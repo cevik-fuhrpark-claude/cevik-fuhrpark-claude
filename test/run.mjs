@@ -18038,6 +18038,10 @@ await test('Springer / Auslesung / Datensicherung (Teilagenten 23.10.): Abfahrts
   ok(j0.data.driver_vehicles.length >= 2, 'Zuordnungen in der Sicherung');
   const old = JSON.parse(JSON.stringify(j0)); const i75 = old.data._migrations.findIndex((m) => /^0075/.test(m.id)); ok(i75 > 0, '0075 bekannt');
   old.data._migrations = old.data._migrations.slice(0, i75); for (const r of old.data.driver_vehicles) delete r.environment;
+  // echte ältere Sicherung kennt auch die Spalten späterer Migrationen (ALTER TABLE … ADD COLUMN ab 0075) nicht – sonst meldet die Probe sie
+  // zu Recht als „unbekannt“ (24.10.2026: Migration 0079 `cases.vehicle_location` …)
+  { const fsm = await import('node:fs'); const md = new URL('../migrations/', import.meta.url);
+    for (const f of fsm.readdirSync(md).filter((x) => x >= '0075')) for (const m of fsm.readFileSync(new URL(f, md), 'utf8').matchAll(/ALTER TABLE (\w+) ADD COLUMN (\w+)/g)) for (const r of old.data[m[1]] || []) delete r[m[2]]; }
   const pr = await probeBackup(old, { required: await requiredTables() });
   ok(pr.ok, JSON.stringify(pr.tables.filter((t) => !t.ok))); ok(pr.migrations_applied_after >= 1, 'nachgezogen');
   const envs = pr.env.DB.db.prepare('SELECT DISTINCT environment FROM driver_vehicles').all().map((r) => r.environment);
@@ -19354,6 +19358,67 @@ await test('Backlog 221 (Teilagent „Kraftstoffdiebstahl am Rastplatz“): Vers
   ok(re.test('Diesel am Rastplatz abgezapft') && re.test('Tankdeckel aufgebrochen') && !re.test('Leistungseinbruch am Berg'), 'Erkennung');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cp_theft_hint && STRINGS[l].cp_theft_hint.includes(STRINGS[l].cp_title), `${l}.cp_theft_hint nennt den Abschnitt`);
+});
+
+await test('Backlog 222 (Teilagent „Fahrzeug wird abgeschleppt – wer sieht was?“): Standort/Abschleppung am Vorgang (Migration 0079) – Rechte Leitung/Werkstatt, Prüfung, Verlauf alt → neu, Sicht für Disposition/Fahrer, Oberfläche und Texte DE/UK/EN', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'AB-S 22', vin: 'WDB96340310824022', site: 'Dortmund' })).status, 201);
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310824022', description: 'Motor aus auf der A1, Fahrzeug wird abgeschleppt', priority: 'kritisch', driveability: 'nicht_fahrbereit', location_note: 'A1 Rastplatz Test', request_key: rk() })).data.id;
+  const cmd = async (u, payload, note = null) => { const c = (await users.fleet.get(`/api/cases/${cid}`)).data.case; return u.post(`/api/cases/${cid}/commands`, { action: 'set_vehicle_location', command_id: rk(), expected_version: c.version, note, payload }); };
+  ok((await users.fleet.get(`/api/cases/${cid}`)).data.allowed_actions.includes('set_vehicle_location'), 'Leitung darf schon bei „gemeldet“');
+  for (const u of [users.dispatch, users.driver]) ok([403, 404].includes((await cmd(u, { vehicle_location: 'Hof X' })).status), 'Disposition/Fahrer nicht');
+  // Prüfung: Datum nur mit Abschleppdienst, nicht in der Zukunft, nicht über ein Jahr zurück, Längen, unverändert
+  const r0 = await cmd(users.fleet, { towed_on: bDayOff(0) }); eq(r0.status, 400, 'Datum ohne Dienst'); ok(/Abschleppdienst/.test(r0.data.message), JSON.stringify(r0.data));
+  eq((await cmd(users.fleet, { tow_service: 'Abschlepp Test GmbH', towed_on: bDayOff(1) })).status, 400, 'nicht in der Zukunft');
+  eq((await cmd(users.fleet, { tow_service: 'Abschlepp Test GmbH', towed_on: bDayOff(-400) })).status, 400, 'nicht über ein Jahr zurück');
+  eq((await cmd(users.fleet, { tow_service: 'Abschlepp Test GmbH', towed_on: '2026-02-30' })).status, 400, 'kein Kalenderdatum');
+  eq((await cmd(users.fleet, { vehicle_location: 'x'.repeat(301) })).status, 400, 'Standort zu lang');
+  eq((await cmd(users.fleet, {})).status, 400, 'leer ohne Eintrag = unverändert');
+  // setzen
+  const r1 = await cmd(users.fleet, { vehicle_location: 'Hof Abschlepp Test, Gewerbestr. 1', tow_service: 'Abschlepp Test GmbH', towed_on: bDayOff(0) });
+  eq(r1.status, 200, JSON.stringify(r1.data));
+  let d = (await users.fleet.get(`/api/cases/${cid}`)).data;
+  eq(d.case.vehicle_location, 'Hof Abschlepp Test, Gewerbestr. 1'); eq(d.case.tow_service, 'Abschlepp Test GmbH'); eq(d.case.towed_on, bDayOff(0));
+  eq(d.case.status, 'gemeldet', 'kein Statuswechsel'); eq(d.case.location_note, 'A1 Rastplatz Test', 'Meldeort bleibt');
+  const ev = d.events.filter((e) => e.action === 'set_vehicle_location').pop();
+  eq(ev.payload.from, null); eq(ev.payload.to.service, 'Abschlepp Test GmbH'); eq(ev.payload.to.on, bDayOff(0));
+  eq((await cmd(users.fleet, { vehicle_location: 'Hof Abschlepp Test, Gewerbestr. 1', tow_service: 'Abschlepp Test GmbH', towed_on: bDayOff(0) })).status, 400, 'unverändert');
+  // Disposition (Liste + Vorgang) und Fahrer (eigene Meldung? hier nicht) sehen den Eintrag; Werkstatt vor Freigabe nicht berechtigt
+  const dl = (await users.dispatch.get('/api/cases?status=open')).data.cases.find((c) => c.id === cid);
+  eq(dl.tow_service, 'Abschlepp Test GmbH', 'Disposition sieht den Abschleppdienst in der Liste'); eq(dl.vehicle_location, 'Hof Abschlepp Test, Gewerbestr. 1');
+  ok(!(await users.dispatch.get(`/api/cases/${cid}`)).data.allowed_actions.includes('set_vehicle_location'), 'Disposition nur lesend');
+  // Werkstatt nach Freigabe: darf ändern (Fahrzeug in die eigene Werkstatt geholt) – Abschleppangaben bleiben, Datum ohne Dienst nicht
+  const c0 = (await users.fleet.get(`/api/cases/${cid}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: c0.version, note: 'Diagnose', payload: { workshop_site: 'DORTMUND' } })).status, 200);
+  ok((await users.ws.get(`/api/cases/${cid}`)).data.allowed_actions.includes('set_vehicle_location'), 'Werkstatt nach Freigabe');
+  eq((await cmd(users.ws, { vehicle_location: 'Werkstatt Dortmund', tow_service: 'Abschlepp Test GmbH', towed_on: bDayOff(0) }, 'abgeholt')).status, 200);
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data;
+  const ev2 = d.events.filter((e) => e.action === 'set_vehicle_location').pop();
+  eq(ev2.payload.from.location, 'Hof Abschlepp Test, Gewerbestr. 1'); eq(ev2.payload.to.location, 'Werkstatt Dortmund'); eq(ev2.note, 'abgeholt'); eq(ev2.actor_role, 'workshop');
+  // alles leer = entfernen
+  eq((await cmd(users.fleet, { vehicle_location: '', tow_service: '', towed_on: '' })).status, 200);
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data; eq(d.case.vehicle_location, null); eq(d.case.tow_service, null); eq(d.case.towed_on, null);
+  eq(d.events.filter((e) => e.action === 'set_vehicle_location').pop().payload.to, null, 'Verlauf: entfernt');
+  // abgeschlossene/abgelehnte Vorgänge: keine Änderung mehr
+  env.DB.db.prepare(`UPDATE cases SET status='abgelehnt', safety_lock=0 WHERE id=?`).run(cid);
+  ok(!(await users.fleet.get(`/api/cases/${cid}`)).data.allowed_actions.includes('set_vehicle_location'), 'nicht an abgeschlossenen Vorgängen');
+  // Hilfsfunktion „ein Jahr zurück“ am 29.02.
+  const { oneYearBack } = await import('../src/cases.js'); eq(oneYearBack('2028-02-29'), '2027-02-28'); eq(oneYearBack('2026-10-24'), '2025-10-24');
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const n of ['vehicle_location', 'tow_service', 'towed_on']) ok(app.includes(`name="${n}"`), `Formularfeld ${n}`);
+  ok(app.includes('${vehLocInfo(c)}') && app.includes('<span data-vloc>') && app.includes('class="towtag"'), 'Anzeige im Vorgang, in „Nicht einplanen“ und in der Vorgangsliste');
+  ok(app.includes("['set_followup', 'set_planned_date', 'set_vehicle_location'].includes(e.action)"), 'Verlauf alt → neu');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['act_set_vehicle_location', 'vl_title', 'vl_hint', 'vl_location_hint', 'vl_service', 'vl_on', 'vl_towed_chip', 'vl_unknown', 'vl_clear_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].help_fleet_s.includes(STRINGS[l].act_set_vehicle_location), `Hilfe Leitung nennt „${STRINGS[l].act_set_vehicle_location}“ ${l}`);
+    ok(STRINGS[l].help_dispo_s.includes(STRINGS[l].vl_towed_chip) && STRINGS[l].help_dispo_s.includes(STRINGS[l].dispo_not_plannable), `Hilfe Disposition ${l}`);
+  }
+  for (const l of ['uk', 'en']) {
+    for (const m of ['Abschleppdatum nur zusammen mit dem Abschleppdienst angeben.', 'Standort ist unverändert.', 'Abgeschleppt am: liegt mehr als ein Jahr zurück.', 'Abgeschleppt am: darf nicht in der Zukunft liegen.', 'Standort des Fahrzeugs ist zu lang (max. 300 Zeichen).']) {
+      const tr = translateValidation(l, m); ok(tr && tr !== m && !/Abschlepp|Standort/.test(tr), `Prüftext ${l}: ${m} → ${tr}`);
+    }
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

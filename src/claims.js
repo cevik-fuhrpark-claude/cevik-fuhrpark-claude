@@ -14,7 +14,8 @@ const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
 const ISO = { test: isCalendarDate }; // echtes Kalenderdatum JJJJ-MM-TT
 const days = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
 
-function day(v, field, required = false, future = false) {
+// auch für das Abschleppdatum am Vorgang (src/cases.js, Migration 0079) – gleiche Prüftexte
+export function day(v, field, required = false, future = false) {
   const d = str(v, { max: 10, field, required });
   if (!d) return null;
   if (!ISO.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', `${field}: gültiges Datum im Format JJJJ-MM-TT.`);

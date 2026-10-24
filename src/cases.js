@@ -1,5 +1,5 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
-import { claimForCase } from './claims.js';
+import { claimForCase, day as pastDay } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
 import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
@@ -588,6 +588,11 @@ export function planDate(v) {
   return d;
 }
 
+// Gleicher Kalendertag im Vorjahr (29.02. → 28.02.) – „höchstens ein Jahr zurück“ (Abschleppdatum, Migration 0079)
+export function oneYearBack(day) {
+  const y = Number(day.slice(0, 4)) - 1; const md = day.slice(5);
+  return md === '02-29' ? `${y}-02-28` : `${y}-${md}`;
+}
 // Gleicher Kalendertag im Folgejahr (29.02. → 28.02.) – „höchstens ein Jahr“ (vorher heute + 366 Tage: ein Tag zu viel, 21.10.2026)
 export function oneYearAhead(day) {
   const y = Number(day.slice(0, 4)) + 1; const md = day.slice(5);
@@ -630,6 +635,9 @@ export function allowedActions(user, c, access) {
     if (c.safety_lock) a.push('lift_safety_lock');
     if (OPEN_STATUSES.includes(c.status)) a.push('change_priority', 'set_followup');
   }
+  // Standort/Abschleppung (Migration 0079, Teilagent „Fahrzeug wird abgeschleppt“): Leitung an offenen Vorgängen, Werkstatt solange sie
+  // das Fahrzeug holt bzw. repariert (nicht mehr in der Abschlusskontrolle); Disposition/Lesende sehen den Eintrag
+  if (OPEN_STATUSES.includes(c.status) && (mgr || (ws && c.status !== 'abschlusskontrolle'))) a.push('set_vehicle_location');
   switch (c.status) {
     case 'gemeldet':
       if (mgr) { if (!c.fleet_received_at) a.push('receive'); a.push('approve_repair', 'reject'); }
@@ -1072,6 +1080,21 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (d === (c.followup_on || null) && fnote === (c.followup_note || null)) throw bad('validation', 'Wiedervorlage ist unverändert.');
       if (fnote && fnote.length > 300) throw bad('validation', 'Vermerk der Wiedervorlage ist zu lang (max. 300 Zeichen).'); // vorher still gekürzt
       set.followup_on = d; set.followup_note = fnote || null; payload = { from: c.followup_on || null, to: d };
+      break;
+    }
+    case 'set_vehicle_location': {
+      // Wo steht das Fahrzeug jetzt, wer hat es abgeschleppt (Migration 0079)? Nur Angaben laut Meldung/Beleg; alles leer = entfernen.
+      // Ohne Statuswechsel und ohne Push (wie Werkstatttermin); der Verlauf zeigt alt → neu.
+      const loc = str(p.vehicle_location, { max: 300, field: 'Standort des Fahrzeugs' });
+      const svc = str(p.tow_service, { max: 120, field: 'Abschleppdienst' });
+      const on = pastDay(p.towed_on, 'Abgeschleppt am');
+      if (on && !svc) throw bad('validation', 'Abschleppdatum nur zusammen mit dem Abschleppdienst angeben.');
+      if (on && on < oneYearBack(berlinDate())) throw bad('validation', 'Abgeschleppt am: liegt mehr als ein Jahr zurück.');
+      const from = { location: c.vehicle_location || null, service: c.tow_service || null, on: c.towed_on || null };
+      const to = { location: loc, service: svc, on };
+      if (from.location === to.location && from.service === to.service && from.on === to.on) throw bad('validation', 'Standort ist unverändert.');
+      set.vehicle_location = loc; set.tow_service = svc; set.towed_on = on;
+      payload = { from: from.location || from.service || from.on ? from : null, to: loc || svc || on ? to : null };
       break;
     }
     case 'reassign_workshop': {
