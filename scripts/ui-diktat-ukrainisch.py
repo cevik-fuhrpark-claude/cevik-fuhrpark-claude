@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (24.10.2026, Backlog 228, Teilagent „Fahrer diktiert die Meldung auf Ukrainisch/Russisch“): Unfall-Hinweis im
 # Meldeformular nicht bei „аварійна сигналізація“/„аварийка“ (Warnblinker), wohl bei „аварія“/„авария“/„ДТП“; Diktat, das nur „change“
 # auslöst, zeigt den Hinweis; ukrainischer Freitext trägt in DE/EN-Oberfläche lang="uk" (Vorgang, Vorgangsliste), in der UK-Oberfläche nicht.
+# Backlog 229: auch Restarbeiten.
 # DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (scripts/dev-server.mjs).
 import os
 from playwright.sync_api import sync_playwright
@@ -22,6 +23,13 @@ with sync_playwright() as p:
     check(api('POST','/api/vehicles/import',csv,'text/csv')['s']==200,'Fahrzeug importiert')
     r=api('POST','/api/cases',{'vehicle_id':'VIN:WMA15SZZ2HM722791','description':UA,'priority':'mittel','driveability':'fahrbereit','request_key':'dk-228-1'})
     check(r['s'] in (200,201),'Meldung auf Ukrainisch angelegt'); cid=r['d']['id']
+    # Backlog 229: Restarbeit auf Ukrainisch (Leitung darf im Werkstattstatus erfassen)
+    site=api('GET','/api/meta')['d']['workshops'][0]['code']
+    def cmd(action,payload={},note=None):
+        v=api('GET',f'/api/cases/{cid}')['d']['case']['version']
+        return api('POST',f'/api/cases/{cid}/commands',{'action':action,'command_id':f'dk-229-{action}','expected_version':v,'note':note,'payload':payload})
+    check(cmd('approve_repair',{'workshop_site':site},'reparieren')['s']==200,'Auftrag freigegeben')
+    check(cmd('add_open_item',{'description':'Замінити дзеркало після отримання запчастини','safety_relevant':False})['s']==200,'Restarbeit auf Ukrainisch')
     for lang,(w,h) in [(l,v) for l in ['de','uk','en'] for v in [(390,844),(820,1180),(1366,900)]]:
         api('PATCH','/api/me',{'language':lang})
         ctx=br.new_context(viewport={'width':w,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
@@ -43,6 +51,8 @@ with sync_playwright() as p:
         la=q.evaluate("() => { const p = [...document.querySelectorAll('section.panel p')].find((x) => x.textContent.startsWith('Сталася')); return p ? p.getAttribute('lang') : 'FEHLT'; }")
         check(la==(None if lang=='uk' else 'uk'),f'{lang}/{w}: Vorgang – Beschreibung lang={la}')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: Vorgang ohne Querscrollen')
+        lo=q.evaluate("() => { const s = [...document.querySelectorAll('.row.note .title')].find((x) => x.textContent.startsWith('Замінити')); return s ? s.getAttribute('lang') : 'FEHLT'; }")
+        check(lo==(None if lang=='uk' else 'uk'),f'{lang}/{w}: Restarbeit lang={lo}')
         if SHOTS: q.screenshot(path=f'{SHOTS}/diktat-vorgang-{lang}-{w}.png')
         q.goto(B+'/#/cases'); q.wait_for_timeout(1200)
         ll=q.evaluate("() => { const s = [...document.querySelectorAll('.title span[lang], .title')].find((x) => x.textContent.includes('Сталася')); return s ? (s.querySelector('span[lang]') || s).getAttribute('lang') : 'FEHLT'; }")

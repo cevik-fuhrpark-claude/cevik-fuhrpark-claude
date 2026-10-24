@@ -7363,7 +7363,7 @@ await test('Datenqualität: Telematik sendet nach „außer Betrieb nehmen“ we
   const items = async () => (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'telematics_vehicle_inactive' && i.vehicle_id === VID);
   eq((await send(new Date(Date.now() - 3600000).toISOString())).data.matched, 1);
   const d = await users.fleet.post(`/api/vehicles/${VID}/active`, { active: false, reason: 'verkauft (Test)' });
-  eq(d.status, 200); eq(d.data.telematics_devices, 1, 'Abmelde-Antwort: Gerät noch zugeordnet'); eq(d.data.running_contracts, 0);
+  eq(d.status, 200, 'außer Betrieb nehmen (24.10.2026 einmal 409 – Antwort zur Diagnose): ' + JSON.stringify(d.data)); eq(d.data.telematics_devices, 1, 'Abmelde-Antwort: Gerät noch zugeordnet'); eq(d.data.running_contracts, 0);
   eq((await items()).length, 0, 'Stand vor dem Abmelden: kein Befund');
   // Fahrzeugakte: „außer Betrieb seit“ laut Protokoll; Grund und Person nur für Inhaber/Fuhrparkleitung
   const ia = (await users.fleet.get(`/api/vehicles/${VID}`)).data.inactive_info;
@@ -19631,7 +19631,7 @@ await test('Backlog 226: Anmelde-Hinweis auf dem anmeldenden Gerät als „diese
   eq((await owner.patch(`/api/users/${u.id}`, { active: false })).status, 200);
 });
 
-await test('Backlog 228 (Teilagent „Fahrer diktiert die Meldung auf Ukrainisch/Russisch“): Unfall-Hinweis wie Datenqualität (Warnblinker „аварійна/аварийка“ kein Unfall, russ. „авария“ erkannt), Diktat per change, Freitext mit lang= (uk/ru, lateinisch in UK-Oberfläche unbestimmt)', async () => {
+await test('Backlog 228/229 (Teilagent „Fahrer diktiert die Meldung auf Ukrainisch/Russisch“): Unfall-Hinweis wie Datenqualität (Warnblinker „аварійна/аварийка“ kein Unfall, russ. „авария“ erkannt), Diktat per change, Freitext mit lang= (uk/ru, lateinisch in UK-Oberfläche unbestimmt) auch an Restarbeiten, Folgeaufträgen, bekannten Mängeln', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const m = app.match(/\nconst ACC_HINT = \/(.+)\/i;/); ok(m, 'ACC_HINT auf Modulebene'); eq((app.match(/const ACC_HINT = /g) || []).length, 1); ok(!/const ACC = /.test(app), 'altes Muster entfernt');
   const re = new RegExp(m[1], 'i');
@@ -19658,7 +19658,10 @@ await test('Backlog 228 (Teilagent „Fahrer diktiert die Meldung auf Ukrainisch
   eq(fl('de')('Дзеркало розбите, не видно задню частину'), 'uk'); eq(fl('de')('Зеркало разбито, бампер отъехал'), 'ru'); eq(fl('en')('Їде вліво'), 'uk');
   eq(fl('uk')('Дзеркало розбите'), null, 'UK-Oberfläche, ukr. Text: kein Attribut'); eq(fl('de')('Spiegel kaputt'), null); eq(fl('uk')('Spiegel kaputt'), '', 'lateinisch in UK: unbestimmt');
   eq(fl('de')('12345 !!'), null, 'ohne Buchstaben'); eq(fl('de')('SZ-YC 5501: Дзеркало розбите, не видно'), 'uk', 'Kennzeichen im Text stört nicht');
-  for (const x of ['${langAttr(cDesc(c.description))}>${esc(cDesc(c.description))}</p>', '${langAttr(evNote(e))}>${esc(evNote(e))}</div>', '${woTag(c)}${ltxt(cDesc(c.description))}</span>', '${ltxt(clipTxt(cDesc(i.description), 100))}']) ok(app.includes(x), 'lang an ' + x.slice(0, 40));
+  for (const x of ['${langAttr(cDesc(c.description))}>${esc(cDesc(c.description))}</p>', '${langAttr(evNote(e))}>${esc(evNote(e))}</div>', '${woTag(c)}${ltxt(cDesc(c.description))}</span>', '${ltxt(clipTxt(cDesc(i.description), 100))}',
+    // Backlog 229: Restarbeiten (Text, Erledigt-Vermerk), Folgeaufträge, bekannte Mängel (nur der Mangeltext, Prüfpunkt in Oberflächensprache)
+    '${langAttr(o.description)}>${esc(o.description)}</span>', "${o.resolution_note ? ' · ' + ltxt(o.resolution_note) : ''}", '${langAttr(cDesc(f.description))}>${esc(cDesc(f.description))}</span>',
+    "${k.check_item ? esc(checkLabel(k.check_item)) + ': ' : ''}${ltxt(k.description.replace("]) ok(app.includes(x), 'lang an ' + x.slice(0, 40));
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
