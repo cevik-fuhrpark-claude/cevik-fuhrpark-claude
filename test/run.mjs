@@ -19261,6 +19261,42 @@ await test('Backlog 218 (Teilagent „Unfall mit fremdem Fahrzeug“): Unfallgeg
   }
 });
 
+await test('Backlog 219 (Versicherungsfälle suchen): Suche über Kennzeichen (auch ohne Trennzeichen), Vorgangsnummer, Versicherer, Schadennummern und Gutachter – beider Seiten; Zähler der Filter bleiben, CSV folgt der Suche, Texte DE/UK/EN', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'US-T 1', vin: 'WDB96340310823001', site: 'Dortmund' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'US-T 2', vin: 'WDB96340310823002', site: 'Dortmund' })).status, 201);
+  const mk = async (vin, desc, claim) => {
+    const cid = (await users.fleet.post('/api/cases', { vehicle_id: 'VIN:' + vin, description: desc, priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+    eq((await users.fleet.put(`/api/cases/${cid}/claim`, { reported_on: bDayOff(-1), evidence: 'Unfallbericht (Test)', ...claim })).status, 200);
+    return cid;
+  };
+  const a = await mk('WDB96340310823001', 'Auffahrunfall mit Fremdbeteiligung', { insurer: 'Eigene Vers AG', claim_no: 'EIG-100', opponent_plate: 'DO-QQ 7', opponent_insurer: 'Fremd Vers AG', opponent_claim_no: 'FRD-5000/26' });
+  const b = await mk('WDB96340310823002', 'Glasbruch', { insurer: 'Eigene Vers AG', claim_no: 'EIG-200', appraiser: 'Sachverständige Suchbegriff' });
+  const get = async (q) => (await users.fleet.get(`/api/claims?filter=alle${q ? '&q=' + encodeURIComponent(q) : ''}`)).data;
+  const ids = (d) => d.claims.map((c) => c.case_id);
+  const all = await get(''); eq(all.q, null); ok(ids(all).includes(a) && ids(all).includes(b));
+  for (const q of ['FRD-5000', 'frd-5000/26', 'Fremd Vers', 'DO-QQ 7', 'doqq7', 'EIG-100']) {
+    const d = await get(q); eq(d.q, q); eq(ids(d).filter((x) => x === a).length, 1, 'gefunden: ' + q); ok(!ids(d).includes(b), 'nur der passende Fall: ' + q);
+  }
+  const g = await get('Suchbegriff'); eq(ids(g).join(), b, 'Gutachter gefunden');
+  const p1 = await get('US-T 1'); eq(ids(p1).join(), a, 'eigenes Kennzeichen');
+  const none = await get('gibt-es-nicht'); eq(ids(none).length, 0, 'kein Treffer');
+  // Zähler der Filterknöpfe zählen weiter alle Fälle (die Suche grenzt nur die Liste ein)
+  eq(none.counts.alle, all.counts.alle, 'Zähler unverändert');
+  // Suche wirkt auch im Export
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle&q=FRD-5000')).data);
+  ok(csv.includes('US-T 1') && !csv.includes('US-T 2'), csv.split('\r\n')[1]);
+  // kein Freitext: Vermerk/Nachweis werden nicht durchsucht (sonst stünden dort Namen Dritter)
+  eq((await users.fleet.put(`/api/cases/${b}/claim`, { note: 'Geheimwort Reifenprofil' })).status, 200);
+  eq(ids(await get('Geheimwort')).length, 0, 'Vermerk nicht durchsucht');
+  eq(ids(await get('Unfallbericht')).length, 0, 'Nachweis nicht durchsucht');
+  eq((await users.fleet.get('/api/claims?filter=alle&q=' + 'x'.repeat(61))).status, 400, 'Suche höchstens 60 Zeichen');
+  for (const u of [users.ws, users.dispatch]) eq((await u.get('/api/claims?filter=alle&q=EIG')).status, 403, 'nur Leitung');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes(`<input id="clq" class="noprint" type="search"`) && app.includes('clq.oninput = ()'), 'Suchfeld in der Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].claim_search, `${l}.claim_search`); ok(STRINGS[l].claim_search_info.includes('{q}') && STRINGS[l].claim_search_info.includes('{n}'), `${l}.claim_search_info`); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

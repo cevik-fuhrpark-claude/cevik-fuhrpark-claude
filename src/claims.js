@@ -2,7 +2,7 @@
 // Alle Angaben laut Schadenmeldung bzw. Schreiben/Abrechnung des Versicherers (Pflicht-Nachweis) – die App berechnet nichts außer
 // der Dauer seit Meldung und dem Saldo „Kosten des Vorgangs − Erstattung“ (nur wenn beide belegt sind).
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate, rateOf, roundCents, commaDec, pointDec } from './util.js';
+import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate, rateOf, roundCents, commaDec, pointDec, normPlate } from './util.js';
 import { audit } from './auth.js';
 import { csvCell, csvText } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -170,10 +170,20 @@ export async function claimOverview(env, user, envName, query = {}) {
   const counts = { offen: 0, gutachten: 0, alle: list.length }; for (const s of CLAIM_STATUS) counts[s] = 0;
   for (const c of list) { counts[c.status]++; if (c.open) counts.offen++; if (c.appraisal_pending) counts.gutachten++; }
   if (filter === 'offen') list = list.filter((c) => c.open); else if (filter === 'gutachten') list = list.filter((c) => c.appraisal_pending); else if (filter !== 'alle') list = list.filter((c) => c.status === filter);
+  // Suche (24.10.2026, Backlog 219): Der Versicherer der Gegenseite nennt am Telefon nur „seine“ Schadennummer oder das Kennzeichen.
+  // Gesucht wird in dem, was die Leitung selbst eingetragen hat – ohne neue Datenbankabfrage (die Liste liegt bereits vor):
+  // Kennzeichen (auch ohne Trennzeichen), Vorgangsnummer, Versicherer/Schadennummer beider Seiten und Gutachter. Kein Freitext-Vermerk.
+  const q = str(query.q, { max: 60, field: 'Suche' });
+  if (q) {
+    const low = q.toLowerCase();
+    const pk = normPlate(q);
+    list = list.filter((c) => [c.case_no, c.insurer, c.claim_no, c.opponent_insurer, c.opponent_claim_no, c.appraiser].some((x) => x && String(x).toLowerCase().includes(low))
+      || [c.plate, c.opponent_plate].some((x) => x && (String(x).toLowerCase().includes(low) || (pk && normPlate(x).includes(pk)))));
+  }
   const reimb = list.filter((c) => c.reimbursed_net !== null && !c.eval_excluded);
   const reimbX = list.filter((c) => c.reimbursed_net !== null && c.eval_excluded);
   const sum = (a) => (a.length ? r2(a.reduce((s, c) => s + c.reimbursed_net, 0)) : null);
-  return { today, filter, site: sel.site, site_options: sel.options, followup_days: followupDays, counts, claims: list, reimbursed_sum_net: sum(reimb), reimbursed_sum_excluded_net: sum(reimbX) };
+  return { today, filter, q: q || null, site: sel.site, site_options: sel.options, followup_days: followupDays, counts, claims: list, reimbursed_sum_net: sum(reimb), reimbursed_sum_excluded_net: sum(reimbX) };
 }
 
 export function claimsCsv(ov) {
