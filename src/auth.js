@@ -697,6 +697,7 @@ export async function listUsers(env, actor) {
   if (!['owner', 'fleet'].includes(actor.role)) throw forbidden();
   const kdSince = new Date(Date.now() - KNOWN_DEVICE_DAYS * 86400000).toISOString();
   const cols = `u.id,u.username,u.display_name,u.role,u.environment,u.workshop_site,u.employee_number,u.active,u.created_at,(u.password_hash IS NOT NULL) AS has_password, (u.totp_enabled_at IS NOT NULL) AS has_totp,
+    (SELECT d.active FROM drivers d WHERE d.user_id=u.id) AS driver_record_active,
     CASE WHEN la.locked_until > ?1 THEN la.locked_until END AS locked_until,
     (SELECT COUNT(*) FROM sessions s WHERE s.user_id=u.id AND ${sessionAliveSql('?1')}) AS sessions, (SELECT MAX(s.last_seen) FROM sessions s WHERE s.user_id=u.id) AS last_seen,
     (SELECT COUNT(*) FROM push_subscriptions p WHERE p.user_id=u.id AND p.revoked_at IS NULL) AS push_devices,

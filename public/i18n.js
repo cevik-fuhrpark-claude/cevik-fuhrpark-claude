@@ -1145,6 +1145,7 @@ const IMPORT_TPL = [
   [/^Art unbekannt: (.{0,200})$/, 'Невідомий вид: $1', 'Unknown type: $1'],
   [/^Fahrer nicht eindeutig: (.{0,200})$/, 'Водій неоднозначний: $1', 'Driver not unique: $1'],
   [/^Fahrer nicht gefunden: (.{0,200})$/, 'Водія не знайдено: $1', 'Driver not found: $1'],
+  [/^Fahrerakte ausgeschieden – Auslesung in der Akte erfassen: (.{0,200})$/, 'Картку водія позначено як звільненого – внесіть зчитування в картці водія: $1', 'Driver record marked as left – record the download in the driver record: $1'],
   [/^Frist in der Liste \((\d{4}-\d{2}-\d{2})\) weicht ab – vorhandene Frist (\d{4}-\d{2}-\d{2}) bleibt; in der Fahrzeugakte prüfen$/, 'Строк у списку ($1) відрізняється – наявний строк $2 залишається; перевірте в картці транспорту', 'Deadline in the list ($1) differs – existing deadline $2 is kept; check in the vehicle file'],
   [/^Anhänger ohne Fahrtenschreiber: (.{0,200})$/, 'Причіп без тахографа: $1', 'Trailer without tachograph: $1'],
   [/^Reifengröße zu lang \(max\. 40 Zeichen\): (.{0,200})$/, 'Розмір шини задовгий (макс. 40 символів): $1', 'Tyre size too long (max. 40 characters): $1'],
@@ -2176,3 +2177,7 @@ Object.assign(STRINGS.en, { dr_title: 'Driver records – period', dr_link: 'Rec
 Object.assign(STRINGS.de, { no_recipients_warn: 'Kommentar gespeichert – es wurde aber niemand benachrichtigt (kein erreichbares Konto unter den gewählten Empfängern).', reporter_off_inactive: 'Konto deaktiviert', reporter_off_other: 'nicht erreichbar' });
 Object.assign(STRINGS.uk, { no_recipients_warn: 'Коментар збережено – але нікого не сповіщено (серед вибраних одержувачів немає доступного облікового запису).', reporter_off_inactive: 'обліковий запис деактивовано', reporter_off_other: 'недоступний' });
 Object.assign(STRINGS.en, { no_recipients_warn: 'Comment saved – but nobody was notified (no reachable account among the selected recipients).', reporter_off_inactive: 'account deactivated', reporter_off_other: 'not reachable' });
+// Backlog 250: Fahrerakte ausgeschieden bei der Fahrzeugzuordnung
+Object.assign(STRINGS.de, { drv_rec_left: 'Akte ausgeschieden', drv_rec_left_warn: 'Zugeordnet – die Fahrerakte dieses Kontos ist aber als „ausgeschieden“ markiert. Bitte Akte oder Zuordnung prüfen.' });
+Object.assign(STRINGS.uk, { drv_rec_left: 'картка: звільнений', drv_rec_left_warn: 'Призначено – але картку водія цього облікового запису позначено як «звільнений». Перевірте картку або призначення.' });
+Object.assign(STRINGS.en, { drv_rec_left: 'record: left', drv_rec_left_warn: 'Assigned – but the driver record of this account is marked as “left”. Please check the record or the assignment.' });

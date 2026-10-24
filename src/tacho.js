@@ -306,7 +306,10 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   if (ci.ev < 0 && !fallbackEv) throw bad('validation', 'Spalte „Nachweis“/„Datei“ oder Angabe „Quelle“ für alle Zeilen erforderlich.');
   if (ci.pno < 0 && ci.name < 0 && ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte Personalnummer/Fahrer oder Kennzeichen/FIN erforderlich.');
 
-  const drivers = (await env.DB.prepare('SELECT id, display_name, personnel_no FROM drivers WHERE environment=? AND active=1').bind(envName).all()).results;
+  const allDrivers = (await env.DB.prepare('SELECT id, display_name, personnel_no, active FROM drivers WHERE environment=?').bind(envName).all()).results;
+  const drivers = allDrivers.filter((d) => d.active);
+  // ausgeschiedene Akten (Backlog 250): nur für einen klaren Überspring-Grund – Einzelerfassung in der Akte bleibt möglich (Nachweis nach Austritt)
+  const offDrivers = allDrivers.filter((d) => !d.active);
   // auch außer Betrieb genommene (Backlog 188): Massenspeicher am Verkaufstag ausgelesen, Export erst danach importiert – FIN trifft das
   // Altfahrzeug (vorher „Fahrzeug nicht gefunden“, Einzelerfassung ging); Kennzeichen zuerst an aktiven, sonst eindeutig am außer Betrieb genommenen
   const allVehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind, eval_excluded, active, created_at FROM vehicles`).all()).results;
@@ -321,6 +324,8 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   // Personalnummer ohne führende Nullen vergleichen (Excel macht aus „00123“ die Zahl 123, 18.10.2026); zwei Nummern, die dadurch gleich werden → mehrdeutig
   const byPno = uniq(drivers, (d) => (d.personnel_no ? pnoKey(d.personnel_no) : null));
   const byName = uniq(drivers, (d) => normName(d.display_name));
+  const byPnoOff = uniq(offDrivers, (d) => (d.personnel_no ? pnoKey(d.personnel_no) : null));
+  const byNameOff = uniq(offDrivers, (d) => normName(d.display_name));
   const byVin = new Map(allVehicles.map((v) => [v.vin, v]));
   // Kennzeichen doppelt, aber nur eines bewertet (ruhendes Doppel, z. B. Tippfehler-FIN): das bewertete Fahrzeug – wie die Fristen-Übersicht
   const byPlate = uniq(vehicles, (v) => normPlate(v.plate));
@@ -352,7 +357,11 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
       // dauerhaft übersprungen). Nicht die exakte Schreibweise – Excel entfernt führende Nullen, „123“ kann „0123“ meinen.
       if (target === 'mehrdeutig' && nm) { const n = byName.get(nm); if (n && n !== 'mehrdeutig' && n.personnel_no && pnoKey(n.personnel_no) === pnoKey(pno)) target = n; }
       if (target === 'mehrdeutig') return skip(`Fahrer nicht eindeutig: ${get(cells, ci.pno) || get(cells, ci.name)}`);
-      if (!target) return skip(`Fahrer nicht gefunden: ${get(cells, ci.pno) || get(cells, ci.name) || '–'}`);
+      if (!target) {
+        const off = pno ? byPnoOff.get(pnoKey(pno)) : nm ? byNameOff.get(nm) : undefined;
+        if (off && off !== 'mehrdeutig') return skip(`Fahrerakte ausgeschieden – Auslesung in der Akte erfassen: ${off.display_name}`);
+        return skip(`Fahrer nicht gefunden: ${get(cells, ci.pno) || get(cells, ci.name) || '–'}`);
+      }
       label = target.display_name;
     } else {
       const vin = get(cells, ci.vin) ? normalizeVin(get(cells, ci.vin)) : '';

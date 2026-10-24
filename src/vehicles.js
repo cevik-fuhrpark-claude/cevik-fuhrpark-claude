@@ -672,7 +672,8 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
 
 export async function assignDriver(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
-  const driver = await env.DB.prepare(`SELECT id, display_name FROM users WHERE id=? AND role='driver' AND environment=? AND active=1`).bind(str(body.user_id, { required: true, max: 40, field: 'Fahrer' }), envName).first();
+  // rec_active: Fahrerakte des Kontos (0 = ausgeschieden → Warnhinweis, Backlog 250; Sperre erst nach Antwort auf „Ausgeschiedene Fahrer“)
+  const driver = await env.DB.prepare(`SELECT id, display_name, (SELECT d.active FROM drivers d WHERE d.user_id=users.id) AS rec_active FROM users WHERE id=? AND role='driver' AND environment=? AND active=1`).bind(str(body.user_id, { required: true, max: 40, field: 'Fahrer' }), envName).first();
   if (!driver) throw bad('validation', 'Fahrer nicht gefunden (gleiche Umgebung erforderlich).');
   const v = await env.DB.prepare('SELECT id, active FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
@@ -706,7 +707,7 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   await audit(env, user.id, 'vehicle.assign_driver', vehicleId, { driver: driver.id, ended_previous: endPrev ? open.map((o) => o.plate) : [] });
   // Fahrzeugwechsel: Ende auch im Protokoll des bisherigen Fahrzeugs (23.10.2026 – Springer mit täglichem Wechsel wirkte dort dauerhaft zugeordnet)
   if (endPrev) for (const o of open) await audit(env, user.id, 'vehicle.end_assignment', o.vehicle_id, { driver: driver.id, assignment: o.id, vehicle_change: true });
-  return { id, ended_previous: endPrev ? open.map((o) => o.plate) : [], other_open: endPrev ? [] : open.map((o) => o.plate) };
+  return { id, ended_previous: endPrev ? open.map((o) => o.plate) : [], other_open: endPrev ? [] : open.map((o) => o.plate), ...(driver.rec_active === 0 ? { driver_record_left: true } : {}) };
 }
 
 export async function endAssignment(env, user, envName, assignmentId) {

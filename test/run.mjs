@@ -20020,6 +20020,34 @@ await test('Backlog 249: Kommentar nur an „Gemeldet von“ bei deaktiviertem M
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].no_recipients_warn && STRINGS[l].reporter_off_inactive && STRINGS[l].reporter_off_other, l);
 });
 
+await test('Backlog 250: Fahrer zuordnen mit ausgeschiedener Fahrerakte → Warnhinweis (Benutzerliste nennt den Aktenstatus); Auslesungs-Import nennt „Fahrerakte ausgeschieden“ statt „nicht gefunden“', async () => {
+  const { U, V1 } = await freshWorld();
+  const rec = await U.fleet.post('/api/drivers', { display_name: 'Fahrer W', personnel_no: 'P-250', user_id: U.driver.id }); eq(rec.status, 201, JSON.stringify(rec.data));
+  let ul = (await U.fleet.get('/api/users')).data.users.find((u) => u.id === U.driver.id); eq(ul.driver_record_active, 1, 'Akte aktiv');
+  let r = await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id }); eq(r.status, 201); eq(r.data.driver_record_left, undefined, 'aktive Akte ohne Hinweis');
+  eq((await U.fleet.patch(`/api/drivers/${rec.data.id}`, { active: false })).status, 200);
+  ul = (await U.fleet.get('/api/users')).data.users.find((u) => u.id === U.driver.id); eq(ul.driver_record_active, 0, 'Akte ausgeschieden');
+  const V2 = 'VIN:WDB9630051L917317';
+  r = await U.fleet.post(`/api/vehicles/${V2}/drivers`, { user_id: U.driver.id }); eq(r.status, 201, 'Zuordnung bleibt möglich'); eq(r.data.driver_record_left, true, 'Warnhinweis');
+  // Konto ohne Fahrerakte: null, kein Hinweis
+  eq((await U.fleet.get('/api/users')).data.users.find((u) => u.id === U.ws.id).driver_record_active, null);
+  // Auslesungs-Import
+  const day = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
+  const csv = ['Art;Personalnummer;Fahrer;Datum;Datei', `Fahrerkarte;P-250;;${day};C_250.ddd`, `Fahrerkarte;;fahrer w;${day};C_250b.ddd`, `Fahrerkarte;P-999;;${day};C_999.ddd`].join('\n');
+  const dry = await U.fleet.req('POST', '/api/tacho/import?dry_run=1', csv, { 'content-type': 'text/csv' }); eq(dry.status, 200, JSON.stringify(dry.data));
+  const reasons = dry.data.skipped.map((x) => x.reason);
+  eq(reasons.filter((x) => x === 'Fahrerakte ausgeschieden – Auslesung in der Akte erfassen: Fahrer W').length, 2, reasons.join(' | '));
+  ok(reasons.includes('Fahrer nicht gefunden: P-999'), 'unbekannt bleibt „nicht gefunden“');
+  // Einzelerfassung in der ausgeschiedenen Akte bleibt möglich
+  eq((await U.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: rec.data.id, downloaded_on: day, evidence: 'C_250.ddd' })).status, 201, 'Einzelerfassung');
+  // Oberfläche + Texte
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("u.driver_record_active === 0 ? ` (${esc(t('drv_rec_left'))})` : ''") && app.includes("if (r.driver_record_left) toast(t('drv_rec_left_warn'), true);"), 'Auswahl + Hinweis');
+  const { STRINGS, translateImportReason } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].drv_rec_left && STRINGS[l].drv_rec_left_warn, l);
+  eq(translateImportReason('en', 'Fahrerakte ausgeschieden – Auslesung in der Akte erfassen: Fahrer W'), 'Driver record marked as left – record the download in the driver record: Fahrer W');
+});
+
 await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „kritisch“/„gesperrte Vorgänge“ der Startseite führen zur passenden Vorgangsliste (Filter priority/locked, gleiche Anzahl), ungültige Priorität 400', async () => {
   const vin = 'WDB96340310823801';
   eq((await owner.post('/api/vehicles', { plate: 'UR-LA 1', vin, site: 'Dortmund' })).status, 201);
