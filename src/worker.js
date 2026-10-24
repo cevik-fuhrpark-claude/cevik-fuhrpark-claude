@@ -666,7 +666,9 @@ async function handleApi(request, env, ctx, url) {
     // ?filter=unread|urgent filtert serverseitig (ältere ungelesene erscheinen so auch bei vielen Hinweisen); ?count=1 nur die Zähler (Kennzahl am Menü).
     // nur Hinweise der aktuellen Umgebung der Person (nach Wechsel Test→Betrieb erschienen sonst Test-Hinweise, 17.10.2026)
     // Sicherheitshinweis „Neue Anmeldung“ betrifft das Konto, nicht die Umgebung: in Test- und Betriebsansicht (20.10.2026: Inhaber in „Test“ sah ihn nicht)
-    const UNREAD = 'n.opened_at IS NULL AND n.acknowledged_at IS NULL';
+    // Anmelde-Hinweis dieses Geräts (Backlog 226): hier nicht „ungelesen“ (Person hat sich gerade selbst angemeldet); andere Geräte unverändert
+    const ownRef = (await auth.loginRefOf(request)) || '-';
+    const UNREAD = `n.opened_at IS NULL AND n.acknowledged_at IS NULL AND NOT (n.kind='new_login' AND n.ref IS '${ownRef.replace(/[^a-z0-9:-]/g, '')}')`;
     const c = await env.DB.prepare(`SELECT COUNT(*) AS all_n, COALESCE(SUM(CASE WHEN ${UNREAD} THEN 1 ELSE 0 END), 0) AS unread_n, COALESCE(SUM(CASE WHEN n.urgent=1 THEN 1 ELSE 0 END), 0) AS urgent_n
       FROM notifications n WHERE n.user_id=? AND (n.environment=? OR n.kind='new_login') AND n.hidden_at IS NULL`).bind(user.id, envName).first();
     const listAsOf = nowIso(); // „Alle gelesen“ markiert nur bis zu diesem Stand (danach eingetroffene bleiben ungelesen)
@@ -683,7 +685,7 @@ async function handleApi(request, env, ctx, url) {
       ${cur ? 'AND (n.created_at < ? OR (n.created_at = ? AND n.rowid < ?))' : ''} ORDER BY n.created_at DESC, n.rowid DESC LIMIT ?`)
       .bind(user.id, envName, ...(cur ? [cur.created_at, cur.created_at, cur.r] : []), NOTIF_MAX + 1).all()).results;
     const truncated = rows.length > NOTIF_MAX; if (truncated) rows.length = NOTIF_MAX;
-    for (const r of rows) { Object.assign(r, currentLangText(r)); delete r.lang; }
+    for (const r of rows) { Object.assign(r, currentLangText(r)); delete r.lang; if (r.kind === 'new_login') { if (r.ref && r.ref === ownRef) r.own_device = true; r.ref = null; } }
     const q = await env.DB.prepare('SELECT push_quiet_from, push_quiet_to FROM users WHERE id=?').bind(user.id).first();
     return json({ as_of: listAsOf, notifications: rows, unread: counts.unread, counts, filter: filter ? url.searchParams.get('filter') : 'all', truncated, max: NOTIF_MAX, quiet: q && q.push_quiet_from ? { from: q.push_quiet_from, to: q.push_quiet_to } : null });
   }

@@ -19601,6 +19601,36 @@ await test('Backlog 227: Fahrer-Startseite – Hinweis „Push auf diesem Gerät
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].push_nudge && STRINGS[l].push_nudge_off && (l === 'de' || STRINGS[l].push_nudge !== STRINGS.de.push_nudge), `Texte ${l}`);
 });
 
+await test('Backlog 226: Anmelde-Hinweis auf dem anmeldenden Gerät als „dieses Gerät“ gekennzeichnet und dort nicht ungelesen; andere Geräte sehen ihn unverändert ungelesen; Gerätekennung nicht ausgeliefert', async () => {
+  const devOld = 'd0'.repeat(16), devNew = 'e1'.repeat(16);
+  const u = await invite(owner, { username: 'test.handy.neu', display_name: 'Test Handy Neu', role: 'driver', environment: 'test' });
+  const login = async (dev) => { const c = new Client(worker, env, 'hn-' + dev); eq((await c.post('/api/login', { username: 'test.handy.neu', password: 'Sicheres-Passwort-2026', device_id: dev })).status, 200); return c; };
+  const oldC = await login(devOld);
+  const newC = await login(devNew);
+  const get = async (c, dev, q = '') => (await c.req('GET', '/api/notifications' + q, undefined, dev ? { 'x-cfp-device': dev } : {})).data;
+  // neues Gerät: gekennzeichnet, nicht ungelesen (Zähler, Filter, count=1)
+  let d = await get(newC, devNew);
+  const own = d.notifications.find((x) => x.kind === 'new_login');
+  ok(own && own.own_device === true, 'dieses Gerät'); eq(own.ref, null, 'Kennung nicht ausgeliefert'); eq(d.unread, 0); eq(d.counts.unread, 0);
+  eq((await get(newC, devNew, '?filter=unread')).notifications.filter((x) => x.kind === 'new_login').length, 0, 'nicht im Filter „ungelesen“');
+  eq((await get(newC, devNew, '?count=1')).unread, 0, 'Menüzähler');
+  // altes Gerät: ungelesen, ohne Kennzeichnung (Sicherheitshinweis bleibt wirksam)
+  d = await get(oldC, devOld);
+  const ot = d.notifications.find((x) => x.kind === 'new_login'); ok(ot && !ot.own_device); eq(ot.ref, null); eq(d.unread, 1);
+  eq((await get(oldC, devOld, '?filter=unread')).notifications.filter((x) => x.kind === 'new_login').length, 1);
+  // ohne Gerätekennung im Aufruf: wie bisher ungelesen
+  eq((await get(newC, null)).unread, 1, 'ohne Kennung wie bisher');
+  // gespeichert als Kurzkennung des Hashes, nie die Kennung selbst
+  const row = await env.DB.prepare(`SELECT ref FROM notifications WHERE user_id=? AND kind='new_login'`).bind(u.id).first();
+  ok(/^login:[0-9a-f]{16}$/.test(row.ref) && !row.ref.includes('e1e1'), row.ref);
+  // Oberfläche + Texte
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("path.startsWith('/api/notifications')") && app.includes('data-owndev'), 'App sendet Kennung, kennzeichnet');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].nl_own_device, `Text ${l}`);
+  eq((await owner.patch(`/api/users/${u.id}`, { active: false })).status, 200);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -473,8 +473,10 @@ async function noteLoginDevice(env, ctx, userRow, request, deviceId) {
   if (r.known || !r.n) return false;
   const text = (l) => ({ title: nt(l, 'new_login'), body: nt(l, 'new_login_body').replace('{d}', label === 'Unbekanntes Gerät' ? nt(l, 'unknown_device') : label).replace('{t}', berlinDateTimeLang(now, l)) });
   try {
+    // ref = Kurzkennung des anmeldenden Geräts (Backlog 226): dort heißt der Hinweis „auf diesem Gerät“ und zählt nicht als ungelesen –
+    // auf allen anderen Geräten bleibt er unverändert ungelesen (Sicherheitshinweis; das neue Gerät quittiert ihn nicht für die anderen)
     await notifyUsers(env, ctx, userRow.environment, [userRow.id], { kind: 'new_login', ...text('de'), localize: text, langOf: new Map([[userRow.id, userRow.language]]),
-      eventKey: `new_login:${userRow.id}:${now}` });
+      eventKey: `new_login:${userRow.id}:${now}`, ref: h ? 'login:' + h.slice(0, SID_LEN) : null });
   } catch (e) { console.error('new_login notify', e); } // Hinweis darf die Anmeldung nie verhindern
   await audit(env, userRow.id, 'login.new_device', userRow.id, { device: label, device_id: h ? 'neu' : 'fehlt' });
   return true;
@@ -516,6 +518,11 @@ export async function revokeOwnSession(env, user, sid) {
 // ---- Bekannte Geräte (für den Anmelde-Hinweis) – eigene Liste, einzelne vergessen ----
 // Kurzkennung = Anfang des Hashes. „Dieses Gerät“ über den Header x-cfp-device (Gerätekennung aus dem Browser, wird nur gehasht verglichen).
 // Das aktuelle Gerät kann nicht vergessen werden – sonst bliebe evtl. kein bekanntes Gerät, und die nächste Anmeldung wäre wieder „erste Anmeldung“ (ohne Hinweis).
+// Bezug des Anmelde-Hinweises für das anfragende Gerät (Backlog 226), sonst null
+export async function loginRefOf(request) {
+  const h = await currentDeviceHash(request);
+  return h ? 'login:' + h.slice(0, SID_LEN) : null;
+}
 async function currentDeviceHash(request) {
   const d = request && request.headers.get('x-cfp-device');
   return typeof d === 'string' && DEVICE_ID_RE.test(d) ? sha256Hex('cfp-dev:' + d) : null;

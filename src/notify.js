@@ -63,7 +63,7 @@ export function localizedTitle(n, lang) {
 // Vorgangs-Hinweise „Nr · Kennzeichen · Priorität[ · TEST]“ und „Prüfung mit gefährlichen Mängeln“ „Kennzeichen · Art Datum: Ergebnis[ – nicht einplanen][ · TEST]“.
 // Alles andere (Agent, Anmeldung, Bußgeld, Test) bleibt wie gespeichert. Unbekannte Form → unverändert.
 const LANGS = ['de', 'uk', 'en'];
-export const NOTIF_REF = /^(vehicle|fine):[A-Za-z0-9:_-]{1,80}$/;
+export const NOTIF_REF = /^((vehicle|fine):[A-Za-z0-9:_-]{1,80}|login:[0-9a-f]{16})$/; // login:<Kurzkennung des auslösenden Geräts> (Backlog 226)
 const PRIO_KEY = new Map(LANGS.flatMap((l) => Object.entries(PRIO[l]).map(([k, v]) => [v, k])));
 const RES_KEY = new Map(LANGS.flatMap((l) => ['gefaehrliche_maengel', 'verkehrsunsicher'].map((k) => [T[l]['res_' + k], k])));
 const DNP = new Set(LANGS.map((l) => T[l].do_not_plan));

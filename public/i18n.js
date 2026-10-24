@@ -2148,3 +2148,7 @@ Object.assign(STRINGS.en, { sess_orphan_push: 'Push devices without an active si
 Object.assign(STRINGS.de, { push_nudge: 'Dieses Gerät erhält noch keine Push-Hinweise (z. B. Rückfragen zur Meldung, Fahrzeug wieder frei). Jetzt aktivieren – auch nach einem Handywechsel nötig.', push_nudge_off: 'Nicht mehr anzeigen' });
 Object.assign(STRINGS.uk, { push_nudge: 'Цей пристрій ще не отримує push-сповіщень (напр. уточнення щодо заявки, транспорт знову вільний). Увімкніть зараз – це потрібно й після заміни телефону.', push_nudge_off: 'Більше не показувати' });
 Object.assign(STRINGS.en, { push_nudge: 'This device does not receive push alerts yet (e.g. questions about your report, vehicle available again). Turn them on now – also needed after changing phones.', push_nudge_off: 'Don’t show again' });
+// Backlog 226 (24.10.2026): Anmelde-Hinweis auf dem Gerät, das sich angemeldet hat
+Object.assign(STRINGS.de, { nl_own_device: 'dieses Gerät – Ihre Anmeldung hier' });
+Object.assign(STRINGS.uk, { nl_own_device: 'цей пристрій – ваш вхід тут' });
+Object.assign(STRINGS.en, { nl_own_device: 'this device – your sign-in here' });

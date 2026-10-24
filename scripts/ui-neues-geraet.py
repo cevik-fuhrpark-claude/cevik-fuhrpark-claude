@@ -1,3 +1,4 @@
+# [CLAUDE] (24.10.2026 Backlog 226: Hinweis auf dem anmeldenden Gerät als „dieses Gerät“, dort nicht ungelesen)
 # [CLAUDE] UI-Test: Anmelde-Hinweis bei neuem Gerät. Anmeldung über das echte Formular (App erzeugt die Gerätekennung selbst):
 # erstes Gerät still, gleiches Gerät still, zweites Gerät → Hinweis; Hinweis öffnet Mein Konto mit aufgeklappter Geräteliste;
 # bekannte Geräte mit „dieses Gerät“, ein anderes Gerät vergessen; Hinweistext nach Sprachwechsel in der aktuellen Sprache.
@@ -40,8 +41,15 @@ with sync_playwright() as p:
         errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         form_login(q,'ng.fahrer'); n+=1
         check(count(q)==n,f'{lang} {w}px: neues Gerät → Hinweis ({n})')
+        # Backlog 226: auf dem anmeldenden Gerät „dieses Gerät“ und nicht ungelesen; ältere (andere Geräte) unverändert
+        nd=q.evaluate("async()=>{const r=await fetch('/api/notifications',{headers:{'x-cfp-device':localStorage.getItem('cfp_device')}});return await r.json()}")
+        nl=[x for x in nd['notifications'] if x['kind']=='new_login']
+        check(nl[0].get('own_device') is True and not any(x.get('own_device') for x in nl[1:]) and all(x.get('ref') is None for x in nl),f'{lang} {w}px: neuester Hinweis = dieses Gerät, Kennung nicht ausgeliefert')
+        exp=len([x for x in nd['notifications'][1:] if not x.get('opened_at') and not x.get('acknowledged_at')]) if nl[0] is nd['notifications'][0] else -1
+        check(not nl[0].get('opened_at') and nd['unread']==exp,f'{lang} {w}px: eigener (ungeöffneter) Anmelde-Hinweis zählt hier nicht als ungelesen ({nd["unread"]}/{exp})')
         q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
         q.goto(B+'/#/inbox'); q.reload(); q.wait_for_selector('.row.note')
+        if n==1: check(q.locator('[data-owndev] .chip.ok').count()==1,f'{lang} {w}px: Kennzeichnung „dieses Gerät“ in der Liste')
         link=q.locator('a.title',has_text=TITLE[lang]).first
         check(link.count()==1,f'{lang} {w}px: Titel „{TITLE[lang]}“')
         body=q.locator('.row.note',has=link).first.inner_text()
