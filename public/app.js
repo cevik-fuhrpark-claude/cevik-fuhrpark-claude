@@ -954,7 +954,7 @@ async function viewHome() {
   }
   let html = `<h1>${esc(t('welcome'))}, ${esc(S.me.display_name)}</h1>${outboxBanner()}`;
   if (S.me.role === 'driver') {
-    html += `<a class="btn block" href="#/new" style="margin:8px 0 12px">${esc(t('report_damage'))}</a><a class="btn secondary block" href="#/check">${esc(t('departure_check'))}</a><a class="btn secondary block" href="#/emergency" id="emhome" style="margin-top:8px">☎ ${esc(t('em_title'))}</a><p style="margin-top:8px"><a href="#/help">${esc(t('help'))} ›</a></p>`;
+    html += `<a class="btn block" href="#/new" style="margin:8px 0 12px">${esc(t('report_damage'))}</a><a class="btn secondary block" href="#/check">${esc(t('departure_check'))}</a><a class="btn secondary block" href="#/emergency" id="emhome" style="margin-top:8px">☎ ${esc(t('em_title'))}</a><p style="margin-top:8px"><a href="#/help">${esc(t('help'))} ›</a></p><section class="panel" id="pushnudge" hidden></section>`;
     const mvKey = `cfp_myveh_${S.me.id}_${S.me.environment}`;
     let mv = null; let mvOffline = false;
     try { mv = (await api('GET', '/api/me/vehicles')).vehicles; try { localStorage.setItem(mvKey, JSON.stringify({ at: new Date().toISOString(), vehicles: mv })); } catch {}
@@ -1020,6 +1020,7 @@ async function viewHome() {
     }
   }
   render(html, 'home');
+  pushNudge().catch(() => {});
   const trb = $('#todoretry'); if (trb) trb.onclick = async () => { await viewHome(); };
   const dtg = $('#dsitetoggle'); if (dtg) dtg.onclick = (e) => { e.preventDefault(); S.dispoAll = !S.dispoAll; route(); };
 }
@@ -3769,6 +3770,20 @@ function inboxPush() {
   const h = $('#main h1') || document.querySelector('main h1'); if (!h) return;
   h.insertAdjacentHTML('afterend', `<p class="panel small" id="nnew" role="status">${esc(t('nf_new'))} <button type="button" class="btn secondary" id="nnewb">${esc(t('nf_reload'))}</button></p>`);
   $('#nnewb').onclick = () => route();
+}
+
+// Backlog 227 (Teilagent „Fahrer wechselt sein Handy“): Fahrer-Startseite – einmaliger, ausblendbarer Hinweis, wenn dieses Gerät keine Push-Hinweise
+// erhält (kein Abo, Berechtigung nicht verweigert); nutzt dasselbe Push-Feld wie „Hinweise“. Ausblenden je Konto und Gerät (nur Bequemlichkeit).
+async function pushNudge() {
+  const el = $('#pushnudge'); if (!el || !S.me || S.me.role !== 'driver') return;
+  const k = 'cfp_pushnudge_off_' + S.me.id; let off = false; try { off = localStorage.getItem(k) === '1'; } catch {}
+  if (off || !('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined' || Notification.permission === 'denied') return;
+  try { const reg = await navigator.serviceWorker.getRegistration(); if (!reg || !reg.pushManager || await reg.pushManager.getSubscription()) return; } catch { return; }
+  if (!document.body.contains(el)) return;
+  el.hidden = false;
+  el.innerHTML = `<p class="small" style="margin-top:0">${esc(t('push_nudge'))}</p><div id="pushnudgep"></div><div class="actions"><button type="button" class="btn secondary" id="pushnudgeoff">${esc(t('push_nudge_off'))}</button></div>`;
+  $('#pushnudgeoff').onclick = () => { try { localStorage.setItem(k, '1'); } catch {} el.remove(); };
+  await pushPanel($('#pushnudgep'));
 }
 
 async function pushPanel(el) {

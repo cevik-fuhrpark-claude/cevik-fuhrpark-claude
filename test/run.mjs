@@ -19589,6 +19589,18 @@ await test('Backlog 225 (Teilagent „Fahrer wechselt sein Handy“): Push-Gerä
   ok(STRINGS.de.help_offline_s.includes('Neues Handy') && STRINGS.uk.help_offline_s.includes('Новий телефон') && STRINGS.en.help_offline_s.includes('New phone'), 'Abschnitt Handywechsel');
 });
 
+await test('Backlog 227: Fahrer-Startseite – Hinweis „Push auf diesem Gerät einschalten“ (nur Fahrer, nicht bei verweigerter Berechtigung oder bestehendem Abo, ausblendbar), Texte DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('async function pushNudge()'), app.indexOf('async function pushPanel(el)'));
+  ok(fn.length > 100, 'Funktion vorhanden');
+  ok(fn.includes("S.me.role !== 'driver'") && fn.includes("Notification.permission === 'denied'") && fn.includes('getSubscription()'), 'nur Fahrer, nicht bei Verweigerung/Abo');
+  ok(fn.includes("localStorage.setItem(k, '1')") && /try \{ localStorage/.test(fn), 'ausblendbar, Speicher abgesichert');
+  ok(app.includes('id="pushnudge" hidden') && app.includes('pushNudge().catch('), 'Platz auf der Startseite, Fehler still');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].push_nudge && STRINGS[l].push_nudge_off && (l === 'de' || STRINGS[l].push_nudge !== STRINGS.de.push_nudge), `Texte ${l}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -2,7 +2,7 @@
 # Push-Gerät ohne aktive Anmeldung (Antwort des Servers per Playwright-Route nachgestellt – Ablauf der Sitzung braucht sonst Wartezeit; Serverlogik
 # prüft Test 590) den Hinweis und „Alle anderen Geräte abmelden“, auch wenn nur dieses Gerät angemeldet ist; (b) die Kontosprache bleibt nach
 # Abmeldung und Neustart auf der Anmeldeseite (Gerät auf Deutsch, Konto Ukrainisch); Werkstatt-Konten setzen sie nicht (geteilte Tablets).
-# DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server; Screenshots: CFP_SHOTS=<Ordner>.
+# (c) Backlog 227: Fahrer-Startseite zeigt „Push einschalten“, bis aktiviert oder ausgeblendet. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server; Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid, json
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -45,6 +45,25 @@ with sync_playwright() as p:
         check(q.evaluate('document.documentElement.lang')==lang,f'{lang}/{w}: Anmeldeseite nach Neustart in Kontosprache ({q.evaluate("document.documentElement.lang")})')
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:1]}')
         ctx.close()
+    # Backlog 227: Fahrer-Startseite zeigt einmal „Push einschalten“, ausblendbar
+    # Headless-Chromium meldet immer „denied“ (dann bewusst kein Hinweis) – hier „noch nicht gefragt“ nachstellen
+    for lang,(w,h) in [(l,(390,844)) for l in ['de','uk','en']]+[('de',(1366,900))]:
+        ctx=br.new_context(viewport={'width':w,'height':h}); ctx.add_init_script("Object.defineProperty(Notification, 'permission', { get: () => 'default' })"); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+        q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':drv,'password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':lang}]); q.evaluate("localStorage.setItem('cfp_lang', %r)" % lang)
+        q.goto(B+'/#/'); q.reload(); q.wait_for_selector('#pushnudge:not([hidden]) #pushnudgeoff',timeout=15000)
+        check(q.locator('#pushnudge #pe').count()==1,f'{lang}/{w}: Startseite – Knopf „Aktivieren“ im Hinweis')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: Startseite ohne Querscrollen')
+        if SHOTS: q.locator('#pushnudge').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/pushhinweis-{lang}-{w}.png')
+        q.click('#pushnudgeoff'); check(q.locator('#pushnudge').count()==0,f'{lang}/{w}: ausgeblendet')
+        q.reload(); q.wait_for_selector('a[href="#/new"]',timeout=15000); q.wait_for_timeout(800)
+        check(q.locator('#pushnudge:not([hidden])').count()==0,f'{lang}/{w}: bleibt nach Neuladen ausgeblendet')
+        check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:1]}')
+        ctx.close()
+    # verweigerte Berechtigung: kein Hinweis
+    ctx=br.new_context(); q=ctx.new_page(); q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':drv,'password':PW}])
+    q.goto(B+'/#/'); q.reload(); q.wait_for_selector('a[href="#/new"]',timeout=15000); q.wait_for_timeout(1000)
+    check(q.evaluate('Notification.permission')=='denied' and q.locator('#pushnudge:not([hidden])').count()==0,'verweigerte Berechtigung: kein Hinweis')
+    ctx.close()
     # Werkstatt (geteiltes Tablet): Kontosprache wird nicht gemerkt
     ctx=br.new_context(locale='de-DE'); q=ctx.new_page(); q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':ws,'password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':'uk'}])
     q.evaluate("localStorage.removeItem('cfp_lang')"); q.goto(B+'/#/'); q.reload(); q.wait_for_timeout(1500)
