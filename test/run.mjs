@@ -18220,7 +18220,7 @@ await test('Geteiltes Werkstatt-Konto / Rückrufaktion / Monatswechsel (Teilagen
   const m = BERLIN_TODAY.slice(0, 7);
   const it = await F.get(`/api/reports/costs?from=${m}&to=${m}&part=items`); eq(it.status, 200);
   const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(it.data).trim().split('\r\n');
-  ok(lines[0].endsWith(';Zählt in Summe belegt;Erfasst am;Beleg-Datei in App'), lines[0]); // letzte Spalte seit Backlog 237
+  ok(lines[0].endsWith(';Zählt in Summe belegt;Erfasst am;Beleg-Datei in App (Dateiname)'), lines[0]); // letzte Spalte seit Backlog 237, Dateiname seit 247
   ok(lines.slice(1).length >= 2 && lines.slice(1).every((l) => /;\d{2}\.\d{2}\.\d{4} \d{2}:\d{2};(ja|nein)?$/.test(l)), lines.slice(1).join(' / '));
   const k = await F.get(`/api/reports/kpi?from=${m}&to=${m}`); eq(k.status, 200);
   ok(Math.abs(Date.parse(k.data.generated_at) - Date.now()) < 60000, 'generated_at'); ok(/Abrufzeitpunkt/.test(k.data.definitions.status_basis));
@@ -19904,8 +19904,8 @@ await test('Backlog 237 (Blickwinkel „Monatsende – Kosten an die Buchhaltung
   const ev = rv.items.find((i) => i.document === 'BU-4711'); eq(ev.description, null); eq(ev.supplier, 'Reifen Test'); eq(ev.has_file, true);
   // CSV: neue letzte Spalte, bestehende Spalten unverändert an ihrer Stelle
   const csv = costItemsCsv(ra).split('\r\n');
-  ok(csv[0].endsWith(';Erfasst am;Beleg-Datei in App'), 'Kopfzeile');
-  const la = csv.find((l) => l.includes('BU-4711')); ok(la && la.endsWith(';ja') && la.includes(';Fremdleistung;4× Reifen HA, Achsvermessung;Reifen Test;BU-4711;'), la);
+  ok(csv[0].endsWith(';Erfasst am;Beleg-Datei in App (Dateiname)'), 'Kopfzeile');
+  const la = csv.find((l) => l.includes('BU-4711')); ok(la && la.endsWith(';reifen-rechnung.pdf') && la.includes(';Fremdleistung;4× Reifen HA, Achsvermessung;Reifen Test;BU-4711;'), la);
   const lw = csv.find((l) => l.includes(';Arbeitszeit;')); if (lw) ok(lw.endsWith(';'), 'Arbeitszeit: Spalte leer');
   // HTTP: Filter + Protokoll + Dateiname mit Stand
   const r = await users.fleet.get(`/api/reports/costs?from=${m}&to=${m}&vehicle_id=VIN:${VA}&part=items`);
@@ -19926,6 +19926,42 @@ await test('Backlog 237 (Blickwinkel „Monatsende – Kosten an die Buchhaltung
   ok(app.includes('function standTag() { const x = BERLIN_DT_FMT.format(new Date(nowMs()))'), 'Serverzeit, Berlin');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cost_items_csv_hint.includes('(stand'), l + ': Hinweis Stand');
+});
+
+await test('Backlog 247 (Blickwinkel „Steuerberatung mit Lesezugriff“): Einzelpositionen-CSV nennt den Dateinamen des Belegs (auch für Lesezugriff, Formelschutz), Fremdleistung ohne Beleg „nein“, Hinweis nennt die Einschränkung der Bemerkung', async () => {
+  const V = 'WDB96340310824701';
+  eq((await owner.post('/api/vehicles', { plate: 'BU-SB 1', vin: V, site: 'Dortmund' })).status, 201);
+  const id = (await users.fleet.post('/api/cases', { vehicle_id: 'VIN:' + V, description: 'Steuerberatung Jahreskosten', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const run = async (action, payload, note = null) => { const c = (await users.fleet.get(`/api/cases/${id}`)).data.case; return users.fleet.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload }); };
+  eq((await run('approve_repair', { workshop_site: 'DORTMUND' }, 'Fremdwerkstatt')).status, 200);
+  const pdf = concatBytes(new TextEncoder().encode('%PDF-1.4\n'), crypto.getRandomValues(new Uint8Array(200)));
+  const up = await users.fleet.req('POST', `/api/cases/${id}/files`, pdf, { 'content-type': 'application/pdf', 'x-filename': '=Rechnung SB-1.pdf' });
+  ok(up.data && up.data.id, 'Beleg hochgeladen');
+  const stored = (await env.DB.prepare('SELECT filename FROM files WHERE id=?').bind(up.data.id).first()).filename;
+  eq((await run('add_external_cost', { supplier: 'Werkstatt SB', invoice_no: 'SB-4701', amount_net: '310,00', file_id: up.data.id }, 'Bremse VA')).status, 200);
+  eq((await run('add_external_cost', { supplier: 'Werkstatt SB', invoice_no: 'SB-4702', amount_net: '45,00' })).status, 200);
+  const m = BERLIN_TODAY.slice(0, 7);
+  const { costItems, costItemsCsv } = await import('../src/reports.js');
+  const fenv = (await users.fleet.get('/api/me')).data.user.environment;
+  for (const role of ['fleet', 'viewer']) {
+    const rep = await costItems(env, { id: 'x', role }, fenv, { from: m, to: m, vehicle_id: 'VIN:' + V });
+    const a = rep.items.find((i) => i.document === 'SB-4701'); const b = rep.items.find((i) => i.document === 'SB-4702');
+    eq(a.has_file, true, role); eq(a.file_name, stored, role + ': Dateiname wie in der Dateiliste');
+    eq(b.has_file, false, role); eq(b.file_name, null, role);
+    eq(a.description, role === 'viewer' ? null : 'Bremse VA', role + ': Bemerkung nur Leitung');
+    const csv = costItemsCsv(rep).split('\r\n');
+    const la = csv.find((l) => l.includes('SB-4701')); const lb = csv.find((l) => l.includes('SB-4702'));
+    const last = la.split(';').pop();
+    ok(!/^[=+\-@]/.test(last.replace(/^"/, '')) && last.includes('Rechnung SB-1.pdf'), role + ': Formelschutz + Dateiname: ' + last);
+    ok(lb.endsWith(';nein'), role + ': ohne Beleg ' + lb);
+  }
+  // Lesezugriff sieht denselben Dateinamen in der Dateiliste des Vorgangs
+  const viewer = await invite(owner, { username: 'test.lesen.steuer', display_name: 'Test Lesezugriff Steuerberatung', role: 'viewer', environment: 'test' });
+  const det = (await viewer.get(`/api/cases/${id}`)).data;
+  ok((det.files || []).some((f) => f.filename === stored), 'Lesezugriff findet die Datei am Vorgang');
+  const { STRINGS } = await import('../public/i18n.js');
+  const must = { de: 'nur für Inhaber/Fuhrparkleitung', uk: 'лише для власника/керівника автопарку', en: 'owner/fleet management only' };
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cost_items_csv_hint.includes(must[l]), l + ': Hinweis Einschränkung');
 });
 
 await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „kritisch“/„gesperrte Vorgänge“ der Startseite führen zur passenden Vorgangsliste (Filter priority/locked, gleiche Anzahl), ungültige Priorität 400', async () => {

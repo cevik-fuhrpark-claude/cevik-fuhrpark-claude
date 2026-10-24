@@ -355,8 +355,8 @@ export async function costItems(env, user, envName, query = {}) {
     WHERE c.environment=? AND w.work_date <= ? AND w.case_id IN (SELECT w2.case_id FROM work_entries w2 WHERE w2.work_date >= ? AND w2.work_date <= ?)`).bind(envName, `${to}-31`, `${from}-01`, `${to}-31`).all()).results;
   const parts = (await env.DB.prepare(`SELECT p.case_id, c.case_no, c.vehicle_id, p.name, p.part_number, p.quantity, p.unit, p.unit_price_net, p.valuation, p.supplier, p.document_ref, p.created_at AS d
     FROM parts p JOIN cases c ON c.id=p.case_id WHERE c.environment=? AND p.created_at >= ? AND p.created_at < ?`).bind(envName, lo, hi).all()).results;
-  const ext = (await env.DB.prepare(`SELECT e.case_id, c.case_no, c.vehicle_id, e.supplier, e.invoice_no, e.amount_net, e.valuation, e.covers_work_and_parts, e.note, e.file_id, e.created_at AS d
-    FROM external_costs e JOIN cases c ON c.id=e.case_id WHERE c.environment=? AND e.created_at >= ? AND e.created_at < ?`).bind(envName, lo, hi).all()).results;
+  const ext = (await env.DB.prepare(`SELECT e.case_id, c.case_no, c.vehicle_id, e.supplier, e.invoice_no, e.amount_net, e.valuation, e.covers_work_and_parts, e.note, e.file_id, f.filename AS file_name, e.created_at AS d
+    FROM external_costs e JOIN cases c ON c.id=e.case_id LEFT JOIN files f ON f.id=e.file_id WHERE c.environment=? AND e.created_at >= ? AND e.created_at < ?`).bind(envName, lo, hi).all()).results;
   const allV = (await env.DB.prepare('SELECT id, plate, site, eval_excluded, active FROM vehicles').all()).results;
   const vmap = new Map(allV.map((v) => [v.id, v]));
   const sel = siteSelection(allV.filter((v) => !v.eval_excluded), query.site);
@@ -388,10 +388,11 @@ export async function costItems(env, user, envName, query = {}) {
   for (const e of ext) {
     const day = dayOf(e.d); if (!inRange(day.slice(0, 7)) || !keep(e.vehicle_id)) continue;
     const unv = e.amount_net === null || e.valuation === 'unvalued';
-    // Bemerkung (Leistung laut Rechnung) und „Beleg-Datei in der App“ für den Abgleich mit den Eingangsrechnungen (24.10.2026)
+    // Bemerkung (Leistung laut Rechnung) und „Beleg-Datei in der App“ für den Abgleich mit den Eingangsrechnungen (24.10.2026);
+    // seit Backlog 247 mit Dateiname, damit Buchhaltung/Lesezugriff die Rechnung in der Dateiliste des Vorgangs findet
     const note = seesNote && e.note ? String(e.note).replace(/\s+/g, ' ').trim() : '';
     items.push({ ...base(e, day), recorded_at: e.d, type: 'fremdleistung', description: [e.covers_work_and_parts ? 'ersetzt eigene Arbeit/Teile' : '', note].filter(Boolean).join(' · ') || null, supplier: e.supplier, document: e.invoice_no || null, quantity: null, unit: null,
-      unit_price_net: null, amount_net: unv ? null : r2(e.amount_net), valuation: unv ? 'unvalued' : e.valuation, counted: true, has_file: !!e.file_id });
+      unit_price_net: null, amount_net: unv ? null : r2(e.amount_net), valuation: unv ? 'unvalued' : e.valuation, counted: true, has_file: !!e.file_id, file_name: e.file_id ? (e.file_name || null) : null });
   }
   items.sort((a, b) => a.date.localeCompare(b.date) || String(a.plate).localeCompare(String(b.plate)) || String(a.case_no).localeCompare(String(b.case_no)) || a.type.localeCompare(b.type));
   const truncated = items.length > COST_ITEMS_MAX;
@@ -403,9 +404,9 @@ export function costItemsCsv(rep) {
   const cell = csvCell;
   const ART = { arbeitszeit: 'Arbeitszeit', teil: 'Teil', fremdleistung: 'Fremdleistung' };
   const WERT = { actual: 'belegt', estimate: 'geschätzt', unvalued: 'unbewertet' };
-  const lines = [['Datum', 'Monat', 'Vorgang', 'Kennzeichen', 'Standort', 'Fahrzeugstatus', 'Art', 'Bezeichnung', 'Lieferant', 'Rechnung/Beleg', 'Menge', 'Einheit', 'Einzelpreis netto', 'Betrag netto', 'Wertart', 'Zählt in Summe belegt', 'Erfasst am', 'Beleg-Datei in App'].join(';')];
+  const lines = [['Datum', 'Monat', 'Vorgang', 'Kennzeichen', 'Standort', 'Fahrzeugstatus', 'Art', 'Bezeichnung', 'Lieferant', 'Rechnung/Beleg', 'Menge', 'Einheit', 'Einzelpreis netto', 'Betrag netto', 'Wertart', 'Zählt in Summe belegt', 'Erfasst am', 'Beleg-Datei in App (Dateiname)'].join(';')];
   for (const i of rep.items) lines.push([i.date.split('-').reverse().join('.'), i.month, cell(i.case_no), cell(i.plate), cell(i.site), i.vehicle_active ? 'aktiv' : 'außer Betrieb', ART[i.type], cell(i.description), cell(i.supplier), cell(i.document),
-    num(i.quantity), cell(i.unit), num(i.unit_price_net), num(i.amount_net), WERT[i.valuation], i.counted ? (i.valuation === 'actual' && i.amount_net !== null ? 'ja' : 'nein') : 'nein (durch Fremdleistung ersetzt)', i.recorded_at ? berlinDateTime(i.recorded_at) : '', i.type === 'fremdleistung' ? (i.has_file ? 'ja' : 'nein') : ''].join(';'));
+    num(i.quantity), cell(i.unit), num(i.unit_price_net), num(i.amount_net), WERT[i.valuation], i.counted ? (i.valuation === 'actual' && i.amount_net !== null ? 'ja' : 'nein') : 'nein (durch Fremdleistung ersetzt)', i.recorded_at ? berlinDateTime(i.recorded_at) : '', i.type === 'fremdleistung' ? (i.has_file ? cell(i.file_name || 'ja') : 'nein') : ''].join(';'));
   if (rep.truncated) lines.push(`Gekürzt: nur die ersten ${COST_ITEMS_MAX} Positionen – Zeitraum verkleinern.`);
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
