@@ -893,11 +893,14 @@ export async function workshopPlan(env, user, envName, query = {}) {
 export function workshopPlanIcs(plan, envName, lang = 'de') {
   const I = icsLang(lang);
   const ev = [];
+  // Gespann und Teile-Liefertermin wie in der App/im Ausdruck (24.10.2026, Blickwinkel „Disposition plant die Woche“: im Kalender
+  // war nicht zu sehen, dass mit dem Anhänger die Zugmaschine ausfällt) – nur Kennzeichen und Datum, keine Namen
+  const cpl = (i) => (i.coupled && i.coupled.plate ? ' · ' + I.tx(i.coupled.kind === 'anhaenger' ? 'plan_coupled_anh' : 'plan_coupled_lkw', { plate: i.coupled.plate }) : '');
   for (const d of plan.days) for (const i of d.items) {
     ev.push(i.type === 'case'
       ? { uid: `plan-case-${i.id}`, date: d.date, summary: I.tx('plan_case', { no: i.case_no, plate: i.plate }) + (envName === 'test' ? ` (${I.tx('test_tag')})` : ''),
-        description: I.tx('plan_status', { status: I.status(i.status) }) + (i.tire_order === 'winter' ? ' · ' + I.label('wo_tag') : '') + (i.safety_lock ? ' · ' + I.label('locked') : '') }
-      : { uid: `plan-maint-${i.id}`, date: d.date, summary: I.tx('plan_maint', { kind: I.kind(i.kind), plate: i.plate }), description: i.next_due_date ? I.tx('plan_due_by', { d: I.d(i.next_due_date) }) : '' });
+        description: I.tx('plan_status', { status: I.status(i.status) }) + (i.status === 'wartet_teile' && i.parts_expected_date ? ' · ' + I.tx('plan_parts_eta', { d: I.d(i.parts_expected_date) }) : '') + (i.tire_order === 'winter' ? ' · ' + I.label('wo_tag') : '') + (i.safety_lock ? ' · ' + I.label('locked') : '') + cpl(i) }
+      : { uid: `plan-maint-${i.id}`, date: d.date, summary: I.tx('plan_maint', { kind: I.kind(i.kind), plate: i.plate }), description: [i.next_due_date ? I.tx('plan_due_by', { d: I.d(i.next_due_date) }) : '', cpl(i).slice(3)].filter(Boolean).join(' · ') });
   }
   return icsCalendar(`${I.tx('cal_plan')}${plan.site ? ' ' + plan.site : ''}${plan.vehicle_site ? ' – ' + I.tx('plan_vsite', { site: plan.vehicle_site === 'ohne' ? I.tx('no_site') : plan.vehicle_site }) : ''}`, ev);
 }

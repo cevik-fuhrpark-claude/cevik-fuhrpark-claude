@@ -155,6 +155,7 @@ UI-Ersatzfahrzeug (Disposition): Prüfstand des gekoppelten Anhängers an der Lk
 UI-Lager zwei Aufträge (Werkstatt): Abweisung am letzten Lagerteil aktualisiert die Auswahl, Übernahme ins Freitextteil|ui-lager-zwei-auftraege.py|/tmp/cfp-lager-zwei-auftraege.log
 UI-Doppelte Rechnung (Fremdleistung): Fundstelle, Häkchen „Trotzdem buchen“, neue Nummer entfernt den Hinweis|ui-doppelte-rechnung.py|/tmp/cfp-doppelte-rechnung.log
 UI-Sammeltermin (Prüftermine): mehrere UVV an einem Tag, Absprache nicht still ersetzt, Rollen|ui-sammeltermin.py|/tmp/cfp-sammeltermin.log
+UI-Heute zu tun nach dem Urlaub: Kostenfreigaben älteste zuerst, „+N“ führt zur gefilterten Vorgangsliste|ui-heute-zu-tun-urlaub.py|/tmp/cfp-heute-zu-tun-urlaub.log
 UI-Bußgeld ändern (Frist), deaktivierter Kandidat, Umgebung|ui-bussgeld-aendern.py|/tmp/cfp-bussgeld-aendern.log
 UI-Bußgeld Befund-Link, Zurücksetzen auf Eingegangen|ui-bussgeld-befundlink.py|/tmp/cfp-bussgeld-befundlink.log
 UI-Bußgeld-Verlauf mit Fahrernamen, Kandidat-Nachweis übersetzt, berechnete SP beim Fahrer, Reifenverlauf|ui-bussgeld-verlauf-sp-fahrer.py|/tmp/cfp-bussgeld-verlauf-sp-fahrer.log

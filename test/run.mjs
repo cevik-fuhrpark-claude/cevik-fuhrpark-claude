@@ -19983,6 +19983,27 @@ await test('Backlog 239 („Heute zu tun“ nach dem Urlaub): Gruppen älteste z
   ok(app.includes("f === 'cost_approval' ? 'status=open&cost_approval=1'"), 'Listenfilter');
 });
 
+await test('Backlog 240 (Blickwinkel „Disposition plant die Woche“): Kalender (.ics) des Werkstattplans nennt Gespann und Teile-Liefertermin (DE/UK/EN, nur Kennzeichen/Datum); „Nicht einplanen“ bricht die Unterzeile um', async () => {
+  const { workshopPlanIcs } = await import('../src/reports.js');
+  const plan = { site: null, vehicle_site: null, days: [{ date: '2026-10-28', items: [
+    { type: 'case', id: 'c1', case_no: 'S-2026-0001', plate: 'X-AH 1', status: 'wartet_teile', parts_expected_date: '2026-10-27', safety_lock: false, coupled: { id: 'v2', plate: 'X-ZM 1', kind: 'lkw' } },
+    { type: 'case', id: 'c2', case_no: 'S-2026-0002', plate: 'X-ZM 2', status: 'in_reparatur', parts_expected_date: '2026-10-29', safety_lock: true, coupled: { id: 'v3', plate: 'X-AH 2', kind: 'anhaenger' } },
+    { type: 'maintenance', id: 'm1', kind: 'UVV', plate: 'X-AH 3', next_due_date: '2026-10-31', coupled: { id: 'v4', plate: 'X-ZM 3', kind: 'lkw' } },
+    { type: 'maintenance', id: 'm2', kind: 'UVV', plate: 'X-ZM 4', next_due_date: null, coupled: null },
+  ] }] };
+  const unfold = (x) => x.replace(/\r\n[ \t]/g, '');
+  const de = unfold(workshopPlanIcs(plan, 'production', 'de'));
+  ok(de.includes('DESCRIPTION:Status: Wartet auf Teile · Teile erwartet am 27.10.2026 · gekoppelt mit Lkw X-ZM 1'), de);
+  ok(/DESCRIPTION:Status: In Reparatur · [^\r\n]* · gekoppelt mit Anhänger X-AH 2/.test(de) && !/In Reparatur · Teile erwartet/.test(de), 'Liefertermin nur bei „Wartet auf Teile“');
+  ok(de.includes('DESCRIPTION:fällig bis 31.10.2026 · gekoppelt mit Lkw X-ZM 3'), 'Prüftermin mit Gespann');
+  ok(!/UID:plan-maint-m2[\s\S]*?DESCRIPTION:[^\r\n]*gekoppelt/.test(de.split('BEGIN:VEVENT').find((e) => e.includes('plan-maint-m2')) || ''), 'ohne Kopplung nichts');
+  const uk = unfold(workshopPlanIcs(plan, 'production', 'uk')); const en = unfold(workshopPlanIcs(plan, 'production', 'en'));
+  ok(uk.includes('зчеплено з вантажівкою X-ZM 1') && uk.includes('Запчастини очікуються'), 'UK');
+  ok(en.includes('coupled with truck X-ZM 1') && en.includes('coupled with trailer X-AH 2') && en.includes('Parts expected'), 'EN');
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<span class="sub wrap" data-dnpsub>'), 'Nicht einplanen: Unterzeile umbrechend');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
