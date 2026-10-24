@@ -19850,6 +19850,25 @@ await test('Backlog 235 (Blickwinkel „UVV aller Fahrzeuge an einem Tag“): Sa
   }
 });
 
+await test('Backlog 236 (Werkstatt arbeitet den Sammeltermin ab): Werkstattplan verlinkt geplante/fällige Prüftermine direkt auf „Durchführung erfassen“ (nur Inhaber/Leitung/Werkstatt, nicht HU/SP ohne Eintrag), nach dem Speichern zurück in den Plan', async () => {
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("[/^#\\/vehicles\\/(VIN:[A-Z0-9]+\\?done=[\\w-]+)$/, (x) => viewVehicle(x.split('?done=')[0], null, 'done:' + x.split('?done=')[1])]"), 'Route ?done=');
+  const plan = app.slice(app.indexOf('async function viewPlan('), app.indexOf('async function viewPlan(') + 9000);
+  ok(plan.includes("const canDone = isMgr() || S.me.role === 'workshop';") && plan.includes("/^[\\w-]+$/.test(i.id) ? '?done='") && (plan.match(/href="\$\{doneHref\(i\)\}" data-fromplan/g) || []).length === 2, 'Plan-Zeilen (Termin und fällig) verlinken das Formular');
+  ok(plan.includes("$$('a[data-fromplan]').forEach((a) => (a.onclick = () => { S.fromPlan = location.hash || '#/plan'; }));"), 'Herkunft gemerkt');
+  const vv = app.slice(app.indexOf('async function viewVehicle('), app.indexOf('\nasync function ', app.indexOf('async function viewVehicle(') + 10));
+  ok(vv.includes("if (sec && sec.startsWith('done:'))") && vv.includes('const doneNext = () =>') && (vv.match(/doneToast\(await api\('POST', .{0,80}, b\)\); doneNext\(\);/g) || []).length === 2, 'Formular geöffnet, Rückkehr nach dem Speichern');
+  // Plan liefert die Eintrags-id der geplanten Prüftermine (Grundlage des Links)
+  const vin = 'WDB96340310995831';
+  eq((await owner.post('/api/vehicles', { plate: 'SM-AB 1', vin, site: 'Dortmund' })).status, 201);
+  const ru = await users.fleet.post(`/api/vehicles/VIN:${vin}/maintenance`, { kind: 'UVV', last_done_date: bDayOff(-370), interval_months: 12, evidence: 'UVV-Protokoll (Test Abarbeiten)' });
+  eq((await users.fleet.post('/api/maintenance/plan-batch', { planned_date: bDayOff(3), ids: [ru.data.id] })).status, 200);
+  const p = (await users.ws.get('/api/workshop/plan')).data;
+  ok(p.days.some((d) => d.items.some((i) => i.type === 'maintenance' && i.id === ru.data.id && i.vehicle_id === `VIN:${vin}`)), 'Plan-Eintrag mit id');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_dates_s.split('|').length > 2, 'Hilfe ' + l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

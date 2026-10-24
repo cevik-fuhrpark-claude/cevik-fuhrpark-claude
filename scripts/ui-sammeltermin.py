@@ -65,9 +65,6 @@ with sync_playwright() as p:
         if SHOTS and w!=820: q.locator('#mbatch').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/sammeltermin-liste-{lang}-{w}.png')
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:1]}')
         ctx.close()
-    pl_=api('GET','/api/maintenance')['d']['rows']
-    got={r['id']:r.get('planned_date') for r in pl_ if r['id'] in rids}
-    check(got.get(rids[0])==day and got.get(rids[1])==day and got.get(rids[2])==other,f'Server: Termine {got}')
     for u,want in [('st.werkstatt',1),('st.dispo',0)]:
         ctx=br.new_context(viewport={'width':1366,'height':900}); q=ctx.new_page(); q.goto(B)
         if q.evaluate(JS,['POST','/api/login',{'username':u+tag,'password':PW}])['s']==200:
@@ -75,5 +72,33 @@ with sync_playwright() as p:
             check(q.locator('#mbatch').count()==want,f'{u}: Bereich {"sichtbar" if want else "nicht sichtbar"}')
         else: check(False,f'{u}: Anmeldung')
         ctx.close()
+    # Backlog 236: Werkstatt arbeitet den Sammeltermin im Werkstattplan ab – Zeile öffnet „Durchführung erfassen“, nach dem Speichern zurück
+    for lang,w in [('de',390),('uk',820),('en',1366)]:
+        api('PATCH','/api/me',{'language':lang})
+        ctx=br.new_context(viewport={'width':w,'height':900}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+        q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'as.inhaber','password':PW}]); q.evaluate("localStorage.setItem('cfp_lang', %r)" % lang)
+        q.goto(B+'/#/plan'); q.wait_for_selector('a[data-fromplan]',timeout=15000)
+        rid={'de':rids[0],'uk':rids[1],'en':rids[2]}[lang]
+        lk=q.locator(f'a[data-fromplan][href*="?done={rid}"]')
+        check(lk.count()==1,f'{lang}/{w}: Plan verlinkt das Formular des Eintrags')
+        lk.click(); q.wait_for_selector(f'form[data-mdone="{rid}"]:not([hidden])',timeout=10000)
+        check(q.evaluate(f"document.activeElement && document.activeElement.name==='done_date'"),f'{lang}/{w}: Formular offen, Datum fokussiert')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/sammeltermin-abarbeiten-{lang}-{w}.png')
+        f=q.locator(f'form[data-mdone="{rid}"]'); f.locator('input[name=done_date]').fill(today.isoformat()); f.locator('input[name=evidence]').fill(f'UVV-Protokoll {lang} (UI-Test)')
+        f.locator('button.btn:not(.secondary)').first.click()
+        for _ in range(50):
+            if q.evaluate('location.hash').startswith('#/plan') and q.locator('a[data-fromplan], #wp-mdue, h1').count(): break
+            q.wait_for_timeout(200)
+        q.wait_for_timeout(500)
+        check(q.evaluate('location.hash').startswith('#/plan'),f'{lang}/{w}: nach dem Speichern zurück im Werkstattplan')
+        check(q.locator(f'a[href*="?done={rid}"]').count()==0,f'{lang}/{w}: zurück im Plan, erledigter Termin weg')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: Plan ohne Querscrollen')
+        check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:1]}')
+        ctx.close()
+    done={r['id']:r.get('last_done_date') for r in api('GET','/api/maintenance')['d']['rows'] if r['id'] in rids}
+    check(all(done.get(x)==today.isoformat() for x in rids),f'Server: alle drei erledigt {done}')
+    pl_=api('GET','/api/maintenance')['d']['rows']
+    got={r['id']:r.get('planned_date') for r in pl_ if r['id'] in rids}
+    check(all(got.get(x) is None for x in rids),f'Server: Termine nach Durchführung entfernt {got}')
     br.close()
 print('FEHLER: '+str(len(fails)) if fails else 'alles grün'); raise SystemExit(1 if fails else 0)
