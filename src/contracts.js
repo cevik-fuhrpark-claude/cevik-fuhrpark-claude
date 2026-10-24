@@ -6,7 +6,7 @@ import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso, maxFutureDate } from './util.js';
 import { audit } from './auth.js';
-import { latestKmByVehicle, csvCell, csvText, KM_DROP_SQL, parseKmDrop } from './maintenance.js';
+import { latestKmByVehicle, csvCell, csvText, KM_DROP_SQL, parseKmDrop, PLATE_FORMER_SKIP, plateFormerOther, formerPlatesAll } from './maintenance.js';
 import { siteSelection } from './reports.js';
 import { SETTING_DEFAULTS } from './settings.js';
 
@@ -481,9 +481,10 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   if (ci.partner < 0) throw bad('validation', 'Spalte „Vertragspartner“ erforderlich.');
   if (ci.ev < 0 && !fallbackEv) throw bad('validation', 'Spalte „Nachweis“ oder Angabe „Quelle“ für alle Zeilen erforderlich.');
 
-  const [vehRes, exRes] = await Promise.all([
+  const [vehRes, exRes, formerPl] = await Promise.all([
     env.DB.prepare('SELECT id, vin, plate, active, eval_excluded FROM vehicles').all(),
     env.DB.prepare('SELECT vehicle_id, kind, contract_no, partner, start_date, end_date, ended_on FROM vehicle_contracts').all(),
+    formerPlatesAll(env), // Kennzeichenwechsel (Backlog 257a)
   ]);
   const vehicles = vehRes.results;
   const byVin = new Map(vehicles.map((v) => [normVin(v.vin), v]));
@@ -527,6 +528,8 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     const status = match ? 'vorhanden' : 'neu';
     // nur über das Kennzeichen zugeordnet: derselbe Vertrag steht schon an einem anderen Fahrzeug mit diesem Kennzeichen (z. B. zurückgegebener Lkw,
     // Nachfolger trägt das Kennzeichen) → nicht als neuen laufenden Vertrag am Nachfolger anlegen (23.10.2026: Raten doppelt im Kostenbericht)
+    // Vertragsbeginn vor einem Kennzeichenwechsel, Kennzeichen gehörte damals einem anderen Fahrzeug → FIN verlangen (Backlog 257a)
+    if (status === 'neu' && !vin && plateFormerOther(formerPl, v, f.start_date)) return skip(PLATE_FORMER_SKIP);
     if (status === 'neu' && !vin) {
       const pk = normPlate(v.plate);
       const other = exRes.results.find((c) => c.vehicle_id !== v.id && sameContract(c, f) && vehicles.some((x) => x.id === c.vehicle_id && normPlate(x.plate) === pk));

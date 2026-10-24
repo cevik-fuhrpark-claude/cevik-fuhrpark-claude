@@ -229,7 +229,11 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // status_since: Eintritt in den aktuellen Status (Werkstattfreigabe/-umleitung, Teilewarten) – Kommentar/Wiedervorlage ändern updated_at
     // und starteten die Übernahmefrist sonst neu (17.10.2026); in derselben Abfrage (Abfragebudget)
     const open = (await env.DB.prepare(`SELECT c.*, v.plate, COALESCE((SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.to_status=c.status
-        AND (e.from_status IS NOT e.to_status OR e.action='reassign_workshop')), c.updated_at) AS status_since FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
+        AND (e.from_status IS NOT e.to_status OR e.action='reassign_workshop')), c.updated_at) AS status_since,
+      -- Eingang von einem inzwischen deaktivierten Konto bzw. einer Person, die nicht mehr Leitung ist (Backlog 258, Leitungswechsel): gilt nicht
+      -- mehr als bestätigt – sonst fiel eine kritische, nie bewertete Meldung aus allen Befunden
+      CASE WHEN c.fleet_received_by IS NOT NULL AND NOT EXISTS (SELECT 1 FROM users ru WHERE ru.id=c.fleet_received_by AND ru.active=1 AND ru.role IN ('owner','fleet')) THEN 1 ELSE 0 END AS recv_gone
+      FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
       WHERE c.environment=? AND c.status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')`).bind(environment).all()).results;
 
     // geschlossene Werkstatt (workshops.active=0, Backlog 191): ihr noch aktives Konto zählt nicht als Empfänger – vorher meldete der
@@ -263,7 +267,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
             next_action: c.status === 'gemeldet' ? 'Vorgang an eine Werkstatt weiterleiten oder begründet ablehnen.' : 'Stand bei der Werkstatt erfragen; Fortschritt, Teilebedarf oder Termin im Vorgang eintragen.' });
         }
       }
-      if (c.status === 'gemeldet' && !c.fleet_received_at) {
+      if (c.status === 'gemeldet' && (!c.fleet_received_at || c.recv_gone)) {
         const urgent = c.priority === 'kritisch' || c.safety_lock;
         const sla = slaMinutes(settings, environment, 'triage', c.priority);
         const age = ageMin(c.created_at);
@@ -714,7 +718,9 @@ export async function masterPanel(env, environment) {
   // zählte die ältere, nie entschiedene wieder als offene Entscheidung)
   // offene Einträge nach Dringlichkeit (wie die Befundliste), dann neueste zuerst – nach dem Urlaub standen kritische sonst hinter 70 Hinweisen (23.10.2026)
   const inbox = (await env.DB.prepare(`SELECT m.*, f.status AS finding_status, f.subject_key AS finding_subject, EXISTS (SELECT 1 FROM master_inbox n WHERE n.environment=m.environment AND n.finding_id=m.finding_id
-      AND (n.received_at > m.received_at OR (n.received_at = m.received_at AND n.rowid > m.rowid))) AS has_newer, du.display_name AS decided_by_name FROM master_inbox m LEFT JOIN agent_findings f ON f.id=m.finding_id LEFT JOIN users du ON du.id=m.decided_by
+      AND (n.received_at > m.received_at OR (n.received_at = m.received_at AND n.rowid > m.rowid))) AS has_newer, du.display_name AS decided_by_name,
+      -- „gesehen von“ einer Person, die nicht mehr Leitung ist (Backlog 258c, Leitungswechsel): Übernahme anbieten
+      CASE WHEN m.decided_by IS NULL OR (du.active=1 AND du.role IN ('owner','fleet')) THEN 1 ELSE 0 END AS decided_by_current FROM master_inbox m LEFT JOIN agent_findings f ON f.id=m.finding_id LEFT JOIN users du ON du.id=m.decided_by
     WHERE m.environment=?1 ORDER BY CASE WHEN m.decision_status IN ('offen','gesehen') THEN 0 ELSE 1 END,
       CASE WHEN m.decision_status IN ('offen','gesehen') THEN CASE m.severity WHEN 'kritisch' THEN 0 WHEN 'handeln' THEN 1 WHEN 'hinweis' THEN 2 ELSE 3 END ELSE 0 END, m.received_at DESC, m.rowid DESC
     LIMIT (SELECT COUNT(*) FROM master_inbox WHERE environment=?1 AND decision_status IN ('offen','gesehen')) + ${MASTER_INBOX_DONE_MAX}`).bind(environment).all()).results
@@ -758,7 +764,10 @@ export async function decideMasterItem(env, user, environment, eventId, body) {
   const before = await env.DB.prepare('SELECT decision_status, decided_by, decision_note, finding_id FROM master_inbox WHERE event_id=? AND environment=?').bind(String(eventId), environment).first();
   if (!before) throw notFound('Eintrag nicht gefunden.');
   // „gesehen“ auf schon gesehenem Eintrag: nichts ändern (19.10.2026: zweite Person überschrieb Person/Zeitpunkt ohne Protokoll)
-  if (st === 'gesehen' && before.decision_status === 'gesehen' && !note && (exp === null || exp === 'gesehen')) return { ok: true, unchanged: true };
+  // Ausnahme (Backlog 258c): „gesehen“ von einer Person, die nicht mehr Leitung ist (deaktiviert/Rolle gewechselt) – neue Leitung übernimmt
+  const takeover = st === 'gesehen' && before.decision_status === 'gesehen' && before.decided_by && before.decided_by !== user.id
+    && !(await env.DB.prepare(`SELECT 1 AS x FROM users WHERE id=? AND active=1 AND role IN ('owner','fleet')`).bind(before.decided_by).first());
+  if (st === 'gesehen' && before.decision_status === 'gesehen' && !note && (exp === null || exp === 'gesehen') && !takeover) return { ok: true, unchanged: true };
   const r = await env.DB.prepare(`UPDATE master_inbox SET decision_status=?1, decided_by=?2, decision_note=COALESCE(?3, decision_note), decided_at=?4 WHERE event_id=?5 AND environment=?6
     AND ((CASE decision_status WHEN 'offen' THEN 0 WHEN 'gesehen' THEN 1 WHEN 'entschieden' THEN 2 ELSE 3 END) < ?7 OR (decision_status=?1 AND (?1='gesehen' OR decided_by=?2)))
     AND (?8 IS NULL OR decision_status=?8)`)
@@ -768,7 +777,7 @@ export async function decideMasterItem(env, user, environment, eventId, body) {
     let older = 0;
     if (st !== 'gesehen' && before.finding_id) older = (await env.DB.prepare(`UPDATE master_inbox SET decision_status=?1, decided_by=?2, decided_at=?3 WHERE environment=?4 AND finding_id=?5 AND event_id<>?6
       AND decision_status IN ('offen','gesehen') AND received_at <= (SELECT received_at FROM master_inbox WHERE event_id=?6 AND environment=?4)`).bind(st, user.id, nowIso(), environment, before.finding_id, String(eventId)).run()).meta.changes || 0;
-    if (st !== 'gesehen' || before.decision_status === 'offen') await audit(env, user.id, 'master.decision', String(eventId), { environment, from: before.decision_status, to: st, ...(note ? { note } : {}), ...(before.decision_note && note && before.decision_note !== note ? { note_before: before.decision_note } : {}), ...(older ? { older_entries: older } : {}) });
+    if (st !== 'gesehen' || before.decision_status === 'offen' || takeover) await audit(env, user.id, 'master.decision', String(eventId), { environment, from: before.decision_status, to: st, ...(takeover ? { taken_over_from: before.decided_by } : {}), ...(note ? { note } : {}), ...(before.decision_note && note && before.decision_note !== note ? { note_before: before.decision_note } : {}), ...(older ? { older_entries: older } : {}) });
     return { ok: true, ...(older ? { older_entries: older } : {}) };
   }
   if (!(await env.DB.prepare('SELECT 1 FROM master_inbox WHERE event_id=? AND environment=?').bind(String(eventId), environment).first())) throw notFound('Eintrag nicht gefunden.');

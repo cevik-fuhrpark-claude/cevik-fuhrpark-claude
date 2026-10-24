@@ -5,7 +5,7 @@ import { audit } from './auth.js';
 import { TABLE_COLUMNS } from './schema.js';
 
 const TABLES = [
-  'workshops', 'vehicles', 'driver_vehicles', 'case_counters', 'cases', 'case_events', 'work_entries', 'parts', 'open_items', 'external_costs',
+  'workshops', 'vehicles', 'vehicle_plates', 'driver_vehicles', 'case_counters', 'cases', 'case_events', 'work_entries', 'parts', 'open_items', 'external_costs',
   'files', 'inspections', 'maintenance_rules', 'maintenance_events', 'odometer_readings', 'tire_specs', 'tire_events', 'stock_items', 'stock_movements',
   'fines', 'fine_events', 'fine_counters', 'agent_findings', 'master_inbox', 'notifications', 'telematics_latest', 'telematics_mappings', 'telematics_unmatched',
   'drivers', 'driver_documents', 'driver_license_checks', 'tacho_downloads', 'vehicle_contracts', 'insurance_claims', 'vehicle_notes', 'emergency_contacts', 'audit_log', '_migrations',

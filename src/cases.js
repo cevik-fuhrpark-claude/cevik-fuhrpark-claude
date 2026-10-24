@@ -163,8 +163,10 @@ export async function listCases(env, user, envName, query, meta = null) {
       // instr statt LIKE (D1: Muster über 50 Byte → Fehler, 19.10.2026); lower() wie LIKE für A–Z, Varianten für andere Buchstaben
       wordSql.push(`(${vs.map(() => `instr(lower(c.description), lower(?)) > 0`).join(' OR ')})`); wordArgs.push(...vs);
     }
-    where.push(`((${wordSql.join(' AND ')}) OR instr(lower(c.case_no), lower(?)) > 0 OR instr(${PLATE_KEY_SQL('v.plate')}, ?) > 0)`);
-    args.push(...wordArgs, q, plateKey.length >= 2 ? plateKey : '\u0000');
+    // früheres Kennzeichen des Fahrzeugs (Backlog 256): Rechnung/Gutachten nennt nach einer Umkennzeichnung oft noch das alte
+    where.push(`((${wordSql.join(' AND ')}) OR instr(lower(c.case_no), lower(?)) > 0 OR instr(${PLATE_KEY_SQL('v.plate')}, ?) > 0
+      OR EXISTS (SELECT 1 FROM vehicle_plates vp WHERE vp.vehicle_id=c.vehicle_id AND instr(${PLATE_KEY_SQL('vp.plate')}, ?) > 0))`);
+    args.push(...wordArgs, q, plateKey.length >= 2 ? plateKey : '\u0000', plateKey.length >= 2 ? plateKey : '\u0000');
   }
   const limit = intParam(query.limit, 200, 1, query.__export ? 5000 : 500);
   const rows = (await env.DB.prepare(`${withSql}
@@ -270,6 +272,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
   // reach: 0 = deaktiviert, 1 = erreichbar, 2 = aktiv, aber nicht benachrichtigbar (ohne Passwort/andere Umgebung; Regel wie candidateUsers.reporter_ok)
   const reporter = await env.DB.prepare(`SELECT display_name, CASE WHEN role='driver' OR was_driver=1 THEN 'driver' ELSE role END AS role,
     CASE WHEN active<>1 THEN 0 WHEN password_hash IS NOT NULL AND (environment=? OR role='owner') THEN 1 ELSE 2 END AS reach FROM users WHERE id=?`).bind(c.environment, c.reporter_id).first();
+  const receivedBy = isManager(user) && c.fleet_received_by ? await env.DB.prepare(`SELECT display_name AS name, CASE WHEN active=1 AND role IN ('owner','fleet') THEN 1 ELSE 0 END AS current FROM users WHERE id=?`).bind(c.fleet_received_by).first() : null;
   const events = (await env.DB.prepare(`SELECT e.id, e.action, e.from_status, e.to_status, e.note, e.payload, e.created_at, e.actor_role, u.display_name AS actor_name
     FROM case_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.case_id=? ORDER BY e.created_at`).bind(c.id).all()).results
     .map((e) => ({ ...e, payload: e.payload ? JSON.parse(e.payload) : null }))
@@ -336,6 +339,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
     ...(user.role === 'viewer' && reporter?.role === 'driver' ? { reporter_name_hidden: true } : {}),
     // Kommentar „nur Gemeldet von“ an einen deaktivierten/nicht erreichbaren Melder erreicht niemanden (Backlog 249) – Fahrer erhalten das Feld nicht
     ...(user.role !== 'driver' && reporter && reporter.reach !== 1 ? { reporter_unreachable: reporter.reach === 0 ? 'inactive' : 'other' } : {}),
+    // Eingang bestätigt von (Backlog 258b, Leitungswechsel): Leitung sieht Name und ob das Konto noch Leitung ist
+    ...(isManager(user) && receivedBy ? { received_by: receivedBy } : {}),
     events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : user.role === 'viewer' ? events.map((e) => (e.actor_role === 'driver' ? { ...e, actor_name: null, actor_name_hidden: true } : e)) : events).map((e) => (hiddenPayloads.includes(e.action) ? { ...e, payload: null, ...(hiddenNotes.includes(e.action) && e.note ? { note: null, note_hidden: true } : {}) } : e)),
     files, open_items: openItems, inspections, followups, parent, duplicates, duplicate_of: duplicateOf, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
     maintenance_event: mevent || null,
@@ -663,6 +668,8 @@ export function allowedActions(user, c, access) {
   switch (c.status) {
     case 'gemeldet':
       if (mgr) { if (!c.fleet_received_at) a.push('receive'); a.push('approve_repair', 'reject'); }
+      // Meldung am falschen Fahrzeug (Backlog 254): solange noch keiner Werkstatt freigegeben und nicht aus Kontrolle/Prüftermin/Reifen entstanden
+      if (mgr && c.origin === 'meldung' && !c.workshop_site && !c.maintenance_rule_id && !c.tire_order && !c.parent_case_id && !c.duplicate_of) a.push('correct_vehicle');
       break;
     case 'werkstatt_freigegeben':
       if (ws || mgr) { if (!c.workshop_ack_at) a.push('acknowledge'); a.push('start_repair'); }
@@ -1119,6 +1126,33 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       payload = { from: from.location || from.service || from.on ? from : null, to: loc || svc || on ? to : null };
       break;
     }
+    case 'correct_vehicle': {
+      // Meldung am falschen Fahrzeug (Backlog 254, 25.10.2026, Teilagent „Meldung am falschen Fahrzeug“): Leitung hängt eine noch nicht
+      // freigegebene Meldung mit Begründung an das richtige Fahrzeug um – vorher nur Ablehnen + neu melden (Melder, Fotos, Sperre gingen verloren;
+      // der wirklich defekte Lkw blieb bis dahin ungesperrt). Nur ohne Folge-/Dublettenbezug und ohne Versicherungsfall (wandern sonst nicht mit).
+      const vid = str(p.vehicle_id, { required: true, max: 80, field: 'Fahrzeug' });
+      requireNote('Bitte Grund für die Korrektur angeben (z. B. Kennzeichen verwechselt).');
+      if (vid === c.vehicle_id) throw bad('validation', 'Fahrzeug ist unverändert.');
+      const [nv, ov, rel] = await Promise.all([
+        env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=? AND active=1').bind(vid).first(),
+        env.DB.prepare('SELECT plate FROM vehicles WHERE id=?').bind(c.vehicle_id).first(),
+        env.DB.prepare(`SELECT (SELECT COUNT(*) FROM cases WHERE duplicate_of=?1 OR parent_case_id=?1) AS linked, (SELECT COUNT(*) FROM insurance_claims WHERE case_id=?1) AS claims`).bind(c.id).first(),
+      ]);
+      if (!nv) throw bad('validation', 'Fahrzeug nicht gefunden oder außer Betrieb.');
+      if (rel.linked > 0) throw bad('correct_vehicle_linked', 'Zu dieser Meldung gibt es Dubletten oder Folgeaufträge – Fahrzeug lässt sich nicht korrigieren. Bitte ablehnen und am richtigen Fahrzeug neu melden.');
+      if (rel.claims > 0) throw bad('correct_vehicle_claim', 'Zu dieser Meldung gibt es einen Versicherungsfall – Fahrzeug lässt sich nicht korrigieren. Bitte ablehnen und am richtigen Fahrzeug neu melden.');
+      set.vehicle_id = nv.id;
+      if (!c.fleet_received_at) { set.fleet_received_at = now; set.fleet_received_by = user.id; }
+      payload = { from: ov ? ov.plate : c.vehicle_id, to: nv.plate, from_vehicle_id: c.vehicle_id, to_vehicle_id: nv.id, safety_lock: !!c.safety_lock };
+      // im Stapel: Ziel weiterhin aktiv, weiterhin ohne Bezug/Versicherungsfall (gleichzeitige Änderung → „Vorgang geändert“)
+      extra.push(env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN EXISTS (SELECT 1 FROM vehicles WHERE id=?1 AND active=1)
+        AND NOT EXISTS (SELECT 1 FROM cases WHERE duplicate_of=?2 OR parent_case_id=?2) AND NOT EXISTS (SELECT 1 FROM insurance_claims WHERE case_id=?2) THEN 1 ELSE 0 END`).bind(nv.id, c.id),
+        env.DB.prepare('DELETE FROM cmd_guard'));
+      // Agent-Befunde rechnet der nächste Lauf neu (Fahrzeug am Befund folgt dem Vorgang)
+      // gesperrt: Sperre wirkt jetzt am richtigen Fahrzeug (Push dorthin), am falschen gilt sie als aufgehoben (Push unten)
+      notifyKind = c.safety_lock ? 'safety_lock' : null;
+      break;
+    }
     case 'reassign_workshop': {
       const site = str(p.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
       const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
@@ -1429,6 +1463,12 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   // Freigabe/Aufhebung: sperrt ein weiterer offener Vorgang das Fahrzeug oder das fest gekoppelte Gespann, keine „freigegeben“-Meldung
   const still_locked = ['released', 'safety_lock_lifted'].includes(notifyKind) ? await otherLockCaseNo(env, updated) : null;
   const sent = notifyKind ? await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c, vehicle: { plate: vPlate }, still_locked }) : null;
+  // Fahrzeug korrigiert (Backlog 254): Fahrer/Disposition des falschen Fahrzeugs erfahren, dass die Sperre dort nicht mehr gilt
+  // (außer ein anderer offener Vorgang sperrt es weiter – dann „bleibt gesperrt“)
+  if (action === 'correct_vehicle' && c.safety_lock) {
+    const old = { ...updated, vehicle_id: c.vehicle_id, safety_lock: 0 };
+    await notifyCaseEvent(env, ctx, old, 'safety_lock_lifted', { actor: user, note, payload, previous: c, vehicle: { plate: payload.from }, still_locked: await otherLockCaseNo(env, old) });
+  }
   // Kommentar ohne jeden Empfänger (z. B. nur „Gemeldet von“ an einen deaktivierten Melder): gespeichert, aber niemand informiert (Backlog 249)
   const noRecipients = action === 'comment' && sent === 0;
   const cost_limit_exceeded = COST_ACTIONS.includes(action) ? await checkCostLimit(env, ctx, user, envName, updated) : undefined;

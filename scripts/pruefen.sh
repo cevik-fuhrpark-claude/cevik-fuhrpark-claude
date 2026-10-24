@@ -92,6 +92,9 @@ UI-Fahrer zuordnen mit ausgeschiedener Fahrerakte: Auswahl und Warnhinweis|ui-zu
 UI-Werkstattplan: Auftrag nach Fristende und mehrfach verschoben|ui-plan-verschoben.py|/tmp/cfp-plan-verschoben.log
 UI-Gesperrtes Fahrzeug genutzt: Ergebnisseite, Verlauf, Befund|ui-sperre-genutzt.py|/tmp/cfp-sperre-genutzt.log
 UI-Werkstattplan: begonnener Auftrag mit vergangenem Termin unter „in Arbeit“|ui-plan-inarbeit.py|/tmp/cfp-plan-inarbeit.log
+UI-Fahrzeug korrigieren (Meldung am falschen Fahrzeug)|ui-fahrzeug-korrigieren.py|/tmp/cfp-fahrzeug-korrigieren.log
+UI-Kennzeichenverlauf: Akte und Suche nach altem Kennzeichen|ui-kennzeichenverlauf.py|/tmp/cfp-kennzeichenverlauf.log
+UI-Leitungswechsel: Eingang und „gesehen von“ einer ausgeschiedenen Leitung|ui-leitungswechsel.py|/tmp/cfp-leitungswechsel.log
 UI-Ausdruck aus der Testumgebung erkennbar, kompakte Druckliste|ui-druck-testumgebung.py|/tmp/cfp-druck-test.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log

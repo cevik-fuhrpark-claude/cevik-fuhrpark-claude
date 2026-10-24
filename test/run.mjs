@@ -18044,7 +18044,9 @@ await test('Springer / Auslesung / Datensicherung (Teilagenten 23.10.): Abfahrts
   // echte ältere Sicherung kennt auch die Spalten späterer Migrationen (ALTER TABLE … ADD COLUMN ab 0075) nicht – sonst meldet die Probe sie
   // zu Recht als „unbekannt“ (24.10.2026: Migration 0079 `cases.vehicle_location` …)
   { const fsm = await import('node:fs'); const md = new URL('../migrations/', import.meta.url);
-    for (const f of fsm.readdirSync(md).filter((x) => x >= '0075')) for (const m of fsm.readFileSync(new URL(f, md), 'utf8').matchAll(/ALTER TABLE (\w+) ADD COLUMN (\w+)/g)) for (const r of old.data[m[1]] || []) delete r[m[2]]; }
+    for (const f of fsm.readdirSync(md).filter((x) => x >= '0075')) for (const m of fsm.readFileSync(new URL(f, md), 'utf8').matchAll(/ALTER TABLE (\w+) ADD COLUMN (\w+)/g)) for (const r of old.data[m[1]] || []) delete r[m[2]];
+    // … und keine Tabellen späterer Migrationen (25.10.2026: Migration 0082 `vehicle_plates`)
+    for (const f of fsm.readdirSync(md).filter((x) => x >= '0075')) for (const m of fsm.readFileSync(new URL(f, md), 'utf8').matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) delete old.data[m[1]]; }
   const pr = await probeBackup(old, { required: await requiredTables() });
   ok(pr.ok, JSON.stringify(pr.tables.filter((t) => !t.ok))); ok(pr.migrations_applied_after >= 1, 'nachgezogen');
   const envs = pr.env.DB.db.prepare('SELECT DISTINCT environment FROM driver_vehicles').all().map((r) => r.environment);
@@ -20403,6 +20405,168 @@ await test('Backlog 253 (Blickwinkel „Auftrag wartet wochenlang auf Teile“):
   for (const l of ['de', 'uk', 'en']) ok(/wartet auf Teile|очікують запчастин|waiting for parts/.test(STRINGS[l].filter_stale_hint), `${l} Filtertext`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("const iw = r.in_work || [];") && app.includes("...(r.in_work || [])"), 'Oberfläche');
+});
+
+await test('Backlog 254 (Blickwinkel „Meldung am falschen Fahrzeug“): Leitung korrigiert das Fahrzeug einer noch nicht freigegebenen Meldung – Sperre wandert mit, Pushs an beide Fahrzeuge, Grenzen (Werkstatt, Kontrolle, Dublette, Versicherungsfall), Rechte', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const V2 = 'VIN:WDB9630051L917317';
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES('dv-cv',?,?,?,?,?,'test')`).run(U.driver.id, V1, '2026-01-01T00:00:00.000Z', U.fleet.id, '2026-01-01T00:00:00.000Z');
+  const id = await newCase({ description: 'Bremse zieht stark' }, U.fleet);
+  eq((await cmd(U.fleet, id, 'set_safety_lock', {}, 'Bremse')).status, 200);
+  const acts = async (u) => (await u.get(`/api/cases/${id}`)).data.allowed_actions || (await u.get(`/api/cases/${id}`)).data.actions || [];
+  const fa = await acts(U.fleet); ok(fa.includes('correct_vehicle'), 'Leitung: ' + fa.join());
+  eq((await cmd(U.ws, id, 'correct_vehicle', { vehicle_id: V2 }, 'falsch')).status, 403, 'Werkstatt nicht');
+  eq((await cmd(U.fleet, id, 'correct_vehicle', { vehicle_id: V2 })).status, 400, 'ohne Grund');
+  eq((await cmd(U.fleet, id, 'correct_vehicle', { vehicle_id: V1 }, 'gleich')).status, 400, 'unverändert');
+  eq((await cmd(U.fleet, id, 'correct_vehicle', { vehicle_id: 'VIN:GIBTESNICHT' }, 'falsch')).status, 400, 'unbekannt');
+  const before = db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE user_id=?`).get(U.driver.id).n;
+  const r = await cmd(U.fleet, id, 'correct_vehicle', { vehicle_id: V2 }, 'Kennzeichen verwechselt'); eq(r.status, 200, JSON.stringify(r.data));
+  const c = db.prepare('SELECT * FROM cases WHERE id=?').get(id); eq(c.vehicle_id, V2); eq(c.safety_lock, 1, 'Sperre bleibt am Vorgang');
+  const ev = db.prepare(`SELECT * FROM case_events WHERE case_id=? AND action='correct_vehicle'`).get(id); const pl = JSON.parse(ev.payload);
+  eq(pl.from, 'SZ-YC 5513'); eq(pl.to, 'SZ-KC 5515'); eq(pl.from_vehicle_id, V1); eq(pl.safety_lock, true); eq(ev.note, 'Kennzeichen verwechselt');
+  const nn = db.prepare(`SELECT kind FROM notifications WHERE user_id=? ORDER BY created_at DESC`).all(U.driver.id);
+  ok(nn.length > before && nn.some((x) => x.kind === 'safety_lock_lifted'), 'Fahrer des falschen Fahrzeugs: Sperre aufgehoben ' + JSON.stringify(nn.slice(0, 3)));
+  const vl = (await U.fleet.get('/api/vehicles')).data.vehicles; eq(vl.find((v) => v.id === V2).availability, 'gesperrt'); ok(vl.find((v) => v.id === V1).availability !== 'gesperrt', 'falsches Fahrzeug frei');
+  // nach Freigabe an eine Werkstatt: nicht mehr
+  eq((await cmd(U.fleet, id, 'lift_safety_lock', { confirm: true }, 'geprüft')).status, 200);
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  ok(!(await acts(U.fleet)).includes('correct_vehicle'), 'nach Freigabe kein Knopf');
+  eq((await cmd(U.fleet, id, 'correct_vehicle', { vehicle_id: V1 }, 'doch anders')).status, 403);
+  // Dublette/Versicherungsfall → Hinweis „ablehnen und neu melden“
+  const a = await newCase({ description: 'Spiegel ab' }, U.fleet); const b = await newCase({ description: 'Spiegel ab (doppelt)' }, U.fleet);
+  eq((await cmd(U.fleet, b, 'reject', { duplicate_of: a }, 'Dublette')).status, 200);
+  const x = await cmd(U.fleet, a, 'correct_vehicle', { vehicle_id: V2 }, 'Kennzeichen verwechselt'); eq(x.status, 400); eq(x.data.error, 'correct_vehicle_linked');
+  const k = await newCase({ description: 'Unfall Heck' }, U.fleet);
+  db.prepare(`INSERT INTO insurance_claims(id,environment,case_id,vehicle_id,insurer,reported_on,status,evidence,created_by,created_at,updated_at) VALUES ('cl-cv','test',?,?,'Testversicherer','2026-10-01','gemeldet','Test',?,'2026-10-01T00:00:00Z','2026-10-01T00:00:00Z')`).run(k, V1, U.fleet.id);
+  const y = await cmd(U.fleet, k, 'correct_vehicle', { vehicle_id: V2 }, 'Kennzeichen verwechselt'); eq(y.status, 400); eq(y.data.error, 'correct_vehicle_claim');
+  // Mangel aus einer Kontrolle: kein Knopf (km/Kontrolle gehören zum Fahrzeug)
+  db.prepare(`UPDATE cases SET origin='kontrolle' WHERE id=?`).run(k);
+  ok(!(await (async () => (await U.fleet.get(`/api/cases/${k}`)).data.allowed_actions || (await U.fleet.get(`/api/cases/${k}`)).data.actions || [])()).includes('correct_vehicle'), 'Kontrolle: kein Knopf');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const key of ['act_correct_vehicle', 'cv_hint', 'cv_hint_lock', 'cv_new_vehicle', 'cv_choose']) ok(STRINGS[l][key], `${l}.${key}`);
+  for (const l of ['de', 'uk', 'en']) ok(/Fahrzeug korrigieren|Виправити транспорт|Correct vehicle/.test(STRINGS[l].help_fleet_s), `${l} Hilfe`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("case 'correct_vehicle': f.push(") && app.includes("if (action === 'correct_vehicle') api('GET', '/api/vehicles')"), 'Formular');
+});
+
+await test('Backlog 256 (Blickwinkel „Lkw wird umgekennzeichnet“): Kennzeichenverlauf (Migration 0082, Stammdaten + CSV-Import, Rückfüllung aus dem Protokoll) – Akte zeigt frühere Kennzeichen, Fahrzeugliste/Suche, Vorgangssuche und Versicherungsfälle (257c) finden das alte Kennzeichen', async () => {
+  const { e, U, newCase } = await freshWorld(); const db = e.DB.db;
+  eq((await U.own.post('/api/vehicles', { plate: 'KV-AB 100', vin: 'WDB96340310891001', site: 'Dortmund' })).status, 201);
+  const VID = 'VIN:WDB96340310891001';
+  const cid = await newCase({ vehicle_id: VID, description: 'Spiegel gebrochen' }, U.fleet);
+  eq((await U.own.post('/api/vehicles', { plate: 'KV-XY 200', vin: 'WDB96340310891001', site: 'Dortmund', keep_active: true })).status, 201);
+  eq((await U.own.post('/api/vehicles', { plate: 'KV-XY 200', vin: 'WDB96340310891001', site: 'Hamm', keep_active: true })).status, 201, 'ohne Kennzeichenwechsel');
+  const csv = 'Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN;Anhänger Kennzeichen\nKV-NE 300;Hamm;in Betrieb;TEST;2020;WDB96340310891001;';
+  eq((await U.own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200);
+  const rows = db.prepare('SELECT plate, source FROM vehicle_plates WHERE vehicle_id=? ORDER BY valid_until, rowid').all(VID);
+  eq(rows.map((r) => r.plate + ':' + r.source).join(), 'KV-AB 100:stammdaten,KV-XY 200:csv-import');
+  const det = (await U.fleet.get(`/api/vehicles/${encodeURIComponent(VID)}`)).data; eq(det.vehicle.plate, 'KV-NE 300');
+  eq(det.former_plates.map((x) => x.plate).join(), 'KV-XY 200,KV-AB 100', 'neueste zuerst'); ok(det.former_plates[0].valid_until, 'bis');
+  const lv = (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === VID); eq(lv.former_plates.join(), 'KV-XY 200,KV-AB 100');
+  // Vorgangssuche mit altem Kennzeichen (andere Schreibweise)
+  const sr = (await U.fleet.get('/api/cases?status=&q=' + encodeURIComponent('kv ab100'))).data.cases.map((c) => c.id); ok(sr.includes(cid), 'Vorgang über altes Kennzeichen');
+  ok(!(await U.fleet.get('/api/cases?status=&q=' + encodeURIComponent('KV-ZZ 999'))).data.cases.some((c) => c.id === cid), 'kein Fehltreffer');
+  // Versicherungsfälle (Backlog 257c): Suche über das alte Kennzeichen, Hilfsfeld nicht in der Antwort
+  db.prepare(`INSERT INTO insurance_claims(id,environment,case_id,vehicle_id,insurer,reported_on,status,evidence,created_by,created_at,updated_at) VALUES ('cl-kv','test',?,?,'Testversicherer','2026-10-01','gemeldet','Test',?,'2026-10-01T00:00:00Z','2026-10-01T00:00:00Z')`).run(cid, VID, U.fleet.id);
+  const cq = (await U.fleet.get('/api/claims?filter=alle&q=' + encodeURIComponent('KV AB 100'))).data;
+  eq(cq.claims.map((x) => x.id).join(), 'cl-kv', 'Versicherungsfall über altes Kennzeichen'); ok(!('fp_search' in cq.claims[0]), 'ohne Hilfsfeld');
+  eq((await U.fleet.get('/api/claims?filter=alle&q=' + encodeURIComponent('KV-ZZ 999'))).data.claims.length, 0);
+  // Rückfüllung aus dem Protokoll (Migration): Eintrag ohne Zeile → nach erneutem Einspielen der Migration vorhanden
+  db.prepare('DELETE FROM vehicle_plates').run();
+  const mig = (await import('node:fs')).readFileSync(new URL('../migrations/0082_vehicle_plates.sql', import.meta.url), 'utf8');
+  db.exec(mig);
+  eq(db.prepare('SELECT COUNT(*) AS n FROM vehicle_plates WHERE vehicle_id=?').get(VID).n, 2, 'aus dem Protokoll');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['former_plates', 'former_plate_until', 'former_plate_hit']) ok(STRINGS[l][k], `${l}.${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-formerplates') && app.includes('(v.former_plates || []).some((x) => norm(x).includes(n))') && app.includes('data-formerhit'), 'Oberfläche');
+});
+
+await test('Backlog 257b: Bußgeld mit früherem Kennzeichen (Umkennzeichnung) – Fahrzeug, das das Kennzeichen zur Tatzeit trug, wird zugeordnet; nach dem Wechsel bzw. bei zwei Trägern nicht; Agent bietet „Angaben ändern“ an; Hinweis in der Oberfläche', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  eq((await U.own.post('/api/vehicles', { plate: 'BG-AL 10', vin: 'WDB96340310892001', site: 'Dortmund' })).status, 201);
+  eq((await U.own.post('/api/vehicles', { plate: 'BG-NE 20', vin: 'WDB96340310892001', site: 'Dortmund', keep_active: true })).status, 201);
+  const VID = 'VIN:WDB96340310892001';
+  const ago = (d) => new Date(Date.now() - d * 86400000).toISOString();
+  const body = (ref, at) => ({ kind: 'bussgeldbescheid', authority: 'Bußgeldstelle Test', reference: ref, offense_type: 'parken', offense_at: at, plate_in_letter: 'bg al 10', amount_eur: 30, response_due: '2040-03-15' });
+  const a = await U.fleet.post('/api/fines', body('AZ-FP-1', ago(5))); eq(a.status, 201, JSON.stringify(a.data)); eq(a.data.vehicle_matched, true, 'Tat vor dem Wechsel');
+  eq(db.prepare('SELECT vehicle_id FROM fines WHERE id=?').get(a.data.id).vehicle_id, VID);
+  const fd = (await U.fleet.get(`/api/fines/${a.data.id}`)).data; ok(fd.fine.plate === 'BG-NE 20' || fd.plate === 'BG-NE 20' || JSON.stringify(fd).includes('BG-NE 20'), 'heutiges Kennzeichen in der Antwort');
+  // Wechsel lag vor der Tat → keine Zuordnung, Agent „unbekannt“
+  db.prepare('UPDATE vehicle_plates SET valid_until=? WHERE vehicle_id=?').run(ago(10), VID);
+  const b = await U.fleet.post('/api/fines', body('AZ-FP-2', ago(5))); eq(b.data.vehicle_matched, false, 'Tat nach dem Wechsel');
+  // zwei frühere Träger → keine Zuordnung
+  db.prepare('UPDATE vehicle_plates SET valid_until=? WHERE vehicle_id=?').run(new Date().toISOString(), VID);
+  db.prepare(`INSERT INTO vehicle_plates(id,vehicle_id,plate,valid_until,source) VALUES ('vp-x','VIN:WMA15SZZ2HM722774','BG-AL 10',?,'test')`).run(new Date().toISOString());
+  const c = await U.fleet.post('/api/fines', body('AZ-FP-3', ago(5))); eq(c.data.vehicle_matched, false, 'mehrdeutig');
+  db.prepare(`DELETE FROM vehicle_plates WHERE id='vp-x'`).run();
+  // Agent: unzugeordnetes Schreiben mit eindeutigem früherem Kennzeichen → „über Angaben ändern übernehmen“
+  eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+  const fnd = db.prepare(`SELECT message FROM agent_findings WHERE environment='test' AND finding_code='FINE_VEHICLE_UNKNOWN' AND status='offen' AND message LIKE '%AZ-FP-2%' OR (environment='test' AND finding_code='FINE_VEHICLE_UNKNOWN' AND status='offen')`).all();
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  const matchText = renderFindingMessage('FINE_VEHICLE_MATCHABLE', { label: 'X', plate: 'BG AL 10' }, 'de').slice(3, 30);
+  ok(fnd.some((x) => x.message.includes(matchText)), 'Agent: zuordenbar ' + JSON.stringify(fnd));
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="fformer"'), 'Hinweis');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].fine_former_plate.includes('{old}') && STRINGS[l].fine_former_plate.includes('{plate}'), l);
+});
+
+await test('Backlog 257a: Kennzeichenwechsel – Prüftermin-, Auslesungs- und Vertragsimport nur mit Kennzeichen, datiert vor dem Wechsel, während das Kennzeichen einem anderen (umgekennzeichneten, aktiven) Fahrzeug gehörte → FIN verlangen; danach bzw. mit FIN wie bisher', async () => {
+  const env = makeEnv(); const owner = new Client(worker, env, 'owner');
+  const s0 = await owner.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'kw.inhaber', display_name: 'KW' });
+  await owner.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const H = { 'content-type': 'text/csv' };
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  // X trug KW-AB 257, wird umgekennzeichnet (bleibt aktiv); Neuzugang C bekommt KW-AB 257
+  eq((await owner.post('/api/vehicles', { vin: 'WDB96340310625701', plate: 'KW-AB 257', site: 'Dortmund' })).status, 201);
+  eq((await owner.post('/api/vehicles', { vin: 'WDB96340310625701', plate: 'KW-XY 258', site: 'Dortmund', keep_active: true })).status, 201);
+  eq((await owner.post('/api/vehicles', { vin: 'WDB96340310625702', plate: 'KW-AB 257', site: 'Dortmund', create_only: true })).status, 201);
+  const C = 'VIN:WDB96340310625702';
+  // Wechsel „vor 3 Tagen“ (Zeitpunkt der Änderung in der App)
+  await env.DB.prepare('UPDATE vehicle_plates SET valid_until=?').bind(new Date(Date.parse(day(-3) + 'T10:00:00Z')).toISOString()).run();
+  const MSG = 'Kennzeichen gehörte zu diesem Datum einem anderen Fahrzeug (Kennzeichenwechsel) – bitte FIN angeben';
+  const m1 = await owner.req('POST', '/api/maintenance/import?dry_run=1', `Kennzeichen;Art;Letzte Prüfung;Nachweis\nKW-AB 257;UVV;${day(-30)};UVV alt (Test)\nKW-AB 257;UVV;${day(-1)};UVV neu (Test)`, H);
+  eq(m1.status, 200, JSON.stringify(m1.data)); eq(m1.data.skipped.map((x) => x.reason).join('|'), MSG); eq(m1.data.rows.map((r) => r.vehicle_id).join(), C, 'nach dem Wechsel: Neuzugang');
+  const m2 = await owner.req('POST', '/api/maintenance/import?dry_run=1', `FIN;Art;Letzte Prüfung;Nachweis\nWDB96340310625702;UVV;${day(-30)};UVV (Test)`, H);
+  eq(m2.data.skipped.length, 0, 'mit FIN bewusst');
+  const t1 = await owner.req('POST', '/api/tacho/import?dry_run=1', `Art;Kennzeichen;Datum;Nachweis\nMassenspeicher;KW-AB 257;${day(-10)};alt.ddd\nMassenspeicher;KW-AB 257;${day(0)};neu.ddd`, H);
+  eq(t1.status, 200, JSON.stringify(t1.data)); eq(t1.data.skipped.map((x) => x.reason).join('|'), MSG); eq(t1.data.rows.map((r) => r.target_id).join(), C);
+  const c1 = await owner.req('POST', '/api/contracts/import?dry_run=1', `Kennzeichen;Vertragsart;Vertragspartner;Beginn;Nachweis\nKW-AB 257;leasing;Leasing GmbH (Test);${day(-60)};Vertrag (Test)\nKW-AB 257;versicherung;Versicherer (Test);${day(-1)};Police (Test)`, H);
+  eq(c1.status, 200, JSON.stringify(c1.data)); eq((c1.data.skipped || []).map((x) => x.reason).join('|'), MSG, JSON.stringify(c1.data.skipped));
+  const { translateValidation } = await import('../public/i18n.js');
+  ok(translateValidation && translateValidation(MSG, 'en') !== MSG, 'übersetzt');
+});
+
+await test('Backlog 258a (Blickwinkel „Leitungswechsel“): Eingang einer nie bewerteten Meldung von einem inzwischen deaktivierten Leitungskonto gilt nicht mehr als bestätigt – Agent meldet die kritische Meldung wieder, Vorgang zeigt „nicht mehr Fuhrparkleitung“ (258b), Übergabe-Hinweis beim Deaktivieren (258d), Master-Eingang „gesehen von“ übernehmbar (258c)', async () => {
+  const { e, U, cmd, newCase } = await freshWorld(); const db = e.DB.db;
+  const { runFleetAgent } = await import('../src/agent.js');
+  const id = await newCase({ priority: 'kritisch', description: 'Bremse blockiert' });
+  eq((await cmd(U.fleet, id, 'receive')).status, 200);
+  const f = async () => { await runFleetAgent(e, { waitUntil() {} }, 'test', 'test'); return db.prepare(`SELECT finding_code FROM agent_findings WHERE environment='test' AND case_id=? AND status='offen' AND finding_code IN ('CRITICAL_UNTRIAGED','TRIAGE_OPEN','TRIAGE_OPEN_NOSLA','TRIAGE_OVERDUE')`).all(id).map((x) => x.finding_code); };
+  eq((await f()).length, 0, 'bestätigt → kein Bewertungsbefund');
+  db.prepare(`INSERT INTO vehicle_notes(id,vehicle_id,environment,text,created_by,created_at) VALUES ('vn-lw',?,'test','Bei Panne Handy Leitung anrufen',?,?)`).run('VIN:WMA15SZZ2HM722774', U.fleet.id, new Date().toISOString());
+  const dz = await U.own.patch(`/api/users/${U.fleet.id}`, { active: false }); eq(dz.status, 200);
+  eq(JSON.stringify(dz.data.fleet_handover), JSON.stringify({ received_untriaged: 1, notes: 1, emergency: 0, last_fleet: true }), 'Übergabe-Hinweis (258d)');
+  eq((await f()).join(), 'CRITICAL_UNTRIAGED', 'Bestätigung des deaktivierten Kontos zählt nicht');
+  // Rolle gewechselt (nicht mehr Leitung) zählt ebenso nicht; aktive Leitung zählt
+  db.prepare(`UPDATE users SET active=1, role='dispatch' WHERE id=?`).run(U.fleet.id);
+  eq((await f()).join(), 'CRITICAL_UNTRIAGED', 'Rolle Disposition');
+  // Master-Eingang (258c): „gesehen“ von der ausgeschiedenen Leitung → Übernahme durch den Inhaber, protokolliert
+  const { masterPanel, decideMasterItem } = await import('../src/agent.js');
+  db.prepare(`INSERT INTO master_inbox(event_id,schema_version,environment,source_agent,event_type,severity,payload,received_at,decision_status,decided_by,decided_at) VALUES ('m-lw','1.0','test','fleet-agent','finding','kritisch','{}',?, 'gesehen', ?, ?)`).run(new Date().toISOString(), U.fleet.id, new Date().toISOString());
+  const ownU = db.prepare(`SELECT * FROM users WHERE role='owner'`).get();
+  const mi = (await masterPanel(e, 'test')); const ent = (mi.inbox || mi.master_inbox).find((x) => x.event_id === 'm-lw'); eq(ent.decided_by_current, 0, 'nicht mehr Leitung');
+  const dr = await decideMasterItem(e, ownU, 'test', 'm-lw', { decision_status: 'gesehen', expected_status: 'gesehen' }); ok(!dr.unchanged, 'übernommen');
+  eq(db.prepare(`SELECT decided_by FROM master_inbox WHERE event_id='m-lw'`).get().decided_by, ownU.id);
+  ok(db.prepare(`SELECT detail FROM audit_log WHERE action='master.decision' AND target='m-lw'`).get().detail.includes('taken_over_from'), 'Protokoll');
+  eq((await decideMasterItem(e, ownU, 'test', 'm-lw', { decision_status: 'gesehen' })).unchanged, true, 'eigene Markierung: unverändert');
+  const { getCaseDetail } = await import('../src/cases.js');
+  const own = db.prepare(`SELECT * FROM users WHERE role='owner'`).get();
+  const det = await getCaseDetail(e, own, 'test', id); eq(det.received_by.name, 'Leitung'); eq(det.received_by.current, 0, 'Vorgang: nicht mehr Leitung');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('data-recvgone'), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['seen_gone', 'recv_gone', 'ue_fleet_recv', 'ue_fleet_notes', 'ue_fleet_emerg', 'ue_fleet_last']) ok(STRINGS[l][k], l + '.' + k);
+  ok(app.includes("t('ue_fleet_last')"), 'Hinweis in der Benutzerverwaltung');
+  db.prepare(`UPDATE users SET role='fleet' WHERE id=?`).run(U.fleet.id);
+  eq((await f()).length, 0, 'wieder Leitung');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

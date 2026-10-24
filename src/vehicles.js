@@ -22,6 +22,13 @@ export const ONE_TIME_KINDS = ['Rückruf'];
 // Arten, die je Fahrzeug mehrfach vorkommen dürfen (mehrere Rückrufe, verschiedene sonstige Prüfungen)
 export const MULTI_RULE_KINDS = ['Rückruf', 'Sonstiges'];
 
+// Kennzeichenverlauf (Backlog 256, Migration 0082): je Wechsel das bisherige Kennzeichen; eine Anweisung für alle Zeilen
+async function platesInsert(env, list, actorId, source) {
+  await env.DB.prepare(`INSERT INTO vehicle_plates(id, vehicle_id, plate, valid_until, changed_by, source)
+    SELECT lower(hex(randomblob(16))), json_extract(value,'$.id'), json_extract(value,'$.plate_old'), ?1, ?2, ?3 FROM json_each(?4)
+    WHERE EXISTS (SELECT 1 FROM vehicles v WHERE v.id = json_extract(value,'$.id'))`).bind(nowIso(), actorId || null, source, JSON.stringify(list)).run();
+}
+
 export async function listVehicles(env, user, envName, query = {}) {
   const active = query.inactive === '1' && isManager(user) ? 0 : 1;
   const today = berlinDate(); // geplante Termine: nur heute oder später (überschrittene zeigt der Werkstattplan)
@@ -53,10 +60,13 @@ export async function listVehicles(env, user, envName, query = {}) {
       -- offene Herstellerrückrufe (noch nicht durchgeführt; gleiche Regel wie Vorgangs-Kurzinfo „Zum Fahrzeug“), Frist nur laut Schreiben
       (SELECT COUNT(*) FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.kind='Rückruf' AND m.last_done_date IS NULL) AS open_recalls,
       -- offene Befunde des Fuhrparkagenten (Umgebung der Person) über idx_findings_vehicle; nur Inhaber/Fuhrparkleitung bekommen die Zahlen
-      (SELECT COUNT(*) || '|' || COALESCE(SUM(f.severity='kritisch'), 0) FROM agent_findings f WHERE f.vehicle_id=v.id AND f.environment=? AND f.status='offen') AS af
+      (SELECT COUNT(*) || '|' || COALESCE(SUM(f.severity='kritisch'), 0) FROM agent_findings f WHERE f.vehicle_id=v.id AND f.environment=? AND f.status='offen') AS af,
+      -- frühere Kennzeichen (Backlog 256): Suche nach dem alten Kennzeichen findet das Fahrzeug
+      (SELECT group_concat(p.plate, '|') FROM (SELECT plate FROM vehicle_plates p WHERE p.vehicle_id=v.id ORDER BY p.valid_until DESC LIMIT 10) p) AS fp
     FROM vehicles v WHERE v.active=? ORDER BY v.plate`).bind(envName, envName, envName, envName, envName, today, today, envName, addMonths(today, -12), envName, envName, today, envName, active).all()).results;
   // letzte Abfahrtskontrolle je Fahrzeug – nur Information (ohne Einsatzplan keine Pflichtbewertung)
   for (const v of rows) { const [at, result] = v.last_check ? v.last_check.split('|') : [null, null]; v.last_check_at = at; v.last_check_result = result; delete v.last_check;
+    v.former_plates = v.fp ? [...new Set(String(v.fp).split('|').filter((x) => x && x !== v.plate))] : []; delete v.fp;
     // nächster geplanter Prüftermin ab heute + Prüfart(en) an diesem Tag
     const [pd, pk] = v.planned_inspection ? v.planned_inspection.split('|') : [null, null]; v.planned_inspection_date = pd; v.planned_inspection_kind = pk || null; delete v.planned_inspection;
     // km-Fälligkeit: Rest-km nur mit erfasstem km-Stand (keine Schätzung)
@@ -138,8 +148,12 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const cap = tl ? Math.min(Math.max(Number(opts.cap) || 0, 0), 1001) : 0;
   const inspCap = cap || 51; // Akte: 50 anzeigen, eine mehr lesen → inspections_truncated (Hinweis + Link zur Zeitleiste)
   if (user.role === 'driver') throw forbidden('Fahrzeugakten sind für Fahrer nicht freigegeben.');
-  const v = await env.DB.prepare('SELECT * FROM vehicles WHERE id=?').bind(vehicleId).first();
+  // Kennzeichenverlauf (Backlog 256) in derselben Abfrage (Abfragebudget der Akte)
+  const v = await env.DB.prepare(`SELECT v.*, (SELECT json_group_array(json_object('plate', p.plate, 'valid_until', p.valid_until)) FROM (SELECT plate, valid_until FROM vehicle_plates p
+      WHERE p.vehicle_id=v.id ORDER BY valid_until DESC LIMIT 20) p) AS fp_json FROM vehicles v WHERE v.id=?`).bind(vehicleId).first();
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
+  let formerPlates = []; try { formerPlates = JSON.parse(v.fp_json || '[]').filter((x) => x.plate !== v.plate); } catch { formerPlates = []; }
+  delete v.fp_json;
   // außer Betrieb: Zeitpunkt (und für Inhaber/Fuhrparkleitung Grund und Person) laut letztem Protokolleintrag – ohne Eintrag (z. B. Import) null
   const deact = !v.active && !tl ? await env.DB.prepare(`SELECT a.created_at, a.detail, u.display_name FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id
     WHERE a.target=? AND a.action='vehicle.deactivate' ORDER BY a.created_at DESC LIMIT 1`).bind(vehicleId).first() : null;
@@ -242,7 +256,8 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const maintTruncated = !tl && maintenanceHistory.length > MAINT_HIST_MAX; if (maintTruncated) maintenanceHistory.length = MAINT_HIST_MAX;
   // Sicherheitssperre aus allen Vorgängen (Werkstatt sieht nur eigene/übernommene – Kennzeichen zeigte dort sonst kein Schloss, 20.10.2026)
   const locked = allCases.some((c) => c.safety_lock && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status));
-  const out = { locked, inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, ...(tl ? {} : { inspections_truncated: inspectionsTruncated }), last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, ...(tl ? {} : { maintenance_history_truncated: maintTruncated, maintenance_history_max: MAINT_HIST_MAX }), odometer, drivers, coupled, documents, hu_sp: husp };
+  // Kennzeichenverlauf (Backlog 256): bisherige Kennzeichen mit „bis“ (Zeitpunkt der Änderung in der App)
+  const out = { former_plates: tl ? [] : formerPlates, locked, inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, ...(tl ? {} : { inspections_truncated: inspectionsTruncated }), last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, ...(tl ? {} : { maintenance_history_truncated: maintTruncated, maintenance_history_max: MAINT_HIST_MAX }), odometer, drivers, coupled, documents, hu_sp: husp };
   if (okCase) Object.defineProperty(out, '_okCase', { value: okCase, enumerable: false });
   if (isManager(user)) {
     if (!tl) {
@@ -557,6 +572,8 @@ export async function upsertVehicle(env, user, body) {
   const duplicates = (await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles WHERE id<>?').bind(row.id).all()).results
     .filter((v) => normPlate(v.plate) === k).map((v) => ({ id: v.id, plate: v.plate, active: !!v.active, eval_excluded: !!v.eval_excluded }));
   await audit(env, user.id, 'vehicle.upsert', row.id, { plate: row.plate, ...(duplicates.length ? { duplicate_plate_of: duplicates.map((d) => d.id) } : {}), ...(changes || {}), ...(before ? {} : { created: true }) });
+  // Kennzeichenverlauf (Backlog 256): bisheriges Kennzeichen mit Zeitpunkt der Änderung – Akte, Suche, Vorgangssuche
+  if (changes && changes.plate_old) await platesInsert(env, [{ id: row.id, plate_old: changes.plate_old }], user.id, 'stammdaten');
   // Anhänger umgekennzeichnet: Zugmaschinen koppeln über das Anhänger-Kennzeichen (Stammliste) – ohne Nachtrag dort ist das Gespann gelöst
   // (Sperre am Anhänger erreicht den Fahrer der Zugmaschine nicht mehr). Nicht automatisch geändert (offene Frage), aber deutlich gemeldet (21.10.2026)
   const trailerOf = before && before.kind === 'anhaenger' && normPlate(before.plate) && normPlate(before.plate) !== k
@@ -1333,6 +1350,8 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
     const changed = Object.fromEntries(pv.changes.filter((c) => c.field !== 'plate').map((c) => [c.field, { from: c.from ?? null, to: c.to ?? null }]));
     return { id: 'VIN:' + pv.vin, detail: JSON.stringify({ plate: pv.plate, ...(pc ? { plate_old: pc.from } : {}), ...(Object.keys(changed).length ? { changed, source: 'CSV-Import' } : {}) }) };
   });
+  const plChanged = result.preview.filter((pv) => pv.action === 'geändert').map((pv) => ({ id: 'VIN:' + pv.vin, plate_old: ((pv.changes || []).find((c) => c.field === 'plate') || {}).from })).filter((x) => x.plate_old);
+  if (plChanged.length) await platesInsert(env, plChanged, user.id, 'csv-import');
   if (plateLog.length) await env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at)
     SELECT lower(hex(randomblob(16))), ?1, 'vehicle.upsert', json_extract(value,'$.id'), json_extract(value,'$.detail'), ?2 FROM json_each(?3)`).bind(user.id, nowIso(), JSON.stringify(plateLog)).run();
   return result;

@@ -348,3 +348,11 @@ Seit 24.10.2026 (Backlog 250): `POST /api/vehicles/:id/drivers` antwortet zusät
 Seit 25.10.2026 (Backlog 252): Eine Abfahrtskontrolle an einem zum Durchführungszeitpunkt (`performed_at`, auch offline nachgereicht) gesperrten Fahrzeug schreibt am Sperr-Vorgang einen Verlaufseintrag `checked_while_locked` (`payload`: `code: departure_check_while_locked`, `inspection_id`, `performed_at`, ggf. `km`); `updated_at` des Vorgangs bleibt unverändert.
 
 Seit 25.10.2026 (Backlog 253): Befund `WAITING_PARTS` nennt den Liefertermin der Werkstatt (`message_args.a.eta`); ist er überschritten, Vorlage `WAITING_PARTS_LATE` und Stufe `handeln`. `GET /api/workshop/plan` liefert begonnene Aufträge (in Reparatur/wartet auf Teile) mit vergangenem Termin additiv in `in_work` statt in `overdue`.
+
+Seit 25.10.2026 (Backlog 254): Befehl `correct_vehicle` (`POST /api/cases/:id/commands`, nur Inhaber/Fuhrparkleitung, `note` Pflicht, `payload.vehicle_id` = aktives Fahrzeug) hängt eine Meldung (Herkunft `meldung`, Status `gemeldet`, noch ohne Werkstatt, ohne Dubletten/Folgeaufträge/Versicherungsfall) an ein anderes Fahrzeug; Verlauf `payload`: `from`/`to` (Kennzeichen), `from_vehicle_id`/`to_vehicle_id`, `safety_lock`. Fehler `correct_vehicle_linked`, `correct_vehicle_claim`. Mit Sperre: Push „Fahrzeug gesperrt“ an das neue, „Sperre aufgehoben“ (bzw. „bleibt gesperrt“) an das bisherige Fahrzeug.
+
+Seit 25.10.2026 (Backlog 256, Migration 0082): `GET /api/vehicles` liefert je Fahrzeug `former_plates` (frühere Kennzeichen, neueste zuerst, höchstens 10), `GET /api/vehicles/:id` `former_plates` [{`plate`, `valid_until`}]; die Vorgangssuche (`q`) findet Vorgänge auch über frühere Kennzeichen des Fahrzeugs.
+
+Seit 25.10.2026 (Backlog 257b): Bußgelder (`POST /api/fines`, „Angaben ändern“) ordnen ein Kennzeichen, das heute kein Fahrzeug trägt, dem Fahrzeug zu, das es laut Kennzeichenverlauf zur Tatzeit eindeutig trug (`vehicle_matched: true`).
+
+Seit 25.10.2026 (Backlog 258): `PATCH /api/users/:id` liefert beim Ausscheiden einer Fuhrparkleitung (deaktiviert, Rolle/Umgebung gewechselt) additiv `fleet_handover` {`received_untriaged`, `notes`, `emergency`, `last_fleet`}; `GET /api/cases/:id` liefert der Leitung `received_by` {`name`, `current`}. Der Fuhrparkagent wertet einen Eingang durch ein deaktiviertes Konto bzw. eine Person ohne Leitungsrolle als nicht bestätigt.

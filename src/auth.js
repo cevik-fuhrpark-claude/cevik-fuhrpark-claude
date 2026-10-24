@@ -676,9 +676,21 @@ export async function updateUser(env, actor, userId, body) {
       .bind(userId, oldSite, target.environment, deact ? 1 : 0).first();
     driverFile = h && h.df ? JSON.parse(h.df) : null; orphaned = (h && h.orphan) || 0;
   }
+  // Leitungswechsel (Backlog 258d, nur Anzeige): scheidet eine Fuhrparkleitung aus bzw. wechselt Rolle/Umgebung – was hängt noch an ihr?
+  // Meldungen mit ihrem Eingang, die nie bewertet wurden; von ihr angelegte aktive Fahrzeughinweise/Notfallnummern (oft ihre Handynummer);
+  // letzte aktive Fuhrparkleitung dieser Umgebung (Meldungen gehen dann nur noch an den Inhaber) – eine Abfrage
+  let handover = null;
+  if (target.role === 'fleet' && (deact || role !== 'fleet' || environment !== target.environment)) {
+    const h = await env.DB.prepare(`SELECT
+        (SELECT COUNT(*) FROM cases WHERE environment=?2 AND status='gemeldet' AND fleet_received_by=?1) AS received_untriaged,
+        (SELECT COUNT(*) FROM vehicle_notes WHERE created_by=?1 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?3)) AS notes,
+        (SELECT COUNT(*) FROM emergency_contacts WHERE created_by=?1 AND environment=?2 AND archived_at IS NULL) AS emergency,
+        NOT EXISTS (SELECT 1 FROM users WHERE id<>?1 AND role='fleet' AND active=1 AND environment=?2) AS last_fleet`).bind(userId, target.environment, berlinDate()).first();
+    if (h && (h.received_untriaged || h.notes || h.emergency || h.last_fleet)) handover = { received_untriaged: h.received_untriaged, notes: h.notes, emergency: h.emergency, last_fleet: !!h.last_fleet };
+  }
   return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active || siteChanged,
     ...(driverFile ? { driver_file_active: driverFile } : {}), ...(orphaned ? { workshop_orphaned_cases: orphaned, workshop_site: oldSite } : {}), ...(invitesVoided ? { invites_voided: invitesVoided } : {}),
-    ...(endedAssign.length ? { ended_assignments: [...new Set(endedAssign.map((a) => a.plate || a.vehicle_id))] } : {}) };
+    ...(endedAssign.length ? { ended_assignments: [...new Set(endedAssign.map((a) => a.plate || a.vehicle_id))] } : {}), ...(handover ? { fleet_handover: handover } : {}) };
 }
 
 export async function resetInvite(env, actor, userId) {

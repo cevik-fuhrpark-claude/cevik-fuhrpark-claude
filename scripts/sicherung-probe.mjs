@@ -27,7 +27,11 @@ export function restoreInto(db, backup, opts = {}) {
   const newerMigs = [...bkMigs].filter((m) => m && !dbMigs.includes(m));
   if (newerMigs.length) report.push({ table: '_migrations', expected: bkMigs.size, restored: dbMigs.length, ok: false, error: `Sicherung ist neuer als dieser Programmstand (${newerMigs.join(', ')}) – Repo aktualisieren (git pull)` });
   const exactSchema = sameSchema && !newerMigs.length;
+  // Tabelle aus einer Migration, die die Sicherung noch nicht kennt (ältere Sicherung, z. B. vor 0082 `vehicle_plates`): nicht „fehlt“, nur Hinweis
+  const newTables = new Map();
+  for (const m of opts.migrations || []) if (!bkMigs.has(m.id)) for (const st of m.statements || []) { const x = /CREATE TABLE IF NOT EXISTS (\w+)/.exec(st); if (x) newTables.set(x[1], m.id); }
   for (const table of opts.required || []) {
+    if (!Object.prototype.hasOwnProperty.call(backup.data, table) && newTables.has(table)) { warnings.push(`${table}: in der Sicherung noch nicht vorhanden (ältere Sicherung vor ${newTables.get(table)}) – bleibt leer`); continue; }
     if (!Object.prototype.hasOwnProperty.call(backup.data, table)) report.push({ table, expected: counts[table] ?? null, restored: 0, ok: false, error: 'fehlt in Sicherung' });
   }
   db.exec('PRAGMA foreign_keys = OFF');
@@ -90,7 +94,7 @@ export async function probeBackup(backup, opts = {}) {
     if (!bk.has(m.id)) break;
     db.exec('BEGIN'); try { for (const st of m.statements) db.exec(st); db.prepare('INSERT INTO _migrations(id, applied_at) VALUES (?, ?)').run(m.id, now); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
   }
-  const r = restoreInto(db, backup, opts);
+  const r = restoreInto(db, backup, { migrations: MIGRATIONS, ...opts });
   const before = db.prepare('SELECT COUNT(*) AS n FROM _migrations').get().n;
   await ensureSchema(env);
   const applied = Number(db.prepare('SELECT COUNT(*) AS n FROM _migrations').get().n) - Number(before);

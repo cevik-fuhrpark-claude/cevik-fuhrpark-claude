@@ -436,6 +436,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     // wie Einzelerfassung/„erledigt“: keine Durchführung in der Zukunft (sonst verdeckte eine erfundene Folgefrist einen fälligen Termin, 17.10.2026)
     if (last.date && last.date > berlinDate()) return skip('Letzte Prüfung liegt in der Zukunft');
     if (matchedBy === 'Kennzeichen' && platePassedOn(offOf.plates, v, last.date)) return skip(PLATE_PASSED_ON_SKIP);
+    if (matchedBy === 'Kennzeichen' && plateFormerOther(offOf.former, v, last.date)) return skip(PLATE_FORMER_SKIP);
     let interval = null;
     const husp = kind === 'HU' || kind === 'SP';
     const ir = husp ? '' : get(cells, ci.interval); // HU/SP: Intervall spielt keine Rolle (Zeile mit „12 Monate“ fiel sonst weg, 18.10.2026)
@@ -648,9 +649,14 @@ const INACTIVE_SKIP = 'Fahrzeug außer Betrieb – nicht übernommen';
 // (vorher: HU vom 15.09. des verkauften Lkw am Nachfolger → dessen fällige HU nirgends gemeldet). Ohne Datum oder nach der Anlage: Nachfolger.
 export const PLATE_PASSED_ON_SKIP = 'Kennzeichen auch an außer Betrieb genommenem Fahrzeug, Datum vor Anlage dieses Fahrzeugs – bitte FIN angeben';
 export const platePassedOn = (offPlates, v, day) => !!(day && v && v.created_at && offPlates.has(normPlate(v.plate)) && day < berlinDate(v.created_at));
+// Kennzeichenwechsel (Backlog 257a, Migration 0082): Zeile nur mit Kennzeichen, datiert vor dem Wechsel, während das Kennzeichen damals einem
+// ANDEREN Fahrzeug gehörte (umgekennzeichneter Lkw, Neuzugang trägt das alte Kennzeichen) → FIN verlangen (wie Backlog 188)
+export const PLATE_FORMER_SKIP = 'Kennzeichen gehörte zu diesem Datum einem anderen Fahrzeug (Kennzeichenwechsel) – bitte FIN angeben';
+export const plateFormerOther = (former, v, day) => !!(day && v && (former || []).some((r) => r.vehicle_id !== v.id && normPlate(r.plate) === normPlate(v.plate) && day < berlinDate(r.valid_until)));
+export async function formerPlatesAll(env) { return (await env.DB.prepare('SELECT vehicle_id, plate, valid_until FROM vehicle_plates').all()).results; }
 async function inactiveIndex(env) {
-  const rows = (await env.DB.prepare('SELECT id, plate FROM vehicles WHERE active=0').all()).results;
-  return { vins: new Set(rows.filter((r) => String(r.id).startsWith('VIN:')).map((r) => r.id.slice(4))), plates: new Set(rows.map((r) => normPlate(r.plate))) };
+  const [rows, former] = await Promise.all([env.DB.prepare('SELECT id, plate FROM vehicles WHERE active=0').all(), formerPlatesAll(env)]);
+  return { vins: new Set(rows.results.filter((r) => String(r.id).startsWith('VIN:')).map((r) => r.id.slice(4))), plates: new Set(rows.results.map((r) => normPlate(r.plate))), former };
 }
 function plateIndex(vehicles) {
   const byPlate = new Map(); const evalOnly = new Map();

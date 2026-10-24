@@ -154,7 +154,9 @@ export async function claimOverview(env, user, envName, query = {}) {
       (SELECT COALESCE(SUM(ROUND(e.amount_net*100 + 1e-6)/100.0),0) FROM external_costs e WHERE e.case_id=c.id AND e.valuation='actual' AND e.amount_net IS NOT NULL) AS ext_net,
       (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND (e.amount_net IS NULL OR e.valuation<>'actual')) AS ext_not_actual,
       (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND e.covers_work_and_parts=1) AS covered,
-      (SELECT COUNT(*) FROM work_entries w WHERE w.case_id=c.id) + (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id) + (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id) AS items
+      (SELECT COUNT(*) FROM work_entries w WHERE w.case_id=c.id) + (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id) + (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id) AS items,
+      -- frühere Kennzeichen des Fahrzeugs (Backlog 257c): Suche über das alte Kennzeichen (Gutachten/Versicherer nennen es oft)
+      (SELECT group_concat(vp.plate, '|') FROM vehicle_plates vp WHERE vp.vehicle_id=ic.vehicle_id) AS fp_search
     FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id WHERE ic.environment=? ORDER BY ic.reported_on DESC`).bind(envName).all()).results;
   const today = berlinDate();
   const r2 = roundCents; // je Position auf Cent wie die Vorgangsbewertung (18.10.2026)
@@ -167,11 +169,11 @@ export async function claimOverview(env, user, envName, query = {}) {
     // ohne jede Kostenposition: „–“ statt 0 € (wie die Vorgangsansicht; vorher Saldo = −Erstattung, 17.10.2026)
     const complete = r.items > 0 && workNet !== null && (r.covered ? r.ext_not_actual === 0 : r.not_actual === 0);
     const cost = complete ? r2(workNet + (r.covered ? 0 : r.parts_net) + r.ext_net) : null;
-    const { hours, not_actual, ext_not_actual, parts_net, ext_net, covered, items, vehicle_excluded, ...rest } = r;
+    const { hours, not_actual, ext_not_actual, parts_net, ext_net, covered, items, vehicle_excluded, fp_search, ...rest } = r;
     const sh = shape(rest, today);
     // ruhende Fahrzeuge (Entscheidung 10.10.2026: aus allen Bewertungen ausgenommen) bleiben sichtbar, aber ohne Nachfass-Hinweis und außerhalb der Summe – wie Agent und Kostenbericht (18.10.2026)
     const excluded = !!vehicle_excluded;
-    return { ...sh, eval_excluded: excluded, followup_due: !excluded && followupDays !== null && sh.open && sh.days_open >= followupDays, case_cost_net: cost, cost_incomplete: items > 0 && !complete, balance_net: cost !== null && r.reimbursed_net !== null ? r2(cost - r.reimbursed_net) : null };
+    return { fp_search, ...sh, eval_excluded: excluded, followup_due: !excluded && followupDays !== null && sh.open && sh.days_open >= followupDays, case_cost_net: cost, cost_incomplete: items > 0 && !complete, balance_net: cost !== null && r.reimbursed_net !== null ? r2(cost - r.reimbursed_net) : null };
   });
   const counts = { offen: 0, gutachten: 0, alle: list.length }; for (const s of CLAIM_STATUS) counts[s] = 0;
   for (const c of list) { counts[c.status]++; if (c.open) counts.offen++; if (c.appraisal_pending) counts.gutachten++; }
@@ -184,8 +186,9 @@ export async function claimOverview(env, user, envName, query = {}) {
     const low = q.toLowerCase();
     const pk = normPlate(q);
     list = list.filter((c) => [c.case_no, c.insurer, c.claim_no, c.opponent_insurer, c.opponent_claim_no, c.appraiser, c.police_station, c.police_ref].some((x) => x && String(x).toLowerCase().includes(low))
-      || [c.plate, c.opponent_plate].some((x) => x && (String(x).toLowerCase().includes(low) || (pk && normPlate(x).includes(pk)))));
+      || [c.plate, c.opponent_plate, ...(c.fp_search ? String(c.fp_search).split('|') : [])].some((x) => x && (String(x).toLowerCase().includes(low) || (pk && normPlate(x).includes(pk)))));
   }
+  for (const c of list) delete c.fp_search;
   const reimb = list.filter((c) => c.reimbursed_net !== null && !c.eval_excluded);
   const reimbX = list.filter((c) => c.reimbursed_net !== null && c.eval_excluded);
   const sum = (a) => (a.length ? r2(a.reduce((s, c) => s + c.reimbursed_net, 0)) : null);

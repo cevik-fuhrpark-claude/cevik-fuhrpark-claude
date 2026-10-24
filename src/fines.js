@@ -33,6 +33,19 @@ function trailerOf(vehicles, plate) {
   return hits.length === 1 ? hits[0] : null;
 }
 
+// Kennzeichen laut Schreiben ist ein früheres Kennzeichen (Umkennzeichnung, Backlog 257b, Migration 0082): genau ein Fahrzeug trug es bis nach
+// der Tatzeit (Zeitpunkt der Änderung in der App) und heute trägt es keines → dieses Fahrzeug; sonst null (manuelle Klärung wie bisher)
+function formerPick(list, plate, offenseAt) {
+  const k = normPlate(plate); if (!k || !offenseAt) return null;
+  const rows = list.filter((r) => r.valid_until > offenseAt && normPlate(r.plate) === k);
+  const ids = [...new Set(rows.map((r) => r.vehicle_id))];
+  return ids.length === 1 ? { vehicle_id: ids[0], until: rows.filter((r) => r.vehicle_id === ids[0]).map((r) => r.valid_until).sort()[0] } : null;
+}
+async function formerPlateVehicle(env, plate, offenseAt) {
+  if (!normPlate(plate) || !offenseAt) return null;
+  return formerPick((await env.DB.prepare('SELECT vehicle_id, plate, valid_until FROM vehicle_plates WHERE valid_until > ?').bind(offenseAt).all()).results, plate, offenseAt);
+}
+
 export async function listFines(env, user, envName, query) {
   return (await listFinesSel(env, user, envName, query)).rows;
 }
@@ -181,7 +194,9 @@ export async function createFine(env, user, envName, body) {
   // (Fahrerermittlung über ein falsches Fahrzeug wäre schlimmer als eine manuelle Klärung). Außer Betrieb genommene zählen mit: das Schreiben
   // kommt oft Wochen nach der Tat, wenn das Fahrzeug schon verkauft ist (vorher kein Fahrzeug, kein Fahrer – 17.10.2026)
   const pick = pickVehicleByPlate((await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles').all()).results, plate);
-  const veh = pick.vehicle;
+  // kein Fahrzeug trägt das Kennzeichen (mehr): zur Tatzeit eindeutig früheres Kennzeichen eines Fahrzeugs (Backlog 257b) → dieses Fahrzeug
+  const former = !pick.vehicle && !pick.ambiguous ? await formerPlateVehicle(env, plate, offenseAt) : null;
+  const veh = pick.vehicle || (former ? { id: former.vehicle_id } : null);
   const reference = str(body.reference, { max: 80, field: 'Aktenzeichen' });
   const authority = str(body.authority, { required: true, max: 200, field: 'Behörde' });
   // Idempotenzschlüssel je Formular: Doppelklick/Netzwiederholung ergibt denselben Vorgang statt eines zweiten (18.10.2026) –
@@ -353,7 +368,8 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
           if (np !== f.plate_in_letter || !f.vehicle_id) {
             if (f.driver_confirmed_at) throw conflict('driver_confirmed', 'Fahrer bereits ermittelt – Kennzeichen nur vor der Fahrerermittlung änderbar.');
             const pk = pickVehicleByPlate((await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles').all()).results, np);
-            set.plate_in_letter = np; set.vehicle_id = pk.vehicle ? pk.vehicle.id : null;
+            const fo = !pk.vehicle && !pk.ambiguous ? await formerPlateVehicle(env, np, set.offense_at || f.offense_at) : null; // Backlog 257b
+            set.plate_in_letter = np; set.vehicle_id = pk.vehicle ? pk.vehicle.id : fo ? fo.vehicle_id : null;
             if (pk.ambiguous) plateAmbiguous = true;
           }
         }
@@ -486,7 +502,10 @@ export async function fineFindings(env, environment, settings = null) {
   const rows = (await env.DB.prepare(`SELECT f.*, v.plate FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id WHERE f.environment=? AND f.status IN ('eingegangen','fahrer_ermittelt','fahrer_informiert')`).bind(environment).all()).results;
   const today = berlinDate();
   const out = [];
-  const vehs = rows.some((f) => !f.vehicle_id) ? (await env.DB.prepare('SELECT id, plate, active, eval_excluded, trailer_plate FROM vehicles').all()).results : [];
+  // frühere Kennzeichen in derselben Abfrage (Abfragebudget des Agenten; Backlog 257b)
+  const vehs = rows.some((f) => !f.vehicle_id) ? (await env.DB.prepare(`SELECT id, plate, active, eval_excluded, trailer_plate,
+    (SELECT json_group_array(json_object('plate', p.plate, 'valid_until', p.valid_until)) FROM vehicle_plates p WHERE p.vehicle_id=vehicles.id) AS fp FROM vehicles`).all()).results : [];
+  const vplates = vehs.flatMap((v) => { try { return JSON.parse(v.fp || '[]').map((x) => ({ vehicle_id: v.id, ...x })); } catch { return []; } });
   for (const f of rows) {
     const label = `${f.fine_no} (${f.plate || f.plate_in_letter}, ${f.authority})`;
     if (f.response_due) {
@@ -495,7 +514,7 @@ export async function fineFindings(env, environment, settings = null) {
       else if (warnDays !== null && days <= warnDays) out.push({ code: 'FINE_DUE_SOON', f, severity: 'hinweis', requires_decision: 0, ...fm(days === 0 ? 'FINE_DUE_TODAY' : 'FINE_DUE_SOON', { label, due: f.response_due, days }), next_action: f.status === 'eingegangen' ? 'Fahrer ermitteln und Schreiben beantworten.' : 'Schreiben fristgerecht beantworten.' });
     }
     if (!f.vehicle_id && pickVehicleByPlate(vehs, f.plate_in_letter).ambiguous) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_AMBIGUOUS', { label, plate: f.plate_in_letter }), next_action: 'Fahrzeugstamm prüfen: Kennzeichen steht an mehreren aktiven Fahrzeugen (Datenqualität).' });
-    else if (!f.vehicle_id && pickVehicleByPlate(vehs, f.plate_in_letter).vehicle) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_MATCHABLE', { label, plate: f.plate_in_letter }), next_action: 'Bußgeld öffnen, unter „Angaben ändern“ speichern – das Fahrzeug wird übernommen.' });
+    else if (!f.vehicle_id && (pickVehicleByPlate(vehs, f.plate_in_letter).vehicle || formerPick(vplates, f.plate_in_letter, f.offense_at))) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_MATCHABLE', { label, plate: f.plate_in_letter }), next_action: 'Bußgeld öffnen, unter „Angaben ändern“ speichern – das Fahrzeug wird übernommen.' });
     else if (!f.vehicle_id && trailerOf(vehs, f.plate_in_letter)) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_TRAILER', { label, plate: f.plate_in_letter, truck: trailerOf(vehs, f.plate_in_letter).plate }), next_action: 'Anhänger im Fahrzeugstamm anlegen, danach im Bußgeld unter „Angaben ändern“ speichern.' });
     else if (!f.vehicle_id) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_UNKNOWN', { label, plate: f.plate_in_letter }), next_action: 'Kennzeichen prüfen (Fremd-/Mietfahrzeug?).' });
     else if (f.status === 'eingegangen') out.push({ code: 'FINE_DRIVER_OPEN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_DRIVER_OPEN', { label }), next_action: 'Fahrer anhand Zuordnung/Tourenplan/Telematik bestätigen.' });

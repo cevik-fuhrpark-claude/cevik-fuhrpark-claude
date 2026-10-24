@@ -9,7 +9,7 @@ import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin, isCalendarDate, normPlate } from './util.js';
 import { siteSelection, siteKey } from './reports.js';
 import { audit } from './auth.js';
-import { PLATE_PASSED_ON_SKIP, platePassedOn } from './maintenance.js';
+import { PLATE_PASSED_ON_SKIP, platePassedOn, PLATE_FORMER_SKIP, plateFormerOther, formerPlatesAll } from './maintenance.js';
 import { SETTING_DEFAULTS } from './settings.js';
 
 export const TACHO_RULE = { card_days: 28, vu_days: 90, source: 'FPersV § 2 Abs. 5' };
@@ -315,6 +315,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   const allVehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind, eval_excluded, active, created_at FROM vehicles`).all()).results;
   const vehicles = allVehicles.filter((v) => v.active);
   const offPlates = new Set(allVehicles.filter((v) => !v.active).map((v) => normPlate(v.plate)));
+  const formerPl = await formerPlatesAll(env); // Kennzeichenwechsel (Backlog 257a)
   const existingRows = (await env.DB.prepare(`SELECT COALESCE(driver_id, vehicle_id) || '|' || downloaded_on AS k, evidence, cancelled_at FROM tacho_downloads WHERE environment=?`).bind(envName).all()).results;
   const existing = new Set(existingRows.filter((r) => !r.cancelled_at).map((r) => r.k));
   // stornierte Auslesung (z. B. falscher Fahrer/Tag): derselbe Export (gleicher Nachweis) erneut importiert bringt sie nicht still zurück;
@@ -369,6 +370,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
       target = vin ? byVin.get(vin) : pk ? (byPlate.get(pk) || byPlateOff.get(pk)) : undefined;
       if (target === 'mehrdeutig') return skip(`Kennzeichen nicht eindeutig: ${get(cells, ci.plate)}`);
       if (!vin && target && target.active && platePassedOn(offPlates, target, day)) return skip(PLATE_PASSED_ON_SKIP);
+      if (!vin && target && target !== 'mehrdeutig' && plateFormerOther(formerPl, target, day)) return skip(PLATE_FORMER_SKIP);
       if (!target) return skip(`Fahrzeug nicht gefunden: ${get(cells, ci.vin) || get(cells, ci.plate) || '–'}`);
       if (target.kind === 'anhaenger') return skip(`Anhänger ohne Fahrtenschreiber: ${target.plate}`);
       label = target.plate;
