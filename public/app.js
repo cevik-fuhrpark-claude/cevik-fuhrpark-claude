@@ -4964,6 +4964,7 @@ const USER_FILTERS = ['all', 'active', 'inactive', 'invite', 'locked', 'unused',
 function userUpdateHints(r) {
   const h = [];
   if (r && r.driver_file_active) h.push(t('ue_driver_file_active').replace('{name}', r.driver_file_active.name));
+  if (r && r.ended_assignments && r.ended_assignments.length) h.push(t('ue_assign_ended').replace('{plates}', r.ended_assignments.join(', '))); // Backlog 248
   if (r && r.invites_voided) h.push(tn('ue_invites_voided', r.invites_voided)); // Backlog 193: Einladungen des deaktivierten Kontos entwertet
   if (r && r.workshop_orphaned_cases) h.push(tn('ue_ws_orphaned', r.workshop_orphaned_cases).replace('{site}', wsName(r.workshop_site)));
   return h;

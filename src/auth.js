@@ -632,7 +632,14 @@ export async function updateUser(env, actor, userId, body) {
   if (role !== target.role || environment !== target.environment || siteChanged) stmts.push(env.DB.prepare('UPDATE notifications SET hidden_at=? WHERE user_id=? AND hidden_at IS NULL').bind(now, userId));
   // … sowie laufende Fahrzeugzuordnungen beenden (Verlauf bleibt): sonst galt das Konto in der neuen Umgebung als „zugeordnet“ (Fahrzeugakte,
   // Hinweise, Reifendaten), ein deaktiviertes Konto blieb Fahrer des Fahrzeugs; Fahrerakte der alten Umgebung gibt das Konto frei (17.10.2026)
-  if (role !== target.role || environment !== target.environment || !active) stmts.push(env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, userId, now));
+  // Backlog 248 (Blickwinkel „Fahrer verlässt das Unternehmen“): beendete Zuordnungen vorher lesen – Ende steht dann auch im Protokoll des
+  // Fahrzeugs (wie beim Fahrzeugwechsel) und die Oberfläche nennt die Fahrzeuge, die jetzt ohne Fahrer sind
+  let endedAssign = [];
+  if (role !== target.role || environment !== target.environment || !active) {
+    endedAssign = (await env.DB.prepare(`SELECT dv.id, dv.vehicle_id, v.plate FROM driver_vehicles dv LEFT JOIN vehicles v ON v.id=dv.vehicle_id
+      WHERE dv.user_id=? AND (dv.valid_to IS NULL OR dv.valid_to > ?) ORDER BY v.plate`).bind(userId, now).all()).results;
+    stmts.push(env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, userId, now));
+  }
   if (role !== target.role || environment !== target.environment) stmts.push(env.DB.prepare(`UPDATE drivers SET user_id=NULL, updated_at=? WHERE user_id=? AND (environment<>? OR ?<>'driver')`).bind(now, userId, environment, role));
   if (!active) stmts.push(env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(userId));
   // offene Einladungs-/Zurücksetzen-Links entwerten: bei Deaktivierung immer (galt nach Reaktivierung wieder), bei Rollen-/Umgebungswechsel
@@ -656,6 +663,7 @@ export async function updateUser(env, actor, userId, body) {
   const changed = {};
   for (const [k, a, b] of [['role', target.role, role], ['environment', target.environment, environment], ['active', !!target.active, !!active], ['display_name', target.display_name, display], ['workshop_site', target.workshop_site || null, site || null]]) if (a !== b) changed[k] = { from: a, to: b };
   await audit(env, actor.id, 'user.update', userId, { role, environment, active: !!active, ...(Object.keys(changed).length ? { changed } : {}) });
+  for (const a of endedAssign) await audit(env, actor.id, 'vehicle.end_assignment', a.vehicle_id, { driver: userId, assignment: a.id, ...(!active ? { account_deactivated: true } : { account_changed: true }) });
   // Hinweise beim Ausscheiden/Versetzen (22.10.2026, nur Anzeige): verknüpfte Fahrerakte bleibt aktiv (Agent meldet weiter ablaufende Nachweise);
   // letzter Werkstatt-Zugang eines Standorts mit offenen Aufträgen – eine Abfrage
   const deact = !!target.active && !active;
@@ -669,7 +677,8 @@ export async function updateUser(env, actor, userId, body) {
     driverFile = h && h.df ? JSON.parse(h.df) : null; orphaned = (h && h.orphan) || 0;
   }
   return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active || siteChanged,
-    ...(driverFile ? { driver_file_active: driverFile } : {}), ...(orphaned ? { workshop_orphaned_cases: orphaned, workshop_site: oldSite } : {}), ...(invitesVoided ? { invites_voided: invitesVoided } : {}) };
+    ...(driverFile ? { driver_file_active: driverFile } : {}), ...(orphaned ? { workshop_orphaned_cases: orphaned, workshop_site: oldSite } : {}), ...(invitesVoided ? { invites_voided: invitesVoided } : {}),
+    ...(endedAssign.length ? { ended_assignments: [...new Set(endedAssign.map((a) => a.plate || a.vehicle_id))] } : {}) };
 }
 
 export async function resetInvite(env, actor, userId) {

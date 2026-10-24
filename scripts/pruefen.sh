@@ -86,6 +86,7 @@ UI-Werkstatt-Tablet in der Halle (Kontrolle nach Reparatur als Entwurf, Arbeitsz
 UI-Aktionsformular nach Netzabbruch (Entwurf je Vorgang, keine Doppelbuchung)|ui-aktionsentwurf.py|/tmp/cfp-aktionsentwurf.log
 UI-Jahresabschluss (Erfassungstag je Kostenposition, Rückfrage rückwirkende Vertragsrate/Arbeitsdatum im Vormonat, „nachträglich erfasst“)|ui-jahresabschluss.py|/tmp/cfp-jahresabschluss.log
 UI-Fahrerakte ausgeschieden (Hinweis Konto aktiv) und Wiedereinstellung (Rückfrage alte Akte)|ui-fahrer-ausgeschieden.py|/tmp/cfp-fahrer-ausgeschieden.log
+UI-Benutzer deaktivieren nennt beendete Fahrzeugzuordnungen|ui-austritt-zuordnung.py|/tmp/cfp-austritt-zuordnung.log
 UI-Ausdruck aus der Testumgebung erkennbar, kompakte Druckliste|ui-druck-testumgebung.py|/tmp/cfp-druck-test.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log

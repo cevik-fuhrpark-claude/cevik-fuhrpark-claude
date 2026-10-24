@@ -19964,6 +19964,34 @@ await test('Backlog 247 (Blickwinkel „Steuerberatung mit Lesezugriff“): Einz
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cost_items_csv_hint.includes(must[l]), l + ': Hinweis Einschränkung');
 });
 
+await test('Backlog 248 (Blickwinkel „Fahrer verlässt das Unternehmen“): Deaktivieren beendet die Zuordnungen mit Eintrag im Protokoll jedes Fahrzeugs und nennt die Fahrzeuge; Rollenwechsel ebenso; ohne Zuordnung kein Zusatz', async () => {
+  const { e, U, V1 } = await freshWorld(); const V2 = 'VIN:WDB9630051L917317'; const db = e.DB.db;
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${V2}/drivers`, { user_id: U.driver.id })).status, 201);
+  const plates = db.prepare(`SELECT plate FROM vehicles WHERE id IN (?, ?) ORDER BY plate`).all(V1, V2).map((r) => r.plate);
+  const r = await U.own.patch(`/api/users/${U.driver.id}`, { active: false });
+  eq(r.status, 200); eq(JSON.stringify(r.data.ended_assignments), JSON.stringify(plates), 'Fahrzeuge ohne Fahrer');
+  for (const v of [V1, V2]) {
+    const ends = db.prepare(`SELECT actor_id, detail FROM audit_log WHERE action='vehicle.end_assignment' AND target=?`).all(v);
+    eq(ends.length, 1, v); const d = JSON.parse(ends[0].detail); eq(d.driver, U.driver.id); eq(d.account_deactivated, true); eq(ends[0].actor_id, db.prepare(`SELECT id FROM users WHERE role='owner' AND active=1 ORDER BY created_at LIMIT 1`).get().id);
+  }
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM driver_vehicles WHERE user_id=? AND valid_to IS NULL`).get(U.driver.id).n, 0, 'Zuordnungen beendet');
+  // erneutes Speichern ohne Änderung / Reaktivieren: keine weiteren Einträge, kein Zusatz
+  const r2 = await U.own.patch(`/api/users/${U.driver.id}`, { active: true }); eq(r2.status, 200); eq(r2.data.ended_assignments, undefined);
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action='vehicle.end_assignment'`).get().n, 2);
+  // Rollenwechsel mit Zuordnung
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id })).status, 201);
+  const r3 = await U.own.patch(`/api/users/${U.driver.id}`, { role: 'viewer' }); eq(r3.status, 200); eq(JSON.stringify(r3.data.ended_assignments), JSON.stringify([db.prepare('SELECT plate FROM vehicles WHERE id=?').get(V1).plate]));
+  const last = JSON.parse(db.prepare(`SELECT detail FROM audit_log WHERE action='vehicle.end_assignment' ORDER BY rowid DESC LIMIT 1`).get().detail); eq(last.account_changed, true);
+  // Oberfläche: Hinweis in drei Sprachen, Protokoll-Beschriftungen
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (r && r.ended_assignments && r.ended_assignments.length) h.push(t('ue_assign_ended')"), 'Hinweis nach dem Speichern');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_assign_ended && STRINGS[l].ue_assign_ended.includes('{plates}'), l);
+  const i18n = fs0().readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(i18n.includes("account_deactivated: ['durch Deaktivierung des Kontos'") && i18n.includes("account_changed: ['durch Rollen-/Umgebungswechsel des Kontos'"), 'Protokoll-Beschriftungen');
+});
+
 await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „kritisch“/„gesperrte Vorgänge“ der Startseite führen zur passenden Vorgangsliste (Filter priority/locked, gleiche Anzahl), ungültige Priorität 400', async () => {
   const vin = 'WDB96340310823801';
   eq((await owner.post('/api/vehicles', { plate: 'UR-LA 1', vin, site: 'Dortmund' })).status, 201);
