@@ -1,7 +1,8 @@
 # [CLAUDE] UI-Test (Backlog 210, Teilagent „Versicherungsschaden mit Gutachter“): Versicherungsfall mit geplanter Besichtigung –
 # Vorgangsansicht zeigt den Abschnitt „Gutachter“ mit „Gutachten ausstehend“, Formular hat die vier Felder, Liste „Versicherungsfälle“
 # (24.10.2026, Backlog 218 ergänzt: Abschnitt „Unfallgegner“ mit Kennzeichen/Versicherer/Schadennummer und Kennzeichnung in der Liste;
-#  Backlog 220: Abschnitt „Polizeiliche Anzeige“ beim zweiten Fall, Kennzeichnung in der Liste, Suche nach dem Aktenzeichen)
+#  Backlog 220: Abschnitt „Polizeiliche Anzeige“ beim zweiten Fall, Kennzeichnung in der Liste, Suche nach dem Aktenzeichen;
+#  Backlog 221: Diebstahlsmeldung ohne Aktenzeichen zeigt Hinweis im Versicherungsfall)
 # hat den Filter „Gutachten ausstehend“, Zeitleiste der Fahrzeugakte zeigt Besichtigung und Gutachten-Eingang. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
 import os, datetime
 from playwright.sync_api import sync_playwright
@@ -39,6 +40,10 @@ with sync_playwright() as p:
     CP={'de':('Polizeiliche Anzeige','Anzeige erfasst'),'uk':('Заява до поліції','Заяву внесено'),'en':('Police report','Police report recorded')}
     r4=api('PUT',f'/api/cases/{c2}/claim',{'police_station':'Autobahnpolizei Muster','police_ref':'ST/0815/26','police_reported_on':d(-2)})
     check(r4['s']==200,f'Anzeige eingetragen ({r4["s"]} {r4["d"]})')
+    # Backlog 221: Diebstahlsmeldung mit Versicherungsfall ohne Aktenzeichen → Hinweis im Versicherungsfall
+    VID3='VIN:WDB96340310778803'; api('POST','/api/vehicles',{'plate':'GA-UI 3','vin':'WDB96340310778803','kind':'lkw'})
+    c3=api('POST','/api/cases',{'vehicle_id':VID3,'description':'Diesel am Rastplatz abgezapft, Tankdeckel aufgebrochen','priority':'mittel','driveability':'fahrbereit','request_key':'ga-ui-3'})['d']['id']
+    check(api('PUT',f'/api/cases/{c3}/claim',{'insurer':'Vers AG','reported_on':d(-1),'evidence':'Meldung Fahrer'})['s']==200,'Diebstahls-Versicherungsfall')
     for lang in ['de','uk','en']:
       api('PATCH','/api/me',{'language':lang})
       for w,h in [(390,844),(820,1180),(1366,900)]:
@@ -62,6 +67,11 @@ with sync_playwright() as p:
         if SHOTS and w==390:
             q.locator('#clf').evaluate('f=>f.closest("details").open=true'); q.locator('[name="police_station"]').scroll_into_view_if_needed()
             q.screenshot(path=f'{SHOTS}/anzeige_fall_{lang}_{w}.png',full_page=True)
+        check(q.locator('#cptheft').count()==0,f'{lang} {w}px: kein Diebstahlshinweis beim Unfall')
+        q.goto(B+f'/#/cases/{c3}'); q.wait_for_function('()=>document.body.innerText.includes("abgezapft")',timeout=15000)
+        check(q.locator('#cptheft').count()==1 and CP[lang][0] in q.locator('#cptheft').inner_text(),f'{lang} {w}px: Diebstahlsmeldung ohne Aktenzeichen zeigt Hinweis')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Diebstahlsfall ohne Querscrollen')
+        if SHOTS and w==390: q.locator('#cptheft').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/anzeige_hinweis_{lang}_{w}.png')
         q.goto(B+'/#/claims'); q.wait_for_selector('[data-clf="alle"]')
         q.locator('[data-clf="alle"]').click(); q.wait_for_timeout(400)
         check(q.inner_text('body').count(CO[lang][1])==1,f'{lang} {w}px: Liste kennzeichnet genau einen Haftpflichtfall')

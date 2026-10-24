@@ -1463,6 +1463,8 @@ const noVehiclesNote = () => `<div class="panel" role="note" data-novehicles><p>
 const tachoPanel = () => `<div id="tacho" class="panel" hidden role="status"><b>${esc(t('tacho_hint_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('tacho_hint_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
 // Beschreibung nennt Fahrtenschreiber/Fahrerkarte: Pflichten laut VO (EU) 165/2014 Art. 29/35/37 (Vermerk, Reparatur, Ersatzkarte) –
 // reine Information, keine Frist im System (Backlog 212, 23.10.2026; auch Mängel der Abfahrtskontrolle, Backlog 216; „Tachometer“ ist kein Fahrtenschreiber)
+// Diebstahl/Einbruch in der Beschreibung (Meldeformular, Backlog 214; Versicherungsfall-Hinweis, Backlog 221)
+const THEFT_HINT = /diebstahl|\bdieb|gestohlen|geklaut|entwendet|abgezapft|(?<![a-zäöüß])einbruch|aufgebrochen|theft|stolen|\bsteal|break-in|broken into|burglar|крадіж|в(?:и)?крал|в(?:и)?крад|украл|украд/i;
 const TACHO_HINT = /fahrtenschreiber|tachogra(?:ph|f)|kontrollger(?:ä|ae|a)t|fahrerkarte|driver ?card|tacho(?!meter)|тахограф|картк\S* водія/i;
 async function viewNew(preId) {
   if (!mayReport()) { render(`<h1>${esc(t('report_damage'))}</h1><p class="muted">${esc(t('no_permission_view'))}</p>`, 'new'); return; }
@@ -1500,7 +1502,6 @@ async function viewNew(preId) {
   const ACC = /unfall|accident|дтп|авар/i;
   // Beschreibung nennt Diebstahl/Einbruch: Polizei, Spuren, Liste des Fehlenden, Fuhrparkleitung (Backlog 214, 23.10.2026) – reine Information,
   // keine Frist; „Leistungseinbruch“ und ukr. „вкрай“/„зламано“ (kaputt) lösen nichts aus
-  const THEFT_HINT = /diebstahl|\bdieb|gestohlen|geklaut|entwendet|abgezapft|(?<![a-zäöüß])einbruch|aufgebrochen|theft|stolen|\bsteal|break-in|broken into|burglar|крадіж|в(?:и)?крал|в(?:и)?крад|украл|украд/i;
   const hints = () => { $('#acc').hidden = !ACC.test($('#d').value); $('#tacho').hidden = !TACHO_HINT.test($('#d').value); $('#theft').hidden = !THEFT_HINT.test($('#d').value); };
   $('#d').addEventListener('input', hints);
   photoLimitWatch($('#ph'));
@@ -1648,7 +1649,7 @@ async function viewCase(id) {
   // Als Dublette abgelehnt ohne eigenen Fall: kein Formular (Server lehnt ab), Hinweis auf den Ursprungsvorgang (20.10.2026)
   if (d.insurance_contracts) html += d.duplicate_of && !d.claim
     ? `<section class="panel"><h3>${esc(t('claim_title'))}</h3><p class="small muted">${esc(t('claim_dup_hint'))}${d.duplicate_of.id ? ` <a href="#/cases/${esc(d.duplicate_of.id)}">${esc(d.duplicate_of.case_no)}</a>` : ''}</p></section>`
-    : claimSection(d.claim, d.insurance_contracts, d.files || []);
+    : claimSection(d.claim, d.insurance_contracts, d.files || [], c.description);
   // Dauer je Status (aus dem Verlauf: gespeicherte Statuswechsel, aktueller Status bis jetzt)
   {
     const spans = []; let cur = 'gemeldet'; let since = c.created_at;
@@ -1772,13 +1773,15 @@ function claimPoliceInfo(cl) {
   if (cl.police_reported_on) rows.push(`<dt>${esc(t('cp_on'))}</dt><dd>${fmtD(cl.police_reported_on)}</dd>`);
   return `<h4 style="margin:.4rem 0 .2rem">${esc(t('cp_title'))}</h4><dl class="kv">${rows.join('')}</dl>`;
 }
-function claimSection(cl, contracts, files = []) {
+function claimSection(cl, contracts, files = [], desc = '') {
+  // Meldung nennt Diebstahl/Einbruch, aber kein Aktenzeichen erfasst (Backlog 221): nur Hinweis, keine Frist, kein Befund
+  const theftNoRef = THEFT_HINT.test(desc || '') && !(cl && cl.police_ref);
   const v = (k) => (cl && cl[k] !== null && cl[k] !== undefined ? esc(String(cl[k])) : '');
   const money = (k) => (cl && cl[k] !== null && cl[k] !== undefined ? esc(decIn(cl[k])) : ''); // EN mit Punkt wie Bußgeld-Formular (19.10.2026)
   const info = cl ? `<p style="margin-top:0">${claimChip(cl.status)} ${esc(cl.insurer)}${cl.claim_no ? ` · ${esc(t('claim_no'))} ${esc(cl.claim_no)}` : ''}</p>
     <dl class="kv"><dt>${esc(t('claim_reported'))}</dt><dd>${fmtD(cl.reported_on)}${cl.days_open !== null ? ` · ${esc(tn('claim_days_open', cl.days_open))}` : ''}</dd>${cl.deductible_net !== null ? `<dt>${esc(t('claim_deductible'))}</dt><dd>${eur(cl.deductible_net)}</dd>` : ''}${cl.reimbursed_net !== null ? `<dt>${esc(t('claim_reimbursed'))}</dt><dd>${eur(cl.reimbursed_net)} · ${fmtD(cl.reimbursed_on)}</dd>` : ''}</dl>
     ${claimAppraisalInfo(cl)}${claimOpponentInfo(cl)}${claimPoliceInfo(cl)}<p class="small muted">${esc(t('evidence'))}: ${esc(cl.evidence)}${cl.note ? ' · ' + esc(cl.note) : ''}</p>${cl.file_id && cl.file_name ? `<p class="small">📎 ${esc(t('claim_file'))}: <a href="${fileUrl(cl.file_id)}" target="_blank" rel="noopener">${esc(cl.file_name)}</a></p>` : ''}` : `<p class="muted small" style="margin-top:0">${esc(t('claim_none'))}</p>`;
-  return `<section class="panel"><h3 style="margin-top:0">${esc(t('claim_title'))}</h3>${info}<details class="noprint"><summary>${esc(t(cl ? 'claim_edit' : 'claim_add'))}</summary><form id="clf"><input type="hidden" name="expected_updated_at" value="${cl ? esc(cl.updated_at || '') : ''}">
+  return `<section class="panel"><h3 style="margin-top:0">${esc(t('claim_title'))}</h3>${theftNoRef ? `<p class="small" id="cptheft">⚠️ ${esc(t('cp_theft_hint'))}</p>` : ''}${info}<details class="noprint"><summary>${esc(t(cl ? 'claim_edit' : 'claim_add'))}</summary><form id="clf"><input type="hidden" name="expected_updated_at" value="${cl ? esc(cl.updated_at || '') : ''}">
     <p class="small muted">${esc(t('claim_hint'))}</p>
     <label>${esc(t('claim_contract'))}</label><select name="contract_id"><option value="">${esc(t('claim_no_contract'))}</option>${contracts.map((k) => `<option value="${esc(k.id)}"${cl && cl.contract_id === k.id ? ' selected' : ''}>${esc(k.partner)}${k.contract_no ? ' · ' + esc(k.contract_no) : ''}${k.ended_on ? ` (${esc(t('cs_beendet'))})` : ''}</option>`).join('')}</select>
     <label>${esc(t('claim_insurer'))}<span class="hint">${esc(t('claim_insurer_hint'))}</span></label><input name="insurer" maxlength="120" value="${v('insurer')}">

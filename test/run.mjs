@@ -19344,6 +19344,18 @@ await test('Backlog 220 (Teilagent „Kraftstoffdiebstahl am Rastplatz“): poli
   }
 });
 
+await test('Backlog 221 (Teilagent „Kraftstoffdiebstahl am Rastplatz“): Versicherungsfall weist bei Diebstahl/Einbruch in der Meldung auf fehlendes Aktenzeichen hin – gleiche Erkennung wie das Meldeformular, verschwindet mit Aktenzeichen, Texte DE/UK/EN', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/^const THEFT_HINT = \//m.test(app), 'THEFT_HINT auf Modulebene (eine Erkennung für Meldeformular und Versicherungsfall)');
+  eq((app.match(/const THEFT_HINT = /g) || []).length, 1, 'nur eine Definition');
+  ok(app.includes("claimSection(d.claim, d.insurance_contracts, d.files || [], c.description)"), 'Beschreibung wird übergeben');
+  ok(app.includes("const theftNoRef = THEFT_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('id="cptheft"'), 'Hinweis nur ohne Aktenzeichen');
+  const m = app.match(/const THEFT_HINT = \/(.+)\/i;/); const re = new RegExp(m[1], 'i');
+  ok(re.test('Diesel am Rastplatz abgezapft') && re.test('Tankdeckel aufgebrochen') && !re.test('Leistungseinbruch am Berg'), 'Erkennung');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cp_theft_hint && STRINGS[l].cp_theft_hint.includes(STRINGS[l].cp_title), `${l}.cp_theft_hint nennt den Abschnitt`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
