@@ -1077,7 +1077,7 @@ await test('Werkstattplan: Winterreifen-Auftrag mit Termin erscheint am geplante
   ok(icsT.includes(r.data.case_no) && icsT.includes('Winterreifen'), 'Kalender nennt Winterreifen');
   ok(!icsT.includes('Positionen laut Reifenerfassung'), 'Kalender ohne Beschreibung');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("i.tire_order === 'winter'") && (app.match(/woTag\(i\)/g) || []).length >= 2 && app.includes('${woTag(c)}${esc(cDesc(c.description))}'), 'Plan, Disposition und Vorgangsliste kennzeichnen Winterreifen-Aufträge');
+  ok(app.includes("i.tire_order === 'winter'") && (app.match(/woTag\(i\)/g) || []).length >= 2 && app.includes('${woTag(c)}${ltxt(cDesc(c.description))}'), 'Plan, Disposition und Vorgangsliste kennzeichnen Winterreifen-Aufträge');
   await env.DB.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).bind(r.data.id).run();
   await env.DB.prepare(`UPDATE vehicles SET active=0 WHERE id=?`).bind(WV).run();
 });
@@ -19629,6 +19629,36 @@ await test('Backlog 226: Anmelde-Hinweis auf dem anmeldenden Gerät als „diese
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].nl_own_device, `Text ${l}`);
   eq((await owner.patch(`/api/users/${u.id}`, { active: false })).status, 200);
+});
+
+await test('Backlog 228 (Teilagent „Fahrer diktiert die Meldung auf Ukrainisch/Russisch“): Unfall-Hinweis wie Datenqualität (Warnblinker „аварійна/аварийка“ kein Unfall, russ. „авария“ erkannt), Diktat per change, Freitext mit lang= (uk/ru, lateinisch in UK-Oberfläche unbestimmt)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/\nconst ACC_HINT = \/(.+)\/i;/); ok(m, 'ACC_HINT auf Modulebene'); eq((app.match(/const ACC_HINT = /g) || []).length, 1); ok(!/const ACC = /.test(app), 'altes Muster entfernt');
+  const re = new RegExp(m[1], 'i');
+  const yes = ['Unfall beim Rangieren', 'Auffahrunfall auf der A2', 'accident at the depot', 'ДТП на трасі', 'Сталася аварія на парковці', 'Після аварії не відкриваються двері', 'АВАРІЯ', 'Была авария, бампер разбит', 'после аварии течёт масло', 'Аварією пошкоджено дзеркало'];
+  const no = ['Не працює аварійна сигналізація', 'аварійний вимикач зламаний', 'Аварийка не работает', 'аварийный выключатель', 'Warnblinker defekt', 'Reifen platt'];
+  for (const x of yes) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of no) ok(!re.test(x), 'kein Hinweis: ' + x);
+  // Datenqualität „Unfall ohne Versicherungsfall“ erkennt dieselben Wörter (Server sucht Teilzeichenketten, Hinweis ganze Wortformen)
+  const { ACC_WORDS_CYR } = await import('../src/quality.js');
+  for (const w of ACC_WORDS_CYR) ok(re.test(w) && re.test(w.toUpperCase()), 'Hinweis kennt ' + w);
+  for (const x of no) ok(!ACC_WORDS_CYR.some((w) => x.toLowerCase().includes(w)), 'Datenqualität ohne ' + x);
+  eq((await owner.post('/api/vehicles', { plate: 'AB-F 228', vin: 'WDB96340310822801', site: 'Dortmund' })).status, 201);
+  const VF = 'VIN:WDB96340310822801';
+  eq((await users.fleet.post(`/api/vehicles/${VF}/drivers`, { user_id: users.driver.id })).status, 201);
+  const mk = async (description) => { const r = await users.driver.post('/api/cases', { vehicle_id: VF, description, priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }); eq(r.status, 201); return r.data.id; };
+  const ru = await mk('Была авария на стоянке, зеркало разбито'); const ruCap = await mk('АВАРИЯ, бампер'); const haz = await mk('Аварийка не работает');
+  const dq = (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'accident_no_claim').map((i) => i.case_id);
+  ok(dq.includes(ru) && dq.includes(ruCap), 'russ. „авария“ in der Datenqualität'); ok(!dq.includes(haz), 'Warnblinker nicht');
+  // Diktat: auch „change“ prüft die Hinweise
+  ok(app.includes("$('#d').addEventListener('input', hints); $('#d').addEventListener('change', hints);"), 'input + change');
+  // Sprache des Freitexts
+  const src = app.match(/\nconst freeLang = (\(s\) => \{[\s\S]+?\n\});/); ok(src, 'freeLang');
+  const fl = (lang) => new Function('S', 'return ' + src[1])({ lang });
+  eq(fl('de')('Дзеркало розбите, не видно задню частину'), 'uk'); eq(fl('de')('Зеркало разбито, бампер отъехал'), 'ru'); eq(fl('en')('Їде вліво'), 'uk');
+  eq(fl('uk')('Дзеркало розбите'), null, 'UK-Oberfläche, ukr. Text: kein Attribut'); eq(fl('de')('Spiegel kaputt'), null); eq(fl('uk')('Spiegel kaputt'), '', 'lateinisch in UK: unbestimmt');
+  eq(fl('de')('12345 !!'), null, 'ohne Buchstaben'); eq(fl('de')('SZ-YC 5501: Дзеркало розбите, не видно'), 'uk', 'Kennzeichen im Text stört nicht');
+  for (const x of ['${langAttr(cDesc(c.description))}>${esc(cDesc(c.description))}</p>', '${langAttr(evNote(e))}>${esc(evNote(e))}</div>', '${woTag(c)}${ltxt(cDesc(c.description))}</span>', '${ltxt(clipTxt(cDesc(i.description), 100))}']) ok(app.includes(x), 'lang an ' + x.slice(0, 40));
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
