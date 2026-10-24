@@ -1721,6 +1721,7 @@ async function viewCase(id) {
         const lost = $('#lostact'); if (lost) lost.scrollIntoView({ block: 'center' }); else if (generic) toast(t(maybeMine ? 'cmd_maybe_saved' : 'case_conflict_kept'), true);
         if (maybeMine) { S.cmdOffline = null; actDraft(c.id).clear(); }
       } else if (err.code === 'cost_approval_open') viewCase(c.id);
+      else if (err.code === 'insufficient_stock' && action === 'add_part' && payload.stock_item_id) stockShortfall(payload.stock_item_id, err.data);
     }
   };
   $$('[data-act]').forEach((b) => (b.onclick = () => actionForm(b.dataset.act, c, cmd, {}, d)));
@@ -2879,7 +2880,7 @@ async function loadStockSelect(c) {
   try { items = (await api('GET', `/api/stock?site=${encodeURIComponent(c.workshop_site || '')}`)).items.filter((i) => i.site === c.workshop_site && i.on_hand > 0); } catch { return; }
   if (!items.length) return;
   el.innerHTML = `<label>${esc(t('from_stock'))}</label><select name="stock_item_id"><option value="">${esc(t('without_stock'))}</option>${items.map((i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`).join('')}</select><p class="small muted" id="stockpricehint" hidden>${esc(t('stock_out_price_hint'))}</p>`;
-  const sel = $('select', el);
+  const sel = $('select', el); el._items = items;
   sel.onchange = () => {
     const fp = $('#freepart'); fp.querySelector('[name=name]').required = !sel.value; $$('[name=name],[name=part_number],[name=supplier]', fp).forEach((x) => { x.disabled = !!sel.value; });
     // Lagerartikel mit Preis: der Server bucht den Artikelpreis – Preisfeld sperren und Hinweis zeigen (19.10.2026: Eingabe wurde still ersetzt)
@@ -2891,6 +2892,29 @@ async function loadStockSelect(c) {
     if (es) { es.disabled = fixed; if (fixed) es.checked = false; }
     $('#stockpricehint').hidden = !fixed;
   };
+}
+
+// Zwei Aufträge greifen auf denselben Lagerartikel (Backlog 232): die Auswahl zeigte nach der Abweisung weiter den Bestand vom Öffnen
+// („(1 Stk)“). Jetzt Menge aus der Serverantwort, Hinweis am Feld; ist nichts mehr da, Artikel gesperrt und Name/Teilenummer ins Freitextteil.
+function stockShortfall(itemId, data) {
+  const el = $('#stocksel'); const sel = el && $('select', el);
+  if (!sel || !data || typeof data.available !== 'number') return;
+  const o = [...sel.options].find((x) => x.value === itemId); if (!o) return;
+  const q = fmtNum(data.available), u = unitL(data.unit);
+  o.textContent = o.textContent.replace(/ \([^()]*\)$/, '') + ` (${q} ${u})`;
+  let h = $('#stockshort'); if (!h) { h = document.createElement('p'); h.id = 'stockshort'; h.className = 'small panel warn'; h.setAttribute('role', 'status'); sel.after(h); }
+  h.textContent = t('stock_short_inline').replace('{q}', q).replace('{u}', u).replace(/\.\.(?=\s|$)/g, '.'); // „шт..“ (Einheit mit Punkt am Satzende)
+  const it = (el._items || []).find((i) => i.id === itemId);
+  if (data.available <= 0) {
+    o.disabled = true;
+    if (sel.value === itemId) {
+      sel.value = ''; sel.onchange();
+      const fp = $('#freepart');
+      if (fp && it) { const n = fp.querySelector('[name=name]'), pn = fp.querySelector('[name=part_number]'); if (n && !n.value) n.value = it.name; if (pn && !pn.value && it.part_number) pn.value = it.part_number; }
+      h.textContent += ' ' + t('stock_short_out');
+    }
+  } else if (it) it.on_hand = data.available;
+  sel.focus();
 }
 
 async function viewStock() {

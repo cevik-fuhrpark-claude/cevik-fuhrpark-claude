@@ -19704,6 +19704,33 @@ await test('Backlog 231 (Teilagent „Disposition sucht Ersatzfahrzeug“): Lkw-
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].av_maint_overdue && STRINGS[l].insp_failed_chip && STRINGS[l].av_meldung_offen, 'Texte ' + l);
 });
 
+await test('Backlog 232 (Teilagent „Werkstatt bucht Teile für zwei Aufträge“): zweiter Auftrag am letzten Lagerteil – Abweisung nennt verfügbare Menge/Einheit, Auswahl zeigt danach den neuen Bestand, gesperrt bei 0 mit Übernahme ins Freitextteil', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'ZA-LG 1', vin: 'WDB96340310995901', site: 'Dortmund' })).status, 201);
+  const it = await users.ws.post('/api/stock', { name: 'ZA Bremsscheibe', part_number: 'ZA-4711', initial_qty: 1 }); eq(it.status, 201);
+  const rk = () => 'za-' + Math.random().toString(36).slice(2);
+  const prep = async () => {
+    const c = await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310995901', description: 'ZA zwei Aufträge', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+    let v = (await users.fleet.post(`/api/cases/${c.data.id}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: 1, payload: { workshop_site: 'DORTMUND' }, note: 'Test' })).data.version;
+    v = (await users.ws.post(`/api/cases/${c.data.id}/commands`, { action: 'start_repair', command_id: rk(), expected_version: v })).data.version;
+    return [c.data.id, v];
+  };
+  const [a, b] = [await prep(), await prep()];
+  const book = ([id, v]) => users.ws.post(`/api/cases/${id}/commands`, { action: 'add_part', command_id: rk(), expected_version: v, payload: { stock_item_id: it.data.id, quantity: 1 } });
+  eq((await book(a)).status, 200);
+  const r = await book(b); eq(r.status, 400); eq(r.data.error, 'insufficient_stock');
+  eq(r.data.available, 0, 'verfügbare Menge als Zahl'); eq(r.data.unit, 'Stk'); eq(r.data.no_stock_hint, true);
+  const cb = (await users.ws.get(`/api/cases/${b[0]}`)).data; eq(cb.case.version, b[1], 'abgewiesener Auftrag unverändert');
+  // Oberfläche: Fehler aus „Teil erfassen“ mit Lagerartikel aktualisiert die Auswahl statt „(1 Stk)“ stehen zu lassen
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("else if (err.code === 'insufficient_stock' && action === 'add_part' && payload.stock_item_id) stockShortfall(payload.stock_item_id, err.data);"), 'Fehler führt zur Aktualisierung');
+  const fn = app.slice(app.indexOf('function stockShortfall('), app.indexOf('async function viewStock()'));
+  ok(fn.includes('o.disabled = true') && fn.includes("sel.value = ''; sel.onchange();") && fn.includes("t('stock_short_inline')") && fn.includes("t('stock_short_out')") && fn.includes("'role', 'status'"), 'bei 0 gesperrt, Freitext, Hinweis als Statusmeldung');
+  ok(fn.includes('if (n && !n.value) n.value = it.name'), 'Freitext-Name nur übernommen, wenn leer');
+  ok(app.includes("el._items = items;"), 'Artikel der Auswahl gemerkt');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].stock_short_inline.includes('{q}') && STRINGS[l].stock_short_inline.includes('{u}') && STRINGS[l].stock_short_out, 'Texte ' + l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
