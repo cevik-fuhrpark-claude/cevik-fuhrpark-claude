@@ -19474,6 +19474,121 @@ await test('Backlog 223 (Teilagent „Werkstatt-Tablet auf Ukrainisch mit Fotos�
   eq((await users.fleet.req('DELETE', `/api/assignments/${as.data.id}`)).status, 200);
 });
 
+await test('Backlog 224 (Teilagent „Leitung gibt Kostenvoranschlag als PDF frei“): Fremdleistung mit Beleg-Datei des Vorgangs (Migration 0080) – Prüfung, Anzeige, Verlauf, Kostenfreigabe nennt die Belege, Werkstatt sieht keine Beträge, Texte DE/UK/EN', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'AB-K 224', vin: 'WDB96340310822401', site: 'Dortmund' })).status, 201);
+  const VK = 'VIN:WDB96340310822401';
+  const mk = async (desc) => (await users.fleet.post('/api/cases', { vehicle_id: VK, description: desc, priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const cid = await mk('Getriebe schaltet schwer – Fremdwerkstatt');
+  const other = await mk('Spiegel links lose');
+  ok(cid && other, 'Vorgänge angelegt');
+  const run = async (u, id, action, payload, note = null) => { const c = (await users.fleet.get(`/api/cases/${id}`)).data.case; return u.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload }); };
+  eq((await run(users.fleet, cid, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Fremdwerkstatt anfragen')).status, 200);
+  const pdf = () => concatBytes(new TextEncoder().encode('%PDF-1.4\n'), crypto.getRandomValues(new Uint8Array(300)));
+  const up = async (id, name) => (await users.fleet.req('POST', `/api/cases/${id}/files`, pdf(), { 'content-type': 'application/pdf', 'x-filename': name })).data.id;
+  const kva = await up(cid, 'kostenvoranschlag.pdf');
+  const foreign = await up(other, 'fremd.pdf');
+  ok(kva && foreign, 'Dateien hochgeladen');
+  eq((await owner.put('/api/settings', { repair_cost_limit_net: 500 })).status, 200);
+  try {
+    // Datei eines anderen Vorgangs bzw. unbekannte Kennung → abgewiesen, nichts gebucht
+    let r = await run(users.fleet, cid, 'add_external_cost', { supplier: 'Getriebe Schmidt', amount_net: '1.240,00', valuation: 'estimate', file_id: foreign }, 'KVA');
+    eq(r.status, 400); ok(/Datei dieses Vorgangs/.test(r.data.message || ''), 'Meldung nennt die Regel');
+    eq((await run(users.fleet, cid, 'add_external_cost', { supplier: 'Getriebe Schmidt', amount_net: 1240, file_id: 'x'.repeat(41) })).status, 400, 'überlange Kennung');
+    eq((await users.fleet.get(`/api/cases/${cid}`)).data.external_costs.length, 0, 'nichts gebucht');
+    // mit Beleg
+    r = await run(users.fleet, cid, 'add_external_cost', { supplier: 'Getriebe Schmidt', invoice_no: 'KVA-77', amount_net: '1.240,00', valuation: 'estimate', file_id: kva }, 'Kostenvoranschlag');
+    eq(r.status, 200); eq(r.data.cost_limit_exceeded, true, 'Schätzung über der Grenze');
+    // ohne Beleg weiterhin möglich (leer = kein Beleg)
+    eq((await run(users.fleet, cid, 'add_external_cost', { supplier: 'Abschleppdienst', amount_net: 90, file_id: '' })).status, 200);
+    let d = (await users.fleet.get(`/api/cases/${cid}`)).data;
+    const x = d.external_costs.find((e) => e.supplier === 'Getriebe Schmidt');
+    eq(x.file_id, kva); eq(x.file_name, 'kostenvoranschlag.pdf'); eq(x.file_type, 'application/pdf'); eq(x.amount_net, 1240); eq(x.valuation, 'estimate');
+    const y = d.external_costs.find((e) => e.supplier === 'Abschleppdienst');
+    eq(y.file_id, null); eq(y.file_name, null);
+    const ev = d.events.find((e) => e.action === 'add_external_cost' && e.payload && e.payload.supplier === 'Getriebe Schmidt');
+    eq(ev.payload.file_id, kva); eq(ev.payload.file_name, 'kostenvoranschlag.pdf');
+    ok(!('file_id' in d.events.find((e) => e.action === 'add_external_cost' && e.payload && e.payload.supplier === 'Abschleppdienst').payload), 'ohne Beleg kein Feld');
+    ok(d.allowed_actions.includes('approve_costs'), 'Kostenfreigabe ausstehend');
+    // Werkstatt: keine Fremdleistungen/Beträge, kein Beleg im Verlauf
+    const dw = (await users.ws.get(`/api/cases/${cid}`)).data;
+    eq(dw.external_costs, undefined); eq(dw.events.find((e) => e.action === 'add_external_cost').payload, null);
+    // Freigabe wie bisher
+    eq((await run(users.fleet, cid, 'approve_costs', {}, 'KVA Getriebe Schmidt geprüft')).status, 200);
+    d = (await users.fleet.get(`/api/cases/${cid}`)).data;
+    eq(d.case.cost_approved_net, 1330);
+    // Datensicherung enthält die neue Spalte
+    const bk = await owner.get('/api/admin/backup');
+    if (bk.status === 200) { const txt = typeof bk.data === 'string' ? bk.data : JSON.stringify(bk.data); ok(txt.includes(kva), 'Sicherung enthält die Beleg-Kennung'); }
+  } finally {
+    eq((await owner.put('/api/settings', { repair_cost_limit_net: '' })).status, 200);
+  }
+  // Oberfläche + Texte
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${extFileSelect(d)}') && app.includes('${extDocList(d)}') && app.includes('${extFileLink(x)}'), 'Auswahl, Freigabeliste und Link eingebaut');
+  ok(/stock_item_id\|file_id\)/.test(app), 'Kennung nicht als „verlorene Eingabe“ angezeigt');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['ext_file', 'ext_file_hint', 'ext_file_none', 'ext_photo', 'ext_docs']) ok(STRINGS[l][k] && STRINGS[l][k] !== STRINGS.de[k] || l === 'de' || k === 'ext_photo', `${k} ${l}`);
+    ok(STRINGS[l].ext_file_none.includes(STRINGS[l].add_photos), `Hinweis nennt „${STRINGS[l].add_photos}“ ${l}`);
+    ok(STRINGS[l].help_costlimit_s.includes(STRINGS[l].ext_file) && STRINGS[l].help_costlimit_s.includes(STRINGS[l].act_add_external_cost) && STRINGS[l].help_costlimit_s.includes(STRINGS[l].add_photos), `Hilfe Kostenfreigabe ${l}`);
+  }
+  for (const id of [cid, other]) await run(users.fleet, id, 'withdraw_order', {}, 'Testdaten').catch(() => {});
+});
+
+await test('Backlog 225 (Teilagent „Fahrer wechselt sein Handy“): Push-Gerät mit abgelaufener Anmeldung wird gezählt und lässt sich abmelden (selbst und durch die Leitung), Anmeldeseite behält die Kontosprache, Hilfe zum Gerätewechsel DE/UK/EN', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const key = async () => b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
+  const auth = () => b64urlEncode(crypto.getRandomValues(new Uint8Array(16)));
+  // altes Handy: angemeldet + Push
+  const old = new Client(worker, e, 'altes-handy'); eq((await old.post('/api/login', { username: 'w.fahrer', password: 'Sicheres-Passwort-2026' })).status, 200);
+  eq((await old.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/altes-handy', keys: { p256dh: await key(), auth: auth() }, device_label: 'Altes Handy' })).status, 200);
+  // neues Handy = U.driver (eigene Sitzung) + Push
+  eq((await U.driver.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/neues-handy', keys: { p256dh: await key(), auth: auth() }, device_label: 'Neues Handy' })).status, 200);
+  let r = (await U.driver.get('/api/me/sessions')).data;
+  eq(r.sessions.length, 2); eq(r.orphan_push_devices, 0, 'lebende Anmeldung = kein verwaistes Gerät');
+  // alte Anmeldung läuft ab (Sitzung bleibt bis zum Cron in der Tabelle) → Push-Gerät verwaist, nur „dieses Gerät“ in der Liste
+  const oldHash = db.prepare(`SELECT session_hash FROM push_subscriptions WHERE endpoint='https://push.example/ok/altes-handy'`).get().session_hash; ok(oldHash, 'Abo an Anmeldung gebunden');
+  db.prepare('UPDATE sessions SET expires_at=? WHERE token_hash=?').run(new Date(Date.now() - 60000).toISOString(), oldHash);
+  r = (await U.driver.get('/api/me/sessions')).data;
+  eq(r.sessions.length, 1); eq(r.orphan_push_devices, 1, 'abgelaufene Anmeldung mit aktivem Push gezählt');
+  // vom Cron gelöscht: ebenso
+  db.prepare('DELETE FROM sessions WHERE token_hash=?').run(oldHash);
+  eq((await U.driver.get('/api/me/sessions')).data.orphan_push_devices, 1, 'gelöschte Anmeldung');
+  // Gerät ohne bekannte Anmeldung (Bestand vor 0059) zählt nicht (wird auch nicht abgemeldet)
+  db.prepare(`INSERT INTO push_subscriptions(id,user_id,endpoint,p256dh,auth,device_label,created_at) VALUES ('legacy-1',?, 'https://push.example/ok/legacy', ?, ?, 'Alt', ?)`).run(U.driver.id, await key(), auth(), new Date().toISOString());
+  eq((await U.driver.get('/api/me/sessions')).data.orphan_push_devices, 1);
+  // „Auf allen anderen Geräten abmelden“ meldet das verwaiste Gerät ab, nicht das eigene
+  const ro = (await U.driver.post('/api/me/sessions/revoke-others')).data;
+  eq(ro.revoked, 0); eq(ro.push_devices, 1);
+  eq((await U.driver.get('/api/me/sessions')).data.orphan_push_devices, 0);
+  const st = (ep) => db.prepare('SELECT revoked_at FROM push_subscriptions WHERE endpoint=?').get(ep).revoked_at;
+  ok(st('https://push.example/ok/altes-handy'), 'altes Handy abgemeldet'); eq(st('https://push.example/ok/neues-handy'), null, 'eigenes Gerät bleibt'); eq(st('https://push.example/ok/legacy'), null);
+  const au = db.prepare(`SELECT detail FROM audit_log WHERE action='session.revoke_others' ORDER BY created_at DESC LIMIT 1`).get();
+  ok(au && JSON.parse(au.detail).push_devices === 1, 'Protokoll nennt Push-Geräte');
+  // Leitung: Benutzerliste zeigt Push-Gerät ohne Anmeldung; „Alle Anmeldungen beenden“ meldet es ab
+  const old2 = new Client(worker, e, 'altes-handy-2'); eq((await old2.post('/api/login', { username: 'w.fahrer', password: 'Sicheres-Passwort-2026' })).status, 200);
+  eq((await old2.post('/api/push/subscribe', { endpoint: 'https://push.example/ok/altes-handy-2', keys: { p256dh: await key(), auth: auth() } })).status, 200);
+  db.prepare('DELETE FROM sessions WHERE user_id=?').run(U.driver.id);
+  const u = (await U.fleet.get('/api/users')).data.users.find((x) => x.id === U.driver.id);
+  eq(u.sessions, 0); ok(u.push_devices >= 1, 'Push-Gerät ohne Anmeldung sichtbar');
+  const rv = (await U.fleet.post(`/api/users/${U.driver.id}/revoke-sessions`)).data;
+  ok(rv.push_devices >= 1, 'Leitung meldet Push-Geräte ab');
+  // Oberfläche + Texte
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('(u.sessions || u.push_devices) ?'), 'Knopf „Alle Anmeldungen beenden“ auch bei Push-Geräten ohne Anmeldung');
+  ok(app.includes('list.length > 1 || orphan > 0') && app.includes('id="sessorphan"'), '„Meine Anmeldungen“: Hinweis + Knopf bei verwaistem Push');
+  ok(/localStorage\.setItem\('cfp_lang', r\.user\.language\)/.test(app), 'Kontosprache für die Anmeldeseite gemerkt');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].sess_orphan_push && /\{n\}/.test(STRINGS[l].sess_orphan_push), `Hinweis verwaistes Push-Gerät ${l}`);
+    ok(STRINGS[l].push_revoked_n && /\{n\}/.test(STRINGS[l].push_revoked_n), `Meldung abgemeldete Push-Geräte ${l}`);
+    ok(STRINGS[l].help_offline_s.split('|').length >= 2 && STRINGS[l].help_offline_s.includes(STRINGS[l].sign_out_others), `Hilfe Offline: Handywechsel nennt „${STRINGS[l].sign_out_others}“ ${l}`);
+  }
+  ok(STRINGS.de.help_offline_s.includes('Neues Handy') && STRINGS.uk.help_offline_s.includes('Новий телефон') && STRINGS.en.help_offline_s.includes('New phone'), 'Abschnitt Handywechsel');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -495,6 +495,15 @@ export async function listOwnSessions(env, user) {
   return rows.map((r) => ({ id: r.token_hash.slice(0, SID_LEN), device: deviceFromUa(r.user_agent || ''), created_at: r.created_at, last_seen: r.last_seen,
     expires_at: r.expires_at, current: r.token_hash === user._session }));
 }
+// Backlog 225 (Teilagent „Fahrer wechselt sein Handy“): Push-Geräte, deren Anmeldung nicht mehr lebt (abgelaufen, Leerlauf, vom Cron gelöscht),
+// erhalten weiter Hinweise – „Meine Anmeldungen“ zeigte dann nur „dieses Gerät“ und keinen Knopf. Zählt nur Geräte mit bekannter Anmeldung
+// (wie pushOrphanStmt; „auf allen anderen Geräten abmelden“ meldet genau diese ab), nie das Gerät der aktuellen Anmeldung.
+export async function orphanPushCount(env, user) {
+  const r = await env.DB.prepare(`SELECT COUNT(*) AS n FROM push_subscriptions p WHERE p.user_id=?1 AND p.revoked_at IS NULL AND p.session_hash IS NOT NULL
+    AND p.session_hash != ?3 AND NOT EXISTS (SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.user_id=?1 AND s.token_hash=p.session_hash AND ${sessionAliveSql('?2')})`)
+    .bind(user.id, nowIso(), user._session || '').first();
+  return r ? r.n : 0;
+}
 export async function revokeOwnSession(env, user, sid) {
   if (!/^[0-9a-f]{16}$/.test(String(sid))) throw bad('invalid_session', 'Ungültige Anmeldung.');
   if (user._session.startsWith(sid)) throw bad('current_session', 'Die aktuelle Anmeldung bitte über „Abmelden“ beenden.');
@@ -529,10 +538,11 @@ export async function forgetKnownDevice(env, user, request, did) {
   return { ok: true, forgotten: r.meta.changes };
 }
 export async function revokeOtherSessions(env, user) {
-  const [r] = await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session), pushOrphanStmt(env, user.id),
+  const [r, pr] = await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session), pushOrphanStmt(env, user.id),
     env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id)]); // begonnene 2FA-Anmeldungen anderer Geräte ebenso (21.10.2026)
-  await audit(env, user.id, 'session.revoke_others', user.id, { count: r.meta.changes });
-  return { ok: true, revoked: r.meta.changes };
+  const pushN = (pr && pr.meta && pr.meta.changes) || 0;
+  await audit(env, user.id, 'session.revoke_others', user.id, { count: r.meta.changes, ...(pushN ? { push_devices: pushN } : {}) });
+  return { ok: true, revoked: r.meta.changes, push_devices: pushN };
 }
 
 // ---- Benutzerverwaltung (owner; fleet darf driver/workshop/viewer in eigener Umgebung anlegen) ----

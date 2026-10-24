@@ -397,7 +397,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
     detail.parts = (await env.DB.prepare('SELECT * FROM parts WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
   }
   if (canSeeCosts(user)) {
-    detail.external_costs = (await env.DB.prepare('SELECT * FROM external_costs WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
+    detail.external_costs = (await env.DB.prepare('SELECT x.*, f.filename AS file_name, f.content_type AS file_type FROM external_costs x LEFT JOIN files f ON f.id=x.file_id WHERE x.case_id=? ORDER BY x.created_at').bind(c.id).all()).results;
     // Kosten aus den bereits geladenen Positionen; Stundensatz und Freigabegrenze in einer Abfrage (vorher 5 Zusatzabfragen)
     const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('workshop_hourly_rate_net','repair_cost_limit_net')`).all()).results.map((r) => [r.key, r.value]));
     const rate = rateOf(sets.get('workshop_hourly_rate_net'));
@@ -1282,12 +1282,18 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const valuation = amount === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const eid = uuid();
       const warranty = warrantyDate(p.warranty_until);
-      extra.push(env.DB.prepare(`INSERT INTO external_costs(id,case_id,user_id,supplier,invoice_no,amount_net,valuation,covers_work_and_parts,note,created_at,warranty_until)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(eid, c.id, user.id, supplier, str(p.invoice_no, { max: 60 }), amount, valuation, flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile') ? 1 : 0, note, now, warranty));
+      // Beleg (Backlog 224): optional eine Datei dieses Vorgangs derselben Umgebung (Kostenvoranschlag/Rechnung als PDF oder Foto)
+      let ecFile = null;
+      if (p.file_id !== undefined && p.file_id !== null && p.file_id !== '') {
+        ecFile = await env.DB.prepare('SELECT id, filename FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(p.file_id, { max: 40, field: 'Datei' }), c.id, envName).first();
+        if (!ecFile) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
+      }
+      extra.push(env.DB.prepare(`INSERT INTO external_costs(id,case_id,user_id,supplier,invoice_no,amount_net,valuation,covers_work_and_parts,note,created_at,warranty_until,file_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(eid, c.id, user.id, supplier, str(p.invoice_no, { max: 60 }), amount, valuation, flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile') ? 1 : 0, note, now, warranty, ecFile ? ecFile.id : null));
       const covers = flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile');
       // Verlauf nennt Schalter und Rechnungsnummer: nachvollziehbar, ab wann eigene Stunden/Teile nicht mehr zählen (23.10.2026)
       const invNo = str(p.invoice_no, { max: 60 });
-      payload = { external_cost_id: eid, supplier, amount_net: amount, valuation, ...(warranty ? { warranty_until: warranty } : {}), ...(covers ? { covers_work_and_parts: true } : {}), ...(invNo ? { invoice_no: invNo } : {}) };
+      payload = { external_cost_id: eid, supplier, amount_net: amount, valuation, ...(warranty ? { warranty_until: warranty } : {}), ...(covers ? { covers_work_and_parts: true } : {}), ...(invNo ? { invoice_no: invNo } : {}), ...(ecFile ? { file_id: ecFile.id, file_name: ecFile.filename } : {}) };
       break;
     }
     case 'approve_costs': {
