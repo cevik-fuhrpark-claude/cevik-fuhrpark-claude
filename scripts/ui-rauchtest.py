@@ -27,6 +27,19 @@ ROUTES = {
     # Lesezugriff (z. B. Büro/Steuerberatung): nur lesen, keine Meldungen/Kontrollen
     'viewer': ['emergency', '', 'search', 'inbox', 'plan', 'cases', 'vehicles', 'more', 'maintenance', 'tires', 'kpi', 'costs', 'fines', 'wsload', 'help', 'help?s=kpi', 'help?s=viewer'],
 }
+# Wort mitten im Wort umgebrochen (24.10.2026, Backlog 242: „Sticht/ag“ neben einem Datumsfeld): #app hat overflow-wrap:anywhere (für lange
+# Links/Teilenummern) – in engen Flex-Zeilen schrumpft eine Beschriftung dadurch bis auf einzelne Buchstaben. Gesucht: Wörter aus Buchstaben
+# (4–24 Zeichen), deren Zeichen auf zwei Zeilen stehen. Ausgenommen: Kennzeichen, Eingabefelder, Code, Reiterleiste (Silbentrennung).
+WORDSPLIT = r"""() => { const out = []; const root = document.querySelector('#app'); if (!root) return out;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); const rg = document.createRange();
+  while (w.nextNode()) { const n = w.currentNode; const el = n.parentElement; if (!el || el.offsetParent === null || el.closest('.plate, code, pre, textarea, select, .mono, .tabbar, [data-raw]')) continue;
+    if (getComputedStyle(el).hyphens === 'auto') continue; // Silbentrennung mit Trennstrich ist gewollt (Prüfpunkte der Abfahrtskontrolle)
+    // nur ganze Wörter (zwischen Leerzeichen/Satzzeichen) – technische Ketten wie „maintenance.husp_migration“ oder CSV-Kopfzeilen dürfen umbrechen
+    const re = /(?<![^\s(„"'])[\p{L}]{4,24}(?=$|[\s,.:;!?)“"'])/gu; let m; const x = n.textContent;
+    while ((m = re.exec(x))) { rg.setStart(n, m.index); rg.setEnd(n, m.index + m[0].length);
+      const tops = new Set([...rg.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top)));
+      if (tops.size > 1) out.push(m[0] + ' ← ' + x.trim().slice(0, 40)); } }
+  return out; }"""
 # Barrierefreiheit (vereinfacht): Felder ohne zugänglichen Namen, Bilder ohne Alternativtext, Schaltflächen/Links ohne Text
 A11Y = """() => {
   const out = [];
@@ -463,6 +476,12 @@ with sync_playwright() as p:
                     small = pg.evaluate(TARGETS)
                     if small:
                         problems.append(f'{where}: Bedienelement kleiner als 24 px {small[:3]}')
+                    # Kopfzeile: „CEVIK“ nie abgeschnitten (24.10.2026: EN „Production“ in der Umgebungswahl kürzte auf „CEVII“)
+                    if pg.evaluate("() => { const b = document.querySelector('.topbar .brand'); return !!b && b.scrollWidth > b.clientWidth + 1; }"):
+                        problems.append(f'{where}: App-Name in der Kopfzeile abgeschnitten')
+                    split = pg.evaluate(WORDSPLIT)
+                    if split:
+                        problems.append(f'{where}: Wort mitten im Wort umgebrochen {split[:3]}')
                     a11y = pg.evaluate(A11Y)
                     if a11y:
                         problems.append(f'{where}: Barrierefreiheit {a11y[:3]}')

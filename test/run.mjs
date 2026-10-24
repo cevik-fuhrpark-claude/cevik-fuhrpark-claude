@@ -2166,7 +2166,7 @@ await test('CSP-tauglich: keine Inline-Event-Handler/Skripte; alle UI-Texte in D
   eq(missing.join(','), '', 'fehlende deutsche Texte');
   for (const lang of ['uk', 'en']) { const miss = Object.keys(STRINGS.de).filter((k) => !(k in STRINGS[lang])); eq(miss.join(','), '', `fehlende Übersetzungen ${lang}`); }
   // Fest verdrahtete Texte in Beschriftungen/Spaltenköpfen/Elementen (außer Sprachnamen, TEST-Kennzeichnung, Dateiformat- und CSV-Spaltenhinweisen)
-  const allow = new Set(['Deutsch', 'English', 'TEST', 'OK', 'Українська']);
+  const allow = new Set(['Deutsch', 'English', 'TEST', 'OK', 'Українська', 'CEVIK']); // CEVIK = Firmenname in der Kopfzeile (24.10.2026)
   const hard = [...app.matchAll(/<(label|th|td|dt|dd|li|b|a|div|button|h[1-4]|span|p|summary|option|legend)[^>]*>([A-Za-zÄÖÜäöüß][^<>${}]{2,})</g)].map((m) => m[2].trim())
     .filter((x) => !allow.has(x) && !/^(PDF|Quelle;|Kennzeichen;)/.test(x));
   eq(hard.join(' | '), '', 'Texte ohne Übersetzung (t())');
@@ -14934,7 +14934,7 @@ await test('Fehlersuche 20.10. (12): Leerlauf mehrere Tabs/Minutentakt, Einladun
   // 7. Push-Abwahl „Neue Meldung“ nur, wo sie wirkt; Reaktionsfrist „kritisch“ = sofort
   const { mutableKindsFor } = await import('../src/notify.js');
   ok(!mutableKindsFor('workshop').includes('created') && !mutableKindsFor('dispatch').includes('created') && mutableKindsFor('fleet').includes('created'), 'Abwahl');
-  ok(app.includes("p === 'kritisch' ? `<td class=\"small muted\">${esc(t('sla_immediate'))}</td>`"), 'kritisch sofort');
+  ok(app.includes("p === 'kritisch' ? `<td class=\"small muted\" style=\"white-space:nowrap\">${esc(t('sla_immediate'))}</td>`"), 'kritisch sofort');
   // 8. Zeitleiste: künftiger Vertragsbeginn erst ab dem Tag; Vorgangstext 300 Zeichen (Übersetzung), Kürzung in der App
   const fd = new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + 30 * 864e5).toISOString().slice(0, 10);
   eq((await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Zukunft-Leasing', evidence: 'v', start_date: fd })).status, 201);
