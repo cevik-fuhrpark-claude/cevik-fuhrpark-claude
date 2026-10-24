@@ -101,7 +101,7 @@ TARGETS = """() => {
 }"""
 # Ansichten mit „Drucken / PDF“ (Präfix mit „/“ am Ende = Detailansicht mit ID)
 PRINT = {
-    'owner': ['guide', 'vehicles//timeline', 'claims', 'tacho', 'quality', 'stock', 'cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'stock/count', 'stock/asof', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload', 'users', 'audit'],
+    'owner': ['guide', 'vehicles//timeline', 'claims', 'tacho', 'tacho/history', 'drivers/records', 'quality', 'stock', 'cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'stock/count', 'stock/asof', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload', 'users', 'audit'],
     'workshop': ['cases/', 'stock', 'stock/', 'stock/reorder', 'stock/count', 'stock/asof', 'plan'],
     'driver': ['check/paper'],
 }
@@ -234,7 +234,7 @@ with sync_playwright() as p:
         'end_date': (td + datetime.timedelta(days=300)).isoformat(), 'notice_months': 9, 'km_allowance': 100000, 'start_km': 1000, 'monthly_rate_net': '999,5', 'evidence': 'Rauchtest Vertrag'})
     api('POST', f'/api/vehicles/{vid}/contracts', {'kind': 'versicherung', 'partner': 'Rauchtest-Versicherung', 'end_date': (td - datetime.timedelta(days=2)).isoformat(), 'evidence': 'Rauchtest Police'})
     for r in ('owner', 'fleet'):
-        ROUTES[r] += ['drivers', f'drivers/{did}', 'tacho', 'vehicles/qr', f'vehicles/qr/{vid}']
+        ROUTES[r] += ['drivers', 'drivers/records', f'drivers/{did}', 'tacho', 'tacho/history', 'vehicles/qr', f'vehicles/qr/{vid}']
     # Panne & Notfall (synthetische Nummern): für alle, für den Standort Dortmund, für das Fahrzeug
     for body in ({'kind': 'dispo', 'label': 'Rauchtest Disposition', 'phone': '0000 11111', 'note': 'Rauchtest rund um die Uhr'},
                  {'kind': 'werkstatt', 'label': 'Rauchtest Werkstatt-Bereitschaft', 'phone': '0000 22222', 'scope': 'site', 'site': 'Dortmund'},
@@ -479,9 +479,6 @@ with sync_playwright() as p:
                     # Kopfzeile: „CEVIK“ nie abgeschnitten (24.10.2026: EN „Production“ in der Umgebungswahl kürzte auf „CEVII“)
                     if pg.evaluate("() => { const b = document.querySelector('.topbar .brand'); return !!b && b.scrollWidth > b.clientWidth + 1; }"):
                         problems.append(f'{where}: App-Name in der Kopfzeile abgeschnitten')
-                    split = pg.evaluate(WORDSPLIT)
-                    if split:
-                        problems.append(f'{where}: Wort mitten im Wort umgebrochen {split[:3]}')
                     a11y = pg.evaluate(A11Y)
                     if a11y:
                         problems.append(f'{where}: Barrierefreiheit {a11y[:3]}')
@@ -500,6 +497,11 @@ with sync_playwright() as p:
                         pl = pg.evaluate("""() => { const e = document.querySelector('#app .plate .num'); return e ? e.textContent.replace(/\\s+/g, ' ').trim() : ''; }""")
                         if not pl or pl not in tt[0]:
                             problems.append(f'{where}: Fenstertitel ohne Kennzeichen „{pl}“: „{tt[0]}“')
+                # Wortumbruch auch in Tablet-Breite prüfen (Backlog 244; Dunkelmodus über CFP_SCHEME=dark im Gesamtlauf)
+                if name in ('handy', 'tablet'):
+                    split = pg.evaluate(WORDSPLIT)
+                    if split:
+                        problems.append(f'{where}: Wort mitten im Wort umgebrochen {split[:3]}')
                 if name == 'handy':
                     # interne Codes (snake_case, z. B. „in_reparatur“) bzw. fehlende Übersetzungsschlüssel (t() liefert dann den Schlüssel) sichtbar?
                     codes = pg.evaluate(r"""() => { const out = []; const w = document.createTreeWalker(document.querySelector('#app') || document.body, NodeFilter.SHOW_TEXT);

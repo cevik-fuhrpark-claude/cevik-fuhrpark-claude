@@ -7053,7 +7053,7 @@ const csvExportUrls = () => {
     'werkstatt-auslastung': '/api/reports/workshop-load?weeks=4&format=csv', 'fuhrpark-kennzahlen': `/api/reports/kpi?format=csv&from=${y}-01&to=${COST_TO}`,
     'fuhrpark-kennzahlen-prio': `/api/reports/kpi?format=csv&part=priority&from=${y}-01&to=${COST_TO}`,
     'fuhrpark-bestellvorschlag': '/api/stock?reorder=1&format=csv', 'fuhrpark-lager': '/api/stock?format=csv', 'fuhrpark-lagerjournal': `/api/stock/journal?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`,
-    'fuhrpark-fahrer': '/api/drivers?format=csv', 'fuhrpark-auslesungen': '/api/tacho?format=csv', 'fuhrpark-bussgelder': '/api/fines?format=csv', 'fuhrpark-vorgaenge': '/api/cases?format=csv',
+    'fuhrpark-fahrer': '/api/drivers?format=csv', 'fuhrpark-auslesungen': '/api/tacho?format=csv', 'fuhrpark-auslesungen-verlauf': '/api/tacho/history?format=csv', 'fuhrpark-fahrer-nachweise': '/api/drivers/records?format=csv', 'fuhrpark-fahrer-kontrollen': '/api/drivers/records?format=csv&part=checks', 'fuhrpark-bussgelder': '/api/fines?format=csv', 'fuhrpark-vorgaenge': '/api/cases?format=csv',
     'fuhrpark-versicherungsfaelle': '/api/claims?format=csv', 'fuhrpark-telematik-stand': '/api/telematics?format=csv',
   };
 };
@@ -14934,7 +14934,9 @@ await test('Fehlersuche 20.10. (12): Leerlauf mehrere Tabs/Minutentakt, Einladun
   // 7. Push-Abwahl „Neue Meldung“ nur, wo sie wirkt; Reaktionsfrist „kritisch“ = sofort
   const { mutableKindsFor } = await import('../src/notify.js');
   ok(!mutableKindsFor('workshop').includes('created') && !mutableKindsFor('dispatch').includes('created') && mutableKindsFor('fleet').includes('created'), 'Abwahl');
-  ok(app.includes("p === 'kritisch' ? `<td class=\"small muted\" style=\"white-space:nowrap\">${esc(t('sla_immediate'))}</td>`"), 'kritisch sofort');
+  ok(app.includes("p === 'kritisch' ? `<td class=\"small muted\" style=\"white-space:nowrap\" data-label=\"${esc(t('prio_' + p))}\">${esc(t('sla_immediate'))}</td>`"), 'kritisch sofort');
+  // Backlog 244: am Handy als Karten (table.stack) mit Dringlichkeit je Zeile – UK 390 px ohne Querscrollen
+  ok(app.includes('<table class="stack slatab"><thead>') && app.includes('`<td data-label="${esc(t(\'prio_\' + p))}"><input name="sla_${e}_${k}_${p}_min"'), 'Reaktionszeiten gestapelt');
   // 8. Zeitleiste: künftiger Vertragsbeginn erst ab dem Tag; Vorgangstext 300 Zeichen (Übersetzung), Kürzung in der App
   const fd = new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + 30 * 864e5).toISOString().slice(0, 10);
   eq((await F.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Zukunft-Leasing', evidence: 'v', start_date: fd })).status, 201);
@@ -20047,6 +20049,119 @@ await test('Backlog 241 (Monatsmeldung km an den Leasinggeber): Vertragsübersic
   // Oberfläche zeigt den Stand auch ohne Kontingent
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-ctread'), 'Vertragszeile: km-Stand mit Ablesedatum und Quelle');
+});
+
+await test('Backlog 245 (Blickwinkel „Betriebsprüfung“): Verlauf der Auslesungen für einen Zeitraum mit Fristüberschreitungen je Fahrerkarte/Massenspeicher, inkl. deaktivierter Fahrer, Storno, offene/abgeschnittene Lücken, CSV, Rechte', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner');
+  const s0 = await own.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'bp.inhaber', display_name: 'BP' });
+  await own.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const eqj = (a, b, m) => eq(JSON.stringify(a), JSON.stringify(b), m);
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const A = (await own.post('/api/drivers', { display_name: 'Anna Prüf', personnel_no: 'BP-1' })).data.id;
+  const B = (await own.post('/api/drivers', { display_name: 'Bernd Alt', personnel_no: 'BP-2' })).data.id;
+  eq((await own.post('/api/vehicles', { plate: 'BP-LK 1', vin: 'WDB96340310824501', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340310824501';
+  const dl = async (b, d) => { const x = await own.post('/api/tacho/downloads', { ...b, downloaded_on: d, evidence: 'Auslesesoftware' }); eq(x.status, 201, d); return x.data.id; };
+  for (const n of [-400, -300, -280, -255]) await dl({ kind: 'fahrerkarte', driver_id: A }, day(n));
+  const wrong = await dl({ kind: 'fahrerkarte', driver_id: A }, day(-330));
+  eq((await own.post(`/api/tacho/downloads/${wrong}/cancel`, { reason: 'Tippfehler im Datum' })).status, 200);
+  for (const n of [-100, -80]) await dl({ kind: 'fahrerkarte', driver_id: B }, day(n));
+  eq((await own.patch(`/api/drivers/${B}`, { active: false })).status, 200, 'Bernd ausgeschieden');
+  for (const n of [-200, -50]) await dl({ kind: 'massenspeicher', vehicle_id: V }, day(n));
+  // Standard: 12 Monate bis heute
+  const h = (await own.get('/api/tacho/history')).data;
+  eq(h.to, BERLIN_TODAY); ok(h.from >= day(-366) && h.from <= day(-364), 'Von = 12 Monate ' + h.from);
+  const a = h.drivers.find((x) => x.id === A); const b = h.drivers.find((x) => x.id === B);
+  ok(a && b, 'beide Fahrer, auch der ausgeschiedene'); eq(b.active, false); eq(a.active, true);
+  eqj(a.downloads, [day(-300), day(-280), day(-255)], 'Auslesungen im Zeitraum ohne Storno'); eq(a.last_before, day(-400));
+  eq(a.gaps.length, 2, JSON.stringify(a.gaps));
+  eqj([a.gaps[0].overdue_from, a.gaps[0].until, a.gaps[0].days, a.gaps[0].open], [day(-371), day(-300), 72, false], 'Lücke in den Zeitraum hinein (Storno zählt nicht)');
+  eqj([a.gaps[1].due, a.gaps[1].until, a.gaps[1].days, a.gaps[1].open, a.gaps[1].cut], [day(-227), BERLIN_TODAY, 227, true, false], 'offene Lücke bis heute');
+  eqj([b.gaps.length, b.gaps[0].days, b.gaps[0].open], [1, 52, true]);
+  const v = h.vehicles.find((x) => x.id === V);
+  eqj([v.plate, v.count, v.gaps.length, v.gaps[0].days, v.gaps[0].until], ['BP-LK 1', 2, 1, 60, day(-50)], 'Massenspeicher 90 Tage');
+  eqj(h.totals.drivers, { subjects: 2, downloads: 5, with_gaps: 2, gaps: 3 }); eq(h.totals.vehicles.with_gaps, 1);
+  // Zeitraum in der Vergangenheit: Lücke bis „Bis“ gezählt, nicht „offen“; Lücken außerhalb fehlen
+  const p = (await own.get(`/api/tacho/history?from=${day(-200)}&to=${day(-60)}`)).data;
+  const pa = p.drivers.find((x) => x.id === A);
+  eqj(pa.downloads, [], 'keine Auslesung im Zeitraum'); eq(pa.last_before, day(-255));
+  eqj([pa.gaps.length, pa.gaps[0].until, pa.gaps[0].days, pa.gaps[0].open, pa.gaps[0].cut], [1, day(-60), 167, false, true]);
+  eqj(p.drivers.find((x) => x.id === B).gaps, [], 'Bernd: -100/-80 ohne Überschreitung bis -60');
+  // CSV mit Protokoll
+  const c = await own.get(`/api/tacho/history?format=csv`); eq(c.status, 200);
+  ok(/fuhrpark-auslesungen-verlauf_production_/.test(c.headers.get('content-disposition')), 'Dateiname');
+  const txt = new TextDecoder('utf-8', { ignoreBOM: true }).decode(c.data);
+  ok(txt.startsWith('﻿Art;Fahrer/Kennzeichen;Personalnummer;Standort;Aktiv;Auslesungen im Zeitraum'), 'Kopfzeile');
+  const de = (x) => x.split('-').reverse().join('.');
+  ok(txt.includes(`Fahrerkarte;Bernd Alt;BP-2;;nein;2;${de(day(-100))}, ${de(day(-80))};;1;52;${de(day(-51))} – offen (${de(BERLIN_TODAY)}) (52)`), txt);
+  ok(txt.includes(`Massenspeicher;BP-LK 1;;Dortmund;ja;2;`), 'Fahrzeugzeile');
+  ok(e.DB.db.prepare(`SELECT 1 FROM audit_log WHERE action='reports.tacho.history_export'`).get(), 'Export protokolliert');
+  // Prüfungen
+  eq((await own.get(`/api/tacho/history?from=${day(-1)}&to=${day(-5)}`)).status, 400, 'Von nach Bis');
+  eq((await own.get(`/api/tacho/history?from=2026-02-30`)).status, 400, 'kein Kalenderdatum');
+  const w = await own.post('/api/users', { username: 'bp.werkstatt', display_name: 'BP Werkstatt', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  const ws = new Client(worker, e, 'bp.werkstatt'); await ws.post('/api/invite/accept', { token: w.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  eq((await ws.get('/api/tacho/history')).status, 403, 'Werkstatt nicht');
+  // Oberfläche: Route, Link aus der Übersicht, Texte DE/UK/EN, Hilfe
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('[/^#\\/tacho\\/history$/, viewTachoHistory]') && app.includes('href="#/tacho/history" id="thlink"'), 'Route und Link');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['th_title', 'th_link', 'th_hint', 'th_downloads', 'th_gaps', 'th_no_gap', 'th_open', 'th_cut', 'th_overdue', 'th_until', 'th_before', 'th_inactive', 'th_with_gaps', 'th_truncated', 'th_none']) ok(STRINGS[l][k], `${l} ${k}`);
+  ok(STRINGS.de.help_drivers_s.includes('Verlauf für einen Zeitraum') && STRINGS.uk.help_drivers_s.includes('Історія за період') && STRINGS.en.help_drivers_s.includes('History for a period'), 'Hilfe');
+});
+
+await test('Backlog 246 (Betriebsprüfung): Nachweise und Führerscheinkontrollen aller Fahrer für einen Zeitraum – Stand heute (aktuell/abgelaufen/abgelöst/storniert), ausgeschiedene Fahrer, ohne Führerscheinnummer, 2 CSV, Rechte', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner');
+  const s0 = await own.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'dr.inhaber', display_name: 'DR Inhaber' });
+  await own.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const A = (await own.post('/api/drivers', { display_name: 'Ada Nachweis', personnel_no: 'DR-1', site: 'Dortmund' })).data.id;
+  const B = (await own.post('/api/drivers', { display_name: 'Bodo Weg', personnel_no: 'DR-2' })).data.id;
+  const doc = async (id, b) => { const x = await own.post(`/api/drivers/${id}/documents`, { evidence: 'Kopie Akte', ...b }); eq(x.status, 201, JSON.stringify(x.data)); return x.data.id; };
+  await doc(A, { kind: 'fuehrerschein', number: 'B072RRE2I55', license_classes: 'C, CE', issued_on: day(-1000), valid_until: day(500) });
+  await doc(A, { kind: 'unterweisung', title: 'Ladungssicherung', issued_on: day(-400), valid_until: day(-35) });
+  await doc(A, { kind: 'unterweisung', title: 'Ladungssicherung', issued_on: day(-30), valid_until: day(335) });
+  await doc(A, { kind: 'code95', issued_on: day(-2000), valid_until: day(-500) });
+  await doc(A, { kind: 'fahrerkarte', issued_on: day(-1800), valid_until: day(-10) });
+  const wrong = await doc(A, { kind: 'sonstiges', title: 'ADR-Schein', issued_on: day(-20), valid_until: day(700) });
+  eq((await own.post(`/api/drivers/${A}/documents/${wrong}/cancel`, { reason: 'falsche Akte' })).status, 200);
+  await doc(B, { kind: 'fuehrerschein', issued_on: day(-3000), valid_until: day(900) });
+  const chk = async (id, b) => { const x = await own.post(`/api/drivers/${id}/license-checks`, b); eq(x.status, 201, JSON.stringify(x.data)); return x.data.id; };
+  await chk(A, { checked_on: day(-200), result: 'in_ordnung' }); await chk(A, { checked_on: day(-500), result: 'in_ordnung' });
+  await chk(B, { checked_on: day(-100), result: 'nicht_vorgelegt', note: 'Urlaub' });
+  const cx = await chk(B, { checked_on: day(-50), result: 'in_ordnung' });
+  eq((await own.post(`/api/drivers/${B}/license-checks/${cx}/cancel`, { reason: 'Tippfehler' })).status, 200);
+  eq((await own.patch(`/api/drivers/${B}`, { active: false })).status, 200);
+  const r = (await own.get('/api/drivers/records')).data;
+  eq(r.to, BERLIN_TODAY); ok(r.from >= day(-366) && r.from <= day(-364), 'Von = 12 Monate');
+  const st = (who, kind, title) => r.documents.filter((x) => x.display_name === who && x.kind === kind && (!title || x.title === title)).map((x) => x.state).sort().join(',');
+  eq(st('Ada Nachweis', 'fuehrerschein'), 'aktuell'); eq(st('Ada Nachweis', 'unterweisung'), 'abgeloest,aktuell', 'ältere Unterweisung durch neuere abgelöst');
+  eq(st('Ada Nachweis', 'code95'), '', 'vor dem Zeitraum abgelaufen → nicht enthalten'); eq(st('Ada Nachweis', 'fahrerkarte'), 'abgelaufen');
+  eq(st('Ada Nachweis', 'sonstiges'), 'storniert'); eq(st('Bodo Weg', 'fuehrerschein'), 'aktuell');
+  ok(r.documents.find((x) => x.display_name === 'Bodo Weg').active === false, 'ausgeschieden gekennzeichnet');
+  ok(!JSON.stringify(r).includes('B072RRE2I55') && !JSON.stringify(r).includes('Urlaub') && !JSON.stringify(r).includes('Kopie Akte'), 'ohne Führerscheinnummer, Bemerkung, Nachweistext');
+  eq(r.documents.find((x) => x.kind === 'fuehrerschein' && x.display_name === 'Ada Nachweis').license_classes, 'C, CE');
+  eq(r.checks.map((x) => `${x.display_name}|${x.checked_on}|${x.result}|${x.cancelled_at ? 'S' : ''}`).join(' '), `Ada Nachweis|${day(-200)}|in_ordnung| Bodo Weg|${day(-100)}|nicht_vorgelegt| Bodo Weg|${day(-50)}|in_ordnung|S`, 'Kontrollen im Zeitraum, Storno gekennzeichnet');
+  eq(r.checks[0].checked_by_name, 'DR Inhaber');
+  const p = (await own.get(`/api/drivers/records?from=${day(-600)}&to=${day(-450)}`)).data;
+  eq(p.checks.length, 1); ok(p.documents.some((x) => x.kind === 'code95'), 'älterer Zeitraum enthält Code 95');
+  ok(!p.documents.some((x) => x.kind === 'sonstiges'), 'später ausgestellter Nachweis nicht im älteren Zeitraum');
+  // CSV beider Teile mit Protokoll
+  const dec = (x) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(x.data);
+  const c1 = await own.get('/api/drivers/records?format=csv'); const t1 = dec(c1);
+  ok(/fuhrpark-fahrer-nachweise_production_/.test(c1.headers.get('content-disposition')) && t1.startsWith('﻿Name;Personalnummer;Standort;Aktiv;Nachweis;Bezeichnung'), 'CSV Nachweise');
+  ok(t1.includes('Ada Nachweis;DR-1;Dortmund;ja;Unterweisung;Ladungssicherung;;') && t1.includes(';abgelöst;') && t1.includes(';storniert;falsche Akte'), t1);
+  const c2 = await own.get('/api/drivers/records?format=csv&part=checks'); const t2 = dec(c2);
+  ok(/fuhrpark-fahrer-kontrollen_production_/.test(c2.headers.get('content-disposition')) && t2.includes('Bodo Weg;DR-2;;nein;') && t2.includes(';in Ordnung;DR Inhaber;ja;Tippfehler'), t2);
+  eq(e.DB.db.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action='reports.drivers.records_export'`).get().n, 2, 'beide Exporte protokolliert');
+  eq((await own.get(`/api/drivers/records?from=${day(-1)}&to=${day(-3)}`)).status, 400);
+  const w = await own.post('/api/users', { username: 'dr.fahrer', display_name: 'DR Fahrer', role: 'driver', environment: 'production' });
+  const drv = new Client(worker, e, 'dr.fahrer'); await drv.post('/api/invite/accept', { token: w.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  eq((await drv.get('/api/drivers/records')).status, 403, 'Fahrer nicht');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('[/^#\\/drivers\\/records$/, viewDriverRecords], [/^#\\/drivers\\/([\\w-]+)$/, viewDriver]') && app.includes('href="#/drivers/records" id="drlink"'), 'Route vor der Fahrerakte, Link');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['dr_title', 'dr_link', 'dr_hint', 'dr_docs', 'dr_checks', 'dr_st_aktuell', 'dr_st_abgelaufen', 'dr_st_abgeloest', 'dr_st_storniert', 'dr_csv_docs', 'dr_csv_checks', 'dr_truncated']) ok(STRINGS[l][k], `${l} ${k}`);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (20.10.2026): Einstellungen – Reaktionsfrist „kritisch“ zeigt „sofort“ statt Eingabefeld (Agent meldet sofort);
 # Benutzerliste nach Deaktivieren/Aktivieren; Hilfe „Benutzer, Zugänge & Protokoll“ ohne „Aktivieren macht es rückgängig“.
-# DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# DE/UK/EN bei 390/820/1366 px, kein Querscrollen (auch nicht innerhalb der Reaktionszeiten-Tabelle, Backlog 244), keine Skriptfehler.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -31,6 +31,9 @@ with sync_playwright() as p:
         check(q.query_selector('#sf input[name=sla_production_ack_mittel_min]') is not None,f'{lang} {w}px: Feld „mittel“ vorhanden')
         check(IMM[lang] in q.inner_text('#sf'),f'{lang} {w}px: „{IMM[lang]}“ angezeigt')
         sw=q.evaluate('()=>document.documentElement.scrollWidth'); check(sw<=w+1,f'{lang} {w}px: Einstellungen ohne Querscrollen ({sw})')
+        # Backlog 244: Tabelle „Reaktionszeiten“ selbst ohne inneres Querscrollen (UK 390 px war 52 px zu breit) – am Handy als Karten
+        tw=q.evaluate("()=>[...document.querySelectorAll('table.slatab')].map((t)=>{const s=t.closest('.scroll');return s.scrollWidth-s.clientWidth})")
+        check(len(tw)==2 and max(tw)<=1,f'{lang} {w}px: Reaktionszeiten ohne inneres Querscrollen {tw}')
         if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/rf-einstellungen-{lang}.png', full_page=True)
         q.goto(B+'/#/users')
         try: q.wait_for_selector('td:has-text("RF Fahrer")', timeout=15000); ok_u=True

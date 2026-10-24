@@ -162,6 +162,75 @@ export function tachoCsv(ov, cell) {
   return lines.join('\r\n') + '\r\n';
 }
 
+// Verlauf für einen Zeitraum (24.10.2026, Backlog 245 – Blickwinkel „Betriebsprüfung durch BAG/Gewerbeaufsicht“): alle erfassten
+// Auslesungen je Fahrer/Fahrzeug im Zeitraum und die Fristüberschreitungen („Lücken“) nach derselben Regel wie die Übersicht:
+// spätestens fällig = vorherige erfasste Auslesung + 28 bzw. 90 Tage; Lücke = Tage nach dieser Frist bis zur nächsten Auslesung
+// (bzw. bis heute, solange keine folgt). Vor der ersten erfassten Auslesung wird keine Frist berechnet (wie überall, keine Annahme).
+// Enthält auch deaktivierte Fahrer, außer Betrieb genommene und ruhende Fahrzeuge, sofern sie Auslesungen haben. Stornierte zählen nicht.
+// Zeitraum für Prüfungsnachweise: ohne „Bis“ heute, ohne „Von“ 12 Monate bis einschließlich „Bis“ (z. B. 25.10.2025–24.10.2026)
+export function periodOf(query = {}, today = berlinDate()) {
+  const to = query.to ? String(query.to).slice(0, 10) : today;
+  if (!ISO.test(to)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  let from = query.from ? String(query.from).slice(0, 10) : null;
+  if (!from) { const prev = `${Number(to.slice(0, 4)) - 1}${to.slice(4)}`; from = addDays(ISO.test(prev) ? prev : `${Number(to.slice(0, 4)) - 1}-02-28`, 1); }
+  if (!ISO.test(from)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  if (from > to) throw bad('validation', '„Von“ liegt nach „bis“.');
+  return { from, to };
+}
+export const TACHO_HISTORY_MAX = 5000;
+export async function tachoHistory(env, user, envName, query = {}) {
+  if (!isMgr(user)) throw forbidden();
+  const today = berlinDate();
+  const { from, to } = periodOf(query, today);
+  const end = to < today ? to : today; // offene Lücke läuft bis heute bzw. bis „Bis“
+  const rows = (await env.DB.prepare(`SELECT kind, driver_id, vehicle_id, downloaded_on FROM tacho_downloads
+    WHERE environment=? AND cancelled_at IS NULL AND downloaded_on >= ? AND downloaded_on <= ? ORDER BY downloaded_on LIMIT ${TACHO_HISTORY_MAX + 1}`).bind(envName, from, to).all()).results;
+  const truncated = rows.length > TACHO_HISTORY_MAX; if (truncated) rows.length = TACHO_HISTORY_MAX;
+  // letzte Auslesung vor dem Zeitraum: Frist, die in den Zeitraum hineinläuft
+  const before = (await env.DB.prepare(`SELECT kind, driver_id, vehicle_id, MAX(downloaded_on) AS last FROM tacho_downloads
+    WHERE environment=? AND cancelled_at IS NULL AND downloaded_on < ? GROUP BY kind, driver_id, vehicle_id`).bind(envName, from).all()).results;
+  const subj = new Map();
+  const keyOf = (r) => (r.kind === 'fahrerkarte' ? 'd|' + r.driver_id : 'v|' + r.vehicle_id);
+  const get = (r) => { const k = keyOf(r); if (!subj.has(k)) subj.set(k, { kind: r.kind, id: r.driver_id || r.vehicle_id, prev: null, dates: [] }); return subj.get(k); };
+  for (const b of before) if (b.driver_id || b.vehicle_id) get(b).prev = b.last;
+  for (const r of rows) if (r.driver_id || r.vehicle_id) get(r).dates.push(r.downloaded_on);
+  const dIds = [...subj.values()].filter((x) => x.kind === 'fahrerkarte').map((x) => x.id);
+  const vIds = [...subj.values()].filter((x) => x.kind !== 'fahrerkarte').map((x) => x.id);
+  const drv = new Map(dIds.length ? (await env.DB.prepare(`SELECT d.id, d.display_name, d.personnel_no, d.site, d.active FROM drivers d JOIN json_each(?) j ON j.value=d.id WHERE d.environment=?`)
+    .bind(JSON.stringify(dIds), envName).all()).results.map((d) => [d.id, d]) : []);
+  const veh = new Map(vIds.length ? (await env.DB.prepare(`SELECT v.id, v.plate, v.site, v.active, v.eval_excluded FROM vehicles v JOIN json_each(?) j ON j.value=v.id`)
+    .bind(JSON.stringify(vIds)).all()).results.map((v) => [v.id, v]) : []);
+  const out = { drivers: [], vehicles: [] };
+  for (const x of subj.values()) {
+    const period = x.kind === 'fahrerkarte' ? TACHO_RULE.card_days : TACHO_RULE.vu_days;
+    const gaps = []; let last = x.prev;
+    // open: bis heute keine weitere Auslesung; cut: Zeitraum endet in der Vergangenheit, Lücke bis „Bis“ gezählt (spätere Auslesung außerhalb)
+    const gap = (lastOn, until, tail) => { const due = addDays(lastOn, period); if (until <= due) return;
+      const g = { last: lastOn, due, overdue_from: addDays(due, 1), until, days: daysBetween(due, until), open: tail && to >= today, cut: tail && to < today };
+      if (g.until >= from && g.overdue_from <= to) gaps.push(g); };
+    for (const d of x.dates) { if (last) gap(last, d, false); last = d; }
+    if (last && !truncated) gap(last, end, true);
+    const base = { id: x.id, downloads: x.dates, count: x.dates.length, last_before: x.prev, gaps, gap_days: gaps.reduce((a, g) => a + g.days, 0) };
+    if (x.kind === 'fahrerkarte') { const d = drv.get(x.id); if (!d) continue; out.drivers.push({ ...base, display_name: d.display_name, personnel_no: d.personnel_no, site: d.site, active: !!d.active }); }
+    else { const v = veh.get(x.id); if (!v) continue; out.vehicles.push({ ...base, plate: v.plate, site: v.site, active: !!v.active && !v.eval_excluded }); }
+  }
+  // Fahrzeuge/Fahrer mit Lücke zuerst, dann alphabetisch
+  const sortBy = (name) => (a, b) => (b.gaps.length ? 1 : 0) - (a.gaps.length ? 1 : 0) || String(a[name] || '').localeCompare(String(b[name] || ''), 'de', { sensitivity: 'base' });
+  out.drivers.sort(sortBy('display_name')); out.vehicles.sort(sortBy('plate'));
+  const cnt = (l) => ({ subjects: l.length, downloads: l.reduce((a, x) => a + x.count, 0), with_gaps: l.filter((x) => x.gaps.length).length, gaps: l.reduce((a, x) => a + x.gaps.length, 0) });
+  return { from, to, today, rule: TACHO_RULE, ...out, totals: { drivers: cnt(out.drivers), vehicles: cnt(out.vehicles) }, truncated, max: TACHO_HISTORY_MAX };
+}
+
+export function tachoHistoryCsv(h, cell) {
+  const lines = ['﻿Art;Fahrer/Kennzeichen;Personalnummer;Standort;Aktiv;Auslesungen im Zeitraum;Auslesedaten;Letzte Auslesung vor dem Zeitraum;Fristüberschreitungen;Tage überfällig gesamt;Fristüberschreitungen (überfällig ab – bis, Tage)'];
+  // Sammelfelder (mehrere Tage in einer Zelle) gleich als TT.MM.JJJJ – die zentrale Umschreibung erfasst nur ganze Datumsfelder
+  const de = (d) => d.split('-').reverse().join('.');
+  const g = (x) => x.gaps.map((y) => `${de(y.overdue_from)} – ${y.open ? 'offen (' + de(y.until) + ')' : y.cut ? 'Zeitraumende (' + de(y.until) + ')' : de(y.until)} (${y.days})`).join(' | ');
+  for (const d of h.drivers) lines.push(['Fahrerkarte', cell(d.display_name), cell(d.personnel_no), cell(d.site), d.active ? 'ja' : 'nein', d.count, d.downloads.map(de).join(', '), d.last_before || '', d.gaps.length, d.gap_days, cell(g(d))].join(';'));
+  for (const v of h.vehicles) lines.push(['Massenspeicher', cell(v.plate), '', cell(v.site), v.active ? 'ja' : 'nein', v.count, v.downloads.map(de).join(', '), v.last_before || '', v.gaps.length, v.gap_days, cell(g(v))].join(';'));
+  return lines.join('\r\n') + '\r\n';
+}
+
 // Sammelimport aus dem Export der Auslesesoftware (CSV, „;“ oder „,“). Spalten (Groß/Klein egal, Anfang genügt):
 // Art (Fahrerkarte/Karte/C bzw. Massenspeicher/Fahrzeug/VU/M), Personalnummer und/oder Fahrer/Name, Kennzeichen und/oder FIN,
 // Datum (JJJJ-MM-TT oder TT.MM.JJJJ), Nachweis/Datei (sonst Pflichtangabe `source` für alle Zeilen).

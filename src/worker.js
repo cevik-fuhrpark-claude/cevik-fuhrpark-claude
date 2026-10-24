@@ -556,6 +556,14 @@ async function handleApi(request, env, ctx, url) {
     return json({ drivers: list, ...(dsel ? { site: dsel.site, site_options: dsel.options, no_site_hidden: noSiteHidden, linked_user_ids: await drivers.linkedUserIds(env) } : {}) });
   }
   if (path === '/api/drivers' && m === 'POST') return json(await drivers.createDriver(env, user, envName, await readJson(request)), 201);
+  // Nachweise/Führerscheinkontrollen aller Fahrer für einen Zeitraum (Backlog 246, Betriebsprüfung) – vor /api/drivers/:id
+  if (path === '/api/drivers/records' && m === 'GET') {
+    const r = await drivers.driverRecords(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') !== 'csv') return json(r);
+    const part = url.searchParams.get('part') === 'checks' ? 'checks' : 'documents';
+    await auth.audit(env, user.id, 'reports.drivers.records_export', null, { environment: envName, part, from: r.from, to: r.to, rows: part === 'checks' ? r.checks.length : r.documents.length, ...(r.truncated ? { truncated: true } : {}) });
+    return new Response(drivers.driverRecordsCsv(r, part, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-${part === 'checks' ? 'kontrollen' : 'nachweise'}_${envName}_${r.from}_${r.to}.csv"`, ...(r.truncated ? { 'x-cfp-truncated': String(r.max) } : {}) } });
+  }
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'GET') {
     const dd = await drivers.driverDetail(env, user, envName, mm[1]);
     // Leitung: Konten anderer Akten für die Kontoauswahl „Stammdaten ändern“ (Backlog 101)
@@ -576,6 +584,12 @@ async function handleApi(request, env, ctx, url) {
       return new Response(tacho.tachoCsv(ov, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-auslesungen_${envName}_${ov.today}.csv"` } });
     }
     return json(ov);
+  }
+  if (path === '/api/tacho/history' && m === 'GET') {
+    const h = await tacho.tachoHistory(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') !== 'csv') return json(h);
+    await auth.audit(env, user.id, 'reports.tacho.history_export', null, { environment: envName, from: h.from, to: h.to, ...(h.truncated ? { truncated: true } : {}) });
+    return new Response(tacho.tachoHistoryCsv(h, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-auslesungen-verlauf_${envName}_${h.from}_${h.to}.csv"`, ...(h.truncated ? { 'x-cfp-truncated': String(h.max) } : {}) } });
   }
   if (path === '/api/tacho/import' && m === 'POST') {
     await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);

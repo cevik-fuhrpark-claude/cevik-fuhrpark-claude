@@ -4,7 +4,7 @@
 import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, flag, berlinDate, berlinDaySql, isCalendarDate, cutText } from './util.js';
 import { audit } from './auth.js';
-import { tachoStatus, warnDaysOf, TACHO_RULE, pnoKey, normName } from './tacho.js';
+import { tachoStatus, warnDaysOf, TACHO_RULE, pnoKey, normName, periodOf } from './tacho.js';
 import { SETTING_DEFAULTS } from './settings.js';
 
 export const DOC_KINDS = ['fuehrerschein', 'fahrerkarte', 'code95', 'unterweisung', 'sonstiges'];
@@ -430,5 +430,48 @@ export function driversCsv(list, tachoByDriver, cell) {
     lines.push([cell(d.display_name), cell(d.personnel_no), cell(d.site), v('fuehrerschein'), v('fahrerkarte'), v('code95'), d.status.check.last || '', CHECK_RESULT_DE[d.status.check.result] || d.status.check.result || '',
       d.status.check.due || '', tc ? tc.last || '' : '', tc ? tc.due || '' : '', cell([DOV[overall(d, tc)], ...reasons(d, tc)].join(' · '))].join(';'));
   }
+  return lines.join('\r\n') + '\r\n';
+}
+
+// Nachweise und Führerscheinkontrollen aller Fahrer für einen Zeitraum (24.10.2026, Backlog 246 – Betriebsprüfung): Nachweise, die im
+// Zeitraum galten (ausgestellt bzw. erfasst bis „Bis“ und nicht vor „Von“ abgelaufen), mit heutigem Stand (aktuell/abgelaufen/abgelöst/
+// storniert); Kontrollen mit Datum im Zeitraum (stornierte gekennzeichnet). Auch ausgeschiedene Fahrer. Nur Inhaber/Fuhrparkleitung.
+// Ohne Führerscheinnummer und ohne interne Bemerkungen (Datensparsamkeit – die Akte bleibt die Quelle).
+export const RECORDS_MAX = 5000;
+export async function driverRecords(env, user, envName, query = {}, settings = null) {
+  if (!isMgr(user)) throw forbidden();
+  const today = berlinDate(); const { from, to } = periodOf(query, today);
+  const docs = (await env.DB.prepare(`SELECT x.id, x.driver_id, x.kind, x.title, x.license_classes, x.issued_on, x.valid_until, x.superseded, x.created_at, x.cancelled_at, x.cancel_reason,
+      ${berlinDaySql('x.created_at')} AS entry_day, d.display_name, d.personnel_no, d.site, d.active
+    FROM driver_documents x JOIN drivers d ON d.id=x.driver_id WHERE d.environment=? ORDER BY d.display_name, x.kind, x.created_at LIMIT ${RECORDS_MAX + 1}`).bind(envName).all()).results;
+  const docsTrunc = docs.length > RECORDS_MAX; if (docsTrunc) docs.length = RECORDS_MAX;
+  const c = cfg(settings || await settingsMap(env));
+  const byD = new Map(); for (const x of docs) { if (!byD.has(x.driver_id)) byD.set(x.driver_id, []); byD.get(x.driver_id).push(x); }
+  const replaced = new Set();
+  for (const list of byD.values()) for (const r of driverStatus(list, null, today, c).replaced) replaced.add(r.id);
+  const documents = docs.filter((x) => (x.issued_on || x.entry_day) <= to && (!x.valid_until || x.valid_until >= from)).map((x) => ({
+    id: x.id, driver_id: x.driver_id, display_name: x.display_name, personnel_no: x.personnel_no, site: x.site, active: !!x.active,
+    kind: x.kind, title: x.title ? shortTitle(x.title) : null, license_classes: x.license_classes || null, issued_on: x.issued_on || null, entry_day: x.entry_day, valid_until: x.valid_until || null,
+    state: x.cancelled_at ? 'storniert' : x.superseded || replaced.has(x.id) ? 'abgeloest' : x.valid_until && x.valid_until < today ? 'abgelaufen' : 'aktuell',
+    ...(x.cancelled_at ? { cancel_reason: x.cancel_reason } : {}) }));
+  const checks = (await env.DB.prepare(`SELECT c.id, c.driver_id, c.checked_on, c.result, c.cancelled_at, c.cancel_reason, u.display_name AS checked_by_name, d.display_name, d.personnel_no, d.site, d.active
+    FROM driver_license_checks c JOIN drivers d ON d.id=c.driver_id LEFT JOIN users u ON u.id=c.checked_by
+    WHERE d.environment=? AND c.checked_on >= ? AND c.checked_on <= ? ORDER BY c.checked_on, d.display_name LIMIT ${RECORDS_MAX + 1}`).bind(envName, from, to).all()).results;
+  const checksTrunc = checks.length > RECORDS_MAX; if (checksTrunc) checks.length = RECORDS_MAX;
+  const sortName = (a, b) => byName(a, b);
+  documents.sort((a, b) => sortName(a, b) || String(a.kind).localeCompare(String(b.kind)) || String(a.issued_on || a.entry_day).localeCompare(String(b.issued_on || b.entry_day)));
+  return { from, to, today, documents, checks: checks.map((x) => ({ ...x, active: !!x.active })), truncated: docsTrunc || checksTrunc, max: RECORDS_MAX };
+}
+
+const DOC_STATE_DE = { aktuell: 'aktuell', abgelaufen: 'abgelaufen', abgeloest: 'abgelöst', storniert: 'storniert' };
+const DOC_KIND_DE = { fuehrerschein: 'Führerschein', fahrerkarte: 'Fahrerkarte', code95: 'Code 95', unterweisung: 'Unterweisung', sonstiges: 'Sonstiger Nachweis' };
+export function driverRecordsCsv(r, part, cell) {
+  if (part === 'checks') {
+    const lines = ['﻿Name;Personalnummer;Standort;Aktiv;Kontrolle am;Ergebnis;Kontrolliert von;Storniert;Storno-Grund'];
+    for (const x of r.checks) lines.push([cell(x.display_name), cell(x.personnel_no), cell(x.site), x.active ? 'ja' : 'nein', x.checked_on, CHECK_RESULT_DE[x.result] || x.result, cell(x.checked_by_name), x.cancelled_at ? 'ja' : 'nein', cell(x.cancelled_at ? x.cancel_reason : '')].join(';'));
+    return lines.join('\r\n') + '\r\n';
+  }
+  const lines = ['﻿Name;Personalnummer;Standort;Aktiv;Nachweis;Bezeichnung;Klassen;Ausgestellt am;Erfasst am;Gültig bis;Stand heute;Storno-Grund'];
+  for (const x of r.documents) lines.push([cell(x.display_name), cell(x.personnel_no), cell(x.site), x.active ? 'ja' : 'nein', DOC_KIND_DE[x.kind] || x.kind, cell(x.title), cell(x.license_classes), x.issued_on || '', x.entry_day || '', x.valid_until || '', DOC_STATE_DE[x.state], cell(x.cancel_reason || '')].join(';'));
   return lines.join('\r\n') + '\r\n';
 }
