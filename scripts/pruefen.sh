@@ -151,6 +151,7 @@ UI-Fotos im Vorgang: Zeitpunkt/Rolle/Name je Datei, Auswahl ohne Kamera-Zwang|ui
 UI-Fremdleistung mit Beleg: Kostenvoranschlag-PDF wählen, Link, Kostenfreigabe listet Belege|ui-fremdbeleg.py|/tmp/cfp-fremdbeleg.log
 UI-Handywechsel: Push-Gerät ohne Anmeldung abmelden, Kontosprache auf der Anmeldeseite|ui-handywechsel.py|/tmp/cfp-handywechsel.log
 UI-Diktat auf Ukrainisch/Russisch: Unfall-Hinweis ohne Warnblinker, change, lang= am Freitext|ui-diktat-ukrainisch.py|/tmp/cfp-diktat-ukrainisch.log
+UI-Ersatzfahrzeug (Disposition): Prüfstand des gekoppelten Anhängers an der Lkw-Zeile, Sperrgrund auf der Tafel|ui-ersatzfahrzeug.py|/tmp/cfp-ersatzfahrzeug.log
 UI-Bußgeld ändern (Frist), deaktivierter Kandidat, Umgebung|ui-bussgeld-aendern.py|/tmp/cfp-bussgeld-aendern.log
 UI-Bußgeld Befund-Link, Zurücksetzen auf Eingegangen|ui-bussgeld-befundlink.py|/tmp/cfp-bussgeld-befundlink.log
 UI-Bußgeld-Verlauf mit Fahrernamen, Kandidat-Nachweis übersetzt, berechnete SP beim Fahrer, Reifenverlauf|ui-bussgeld-verlauf-sp-fahrer.py|/tmp/cfp-bussgeld-verlauf-sp-fahrer.log

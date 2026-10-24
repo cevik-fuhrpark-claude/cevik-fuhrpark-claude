@@ -105,11 +105,14 @@ export async function listVehicles(env, user, envName, query = {}) {
   const byId = new Map(list.map((v) => [v.id, v]));
   for (const v of list) {
     const p = byId.get(v.trailer_id || v.truck_id);
-    v.coupled = p ? { id: p.id, plate: p.plate, kind: p.kind, availability: p.availability } : null;
+    // Prüfstand des gekoppelten Fahrzeugs (25.10.2026, Teilagent „Disposition sucht Ersatzfahrzeug“): Lkw-Zeile zeigte „Keine offenen Meldungen“,
+    // obwohl der Anhänger HU/SP überfällig oder „verkehrsunsicher“ war – nur Information, availability bleibt unverändert
+    v.coupled = p ? { id: p.id, plate: p.plate, kind: p.kind, availability: p.availability, eval_excluded: p.eval_excluded ? 1 : 0, next_due: p.next_due || null,
+      km_remaining: p.km_remaining ?? null, failed_inspection: p.failed_inspection || null } : null;
   }
   if (user.role === 'driver') {
     const assigned = (await env.DB.prepare(`SELECT vehicle_id FROM driver_vehicles WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)`).bind(user.id, nowIso()).all()).results.map((r) => r.vehicle_id);
-    list = list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, manufacturer: v.manufacturer, trailer_plate: v.trailer_plate, truck_plate: v.truck_plate, assigned: assigned.includes(v.id), availability: v.availability, coupled: v.coupled }));
+    list = list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, manufacturer: v.manufacturer, trailer_plate: v.trailer_plate, truck_plate: v.truck_plate, assigned: assigned.includes(v.id), availability: v.availability, coupled: v.coupled && { id: v.coupled.id, plate: v.coupled.plate, kind: v.coupled.kind, availability: v.coupled.availability } })); // Fahrer: Prüfstand des Gespanns wie bisher nicht in der Liste
     list.sort((a, b) => (b.assigned - a.assigned) || plateCmp(a.plate, b.plate));
   } else list.sort((a, b) => plateCmp(a.plate, b.plate)); // Auswahllisten (Melden, Kontrolle) übernehmen diese Reihenfolge
   return list;
@@ -426,6 +429,8 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
 
 // Fahrzeugliste als CSV (Excel): Stammdaten + Verfügbarkeit laut System
 const AV_DE = { gesperrt: 'gesperrt', werkstatt: 'in Werkstatt', meldung_offen: 'Meldung offen', einsatzbereit_lt_system: 'keine offenen Meldungen' };
+const FAILED_DE = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
+const failedCell = (fi, csvCell) => (fi ? csvCell(`${fi.kind} ${fi.done_date || ''} ${FAILED_DE[fi.result] || fi.result || ''}`.replace(/\s+/g, ' ').trim()) : '');
 export function vehiclesCsv(list, csvCell) {
   const head = ['Kennzeichen', 'FIN', 'Fahrzeugart', 'Standort', 'Hersteller', 'Modell', 'Baujahr', 'Anhänger', 'Status Stammliste', 'Verfügbarkeit laut System', 'Offene Vorgänge', 'Letzter km-Stand', 'Nächste Prüfung', 'Letzte Abfahrtskontrolle', 'Ergebnis Abfahrtskontrolle', 'Gekoppeltes Fahrzeug', 'Zustand gekoppeltes Fahrzeug', 'Nächste km-Fälligkeit', 'Art km-Fälligkeit', 'Rest-km', 'Offene Rückrufe'];
   // Inhaber/Fuhrparkleitung: offene Agentenbefunde (Anzahl, davon kritisch) – nur wenn die Liste die Felder trägt (gleiche Sichtbarkeit wie die Liste)
@@ -433,6 +438,8 @@ export function vehiclesCsv(list, csvCell) {
   if (withAF) head.push('Offene Agentenbefunde', 'davon kritisch');
   // ruhend/außer Betrieb sichtbar (sonst „keine offenen Meldungen“ ohne Kennzeichnung, 18.10.2026) – am Ende, Spaltenpositionen bleiben
   head.push('Bewertung/Betrieb');
+  // Prüfung nicht bestanden (erhebliche/gefährliche Mängel, verkehrsunsicher) wie Listen-Chip und /v1/availability – exportierte Liste „Keine offenen Meldungen“ zeigte sie nicht (25.10.2026)
+  head.push('Prüfung nicht bestanden', 'Prüfung gekoppeltes Fahrzeug');
   const lines = [head.join(';')];
   for (const v of list) lines.push([csvCell(v.plate), csvCell(v.vin), v.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(v.site), csvCell(v.manufacturer), csvCell(v.model), v.build_year ?? '',
     csvCell(v.trailer_plate), csvCell(v.master_status), AV_DE[v.availability] || v.availability, v.open_cases ?? '', v.last_km ?? '', v.next_due || '',
@@ -443,7 +450,7 @@ export function vehiclesCsv(list, csvCell) {
     v.next_due_km ?? '', csvCell(v.next_due_km_kind), v.km_remaining ?? '',
     // offene Herstellerrückrufe (Anzahl) – ebenfalls am Ende angehängt
     v.open_recalls ?? 0, ...(withAF ? [v.agent_findings_open ?? 0, v.agent_findings_critical ?? 0] : []),
-    v.active === 0 || v.active === false ? 'außer Betrieb' : v.eval_excluded ? 'ruhend (nicht in Bewertungen)' : 'aktiv'].join(';'));
+    v.active === 0 || v.active === false ? 'außer Betrieb' : v.eval_excluded ? 'ruhend (nicht in Bewertungen)' : 'aktiv', failedCell(v.failed_inspection, csvCell), failedCell(v.coupled && v.coupled.failed_inspection, csvCell)].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
