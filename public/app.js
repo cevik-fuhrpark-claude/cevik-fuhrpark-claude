@@ -4423,7 +4423,7 @@ async function viewPlan(sec) {
   // Fahrzeug-Standort je Zeile, wenn nicht nach Fahrzeug-Standort gefiltert und mehrere Standorte (23.10.2026)
   const vsTag = (i) => (!r.vehicle_site && (r.vehicle_sites || []).length > 1 && i.vehicle_site_label ? `<span data-vsite>📍 ${esc(i.vehicle_site_label === 'ohne' ? t('cs_nosite') : i.vehicle_site_label)}</span>` : '');
   const row = (i) => i.type === 'case'
-    ? `<a class="row p-${esc(i.priority)}" href="#/cases/${esc(i.id)}">${plate(i.plate, { locked: i.safety_lock })}<span class="title">${esc(i.case_no)} · ${woTag(i)}${ltxt(clipTxt(cDesc(i.description), 100))}</span><span class="chip">${esc(t('st_' + i.status))}</span>${subs(vsTag(i), planVehTag(i), mgr && !site && esc(wsName(i.workshop_site)), partsEta(i, '', true), i.status === 'wartet_teile' && i.parts_expected_date && i.planned_date && i.planned_date < i.parts_expected_date && `<span class="chip mittel">${esc(t('plan_before_parts'))}</span>`, other(i))}</a>`
+    ? `<a class="row p-${esc(i.priority)}" href="#/cases/${esc(i.id)}">${plate(i.plate, { locked: i.safety_lock })}<span class="title">${esc(i.case_no)} · ${woTag(i)}${ltxt(clipTxt(cDesc(i.description), 100))}</span><span class="chip">${esc(t('st_' + i.status))}</span>${subs(vsTag(i), planVehTag(i), mgr && !site && esc(wsName(i.workshop_site)), partsEta(i, '', true), i.status === 'wartet_teile' && i.parts_expected_date && i.planned_date && i.planned_date < i.parts_expected_date && `<span class="chip mittel">${esc(t('plan_before_parts'))}</span>`, i.reschedules >= 2 && `<span class="chip mittel" style="white-space:nowrap">${esc(tn('plan_moved_n', i.reschedules))}</span>`, i.after_due_date && `<span class="chip kritisch">${esc(t('wplan_mdue_late').replace('{d}', fmtD(i.planned_date)))} (${fmtD(i.after_due_date)})</span>`, other(i))}</a>`
     : `<a class="row" href="${doneHref(i)}" data-fromplan>${plate(i.plate)}<span class="title">${esc(t('planned_inspection'))}: ${esc(mk(i.kind))}</span>${i.next_due_date ? `<span class="chip">${esc(t('next_due'))} ${fmtD(i.next_due_date)}</span>` : ''}${subs(vsTag(i), planVehTag(i), i.order && `🔧 ${esc(t('mo_open'))} ${esc(i.order.case_no)}`, kmTxt(i), other(i))}</a>`;
   // km-Fälligkeit als Text (Rest bzw. überschritten); ohne km-Regel leer
   function kmTxt(i) {
@@ -4446,7 +4446,7 @@ async function viewPlan(sec) {
   // „Vorschlag“ füllt nur das Feld (Werktag mit den wenigsten geplanten Aufträgen) – gespeichert wird erst mit „Termin setzen“.
   const canEdit = ['owner', 'fleet', 'workshop'].includes(S.me.role);
   const setForm = (i) => i.can_plan
-    ? `<div class="planset noprint"><label for="pd-${esc(i.id)}">${esc(t('planned'))}</label><input type="date" id="pd-${esc(i.id)}" min="${esc(r.today)}" value=""><button type="button" class="btn secondary" data-psug="${esc(i.id)}" title="${esc(t('plan_suggest_hint'))}">${esc(t('plan_suggest'))}</button><button type="button" class="btn" data-pset="${esc(i.id)}">${esc(t('plan_set'))}</button></div>`
+    ? `<div class="planset noprint"><label for="pd-${esc(i.id)}">${esc(t('planned'))}</label><input type="date" id="pd-${esc(i.id)}" min="${esc(r.today)}" value="">${i.planned_date ? `<input type="text" id="pr-${esc(i.id)}" maxlength="500" placeholder="${esc(t('plan_reason_ph'))}" aria-label="${esc(t('plan_reason_ph'))}">` : ''}<button type="button" class="btn secondary" data-psug="${esc(i.id)}" title="${esc(t('plan_suggest_hint'))}">${esc(t('plan_suggest'))}</button><button type="button" class="btn" data-pset="${esc(i.id)}">${esc(t('plan_set'))}</button></div>`
     : canEdit ? `<p class="small muted noprint planset">${esc(t('plan_need_ack'))}</p>` : '';
   const prow = (i, base) => i.type === 'case' && canEdit ? `<div class="planitem">${base}${setForm(i)}</div>` : base;
   if (r.overdue.length) html += `<h2>${esc(t('wplan_overdue'))} <span class="chip kritisch">${r.overdue.length}</span></h2><div class="list">${r.overdue.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip kritisch">${fmtD(i.planned_date)} · `))).join('')}</div>`;
@@ -4487,7 +4487,7 @@ async function viewPlan(sec) {
     const i = all.find((x) => x.id === b.dataset.pset); const f = $('#pd-' + CSS.escape(i.id));
     if (!f.value) { toast(t('plan_pick_date'), true); f.focus(); return; }
     b.disabled = true;
-    try { await api('POST', `/api/cases/${i.id}/commands`, { action: 'set_planned_date', command_id: uid(), expected_version: i.version, note: null, payload: { planned_date: f.value } }); toast('✓'); viewPlan(); }
+    try { await api('POST', `/api/cases/${i.id}/commands`, { action: 'set_planned_date', command_id: uid(), expected_version: i.version, note: ($('#pr-' + CSS.escape(i.id))?.value || '').trim() || null, payload: { planned_date: f.value } }); toast('✓'); viewPlan(); }
     catch (err) { b.disabled = false; toast(err.message, true); if (err.code === 'version_conflict') viewPlan(); }
   }));
   const ps = $('#psite'); if (ps) ps.onchange = () => { S.planSite = ps.value; viewPlan(); };

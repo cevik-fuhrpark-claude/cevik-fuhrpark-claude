@@ -831,9 +831,14 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const byDay = new Map();
   const put = (d, item) => { if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(item); };
   const overdue = []; const unplanned = [];
+  // Wie oft wurde der Termin schon verschoben (Verlauf set_planned_date mit altem und neuem Termin)? Eine Abfrage für alle Aufträge mit Termin
+  // (Blickwinkel „Termin verpasst“, 24.10.2026 – im Plan sah man ein mehrfach verschobenes Fahrzeug nicht)
+  const withDate = cs.results.filter((c) => c.planned_date).map((c) => c.id);
+  const moves = new Map(withDate.length ? (await env.DB.prepare(`SELECT case_id, COUNT(*) AS n FROM case_events WHERE action='set_planned_date' AND case_id IN (SELECT value FROM json_each(?))
+      AND json_extract(payload,'$.from') IS NOT NULL AND json_extract(payload,'$.to') IS NOT NULL GROUP BY case_id`).bind(JSON.stringify(withDate)).all()).results.map((x) => [x.case_id, x.n]) : []);
   for (const c of cs.results) {
     // can_plan: Termin direkt aus dem Plan setzbar – gleiche Regel wie Vorgangsbefehl set_planned_date (nach Übernahme)
-    const item = { type: 'case', ...c, eval_excluded: !!c.eval_excluded, coupled: coupled(c.vehicle_id), safety_lock: !!c.safety_lock, can_plan: canPlan && (c.status !== 'werkstatt_freigegeben' || !!c.workshop_ack_at) };
+    const item = { type: 'case', ...c, eval_excluded: !!c.eval_excluded, coupled: coupled(c.vehicle_id), safety_lock: !!c.safety_lock, can_plan: canPlan && (c.status !== 'werkstatt_freigegeben' || !!c.workshop_ack_at), ...(moves.get(c.id) ? { reschedules: moves.get(c.id) } : {}) };
     if (!c.planned_date) unplanned.push(item);
     else if (c.planned_date < today) overdue.push(item);
     else if (c.planned_date <= to) put(c.planned_date, item);
@@ -860,6 +865,12 @@ export async function workshopPlan(env, user, envName, query = {}) {
   for (const [, items] of byDay) for (const i of items) if (i.type === 'maintenance') {
     const o = ovById.get(i.id);
     if (o) Object.assign(i, { status: o.status, next_due_km: o.next_due_km ?? null, km_remaining: o.km_remaining ?? null, km_status: o.km_status ?? null, ...(o.km_unclear ? { km_unclear: o.km_unclear, km_drop_at: o.km_drop_at || null } : {}) });
+  }
+  // Auftrag aus einem Prüftermin mit Termin nach dessen Frist (z. B. zweimal verschoben, weil das Fahrzeug nicht kam): Hinweis am Auftrag –
+  // bisher nur bei Prüfterminen ohne Auftrag (planned_after_due). Frist aus der Übersicht (HU/SP berechnet), nichts wird verschoben (24.10.2026)
+  for (const i of [...[...byDay.values()].flat(), ...overdue]) if (i.type === 'case' && i.maintenance_rule_id && i.planned_date) {
+    const o = ovById.get(i.maintenance_rule_id);
+    if (o && o.next_due_date && i.planned_date > o.next_due_date) i.after_due_date = o.next_due_date;
   }
   const DUE = ['ueberfaellig', 'faellig'];
   // + offene Herstellerrückrufe ohne Frist (noch nicht durchgeführt): keine erfundene Frist, aber Werkstattarbeit, die eingeplant werden kann;

@@ -19855,7 +19855,7 @@ await test('Backlog 235 (Blickwinkel „UVV aller Fahrzeuge an einem Tag“): Sa
 await test('Backlog 236 (Werkstatt arbeitet den Sammeltermin ab): Werkstattplan verlinkt geplante/fällige Prüftermine direkt auf „Durchführung erfassen“ (nur Inhaber/Leitung/Werkstatt, nicht HU/SP ohne Eintrag), nach dem Speichern zurück in den Plan', async () => {
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("[/^#\\/vehicles\\/(VIN:[A-Z0-9]+\\?done=[\\w-]+)$/, (x) => viewVehicle(x.split('?done=')[0], null, 'done:' + x.split('?done=')[1])]"), 'Route ?done=');
-  const plan = app.slice(app.indexOf('async function viewPlan('), app.indexOf('async function viewPlan(') + 9000);
+  const plan = app.slice(app.indexOf('async function viewPlan('), app.indexOf('async function viewPlan(') + 10000);
   ok(plan.includes("const canDone = isMgr() || S.me.role === 'workshop';") && plan.includes("/^[\\w-]+$/.test(i.id) ? '?done='") && (plan.match(/href="\$\{doneHref\(i\)\}" data-fromplan/g) || []).length === 2, 'Plan-Zeilen (Termin und fällig) verlinken das Formular');
   ok(plan.includes("$$('a[data-fromplan]').forEach((a) => (a.onclick = () => { S.fromPlan = location.hash || '#/plan'; }));"), 'Herkunft gemerkt');
   const vv = app.slice(app.indexOf('async function viewVehicle('), app.indexOf('\nasync function ', app.indexOf('async function viewVehicle(') + 10));
@@ -20046,6 +20046,43 @@ await test('Backlog 250: Fahrer zuordnen mit ausgeschiedener Fahrerakte → Warn
   const { STRINGS, translateImportReason } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].drv_rec_left && STRINGS[l].drv_rec_left_warn, l);
   eq(translateImportReason('en', 'Fahrerakte ausgeschieden – Auslesung in der Akte erfassen: Fahrer W'), 'Driver record marked as left – record the download in the driver record: Fahrer W');
+});
+
+await test('Blickwinkel „Termin verpasst“ (24.10.2026): HU/SP mit verstrichenem Werkstatttermin → Agent rät „einplanen“; Werkstattplan zeigt Auftragstermin nach Fristende und Anzahl der Verschiebungen, Grund beim Verschieben im Plan', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  eq((await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', spec_source: 'Test: Fahrzeugschein F.2' })).status, 200);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', last_done_date: HU_LAST, interval_months: 12, evidence: 'Prüfbericht TÜV (Test)' }); eq(r.status, 201);
+  const f = () => db.prepare(`SELECT next_action, message_args FROM agent_findings WHERE finding_code='MAINTENANCE_DUE' AND vehicle_id=? AND status='offen' AND subject_key LIKE '%|HU'`).get(V1);
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  // Termin heute → „wahrnehmen“
+  db.prepare('UPDATE maintenance_rules SET planned_date=? WHERE id=?').run(BERLIN_TODAY, r.data.id);
+  await U.fleet.post('/api/agent/run', {});
+  ok(f(), 'Befund HU bald fällig'); eq(f().next_action, 'Geplanten Termin wahrnehmen und Durchführung belegen.');
+  // Termin gestern verstrichen (Fahrzeug nicht erschienen) → „einplanen“, kein geplanter Termin im Befund
+  db.prepare('UPDATE maintenance_rules SET planned_date=? WHERE id=?').run(day(-1), r.data.id);
+  await U.fleet.post('/api/agent/run', {});
+  eq(f().next_action, 'Werkstatttermin einplanen.', 'verstrichener Termin');
+  ok(!String(f().message_args || '').includes(day(-1)), 'kein verstrichener Termin im Befund: ' + f().message_args);
+  // Werkstattauftrag aus dem Prüftermin, zweimal verschoben – zuletzt hinter das Fristende → Hinweis am Auftrag im Werkstattplan
+  db.prepare('UPDATE maintenance_rules SET planned_date=NULL WHERE id=?').run(r.data.id);
+  const o = await U.fleet.post(`/api/maintenance/${r.data.id}/order`, { workshop_site: 'DORTMUND', note: 'HU', request_key: rk() }); eq(o.status, 201, JSON.stringify(o.data));
+  const ver = async () => (await U.fleet.get(`/api/cases/${o.data.id}`)).data.case.version;
+  const due = (await U.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === r.data.id).next_due_date; ok(due, 'Frist');
+  const plan = async () => { const p = (await U.fleet.get('/api/workshop/plan?days=60')).data; return [...p.days.flatMap((d) => d.items), ...(p.overdue || []), ...(p.unplanned || [])].find((i) => i.type === 'case' && i.id === o.data.id); };
+  const set = async (d) => eq((await U.fleet.post(`/api/cases/${o.data.id}/commands`, { action: 'set_planned_date', command_id: rk(), expected_version: await ver(), payload: { planned_date: d } })).status, 200, d);
+  eq((await U.ws.post(`/api/cases/${o.data.id}/commands`, { action: 'acknowledge', command_id: rk(), expected_version: await ver() })).status, 200, 'Werkstatt übernimmt');
+  await set(BERLIN_TODAY); eq((await plan()).after_due_date, undefined, 'Termin vor der Frist');
+  const after = new Date(Date.parse(due) + 86400000).toISOString().slice(0, 10);
+  await set(after); eq((await plan()).after_due_date, due, 'Termin nach der Frist'); eq((await plan()).reschedules, 1, 'einmal verschoben');
+  const after2 = new Date(Date.parse(due) + 2 * 86400000).toISOString().slice(0, 10);
+  eq((await U.fleet.post(`/api/cases/${o.data.id}/commands`, { action: 'set_planned_date', command_id: rk(), expected_version: await ver(), note: 'Fahrzeug nicht erschienen', payload: { planned_date: after2 } })).status, 200);
+  eq((await plan()).reschedules, 2, 'zweimal verschoben');
+  ok(db.prepare(`SELECT note FROM case_events WHERE case_id=? AND action='set_planned_date' ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(o.data.id).note === 'Fahrzeug nicht erschienen', 'Grund im Verlauf');
+  const { PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(PLURALS[l].plan_moved_n, l);
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("i.reschedules >= 2 && `") && app.includes("note: ($('#pr-' + CSS.escape(i.id))?.value || '').trim() || null"), 'Verschiebungen + Grund im Plan');
+  ok(app.includes("i.after_due_date && `<span class=\"chip kritisch\">${esc(t('wplan_mdue_late').replace('{d}', fmtD(i.planned_date)))} (${fmtD(i.after_due_date)})</span>`"), 'Hinweis im Plan');
 });
 
 await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „kritisch“/„gesperrte Vorgänge“ der Startseite führen zur passenden Vorgangsliste (Filter priority/locked, gleiche Anzahl), ungültige Priorität 400', async () => {

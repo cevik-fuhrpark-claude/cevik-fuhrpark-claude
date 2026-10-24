@@ -2181,3 +2181,10 @@ Object.assign(STRINGS.en, { no_recipients_warn: 'Comment saved – but nobody wa
 Object.assign(STRINGS.de, { drv_rec_left: 'Akte ausgeschieden', drv_rec_left_warn: 'Zugeordnet – die Fahrerakte dieses Kontos ist aber als „ausgeschieden“ markiert. Bitte Akte oder Zuordnung prüfen.' });
 Object.assign(STRINGS.uk, { drv_rec_left: 'картка: звільнений', drv_rec_left_warn: 'Призначено – але картку водія цього облікового запису позначено як «звільнений». Перевірте картку або призначення.' });
 Object.assign(STRINGS.en, { drv_rec_left: 'record: left', drv_rec_left_warn: 'Assigned – but the driver record of this account is marked as “left”. Please check the record or the assignment.' });
+// Blickwinkel „Termin verpasst“ (24.10.2026): Verschiebungen im Werkstattplan, Grund beim Verschieben
+Object.assign(STRINGS.de, { plan_reason_ph: 'Grund der Verschiebung (optional)', plan_moved_n: '{n}× verschoben' });
+Object.assign(STRINGS.uk, { plan_reason_ph: 'Причина перенесення (необов’язково)', plan_moved_n: 'перенесено {n} рази' });
+Object.assign(STRINGS.en, { plan_reason_ph: 'Reason for rescheduling (optional)', plan_moved_n: 'rescheduled {n} times' });
+Object.assign(PLURALS.de, { plan_moved_n: { one: '{n}× verschoben', other: '{n}× verschoben' } });
+Object.assign(PLURALS.uk, { plan_moved_n: { one: 'перенесено {n} раз', few: 'перенесено {n} рази', many: 'перенесено {n} разів', other: 'перенесено {n} рази' } });
+Object.assign(PLURALS.en, { plan_moved_n: { one: 'rescheduled {n} time', other: 'rescheduled {n} times' } });

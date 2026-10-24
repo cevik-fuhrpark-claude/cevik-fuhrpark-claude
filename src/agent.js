@@ -422,11 +422,14 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         const dDe = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`; // deutsch gespeichert, Anzeige je Sprache (DATE_ARGS)
         // „6 Monate nach HU“ nur nennen, wenn die Fälligkeit tatsächlich daraus folgt (erste SP nach Erstzulassung hat eine andere Grundlage, 18.10.2026)
         const huPlus6 = (d) => { const t = Number(d.slice(0, 4)) * 12 + Number(d.slice(5, 7)) - 1 + 6; return `${String(t % 12 + 1).padStart(2, '0')}/${Math.floor(t / 12)}`; };
+        // verstrichener Werkstatttermin zählt nicht als „geplant“ (wie bei den übrigen Prüfarten, Z. „planned … >= today“) – sonst „Geplanten
+        // Termin wahrnehmen“ statt „einplanen“, wenn das Fahrzeug nicht zum Termin kam (Blickwinkel „Termin verpasst“, 24.10.2026)
+        const hPlanned = h.planned_date && h.planned_date >= todayB ? h.planned_date : null;
         if (h.status === 'ueberfaellig') add({ code: 'MAINTENANCE_OVERDUE', subject, legacy_subject, vehicle_id: vid, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
           ...(dayDue(h.due) ? fm('HUSP_OVERDUE_DAY', { plate: x.v.plate, kind: H_LABEL[kind], due: dDe(h.due) }) : fm('HUSP_OVERDUE', { plate: x.v.plate, kind: H_LABEL[kind], due: m(h.due), hu: kind === 'SP' && res.hu.last_done && m(h.due) === huPlus6(res.hu.last_done) ? res.hu.last_done : null })),
           next_action: 'Prüftermin vereinbaren; Einsatzfähigkeit fachlich prüfen. Kein automatisches Verschieben.' });
         else if (h.status === 'bald_faellig') add({ code: 'MAINTENANCE_DUE', subject, legacy_subject, vehicle_id: vid, severity: 'hinweis', owner_role: 'fleet',
-          ...fm(dayDue(h.due) ? 'HUSP_DUE_DAY' : 'HUSP_DUE', { plate: x.v.plate, kind: H_LABEL[kind], due: dayDue(h.due) ? dDe(h.due) : m(h.due), planned: h.planned_date || null }), next_action: h.planned_date ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
+          ...fm(dayDue(h.due) ? 'HUSP_DUE_DAY' : 'HUSP_DUE', { plate: x.v.plate, kind: H_LABEL[kind], due: dayDue(h.due) ? dDe(h.due) : m(h.due), planned: hPlanned }), next_action: hPlanned ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
         else if (h.status === 'ungeklaert' && x.rules.length) add({ code: 'INSPECTION_UNCLEAR', subject: `${vid}|${kind}|unklar`, vehicle_id: vid, severity: 'hinweis', owner_role: 'fleet',
           ...fm('INSPECTION_UNCLEAR', { plate: x.v.plate, kind: H_LABEL[kind], note: h.notes[h.notes.length - 1] || 'Grundlage fehlt', nc: h.note_codes?.[h.note_codes.length - 1] || null }), next_action: 'Prüfbericht/Fahrzeugschein prüfen und fehlende Angaben in der Fahrzeugakte nachtragen.' });
       }
