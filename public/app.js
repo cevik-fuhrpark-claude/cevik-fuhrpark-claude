@@ -3354,6 +3354,8 @@ async function viewFine(id) {
 // Filter „Fahrzeug-Standort“: in dieser Sitzung gewählter Wert (auch „Alle“ = ''), sonst der Standard-Standort aus „Mein Konto“
 // Standort als Teil eines Dateinamens (Umlaute bleiben, sonst Bindestrich)
 function fnPart(x) { return String(x).replace(/[^\wÄÖÜäöüß-]+/g, '-'); }
+// Abrufzeitpunkt (Berlin, Serverzeit) im Dateinamen der Kosten-CSVs wie auf dem Server: „stand-JJJJ-MM-TT-HHMM“ (24.10.2026, Abgabe an die Buchhaltung)
+function standTag() { const x = BERLIN_DT_FMT.format(new Date(nowMs())).replace(/[^0-9]/g, ''); return x.length === 12 ? `stand-${x.slice(0, 4)}-${x.slice(4, 6)}-${x.slice(6, 8)}-${x.slice(8)}` : 'stand'; }
 // Umgebung im Dateinamen von Exporten (Test-Export hieß sonst wie ein Betriebsexport; 20.10.2026)
 // Inhaber: Ansicht auf die Umgebung eines angetippten Pushs umstellen (Test-Vorgang in der Betriebsansicht → 404, 21.10.2026); true = gewechselt
 function pushEnv(ev) {
@@ -3418,9 +3420,9 @@ async function viewCosts() {
   $('#costprt').onclick = () => window.print();
   cr.onsubmit = (e) => { e.preventDefault(); S.costFrom = cr.from.value; S.costTo = cr.to.value; S.costSite = cr.site ? cr.site.value : ''; viewCosts(); };
   // Dateiname aus dem angezeigten Zeitraum/Standort (nicht aus noch nicht abgeschickten Formularfeldern)
-  $('#csv').onclick = async () => { try { const blob = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}&format=csv`); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `fuhrpark-kosten_${envFn()}_${rep.from || from}_${rep.to || to}${rep.site ? '_' + fnPart(rep.site) : ''}.csv`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
+  $('#csv').onclick = async () => { try { const blob = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}&format=csv`); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `fuhrpark-kosten_${envFn()}_${rep.from || from}_${rep.to || to}${rep.site ? '_' + fnPart(rep.site) : ''}_${standTag()}.csv`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
   // Einzelpositionen (Lieferant, Rechnung/Beleg) für den Abgleich mit den Belegen – Jahresabschluss (23.10.2026)
-  $('#csvi').onclick = async () => { try { const blob = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}&part=items`); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `fuhrpark-kostenpositionen_${envFn()}_${rep.from || from}_${rep.to || to}${rep.site ? '_' + fnPart(rep.site) : ''}.csv`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
+  $('#csvi').onclick = async () => { try { const blob = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}&part=items`); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `fuhrpark-kostenpositionen_${envFn()}_${rep.from || from}_${rep.to || to}${rep.site ? '_' + fnPart(rep.site) : ''}_${standTag()}.csv`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
 }
 
 // ---------- Fahrerakte (personenbezogen: nur Inhaber/Fuhrparkleitung, Fahrer nur eigene Akte) ----------

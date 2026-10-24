@@ -18218,8 +18218,8 @@ await test('Geteiltes Werkstatt-Konto / Rückrufaktion / Monatswechsel (Teilagen
   const m = BERLIN_TODAY.slice(0, 7);
   const it = await F.get(`/api/reports/costs?from=${m}&to=${m}&part=items`); eq(it.status, 200);
   const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(it.data).trim().split('\r\n');
-  ok(lines[0].endsWith(';Zählt in Summe belegt;Erfasst am'), lines[0]);
-  ok(lines.slice(1).length >= 2 && lines.slice(1).every((l) => /;\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/.test(l)), lines.slice(1).join(' / '));
+  ok(lines[0].endsWith(';Zählt in Summe belegt;Erfasst am;Beleg-Datei in App'), lines[0]); // letzte Spalte seit Backlog 237
+  ok(lines.slice(1).length >= 2 && lines.slice(1).every((l) => /;\d{2}\.\d{2}\.\d{4} \d{2}:\d{2};(ja|nein)?$/.test(l)), lines.slice(1).join(' / '));
   const k = await F.get(`/api/reports/kpi?from=${m}&to=${m}`); eq(k.status, 200);
   ok(Math.abs(Date.parse(k.data.generated_at) - Date.now()) < 60000, 'generated_at'); ok(/Abrufzeitpunkt/.test(k.data.definitions.status_basis));
   ok(app.includes("t('kpi_status_basis').replace('{at}', fmtDT(r.generated_at))") && app.includes("' ' + esc(t('cost_rate_today'))"), 'Anzeige');
@@ -19867,6 +19867,63 @@ await test('Backlog 236 (Werkstatt arbeitet den Sammeltermin ab): Werkstattplan 
   ok(p.days.some((d) => d.items.some((i) => i.type === 'maintenance' && i.id === ru.data.id && i.vehicle_id === `VIN:${vin}`)), 'Plan-Eintrag mit id');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_dates_s.split('|').length > 2, 'Hilfe ' + l);
+});
+
+await test('Backlog 237 (Blickwinkel „Monatsende – Kosten an die Buchhaltung“): Einzelpositionen-CSV mit Bemerkung der Fremdleistung (nur Leitung) und „Beleg-Datei in App“, Fahrzeugfilter wirkt auch bei part=items, Dateinamen mit Abrufzeitpunkt (stand-…)', async () => {
+  const VA = 'WDB96340310823701'; const VB = 'WDB96340310823702';
+  eq((await owner.post('/api/vehicles', { plate: 'BU-HA 1', vin: VA, site: 'Dortmund' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'BU-HA 2', vin: VB, site: 'Dortmund' })).status, 201);
+  const mk = async (vin) => (await users.fleet.post('/api/cases', { vehicle_id: 'VIN:' + vin, description: 'Buchhaltung Monatsende ' + vin, priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const run = async (id, action, payload, note = null) => { const c = (await users.fleet.get(`/api/cases/${id}`)).data.case; return users.fleet.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload }); };
+  const a = await mk(VA); const b = await mk(VB);
+  for (const id of [a, b]) eq((await run(id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Fremdwerkstatt')).status, 200);
+  const pdf = concatBytes(new TextEncoder().encode('%PDF-1.4\n'), crypto.getRandomValues(new Uint8Array(300)));
+  const fid = (await users.fleet.req('POST', `/api/cases/${a}/files`, pdf, { 'content-type': 'application/pdf', 'x-filename': 'reifen-rechnung.pdf' })).data.id;
+  ok(fid, 'Beleg hochgeladen');
+  eq((await run(a, 'add_external_cost', { supplier: 'Reifen Test', invoice_no: 'BU-4711', amount_net: '840,00', file_id: fid }, '4× Reifen HA,\n Achsvermessung')).status, 200);
+  eq((await run(b, 'add_external_cost', { supplier: 'Glas Test', invoice_no: 'BU-4712', amount_net: 120 })).status, 200);
+  const m = BERLIN_TODAY.slice(0, 7);
+  const { costItems, costItemsCsv } = await import('../src/reports.js');
+  const fenv = (await users.fleet.get('/api/me')).data.user.environment;
+  // Fahrzeugfilter: nur Positionen dieses Fahrzeugs, Summe = Kostenbericht mit demselben Filter
+  const ra = await costItems(env, { id: 'x', role: 'fleet' }, fenv, { from: m, to: m, vehicle_id: 'VIN:' + VA });
+  ok(ra.items.length > 0 && ra.items.every((i) => i.plate === 'BU-HA 1'), 'nur Fahrzeug A: ' + [...new Set(ra.items.map((i) => i.plate))].join(','));
+  eq(ra.vehicle_id, 'VIN:' + VA);
+  const rep = (await users.fleet.get(`/api/reports/costs?from=${m}&to=${m}&vehicle_id=VIN:${VA}`)).data;
+  const c2 = (x) => Math.round(x * 100) / 100;
+  eq(c2(ra.items.filter((i) => i.counted && i.valuation === 'actual').reduce((s, i) => s + i.amount_net, 0)), rep.totals.actual_net, 'Summe belegt = Bericht (Filter)');
+  // Bemerkung (eine Zeile) und Beleg-Datei
+  const ea = ra.items.find((i) => i.type === 'fremdleistung' && i.document === 'BU-4711');
+  eq(ea.description, '4× Reifen HA, Achsvermessung'); eq(ea.has_file, true);
+  const rb = await costItems(env, { id: 'x', role: 'fleet' }, fenv, { from: m, to: m, vehicle_id: 'VIN:' + VB });
+  eq(rb.items.find((i) => i.document === 'BU-4712').has_file, false);
+  // Lesezugriff: Lieferant/Beleg/Betrag ja, Bemerkung nein (Vorgang zeigt Fremdleistungen nur Inhaber/Leitung)
+  const rv = await costItems(env, { id: 'x', role: 'viewer' }, fenv, { from: m, to: m, vehicle_id: 'VIN:' + VA });
+  const ev = rv.items.find((i) => i.document === 'BU-4711'); eq(ev.description, null); eq(ev.supplier, 'Reifen Test'); eq(ev.has_file, true);
+  // CSV: neue letzte Spalte, bestehende Spalten unverändert an ihrer Stelle
+  const csv = costItemsCsv(ra).split('\r\n');
+  ok(csv[0].endsWith(';Erfasst am;Beleg-Datei in App'), 'Kopfzeile');
+  const la = csv.find((l) => l.includes('BU-4711')); ok(la && la.endsWith(';ja') && la.includes(';Fremdleistung;4× Reifen HA, Achsvermessung;Reifen Test;BU-4711;'), la);
+  const lw = csv.find((l) => l.includes(';Arbeitszeit;')); if (lw) ok(lw.endsWith(';'), 'Arbeitszeit: Spalte leer');
+  // HTTP: Filter + Protokoll + Dateiname mit Stand
+  const r = await users.fleet.get(`/api/reports/costs?from=${m}&to=${m}&vehicle_id=VIN:${VA}&part=items`);
+  eq(r.status, 200);
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  ok(text.includes('BU-4711') && !text.includes('BU-4712'), 'HTTP-Export gefiltert');
+  ok(/filename="fuhrpark-kostenpositionen_[a-z]+_\d{4}-\d{2}_\d{4}-\d{2}_stand-\d{4}-\d{2}-\d{2}-\d{4}\.csv"/.test(r.headers.get('content-disposition')), r.headers.get('content-disposition'));
+  const r2 = await users.fleet.get(`/api/reports/costs?from=${m}&to=${m}&format=csv`);
+  ok(/filename="fuhrpark-kosten_[a-z]+_\d{4}-\d{2}_\d{4}-\d{2}_stand-\d{4}-\d{2}-\d{2}-\d{4}\.csv"/.test(r2.headers.get('content-disposition')), r2.headers.get('content-disposition'));
+  const au = await env.DB.prepare(`SELECT detail FROM audit_log WHERE action='reports.costs.items_export' ORDER BY rowid DESC LIMIT 1`).first();
+  ok(au && JSON.parse(au.detail).vehicle_id === 'VIN:' + VA, 'Protokoll nennt das Fahrzeug');
+  const { standTag } = await import('../src/reports.js');
+  eq(standTag('2026-10-24T22:30:00Z'), 'stand-2026-10-25-0030', 'Berliner Zeit (Datumsgrenze)');
+  eq(standTag('2026-01-15T07:05:00Z'), 'stand-2026-01-15-0805', 'Winterzeit');
+  // Oberfläche: Dateinamen der beiden Knöpfe mit Abrufzeitpunkt, Hinweis in drei Sprachen
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/fnPart\(rep\.site\) : ''\}_\$\{standTag\(\)\}\.csv`/g) || []).length, 2, 'beide Kosten-CSVs');
+  ok(app.includes('function standTag() { const x = BERLIN_DT_FMT.format(new Date(nowMs()))'), 'Serverzeit, Berlin');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cost_items_csv_hint.includes('(stand'), l + ': Hinweis Stand');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

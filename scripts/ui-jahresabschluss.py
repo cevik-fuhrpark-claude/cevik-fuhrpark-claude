@@ -42,7 +42,7 @@ with sync_playwright() as p:
         check(r['s'] == 200, f'{lang}: Reparatur begonnen ({r["s"]})')
         r = wapi('POST', f'/api/cases/{cid}/commands', {'action': 'add_part', 'command_id': f'ja3-{pid}-{lang}', 'expected_version': ver(), 'payload': {'name': 'Bremsbelagsatz', 'quantity': 1, 'unit_price_net': '120,50'}})
         check(r['s'] == 200, f'{lang}: Teil erfasst ({r["s"]} {r["d"] if r["s"] != 200 else ""})')
-        r = api('POST', f'/api/cases/{cid}/commands', {'action': 'add_external_cost', 'command_id': f'ja4-{pid}-{lang}', 'expected_version': ver(), 'payload': {'supplier': 'Elektrik Test', 'invoice_no': 'R-188', 'amount_net': 80}})
+        r = api('POST', f'/api/cases/{cid}/commands', {'action': 'add_external_cost', 'command_id': f'ja4-{pid}-{lang}', 'expected_version': ver(), 'payload': {'supplier': 'Elektrik Test', 'invoice_no': f'R-188-{lang}', 'amount_net': 80}})
         check(r['s'] == 200, f'{lang}: Fremdleistung erfasst ({r["s"]})')
         c = api('POST', f'/api/vehicles/{VID}/contracts', {'kind': 'leasing', 'partner': f'Leasing Test {lang}', 'start_date': '2024-01-01', 'end_date': '2029-12-31', 'monthly_rate_net': '1000', 'evidence': 'Vertrag (Test)'})
         check(c['s'] == 201, f'{lang}: Vertrag angelegt ({c["s"]})')
