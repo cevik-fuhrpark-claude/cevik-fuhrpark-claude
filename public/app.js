@@ -4054,6 +4054,15 @@ async function viewMaint(fq) {
   } else {
     html += `<div class="list">${rows.map((r) => `<a class="row ${r.status === 'ueberfaellig' ? 'p-kritisch' : r.status === 'faellig' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}">${plate(r.plate)}<span class="title">${esc(mk(r.kind))}${r.due_month || r.next_due_date || r.prognosis || !r.next_due_km ? ' · ' : ''}${r.due_month ? `${esc(t('due_until_end'))} ${esc(r.due_month)}${r.due_basis ? ` <span class="small muted">(${esc(t('db_' + r.due_basis))})</span>` : ''}` : r.next_due_date ? fmtD(r.next_due_date) : r.prognosis ? `${esc(t('prognosis'))} ${mY(r.prognosis)}` : r.next_due_km ? '' : r.status === 'erledigt' && r.last_done_date ? `${esc(t('done_on'))} ${fmtD(r.last_done_date)}` : '–'}${r.planned_date ? ` · ${esc(t('planned_appt'))} ${fmtD(r.planned_date)}` : ''}${r.open_order ? ` · 🔧 ${esc(r.open_order.case_no)}` : ''}${r.next_due_km ? ` · ${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining !== null ? ` (${r.km_remaining < 0 ? esc(t('km_over')) + ' ' + fmtKm(-r.km_remaining) : esc(t('km_left')) + ' ' + fmtKm(r.km_remaining)})` : ''}` : ''}</span><span class="chip ${cls[r.status]}">${esc(t('ms_' + r.status))}${kmUnclearDateDue(r) ? ' · ' + esc(t('ms_' + r.date_status)) : ''}${r.days !== null ? ` (${r.days})` : ''}</span><span class="sub">${r.km_unclear ? `<span class="km-unclear">${esc(t('km_unclear_drop').replace('{d}', fmtD(r.km_drop_at)))}</span> · ` : ''}${r.km_forecast ? kmFcHtml(r.km_forecast) + ' · ' : ''}${r.notes && r.notes.length && ['ungeklaert', 'ueberfaellig'].includes(r.status) ? esc(huNote(r, r.notes.length - 1)) + ' · ' : ''}${esc(mEv(r.evidence))}${r.site ? ' · ' + esc(r.site) : ''}</span></a>`).join('') || `<p class="muted">${esc(t('none_due'))}</p>`}</div>`;
   }
+  // Sammeltermin (Backlog 235): gleichen Termin für ausgewählte Einträge der aktuellen Ansicht – Inhaber, Fuhrparkleitung, Werkstatt
+  const mbRows = f === 'gaps' ? [] : rows.filter((r) => !(r.kind === 'Rückruf' && r.last_done_date));
+  if ((isMgr() || S.me.role === 'workshop') && mbRows.length) html += `<details class="panel noprint" id="mbatch"${S.mbOpen ? ' open' : ''}><summary>${esc(t('mb_title'))}</summary><p class="small muted">${esc(t('mb_hint'))}</p>
+    <form id="mbf"><div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end"><div><label for="mbdate">${esc(t('mb_date'))}</label><input type="date" id="mbdate" name="planned_date" min="${esc(ov.today)}" value="${esc(S.mbDate || '')}" required></div>
+    <label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="replace"> ${esc(t('mb_replace'))}</label></div>
+    <div class="actions" style="margin:8px 0"><button type="button" class="btn secondary" id="mball">${esc(t('mb_all'))}</button><button type="button" class="btn secondary" id="mbnone">${esc(t('mb_none'))}</button> <span class="small muted" id="mbcount" aria-live="polite"></span></div>
+    <div class="list" style="max-height:340px;overflow:auto">${mbRows.slice(0, 200).map((r) => `<label class="row" style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:8px 10px;margin:0"><input type="checkbox" name="mbid" value="${esc(r.id)}"${r.virtual ? ' disabled' : ''}> ${plate(r.plate)}<span class="title" style="white-space:normal;flex:1 1 150px">${esc(mk(r.kind))}${r.virtual ? ` <span class="small muted">– ${esc(t('mb_virtual'))}</span>` : ''}${r.planned_date && r.planned_date >= ov.today ? ` <span class="chip">${esc(t('mb_has_plan').replace('{d}', fmtD(r.planned_date)))}</span>` : ''}</span></label>`).join('')}</div>${impMore(mbRows.length, 200)}
+    <div class="actions"><button class="btn" id="mbgo">${esc(t('mb_submit'))}</button></div></form></details>`;
+  if (S.mbRes) html += `<div id="mbres" class="noprint" role="status">${S.mbRes}</div>`;
   // Durchgeführte Prüfungen (Wartungshistorie der Flotte) – Inhaber, Fuhrparkleitung, Lesezugriff
   if (['owner', 'fleet', 'viewer'].includes(S.me.role)) html += `<details class="panel noprint" id="mhist"><summary>${esc(t('mh_title'))}</summary><p class="small muted">${esc(t('mh_hint'))}</p>
     <form id="mhf" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end"><div><label>${esc(t('from'))}</label><input type="date" name="from" value="${esc(ov.today.slice(0, 4))}-01-01" required></div><div><label>${esc(t('to'))}</label><input type="date" name="to" value="${esc(ov.today)}" required></div>
@@ -4063,6 +4072,27 @@ async function viewMaint(fq) {
     <section class="panel noprint"><h2 style="margin-top:0">${esc(t('import_recalls'))}</h2><p class="small muted">${esc(t('import_recalls_hint'))}</p><input type="file" id="rimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_recalls'))}"><div id="rimpr"></div></section>`;
   render(html, 'more');
   $$('[data-mf]').forEach((b) => (b.onclick = () => { S.maintFilter = b.dataset.mf; viewMaint(); }));
+  S.mbRes = ''; S.mbOpen = false; // Ergebnis des Sammeltermins nur direkt nach dem Speichern zeigen
+  const mbf = $('#mbf');
+  if (mbf) {
+    const boxes = () => $$('#mbf input[name=mbid]:not(:disabled)');
+    const cnt = () => { $('#mbcount').textContent = tn('mb_selected', boxes().filter((x) => x.checked).length); };
+    boxes().forEach((x) => (x.onchange = cnt)); cnt();
+    $('#mball').onclick = () => { boxes().forEach((x) => (x.checked = true)); cnt(); };
+    $('#mbnone').onclick = () => { boxes().forEach((x) => (x.checked = false)); cnt(); };
+    mbf.onsubmit = async (e) => {
+      e.preventDefault();
+      const ids = boxes().filter((x) => x.checked).map((x) => x.value);
+      if (!ids.length) { toast(t('mb_pick'), true); return; }
+      try {
+        const r = await api('POST', '/api/maintenance/plan-batch', { planned_date: mbf.planned_date.value, ids, replace: mbf.replace.checked });
+        const skip = (r.skipped || []).map((x) => `<li>${x.plate ? esc(x.plate) + ' · ' : ''}${x.kind ? esc(mk(x.kind)) + ': ' : ''}${esc(t('mb_sk_' + x.code).replace('{d}', fmtD(x.planned_date)))}</li>`).join('');
+        S.mbRes = `<p class="panel ${r.skipped && r.skipped.length ? 'warn' : 'ok'}" style="margin-top:8px"><b>${esc(tn('mb_done', r.planned.length).replace('{d}', fmtD(r.planned_date)))}</b>${r.unchanged ? ` · ${esc(t('mb_unchanged').replace('{n}', fmtNum(r.unchanged)))}` : ''}${r.planned.some((x) => x.replaced) ? `<br><span class="small">${r.planned.filter((x) => x.replaced).map((x) => `${esc(x.plate)} · ${esc(mk(x.kind))} (${esc(t('mb_replaced').replace('{d}', fmtD(x.replaced)))})`).join('; ')}</span>` : ''}</p>${skip ? `<p class="small"><b>${esc(t('mb_skipped'))}</b></p><ul class="small">${skip}</ul>` : ''}`;
+        S.mbOpen = true; S.mbDate = r.planned_date;
+        await viewMaint();
+      } catch (err) { toast(err.message, true); }
+    };
+  }
   const msel = $('#msite'); if (msel) msel.onchange = () => { S.maintSite = msel.value; viewMaint(); };
   $('#mics').onclick = async () => { try { download(await api('GET', '/api/maintenance?format=ics' + msQ), `fuhrpark-prueftermine_${ov.today}${ov.site ? '_' + fnPart(ov.site) : ''}.ics`); } catch (err) { toast(err.message, true); } };
   $('#mprt').onclick = () => window.print();

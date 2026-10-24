@@ -912,6 +912,47 @@ export async function planMaintenance(env, user, ruleId, body) {
   return { ok: true, planned_date: d };
 }
 
+// Sammeltermin (Backlog 235, Blickwinkel „Fuhrparkleitung plant die UVV aller Fahrzeuge an einem Tag“): denselben Termin für mehrere
+// Prüftermin-Einträge auf einmal setzen – gleiche Regeln wie `planMaintenance` je Eintrag, aber mit fester Abfragezahl (Auswahl, Änderung
+// und Protokoll je Fahrzeug in einem Stapel). Nicht übernommen und einzeln gemeldet: außer Betrieb, erledigter Rückruf, unbekannt sowie ein
+// anderer Termin ab heute (nur mit `replace` ersetzt – vorher überschrieb ein Sammeltermin bestehende Absprachen still). HU/SP ohne eigenen
+// Eintrag (`husp:…`) einzeln in der Fahrzeugakte einplanen (Eintrag wird dort erst angelegt). Kein Termin entfernen über diesen Weg.
+export const PLAN_BATCH_MAX = 200;
+export async function planMaintenanceBatch(env, user, body) {
+  if (!isManager(user) && user.role !== 'workshop') throw forbidden();
+  const d = planDate(str(body.planned_date, { required: true, max: 10, field: 'Termin' }));
+  const raw = Array.isArray(body.ids) ? body.ids : null;
+  if (!raw || !raw.length || raw.length > PLAN_BATCH_MAX || raw.some((x) => typeof x !== 'string' || !x || x.length > 80)) throw bad('validation', 'Bitte 1 bis 200 Prüftermine auswählen.');
+  const ids = [...new Set(raw)];
+  const replace = flag(body.replace);
+  const today = berlinDate();
+  const rows = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, m.planned_date, v.active, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
+    WHERE m.id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(ids.filter((x) => !x.startsWith('husp:')))).all()).results || [];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const skipped = []; const planned = []; let unchanged = 0;
+  for (const id of ids) {
+    if (id.startsWith('husp:')) { const p = id.split(':'); skipped.push({ id, ...(p.length === 4 ? { vehicle_id: `${p[1]}:${p[2]}`, kind: p[3] } : {}), code: 'husp_virtual' }); continue; }
+    const r = byId.get(id);
+    if (!r) { skipped.push({ id, code: 'not_found' }); continue; }
+    const base = { id, vehicle_id: r.vehicle_id, plate: r.plate, kind: r.kind };
+    if (!r.active) { skipped.push({ ...base, code: 'inactive' }); continue; }
+    if (ONE_TIME_KINDS.includes(r.kind) && r.last_done_date) { skipped.push({ ...base, code: 'already_done' }); continue; }
+    if (r.planned_date === d) { unchanged++; continue; }
+    if (r.planned_date && r.planned_date >= today && !replace) { skipped.push({ ...base, code: 'planned_other', planned_date: r.planned_date }); continue; }
+    planned.push({ ...base, previous: r.planned_date || null });
+  }
+  if (planned.length) {
+    const now = nowIso();
+    await env.DB.batch([
+      env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(d, now, JSON.stringify(planned.map((p) => p.id))),
+      // Protokoll je Eintrag wie `planMaintenance` (Ziel = Fahrzeug), zusätzlich `batch` und ein ersetzter Termin
+      env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) SELECT json_extract(j.value,'$[0]'), ?, 'maintenance.plan', json_extract(j.value,'$[1]'), json_extract(j.value,'$[2]'), ? FROM json_each(?) j`)
+        .bind(user.id, now, JSON.stringify(planned.map((p) => [uuid(), p.vehicle_id, JSON.stringify({ kind: p.kind, planned_date: d, batch: true, ...(p.previous ? { replaced: p.previous } : {}) })]))),
+    ]);
+  }
+  return { ok: true, planned_date: d, planned: planned.map(({ previous, ...p }) => (previous ? { ...p, replaced: previous } : p)), unchanged, skipped };
+}
+
 // HU/SP ohne eigenen Eintrag (Frist nur berechnet, Zeile `virtual` in der Prüftermin-Übersicht, Backlog 93): erst wenn jemand in der
 // Fahrzeugakte eine Durchführung erfasst, einen Termin plant oder einen Auftrag erstellt, wird der Eintrag angelegt (19.10.2026) – nie
 // automatisch. Ohne Nachweis-Datum/Fälligkeit: die Frist rechnet danach genauso wie vorher (syncHuSpDues). Vorhandener Eintrag → dessen id.

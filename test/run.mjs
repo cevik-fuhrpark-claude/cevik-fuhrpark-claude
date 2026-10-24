@@ -19792,6 +19792,64 @@ await test('Backlog 234: „Teil erfassen“ mit Lagerartikel – Menge über de
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].stock_qty_over.includes('{q}') && STRINGS[l].stock_qty_over.includes('{u}'), 'Text ' + l);
 });
 
+await test('Backlog 235 (Blickwinkel „UVV aller Fahrzeuge an einem Tag“): Sammeltermin setzt einen Termin für mehrere Prüftermine mit fester Abfragezahl, meldet außer Betrieb/anderen Termin/HU-SP ohne Eintrag einzeln, ersetzt nur mit Häkchen, Rechte wie der Einzeltermin', async () => {
+  const vins = ['WDB96340310995821', 'WDB96340310995822', 'WDB96340310995823', 'WDB96340310995824'];
+  for (const [i, vin] of vins.entries()) eq((await owner.post('/api/vehicles', { plate: `SM-UV ${i + 1}`, vin, site: 'Dortmund' })).status, 201);
+  const rid = [];
+  for (const vin of vins) { const r = await users.fleet.post(`/api/vehicles/VIN:${vin}/maintenance`, { kind: 'UVV', last_done_date: bDayOff(-380), interval_months: 12, evidence: 'UVV-Protokoll (Test Sammeltermin)' }); eq(r.status, 201); rid.push(r.data.id); }
+  const day = bDayOff(10); const other = bDayOff(5);
+  // Eintrag 3 hat schon eine Absprache, Fahrzeug 4 ist außer Betrieb
+  eq((await users.fleet.post(`/api/maintenance/${rid[2]}/plan`, { planned_date: other })).status, 200);
+  eq((await users.fleet.post(`/api/vehicles/VIN:${vins[3]}/active`, { active: false, reason: 'Verkauf (Test Sammeltermin)' })).status, 200);
+  // Rechte und Eingaben
+  eq((await users.driver.post('/api/maintenance/plan-batch', { planned_date: day, ids: rid })).status, 403, 'Fahrer');
+  eq((await users.dispatch.post('/api/maintenance/plan-batch', { planned_date: day, ids: rid })).status, 403, 'Disposition');
+  eq((await users.fleet.post('/api/maintenance/plan-batch', { planned_date: day, ids: [] })).status, 400, 'leere Auswahl');
+  eq((await users.fleet.post('/api/maintenance/plan-batch', { planned_date: day, ids: Array.from({ length: 201 }, (_, i) => 'x' + i) })).status, 400, 'mehr als 200');
+  eq((await users.fleet.post('/api/maintenance/plan-batch', { ids: rid })).status, 400, 'ohne Termin');
+  eq((await users.fleet.post('/api/maintenance/plan-batch', { planned_date: '2026-02-30', ids: rid })).status, 400, 'kein Kalenderdatum');
+  const q0 = QSTAT.n;
+  const r = await users.fleet.post('/api/maintenance/plan-batch', { planned_date: day, ids: [...rid, rid[0], `husp:VIN:${vins[0]}:HU`, 'gibt-es-nicht'] });
+  const nq = QSTAT.n - q0;
+  eq(r.status, 200); eq(r.data.planned_date, day);
+  eq(r.data.planned.map((x) => x.plate).sort().join(','), 'SM-UV 1,SM-UV 2', 'eingeplant (doppelte id einmal)');
+  const sk = Object.fromEntries(r.data.skipped.map((x) => [x.id, x]));
+  eq(sk[rid[2]].code, 'planned_other'); eq(sk[rid[2]].planned_date, other, 'vorhandener Termin genannt');
+  eq(sk[rid[3]].code, 'inactive'); eq(sk[`husp:VIN:${vins[0]}:HU`].code, 'husp_virtual'); eq(sk[`husp:VIN:${vins[0]}:HU`].vehicle_id, `VIN:${vins[0]}`);
+  eq(sk['gibt-es-nicht'].code, 'not_found');
+  const pl = (id) => env.DB.db.prepare('SELECT planned_date FROM maintenance_rules WHERE id=?').get(id).planned_date;
+  eq(pl(rid[0]), day); eq(pl(rid[1]), day); eq(pl(rid[2]), other, 'Absprache nicht still überschrieben'); eq(pl(rid[3]), null);
+  const au = env.DB.db.prepare(`SELECT target, detail FROM audit_log WHERE action='maintenance.plan' AND detail LIKE '%"batch":true%' AND target IN (?,?)`).all(`VIN:${vins[0]}`, `VIN:${vins[1]}`);
+  eq(au.length, 2, 'Protokoll je Fahrzeug'); ok(au.every((a) => JSON.parse(a.detail).kind === 'UVV' && JSON.parse(a.detail).planned_date === day), 'Protokollinhalt');
+  // feste Abfragezahl: 200 Einträge kosten nicht mehr als 4 Einträge
+  ok(nq <= 8, `Abfragen ${nq}`);
+  const big = await users.fleet.post('/api/maintenance/plan-batch', { planned_date: day, ids: [...rid, ...Array.from({ length: 196 }, (_, i) => 'y' + i)] });
+  eq(big.status, 200); eq(big.data.unchanged, 2, 'Termin stand schon so');
+  // Wiederholung: unverändert, kein zweiter Protokolleintrag
+  eq(env.DB.db.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action='maintenance.plan' AND detail LIKE '%"batch":true%' AND target=?`).get(`VIN:${vins[0]}`).n, 1);
+  // ersetzen nur mit Häkchen; Werkstatt darf wie beim Einzeltermin
+  const rep = await users.ws.post('/api/maintenance/plan-batch', { planned_date: day, ids: [rid[2]], replace: true });
+  eq(rep.status, 200); eq(rep.data.planned[0].replaced, other); eq(pl(rid[2]), day);
+  // Termin in der Vergangenheit (älter als heute) ersetzt ohne Häkchen – wie der Einzeltermin; erledigter Rückruf wird nicht eingeplant
+  const rc = await users.fleet.post(`/api/vehicles/VIN:${vins[0]}/maintenance`, { kind: 'Rückruf', due_date: bDayOff(60), evidence: 'Herstellerschreiben RC-SM-1' });
+  eq(rc.status, 201);
+  eq((await users.fleet.post(`/api/maintenance/${rc.data.id}/complete`, { done_date: bDayOff(-1), evidence: 'Werkstattbeleg RC-SM-1' })).status, 200);
+  eq((await users.fleet.post('/api/maintenance/plan-batch', { planned_date: day, ids: [rc.data.id] })).data.skipped[0].code, 'already_done');
+  // Testkonto mit „Stammdaten nur lesen“: gesperrt wie der Einzeltermin
+  eq((await owner.put('/api/settings', { test_master_readonly: '1' })).status, 200);
+  try { eq((await users.fleet.post('/api/maintenance/plan-batch', { planned_date: day, ids: [rid[0]] })).status, 403, 'nur lesen'); }
+  finally { eq((await owner.put('/api/settings', { test_master_readonly: '0' })).status, 200); }
+  // Oberfläche und Texte
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('async function viewMaint('), app.indexOf('// ---------- Kennzahlen Instandhaltung'));
+  ok(fn.includes("api('POST', '/api/maintenance/plan-batch'") && fn.includes('mbf.onsubmit = async') && fn.includes("r.virtual ? ' disabled' : ''") && fn.includes("t('mb_sk_' + x.code)"), 'Formular Sammeltermin');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const c of ['inactive', 'already_done', 'planned_other', 'husp_virtual', 'not_found']) ok(STRINGS[l]['mb_sk_' + c], `Text mb_sk_${c} ${l}`);
+    ok(PLURALS[l].mb_done && STRINGS[l].mb_title && STRINGS[l].mb_replace, 'Texte ' + l);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
