@@ -105,6 +105,10 @@ const afLink = (caseId, code, subj) => { const c = String(code || ''); const d =
 const notifHref = (x) => { const m = /^(vehicle|fine):(.+)$/.exec(x.ref || ''); return x.case_id ? '#/cases/' + encodeURIComponent(x.case_id) : m ? (m[1] === 'vehicle' ? '#/vehicles/' + encodeURIComponent(m[2]) : '#/fines/' + encodeURIComponent(m[2])) : x.kind === 'new_login' ? '#/more?o=sess' : S.me.role === 'driver' ? '#/' : isMgr() ? '#/master' : '#/'; };
 // Standort-Schlüssel wie der Server (siteKey): Leerraum vereinheitlicht, Groß-/Kleinschreibung egal (23.10.2026)
 const siteKeyUi = (x) => (x && String(x).trim() ? String(x).normalize('NFC').replace(/\s+/g, ' ').trim().toLocaleLowerCase('de') : 'ohne');
+// HH:MM ist in DE/UK/EN gleich (24 h) – ein fester Formatierer genügt
+const HM_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+// nur Uhrzeit (Berlin) – Bildunterschriften der Vorgangsdateien: Datum und Uhrzeit in zwei Zeilen, damit die Uhrzeit nicht abgeschnitten wird
+const fmtHM = (iso) => { const d = new Date(iso || ''); return Number.isNaN(d.getTime()) ? '' : HM_FMT.format(d); };
 const fmtDT = (iso) => { if (!iso) return '–'; const d = new Date(iso); return Number.isNaN(d.getTime()) ? '–' : dtFmt('dt').format(d); };
 // Kalenderdatum „JJJJ-MM-TT“ bleibt dieser Tag; Zeitstempel → Berliner Kalendertag
 const fmtD = (iso) => { if (!iso) return '–'; const d = new Date(iso.length === 10 ? iso + 'T12:00:00Z' : iso); return Number.isNaN(d.getTime()) ? '–' : dtFmt(iso.length === 10 ? 'd10' : 'd').format(d); };
@@ -1630,11 +1634,18 @@ async function viewCase(id) {
   } else html += `<div id="actform"></div>`;
 
   // Dateien
-  html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((f) => f.content_type.startsWith('image/') ? `<a href="${fileUrl(f.id)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(f.id)}" alt="${esc(f.filename)}"></a>` : `<a href="${fileUrl(f.id)}" target="_blank" rel="noopener">PDF<br>${esc(f.filename.slice(0, 14))}</a>`).join('')}</div>`;
+  // Je Datei: wann und von wem (Rolle, Name nach denselben Regeln wie im Verlauf) – Schadensfoto des Fahrers vs. Reparaturfoto der Werkstatt (Backlog 223)
+  html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((f) => {
+    const role = f.uploader_role ? t('role_' + f.uploader_role) : '';
+    const name = f.uploaded_by_name_hidden ? t('name_hidden_driver') : (f.uploaded_by_name || '');
+    const info = [fmtDT(f.created_at), role, name && name !== role ? name : ''].filter(Boolean);
+    const link = f.content_type.startsWith('image/') ? `<a href="${fileUrl(f.id)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(f.id)}" alt="${esc([f.filename, ...info].join(' · '))}"></a>` : `<a href="${fileUrl(f.id)}" target="_blank" rel="noopener" aria-label="${esc(['PDF', f.filename, ...info].join(' · '))}">PDF<br>${esc(f.filename.slice(0, 14))}</a>`;
+    return `<figure class="thumb" data-fileinfo title="${esc(info.join(' · '))}">${link}<figcaption class="small muted"><span>${esc(fmtD(f.created_at))} ${esc(fmtHM(f.created_at))}</span>${role ? `<span data-uprole="${esc(f.uploader_role)}">${esc(role)}</span>` : ''}${name && name !== role ? `<span>${esc(name)}</span>` : ''}</figcaption></figure>`;
+  }).join('')}</div>`;
   const canUpload = A.includes('upload') || (c.reporter_id === S.me.id && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status));
   // Höchstzahl je Vorgang (wie Server MAX_FILES): voll → Hinweis statt Knopf; sonst freie Plätze nennen, wenn weniger als die Hälfte frei
   const filesFree = Math.max(0, PHOTO_MAX - d.files.length);
-  if (canUpload && filesFree) html += `<label class="btn secondary noprint" style="margin-top:8px;display:inline-flex">${esc(t('add_photos'))}<input id="file" type="file" accept="image/*,application/pdf" capture="environment" multiple hidden></label>${filesFree < PHOTO_MAX / 2 ? ` <span class="small muted" id="filesfree">${esc(t('files_free').replace('{n}', filesFree).replace('{max}', PHOTO_MAX))}</span>` : ''}`;
+  if (canUpload && filesFree) html += `<label class="btn secondary noprint" style="margin-top:8px;display:inline-flex">${esc(t('add_photos'))}<input id="file" type="file" accept="image/*,application/pdf" multiple hidden></label>${filesFree < PHOTO_MAX / 2 ? ` <span class="small muted" id="filesfree">${esc(t('files_free').replace('{n}', filesFree).replace('{max}', PHOTO_MAX))}</span>` : ''}`;
   else if (canUpload) html += `<p class="small muted" id="filesfull">${esc(t('files_full').replace('{max}', PHOTO_MAX))}</p>`;
 
   // Restarbeiten

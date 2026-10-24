@@ -266,9 +266,19 @@ export async function getCaseDetail(env, user, envName, caseId) {
     .filter((e) => e.action !== 'set_followup' || !['driver', 'workshop'].includes(user.role)) // Wiedervorlage nur für Leitung/Lesende
     // Kosten-Ereignisse sind interne Abläufe der Leitung/Werkstatt – Fahrer sehen sie nicht (wie cost_over_limit_at; 20.10.2026)
     .filter((e) => user.role !== 'driver' || !['cost_limit_exceeded', 'cost_limit_cleared', 'approve_costs', 'add_external_cost'].includes(e.action));
-  const files = (await env.DB.prepare('SELECT id, filename, content_type, size, created_at, uploaded_by FROM files WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
   // Fahrer sehen wie im Verlauf keine Namen anderer Personen, nur deren Rolle (17.10.2026: Restarbeiten/Kontrollen zeigten Namen von Werkstatt/Leitung)
   const ownName = (o, by, nameK) => (user.role === 'driver' && o[by] !== user.id ? { ...o, [nameK]: null, [nameK + '_role']: o[nameK.replace('_name', '_role')] } : o);
+  // Dateien mit Name/Rolle der hochladenden Person (Backlog 223, 24.10.2026: Werkstatt konnte Schadensfotos des Fahrers nicht von eigenen
+  // Reparaturfotos unterscheiden); gleiche Namensregeln wie Restarbeiten/Kontrollen
+  const files = (await env.DB.prepare(`SELECT f.id, f.filename, f.content_type, f.size, f.created_at, f.uploaded_by, u.display_name AS uploaded_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS uploaded_by_role
+    FROM files f LEFT JOIN users u ON u.id=f.uploaded_by WHERE f.case_id=? ORDER BY f.created_at`).bind(c.id).all()).results
+    .map((f) => {
+      const role = f.uploaded_by_role || null;
+      const r = hideDriverName(user, ownName(f, 'uploaded_by', 'uploaded_by_name'), 'uploaded_by_name', 'uploaded_by_role');
+      delete r.uploaded_by_name_role;
+      if (user.role === 'driver' && f.uploaded_by !== user.id) delete r.uploaded_by;
+      return { ...r, uploader_role: role };
+    });
   const openItems = (await env.DB.prepare(`SELECT o.*, u.display_name AS created_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS created_by_role FROM open_items o JOIN users u ON u.id=o.created_by WHERE case_id=? ORDER BY created_at`).bind(c.id).all()).results
     .map((o) => hideDriverName(user, ownName(o, 'created_by', 'created_by_name'), 'created_by_name', 'created_by_role'));
   const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.created_at, i.odometer_km, i.items, i.note, i.performed_by, u.display_name AS performed_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS performed_by_role FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.case_id=? ORDER BY i.created_at`).bind(c.id).all()).results

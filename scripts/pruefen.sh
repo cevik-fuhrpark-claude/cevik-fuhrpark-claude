@@ -147,6 +147,7 @@ UI-Diebstahl-/Einbruch-Hinweis im Meldeformular und Hilfe|ui-diebstahl-hinweis.p
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
 UI-Abschleppung: Standort/Abschleppdienst im Vorgang, Liste, Disposition, Hilfe|ui-abschleppung.py|/tmp/cfp-abschleppung.log
+UI-Fotos im Vorgang: Zeitpunkt/Rolle/Name je Datei, Auswahl ohne Kamera-Zwang|ui-fotos-herkunft.py|/tmp/cfp-fotos-herkunft.log
 UI-Bußgeld ändern (Frist), deaktivierter Kandidat, Umgebung|ui-bussgeld-aendern.py|/tmp/cfp-bussgeld-aendern.log
 UI-Bußgeld Befund-Link, Zurücksetzen auf Eingegangen|ui-bussgeld-befundlink.py|/tmp/cfp-bussgeld-befundlink.log
 UI-Bußgeld-Verlauf mit Fahrernamen, Kandidat-Nachweis übersetzt, berechnete SP beim Fahrer, Reifenverlauf|ui-bussgeld-verlauf-sp-fahrer.py|/tmp/cfp-bussgeld-verlauf-sp-fahrer.log

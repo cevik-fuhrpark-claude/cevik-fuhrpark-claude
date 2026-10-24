@@ -19427,6 +19427,53 @@ await test('Backlog 222 (Teilagent „Fahrzeug wird abgeschleppt – wer sieht w
   }
 });
 
+await test('Backlog 223 (Teilagent „Werkstatt-Tablet auf Ukrainisch mit Fotos“): Dateien im Vorgang nennen Zeitpunkt und hochladende Person (Rolle; Name nach den Regeln des Verlaufs), Knopf ohne Kamera-Zwang (Galerie/PDF wählbar), Texte DE/UK/EN', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'AB-F 223', vin: 'WDB96340310822301', site: 'Dortmund' })).status, 201);
+  const VF = 'VIN:WDB96340310822301';
+  const as = await users.fleet.post(`/api/vehicles/${VF}/drivers`, { user_id: users.driver.id }); eq(as.status, 201);
+  const viewer = await invite(owner, { username: 'test.lesen.fotos', display_name: 'Test Lesezugriff Fotos', role: 'viewer', environment: 'test' });
+  const cid = (await users.driver.post('/api/cases', { vehicle_id: VF, description: 'Stoßfänger hinten eingedrückt', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  ok(cid, 'Meldung angelegt');
+  const png = () => { const b = new Uint8Array(400); b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]); crypto.getRandomValues(b.subarray(8)); return b; };
+  eq((await users.driver.req('POST', `/api/cases/${cid}/files`, png(), { 'content-type': 'image/png', 'x-filename': 'schaden.png' })).status, 201);
+  const c0 = (await users.fleet.get(`/api/cases/${cid}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'approve_repair', command_id: rk(), expected_version: c0.version, note: 'reparieren', payload: { workshop_site: 'DORTMUND' } })).status, 200);
+  eq((await users.ws.req('POST', `/api/cases/${cid}/files`, png(), { 'content-type': 'image/png', 'x-filename': 'nach-reparatur.png' })).status, 201);
+  const byName = (d) => Object.fromEntries(d.files.map((f) => [f.filename, f]));
+  // Leitung: Name + Rolle beider Dateien
+  let f = byName((await users.fleet.get(`/api/cases/${cid}`)).data);
+  eq(f['schaden.png'].uploader_role, 'driver'); eq(f['schaden.png'].uploaded_by_name, 'Test Fahrer 1');
+  eq(f['nach-reparatur.png'].uploader_role, 'workshop'); eq(f['nach-reparatur.png'].uploaded_by_name, 'Test Werkstatt DO');
+  ok(f['schaden.png'].created_at <= f['nach-reparatur.png'].created_at, 'zeitlich sortiert');
+  // Werkstatt sieht den Fahrernamen wie im Verlauf
+  f = byName((await users.ws.get(`/api/cases/${cid}`)).data);
+  eq(f['schaden.png'].uploader_role, 'driver'); eq(f['schaden.png'].uploaded_by_name, 'Test Fahrer 1');
+  // Fahrer: eigener Name, für die Werkstatt nur die Rolle, keine fremde Kontokennung
+  f = byName((await users.driver.get(`/api/cases/${cid}`)).data);
+  eq(f['schaden.png'].uploaded_by_name, 'Test Fahrer 1'); eq(f['schaden.png'].uploaded_by, users.driver.id);
+  eq(f['nach-reparatur.png'].uploaded_by_name, null, 'kein Werkstattname für Fahrer'); eq(f['nach-reparatur.png'].uploader_role, 'workshop');
+  ok(!('uploaded_by' in f['nach-reparatur.png']), 'keine fremde Kontokennung');
+  ok(!('uploaded_by_name_role' in f['nach-reparatur.png']) && !('uploaded_by_role' in f['nach-reparatur.png']), 'keine Hilfsfelder');
+  // Lesezugriff: Fahrername verborgen, Rolle bleibt; Werkstattname sichtbar
+  f = byName((await viewer.get(`/api/cases/${cid}`)).data);
+  eq(f['schaden.png'].uploaded_by_name, null); eq(f['schaden.png'].uploaded_by_name_hidden, true); eq(f['schaden.png'].uploader_role, 'driver');
+  eq(f['nach-reparatur.png'].uploaded_by_name, 'Test Werkstatt DO');
+  // Oberfläche: Bildunterschrift, Alternativtext, kein capture-Zwang; Texte DE/UK/EN
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<figure class="thumb" data-fileinfo') && app.includes('data-uprole='), 'Bildunterschrift je Datei');
+  ok(!app.includes('capture="environment"'), 'Knopf ohne Kamera-Zwang – Galerie und PDF bleiben wählbar');
+  ok(/\.thumbs figure\.thumb figcaption/.test((await import('node:fs')).readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')), 'Stil der Bildunterschrift');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(/PDF/.test(STRINGS[l].add_photos), `Knopf nennt PDF ${l}`);
+    ok(STRINGS[l].help_ws_s.includes(STRINGS[l].add_photos), `Hilfe Werkstatt nennt „${STRINGS[l].add_photos}“ ${l}`);
+  }
+  // aufräumen: Zuordnung beenden, Vorgang ablehnen
+  const c1 = (await users.fleet.get(`/api/cases/${cid}`)).data.case;
+  await users.fleet.post(`/api/cases/${cid}/commands`, { action: 'withdraw_order', command_id: rk(), expected_version: c1.version, note: 'Testdaten' });
+  eq((await users.fleet.req('DELETE', `/api/assignments/${as.data.id}`)).status, 200);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
