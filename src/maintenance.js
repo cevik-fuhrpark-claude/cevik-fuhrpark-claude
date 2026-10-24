@@ -75,7 +75,7 @@ export async function latestKmByVehicle(env, { withBase = false, before = null }
   // Rücksprünge gespeichert (km_drop_prev, Migration 0071, Trigger) statt LAG() über die ganze Historie; letzte Ablesung je Fahrzeug per Index
   const rows = (await env.DB.prepare(`WITH d AS (SELECT vehicle_id, MAX(measured_at) AS drop_at, MAX(created_at) AS drop_rec FROM odometer_readings
       WHERE km_drop_prev IS NOT NULL${cut} GROUP BY vehicle_id)
-    SELECT o.vehicle_id, o.km, o.measured_at, d.drop_at, d.drop_rec${base} FROM vehicles v
+    SELECT o.vehicle_id, o.km, o.measured_at, o.source, d.drop_at, d.drop_rec${base} FROM vehicles v
     JOIN odometer_readings o ON o.rowid = (SELECT o2.rowid FROM odometer_readings o2 WHERE o2.vehicle_id = v.id${before ? ' AND o2.measured_at < ?1' : ''} ORDER BY o2.measured_at DESC, o2.rowid DESC LIMIT 1)
     LEFT JOIN d ON d.vehicle_id = o.vehicle_id`).bind(...(before ? [before] : [])).all()).results;
   return new Map(rows.map((r) => [r.vehicle_id, r]));

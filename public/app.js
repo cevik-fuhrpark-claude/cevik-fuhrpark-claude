@@ -2762,6 +2762,9 @@ function ctLines(c, { noEvidence = false } = {}) {
     else if (s.km.status === 'unter_start') out.push(`${esc(t('ct_km_allow'))}: ${fmtKm(c.km_allowance)} · <span class="chip mittel" style="white-space:normal" data-ct-below>${esc(t('ct_km_below').replace('{km}', fmtKm(s.km.current_km)).replace('{start}', fmtKm(s.km.start_km)))}</span>`);
     else out.push(`${esc(t('ct_km_allow'))}: ${fmtKm(c.km_allowance)} · <span class="muted">${esc(t('ct_km_none'))}</span>`);
   }
+  // letzte Ablesung zum Stichtag/bis „Beendet am“ auch ohne berechenbare Kontingent-Zeile (Backlog 241: ohne Kontingent, nach Tachotausch,
+  // „km bei Übernahme“ fehlt) – der Stand für die Meldung an den Leasinggeber, mit Herkunft; nie geschätzt
+  if (c.reading && !(s.km && s.km.driven !== undefined)) out.push(`<span data-ctread>${esc(t('km'))}: ${fmtKm(c.reading.km)} <span class="small muted">(${esc(t('ct_km_read'))} ${fmtD(c.reading.measured_at)}${c.reading.source ? ' · ' + esc(odoSrc(c.reading.source)) : ''})</span></span>`);
   if (c.monthly_rate_net !== null) out.push(`${esc(t('ct_rate'))}: ${eur(c.monthly_rate_net)}`);
   if (!noEvidence) out.push(`<span class="small muted">${esc(t('evidence'))}: ${esc(c.evidence)}${c.note ? ' · ' + esc(c.note) : ''}</span>`);
   if (c.ended_on) out.push(`<span class="small">${esc(t('ct_ended_on'))} ${fmtD(c.ended_on)}${c.end_note ? ' · ' + esc(c.end_note) : ''}</span>`);

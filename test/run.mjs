@@ -18753,10 +18753,10 @@ await test('Backlog 196 (Monatsende Leasing): Vertragsübersicht/CSV zum Stichta
   const csv = new TextDecoder().decode((await own.get(`/api/contracts?filter=alle&format=csv&as_of=${day(-10)}`)).data).replace(/^﻿/, '');
   const lines = csv.trim().split('\r\n'); const head = lines[0].split(';');
   eq(head.slice(0, 20).join('|').startsWith('Kennzeichen|Vertragsart|Vertragspartner'), true);
-  eq(head.slice(20).join('|'), 'km-Stand|Ablesung vom|Mehr-km (+) / Minder-km (−) bisher|km-Status|Stichtag');
+  eq(head.slice(20, 25).join('|'), 'km-Stand|Ablesung vom|Mehr-km (+) / Minder-km (−) bisher|km-Status|Stichtag'); // seit Backlog 241 folgt „Ablesung Quelle“
   const la = lines.find((l) => l.startsWith('LE-AS 1')).split(';'); const lb = lines.find((l) => l.startsWith('LE-AS 2')).split(';');
-  eq(la.slice(20).join('|'), `130000|${day(-30).split('-').reverse().join('.')}|-10000|Prognose über Kontingent|${day(-10).split('-').reverse().join('.')}`);
-  eq(lb.slice(20).join('|'), `||||${day(-10).split('-').reverse().join('.')}`.replace('||||', '|||kein km-Stand|'));
+  eq(la.slice(20, 25).join('|'), `130000|${day(-30).split('-').reverse().join('.')}|-10000|Prognose über Kontingent|${day(-10).split('-').reverse().join('.')}`);
+  eq(lb.slice(20, 25).join('|'), `||||${day(-10).split('-').reverse().join('.')}`.replace('||||', '|||kein km-Stand|'));
   const cd = (await own.req('GET', `/api/contracts?filter=alle&format=csv&as_of=${day(-10)}`)); ok(String(cd.headers.get('content-disposition')).includes(`stichtag-${day(-10)}`), 'Dateiname mit Stichtag');
   const csvNow = new TextDecoder().decode((await own.get('/api/contracts?filter=alle&format=csv')).data);
   ok(csvNow.split('\r\n').find((l) => l.startsWith('LE-AS 1')).split(';').slice(20, 24).join('|') === `150500|${day(-2).split('-').reverse().join('.')}|10500|Kontingent überschritten`, 'Mehr-km heute');
@@ -20002,6 +20002,51 @@ await test('Backlog 240 (Blickwinkel „Disposition plant die Woche“): Kalende
   ok(en.includes('coupled with truck X-ZM 1') && en.includes('coupled with trailer X-AH 2') && en.includes('Parts expected'), 'EN');
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('<span class="sub wrap" data-dnpsub>'), 'Nicht einplanen: Unterzeile umbrechend');
+});
+
+await test('Backlog 241 (Monatsmeldung km an den Leasinggeber): Vertragsübersicht/CSV/Akte nennen die letzte Ablesung zum Stichtag auch ohne km-Kontingent, nach Tachotausch und bei beendeten Verträgen, mit Quelle (Spalte „Ablesung Quelle“); nie geschätzt', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner');
+  const s0 = await own.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'km.inhaber', display_name: 'KM' });
+  await own.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const dde = (d) => d.split('-').reverse().join('.');
+  const V = (i) => 'VIN:WDB9634031082410' + i;
+  for (const i of [1, 2, 3]) eq((await own.post('/api/vehicles', { plate: 'KM-LG ' + i, vin: 'WDB9634031082410' + i, site: 'Dortmund' })).status, 201);
+  const odo = async (v, km, d, extra = {}) => eq((await own.post(`/api/vehicles/${v}/odometer`, { km, measured_on: d, ...extra })).status, 201, `km ${km} ${d}`);
+  const ct = async (v, b) => { const x = await own.post(`/api/vehicles/${v}/contracts`, { kind: 'leasing', partner: 'LeaseKM', evidence: 'Vertrag', ...b }); eq(x.status, 201, JSON.stringify(x.data)); return x.data.id; };
+  // 1: Leasing ohne Kontingent
+  await ct(V(1), { contract_no: 'K1', start_date: day(-200), end_date: day(500) });
+  await odo(V(1), 118000, day(-40)); await odo(V(1), 120000, day(-5));
+  // 2: Kontingent, danach Tachotausch (Rücksprung mit Begründung) → km-Status nicht berechenbar, Stand trotzdem meldbar
+  await ct(V(2), { contract_no: 'K2', start_date: day(-200), end_date: day(500), km_allowance: 40000, start_km: 10000 });
+  await odo(V(2), 30000, day(-20)); await odo(V(2), 500, day(-3), { note: 'Tachotausch laut Werkstattrechnung' });
+  // 3: beendeter Vertrag ohne Kontingent – Stand bis zum Beenden (spätere Ablesung zählt nicht)
+  const c3 = await ct(V(3), { contract_no: 'K3', start_date: day(-300), end_date: day(-10) });
+  await odo(V(3), 77000, day(-12)); await odo(V(3), 77500, day(-1));
+  eq((await own.post(`/api/contracts/${c3}/end`, { ended_on: day(-10), end_note: 'zurückgegeben' })).status, 200);
+  const row = (ov, no) => ov.contracts.find((c) => c.contract_no === no);
+  const ov = (await own.get(`/api/contracts?filter=alle&as_of=${day(-1)}`)).data;
+  const r1 = row(ov, 'K1').reading; eq(r1.km, 120000); ok(r1.measured_at && r1.source === 'manuell:owner', JSON.stringify(r1)); eq(row(ov, 'K1').status.km, null, 'ohne Kontingent kein km-Status');
+  eq(row(ov, 'K2').reading.km, 500); eq(row(ov, 'K2').status.km.status, 'zaehler', 'Status bleibt nicht berechenbar');
+  eq(row(ov, 'K3').reading.km, 77000, 'Stand bis Beendet am');
+  // Stichtag vor allen Ablesungen von K1 → kein Stand, nichts geschätzt
+  eq(row((await own.get(`/api/contracts?filter=alle&as_of=${day(-60)}`)).data, 'K1').reading, null);
+  eq(row((await own.get(`/api/contracts?filter=alle&as_of=${day(-30)}`)).data, 'K1').reading.km, 118000);
+  // CSV: km-Stand/Ablesung vom gefüllt, Mehr-km nur bei berechenbarem Status, Quelle am Ende
+  const csv = new TextDecoder().decode((await own.get(`/api/contracts?filter=alle&format=csv&as_of=${day(-1)}`)).data).replace(/^﻿/, '');
+  const lines = csv.trim().split('\r\n'); ok(lines[0].endsWith(';Stichtag;Ablesung Quelle'), lines[0]);
+  const f = (p) => lines.find((l) => l.startsWith(p)).split(';').slice(20);
+  eq(f('KM-LG 1').join('|'), `120000|${dde(day(-5))}|||${dde(day(-1))}|manuell (Inhaber)`);
+  eq(f('KM-LG 2').join('|'), `500|${dde(day(-3))}||nicht berechenbar (Zähler-Rücksprung)|${dde(day(-1))}|manuell (Inhaber)`);
+  eq(f('KM-LG 3').slice(0, 2).join('|'), `77000|${dde(day(-12))}`);
+  // Fahrzeugakte: gleiche Angabe
+  const ak = (await own.get(`/api/vehicles/${V(1)}`)).data.contracts.find((c) => c.contract_no === 'K1'); eq(ak.reading.km, 120000);
+  const ak3 = (await own.get(`/api/vehicles/${V(3)}`)).data.contracts.find((c) => c.contract_no === 'K3'); eq(ak3.reading.km, 77000);
+  const { odoSourceDe } = await import('../src/contracts.js');
+  eq(odoSourceDe('telematik:webfleet'), 'Telematik (webfleet)'); eq(odoSourceDe('kontrolle:abfahrt'), 'Abfahrtskontrolle'); eq(odoSourceDe('import'), 'Import'); eq(odoSourceDe(null), '');
+  // Oberfläche zeigt den Stand auch ohne Kontingent
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-ctread'), 'Vertragszeile: km-Stand mit Ablesedatum und Quelle');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

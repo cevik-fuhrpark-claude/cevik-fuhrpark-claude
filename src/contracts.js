@@ -242,19 +242,24 @@ export async function endContract(env, user, id, body) {
 }
 
 // Backlog 197: letzte Ablesung (und letzter km-Rücksprung) bis Ende des Berliner Tags `ended_on` je beendetem Vertrag mit Kontingent –
-// eine Sammelabfrage über json_each, nur wenn es solche Verträge gibt. Ergebnis Map Vertrags-ID → {km, measured_at, drop_at, drop_rec} | null
+// eine Sammelabfrage über json_each, nur wenn es solche Verträge gibt. Ergebnis Map Vertrags-ID → {km, measured_at, source, drop_at, drop_rec} | null
+// Seit Backlog 241 für alle beendeten Verträge (km-Stand zur Rückgabe auch ohne Kontingent); km-Status weiterhin nur mit Kontingent
 export async function endKmByContract(env, list) {
-  const want = list.filter((c) => c.ended_on && c.km_allowance);
+  const want = list.filter((c) => c.ended_on);
   const out = new Map(); if (!want.length) return out;
   const nextDay = (d) => new Date(Date.parse(d + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
   const arg = JSON.stringify(want.map((c) => [c.id, c.vehicle_id, berlinDayStartIso(nextDay(c.ended_on))]));
   const rows = (await env.DB.prepare(`SELECT json_extract(j.value, '$[0]') AS id,
-      (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=json_extract(j.value, '$[1]') AND o.measured_at < json_extract(j.value, '$[2]') ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS lk,
+      (SELECT o.km || '|' || o.measured_at || '|' || COALESCE(o.source, '') FROM odometer_readings o WHERE o.vehicle_id=json_extract(j.value, '$[1]') AND o.measured_at < json_extract(j.value, '$[2]') ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS lk,
       (SELECT MAX(o.measured_at) || '|' || MAX(o.created_at) FROM odometer_readings o WHERE o.vehicle_id=json_extract(j.value, '$[1]') AND o.km_drop_prev IS NOT NULL AND o.measured_at < json_extract(j.value, '$[2]')) AS dr
     FROM json_each(?) j`).bind(arg).all()).results;
-  for (const r of rows) { if (!r.lk) { out.set(r.id, null); continue; } const [k, at] = r.lk.split('|'); out.set(r.id, { km: Number(k), measured_at: at, ...parseKmDrop(r.dr) }); }
+  for (const r of rows) { if (!r.lk) { out.set(r.id, null); continue; } const [k, at, ...src] = r.lk.split('|'); out.set(r.id, { km: Number(k), measured_at: at, source: src.join('|') || null, ...parseKmDrop(r.dr) }); }
   return out;
 }
+
+// Backlog 241 (Monatsmeldung an den Leasinggeber): letzte Ablesung zum Stichtag bzw. bis „Beendet am“ – unabhängig vom km-Status
+// (vorher nur bei km-Kontingent und berechenbarem Status; ohne Kontingent oder nach Tachotausch fehlte der meldbare Stand). Nie geschätzt.
+const readingOf = (x) => (x && x.km !== null && x.km !== undefined ? { km: x.km, measured_at: x.measured_at, source: x.source || null } : null);
 
 // Verträge eines Fahrzeugs (Fahrzeugakte); latest = letzter km-Stand der Akte
 // Vertragsdokument: Dateiname nur, wenn das Dokument in der angezeigten Umgebung liegt (sonst file_other_env)
@@ -263,7 +268,8 @@ export async function vehicleContracts(env, vehicleId, latest, settings, envName
     LEFT JOIN files f ON f.id=c.file_id AND f.environment=?
     WHERE c.vehicle_id=? ORDER BY c.ended_on IS NOT NULL, c.ended_on DESC, c.end_date IS NULL, c.end_date`).bind(envName || '', vehicleId).all()).results;
   const today = berlinDate(); const w = warnDaysOf(settings); const endKm = await endKmByContract(env, rows);
-  return rows.map((c) => ({ ...c, file_id: c.file_name ? c.file_id : null, file_other_env: !!(c.file_id && !c.file_name), status: contractStatus(c, latest, today, w, endKm.has(c.id) ? endKm.get(c.id) : undefined) }));
+  return rows.map((c) => ({ ...c, file_id: c.file_name ? c.file_id : null, file_other_env: !!(c.file_id && !c.file_name), status: contractStatus(c, latest, today, w, c.km_allowance && endKm.has(c.id) ? endKm.get(c.id) : undefined),
+    reading: readingOf(c.ended_on ? endKm.get(c.id) : latest) }));
 }
 
 const ORDER = { handeln: 0, hinweis: 1, ok: 2, beendet: 3 };
@@ -292,7 +298,8 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   // Stichtag vor dem Beenden: Vertrag lief damals noch – Status wie laufend (km bis zum Stichtag), beendet erst ab `ended_on`
   const endKm = await endKmByContract(env, pre.filter((c) => !(asOf && c.ended_on && c.ended_on > asOf)));
   let list = pre.map(({ file_ok, ...c }) => ({ ...c, file_id: file_ok ? c.file_id : null, file_other_env: !!(c.file_id && !file_ok), vehicle_eval_excluded: !!c.vehicle_eval_excluded,
-    status: asOf && c.ended_on && c.ended_on > asOf ? contractStatus({ ...c, ended_on: null }, latestKm.get(c.vehicle_id), today, w) : contractStatus(c, latestKm.get(c.vehicle_id), today, w, endKm.has(c.id) ? endKm.get(c.id) : undefined) }));
+    status: asOf && c.ended_on && c.ended_on > asOf ? contractStatus({ ...c, ended_on: null }, latestKm.get(c.vehicle_id), today, w) : contractStatus(c, latestKm.get(c.vehicle_id), today, w, c.km_allowance && endKm.has(c.id) ? endKm.get(c.id) : undefined),
+    reading: readingOf(c.ended_on && !(asOf && c.ended_on > asOf) ? endKm.get(c.id) : latestKm.get(c.vehicle_id)) }));
   // zum Stichtag beendet = vor oder am Stichtag beendet (sonst lief der Vertrag damals noch)
   const ended = (c) => !!c.ended_on && !(asOf && c.ended_on > asOf);
   const counts = { aktiv: 0, aktion: 0, beendet: 0, alle: list.length };
@@ -313,20 +320,34 @@ export async function contractOverview(env, user, query = {}, envName = null) {
 
 const KM_ST_DE = { ok: 'im Kontingent', ueber: 'Kontingent überschritten', prognose_ueber: 'Prognose über Kontingent', ohne_km: 'kein km-Stand',
   ohne_start: 'km bei Übernahme fehlt', zaehler: 'nicht berechenbar (Zähler-Rücksprung)', unter_start: 'km-Stand unter km bei Übernahme' };
+// Herkunft einer Ablesung im Klartext (wie `odoSrc` der App, deutsch für die CSV)
+const ODO_ROLE_DE = { owner: 'Inhaber', fleet: 'Fuhrparkleitung', workshop: 'Werkstatt', dispatch: 'Disposition', driver: 'Fahrer', viewer: 'Lesezugriff' };
+export function odoSourceDe(src) {
+  const v = String(src || ''); if (!v) return '';
+  if (v.startsWith('manuell:')) return `manuell (${ODO_ROLE_DE[v.slice(8)] || v.slice(8)})`;
+  if (v === 'kontrolle' || v === 'kontrolle:abfahrt') return 'Abfahrtskontrolle';
+  if (v === 'kontrolle:nach_reparatur') return 'Kontrolle nach Reparatur';
+  if (v.startsWith('telematik:')) return `Telematik (${v.slice(10)})`;
+  if (v === 'import') return 'Import';
+  if (v.startsWith('wartung:')) return `Prüfung/Wartung ${v.slice(8)}`;
+  return v;
+}
 const ST_DE = { handeln: 'handeln', hinweis: 'Hinweis', ok: 'in Ordnung', beendet: 'beendet' };
 export function contractsCsv(ov) {
   const head = ['Kennzeichen', 'Vertragsart', 'Vertragspartner', 'Vertragsnummer', 'Beginn', 'Ende', 'Kündigungsfrist (Monate)', 'Kündigung spätestens', 'Monatsrate netto (EUR)',
     'km-Kontingent', 'km bei Übernahme', 'km gefahren', 'km Prognose bis Ende (linear)', 'Status', 'Beendet am', 'Grund', 'Nachweis', 'Bemerkung', 'Vertragsdokument verknüpft', 'Fahrzeug ruhend (nicht in Summen)',
     // Backlog 196 (Monatsmeldung Leasing): angehängt, damit bestehende Auswertungen ihre Spalten behalten
-    'km-Stand', 'Ablesung vom', 'Mehr-km (+) / Minder-km (−) bisher', 'km-Status', 'Stichtag'];
+    'km-Stand', 'Ablesung vom', 'Mehr-km (+) / Minder-km (−) bisher', 'km-Status', 'Stichtag',
+    // Backlog 241: Herkunft der Ablesung (Rückfragen des Leasinggebers, Telematik-Ausreißer)
+    'Ablesung Quelle'];
   const lines = [head.join(';')];
   for (const c of ov.contracts) {
     const s = c.status;
     lines.push([c.plate, KIND_DE[c.kind], c.partner, c.contract_no, c.start_date, c.end_date, c.notice_months, s.notice ? s.notice.by : '',
       c.monthly_rate_net === null ? '' : String(c.monthly_rate_net).replace('.', ','), c.km_allowance, c.start_km, s.km && s.km.driven !== undefined ? s.km.driven : '',
       s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.vehicle_eval_excluded ? 'ja' : 'nein',
-      s.km && s.km.current_km !== undefined ? s.km.current_km : '', s.km && s.km.measured_at ? berlinDate(s.km.measured_at) : '',
-      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : '', ov.as_of || ov.today].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
+      c.reading ? c.reading.km : '', c.reading && c.reading.measured_at ? berlinDate(c.reading.measured_at) : '',
+      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : '', ov.as_of || ov.today, c.reading ? odoSourceDe(c.reading.source) : ''].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
