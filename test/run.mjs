@@ -16937,7 +16937,7 @@ await test('Leistung 22.10.: Unterabfrage „Mängelauftrag zur Prüfung“ übe
   const pm = plan(`SELECT m.event_id, EXISTS (SELECT 1 FROM master_inbox n WHERE n.environment=m.environment AND n.finding_id=m.finding_id AND (n.received_at > m.received_at OR (n.received_at = m.received_at AND n.rowid > m.rowid))) FROM master_inbox m`);
   ok(/SEARCH n USING (COVERING )?INDEX idx_master_inbox_finding \(finding_id=\? AND environment=\?/.test(pm), pm);
   const pw = plan(`SELECT c.id FROM cases c WHERE EXISTS (SELECT 1 FROM cases x WHERE x.vehicle_id=c.vehicle_id AND x.environment=c.environment AND x.id<>c.id AND x.created_at < c.created_at)`);
-  ok(/SEARCH x USING (COVERING )?INDEX idx_cases_vehicle_env_created \(vehicle_id=\? AND environment=\? AND created_at<\?\)/.test(pw), pw);
+  ok(/SEARCH x (?:EXISTS )?USING (COVERING )?INDEX idx_cases_vehicle_env_created \(vehicle_id=\? AND environment=\? AND created_at<\?\)/.test(pw), pw);
   ok((await owner.get('/api/cases?warranty=1')).status === 200 && (await owner.get('/api/master')).status === 200, 'Gewährleistungsfilter und Master-Eingang');
   // Endpunkte mit dieser Unterabfrage einmal aufrufen (Nachweisliste, Kennzahlen, Schnittstelle), dann Wächter über die ganze Testsuite
   for (const u of ['/api/maintenance/history?from=2020-01-01', '/api/maintenance/history?format=csv&from=2020-01-01', '/api/reports/kpi', '/api/maintenance']) ok((await owner.get(u)).status < 300, u);
@@ -19074,8 +19074,8 @@ await test('Backlog 210 (Versicherungsschaden mit Gutachter): Gutachter, Besicht
   const au = env.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='claim.update' AND target=? ORDER BY created_at DESC LIMIT 1`).get(d.id);
   ok(au && au.detail.includes('appraisal_net'), 'Protokoll nennt die Änderung');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data);
-  ok(csv.includes(';Bemerkung;Gutachter;Besichtigung am;Gutachten eingegangen am;Schadenhöhe laut Gutachten netto (EUR);Gutachten ausstehend;Kennzeichen Unfallgegner;Versicherer Unfallgegner;Schadennummer Unfallgegner;Schreiben verknüpft;'), 'CSV-Kopf');
-  const line = csv.split('\r\n').find((l) => l.includes('GA-T 1')); ok(line && line.includes('Sachverständigenbüro Test') && line.includes('4250,5;nein;;;;nein;nein;'), line);
+  ok(csv.includes(';Bemerkung;Gutachter;Besichtigung am;Gutachten eingegangen am;Schadenhöhe laut Gutachten netto (EUR);Gutachten ausstehend;Kennzeichen Unfallgegner;Versicherer Unfallgegner;Schadennummer Unfallgegner;Polizeidienststelle;Polizeiliches Aktenzeichen;Anzeige erstattet am;Schreiben verknüpft;'), 'CSV-Kopf');
+  const line = csv.split('\r\n').find((l) => l.includes('GA-T 1')); ok(line && line.includes('Sachverständigenbüro Test') && line.includes('4250,5;nein;;;;;;;nein;nein;'), line);
   // geleert = Verknüpfung aufgehoben
   d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim;
   eq((await users.fleet.put(P, { appraisal_net: null, appraisal_received_on: null, expected_updated_at: d.updated_at })).status, 200);
@@ -19243,7 +19243,7 @@ await test('Backlog 218 (Teilagent „Unfall mit fremdem Fahrzeug“): Unfallgeg
   ok(ov.claims.filter((c) => c.case_id !== cid).every((c) => c.opponent === false || c.opponent === true), 'Kennzeichen immer gesetzt');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data);
   const line = csv.split('\r\n').find((l) => l.includes('UG-T 1'));
-  ok(line && line.includes('DO-AB 123;Gegner Vers AG;FR-77/2026;nein;nein;'), line);
+  ok(line && line.includes('DO-AB 123;Gegner Vers AG;FR-77/2026;;;;nein;nein;'), line);
   const au = env.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='claim.update' AND target=? ORDER BY created_at DESC LIMIT 1`).get(d.id);
   ok(au, 'Protokoll vorhanden');
   const r3 = await users.fleet.put(P, { opponent_plate: '', opponent_insurer: '', opponent_claim_no: '', expected_updated_at: d.updated_at });
@@ -19295,6 +19295,53 @@ await test('Backlog 219 (Versicherungsfälle suchen): Suche über Kennzeichen (a
   ok(app.includes(`<input id="clq" class="noprint" type="search"`) && app.includes('clq.oninput = ()'), 'Suchfeld in der Oberfläche');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].claim_search, `${l}.claim_search`); ok(STRINGS[l].claim_search_info.includes('{q}') && STRINGS[l].claim_search_info.includes('{n}'), `${l}.claim_search_info`); }
+});
+
+await test('Backlog 220 (Teilagent „Kraftstoffdiebstahl am Rastplatz“): polizeiliche Anzeige im Versicherungsfall – Dienststelle, Aktenzeichen, Datum (Migration 0078), Prüfung, Übersicht/Suche/CSV, Rechte, Oberfläche und Texte DE/UK/EN', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'PA-T 1', vin: 'WDB96340310824001', site: 'Dortmund' })).status, 201);
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310824001', description: 'Diesel am Rastplatz abgezapft, Tankdeckel aufgebrochen', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const P = `/api/cases/${cid}/claim`; const base = { insurer: 'Eigene Vers AG', reported_on: bDayOff(-1), evidence: 'Meldung des Fahrers (Test)' };
+  // Aktenzeichen ohne Dienststelle: niemand weiß, wo man nachfragt
+  const r0 = await users.fleet.put(P, { ...base, police_ref: 'ST/123/26' }); eq(r0.status, 400, 'Aktenzeichen ohne Dienststelle');
+  ok(/Dienststelle/.test(r0.data.message), JSON.stringify(r0.data));
+  eq((await users.fleet.put(P, { ...base, police_station: 'PI Test', police_reported_on: bDayOff(1) })).status, 400, 'Anzeigedatum nicht in der Zukunft');
+  for (const u of [users.ws, users.dispatch, users.driver]) eq((await u.put(P, { ...base, police_station: 'PI Test' })).status, 403, 'nur Leitung');
+  const c1 = await users.fleet.put(P, { ...base, police_station: 'Autobahnpolizei Test', police_ref: '2026-10-23', police_reported_on: bDayOff(-1) });
+  eq(c1.status, 200, JSON.stringify(c1.data));
+  let d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim;
+  eq(d.police_station, 'Autobahnpolizei Test'); eq(d.police_ref, '2026-10-23'); eq(d.police_reported_on, bDayOff(-1)); eq(d.police, true);
+  ok(!('claim' in (await users.ws.get(`/api/cases/${cid}`)).data), 'Werkstatt sieht den Versicherungsfall nicht');
+  // weglassen = unverändert
+  eq((await users.fleet.put(P, { claim_no: 'EIG-PA' })).status, 200);
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(d.police_ref, '2026-10-23', 'Aktenzeichen bleibt');
+  // Suche findet Aktenzeichen und Dienststelle, CSV schützt das datumsähnliche Aktenzeichen vor Excel-Umwandlung
+  for (const q of ['2026-10-23', 'autobahnpolizei']) {
+    const ov = (await users.fleet.get(`/api/claims?filter=alle&q=${encodeURIComponent(q)}`)).data;
+    eq(ov.claims.map((c) => c.case_id).join(), cid, 'gefunden: ' + q); eq(ov.claims[0].police, true);
+  }
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle&q=PA-T')).data);
+  const head = csv.split('\r\n')[0].split(';'); const line = csv.split('\r\n').find((l) => l.includes('PA-T 1'));
+  ok(line, csv); const cells = line.split(';');
+  eq(cells[head.indexOf('Polizeidienststelle')], 'Autobahnpolizei Test'); ok(cells[head.indexOf('Polizeiliches Aktenzeichen')] !== '2026-10-23' && cells[head.indexOf('Polizeiliches Aktenzeichen')].includes('2026-10-23'), 'Aktenzeichen als Text');
+  eq(cells[head.indexOf('Anzeige erstattet am')], bDayOff(-1).split('-').reverse().join('.'));
+  const au = env.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='claim.create' AND target=?`).get(d.id); ok(au, 'Protokoll');
+  // leeren
+  eq((await users.fleet.put(P, { police_station: '', police_ref: '', police_reported_on: '', expected_updated_at: d.updated_at })).status, 200);
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(d.police_station, null); eq(d.police_ref, null); eq(d.police, false);
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const n of ['police_station', 'police_ref', 'police_reported_on']) ok(app.includes(`name="${n}"`), `Formularfeld ${n}`);
+  ok(app.includes('${claimOpponentInfo(cl)}${claimPoliceInfo(cl)}') && app.includes("c.police ? ` <span class=\"chip\""), 'Anzeige im Vorgang und in der Liste');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  const i18nSrc = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['cp_title', 'cp_hint', 'cp_station', 'cp_ref', 'cp_on', 'cp_chip']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].help_claims_s.includes(STRINGS[l].cp_title), `Hilfe nennt „${STRINGS[l].cp_title}“ ${l}`);
+  }
+  for (const l of ['uk', 'en']) {
+    const m = 'Polizeiliches Aktenzeichen nur zusammen mit der Dienststelle angeben.'; ok(translateValidation(l, m) !== m, `Prüftext ${l}`);
+    ok(i18nSrc.includes(`Object.assign(FIELD_NAMES.${l}, { Polizeidienststelle: `), `Feldnamen ${l}`);
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

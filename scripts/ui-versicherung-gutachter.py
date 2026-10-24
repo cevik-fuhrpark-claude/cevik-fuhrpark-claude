@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (Backlog 210, Teilagent „Versicherungsschaden mit Gutachter“): Versicherungsfall mit geplanter Besichtigung –
 # Vorgangsansicht zeigt den Abschnitt „Gutachter“ mit „Gutachten ausstehend“, Formular hat die vier Felder, Liste „Versicherungsfälle“
-# (24.10.2026, Backlog 218 ergänzt: Abschnitt „Unfallgegner“ mit Kennzeichen/Versicherer/Schadennummer und Kennzeichnung in der Liste)
+# (24.10.2026, Backlog 218 ergänzt: Abschnitt „Unfallgegner“ mit Kennzeichen/Versicherer/Schadennummer und Kennzeichnung in der Liste;
+#  Backlog 220: Abschnitt „Polizeiliche Anzeige“ beim zweiten Fall, Kennzeichnung in der Liste, Suche nach dem Aktenzeichen)
 # hat den Filter „Gutachten ausstehend“, Zeitleiste der Fahrzeugakte zeigt Besichtigung und Gutachten-Eingang. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig.
 import os, datetime
 from playwright.sync_api import sync_playwright
@@ -34,6 +35,10 @@ with sync_playwright() as p:
     # Unfallgegner nur beim ersten Fall (Backlog 218): Kennzeichen, Versicherer und deren Schadennummer laut Unfallbericht
     r3=api('PUT',f'/api/cases/{cid}/claim',{'opponent_plate':'DO-XY 987','opponent_insurer':'Gegner Vers AG','opponent_claim_no':'FR-2026/77'})
     check(r3['s']==200,f'Unfallgegner eingetragen ({r3["s"]} {r3["d"]})')
+    # polizeiliche Anzeige nur beim zweiten Fall (Backlog 220)
+    CP={'de':('Polizeiliche Anzeige','Anzeige erfasst'),'uk':('Заява до поліції','Заяву внесено'),'en':('Police report','Police report recorded')}
+    r4=api('PUT',f'/api/cases/{c2}/claim',{'police_station':'Autobahnpolizei Muster','police_ref':'ST/0815/26','police_reported_on':d(-2)})
+    check(r4['s']==200,f'Anzeige eingetragen ({r4["s"]} {r4["d"]})')
     for lang in ['de','uk','en']:
       api('PATCH','/api/me',{'language':lang})
       for w,h in [(390,844),(820,1180),(1366,900)]:
@@ -45,13 +50,24 @@ with sync_playwright() as p:
         check(all(q.locator(f'#clf [name="{n}"]').count()==1 for n in ['appraiser','appraisal_on','appraisal_received_on','appraisal_net']),f'{lang} {w}px: vier Formularfelder')
         check(CO[lang][0] in body and 'DO-XY 987' in body and 'Gegner Vers AG' in body and 'FR-2026/77' in body,f'{lang} {w}px: Vorgang zeigt den Unfallgegner')
         check(all(q.locator(f'#clf [name="{n}"]').count()==1 for n in ['opponent_plate','opponent_insurer','opponent_claim_no']),f'{lang} {w}px: drei Felder zum Unfallgegner')
+        check(all(q.locator(f'#clf [name="{n}"]').count()==1 for n in ['police_station','police_ref','police_reported_on']),f'{lang} {w}px: drei Felder zur Anzeige')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Vorgang ohne Querscrollen')
         if SHOTS and w==390:
             q.locator('#clf').evaluate('f=>f.closest("details").open=true'); q.locator('#clf').scroll_into_view_if_needed()
             q.screenshot(path=f'{SHOTS}/gutachter_fall_{lang}_{w}.png',full_page=True)
+        q.goto(B+f'/#/cases/{c2}'); q.wait_for_function('()=>document.body.innerText.includes("Autobahnpolizei Muster")',timeout=15000)  # Hash-Wechsel: altes #clf ist noch da
+        b2=q.inner_text('body')
+        check(CP[lang][0] in b2 and 'Autobahnpolizei Muster' in b2 and 'ST/0815/26' in b2,f'{lang} {w}px: Vorgang zeigt die Anzeige')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Vorgang mit Anzeige ohne Querscrollen')
+        if SHOTS and w==390:
+            q.locator('#clf').evaluate('f=>f.closest("details").open=true'); q.locator('[name="police_station"]').scroll_into_view_if_needed()
+            q.screenshot(path=f'{SHOTS}/anzeige_fall_{lang}_{w}.png',full_page=True)
         q.goto(B+'/#/claims'); q.wait_for_selector('[data-clf="alle"]')
         q.locator('[data-clf="alle"]').click(); q.wait_for_timeout(400)
         check(q.inner_text('body').count(CO[lang][1])==1,f'{lang} {w}px: Liste kennzeichnet genau einen Haftpflichtfall')
+        check(q.inner_text('body').count(CP[lang][1])==1,f'{lang} {w}px: Liste kennzeichnet genau einen Fall mit Anzeige')
+        q.fill('#clq','ST/0815'); q.wait_for_timeout(600)
+        check(q.locator('a.row').count()==1 and CP[lang][1] in q.inner_text('body'),f'{lang} {w}px: Suche findet das Aktenzeichen')
         # Suche nach der Schadennummer der Gegenseite (Backlog 219): nur der Haftpflichtfall bleibt stehen
         q.fill('#clq','FR-2026/77'); q.wait_for_timeout(600)
         check(q.locator('a.row').count()==1 and CO[lang][1] in q.inner_text('body'),f'{lang} {w}px: Suche findet den Haftpflichtfall')
