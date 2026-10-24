@@ -16748,7 +16748,7 @@ await test('Fehlersuche 22.10. (Konsistenz/Rollen/Tastatur): HU/SP-Widerspruch m
   // 6. Oberfläche (Quelltext): erledigter Rückruf nicht in „Heute zu tun“, Kachel „Gesperrte Vorgänge“, Notfallseite ohne Melden-Link für Lesezugriff, Tastatur
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("r.next_due_date <= in7 && r.date_status !== 'erledigt'"), 'Heute zu tun ohne erledigte');
-  ok(app.includes("<div><b>${d.locked}</b>${esc(t('locked_cases'))}</div>"), 'Kachel zählt Vorgänge und heißt so');
+  ok(app.includes("<b>${d.locked}</b>${esc(t('locked_cases'))}</a>"), 'Kachel zählt Vorgänge und heißt so'); // seit Backlog 238 als Link
   ok(app.includes("${mayReport() ? `<a href=\"${vid ? `#/new/${esc(vid)}` : '#/new'}\">"), 'Panne & Notfall: Melden nur mit Recht');
   ok(app.includes(`\${key === active ? ' aria-current="page"' : ''}`), 'aktive Seite aria-current');
   ok(!app.includes('role="tablist"') && !app.includes('role="tab"'), 'keine Tab-Rollen ohne Pfeiltasten');
@@ -19924,6 +19924,36 @@ await test('Backlog 237 (Blickwinkel „Monatsende – Kosten an die Buchhaltung
   ok(app.includes('function standTag() { const x = BERLIN_DT_FMT.format(new Date(nowMs()))'), 'Serverzeit, Berlin');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cost_items_csv_hint.includes('(stand'), l + ': Hinweis Stand');
+});
+
+await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „kritisch“/„gesperrte Vorgänge“ der Startseite führen zur passenden Vorgangsliste (Filter priority/locked, gleiche Anzahl), ungültige Priorität 400', async () => {
+  const vin = 'WDB96340310823801';
+  eq((await owner.post('/api/vehicles', { plate: 'UR-LA 1', vin, site: 'Dortmund' })).status, 201);
+  const mk = async (prio, desc) => (await users.fleet.post('/api/cases', { vehicle_id: 'VIN:' + vin, description: desc, priority: prio, driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const k1 = await mk('kritisch', 'Urlaub kritisch 1'); const n1 = await mk('niedrig', 'Urlaub niedrig gesperrt'); const m1 = await mk('mittel', 'Urlaub mittel offen');
+  const c = (await users.fleet.get(`/api/cases/${n1}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${n1}/commands`, { action: 'set_safety_lock', command_id: rk(), expected_version: c.version, note: 'Bremse' })).status, 200);
+  for (const u of [users.fleet, users.dispatch]) { // Testumgebung (Inhaber arbeitet in Betrieb)
+    const d = (await u.get('/api/dashboard')).data;
+    const cr = (await u.get('/api/cases?status=open&priority=kritisch&limit=500')).data;
+    const lk = (await u.get('/api/cases?status=open&locked=1&limit=500')).data;
+    eq(cr.cases.length, d.critical, 'kritisch = Zähler'); eq(lk.cases.length, d.locked, 'gesperrt = Zähler');
+    ok(cr.cases.every((x) => x.priority === 'kritisch') && cr.cases.some((x) => x.id === k1), 'nur kritische: ' + JSON.stringify(cr.cases.map((x) => [x.priority, x.id === k1])) + ' k1=' + k1);
+    ok(lk.cases.every((x) => x.safety_lock) && lk.cases.some((x) => x.id === n1), 'nur gesperrte');
+  }
+  // CSV mit denselben Filtern
+  const csv = await users.fleet.get('/api/cases?format=csv&status=open&locked=1');
+  eq(csv.status, 200); ok(new TextDecoder().decode(csv.data).includes('Urlaub niedrig gesperrt') && !new TextDecoder().decode(csv.data).includes('Urlaub mittel offen'), 'CSV gefiltert');
+  ok(!(await users.fleet.get('/api/cases?status=open&locked=1&limit=500')).data.cases.some((x) => x.id === m1), 'ungesperrter nicht in „gesperrt“');
+  const bad = await users.fleet.get('/api/cases?status=open&priority=hoch'); eq(bad.status, 400);
+  eq((await users.fleet.get('/api/cases?status=open&locked=0')).data.cases.length, (await users.fleet.get('/api/cases?status=open')).data.cases.length, 'locked=0 = kein Filter');
+  // Oberfläche: Zähler als Links mit Standort-Sprung, Filter in der Liste, Fahrer ohne
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes(`<a class="statlink" id="stcrit" href="\${hj('#/cases?f=critical')}">`) && app.includes(`<a class="statlink" id="stlock" href="\${hj('#/cases?f=locked')}">`) && app.includes(`id="stopen" href="\${hj('#/cases?f=open')}"`), 'Startseite verlinkt');
+  ok(app.includes("f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1'"), 'Listenfilter');
+  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
+  const { translateValidation } = await import('../public/i18n.js');
+  for (const l of ['uk', 'en']) ok(translateValidation(l, 'Priorität: niedrig, mittel oder kritisch.') !== 'Priorität: niedrig, mittel oder kritisch.', l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

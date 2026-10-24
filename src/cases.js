@@ -113,6 +113,12 @@ export async function listCases(env, user, envName, query, meta = null) {
   // Schalter-Filter nur bei „1“/„true“/„ja“ (17.10.2026: ?warranty=0 schaltete den Filter EIN, weil nur der Rohwert geprüft wurde)
   const on = (v) => typeof v === 'string' && /^(1|true|ja|yes)$/i.test(v.trim());
   const qWarranty = on(query.warranty); const qFollowup = on(query.followup); const qStale = on(query.stale);
+  // Filter „kritisch“/„gesperrt“ (Backlog 238): gleiche Regel wie die Zähler der Startseite (priority='kritisch' bzw. safety_lock)
+  if (query.priority !== undefined && query.priority !== '') {
+    if (!PRIORITIES.includes(query.priority)) throw bad('validation', 'Priorität: niedrig, mittel oder kritisch.');
+    where.push('c.priority = ?'); args.push(query.priority);
+  }
+  if (on(query.locked)) where.push('c.safety_lock = 1');
   // Filter „Gewährleistung prüfen“: frühere Vorgänge desselben Fahrzeugs mit Teil/Fremdleistung, deren Gewährleistung am Meldetag
   // noch lief (Meldetag = Berliner Kalendertag wie im Vorgang angezeigt); Werkstatt nur eigener Standort
   let withSql = '';

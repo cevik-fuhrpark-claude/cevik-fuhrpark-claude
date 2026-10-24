@@ -720,6 +720,7 @@ const V_MORE = [
   ['Die Prüfliste wurde inzwischen geändert – bitte die Kontrolle neu durchführen.', 'Перелік пунктів перевірки тим часом змінено – будь ласка, проведіть перевірку заново.', 'The checklist has changed in the meantime – please carry out the check again.'],
   ['Unbekannte Aktion.', 'Невідома дія.', 'Unknown action.'],
   ['repeat_days: 1–30 Tage', 'repeat_days: 1–30 днів', 'repeat_days: 1–30 days'],
+  ['Priorität: niedrig, mittel oder kritisch.', 'Пріоритет: низький, середній або критичний.', 'Priority: low, medium or critical.'],
   ['Konto ist deaktiviert – erst aktivieren, dann neuen Einladungslink erzeugen.', 'Обліковий запис деактивовано – спершу активуйте, потім створіть нове посилання-запрошення.', 'Account is deactivated – activate it first, then create a new invitation link.'],
   ['Fahrer bereits ermittelt – Tatzeit nur vor der Fahrerermittlung änderbar.', 'Водія вже встановлено – час порушення можна змінити лише до встановлення водія.', 'Driver already identified – the offence time can only be changed before the driver is identified.'],
   ['Fahrer bereits ermittelt – Kennzeichen nur vor der Fahrerermittlung änderbar.', 'Водія вже встановлено – номерний знак можна змінити лише до встановлення водія.', 'Driver already identified – the plate can only be changed before the driver is identified.'],

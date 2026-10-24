@@ -13,7 +13,7 @@ def check(c, m):
     print(('  ✔ ' if c else '  ✘ ') + m)
     if not c: fails.append(m)
 def stat(q, label):
-    for el in q.locator('.stats > div').all():
+    for el in q.locator('.stats > *').all():
         t = el.inner_text()
         if label.lower() in t.lower(): return el.locator('b').inner_text().strip()
     return None
@@ -57,13 +57,19 @@ with sync_playwright() as p:
             else:
                 bar = q.locator('#dsitebar'); stats = q.locator('.stats')
                 check(bar.count() == 1 and bar.bounding_box()['y'] < stats.bounding_box()['y'], f'{lang} Dispo: Standortzeile über den Zählern')
-                own = q.locator('.stats > div').first.locator('b').inner_text().strip()
+                own = q.locator('.stats > *').first.locator('b').inner_text().strip()
                 check(own.startswith('1'), f'{lang} Dispo Hamburg: Offen = {own}')
                 h2 = q.locator('h2', has_text=':').first.inner_text()
                 check(h2.strip().endswith(': 1'), f'{lang} Dispo Hamburg: Fahrzeuge „{h2}“')
                 if SHOTS: q.screenshot(path=f'{SHOTS}/start-dispo-{lang}-{w}.png', full_page=True)
+                # Backlog 238: Zähler „kritisch“ führt zur gefilterten Liste mit gleicher Anzahl (Standort Hamburg bleibt)
+                crit = q.locator('#stcrit b').inner_text().strip(); q.click('#stcrit'); q.wait_for_selector('#cl', timeout=15000); q.wait_for_timeout(800)
+                rows = q.locator('#cl .list a.row').count(); tab = q.locator('.seg-tabs a[aria-current]').inner_text().strip()
+                check(crit == '1' and rows == 1 and tab != '', f'{lang} Dispo: kritisch {crit} → Liste {rows} Zeile(n), Reiter „{tab}“')
+                if SHOTS: q.screenshot(path=f'{SHOTS}/start-krit-{lang}-{w}.png', full_page=True)
+                q.go_back(); q.wait_for_selector('.stats', timeout=15000); q.wait_for_timeout(800)
                 q.click('#dsitetoggle'); q.wait_for_timeout(1500)
-                allo = q.locator('.stats > div').first.locator('b').inner_text().strip()
+                allo = q.locator('.stats > *').first.locator('b').inner_text().strip()
                 check(int(allo.rstrip('+')) >= 3, f'{lang} Dispo alle Standorte: Offen = {allo}')
                 q.evaluate("() => { try { sessionStorage.clear(); } catch {} }")
             sw = q.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
