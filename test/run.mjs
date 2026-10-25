@@ -20196,8 +20196,8 @@ await test('Backlog 241 (Monatsmeldung km an den Leasinggeber): Vertragsübersic
   eq(row((await own.get(`/api/contracts?filter=alle&as_of=${day(-30)}`)).data, 'K1').reading.km, 118000);
   // CSV: km-Stand/Ablesung vom gefüllt, Mehr-km nur bei berechenbarem Status, Quelle am Ende
   const csv = new TextDecoder().decode((await own.get(`/api/contracts?filter=alle&format=csv&as_of=${day(-1)}`)).data).replace(/^﻿/, '');
-  const lines = csv.trim().split('\r\n'); ok(lines[0].endsWith(';Stichtag;Ablesung Quelle'), lines[0]);
-  const f = (p) => lines.find((l) => l.startsWith(p)).split(';').slice(20);
+  const lines = csv.trim().split('\r\n'); ok(lines[0].includes(';Stichtag;Ablesung Quelle;Offene Vorgänge (Rückgabe);'), lines[0]); // Backlog 288 hängt zwei Spalten an
+  const f = (p) => lines.find((l) => l.startsWith(p)).split(';').slice(20, 26);
   eq(f('KM-LG 1').join('|'), `120000|${dde(day(-5))}|||${dde(day(-1))}|manuell (Inhaber)`);
   eq(f('KM-LG 2').join('|'), `500|${dde(day(-3))}||nicht berechenbar (Zähler-Rücksprung)|${dde(day(-1))}|manuell (Inhaber)`);
   eq(f('KM-LG 3').slice(0, 2).join('|'), `77000|${dde(day(-12))}`);
@@ -21020,6 +21020,65 @@ await test('Backlog 285b: Datenqualität „Offener Versicherungsfall ohne Schad
   eq((await dq()).length, 0, 'regulierter Fall: kein Hinweis');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].dq_claim_no_occurred, `${l}.dq_claim_no_occurred`); ok(STRINGS[l].claim_no_occ_hint && STRINGS[l].claim_no_occ_hint.includes('{b}'), `${l}.claim_no_occ_hint`); }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('data-claimnoocc>') && app.includes("['gemeldet', 'in_pruefung'].includes(cl.status)"), 'Hinweis im Versicherungsfall (Backlog 287)');
+});
+
+await test('Backlog 288 (Blickwinkel „Leasingrückgabe“): Leasing/Miete endet bald bzw. abgelaufen → offene Vorgänge und offene Restarbeiten freigegebener Vorgänge am Fahrzeug in Übersicht, CSV und Agentenbefund (nur eigene Umgebung); Texte DE/UK/EN', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const V2 = 'VIN:WDB9630051L917317';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const lea = (await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Leasing AG', start_date: day(-700), end_date: day(20), evidence: 'Leasingvertrag' })).data.id;
+  const ins = (await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Versicherer', end_date: day(10), evidence: 'Police' })).data.id;
+  const mie = (await U.fleet.post(`/api/vehicles/${V2}/contracts`, { kind: 'miete', partner: 'Mietpartner', start_date: day(-60), end_date: day(-2), evidence: 'Mietvertrag' })).data.id;
+  const far = (await U.fleet.post(`/api/vehicles/${V2}/contracts`, { kind: 'leasing', partner: 'Später AG', start_date: day(-10), end_date: day(400), evidence: 'Leasingvertrag 2' })).data.id;
+  ok(lea && ins && mie && far, 'Verträge angelegt');
+  // offener Vorgang + freigegebener Vorgang mit offener Restarbeit (und einer erledigten) an V1
+  const c1 = await newCase({ description: 'Kratzer an der Tür' });
+  const c2 = await newCase({ description: 'Spiegel lose' });
+  const vid = db.prepare('SELECT vehicle_id FROM cases WHERE id=?').get(c2).vehicle_id;
+  db.prepare(`UPDATE cases SET status='fahrzeug_freigegeben' WHERE id=?`).run(c2);
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO open_items(id,case_id,description,safety_relevant,status,created_by,created_at) VALUES('oi288a',?,'Lackschaden Tür',0,'offen',?,?)`).run(c2, U.fleet.id, now);
+  db.prepare(`INSERT INTO open_items(id,case_id,description,safety_relevant,status,created_by,created_at) VALUES('oi288b',?,'Spiegel justiert',0,'erledigt',?,?)`).run(c2, U.fleet.id, now);
+  // Vorgang in der anderen Umgebung zählt nicht
+  const cols = db.prepare('PRAGMA table_info(cases)').all().map((x) => x.name);
+  const repl = { id: "'c288p'", case_no: "'P-288'", environment: "'production'", status: "'gemeldet'", request_key: "'rk-288p'" };
+  db.prepare(`INSERT INTO cases(${cols.join(',')}) SELECT ${cols.map((c) => repl[c] || c).join(',')} FROM cases WHERE id=?`).run(c1);
+  ok(c1 && vid, 'Vorgänge');
+  let ov = (await U.fleet.get('/api/contracts?filter=alle')).data;
+  const by = (id) => ov.contracts.find((c) => c.id === id);
+  eq(JSON.stringify(by(lea).return_check), JSON.stringify({ open_cases: 1, open_items: 1 }), 'Leasing endet bald: 1 offener Vorgang, 1 offene Restarbeit');
+  eq(JSON.stringify(by(mie).return_check), JSON.stringify({ open_cases: 0, open_items: 0 }), 'Miete abgelaufen, ohne Offenes');
+  ok(!by(ins).return_check, 'Versicherung: keine Rückgabe');
+  ok(!by(far).return_check, 'Leasing endet nicht bald: nicht geprüft');
+  // Stichtag: nicht rekonstruiert → keine Angabe
+  ok(!(await U.fleet.get(`/api/contracts?filter=alle&as_of=${day(-1)}`)).data.contracts.some((c) => c.return_check), 'Stichtag ohne Rückgabeprüfung');
+  // CSV
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/contracts?filter=alle&format=csv')).data).split('\r\n');
+  ok(csv[0].endsWith(';Offene Vorgänge (Rückgabe);Offene Restarbeiten nach Freigabe (Rückgabe)'), 'CSV-Kopf');
+  const row = csv.find((l) => l.includes('Leasing AG')); ok(row && row.endsWith(';1;1'), 'CSV-Werte Leasing');
+  ok(csv.find((l) => l.includes('Mietpartner')).endsWith(';0;0'), 'CSV-Werte Miete'); ok(csv.find((l) => l.includes('Versicherer')).endsWith(';;'), 'CSV leer bei Versicherung');
+  // Agentenbefund in der Testumgebung nennt die Zahlen, Betrieb nicht
+  eq((await U.fleet.post('/api/agent/run')).status, 200);
+  const f = (await U.fleet.get('/api/master')).data.findings.find((x) => x.finding_code === 'CONTRACT_ENDS_SOON' && x.message.includes('Leasing AG'));
+  ok(f && f.message.includes('offene Vorgänge am Fahrzeug: 1') && f.message.includes('offene Restarbeiten nach Freigabe: 1'), f && f.message);
+  const fm2 = (await U.fleet.get('/api/master')).data.findings.find((x) => x.finding_code === 'CONTRACT_ENDED' && x.message.includes('Mietpartner'));
+  ok(fm2 && !fm2.message.includes('offene'), 'ohne Offenes kein Zusatz');
+  const { contractFindings } = await import('../src/contracts.js');
+  const prod = (await contractFindings(e, new Map(), 'production')).find((x) => x.code === 'CONTRACT_ENDS_SOON' && x.message.includes('Leasing AG'));
+  ok(prod && prod.message.includes('offene Vorgänge am Fahrzeug: 1') && !prod.message.includes('Restarbeiten'), 'Betrieb: nur der dortige Vorgang');
+  // Vorgang abgeschlossen → Zahl sinkt
+  db.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).run(c1); db.prepare(`UPDATE open_items SET status='erledigt' WHERE id='oi288a'`).run();
+  ov = (await U.fleet.get('/api/contracts?filter=alle')).data; eq(JSON.stringify(by(lea).return_check), JSON.stringify({ open_cases: 0, open_items: 0 }), 'nach Abschluss 0');
+  ok((await U.ws.get('/api/contracts')).status === 403, 'Werkstatt sieht keine Verträge');
+  // Texte und Oberfläche
+  const { STRINGS } = await import('../public/i18n.js'); const { FINDING_MESSAGES } = await import('../public/finding-messages.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['ct_ret', 'ct_ret_open', 'ct_ret_items', 'ct_ret_clear']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].ct_ret_open.includes('{n}') && STRINGS[l].ct_ret_items.includes('{n}'), `${l} Platzhalter`);
+    ok(STRINGS[l].help_contracts_s.includes(STRINGS[l].ct_ret), `Hilfe ${l}`);
+    for (const k of ['CONTRACT_ENDED', 'CONTRACT_ENDS_SOON']) ok(FINDING_MESSAGES[l][k].includes('{open}') && FINDING_MESSAGES[l][k].includes('{items}'), `${l}.${k}`);
+  }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('${ctRet(c.return_check)}') && app.includes('data-ct-ret'), 'Anzeige in der Vertragsübersicht');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

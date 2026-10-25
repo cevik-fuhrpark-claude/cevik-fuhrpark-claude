@@ -2924,6 +2924,12 @@ function bindCtSection(id, reload) {
   $$('form[data-ctedit]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); if (rateRetro(fm) && !confirm(t('ct_rate_retro_confirm'))) return; try { await api('PATCH', `/api/contracts/${fm.dataset.ctedit}`, { ...ctBody(fm), ...(fm.dataset.upd ? { expected_updated_at: fm.dataset.upd } : {}) }); toast('✓'); reload(); } catch (err) { toast(err.message, true); } }));
   $$('form[data-ctend]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { await api('POST', `/api/contracts/${fm.dataset.ctend}/end`, ctBody(fm)); toast('✓'); reload(); } catch (err) { toast(err.message, true); } }));
 }
+// Backlog 288 (Leasingrückgabe): offene Vorgänge/Restarbeiten am Fahrzeug, wenn Leasing/Miete bald endet bzw. abgelaufen ist
+function ctRet(rc) {
+  if (!rc) return '';
+  const parts = [rc.open_cases ? t('ct_ret_open').replace('{n}', rc.open_cases) : '', rc.open_items ? t('ct_ret_items').replace('{n}', rc.open_items) : ''].filter(Boolean);
+  return `<span class="sub" data-ct-ret style="white-space:normal"><span class="chip ${parts.length ? 'mittel' : 'ok'}" style="white-space:normal">${esc(t('ct_ret'))}: ${esc(parts.length ? parts.join(' · ') : t('ct_ret_clear'))}</span></span>`;
+}
 async function viewContracts() {
   const f = S.ctFilter || 'aktiv'; const k = S.ctKind || '';
   const cts = vsDef('ctSite') || ''; const asof = S.ctAsOf || '';
@@ -2938,7 +2944,7 @@ async function viewContracts() {
     ${r.as_of ? `<p class="small" data-ct-asof><span class="chip mittel" style="white-space:normal">${esc(t('ct_asof_note').replace('{d}', fmtD(r.as_of)))}</span></p>` : ''}
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('ctsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : ''}
     ${f !== 'beendet' ? `<p>${esc(t('ct_rate_sum'))}: <b>${eur(r.monthly_rate_sum_net)}</b>${r.unrated ? ` <span class="small muted">· ${r.unrated} ${esc(t('ct_unrated'))}</span>` : ''}${r.contracts.some((c) => c.vehicle_eval_excluded) ? ` <span class="small muted">· ${esc(t('ct_excluded_hint'))}</span>` : ''}</p>` : ''}
-    <div class="list">${r.contracts.length ? r.contracts.map((c) => `<a class="row ${c.status.overall === 'handeln' ? 'p-kritisch' : c.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${plate(c.plate)}<span class="title">${c.vehicle_eval_excluded ? `<span class="chip">${esc(t('eval_excluded'))}</span> ` : ''}${esc(t('ck_' + c.kind))} · ${esc(c.partner)}</span>${ctChip(c.status)}<span class="sub" style="white-space:normal">${ctLines(c, { noEvidence: true }).join(' · ').replace(/<br>/g, ' · ')}${c.file_id ? ` · 📎 ${esc(t('ct_doc_linked'))}` : ''}</span></a>`).join('') : `<p class="muted">${esc(t('ct_none'))}</p>`}</div>
+    <div class="list">${r.contracts.length ? r.contracts.map((c) => `<a class="row ${c.status.overall === 'handeln' ? 'p-kritisch' : c.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${plate(c.plate)}<span class="title">${c.vehicle_eval_excluded ? `<span class="chip">${esc(t('eval_excluded'))}</span> ` : ''}${esc(t('ck_' + c.kind))} · ${esc(c.partner)}</span>${ctChip(c.status)}<span class="sub" style="white-space:normal">${ctLines(c, { noEvidence: true }).join(' · ').replace(/<br>/g, ' · ')}${c.file_id ? ` · 📎 ${esc(t('ct_doc_linked'))}` : ''}</span>${ctRet(c.return_check)}</a>`).join('') : `<p class="muted">${esc(t('ct_none'))}</p>`}</div>
     <div class="actions noprint"><button type="button" class="btn secondary" id="ctcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="ctics" title="${esc(t('ct_ics_hint'))}">${esc(t('export_ics'))}</button><button type="button" class="btn secondary" id="ctprt">${esc(t('print'))}</button></div>
     <details class="panel noprint"><summary>${esc(t('ct_import'))}</summary><p class="small muted">${esc(t('ct_import_hint'))}</p>
       <label for="ctsrc">${esc(t('ct_import_src'))}</label><input id="ctsrc" maxlength="300"><input type="file" id="ctimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('ct_import'))}" style="margin-top:8px"><div id="ctimpr"></div></details>`, 'more');

@@ -14,6 +14,9 @@ export const CONTRACT_KINDS = ['leasing', 'miete', 'finanzierung', 'versicherung
 export const KIND_DE = { leasing: 'Leasing', miete: 'Miete', finanzierung: 'Finanzierung', versicherung: 'Versicherung', wartung: 'Wartungsvertrag', sonstiges: 'Vertrag' };
 export const FORECAST_MIN_DAYS = 30; // Prognose erst nach mindestens 30 Tagen Laufzeit mit km-Stand (sonst zu unsicher)
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
+// Backlog 288 (Leasingrückgabe): Vertragsarten mit Rückgabe des Fahrzeugs; offene Vorgangsstatus wie OPEN_STATUSES in src/cases.js
+export const RETURN_KINDS = ['leasing', 'miete'];
+const OPEN_CASE_ST = `('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')`;
 const ISO = { test: isCalendarDate }; // echtes Kalenderdatum JJJJ-MM-TT
 const days = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
 
@@ -300,6 +303,18 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   let list = pre.map(({ file_ok, ...c }) => ({ ...c, file_id: file_ok ? c.file_id : null, file_other_env: !!(c.file_id && !file_ok), vehicle_eval_excluded: !!c.vehicle_eval_excluded,
     status: asOf && c.ended_on && c.ended_on > asOf ? contractStatus({ ...c, ended_on: null }, latestKm.get(c.vehicle_id), today, w) : contractStatus(c, latestKm.get(c.vehicle_id), today, w, c.km_allowance && endKm.has(c.id) ? endKm.get(c.id) : undefined),
     reading: readingOf(c.ended_on && !(asOf && c.ended_on > asOf) ? endKm.get(c.id) : latestKm.get(c.vehicle_id)) }));
+  // Backlog 288 (Leasingrückgabe): Leasing/Miete endet bald bzw. ist abgelaufen → offene Vorgänge und offene Restarbeiten freigegebener
+  // Vorgänge am Fahrzeug (eigene Umgebung, heutiger Stand – nicht zum Stichtag, der Verlauf offener Vorgänge wird nicht rekonstruiert)
+  const retIds = asOf ? [] : [...new Set(list.filter((c) => RETURN_KINDS.includes(c.kind) && !c.ended_on && c.status.end && ['laeuft_aus', 'abgelaufen'].includes(c.status.end.status)).map((c) => c.vehicle_id))];
+  if (retIds.length) {
+    const rr = (await env.DB.prepare(`SELECT j.value AS vehicle_id,
+        (SELECT COUNT(*) FROM cases k WHERE k.vehicle_id=j.value AND k.environment=?1 AND k.status IN ${OPEN_CASE_ST}) AS open_cases,
+        (SELECT COUNT(*) FROM cases k JOIN open_items i ON i.case_id=k.id AND i.status='offen' WHERE k.vehicle_id=j.value AND k.environment=?1 AND k.status='fahrzeug_freigegeben') AS open_items
+      FROM json_each(?2) j`).bind(envName, JSON.stringify(retIds)).all()).results;
+    const byV = new Map(rr.map((x) => [x.vehicle_id, x]));
+    list = list.map((c) => (retIds.includes(c.vehicle_id) && RETURN_KINDS.includes(c.kind) && !c.ended_on && c.status.end && ['laeuft_aus', 'abgelaufen'].includes(c.status.end.status)
+      ? { ...c, return_check: { open_cases: byV.get(c.vehicle_id)?.open_cases || 0, open_items: byV.get(c.vehicle_id)?.open_items || 0 } } : c));
+  }
   // zum Stichtag beendet = vor oder am Stichtag beendet (sonst lief der Vertrag damals noch)
   const ended = (c) => !!c.ended_on && !(asOf && c.ended_on > asOf);
   const counts = { aktiv: 0, aktion: 0, beendet: 0, alle: list.length };
@@ -339,7 +354,9 @@ export function contractsCsv(ov) {
     // Backlog 196 (Monatsmeldung Leasing): angehängt, damit bestehende Auswertungen ihre Spalten behalten
     'km-Stand', 'Ablesung vom', 'Mehr-km (+) / Minder-km (−) bisher', 'km-Status', 'Stichtag',
     // Backlog 241: Herkunft der Ablesung (Rückfragen des Leasinggebers, Telematik-Ausreißer)
-    'Ablesung Quelle'];
+    'Ablesung Quelle',
+    // Backlog 288: nur bei Leasing/Miete, die bald enden bzw. abgelaufen sind (heutiger Stand, leer = nicht geprüft)
+    'Offene Vorgänge (Rückgabe)', 'Offene Restarbeiten nach Freigabe (Rückgabe)'];
   const lines = [head.join(';')];
   for (const c of ov.contracts) {
     const s = c.status;
@@ -347,7 +364,8 @@ export function contractsCsv(ov) {
       c.monthly_rate_net === null ? '' : String(c.monthly_rate_net).replace('.', ','), c.km_allowance, c.start_km, s.km && s.km.driven !== undefined ? s.km.driven : '',
       s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.vehicle_eval_excluded ? 'ja' : 'nein',
       c.reading ? c.reading.km : '', c.reading && c.reading.measured_at ? berlinDate(c.reading.measured_at) : '',
-      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : '', ov.as_of || ov.today, c.reading ? odoSourceDe(c.reading.source) : ''].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
+      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : '', ov.as_of || ov.today, c.reading ? odoSourceDe(c.reading.source) : '',
+      c.return_check ? c.return_check.open_cases : '', c.return_check ? c.return_check.open_items : ''].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
@@ -370,21 +388,27 @@ export function contractsIcs(ov, lang = 'de') {
 }
 
 // Für den Fuhrparkagenten (genau eine Abfrage inkl. letztem km-Stand – Abfragebudget je Lauf): Befunde je Vertrag
-export async function contractFindings(env, settings) {
+// Backlog 288 (Blickwinkel „Leasingrückgabe“): bei Leasing/Miete zusätzlich offene Vorgänge und offene Restarbeiten freigegebener
+// Vorgänge am Fahrzeug in der Umgebung des Laufs – bei der Rückgabe werden Schäden sonst teuer abgerechnet. Weiter genau eine Abfrage.
+export async function contractFindings(env, settings, envName = 'production') {
   const rows = (await env.DB.prepare(`SELECT c.*, v.plate, v.active AS vehicle_active,
       (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC LIMIT 1) AS latest_km,
-      ${KM_DROP_SQL('c.vehicle_id')} AS drop_at
-    FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.ended_on IS NULL AND (c.end_date IS NOT NULL OR c.km_allowance IS NOT NULL)`).all()).results;
+      ${KM_DROP_SQL('c.vehicle_id')} AS drop_at,
+      CASE WHEN c.kind IN ('leasing','miete') AND c.end_date IS NOT NULL THEN (SELECT COUNT(*) FROM cases k WHERE k.vehicle_id=c.vehicle_id AND k.environment=?1 AND k.status IN ${OPEN_CASE_ST}) END AS open_cases,
+      CASE WHEN c.kind IN ('leasing','miete') AND c.end_date IS NOT NULL THEN (SELECT COUNT(*) FROM cases k JOIN open_items i ON i.case_id=k.id AND i.status='offen' WHERE k.vehicle_id=c.vehicle_id AND k.environment=?1 AND k.status='fahrzeug_freigegeben') END AS open_items
+    FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.ended_on IS NULL AND (c.end_date IS NOT NULL OR c.km_allowance IS NOT NULL)`).bind(envName).all()).results;
   if (!rows.length) return [];
   const km = new Map(rows.filter((r) => r.latest_km).map((r) => { const [k, at] = r.latest_km.split('|'); return [r.vehicle_id, { km: Number(k), measured_at: at, ...parseKmDrop(r.drop_at) }]; }));
   const today = berlinDate(); const w = warnDaysOf(settings); const out = [];
+  // nur Zahlen > 0 (sonst entfällt der optionale Abschnitt der Meldung)
+  const ret = (c) => ({ ...(c.open_cases > 0 ? { open: c.open_cases } : {}), ...(c.open_items > 0 ? { items: c.open_items } : {}) });
   for (const c of rows) {
     const s = contractStatus(c, km.get(c.vehicle_id), today, w);
     const base = { vehicle_id: c.vehicle_id, owner_role: 'fleet' };
     if (s.end && s.end.status === 'abgelaufen') out.push({ ...base, code: 'CONTRACT_ENDED', subject: `${c.id}|end`, severity: 'handeln', requires_decision: 1,
-      ...fm('CONTRACT_ENDED', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date }), next_action: 'Rückgabe/Verlängerung klären; Vertrag in der Fahrzeugakte beenden oder mit neuem Nachweis aktualisieren.' });
+      ...fm('CONTRACT_ENDED', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, ...ret(c) }), next_action: 'Rückgabe/Verlängerung klären; Vertrag in der Fahrzeugakte beenden oder mit neuem Nachweis aktualisieren.' });
     else if (s.end && s.end.status === 'laeuft_aus') out.push({ ...base, code: 'CONTRACT_ENDS_SOON', subject: `${c.id}|end`, severity: 'hinweis', requires_decision: 0,
-      ...fm('CONTRACT_ENDS_SOON', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, days: s.end.days }), next_action: 'Rückgabe, Verlängerung oder Ersatzfahrzeug klären.' });
+      ...fm('CONTRACT_ENDS_SOON', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, days: s.end.days, ...ret(c) }), next_action: 'Rückgabe, Verlängerung oder Ersatzfahrzeug klären.' });
     if (s.notice && s.notice.status === 'bald') out.push({ ...base, code: 'CONTRACT_NOTICE_DUE', subject: `${c.id}|notice`, severity: 'hinweis', requires_decision: 1,
       ...fm('CONTRACT_NOTICE_DUE', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, by: s.notice.by, months: c.notice_months, end: c.end_date }), next_action: 'Entscheiden: kündigen oder verlängern. Frist und Form laut Vertrag prüfen.' });
     // Schweregrad wie die Vertragsübersicht (Status „handeln“, bis 19.10.2026 hier nur „hinweis“)

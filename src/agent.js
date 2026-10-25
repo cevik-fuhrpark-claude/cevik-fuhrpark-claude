@@ -509,7 +509,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     }
 
     // Fahrzeugverträge (Leasing/Miete/…): Ende, Kündigungsfrist, km-Kontingent – nur laut eingetragenem Vertrag
-    for (const x of await contractFindings(env, settings)) add(x);
+    for (const x of await contractFindings(env, settings, environment)) add(x);
     // Versicherungsfälle: nur mit eingestellter Nachfass-Frist (sonst keine Abfrage)
     for (const x of await claimFindings(env, environment, settings)) add(x);
 

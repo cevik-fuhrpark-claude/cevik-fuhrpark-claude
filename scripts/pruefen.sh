@@ -53,6 +53,7 @@ UI-km-Begründung nachtragen (Datenqualität → Zeitleiste)|ui-km-begruendung.p
 UI-Befund Empfänger nicht zugestellt (Name/Rolle)|ui-befund-empfaenger.py|/tmp/cfp-befund-empfaenger.log
 UI-Befund gebündelt (gleiche Empfänger, Backlog 194)|ui-befund-buendel.py|/tmp/cfp-befund-buendel.log
 UI-Verträge Stichtag (km zum Monatsende, Backlog 196)|ui-vertrag-stichtag.py|/tmp/cfp-vertrag-stichtag.log
+UI-Verträge Rückgabe (offene Vorgänge vor Leasingrückgabe, Backlog 288)|ui-vertrag-rueckgabe.py|/tmp/cfp-vertrag-rueckgabe.log
 UI-Auslesungen Verlauf (Betriebsprüfung, Backlog 245)|ui-auslesung-verlauf.py|/tmp/cfp-auslesung-verlauf.log
 UI-Fahrernachweise Zeitraum (Betriebsprüfung, Backlog 246)|ui-fahrernachweise-zeitraum.py|/tmp/cfp-fahrernachweise-zeitraum.log
 UI-Postausgang wirkt auf dem Gerät (kritisch noch nicht gesendet, Backlog 200)|ui-postausgang-fahrzeug.py|/tmp/cfp-postausgang-fahrzeug.log
