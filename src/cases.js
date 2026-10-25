@@ -669,7 +669,7 @@ export function allowedActions(user, c, access) {
     case 'gemeldet':
       if (mgr) { if (!c.fleet_received_at) a.push('receive'); a.push('approve_repair', 'reject'); }
       // Meldung am falschen Fahrzeug (Backlog 254): solange noch keiner Werkstatt freigegeben und nicht aus Kontrolle/Prüftermin/Reifen entstanden
-      if (mgr && c.origin === 'meldung' && !c.workshop_site && !c.maintenance_rule_id && !c.tire_order && !c.parent_case_id && !c.duplicate_of) a.push('correct_vehicle');
+      if (mgr && (c.origin === 'meldung' || (c.origin === 'kontrolle' && c.check_item)) && !c.workshop_site && !c.maintenance_rule_id && !c.tire_order && !c.parent_case_id && !c.duplicate_of) a.push('correct_vehicle');
       break;
     case 'werkstatt_freigegeben':
       if (ws || mgr) { if (!c.workshop_ack_at) a.push('acknowledge'); a.push('start_repair'); }
@@ -1133,24 +1133,90 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const vid = str(p.vehicle_id, { required: true, max: 80, field: 'Fahrzeug' });
       requireNote('Bitte Grund für die Korrektur angeben (z. B. Kennzeichen verwechselt).');
       if (vid === c.vehicle_id) throw bad('validation', 'Fahrzeug ist unverändert.');
-      const [nv, ov, rel] = await Promise.all([
+      // Backlog 255 (25.10.2026): Mangel aus einer Abfahrtskontrolle → die ganze Kontrolle hängt um (Kontrolle, alle daraus angelegten
+      // Vorgänge, km-Stand nur wenn am richtigen Fahrzeug plausibel – sonst nur noch an der Kontrolle). Ohne gefundene Kontrolle
+      // (z. B. Papierkontrolle über /api/cases) wie eine Meldung nur dieser Vorgang.
+      const insp = c.origin === 'kontrolle' && c.check_item && !c.parent_case_id ? await env.DB.prepare(`SELECT id, items, odometer_km, created_at FROM inspections
+        WHERE environment=?1 AND vehicle_id=?2 AND kind='abfahrt' AND case_id IS NULL AND EXISTS (SELECT 1 FROM json_each(items) j
+          WHERE json_extract(j.value,'$.followup_case_id')=?3 AND json_extract(j.value,'$.repeat') IS NULL) ORDER BY created_at DESC LIMIT 1`).bind(envName, c.vehicle_id, c.id).first() : null;
+      let ids = [c.id];
+      if (insp) {
+        let items = []; try { items = (JSON.parse(insp.items || '[]') || []).filter((i) => i && typeof i === 'object'); } catch { items = []; }
+        if (items.some((i) => i.repeat)) throw bad('correct_vehicle_repeat', 'Diese Kontrolle hat Mängel an bereits offenen Vorgängen erneut festgestellt – Fahrzeug lässt sich nicht korrigieren. Bitte ablehnen und am richtigen Fahrzeug neu melden.');
+        ids = [...new Set([c.id, ...items.filter((i) => typeof i.followup_case_id === 'string').map((i) => i.followup_case_id)])];
+      }
+      const idsJson = JSON.stringify(ids);
+      const IN = '(SELECT value FROM json_each(?1))';
+      const [nv, ov, rel, sibs] = await Promise.all([
         env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=? AND active=1').bind(vid).first(),
         env.DB.prepare('SELECT plate FROM vehicles WHERE id=?').bind(c.vehicle_id).first(),
-        env.DB.prepare(`SELECT (SELECT COUNT(*) FROM cases WHERE duplicate_of=?1 OR parent_case_id=?1) AS linked, (SELECT COUNT(*) FROM insurance_claims WHERE case_id=?1) AS claims`).bind(c.id).first(),
+        env.DB.prepare(`SELECT (SELECT COUNT(*) FROM cases WHERE duplicate_of IN ${IN} OR parent_case_id IN ${IN}) AS linked, (SELECT COUNT(*) FROM insurance_claims WHERE case_id IN ${IN}) AS claims,
+          (SELECT COUNT(*) FROM case_events WHERE case_id IN ${IN} AND action='repeat_finding') AS repeated`).bind(idsJson).first(),
+        insp ? env.DB.prepare(`SELECT id, case_no, status, version, vehicle_id, workshop_site, duplicate_of, safety_lock FROM cases WHERE id IN ${IN} AND id<>?2`).bind(idsJson, c.id).all().then((r) => r.results) : [],
       ]);
       if (!nv) throw bad('validation', 'Fahrzeug nicht gefunden oder außer Betrieb.');
       if (rel.linked > 0) throw bad('correct_vehicle_linked', 'Zu dieser Meldung gibt es Dubletten oder Folgeaufträge – Fahrzeug lässt sich nicht korrigieren. Bitte ablehnen und am richtigen Fahrzeug neu melden.');
       if (rel.claims > 0) throw bad('correct_vehicle_claim', 'Zu dieser Meldung gibt es einen Versicherungsfall – Fahrzeug lässt sich nicht korrigieren. Bitte ablehnen und am richtigen Fahrzeug neu melden.');
+      if (insp && rel.repeated > 0) throw bad('correct_vehicle_repeat', 'Diese Kontrolle hat Mängel an bereits offenen Vorgängen erneut festgestellt – Fahrzeug lässt sich nicht korrigieren. Bitte ablehnen und am richtigen Fahrzeug neu melden.');
+      // weitere Mängel derselben Kontrolle: nur solange keiner Werkstatt freigegeben (gemeldet oder ohne Dublette abgelehnt)
+      const busy = sibs.filter((x) => x.vehicle_id !== c.vehicle_id || x.workshop_site || x.duplicate_of || !['gemeldet', 'abgelehnt'].includes(x.status));
+      if (busy.length) throw bad('correct_vehicle_busy', `Weitere Mängel dieser Kontrolle sind bereits in Bearbeitung (${busy.map((x) => x.case_no).join(', ')}) – Fahrzeug lässt sich nicht korrigieren. Bitte ablehnen und am richtigen Fahrzeug neu melden.`);
       set.vehicle_id = nv.id;
       if (!c.fleet_received_at) { set.fleet_received_at = now; set.fleet_received_by = user.id; }
       payload = { from: ov ? ov.plate : c.vehicle_id, to: nv.plate, from_vehicle_id: c.vehicle_id, to_vehicle_id: nv.id, safety_lock: !!c.safety_lock };
       // im Stapel: Ziel weiterhin aktiv, weiterhin ohne Bezug/Versicherungsfall (gleichzeitige Änderung → „Vorgang geändert“)
-      extra.push(env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN EXISTS (SELECT 1 FROM vehicles WHERE id=?1 AND active=1)
-        AND NOT EXISTS (SELECT 1 FROM cases WHERE duplicate_of=?2 OR parent_case_id=?2) AND NOT EXISTS (SELECT 1 FROM insurance_claims WHERE case_id=?2) THEN 1 ELSE 0 END`).bind(nv.id, c.id),
+      extra.push(env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN EXISTS (SELECT 1 FROM vehicles WHERE id=?2 AND active=1)
+        AND NOT EXISTS (SELECT 1 FROM cases WHERE duplicate_of IN ${IN} OR parent_case_id IN ${IN}) AND NOT EXISTS (SELECT 1 FROM insurance_claims WHERE case_id IN ${IN}) THEN 1 ELSE 0 END`).bind(idsJson, nv.id),
         env.DB.prepare('DELETE FROM cmd_guard'));
+      if (insp) {
+        payload.inspection_id = insp.id;
+        if (sibs.length) {
+          payload.moved_cases = sibs.map((x) => x.case_no);
+          const sJson = JSON.stringify(sibs.map((x) => x.id));
+          // weitere Vorgänge der Kontrolle: Fahrzeug, Version +1, je ein Verlaufseintrag (zwei Anweisungen unabhängig von der Anzahl)
+          extra.push(env.DB.prepare(`UPDATE cases SET vehicle_id=?2, version=version+1, updated_at=?3 WHERE id IN ${IN} AND vehicle_id=?4 AND workshop_site IS NULL
+            AND duplicate_of IS NULL AND status IN ('gemeldet','abgelehnt')`).bind(sJson, nv.id, now, c.vehicle_id),
+            env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()=?').bind(sibs.length), env.DB.prepare('DELETE FROM cmd_guard'),
+            env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
+              SELECT lower(hex(randomblob(16))), id, ?2, ?3, ?4, 'correct_vehicle', status, status, version-1, version, ?5, ?6, ?7 FROM cases WHERE id IN ${IN}`)
+              .bind(sJson, envName, user.id, user.role, note, JSON.stringify({ ...payload, moved_cases: undefined, with_case_no: c.case_no, safety_lock: undefined }), now));
+        }
+        // Kontrolle selbst
+        extra.push(env.DB.prepare('UPDATE inspections SET vehicle_id=? WHERE id=? AND vehicle_id=?').bind(nv.id, insp.id, c.vehicle_id),
+          env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard'));
+        // km-Stand: nur der von dieser Kontrolle in die Akte übernommene Eintrag; am Ziel nur, wenn er dort zwischen die vorhandenen passt
+        const odo = insp.odometer_km;
+        const reading = odo !== null && odo !== undefined ? await env.DB.prepare(`SELECT id FROM odometer_readings WHERE vehicle_id=? AND measured_at=? AND source='kontrolle:abfahrt' AND km=? LIMIT 1`)
+          .bind(c.vehicle_id, insp.created_at, odo).first() : null;
+        if (reading) {
+          const [last, later] = await Promise.all([
+            env.DB.prepare('SELECT km FROM odometer_readings WHERE vehicle_id=? AND measured_at <= ? ORDER BY measured_at DESC LIMIT 1').bind(nv.id, insp.created_at).first(),
+            env.DB.prepare('SELECT km FROM odometer_readings WHERE vehicle_id=? AND measured_at > ? ORDER BY measured_at ASC LIMIT 1').bind(nv.id, insp.created_at).first(),
+          ]);
+          if ((!last || odo >= last.km) && (!later || odo <= later.km)) {
+            payload.km = { km: odo, moved: true };
+            extra.push(env.DB.prepare(`UPDATE odometer_readings SET vehicle_id=?1 WHERE id=?2
+              AND COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?1 AND measured_at <= ?3 ORDER BY measured_at DESC LIMIT 1), -1) <= ?4
+              AND COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?1 AND measured_at > ?3 ORDER BY measured_at ASC LIMIT 1), 9999999999) >= ?4`).bind(nv.id, reading.id, insp.created_at, odo),
+              env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard'));
+          } else {
+            // passt nicht zum richtigen Fahrzeug: aus der Akte des falschen Fahrzeugs entfernt, bleibt an der Kontrolle (Verlauf nennt ihn)
+            payload.km = { km: odo, moved: false, ...(last && odo < last.km ? { previous_km: last.km } : { next_km: later.km }) };
+            extra.push(env.DB.prepare('DELETE FROM odometer_readings WHERE id=?').bind(reading.id));
+          }
+        }
+        // „Abfahrtskontrolle trotz Sicherheitssperre“: an Vorgängen des falschen Fahrzeugs Hinweis „gehörte zu …“, am richtigen neu prüfen
+        extra.push(env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
+          SELECT lower(hex(randomblob(16))), x.id, ?1, ?2, ?3, 'inspection_moved', x.status, x.status, x.version, x.version, ?4, ?5, ?6 FROM cases x
+          WHERE x.environment=?1 AND x.vehicle_id=?7 AND EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=x.id AND e.action='checked_while_locked' AND json_extract(e.payload,'$.inspection_id')=?8)`)
+          .bind(envName, user.id, user.role, `Abfahrtskontrolle gehörte zu ${nv.plate} (Fahrzeug korrigiert)`, JSON.stringify({ inspection_id: insp.id, code: 'inspection_moved', to: nv.plate }), now, c.vehicle_id, insp.id),
+          checkedWhileLockedStmt(env, envName, user, insp.id, insp.created_at, odo, nv.id, now, { moved: true }));
+      }
       // Agent-Befunde rechnet der nächste Lauf neu (Fahrzeug am Befund folgt dem Vorgang)
       // gesperrt: Sperre wirkt jetzt am richtigen Fahrzeug (Push dorthin), am falschen gilt sie als aufgehoben (Push unten)
       notifyKind = c.safety_lock ? 'safety_lock' : null;
+      // nur ein weiterer Mangel der Kontrolle sperrt: Pushs mit diesem Vorgang (unten, ein Paar je Korrektur)
+      if (!c.safety_lock) { const lk = sibs.find((x) => x.safety_lock && x.status === 'gemeldet'); if (lk) { payload.lock_case_id = lk.id; payload.safety_lock = true; } }
       break;
     }
     case 'reassign_workshop': {
@@ -1465,9 +1531,13 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const sent = notifyKind ? await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c, vehicle: { plate: vPlate }, still_locked }) : null;
   // Fahrzeug korrigiert (Backlog 254): Fahrer/Disposition des falschen Fahrzeugs erfahren, dass die Sperre dort nicht mehr gilt
   // (außer ein anderer offener Vorgang sperrt es weiter – dann „bleibt gesperrt“)
-  if (action === 'correct_vehicle' && c.safety_lock) {
-    const old = { ...updated, vehicle_id: c.vehicle_id, safety_lock: 0 };
-    await notifyCaseEvent(env, ctx, old, 'safety_lock_lifted', { actor: user, note, payload, previous: c, vehicle: { plate: payload.from }, still_locked: await otherLockCaseNo(env, old) });
+  if (action === 'correct_vehicle' && (c.safety_lock || payload.lock_case_id)) {
+    // Backlog 255: sperrt nur ein weiterer Mangel derselben Kontrolle, gehen beide Pushs mit diesem Vorgang
+    const lc = payload.lock_case_id ? await env.DB.prepare('SELECT * FROM cases WHERE id=?').bind(payload.lock_case_id).first() : null;
+    if (lc) await notifyCaseEvent(env, ctx, lc, 'safety_lock', { actor: user, note, payload, previous: { ...lc, vehicle_id: c.vehicle_id }, vehicle: { plate: payload.to } });
+    const base = lc || updated;
+    const old = { ...base, vehicle_id: c.vehicle_id, safety_lock: 0 };
+    await notifyCaseEvent(env, ctx, old, 'safety_lock_lifted', { actor: user, note, payload, previous: lc ? { ...lc, vehicle_id: c.vehicle_id } : c, vehicle: { plate: payload.from }, still_locked: await otherLockCaseNo(env, old) });
   }
   // Kommentar ohne jeden Empfänger (z. B. nur „Gemeldet von“ an einen deaktivierten Melder): gespeichert, aber niemand informiert (Backlog 249)
   const noRecipients = action === 'comment' && sent === 0;
@@ -1478,6 +1548,20 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   // Kostengrenze überschritten bzw. Markierung aufgehoben → Version um 1 erhöht; Antwort nennt diese (18.10.2026: sonst 409 beim nächsten Befehl)
   const version = cost_limit_exceeded || cost_limit_cleared ? newVersion + 1 : newVersion;
   return { ok: true, version, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}), ...(noWorkshopUser ? { no_workshop_user: true } : {}), ...(noRecipients ? { no_recipients: true } : {}) };
+}
+
+// Verlaufseintrag „Abfahrtskontrolle trotz Sicherheitssperre“ an jedem zum Zeitpunkt `performedAt` gesperrten Vorgang des Fahrzeugs (Backlog 252);
+// auch beim Umhängen einer Kontrolle an das richtige Fahrzeug (Backlog 255, `extra` z. B. { moved: true })
+function checkedWhileLockedStmt(env, envName, user, inspId, performedAt, odo, vehicleId, now, extra = {}) {
+  return env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
+    SELECT lower(hex(randomblob(16))), x.id, ?1, ?2, ?3, 'checked_while_locked', x.status, x.status, x.version, x.version, ?4, ?5, ?6 FROM (
+      SELECT c.id, c.status, c.version, (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.created_at <= ?7
+        AND (e.action='set_safety_lock' OR (e.action='create' AND json_extract(e.payload,'$.safety_lock')))) AS s
+      FROM cases c WHERE c.environment=?1 AND c.vehicle_id=?8 AND c.created_at < ?7) x
+    WHERE x.s IS NOT NULL AND NOT EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=x.id AND e.created_at > x.s AND e.created_at <= ?7
+      AND (e.action='lift_safety_lock' OR e.to_status IN ('fahrzeug_freigegeben','abgelehnt')))`)
+    .bind(envName, user.id, user.role, `Abfahrtskontrolle trotz Sicherheitssperre${odo !== null && odo !== undefined ? ` · km-Stand ${odo}` : ''}`,
+      JSON.stringify({ inspection_id: inspId, code: 'departure_check_while_locked', performed_at: performedAt, ...(odo !== null && odo !== undefined ? { km: odo } : {}), ...extra }), now, performedAt, vehicleId);
 }
 
 // gebuchte Arbeitsstunden einer Person an einem Tag über alle Vorgänge (Tagesgrenze 24 h)
@@ -1703,17 +1787,7 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
     // Abfahrtskontrolle an einem zum Durchführungszeitpunkt gesperrten Fahrzeug (Backlog 252, 25.10.2026): Verlaufseintrag an jedem damals
     // gesperrten Vorgang des Fahrzeugs – Sperre zum Zeitpunkt `performedAt` (offline nachgereicht: auch wenn inzwischen freigegeben), sonst sah
     // die Leitung nur die Antwort an den Fahrer. Kein updated_at (keine Arbeit am Vorgang); Fuhrparkagent meldet VEHICLE_USED_WHILE_LOCKED.
-    if (kind === 'abfahrt') {
-      stmts.push(env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
-        SELECT lower(hex(randomblob(16))), x.id, ?1, ?2, ?3, 'checked_while_locked', x.status, x.status, x.version, x.version, ?4, ?5, ?6 FROM (
-          SELECT c.id, c.status, c.version, (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.created_at <= ?7
-            AND (e.action='set_safety_lock' OR (e.action='create' AND json_extract(e.payload,'$.safety_lock')))) AS s
-          FROM cases c WHERE c.environment=?1 AND c.vehicle_id=?8 AND c.created_at < ?7) x
-        WHERE x.s IS NOT NULL AND NOT EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=x.id AND e.created_at > x.s AND e.created_at <= ?7
-          AND (e.action='lift_safety_lock' OR e.to_status IN ('fahrzeug_freigegeben','abgelehnt')))`)
-        .bind(envName, user.id, user.role, `Abfahrtskontrolle trotz Sicherheitssperre${odo !== null ? ` · km-Stand ${odo}` : ''}`,
-          JSON.stringify({ inspection_id: id, code: 'departure_check_while_locked', performed_at: performedAt, ...(odo !== null ? { km: odo } : {}) }), now, performedAt, vehicleId));
-    }
+    if (kind === 'abfahrt') stmts.push(checkedWhileLockedStmt(env, envName, user, id, performedAt, odo, vehicleId, now));
     if (repeats.length) { // zwei Anweisungen unabhängig von der Anzahl
       const rk2 = kind === 'nach_reparatur' ? ['Kontrolle nach Reparatur', 'repeat_repair_check'] : ['Abfahrtskontrolle', 'repeat_departure_check'];
       const rep = repeats.map(({ open, d }) => ({ id: uuid(), case_id: open.id, status: open.status, version: open.version, note: `Erneut festgestellt (${rk2[0]}): ${d.note}`,

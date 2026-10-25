@@ -20569,6 +20569,71 @@ await test('Backlog 258a (Blickwinkel „Leitungswechsel“): Eingang einer nie 
   eq((await f()).length, 0, 'wieder Leitung');
 });
 
+await test('Backlog 255 (Folge aus 254): Fahrzeug korrigieren für Mängel aus einer Abfahrtskontrolle – ganze Kontrolle samt aller Mängel hängt um, km-Stand nur wenn am Ziel plausibel (sonst nur an der Kontrolle), Sperr-Hinweise an beiden Fahrzeugen, Grenzen (erneut festgestellt, Mangel in Bearbeitung)', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const V2 = 'VIN:WDB9630051L917317';
+  const { CHECKLIST } = await import('../src/cases.js');
+  const K = CHECKLIST.map((i) => i.key);
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES('dv-cv5',?,?,?,?,?,'test')`).run(U.driver.id, V1, '2026-01-01T00:00:00.000Z', U.fleet.id, '2026-01-01T00:00:00.000Z');
+  const check = async (defects, km) => {
+    const r = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), ...(km !== undefined ? { odometer_km: km } : {}),
+      items: K.map((k) => (defects[k] ? { key: k, result: 'mangel', note: defects[k].note, ...(defects[k].safety ? { safety_relevant: true } : {}) } : { key: k, result: 'ok' })) });
+    eq(r.status, 201, JSON.stringify(r.data)); return r.data;
+  };
+  const acts = async (id) => { const d = (await U.fleet.get(`/api/cases/${id}`)).data; return d.allowed_actions || d.actions || []; };
+  // V1 ist durch eine Meldung gesperrt → Kontrolle erzeugt „trotz Sicherheitssperre“ dort
+  const L = await newCase({ description: 'Lenkung schlägt', priority: 'kritisch', driveability: 'nicht_fahrbereit' }, U.fleet);
+  const t0 = new Date(Date.now() - 86400000).toISOString();
+  db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES ('o-v2a',?,100000,?,'manuell',?,?)`).run(V2, t0, U.fleet.id, t0);
+  const r1 = await check({ [K[0]]: { note: 'Bremse links schleift', safety: true }, [K[1]]: { note: 'Spiegel locker' } }, 100500);
+  const [a, b] = r1.followups.map((f) => f.id); ok(a && b, 'zwei Folgeaufträge');
+  ok(db.prepare(`SELECT 1 FROM case_events WHERE case_id=? AND action='checked_while_locked'`).get(L), 'trotz Sperre am falschen Fahrzeug');
+  ok((await acts(a)).includes('correct_vehicle'), 'Knopf auch bei Kontroll-Mangel');
+  ok(!(await (async () => { const d = (await U.driver.get(`/api/cases/${a}`)).data; return d.allowed_actions || d.actions || []; })()).includes('correct_vehicle'), 'Fahrer nicht');
+  // Korrektur über den nicht gesperrten Mangel b: der gesperrte Mangel a wandert mit (Push mit a)
+  const before = db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE user_id=?`).get(U.driver.id).n;
+  const r = await cmd(U.fleet, b, 'correct_vehicle', { vehicle_id: V2 }, 'Kennzeichen verwechselt'); eq(r.status, 200, JSON.stringify(r.data));
+  const insp = db.prepare('SELECT * FROM inspections WHERE id=?').get(JSON.parse(db.prepare(`SELECT payload FROM case_events WHERE case_id=? AND action='correct_vehicle'`).get(b).payload).inspection_id);
+  eq(insp.vehicle_id, V2, 'Kontrolle am richtigen Fahrzeug'); eq(insp.odometer_km, 100500);
+  for (const id of [a, b]) eq(db.prepare('SELECT vehicle_id FROM cases WHERE id=?').get(id).vehicle_id, V2, 'Vorgang ' + id);
+  eq(db.prepare('SELECT safety_lock FROM cases WHERE id=?').get(a).safety_lock, 1, 'Sperre bleibt am Mangel');
+  const pb = JSON.parse(db.prepare(`SELECT payload FROM case_events WHERE case_id=? AND action='correct_vehicle'`).get(b).payload);
+  eq(pb.moved_cases.length, 1); eq(pb.km.moved, true); eq(pb.km.km, 100500); eq(pb.lock_case_id, a);
+  const pa = db.prepare(`SELECT * FROM case_events WHERE case_id=? AND action='correct_vehicle'`).get(a); eq(pa.note, 'Kennzeichen verwechselt'); ok(JSON.parse(pa.payload).with_case_no, 'Verlauf am mitgewanderten Mangel');
+  eq(db.prepare('SELECT version FROM cases WHERE id=?').get(a).version, pa.to_version, 'Version des mitgewanderten Mangels');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM odometer_readings WHERE vehicle_id=? AND km=100500`).get(V1).n, 0, 'km nicht mehr am falschen Fahrzeug');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM odometer_readings WHERE vehicle_id=? AND km=100500 AND source='kontrolle:abfahrt'`).get(V2).n, 1, 'km am richtigen Fahrzeug');
+  ok(db.prepare(`SELECT 1 FROM case_events WHERE case_id=? AND action='inspection_moved'`).get(L), 'Hinweis „gehörte zu …“ am gesperrten Vorgang des falschen Fahrzeugs');
+  const nn = db.prepare(`SELECT kind FROM notifications WHERE user_id=? ORDER BY created_at DESC`).all(U.driver.id);
+  ok(nn.length > before && nn.some((x) => x.kind === 'still_locked'), 'Fahrer des falschen Fahrzeugs: bleibt gesperrt (Meldung L) ' + JSON.stringify(nn.slice(0, 3)));
+  const vl = (await U.fleet.get('/api/vehicles')).data.vehicles; eq(vl.find((v) => v.id === V2).availability, 'gesperrt', 'richtiges Fahrzeug gesperrt');
+  // km passt nicht zum richtigen Fahrzeug (dort später schon höher) → nur an der Kontrolle, aus der Akte des falschen entfernt
+  const t1 = new Date(Date.now() + 3600000).toISOString();
+  db.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES ('o-v2b',?,100600,?,'manuell',?,?)`).run(V2, t1, U.fleet.id, t1);
+  const r2 = await check({ [K[2]]: { note: 'Kennleuchte flackert' } }, 200000);
+  const c2 = r2.followups[0].id; eq(db.prepare(`SELECT COUNT(*) AS n FROM odometer_readings WHERE vehicle_id=? AND km=200000`).get(V1).n, 1);
+  eq((await cmd(U.fleet, c2, 'correct_vehicle', { vehicle_id: V2 }, 'verwechselt')).status, 200);
+  const p2 = JSON.parse(db.prepare(`SELECT payload FROM case_events WHERE case_id=? AND action='correct_vehicle'`).get(c2).payload);
+  eq(p2.km.moved, false); eq(p2.km.next_km, 100600);
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM odometer_readings WHERE km=200000`).get().n, 0, 'km in keiner Akte');
+  eq(db.prepare('SELECT odometer_km FROM inspections WHERE id=?').get(p2.inspection_id).odometer_km, 200000, 'km bleibt an der Kontrolle');
+  // erneut festgestellt: zweite Kontrolle vermerkt denselben Mangel am offenen Vorgang → Korrektur abgewiesen
+  const r3 = await check({ [K[3]]: { note: 'Hupe leise' } });
+  const c3 = r3.followups[0].id; const r4 = await check({ [K[3]]: { note: 'Hupe leise (wieder)' } }); ok(r4.followups[0].repeat, 'erneut festgestellt');
+  const x = await cmd(U.fleet, c3, 'correct_vehicle', { vehicle_id: V2 }, 'verwechselt'); eq(x.status, 400); eq(x.data.error, 'correct_vehicle_repeat');
+  // weiterer Mangel derselben Kontrolle schon an eine Werkstatt freigegeben → abgewiesen, Hinweis übersetzt
+  const r5 = await check({ [K[4]]: { note: 'Wischer defekt' }, [K[5]]: { note: 'Blinker hinten' } });
+  const [d1, d2] = r5.followups.map((f) => f.id);
+  eq((await cmd(U.fleet, d1, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  const y = await cmd(U.fleet, d2, 'correct_vehicle', { vehicle_id: V2 }, 'verwechselt'); eq(y.status, 400); eq(y.data.error, 'correct_vehicle_busy');
+  eq(db.prepare('SELECT vehicle_id FROM cases WHERE id=?').get(d2).vehicle_id, V1, 'nichts geändert');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  ok(/already being handled \(\S+-\d{4}-\d{4}\)/.test(translateValidation('en', y.data.message || '') || ''), 'Hinweis EN: ' + (y.data.message || y.data.reason));
+  for (const l of ['de', 'uk', 'en']) for (const key of ['cv_hint_insp', 'act_inspection_moved', 'ev_insp_moved', 'cv_ev_insp', 'cv_ev_cases', 'cv_ev_with', 'cv_ev_km_moved', 'cv_ev_km_kept']) ok(STRINGS[l][key], `${l}.${key}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("t(c.origin === 'kontrolle' && c.check_item ? 'cv_hint_insp' : 'cv_hint')") && app.includes('function cvInspText(p)'), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
