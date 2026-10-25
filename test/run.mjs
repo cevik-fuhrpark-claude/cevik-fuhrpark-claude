@@ -20804,6 +20804,12 @@ await test('Backlog 268: Hinweise „Kalenderzeit“ an SLA-Einstellungen und Ve
   ok(app.includes('id="slacal"') && app.includes('id="kpical"'), 'Oberfläche');
 });
 
+await test('Backlog 269: Hinweis beim von Hand gewählten Werkstatttermin an Wochenende/bundesweitem Feiertag (Aktionsformulare und Werkstattplan), Texte DE/UK/EN', async () => {
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].plan_offday_hint && STRINGS[l].plan_offday_hint.includes('{d}'), `${l}.plan_offday_hint`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('function offDayWatch(els)') && app.includes("offDayWatch($$('#af input[name=planned_date]'));") && app.includes("offDayWatch($$('.planset input[type=date]'));"), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

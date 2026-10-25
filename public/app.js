@@ -125,6 +125,8 @@ const fmtDue = (iso) => { if (!iso || iso.length !== 10) return fmtD(iso); const
 // Hinweistext zur Antwortfrist: Feiertag vor Wochenende (Frist bleibt der Tag laut Schreiben)
 const dueOffHint = (iso) => (federalHoliday(iso) ? t('due_holiday_hint') : isWeekendD(iso) ? t('due_weekend_hint') : '');
 // Eingabe der Antwortfrist: Hinweis, wenn der Tag auf ein Wochenende fällt (Frist wird nicht verschoben)
+// Werkstatttermin von Hand gewählt (Backlog 269): Hinweis bei Wochenende/bundesweitem Feiertag – nichts wird verschoben
+function offDayWatch(els) { for (const el of els) { if (!el || el.dataset.offW) continue; el.dataset.offW = '1'; const h = document.createElement('p'); h.className = 'small muted'; h.dataset.offday = ''; h.hidden = true; el.after(h); const upd = () => { const v = el.value; const x = holName(v) || (isWeekendD(v) ? t('due_weekend') : ''); h.hidden = !x; if (x) h.textContent = t('plan_offday_hint').replace('{d}', () => x); }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); } }
 function dueWeekendWatch() { for (const el of $$('input[name=response_due]')) { const h = document.createElement('p'); h.className = 'small muted'; h.dataset.dueWe = ''; h.textContent = t('due_weekend_hint'); el.after(h); const upd = () => { const x = dueOffHint(el.value); h.hidden = !x; if (x) h.textContent = x; }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); } }
 const dqDetail = (i) => dqDetailText(i, t, fmtD, mk, { km: (n) => fmtKm(n), src: (v) => odoSrc(v) });
 const hrs = (n) => (n === null || n === undefined ? '–' : fmtNum(Math.round(n * 100) / 100, { maximumFractionDigits: 2 }));
@@ -2080,6 +2082,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   $('#af').addEventListener('input', afUpd); $('#af').addEventListener('change', afUpd);
   const stockP = action === 'add_part' ? loadStockSelect(c) : null; // Promise erst am Ende zurückgeben – die Handler unten müssen gesetzt werden
   if ($('#dupsel')) $('#dupsel').onchange = () => { const ta = $('#af textarea[name=note]'); const o = $('#dupsel').selectedOptions[0]; if (ta && !ta.value && $('#dupsel').value) ta.value = `${t('dup_of')} ${o.textContent.split(' · ')[0]}`; };
+  offDayWatch($$('#af input[name=planned_date]'));
   $('#af').onsubmit = (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -4559,6 +4562,7 @@ async function viewPlan(sec) {
   };
   // Werkstattauftrag aus „Fällig – ohne Termin“ (nur Leitung, nicht HU/SP): bleibt im Plan, der Auftrag erscheint danach unter „Ohne Termin“
   $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const x = await api('POST', `/api/maintenance/${fm.dataset.mord}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }); toast('✓ ' + x.case_no); viewPlan(); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
+  offDayWatch($$('.planset input[type=date]'));
   $$('[data-psug]').forEach((b) => (b.onclick = () => { const i = all.find((x) => x.id === b.dataset.psug); const f = $('#pd-' + CSS.escape(i.id)); f.value = suggest(i) || ''; f.focus(); }));
   $$('[data-pset]').forEach((b) => (b.onclick = async () => {
     const i = all.find((x) => x.id === b.dataset.pset); const f = $('#pd-' + CSS.escape(i.id));
