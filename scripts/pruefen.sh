@@ -173,6 +173,7 @@ UI-Hinweis Warnleuchte während der Fahrt im Meldeformular und Hilfe|ui-warnleuc
 UI-Hinweis Ölspur/Leck unter dem Lkw im Meldeformular und Hilfe|ui-leck.py|/tmp/cfp-leck.log
 UI-Hinweis Schaden beim Kunden (Rampe, Stapler) im Meldeformular und Hilfe|ui-schaden-kunde.py|/tmp/cfp-schaden-kunde.log
 UI-Hinweis Rauch oder Brandgeruch am Fahrzeug im Meldeformular und Hilfe|ui-rauch.py|/tmp/cfp-rauch.log
+UI-Hinweis Kühlgerät des Kühlaufliegers ausgefallen im Meldeformular und Hilfe|ui-kuehlgeraet.py|/tmp/cfp-kuehlgeraet.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
 UI-Abschleppung: Standort/Abschleppdienst im Vorgang, Liste, Disposition, Hilfe|ui-abschleppung.py|/tmp/cfp-abschleppung.log

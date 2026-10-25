@@ -21295,7 +21295,7 @@ await test('Backlog 299 (Blickwinkel „Motorwarnleuchte rot während der Fahrt�
   }
   ok(app.includes(`<div id="warnlight" class="panel" hidden role="status">`), 'Panel #warnlight');
   ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'roadchk', 'nostart', 'warnlight', 'leak', 'custdmg', 'fire', 'prio',"), 'Hilfe-Abschnitt warnlight nach nostart');
+  ok(app.includes("'roadchk', 'nostart', 'warnlight', 'leak', 'custdmg', 'fire', 'reefer', 'prio',"), 'Hilfe-Abschnitt warnlight nach nostart');
 });
 
 await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lkw“): Meldeformular zeigt Hinweise (anhalten/Motor aus/Leitung; Dieselgeruch: kein Feuer, Notruf; nicht in Gully/Erdreich, Ölspur auf der Straße melden; Foto + Tropfstelle; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Ölwechsel/Öl kontrolliert/Dach undicht/Druckluft lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21314,7 +21314,7 @@ await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lk
   }
   ok(app.includes(`<div id="leak" class="panel" hidden role="status">`), 'Panel #leak');
   ok(app.includes("$('#leak').hidden = !LEAK_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'nostart', 'warnlight', 'leak', 'custdmg', 'fire', 'prio',"), 'Hilfe-Abschnitt leak nach warnlight');
+  ok(app.includes("'nostart', 'warnlight', 'leak', 'custdmg', 'fire', 'reefer', 'prio',"), 'Hilfe-Abschnitt leak nach warnlight');
 });
 
 await test('Backlog 301 (Blickwinkel „Auflieger beim Kunden beschädigt (Rampe, Stapler)“): Meldeformular zeigt Hinweise (Vermerk auf Lieferschein/Frachtbrief gegenzeichnen, Firma/Tor/Uhrzeit, Fotos, kein Schuldanerkenntnis, Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Mitnahmestapler/Ladebordwand/„Kunde hat angerufen“ lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21333,7 +21333,7 @@ await test('Backlog 301 (Blickwinkel „Auflieger beim Kunden beschädigt (Rampe
   }
   ok(app.includes(`<div id="custdmg" class="panel" hidden role="status">`), 'Panel #custdmg');
   ok(app.includes("$('#custdmg').hidden = !CUSTDMG_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'warnlight', 'leak', 'custdmg', 'fire', 'prio',"), 'Hilfe-Abschnitt custdmg nach leak');
+  ok(app.includes("'warnlight', 'leak', 'custdmg', 'fire', 'reefer', 'prio',"), 'Hilfe-Abschnitt custdmg nach leak');
 });
 
 await test('Backlog 302 (Blickwinkel „Rauch oder Brandgeruch aus dem Motorraum“): Meldeformular zeigt Hinweise (anhalten, alle raus, Notruf; löschen nur ohne Gefahr, Gefahrgut-Papiere; danach Leitung + Stelle notieren; „Kritisch“ und „nicht fahrbereit“ wörtlich); Feuerlöscher/Rauchverbot/„Licht brennt nicht“/Auspuffrauch/Motorkontrollleuchte lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21352,7 +21352,26 @@ await test('Backlog 302 (Blickwinkel „Rauch oder Brandgeruch aus dem Motorraum
   }
   ok(app.includes(`<div id="fire" class="panel" hidden role="status">`), 'Panel #fire');
   ok(app.includes("$('#fire').hidden = !FIRE_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'leak', 'custdmg', 'fire', 'prio',"), 'Hilfe-Abschnitt fire nach custdmg');
+  ok(app.includes("'leak', 'custdmg', 'fire', 'reefer', 'prio',"), 'Hilfe-Abschnitt fire nach custdmg');
+});
+
+await test('Backlog 303 (Blickwinkel „Kühlaggregat des Kühlaufliegers fällt unterwegs aus“): Meldeformular zeigt Hinweise (Leitung/Disposition, Türen zu; Display-Foto, Uhrzeit, Temperaturausdruck; nur unterwiesene Prüfungen; Ware/Liefertermin; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Kühlwasser/Motortemperatur/Klimaanlage/Kabinen-Kühlschrank/Wartung lösen nichts aus; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const REEFER_HINT = \/(.+)\/i;/m); ok(m, 'REEFER_HINT auf Modulebene'); eq((app.match(/const REEFER_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Kühlaggregat ausgefallen', 'Kühlgerät zeigt Alarm', 'Kühlmaschine springt nicht an', 'Thermo King defekt', 'Kühlung ist ausgefallen', 'Störung am Kühlaggregat', 'Laderaum wird warm', 'Tiefkühlware taut', 'Reefer unit failed', 'refrigeration alarm on the trailer', 'Thermo King not cooling', 'trailer getting too warm', 'Рефрижератор не працює', 'Холодильна установка вийшла з ладу', 'Холодильная установка не охлаждает', 'Реф не заводится']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Kühlwasser läuft aus', 'Motortemperatur zu hoch', 'Klimaanlage kühlt nicht', 'Kühlaggregat Wartung fällig', 'Kühlschrank in der Kabine defekt', 'Motorkühlung prüfen', 'cab fridge broken', 'engine cooling fan broken', 'AC not cooling', 'Кондиціонер не працює', 'Охолоджувальна рідина тече', 'Öl tropft']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.reefer_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.reefer_hint_steps) && !/°/.test(L.reefer_hint_steps), 'keine Zahl/Temperatur (Frist, Grenzwert) ' + l);
+    const h = L.help_reefer_s; ok(L.help_reefer_t && h && h.includes(L.reefer_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.reefer_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="reefer" class="panel" hidden role="status">`), 'Panel #reefer');
+  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("'custdmg', 'fire', 'reefer', 'prio',"), 'Hilfe-Abschnitt reefer nach fire');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
