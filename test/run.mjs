@@ -21295,7 +21295,7 @@ await test('Backlog 299 (Blickwinkel „Motorwarnleuchte rot während der Fahrt�
   }
   ok(app.includes(`<div id="warnlight" class="panel" hidden role="status">`), 'Panel #warnlight');
   ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'roadchk', 'nostart', 'warnlight', 'leak', 'custdmg', 'prio',"), 'Hilfe-Abschnitt warnlight nach nostart');
+  ok(app.includes("'roadchk', 'nostart', 'warnlight', 'leak', 'custdmg', 'fire', 'prio',"), 'Hilfe-Abschnitt warnlight nach nostart');
 });
 
 await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lkw“): Meldeformular zeigt Hinweise (anhalten/Motor aus/Leitung; Dieselgeruch: kein Feuer, Notruf; nicht in Gully/Erdreich, Ölspur auf der Straße melden; Foto + Tropfstelle; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Ölwechsel/Öl kontrolliert/Dach undicht/Druckluft lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21314,7 +21314,7 @@ await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lk
   }
   ok(app.includes(`<div id="leak" class="panel" hidden role="status">`), 'Panel #leak');
   ok(app.includes("$('#leak').hidden = !LEAK_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'nostart', 'warnlight', 'leak', 'custdmg', 'prio',"), 'Hilfe-Abschnitt leak nach warnlight');
+  ok(app.includes("'nostart', 'warnlight', 'leak', 'custdmg', 'fire', 'prio',"), 'Hilfe-Abschnitt leak nach warnlight');
 });
 
 await test('Backlog 301 (Blickwinkel „Auflieger beim Kunden beschädigt (Rampe, Stapler)“): Meldeformular zeigt Hinweise (Vermerk auf Lieferschein/Frachtbrief gegenzeichnen, Firma/Tor/Uhrzeit, Fotos, kein Schuldanerkenntnis, Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Mitnahmestapler/Ladebordwand/„Kunde hat angerufen“ lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21333,7 +21333,26 @@ await test('Backlog 301 (Blickwinkel „Auflieger beim Kunden beschädigt (Rampe
   }
   ok(app.includes(`<div id="custdmg" class="panel" hidden role="status">`), 'Panel #custdmg');
   ok(app.includes("$('#custdmg').hidden = !CUSTDMG_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'warnlight', 'leak', 'custdmg', 'prio',"), 'Hilfe-Abschnitt custdmg nach leak');
+  ok(app.includes("'warnlight', 'leak', 'custdmg', 'fire', 'prio',"), 'Hilfe-Abschnitt custdmg nach leak');
+});
+
+await test('Backlog 302 (Blickwinkel „Rauch oder Brandgeruch aus dem Motorraum“): Meldeformular zeigt Hinweise (anhalten, alle raus, Notruf; löschen nur ohne Gefahr, Gefahrgut-Papiere; danach Leitung + Stelle notieren; „Kritisch“ und „nicht fahrbereit“ wörtlich); Feuerlöscher/Rauchverbot/„Licht brennt nicht“/Auspuffrauch/Motorkontrollleuchte lösen nichts aus; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const FIRE_HINT = \/(.+)\/i;/m); ok(m, 'FIRE_HINT auf Modulebene'); eq((app.match(/const FIRE_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Rauch aus dem Motorraum', 'Starke Rauchentwicklung hinten links', 'Bremse qualmt', 'Es riecht nach Brandgeruch in der Kabine', 'Kabelbrand im Armaturenbrett', 'Stecker verschmort', 'Reifen brennt', 'Feuer am Auflieger', 'Motor brennt', 'Smoke from the engine bay', 'brakes smoking after the descent', 'burning smell in the cab', 'truck caught fire', 'Дим з моторного відсіку', 'Запах гарі в кабіні', 'Пожежа на стоянці', 'Горить колесо', 'Двигун горить', 'Дымится проводка']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Feuerlöscher abgelaufen', 'Rauchen im Fahrerhaus verboten', 'Nichtraucherfahrzeug', 'Abblendlicht brennt nicht', 'Motorkontrollleuchte brennt', 'Schwarzer Rauch aus dem Auspuff', 'Fire extinguisher missing', 'No smoking sign missing', 'Загорівся індикатор двигуна', 'Горить лампа', 'Фара не горить', 'Вогнегасник прострочений', 'Öl tropft']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.fire_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.prio_kritisch].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.fire_hint_steps), 'keine Zahl (Frist, Notrufnummer je Land verschieden) ' + l);
+    const h = L.help_fire_s; ok(L.help_fire_t && h && h.includes(L.fire_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.fire_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="fire" class="panel" hidden role="status">`), 'Panel #fire');
+  ok(app.includes("$('#fire').hidden = !FIRE_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("'leak', 'custdmg', 'fire', 'prio',"), 'Hilfe-Abschnitt fire nach custdmg');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
