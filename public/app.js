@@ -1541,6 +1541,22 @@ async function viewNew(preId) {
     api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => { known = myVehCached(); showKnown(); });
     $$('input[name=veh]').forEach((r) => r.addEventListener('change', showKnown));
   }
+  // Backlog 270 (Teilagent „Fahrer ruft die Disposition an“): Disposition/Leitung/Werkstatt sehen beim Melden die offenen Vorgänge des gewählten
+  // Fahrzeugs – nachts entstand sonst leicht eine Doppelmeldung (Hinweis vorher nur für Fahrer); nur Vorgänge, die die Rolle ohnehin sieht
+  if (S.me.role !== 'driver') {
+    let seq = 0;
+    const showOpen = async () => {
+      const sel = $('input[name=veh]:checked'); const box = $('#known'); if (!box) return; const my = ++seq;
+      if (!sel) { box.innerHTML = ''; return; }
+      try {
+        const r = await api('GET', `/api/cases?status=open&limit=50&vehicle_id=${encodeURIComponent(sel.value)}`);
+        if (my !== seq) return;
+        box.innerHTML = knownDefects((r.cases || []).map((c) => ({ id: c.id, description: c.description || '', priority: c.priority, status: c.status, created_at: c.created_at, check_item: c.check_item, planned_date: c.planned_date, parts_expected_date: c.parts_expected_date })));
+      } catch { if (my === seq) box.innerHTML = ''; }
+    };
+    $$('input[name=veh]').forEach((r) => r.addEventListener('change', showOpen));
+    if ($('input[name=veh]:checked')) showOpen();
+  }
   // Beschreibung nennt Diebstahl/Einbruch: Polizei, Spuren, Liste des Fehlenden, Fuhrparkleitung (Backlog 214, 23.10.2026) – reine Information,
   // keine Frist; „Leistungseinbruch“ und ukr. „вкрай“/„зламано“ (kaputt) lösen nichts aus
   const hints = () => { $('#acc').hidden = !ACC_HINT.test($('#d').value); $('#tacho').hidden = !TACHO_HINT.test($('#d').value); $('#theft').hidden = !THEFT_HINT.test($('#d').value); };

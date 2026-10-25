@@ -20810,6 +20810,18 @@ await test('Backlog 269: Hinweis beim von Hand gewählten Werkstatttermin an Woc
   ok(app.includes('function offDayWatch(els)') && app.includes("offDayWatch($$('#af input[name=planned_date]'));") && app.includes("offDayWatch($$('.planset input[type=date]'));"), 'Oberfläche');
 });
 
+await test('Backlog 270 (Blickwinkel „Fahrer ruft die Disposition an“): Meldeformular zeigt Disposition/Leitung/Werkstatt die offenen Vorgänge des gewählten Fahrzeugs (Vorgangsliste mit vehicle_id liefert die nötigen Felder)', async () => {
+  const { U, newCase, V1 } = await freshWorld();
+  const id = await newCase({ description: 'Bremse links zieht stark', priority: 'mittel' });
+  const dsp = (await U.own.post('/api/users', { username: 'w.dispo270', display_name: 'Dispo 270', role: 'dispatch', environment: 'test' }));
+  ok(dsp.status < 300, 'Disposition eingeladen');
+  const r = await U.fleet.get(`/api/cases?status=open&limit=50&vehicle_id=${encodeURIComponent(V1)}`); eq(r.status, 200);
+  const c = r.data.cases.find((x) => x.id === id); ok(c, 'offener Vorgang des Fahrzeugs');
+  for (const k of ['id', 'description', 'priority', 'status', 'created_at']) ok(c[k] !== undefined, 'Feld ' + k);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (S.me.role !== 'driver') {\n    let seq = 0;") && app.includes('/api/cases?status=open&limit=50&vehicle_id=${encodeURIComponent(sel.value)}'), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
