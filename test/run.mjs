@@ -21773,6 +21773,18 @@ await test('Backlog 321 (Blickwinkel „Sicherheitsgurt oder Fahrersitz defekt�
   ok(helpAfter(app, 'seat', 'gear'), 'Hilfe-Abschnitt seat nach gear');
 });
 
+await test('Backlog 322 (Fehlersuche Bremsen-Hinweis): „Bremse defekt“, „Bremsen kaputt“, „Retarder ausgefallen“, „Dauerbremse fällt aus“, „Feststellbremse geht nicht“, „brakes faulty“ zeigen den Bremsen-Hinweis (vorher kein Hinweis); „brake light(s) …“ nur den Beleuchtungs-Hinweis; Schritt zu Retarder/Motorbremse (Gefälle, niedrigerer Gang) DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const re = pat('BRAKE_HINT');
+  for (const x of ['Bremse defekt', 'Bremsen kaputt', 'Retarder ausgefallen', 'Retarder funktioniert nicht', 'Dauerbremse fällt aus', 'Motorbremse ohne Funktion', 'Feststellbremse geht nicht', 'Bremse geht nicht mehr richtig', 'brakes faulty', 'retarder doesn\'t work', 'retarder not working']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Bremslicht defekt', 'Bremsleuchte geht nicht', 'brake light broken', 'brake lights not working', 'brake light out', 'Bremsen neu gemacht', 'Bremsenprüfung fällig', 'Bremsflüssigkeit wechseln', 'Brems-Check erledigt']) ok(!re.test(x), 'kein Bremsen-Hinweis: ' + x);
+  ok(pat('LIGHTS_HINT').test('brake light broken') && pat('LIGHTS_HINT').test('Bremslicht defekt'), 'Bremslicht behält den Beleuchtungs-Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  const kw = { de: ['Retarder', 'Gefälle', 'niedrigeren Gang'], uk: ['ретардер', 'спусках', 'нижчу передачу'], en: ['retarder', 'downhill', 'lower gear'] };
+  for (const l of ['de', 'uk', 'en']) { const st = STRINGS[l].brake_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l); ok(kw[l].every((w) => st[1].includes(w)), 'Schritt Retarder/Motorbremse ' + l); ok(STRINGS[l].help_brake_s.includes(STRINGS[l].brake_hint_steps), 'Hilfe ' + l); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
