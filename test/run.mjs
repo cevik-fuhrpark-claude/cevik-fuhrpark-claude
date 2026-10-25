@@ -21276,7 +21276,26 @@ await test('Backlog 298 (Blickwinkel „Lkw springt morgens bei Kälte nicht an�
   }
   ok(app.includes(`<div id="nostart" class="panel" hidden role="status">`), 'Panel #nostart');
   ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'flat', 'roadchk', 'nostart', 'prio',"), 'Hilfe-Abschnitt nostart nach roadchk');
+  ok(app.includes("'flat', 'roadchk', 'nostart', "), 'Hilfe-Abschnitt nostart nach roadchk');
+});
+
+await test('Backlog 299 (Blickwinkel „Motorwarnleuchte rot während der Fahrt“): Meldeformular zeigt Hinweise (rot: anhalten/Motor aus/Leitung; gelb: Weiterfahrt klären; Display-Foto; Rauch: Notruf; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Rückleuchte/Warnweste/Warnblinker lösen nichts aus; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const WARNLIGHT_HINT = \/(.+)\/i;/m); ok(m, 'WARNLIGHT_HINT auf Modulebene'); eq((app.match(/const WARNLIGHT_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Motorwarnleuchte rot während der Fahrt', 'Kontrollleuchte Motor an', 'Warnlampe Öldruck leuchtet', 'rotes Symbol im Display', 'Rote Warnung STOP im Display', 'Warnmeldung Kühlmittel', 'Engine warning light on', 'check engine light', 'red stop symbol on dashboard', 'Контрольна лампа горить', 'Загорівся індикатор двигуна', 'Горит чек', 'Загорелась лампочка давления масла']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Rückleuchte links defekt', 'Rote Rückleuchte kaputt', 'Warnweste fehlt', 'Warnblinker geht nicht', 'Warndreieck fehlt', 'Rotes Kabel lose', 'Tail light broken', 'Задній ліхтар не горить', 'Фара не горить', 'Reifen platt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.warnlight_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.warnlight_hint_steps), 'keine Zahl (Frist, Notrufnummer je Land verschieden) ' + l);
+    const h = L.help_warnlight_s; ok(L.help_warnlight_t && h && h.includes(L.warnlight_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.warnlight_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="warnlight" class="panel" hidden role="status">`), 'Panel #warnlight');
+  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("'roadchk', 'nostart', 'warnlight', 'prio',"), 'Hilfe-Abschnitt warnlight nach nostart');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
