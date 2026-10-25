@@ -21295,7 +21295,7 @@ await test('Backlog 299 (Blickwinkel „Motorwarnleuchte rot während der Fahrt�
   }
   ok(app.includes(`<div id="warnlight" class="panel" hidden role="status">`), 'Panel #warnlight');
   ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'roadchk', 'nostart', 'warnlight', 'leak', 'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'prio',"), 'Hilfe-Abschnitt warnlight nach nostart');
+  ok(app.includes("'roadchk', 'nostart', 'warnlight', 'leak', 'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'prio',"), 'Hilfe-Abschnitt warnlight nach nostart');
 });
 
 await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lkw“): Meldeformular zeigt Hinweise (anhalten/Motor aus/Leitung; Dieselgeruch: kein Feuer, Notruf; nicht in Gully/Erdreich, Ölspur auf der Straße melden; Foto + Tropfstelle; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Ölwechsel/Öl kontrolliert/Dach undicht/Druckluft lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21314,7 +21314,7 @@ await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lk
   }
   ok(app.includes(`<div id="leak" class="panel" hidden role="status">`), 'Panel #leak');
   ok(app.includes("$('#leak').hidden = !LEAK_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'nostart', 'warnlight', 'leak', 'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'prio',"), 'Hilfe-Abschnitt leak nach warnlight');
+  ok(app.includes("'nostart', 'warnlight', 'leak', 'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'prio',"), 'Hilfe-Abschnitt leak nach warnlight');
 });
 
 await test('Backlog 301 (Blickwinkel „Auflieger beim Kunden beschädigt (Rampe, Stapler)“): Meldeformular zeigt Hinweise (Vermerk auf Lieferschein/Frachtbrief gegenzeichnen, Firma/Tor/Uhrzeit, Fotos, kein Schuldanerkenntnis, Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Mitnahmestapler/Ladebordwand/„Kunde hat angerufen“ lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21333,7 +21333,7 @@ await test('Backlog 301 (Blickwinkel „Auflieger beim Kunden beschädigt (Rampe
   }
   ok(app.includes(`<div id="custdmg" class="panel" hidden role="status">`), 'Panel #custdmg');
   ok(app.includes("$('#custdmg').hidden = !CUSTDMG_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'warnlight', 'leak', 'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'prio',"), 'Hilfe-Abschnitt custdmg nach leak');
+  ok(app.includes("'warnlight', 'leak', 'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'prio',"), 'Hilfe-Abschnitt custdmg nach leak');
 });
 
 await test('Backlog 302 (Blickwinkel „Rauch oder Brandgeruch aus dem Motorraum“): Meldeformular zeigt Hinweise (anhalten, alle raus, Notruf; löschen nur ohne Gefahr, Gefahrgut-Papiere; danach Leitung + Stelle notieren; „Kritisch“ und „nicht fahrbereit“ wörtlich); Feuerlöscher/Rauchverbot/„Licht brennt nicht“/Auspuffrauch/Motorkontrollleuchte lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21352,7 +21352,7 @@ await test('Backlog 302 (Blickwinkel „Rauch oder Brandgeruch aus dem Motorraum
   }
   ok(app.includes(`<div id="fire" class="panel" hidden role="status">`), 'Panel #fire');
   ok(app.includes("$('#fire').hidden = !FIRE_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'leak', 'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'prio',"), 'Hilfe-Abschnitt fire nach custdmg');
+  ok(app.includes("'leak', 'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'prio',"), 'Hilfe-Abschnitt fire nach custdmg');
 });
 
 await test('Backlog 303 (Blickwinkel „Kühlaggregat des Kühlaufliegers fällt unterwegs aus“): Meldeformular zeigt Hinweise (Leitung/Disposition, Türen zu; Display-Foto, Uhrzeit, Temperaturausdruck; nur unterwiesene Prüfungen; Ware/Liefertermin; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Kühlwasser/Motortemperatur/Klimaanlage/Kabinen-Kühlschrank/Wartung lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21371,7 +21371,7 @@ await test('Backlog 303 (Blickwinkel „Kühlaggregat des Kühlaufliegers fällt
   }
   ok(app.includes(`<div id="reefer" class="panel" hidden role="status">`), 'Panel #reefer');
   ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'prio',"), 'Hilfe-Abschnitt reefer nach fire');
+  ok(app.includes("'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'prio',"), 'Hilfe-Abschnitt reefer nach fire');
 });
 
 await test('Backlog 304 (Blickwinkel „Bremsen ziehen schief, quietschen oder verlieren Druck“): Meldeformular zeigt Hinweise (Druckverlust: anhalten, Feststellbremse, Leitung; Geräusche: Weiterfahrt klären; heiße Bremse nicht kühlen; Rad/Achse + Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Bremslicht/Bremsenprüfung/Reifendruck lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21390,7 +21390,7 @@ await test('Backlog 304 (Blickwinkel „Bremsen ziehen schief, quietschen oder v
   }
   ok(app.includes(`<div id="brake" class="panel" hidden role="status">`), 'Panel #brake');
   ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'prio',"), 'Hilfe-Abschnitt brake nach reefer');
+  ok(app.includes("'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'prio',"), 'Hilfe-Abschnitt brake nach reefer');
 });
 
 await test('Backlog 305 (Blickwinkel „Plane des Aufliegers gerissen, Ladung nass“): Meldeformular zeigt Hinweise (Ladung prüfen, nicht klettern; Leitung klärt mit dem Kunden; Fotos + Stelle; Vermerk beim Kunden; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); „planen“ als Verb/Kabinendach/Ladung verrutscht lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21409,7 +21409,7 @@ await test('Backlog 305 (Blickwinkel „Plane des Aufliegers gerissen, Ladung na
   }
   ok(app.includes(`<div id="tarp" class="panel" hidden role="status">`), 'Panel #tarp');
   ok(app.includes("$('#tarp').hidden = !TARP_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'prio',"), 'Hilfe-Abschnitt tarp nach brake');
+  ok(app.includes("'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'prio',"), 'Hilfe-Abschnitt tarp nach brake');
 });
 
 await test('Backlog 306 (mehrere passende Hinweise im Meldeformular): Reihenfolge nach Gefahr, wichtigster offen, weitere eingeklappt mit „Schritte anzeigen“; HINT_ORDER deckt genau alle Hinweis-Kästen des Formulars; Texte und Hilfe DE/UK/EN', async () => {
@@ -21458,7 +21458,7 @@ await test('Backlog 307 (Blickwinkel „Ladung verrutscht während der Fahrt“)
   ok(app.includes(`<div id="load" class="panel" hidden role="status">`), 'Panel #load');
   ok(app.includes("$('#load').hidden = !LOAD_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
   { const o = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, '')); ok(o.indexOf('brake') < o.indexOf('load') && o.indexOf('load') + 1 === o.indexOf('leak'), 'Gruppierung: nach Bremse, vor Leck'); }
-  ok(app.includes("'brake', 'tarp', 'load', 'mirror', 'coupling', 'prio',"), 'Hilfe-Abschnitt load nach tarp');
+  ok(app.includes("'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'prio',"), 'Hilfe-Abschnitt load nach tarp');
 });
 
 await test('Backlog 308 (Blickwinkel „Spiegel abgefahren“): Meldeformular zeigt Hinweise (ohne Haupt-/Weitwinkelspiegel nicht weiterfahren; Fremdschaden wie Unfall, niemand vor Ort → Polizei; Leitung entscheidet; Fotos/Seite/Spiegelart; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Ölspiegel/Spiegelei/„Spiegel in Ordnung“/Scheibe lösen nichts aus; zusammen mit „Unfall“ steht der Unfall-Hinweis vorn; Hilfe DE/UK/EN', async () => {
@@ -21480,7 +21480,7 @@ await test('Backlog 308 (Blickwinkel „Spiegel abgefahren“): Meldeformular ze
   ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test($('#d').value); $('#coupling')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('mirror') && order.indexOf('mirror') < order.indexOf('glass'), 'Gruppierung: Unfall vor Spiegel vor Glas');
-  ok(app.includes("'tarp', 'load', 'mirror', 'coupling', 'prio',"), 'Hilfe-Abschnitt mirror nach load');
+  ok(app.includes("'tarp', 'load', 'mirror', 'coupling', 'lights', 'prio',"), 'Hilfe-Abschnitt mirror nach load');
 });
 
 await test('Backlog 309 (Blickwinkel „Auflieger lässt sich nicht sicher kuppeln oder hat sich gelöst“): Meldeformular zeigt Hinweise (nicht losfahren, solange nicht sicher gekuppelt; gelöster Auflieger → Stelle sichern, Notruf bei Gefahr; gegen Wegrollen sichern, Leitung entscheidet; Fotos mit beiden Kennzeichen; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Kupplung rutscht/Sattelkupplung abgeschmiert/„сідельний тягач“ lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
@@ -21498,10 +21498,32 @@ await test('Backlog 309 (Blickwinkel „Auflieger lässt sich nicht sicher kuppe
     ok(L.coupling_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="coupling" class="panel" hidden role="status">`), 'Panel #coupling');
-  ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test($('#d').value); groupHints(hintOpen);"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test($('#d').value); $('#lights')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('coupling') && order.indexOf('brake') < order.indexOf('coupling') && order.indexOf('coupling') < order.indexOf('load'), 'Gruppierung: Unfall/Bremse vor Kupplung vor Ladung');
-  ok(app.includes("'load', 'mirror', 'coupling', 'prio',"), 'Hilfe-Abschnitt coupling nach mirror');
+  ok(app.includes("'load', 'mirror', 'coupling', 'lights', 'prio',"), 'Hilfe-Abschnitt coupling nach mirror');
+});
+
+await test('Backlog 310 (Blickwinkel „Beleuchtung am Lkw/Auflieger ausgefallen“): Meldeformular zeigt Hinweise (bei Dunkelheit anhalten, so nicht weiterfahren; Stecker/Kabel nur gefahrlos, Lampe/Sicherung nur unterwiesen; Leitung entscheidet; Fotos/welche Leuchte; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Warn-/Kontrollleuchten, Lichtmaschine, „Licht an“ lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const LIGHTS_HINT = \/(.+)\/i;/m); ok(m, 'LIGHTS_HINT auf Modulebene'); eq((app.match(/const LIGHTS_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Rücklicht links ausgefallen', 'Blinker am Auflieger geht nicht', 'Scheinwerfer rechts defekt', 'Bremslicht funktioniert nicht', 'Beleuchtung am Auflieger komplett ausgefallen', 'defekter Scheinwerfer', 'Licht am Anhänger flackert', 'Begrenzungsleuchte kaputt', 'left tail light out', 'trailer indicator not working', 'headlight is broken', 'brake lights not working', 'Ліва фара не світить', 'Стоп-сигнал не працює', 'Поворотник не блимає', 'Фара не горит', 'Габарит перегорів']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Warnleuchte leuchtet rot', 'Motorkontrollleuchte an', 'Lichtmaschine defekt', 'Licht an', 'warning light is on', 'engine warning light not working', 'check light out', 'Spiegel abgefahren', 'Лампочка двигуна горить', 'Licht im Laderaum ist an', 'lights are fine']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const warn = new RegExp(app.match(/^const WARNLIGHT_HINT = \/(.+)\/i;/m)[1], 'i'); ok(!warn.test('Rücklicht links ausgefallen') && !warn.test('left tail light out'), 'Warnleuchten-Hinweis bleibt bei Fahrzeugbeleuchtung aus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.lights_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.lights_hint_steps), 'keine Zahl ' + l);
+    const h = L.help_lights_s; ok(L.help_lights_t && h && h.includes(L.lights_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.lights_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="lights" class="panel" hidden role="status">`), 'Panel #lights');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test($('#d').value); groupHints(hintOpen);"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.indexOf('acc') < order.indexOf('lights') && order.indexOf('mirror') < order.indexOf('lights') && order.indexOf('lights') < order.indexOf('glass'), 'Gruppierung: Unfall/Spiegel vor Licht vor Glas');
+  ok(app.includes("'mirror', 'coupling', 'lights', 'prio',"), 'Hilfe-Abschnitt lights nach coupling');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
