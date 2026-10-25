@@ -19219,6 +19219,22 @@ await test('Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“)
   ok(app.includes("'theft', 'glass', 'prio',"), 'Hilfe-Abschnitt glass für meldende Rollen');
 });
 
+await test('Backlog 292: Abfahrtskontrolle zeigt bei einem Mangel mit Glasschaden (z. B. „Spiegel, Scheiben, Wischer: Steinschlag“) den Glasschaden-Hinweis – mit eigenem Schritt „vor der Abfahrt klären“ statt „Fahrbereitschaft unten“ (DE/UK/EN)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/<div id="glass" class="panel"/g) || []).length, 1, 'Panel einmal definiert (glassPanel)');
+  const dep = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('function kmInputOk('));
+  ok(dep.includes('${checklistHtml()}${tachoPanel()}${glassPanel(true)}'), 'Panel unter der Prüfliste, Variante Kontrolle');
+  ok(dep.includes("$('#glass').hidden = !ms.some((i) => GLASS_HINT.test(i.note || ''));"), 'nur Mängel mit passender Beschreibung');
+  const nw = app.slice(app.indexOf('async function viewNew('), app.indexOf('async function viewNew(') + 6000);
+  ok(nw.includes('${glassPanel()}'), 'Meldeformular nutzt dasselbe Panel (Grundvariante)');
+  ok(app.includes("if (check) st[2] = t('glass_hint_step_check');"), 'Kontrolle ersetzt nur Schritt 3');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const sc = STRINGS[l].glass_hint_step_check; ok(sc && !sc.includes(STRINGS[l].driveable || '§§'), 'eigener Schritt ' + l);
+    ok(!/\d/.test(sc), 'keine Zahl/Frist ' + l);
+  }
+});
+
 await test('Backlog 216 (Teilagent „Abfahrtskontrolle findet Fahrtenschreiber-Störung“): Abfahrtskontrolle zeigt bei einem Mangel, dessen Beschreibung Fahrtenschreiber/Fahrerkarte nennt, dieselben Pflichten wie das Meldeformular; ein Ok-Punkt mit Text löst nichts aus', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   // ein gemeinsames Muster und Panel für beide Formulare (Modulebene, nicht mehr nur in viewNew)
@@ -19226,7 +19242,7 @@ await test('Backlog 216 (Teilagent „Abfahrtskontrolle findet Fahrtenschreiber-
   ok((app.match(/<div id="tacho" class="panel"/g) || []).length === 1, 'Panel einmal definiert (tachoPanel)');
   const dep = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('function kmInputOk('));
   ok(dep.includes('${checklistHtml()}${tachoPanel()}'), 'Panel unter der Prüfliste');
-  ok(dep.includes("i.result === 'mangel' && TACHO_HINT.test(i.note || '')"), 'nur Mängel mit passender Beschreibung');
+  ok(dep.includes("const ms = collectChecklist(form).filter((i) => i.result === 'mangel');") && dep.includes("$('#tacho').hidden = !ms.some((i) => TACHO_HINT.test(i.note || ''));"), 'nur Mängel mit passender Beschreibung');
   ok(dep.indexOf("form.addEventListener('input', tachoCheck)") > 0 && dep.indexOf("form.addEventListener('input', tachoCheck)") < dep.indexOf("bindFormDraft('check'") && dep.indexOf('tachoCheck();') > dep.indexOf("bindFormDraft('check'"), 'Listener vor dem Entwurf, Prüfung danach');
   const nw = app.slice(app.indexOf('async function viewNew('), app.indexOf('async function viewNew(') + 6000);
   ok(nw.includes('${tachoPanel()}'), 'Meldeformular nutzt dasselbe Panel');

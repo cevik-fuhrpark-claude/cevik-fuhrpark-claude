@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 291, Blickwinkel „Steinschlag in der Windschutzscheibe“): Meldeformular zeigt bei Glasschaden
 # vier Schritte (Fotos mit Größenvergleich, Lage/Größe, Weiterfahrt klären, früh melden); „Bremsscheibe gerissen“ zeigt nichts;
-# Vorgang zeigt der Leitung im Versicherungsabschnitt den Hinweis nur ohne Versicherungsfall; Hilfe enthält den Abschnitt.
+# Abfahrtskontrolle bei Mangel mit Glasschaden ebenso (Backlog 292); Vorgang zeigt der Leitung im Versicherungsabschnitt den Hinweis nur ohne Versicherungsfall; Hilfe enthält den Abschnitt.
 # DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid, datetime
 from playwright.sync_api import sync_playwright
@@ -48,6 +48,18 @@ with sync_playwright() as p:
         check(api('PUT',f'/api/cases/{cid}/claim',{'insurer':'Test-Versicherung','reported_on':datetime.date.today().isoformat(),'status':'gemeldet','evidence':'Mail'})['s']==200,f'{lang}/{w}: Versicherungsfall erfasst')
         q.reload(); q.wait_for_selector('#clf',state='attached',timeout=15000); q.wait_for_timeout(200)
         check(q.locator('[data-claimglass]').count()==0,f'{lang}/{w}: mit Versicherungsfall kein Hinweis')
+        # Backlog 292: Abfahrtskontrolle – Mangel „Spiegel, Scheiben, Wischer“ mit Steinschlag → Hinweis mit eigenem 3. Schritt
+        q.goto(B+'/#/check'); q.wait_for_selector('#f .checkitem',timeout=15000); q.select_option('#v',index=1)
+        gv=lambda: q.evaluate("!document.querySelector('#glass').hidden")
+        check(not gv(),f'{lang}/{w}: Kontrolle anfangs kein Hinweis')
+        q.click('.checkitem[data-key=spiegel_scheiben_wischer] label.bad'); q.fill('input[name=spiegel_scheiben_wischer__note]',NEG[lang]); q.wait_for_timeout(100)
+        check(not gv(),f'{lang}/{w}: Kontrolle „{NEG[lang]}“ ohne Hinweis')
+        q.fill('input[name=spiegel_scheiben_wischer__note]',TXT[lang]); q.wait_for_timeout(100)
+        check(gv() and q.inner_text('#glass').count('\n')>=4,f'{lang}/{w}: Kontrolle Glasschaden → Hinweis mit 4 Schritten')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: Kontrolle ohne Querscrollen')
+        if SHOTS and w==390: q.locator('#glass').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/glasschaden-kontrolle-{lang}.png')
+        q.click('.checkitem[data-key=spiegel_scheiben_wischer] input[value=ok]', force=True); q.wait_for_timeout(100)
+        check(not gv(),f'{lang}/{w}: Kontrolle zurück auf Ok → kein Hinweis')
         q.goto(B+'/#/help?s=glass'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_glass' not in bt,f'{lang}/{w}: Hilfe mit Glasschaden-Abschnitt')
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:1]}')
