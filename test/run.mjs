@@ -21600,6 +21600,29 @@ await test('Backlog 313 (Blickwinkel „Heizung/Gebläse/Scheibenwischer fällt 
   ok(helpAfter(app, 'visib', 'stuck'), 'Hilfe-Abschnitt visib nach stuck');
 });
 
+await test('Backlog 314 (Blickwinkel „Teil hängt herunter, schleift oder wurde unterwegs verloren“): Meldeformular zeigt Hinweise (sicher anhalten, nicht mit losem Teil weiterfahren; Teil auf der Fahrbahn → Notruf, nicht selbst holen; sichern nur abseits des Verkehrs, Leitung entscheidet; Fotos/Seite/Ort; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Ersatzteil fehlt/Spiegel/Plane/Ladung/Schlüssel/Bremse schleift lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const LOOSE_HINT = \/(.+)\/i;/m); ok(m, 'LOOSE_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Kotflügel hängt herunter', 'Unterfahrschutz abgerissen', 'Teil verloren während der Fahrt', 'Auspuff hängt runter', 'Seitenverkleidung ist lose', 'Schmutzfänger schleift am Reifen', 'Lkw verliert Teile', 'unterwegs Reserverad verloren', 'Stoßstange hängt schief', 'Trittstufe abgebrochen', 'loser Kotflügel', 'mudguard hanging off', 'bumper fell off', 'exhaust dragging', 'lost a part on the motorway', 'side guard loose', 'Крило відірвалося', 'Бампер відірвався', 'Бризковик відпав', 'Бампер звисає', 'Загубив бризковик', 'Глушитель оторвался']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Ersatzteil fehlt', 'Teile bestellt', 'Spiegel abgefahren', 'Plane abgerissen', 'Ladung verloren', 'Schlüssel verloren', 'Fahrzeugschein verloren', 'Bremse schleift', 'parts missing', 'Teil eingebaut', 'Kennzeichen ändern', 'Reifen platt', 'Kupplung rutscht', 'Ladung verrutscht', 'Tür klemmt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const n of ['MIRROR_HINT', 'TARP_HINT', 'LOAD_HINT', 'LOST_HINT', 'BRAKE_HINT', 'FLAT_HINT']) ok(!pat(n).test('Kotflügel hängt herunter') && !pat(n).test('Unterfahrschutz abgerissen'), n + ' bleibt bei losem Teil aus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.loose_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.loose_hint_steps), 'keine Zahl ' + l);
+    const h = L.help_loose_s; ok(L.help_loose_t && h && h.includes(L.loose_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.loose_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="loose" class="panel" hidden role="status">`), 'Panel #loose');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#loose').hidden = !LOOSE_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('loose') && order.indexOf('acc') < order.indexOf('loose') && order.indexOf('flat') < order.indexOf('loose') && order.indexOf('loose') < order.indexOf('mirror') && order.indexOf('loose') < order.indexOf('tarp'), 'Gruppierung: Unfall/Reifenpanne vor losem Teil vor Spiegel/Plane');
+  ok(helpAfter(app, 'loose', 'visib'), 'Hilfe-Abschnitt loose nach visib');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
