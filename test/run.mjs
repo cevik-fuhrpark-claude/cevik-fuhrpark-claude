@@ -20822,6 +20822,23 @@ await test('Backlog 270 (Blickwinkel „Fahrer ruft die Disposition an“): Meld
   ok(app.includes("if (S.me.role !== 'driver') {\n    let seq = 0;") && app.includes('/api/cases?status=open&limit=50&vehicle_id=${encodeURIComponent(sel.value)}'), 'Oberfläche');
 });
 
+await test('Backlog 271 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Standortwechsel nennt zugeordnete Fahrer, deren Fahrerakte einen anderen Standort hat (nichts wird geändert); Zeitleiste zeigt Standortwechsel (272)', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES('dv-271',?,?,?,?,?,'test')`).run(U.driver.id, V1, '2026-01-01T00:00:00.000Z', U.fleet.id, now);
+  db.prepare(`INSERT INTO drivers(id,environment,display_name,active,created_by,created_at,updated_at,site,user_id) VALUES ('dr-271','test','Fahrer W',1,?,?,?,'Dortmund',?)`).run(U.fleet.id, now, now, U.driver.id);
+  const save = (b) => U.own.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', manufacturer: 'MAN', build_year: 2016, keep_active: true, ...b });
+  const r = await save({ site: 'Bayern' }); eq(r.status, 201, JSON.stringify(r.data)); eq(r.data.site_changed, true);
+  eq(JSON.stringify(r.data.drivers_other_site), JSON.stringify([{ name: 'Fahrer W', site: 'Dortmund' }]), 'Fahrer mit Akte Dortmund genannt');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM driver_vehicles WHERE vehicle_id=? AND valid_to IS NULL`).get(V1).n, 1, 'Zuordnung bleibt');
+  const r2 = await save({ site: 'Dortmund' }); eq(r2.data.drivers_other_site.length, 0, 'zurück nach Dortmund: kein Hinweis');
+  // Backlog 272: Zeitleiste der Akte zeigt beide Standortwechsel mit Person
+  const tl = (await U.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline`)).data;
+  const ev = (tl.events || tl.items || []).filter((x) => x.type === 'status' && x.status_event === 'site');
+  eq(ev.length, 2, 'zwei Standortwechsel ' + JSON.stringify(ev)); ok(ev.some((x) => x.site_from === 'Dortmund' && x.site_to === 'Bayern'), 'Dortmund → Bayern'); ok(ev.every((x) => x.by), 'Person');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].veh_site_drivers, `${l}.veh_site_drivers`); ok(STRINGS[l].tl_st_site, `${l}.tl_st_site`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("t('veh_site_drivers').replace('{list}'"), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

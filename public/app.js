@@ -2372,7 +2372,8 @@ async function saveVehicleForm(form, edit = false) {
   if (r && r.site_changed) {
     const sh = [r.open_workshop_cases ? tn('veh_site_ws_open', r.open_workshop_cases).replace('{list}', (r.open_workshop_sites || []).join(', ')) : '',
       r.planned_appointments ? tn('veh_site_planned', r.planned_appointments) : '',
-      ...(r.coupled_other_site || []).map((x) => t('veh_site_coupled').replace('{p}', x.plate).replace('{site}', x.site || t('cs_nosite')))].filter(Boolean);
+      ...(r.coupled_other_site || []).map((x) => t('veh_site_coupled').replace('{p}', x.plate).replace('{site}', x.site || t('cs_nosite'))),
+      (r.drivers_other_site || []).length ? t('veh_site_drivers').replace('{list}', () => r.drivers_other_site.map((x) => `${x.name} (${x.site})`).join(', ')) : ''].filter(Boolean);
     if (sh.length) setTimeout(() => toast(sh.join(' · '), true), (d && d.length ? 6000 : 400) + (tr && tr.length ? 6000 : 0));
   }
   return r;
@@ -4455,7 +4456,8 @@ async function viewTimeline(id, fArg) {
         const meta = x.note_event === 'archive' ? [t('vnote_archived')] : x.note_event === 'expire' ? [t('vnote_expired').replace('{d}', fmtD(x.valid_until))] : [x.for_driver ? t('vnote_driver_chip') : '', x.valid_until ? t('vnote_until').replace('{d}', fmtD(x.valid_until)) : ''];
         return ['', `${esc(t('vnotes'))}: ${gone ? `<s>${esc(x.text)}</s>` : esc(x.text)}`, esc(meta.filter(Boolean).join(' · '))]; }
       case 'fine': return ['', `${esc(t('fk_' + x.fine_kind))}: <a href="#/fines/${esc(x.fine_id)}">${esc(x.fine_no)}</a>`, esc(t('fs_' + x.status))];
-      case 'status': return [['eval_exclude', 'deactivate'].includes(x.status_event) ? 'p-mittel' : '', esc(t('tl_st_' + x.status_event)), `${x.status_reason ? esc(t('inactive_reason')) + ': ' + esc(x.status_reason) : ''}${x.status_reason && x.by ? ' · ' : ''}${x.by ? esc(x.by) : ''}`];
+      case 'status': if (x.status_event === 'site') return ['', esc(t('tl_st_site')), `${esc(x.site_from || t('cs_nosite'))} → ${esc(x.site_to || t('cs_nosite'))}${x.by ? ' · ' + esc(x.by) : ''}`];
+        return [['eval_exclude', 'deactivate'].includes(x.status_event) ? 'p-mittel' : '', esc(t('tl_st_' + x.status_event)), `${x.status_reason ? esc(t('inactive_reason')) + ': ' + esc(x.status_reason) : ''}${x.status_reason && x.by ? ' · ' : ''}${x.by ? esc(x.by) : ''}`];
       default: return ['', esc(x.type), ''];
     }
   };
