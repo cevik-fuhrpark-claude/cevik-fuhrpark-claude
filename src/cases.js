@@ -125,6 +125,8 @@ export async function listCases(env, user, envName, query, meta = null) {
     where.push('c.priority = ?'); args.push(query.priority);
   }
   if (on(query.locked)) where.push('c.safety_lock = 1');
+  // „Eingang nicht bestätigt“ (Backlog 278, Teilagent „Sturmnacht“): gleiche Regel wie „Heute zu tun → Eingang bestätigen“ der Startseite
+  if (on(query.unreceived)) where.push(user.role === 'driver' ? '0' : `c.status = 'gemeldet' AND c.fleet_received_at IS NULL`);
   // „Kostenfreigabe ausstehend“ (Backlog 239): gleiche Regel wie „Heute zu tun“ (offen und `cost_over_limit_at` gesetzt; Fahrer nie)
   if (on(query.cost_approval)) where.push(user.role === 'driver' ? '0' : `c.cost_over_limit_at IS NOT NULL AND c.status IN (${OPEN_STATUSES.map((x) => `'${x}'`).join(',')})`);
   // Filter „Gewährleistung prüfen“: frühere Vorgänge desselben Fahrzeugs mit Teil/Fremdleistung, deren Gewährleistung am Meldetag
@@ -360,7 +362,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
     // damit die Werkstatt z. B. eine fällige Prüfung beim selben Aufenthalt mit erledigen kann
     // Werkstatt-Einschränkung im SQL (vorher nach dem LIMIT gefiltert → Zähler zu klein); Gesamtzahl per Fensterfunktion, angezeigt werden die neuesten 5
     const wsOnly = user.role === 'workshop' ? user.workshop_site : null;
-    const othersRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, workshop_site, safety_lock, COUNT(*) OVER () AS total FROM cases WHERE vehicle_id=? AND environment=? AND id<>?
+    // + Kurzbeschreibung/Prüfpunkt/Meldezeit (Backlog 279, Teilagent „Sturmnacht“): Dublette erkennbar, ohne jeden Vorgang zu öffnen
+    const othersRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, workshop_site, safety_lock, substr(description, 1, 120) AS description, check_item, created_at, COUNT(*) OVER () AS total FROM cases WHERE vehicle_id=? AND environment=? AND id<>?
       AND status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') ${wsOnly ? "AND workshop_site=? AND status<>'gemeldet'" : ''} ORDER BY created_at DESC LIMIT 5`)
       .bind(...[c.vehicle_id, envName, c.id, ...(wsOnly ? [wsOnly] : [])]).all()).results;
     const othersTotal = othersRows.length ? othersRows[0].total : 0;

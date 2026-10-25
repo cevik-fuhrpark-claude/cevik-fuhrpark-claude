@@ -667,8 +667,8 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/claims' && m === 'GET') {
     const ov = await claims.claimOverview(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
-      await auth.audit(env, user.id, 'claim.export', null, { rows: ov.claims.length, filter: ov.filter, site: ov.site });
-      return new Response(claims.claimsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-versicherungsfaelle_${envName}_${ov.today}.csv"` } });
+      await auth.audit(env, user.id, 'claim.export', null, { rows: ov.claims.length, filter: ov.filter, site: ov.site, ...(ov.from ? { from: ov.from } : {}), ...(ov.to ? { to: ov.to } : {}), ...(ov.insurer ? { insurer: ov.insurer } : {}), ...(url.searchParams.get('third_party') === '1' ? { third_party: true } : {}) });
+      return new Response(claims.claimsCsv(ov, { thirdParty: url.searchParams.get('third_party') === '1' }), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-versicherungsfaelle_${envName}_${ov.today}.csv"` } });
     }
     return json(ov);
   }

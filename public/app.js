@@ -6,6 +6,7 @@ import { svg as qrSvg } from './qr.js';
 import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentFindingsCsv, usersCsv, sortUsers, filterUsers, isUnusedUser, inviteExpired, readCsvFile as readCsvRaw } from './csv.js';
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
+import { federalHoliday } from './holidays.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
 const deviceLang = () => { const l = (navigator.language || 'de').toLowerCase(); return l.startsWith('uk') ? 'uk' : l.startsWith('en') ? 'en' : 'de'; };
@@ -118,9 +119,15 @@ const isWeekendD = (iso) => !!iso && iso.length === 10 && [0, 6].includes(new Da
 const bookedAt = (iso) => (iso ? `<br><span class="small muted" title="${esc(t('cost_booked_hint'))}">${esc(t('cost_booked'))} ${fmtD(iso)}</span>` : '');
 // Konto schon mit einer (oft ausgeschiedenen) Fahrerakte verknüpft: Akte nennen (Backlog 191)
 const linkedMsg = (err) => { const ld = err && err.code === 'duplicate' && err.data && err.data.linked_driver; return ld ? `${err.message} ${t('dr_linked_to').replace('{name}', ld.display_name)}${ld.active ? '' : ' (' + t('inactive') + ')'}` : err.message; };
-const fmtDue = (iso) => { if (!iso || iso.length !== 10) return fmtD(iso); const d = new Date(iso + 'T12:00:00Z'); if (Number.isNaN(d.getTime())) return '–'; const k = 'wd' + uiLoc(); const wd = (DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(uiLoc(), { weekday: 'short', timeZone: 'UTC' }))).format(d); return `${wd} ${fmtD(iso)}${isWeekendD(iso) ? ' (' + t('due_weekend') + ')' : ''}`; };
+// bundesweiter gesetzlicher Feiertag (Backlog 267, public/holidays.js): Name in der Oberflächensprache oder ''
+const holName = (iso) => { const h = federalHoliday(iso); return h ? t('hol_' + h) : ''; };
+const fmtDue = (iso) => { if (!iso || iso.length !== 10) return fmtD(iso); const d = new Date(iso + 'T12:00:00Z'); if (Number.isNaN(d.getTime())) return '–'; const k = 'wd' + uiLoc(); const wd = (DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(uiLoc(), { weekday: 'short', timeZone: 'UTC' }))).format(d); return `${wd} ${fmtD(iso)}${holName(iso) ? ' (' + holName(iso) + ')' : isWeekendD(iso) ? ' (' + t('due_weekend') + ')' : ''}`; };
+// Hinweistext zur Antwortfrist: Feiertag vor Wochenende (Frist bleibt der Tag laut Schreiben)
+const dueOffHint = (iso) => (federalHoliday(iso) ? t('due_holiday_hint') : isWeekendD(iso) ? t('due_weekend_hint') : '');
 // Eingabe der Antwortfrist: Hinweis, wenn der Tag auf ein Wochenende fällt (Frist wird nicht verschoben)
-function dueWeekendWatch() { for (const el of $$('input[name=response_due]')) { const h = document.createElement('p'); h.className = 'small muted'; h.dataset.dueWe = ''; h.textContent = t('due_weekend_hint'); el.after(h); const upd = () => { h.hidden = !isWeekendD(el.value); }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); } }
+// Werkstatttermin von Hand gewählt (Backlog 269): Hinweis bei Wochenende/bundesweitem Feiertag – nichts wird verschoben
+function offDayWatch(els) { for (const el of els) { if (!el || el.dataset.offW) continue; el.dataset.offW = '1'; const h = document.createElement('p'); h.className = 'small muted'; h.dataset.offday = ''; h.hidden = true; el.after(h); const upd = () => { const v = el.value; const x = holName(v) || (isWeekendD(v) ? t('due_weekend') : ''); h.hidden = !x; if (x) h.textContent = t('plan_offday_hint').replace('{d}', () => x); }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); } }
+function dueWeekendWatch() { for (const el of $$('input[name=response_due]')) { const h = document.createElement('p'); h.className = 'small muted'; h.dataset.dueWe = ''; h.textContent = t('due_weekend_hint'); el.after(h); const upd = () => { const x = dueOffHint(el.value); h.hidden = !x; if (x) h.textContent = x; }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); } }
 const dqDetail = (i) => dqDetailText(i, t, fmtD, mk, { km: (n) => fmtKm(n), src: (v) => odoSrc(v) });
 const hrs = (n) => (n === null || n === undefined ? '–' : fmtNum(Math.round(n * 100) / 100, { maximumFractionDigits: 2 }));
 const EUR_FMT = {};
@@ -1113,7 +1120,8 @@ async function fleetTodo() {
   const asc = (f) => (a, b) => String(f(a) || '9').localeCompare(String(f(b) || '9'));
   const PR = { kritisch: 0, mittel: 1, niedrig: 2 };
   const groups = [
-    ['todo_receive', cs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).sort((a, b) => (PR[a.priority] ?? 3) - (PR[b.priority] ?? 3) || asc((c) => c.created_at)(a, b)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, 'kritisch'],
+    // gesperrte zuerst (wie die Vorgangsliste, Backlog 193/278 – gesperrte Meldung mit „niedrig“ stand sonst hinten), Zeile nennt die Sperre
+    ['todo_receive', cs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).sort((a, b) => (b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PR[a.priority] ?? 3) - (PR[b.priority] ?? 3) || asc((c) => c.created_at)(a, b)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}${c.safety_lock ? ' · ' + t('locked') : ''}`, 'kritisch'],
     ['todo_vfind_crit', af, (v) => `#/vehicles/${encodeURIComponent(v.id)}`, (v) => `${v.plate} · ${t('vfind_crit').replace('{n}', v.agent_findings_critical)} · ${t('vfind_n').replace('{n}', v.agent_findings_open)}`, 'kritisch'],
     ['todo_followup', cs.filter((c) => c.followup_on && c.followup_on <= today).sort(asc((c) => c.followup_on)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${fmtD(c.followup_on)}${c.followup_note ? ' · ' + c.followup_note : ''}`, 'mittel'],
     ['todo_repeat', cs.filter(recentRepeat), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${fmtD(c.last_repeat_at)}`, 'mittel'],
@@ -1147,7 +1155,7 @@ async function fleetTodo() {
 }
 
 // „+N“ in „Heute zu tun“ verlinkt die vollständige, gleich gefilterte Vorgangsliste (Backlog 239)
-const TODO_LIST = { todo_followup: '#/cases?f=followup', todo_cost_approval: '#/cases?f=cost_approval' }; // todo_repeat hat bereits einen eigenen Link
+const TODO_LIST = { todo_receive: '#/cases?f=unreceived', todo_followup: '#/cases?f=followup', todo_cost_approval: '#/cases?f=cost_approval' }; // todo_repeat hat bereits einen eigenen Link
 // Listen der Prüftermin-Übersicht, die der Server bei 200 kappt (`lists_truncated`) → Zähler „200+“
 const TODO_TRUNC = { todo_defects_no_case: 'defects_without_case', todo_reinspection: 'reinspection_pending', todo_result_missing: 'result_missing' };
 // wie der Listenfilter repeat_days=3 (Server: ab Berliner Mitternacht vor zwei Tagen) – 20.10.2026: vorher 72 h ab jetzt, Startseite zählte Vorgänge, die die verlinkte Liste nicht zeigt
@@ -1166,20 +1174,20 @@ function caseList(list, empty) {
     ${plate(c.plate, { locked: c.safety_lock })}
     <span class="title">${woTag(c)}${ltxt(cDesc(c.description))}</span>
     <span class="chip ${esc(c.status === 'fahrzeug_freigegeben' ? 'ok' : c.priority)}">${esc(t('st_' + c.status))}</span>
-    <span class="sub">${esc(c.case_no)} · ${esc(t('prio_' + c.priority))}${c.safety_lock ? ' · ' + esc(t('locked')) : ''}${c.access === 'preview' ? ' · ' + esc(t('preview_hint')) : ''}${c.tow_service && OPEN_CASE_ST.includes(c.status) ? ` · <b class="towtag">${esc(t('vl_towed_chip'))}</b>` : ''}${c.planned_date && ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status) ? ` · <b>${esc(t('planned'))} ${fmtD(c.planned_date)}</b>` : ''} · ${fmtDT(c.updated_at)}${recentRepeat(c) ? ` · <b>${esc(t('act_repeat_finding'))} ${fmtDT(c.last_repeat_at)}</b>` : ''}${partsEta(c)}${c.cost_over_limit_at ? ` · <span class="chip mittel">${esc(t('cost_approval_pending'))}</span>` : ''}${c.maintenance_event_id ? ` · <b>${esc(t('md_case'))}</b>` : ''}${c.duplicate_of_no ? ` · ${esc(t('dup_of'))} ${esc(c.duplicate_of_no)}` : ''}${c.followup_on && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? ` · <span class="chip${c.followup_on <= bDate() ? ' mittel' : ''}">${esc(t('followup'))} ${fmtD(c.followup_on)}</span>` : ''}</span></a>`).join('')}</div>`;
+    <span class="sub">${esc(c.case_no)} · ${esc(t('prio_' + c.priority))}${c.safety_lock ? ' · ' + esc(t('locked')) : ''}${c.file_count ? ` · <span data-fc title="${esc(t('files'))}">📎 ${Number(c.file_count)}</span>` : ''}${c.access === 'preview' ? ' · ' + esc(t('preview_hint')) : ''}${c.tow_service && OPEN_CASE_ST.includes(c.status) ? ` · <b class="towtag">${esc(t('vl_towed_chip'))}</b>` : ''}${c.planned_date && ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status) ? ` · <b>${esc(t('planned'))} ${fmtD(c.planned_date)}</b>` : ''} · ${fmtDT(c.updated_at)}${recentRepeat(c) ? ` · <b>${esc(t('act_repeat_finding'))} ${fmtDT(c.last_repeat_at)}</b>` : ''}${partsEta(c)}${c.cost_over_limit_at ? ` · <span class="chip mittel">${esc(t('cost_approval_pending'))}</span>` : ''}${c.maintenance_event_id ? ` · <b>${esc(t('md_case'))}</b>` : ''}${c.duplicate_of_no ? ` · ${esc(t('dup_of'))} ${esc(c.duplicate_of_no)}` : ''}${c.followup_on && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? ` · <span class="chip${c.followup_on <= bDate() ? ' mittel' : ''}">${esc(t('followup'))} ${fmtD(c.followup_on)}</span>` : ''}</span></a>`).join('')}</div>`;
 }
 
 // Filter der Vorgangsliste: offen/abgeschlossen/alle bzw. „Mangel erneut festgestellt“ (offen, letzte 3 Tage)
 // „kritisch“/„gesperrt“: Sprung aus den Zählern der Startseite (Backlog 238, Blickwinkel „Inhaber nach dem Urlaub“) – gleiche Regel wie der Zähler
-const caseFilterQ = (f) => (f === 'cost_approval' ? 'status=open&cost_approval=1' : f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1' : f === 'repeat' ? 'status=open&repeat_days=3' : f === 'warranty' ? 'status=open&warranty=1' : f === 'stale' ? 'status=open&stale=1' : f === 'followup' ? 'status=open&followup=1' : `status=${f === 'all' ? '' : f}`);
-const CF_LABEL = { repeat: 'filter_repeat', warranty: 'filter_warranty', stale: 'filter_stale', followup: 'filter_followup', critical: 'prio_kritisch', locked: 'locked_cases', cost_approval: 'todo_cost_approval' };
+const caseFilterQ = (f) => (f === 'unreceived' ? 'status=open&unreceived=1' : f === 'cost_approval' ? 'status=open&cost_approval=1' : f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1' : f === 'repeat' ? 'status=open&repeat_days=3' : f === 'warranty' ? 'status=open&warranty=1' : f === 'stale' ? 'status=open&stale=1' : f === 'followup' ? 'status=open&followup=1' : `status=${f === 'all' ? '' : f}`);
+const CF_LABEL = { unreceived: 'todo_receive', repeat: 'filter_repeat', warranty: 'filter_warranty', stale: 'filter_stale', followup: 'filter_followup', critical: 'prio_kritisch', locked: 'locked_cases', cost_approval: 'todo_cost_approval' };
 async function viewCases() {
   const hf = new URLSearchParams(location.hash.split('?')[1] || '').get('f');
   if (hf) try { sessionStorage.setItem('cfp_cf', hf); } catch {}
   // Sprung aus einem Zähler (#/cases?f=…): früherer Suchbegriff gilt nicht (Zahl und Liste passten sonst nicht, 22.10.2026)
   if (hf) S.caseQ = '';
   let f = hf || sessionStorage.getItem('cfp_cf') || 'open';
-  if (!['open', 'closed', 'all', 'repeat', 'warranty', 'stale', 'followup', 'critical', 'locked', 'cost_approval'].includes(f) || (['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval'].includes(f) && S.me.role === 'driver') || (f === 'followup' && ['driver', 'workshop'].includes(S.me.role))) f = 'open';
+  if (!['open', 'closed', 'all', 'repeat', 'warranty', 'stale', 'followup', 'critical', 'locked', 'cost_approval', 'unreceived'].includes(f) || (['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived'].includes(f) && S.me.role === 'driver') || (f === 'followup' && ['driver', 'workshop'].includes(S.me.role))) f = 'open';
   const q = S.caseQ || '';
   const vq = () => (vsDef('caseVsite') && S.me.role !== 'driver' ? '&vsite=' + encodeURIComponent(vsDef('caseVsite')) : '') + (S.caseWs && wsFilterOk() ? '&ws=' + encodeURIComponent(S.caseWs) : '');
   const lq = () => (S.caseLimit ? '&limit=' + S.caseLimit : '') + sq();
@@ -1199,7 +1207,7 @@ async function viewCases() {
   const wsel = wsFilterOk() && wsAll().length > 1 ? `<div class="noprint" style="margin-bottom:12px"><label for="cws">${esc(t('workshop'))}</label><select id="cws"><option value="">${esc(t('filter_all'))}</option>${wsAll().map((w) => `<option value="${esc(w.code)}"${S.caseWs === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>` : '';
   render(`<h1>${esc(t('nav_cases'))}</h1>
     <input id="cq" class="noprint" type="search" value="${esc(q)}" placeholder="${esc(t('case_search'))}" aria-label="${esc(t('case_search'))}" style="margin-bottom:12px" autocomplete="off">${vsel}${wsel}
-    <div class="seg-tabs noprint">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? [] : ['followup']), ...(['critical', 'locked', 'cost_approval'].includes(f) ? [f] : [])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}"${k === f ? ' aria-current="true"' : ''}>${esc(t(CF_LABEL[k] || k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', nDays(res.stale_days)) : t('filter_stale_off'))}</p>` : ''}
+    <div class="seg-tabs noprint">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? [] : ['followup']), ...(['critical', 'locked', 'cost_approval', 'unreceived'].includes(f) ? [f] : [])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}"${k === f ? ' aria-current="true"' : ''}>${esc(t(CF_LABEL[k] || k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', nDays(res.stale_days)) : t('filter_stale_off'))}</p>` : ''}
     ${f !== 'followup' ? `<select id="csort" class="noprint" aria-label="${esc(t('sort_by'))}" style="max-width:420px;margin-bottom:12px">${CASE_SORTS.map((k) => `<option value="${k}"${(S.caseSort || 'priority') === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('csort_' + k))}</option>`).join('')}</select>` : ''}
     <div id="cl">${cPrint(list, q)}${caseList(list)}${trunc(res)}</div>
     <div class="actions">${S.me.role !== 'driver' ? `<button type="button" class="btn secondary" id="ccsv">${esc(t('export_csv'))}</button>${f === 'followup' ? `<button type="button" class="btn secondary" id="cics">${esc(t('followup_ics'))}</button>` : ''}` : ''}<button type="button" class="btn secondary" id="cprl">${esc(t('print'))}</button></div>`, 'cases');
@@ -1534,6 +1542,22 @@ async function viewNew(preId) {
     api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => { known = myVehCached(); showKnown(); });
     $$('input[name=veh]').forEach((r) => r.addEventListener('change', showKnown));
   }
+  // Backlog 270 (Teilagent „Fahrer ruft die Disposition an“): Disposition/Leitung/Werkstatt sehen beim Melden die offenen Vorgänge des gewählten
+  // Fahrzeugs – nachts entstand sonst leicht eine Doppelmeldung (Hinweis vorher nur für Fahrer); nur Vorgänge, die die Rolle ohnehin sieht
+  if (S.me.role !== 'driver') {
+    let seq = 0;
+    const showOpen = async () => {
+      const sel = $('input[name=veh]:checked'); const box = $('#known'); if (!box) return; const my = ++seq;
+      if (!sel) { box.innerHTML = ''; return; }
+      try {
+        const r = await api('GET', `/api/cases?status=open&limit=50&vehicle_id=${encodeURIComponent(sel.value)}`);
+        if (my !== seq) return;
+        box.innerHTML = knownDefects((r.cases || []).map((c) => ({ id: c.id, description: c.description || '', priority: c.priority, status: c.status, created_at: c.created_at, check_item: c.check_item, planned_date: c.planned_date, parts_expected_date: c.parts_expected_date })));
+      } catch { if (my === seq) box.innerHTML = ''; }
+    };
+    $$('input[name=veh]').forEach((r) => r.addEventListener('change', showOpen));
+    if ($('input[name=veh]:checked')) showOpen();
+  }
   // Beschreibung nennt Diebstahl/Einbruch: Polizei, Spuren, Liste des Fehlenden, Fuhrparkleitung (Backlog 214, 23.10.2026) – reine Information,
   // keine Frist; „Leistungseinbruch“ und ukr. „вкрай“/„зламано“ (kaputt) lösen nichts aus
   const hints = () => { $('#acc').hidden = !ACC_HINT.test($('#d').value); $('#tacho').hidden = !TACHO_HINT.test($('#d').value); $('#theft').hidden = !THEFT_HINT.test($('#d').value); };
@@ -1624,7 +1648,8 @@ async function viewCase(id) {
   const c = d.case;
   const A = d.allowed_actions;
   const prioLine = c.reported_priority !== c.priority ? ` <span class="muted small">(${esc(t('reported_prio'))}: ${esc(t('prio_' + c.reported_priority))})</span>` : '';
-  let html = `<p class="noprint"><a class="backlink" href="#/cases">‹ ${esc(t('back'))}</a></p>
+  // Sichten nach einer Meldungswelle (Backlog 280): Leitung springt zur nächsten nicht bestätigten Meldung (gesperrte/kritische zuerst)
+  let html = `<p class="noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center"><a class="backlink" href="#/cases">‹ ${esc(t('back'))}</a>${isMgr() ? `<button type="button" class="btn secondary" id="nextunrec" style="margin-left:auto">${esc(t('next_unreceived'))} ›</button>` : ''}</p>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${plate(d.vehicle.plate, { big: true, locked: c.safety_lock })}<span class="chip ${c.status === 'fahrzeug_freigegeben' ? 'ok' : esc(c.priority)}">${esc(t('st_' + c.status))}</span>${c.environment === 'test' ? '<span class="chip test">TEST</span>' : ''}</div>
     <h1 style="margin-top:12px" data-title="${esc(c.case_no)} · ${esc(d.vehicle.plate)}">${esc(c.case_no)}</h1>
     <p class="print-only small">${printStamp()} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -1737,6 +1762,13 @@ async function viewCase(id) {
       else if (err.code === 'insufficient_stock' && action === 'add_part' && payload.stock_item_id) stockShortfall(payload.stock_item_id, err.data);
       else if (err.code === 'duplicate_invoice' && action === 'add_external_cost') dupInvoiceHint(err.data);
     }
+  };
+  const nu = $('#nextunrec'); if (nu) nu.onclick = async () => {
+    try {
+      const r = await api('GET', '/api/cases?status=open&unreceived=1&limit=50');
+      const nx = (r.cases || []).find((x) => x.id !== c.id);
+      if (nx) location.hash = `#/cases/${encodeURIComponent(nx.id)}`; else toast(t('next_unreceived_none'));
+    } catch (err) { toast(err.message, true); }
   };
   $$('[data-act]').forEach((b) => (b.onclick = () => actionForm(b.dataset.act, c, cmd, {}, d)));
   $$('[data-resolve]').forEach((b) => (b.onclick = () => actionForm('resolve_open_item', c, cmd, { open_item_id: b.dataset.resolve })));
@@ -1875,26 +1907,36 @@ async function viewClaims() {
   let timer = null;
   const f = S.clFilter || 'offen';
   const cs = vsDef('claimSite') || ''; const csq = cs ? '&site=' + encodeURIComponent(cs) : '';
-  const q = S.clQ || ''; const qq = q ? '&q=' + encodeURIComponent(q) : ''; // Suche nach Kennzeichen/Nummern (Backlog 219)
-  const r = await api('GET', `/api/claims?filter=${f}${csq}${qq}`);
+  const q = S.clQ || ''; const qq0 = q ? '&q=' + encodeURIComponent(q) : ''; // Suche nach Kennzeichen/Nummern (Backlog 219)
+  // Zeitraum (Meldedatum) und Versicherer (Backlog 274, Schadenaufstellung für den Versicherer)
+  const pq = `${S.clFrom ? '&from=' + S.clFrom : ''}${S.clTo ? '&to=' + S.clTo : ''}${S.clIns ? '&insurer=' + encodeURIComponent(S.clIns) : ''}`;
+  const qq = qq0 + pq;
+  let r;
+  // ungültiger Zeitraum (400): Filter zurücksetzen und einmal neu laden; ohne gesetzte Filter normale Fehlerbehandlung (keine Schleife)
+  try { r = await api('GET', `/api/claims?filter=${f}${csq}${qq}`); } catch (err) { if (!pq) throw err; S.clFrom = S.clTo = S.clIns = null; toast(err.message, true); return viewClaims(); }
   const tabs = ['offen', 'gutachten', 'alle', 'reguliert', 'abgelehnt'];
   const fName = (x) => (x === 'offen' ? t('claim_f_open') : x === 'gutachten' ? t('ca_pending') : x === 'alle' ? t('filter_all') : t('cls_' + x));
   const fLabel = fName(f);
-  let html = `<h1>${esc(t('claims'))}</h1>${printHead([`${t('print_filter')}: ${fLabel}`, r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', r.claims.length)])}${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
+  let html = `<h1>${esc(t('claims'))}</h1>${printHead([`${t('print_filter')}: ${fLabel}`, r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', r.from || r.to ? `${t('claim_period')}: ${r.from ? fmtD(r.from) : '…'} – ${r.to ? fmtD(r.to) : '…'}` : '', r.insurer ? `${t('claim_insurer')}: ${r.insurer}` : '', t('print_count').replace('{n}', r.claims.length)])}${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
     <div class="actions noprint" style="flex-wrap:wrap">${tabs.map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-clf="${x}">${esc(fName(x))} (${r.counts[x] || 0})</button>`).join('')}</div>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('clsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : ''}
+    <div class="actions noprint" style="margin-top:0;align-items:end;flex-wrap:wrap" id="clper"><div><label for="clfrom">${esc(t('claim_from'))}</label><input type="date" id="clfrom" value="${esc(r.from || '')}"></div><div><label for="clto">${esc(t('claim_to'))}</label><input type="date" id="clto" value="${esc(r.to || '')}"></div>${(r.insurer_options || []).length > 1 || r.insurer ? `<div><label for="clins">${esc(t('claim_insurer'))}</label><select id="clins"><option value="">${esc(t('filter_all'))}</option>${[...new Set([...(r.insurer_options || []), ...(r.insurer ? [r.insurer] : [])])].map((x) => `<option value="${esc(x)}"${x === r.insurer ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div>` : ''}</div>
     <input id="clq" class="noprint" type="search" maxlength="60" value="${esc(q)}" placeholder="${esc(t('claim_search'))}" aria-label="${esc(t('claim_search'))}" autocomplete="off" style="margin-bottom:12px">
     ${q ? `<p class="small muted" id="clqinfo">${esc(t('claim_search_info').replace('{q}', q).replace('{n}', r.claims.length))}</p>` : ''}
     ${r.reimbursed_sum_net !== null || r.reimbursed_sum_excluded_net != null ? `<section class="panel"><dl class="kv">${r.reimbursed_sum_net !== null ? `<dt>${esc(t('claim_sum'))}</dt><dd><b>${eur(r.reimbursed_sum_net)}</b></dd>` : ''}${r.reimbursed_sum_excluded_net != null ? `<dt>${esc(t('claim_sum_excluded'))}</dt><dd>${eur(r.reimbursed_sum_excluded_net)}<div class="small muted">${esc(t('claim_sum_excluded_hint'))}</div></dd>` : ''}</dl></section>` : ''}
     <div class="list">${r.claims.length ? r.claims.map((c) => `<a class="row${c.followup_due ? ' p-mittel' : ''}" href="#/cases/${encodeURIComponent(c.case_id)}">${plate(c.plate)}<span class="title">${c.eval_excluded ? `<span class="chip">${esc(t('eval_excluded'))}</span> ` : ''}${esc(c.insurer)}${c.claim_no ? ' · ' + esc(c.claim_no) : ''}${c.opponent ? ` <span class="chip" title="${esc(t('co_title'))}">${esc(t('co_chip'))}</span>` : ''}${c.police ? ` <span class="chip" title="${esc(t('cp_title'))}">${esc(t('cp_chip'))}</span>` : ''}</span>${claimChip(c.status)}<span class="sub" style="white-space:normal">${c.followup_due ? `<b>${esc(t('todo_claims'))}</b> · ` : ''}${esc(c.case_no)} · ${esc(t('claim_reported'))} ${fmtD(c.reported_on)}${c.days_open !== null ? ` · ${esc(tn('claim_days_open', c.days_open))}` : ''}${c.deductible_net !== null ? ` · ${esc(t('claim_deductible_short'))} ${eur(c.deductible_net)}` : ''}${c.reimbursed_net !== null ? ` · ${esc(t('claim_reimbursed_short'))} ${eur(c.reimbursed_net)}` : ''}${c.case_cost_net !== null ? ` · ${esc(t('claim_case_cost'))} ${eur(c.case_cost_net)}` : c.cost_incomplete ? ` · ${esc(t('claim_case_cost'))} – <span class="chip mittel">${esc(t('incomplete'))}</span>` : ''}${c.balance_net !== null ? ` · <b>${esc(t('claim_balance'))} ${eur(c.balance_net)}</b>` : ''}${c.appraisal_pending ? ` · <span class="chip mittel">${esc(t('ca_pending'))}</span>${c.appraisal_on ? ` ${esc(t('ca_on'))} ${fmtD(c.appraisal_on)}` : ''}` : c.appraisal_net !== null && c.appraisal_net !== undefined ? ` · ${esc(t('ca_net'))} ${eur(c.appraisal_net)}` : ''}</span></a>`).join('') : `<p class="muted">${esc(t('claims_none'))}</p>`}</div>
-    <div class="actions noprint"><button type="button" class="btn secondary" id="clcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="clprt">${esc(t('print'))}</button></div>`;
+    ${r.sums && r.sums.total && r.sums.total.n ? `<section class="panel" id="clsums"><h2 style="margin-top:0">${esc(t('claim_sums'))}</h2><div class="scroll"><table class="stack"><thead><tr><th>${esc(t('claim_year'))}</th><th>${esc(t('claim_count'))}</th><th>${esc(t('claim_ded_short'))}</th><th>${esc(t('ca_net_short'))}</th><th>${esc(t('claim_case_cost'))}</th><th>${esc(t('claim_reimbursed_short'))}</th></tr></thead><tbody>${[...r.sums.by_year, { year: t('total'), ...r.sums.total }].map((y) => `<tr><td data-l="${esc(t('claim_year'))}">${esc(y.year)}</td><td data-l="${esc(t('claim_count'))}">${y.n}</td><td data-l="${esc(t('claim_ded_short'))}">${eur(y.deductible_net)}</td><td data-l="${esc(t('ca_net_short'))}">${eur(y.appraisal_net)}</td><td data-l="${esc(t('claim_case_cost'))}">${eur(y.case_cost_net)}${y.cost_incomplete ? ` <span class="small muted">(${esc(tn('claim_cost_incompl', y.cost_incomplete))})</span>` : ''}</td><td data-l="${esc(t('claim_reimbursed_short'))}">${eur(y.reimbursed_net)}</td></tr>`).join('')}</tbody></table></div><p class="small muted">${esc(t('claim_sums_hint'))}</p></section>` : ''}
+    <div class="actions noprint" style="flex-wrap:wrap;align-items:center"><button type="button" class="btn secondary" id="clcsv">${esc(t('export_csv'))}</button><label class="check" style="margin:0"><input type="checkbox" id="cl3p"> ${esc(t('claim_third_party'))}</label><button type="button" class="btn secondary" id="clprt">${esc(t('print'))}</button></div>`;
   render(html, 'more');
   $$('[data-clf]').forEach((b) => (b.onclick = () => { S.clFilter = b.dataset.clf; viewClaims(); }));
   const clq = $('#clq');
   clq.oninput = () => { clearTimeout(timer); timer = setTimeout(() => { const v = clq.value.trim(); if (v === (S.clQ || '')) return; S.clQ = v; viewClaims().then(() => { const n = $('#clq'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }); }, 300); };
   const cls = $('#clsite'); if (cls) cls.onchange = () => { S.claimSite = cls.value; viewClaims(); };
+  $('#clfrom').onchange = () => { S.clFrom = $('#clfrom').value || null; viewClaims(); };
+  $('#clto').onchange = () => { S.clTo = $('#clto').value || null; viewClaims(); };
+  const cli = $('#clins'); if (cli) cli.onchange = () => { S.clIns = cli.value || null; viewClaims(); };
   $('#clprt').onclick = () => window.print();
-  $('#clcsv').onclick = async () => { try { download(await api('GET', `/api/claims?format=csv&filter=${f}${csq}${qq}`), `fuhrpark-versicherungsfaelle_${envFn()}_${r.today}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#clcsv').onclick = async () => { try { download(await api('GET', `/api/claims?format=csv&filter=${f}${csq}${qq}${$('#cl3p').checked ? '&third_party=1' : ''}`), `fuhrpark-versicherungsfaelle_${envFn()}_${r.today}${r.site ? '_' + fnPart(r.site) : ''}${r.from || r.to ? '_' + (r.from || '') + '-' + (r.to || '') : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 // Verlauf der Auslesungen (Fahrerakte, Fahrzeugakte): stornierte durchgestrichen mit Begründung; Leitung kann stornieren (18.10.2026)
@@ -2075,6 +2117,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   $('#af').addEventListener('input', afUpd); $('#af').addEventListener('change', afUpd);
   const stockP = action === 'add_part' ? loadStockSelect(c) : null; // Promise erst am Ende zurückgeben – die Handler unten müssen gesetzt werden
   if ($('#dupsel')) $('#dupsel').onchange = () => { const ta = $('#af textarea[name=note]'); const o = $('#dupsel').selectedOptions[0]; if (ta && !ta.value && $('#dupsel').value) ta.value = `${t('dup_of')} ${o.textContent.split(' · ')[0]}`; };
+  offDayWatch($$('#af input[name=planned_date]'));
   $('#af').onsubmit = (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -2348,7 +2391,8 @@ async function saveVehicleForm(form, edit = false) {
   if (r && r.site_changed) {
     const sh = [r.open_workshop_cases ? tn('veh_site_ws_open', r.open_workshop_cases).replace('{list}', (r.open_workshop_sites || []).join(', ')) : '',
       r.planned_appointments ? tn('veh_site_planned', r.planned_appointments) : '',
-      ...(r.coupled_other_site || []).map((x) => t('veh_site_coupled').replace('{p}', x.plate).replace('{site}', x.site || t('cs_nosite')))].filter(Boolean);
+      ...(r.coupled_other_site || []).map((x) => t('veh_site_coupled').replace('{p}', x.plate).replace('{site}', x.site || t('cs_nosite'))),
+      (r.drivers_other_site || []).length ? t('veh_site_drivers').replace('{list}', () => r.drivers_other_site.map((x) => `${x.name} (${x.site})`).join(', ')) : ''].filter(Boolean);
     if (sh.length) setTimeout(() => toast(sh.join(' · '), true), (d && d.length ? 6000 : 400) + (tr && tr.length ? 6000 : 0));
   }
   return r;
@@ -3356,7 +3400,7 @@ async function viewFine(id) {
     ${!f.vehicle_id ? `<div class="panel alert" id="fvu">${d.vehicle_ambiguous ? `${esc(f.plate_in_letter)}: ${esc(t('fine_vehicle_ambiguous'))}` : `${esc(t('vehicle_unknown'))}: ${esc(f.plate_in_letter)}`}${d.vehicle_matchable ? `<div class="small" data-fmatch>${esc(t('fine_vehicle_matchable').replace('{p}', d.vehicle_matchable.plate))}</div>` : d.trailer_of ? `<div class="small" data-ftrailer>${esc(t('fine_trailer_of').replace('{p}', d.trailer_of.plate))}</div>` : ''}</div>` : ''}
     <section class="panel"><dl class="kv"><dt>${esc(t('offense'))}</dt><dd>${esc(t('of_' + f.offense_type))}</dd><dt>${esc(t('offense_at'))}</dt><dd>${fmtDT(f.offense_at)}</dd><dt>${esc(t('offense_place'))}</dt><dd>${esc(f.location || '–')}</dd>
       <dt>${esc(t('authority'))}</dt><dd>${esc(f.authority)}</dd><dt>${esc(t('reference'))}</dt><dd>${esc(f.reference || '–')}</dd><dt>${esc(t('amount'))}</dt><dd>${eur(f.amount_eur)}</dd>
-      <dt>${esc(t('response_due'))}</dt><dd>${f.response_due ? esc(fmtDue(f.response_due)) : '–'}${isWeekendD(f.response_due) ? `<div class="small muted">${esc(t('due_weekend_hint'))}</div>` : ''}</dd><dt>${esc(t('role_driver'))}</dt><dd>${f.driver_hidden ? esc(t('fine_driver_hidden')) : esc(d.driver_name || '–')}${f.driver_basis ? ' · ' + esc(t('fb_' + f.driver_basis)) : ''}${f.driver_evidence ? `<div class="small muted">${esc(fineEvTr(f.driver_evidence))}</div>` : ''}${d.driver_unreachable ? `<div class="panel alert small" data-funreach role="note" style="margin-top:6px">${esc(t('fine_driver_unreachable'))}</div>` : ''}</dd></dl>
+      <dt>${esc(t('response_due'))}</dt><dd>${f.response_due ? esc(fmtDue(f.response_due)) : '–'}${dueOffHint(f.response_due) ? `<div class="small muted">${esc(dueOffHint(f.response_due))}</div>` : ''}</dd><dt>${esc(t('role_driver'))}</dt><dd>${f.driver_hidden ? esc(t('fine_driver_hidden')) : esc(d.driver_name || '–')}${f.driver_basis ? ' · ' + esc(t('fb_' + f.driver_basis)) : ''}${f.driver_evidence ? `<div class="small muted">${esc(fineEvTr(f.driver_evidence))}</div>` : ''}${d.driver_unreachable ? `<div class="panel alert small" data-funreach role="note" style="margin-top:6px">${esc(t('fine_driver_unreachable'))}</div>` : ''}</dd></dl>
       ${f.note ? `<p style="white-space:pre-wrap;margin-top:8px">${esc(f.note)}</p>` : ''}</section>`;
   html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((x) => `<a href="${fileUrl(x.id)}" target="_blank" rel="noopener">${x.content_type.startsWith('image/') ? `<img src="${fileUrl(x.id)}" alt="${esc(x.filename)}">` : 'PDF<br>' + esc(x.filename.slice(0, 14))}</a>`).join('')}</div>`;
   // Höchstzahl je Bußgeldvorgang wie Server (MAX_FINE_FILES): voll → Hinweis statt Knopf
@@ -3691,7 +3735,7 @@ function vehInfo(vi, c) {
   if (!vi || (!vi.other_open_total && !vi.inspections_due.length && !vi.last_km && !prev.length && !vn.length && !wr.length)) return '';
   const today = bDate();
   const parts = [];
-  if (vi.other_open_total) parts.push(`<dt>${esc(t('vi_other_cases'))}</dt><dd>${vi.other_open_cases.map((o) => `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a> <span class="chip ${esc(o.priority)}">${esc(t('st_' + o.status))}</span>${o.safety_lock ? ` <span class="chip kritisch">${esc(t('locked'))}</span>` : ''}`).join('<br>')}${vi.other_open_total > vi.other_open_cases.length ? `<br><span class="small muted">+${vi.other_open_total - vi.other_open_cases.length}</span>` : ''}</dd>`);
+  if (vi.other_open_total) parts.push(`<dt>${esc(t('vi_other_cases'))}</dt><dd>${vi.other_open_cases.map((o) => `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a> <span class="chip ${esc(o.priority)}">${esc(t('st_' + o.status))}</span>${o.safety_lock ? ` <span class="chip kritisch">${esc(t('locked'))}</span>` : ''}${o.description ? `<br><span class="small" data-ocdesc>${ltxt(clipTxt(cDesc(o.description), 90))}${o.created_at ? ` <span class="muted">· ${fmtDT(o.created_at)}</span>` : ''}</span>` : ''}`).join('<br>')}${vi.other_open_total > vi.other_open_cases.length ? `<br><span class="small muted">+${vi.other_open_total - vi.other_open_cases.length}</span>` : ''}</dd>`);
   if (vi.inspections_due.length) parts.push(`<dt>${esc(t('vi_due'))}${vi.inspections_due.some((m) => m.recall_ref) ? ' · ' + esc(t('vi_recalls')) : ''}</dt><dd>${vi.inspections_due.map((m) => `${esc(mk(m.kind))} ${m.next_due_date ? fmtD(m.next_due_date) : esc(t('vi_recall_open'))}${m.next_due_date && m.next_due_date < today ? ` <span class="chip kritisch">${esc(t('ms_ueberfaellig'))}</span>` : ''}${m.recall_ref ? ` <span class="small muted">(${esc(m.recall_ref)})</span>` : ''}`).join('<br>')}${(vi.inspections_due_total || 0) > vi.inspections_due.length ? `<br><span class="small muted" id="vidmore">+${vi.inspections_due_total - vi.inspections_due.length} · <a href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${esc(t('vi_due_all'))} ›</a></span>` : ''}</dd>`);
   if (prev.length) parts.unshift(`<dt>${esc(t('vi_prev_same'))}</dt><dd>${prev.map((o) => `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a> · ${esc(t('st_fahrzeug_freigegeben'))} ${fmtD(o.closed_at)}`).join('<br>')}<div class="small muted">${esc(t('vi_prev_same_hint'))}</div></dd>`);
   if (wr.length) parts.unshift(`<dt>${esc(t('vi_warranty'))}</dt><dd>${wr.map((w) => `<a href="#/cases/${esc(w.case_id)}">${esc(w.case_no)}</a> · ${esc(w.item)}${w.item_kind === 'part' && w.supplier ? ` <span class="small muted">(${esc(supplierLabel(w.supplier))})</span>` : ''} · ${esc(t('warranty_until_d').replace('{d}', fmtD(w.warranty_until)))}`).join('<br>')}${vi.warranties_truncated ? `<div class="small" role="note" data-warrmore>${esc(t('warr_more').replace('{n}', vi.warranties_max))}</div>` : ''}<div class="small muted">${esc(t('vi_warranty_hint'))}</div></dd>`);
@@ -4313,7 +4357,7 @@ async function viewKpi() {
   // Technische Verfügbarkeit (Flotte) – nur ohne Werkstattfilter; Liste der geringsten nur mit Ausfall
   const pct = (x) => `${fmtNum(x, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
   const av = r.availability;
-  if (av) html += `<section class="panel" id="kpiav"><h3>${esc(t('kpi_av'))}</h3><p><b style="font-size:1.4em">${esc(pct(av.pct))}</b> <span class="muted">${esc(t('kpi_av_of'))}</span></p><p>${esc(t('kpi_av_line').replace('{n}', fmtNum(av.vehicles)).replace('{d}', dur(av.downtime_h)))}</p>${av.lowest.length ? `<h4>${esc(t('kpi_av_lowest'))}</h4><div class="list">${av.lowest.map((x) => `<a class="row" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate || x.vehicle_id)}<span class="title">${esc(pct(x.pct))}</span><span class="sub">${esc(t('kpi_downtime'))}: ${dur(x.downtime_h)}</span></a>`).join('')}</div>` : `<p class="muted">${esc(t('kpi_av_none'))}</p>`}<p class="small muted">${esc(t('kpi_av_rule'))}</p></section>`;
+  if (av) html += `<section class="panel" id="kpiav"><h3>${esc(t('kpi_av'))}</h3><p><b style="font-size:1.4em">${esc(pct(av.pct))}</b> <span class="muted">${esc(t('kpi_av_of'))}</span></p><p>${esc(t('kpi_av_line').replace('{n}', fmtNum(av.vehicles)).replace('{d}', dur(av.downtime_h)))}</p>${av.lowest.length ? `<h4>${esc(t('kpi_av_lowest'))}</h4><div class="list">${av.lowest.map((x) => `<a class="row" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate || x.vehicle_id)}<span class="title">${esc(pct(x.pct))}</span><span class="sub">${esc(t('kpi_downtime'))}: ${dur(x.downtime_h)}</span></a>`).join('')}</div>` : `<p class="muted">${esc(t('kpi_av_none'))}</p>`}<p class="small muted">${esc(t('kpi_av_rule'))}</p><p class="small muted" id="kpical">${esc(t('kpi_calendar_hint'))}</p></section>`;
   else if (r.site) html += `<p class="small muted" id="kpiavsite">${esc(t('kpi_av_site'))}</p>`;
   // Fahrzeugliste: meiste Werkstattzeit zuerst, die ersten KPI_VEH_MAX; Gesamtzahl und „Alle anzeigen“ statt stillem Abschneiden (Druck zeigt alle)
   const kvAll = !!S.kpiVehAll || r.vehicles.length <= KPI_VEH_MAX; const kvShown = kvAll ? r.vehicles : r.vehicles.slice(0, KPI_VEH_MAX);
@@ -4431,7 +4475,8 @@ async function viewTimeline(id, fArg) {
         const meta = x.note_event === 'archive' ? [t('vnote_archived')] : x.note_event === 'expire' ? [t('vnote_expired').replace('{d}', fmtD(x.valid_until))] : [x.for_driver ? t('vnote_driver_chip') : '', x.valid_until ? t('vnote_until').replace('{d}', fmtD(x.valid_until)) : ''];
         return ['', `${esc(t('vnotes'))}: ${gone ? `<s>${esc(x.text)}</s>` : esc(x.text)}`, esc(meta.filter(Boolean).join(' · '))]; }
       case 'fine': return ['', `${esc(t('fk_' + x.fine_kind))}: <a href="#/fines/${esc(x.fine_id)}">${esc(x.fine_no)}</a>`, esc(t('fs_' + x.status))];
-      case 'status': return [['eval_exclude', 'deactivate'].includes(x.status_event) ? 'p-mittel' : '', esc(t('tl_st_' + x.status_event)), `${x.status_reason ? esc(t('inactive_reason')) + ': ' + esc(x.status_reason) : ''}${x.status_reason && x.by ? ' · ' : ''}${x.by ? esc(x.by) : ''}`];
+      case 'status': if (x.status_event === 'site') return ['', esc(t('tl_st_site')), `${esc(x.site_from || t('cs_nosite'))} → ${esc(x.site_to || t('cs_nosite'))}${x.by ? ' · ' + esc(x.by) : ''}`];
+        return [['eval_exclude', 'deactivate'].includes(x.status_event) ? 'p-mittel' : '', esc(t('tl_st_' + x.status_event)), `${x.status_reason ? esc(t('inactive_reason')) + ': ' + esc(x.status_reason) : ''}${x.status_reason && x.by ? ' · ' : ''}${x.by ? esc(x.by) : ''}`];
       default: return ['', esc(x.type), ''];
     }
   };
@@ -4520,7 +4565,7 @@ async function viewPlan(sec) {
   // begonnene Aufträge mit vergangenem Termin (Backlog 253): eigene Gruppe, Termin neutral, Teile-Liefertermin in der Zeile
   const iw = r.in_work || [];
   if (iw.length) html += `<h2 id="wp-inwork">${esc(t('wplan_inwork'))} <span class="chip">${iw.length}</span></h2><p class="small muted noprint">${esc(t('wplan_inwork_hint'))}</p><div class="list">${iw.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip">${fmtD(i.planned_date)} · `))).join('')}</div>`;
-  html += r.days.length ? r.days.map((d) => `<h2>${esc(wd(d.date))}${d.date === r.today ? ` <span class="chip ok">${esc(t('today'))}</span>` : ''}</h2><div class="list">${d.items.map(drowC).join('')}</div>`).join('') : `<div class="panel">${esc(t('wplan_empty'))}</div>`;
+  html += r.days.length ? r.days.map((d) => `<h2>${esc(wd(d.date))}${d.date === r.today ? ` <span class="chip ok">${esc(t('today'))}</span>` : ''}${holName(d.date) ? ` <span class="chip mittel" data-hol title="${esc(t('plan_holiday_hint'))}">${esc(holName(d.date))}</span>` : ''}</h2><div class="list">${d.items.map(drowC).join('')}</div>`).join('') : `<div class="panel">${esc(t('wplan_empty'))}</div>`;
   if (r.unplanned.length) html += `<h2>${esc(t('wplan_unplanned'))} <span class="chip mittel">${r.unplanned.length}</span></h2><p class="small muted noprint">${esc(t('wplan_unplanned_hint'))}</p><div class="list">${r.unplanned.map((i) => prow(i, row(i))).join('')}</div>`;
   const md = r.maintenance_due || [];
   if (md.length) html += `<h2 id="wp-mdue" tabindex="-1" data-keepfocus>${esc(t('wplan_mdue'))} <span class="chip ${md.some((i) => i.status === 'ueberfaellig') ? 'kritisch' : 'mittel'}">${md.length}</span></h2><p class="small muted noprint">${esc(t('wplan_mdue_hint'))}</p><div class="list">${md.map((i) => { const f = !['HU', 'SP'].includes(i.kind) ? maintOrderHtml(i.id, i.kind, null, { site: i.vehicle_site }) : ''; return f ? `<div class="planitem">${drow(i)}${f}</div>` : drow(i); }).join('')}</div>`;
@@ -4534,7 +4579,8 @@ async function viewPlan(sec) {
     const minD = i.status === 'wartet_teile' && i.parts_expected_date > r.today ? i.parts_expected_date : '';
     // Hat dasselbe Fahrzeug ab morgen schon einen Termin (anderer Auftrag oder Prüfung) an einem Werktag: diesen vorschlagen –
     // das Fahrzeug fällt dann nur einmal aus. Sonst Werktag ab morgen mit den wenigsten geplanten Aufträgen derselben Werkstatt.
-    const same = r.days.filter((d) => d.date > r.today && d.date >= minD && ![0, 6].includes(new Date(d.date + 'T12:00:00Z').getUTCDay())
+    // Wochenende und bundesweite Feiertage nie vorschlagen (Backlog 267; vorher z. B. 25.12./01.01.)
+    const same = r.days.filter((d) => d.date > r.today && d.date >= minD && ![0, 6].includes(new Date(d.date + 'T12:00:00Z').getUTCDay()) && !federalHoliday(d.date)
       && d.items.some((x) => x.vehicle_id === i.vehicle_id && x.id !== i.id && (x.type === 'maintenance' || x.workshop_site === i.workshop_site)))[0];
     if (same) return same.date;
     // Auslastung vom Server (alle Aufträge der Werkstatt, auch bei Fahrzeug-Standortfilter); ältere Antwort: aus den angezeigten Tagen
@@ -4544,6 +4590,7 @@ async function viewPlan(sec) {
       const d = new Date(Date.parse(r.today + 'T00:00:00Z') + n * 86400000);
       if ([0, 6].includes(d.getUTCDay())) continue;
       const ds = [d.getUTCFullYear(), String(d.getUTCMonth() + 1).padStart(2, '0'), String(d.getUTCDate()).padStart(2, '0')].join('-'); const c = load.get(ds) || 0;
+      if (federalHoliday(ds)) continue;
       if (ds < minD) continue;
       if (!best || c < best.c) best = { ds, c };
       if (ds >= r.to && ds >= minD && best) break;
@@ -4552,6 +4599,7 @@ async function viewPlan(sec) {
   };
   // Werkstattauftrag aus „Fällig – ohne Termin“ (nur Leitung, nicht HU/SP): bleibt im Plan, der Auftrag erscheint danach unter „Ohne Termin“
   $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const x = await api('POST', `/api/maintenance/${fm.dataset.mord}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }); toast('✓ ' + x.case_no); viewPlan(); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
+  offDayWatch($$('.planset input[type=date]'));
   $$('[data-psug]').forEach((b) => (b.onclick = () => { const i = all.find((x) => x.id === b.dataset.psug); const f = $('#pd-' + CSS.escape(i.id)); f.value = suggest(i) || ''; f.focus(); }));
   $$('[data-pset]').forEach((b) => (b.onclick = async () => {
     const i = all.find((x) => x.id === b.dataset.pset); const f = $('#pd-' + CSS.escape(i.id));
@@ -4678,7 +4726,7 @@ async function viewQuality(pre) {
 
 // ---------- Nutzungsstatistik (Inhaber, ohne Personenbezug) ----------
 // Einrichtungsstand (nur Inhaber, nur lesend, 22.10.2026): was vor bzw. im Betrieb noch offen ist – Werte nur aus Daten/Einstellungen
-const RD_ORDER = ['agent', 'vehicles', 'emergency', 'two_factor', 'own_push', 'idle_workshop', 'test_readonly', 'hourly_rate', 'license_interval', 'cost_limit', 'backup', 'prod_accounts', 'integration'];
+const RD_ORDER = ['agent', 'vehicles', 'emergency', 'two_factor', 'own_push', 'idle_workshop', 'test_readonly', 'hourly_rate', 'license_interval', 'cost_limit', 'backup', 'owner_backup', 'prod_accounts', 'integration'];
 async function viewReadiness() {
   if (!S.me || S.me.role !== 'owner') { location.hash = '#/'; return; }
   const r = await api('GET', '/api/admin/readiness');
@@ -4688,7 +4736,7 @@ async function viewReadiness() {
     if (x.key === 'two_factor' && x.names && x.names.length) return x.names.map((n) => `${n.name} (${t('role_' + n.role)})`).join(', ');
     if (x.key === 'agent' && x.last) return `${t('rd_last_run')}: ${fmtDT(x.last)}`;
     if (x.key === 'backup' && x.last) return `${t('rd_last_backup')}: ${fmtD(x.last)}`;
-    if (x.key === 'vehicles' || x.key === 'emergency' || x.key === 'own_push') return `${t('rd_count')}: ${x.n || 0}`;
+    if (x.key === 'vehicles' || x.key === 'emergency' || x.key === 'own_push' || x.key === 'owner_backup') return `${t('rd_count')}: ${x.n || 0}`;
     if (x.key === 'idle_workshop' && x.value) return `${x.value} min`;
     if (x.key === 'prod_accounts') return [...['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'].filter((k) => x.roles && x.roles[k]).map((k) => `${t('role_' + k)}: ${x.roles[k]}`), `${t('rd_open_invites')}: ${x.open_invites || 0}`, `${t('rd_test_accounts')}: ${x.test_accounts || 0}`].join(' · ');
     return '';
@@ -5139,7 +5187,7 @@ async function viewSettings(sec) {
   const DEC = ['workshop_hourly_rate_net', 'tire_warn_tread_mm', 'repair_cost_limit_net'];
   const field = (k, label) => `<label for="${k}">${esc(label)}</label><input id="${k}" name="${k}" inputmode="${DEC.includes(k) ? 'decimal' : 'numeric'}"${s.defaults && s.defaults[k] !== undefined ? ` placeholder="${esc(fmtNum(s.defaults[k]))}"` : ''} value="${esc(shown(v[k]))}">`; // Platzhalter = Standard bei leerem Feld (Server)
   const slaRows = ['test', 'production'].map((e) => `<h3>${esc(e === 'test' ? t('env_testname') : t('env_prod'))}</h3><div class="scroll"><table class="stack slatab"><thead><tr><th></th>${['niedrig', 'mittel', 'kritisch'].map((p) => `<th>${esc(t('prio_' + p))}</th>`).join('')}</tr></thead><tbody>${['triage', 'ack'].map((k) => `<tr><td class="slak">${esc(k === 'triage' ? t('act_receive') : t('act_acknowledge'))}</td>${['niedrig', 'mittel', 'kritisch'].map((p) => p === 'kritisch' ? `<td class="small muted" style="white-space:nowrap" data-label="${esc(t('prio_' + p))}">${esc(t('sla_immediate'))}</td>` /* Agent meldet kritische Vorgänge sofort – eine Frist wirkte nie (20.10.2026) */ : `<td data-label="${esc(t('prio_' + p))}"><input name="sla_${e}_${k}_${p}_min" inputmode="numeric" style="width:4em;padding:6px" value="${esc(v[`sla_${e}_${k}_${p}_min`] ?? '')}" aria-label="${esc((e === 'test' ? t('env_testname') : t('env_prod')) + ' · ' + (k === 'triage' ? t('act_receive') : t('act_acknowledge')) + ' · ' + t('prio_' + p) + ' (min)')}"></td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join('');
-  render(`<h1>${esc(t('settings'))}</h1>${helpLink('settings')}<div id="sinv"></div><form id="sf" class="panel"><label class="check"><input type="checkbox" id="tmr"${v.test_master_readonly === '1' ? ' checked' : ''}> ${esc(t('test_master_readonly'))}</label><p class="small muted">${esc(t('test_master_readonly_hint'))}</p>${field('idle_logout_workshop_min', t('idle_ws'))}${field('idle_logout_other_min', t('idle_other'))}<p class="small muted">${esc(t('idle_hint'))}</p>${field('workshop_hourly_rate_net', t('hourly_rate'))}${field('maintenance_warn_days', t('warn_days'))}${field('maintenance_warn_km', t('warn_km'))}${field('tire_warn_tread_mm', t('tire_warn'))}${field('tire_warn_age_years', t('tire_warn_age'))}<p class="small muted">${esc(t('tire_age_hint'))}</p>${field('fine_warn_days', t('fine_warn'))}${field('driver_doc_warn_days', t('driver_doc_warn'))}${field('license_check_months', t('license_check_months'))}${field('tacho_warn_days', t('tacho_warn'))}${field('contract_warn_days', t('ct_warn'))}<p class="small muted">${esc(t('warn_zero_hint'))}</p>${field('claim_followup_days', t('claim_followup'))}${field('case_stale_days', t('case_stale_setting'))}${field('user_unused_days', t('unused_setting'))}<p class="small muted">${esc(t('unused_setting_hint'))}</p>${field('repair_cost_limit_net', t('cost_limit_setting'))}<p class="small muted">${esc(t('cost_limit_setting_hint'))}</p><h2>${esc(t('sla'))}</h2>${slaRows}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form>
+  render(`<h1>${esc(t('settings'))}</h1>${helpLink('settings')}<div id="sinv"></div><form id="sf" class="panel"><label class="check"><input type="checkbox" id="tmr"${v.test_master_readonly === '1' ? ' checked' : ''}> ${esc(t('test_master_readonly'))}</label><p class="small muted">${esc(t('test_master_readonly_hint'))}</p>${field('idle_logout_workshop_min', t('idle_ws'))}${field('idle_logout_other_min', t('idle_other'))}<p class="small muted">${esc(t('idle_hint'))}</p>${field('workshop_hourly_rate_net', t('hourly_rate'))}${field('maintenance_warn_days', t('warn_days'))}${field('maintenance_warn_km', t('warn_km'))}${field('tire_warn_tread_mm', t('tire_warn'))}${field('tire_warn_age_years', t('tire_warn_age'))}<p class="small muted">${esc(t('tire_age_hint'))}</p>${field('fine_warn_days', t('fine_warn'))}${field('driver_doc_warn_days', t('driver_doc_warn'))}${field('license_check_months', t('license_check_months'))}${field('tacho_warn_days', t('tacho_warn'))}${field('contract_warn_days', t('ct_warn'))}<p class="small muted">${esc(t('warn_zero_hint'))}</p>${field('claim_followup_days', t('claim_followup'))}${field('case_stale_days', t('case_stale_setting'))}${field('user_unused_days', t('unused_setting'))}<p class="small muted">${esc(t('unused_setting_hint'))}</p>${field('repair_cost_limit_net', t('cost_limit_setting'))}<p class="small muted">${esc(t('cost_limit_setting_hint'))}</p><h2>${esc(t('sla'))}</h2>${slaRows}<p class="small muted" id="slacal">${esc(t('sla_calendar_hint'))}</p><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form>
     <section class="panel"><h2 style="margin-top:0">${esc(t('import_csv'))}</h2><p class="small muted">${esc(t('import_vehicle_cols'))} · ${esc(t('import_trailer_hint'))}</p><input type="file" id="csv" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_csv'))}"><div id="csvr"></div></section>
     <section class="panel"><h2 style="margin-top:0">${esc(t('import_tires'))}</h2><p class="small muted" id="tirecols">${esc(t('import_tire_cols'))}</p><input type="file" id="tcsv" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_tires'))}"><div id="tcsvr"></div></section>
     <section class="panel"><h2 style="margin-top:0">${esc(t('backup'))}</h2><p class="small muted">${esc(t('backup_hint'))}</p><button type="button" class="btn secondary" id="bkp">${esc(t('backup_download'))}</button></section>`, 'more');
@@ -5203,7 +5251,7 @@ async function viewSettings(sec) {
       $('#csvr').innerHTML = `<p><b>${esc(t('preview'))}:</b> ${esc(t('imp_new'))}: ${r.counts.neu} · ${esc(t('imp_changed'))}: ${r.counts.geaendert} · ${esc(t('imp_same'))}: ${r.counts.unveraendert}</p>${skipped(r)}${pcHtml}${kdHtml}${ikHtml}${siHtml}
         ${changed.length ? `<div class="list">${changed.slice(0, 200).map((x) => `<div class="row ${x.action === 'neu' ? '' : 'p-mittel'}"><span class="chip">${esc(t('line'))} ${x.line}</span><span class="title">${esc(x.plate)}</span><span class="chip">${esc(x.action === 'neu' ? t('imp_new') : x.action === 'unverändert' ? t('imp_same') : t('imp_changed'))}</span>${(x.changes && x.changes.length) || x.plate_conflict || x.year_unrecognized ? `<span class="sub" style="white-space:normal">${[...(x.plate_conflict ? [`⚠ ${esc(t('dq_duplicate_plate'))}`] : []), ...(x.year_unrecognized ? [`⚠ ${esc(t('imp_year_unrecognized').replace('{v}', x.year_unrecognized))}`] : []), ...(x.changes || []).map((c) => `${esc(FL[c.field] || c.field)}: ${esc(c.field === 'kind' && c.from ? t('vk_' + c.from) : c.from ?? '–')} → ${esc(c.field === 'kind' ? t('vk_' + c.to) : c.to)}`)].join(' · ')}</span>` : ''}</div>`).join('')}</div>${impMore(changed.length, 200)}` : ''}
         <p class="small muted">${esc(t('imp_keep_hint'))}</p><div class="actions"><button type="button" class="btn" id="csvgo"${r.preview.length ? '' : ' disabled'}>${esc(t('apply_import'))}</button></div>`;
-      $('#csvgo').onclick = async () => { try { const g = await api('POST', '/api/vehicles/import', text, { headers: { 'content-type': 'text/csv' } }); $('#csvr').innerHTML = `<p>✓ ${g.imported}</p>${skipped(g)}`; } catch (err) { toast(err.message, true); } };
+      $('#csvgo').onclick = async () => { try { const g = await api('POST', '/api/vehicles/import', text, { headers: { 'content-type': 'text/csv' } }); $('#csvr').innerHTML = `<p>✓ ${g.imported}</p>${skipped(g)}${(g.site_changes || []).length ? `<div class="panel warn small" id="impsite"><b>${esc(t('imp_site_changes'))}</b><ul>${g.site_changes.map((x) => `<li>${esc(x.plate)} → ${esc(x.site || t('cs_nosite'))}: ${[x.open_workshop_cases ? tn('veh_site_ws_open', x.open_workshop_cases).replace('{list}', () => (x.open_workshop_sites || []).join(', ')) : '', x.planned_appointments ? tn('veh_site_planned', x.planned_appointments) : '', x.drivers_other_site.length ? t('veh_site_drivers').replace('{list}', () => x.drivers_other_site.map((d) => `${d.name} (${d.site})`).join(', ')) : ''].filter(Boolean).map(esc).join(' · ')}</li>`).join('')}</ul></div>` : ''}`; } catch (err) { toast(err.message, true); } };
     } catch (err) { toast(err.message, true); }
   };
 }

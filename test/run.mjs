@@ -20772,6 +20772,172 @@ await test('Backlog 266 (Blickwinkel „Kurzfristiges Mietfahrzeug“): Außer B
   ok(app.includes("t('deact_drivers_ended').replace('{list}'") && app.includes("esc(t('vin_hint_new'))"), 'Oberfläche');
 });
 
+await test('Backlog 267 (Blickwinkel „Feiertage und Brückentage“): bundesweite gesetzliche Feiertage nach Gesetz berechnet (Ostern-Formel), Hinweis an Antwortfristen, Werkstattplan kennzeichnet sie und schlägt sie nicht vor; Texte DE/UK/EN; im Service Worker', async () => {
+  const { federalHoliday, HOLIDAY_KEYS } = await import('../public/holidays.js');
+  // Ostersonntage laut Kalender: 2026-04-05, 2027-03-28, 2028-04-16, 2038-04-25
+  eq(federalHoliday('2026-04-03'), 'karfreitag'); eq(federalHoliday('2026-04-06'), 'ostermontag'); eq(federalHoliday('2026-05-14'), 'himmelfahrt'); eq(federalHoliday('2026-05-25'), 'pfingstmontag');
+  eq(federalHoliday('2027-03-26'), 'karfreitag'); eq(federalHoliday('2027-03-29'), 'ostermontag'); eq(federalHoliday('2028-04-17'), 'ostermontag'); eq(federalHoliday('2038-04-26'), 'ostermontag');
+  eq(federalHoliday('2026-10-03'), 'einheit'); eq(federalHoliday('2026-12-25'), 'weihnacht1'); eq(federalHoliday('2026-12-26'), 'weihnacht2'); eq(federalHoliday('2027-01-01'), 'neujahr'); eq(federalHoliday('2027-05-01'), 'tag_der_arbeit');
+  eq(federalHoliday('2026-11-01'), null, 'Allerheiligen: landesrechtlich, nicht bundesweit'); eq(federalHoliday('2026-06-04'), null, 'Fronleichnam nicht'); eq(federalHoliday('2026-12-24'), null); eq(federalHoliday('2026-10-26'), null);
+  eq(federalHoliday(''), null); eq(federalHoliday('kein Datum'), null); eq(federalHoliday(null), null);
+  let n = 0; for (let d = Date.UTC(2026, 0, 1); d < Date.UTC(2027, 0, 1); d += 864e5) if (federalHoliday(new Date(d).toISOString().slice(0, 10))) n++; eq(n, 9, 'neun je Jahr');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of HOLIDAY_KEYS) ok(STRINGS[l]['hol_' + k], `${l}.hol_${k}`); for (const k of ['due_holiday_hint', 'plan_holiday_hint']) ok(STRINGS[l][k], `${l}.${k}`); }
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("import { federalHoliday } from './holidays.js';") && app.includes('&& !federalHoliday(d.date)') && app.includes('if (federalHoliday(ds)) continue;') && app.includes('data-hol title='), 'Werkstattplan');
+  ok(app.includes("const dueOffHint = (iso) => (federalHoliday(iso) ? t('due_holiday_hint')"), 'Antwortfrist');
+  ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/holidays.js'"), 'Service Worker');
+});
+
+await test('Backlog 268: Hinweise „Kalenderzeit“ an SLA-Einstellungen und Verfügbarkeit; Bußgeld-Fristenkalender nennt Wochenende/Feiertag in der Beschreibung (Termin bleibt der Tag laut Schreiben)', async () => {
+  const { finesIcs } = await import('../src/fines.js');
+  const cal = (title, evs) => evs.map((e) => `${e.date}|${e.description}`).join('\n');
+  const rows = [{ id: 'a', response_due: '2026-12-25', status: 'offen', authority: 'Stadt A', kind: 'bussgeld', plate: 'X 1', fine_no: '1' },
+    { id: 'b', response_due: '2026-10-31', status: 'offen', authority: 'Stadt B', kind: 'bussgeld', plate: 'X 2', fine_no: '2' },
+    { id: 'c', response_due: '2026-10-27', status: 'offen', authority: 'Stadt C', kind: 'bussgeld', plate: 'X 3', fine_no: '3' }];
+  const out = finesIcs(rows, 3, cal, null, 'de').split('\n');
+  ok(out[0].startsWith('2026-12-25|') && out[0].includes('Wochenende/Feiertag'), 'Feiertag'); ok(out[1].includes('Wochenende/Feiertag'), 'Samstag'); ok(!out[2].includes('Wochenende/Feiertag'), 'Werktag ohne Hinweis');
+  ok(finesIcs(rows, 3, cal, null, 'en').includes('weekend/public holiday'), 'EN');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['sla_calendar_hint', 'kpi_calendar_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="slacal"') && app.includes('id="kpical"'), 'Oberfläche');
+});
+
+await test('Backlog 269: Hinweis beim von Hand gewählten Werkstatttermin an Wochenende/bundesweitem Feiertag (Aktionsformulare und Werkstattplan), Texte DE/UK/EN', async () => {
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].plan_offday_hint && STRINGS[l].plan_offday_hint.includes('{d}'), `${l}.plan_offday_hint`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('function offDayWatch(els)') && app.includes("offDayWatch($$('#af input[name=planned_date]'));") && app.includes("offDayWatch($$('.planset input[type=date]'));"), 'Oberfläche');
+});
+
+await test('Backlog 270 (Blickwinkel „Fahrer ruft die Disposition an“): Meldeformular zeigt Disposition/Leitung/Werkstatt die offenen Vorgänge des gewählten Fahrzeugs (Vorgangsliste mit vehicle_id liefert die nötigen Felder)', async () => {
+  const { U, newCase, V1 } = await freshWorld();
+  const id = await newCase({ description: 'Bremse links zieht stark', priority: 'mittel' });
+  const dsp = (await U.own.post('/api/users', { username: 'w.dispo270', display_name: 'Dispo 270', role: 'dispatch', environment: 'test' }));
+  ok(dsp.status < 300, 'Disposition eingeladen');
+  const r = await U.fleet.get(`/api/cases?status=open&limit=50&vehicle_id=${encodeURIComponent(V1)}`); eq(r.status, 200);
+  const c = r.data.cases.find((x) => x.id === id); ok(c, 'offener Vorgang des Fahrzeugs');
+  for (const k of ['id', 'description', 'priority', 'status', 'created_at']) ok(c[k] !== undefined, 'Feld ' + k);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (S.me.role !== 'driver') {\n    let seq = 0;") && app.includes('/api/cases?status=open&limit=50&vehicle_id=${encodeURIComponent(sel.value)}'), 'Oberfläche');
+});
+
+await test('Backlog 271 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Standortwechsel nennt zugeordnete Fahrer, deren Fahrerakte einen anderen Standort hat (nichts wird geändert); Zeitleiste zeigt Standortwechsel (272)', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES('dv-271',?,?,?,?,?,'test')`).run(U.driver.id, V1, '2026-01-01T00:00:00.000Z', U.fleet.id, now);
+  db.prepare(`INSERT INTO drivers(id,environment,display_name,active,created_by,created_at,updated_at,site,user_id) VALUES ('dr-271','test','Fahrer W',1,?,?,?,'Dortmund',?)`).run(U.fleet.id, now, now, U.driver.id);
+  const save = (b) => U.own.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', manufacturer: 'MAN', build_year: 2016, keep_active: true, ...b });
+  const r = await save({ site: 'Bayern' }); eq(r.status, 201, JSON.stringify(r.data)); eq(r.data.site_changed, true);
+  eq(JSON.stringify(r.data.drivers_other_site), JSON.stringify([{ name: 'Fahrer W', site: 'Dortmund' }]), 'Fahrer mit Akte Dortmund genannt');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM driver_vehicles WHERE vehicle_id=? AND valid_to IS NULL`).get(V1).n, 1, 'Zuordnung bleibt');
+  const r2 = await save({ site: 'Dortmund' }); eq(r2.data.drivers_other_site.length, 0, 'zurück nach Dortmund: kein Hinweis');
+  // Backlog 272: Zeitleiste der Akte zeigt beide Standortwechsel mit Person
+  const tl = (await U.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline`)).data;
+  const ev = (tl.events || tl.items || []).filter((x) => x.type === 'status' && x.status_event === 'site');
+  eq(ev.length, 2, 'zwei Standortwechsel ' + JSON.stringify(ev)); ok(ev.some((x) => x.site_from === 'Dortmund' && x.site_to === 'Bayern'), 'Dortmund → Bayern'); ok(ev.every((x) => x.by), 'Person');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].veh_site_drivers, `${l}.veh_site_drivers`); ok(STRINGS[l].tl_st_site, `${l}.tl_st_site`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("t('veh_site_drivers').replace('{list}'"), 'Oberfläche');
+});
+
+await test('Backlog 273: Fahrzeug-CSV-Import mit Standortwechsel nennt offene Werkstattaufträge (mit Werkstatt), geplante Prüftermine und Fahrer anderer Standorte; Vorschau unverändert, ohne Wechsel kein Hinweis', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  await newCase({ description: 'Bremse zieht (vor Versetzung)' });
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES('dv-273',?,?,?,?,?,'test')`).run(U.driver.id, V1, '2026-01-01T00:00:00.000Z', U.fleet.id, now);
+  db.prepare(`INSERT INTO drivers(id,environment,display_name,active,created_by,created_at,updated_at,site,user_id) VALUES ('dr-273','test','Fahrer W',1,?,?,?,'Dortmund',?)`).run(U.fleet.id, now, now, U.driver.id);
+  const csv = (site) => `Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN;Anhänger Kennzeichen\nSZ-YC 5513;${site};in Betrieb;MAN;2016;WMA15SZZ2HM722774;`;
+  const dry = await U.own.req('POST', '/api/vehicles/import?dry_run=1', csv('Bayern'), { 'content-type': 'text/csv' }); ok(!dry.data.site_changes, 'Vorschau ohne Hinweis');
+  const r = await U.own.req('POST', '/api/vehicles/import', csv('Bayern'), { 'content-type': 'text/csv' }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(r.data.site_changes.length, 1); const x = r.data.site_changes[0];
+  eq(x.plate, 'SZ-YC 5513'); eq(x.site, 'Bayern'); eq(x.open_workshop_cases, 1); eq(x.open_workshop_sites.join(), 'DORTMUND'); eq(x.drivers_other_site.map((d) => d.name).join(), 'Fahrer W');
+  const r2 = await U.own.req('POST', '/api/vehicles/import', csv('Bayern'), { 'content-type': 'text/csv' }); ok(!r2.data.site_changes, 'unverändert: kein Hinweis');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].imp_site_changes, `${l}.imp_site_changes`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id=\\"impsite\\"') || app.includes('id="impsite"'), 'Oberfläche');
+});
+
+await test('Backlog 274 (Blickwinkel „Versicherer verlangt eine Schadenaufstellung“): Versicherungsfälle nach Meldezeitraum und Versicherer (nur eigene Seite), Zähler im Filter, CSV mit Vertragsnummer und Vorgangsdatum, ungültiger Zeitraum abgewiesen', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,evidence,created_by,created_at,updated_at) VALUES ('k-274',?,'versicherung','Testversicherer AG','VS-4711','2024-01-01','Police',?,?,?)`).run(V1, U.fleet.id, now, now);
+  const ins = db.prepare(`INSERT INTO insurance_claims(id,environment,case_id,vehicle_id,insurer,reported_on,status,evidence,created_by,created_at,updated_at,contract_id,opponent_insurer) VALUES (?,'test',?,?,?,?,'gemeldet','Test',?,?,?,?,?)`);
+  const a = await newCase({ description: 'Unfall 2024' }, U.fleet); const b = await newCase({ description: 'Unfall 2025' }, U.fleet); const c = await newCase({ description: 'Unfall 2026' }, U.fleet);
+  ins.run('cl-a', a, V1, 'Testversicherer AG', '2024-03-01', U.fleet.id, now, now, 'k-274', null);
+  ins.run('cl-b', b, V1, 'Andere Vers.', '2025-06-01', U.fleet.id, now, now, null, 'Testversicherer AG');
+  ins.run('cl-c', c, V1, 'Testversicherer AG', '2026-02-01', U.fleet.id, now, now, null, null);
+  const get = async (q) => { const r = await U.fleet.get('/api/claims?filter=alle' + q); eq(r.status, 200, JSON.stringify(r.data)); return r.data; };
+  let d = await get('&from=2025-01-01&to=2026-12-31'); eq(d.claims.map((x) => x.id).sort().join(), 'cl-b,cl-c'); eq(d.counts.alle, 2, 'Zähler im Zeitraum');
+  d = await get('&insurer=' + encodeURIComponent('Testversicherer AG')); eq(d.claims.map((x) => x.id).sort().join(), 'cl-a,cl-c', 'nur eigene Seite (Gegner-Versicherer zählt nicht)');
+  ok(d.insurer_options.includes('Andere Vers.') && d.insurer_options.includes('Testversicherer AG'), 'Auswahl');
+  eq((await U.fleet.get('/api/claims?filter=alle&from=2026-01-01&to=2025-01-01')).status, 400); eq((await U.fleet.get('/api/claims?filter=alle&from=gestern')).status, 400);
+  const csv = await U.fleet.get('/api/claims?format=csv&filter=alle&from=2024-01-01&to=2024-12-31'); eq(csv.status, 200);
+  const txt = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data); const lines = txt.trim().split('\r\n');
+  ok(lines[0].includes(';Vertragsnummer;Vorgang angelegt am'), 'Kopf'); eq(lines.length, 2, 'nur 2024'); ok(lines[1].includes('VS-4711'), 'Vertragsnummer');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['claim_from', 'claim_to', 'claim_period']) ok(STRINGS[l][k], `${l}.${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("$('#clfrom').onchange =") && app.includes("&insurer=' + encodeURIComponent(S.clIns)"), 'Oberfläche');
+});
+
+await test('Backlog 275–277: Versicherungsfälle – Summen je Meldejahr (Selbstbeteiligung, Gutachten, belegte Kosten, Erstattung; ruhende Fahrzeuge außerhalb), CSV „Kennzeichen zum Meldedatum“ nach Umkennzeichnung, Export für Dritte ohne Bemerkung/Nachweis', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const ins = db.prepare(`INSERT INTO insurance_claims(id,environment,case_id,vehicle_id,insurer,reported_on,status,evidence,note,created_by,created_at,updated_at,deductible_net,reimbursed_net,reimbursed_on,appraisal_net) VALUES (?,'test',?,?,'Vers',?,'reguliert','Schreiben vom 1.3.','Gegner: Max Muster',?,?,?,?,?,?,?)`);
+  const a = await newCase({ description: 'Unfall A' }, U.fleet); const b = await newCase({ description: 'Unfall B' }, U.fleet); const c = await newCase({ description: 'Unfall C' }, U.fleet);
+  ins.run('s-a', a, V1, '2025-03-01', U.fleet.id, now, now, 500, 1200, '2025-04-01', 1500);
+  ins.run('s-b', b, V1, '2025-09-01', U.fleet.id, now, now, 500, 800, '2025-10-01', null);
+  ins.run('s-c', c, V1, '2026-02-01', U.fleet.id, now, now, 1000, null, null, null);
+  // Umkennzeichnung nach dem ersten Fall: Kennzeichen damals „SZ-ALT 1“
+  db.prepare(`INSERT INTO vehicle_plates(id,vehicle_id,plate,valid_until,changed_by,source) VALUES ('vp-275',?,'SZ-ALT 1','2025-06-01T10:00:00.000Z',?,'test')`).run(V1, U.fleet.id);
+  const d = (await U.fleet.get('/api/claims?filter=alle')).data;
+  const y25 = d.sums.by_year.find((y) => y.year === '2025'); eq(y25.n, 2); eq(y25.deductible_net, 1000); eq(y25.reimbursed_net, 2000); eq(y25.appraisal_net, 1500);
+  eq(d.sums.total.n, 3); eq(d.sums.total.deductible_net, 2000); eq(d.sums.by_year[0].year, '2026', 'neuestes Jahr zuerst');
+  const csv = await U.fleet.get('/api/claims?format=csv&filter=alle'); const txt = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data); const L = txt.trim().split('\r\n');
+  ok(L[0].endsWith(';Kennzeichen zum Meldedatum'), 'Kopf'); ok(L.some((l) => l.includes('2025-03-01') || l.includes('01.03.2025')) && L.find((l) => /2025-03-01|01\.03\.2025/.test(l)).endsWith(';SZ-ALT 1'), 'altes Kennzeichen beim ersten Fall');
+  ok(txt.includes('Max Muster') && L[0].includes(';Bemerkung;'), 'normal mit Bemerkung');
+  const c3 = await U.fleet.get('/api/claims?format=csv&filter=alle&third_party=1'); const t3 = typeof c3.data === 'string' ? c3.data : new TextDecoder().decode(c3.data);
+  ok(!t3.includes('Max Muster') && !t3.includes('Schreiben vom') && !t3.split('\r\n')[0].includes('Bemerkung') && !t3.split('\r\n')[0].includes('Nachweis'), 'für Dritte ohne Freitext');
+  eq(t3.split('\r\n')[0].split(';').length, L[0].split(';').length - 2, 'zwei Spalten weniger');
+  // ruhendes Fahrzeug: nicht in den Summen
+  db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1); eq((await U.fleet.get('/api/claims?filter=alle')).data.sums.total.n, 0, 'ruhend außerhalb');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['claim_sums', 'claim_year', 'claim_count', 'claim_ded_short', 'ca_net_short', 'claim_sums_hint', 'claim_third_party']) ok(STRINGS[l][k], `${l}.${k}`); ok(PLURALS[l].claim_cost_incompl, `${l} Plural`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="clsums"') && app.includes("$('#cl3p').checked ? '&third_party=1' : ''"), 'Oberfläche');
+});
+
+await test('Backlog 278 (Blickwinkel „Sturmnacht“): Vorgangsfilter „Eingang nicht bestätigt“ (unreceived) wie „Heute zu tun“, „+N“ verlinkt ihn, gesperrte zuerst und gekennzeichnet; Vorgangsliste zeigt die Dateianzahl; Kurzinfo „weitere offene Vorgänge“ mit Beschreibung (279)', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const a = await newCase({ description: 'Plane gerissen', priority: 'niedrig' });
+  const b = await newCase({ description: 'Ast auf Kabine', priority: 'niedrig', driveability: 'nicht_fahrbereit' });
+  const c = await newCase({ description: 'Spiegel ab', priority: 'mittel' });
+  eq((await cmd(U.fleet, c, 'receive')).status, 200);
+  const ids = (await U.fleet.get('/api/cases?status=open&unreceived=1')).data.cases.map((x) => x.id);
+  ok(ids.includes(a) && ids.includes(b) && !ids.includes(c), 'nur nicht bestätigte');
+  eq((await U.driver.get('/api/cases?status=open&unreceived=1')).data.cases.length, 0, 'Fahrer: leer');
+  const fc = (await U.fleet.get('/api/cases?status=open')).data.cases.find((x) => x.id === a); ok(fc.file_count !== undefined, 'file_count');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("todo_receive: '#/cases?f=unreceived'") && app.includes("f === 'unreceived' ? 'status=open&unreceived=1'"), 'Link/Filter');
+  ok(app.includes("(b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PR[a.priority] ?? 3)") && app.includes('<span data-fc title='), 'Sortierung/Dateianzahl');
+  // Backlog 279: Kurzinfo „weitere offene Vorgänge“ mit Kurzbeschreibung und Meldezeit
+  const vi = (await U.fleet.get(`/api/cases/${a}`)).data.vehicle_info; const o = vi.other_open_cases.find((x) => x.id === b);
+  ok(o && o.description.includes('Ast auf Kabine') && o.created_at, 'Beschreibung/Meldezeit'); ok(app.includes('data-ocdesc'), 'Anzeige');
+});
+
+await test('Backlog 280: Vorgang (Leitung) mit Knopf „Nächste unbestätigte Meldung“ (Filter unreceived, gesperrte/kritische zuerst laut Liste), Texte DE/UK/EN', async () => {
+  const { U, newCase } = await freshWorld();
+  const a = await newCase({ description: 'Plane gerissen', priority: 'niedrig' }); const b = await newCase({ description: 'Ast auf Kabine', priority: 'kritisch' });
+  const l = (await U.fleet.get('/api/cases?status=open&unreceived=1&limit=50')).data.cases; eq(l[0].id, b, 'kritisch/gesperrt zuerst'); ok(l.some((x) => x.id === a));
+  const { STRINGS } = await import('../public/i18n.js'); for (const lg of ['de', 'uk', 'en']) for (const k of ['next_unreceived', 'next_unreceived_none']) ok(STRINGS[lg][k], `${lg}.${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="nextunrec"') && app.includes("const nu = $('#nextunrec'); if (nu) nu.onclick = async () => {"), 'Oberfläche');
+});
+
+await test('Backlog 282 (Blickwinkel „Inhaber fällt aus“): Einrichtungsstand meldet „nur ein Inhaber-Konto“ als Hinweis (zwei → eingerichtet); Notfallabschnitt in BETRIEB.md ohne Geheimnisse; Texte DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const it = async () => (await U.own.get('/api/admin/readiness')).data.items.find((x) => x.key === 'owner_backup');
+  let x = await it(); eq(x.state, 'info'); eq(x.n, 1);
+  const r = await U.own.post('/api/users', { username: 'w.inhaber2', display_name: 'Stellvertretung', role: 'owner', environment: 'production' }); ok(r.status < 300, JSON.stringify(r.data));
+  x = await it(); eq(x.n, 1, 'Einladung ohne Passwort zählt nicht');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['rd_owner_backup_t', 'rd_owner_backup_todo']) ok(STRINGS[l][k], `${l}.${k}`);
+  const fs = await import('node:fs'); const b = fs.readFileSync(new URL('../docs/BETRIEB.md', import.meta.url), 'utf8');
+  ok(b.includes('## Inhaber ausgesperrt (Notfall') && b.includes('totp_secret=NULL') && !/SELECT\s+(password_hash|totp_secret)/i.test(b), 'Notfallweg ohne Lesen von Geheimnissen');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("'backup', 'owner_backup', 'prod_accounts'"), 'Reihenfolge');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

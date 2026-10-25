@@ -1,5 +1,6 @@
 // [CLAUDE] Bußgelder & Zeugenfragebögen: Erfassung, Fahrerermittlung zum Tatzeitpunkt mit Nachweis, Fristen, Information des Fahrers
 import { icsLang } from '../public/ics-texts.js';
+import { federalHoliday } from '../public/holidays.js';
 import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, normPlate, PLATE_KEY_SQL, quoteCell, pointDec } from './util.js';
 import { notifyUsers, nt } from './notify.js';
@@ -492,7 +493,8 @@ export function finesIcs(rows, warnDays, icsCalendar, site = null, lang = 'de', 
   const open = rows.filter((f) => f.response_due && !['bezahlt', 'eingestellt', 'erledigt', 'beantwortet'].includes(f.status));
   return icsCalendar(`${I.tx('cal_fines')}${site ? ' – ' + (site === 'ohne' ? I.tx('no_site') : site) : ''}${envName === 'test' ? ` (${I.tx('test_env')})` : ''}`, open.map((f) => ({ uid: `fine-${f.id}`, date: f.response_due,
     summary: I.tx('fine_due', { kind: I.label('fk_' + f.kind, KIND_DE[f.kind] || f.kind), plate: f.plate || f.plate_in_letter, no: f.fine_no }),
-    description: `${f.authority}${f.reference ? ' · ' + I.tx('fine_ref', { ref: f.reference }) : ''} · ${I.tx('fine_by_letter')}`, alarmDays: warnDays })));
+    // Frist am Wochenende/bundesweiten Feiertag (Backlog 268): Hinweis wie in der App, Termin bleibt der Tag laut Schreiben
+    description: `${f.authority}${f.reference ? ' · ' + I.tx('fine_ref', { ref: f.reference }) : ''} · ${I.tx('fine_by_letter')}${[0, 6].includes(new Date(f.response_due + 'T12:00:00Z').getUTCDay()) || federalHoliday(f.response_due) ? ' · ' + I.tx('fine_offday') : ''}`, alarmDays: warnDays })));
 }
 
 export async function fineFindings(env, environment, settings = null) {

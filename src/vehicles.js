@@ -432,8 +432,14 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
     // und Person – beim Wiederaufnehmen wird der Grund am Fahrzeug geleert, die Akte zeigte danach keine Spur der Standzeit
     if (!want.size || want.has('status')) {
       const st = (await env.DB.prepare(`SELECT a.action, a.detail, a.created_at, u.display_name FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id
-        WHERE a.target=? AND a.action IN ('vehicle.eval_exclude','vehicle.eval_include','vehicle.deactivate','vehicle.activate') ORDER BY a.created_at DESC, a.rowid DESC LIMIT ?`).bind(vehicleId, cap).all()).results;
-      for (const a of st) { let det = {}; try { det = JSON.parse(a.detail || '{}') || {}; } catch {} add('status', a.created_at, { status_event: a.action.slice(8), status_reason: typeof det.reason === 'string' ? det.reason : null, by: a.display_name || null }); }
+        WHERE a.target=? AND (a.action IN ('vehicle.eval_exclude','vehicle.eval_include','vehicle.deactivate','vehicle.activate')
+          OR (a.action='vehicle.upsert' AND CASE WHEN json_valid(a.detail) THEN json_type(a.detail,'$.site')='object' OR json_type(a.detail,'$.changed.site')='object' ELSE 0 END)) ORDER BY a.created_at DESC, a.rowid DESC LIMIT ?`).bind(vehicleId, cap).all()).results;
+      for (const a of st) {
+        let det = {}; try { det = JSON.parse(a.detail || '{}') || {}; } catch {}
+        // Standortwechsel (Backlog 272): Stammdaten (`site`) bzw. CSV-Import (`changed.site`) – seit wann der Lkw wo eingesetzt ist
+        if (a.action === 'vehicle.upsert') { const sc = (det.site && typeof det.site === 'object' ? det.site : det.changed && det.changed.site) || {}; add('status', a.created_at, { status_event: 'site', site_from: sc.from ?? null, site_to: sc.to ?? null, by: a.display_name || null }); continue; }
+        add('status', a.created_at, { status_event: a.action.slice(8), status_reason: typeof det.reason === 'string' ? det.reason : null, by: a.display_name || null });
+      }
     }
   }
   // Datum ohne Uhrzeit (z. B. Prüfung „erledigt am“) als Tagesmitte einsortieren
@@ -590,13 +596,18 @@ export async function upsertVehicle(env, user, body) {
           WHERE vehicle_id=?1 AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') AND COALESCE(workshop_site, suggested_workshop_site) IS NOT NULL GROUP BY s ORDER BY s)) AS ws,
         (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND planned_date >= ?2) AS p,
         (SELECT json_group_array(json_object('plate', plate, 'site', site, 'tp', trailer_plate)) FROM vehicles WHERE active=1 AND id<>?1
-          AND ((?3 IS NOT NULL AND kind='anhaenger') OR (?4='anhaenger' AND kind='lkw' AND trailer_plate IS NOT NULL))) AS cpl`)
-      .bind(row.id, berlinDate(), row.kind !== 'anhaenger' ? (row.trailer_plate ?? before.trailer_plate ?? null) : null, row.kind || before.kind).first();
+          AND ((?3 IS NOT NULL AND kind='anhaenger') OR (?4='anhaenger' AND kind='lkw' AND trailer_plate IS NOT NULL))) AS cpl,
+        (SELECT json_group_array(json_object('name', name, 'site', site)) FROM (SELECT DISTINCT u.display_name AS name, dr.site AS site FROM driver_vehicles dv JOIN users u ON u.id=dv.user_id
+          JOIN drivers dr ON dr.user_id=u.id WHERE dv.vehicle_id=?1 AND (dv.valid_to IS NULL OR dv.valid_to > ?5) AND dr.site IS NOT NULL AND trim(dr.site)<>'')) AS drv`)
+      .bind(row.id, berlinDate(), row.kind !== 'anhaenger' ? (row.trailer_plate ?? before.trailer_plate ?? null) : null, row.kind || before.kind, nowIso()).first();
     const ws = JSON.parse(h.ws || '[]');
     const own = normPlate(row.kind !== 'anhaenger' ? (row.trailer_plate ?? before.trailer_plate) : null);
     const coupled = JSON.parse(h.cpl || '[]').filter((v) => (own ? normPlate(v.plate) === own : normPlate(v.tp) === k) && sk(v.site) !== sk(row.site))
       .map((v) => ({ plate: v.plate, site: v.site || null }));
-    siteHints = { site_changed: true, open_workshop_cases: ws.reduce((a, x) => a + x.n, 0), open_workshop_sites: ws.map((x) => x.site), planned_appointments: h.p || 0, coupled_other_site: coupled };
+    // Backlog 271 (Teilagent „Lkw wechselt dauerhaft den Standort“): zugeordnete Fahrer, deren Fahrerakte einen anderen Standort nennt –
+    // sie bleiben sonst still zugeordnet und bekommen Sperren/Hinweise des versetzten Lkw (nichts wird automatisch geändert)
+    const drvOther = JSON.parse(h.drv || '[]').filter((x) => sk(x.site) !== sk(row.site)).map((x) => ({ name: x.name, site: x.site }));
+    siteHints = { site_changed: true, open_workshop_cases: ws.reduce((a, x) => a + x.n, 0), open_workshop_sites: ws.map((x) => x.site), planned_appointments: h.p || 0, coupled_other_site: coupled, drivers_other_site: drvOther };
   }
   return { id: row.id, duplicate_plates: duplicates, ...(trailerOf.length ? { trailer_of_trucks: trailerOf, trailer_plate_old: before.plate } : {}), ...siteHints };
 }
@@ -1358,6 +1369,25 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
   if (plChanged.length) await platesInsert(env, plChanged, user.id, 'csv-import');
   if (plateLog.length) await env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at)
     SELECT lower(hex(randomblob(16))), ?1, 'vehicle.upsert', json_extract(value,'$.id'), json_extract(value,'$.detail'), ?2 FROM json_each(?3)`).bind(user.id, nowIso(), JSON.stringify(plateLog)).run();
+  // Backlog 273 (Teilagent „Lkw wechselt dauerhaft den Standort“): Standortwechsel per Import → Hinweise wie bei „Stammdaten bearbeiten“
+  // (offene Werkstattaufträge, geplante Prüftermine, zugeordnete Fahrer mit Fahrerakte an einem anderen Standort) – eine Abfrage für alle
+  const skx = (x) => (x && String(x).trim() ? String(x).trim().toLocaleLowerCase('de') : '');
+  const moved = result.preview.filter((pv) => pv.action === 'geändert' && (pv.changes || []).some((c) => c.field === 'site' && skx(c.from) !== skx(c.to)))
+    .map((pv) => ({ id: 'VIN:' + pv.vin, plate: pv.plate, to: (pv.changes.find((c) => c.field === 'site') || {}).to ?? null }));
+  if (moved.length) {
+    const hs = (await env.DB.prepare(`SELECT json_extract(j.value,'$.id') AS id,
+        (SELECT COUNT(*) FROM cases c WHERE c.vehicle_id=json_extract(j.value,'$.id') AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') AND COALESCE(c.workshop_site, c.suggested_workshop_site) IS NOT NULL) AS ws,
+        (SELECT group_concat(s, ', ') FROM (SELECT DISTINCT COALESCE(c.workshop_site, c.suggested_workshop_site) AS s FROM cases c WHERE c.vehicle_id=json_extract(j.value,'$.id')
+          AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') AND COALESCE(c.workshop_site, c.suggested_workshop_site) IS NOT NULL ORDER BY s)) AS wsl,
+        (SELECT COUNT(*) FROM maintenance_rules m WHERE m.vehicle_id=json_extract(j.value,'$.id') AND m.planned_date >= ?2) AS p,
+        (SELECT json_group_array(json_object('name', name, 'site', site)) FROM (SELECT DISTINCT u.display_name AS name, dr.site AS site FROM driver_vehicles dv JOIN users u ON u.id=dv.user_id
+          JOIN drivers dr ON dr.user_id=u.id WHERE dv.vehicle_id=json_extract(j.value,'$.id') AND (dv.valid_to IS NULL OR dv.valid_to > ?3) AND dr.site IS NOT NULL AND trim(dr.site)<>'')) AS drv
+      FROM json_each(?1) j`).bind(JSON.stringify(moved), berlinDate(), nowIso()).all()).results;
+    const byId = new Map(hs.map((h) => [h.id, h]));
+    result.site_changes = moved.map((m) => { const h = byId.get(m.id) || {}; let drv = []; try { drv = JSON.parse(h.drv || '[]'); } catch { drv = []; }
+      return { plate: m.plate, site: m.to, open_workshop_cases: h.ws || 0, open_workshop_sites: h.wsl ? String(h.wsl).split(', ') : [], planned_appointments: h.p || 0, drivers_other_site: drv.filter((x) => skx(x.site) !== skx(m.to)).map((x) => ({ name: x.name, site: x.site })) }; })
+      .filter((x) => x.open_workshop_cases || x.planned_appointments || x.drivers_other_site.length);
+  }
   return result;
 }
 
