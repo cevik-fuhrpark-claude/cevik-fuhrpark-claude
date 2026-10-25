@@ -21819,6 +21819,112 @@ await test('Backlog 324 (Blickwinkel „Kombiinstrument, Display oder Hupe ausge
   ok(helpAfter(app, 'dash', 'seat'), 'Hilfe-Abschnitt dash nach seat');
 });
 
+await test('Backlog 325 (Blickwinkel „Auspuff laut oder undicht, Abgase im Fahrerhaus“): Meldeformular zeigt Hinweise (Abgasgeruch: Fenster auf, anhalten, Motor/Standheizung aus, frische Luft; Notruf bei Unwohlsein; Leitung entscheidet, an heißer Abgasanlage nichts selbst; Fotos/Geruch/seit wann; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); „Auspuff laut Rechnung“, Abgasuntersuchung, Motorbremse/exhaust brake lösen ihn nicht aus; abgerissener/qualmender Auspuff behält seinen Hinweis; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const EXHAUST_HINT = \/(.+)\/i;/m); ok(m, 'EXHAUST_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Auspuff laut', 'Auspuff ist sehr laut geworden', 'Abgase im Fahrerhaus', 'Im Fahrerhaus riecht es stark nach Abgasen', 'Kabine stinkt nach Abgas', 'Abgasgeruch in der Kabine', 'Endtopf durchgerostet', 'Krümmer undicht', 'exhaust fumes in cab', 'exhaust very loud', 'smells of exhaust in the cab', 'Вихлоп дуже гучний', 'Глушитель прогорел', 'запах вихлопу в кабіні', 'Выхлопные газы в кабине']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Auspuff laut Rechnung getauscht', 'Auspuff laut Werkstatt erneuert', 'Abgasuntersuchung fällig', 'exhaust brake noisy', 'Motorbremse laut', 'Abgaswarnleuchte an', 'Ladung riecht nach Diesel', 'Bremse laut', 'Auspuff abgerissen', 'Auspuff qualmt', 'Kotflügel gerissen']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('LOOSE_HINT').test('Auspuff abgerissen') && pat('FIRE_HINT').test('Auspuff qualmt') && pat('WARNLIGHT_HINT').test('Abgaswarnleuchte an'), 'abgerissen/qualmt/Warnleuchte behalten ihren eigenen Hinweis');
+  for (const n of ['LEAK_HINT', 'ENGINE_HINT', 'FIRE_HINT', 'LOOSE_HINT']) ok(!pat(n).test('Abgase im Fahrerhaus') && !pat(n).test('Auspuff laut'), n + ' bleibt bei Abgas/lautem Auspuff aus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.exhaust_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.exhaust_hint_steps), 'keine Zahl (auch keine Notrufnummer) ' + l);
+    const h = L.help_exhaust_s; ok(L.help_exhaust_t && h && h.includes(L.exhaust_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.exhaust_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="exhaust" class="panel" hidden role="status">`), 'Panel #exhaust');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#exhaust').hidden = !EXHAUST_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('exhaust') && order.indexOf('fire') < order.indexOf('exhaust') && order.indexOf('acc') < order.indexOf('exhaust') && order.indexOf('exhaust') < order.indexOf('flat') && order.indexOf('exhaust') < order.indexOf('loose') && order.indexOf('exhaust') < order.indexOf('engine'), 'Gruppierung: Brand/Unfall vor Abgas vor Reifen/loses Teil/Motor');
+  ok(helpAfter(app, 'exhaust', 'dash'), 'Hilfe-Abschnitt exhaust nach dash');
+});
+
+await test('Backlog 326 (Blickwinkel „Fahrerhaus lässt sich nicht kippen oder ist nicht verriegelt“): Meldeformular zeigt Hinweise (nicht verriegelt: nicht losfahren/anhalten; halb gekippt: nicht darunter; Leitung entscheidet, Kipppumpe/Verriegelung nicht selbst; Fotos/Stellung/Öl; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Kippbrücke/Kipper, Fahrerhaustür, „cab door won’t lock“ lösen ihn nicht aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const CABTILT_HINT = \/(.+)\/i;/m); ok(m, 'CABTILT_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Fahrerhaus lässt sich nicht kippen', 'Kabine kippt nicht', 'Fahrerhaus nicht verriegelt', 'Warnung Fahrerhaus nicht verriegelt', 'Fahrerhaus geht nicht mehr runter', 'Fahrerhaus bleibt halb gekippt', 'Kipppumpe undicht', 'Fahrerhausverriegelung defekt', 'cab won’t tilt', 'cab stuck half up', 'cab not locked', 'cab tilt pump leaking', 'Кабіна не перекидається', 'Кабина не опускается', 'кабіна не зафіксована']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Kippbrücke geht nicht hoch', 'Kipper kippt nicht', 'Fahrerhaustür lässt sich nicht verriegeln', 'Fahrerhaus Tür lässt sich nicht verriegeln', 'cab door won’t lock', 'Kabine sauber', 'Fahrerhaus gekippt zur Ölkontrolle', 'Kabine kalt', 'Fahrerhaus hängt schief', 'Kabine Heizung geht nicht', 'двері кабіни не зачиняються']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('DOOR_HINT').test("cab door won't lock") && pat('SUSP_HINT').test('Fahrerhaus hängt schief') && pat('VISIB_HINT').test('Kabine Heizung geht nicht'), 'Tür/Federung/Heizung behalten ihren eigenen Hinweis');
+  for (const n of ['DOOR_HINT', 'SUSP_HINT', 'LEAK_HINT', 'COUPLING_HINT']) ok(!pat(n).test('Fahrerhaus lässt sich nicht kippen') && !pat(n).test('Fahrerhaus nicht verriegelt'), n + ' bleibt beim Fahrerhaus-Kippen aus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.cabtilt_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.cabtilt_hint_steps), 'keine Zahl ' + l);
+    const h = L.help_cabtilt_s; ok(L.help_cabtilt_t && h && h.includes(L.cabtilt_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.cabtilt_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="cabtilt" class="panel" hidden role="status">`), 'Panel #cabtilt');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#cabtilt').hidden = !CABTILT_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('cabtilt') && order.indexOf('brake') < order.indexOf('cabtilt') && order.indexOf('coupling') < order.indexOf('cabtilt') && order.indexOf('cabtilt') < order.indexOf('susp') && order.indexOf('cabtilt') < order.indexOf('door'), 'Gruppierung: Bremse/Sattelkupplung vor Fahrerhaus vor Federung/Tür');
+  ok(helpAfter(app, 'cabtilt', 'exhaust'), 'Hilfe-Abschnitt cabtilt nach exhaust');
+});
+
+await test('Backlog 327 (Blickwinkel „Diesel versulzt oder AdBlue eingefroren“): Meldeformular zeigt Hinweise (sicher abstellen, nicht dauernd starten; kein Feuer/Heißluft, keine Zusätze ohne Freigabe; Leitung entscheidet; Tankort/AdBlue-Warnung/Standzeit; Auswahl „Kann das Fahrzeug fahren?“ wörtlich), keine Zahl/Temperatur; „Diesel getankt“, „Scheibe eingefroren“, Tiefkühlware, „Diesel ausgelaufen“ lösen ihn nicht aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const GELFUEL_HINT = \/(.+)\/i;/m); ok(m, 'GELFUEL_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Diesel versulzt', 'Diesel eingefroren', 'Motor geht aus, Diesel geliert', 'AdBlue eingefroren', 'AdBlue gefroren', 'eingefrorenes AdBlue', 'versulzter Diesel', 'Kraftstofffilter zugefroren', 'diesel gelled', 'fuel waxing', 'frozen AdBlue', 'дизель замерз', 'солярка замерзла', 'Паливо загусло']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Diesel getankt', 'Scheibe eingefroren', 'Wischwasser gefroren', 'Tiefkühlware gefroren', 'Diesel ausgelaufen', 'AdBlue nachgefüllt', 'Kühlung eingefroren', 'Diesel-Partikelfilter', 'Ladung gefroren', 'fuel gauge broken', 'frozen goods']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('LEAK_HINT').test('Diesel ausgelaufen') && pat('VISIB_HINT').test('Wischwasser gefroren'), 'Auslaufen/Wischwasser behalten ihren eigenen Hinweis');
+  for (const n of ['FUEL_HINT', 'LEAK_HINT', 'VISIB_HINT', 'REEFER_HINT']) ok(!pat(n).test('Diesel versulzt') && !pat(n).test('AdBlue eingefroren'), n + ' bleibt bei versulztem Diesel/gefrorenem AdBlue aus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.gelfuel_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|°/.test(L.gelfuel_hint_steps), 'keine Zahl/Temperatur ' + l);
+    const h = L.help_gelfuel_s; ok(L.help_gelfuel_t && h && h.includes(L.gelfuel_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.gelfuel_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="gelfuel" class="panel" hidden role="status">`), 'Panel #gelfuel');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#gelfuel').hidden = !GELFUEL_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('gelfuel') && order.indexOf('warnlight') < order.indexOf('gelfuel') && order.indexOf('gelfuel') < order.indexOf('engine') && order.indexOf('gelfuel') < order.indexOf('fuel') && order.indexOf('gelfuel') < order.indexOf('nostart'), 'Gruppierung: Warnleuchte vor Diesel/AdBlue vor Motor/Falschtanken/springt nicht an');
+  ok(helpAfter(app, 'gelfuel', 'cabtilt'), 'Hilfe-Abschnitt gelfuel nach cabtilt');
+});
+
+await test('Backlog 328 (Blickwinkel „Warndreieck, Verbandkasten, Feuerlöscher oder Unterlegkeil fehlt“): Meldeformular zeigt Hinweise (vor Abfahrt Leitung anrufen, sie entscheidet; Gefahrgut nur vollständig; nichts unbemerkt aus anderem Fahrzeug; was fehlt/Prüfdatum/Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Kontrollleuchte, „Warndreieck aufgestellt“, „Verbandskasten geprüft“ lösen ihn nicht aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const SAFETYKIT_HINT = \/(.+)\/i;/m); ok(m, 'SAFETYKIT_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Warndreieck fehlt', 'Feuerlöscher abgelaufen', 'Verbandskasten unvollständig', 'Unterlegkeile fehlen', 'kein Feuerlöscher an Bord', 'Warnweste nicht mehr da', 'Feuerlöscher benutzt', 'fire extinguisher expired', 'first aid kit missing', 'no warning triangle', 'wheel chocks missing', 'Аптечка відсутня', 'Вогнегасник прострочений', 'Нет огнетушителя', 'немає аптечки']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Warnleuchte leuchtet', 'Warnleuchte Motor an', 'Warnleuchte defekt', 'Warndreieck aufgestellt', 'Verbandskasten geprüft', 'Feuerlöscher geprüft', 'warning light on', 'Wagenheber ausgeliehen', 'Reifen weg', 'Kennzeichen fehlt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('WARNLIGHT_HINT').test('Warnleuchte leuchtet') && pat('WARNLIGHT_HINT').test('warning light on'), 'Kontrollleuchte behält ihren eigenen Hinweis');
+  for (const n of ['WARNLIGHT_HINT', 'THEFT_HINT', 'LOST_HINT', 'FIRE_HINT', 'ROADCHK_HINT']) ok(!pat(n).test('Warndreieck fehlt') && !pat(n).test('Feuerlöscher abgelaufen'), n + ' bleibt bei fehlender Ausrüstung aus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.safetykit_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|§/.test(L.safetykit_hint_steps), 'keine Zahl, kein Paragraf ' + l);
+    const h = L.help_safetykit_s; ok(L.help_safetykit_t && h && h.includes(L.safetykit_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.safetykit_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="safetykit" class="panel" hidden role="status">`), 'Panel #safetykit');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#safetykit').hidden = !SAFETYKIT_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('safetykit') && order.indexOf('fire') < order.indexOf('safetykit') && order.indexOf('warnlight') < order.indexOf('safetykit') && order.indexOf('stuck') < order.indexOf('safetykit') && order.indexOf('safetykit') < order.indexOf('roadchk') && order.indexOf('safetykit') < order.indexOf('theft'), 'Gruppierung: Brand/Warnleuchte/Festgefahren vor Ausrüstung vor Kontrolle/Diebstahl');
+  ok(helpAfter(app, 'safetykit', 'gelfuel'), 'Hilfe-Abschnitt safetykit nach gelfuel');
+});
+
+await test('Backlog 329 (Fehlersuche Handy-Tastatur): typografischer Apostroph „’“ (iPhone/Android setzen ihn automatisch) wirkt in allen Meldehinweisen wie „\'“; „brakes don’t work“/„aren’t working“ zeigen den Bremsen-Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const lines = app.split('\n').filter((l) => /^const [A-Z]+_HINT = \//.test(l)); ok(lines.length >= 36, 'Hinweis-Muster gefunden: ' + lines.length);
+  for (const l of lines) ok(!/(?<!\[)'\?/.test(l), 'nur gerader Apostroph als Option: ' + l.slice(6, 22));
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const cases = [['DOOR_HINT', "cab door won't lock"], ['NOSTART_HINT', "truck won't start"], ['STUCK_HINT', "we're stuck"], ['STUCK_HINT', "I'm stuck in mud"], ['MIRROR_HINT', "driver's mirror broken"], ['ADAS_HINT', "reversing camera doesn't work"], ['BRAKE_HINT', "brakes don't work"], ['BRAKE_HINT', "the brakes aren't working"], ['CABTILT_HINT', "cab won't tilt"]];
+  for (const [n, x] of cases) { const r = pat(n); ok(r.test(x), n + ': ' + x); ok(r.test(x.replace(/'/g, '’')), n + ' mit ’: ' + x.replace(/'/g, '’')); }
+  ok(!pat('BRAKE_HINT').test("brake lights don't work") && pat('LIGHTS_HINT').test("brake lights don’t work"), 'Bremslicht bleibt beim Licht-Hinweis');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

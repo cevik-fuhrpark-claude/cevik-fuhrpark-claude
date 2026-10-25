@@ -191,6 +191,10 @@ UI-Hinweis Luftfederung defekt/Lkw oder Auflieger hängt schief im Meldeformular
 UI-Hinweis Getriebe schaltet nicht/Gang geht nicht rein/Kupplung rutscht im Meldeformular und Hilfe|ui-getriebe.py|/tmp/cfp-getriebe.log
 UI-Hinweis Sicherheitsgurt/Fahrersitz defekt im Meldeformular und Hilfe|ui-gurt.py|/tmp/cfp-gurt.log
 UI-Hinweis Kombiinstrument/Display/Hupe ausgefallen im Meldeformular und Hilfe|ui-anzeige.py|/tmp/cfp-anzeige.log
+UI-Hinweis Auspuff laut/undicht, Abgase im Fahrerhaus im Meldeformular und Hilfe|ui-abgas.py|/tmp/cfp-abgas.log
+UI-Hinweis Fahrerhaus lässt sich nicht kippen/nicht verriegelt im Meldeformular und Hilfe|ui-fahrerhaus-kippen.py|/tmp/cfp-fahrerhaus-kippen.log
+UI-Hinweis Diesel versulzt/AdBlue eingefroren im Meldeformular und Hilfe|ui-diesel-kaelte.py|/tmp/cfp-diesel-kaelte.log
+UI-Hinweis Warndreieck/Verbandkasten/Feuerlöscher/Unterlegkeil fehlt im Meldeformular und Hilfe|ui-ausruestung.py|/tmp/cfp-ausruestung.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
