@@ -22197,6 +22197,40 @@ await test('Backlog 347 (Fehlersuche Warnleuchten-Hinweis): „Display zeigt Feh
   for (const x of ['Display kaputt', 'Display zeigt nichts', 'Navi zeigt Fehler', 'Display zeigt Uhrzeit', 'Display gereinigt']) ok(!re.test(x), 'kein Hinweis: ' + x);
   ok(pat('DASH_HINT').test('Display kaputt') && pat('DASH_HINT').test('Display zeigt nichts'), 'Kombiinstrument-Ausfall behält seinen eigenen Hinweis');
 });
+await test('Backlog 348 (Blickwinkel „Fahrerhaus lässt sich nicht abschließen – Zentralverriegelung oder Schlüssel defekt“): Meldeformular zeigt Hinweise (Leitung vor Pause/Ruhezeit/Abstellen; Fahrerhaus nicht offen unbeaufsichtigt, Schlüssel/Papiere/Tankkarte nicht darin; nicht mit Gewalt, abgebrochenes Stück nicht selbst; Tür/Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); verlorener Schlüssel bleibt beim Schlüssel-/Papiere-Hinweis; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const CABLOCK_HINT = \/(.+)\/i;/m); ok(m, 'CABLOCK_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Zentralverriegelung defekt', 'Zentralverriegelung geht nicht', 'Funkschlüssel reagiert nicht', 'Schlüssel abgebrochen', 'Schlüssel im Schloss abgebrochen', 'Lkw lässt sich nicht abschließen', 'Fahrerhaus lässt sich nicht mehr abschließen', 'Türschloss klemmt', 'central locking not working', 'key fob dead', 'cab won’t lock', "truck can't be locked", 'key snapped in the lock', 'центральний замок не працює', 'ключ зламався', 'брелок не працює', 'центральный замок не работает', 'кабіна не зачиняється на ключ']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Schlüssel verloren', 'Schlüssel abgegeben', 'Zentralverriegelung geht wieder', 'Tür abgeschlossen', 'Schlüsselbund', 'Ersatzschlüssel bestellt', 'ключ загубив', 'Lost the keys']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('LOST_HINT').test('Schlüssel verloren') && pat('LOST_HINT').test('ключ загубив') && pat('DOOR_HINT').test('Tür lässt sich nicht abschließen'), 'Schlüssel verloren/Tür behalten ihre eigenen Hinweise');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.cablock_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|§/.test(L.cablock_hint_steps), 'keine Zahl, kein Paragraf ' + l);
+    const h = L.help_cablock_s; ok(L.help_cablock_t && h && h.includes(L.cablock_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.cablock_hint_title, 'Titel ' + l);
+    // die Beispiele im Hilfetext lösen den Hinweis tatsächlich aus
+    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
+  }
+  ok(app.includes(`<div id="cablock" class="panel" hidden role="status">`), 'Panel #cablock');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#cablock').hidden = !CABLOCK_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('cablock') && order.indexOf('door') < order.indexOf('cablock') && order.indexOf('window') < order.indexOf('cablock') && order.indexOf('cablock') < order.indexOf('theft') && order.indexOf('cablock') < order.indexOf('lost'), 'Gruppierung: Tür/Fenster vor Abschließen vor Diebstahl/Schlüssel verloren');
+  ok(helpAfter(app, 'cablock', 'tyre'), 'Hilfe-Abschnitt cablock nach tyre');
+});
+await test('Backlog 349 (Fehlersuche Motor-/Leck-/Brand-/Licht-Hinweis): Rauch aus dem Auspuff → Motor-Hinweis (Rauch aus Motorraum bleibt Brand); Diesel-/Kraftstoffgeruch → Leck-Hinweis; „riecht verbrannt“, „riecht nach Gas“, „Gasgeruch“ → Brand-Hinweis; Licht geht während der Fahrt aus → Licht-Hinweis; Abgase/lauter Auspuff, Abgasuntersuchung, „Diesel getankt“, „Licht geht aus, wenn ich abschließe“ unverändert', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const exp = { ENGINE_HINT: ['Rauch aus dem Auspuff', 'schwarzer Rauch aus dem Auspuff', 'weißer Qualm aus dem Auspuff', 'Rauch kommt aus dem Auspuff', 'black smoke from exhaust', 'smoke coming from the exhaust', 'чорний дим з вихлопної труби'], LEAK_HINT: ['Dieselgeruch im Fahrerhaus', 'riecht nach Diesel im Fahrerhaus', 'smells of diesel', 'пахне дизелем'], FIRE_HINT: ['riecht verbrannt', 'riecht nach Gas', 'Gasgeruch im Fahrerhaus', 'smells burnt', 'пахне гаром', 'weißer Rauch aus dem Motorraum', 'smoke from the engine'], LIGHTS_HINT: ['Licht geht während der Fahrt aus', 'Scheinwerfer gehen plötzlich aus', 'Abblendlicht geht immer wieder aus'] };
+  for (const [n, xs] of Object.entries(exp)) { const re = pat(n); for (const x of xs) ok(re.test(x), n + ' erwartet: ' + x); }
+  for (const x of ['Rauch aus dem Auspuff', 'black smoke from exhaust', 'smoke coming from the exhaust', 'Rauch kommt aus dem Auspuff']) ok(!pat('FIRE_HINT').test(x), 'kein Brand-Hinweis: ' + x);
+  for (const x of ['Abgase im Fahrerhaus', 'Auspuff laut']) for (const n of ['ENGINE_HINT', 'LEAK_HINT', 'FIRE_HINT']) ok(!pat(n).test(x), n + ' bleibt aus: ' + x);
+  for (const x of ['Abgasuntersuchung', 'Diesel getankt', 'Fahrerhaus riecht muffig']) ok(!['ENGINE_HINT', 'LEAK_HINT', 'FIRE_HINT'].some((n) => pat(n).test(x)), 'kein Hinweis: ' + x);
+  ok(!pat('LIGHTS_HINT').test('Licht geht aus, wenn ich abschließe') && !pat('LIGHTS_HINT').test('Motor geht während der Fahrt aus'), 'Licht-Hinweis nur für Licht im Fahrbetrieb');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
