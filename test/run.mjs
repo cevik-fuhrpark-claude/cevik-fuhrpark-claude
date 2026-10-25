@@ -21785,6 +21785,16 @@ await test('Backlog 322 (Fehlersuche Bremsen-Hinweis): „Bremse defekt“, „B
   for (const l of ['de', 'uk', 'en']) { const st = STRINGS[l].brake_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l); ok(kw[l].every((w) => st[1].includes(w)), 'Schritt Retarder/Motorbremse ' + l); ok(STRINGS[l].help_brake_s.includes(STRINGS[l].brake_hint_steps), 'Hilfe ' + l); }
 });
 
+await test('Backlog 323 (Fehlersuche einfache Formulierungen): „Spiegel defekt“, „Tür kaputt“/„Fahrertür defekt“, „Reifen kaputt“, „Anlasser defekt“, „Batterie kaputt“ zeigen den passenden Hinweis (vorher keinen); Reifendruck/Reifendrucksensor/Türgriff/Türdichtung lösen weiterhin nichts aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const exp = { MIRROR_HINT: ['Spiegel defekt', 'Außenspiegel defekt'], DOOR_HINT: ['Tür kaputt', 'Fahrertür defekt', 'Hecktüren defekt'], FLAT_HINT: ['Reifen kaputt', 'Reifen hinten links defekt', 'Reifen aufgeschlitzt'], NOSTART_HINT: ['Anlasser defekt', 'Batterie kaputt'] };
+  for (const [n, xs] of Object.entries(exp)) { const re = pat(n); for (const x of xs) ok(re.test(x), n + ' erwartet: ' + x); }
+  const all = [...app.matchAll(/^const (\w+_HINT) = \/(.+)\/i;/gm)].map(([, n, s]) => [n, new RegExp(s, 'i')]);
+  for (const x of ['Reifendruck niedrig', 'Reifendrucksensor defekt', 'Türgriff kaputt', 'Türdichtung defekt', 'Batteriefach sauber', 'Spiegelbild']) ok(!all.some(([, r]) => r.test(x)), 'kein Hinweis: ' + x);
+  ok(!pat('DOOR_HINT').test('Fenster geht nicht zu') && !pat('FLAT_HINT').test('Reifen verliert Luft'), 'Abgrenzungen aus 320 bleiben');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
