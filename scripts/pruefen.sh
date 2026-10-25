@@ -96,6 +96,7 @@ UI-Fahrzeug korrigieren (Meldung am falschen Fahrzeug)|ui-fahrzeug-korrigieren.p
 UI-Kontrolle korrigieren (Abfahrtskontrolle am falschen Fahrzeug)|ui-kontrolle-korrigieren.py|/tmp/cfp-kontrolle-korrigieren.log
 UI-Restarbeit als Folgeauftrag|ui-restarbeit-folgeauftrag.py|/tmp/cfp-restarbeit-folgeauftrag.log
 UI-Vorgänge: Werkstatt-Filter|ui-vorgaenge-werkstattfilter.py|/tmp/cfp-vorgaenge-werkstattfilter.log
+UI-Werkstattplan: Werkstatt wechseln|ui-plan-werkstattwechsel.py|/tmp/cfp-plan-werkstattwechsel.log
 UI-Kennzeichenverlauf: Akte und Suche nach altem Kennzeichen|ui-kennzeichenverlauf.py|/tmp/cfp-kennzeichenverlauf.log
 UI-Leitungswechsel: Eingang und „gesehen von“ einer ausgeschiedenen Leitung|ui-leitungswechsel.py|/tmp/cfp-leitungswechsel.log
 UI-Ausdruck aus der Testumgebung erkennbar, kompakte Druckliste|ui-druck-testumgebung.py|/tmp/cfp-druck-test.log

@@ -19858,7 +19858,7 @@ await test('Backlog 235 (Blickwinkel „UVV aller Fahrzeuge an einem Tag“): Sa
 await test('Backlog 236 (Werkstatt arbeitet den Sammeltermin ab): Werkstattplan verlinkt geplante/fällige Prüftermine direkt auf „Durchführung erfassen“ (nur Inhaber/Leitung/Werkstatt, nicht HU/SP ohne Eintrag), nach dem Speichern zurück in den Plan', async () => {
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("[/^#\\/vehicles\\/(VIN:[A-Z0-9]+\\?done=[\\w-]+)$/, (x) => viewVehicle(x.split('?done=')[0], null, 'done:' + x.split('?done=')[1])]"), 'Route ?done=');
-  const plan = app.slice(app.indexOf('async function viewPlan('), app.indexOf('async function viewPlan(') + 10000);
+  const plan = app.slice(app.indexOf('async function viewPlan('), app.indexOf('async function viewPlan(') + 14000);
   ok(plan.includes("const canDone = isMgr() || S.me.role === 'workshop';") && plan.includes("/^[\\w-]+$/.test(i.id) ? '?done='") && (plan.match(/href="\$\{doneHref\(i\)\}" data-fromplan/g) || []).length === 2, 'Plan-Zeilen (Termin und fällig) verlinken das Formular');
   ok(plan.includes("$$('a[data-fromplan]').forEach((a) => (a.onclick = () => { S.fromPlan = location.hash || '#/plan'; }));"), 'Herkunft gemerkt');
   const vv = app.slice(app.indexOf('async function viewVehicle('), app.indexOf('\nasync function ', app.indexOf('async function viewVehicle(') + 10));
@@ -20744,6 +20744,32 @@ await test('Backlog 264 (Blickwinkel „Werkstatt fällt eine Woche aus“): Vor
   const dr = await ids(U.driver, 'ws=MUENCHEN'); ok(dr.includes(a), 'Fahrer: Filter ohne Wirkung (eigene Meldungen)');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("const cws = $('#cws'); if (cws) cws.onchange =") && app.includes("'&ws=' + encodeURIComponent(S.caseWs)"), 'Oberfläche');
+});
+
+await test('Backlog 265: Werkstattplan liefert je Auftrag Status/Version/Werkstatt für „Werkstatt wechseln“ (nur freigegeben, Leitung); Wechsel aus dem Plan nutzt reassign_workshop mit Grund; Texte DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const id = await newCase({ description: 'Bremse zieht (Plan)' });
+  const day = new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + 2 * 864e5).toISOString().slice(0, 10);
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day }, 'frei')).status, 200);
+  const p = (await U.fleet.get('/api/workshop/plan?days=7')).data;
+  const it = p.days.flatMap((d) => d.items).find((x) => x.id === id); ok(it, 'Auftrag im Plan');
+  eq(it.status, 'werkstatt_freigegeben'); eq(it.workshop_site, 'DORTMUND'); ok(Number.isInteger(it.version), 'Version');
+  const r = await U.fleet.post(`/api/cases/${id}/commands`, { action: 'reassign_workshop', command_id: rk(), expected_version: it.version, note: 'Werkstatt fällt aus', payload: { workshop_site: 'MUENCHEN' } }); eq(r.status, 200, JSON.stringify(r.data));
+  const p2 = (await U.fleet.get('/api/workshop/plan?days=7&site=DORTMUND')).data; ok(!p2.days.flatMap((d) => d.items).some((x) => x.id === id) && !p2.unplanned.some((x) => x.id === id), 'nicht mehr im Plan Dortmund');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['pws_reason_ph', 'pws_need_reason']) ok(STRINGS[l][k], `${l}.${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const canWs = (i) => i.type === 'case' && isMgr() && i.status === 'werkstatt_freigegeben';") && app.includes("action: 'reassign_workshop', command_id: uid(), expected_version: i.version"), 'Oberfläche');
+});
+
+await test('Backlog 266 (Blickwinkel „Kurzfristiges Mietfahrzeug“): Außer Betrieb nehmen nennt die Fahrer, deren Zuordnung endet (nur diese Umgebung); FIN-Hinweis im Formular „Fahrzeug anlegen“', async () => {
+  const { U, V1 } = await freshWorld();
+  eq((await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/drivers`, { user_id: U.driver.id })).status < 300, true, 'Zuordnung');
+  const r = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/active`, { active: false, reason: 'Mietfahrzeug zurückgegeben' }); eq(r.status, 200, JSON.stringify(r.data));
+  eq((r.data.ended_drivers || []).map((d) => d.id).join(), U.driver.id, 'Fahrer genannt');
+  const r2 = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/active`, { active: true }); eq(r2.status, 200); ok(!r2.data.ended_drivers, 'beim Wieder-in-Betrieb-Nehmen nicht');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['deact_drivers_ended', 'vin_hint_new']) ok(STRINGS[l][k], `${l}.${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("t('deact_drivers_ended').replace('{list}'") && app.includes("esc(t('vin_hint_new'))"), 'Oberfläche');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

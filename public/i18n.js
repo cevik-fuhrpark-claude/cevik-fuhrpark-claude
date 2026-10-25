@@ -277,6 +277,14 @@ Object.assign(STRINGS.en, { seen_gone: 'no longer fleet management – please ta
 Object.assign(STRINGS.de, { pk_open_item: 'Neue Restarbeit der Werkstatt' });
 Object.assign(STRINGS.uk, { pk_open_item: 'Нова незавершена робота від майстерні' });
 Object.assign(STRINGS.en, { pk_open_item: 'New open item from the workshop' });
+// Backlog 266: Fahrerzuordnung beim Außer-Betrieb-Nehmen beendet
+Object.assign(STRINGS.de, { vin_hint_new: 'FIN laut Zulassungsbescheinigung Teil I (Feld E) – bei Miet-/Ersatzfahrzeugen die des Vermieters, keine Platzhalter: eine bekannte FIN nimmt das frühere Fahrzeug samt Verlauf wieder in Betrieb.', deact_drivers_ended: 'Fahrerzuordnung beendet: {list} – bei Bedarf einem anderen Fahrzeug zuordnen' });
+Object.assign(STRINGS.uk, { vin_hint_new: 'VIN згідно зі свідоцтвом про реєстрацію, частина I (поле E) – для орендованих/підмінних транспортних засобів VIN орендодавця, без заповнювачів: відомий VIN знову вводить попередній транспорт в експлуатацію разом з історією.', deact_drivers_ended: 'Призначення водіїв завершено: {list} – за потреби призначте інший транспорт' });
+Object.assign(STRINGS.en, { vin_hint_new: 'VIN as per registration certificate part I (field E) – for rental/replacement vehicles the lessor’s VIN, no placeholders: a known VIN puts the earlier vehicle back into service including its history.', deact_drivers_ended: 'Driver assignment ended: {list} – assign another vehicle if needed' });
+// Backlog 265: Werkstatt wechseln im Werkstattplan
+Object.assign(STRINGS.de, { pws_reason_ph: 'Grund (z. B. Werkstatt fällt aus)', pws_need_reason: 'Bitte Grund für den Werkstattwechsel angeben.' });
+Object.assign(STRINGS.uk, { pws_reason_ph: 'Причина (напр., майстерня не працює)', pws_need_reason: 'Будь ласка, вкажіть причину зміни майстерні.' });
+Object.assign(STRINGS.en, { pws_reason_ph: 'Reason (e.g. workshop unavailable)', pws_need_reason: 'Please give a reason for changing the workshop.' });
 // Backlog 261: Foto/PDF zur Restarbeit
 Object.assign(STRINGS.de, { oi_file: 'Foto/PDF zum Befund', oi_file_hint: 'optional – vorher unter „Fotos & Dokumente“ hochladen', oi_file_none: 'Foto zum Befund: zuerst unter „Fotos & Dokumente“ hochladen, dann die Restarbeit erfassen.' });
 Object.assign(STRINGS.uk, { oi_file: 'Фото/PDF до виявленого дефекту', oi_file_hint: 'необов’язково – спочатку завантажте в «Фото та документи»', oi_file_none: 'Фото до дефекту: спершу завантажте в «Фото та документи», потім додайте незавершену роботу.' });

@@ -652,6 +652,10 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   const already = () => conflict(active ? 'already_active' : 'already_inactive', active ? 'Fahrzeug ist bereits in Betrieb.' : 'Fahrzeug ist bereits außer Betrieb.');
   if (Number(v.active) === (active ? 1 : 0)) throw already();
   const now = nowIso();
+  // Backlog 266 (Teilagent „Kurzfristiges Mietfahrzeug“): Fahrer, deren Zuordnung jetzt endet, in der Antwort nennen – nach Rückgabe eines
+  // Ersatz-/Mietfahrzeugs hatten sie sonst kein Fahrzeug mehr, ohne dass die Leitung daran erinnert wurde (nur diese Umgebung)
+  const endedDrivers = active ? [] : (await env.DB.prepare(`SELECT DISTINCT u.id, u.display_name FROM driver_vehicles dv JOIN users u ON u.id=dv.user_id
+    WHERE dv.vehicle_id=? AND dv.environment=? AND (dv.valid_to IS NULL OR dv.valid_to > ?) ORDER BY u.display_name`).bind(vehicleId, envName, now).all()).results;
   // Außer Betrieb nehmen beendet laufende Fahrerzuordnungen (Verlauf bleibt) – sonst galt der Fahrer weiter als zugeordnet und die
   // Zuordnung lebte bei Wieder-in-Betrieb-Nahme auf (17.10.2026)
   // offene Vorgänge zusätzlich im selben Stapel geprüft (18.10.2026: gleichzeitig angelegte Meldung blieb sonst offen am außer Betrieb genommenen Fahrzeug)
@@ -683,7 +687,7 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   const trailerOf = !active && v.kind === 'anhaenger' && normPlate(v.plate)
     ? (await env.DB.prepare(`SELECT id, plate, trailer_plate FROM vehicles WHERE kind='lkw' AND active=1 AND trailer_plate IS NOT NULL`).all()).results
       .filter((x) => normPlate(x.trailer_plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate })) : [];
-  return { ok: true, active, running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? { duplicate_plates: duplicates, return_check: await returnCheck(env, envName, vehicleId) } : {}),
+  return { ok: true, active, ...(endedDrivers.length ? { ended_drivers: endedDrivers.map((d) => ({ id: d.id, display_name: d.display_name })) } : {}), running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? { duplicate_plates: duplicates, return_check: await returnCheck(env, envName, vehicleId) } : {}),
     ...(trailerOf.length ? { trailer_of_trucks: trailerOf } : {}) };
 }
 

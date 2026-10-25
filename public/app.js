@@ -2322,7 +2322,7 @@ const mayCheck = () => ['driver', 'fleet', 'owner', 'workshop'].includes(S.me &&
 const mayReport = () => !!(S.me && S.me.role !== 'viewer');
 function vehicleForm(v = {}) {
   const f = (name, label, val, extra = '') => `<label>${esc(label)}</label><input name="${name}" value="${esc(val ?? '')}" ${extra}>`;
-  return `${v.trailer_vin ? `<input type="hidden" name="trailer_vin" value="${esc(v.trailer_vin)}">` : ''}${v.vin ? `<input type="hidden" name="vin" value="${esc(v.vin)}">` : f('vin', t('vin'), '', 'required minlength="17" maxlength="25" autocapitalize="characters"')}
+  return `${v.trailer_vin ? `<input type="hidden" name="trailer_vin" value="${esc(v.trailer_vin)}">` : ''}${v.vin ? `<input type="hidden" name="vin" value="${esc(v.vin)}">` : f('vin', t('vin'), '', 'required minlength="17" maxlength="25" autocapitalize="characters" aria-describedby="vinhint"') + `<p class="small muted" id="vinhint">${esc(t('vin_hint_new'))}</p>`}
     ${f('plate', t('plate_label'), v.plate, 'required maxlength="20" autocapitalize="characters"')}
     <label>${esc(t('vehicle_kind'))}</label><select name="kind">${['lkw', 'anhaenger'].map((k) => `<option value="${k}"${(v.kind || 'lkw') === k ? ' selected' : ''}>${esc(t('vk_' + k))}</option>`).join('')}</select>
     ${f('site', t('site'), v.site, 'maxlength="60"')}${f('manufacturer', t('manufacturer'), v.manufacturer, 'maxlength="60"')}${f('model', t('model_label'), v.model, 'maxlength="60"')}${f('build_year', t('year'), v.build_year, 'inputmode="numeric" maxlength="4"')}
@@ -2727,7 +2727,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   $$('[data-goto]').forEach((b) => (b.onclick = () => { const x = $('#' + b.dataset.goto); if (x) x.click(); }));
   // Grund beim Wiederaufnehmen/Reaktivieren optional (steht dann in der Zeitleiste), Abbrechen bricht ab
   const evx = $('#evx'); if (evx) evx.onclick = async () => { let reason = null; if (!v.eval_excluded) { reason = prompt(t('evx_reason')); if (!reason) return; } else { reason = prompt(t('return_reason')); if (reason === null) return; reason = reason.trim() || null; } try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/evaluation`, { excluded: !v.eval_excluded, reason }); const rc = returnCheckText(r && r.return_check); toast(rc ? `✓ ${t('saved_ok')} – ${rc}` : '✓', !!rc); viewVehicle(id); } catch (err) { toast(err.message, true); } };
-  const deact = $('#deact'); if (deact) deact.onclick = async () => { const reason = prompt(t('deactivate_reason')); if (!reason) return; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: false, reason }); const hints = [r.running_contracts ? tn('ct_running_deact', r.running_contracts) : '', r.telematics_devices ? tn('tm_devices_deact', r.telematics_devices) : '', r.planned_appointments ? tn('mt_planned_deact', r.planned_appointments) : '', (r.trailer_of_trucks || []).length ? t('trailer_deact_warn').replace('{list}', r.trailer_of_trucks.map((x) => x.plate).join(', ')) : ''].filter(Boolean); if (hints.length) toast(hints.join(' · '), true); else toast('✓'); viewVehicle(id); } catch (err) { toast(err.code === 'open_cases' ? `${err.message} ${t('deact_open_hint')}` : err.message, true); } };
+  const deact = $('#deact'); if (deact) deact.onclick = async () => { const reason = prompt(t('deactivate_reason')); if (!reason) return; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: false, reason }); const hints = [r.running_contracts ? tn('ct_running_deact', r.running_contracts) : '', r.telematics_devices ? tn('tm_devices_deact', r.telematics_devices) : '', r.planned_appointments ? tn('mt_planned_deact', r.planned_appointments) : '', (r.trailer_of_trucks || []).length ? t('trailer_deact_warn').replace('{list}', r.trailer_of_trucks.map((x) => x.plate).join(', ')) : '', (r.ended_drivers || []).length ? t('deact_drivers_ended').replace('{list}', () => r.ended_drivers.map((x) => x.display_name).join(', ')) : ''].filter(Boolean); if (hints.length) toast(hints.join(' · '), true); else toast('✓'); viewVehicle(id); } catch (err) { toast(err.code === 'open_cases' ? `${err.message} ${t('deact_open_hint')}` : err.message, true); } };
   const react = $('#react'); if (react) react.onclick = async () => { let reason = prompt(t('return_reason')); if (reason === null) return; reason = reason.trim() || null; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: true, reason }); const rc = returnCheckText(r && r.return_check); toast(rc ? `✓ ${t('saved_ok')} – ${rc}` : '✓', !!rc); await viewVehicle(id);
     // Nachfolger mit gleichem Kennzeichen in Betrieb: Hinweis wie beim Anlegen (23.10.2026)
     const d = r && r.duplicate_plates; if (d && d.length) setTimeout(() => toast(t('dup_plate_warn').replace('{p}', String(d[0].plate || '').toUpperCase()).replace('{list}', d.slice(0, 3).map((x) => String(x.id).replace(/^VIN:/, '')).join(', ') + (d.length > 3 ? ` +${d.length - 3}` : '')), true), 400);
@@ -4510,12 +4510,17 @@ async function viewPlan(sec) {
   const setForm = (i) => i.can_plan
     ? `<div class="planset noprint"><label for="pd-${esc(i.id)}">${esc(t('planned'))}</label><input type="date" id="pd-${esc(i.id)}" min="${esc(r.today)}" value="">${i.planned_date ? `<input type="text" id="pr-${esc(i.id)}" maxlength="500" placeholder="${esc(t('plan_reason_ph'))}" aria-label="${esc(t('plan_reason_ph'))}">` : ''}<button type="button" class="btn secondary" data-psug="${esc(i.id)}" title="${esc(t('plan_suggest_hint'))}">${esc(t('plan_suggest'))}</button><button type="button" class="btn" data-pset="${esc(i.id)}">${esc(t('plan_set'))}</button></div>`
     : canEdit ? `<p class="small muted noprint planset">${esc(t('plan_need_ack'))}</p>` : '';
-  const prow = (i, base) => i.type === 'case' && canEdit ? `<div class="planitem">${base}${setForm(i)}</div>` : base;
+  // Werkstatt wechseln direkt im Plan (Backlog 265, Teilagent „Werkstatt fällt eine Woche aus“): Leitung, Aufträge im Status „freigegeben“
+  // (wie der Vorgangsbefehl reassign_workshop), Grund Pflicht; aktive Werkstätten außer der bisherigen
+  const canWs = (i) => i.type === 'case' && isMgr() && i.status === 'werkstatt_freigegeben';
+  const wsForm = (i) => canWs(i) ? `<details class="planws noprint"><summary>${esc(t('act_reassign_workshop'))}</summary><label for="pw-${esc(i.id)}">${esc(t('workshop'))}</label><select id="pw-${esc(i.id)}">${(S.meta.workshops || []).filter((w) => w.code !== i.workshop_site).map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select><input type="text" id="pwr-${esc(i.id)}" maxlength="2000" placeholder="${esc(t('pws_reason_ph'))}" aria-label="${esc(t('pws_reason_ph'))}"><button type="button" class="btn secondary" data-pws="${esc(i.id)}">${esc(t('save'))}</button></details>` : '';
+  const prow = (i, base) => i.type === 'case' && canEdit ? `<div class="planitem">${base}${setForm(i)}${wsForm(i)}</div>` : base;
+  const drowC = (i) => (canWs(i) ? `<div class="planitem">${row(i)}${wsForm(i)}</div>` : row(i));
   if (r.overdue.length) html += `<h2>${esc(t('wplan_overdue'))} <span class="chip kritisch">${r.overdue.length}</span></h2><div class="list">${r.overdue.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip kritisch">${fmtD(i.planned_date)} · `))).join('')}</div>`;
   // begonnene Aufträge mit vergangenem Termin (Backlog 253): eigene Gruppe, Termin neutral, Teile-Liefertermin in der Zeile
   const iw = r.in_work || [];
   if (iw.length) html += `<h2 id="wp-inwork">${esc(t('wplan_inwork'))} <span class="chip">${iw.length}</span></h2><p class="small muted noprint">${esc(t('wplan_inwork_hint'))}</p><div class="list">${iw.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip">${fmtD(i.planned_date)} · `))).join('')}</div>`;
-  html += r.days.length ? r.days.map((d) => `<h2>${esc(wd(d.date))}${d.date === r.today ? ` <span class="chip ok">${esc(t('today'))}</span>` : ''}</h2><div class="list">${d.items.map(row).join('')}</div>`).join('') : `<div class="panel">${esc(t('wplan_empty'))}</div>`;
+  html += r.days.length ? r.days.map((d) => `<h2>${esc(wd(d.date))}${d.date === r.today ? ` <span class="chip ok">${esc(t('today'))}</span>` : ''}</h2><div class="list">${d.items.map(drowC).join('')}</div>`).join('') : `<div class="panel">${esc(t('wplan_empty'))}</div>`;
   if (r.unplanned.length) html += `<h2>${esc(t('wplan_unplanned'))} <span class="chip mittel">${r.unplanned.length}</span></h2><p class="small muted noprint">${esc(t('wplan_unplanned_hint'))}</p><div class="list">${r.unplanned.map((i) => prow(i, row(i))).join('')}</div>`;
   const md = r.maintenance_due || [];
   if (md.length) html += `<h2 id="wp-mdue" tabindex="-1" data-keepfocus>${esc(t('wplan_mdue'))} <span class="chip ${md.some((i) => i.status === 'ueberfaellig') ? 'kritisch' : 'mittel'}">${md.length}</span></h2><p class="small muted noprint">${esc(t('wplan_mdue_hint'))}</p><div class="list">${md.map((i) => { const f = !['HU', 'SP'].includes(i.kind) ? maintOrderHtml(i.id, i.kind, null, { site: i.vehicle_site }) : ''; return f ? `<div class="planitem">${drow(i)}${f}</div>` : drow(i); }).join('')}</div>`;
@@ -4554,6 +4559,18 @@ async function viewPlan(sec) {
     b.disabled = true;
     try { await api('POST', `/api/cases/${i.id}/commands`, { action: 'set_planned_date', command_id: uid(), expected_version: i.version, note: ($('#pr-' + CSS.escape(i.id))?.value || '').trim() || null, payload: { planned_date: f.value } }); toast('✓'); viewPlan(); }
     catch (err) { b.disabled = false; toast(err.message, true); if (err.code === 'version_conflict') viewPlan(); }
+  }));
+  const allCases = [...all, ...r.days.flatMap((d) => d.items.filter((x) => x.type === 'case'))];
+  $$('[data-pws]').forEach((b) => (b.onclick = async () => {
+    const i = allCases.find((x) => x.id === b.dataset.pws); const sel = $('#pw-' + CSS.escape(i.id)); const rs = $('#pwr-' + CSS.escape(i.id));
+    const note = (rs.value || '').trim();
+    if (note.length < 3) { toast(t('pws_need_reason'), true); rs.focus(); return; }
+    if (!sel.value) return;
+    b.disabled = true;
+    try {
+      const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'reassign_workshop', command_id: uid(), expected_version: i.version, note, payload: { workshop_site: sel.value } });
+      toast(x && x.no_workshop_user ? t('no_ws_user_warn') : '✓', !!(x && x.no_workshop_user)); viewPlan();
+    } catch (err) { b.disabled = false; toast(err.message, true); if (err.code === 'version_conflict') viewPlan(); }
   }));
   const ps = $('#psite'); if (ps) ps.onchange = () => { S.planSite = ps.value; viewPlan(); };
   const pvs = $('#pvsite'); if (pvs) pvs.onchange = () => { S.planVsite = pvs.value; viewPlan(); };
