@@ -2912,7 +2912,7 @@ const ctBody = (fm) => { const b = Object.fromEntries(new FormData(fm)); for (co
 function ctSection(list, docs = null) {
   return `<h2>${esc(t('ct_title'))}</h2>${list.length ? list.map((c) => `<section class="panel ${c.status.overall === 'handeln' ? 'p-kritisch' : ''}"><p style="margin-top:0"><b>${esc(t('ck_' + c.kind))}</b> · ${esc(c.partner)}${c.contract_no ? ' · ' + esc(c.contract_no) : ''} ${ctChip(c.status)}</p>${ctLines(c).map((x) => `<div>${x}</div>`).join('')}${ctDocLine(c)}
     ${c.ended_on ? '' : `<details class="noprint"><summary>${esc(t('ct_edit'))}</summary><form data-ctedit="${esc(c.id)}" data-upd="${esc(c.updated_at || '')}">${ctForm(c, docs)}${c.status.km && c.status.km.status === 'zaehler' ? `<label class="check"><input type="checkbox" name="confirm_km_basis" value="1"> ${esc(t('ct_km_basis_ok'))}</label>` : ''}<div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
-    <details class="noprint"><summary>${esc(t('ct_end_btn'))}</summary><form data-ctend="${esc(c.id)}"><label>${esc(t('ct_ended_on'))}</label><input type="date" name="ended_on" max="${bDate()}" value="${bDate()}"><label>${esc(t('ct_end_reason'))}</label><input name="end_note" required maxlength="300"><p class="small muted">${esc(t('ct_ended_note'))}</p><div class="actions"><button class="btn secondary">${esc(t('ct_end_btn'))}</button></div></form></details>`}</section>`).join('') : `<p class="muted">${esc(t('ct_none'))}</p>`}
+    <details class="noprint"><summary>${esc(t('ct_end_btn'))}</summary><form data-ctend="${esc(c.id)}">${ctRetEnd(c)}<label>${esc(t('ct_ended_on'))}</label><input type="date" name="ended_on" max="${bDate()}" value="${bDate()}"><label>${esc(t('ct_end_reason'))}</label><input name="end_note" required maxlength="300"><p class="small muted">${esc(t('ct_ended_note'))}</p><div class="actions"><button class="btn secondary">${esc(t('ct_end_btn'))}</button></div></form></details>`}</section>`).join('') : `<p class="muted">${esc(t('ct_none'))}</p>`}
     <details class="panel noprint"><summary>${esc(t('ct_add'))}</summary><p class="small muted">${esc(t('ct_hint'))}</p><form id="ctf">${ctForm({}, docs)}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>`;
 }
 function bindCtSection(id, reload) {
@@ -2929,6 +2929,13 @@ function ctRet(rc) {
   if (!rc) return '';
   const parts = [rc.open_cases ? t('ct_ret_open').replace('{n}', rc.open_cases) : '', rc.open_items ? t('ct_ret_items').replace('{n}', rc.open_items) : ''].filter(Boolean);
   return `<span class="sub" data-ct-ret style="white-space:normal"><span class="chip ${parts.length ? 'mittel' : 'ok'}" style="white-space:normal">${esc(t('ct_ret'))}: ${esc(parts.length ? parts.join(' · ') : t('ct_ret_clear'))}</span></span>`;
+}
+// Backlog 289: beim Beenden von Leasing/Miete (Rückgabe) offene Vorgänge/Restarbeiten und den letzten km-Stand zeigen – die Rückgabe-km
+// zählen für Mehr-/Minder-km; fehlt ein aktueller Stand, zuerst erfassen (nichts wird geschätzt)
+function ctRetEnd(c) {
+  if (!c.return_check) return '';
+  const r = c.reading; const old = !r || (r.measured_at && BERLIN_FMT.format(new Date(r.measured_at)) < bDate());
+  return `<div data-ct-retend><p class="small">${ctRet(c.return_check)}</p><p class="small ${old ? '' : 'muted'}">${r ? esc(t('ct_ret_km').replace('{km}', fmtKm(r.km)).replace('{d}', fmtD(r.measured_at))) : esc(t('ct_ret_km_none'))}${old ? ` <b>${esc(t('ct_ret_km_old'))}</b>` : ''}</p></div>`;
 }
 async function viewContracts() {
   const f = S.ctFilter || 'aktiv'; const k = S.ctKind || '';
@@ -3776,16 +3783,18 @@ function vehInfo(vi, c) {
   const prev = (vi && vi.previous_same_item) || [];
   const vn = (vi && vi.notes) || [];
   const wr = (vi && vi.warranties) || [];
-  if (!vi || (!vi.other_open_total && !vi.inspections_due.length && !vi.last_km && !prev.length && !vn.length && !wr.length)) return '';
+  const ls = (vi && vi.lease_contracts) || []; // Backlog 290: nur Leitung
+  if (!vi || (!vi.other_open_total && !vi.inspections_due.length && !vi.last_km && !prev.length && !vn.length && !wr.length && !ls.length)) return '';
   const today = bDate();
   const parts = [];
   if (vi.other_open_total) parts.push(`<dt>${esc(t('vi_other_cases'))}</dt><dd>${vi.other_open_cases.map((o) => `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a> <span class="chip ${esc(o.priority)}">${esc(t('st_' + o.status))}</span>${o.safety_lock ? ` <span class="chip kritisch">${esc(t('locked'))}</span>` : ''}${o.description ? `<br><span class="small" data-ocdesc>${ltxt(clipTxt(cDesc(o.description), 90))}${o.created_at ? ` <span class="muted">· ${fmtDT(o.created_at)}</span>` : ''}</span>` : ''}`).join('<br>')}${vi.other_open_total > vi.other_open_cases.length ? `<br><span class="small muted">+${vi.other_open_total - vi.other_open_cases.length}</span>` : ''}</dd>`);
   if (vi.inspections_due.length) parts.push(`<dt>${esc(t('vi_due'))}${vi.inspections_due.some((m) => m.recall_ref) ? ' · ' + esc(t('vi_recalls')) : ''}</dt><dd>${vi.inspections_due.map((m) => `${esc(mk(m.kind))} ${m.next_due_date ? fmtD(m.next_due_date) : esc(t('vi_recall_open'))}${m.next_due_date && m.next_due_date < today ? ` <span class="chip kritisch">${esc(t('ms_ueberfaellig'))}</span>` : ''}${m.recall_ref ? ` <span class="small muted">(${esc(m.recall_ref)})</span>` : ''}`).join('<br>')}${(vi.inspections_due_total || 0) > vi.inspections_due.length ? `<br><span class="small muted" id="vidmore">+${vi.inspections_due_total - vi.inspections_due.length} · <a href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${esc(t('vi_due_all'))} ›</a></span>` : ''}</dd>`);
   if (prev.length) parts.unshift(`<dt>${esc(t('vi_prev_same'))}</dt><dd>${prev.map((o) => `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a> · ${esc(t('st_fahrzeug_freigegeben'))} ${fmtD(o.closed_at)}`).join('<br>')}<div class="small muted">${esc(t('vi_prev_same_hint'))}</div></dd>`);
   if (wr.length) parts.unshift(`<dt>${esc(t('vi_warranty'))}</dt><dd>${wr.map((w) => `<a href="#/cases/${esc(w.case_id)}">${esc(w.case_no)}</a> · ${esc(w.item)}${w.item_kind === 'part' && w.supplier ? ` <span class="small muted">(${esc(supplierLabel(w.supplier))})</span>` : ''} · ${esc(t('warranty_until_d').replace('{d}', fmtD(w.warranty_until)))}`).join('<br>')}${vi.warranties_truncated ? `<div class="small" role="note" data-warrmore>${esc(t('warr_more').replace('{n}', vi.warranties_max))}</div>` : ''}<div class="small muted">${esc(t('vi_warranty_hint'))}</div></dd>`);
+  if (ls.length) parts.unshift(`<dt>${esc(t('vi_lease'))}</dt><dd data-vilease>${ls.map((l) => `${esc(t('ck_' + l.kind))} · ${esc(l.partner)}${l.contract_no ? ' · ' + esc(l.contract_no) : ''}${l.end_date ? ` <span class="small muted">${esc(t('vi_lease_until').replace('{d}', fmtD(l.end_date)))}</span>` : ''}`).join('<br>')}<div class="small muted">${esc(t('vi_lease_hint'))}</div></dd>`);
   if (vn.length) parts.unshift(`<dt>${esc(t('vnotes'))}</dt><dd>${vn.map((n) => `<b>ⓘ ${esc(n.text)}</b>${n.valid_until ? ` <span class="small muted">${esc(t('vnote_until').replace('{d}', fmtD(n.valid_until)))}</span>` : ''}`).join('<br>')}</dd>`);
   if (vi.last_km) parts.push(`<dt>${esc(t('km'))}</dt><dd>${fmtKm(vi.last_km.km)} <span class="small muted">(${fmtD(vi.last_km.measured_at)})</span></dd>`);
-  return `<details class="small vinfo" style="margin-top:8px"${vi.other_open_total || prev.length || vn.length || wr.length || vi.inspections_due.some((m) => m.recall_ref || (m.next_due_date && m.next_due_date < today)) ? ' open' : ''}><summary><b>${esc(t('vi_title'))}</b></summary><dl class="kv">${parts.join('')}</dl></details>`;
+  return `<details class="small vinfo" style="margin-top:8px"${vi.other_open_total || prev.length || vn.length || wr.length || ls.length || vi.inspections_due.some((m) => m.recall_ref || (m.next_due_date && m.next_due_date < today)) ? ' open' : ''}><summary><b>${esc(t('vi_title'))}</b></summary><dl class="kv">${parts.join('')}</dl></details>`;
 }
 
 // Nach Scan des Fahrzeug-Aufklebers: Auswahl „Schaden melden“ / „Abfahrtskontrolle“ für dieses Fahrzeug

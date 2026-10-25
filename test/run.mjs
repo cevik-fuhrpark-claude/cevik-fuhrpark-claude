@@ -2010,7 +2010,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -21079,6 +21079,48 @@ await test('Backlog 288 (Blickwinkel „Leasingrückgabe“): Leasing/Miete ende
     for (const k of ['CONTRACT_ENDED', 'CONTRACT_ENDS_SOON']) ok(FINDING_MESSAGES[l][k].includes('{open}') && FINDING_MESSAGES[l][k].includes('{items}'), `${l}.${k}`);
   }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('${ctRet(c.return_check)}') && app.includes('data-ct-ret'), 'Anzeige in der Vertragsübersicht');
+});
+
+await test('Backlog 289: Fahrzeugakte – laufende Leasing-/Mietverträge tragen `return_check` (offene Vorgänge/Restarbeiten, eigene Umgebung), Beenden-Formular zeigt sie mit letztem km-Stand; andere Arten ohne; Texte DE/UK/EN', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const lea = (await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Leasing AG', start_date: day(-700), end_date: day(300), evidence: 'Leasingvertrag' })).data.id;
+  const ins = (await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Versicherer', end_date: day(100), evidence: 'Police' })).data.id;
+  const mie = (await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'miete', partner: 'Alt-Miete', start_date: day(-900), end_date: day(-720), evidence: 'Mietvertrag' })).data.id;
+  eq((await U.fleet.post(`/api/contracts/${mie}/end`, { ended_on: day(-720), end_note: 'zurückgegeben' })).status, 200);
+  await newCase({ description: 'Kratzer Tür' }); await newCase({ description: 'Plane eingerissen' });
+  let ak = (await U.fleet.get(`/api/vehicles/${V1}`)).data;
+  const by = (id) => ak.contracts.find((c) => c.id === id);
+  eq(JSON.stringify(by(lea).return_check), JSON.stringify({ open_cases: 2, open_items: 0 }), 'Leasing läuft: auch ohne baldiges Ende geprüft (Beenden jederzeit möglich)');
+  ok(!by(ins).return_check && !by(mie).return_check, 'Versicherung und beendete Miete ohne Prüfung');
+  eq(by(lea).reading, null, 'ohne km-Stand: nichts geschätzt');
+  // Betrieb sieht die Testvorgänge nicht
+  const { vehicleContracts } = await import('../src/contracts.js');
+  const vid = db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
+  eq((await vehicleContracts(e, vid, null, new Map(), 'production')).find((c) => c.id === lea).return_check.open_cases, 0, 'andere Umgebung zählt nicht');
+  ok(!(await U.ws.get(`/api/vehicles/${V1}`)).data.contracts, 'Werkstatt sieht keine Verträge');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['ct_ret_km', 'ct_ret_km_none', 'ct_ret_km_old']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].ct_ret_km.includes('{km}') && STRINGS[l].ct_ret_km.includes('{d}'), `${l} Platzhalter`); ok(STRINGS[l].help_contracts_s.includes(STRINGS[l].ct_ret), `Hilfe ${l}`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('<form data-ctend="${esc(c.id)}">${ctRetEnd(c)}') && app.includes('data-ct-retend'), 'Beenden-Formular');
+});
+
+await test('Backlog 290: Vorgang an einem Leasing-/Mietfahrzeug – Kurzinfo nennt der Leitung die am Meldetag laufenden Leasing-/Mietverträge (nicht Lesezugriff/Werkstatt – nur isManager, nicht Versicherung/beendete/künftige); Texte DE/UK/EN', async () => {
+  const { U, newCase, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const id0 = await newCase({ description: 'Vor dem Vertrag gemeldet' });
+  eq(JSON.stringify((await U.fleet.get(`/api/cases/${id0}`)).data.vehicle_info.lease_contracts), '[]', 'ohne Vertrag leer');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Leasing AG', contract_no: 'L-77', start_date: day(-400), end_date: day(200), evidence: 'Leasingvertrag' })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Versicherer', end_date: day(100), evidence: 'Police' })).status, 201);
+  const old = (await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'miete', partner: 'Alt-Miete', start_date: day(-900), end_date: day(-700), evidence: 'Mietvertrag' })).data.id;
+  eq((await U.fleet.post(`/api/contracts/${old}/end`, { ended_on: day(-700), end_note: 'zurückgegeben' })).status, 200);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'miete', partner: 'Künftig-Miete', start_date: day(30), end_date: day(90), evidence: 'Mietvertrag 2' })).status, 201);
+  const id = await newCase({ description: 'Seitenspiegel abgefahren' });
+  const vi = (await U.fleet.get(`/api/cases/${id}`)).data.vehicle_info;
+  eq(JSON.stringify(vi.lease_contracts), JSON.stringify([{ kind: 'leasing', partner: 'Leasing AG', contract_no: 'L-77', end_date: day(200) }]), 'nur laufendes Leasing');
+  ok(!('lease_contracts' in (await U.viewer.get(`/api/cases/${id}`)).data.vehicle_info), 'Lesezugriff ohne Verträge');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['vi_lease', 'vi_lease_until', 'vi_lease_hint']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].vi_lease_until.includes('{d}'), `${l} Platzhalter`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('data-vilease') && app.includes("const ls = (vi && vi.lease_contracts) || [];"), 'Anzeige in der Kurzinfo');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

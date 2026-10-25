@@ -271,8 +271,12 @@ export async function vehicleContracts(env, vehicleId, latest, settings, envName
     LEFT JOIN files f ON f.id=c.file_id AND f.environment=?
     WHERE c.vehicle_id=? ORDER BY c.ended_on IS NOT NULL, c.ended_on DESC, c.end_date IS NULL, c.end_date`).bind(envName || '', vehicleId).all()).results;
   const today = berlinDate(); const w = warnDaysOf(settings); const endKm = await endKmByContract(env, rows);
+  // Backlog 289 (Rückgabe beim Beenden): laufende Leasing-/Mietverträge tragen `return_check` wie die Übersicht (eine Abfrage, nur wenn nötig)
+  const ret = rows.some((c) => RETURN_KINDS.includes(c.kind) && !c.ended_on) ? await env.DB.prepare(`SELECT
+      (SELECT COUNT(*) FROM cases k WHERE k.vehicle_id=?1 AND k.environment=?2 AND k.status IN ${OPEN_CASE_ST}) AS open_cases,
+      (SELECT COUNT(*) FROM cases k JOIN open_items i ON i.case_id=k.id AND i.status='offen' WHERE k.vehicle_id=?1 AND k.environment=?2 AND k.status='fahrzeug_freigegeben') AS open_items`).bind(vehicleId, envName || '').first() : null;
   return rows.map((c) => ({ ...c, file_id: c.file_name ? c.file_id : null, file_other_env: !!(c.file_id && !c.file_name), status: contractStatus(c, latest, today, w, c.km_allowance && endKm.has(c.id) ? endKm.get(c.id) : undefined),
-    reading: readingOf(c.ended_on ? endKm.get(c.id) : latest) }));
+    reading: readingOf(c.ended_on ? endKm.get(c.id) : latest), ...(ret && RETURN_KINDS.includes(c.kind) && !c.ended_on ? { return_check: { open_cases: ret.open_cases || 0, open_items: ret.open_items || 0 } } : {}) }));
 }
 
 const ORDER = { handeln: 0, hinweis: 1, ok: 2, beendet: 3 };

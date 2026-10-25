@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 288 – Blickwinkel „Leasingrückgabe“): Vertragsübersicht zeigt bei Leasing/Miete, die bald enden,
-# „Vor der Rückgabe: offene Vorgänge: N“ bzw. „keine offenen Vorgänge …“; DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler/Wortumbruch.
+# „Vor der Rückgabe: offene Vorgänge: N“ bzw. „keine offenen Vorgänge …“, Fahrzeugakte: Beenden-Formular mit Rückgabe-Angaben (Backlog 289), Vorgang: Kurzinfo nennt den Leasingvertrag (Backlog 290); DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler/Wortumbruch.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os, datetime, uuid
 from playwright.sync_api import sync_playwright
@@ -9,6 +9,8 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
 RET={'de':'Vor der Rückgabe','uk':'Перед поверненням','en':'Before return'}
 OPEN={'de':'offene Vorgänge: 1','uk':'відкриті справи: 1','en':'open cases: 1'}
 CLEAR={'de':'keine offenen Vorgänge','uk':'немає відкритих справ','en':'no open cases'}
+LEASE={'de':'Leasing-/Mietfahrzeug','uk':'Лізинговий/орендований транспорт','en':'Leased/rented vehicle'}
+NOKM={'de':'Noch kein km-Stand','uk':'Показник пробігу ще не внесено','en':'No odometer reading'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -45,6 +47,19 @@ with sync_playwright() as p:
         check(rowm.count()==1 and CLEAR[lang] in rowm.inner_text(),f'{lang} {w}px: Miete ohne Offenes')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/rueckgabe_{lang}_{w}.png', full_page=True)
+        # Backlog 289: Fahrzeugakte – Beenden-Formular des Leasingvertrags zeigt offene Vorgänge und den (fehlenden) km-Stand
+        q.goto(B+'/#/vehicles/'+V1); q.wait_for_selector('[data-ct-retend]', state='attached', timeout=15000)
+        det=q.locator('details:has([data-ct-retend])').first; det.locator('summary').click()
+        tx=q.locator('[data-ct-retend]').first.inner_text()
+        check(RET[lang] in tx and OPEN[lang] in tx and NOKM[lang] in tx,f'{lang} {w}px: Beenden-Formular mit Rückgabe-Angaben')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: Akte ohne Querscrollen')
+        if SHOTS: q.locator('[data-ct-retend]').first.screenshot(path=f'{SHOTS}/rueckgabe_akte_{lang}_{w}.png')
+        # Backlog 290: Vorgang am Leasingfahrzeug – Kurzinfo nennt den Vertrag
+        q.goto(B+'/#/cases/'+c['d']['id']); q.wait_for_selector('[data-vilease]', state='attached', timeout=15000)
+        vt=q.locator('details.vinfo').first.inner_text()
+        check(LEASE[lang] in vt and 'UI-Rückgabe-Leasing' in vt,f'{lang} {w}px: Vorgang nennt Leasingvertrag')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: Vorgang ohne Querscrollen')
+        if SHOTS: q.locator('details.vinfo').first.screenshot(path=f'{SHOTS}/rueckgabe_vorgang_{lang}_{w}.png')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')
         cx.close()
     br.close()
