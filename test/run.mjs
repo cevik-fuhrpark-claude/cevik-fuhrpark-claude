@@ -21646,6 +21646,29 @@ await test('Backlog 315 (Blickwinkel „Fahrerassistenzsystem fällt aus oder br
   ok(helpAfter(app, 'adas', 'loose'), 'Hilfe-Abschnitt adas nach loose');
 });
 
+await test('Backlog 316 (Blickwinkel „Lenkung schwergängig, hat Spiel oder Lkw zieht zur Seite“): Meldeformular zeigt Hinweise (anhalten, nicht weiterfahren; Warnmeldung/Servolenkung → nicht mehr bewegen, Warndreieck; Leitung entscheidet, nicht selbst schrauben; Fotos/Situation/Seite; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Lenkzeit/Lenkradheizung/Spiegel/Bremse quietscht lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const STEER_HINT = \/(.+)\/i;/m); ok(m, 'STEER_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Lenkung schwergängig', 'Lenkung zieht stark nach rechts', 'Lkw zieht nach links', 'Lenkrad hat viel Spiel', 'Servolenkung ausgefallen', 'Warnmeldung Servolenkung im Display', 'Lenkrad vibriert ab 80', 'Lenkrad steht schief', 'Lenkung blockiert beim Rangieren', 'steering is very heavy', 'power steering failure', 'steering wheel vibrates', 'truck pulls to the right', 'steering has a lot of play', 'Кермо туго повертається', 'Тягне вправо', 'Руль тянет влево', 'Кермо вібрує', 'Гидроусилитель руля не работает']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Lenkzeit überschritten', 'Lenk- und Ruhezeiten', 'Lenkradheizung', 'Lenkrad verschmutzt', 'Spiegel abgefahren', 'Bremse quietscht', 'Reifen platt', 'Disponent zieht Auftrag zurück', 'Fahrer zieht um', 'steering committee meeting', 'Kühlaggregat defekt', 'Plane gerissen', 'Rechts abgebogen und Bordstein touchiert']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const n of ['BRAKE_HINT', 'ADAS_HINT', 'FLAT_HINT', 'LOOSE_HINT']) ok(!pat(n).test('Lenkung schwergängig') && !pat(n).test('Lkw zieht nach links'), n + ' bleibt bei Lenkungsproblem aus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.steer_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.steer_hint_steps), 'keine Zahl ' + l);
+    const h = L.help_steer_s; ok(L.help_steer_t && h && h.includes(L.steer_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.steer_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="steer" class="panel" hidden role="status">`), 'Panel #steer');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#steer').hidden = !STEER_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('steer') && order.indexOf('acc') < order.indexOf('steer') && order.indexOf('flat') < order.indexOf('steer') && order.indexOf('brake') < order.indexOf('steer') && order.indexOf('steer') < order.indexOf('warnlight') && order.indexOf('steer') < order.indexOf('adas'), 'Gruppierung: Unfall/Reifen/Bremse vor Lenkung vor Warnleuchte/Assistent');
+  ok(helpAfter(app, 'steer', 'adas'), 'Hilfe-Abschnitt steer nach adas');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

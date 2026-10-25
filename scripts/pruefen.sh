@@ -185,6 +185,7 @@ UI-Hinweis Lkw festgefahren/kommt bei Glätte nicht weiter im Meldeformular und 
 UI-Hinweis Heizung/Gebläse/Scheibenwischer ausgefallen, Scheibe beschlagen/vereist im Meldeformular und Hilfe|ui-sicht.py|/tmp/cfp-sicht.log
 UI-Hinweis Teil hängt herunter/schleift/unterwegs verloren im Meldeformular und Hilfe|ui-teil-lose.py|/tmp/cfp-teil-lose.log
 UI-Hinweis Assistenzsystem gestört/Lkw bremst grundlos im Meldeformular und Hilfe|ui-assistenz.py|/tmp/cfp-assistenz.log
+UI-Hinweis Lenkung schwergängig/Spiel/Lkw zieht zur Seite im Meldeformular und Hilfe|ui-lenkung.py|/tmp/cfp-lenkung.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
