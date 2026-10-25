@@ -39,6 +39,9 @@ with sync_playwright() as p:
         ctx=br.new_context(viewport={'width':w,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'bm.inhaber','password':PW}])
         q.goto(B+'/#/fines/'+fid); q.wait_for_selector('main h1', timeout=15000); q.wait_for_timeout(300)
+        # 25.10.2026: unter Last (pruefen.sh) war der Text nach 300 ms noch nicht da – auf den Text warten statt fester Pause
+        try: q.wait_for_function('t => document.querySelector("main").innerText.includes(t)', arg=AMB[lang], timeout=10000)
+        except Exception: pass
         txt=q.inner_text('main')
         check(AMB[lang] in txt,f'{lang} {w}px: Bußgeld nennt mehrere aktive Fahrzeuge')
         sw=q.evaluate('()=>document.documentElement.scrollWidth'); check(sw<=w+1,f'{lang} {w}px: Bußgeld ohne Querscrollen ({sw})')
