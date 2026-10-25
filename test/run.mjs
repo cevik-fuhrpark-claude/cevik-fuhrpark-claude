@@ -19194,7 +19194,7 @@ await test('Backlog 214/215 (Teilagent „Fahrzeug gestohlen / Einbruch“): Mel
     ok(h.includes(STRINGS[l].theft_hint_steps) && h.includes(STRINGS[l].nav_new) && h.includes(STRINGS[l].help_tachofault_t), 'Hilfe nennt Schritte, „' + STRINGS[l].nav_new + '“ und Fahrerkarten-Abschnitt ' + l);
   }
   ok(app.includes(`<div id="theft" class="panel" hidden role="status">`), 'Panel #theft');
-  ok(app.includes("'tachofault', 'theft', 'glass', 'prio',"), 'Hilfe-Abschnitt theft');
+  ok(app.includes("'tachofault', 'theft', 'glass', "), 'Hilfe-Abschnitt theft');
   ok(app.indexOf("$('#theft').hidden = !THEFT_HINT.test") > 0 && app.indexOf("$('#theft').hidden = !THEFT_HINT.test") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
 });
 
@@ -19216,7 +19216,7 @@ await test('Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“)
   ok(app.includes(`<div id="glass" class="panel" hidden role="status">`), 'Panel #glass');
   const lp = app.indexOf("$('#glass').hidden = !GLASS_HINT.test($('#d').value)"); ok(lp > 0 && lp < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("const glassNoClaim = !cl && GLASS_HINT.test(desc || '');") && app.includes('data-claimglass'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
-  ok(app.includes("'theft', 'glass', 'prio',"), 'Hilfe-Abschnitt glass für meldende Rollen');
+  ok(app.includes("'theft', 'glass', "), 'Hilfe-Abschnitt glass für meldende Rollen');
 });
 
 await test('Backlog 293 (Blickwinkel „Wildunfall nachts auf der Landstraße“): Meldeformular zeigt bei Wildunfall eigene Schritte (sichern, Polizei auch ohne Verletzte, Wildunfallbescheinigung, Tier nicht mitnehmen) statt der allgemeinen Unfall-Hinweise; Versicherungsabschnitt erinnert an die Bescheinigung bis eine Datei verknüpft ist; Hilfe DE/UK/EN', async () => {
@@ -21178,6 +21178,26 @@ await test('Backlog 290: Vorgang an einem Leasing-/Mietfahrzeug – Kurzinfo nen
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const k of ['vi_lease', 'vi_lease_until', 'vi_lease_hint']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].vi_lease_until.includes('{d}'), `${l} Platzhalter`); }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('data-vilease') && app.includes("const ls = (vi && vi.lease_contracts) || [];"), 'Anzeige in der Kurzinfo');
+});
+
+await test('Backlog 294 (Blickwinkel „Fahrer verliert unterwegs Fahrzeugschlüssel oder Fahrzeugschein“): Meldeformular zeigt Hinweise (Fahrzeug sichern, Leitung anrufen statt eigenmächtig Schlüsseldienst, Zulassungsbescheinigung Teil I mitführen, Diebstahlverdacht → Polizei); Werkzeug-/Frachtwörter lösen nichts aus; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const LOST_HINT = \/(.+)\/i;/m); ok(m, 'LOST_HINT auf Modulebene'); eq((app.match(/const LOST_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Schlüssel verloren an der Raststätte', 'Fahrzeugschlüssel ist weg', 'Schlüssel im Fahrerhaus eingeschlossen', 'Fahrzeugschein verloren', 'Zulassungsbescheinigung nicht mehr auffindbar', 'Fahrzeugpapiere vergessen im Büro', 'Ich finde den Schlüssel nicht', 'Lost the truck keys', 'Keys are missing', 'locked the keys in the cab', 'cannot find the registration', 'Загубив ключі від вантажівки', 'Техпаспорт зник', 'Потерял ключ от машины', 'Ключі забув на складі']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Schraubenschlüssel fehlt im Werkzeugkasten', 'Drehmomentschlüssel verloren', 'Frachtpapiere vergessen', 'Papierrolle Fahrtenschreiber leer', 'Keyboard im Büro defekt', 'Spiegel weg nach Anstoß', 'Schlüssel klemmt im Zündschloss', 'Weg zur Werkstatt gesperrt', 'Turkey sandwich lost']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const st = STRINGS[l].lost_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(/Zulassungsbescheinigung Teil I/.test(st[2]), 'Fahrzeugschein mit amtlicher Bezeichnung ' + l);
+    ok(/110/.test(st[3]) && /112/.test(st[3]), 'Polizei/Notruf ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год|€|EUR)/i.test(STRINGS[l].lost_hint_steps), 'keine erfundene Frist/kein Betrag ' + l);
+    const h = STRINGS[l].help_lost_s; ok(STRINGS[l].help_lost_t && h && h.includes(STRINGS[l].lost_hint_steps) && h.includes(STRINGS[l].nav_new), 'Hilfe ' + l);
+    ok(STRINGS[l].lost_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="lost" class="panel" hidden role="status">`), 'Panel #lost');
+  ok(app.includes("$('#lost').hidden = !LOST_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("'theft', 'glass', 'lost', 'prio',"), 'Hilfe-Abschnitt lost nach Glasschaden');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
