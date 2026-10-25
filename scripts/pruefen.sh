@@ -166,6 +166,7 @@ UI-Glasschaden-Hinweis im Meldeformular, Vorgang und Hilfe|ui-glasschaden.py|/tm
 UI-Wildunfall-Hinweis im Meldeformular, Vorgang und Hilfe|ui-wildunfall.py|/tmp/cfp-wildunfall.log
 UI-Schlüssel/Fahrzeugschein-verloren-Hinweis im Meldeformular und Hilfe|ui-schluessel-verloren.py|/tmp/cfp-schluessel-verloren.log
 UI-Fehlbetankungs-Hinweis im Meldeformular und Hilfe|ui-falsch-getankt.py|/tmp/cfp-falsch-getankt.log
+UI-Reifenpanne-Hinweis im Meldeformular und Hilfe|ui-reifenpanne.py|/tmp/cfp-reifenpanne.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
 UI-Abschleppung: Standort/Abschleppdienst im Vorgang, Liste, Disposition, Hilfe|ui-abschleppung.py|/tmp/cfp-abschleppung.log

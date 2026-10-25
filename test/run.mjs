@@ -10195,7 +10195,10 @@ await test('Vorgang-Nebenwege: Beträge/Stunden im Verlauf nur mit Recht, fremde
   const same = png();
   const res = await Promise.all([same, same, ...Array.from({ length: 12 }, png)].map((b, i) => U.driver.req('POST', `/api/cases/${c8}/files`, b, { 'content-type': 'image/png', 'x-filename': `foto${i}.png` })));
   eq(e.DB.db.prepare('SELECT COUNT(*) n FROM files WHERE case_id=?').get(c8).n, 10, 'höchstens 10');
-  eq(res.filter((x) => x.status === 400 && x.data.error === 'too_many').length, 3, 'Überzählige mit too_many: ' + res.map((x) => x.status).join());
+  // Reihenfolge paralleler Anfragen ist nicht festgelegt (25.10.2026 unter Last: beide gleichen Fotos kamen nach zehn anderen → beide too_many):
+  // jede nicht gespeicherte Anfrage ist entweder die eine Dublette des gleichen Fotos oder too_many
+  const dupes = res.filter((x) => x.data && x.data.duplicate === true).length; ok(dupes <= 1, 'höchstens eine Dublette');
+  eq(res.filter((x) => x.status === 400 && x.data.error === 'too_many').length, res.length - 10 - dupes, 'Überzählige mit too_many: ' + res.map((x) => x.status).join());
   ok(res.slice(0, 2).every((x) => x.status === 201 || x.status === 400), 'gleiche Datei');
   eq(e.DB.db.prepare('SELECT COUNT(DISTINCT sha256) n FROM files WHERE case_id=?').get(c8).n, 10, 'keine Dublette gespeichert');
 });
@@ -21216,7 +21219,26 @@ await test('Backlog 295 (Blickwinkel „Falsch getankt – AdBlue im Dieseltank�
   }
   ok(app.includes(`<div id="fuel" class="panel" hidden role="status">`), 'Panel #fuel');
   ok(app.includes("$('#fuel').hidden = !FUEL_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'glass', 'lost', 'fuel', 'prio',"), 'Hilfe-Abschnitt fuel nach lost');
+  ok(app.includes("'glass', 'lost', 'fuel', "), 'Hilfe-Abschnitt fuel nach lost');
+});
+
+await test('Backlog 296 (Blickwinkel „Reifenpanne auf der Autobahn“): Meldeformular zeigt Hinweise (sicher anhalten, Warnblinker/Warnweste/Warndreieck, nicht selbst wechseln – Leitung/Disposition, Standort und Reifenposition, „nicht fahrbereit“); Reifendruck/Batterie platt lösen nichts aus; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const FLAT_HINT = \/(.+)\/i;/m); ok(m, 'FLAT_HINT auf Modulebene'); eq((app.match(/const FLAT_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Reifenpanne auf der A3', 'Reifen hinten links geplatzt', 'Anhängerreifen ist platt', 'Platter Reifen an der zweiten Achse', 'geplatzter Reifen, Fetzen auf der Fahrbahn', 'Plattfuß vorne rechts', 'Reifenplatzer am Auflieger', 'Flat tyre on the motorway', 'Tire blew out on the trailer', 'rear tyre burst', 'puncture front left', 'Пробив колесо на автобані', 'Лопнула шина на причепі', 'Колесо спустило', 'Пробил колесо', 'Прокол шины']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Reifendruck zu niedrig, Batterie platt', 'Batterie ist platt', 'Reifen abgefahren, Profil prüfen', 'Reifendruck prüfen', 'Bodenplatte gerissen', 'Flatbed door broken', 'Battery flat', 'Tyre pressure low', 'Шини зношені', 'Перевірити тиск у шинах', 'Winterreifen fehlen', 'Ersatzrad fehlt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const st = STRINGS[l].flat_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok(st[4].includes(STRINGS[l].driveable) && st[4].includes(STRINGS[l].drv_nicht_fahrbereit), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(STRINGS[l].flat_hint_steps), 'keine Zahl (Frist, Entfernung, Betrag) ' + l);
+    const h = STRINGS[l].help_flat_s; ok(STRINGS[l].help_flat_t && h && h.includes(STRINGS[l].flat_hint_steps) && h.includes(STRINGS[l].nav_new), 'Hilfe ' + l);
+    ok(STRINGS[l].flat_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="flat" class="panel" hidden role="status">`), 'Panel #flat');
+  ok(app.includes("$('#flat').hidden = !FLAT_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("'lost', 'fuel', 'flat', 'prio',"), 'Hilfe-Abschnitt flat nach fuel');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
