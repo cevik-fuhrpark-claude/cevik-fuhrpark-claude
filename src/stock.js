@@ -1,5 +1,5 @@
 // [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
-import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso, roundCents, quoteCell , commaDec, pointDec, parseCsv } from './util.js';
+import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso, berlinWindowStartIso, roundCents, quoteCell , commaDec, pointDec, parseCsv } from './util.js';
 import { audit, auditStmt } from './auth.js';
 import { stockNoteText } from '../public/check-labels.js';
 
@@ -46,7 +46,8 @@ function requestKey(body) {
 export async function listStock(env, user, envName, query) {
   const site = siteScope(user, query.site);
   // Verbrauch = Entnahmen der letzten 90 Tage ohne Umlagerungen (nur Information für den Bestellvorschlag)
-  const since = new Date(Date.now() - 90 * 86400000).toISOString();
+  // Berliner Kalendertage wie alle anderen Zeitfenster (Backlog 281, Teilagent „Nachtschicht“; vorher 90 × 24 h ab jetzt – uhrzeitabhängig)
+  const since = berlinWindowStartIso(90);
   const rows = (await env.DB.prepare(`SELECT i.*, COALESCE((SELECT SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id),0) AS on_hand,
       COALESCE((SELECT -SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id AND m.type='entnahme' AND m.transfer_id IS NULL AND m.created_at >= ?),0) AS used_90d,
       (SELECT MAX(m.created_at) FROM stock_movements m WHERE m.item_id=i.id AND m.type='entnahme' AND m.transfer_id IS NULL) AS last_out_at
