@@ -21925,6 +21925,30 @@ await test('Backlog 329 (Fehlersuche Handy-Tastatur): typografischer Apostroph �
   ok(!pat('BRAKE_HINT').test("brake lights don't work") && pat('LIGHTS_HINT').test("brake lights don’t work"), 'Bremslicht bleibt beim Licht-Hinweis');
 });
 
+await test('Backlog 330 (Blickwinkel „Rad wackelt, Radmuttern locker oder Radlager heiß“): Meldeformular zeigt Hinweise (anhalten, Leitung anrufen, nicht weiterfahren; nicht nach Gefühl nachziehen; heiße Nabe nicht anfassen; welches Rad/Achse/Seite, Reifenwechsel, Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Lenkrad, Ersatzrad, Radkappe, Reifenwechsel, Unterlegkeile lösen ihn nicht aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const WHEEL_HINT = \/(.+)\/i;/m); ok(m, 'WHEEL_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Radmuttern locker', 'Radmutter fehlt', 'Hinterrad links wackelt', 'Lkw hat ein Rad verloren', 'Radbolzen abgerissen', 'Radlager heiß', 'Radnabe qualmt', 'Felge gerissen', 'lose Radmuttern am Auflieger', 'wheel nuts loose', 'missing wheel nut', 'wheel is wobbling', 'lost a wheel', 'wheel bearing grinding', 'cracked rim', 'Колісні гайки ослабли', 'колесо хитається', 'Колесо болтается', 'отвалилось колесо', 'ступица горячая']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Lenkrad wackelt', 'steering wheel loose', 'Ersatzrad lose', 'spare wheel loose', 'Radkappe verloren', 'Rad gewechselt, Radmuttern geprüft', 'Radmuttern nachgezogen', 'Reifen platt', 'Reifen hat Luft verloren', 'wheel chocks missing', 'Fahrrad verloren', 'колесо пробите']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('STEER_HINT').test('Lenkrad wackelt') && pat('FLAT_HINT').test('Reifen platt') && pat('LOOSE_HINT').test('Radkappe verloren') && pat('SAFETYKIT_HINT').test('wheel chocks missing'), 'Lenkung/Reifenpanne/lose Teile/Ausrüstung behalten ihre eigenen Hinweise');
+  for (const n of ['STEER_HINT', 'FLAT_HINT', 'LOOSE_HINT', 'SAFETYKIT_HINT', 'THEFT_HINT']) ok(!pat(n).test('Radmuttern locker') && !pat(n).test('wheel nuts loose'), n + ' bleibt bei lockeren Radmuttern aus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.wheel_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|§/.test(L.wheel_hint_steps), 'keine Zahl, kein Paragraf ' + l);
+    const h = L.help_wheel_s; ok(L.help_wheel_t && h && h.includes(L.wheel_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.wheel_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="wheel" class="panel" hidden role="status">`), 'Panel #wheel');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#wheel').hidden = !WHEEL_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('wheel') && order.indexOf('fire') < order.indexOf('wheel') && order.indexOf('acc') < order.indexOf('wheel') && order.indexOf('flat') < order.indexOf('wheel') && order.indexOf('wheel') < order.indexOf('brake') && order.indexOf('wheel') < order.indexOf('loose'), 'Gruppierung: Brand/Unfall/Reifenpanne vor Rad vor Bremse/lose Teile');
+  ok(helpAfter(app, 'wheel', 'safetykit'), 'Hilfe-Abschnitt wheel nach safetykit');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
