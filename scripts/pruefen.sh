@@ -181,6 +181,7 @@ UI-Hinweis Spiegel abgefahren im Meldeformular und Hilfe|ui-spiegel.py|/tmp/cfp-
 UI-Hinweis Auflieger lässt sich nicht kuppeln/hat sich gelöst im Meldeformular und Hilfe|ui-kupplung.py|/tmp/cfp-kupplung.log
 UI-Hinweis Beleuchtung am Lkw/Auflieger ausgefallen im Meldeformular und Hilfe|ui-licht.py|/tmp/cfp-licht.log
 UI-Hinweis Tür/Hecktür/Ladebordwand schließt nicht im Meldeformular und Hilfe|ui-tuer.py|/tmp/cfp-tuer.log
+UI-Hinweis Lkw festgefahren/kommt bei Glätte nicht weiter im Meldeformular und Hilfe|ui-festgefahren.py|/tmp/cfp-festgefahren.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
