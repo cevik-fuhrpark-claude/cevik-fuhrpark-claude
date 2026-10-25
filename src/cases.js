@@ -1,10 +1,10 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase, day as pastDay } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
-import { canReadFineFile } from './fines.js';
+import { canReadFineFile, fineVehiclesSql } from './fines.js';
 import { siteSelection } from './reports.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { huSpFor, HUSP_ONE_SQL, huSpInputFromRow } from './inspection_rules.js';
@@ -227,14 +227,14 @@ const CLAIM_DE = { gemeldet: 'gemeldet', in_pruefung: 'in Prüfung', reguliert: 
 // workshopNames (optional): Map Werkstatt-Code → Name (20.10.2026: CSV zeigte „MUENCHEN“ statt „Werkstatt München“)
 export function casesCsv(rows, csvCell, fmt, claims = null, workshopNames = null) {
   const head = ['Vorgang', 'Kennzeichen', 'Standort', 'Priorität', 'Status', 'Sicherheitssperre', 'Fahrbereit laut Meldung', 'Werkstatt', 'Beschreibung', 'Gemeldet am', 'Gemeldet von',
-    'Eingang bestätigt', 'Werkstatt übernommen', 'Abgeschlossen', 'Offene Restarbeiten', 'Fotos/Dateien', 'Werkstatttermin', ...(claims ? ['Versicherungsfall', 'Versicherer', 'Schadennummer', 'Kostenfreigabe ausstehend'] : []), 'Herkunft', 'Dublette von', 'Wiedervorlage'];
+    'Eingang bestätigt', 'Werkstatt übernommen', 'Abgeschlossen', 'Offene Restarbeiten', 'Fotos/Dateien', 'Werkstatttermin', ...(claims ? ['Versicherungsfall', 'Versicherer', 'Schadennummer', 'Kostenfreigabe ausstehend'] : []), 'Herkunft', 'Dublette von', 'Wiedervorlage', 'Schadenzeitpunkt laut Meldung'];
   const lines = [head.join(';')];
   for (const c of rows) {
     const k = claims && claims.get(c.id);
     lines.push([csvCell(c.case_no), csvCell(c.plate), csvCell(c.vehicle_site), PRIO_DE[c.priority] || c.priority, CASE_STATUS_DE[c.status] || csvCell(c.status), c.safety_lock ? 'ja' : 'nein',
       DRV_DE[c.reported_driveability] || csvCell(c.reported_driveability), csvCell((workshopNames && workshopNames.get(c.workshop_site)) || c.workshop_site), csvCell(caseDescText(c.description, 'de')), fmt(c.created_at), csvCell(c.reporter_name_hidden ? 'Fahrer/in (Name ausgeblendet)' : c.reporter_name), fmt(c.fleet_received_at), fmt(c.workshop_ack_at), fmt(c.closed_at),
       c.open_items ?? '', c.file_count ?? '', c.planned_date ? c.planned_date.split('-').reverse().join('.') : '',
-      ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), quoteCell(csvCell(k ? k.claim_no : '')), c.cost_over_limit_at && OPEN_STATUSES.includes(c.status) ? 'ja' : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no), c.followup_on ? csvCell(c.followup_on.split('-').reverse().join('.') + (c.followup_note ? ' – ' + c.followup_note : '')) : ''].join(';'));
+      ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), quoteCell(csvCell(k ? k.claim_no : '')), c.cost_over_limit_at && OPEN_STATUSES.includes(c.status) ? 'ja' : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no), c.followup_on ? csvCell(c.followup_on.split('-').reverse().join('.') + (c.followup_note ? ' – ' + c.followup_note : '')) : '', csvCell(occurredCsv(c.occurred_at))].join(';'));
   }
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
@@ -357,6 +357,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
   };
   // Versicherungsfall (nur Inhaber/Fuhrparkleitung) samt Versicherungsverträgen des Fahrzeugs zur Auswahl
   if (user.role === 'owner' || user.role === 'fleet') Object.assign(detail, await claimForCase(env, c.id, c.vehicle_id));
+  // Fahrer laut Zuordnung/Abfahrtskontrolle zum Schadenzeitpunkt (Backlog 285) – nur Leitung (Fahrerdaten), nur wenn angegeben
+  if (isManager(user) && c.occurred_at) detail.occurred_drivers = await driversAtOccurrence(env, envName, c);
   if (user.role !== 'driver') {
     // Kurzinfo zum Fahrzeug (nur gespeicherte Daten): weitere offene Vorgänge, Prüfungen ≤ 30 Tage/überfällig, letzter km-Stand –
     // damit die Werkstatt z. B. eine fällige Prüfung beim selben Aufenthalt mit erledigen kann
@@ -635,6 +637,51 @@ export function oneYearAhead(day) {
   return md === '02-29' ? `${y}-02-28` : `${y}-${md}`;
 }
 
+// Schadenzeitpunkt laut Meldung (Backlog 285, Migration 0084): leer → null; „JJJJ-MM-TT“ = Tag ohne Uhrzeit (Berliner Kalender);
+// „JJJJ-MM-TTTHH:MM“ = deutsche Uhrzeit (wie die Tatzeit bei Bußgeldern) bzw. ISO mit Zeitzone → UTC-ISO. Nicht nach `latest`
+// (Meldezeit; 10 Min. Toleranz für Geräteuhren), höchstens ein Jahr zurück. Nie geschätzt oder aus der Meldezeit abgeleitet.
+export function occurredAt(v, latest = nowIso()) {
+  const s = str(v, { max: 40, field: 'Schadenzeitpunkt' });
+  if (!s) return null;
+  const lim = berlinDate(latest);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    if (!isCalendarDate(s)) throw bad('validation', 'Schadenzeitpunkt: ungültiges Datum.');
+    if (s > lim) throw bad('validation', 'Schadenzeitpunkt liegt in der Zukunft.');
+    if (s < oneYearBack(lim)) throw bad('validation', 'Schadenzeitpunkt liegt mehr als ein Jahr zurück.');
+    return s;
+  }
+  const iso = berlinLocalToIso(s);
+  const ms = iso ? Date.parse(iso) : NaN;
+  if (!iso || !/^\d{4}-\d{2}-\d{2}T/.test(s) || !Number.isFinite(ms)) throw bad('validation', 'Schadenzeitpunkt: ungültiges Datum.');
+  if (ms > Date.parse(latest) + 10 * 60000) throw bad('validation', 'Schadenzeitpunkt liegt in der Zukunft.');
+  if (berlinDate(new Date(ms).toISOString()) < oneYearBack(lim)) throw bad('validation', 'Schadenzeitpunkt liegt mehr als ein Jahr zurück.');
+  return new Date(ms).toISOString();
+}
+
+// Fahrer laut Fahrzeugzuordnung bzw. Abfahrtskontrolle (Fahrerrolle) zum Schadenzeitpunkt – nur Hinweis für die Leitung, keine Zuordnung.
+// Tag ohne Uhrzeit: alle Zuordnungen, die an diesem Berliner Tag galten. Anhänger: auch über die fest gekoppelte Zugmaschine (wie Bußgelder).
+export async function driversAtOccurrence(env, envName, c) {
+  if (!c.occurred_at) return null;
+  const dayOnly = c.occurred_at.length === 10;
+  const day = dayOnly ? c.occurred_at : berlinDate(c.occurred_at);
+  const from = dayOnly ? berlinDayStartIso(day) : c.occurred_at;
+  const next = new Date(Date.parse(day + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
+  const to = dayOnly ? berlinDayStartIso(next) : c.occurred_at;
+  const rows = (await env.DB.prepare(`SELECT 'zuordnung' AS basis, d.user_id, u.display_name, d.valid_from AS at, d.valid_to AS until, vv.plate, d.vehicle_id FROM driver_vehicles d
+      JOIN users u ON u.id=d.user_id JOIN vehicles vv ON vv.id=d.vehicle_id
+      WHERE d.vehicle_id IN (${fineVehiclesSql('?1')}) AND d.environment=?2 AND d.valid_from <= ?4 AND (d.valid_to IS NULL OR d.valid_to > ?3)
+    UNION ALL SELECT 'kontrolle' AS basis, i.performed_by, u.display_name, i.created_at, NULL, vv.plate, i.vehicle_id FROM inspections i
+      JOIN users u ON u.id=i.performed_by JOIN vehicles vv ON vv.id=i.vehicle_id
+      WHERE i.vehicle_id IN (${fineVehiclesSql('?1')}) AND i.environment=?2 AND u.environment=?2 AND i.kind='abfahrt' AND u.role='driver' AND i.created_at >= ?5 AND i.created_at < ?6
+    ORDER BY at LIMIT 21`).bind(c.vehicle_id, envName, from, dayOnly ? to : from, berlinDayStartIso(day), berlinDayStartIso(next)).all()).results;
+  const out = [];
+  for (const r of rows.slice(0, 20)) {
+    if (out.some((o) => o.user_id === r.user_id && o.basis === r.basis)) continue;
+    out.push({ user_id: r.user_id, display_name: r.display_name, basis: r.basis, at: r.at, until: r.until || null, ...(r.vehicle_id !== c.vehicle_id ? { via_plate: r.plate } : {}) });
+  }
+  return { day_only: dayOnly, drivers: out, truncated: rows.length > 20 };
+}
+
 // Wiedervorlage: Kalenderdatum ab heute (Berlin), höchstens 1 Jahr voraus
 export function followupDate(v) {
   const d = String(v);
@@ -674,6 +721,8 @@ export function allowedActions(user, c, access) {
   // Standort/Abschleppung (Migration 0079, Teilagent „Fahrzeug wird abgeschleppt“): Leitung an offenen Vorgängen, Werkstatt solange sie
   // das Fahrzeug holt bzw. repariert (nicht mehr in der Abschlusskontrolle); Disposition/Lesende sehen den Eintrag
   if (OPEN_STATUSES.includes(c.status) && (mgr || (ws && c.status !== 'abschlusskontrolle'))) a.push('set_vehicle_location');
+  // Schadenzeitpunkt (Backlog 285): Leitung trägt ihn nach bzw. berichtigt ihn – auch nach dem Abschluss (Versicherer/Gutachter fragen später nach)
+  if (mgr && c.origin === 'meldung' && c.status !== 'abgelehnt') a.push('set_occurred_at');
   switch (c.status) {
     case 'gemeldet':
       if (mgr) { if (!c.fleet_received_at) a.push('receive'); a.push('approve_repair', 'reject'); }
@@ -852,7 +901,9 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
     const origin = body.origin && ['meldung', 'kontrolle'].includes(body.origin) ? body.origin : 'meldung';
     const parentId = body.parent_case_id ? str(body.parent_case_id, { max: 40 }) : null;
     const checkItem = origin === 'kontrolle' && body.check_item ? str(body.check_item, { max: 60, field: 'Prüfpunkt' }) : null;
-    specs.push({ vehicleId, description, reportedPriority, driveability, suggested, requestKey, location, origin, parentId, checkItem,
+    // Schadenzeitpunkt laut Meldung (Backlog 285): optional, nur bei Meldungen (Kontrolle/Prüftermin haben ihren eigenen Zeitpunkt)
+    const occurred = origin === 'meldung' && !internal.origin ? occurredAt(body.occurred_at) : null;
+    specs.push({ vehicleId, description, reportedPriority, driveability, suggested, requestKey, location, origin, parentId, checkItem, occurred,
       reporterNote: str(body.reporter_name_note, { max: 120, field: 'Name' }) });
     if (internal.origin) specs.at(-1).origin = internal.origin;
   }
@@ -878,7 +929,7 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
     for (const x of specs) if (x.suggested && closed.has(x.suggested)) x.suggested = null;
     if (specs.some((x) => x.suggested && !ok.has(x.suggested))) throw bad('validation', 'Unbekannte Werkstatt.');
   }
-  const hashes = await Promise.all(specs.map((x) => sha256Hex(JSON.stringify([x.vehicleId, x.description, x.reportedPriority, x.driveability, x.suggested, x.location, x.parentId]))));
+  const hashes = await Promise.all(specs.map((x) => sha256Hex(JSON.stringify([x.vehicleId, x.description, x.reportedPriority, x.driveability, x.suggested, x.location, x.parentId, ...(x.occurred ? [x.occurred] : [])]))));
   specs.forEach((x, i) => { x.contentHash = hashes[i]; });
   const byKey = async () => new Map((await env.DB.prepare('SELECT id, case_no, content_hash, request_key FROM cases WHERE environment=? AND reporter_id=? AND request_key IN (SELECT value FROM json_each(?))')
     .bind(envName, user.id, J(specs.map((x) => x.requestKey))).all()).results.map((r) => [r.request_key, r]));
@@ -916,7 +967,7 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
     // Auftrag der Leitung aus Prüftermin/Prüfmangel ist bereits fachlich bewertet – kein „(ungeprüft)“ (18.10.2026)
     const by2 = internal.origin === 'wartung' ? `Auftrag ${ROLE_DE[user.role] || ''}`.trim() : by; const unchecked = internal.origin === 'wartung' ? '' : ' (ungeprüft)';
     const lockReason = safetyLock ? (x.driveability === 'nicht_fahrbereit' ? `${by2}: nicht fahrbereit${unchecked}` : `${by2}: sicherheitskritisch${unchecked}`) : null;
-    rows.push({ id, case_no: caseNo, vehicle_id: x.vehicleId, reporter_name_note: x.reporterNote, description: x.description, location_note: x.location,
+    rows.push({ id, case_no: caseNo, vehicle_id: x.vehicleId, reporter_name_note: x.reporterNote, description: x.description, location_note: x.location, occurred_at: x.occurred,
       priority: x.reportedPriority, driveability: x.driveability, safety_lock: safetyLock, lock_reason: lockReason, site: x.suggested, origin: x.origin,
       parent_case_id: x.parentId, check_item: x.checkItem, request_key: x.requestKey, content_hash: x.contentHash,
       maintenance_rule_id: internal.maintenance_rule_id || null, maintenance_event_id: internal.maintenance_event_id || null, tire_order: internal.tire_order || null });
@@ -948,9 +999,9 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   try {
     batchRes = await env.DB.batch([
       env.DB.prepare(`INSERT INTO cases(id,case_no,environment,vehicle_id,reporter_id,reporter_name_note,description,location_note,reported_priority,priority,
-        reported_driveability,safety_lock,safety_lock_reason,status,suggested_workshop_site,origin,parent_case_id,check_item,request_key,content_hash,maintenance_rule_id,maintenance_event_id,tire_order,version,created_at,updated_at)
+        reported_driveability,safety_lock,safety_lock_reason,status,suggested_workshop_site,origin,parent_case_id,check_item,request_key,content_hash,maintenance_rule_id,maintenance_event_id,tire_order,occurred_at,version,created_at,updated_at)
         SELECT ${v('id')}, ${v('case_no')}, ?1, ${v('vehicle_id')}, ?2, ${v('reporter_name_note')}, ${v('description')}, ${v('location_note')}, ${v('priority')}, ${v('priority')},
-          ${v('driveability')}, ${v('safety_lock')}, ${v('lock_reason')}, 'gemeldet', ${v('site')}, ${v('origin')}, ${v('parent_case_id')}, ${v('check_item')}, ${v('request_key')}, ${v('content_hash')}, ${v('maintenance_rule_id')}, ${v('maintenance_event_id')}, ${v('tire_order')}, 1, ?3, ?3
+          ${v('driveability')}, ${v('safety_lock')}, ${v('lock_reason')}, 'gemeldet', ${v('site')}, ${v('origin')}, ${v('parent_case_id')}, ${v('check_item')}, ${v('request_key')}, ${v('content_hash')}, ${v('maintenance_rule_id')}, ${v('maintenance_event_id')}, ${v('tire_order')}, ${v('occurred_at')}, 1, ?3, ?3
         FROM json_each(?4) WHERE EXISTS (SELECT 1 FROM vehicles WHERE id=${v('vehicle_id')} AND active=1)`).bind(envName, user.id, now, JSON.stringify(rows)),
       // Fahrzeug gleichzeitig außer Betrieb genommen (18.10.2026: offener Vorgang an außer Betrieb genommenem Fahrzeug) → ganzer Stapel zurück
       env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN changes() = ? THEN 1 ELSE 0 END').bind(rows.length), env.DB.prepare('DELETE FROM cmd_guard'),
@@ -1190,6 +1241,14 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (from.location === to.location && from.service === to.service && from.on === to.on) throw bad('validation', 'Standort ist unverändert.');
       set.vehicle_location = loc; set.tow_service = svc; set.towed_on = on;
       payload = { from: from.location || from.service || from.on ? from : null, to: loc || svc || on ? to : null };
+      break;
+    }
+    case 'set_occurred_at': {
+      // Schadenzeitpunkt laut Meldung/Rückfrage (Backlog 285): Tag oder Tag + deutsche Uhrzeit, nicht nach der Meldung; leer = entfernen.
+      // Ohne Statuswechsel und ohne Push; der Verlauf zeigt alt → neu.
+      const at = occurredAt(p.occurred_at, c.created_at);
+      if (at === (c.occurred_at || null)) throw bad('validation', 'Schadenzeitpunkt ist unverändert.');
+      set.occurred_at = at; payload = { from: c.occurred_at || null, to: at };
       break;
     }
     case 'correct_vehicle': {

@@ -4969,7 +4969,7 @@ await test('Dublette: Meldung als Dublette eines Vorgangs desselben Fahrzeugs sc
   ok(kcsv[0].endsWith(';davon Dubletten;davon interne Aufträge;davon ohne Reparatur beendet'), 'CSV-Spalte am Ende');
   eq(Number(kcsv.find((l) => l.startsWith('Alle;')).split(';').at(-3)), pick(k1, 'alle').duplicates, 'CSV = JSON');
   const lcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?status=all&format=csv&q=Spiegel')).data);
-  ok(lcsv.split('\r\n').filter((l) => l.endsWith(';' + o.case.case_no + ';')).length === 2, 'CSV-Spalte „Dublette von“');
+  ok(lcsv.split('\r\n').filter((l) => l.endsWith(';' + o.case.case_no + ';;')).length === 2, 'CSV-Spalte „Dublette von“');
   eq((await users.fleet.get('/api/cases?status=closed')).data.cases.find((x) => x.id === dup).duplicate_of_no, o.case.case_no, 'Liste liefert Nummer');
   // Folgeauftrag und Dublette im selben Vorgang werden getrennt (eine Abfrage)
   ok(QSTAT.perRequest.filter((w) => w.method === 'GET' && w.path === '/api/cases/:id').every((w) => w.n <= 21), 'Vorgangsdetail ≤ 21 Abfragen');
@@ -5232,7 +5232,7 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   p = (await users.fleet.get('/api/workshop/plan')).data;
   ok(p.overdue.some((i) => i.id === cid), 'überfällig geplant');
   const csvT = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Werkstattplan-Test')).data);
-  ok(csvT.split('\r\n')[0].includes(';Werkstatttermin;Versicherungsfall') && csvT.includes(';' + day(-1).split('-').reverse().join('.') + ';;;;;Meldung;;\r\n'), 'CSV-Spalte Werkstatttermin (Leitung: danach Versicherungsfall-Spalten)');
+  ok(csvT.split('\r\n')[0].includes(';Werkstatttermin;Versicherungsfall') && csvT.includes(';' + day(-1).split('-').reverse().join('.') + ';;;;;Meldung;;;\r\n'), 'CSV-Spalte Werkstatttermin (Leitung: danach Versicherungsfall-Spalten)');
   eq((await cmd(users.ws, 'set_planned_date', { planned_date: '' })).status, 200);
   p = (await users.dispatch.get('/api/workshop/plan')).data;
   ok(p.unplanned.some((i) => i.id === cid), 'ohne Termin');
@@ -5658,10 +5658,10 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   eq((await users.prodFleet.get(`/api/vehicles/${V}/timeline?types=claim`)).data.items.length, 0, 'Betrieb sieht Testfall nicht');
   // Vorgänge-CSV: Versicherungsfall-Spalten nur für die Leitung
   const vcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=VT-IC')).data);
-  ok(vcsv.split('\r\n')[0].endsWith(';Versicherungsfall;Versicherer;Schadennummer;Kostenfreigabe ausstehend;Herkunft;Dublette von;Wiedervorlage') && vcsv.includes(';reguliert;Muster-Versicherung AG;S-2026-77'), 'CSV mit Versicherungsfall');
+  ok(vcsv.split('\r\n')[0].endsWith(';Versicherungsfall;Versicherer;Schadennummer;Kostenfreigabe ausstehend;Herkunft;Dublette von;Wiedervorlage;Schadenzeitpunkt laut Meldung') && vcsv.includes(';reguliert;Muster-Versicherung AG;S-2026-77'), 'CSV mit Versicherungsfall');
   const vcsvV = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.dispatch.get('/api/cases?format=csv&q=VT-IC')).data);
   ok(!vcsvV.includes('Versicherer'), 'Disposition ohne Versicherungsspalten');
-  ok(!vcsvV.includes('Kostenfreigabe') && vcsvV.split('\r\n')[0].endsWith(';Werkstatttermin;Herkunft;Dublette von;Wiedervorlage'), 'Disposition ohne Kostenspalte, mit Herkunft');
+  ok(!vcsvV.includes('Kostenfreigabe') && vcsvV.split('\r\n')[0].endsWith(';Werkstatttermin;Herkunft;Dublette von;Wiedervorlage;Schadenzeitpunkt laut Meldung'), 'Disposition ohne Kostenspalte, mit Herkunft');
   // Fahrzeugakte: Zusammenfassung Versicherungsfälle (nur Leitung)
   const akte = (await users.fleet.get(`/api/vehicles/${V}`)).data;
   eq(akte.claims_summary.total, 1); eq(akte.claims_summary.open, 0); eq(akte.claims_summary.reimbursed_net, 2000);
@@ -5711,7 +5711,7 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   let cd = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(cd.file_id, fid); eq(cd.file_name, 'abrechnung.pdf');
   eq((await users.fleet.put(P, { note: 'Rückfrage erledigt' })).status, 200);
   eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, fid, 'ohne Feld unverändert');
-  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft;Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum\r\n'), 'CSV-Spalte');
+  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft;Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung\r\n'), 'CSV-Spalte');
   eq((await users.fleet.put(P, { file_id: null })).status, 200);
   eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, null, 'Verknüpfung aufgehoben');
   eq((await users.fleet.put(P, { file_id: fid })).status, 200);
@@ -5985,7 +5985,7 @@ await test('Kosten-Freigabegrenze: aus ohne Einstellung; Überschreiten markiert
   eq((await owner.put('/api/settings', { repair_cost_limit_net: '' })).status, 200);
   ok(!(await cmd(users.ws, 'add_part', { name: 'Fett', quantity: 1, unit_price_net: 5 })).data.cost_limit_exceeded, 'Grenze aus');
   const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Kostengrenze-Test')).data);
-  ok(kcsv.split('\r\n')[1].endsWith(';;Meldung;;'), 'CSV: Grenze entfernt → Kostenfreigabe nicht mehr ausstehend (seit 19.10.2026 aufgehoben)');
+  ok(kcsv.split('\r\n')[1].endsWith(';;Meldung;;;'), 'CSV: Grenze entfernt → Kostenfreigabe nicht mehr ausstehend (seit 19.10.2026 aufgehoben)');
   // seit 19.10.2026: Grenze entfernt → Markierung aufgehoben; für die folgenden Prüfungen Grenze wieder setzen und erneut überschreiten
   eq((await owner.put('/api/settings', { repair_cost_limit_net: '1000' })).status, 200);
   eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Getriebedienst', amount_net: 900, valuation: 'estimate' }, 'Angebot 2')).data.cost_limit_exceeded, true);
@@ -12500,7 +12500,7 @@ await test('Versicherungsfälle: ruhendes Fahrzeug bleibt sichtbar, aber ohne Na
   eq(ov.reimbursed_sum_net, null, 'nicht in der Summe'); eq(ov.reimbursed_sum_excluded_net, 750.5, 'eigene Zeile');
   eq(ov.claims.find((c) => c.case_id === B).followup_due, false, 'ruhend: kein Nachfass-Hinweis (wie Agent)');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/claims?format=csv&filter=alle')).data);
-  ok(csv.includes(';Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum\r\n'), 'CSV-Kopf'); ok(/;ja;(ja|nein|);[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n/.test(csv.split('\r\n').slice(1).join('\r\n') + '\r\n'), 'CSV-Wert ja');
+  ok(csv.includes(';Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung\r\n'), 'CSV-Kopf'); ok(/;ja;(ja|nein|);[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n/.test(csv.split('\r\n').slice(1).join('\r\n') + '\r\n'), 'CSV-Wert ja');
 });
 
 await test('Fehlersuche 18.10. (16): Bußgeld-Standort/„offen“ vor der Grenze, Frist-Obergrenze; Lagerpreis mit Dezimalkomma, Umlagerungs-Schlüssel je Artikel; Profiltiefe gerundet, Messalter in Berliner Kalendertagen', async () => {
@@ -14253,7 +14253,7 @@ await test('Fehlersuche 19.10. (Fahrzeugimport/Lager/Push/Versicherung): Anhäng
   const cl = (await U.fleet.get('/api/claims?filter=alle')).data.claims.find((c) => c.case_id === cid);
   eq(cl.case_cost_net, null); eq(cl.cost_incomplete, true);
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/claims?filter=alle&format=csv')).data);
-  ok(/;Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum\r\n/.test(csv) && /;nein;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n$/.test(csv), csv.slice(-120));
+  ok(/;Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung\r\n/.test(csv) && /;nein;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n$/.test(csv), csv.slice(-120));
   ok(app.includes("c.cost_incomplete ? ` · ${esc(t('claim_case_cost'))} –"), 'Übersicht zeigt „unvollständig“');
   // 5. Lager-Buchungstexte: Import-Anfangsbestand und Einheit übersetzt; deaktivierter Artikel im Import markiert
   const { stockNoteText } = await import('../public/check-labels.js');
@@ -19418,7 +19418,7 @@ await test('Backlog 222 (Teilagent „Fahrzeug wird abgeschleppt – wer sieht w
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   for (const n of ['vehicle_location', 'tow_service', 'towed_on']) ok(app.includes(`name="${n}"`), `Formularfeld ${n}`);
   ok(app.includes('${vehLocInfo(c)}') && app.includes('<span data-vloc>') && app.includes('class="towtag"'), 'Anzeige im Vorgang, in „Nicht einplanen“ und in der Vorgangsliste');
-  ok(app.includes("['set_followup', 'set_planned_date', 'set_vehicle_location'].includes(e.action)"), 'Verlauf alt → neu');
+  ok(app.includes("['set_followup', 'set_planned_date', 'set_vehicle_location', 'set_occurred_at'].includes(e.action)"), 'Verlauf alt → neu');
   const { STRINGS, translateValidation } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) {
     for (const k of ['act_set_vehicle_location', 'vl_title', 'vl_hint', 'vl_location_hint', 'vl_service', 'vl_on', 'vl_towed_chip', 'vl_unknown', 'vl_clear_hint']) ok(STRINGS[l][k], `${l}.${k}`);
@@ -20887,7 +20887,7 @@ await test('Backlog 275–277: Versicherungsfälle – Summen je Meldejahr (Selb
   const y25 = d.sums.by_year.find((y) => y.year === '2025'); eq(y25.n, 2); eq(y25.deductible_net, 1000); eq(y25.reimbursed_net, 2000); eq(y25.appraisal_net, 1500);
   eq(d.sums.total.n, 3); eq(d.sums.total.deductible_net, 2000); eq(d.sums.by_year[0].year, '2026', 'neuestes Jahr zuerst');
   const csv = await U.fleet.get('/api/claims?format=csv&filter=alle'); const txt = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data); const L = txt.trim().split('\r\n');
-  ok(L[0].endsWith(';Kennzeichen zum Meldedatum'), 'Kopf'); ok(L.some((l) => l.includes('2025-03-01') || l.includes('01.03.2025')) && L.find((l) => /2025-03-01|01\.03\.2025/.test(l)).endsWith(';SZ-ALT 1'), 'altes Kennzeichen beim ersten Fall');
+  ok(L[0].endsWith(';Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung'), 'Kopf'); ok(L.some((l) => l.includes('2025-03-01') || l.includes('01.03.2025')) && L.find((l) => /2025-03-01|01\.03\.2025/.test(l)).endsWith(';SZ-ALT 1;'), 'altes Kennzeichen beim ersten Fall');
   ok(txt.includes('Max Muster') && L[0].includes(';Bemerkung;'), 'normal mit Bemerkung');
   const c3 = await U.fleet.get('/api/claims?format=csv&filter=alle&third_party=1'); const t3 = typeof c3.data === 'string' ? c3.data : new TextDecoder().decode(c3.data);
   ok(!t3.includes('Max Muster') && !t3.includes('Schreiben vom') && !t3.split('\r\n')[0].includes('Bemerkung') && !t3.split('\r\n')[0].includes('Nachweis'), 'für Dritte ohne Freitext');
@@ -20954,6 +20954,57 @@ await test('Backlog 284: dringende Meldung nennt, wie viele benachrichtigte Pers
   eq((await send({ priority: 'kritisch', description: 'Ast auf Kabine' })).urgent_push_recipients, 1, 'Leitung mit Gerät');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].no_push_reach, `${l}.no_push_reach`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('r.urgent_push_recipients === 0 ? `<p data-nopush>'), 'Oberfläche');
+});
+
+await test('Backlog 285 (Blickwinkel „Schaden wird erst Tage später gemeldet“): Schadenzeitpunkt laut Meldung (Migration 0084) – Tag oder Tag + deutsche Uhrzeit, Prüfung, Leitung trägt nach/berichtigt, „N Tage später gemeldet“, Fahrer laut Zuordnung zum Zeitpunkt nur für die Leitung, CSV, Texte DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const { berlinLocalToIso, berlinDayStartIso } = await import('../src/util.js');
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const send = (extra, key = rk()) => U.driver.post('/api/cases', { vehicle_id: V1, description: 'Delle in der Plane hinten links', priority: 'niedrig', driveability: 'fahrbereit', request_key: key, ...extra });
+  // Prüfung
+  for (const bad of [day(1), `${day(1)}T00:05`, '2026-02-30', day(-400), 'gestern', '12:30', `${day(-1)}T25:00`]) eq((await send({ occurred_at: bad })).status, 400, `abgewiesen: ${bad}`);
+  // Fahrerzuordnungen: Fahrer seit 10 Tagen (offen), andere Person bis vor 5 Tagen
+  const vid = (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.plate === 'SZ-YC 5513').id;
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,environment,created_by,created_at) VALUES('dv285a',?,?,?,NULL,'test',?,?)`).run(U.driver.id, vid, berlinDayStartIso(day(-10)), U.fleet.id, new Date().toISOString());
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,environment,created_by,created_at) VALUES('dv285b',?,?,?,?,'test',?,?)`).run(U.viewer.id, vid, berlinDayStartIso(day(-20)), berlinDayStartIso(day(-5)), U.fleet.id, new Date().toISOString());
+  // Tag ohne Uhrzeit
+  const key = rk(); const r1 = await send({ occurred_at: day(-3) }, key); eq(r1.status, 201, JSON.stringify(r1.data));
+  eq((await send({ occurred_at: day(-3) }, key)).data.duplicate, true, 'erneut gesendet: Dublette');
+  eq((await send({ occurred_at: day(-4) }, key)).status, 409, 'gleicher Schlüssel, anderer Zeitpunkt');
+  let d = (await U.fleet.get(`/api/cases/${r1.data.id}`)).data;
+  eq(d.case.occurred_at, day(-3)); eq(d.occurred_drivers.day_only, true);
+  eq(d.occurred_drivers.drivers.map((x) => x.display_name).join(','), 'Fahrer W', 'nur die am Schadentag gültige Zuordnung');
+  ok(d.allowed_actions.includes('set_occurred_at'), 'Leitung darf berichtigen');
+  const dDrv = (await U.driver.get(`/api/cases/${r1.data.id}`)).data; eq(dDrv.case.occurred_at, day(-3), 'Fahrer sieht eigene Angabe'); ok(!('occurred_drivers' in dDrv) && !dDrv.allowed_actions.includes('set_occurred_at'), 'Fahrer: keine Fahrerliste, kein Berichtigen');
+  ok(!('occurred_drivers' in (await U.viewer.get(`/api/cases/${r1.data.id}`)).data), 'Lesezugriff: keine Fahrerliste');
+  // Tag + deutsche Uhrzeit → UTC
+  const r2 = await send({ occurred_at: `${day(-6)}T14:30` }); eq(r2.status, 201);
+  d = (await U.fleet.get(`/api/cases/${r2.data.id}`)).data; eq(d.case.occurred_at, berlinLocalToIso(`${day(-6)}T14:30`));
+  eq(d.occurred_drivers.day_only, false); eq(d.occurred_drivers.drivers.map((x) => x.display_name).sort().join(','), 'Fahrer W,Lesen', 'beide Zuordnungen galten');
+  // ohne Angabe: leer, keine Fahrerliste; Kontrollmängel nehmen keine Angabe an
+  const r3 = await send({}); d = (await U.fleet.get(`/api/cases/${r3.data.id}`)).data; eq(d.case.occurred_at, null); ok(!('occurred_drivers' in d), 'ohne Angabe keine Fahrerliste');
+  // Leitung trägt nach / berichtigt / entfernt
+  const cmd = async (u, id, occurred_at) => { const c = (await U.fleet.get(`/api/cases/${id}`)).data.case; return u.post(`/api/cases/${id}/commands`, { action: 'set_occurred_at', command_id: rk(), expected_version: c.version, payload: { occurred_at } }); };
+  eq((await cmd(U.driver, r3.data.id, day(-1))).status, 403, 'Fahrer nicht');
+  eq((await cmd(U.fleet, r3.data.id, `${day(1)}T08:00`)).status, 400, 'nicht nach der Meldung');
+  eq((await cmd(U.fleet, r3.data.id, `${day(-2)}T07:15`)).status, 200);
+  eq((await cmd(U.fleet, r3.data.id, `${day(-2)}T07:15`)).status, 400, 'unverändert');
+  d = (await U.fleet.get(`/api/cases/${r3.data.id}`)).data; eq(d.case.occurred_at, berlinLocalToIso(`${day(-2)}T07:15`));
+  const ev = d.events.filter((x) => x.action === 'set_occurred_at').pop(); eq(ev.payload.from, null); eq(ev.payload.to, d.case.occurred_at, 'Verlauf alt → neu');
+  eq((await cmd(U.fleet, r3.data.id, '')).status, 200); eq((await U.fleet.get(`/api/cases/${r3.data.id}`)).data.case.occurred_at, null, 'entfernt');
+  // CSV
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/cases?status=all&format=csv')).data);
+  ok(csv.split('\r\n')[0].endsWith(';Schadenzeitpunkt laut Meldung'), 'CSV-Kopf');
+  const hm = (await import('../src/util.js')).berlinDateTime(berlinLocalToIso(`${day(-6)}T14:30`)); ok(csv.includes(';' + hm + '\r\n') && (csv.includes(';' + day(-3) + '\r\n') || csv.includes(';' + day(-3).split('-').reverse().join('.') + '\r\n')), 'CSV-Werte');
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${occurredFields(null)}') && app.includes("...(occ ? { occurred_at: occ } : {})") && app.includes('data-occurred>') && app.includes("case 'set_occurred_at':"), 'Meldeformular, Anzeige, Formular');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['occurred', 'act_set_occurred_at', 'occ_date', 'occ_date_hint', 'occ_time', 'occ_time_hint', 'occ_need_date', 'occ_future', 'occ_late', 'occ_drivers', 'occ_drv_assign', 'occ_drv_open', 'occ_drv_check', 'occ_drv_via', 'occ_drv_none', 'occ_drv_hint', 'occ_drv_hint_day', 'occ_drv_more', 'occ_set_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].occ_late.includes('{d}'), `${l}.occ_late mit {d}`); ok(STRINGS[l].help_fleet_s.includes(STRINGS[l].act_set_occurred_at), `Hilfe Leitung ${l}`);
+  }
+  for (const m of ['Schadenzeitpunkt liegt in der Zukunft.', 'Schadenzeitpunkt liegt mehr als ein Jahr zurück.', 'Schadenzeitpunkt: ungültiges Datum.', 'Schadenzeitpunkt ist unverändert.']) ok(translateValidation('en', m) && translateValidation('en', m) !== m, `übersetzt: ${m}`);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

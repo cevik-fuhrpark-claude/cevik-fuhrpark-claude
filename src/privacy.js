@@ -45,7 +45,7 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     push_devices: q('SELECT device_label, created_at, last_success_at, revoked_at FROM push_subscriptions WHERE user_id=? ORDER BY created_at', userId),
     invites: q('SELECT created_at, expires_at, used_at FROM invites WHERE user_id=? ORDER BY created_at', userId),
     vehicle_assignments: q(`SELECT d.valid_from, d.valid_to, d.evidence, d.environment, v.plate FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE d.user_id=? ORDER BY d.valid_from`, userId),
-    reported_cases: q(`SELECT c.case_no, c.environment, c.status, c.priority, c.description, c.location_note, c.reported_priority, c.reported_driveability, c.created_at, v.plate FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.reporter_id=? ORDER BY c.created_at`, userId),
+    reported_cases: q(`SELECT c.case_no, c.environment, c.status, c.priority, c.description, c.location_note, c.occurred_at, c.reported_priority, c.reported_driveability, c.created_at, v.plate FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.reporter_id=? ORDER BY c.created_at`, userId),
     case_events: q(`SELECT c.case_no, e.environment, e.action, e.note, e.created_at FROM case_events e JOIN cases c ON c.id=e.case_id WHERE e.actor_id=? ORDER BY e.created_at`, userId),
     work_entries: q(`SELECT c.case_no, w.* FROM work_entries w JOIN cases c ON c.id=w.case_id WHERE w.user_id=? ORDER BY w.created_at`, userId),
     inspections: q(`SELECT i.kind, i.environment, i.result, i.odometer_km, i.note, i.items, i.created_at, i.received_at, v.plate FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id WHERE i.performed_by=? ORDER BY i.created_at`, userId),

@@ -113,6 +113,13 @@ const fmtHM = (iso) => { const d = new Date(iso || ''); return Number.isNaN(d.ge
 const fmtDT = (iso) => { if (!iso) return '–'; const d = new Date(iso); return Number.isNaN(d.getTime()) ? '–' : dtFmt('dt').format(d); };
 // Kalenderdatum „JJJJ-MM-TT“ bleibt dieser Tag; Zeitstempel → Berliner Kalendertag
 const fmtD = (iso) => { if (!iso) return '–'; const d = new Date(iso.length === 10 ? iso + 'T12:00:00Z' : iso); return Number.isNaN(d.getTime()) ? '–' : dtFmt(iso.length === 10 ? 'd10' : 'd').format(d); };
+// Schadenzeitpunkt laut Meldung (Backlog 285): „JJJJ-MM-TT“ = Tag ohne Uhrzeit, sonst Zeitpunkt (deutsche Zeit)
+const fmtOccurred = (x) => (!x ? '–' : x.length === 10 ? fmtD(x) : fmtDT(x));
+// Eingabe Tag + optionale Uhrzeit (deutsche Zeit wie die Tatzeit bei Bußgeldern); cur = gespeicherter Wert
+const occurredFields = (cur, named = false) => { const dt = cur && cur.length > 10 ? berlinLocalDT(cur) : ''; const dv = cur ? (dt ? dt.slice(0, 10) : cur) : ''; const tv = dt ? dt.slice(11, 16) : '';
+  return `<div class="grid2" data-occ><div><label for="occd">${esc(t('occ_date'))}<span class="hint">${esc(t('occ_date_hint'))}</span></label><input type="date" id="occd"${named ? ' name="occ_date"' : ''} max="${bDate()}" value="${esc(dv)}"></div><div><label for="occt">${esc(t('occ_time'))}<span class="hint">${esc(t('occ_time_hint'))}</span></label><input type="time" id="occt"${named ? ' name="occ_time"' : ''} step="60" value="${esc(tv)}"></div></div>`; };
+// Wert für den Server: '' (leer), Tag oder Tag + Uhrzeit; Uhrzeit ohne Tag → undefined (Formularfehler)
+const occurredValue = (dv, tv) => (!dv ? (tv ? undefined : '') : tv ? `${dv}T${tv}` : dv);
 // Antwortfrist mit Wochentag; Samstag/Sonntag markiert (Frist bleibt der Tag laut Schreiben – nur Hinweis, dass davor kein Arbeitstag folgt)
 const isWeekendD = (iso) => !!iso && iso.length === 10 && [0, 6].includes(new Date(iso + 'T12:00:00Z').getUTCDay());
 // Erfassungstag einer Kostenposition (Teil/Fremdleistung) – danach zählt sie im Kostenbericht (Backlog 188: Dezember-Rechnung am 02.01. erfasst = Januar)
@@ -1510,6 +1517,17 @@ const ACC_HINT = /unfall|accident|дтп|авар(?:ія|ії|ію|ією|ия|�
 const THEFT_HINT = /diebstahl|\bdieb|gestohlen|geklaut|entwendet|abgezapft|(?<![a-zäöüß])einbruch|aufgebrochen|theft|stolen|\bsteal|break-in|broken into|burglar|крадіж|в(?:и)?крал|в(?:и)?крад|украл|украд|siphon|(?<![а-яіїєґ])(?:з|с)лил[иао]?\s+(?:\S+\s+)?(?:пальн|палив|дизел|солярк|топлив|бензин)/i;
 // + russ. „карта водителя“ (Backlog 230)
 const TACHO_HINT = /fahrtenschreiber|tachogra(?:ph|f)|kontrollger(?:ä|ae|a)t|fahrerkarte|driver ?card|tacho(?!meter)|тахограф|картк\S* водія|карт\S* водител/i;
+// Backlog 285: „N Tage später gemeldet“ (Berliner Kalendertage zwischen Schadentag und Meldung) und Fahrer laut Zuordnung/Kontrolle (nur Leitung)
+function occLate(c) {
+  const a = c.occurred_at.length === 10 ? c.occurred_at : BERLIN_FMT.format(new Date(c.occurred_at)); const b = BERLIN_FMT.format(new Date(c.created_at));
+  const n = Math.round((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / 86400000);
+  return n >= 1 ? ` <span class="chip${n >= 3 ? ' mittel' : ''}" data-occlate>${esc(t('occ_late').replace('{d}', nDays(n)))}</span>` : '';
+}
+function occDrivers(o) {
+  if (!o) return '';
+  const row = (x) => `<li>${esc(x.display_name)} · ${x.basis === 'kontrolle' ? `${esc(t('occ_drv_check'))} ${fmtDT(x.at)}` : `${esc(t('occ_drv_assign'))} ${fmtD(x.at)} – ${x.until ? fmtD(x.until) : esc(t('occ_drv_open'))}`}${x.via_plate ? ` (${esc(t('occ_drv_via'))} ${esc(x.via_plate)})` : ''}</li>`;
+  return `<dt>${esc(t('occ_drivers'))}</dt><dd data-occdrivers>${o.drivers.length ? `<ul class="small" style="margin:0;padding-left:18px">${o.drivers.map(row).join('')}</ul>` : `<span class="muted">${esc(t('occ_drv_none'))}</span>`}<p class="small muted" style="margin:2px 0 0">${esc(t(o.day_only ? 'occ_drv_hint_day' : 'occ_drv_hint'))}${o.truncated ? ' ' + esc(t('occ_drv_more')) : ''}</p></dd>`;
+}
 async function viewNew(preId) {
   if (!mayReport()) { render(`<h1>${esc(t('report_damage'))}</h1><p class="muted">${esc(t('no_permission_view'))}</p>`, 'new'); return; }
   const vs = await vehiclesCached();
@@ -1529,6 +1547,7 @@ async function viewNew(preId) {
     <label id="lbl_drv">${esc(t('driveable'))}</label><div class="choices" role="radiogroup" aria-labelledby="lbl_drv">${['fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit', 'unbekannt'].map((p) => `<label class="choice${p === 'nicht_fahrbereit' ? ' c-kritisch' : ''}"><input type="radio" name="drv" value="${p}"${p === 'unbekannt' ? ' checked' : ''}><b>${esc(t('drv_' + p))}</b></label>`).join('')}</div>
     <label for="w">${esc(t('workshop'))}</label><select id="w"><option value="">–</option>${ws.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>
     <label for="l">${esc(t('location'))}</label><input id="l" maxlength="300">
+    ${occurredFields(null)}
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('photos_now_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
     <div class="actions"><button class="btn block" id="sb">${esc(t('send_report'))}</button></div></form>`, 'new');
   // Genau ein zugeordnetes Fahrzeug: vorauswählen (Fahrer kann jederzeit ein anderes wählen)
@@ -1579,11 +1598,14 @@ async function viewNew(preId) {
     // Prüfung in der App-Sprache (Browser-Meldungen wären in der Gerätesprache)
     if (!veh) { toast(t('choose_vehicle'), true); const vp = $('.vehpick'); if (vp) { vp.setAttribute('role', 'radiogroup'); markInvalid(vp, t('choose_vehicle')); } $('#vq').focus(); return; }
     if ($('#d').value.trim().length < 5) { toast(t('desc_too_short'), true); markInvalid($('#d'), t('desc_too_short')); $('#d').focus(); return; }
+    const occ = occurredValue($('#occd').value, $('#occt').value);
+    if (occ === undefined) { toast(t('occ_need_date'), true); markInvalid($('#occd'), t('occ_need_date')); $('#occd').focus(); return; }
+    if (occ && occ.slice(0, 10) > bDate()) { toast(t('occ_future'), true); markInvalid($('#occd'), t('occ_future')); $('#occd').focus(); return; }
     sb.disabled = true;
     const who = outboxWho();
     const photoFiles = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
     const body = { vehicle_id: veh.value, description: $('#d').value, priority: $('input[name=prio]:checked').value,
-      driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key };
+      driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key, ...(occ ? { occurred_at: occ } : {}) };
     try {
       const r = await api('POST', '/api/cases', body);
       draft.clear();
@@ -1671,6 +1693,7 @@ async function viewCase(id) {
       <dt>${esc(t('urgency'))}</dt><dd><span class="chip ${esc(c.priority)}">${esc(t('prio_' + c.priority))}</span>${prioLine}</dd>
       <dt>${esc(t('driveable'))}</dt><dd>${esc(t('drv_' + c.reported_driveability))}</dd>
       ${d.reporter_name || d.reporter_name_hidden ? `<dt>${esc(t('reported_by'))}</dt><dd>${esc(pnm(d.reporter_name, d.reporter_name_hidden))} · ${fmtDT(c.created_at)}</dd>` : `<dt>${esc(t('date'))}</dt><dd>${fmtDT(c.created_at)}</dd>`}
+      ${c.occurred_at ? `<dt>${esc(t('occurred'))}</dt><dd data-occurred>${fmtOccurred(c.occurred_at)}${occLate(c)}</dd>${occDrivers(d.occurred_drivers)}` : ''}
       <dt>${esc(t('received'))}</dt><dd>${c.fleet_received_at ? fmtDT(c.fleet_received_at) : esc(t('not_yet'))}${c.fleet_received_at && d.received_by ? ` · ${esc(d.received_by.name)}${d.received_by.current ? '' : ` <span class="chip mittel" data-recvgone>${esc(t('recv_gone'))}</span>`}` : ''}</dd>
       <dt>${esc(t('workshop'))}</dt><dd>${esc(wsName(c.workshop_site || c.suggested_workshop_site))}${c.planned_date ? ' · ' + esc(t('planned')) + ' ' + fmtD(c.planned_date) : ''}</dd>${c.followup_on && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? `<dt>${esc(t('followup'))}</dt><dd><span class="chip${c.followup_on <= bDate() ? ' mittel' : ''}">${fmtD(c.followup_on)}</span>${c.followup_note ? ' ' + esc(c.followup_note) : ''}</dd>` : ''}
       ${c.status === 'wartet_teile' ? `<dt>${esc(t('parts_eta'))}</dt><dd>${c.parts_expected_date ? partsEta(c, '', false) : `<span class="muted">${esc(t('parts_eta_none'))}</span>`}</dd>` : ''}
@@ -1685,7 +1708,7 @@ async function viewCase(id) {
   // Aktionen
   const main = A.filter((a) => !['comment', 'upload', 'inspection', 'resolve_open_item'].includes(a));
   if (main.length || A.includes('inspection')) {
-    html += `<div class="actions">${A.includes('inspection') ? `<a class="btn" href="#/inspect/${esc(c.id)}">${esc(t('act_inspection'))}</a>` : ''}${main.map((a) => `<button class="btn ${['reject', 'set_safety_lock', 'withdraw_order'].includes(a) ? 'danger' : a === 'technical_release' ? 'go' : ['record_work', 'add_part', 'add_open_item', 'add_external_cost', 'change_priority', 'reassign_workshop', 'correct_vehicle', 'lift_safety_lock', 'return_for_rework', 'set_planned_date', 'set_parts_eta', 'set_followup', 'set_vehicle_location'].includes(a) ? 'secondary' : ''}" data-act="${esc(a)}">${esc(t('act_' + a))}</button>`).join('')}</div><div id="actform"></div>`;
+    html += `<div class="actions">${A.includes('inspection') ? `<a class="btn" href="#/inspect/${esc(c.id)}">${esc(t('act_inspection'))}</a>` : ''}${main.map((a) => `<button class="btn ${['reject', 'set_safety_lock', 'withdraw_order'].includes(a) ? 'danger' : a === 'technical_release' ? 'go' : ['record_work', 'add_part', 'add_open_item', 'add_external_cost', 'change_priority', 'reassign_workshop', 'correct_vehicle', 'lift_safety_lock', 'return_for_rework', 'set_planned_date', 'set_parts_eta', 'set_followup', 'set_vehicle_location', 'set_occurred_at'].includes(a) ? 'secondary' : ''}" data-act="${esc(a)}">${esc(t('act_' + a))}</button>`).join('')}</div><div id="actform"></div>`;
   } else html += `<div id="actform"></div>`;
 
   // Dateien
@@ -2069,6 +2092,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     case 'set_parts_eta': f.push(`<label>${esc(t('parts_eta'))}<span class="hint">${esc(t('parts_eta_hint'))} (${esc(t('planned_clear_hint'))})</span></label><input type="date" name="parts_expected_date" min="${bDate()}" value="${esc(c.parts_expected_date || '')}">`); break;
     case 'set_followup': f.push(`<p class="small muted">${esc(t('followup_hint'))}</p><label>${esc(t('followup'))}<span class="hint">${esc(t('planned_clear_hint'))}</span></label><input type="date" name="followup_on" min="${c.followup_on && c.followup_on < bDate() ? esc(c.followup_on) : bDate()}" value="${esc(c.followup_on || '')}">`); break;
     case 'set_vehicle_location': f.push(`<p class="small muted" id="vlhint">${esc(t('vl_hint'))}</p><label>${esc(t('vl_title'))}<span class="hint">${esc(t('vl_location_hint'))}</span></label><input name="vehicle_location" maxlength="300" autocomplete="off" value="${esc(c.vehicle_location || '')}"><label>${esc(t('vl_service'))}</label><input name="tow_service" maxlength="120" autocomplete="off" value="${esc(c.tow_service || '')}"><label>${esc(t('vl_on'))}</label><input type="date" name="towed_on" max="${bDate()}" value="${esc(c.towed_on || '')}"><p class="small muted">${esc(t('vl_clear_hint'))}</p>`); break;
+    case 'set_occurred_at': f.push(`<p class="small muted">${esc(t('occ_set_hint'))}</p>${occurredFields(c.occurred_at, true)}`); break;
     case 'set_planned_date': f.push(`<label>${esc(t('planned'))}<span class="hint">${esc(t('planned_clear_hint'))}</span></label><input type="date" name="planned_date" value="${esc(c.planned_date || '')}">`); break;
     case 'record_work': f.push(`<label>${esc(t('hours'))}</label><input name="hours" inputmode="decimal" required><label>${esc(t('activity'))}</label><input name="description" required list="worksugg" autocomplete="off"><datalist id="worksugg"></datalist><label>${esc(t('date'))}</label><input type="date" name="work_date" value="${bDate()}" max="${bDate()}" min="${workDateMin(c.created_at)}">`); break;
     case 'add_part': f.push(`<div id="stocksel"></div><div id="freepart">`); f.push(`<label>${esc(t('part_name'))}</label><input name="name" required list="partsugg" autocomplete="off"><datalist id="partsugg"></datalist><label>${esc(t('part_number'))}</label><input name="part_number"><label>${esc(t('qty'))}</label><input name="quantity" inputmode="decimal" value="1"><label>${esc(t('price_net'))}</label><input name="unit_price_net" inputmode="decimal"><label class="check"><input type="checkbox" name="estimate"> ${esc(t('estimate'))}</label><label>${esc(t('supplier'))}</label><input name="supplier"></div><label>${esc(t('warranty_until'))}<span class="hint">${esc(t('warranty_hint'))}</span></label><input type="date" name="warranty_until" style="max-width:220px">`); break;
@@ -2131,6 +2155,11 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     for (const [k, v] of fd.entries()) if (k !== 'note' && v !== '') p[k] = v;
     for (const k of ['confirm', 'confirm_winter_open', 'confirm_duplicate_invoice', 'safety_relevant', 'covers_work_and_parts']) if (k in p) p[k] = true;
     if (p.estimate) { p.valuation = 'estimate'; delete p.estimate; }
+    if (action === 'set_occurred_at') {
+      const occ = occurredValue(fd.get('occ_date') || '', fd.get('occ_time') || ''); delete p.occ_date; delete p.occ_time;
+      if (occ === undefined) { toast(t('occ_need_date'), true); markInvalid($('#occd'), t('occ_need_date')); return; }
+      p.occurred_at = occ;
+    }
     // Zahlen unverändert senden – der Server liest deutsche Schreibweise („4,750“, „1.234,50“); vorher wurde „4,750“ zu „4.750“ und abgewiesen (18.10.2026)
     for (const k of ['hours', 'quantity', 'unit_price_net', 'amount_net']) if (k in p) p[k] = String(p[k]).trim();
     if (p.stock_item_id) { delete p.name; delete p.part_number; delete p.supplier; if (!fd.get('unit_price_net')) delete p.unit_price_net; } else delete p.stock_item_id;
@@ -3679,13 +3708,14 @@ function odoSrc(s) {
 }
 function evFromTo(e) {
   const p = e.payload; if (!p || typeof p !== 'object' || !('from' in p) || !('to' in p)) return '';
-  const oneSide = ['set_followup', 'set_planned_date', 'set_vehicle_location'].includes(e.action) || /^\d{4}-\d{2}-\d{2}$/.test(String(p.from || p.to || ''));
+  const oneSide = ['set_followup', 'set_planned_date', 'set_vehicle_location', 'set_occurred_at'].includes(e.action) || /^\d{4}-\d{2}-\d{2}$/.test(String(p.from || p.to || ''));
   if (!(p.from && p.to) && !oneSide) return '';
   if (!p.from && !p.to) return '';
   const v = (x) => { if (x === null || x === undefined || x === '') return '–';
     if (e.action === 'change_priority') return t('prio_' + x);
     if (e.action === 'reassign_workshop') return wsName(x);
     if (e.action === 'set_vehicle_location' && typeof x === 'object') return [x.location, x.service, x.on ? fmtD(x.on) : null].filter(Boolean).join(' · ') || '–';
+    if (e.action === 'set_occurred_at') return fmtOccurred(x);
     if (/^\d{4}-\d{2}-\d{2}$/.test(String(x))) return fmtD(x);
     return String(x); };
   return `<div class="small muted">${esc(v(p.from))} → ${esc(v(p.to))}</div>`;

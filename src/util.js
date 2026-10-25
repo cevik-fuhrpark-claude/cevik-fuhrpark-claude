@@ -403,6 +403,8 @@ export function berlinDateTime(iso) {
   const d = new Date(ms + berlinOffsetMs(ms));
   return `${p2(d.getUTCDate())}.${p2(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`;
 }
+// Schadenzeitpunkt (Backlog 285) für CSV: Tag ohne Uhrzeit bleibt „JJJJ-MM-TT“, Zeitpunkt in deutscher Zeit
+export const occurredCsv = (x) => (!x ? '' : String(x).length === 10 ? String(x) : berlinDateTime(x));
 // Datum + Uhrzeit (Berliner Zeit) in der Schreibweise der Sprache – für Hinweistexte (Sperrbildschirm), z. B. Anmelde-Hinweis
 const EN_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export function berlinDateTimeLang(iso, lang) {
