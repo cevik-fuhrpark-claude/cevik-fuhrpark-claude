@@ -21983,6 +21983,16 @@ await test('Backlog 332 (Fehlersuche Licht-Hinweis): Rundumleuchte, Arbeitsschei
   ok(!W.test('Rundumleuchte defekt') && !W.test('beacon not working'), 'Rundumleuchte ist keine Warnleuchte im Display');
 });
 
+await test('Backlog 333 (Fehlersuche Assistenz-Hinweis): ausgefallener Rückfahrwarner (DE/EN/UK/RU) zeigt den Assistenz-Hinweis („nicht mehr darauf verlassen“); Rückfahrscheinwerfer bleibt beim Licht-Hinweis; „Rückfahrwarner piept“ allein löst nichts aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const A = pat('ADAS_HINT');
+  for (const x of ['Rückfahrwarner piept nicht', 'Rückfahrwarner ist stumm', 'Rückfahrwarner defekt', 'reversing alarm not working', 'reverse beeper doesn’t work', 'backup alarm silent', 'Сигнал заднього ходу не працює', 'Сигнал заднего хода не работает']) ok(A.test(x), 'Assistenz-Hinweis: ' + x);
+  for (const x of ['Rückfahrwarner piept', 'reversing alarm fitted', 'Rückfahrscheinwerfer defekt']) ok(!A.test(x), 'kein Assistenz-Hinweis: ' + x);
+  ok(pat('LIGHTS_HINT').test('Rückfahrscheinwerfer defekt'), 'Rückfahrscheinwerfer behält den Licht-Hinweis');
+  const { STRINGS } = await import('../public/i18n.js'); ok(/nicht mehr darauf verlassen/.test(STRINGS.de.adas_hint_steps), 'Schritt „nicht mehr darauf verlassen“ passt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
