@@ -21949,6 +21949,40 @@ await test('Backlog 330 (Blickwinkel „Rad wackelt, Radmuttern locker oder Radl
   ok(helpAfter(app, 'wheel', 'safetykit'), 'Hilfe-Abschnitt wheel nach safetykit');
 });
 
+await test('Backlog 331 (Blickwinkel „Mautgerät (OBU) zeigt Rot oder ist ausgefallen“): Meldeformular zeigt Hinweise (anhalten, Leitung klärt Mautbuchung, ohne Klärung nicht auf Mautstrecken; Gerät nicht abbauen; Mautkontrolle: Vorgang zeigen; Anzeige/Strecke/Land/Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); „Maut bezahlt“, „Mautgerät geprüft“, „OBU eingebaut“, „Robuste Plane“ lösen ihn nicht aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const TOLL_HINT = \/(.+)\/i;/m); ok(m, 'TOLL_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Mautgerät defekt', 'OBU zeigt rot', 'Toll Collect Box blinkt rot', 'Mautbox ausgefallen', 'Maut nicht gebucht', 'Mautstörung', 'Go-Box blinkt rot', 'OBU error', 'toll box not working', 'the OBU is beeping', 'OBU doesn’t work', 'OBU не працює', 'Пристрій для мита не працює', 'Устройство оплаты дорог не работает']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Maut bezahlt', 'Mautgerät geprüft', 'OBU eingebaut', 'toll road closed', 'Robuste Plane gerissen', 'Rotes Licht am Armaturenbrett']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const n of ['DASH_HINT', 'WARNLIGHT_HINT', 'TACHO_HINT', 'ADAS_HINT', 'THEFT_HINT']) ok(!pat(n).test('Mautgerät defekt') && !pat(n).test('OBU zeigt rot'), n + ' bleibt bei gestörtem Mautgerät aus');
+  ok(pat('TACHO_HINT').test('Fahrtenschreiber defekt'), 'Fahrtenschreiber behält seinen eigenen Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.toll_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|§/.test(L.toll_hint_steps), 'keine Zahl, kein Paragraf ' + l);
+    const h = L.help_toll_s; ok(L.help_toll_t && h && h.includes(L.toll_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.toll_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="toll" class="panel" hidden role="status">`), 'Panel #toll');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#toll').hidden = !TOLL_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('toll') && order.indexOf('fire') < order.indexOf('toll') && order.indexOf('acc') < order.indexOf('toll') && order.indexOf('wheel') < order.indexOf('toll') && order.indexOf('lost') < order.indexOf('toll') && order.indexOf('toll') < order.indexOf('tacho'), 'Gruppierung: Sicherheitshinweise vor Maut, Maut vor Fahrtenschreiber');
+  ok(helpAfter(app, 'toll', 'wheel'), 'Hilfe-Abschnitt toll nach wheel');
+});
+
+await test('Backlog 332 (Fehlersuche Licht-Hinweis): Rundumleuchte, Arbeitsscheinwerfer, Blitzleuchte, Zusatzscheinwerfer (DE), beacon/work light (EN), маячок/мигалка (UK/RU) zeigen den Licht-Hinweis; Warnleuchte im Display bleibt beim Warnleuchten-Hinweis; „Rundumleuchte eingeschaltet“ löst nichts aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const L = pat('LIGHTS_HINT'), W = pat('WARNLIGHT_HINT');
+  for (const x of ['Rundumleuchte defekt', 'defekte Rundumleuchte', 'Rundumkennleuchte geht nicht', 'Blitzleuchte ausgefallen', 'Arbeitsscheinwerfer kaputt', 'Zusatzscheinwerfer flackert', 'beacon not working', 'rotating beacon broken', 'amber beacon doesn’t work', 'work light out', 'маячок не працює', 'мигалка не работает']) ok(L.test(x), 'Licht-Hinweis: ' + x);
+  for (const x of ['Rundumleuchte eingeschaltet', 'Arbeitsscheinwerfer montiert', 'beacon fitted']) ok(!L.test(x), 'kein Licht-Hinweis: ' + x);
+  for (const x of ['Warnleuchte leuchtet', 'warning light on']) { ok(W.test(x), 'Warnleuchten-Hinweis: ' + x); ok(!L.test(x), 'kein Licht-Hinweis: ' + x); }
+  ok(!W.test('Rundumleuchte defekt') && !W.test('beacon not working'), 'Rundumleuchte ist keine Warnleuchte im Display');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
