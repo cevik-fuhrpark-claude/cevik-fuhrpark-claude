@@ -18834,7 +18834,7 @@ await test('Disposition erster Tag (23.10.): Nachweistext der Fahrerzuordnung nu
 await test('Unfall nachts (23.10.): offline gespeicherte kritische Meldung/Kontrolle zeigt Weg zu „Panne & Notfall“ (Fahrzeug) und 112; Ort in der Vorgangsansicht ohne „(optional)“ (DE/UK/EN)', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("const callBox = (vid) =>") && app.includes("href=\"${vid ? `#/emergency?v=${esc(vid)}` : '#/emergency'}\"") && app.includes('href="tel:112"'), 'Baustein');
-  eq((app.match(/callBox\(body\.vehicle_id\)/g) || []).length, 3, 'Meldung und Abfahrtskontrolle (offline + gesperrt, Backlog 252)');
+  eq((app.match(/callBox\(body\.vehicle_id\)/g) || []).length, 4, 'Meldung und Abfahrtskontrolle (offline + gesperrt, Backlog 252) + kritische Meldung online (Backlog 283)');
   ok(!app.includes("`<p><b>${esc(t('outbox_call'))}</b></p>` : ''"), 'kein Hinweis ohne Weg mehr');
   ok(app.includes("<dt>${esc(t('location_shown'))}</dt>"), 'Anzeige-Beschriftung');
   const { STRINGS } = await import('../public/i18n.js');
@@ -20941,7 +20941,7 @@ await test('Backlog 282 (Blickwinkel „Inhaber fällt aus“): Einrichtungsstan
 await test('Backlog 283 (Blickwinkel „Sonntag 03:00“): nach dem Senden einer kritischen bzw. „nicht fahrbereit“-Meldung zeigt die App auch mit Netz den Anruf-Hinweis mit „Panne & Notfall“/112 und „Meldung öffnen“; Texte DE/UK/EN', async () => {
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].open_report, `${l}.open_report`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("if (sb.isConnected && (body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit')) {") && app.includes('data-sentcritical><p><b>${esc(t(\'report_sent\'))}: ${esc(r.case_no)}</b></p>${callBox(body.vehicle_id)}'), 'Ergebnisseite');
+  ok(app.includes("if (sb.isConnected && (body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit')) {") && app.includes('data-sentcritical><p><b>${esc(t(\'report_sent\'))}: ${esc(r.case_no)}</b></p>') && app.includes("<p data-nopush><b>⚠ ${esc(t('no_push_reach'))}</b></p>` : ''}${callBox(body.vehicle_id)}"), 'Ergebnisseite');
   const ui = (await import('node:fs')).readFileSync(new URL('../scripts/ui-formularentwurf.py', import.meta.url), 'utf8'); ok(ui.includes('[data-sentcritical] [data-callbox]'), 'UI-Skript prüft den Hinweis');
 });
 
