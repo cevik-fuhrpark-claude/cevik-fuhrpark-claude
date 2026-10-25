@@ -1001,6 +1001,15 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   // Interne Aufträge (Herkunft „wartung“) werden sofort freigegeben – die Freigabe benachrichtigt; vorher bekam die Werkstatt zusätzlich
   // „KRITISCH: neue Meldung (ungeprüft)“ (zwei dringende Pushs je Auftrag, 18.10.2026)
   if (internal.origin !== 'wartung') await notifyCasesCreated(env, ctx, created, { actor: user, vehicles });
+  // Backlog 284 (Teilagent „Sonntag 03:00“): dringende Meldung – wie viele benachrichtigte Personen (außer der meldenden) haben ein aktives
+  // Push-Gerät? Bei 0 bittet die App den Fahrer, anzurufen (vorher merkte das erst der Agent am Morgen). Eine Abfrage, nur bei dringenden.
+  const urgentIds = internal.origin !== 'wartung' ? created.filter((c) => c.safety_lock || c.priority === 'kritisch').map((c) => c.id) : [];
+  if (urgentIds.length) {
+    const reach = new Map((await env.DB.prepare(`SELECT n.case_id AS id, COUNT(DISTINCT n.user_id) AS k FROM notifications n
+      WHERE n.case_id IN (SELECT value FROM json_each(?1)) AND n.kind='created' AND n.user_id<>?2
+        AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id=n.user_id AND p.revoked_at IS NULL) GROUP BY n.case_id`).bind(JSON.stringify(urgentIds), user.id).all()).results.map((r) => [r.id, r.k]));
+    for (const r of results) if (r && urgentIds.includes(r.id)) r.urgent_push_recipients = reach.get(r.id) || 0;
+  }
   return results;
 }
 

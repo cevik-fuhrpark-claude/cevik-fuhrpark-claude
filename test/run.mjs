@@ -20945,6 +20945,17 @@ await test('Backlog 283 (Blickwinkel „Sonntag 03:00“): nach dem Senden einer
   const ui = (await import('node:fs')).readFileSync(new URL('../scripts/ui-formularentwurf.py', import.meta.url), 'utf8'); ok(ui.includes('[data-sentcritical] [data-callbox]'), 'UI-Skript prüft den Hinweis');
 });
 
+await test('Backlog 284: dringende Meldung nennt, wie viele benachrichtigte Personen ein aktives Push-Gerät haben (0 → App bittet um Anruf); nicht dringend ohne Angabe', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const send = async (extra) => { const r = await U.driver.post('/api/cases', { vehicle_id: 'VIN:WMA15SZZ2HM722774', description: 'Bremse blockiert nachts', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk(), ...extra }); eq(r.status, 201, JSON.stringify(r.data)); return r.data; };
+  eq((await send({ driveability: 'nicht_fahrbereit' })).urgent_push_recipients, 0, 'niemand mit Gerät');
+  ok(!('urgent_push_recipients' in (await send({ description: 'Spiegel locker' }))), 'nicht dringend: keine Angabe');
+  db.prepare(`INSERT INTO push_subscriptions(id,user_id,endpoint,p256dh,auth,created_at) VALUES ('ps-284',?,'https://push.example/x','k','a',?)`).run(U.fleet.id, new Date().toISOString());
+  eq((await send({ priority: 'kritisch', description: 'Ast auf Kabine' })).urgent_push_recipients, 1, 'Leitung mit Gerät');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].no_push_reach, `${l}.no_push_reach`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('r.urgent_push_recipients === 0 ? `<p data-nopush>'), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

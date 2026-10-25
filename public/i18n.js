@@ -278,9 +278,9 @@ Object.assign(STRINGS.de, { pk_open_item: 'Neue Restarbeit der Werkstatt' });
 Object.assign(STRINGS.uk, { pk_open_item: 'Нова незавершена робота від майстерні' });
 Object.assign(STRINGS.en, { pk_open_item: 'New open item from the workshop' });
 // Backlog 283: nach dem Senden einer kritischen Meldung
-Object.assign(STRINGS.de, { open_report: 'Meldung öffnen' });
-Object.assign(STRINGS.uk, { open_report: 'Відкрити повідомлення' });
-Object.assign(STRINGS.en, { open_report: 'Open report' });
+Object.assign(STRINGS.de, { open_report: 'Meldung öffnen', no_push_reach: 'Niemand ist gerade per Push erreichbar – bitte unbedingt anrufen.' });
+Object.assign(STRINGS.uk, { open_report: 'Відкрити повідомлення', no_push_reach: 'Зараз ніхто не доступний через push – обов’язково зателефонуйте.' });
+Object.assign(STRINGS.en, { open_report: 'Open report', no_push_reach: 'Nobody can be reached by push right now – please make sure to call.' });
 // Backlog 282: Einrichtungsstand – nur ein Inhaber-Konto
 Object.assign(STRINGS.de, { rd_owner_backup_t: 'Zweites Inhaber-Konto (Ausfallsicherheit)', rd_owner_backup_todo: 'Nur ein aktives Inhaber-Konto: Fällt es aus (Urlaub, Krankheit, Handy verloren), sind Einstellungen, Datensicherung, Datenauskunft und das Zurücksetzen der Zwei-Faktor-Anmeldung nicht möglich. Ob ein zweites Konto angelegt wird, entscheiden Sie; Notfallweg siehe Betriebsdoku.' });
 Object.assign(STRINGS.uk, { rd_owner_backup_t: 'Другий акаунт власника (резерв)', rd_owner_backup_todo: 'Лише один активний акаунт власника: якщо він недоступний (відпустка, хвороба, втрачений телефон), налаштування, резервна копія, надання даних і скидання двофакторного входу неможливі. Чи створювати другий акаунт, вирішуєте ви; аварійний шлях – у документації з експлуатації.' });
