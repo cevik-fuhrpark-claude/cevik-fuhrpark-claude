@@ -2245,6 +2245,9 @@ Object.assign(PLURALS.de, { plan_moved_n: { one: '{n}× verschoben', other: '{n}
 Object.assign(PLURALS.uk, { plan_moved_n: { one: 'перенесено {n} раз', few: 'перенесено {n} рази', many: 'перенесено {n} разів', other: 'перенесено {n} рази' } });
 Object.assign(PLURALS.en, { plan_moved_n: { one: 'rescheduled {n} time', other: 'rescheduled {n} times' } });
 // Backlog 275: Versicherungsfall-Summen – Fälle mit unvollständig bewerteten Kosten
+Object.assign(STRINGS.de, { claim_cost_incompl: '{n} Fälle unvollständig' });
+Object.assign(STRINGS.uk, { claim_cost_incompl: '{n} випадку неповні' });
+Object.assign(STRINGS.en, { claim_cost_incompl: '{n} claims incomplete' });
 Object.assign(PLURALS.de, { claim_cost_incompl: { one: '{n} Fall unvollständig', other: '{n} Fälle unvollständig' } });
 Object.assign(PLURALS.uk, { claim_cost_incompl: { one: '{n} випадок неповний', few: '{n} випадки неповні', many: '{n} випадків неповні', other: '{n} випадку неповні' } });
 Object.assign(PLURALS.en, { claim_cost_incompl: { one: '{n} claim incomplete', other: '{n} claims incomplete' } });

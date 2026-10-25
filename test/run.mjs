@@ -5711,7 +5711,7 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   let cd = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(cd.file_id, fid); eq(cd.file_name, 'abrechnung.pdf');
   eq((await users.fleet.put(P, { note: 'Rückfrage erledigt' })).status, 200);
   eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, fid, 'ohne Feld unverändert');
-  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft;Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet\r\n'), 'CSV-Spalte');
+  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft;Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum\r\n'), 'CSV-Spalte');
   eq((await users.fleet.put(P, { file_id: null })).status, 200);
   eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, null, 'Verknüpfung aufgehoben');
   eq((await users.fleet.put(P, { file_id: fid })).status, 200);
@@ -12500,7 +12500,7 @@ await test('Versicherungsfälle: ruhendes Fahrzeug bleibt sichtbar, aber ohne Na
   eq(ov.reimbursed_sum_net, null, 'nicht in der Summe'); eq(ov.reimbursed_sum_excluded_net, 750.5, 'eigene Zeile');
   eq(ov.claims.find((c) => c.case_id === B).followup_due, false, 'ruhend: kein Nachfass-Hinweis (wie Agent)');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/claims?format=csv&filter=alle')).data);
-  ok(csv.includes(';Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet\r\n'), 'CSV-Kopf'); ok(/;ja;(ja|nein|)\r\n/.test(csv.split('\r\n').slice(1).join('\r\n') + '\r\n'), 'CSV-Wert ja');
+  ok(csv.includes(';Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum\r\n'), 'CSV-Kopf'); ok(/;ja;(ja|nein|);[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n/.test(csv.split('\r\n').slice(1).join('\r\n') + '\r\n'), 'CSV-Wert ja');
 });
 
 await test('Fehlersuche 18.10. (16): Bußgeld-Standort/„offen“ vor der Grenze, Frist-Obergrenze; Lagerpreis mit Dezimalkomma, Umlagerungs-Schlüssel je Artikel; Profiltiefe gerundet, Messalter in Berliner Kalendertagen', async () => {
@@ -14253,7 +14253,7 @@ await test('Fehlersuche 19.10. (Fahrzeugimport/Lager/Push/Versicherung): Anhäng
   const cl = (await U.fleet.get('/api/claims?filter=alle')).data.claims.find((c) => c.case_id === cid);
   eq(cl.case_cost_net, null); eq(cl.cost_incomplete, true);
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/claims?filter=alle&format=csv')).data);
-  ok(/;Kosten vollständig bewertet\r\n/.test(csv) && /;nein\r\n$/.test(csv), csv.slice(-120));
+  ok(/;Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum\r\n/.test(csv) && /;nein;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n$/.test(csv), csv.slice(-120));
   ok(app.includes("c.cost_incomplete ? ` · ${esc(t('claim_case_cost'))} –"), 'Übersicht zeigt „unvollständig“');
   // 5. Lager-Buchungstexte: Import-Anfangsbestand und Einheit übersetzt; deaktivierter Artikel im Import markiert
   const { stockNoteText } = await import('../public/check-labels.js');
@@ -18374,7 +18374,7 @@ await test('Bußgeld-Antwortfrist am Wochenende: Anzeige mit Wochentag und Marki
   const isWeekendD = eval(m[1]);
   eq([isWeekendD('2026-10-24'), isWeekendD('2026-10-25'), isWeekendD('2026-10-26'), isWeekendD('2026-10-23'), isWeekendD(null), isWeekendD('2026-03-29')].join(), 'true,true,false,false,false,true', 'Sa/So erkannt, Zeitumstellung egal');
   ok(app.includes("${f.response_due ? ' · ' + esc(t('response_due')) + ' ' + esc(fmtDue(f.response_due)) : ''}"), 'Liste');
-  ok(app.includes("<dd>${f.response_due ? esc(fmtDue(f.response_due)) : '–'}${isWeekendD(f.response_due) ?"), 'Detail mit Hinweis');
+  ok(app.includes("<dd>${f.response_due ? esc(fmtDue(f.response_due)) : '–'}${dueOffHint(f.response_due) ?"), 'Detail mit Hinweis (Wochenende/Feiertag, Backlog 267)');
   ok(app.includes("${fmtDue(f.response_due)}${f.response_due < today ? ' !' : ''}"), 'Startseite „Heute zu tun“');
   eq((app.match(/dueWeekendWatch\(\);/g) || []).length, 2, 'Formularhinweis bei Erfassen und Ändern');
   for (const l of ['de', 'uk', 'en']) for (const k of ['due_weekend', 'due_weekend_hint']) ok(typeof STRINGS[l][k] === 'string' && STRINGS[l][k].length > 3, `${l}: ${k}`);
@@ -20113,7 +20113,7 @@ await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes(`<a class="statlink" id="stcrit" href="\${hj('#/cases?f=critical')}">`) && app.includes(`<a class="statlink" id="stlock" href="\${hj('#/cases?f=locked')}">`) && app.includes(`id="stopen" href="\${hj('#/cases?f=open')}"`), 'Startseite verlinkt');
   ok(app.includes("f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1'"), 'Listenfilter');
-  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
+  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
   const { translateValidation } = await import('../public/i18n.js');
   for (const l of ['uk', 'en']) ok(translateValidation(l, 'Priorität: niedrig, mittel oder kritisch.') !== 'Priorität: niedrig, mittel oder kritisch.', l);
 });
@@ -20139,7 +20139,7 @@ await test('Backlog 239 („Heute zu tun“ nach dem Urlaub): Gruppen älteste z
   // Oberfläche: Sortierung und Link
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("['todo_cost_approval', cs.filter((c) => c.cost_over_limit_at).sort(asc((c) => c.cost_over_limit_at)),"), 'Kostenfreigabe älteste zuerst');
-  ok(app.includes("cs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).sort((a, b) => (PR[a.priority] ?? 3) - (PR[b.priority] ?? 3) || asc((c) => c.created_at)(a, b))"), 'Meldungen: Dringlichkeit, dann älteste');
+  ok(app.includes("cs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).sort((a, b) => (b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PR[a.priority] ?? 3) - (PR[b.priority] ?? 3) || asc((c) => c.created_at)(a, b))"), 'Meldungen: gesperrt (Backlog 278), Dringlichkeit, dann älteste');
   ok(app.includes("cs.filter((c) => c.followup_on && c.followup_on <= today).sort(asc((c) => c.followup_on))"), 'Wiedervorlage nach Datum');
   ok(app.includes("TODO_LIST[k] ? ` · <a href=\"${hj(TODO_LIST[k])}\">${esc(t('show_in_list'))} ›</a>` : ''") && app.includes("todo_cost_approval: '#/cases?f=cost_approval'"), '„+N“ mit Link');
   ok(app.includes("f === 'cost_approval' ? 'status=open&cost_approval=1'"), 'Listenfilter');
