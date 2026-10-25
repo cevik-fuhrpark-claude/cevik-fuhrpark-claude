@@ -20917,6 +20917,15 @@ await test('Backlog 278 (Blickwinkel „Sturmnacht“): Vorgangsfilter „Eingan
   ok(o && o.description.includes('Ast auf Kabine') && o.created_at, 'Beschreibung/Meldezeit'); ok(app.includes('data-ocdesc'), 'Anzeige');
 });
 
+await test('Backlog 280: Vorgang (Leitung) mit Knopf „Nächste unbestätigte Meldung“ (Filter unreceived, gesperrte/kritische zuerst laut Liste), Texte DE/UK/EN', async () => {
+  const { U, newCase } = await freshWorld();
+  const a = await newCase({ description: 'Plane gerissen', priority: 'niedrig' }); const b = await newCase({ description: 'Ast auf Kabine', priority: 'kritisch' });
+  const l = (await U.fleet.get('/api/cases?status=open&unreceived=1&limit=50')).data.cases; eq(l[0].id, b, 'kritisch/gesperrt zuerst'); ok(l.some((x) => x.id === a));
+  const { STRINGS } = await import('../public/i18n.js'); for (const lg of ['de', 'uk', 'en']) for (const k of ['next_unreceived', 'next_unreceived_none']) ok(STRINGS[lg][k], `${lg}.${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="nextunrec"') && app.includes("const nu = $('#nextunrec'); if (nu) nu.onclick = async () => {"), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

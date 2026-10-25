@@ -1648,7 +1648,8 @@ async function viewCase(id) {
   const c = d.case;
   const A = d.allowed_actions;
   const prioLine = c.reported_priority !== c.priority ? ` <span class="muted small">(${esc(t('reported_prio'))}: ${esc(t('prio_' + c.reported_priority))})</span>` : '';
-  let html = `<p class="noprint"><a class="backlink" href="#/cases">‹ ${esc(t('back'))}</a></p>
+  // Sichten nach einer Meldungswelle (Backlog 280): Leitung springt zur nächsten nicht bestätigten Meldung (gesperrte/kritische zuerst)
+  let html = `<p class="noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center"><a class="backlink" href="#/cases">‹ ${esc(t('back'))}</a>${isMgr() ? `<button type="button" class="btn secondary" id="nextunrec" style="margin-left:auto">${esc(t('next_unreceived'))} ›</button>` : ''}</p>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${plate(d.vehicle.plate, { big: true, locked: c.safety_lock })}<span class="chip ${c.status === 'fahrzeug_freigegeben' ? 'ok' : esc(c.priority)}">${esc(t('st_' + c.status))}</span>${c.environment === 'test' ? '<span class="chip test">TEST</span>' : ''}</div>
     <h1 style="margin-top:12px" data-title="${esc(c.case_no)} · ${esc(d.vehicle.plate)}">${esc(c.case_no)}</h1>
     <p class="print-only small">${printStamp()} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -1761,6 +1762,13 @@ async function viewCase(id) {
       else if (err.code === 'insufficient_stock' && action === 'add_part' && payload.stock_item_id) stockShortfall(payload.stock_item_id, err.data);
       else if (err.code === 'duplicate_invoice' && action === 'add_external_cost') dupInvoiceHint(err.data);
     }
+  };
+  const nu = $('#nextunrec'); if (nu) nu.onclick = async () => {
+    try {
+      const r = await api('GET', '/api/cases?status=open&unreceived=1&limit=50');
+      const nx = (r.cases || []).find((x) => x.id !== c.id);
+      if (nx) location.hash = `#/cases/${encodeURIComponent(nx.id)}`; else toast(t('next_unreceived_none'));
+    } catch (err) { toast(err.message, true); }
   };
   $$('[data-act]').forEach((b) => (b.onclick = () => actionForm(b.dataset.act, c, cmd, {}, d)));
   $$('[data-resolve]').forEach((b) => (b.onclick = () => actionForm('resolve_open_item', c, cmd, { open_item_id: b.dataset.resolve })));

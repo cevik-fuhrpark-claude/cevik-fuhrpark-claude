@@ -277,6 +277,10 @@ Object.assign(STRINGS.en, { seen_gone: 'no longer fleet management – please ta
 Object.assign(STRINGS.de, { pk_open_item: 'Neue Restarbeit der Werkstatt' });
 Object.assign(STRINGS.uk, { pk_open_item: 'Нова незавершена робота від майстерні' });
 Object.assign(STRINGS.en, { pk_open_item: 'New open item from the workshop' });
+// Backlog 280: nächste nicht bestätigte Meldung
+Object.assign(STRINGS.de, { next_unreceived: 'Nächste unbestätigte Meldung', next_unreceived_none: 'Keine weitere Meldung ohne Eingangsbestätigung.' });
+Object.assign(STRINGS.uk, { next_unreceived: 'Наступне непідтверджене повідомлення', next_unreceived_none: 'Інших повідомлень без підтвердження отримання немає.' });
+Object.assign(STRINGS.en, { next_unreceived: 'Next unconfirmed report', next_unreceived_none: 'No further report without confirmation of receipt.' });
 // Backlog 274: Versicherungsfälle nach Zeitraum/Versicherer
 Object.assign(STRINGS.de, { claim_from: 'Gemeldet ab', claim_to: 'Gemeldet bis', claim_period: 'Zeitraum (gemeldet)', claim_sums: 'Summen je Meldejahr (Auswahl)', claim_year: 'Jahr', claim_count: 'Fälle', claim_ded_short: 'Selbstbeteiligung', ca_net_short: 'Schadenhöhe Gutachten', claim_sums_hint: 'Nur eingetragene bzw. belegte Werte netto; Fälle ruhender Fahrzeuge nicht enthalten. Kosten mit unbewerteten oder geschätzten Positionen zählen nicht in die Summe.', claim_third_party: 'für Dritte (ohne Bemerkung/Nachweis)' });
 Object.assign(STRINGS.uk, { claim_from: 'Повідомлено з', claim_to: 'Повідомлено по', claim_period: 'Період (повідомлено)', claim_sums: 'Суми за роком повідомлення (вибірка)', claim_year: 'Рік', claim_count: 'Випадки', claim_ded_short: 'Франшиза', ca_net_short: 'Сума збитку за експертизою', claim_sums_hint: 'Лише внесені або підтверджені значення нетто; випадки законсервованого транспорту не враховано. Витрати з неоціненими або орієнтовними позиціями до суми не входять.', claim_third_party: 'для третіх осіб (без примітки/підтвердження)' });
