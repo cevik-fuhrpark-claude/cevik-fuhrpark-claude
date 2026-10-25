@@ -1515,6 +1515,9 @@ const tachoPanel = () => `<div id="tacho" class="panel" hidden role="status"><b>
 const ACC_HINT = /unfall|accident|дтп|авар(?:ія|ії|ію|ією|ия|ии|ию|ией)(?![а-яіїєґ])/i;
 // + Kraftstoffdiebstahl per Diktat: ukr./russ. „злили/слили (…) пальне/паливо/дизель/солярку/топливо“, engl. „siphoned“ (Backlog 230; „злили масло“ = Ölwechsel nicht)
 const THEFT_HINT = /diebstahl|\bdieb|gestohlen|geklaut|entwendet|abgezapft|(?<![a-zäöüß])einbruch|aufgebrochen|theft|stolen|\bsteal|break-in|broken into|burglar|крадіж|в(?:и)?крал|в(?:и)?крад|украл|украд|siphon|(?<![а-яіїєґ])(?:з|с)лил[иао]?\s+(?:\S+\s+)?(?:пальн|палив|дизел|солярк|топлив|бензин)/i;
+// Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“): Glasschaden in der Beschreibung → Hinweise (Fotos mit Größenvergleich,
+// Lage im Sichtfeld, Weiterfahrt klären, früh melden). „Bremsscheibe“, „Scheibenwischer“, „Spiegel“ lösen nichts aus; reine Information, keine Frist
+const GLASS_HINT = /windschutzscheibe|frontscheibe|seitenscheibe|heckscheibe|steinschlag|glasbruch|glasschaden|(?<![a-zäöüß])scheibe\s+(?:\S+\s+){0,3}?(?:gerissen|gesprungen|eingeschlagen|kaputt|gebrochen|(?:einen\s+)?riss)|riss\s+in\s+der\s+scheibe|windshield|windscreen|(?:stone|rock)\s+chip|(?:cracked|broken|smashed|chipped)\s+(?:side\s+)?(?:window|glass)|(?<!mirror\s)(?:window|glass)\s+(?:is\s+)?(?:cracked|broken|smashed|chipped)|лобов\S*\s+(?:скл|стекл)|скл[оаіу]\S*\s+(?:\S+\s+)?(?:тріснул|розбит|пошкоджен)|стекл\S*\s+(?:\S+\s+)?(?:треснул|разбит)|(?:тріщин|трещин|скол)\S*\s+(?:\S+\s+)?(?:на\s+)?(?:скл|стекл)/i;
 // + russ. „карта водителя“ (Backlog 230)
 const TACHO_HINT = /fahrtenschreiber|tachogra(?:ph|f)|kontrollger(?:ä|ae|a)t|fahrerkarte|driver ?card|tacho(?!meter)|тахограф|картк\S* водія|карт\S* водител/i;
 // Backlog 285: „N Tage später gemeldet“ (Berliner Kalendertage zwischen Schadentag und Meldung) und Fahrer laut Zuordnung/Kontrolle (nur Leitung)
@@ -1543,6 +1546,7 @@ async function viewNew(preId) {
     <div id="acc" class="panel" hidden role="status"><b>${esc(t('acc_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('acc_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
     ${tachoPanel()}
     <div id="theft" class="panel" hidden role="status"><b>${esc(t('theft_hint_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('theft_hint_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
+    <div id="glass" class="panel" hidden role="status"><b>${esc(t('glass_hint_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('glass_hint_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
     <label id="lbl_prio">${esc(t('urgency'))}</label><div class="choices" role="radiogroup" aria-labelledby="lbl_prio">${['niedrig', 'mittel', 'kritisch'].map((p, i) => `<label class="choice c-${p}"><input type="radio" name="prio" value="${p}"${i === 0 ? ' checked' : ''}><span><b>${esc(t('prio_' + p))}</b><span class="small muted">${esc(t('prio_' + p + '_d'))}</span></span></label>`).join('')}</div>
     <label id="lbl_drv">${esc(t('driveable'))}</label><div class="choices" role="radiogroup" aria-labelledby="lbl_drv">${['fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit', 'unbekannt'].map((p) => `<label class="choice${p === 'nicht_fahrbereit' ? ' c-kritisch' : ''}"><input type="radio" name="drv" value="${p}"${p === 'unbekannt' ? ' checked' : ''}><b>${esc(t('drv_' + p))}</b></label>`).join('')}</div>
     <label for="w">${esc(t('workshop'))}</label><select id="w"><option value="">–</option>${ws.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>
@@ -1579,7 +1583,7 @@ async function viewNew(preId) {
   }
   // Beschreibung nennt Diebstahl/Einbruch: Polizei, Spuren, Liste des Fehlenden, Fuhrparkleitung (Backlog 214, 23.10.2026) – reine Information,
   // keine Frist; „Leistungseinbruch“ und ukr. „вкрай“/„зламано“ (kaputt) lösen nichts aus
-  const hints = () => { $('#acc').hidden = !ACC_HINT.test($('#d').value); $('#tacho').hidden = !TACHO_HINT.test($('#d').value); $('#theft').hidden = !THEFT_HINT.test($('#d').value); };
+  const hints = () => { $('#acc').hidden = !ACC_HINT.test($('#d').value); $('#tacho').hidden = !TACHO_HINT.test($('#d').value); $('#theft').hidden = !THEFT_HINT.test($('#d').value); $('#glass').hidden = !GLASS_HINT.test($('#d').value); };
   // Spracheingabe (Diktat) meldet sich je nach Gerät nur mit „change“ statt „input“ (Backlog 228) – beide prüfen
   $('#d').addEventListener('input', hints); $('#d').addEventListener('change', hints);
   photoLimitWatch($('#ph'));
@@ -1902,12 +1906,14 @@ function claimSection(cl, contracts, files = [], desc = '', c = null) {
   const noOcc = !!(cl && c && c.origin === 'meldung' && !c.occurred_at && ['gemeldet', 'in_pruefung'].includes(cl.status));
   // Meldung nennt Diebstahl/Einbruch, aber kein Aktenzeichen erfasst (Backlog 221): nur Hinweis, keine Frist, kein Befund
   const theftNoRef = THEFT_HINT.test(desc || '') && !(cl && cl.police_ref);
+  // Backlog 291: Glasschaden ohne Versicherungsfall – Hinweis an die Leitung, Versicherungsschutz laut Vertrag zu prüfen (nichts angenommen)
+  const glassNoClaim = !cl && GLASS_HINT.test(desc || '');
   const v = (k) => (cl && cl[k] !== null && cl[k] !== undefined ? esc(String(cl[k])) : '');
   const money = (k) => (cl && cl[k] !== null && cl[k] !== undefined ? esc(decIn(cl[k])) : ''); // EN mit Punkt wie Bußgeld-Formular (19.10.2026)
   const info = cl ? `<p style="margin-top:0">${claimChip(cl.status)} ${esc(cl.insurer)}${cl.claim_no ? ` · ${esc(t('claim_no'))} ${esc(cl.claim_no)}` : ''}</p>
     <dl class="kv"><dt>${esc(t('claim_reported'))}</dt><dd>${fmtD(cl.reported_on)}${cl.days_open !== null ? ` · ${esc(tn('claim_days_open', cl.days_open))}` : ''}</dd>${cl.deductible_net !== null ? `<dt>${esc(t('claim_deductible'))}</dt><dd>${eur(cl.deductible_net)}</dd>` : ''}${cl.reimbursed_net !== null ? `<dt>${esc(t('claim_reimbursed'))}</dt><dd>${eur(cl.reimbursed_net)} · ${fmtD(cl.reimbursed_on)}</dd>` : ''}</dl>
     ${claimAppraisalInfo(cl)}${claimOpponentInfo(cl)}${claimPoliceInfo(cl)}<p class="small muted">${esc(t('evidence'))}: ${esc(cl.evidence)}${cl.note ? ' · ' + esc(cl.note) : ''}</p>${cl.file_id && cl.file_name ? `<p class="small">📎 ${esc(t('claim_file'))}: <a href="${fileUrl(cl.file_id)}" target="_blank" rel="noopener">${esc(cl.file_name)}</a></p>` : ''}` : `<p class="muted small" style="margin-top:0">${esc(t('claim_none'))}</p>`;
-  return `<section class="panel"><h3 style="margin-top:0">${esc(t('claim_title'))}</h3>${theftNoRef ? `<p class="small" id="cptheft">⚠️ ${esc(t('cp_theft_hint'))}</p>` : ''}${noOcc ? `<p class="small" data-claimnoocc>⚠️ ${esc(t('claim_no_occ_hint').replace('{b}', t('act_set_occurred_at')))}</p>` : ''}${info}<details class="noprint"><summary>${esc(t(cl ? 'claim_edit' : 'claim_add'))}</summary><form id="clf"><input type="hidden" name="expected_updated_at" value="${cl ? esc(cl.updated_at || '') : ''}">
+  return `<section class="panel"><h3 style="margin-top:0">${esc(t('claim_title'))}</h3>${theftNoRef ? `<p class="small" id="cptheft">⚠️ ${esc(t('cp_theft_hint'))}</p>` : ''}${glassNoClaim ? `<p class="small" data-claimglass>ℹ️ ${esc(t('claim_glass_hint').replace('{b}', t('claim_add')))}</p>` : ''}${noOcc ? `<p class="small" data-claimnoocc>⚠️ ${esc(t('claim_no_occ_hint').replace('{b}', t('act_set_occurred_at')))}</p>` : ''}${info}<details class="noprint"><summary>${esc(t(cl ? 'claim_edit' : 'claim_add'))}</summary><form id="clf"><input type="hidden" name="expected_updated_at" value="${cl ? esc(cl.updated_at || '') : ''}">
     <p class="small muted">${esc(t('claim_hint'))}</p>
     <label>${esc(t('claim_contract'))}</label><select name="contract_id"><option value="">${esc(t('claim_no_contract'))}</option>${contracts.map((k) => `<option value="${esc(k.id)}"${cl && cl.contract_id === k.id ? ' selected' : ''}>${esc(k.partner)}${k.contract_no ? ' · ' + esc(k.contract_no) : ''}${k.ended_on ? ` (${esc(t('cs_beendet'))})` : ''}</option>`).join('')}</select>
     <label>${esc(t('claim_insurer'))}<span class="hint">${esc(t('claim_insurer_hint'))}</span></label><input name="insurer" maxlength="120" value="${v('insurer')}">
@@ -4886,7 +4892,7 @@ function helpSections(r) {
   // Lesezugriff meldet nichts und macht keine Kontrollen; Mängelstatistik nur Inhaber/Fuhrparkleitung (Server) – nur Kennzahlen und Benachrichtigungen
   if (r === 'viewer') return ['viewer', 'kpi', 'costs', 'exports', 'push', 'login2fa'];
   // Disposition führt keine Abfahrtskontrolle durch (Server 403, kein Menüpunkt) – Abschnitt nicht anbieten (20.10.2026)
-  const parts = ['report', 'accident', 'tachofault', 'theft', 'prio', ...(r === 'dispatch' ? [] : ['check']), 'push', 'offline', 'login2fa'];
+  const parts = ['report', 'accident', 'tachofault', 'theft', 'glass', 'prio', ...(r === 'dispatch' ? [] : ['check']), 'push', 'offline', 'login2fa'];
   if (r === 'workshop') parts.unshift('ws', 'costlimit', 'stock');
   if (r === 'workshop') parts.splice(parts.indexOf('stock') + 1, 0, 'tires');
   if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'costs', 'drivers', 'contracts', 'claims', 'fines', 'tires', 'stock');

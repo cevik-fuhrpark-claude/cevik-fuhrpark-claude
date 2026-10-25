@@ -162,6 +162,7 @@ UI-Versicherungsfall mit Gutachter (Abschnitt, Filter)|ui-versicherung-gutachter
 UI-Werkstattauftrag ohne Reparatur beenden (Totalschaden)|ui-ohne-reparatur.py|/tmp/cfp-ohne-reparatur.log
 UI-Fahrtenschreiber-/Fahrerkarten-Hinweis im Meldeformular|ui-fahrtenschreiber-hinweis.py|/tmp/cfp-fahrtenschreiber-hinweis.log
 UI-Diebstahl-/Einbruch-Hinweis im Meldeformular und Hilfe|ui-diebstahl-hinweis.py|/tmp/cfp-diebstahl-hinweis.log
+UI-Glasschaden-Hinweis im Meldeformular, Vorgang und Hilfe|ui-glasschaden.py|/tmp/cfp-glasschaden.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
 UI-Abschleppung: Standort/Abschleppdienst im Vorgang, Liste, Disposition, Hilfe|ui-abschleppung.py|/tmp/cfp-abschleppung.log

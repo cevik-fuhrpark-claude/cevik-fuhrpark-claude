@@ -19194,8 +19194,29 @@ await test('Backlog 214/215 (Teilagent „Fahrzeug gestohlen / Einbruch“): Mel
     ok(h.includes(STRINGS[l].theft_hint_steps) && h.includes(STRINGS[l].nav_new) && h.includes(STRINGS[l].help_tachofault_t), 'Hilfe nennt Schritte, „' + STRINGS[l].nav_new + '“ und Fahrerkarten-Abschnitt ' + l);
   }
   ok(app.includes(`<div id="theft" class="panel" hidden role="status">`), 'Panel #theft');
-  ok(app.includes("const parts = ['report', 'accident', 'tachofault', 'theft', 'prio',"), 'Hilfe-Abschnitt theft');
+  ok(app.includes("const parts = ['report', 'accident', 'tachofault', 'theft', 'glass', 'prio',"), 'Hilfe-Abschnitt theft');
   ok(app.indexOf("$('#theft').hidden = !THEFT_HINT.test") > 0 && app.indexOf("$('#theft').hidden = !THEFT_HINT.test") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+});
+
+await test('Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“): Meldeformular zeigt bei Glasschaden Hinweise (Fotos mit Größenvergleich, Sichtfeld, Weiterfahrt klären, früh melden; DE/UK/EN), Hilfe-Abschnitt, Hinweis im Versicherungsabschnitt nur ohne Versicherungsfall; Bremsscheibe/Scheibenwischer/Spiegel lösen nichts aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const GLASS_HINT = \/(.+)\/i;/m); ok(m, 'GLASS_HINT auf Modulebene'); eq((app.match(/const GLASS_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Steinschlag in der Windschutzscheibe', 'Frontscheibe hat einen Riss', 'Riss in der Scheibe unten links', 'Scheibe ist gerissen', 'Seitenscheibe eingeschlagen', 'Glasbruch Fahrerseite', 'Die Scheibe hat einen Riss', 'stone chip on the windscreen', 'cracked windshield', 'Side window smashed', 'Лобове скло тріснуло', 'Скол на лобовому склі', 'Тріщина на склі', 'Скло пошкоджене', 'Трещина на стекле', 'лобовое стекло разбито']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Bremsscheibe gerissen', 'Bremsscheiben verschlissen', 'Scheibenwischer defekt', 'Scheibenwaschanlage leer', 'Spiegel abgebrochen', 'Mirror glass broken', 'Kupplungsscheibe kaputt', 'Reifen platt', 'Дзеркало зламано', 'Склоочисник не працює', 'Unfall beim Rangieren']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].glass_hint_title, 'Titel ' + l);
+    eq(STRINGS[l].glass_hint_steps.split('|').length, 4, 'Schritte ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год|mm|cm|см|мм)/i.test(STRINGS[l].glass_hint_steps), 'keine erfundene Frist oder Größengrenze ' + l);
+    const h = STRINGS[l].help_glass_s; ok(STRINGS[l].help_glass_t && h, 'Hilfe ' + l);
+    ok(h.includes(STRINGS[l].glass_hint_steps) && h.includes(STRINGS[l].nav_new), 'Hilfe nennt Schritte und „' + STRINGS[l].nav_new + '“ ' + l);
+    ok(STRINGS[l].claim_glass_hint.includes('{b}') && STRINGS[l].claim_add, 'Versicherungs-Hinweis nennt den Knopf ' + l);
+  }
+  ok(app.includes(`<div id="glass" class="panel" hidden role="status">`), 'Panel #glass');
+  const lp = app.indexOf("$('#glass').hidden = !GLASS_HINT.test($('#d').value)"); ok(lp > 0 && lp < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("const glassNoClaim = !cl && GLASS_HINT.test(desc || '');") && app.includes('data-claimglass'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
+  ok(app.includes("'theft', 'glass', 'prio',"), 'Hilfe-Abschnitt glass für meldende Rollen');
 });
 
 await test('Backlog 216 (Teilagent „Abfahrtskontrolle findet Fahrtenschreiber-Störung“): Abfahrtskontrolle zeigt bei einem Mangel, dessen Beschreibung Fahrtenschreiber/Fahrerkarte nennt, dieselben Pflichten wie das Meldeformular; ein Ok-Punkt mit Text löst nichts aus', async () => {
