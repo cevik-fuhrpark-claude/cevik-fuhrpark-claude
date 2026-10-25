@@ -21238,7 +21238,26 @@ await test('Backlog 296 (Blickwinkel „Reifenpanne auf der Autobahn“): Meldef
   }
   ok(app.includes(`<div id="flat" class="panel" hidden role="status">`), 'Panel #flat');
   ok(app.includes("$('#flat').hidden = !FLAT_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'lost', 'fuel', 'flat', 'prio',"), 'Hilfe-Abschnitt flat nach fuel');
+  ok(app.includes("'lost', 'fuel', 'flat', "), 'Hilfe-Abschnitt flat nach fuel');
+});
+
+await test('Backlog 297 (Blickwinkel „Ladungssicherung bei Polizeikontrolle bemängelt“): Meldeformular zeigt Hinweise (Anordnungen befolgen, Leitung anrufen, Mängelbericht fotografieren, Bußgeldbescheid an die Leitung, „nicht fahrbereit“ solange untersagt); Abfahrtskontrolle/Zoll-Maß/Unfallaufnahme lösen nichts aus; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const ROADCHK_HINT = \/(.+)\/i;/m); ok(m, 'ROADCHK_HINT auf Modulebene'); eq((app.match(/const ROADCHK_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Polizei hat die Ladungssicherung bemängelt', 'Bei der BAG-Kontrolle wurde die Ladungssicherung beanstandet', 'Weiterfahrt untersagt, Ladung verrutscht', 'Mängelbericht von der Polizei bekommen', 'Verkehrskontrolle: Bremsen beanstandet, Weiterfahrt verboten', 'Ladungssicherung wurde bemängelt', 'Kontrolle durch die Polizei, Verwarnung wegen Licht', 'Police stopped me and gave a fine for load securing', 'Roadside check: prohibition notice for brakes', 'BAG inspection, not allowed to continue', 'Поліція виписала штраф за кріплення вантажу', 'Полиция запретила ехать дальше']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Abfahrtskontrolle: Licht bemängelt', 'Reifen 22,5 Zoll beschädigt', 'Öl kontrolliert, alles gut', 'Airbag-Leuchte an', 'Baggerschaufel verbogen', 'Kontrollleuchte Motor an', 'Ladung verrutscht beim Bremsen', 'Unfall, Polizei hat Anzeige aufgenommen', 'Diebstahl, Polizei hat Anzeige aufgenommen', 'Bremsen bei UVV bemängelt', 'Поліція склала протокол ДТП', 'Контрольна лампа горить']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const st = STRINGS[l].roadchk_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok(st[4].includes(STRINGS[l].driveable) && st[4].includes(STRINGS[l].drv_nicht_fahrbereit), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(STRINGS[l].roadchk_hint_steps), 'keine Zahl (Frist, Betrag) ' + l);
+    const h = STRINGS[l].help_roadchk_s; ok(STRINGS[l].help_roadchk_t && h && h.includes(STRINGS[l].roadchk_hint_steps) && h.includes(STRINGS[l].nav_new) && h.includes(STRINGS[l].fines), 'Hilfe nennt Melden und den Bereich Bußgelder wörtlich ' + l);
+    ok(STRINGS[l].roadchk_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="roadchk" class="panel" hidden role="status">`), 'Panel #roadchk');
+  ok(app.includes("$('#roadchk').hidden = !ROADCHK_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("'fuel', 'flat', 'roadchk', 'prio',"), 'Hilfe-Abschnitt roadchk nach flat');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

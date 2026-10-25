@@ -1532,6 +1532,12 @@ const LOST_HINT = /(?<![a-zäöüß])(?:(?:fahrzeug|lkw|auto|wagen|ersatz)?schl(
 // Standort und Reifenposition notieren + Foto, „nicht fahrbereit“) – reine Information, keine Frist, keine Entfernungsangabe.
 // „Batterie platt“, „Reifendruck prüfen“, „Reifen abgefahren“, „Bodenplatte“, „flatbed“ lösen nichts aus
 const FLAT_HINT = /reifenpanne|reifenplatzer|plattfu(?:ß|ss)|(?<![a-zäöüß])(?:platte[rmn]?|geplatzte[rmn]?)\s+(?:\S+\s+)?reifen|reifen[sn]?\s+(?:\S+\s+){0,3}?(?:platt(?![a-zäöüß])|geplatzt|zerfetzt|explodiert)|flat\s+(?:tyre|tire)|(?:tyre|tire)s?\s+(?:\S+\s+){0,2}?(?:burst|blew|blown|exploded|flat(?![a-z]))|blow-?out|punctur|(?:пробив|пробила|пробили|пробил|проколов|проколол|проколола|спустил[оаи]?|спустив|лопнул[аои]?|лопнув)\s+(?:\S+\s+){0,2}?(?:колес|шин)|(?:колес|шин)\S*\s+(?:\S+\s+){0,2}?(?:лопнул|лопнув|пробит|спущен|спустил|розірв|порвал)|прокол\S*\s+(?:\S+\s+)?(?:колес|шин)/i;
+// Backlog 297 (Blickwinkel „Ladungssicherung bei Polizeikontrolle bemängelt“): Beanstandung bei einer Straßenkontrolle → Hinweise
+// (Anordnungen befolgen, Leitung/Disposition anrufen, Mängelbericht/Verwarnung fotografieren, Anhörungsbogen/Bußgeldbescheid an die Leitung,
+// „nicht fahrbereit“ solange die Weiterfahrt untersagt ist) – reine Information, keine Frist, kein Betrag. „Abfahrtskontrolle: Licht bemängelt“,
+// „22,5 Zoll“, „Bag“ im Wort, „Öl kontrolliert“,
+// „Polizei hat Anzeige/Unfall aufgenommen“, „Поліція склала протокол ДТП“ lösen nichts aus
+const ROADCHK_HINT = /(?<![a-zäöüß])(?:polizei\S*|bag(?![a-zäöüß])\S*|verkehrskontrolle|stra(?:ß|ss)enkontrolle|zollkontrolle|kontrolle\s+(?:durch|von|der)\s+(?:die\s+|der\s+|dem\s+)?(?:polizei|bag))\s+(?:\S+\s+){0,8}?(?:bemängelt|beanstandet|mängelbericht|verwarn|bußgeld|bussgeld|weiterfahrt|stillgelegt|untersagt|festgehalten)|weiterfahrt\s+(?:\S+\s+){0,2}?(?:untersagt|verboten)|mängelbericht|ladungssicherung\S*\s+(?:\S+\s+){0,3}?(?:bemängelt|beanstandet)|(?:bemängelt|beanstandet)\S*\s+(?:\S+\s+){0,3}?ladungssicherung|(?:police|roadside\s+(?:check|inspection)|dvsa|bag)\s+(?:\S+\s+){0,8}?(?:fined|fine|ticket|defect\s+notice|prohibit|not\s+allowed\s+to\s+(?:drive|continue))|prohibition\s+notice|load\s+securing\s+(?:\S+\s+){0,2}?(?:criticised|criticized|objected)|(?:поліці|поліц|полиц|контрол)\S*\s+(?:\S+\s+){0,8}?(?:штраф|заборон|запрет|кріплення\s+вантаж|крепление\s+груз)/i;
 // Backlog 295 (Blickwinkel „Falsch getankt – AdBlue im Dieseltank“): Fehlbetankung → Hinweise (Motor nicht starten/sofort abstellen, nicht
 // weiterfahren, Leitung veranlasst Abpumpen/Abschleppen, Menge laut Tankbeleg + Foto, „nicht fahrbereit“) – reine Information, keine Frist, keine Literangabe.
 // „AdBlue nachgefüllt“, „AdBlue-Warnung“, „Diesel getankt“, „falsch geparkt“, „Заправив AdBlue“ lösen nichts aus
@@ -1568,6 +1574,7 @@ async function viewNew(preId) {
     <div id="wild" class="panel" hidden role="status"><b>${esc(t('wild_hint_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('wild_hint_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
     <div id="fuel" class="panel" hidden role="status"><b>${esc(t('fuel_hint_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('fuel_hint_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
     <div id="flat" class="panel" hidden role="status"><b>${esc(t('flat_hint_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('flat_hint_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
+    <div id="roadchk" class="panel" hidden role="status"><b>${esc(t('roadchk_hint_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('roadchk_hint_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
     <div id="lost" class="panel" hidden role="status"><b>${esc(t('lost_hint_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('lost_hint_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
     <label id="lbl_prio">${esc(t('urgency'))}</label><div class="choices" role="radiogroup" aria-labelledby="lbl_prio">${['niedrig', 'mittel', 'kritisch'].map((p, i) => `<label class="choice c-${p}"><input type="radio" name="prio" value="${p}"${i === 0 ? ' checked' : ''}><span><b>${esc(t('prio_' + p))}</b><span class="small muted">${esc(t('prio_' + p + '_d'))}</span></span></label>`).join('')}</div>
     <label id="lbl_drv">${esc(t('driveable'))}</label><div class="choices" role="radiogroup" aria-labelledby="lbl_drv">${['fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit', 'unbekannt'].map((p) => `<label class="choice${p === 'nicht_fahrbereit' ? ' c-kritisch' : ''}"><input type="radio" name="drv" value="${p}"${p === 'unbekannt' ? ' checked' : ''}><b>${esc(t('drv_' + p))}</b></label>`).join('')}</div>
@@ -1605,7 +1612,7 @@ async function viewNew(preId) {
   }
   // Beschreibung nennt Diebstahl/Einbruch: Polizei, Spuren, Liste des Fehlenden, Fuhrparkleitung (Backlog 214, 23.10.2026) – reine Information,
   // keine Frist; „Leistungseinbruch“ und ukr. „вкрай“/„зламано“ (kaputt) lösen nichts aus
-  const hints = () => { const wild = WILD_HINT.test($('#d').value); $('#wild').hidden = !wild; $('#acc').hidden = wild || !ACC_HINT.test($('#d').value); $('#tacho').hidden = !TACHO_HINT.test($('#d').value); $('#theft').hidden = !THEFT_HINT.test($('#d').value); $('#glass').hidden = !GLASS_HINT.test($('#d').value); $('#lost').hidden = !LOST_HINT.test($('#d').value); $('#fuel').hidden = !FUEL_HINT.test($('#d').value); $('#flat').hidden = !FLAT_HINT.test($('#d').value); };
+  const hints = () => { const wild = WILD_HINT.test($('#d').value); $('#wild').hidden = !wild; $('#acc').hidden = wild || !ACC_HINT.test($('#d').value); $('#tacho').hidden = !TACHO_HINT.test($('#d').value); $('#theft').hidden = !THEFT_HINT.test($('#d').value); $('#glass').hidden = !GLASS_HINT.test($('#d').value); $('#lost').hidden = !LOST_HINT.test($('#d').value); $('#fuel').hidden = !FUEL_HINT.test($('#d').value); $('#flat').hidden = !FLAT_HINT.test($('#d').value); $('#roadchk').hidden = !ROADCHK_HINT.test($('#d').value); };
   // Spracheingabe (Diktat) meldet sich je nach Gerät nur mit „change“ statt „input“ (Backlog 228) – beide prüfen
   $('#d').addEventListener('input', hints); $('#d').addEventListener('change', hints);
   photoLimitWatch($('#ph'));
@@ -4917,7 +4924,7 @@ function helpSections(r) {
   // Lesezugriff meldet nichts und macht keine Kontrollen; Mängelstatistik nur Inhaber/Fuhrparkleitung (Server) – nur Kennzahlen und Benachrichtigungen
   if (r === 'viewer') return ['viewer', 'kpi', 'costs', 'exports', 'push', 'login2fa'];
   // Disposition führt keine Abfahrtskontrolle durch (Server 403, kein Menüpunkt) – Abschnitt nicht anbieten (20.10.2026)
-  const parts = ['report', 'accident', 'wild', 'tachofault', 'theft', 'glass', 'lost', 'fuel', 'flat', 'prio', ...(r === 'dispatch' ? [] : ['check']), 'push', 'offline', 'login2fa'];
+  const parts = ['report', 'accident', 'wild', 'tachofault', 'theft', 'glass', 'lost', 'fuel', 'flat', 'roadchk', 'prio', ...(r === 'dispatch' ? [] : ['check']), 'push', 'offline', 'login2fa'];
   if (r === 'workshop') parts.unshift('ws', 'costlimit', 'stock');
   if (r === 'workshop') parts.splice(parts.indexOf('stock') + 1, 0, 'tires');
   if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'costs', 'drivers', 'contracts', 'claims', 'fines', 'tires', 'stock');
