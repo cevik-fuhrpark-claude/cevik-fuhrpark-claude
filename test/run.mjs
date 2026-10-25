@@ -22231,6 +22231,52 @@ await test('Backlog 349 (Fehlersuche Motor-/Leck-/Brand-/Licht-Hinweis): Rauch a
   for (const x of ['Abgasuntersuchung', 'Diesel getankt', 'Fahrerhaus riecht muffig']) ok(!['ENGINE_HINT', 'LEAK_HINT', 'FIRE_HINT'].some((n) => pat(n).test(x)), 'kein Hinweis: ' + x);
   ok(!pat('LIGHTS_HINT').test('Licht geht aus, wenn ich abschließe') && !pat('LIGHTS_HINT').test('Motor geht während der Fahrt aus'), 'Licht-Hinweis nur für Licht im Fahrbetrieb');
 });
+await test('Backlog 350 (Blickwinkel „Lkw vibriert, schaukelt oder flattert“): Meldeformular zeigt Hinweise (vorsichtig verringern/sicher anhalten; nur von außen ansehen, Verweis auf Rad-/Reifen-Schritte; Leitung entscheidet, nicht selbst schrauben; Geschwindigkeit/Situation/Reifenwechsel/Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Handy-/Sitzvibration (Spurhalteassistent) und „Vibration weg“ lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const VIBR_HINT = \/(.+)\/i;/m); ok(m, 'VIBR_HINT vorhanden'); eq((app.match(/const VIBR_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Lkw vibriert ab 80 km/h', 'starke Vibrationen beim Bremsen', 'Lkw schaukelt', 'Auflieger schaukelt sich auf', 'Lenkradflattern', 'Unwucht am Vorderrad', 'truck vibrates at 80', 'vibration at speed', 'trailer sways', 'вантажівку трясе', 'вібрація на швидкості', 'грузовик трясет']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Handy vibriert', 'Sitz vibriert', 'seat vibrates', 'Vibration weg', 'vibration gone', 'Lkw vibriert nicht mehr', 'Vibrationsalarm', 'Rad wackelt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('WHEEL_HINT').test('Rad wackelt') && pat('STEER_HINT').test('Lenkrad vibriert'), 'Rad/Lenkung behalten ihre eigenen Hinweise');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.vibr_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|§/.test(L.vibr_hint_steps), 'keine Zahl, kein Paragraf ' + l);
+    const h = L.help_vibr_s; ok(L.help_vibr_t && h && h.includes(L.vibr_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.vibr_hint_title, 'Titel ' + l);
+    const ex = (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new);
+    ok(ex.length >= 2, 'Hilfe nennt Beispiele ' + l);
+    for (const e of ex) ok(re.test(e), 'Hilfe-Beispiel löst Hinweis aus: ' + e);
+  }
+  ok(app.includes(`<div id="vibr" class="panel" hidden role="status">`), 'Panel #vibr');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#vibr').hidden = !VIBR_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('vibr') && order.indexOf('flat') < order.indexOf('vibr') && order.indexOf('wheel') < order.indexOf('vibr') && order.indexOf('steer') < order.indexOf('vibr') && order.indexOf('vibr') < order.indexOf('susp') && order.indexOf('vibr') < order.indexOf('load'), 'Gruppierung: Reifen/Rad/Lenkung vor Vibration vor Federung/Ladung');
+  ok(helpAfter(app, 'vibr', 'cablock'), 'Hilfe-Abschnitt vibr nach cablock');
+});
+await test('Backlog 351 (Fehlersuche Motor-/Brand-/Anzeige-Hinweis): ukrainisch „дим з вихлопної труби“/„з вихлопної труби дим“ und „aus dem Auspuff kommt Rauch“ → Motor-, nicht Brand-Hinweis (Rauch aus Motorraum/Kabine bleibt Brand); Kilometerzähler/odometer/одометр → Anzeige-Hinweis mit Schritt „zuletzt abgelesenen Kilometerstand notieren“ (ohne Zahl)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['дим з вихлопної труби', 'з вихлопної труби дим', 'глушник димить', 'дым из выхлопной трубы', 'aus dem Auspuff kommt Rauch', 'Auspuff kommt schwarzer Rauch']) { ok(pat('ENGINE_HINT').test(x), 'Motor-Hinweis: ' + x); ok(!pat('FIRE_HINT').test(x), 'kein Brand-Hinweis: ' + x); }
+  for (const x of ['дим з моторного відсіку', 'з кабіни йде дим', 'aus dem Motorraum kommt Rauch', 'Rauch']) ok(pat('FIRE_HINT').test(x), 'Brand-Hinweis bleibt: ' + x);
+  for (const x of ['Kilometerzähler geht nicht', 'km-Zähler zählt nicht mehr', 'Kilometeranzeige defekt', 'odometer not working', 'odometer stopped counting', 'одометр не працює', 'одометр не рахує']) ok(pat('DASH_HINT').test(x), 'Anzeige-Hinweis: ' + x);
+  for (const x of ['Kilometerstand falsch eingetragen', 'Kilometerzähler abgelesen', 'Kilometerstand eingetragen']) ok(!pat('DASH_HINT').test(x), 'kein Anzeige-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  const w = { de: 'Kilometerzähler', uk: 'одометр', en: 'odometer' };
+  for (const l of ['de', 'uk', 'en']) { const st = STRINGS[l].dash_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l); ok(st[3].includes(w[l]), 'Schritt nennt den Kilometerzähler ' + l); ok(!/\d/.test(STRINGS[l].dash_hint_steps), 'keine Zahl ' + l); }
+});
+await test('Backlog 352 (Fehlersuche Start-/Abschließen-Hinweis): Zünd-/Lenkradschloss klemmt oder Schlüssel dreht sich im Zündschloss nicht → Start-Hinweis statt Abschließen-Hinweis (Schritt: nicht mit Gewalt drehen); Schlüssel/Zentralverriegelung ohne Zündschloss bleiben beim Abschließen-Hinweis; „ключ застряг у замку запалювання“ ist kein Festgefahren-Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['Schlüssel klemmt im Zündschloss', 'Zündschloss defekt', 'Schlüssel lässt sich im Zündschloss nicht drehen', 'Lenkradschloss klemmt', 'Schlüssel steckt fest in der Zündung', 'key stuck in the ignition', 'ignition lock jammed', 'steering lock stuck', 'замок запалювання заклинило', 'ключ застряг у замку запалювання']) { ok(pat('NOSTART_HINT').test(x), 'Start-Hinweis: ' + x); ok(!pat('CABLOCK_HINT').test(x), 'kein Abschließen-Hinweis: ' + x); ok(!pat('STUCK_HINT').test(x), 'kein Festgefahren-Hinweis: ' + x); }
+  for (const x of ['Schlüssel klemmt', 'Schlüssel abgebrochen', 'Zentralverriegelung defekt', 'ключ застряг', 'ключ зламався', 'Türschloss klemmt']) { ok(pat('CABLOCK_HINT').test(x), 'Abschließen-Hinweis bleibt: ' + x); ok(!pat('NOSTART_HINT').test(x), 'kein Start-Hinweis: ' + x); }
+  ok(pat('STUCK_HINT').test('вантажівка застрягла в багнюці') && pat('NOSTART_HINT').test('Motor springt nicht an'), 'Festgefahren/Start unverändert');
+  const { STRINGS } = await import('../public/i18n.js');
+  const w = { de: 'nicht mit Gewalt', uk: 'силою', en: 'Do not force the key' };
+  for (const l of ['de', 'uk', 'en']) { const st = STRINGS[l].nostart_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l); ok(st[2].includes(w[l]), 'Schritt: Schlüssel nicht mit Gewalt ' + l); }
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

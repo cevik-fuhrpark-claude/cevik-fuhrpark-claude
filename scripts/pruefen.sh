@@ -204,6 +204,7 @@ UI-Hinweis Tankkarte verloren/gestohlen/abgelehnt im Meldeformular und Hilfe|ui-
 UI-Hinweis Unterfahrschutz/Seitenschutz verbogen im Meldeformular und Hilfe|ui-unterfahrschutz.py|/tmp/cfp-unterfahrschutz.log
 UI-Hinweis Reifen beschädigt/verliert Luft/abgefahren im Meldeformular und Hilfe|ui-reifenschaden.py|/tmp/cfp-reifenschaden.log
 UI-Hinweis Fahrerhaus lässt sich nicht abschließen/Zentralverriegelung defekt im Meldeformular und Hilfe|ui-abschliessen.py|/tmp/cfp-abschliessen.log
+UI-Hinweis Lkw vibriert/schaukelt/flattert im Meldeformular und Hilfe, Zündschloss → Start-Hinweis|ui-vibration.py|/tmp/cfp-vibration.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
