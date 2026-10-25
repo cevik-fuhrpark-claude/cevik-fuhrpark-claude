@@ -1181,7 +1181,7 @@ async function viewCases() {
   let f = hf || sessionStorage.getItem('cfp_cf') || 'open';
   if (!['open', 'closed', 'all', 'repeat', 'warranty', 'stale', 'followup', 'critical', 'locked', 'cost_approval'].includes(f) || (['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval'].includes(f) && S.me.role === 'driver') || (f === 'followup' && ['driver', 'workshop'].includes(S.me.role))) f = 'open';
   const q = S.caseQ || '';
-  const vq = () => (vsDef('caseVsite') && S.me.role !== 'driver' ? '&vsite=' + encodeURIComponent(vsDef('caseVsite')) : '');
+  const vq = () => (vsDef('caseVsite') && S.me.role !== 'driver' ? '&vsite=' + encodeURIComponent(vsDef('caseVsite')) : '') + (S.caseWs && wsFilterOk() ? '&ws=' + encodeURIComponent(S.caseWs) : '');
   const lq = () => (S.caseLimit ? '&limit=' + S.caseLimit : '') + sq();
   if (!S.caseSort) S.caseSort = sortPref('cases', CASE_SORTS, 'priority');
   const sq = () => (S.caseSort && S.caseSort !== 'priority' && f !== 'followup' ? '&sort=' + S.caseSort : '');
@@ -1192,11 +1192,13 @@ async function viewCases() {
   // Ausdruck: gewählte Auswahl, Suche, Standort, Sortierung und Anzahl im Kopf (wie Prüftermine)
   const fLabel = t(CF_LABEL[f] || f);
   const cPrint = (l, qq) => printHead([`${t('print_filter')}: ${fLabel}`, qq && qq.length >= 2 ? `${t('print_search')}: „${qq}“` : '',
-    res.site ? `${t('kpi_vsite')}: ${res.site === 'ohne' ? t('cs_nosite') : res.site}` : '', f !== 'followup' && S.me.role !== 'driver' ? `${t('sort_by')}: ${t('csort_' + (S.caseSort || 'priority'))}` : '', t('print_count').replace('{n}', l.length)]);
+    res.site ? `${t('kpi_vsite')}: ${res.site === 'ohne' ? t('cs_nosite') : res.site}` : '', S.caseWs && wsFilterOk() ? `${t('workshop')}: ${wsName(S.caseWs)}` : '', f !== 'followup' && S.me.role !== 'driver' ? `${t('sort_by')}: ${t('csort_' + (S.caseSort || 'priority'))}` : '', t('print_count').replace('{n}', l.length)]);
   const list = f === 'followup' ? res.cases.slice().sort((x, y) => (x.followup_on < y.followup_on ? -1 : x.followup_on > y.followup_on ? 1 : 0)) : res.cases;
   const vsel = S.me.role !== 'driver' && ((res.site_options || []).length > 1 || res.site) ? `<div class="noprint" style="margin-bottom:12px">${siteSelect('cvsite', '', res.site_options, res.site, t('kpi_vsite'), t('filter_all'))}</div>` : '';
+  // Werkstatt-Filter (Backlog 264): Leitung/Disposition/Lesezugriff, auch geschlossene Werkstätten wählbar
+  const wsel = wsFilterOk() && wsAll().length > 1 ? `<div class="noprint" style="margin-bottom:12px"><label for="cws">${esc(t('workshop'))}</label><select id="cws"><option value="">${esc(t('filter_all'))}</option>${wsAll().map((w) => `<option value="${esc(w.code)}"${S.caseWs === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>` : '';
   render(`<h1>${esc(t('nav_cases'))}</h1>
-    <input id="cq" class="noprint" type="search" value="${esc(q)}" placeholder="${esc(t('case_search'))}" aria-label="${esc(t('case_search'))}" style="margin-bottom:12px" autocomplete="off">${vsel}
+    <input id="cq" class="noprint" type="search" value="${esc(q)}" placeholder="${esc(t('case_search'))}" aria-label="${esc(t('case_search'))}" style="margin-bottom:12px" autocomplete="off">${vsel}${wsel}
     <div class="seg-tabs noprint">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? [] : ['followup']), ...(['critical', 'locked', 'cost_approval'].includes(f) ? [f] : [])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}"${k === f ? ' aria-current="true"' : ''}>${esc(t(CF_LABEL[k] || k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', nDays(res.stale_days)) : t('filter_stale_off'))}</p>` : ''}
     ${f !== 'followup' ? `<select id="csort" class="noprint" aria-label="${esc(t('sort_by'))}" style="max-width:420px;margin-bottom:12px">${CASE_SORTS.map((k) => `<option value="${k}"${(S.caseSort || 'priority') === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('csort_' + k))}</option>`).join('')}</select>` : ''}
     <div id="cl">${cPrint(list, q)}${caseList(list)}${trunc(res)}</div>
@@ -1207,6 +1209,7 @@ async function viewCases() {
   // Reiter: ein Filter aus dem Link (#/cases?f=…) hätte sonst Vorrang und der Klick bliebe ohne Wirkung (19.10.2026)
   $$('.seg-tabs a').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sessionStorage.setItem('cfp_cf', a.dataset.f); S.caseLimit = null; if (location.hash.includes('?')) history.replaceState(history.state, '', '#/cases'); viewCases(); }));
   const cvs = $('#cvsite'); if (cvs) cvs.onchange = () => { S.caseVsite = cvs.value; S.caseLimit = null; viewCases(); };
+  const cws = $('#cws'); if (cws) cws.onchange = () => { S.caseWs = cws.value || null; S.caseLimit = null; viewCases(); };
   const cso = $('#csort'); if (cso) cso.onchange = () => { S.caseSort = sortPref('cases', CASE_SORTS, 'priority', CASE_SORTS.includes(cso.value) ? cso.value : 'priority'); viewCases(); };
   bindMore();
   let timer = null;
@@ -1902,6 +1905,7 @@ const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNu
 // Werkstatt „EXTERN“ hat einen festen deutschen Namen aus dem Schema – in der App-Sprache anzeigen (22.10.2026, Fund Druck UK/EN)
 const wsLabel = (w) => (w && w.code === 'EXTERN' ? t('ws_extern') : (w && w.name) || '') + (w && w.active === false ? ` (${t('ws_closed')})` : '');
 // alle Werkstätten inkl. geschlossener (Namen, Filter) – Auswahl für Neues bleibt S.meta.workshops (nur aktive), Backlog 192
+const wsFilterOk = () => S.me && ['owner', 'fleet', 'dispatch', 'viewer'].includes(S.me.role);
 const wsAll = () => (S.meta && (S.meta.workshops_all || S.meta.workshops)) || [];
 const wsName = (code) => wsLabel(wsAll().find((w) => w.code === code)) || code || '–';
 // Lieferant einer Lagerentnahme wird als „Lager <Werkstattcode>“ gespeichert (src/cases.js) – Anzeige mit Werkstattnamen in der App-Sprache (19.10.2026)

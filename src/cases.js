@@ -103,6 +103,12 @@ export async function listCases(env, user, envName, query, meta = null) {
   else if (query.status === 'closed') where.push(`c.status IN ('fahrzeug_freigegeben','abgelehnt')`);
   else if (query.status && STATUSES.includes(query.status)) { where.push('c.status = ?'); args.push(query.status); }
   if (query.vehicle_id) { where.push('c.vehicle_id = ?'); args.push(query.vehicle_id); }
+  // Werkstatt-Filter (Backlog 264, Teilagent „Werkstatt fällt eine Woche aus“): Aufträge der Werkstatt bzw. Meldungen mit diesem Vorschlag
+  // (noch ohne Werkstatt) – Überblick, was bei einem Ausfall umzuverteilen ist; Werkstattkonten sehen ohnehin nur den eigenen Standort
+  if (query.ws !== undefined && query.ws !== '' && user.role !== 'driver') {
+    const ws = str(query.ws, { max: 20, field: 'Werkstatt' });
+    where.push('(c.workshop_site = ? OR (c.workshop_site IS NULL AND c.suggested_workshop_site = ?))'); args.push(ws, ws);
+  }
   // Filter „Mangel erneut festgestellt“: Vermerk der Abfahrtskontrolle in den letzten N Tagen (1–30)
   if (query.repeat_days !== undefined && query.repeat_days !== '') {
     const d = Number(query.repeat_days);
@@ -1275,6 +1281,11 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (site === c.workshop_site) throw bad('validation', 'Werkstatt ist unverändert.');
       // Termin gehörte zur bisherigen Werkstatt – die neue legt ihren eigenen bei der Übernahme fest (bleibt im Verlauf)
       set.workshop_site = site; set.workshop_ack_at = null; set.workshop_ack_by = null; set.planned_date = null;
+      // Backlog 263 (Teilagent „Werkstatt fällt eine Woche aus“): vom Auftrag übernommener Prüftermin (gleicher Tag) entfällt mit – sonst stand
+      // das Fahrzeug im Werkstattplan weiter am alten Tag der bisherigen Werkstatt (wie set_planned_date, nur im Betrieb)
+      if (c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=NULL, updated_at=? WHERE id=? AND planned_date=?').bind(now, c.maintenance_rule_id, c.planned_date));
+      // Wechsel an eine Werkstatt ohne aktives Konto: Hinweis in der Antwort wie bei der Freigabe (vorher still bis zum nächsten Agentenlauf)
+      noWorkshopUser = !(await env.DB.prepare(`SELECT 1 AS x FROM users WHERE environment=? AND role='workshop' AND active=1 AND password_hash IS NOT NULL AND workshop_site=? LIMIT 1`).bind(envName, site).first());
       // prev_ack_at: Übernahme der bisherigen Werkstatt (zählt in deren Auslastung weiter, Backlog 90)
       payload = { from: c.workshop_site, to: site, ...(c.planned_date ? { planned_date_before: c.planned_date } : {}), ...(c.workshop_ack_at ? { prev_ack_at: c.workshop_ack_at } : {}) };
       // bisherige Werkstatt: alte Hinweise zum Auftrag ausblenden (Link → 404, zurückgehaltener Push ging nach der Ruhezeit noch raus – 17.10.2026);
@@ -1340,6 +1351,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       set.workshop_ack_at = now; set.workshop_ack_by = user.id;
       // Terminänderung bei Übernahme im Verlauf festhalten (20.10.2026; vorher nur bei „Termin setzen/verschieben“)
       if (p.planned_date) { set.planned_date = planDate(p.planned_date); if (set.planned_date !== (c.planned_date || null)) payload = { planned_from: c.planned_date || null, planned_to: set.planned_date }; }
+      // Backlog 263: Termin bei Übernahme verschoben → übernommener Prüftermin (gleicher Tag) zieht mit (wie set_planned_date, nur im Betrieb)
+      if (set.planned_date && c.planned_date && set.planned_date !== c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=? AND planned_date=?').bind(set.planned_date, now, c.maintenance_rule_id, c.planned_date));
       notifyKind = 'acknowledged';
       break;
     case 'start_repair':

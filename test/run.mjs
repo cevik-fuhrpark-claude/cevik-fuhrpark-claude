@@ -20708,6 +20708,44 @@ await test('Backlog 261 (Migration 0083): Restarbeit mit Foto/PDF desselben Vorg
   ok(app.includes('${oiFileSelect(d)}') && app.includes('${oiFileLink(o, d)}'), 'Oberfläche');
 });
 
+await test('Backlog 263 (Blickwinkel „Werkstatt fällt eine Woche aus“): Werkstattwechsel eines Auftrags aus Prüftermin nimmt den übernommenen Prüftermin mit heraus, Übernahme mit anderem Termin zieht ihn mit (nur Betrieb); Wechsel an eine Werkstatt ohne Konto → Hinweis', async () => {
+  const db = env.DB.db; const today = BERLIN_TODAY; const now = new Date().toISOString();
+  const day = (n) => new Date(Date.parse(today + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  eq((await owner.post('/api/vehicles', { plate: 'WA-US 1', vin: 'WDB96340310626301', site: 'Dortmund' })).status, 201);
+  const insR = db.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,planned_date,evidence,created_by,created_at,updated_at) VALUES (?,?,?,12,?,'Beleg',?,?,?)`);
+  insR.run('R-WA-1', 'VIN:WDB96340310626301', 'UVV', day(4), users.fleet.id, now, now); insR.run('R-WA-2', 'VIN:WDB96340310626301', 'Bremsen', day(5), users.fleet.id, now, now);
+  const cmd = async (u, id, action, payload = {}, note) => { const c = (await u.get(`/api/cases/${id}`)).data.case; return u.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: c.version, payload, ...(note ? { note } : {}) }); };
+  const ws = await invite(owner, { username: 'prod.werkstatt.wa', display_name: 'Betrieb Werkstatt DO (WA)', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  const site2 = db.prepare(`SELECT code FROM workshops WHERE active=1 AND code<>'DORTMUND' AND code NOT IN (SELECT workshop_site FROM users WHERE role='workshop' AND environment='production' AND active=1 AND workshop_site IS NOT NULL) LIMIT 1`).get();
+  ok(site2, 'Werkstatt ohne Betriebskonto vorhanden');
+  const o = await users.prodFleet.post('/api/maintenance/R-WA-1/order', { workshop_site: 'DORTMUND' }); eq(o.status, 201, JSON.stringify(o.data)); eq(o.data.planned_date, day(4));
+  const r = await cmd(users.prodFleet, o.data.id, 'reassign_workshop', { workshop_site: site2.code }, 'Werkstatt Dortmund fällt aus'); eq(r.status, 200, JSON.stringify(r.data));
+  eq(r.data.no_workshop_user, true, 'Hinweis: dort kein aktives Konto');
+  eq(db.prepare(`SELECT planned_date FROM maintenance_rules WHERE id='R-WA-1'`).get().planned_date, null, 'übernommener Prüftermin entfällt');
+  const r2 = await cmd(users.prodFleet, o.data.id, 'reassign_workshop', { workshop_site: 'DORTMUND' }, 'doch Dortmund'); eq(r2.status, 200); ok(!r2.data.no_workshop_user, 'mit Konto kein Hinweis');
+  // Übernahme mit anderem Termin: Prüftermin zieht mit
+  const o2 = await users.prodFleet.post('/api/maintenance/R-WA-2/order', { workshop_site: 'DORTMUND' }); eq(o2.status, 201); eq(o2.data.planned_date, day(5));
+  eq((await cmd(ws, o2.data.id, 'acknowledge', { planned_date: day(2) })).status, 200);
+  eq(db.prepare(`SELECT planned_date FROM maintenance_rules WHERE id='R-WA-2'`).get().planned_date, day(2), 'Prüftermin mitgezogen');
+});
+
+await test('Backlog 264 (Blickwinkel „Werkstatt fällt eine Woche aus“): Vorgangsliste/CSV mit Werkstatt-Filter (Aufträge der Werkstatt + Meldungen mit diesem Vorschlag), Fahrer ohne Wirkung, Oberfläche', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const a = await newCase({ description: 'Bremse zieht (Vorschlag Dortmund)' });
+  const b = await newCase({ description: 'Licht defekt (Vorschlag München)', workshop_site: 'MUENCHEN' });
+  const c = await newCase({ description: 'Spiegel lose (an Dortmund freigegeben)' });
+  eq((await cmd(U.fleet, c, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  const ids = async (u, q) => { const r = await u.get('/api/cases?status=open&' + q); eq(r.status, 200, JSON.stringify(r.data)); return r.data.cases.map((x) => x.id); };
+  const d = await ids(U.fleet, 'ws=DORTMUND'); ok(d.includes(a) && d.includes(c) && !d.includes(b), 'Dortmund: Vorschlag + Auftrag');
+  const m = await ids(U.fleet, 'ws=MUENCHEN'); ok(m.includes(b) && !m.includes(a) && !m.includes(c), 'München');
+  eq((await ids(U.fleet, '')).length >= 3, true, 'ohne Filter alle');
+  const csv = await U.fleet.get('/api/cases?format=csv&status=open&ws=MUENCHEN'); eq(csv.status, 200);
+  const txt = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data); ok(txt.includes('Licht defekt') && !txt.includes('Spiegel lose'), 'CSV gefiltert');
+  const dr = await ids(U.driver, 'ws=MUENCHEN'); ok(dr.includes(a), 'Fahrer: Filter ohne Wirkung (eigene Meldungen)');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const cws = $('#cws'); if (cws) cws.onchange =") && app.includes("'&ws=' + encodeURIComponent(S.caseWs)"), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
