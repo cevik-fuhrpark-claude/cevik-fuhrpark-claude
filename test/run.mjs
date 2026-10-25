@@ -21623,6 +21623,29 @@ await test('Backlog 314 (Blickwinkel „Teil hängt herunter, schleift oder wurd
   ok(helpAfter(app, 'loose', 'visib'), 'Hilfe-Abschnitt loose nach visib');
 });
 
+await test('Backlog 315 (Blickwinkel „Fahrerassistenzsystem fällt aus oder bremst grundlos“): Meldeformular zeigt Hinweise (nicht mehr darauf verlassen, Abstand/Schulterblick; rote Warnung oder grundlose Bremsung → anhalten; Leitung entscheidet, nicht selbst abschalten; Display-Foto/welches System/Sensor verschmutzt; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Navi/Dashcam/Reifendrucksensor/Bremse quietscht lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const ADAS_HINT = \/(.+)\/i;/m); ok(m, 'ADAS_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Notbremsassistent Fehler', 'Abbiegeassistent ausgefallen', 'Spurhalteassistent funktioniert nicht', 'Rückfahrkamera zeigt kein Bild', 'Kamera-Monitor-System schwarz', 'Abstandstempomat geht nicht', 'Fehlermeldung Notbremsassistent im Display', 'Lkw hat grundlos voll gebremst', 'Notbremsassistent bremst grundlos', 'Phantombremsung auf der Autobahn', 'Assistenzsysteme nicht verfügbar', 'emergency braking system fault', 'blind spot camera not working', 'lane departure warning failed', 'truck braked for no reason', 'phantom braking', 'reversing camera black', 'Асистент не працює', 'Камера заднього виду не працює', 'Гальмує без причини', 'Ассистент ошибка']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Navi kaputt', 'Dashcam fehlt', 'Reifendrucksensor', 'Bremse quietscht', 'Spiegel abgefahren', 'Kühlaggregat Fühler defekt', 'Fahrer bremst stark', 'Assistent der Disposition', 'tyre pressure sensor fault', 'Reifen platt', 'Warnleuchte rot']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const n of ['BRAKE_HINT', 'WARNLIGHT_HINT', 'MIRROR_HINT', 'LIGHTS_HINT']) ok(!pat(n).test('Abbiegeassistent ausgefallen') && !pat(n).test('Lkw hat grundlos voll gebremst'), n + ' bleibt bei gestörtem Assistenten aus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.adas_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.adas_hint_steps), 'keine Zahl ' + l);
+    const h = L.help_adas_s; ok(L.help_adas_t && h && h.includes(L.adas_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.adas_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="adas" class="panel" hidden role="status">`), 'Panel #adas');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#adas').hidden = !ADAS_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('adas') && order.indexOf('acc') < order.indexOf('adas') && order.indexOf('brake') < order.indexOf('adas') && order.indexOf('warnlight') < order.indexOf('adas') && order.indexOf('adas') < order.indexOf('mirror'), 'Gruppierung: Unfall/Bremse/Warnleuchte vor Assistent vor Spiegel');
+  ok(helpAfter(app, 'adas', 'loose'), 'Hilfe-Abschnitt adas nach loose');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
