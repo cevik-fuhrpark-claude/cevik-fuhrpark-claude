@@ -55,6 +55,13 @@ with sync_playwright() as p:
         try: q.wait_for_function("(c)=>document.querySelector('[data-occurred]') && !document.querySelector('[data-occurred]').innerText.includes('14:30')",timeout=15000); okc=True
         except Exception: okc=False
         check(okc and api('GET',f'/api/cases/{cid}')['d']['case']['occurred_at']==d3,f'{lang} {wd}px: berichtigt auf Tag ohne Uhrzeit')
+        # Backlog 287: Versicherungsfall ohne Schadenzeitpunkt → Hinweis im Abschnitt
+        check(api('PUT',f'/api/cases/{cid}/claim',{'insurer':'Test-Versicherung','reported_on':today.isoformat(),'status':'gemeldet','evidence':'Mail'})['s']==200,f'{lang} {wd}px: Versicherungsfall')
+        ver=api('GET',f'/api/cases/{cid}')['d']['case']['version']
+        check(api('POST',f'/api/cases/{cid}/commands',{'action':'set_occurred_at','command_id':str(uuid.uuid4()),'expected_version':ver,'payload':{'occurred_at':''}})['s']==200,f'{lang} {wd}px: Zeitpunkt entfernt')
+        q.reload(); q.wait_for_selector('[data-claimnoocc]',timeout=15000)
+        check(BTN[lang] in q.inner_text('[data-claimnoocc]') and q.evaluate(noscroll),f'{lang} {wd}px: Hinweis im Versicherungsfall')
+        if SHOTS and wd==390: q.locator('[data-claimnoocc]').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/schadenzeitpunkt-claim-{lang}-{wd}.png')
         check(not errs,f'{lang} {wd}px: keine Skriptfehler {errs[:2]}')
         ctx.close()
     br.close()

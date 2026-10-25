@@ -19357,7 +19357,7 @@ await test('Backlog 221 (Teilagent „Kraftstoffdiebstahl am Rastplatz“): Vers
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/^const THEFT_HINT = \//m.test(app), 'THEFT_HINT auf Modulebene (eine Erkennung für Meldeformular und Versicherungsfall)');
   eq((app.match(/const THEFT_HINT = /g) || []).length, 1, 'nur eine Definition');
-  ok(app.includes("claimSection(d.claim, d.insurance_contracts, d.files || [], c.description)"), 'Beschreibung wird übergeben');
+  ok(app.includes("claimSection(d.claim, d.insurance_contracts, d.files || [], c.description, c)"), 'Beschreibung wird übergeben');
   ok(app.includes("const theftNoRef = THEFT_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('id="cptheft"'), 'Hinweis nur ohne Aktenzeichen');
   const m = app.match(/const THEFT_HINT = \/(.+)\/i;/); const re = new RegExp(m[1], 'i');
   ok(re.test('Diesel am Rastplatz abgezapft') && re.test('Tankdeckel aufgebrochen') && !re.test('Leistungseinbruch am Berg'), 'Erkennung');
@@ -21018,7 +21018,8 @@ await test('Backlog 285b: Datenqualität „Offener Versicherungsfall ohne Schad
   eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: '' })).status, 200); eq((await dq()).length, 1, 'wieder entfernt → Hinweis');
   eq((await U.fleet.put(`/api/cases/${id}/claim`, { insurer: 'Test-Versicherung', reported_on: BERLIN_TODAY, status: 'reguliert', evidence: 'Schadenmeldung per Mail' })).status, 200);
   eq((await dq()).length, 0, 'regulierter Fall: kein Hinweis');
-  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dq_claim_no_occurred, `${l}.dq_claim_no_occurred`);
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].dq_claim_no_occurred, `${l}.dq_claim_no_occurred`); ok(STRINGS[l].claim_no_occ_hint && STRINGS[l].claim_no_occ_hint.includes('{b}'), `${l}.claim_no_occ_hint`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('data-claimnoocc>') && app.includes("['gemeldet', 'in_pruefung'].includes(cl.status)"), 'Hinweis im Versicherungsfall (Backlog 287)');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
