@@ -1376,7 +1376,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
         .bind(oid, c.id, desc, flag(p.safety_relevant, 'Sicherheitsrelevant') ? 1 : 0, user.id, now));
       payload = { open_item_id: oid, description: desc, safety_relevant: flag(p.safety_relevant, 'Sicherheitsrelevant') };
       // Hinweis nach dem geprüften Wert (17.10.2026: „false“/„0“ wurden als nicht sicherheitsrelevant gespeichert, lösten aber den Sicherheits-Push aus)
-      notifyKind = payload.safety_relevant ? 'open_item_safety' : null;
+      // Backlog 259 (Blickwinkel „Werkstatt findet bei der Reparatur einen zusätzlichen Schaden“): auch ein nicht dringender Zusatzbefund der
+      // Werkstatt erreicht die Leitung (abschaltbar) – vorher erfuhr sie davon erst beim Öffnen des Vorgangs
+      notifyKind = payload.safety_relevant ? 'open_item_safety' : user.role === 'workshop' ? 'open_item' : null;
       break;
     }
     case 'resolve_open_item': {
@@ -1385,7 +1387,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (!oi) throw bad('validation', 'Restarbeit nicht gefunden oder bereits erledigt.');
       requireNote('Bitte Erledigungsvermerk angeben.');
       extra.push(env.DB.prepare(`UPDATE open_items SET status='erledigt', resolved_by=?, resolved_at=?, resolution_note=? WHERE id=?`).bind(user.id, now, note, oid));
-      payload = { open_item_id: oid };
+      payload = { open_item_id: oid, ...(oi.safety_relevant ? { safety_relevant: true, description: cutText(oi.description, 200) } : {}) };
+      // Backlog 259: sicherheitsrelevante Restarbeit von der Werkstatt erledigt → Leitung erfährt es (nicht abschaltbar; sie gibt danach frei)
+      if (oi.safety_relevant && user.role === 'workshop') notifyKind = 'open_item_safety_resolved';
       break;
     }
     case 'add_external_cost': {

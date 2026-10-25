@@ -20634,6 +20634,33 @@ await test('Backlog 255 (Folge aus 254): Fahrzeug korrigieren für Mängel aus e
   ok(app.includes("t(c.origin === 'kontrolle' && c.check_item ? 'cv_hint_insp' : 'cv_hint')") && app.includes('function cvInspText(p)'), 'Oberfläche');
 });
 
+await test('Backlog 259 (Blickwinkel „Werkstatt findet bei der Reparatur einen zusätzlichen Schaden“): nicht dringende Restarbeit der Werkstatt → Hinweis an die Leitung (abschaltbar), erledigte sicherheitsrelevante Restarbeit → Hinweis an die Leitung (nicht abschaltbar)', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
+  const id = await toRepair();
+  const n = (kind, uid) => db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE kind=? AND user_id=?`).get(kind, uid).n;
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Stoßdämpfer hinten leckt', safety_relevant: false })).status, 200);
+  eq(n('open_item', U.fleet.id), 1, 'Leitung: neue Restarbeit'); eq(n('open_item', U.ws.id), 0, 'nicht an die Werkstatt selbst');
+  eq((await cmd(U.fleet, id, 'add_open_item', { description: 'Leitung notiert selbst', safety_relevant: false })).status, 200);
+  const tot = () => db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE kind='open_item'`).get().n;
+  const t0 = tot();
+  eq((await cmd(U.fleet, id, 'add_open_item', { description: 'Leitung notiert noch etwas', safety_relevant: false })).status, 200);
+  eq(tot(), t0, 'Restarbeit der Leitung: kein Hinweis');
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Bremsleitung porös', safety_relevant: true })).status, 200);
+  ok(n('open_item_safety', U.fleet.id) >= 1, 'Sicherheits-Hinweis wie bisher');
+  const oi = db.prepare(`SELECT id FROM open_items WHERE case_id=? AND safety_relevant=1`).get(id).id;
+  eq((await cmd(U.ws, id, 'resolve_open_item', { open_item_id: oi }, 'Bremsleitung erneuert')).status, 200);
+  eq(n('open_item_safety_resolved', U.fleet.id), 1, 'Leitung: Sicherheitsrestarbeit erledigt');
+  const ev = db.prepare(`SELECT payload FROM case_events WHERE case_id=? AND action='resolve_open_item'`).get(id); eq(JSON.parse(ev.payload).description, 'Bremsleitung porös');
+  const { MUTABLE_KINDS, mutableKindsFor, nt } = await import('../src/notify.js');
+  ok(MUTABLE_KINDS.includes('open_item') && !MUTABLE_KINDS.includes('open_item_safety_resolved'), 'abschaltbar nur die nicht dringende');
+  ok(mutableKindsFor('fleet').includes('open_item') && !mutableKindsFor('workshop').includes('open_item'), 'nur Leitung');
+  for (const k of ['open_item', 'open_item_safety_resolved']) ok(nt('de', k) && nt('uk', k) !== nt('de', k) && nt('en', k) !== nt('de', k), `Titel ${k} DE/UK/EN`);
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].pk_open_item, `${l}.pk_open_item`);
+  // Werkstatt schaltet die Art ab → bleibt im Eingang, kein Push (wie andere abschaltbare Arten)
+  eq((await U.fleet.req('PUT', '/api/me/notify-prefs', { muted: ['open_item'] })).status, 200);
+  eq((await U.fleet.get('/api/me/notify-prefs')).data.muted.join(), 'open_item');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
