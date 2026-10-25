@@ -15,6 +15,13 @@ async function test(name, fn) {
 }
 function eq(a, b, msg = '') { if (a !== b) throw new Error(`${msg} erwartet ${JSON.stringify(b)}, erhalten ${JSON.stringify(a)}`); }
 function ok(v, msg = 'Bedingung nicht erfüllt') { if (!v) throw new Error(msg); }
+// Hilfe-Abschnitte (helpSections in public/app.js): cur steht nach prev und vor 'prio' – robust gegen neue Abschnitte am Ende der Hinweisliste
+function helpAfter(app, cur, prev) {
+  const m = app.match(/const parts = \['report', ([^\n]*?'prio'),/); if (!m) return false;
+  const a = ['report', ...m[1].split(',').map((x) => x.trim().replace(/'/g, ''))];
+  const i = a.indexOf(cur), j = a.indexOf(prev), k = a.indexOf('prio');
+  return i > 0 && j >= 0 && j < i && i < k && a.indexOf(cur, i + 1) < 0;
+}
 const rk = () => crypto.randomUUID();
 const deD = (iso) => iso.split('-').reverse().join('.'); // CSV-Exporte: Kalendertage als TT.MM.JJJJ
 // Testdaten relativ zum heutigen Berliner Datum, damit die Suite an jedem Tag gleich läuft (Prüfung: scripts/zeitreise-test.sh)
@@ -21295,7 +21302,7 @@ await test('Backlog 299 (Blickwinkel „Motorwarnleuchte rot während der Fahrt�
   }
   ok(app.includes(`<div id="warnlight" class="panel" hidden role="status">`), 'Panel #warnlight');
   ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'roadchk', 'nostart', 'warnlight', 'leak', 'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt warnlight nach nostart');
+  ok(helpAfter(app, 'warnlight', 'nostart'), 'Hilfe-Abschnitt warnlight nach nostart');
 });
 
 await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lkw“): Meldeformular zeigt Hinweise (anhalten/Motor aus/Leitung; Dieselgeruch: kein Feuer, Notruf; nicht in Gully/Erdreich, Ölspur auf der Straße melden; Foto + Tropfstelle; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Ölwechsel/Öl kontrolliert/Dach undicht/Druckluft lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21314,7 +21321,7 @@ await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lk
   }
   ok(app.includes(`<div id="leak" class="panel" hidden role="status">`), 'Panel #leak');
   ok(app.includes("$('#leak').hidden = !LEAK_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'nostart', 'warnlight', 'leak', 'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt leak nach warnlight');
+  ok(helpAfter(app, 'leak', 'warnlight'), 'Hilfe-Abschnitt leak nach warnlight');
 });
 
 await test('Backlog 301 (Blickwinkel „Auflieger beim Kunden beschädigt (Rampe, Stapler)“): Meldeformular zeigt Hinweise (Vermerk auf Lieferschein/Frachtbrief gegenzeichnen, Firma/Tor/Uhrzeit, Fotos, kein Schuldanerkenntnis, Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Mitnahmestapler/Ladebordwand/„Kunde hat angerufen“ lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21333,7 +21340,7 @@ await test('Backlog 301 (Blickwinkel „Auflieger beim Kunden beschädigt (Rampe
   }
   ok(app.includes(`<div id="custdmg" class="panel" hidden role="status">`), 'Panel #custdmg');
   ok(app.includes("$('#custdmg').hidden = !CUSTDMG_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'warnlight', 'leak', 'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt custdmg nach leak');
+  ok(helpAfter(app, 'custdmg', 'leak'), 'Hilfe-Abschnitt custdmg nach leak');
 });
 
 await test('Backlog 302 (Blickwinkel „Rauch oder Brandgeruch aus dem Motorraum“): Meldeformular zeigt Hinweise (anhalten, alle raus, Notruf; löschen nur ohne Gefahr, Gefahrgut-Papiere; danach Leitung + Stelle notieren; „Kritisch“ und „nicht fahrbereit“ wörtlich); Feuerlöscher/Rauchverbot/„Licht brennt nicht“/Auspuffrauch/Motorkontrollleuchte lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21352,7 +21359,7 @@ await test('Backlog 302 (Blickwinkel „Rauch oder Brandgeruch aus dem Motorraum
   }
   ok(app.includes(`<div id="fire" class="panel" hidden role="status">`), 'Panel #fire');
   ok(app.includes("$('#fire').hidden = !FIRE_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'leak', 'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt fire nach custdmg');
+  ok(helpAfter(app, 'fire', 'custdmg'), 'Hilfe-Abschnitt fire nach custdmg');
 });
 
 await test('Backlog 303 (Blickwinkel „Kühlaggregat des Kühlaufliegers fällt unterwegs aus“): Meldeformular zeigt Hinweise (Leitung/Disposition, Türen zu; Display-Foto, Uhrzeit, Temperaturausdruck; nur unterwiesene Prüfungen; Ware/Liefertermin; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Kühlwasser/Motortemperatur/Klimaanlage/Kabinen-Kühlschrank/Wartung lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21371,7 +21378,7 @@ await test('Backlog 303 (Blickwinkel „Kühlaggregat des Kühlaufliegers fällt
   }
   ok(app.includes(`<div id="reefer" class="panel" hidden role="status">`), 'Panel #reefer');
   ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'custdmg', 'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt reefer nach fire');
+  ok(helpAfter(app, 'reefer', 'fire'), 'Hilfe-Abschnitt reefer nach fire');
 });
 
 await test('Backlog 304 (Blickwinkel „Bremsen ziehen schief, quietschen oder verlieren Druck“): Meldeformular zeigt Hinweise (Druckverlust: anhalten, Feststellbremse, Leitung; Geräusche: Weiterfahrt klären; heiße Bremse nicht kühlen; Rad/Achse + Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Bremslicht/Bremsenprüfung/Reifendruck lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21390,7 +21397,7 @@ await test('Backlog 304 (Blickwinkel „Bremsen ziehen schief, quietschen oder v
   }
   ok(app.includes(`<div id="brake" class="panel" hidden role="status">`), 'Panel #brake');
   ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'fire', 'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt brake nach reefer');
+  ok(helpAfter(app, 'brake', 'reefer'), 'Hilfe-Abschnitt brake nach reefer');
 });
 
 await test('Backlog 305 (Blickwinkel „Plane des Aufliegers gerissen, Ladung nass“): Meldeformular zeigt Hinweise (Ladung prüfen, nicht klettern; Leitung klärt mit dem Kunden; Fotos + Stelle; Vermerk beim Kunden; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); „planen“ als Verb/Kabinendach/Ladung verrutscht lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21409,7 +21416,7 @@ await test('Backlog 305 (Blickwinkel „Plane des Aufliegers gerissen, Ladung na
   }
   ok(app.includes(`<div id="tarp" class="panel" hidden role="status">`), 'Panel #tarp');
   ok(app.includes("$('#tarp').hidden = !TARP_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'reefer', 'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt tarp nach brake');
+  ok(helpAfter(app, 'tarp', 'brake'), 'Hilfe-Abschnitt tarp nach brake');
 });
 
 await test('Backlog 306 (mehrere passende Hinweise im Meldeformular): Reihenfolge nach Gefahr, wichtigster offen, weitere eingeklappt mit „Schritte anzeigen“; HINT_ORDER deckt genau alle Hinweis-Kästen des Formulars; Texte und Hilfe DE/UK/EN', async () => {
@@ -21458,7 +21465,7 @@ await test('Backlog 307 (Blickwinkel „Ladung verrutscht während der Fahrt“)
   ok(app.includes(`<div id="load" class="panel" hidden role="status">`), 'Panel #load');
   ok(app.includes("$('#load').hidden = !LOAD_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
   { const o = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, '')); ok(o.indexOf('brake') < o.indexOf('load') && o.indexOf('load') + 1 === o.indexOf('leak'), 'Gruppierung: nach Bremse, vor Leck'); }
-  ok(app.includes("'brake', 'tarp', 'load', 'mirror', 'coupling', 'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt load nach tarp');
+  ok(helpAfter(app, 'load', 'tarp'), 'Hilfe-Abschnitt load nach tarp');
 });
 
 await test('Backlog 308 (Blickwinkel „Spiegel abgefahren“): Meldeformular zeigt Hinweise (ohne Haupt-/Weitwinkelspiegel nicht weiterfahren; Fremdschaden wie Unfall, niemand vor Ort → Polizei; Leitung entscheidet; Fotos/Seite/Spiegelart; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Ölspiegel/Spiegelei/„Spiegel in Ordnung“/Scheibe lösen nichts aus; zusammen mit „Unfall“ steht der Unfall-Hinweis vorn; Hilfe DE/UK/EN', async () => {
@@ -21480,7 +21487,7 @@ await test('Backlog 308 (Blickwinkel „Spiegel abgefahren“): Meldeformular ze
   ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test($('#d').value); $('#coupling')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('mirror') && order.indexOf('mirror') < order.indexOf('glass'), 'Gruppierung: Unfall vor Spiegel vor Glas');
-  ok(app.includes("'tarp', 'load', 'mirror', 'coupling', 'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt mirror nach load');
+  ok(helpAfter(app, 'mirror', 'load'), 'Hilfe-Abschnitt mirror nach load');
 });
 
 await test('Backlog 309 (Blickwinkel „Auflieger lässt sich nicht sicher kuppeln oder hat sich gelöst“): Meldeformular zeigt Hinweise (nicht losfahren, solange nicht sicher gekuppelt; gelöster Auflieger → Stelle sichern, Notruf bei Gefahr; gegen Wegrollen sichern, Leitung entscheidet; Fotos mit beiden Kennzeichen; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Kupplung rutscht/Sattelkupplung abgeschmiert/„сідельний тягач“ lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
@@ -21501,7 +21508,7 @@ await test('Backlog 309 (Blickwinkel „Auflieger lässt sich nicht sicher kuppe
   ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test($('#d').value); $('#lights')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('coupling') && order.indexOf('brake') < order.indexOf('coupling') && order.indexOf('coupling') < order.indexOf('load'), 'Gruppierung: Unfall/Bremse vor Kupplung vor Ladung');
-  ok(app.includes("'load', 'mirror', 'coupling', 'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt coupling nach mirror');
+  ok(helpAfter(app, 'coupling', 'mirror'), 'Hilfe-Abschnitt coupling nach mirror');
 });
 
 await test('Backlog 310 (Blickwinkel „Beleuchtung am Lkw/Auflieger ausgefallen“): Meldeformular zeigt Hinweise (bei Dunkelheit anhalten, so nicht weiterfahren; Stecker/Kabel nur gefahrlos, Lampe/Sicherung nur unterwiesen; Leitung entscheidet; Fotos/welche Leuchte; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Warn-/Kontrollleuchten, Lichtmaschine, „Licht an“ lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
@@ -21523,7 +21530,7 @@ await test('Backlog 310 (Blickwinkel „Beleuchtung am Lkw/Auflieger ausgefallen
   ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test($('#d').value); $('#door')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('lights') && order.indexOf('mirror') < order.indexOf('lights') && order.indexOf('lights') < order.indexOf('glass'), 'Gruppierung: Unfall/Spiegel vor Licht vor Glas');
-  ok(app.includes("'mirror', 'coupling', 'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt lights nach coupling');
+  ok(helpAfter(app, 'lights', 'coupling'), 'Hilfe-Abschnitt lights nach coupling');
 });
 
 await test('Backlog 311 (Blickwinkel „Tür/Ladebordwand/Hecktür schließt nicht“): Meldeformular zeigt Hinweise (nicht losfahren, solange nicht sicher geschlossen/Ladebordwand nicht gesichert; unterwegs anhalten, nichts mit Gewalt, nicht in den Schwenkbereich; Leitung entscheidet; Fotos/welche Tür; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); eingedrückte/aufgebrochene Tür, Rolltor beim Kunden, „Tür ist zu“ lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
@@ -21545,7 +21552,7 @@ await test('Backlog 311 (Blickwinkel „Tür/Ladebordwand/Hecktür schließt nic
   ok(app.includes("$('#door').hidden = !DOOR_HINT.test($('#d').value); $('#stuck')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('door') && order.indexOf('load') < order.indexOf('door') && order.indexOf('door') < order.indexOf('custdmg') && order.indexOf('door') < order.indexOf('theft'), 'Gruppierung: Unfall/Ladung vor Tür vor Diebstahl/Kundenschaden');
-  ok(app.includes("'coupling', 'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt door nach lights');
+  ok(helpAfter(app, 'door', 'lights'), 'Hilfe-Abschnitt door nach lights');
 });
 
 await test('Backlog 312 (Blickwinkel „Lkw festgefahren oder kommt bei Glätte nicht weiter“): Meldeformular zeigt Hinweise (nicht mit Gewalt freifahren; Stelle sichern, Schneeketten nur unterwiesen und abseits des Verkehrs; Leitung entscheidet über Bergung; Fotos/Ort; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); „Radmutter sitzt fest“, „Schlüssel steckt“, „door got stuck“ lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
@@ -21564,10 +21571,33 @@ await test('Backlog 312 (Blickwinkel „Lkw festgefahren oder kommt bei Glätte 
     ok(L.stuck_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="stuck" class="panel" hidden role="status">`), 'Panel #stuck');
-  ok(app.includes("$('#stuck').hidden = !STUCK_HINT.test($('#d').value); groupHints(hintOpen);"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#stuck').hidden = !STUCK_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('stuck') && order.indexOf('flat') < order.indexOf('stuck') && order.indexOf('stuck') < order.indexOf('roadchk') && order.indexOf('stuck') < order.indexOf('nostart'), 'Gruppierung: Unfall/Reifenpanne vor festgefahren vor Kontrolle/springt nicht an');
-  ok(app.includes("'lights', 'door', 'stuck', 'prio',"), 'Hilfe-Abschnitt stuck nach door');
+  ok(helpAfter(app, 'stuck', 'door'), 'Hilfe-Abschnitt stuck nach door');
+});
+
+await test('Backlog 313 (Blickwinkel „Heizung/Gebläse/Scheibenwischer fällt aus, Scheibe beschlägt oder vereist“): Meldeformular zeigt Hinweise (nicht mit Guckloch weiterfahren, sicher anhalten; Scheiben frei machen ohne heißes Wasser; Leitung entscheidet; was ausfällt + Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); „Standheizung startet nicht“, „Sitzheizung defekt“, „Bremsscheibe vereist“, „engine fan broken“ lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const VISIB_HINT = \/(.+)\/i;/m); ok(m, 'VISIB_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Heizung geht nicht, Scheibe beschlägt', 'Gebläse ausgefallen', 'Heizung im Fahrerhaus ist kaputt', 'Kabinenheizung wird nicht warm', 'Scheibenwischer ausgefallen', 'Wischer bleibt stehen', 'Wischwasser gefroren', 'Windschutzscheibe vereist von innen', 'Scheiben beschlagen ständig', 'Frontscheibe friert innen zu', 'beschlagene Scheiben, keine Sicht', 'heater not working', 'blower is broken', 'windscreen keeps fogging up', 'windows are iced', 'wipers stopped', 'washer fluid frozen', 'frozen windscreen', 'Пічка не працює', 'Обігрів не гріє', 'Скло запотіває', 'Лобове скло замерзло', 'Двірники не працюють', 'Омивач замерз', 'Печка не работает', 'Стекло запотело']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Standheizung startet nicht', 'Sitzheizung defekt', 'Heizungsrohr beim Kunden kaputt', 'Bremsscheibe vereist', 'Scheinwerfer beschlagen', 'parking heater not working', 'engine fan broken', 'Reefer fan not working', 'Steinschlag in der Windschutzscheibe', 'Scheibe gerissen', 'Kühlaggregat heizt nicht', 'Lkw steckt im Schnee fest', 'Kühlwasser leer', 'Licht geht nicht', 'Fenster beim Kunden kaputt', 'Двері пошкоджені']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const n of ['NOSTART_HINT', 'STUCK_HINT', 'LIGHTS_HINT', 'REEFER_HINT', 'WARNLIGHT_HINT']) ok(!pat(n).test('Heizung geht nicht, Scheibe beschlägt') && !pat(n).test('wipers stopped'), n + ' bleibt bei ausgefallener Heizung/Wischern aus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.visib_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.visib_hint_steps), 'keine Zahl ' + l);
+    const h = L.help_visib_s; ok(L.help_visib_t && h && h.includes(L.visib_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.visib_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="visib" class="panel" hidden role="status">`), 'Panel #visib');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('visib') && order.indexOf('acc') < order.indexOf('visib') && order.indexOf('visib') < order.indexOf('glass') && order.indexOf('visib') < order.indexOf('nostart'), 'Gruppierung: Unfall vor Sicht vor Glasschaden/springt nicht an (beschlagene Windschutzscheibe zeigt Sicht offen, Glas eingeklappt)');
+  ok(helpAfter(app, 'visib', 'stuck'), 'Hilfe-Abschnitt visib nach stuck');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
