@@ -20839,6 +20839,21 @@ await test('Backlog 271 (Blickwinkel „Lkw wechselt dauerhaft den Standort“):
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("t('veh_site_drivers').replace('{list}'"), 'Oberfläche');
 });
 
+await test('Backlog 273: Fahrzeug-CSV-Import mit Standortwechsel nennt offene Werkstattaufträge (mit Werkstatt), geplante Prüftermine und Fahrer anderer Standorte; Vorschau unverändert, ohne Wechsel kein Hinweis', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  await newCase({ description: 'Bremse zieht (vor Versetzung)' });
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES('dv-273',?,?,?,?,?,'test')`).run(U.driver.id, V1, '2026-01-01T00:00:00.000Z', U.fleet.id, now);
+  db.prepare(`INSERT INTO drivers(id,environment,display_name,active,created_by,created_at,updated_at,site,user_id) VALUES ('dr-273','test','Fahrer W',1,?,?,?,'Dortmund',?)`).run(U.fleet.id, now, now, U.driver.id);
+  const csv = (site) => `Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN;Anhänger Kennzeichen\nSZ-YC 5513;${site};in Betrieb;MAN;2016;WMA15SZZ2HM722774;`;
+  const dry = await U.own.req('POST', '/api/vehicles/import?dry_run=1', csv('Bayern'), { 'content-type': 'text/csv' }); ok(!dry.data.site_changes, 'Vorschau ohne Hinweis');
+  const r = await U.own.req('POST', '/api/vehicles/import', csv('Bayern'), { 'content-type': 'text/csv' }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(r.data.site_changes.length, 1); const x = r.data.site_changes[0];
+  eq(x.plate, 'SZ-YC 5513'); eq(x.site, 'Bayern'); eq(x.open_workshop_cases, 1); eq(x.open_workshop_sites.join(), 'DORTMUND'); eq(x.drivers_other_site.map((d) => d.name).join(), 'Fahrer W');
+  const r2 = await U.own.req('POST', '/api/vehicles/import', csv('Bayern'), { 'content-type': 'text/csv' }); ok(!r2.data.site_changes, 'unverändert: kein Hinweis');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].imp_site_changes, `${l}.imp_site_changes`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id=\\"impsite\\"') || app.includes('id="impsite"'), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
