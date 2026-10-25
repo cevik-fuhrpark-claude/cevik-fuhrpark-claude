@@ -21412,6 +21412,34 @@ await test('Backlog 305 (Blickwinkel „Plane des Aufliegers gerissen, Ladung na
   ok(app.includes("'reefer', 'brake', 'tarp', 'prio',"), 'Hilfe-Abschnitt tarp nach brake');
 });
 
+await test('Backlog 306 (mehrere passende Hinweise im Meldeformular): Reihenfolge nach Gefahr, wichtigster offen, weitere eingeklappt mit „Schritte anzeigen“; HINT_ORDER deckt genau alle Hinweis-Kästen des Formulars; Texte und Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m); ok(m, 'HINT_ORDER auf Modulebene');
+  const order = m[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  eq(new Set(order).size, order.length, 'keine doppelten Einträge');
+  eq(order.slice(0, 3).join(','), 'fire,acc,wild', 'Rauch/Brand vor Unfall/Wildunfall');
+  const a = app.indexOf('async function viewNew('); const b = app.indexOf('\nasync function ', a + 10); ok(a > 0 && b > a, 'viewNew gefunden');
+  const body = app.slice(a, b);
+  const hs = body.match(/const hints = \(\) => \{(.+)\};/); ok(hs, 'hints()');
+  const ids = [...hs[1].matchAll(/\$\('#([a-z]+)'\)\.hidden =/g)].map((x) => x[1]);
+  eq([...ids].sort().join(','), [...order].sort().join(','), 'jeder Hinweis-Kasten aus hints() steht in HINT_ORDER');
+  ok(hs[1].trim().endsWith('groupHints(hintOpen);'), 'Gruppierung nach dem Ein-/Ausblenden');
+  ok(body.includes('const hintOpen = new Set();'), 'von Hand Aufgeklapptes je Formular gemerkt');
+  ok(body.indexOf('<p id="hintsum"') > body.indexOf('<textarea id="d"') && body.indexOf('<p id="hintsum"') < body.indexOf('<div id="acc"'), 'Sammelhinweis vor den Kästen');
+  const g = app.slice(app.indexOf('function groupHints('), app.indexOf('function occLate('));
+  ok(g.includes("const many = vis.length > 1;") && g.includes('pos > 0 && !opened.has(p.id)'), 'nur bei mehreren: erster offen, weitere eingeklappt');
+  ok(g.includes("b.type = 'button'"), 'Knopf sendet das Formular nicht ab');
+  ok(g.includes('b.onclick = ') && g.includes("aria-expanded"), 'Knopf als Eigenschaft + aria-expanded');
+  ok(g.includes('if (!many || pos < 1) { if (b) b.remove(); continue; }'), 'einzelner Hinweis ohne Knopf');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l];
+    ok(L.hint_group && L.hint_show && L.hint_hide && L.hint_show !== L.hint_hide, 'Texte ' + l);
+    ok(!/\d/.test(L.hint_group), 'keine Zahl ' + l);
+    ok(L.help_report_s.includes(L.hint_show), 'Hilfe „Melden“ nennt den Knopf wörtlich ' + l);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

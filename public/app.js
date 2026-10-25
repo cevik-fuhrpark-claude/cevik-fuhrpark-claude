@@ -1592,6 +1592,30 @@ const FUEL_HINT = /falsch\s+(?:\S+\s+){0,2}?(?:getankt|betankt)|falsche[nmrs]?\s
 // + russ. „карта водителя“ (Backlog 230)
 const TACHO_HINT = /fahrtenschreiber|tachogra(?:ph|f)|kontrollger(?:ä|ae|a)t|fahrerkarte|driver ?card|tacho(?!meter)|тахограф|картк\S* водія|карт\S* водител/i;
 // Backlog 285: „N Tage später gemeldet“ (Berliner Kalendertage zwischen Schadentag und Meldung) und Fahrer laut Zuordnung/Kontrolle (nur Leitung)
+// Backlog 306: Passen mehrere Hinweise zur Beschreibung (z. B. „Unfall, Reifen geplatzt, Öl läuft aus“), stand bisher eine lange Kette
+// gleichrangiger Kästen über der Dringlichkeit. Jetzt: Reihenfolge nach Gefahr für Leib und Leben/Verkehr, der wichtigste Hinweis offen,
+// die weiteren nur mit Titel und „Schritte anzeigen“; von Hand Aufgeklapptes bleibt beim Weitertippen offen. Ein einzelner Hinweis bleibt unverändert.
+const HINT_ORDER = ['fire', 'acc', 'wild', 'flat', 'brake', 'leak', 'warnlight', 'roadchk', 'theft', 'reefer', 'fuel', 'nostart', 'tarp', 'custdmg', 'glass', 'lost', 'tacho'];
+function groupHints(opened) {
+  const sum = $('#hintsum'); if (!sum) return;
+  const all = HINT_ORDER.map((id) => $('#' + id)).filter(Boolean);
+  const vis = all.filter((p) => !p.hidden); const many = vis.length > 1;
+  // nur umstellen, wenn die Reihenfolge abweicht – ein Verschieben zwischen Maus-/Fingerdruck und Loslassen (Feld verliert den Fokus → „change“) verschluckt sonst den Klick
+  let prev = sum; if (vis.some((p) => { const ok = prev.nextElementSibling === p; prev = p; return !ok; })) sum.after(...vis);
+  sum.hidden = !many; sum.textContent = many ? t('hint_group') : '';
+  for (const p of all) {
+    const pos = vis.indexOf(p); const fold = many && pos > 0 && !opened.has(p.id);
+    const ul = p.querySelector('ul'); if (ul) ul.hidden = fold;
+    let b = p.querySelector('[data-hintfold]');
+    if (!many || pos < 1) { if (b) b.remove(); continue; }
+    if (!b) {
+      b = document.createElement('button'); b.type = 'button'; b.className = 'btn secondary small'; b.dataset.hintfold = '';
+      b.style.cssText = 'display:block;margin-top:6px;white-space:nowrap'; p.append(b);
+      b.onclick = () => { if (opened.has(p.id)) opened.delete(p.id); else opened.add(p.id); groupHints(opened); };
+    }
+    b.textContent = t(fold ? 'hint_show' : 'hint_hide'); b.setAttribute('aria-expanded', String(!fold));
+  }
+}
 function occLate(c) {
   const a = c.occurred_at.length === 10 ? c.occurred_at : BERLIN_FMT.format(new Date(c.occurred_at)); const b = BERLIN_FMT.format(new Date(c.created_at));
   const n = Math.round((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / 86400000);
@@ -1614,6 +1638,7 @@ async function viewNew(preId) {
     <label for="vq">${esc(t('choose_vehicle'))}</label><input id="vq" placeholder="SZ-…" autocomplete="off" style="margin-bottom:8px">
     ${mine.length ? `<h3>${esc(t('my_vehicles'))}</h3>${pick(mine)}<details><summary>${esc(t('other_vehicles'))}</summary>${pick(others)}</details>` : pick(vs)}
     <div id="known"></div><label for="d">${esc(t('what_wrong'))}<span class="hint">${esc(t('what_wrong_hint'))}</span></label><textarea id="d" required minlength="5" maxlength="4000"></textarea>
+    <p id="hintsum" class="small muted" hidden role="status" style="margin:6px 0"></p>
     <div id="acc" class="panel" hidden role="status"><b>${esc(t('acc_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('acc_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
     ${tachoPanel()}
     <div id="theft" class="panel" hidden role="status"><b>${esc(t('theft_hint_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('theft_hint_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
@@ -1667,7 +1692,8 @@ async function viewNew(preId) {
   }
   // Beschreibung nennt Diebstahl/Einbruch: Polizei, Spuren, Liste des Fehlenden, Fuhrparkleitung (Backlog 214, 23.10.2026) – reine Information,
   // keine Frist; „Leistungseinbruch“ und ukr. „вкрай“/„зламано“ (kaputt) lösen nichts aus
-  const hints = () => { const wild = WILD_HINT.test($('#d').value); $('#wild').hidden = !wild; $('#acc').hidden = wild || !ACC_HINT.test($('#d').value); $('#tacho').hidden = !TACHO_HINT.test($('#d').value); $('#theft').hidden = !THEFT_HINT.test($('#d').value); $('#glass').hidden = !GLASS_HINT.test($('#d').value); $('#lost').hidden = !LOST_HINT.test($('#d').value); $('#fuel').hidden = !FUEL_HINT.test($('#d').value); $('#flat').hidden = !FLAT_HINT.test($('#d').value); $('#roadchk').hidden = !ROADCHK_HINT.test($('#d').value); $('#nostart').hidden = !NOSTART_HINT.test($('#d').value); $('#warnlight').hidden = !WARNLIGHT_HINT.test($('#d').value); $('#leak').hidden = !LEAK_HINT.test($('#d').value); $('#custdmg').hidden = !CUSTDMG_HINT.test($('#d').value); $('#fire').hidden = !FIRE_HINT.test($('#d').value); $('#reefer').hidden = !REEFER_HINT.test($('#d').value); $('#brake').hidden = !BRAKE_HINT.test($('#d').value); $('#tarp').hidden = !TARP_HINT.test($('#d').value); };
+  const hints = () => { const wild = WILD_HINT.test($('#d').value); $('#wild').hidden = !wild; $('#acc').hidden = wild || !ACC_HINT.test($('#d').value); $('#tacho').hidden = !TACHO_HINT.test($('#d').value); $('#theft').hidden = !THEFT_HINT.test($('#d').value); $('#glass').hidden = !GLASS_HINT.test($('#d').value); $('#lost').hidden = !LOST_HINT.test($('#d').value); $('#fuel').hidden = !FUEL_HINT.test($('#d').value); $('#flat').hidden = !FLAT_HINT.test($('#d').value); $('#roadchk').hidden = !ROADCHK_HINT.test($('#d').value); $('#nostart').hidden = !NOSTART_HINT.test($('#d').value); $('#warnlight').hidden = !WARNLIGHT_HINT.test($('#d').value); $('#leak').hidden = !LEAK_HINT.test($('#d').value); $('#custdmg').hidden = !CUSTDMG_HINT.test($('#d').value); $('#fire').hidden = !FIRE_HINT.test($('#d').value); $('#reefer').hidden = !REEFER_HINT.test($('#d').value); $('#brake').hidden = !BRAKE_HINT.test($('#d').value); $('#tarp').hidden = !TARP_HINT.test($('#d').value); groupHints(hintOpen); };
+  const hintOpen = new Set();
   // Spracheingabe (Diktat) meldet sich je nach Gerät nur mit „change“ statt „input“ (Backlog 228) – beide prüfen
   $('#d').addEventListener('input', hints); $('#d').addEventListener('change', hints);
   photoLimitWatch($('#ph'));
