@@ -203,14 +203,18 @@ export async function claimOverview(env, user, envName, query = {}) {
   const sum = (a) => (a.length ? r2(a.reduce((s, c) => s + c.reimbursed_net, 0)) : null);
   // Summen je Meldejahr und gesamt (Backlog 275): nur Werte, die eingetragen bzw. belegt sind; Fälle ruhender Fahrzeuge außerhalb (wie die Erstattungssumme);
   // Kosten mit unbewerteten/geschätzten Positionen zählen nicht in die Summe, sondern als „unvollständig“
-  const acc = () => ({ n: 0, deductible_net: 0, appraisal_net: 0, reimbursed_net: 0, case_cost_net: 0, cost_incomplete: 0, cost_missing: 0 });
+  // *_n = Anzahl Fälle mit eingetragenem Wert (0 → Anzeige „–“ statt 0 €)
+  const acc = () => ({ n: 0, deductible_net: 0, deductible_n: 0, appraisal_net: 0, appraisal_n: 0, reimbursed_net: 0, reimbursed_n: 0, case_cost_net: 0, cost_n: 0, cost_incomplete: 0, cost_missing: 0 });
   const years = new Map(); const total = acc();
   for (const c of list) {
     if (c.eval_excluded) continue;
     const y = String(c.reported_on || '').slice(0, 4); if (!years.has(y)) years.set(y, acc());
     for (const a of [years.get(y), total]) {
-      a.n++; a.deductible_net = r2(a.deductible_net + (c.deductible_net || 0)); a.appraisal_net = r2(a.appraisal_net + (c.appraisal_net || 0)); a.reimbursed_net = r2(a.reimbursed_net + (c.reimbursed_net || 0));
-      if (c.case_cost_net !== null) a.case_cost_net = r2(a.case_cost_net + c.case_cost_net); else if (c.cost_incomplete) a.cost_incomplete++; else a.cost_missing++;
+      a.n++;
+      if (c.deductible_net !== null && c.deductible_net !== undefined) { a.deductible_net = r2(a.deductible_net + c.deductible_net); a.deductible_n++; }
+      if (c.appraisal_net !== null && c.appraisal_net !== undefined) { a.appraisal_net = r2(a.appraisal_net + c.appraisal_net); a.appraisal_n++; }
+      if (c.reimbursed_net !== null && c.reimbursed_net !== undefined) { a.reimbursed_net = r2(a.reimbursed_net + c.reimbursed_net); a.reimbursed_n++; }
+      if (c.case_cost_net !== null) { a.case_cost_net = r2(a.case_cost_net + c.case_cost_net); a.cost_n++; } else if (c.cost_incomplete) a.cost_incomplete++; else a.cost_missing++;
     }
   }
   const sums = { total, by_year: [...years.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([year, v]) => ({ year, ...v })) };
