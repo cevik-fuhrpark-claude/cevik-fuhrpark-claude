@@ -20938,6 +20938,13 @@ await test('Backlog 282 (Blickwinkel „Inhaber fällt aus“): Einrichtungsstan
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("'backup', 'owner_backup', 'prod_accounts'"), 'Reihenfolge');
 });
 
+await test('Backlog 283 (Blickwinkel „Sonntag 03:00“): nach dem Senden einer kritischen bzw. „nicht fahrbereit“-Meldung zeigt die App auch mit Netz den Anruf-Hinweis mit „Panne & Notfall“/112 und „Meldung öffnen“; Texte DE/UK/EN', async () => {
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].open_report, `${l}.open_report`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (sb.isConnected && (body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit')) {") && app.includes('data-sentcritical><p><b>${esc(t(\'report_sent\'))}: ${esc(r.case_no)}</b></p>${callBox(body.vehicle_id)}'), 'Ergebnisseite');
+  const ui = (await import('node:fs')).readFileSync(new URL('../scripts/ui-formularentwurf.py', import.meta.url), 'utf8'); ok(ui.includes('[data-sentcritical] [data-callbox]'), 'UI-Skript prüft den Hinweis');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

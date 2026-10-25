@@ -1590,6 +1590,12 @@ async function viewNew(preId) {
       const files = photoFiles;
       const { failed, later } = files.length ? await uploadPhotosSafe('/api/cases', body, r, r.id, files, sb, who) : { failed: 0, later: 0 };
       toast(`${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}`, !!failed);
+      // Backlog 283 (Teilagent „Sonntag 03:00“): kritisch/nicht fahrbereit – auch mit Netz die Bitte zum Anruf samt „Panne & Notfall“ zeigen
+      // (vorher nur beim Offline-Speichern; nachts liest niemand die Meldung sofort)
+      if (sb.isConnected && (body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit')) {
+        render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert" data-sentcritical><p><b>${esc(t('report_sent'))}: ${esc(r.case_no)}</b></p>${callBox(body.vehicle_id)}<p><a class="btn" href="#/cases/${esc(r.id)}">${esc(t('open_report'))} ›</a></p></div>`, 'new');
+        return;
+      }
       if (sb.isConnected) location.hash = '#/cases/' + r.id;
     } catch (err) {
       // Netzabbruch, Anmeldung inzwischen beendet (401) oder andere Person angemeldet (user_mismatch): Meldung für die Person sichern,

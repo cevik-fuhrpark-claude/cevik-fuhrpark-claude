@@ -84,9 +84,16 @@ with sync_playwright() as p:
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: Meldung ohne Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/fe_new_{lang}_{w}.png')
         q.click('#sb')
+        # kritisch: Ergebnisseite mit Anruf-Hinweis (Backlog 283), dann „Meldung öffnen“
         for _ in range(60):
-            if '#/cases/' in q.url: break
+            if '#/cases/' in q.url or q.query_selector('[data-sentcritical]'): break
             q.wait_for_timeout(250)
+        if q.query_selector('[data-sentcritical]'):
+            check(q.query_selector('[data-sentcritical] [data-callbox]') is not None,f'{lang}/{w}: Anruf-Hinweis nach kritischer Meldung')
+            q.click('[data-sentcritical] a.btn[href^="#/cases/"]')
+            for _ in range(40):
+                if '#/cases/' in q.url: break
+                q.wait_for_timeout(250)
         check('#/cases/' in q.url,f'{lang}/{w}: Meldung gesendet ({q.url})'); q.wait_for_timeout(300)
         q.goto(B+'/#/new'); q.wait_for_selector('#f #d',timeout=15000); q.wait_for_timeout(300)
         st=q.evaluate("() => ({ d: document.querySelector('#d').value, box: !!document.querySelector('#fdraft') })")
