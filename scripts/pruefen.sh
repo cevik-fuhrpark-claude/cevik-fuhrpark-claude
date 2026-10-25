@@ -178,6 +178,7 @@ UI-Hinweis Auffälligkeit an der Bremse im Meldeformular und Hilfe|ui-bremse.py|
 UI-Hinweis Plane gerissen/Ladung nass im Meldeformular und Hilfe|ui-plane-gerissen.py|/tmp/cfp-plane-gerissen.log
 UI-Hinweis Ladung verrutscht im Meldeformular und Hilfe|ui-ladung-verrutscht.py|/tmp/cfp-ladung-verrutscht.log
 UI-Hinweis Spiegel abgefahren im Meldeformular und Hilfe|ui-spiegel.py|/tmp/cfp-spiegel.log
+UI-Hinweis Auflieger lässt sich nicht kuppeln/hat sich gelöst im Meldeformular und Hilfe|ui-kupplung.py|/tmp/cfp-kupplung.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
