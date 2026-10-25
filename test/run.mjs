@@ -21993,6 +21993,60 @@ await test('Backlog 333 (Fehlersuche Assistenz-Hinweis): ausgefallener Rückfahr
   const { STRINGS } = await import('../public/i18n.js'); ok(/nicht mehr darauf verlassen/.test(STRINGS.de.adas_hint_steps), 'Schritt „nicht mehr darauf verlassen“ passt');
 });
 
+await test('Backlog 334 (Blickwinkel „Standheizung oder Klimaanlage im Fahrerhaus ausgefallen – Ruhezeit im Lkw“): Meldeformular zeigt Hinweise (vor Pause/Ruhezeit Leitung anrufen; kein Motor im Stand, keine Gasgeräte, bei Abgasgeruch raus; nicht öffnen, keine Sicherungen überbrücken; Anzeige/Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Sitzheizung, Kühlaggregat, Fahrerhausheizung, „Standheizung läuft“ lösen ihn nicht aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const CLIMATE_HINT = \/(.+)\/i;/m); ok(m, 'CLIMATE_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Standheizung ausgefallen', 'Standheizung startet nicht', 'Die Standheizung geht immer wieder aus', 'Standheizung qualmt', 'Klimaanlage defekt', 'Klima geht nicht', 'Klimaanlage kühlt nicht', 'Klimaanlage bläst nur warm', 'Webasto zeigt Fehler', 'Standklima kaputt', 'parking heater not working', 'night heater won’t start', 'air conditioning broken', 'AC not cooling', 'A/C blowing warm', 'кондиціонер не працює', 'автономка не працює', 'кондиционер сломался', 'автономный отопитель не запускается']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Standheizung eingeschaltet', 'Standheizung läuft', 'Klima läuft', 'Klimaanlage gewartet', 'Klimaanlage kühlt gut', 'Sitzheizung defekt', 'Kühlaggregat ausgefallen', 'Heizung im Fahrerhaus kaputt', 'Klimawandel', 'parking brake not working', 'reefer not cooling', 'кондиціонер працює']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('VISIB_HINT').test('Heizung im Fahrerhaus kaputt') && pat('REEFER_HINT').test('Kühlaggregat ausgefallen'), 'Fahrerhausheizung (Sicht) und Kühlaggregat behalten ihre eigenen Hinweise');
+  for (const n of ['VISIB_HINT', 'REEFER_HINT', 'NOSTART_HINT', 'ENGINE_HINT']) ok(!pat(n).test('Standheizung startet nicht') && !pat(n).test('parking heater not working'), n + ' bleibt bei ausgefallener Standheizung aus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.climate_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|§|°/.test(L.climate_hint_steps), 'keine Zahl, kein Paragraf, keine Temperatur ' + l);
+    const h = L.help_climate_s; ok(L.help_climate_t && h && h.includes(L.climate_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.climate_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="climate" class="panel" hidden role="status">`), 'Panel #climate');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#climate').hidden = !CLIMATE_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('climate') && order.indexOf('fire') < order.indexOf('climate') && order.indexOf('exhaust') < order.indexOf('climate') && order.indexOf('visib') < order.indexOf('climate') && order.indexOf('climate') < order.indexOf('door'), 'Gruppierung: Brand/Abgase/Sicht vor Standheizung/Klima vor Tür');
+  ok(helpAfter(app, 'climate', 'toll'), 'Hilfe-Abschnitt climate nach toll');
+});
+await test('Backlog 335 (Blickwinkel „Fensterheber defekt – Seitenscheibe geht nicht mehr zu“): Meldeformular zeigt Hinweise (Leitung vor Pause/Ruhezeit/Abstellen; Fahrerhaus nicht offen unbeaufsichtigt, Schlüssel/Papiere mitnehmen; nicht mit Gewalt, Behelf nur nach Absprache ohne Sicht zu verdecken; Seite/Stellung/Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); eingeschlagene Scheibe bleibt beim Glas-Hinweis, „Seitenscheibe geht nicht zu“ zeigt keinen Glas-Hinweis mehr; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const WINDOW_HINT = \/(.+)\/i;/m); ok(m, 'WINDOW_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Fensterheber kaputt', 'Fensterheber Fahrerseite defekt', 'Seitenscheibe geht nicht zu', 'Fenster lässt sich nicht schließen', 'Fenster schließt nicht', 'Beifahrerfenster bleibt offen', 'Scheibe geht nicht mehr hoch', 'Fahrerfenster rutscht immer runter', 'Scheibe ist in die Tür gefallen', 'window won’t close', "window doesn't go up", 'driver window stuck open', 'power window not working', 'window regulator broken', 'склопідйомник не працює', 'вікно не закривається', 'скло не піднімається', 'стеклоподъемник сломался', 'окно не закрывается']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Scheibe beschlägt', 'Seitenscheibe eingeschlagen', 'Windschutzscheibe gerissen', 'Bremsscheibe verschlissen', 'Fenster geputzt', 'window cracked', 'broken window', 'window is broken', 'Tür geht nicht zu', 'Fenster kaputt', 'Scheibe kaputt', 'Fenster zu', 'Rollo geht nicht runter', 'скло тріснуло']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const G = pat('GLASS_HINT');
+  for (const x of ['Seitenscheibe eingeschlagen', 'Seitenscheibe kaputt', 'Seitenscheibe gerissen, geht nicht zu', 'broken window', 'Steinschlag in der Windschutzscheibe']) ok(G.test(x), 'Glas-Hinweis bleibt: ' + x);
+  for (const x of ['Seitenscheibe geht nicht zu', 'Seitenscheibe bleibt unten', 'Seitenscheibe lässt sich nicht schließen', 'Fensterheber kaputt', 'window won’t close']) ok(!G.test(x), 'kein Glas-Hinweis: ' + x);
+  ok(pat('DOOR_HINT').test('Tür geht nicht zu') && pat('VISIB_HINT').test('Scheibe beschlägt'), 'Tür/Sicht behalten ihre eigenen Hinweise');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.window_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|§/.test(L.window_hint_steps), 'keine Zahl, kein Paragraf ' + l);
+    const h = L.help_window_s; ok(L.help_window_t && h && h.includes(L.window_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.window_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="window" class="panel" hidden role="status">`), 'Panel #window');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#window').hidden = !WINDOW_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('window') && order.indexOf('door') < order.indexOf('window') && order.indexOf('window') < order.indexOf('theft') && order.indexOf('window') < order.indexOf('glass'), 'Gruppierung: Tür vor Fenster vor Diebstahl/Glas');
+  ok(helpAfter(app, 'window', 'climate'), 'Hilfe-Abschnitt window nach climate');
+});
+await test('Backlog 336 (Fehlersuche Bremsen-Hinweis): Druckluft baut sich nicht auf, Luftkompressor läuft dauernd/pumpt nicht, Intarder ausgefallen (DE/EN/UK/RU) zeigen den Bremsen-Hinweis; Reifen-/Öldruck, Kompressor von Kühlaggregat/Klimaanlage und „Kompressor läuft“ allein lösen ihn nicht aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const BRAKE_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Luftdruck baut sich nicht auf', 'Druck baut sich nicht mehr auf', 'Vorratsdruck baut sich nicht richtig auf', 'Kompressor läuft dauernd', 'Luftkompressor defekt', 'Kompressor pumpt nicht', 'Intarder ausgefallen', 'air pressure not building', 'air pressure won’t build', 'compressor running constantly', 'air compressor faulty', 'тиск повітря не набирається', 'давление воздуха не набирается', 'компресор постійно працює', 'компрессор не качает']) ok(re.test(x), 'Bremsen-Hinweis erwartet: ' + x);
+  for (const x of ['Reifendruck baut sich nicht auf', 'Öldruck baut sich nicht auf', 'Kompressor des Kühlaggregats läuft dauernd', 'Kühlaggregat Kompressor läuft dauernd', 'reefer compressor running constantly', 'AC compressor not pumping', 'Klimakompressor defekt', 'Kompressor läuft', 'Druck aufgebaut']) ok(!re.test(x), 'kein Bremsen-Hinweis: ' + x);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

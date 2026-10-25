@@ -197,6 +197,8 @@ UI-Hinweis Diesel versulzt/AdBlue eingefroren im Meldeformular und Hilfe|ui-dies
 UI-Hinweis Warndreieck/Verbandkasten/Feuerlöscher/Unterlegkeil fehlt im Meldeformular und Hilfe|ui-ausruestung.py|/tmp/cfp-ausruestung.log
 UI-Hinweis Rad wackelt/Radmuttern locker/Radlager heiß im Meldeformular und Hilfe|ui-rad.py|/tmp/cfp-rad.log
 UI-Hinweis Mautgerät (OBU) rot/Störung/ausgefallen im Meldeformular und Hilfe|ui-maut.py|/tmp/cfp-maut.log
+UI-Hinweis Standheizung/Klimaanlage im Fahrerhaus ausgefallen im Meldeformular und Hilfe|ui-klima.py|/tmp/cfp-klima.log
+UI-Hinweis Fensterheber defekt/Seitenscheibe geht nicht zu im Meldeformular und Hilfe|ui-fenster.py|/tmp/cfp-fenster.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
