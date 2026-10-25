@@ -21464,7 +21464,7 @@ await test('Backlog 307 (Blickwinkel „Ladung verrutscht während der Fahrt“)
   }
   ok(app.includes(`<div id="load" class="panel" hidden role="status">`), 'Panel #load');
   ok(app.includes("$('#load').hidden = !LOAD_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  { const o = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, '')); ok(o.indexOf('brake') < o.indexOf('load') && o.indexOf('load') + 1 === o.indexOf('leak'), 'Gruppierung: nach Bremse, vor Leck'); }
+  { const o = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, '')); ok(o.indexOf('brake') < o.indexOf('load') && o.indexOf('load') < o.indexOf('leak') && o.slice(o.indexOf('load') + 1, o.indexOf('leak')).every((x) => x === 'deck'), 'Gruppierung: nach Bremse, vor Leck (dazwischen nur Ladeetage, Backlog 354)'); }
   ok(helpAfter(app, 'load', 'tarp'), 'Hilfe-Abschnitt load nach tarp');
 });
 
@@ -22276,6 +22276,50 @@ await test('Backlog 352 (Fehlersuche Start-/Abschließen-Hinweis): Zünd-/Lenkra
   const { STRINGS } = await import('../public/i18n.js');
   const w = { de: 'nicht mit Gewalt', uk: 'силою', en: 'Do not force the key' };
   for (const l of ['de', 'uk', 'en']) { const st = STRINGS[l].nostart_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l); ok(st[2].includes(w[l]), 'Schritt: Schlüssel nicht mit Gewalt ' + l); }
+});
+await test('Backlog 353 (Fehlersuche Anzeige-/Sicht-Hinweis): Hupe hängt/hupt von selbst/hört nicht auf, „horn stuck“, „клаксон заїло“ → Anzeige-Hinweis (Schritt 1 nennt die selbst hupende Hupe); „Hupe benutzt“, „Hupe hängt nicht mehr“, „Ich habe gehupt“ nicht; Wischerblatt/Wischergummi kaputt, gerissen oder lose → Sicht-Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['Hupe hängt', 'Hupe klemmt', 'Hupe hupt von selbst', 'Lkw hupt ständig', 'Hupe hört nicht mehr auf', 'Hupe lässt sich nicht abstellen', 'horn stuck', 'horn keeps sounding', 'the horn won’t stop', 'клаксон заїло', 'сигнал сам гудить', 'клаксон не вимикається', 'Hupe geht nicht']) ok(pat('DASH_HINT').test(x), 'Anzeige-Hinweis: ' + x);
+  for (const x of ['Hupe benutzt', 'Hupe hängt nicht mehr', 'Ich habe gehupt', 'Er hupt von hinten', 'Signalhorn laut', 'Hornhaut']) ok(!pat('DASH_HINT').test(x), 'kein Anzeige-Hinweis: ' + x);
+  for (const x of ['Wischerblatt kaputt', 'Wischerblatt gerissen', 'Wischergummi lose', 'Scheibenwischer geht nicht', 'wipers not working']) ok(pat('VISIB_HINT').test(x), 'Sicht-Hinweis: ' + x);
+  ok(!pat('VISIB_HINT').test('Wischerblatt gewechselt'), 'kein Sicht-Hinweis nach Wechsel');
+  const { STRINGS } = await import('../public/i18n.js');
+  const w = { de: 'hupt sie von selbst', uk: 'сигналить сам', en: 'sounds by itself' };
+  for (const l of ['de', 'uk', 'en']) { const L = STRINGS[l]; const st = L.dash_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l); ok(st[0].includes(w[l]), 'Schritt 1 nennt die selbst hupende Hupe ' + l); ok(L.help_dash_s.includes(L.dash_hint_steps), 'Hilfe enthält die Schritte ' + l); ok(L.help_dash_s.split('|')[0].includes(l === 'de' ? 'von selbst hupt' : w[l]), 'Hilfe-Einleitung nennt es ' + l); }
+});
+await test('Backlog 354 (Blickwinkel „Autotransporter: Ladeetage, Auffahrrampe oder Hydraulik gestört“): Meldeformular zeigt Hinweise (Bedienung stoppen, nicht unter angehobene Etage/Rampe; nicht weiter be-/entladen, Leck-Schritte; Leitung entscheidet, nur unterwiesene Bedienschritte; welche Etage/was passiert/Fotos; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); „Laderampe angefahren“, „Hydraulik geprüft“, „Ladeetage klemmt nicht mehr“ lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const DECK_HINT = \/(.+)\/i;/m); ok(m, 'DECK_HINT vorhanden'); eq((app.match(/const DECK_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Hydraulik undicht', 'Ladeetage senkt sich ab', 'obere Etage lässt sich nicht hochfahren', 'Ladeebene klemmt', 'Hydraulikschlauch geplatzt', 'Auffahrrampe klemmt', 'Rampe hydraulisch geht nicht', 'upper deck won’t lift', 'ramp stuck', 'hydraulics leaking', 'hydraulic hose burst', 'гідравліка тече', 'верхній ярус не піднімається', 'аппарель не опускается']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Laderampe angefahren', 'an der Rampe gewartet, Tor klemmt', 'Hydraulik geprüft', 'Etage repariert, geht wieder', 'Ladeetage klemmt nicht mehr', 'Hydrauliköl läuft aus', 'Rampe klemmt', 'Hydraulik geht wieder']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('LEAK_HINT').test('Hydrauliköl läuft aus') && pat('CUSTDMG_HINT').test('Laderampe angefahren'), 'Leck und Kundenschaden behalten ihre eigenen Hinweise');
+  const { STRINGS } = await import('../public/i18n.js');
+  const w = { de: ['nicht unter eine angehobene', 'Leck'], uk: ['не заходьте під', 'протікання'], en: ['do not step under', 'leak'] };
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.deck_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok(st[0].includes(w[l][0]) && st[1].includes(w[l][1]), 'Schritte 1/2: nicht unter die Etage, Leck-Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|§/.test(L.deck_hint_steps), 'keine Zahl, kein Paragraf ' + l);
+    const h = L.help_deck_s; ok(L.help_deck_t && h && h.includes(L.deck_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.deck_hint_title, 'Titel ' + l);
+    const ex = (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new);
+    ok(ex.length >= 2, 'Hilfe nennt Beispiele ' + l);
+    for (const e of ex) ok(re.test(e), 'Hilfe-Beispiel löst Hinweis aus: ' + e);
+  }
+  ok(app.includes(`<div id="deck" class="panel" hidden role="status">`), 'Panel #deck');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#deck').hidden = !DECK_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('deck') && order.indexOf('load') < order.indexOf('deck') && order.indexOf('deck') < order.indexOf('leak'), 'Gruppierung: Ladung vor Ladeetage vor Leck');
+  ok(helpAfter(app, 'deck', 'vibr'), 'Hilfe-Abschnitt deck nach vibr');
+});
+await test('Backlog 355 (Fehlersuche Ladungs-Hinweis, Fahrzeugtransport): geladener Pkw/Neuwagen verrutscht oder hat sich gelöst, Radgurt/Spannkette/Zurrgurt gerissen oder kaputt, „car on the deck shifted“, „авто на ярусі зсунулось“, „лашинг порвався“ → Ladungs-Hinweis; „Lkw verrutscht auf Eis“, „Ein Auto rutscht auf Glatteis“, „Neuwagen abgeholt“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['Pkw auf der Etage verrutscht', 'geladenes Auto hat sich gelöst', 'geladene Fahrzeuge verrutscht', 'Neuwagen hat sich losgerissen', 'Radgurt gerissen', 'Zurrgurt kaputt', 'Spannkette gerissen', 'Spanngurt gerissen', 'car on the deck shifted', 'cars on the upper deck moved', 'wheel strap snapped', 'авто на ярусі зсунулось', 'лашинг порвався', 'Ladung verrutscht']) ok(pat('LOAD_HINT').test(x), 'Ladungs-Hinweis: ' + x);
+  for (const x of ['Lkw verrutscht auf Eis', 'Ein Auto rutscht auf Glatteis in mich rein', 'Auto vor mir hat sich gedreht', 'Neuwagen abgeholt', 'my car moved', 'Pkw beim Abladen beschädigt']) ok(!pat('LOAD_HINT').test(x), 'kein Ladungs-Hinweis: ' + x);
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
