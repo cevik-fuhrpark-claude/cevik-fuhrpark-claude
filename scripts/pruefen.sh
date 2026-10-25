@@ -202,6 +202,7 @@ UI-Hinweis Fensterheber defekt/Seitenscheibe geht nicht zu im Meldeformular und 
 UI-Hinweis Tankdeckel/AdBlue-Deckel verloren/klemmt/schließt nicht im Meldeformular und Hilfe|ui-tankdeckel.py|/tmp/cfp-tankdeckel.log
 UI-Hinweis Tankkarte verloren/gestohlen/abgelehnt im Meldeformular und Hilfe|ui-tankkarte.py|/tmp/cfp-tankkarte.log
 UI-Hinweis Unterfahrschutz/Seitenschutz verbogen im Meldeformular und Hilfe|ui-unterfahrschutz.py|/tmp/cfp-unterfahrschutz.log
+UI-Hinweis Reifen beschädigt/verliert Luft/abgefahren im Meldeformular und Hilfe|ui-reifenschaden.py|/tmp/cfp-reifenschaden.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log

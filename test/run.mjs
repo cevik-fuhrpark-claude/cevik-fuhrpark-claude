@@ -21791,7 +21791,9 @@ await test('Backlog 323 (Fehlersuche einfache Formulierungen): „Spiegel defekt
   const exp = { MIRROR_HINT: ['Spiegel defekt', 'Außenspiegel defekt'], DOOR_HINT: ['Tür kaputt', 'Fahrertür defekt', 'Hecktüren defekt'], FLAT_HINT: ['Reifen kaputt', 'Reifen hinten links defekt', 'Reifen aufgeschlitzt'], NOSTART_HINT: ['Anlasser defekt', 'Batterie kaputt'] };
   for (const [n, xs] of Object.entries(exp)) { const re = pat(n); for (const x of xs) ok(re.test(x), n + ' erwartet: ' + x); }
   const all = [...app.matchAll(/^const (\w+_HINT) = \/(.+)\/i;/gm)].map(([, n, s]) => [n, new RegExp(s, 'i')]);
-  for (const x of ['Reifendruck niedrig', 'Reifendrucksensor defekt', 'Türgriff kaputt', 'Türdichtung defekt', 'Batteriefach sauber', 'Spiegelbild']) ok(!all.some(([, r]) => r.test(x)), 'kein Hinweis: ' + x);
+  for (const x of ['Reifendrucksensor defekt', 'Türgriff kaputt', 'Türdichtung defekt', 'Batteriefach sauber', 'Spiegelbild']) ok(!all.some(([, r]) => r.test(x)), 'kein Hinweis: ' + x);
+  // seit Backlog 345: niedriger Reifendruck zeigt den Hinweis „Reifen beschädigt, verliert Luft“ – nur diesen, nicht die Reifenpanne
+  eq(all.filter(([, r]) => r.test('Reifendruck niedrig')).map(([n]) => n).join(','), 'TYRE_HINT', 'Reifendruck niedrig → nur Reifenschaden-Hinweis');
   ok(!pat('DOOR_HINT').test('Fenster geht nicht zu') && !pat('FLAT_HINT').test('Reifen verliert Luft'), 'Abgrenzungen aus 320 bleiben');
 });
 
@@ -22131,6 +22133,69 @@ await test('Backlog 341 (Blickwinkel „Unterfahrschutz oder Seitenschutz verbog
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('underrun') && order.indexOf('loose') < order.indexOf('underrun') && order.indexOf('acc') < order.indexOf('underrun') && order.indexOf('underrun') < order.indexOf('load'), 'Gruppierung: Unfall/lose Teile vor Unterfahrschutz vor Ladung');
   ok(helpAfter(app, 'underrun', 'fuelcard'), 'Hilfe-Abschnitt underrun nach fuelcard');
+});
+await test('Backlog 342 (Fehlersuche Warnleuchten-Hinweis): einzelne Leuchten im Display (Öldruck-, ABS-, AdBlue-, Batterie-Leuchte, „Symbol leuchtet rot“, „STOP leuchtet“, „Fehlermeldung im Display“, „oil pressure light on“, „red light on the dashboard“) zeigen den Warnleuchten-Hinweis; Brems-/Rück-/Stoppleuchten außen, „brake light“, rote Ampel, Leuchten am Anhänger lösen ihn nicht aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const WARNLIGHT_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Öldruckleuchte an', 'Öldrucklampe leuchtet', 'Batterie-Symbol leuchtet rot', 'Symbol leuchtet rot', 'AdBlue-Leuchte an', 'ABS-Leuchte an', 'ABS Lampe leuchtet', 'EBS-Warnleuchte', 'Lampe leuchtet rot im Display', 'STOP leuchtet', 'Fehlermeldung im Display', 'oil pressure light on', 'battery light came on', 'brake warning light on', 'red light on the dashboard', 'error message on the display']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Rückleuchte defekt', 'rote Rückleuchte kaputt', 'Bremsleuchte geht nicht', 'Stoppleuchte defekt', 'brake light not working', 'stop light broken', 'Leuchte am Anhänger leuchtet rot', 'rote Ampel', 'ran a red light', 'Stopp an der Raststätte', 'Ölwechsel fällig', 'Laderaumleuchte defekt', 'Warnweste fehlt', 'Warnblinker geht nicht']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('LIGHTS_HINT').test('brake light not working') && pat('LIGHTS_HINT').test('Bremsleuchte geht nicht'), 'Außenbeleuchtung behält ihren eigenen Hinweis');
+});
+await test('Backlog 343 (Fehlersuche Licht-Hinweis): Stoppleuchte/Stopplicht, Warnblinker/Warnblinkanlage (auch „аварійка/аварийка не працює/работает“), Umriss-/Kennzeichenleuchte und schnell blinkender Blinker zeigen den Licht-Hinweis; eingeschalteter Warnblinker (Panne/Unfall) und „Blinker blinkt“ lösen ihn nicht aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const LIGHTS_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Stoppleuchte defekt', 'Stopplicht geht nicht', 'Warnblinker geht nicht', 'Warnblinkanlage defekt', 'аварійка не працює', 'аварийка не работает', 'Blinker blinkt schnell', 'Blinker links blinkt doppelt so schnell', 'Umrissleuchte kaputt', 'Kennzeichenleuchte defekt']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Warnblinker an', 'Warnblinker an, Panne', 'Warnblinker eingeschaltet, Unfall', 'аварійка увімкнена', 'увімкнув аварійку', 'Blinker blinkt', 'Stopp an der Raststätte']) ok(!re.test(x), 'kein Hinweis: ' + x);
+});
+await test('Backlog 344 (Fehlersuche Motor-/Gurt-Hinweis): Keil-/Rippenriemen gerissen/quietscht, Lichtmaschine lädt nicht, Batterie wird nicht geladen, Wasserpumpe/Kühlerlüfter ausgefallen (DE/EN/UK/RU) zeigen den Motor-Hinweis; Spanngurt, „Riemen gerissen“ allein, Fahrerhaus-Lüfter, leere Batterie, Kühlaggregat-Generator nicht; „ремінь безпеки порвався“ zeigt den Sitz-/Gurt-Hinweis, der Antriebsriemen nicht mehr', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const re = pat('ENGINE_HINT'), seat = pat('SEAT_HINT');
+  for (const x of ['Keilriemen gerissen', 'Keilriemen quietscht', 'Rippenriemen abgesprungen', 'Lichtmaschine lädt nicht', 'Lichtmaschine defekt', 'Batterie wird nicht mehr geladen', 'Wasserpumpe kaputt', 'Kühlerlüfter läuft nicht', 'fan belt snapped', 'alternator not charging', 'water pump failed', 'radiator fan not working', 'ремінь генератора порвався', 'ремень генератора порвался', 'приводний ремінь свистить', 'генератор не заряджає', 'генератор не заряжает', 'помпа зламалася']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Spanngurt gerissen', 'Riemen gerissen', 'Lüfter im Fahrerhaus geht nicht', 'Batterie leer', 'Lichtmaschine getauscht', 'seat belt broken', 'Generator vom Kühlaggregat läuft nicht', 'ремень порвался', 'ремінь безпеки порвався']) ok(!re.test(x), 'kein Motor-Hinweis: ' + x);
+  for (const x of ['ремінь безпеки порвався', 'ремінь безпеки обірвався', 'ремень порвался', 'ремень безопасности не застегивается', 'Sicherheitsgurt kaputt']) ok(seat.test(x), 'Gurt-Hinweis: ' + x);
+  for (const x of ['ремінь генератора порвався', 'ремень генератора порвался', 'Keilriemen gerissen']) ok(!seat.test(x), 'kein Gurt-Hinweis: ' + x);
+  ok(pat('LOAD_HINT').test('Spanngurt gerissen') && pat('NOSTART_HINT').test('Batterie leer'), 'Ladung/Starthilfe behalten ihre eigenen Hinweise');
+});
+await test('Backlog 345 (Blickwinkel „Reifen beschädigt, verliert Luft oder ist abgefahren – noch nicht platt“): Meldeformular zeigt Hinweise (Beule/Schnitt/Gewebe/Luftverlust → anhalten, Reifenpanne-Schritte; Fremdkörper nicht herausziehen; Leitung entscheidet; welcher Reifen, Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich, keine Profiltiefe); platter/geplatzter Reifen bleibt beim Reifenpanne-Hinweis, Reifenwechsel/Druck geprüft lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const TYRE_HINT = \/(.+)\/i;/m); ok(m, 'TYRE_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Reifen abgefahren', 'Profil zu wenig', 'Reifen hat eine Beule', 'Reifen Seitenwand beschädigt', 'Nagel im Reifen', 'Reifen hat einen Nagel', 'Reifen verliert langsam Luft', 'Reifendruck zu niedrig', 'Reifendruckwarnung', 'Reifen hat einen Schnitt', 'Reifen rissig', 'Lauffläche löst sich', 'Zwillingsreifen berühren sich', 'Reifen hinten links Draht schaut raus', 'Kotflügel scheuert am Reifen', 'tyre bulge', 'nail in the tyre', 'tyre worn', 'tyre losing air', 'bald tyre', 'tyre pressure warning', 'шина зношена', 'грижа на шині', 'цвях у шині', 'колесо травить повітря', 'низький тиск у шині']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Reifen platt', 'Reifen geplatzt', 'Reifen gewechselt', 'Reifendruck geprüft', 'Winterreifen montiert', 'neue Reifen bestellt', 'Reifen ok', 'Profilbild', 'Reifenalter', 'Spanngurt gerissen']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('FLAT_HINT').test('Reifen platt') && pat('FLAT_HINT').test('Reifen geplatzt') && !pat('FLAT_HINT').test('Reifen hat eine Beule'), 'Reifenpanne behält ihren eigenen Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.tyre_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|§|mm/.test(L.tyre_hint_steps), 'keine Zahl, keine Profiltiefe, kein Paragraf ' + l);
+    const h = L.help_tyre_s; ok(L.help_tyre_t && h && h.includes(L.tyre_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.tyre_hint_title, 'Titel ' + l);
+    // die Beispiele im Hilfetext lösen den Hinweis tatsächlich aus
+    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
+  }
+  ok(app.includes(`<div id="tyre" class="panel" hidden role="status">`), 'Panel #tyre');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#tyre').hidden = !TYRE_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('tyre') && order.indexOf('flat') < order.indexOf('tyre') && order.indexOf('tyre') < order.indexOf('wheel') && order.indexOf('tyre') < order.indexOf('brake'), 'Gruppierung: Reifenpanne vor Reifenschaden vor Rad/Bremse');
+  ok(helpAfter(app, 'tyre', 'underrun'), 'Hilfe-Abschnitt tyre nach underrun');
+});
+await test('Backlog 346 (Fehlersuche Motor-Hinweis, sicherheitskritisch): Motor geht während der Fahrt/an der Ampel/immer wieder aus, stirbt ab, ruckelt/stottert/setzt aus, springt an und geht wieder aus (DE/EN/UK/RU) zeigen den Motor-Hinweis; „Motor aus“, „Motor ausgemacht“, „geht nicht an/aus“, „Licht geht aus“, Zündung ausgeschaltet lösen ihn nicht aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const ENGINE_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Motor geht aus während der Fahrt', 'Motor geht während der Fahrt aus', 'Motor geht an der Ampel einfach aus', 'Lkw geht immer wieder aus', 'Während der Fahrt geht der Motor aus', 'An der Ampel ging mir der Motor aus', 'Motor stirbt ab', 'Motor ruckelt beim Anfahren', 'Motor stottert', 'Motor setzt aus', 'Motor springt an und geht wieder aus', 'engine cuts out', 'engine stalled on the motorway', 'engine keeps cutting out', 'двигун глухне', 'мотор заглох', 'двигатель глохнет на ходу']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Motor aus', 'Motor ausgemacht', 'Motor geht nicht an', 'Motor geht nicht aus', 'Motor abgestellt, Licht geht aus', 'Motor geht aus, wenn ich die Zündung ausschalte', 'Lkw geht in die Werkstatt, Fahrt aus', 'Licht geht während der Fahrt aus']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  ok(new RegExp(app.match(/^const NOSTART_HINT = \/(.+)\/i;/m)[1], 'i').test('Lkw springt nicht an'), 'Starthilfe behält ihren eigenen Hinweis');
+});
+await test('Backlog 347 (Fehlersuche Warnleuchten-Hinweis): „Display zeigt Fehler/Warnung“, „Fehler/Störung im Display“, „Im Display steht …“, „display shows an error“, „на дисплеї помилка“ zeigen den Warnleuchten-Hinweis; „Display kaputt/zeigt nichts“ bleibt beim Kombiinstrument-Hinweis, Navi/Uhrzeit/gereinigt lösen nichts aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const re = pat('WARNLIGHT_HINT');
+  for (const x of ['Display zeigt Fehler', 'Display zeigt eine Warnung', 'Im Display steht Fehler', 'Display meldet Fehler', 'Fehler im Display', 'Störung im Display', 'display shows an error', 'dashboard shows a warning', 'на дисплеї помилка', 'на дисплее ошибка']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Display kaputt', 'Display zeigt nichts', 'Navi zeigt Fehler', 'Display zeigt Uhrzeit', 'Display gereinigt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  ok(pat('DASH_HINT').test('Display kaputt') && pat('DASH_HINT').test('Display zeigt nichts'), 'Kombiinstrument-Ausfall behält seinen eigenen Hinweis');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
