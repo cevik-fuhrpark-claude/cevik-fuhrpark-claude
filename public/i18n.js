@@ -277,6 +277,10 @@ Object.assign(STRINGS.en, { seen_gone: 'no longer fleet management – please ta
 Object.assign(STRINGS.de, { pk_open_item: 'Neue Restarbeit der Werkstatt' });
 Object.assign(STRINGS.uk, { pk_open_item: 'Нова незавершена робота від майстерні' });
 Object.assign(STRINGS.en, { pk_open_item: 'New open item from the workshop' });
+// Backlog 274: Versicherungsfälle nach Zeitraum/Versicherer
+Object.assign(STRINGS.de, { claim_from: 'Gemeldet ab', claim_to: 'Gemeldet bis', claim_period: 'Zeitraum (gemeldet)' });
+Object.assign(STRINGS.uk, { claim_from: 'Повідомлено з', claim_to: 'Повідомлено по', claim_period: 'Період (повідомлено)' });
+Object.assign(STRINGS.en, { claim_from: 'Reported from', claim_to: 'Reported until', claim_period: 'Period (reported)' });
 // Backlog 271: Standortwechsel – zugeordnete Fahrer eines anderen Standorts
 Object.assign(STRINGS.de, { imp_site_changes: 'Standort geändert – bitte prüfen:', tl_st_site: 'Standort geändert', veh_site_drivers: 'Weiter zugeordnet (Fahrerakte anderer Standort): {list} – Zuordnung prüfen' });
 Object.assign(STRINGS.uk, { imp_site_changes: 'Локацію змінено – перевірте:', tl_st_site: 'Локацію змінено', veh_site_drivers: 'Досі призначені (картка водія з іншої локації): {list} – перевірте призначення' });

@@ -146,7 +146,7 @@ export async function claimOverview(env, user, envName, query = {}) {
   const rate = rateOf(rv);
   const fu = Number(sets.get('claim_followup_days'));
   const followupDays = fu > 0 ? fu : null;
-  const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, v.plate, v.site AS vehicle_site, v.eval_excluded AS vehicle_excluded,
+  const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, c.created_at AS case_created_at, k.contract_no, v.plate, v.site AS vehicle_site, v.eval_excluded AS vehicle_excluded,
       (SELECT COALESCE(SUM(w.hours),0) FROM work_entries w WHERE w.case_id=c.id) AS hours,
       (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id AND (p.unit_price_net IS NULL OR p.valuation<>'actual')) +
       (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND (e.amount_net IS NULL OR e.valuation<>'actual')) AS not_actual,
@@ -157,12 +157,19 @@ export async function claimOverview(env, user, envName, query = {}) {
       (SELECT COUNT(*) FROM work_entries w WHERE w.case_id=c.id) + (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id) + (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id) AS items,
       -- frühere Kennzeichen des Fahrzeugs (Backlog 257c): Suche über das alte Kennzeichen (Gutachten/Versicherer nennen es oft)
       (SELECT group_concat(vp.plate, '|') FROM vehicle_plates vp WHERE vp.vehicle_id=ic.vehicle_id) AS fp_search
-    FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id WHERE ic.environment=? ORDER BY ic.reported_on DESC`).bind(envName).all()).results;
+    FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id LEFT JOIN vehicle_contracts k ON k.id=ic.contract_id WHERE ic.environment=? ORDER BY ic.reported_on DESC`).bind(envName).all()).results;
   const today = berlinDate();
   const r2 = roundCents; // je Position auf Cent wie die Vorgangsbewertung (18.10.2026)
   // Filter „Fahrzeug-Standort“ vor den Zählern (Standort laut Fahrzeugstamm)
   const sel = siteSelection(rows.map((r) => ({ site: r.vehicle_site })), query.site);
-  let list = rows.filter((r) => !sel.site || sel.match(r.vehicle_site)).map((r) => {
+  // Backlog 274 (Teilagent „Versicherer verlangt eine Schadenaufstellung“): Zeitraum nach Meldedatum (von/bis) und Versicherer (genau,
+  // nur eigene Seite – die Suche findet auch den Versicherer des Unfallgegners); wirken vor den Zählern wie der Standort
+  const day = (x) => { if (x === undefined || x === null || x === '') return null; const v = String(x).slice(0, 12); if (!isCalendarDate(v)) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.'); return v; };
+  const from = day(query.from); const to = day(query.to);
+  if (from && to && from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.');
+  const insurerOptions = [...new Set(rows.filter((r) => !sel.site || sel.match(r.vehicle_site)).map((r) => r.insurer).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
+  const insurer = query.insurer ? str(query.insurer, { max: 120, field: 'Versicherer' }) : null;
+  let list = rows.filter((r) => (!sel.site || sel.match(r.vehicle_site)) && (!from || r.reported_on >= from) && (!to || r.reported_on <= to) && (!insurer || r.insurer === insurer)).map((r) => {
     // gleiche Regel wie die Vorgangsbewertung: Fremdleistung „ersetzt eigene Arbeit/Teile“ → nur Fremdleistung; ohne Stundensatz oder mit unbewerteten/geschätzten Positionen: keine Summe
     const workNet = r.covered ? 0 : rate === null ? (r.hours ? null : 0) : r2(r.hours * rate);
     // ersetzt eine Fremdleistung eigene Arbeit/Teile, zählen nur die Fremdleistungen – auch deren Bewertung (vorher: unbewertete Fremdrechnung → „0 €“, 17.10.2026)
@@ -192,18 +199,18 @@ export async function claimOverview(env, user, envName, query = {}) {
   const reimb = list.filter((c) => c.reimbursed_net !== null && !c.eval_excluded);
   const reimbX = list.filter((c) => c.reimbursed_net !== null && c.eval_excluded);
   const sum = (a) => (a.length ? r2(a.reduce((s, c) => s + c.reimbursed_net, 0)) : null);
-  return { today, filter, q: q || null, site: sel.site, site_options: sel.options, followup_days: followupDays, counts, claims: list, reimbursed_sum_net: sum(reimb), reimbursed_sum_excluded_net: sum(reimbX) };
+  return { today, filter, q: q || null, from, to, insurer, insurer_options: insurerOptions, site: sel.site, site_options: sel.options, followup_days: followupDays, counts, claims: list, reimbursed_sum_net: sum(reimb), reimbursed_sum_excluded_net: sum(reimbX) };
 }
 
 export function claimsCsv(ov) {
   const head = ['Kennzeichen', 'Vorgang', 'Versicherer', 'Schadennummer', 'Gemeldet am', 'Status', 'Tage offen', 'Selbstbeteiligung netto (EUR)', 'Erstattung netto (EUR)', 'Erstattet am',
     'Kosten Vorgang belegt netto (EUR)', 'Saldo nach Erstattung (EUR)', 'Nachweis', 'Bemerkung',
-    'Gutachter', 'Besichtigung am', 'Gutachten eingegangen am', 'Schadenhöhe laut Gutachten netto (EUR)', 'Gutachten ausstehend', 'Kennzeichen Unfallgegner', 'Versicherer Unfallgegner', 'Schadennummer Unfallgegner', 'Polizeidienststelle', 'Polizeiliches Aktenzeichen', 'Anzeige erstattet am', 'Schreiben verknüpft', 'Fahrzeug ruhend (nicht in Summen)', 'Kosten vollständig bewertet'];
+    'Gutachter', 'Besichtigung am', 'Gutachten eingegangen am', 'Schadenhöhe laut Gutachten netto (EUR)', 'Gutachten ausstehend', 'Kennzeichen Unfallgegner', 'Versicherer Unfallgegner', 'Schadennummer Unfallgegner', 'Polizeidienststelle', 'Polizeiliches Aktenzeichen', 'Anzeige erstattet am', 'Schreiben verknüpft', 'Fahrzeug ruhend (nicht in Summen)', 'Kosten vollständig bewertet', 'Vertragsnummer', 'Vorgang angelegt am'];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const c of ov.claims) lines.push([c.plate, c.case_no, c.insurer, c.claim_no, c.reported_on, STATUS_DE[c.status], c.days_open ?? '', n(c.deductible_net), n(c.reimbursed_net), c.reimbursed_on,
     n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.appraiser, c.appraisal_on, c.appraisal_received_on, n(c.appraisal_net), c.appraisal_pending ? 'ja' : 'nein', c.opponent_plate, c.opponent_insurer, c.opponent_claim_no, c.police_station, c.police_ref, c.police_reported_on,
-    c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein', c.cost_incomplete ? 'nein' : c.case_cost_net !== null ? 'ja' : ''].map((x, i) => ([3, 21, 23].includes(i) ? csvText(x) : csvCell(x))).join(';'));
+    c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein', c.cost_incomplete ? 'nein' : c.case_cost_net !== null ? 'ja' : '', c.contract_no, c.case_created_at ? berlinDate(c.case_created_at) : ''].map((x, i) => ([3, 21, 23, 28].includes(i) ? csvText(x) : csvCell(x))).join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 

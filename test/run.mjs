@@ -20854,6 +20854,26 @@ await test('Backlog 273: Fahrzeug-CSV-Import mit Standortwechsel nennt offene We
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id=\\"impsite\\"') || app.includes('id="impsite"'), 'Oberfläche');
 });
 
+await test('Backlog 274 (Blickwinkel „Versicherer verlangt eine Schadenaufstellung“): Versicherungsfälle nach Meldezeitraum und Versicherer (nur eigene Seite), Zähler im Filter, CSV mit Vertragsnummer und Vorgangsdatum, ungültiger Zeitraum abgewiesen', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,evidence,created_by,created_at,updated_at) VALUES ('k-274',?,'versicherung','Testversicherer AG','VS-4711','2024-01-01','Police',?,?,?)`).run(V1, U.fleet.id, now, now);
+  const ins = db.prepare(`INSERT INTO insurance_claims(id,environment,case_id,vehicle_id,insurer,reported_on,status,evidence,created_by,created_at,updated_at,contract_id,opponent_insurer) VALUES (?,'test',?,?,?,?,'gemeldet','Test',?,?,?,?,?)`);
+  const a = await newCase({ description: 'Unfall 2024' }, U.fleet); const b = await newCase({ description: 'Unfall 2025' }, U.fleet); const c = await newCase({ description: 'Unfall 2026' }, U.fleet);
+  ins.run('cl-a', a, V1, 'Testversicherer AG', '2024-03-01', U.fleet.id, now, now, 'k-274', null);
+  ins.run('cl-b', b, V1, 'Andere Vers.', '2025-06-01', U.fleet.id, now, now, null, 'Testversicherer AG');
+  ins.run('cl-c', c, V1, 'Testversicherer AG', '2026-02-01', U.fleet.id, now, now, null, null);
+  const get = async (q) => { const r = await U.fleet.get('/api/claims?filter=alle' + q); eq(r.status, 200, JSON.stringify(r.data)); return r.data; };
+  let d = await get('&from=2025-01-01&to=2026-12-31'); eq(d.claims.map((x) => x.id).sort().join(), 'cl-b,cl-c'); eq(d.counts.alle, 2, 'Zähler im Zeitraum');
+  d = await get('&insurer=' + encodeURIComponent('Testversicherer AG')); eq(d.claims.map((x) => x.id).sort().join(), 'cl-a,cl-c', 'nur eigene Seite (Gegner-Versicherer zählt nicht)');
+  ok(d.insurer_options.includes('Andere Vers.') && d.insurer_options.includes('Testversicherer AG'), 'Auswahl');
+  eq((await U.fleet.get('/api/claims?filter=alle&from=2026-01-01&to=2025-01-01')).status, 400); eq((await U.fleet.get('/api/claims?filter=alle&from=gestern')).status, 400);
+  const csv = await U.fleet.get('/api/claims?format=csv&filter=alle&from=2024-01-01&to=2024-12-31'); eq(csv.status, 200);
+  const txt = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data); const lines = txt.trim().split('\r\n');
+  ok(lines[0].endsWith(';Vertragsnummer;Vorgang angelegt am'), 'Kopf'); eq(lines.length, 2, 'nur 2024'); ok(lines[1].includes('VS-4711'), 'Vertragsnummer');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['claim_from', 'claim_to', 'claim_period']) ok(STRINGS[l][k], `${l}.${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("$('#clfrom').onchange =") && app.includes("&insurer=' + encodeURIComponent(S.clIns)"), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

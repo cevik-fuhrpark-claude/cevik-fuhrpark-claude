@@ -1898,14 +1898,19 @@ async function viewClaims() {
   let timer = null;
   const f = S.clFilter || 'offen';
   const cs = vsDef('claimSite') || ''; const csq = cs ? '&site=' + encodeURIComponent(cs) : '';
-  const q = S.clQ || ''; const qq = q ? '&q=' + encodeURIComponent(q) : ''; // Suche nach Kennzeichen/Nummern (Backlog 219)
-  const r = await api('GET', `/api/claims?filter=${f}${csq}${qq}`);
+  const q = S.clQ || ''; const qq0 = q ? '&q=' + encodeURIComponent(q) : ''; // Suche nach Kennzeichen/Nummern (Backlog 219)
+  // Zeitraum (Meldedatum) und Versicherer (Backlog 274, Schadenaufstellung für den Versicherer)
+  const pq = `${S.clFrom ? '&from=' + S.clFrom : ''}${S.clTo ? '&to=' + S.clTo : ''}${S.clIns ? '&insurer=' + encodeURIComponent(S.clIns) : ''}`;
+  const qq = qq0 + pq;
+  let r;
+  try { r = await api('GET', `/api/claims?filter=${f}${csq}${qq}`); } catch (err) { S.clFrom = S.clTo = S.clIns = null; toast(err.message, true); return viewClaims(); }
   const tabs = ['offen', 'gutachten', 'alle', 'reguliert', 'abgelehnt'];
   const fName = (x) => (x === 'offen' ? t('claim_f_open') : x === 'gutachten' ? t('ca_pending') : x === 'alle' ? t('filter_all') : t('cls_' + x));
   const fLabel = fName(f);
-  let html = `<h1>${esc(t('claims'))}</h1>${printHead([`${t('print_filter')}: ${fLabel}`, r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', r.claims.length)])}${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
+  let html = `<h1>${esc(t('claims'))}</h1>${printHead([`${t('print_filter')}: ${fLabel}`, r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', r.from || r.to ? `${t('claim_period')}: ${r.from ? fmtD(r.from) : '…'} – ${r.to ? fmtD(r.to) : '…'}` : '', r.insurer ? `${t('claim_insurer')}: ${r.insurer}` : '', t('print_count').replace('{n}', r.claims.length)])}${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
     <div class="actions noprint" style="flex-wrap:wrap">${tabs.map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-clf="${x}">${esc(fName(x))} (${r.counts[x] || 0})</button>`).join('')}</div>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('clsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : ''}
+    <div class="actions noprint" style="margin-top:0;align-items:end;flex-wrap:wrap" id="clper"><div><label for="clfrom">${esc(t('claim_from'))}</label><input type="date" id="clfrom" value="${esc(r.from || '')}"></div><div><label for="clto">${esc(t('claim_to'))}</label><input type="date" id="clto" value="${esc(r.to || '')}"></div>${(r.insurer_options || []).length > 1 || r.insurer ? `<div><label for="clins">${esc(t('claim_insurer'))}</label><select id="clins"><option value="">${esc(t('filter_all'))}</option>${[...new Set([...(r.insurer_options || []), ...(r.insurer ? [r.insurer] : [])])].map((x) => `<option value="${esc(x)}"${x === r.insurer ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div>` : ''}</div>
     <input id="clq" class="noprint" type="search" maxlength="60" value="${esc(q)}" placeholder="${esc(t('claim_search'))}" aria-label="${esc(t('claim_search'))}" autocomplete="off" style="margin-bottom:12px">
     ${q ? `<p class="small muted" id="clqinfo">${esc(t('claim_search_info').replace('{q}', q).replace('{n}', r.claims.length))}</p>` : ''}
     ${r.reimbursed_sum_net !== null || r.reimbursed_sum_excluded_net != null ? `<section class="panel"><dl class="kv">${r.reimbursed_sum_net !== null ? `<dt>${esc(t('claim_sum'))}</dt><dd><b>${eur(r.reimbursed_sum_net)}</b></dd>` : ''}${r.reimbursed_sum_excluded_net != null ? `<dt>${esc(t('claim_sum_excluded'))}</dt><dd>${eur(r.reimbursed_sum_excluded_net)}<div class="small muted">${esc(t('claim_sum_excluded_hint'))}</div></dd>` : ''}</dl></section>` : ''}
@@ -1916,8 +1921,11 @@ async function viewClaims() {
   const clq = $('#clq');
   clq.oninput = () => { clearTimeout(timer); timer = setTimeout(() => { const v = clq.value.trim(); if (v === (S.clQ || '')) return; S.clQ = v; viewClaims().then(() => { const n = $('#clq'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }); }, 300); };
   const cls = $('#clsite'); if (cls) cls.onchange = () => { S.claimSite = cls.value; viewClaims(); };
+  $('#clfrom').onchange = () => { S.clFrom = $('#clfrom').value || null; viewClaims(); };
+  $('#clto').onchange = () => { S.clTo = $('#clto').value || null; viewClaims(); };
+  const cli = $('#clins'); if (cli) cli.onchange = () => { S.clIns = cli.value || null; viewClaims(); };
   $('#clprt').onclick = () => window.print();
-  $('#clcsv').onclick = async () => { try { download(await api('GET', `/api/claims?format=csv&filter=${f}${csq}${qq}`), `fuhrpark-versicherungsfaelle_${envFn()}_${r.today}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#clcsv').onclick = async () => { try { download(await api('GET', `/api/claims?format=csv&filter=${f}${csq}${qq}`), `fuhrpark-versicherungsfaelle_${envFn()}_${r.today}${r.site ? '_' + fnPart(r.site) : ''}${r.from || r.to ? '_' + (r.from || '') + '-' + (r.to || '') : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 // Verlauf der Auslesungen (Fahrerakte, Fahrzeugakte): stornierte durchgestrichen mit Begründung; Leitung kann stornieren (18.10.2026)

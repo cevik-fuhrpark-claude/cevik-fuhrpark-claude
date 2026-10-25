@@ -667,7 +667,7 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/claims' && m === 'GET') {
     const ov = await claims.claimOverview(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
-      await auth.audit(env, user.id, 'claim.export', null, { rows: ov.claims.length, filter: ov.filter, site: ov.site });
+      await auth.audit(env, user.id, 'claim.export', null, { rows: ov.claims.length, filter: ov.filter, site: ov.site, ...(ov.from ? { from: ov.from } : {}), ...(ov.to ? { to: ov.to } : {}), ...(ov.insurer ? { insurer: ov.insurer } : {}) });
       return new Response(claims.claimsCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-versicherungsfaelle_${envName}_${ov.today}.csv"` } });
     }
     return json(ov);
