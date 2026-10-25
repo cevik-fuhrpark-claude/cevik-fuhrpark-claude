@@ -19170,7 +19170,7 @@ await test('Backlog 212 (Teilagent „Fahrtenschreiber gestört unterwegs“): M
   // Hinweis-Panel im Formular; beim Wiederherstellen des Entwurfs meldet formDraft.restore ein input-Ereignis – der Listener steht davor
   ok(app.includes(`<div id="tacho" class="panel" hidden role="status">`), 'Panel #tacho');
   // Backlog 213: Hilfe-Abschnitt „Fahrtenschreiber gestört“ für alle meldenden Rollen, Pflichten wie im Formular, Weg über „Melden“
-  ok(app.includes("const parts = ['report', 'accident', 'tachofault', "), 'Hilfe-Abschnitt tachofault');
+  ok(app.includes("const parts = ['report', 'accident', 'wild', 'tachofault', "), 'Hilfe-Abschnitt tachofault');
   for (const l of ['de', 'uk', 'en']) {
     const h = STRINGS[l].help_tachofault_s; ok(STRINGS[l].help_tachofault_t && h, 'Hilfe ' + l);
     ok(h.includes(STRINGS[l].tacho_hint_steps) && h.includes(STRINGS[l].nav_new), 'Hilfe nennt Pflichten und „' + STRINGS[l].nav_new + '“ ' + l);
@@ -19194,7 +19194,7 @@ await test('Backlog 214/215 (Teilagent „Fahrzeug gestohlen / Einbruch“): Mel
     ok(h.includes(STRINGS[l].theft_hint_steps) && h.includes(STRINGS[l].nav_new) && h.includes(STRINGS[l].help_tachofault_t), 'Hilfe nennt Schritte, „' + STRINGS[l].nav_new + '“ und Fahrerkarten-Abschnitt ' + l);
   }
   ok(app.includes(`<div id="theft" class="panel" hidden role="status">`), 'Panel #theft');
-  ok(app.includes("const parts = ['report', 'accident', 'tachofault', 'theft', 'glass', 'prio',"), 'Hilfe-Abschnitt theft');
+  ok(app.includes("'tachofault', 'theft', 'glass', 'prio',"), 'Hilfe-Abschnitt theft');
   ok(app.indexOf("$('#theft').hidden = !THEFT_HINT.test") > 0 && app.indexOf("$('#theft').hidden = !THEFT_HINT.test") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
 });
 
@@ -19217,6 +19217,26 @@ await test('Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“)
   const lp = app.indexOf("$('#glass').hidden = !GLASS_HINT.test($('#d').value)"); ok(lp > 0 && lp < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("const glassNoClaim = !cl && GLASS_HINT.test(desc || '');") && app.includes('data-claimglass'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
   ok(app.includes("'theft', 'glass', 'prio',"), 'Hilfe-Abschnitt glass für meldende Rollen');
+});
+
+await test('Backlog 293 (Blickwinkel „Wildunfall nachts auf der Landstraße“): Meldeformular zeigt bei Wildunfall eigene Schritte (sichern, Polizei auch ohne Verletzte, Wildunfallbescheinigung, Tier nicht mitnehmen) statt der allgemeinen Unfall-Hinweise; Versicherungsabschnitt erinnert an die Bescheinigung bis eine Datei verknüpft ist; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const WILD_HINT = \/(.+)\/i;/m); ok(m, 'WILD_HINT auf Modulebene'); eq((app.match(/const WILD_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Wildunfall auf der B51', 'Reh angefahren', 'Wildschwein vor die Front gelaufen', 'Hirsch erwischt, Kühlergrill kaputt', 'Hit a deer at night', 'collision with a wild boar', 'Збив косулю вночі', 'Зіткнення з кабаном', 'Сбил лося', 'Олень вибіг на дорогу', 'Дика тварина вибігла']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Drehzahl schwankt', 'Dashboard leuchtet', 'Wildes Klappern hinten', 'Солений дощ', 'Получилось странно', 'Кабіна протікає', 'boarding ramp', 'Unfall beim Rangieren', 'Fuchsschwanz-Säge fehlt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const st = STRINGS[l].wild_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(/112/.test(st[0]) && /110/.test(st[1]) && /112/.test(st[1]), 'Notrufnummern ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год)/i.test(STRINGS[l].wild_hint_steps), 'keine erfundene Frist ' + l);
+    const h = STRINGS[l].help_wild_s; ok(STRINGS[l].help_wild_t && h && h.includes(STRINGS[l].wild_hint_steps) && h.includes(STRINGS[l].nav_new), 'Hilfe ' + l);
+    ok(STRINGS[l].claim_wild_hint && STRINGS[l].wild_hint_title, 'Texte ' + l);
+  }
+  ok(app.includes(`<div id="wild" class="panel" hidden role="status">`), 'Panel #wild');
+  ok(app.includes("const wild = WILD_HINT.test($('#d').value); $('#wild').hidden = !wild; $('#acc').hidden = wild || !ACC_HINT.test($('#d').value);"), 'Wildunfall ersetzt die allgemeinen Unfall-Hinweise');
+  ok(app.includes("const wildHint = WILD_HINT.test(desc || '') && !(cl && cl.file_id);") && app.includes('data-claimwild'), 'Versicherungs-Hinweis bis eine Datei verknüpft ist');
+  ok(app.includes("const parts = ['report', 'accident', 'wild', "), 'Hilfe-Abschnitt wild nach Unfall');
 });
 
 await test('Backlog 292: Abfahrtskontrolle zeigt bei einem Mangel mit Glasschaden (z. B. „Spiegel, Scheiben, Wischer: Steinschlag“) den Glasschaden-Hinweis – mit eigenem Schritt „vor der Abfahrt klären“ statt „Fahrbereitschaft unten“ (DE/UK/EN)', async () => {
