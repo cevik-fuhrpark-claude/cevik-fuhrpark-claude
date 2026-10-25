@@ -22047,6 +22047,91 @@ await test('Backlog 336 (Fehlersuche Bremsen-Hinweis): Druckluft baut sich nicht
   for (const x of ['Luftdruck baut sich nicht auf', 'Druck baut sich nicht mehr auf', 'Vorratsdruck baut sich nicht richtig auf', 'Kompressor läuft dauernd', 'Luftkompressor defekt', 'Kompressor pumpt nicht', 'Intarder ausgefallen', 'air pressure not building', 'air pressure won’t build', 'compressor running constantly', 'air compressor faulty', 'тиск повітря не набирається', 'давление воздуха не набирается', 'компресор постійно працює', 'компрессор не качает']) ok(re.test(x), 'Bremsen-Hinweis erwartet: ' + x);
   for (const x of ['Reifendruck baut sich nicht auf', 'Öldruck baut sich nicht auf', 'Kompressor des Kühlaggregats läuft dauernd', 'Kühlaggregat Kompressor läuft dauernd', 'reefer compressor running constantly', 'AC compressor not pumping', 'Klimakompressor defekt', 'Kompressor läuft', 'Druck aufgebaut']) ok(!re.test(x), 'kein Bremsen-Hinweis: ' + x);
 });
+await test('Backlog 337 (Blickwinkel „Tankdeckel oder AdBlue-Deckel verloren, klemmt oder schließt nicht“): Meldeformular zeigt Hinweise (Leitung vor der Weiterfahrt; kein Behelf, nicht randvoll tanken; Leck-/Diebstahl-Schritte; Diesel/AdBlue, Seite, Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); aufgebrochener Deckel bleibt beim Diebstahl-Hinweis, Tankanzeige/Tankkarte lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const FUELCAP_HINT = \/(.+)\/i;/m); ok(m, 'FUELCAP_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Tankdeckel verloren', 'Tankdeckel fehlt', 'Tankdeckel klemmt', 'Tankdeckel ist weg', 'AdBlue-Deckel geht nicht mehr zu', 'Tankdeckel an der Tankstelle liegen lassen', 'fahre ohne Tankdeckel', 'Tankdeckel lässt sich nicht öffnen', 'Deckel vom Dieseltank ist weg', 'Tankschloss klemmt', 'Tankdeckeldichtung defekt', 'fuel cap missing', 'lost the fuel cap', "fuel cap won't open", 'AdBlue cap stuck', 'can’t open the fuel cap', 'кришка бака загубилася', 'загубив кришку паливного бака', 'кришка бака не закривається', 'крышка бака не открывается', 'нет крышки бака']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Tankanzeige defekt', 'Tankkarte verloren', 'Tankdeckel geöffnet', 'Tank voll', 'AdBlue-Tank undicht', 'Deckel vom Werkzeugkasten fehlt', 'kein Tank', 'fuel tank leaking', 'fuel card lost', 'кришка багажника зламана', 'Tankdeckel aufgebrochen']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('THEFT_HINT').test('Diesel gestohlen, Tankdeckel aufgebrochen') && pat('LEAK_HINT').test('AdBlue-Tank undicht'), 'Diebstahl/Leck behalten ihre eigenen Hinweise');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.fuelcap_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|§/.test(L.fuelcap_hint_steps), 'keine Zahl, kein Paragraf ' + l);
+    const h = L.help_fuelcap_s; ok(L.help_fuelcap_t && h && h.includes(L.fuelcap_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.fuelcap_hint_title, 'Titel ' + l);
+    // die Beispiele im Hilfetext lösen den Hinweis tatsächlich aus
+    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
+  }
+  ok(app.includes(`<div id="fuelcap" class="panel" hidden role="status">`), 'Panel #fuelcap');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#fuelcap').hidden = !FUELCAP_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('fuelcap') && order.indexOf('leak') < order.indexOf('fuelcap') && order.indexOf('theft') < order.indexOf('fuelcap') && order.indexOf('fuel') < order.indexOf('fuelcap') && order.indexOf('fuelcap') < order.indexOf('glass'), 'Gruppierung: Leck/Diebstahl/Fehlbetankung vor Tankdeckel vor Glas');
+  ok(helpAfter(app, 'fuelcap', 'window'), 'Hilfe-Abschnitt fuelcap nach window');
+});
+await test('Backlog 338 (Fehlersuche Leck-Hinweis): „Tank tropft“, „Kühler tropft“, „Unter dem Lkw ist eine Pfütze“, „Бак протікає“, „бак тече“, „Бак течёт“, „Протекает бак“, „Під машиною калюжа“, „Под грузовиком лужа“ zeigen den Leck-Hinweis; volle/getankte Tanks, Dach, Druckluft und liegende Teile lösen ihn nicht aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const LEAK_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Tank tropft', 'Dieseltank tropft unten', 'Kühler tropft', 'Unter dem Lkw ist eine Pfütze', 'unter dem Anhänger eine große Lache', 'Бак протікає', 'бак тече', 'Бак течёт', 'Протекает бак', 'Протікає радіатор', 'Під машиною калюжа', 'Под грузовиком лужа']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['бак повний', 'Бак заправлений', 'Радіатор замінили', 'Tank voll', 'Dach tropft', 'Dach undicht', 'Luftleitung tropft', 'Druckluftschlauch undicht', 'Unter dem Lkw liegt ein Teil', 'Під машиною лежить деталь', 'Тече дах', 'Шланг тиску повітря тече']) ok(!re.test(x), 'kein Hinweis: ' + x);
+});
+await test('Backlog 339 (Fehlersuche Assistenz-Hinweis): einfacher Tempomat ausgefallen, schaltet sich ab, lässt sich nicht ausschalten oder beschleunigt von selbst (DE/EN/UK/RU) zeigt den Assistenz-Hinweis; „Tempomat eingestellt“, „Tempomat auf …“, „cruise control set“ lösen ihn nicht aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const ADAS_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Tempomat geht nicht', 'Tempomat funktioniert nicht mehr', 'Tempomat ausgefallen', 'Tempomat schaltet sich immer ab', 'Tempomat lässt sich nicht ausschalten', 'Tempomat beschleunigt von selbst', 'Abstandstempomat geht nicht', 'cruise control not working', 'cruise control won’t turn off', 'adaptive cruise control not working', 'круїз-контроль не працює', 'круиз-контроль не работает']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Tempomat eingestellt', 'Tempomat auf achtzig', 'cruise control set', 'Tempomat benutzt', 'Navi kaputt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+});
+await test('Backlog 340 (Blickwinkel „Tankkarte verloren, gestohlen oder an der Kasse abgelehnt“): Meldeformular zeigt Hinweise (sofort Leitung zum Sperren; PIN/Kartennummer nie in die Meldung; Diebstahl-Schritte; abgelehnt: nicht mehrfach mit unsicherer PIN; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Getankt/neue Karte/Fahrerkarte lösen nichts aus, gestohlene Karte zeigt auch den Diebstahl-Hinweis; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const FUELCARD_HINT = \/(.+)\/i;/m); ok(m, 'FUELCARD_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Tankkarte verloren', 'Tankkarte weg', 'Tankkarte gestohlen', 'Tankkarte wird nicht angenommen', 'Tankkarte an der Tankstelle liegen lassen', 'DKV-Karte gesperrt', 'PIN der Tankkarte vergessen', 'fuel card lost', 'fuel card declined', 'lost my fuel card', "fuel card doesn't work", 'загубив паливну картку', 'паливна картка не працює', 'топливная карта не работает', 'потерял топливную карту']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['mit Tankkarte getankt', 'neue Tankkarte erhalten', 'Tankkarte liegt im Handschuhfach', 'Fahrerkarte verloren', 'fuel card receipt', 'Tankkarte abgeholt', 'Tankkartenabrechnung fehlt', 'Tankdeckel verloren']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('THEFT_HINT').test('Tankkarte gestohlen') && pat('TACHO_HINT').test('Fahrerkarte verloren') && !pat('LOST_HINT').test('Tankkarte verloren'), 'Diebstahl/Fahrerkarte behalten ihre eigenen Hinweise');
+  for (const l of ['de', 'uk', 'en']) { const { STRINGS: S0 } = await import('../public/i18n.js'); ok(/PIN/.test(S0[l].fuelcard_hint_steps), 'PIN-Hinweis ' + l); }
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.fuelcard_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|§/.test(L.fuelcard_hint_steps), 'keine Zahl, kein Paragraf ' + l);
+    const h = L.help_fuelcard_s; ok(L.help_fuelcard_t && h && h.includes(L.fuelcard_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.fuelcard_hint_title, 'Titel ' + l);
+    // die Beispiele im Hilfetext lösen den Hinweis tatsächlich aus
+    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
+  }
+  ok(app.includes(`<div id="fuelcard" class="panel" hidden role="status">`), 'Panel #fuelcard');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#fuelcard').hidden = !FUELCARD_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('fuelcard') && order.indexOf('theft') < order.indexOf('fuelcard') && order.indexOf('lost') < order.indexOf('fuelcard') && order.indexOf('fuelcard') < order.indexOf('toll'), 'Gruppierung: Diebstahl/Schlüssel vor Tankkarte vor Maut');
+  ok(helpAfter(app, 'fuelcard', 'fuelcap'), 'Hilfe-Abschnitt fuelcard nach fuelcap');
+});
+await test('Backlog 341 (Blickwinkel „Unterfahrschutz oder Seitenschutz verbogen – z. B. beim Rangieren“): Meldeformular zeigt Hinweise (Leitung auch ohne fremden Schaden; Unfall-Schritte bei Anstoß an Fremdem; lose Teile → nicht weiterfahren; nicht selbst zurückbiegen; Lage/Foto; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); abgerissener/herunterhängender Schutz bleibt beim Hinweis für lose Teile, Stoßstange/geprüft/montiert lösen nichts aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const UNDERRUN_HINT = \/(.+)\/i;/m); ok(m, 'UNDERRUN_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Unterfahrschutz verbogen', 'Beim Rangieren Unterfahrschutz verbogen', 'Unterfahrschutz hinten eingedrückt', 'Seitenschutz eingedrückt', 'Seitenschutz links beschädigt', 'Seitliche Schutzvorrichtung beschädigt', 'verbogener Unterfahrschutz', 'rear underrun bar bent', 'side guard damaged', 'bent the underrun bar', 'протипідкатний брус погнутий', 'бічний захист пошкоджений', 'погнутий протипідкатний брус', 'противоподкатный брус погнут']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Unterfahrschutz abgerissen', 'Unterfahrschutz hängt herunter', 'Stoßstange verbogen', 'Unterfahrschutz geprüft', 'Seitenschutz montiert', 'Unterfahrschutz in Ordnung', 'side guard fitted', 'Bremsbelag verbogen']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(pat('LOOSE_HINT').test('Unterfahrschutz abgerissen') && pat('LOOSE_HINT').test('Unterfahrschutz hängt herunter'), 'lose Teile behalten ihren eigenen Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.underrun_hint_steps.split('|'); eq(st.length, 6, 'Schritte ' + l);
+    ok([L.driveable, L.drv_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[5].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d|§/.test(L.underrun_hint_steps), 'keine Zahl, kein Paragraf ' + l);
+    const h = L.help_underrun_s; ok(L.help_underrun_t && h && h.includes(L.underrun_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.underrun_hint_title, 'Titel ' + l);
+    // die Beispiele im Hilfetext lösen den Hinweis tatsächlich aus
+    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
+  }
+  ok(app.includes(`<div id="underrun" class="panel" hidden role="status">`), 'Panel #underrun');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#underrun').hidden = !UNDERRUN_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('underrun') && order.indexOf('loose') < order.indexOf('underrun') && order.indexOf('acc') < order.indexOf('underrun') && order.indexOf('underrun') < order.indexOf('load'), 'Gruppierung: Unfall/lose Teile vor Unterfahrschutz vor Ladung');
+  ok(helpAfter(app, 'underrun', 'fuelcard'), 'Hilfe-Abschnitt underrun nach fuelcard');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

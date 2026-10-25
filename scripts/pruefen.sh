@@ -199,6 +199,9 @@ UI-Hinweis Rad wackelt/Radmuttern locker/Radlager heiß im Meldeformular und Hil
 UI-Hinweis Mautgerät (OBU) rot/Störung/ausgefallen im Meldeformular und Hilfe|ui-maut.py|/tmp/cfp-maut.log
 UI-Hinweis Standheizung/Klimaanlage im Fahrerhaus ausgefallen im Meldeformular und Hilfe|ui-klima.py|/tmp/cfp-klima.log
 UI-Hinweis Fensterheber defekt/Seitenscheibe geht nicht zu im Meldeformular und Hilfe|ui-fenster.py|/tmp/cfp-fenster.log
+UI-Hinweis Tankdeckel/AdBlue-Deckel verloren/klemmt/schließt nicht im Meldeformular und Hilfe|ui-tankdeckel.py|/tmp/cfp-tankdeckel.log
+UI-Hinweis Tankkarte verloren/gestohlen/abgelehnt im Meldeformular und Hilfe|ui-tankkarte.py|/tmp/cfp-tankkarte.log
+UI-Hinweis Unterfahrschutz/Seitenschutz verbogen im Meldeformular und Hilfe|ui-unterfahrschutz.py|/tmp/cfp-unterfahrschutz.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
