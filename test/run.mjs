@@ -21007,6 +21007,20 @@ await test('Backlog 285 (Blickwinkel „Schaden wird erst Tage später gemeldet�
   for (const m of ['Schadenzeitpunkt liegt in der Zukunft.', 'Schadenzeitpunkt liegt mehr als ein Jahr zurück.', 'Schadenzeitpunkt: ungültiges Datum.', 'Schadenzeitpunkt ist unverändert.']) ok(translateValidation('en', m) && translateValidation('en', m) !== m, `übersetzt: ${m}`);
 });
 
+await test('Backlog 285b: Datenqualität „Offener Versicherungsfall ohne Schadenzeitpunkt“ – verschwindet nach Nachtrag bzw. reguliertem Fall; Texte DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const id = await newCase({ description: 'Unfall beim Rangieren, Stoßfänger' });
+  eq((await U.fleet.put(`/api/cases/${id}/claim`, { insurer: 'Test-Versicherung', reported_on: BERLIN_TODAY, status: 'gemeldet', evidence: 'Schadenmeldung per Mail' })).status, 200);
+  const dq = async () => (await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'claim_no_occurred');
+  let x = await dq(); eq(x.length, 1); eq(x[0].case_id, id); eq(x[0].severity, 'hinweis'); ok(x[0].detail.includes(BERLIN_TODAY), 'Detail mit Meldedatum');
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: BERLIN_TODAY })).status, 200);
+  eq((await dq()).length, 0, 'nach Nachtrag weg');
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: '' })).status, 200); eq((await dq()).length, 1, 'wieder entfernt → Hinweis');
+  eq((await U.fleet.put(`/api/cases/${id}/claim`, { insurer: 'Test-Versicherung', reported_on: BERLIN_TODAY, status: 'reguliert', evidence: 'Schadenmeldung per Mail' })).status, 200);
+  eq((await dq()).length, 0, 'regulierter Fall: kein Hinweis');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dq_claim_no_occurred, `${l}.dq_claim_no_occurred`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
