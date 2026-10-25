@@ -20869,9 +20869,34 @@ await test('Backlog 274 (Blickwinkel „Versicherer verlangt eine Schadenaufstel
   eq((await U.fleet.get('/api/claims?filter=alle&from=2026-01-01&to=2025-01-01')).status, 400); eq((await U.fleet.get('/api/claims?filter=alle&from=gestern')).status, 400);
   const csv = await U.fleet.get('/api/claims?format=csv&filter=alle&from=2024-01-01&to=2024-12-31'); eq(csv.status, 200);
   const txt = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data); const lines = txt.trim().split('\r\n');
-  ok(lines[0].endsWith(';Vertragsnummer;Vorgang angelegt am'), 'Kopf'); eq(lines.length, 2, 'nur 2024'); ok(lines[1].includes('VS-4711'), 'Vertragsnummer');
+  ok(lines[0].includes(';Vertragsnummer;Vorgang angelegt am'), 'Kopf'); eq(lines.length, 2, 'nur 2024'); ok(lines[1].includes('VS-4711'), 'Vertragsnummer');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['claim_from', 'claim_to', 'claim_period']) ok(STRINGS[l][k], `${l}.${k}`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("$('#clfrom').onchange =") && app.includes("&insurer=' + encodeURIComponent(S.clIns)"), 'Oberfläche');
+});
+
+await test('Backlog 275–277: Versicherungsfälle – Summen je Meldejahr (Selbstbeteiligung, Gutachten, belegte Kosten, Erstattung; ruhende Fahrzeuge außerhalb), CSV „Kennzeichen zum Meldedatum“ nach Umkennzeichnung, Export für Dritte ohne Bemerkung/Nachweis', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const ins = db.prepare(`INSERT INTO insurance_claims(id,environment,case_id,vehicle_id,insurer,reported_on,status,evidence,note,created_by,created_at,updated_at,deductible_net,reimbursed_net,reimbursed_on,appraisal_net) VALUES (?,'test',?,?,'Vers',?,'reguliert','Schreiben vom 1.3.','Gegner: Max Muster',?,?,?,?,?,?,?)`);
+  const a = await newCase({ description: 'Unfall A' }, U.fleet); const b = await newCase({ description: 'Unfall B' }, U.fleet); const c = await newCase({ description: 'Unfall C' }, U.fleet);
+  ins.run('s-a', a, V1, '2025-03-01', U.fleet.id, now, now, 500, 1200, '2025-04-01', 1500);
+  ins.run('s-b', b, V1, '2025-09-01', U.fleet.id, now, now, 500, 800, '2025-10-01', null);
+  ins.run('s-c', c, V1, '2026-02-01', U.fleet.id, now, now, 1000, null, null, null);
+  // Umkennzeichnung nach dem ersten Fall: Kennzeichen damals „SZ-ALT 1“
+  db.prepare(`INSERT INTO vehicle_plates(id,vehicle_id,plate,valid_until,changed_by,source) VALUES ('vp-275',?,'SZ-ALT 1','2025-06-01T10:00:00.000Z',?,'test')`).run(V1, U.fleet.id);
+  const d = (await U.fleet.get('/api/claims?filter=alle')).data;
+  const y25 = d.sums.by_year.find((y) => y.year === '2025'); eq(y25.n, 2); eq(y25.deductible_net, 1000); eq(y25.reimbursed_net, 2000); eq(y25.appraisal_net, 1500);
+  eq(d.sums.total.n, 3); eq(d.sums.total.deductible_net, 2000); eq(d.sums.by_year[0].year, '2026', 'neuestes Jahr zuerst');
+  const csv = await U.fleet.get('/api/claims?format=csv&filter=alle'); const txt = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data); const L = txt.trim().split('\r\n');
+  ok(L[0].endsWith(';Kennzeichen zum Meldedatum'), 'Kopf'); ok(L.some((l) => l.includes('2025-03-01') || l.includes('01.03.2025')) && L.find((l) => /2025-03-01|01\.03\.2025/.test(l)).endsWith(';SZ-ALT 1'), 'altes Kennzeichen beim ersten Fall');
+  ok(txt.includes('Max Muster') && L[0].includes(';Bemerkung;'), 'normal mit Bemerkung');
+  const c3 = await U.fleet.get('/api/claims?format=csv&filter=alle&third_party=1'); const t3 = typeof c3.data === 'string' ? c3.data : new TextDecoder().decode(c3.data);
+  ok(!t3.includes('Max Muster') && !t3.includes('Schreiben vom') && !t3.split('\r\n')[0].includes('Bemerkung') && !t3.split('\r\n')[0].includes('Nachweis'), 'für Dritte ohne Freitext');
+  eq(t3.split('\r\n')[0].split(';').length, L[0].split(';').length - 2, 'zwei Spalten weniger');
+  // ruhendes Fahrzeug: nicht in den Summen
+  db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1); eq((await U.fleet.get('/api/claims?filter=alle')).data.sums.total.n, 0, 'ruhend außerhalb');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['claim_sums', 'claim_year', 'claim_count', 'claim_ded_short', 'ca_net_short', 'claim_sums_hint', 'claim_third_party']) ok(STRINGS[l][k], `${l}.${k}`); ok(PLURALS[l].claim_cost_incompl, `${l} Plural`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="clsums"') && app.includes("$('#cl3p').checked ? '&third_party=1' : ''"), 'Oberfläche');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

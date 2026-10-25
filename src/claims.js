@@ -146,7 +146,9 @@ export async function claimOverview(env, user, envName, query = {}) {
   const rate = rateOf(rv);
   const fu = Number(sets.get('claim_followup_days'));
   const followupDays = fu > 0 ? fu : null;
-  const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, c.created_at AS case_created_at, k.contract_no, v.plate, v.site AS vehicle_site, v.eval_excluded AS vehicle_excluded,
+  const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, c.created_at AS case_created_at, k.contract_no, v.plate,
+      -- Kennzeichen zum Meldedatum (Backlog 276): früheres Kennzeichen, das an dem Tag noch galt, sonst das heutige
+      COALESCE((SELECT vp.plate FROM vehicle_plates vp WHERE vp.vehicle_id=ic.vehicle_id AND vp.valid_until > ic.reported_on ORDER BY vp.valid_until LIMIT 1), v.plate) AS plate_at_report, v.site AS vehicle_site, v.eval_excluded AS vehicle_excluded,
       (SELECT COALESCE(SUM(w.hours),0) FROM work_entries w WHERE w.case_id=c.id) AS hours,
       (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id AND (p.unit_price_net IS NULL OR p.valuation<>'actual')) +
       (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND (e.amount_net IS NULL OR e.valuation<>'actual')) AS not_actual,
@@ -199,18 +201,33 @@ export async function claimOverview(env, user, envName, query = {}) {
   const reimb = list.filter((c) => c.reimbursed_net !== null && !c.eval_excluded);
   const reimbX = list.filter((c) => c.reimbursed_net !== null && c.eval_excluded);
   const sum = (a) => (a.length ? r2(a.reduce((s, c) => s + c.reimbursed_net, 0)) : null);
-  return { today, filter, q: q || null, from, to, insurer, insurer_options: insurerOptions, site: sel.site, site_options: sel.options, followup_days: followupDays, counts, claims: list, reimbursed_sum_net: sum(reimb), reimbursed_sum_excluded_net: sum(reimbX) };
+  // Summen je Meldejahr und gesamt (Backlog 275): nur Werte, die eingetragen bzw. belegt sind; Fälle ruhender Fahrzeuge außerhalb (wie die Erstattungssumme);
+  // Kosten mit unbewerteten/geschätzten Positionen zählen nicht in die Summe, sondern als „unvollständig“
+  const acc = () => ({ n: 0, deductible_net: 0, appraisal_net: 0, reimbursed_net: 0, case_cost_net: 0, cost_incomplete: 0, cost_missing: 0 });
+  const years = new Map(); const total = acc();
+  for (const c of list) {
+    if (c.eval_excluded) continue;
+    const y = String(c.reported_on || '').slice(0, 4); if (!years.has(y)) years.set(y, acc());
+    for (const a of [years.get(y), total]) {
+      a.n++; a.deductible_net = r2(a.deductible_net + (c.deductible_net || 0)); a.appraisal_net = r2(a.appraisal_net + (c.appraisal_net || 0)); a.reimbursed_net = r2(a.reimbursed_net + (c.reimbursed_net || 0));
+      if (c.case_cost_net !== null) a.case_cost_net = r2(a.case_cost_net + c.case_cost_net); else if (c.cost_incomplete) a.cost_incomplete++; else a.cost_missing++;
+    }
+  }
+  const sums = { total, by_year: [...years.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([year, v]) => ({ year, ...v })) };
+  return { today, filter, q: q || null, from, to, insurer, insurer_options: insurerOptions, site: sel.site, site_options: sel.options, followup_days: followupDays, counts, claims: list, sums, reimbursed_sum_net: sum(reimb), reimbursed_sum_excluded_net: sum(reimbX) };
 }
 
-export function claimsCsv(ov) {
+// thirdParty (Backlog 277): Export für Dritte (z. B. Versicherer) ohne Freitexte „Nachweis“/„Bemerkung“ (dort stehen u. a. Namen von Unfallgegnern)
+export function claimsCsv(ov, { thirdParty = false } = {}) {
   const head = ['Kennzeichen', 'Vorgang', 'Versicherer', 'Schadennummer', 'Gemeldet am', 'Status', 'Tage offen', 'Selbstbeteiligung netto (EUR)', 'Erstattung netto (EUR)', 'Erstattet am',
     'Kosten Vorgang belegt netto (EUR)', 'Saldo nach Erstattung (EUR)', 'Nachweis', 'Bemerkung',
-    'Gutachter', 'Besichtigung am', 'Gutachten eingegangen am', 'Schadenhöhe laut Gutachten netto (EUR)', 'Gutachten ausstehend', 'Kennzeichen Unfallgegner', 'Versicherer Unfallgegner', 'Schadennummer Unfallgegner', 'Polizeidienststelle', 'Polizeiliches Aktenzeichen', 'Anzeige erstattet am', 'Schreiben verknüpft', 'Fahrzeug ruhend (nicht in Summen)', 'Kosten vollständig bewertet', 'Vertragsnummer', 'Vorgang angelegt am'];
+    'Gutachter', 'Besichtigung am', 'Gutachten eingegangen am', 'Schadenhöhe laut Gutachten netto (EUR)', 'Gutachten ausstehend', 'Kennzeichen Unfallgegner', 'Versicherer Unfallgegner', 'Schadennummer Unfallgegner', 'Polizeidienststelle', 'Polizeiliches Aktenzeichen', 'Anzeige erstattet am', 'Schreiben verknüpft', 'Fahrzeug ruhend (nicht in Summen)', 'Kosten vollständig bewertet', 'Vertragsnummer', 'Vorgang angelegt am', 'Kennzeichen zum Meldedatum'];
+  const drop = thirdParty ? new Set([12, 13]) : new Set(); const keep = (_, i) => !drop.has(i);
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
-  const lines = [head.join(';')];
+  const lines = [head.filter(keep).join(';')];
   for (const c of ov.claims) lines.push([c.plate, c.case_no, c.insurer, c.claim_no, c.reported_on, STATUS_DE[c.status], c.days_open ?? '', n(c.deductible_net), n(c.reimbursed_net), c.reimbursed_on,
     n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.appraiser, c.appraisal_on, c.appraisal_received_on, n(c.appraisal_net), c.appraisal_pending ? 'ja' : 'nein', c.opponent_plate, c.opponent_insurer, c.opponent_claim_no, c.police_station, c.police_ref, c.police_reported_on,
-    c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein', c.cost_incomplete ? 'nein' : c.case_cost_net !== null ? 'ja' : '', c.contract_no, c.case_created_at ? berlinDate(c.case_created_at) : ''].map((x, i) => ([3, 21, 23, 28].includes(i) ? csvText(x) : csvCell(x))).join(';'));
+    c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein', c.cost_incomplete ? 'nein' : c.case_cost_net !== null ? 'ja' : '', c.contract_no, c.case_created_at ? berlinDate(c.case_created_at) : '', c.plate_at_report || c.plate].map((x, i) => ([3, 21, 23, 28].includes(i) ? csvText(x) : csvCell(x))).filter(keep).join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 

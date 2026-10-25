@@ -278,9 +278,9 @@ Object.assign(STRINGS.de, { pk_open_item: 'Neue Restarbeit der Werkstatt' });
 Object.assign(STRINGS.uk, { pk_open_item: 'Нова незавершена робота від майстерні' });
 Object.assign(STRINGS.en, { pk_open_item: 'New open item from the workshop' });
 // Backlog 274: Versicherungsfälle nach Zeitraum/Versicherer
-Object.assign(STRINGS.de, { claim_from: 'Gemeldet ab', claim_to: 'Gemeldet bis', claim_period: 'Zeitraum (gemeldet)' });
-Object.assign(STRINGS.uk, { claim_from: 'Повідомлено з', claim_to: 'Повідомлено по', claim_period: 'Період (повідомлено)' });
-Object.assign(STRINGS.en, { claim_from: 'Reported from', claim_to: 'Reported until', claim_period: 'Period (reported)' });
+Object.assign(STRINGS.de, { claim_from: 'Gemeldet ab', claim_to: 'Gemeldet bis', claim_period: 'Zeitraum (gemeldet)', claim_sums: 'Summen je Meldejahr (Auswahl)', claim_year: 'Jahr', claim_count: 'Fälle', claim_ded_short: 'Selbstbeteiligung', ca_net_short: 'Schadenhöhe Gutachten', claim_sums_hint: 'Nur eingetragene bzw. belegte Werte netto; Fälle ruhender Fahrzeuge nicht enthalten. Kosten mit unbewerteten oder geschätzten Positionen zählen nicht in die Summe.', claim_third_party: 'für Dritte (ohne Bemerkung/Nachweis)' });
+Object.assign(STRINGS.uk, { claim_from: 'Повідомлено з', claim_to: 'Повідомлено по', claim_period: 'Період (повідомлено)', claim_sums: 'Суми за роком повідомлення (вибірка)', claim_year: 'Рік', claim_count: 'Випадки', claim_ded_short: 'Франшиза', ca_net_short: 'Сума збитку за експертизою', claim_sums_hint: 'Лише внесені або підтверджені значення нетто; випадки законсервованого транспорту не враховано. Витрати з неоціненими або орієнтовними позиціями до суми не входять.', claim_third_party: 'для третіх осіб (без примітки/підтвердження)' });
+Object.assign(STRINGS.en, { claim_from: 'Reported from', claim_to: 'Reported until', claim_period: 'Period (reported)', claim_sums: 'Totals per reporting year (selection)', claim_year: 'Year', claim_count: 'Claims', claim_ded_short: 'Deductible', ca_net_short: 'Damage per appraisal', claim_sums_hint: 'Only entered or documented net values; claims of dormant vehicles not included. Costs with unvalued or estimated items are not included in the total.', claim_third_party: 'for third parties (without note/evidence)' });
 // Backlog 271: Standortwechsel – zugeordnete Fahrer eines anderen Standorts
 Object.assign(STRINGS.de, { imp_site_changes: 'Standort geändert – bitte prüfen:', tl_st_site: 'Standort geändert', veh_site_drivers: 'Weiter zugeordnet (Fahrerakte anderer Standort): {list} – Zuordnung prüfen' });
 Object.assign(STRINGS.uk, { imp_site_changes: 'Локацію змінено – перевірте:', tl_st_site: 'Локацію змінено', veh_site_drivers: 'Досі призначені (картка водія з іншої локації): {list} – перевірте призначення' });
@@ -2236,3 +2236,7 @@ Object.assign(STRINGS.en, { plan_reason_ph: 'Reason for rescheduling (optional)'
 Object.assign(PLURALS.de, { plan_moved_n: { one: '{n}× verschoben', other: '{n}× verschoben' } });
 Object.assign(PLURALS.uk, { plan_moved_n: { one: 'перенесено {n} раз', few: 'перенесено {n} рази', many: 'перенесено {n} разів', other: 'перенесено {n} рази' } });
 Object.assign(PLURALS.en, { plan_moved_n: { one: 'rescheduled {n} time', other: 'rescheduled {n} times' } });
+// Backlog 275: Versicherungsfall-Summen – Fälle mit unvollständig bewerteten Kosten
+Object.assign(PLURALS.de, { claim_cost_incompl: { one: '{n} Fall unvollständig', other: '{n} Fälle unvollständig' } });
+Object.assign(PLURALS.uk, { claim_cost_incompl: { one: '{n} випадок неповний', few: '{n} випадки неповні', many: '{n} випадків неповні', other: '{n} випадку неповні' } });
+Object.assign(PLURALS.en, { claim_cost_incompl: { one: '{n} claim incomplete', other: '{n} claims incomplete' } });
