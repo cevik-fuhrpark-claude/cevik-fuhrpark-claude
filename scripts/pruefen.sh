@@ -94,6 +94,7 @@ UI-Gesperrtes Fahrzeug genutzt: Ergebnisseite, Verlauf, Befund|ui-sperre-genutzt
 UI-Werkstattplan: begonnener Auftrag mit vergangenem Termin unter „in Arbeit“|ui-plan-inarbeit.py|/tmp/cfp-plan-inarbeit.log
 UI-Fahrzeug korrigieren (Meldung am falschen Fahrzeug)|ui-fahrzeug-korrigieren.py|/tmp/cfp-fahrzeug-korrigieren.log
 UI-Kontrolle korrigieren (Abfahrtskontrolle am falschen Fahrzeug)|ui-kontrolle-korrigieren.py|/tmp/cfp-kontrolle-korrigieren.log
+UI-Restarbeit als Folgeauftrag|ui-restarbeit-folgeauftrag.py|/tmp/cfp-restarbeit-folgeauftrag.log
 UI-Kennzeichenverlauf: Akte und Suche nach altem Kennzeichen|ui-kennzeichenverlauf.py|/tmp/cfp-kennzeichenverlauf.log
 UI-Leitungswechsel: Eingang und „gesehen von“ einer ausgeschiedenen Leitung|ui-leitungswechsel.py|/tmp/cfp-leitungswechsel.log
 UI-Ausdruck aus der Testumgebung erkennbar, kompakte Druckliste|ui-druck-testumgebung.py|/tmp/cfp-druck-test.log

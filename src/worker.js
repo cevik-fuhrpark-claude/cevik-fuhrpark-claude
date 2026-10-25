@@ -661,6 +661,7 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/cases' && m === 'POST') return json(await cases.createCase(env, ctx, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)$/)) && m === 'GET') return json(await cases.getCaseDetail(env, user, envName, mm[1]));
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/commands$/)) && m === 'POST') { const b = await readJson(request); usageAction.set(request, b && b.action); return json(await cases.runCommand(env, ctx, user, envName, mm[1], b)); }
+  if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/open-items\/([\w-]+)\/followup$/)) && m === 'POST') return json(await cases.openItemToCase(env, ctx, user, envName, mm[1], mm[2], await readJson(request)), 201);
   // Versicherungsfall je Vorgang (nur Inhaber/Fuhrparkleitung)
   if ((mm = path.match(/^\/api\/cases\/([\w-]+)\/claim$/)) && m === 'PUT') return json(await claims.saveClaim(env, user, envName, mm[1], await readJson(request)));
   if (path === '/api/claims' && m === 'GET') {

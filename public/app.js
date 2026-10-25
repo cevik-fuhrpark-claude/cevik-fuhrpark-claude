@@ -1671,7 +1671,7 @@ async function viewCase(id) {
 
   // Restarbeiten
   if (d.open_items.length) {
-    html += `<h2>${esc(t('open_items'))}</h2><div class="list">${d.open_items.map((o) => `<div class="row note ${o.safety_relevant && o.status === 'offen' ? 'p-kritisch' : ''}"><span class="chip ${o.status === 'offen' ? (o.safety_relevant ? 'kritisch' : 'mittel') : 'ok'}">${esc(t('oi_' + o.status))}</span><span class="title" style="white-space:normal"${langAttr(o.description)}>${esc(o.description)}</span>${o.status === 'offen' && A.includes('resolve_open_item') ? `<button class="btn secondary" data-resolve="${esc(o.id)}">${esc(t('done'))}</button>` : '<span></span>'}<span class="sub" style="white-space:normal">${o.safety_relevant ? esc(t('safety_relevant')) + ' · ' : ''}${esc((pnm(o.created_by_name, o.created_by_name_hidden) || t('role_' + o.created_by_name_role)))} · ${fmtDT(o.created_at)}${o.resolution_note ? ' · ' + ltxt(o.resolution_note) : ''}</span></div>`).join('')}</div>`;
+    html += `<h2>${esc(t('open_items'))}</h2><div class="list">${d.open_items.map((o) => `<div class="row note ${o.safety_relevant && o.status === 'offen' ? 'p-kritisch' : ''}"><span class="chip ${o.status === 'offen' ? (o.safety_relevant ? 'kritisch' : 'mittel') : 'ok'}">${esc(t('oi_' + o.status))}</span><span class="title" style="white-space:normal"${langAttr(o.description)}>${esc(o.description)}</span>${o.status === 'offen' && (A.includes('resolve_open_item') || isMgr()) ? `<span style="display:flex;gap:6px;flex-wrap:wrap">${A.includes('resolve_open_item') ? `<button class="btn secondary" data-resolve="${esc(o.id)}">${esc(t('done'))}</button>` : ''}${isMgr() ? `<button class="btn secondary" data-oifu="${esc(o.id)}" data-safety="${o.safety_relevant ? 1 : 0}">${esc(t('oi_to_case'))}</button>` : ''}</span>` : '<span></span>'}<span class="sub" style="white-space:normal">${o.safety_relevant ? esc(t('safety_relevant')) + ' · ' : ''}${esc((pnm(o.created_by_name, o.created_by_name_hidden) || t('role_' + o.created_by_name_role)))} · ${fmtDT(o.created_at)}${o.resolution_note ? ' · ' + (/^Folgeauftrag \S{1,40}$/.test(o.resolution_note) ? esc(t('oi_followup_ref').replace('{v}', () => o.resolution_note.slice(13))) : ltxt(o.resolution_note)) : ''}</span></div>`).join('')}</div>`;
   }
   if (d.followups.length) html += `<h2>${esc(t('followups'))}</h2><div class="list">${d.followups.map((f) => `<a class="row note p-${esc(f.priority)}" href="#/cases/${esc(f.id)}"><span class="chip">${esc(f.case_no)}</span><span class="title" style="white-space:normal"${langAttr(cDesc(f.description))}>${esc(cDesc(f.description))}</span><span class="chip">${esc(t('st_' + f.status))}</span></a>`).join('')}</div>`;
   if (d.inspections.length) html += `<h2>${esc(t('inspections'))}</h2>${d.inspections.map((i) => `<details class="panel cinsp"><summary>${fmtDT(i.created_at)} · ${esc((pnm(i.performed_by_name, i.performed_by_name_hidden) || t('role_' + i.performed_by_name_role)))} · <span class="chip ${i.result === 'ok' ? 'ok' : 'kritisch'}">${i.result === 'ok' ? 'OK' : esc(t('defect'))}</span>${i.odometer_km ? ' · ' + fmtKm(i.odometer_km) : ''}</summary><table>${i.items.map((it) => `<tr><td>${esc(checkLabel(it.key))}</td><td><span class="chip ${it.result === 'mangel' ? 'kritisch' : it.result === 'ok' ? 'ok' : ''}">${esc(t(it.result === 'mangel' ? 'defect' : it.result))}</span>${it.note ? ' ' + esc(it.note) : ''}${it.followup_case_no ? (it.followup_case_id ? ` → <a href="#/cases/${esc(it.followup_case_id)}">${esc(it.followup_case_no)}</a>` : ` → ${esc(it.followup_case_no)}`) : ''}</td></tr>`).join('')}</table></details>`).join('')}`;
@@ -1737,6 +1737,23 @@ async function viewCase(id) {
   };
   $$('[data-act]').forEach((b) => (b.onclick = () => actionForm(b.dataset.act, c, cmd, {}, d)));
   $$('[data-resolve]').forEach((b) => (b.onclick = () => actionForm('resolve_open_item', c, cmd, { open_item_id: b.dataset.resolve })));
+  // Restarbeit → Folgeauftrag (Backlog 260): kleines Formular unter der Zeile, Dringlichkeit vorbelegt wie bei Kontroll-Mängeln
+  $$('[data-oifu]').forEach((b) => (b.onclick = () => {
+    const old = $('#oiff'); if (old) old.remove();
+    const row = b.closest('.row'); const safety = b.dataset.safety === '1';
+    const f = document.createElement('form'); f.id = 'oiff'; f.className = 'panel';
+    f.innerHTML = `<p class="small muted">${esc(t(safety ? 'oi_to_case_hint_safety' : 'oi_to_case_hint'))}</p><label for="oifp">${esc(t('urgency'))}</label><select id="oifp" name="priority">${['niedrig', 'mittel', 'kritisch'].map((p) => `<option value="${p}"${p === (safety ? 'kritisch' : 'mittel') ? ' selected' : ''}>${esc(t('prio_' + p))}</option>`).join('')}</select><label for="oifn">${esc(t('note'))}</label><textarea id="oifn" name="note" rows="2" maxlength="1000"></textarea><div class="actions"><button class="btn">${esc(t('oi_to_case'))}</button><button type="button" class="btn secondary" id="oifx">${esc(t('cancel'))}</button></div>`;
+    row.after(f);
+    $('#oifx').onclick = () => f.remove();
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const r = await api('POST', `/api/cases/${encodeURIComponent(c.id)}/open-items/${encodeURIComponent(b.dataset.oifu)}/followup`, { priority: $('#oifp').value, note: $('#oifn').value.trim() || undefined });
+        toast(t('oi_to_case_done').replace('{v}', () => r.case_no));
+        location.hash = `#/cases/${encodeURIComponent(r.id)}`;
+      } catch (err) { toast(err.message, true); }
+    };
+  }));
   // Neuaufbau derselben Seite (z. B. nach einem Kommentar): ein offenes, nicht abgeschicktes Aktionsformular bleibt offen samt Eingaben
   // (17.10.2026: „Teil erfassen“ halb ausgefüllt war danach weg); nur solange die Aktion noch erlaubt ist
   if (S.openAct && (S.openAct.caseId !== c.id || !S.renderSame || !A.includes(S.openAct.action))) S.openAct = null;
@@ -3635,6 +3652,7 @@ function evNote(e) {
     const when = p.performed_at ? fmtDT(p.performed_at) : fmtDT(e.created_at);
     return Number.isFinite(Number(p.km)) && p.km !== null && p.km !== undefined ? t('ev_checked_locked_km').replace('{t}', when).replace('{km}', fmtNum(Number(p.km))) : t('ev_checked_locked').replace('{t}', when);
   }
+  if (e.action === 'open_item_to_case' && typeof p.case_no === 'string') return t('oi_followup_ref').replace('{v}', () => p.case_no);
   // Kontrolle an das richtige Fahrzeug umgehängt (Backlog 255): Hinweis an Vorgängen des falschen Fahrzeugs
   if (e.action === 'inspection_moved' && p.code === 'inspection_moved' && typeof p.to === 'string') return t('ev_insp_moved').replace('{p}', () => p.to);
   if (e.action === 'repeat_finding') return n.replace(/^Erneut festgestellt \(Abfahrtskontrolle\): /, '');

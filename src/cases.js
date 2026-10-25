@@ -995,6 +995,54 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   return results;
 }
 
+// Backlog 260 (25.10.2026, Folge aus Teilagent „Zusatzbefund in der Reparatur“): offene Restarbeit in einen Folgeauftrag umwandeln (nur
+// Inhaber/Fuhrparkleitung). Neuer Vorgang am selben Fahrzeug mit Bezug auf den Ursprungsvorgang; Dringlichkeit wählt die Leitung
+// (Vorbelegung in der App wie bei Kontroll-Mängeln: sicherheitsrelevant → kritisch + nicht fahrbereit = Sperre bis zur Bewertung).
+// Restarbeit wird im selben Stapel „erledigt“ mit Verweis auf den Folgeauftrag – so kann der Ursprungsvorgang abgeschlossen werden,
+// ohne dass der Zusatzbefund verloren geht. Wiederholung (gleiche Restarbeit) liefert denselben Folgeauftrag.
+export async function openItemToCase(env, ctx, user, envName, caseId, oid, body) {
+  if (!isManager(user)) throw forbidden();
+  const c = await env.DB.prepare('SELECT id, case_no, vehicle_id, version, status FROM cases WHERE id=? AND environment=?').bind(caseId, envName).first();
+  if (!c) throw notFound();
+  const oi = await env.DB.prepare('SELECT * FROM open_items WHERE id=? AND case_id=?').bind(String(oid).slice(0, 40), c.id).first();
+  if (!oi) throw bad('validation', 'Restarbeit nicht gefunden oder bereits erledigt.');
+  const requestKey = 'oi-' + oi.id;
+  if (oi.status !== 'offen') {
+    // schon umgewandelt (Doppelklick/Netzwiederholung): denselben Folgeauftrag nennen
+    const prev = await env.DB.prepare('SELECT id, case_no FROM cases WHERE environment=? AND reporter_id=? AND request_key=?').bind(envName, user.id, requestKey).first();
+    if (prev) return { id: prev.id, case_no: prev.case_no, duplicate: true };
+    throw bad('validation', 'Restarbeit nicht gefunden oder bereits erledigt.');
+  }
+  const priority = oneOf(body.priority, PRIORITIES, 'Dringlichkeit');
+  const driveability = oneOf(body.driveability || (oi.safety_relevant ? 'nicht_fahrbereit' : 'unbekannt'), DRIVEABILITY, 'Fahrbereitschaft');
+  const note = str(body.note, { max: 1000, field: 'Bemerkung' });
+  const now = nowIso();
+  const description = cutText(`[Restarbeit aus ${c.case_no}] ${oi.description}${note ? ' – ' + note : ''}`, 4000);
+  const internal = {
+    extra: (results) => {
+      const r = results[0]; if (!r || r.duplicate) return [];
+      return [
+        env.DB.prepare(`UPDATE open_items SET status='erledigt', resolved_by=?, resolved_at=?, resolution_note=? WHERE id=? AND status='offen'`).bind(user.id, now, `Folgeauftrag ${r.case_no}`, oi.id),
+        env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard'),
+        env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
+          SELECT ?,?,?,?,?,'open_item_to_case',status,status,version,version,?,?,? FROM cases WHERE id=?`).bind(uuid(), c.id, envName, user.id, user.role, `Folgeauftrag ${r.case_no}`,
+          JSON.stringify({ open_item_id: oi.id, case_id: r.id, case_no: r.case_no, safety_relevant: !!oi.safety_relevant }), now, c.id),
+        env.DB.prepare('UPDATE cases SET updated_at=? WHERE id=?').bind(now, c.id),
+      ];
+    },
+  };
+  let res;
+  try {
+    [res] = await createCases(env, ctx, user, envName, [{ vehicle_id: c.vehicle_id, description, priority, driveability, parent_case_id: c.id, request_key: requestKey }], internal);
+  } catch (e) {
+    // gleichzeitig erledigt (Werkstatt hakt ab, während die Leitung umwandelt): ganzer Stapel zurück
+    const again = await env.DB.prepare('SELECT status FROM open_items WHERE id=?').bind(oi.id).first();
+    if (again && again.status !== 'offen') throw conflict('version_conflict', 'Der Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
+    throw e;
+  }
+  return { id: res.id, case_no: res.case_no, ...(res.duplicate ? { duplicate: true } : {}) };
+}
+
 // ---------- Befehle ----------
 
 const hideSuggestedSite = (env, now, c) => env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE case_id=? AND hidden_at IS NULL AND user_id<>?

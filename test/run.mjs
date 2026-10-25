@@ -19670,7 +19670,7 @@ await test('Backlog 228/229 (Teilagent „Fahrer diktiert die Meldung auf Ukrain
   eq(fl('de')('12345 !!'), null, 'ohne Buchstaben'); eq(fl('de')('SZ-YC 5501: Дзеркало розбите, не видно'), 'uk', 'Kennzeichen im Text stört nicht');
   for (const x of ['${langAttr(cDesc(c.description))}>${esc(cDesc(c.description))}</p>', '${langAttr(evNote(e))}>${esc(evNote(e))}</div>', '${woTag(c)}${ltxt(cDesc(c.description))}</span>', '${ltxt(clipTxt(cDesc(i.description), 100))}',
     // Backlog 229: Restarbeiten (Text, Erledigt-Vermerk), Folgeaufträge, bekannte Mängel (nur der Mangeltext, Prüfpunkt in Oberflächensprache)
-    '${langAttr(o.description)}>${esc(o.description)}</span>', "${o.resolution_note ? ' · ' + ltxt(o.resolution_note) : ''}", '${langAttr(cDesc(f.description))}>${esc(cDesc(f.description))}</span>',
+    '${langAttr(o.description)}>${esc(o.description)}</span>', ": ltxt(o.resolution_note)) : ''}</span></div>`", '${langAttr(cDesc(f.description))}>${esc(cDesc(f.description))}</span>',
     "${k.check_item ? esc(checkLabel(k.check_item)) + ': ' : ''}${ltxt(k.description.replace("]) ok(app.includes(x), 'lang an ' + x.slice(0, 40));
 });
 
@@ -20659,6 +20659,33 @@ await test('Backlog 259 (Blickwinkel „Werkstatt findet bei der Reparatur einen
   // Werkstatt schaltet die Art ab → bleibt im Eingang, kein Push (wie andere abschaltbare Arten)
   eq((await U.fleet.req('PUT', '/api/me/notify-prefs', { muted: ['open_item'] })).status, 200);
   eq((await U.fleet.get('/api/me/notify-prefs')).data.muted.join(), 'open_item');
+});
+
+await test('Backlog 260: Restarbeit als Folgeauftrag – Leitung wandelt eine offene (auch sicherheitsrelevante) Restarbeit in einen Vorgang mit Bezug um, Restarbeit erledigt mit Verweis, Ursprungsauftrag danach freigebbar, Wiederholung idempotent, Rechte', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db;
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Bremsleitung hinten porös', safety_relevant: true })).status, 200);
+  const oi = db.prepare(`SELECT id FROM open_items WHERE case_id=?`).get(id).id;
+  const url = `/api/cases/${id}/open-items/${oi}/followup`;
+  eq((await U.ws.post(url, { priority: 'kritisch' })).status, 403, 'Werkstatt nicht');
+  eq((await U.driver.post(url, { priority: 'kritisch' })).status, 403, 'Fahrer nicht');
+  eq((await U.fleet.post(url, {})).status, 400, 'Dringlichkeit Pflicht');
+  const r = await U.fleet.post(url, { priority: 'kritisch', note: 'nach Teilelieferung' }); eq(r.status, 201, JSON.stringify(r.data));
+  const f = db.prepare('SELECT * FROM cases WHERE id=?').get(r.data.id);
+  eq(f.parent_case_id, id); eq(f.vehicle_id, V1); eq(f.priority, 'kritisch'); eq(f.safety_lock, 1, 'sicherheitsrelevant → gesperrt bis zur Bewertung'); eq(f.status, 'gemeldet');
+  ok(f.description.includes('Bremsleitung hinten porös') && f.description.includes('nach Teilelieferung'), f.description);
+  const o = db.prepare('SELECT * FROM open_items WHERE id=?').get(oi); eq(o.status, 'erledigt'); eq(o.resolution_note, `Folgeauftrag ${f.case_no}`);
+  const ev = db.prepare(`SELECT * FROM case_events WHERE case_id=? AND action='open_item_to_case'`).get(id); eq(JSON.parse(ev.payload).case_no, f.case_no);
+  const again = await U.fleet.post(url, { priority: 'kritisch', note: 'nach Teilelieferung' }); eq(again.status, 201); eq(again.data.id, f.id, 'Wiederholung: derselbe Folgeauftrag'); ok(again.data.duplicate);
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM cases WHERE parent_case_id=?`).get(id).n, 1);
+  const d = (await U.fleet.get(`/api/cases/${id}`)).data; ok(d.followups.some((x) => x.id === f.id), 'Ursprung zeigt den Folgeauftrag');
+  // Ursprungsauftrag ist jetzt nicht mehr durch die Sicherheitsrestarbeit blockiert
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).get(id).n, 0, 'keine offene Sicherheitsrestarbeit mehr');
+  eq((await U.fleet.post(`/api/cases/${id}/open-items/gibtsnicht/followup`, { priority: 'mittel' })).status, 400);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['oi_to_case', 'oi_to_case_hint', 'oi_to_case_hint_safety', 'oi_to_case_done', 'oi_followup_ref', 'act_open_item_to_case']) ok(STRINGS[l][k], `${l}.${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("$$('[data-oifu]').forEach((b) => (b.onclick = () => {") && app.includes('/open-items/${encodeURIComponent(b.dataset.oifu)}/followup'), 'Oberfläche');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
