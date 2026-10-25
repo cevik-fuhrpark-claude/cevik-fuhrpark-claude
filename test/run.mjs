@@ -20790,6 +20790,20 @@ await test('Backlog 267 (Blickwinkel „Feiertage und Brückentage“): bundeswe
   ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/holidays.js'"), 'Service Worker');
 });
 
+await test('Backlog 268: Hinweise „Kalenderzeit“ an SLA-Einstellungen und Verfügbarkeit; Bußgeld-Fristenkalender nennt Wochenende/Feiertag in der Beschreibung (Termin bleibt der Tag laut Schreiben)', async () => {
+  const { finesIcs } = await import('../src/fines.js');
+  const cal = (title, evs) => evs.map((e) => `${e.date}|${e.description}`).join('\n');
+  const rows = [{ id: 'a', response_due: '2026-12-25', status: 'offen', authority: 'Stadt A', kind: 'bussgeld', plate: 'X 1', fine_no: '1' },
+    { id: 'b', response_due: '2026-10-31', status: 'offen', authority: 'Stadt B', kind: 'bussgeld', plate: 'X 2', fine_no: '2' },
+    { id: 'c', response_due: '2026-10-27', status: 'offen', authority: 'Stadt C', kind: 'bussgeld', plate: 'X 3', fine_no: '3' }];
+  const out = finesIcs(rows, 3, cal, null, 'de').split('\n');
+  ok(out[0].startsWith('2026-12-25|') && out[0].includes('Wochenende/Feiertag'), 'Feiertag'); ok(out[1].includes('Wochenende/Feiertag'), 'Samstag'); ok(!out[2].includes('Wochenende/Feiertag'), 'Werktag ohne Hinweis');
+  ok(finesIcs(rows, 3, cal, null, 'en').includes('weekend/public holiday'), 'EN');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['sla_calendar_hint', 'kpi_calendar_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="slacal"') && app.includes('id="kpical"'), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
