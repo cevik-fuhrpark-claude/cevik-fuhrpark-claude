@@ -21669,6 +21669,110 @@ await test('Backlog 316 (Blickwinkel „Lenkung schwergängig, hat Spiel oder Lk
   ok(helpAfter(app, 'steer', 'adas'), 'Hilfe-Abschnitt steer nach adas');
 });
 
+await test('Backlog 317 (Blickwinkel „Motor im Notlauf, verliert Leistung oder wird zu heiß“): Meldeformular zeigt Hinweise (anhalten, nicht am Berg weiterquälen; Kühlerdeckel nicht heiß öffnen, AdBlue nur in den blauen Tank; Leitung entscheidet über Notlauf/Pannendienst; Display-Foto/Situation; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Kühlaggregat/Motor springt nicht an/Motor raucht/AdBlue in Dieseltank lösen ihn nicht aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const ENGINE_HINT = \/(.+)\/i;/m); ok(m, 'ENGINE_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['AdBlue Warnung Motor reduziert Leistung', 'Motor im Notlauf', 'Lkw hat keine Leistung mehr', 'Motor überhitzt', 'Kühlwasser Temperatur rot', 'Kühlmittel verloren', 'Notlaufprogramm aktiv', 'Leistungsverlust am Berg', 'Motor geht in Notlauf', 'Lkw zieht nicht mehr', 'engine overheating', 'limp mode', 'truck is losing power', 'coolant warning', 'AdBlue warning', 'Аварійний режим', 'Перегрів двигуна', 'Немає потужності', 'Потеря мощности']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Motor springt nicht an', 'Batterie leer', 'Motor raucht', 'Kühlaggregat defekt', 'Kühlung des Aufliegers ausgefallen', 'Heizung geht nicht', 'Lkw zieht nach links', 'Reifen platt', 'AdBlue getankt in Dieseltank', 'Leistungsnachweis fehlt', 'Motorhaube Delle', 'Fahrer hat keine Kraft', 'power steering failure', 'reefer unit fault']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const n of ['NOSTART_HINT', 'FUEL_HINT', 'REEFER_HINT', 'STEER_HINT', 'VISIB_HINT']) ok(!pat(n).test('Motor im Notlauf') && !pat(n).test('Kühlwasser Temperatur rot'), n + ' bleibt bei Notlauf/Überhitzung aus');
+  ok(pat('NOSTART_HINT').test('Motor springt nicht an') && pat('FUEL_HINT').test('AdBlue in den Dieseltank getankt') && !re.test('AdBlue in den Dieseltank getankt'), 'Startprobleme und Falschtanken behalten ihren eigenen Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.engine_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.engine_hint_steps), 'keine Zahl ' + l);
+    const h = L.help_engine_s; ok(L.help_engine_t && h && h.includes(L.engine_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.engine_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="engine" class="panel" hidden role="status">`), 'Panel #engine');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#engine').hidden = !ENGINE_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('engine') && order.indexOf('fire') < order.indexOf('engine') && order.indexOf('steer') < order.indexOf('engine') && order.indexOf('warnlight') < order.indexOf('engine') && order.indexOf('engine') < order.indexOf('adas') && order.indexOf('engine') < order.indexOf('nostart'), 'Gruppierung: Brand/Lenkung/Warnleuchte vor Motor vor Assistent/Startproblem');
+  ok(helpAfter(app, 'engine', 'steer'), 'Hilfe-Abschnitt engine nach steer');
+});
+
+await test('Backlog 318 (Blickwinkel „Luftfederung defekt oder Lkw/Auflieger hängt schief“): Meldeformular zeigt Hinweise (anhalten, nicht weiterfahren; nicht unter das Fahrzeug greifen, Niveauregulierung nur unterwiesen; Leitung entscheidet; Fotos Achse/Seite/Abstand; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Lkw schief geparkt/Spiegel schief/Druckluft zischt/Sitzfeder lösen ihn nicht aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const SUSP_HINT = \/(.+)\/i;/m); ok(m, 'SUSP_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Luftfederung defekt', 'Luftbalg geplatzt', 'Auflieger hängt hinten schief', 'Lkw senkt sich links ab', 'Niveauregulierung funktioniert nicht', 'Federbalg verliert Luft', 'Blattfeder gebrochen', 'Fahrerhaus hängt schief', 'Auflieger sackt hinten ab', 'air suspension failure', 'air bag burst', 'trailer is leaning to the left', 'leaf spring broken', 'Пневмоподушка лопнула', 'Причіп просів', 'Подвеска не работает', 'Ресора зламана']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Lkw steht schief geparkt am Hang', 'Spiegel schief', 'Plane schief', 'Druckluft zischt', 'Reifen platt', 'Feder am Sitz kaputt', 'Kühlaggregat defekt', 'Lenkung schwergängig', 'airbag light on', 'Lkw senkt Kosten', 'Motor im Notlauf']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const n of ['BRAKE_HINT', 'FLAT_HINT', 'LOAD_HINT', 'LOOSE_HINT', 'ENGINE_HINT']) ok(!pat(n).test('Luftbalg geplatzt') && !pat(n).test('Auflieger hängt hinten schief'), n + ' bleibt bei Federungsschaden aus');
+  ok(pat('BRAKE_HINT').test('Druckluft zischt'), 'Druckluftverlust behält den Bremsen-Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.susp_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.susp_hint_steps), 'keine Zahl ' + l);
+    const h = L.help_susp_s; ok(L.help_susp_t && h && h.includes(L.susp_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.susp_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="susp" class="panel" hidden role="status">`), 'Panel #susp');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#susp').hidden = !SUSP_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('susp') && order.indexOf('flat') < order.indexOf('susp') && order.indexOf('brake') < order.indexOf('susp') && order.indexOf('coupling') < order.indexOf('susp') && order.indexOf('susp') < order.indexOf('loose') && order.indexOf('susp') < order.indexOf('load'), 'Gruppierung: Reifen/Bremse/Kupplung vor Federung vor losem Teil/Ladung');
+  ok(helpAfter(app, 'susp', 'engine'), 'Hilfe-Abschnitt susp nach engine');
+});
+
+await test('Backlog 319 (Blickwinkel „Getriebe schaltet nicht, Gang geht nicht rein oder Kupplung rutscht“): Meldeformular zeigt Hinweise (anhalten; Feststellbremse, nicht mit Gewalt schalten, Zurücksetzen nur nach Anweisung; Leitung entscheidet; Display-Foto/Gänge/Geruch; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Sattelkupplung/Gang im Laderaum/Getränke lösen ihn nicht aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const GEAR_HINT = \/(.+)\/i;/m); ok(m, 'GEAR_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Kupplung rutscht', 'Kupplungspedal bleibt unten', 'Getriebe schaltet nicht', 'Gang geht nicht rein', 'Getriebe Fehler im Display', 'Rückwärtsgang geht nicht', 'Lkw bleibt im Gang hängen', 'Getriebefehler', 'Gang springt raus', 'clutch slipping', 'gearbox fault', 'reverse gear won\'t engage', 'can\'t select a gear', 'Коробка передач не перемикає', 'Зчеплення буксує', 'Задний ход не включается']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Sattelkupplung geht nicht zu', 'Auflieger lässt sich nicht kuppeln', 'Kupplung Sattel öffnet nicht', 'Gang im Laderaum blockiert', 'Gangway', 'Getränke ausgelaufen', 'Motor im Notlauf', 'Lenkung schwergängig', 'Tür geht nicht zu', 'fifth wheel won\'t lock', 'Fahrer geht nicht ans Telefon', 'Gang zur Werkstatt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const n of ['COUPLING_HINT', 'ENGINE_HINT', 'NOSTART_HINT', 'DOOR_HINT', 'BRAKE_HINT']) ok(!pat(n).test('Gang geht nicht rein') && !pat(n).test('Kupplung rutscht'), n + ' bleibt bei Getriebe-/Kupplungsproblem aus');
+  ok(pat('COUPLING_HINT').test('Auflieger lässt sich nicht kuppeln'), 'Sattelkupplung behält ihren eigenen Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.gear_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.gear_hint_steps), 'keine Zahl ' + l);
+    const h = L.help_gear_s; ok(L.help_gear_t && h && h.includes(L.gear_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.gear_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="gear" class="panel" hidden role="status">`), 'Panel #gear');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#gear').hidden = !GEAR_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('gear') && order.indexOf('brake') < order.indexOf('gear') && order.indexOf('warnlight') < order.indexOf('gear') && order.indexOf('engine') < order.indexOf('gear') && order.indexOf('gear') < order.indexOf('adas') && order.indexOf('gear') < order.indexOf('stuck'), 'Gruppierung: Bremse/Warnleuchte/Motor vor Getriebe vor Assistent/festgefahren');
+  ok(helpAfter(app, 'gear', 'susp'), 'Hilfe-Abschnitt gear nach susp');
+});
+
+await test('Backlog 320 (Fehlersuche Tür-Hinweis): „geht/lässt sich nicht zu/auf/hoch“ löst den Tür-Hinweis nur zusammen mit Tür, Ladebordwand, Hebebühne o. Ä. aus (vorher stand der Teil ohne Klammer als eigene Alternative, „Sattelkupplung geht nicht zu“, „Tank geht nicht auf“ zeigten den Tür-Hinweis)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const DOOR_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Hecktür geht nicht zu', 'Fahrertür geht nicht zu', 'Türen gehen nicht auf', 'Ladebordwand fährt nicht mehr hoch', 'Hebebühne geht nicht runter', 'Tür lässt sich nicht schließen', 'Seitentür schließt nicht', 'Ladeklappe klappt nicht hoch']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Sattelkupplung geht nicht zu', 'Tank geht nicht auf', 'Fenster geht nicht zu', 'Sitz geht nicht hoch', 'Motorhaube geht nicht zu', 'Auflieger lässt sich nicht verriegeln', 'Kühlschrank geht nicht auf', 'Plane geht nicht zu']) ok(!re.test(x), 'kein Tür-Hinweis: ' + x);
+  const cp = new RegExp(app.match(/^const COUPLING_HINT = \/(.+)\/i;/m)[1], 'i'); ok(cp.test('Sattelkupplung geht nicht zu'), 'Sattelkupplung behält ihren eigenen Hinweis');
+});
+
+await test('Backlog 321 (Blickwinkel „Sicherheitsgurt oder Fahrersitz defekt“): Meldeformular zeigt Hinweise (nicht ohne Gurt losfahren; Sitz nicht sicher → nicht losfahren; Leitung entscheidet, nicht selbst reparieren; Fotos/Seite; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Spanngurte der Ladungssicherung/Sitzung/Firmensitz lösen ihn nicht aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const SEAT_HINT = \/(.+)\/i;/m); ok(m, 'SEAT_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Sicherheitsgurt rastet nicht ein', 'Gurt rollt nicht mehr auf', 'Gurtschloss defekt', 'Fahrersitz lässt sich nicht verstellen', 'Fahrersitz sackt ab', 'Sitz wackelt', 'Gurt lässt sich nicht herausziehen', 'Sicherheitsgurt eingerissen', 'seat belt won\'t latch', 'Seat belt won’t latch', 'driver seat broken', 'seat belt torn', 'Ремінь безпеки не застібається', 'Сидіння зламане', 'Ремень безопасности не работает', 'Кресло водителя сломано']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Spanngurt gerissen', 'Gurt gerissen', 'Ladungssicherung Gurt fehlt', 'Spanngurte defekt', 'Sitzung mit Disposition', 'Firmensitz', 'Sattelkupplung defekt', 'Lenkung schwergängig', 'Kühlaggregat defekt', 'Gurtband an der Ladung lose', 'Ремінь кріплення вантажу порвався']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const n of ['LOAD_HINT', 'DOOR_HINT', 'SUSP_HINT', 'LOOSE_HINT', 'GEAR_HINT']) ok(!pat(n).test('Sicherheitsgurt rastet nicht ein') && !pat(n).test('Fahrersitz sackt ab'), n + ' bleibt bei Gurt-/Sitzschaden aus');
+  ok(pat('LOAD_HINT').test('Spanngurt gerissen'), 'Spanngurt der Ladungssicherung behält den Ladungs-Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.seat_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.seat_hint_steps), 'keine Zahl ' + l);
+    const h = L.help_seat_s; ok(L.help_seat_t && h && h.includes(L.seat_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.seat_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="seat" class="panel" hidden role="status">`), 'Panel #seat');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#seat').hidden = !SEAT_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('seat') && order.indexOf('acc') < order.indexOf('seat') && order.indexOf('steer') < order.indexOf('seat') && order.indexOf('adas') < order.indexOf('seat') && order.indexOf('seat') < order.indexOf('mirror') && order.indexOf('seat') < order.indexOf('door'), 'Gruppierung: Unfall/Lenkung/Assistent vor Gurt/Sitz vor Spiegel/Tür');
+  ok(helpAfter(app, 'seat', 'gear'), 'Hilfe-Abschnitt seat nach gear');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
