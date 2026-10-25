@@ -170,6 +170,7 @@ UI-Reifenpanne-Hinweis im Meldeformular und Hilfe|ui-reifenpanne.py|/tmp/cfp-rei
 UI-Hinweis Beanstandung bei Polizei-/BAG-Kontrolle im Meldeformular und Hilfe|ui-kontrolle-beanstandet.py|/tmp/cfp-kontrolle-beanstandet.log
 UI-Hinweis Fahrzeug springt nicht an im Meldeformular und Hilfe|ui-springt-nicht-an.py|/tmp/cfp-springt-nicht-an.log
 UI-Hinweis Warnleuchte während der Fahrt im Meldeformular und Hilfe|ui-warnleuchte.py|/tmp/cfp-warnleuchte.log
+UI-Hinweis Ölspur/Leck unter dem Lkw im Meldeformular und Hilfe|ui-leck.py|/tmp/cfp-leck.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
 UI-Abschleppung: Standort/Abschleppdienst im Vorgang, Liste, Disposition, Hilfe|ui-abschleppung.py|/tmp/cfp-abschleppung.log

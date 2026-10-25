@@ -21295,7 +21295,26 @@ await test('Backlog 299 (Blickwinkel „Motorwarnleuchte rot während der Fahrt�
   }
   ok(app.includes(`<div id="warnlight" class="panel" hidden role="status">`), 'Panel #warnlight');
   ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'roadchk', 'nostart', 'warnlight', 'prio',"), 'Hilfe-Abschnitt warnlight nach nostart');
+  ok(app.includes("'roadchk', 'nostart', 'warnlight', 'leak', 'prio',"), 'Hilfe-Abschnitt warnlight nach nostart');
+});
+
+await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lkw“): Meldeformular zeigt Hinweise (anhalten/Motor aus/Leitung; Dieselgeruch: kein Feuer, Notruf; nicht in Gully/Erdreich, Ölspur auf der Straße melden; Foto + Tropfstelle; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Ölwechsel/Öl kontrolliert/Dach undicht/Druckluft lösen nichts aus; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const LEAK_HINT = \/(.+)\/i;/m); ok(m, 'LEAK_HINT auf Modulebene'); eq((app.match(/const LEAK_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Ölspur unter dem Lkw', 'Öl tropft unter dem Motor', 'Motoröl tropft', 'Diesel läuft aus dem Tank', 'Kühlwasser läuft aus', 'Hydrauliköl tritt aus', 'Lkw verliert Öl', 'verliert etwas Kühlmittel', 'Kühler undicht', 'Tank leckt', 'Hydraulikschlauch undicht', 'große Pfütze unter dem Fahrzeug', 'Ölfleck auf dem Hof', 'Oil leak under the truck', 'diesel dripping from the tank', 'coolant is leaking', 'leaking oil', 'losing oil', 'puddle under the trailer', 'Тече масло', 'Тече олива з двигуна', 'капає антифриз', 'Масло подтекает', 'витік пального', 'Калюжа під вантажівкою', 'Лужа под машиной']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Öl kontrolliert', 'Ölwechsel fällig', 'Öl nachgefüllt', 'Warnlampe Öldruck leuchtet', 'Ölstand ok', 'Dach undicht, Wasser tropft ins Fahrerhaus', 'Druckluftleitung undicht', 'Luftschlauch undicht', 'Reifen verliert Luft', 'Motor läuft unruhig, Ölstand ok', 'Diesel getankt', 'Roof leaks into the cab', 'air leak at the brakes', 'oil change due', 'oil checked', 'Заміна масла', 'Тече дах', 'Перевірив оливу', 'Reifen platt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.leak_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.leak_hint_steps), 'keine Zahl (Frist, Menge, Notrufnummer je Land verschieden) ' + l);
+    const h = L.help_leak_s; ok(L.help_leak_t && h && h.includes(L.leak_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.leak_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="leak" class="panel" hidden role="status">`), 'Panel #leak');
+  ok(app.includes("$('#leak').hidden = !LEAK_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("'nostart', 'warnlight', 'leak', 'prio',"), 'Hilfe-Abschnitt leak nach warnlight');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
