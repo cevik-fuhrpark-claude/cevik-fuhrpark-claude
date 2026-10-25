@@ -1912,7 +1912,8 @@ async function viewClaims() {
   const pq = `${S.clFrom ? '&from=' + S.clFrom : ''}${S.clTo ? '&to=' + S.clTo : ''}${S.clIns ? '&insurer=' + encodeURIComponent(S.clIns) : ''}`;
   const qq = qq0 + pq;
   let r;
-  try { r = await api('GET', `/api/claims?filter=${f}${csq}${qq}`); } catch (err) { S.clFrom = S.clTo = S.clIns = null; toast(err.message, true); return viewClaims(); }
+  // ungültiger Zeitraum (400): Filter zurücksetzen und einmal neu laden; ohne gesetzte Filter normale Fehlerbehandlung (keine Schleife)
+  try { r = await api('GET', `/api/claims?filter=${f}${csq}${qq}`); } catch (err) { if (!pq) throw err; S.clFrom = S.clTo = S.clIns = null; toast(err.message, true); return viewClaims(); }
   const tabs = ['offen', 'gutachten', 'alle', 'reguliert', 'abgelehnt'];
   const fName = (x) => (x === 'offen' ? t('claim_f_open') : x === 'gutachten' ? t('ca_pending') : x === 'alle' ? t('filter_all') : t('cls_' + x));
   const fLabel = fName(f);
