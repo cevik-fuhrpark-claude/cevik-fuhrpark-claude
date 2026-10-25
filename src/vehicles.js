@@ -433,7 +433,7 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
     if (!want.size || want.has('status')) {
       const st = (await env.DB.prepare(`SELECT a.action, a.detail, a.created_at, u.display_name FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id
         WHERE a.target=? AND (a.action IN ('vehicle.eval_exclude','vehicle.eval_include','vehicle.deactivate','vehicle.activate')
-          OR (a.action='vehicle.upsert' AND (json_type(a.detail,'$.site')='object' OR json_type(a.detail,'$.changed.site')='object'))) ORDER BY a.created_at DESC, a.rowid DESC LIMIT ?`).bind(vehicleId, cap).all()).results;
+          OR (a.action='vehicle.upsert' AND CASE WHEN json_valid(a.detail) THEN json_type(a.detail,'$.site')='object' OR json_type(a.detail,'$.changed.site')='object' ELSE 0 END)) ORDER BY a.created_at DESC, a.rowid DESC LIMIT ?`).bind(vehicleId, cap).all()).results;
       for (const a of st) {
         let det = {}; try { det = JSON.parse(a.detail || '{}') || {}; } catch {}
         // Standortwechsel (Backlog 272): Stammdaten (`site`) bzw. CSV-Import (`changed.site`) – seit wann der Lkw wo eingesetzt ist
