@@ -20772,6 +20772,24 @@ await test('Backlog 266 (Blickwinkel „Kurzfristiges Mietfahrzeug“): Außer B
   ok(app.includes("t('deact_drivers_ended').replace('{list}'") && app.includes("esc(t('vin_hint_new'))"), 'Oberfläche');
 });
 
+await test('Backlog 267 (Blickwinkel „Feiertage und Brückentage“): bundesweite gesetzliche Feiertage nach Gesetz berechnet (Ostern-Formel), Hinweis an Antwortfristen, Werkstattplan kennzeichnet sie und schlägt sie nicht vor; Texte DE/UK/EN; im Service Worker', async () => {
+  const { federalHoliday, HOLIDAY_KEYS } = await import('../public/holidays.js');
+  // Ostersonntage laut Kalender: 2026-04-05, 2027-03-28, 2028-04-16, 2038-04-25
+  eq(federalHoliday('2026-04-03'), 'karfreitag'); eq(federalHoliday('2026-04-06'), 'ostermontag'); eq(federalHoliday('2026-05-14'), 'himmelfahrt'); eq(federalHoliday('2026-05-25'), 'pfingstmontag');
+  eq(federalHoliday('2027-03-26'), 'karfreitag'); eq(federalHoliday('2027-03-29'), 'ostermontag'); eq(federalHoliday('2028-04-17'), 'ostermontag'); eq(federalHoliday('2038-04-26'), 'ostermontag');
+  eq(federalHoliday('2026-10-03'), 'einheit'); eq(federalHoliday('2026-12-25'), 'weihnacht1'); eq(federalHoliday('2026-12-26'), 'weihnacht2'); eq(federalHoliday('2027-01-01'), 'neujahr'); eq(federalHoliday('2027-05-01'), 'tag_der_arbeit');
+  eq(federalHoliday('2026-11-01'), null, 'Allerheiligen: landesrechtlich, nicht bundesweit'); eq(federalHoliday('2026-06-04'), null, 'Fronleichnam nicht'); eq(federalHoliday('2026-12-24'), null); eq(federalHoliday('2026-10-26'), null);
+  eq(federalHoliday(''), null); eq(federalHoliday('kein Datum'), null); eq(federalHoliday(null), null);
+  let n = 0; for (let d = Date.UTC(2026, 0, 1); d < Date.UTC(2027, 0, 1); d += 864e5) if (federalHoliday(new Date(d).toISOString().slice(0, 10))) n++; eq(n, 9, 'neun je Jahr');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of HOLIDAY_KEYS) ok(STRINGS[l]['hol_' + k], `${l}.hol_${k}`); for (const k of ['due_holiday_hint', 'plan_holiday_hint']) ok(STRINGS[l][k], `${l}.${k}`); }
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("import { federalHoliday } from './holidays.js';") && app.includes('&& !federalHoliday(d.date)') && app.includes('if (federalHoliday(ds)) continue;') && app.includes('data-hol title='), 'Werkstattplan');
+  ok(app.includes("const dueOffHint = (iso) => (federalHoliday(iso) ? t('due_holiday_hint')"), 'Antwortfrist');
+  ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/holidays.js'"), 'Service Worker');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

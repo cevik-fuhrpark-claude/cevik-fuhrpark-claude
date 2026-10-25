@@ -6,6 +6,7 @@ import { svg as qrSvg } from './qr.js';
 import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentFindingsCsv, usersCsv, sortUsers, filterUsers, isUnusedUser, inviteExpired, readCsvFile as readCsvRaw } from './csv.js';
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
+import { federalHoliday } from './holidays.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
 const deviceLang = () => { const l = (navigator.language || 'de').toLowerCase(); return l.startsWith('uk') ? 'uk' : l.startsWith('en') ? 'en' : 'de'; };
@@ -118,9 +119,13 @@ const isWeekendD = (iso) => !!iso && iso.length === 10 && [0, 6].includes(new Da
 const bookedAt = (iso) => (iso ? `<br><span class="small muted" title="${esc(t('cost_booked_hint'))}">${esc(t('cost_booked'))} ${fmtD(iso)}</span>` : '');
 // Konto schon mit einer (oft ausgeschiedenen) Fahrerakte verknüpft: Akte nennen (Backlog 191)
 const linkedMsg = (err) => { const ld = err && err.code === 'duplicate' && err.data && err.data.linked_driver; return ld ? `${err.message} ${t('dr_linked_to').replace('{name}', ld.display_name)}${ld.active ? '' : ' (' + t('inactive') + ')'}` : err.message; };
-const fmtDue = (iso) => { if (!iso || iso.length !== 10) return fmtD(iso); const d = new Date(iso + 'T12:00:00Z'); if (Number.isNaN(d.getTime())) return '–'; const k = 'wd' + uiLoc(); const wd = (DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(uiLoc(), { weekday: 'short', timeZone: 'UTC' }))).format(d); return `${wd} ${fmtD(iso)}${isWeekendD(iso) ? ' (' + t('due_weekend') + ')' : ''}`; };
+// bundesweiter gesetzlicher Feiertag (Backlog 267, public/holidays.js): Name in der Oberflächensprache oder ''
+const holName = (iso) => { const h = federalHoliday(iso); return h ? t('hol_' + h) : ''; };
+const fmtDue = (iso) => { if (!iso || iso.length !== 10) return fmtD(iso); const d = new Date(iso + 'T12:00:00Z'); if (Number.isNaN(d.getTime())) return '–'; const k = 'wd' + uiLoc(); const wd = (DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(uiLoc(), { weekday: 'short', timeZone: 'UTC' }))).format(d); return `${wd} ${fmtD(iso)}${holName(iso) ? ' (' + holName(iso) + ')' : isWeekendD(iso) ? ' (' + t('due_weekend') + ')' : ''}`; };
+// Hinweistext zur Antwortfrist: Feiertag vor Wochenende (Frist bleibt der Tag laut Schreiben)
+const dueOffHint = (iso) => (federalHoliday(iso) ? t('due_holiday_hint') : isWeekendD(iso) ? t('due_weekend_hint') : '');
 // Eingabe der Antwortfrist: Hinweis, wenn der Tag auf ein Wochenende fällt (Frist wird nicht verschoben)
-function dueWeekendWatch() { for (const el of $$('input[name=response_due]')) { const h = document.createElement('p'); h.className = 'small muted'; h.dataset.dueWe = ''; h.textContent = t('due_weekend_hint'); el.after(h); const upd = () => { h.hidden = !isWeekendD(el.value); }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); } }
+function dueWeekendWatch() { for (const el of $$('input[name=response_due]')) { const h = document.createElement('p'); h.className = 'small muted'; h.dataset.dueWe = ''; h.textContent = t('due_weekend_hint'); el.after(h); const upd = () => { const x = dueOffHint(el.value); h.hidden = !x; if (x) h.textContent = x; }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); } }
 const dqDetail = (i) => dqDetailText(i, t, fmtD, mk, { km: (n) => fmtKm(n), src: (v) => odoSrc(v) });
 const hrs = (n) => (n === null || n === undefined ? '–' : fmtNum(Math.round(n * 100) / 100, { maximumFractionDigits: 2 }));
 const EUR_FMT = {};
@@ -3356,7 +3361,7 @@ async function viewFine(id) {
     ${!f.vehicle_id ? `<div class="panel alert" id="fvu">${d.vehicle_ambiguous ? `${esc(f.plate_in_letter)}: ${esc(t('fine_vehicle_ambiguous'))}` : `${esc(t('vehicle_unknown'))}: ${esc(f.plate_in_letter)}`}${d.vehicle_matchable ? `<div class="small" data-fmatch>${esc(t('fine_vehicle_matchable').replace('{p}', d.vehicle_matchable.plate))}</div>` : d.trailer_of ? `<div class="small" data-ftrailer>${esc(t('fine_trailer_of').replace('{p}', d.trailer_of.plate))}</div>` : ''}</div>` : ''}
     <section class="panel"><dl class="kv"><dt>${esc(t('offense'))}</dt><dd>${esc(t('of_' + f.offense_type))}</dd><dt>${esc(t('offense_at'))}</dt><dd>${fmtDT(f.offense_at)}</dd><dt>${esc(t('offense_place'))}</dt><dd>${esc(f.location || '–')}</dd>
       <dt>${esc(t('authority'))}</dt><dd>${esc(f.authority)}</dd><dt>${esc(t('reference'))}</dt><dd>${esc(f.reference || '–')}</dd><dt>${esc(t('amount'))}</dt><dd>${eur(f.amount_eur)}</dd>
-      <dt>${esc(t('response_due'))}</dt><dd>${f.response_due ? esc(fmtDue(f.response_due)) : '–'}${isWeekendD(f.response_due) ? `<div class="small muted">${esc(t('due_weekend_hint'))}</div>` : ''}</dd><dt>${esc(t('role_driver'))}</dt><dd>${f.driver_hidden ? esc(t('fine_driver_hidden')) : esc(d.driver_name || '–')}${f.driver_basis ? ' · ' + esc(t('fb_' + f.driver_basis)) : ''}${f.driver_evidence ? `<div class="small muted">${esc(fineEvTr(f.driver_evidence))}</div>` : ''}${d.driver_unreachable ? `<div class="panel alert small" data-funreach role="note" style="margin-top:6px">${esc(t('fine_driver_unreachable'))}</div>` : ''}</dd></dl>
+      <dt>${esc(t('response_due'))}</dt><dd>${f.response_due ? esc(fmtDue(f.response_due)) : '–'}${dueOffHint(f.response_due) ? `<div class="small muted">${esc(dueOffHint(f.response_due))}</div>` : ''}</dd><dt>${esc(t('role_driver'))}</dt><dd>${f.driver_hidden ? esc(t('fine_driver_hidden')) : esc(d.driver_name || '–')}${f.driver_basis ? ' · ' + esc(t('fb_' + f.driver_basis)) : ''}${f.driver_evidence ? `<div class="small muted">${esc(fineEvTr(f.driver_evidence))}</div>` : ''}${d.driver_unreachable ? `<div class="panel alert small" data-funreach role="note" style="margin-top:6px">${esc(t('fine_driver_unreachable'))}</div>` : ''}</dd></dl>
       ${f.note ? `<p style="white-space:pre-wrap;margin-top:8px">${esc(f.note)}</p>` : ''}</section>`;
   html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((x) => `<a href="${fileUrl(x.id)}" target="_blank" rel="noopener">${x.content_type.startsWith('image/') ? `<img src="${fileUrl(x.id)}" alt="${esc(x.filename)}">` : 'PDF<br>' + esc(x.filename.slice(0, 14))}</a>`).join('')}</div>`;
   // Höchstzahl je Bußgeldvorgang wie Server (MAX_FINE_FILES): voll → Hinweis statt Knopf
@@ -4520,7 +4525,7 @@ async function viewPlan(sec) {
   // begonnene Aufträge mit vergangenem Termin (Backlog 253): eigene Gruppe, Termin neutral, Teile-Liefertermin in der Zeile
   const iw = r.in_work || [];
   if (iw.length) html += `<h2 id="wp-inwork">${esc(t('wplan_inwork'))} <span class="chip">${iw.length}</span></h2><p class="small muted noprint">${esc(t('wplan_inwork_hint'))}</p><div class="list">${iw.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip">${fmtD(i.planned_date)} · `))).join('')}</div>`;
-  html += r.days.length ? r.days.map((d) => `<h2>${esc(wd(d.date))}${d.date === r.today ? ` <span class="chip ok">${esc(t('today'))}</span>` : ''}</h2><div class="list">${d.items.map(drowC).join('')}</div>`).join('') : `<div class="panel">${esc(t('wplan_empty'))}</div>`;
+  html += r.days.length ? r.days.map((d) => `<h2>${esc(wd(d.date))}${d.date === r.today ? ` <span class="chip ok">${esc(t('today'))}</span>` : ''}${holName(d.date) ? ` <span class="chip mittel" data-hol title="${esc(t('plan_holiday_hint'))}">${esc(holName(d.date))}</span>` : ''}</h2><div class="list">${d.items.map(drowC).join('')}</div>`).join('') : `<div class="panel">${esc(t('wplan_empty'))}</div>`;
   if (r.unplanned.length) html += `<h2>${esc(t('wplan_unplanned'))} <span class="chip mittel">${r.unplanned.length}</span></h2><p class="small muted noprint">${esc(t('wplan_unplanned_hint'))}</p><div class="list">${r.unplanned.map((i) => prow(i, row(i))).join('')}</div>`;
   const md = r.maintenance_due || [];
   if (md.length) html += `<h2 id="wp-mdue" tabindex="-1" data-keepfocus>${esc(t('wplan_mdue'))} <span class="chip ${md.some((i) => i.status === 'ueberfaellig') ? 'kritisch' : 'mittel'}">${md.length}</span></h2><p class="small muted noprint">${esc(t('wplan_mdue_hint'))}</p><div class="list">${md.map((i) => { const f = !['HU', 'SP'].includes(i.kind) ? maintOrderHtml(i.id, i.kind, null, { site: i.vehicle_site }) : ''; return f ? `<div class="planitem">${drow(i)}${f}</div>` : drow(i); }).join('')}</div>`;
@@ -4534,7 +4539,8 @@ async function viewPlan(sec) {
     const minD = i.status === 'wartet_teile' && i.parts_expected_date > r.today ? i.parts_expected_date : '';
     // Hat dasselbe Fahrzeug ab morgen schon einen Termin (anderer Auftrag oder Prüfung) an einem Werktag: diesen vorschlagen –
     // das Fahrzeug fällt dann nur einmal aus. Sonst Werktag ab morgen mit den wenigsten geplanten Aufträgen derselben Werkstatt.
-    const same = r.days.filter((d) => d.date > r.today && d.date >= minD && ![0, 6].includes(new Date(d.date + 'T12:00:00Z').getUTCDay())
+    // Wochenende und bundesweite Feiertage nie vorschlagen (Backlog 267; vorher z. B. 25.12./01.01.)
+    const same = r.days.filter((d) => d.date > r.today && d.date >= minD && ![0, 6].includes(new Date(d.date + 'T12:00:00Z').getUTCDay()) && !federalHoliday(d.date)
       && d.items.some((x) => x.vehicle_id === i.vehicle_id && x.id !== i.id && (x.type === 'maintenance' || x.workshop_site === i.workshop_site)))[0];
     if (same) return same.date;
     // Auslastung vom Server (alle Aufträge der Werkstatt, auch bei Fahrzeug-Standortfilter); ältere Antwort: aus den angezeigten Tagen
@@ -4544,6 +4550,7 @@ async function viewPlan(sec) {
       const d = new Date(Date.parse(r.today + 'T00:00:00Z') + n * 86400000);
       if ([0, 6].includes(d.getUTCDay())) continue;
       const ds = [d.getUTCFullYear(), String(d.getUTCMonth() + 1).padStart(2, '0'), String(d.getUTCDate()).padStart(2, '0')].join('-'); const c = load.get(ds) || 0;
+      if (federalHoliday(ds)) continue;
       if (ds < minD) continue;
       if (!best || c < best.c) best = { ds, c };
       if (ds >= r.to && ds >= minD && best) break;
