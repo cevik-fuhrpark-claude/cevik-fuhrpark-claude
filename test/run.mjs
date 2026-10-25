@@ -21295,7 +21295,7 @@ await test('Backlog 299 (Blickwinkel „Motorwarnleuchte rot während der Fahrt�
   }
   ok(app.includes(`<div id="warnlight" class="panel" hidden role="status">`), 'Panel #warnlight');
   ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'roadchk', 'nostart', 'warnlight', 'leak', 'prio',"), 'Hilfe-Abschnitt warnlight nach nostart');
+  ok(app.includes("'roadchk', 'nostart', 'warnlight', 'leak', 'custdmg', 'prio',"), 'Hilfe-Abschnitt warnlight nach nostart');
 });
 
 await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lkw“): Meldeformular zeigt Hinweise (anhalten/Motor aus/Leitung; Dieselgeruch: kein Feuer, Notruf; nicht in Gully/Erdreich, Ölspur auf der Straße melden; Foto + Tropfstelle; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Ölwechsel/Öl kontrolliert/Dach undicht/Druckluft lösen nichts aus; Hilfe DE/UK/EN', async () => {
@@ -21314,7 +21314,26 @@ await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lk
   }
   ok(app.includes(`<div id="leak" class="panel" hidden role="status">`), 'Panel #leak');
   ok(app.includes("$('#leak').hidden = !LEAK_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'nostart', 'warnlight', 'leak', 'prio',"), 'Hilfe-Abschnitt leak nach warnlight');
+  ok(app.includes("'nostart', 'warnlight', 'leak', 'custdmg', 'prio',"), 'Hilfe-Abschnitt leak nach warnlight');
+});
+
+await test('Backlog 301 (Blickwinkel „Auflieger beim Kunden beschädigt (Rampe, Stapler)“): Meldeformular zeigt Hinweise (Vermerk auf Lieferschein/Frachtbrief gegenzeichnen, Firma/Tor/Uhrzeit, Fotos, kein Schuldanerkenntnis, Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Mitnahmestapler/Ladebordwand/„Kunde hat angerufen“ lösen nichts aus; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const CUSTDMG_HINT = \/(.+)\/i;/m); ok(m, 'CUSTDMG_HINT auf Modulebene'); eq((app.match(/const CUSTDMG_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Stapler hat die Plane aufgeschlitzt', 'Gabelstapler hat den Auflieger beschädigt', 'Tür angefahren von einem Stapler', 'Beim Kunden Spiegel beschädigt', 'Rückleuchte beschädigt beim Kunden', 'an der Rampe angefahren', 'Gegen die Laderampe gestoßen', 'Laderampe beschädigt', 'Forklift damaged the trailer', 'curtain ripped by a forklift', 'At the customer the side panel was dented', 'reversed into the loading dock', 'Навантажувач пошкодив тент', 'Погрузчик повредил борт', 'У клієнта пошкодили дзеркало', 'В клиента повредили дверь']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Mitnahmestapler defekt', 'Stapler-Halterung lose', 'Kunde hat angerufen', 'Ladebordwand defekt', 'Unfall auf der Autobahn', 'Rampe am Hof', 'Forklift mount loose', 'customer complained about delay', 'Клієнт телефонував', 'Öl tropft']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.custdmg_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.custdmg_hint_steps), 'keine Zahl (Frist, Betrag) ' + l);
+    const h = L.help_custdmg_s; ok(L.help_custdmg_t && h && h.includes(L.custdmg_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.custdmg_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="custdmg" class="panel" hidden role="status">`), 'Panel #custdmg');
+  ok(app.includes("$('#custdmg').hidden = !CUSTDMG_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("'warnlight', 'leak', 'custdmg', 'prio',"), 'Hilfe-Abschnitt custdmg nach leak');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
