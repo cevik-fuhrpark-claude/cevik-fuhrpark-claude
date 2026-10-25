@@ -20899,6 +20899,24 @@ await test('Backlog 275–277: Versicherungsfälle – Summen je Meldejahr (Selb
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="clsums"') && app.includes("$('#cl3p').checked ? '&third_party=1' : ''"), 'Oberfläche');
 });
 
+await test('Backlog 278 (Blickwinkel „Sturmnacht“): Vorgangsfilter „Eingang nicht bestätigt“ (unreceived) wie „Heute zu tun“, „+N“ verlinkt ihn, gesperrte zuerst und gekennzeichnet; Vorgangsliste zeigt die Dateianzahl; Kurzinfo „weitere offene Vorgänge“ mit Beschreibung (279)', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const a = await newCase({ description: 'Plane gerissen', priority: 'niedrig' });
+  const b = await newCase({ description: 'Ast auf Kabine', priority: 'niedrig', driveability: 'nicht_fahrbereit' });
+  const c = await newCase({ description: 'Spiegel ab', priority: 'mittel' });
+  eq((await cmd(U.fleet, c, 'receive')).status, 200);
+  const ids = (await U.fleet.get('/api/cases?status=open&unreceived=1')).data.cases.map((x) => x.id);
+  ok(ids.includes(a) && ids.includes(b) && !ids.includes(c), 'nur nicht bestätigte');
+  eq((await U.driver.get('/api/cases?status=open&unreceived=1')).data.cases.length, 0, 'Fahrer: leer');
+  const fc = (await U.fleet.get('/api/cases?status=open')).data.cases.find((x) => x.id === a); ok(fc.file_count !== undefined, 'file_count');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("todo_receive: '#/cases?f=unreceived'") && app.includes("f === 'unreceived' ? 'status=open&unreceived=1'"), 'Link/Filter');
+  ok(app.includes("(b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PR[a.priority] ?? 3)") && app.includes('<span data-fc title='), 'Sortierung/Dateianzahl');
+  // Backlog 279: Kurzinfo „weitere offene Vorgänge“ mit Kurzbeschreibung und Meldezeit
+  const vi = (await U.fleet.get(`/api/cases/${a}`)).data.vehicle_info; const o = vi.other_open_cases.find((x) => x.id === b);
+  ok(o && o.description.includes('Ast auf Kabine') && o.created_at, 'Beschreibung/Meldezeit'); ok(app.includes('data-ocdesc'), 'Anzeige');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
