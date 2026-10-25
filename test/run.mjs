@@ -21795,6 +21795,30 @@ await test('Backlog 323 (Fehlersuche einfache Formulierungen): „Spiegel defekt
   ok(!pat('DOOR_HINT').test('Fenster geht nicht zu') && !pat('FLAT_HINT').test('Reifen verliert Luft'), 'Abgrenzungen aus 320 bleiben');
 });
 
+await test('Backlog 324 (Blickwinkel „Kombiinstrument, Display oder Hupe ausgefallen“): Meldeformular zeigt Hinweise (anhalten, Warnungen nicht erkennbar; Fahrtenschreiber-Schritte zusätzlich; Leitung entscheidet, Sicherungen nur unterwiesen; Foto/was fehlt/Neustart; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Handy-/Navi-/Kamera-Display, „Meldung im Display“, „Hupe benutzt“ lösen ihn nicht aus; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const DASH_HINT = \/(.+)\/i;/m); ok(m, 'DASH_HINT vorhanden');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Kombiinstrument ausgefallen', 'Display schwarz', 'Hupe geht nicht', 'Tachoanzeige zeigt nichts', 'Armaturenbrett komplett dunkel', 'Drehzahlmesser bleibt stehen', 'Druckanzeige defekt', 'Cockpit flackert', 'dashboard dead', 'speedometer not working', 'horn doesn’t work', 'instrument cluster blank', 'Панель приладів не працює', 'Спідометр не показує', 'Клаксон не работает', 'Дисплей погас']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Handy-Display kaputt', 'Tablet Display kaputt', 'Navi Display schwarz', 'Meldung im Display', 'Warnmeldung im Display', 'phone screen broken', 'Fahrtenschreiber defekt', 'Hupe benutzt', 'Signalhorn laut', 'Kamera Display zeigt kein Bild', 'Rückfahrkamera Display schwarz', 'Radio Display kaputt', 'Hornhaut']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const n of ['ADAS_HINT', 'WARNLIGHT_HINT', 'LIGHTS_HINT', 'ENGINE_HINT']) ok(!pat(n).test('Kombiinstrument ausgefallen') && !pat(n).test('Hupe geht nicht'), n + ' bleibt bei ausgefallener Anzeige/Hupe aus');
+  ok(pat('TACHO_HINT').test('Fahrtenschreiber defekt') && pat('ADAS_HINT').test('Rückfahrkamera Display schwarz'), 'Fahrtenschreiber und Kamera behalten ihren eigenen Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const L = STRINGS[l]; const st = L.dash_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok([L.driveable, L.drv_nicht_fahrbereit, L.drv_eingeschraenkt, L.drv_unbekannt].every((x) => st[4].includes(x)), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(L.dash_hint_steps), 'keine Zahl ' + l);
+    const h = L.help_dash_s; ok(L.help_dash_t && h && h.includes(L.dash_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
+    ok(L.dash_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="dash" class="panel" hidden role="status">`), 'Panel #dash');
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#dash').hidden = !DASH_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  ok(order.includes('dash') && order.indexOf('brake') < order.indexOf('dash') && order.indexOf('warnlight') < order.indexOf('dash') && order.indexOf('engine') < order.indexOf('dash') && order.indexOf('dash') < order.indexOf('adas') && order.indexOf('dash') < order.indexOf('tacho'), 'Gruppierung: Bremse/Warnleuchte/Motor vor Anzeige vor Assistent/Fahrtenschreiber');
+  ok(helpAfter(app, 'dash', 'seat'), 'Hilfe-Abschnitt dash nach seat');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

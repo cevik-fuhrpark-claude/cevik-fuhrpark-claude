@@ -190,6 +190,7 @@ UI-Hinweis Motor im Notlauf/Leistungsverlust/Überhitzung im Meldeformular und H
 UI-Hinweis Luftfederung defekt/Lkw oder Auflieger hängt schief im Meldeformular und Hilfe|ui-federung.py|/tmp/cfp-federung.log
 UI-Hinweis Getriebe schaltet nicht/Gang geht nicht rein/Kupplung rutscht im Meldeformular und Hilfe|ui-getriebe.py|/tmp/cfp-getriebe.log
 UI-Hinweis Sicherheitsgurt/Fahrersitz defekt im Meldeformular und Hilfe|ui-gurt.py|/tmp/cfp-gurt.log
+UI-Hinweis Kombiinstrument/Display/Hupe ausgefallen im Meldeformular und Hilfe|ui-anzeige.py|/tmp/cfp-anzeige.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
