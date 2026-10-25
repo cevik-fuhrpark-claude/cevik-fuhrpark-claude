@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 260): Leitung wandelt eine sicherheitsrelevante Restarbeit der Werkstatt per „Als Folgeauftrag“
 # in einen Vorgang um (Dringlichkeit vorbelegt „kritisch“) → App öffnet den Folgeauftrag; Ursprung zeigt „Folgeauftrag <Nr.>“ an der
-# Restarbeit. DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler.
+# Restarbeit; Restarbeit zeigt die angehängte Datei (Backlog 261). DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -29,11 +29,15 @@ with sync_playwright() as p:
         cid=api('POST','/api/cases',{'vehicle_id':'VIN:'+va,'description':'Bremse zieht (Test)','priority':'mittel','driveability':'fahrbereit','request_key':str(uuid.uuid4())})['d']['id']
         cmd=lambda action,pl={},note=None: api('POST',f'/api/cases/{cid}/commands',{'action':action,'command_id':str(uuid.uuid4()),'expected_version':api('GET',f'/api/cases/{cid}')['d']['case']['version'],'payload':pl,**({'note':note} if note else {})})
         check(cmd('approve_repair',{'workshop_site':ws},'frei')['s']==200,'Freigabe')
-        check(cmd('add_open_item',{'description':'Bremsleitung porös (Test)','safety_relevant':True})['s']==200,'Restarbeit')
+        # Backlog 261: Foto/PDF zur Restarbeit (Datei des Vorgangs)
+        fid=a.evaluate("""async (cid) => { const b = new Uint8Array([37,80,68,70,45,49,46,52,10, ...Array.from({length:300},(_, i)=>i%256)]);
+          const r = await fetch(`/api/cases/${cid}/files`, { method: 'POST', headers: { 'content-type': 'application/pdf', 'x-filename': 'bremsleitung.pdf', 'x-cfp': '1' }, body: b }); return (await r.json()).id; }""",cid)
+        check(cmd('add_open_item',{'description':'Bremsleitung porös (Test)','safety_relevant':True,'file_id':fid})['s']==200,'Restarbeit mit Datei')
         ctx=br.new_context(viewport={'width':wd,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'rf.inhaber','password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
         q.goto(B+f'/#/cases/{cid}'); q.reload(); q.wait_for_selector('[data-oifu]',timeout=15000)
         check(q.inner_text('[data-oifu]').strip()==BTN[lang],f'{lang} {wd}px: Knopf')
+        check(q.locator('[data-oifile] a').count()==1 and 'bremsleitung.pdf' in q.inner_text('[data-oifile]'),f'{lang} {wd}px: Datei an der Restarbeit')
         q.click('[data-oifu]'); q.wait_for_selector('#oiff',timeout=5000)
         check(q.input_value('#oifp')=='kritisch',f'{lang} {wd}px: Dringlichkeit vorbelegt kritisch')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {wd}px: Formular ohne Querscrollen')

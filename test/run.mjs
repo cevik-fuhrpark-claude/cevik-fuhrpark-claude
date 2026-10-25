@@ -19670,7 +19670,7 @@ await test('Backlog 228/229 (Teilagent „Fahrer diktiert die Meldung auf Ukrain
   eq(fl('de')('12345 !!'), null, 'ohne Buchstaben'); eq(fl('de')('SZ-YC 5501: Дзеркало розбите, не видно'), 'uk', 'Kennzeichen im Text stört nicht');
   for (const x of ['${langAttr(cDesc(c.description))}>${esc(cDesc(c.description))}</p>', '${langAttr(evNote(e))}>${esc(evNote(e))}</div>', '${woTag(c)}${ltxt(cDesc(c.description))}</span>', '${ltxt(clipTxt(cDesc(i.description), 100))}',
     // Backlog 229: Restarbeiten (Text, Erledigt-Vermerk), Folgeaufträge, bekannte Mängel (nur der Mangeltext, Prüfpunkt in Oberflächensprache)
-    '${langAttr(o.description)}>${esc(o.description)}</span>', ": ltxt(o.resolution_note)) : ''}</span></div>`", '${langAttr(cDesc(f.description))}>${esc(cDesc(f.description))}</span>',
+    '${langAttr(o.description)}>${esc(o.description)}${oiFileLink(o, d)}</span>', ": ltxt(o.resolution_note)) : ''}</span></div>`", '${langAttr(cDesc(f.description))}>${esc(cDesc(f.description))}</span>',
     "${k.check_item ? esc(checkLabel(k.check_item)) + ': ' : ''}${ltxt(k.description.replace("]) ok(app.includes(x), 'lang an ' + x.slice(0, 40));
 });
 
@@ -20686,6 +20686,26 @@ await test('Backlog 260: Restarbeit als Folgeauftrag – Leitung wandelt eine of
   for (const l of ['de', 'uk', 'en']) for (const k of ['oi_to_case', 'oi_to_case_hint', 'oi_to_case_hint_safety', 'oi_to_case_done', 'oi_followup_ref', 'act_open_item_to_case']) ok(STRINGS[l][k], `${l}.${k}`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("$$('[data-oifu]').forEach((b) => (b.onclick = () => {") && app.includes('/open-items/${encodeURIComponent(b.dataset.oifu)}/followup'), 'Oberfläche');
+});
+
+await test('Backlog 261 (Migration 0083): Restarbeit mit Foto/PDF desselben Vorgangs – Prüfung (fremde Datei abgewiesen), Speicherung, Detail/Verlauf, Oberfläche', async () => {
+  const { e, U, cmd, toRepair, newCase } = await freshWorld(); const db = e.DB.db;
+  const id = await toRepair(); const other = await newCase({ description: 'Spiegel lose (anderer Vorgang)' }, U.fleet);
+  const pdf = () => concatBytes(new TextEncoder().encode('%PDF-1.4\n'), crypto.getRandomValues(new Uint8Array(300)));
+  const up = async (cid, name, u = U.ws) => { const r = await u.req('POST', `/api/cases/${cid}/files`, pdf(), { 'content-type': 'application/pdf', 'x-filename': name }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const mine = await up(id, 'bremsleitung.pdf'); const foreign = await up(other, 'fremd.pdf', U.fleet);
+  const x = await cmd(U.ws, id, 'add_open_item', { description: 'Bremsleitung porös', safety_relevant: true, file_id: foreign }); eq(x.status, 400); ok(/Datei dieses Vorgangs/.test(x.data.message || ''), x.data.message);
+  eq(db.prepare('SELECT COUNT(*) AS n FROM open_items WHERE case_id=?').get(id).n, 0, 'nichts angelegt');
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Bremsleitung porös', safety_relevant: true, file_id: mine })).status, 200);
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Ohne Foto', safety_relevant: false })).status, 200);
+  const d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq(d.open_items.find((o) => o.description === 'Bremsleitung porös').file_id, mine); eq(d.open_items.find((o) => o.description === 'Ohne Foto').file_id, null);
+  ok(d.files.some((f) => f.id === mine), 'Datei für die Leitung sichtbar');
+  eq(d.events.find((v) => v.action === 'add_open_item' && v.payload && v.payload.file_id).payload.file_id, mine, 'Verlauf');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['oi_file', 'oi_file_hint', 'oi_file_none']) ok(STRINGS[l][k], `${l}.${k}`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${oiFileSelect(d)}') && app.includes('${oiFileLink(o, d)}'), 'Oberfläche');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

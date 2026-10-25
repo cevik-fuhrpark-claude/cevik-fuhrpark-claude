@@ -1420,9 +1420,15 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     case 'add_open_item': {
       const desc = str(p.description, { required: true, max: 2000, field: 'Restarbeit' });
       const oid = uuid();
-      extra.push(env.DB.prepare(`INSERT INTO open_items(id,case_id,description,safety_relevant,status,created_by,created_at) VALUES (?,?,?,?,'offen',?,?)`)
-        .bind(oid, c.id, desc, flag(p.safety_relevant, 'Sicherheitsrelevant') ? 1 : 0, user.id, now));
-      payload = { open_item_id: oid, description: desc, safety_relevant: flag(p.safety_relevant, 'Sicherheitsrelevant') };
+      // Foto/PDF zum Befund (Backlog 261): optional eine Datei dieses Vorgangs derselben Umgebung
+      let oiFile = null;
+      if (p.file_id !== undefined && p.file_id !== null && p.file_id !== '') {
+        oiFile = await env.DB.prepare('SELECT id FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(p.file_id, { max: 40, field: 'Datei' }), c.id, envName).first();
+        if (!oiFile) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
+      }
+      extra.push(env.DB.prepare(`INSERT INTO open_items(id,case_id,description,safety_relevant,status,created_by,created_at,file_id) VALUES (?,?,?,?,'offen',?,?,?)`)
+        .bind(oid, c.id, desc, flag(p.safety_relevant, 'Sicherheitsrelevant') ? 1 : 0, user.id, now, oiFile ? oiFile.id : null));
+      payload = { open_item_id: oid, description: desc, safety_relevant: flag(p.safety_relevant, 'Sicherheitsrelevant'), ...(oiFile ? { file_id: oiFile.id } : {}) };
       // Hinweis nach dem geprüften Wert (17.10.2026: „false“/„0“ wurden als nicht sicherheitsrelevant gespeichert, lösten aber den Sicherheits-Push aus)
       // Backlog 259 (Blickwinkel „Werkstatt findet bei der Reparatur einen zusätzlichen Schaden“): auch ein nicht dringender Zusatzbefund der
       // Werkstatt erreicht die Leitung (abschaltbar) – vorher erfuhr sie davon erst beim Öffnen des Vorgangs
