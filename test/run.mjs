@@ -21197,7 +21197,26 @@ await test('Backlog 294 (Blickwinkel „Fahrer verliert unterwegs Fahrzeugschlü
   }
   ok(app.includes(`<div id="lost" class="panel" hidden role="status">`), 'Panel #lost');
   ok(app.includes("$('#lost').hidden = !LOST_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'theft', 'glass', 'lost', 'prio',"), 'Hilfe-Abschnitt lost nach Glasschaden');
+  ok(app.includes("'theft', 'glass', 'lost', "), 'Hilfe-Abschnitt lost nach Glasschaden');
+});
+
+await test('Backlog 295 (Blickwinkel „Falsch getankt – AdBlue im Dieseltank“): Meldeformular zeigt Hinweise (Motor nicht starten, nicht weiterfahren, Leitung veranlasst Abpumpen, Menge laut Tankbeleg, „nicht fahrbereit“); normales Tanken/AdBlue-Nachfüllen löst nichts aus; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const FUEL_HINT = \/(.+)\/i;/m); ok(m, 'FUEL_HINT auf Modulebene'); eq((app.match(/const FUEL_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Falsch getankt, Benzin statt Diesel', 'AdBlue in den Dieseltank gefüllt', 'Fehlbetankung an der Tankstelle', 'Diesel versehentlich ins AdBlue-Tank', 'falschen Kraftstoff getankt', 'Put the wrong fuel in', 'AdBlue into the diesel tank', 'filled up with petrol', 'misfuelled the truck', 'Заправив не те пальне', 'Залив бензин замість дизеля', 'AdBlue у паливний бак', 'Залил не то топливо']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['AdBlue nachgefüllt', 'AdBlue in den Tank nachgefüllt', 'AdBlue-Warnung leuchtet', 'Diesel getankt, Tankdeckel klemmt', 'Falsch geparkt', 'AdBlue-Tank leer', 'Заправив AdBlue', 'Fuel gauge wrong', 'Kraftstofffilter verstopft', 'Wrong tyre pressure']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const st = STRINGS[l].fuel_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(st[3].includes(STRINGS[l].driveable) && st[3].includes(STRINGS[l].drv_nicht_fahrbereit), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(STRINGS[l].fuel_hint_steps), 'keine Zahl (Frist, Liter, Betrag) ' + l);
+    const h = STRINGS[l].help_fuel_s; ok(STRINGS[l].help_fuel_t && h && h.includes(STRINGS[l].fuel_hint_steps) && h.includes(STRINGS[l].nav_new), 'Hilfe ' + l);
+    ok(STRINGS[l].fuel_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="fuel" class="panel" hidden role="status">`), 'Panel #fuel');
+  ok(app.includes("$('#fuel').hidden = !FUEL_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("'glass', 'lost', 'fuel', 'prio',"), 'Hilfe-Abschnitt fuel nach lost');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
