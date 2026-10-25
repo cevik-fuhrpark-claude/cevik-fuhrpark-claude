@@ -21257,7 +21257,26 @@ await test('Backlog 297 (Blickwinkel „Ladungssicherung bei Polizeikontrolle be
   }
   ok(app.includes(`<div id="roadchk" class="panel" hidden role="status">`), 'Panel #roadchk');
   ok(app.includes("$('#roadchk').hidden = !ROADCHK_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  ok(app.includes("'fuel', 'flat', 'roadchk', 'prio',"), 'Hilfe-Abschnitt roadchk nach flat');
+  ok(app.includes("'fuel', 'flat', 'roadchk', "), 'Hilfe-Abschnitt roadchk nach flat');
+});
+
+await test('Backlog 298 (Blickwinkel „Lkw springt morgens bei Kälte nicht an“): Meldeformular zeigt Hinweise (nicht dauernd starten, Starthilfe nur unterwiesen/gleiche Bordspannung, Beobachtung + Display-Foto, Kühlware/Liefertermin, „nicht fahrbereit“); Navi/App/Standheizung/Handy-Akku lösen nichts aus; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const NOSTART_HINT = \/(.+)\/i;/m); ok(m, 'NOSTART_HINT auf Modulebene'); eq((app.match(/const NOSTART_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Lkw springt nicht an', 'Springt heute morgen nicht mehr an', 'Motor startet nicht, Anlasser klackt nur', 'Batterie leer nach der Nacht', 'Batterien sind komplett leer', 'Brauche Starthilfe', 'Anlasser dreht nicht', 'Zugmaschine lässt sich nicht starten', "Truck won't start", 'engine does not start in the cold', 'flat battery', 'battery is dead', 'need a jump start', 'Не заводиться після ночі', 'Двигун не запускається', 'Розрядився акумулятор', 'Акумулятор сів', 'Не заводится', 'Сел аккумулятор']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Navi startet nicht', 'App startet nicht', 'Standheizung startet nicht', 'Handy-Akku leer', 'додаток не запускається', 'Batteriehalter locker', 'Motorleuchte an, fährt aber', 'Startnummer fehlt', "Navigation won't start", 'Start-Stopp-Taste klemmt', 'Reifen platt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const st = STRINGS[l].nostart_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l);
+    ok(st[4].includes(STRINGS[l].driveable) && st[4].includes(STRINGS[l].drv_nicht_fahrbereit), 'Schritt nennt die Auswahl im Formular wörtlich ' + l);
+    ok(!/\d/.test(STRINGS[l].nostart_hint_steps), 'keine Zahl (Frist, Volt, Minuten) ' + l);
+    const h = STRINGS[l].help_nostart_s; ok(STRINGS[l].help_nostart_t && h && h.includes(STRINGS[l].nostart_hint_steps) && h.includes(STRINGS[l].nav_new), 'Hilfe ' + l);
+    ok(STRINGS[l].nostart_hint_title, 'Titel ' + l);
+  }
+  ok(app.includes(`<div id="nostart" class="panel" hidden role="status">`), 'Panel #nostart');
+  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("'flat', 'roadchk', 'nostart', 'prio',"), 'Hilfe-Abschnitt nostart nach roadchk');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
