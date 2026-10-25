@@ -20926,6 +20926,18 @@ await test('Backlog 280: Vorgang (Leitung) mit Knopf „Nächste unbestätigte M
   ok(app.includes('id="nextunrec"') && app.includes("const nu = $('#nextunrec'); if (nu) nu.onclick = async () => {"), 'Oberfläche');
 });
 
+await test('Backlog 282 (Blickwinkel „Inhaber fällt aus“): Einrichtungsstand meldet „nur ein Inhaber-Konto“ als Hinweis (zwei → eingerichtet); Notfallabschnitt in BETRIEB.md ohne Geheimnisse; Texte DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const it = async () => (await U.own.get('/api/admin/readiness')).data.items.find((x) => x.key === 'owner_backup');
+  let x = await it(); eq(x.state, 'info'); eq(x.n, 1);
+  const r = await U.own.post('/api/users', { username: 'w.inhaber2', display_name: 'Stellvertretung', role: 'owner', environment: 'production' }); ok(r.status < 300, JSON.stringify(r.data));
+  x = await it(); eq(x.n, 1, 'Einladung ohne Passwort zählt nicht');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['rd_owner_backup_t', 'rd_owner_backup_todo']) ok(STRINGS[l][k], `${l}.${k}`);
+  const fs = await import('node:fs'); const b = fs.readFileSync(new URL('../docs/BETRIEB.md', import.meta.url), 'utf8');
+  ok(b.includes('## Inhaber ausgesperrt (Notfall') && b.includes('totp_secret=NULL') && !/SELECT\s+(password_hash|totp_secret)/i.test(b), 'Notfallweg ohne Lesen von Geheimnissen');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("'backup', 'owner_backup', 'prod_accounts'"), 'Reihenfolge');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

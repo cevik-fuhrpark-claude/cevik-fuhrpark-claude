@@ -277,6 +277,10 @@ Object.assign(STRINGS.en, { seen_gone: 'no longer fleet management – please ta
 Object.assign(STRINGS.de, { pk_open_item: 'Neue Restarbeit der Werkstatt' });
 Object.assign(STRINGS.uk, { pk_open_item: 'Нова незавершена робота від майстерні' });
 Object.assign(STRINGS.en, { pk_open_item: 'New open item from the workshop' });
+// Backlog 282: Einrichtungsstand – nur ein Inhaber-Konto
+Object.assign(STRINGS.de, { rd_owner_backup_t: 'Zweites Inhaber-Konto (Ausfallsicherheit)', rd_owner_backup_todo: 'Nur ein aktives Inhaber-Konto: Fällt es aus (Urlaub, Krankheit, Handy verloren), sind Einstellungen, Datensicherung, Datenauskunft und das Zurücksetzen der Zwei-Faktor-Anmeldung nicht möglich. Ob ein zweites Konto angelegt wird, entscheiden Sie; Notfallweg siehe Betriebsdoku.' });
+Object.assign(STRINGS.uk, { rd_owner_backup_t: 'Другий акаунт власника (резерв)', rd_owner_backup_todo: 'Лише один активний акаунт власника: якщо він недоступний (відпустка, хвороба, втрачений телефон), налаштування, резервна копія, надання даних і скидання двофакторного входу неможливі. Чи створювати другий акаунт, вирішуєте ви; аварійний шлях – у документації з експлуатації.' });
+Object.assign(STRINGS.en, { rd_owner_backup_t: 'Second owner account (fallback)', rd_owner_backup_todo: 'Only one active owner account: if it is unavailable (holiday, illness, lost phone), settings, backup, data access requests and resetting two-factor sign-in are not possible. Whether to create a second account is your decision; for the emergency procedure see the operations documentation.' });
 // Backlog 280: nächste nicht bestätigte Meldung
 Object.assign(STRINGS.de, { next_unreceived: 'Nächste unbestätigte Meldung', next_unreceived_none: 'Keine weitere Meldung ohne Eingangsbestätigung.' });
 Object.assign(STRINGS.uk, { next_unreceived: 'Наступне непідтверджене повідомлення', next_unreceived_none: 'Інших повідомлень без підтвердження отримання немає.' });

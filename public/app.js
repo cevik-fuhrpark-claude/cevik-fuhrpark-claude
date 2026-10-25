@@ -4725,7 +4725,7 @@ async function viewQuality(pre) {
 
 // ---------- Nutzungsstatistik (Inhaber, ohne Personenbezug) ----------
 // Einrichtungsstand (nur Inhaber, nur lesend, 22.10.2026): was vor bzw. im Betrieb noch offen ist – Werte nur aus Daten/Einstellungen
-const RD_ORDER = ['agent', 'vehicles', 'emergency', 'two_factor', 'own_push', 'idle_workshop', 'test_readonly', 'hourly_rate', 'license_interval', 'cost_limit', 'backup', 'prod_accounts', 'integration'];
+const RD_ORDER = ['agent', 'vehicles', 'emergency', 'two_factor', 'own_push', 'idle_workshop', 'test_readonly', 'hourly_rate', 'license_interval', 'cost_limit', 'backup', 'owner_backup', 'prod_accounts', 'integration'];
 async function viewReadiness() {
   if (!S.me || S.me.role !== 'owner') { location.hash = '#/'; return; }
   const r = await api('GET', '/api/admin/readiness');
@@ -4735,7 +4735,7 @@ async function viewReadiness() {
     if (x.key === 'two_factor' && x.names && x.names.length) return x.names.map((n) => `${n.name} (${t('role_' + n.role)})`).join(', ');
     if (x.key === 'agent' && x.last) return `${t('rd_last_run')}: ${fmtDT(x.last)}`;
     if (x.key === 'backup' && x.last) return `${t('rd_last_backup')}: ${fmtD(x.last)}`;
-    if (x.key === 'vehicles' || x.key === 'emergency' || x.key === 'own_push') return `${t('rd_count')}: ${x.n || 0}`;
+    if (x.key === 'vehicles' || x.key === 'emergency' || x.key === 'own_push' || x.key === 'owner_backup') return `${t('rd_count')}: ${x.n || 0}`;
     if (x.key === 'idle_workshop' && x.value) return `${x.value} min`;
     if (x.key === 'prod_accounts') return [...['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'].filter((k) => x.roles && x.roles[k]).map((k) => `${t('role_' + k)}: ${x.roles[k]}`), `${t('rd_open_invites')}: ${x.open_invites || 0}`, `${t('rd_test_accounts')}: ${x.test_accounts || 0}`].join(' · ');
     return '';

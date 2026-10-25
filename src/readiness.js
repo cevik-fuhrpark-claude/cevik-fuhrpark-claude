@@ -46,6 +46,9 @@ export async function readiness(env, user) {
     { key: 'license_interval', state: set(r.lic_months) ? 'ok' : 'open', link: '#/settings?s=license_interval' },
     { key: 'cost_limit', state: set(r.cost_limit) && Number(r.cost_limit) > 0 ? 'ok' : 'info', link: '#/settings?s=cost_limit' },
     { key: 'backup', state: backupDays !== null && backupDays <= 31 ? 'ok' : 'open', last: r.backup_at || null, days: backupDays, link: '#/settings?s=backup' },
+    // Backlog 282 (Teilagent „Inhaber fällt aus“): nur ein aktives Inhaber-Konto → Einstellungen, Sicherung, Datenauskunft und
+    // Zwei-Faktor-Rücksetzung sind bei Ausfall nicht möglich; reiner Hinweis (ob ein zweites Konto angelegt wird, entscheidet der Inhaber)
+    { key: 'owner_backup', state: (roles.owner || 0) >= 2 ? 'ok' : 'info', n: roles.owner || 0, link: '#/users' },
     { key: 'prod_accounts', state: 'info', roles, open_invites: r.open_invites, test_accounts: r.test_accounts, link: '#/users' },
     // gleiche Prüfung wie die Schnittstelle (Mindestlänge, Leerraum, Lese-Token) – vorher „ok“ bei zu kurzem Secret (23.10.2026)
     { key: 'integration', state: (() => { const tk = integrationTokens(env); return tk.full.length || tk.read.length ? 'ok' : 'info'; })(), link: '#/help' },
