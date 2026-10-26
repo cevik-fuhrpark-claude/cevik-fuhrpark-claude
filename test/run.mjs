@@ -22379,6 +22379,14 @@ await test('Backlog 362 (Blickwinkel „erster Frostmorgen“, Unfall-Hinweis oh
   for (const x of ['Palette umgekippt', 'Ladung umgekippt', 'Wasser im Graben', 'Fahrer ist umgeknickt']) ok(!pat('ACC_HINT').test(x), 'kein Unfall-Hinweis: ' + x);
   ok(pat('LOAD_HINT').test('Ladung umgekippt'), 'Ladungs-Hinweis bleibt');
 });
+await test('Backlog 363 (Fehlersuche Kupplungs-/Federungs-Hinweis): „Stützbeine lassen sich nicht kurbeln“, „Stützwinde abgebrochen“, „Stützfüße verbogen“, „опори напівпричепа не опускаються“ → Kupplungs-Hinweis; „Liftachse geht nicht hoch/senkt sich nicht“, „lift axle stuck“, „підйомна вісь не піднімається“ → Federungs-Hinweis; „Liftachse oben“, „Stützwinde geschmiert“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['Stützbeine lassen sich nicht kurbeln', 'Stützwinde abgebrochen', 'Stützfüße verbogen', 'Königszapfen abgebrochen', 'опори напівпричепа не опускаються']) ok(pat('COUPLING_HINT').test(x), 'Kupplungs-Hinweis: ' + x);
+  ok(!pat('COUPLING_HINT').test('Stützwinde geschmiert'), 'kein Kupplungs-Hinweis');
+  for (const x of ['Liftachse geht nicht hoch', 'Liftachse senkt sich nicht', 'lift axle stuck', "lift axle won't go down", 'підйомна вісь не піднімається']) ok(pat('SUSP_HINT').test(x), 'Federungs-Hinweis: ' + x);
+  ok(!pat('SUSP_HINT').test('Liftachse oben'), 'kein Federungs-Hinweis');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
