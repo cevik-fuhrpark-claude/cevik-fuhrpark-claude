@@ -739,7 +739,12 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   await audit(env, user.id, 'vehicle.assign_driver', vehicleId, { driver: driver.id, ended_previous: endPrev ? open.map((o) => o.plate) : [] });
   // Fahrzeugwechsel: Ende auch im Protokoll des bisherigen Fahrzeugs (23.10.2026 – Springer mit täglichem Wechsel wirkte dort dauerhaft zugeordnet)
   if (endPrev) for (const o of open) await audit(env, user.id, 'vehicle.end_assignment', o.vehicle_id, { driver: driver.id, assignment: o.id, vehicle_change: true });
-  return { id, ended_previous: endPrev ? open.map((o) => o.plate) : [], other_open: endPrev ? [] : open.map((o) => o.plate), ...(driver.rec_active === 0 ? { driver_record_left: true } : {}) };
+  // Bußgeld mit Fahrverbot laut Schreiben (Backlog 365): Warnhinweis, solange das Schreiben nicht erledigt/eingestellt ist – keine Sperre,
+  // weil der Verbotszeitraum (Abgabe des Führerscheins) nicht im Schreiben steht; nur Inhaber/Fuhrparkleitung (sehen die Bußgelder ohnehin)
+  const bans = (await env.DB.prepare(`SELECT fine_no, driving_ban_months AS months FROM fines WHERE environment=? AND driver_id=? AND driving_ban_months IS NOT NULL
+    AND status NOT IN ('eingestellt','erledigt') ORDER BY offense_at DESC`).bind(envName, driver.id).all()).results;
+  return { id, ended_previous: endPrev ? open.map((o) => o.plate) : [], other_open: endPrev ? [] : open.map((o) => o.plate), ...(driver.rec_active === 0 ? { driver_record_left: true } : {}),
+    ...(bans.length ? { driving_ban_fines: bans } : {}) };
 }
 
 export async function endAssignment(env, user, envName, assignmentId) {

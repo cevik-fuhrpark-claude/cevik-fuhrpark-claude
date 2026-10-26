@@ -22387,6 +22387,62 @@ await test('Backlog 363 (Fehlersuche Kupplungs-/Federungs-Hinweis): „Stützbei
   for (const x of ['Liftachse geht nicht hoch', 'Liftachse senkt sich nicht', 'lift axle stuck', "lift axle won't go down", 'підйомна вісь не піднімається']) ok(pat('SUSP_HINT').test(x), 'Federungs-Hinweis: ' + x);
   ok(!pat('SUSP_HINT').test('Liftachse oben'), 'kein Federungs-Hinweis');
 });
+await test('Backlog 364 (Blickwinkel „Bußgeldbescheid mit Fahrverbot“): Fahrverbot laut Schreiben (1–3 Monate) beim Erfassen und Ändern, Verlauf alt → neu, CSV-Spalte, Lesezugriff, Agent-Befund „handeln“ solange offen; ungültige Werte 400; Oberfläche/Texte DE/UK/EN', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const base = { kind: 'bussgeldbescheid', authority: 'Bußgeldstelle FV', offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 3 * 86400000).toISOString(), plate_in_letter: 'SZ-YC 5513', amount_eur: 320 };
+  for (const bad of [4, '0,5', -1, 'zwei', 1.5]) { const r = await U.fleet.post('/api/fines', { ...base, reference: 'AZ-FV-X', driving_ban_months: bad }); eq(r.status, 400, 'ungültig ' + bad); ok(/Fahrverbot: 1 bis 3 Monate/.test(r.data.message || JSON.stringify(r.data)), 'Meldung ' + JSON.stringify(r.data)); }
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM fines`).get().n, 0, 'keine Nummer verbraucht');
+  const a = await U.fleet.post('/api/fines', { ...base, reference: 'AZ-FV-1', driving_ban_months: '2' }); eq(a.status, 201, JSON.stringify(a.data));
+  const b = await U.fleet.post('/api/fines', { ...base, reference: 'AZ-FV-2', driving_ban_months: 0 }); eq(b.status, 201);
+  eq(db.prepare('SELECT driving_ban_months AS m FROM fines WHERE id=?').get(a.data.id).m, 2);
+  eq(db.prepare('SELECT driving_ban_months AS m FROM fines WHERE id=?').get(b.data.id).m, null, '0 = kein Fahrverbot');
+  // Agent: Befund „handeln“ nur für das Schreiben mit Fahrverbot
+  eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+  const fb = db.prepare(`SELECT subject_key, severity, message FROM agent_findings WHERE environment='test' AND finding_code='FINE_DRIVING_BAN' AND status='offen'`).all();
+  eq(fb.length, 1, JSON.stringify(fb)); eq(fb[0].severity, 'handeln'); ok(fb[0].message.includes('2 Monate') && fb[0].message.includes('Fahrverbot'), fb[0].message);
+  // Ändern: 2 → 1 mit Verlauf alt → neu; unverändert bleibt unverändert
+  const ver = () => db.prepare('SELECT version FROM fines WHERE id=?').get(a.data.id).version;
+  const u1 = await U.fleet.post(`/api/fines/${a.data.id}/commands`, { action: 'update', expected_version: ver(), payload: { driving_ban_months: 1 } }); eq(u1.status, 200, JSON.stringify(u1.data));
+  const ev = db.prepare(`SELECT payload FROM fine_events WHERE fine_id=? AND action='update'`).all(a.data.id).map((x) => JSON.parse(x.payload));
+  eq(ev.length, 1); eq(ev[0].driving_ban_months, 1); eq(ev[0].prev.driving_ban_months, 2);
+  const u2 = await U.fleet.post(`/api/fines/${a.data.id}/commands`, { action: 'update', expected_version: ver(), payload: { driving_ban_months: 1 } }); eq(u2.data.unchanged, true);
+  eq((await U.fleet.post(`/api/fines/${a.data.id}/commands`, { action: 'update', expected_version: ver(), payload: { driving_ban_months: 7 } })).status, 400);
+  // Liste/Lesezugriff/CSV
+  const lv = (await U.viewer.get('/api/fines')).data; const lvr = (lv.fines || lv.rows || lv).find ? (lv.fines || lv.rows || lv).find((x) => x.id === a.data.id) : null; eq(lvr && lvr.driving_ban_months, 1, 'Lesezugriff sieht das Fahrverbot (ohne Fahrer)');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/fines?format=csv')).data).trim().split('\r\n');
+  const head = csv[0].split(';'); const col = head.indexOf('Fahrverbot (Monate)'); ok(col > head.indexOf('Betrag (EUR)'), 'Spalte nach dem Betrag');
+  const rowA = csv.find((l) => l.includes('AZ-FV-1')).split(';'); eq(rowA[col], '1'); eq(csv.find((l) => l.includes('AZ-FV-2')).split(';')[col], '');
+  // erledigt → Befund geschlossen; Fahrverbot laut Schreiben bleibt gespeichert
+  eq((await U.fleet.post(`/api/fines/${a.data.id}/commands`, { action: 'set_status', expected_version: ver(), payload: { status: 'bezahlt' }, note: 'bezahlt, Abgabe vereinbart' })).status, 200);
+  await U.fleet.post('/api/agent/run', {});
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM agent_findings WHERE environment='test' AND finding_code='FINE_DRIVING_BAN' AND status='offen'`).get().n, 0, 'erledigt');
+  eq(db.prepare('SELECT driving_ban_months AS m FROM fines WHERE id=?').get(a.data.id).m, 1);
+  // Oberfläche und Texte
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('function fineBanSel(') && app.includes('id="fban"') && app.includes('data-fban') && app.includes("driving_ban_months: uf.driving_ban_months.value"), 'Formular, Hinweis, Listen-Chip, Ändern');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['fine_ban', 'fine_ban_none', 'fine_ban_alert', 'fine_ban_hint']) ok(STRINGS[l][k], l + ' ' + k); ok(STRINGS[l].fine_ban_alert.includes('{m}') && STRINGS[l].fine_ban_alert.includes('§ 21 StVG'), l); ok(PLURALS[l].ban_months.one, l); ok(STRINGS[l].help_fines_s.includes('§ 21 StVG'), 'Hilfe ' + l); }
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  for (const l of ['de', 'uk', 'en']) { const m = renderFindingMessage('FINE_DRIVING_BAN', { label: 'B-1', n: 3 }, l); ok(m.includes('3') && !m.includes('{'), l + ' ' + m); }
+});
+
+await test('Backlog 365: Fahrzeugzuordnung eines Fahrers mit offenem Bußgeld mit Fahrverbot → Warnhinweis mit Bußgeldnummer (keine Sperre); ohne Fahrverbot, erledigt/eingestellt oder andere Umgebung kein Hinweis; Toast-Text DE/UK/EN', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const V1 = 'VIN:WMA15SZZ2HM722774'; const V2 = 'VIN:WDB9630051L917317';
+  const mk = async (ref, ban) => { const r = await U.fleet.post('/api/fines', { kind: 'bussgeldbescheid', authority: 'Bußgeldstelle FV2', reference: ref, offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 86400000).toISOString(), plate_in_letter: 'SZ-YC 5513', driving_ban_months: ban }); eq(r.status, 201); return r.data; };
+  const a = await mk('AZ-FV2-1', 3); const b = await mk('AZ-FV2-2', null);
+  db.prepare(`UPDATE fines SET driver_id=?, status='bezahlt' WHERE id IN (?,?)`).run(U.driver.id, a.id, b.id);
+  const r1 = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/drivers`, { user_id: U.driver.id }); eq(r1.status, 201, JSON.stringify(r1.data));
+  eq(JSON.stringify(r1.data.driving_ban_fines), JSON.stringify([{ fine_no: a.fine_no, months: 3 }]), 'nur das Schreiben mit Fahrverbot');
+  db.prepare(`UPDATE fines SET status='erledigt' WHERE id=?`).run(a.id);
+  const r2 = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V2)}/drivers`, { user_id: U.driver.id }); eq(r2.status, 201); eq(r2.data.driving_ban_fines, undefined, 'erledigt → kein Hinweis');
+  db.prepare(`UPDATE fines SET status='beantwortet', environment='production' WHERE id=?`).run(a.id);
+  db.prepare(`UPDATE driver_vehicles SET valid_to=? WHERE user_id=?`).run(new Date(Date.now() - 1000).toISOString(), U.driver.id);
+  const r3 = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/drivers`, { user_id: U.driver.id }); eq(r3.status, 201); eq(r3.data.driving_ban_fines, undefined, 'andere Umgebung');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("toast(t('drv_ban_warn')"), 'Toast');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].drv_ban_warn.includes('{list}') && STRINGS[l].drv_ban_warn.includes(STRINGS[l].fs_erledigt), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

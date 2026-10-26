@@ -177,6 +177,14 @@ function parseOffenseAt(v) {
   return offenseAt;
 }
 
+// Fahrverbot laut Schreiben (Backlog 364, Migration 0085): ganze Monate 1–3 (§ 25 StVG), leer/0 = kein Fahrverbot angegeben; nie geschätzt
+function parseBan(v) {
+  if (v === undefined || v === null || v === '' || v === 0 || v === '0') return null;
+  const n = typeof v === 'number' ? v : /^\s*\d+\s*$/.test(String(v)) ? Number(v) : NaN;
+  if (!Number.isInteger(n) || n < 1 || n > 3) throw bad('validation', 'Fahrverbot: 1 bis 3 Monate laut Schreiben (leer = kein Fahrverbot).');
+  return n;
+}
+
 export async function createFine(env, user, envName, body) {
   if (!isMgr(user)) throw forbidden();
   const kind = oneOf(body.kind, FINE_KINDS, 'Art');
@@ -191,6 +199,7 @@ export async function createFine(env, user, envName, body) {
   if (due && due < berlinDate(offenseAt)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.');
   // alle Eingaben vor dem Hochzählen der Bußgeldnummer prüfen (18.10.2026: jeder Tippfehler verbrauchte eine Nummer)
   const location = str(body.location, { max: 200, field: 'Ort' }); const amount = num(body.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true, cents: true, decimalPoint: pointDec(user) }); const fnote = str(body.note, { max: 2000, field: 'Bemerkung' });
+  const ban = parseBan(body.driving_ban_months);
   // bei gleichem Kennzeichen zählt das aktive bewertete vor dem ruhenden vor dem außer Betrieb genommenen, sonst mehrdeutig = keine Zuordnung
   // (Fahrerermittlung über ein falsches Fahrzeug wäre schlimmer als eine manuelle Klärung). Außer Betrieb genommene zählen mit: das Schreiben
   // kommt oft Wochen nach der Tat, wenn das Fahrzeug schon verkauft ist (vorher kein Fahrzeug, kein Fahrer – 17.10.2026)
@@ -243,11 +252,11 @@ export async function createFine(env, user, envName, body) {
   // Kein UNIQUE-Index, weil vorhandene Dubletten im Bestand die Migration scheitern ließen.
   let res;
   try { res = await env.DB.batch([
-    env.DB.prepare(`INSERT INTO fines(id,fine_no,environment,kind,authority,reference,offense_type,offense_at,location,plate_in_letter,vehicle_id,amount_eur,response_due,status,note,created_by,created_at,updated_at,request_key)
-      SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'eingegangen',?14,?15,?16,?17,?18
+    env.DB.prepare(`INSERT INTO fines(id,fine_no,environment,kind,authority,reference,offense_type,offense_at,location,plate_in_letter,vehicle_id,amount_eur,response_due,status,note,created_by,created_at,updated_at,request_key,driving_ban_months)
+      SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'eingegangen',?14,?15,?16,?17,?18,?19
       WHERE ?6 IS NULL OR NOT EXISTS (SELECT 1 FROM fines WHERE environment=?3 AND reference=?6 AND authority=?5)`).bind(id, fineNo, envName, kind, authority, reference, offense, new Date(offenseAt).toISOString(),
       location, plate, veh ? veh.id : null, amount, due,
-      fnote, user.id, now, now, rkey),
+      fnote, user.id, now, now, rkey, ban),
     env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM fines WHERE id=?)').bind(uuid(), id, user.id, 'create', null, JSON.stringify(pick.ambiguous ? { vehicle_matched: false, vehicle_ambiguous: true } : { vehicle_matched: !!veh }), now, id),
   ]); } catch (e) {
     await giveBackNo();
@@ -353,6 +362,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
           if (('response_due' in set || 'offense_at' in set) && due && due < berlinDate(oa)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.');
         }
         if (p.reference !== undefined) set.reference = str(p.reference, { max: 80 });
+        if (p.driving_ban_months !== undefined) set.driving_ban_months = parseBan(p.driving_ban_months); // Backlog 364
         // Behörde korrigierbar (19.10.2026, Backlog 91) – Pflichtfeld wie beim Anlegen
         if (p.authority !== undefined) set.authority = str(p.authority, { required: true, max: 200, field: 'Behörde' });
         {
@@ -479,10 +489,10 @@ export const FINE_STATUS_DE = { eingegangen: 'Eingegangen', fahrer_ermittelt: 'F
 export const OFFENSE_DE = { geschwindigkeit: 'Geschwindigkeit', abstand: 'Abstand', parken: 'Parken/Halten', rotlicht: 'Rotlicht', lenk_ruhezeit: 'Lenk-/Ruhezeit', ladung: 'Ladung/Gewicht', maut: 'Maut', handy: 'Handy', sonstiges: 'Sonstiges' };
 const KIND_DE = { anhoerung: 'Anhörung', zeugenfragebogen: 'Zeugenfragebogen', bussgeldbescheid: 'Bußgeldbescheid', verwarnung: 'Verwarnung', maut: 'Mautnacherhebung', sonstiges: 'Sonstiges' };
 export function finesCsv(rows, csvCell, withDriver) {
-  const head = ['Vorgang', 'Art', 'Behörde', 'Aktenzeichen', 'Tatvorwurf', 'Tatzeit', 'Ort', 'Kennzeichen laut Schreiben', 'Fahrzeug', 'Betrag (EUR)', 'Antwortfrist', 'Status', ...(withDriver ? ['Fahrer'] : [])];
+  const head = ['Vorgang', 'Art', 'Behörde', 'Aktenzeichen', 'Tatvorwurf', 'Tatzeit', 'Ort', 'Kennzeichen laut Schreiben', 'Fahrzeug', 'Betrag (EUR)', 'Fahrverbot (Monate)', 'Antwortfrist', 'Status', ...(withDriver ? ['Fahrer'] : [])];
   const lines = [head.join(';')];
   for (const f of rows) lines.push([csvCell(f.fine_no), KIND_DE[f.kind] || f.kind, csvCell(f.authority), quoteCell(csvCell(f.reference)), OFFENSE_DE[f.offense_type] || csvCell(f.offense_type), berlinDateTime(f.offense_at) || csvCell(f.offense_at), csvCell(f.location),
-    csvCell(f.plate_in_letter), csvCell(f.plate), f.amount_eur === null || f.amount_eur === undefined ? '' : Number(f.amount_eur).toFixed(2).replace('.', ','), f.response_due || '', FINE_STATUS_DE[f.status] || csvCell(f.status),
+    csvCell(f.plate_in_letter), csvCell(f.plate), f.amount_eur === null || f.amount_eur === undefined ? '' : Number(f.amount_eur).toFixed(2).replace('.', ','), f.driving_ban_months ? String(f.driving_ban_months) : '', f.response_due || '', FINE_STATUS_DE[f.status] || csvCell(f.status),
     ...(withDriver ? [csvCell(f.driver_name || f.driver_name_note)] : [])].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
@@ -519,7 +529,10 @@ export async function fineFindings(env, environment, settings = null) {
     else if (!f.vehicle_id && (pickVehicleByPlate(vehs, f.plate_in_letter).vehicle || formerPick(vplates, f.plate_in_letter, f.offense_at))) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_MATCHABLE', { label, plate: f.plate_in_letter }), next_action: 'Bußgeld öffnen, unter „Angaben ändern“ speichern – das Fahrzeug wird übernommen.' });
     else if (!f.vehicle_id && trailerOf(vehs, f.plate_in_letter)) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_TRAILER', { label, plate: f.plate_in_letter, truck: trailerOf(vehs, f.plate_in_letter).plate }), next_action: 'Anhänger im Fahrzeugstamm anlegen, danach im Bußgeld unter „Angaben ändern“ speichern.' });
     else if (!f.vehicle_id) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_UNKNOWN', { label, plate: f.plate_in_letter }), next_action: 'Kennzeichen prüfen (Fremd-/Mietfahrzeug?).' });
-    else if (f.status === 'eingegangen') out.push({ code: 'FINE_DRIVER_OPEN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_DRIVER_OPEN', { label }), next_action: 'Fahrer anhand Zuordnung/Tourenplan/Telematik bestätigen.' });
+    // Fahrverbot laut Schreiben (Backlog 364): Halter darf den Fahrer im Verbotszeitraum nicht fahren lassen (§ 21 StVG) – Zeitraum
+    // (Beginn mit Abgabe des Führerscheins) steht nicht im Schreiben, daher Hinweis zum Klären statt berechneter Sperre
+    if (f.driving_ban_months) out.push({ code: 'FINE_DRIVING_BAN', f, severity: 'handeln', requires_decision: 1, ...fm('FINE_DRIVING_BAN', { label, n: f.driving_ban_months }), next_action: 'Mit dem Fahrer klären, wann der Führerschein abgegeben wird; in diesem Zeitraum nicht als Fahrer einsetzen.' });
+    if (f.vehicle_id && f.status === 'eingegangen') out.push({ code: 'FINE_DRIVER_OPEN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_DRIVER_OPEN', { label }), next_action: 'Fahrer anhand Zuordnung/Tourenplan/Telematik bestätigen.' });
   }
   return out;
 }

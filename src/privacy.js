@@ -55,7 +55,7 @@ export async function personExport(env, actor, { userId = null, driverId = null 
     // 18.10.2026: Nachweis der Fahrerermittlung, Betrag, Frist und Verlauf (auch Einträge der Leitung) gehören zur Auskunft der betroffenen Person
     // 21.10.2026 (Backlog 104): auch Schreiben, bei denen die Person ermittelt war und später abgelöst wurde (Verlauf `fine_events.payload`);
     // `driver_status` aktuell/abgelöst, Ermittlungsangaben nur, solange sie die Person betreffen
-    fines_as_driver: q(`SELECT fine_no, environment, kind, authority, reference, offense_type, offense_at, location, amount_eur, response_due, status,
+    fines_as_driver: q(`SELECT fine_no, environment, kind, authority, reference, offense_type, offense_at, location, amount_eur, driving_ban_months, response_due, status,
         CASE WHEN driver_id=?1 THEN 'aktuell' ELSE 'abgelöst' END AS driver_status,
         CASE WHEN driver_id=?1 THEN driver_basis END AS driver_basis, CASE WHEN driver_id=?1 THEN driver_evidence END AS driver_evidence,
         CASE WHEN driver_id=?1 THEN driver_confirmed_at END AS driver_confirmed_at, CASE WHEN driver_id=?1 THEN driver_informed_at END AS driver_informed_at,
