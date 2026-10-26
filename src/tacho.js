@@ -52,7 +52,7 @@ export async function tachoRows(env, envName, warn, today = berlinDate(), active
     FROM vehicles v WHERE v.active=1 AND v.eval_excluded=0 AND v.kind<>'anhaenger' ORDER BY v.plate`).bind(envName).all()).results;
   const drivers = drv.filter((d) => d.has_card || d.last).map((d) => ({ id: d.id, display_name: d.display_name, personnel_no: d.personnel_no, site: d.site,
     card_valid_until: d.card_valid_until, has_card: !!d.has_card, ...tachoStatus(d.last, TACHO_RULE.card_days, today, warn) }));
-  const without_card = drv.filter((d) => !d.has_card && !d.last).map((d) => ({ id: d.id, display_name: d.display_name, site: d.site }));
+  const without_card = drv.filter((d) => !d.has_card && !d.last).map((d) => ({ id: d.id, display_name: d.display_name, personnel_no: d.personnel_no, site: d.site }));
   const vehicles = veh.map((v) => ({ id: v.id, plate: v.plate, site: v.site, ...tachoStatus(v.last, TACHO_RULE.vu_days, today, warn) }));
   return { drivers, vehicles, without_card };
 }
@@ -158,6 +158,8 @@ export function tachoCsv(ov, cell) {
   const S = { ueberfaellig: 'überfällig', bald: 'bald fällig', ok: 'in Ordnung', keine: 'keine Auslesung erfasst' };
   const lines = ['﻿Art;Fahrer/Kennzeichen;Personalnummer;Standort;Letzte Auslesung;Spätestens fällig;Tage;Status'];
   for (const d of ov.drivers) lines.push(['Fahrerkarte', cell(d.display_name), cell(d.personnel_no), cell(d.site), d.last || '', d.due || '', d.days ?? '', S[d.status]].join(';'));
+  // Backlog 383 (Blickwinkel „Betriebskontrolle“): aktive Fahrer ohne erfasste Fahrerkarte und ohne Auslesung fehlten im Export ganz
+  for (const d of ov.without_card || []) lines.push(['Fahrerkarte', cell(d.display_name), cell(d.personnel_no), cell(d.site), '', '', '', 'keine Fahrerkarte erfasst'].join(';'));
   for (const v of ov.vehicles) lines.push(['Massenspeicher', cell(v.plate), '', cell(v.site), v.last || '', v.due || '', v.days ?? '', S[v.status]].join(';'));
   return lines.join('\r\n') + '\r\n';
 }
@@ -214,10 +216,19 @@ export async function tachoHistory(env, user, envName, query = {}) {
     if (x.kind === 'fahrerkarte') { const d = drv.get(x.id); if (!d) continue; out.drivers.push({ ...base, display_name: d.display_name, personnel_no: d.personnel_no, site: d.site, active: !!d.active }); }
     else { const v = veh.get(x.id); if (!v) continue; out.vehicles.push({ ...base, plate: v.plate, site: v.site, active: !!v.active && !v.eval_excluded }); }
   }
+  // Backlog 384 (Blickwinkel „Betriebskontrolle“): aktive Fahrer (mit oder ohne erfasste Fahrerkarte) und aktive Lkw ohne jede erfasste
+  // Auslesung bis Zeitraumende fehlten – der Ausdruck wirkte vollständig. Jetzt als Zeile mit 0 Auslesungen und `none_recorded`
+  // („keine Auslesung erfasst – Frist ungeklärt“); keine Lückentage berechnet (keine Annahme vor der ersten Auslesung).
+  const cur = await tachoRows(env, envName, 0, today);
+  for (const d of [...cur.drivers.map((x) => ({ ...x, no_card: false })), ...cur.without_card.map((x) => ({ ...x, no_card: true }))]) {
+    if (subj.has('d|' + d.id)) continue;
+    out.drivers.push({ id: d.id, downloads: [], count: 0, last_before: null, gaps: [], gap_days: 0, none_recorded: true, ...(d.no_card ? { no_card: true } : {}), display_name: d.display_name, personnel_no: d.personnel_no || null, site: d.site, active: true });
+  }
+  for (const v of cur.vehicles) if (!subj.has('v|' + v.id)) out.vehicles.push({ id: v.id, downloads: [], count: 0, last_before: null, gaps: [], gap_days: 0, none_recorded: true, plate: v.plate, site: v.site, active: true });
   // Fahrzeuge/Fahrer mit Lücke zuerst, dann alphabetisch
-  const sortBy = (name) => (a, b) => (b.gaps.length ? 1 : 0) - (a.gaps.length ? 1 : 0) || String(a[name] || '').localeCompare(String(b[name] || ''), 'de', { sensitivity: 'base' });
+  const sortBy = (name) => (a, b) => (b.gaps.length ? 1 : 0) - (a.gaps.length ? 1 : 0) || (b.none_recorded ? 1 : 0) - (a.none_recorded ? 1 : 0) || String(a[name] || '').localeCompare(String(b[name] || ''), 'de', { sensitivity: 'base' });
   out.drivers.sort(sortBy('display_name')); out.vehicles.sort(sortBy('plate'));
-  const cnt = (l) => ({ subjects: l.length, downloads: l.reduce((a, x) => a + x.count, 0), with_gaps: l.filter((x) => x.gaps.length).length, gaps: l.reduce((a, x) => a + x.gaps.length, 0) });
+  const cnt = (l) => ({ subjects: l.length, downloads: l.reduce((a, x) => a + x.count, 0), with_gaps: l.filter((x) => x.gaps.length).length, gaps: l.reduce((a, x) => a + x.gaps.length, 0), none_recorded: l.filter((x) => x.none_recorded).length });
   return { from, to, today, rule: TACHO_RULE, ...out, totals: { drivers: cnt(out.drivers), vehicles: cnt(out.vehicles) }, truncated, max: TACHO_HISTORY_MAX };
 }
 
@@ -226,8 +237,9 @@ export function tachoHistoryCsv(h, cell) {
   // Sammelfelder (mehrere Tage in einer Zelle) gleich als TT.MM.JJJJ – die zentrale Umschreibung erfasst nur ganze Datumsfelder
   const de = (d) => d.split('-').reverse().join('.');
   const g = (x) => x.gaps.map((y) => `${de(y.overdue_from)} – ${y.open ? 'offen (' + de(y.until) + ')' : y.cut ? 'Zeitraumende (' + de(y.until) + ')' : de(y.until)} (${y.days})`).join(' | ');
-  for (const d of h.drivers) lines.push(['Fahrerkarte', cell(d.display_name), cell(d.personnel_no), cell(d.site), d.active ? 'ja' : 'nein', d.count, d.downloads.map(de).join(', '), d.last_before || '', d.gaps.length, d.gap_days, cell(g(d))].join(';'));
-  for (const v of h.vehicles) lines.push(['Massenspeicher', cell(v.plate), '', cell(v.site), v.active ? 'ja' : 'nein', v.count, v.downloads.map(de).join(', '), v.last_before || '', v.gaps.length, v.gap_days, cell(g(v))].join(';'));
+  const nr = (x) => (x.none_recorded ? (x.no_card ? 'keine Fahrerkarte erfasst, ' : '') + 'keine Auslesung erfasst – Frist ungeklärt' : g(x));
+  for (const d of h.drivers) lines.push(['Fahrerkarte', cell(d.display_name), cell(d.personnel_no), cell(d.site), d.active ? 'ja' : 'nein', d.count, d.downloads.map(de).join(', '), d.last_before || '', d.gaps.length, d.gap_days, cell(nr(d))].join(';'));
+  for (const v of h.vehicles) lines.push(['Massenspeicher', cell(v.plate), '', cell(v.site), v.active ? 'ja' : 'nein', v.count, v.downloads.map(de).join(', '), v.last_before || '', v.gaps.length, v.gap_days, cell(nr(v))].join(';'));
   return lines.join('\r\n') + '\r\n';
 }
 

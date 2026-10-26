@@ -345,7 +345,7 @@ async function handleApi(request, env, ctx, url) {
     }
     if (url.searchParams.get('format') === 'csv') {
       await auth.audit(env, user.id, 'maintenance.export', null, { rows: ov.rows.length, gaps: ov.gaps.length, site: ov.site });
-      return new Response(maint.maintenanceCsv(ov), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.csv"` } });
+      return new Response(maint.maintenanceCsv(ov, await maint.latestResults(env)), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.csv"` } });
     }
     return json(ov);
   }

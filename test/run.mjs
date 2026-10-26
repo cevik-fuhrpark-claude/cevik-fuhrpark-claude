@@ -4423,7 +4423,7 @@ await test('Auslese-Fristen Fahrerkarte (28 Tage) / Massenspeicher (90 Tage) nac
   ok(!f.some((x) => x.finding_code === 'TACHO_CARD_OVERDUE' && /Testfahrer Eins/.test(x.message)), 'nach Auslesung erledigt');
   eq((await users.driver.get('/api/drivers?format=csv')).status, 403, 'Fahrer: keine Fristenliste');
   const dcsv = new TextDecoder().decode((await users.fleet.get('/api/drivers?format=csv')).data);
-  ok(dcsv.includes('Name;Personalnummer;') && /Testfahrer Eins;P-1;;31\.03\.2035;31\.05\.2031;;10\.01\.2026;in Ordnung;;/.test(dcsv) && dcsv.includes(`in Ordnung;;${deD(ago(0))};${deD(ago(-28))};in Ordnung`), dcsv.split('\r\n').find((l) => l.startsWith('Testfahrer')));
+  ok(dcsv.includes('Name;Personalnummer;') && /Testfahrer Eins;P-1;;31\.03\.2035;31\.05\.2031;nicht erfasst;10\.01\.2026;in Ordnung;;/.test(dcsv) && dcsv.includes(`in Ordnung;;${deD(ago(0))};${deD(ago(-28))};in Ordnung`), dcsv.split('\r\n').find((l) => l.startsWith('Testfahrer')));
   const vd = (await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data;
   eq(vd.tacho.last, ago(85)); eq(vd.tacho.status, 'bald', 'Fahrzeugakte zeigt Massenspeicher-Frist');
   eq((await users.ws.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.tacho, undefined, 'Werkstatt sieht keine Auslesungen');
@@ -20307,7 +20307,7 @@ await test('Backlog 245 (Blickwinkel „Betriebsprüfung“): Verlauf der Ausles
   eqj([b.gaps.length, b.gaps[0].days, b.gaps[0].open], [1, 52, true]);
   const v = h.vehicles.find((x) => x.id === V);
   eqj([v.plate, v.count, v.gaps.length, v.gaps[0].days, v.gaps[0].until], ['BP-LK 1', 2, 1, 60, day(-50)], 'Massenspeicher 90 Tage');
-  eqj(h.totals.drivers, { subjects: 2, downloads: 5, with_gaps: 2, gaps: 3 }); eq(h.totals.vehicles.with_gaps, 1);
+  { const td = h.totals.drivers; eqj([td.subjects - td.none_recorded, td.downloads, td.with_gaps, td.gaps], [2, 5, 2, 3]); } // seit Backlog 384 zusätzlich Fahrer ohne Auslesung (none_recorded) eq(h.totals.vehicles.with_gaps, 1);
   // Zeitraum in der Vergangenheit: Lücke bis „Bis“ gezählt, nicht „offen“; Lücken außerhalb fehlen
   const p = (await own.get(`/api/tacho/history?from=${day(-200)}&to=${day(-60)}`)).data;
   const pa = p.drivers.find((x) => x.id === A);
@@ -22725,6 +22725,50 @@ await test('Backlog 381 (Blickwinkel „Neuer Fahrer, erster Arbeitstag“): Spr
   ok(app.includes('navigator.languages') && app.includes('name="language"') && app.includes('if (info.language &&'), 'Oberfläche: Auswahl beim Anlegen, Einladungsseite, Gerätesprachen');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['user_language', 'user_language_hint', 'user_language_device']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+await test('Backlog 382 (Blickwinkel „Betriebskontrolle/BG-Prüfung angekündigt“): Prüftermine-CSV nennt das letzte Prüfergebnis und einen offenen Prüfmangel (UVV „verkehrsunsicher“ stand nur als „in Ordnung“), Pflichtprüfung ohne Ergebnis als solche; gleiche Spaltenzahl in allen Zeilen', async () => {
+  const { U, V1 } = await freshWorld();
+  const day = (n) => bDayOff(n);
+  const uvv = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: day(-400), interval_months: 12, evidence: 'UVV alt' }); eq(uvv.status, 201);
+  eq((await U.fleet.post(`/api/maintenance/${uvv.data.id}/complete`, { done_date: day(-6), evidence: 'UVV-Protokoll 1', result: 'verkehrsunsicher' })).status, 200);
+  const tg = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Tachograph', last_done_date: day(-300), interval_months: 24, evidence: 'Tacho alt' }); eq(tg.status, 201);
+  eq((await U.fleet.post(`/api/maintenance/${tg.data.id}/complete`, { done_date: day(-3), evidence: 'Prüfbescheinigung 7' })).status, 200);
+  const csv = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv')).data).replace(/^\uFEFF/, '');
+  const lines = csv.trim().split('\r\n'); const head = lines[0].split(';');
+  ok(head.at(-2) === 'Letztes Prüfergebnis' && head.at(-1) === 'Prüfmangel offen', head.join('|'));
+  const cols = (l) => l.split(';').length; ok(lines.every((l) => cols(l) === head.length), 'gleiche Spaltenzahl');
+  const de = (d) => d.split('-').reverse().join('.');
+  const u = lines.find((l) => l.includes(';UVV;')).split(';');
+  ok(u.at(-2) === `verkehrsunsicher (${de(day(-6))})` && u.at(-1) === `verkehrsunsicher am ${de(day(-6))} – kein Mängelauftrag angelegt`, u.join('|'));
+  const t = lines.find((l) => l.includes(';Tachograph;')).split(';');
+  ok(t.at(-2) === `kein Ergebnis eingetragen (${de(day(-3))})` && t.at(-1) === '', t.join('|'));
+  ok(lines.some((l) => l.includes('kein Termin hinterlegt')), 'Lückenzeilen weiter da');
+  // Mängelauftrag angelegt → kein „kein Mängelauftrag angelegt“ mehr
+  const ord = await U.fleet.post('/api/cases', { vehicle_id: V1, description: 'UVV-Mängel beheben', priority: 'kritisch', driveability: 'nicht_fahrbereit', workshop_site: 'DORTMUND', request_key: rk() }); eq(ord.status, 201);
+  const csv2 = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv')).data);
+  const u2 = csv2.split('\r\n').find((l) => l.includes(';UVV;')).split(';'); eq(u2.at(-1), '', 'Auftrag angelegt'); ok(u2.at(-2).startsWith('verkehrsunsicher'), 'Ergebnis bleibt sichtbar');
+});
+await test('Backlog 383/384 (Blickwinkel „Betriebskontrolle/BG-Prüfung angekündigt“): Fahrer-CSV nennt fehlende Fahrerkarte/Code 95 als „nicht erfasst“ (Status unverändert), Auslesungs-CSV listet Fahrer ohne Fahrerkarte, Auslesungsverlauf listet aktive Fahrer/Lkw ohne jede Auslesung als „keine Auslesung erfasst – Frist ungeklärt“ (ohne Lückentage); Texte DE/UK/EN', async () => {
+  const { U, V1 } = await freshWorld();
+  const D = (await U.fleet.post('/api/drivers', { display_name: 'Olga Neu', personnel_no: 'BK-1' })).data.id;
+  const dcsv = new TextDecoder().decode((await U.fleet.get('/api/drivers?format=csv')).data);
+  const row = dcsv.split('\r\n').find((l) => l.startsWith('Olga Neu;')).split(';');
+  eq(row[4], 'nicht erfasst', 'Fahrerkarte'); eq(row[5], 'nicht erfasst', 'Code 95'); eq(row[9], 'ohne Fahrerkarte', 'Auslesung');
+  const tcsv = new TextDecoder().decode((await U.fleet.get('/api/tacho?format=csv')).data);
+  ok(tcsv.includes('Fahrerkarte;Olga Neu;BK-1;;;;;keine Fahrerkarte erfasst'), tcsv);
+  const h = (await U.fleet.get('/api/tacho/history')).data;
+  const o = h.drivers.find((x) => x.id === D); ok(o && o.none_recorded && o.no_card && o.count === 0 && o.gaps.length === 0 && o.gap_days === 0, JSON.stringify(o));
+  const v = h.vehicles.find((x) => x.id === V1); ok(v && v.none_recorded && !v.gaps.length, JSON.stringify(v));
+  ok(h.totals.drivers.none_recorded >= 1 && h.totals.vehicles.none_recorded >= 1, JSON.stringify(h.totals));
+  // eine Auslesung → keine „ohne Auslesung“-Zeile mehr
+  eq((await U.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: V1, downloaded_on: bDayOff(-3), evidence: 'Auslesesoftware' })).status, 201);
+  const h2 = (await U.fleet.get('/api/tacho/history')).data; const v2 = h2.vehicles.find((x) => x.id === V1); ok(v2 && !v2.none_recorded && v2.count === 1, JSON.stringify(v2));
+  const hc = new TextDecoder().decode((await U.fleet.get('/api/tacho/history?format=csv')).data);
+  ok(hc.includes('Fahrerkarte;Olga Neu;BK-1;;ja;0;;;0;0;keine Fahrerkarte erfasst, keine Auslesung erfasst – Frist ungeklärt'), hc);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['th_none_recorded', 'th_none_card', 'th_none_count']) ok(STRINGS[l][k], `${l}.${k}`);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-thnone') && app.includes("t('th_none_count')"), 'Oberfläche zeigt „ohne Auslesung“');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

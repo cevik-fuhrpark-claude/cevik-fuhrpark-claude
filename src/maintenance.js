@@ -349,10 +349,26 @@ export const csvCell = (x) => {
 export const csvText = (x) => quoteCell(csvCell(x));
 const STATUS_DE = { ueberfaellig: 'überfällig', faellig: 'bald fällig', ok: 'in Ordnung', ohne_termin: 'ohne Termin', ungeklaert: 'Frist ungeklärt', erledigt: 'erledigt', nicht_pflichtig: 'nicht SP-pflichtig', erste_sp: 'erste SP künftig fällig' };
 
-export function maintenanceCsv(ov) {
-  const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Prüfart', 'Letzte Prüfung', 'Nächster Termin', 'Tage bis Termin', 'Status', 'Nachweis', 'Fahrzeugart', 'Fällig bei km', 'Aktueller km-Stand', 'Rest-km', 'km-Fälligkeit voraussichtlich (Prognose)', 'km bei letzter Prüfung', 'Intervall km'].join(';')];
-  for (const r of ov.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), csvCell(r.site), csvCell(r.kind), r.last_done_date || '', r.next_due_date || '', r.days ?? '', STATUS_DE[r.status], csvCell(r.evidence), r.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', r.next_due_km ?? '', r.current_km ?? '', r.km_remaining ?? '', r.km_forecast ? r.km_forecast.date : '', r.kind === 'HU' || r.kind === 'SP' ? '' : r.last_done_km ?? '', r.interval_km ?? ''].join(';'));
-  for (const g of ov.gaps) for (const k of g.missing) lines.push([csvCell(g.plate), csvCell(g.vehicle_id), csvCell(g.site), csvCell(k), '', '', '', 'kein Termin hinterlegt', '', g.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', '', '', '', '', '', ''].join(';'));
+// Backlog 382 (Blickwinkel „Betriebskontrolle/BG-Prüfung angekündigt“): jüngstes eingetragenes Prüfergebnis je Fahrzeug und Prüfart
+// (gleiche Regel „neuere Durchführung überholt ältere“ wie die Prüfmängel-Listen) – eine Abfrage für den CSV-Export
+export async function latestResults(env) {
+  const r = (await env.DB.prepare(`SELECT e.vehicle_id, e.kind, e.done_date, e.result FROM maintenance_events e WHERE NOT EXISTS (SELECT 1 FROM maintenance_events e2
+    WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))`).all()).results;
+  return new Map(r.map((x) => [`${x.vehicle_id}|${x.kind}`, x]));
+}
+const deDate = (d) => (d ? `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}` : '');
+
+// latest (optional, Backlog 382): Map „Fahrzeug|Prüfart“ → jüngste Durchführung mit Ergebnis. Zwei Spalten am Ende: „Letztes Prüfergebnis“
+// und „Prüfmangel offen“ (ohne Mängelauftrag bzw. Auftrag erledigt, Nachprüfung nicht eingetragen) – vorher stand z. B. eine UVV
+// „verkehrsunsicher“ hier nur als „in Ordnung“ (Status = Frist), Widerspruch zur Fahrzeug-CSV. Der Status bleibt die Frist.
+export function maintenanceCsv(ov, latest = null) {
+  const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Prüfart', 'Letzte Prüfung', 'Nächster Termin', 'Tage bis Termin', 'Status', 'Nachweis', 'Fahrzeugart', 'Fällig bei km', 'Aktueller km-Stand', 'Rest-km', 'km-Fälligkeit voraussichtlich (Prognose)', 'km bei letzter Prüfung', 'Intervall km', ...(latest ? ['Letztes Prüfergebnis', 'Prüfmangel offen'] : [])].join(';')];
+  const open = new Map();
+  for (const d of ov.defects_without_case || []) open.set(`${d.vehicle_id}|${d.kind}`, `${RESULT_DE[d.result] || d.result} am ${deDate(d.done_date)} – kein Mängelauftrag angelegt`);
+  for (const d of ov.reinspection_pending || []) if (!open.has(`${d.vehicle_id}|${d.kind}`)) open.set(`${d.vehicle_id}|${d.kind}`, `${RESULT_DE[d.result] || d.result} am ${deDate(d.done_date)} – Auftrag ${d.case_no} erledigt, Nachprüfung nicht eingetragen`);
+  const extra = (vid, kind) => { if (!latest) return []; const l = latest.get(`${vid}|${kind}`); return [l ? (l.result ? csvCell(`${RESULT_DE[l.result] || l.result} (${deDate(l.done_date)})`) : REQUIRED_KINDS.includes(kind) ? csvCell(`kein Ergebnis eingetragen (${deDate(l.done_date)})`) : '') : '', csvCell(open.get(`${vid}|${kind}`) || '')]; };
+  for (const r of ov.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), csvCell(r.site), csvCell(r.kind), r.last_done_date || '', r.next_due_date || '', r.days ?? '', STATUS_DE[r.status], csvCell(r.evidence), r.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', r.next_due_km ?? '', r.current_km ?? '', r.km_remaining ?? '', r.km_forecast ? r.km_forecast.date : '', r.kind === 'HU' || r.kind === 'SP' ? '' : r.last_done_km ?? '', r.interval_km ?? '', ...extra(r.vehicle_id, r.kind)].join(';'));
+  for (const g of ov.gaps) for (const k of g.missing) lines.push([csvCell(g.plate), csvCell(g.vehicle_id), csvCell(g.site), csvCell(k), '', '', '', 'kein Termin hinterlegt', '', g.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', '', '', '', '', '', '', ...(latest ? ['', ''] : [])].join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 

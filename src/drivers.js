@@ -429,9 +429,12 @@ export function driversCsv(list, tachoByDriver, cell) {
   const lines = ['﻿Name;Personalnummer;Standort;Führerschein gültig bis;Fahrerkarte gültig bis;Code 95 gültig bis;Letzte Führerscheinkontrolle;Ergebnis;Kontrolle fällig;Letzte Auslesung Fahrerkarte;Auslesung spätestens;Status'];
   for (const d of list) {
     const v = (k) => (d.status.items.find((i) => i.kind === k) || {}).valid_until || '';
+    // Backlog 383 (Blickwinkel „Betriebskontrolle“): leere Zelle war nicht von „nicht erfasst“ zu unterscheiden – Fahrerkarte/Code 95
+    // ohne Nachweis jetzt ausdrücklich (Status bleibt unverändert: nicht jeder Fahrer braucht beides)
+    const vx = (k) => { const it = d.status.items.find((i) => i.kind === k); return !it ? 'nicht erfasst' : it.valid_until || 'ohne Ablaufdatum'; };
     const tc = tachoByDriver.get(d.id);
-    lines.push([cell(d.display_name), cell(d.personnel_no), cell(d.site), v('fuehrerschein'), v('fahrerkarte'), v('code95'), d.status.check.last || '', CHECK_RESULT_DE[d.status.check.result] || d.status.check.result || '',
-      d.status.check.due || '', tc ? tc.last || '' : '', tc ? tc.due || '' : '', cell([DOV[overall(d, tc)], ...reasons(d, tc)].join(' · '))].join(';'));
+    lines.push([cell(d.display_name), cell(d.personnel_no), cell(d.site), v('fuehrerschein'), vx('fahrerkarte'), vx('code95'), d.status.check.last || '', CHECK_RESULT_DE[d.status.check.result] || d.status.check.result || '',
+      d.status.check.due || '', tc ? tc.last || 'keine erfasst' : 'ohne Fahrerkarte', tc ? tc.due || '' : '', cell([DOV[overall(d, tc)], ...reasons(d, tc)].join(' · '))].join(';'));
   }
   return lines.join('\r\n') + '\r\n';
 }

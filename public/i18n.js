@@ -2617,3 +2617,7 @@ Object.assign(STRINGS.uk, { user_language: 'Мова особи', user_language_
 Object.assign(STRINGS.en, { user_language: 'Person’s language', user_language_hint: 'Optional – the invitation page and the app start in this language; the person can change it at any time.', user_language_device: 'Phone language' });
 Object.assign(FIELD_NAMES.uk, { Sprache: 'Мова' });
 Object.assign(FIELD_NAMES.en, { Sprache: 'Language' });
+// Backlog 384 (Blickwinkel „Betriebskontrolle“): Auslesungsverlauf ohne jede Auslesung
+Object.assign(STRINGS.de, { th_none_recorded: 'keine Auslesung erfasst – Frist ungeklärt', th_none_card: 'keine Fahrerkarte und keine Auslesung erfasst', th_none_count: 'ohne Auslesung: {n}' });
+Object.assign(STRINGS.uk, { th_none_recorded: 'зчитувань не внесено – строк не з’ясовано', th_none_card: 'картку водія та зчитування не внесено', th_none_count: 'без зчитування: {n}' });
+Object.assign(STRINGS.en, { th_none_recorded: 'no download recorded – deadline unclear', th_none_card: 'no driver card and no download recorded', th_none_count: 'without download: {n}' });

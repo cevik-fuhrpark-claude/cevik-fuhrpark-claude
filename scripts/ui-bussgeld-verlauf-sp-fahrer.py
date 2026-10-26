@@ -63,7 +63,7 @@ with sync_playwright() as p:
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'bv.fahrer','password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
         q.goto(B+'/#/'); q.wait_for_selector('dl.kv dt', state='attached', timeout=15000); q.wait_for_timeout(300)
         dts=q.eval_on_selector_all('dl.kv dt','els => els.map(e => e.textContent.trim())')
-        check(any(d.startswith('SP') for d in dts),f'{lang} {w}px: Fahrer sieht SP ({dts})')
+        check(any(d.startswith('SP') or d.endswith('(SP)') for d in dts),f'{lang} {w}px: Fahrer sieht SP ({dts})')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Startseite ohne Querscrollen')
         if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/bv_home_{lang}_{w}.png',full_page=True)
         check(not errs,f'{lang} {w}px: Fahrer ohne Skriptfehler {errs[:2]}')
