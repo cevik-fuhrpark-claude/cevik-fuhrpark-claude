@@ -55,6 +55,7 @@ export const FINDING_LABELS = {
     FINE_VEHICLE_UNKNOWN: 'Bußgeld: Kennzeichen unbekannt',
     FINE_DRIVER_OPEN: 'Bußgeld: Fahrer offen',
     FINE_DRIVING_BAN: 'Bußgeld: Fahrverbot',
+    FINE_DRIVER_DISPUTED: 'Bußgeld: Einwand des Fahrers',
   },
   uk: {
     MAINTENANCE_OVERDUE: 'Техогляд прострочено',
@@ -110,6 +111,7 @@ export const FINDING_LABELS = {
     FINE_VEHICLE_UNKNOWN: 'Штраф: номер невідомий',
     FINE_DRIVER_OPEN: 'Штраф: водія не визначено',
     FINE_DRIVING_BAN: 'Штраф: заборона керування',
+    FINE_DRIVER_DISPUTED: 'Штраф: заперечення водія',
   },
   en: {
     MAINTENANCE_OVERDUE: 'Inspection overdue',
@@ -165,6 +167,7 @@ export const FINDING_LABELS = {
     FINE_VEHICLE_UNKNOWN: 'Fine: plate unknown',
     FINE_DRIVER_OPEN: 'Fine: driver not identified',
     FINE_DRIVING_BAN: 'Fine: driving ban',
+    FINE_DRIVER_DISPUTED: 'Fine: driver objection',
   },
 };
 export const findingLabel = (code, lang) => (FINDING_LABELS[lang] && FINDING_LABELS[lang][code]) || FINDING_LABELS.de[code] || code;

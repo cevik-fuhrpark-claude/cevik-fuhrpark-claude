@@ -210,6 +210,7 @@ UI-Hinweis Lkw vibriert/schaukelt/flattert im Meldeformular und Hilfe, Zündschl
 UI-Hinweis Ladeetage/Auffahrrampe/Hydraulik gestört im Meldeformular und Hilfe, Hupe hängt → Anzeige-Hinweis|ui-ladeetage.py|/tmp/cfp-ladeetage.log
 UI-Hinweise Kamera beschlagen, Kühler-/Luftschlauch geplatzt, Kühlergrill lose, Tachometer, Luftsitz im Meldeformular|ui-kamera-schlauch.py|/tmp/cfp-kamera-schlauch.log
 UI-Bußgeld mit Fahrverbot: Auswahl beim Erfassen, Chip, Hinweis § 21 StVG, Ändern/Entfernen, DE/UK/EN 390/820/1366|ui-fahrverbot.py|/tmp/cfp-fahrverbot.log
+UI-Bußgeld Zustellstand der Fahrerinformation und Einwand des Fahrers, DE/UK/EN 390/820/1366|ui-bussgeld-zustellung.py|/tmp/cfp-bussgeld-zustellung.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log

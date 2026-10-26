@@ -82,6 +82,7 @@ export const FINDING_MESSAGES = {
     FINE_VEHICLE_AMBIGUOUS: '{label}: Kennzeichen {plate} steht an mehreren aktiven Fahrzeugen – nicht zugeordnet.',
     FINE_DRIVER_OPEN: '{label}: Fahrer zur Tatzeit noch nicht ermittelt.',
     FINE_DRIVING_BAN: '{label}: Fahrverbot laut Schreiben ({n} {n#Monat/Monate}).',
+    FINE_DRIVER_DISPUTED: '{label}: Der ermittelte Fahrer widerspricht (nicht gefahren) – Ermittlung prüfen.',
   },
   uk: {
     NO_FLEET_RECIPIENT: 'У цьому середовищі немає активного керівника автопарку з доступом – повідомлення не мають отримувача.',
@@ -158,6 +159,7 @@ export const FINDING_MESSAGES = {
     FINE_VEHICLE_AMBIGUOUS: '{label}: номерний знак {plate} є в кількох активних транспортних засобів – не прив’язано.',
     FINE_DRIVER_OPEN: '{label}: водія на момент порушення ще не встановлено.',
     FINE_DRIVING_BAN: '{label}: заборона керування згідно з листом ({n} {n#місяць/місяці/місяців}).',
+    FINE_DRIVER_DISPUTED: '{label}: визначений водій заперечує (не керував) – перевірте встановлення водія.',
   },
   en: {
     NO_FLEET_RECIPIENT: 'No active fleet manager with access in this environment – notifications have no recipient.',
@@ -234,6 +236,7 @@ export const FINDING_MESSAGES = {
     FINE_VEHICLE_AMBIGUOUS: '{label}: licence plate {plate} is on several active vehicles – not assigned.',
     FINE_DRIVER_OPEN: '{label}: driver at the time of the offence not yet identified.',
     FINE_DRIVING_BAN: '{label}: driving ban according to the letter ({n} {n#month/months}).',
+    FINE_DRIVER_DISPUTED: '{label}: the identified driver objects (did not drive) – check the identification.',
   },
 };
 

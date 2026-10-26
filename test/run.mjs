@@ -9981,7 +9981,7 @@ await test('Bußgelder/Verträge/Versicherungsfälle/Hinweise/Rufnummern: gleich
   await cmd({ action: 'confirm_driver', payload: { basis: 'manuell', evidence: 'korrigiert', driver_id: 'dB' } });
   eq((await fines.listFines(e, B, E, {})).length, 0, 'B ohne Information:');
   await cmd({ action: 'inform_driver' });
-  eq(JSON.stringify((await fines.fineDetail(e, B, E, id3)).allowed_actions), JSON.stringify(['driver_ack']), 'B kann quittieren:');
+  eq(JSON.stringify((await fines.fineDetail(e, B, E, id3)).allowed_actions), JSON.stringify(['driver_ack', 'driver_dispute']), 'B kann quittieren (und seit Backlog 377 widersprechen):');
   // 4. ungültiger Dateiname → Ersatzname, kein 500, keine verwaiste Datei
   const pdf = new TextEncoder().encode('%PDF-1.4\n%%EOF');
   const up = await fines.uploadFineFile(e, O, E, id3, new Request('https://x/', { method: 'POST', headers: { 'x-filename': '%E0%A4%A' }, body: pdf }));
@@ -22550,6 +22550,100 @@ await test('Fehlersuche 26.10.: „Зчеплення буксує“/„бук�
   // „Cab door won’t lock“ wie „Fahrertür lässt sich nicht abschließen“: nur Tür-Hinweis (vorher zusätzlich Abschließen-Hinweis → ui-fahrerhaus-kippen rot)
   const CABLOCK = re('CABLOCK_HINT'); const DOOR = re('DOOR_HINT');
   ok(!CABLOCK.test('Cab door won’t lock') && DOOR.test('Cab door won’t lock'), 'cab door'); for (const x of ['Cab won’t lock', 'Truck won’t lock', 'cab can’t be locked']) ok(CABLOCK.test(x), 'Abschließen: ' + x);
+});
+
+await test('Backlog 375 (Blickwinkel „Zeugenfragebogen, Frist 1 Woche, Fahrer im Urlaub“): Bußgeld zeigt der Leitung den Zustellstand der Fahrerinformation (informiert/quittiert, Push am Gerät angekommen – nicht „geöffnet“), Hinweis bei fehlendem Push und zur Antwortfrist; Fahrer/Lesezugriff ohne diese Angaben; Texte DE/UK/EN', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const due = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const c = await U.fleet.post('/api/fines', { kind: 'zeugenfragebogen', authority: 'Stadt Zeugen', reference: 'AZ-ZF-1', offense_type: 'parken', offense_at: new Date(Date.now() - 5 * 86400000).toISOString(), plate_in_letter: 'SZ-YC 5513', response_due: due }); eq(c.status, 201, JSON.stringify(c.data));
+  const id = c.data.id; const ver = () => db.prepare('SELECT version FROM fines WHERE id=?').get(id).version;
+  eq((await U.fleet.get('/api/fines/' + id)).data.inform_delivery, undefined, 'vor der Information nichts');
+  eq((await U.fleet.post(`/api/fines/${id}/commands`, { action: 'confirm_driver', expected_version: ver(), payload: { driver_id: U.driver.id, basis: 'manuell', evidence: 'Tourenplan Test' } })).status, 200);
+  eq((await U.fleet.get('/api/fines/' + id)).data.inform_delivery, undefined, 'ermittelt, nicht informiert');
+  eq((await U.fleet.post(`/api/fines/${id}/commands`, { action: 'inform_driver', expected_version: ver() })).status, 200);
+  const n = db.prepare(`SELECT id, push_status FROM notifications WHERE user_id=? AND ref=?`).all(U.driver.id, 'fine:' + id); eq(n.length, 1, JSON.stringify(n));
+  let d = (await U.fleet.get('/api/fines/' + id)).data.inform_delivery;
+  ok(d && d.informed_at && d.ack_at === null, JSON.stringify(d)); eq(d.push, n[0].push_status, 'Push-Status wie gespeichert');
+  // Ruhezeit: zurückgehalten bis …
+  const hold = new Date(Date.now() + 3600000).toISOString();
+  db.prepare(`UPDATE notifications SET push_status='pending', push_hold_until=? WHERE id=?`).run(hold, n[0].id);
+  d = (await U.fleet.get('/api/fines/' + id)).data.inform_delivery; eq(d.push, 'held'); eq(d.hold_until, hold);
+  // am Gerät angekommen und geöffnet → nur „angekommen“ (Öffnen wird nicht gemeldet)
+  db.prepare(`UPDATE notifications SET push_status='accepted', push_hold_until=NULL, device_received_at=?, opened_at=? WHERE id=?`).run(new Date().toISOString(), new Date().toISOString(), n[0].id);
+  d = (await U.fleet.get('/api/fines/' + id)).data.inform_delivery; eq(d.push, 'received'); ok(!('opened_at' in d) && !JSON.stringify(d).includes('opened'), JSON.stringify(d));
+  // Fahrer und Lesezugriff bekommen den Zustellstand nicht
+  const dd = await U.driver.get('/api/fines/' + id); eq(dd.status, 200); eq(dd.data.inform_delivery, undefined, 'Fahrer');
+  eq((await U.viewer.get('/api/fines/' + id)).data.inform_delivery, undefined, 'Lesezugriff');
+  // Quittung
+  eq((await U.driver.post(`/api/fines/${id}/commands`, { action: 'driver_ack' })).status, 200);
+  d = (await U.fleet.get('/api/fines/' + id)).data.inform_delivery; ok(d.ack_at, 'quittiert');
+  // Abfrage ohne LIKE (D1-Grenze 50 Byte) und innerhalb des Budgets
+  const src = (await import('node:fs')).readFileSync(new URL('../src/fines.js', import.meta.url), 'utf8'); ok(src.includes('inform_delivery') && !/event_key LIKE/.test(src), 'kein LIKE');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('function fineInfLine(') && app.includes('data-fpushmiss') && app.includes('data-fackdue') && app.includes('${fineInfLine(d, f)}'), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['fine_inf_at', 'fine_ack_done', 'fine_ack_open', 'fine_push_received', 'fine_push_none', 'fine_push_missing', 'fine_ack_due_hint']) ok(STRINGS[l][k], l + ' ' + k); ok(STRINGS[l].fine_ack_due_hint.includes('{due}') && STRINGS[l].fine_inf_at.includes('{t}'), l); }
+});
+
+await test('Backlog 376 (Blickwinkel „Fahrer im Urlaub“): Bußgeld-Kandidaten – Fahrzeugzuordnung und Abfahrtskontrolle am Tattag nennen verschiedene Fahrer → Hinweis `candidates_differ` vor dem Bestätigen; gleicher Fahrer oder nur eine Quelle → kein Hinweis; Text DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const t0 = new Date(Date.now() - 4 * 86400000); t0.setUTCHours(6, 0, 0, 0);
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES ('dv-376',?,?,?,?,?,'test')`).run(U.driver.id, V1, new Date(t0.getTime() - 30 * 86400000).toISOString(), U.fleet.id || U.driver.id, new Date().toISOString());
+  const mk = async (ref) => { const r = await U.fleet.post('/api/fines', { kind: 'zeugenfragebogen', offense_type: 'parken', offense_at: new Date(t0.getTime() + 3 * 3600000).toISOString(), plate_in_letter: 'SZ-YC 5513', authority: 'Stadt U', reference: ref }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const f1 = await mk('AZ-U-1');
+  let d = (await U.fleet.get('/api/fines/' + f1)).data; eq(d.candidates.length, 1); eq(d.candidates_differ, undefined, 'nur Zuordnung');
+  // derselbe Fahrer macht am Tattag die Abfahrtskontrolle → kein Hinweis
+  db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,items,result,created_at) VALUES ('i-376a','test',?,'abfahrt','v1',?,'[]','ok',?)`).run(V1, U.driver.id, t0.toISOString());
+  d = (await U.fleet.get('/api/fines/' + f1)).data; eq(d.candidates.length, 2); eq(d.candidates_differ, undefined, 'gleicher Fahrer');
+  // Vertretung (zweiter Fahrer) macht die Kontrolle, der zugeordnete ist im Urlaub
+  db.prepare(`DELETE FROM inspections WHERE id='i-376a'`).run();
+  const v = await U.own.post('/api/users', { username: 'vertretung.376', display_name: 'Vertretung 376', role: 'driver', environment: 'test' }); ok(v.status === 200 || v.status === 201, JSON.stringify(v.data));
+  const vid = v.data.id || (v.data.user && v.data.user.id); ok(vid, 'Konto angelegt');
+  db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,items,result,created_at) VALUES ('i-376b','test',?,'abfahrt','v1',?,'[]','ok',?)`).run(V1, vid, t0.toISOString());
+  d = (await U.fleet.get('/api/fines/' + f1)).data; eq(d.candidates.length, 2, JSON.stringify(d.candidates)); eq(d.candidates_differ, true, 'verschiedene Fahrer');
+  eq((await U.viewer.get('/api/fines/' + f1)).data.candidates_differ, undefined, 'Lesezugriff ohne Kandidaten');
+  // nur Abfahrtskontrolle (keine Zuordnung) → kein Hinweis
+  db.prepare(`DELETE FROM driver_vehicles WHERE id='dv-376'`).run();
+  d = (await U.fleet.get('/api/fines/' + f1)).data; eq(d.candidates.length, 1); eq(d.candidates_differ, undefined, 'nur Kontrolle');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('data-fcdiff') && app.includes("t('fine_cand_differ')"), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].fine_cand_differ, l);
+});
+
+await test('Backlog 377 (Blickwinkel „Fahrer im Urlaub“): Einwand des Fahrers zum Bußgeld („nicht gefahren“ mit Begründung) – nur der informierte Fahrer, Begründung Pflicht, einmal je Information; Leitung sieht ihn im Schreiben, Verlauf und als Agent-Befund „handeln“; neue Ermittlung beendet ihn; Lesezugriff ohne; Texte DE/UK/EN', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const c = await U.fleet.post('/api/fines', { kind: 'zeugenfragebogen', authority: 'Stadt E', reference: 'AZ-E-1', offense_type: 'parken', offense_at: new Date(Date.now() - 6 * 86400000).toISOString(), plate_in_letter: 'SZ-YC 5513', response_due: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) }); eq(c.status, 201);
+  const id = c.data.id; const ver = () => db.prepare('SELECT version FROM fines WHERE id=?').get(id).version;
+  const fc = (a, payload = {}, note) => U.fleet.post(`/api/fines/${id}/commands`, { action: a, expected_version: ver(), payload, note });
+  eq((await fc('confirm_driver', { driver_id: U.driver.id, basis: 'zuordnung', evidence: 'Zuordnung' })).status, 200);
+  eq((await U.driver.post(`/api/fines/${id}/commands`, { action: 'driver_dispute', note: 'x' })).status, 404, 'vor der Information unsichtbar');
+  eq((await fc('inform_driver')).status, 200);
+  let dd = (await U.driver.get('/api/fines/' + id)).data; ok(dd.allowed_actions.includes('driver_dispute') && dd.allowed_actions.includes('driver_ack'), JSON.stringify(dd.allowed_actions));
+  const r0 = await U.driver.post(`/api/fines/${id}/commands`, { action: 'driver_dispute', note: '  ' }); eq(`${r0.status} ${r0.data.error}`, '400 note_required');
+  eq((await U.fleet.post(`/api/fines/${id}/commands`, { action: 'driver_dispute', note: 'x' })).status, 403, 'Leitung kann nicht im Namen des Fahrers widersprechen');
+  const r1 = await U.driver.post(`/api/fines/${id}/commands`, { action: 'driver_dispute', note: 'War vom 18. bis 25. im Urlaub, Vertretung fuhr.' }); eq(r1.status, 200, JSON.stringify(r1.data));
+  const r2 = await U.driver.post(`/api/fines/${id}/commands`, { action: 'driver_dispute', note: 'nochmal' }); eq(r2.data.duplicate, true, 'einmal je Information');
+  dd = (await U.driver.get('/api/fines/' + id)).data; ok(dd.my_dispute && !dd.allowed_actions.includes('driver_dispute') && dd.allowed_actions.includes('driver_ack'), JSON.stringify(dd));
+  const md = (await U.fleet.get('/api/fines/' + id)).data; ok(md.driver_dispute && md.driver_dispute.note.includes('Urlaub'), JSON.stringify(md.driver_dispute));
+  ok(md.events.some((x) => x.action === 'driver_dispute' && x.note.includes('Urlaub')), 'Verlauf');
+  const vd = (await U.viewer.get('/api/fines/' + id)).data; eq(vd.driver_dispute, undefined); eq(vd.my_dispute, undefined);
+  eq(db.prepare('SELECT status FROM fines WHERE id=?').get(id).status, 'fahrer_informiert', 'Ermittlung unverändert');
+  eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+  const fnd = db.prepare(`SELECT severity, message FROM agent_findings WHERE environment='test' AND finding_code='FINE_DRIVER_DISPUTED' AND status='offen'`).all(); eq(fnd.length, 1); eq(fnd[0].severity, 'handeln'); ok(fnd[0].message.includes('widerspricht'), fnd[0].message);
+  // Quittung bleibt möglich
+  eq((await U.driver.post(`/api/fines/${id}/commands`, { action: 'driver_ack' })).status, 200);
+  // neue Ermittlung (zurück auf eingegangen, gleicher Fahrer erneut bestätigt und informiert): Einwand gehört zur früheren Information
+  eq((await fc('set_status', { status: 'eingegangen' }, 'Einwand geprüft, Tourenplan bestätigt Fahrer')).status, 200);
+  eq((await fc('confirm_driver', { driver_id: U.driver.id, basis: 'tourenplan', evidence: 'Tourenplan KW 43' })).status, 200);
+  eq((await fc('inform_driver')).status, 200);
+  eq((await U.fleet.get('/api/fines/' + id)).data.driver_dispute, undefined, 'neue Information ohne Einwand');
+  ok((await U.driver.get('/api/fines/' + id)).data.allowed_actions.includes('driver_dispute'), 'erneut möglich');
+  await U.fleet.post('/api/agent/run', {});
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM agent_findings WHERE environment='test' AND finding_code='FINE_DRIVER_DISPUTED' AND status='offen'`).get().n, 0, 'Befund erledigt');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="fdisp"') && app.includes('id="dpf"') && app.includes("cmd('driver_dispute', {}, n)") && app.includes("driver_dispute: 'fine_dispute_ev'"), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['fine_dispute', 'fine_dispute_hint', 'fine_dispute_reason', 'fine_dispute_send', 'fine_dispute_sent', 'fine_dispute_mgr', 'fine_dispute_ev']) ok(STRINGS[l][k], l + ' ' + k); ok(STRINGS[l].help_myfines_s.split('|').length === 3, 'Hilfe ' + l); }
+  ok((await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8').includes("['Bitte Begründung angeben.', "), 'Servertext übersetzt');
+  const { renderFindingMessage } = await import('../public/finding-messages.js'); for (const l of ['de', 'uk', 'en']) { const m = renderFindingMessage('FINE_DRIVER_DISPUTED', { label: 'B-1' }, l); ok(m.includes('B-1') && !m.includes('{'), m); }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

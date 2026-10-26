@@ -148,11 +148,36 @@ export async function fineDetail(env, user, envName, id) {
     for (const e of events) { let p = null; try { p = e.payload ? JSON.parse(e.payload) : null; } catch {} if (p && p.driver_id) evIds.add(p.driver_id); if (p && p.driver_reset && p.driver_reset.driver_id) evIds.add(p.driver_reset.driver_id); }
     out.event_driver_names = evIds.size ? Object.fromEntries((await env.DB.prepare('SELECT id, display_name FROM users WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify([...evIds])).all()).results.map((u) => [u.id, u.display_name])) : {};
     out.candidates = await driverCandidates(env, envName, f);
+    { const dp = await disputeOf(env, f); if (dp) out.driver_dispute = dp; }
+    // Zuordnung und Abfahrtskontrolle am Tattag nennen verschiedene Fahrer (z. B. zugeordneter Fahrer im Urlaub, Vertretung fuhr):
+    // Hinweis vor dem Bestätigen statt stiller Liste – keine Automatik (Backlog 376)
+    {
+      const za = new Set(out.candidates.filter((c) => c.basis === 'zuordnung').map((c) => c.user_id));
+      const ch = new Set(out.candidates.filter((c) => c.basis === 'manuell').map((c) => c.user_id));
+      if (za.size && ch.size && (za.size !== ch.size || [...za].some((u) => !ch.has(u)))) out.candidates_differ = true;
+    }
+    // Zustellstand der Fahrerinformation (Backlog 375, Blickwinkel „Zeugenfragebogen, Frist 1 Woche, Fahrer im Urlaub“): ob der Push
+    // das Gerät erreicht hat – nicht, ob/wann er geöffnet wurde (keine Verhaltenskontrolle); die Quittung zeigt die Kenntnisnahme
+    if (f.driver_id && f.driver_informed_at) {
+      const n = await env.DB.prepare(`SELECT push_status, push_hold_until, device_received_at FROM notifications WHERE user_id=?1 AND ref=?2 AND substr(event_key, 1, length(?3))=?3 AND environment=?4
+        ORDER BY created_at DESC, rowid DESC LIMIT 1`).bind(f.driver_id, `fine:${id}`, `fine:${id}:inform:`, envName).first();
+      out.inform_delivery = { informed_at: f.driver_informed_at, ack_at: f.driver_ack_at || null,
+        push: !n ? null : n.device_received_at ? 'received' : n.push_hold_until && n.push_status === 'pending' ? 'held' : n.push_status,
+        ...(n && n.push_hold_until && n.push_status === 'pending' ? { hold_until: n.push_hold_until } : {}) };
+    }
     out.allowed_actions = fineActions(user, f).filter((a) => !(a === 'inform_driver' && unreachable));
   } else {
-    out.allowed_actions = user.role === 'driver' && !f.driver_ack_at ? ['driver_ack'] : [];
+    out.allowed_actions = user.role === 'driver' ? [...(!f.driver_ack_at ? ['driver_ack'] : []), ...(!(await disputeOf(env, f)) && !['bezahlt', 'eingestellt', 'erledigt'].includes(f.status) ? ['driver_dispute'] : [])] : [];
+    if (user.role === 'driver') { const dp = await disputeOf(env, f); if (dp) out.my_dispute = dp; }
   }
   return out;
+}
+
+// Einwand des ermittelten Fahrers zur aktuellen Information (nach driver_informed_at) – ältere Einwände gehören zu einer früheren Ermittlung
+async function disputeOf(env, f) {
+  if (!f.driver_id || !f.driver_informed_at) return null;
+  const e = await env.DB.prepare(`SELECT created_at AS at, note FROM fine_events WHERE fine_id=? AND action='driver_dispute' AND actor_id=? AND created_at >= ? ORDER BY created_at DESC LIMIT 1`).bind(f.id, f.driver_id, f.driver_informed_at).first();
+  return e || null;
 }
 
 function fineActions(user, f) {
@@ -281,6 +306,13 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
     if (user.role !== 'driver' || f.driver_id !== user.id) throw forbidden();
     if (f.driver_ack_at) return { ok: true, version: f.version, duplicate: true };
     set.driver_ack_at = now;
+  } else if (action === 'driver_dispute') {
+    // Einwand des Fahrers (Backlog 377, Blickwinkel „Fahrer im Urlaub“): „Ich bin nicht gefahren“ mit Begründung – ändert nichts an der
+    // Ermittlung, die Leitung entscheidet (Hinweis im Schreiben + Agent-Befund); je Information einmal
+    if (user.role !== 'driver' || f.driver_id !== user.id) throw forbidden();
+    if (!note) throw bad('note_required', 'Bitte Begründung angeben.');
+    if (await disputeOf(env, f)) return { ok: true, version: f.version, duplicate: true };
+    payload = { driver_id: user.id };
   } else {
     // Wiederholung (Doppeltipp/verlorene Antwort) von „Fahrer informieren“/„Status setzen“ auf den Stand davor: war der letzte Schritt genau
     // diese Aktion derselben Person (bei Status mit demselben Ziel), Erfolg melden statt 403/409 (19.10.2026)
@@ -511,7 +543,9 @@ export async function fineFindings(env, environment, settings = null) {
   // leer/nicht gesetzt = keine Vorwarnung (wie Kalender); vorher wurde ein fehlender Schlüssel über die Agenten-Einstellungen zu 0 → „Frist läuft ab (in 0 Tagen)“ (17.10.2026)
   const raw = settings ? settings.get('fine_warn_days') : (await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first())?.value;
   const warnDays = raw === undefined || raw === null || raw === '' || !Number.isFinite(Number(raw)) ? null : Number(raw);
-  const rows = (await env.DB.prepare(`SELECT f.*, v.plate FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id WHERE f.environment=? AND f.status IN ('eingegangen','fahrer_ermittelt','fahrer_informiert')`).bind(environment).all()).results;
+  const rows = (await env.DB.prepare(`SELECT f.*, v.plate, CASE WHEN f.driver_id IS NOT NULL AND f.driver_informed_at IS NOT NULL THEN (SELECT MAX(e.created_at) FROM fine_events e
+    WHERE e.fine_id=f.id AND e.action='driver_dispute' AND e.actor_id=f.driver_id AND e.created_at >= f.driver_informed_at) END AS disputed_at
+    FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id WHERE f.environment=? AND f.status IN ('eingegangen','fahrer_ermittelt','fahrer_informiert')`).bind(environment).all()).results;
   const today = berlinDate();
   const out = [];
   // frühere Kennzeichen in derselben Abfrage (Abfragebudget des Agenten; Backlog 257b)
@@ -532,6 +566,7 @@ export async function fineFindings(env, environment, settings = null) {
     // Fahrverbot laut Schreiben (Backlog 364): Halter darf den Fahrer im Verbotszeitraum nicht fahren lassen (§ 21 StVG) – Zeitraum
     // (Beginn mit Abgabe des Führerscheins) steht nicht im Schreiben, daher Hinweis zum Klären statt berechneter Sperre
     if (f.driving_ban_months) out.push({ code: 'FINE_DRIVING_BAN', f, severity: 'handeln', requires_decision: 1, ...fm('FINE_DRIVING_BAN', { label, n: f.driving_ban_months }), next_action: 'Mit dem Fahrer klären, wann der Führerschein abgegeben wird; in diesem Zeitraum nicht als Fahrer einsetzen.' });
+    if (f.disputed_at) out.push({ code: 'FINE_DRIVER_DISPUTED', f, severity: 'handeln', requires_decision: 1, ...fm('FINE_DRIVER_DISPUTED', { label }), next_action: 'Einwand des Fahrers prüfen (Urlaub, Vertretung, Tourenplan) und Fahrer bestätigen oder neu ermitteln.' });
     if (f.vehicle_id && f.status === 'eingegangen') out.push({ code: 'FINE_DRIVER_OPEN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_DRIVER_OPEN', { label }), next_action: 'Fahrer anhand Zuordnung/Tourenplan/Telematik bestätigen.' });
   }
   return out;
