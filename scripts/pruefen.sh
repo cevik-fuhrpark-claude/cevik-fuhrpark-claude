@@ -75,6 +75,7 @@ UI-Druck UK/EN (Spaltenbreiten, Werkstatt EXTERN übersetzt)|ui-druck-ukrainisch
 UI-Sitzungsende während der Eingabe, Speicher voll|ui-sitzungsende-eingaben.py|/tmp/cfp-sitzungsende.log
 UI-Schichtwechsel am Werkstatt-Tablet (Konflikt, Eingaben behalten, 401 leert Offline-Daten)|ui-schichtwechsel.py|/tmp/cfp-schichtwechsel.log
 UI-Disposition im Tagesgeschäft (Rückkehr ungeklärt, Ruhend, Überfällig-Link) und Restbestand ausbuchen|ui-dispo-tagesgeschaeft.py|/tmp/cfp-dispo-tag.log
+UI-Disposition erster Tag (Rückkehr ungeklärt in Reparatur, neue unbestätigte Meldungen)|ui-dispo-erster-tag.py|/tmp/cfp-dispo-erster-tag.log
 UI-Reifen-Saison, Bußgeld-Tatzeit ändern, Kosten-Einzelpositionen|ui-saison-bussgeld-kosten.py|/tmp/cfp-saison.log
 UI-Springer: Abfahrtskontrolle zeigt Sperre (auch fremdes Fahrzeug), Startseite → Auslesungen|ui-springer-sperre.py|/tmp/cfp-springer.log
 UI-Inhaber am Handy (Teilausfall Startseite, Erledigt mit Rückfrage, Zurück-Scroll, Umschalten auf Detailseite, Einrichtungsstand → Feld)|ui-inhaber-unterwegs.py|/tmp/cfp-inhaber.log

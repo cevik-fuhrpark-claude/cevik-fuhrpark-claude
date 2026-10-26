@@ -889,6 +889,14 @@ async function viewInvite(token) {
 
 // ---------- Übersicht ----------
 // Teile-Liefertermin laut Werkstatt (nur bei „wartet auf Teile“); überschritten = markiert
+// „Rückkehr: ungeklärt“ (Disposition): der Werkstatttermin ist der Beginn, nicht die Fertigstellung – ein Datum zählt nur, solange es noch
+// bevorsteht; in Reparatur bzw. Termin/Liefertermin heute oder vorbei → ungeklärt (Blickwinkel „Disposition, erster Tag“, 26.10.2026)
+const dispoReturnKnown = (c) => {
+  if (c.status === 'abschlusskontrolle') return true;
+  if (c.status === 'in_reparatur') return false;
+  const d = c.status === 'wartet_teile' ? c.parts_expected_date : c.planned_date;
+  return !!d && d > bDate();
+};
 const partsEta = (c, sep = ' · ', label = true) => c.status === 'wartet_teile' && c.parts_expected_date ? `${sep}<b>${label ? esc(t('parts_eta')) + ' ' : ''}${fmtD(c.parts_expected_date)}</b>${c.parts_expected_date < bDate() ? ` <span class="chip kritisch">${esc(t('parts_eta_passed'))}</span>` : ''}` : '';
 // Werkstatt-Tagesübersicht: Aufträge des eigenen Standorts nach Arbeitsschritt, dazu Prüftermine der nächsten 14 Tage
 async function workshopBoard() {
@@ -1014,6 +1022,10 @@ async function viewHome() {
         const [dcs, dmo, dvs] = await Promise.all([cases === null ? [] : api('GET', '/api/cases?status=open&limit=500' + (hq ? '&vsite=' + hq : '')).then((r) => r.cases).catch(() => []), cases === null ? null : api('GET', '/api/maintenance' + (hq ? '?site=' + hq : '')).catch(() => null),
           cases === null ? [] : api('GET', '/api/vehicles').then((r) => r.vehicles).catch(() => [])]);
         html += dispoBoard(dcs, dmo && dmo.defects_without_case ? dmo.defects_without_case : [], new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])), new Set(dvs.filter((v) => v.eval_excluded).map((v) => v.id)));
+        // Neue Meldungen, deren Eingang die Leitung noch nicht bestätigt hat (gleiche Regel wie Filter `unreceived`; Standort wie die Tafel) –
+        // vorher sah die Disposition „was ist neu?“ nur über die nach Dringlichkeit sortierte Liste (Blickwinkel „Disposition, erster Tag“, 26.10.2026)
+        const nu = dcs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).length;
+        if (nu) html += `<p class="noprint"><a href="${hj('#/cases?f=unreceived')}" id="dunrec" data-site="${esc(hs)}"><b>${esc(t('dispo_unreceived'))} (${nu})</b></a></p>`;
         // Fahrzeuge mit aktiven Hinweisen (z. B. „Ladebordwand nur manuell“) – Link auf die gefilterte Fahrzeugliste; Standortregel wie oben
         const nk = (x) => (x && String(x).trim() ? String(x).trim().toLocaleLowerCase('de') : 'ohne');
         const wn = dvs.filter((v) => v.notes_active > 0 && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs))).length;
@@ -1039,6 +1051,8 @@ async function viewHome() {
   render(html, 'home');
   pushNudge().catch(() => {});
   const trb = $('#todoretry'); if (trb) trb.onclick = async () => { await viewHome(); };
+  // Liste mit demselben Standort wie die gezählte Tafel (Standard-Standort bzw. „alle“)
+  const dunr = $('#dunrec'); if (dunr) dunr.onclick = () => { S.caseVsite = dunr.dataset.site; };
   const dtg = $('#dsitetoggle'); if (dtg) dtg.onclick = (e) => { e.preventDefault(); S.dispoAll = !S.dispoAll; route(); };
 }
 
@@ -1059,7 +1073,7 @@ function dispoCases(cs, hasOther = false, coupled = new Map(), dormant = new Set
   const list = [...byV.values()].sort((a, b) => b.r - a.r || plateCmp(a.c.plate, b.c.plate));
   if (!list.length) return hasOther ? '' : `<section class="panel good"><b>${esc(t('dispo_all_ok'))}</b></section>`;
   // Unterzeile umbrechen (24.10.2026, Blickwinkel „Disposition plant die Woche“: am Tablet fielen „Teile erwartet am …“/„Rückkehr: ungeklärt“ ins „…“)
-  return `<h2>${esc(t('dispo_not_plannable'))}</h2><div class="list">${list.map(({ r, c }) => `<a class="row ${r === 3 ? 'p-kritisch' : 'p-mittel'}" href="#/cases/${esc(c.id)}">${plate(c.plate, { locked: c.safety_lock })}<span class="title" style="white-space:normal">${esc(r === 3 ? t('locked') + ' – ' + t('do_not_drive') : t('st_' + c.status))}</span><span class="chip ${r === 3 ? 'kritisch' : 'mittel'}">${esc(t('since'))} ${fmtDT(r === 3 ? c.lock_since || c.created_at : c.status_since || c.updated_at)}</span>${dormant.has(c.vehicle_id) ? ` <span class="chip" data-dormant>${esc(t('eval_excluded'))}</span>` : ''}<span class="sub wrap" data-dnpsub>${esc(c.case_no)}${r === 3 && c.safety_lock_reason ? ` · <span data-lockreason>${esc(translateLockReason(S.lang, c.safety_lock_reason))}</span>` : ''}${coupled.has(c.vehicle_id) ? ` · <b>${esc(t(coupled.get(c.vehicle_id).kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(coupled.get(c.vehicle_id).plate)}</b>` : ''}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${c.tow_service || c.vehicle_location ? ` · <span data-vloc>${c.tow_service ? `<b>${esc(t('vl_towed_chip'))}</b>` : ''}${c.tow_service && c.vehicle_location ? ': ' : ''}${esc(c.vehicle_location || '')}</span>` : ''}${c.planned_date && c.status !== 'abschlusskontrolle' ? ' · ' + esc(t('planned_ws_short')) + ' ' + fmtD(c.planned_date) : ''}${partsEta(c)}${c.status !== 'abschlusskontrolle' && !(c.status === 'wartet_teile' ? c.parts_expected_date : c.planned_date) ? ` · <b data-retunk>${esc(t('dispo_return_unknown'))}</b>` : ''}</span></a>`).join('')}</div>`;
+  return `<h2>${esc(t('dispo_not_plannable'))}</h2><div class="list">${list.map(({ r, c }) => `<a class="row ${r === 3 ? 'p-kritisch' : 'p-mittel'}" href="#/cases/${esc(c.id)}">${plate(c.plate, { locked: c.safety_lock })}<span class="title" style="white-space:normal">${esc(r === 3 ? t('locked') + ' – ' + t('do_not_drive') : t('st_' + c.status))}</span><span class="chip ${r === 3 ? 'kritisch' : 'mittel'}">${esc(t('since'))} ${fmtDT(r === 3 ? c.lock_since || c.created_at : c.status_since || c.updated_at)}</span>${dormant.has(c.vehicle_id) ? ` <span class="chip" data-dormant>${esc(t('eval_excluded'))}</span>` : ''}<span class="sub wrap" data-dnpsub>${esc(c.case_no)}${r === 3 && c.safety_lock_reason ? ` · <span data-lockreason>${esc(translateLockReason(S.lang, c.safety_lock_reason))}</span>` : ''}${coupled.has(c.vehicle_id) ? ` · <b>${esc(t(coupled.get(c.vehicle_id).kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(coupled.get(c.vehicle_id).plate)}</b>` : ''}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${c.tow_service || c.vehicle_location ? ` · <span data-vloc>${c.tow_service ? `<b>${esc(t('vl_towed_chip'))}</b>` : ''}${c.tow_service && c.vehicle_location ? ': ' : ''}${esc(c.vehicle_location || '')}</span>` : ''}${c.planned_date && c.status !== 'abschlusskontrolle' ? ' · ' + esc(t('planned_ws_short')) + ' ' + fmtD(c.planned_date) : ''}${partsEta(c)}${!dispoReturnKnown(c) ? ` · <b data-retunk>${esc(t('dispo_return_unknown'))}</b>` : ''}</span></a>`).join('')}</div>`;
 }
 
 // Werkstatt-Startseite: Winterreifen-Arbeitsvorrat (gleiche Daten wie Disposition, Standort wie Reifen – Flotte); Sprung in die passenden Reiter
@@ -1214,7 +1228,7 @@ async function viewCases() {
   const wsel = wsFilterOk() && wsAll().length > 1 ? `<div class="noprint" style="margin-bottom:12px"><label for="cws">${esc(t('workshop'))}</label><select id="cws"><option value="">${esc(t('filter_all'))}</option>${wsAll().map((w) => `<option value="${esc(w.code)}"${S.caseWs === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>` : '';
   render(`<h1>${esc(t('nav_cases'))}</h1>
     <input id="cq" class="noprint" type="search" value="${esc(q)}" placeholder="${esc(t('case_search'))}" aria-label="${esc(t('case_search'))}" style="margin-bottom:12px" autocomplete="off">${vsel}${wsel}
-    <div class="seg-tabs noprint">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? [] : ['followup']), ...(['critical', 'locked', 'cost_approval', 'unreceived'].includes(f) ? [f] : [])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}"${k === f ? ' aria-current="true"' : ''}>${esc(t(CF_LABEL[k] || k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', nDays(res.stale_days)) : t('filter_stale_off'))}</p>` : ''}
+    <div class="seg-tabs noprint">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? [] : ['followup']), ...(['critical', 'locked', 'cost_approval', 'unreceived'].includes(f) ? [f] : [])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}"${k === f ? ' aria-current="true"' : ''}>${esc(t(k === 'unreceived' && !isMgr() ? 'dispo_unreceived' : CF_LABEL[k] || k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', nDays(res.stale_days)) : t('filter_stale_off'))}</p>` : ''}
     ${f !== 'followup' ? `<select id="csort" class="noprint" aria-label="${esc(t('sort_by'))}" style="max-width:420px;margin-bottom:12px">${CASE_SORTS.map((k) => `<option value="${k}"${(S.caseSort || 'priority') === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('csort_' + k))}</option>`).join('')}</select>` : ''}
     <div id="cl">${cPrint(list, q)}${caseList(list)}${trunc(res)}</div>
     <div class="actions">${S.me.role !== 'driver' ? `<button type="button" class="btn secondary" id="ccsv">${esc(t('export_csv'))}</button>${f === 'followup' ? `<button type="button" class="btn secondary" id="cics">${esc(t('followup_ics'))}</button>` : ''}` : ''}<button type="button" class="btn secondary" id="cprl">${esc(t('print'))}</button></div>`, 'cases');

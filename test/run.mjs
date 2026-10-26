@@ -22456,6 +22456,37 @@ await test('Backlog 367: Fahrerakte zeigt Inhaber/Fuhrparkleitung offene Bußgel
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].drv_ban_file, l);
 });
 
+await test('Backlog 368: Disposition – „Rückkehr: ungeklärt“ auch bei laufender Reparatur bzw. Werkstatt-/Liefertermin heute oder vorbei (Termin ist der Beginn, nicht die Fertigstellung); Abschlusskontrolle nie; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('const dispoReturnKnown = '); const b = app.indexOf('\n};', a) + 3; ok(a > 0 && b > a, 'Funktion gefunden');
+  const known = new Function('bDate', app.slice(a, b) + '\nreturn dispoReturnKnown;')(() => '2026-10-26');
+  const cases = [
+    [{ status: 'werkstatt_freigegeben', planned_date: '2026-10-28' }, true], [{ status: 'werkstatt_freigegeben', planned_date: '2026-10-26' }, false],
+    [{ status: 'werkstatt_freigegeben', planned_date: '2026-10-19' }, false], [{ status: 'werkstatt_freigegeben', planned_date: null }, false],
+    [{ status: 'in_reparatur', planned_date: '2026-10-30' }, false], [{ status: 'wartet_teile', parts_expected_date: '2026-10-29', planned_date: '2026-10-01' }, true],
+    [{ status: 'wartet_teile', parts_expected_date: '2026-10-20', planned_date: '2026-11-30' }, false], [{ status: 'wartet_teile', parts_expected_date: null, planned_date: '2026-11-30' }, false],
+    [{ status: 'abschlusskontrolle', planned_date: null }, true], [{ status: 'gemeldet', safety_lock: 1, planned_date: null }, false]];
+  for (const [c, want] of cases) eq(known(c), want, JSON.stringify(c));
+  ok(app.includes('${!dispoReturnKnown(c) ? ` · <b data-retunk>'), 'Tafel nutzt die Regel');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].help_dispo_s.includes(STRINGS[l].dispo_return_unknown.split(':')[0]), l + ' Hilfe nennt „Rückkehr“'); ok(STRINGS[l].help_dispo_s.includes(STRINGS[l].dispo_unreceived), l + ' Hilfe nennt neue Meldungen'); for (const k of ['nav_new', 'drv_nicht_fahrbereit', 'prio_kritisch']) ok(STRINGS[l].help_dispo_s.includes(STRINGS[l][k]), l + ' Hilfe Anruf nennt ' + k); }
+});
+
+await test('Backlog 369: Disposition – Startseite „Neue Meldungen, Eingang noch nicht bestätigt (n)“ → Filter unreceived (Standort der Tafel); Server liefert dem Filter nur unbestätigte gemeldete Vorgänge, Disposition darf ihn nutzen; Reiter heißt für Nicht-Leitung anders', async () => {
+  const { e, U, cmd, newCase } = await freshWorld();
+  const x0 = await U.own.post('/api/users', { username: 'w.dispo', display_name: 'Dispo W', role: 'dispatch', environment: 'test' }); eq(x0.status, 201, JSON.stringify(x0.data));
+  const D = new Client(worker, e, 'w.dispo'); eq((await D.post('/api/invite/accept', { token: x0.data.invite_token, password: 'Sicheres-Passwort-2026' })).status, 200);
+  const id1 = await newCase({ description: 'Spiegel locker 369' }); const id2 = await newCase({ description: 'Wischer 369' });
+  eq((await cmd(U.fleet, id1, 'receive')).status, 200, 'Eingang bestätigt');
+  const r = await D.get('/api/cases?status=open&unreceived=1&limit=50'); eq(r.status, 200, JSON.stringify(r.data));
+  const ids = r.data.cases.map((c) => c.id); ok(ids.includes(id2) && !ids.includes(id1), JSON.stringify(ids));
+  const all = (await D.get('/api/cases?status=open&limit=500')).data.cases; const x = all.find((c) => c.id === id2); ok(x && x.status === 'gemeldet' && !x.fleet_received_at, 'Liste liefert Felder für die Zählung');
+  ok(all.find((c) => c.id === id1).fleet_received_at, 'bestätigt hat Zeitstempel');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("dcs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at)") && app.includes('id="dunrec"') && app.includes("k === 'unreceived' && !isMgr() ? 'dispo_unreceived'"), 'Startseite/Reiter');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dispo_unreceived && STRINGS[l].dispo_unreceived !== STRINGS[l].todo_receive, l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
