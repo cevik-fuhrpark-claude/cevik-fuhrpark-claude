@@ -23057,7 +23057,7 @@ await test('Backlog 406 (Blickwinkel „Winterreifen bestellen, bevor der erste 
   const n = ft.winter_need;
   eq(n.vehicles, 2); eq(n.positions, 5);
   eq(n.groups.map((g) => `${g.axle}|${g.size}|${g.positions}|${g.vehicles}|${g.unverified}`).join(' ; '), 'lenkachse|385/65 R22.5|3|2|1 ; antriebsachse|null|2|1|0');
-  eq(n.groups[0].plates.join(), 'SZ-KC 5515,SZ-YC 5513');
+  eq(n.groups[0].plates.join(), 'SZ-KC 5515,SZ-YC 5513'); eq(n.groups[0].vehicle_ids.join(), [V2, V1].join(), 'Fahrzeug-IDs passend zu den Kennzeichen');
   eq(n.missing_vehicles, 2, 'V2 (Antriebsachse) und V3'); eq(n.missing_positions, 2 + 4);
   // Standortfilter
   const hh = (await U.fleet.get('/api/tires/fleet?site=Hamburg')).data.winter_need;

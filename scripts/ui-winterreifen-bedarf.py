@@ -39,6 +39,8 @@ with sync_playwright() as p:
         if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/twn_{lang}.png',full_page=True)
         q.click('[data-tf="attention"]'); q.wait_for_timeout(600)
         check(not q.query_selector('#twneed'),f'{lang}/{w}: nur in den Winter-Reitern')
+        q.goto(B+'/#/tires?f=winter_bad'); q.wait_for_selector('#twneed a',timeout=15000); q.click('#twneed tr[data-twn] a'); q.wait_for_timeout(1200)
+        check('#/vehicles/' in q.url and 'WR-BD 80' in q.inner_text('body'),f'{lang}/{w}: Kennzeichen öffnet die Fahrzeugakte')
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:2]}')
         ctx.close()
     br.close()

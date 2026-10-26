@@ -450,15 +450,18 @@ async function winterNeedBySize(env, rows) {
       const axle = WINTER_AXLE(pos); if (!axle) continue;
       const s = sp.get(`${r.vehicle_id}|${axle}`); const size = s && s.size ? String(s.size).trim() : null;
       const k = `${axle}|${size ? sizeKey(size) : ''}`; // Schreibweise egal („315/70R22.5“ = „315/70 R22.5“), angezeigt die geprüfte bzw. erste
-      if (!groups.has(k)) groups.set(k, { axle, size, positions: 0, unverified: 0, plates: [] });
+      if (!groups.has(k)) groups.set(k, { axle, size, positions: 0, unverified: 0, vs: new Map() });
       const g = groups.get(k); g.positions++; out.positions++;
       if (size && !s.verified) g.unverified++;
       else if (size && !g.sv) { g.size = size; g.sv = true; } // geprüfte Schreibweise bevorzugt
-      if (!g.plates.includes(r.plate)) g.plates.push(r.plate);
+      g.vs.set(r.vehicle_id, r.plate);
     }
   }
   const ax = { lenkachse: 0, antriebsachse: 1 };
-  out.groups = [...groups.values()].map(({ sv, ...g }) => ({ ...g, vehicles: g.plates.length, plates: g.plates.sort((a, b) => String(a).localeCompare(String(b), 'de', { numeric: true })) }))
+  out.groups = [...groups.values()].map(({ sv, vs, ...g }) => {
+    const list = [...vs.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'de', { numeric: true }));
+    return { ...g, vehicles: list.length, plates: list.map((x) => x[1]), vehicle_ids: list.map((x) => x[0]) }; // vehicle_ids[i] gehört zu plates[i]
+  })
     .sort((a, b) => ax[a.axle] - ax[b.axle] || (a.size === null) - (b.size === null) || b.positions - a.positions || String(a.size).localeCompare(String(b.size)));
   return out;
 }
