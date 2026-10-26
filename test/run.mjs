@@ -22541,12 +22541,15 @@ await test('Backlog 373: Fahrzeugakte „Was fehlt noch?“ – Datenqualitäts-
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['vdq_title', 'vdq_none', 'vdq_hint']) ok(STRINGS[l][k], `${l}.${k}`);
 });
 
-await test('Fehlersuche 26.10.: „Зчеплення буксує“/„буксує зчеплення“/„сцепление буксует“ (Kupplung rutscht) zeigt nur den Getriebe-, nicht den Festgefahren-Hinweis; „вантажівка буксує“/„забуксували в снігу“ bleiben Festgefahren', async () => {
+await test('Fehlersuche 26.10.: „Зчеплення буксує“/„буксує зчеплення“/„сцепление буксует“ (Kupplung rutscht) zeigt nur den Getriebe-, nicht den Festgefahren-Hinweis; „вантажівка буксує“/„забуксували в снігу“ bleiben Festgefahren; „Cab door won’t lock“ nur Tür-Hinweis', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const re = (n) => new RegExp(app.match(new RegExp(`^const ${n} = /(.*)/i;$`, 'm'))[1], 'i');
   const STUCK = re('STUCK_HINT'); const GEAR = re('GEAR_HINT');
   for (const x of ['Зчеплення буксує', 'буксує зчеплення', 'сцепление буксует', 'Зчеплення сильно буксує']) { ok(!STUCK.test(x), 'kein Festgefahren: ' + x); ok(GEAR.test(x), 'Getriebe: ' + x); }
   for (const x of ['вантажівка буксує', 'забуксували в снігу', 'колеса буксують на льоду']) ok(STUCK.test(x), 'Festgefahren: ' + x);
+  // „Cab door won’t lock“ wie „Fahrertür lässt sich nicht abschließen“: nur Tür-Hinweis (vorher zusätzlich Abschließen-Hinweis → ui-fahrerhaus-kippen rot)
+  const CABLOCK = re('CABLOCK_HINT'); const DOOR = re('DOOR_HINT');
+  ok(!CABLOCK.test('Cab door won’t lock') && DOOR.test('Cab door won’t lock'), 'cab door'); for (const x of ['Cab won’t lock', 'Truck won’t lock', 'cab can’t be locked']) ok(CABLOCK.test(x), 'Abschließen: ' + x);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
