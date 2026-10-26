@@ -4002,10 +4002,14 @@ async function viewCosts() {
   for (const r of rep.rows) { const v = byV.get(r.vehicle_id) || { plate: r.plate, site: r.site, inactive: r.vehicle_active === false, actual: 0, valued: 0, estimate: 0, unvalued: 0, hours: 0, months: [] }; v.actual += r.actual_net; v.valued += r.valued_items || 0; v.estimate += r.estimate_net; v.unvalued += r.unvalued_items; v.hours += r.hours; v.months.push(r); byV.set(r.vehicle_id, v); }
   const vs = [...byV.entries()].sort((a, b) => b[1].actual - a[1].actual);
   const kmBy = new Map((rep.vehicles || []).map((v) => [v.vehicle_id, v]));
+  // Backlog 413 (Blickwinkel „Jahresabschluss: Kosten 2026 für die Steuerberatung“): Schnellwahl laufendes Jahr / Vorjahr / letzte 12 Monate
+  const cy = bYm().slice(0, 4);
+  const costQuick = [['year', `${cy}-01`, bYm()], ['prev', `${Number(cy) - 1}-01`, `${Number(cy) - 1}-12`], ['12m', bYm(11), bYm()]];
   // Ausdruck (Besprechung/Ablage): Zeitraum und Standort im Vermerk, weil das Formular nicht mitgedruckt wird
   let html = `<h1>${esc(t('costs_report'))}</h1>${printHead([`${t('period')}: ${fmtMonth(from)} – ${fmtMonth(to)}`, site ? `${t('site')}: ${site === 'ohne' ? t('cs_nosite') : site}` : ''])}${helpLink('costs')}<form id="cr" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
     <div><label>${esc(t('from'))}</label><input type="month" name="from" value="${esc(from)}" required></div><div><label>${esc(t('to'))}</label><input type="month" name="to" value="${esc(to)}" required></div>
     ${(rep.site_options || []).length > 1 || site ? `<div>${siteSelect('crsite', 'site', rep.site_options, site)}</div>` : ''}
+    <div class="noprint" id="crq" style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap">${costQuick.map(([k, f, tt]) => `<button type="button" class="btn ${f === from && tt === to ? '' : 'secondary '}small" data-crq="${k}" aria-pressed="${f === from && tt === to}" style="white-space:nowrap">${esc(t('crq_' + k).replace('{y}', f.slice(0, 4)))}</button>`).join('')}</div>
     <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn" id="csv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="csvi" title="${esc(t('cost_items_csv_hint'))}">${esc(t('cost_items_csv'))}</button><button type="button" class="btn secondary" id="costprt">${esc(t('print'))}</button></div></form>
     <section class="panel"><dl class="kv"><dt>${esc(t('cost_actual'))}</dt><dd><b>${eurIst(rep.totals)}</b></dd><dt>${esc(t('cost_estimate'))}</dt><dd>${eur(rep.totals.estimate_net)}</dd>
     <dt>${esc(t('hours'))}</dt><dd>${esc(fmtNum(rep.totals.hours))}</dd><dt>${esc(t('unvalued_positions'))}</dt><dd>${rep.totals.unvalued_items ? `<span class="chip kritisch">${rep.totals.unvalued_items}</span>` : '0'}</dd></dl>
@@ -4027,6 +4031,7 @@ async function viewCosts() {
   const cr = $('#cr');
   $('#costprt').onclick = () => window.print();
   cr.onsubmit = (e) => { e.preventDefault(); S.costFrom = cr.from.value; S.costTo = cr.to.value; S.costSite = cr.site ? cr.site.value : ''; viewCosts(); };
+  $$('[data-crq]').forEach((bt) => { bt.onclick = () => { const q = costQuick.find((x) => x[0] === bt.dataset.crq); S.costFrom = q[1]; S.costTo = q[2]; viewCosts(); }; });
   // Dateiname aus dem angezeigten Zeitraum/Standort (nicht aus noch nicht abgeschickten Formularfeldern)
   $('#csv').onclick = async () => { try { const blob = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}&format=csv`); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `fuhrpark-kosten_${envFn()}_${rep.from || from}_${rep.to || to}${rep.site ? '_' + fnPart(rep.site) : ''}_${standTag()}.csv`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
   // Einzelpositionen (Lieferant, Rechnung/Beleg) für den Abgleich mit den Belegen – Jahresabschluss (23.10.2026)

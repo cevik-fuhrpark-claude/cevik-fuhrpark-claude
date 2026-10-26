@@ -23275,6 +23275,15 @@ await test('Backlog 412 (Blickwinkel „Jahreswechsel: Werkstatt-Stundensatz ste
   for (const l of ['de', 'uk', 'en']) { for (const x of ['hr_keep', 'hr_keep_until', 'hr_keep_hint', 'hr_periods', 'hr_period_item', 'hr_period_now', 'hr_remove', 'hr_period_remove_confirm', 'hr_kept_toast', 'hr_until', 'cost_rate_periods']) ok(STRINGS[l][x], `${x} ${l}`); ok(/01\.01|1 January/.test(STRINGS[l].help_settings_s), 'Hilfe ' + l); }
   const api2 = fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8'); ok(api2.includes('hourly_rate_keep_until') && api2.includes('hourly_rate_periods'), 'API.md');
 });
+await test('Backlog 413 (Blickwinkel „Jahresabschluss: Kosten 2026 für die Steuerberatung“): Kostenbericht-Schnellwahl laufendes Jahr / Vorjahr / letzte 12 Monate – Zeiträume gültig, Texte DE/UK/EN, Hilfe', async () => {
+  const { U } = await freshWorld();
+  const y = Number(BERLIN_TODAY.slice(0, 4)); const ym = BERLIN_TODAY.slice(0, 7);
+  for (const [f, to] of [[`${y}-01`, ym], [`${y - 1}-01`, `${y - 1}-12`]]) { const r = await U.fleet.get(`/api/reports/costs?from=${f}&to=${to}`); eq(r.status, 200, f); eq(`${r.data.from}/${r.data.to}`, `${f}/${to}`); }
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const costQuick = [['year', `${cy}-01`, bYm()], ['prev', `${Number(cy) - 1}-01`, `${Number(cy) - 1}-12`], ['12m', bYm(11), bYm()]];") && app.includes("$$('[data-crq]').forEach((bt) =>"), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['crq_year', 'crq_prev', 'crq_12m']) ok(STRINGS[l][x], `${x} ${l}`); ok(STRINGS[l].help_costs_s.includes(STRINGS[l].crq_12m), 'Hilfe ' + l); }
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
