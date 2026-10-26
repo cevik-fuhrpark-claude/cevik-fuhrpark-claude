@@ -411,7 +411,7 @@ function labelFix(root) {
 // ---------- Router ----------
 const routes = [
   [/^#\/login$/, viewLogin], [/^#\/setup$/, viewSetup], [/^#\/invite\/(.+)$/, viewInvite],
-  [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
+  [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/multi$/, viewNewMulti], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
   [/^#\/vehicles(?:\?f=\w+)?$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?sec=tires$/, (vid) => viewVehicle(vid, null, 'tires')], [/^#\/vehicles\/(VIN:[A-Z0-9]+\?done=[\w-]+)$/, (x) => viewVehicle(x.split('?done=')[0], null, 'done:' + x.split('?done=')[1])], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline(?:\?f=(\w+))?$/, viewTimeline], [/^#\/inbox$/, viewInbox], [/^#\/push$/, () => { location.replace(notifHref({})); }],
   [/^#\/master(?:\?(q|sev)=([^&]*))?$/, viewMaster], [/^#\/plan(?:\?s=(mdue))?$/, (sec) => viewPlan(sec)], [/^#\/users$/, viewUsers], [/^#\/settings(?:\?s=([a-z_]+))?$/, (sec) => viewSettings(sec)], [/^#\/more(?:\?o=(sess))?$/, (o) => viewMore(o)],
   [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/guide(?:\?l=(de|uk|en))?$/, (l) => viewDriverGuide(l)], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/stock\/count$/, viewStockCount], [/^#\/stock\/asof$/, viewStockAsOf], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/tacho\/history$/, viewTachoHistory], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/records$/, viewDriverRecords], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit(?:\?u=([\w-]+))?$/, (u) => viewAudit(false, u)], [/^#\/audit\?v=(VIN:[A-Z0-9]+)$/, (v) => viewAudit(false, undefined, v)], [/^#\/usage$/, viewUsage], [/^#\/readiness$/, viewReadiness], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/emergency(?:\?v=(VIN:[A-Z0-9]+)(?:&from=file)?)?$/, viewEmergency], [/^#\/emergency\/edit$/, viewEmergencyEdit], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance(?:\?f=(gaps|due|noplan|all))?$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
@@ -1778,6 +1778,64 @@ function occDrivers(o) {
   const row = (x) => `<li>${esc(x.display_name)} · ${x.basis === 'kontrolle' ? `${esc(t('occ_drv_check'))} ${fmtDT(x.at)}` : `${esc(t('occ_drv_assign'))} ${fmtD(x.at)} – ${x.until ? fmtD(x.until) : esc(t('occ_drv_open'))}`}${x.via_plate ? ` (${esc(t('occ_drv_via'))} ${esc(x.via_plate)})` : ''}</li>`;
   return `<dt>${esc(t('occ_drivers'))}</dt><dd data-occdrivers>${o.drivers.length ? `<ul class="small" style="margin:0;padding-left:18px">${o.drivers.map(row).join('')}</ul>` : `<span class="muted">${esc(t('occ_drv_none'))}</span>`}<p class="small muted" style="margin:2px 0 0">${esc(t(o.day_only ? 'occ_drv_hint_day' : 'occ_drv_hint'))}${o.truncated ? ' ' + esc(t('occ_drv_more')) : ''}</p></dd>`;
 }
+// Backlog 404 (26.10.2026, Blickwinkel „Hagelschaden an mehreren Lkw auf dem Hof“): gleicher Schaden an mehreren Fahrzeugen in einem Schritt
+// (nur Inhaber/Fuhrparkleitung). Je Fahrzeug ein eigener Vorgang; Fotos danach im jeweiligen Vorgang ergänzen.
+// App: bis 40 Fahrzeuge (ganzer Hof); Server nimmt höchstens 12 je Aufruf → gleichmäßige Blöcke (je ≥ 2) mit demselben Schlüssel
+const BATCH_MAX = 40; const BATCH_CHUNK = 12;
+const tfill = (k, o) => Object.entries(o).reduce((a, [x, y]) => a.split(`{${x}}`).join(String(y)), t(k));
+async function viewNewMulti() {
+  if (!S.me || !['owner', 'fleet'].includes(S.me.role)) { render(`<h1>${esc(t('multi_title'))}</h1><p class="muted">${esc(t('no_permission_view'))}</p>`, 'new'); return; }
+  const vs = await vehiclesCached();
+  if (!vs.length) { render(`<h1>${esc(t('multi_title'))}</h1>${noVehiclesNote()}`, 'new'); return; }
+  const ws = S.meta.workshops;
+  render(`<h1>${esc(t('multi_title'))}</h1><p class="small muted">${esc(t('multi_intro'))}</p><form id="f" novalidate>
+    <label for="vq">${esc(t('multi_choose'))}</label><input id="vq" placeholder="SZ-…" autocomplete="off" style="margin-bottom:8px">
+    <p class="small" id="mcount" role="status" aria-live="polite"></p>
+    <div class="vehpick multi" id="mpick" role="group" aria-label="${esc(t('multi_choose'))}">${vs.map((v) => `<label><input type="checkbox" name="mveh" value="${esc(v.id)}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="small muted">${v.kind === 'anhaenger' ? esc(t('vk_anhaenger')) + ' · ' : ''}${esc(v.site || '')}</span></label>`).join('')}</div>
+    <label for="d">${esc(t('what_wrong'))}<span class="hint">${esc(t('multi_desc_hint'))}</span></label><textarea id="d" required minlength="5" maxlength="4000"></textarea>
+    <label id="lbl_prio">${esc(t('urgency'))}</label><div class="choices" role="radiogroup" aria-labelledby="lbl_prio">${['niedrig', 'mittel', 'kritisch'].map((p, i) => `<label class="choice c-${p}"><input type="radio" name="prio" value="${p}"${i === 0 ? ' checked' : ''}><span><b>${esc(t('prio_' + p))}</b></span></label>`).join('')}</div>
+    <label id="lbl_drv">${esc(t('driveable'))}</label><div class="choices" role="radiogroup" aria-labelledby="lbl_drv">${['fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit', 'unbekannt'].map((p) => `<label class="choice${p === 'nicht_fahrbereit' ? ' c-kritisch' : ''}"><input type="radio" name="drv" value="${p}"${p === 'unbekannt' ? ' checked' : ''}><span><b>${esc(t('drv_' + p))}</b></span></label>`).join('')}</div>
+    <label for="w">${esc(t('workshop'))}</label><select id="w"><option value="">–</option>${ws.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>
+    <label for="l">${esc(t('location'))}</label><input id="l" maxlength="300">
+    ${occurredFields(null)}
+    <p class="small muted" data-multiphotos>${esc(t('multi_photos_hint'))}</p>
+    <div class="actions"><button class="btn block" id="sb">${esc(t('multi_send'))}</button></div></form>`, 'new');
+  const chosen = () => $$('input[name=mveh]:checked');
+  const count = () => { const n = chosen().length; const el = $('#mcount'); if (el) { el.textContent = tfill('multi_selected', { n, max: BATCH_MAX }); el.classList.toggle('err', n > BATCH_MAX); } };
+  $$('input[name=mveh]').forEach((x) => x.addEventListener('change', count)); count();
+  $('#vq').onkeydown = (e) => { if (e.key === 'Enter') e.preventDefault(); };
+  // Filter blendet nur aus – bereits gewählte Fahrzeuge bleiben gewählt und sichtbar (Hof-Liste wird oft in mehreren Suchen zusammengestellt)
+  $('#vq').oninput = () => { const q = searchKey($('#vq').value); $$('#mpick label').forEach((l) => { const r = $('input', l); l.hidden = !!q && !(r && r.checked) && !searchKey(l.textContent).includes(q); }); };
+  const key = uid();
+  $('#f').onsubmit = async (e) => {
+    e.preventDefault();
+    const sb = $('#sb'); const ids = chosen().map((x) => x.value);
+    if (ids.length < 2) { toast(t('multi_need_two'), true); markInvalid($('#mpick'), t('multi_need_two')); $('#vq').focus(); return; }
+    if (ids.length > BATCH_MAX) { toast(tfill('multi_too_many', { max: BATCH_MAX }), true); markInvalid($('#mpick'), tfill('multi_too_many', { max: BATCH_MAX })); return; }
+    if ($('#d').value.trim().length < 5) { toast(t('desc_too_short'), true); markInvalid($('#d'), t('desc_too_short')); $('#d').focus(); return; }
+    const occ = occurredValue($('#occd').value, $('#occt').value);
+    if (occ === undefined) { toast(t('occ_need_date'), true); markInvalid($('#occd'), t('occ_need_date')); $('#occd').focus(); return; }
+    if (occ && occ.slice(0, 10) > bDate()) { toast(t('occ_future'), true); markInvalid($('#occd'), t('occ_future')); $('#occd').focus(); return; }
+    sb.disabled = true;
+    const body = { vehicle_ids: ids, description: $('#d').value, priority: $('input[name=prio]:checked').value, driveability: $('input[name=drv]:checked').value,
+      workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key, ...(occ ? { occurred_at: occ } : {}) };
+    try {
+      const k = Math.ceil(ids.length / BATCH_CHUNK); const size = Math.ceil(ids.length / k); const r = { count: 0, cases: [] };
+      try {
+        for (let i = 0; i < ids.length; i += size) { const x = await api('POST', '/api/cases/batch', { ...body, vehicle_ids: ids.slice(i, i + size) }); r.count += x.count; r.cases.push(...x.cases); }
+      } catch (err) { if (r.count) err.message = `${err.offline ? t('multi_offline') : err.message} ${tfill('multi_partial', { n: r.count, m: ids.length })}`; err.offline = err.offline && !r.count; throw err; }
+      if (!sb.isConnected) return;
+      document.querySelectorAll('.toast.err').forEach((x) => x.remove()); // Hinweis eines früheren Versuchs (z. B. „mindestens zwei“) ist erledigt
+      const pl = new Map(vs.map((v) => [v.id, v]));
+      render(`<h1>${esc(t('multi_title'))}</h1><div class="panel" role="status" data-multidone><p><b>${esc(tn('multi_done', r.count))}</b></p><p class="small muted">${esc(t('multi_photos_after'))}</p>
+        <ul class="list">${r.cases.map((c) => { const v = pl.get(c.vehicle_id); return `<li><a href="#/cases/${esc(c.id)}" data-mcase="${esc(c.case_no)}">${esc(c.case_no)}</a> · ${v ? plate(v.plate, { locked: !!c.safety_lock }) : esc(c.vehicle_id)}${c.duplicate ? ` <span class="small muted">${esc(t('multi_dup'))}</span>` : ''}</li>`; }).join('')}</ul>
+        <p><a class="btn" href="#/cases">${esc(t('nav_cases'))}</a></p></div>`, 'new');
+    } catch (err) {
+      sb.disabled = false;
+      toast(err.offline ? t('multi_offline') : err.message, true);
+    }
+  };
+}
 async function viewNew(preId) {
   if (!mayReport()) { render(`<h1>${esc(t('report_damage'))}</h1><p class="muted">${esc(t('no_permission_view'))}</p>`, 'new'); return; }
   const vs = await vehiclesCached();
@@ -1786,7 +1844,7 @@ async function viewNew(preId) {
   const others = vs.filter((v) => !v.assigned);
   const pick = (arr) => `<div class="vehpick">${arr.map((v) => `<label><input type="radio" name="veh" value="${esc(v.id)}" required>${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="small muted">${v.kind === 'anhaenger' ? esc(t('vk_anhaenger')) + ' · ' : ''}${esc(v.site || '')}</span></label>`).join('')}</div>`;
   const ws = S.meta.workshops;
-  render(`<h1>${esc(t('report_damage'))}</h1>${outboxBanner()}${helpLink('report')}<form id="f" novalidate>
+  render(`<h1>${esc(t('report_damage'))}</h1>${outboxBanner()}${helpLink('report')}${['owner', 'fleet'].includes(S.me.role) ? `<p class="small"><a href="#/new/multi" id="tomulti">${esc(t('multi_link'))}</a></p>` : ''}<form id="f" novalidate>
     <label for="vq">${esc(t('choose_vehicle'))}</label><input id="vq" placeholder="SZ-…" autocomplete="off" style="margin-bottom:8px">
     ${mine.length ? `<h3>${esc(t('my_vehicles'))}</h3>${pick(mine)}<details><summary>${esc(t('other_vehicles'))}</summary>${pick(others)}</details>` : pick(vs)}
     <div id="known"></div><label for="d">${esc(t('what_wrong'))}<span class="hint">${esc(t('what_wrong_hint'))}</span></label><textarea id="d" required minlength="5" maxlength="4000"></textarea>

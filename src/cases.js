@@ -908,6 +908,29 @@ export async function createCase(env, ctx, user, envName, body) {
   return (await createCases(env, ctx, user, envName, [body]))[0];
 }
 
+// Backlog 404 (26.10.2026, Blickwinkel „Hagelschaden an mehreren Lkw auf dem Hof“): gleicher Schaden an mehreren Fahrzeugen in einem
+// Schritt melden (nur Inhaber/Fuhrparkleitung). Je Fahrzeug ein eigener Vorgang (eigene Werkstatt, Kosten, Versicherungsfall), alle im
+// selben atomaren Stapel wie createCases. request_key je Fahrzeug aus dem Schlüssel des Formulars abgeleitet – erneutes Senden (Funkloch)
+// liefert dieselben Vorgänge. Fotos ergänzt die Leitung danach im jeweiligen Vorgang (Bilder gehören zu einem Fahrzeug).
+// Höchstens 12 je Aufruf: Empfängerermittlung je Fahrzeug (1 Abfrage) – 25 Fahrzeuge kamen mit Push-Geräten auf 45 von 50 Abfragen.
+// Die App teilt größere Auswahlen in Blöcke mit demselben Schlüssel (je Fahrzeug abgeleitet → erneutes Senden bleibt wiederholbar).
+export const BATCH_MAX = 12;
+export async function createCaseBatch(env, ctx, user, envName, body) {
+  if (!isManager(user)) throw forbidden();
+  body = body && typeof body === 'object' ? body : {};
+  const key = str(body.request_key, { required: true, max: 64, field: 'request_key' });
+  if (!Array.isArray(body.vehicle_ids)) throw bad('validation', 'Bitte mindestens zwei Fahrzeuge wählen.');
+  const ids = body.vehicle_ids.map((x) => str(x, { required: true, max: 40, field: 'Fahrzeug' }));
+  if (new Set(ids).size !== ids.length) throw bad('validation', 'Fahrzeug doppelt gewählt.');
+  if (ids.length < 2) throw bad('validation', 'Bitte mindestens zwei Fahrzeuge wählen.');
+  if (ids.length > BATCH_MAX) throw bad('validation', 'Höchstens 12 Fahrzeuge je Aufruf.');
+  const keys = await Promise.all(ids.map((id) => sha256Hex(`${key}|${id}`)));
+  const common = { description: body.description, priority: body.priority, driveability: body.driveability, workshop_site: body.workshop_site,
+    location_note: body.location_note, occurred_at: body.occurred_at, origin: 'meldung' };
+  const res = await createCases(env, ctx, user, envName, ids.map((id, i) => ({ ...common, vehicle_id: id, request_key: 'b' + keys[i].slice(0, 40) })));
+  return { count: res.length, cases: res.map((r, i) => ({ vehicle_id: ids[i], ...r })) };
+}
+
 // Mehrere Meldungen in einem Aufruf anlegen (z. B. Folgeaufträge einer Kontrolle mit mehreren Mängeln).
 // Abfragebudget: feste Zahl an Anweisungen unabhängig von der Anzahl – vorher ≈ 14 je Meldung, d. h. eine
 // Abfahrtskontrolle mit 3 Mängeln überschritt bereits die Cloudflare-Grenze von 50 Abfragen je Aufruf.

@@ -16934,7 +16934,7 @@ await test('Fehlersuche 22.10. (Erstnutzung): Hinweise statt leerer Seiten – S
   }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('ov.totals.vehicles === 0') && app.includes('data-todogaps'), 'Startseite: ohne Fahrzeuge bzw. mit Lücken kein grünes Feld');
-  eq((app.match(/if \(!vs\.length\) \{ render\(/g) || []).length, 2, 'Melden und Abfahrtskontrolle mit Hinweis');
+  eq((app.match(/if \(!vs\.length\) \{ render\(/g) || []).length, 3, 'Melden, Sammelmeldung (Backlog 404) und Abfahrtskontrolle mit Hinweis');
   ok(app.includes('data-vlempty') && app.includes('data-novehicle>'), 'leere Fahrzeugliste, Fahrer ohne Zuordnung');
   const { U } = await freshWorld();
   eq((await U.fleet.get('/api/tires/fleet')).status, 200);
@@ -22920,6 +22920,58 @@ await test('Backlog 400–403 (Blickwinkel „Lkw abgemeldet / Versicherung been
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-drvresting') && app.includes("rc.insurance_none_running ? t('rc_no_insurance')"), 'Oberfläche');
   ok(fs.readFileSync(new URL('../public/csv.js', import.meta.url), 'utf8').includes("i.check === 'insurance_none_running'"), 'Anzeige in der App-Sprache');
+});
+await test('Backlog 404 (Blickwinkel „Hagelschaden an mehreren Lkw auf dem Hof“): Sammelmeldung – gleicher Schaden an mehreren Fahrzeugen, je Fahrzeug ein Vorgang, atomar, wiederholbar, Abfragebudget', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const V2 = 'VIN:WDB9630051L917317';
+  const base = { description: 'Hagelschaden: Dellen im Dach und an der Motorhaube', priority: 'mittel', driveability: 'fahrbereit', location_note: 'Hof Dortmund', occurred_at: bDayOff(-1) };
+  // Rechte und Prüfungen
+  eq((await U.driver.post('/api/cases/batch', { ...base, vehicle_ids: [V1, V2], request_key: rk() })).status, 403, 'Fahrer');
+  eq((await U.ws.post('/api/cases/batch', { ...base, vehicle_ids: [V1, V2], request_key: rk() })).status, 403, 'Werkstatt');
+  eq((await U.viewer.post('/api/cases/batch', { ...base, vehicle_ids: [V1, V2], request_key: rk() })).status, 403, 'Lesen');
+  let r = await U.fleet.post('/api/cases/batch', { ...base, vehicle_ids: [V1], request_key: rk() }); eq(r.status, 400); ok(/mindestens zwei/.test(r.data.error?.message || JSON.stringify(r.data)), JSON.stringify(r.data));
+  eq((await U.fleet.post('/api/cases/batch', { ...base, vehicle_ids: [V1, V1], request_key: rk() })).status, 400, 'doppelt');
+  eq((await U.fleet.post('/api/cases/batch', { ...base, vehicle_ids: 'x', request_key: rk() })).status, 400, 'keine Liste');
+  eq((await U.fleet.post('/api/cases/batch', { ...base, description: 'kurz', vehicle_ids: [V1, V2], request_key: rk() })).status, 400, 'Beschreibung');
+  eq((await U.fleet.post('/api/cases/batch', { ...base, vehicle_ids: [V1, 'VIN:UNBEKANNT00000000'], request_key: rk() })).status, 400, 'unbekanntes Fahrzeug');
+  eq((await U.fleet.get('/api/cases?status=open')).data.cases.length, 0, 'nichts angelegt (atomar)');
+  // Zwei Fahrzeuge: je ein Vorgang mit gleicher Beschreibung, Ort, Schadenzeitpunkt
+  const k1 = rk();
+  r = await U.fleet.post('/api/cases/batch', { ...base, vehicle_ids: [V1, V2], request_key: k1 });
+  eq(r.status, 201, JSON.stringify(r.data)); eq(r.data.count, 2); eq(r.data.cases.map((c) => c.vehicle_id).join(), [V1, V2].join());
+  ok(r.data.cases[0].case_no !== r.data.cases[1].case_no && r.data.cases.every((c) => c.duplicate === false && c.safety_lock === false), JSON.stringify(r.data));
+  for (const c of r.data.cases) { const d = (await U.fleet.get(`/api/cases/${c.id}`)).data.case; eq(d.description, base.description); eq(d.location_note, 'Hof Dortmund'); eq(d.occurred_at, bDayOff(-1)); eq(d.status, 'gemeldet'); eq(d.vehicle_id, c.vehicle_id); }
+  // erneut senden (Funkloch): dieselben Vorgänge; anderer Inhalt mit gleichem Schlüssel → 409
+  const again = await U.fleet.post('/api/cases/batch', { ...base, vehicle_ids: [V1, V2], request_key: k1 });
+  eq(again.status, 201); ok(again.data.cases.every((c, i) => c.duplicate === true && c.id === r.data.cases[i].id), JSON.stringify(again.data));
+  eq((await U.fleet.post('/api/cases/batch', { ...base, description: base.description + ' (geändert)', vehicle_ids: [V1, V2], request_key: k1 })).status, 409);
+  eq((await U.fleet.get('/api/cases?status=open')).data.cases.length, 2);
+  // 12 Fahrzeuge je Aufruf (App teilt größere Auswahlen in Blöcke mit demselben Schlüssel), nicht fahrbereit: alle gesperrt, im Abfragebudget; 13 → 400
+  const ids = [V1, V2];
+  for (let i = 0; ids.length < 26; i++) { const vin = `WDB9634031055${String(7000 + i)}`; eq((await U.own.post('/api/vehicles', { plate: `HG-L ${100 + i}`, vin, site: 'Dortmund' })).status, 201); ids.push('VIN:' + vin); }
+  eq((await U.fleet.post('/api/cases/batch', { ...base, vehicle_ids: ids.slice(0, 13), request_key: rk() })).status, 400, '13 Fahrzeuge');
+  // mit Push-Geräten (Inhaber, Werkstatt, Fahrer) und zugeordnetem Fahrer – Zustellung zählt mit
+  const key = async () => b64urlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey)));
+  for (const u of [U.own, U.ws, U.driver]) eq((await u.post('/api/push/subscribe', { endpoint: `https://push.example/ok/hagel-${u.id}`, keys: { p256dh: await key(), auth: b64urlEncode(crypto.getRandomValues(new Uint8Array(16))) } })).status, 200);
+  eq((await U.fleet.post(`/api/vehicles/${ids[3]}/drivers`, { user_id: U.driver.id, evidence: 'Test' })).status, 201);
+  const k2 = rk(); const hb = { ...base, driveability: 'nicht_fahrbereit', workshop_site: 'DORTMUND', request_key: k2 };
+  const big = await U.fleet.post('/api/cases/batch', { ...hb, vehicle_ids: ids.slice(2, 14) });
+  eq(big.status, 201, JSON.stringify(big.data)); eq(big.data.count, 12); ok(big.data.cases.every((c) => c.safety_lock), 'gesperrt');
+  const n = QSTAT.perRequest.at(-1).n; ok(n <= 40, `Abfragen: ${n} (Abstand zur Grenze 50)`);
+  // zweiter Block mit demselben Schlüssel, danach beide erneut (Funkloch nach Block 1): nichts doppelt
+  const b2 = await U.fleet.post('/api/cases/batch', { ...hb, vehicle_ids: ids.slice(14, 26) }); eq(b2.status, 201); eq(b2.data.cases.filter((c) => !c.duplicate).length, 12);
+  const re1 = await U.fleet.post('/api/cases/batch', { ...hb, vehicle_ids: ids.slice(2, 14) }); ok(re1.data.cases.every((c, i) => c.duplicate && c.id === big.data.cases[i].id), 'Block 1 erneut');
+  eq(new Set([...big.data.cases, ...b2.data.cases].map((c) => c.case_no)).size, 24, 'eigene Nummern');
+  // außer Betrieb genommenes Fahrzeug in der Auswahl → nichts angelegt
+  e.DB.db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(ids[25]);
+  const before = (await U.fleet.get('/api/cases?status=open&limit=500')).data.cases.length;
+  eq((await U.fleet.post('/api/cases/batch', { ...base, vehicle_ids: [V1, ids[25]], request_key: rk() })).status, 400);
+  eq((await U.fleet.get('/api/cases?status=open&limit=500')).data.cases.length, before, 'atomar');
+  // Oberfläche und Texte
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['multi_link', 'multi_title', 'multi_intro', 'multi_choose', 'multi_selected', 'multi_send', 'multi_need_two', 'multi_too_many', 'multi_photos_after', 'multi_offline', 'multi_dup', 'multi_partial']) ok(STRINGS[l][k], `${l}.${k}`); ok(PLURALS[l].multi_done, `${l} Plural`); }
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("[/^#\\/new\\/multi$/, viewNewMulti]") && app.includes("api('POST', '/api/cases/batch'") && app.includes('const BATCH_MAX = 40; const BATCH_CHUNK = 12;') && app.includes('id="tomulti"'), 'Oberfläche');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

@@ -199,6 +199,8 @@ input[type=checkbox], input[type=radio] { width: 22px; height: 22px; min-height:
 .vehpick label { margin: 0; padding: 10px; border: 2px solid var(--rule); border-radius: var(--radius-m); background: var(--surface); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-weight: 400; cursor: pointer; }
 .vehpick label:has(input:checked) { border-color: var(--ink); }
 .vehpick input { position: absolute; opacity: 0; pointer-events: none; }
+.vehpick.multi label { position: relative; }
+.vehpick.multi label:has(input:checked)::after { content: '✓'; position: absolute; bottom: 8px; right: 10px; font-weight: 700; }
 .vehpick label:has(input:focus-visible), .choice:has(input:focus-visible) { outline: 3px solid var(--signal); outline-offset: 2px; box-shadow: 0 0 0 2px var(--ink); }
 
 /* Checkliste */
