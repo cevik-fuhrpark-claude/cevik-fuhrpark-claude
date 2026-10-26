@@ -131,7 +131,9 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/setup' && m === 'POST') return json(await auth.setupFirstOwner(env, await readJson(request)));
   if (path.startsWith('/api/invite/') && m === 'GET') {
     const { row } = await auth.inviteInfo(env, path.split('/')[3]); // path ist bereits dekodiert (zweites decodeURIComponent → 500 bei „%“)
-    return json({ username: row.username, display_name: row.display_name, role: row.role, environment: row.environment });
+    // Backlog 381: Sprache der Person, wenn die Leitung sie beim Anlegen gewählt hat bzw. die Person eine andere als Deutsch eingestellt hat
+    // (neuer Link nach vergessenem Passwort); sonst entscheidet wie bisher die Handysprache
+    return json({ username: row.username, display_name: row.display_name, role: row.role, environment: row.environment, ...(row.language && (row.chosen_language || row.language !== 'de') ? { language: row.language } : {}) });
   }
   if (path === '/api/invite/accept' && m === 'POST') {
     const r = await auth.acceptInvite(env, request, await readJson(request), ctx);

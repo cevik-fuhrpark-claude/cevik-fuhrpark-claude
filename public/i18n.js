@@ -2604,3 +2604,16 @@ Object.assign(STRINGS.en, { parts_postponed: 'postponed: {n}', parts_wait_for: '
 Object.assign(PLURALS.de, { parts_postponed: { one: '{n}× verschoben', other: '{n}× verschoben' } });
 Object.assign(PLURALS.uk, { parts_postponed: { one: 'перенесено {n} раз', few: 'перенесено {n} рази', many: 'перенесено {n} разів', other: 'перенесено {n} рази' } });
 Object.assign(PLURALS.en, { parts_postponed: { one: 'postponed {n} time', other: 'postponed {n} times' } });
+// Backlog 379/380 (Blickwinkel „Neuer Fahrer, erster Arbeitstag“)
+Object.assign(STRINGS.de, { check_defects_reported: 'Mangel gemeldet: {n}', check_defect_clarify: 'Ob Sie mit dem Mangel losfahren dürfen, vor der Abfahrt mit der Fuhrparkleitung bzw. Disposition klären.', drv_not_asked_check: 'nicht abgefragt (aus der Abfahrtskontrolle)', check_safety_locks: 'Sicherheitsrelevant sperrt das Fahrzeug, bis die Werkstatt bzw. Fuhrparkleitung es wieder freigibt.', drv_unclear_fleet: 'klärt die Fuhrparkleitung' });
+Object.assign(STRINGS.uk, { check_defects_reported: 'Повідомлено про дефекти: {n}', check_defect_clarify: 'Чи можна виїжджати з цим дефектом, з’ясуйте перед виїздом з керівником автопарку або диспетчером.', drv_not_asked_check: 'не запитувалося (з передрейсової перевірки)', check_safety_locks: '«Впливає на безпеку» блокує транспорт, доки майстерня або керівник автопарку знову його не допустить.', drv_unclear_fleet: 'з’ясовує керівник автопарку' });
+Object.assign(STRINGS.en, { check_defects_reported: 'Defects reported: {n}', check_defect_clarify: 'Before setting off, check with fleet management or dispatch whether you may drive with this defect.', drv_not_asked_check: 'not asked (from the departure check)', check_safety_locks: 'Safety-relevant locks the vehicle until the workshop or fleet management releases it again.', drv_unclear_fleet: 'fleet management will clarify' });
+Object.assign(PLURALS.de, { check_defects_reported: { one: '{n} Mangel gemeldet', other: '{n} Mängel gemeldet' } });
+Object.assign(PLURALS.uk, { check_defects_reported: { one: 'Повідомлено про {n} дефект', few: 'Повідомлено про {n} дефекти', many: 'Повідомлено про {n} дефектів', other: 'Повідомлено про {n} дефекту' } });
+Object.assign(PLURALS.en, { check_defects_reported: { one: '{n} defect reported', other: '{n} defects reported' } });
+// Backlog 381 (Blickwinkel „Neuer Fahrer, erster Arbeitstag“): Sprache beim Anlegen
+Object.assign(STRINGS.de, { user_language: 'Sprache der Person', user_language_hint: 'Optional – Einladungsseite und App starten in dieser Sprache; die Person kann sie jederzeit ändern.', user_language_device: 'Sprache des Handys' });
+Object.assign(STRINGS.uk, { user_language: 'Мова особи', user_language_hint: 'Необов’язково – сторінка запрошення та застосунок відкриються цією мовою; особа може змінити її будь-коли.', user_language_device: 'Мова телефону' });
+Object.assign(STRINGS.en, { user_language: 'Person’s language', user_language_hint: 'Optional – the invitation page and the app start in this language; the person can change it at any time.', user_language_device: 'Phone language' });
+Object.assign(FIELD_NAMES.uk, { Sprache: 'Мова' });
+Object.assign(FIELD_NAMES.en, { Sprache: 'Language' });

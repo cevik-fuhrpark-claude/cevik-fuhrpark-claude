@@ -16588,7 +16588,7 @@ await test('Fehlersuche 21.10. (langsames Netz): Lagerbuchung mit gleichem Schl�
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const vn = app.slice(app.indexOf("  $('#f').onsubmit = async (e) => {\n    e.preventDefault();\n    // Knopf/Fotos"), app.indexOf('// Geplanter Werkstatttermin/Prüftermin am eigenen Fahrzeug'));
   ok(vn.length > 500 && vn.includes("if (sb.isConnected) location.hash = '#/cases/' + r.id;") && !vn.split("const sb = $('#sb');")[1].includes("$('#sb')") && !vn.split('const photoFiles')[1].split('\n').slice(1).join('\n').includes("$('#ph')"), 'Meldung: Knopf/Fotos festgehalten');
-  const vc = app.slice(app.indexOf('    // km-Stand wie der Server prüfen'), app.indexOf('    // km-Stand wie der Server prüfen') + 4000);
+  const vc = app.slice(app.indexOf('    // km-Stand wie der Server prüfen'), app.indexOf('    // km-Stand wie der Server prüfen') + 6500); // 26.10.2026: Ergebnisseite für Fahrer mit Mangel (Backlog 379) verlängert den Block
   ok(vc.includes("if (sb.isConnected) location.hash = fTarget") && (vc.match(/if \(!err\.offline \|\| !sb\.isConnected\) \{ toast\(t\(err\.offline \? 'outbox_saved' : 'outbox_saved_login'\)\); return; \}/g) || []).length === 1, 'Kontrolle: kein Sprung/Überschreiben nach Seitenwechsel');
   ok(/signal: sig/.test(app) && /timeoutMs: PHOTO_TIMEOUT_MS, \.\.\.ox/.test(app), 'Foto-Zeitlimit');
   ok(app.includes("b.request_key = rkFor(e.target, b); try { await api('POST', `/api/stock/${id}/movements`, b);"), 'Lager: Schlüssel je Inhalt');
@@ -18943,7 +18943,7 @@ await test('Backlog 202 (Straßenkontrolle): „Mein Fahrzeug“ zeigt HU/SP und
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('obN || v.coupled?.locked || v.coupled?.open_cases_total ? \'\' : `<span class="chip ok">'), 'grün nur ohne Anhänger-Sperre/-Meldungen');
   ok(app.includes('${knownDefects(v.known_defects)}${drvCoupled(v.coupled)}</section>'), 'Anhänger-Block');
-  ok(app.includes("(v.inspections_unclear || []).map((k) => `<dt>${esc(mk(k))}</dt><dd><span class=\"chip mittel\" data-unclear>${esc(t('ms_ungeklaert'))}"), 'ungeklärt angezeigt');
+  ok(app.includes("(v.inspections_unclear || []).map((k) => `<dt>${esc(dk(k))}</dt><dd><span class=\"chip mittel\" data-unclear>${esc(t('ms_ungeklaert'))}"), 'ungeklärt angezeigt (seit Backlog 380 ausgeschrieben)');
   ok(app.includes('known.find((x) => x.id === id) || coupledKnown(known, id)'), 'Abfahrtskontrolle: Anhänger-Mängel');
 });
 
@@ -22680,6 +22680,51 @@ await test('Backlog 378 (Blickwinkel „Werkstatt bekommt Teile falsch geliefert
   ok(PLURALS.uk.parts_postponed.few && PLURALS.uk.parts_postponed.many, 'uk few/many');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("d.parts_wait ? partsWaitRows(d.parts_wait)") && app.includes("t('parts_eta_note_hint')"), 'Oberfläche nutzt die Zusammenfassung');
+});
+await test('Backlog 379/380 (Blickwinkel „Neuer Fahrer, erster Arbeitstag“): Abfahrtskontrolle mit Mangel – Antwort nennt eigene Folgeaufträge mit Nummer, Fahrbereitschaft „nicht abgefragt“ statt „Weiß nicht“, stehende Ergebnisseite mit „vor der Abfahrt klären“; Kästchen „sicherheitsrelevant“ erklärt die Sperre (und sperrt); HU/SP auf der Fahrer-Startseite ausgeschrieben, „ungeklärt“ mit „klärt die Fuhrparkleitung“; Texte DE/UK/EN', async () => {
+  const { U, V1 } = await freshWorld();
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, end_previous: false })).status, 201);
+  const keys = (await U.driver.get('/api/meta')).data.checklist.map((i) => i.key);
+  const items = keys.map((k) => ({ key: k, result: 'ok' })); items[0] = { key: keys[0], result: 'mangel', note: 'Rückleuchte links defekt' };
+  const r = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items });
+  eq(r.status, 201, JSON.stringify(r.data));
+  const mine = r.data.followups.filter((f) => f && f.id);
+  ok(mine.length === 1 && /^[ST]-\d{4}-\d+$/.test(mine[0].case_no), 'Folgeauftrag mit Nummer: ' + JSON.stringify(r.data.followups));
+  const c = (await U.driver.get(`/api/cases/${mine[0].id}`)).data.case;
+  eq(c.origin, 'kontrolle'); eq(c.reported_driveability, 'unbekannt'); eq(c.safety_lock ? 1 : 0, 0, 'nicht sicherheitsrelevant → keine Sperre');
+  // sicherheitsrelevant sperrt tatsächlich (Hinweistext am Kästchen stimmt)
+  const items2 = keys.map((k) => ({ key: k, result: 'ok' })); items2[1] = { key: keys[1], result: 'mangel', note: 'Bremse zieht stark nach links', safety_relevant: true };
+  const r2 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: items2 });
+  eq(r2.status, 201); ok(r2.data.vehicle_locked, 'sicherheitsrelevant → Fahrzeug gesperrt');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['check_defects_reported', 'check_defect_clarify', 'drv_not_asked_check', 'check_safety_locks', 'drv_unclear_fleet', 'hu_long', 'sp_long']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(PLURALS[l].check_defects_reported.one && PLURALS[l].check_defects_reported.other, `${l} Plural`);
+  }
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-defectresult') && app.includes("t('check_defect_clarify')") && app.includes("S.me.role === 'driver' && mine.length"), 'Ergebnisseite für Fahrer mit Mangel');
+  ok(app.includes('data-drvcheck') && app.includes("c.origin === 'kontrolle' && c.reported_driveability === 'unbekannt'"), 'Fahrbereitschaft aus Kontrolle');
+  ok(app.includes('data-safetyhint') && app.includes("t('check_safety_locks')"), 'Hinweis am Kästchen');
+  ok(app.includes("k === 'HU' ? t('hu_long')") && app.includes('data-unclearwho'), 'HU/SP ausgeschrieben, wer klärt');
+});
+await test('Backlog 381 (Blickwinkel „Neuer Fahrer, erster Arbeitstag“): Sprache der Person beim Anlegen – gespeichert, Einladungsseite bekommt sie (auch ausdrücklich Deutsch), ohne Wahl entscheidet die Handysprache; ungültige Sprache 400; Gerätesprache aus navigator.languages; Texte DE/UK/EN', async () => {
+  const { e, U } = await freshWorld();
+  const mk = async (b) => { const r = await U.fleet.post('/api/users', { role: 'driver', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data; };
+  const a = await mk({ username: 'l.uk', display_name: 'Fahrer UK', language: 'uk' });
+  const b = await mk({ username: 'l.de', display_name: 'Fahrer DE', language: 'de' });
+  const c = await mk({ username: 'l.none', display_name: 'Fahrer ohne' });
+  eq((await U.fleet.post('/api/users', { role: 'driver', username: 'l.ru', display_name: 'X', language: 'ru' })).status, 400, 'ungültige Sprache');
+  const info = async (tok) => (await U.viewer.get('/api/invite/' + tok)).data;
+  eq((await info(a.invite_token)).language, 'uk');
+  eq((await info(b.invite_token)).language, 'de', 'ausdrücklich Deutsch');
+  eq((await info(c.invite_token)).language, undefined, 'ohne Wahl: Handysprache');
+  const db = e.DB.db;
+  eq(db.prepare("SELECT language FROM users WHERE username='l.uk'").get().language, 'uk', 'gespeichert');
+  eq(db.prepare("SELECT language FROM users WHERE username='l.none'").get().language, 'de', 'Standard unverändert');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('navigator.languages') && app.includes('name="language"') && app.includes('if (info.language &&'), 'Oberfläche: Auswahl beim Anlegen, Einladungsseite, Gerätesprachen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['user_language', 'user_language_hint', 'user_language_device']) ok(STRINGS[l][k], `${l}.${k}`);
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

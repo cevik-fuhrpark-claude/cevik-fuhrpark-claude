@@ -363,7 +363,8 @@ export async function inviteInfo(env, token) {
     // sonst konnte sie Fahrerkonten mit zuvor erzeugten Links übernehmen); Ersteinrichtung ohne Aussteller bleibt gültig
     // 20.10.2026: Link der Fuhrparkleitung nur für Rollen/Umgebung, die sie selbst anlegen darf (FLEET_MAY_CREATE) – sonst ergab ein gleichzeitiges
     // „neuer Link“ (Leitung) + Hochstufen zum Inhaber einen einlösbaren Inhaber-Link
-    `SELECT i.*, u.username, u.display_name, u.role, u.environment, u.active FROM invites i JOIN users u ON u.id=i.user_id WHERE i.token_hash = ?
+    `SELECT i.*, u.username, u.display_name, u.role, u.environment, u.active, u.language,
+      (SELECT json_extract(a.detail, '$.language') FROM audit_log a WHERE a.target=u.id AND a.action='user.create' LIMIT 1) AS chosen_language FROM invites i JOIN users u ON u.id=i.user_id WHERE i.token_hash = ?
       AND (i.created_by IS NULL OR EXISTS (SELECT 1 FROM users c WHERE c.id=i.created_by AND c.active=1 AND (c.role='owner' OR (c.role='fleet' AND u.role IN ('driver','workshop','viewer') AND u.environment=c.environment))))`
   ).bind(h).first();
   // deaktiviertes Konto: Einladung nicht einlösbar (vorher Passwort gesetzt + „Letzte Anmeldung“ trotz Deaktivierung)
@@ -573,16 +574,18 @@ export async function createUser(env, actor, body) {
     const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
     if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
   }
+  // Backlog 381: Sprache der Person optional beim Anlegen (Einladungsseite und App starten darin; leer = Standard Deutsch bzw. Handysprache)
+  const language = body.language === undefined || body.language === null || body.language === '' ? null : oneOf(body.language, ['de', 'uk', 'en'], 'Sprache');
   const exists = await env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first();
   if (exists) throw new HttpError(409, 'username_taken', 'Benutzername ist bereits vergeben.');
   const id = uuid();
   const now = nowIso();
   // gleichzeitiges Anlegen desselben Namens: 409 statt 500 (UNIQUE) – 17.10.2026
-  const ins = await env.DB.prepare(`INSERT INTO users(id,username,display_name,role,environment,workshop_site,employee_number,active,created_by,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,1,?,?,?) ON CONFLICT(username) DO NOTHING`).bind(id, username, display, role, environment, site, str(body.employee_number, { max: 30, field: 'Personalnummer' }), actor.id, now, now).run();
+  const ins = await env.DB.prepare(`INSERT INTO users(id,username,display_name,role,environment,workshop_site,employee_number,active,created_by,created_at,updated_at,language)
+    VALUES (?,?,?,?,?,?,?,1,?,?,?,?) ON CONFLICT(username) DO NOTHING`).bind(id, username, display, role, environment, site, str(body.employee_number, { max: 30, field: 'Personalnummer' }), actor.id, now, now, language || 'de').run();
   if (!ins.meta || !ins.meta.changes) throw new HttpError(409, 'username_taken', 'Benutzername ist bereits vergeben.');
   const token = await createInvite(env, id, actor.id);
-  await audit(env, actor.id, 'user.create', id, { role, environment, username });
+  await audit(env, actor.id, 'user.create', id, { role, environment, username, ...(language ? { language } : {}) });
   return { id, username, invite_token: token };
 }
 
