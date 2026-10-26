@@ -228,8 +228,16 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   if (rk && res.every((r) => !(r.meta && r.meta.changes))) { const k = await known();
     if (!k.length) throw conflict('request_key_reused', 'Dieser Buchungsschlüssel wurde bereits für eine andere Buchung verwendet.'); // fremde Kennung (andere Person/Umgebung)
     return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, ...warnOf(k[0].tread_mm, k.map((x) => x.position)) }; }
-  return { id: ids[0], ids, positions, ...warnOf(tread, positions) };
+  const w = warnOf(tread, positions);
+  // Backlog 396 (Blickwinkel „Getriebetausch – Fahrtenschreiber“): Wechsel an der Antriebsachse auf eine andere Größe als hinterlegt →
+  // Hinweis, dass eine Prüfung des Fahrtenschreibers (§ 57b StVZO) nötig sein kann (reine Information, keine Frist, kein Prüftermin)
+  if (type === 'wechsel' && size && positions.some((p) => p.startsWith('HA-'))) {
+    const spec = await env.DB.prepare(`SELECT size FROM tire_specs WHERE vehicle_id=? AND axle='antriebsachse'`).bind(vehicleId).first();
+    if (spec && sizeKey(spec.size) !== sizeKey(size)) { w.warning_items.push({ code: 'tacho_check_possible', from: spec.size, to: size }); w.warnings.push('Andere Reifengröße an der Antriebsachse als hinterlegt – ggf. Prüfung des Fahrtenschreibers nach § 57b StVZO veranlassen.'); }
+  }
+  return { id: ids[0], ids, positions, ...w };
 }
+const sizeKey = (x) => String(x || '').toUpperCase().replace(/\s+/g, '');
 // Warnungen zur Profiltiefe – auch bei der Wiederholung mit gleichem request_key aus den gespeicherten Einträgen (21.10.2026: Antwort ging verloren,
 // erneutes Senden zeigte nur „✓“ ohne „unter Minimum“)
 function warnOf(tread, positions) {
@@ -268,7 +276,8 @@ export async function setTireSpec(env, user, vehicleId, body) {
       verified, verified ? user.id : null, verified ? now : null, now).run();
   if (!r.meta || r.meta.changes !== 1) throw conflict('spec_verified', 'Die Reifengröße dieser Achse ist am Fahrzeug geprüft – nur mit neuer Prüfung am Fahrzeug änderbar.');
   await audit(env, user.id, 'tires.spec', vehicleId, { axle, from: prev ? prev.size : null, to: size, verified: !!verified });
-  return { ok: true };
+  // Backlog 396: andere Größe an der Antriebsachse eines Lkw → Hinweis Fahrtenschreiber-Prüfung (§ 57b StVZO), nur Information
+  return { ok: true, ...(axle === 'antriebsachse' && prev && sizeKey(prev.size) !== sizeKey(size) ? { tacho_check_possible: true } : {}) };
 }
 
 // Import Quelldatei (CSV: Quelle;Kennzeichen;FIN;Reifen Lenkachse;Reifen Liftachse;Reifen Antriebsachse;Reifen Anhänger)

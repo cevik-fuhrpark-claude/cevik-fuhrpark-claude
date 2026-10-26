@@ -215,6 +215,7 @@ UI-Vorgang wartet auf Teile: worauf gewartet wird, Liefertermin verschoben (Fals
 UI-Neuer Fahrer erster Tag: Einladung in gewählter Sprache, Kontrolle mit Mangel → Ergebnisseite „vor der Abfahrt klären“, Fahrbereitschaft „nicht abgefragt“, HU/SP ausgeschrieben, DE/UK/EN 390/820/1366|ui-fahrer-erster-tag.py|/tmp/cfp-fahrer-erster-tag.log
 UI-Herstellerwerkstatt: Freigabe extern ohne Warnung, Werkstattplan mit Standort, Fremdleistung 0 € mit Vermerk, Hinweis 0/leer, DE/UK/EN 390/820/1366|ui-herstellerwerkstatt.py|/tmp/cfp-herstellerwerkstatt.log
 UI-Unfall in Polen: Unfall-Hinweis bei Zusammenstoß/зіткнення/collision mit Unfallbericht-Schritt, Gegner-Kennzeichen ohne D-Band, DE/UK/EN 390/820/1366|ui-unfall-polen.py|/tmp/cfp-unfall-polen.log
+UI-Getriebetausch/Fahrtenschreiber: Hinweis § 57b vor Abschlusskontrolle, Tachograph-Durchführung mit Einbauschild-Hinweis, Kurzinfo ≤ 60 Tage, DE/UK/EN 390/820/1366|ui-getriebe-57b.py|/tmp/cfp-getriebe-57b.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log

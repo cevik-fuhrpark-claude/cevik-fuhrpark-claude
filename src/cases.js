@@ -385,11 +385,16 @@ export async function getCaseDetail(env, user, envName, caseId) {
       .bind(...[c.vehicle_id, envName, c.id, ...(wsOnly ? [wsOnly] : [])]).all()).results;
     const othersTotal = othersRows.length ? othersRows[0].total : 0;
     const others = othersRows.map(({ total, ...o }) => o);
-    const soon = berlinDate(new Date(Date.now() + 30 * 86400000).toISOString());
+    // Backlog 398 (Blickwinkel „Getriebetausch – Fahrtenschreiber“): Fenster wie die Vorwarnung der Prüftermine, mindestens 30 Tage
+    // (vorher fest 30 – bei Vorwarnung 60 meldete der Agent „fällig in 45 Tagen“, der Vorgang in der Werkstatt zeigte nichts)
+    // Einstellung im selben SQL (Abfragebudget Vorgangsdetail): leer/ungültig → 30, kleiner als 30 → 30
     // + offene Herstellerrückrufe auch ohne Frist (mit Referenz laut Nachweis) – typischer Fall „beim selben Werkstattaufenthalt mit erledigen“
-    const due = (await env.DB.prepare(`SELECT kind, next_due_date, CASE WHEN kind='Rückruf' THEN evidence END AS recall_ref FROM maintenance_rules WHERE vehicle_id=?
-      AND ((next_due_date IS NOT NULL AND next_due_date <= ? AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) OR (kind='Rückruf' AND last_done_date IS NULL)) ORDER BY next_due_date IS NULL, next_due_date LIMIT 10`).bind(c.vehicle_id, soon).all()).results
-      .map(({ recall_ref, ...m }) => (recall_ref ? { ...m, recall_ref } : m));
+    const dueRows = (await env.DB.prepare(`WITH w AS (SELECT MAX(30, COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key='maintenance_warn_days' AND trim(value)<>''), 30)) AS d)
+      SELECT kind, next_due_date, CASE WHEN kind='Rückruf' THEN evidence END AS recall_ref, w.d AS warn_d FROM maintenance_rules, w WHERE vehicle_id=?
+      AND ((next_due_date IS NOT NULL AND next_due_date <= date(?, '+' || w.d || ' days') AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) OR (kind='Rückruf' AND last_done_date IS NULL)) ORDER BY next_due_date IS NULL, next_due_date LIMIT 10`).bind(c.vehicle_id, berlinDate()).all()).results;
+    const dueDays = dueRows.length ? dueRows[0].warn_d : null;
+    const due = dueRows.map(({ recall_ref, warn_d, ...m }) => (recall_ref ? { ...m, recall_ref } : m));
+    const soon = berlinDate(new Date(Date.now() + (dueDays || 30) * 86400000).toISOString()); // berechnete HU/SP und Nachzählung im selben Fenster
     // mehr als 10 fällige Prüfungen/Rückrufe: Gesamtzahl nur dann nachzählen (seltener Fall, keine Zusatzabfrage im Normalfall)
     let dueTotal = due.length < 10 ? due.length : (await env.DB.prepare(`SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=?
       AND ((next_due_date IS NOT NULL AND next_due_date <= ? AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) OR (kind='Rückruf' AND last_done_date IS NULL))`).bind(c.vehicle_id, soon).first()).n;
@@ -437,7 +442,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
         AND status='fahrzeug_freigegeben' AND closed_at IS NOT NULL AND closed_at <= ? AND closed_at >= ? ${wsOnly ? 'AND workshop_site=?' : ''} ORDER BY closed_at DESC LIMIT 5`)
         .bind(...[c.vehicle_id, envName, c.id, c.check_item, c.created_at, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString(), ...(wsOnly ? [wsOnly] : [])]).all()).results;
     }
-    detail.vehicle_info = { other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties, warranties_truncated: warrantiesTruncated, warranties_max: WARR_CASE_MAX };
+    detail.vehicle_info = { other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, inspections_due_days: dueDays, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties, warranties_truncated: warrantiesTruncated, warranties_max: WARR_CASE_MAX };
     if (isManager(user)) detail.vehicle_info.lease_contracts = kmn && kmn.leases ? JSON.parse(kmn.leases) : [];
   }
   if (seesWork) {

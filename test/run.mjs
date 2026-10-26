@@ -22840,6 +22840,35 @@ await test('Backlog 390–394 (Blickwinkel „Unfall in Polen mit Fremdbeteiligu
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, w] of [['de', 'Unfallbericht'], ['uk', 'протокол ДТП'], ['en', 'accident report']]) { ok(STRINGS[l].claim_file.includes(w), `${l}.claim_file`); ok(STRINGS[l].acc_steps.split('|').length === 5 && STRINGS[l].acc_steps.includes(w.replace('протокол ДТП', 'протокол ДТП')), `${l}.acc_steps`); }
 });
+await test('Backlog 395–398 (Blickwinkel „Getriebetausch/Reifengröße – Fahrtenschreiber prüfen“): Hinweis § 57b vor Abschlusskontrolle/Freigabe (Texterkennung), Reifengröße an der Antriebsachse geändert → Hinweis (Stammdaten und Wechsel), Tachograph-Durchführung mit Nachweis-Hinweis, Kurzinfo „Prüfungen ≤ n Tage“ nach Vorwarnung', async () => {
+  const { U, cmd, toRepair, V1 } = await freshWorld();
+  // 398: Vorwarnung 60 Tage → Tachograph fällig in 45 Tagen erscheint in der Kurzinfo des Vorgangs
+  const due45 = bDayOff(45); const r0 = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Tachograph', next_due_date: due45, evidence: 'Einbauschild (Test)' }); eq(r0.status, 201, JSON.stringify(r0.data));
+  const id = await toRepair({ description: 'Getriebe schaltet nicht' });
+  let vi = (await U.fleet.get(`/api/cases/${id}`)).data.vehicle_info; ok(!vi.inspections_due.some((m) => m.kind === 'Tachograph'), 'Standard 30 Tage: nicht in 45 Tagen'); eq(vi.inspections_due_days, null, 'nichts fällig');
+  eq((await U.own.put('/api/settings', { maintenance_warn_days: 60 })).status, 200);
+  vi = (await U.ws.get(`/api/cases/${id}`)).data.vehicle_info; ok(vi.inspections_due.some((m) => m.kind === 'Tachograph' && m.next_due_date === due45), JSON.stringify(vi.inspections_due)); eq(vi.inspections_due_days, 60);
+  eq((await U.own.put('/api/settings', { maintenance_warn_days: '' })).status, 200);
+  // 396: Reifengröße Antriebsachse geändert → tacho_check_possible; Lenkachse/gleiche Größe nicht
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'antriebsachse', size: '315/80 R22.5', verified: true })).data.tacho_check_possible, undefined, 'erste Angabe');
+  let sp = await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'antriebsachse', size: '295/60 R22.5', verified: true }); eq(sp.status, 200); eq(sp.data.tacho_check_possible, true);
+  sp = await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'lenkachse', size: '385/65 R22.5', verified: true }); ok(!sp.data.tacho_check_possible, 'Lenkachse');
+  sp = await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'lenkachse', size: '315/70 R22.5', verified: true }); ok(!sp.data.tacho_check_possible, 'Lenkachse geändert');
+  let ev = await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'HA-L-aussen', size: '315/80 R22.5', request_key: rk() }); eq(ev.status, 201);
+  ok(ev.data.warning_items.some((w) => w.code === 'tacho_check_possible' && w.from === '295/60 R22.5'), JSON.stringify(ev.data)); ok(ev.data.warnings.some((w) => /§ 57b/.test(w)));
+  ev = await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'HA-L-aussen', size: '295/60R22.5', request_key: rk() }); ok(!ev.data.warning_items.some((w) => w.code === 'tacho_check_possible'), 'gleiche Größe (Leerzeichen egal)');
+  ev = await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-L', size: '385/65 R22.5', request_key: rk() }); ok(!ev.data.warning_items.some((w) => w.code === 'tacho_check_possible'), 'Vorderachse');
+  // 395/397: Oberfläche und Texte
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/\nconst TACHO_WORK = \/(.+)\/i;/)[1], 'i');
+  for (const x of ['Austauschgetriebe ZF TraXon', 'Tachogeber (Impulsgeber KITAS) ersetzt', 'Fahrtenschreiber neu verplombt', 'gearbox replaced', 'Заміна коробки передач', 'датчик швидкості замінено', 'тахограф']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Bremsbeläge vorne', 'Rückleuchte links', 'Kupplungsnehmerzylinder']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  ok(app.includes("['request_quality_check', 'technical_release'].includes(action) && d && TACHO_WORK.test(") && app.includes('data-tachowork'), 'Formularhinweis');
+  ok(app.includes("m.kind === 'Tachograph' ? `<p class=\"small muted\" data-tachodone>"), 'Durchführung Tachograph');
+  ok(app.includes("w.code === 'tacho_check_possible' ? t('tacho_check_possible')") && app.includes("r.tacho_check_possible) toast(t('tacho_check_possible'))"), 'Reifenhinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['tacho_check_possible', 'tacho_work_hint', 'mdone_tacho_hint']) ok(STRINGS[l][k] && STRINGS[l][k].includes(k === 'mdone_tacho_hint' ? '' : '57b'), `${l}.${k}`); ok(STRINGS[l].vi_due.includes('{days}'), `${l}.vi_due`); }
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
