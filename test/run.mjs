@@ -22321,6 +22321,21 @@ await test('Backlog 355 (Fehlersuche Ladungs-Hinweis, Fahrzeugtransport): gelade
   for (const x of ['Pkw auf der Etage verrutscht', 'geladenes Auto hat sich gelöst', 'geladene Fahrzeuge verrutscht', 'Neuwagen hat sich losgerissen', 'Radgurt gerissen', 'Zurrgurt kaputt', 'Spannkette gerissen', 'Spanngurt gerissen', 'car on the deck shifted', 'cars on the upper deck moved', 'wheel strap snapped', 'авто на ярусі зсунулось', 'лашинг порвався', 'Ladung verrutscht']) ok(pat('LOAD_HINT').test(x), 'Ladungs-Hinweis: ' + x);
   for (const x of ['Lkw verrutscht auf Eis', 'Ein Auto rutscht auf Glatteis in mich rein', 'Auto vor mir hat sich gedreht', 'Neuwagen abgeholt', 'my car moved', 'Pkw beim Abladen beschädigt']) ok(!pat('LOAD_HINT').test(x), 'kein Ladungs-Hinweis: ' + x);
 });
+await test('Backlog 356 (Fehlersuche Tür-/Ladebordwand-Hinweis): „Ladebordwand geht nicht“, „Ladebordwand senkt sich ab“, „Hebebühne funktioniert nicht“, „tail lift not working“ → Tür-/Ladebordwand-Hinweis, nicht Ladeetage; „Ladebordwand geht wieder“, „Ladebordwand benutzt“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['Ladebordwand geht nicht', 'Ladebordwand geht nicht mehr', 'Ladebordwand senkt sich ab', 'Hebebühne funktioniert nicht', 'tail lift not working', 'tail lift keeps dropping', 'Ladebordwand geht nicht hoch', 'гідроборт не працює']) { ok(pat('DOOR_HINT').test(x), 'Tür-/Ladebordwand-Hinweis: ' + x); ok(!pat('DECK_HINT').test(x), 'kein Ladeetagen-Hinweis: ' + x); }
+  for (const x of ['Ladebordwand geht wieder', 'Ladebordwand benutzt', 'Ladebordwand repariert']) ok(!pat('DOOR_HINT').test(x), 'kein Hinweis: ' + x);
+});
+await test('Backlog 357 (Fehlersuche Motor-/Getriebe-Hinweis): „Temperaturanzeige im roten Bereich“, „Kühlwasseranzeige rot“, „Motortemperaturanzeige steigt“ → Motor-Hinweis (nicht bei Außentemperatur oder Kühlaggregat); „Kupplungspedal geht schwer/bleibt unten/kommt nicht mehr hoch“, „Gang geht schwer rein“ → Getriebe-Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['Temperaturanzeige im roten Bereich', 'Temperaturanzeige geht hoch', 'Kühlwasseranzeige rot', 'Motortemperaturanzeige steigt', 'Motor überhitzt']) ok(pat('ENGINE_HINT').test(x), 'Motor-Hinweis: ' + x);
+  for (const x of ['Temperaturanzeige', 'Außentemperaturanzeige zeigt minus', 'Temperaturanzeige vom Kühlaggregat steigt', 'Tankanzeige rot', 'Anzeige rot']) ok(!pat('ENGINE_HINT').test(x), 'kein Motor-Hinweis: ' + x);
+  for (const x of ['Kupplungspedal geht schwer', 'Kupplungspedal bleibt unten', 'Kupplungspedal kommt nicht mehr hoch', 'Gang geht schwer rein', 'Kupplung rutscht']) ok(pat('GEAR_HINT').test(x), 'Getriebe-Hinweis: ' + x);
+  ok(!pat('GEAR_HINT').test('Kupplungspedal neu eingestellt') && !pat('GEAR_HINT').test('Lenkung geht schwer'), 'kein Getriebe-Hinweis ohne Störung bzw. bei Lenkung');
+  ok(pat('STEER_HINT').test('Lenkung geht schwer'), 'Lenkung behält ihren Hinweis');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
