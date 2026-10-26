@@ -22541,6 +22541,14 @@ await test('Backlog 373: Fahrzeugakte „Was fehlt noch?“ – Datenqualitäts-
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['vdq_title', 'vdq_none', 'vdq_hint']) ok(STRINGS[l][k], `${l}.${k}`);
 });
 
+await test('Fehlersuche 26.10.: „Зчеплення буксує“/„буксує зчеплення“/„сцепление буксует“ (Kupplung rutscht) zeigt nur den Getriebe-, nicht den Festgefahren-Hinweis; „вантажівка буксує“/„забуксували в снігу“ bleiben Festgefahren', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = (n) => new RegExp(app.match(new RegExp(`^const ${n} = /(.*)/i;$`, 'm'))[1], 'i');
+  const STUCK = re('STUCK_HINT'); const GEAR = re('GEAR_HINT');
+  for (const x of ['Зчеплення буксує', 'буксує зчеплення', 'сцепление буксует', 'Зчеплення сильно буксує']) { ok(!STUCK.test(x), 'kein Festgefahren: ' + x); ok(GEAR.test(x), 'Getriebe: ' + x); }
+  for (const x of ['вантажівка буксує', 'забуксували в снігу', 'колеса буксують на льоду']) ok(STUCK.test(x), 'Festgefahren: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
