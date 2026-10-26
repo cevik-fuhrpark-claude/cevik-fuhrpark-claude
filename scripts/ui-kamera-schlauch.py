@@ -1,6 +1,6 @@
-# [CLAUDE] UI-Test (26.10.2026, Backlog 359–360): Meldeformular zeigt bei „Rückfahrkamera beschlagen“ den Assistenz-, bei „Kühlerschlauch geplatzt“
+# [CLAUDE] UI-Test (26.10.2026, Backlog 359–362): Meldeformular zeigt bei „Rückfahrkamera beschlagen“ den Assistenz-, bei „Kühlerschlauch geplatzt“
 # den Leck-, bei „Luftschlauch geplatzt“ den Bremsen-, bei „Kühlergrill hängt herunter“ den Teile-, bei „Tachometer zeigt nichts“ den Anzeige- und bei
-# „Fahrersitz verliert Luft“ den Sitz-Hinweis; „Kamera gereinigt“ zeigt keinen. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# „Fahrersitz verliert Luft“ den Sitz-Hinweis, bei „Feststellbremse festgefroren“ den Bremsen- und bei „Sattelzug eingeknickt“ den Unfall-Hinweis (Backlog 361–362); „Kamera gereinigt“ zeigt keinen. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -8,11 +8,11 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 CASES={
- 'de':[('Rückfahrkamera beschlagen','#adas'),('Kühlerschlauch geplatzt','#leak'),('Luftschlauch geplatzt','#brake'),('Kühlergrill hängt herunter','#loose'),('Tachometer zeigt nichts','#dash'),('Fahrersitz verliert Luft','#seat')],
- 'uk':[('камера заднього виду запітніла','#adas'),('патрубок радіатора лопнув','#leak'),('повітряний шланг лопнув','#brake'),('решітка радіатора відвалилась','#loose'),('спідометр не працює','#dash'),('сидіння зламане','#seat')],
- 'en':[('reversing camera fogged up','#adas'),('coolant hose burst','#leak'),('air hose burst','#brake'),('grille came off','#loose'),('speedometer not working','#dash'),('driver seat losing air','#seat')]}
+ 'de':[('Rückfahrkamera beschlagen','#adas'),('Kühlerschlauch geplatzt','#leak'),('Luftschlauch geplatzt','#brake'),('Kühlergrill hängt herunter','#loose'),('Tachometer zeigt nichts','#dash'),('Fahrersitz verliert Luft','#seat'),('Feststellbremse festgefroren','#brake'),('Sattelzug auf Glatteis eingeknickt','#acc')],
+ 'uk':[('камера заднього виду запітніла','#adas'),('патрубок радіатора лопнув','#leak'),('повітряний шланг лопнув','#brake'),('решітка радіатора відвалилась','#loose'),('спідометр не працює','#dash'),('сидіння зламане','#seat'),('гальма примерзли','#brake'),('фура склалась на льоду','#acc')],
+ 'en':[('reversing camera fogged up','#adas'),('coolant hose burst','#leak'),('air hose burst','#brake'),('grille came off','#loose'),('speedometer not working','#dash'),('driver seat losing air','#seat'),('air tanks frozen','#brake'),('jackknifed on ice','#acc')]}
 NO={'de':'Kamera gereinigt','uk':'камеру почистили','en':'camera cleaned'}
-IDS=['#adas','#leak','#brake','#loose','#dash','#seat']
+IDS=['#adas','#leak','#brake','#loose','#dash','#seat','#acc']
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)

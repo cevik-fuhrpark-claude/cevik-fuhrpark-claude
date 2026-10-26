@@ -22364,6 +22364,21 @@ await test('Backlog 360 (Fehlersuche Anzeige-/Sitz-Hinweis): „Tachometer zeigt
   for (const x of ['Fahrersitz verliert Luft', 'Luftsitz verliert ständig Luft', 'driver seat losing air']) { ok(pat('SEAT_HINT').test(x), 'Sitz-Hinweis: ' + x); ok(!pat('BRAKE_HINT').test(x) && !pat('SUSP_HINT').test(x), 'kein Bremsen-/Federungs-Hinweis: ' + x); }
   ok(!pat('SEAT_HINT').test('Fahrersitz eingestellt'), 'kein Sitz-Hinweis');
 });
+await test('Backlog 361 (Blickwinkel „erster Frostmorgen“, Fehlersuche Bremsen-/Teile-Hinweis): Bremse/Feststellbremse festgefroren, Luftkessel eingefroren, Wasser im Luftkessel, „brakes frozen“, „air tanks frozen“, „гальма примерзли“ → Bremsen-Hinweis; Schneekette gerissen/verloren, „snow chain snapped“, „ланцюг протиковзання порвався“ → Teile-Hinweis; „Schneeketten aufgezogen“, „Luftkessel entwässert“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['Bremse festgefroren', 'Feststellbremse eingefroren', 'Handbremse friert fest', 'Luftkessel eingefroren', 'Wasser im Luftkessel', 'Druckluftanlage eingefroren', 'brakes frozen', 'air tanks frozen', 'parking brake frozen on', 'гальма примерзли', 'тормоза замерзли']) ok(pat('BRAKE_HINT').test(x), 'Bremsen-Hinweis: ' + x);
+  for (const x of ['Bremse geprüft', 'Luftkessel entwässert', 'Wasser im Fahrerhaus']) ok(!pat('BRAKE_HINT').test(x), 'kein Bremsen-Hinweis: ' + x);
+  for (const x of ['Schneeketten gerissen', 'Schneekette verloren', 'Schneekette schlägt gegen den Kotflügel', 'snow chain snapped', 'ланцюг протиковзання порвався']) ok(pat('LOOSE_HINT').test(x), 'Teile-Hinweis: ' + x);
+  ok(!pat('LOOSE_HINT').test('Schneeketten aufgezogen'), 'kein Teile-Hinweis beim Aufziehen');
+});
+await test('Backlog 362 (Blickwinkel „erster Frostmorgen“, Unfall-Hinweis ohne das Wort „Unfall“): „Lkw in den Graben gerutscht“, „Sattelzug eingeknickt“, „Anhänger umgekippt“, „von der Fahrbahn abgekommen“, „jackknifed on ice“, „trailer rolled over“, „з’їхав у кювет“, „вантажівка перекинулась“ → Unfall-Hinweis; „Palette/Ladung umgekippt“ bleibt beim Ladungs-Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['Lkw in den Graben gerutscht', 'in den Straßengraben geraten', 'Auflieger auf Glatteis eingeknickt', 'Sattelzug eingeknickt', 'Anhänger umgekippt', 'von der Fahrbahn abgekommen', 'jackknifed on ice', 'truck slid off the road', 'trailer rolled over', "з'їхав у кювет", 'вантажівка перекинулась', 'фура склалась на льоду']) ok(pat('ACC_HINT').test(x), 'Unfall-Hinweis: ' + x);
+  for (const x of ['Palette umgekippt', 'Ladung umgekippt', 'Wasser im Graben', 'Fahrer ist umgeknickt']) ok(!pat('ACC_HINT').test(x), 'kein Unfall-Hinweis: ' + x);
+  ok(pat('LOAD_HINT').test('Ladung umgekippt'), 'Ladungs-Hinweis bleibt');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
