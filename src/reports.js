@@ -905,6 +905,14 @@ export async function workshopPlan(env, user, envName, query = {}) {
       ...(r.kind === 'Rückruf' && !r.last_done_date ? { recall_ref: r.evidence } : {}), ...(prevOpen(r) ? { prev_cycle_open: r.prev_cycle_open } : {}) }))
     .sort((a, b) => (b.status === 'ueberfaellig') - (a.status === 'ueberfaellig') || String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')) || String(a.plate).localeCompare(String(b.plate)));
   for (const i of maintenance_due) i.other_dates = others(i, null);
+  // Backlog 416: laufende Wartungs-/Full-Service-Verträge je Fahrzeug (nur Inhaber/Leitung – Verträge sind Geschäftsdaten), damit der Auftrag
+  // nicht ungeprüft an die eigene Werkstatt geht; eine Abfrage nur, wenn Fälliges ohne Termin angezeigt wird
+  if (maintenance_due.length && user && ['owner', 'fleet'].includes(user.role)) {
+    const svc = (await env.DB.prepare(`SELECT vehicle_id, partner, contract_no FROM vehicle_contracts WHERE kind='wartung' AND ended_on IS NULL
+      AND (start_date IS NULL OR start_date <= ?1) AND (end_date IS NULL OR end_date >= ?1) AND vehicle_id IN (SELECT value FROM json_each(?2)) ORDER BY partner`)
+      .bind(today, JSON.stringify([...new Set(maintenance_due.map((i) => i.vehicle_id))])).all()).results;
+    for (const i of maintenance_due) { const l = svc.filter((c) => c.vehicle_id === i.vehicle_id).map((c) => ({ partner: c.partner, contract_no: c.contract_no })); if (l.length) i.service_contracts = l; }
+  }
   // Fahrzeug-Standort je Zeile in Anzeige-Schreibweise (23.10.2026, Teilagent Monatsplanung: Plan/Ausdruck für „alle Standorte“ zeigte nicht,
   // woher ein Fahrzeug kommt)
   const vLab = (x) => (x && String(x).trim() ? vSel.label.get(siteKey(x)) || String(x).trim() : 'ohne');

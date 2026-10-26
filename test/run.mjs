@@ -23321,6 +23321,22 @@ await test('Backlog 415 (Folge aus 414): Formular „Werkstattauftrag anlegen“
   ok(app.includes('data-mosvc') && app.includes("const svcRun = (d.contracts || []).filter((c) => c.kind === 'wartung' && !c.ended_on") && app.includes('maintOrderHtml(m.id, m.kind, mOrders, vS)') && app.includes('huSpHtml(d.hu_sp, vS, canMaint, mOrders)'), 'Hinweis im Formular der Akte');
 });
 
+await test('Backlog 416 (Folge aus 414): Werkstattplan „Fällig – ohne Termin“ nennt der Leitung laufende Wartungs-/Full-Service-Verträge je Fahrzeug (nicht Werkstatt/Lesezugriff, nicht beendete/künftige); Formular-Hinweis wie in der Akte', async () => {
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Ölwechsel', interval_months: 12, last_done_date: day(-380), evidence: 'Werkstattrechnung (Test)' })).status, 201);
+  const plan0 = (await U.fleet.get('/api/workshop/plan?days=14')).data;
+  const it0 = plan0.maintenance_due.find((i) => i.vehicle_id === V1 && i.kind === 'Ölwechsel'); ok(it0, 'Ölwechsel überfällig im Plan'); ok(!('service_contracts' in it0), 'ohne Vertrag kein Feld');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'wartung', partner: 'Service GmbH', contract_no: 'FS-1', start_date: day(-30), evidence: 'Full-Service-Vertrag' })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'wartung', partner: 'Künftig', start_date: day(30), evidence: 'Vertrag neu' })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Leasing AG', evidence: 'Leasing' })).status, 201);
+  const it = (await U.fleet.get('/api/workshop/plan?days=14')).data.maintenance_due.find((i) => i.vehicle_id === V1 && i.kind === 'Ölwechsel');
+  eq(JSON.stringify(it.service_contracts), JSON.stringify([{ partner: 'Service GmbH', contract_no: 'FS-1' }]), 'nur laufender Wartungsvertrag');
+  for (const u of [U.ws, U.viewer]) { const r = await u.get('/api/workshop/plan?days=14'); if (r.status === 200) ok(!(r.data.maintenance_due || []).some((i) => 'service_contracts' in i), 'keine Verträge für Werkstatt/Lesezugriff'); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('maintOrderHtml(i.id, i.kind, null, { site: i.vehicle_site, svc: i.service_contracts || [] })'), 'Plan reicht die Verträge an das Formular weiter');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
