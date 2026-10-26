@@ -295,6 +295,43 @@ export async function addDriverDocument(env, user, envName, id, body) {
   return { id: docId, ...(older ? { older_than_current: true } : {}) };
 }
 
+// Backlog 410 (Blickwinkel „Jährliche Fahrerunterweisung im Januar – viele Fahrer in einer Schulung“): eine Unterweisung für mehrere Fahrer
+// in einem Schritt (nur Inhaber/Fuhrparkleitung, nur aktive Fahrer der Umgebung, höchstens 200). Thema, Datum und Nachweis Pflicht,
+// „gültig bis“ nur laut Nachweis (nie berechnet). Gleicher Eintrag (Thema, Datum, Nachweis, nicht storniert) je Fahrer nur einmal –
+// erneutes Senden (Netzabbruch, Doppelklick) legt nichts doppelt an. Ein atomarer Stapel inkl. Protokoll je Fahrer (Personen-Protokoll).
+export const BATCH_DOCS_MAX = 200;
+export async function addTrainingBatch(env, user, envName, body) {
+  if (!isMgr(user)) throw forbidden();
+  if (!Array.isArray(body.driver_ids) || !body.driver_ids.length) throw bad('validation', 'Bitte mindestens einen Fahrer auswählen.');
+  const ids = [...new Set(body.driver_ids.map((x) => str(x, { max: 40, field: 'Fahrer' })).filter(Boolean))];
+  if (ids.length > BATCH_DOCS_MAX) throw bad('validation', 'Höchstens 200 Fahrer je Erfassung.');
+  const title = str(body.title, { required: true, max: 120, field: 'Bezeichnung' }).normalize('NFC');
+  const issued = date(body.issued_on, 'Ausgestellt am', { required: true, notFuture: true });
+  const valid = date(body.valid_until, 'Gültig bis');
+  if (valid && valid < issued) throw bad('validation', 'Gültig bis liegt vor dem Ausstellungsdatum.');
+  const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
+  const found = (await env.DB.prepare(`SELECT d.id, d.display_name, d.active FROM json_each(?1) j JOIN drivers d ON d.id=j.value AND d.environment=?2`).bind(JSON.stringify(ids), envName).all()).results;
+  const byId = new Map(found.map((d) => [d.id, d]));
+  const missing = ids.filter((x) => !byId.has(x)); const inactive = found.filter((d) => !d.active);
+  if (missing.length) throw notFound('Fahrer nicht gefunden.');
+  if (inactive.length) throw bad('driver_inactive', `Ausgeschiedene Fahrer können nicht unterwiesen werden: ${inactive.map((d) => d.display_name).join(', ')}.`, { drivers: inactive.map((d) => ({ id: d.id, display_name: d.display_name })) });
+  const now = nowIso();
+  const rows = ids.map((id) => [id, uuid(), uuid()]);
+  const dup = `EXISTS (SELECT 1 FROM driver_documents x WHERE x.driver_id=json_extract(j.value,'$[0]') AND x.kind='unterweisung' AND x.cancelled_at IS NULL AND x.title IS ?2 AND x.issued_on IS ?3 AND x.evidence=?5)`;
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO driver_documents(id,driver_id,kind,title,number,license_classes,issued_on,valid_until,evidence,superseded,created_by,created_at)
+      SELECT json_extract(j.value,'$[1]'), json_extract(j.value,'$[0]'), 'unterweisung', ?2, NULL, NULL, ?3, ?4, ?5, 0, ?6, ?7 FROM json_each(?1) j
+      JOIN drivers d ON d.id=json_extract(j.value,'$[0]') AND d.environment=?8 AND d.active=1 WHERE NOT ${dup}`)
+      .bind(JSON.stringify(rows), title, issued, valid, evidence, user.id, now, envName),
+    env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) SELECT json_extract(j.value,'$[2]'), ?2, 'driver.document', json_extract(j.value,'$[0]'),
+      json_object('kind','unterweisung','valid_until',?3,'batch',json('true')), ?4 FROM json_each(?1) j WHERE EXISTS (SELECT 1 FROM driver_documents x WHERE x.id=json_extract(j.value,'$[1]'))`)
+      .bind(JSON.stringify(rows), user.id, valid, now),
+  ]);
+  const made = new Set((await env.DB.prepare(`SELECT x.id FROM json_each(?1) j JOIN driver_documents x ON x.id=json_extract(j.value,'$[1]')`).bind(JSON.stringify(rows)).all()).results.map((x) => x.id));
+  const out = rows.map(([id, docId]) => ({ driver_id: id, display_name: byId.get(id).display_name, status: made.has(docId) ? 'neu' : 'vorhanden', ...(made.has(docId) ? { id: docId } : {}) }));
+  return { created: out.filter((x) => x.status === 'neu').length, existing: out.filter((x) => x.status === 'vorhanden').length, rows: out };
+}
+
 // Nachweis stornieren (Tippfehler, falsche Person): bleibt mit Begründung im Verlauf, zählt nicht mehr. War er der gültige Nachweis einer
 // Einzelart (Führerschein/Fahrerkarte/Code 95), gilt wieder der neueste verbliebene – im selben Stapel (19.10.2026).
 export async function cancelDriverDocument(env, user, envName, id, docId, body = {}) {

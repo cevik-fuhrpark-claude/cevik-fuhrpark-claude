@@ -23151,6 +23151,41 @@ await test('Backlog 409 (Blickwinkel „Jahresende: Verträge, die im 1. Quartal
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['ct_endsby', 'ct_endsby_q0', 'ct_endsby_q1', 'ct_endsby_clear', 'ct_endsby_note']) ok(STRINGS[l][x], `${x} ${l}`); ok(STRINGS[l].help_contracts_s.includes(STRINGS[l].ct_endsby), 'Hilfe ' + l); }
 });
+await test('Backlog 410 (Blickwinkel „Jährliche Fahrerunterweisung – viele Fahrer in einer Schulung“): Unterweisung für mehrere Fahrer in einem Schritt – nur Leitung, nur aktive Fahrer, Pflichtangaben, gleicher Eintrag nicht doppelt, Protokoll je Fahrer, atomar', async () => {
+  const { e, U } = await freshWorld();
+  const mk = async (n) => (await U.fleet.post('/api/drivers', { display_name: n })).data.id;
+  const A = await mk('Anna Unterweisung'); const B = await mk('Bernd Unterweisung'); const C = await mk('Carl Ausgeschieden');
+  eq((await U.fleet.patch(`/api/drivers/${C}`, { active: false })).status, 200);
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const body = { driver_ids: [A, B], title: 'Ladungssicherung', issued_on: day(-1), evidence: 'Teilnehmerliste Schulung' };
+  for (const [u, st] of [[U.ws, 403], [U.driver, 403], [U.viewer, 403]]) eq((await u.post('/api/drivers/trainings', body)).status, st);
+  for (const bad of [{ driver_ids: [] }, { title: '' }, { evidence: '' }, { issued_on: day(2) }, { issued_on: '' }, { valid_until: day(-5) }, { driver_ids: 'x' }]) eq((await U.fleet.post('/api/drivers/trainings', { ...body, ...bad })).status, 400, JSON.stringify(bad));
+  eq((await U.fleet.post('/api/drivers/trainings', { ...body, driver_ids: [A, 'gibtsnicht'] })).status, 404);
+  const inact = await U.fleet.post('/api/drivers/trainings', { ...body, driver_ids: [A, C] });
+  eq(inact.status, 400); eq(inact.data.error || inact.data.code, 'driver_inactive', JSON.stringify(inact.data)); ok(JSON.stringify(inact.data).includes('Carl Ausgeschieden'));
+  const docsOf = async (id) => (await U.fleet.get(`/api/drivers/${id}`)).data.documents.filter((d) => d.kind === 'unterweisung');
+  eq((await docsOf(A)).length, 0, 'nichts angelegt bei Fehler');
+  const r = await U.fleet.post('/api/drivers/trainings', { ...body, driver_ids: [A, B, A], valid_until: day(360) });
+  eq(r.status, 201, JSON.stringify(r.data)); eq(r.data.created, 2); eq(r.data.existing, 0); eq(r.data.rows.map((x) => x.status).join(','), 'neu,neu');
+  const da = await docsOf(A); eq(da.length, 1); eq(da[0].title, 'Ladungssicherung'); eq(da[0].issued_on, day(-1)); eq(da[0].valid_until, day(360)); eq(da[0].evidence, 'Teilnehmerliste Schulung');
+  // erneut senden: nichts doppelt; ein neuer Fahrer dazu wird ergänzt
+  const D = await mk('Dora Nachzüglerin');
+  const r2 = await U.fleet.post('/api/drivers/trainings', { ...body, driver_ids: [A, B, D] });
+  eq(r2.data.created, 1); eq(r2.data.existing, 2); eq(r2.data.rows.find((x) => x.driver_id === D).status, 'neu');
+  eq((await docsOf(A)).length, 1);
+  // anderes Datum = neue Unterweisung
+  eq((await U.fleet.post('/api/drivers/trainings', { ...body, driver_ids: [A], issued_on: day(-2) })).data.created, 1);
+  const au = (await e.DB.prepare(`SELECT target, detail FROM audit_log WHERE action='driver.document' AND target IN (?,?,?)`).bind(A, B, D).all()).results;
+  eq(au.length, 4, 'Protokoll je Fahrer'); ok(au.every((x) => JSON.parse(x.detail).kind === 'unterweisung' && JSON.parse(x.detail).batch === true), JSON.stringify(au[0]));
+  // parallel zweimal gleich → nur einmal
+  const E = await mk('Emil Parallel');
+  const [p1, p2] = await Promise.all([U.fleet.post('/api/drivers/trainings', { ...body, driver_ids: [E] }), U.fleet.post('/api/drivers/trainings', { ...body, driver_ids: [E] })]);
+  eq(p1.data.created + p2.data.created, 1); eq((await docsOf(E)).length, 1);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (!isMgr() || S.drvInactive || !list.length) return '';") && app.includes("api('POST', '/api/drivers/trainings', b)") && app.includes("S.dtbRes = ''; wireDtb();") && app.includes('${dtbHtml(list)}'), 'Oberfläche');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['dtb_title', 'dtb_hint', 'dtb_date', 'dtb_ev_ph', 'dtb_pick', 'dtb_send', 'dtb_none', 'dtb_was', 'dtb_inactive']) ok(STRINGS[l][x], `${x} ${l}`); for (const x of ['dtb_done', 'dtb_existing', 'dtb_selected']) ok(PLURALS[l][x], `Plural ${x} ${l}`); ok(STRINGS[l].help_drivers_s.includes(STRINGS[l].dtb_title), 'Hilfe ' + l); }
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

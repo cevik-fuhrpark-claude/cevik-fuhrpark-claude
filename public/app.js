@@ -4066,6 +4066,39 @@ async function viewDriverRecords() {
   $('#drcsvd').onclick = csv('documents', 'nachweise'); $('#drcsvc').onclick = csv('checks', 'kontrollen');
 }
 
+// Backlog 410 (Blickwinkel „Jährliche Fahrerunterweisung – viele Fahrer in einer Schulung“): eine Unterweisung für mehrere Fahrer erfassen
+// (nur aktive Fahrer der Liste; „gültig bis“ nur laut Nachweis; erneutes Senden legt nichts doppelt an – Server vergleicht Thema/Datum/Nachweis)
+const dtbHtml = (list) => {
+  if (!isMgr() || S.drvInactive || !list.length) return '';
+  return `<details class="panel noprint" id="dtb"${S.dtbRes ? ' open' : ''}><summary>${esc(t('dtb_title'))}</summary><p class="small muted">${esc(t('dtb_hint'))}</p><form id="dtbf">
+    <label>${esc(t('doc_title'))}</label><input name="title" required maxlength="120" placeholder="${esc(t('doc_title_ph'))}">
+    <label>${esc(t('dtb_date'))}</label><input type="date" name="issued_on" required max="${bDate()}" value="${bDate()}">
+    <label>${esc(t('valid_until'))} <span class="hint">${esc(t('driver_valid_until_hint'))}</span></label><input type="date" name="valid_until">
+    <label>${esc(t('evidence'))}</label><input name="evidence" required maxlength="300" placeholder="${esc(t('dtb_ev_ph'))}">
+    <p style="margin:12px 0 0"><b>${esc(t('dtb_pick'))}</b></p>
+    <div class="actions" style="margin:8px 0"><button type="button" class="btn secondary" data-dtb="1">${esc(t('mb_all'))}</button><button type="button" class="btn secondary" data-dtb="0">${esc(t('mb_none'))}</button> <span class="small muted" id="dtbcount" aria-live="polite"></span></div>
+    <div class="tfpos" style="max-height:340px;overflow:auto;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">${list.map((d) => `<label class="check"><input type="checkbox" name="driver_ids" value="${esc(d.id)}"> <span>${esc(d.display_name)}${d.personnel_no ? `<br><span class="small muted" style="white-space:nowrap">${esc(d.personnel_no)}</span>` : ''}</span></label>`).join('')}</div>
+    <div class="actions"><button class="btn" id="dtbgo">${esc(t('dtb_send'))}</button></div></form>${S.dtbRes ? `<div id="dtbres" role="status">${S.dtbRes}</div>` : ''}</details>`;
+};
+function wireDtb() {
+  const fm = $('#dtbf'); if (!fm) return;
+  const boxes = () => $$('input[name="driver_ids"]', fm);
+  const cnt = () => { const n = boxes().filter((b) => b.checked).length; $('#dtbcount').textContent = n ? tn('dtb_selected', n) : ''; };
+  boxes().forEach((b) => (b.onchange = cnt));
+  $$('[data-dtb]', fm).forEach((b) => (b.onclick = () => { boxes().forEach((x) => (x.checked = b.dataset.dtb === '1')); cnt(); }));
+  fm.onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(fm); const ids = fd.getAll('driver_ids');
+    if (!ids.length) { toast(t('dtb_none'), true); return; }
+    const b = { driver_ids: ids, title: fd.get('title'), issued_on: fd.get('issued_on'), evidence: fd.get('evidence') }; if (fd.get('valid_until')) b.valid_until = fd.get('valid_until');
+    try {
+      const r = await api('POST', '/api/drivers/trainings', b);
+      document.querySelectorAll('.toast.err').forEach((x) => x.remove()); // Hinweis eines früheren Versuchs („Fahrer auswählen“) ist erledigt
+      S.dtbRes = `<p class="panel good" data-dtbdone>✓ ${esc(tn('dtb_done', r.created))}${r.existing ? ` · ${esc(tn('dtb_existing', r.existing))}` : ''}</p><p class="small">${r.rows.map((x) => `<a href="#/drivers/${esc(x.driver_id)}">${esc(x.display_name)}</a>${x.status === 'vorhanden' ? ` <span class="muted">(${esc(t('dtb_was'))})</span>` : ''}`).join(', ')}</p>`;
+      await viewDrivers(); // zeigt S.dtbRes einmal im aufgeklappten Bereich und setzt es zurück
+    } catch (err) { toast(err.code === 'driver_inactive' && err.data && err.data.drivers ? t('dtb_inactive').replace('{list}', err.data.drivers.map((x) => x.display_name).join(', ')) : err.message, true); }
+  };
+}
 async function viewDrivers() {
   const dsite = isMgr() ? vsDef('drvSite') || '' : '';
   const dq = [S.drvInactive ? 'inactive=1' : '', dsite ? 'site=' + encodeURIComponent(dsite) : ''].filter(Boolean).join('&');
@@ -4079,6 +4112,7 @@ async function viewDrivers() {
     <details class="panel"><summary>${esc(t('new_driver'))}</summary><form id="ndf"><label>${esc(t('display_name'))}</label><input name="display_name" required><label>${esc(t('personnel_no'))}</label><input name="personnel_no"><label>${esc(t('site'))}</label><input name="site">
       <label>${esc(t('app_account'))}</label><select name="user_id"><option value="">${esc(t('no_account'))}</option>${users.map((u) => `<option value="${esc(u.id)}">${esc(u.display_name)} (${esc(u.username)})</option>`).join('')}</select>
       <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
+    ${dtbHtml(list)}
     <div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="dcsv">${esc(t('driver_csv'))}</button><button type="button" class="btn secondary" id="dprl">${esc(t('print'))}</button></div>
     <p class="noprint"><a href="#/drivers/records" id="drlink">${esc(t('dr_link'))} ›</a></p>
     ${printHead([S.drvInactive ? t('inactive_drivers') : '', dr.site ? `${t('site')}: ${dr.site === 'ohne' ? t('cs_nosite') : dr.site}` : '', t('print_count').replace('{n}', list.length)])}
@@ -4086,6 +4120,7 @@ async function viewDrivers() {
     ${(dr.site_options || []).length > 1 || dr.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('dsite', '', dr.site_options, dr.site, t('site'), t('filter_all'))}</div></div>` : ''}${dr.no_site_hidden ? `<p class="small muted noprint" data-nositehidden>${esc(tn('drv_nosite_hidden', dr.no_site_hidden))}</p>` : ''}
     <div class="list">${list.map((d) => { const crit = d.status.items.filter((i) => i.status !== 'ok'); return `<a class="row ${d.status.overall === 'kritisch' ? 'p-kritisch' : d.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/drivers/${esc(d.id)}"><span>🪪</span><span class="title">${esc(d.display_name)}${d.personnel_no ? ` <span class="small muted">${esc(d.personnel_no)}</span>` : ''}</span><span class="chip ${DST[d.status.overall]}">${esc(t('dov_' + d.status.overall))}</span><span class="sub">${[...crit.map((i) => `${t('dk2_' + i.kind)}${i.title ? ' ' + i.title : ''}: ${t('dst_' + i.status)} (${fmtD(i.valid_until)})`), d.status.check.status !== 'ok' ? `${t('license_check')}: ${t('dck_' + d.status.check.status)}` : '', d.status.tacho_status && d.status.tacho_status !== 'ok' ? `${t('tacho_card')}: ${t('tst_' + d.status.tacho_status)}` : '', !d.status.has_license ? t('no_license_doc') : '', d.username ? t('app_account') + ': ' + d.username : ''].filter(Boolean).map(esc).join(' · ')}</span></a>`; }).join('') || noneP()}</div>`;
   render(html, 'more');
+  S.dtbRes = ''; wireDtb();
   const ia = $('#dinact'); if (ia) ia.onchange = () => { S.drvInactive = ia.checked; viewDrivers(); };
   const dse = $('#dsite'); if (dse) dse.onchange = () => { S.drvSite = dse.value; viewDrivers(); };
   $('#dprl').onclick = () => window.print();

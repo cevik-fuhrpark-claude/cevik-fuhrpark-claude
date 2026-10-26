@@ -560,6 +560,7 @@ async function handleApi(request, env, ctx, url) {
   }
   if (path === '/api/drivers' && m === 'POST') return json(await drivers.createDriver(env, user, envName, await readJson(request)), 201);
   // Nachweise/Führerscheinkontrollen aller Fahrer für einen Zeitraum (Backlog 246, Betriebsprüfung) – vor /api/drivers/:id
+  if (path === '/api/drivers/trainings' && m === 'POST') return json(await drivers.addTrainingBatch(env, user, envName, await readJson(request)), 201); // Backlog 410, vor /api/drivers/:id
   if (path === '/api/drivers/records' && m === 'GET') {
     const r = await drivers.driverRecords(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') !== 'csv') return json(r);
