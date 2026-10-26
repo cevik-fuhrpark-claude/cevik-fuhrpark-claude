@@ -289,6 +289,10 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   // dahin, nichts interpoliert (fehlt eine, bleibt „kein km-Stand“). Ohne Angabe wie bisher heute.
   const realToday = berlinDate();
   const asOf = query.as_of ? date(query.as_of, 'Stichtag', { notFuture: true }) : null;
+  // Backlog 409 (Blickwinkel „Jahresende: Verträge, die im 1. Quartal enden“): nur laufende Verträge, deren Vertragsende oder Kündigungsfrist
+  // (laut Vertrag) bis `ends_by` liegt – für die Planung Rückgabe/Verlängerung/Kündigung; Termine nur aus erfassten Vertragsdaten
+  const endsBy = query.ends_by ? date(query.ends_by, 'Fällig bis') : null;
+  if (endsBy && asOf) throw bad('validation', 'Stichtag und „Fällig bis“ bitte nicht zusammen verwenden.');
   const before = asOf ? berlinDayStartIso(new Date(Date.parse(asOf + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10)) : null;
   const [rows, settingsRows, latestKm] = await Promise.all([
     // Vertragsdokument nur aus der eigenen Umgebung (wie die Fahrzeugakte; 18.10.2026: Übersicht/CSV zeigten „verknüpft“ für ein Test-Dokument im Betrieb)
@@ -330,11 +334,12 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   if (filter === 'aktiv') list = list.filter((c) => !ended(c));
   else if (filter === 'aktion') list = list.filter((c) => !ended(c) && c.status.overall !== 'ok');
   else if (filter === 'beendet') list = list.filter((c) => ended(c));
+  if (endsBy) list = list.filter((c) => !ended(c) && ((c.end_date && c.end_date <= endsBy) || (c.status.notice && c.status.notice.status && c.status.notice.by <= endsBy)));
   list.sort((a, b) => ORDER[a.status.overall] - ORDER[b.status.overall] || String(a.end_date || '9999').localeCompare(String(b.end_date || '9999')) || a.plate.localeCompare(b.plate));
   // Summe der Monatsraten nur über aktive Verträge mit hinterlegter Rate (fehlende Rate = unbewertet, nie 0 €)
   const active = running;
   const rated = active.filter((c) => c.monthly_rate_net !== null);
-  return { today, as_of: asOf, generated_on: realToday, warn_days: w, filter, kind, site: sel.site, site_options: sel.options, counts, contracts: list, monthly_rate_sum_net: rated.length ? Math.round(rated.reduce((s, c) => s + c.monthly_rate_net, 0) * 100) / 100 : null, unrated: active.length - rated.length };
+  return { today, as_of: asOf, ends_by: endsBy, generated_on: realToday, warn_days: w, filter, kind, site: sel.site, site_options: sel.options, counts, contracts: list, monthly_rate_sum_net: rated.length ? Math.round(rated.reduce((s, c) => s + c.monthly_rate_net, 0) * 100) / 100 : null, unrated: active.length - rated.length };
 }
 
 const KM_ST_DE = { ok: 'im Kontingent', ueber: 'Kontingent überschritten', prognose_ueber: 'Prognose über Kontingent', ohne_km: 'kein km-Stand',

@@ -3325,17 +3325,28 @@ function ctRetEnd(c) {
   const r = c.reading; const old = !r || (r.measured_at && BERLIN_FMT.format(new Date(r.measured_at)) < bDate());
   return `<div data-ct-retend><p class="small">${ctRet(c.return_check)}</p><p class="small ${old ? '' : 'muted'}">${r ? esc(t('ct_ret_km').replace('{km}', fmtKm(r.km)).replace('{d}', fmtD(r.measured_at))) : esc(t('ct_ret_km_none'))}${old ? ` <b>${esc(t('ct_ret_km_old'))}</b>` : ''}</p></div>`;
 }
+// Backlog 409: letzter Tag des Quartals (0 = laufendes, 1 = nächstes) zum Berliner Tag `ymd` (JJJJ-MM-TT)
+function quarterEnd(ymd, off = 0) {
+  const y = Number(ymd.slice(0, 4)); const m = Number(ymd.slice(5, 7));
+  const em = (Math.floor((m - 1) / 3) + off + 1) * 3; // Endmonat ab Jahresbeginn, kann > 12 sein
+  const yy = y + Math.floor((em - 1) / 12); const mm = ((em - 1) % 12) + 1;
+  const last = new Date(Date.UTC(yy, mm, 0)).getUTCDate(); return `${yy}-${String(mm).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+}
 async function viewContracts() {
   const f = S.ctFilter || 'aktiv'; const k = S.ctKind || '';
   const cts = vsDef('ctSite') || ''; const asof = S.ctAsOf || '';
+  // Backlog 409: „Ende/Kündigung bis“ (laufende Verträge mit Vertragsende oder Kündigungsfrist bis zum Datum) – nicht zusammen mit dem Stichtag
+  const eby = !asof && f !== 'beendet' ? S.ctEndsBy || '' : '';
   // Stichtag (Backlog 196): km/Status zum Ende des Berliner Tags – nur Ablesungen bis dahin; gilt für Liste, Ausdruck und CSV
-  const sq = (cts ? '&site=' + encodeURIComponent(cts) : '') + (asof ? '&as_of=' + asof : '');
+  const sq = (cts ? '&site=' + encodeURIComponent(cts) : '') + (asof ? '&as_of=' + asof : '') + (eby ? '&ends_by=' + eby : '');
   const r = await api('GET', `/api/contracts?filter=${f}${k ? '&kind=' + k : ''}${sq}`);
   render(`<h1>${esc(t('ct_title'))}</h1>${helpLink('contracts')}<p class="small muted">${esc(t('ct_hint'))}</p>
-    <p class="print-only small">${printStamp()} · ${esc(t('print_filter'))}: ${esc(t('cf_' + f))}${k ? ' · ' + esc(t('ck_' + k)) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''}${r.as_of ? ' · ' + esc(t('ct_asof')) + ': ' + fmtD(r.as_of) : ''} · ${esc(t('print_count').replace('{n}', r.contracts.length))} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    <p class="print-only small">${printStamp()} · ${esc(t('print_filter'))}: ${esc(t('cf_' + f))}${k ? ' · ' + esc(t('ck_' + k)) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''}${r.as_of ? ' · ' + esc(t('ct_asof')) + ': ' + fmtD(r.as_of) : ''}${r.ends_by ? ' · ' + esc(t('ct_endsby')) + ': ' + fmtD(r.ends_by) : ''} · ${esc(t('print_count').replace('{n}', r.contracts.length))} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="actions noprint" style="flex-wrap:wrap">${['aktiv', 'aktion', 'beendet', 'alle'].map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-cf="${x}">${esc(t('cf_' + x))} (${r.counts[x]})</button>`).join('')}</div>
     <div class="actions noprint" style="margin-top:0"><select id="ctk" aria-label="${esc(t('ct_kind'))}" style="max-width:260px"><option value="">${esc(t('ct_all_kinds'))}</option>${CT_KINDS.map((x) => `<option value="${x}"${k === x ? ' selected' : ''}>${esc(t('ck_' + x))}</option>`).join('')}</select>
       <label class="small" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0"><span style="white-space:nowrap">${esc(t('ct_asof'))}</span> <input type="date" id="ctasof" value="${esc(asof)}" max="${bDate()}" style="max-width:170px"></label>${asof ? `<button type="button" class="btn secondary" id="ctasofx">${esc(t('ct_asof_clear'))}</button>` : ''}</div>
+    ${!asof && f !== 'beendet' ? `<div class="actions noprint" style="margin-top:0;flex-wrap:wrap"><label class="small" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0"><span style="white-space:nowrap">${esc(t('ct_endsby'))}</span> <input type="date" id="ctendsby" value="${esc(eby)}" style="max-width:170px"></label><button type="button" class="btn secondary small" data-ctq="0">${esc(t('ct_endsby_q0'))}</button><button type="button" class="btn secondary small" data-ctq="1">${esc(t('ct_endsby_q1'))}</button>${eby ? `<button type="button" class="btn secondary small" id="ctendsbyx">${esc(t('ct_endsby_clear'))}</button>` : ''}</div>` : ''}
+    ${r.ends_by ? `<p class="small" data-ct-endsby><span class="chip mittel" style="white-space:normal">${esc(t('ct_endsby_note').replace('{d}', fmtD(r.ends_by)))}</span></p>` : ''}
     ${r.as_of ? `<p class="small" data-ct-asof><span class="chip mittel" style="white-space:normal">${esc(t('ct_asof_note').replace('{d}', fmtD(r.as_of)))}</span></p>` : ''}
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('ctsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : ''}
     ${f !== 'beendet' ? `<p>${esc(t('ct_rate_sum'))}: <b>${eur(r.monthly_rate_sum_net)}</b>${r.unrated ? ` <span class="small muted">· ${r.unrated} ${esc(t('ct_unrated'))}</span>` : ''}${r.contracts.some((c) => c.vehicle_eval_excluded) ? ` <span class="small muted">· ${esc(t('ct_excluded_hint'))}</span>` : ''}</p>` : ''}
@@ -3345,8 +3356,11 @@ async function viewContracts() {
       <label for="ctsrc">${esc(t('ct_import_src'))}</label><input id="ctsrc" maxlength="300"><input type="file" id="ctimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('ct_import'))}" style="margin-top:8px"><div id="ctimpr"></div></details>`, 'more');
   $$('[data-cf]').forEach((b) => (b.onclick = () => { S.ctFilter = b.dataset.cf; viewContracts(); }));
   $('#ctk').onchange = () => { S.ctKind = $('#ctk').value; viewContracts(); };
-  const ao = $('#ctasof'); if (ao) ao.onchange = () => { const v = ao.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctAsOf = v && v < bDate() ? v : ''; viewContracts(); };
+  const ao = $('#ctasof'); if (ao) ao.onchange = () => { const v = ao.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctAsOf = v && v < bDate() ? v : ''; if (S.ctAsOf) S.ctEndsBy = ''; viewContracts(); };
   const aox = $('#ctasofx'); if (aox) aox.onclick = () => { S.ctAsOf = ''; viewContracts(); };
+  const ebEl = $('#ctendsby'); if (ebEl) ebEl.onchange = () => { const v = ebEl.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctEndsBy = v; viewContracts(); };
+  $$('[data-ctq]').forEach((b) => (b.onclick = () => { S.ctEndsBy = quarterEnd(bDate(), Number(b.dataset.ctq)); viewContracts(); }));
+  const ebx = $('#ctendsbyx'); if (ebx) ebx.onclick = () => { S.ctEndsBy = ''; viewContracts(); };
   const ctsEl = $('#ctsite'); if (ctsEl) ctsEl.onchange = () => { S.ctSite = ctsEl.value; viewContracts(); };
   $('#ctprt').onclick = () => window.print();
   const inp = $('#ctimp');
@@ -3366,7 +3380,7 @@ async function viewContracts() {
     try { show(await api('POST', '/api/contracts/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
   };
   $('#ctics').onclick = async () => { try { download(await api('GET', `/api/contracts?format=ics&filter=aktiv${k ? '&kind=' + k : ''}${sq.replace(/&as_of=[^&]*/, '')}`), `fuhrpark-vertraege_${r.today}${r.site ? '_' + fnPart(r.site) : ''}.ics`); } catch (err) { toast(err.message, true); } };
-  $('#ctcsv').onclick = async () => { try { download(await api('GET', `/api/contracts?format=csv&filter=${f}${k ? '&kind=' + k : ''}${sq}`), `fuhrpark-vertraege_${r.as_of ? 'stichtag-' + r.as_of : r.today}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#ctcsv').onclick = async () => { try { download(await api('GET', `/api/contracts?format=csv&filter=${f}${k ? '&kind=' + k : ''}${sq}`), `fuhrpark-vertraege_${r.as_of ? 'stichtag-' + r.as_of : r.today}${r.ends_by ? '_bis-' + r.ends_by : ''}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 // Reifenalter in Monaten → „6 J. 9 Mon.“ bzw. „9 Mon.“

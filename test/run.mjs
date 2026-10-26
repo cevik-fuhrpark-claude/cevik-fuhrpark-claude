@@ -23121,6 +23121,36 @@ await test('Backlog 408 (Blickwinkel „Reifendienst wechselt an einem Tag die R
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['wo_rec', 'wo_rec_for', 'wo_rec_for_noorder', 'wo_rec_done', 'tfspec_hint', 'tfspec_take']) ok(STRINGS[l][x], `${x} ${l}`); ok(STRINGS[l].help_tires_s.includes(STRINGS[l].wo_rec), 'Hilfe ' + l); }
 });
+await test('Backlog 409 (Blickwinkel „Jahresende: Verträge, die im 1. Quartal enden“): Vertragsliste „Ende/Kündigung bis“ – nur laufende Verträge mit Ende oder Kündigungsfrist bis zum Datum, ohne Ende nicht enthalten, nicht mit Stichtag kombinierbar, CSV-Name, Quartalsende in der App', async () => {
+  const { U, V1 } = await freshWorld();
+  const V2 = 'VIN:WDB9630051L917317';
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const mk = async (v, b) => { const r = await U.fleet.post(`/api/vehicles/${v}/contracts`, { evidence: 'Vertrag', start_date: day(-400), ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  await mk(V1, { kind: 'leasing', partner: 'Ende bald', end_date: day(30) });
+  await mk(V2, { kind: 'miete', partner: 'Kündigung bald', end_date: day(200), notice_months: 6 });
+  await mk(V1, { kind: 'versicherung', partner: 'Ende spät', end_date: day(400) });
+  await mk(V1, { kind: 'wartung', partner: 'Ohne Ende' });
+  const all = (await U.fleet.get('/api/contracts')).data; eq(all.contracts.length, 4); eq(all.ends_by, null);
+  const r = (await U.fleet.get(`/api/contracts?ends_by=${day(60)}`)).data;
+  eq(r.ends_by, day(60)); eq(r.contracts.map((c) => c.partner).sort().join('|'), 'Ende bald|Kündigung bald');
+  eq(r.counts.alle, 4, 'Zähler der Filterknöpfe unverändert');
+  eq((await U.fleet.get(`/api/contracts?ends_by=${day(500)}`)).data.contracts.length, 3, 'ohne Ende nie enthalten');
+  eq((await U.fleet.get(`/api/contracts?ends_by=${day(10)}`)).data.contracts.length, 0);
+  eq((await U.fleet.get(`/api/contracts?ends_by=${day(60)}&filter=beendet`)).data.contracts.length, 0);
+  const both = await U.fleet.get(`/api/contracts?ends_by=${day(60)}&as_of=${day(-1)}`); eq(both.status, 400); ok(/nicht zusammen/.test(both.data.message || both.data.error || JSON.stringify(both.data)), JSON.stringify(both.data));
+  eq((await U.fleet.get('/api/contracts?ends_by=2026-13-01')).status, 400);
+  eq((await U.ws.get(`/api/contracts?ends_by=${day(60)}`)).status, 403);
+  const csv = await U.fleet.req('GET', `/api/contracts?format=csv&ends_by=${day(60)}`);
+  eq(csv.status, 200); ok(String(csv.headers.get('content-disposition')).includes(`_bis-${day(60)}.csv`), csv.headers.get('content-disposition'));
+  const ctext = new TextDecoder().decode(csv.data); ok(ctext.includes('Ende bald') && !ctext.includes('Ende spät'), 'CSV gefiltert');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.slice(app.indexOf('function quarterEnd('), app.indexOf('async function viewContracts()'));
+  const quarterEnd = new Function(src + '; return quarterEnd;')();
+  eq([quarterEnd('2026-10-26', 0), quarterEnd('2026-10-26', 1), quarterEnd('2026-02-10', 0), quarterEnd('2026-04-01', 0), quarterEnd('2027-12-31', 1), quarterEnd('2027-11-30', 1)].join(','), '2026-12-31,2027-03-31,2026-03-31,2026-06-30,2028-03-31,2028-03-31');
+  ok(app.includes("+ (eby ? '&ends_by=' + eby : '')") && app.includes("if (S.ctAsOf) S.ctEndsBy = '';") && app.includes("S.ctEndsBy = quarterEnd(bDate(), Number(b.dataset.ctq))"), 'eingebunden');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['ct_endsby', 'ct_endsby_q0', 'ct_endsby_q1', 'ct_endsby_clear', 'ct_endsby_note']) ok(STRINGS[l][x], `${x} ${l}`); ok(STRINGS[l].help_contracts_s.includes(STRINGS[l].ct_endsby), 'Hilfe ' + l); }
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
