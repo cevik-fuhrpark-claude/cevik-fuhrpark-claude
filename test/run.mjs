@@ -23337,6 +23337,28 @@ await test('Backlog 416 (Folge aus 414): Werkstattplan „Fällig – ohne Termi
   ok(app.includes('maintOrderHtml(i.id, i.kind, null, { site: i.vehicle_site, svc: i.service_contracts || [] })'), 'Plan reicht die Verträge an das Formular weiter');
 });
 
+await test('Backlog 417 (Blickwinkel Full-Service): Befunde „Vertrag endet bald/abgelaufen“ mit nächstem Schritt je Vertragsart (Rückgabe/Ersatzfahrzeug nur Leasing/Miete; Versicherung, Wartung, sonstige eigene Texte); alle Texte UK/EN übersetzt', async () => {
+  const { endAction, CONTRACT_KINDS } = await import('../src/contracts.js');
+  const { NEXT_ACTION_FIXED, STRINGS } = await import('../public/i18n.js');
+  for (const k of CONTRACT_KINDS) for (const ended of [true, false]) {
+    const a = endAction(k, ended); ok(NEXT_ACTION_FIXED.includes(a), `übersetzt: ${k}/${ended}`);
+    eq(/Rückgabe|Ersatzfahrzeug/.test(a), ['leasing', 'miete'].includes(k), `Rückgabe nur bei Leasing/Miete: ${k}/${ended}`);
+    ok(!/\d/.test(a), 'keine Frist/Zahl ' + k);
+  }
+  ok(/Wartung/.test(endAction('wartung', false)) && /Versicherungsschutz/.test(endAction('versicherung', false)), 'eigene Texte');
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'wartung', partner: 'Service GmbH', start_date: day(-300), end_date: day(10), evidence: 'Full-Service-Vertrag' })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'finanzierung', partner: 'Bank AG', start_date: day(-900), end_date: day(-5), evidence: 'Finanzierungsvertrag' })).status, 201);
+  eq((await U.fleet.post('/api/agent/run')).status, 200);
+  const fs = (await U.fleet.get('/api/master')).data.findings;
+  const w = fs.find((x) => x.finding_code === 'CONTRACT_ENDS_SOON' && x.message.includes('Service GmbH')); ok(w, 'Wartungsvertrag endet bald');
+  eq(w.next_action, endAction('wartung', false), 'Wartung: eigener Schritt');
+  const fz = fs.find((x) => x.finding_code === 'CONTRACT_ENDED' && x.message.includes('Bank AG')); ok(fz, 'Finanzierung abgelaufen');
+  ok(!/Rückgabe|Ersatzfahrzeug/.test(fz.next_action), 'Finanzierung ohne Rückgabe');
+  ok(STRINGS.en, 'i18n geladen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

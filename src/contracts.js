@@ -399,6 +399,22 @@ export function contractsIcs(ov, lang = 'de') {
 // Für den Fuhrparkagenten (genau eine Abfrage inkl. letztem km-Stand – Abfragebudget je Lauf): Befunde je Vertrag
 // Backlog 288 (Blickwinkel „Leasingrückgabe“): bei Leasing/Miete zusätzlich offene Vorgänge und offene Restarbeiten freigegebener
 // Vorgänge am Fahrzeug in der Umgebung des Laufs – bei der Rückgabe werden Schäden sonst teuer abgerechnet. Weiter genau eine Abfrage.
+// Backlog 417 (Blickwinkel Full-Service): nächster Schritt je Vertragsart – „Rückgabe/Ersatzfahrzeug“ passt nur zu Leasing/Miete
+// (bis 26.10.2026 bekam auch ein auslaufender Wartungs-/Finanzierungsvertrag „Rückgabe, Verlängerung oder Ersatzfahrzeug klären“)
+// Tabelle mit eigenem Schlüssel next_action je Eintrag – der Übersetzungs-Wächter findet die Texte daran
+const END_NEXT = [
+  { kinds: RETURN_KINDS, ended: true, next_action: 'Rückgabe/Verlängerung klären; Vertrag in der Fahrzeugakte beenden oder mit neuem Nachweis aktualisieren.' },
+  { kinds: RETURN_KINDS, ended: false, next_action: 'Rückgabe, Verlängerung oder Ersatzfahrzeug klären.' },
+  { kinds: ['versicherung'], ended: true, next_action: 'Versicherungsschutz bzw. Folgevertrag klären; Vertrag beenden oder Folgevertrag mit Nachweis erfassen.' },
+  { kinds: ['versicherung'], ended: false, next_action: 'Versicherungsschutz ab Vertragsende sicherstellen: Verlängerung oder Folgevertrag klären.' },
+  { kinds: ['wartung'], ended: true, next_action: 'Wartung ab Vertragsende klären: Verlängerung bzw. Folgevertrag mit Nachweis erfassen oder Vertrag beenden und Prüftermine über die eigene Werkstatt einplanen.' },
+  { kinds: ['wartung'], ended: false, next_action: 'Wartung ab Vertragsende klären: Verlängerung, Folgevertrag oder eigene Werkstatt.' },
+  { kinds: null, ended: true, next_action: 'Vertragsende laut Vertrag abwickeln; Vertrag in der Fahrzeugakte beenden oder Verlängerung/Folgevertrag mit Nachweis erfassen.' },
+  { kinds: null, ended: false, next_action: 'Vertragsende laut Vertrag klären: Verlängerung, Folgevertrag oder Abschluss.' },
+];
+export function endAction(kind, ended) {
+  return END_NEXT.find((e) => e.ended === !!ended && (!e.kinds || e.kinds.includes(kind))).next_action;
+}
 export async function contractFindings(env, settings, envName = 'production') {
   const rows = (await env.DB.prepare(`SELECT c.*, v.plate, v.active AS vehicle_active,
       (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC LIMIT 1) AS latest_km,
@@ -415,9 +431,9 @@ export async function contractFindings(env, settings, envName = 'production') {
     const s = contractStatus(c, km.get(c.vehicle_id), today, w);
     const base = { vehicle_id: c.vehicle_id, owner_role: 'fleet' };
     if (s.end && s.end.status === 'abgelaufen') out.push({ ...base, code: 'CONTRACT_ENDED', subject: `${c.id}|end`, severity: 'handeln', requires_decision: 1,
-      ...fm('CONTRACT_ENDED', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, ...ret(c) }), next_action: c.kind === 'versicherung' ? 'Versicherungsschutz bzw. Folgevertrag klären; Vertrag beenden oder Folgevertrag mit Nachweis erfassen.' : 'Rückgabe/Verlängerung klären; Vertrag in der Fahrzeugakte beenden oder mit neuem Nachweis aktualisieren.' });
+      ...fm('CONTRACT_ENDED', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, ...ret(c) }), next_action: endAction(c.kind, true) });
     else if (s.end && s.end.status === 'laeuft_aus') out.push({ ...base, code: 'CONTRACT_ENDS_SOON', subject: `${c.id}|end`, severity: 'hinweis', requires_decision: 0,
-      ...fm('CONTRACT_ENDS_SOON', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, days: s.end.days, ...ret(c) }), next_action: 'Rückgabe, Verlängerung oder Ersatzfahrzeug klären.' });
+      ...fm('CONTRACT_ENDS_SOON', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, days: s.end.days, ...ret(c) }), next_action: endAction(c.kind, false) });
     if (s.notice && s.notice.status === 'bald') out.push({ ...base, code: 'CONTRACT_NOTICE_DUE', subject: `${c.id}|notice`, severity: 'hinweis', requires_decision: 1,
       ...fm('CONTRACT_NOTICE_DUE', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, by: s.notice.by, months: c.notice_months, end: c.end_date }), next_action: 'Entscheiden: kündigen oder verlängern. Frist und Form laut Vertrag prüfen.' });
     // Schweregrad wie die Vertragsübersicht (Status „handeln“, bis 19.10.2026 hier nur „hinweis“)
