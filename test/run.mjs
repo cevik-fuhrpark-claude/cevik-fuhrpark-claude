@@ -22344,6 +22344,26 @@ await test('Backlog 358 (Fehlersuche Bremsen-/Teile-Hinweis): Lufttrockner bläs
   for (const x of ['Haltegriff lose', 'Aufstiegstritt kaputt', 'Einstiegsstufe abgebrochen', 'Trittstufe abgebrochen', 'cab step broken', 'grab handle loose', 'поручень відламався', 'сходинка відламалась', 'підніжка зламалась']) ok(pat('LOOSE_HINT').test(x), 'Teile-Hinweis: ' + x);
   for (const x of ['next step broken', 'Haltegriff repariert, wieder fest', 'Haltegriff geputzt']) ok(!pat('LOOSE_HINT').test(x), 'kein Teile-Hinweis: ' + x);
 });
+await test('Backlog 359 (Fehlersuche Kamera-/Leck-/Bremsen-/Teile-Hinweis): Rückfahrkamera beschlagen/verschmutzt/zugeschneit, Kameramonitor schwarz, „reversing camera fogged up“, „камера запітніла“, Rückfahrwarnsignal defekt → Assistenz-Hinweis; Kühler-/Hydraulikschlauch geplatzt, „coolant hose burst“, „патрубок радіатора лопнув“ → Leck-Hinweis; Luft-/Bremsschlauch geplatzt, „air hose burst“, „повітряний шланг лопнув“ → Bremsen-Hinweis; Kühlergrill/Frontschürze abgebrochen oder hängt herunter, „grille came off“ → Teile-Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['Rückfahrkamera beschlagen', 'Rückfahrkamera verschmutzt', 'Kamera zugeschneit', 'Kameramonitor schwarz', 'Kamerabildschirm flackert', 'reversing camera fogged up', 'rear camera dirty', 'камера заднього виду запітніла', 'Rückfahrwarnsignal defekt', 'Rückfahrsignal piept nicht']) ok(pat('ADAS_HINT').test(x), 'Assistenz-Hinweis: ' + x);
+  for (const x of ['Kamera gereinigt', 'Handykamera verschmutzt']) ok(!pat('ADAS_HINT').test(x), 'kein Assistenz-Hinweis: ' + x);
+  for (const x of ['Kühlerschlauch geplatzt', 'Kühlwasserschlauch gerissen', 'Hydraulikschlauch geplatzt', 'coolant hose burst', 'radiator hose split', 'патрубок радіатора лопнув', 'шланг гідравліки порвався']) ok(pat('LEAK_HINT').test(x), 'Leck-Hinweis: ' + x);
+  ok(!pat('LEAK_HINT').test('Luftschlauch geplatzt'), 'Luftschlauch ist kein Leck');
+  for (const x of ['Luftschlauch geplatzt', 'Bremsschlauch geplatzt', 'Luftleitung abgerissen', 'Druckluftschlauch undicht', 'Bremsluftschlauch zum Anhänger geplatzt', 'air hose burst', 'suzie coil split', 'повітряний шланг лопнув']) ok(pat('BRAKE_HINT').test(x), 'Bremsen-Hinweis: ' + x);
+  ok(!pat('BRAKE_HINT').test('Luftschlauch getauscht'), 'kein Bremsen-Hinweis nach Tausch');
+  for (const x of ['Kühlergrill abgebrochen', 'Kühlergrill hängt herunter', 'Frontschürze hängt herunter', 'Frontklappe klappert', 'grille came off', 'решітка радіатора відвалилась']) ok(pat('LOOSE_HINT').test(x), 'Teile-Hinweis: ' + x);
+  for (const x of ['Kühlergrill neu lackiert', 'Grill im Pausenraum', 'Grill ist sauber']) ok(!pat('LOOSE_HINT').test(x), 'kein Teile-Hinweis: ' + x);
+});
+await test('Backlog 360 (Fehlersuche Anzeige-/Sitz-Hinweis): „Tachometer zeigt nichts“, „Tachometernadel bleibt stehen“ → Anzeige-Hinweis (nicht Fahrtenschreiber); „Fahrersitz verliert Luft“, „driver seat losing air“ → Sitz-Hinweis; „Tachometer kalibriert“, „Fahrersitz eingestellt“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['Tachometer zeigt nichts', 'Tachometernadel bleibt stehen', 'Tachometer ausgefallen']) { ok(pat('DASH_HINT').test(x), 'Anzeige-Hinweis: ' + x); ok(!pat('TACHO_HINT').test(x), 'kein Fahrtenschreiber-Hinweis: ' + x); }
+  ok(!pat('DASH_HINT').test('Tachometer kalibriert'), 'kein Anzeige-Hinweis nach Kalibrierung');
+  for (const x of ['Fahrersitz verliert Luft', 'Luftsitz verliert ständig Luft', 'driver seat losing air']) { ok(pat('SEAT_HINT').test(x), 'Sitz-Hinweis: ' + x); ok(!pat('BRAKE_HINT').test(x) && !pat('SUSP_HINT').test(x), 'kein Bremsen-/Federungs-Hinweis: ' + x); }
+  ok(!pat('SEAT_HINT').test('Fahrersitz eingestellt'), 'kein Sitz-Hinweis');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
