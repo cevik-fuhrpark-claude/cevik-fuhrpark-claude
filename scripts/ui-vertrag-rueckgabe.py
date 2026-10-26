@@ -35,6 +35,8 @@ with sync_playwright() as p:
     r2=api('POST',f'/api/vehicles/{V2}/contracts',{'kind':'miete','partner':'UI-Rückgabe-Miete','evidence':'UI-Test','start_date':d(-60),'end_date':d(15)})
     r3=api('POST',f'/api/vehicles/{V1}/contracts',{'kind':'wartung','partner':'UI-Full-Service','evidence':'UI-Test','start_date':d(-700),'end_date':d(400)})
     check(r3['s'] in (200,201),f'Wartungsvertrag angelegt {r3["s"]}')
+    r4=api('POST',f'/api/vehicles/{V1}/maintenance',{'kind':'Ölwechsel','interval_months':12,'last_done_date':d(-300),'evidence':'UI-Test'})
+    check(r4['s'] in (200,201),f'Prüftermin angelegt {r4["s"]}')
     check(r1['s'] in (200,201) and r2['s'] in (200,201),f'Verträge angelegt {r1["s"]}/{r2["s"]}')
     c=api('POST','/api/cases',{'vehicle_id':V1,'description':'Delle Seitenverkleidung (UI-Test Rückgabe)','priority':'niedrig','driveability':'fahrbereit','workshop_site':'DORTMUND','request_key':str(uuid.uuid4())})
     check(c['s'] in (200,201),'Vorgang angelegt '+str(c['s'])+' '+str(c['d'])[:200])
@@ -57,6 +59,11 @@ with sync_playwright() as p:
         check(RET[lang] in tx and OPEN[lang] in tx and NOKM[lang] in tx,f'{lang} {w}px: Beenden-Formular mit Rückgabe-Angaben')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: Akte ohne Querscrollen')
         if SHOTS: q.locator('[data-ct-retend]').first.screenshot(path=f'{SHOTS}/rueckgabe_akte_{lang}_{w}.png')
+        # Backlog 415: Werkstattauftrag aus Prüftermin nennt den laufenden Wartungsvertrag
+        ms=q.locator('[data-mosvc]')
+        check(ms.count()>=1 and 'UI-Full-Service' in (ms.first.text_content() or ''),f'{lang} {w}px: Werkstattauftrag-Formular nennt Wartungsvertrag (Backlog 415)')
+        if SHOTS and ms.count():
+          q.locator('details:has([data-mosvc]) > summary').first.click(); ms.first.scroll_into_view_if_needed(); q.locator('details:has([data-mosvc])').first.screenshot(path=f'{SHOTS}/wartung_auftrag_{lang}_{w}.png')
         # Backlog 290: Vorgang am Leasingfahrzeug – Kurzinfo nennt den Vertrag
         q.goto(B+'/#/cases/'+c['d']['id']); q.wait_for_selector('[data-vilease]', state='attached', timeout=15000)
         vt=q.locator('details.vinfo').first.inner_text()

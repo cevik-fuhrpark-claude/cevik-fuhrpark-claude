@@ -23306,6 +23306,21 @@ await test('Backlog 414 (Blickwinkel „Fahrzeug im Full-Service-Leasing: Werkst
   ok(app.includes('data-viservice') && app.includes("const svc = ls.filter((l) => l.kind === 'wartung')"), 'eigene Zeile in der Kurzinfo');
 });
 
+await test('Backlog 415 (Folge aus 414): Formular „Werkstattauftrag anlegen“ aus einem Prüftermin der Fahrzeugakte nennt laufende Wartungs-/Full-Service-Verträge (Leitung; Akte liefert Verträge nur ihr); Texte DE/UK/EN, Hilfe', async () => {
+  const { U, V1 } = await freshWorld();
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'wartung', partner: 'Service GmbH', evidence: 'Full-Service-Vertrag' })).status, 201);
+  const fl = (await U.fleet.get(`/api/vehicles/${V1}`)).data;
+  ok((fl.contracts || []).some((c) => c.kind === 'wartung' && c.partner === 'Service GmbH' && !c.ended_on && 'start_date' in c && 'end_date' in c), 'Akte liefert der Leitung den Vertrag mit Laufzeitfeldern');
+  ok(!(await U.ws.get(`/api/vehicles/${V1}`)).data.contracts, 'Werkstatt ohne Verträge');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].mo_svc_hint && STRINGS[l].mo_svc_hint.includes('{list}') && !/\d/.test(STRINGS[l].mo_svc_hint), 'Hinweis mit Liste, ohne Zahl ' + l);
+    ok(STRINGS[l].help_contracts_s.includes(STRINGS[l].mo_create), 'Hilfe nennt den Knopf wörtlich ' + l);
+  }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-mosvc') && app.includes("const svcRun = (d.contracts || []).filter((c) => c.kind === 'wartung' && !c.ended_on") && app.includes('maintOrderHtml(m.id, m.kind, mOrders, vS)') && app.includes('huSpHtml(d.hu_sp, vS, canMaint, mOrders)'), 'Hinweis im Formular der Akte');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
