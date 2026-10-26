@@ -8132,6 +8132,7 @@ await test('Protokoll: jeder Aktionscode hat eine Bezeichnung in DE/UK/EN (Code 
     for (const x of head.matchAll(/'([a-z_]+(?:\.[a-z_]+)*)'/g)) if (x[1].includes('.') || x[1] === 'login') codes.add(x[1]); // Detailwerte wie 'neu' nicht
   }
   for (const x of src.matchAll(/'(maintenance\.husp_[a-z_]+)'/g)) codes.add(x[1]);
+  for (const x of src.matchAll(/INSERT INTO audit_log[^;]*?'([a-z_]+\.[a-z_.]+)'/g)) codes.add(x[1]); // Sammel-Protokolle per INSERT … SELECT (Backlog 235/405)
   const mig = fs.readdirSync(new URL('../migrations/', import.meta.url)).map((f) => fs.readFileSync(new URL('../migrations/' + f, import.meta.url), 'utf8')).join('\n');
   for (const x of mig.matchAll(/INSERT INTO audit_log[^;]*?'([a-z_]+\.[a-z_.]+)'/g)) codes.add(x[1]);
   ok(codes.size >= 70, 'Codes gefunden: ' + codes.size);
@@ -16934,7 +16935,7 @@ await test('Fehlersuche 22.10. (Erstnutzung): Hinweise statt leerer Seiten – S
   }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('ov.totals.vehicles === 0') && app.includes('data-todogaps'), 'Startseite: ohne Fahrzeuge bzw. mit Lücken kein grünes Feld');
-  eq((app.match(/if \(!vs\.length\) \{ render\(/g) || []).length, 3, 'Melden, Sammelmeldung (Backlog 404) und Abfahrtskontrolle mit Hinweis');
+  eq((app.match(/if \(!vs\.length\) \{ render\(/g) || []).length, 4, 'Melden, Sammelmeldung (Backlog 404), Prüftermin für mehrere Fahrzeuge (Backlog 405) und Abfahrtskontrolle mit Hinweis');
   ok(app.includes('data-vlempty') && app.includes('data-novehicle>'), 'leere Fahrzeugliste, Fahrer ohne Zuordnung');
   const { U } = await freshWorld();
   eq((await U.fleet.get('/api/tires/fleet')).status, 200);
@@ -22972,6 +22973,67 @@ await test('Backlog 404 (Blickwinkel „Hagelschaden an mehreren Lkw auf dem Hof
   for (const l of ['de', 'uk', 'en']) { for (const k of ['multi_link', 'multi_title', 'multi_intro', 'multi_choose', 'multi_selected', 'multi_send', 'multi_need_two', 'multi_too_many', 'multi_photos_after', 'multi_offline', 'multi_dup', 'multi_partial']) ok(STRINGS[l][k], `${l}.${k}`); ok(PLURALS[l].multi_done, `${l} Plural`); }
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("[/^#\\/new\\/multi$/, viewNewMulti]") && app.includes("api('POST', '/api/cases/batch'") && app.includes('const BATCH_MAX = 40; const BATCH_CHUNK = 12;') && app.includes('id="tomulti"'), 'Oberfläche');
+});
+await test('Backlog 405 (Blickwinkel „Wintercheck vor der Saison für alle Lkw“): Prüftermin für mehrere Fahrzeuge anlegen – gleiche Art/Bezeichnung/Fälligkeit, übersprungene einzeln gemeldet, wiederholbar ohne Dubletten, feste Abfragezahl, Rechte wie der Import', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const V2 = 'VIN:WDB9630051L917317';
+  const ids = [V1, V2];
+  for (let i = 0; i < 4; i++) { const vin = `WDB9634031056${String(8000 + i)}`; eq((await U.own.post('/api/vehicles', { plate: `WC-K ${200 + i}`, vin, site: 'Dortmund' })).status, 201); ids.push('VIN:' + vin); }
+  const due = bDayOff(20);
+  const body = { kind: 'Sonstiges', evidence: 'Wintercheck 2026 (Frostschutz, Batterie, Heizung) – Anweisung Leitung', next_due_date: due, vehicle_ids: ids };
+  // Rechte und Eingaben
+  for (const [c, n] of [[U.ws, 'Werkstatt'], [U.driver, 'Fahrer'], [U.viewer, 'Lesen']]) eq((await c.post('/api/maintenance/create-batch', body)).status, 403, n);
+  eq((await U.fleet.post('/api/maintenance/create-batch', { ...body, vehicle_ids: [] })).status, 400, 'leer');
+  eq((await U.fleet.post('/api/maintenance/create-batch', { ...body, vehicle_ids: Array.from({ length: 201 }, (_, i) => 'x' + i) })).status, 400, '> 200');
+  eq((await U.fleet.post('/api/maintenance/create-batch', { ...body, evidence: '' })).status, 400, 'ohne Nachweis');
+  eq((await U.fleet.post('/api/maintenance/create-batch', { ...body, next_due_date: '2026-02-30' })).status, 400, 'kein Kalenderdatum');
+  eq((await U.fleet.post('/api/maintenance/create-batch', { ...body, interval_months: '1,5' })).status, 400, 'Intervall ganzzahlig');
+  for (const k of ['HU', 'SP', 'Rückruf']) { const x = await U.fleet.post('/api/maintenance/create-batch', { ...body, kind: k }); eq(x.status, 400, k); ok(/Rückrufe importieren/.test(JSON.stringify(x.data)), JSON.stringify(x.data)); }
+  eq((await U.fleet.post('/api/maintenance/create-batch', { ...body, kind: 'Gibtsnicht' })).status, 400, 'Art');
+  eq(e.DB.db.prepare('SELECT COUNT(*) AS n FROM maintenance_rules').get().n, 0, 'nichts angelegt');
+  // Fahrzeug 5 außer Betrieb, Fahrzeug 6 ruhend, unbekanntes Fahrzeug, doppelte Auswahl
+  e.DB.db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(ids[4]);
+  e.DB.db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(ids[5]);
+  const q0 = QSTAT.n;
+  const r = await U.fleet.post('/api/maintenance/create-batch', { ...body, vehicle_ids: [...ids, V1, 'VIN:UNBEKANNT00000000'] });
+  const nq = QSTAT.n - q0;
+  eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.kind, 'Sonstiges');
+  eq(r.data.created.map((x) => x.vehicle_id).join(), ids.slice(0, 4).join(), 'angelegt');
+  const sk = Object.fromEntries(r.data.skipped.map((x) => [x.vehicle_id, x.code]));
+  eq(sk[ids[4]], 'inactive'); eq(sk[ids[5]], 'dormant'); eq(sk['VIN:UNBEKANNT00000000'], 'not_found'); eq(r.data.skipped.length, 3);
+  ok(nq <= 8, `Abfragen ${nq} (Anmeldung + Auswahl + ein Stapel + Nachlese, unabhängig von der Anzahl)`);
+  const rules = e.DB.db.prepare('SELECT * FROM maintenance_rules ORDER BY vehicle_id').all();
+  eq(rules.length, 4);
+  ok(rules.every((m) => m.kind === 'Sonstiges' && m.next_due_date === due && m.due_source === 'nachweis' && m.evidence === body.evidence && m.last_done_date === null && m.interval_months === null && m.created_by === U.fleet.id), JSON.stringify(rules[0]));
+  eq(e.DB.db.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action='maintenance.rule_add' AND json_extract(detail,'$.batch')=1`).get().n, 4, 'Protokoll je Fahrzeug');
+  // erscheint in Übersicht und Fahrzeugakte wie ein einzeln angelegter Eintrag
+  const ov = (await U.fleet.get('/api/maintenance')).data;
+  eq(ov.rows.filter((x) => x.kind === 'Sonstiges' && x.next_due_date === due).length, 4, 'Übersicht');
+  ok((await U.fleet.get(`/api/vehicles/${V1}`)).data.maintenance.some((m) => m.kind === 'Sonstiges' && m.evidence === body.evidence), 'Fahrzeugakte');
+  // erneut senden (Funkloch/Doppelklick): nichts doppelt, als unverändert gemeldet; andere Bezeichnung → weiterer Eintrag (Sonstiges darf mehrfach)
+  const again = await U.fleet.post('/api/maintenance/create-batch', { ...body, vehicle_ids: ids.slice(0, 4) });
+  eq(again.status, 200); eq(again.data.created.length, 0); eq(again.data.unchanged, 4);
+  const other = await U.fleet.post('/api/maintenance/create-batch', { ...body, evidence: 'Klimaanlage prüfen (Anweisung Leitung)', next_due_date: '', vehicle_ids: [V1] });
+  eq(other.data.created.length, 1); eq(e.DB.db.prepare('SELECT next_due_date, due_source FROM maintenance_rules WHERE id=?').get(other.data.created[0].id).due_source, 'berechnet');
+  // Einzelart (Feuerlöscher, Intervall 24 Monate): Fahrzeug mit vorhandenem Eintrag wird übersprungen, nicht überschrieben
+  eq((await U.fleet.post(`/api/vehicles/${V2}/maintenance`, { kind: 'Feuerlöscher', last_done_date: bDayOff(-30), interval_months: 24, evidence: 'Prüfplakette' })).status, 201);
+  const fl = await U.fleet.post('/api/maintenance/create-batch', { kind: 'Feuerlöscher', evidence: 'Feuerlöscher-Prüfung laut Leitung', interval_months: 24, vehicle_ids: ids.slice(0, 4) });
+  eq(fl.status, 200); eq(fl.data.created.length, 3); eq(fl.data.skipped.map((x) => `${x.vehicle_id}:${x.code}`).join(), `${V2}:rule_exists`);
+  eq(e.DB.db.prepare(`SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=? AND kind='Feuerlöscher'`).get(V2).n, 1, 'ein Eintrag je Art');
+  ok(e.DB.db.prepare(`SELECT interval_months FROM maintenance_rules WHERE vehicle_id=? AND kind='Feuerlöscher'`).get(V1).interval_months === 24, 'Intervall');
+  // Testkonto mit „Stammdaten nur lesen“ gesperrt; Inhaber darf
+  eq((await U.own.put('/api/settings', { test_master_readonly: '1' })).status, 200);
+  try { eq((await U.fleet.post('/api/maintenance/create-batch', { ...body, evidence: 'x-Test', vehicle_ids: [V1] })).status, 403, 'nur lesen'); }
+  finally { eq((await U.own.put('/api/settings', { test_master_readonly: '0' })).status, 200); }
+  // Oberfläche und Texte
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['mc_link', 'mc_title', 'mc_intro', 'mc_kind', 'mc_evidence', 'mc_evidence_hint', 'mc_due', 'mc_due_hint', 'mc_interval', 'mc_choose', 'mc_send', 'mc_need_one', 'mc_skipped', 'mc_unchanged', 'mc_all', 'mc_none']) ok(STRINGS[l][k], `Text ${k} ${l}`);
+    for (const c of ['inactive', 'dormant', 'rule_exists', 'not_found']) ok(STRINGS[l]['mc_sk_' + c], `Text mc_sk_${c} ${l}`);
+    ok(PLURALS[l].mc_done && PLURALS[l].mc_selected, 'Plural ' + l);
+  }
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("[/^#\\/maintenance\\/multi$/, viewMaintMulti]") && app.includes("api('POST', '/api/maintenance/create-batch'") && app.includes('id="tomcreate"'), 'Oberfläche');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

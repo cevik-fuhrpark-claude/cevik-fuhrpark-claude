@@ -96,7 +96,7 @@ function requireRole(user, roles) {
 // Gemeinsame Stammdaten ohne Trennung Test/Betrieb (Fahrzeuge, Prüftermine, km-Stände, Reifengrößen, Telematik-Zuordnung).
 // Mit Einstellung „test_master_readonly“ = 1 dürfen Testkonten (außer Inhaber) sie nur lesen. Standard: aus (bisheriges Verhalten).
 const SHARED_WRITE = [/^\/api\/vehicles$/, /^\/api\/vehicles\/import$/, /^\/api\/vehicles\/VIN:[A-Z0-9]+\/(spec|evaluation|active|maintenance|odometer|tires\/specs)$/,
-  /^\/api\/maintenance\/import$/, /^\/api\/maintenance\/plan-batch$/, /^\/api\/maintenance\/recalls\/import$/, /^\/api\/maintenance\/[\w-]+\/(complete|plan)$/, /^\/api\/vehicles\/VIN:[A-Z0-9]+\/husp\/(HU|SP)\/(complete|plan|order)$/, /^\/api\/maintenance\/events\/[\w-]+\/result$/, /^\/api\/tires\/import$/, /^\/api\/telematics\/mappings$/,
+  /^\/api\/maintenance\/import$/, /^\/api\/maintenance\/plan-batch$/, /^\/api\/maintenance\/create-batch$/, /^\/api\/maintenance\/recalls\/import$/, /^\/api\/maintenance\/[\w-]+\/(complete|plan)$/, /^\/api\/vehicles\/VIN:[A-Z0-9]+\/husp\/(HU|SP)\/(complete|plan|order)$/, /^\/api\/maintenance\/events\/[\w-]+\/result$/, /^\/api\/tires\/import$/, /^\/api\/telematics\/mappings$/,
   /^\/api\/vehicles\/VIN:[A-Z0-9]+\/contracts$/, /^\/api\/contracts\/[\w-]+(\/end)?$/, /^\/api\/odometer\/[\w-]+\/note$/];
 async function guardSharedWrite(env, user, path, m) {
   if (m === 'GET' || user.role === 'owner' || user.environment !== 'test' || !SHARED_WRITE.some((r) => r.test(path))) return;
@@ -371,6 +371,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/order$/)) && m === 'POST') return json(await cases.orderFromMaintenance(env, ctx, user, envName, mm[1], await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/maintenance\/events\/([\w-]+)\/result$/)) && m === 'POST') return json(await veh.addMaintenanceResult(env, user, mm[1], await readJson(request), { ctx, envName }));
   if ((mm = path.match(/^\/api\/maintenance\/events\/([\w-]+)\/order$/)) && m === 'POST') return json(await cases.orderFromInspectionDefect(env, ctx, user, envName, mm[1], await readJson(request)), 201);
+  if (path === '/api/maintenance/create-batch' && m === 'POST') return json(await veh.addMaintenanceRuleBatch(env, user, await readJson(request)));
   if (path === '/api/maintenance/plan-batch' && m === 'POST') return json(await veh.planMaintenanceBatch(env, user, await readJson(request)));
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/plan$/)) && m === 'POST') return json(await veh.planMaintenance(env, user, mm[1], await readJson(request)));
   // HU/SP ohne eigenen Eintrag (nur berechnete Frist): Eintrag erst bei der Aktion anlegen, dann wie beim vorhandenen Eintrag (19.10.2026)

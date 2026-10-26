@@ -218,6 +218,7 @@ UI-Unfall in Polen: Unfall-Hinweis bei Zusammenstoß/зіткнення/collisio
 UI-Getriebetausch/Fahrtenschreiber: Hinweis § 57b vor Abschlusskontrolle, Tachograph-Durchführung mit Einbauschild-Hinweis, Kurzinfo ≤ 60 Tage, DE/UK/EN 390/820/1366|ui-getriebe-57b.py|/tmp/cfp-getriebe-57b.log
 UI-Ruhendes Fahrzeug/Versicherung beendet: Hinweis an den Fahrer auf „Mein Fahrzeug“, Datenqualität „kein laufender Kfz-Versicherungsvertrag“, DE/UK/EN 390/820/1366|ui-ruhend-versicherung.py|/tmp/cfp-ruhend-versicherung.log
 UI-Sammelmeldung (Hagel): gleicher Schaden an 14 Fahrzeugen in zwei Blöcken, je Fahrzeug ein Vorgang mit Link, weniger als zwei Fahrzeuge abgewiesen, DE/UK/EN 390/820/1366|ui-hagel-sammelmeldung.py|/tmp/cfp-hagel-sammelmeldung.log
+UI-Prüftermin für mehrere Fahrzeuge (Wintercheck): 5 Fahrzeuge, Hinweise ohne Bezeichnung/Fahrzeug, Link zur Fahrzeugakte, erneut ohne Dubletten, DE/UK/EN 390/820/1366|ui-pruefung-sammelanlage.py|/tmp/cfp-pruefung-sammelanlage.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log

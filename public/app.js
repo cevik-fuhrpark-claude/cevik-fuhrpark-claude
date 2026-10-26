@@ -414,7 +414,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/multi$/, viewNewMulti], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
   [/^#\/vehicles(?:\?f=\w+)?$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?sec=tires$/, (vid) => viewVehicle(vid, null, 'tires')], [/^#\/vehicles\/(VIN:[A-Z0-9]+\?done=[\w-]+)$/, (x) => viewVehicle(x.split('?done=')[0], null, 'done:' + x.split('?done=')[1])], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline(?:\?f=(\w+))?$/, viewTimeline], [/^#\/inbox$/, viewInbox], [/^#\/push$/, () => { location.replace(notifHref({})); }],
   [/^#\/master(?:\?(q|sev)=([^&]*))?$/, viewMaster], [/^#\/plan(?:\?s=(mdue))?$/, (sec) => viewPlan(sec)], [/^#\/users$/, viewUsers], [/^#\/settings(?:\?s=([a-z_]+))?$/, (sec) => viewSettings(sec)], [/^#\/more(?:\?o=(sess))?$/, (o) => viewMore(o)],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/guide(?:\?l=(de|uk|en))?$/, (l) => viewDriverGuide(l)], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/stock\/count$/, viewStockCount], [/^#\/stock\/asof$/, viewStockAsOf], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/tacho\/history$/, viewTachoHistory], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/records$/, viewDriverRecords], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit(?:\?u=([\w-]+))?$/, (u) => viewAudit(false, u)], [/^#\/audit\?v=(VIN:[A-Z0-9]+)$/, (v) => viewAudit(false, undefined, v)], [/^#\/usage$/, viewUsage], [/^#\/readiness$/, viewReadiness], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/emergency(?:\?v=(VIN:[A-Z0-9]+)(?:&from=file)?)?$/, viewEmergency], [/^#\/emergency\/edit$/, viewEmergencyEdit], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance(?:\?f=(gaps|due|noplan|all))?$/, viewMaint], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/guide(?:\?l=(de|uk|en))?$/, (l) => viewDriverGuide(l)], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/stock\/count$/, viewStockCount], [/^#\/stock\/asof$/, viewStockAsOf], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/tacho\/history$/, viewTachoHistory], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/records$/, viewDriverRecords], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit(?:\?u=([\w-]+))?$/, (u) => viewAudit(false, u)], [/^#\/audit\?v=(VIN:[A-Z0-9]+)$/, (v) => viewAudit(false, undefined, v)], [/^#\/usage$/, viewUsage], [/^#\/readiness$/, viewReadiness], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/emergency(?:\?v=(VIN:[A-Z0-9]+)(?:&from=file)?)?$/, viewEmergency], [/^#\/emergency\/edit$/, viewEmergencyEdit], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance(?:\?f=(gaps|due|noplan|all))?$/, viewMaint], [/^#\/maintenance\/multi$/, viewMaintMulti], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 // `vs` aus Startseiten-Sprüngen (hj): Standortfilter der Zielliste setzen ('*' = alle), dann ohne `vs` weiter (Routen-Muster bleiben streng)
 const VS_KEYS = { cases: 'caseVsite', vehicles: 'vehSite', plan: 'planVsite', tires: 'tireSite', quality: 'dqSite', maintenance: 'maintSite', tacho: 'tachoSite' };
@@ -4672,6 +4672,52 @@ const candEv = (c) => (c.since ? t('cand_since').replace('{d}', fmtD(c.since)) +
 const fcSoon = (r, today, days = 30) => !!(r.km_forecast && r.km_forecast.date && Date.parse(r.km_forecast.date) - Date.parse(today) <= days * 86400000);
 // „ungeklärt“ (km-Zähler gesunken bzw. HU/SP-Frist ungeklärt) überdeckt im Gesamtstatus eine Datumsfälligkeit – die bleibt einzuplanen (Server: date_status)
 const kmUnclearDateDue = (r) => r.status === 'ungeklaert' && ['ueberfaellig', 'faellig'].includes(r.date_status);
+// Backlog 405 (Blickwinkel „Wintercheck vor der Saison für alle Lkw“): Prüftermin für mehrere Fahrzeuge anlegen – Inhaber/Fuhrparkleitung.
+// Je Fahrzeug ein eigener Eintrag (Server `POST /api/maintenance/create-batch`); Durchführung/km danach je Fahrzeug mit „Erledigt“.
+const MC_MAX = 200;
+async function viewMaintMulti() {
+  if (!isMgr()) { render(`<h1>${esc(t('mc_title'))}</h1><p class="muted">${esc(t('no_permission_view'))}</p>`, 'more'); return; }
+  const vs = (await vehiclesCached()).filter((v) => !v.eval_excluded);
+  if (!vs.length) { render(`<h1>${esc(t('mc_title'))}</h1>${noVehiclesNote()}`, 'more'); return; }
+  const kinds = (S.meta.maintenance_kinds || []).filter((k) => !['HU', 'SP', 'Rückruf'].includes(k));
+  render(`<h1>${esc(t('mc_title'))}</h1>${helpLink('dates')}<p class="small muted">${esc(t('mc_intro'))}</p><form id="mcf" novalidate>
+    <label for="mck">${esc(t('mc_kind'))}</label><select id="mck">${kinds.map((k) => `<option value="${esc(k)}"${k === 'Sonstiges' ? ' selected' : ''}>${esc(mk(k))}</option>`).join('')}</select>
+    <label for="mce">${esc(t('mc_evidence'))}<span class="hint">${esc(t('mc_evidence_hint'))}</span></label><input id="mce" maxlength="300" required>
+    <div style="display:flex;gap:12px;flex-wrap:wrap"><div><label for="mcd">${esc(t('mc_due'))}</label><input type="date" id="mcd"></div><div><label for="mci">${esc(t('mc_interval'))}</label><input id="mci" inputmode="numeric" maxlength="3" style="max-width:9em"></div></div>
+    <p class="small muted">${esc(t('mc_due_hint'))}</p>
+    <label for="vq">${esc(t('mc_choose'))}</label><input id="vq" placeholder="SZ-…" autocomplete="off" style="margin-bottom:8px">
+    <div class="actions" style="margin:0 0 8px"><button type="button" class="btn secondary" id="mcall">${esc(t('mc_all'))}</button><button type="button" class="btn secondary" id="mcnone">${esc(t('mc_none'))}</button></div>
+    <p class="small" id="mccount" role="status" aria-live="polite"></p>
+    <div class="vehpick multi" id="mcpick" role="group" aria-label="${esc(t('mc_choose'))}">${vs.map((v) => `<label><input type="checkbox" name="mcveh" value="${esc(v.id)}">${plate(v.plate)}<span class="small muted">${v.kind === 'anhaenger' ? esc(t('vk_anhaenger')) + ' · ' : ''}${esc(v.site || '')}</span></label>`).join('')}</div>
+    <div class="actions"><button class="btn block" id="mcsb">${esc(t('mc_send'))}</button></div></form>`, 'more');
+  const boxes = () => $$('input[name=mcveh]');
+  const chosen = () => boxes().filter((x) => x.checked);
+  const count = () => { const n = chosen().length; const el = $('#mccount'); if (el) { el.textContent = tn('mc_selected', n); el.classList.toggle('err', n > MC_MAX); } };
+  boxes().forEach((x) => x.addEventListener('change', count)); count();
+  $('#vq').onkeydown = (e) => { if (e.key === 'Enter') e.preventDefault(); };
+  // Filter blendet nur aus – gewählte Fahrzeuge bleiben sichtbar (wie die Sammelmeldung)
+  $('#vq').oninput = () => { const q = searchKey($('#vq').value); $$('#mcpick label').forEach((l) => { const r = $('input', l); l.hidden = !!q && !(r && r.checked) && !searchKey(l.textContent).includes(q); }); };
+  $('#mcall').onclick = () => { $$('#mcpick label').forEach((l) => { const r = $('input', l); if (r && !l.hidden) r.checked = true; }); count(); };
+  $('#mcnone').onclick = () => { boxes().forEach((x) => (x.checked = false)); count(); };
+  $('#mcf').onsubmit = async (e) => {
+    e.preventDefault();
+    const sb = $('#mcsb'); const ids = chosen().map((x) => x.value);
+    if (!$('#mce').value.trim()) { toast(t('mc_need_evidence'), true); markInvalid($('#mce'), t('mc_need_evidence')); $('#mce').focus(); return; }
+    if (!ids.length) { toast(t('mc_need_one'), true); markInvalid($('#mcpick'), t('mc_need_one')); $('#vq').focus(); return; }
+    if (ids.length > MC_MAX) { toast(t('mc_too_many'), true); markInvalid($('#mcpick'), t('mc_too_many')); return; }
+    sb.disabled = true;
+    try {
+      const r = await api('POST', '/api/maintenance/create-batch', { kind: $('#mck').value, evidence: $('#mce').value, next_due_date: $('#mcd').value || null, interval_months: $('#mci').value.trim() || null, vehicle_ids: ids });
+      if (!sb.isConnected) return;
+      document.querySelectorAll('.toast.err').forEach((x) => x.remove());
+      const skip = (r.skipped || []).map((x) => `<li>${x.plate ? esc(x.plate) + ' · ' : ''}${esc(t('mc_sk_' + x.code))}</li>`).join('');
+      render(`<h1>${esc(t('mc_title'))}</h1><div class="panel ${skip ? 'warn' : 'ok'}" role="status" data-mcdone><p><b>${esc(tn('mc_done', r.created.length))}</b>${r.unchanged ? ` · ${esc(t('mc_unchanged').replace('{n}', fmtNum(r.unchanged)))}` : ''}</p>
+        ${r.created.length ? `<ul class="list">${r.created.map((c) => `<li><a href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${plate(c.plate)}</a> · ${esc(mk(r.kind))}</li>`).join('')}</ul>` : ''}
+        ${skip ? `<p class="small"><b>${esc(t('mc_skipped'))}</b></p><ul class="small">${skip}</ul>` : ''}
+        <p><a class="btn" href="#/maintenance">${esc(t('inspections_due'))}</a></p></div>`, 'more');
+    } catch (err) { sb.disabled = false; toast(err.message, true); }
+  };
+}
 async function viewMaint(fq) {
   if (typeof fq === 'string' && fq) S.maintFilter = fq; // Wegweiser „#/maintenance?f=gaps“ (Startseite: Pflichtprüfungen ohne Termin)
   let ov;
@@ -4690,7 +4736,7 @@ async function viewMaint(fq) {
   if (f === 'fc30') rows.sort((a, b) => (a.km_forecast.date < b.km_forecast.date ? -1 : a.km_forecast.date > b.km_forecast.date ? 1 : 0));
   const cls = { ueberfaellig: 'kritisch', faellig: 'mittel', ok: 'ok', ohne_termin: '', erledigt: 'ok', ungeklaert: 'mittel', nicht_pflichtig: '', erste_sp: '' };
   const tabs = [['due', `${t('ms_ueberfaellig')} + ${t('ms_faellig')}`, ov.totals.overdue + ov.totals.due], ['noplan', t('due_no_plan'), ov.rows.filter(noPlan).length], ['ueberfaellig', t('ms_ueberfaellig'), ov.totals.overdue], ['ungeklaert', t('ms_ungeklaert'), ov.totals.unclear || 0], ...(kmN || f === 'km' ? [['km', t('km_due_tab'), kmN]] : []), ...(fcN || f === 'fc30' ? [['fc30', t('fc30_tab'), fcN]] : []), ['all', t('filter_all'), ov.rows.length], ['gaps', t('gaps'), ov.totals.vehicles_with_gaps]];
-  let html = `<h1>${esc(t('inspections_due'))}</h1>${helpLink('dates')}
+  let html = `<h1>${esc(t('inspections_due'))}</h1>${helpLink('dates')}${isMgr() ? `<p class="small noprint"><a href="#/maintenance/multi" id="tomcreate">${esc(t('mc_link'))}</a></p>` : ''}
     <section class="panel"><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip ${ov.totals.overdue ? 'kritisch' : ''}">${esc(t('ms_ueberfaellig'))}: ${ov.totals.overdue}</span><span class="chip ${ov.totals.due ? 'mittel' : ''}">${esc(t('ms_faellig'))} (≤ ${esc(nDays(ov.warn_days))}): ${ov.totals.due}</span><span class="chip ok">${esc(t('ms_ok'))}: ${ov.totals.ok}</span><span class="chip ${ov.totals.vehicles_with_gaps ? 'mittel' : ''}">${esc(t('gaps'))}: ${ov.totals.vehicles_with_gaps} / ${ov.totals.vehicles}</span></div>
     ${(ov.site_options || []).length > 1 || ov.site ? `<div class="noprint" style="margin-top:10px">${siteSelect('msite', '', ov.site_options, ov.site)}</div>` : ''}
     <div class="actions"><button type="button" class="btn secondary" id="mcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="mics">${esc(t('export_ics'))}</button><button type="button" class="btn secondary" id="mprt">${esc(t('print'))}</button></div></section>

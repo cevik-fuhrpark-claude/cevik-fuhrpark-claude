@@ -1002,6 +1002,65 @@ export async function planMaintenanceBatch(env, user, body) {
   return { ok: true, planned_date: d, planned: planned.map(({ previous, ...p }) => (previous ? { ...p, replaced: previous } : p)), unchanged, skipped };
 }
 
+// Sammelanlage (Backlog 405, Blickwinkel „Wintercheck vor der Saison für alle Lkw“): denselben Prüftermin (Art, Nachweis/Bezeichnung, optional
+// Intervall und Fälligkeit laut Leitung) für mehrere Fahrzeuge in einem Schritt anlegen – vorher eine Fahrzeugakte nach der anderen oder ein
+// CSV-Import. Nur Inhaber/Fuhrparkleitung (wie der Import). Keine Durchführung/km je Fahrzeug (die sind fahrzeugbezogene Belege → „erledigt“
+// in der Fahrzeugakte bzw. Werkstattplan). Nicht für HU/SP (Frist rechnet die App je Fahrzeug nach Anl. VIII) und Rückrufe (Referenz je
+// Schreiben → Rückruf-Import). Feste Abfragezahl: Auswahl, ein Stapel (Anlage mit Doppelschutz im selben INSERT + Protokoll), Nachlese.
+// Übersprungen und einzeln gemeldet: unbekannt, außer Betrieb, ruhend (aus Bewertungen ausgenommen), Art schon vorhanden (je Fahrzeug nur
+// ein Eintrag dieser Art). Bei „Sonstiges“ gilt derselbe Nachweistext am selben Fahrzeug als bereits angelegt (erneutes Senden → unverändert).
+export const CREATE_BATCH_MAX = 200;
+export async function addMaintenanceRuleBatch(env, user, body) {
+  if (!isManager(user)) throw forbidden();
+  const kind = oneOf(body.kind, MAINT_KINDS, 'Art');
+  if (kind === 'HU' || kind === 'SP' || ONE_TIME_KINDS.includes(kind)) throw bad('validation', 'HU/SP und Rückrufe bitte je Fahrzeug bzw. über „Rückrufe importieren“ anlegen.');
+  const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
+  const months = body.interval_months ? num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate' }) : null;
+  const km = body.interval_km ? num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', grouped: true }) : null;
+  if ((months !== null && !Number.isInteger(months)) || (km !== null && !Number.isInteger(km))) throw bad('validation', 'Intervall als ganze Zahl angeben.');
+  const nextDue = str(body.next_due_date, { max: 10, field: 'Nächster Termin' });
+  if (nextDue && !isCalendarDate(nextDue)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  if (nextDue && nextDue > maxFutureDate()) throw bad('validation', DUE_FAR_MSG);
+  const raw = Array.isArray(body.vehicle_ids) ? body.vehicle_ids : null;
+  if (!raw || !raw.length || raw.length > CREATE_BATCH_MAX || raw.some((x) => typeof x !== 'string' || !x || x.length > 40)) throw bad('validation', 'Bitte 1 bis 200 Fahrzeuge auswählen.');
+  const ids = [...new Set(raw)];
+  const single = !MULTI_RULE_KINDS.includes(kind);
+  // vorhandener Eintrag: bei Einzelarten jede gleiche Art, bei „Sonstiges“ nur derselbe Nachweistext (gleiche Aktion)
+  const SAME = `SELECT 1 FROM maintenance_rules m WHERE m.vehicle_id=%V AND m.kind=?${single ? '' : ' AND m.evidence=?'}`;
+  const sameArgs = single ? [kind] : [kind, evidence];
+  const rows = (await env.DB.prepare(`SELECT v.id, v.plate, v.active, v.eval_excluded, EXISTS(${SAME.replace('%V', 'v.id')}) AS has FROM vehicles v WHERE v.id IN (SELECT value FROM json_each(?))`)
+    .bind(...sameArgs, JSON.stringify(ids)).all()).results || [];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const skipped = []; const todo = []; let unchanged = 0;
+  for (const id of ids) {
+    const r = byId.get(id);
+    if (!r) { skipped.push({ vehicle_id: id, code: 'not_found' }); continue; }
+    const base = { vehicle_id: id, plate: r.plate };
+    if (!r.active) { skipped.push({ ...base, code: 'inactive' }); continue; }
+    if (r.eval_excluded) { skipped.push({ ...base, code: 'dormant' }); continue; }
+    if (r.has) { if (single) skipped.push({ ...base, code: 'rule_exists' }); else unchanged++; continue; }
+    todo.push({ ...base, id: uuid() });
+  }
+  const created = [];
+  if (todo.length) {
+    const now = nowIso();
+    const j = (k) => `json_extract(j.value,'$.${k}')`;
+    await env.DB.batch([
+      // Doppelschutz im selben INSERT (zwei gleichzeitige Klicks/Tabs): nur Fahrzeuge ohne passenden Eintrag
+      env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,km_basis_at)
+        SELECT ${j('id')}, ${j('vehicle_id')}, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ? FROM json_each(?) j WHERE NOT EXISTS (${SAME.replace('%V', j('vehicle_id'))})`)
+        .bind(kind, months, km, nextDue || null, evidence, user.id, now, now, nextDue ? 'nachweis' : 'berechnet', now, JSON.stringify(todo.map(({ id, vehicle_id }) => ({ id, vehicle_id }))), ...sameArgs),
+      // Protokoll je angelegtem Eintrag (Ziel = Fahrzeug)
+      env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) SELECT ${j('a')}, ?, 'maintenance.rule_add', ${j('vehicle_id')}, json_object('kind', ?, 'rule_id', ${j('id')}, 'batch', json('true')${nextDue ? ", 'next_due_date', ?" : ''}), ?
+        FROM json_each(?) j WHERE EXISTS (SELECT 1 FROM maintenance_rules m WHERE m.id=${j('id')})`)
+        .bind(user.id, kind, ...(nextDue ? [nextDue] : []), now, JSON.stringify(todo.map(({ id, vehicle_id }) => ({ id, vehicle_id, a: uuid() })))),
+    ]);
+    const made = new Set(((await env.DB.prepare('SELECT id FROM maintenance_rules WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(todo.map((x) => x.id))).all()).results || []).map((r) => r.id));
+    for (const x of todo) { if (made.has(x.id)) created.push(x); else if (single) skipped.push({ vehicle_id: x.vehicle_id, plate: x.plate, code: 'rule_exists' }); else unchanged++; }
+  }
+  return { ok: true, kind, created: created.map(({ id, vehicle_id, plate }) => ({ id, vehicle_id, plate })), unchanged, skipped };
+}
+
 // HU/SP ohne eigenen Eintrag (Frist nur berechnet, Zeile `virtual` in der Prüftermin-Übersicht, Backlog 93): erst wenn jemand in der
 // Fahrzeugakte eine Durchführung erfasst, einen Termin plant oder einen Auftrag erstellt, wird der Eintrag angelegt (19.10.2026) – nie
 // automatisch. Ohne Nachweis-Datum/Fälligkeit: die Frist rechnet danach genauso wie vorher (syncHuSpDues). Vorhandener Eintrag → dessen id.
