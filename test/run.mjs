@@ -22823,6 +22823,23 @@ await test('Backlog 386–389 (Blickwinkel „Lkw drei Wochen in der Herstellerw
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-extnote') && app.includes("t('ext_amount_hint')") && app.includes("r.external_workshop) toast(t('ext_ws_hint'))") && /i\.vehicle_location && `<span data-vloc>/.test(app), 'Oberfläche');
 });
+await test('Backlog 390–394 (Blickwinkel „Unfall in Polen mit Fremdbeteiligung“): Unfall-Hinweis erkennt Zusammenstoß/зіткнення/європротокол/collision (nicht „наїхав на цвях“), Gegner-Kennzeichen ohne „D“-Band, Suche ohne Akzente und mit Länderkennung, Kennzeichen ohne Buchstaben/Ziffern abgewiesen, Unfallbericht im Hinweis und in der Belegbezeichnung', async () => {
+  const { U } = await freshWorld();
+  const cid = (await U.driver.post('/api/cases', { vehicle_id: 'VIN:WMA15SZZ2HM722774', description: 'Зіткнення з польським легковиком біля Познані, заповнили європротокол', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const P = `/api/cases/${cid}/claim`; const base = { insurer: 'Eigene Vers AG', reported_on: bDayOff(0), evidence: 'Europäischer Unfallbericht (Foto)' };
+  for (const bad of ['???', '-', ' / ']) { const r = await U.fleet.put(P, { ...base, opponent_plate: bad }); eq(r.status, 400, bad); ok(/Buchstaben\/Ziffern/.test(r.data.message || r.data.error || JSON.stringify(r.data)), JSON.stringify(r.data)); }
+  const r = await U.fleet.put(P, { ...base, opponent_plate: 'PO 12345', opponent_insurer: 'PZU SA', police_station: 'KPP Września', expected_updated_at: null }); eq(r.status, 200, JSON.stringify(r.data));
+  const hits = async (q) => (await U.fleet.get(`/api/claims?filter=alle&q=${encodeURIComponent(q)}`)).data.claims.filter((x) => x.case_id === cid).length;
+  for (const q of ['Wrzesnia', 'września', 'PL PO 12345', 'PO12345', 'po-12345', 'pzu']) eq(await hits(q), 1, 'Treffer: ' + q);
+  for (const q of ['PL', 'Warszawa', 'XY 12345']) eq(await hits(q), 0, 'kein Treffer: ' + q);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<b data-coplate>${esc(cl.opponent_plate)}</b>') && !app.includes('${plate(cl.opponent_plate)}'), 'Gegner ohne D-Band');
+  const re = new RegExp(app.match(/\nconst ACC_HINT = \/(.+)\/i;/)[1], 'i');
+  for (const x of ['Зіткнення з польським легковиком', 'заповнили європротокол', 'В мене врізався легковик', 'Наїхав задом на машину', 'Зачепив польську машину', 'Collision with a Polish car', 'Crashed into a car', 'rear-ended at the border', 'Zusammenstoß mit Pkw', 'Pkw angefahren', 'Auf Pkw aufgefahren', 'Столкнулся с машиной']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Наїхав на цвях, колесо спущене', 'Lkw ist schwer angefahren', 'App crashed beim Foto', 'Zusammenbau Spiegel', 'Зачепив бордюр', 'Не працює аварійна сигналізація']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, w] of [['de', 'Unfallbericht'], ['uk', 'протокол ДТП'], ['en', 'accident report']]) { ok(STRINGS[l].claim_file.includes(w), `${l}.claim_file`); ok(STRINGS[l].acc_steps.split('|').length === 5 && STRINGS[l].acc_steps.includes(w.replace('протокол ДТП', 'протокол ДТП')), `${l}.acc_steps`); }
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

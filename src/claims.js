@@ -7,6 +7,8 @@ import { audit } from './auth.js';
 import { csvCell, csvText } from './maintenance.js';
 import { siteSelection } from './reports.js';
 
+// Backlog 393: Gegner-Kennzeichen ohne einen einzigen Buchstaben/Ziffer („???“, „-“) abweisen – Format sonst frei (ausländische Kennzeichen)
+const plateText = (v) => { if (v && !/[\p{L}\p{N}]/u.test(v)) throw bad('validation', 'Kennzeichen Unfallgegner: bitte Buchstaben/Ziffern laut Unfallbericht angeben oder leer lassen.'); return v; };
 export const CLAIM_STATUS = ['gemeldet', 'in_pruefung', 'reguliert', 'abgelehnt', 'zurueckgezogen'];
 export const OPEN_STATUS = ['gemeldet', 'in_pruefung'];
 const STATUS_DE = { gemeldet: 'gemeldet', in_pruefung: 'in Prüfung', reguliert: 'reguliert', abgelehnt: 'abgelehnt', zurueckgezogen: 'zurückgezogen' };
@@ -48,7 +50,7 @@ function readBody(body, existing = {}, user = null) {
     appraisal_net: num(pick('appraisal_net'), { min: 0, max: 10000000, field: 'Schadenhöhe laut Gutachten', nullable: true, cents: true, decimalComma: dc, decimalPoint: dp }),
     // Unfallgegner (Teilagent „Unfall mit fremdem Fahrzeug“, 24.10.2026): alles optional und nur laut Unfallbericht/Schreiben.
     // Kein Namens-/Adressfeld (Datenschutz-Frage offen) – wer Namen braucht, trägt sie wie bisher unter „Bemerkung“ ein.
-    opponent_plate: str(pick('opponent_plate'), { max: 20, field: 'Kennzeichen Unfallgegner' }),
+    opponent_plate: plateText(str(pick('opponent_plate'), { max: 20, field: 'Kennzeichen Unfallgegner' })),
     opponent_insurer: str(pick('opponent_insurer'), { max: 120, field: 'Versicherer Unfallgegner' }),
     opponent_claim_no: str(pick('opponent_claim_no'), { max: 60, field: 'Schadennummer Unfallgegner' }),
     // Polizeiliche Anzeige (Teilagent „Kraftstoffdiebstahl am Rastplatz“, 24.10.2026): optional, nur laut Anzeigebestätigung bzw. Angabe des Fahrers
@@ -192,10 +194,14 @@ export async function claimOverview(env, user, envName, query = {}) {
   // Kennzeichen (auch ohne Trennzeichen), Vorgangsnummer, Versicherer/Schadennummer beider Seiten und Gutachter. Kein Freitext-Vermerk.
   const q = str(query.q, { max: 60, field: 'Suche' });
   if (q) {
-    const low = q.toLowerCase();
+    // Backlog 392 (Blickwinkel „Unfall in Polen“): Akzente/ł egal („Wrzesnia“ findet „KPP Września“), Kennzeichen mit vorangestellter
+    // Länderkennung („PL PO 12345“) findet das gespeicherte „PO 12345“ (gespeichertes Kennzeichen ab 5 Zeichen im Suchtext enthalten)
+    const fold = (x) => String(x).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/ł/g, 'l').replace(/ß/g, 'ss');
+    const low = fold(q);
     const pk = normPlate(q);
-    list = list.filter((c) => [c.case_no, c.insurer, c.claim_no, c.opponent_insurer, c.opponent_claim_no, c.appraiser, c.police_station, c.police_ref].some((x) => x && String(x).toLowerCase().includes(low))
-      || [c.plate, c.opponent_plate, ...(c.fp_search ? String(c.fp_search).split('|') : [])].some((x) => x && (String(x).toLowerCase().includes(low) || (pk && normPlate(x).includes(pk)))));
+    const plateHit = (x) => { if (!pk) return false; const n = normPlate(x); return !!n && (n.includes(pk) || (n.length >= 5 && pk.endsWith(n))); };
+    list = list.filter((c) => [c.case_no, c.insurer, c.claim_no, c.opponent_insurer, c.opponent_claim_no, c.appraiser, c.police_station, c.police_ref].some((x) => x && fold(x).includes(low))
+      || [c.plate, c.opponent_plate, ...(c.fp_search ? String(c.fp_search).split('|') : [])].some((x) => x && (fold(x).includes(low) || plateHit(x))));
   }
   for (const c of list) delete c.fp_search;
   const reimb = list.filter((c) => c.reimbursed_net !== null && !c.eval_excluded);
