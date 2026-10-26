@@ -689,8 +689,15 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   // Hinweis: Telematik-Geräte bleiben zugeordnet und liefern ggf. weiter Daten (FIN/Zuordnung) – Gerät ausbauen bzw. Zuordnung lösen separat
   // Hinweis: geplante Prüftermine (ab heute) verschwinden aus Werkstattplan/Kalender – Termin bei der Werkstatt absagen (22.10.2026; vorher still)
   // alle drei Zähler in einer Abfrage (Abfragebudget)
-  const hint = active ? { r: 0, d: 0, p: 0 } : await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM vehicle_contracts WHERE vehicle_id=?1 AND ended_on IS NULL) AS r,
-      (SELECT COUNT(*) FROM telematics_latest WHERE vehicle_id=?1) AS d, (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND planned_date >= ?2) AS p`).bind(vehicleId, berlinDate()).first();
+  // Backlog 370 (Teilagent „Lkw wird verkauft“): offene Restarbeiten (davon sicherheitsrelevant), offene Versicherungsfälle und aktive
+  // Fahrzeughinweise dieser Umgebung nennen – der Agent prüft außer Betrieb genommene Fahrzeuge nicht mehr, sie waren danach nirgends sichtbar.
+  // Nur Hinweis: nichts wird geschlossen oder archiviert.
+  const hint = active ? { r: 0, d: 0, p: 0, o: 0, os: 0, cl: 0, n: 0 } : await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM vehicle_contracts WHERE vehicle_id=?1 AND ended_on IS NULL) AS r,
+      (SELECT COUNT(*) FROM telematics_latest WHERE vehicle_id=?1) AS d, (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND planned_date >= ?2) AS p,
+      (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen') AS o,
+      (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen' AND oi.safety_relevant=1) AS os,
+      (SELECT COUNT(*) FROM insurance_claims WHERE vehicle_id=?1 AND environment=?3 AND status IN ('gemeldet','in_pruefung')) AS cl,
+      (SELECT COUNT(*) FROM vehicle_notes WHERE vehicle_id=?1 AND environment=?3 AND archived_at IS NULL) AS n`).bind(vehicleId, berlinDate(), envName).first();
   // Wieder in Betrieb: dasselbe Kennzeichen an einem anderen aktiven Fahrzeug (Nachfolger) – Hinweis wie beim Anlegen, Bußgelder/Importe sind sonst „mehrdeutig“ (23.10.2026)
   const duplicates = active ? (await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles WHERE id<>? AND active=1').bind(vehicleId).all()).results
     .filter((x) => normPlate(x.plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate, active: true, eval_excluded: !!x.eval_excluded })) : [];
@@ -698,7 +705,7 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   const trailerOf = !active && v.kind === 'anhaenger' && normPlate(v.plate)
     ? (await env.DB.prepare(`SELECT id, plate, trailer_plate FROM vehicles WHERE kind='lkw' AND active=1 AND trailer_plate IS NOT NULL`).all()).results
       .filter((x) => normPlate(x.trailer_plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate })) : [];
-  return { ok: true, active, ...(endedDrivers.length ? { ended_drivers: endedDrivers.map((d) => ({ id: d.id, display_name: d.display_name })) } : {}), running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? { duplicate_plates: duplicates, return_check: await returnCheck(env, envName, vehicleId) } : {}),
+  return { ok: true, active, ...(endedDrivers.length ? { ended_drivers: endedDrivers.map((d) => ({ id: d.id, display_name: d.display_name })) } : {}), running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? {} : { open_items: hint.o, open_items_safety: hint.os, open_claims: hint.cl, active_notes: hint.n }), ...(active ? { duplicate_plates: duplicates, return_check: await returnCheck(env, envName, vehicleId) } : {}),
     ...(trailerOf.length ? { trailer_of_trucks: trailerOf } : {}) };
 }
 
@@ -1293,6 +1300,10 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
   // Reifen-/Prüftermin-Dateien abweisen; der eigene Fahrzeug-Export („Letzter km-Stand“, „Letzte Abfahrtskontrolle“) bleibt importierbar
   if (head.some((h) => h.startsWith('reifen') || h === 'art' || /^(prüfart|pruefart|letzte prüf|letzte pruef|nächster termin|naechster termin)/.test(h))) throw bad('wrong_file', 'Das ist keine Fahrzeugstamm-Datei (Reifen- oder Prüfterminspalten erkannt). Bitte im passenden Importfeld hochladen.');
   const result = { imported: 0, skipped: [], dry_run: dryRun, preview: [] };
+  // Backlog 372 (Teilagent „Neuer Lkw kommt in den Bestand“): Spalten Erstzulassung/zGM werden nicht übernommen (HU/SP-Grundlagen brauchen je
+  // Fahrzeug einen Nachweis) – vorher still ignoriert, alle Neuzugänge standen ohne Hinweis auf „SP ungeklärt“. Jetzt in Vorschau und Ergebnis genannt.
+  const ignoredCols = table[0].map((h) => String(h).trim()).filter((h) => /^(erstzulassung|datum (der )?erstzulassung|ez( |$|\.|\()|zgm|zul(ä|ae)ssige gesamtmasse|zul\. ?gesamtmasse|gesamtmasse|zul(ä|ae)ssiges gesamtgewicht|zul\. ?gesamtgewicht|gesamtgewicht)/i.test(h));
+  if (ignoredCols.length) result.ignored_columns = ignoredCols.map((h) => h.slice(0, 60));
   const rows = new Map();
   const cell = (cells, i) => (i >= 0 && cells[i] !== undefined && cells[i] !== '' ? cells[i] : null);
   table.slice(1).forEach((raw, idx) => {

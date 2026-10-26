@@ -154,6 +154,9 @@ function computeHuSpRaw(vehicle, events, { today, warnDays = SETTING_DEFAULTS.ma
       sp.status = 'erste_sp_kuenftig'; sp.prognosis = firstSpDue; sp.basis = 'erstzulassung';
       note(sp, 'sp_first_prognosis', `Erste SP ${firstSpMonths} Monate nach Erstzulassung (Prognose; verbindlich 6 Monate nach der dann letzten HU).`, { m: firstSpMonths });
     } else note(sp, 'sp_no_hu', 'Keine durchgeführte HU belegt – SP-Frist (6 Monate nach HU) nicht bestimmbar.');
+    // Ursache nennen, wenn auch die Erstzulassung fehlt (Backlog 371, Teilagent „Neuer Lkw kommt in den Bestand“): mit ihr ergäbe sich bei einem
+    // neueren Fahrzeug die Prognose der ersten SP – vorher suchte die Leitung nur nach einer HU
+    if (!vehicle.first_registration) note(sp, 'sp_no_fr', 'Erstzulassung nicht erfasst – laut Zulassungsbescheinigung Teil I (Feld B) eintragen; bei einem neueren Fahrzeug ergibt sie die Prognose der ersten SP.');
     return { hu, sp, ...RULE_INFO };
   }
 

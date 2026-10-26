@@ -22487,6 +22487,60 @@ await test('Backlog 369: Disposition – Startseite „Neue Meldungen, Eingang n
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dispo_unreceived && STRINGS[l].dispo_unreceived !== STRINGS[l].todo_receive, l);
 });
 
+await test('Backlog 370 (Blickwinkel „Lkw wird verkauft“): Außer Betrieb nehmen nennt offene Restarbeiten (davon sicherheitsrelevant), offene Versicherungsfälle und aktive Fahrzeughinweise dieser Umgebung – nichts wird geschlossen; Wieder-in-Betrieb ohne diese Angaben', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db;
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Bremsleitung beobachten', safety_relevant: true })).status, 200);
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Halter lose' })).status, 200);
+  const day = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const cl = await U.fleet.put(`/api/cases/${id}/claim`, { insurer: 'Test-Versicherung', reported_on: day, evidence: 'Schadenmeldung' }); eq(cl.status, 200, JSON.stringify(cl.data));
+  eq((await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/notes`.replace('%3A', ':'), { text: 'Ladebordwand nur manuell bedienen' })).status < 300, true, 'Hinweis');
+  db.prepare(`UPDATE cases SET status='fahrzeug_freigegeben', safety_lock=0 WHERE id=?`).run(id); // Abschluss abgekürzt (Kontrolle hier nicht Gegenstand)
+  const r = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/active`, { active: false, reason: 'Verkauft' }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(JSON.stringify([r.data.open_items, r.data.open_items_safety, r.data.open_claims, r.data.active_notes]), JSON.stringify([2, 1, 1, 1]));
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen'`).get(id).n, 2, 'Restarbeiten bleiben offen');
+  eq(db.prepare(`SELECT status FROM insurance_claims WHERE case_id=?`).get(id).status, 'gemeldet', 'Versicherungsfall unverändert');
+  const r2 = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/active`, { active: true }); eq(r2.status, 200); eq(r2.data.open_items, undefined, 'beim Wieder-in-Betrieb nicht');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("tn('oi_open_deact', r.open_items)") && app.includes("tn('claims_open_deact', r.open_claims)") && app.includes("tn('notes_active_deact', r.active_notes)"), 'Oberfläche');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].oi_safety_deact.includes('{n}'), l); for (const k of ['oi_open_deact', 'claims_open_deact', 'notes_active_deact']) ok(PLURALS[l][k] && PLURALS[l][k].one && PLURALS[l][k].other && (l !== 'uk' || (PLURALS[l][k].few && PLURALS[l][k].many)), `${l}.${k}`); }
+});
+
+await test('Backlog 371 (Blickwinkel „Neuer Lkw kommt in den Bestand“): SP ohne HU und ohne Erstzulassung nennt zusätzlich „Erstzulassung nicht erfasst“ (sp_no_fr); mit Erstzulassung nicht; Status/Fristen unverändert; Text DE/UK/EN', async () => {
+  const { computeHuSp } = await import('../src/inspection_rules.js');
+  const calc = (v) => computeHuSp(v, [], { today: '2026-10-26', warnDays: 30 }).sp;
+  const a = calc({ kind: 'lkw', zgm_class: 'ueber_12', first_registration: null });
+  eq(a.status, 'ungeklaert'); eq(a.due, null); eq(JSON.stringify(a.note_codes.map((x) => x.code)), JSON.stringify(['sp_no_hu', 'sp_no_fr']));
+  const b = calc({ kind: 'lkw', zgm_class: 'ueber_12', first_registration: '2015-03-10' }); eq(b.status, 'ungeklaert'); ok(!b.note_codes.some((x) => x.code === 'sp_no_fr'), 'mit EZ kein Hinweis');
+  const c = calc({ kind: 'lkw', zgm_class: 'ueber_12', first_registration: '2026-09-01' }); eq(c.status, 'erste_sp_kuenftig'); ok(!c.note_codes.some((x) => x.code === 'sp_no_fr'), 'Prognose');
+  const d = calc({ kind: 'lkw', zgm_class: '3_5_7_5', first_registration: null }); eq(d.status, 'nicht_sp_pflichtig'); ok(!d.note_codes.some((x) => x.code === 'sp_no_fr'), 'nicht SP-pflichtig');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].hn_sp_no_fr && STRINGS[l].hn_sp_no_fr.includes('B'), l);
+});
+
+await test('Backlog 372 (Blickwinkel „Neuer Lkw kommt in den Bestand“): Fahrzeug-CSV-Import nennt Spalten Erstzulassung/zGM als „erkannt, aber nicht übernommen“ (Vorschau und Ergebnis), übernimmt sie nicht; ohne solche Spalten kein Hinweis', async () => {
+  const { U } = await freshWorld();
+  const csv = 'Kennzeichen;Standort;FIN;Erstzulassung;zGM (kg)\nSZ-NE 372;Dortmund;WDB9634031L372001;01.09.2026;40000';
+  const pv = await U.own.req('POST', '/api/vehicles/import?dry_run=1', csv, { 'content-type': 'text/csv' }); eq(pv.status, 200, JSON.stringify(pv.data));
+  eq(JSON.stringify(pv.data.ignored_columns), JSON.stringify(['Erstzulassung', 'zGM (kg)']), 'Vorschau');
+  const im = await U.own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' }); eq(im.status, 200); eq(JSON.stringify(im.data.ignored_columns), JSON.stringify(['Erstzulassung', 'zGM (kg)']), 'Ergebnis');
+  const v = U.own.env.DB.db.prepare(`SELECT first_registration, zgm_kg FROM vehicles WHERE id='VIN:WDB9634031L372001'`).get(); eq(v.first_registration, null); eq(v.zgm_kg, null, 'nicht übernommen');
+  const im2 = await U.own.req('POST', '/api/vehicles/import?dry_run=1', 'Kennzeichen;Standort;FIN;Status\nSZ-NE 373;Dortmund;WDB9634031L372002;in Betrieb', { 'content-type': 'text/csv' }); eq(im2.data.ignored_columns, undefined, 'ohne Spalten kein Hinweis');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="impign"') && app.includes('${skipped(r)}${igHtml}'), 'Vorschau zeigt Hinweis');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].imp_cols_ignored.includes('{list}') && STRINGS[l].imp_cols_ignored.includes('{sec}'), l);
+});
+
+await test('Backlog 373: Fahrzeugakte „Was fehlt noch?“ – Datenqualitäts-Befunde nur dieses Fahrzeugs (aufklappbar, erst beim Öffnen geladen, nur Leitung, nicht bei ruhenden/außer Betrieb); Befunde tragen vehicle_id; Texte DE/UK/EN', async () => {
+  const { U, V1 } = await freshWorld();
+  const r = await U.fleet.get('/api/admin/data-quality'); eq(r.status, 200);
+  const mine = r.data.items.filter((i) => i.vehicle_id === V1); ok(mine.some((i) => i.check === 'missing_inspection'), JSON.stringify(mine.map((i) => i.check)));
+  ok(r.data.items.some((i) => i.vehicle_id && i.vehicle_id !== V1), 'anderes Fahrzeug wird herausgefiltert');
+  eq((await U.ws.get('/api/admin/data-quality')).status, 403, 'Werkstatt nicht');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (isMgr() && v.active && !v.eval_excluded) html += `<details class=\"panel noprint\" id=\"vdq\">") && app.includes("r.items.filter((i) => i.vehicle_id === v.id)") && app.includes("if (!vdq.open || vdq.dataset.loaded) return;"), 'Akte');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['vdq_title', 'vdq_none', 'vdq_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -1,4 +1,5 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 301, Blickwinkel „Auflieger beim Kunden beschädigt (Rampe, Stapler)“): Meldeformular
+# 26.10.2026: DE-Beispielsatz ohne „Plane“ – „Plane aufgeschlitzt“ zeigt seit Backlog 323 zusätzlich den Planen-Hinweis (vorrangig), der Kunden-Hinweis ist dann eingeklappt (gewollt)
 # zeigt bei einem Schaden durch Stapler/Rampe/beim Kunden fünf Schritte (Vermerk gegenzeichnen, Firma/Tor/Uhrzeit, Fotos, kein
 # Schuldanerkenntnis, Auswahl Fahrbereitschaft); „Mitnahmestapler defekt“ zeigt nichts; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
@@ -7,7 +8,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-TXT={'de':'Stapler hat beim Kunden die Plane aufgeschlitzt','uk':'Навантажувач пошкодив тент у клієнта','en':'Forklift damaged the curtain at the customer'}
+TXT={'de':'Stapler hat beim Kunden die Bordwand eingedrückt','uk':'Навантажувач пошкодив тент у клієнта','en':'Forklift damaged the curtain at the customer'}
 NO={'de':'Mitnahmestapler defekt','uk':'Клієнт телефонував','en':'Forklift mount loose'}
 HT={'de':'Schaden beim Kunden (Laderampe, Stapler)','uk':'Пошкодження в клієнта (рампа, навантажувач)','en':'Damage at the customer (loading dock, forklift)'}
 fails=[]
