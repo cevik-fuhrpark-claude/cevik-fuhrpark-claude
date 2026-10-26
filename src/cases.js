@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase, day as pastDay } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile, fineVehiclesSql } from './fines.js';
@@ -452,9 +452,11 @@ export async function getCaseDetail(env, user, envName, caseId) {
   if (canSeeCosts(user)) {
     detail.external_costs = (await env.DB.prepare('SELECT x.*, f.filename AS file_name, f.content_type AS file_type FROM external_costs x LEFT JOIN files f ON f.id=x.file_id WHERE x.case_id=? ORDER BY x.created_at').bind(c.id).all()).results;
     // Kosten aus den bereits geladenen Positionen; Stundensatz und Freigabegrenze in einer Abfrage (vorher 5 Zusatzabfragen)
-    const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('workshop_hourly_rate_net','repair_cost_limit_net')`).all()).results.map((r) => [r.key, r.value]));
+    // + Stundensatz-Verlauf (Backlog 412) in derselben Abfrage
+    const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('workshop_hourly_rate_net','repair_cost_limit_net')
+      UNION ALL SELECT '__rp', json_group_array(json_object('u', valid_until, 'r', rate_net)) FROM hourly_rate_periods`).all()).results.map((r) => [r.key, r.value]));
     const rate = rateOf(sets.get('workshop_hourly_rate_net'));
-    detail.costs = detail.work && detail.parts ? computeCosts(rate, detail.work, detail.parts, detail.external_costs) : await caseCosts(env, c.id);
+    detail.costs = detail.work && detail.parts ? computeCosts(rate, detail.work, detail.parts, detail.external_costs, ratePeriods(sets.get('__rp'))) : await caseCosts(env, c.id);
     const limRaw = sets.has('repair_cost_limit_net') && sets.get('repair_cost_limit_net') !== '' ? Number(sets.get('repair_cost_limit_net')) : null;
     const lim = Number.isFinite(limRaw) && limRaw > 0 ? limRaw : null;
     const overSince = c.cost_over_limit_at && OPEN_STATUSES.includes(c.status) ? c.cost_over_limit_at : null;
@@ -512,20 +514,20 @@ export async function revalidateCostMarks(env, actorId, caseIds = null) {
   const limit = await costLimit(env);
   const r = await env.DB.prepare(`WITH m AS (SELECT id, environment, status, cost_over_limit_at, cost_approved_net FROM cases WHERE cost_over_limit_at IS NOT NULL
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')${caseIds ? ' AND id IN (SELECT value FROM json_each(?1))' : ''} LIMIT 200)
-    SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS rate,
+    SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS rate, ${RATE_PERIODS_SQL},
       (SELECT json_group_array(json_object('id', id, 'environment', environment, 'status', status, 'at', cost_over_limit_at, 'approved', cost_approved_net)) FROM m) AS c,
-      (SELECT json_group_array(json_object('case_id', x.case_id, 'hours', x.hours)) FROM work_entries x WHERE x.case_id IN (SELECT id FROM m)) AS w,
+      (SELECT json_group_array(json_object('case_id', x.case_id, 'hours', x.hours, 'work_date', x.work_date)) FROM work_entries x WHERE x.case_id IN (SELECT id FROM m)) AS w,
       (SELECT json_group_array(json_object('case_id', x.case_id, 'quantity', x.quantity, 'unit_price_net', x.unit_price_net, 'valuation', x.valuation)) FROM parts x WHERE x.case_id IN (SELECT id FROM m)) AS p,
       (SELECT json_group_array(json_object('case_id', x.case_id, 'amount_net', x.amount_net, 'valuation', x.valuation, 'covers_work_and_parts', x.covers_work_and_parts)) FROM external_costs x WHERE x.case_id IN (SELECT id FROM m)) AS e`)
     .bind(...(caseIds ? [JSON.stringify(caseIds)] : [])).first();
   const rows = JSON.parse(r.c || '[]');
   if (!rows.length) return [];
-  const rate = rateOf(r.rate);
+  const rate = rateOf(r.rate); const periods = ratePeriods(r.rp);
   const by = (txt) => { const m = new Map(); for (const x of JSON.parse(txt || '[]')) { if (!m.has(x.case_id)) m.set(x.case_id, []); m.get(x.case_id).push(x); } return m; };
   const work = by(r.w); const parts = by(r.p); const ext = by(r.e);
   const clear = [];
   for (const c of rows) {
-    const k = computeCosts(rate, work.get(c.id) || [], parts.get(c.id) || [], ext.get(c.id) || []);
+    const k = computeCosts(rate, work.get(c.id) || [], parts.get(c.id) || [], ext.get(c.id) || [], periods);
     const total = round2(k.actual_net + k.estimate_net);
     if (limit !== null && total > Math.max(limit, c.approved || 0)) continue;
     // Fremdleistung „ersetzt eigene Arbeit/Teile“ noch ohne Betrag: die eigenen Kosten fallen heraus, der Ersatz ist aber unbewertet –
@@ -573,15 +575,18 @@ async function checkCostLimit(env, ctx, user, envName, c) {
 
 // Reine Bewertungslogik (gemeinsam für Vorgang und Fahrzeug): unbewertet ≠ 0 €, Schätzungen getrennt,
 // Fremdleistung „ersetzt eigene Stunden/Teile“ verhindert Doppelzählung
-export function computeCosts(rate, work, parts, ext) {
+// periods (Backlog 412): frühere Stundensätze mit Gültigkeit (ratePeriods); Arbeitszeit dann je Arbeitsdatum mit dem damals gültigen Satz
+export function computeCosts(rate, work, parts, ext, periods = null) {
   const hours = work.reduce((s, w) => s + w.hours, 0);
   const coveredByExternal = ext.some((e) => e.covers_work_and_parts);
   // valuedItems: Anzahl belegter Positionen – ohne belegte Position ist „Ist 0 €“ keine Aussage (Anzeige „–“)
   let valued = 0; let valuedItems = 0; let estimate = 0; const unvalued = [];
   if (!coveredByExternal) {
     if (hours > 0) {
-      if (rate === null || !Number.isFinite(rate)) unvalued.push({ type: 'arbeitszeit', hours });
-      else { valued += round2(hours * rate); valuedItems++; } // je Position auf Cent (18.10.2026: Bericht/Akte wichen um Cent ab)
+      // je Position auf Cent (18.10.2026: Bericht/Akte wichen um Cent ab); mit Satz-Verlauf je Satz-Abschnitt (valueWork)
+      const vw = valueWork(rate, periods, work);
+      if (vw.valued) { valued += vw.net; valuedItems++; }
+      if (vw.unvalued_hours > 0) unvalued.push({ type: 'arbeitszeit', hours: vw.unvalued_hours });
     }
     for (const p of parts) {
       if (p.unit_price_net === null || p.valuation === 'unvalued') unvalued.push({ type: 'teil', quantity: p.quantity });
@@ -595,7 +600,7 @@ export function computeCosts(rate, work, parts, ext) {
     else { valued += round2(e.amount_net); valuedItems++; }
   }
   return {
-    hours, hourly_rate_net: rate, actual_net: round2(valued), valued_items: valuedItems, estimate_net: round2(estimate),
+    hours, hourly_rate_net: rate, ...(periods && periods.length && work.length ? { hourly_rate_periods: true } : {}), actual_net: round2(valued), valued_items: valuedItems, estimate_net: round2(estimate),
     unvalued_items: unvalued.length, unvalued, complete: unvalued.length === 0,
     external_replaces_own: coveredByExternal,
   };
@@ -603,20 +608,20 @@ export function computeCosts(rate, work, parts, ext) {
 
 // Eine Abfrage statt vier (Stundensatz + Stunden + Teile + Fremdleistungen); Ergebnis wie computeCosts über die Einzelabfragen
 export async function caseCosts(env, caseId) {
-  const r = await env.DB.prepare(`SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS rate,
-    (SELECT json_group_array(json_object('hours', hours)) FROM work_entries WHERE case_id=?1) AS w,
+  const r = await env.DB.prepare(`SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS rate, ${RATE_PERIODS_SQL},
+    (SELECT json_group_array(json_object('hours', hours, 'work_date', work_date)) FROM work_entries WHERE case_id=?1) AS w,
     (SELECT json_group_array(json_object('quantity', quantity, 'unit_price_net', unit_price_net, 'valuation', valuation)) FROM parts WHERE case_id=?1) AS p,
     (SELECT json_group_array(json_object('amount_net', amount_net, 'valuation', valuation, 'covers_work_and_parts', covers_work_and_parts)) FROM external_costs WHERE case_id=?1) AS e`).bind(caseId).first();
   const rate = rateOf(r.rate);
-  return computeCosts(rate, JSON.parse(r.w || '[]'), JSON.parse(r.p || '[]'), JSON.parse(r.e || '[]'));
+  return computeCosts(rate, JSON.parse(r.w || '[]'), JSON.parse(r.p || '[]'), JSON.parse(r.e || '[]'), ratePeriods(r.rp));
 }
 
 // Summe über alle Vorgänge eines Fahrzeugs mit 4 Abfragen (statt 4 je Vorgang)
 export async function vehicleCosts(env, envName, vehicleId) {
   // Eine Sammelabfrage (Stundensatz + Stunden/Teile/Fremdleistungen aller Vorgänge des Fahrzeugs) statt vier
   const J = 'JOIN cases c ON c.id=x.case_id WHERE c.environment=?1 AND c.vehicle_id=?2';
-  const r = await env.DB.prepare(`SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS rate,
-    (SELECT json_group_array(json_object('case_id', x.case_id, 'hours', x.hours)) FROM work_entries x ${J}) AS w,
+  const r = await env.DB.prepare(`SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS rate, ${RATE_PERIODS_SQL},
+    (SELECT json_group_array(json_object('case_id', x.case_id, 'hours', x.hours, 'work_date', x.work_date)) FROM work_entries x ${J}) AS w,
     (SELECT json_group_array(json_object('case_id', x.case_id, 'quantity', x.quantity, 'unit_price_net', x.unit_price_net, 'valuation', x.valuation)) FROM parts x ${J}) AS p,
     (SELECT json_group_array(json_object('case_id', x.case_id, 'amount_net', x.amount_net, 'valuation', x.valuation, 'covers_work_and_parts', x.covers_work_and_parts)) FROM external_costs x ${J}) AS e,
     (SELECT json_group_array(json_object('case_id', g.case_id, 'case_no', g.case_no, 'item', g.item, 'item_kind', g.item_kind, 'supplier', g.supplier, 'warranty_until', g.warranty_until)) FROM
@@ -624,7 +629,7 @@ export async function vehicleCosts(env, envName, vehicleId) {
        UNION ALL SELECT x.case_id, c.case_no, x.supplier AS item, 'external' AS item_kind, x.supplier, x.warranty_until FROM external_costs x ${J} AND x.warranty_until >= ?3
        ORDER BY 6, 2 LIMIT ${WARR_VEH_MAX + 1}) g) AS g`)
     .bind(envName, vehicleId, berlinDate()).first();
-  const rate = rateOf(r.rate);
+  const rate = rateOf(r.rate); const periods = ratePeriods(r.rp);
   const by = (txt) => {
     const m = new Map();
     for (const x of JSON.parse(txt || '[]')) { if (!m.has(x.case_id)) m.set(x.case_id, []); m.get(x.case_id).push(x); }
@@ -633,7 +638,7 @@ export async function vehicleCosts(env, envName, vehicleId) {
   const work = by(r.w); const parts = by(r.p); const ext = by(r.e);
   let actual = 0; let valuedItems = 0; let estimate = 0; let unvalued = 0;
   for (const id of new Set([...work.keys(), ...parts.keys(), ...ext.keys()])) {
-    const k = computeCosts(rate, work.get(id) || [], parts.get(id) || [], ext.get(id) || []);
+    const k = computeCosts(rate, work.get(id) || [], parts.get(id) || [], ext.get(id) || [], periods);
     actual += k.actual_net; valuedItems += k.valued_items; estimate += k.estimate_net; unvalued += k.unvalued_items;
   }
   // laufende Gewährleistungen (heute noch gültig) aus Teilen/Fremdleistungen der Vorgänge – getrennt von der Kostensumme

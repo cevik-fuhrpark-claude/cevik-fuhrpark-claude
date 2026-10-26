@@ -45,13 +45,14 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `src/vehicles.js` – Fahrzeugakte, CSV-Import, Fahrerzuordnung mit Historie, Wartung/Prüftermine mit Pflicht-Nachweis,
   Kilometerstände, KI-Analyse.
 - `src/contracts.js` – Fahrzeugverträge (Leasing/Miete/Finanzierung/Versicherung/Wartung): Status, Agent-Befunde, Übersicht, CSV-Import/-Export.
+- `src/rates.js` – Stundensatz-Verlauf (Backlog 412, Migration 0086): frühere Sätze „gilt bis einschließlich“; Arbeitszeit überall nach Arbeitsdatum bewertet (`valueWork` in `src/util.js`).
 - Vorgänge mit optionalem **Schadenzeitpunkt** (`cases.occurred_at`, Backlog 285) getrennt von der Meldezeit.
 - `src/claims.js` – Versicherungsfälle je Vorgang (nur Inhaber/Fuhrparkleitung): Status, Selbstbeteiligung/Erstattung laut Abrechnung, Gutachter, **Unfallgegner** (Kennzeichen, Versicherer, Schadennummer der Gegenseite; kein Namensfeld), **polizeiliche Anzeige** (Dienststelle, Aktenzeichen, Datum), Suche über Nummern/Kennzeichen/Aktenzeichen, CSV, Agent-Befund „lange offen“.
 - `src/integration.js` – Bearer-API für Unternehmensbetriebssystem/n8n (siehe `docs/API.md`).
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 749 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 10 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 750 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 10 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026

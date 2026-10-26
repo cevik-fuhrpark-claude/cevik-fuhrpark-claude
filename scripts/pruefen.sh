@@ -225,6 +225,7 @@ UI-Umrüstung zum Winterreifen-Auftrag erfassen (je Achse vorbereitet, Kennzeich
 UI-Verträge „Ende/Kündigung bis“ (Quartalsende, eigenes Datum, alle Termine, Stichtag hebt auf), DE/UK/EN 390/820/1366|ui-vertraege-faellig-bis.py|/tmp/cfp-vertraege-faellig-bis.log
 UI-Unterweisung für mehrere Fahrer (ohne Auswahl Hinweis, alle erfasst mit Link, erneut ohne Dubletten, Akte), DE/UK/EN 390/820/1366|ui-unterweisung-mehrere.py|/tmp/cfp-unterweisung-mehrere.log
 UI-Führerscheinkontrolle für mehrere Fahrer (Fällige auswählen, Link je Fahrer, danach aktuell, erneut ohne Dubletten), DE/UK/EN 390/820/1366|ui-fs-kontrolle-mehrere.py|/tmp/cfp-fs-kontrolle-mehrere.log
+UI-Stundensatz-Verlauf (bisherigen Satz behalten, Liste, Entfernen), DE/UK/EN 390/820/1366|ui-stundensatz-verlauf.py|/tmp/cfp-stundensatz-verlauf.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log

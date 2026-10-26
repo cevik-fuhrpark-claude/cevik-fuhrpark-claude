@@ -2,7 +2,7 @@
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
 import { icsLang } from '../public/ics-texts.js';
-import { bad, forbidden, normPlate, berlinWindowStartIso, berlinDate, berlinDateTime, berlinDayStartIso, addMonths, icsCalendar, intParam, rateOf, roundCents, roundMilli } from './util.js';
+import { bad, forbidden, normPlate, berlinWindowStartIso, berlinDate, berlinDateTime, berlinDayStartIso, addMonths, icsCalendar, intParam, rateOf, roundCents, roundMilli, ratePeriods, ratePeriodIndex, rateAtIndex } from './util.js';
 import { maintenanceOverview, csvCell } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
@@ -49,8 +49,11 @@ export async function costReport(env, user, envName, query = {}) {
   if (user && !READ_ROLES.includes(user.role)) throw forbidden();
   const { from, to } = monthRange(query);
   const vehicleFilter = query.vehicle_id ? String(query.vehicle_id).slice(0, 40) : null;
-  const rateRow = await env.DB.prepare(`SELECT value FROM settings WHERE key='workshop_hourly_rate_net'`).first();
-  const rate = rateOf(rateRow && rateRow.value);
+  // + Stundensatz-Verlauf (Backlog 412) in derselben Abfrage: Arbeitszeit je Arbeitsdatum mit dem damals gültigen Satz
+  const rateRow = await env.DB.prepare(`SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS value,
+    (SELECT json_group_array(json_object('u', valid_until, 'r', rate_net)) FROM hourly_rate_periods) AS rp`).first();
+  const rate = rateOf(rateRow && rateRow.value); const periods = ratePeriods(rateRow && rateRow.rp);
+  const pIdx = (d) => (periods.length ? ratePeriodIndex(periods, d) : 0); const rateAt = (i) => (periods.length ? rateAtIndex(periods, rate, i) : rate);
   // Zeitfenster großzügig in UTC laden, exakte Monatsgrenze danach in Berliner Zeit prüfen
   const lo = new Date(Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, 1) - 86400000).toISOString();
   const hi = new Date(Date.UTC(+to.slice(0, 4), +to.slice(5, 7), 2)).toISOString();
@@ -83,10 +86,12 @@ export async function costReport(env, user, envName, query = {}) {
   // einzeln gerundet → Bericht und Akte wichen um Cent ab (19.10.2026)
   const lateKeys = new Set();
   const workItem = new Set(); const workHours = new Map(); // `${case}|${month}` → { vehicle_id, case_id, m, h } (alle Monate, auch außerhalb des Zeitraums)
+  // mit Stundensatz-Verlauf zusätzlich je Satz-Abschnitt p (fortlaufende Rundung je Vorgang und Abschnitt – Summe = computeCosts/valueWork)
   for (const w of work) {
-    if (covered.has(w.case_id) || rate === null) continue;
-    const m = monthOf(w.d); const wk = `${w.case_id}|${m}`;
-    const x = workHours.get(wk) || { vehicle_id: w.vehicle_id, case_id: w.case_id, m, h: 0 }; x.h += w.hours; workHours.set(wk, x);
+    const p = pIdx(w.d);
+    if (covered.has(w.case_id) || rateAt(p) === null) continue;
+    const m = monthOf(w.d); const wk = `${w.case_id}|${m}|${p}`;
+    const x = workHours.get(wk) || { vehicle_id: w.vehicle_id, case_id: w.case_id, m, p, h: 0 }; x.h += w.hours; workHours.set(wk, x);
   }
   for (const w of work) {
     if (covered.has(w.case_id)) continue;
@@ -95,15 +100,17 @@ export async function costReport(env, user, envName, query = {}) {
     // nach Ende des Monats gebucht (z. B. im Januar für Dezember, Backlog 189): je Vorgang/Monat/Buchungstag eine nachträgliche Position –
     // der Monatswert hat sich nach Monatsende geändert; gleiche Gruppierung wie die Einzelpositionen-CSV
     if (w.hours > 0 && w.rec) { const rd = berlinDate(w.rec); if (rd.slice(0, 7) > m) { const lk = `${w.case_id}|${m}|${rd}`; if (!lateKeys.has(lk)) { lateKeys.add(lk); r.late_items++; } } }
-    const k = `${w.case_id}|${m}`;
+    const wr = rateAt(pIdx(w.d)) === null ? 'u' : 'v';
+    const k = `${w.case_id}|${m}|${wr}`;
     if (!(w.hours > 0) || workItem.has(k)) continue;
     workItem.add(k);
-    if (rate === null) r.unvalued_items++; else r.valued_items++;
+    if (wr === 'u') r.unvalued_items++; else r.valued_items++;
   }
-  { const cum = new Map(); // je Vorgang: Stunden der Vormonate
-    for (const x of [...workHours.values()].sort((a, b) => (a.case_id === b.case_id ? (a.m < b.m ? -1 : 1) : a.case_id < b.case_id ? -1 : 1))) {
-      const before = cum.get(x.case_id) || 0; const after = before + x.h; cum.set(x.case_id, after);
-      if (inRange(x.m)) row(x.vehicle_id, x.m).work_net += r2(r2(after * rate) - r2(before * rate));
+  { const cum = new Map(); // je Vorgang (und Satz-Abschnitt): Stunden der Vormonate
+    for (const x of [...workHours.values()].sort((a, b) => (a.case_id === b.case_id ? (a.p !== b.p ? a.p - b.p : a.m < b.m ? -1 : 1) : a.case_id < b.case_id ? -1 : 1))) {
+      const ck = `${x.case_id}|${x.p}`; const xr = rateAt(x.p);
+      const before = cum.get(ck) || 0; const after = before + x.h; cum.set(ck, after);
+      if (inRange(x.m)) row(x.vehicle_id, x.m).work_net += r2(r2(after * xr) - r2(before * xr));
     } }
   for (const p of parts) {
     if (covered.has(p.case_id)) continue;
@@ -132,14 +139,14 @@ export async function costReport(env, user, envName, query = {}) {
   const out = [...rows.values()].map((r) => {
     const v = plates.get(r.vehicle_id) || {};
     // Summe aus den gerundeten Spalten (18.10.2026: Zeile 4,99 + 1 + 0 ergab „Summe belegt“ 6)
-    const actual = (rate === null ? 0 : r2(r.work_net)) + r2(r.parts_actual_net) + r2(r.external_actual_net);
+    const actual = (rate === null && !periods.length ? 0 : r2(r.work_net)) + r2(r.parts_actual_net) + r2(r.external_actual_net);
     const estimate = r2(r.parts_estimate_net) + r2(r.external_estimate_net);
     return {
       // Standort in Anzeige-Schreibweise wie die Standortsumme (21.10.2026: CSV hatte „DORTMUND“ und „Dortmund“ getrennt)
       vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site ? (label.get(siteKey(v.site)) || v.site) : null, month: r.month, cases_opened: r.cases_opened,
       // außer Betrieb genommen (z. B. im Jahr verkauft) kennzeichnen – Jahresabschluss (23.10.2026, Teilagent Kostenbericht)
       vehicle_active: v.active === 0 ? false : true,
-      hours: r2(r.hours), work_net: rate === null ? null : r2(r.work_net), parts_actual_net: r2(r.parts_actual_net), parts_estimate_net: r2(r.parts_estimate_net),
+      hours: r2(r.hours), work_net: rate === null && !periods.length ? null : r2(r.work_net), parts_actual_net: r2(r.parts_actual_net), parts_estimate_net: r2(r.parts_estimate_net),
       external_actual_net: r2(r.external_actual_net), external_estimate_net: r2(r.external_estimate_net),
       actual_net: r2(actual), valued_items: r.valued_items, estimate_net: r2(estimate), unvalued_items: r.unvalued_items, complete: r.unvalued_items === 0, late_items: r.late_items,
       // nur unbewertete Teile/Fremdleistungen in der Zeile → Spalte ohne Betrag (nie „0 €“), wie „–“ in der App (18.10.2026)
@@ -181,7 +188,7 @@ export async function costReport(env, user, envName, query = {}) {
   const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates) : undefined;
   // Versicherungserstattungen (nur Leitung) getrennt ausgewiesen – werden NICHT von den Instandhaltungskosten abgezogen
   const claim_reimbursements = user && ['owner', 'fleet'].includes(user.role) ? await claimReimbursements(env, envName, from, to, vehicleFilter, plates) : undefined;
-  return { from, to, environment: envName, site: siteFilter ? sel.site : null, site_options: siteOptions, hourly_rate_net: rate, rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), valued_items: totals.valued_items, estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) },
+  return { from, to, environment: envName, site: siteFilter ? sel.site : null, site_options: siteOptions, hourly_rate_net: rate, hourly_rate_periods: periods.map((x) => ({ valid_until: x.u, rate_net: x.r })), rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), valued_items: totals.valued_items, estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) },
     // Zuordnungsregeln und Abrufzeitpunkt wie /v1/kpi (Backlog 188, Jahresabschluss): im Januar nachgetragene Dezember-Rechnungen, rückdatierte
     // Arbeitszeit oder eine geänderte Vertragsrate ändern Werte vergangener Monate – Abnehmer (n8n/Buchhaltung) sehen, wann und wonach gerechnet wurde
     generated_at: new Date().toISOString(), definitions: COST_DEFINITIONS };
@@ -267,7 +274,7 @@ export async function periodMileage(env, from, to, vehicleFilter = null) {
 export const monthsBetween = (a, b) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7)) + 1;
 export const COST_DEFINITIONS = {
   month_basis: 'Monatszuordnung (Berliner Kalender): Arbeitszeit nach Arbeitsdatum; Teile und Fremdleistungen nach Erfassungszeitpunkt (nicht Rechnungs- oder Leistungsdatum); Vorgänge nach Meldedatum; Versicherungserstattungen nach Erstattungsdatum; Vertragsraten je vollem Monat der Laufzeit',
-  hourly_rate: 'Arbeitszeit mit dem heute eingestellten Stundensatz bewertet (hourly_rate_net) – eine Satzänderung bewertet auch vergangene Monate neu; je Vorgang fortlaufend auf Cent gerundet',
+  hourly_rate: 'Arbeitszeit mit dem Stundensatz bewertet, der am Arbeitsdatum galt: frühere Sätze laut hourly_rate_periods (gilt bis einschließlich valid_until), danach der heute eingestellte Satz (hourly_rate_net). Ohne früheren Satz bewertet eine Satzänderung auch vergangene Monate neu. Je Vorgang (und Satz-Abschnitt) fortlaufend auf Cent gerundet',
   contract_rate: 'Vertragsraten mit der aktuell hinterlegten Monatsrate für alle Monate der Laufzeit (keine Abgrenzung je Ratenänderung) – bei Ratenänderung Vertrag zum Stichtag beenden und Folgevertrag anlegen',
   retroactive: 'Spätere Erfassungen mit früherem Arbeitsdatum, ersetzte Schätzungen und Ratenänderungen ändern Werte bereits vergangener Monate; Stand zum Abrufzeitpunkt (generated_at)',
   late_items: 'Je Zeile: Arbeitszeit-Positionen (je Vorgang, Monat und Buchungstag), die erst nach Ende des Monats gebucht wurden (Berliner Kalender); in den Einzelpositionen je Buchungstag eigene Zeile (`late`)',
@@ -347,7 +354,10 @@ export async function costItems(env, user, envName, query = {}) {
   const vehicleFilter = query.vehicle_id ? String(query.vehicle_id).slice(0, 40) : null;
   // Bemerkung zur Fremdleistung nur für Inhaber/Leitung (Vorgang zeigt Fremdleistungen nur ihnen; Lesezugriff sieht Lieferant/Beleg/Betrag)
   const seesNote = !user || user.role === 'owner' || user.role === 'fleet';
-  const rate = rateOf((await env.DB.prepare(`SELECT value FROM settings WHERE key='workshop_hourly_rate_net'`).first() || {}).value);
+  const rr = await env.DB.prepare(`SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS value,
+    (SELECT json_group_array(json_object('u', valid_until, 'r', rate_net)) FROM hourly_rate_periods) AS rp`).first() || {};
+  const rate = rateOf(rr.value); const periods = ratePeriods(rr.rp); // Stundensatz-Verlauf (Backlog 412)
+  const pIdx = (d) => (periods.length ? ratePeriodIndex(periods, d) : 0); const rateAt = (i) => (periods.length ? rateAtIndex(periods, rate, i) : rate);
   const lo = new Date(Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, 1) - 86400000).toISOString();
   const hi = new Date(Date.UTC(+to.slice(0, 4), +to.slice(5, 7), 2)).toISOString();
   const covered = new Set((await env.DB.prepare(`SELECT DISTINCT e.case_id FROM external_costs e JOIN cases c ON c.id=e.case_id WHERE c.environment=? AND e.covers_work_and_parts=1`).bind(envName).all()).results.map((x) => x.case_id));
@@ -369,15 +379,17 @@ export async function costItems(env, user, envName, query = {}) {
   const wm = new Map();
   // nach Monatsende gebuchte Arbeitszeit als eigene Position je Buchungstag (Backlog 189: vorher 2 h aus Dezember + im Februar nachgebuchte 3 h
   // als eine Zeile „Erfasst am <Februar>“ – die Dezember-Buchung war nicht mehr zu erkennen); fortlaufende Rundung je Vorgang bleibt
-  for (const w of work) { const day = dayOf(w.d); const m = day.slice(0, 7); const rd = w.rec ? berlinDate(w.rec) : ''; const late = !!rd && rd.slice(0, 7) > m;
-    const k = `${w.case_id}|${m}|${late ? rd : ''}`; const x = wm.get(k) || { ...w, m, sub: late ? rd : '', late, last: day, h: 0, rec: null }; x.h += w.hours; if (day > x.last) x.last = day; if (w.rec && (!x.rec || w.rec > x.rec)) x.rec = w.rec; wm.set(k, x); }
+  // mit Stundensatz-Verlauf je Satz-Abschnitt p eine eigene Position (Einzelpreis = damals gültiger Satz)
+  for (const w of work) { const day = dayOf(w.d); const m = day.slice(0, 7); const rd = w.rec ? berlinDate(w.rec) : ''; const late = !!rd && rd.slice(0, 7) > m; const p = pIdx(day);
+    const k = `${w.case_id}|${m}|${late ? rd : ''}|${p}`; const x = wm.get(k) || { ...w, m, p, sub: late ? rd : '', late, last: day, h: 0, rec: null }; x.h += w.hours; if (day > x.last) x.last = day; if (w.rec && (!x.rec || w.rec > x.rec)) x.rec = w.rec; wm.set(k, x); }
   const cum = new Map();
-  for (const x of [...wm.values()].sort((a, b) => (a.case_id !== b.case_id ? (a.case_id < b.case_id ? -1 : 1) : a.m !== b.m ? (a.m < b.m ? -1 : 1) : a.sub < b.sub ? -1 : a.sub > b.sub ? 1 : 0))) {
-    const before = cum.get(x.case_id) || 0; const after = before + x.h; cum.set(x.case_id, after);
+  for (const x of [...wm.values()].sort((a, b) => (a.case_id !== b.case_id ? (a.case_id < b.case_id ? -1 : 1) : a.p !== b.p ? a.p - b.p : a.m !== b.m ? (a.m < b.m ? -1 : 1) : a.sub < b.sub ? -1 : a.sub > b.sub ? 1 : 0))) {
+    const ck = `${x.case_id}|${x.p}`; const xr = rateAt(x.p);
+    const before = cum.get(ck) || 0; const after = before + x.h; cum.set(ck, after);
     if (!inRange(x.m) || !keep(x.vehicle_id) || !(x.h > 0)) continue;
     // recorded_at: Erfassungszeitpunkt (Arbeitszeit: jüngste Buchung der Position) – nachgereichte Belege erkennbar (23.10.2026)
-    items.push({ ...base(x, x.last), recorded_at: x.rec || null, ...(x.late ? { late: true } : {}), type: 'arbeitszeit', description: null, supplier: null, document: null, quantity: r2(x.h), unit: 'h', unit_price_net: rate,
-      amount_net: rate === null ? null : r2(r2(after * rate) - r2(before * rate)), valuation: rate === null ? 'unvalued' : 'actual', counted: !covered.has(x.case_id) });
+    items.push({ ...base(x, x.last), recorded_at: x.rec || null, ...(x.late ? { late: true } : {}), type: 'arbeitszeit', description: null, supplier: null, document: null, quantity: r2(x.h), unit: 'h', unit_price_net: xr,
+      amount_net: xr === null ? null : r2(r2(after * xr) - r2(before * xr)), valuation: xr === null ? 'unvalued' : 'actual', counted: !covered.has(x.case_id) });
   }
   for (const p of parts) {
     const day = dayOf(p.d); if (!inRange(day.slice(0, 7)) || !keep(p.vehicle_id)) continue;

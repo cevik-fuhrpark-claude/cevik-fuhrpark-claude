@@ -402,13 +402,15 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const rate = rateOf(rateRaw);
     const closed = (await env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate,
         (SELECT COUNT(*) FROM work_entries w WHERE w.case_id=c.id) AS hours_n,
+        -- Arbeitszeit ohne Satz (Backlog 412): nur Arbeitsdaten nach dem jüngsten früheren Stundensatz zählen bei fehlendem aktuellem Satz
+        (SELECT COUNT(*) FROM work_entries w WHERE w.case_id=c.id AND w.work_date > COALESCE((SELECT MAX(valid_until) FROM hourly_rate_periods), '')) AS hours_open_n,
         (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id AND (p.unit_price_net IS NULL OR p.valuation='unvalued')) AS unv_n,
         (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND e.covers_work_and_parts=1) AS ext_n,
         (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND (e.amount_net IS NULL OR e.valuation='unvalued')) AS ext_unv_n
       FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status='fahrzeug_freigegeben' AND c.closed_at > ?`)
       .bind(environment, new Date(Date.now() - 90 * 86400000).toISOString()).all()).results;
     for (const c of closed) {
-      const hasHours = { n: c.hours_n }; const unvParts = { n: c.unv_n }; const ext = { n: c.ext_n };
+      const hasHours = { n: rate === null ? c.hours_open_n : c.hours_n }; const unvParts = { n: c.unv_n }; const ext = { n: c.ext_n };
       // gleiche Regel wie computeCosts (Akte/Vorgang): auch Fremdleistungen ohne Betrag – auch wenn sie eigene Arbeit/Teile ersetzen (vorher kein Befund, 17.10.2026)
       if (c.ext_unv_n > 0) {
         const own = ext.n ? 0 : (hasHours.n > 0 && rate === null ? 1 : 0) + unvParts.n;

@@ -29,6 +29,7 @@ const stockCsvResponse = (items, envName) => new Response(stock.stockCsv(items, 
 const stockSel = (items, ids) => { const pos = new Map(ids.slice(0, 5000).map((x, i) => [x, i])); return items.filter((i) => pos.has(i.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id)); };
 import { recordUsage, usageReport } from './usage.js';
 import { readiness } from './readiness.js';
+import * as rates from './rates.js';
 import { dataQuality, myInspectionsWithoutResult } from './quality.js';
 import * as telem from './telematics.js';
 import * as contracts from './contracts.js';
@@ -784,21 +785,36 @@ async function handleApi(request, env, ctx, url) {
     requireRole(user, ['owner']);
     const rows = (await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTINGS_KEYS.map(() => '?').join(',')})`).bind(...SETTINGS_KEYS).all()).results;
     const values = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-    return json({ keys: SETTINGS_KEYS, values, defaults: SETTING_DEFAULTS, invalid: storedInvalid(values) });
+    // frühere Stundensätze mit Gültigkeit (Backlog 412)
+    return json({ keys: SETTINGS_KEYS, values, defaults: SETTING_DEFAULTS, invalid: storedInvalid(values), hourly_rate_periods: await rates.listRatePeriods(env) });
+  }
+  // früheren Stundensatz entfernen (Korrektur; Backlog 412) – Arbeitszeit bis dahin wird mit dem nächsten Satz bewertet
+  if ((mm = path.match(/^\/api\/settings\/hourly-rate-periods\/(\d{4}-\d{2}-\d{2})$/)) && m === 'DELETE') {
+    requireRole(user, ['owner']);
+    const r = await rates.removeRatePeriod(env, mm[1]);
+    await auth.audit(env, user.id, 'settings.hourly_rate_period_removed', null, { valid_until: r.valid_until, rate_net: r.rate_net });
+    const costs_revalidated = (await cases.revalidateCostMarks(env, user.id)).length;
+    return json({ ok: true, removed: r, ...(costs_revalidated ? { costs_revalidated } : {}) });
   }
   if (path === '/api/settings' && m === 'PUT') {
     requireRole(user, ['owner']);
     const b = await readJson(request);
     // Eine Anweisung für alle Schlüssel (vorher eine je Schlüssel – das volle Formular hat > 30 Felder); erst alle Werte prüfen (src/settings.js)
     const pairs = settingPairs(b, { decimalPoint: pointDec(user) });
+    // Backlog 412: bisherigen Stundensatz für Arbeit bis einschließlich Datum behalten (vor dem Speichern prüfen, im selben Stapel anlegen)
+    const keep = await rates.keepRateStatement(env, user, b, pairs);
+    let kept = null;
     if (pairs.length) {
-      await env.DB.prepare(`INSERT INTO settings(key,value,updated_by,updated_at) SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), ?1, ?2 FROM json_each(?3) WHERE 1
-        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`).bind(user.id, nowIso(), JSON.stringify(pairs)).run();
+      const up = env.DB.prepare(`INSERT INTO settings(key,value,updated_by,updated_at) SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), ?1, ?2 FROM json_each(?3) WHERE 1
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`).bind(user.id, nowIso(), JSON.stringify(pairs));
+      if (keep) { const res = await env.DB.batch([keep.stmt, up]); if (res[0].meta && res[0].meta.changes) kept = { valid_until: keep.until, rate_net: keep.rate }; }
+      else await up.run();
     }
     if (pairs.length) await auth.audit(env, user.id, 'settings.update', null, Object.fromEntries(pairs)); // nur geprüfte, gespeicherte Werte (unbekannte Schlüssel nicht ins Protokoll)
+    if (kept) await auth.audit(env, user.id, 'settings.hourly_rate_period', null, kept);
     // Grenze/Stundensatz geändert: offene Markierungen „Kostenfreigabe ausstehend“ neu bewerten (19.10.2026)
     const costs_revalidated = pairs.some(([k]) => k === 'repair_cost_limit_net' || k === 'workshop_hourly_rate_net') ? (await cases.revalidateCostMarks(env, user.id)).length : 0;
-    return json({ ok: true, ...(costs_revalidated ? { costs_revalidated } : {}) });
+    return json({ ok: true, ...(costs_revalidated ? { costs_revalidated } : {}), ...(kept ? { hourly_rate_period: kept } : {}) });
   }
 
   throw notFound('Unbekannter API-Pfad.');

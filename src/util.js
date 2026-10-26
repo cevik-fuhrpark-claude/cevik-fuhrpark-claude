@@ -623,3 +623,31 @@ export const rateOf = (v) => { if (v === undefined || v === null || String(v).tr
 export const roundCents = (n) => { const x = Number(n); if (!Number.isFinite(x)) return x; return Math.sign(x) * Math.round(Number((Math.abs(x) * 100).toFixed(6))) / 100 + 0; };
 // drei Nachkommastellen (z. B. Kosten je km) mit derselben Absicherung: 0,5005 → 0,501 (vorher Math.round(x*1000)/1000 → 0,5; 22.10.2026)
 export const roundMilli = (n) => { const x = Number(n); if (!Number.isFinite(x)) return x; return Math.sign(x) * Math.round(Number((Math.abs(x) * 1000).toFixed(6))) / 1000 + 0; };
+// Stundensatz-Verlauf (Backlog 412, Migration 0086): frühere Sätze mit „gilt bis einschließlich“ (Arbeitsdatum, Berliner Kalendertag).
+// RATE_PERIODS_SQL als Spalte `rp` in eine bestehende Abfrage einbauen (keine zusätzliche D1-Abfrage); ratePeriods() wertet sie aus.
+export const RATE_PERIODS_SQL = `(SELECT json_group_array(json_object('u', valid_until, 'r', rate_net)) FROM hourly_rate_periods) AS rp`;
+export const ratePeriods = (txt) => {
+  let a = []; try { a = Array.isArray(txt) ? txt : JSON.parse(txt || '[]'); } catch { a = []; }
+  return a.map((x) => ({ u: String(x.u || x.valid_until || ''), r: rateOf(x.r ?? x.rate_net) })).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.u) && x.r !== null).sort((a, b) => (a.u < b.u ? -1 : a.u > b.u ? 1 : 0));
+};
+// Index des Abschnitts für ein Arbeitsdatum (0 … periods.length; periods.length = aktueller Satz aus den Einstellungen)
+export const ratePeriodIndex = (periods, day) => { const d = String(day || '').slice(0, 10); for (let i = 0; i < periods.length; i++) if (d <= periods[i].u) return i; return periods.length; };
+export const rateAtIndex = (periods, current, i) => (i < periods.length ? periods[i].r : current);
+// Arbeitszeit bewerten: je Satz-Abschnitt rund(Stunden × Satz) – ohne Verlauf genau wie bisher rund(alle Stunden × Satz).
+// Ergebnis: net (bewerteter Betrag), valued (es gibt bewertete Stunden), unvalued_hours (Stunden ohne Satz)
+export function valueWork(current, periods, work) {
+  const hours = work.reduce((s, w) => s + w.hours, 0);
+  if (!(hours > 0)) return { net: 0, valued: false, unvalued_hours: 0 };
+  if (!periods || !periods.length) {
+    if (current === null || !Number.isFinite(current)) return { net: 0, valued: false, unvalued_hours: hours };
+    return { net: roundCents(hours * current), valued: true, unvalued_hours: 0 };
+  }
+  const by = new Map();
+  for (const w of work) { const i = ratePeriodIndex(periods, w.work_date ?? w.d); by.set(i, (by.get(i) || 0) + w.hours); }
+  let net = 0; let valued = false; let unv = 0;
+  for (const [i, h] of [...by.entries()].sort((a, b) => a[0] - b[0])) {
+    const r = rateAtIndex(periods, current, i);
+    if (r === null || !Number.isFinite(r)) unv += h; else { net += roundCents(h * r); valued = true; }
+  }
+  return { net: roundCents(net), valued, unvalued_hours: unv };
+}

@@ -23214,6 +23214,67 @@ await test('Backlog 411 (Blickwinkel „Halbjährliche Führerscheinkontrolle al
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['dlb_title', 'dlb_hint', 'dlb_pick', 'dlb_due', 'dlb_send']) ok(STRINGS[l][x], `${x} ${l}`); ok(PLURALS[l].dlb_done); ok(STRINGS[l].help_drivers_s.includes(STRINGS[l].dlb_title), 'Hilfe ' + l); }
 });
+await test('Backlog 412 (Blickwinkel „Jahreswechsel: Werkstatt-Stundensatz steigt zum 01.01.“): bisherigen Stundensatz beim Ändern für Arbeit bis Datum behalten – Vorgang, Akte, Kostenbericht, Einzelpositionen nach Arbeitsdatum; Prüfungen, Entfernen, Protokoll, Sicherung', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld();
+  const day = (n) => { const d = new Date(BERLIN_TODAY + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const { valueWork, ratePeriods } = await import('../src/util.js'); const { costReport, costItems } = await import('../src/reports.js'); const { vehicleCosts } = await import('../src/cases.js');
+  // Einheit: ohne Verlauf wie bisher rund(alle Stunden × Satz); mit Verlauf je Abschnitt; fehlender aktueller Satz → unbewertete Stunden
+  eq(JSON.stringify(valueWork(80, [], [{ hours: 1.5, work_date: '2026-01-05' }, { hours: 2, work_date: '2026-03-01' }])), JSON.stringify({ net: 280, valued: true, unvalued_hours: 0 }));
+  const P = ratePeriods('[{"u":"2026-01-31","r":80},{"u":"x","r":1},{"u":"2025-12-31","r":70}]'); eq(P.map((x) => x.u).join(','), '2025-12-31,2026-01-31', 'sortiert, ungültige verworfen');
+  eq(valueWork(100, P, [{ hours: 1, work_date: '2025-12-31' }, { hours: 1, work_date: '2026-01-01' }, { hours: 1, work_date: '2026-02-01' }]).net, 250);
+  eq(JSON.stringify(valueWork(null, P, [{ hours: 1, work_date: '2026-01-31' }, { hours: 2, work_date: '2026-02-01' }])), JSON.stringify({ net: 80, valued: true, unvalued_hours: 2 }));
+  eq(valueWork(33.33, P, [{ hours: 0.35, work_date: '2026-03-01' }, { hours: 0.35, work_date: '2026-03-02' }]).net, 23.33, 'je Abschnitt einmal gerundet');
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: 80 })).status, 200);
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'record_work', { work_date: day(-40), hours: 2, description: 'Diagnose' })).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { work_date: day(-1), hours: 1.5, description: 'Einbau' })).status, 200);
+  const cost = async () => (await U.fleet.get(`/api/cases/${id}`)).data.costs;
+  eq((await cost()).actual_net, 280);
+  // Prüfungen: nur Inhaber, nur mit neuem Satz, nur bei geändertem Satz, gültiges Datum, nicht Jahre im Voraus
+  eq((await U.fleet.put('/api/settings', { workshop_hourly_rate_net: 100, hourly_rate_keep_until: day(-20) })).status, 403);
+  for (const [b, st] of [[{ hourly_rate_keep_until: day(-20) }, 400], [{ workshop_hourly_rate_net: 80, hourly_rate_keep_until: day(-20) }, 400], [{ workshop_hourly_rate_net: 100, hourly_rate_keep_until: '31.12.2026' }, 400],
+    [{ workshop_hourly_rate_net: 100, hourly_rate_keep_until: `${Number(BERLIN_TODAY.slice(0, 4)) + 3}-01-01` }, 400], [{ workshop_hourly_rate_net: 100, hourly_rate_keep_until: '1999-12-31' }, 400]]) {
+    const r = await U.own.put('/api/settings', b); eq(r.status, st, JSON.stringify(b) + ' ' + JSON.stringify(r.data));
+  }
+  eq((await U.own.get('/api/settings')).data.values.workshop_hourly_rate_net, '80', 'abgewiesen → nichts gespeichert');
+  // 1. Satzwechsel: 80 € bleibt für Arbeit bis day(-20)
+  const r1 = await U.own.put('/api/settings', { workshop_hourly_rate_net: 100, hourly_rate_keep_until: day(-20) });
+  eq(r1.status, 200, JSON.stringify(r1.data)); eq(JSON.stringify(r1.data.hourly_rate_period), JSON.stringify({ valid_until: day(-20), rate_net: 80 }));
+  const g = (await U.own.get('/api/settings')).data; eq(g.hourly_rate_periods.length, 1); eq(g.hourly_rate_periods[0].rate_net, 80); eq(g.hourly_rate_periods[0].created_by_name, 'Yilmaz Cevik');
+  let k = await cost(); eq(k.actual_net, 310, '2 h × 80 + 1,5 h × 100'); eq(k.hourly_rate_net, 100); eq(k.hourly_rate_periods, true);
+  // gleiches oder früheres Datum → 409; ohne Haken bewertet der neue Satz nur Arbeit nach dem letzten Wechsel neu
+  const r409 = await U.own.put('/api/settings', { workshop_hourly_rate_net: 105, hourly_rate_keep_until: day(-20) }); eq(r409.status, 409); eq(r409.data.error, 'rate_period_order'); eq(r409.data.last_until, day(-20));
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: 110 })).status, 200);
+  k = await cost(); eq(k.actual_net, 325, '2 h × 80 + 1,5 h × 110');
+  // Akte, Kostenbericht (Monate), Einzelpositionen und Vorgang stimmen überein
+  eq((await vehicleCosts(e, 'test', V1)).actual_net, 325, 'Akte');
+  const from = day(-40).slice(0, 7); const to = BERLIN_TODAY.slice(0, 7);
+  const rep = await costReport(e, { role: 'owner' }, 'test', { from, to });
+  eq(Math.round(rep.rows.filter((x) => x.vehicle_id === V1).reduce((a, x) => a + (x.work_net || 0), 0) * 100) / 100, 325, 'Bericht'); eq(rep.hourly_rate_periods.length, 1); ok(/am Arbeitsdatum galt/.test(rep.definitions.hourly_rate));
+  const old = rep.rows.find((x) => x.vehicle_id === V1 && x.month === day(-40).slice(0, 7)); ok(old.work_net >= 160, 'Monat der alten Arbeit mit 80 €: ' + old.work_net);
+  const it = (await costItems(e, { role: 'owner' }, 'test', { from, to })).items.filter((x) => x.type === 'arbeitszeit');
+  eq(Math.round(it.reduce((a, x) => a + x.amount_net, 0) * 100) / 100, 325, 'Einzelpositionen'); eq([...new Set(it.map((x) => x.unit_price_net))].sort().join(','), '110,80');
+  const api = await U.viewer.get(`/api/reports/costs?from=${from}&to=${to}`); eq(api.status, 200); eq(api.data.hourly_rate_periods[0].valid_until, day(-20));
+  // Protokoll
+  const au = (await e.DB.prepare(`SELECT detail FROM audit_log WHERE action='settings.hourly_rate_period'`).all()).results; eq(au.length, 1); eq(JSON.parse(au[0].detail).rate_net, 80);
+  // Sicherung enthält den Verlauf
+  const b = await U.own.get('/api/admin/backup'); const bj = b.data instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(b.data)) : b.data; eq(bj.data.hourly_rate_periods.length, 1);
+  // Entfernen (Korrektur): nur Inhaber; danach gilt der heutige Satz wieder für alle Arbeitsdaten
+  eq((await U.fleet.req('DELETE', `/api/settings/hourly-rate-periods/${day(-20)}`)).status, 403);
+  eq((await U.own.req('DELETE', '/api/settings/hourly-rate-periods/2001-01-01')).status, 404);
+  eq((await U.own.req('DELETE', `/api/settings/hourly-rate-periods/${day(-20)}`)).status, 200);
+  eq((await cost()).actual_net, 385, '3,5 h × 110'); eq((await U.own.get('/api/settings')).data.hourly_rate_periods.length, 0);
+  eq((await e.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action='settings.hourly_rate_period_removed'`).first()).n, 1);
+  // Satz entfernen, bisherigen behalten: Arbeit danach unbewertet (nie 0 €)
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: null, hourly_rate_keep_until: day(-5) })).status, 200);
+  k = await cost(); eq(k.actual_net, 220); eq(k.unvalued_items, 1); eq(k.complete, false);
+  // Oberfläche und Texte
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("b.hourly_rate_keep_until = $('#hrkdate').value || '';") && app.includes("api('DELETE', `/api/settings/hourly-rate-periods/") && app.includes("t('cost_rate_periods')"), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['hr_keep', 'hr_keep_until', 'hr_keep_hint', 'hr_periods', 'hr_period_item', 'hr_period_now', 'hr_remove', 'hr_period_remove_confirm', 'hr_kept_toast', 'hr_until', 'cost_rate_periods']) ok(STRINGS[l][x], `${x} ${l}`); ok(/01\.01|1 January/.test(STRINGS[l].help_settings_s), 'Hilfe ' + l); }
+  const api2 = fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8'); ok(api2.includes('hourly_rate_keep_until') && api2.includes('hourly_rate_periods'), 'API.md');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

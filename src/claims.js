@@ -2,7 +2,7 @@
 // Alle Angaben laut Schadenmeldung bzw. Schreiben/Abrechnung des Versicherers (Pflicht-Nachweis) – die App berechnet nichts außer
 // der Dauer seit Meldung und dem Saldo „Kosten des Vorgangs − Erstattung“ (nur wenn beide belegt sind).
 import { findingText as fm } from '../public/finding-messages.js';
-import { occurredCsv, nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate, rateOf, roundCents, commaDec, pointDec, normPlate } from './util.js';
+import { occurredCsv, nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate, rateOf, roundCents, commaDec, pointDec, normPlate, ratePeriods, valueWork } from './util.js';
 import { audit } from './auth.js';
 import { csvCell, csvText } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -143,15 +143,17 @@ export async function claimForCase(env, caseId, vehicleId) {
 export async function claimOverview(env, user, envName, query = {}) {
   if (!isMgr(user)) throw forbidden();
   const filter = ['offen', 'gutachten', 'alle', ...CLAIM_STATUS].includes(query.filter) ? query.filter : 'offen';
-  const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('workshop_hourly_rate_net','claim_followup_days')`).all()).results.map((r) => [r.key, r.value]));
+  const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('workshop_hourly_rate_net','claim_followup_days')
+    UNION ALL SELECT '__rp', json_group_array(json_object('u', valid_until, 'r', rate_net)) FROM hourly_rate_periods`).all()).results.map((r) => [r.key, r.value]));
   const rv = sets.get('workshop_hourly_rate_net');
-  const rate = rateOf(rv);
+  const rate = rateOf(rv); const periods = ratePeriods(sets.get('__rp')); // Stundensatz-Verlauf (Backlog 412)
   const fu = Number(sets.get('claim_followup_days'));
   const followupDays = fu > 0 ? fu : null;
   const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, c.created_at AS case_created_at, c.occurred_at AS case_occurred_at, k.contract_no, v.plate,
       -- Kennzeichen zum Meldedatum (Backlog 276): früheres Kennzeichen, das an dem Tag noch galt, sonst das heutige
       COALESCE((SELECT vp.plate FROM vehicle_plates vp WHERE vp.vehicle_id=ic.vehicle_id AND vp.valid_until > ic.reported_on ORDER BY vp.valid_until LIMIT 1), v.plate) AS plate_at_report, v.site AS vehicle_site, v.eval_excluded AS vehicle_excluded,
       (SELECT COALESCE(SUM(w.hours),0) FROM work_entries w WHERE w.case_id=c.id) AS hours,
+      (SELECT json_group_array(json_object('hours', w.hours, 'work_date', w.work_date)) FROM work_entries w WHERE w.case_id=c.id) AS wj,
       (SELECT COUNT(*) FROM parts p WHERE p.case_id=c.id AND (p.unit_price_net IS NULL OR p.valuation<>'actual')) +
       (SELECT COUNT(*) FROM external_costs e WHERE e.case_id=c.id AND (e.amount_net IS NULL OR e.valuation<>'actual')) AS not_actual,
       (SELECT COALESCE(SUM(ROUND(p.quantity*p.unit_price_net*100 + 1e-6)/100.0),0) FROM parts p WHERE p.case_id=c.id AND p.valuation='actual' AND p.unit_price_net IS NOT NULL) AS parts_net,
@@ -175,12 +177,14 @@ export async function claimOverview(env, user, envName, query = {}) {
   const insurer = query.insurer ? str(query.insurer, { max: 120, field: 'Versicherer' }) : null;
   let list = rows.filter((r) => (!sel.site || sel.match(r.vehicle_site)) && (!from || r.reported_on >= from) && (!to || r.reported_on <= to) && (!insurer || r.insurer === insurer)).map((r) => {
     // gleiche Regel wie die Vorgangsbewertung: Fremdleistung „ersetzt eigene Arbeit/Teile“ → nur Fremdleistung; ohne Stundensatz oder mit unbewerteten/geschätzten Positionen: keine Summe
-    const workNet = r.covered ? 0 : rate === null ? (r.hours ? null : 0) : r2(r.hours * rate);
+    // mit Stundensatz-Verlauf je Arbeitsdatum der damals gültige Satz (Backlog 412); ohne Verlauf wie bisher rund(Stunden × Satz)
+    const vw = periods.length ? valueWork(rate, periods, JSON.parse(r.wj || '[]')) : null;
+    const workNet = r.covered ? 0 : vw ? (vw.unvalued_hours > 0 ? null : vw.net) : rate === null ? (r.hours ? null : 0) : r2(r.hours * rate);
     // ersetzt eine Fremdleistung eigene Arbeit/Teile, zählen nur die Fremdleistungen – auch deren Bewertung (vorher: unbewertete Fremdrechnung → „0 €“, 17.10.2026)
     // ohne jede Kostenposition: „–“ statt 0 € (wie die Vorgangsansicht; vorher Saldo = −Erstattung, 17.10.2026)
     const complete = r.items > 0 && workNet !== null && (r.covered ? r.ext_not_actual === 0 : r.not_actual === 0);
     const cost = complete ? r2(workNet + (r.covered ? 0 : r.parts_net) + r.ext_net) : null;
-    const { hours, not_actual, ext_not_actual, parts_net, ext_net, covered, items, vehicle_excluded, fp_search, ...rest } = r;
+    const { hours, wj, not_actual, ext_not_actual, parts_net, ext_net, covered, items, vehicle_excluded, fp_search, ...rest } = r;
     const sh = shape(rest, today);
     // ruhende Fahrzeuge (Entscheidung 10.10.2026: aus allen Bewertungen ausgenommen) bleiben sichtbar, aber ohne Nachfass-Hinweis und außerhalb der Summe – wie Agent und Kostenbericht (18.10.2026)
     const excluded = !!vehicle_excluded;
