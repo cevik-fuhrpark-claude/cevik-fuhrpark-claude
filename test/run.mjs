@@ -23035,6 +23035,45 @@ await test('Backlog 405 (Blickwinkel „Wintercheck vor der Saison für alle Lkw
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("[/^#\\/maintenance\\/multi$/, viewMaintMulti]") && app.includes("api('POST', '/api/maintenance/create-batch'") && app.includes('id="tomcreate"'), 'Oberfläche');
 });
+await test('Backlog 406 (Blickwinkel „Winterreifen bestellen, bevor der erste Schnee kommt“): Reifen-Flotte nennt Positionen ohne Alpine-Symbol je Achse und hinterlegter Reifengröße (nur Erfasstes, Schreibweise egal, ungeprüfte Größen gezählt, nicht erfasste Positionen getrennt), Standortfilter wirkt', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const V2 = 'VIN:WDB9630051L917317';
+  const V3 = 'VIN:WDB96340310568900';
+  eq((await U.own.post('/api/vehicles', { plate: 'WR-B 900', vin: V3.slice(4), site: 'Hamburg' })).status, 201);
+  const W = (v, b) => U.ws.post(`/api/vehicles/${v}/tires/events`, b);
+  // ohne Daten: kein Bedarf
+  let ft = (await U.fleet.get('/api/tires/fleet')).data;
+  eq(JSON.stringify(ft.winter_need.groups), '[]'); eq(ft.winter_need.positions, 0);
+  // V1: Lenkachse M+S (Größe geprüft), Antriebsachse ohne Kennzeichnung (Größe nicht hinterlegt)
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'lenkachse', size: '385/65 R22.5', verified: true })).status, 200);
+  for (const p of ['VA-L', 'VA-R']) eq((await W(V1, { event_type: 'sichtpruefung', position: p, winter_mark: 'ms' })).status, 201);
+  for (const p of ['HA-L-aussen', 'HA-R-aussen']) eq((await W(V1, { event_type: 'sichtpruefung', position: p, winter_mark: 'keine' })).status, 201);
+  // V2: Lenkachse gleiche Größe in anderer Schreibweise, ungeprüft (Quellwert), eine Position M+S, eine mit Alpine-Symbol; Antriebsachse nicht erfasst
+  e.DB.db.prepare(`INSERT INTO tire_specs(vehicle_id,axle,size,source,verified,updated_at) VALUES (?,?,?,?,0,?)`).run(V2, 'lenkachse', '385/65R22.5', 'Test-Import', new Date().toISOString());
+  eq((await W(V2, { event_type: 'sichtpruefung', position: 'VA-L', winter_mark: 'ms' })).status, 201);
+  eq((await W(V2, { event_type: 'sichtpruefung', position: 'VA-R', winter_mark: '3pmsf' })).status, 201);
+  // V3 (Hamburg): alles nicht erfasst → nur als „nicht erfasst“ gezählt
+  ft = (await U.fleet.get('/api/tires/fleet')).data;
+  const n = ft.winter_need;
+  eq(n.vehicles, 2); eq(n.positions, 5);
+  eq(n.groups.map((g) => `${g.axle}|${g.size}|${g.positions}|${g.vehicles}|${g.unverified}`).join(' ; '), 'lenkachse|385/65 R22.5|3|2|1 ; antriebsachse|null|2|1|0');
+  eq(n.groups[0].plates.join(), 'SZ-KC 5515,SZ-YC 5513');
+  eq(n.missing_vehicles, 2, 'V2 (Antriebsachse) und V3'); eq(n.missing_positions, 2 + 4);
+  // Standortfilter
+  const hh = (await U.fleet.get('/api/tires/fleet?site=Hamburg')).data.winter_need;
+  eq(hh.positions, 0); eq(hh.missing_vehicles, 1);
+  // Werkstatt und Lesen sehen es wie die Reifen-Flotte; Fahrer nicht
+  eq((await U.ws.get('/api/tires/fleet')).data.winter_need.positions, 5); eq((await U.viewer.get('/api/tires/fleet')).data.winter_need.positions, 5);
+  eq((await U.driver.get('/api/tires/fleet')).status, 403);
+  // ruhendes Fahrzeug zählt nicht (wie die Reifen-Flotte)
+  e.DB.db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1);
+  eq((await U.fleet.get('/api/tires/fleet')).data.winter_need.positions, 1);
+  // Oberfläche und Texte
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['twn_title', 'twn_hint', 'twn_axle', 'twn_size', 'twn_positions', 'twn_vehicles', 'twn_nosize', 'twn_unverified', 'twn_missing']) ok(STRINGS[l][k], `Text ${k} ${l}`); ok(PLURALS[l].twn_missing, 'Plural ' + l); }
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="twneed"') && app.includes('r.winter_need'), 'Oberfläche');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -424,9 +424,43 @@ export async function fleetTires(env, user, envName, query = {}) {
       dot_positions: ages.length, oldest_dot_date: oldestDot ? oldestDot.dot_date : null, oldest_dot_months: oldestDot ? oldestDot.age_months : null, age_warn: ages.filter((a) => a.age_warn).length, measured_positions: pos.length, min_tread_mm: minTread, below_min: below, below_warn: warned, spare_below_min: spareBelow, oldest_measure_at: oldest, oldest_age_days: ageDays, stale: ageDays === null || ageDays > staleDays };
   }).sort((a, b) => rank[b.status] - rank[a.status] || (a.min_tread_mm ?? 99) - (b.min_tread_mm ?? 99) || String(a.plate).localeCompare(String(b.plate)));
   const count = (f) => rows.filter(f).length;
-  return { legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, stale_days: staleDays, site: sel.site, site_options: sel.options, rows,
+  const winterNeed = await winterNeedBySize(env, rows);
+  return { legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, stale_days: staleDays, site: sel.site, site_options: sel.options, rows, winter_need: winterNeed,
     totals: { vehicles: rows.length, below_min: count((r) => r.status === 'unter_minimum'), warn: count((r) => r.status === 'warnung'), never_measured: count((r) => r.measured_positions === 0), stale: count((r) => r.stale && r.measured_positions > 0),
       winter_noncompliant: count((r) => r.winter === 'nicht_erfuellt'), winter_unknown: count((r) => r.winter === 'unbekannt'), winter_ok: count((r) => r.winter === 'erfuellt'), age_warn: count((r) => r.age_warn > 0) } };
+}
+
+// Backlog 406 (Blickwinkel „Winterreifen bestellen, bevor der erste Schnee kommt“): Positionen ohne Alpine-Symbol laut Erfassung
+// (M+S oder keine Kennzeichnung) der Lkw mit „Winter nicht erfüllt“, gruppiert nach Achse und hinterlegter Reifengröße – Grundlage
+// für die Anfrage beim Reifendienst. Nur Erfasstes: keine Größe hinterlegt → eigene Gruppe „Größe nicht hinterlegt“; nicht erfasste
+// Positionen (Lage „unbekannt“) werden nur gezählt, nie als Bedarf gerechnet. Ungeprüfte Größen (Quellwert) werden je Gruppe gezählt.
+// Eine Abfrage (Reifengrößen der betroffenen Fahrzeuge). Reihenfolge: Achse (Lenk- vor Antriebsachse), dann Positionen absteigend.
+const WINTER_AXLE = (pos) => (pos.startsWith('VA') ? 'lenkachse' : pos.startsWith('HA') ? 'antriebsachse' : null);
+async function winterNeedBySize(env, rows) {
+  const bad = rows.filter((r) => r.winter === 'nicht_erfuellt' && r.winter_noncompliant.length);
+  const unk = rows.filter((r) => r.winter_missing && r.winter_missing.length && r.kind !== 'anhaenger');
+  const out = { groups: [], positions: 0, vehicles: bad.length, missing_positions: unk.reduce((n, r) => n + r.winter_missing.length, 0), missing_vehicles: unk.length };
+  if (!bad.length) return out;
+  const specs = (await env.DB.prepare('SELECT vehicle_id, axle, size, verified FROM tire_specs WHERE vehicle_id IN (SELECT value FROM json_each(?))')
+    .bind(JSON.stringify(bad.map((r) => r.vehicle_id))).all()).results || [];
+  const sp = new Map(specs.map((x) => [`${x.vehicle_id}|${x.axle}`, x]));
+  const groups = new Map();
+  for (const r of bad) {
+    for (const pos of r.winter_noncompliant) {
+      const axle = WINTER_AXLE(pos); if (!axle) continue;
+      const s = sp.get(`${r.vehicle_id}|${axle}`); const size = s && s.size ? String(s.size).trim() : null;
+      const k = `${axle}|${size ? sizeKey(size) : ''}`; // Schreibweise egal („315/70R22.5“ = „315/70 R22.5“), angezeigt die geprüfte bzw. erste
+      if (!groups.has(k)) groups.set(k, { axle, size, positions: 0, unverified: 0, plates: [] });
+      const g = groups.get(k); g.positions++; out.positions++;
+      if (size && !s.verified) g.unverified++;
+      else if (size && !g.sv) { g.size = size; g.sv = true; } // geprüfte Schreibweise bevorzugt
+      if (!g.plates.includes(r.plate)) g.plates.push(r.plate);
+    }
+  }
+  const ax = { lenkachse: 0, antriebsachse: 1 };
+  out.groups = [...groups.values()].map(({ sv, ...g }) => ({ ...g, vehicles: g.plates.length, plates: g.plates.sort((a, b) => String(a).localeCompare(String(b), 'de', { numeric: true })) }))
+    .sort((a, b) => ax[a.axle] - ax[b.axle] || (a.size === null) - (b.size === null) || b.positions - a.positions || String(a.size).localeCompare(String(b.size)));
+  return out;
 }
 
 // Winterreifen-Lage je Lkw (Disposition-Startseite): nur Erfasstes, gleiche Regel wie Fahrzeugakte; Anhänger nicht betroffen.
