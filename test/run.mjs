@@ -22336,6 +22336,14 @@ await test('Backlog 357 (Fehlersuche Motor-/Getriebe-Hinweis): „Temperaturanze
   ok(!pat('GEAR_HINT').test('Kupplungspedal neu eingestellt') && !pat('GEAR_HINT').test('Lenkung geht schwer'), 'kein Getriebe-Hinweis ohne Störung bzw. bei Lenkung');
   ok(pat('STEER_HINT').test('Lenkung geht schwer'), 'Lenkung behält ihren Hinweis');
 });
+await test('Backlog 358 (Fehlersuche Bremsen-/Teile-Hinweis): Lufttrockner bläst ständig ab/zischt, „air dryer keeps purging“, „осушувач повітря постійно скидає“ → Bremsen-Hinweis (Druckluft); Haltegriff/Aufstiegstritt/Einstiegsstufe lose oder abgebrochen, „cab step broken“, „grab handle loose“, „поручень відламався“ → Teile-Hinweis; „next step broken“, „Haltegriff repariert, wieder fest“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['Lufttrockner bläst ständig ab', 'Lufttrockner zischt', 'Lufttrocknerpatrone undicht', 'air dryer keeps purging', 'осушувач повітря постійно скидає']) ok(pat('BRAKE_HINT').test(x), 'Bremsen-Hinweis: ' + x);
+  ok(!pat('BRAKE_HINT').test('Lufttrockner gewechselt') && !pat('REEFER_HINT').test('Lufttrockner zischt'), 'kein Hinweis nach Wechsel, kein Kühlaggregat-Hinweis');
+  for (const x of ['Haltegriff lose', 'Aufstiegstritt kaputt', 'Einstiegsstufe abgebrochen', 'Trittstufe abgebrochen', 'cab step broken', 'grab handle loose', 'поручень відламався', 'сходинка відламалась', 'підніжка зламалась']) ok(pat('LOOSE_HINT').test(x), 'Teile-Hinweis: ' + x);
+  for (const x of ['next step broken', 'Haltegriff repariert, wieder fest', 'Haltegriff geputzt']) ok(!pat('LOOSE_HINT').test(x), 'kein Teile-Hinweis: ' + x);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
