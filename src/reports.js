@@ -806,7 +806,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const sf = site ? ' AND c.workshop_site=?' : '';
   const canPlan = ['owner', 'fleet', 'workshop'].includes(user.role);
   const [cs, mt, vs, mo] = await Promise.all([
-    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, v.eval_excluded, c.status, c.priority, c.safety_lock, c.workshop_site, c.planned_date, c.parts_expected_date, c.workshop_ack_at, c.version, substr(c.description,1,300) AS description, c.maintenance_rule_id, c.tire_order
+    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, v.eval_excluded, c.status, c.priority, c.safety_lock, c.workshop_site, c.vehicle_location, c.planned_date, c.parts_expected_date, c.workshop_ack_at, c.version, substr(c.description,1,300) AS description, c.maintenance_rule_id, c.tire_order
       FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status IN (${PLAN_STATUSES.map(() => '?').join(',')})${sf}
       ORDER BY c.planned_date, c.priority='kritisch' DESC, c.created_at`).bind(envName, ...PLAN_STATUSES, ...(site ? [site] : [])).all(),
     // ruhende Fahrzeuge mit eingetragenem Termin erscheinen gekennzeichnet (wie ihre Aufträge) – vorher war ihr Prüftermin unsichtbar (23.10.2026)

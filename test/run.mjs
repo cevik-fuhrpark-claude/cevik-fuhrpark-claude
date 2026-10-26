@@ -4423,7 +4423,7 @@ await test('Auslese-Fristen Fahrerkarte (28 Tage) / Massenspeicher (90 Tage) nac
   ok(!f.some((x) => x.finding_code === 'TACHO_CARD_OVERDUE' && /Testfahrer Eins/.test(x.message)), 'nach Auslesung erledigt');
   eq((await users.driver.get('/api/drivers?format=csv')).status, 403, 'Fahrer: keine Fristenliste');
   const dcsv = new TextDecoder().decode((await users.fleet.get('/api/drivers?format=csv')).data);
-  ok(dcsv.includes('Name;Personalnummer;') && /Testfahrer Eins;P-1;;31\.03\.2035;31\.05\.2031;nicht erfasst;10\.01\.2026;in Ordnung;;/.test(dcsv) && dcsv.includes(`in Ordnung;;${deD(ago(0))};${deD(ago(-28))};in Ordnung`), dcsv.split('\r\n').find((l) => l.startsWith('Testfahrer')));
+  ok(dcsv.includes('Name;Personalnummer;') && /Testfahrer Eins;P-1;;31\.03\.2035;31\.05\.2031;nicht erfasst;10\.01\.2026;in Ordnung;Intervall nicht eingestellt;/.test(dcsv) && dcsv.includes(`in Ordnung;Intervall nicht eingestellt;${deD(ago(0))};${deD(ago(-28))};in Ordnung`), dcsv.split('\r\n').find((l) => l.startsWith('Testfahrer')));
   const vd = (await users.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data;
   eq(vd.tacho.last, ago(85)); eq(vd.tacho.status, 'bald', 'Fahrzeugakte zeigt Massenspeicher-Frist');
   eq((await users.ws.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.tacho, undefined, 'Werkstatt sieht keine Auslesungen');
@@ -22769,6 +22769,59 @@ await test('Backlog 383/384 (Blickwinkel „Betriebskontrolle/BG-Prüfung angek�
   for (const l of ['de', 'uk', 'en']) for (const k of ['th_none_recorded', 'th_none_card', 'th_none_count']) ok(STRINGS[l][k], `${l}.${k}`);
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-thnone') && app.includes("t('th_none_count')"), 'Oberfläche zeigt „ohne Auslesung“');
+});
+await test('Backlog 385 (Randnotiz 384): Führerscheinkontrolle ohne eingestelltes Intervall – Akte meldet no_interval, Fahrer-CSV „Intervall nicht eingestellt“ statt leerer Zelle; mit Intervall Fälligkeit wie bisher', async () => {
+  const { U } = await freshWorld();
+  const D = (await U.fleet.post('/api/drivers', { display_name: 'Ivan Kontrolle', personnel_no: 'FK-1' })).data.id;
+  eq((await U.fleet.post(`/api/drivers/${D}/license-checks`, { checked_on: bDayOff(-30), result: 'in_ordnung' })).status, 201);
+  let d = (await U.fleet.get(`/api/drivers/${D}`)).data; eq(d.status.check.due, null, 'keine erfundene Frist'); eq(d.status.check.no_interval, true);
+  const row = () => U.fleet.get('/api/drivers?format=csv').then((r) => new TextDecoder().decode(r.data).split('\r\n').find((l) => l.startsWith('Ivan Kontrolle;')).split(';'));
+  eq((await row())[8], 'Intervall nicht eingestellt');
+  eq((await U.own.put('/api/settings', { license_check_months: 12 })).status, 200);
+  d = (await U.fleet.get(`/api/drivers/${D}`)).data; ok(d.status.check.due && !d.status.check.no_interval, JSON.stringify(d.status.check)); eq((await row())[8], d.status.check.due.split('-').reverse().join('.'));
+  // Kontrolle mit Mangel: kein Intervallhinweis (Status „Mangel“ zählt)
+  eq((await U.own.put('/api/settings', { license_check_months: '' })).status, 200);
+  eq((await U.fleet.post(`/api/drivers/${D}/license-checks`, { checked_on: bDayOff(-1), result: 'maengel', note: 'Klasse CE abgelaufen' })).status, 201);
+  d = (await U.fleet.get(`/api/drivers/${D}`)).data; eq(d.status.check.status, 'mangel'); ok(!d.status.check.no_interval);
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].lc_no_interval, `${l}.lc_no_interval`);
+  const fs = await import('node:fs'); ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes("st.check.no_interval ? ` · <span class=\"muted\">${esc(t('lc_no_interval'))}"), 'Akte zeigt den Hinweis');
+});
+await test('Backlog 386–389 (Blickwinkel „Lkw drei Wochen in der Herstellerwerkstatt“): Externe Werkstatt ohne Konto ist kein kritischer Befund (Hinweis an die Leitung, Antwort external_workshop), „ohne Bewegung“ an die Leitung mit eingetragener Wiedervorlage, Werkstattplan mit Standort, Fremdleistung 0 € mit Vermerk in der Kostentabelle', async () => {
+  const { e, U, cmd, newCase } = await freshWorld();
+  const id = await newCase({ description: 'Getriebe schaltet nicht', driveability: 'nicht_fahrbereit' });
+  const ap = await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'EXTERN' }, 'Garantiereparatur beim Hersteller');
+  eq(ap.status, 200); ok(!ap.data.no_workshop_user && ap.data.external_workshop, JSON.stringify(ap.data));
+  await U.fleet.post('/api/agent/run');
+  const open = async () => (await U.fleet.get('/api/master')).data.findings.filter((x) => x.case_id === id && x.status !== 'erledigt');
+  let f = await open();
+  ok(!f.some((x) => x.finding_code === 'NO_WORKSHOP_RECIPIENT'), 'kein „Werkstatt ohne Benutzer“: ' + JSON.stringify(f.map((x) => x.finding_code)));
+  const ack = f.find((x) => x.finding_code === 'WORKSHOP_ACK_PENDING'); ok(ack && ack.severity === 'hinweis' && ack.owner_role === 'fleet' && /externe Werkstatt/.test(ack.message), JSON.stringify(ack));
+  // Leitung bestätigt selbst, Reparatur läuft extern – kein Befund „ohne Benutzer“ nach der Übernahme
+  eq((await cmd(U.fleet, id, 'acknowledge')).status, 200); eq((await cmd(U.fleet, id, 'start_repair')).status, 200);
+  eq((await cmd(U.fleet, id, 'set_vehicle_location', { vehicle_location: 'MAN Truck & Bus Hamm' })).status, 200);
+  eq((await cmd(U.fleet, id, 'set_planned_date', { planned_date: bDayOff(3) })).status, 200);
+  eq((await cmd(U.fleet, id, 'set_followup', { followup_on: bDayOff(21), followup_note: 'Rückholung' })).status, 200);
+  eq((await cmd(U.fleet, id, 'add_external_cost', { supplier: 'MAN Hamm', invoice_no: 'G-1', amount_net: 0 }, 'Garantie laut Werkstatt')).status, 200);
+  eq((await U.own.put('/api/settings', { case_stale_days: 7 })).status, 200);
+  e.DB.db.prepare(`UPDATE cases SET updated_at=? WHERE id=?`).run(new Date(Date.now() - 10 * 86400000).toISOString(), id);
+  await U.fleet.post('/api/agent/run');
+  f = await open();
+  ok(!f.some((x) => x.finding_code === 'NO_WORKSHOP_RECIPIENT'), 'nach Übernahme kein „ohne Benutzer“');
+  const st = f.find((x) => x.finding_code === 'CASE_STALE'); ok(st && st.owner_role === 'fleet' && /Wiedervorlage am \d\d\.\d\d\.\d{4} eingetragen/.test(st.message) && /externen Werkstatt/.test(st.next_action || ''), JSON.stringify(st));
+  // Werkstattplan nennt den Standort
+  const plan = (await U.fleet.get('/api/workshop/plan')).data;
+  const it = plan.days.flatMap((x) => x.items).find((x) => x.id === id); ok(it && it.vehicle_location === 'MAN Truck & Bus Hamm', JSON.stringify(it));
+  // Fremdleistung 0 € mit Vermerk: bewertet (nicht „unbewertet“), Vermerk in der Antwort
+  const d = (await U.fleet.get(`/api/cases/${id}`)).data; const x = d.external_costs.find((y) => y.invoice_no === 'G-1');
+  ok(x && x.amount_net === 0, JSON.stringify(x)); eq(d.costs.unvalued_items, 0);
+  // eigene Werkstatt mit Konto: Warnung wie bisher (Gegenprobe)
+  const id2 = await newCase(); const ap2 = await cmd(U.fleet, id2, 'approve_repair', { workshop_site: 'DORTMUND' }, 'x'); ok(!ap2.data.external_workshop && !ap2.data.no_workshop_user);
+  const { STRINGS } = await import('../public/i18n.js'); const { FINDING_MESSAGES } = await import('../public/finding-messages.js').catch(() => ({}));
+  for (const l of ['de', 'uk', 'en']) for (const k of ['ext_ws_hint', 'ext_amount_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+  const fs = await import('node:fs'); const fm = fs.readFileSync(new URL('../public/finding-messages.js', import.meta.url), 'utf8');
+  for (const k of ['CASE_STALE_FOLLOWUP', 'WORKSHOP_ACK_PENDING_EXTERN']) eq((fm.match(new RegExp(`\\b${k}:`, 'g')) || []).length, 3, `${k} in DE/UK/EN`);
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-extnote') && app.includes("t('ext_amount_hint')") && app.includes("r.external_workshop) toast(t('ext_ws_hint'))") && /i\.vehicle_location && `<span data-vloc>/.test(app), 'Oberfläche');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

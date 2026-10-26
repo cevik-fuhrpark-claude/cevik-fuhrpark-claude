@@ -84,7 +84,7 @@ export function driverStatus(docs, lastCheck, today, { warnDays, checkMonths }) 
     // Vorwarnung höchstens Kontrollabstand − 1 Tag (wie Auslesungen, tachoStatus): sonst stand die Akte bei Vorwarnung ≥ Abstand schon am Kontrolltag auf „bald fällig“ (19.10.2026)
     check.days = left;
     check.status = left < 0 ? 'faellig' : left <= Math.min(warnDays, days(lastCheck.checked_on, check.due) - 1) ? 'bald' : 'ok';
-  }
+  } else if (lastCheck) check.no_interval = true; // Randnotiz 384: ohne Intervall-Einstellung keine Fälligkeit – sichtbar machen statt leerer Zelle
   const hasLicense = docs.some((x) => !x.superseded && x.kind === 'fuehrerschein');
   const worst = items.some((i) => i.status === 'abgelaufen') || check.status === 'mangel' ? 'kritisch'
     : items.some((i) => i.status === 'laeuft_ab') || ['faellig', 'fehlt', 'bald'].includes(check.status) || !hasLicense ? 'hinweis' : 'ok'; // „bald“ wie bald ablaufende Nachweise (18.10.2026)
@@ -434,7 +434,7 @@ export function driversCsv(list, tachoByDriver, cell) {
     const vx = (k) => { const it = d.status.items.find((i) => i.kind === k); return !it ? 'nicht erfasst' : it.valid_until || 'ohne Ablaufdatum'; };
     const tc = tachoByDriver.get(d.id);
     lines.push([cell(d.display_name), cell(d.personnel_no), cell(d.site), v('fuehrerschein'), vx('fahrerkarte'), vx('code95'), d.status.check.last || '', CHECK_RESULT_DE[d.status.check.result] || d.status.check.result || '',
-      d.status.check.due || '', tc ? tc.last || 'keine erfasst' : 'ohne Fahrerkarte', tc ? tc.due || '' : '', cell([DOV[overall(d, tc)], ...reasons(d, tc)].join(' · '))].join(';'));
+      d.status.check.due || (d.status.check.no_interval ? 'Intervall nicht eingestellt' : ''), tc ? tc.last || 'keine erfasst' : 'ohne Fahrerkarte', tc ? tc.due || '' : '', cell([DOV[overall(d, tc)], ...reasons(d, tc)].join(' · '))].join(';'));
   }
   return lines.join('\r\n') + '\r\n';
 }

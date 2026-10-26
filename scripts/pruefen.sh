@@ -213,6 +213,7 @@ UI-Bußgeld mit Fahrverbot: Auswahl beim Erfassen, Chip, Hinweis § 21 StVG, Än
 UI-Bußgeld Zustellstand der Fahrerinformation und Einwand des Fahrers, DE/UK/EN 390/820/1366|ui-bussgeld-zustellung.py|/tmp/cfp-bussgeld-zustellung.log
 UI-Vorgang wartet auf Teile: worauf gewartet wird, Liefertermin verschoben (Falschlieferung), Grund im Formular, DE/UK/EN 390/820/1366|ui-teile-falschlieferung.py|/tmp/cfp-teile-falschlieferung.log
 UI-Neuer Fahrer erster Tag: Einladung in gewählter Sprache, Kontrolle mit Mangel → Ergebnisseite „vor der Abfahrt klären“, Fahrbereitschaft „nicht abgefragt“, HU/SP ausgeschrieben, DE/UK/EN 390/820/1366|ui-fahrer-erster-tag.py|/tmp/cfp-fahrer-erster-tag.log
+UI-Herstellerwerkstatt: Freigabe extern ohne Warnung, Werkstattplan mit Standort, Fremdleistung 0 € mit Vermerk, Hinweis 0/leer, DE/UK/EN 390/820/1366|ui-herstellerwerkstatt.py|/tmp/cfp-herstellerwerkstatt.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log

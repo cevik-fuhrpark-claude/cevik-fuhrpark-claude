@@ -50,6 +50,7 @@ function slaMinutes(settings, environment, kind, priority) {
 // (unabhängig von der Anzahl der Vorgänge) und schreibt Befunde blockweise über json_each.
 const CHUNK = 1000; // JSON-Parameter je Anweisung ≈ 0,5 MB (D1: max. 2 MB je Wert) – weniger Anweisungen je Lauf
 // Befunde, die als ruhige Erinnerung (nicht dringend) an Fuhrparkleitung/Inhaber gehen, sobald sie neu auftreten
+export const EXTERNAL_SITE = 'EXTERN';
 export const REMINDER_LABEL = { MAINTENANCE_OVERDUE: 'Prüftermin überfällig', MAINTENANCE_DUE: 'Prüftermin bald fällig', INSPECTION_UNCLEAR: 'Prüffrist ungeklärt', FINE_OVERDUE: 'Behördenfrist überschritten', FINE_DUE_SOON: 'Behördenfrist läuft ab', DOCUMENT_EXPIRED: 'Dokument abgelaufen', DOCUMENT_EXPIRES_SOON: 'Dokument läuft ab', DRIVER_DOC_EXPIRED: 'Fahrernachweis abgelaufen', DRIVER_DOC_EXPIRES_SOON: 'Fahrernachweis läuft ab', LICENSE_CHECK_DUE: 'Führerscheinkontrolle fällig', LICENSE_CHECK_DUE_SOON: 'Führerscheinkontrolle bald fällig', LICENSE_CHECK_FAILED: 'Führerscheinkontrolle mit Mangel', TACHO_CARD_OVERDUE: 'Fahrerkarte nicht ausgelesen', TACHO_CARD_DUE: 'Fahrerkarte bald auslesen', TACHO_VU_OVERDUE: 'Massenspeicher nicht ausgelesen', TACHO_VU_DUE: 'Massenspeicher bald auslesen', CONTRACT_ENDED: 'Vertrag abgelaufen', CONTRACT_ENDS_SOON: 'Vertrag endet bald', CONTRACT_NOTICE_DUE: 'Kündigungsfrist Vertrag', CONTRACT_KM_OVER: 'km-Kontingent überschritten', CONTRACT_KM_FORECAST: 'km-Kontingent (Prognose)', CONTRACT_KM_UNCLEAR: 'km-Kontingent nicht berechenbar', CONTRACT_KM_BELOW_START: 'km-Stand unter Übernahme-km', CLAIM_OPEN_LONG: 'Versicherungsfall nachfassen', CASE_STALE: 'Vorgang ohne Bewegung', CASE_FOLLOWUP_DUE: 'Wiedervorlage', INSPECTION_DEFECTS_NO_CASE: 'Prüfmangel ohne Auftrag', REINSPECTION_PENDING: 'Nachprüfung eintragen' };
 const REMINDER_CODES = new Set(Object.keys(REMINDER_LABEL));
 // Push-Texte des Agenten in der Sprache der Person (Fuhrparkleitung/Inhaber arbeiten nicht immer auf Deutsch); Befundcodes bleiben sprachneutral
@@ -253,6 +254,8 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     const fuToday = berlinDate();
     for (const c of open) {
       const label = `${c.case_no} (${c.plate})`;
+      // Werkstatt „EXTERN“ (fest im Schema, Backlog 386) ohne eigenes Konto: Ablauf führt die Leitung im Vorgang
+      const isExternal = (x) => x.workshop_site === EXTERNAL_SITE && !sitesWithUsers.has(EXTERNAL_SITE);
       // Wiedervorlage (von der Leitung selbst gesetztes Datum): ab dem Tag als Hinweis, bis neu gesetzt/entfernt oder Vorgang abgeschlossen
       if (c.followup_on && c.followup_on <= fuToday) {
         add({ code: 'CASE_FOLLOWUP_DUE', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
@@ -262,9 +265,12 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       if (staleLimit && STALE_DE[c.status] && (c.status !== 'gemeldet' || c.fleet_received_at) && (c.status !== 'werkstatt_freigegeben' || c.workshop_ack_at)) {
         const last = berlinDate(c.updated_at);
         if (c.updated_at < staleLimit) {
-          add({ code: 'CASE_STALE', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: c.status === 'gemeldet' ? 'fleet' : 'workshop',
-            ...fm('CASE_STALE', { label, state: c.status, date: last.split('-').reverse().join('.'), days: staleDays }),
-            next_action: c.status === 'gemeldet' ? 'Vorgang an eine Werkstatt weiterleiten oder begründet ablehnen.' : 'Stand bei der Werkstatt erfragen; Fortschritt, Teilebedarf oder Termin im Vorgang eintragen.' });
+          // Backlog 386/387 (Blickwinkel „Lkw drei Wochen in der Herstellerwerkstatt“): externe Werkstatt ohne Konto → an die Leitung (niemand
+          // in der Rolle Werkstatt kann dort nachfassen); eingetragene künftige Wiedervorlage im Text nennen (Befund bleibt – Unterdrücken ist eine Frage)
+          const ext = isExternal(c); const fu = c.followup_on && c.followup_on > fuToday ? c.followup_on.split('-').reverse().join('.') : null;
+          add({ code: 'CASE_STALE', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: c.status === 'gemeldet' || ext ? 'fleet' : 'workshop',
+            ...fm(fu ? 'CASE_STALE_FOLLOWUP' : 'CASE_STALE', { label, state: c.status, date: last.split('-').reverse().join('.'), days: staleDays, ...(fu ? { fdate: fu } : {}) }),
+            next_action: c.status === 'gemeldet' ? 'Vorgang an eine Werkstatt weiterleiten oder begründet ablehnen.' : ext ? 'Stand bei der externen Werkstatt erfragen; Fortschritt oder Termin im Vorgang eintragen.' : 'Stand bei der Werkstatt erfragen; Fortschritt, Teilebedarf oder Termin im Vorgang eintragen.' });
         }
       }
       if (c.status === 'gemeldet' && (!c.fleet_received_at || c.recv_gone)) {
@@ -287,7 +293,11 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         const sla = slaMinutes(settings, environment, 'ack', c.priority);
         const age = ageMin(c.status_since);
         const noUser = c.workshop_site && !sitesWithUsers.has(c.workshop_site);
-        if (noUser) {
+        if (isExternal(c)) {
+          // Backlog 386: externe Werkstatt (fest angelegt, ohne Konto) ist kein Fehler – Übernahme bestätigt die Leitung selbst (vorher kritisch + dringender Push)
+          add({ code: 'WORKSHOP_ACK_PENDING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
+            ...fm('WORKSHOP_ACK_PENDING_EXTERN', { label, at: berlinDateTime(c.status_since) }), next_action: 'Übergabe an die externe Werkstatt im Vorgang mit „Auftrag übernehmen“ bestätigen.' });
+        } else if (noUser) {
           add({ code: 'NO_WORKSHOP_RECIPIENT', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'kritisch', owner_role: 'fleet', requires_decision: 1,
             ...fm('NO_WORKSHOP_RECIPIENT', { label, site: c.workshop_site }),
             next_action: closedWs.has(c.workshop_site) ? 'Werkstatt geschlossen – andere Werkstatt zuweisen.' : 'Werkstattbenutzer anlegen oder andere Werkstatt zuweisen.' });
@@ -304,7 +314,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       // vorher nur bei nicht übernommenen Aufträgen gemeldet – Werkstatthinweise (Kommentar, Nacharbeit) liefen still ins Leere.
       // „Abschlusskontrolle“ ausgenommen (handelt die Leitung; Nacharbeit führt zurück nach „in Reparatur“ und wird dann gemeldet).
       if (((c.status === 'werkstatt_freigegeben' && c.workshop_ack_at) || c.status === 'in_reparatur' || c.status === 'wartet_teile')
-          && c.workshop_site && !sitesWithUsers.has(c.workshop_site)) {
+          && c.workshop_site && !sitesWithUsers.has(c.workshop_site) && !isExternal(c)) {
         const crit = c.priority === 'kritisch' || !!c.safety_lock;
         add({ code: 'NO_WORKSHOP_RECIPIENT', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: crit ? 'kritisch' : 'handeln', owner_role: 'fleet', requires_decision: 1,
           ...fm('NO_WORKSHOP_RECIPIENT_ACKED', { label, site: c.workshop_site }),

@@ -1167,7 +1167,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   let toStatus = c.status;
   let payload = {};
   let workGuard = null; // Arbeitszeit-Tagesgrenze im Stapel geprüft
-  let noWorkshopUser = false; // Reparatur an eine Werkstatt ohne aktives Konto freigegeben (Antwort-Hinweis, 23.10.2026)
+  let noWorkshopUser = false; let externalWs = false; // Backlog 386: Werkstatt „EXTERN“ ohne Konto – Hinweis statt Warnung // Reparatur an eine Werkstatt ohne aktives Konto freigegeben (Antwort-Hinweis, 23.10.2026)
   let stockGuardItem = null; // Lagerentnahme mit Bestandsprüfung im Stapel (Fehlerbild unterscheiden)
   const extra = []; // zusätzliche Statements in derselben Transaktion
   let notifyKind = null;
@@ -1223,7 +1223,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       toStatus = 'werkstatt_freigegeben';
       payload.workshop_site = site;
       // wie der Agentenbefund NO_WORKSHOP_RECIPIENT, aber sofort: niemand kann den Auftrag dort übernehmen (vorher erst beim nächsten Lauf)
-      noWorkshopUser = !(await env.DB.prepare(`SELECT 1 AS x FROM users WHERE environment=? AND role='workshop' AND active=1 AND password_hash IS NOT NULL AND workshop_site=? LIMIT 1`).bind(envName, site).first());
+      noWorkshopUser = !(await env.DB.prepare(`SELECT 1 AS x FROM users WHERE environment=? AND role='workshop' AND active=1 AND password_hash IS NOT NULL AND workshop_site=? LIMIT 1`).bind(envName, site).first()); externalWs = site === 'EXTERN';
       // vorgeschlagene Werkstatt bekommt den Auftrag nicht: ihre Hinweise zum Vorgang ausblenden (18.10.2026: Link → 404; Melder ausgenommen)
       if (c.suggested_workshop_site && c.suggested_workshop_site !== site) extra.push(hideSuggestedSite(env, now, c));
       notifyKind = 'approved';
@@ -1378,7 +1378,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // das Fahrzeug im Werkstattplan weiter am alten Tag der bisherigen Werkstatt (wie set_planned_date, nur im Betrieb)
       if (c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=NULL, updated_at=? WHERE id=? AND planned_date=?').bind(now, c.maintenance_rule_id, c.planned_date));
       // Wechsel an eine Werkstatt ohne aktives Konto: Hinweis in der Antwort wie bei der Freigabe (vorher still bis zum nächsten Agentenlauf)
-      noWorkshopUser = !(await env.DB.prepare(`SELECT 1 AS x FROM users WHERE environment=? AND role='workshop' AND active=1 AND password_hash IS NOT NULL AND workshop_site=? LIMIT 1`).bind(envName, site).first());
+      noWorkshopUser = !(await env.DB.prepare(`SELECT 1 AS x FROM users WHERE environment=? AND role='workshop' AND active=1 AND password_hash IS NOT NULL AND workshop_site=? LIMIT 1`).bind(envName, site).first()); externalWs = site === 'EXTERN';
       // prev_ack_at: Übernahme der bisherigen Werkstatt (zählt in deren Auslastung weiter, Backlog 90)
       payload = { from: c.workshop_site, to: site, ...(c.planned_date ? { planned_date_before: c.planned_date } : {}), ...(c.workshop_ack_at ? { prev_ack_at: c.workshop_ack_at } : {}) };
       // bisherige Werkstatt: alte Hinweise zum Auftrag ausblenden (Link → 404, zurückgehaltener Push ging nach der Ruhezeit noch raus – 17.10.2026);
@@ -1711,7 +1711,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const cost_limit_cleared = COST_ACTIONS.includes(action) && updated.cost_over_limit_at ? (await revalidateCostMarks(env, user.id, [c.id])).length > 0 : false;
   // Kostengrenze überschritten bzw. Markierung aufgehoben → Version um 1 erhöht; Antwort nennt diese (18.10.2026: sonst 409 beim nächsten Befehl)
   const version = cost_limit_exceeded || cost_limit_cleared ? newVersion + 1 : newVersion;
-  return { ok: true, version, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}), ...(noWorkshopUser ? { no_workshop_user: true } : {}), ...(noRecipients ? { no_recipients: true } : {}) };
+  return { ok: true, version, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}), ...(noWorkshopUser && !externalWs ? { no_workshop_user: true } : {}), ...(noWorkshopUser && externalWs ? { external_workshop: true } : {}), ...(noRecipients ? { no_recipients: true } : {}) };
 }
 
 // Verlaufseintrag „Abfahrtskontrolle trotz Sicherheitssperre“ an jedem zum Zeitpunkt `performedAt` gesperrten Vorgang des Fahrzeugs (Backlog 252);
