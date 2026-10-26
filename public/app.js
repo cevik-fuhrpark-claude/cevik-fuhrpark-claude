@@ -897,6 +897,8 @@ const dispoReturnKnown = (c) => {
   const d = c.status === 'wartet_teile' ? c.parts_expected_date : c.planned_date;
   return !!d && d > bDate();
 };
+// Backlog 378: worauf gewartet wird, Verschiebungen des Liefertermins (z. B. Teile falsch geliefert) und letzter Vermerk dazu – vorher nur im Verlauf
+const partsWaitRows = (pw) => `${pw.note ? `<dt>${esc(t('parts_wait_for'))}</dt><dd id="pwnote">${esc(pw.note)} <span class="muted small">· ${esc(t('parts_wait_since'))} ${fmtDT(pw.since)}</span></dd>` : ''}${pw.postponed || pw.last_change_note ? `<dt>${esc(t('parts_eta_changes'))}</dt><dd id="pwmoves">${pw.postponed ? `<span class="chip mittel">${esc(tn('parts_postponed', pw.postponed))}</span>${pw.first_eta ? ` <span class="small">${esc(t('parts_first_eta'))} ${fmtD(pw.first_eta)}</span>` : ''}` : ''}${pw.last_change_note ? `${pw.postponed ? '<br>' : ''}<span class="small">${esc(t('parts_last_change'))} (${fmtDT(pw.last_change_at)}): ${esc(pw.last_change_note)}</span>` : ''}</dd>` : ''}`;
 const partsEta = (c, sep = ' · ', label = true) => c.status === 'wartet_teile' && c.parts_expected_date ? `${sep}<b>${label ? esc(t('parts_eta')) + ' ' : ''}${fmtD(c.parts_expected_date)}</b>${c.parts_expected_date < bDate() ? ` <span class="chip kritisch">${esc(t('parts_eta_passed'))}</span>` : ''}` : '';
 // Werkstatt-Tagesübersicht: Aufträge des eigenen Standorts nach Arbeitsschritt, dazu Prüftermine der nächsten 14 Tage
 async function workshopBoard() {
@@ -1986,6 +1988,7 @@ async function viewCase(id) {
       <dt>${esc(t('received'))}</dt><dd>${c.fleet_received_at ? fmtDT(c.fleet_received_at) : esc(t('not_yet'))}${c.fleet_received_at && d.received_by ? ` · ${esc(d.received_by.name)}${d.received_by.current ? '' : ` <span class="chip mittel" data-recvgone>${esc(t('recv_gone'))}</span>`}` : ''}</dd>
       <dt>${esc(t('workshop'))}</dt><dd>${esc(wsName(c.workshop_site || c.suggested_workshop_site))}${c.planned_date ? ' · ' + esc(t('planned')) + ' ' + fmtD(c.planned_date) : ''}</dd>${c.followup_on && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? `<dt>${esc(t('followup'))}</dt><dd><span class="chip${c.followup_on <= bDate() ? ' mittel' : ''}">${fmtD(c.followup_on)}</span>${c.followup_note ? ' ' + esc(c.followup_note) : ''}</dd>` : ''}
       ${c.status === 'wartet_teile' ? `<dt>${esc(t('parts_eta'))}</dt><dd>${c.parts_expected_date ? partsEta(c, '', false) : `<span class="muted">${esc(t('parts_eta_none'))}</span>`}</dd>` : ''}
+      ${c.status === 'wartet_teile' && d.parts_wait ? partsWaitRows(d.parts_wait) : ''}
       ${c.status !== 'gemeldet' ? `<dt>${esc(t('workshop_ack'))}</dt><dd>${c.workshop_ack_at ? fmtDT(c.workshop_ack_at) : esc(t('not_yet'))}</dd>` : ''}
       ${c.location_note ? `<dt>${esc(t('location_shown'))}</dt><dd>${esc(c.location_note)}</dd>` : ''}
       ${vehLocInfo(c)}
@@ -2415,7 +2418,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   if (['technical_release', 'lift_safety_lock'].includes(action) && d && Array.isArray(d.open_items) && d.open_items.some((o) => o.status === 'offen' && o.safety_relevant)) f.push(`<p class="panel warn small" id="relsafety">${esc(t('err_safety_items_open'))}</p>`);
   if (['technical_release', 'lift_safety_lock'].includes(action)) f.push(`<label class="check"><input type="checkbox" name="confirm" required> ${esc(t('confirm'))}</label>`);
   const noteLabel = action === 'approve_repair' ? t('scope') : ['technical_release'].includes(action) ? t('evidence') : needsNote.includes(action) ? t('reason') : t('note');
-  f.push(`<label>${esc(noteLabel)}</label><textarea name="note"${needsNote.includes(action) ? ' required minlength="3"' : ''}${action === 'set_followup' ? ' maxlength="300"' : ''}>${action === 'set_followup' ? esc(c.followup_note || '') : ''}</textarea>`);
+  f.push(`<label>${esc(noteLabel)}${action === 'set_parts_eta' ? `<span class="hint">${esc(t('parts_eta_note_hint'))}</span>` : ''}</label><textarea name="note"${needsNote.includes(action) ? ' required minlength="3"' : ''}${action === 'set_followup' ? ' maxlength="300"' : ''}>${action === 'set_followup' ? esc(c.followup_note || '') : ''}</textarea>`);
   if (action === 'add_part') api('GET', '/api/part-suggestions').then((r) => {
     const dl = $('#partsugg'); if (!dl) return;
     dl.innerHTML = r.suggestions.map((x) => `<option value="${esc(x.name)}">${esc(x.part_number || '')}</option>`).join('');

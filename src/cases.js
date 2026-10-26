@@ -274,6 +274,21 @@ export function shapeCaseRow(r, user) {
   return out;
 }
 
+// Backlog 378 (Blickwinkel „Werkstatt bekommt Teile falsch geliefert“): Zusammenfassung des laufenden Wartens auf Teile aus dem Verlauf –
+// Vermerk von „Warten auf Teile“ (worauf gewartet wird), ursprünglich genannter Liefertermin, Anzahl der Verschiebungen (später oder entfernt)
+// und der letzte Vermerk zu einer Terminänderung. Nur Angaben der Werkstatt/Leitung, nichts geschätzt.
+export function partsWaitOf(events) {
+  let i = -1;
+  for (let k = events.length - 1; k >= 0; k--) if (events[k].action === 'wait_parts') { i = k; break; }
+  if (i < 0) return null;
+  const w = events[i];
+  const moves = events.slice(i + 1).filter((e) => e.action === 'set_parts_eta' && e.payload);
+  const postponed = moves.filter((e) => e.payload.from && (!e.payload.to || e.payload.to > e.payload.from)).length;
+  const firstEta = (w.payload && w.payload.parts_expected_date) || (moves[0] && moves[0].payload.to) || null;
+  const lastNoted = [...moves].reverse().find((e) => e.note);
+  return { note: w.note || null, since: w.created_at, first_eta: firstEta, changes: moves.length, postponed, ...(lastNoted ? { last_change_note: lastNoted.note, last_change_at: lastNoted.created_at } : {}) };
+}
+
 export async function getCaseDetail(env, user, envName, caseId) {
   const { c, access } = await loadCase(env, user, envName, caseId);
   const vehicle = await env.DB.prepare('SELECT * FROM vehicles WHERE id=?').bind(c.vehicle_id).first();
@@ -440,6 +455,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
     const overSince = c.cost_over_limit_at && OPEN_STATUSES.includes(c.status) ? c.cost_over_limit_at : null;
     if (lim !== null || c.cost_approved_net !== null || overSince) detail.cost_limit = { limit_net: lim, approved_net: c.cost_approved_net ?? null, over_since: overSince };
   }
+  // Backlog 378: worauf gewartet wird und wie oft der Liefertermin verschoben wurde (z. B. Teile falsch geliefert) – sonst nur im Verlauf
+  if (c.status === 'wartet_teile') { const pw = partsWaitOf(events); if (pw) detail.parts_wait = pw; }
   return detail;
 }
 

@@ -22646,6 +22646,41 @@ await test('Backlog 377 (Blickwinkel „Fahrer im Urlaub“): Einwand des Fahrer
   const { renderFindingMessage } = await import('../public/finding-messages.js'); for (const l of ['de', 'uk', 'en']) { const m = renderFindingMessage('FINE_DRIVER_DISPUTED', { label: 'B-1' }, l); ok(m.includes('B-1') && !m.includes('{'), m); }
 });
 
+await test('Backlog 378 (Blickwinkel „Werkstatt bekommt Teile falsch geliefert“): Vorgang „wartet auf Teile“ zeigt, worauf gewartet wird, wie oft der Liefertermin verschoben wurde (ursprünglicher Termin) und den letzten Vermerk dazu; nur im Status „wartet auf Teile“, neues Warten zählt neu; Texte DE/UK/EN', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const { partsWaitOf } = await import('../src/cases.js');
+  eq(partsWaitOf([{ action: 'start_repair' }]), null, 'ohne Warten auf Teile');
+  const id = await toRepair();
+  const d1 = bDayOff(2), d2 = bDayOff(5), d3 = bDayOff(9), d0 = bDayOff(1);
+  eq((await cmd(U.ws, id, 'wait_parts', { parts_expected_date: d1 }, 'Rückleuchte links, Hella 2VP')).status, 200);
+  let pw = (await U.fleet.get(`/api/cases/${id}`)).data.parts_wait;
+  ok(pw && pw.note === 'Rückleuchte links, Hella 2VP' && pw.first_eta === d1 && pw.postponed === 0 && pw.changes === 0 && !pw.last_change_note, JSON.stringify(pw));
+  eq((await cmd(U.ws, id, 'set_parts_eta', { parts_expected_date: d2 }, 'Falsch geliefert (rechts statt links), Nachlieferung bestellt')).status, 200);
+  eq((await cmd(U.ws, id, 'set_parts_eta', { parts_expected_date: d0 })).status, 200, 'früher (zählt nicht als Verschiebung)');
+  eq((await cmd(U.fleet, id, 'set_parts_eta', {})).status, 200, 'entfernt (zählt als Verschiebung)');
+  eq((await cmd(U.ws, id, 'set_parts_eta', { parts_expected_date: d3 }, 'Lieferant: erneut falsch, jetzt Direktversand')).status, 200);
+  pw = (await U.fleet.get(`/api/cases/${id}`)).data.parts_wait;
+  eq(pw.first_eta, d1); eq(pw.changes, 4); eq(pw.postponed, 2, 'später oder entfernt');
+  eq(pw.last_change_note, 'Lieferant: erneut falsch, jetzt Direktversand');
+  // gleiche Angaben für Werkstatt, Disposition-artige Leserolle und Fahrer (Vermerke stehen ohnehin im Verlauf)
+  for (const u of [U.ws, U.viewer, U.driver]) { const x = (await u.get(`/api/cases/${id}`)).data.parts_wait; eq(x && x.postponed, 2, 'sichtbar'); }
+  // weiter reparieren → keine Zusammenfassung; erneutes Warten zählt neu
+  eq((await cmd(U.ws, id, 'resume_repair')).status, 200);
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.parts_wait, undefined, 'nur bei „wartet auf Teile“');
+  eq((await cmd(U.ws, id, 'wait_parts', {}, 'Steckverbinder')).status, 200);
+  pw = (await U.fleet.get(`/api/cases/${id}`)).data.parts_wait;
+  ok(pw.note === 'Steckverbinder' && pw.first_eta === null && pw.postponed === 0 && pw.changes === 0, JSON.stringify(pw));
+  eq((await cmd(U.ws, id, 'set_parts_eta', { parts_expected_date: d2 })).status, 200);
+  pw = (await U.fleet.get(`/api/cases/${id}`)).data.parts_wait; eq(pw.first_eta, d2, 'erster genannter Termin'); eq(pw.postponed, 0, 'erstmals genannt ist keine Verschiebung');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['parts_wait_for', 'parts_wait_since', 'parts_eta_changes', 'parts_first_eta', 'parts_last_change', 'parts_eta_note_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(PLURALS[l].parts_postponed && PLURALS[l].parts_postponed.one && PLURALS[l].parts_postponed.other, `${l} Pluralformen`);
+  }
+  ok(PLURALS.uk.parts_postponed.few && PLURALS.uk.parts_postponed.many, 'uk few/many');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("d.parts_wait ? partsWaitRows(d.parts_wait)") && app.includes("t('parts_eta_note_hint')"), 'Oberfläche nutzt die Zusammenfassung');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
