@@ -39,6 +39,8 @@ export const CHECKS = {
   accident_no_claim: 'hinweis',
   // offener Versicherungsfall ohne Schadenzeitpunkt am Vorgang (Backlog 285) – im Vorgang „Schadenzeitpunkt“ nachtragen
   claim_no_occurred: 'hinweis',
+  // Backlog 399: Reifengröße der Antriebsachse nach der letzten Tachographenprüfung geändert (Protokoll `tires.spec`) – Prüfung nach § 57b StVZO klären
+  tire_size_after_tacho: 'hinweis',
   // Prüfergebnis mit erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher, aber kein Vorgang zum Fahrzeug seit der Prüfung
   inspection_defects_no_case: 'luecke',
   // Nachprüfung nach freigegebenem Mängelauftrag zeigt erneut erhebliche/gefährliche Mängel bzw. verkehrsunsicher (Wiederholungsmangel)
@@ -99,7 +101,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (sel0.site) vf = JSON.stringify(all.filter((v) => sel0.match(v.site)).map((v) => v.id));
   }
   const VF = vf ? 'AND i.vehicle_id IN (SELECT value FROM json_each(?))' : '';
-  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates, claimNoOcc] = await Promise.all([
+  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates, claimNoOcc, tireTacho] = await Promise.all([
     // aktive Fahrzeuge inkl. ruhender (nur für die Anhänger-Suche; Prüfungen laufen über die bewerteten)
     // dazu außer Betrieb genommene Anhänger (nur für „Anhänger außer Betrieb“, 23.10.2026) – gleich danach abgetrennt
     env.DB.prepare(`SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate, zgm_class, zgm_kg, eval_excluded, active FROM vehicles WHERE active=1 OR kind='anhaenger'`).all(),
@@ -184,6 +186,11 @@ export async function dataQuality(env, user, envName, query = {}) {
     env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, ic.reported_on FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id
       WHERE ic.environment=? AND ic.status IN ('gemeldet','in_pruefung') AND c.origin='meldung' AND c.occurred_at IS NULL AND v.eval_excluded=0
       ${vf ? 'AND ic.vehicle_id IN (SELECT value FROM json_each(?))' : ''} ORDER BY ic.reported_on DESC LIMIT ${DQ_MAX + 1}`).bind(envName, ...(vf ? [vf] : [])).all(),
+    // Backlog 399: Größenänderungen der Antriebsachse (Protokoll, Index target/action) nach dem Tag der letzten Tachographenprüfung; nur Fahrzeuge mit erfasster Prüfung
+    env.DB.prepare(`SELECT m.vehicle_id, v.plate, m.last_done_date, a.created_at, a.detail FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
+      JOIN audit_log a ON a.target=m.vehicle_id AND a.action='tires.spec' AND a.created_at >= m.last_done_date
+      WHERE m.kind='Tachograph' AND m.last_done_date IS NOT NULL AND v.active=1 AND v.eval_excluded=0 AND ${berlinDaySql('a.created_at')} > m.last_done_date
+      ${vf ? 'AND m.vehicle_id IN (SELECT value FROM json_each(?))' : ''} ORDER BY a.created_at DESC LIMIT ${DQ_MAX * 4}`).bind(...(vf ? [vf] : [])).all(),
   ]);
   const offTrailers = new Map(veh.results.filter((v) => !v.active).map((v) => [normPlate(v.plate), v]));
   veh.results = veh.results.filter((v) => v.active);
@@ -284,6 +291,14 @@ export async function dataQuality(env, user, envName, query = {}) {
     const nm = (c) => c.partner + (c.contract_no ? ` (${c.contract_no})` : '');
     addA('contract_overlap', { id: a.vehicle_id, plate: a.plate }, `${CK_DE[a.kind]} · ${nm(a)} / ${nm(b)}`, { contract_kind: a.kind, partner: `${nm(a)} / ${nm(b)}` });
   }
+  { const seen = new Set();
+    for (const r of tireTacho.results) {
+      if (seen.has(r.vehicle_id)) continue; let x = null; try { x = JSON.parse(r.detail || '{}'); } catch { /* alter Eintrag */ }
+      if (!x || x.axle !== 'antriebsachse' || !x.from || String(x.from).replace(/\s+/g, '').toUpperCase() === String(x.to || '').replace(/\s+/g, '').toUpperCase()) continue;
+      seen.add(r.vehicle_id); const day = berlinDate(r.created_at);
+      items.push({ check: 'tire_size_after_tacho', severity: CHECKS.tire_size_after_tacho, vehicle_id: r.vehicle_id, plate: r.plate, detail: `${x.from} → ${x.to} am ${day.split('-').reverse().join('.')} · letzte Tachographenprüfung ${r.last_done_date.split('-').reverse().join('.')}`,
+        detail_args: { from: x.from, to: x.to, changed_on: day, last_done: r.last_done_date } });
+    } }
   for (const c of claimNoOcc.results) items.push({ check: 'claim_no_occurred', severity: CHECKS.claim_no_occurred, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${c.reported_on}` });
   for (const c of acc365.results) items.push({ check: 'accident_no_claim', severity: CHECKS.accident_no_claim, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${berlinDate(c.created_at)}` });
   const RES_DE = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };

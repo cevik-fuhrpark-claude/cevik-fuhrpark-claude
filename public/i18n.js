@@ -512,9 +512,9 @@ Object.assign(STRINGS.en, { cr_title: 'Insurance reimbursements in period', cr_r
 Object.assign(STRINGS.de, { dq_accident_no_claim: 'Vorgang nennt „Unfall“ – kein Versicherungsfall' });
 Object.assign(STRINGS.uk, { dq_accident_no_claim: 'Згадано «ДТП» – немає страхового випадку' });
 Object.assign(STRINGS.en, { dq_accident_no_claim: 'Case mentions "accident" – no insurance claim' });
-Object.assign(STRINGS.de, { dq_claim_no_occurred: 'Offener Versicherungsfall ohne Schadenzeitpunkt am Vorgang' });
-Object.assign(STRINGS.uk, { dq_claim_no_occurred: 'Відкритий страховий випадок без часу пошкодження у справі' });
-Object.assign(STRINGS.en, { dq_claim_no_occurred: 'Open insurance claim without time of damage in the case' });
+Object.assign(STRINGS.de, { dq_last_tacho: 'letzte Tachographenprüfung {d}', dq_tire_size_after_tacho: 'Reifengröße der Antriebsachse nach der letzten Tachographenprüfung geändert (§ 57b StVZO klären)', dq_claim_no_occurred: 'Offener Versicherungsfall ohne Schadenzeitpunkt am Vorgang' });
+Object.assign(STRINGS.uk, { dq_last_tacho: 'остання перевірка тахографа {d}', dq_tire_size_after_tacho: 'Розмір шин ведучої осі змінено після останньої перевірки тахографа (з’ясувати § 57b StVZO)', dq_claim_no_occurred: 'Відкритий страховий випадок без часу пошкодження у справі' });
+Object.assign(STRINGS.en, { dq_last_tacho: 'last tachograph check {d}', dq_tire_size_after_tacho: 'Drive-axle tyre size changed after the last tachograph check (clarify § 57b StVZO)', dq_claim_no_occurred: 'Open insurance claim without time of damage in the case' });
 Object.assign(STRINGS.de, { num_ambiguous: 'Mehrdeutig: bitte ohne Tausenderpunkt (z. B. 2000) oder mit Komma für Nachkommastellen (z. B. 2,5 oder 2.000,00) eingeben.' });
 Object.assign(STRINGS.uk, { num_ambiguous: 'Неоднозначно: введіть без крапки для тисяч (напр. 2000) або з комою для дробової частини (напр. 2,5 чи 2.000,00).' });
 Object.assign(STRINGS.en, { num_ambiguous: 'Ambiguous: enter without thousands separator (e.g. 2000) or with a point for decimals (e.g. 2.5 or 2,000.00).' });

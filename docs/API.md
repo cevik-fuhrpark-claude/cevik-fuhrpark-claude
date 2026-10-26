@@ -99,6 +99,7 @@ Schweregrad im Feld `severity`: `fehler` = Widerspruch, `luecke` = fehlt für Au
 | `contract_overlap` | `hinweis` | Zwei laufende Leasing-/Miet-/Finanzierungsverträge desselben Fahrzeugs mit überschneidender Laufzeit (Raten zählen doppelt; je Paar ein Eintrag, Detail „Art · Partner (Nr.) / Partner (Nr.)“) |
 | `accident_no_claim` | `hinweis` | Vorgang nennt „Unfall“ (DE/EN; ukr. „аварія“, russ. „авария“ nur als Substantiv – nicht „аварійна сигналізація“/„аварийка“; „ДТП“) – kein Versicherungsfall |
 | `claim_no_occurred` | `hinweis` | Versicherungsfall gemeldet/in Prüfung, Vorgang (Herkunft Meldung) ohne Schadenzeitpunkt – im Vorgang „Schadenzeitpunkt“ nachtragen (Backlog 285); `case_id`, Detail „Vorgangsnr. · Meldedatum an den Versicherer“ |
+| `tire_size_after_tacho` | `hinweis` | Reifengröße der Antriebsachse laut Protokoll (`tires.spec`) nach dem Tag der letzten erfassten Tachographenprüfung geändert – Prüfung nach § 57b StVZO klären (Backlog 399); je Fahrzeug die jüngste Änderung, `detail_args` `from`, `to`, `changed_on`, `last_done` |
 | `inspection_defects_no_case` | `luecke` | Prüfung mit erheblichen/gefährlichen Mängeln – kein Vorgang seit der Prüfung |
 | `reinspection_defects_again` | `luecke` | Nachprüfung nach Mängelauftrag erneut mit erheblichen Mängeln |
 | `inspection_no_result` | `hinweis` | Pflichtprüfung ohne Prüfergebnis (in der App erfasst, ≤ 180 Tage) |

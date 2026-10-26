@@ -22869,6 +22869,26 @@ await test('Backlog 395–398 (Blickwinkel „Getriebetausch/Reifengröße – F
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const k of ['tacho_check_possible', 'tacho_work_hint', 'mdone_tacho_hint']) ok(STRINGS[l][k] && STRINGS[l][k].includes(k === 'mdone_tacho_hint' ? '' : '57b'), `${l}.${k}`); ok(STRINGS[l].vi_due.includes('{days}'), `${l}.vi_due`); }
 });
+await test('Backlog 399 (Randnotiz 398): Datenqualität „Reifengröße der Antriebsachse nach der letzten Tachographenprüfung geändert“ – nur Antriebsachse, nur echte Änderung, nur nach dem Prüftag; neue Prüfung erledigt den Hinweis; Texte DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const last = bDayOff(-100);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Tachograph', last_done_date: last, interval_months: 24, evidence: 'Einbauschild (Test)' })).status, 201);
+  const dq = async () => (await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'tire_size_after_tacho');
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'antriebsachse', size: '315/80 R22.5', verified: true })).status, 200);
+  eq((await dq()).length, 0, 'erste Angabe ist keine Änderung');
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'lenkachse', size: '385/65 R22.5', verified: true })).status, 200);
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'lenkachse', size: '315/70 R22.5', verified: true })).status, 200);
+  eq((await dq()).length, 0, 'Lenkachse zählt nicht');
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'antriebsachse', size: '295/60 R22.5', verified: true })).status, 200);
+  let it = await dq(); eq(it.length, 1); eq(it[0].severity, 'hinweis'); ok(it[0].detail.includes('315/80 R22.5 → 295/60 R22.5') && it[0].detail_args.last_done === last, JSON.stringify(it[0]));
+  // Änderung vor dem Prüftag zählt nicht: Prüfung heute erfasst → Hinweis weg
+  e.DB.db.prepare(`UPDATE audit_log SET created_at=? WHERE action='tires.spec'`).run(new Date(Date.now() - 2 * 86400000).toISOString());
+  const rule = (await U.fleet.get('/api/maintenance')).data.rows.find((x) => x.vehicle_id === V1 && x.kind === 'Tachograph');
+  eq((await U.ws.post(`/api/maintenance/${rule.id}/complete`, { done_date: bDayOff(0), evidence: 'Prüfbescheinigung § 57b', result: 'ohne_maengel' })).status, 200);
+  eq((await dq()).length, 0, 'nach neuer Prüfung kein Hinweis');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['dq_tire_size_after_tacho', 'dq_last_tacho']) ok(STRINGS[l][k], `${l}.${k}`);
+  const fs = await import('node:fs'); ok(fs.readFileSync(new URL('../public/csv.js', import.meta.url), 'utf8').includes("i.check === 'tire_size_after_tacho'"), 'Anzeige in der App-Sprache');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
