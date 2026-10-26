@@ -412,7 +412,7 @@ function labelFix(root) {
 const routes = [
   [/^#\/login$/, viewLogin], [/^#\/setup$/, viewSetup], [/^#\/invite\/(.+)$/, viewInvite],
   [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/multi$/, viewNewMulti], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
-  [/^#\/vehicles(?:\?f=\w+)?$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?sec=tires$/, (vid) => viewVehicle(vid, null, 'tires')], [/^#\/vehicles\/(VIN:[A-Z0-9]+\?done=[\w-]+)$/, (x) => viewVehicle(x.split('?done=')[0], null, 'done:' + x.split('?done=')[1])], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline(?:\?f=(\w+))?$/, viewTimeline], [/^#\/inbox$/, viewInbox], [/^#\/push$/, () => { location.replace(notifHref({})); }],
+  [/^#\/vehicles(?:\?f=\w+)?$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?sec=tires$/, (vid) => viewVehicle(vid, null, 'tires')], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?sec=wo$/, (vid) => viewVehicle(vid, null, 'wo')], [/^#\/vehicles\/(VIN:[A-Z0-9]+\?done=[\w-]+)$/, (x) => viewVehicle(x.split('?done=')[0], null, 'done:' + x.split('?done=')[1])], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline(?:\?f=(\w+))?$/, viewTimeline], [/^#\/inbox$/, viewInbox], [/^#\/push$/, () => { location.replace(notifHref({})); }],
   [/^#\/master(?:\?(q|sev)=([^&]*))?$/, viewMaster], [/^#\/plan(?:\?s=(mdue))?$/, (sec) => viewPlan(sec)], [/^#\/users$/, viewUsers], [/^#\/settings(?:\?s=([a-z_]+))?$/, (sec) => viewSettings(sec)], [/^#\/more(?:\?o=(sess))?$/, (o) => viewMore(o)],
   [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/guide(?:\?l=(de|uk|en))?$/, (l) => viewDriverGuide(l)], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/stock\/count$/, viewStockCount], [/^#\/stock\/asof$/, viewStockAsOf], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/tacho\/history$/, viewTachoHistory], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/records$/, viewDriverRecords], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit(?:\?u=([\w-]+))?$/, (u) => viewAudit(false, u)], [/^#\/audit\?v=(VIN:[A-Z0-9]+)$/, (v) => viewAudit(false, undefined, v)], [/^#\/usage$/, viewUsage], [/^#\/readiness$/, viewReadiness], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/emergency(?:\?v=(VIN:[A-Z0-9]+)(?:&from=file)?)?$/, viewEmergency], [/^#\/emergency\/edit$/, viewEmergencyEdit], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance(?:\?f=(gaps|due|noplan|all))?$/, viewMaint], [/^#\/maintenance\/multi$/, viewMaintMulti], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
@@ -2042,7 +2042,7 @@ async function viewCase(id) {
     ${d.access === 'preview' ? `<div class="panel">${esc(t('preview_hint'))}</div>` : ''}
     ${d.maintenance_event ? (() => { const me = d.maintenance_event; const ri = me.reinspection; const good = ri && !DEFECT_RESULTS.includes(ri.result); return `<div class="panel ${good ? 'good' : ''}"><b>${esc(t('md_case'))}: ${esc(mk(me.kind))} ${fmtD(me.done_date)}</b> · ${esc(t('res_' + me.result))} – ${ri ? `${esc(t('reinsp_done'))} ${fmtD(ri.done_date)}${ri.result ? ' · ' + esc(t('res_' + ri.result)) : ''} (${esc(ri.evidence)})` : `${c.status === 'fahrzeug_freigegeben' ? `<span class="chip mittel">${esc(t('todo_reinspection'))}</span> ` : ''}${esc(t('md_case_hint'))}`} <a href="#/vehicles/${esc(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a></div>`; })() : ''}
     ${d.maintenance_rule ? `<div class="panel ${d.maintenance_rule.done_since_order ? 'good' : ''}"><b>${esc(t('mo_case'))}: ${esc(mk(d.maintenance_rule.kind))}</b> – ${d.maintenance_rule.done_since_order ? `${esc(t('mo_done'))} ${fmtD(d.maintenance_rule.last_done_date)}` : esc(t('mo_case_hint'))} <a href="#/vehicles/${esc(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a></div>` : ''}
-    ${d.tire_winter ? (() => { const w = d.tire_winter; const good = w.status === 'erfuellt'; return `<div class="panel ${good ? 'good' : ''}" id="cwinter"><b>${esc(t('wo_case'))}</b> <span class="chip ${good ? 'ok' : w.status === 'nicht_erfuellt' ? 'kritisch' : 'mittel'}">${esc(t('ws_' + w.status))}</span>${w.noncompliant.length ? ` – ${esc(t('winter_bad').replace('{p}', w.noncompliant.map(posL).join(', ')))}` : ''}${w.missing.length ? ` – ${esc(t('winter_missing').replace('{p}', w.missing.map(posL).join(', ')))}` : ''}${good ? '' : `<p class="small" id="cwhint">${esc(t(['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? 'wo_case_hint_closed' : 'wo_case_hint'))}</p>`} <a href="#/vehicles/${esc(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a></div>`; })() : ''}
+    ${d.tire_winter ? (() => { const w = d.tire_winter; const good = w.status === 'erfuellt'; return `<div class="panel ${good ? 'good' : ''}" id="cwinter"><b>${esc(t('wo_case'))}</b> <span class="chip ${good ? 'ok' : w.status === 'nicht_erfuellt' ? 'kritisch' : 'mittel'}">${esc(t('ws_' + w.status))}</span>${w.noncompliant.length ? ` – ${esc(t('winter_bad').replace('{p}', w.noncompliant.map(posL).join(', ')))}` : ''}${w.missing.length ? ` – ${esc(t('winter_missing').replace('{p}', w.missing.map(posL).join(', ')))}` : ''}${good ? '' : `<p class="small" id="cwhint">${esc(t(['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? 'wo_case_hint_closed' : 'wo_case_hint'))}</p>`}${!good && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) && ['owner', 'fleet', 'workshop'].includes(S.me.role) ? ` <a href="#/vehicles/${esc(c.vehicle_id)}?sec=wo" id="cwrec">❄ ${esc(t('wo_rec'))} ›</a> ·` : ''} <a href="#/vehicles/${esc(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a></div>`; })() : ''}
     ${c.cost_over_limit_at ? `<div class="panel warn"><b>${esc(t('cost_approval_pending'))}</b>${isMgr() || S.me.role === 'workshop' ? ` – ${esc(t(isMgr() ? 'cost_approval_hint_mgr' : 'cost_approval_hint_ws'))}` : ''} <span class="small muted">(${fmtDT(c.cost_over_limit_at)})</span></div>` : ''}
     <section class="panel"><p style="white-space:pre-wrap;font-size:1.05rem"${langAttr(cDesc(c.description))}>${esc(cDesc(c.description))}</p>
     <dl class="kv">
@@ -2960,6 +2960,9 @@ function huNote(x, i) {
   return s === k ? x.notes[i] : s.replace(/\{(\w+)\}/g, (m, n) => (n in (c.p || {}) ? isoDay(c.p[n]) : m));
 }
 // Werkstattauftrag „Winterreifen“ (nur Leitung) im Reifenbereich der Fahrzeugakte: offener Auftrag als Link, sonst Formular
+// Backlog 408: Achse einer Position (wie tire_specs.axle) und offene Winterpositionen (ohne Alpine-Symbol zuerst, dann nicht erfasste) in Achsreihenfolge
+const posAxle = (p) => (/^VA/.test(p) ? 'lenkachse' : /^LA/.test(p) ? 'liftachse' : /^HA/.test(p) ? 'antriebsachse' : /^AH/.test(p) ? 'anhaenger' : null);
+const woOpenPos = (d) => { const w = d.winter; if (!w || !['nicht_erfuellt', 'unbekannt'].includes(w.status)) return []; const al = d.allowed_positions || S.meta.tire_positions; return [...al.filter((p) => w.noncompliant.includes(p)), ...al.filter((p) => w.missing.includes(p))]; };
 function winterOrderHtml(d) {
   const w = d.winter;
   if (w.open_order) return `<p class="small" id="wolink">🔧 ${w.open_order.id ? `<a href="#/cases/${esc(w.open_order.id)}">${esc(t('mo_open'))} ${esc(w.open_order.case_no)}</a>` : `${esc(t('mo_open'))} ${esc(w.open_order.case_no)}`}</p>`;
@@ -3148,7 +3151,8 @@ async function viewVehicle(id, focusEv = null, sec = null) {
 
   // Direktsprung aus Reifen-/Winterlisten (#/vehicles/…?sec=tires, 23.10.2026 Teilagent Reifenwechsel-Saison): Abschnitt Reifen zeigen,
   // Erfassung aufgeklappt – vorher ~4 Bildschirmhöhen Scrollen je Fahrzeug am Umrüsttag
-  renderTires(id, $('#tires'), sec === 'tires' ? { open: true } : null).then(() => { if (sec !== 'tires') return; const h = $('#tires-h'); if (h) { h.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true }); } });
+  // Backlog 408: ?sec=wo (aus dem Winterreifen-Auftrag) = Reifen + Umrüstung vorbereitet
+  renderTires(id, $('#tires'), sec === 'tires' ? { open: true } : sec === 'wo' ? { open: true, wo: true } : null).then(() => { if (sec !== 'tires' && sec !== 'wo') return; const h = $('#tires-h'); if (h) { h.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true }); } });
   if (d.contracts) bindCtSection(id, () => viewVehicle(id));
   const prt = $('#prt'); if (prt) prt.onclick = () => window.print();
   const docf = $('#docf'); if (docf) docf.onsubmit = async (e) => {
@@ -3376,17 +3380,18 @@ async function renderTires(id, el, keep = null) {
   const stCls = { ok: 'ok', warnung: 'mittel', reserve_unter_minimum: 'mittel', unter_minimum: 'kritisch', unbekannt: '' };
   const wCls = { erfuellt: 'ok', nicht_erfuellt: 'kritisch', unbekannt: 'mittel' };
   el.innerHTML = `<section class="panel"><h3>${esc(t('tire_sizes'))}</h3>${d.specs.length ? d.specs.map((s) => `<div class="specrow"><div><span class="muted">${esc(t('axle_' + s.axle))}</span> <b>${esc(s.size)}</b></div><div>${s.verified ? `<span class="chip ok">${esc(t('verified'))}</span>` : `<span class="chip mittel">${esc(t('source_unverified'))}</span>`}${canWrite && !s.verified ? ` <button class="btn secondary small" data-ver="${esc(s.axle)}" data-size="${esc(s.size)}">${esc(t('mark_verified'))}</button>` : ''}</div></div>`).join('') : noneP()}</section>
-    ${d.winter && d.winter.status !== 'nicht_pflichtig' ? `<section class="panel" id="twinter"><h3>${esc(t('winter_title'))} <span class="chip ${wCls[d.winter.status]}">${esc(t('ws_' + d.winter.status))}</span></h3>${d.winter.noncompliant.length ? `<p><b>${esc(t('winter_bad').replace('{p}', d.winter.noncompliant.map(posL).join(', ')))}</b></p>` : ''}${d.winter.missing.length ? `<p>${esc(t('winter_missing').replace('{p}', d.winter.missing.map(posL).join(', ')))}</p>` : ''}<p class="small muted">${esc(t('winter_rule'))}</p>${winterOrderHtml(d)}</section>` : ''}
+    ${d.winter && d.winter.status !== 'nicht_pflichtig' ? `<section class="panel" id="twinter"><h3>${esc(t('winter_title'))} <span class="chip ${wCls[d.winter.status]}">${esc(t('ws_' + d.winter.status))}</span></h3>${d.winter.noncompliant.length ? `<p><b>${esc(t('winter_bad').replace('{p}', d.winter.noncompliant.map(posL).join(', ')))}</b></p>` : ''}${d.winter.missing.length ? `<p>${esc(t('winter_missing').replace('{p}', d.winter.missing.map(posL).join(', ')))}</p>` : ''}<p class="small muted">${esc(t('winter_rule'))}</p>${winterOrderHtml(d)}${canWrite && d.winter.open_order && woOpenPos(d).length ? `<div class="actions noprint"><button type="button" class="btn secondary" id="twopre">❄ ${esc(t('wo_rec'))}</button></div>` : ''}</section>` : ''}
+    ${keep && keep.wo && d.winter && d.winter.status === 'erfuellt' && d.winter.open_order ? `<p class="panel good" id="twodone" role="status">✓ ${esc(t('wo_rec_done').replace('{no}', d.winter.open_order.case_no))}${d.winter.open_order.id ? ` <a href="#/cases/${esc(d.winter.open_order.id)}">${esc(d.winter.open_order.case_no)} ›</a>` : ''}</p>` : ''}
     <section class="panel"><h3>${esc(t('positions'))}</h3>${d.positions.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('position'))}</th><th>${esc(t('tread'))}</th><th></th></tr></thead><tbody>${d.positions.map((p) => `<tr><td><b>${esc(posL(p.position))}</b><div class="small muted">${esc(t('te_' + p.last_event))} · ${fmtD(p.last_event_at)}</div>${p.dot ? `<div class="small${p.age_warn ? '' : ' muted'}">DOT ${esc(dotTxt(p.dot))} · ${esc(t('tire_age'))} ${esc(tireAge(p.age_months))}${p.age_warn ? ` <span class="chip mittel">${esc(tn('tire_age_warn', d.warn_age_years))}</span>` : ''}</div>` : ''}</td><td>${p.tread_mm === null ? '–' : esc(fmtNum(p.tread_mm))}${p.tread_mm !== null && p.tread_at && fmtD(p.tread_at) !== fmtD(p.last_event_at) ? `<div class="small muted" data-tat="${esc(p.position)}">${esc(t('tread_measured_at'))} ${fmtD(p.tread_at)}</div>` : ''}</td><td><span class="chip ${stCls[p.status]}">${esc(t('ts_' + p.status))}</span>${p.winter_mark ? `<div style="margin-top:4px"><span class="chip ${p.winter_mark === '3pmsf' ? 'ok' : (d.winter && (d.winter.required || []).includes(p.position)) ? 'kritisch' : ''}" data-wm="${esc(p.position)}" style="white-space:normal" title="${esc(t('winter_mark'))}">❄ ${esc(t('wm_' + p.winter_mark))}</span></div>` : ''}</td></tr>`).join('')}</tbody></table></div>` : noneP()}
     ${canWrite || (vActive && S.me.role === 'driver') ? `<details><summary>${esc(t('record_tire'))}</summary><form id="tf">
       <label>${esc(t('kind'))}</label><select name="event_type">${S.meta.tire_events.filter((e) => canWrite || ['messung', 'sichtpruefung'].includes(e)).map((e) => `<option value="${e}">${esc(t('te_' + e))}</option>`).join('')}</select>
       <label>${esc(t('position'))}</label><select name="position">${(d.allowed_positions || S.meta.tire_positions).map((p) => `<option value="${esc(p)}">${esc(posL(p))}</option>`).join('')}</select>
       <details id="tfmore"><summary class="small">${esc(t('tire_more_pos'))}</summary><p class="small muted">${esc(t('tire_more_pos_hint'))}</p><div class="tfpos">${(d.allowed_positions || S.meta.tire_positions).map((p) => `<label class="check"><input type="checkbox" name="positions" value="${esc(p)}"> ${esc(posL(p))}</label>`).join('')}</div></details>
       <label>${esc(t('tread'))}</label><input name="tread_mm" inputmode="decimal"><label>${esc(t('pressure'))}</label><input name="pressure_bar" inputmode="decimal">
-      <label>${esc(t('tire_sizes'))}</label><input name="size" maxlength="40" placeholder="315/70 R22.5"><label>${esc(t('brand'))}</label><input name="brand" maxlength="60"><label>${esc(t('dot'))}</label><input name="dot" maxlength="20" autocapitalize="characters" placeholder="DOT … 0124">
+      <label>${esc(t('tire_sizes'))}</label><input name="size" maxlength="40" placeholder="315/70 R22.5"><p class="small" id="tfspec" hidden></p><label>${esc(t('brand'))}</label><input name="brand" maxlength="60"><label>${esc(t('dot'))}</label><input name="dot" maxlength="20" autocapitalize="characters" placeholder="DOT … 0124">
       <label>${esc(t('winter_mark'))}</label><select name="winter_mark"><option value="">${esc(t('wm_none'))}</option>${(S.meta.tire_winter_marks || []).map((w) => `<option value="${w}">${esc(t('wm_' + w))}</option>`).join('')}</select>
       <label>${esc(t('km'))}</label><input name="odometer_km" inputmode="numeric"><label>${esc(t('note'))}</label><input name="note" maxlength="1000">
-      <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}</section>
+      <input type="hidden" name="case_id"><p class="panel small" id="tfwo" hidden></p><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}</section>
     ${d.history.length ? `<details class="panel"><summary>${esc(t('history'))} (${d.history.length}${d.history_truncated ? '+' : ''})</summary>${d.history_truncated ? `<p class="small muted" id="tiretrunc">${esc(t('tire_hist_truncated').replace('{n}', d.history.length))} <a href="${tlHash(id, 'tire')}">${esc(t('timeline'))}</a></p>` : ''}<div class="scroll"><table class="stack" id="tirehist"><thead><tr><th>${esc(t('date'))}</th><th>${esc(t('position'))}</th><th>${esc(t('kind'))}</th><th>${esc(t('audit_person'))}</th></tr></thead><tbody>${d.history.map((h) => `<tr><td class="small">${fmtDT(h.created_at)}</td><td>${esc(posL(h.position))}</td><td>${esc(t('te_' + h.event_type))}${h.tread_mm !== null ? ' · ' + esc(fmtMm(h.tread_mm)) : ''}${h.pressure_bar !== null ? ' · ' + esc(fmtBar(h.pressure_bar)) : ''}${h.size ? ' · ' + esc(h.size) : ''}${h.brand ? ' · ' + esc(h.brand) : ''}${h.winter_mark ? ' · ' + esc(t('wm_' + h.winter_mark)) : ''}${h.note ? '<br><span class="small muted">' + esc(h.note) + '</span>' : ''}</td><td class="small">${esc(pnm(h.recorded_by_name, h.recorded_by_name_hidden))}</td></tr>`).join('')}</tbody></table></div></details>` : ''}`;
   stackTables(el);
   const tf = $('#tf', el);
@@ -3397,8 +3402,37 @@ async function renderTires(id, el, keep = null) {
     if (keep.event_type && [...tf.event_type.options].some((o) => o.value === keep.event_type)) tf.event_type.value = keep.event_type;
     if (keep.position && [...tf.position.options].some((o) => o.value === keep.position)) tf.position.value = keep.position;
     if (keep.odometer_km) tf.odometer_km.value = keep.odometer_km;
-    if (keep.saved) { const ff = keep.event_type === 'wechsel' ? tf.size : tf.tread_mm; if (ff) ff.focus(); }
+    if (keep.saved && !keep.wo) { const ff = keep.event_type === 'wechsel' ? tf.size : tf.tread_mm; if (ff) ff.focus(); }
   }
+  // Backlog 408 (Blickwinkel „Reifendienst wechselt an einem Tag die Reifen von 10 Lkw“): hinterlegte Größe der Achse per Knopf übernehmen
+  // (nie still vorbelegt – die montierte Größe kann abweichen) und Umrüstung zum offenen Winterreifen-Auftrag vorbereiten: offene Positionen
+  // einer Achse, Art, Bezug zum Auftrag; Winterkennzeichnung bleibt Pflichtauswahl der Person (keine Vorgabe)
+  const updSpec = () => {
+    const sp = $('#tfspec', tf); if (!sp) return;
+    const ax = posAxle(tf.position.value); const s = ax && (d.specs || []).find((x) => x.axle === ax);
+    if (!s || tf.event_type.value !== 'wechsel') { sp.hidden = true; sp.innerHTML = ''; return; }
+    sp.hidden = false; sp.innerHTML = `${esc(t('tfspec_hint'))} <b>${esc(s.size)}</b>${s.verified ? '' : ` <span class="muted">(${esc(t('source_unverified'))})</span>`} <button type="button" class="btn secondary small" id="tfspecgo">${esc(t('tfspec_take'))}</button>`;
+    $('#tfspecgo', tf).onclick = () => { tf.size.value = s.size; tf.size.focus(); };
+  };
+  const applyWo = () => {
+    const open = woOpenPos(d); if (!tf || !open.length) return false;
+    const w = d.winter; const first = open[0]; const bad0 = w.noncompliant.includes(first);
+    const grp = open.filter((p) => posAxle(p) === posAxle(first) && w.noncompliant.includes(p) === bad0);
+    tf.closest('details').open = true;
+    tf.event_type.value = bad0 ? 'wechsel' : 'sichtpruefung';
+    tf.position.value = first;
+    $$('input[name="positions"]', tf).forEach((cb) => (cb.checked = grp.slice(1).includes(cb.value)));
+    const more = $('#tfmore', tf); if (more) more.open = grp.length > 1;
+    tf.winter_mark.value = ''; tf.winter_mark.required = true;
+    tf.case_id.value = w.open_order && w.open_order.id ? w.open_order.id : '';
+    const n = $('#tfwo', tf); n.hidden = false;
+    n.textContent = (w.open_order ? t('wo_rec_for').replace('{no}', w.open_order.case_no) : t('wo_rec_for_noorder')).replace('{p}', grp.map(posL).join(', '));
+    updSpec(); (bad0 ? tf.size : tf.winter_mark).focus();
+    return true;
+  };
+  let woMode = false;
+  if (tf) { tf.position.onchange = updSpec; tf.event_type.onchange = updSpec; updSpec(); if (keep && keep.wo) woMode = applyWo(); }
+  const twp = $('#twopre', el); if (twp) twp.onclick = () => { woMode = applyWo(); if (woMode) tf.closest('details').scrollIntoView({ block: 'start' }); };
   if (tf) tf.onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(tf); const b = Object.fromEntries(fd);
@@ -3410,7 +3444,7 @@ async function renderTires(id, el, keep = null) {
     b.request_key = tf.dataset.key;
     try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b); const wl = (r.warning_items && r.warning_items.length ? r.warning_items.map((w) => (['tread_below_min', 'spare_below_min'].includes(w.code) ? t(w.code).replace('{mm}', fmtNum(w.tread_mm)).replace('{min}', fmtNum(w.min_mm)) : w.code === 'tacho_check_possible' ? t('tacho_check_possible') : '')).filter(Boolean) : r.warnings || []).filter(Boolean); if (wl.length) toast(wl.join(' · '), true); /* ein Fehler-Toast ersetzt den vorherigen – alle Warnungen in einem (20.10.2026) */ if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.map(posL).join(', ') : '✓');
       const ap = [...tf.position.options].map((o) => o.value); const nx = !b.positions && ap.indexOf(b.position) >= 0 ? ap[ap.indexOf(b.position) + 1] : null;
-      renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position }); }
+      renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode }); }
     catch (err) { toast(err.message, true); }
   };
   if ($('#woform', el)) $('#woform', el).onsubmit = async (e) => { e.preventDefault(); const fm = e.target; const b = Object.fromEntries(new FormData(fm)); if (!b.planned_date) delete b.planned_date; fm.querySelector('button').disabled = true;

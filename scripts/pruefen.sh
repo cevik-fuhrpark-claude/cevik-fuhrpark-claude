@@ -221,6 +221,7 @@ UI-Sammelmeldung (Hagel): gleicher Schaden an 14 Fahrzeugen in zwei Blöcken, je
 UI-Prüftermin für mehrere Fahrzeuge (Wintercheck): 5 Fahrzeuge, Hinweise ohne Bezeichnung/Fahrzeug, Link zur Fahrzeugakte, erneut ohne Dubletten, DE/UK/EN 390/820/1366|ui-pruefung-sammelanlage.py|/tmp/cfp-pruefung-sammelanlage.log
 UI-Winterreifen-Bedarf je Reifengröße (Reifen-Flotte, Winter-Reiter), Größe nicht hinterlegt getrennt, DE/UK/EN 390/820/1366|ui-winterreifen-bedarf.py|/tmp/cfp-winterreifen-bedarf.log
 UI-Winterreifen-Aufträge für mehrere Lkw (Werkstatt Pflicht, je Lkw ein Auftrag mit Link, danach nicht wählbar), DE/UK/EN 390/820/1366|ui-winterreifen-auftraege.py|/tmp/cfp-winterreifen-auftraege.log
+UI-Umrüstung zum Winterreifen-Auftrag erfassen (je Achse vorbereitet, Kennzeichnung Pflicht, Größe per Knopf, danach erfüllt mit Link), DE/UK/EN 390/820/1366|ui-winterreifen-umruestung.py|/tmp/cfp-winterreifen-umruestung.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log

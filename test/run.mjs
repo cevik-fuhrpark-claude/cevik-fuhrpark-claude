@@ -17991,7 +17991,7 @@ await test('Reifenwechsel-Saison / Jahresabschluss Kosten (Teilagenten 23.10.): 
   eq(new Set(['de', 'uk', 'en'].map((l) => STRINGS[l].help_costs_s.split('|').length)).size, 1, 'Hilfe Kosten: gleiche Absatzzahl');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("\\?sec=tires$/, (vid) => viewVehicle(vid, null, 'tires')]") && (app.match(/encodeURIComponent\(x\.vehicle_id\)\}\?sec=tires/g) || []).length >= 4, 'Reifen-/Winterlisten springen zum Abschnitt');
-  ok(app.includes("renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position })") && app.includes("tf.closest('details').open = true"), 'Erfassung bleibt offen');
+  ok(app.includes("renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode })") && app.includes("tf.closest('details').open = true"), 'Erfassung bleibt offen');
   ok(app.includes("part=items`)") && app.includes('data-cinact'), 'Kosten: Knopf Einzelpositionen, Status-Chip');
 });
 
@@ -23093,6 +23093,33 @@ await test('Backlog 407 (Fortsetzung „Winterreifen bestellen“): Winterreifen
   ok(app.includes('S.woRes = \'\'; wireWoBatch();'), 'eingebunden');
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['wob_title', 'wob_hint', 'wob_send', 'wob_pick', 'wob_ws', 'wob_progress', 'wob_failed', 'wob_offline']) ok(STRINGS[l][x], `${x} ${l}`); ok(PLURALS[l].wob_done, 'Plural ' + l); }
+});
+await test('Backlog 408 (Blickwinkel „Reifendienst wechselt an einem Tag die Reifen von 10 Lkw“): Umrüstung zum Winterreifen-Auftrag – Werkstatt erfasst je Achse mit Bezug zum Auftrag, Winterlage danach erfüllt; Oberfläche bereitet Positionen/Art vor, Winterkennzeichnung Pflichtauswahl, Größe nur per Knopf', async () => {
+  const { U, V1 } = await freshWorld();
+  for (const p of ['VA-L', 'VA-R', 'HA-L-aussen', 'HA-R-aussen']) eq((await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'sichtpruefung', position: p, winter_mark: 'ms' })).status, 201);
+  const o = await U.fleet.post(`/api/vehicles/${V1}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: 'b408-' + Date.now() });
+  eq(o.status, 201, JSON.stringify(o.data));
+  const ov = (await U.ws.get(`/api/vehicles/${V1}/tires`)).data;
+  eq(ov.winter.status, 'nicht_erfuellt'); ok(ov.winter.open_order && ov.winter.open_order.id === o.data.id, 'Werkstatt sieht den Auftrag mit Link');
+  // wie die App: je Achse ein Wechsel mit case_id des Auftrags
+  const a1 = await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-L', positions: ['VA-R'], size: '385/65 R22.5', winter_mark: '3pmsf', case_id: o.data.id, request_key: 'b408-va' });
+  eq(a1.status, 201, JSON.stringify(a1.data)); eq(a1.data.positions.join(','), 'VA-L,VA-R');
+  eq((await U.ws.get(`/api/vehicles/${V1}/tires`)).data.winter.status, 'nicht_erfuellt');
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'HA-L-aussen', positions: ['HA-R-aussen'], size: '315/70 R22.5', winter_mark: '3pmsf', case_id: o.data.id, request_key: 'b408-ha' })).status, 201);
+  const ov2 = (await U.ws.get(`/api/vehicles/${V1}/tires`)).data;
+  eq(ov2.winter.status, 'erfuellt'); ok(ov2.winter.open_order && ov2.winter.open_order.id === o.data.id, 'Auftrag bleibt bis zum Abschluss offen');
+  ok(ov2.history.filter((h) => h.case_id === o.data.id).length === 4, 'Ereignisse tragen den Auftrag');
+  eq((await U.fleet.get(`/api/cases/${o.data.id}`)).data.tire_winter.status, 'erfuellt');
+  // fremder Vorgang als Bezug abgewiesen
+  const other = await U.ws.post(`/api/vehicles/VIN:WDB9630051L917317/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 8, case_id: o.data.id });
+  eq(other.status, 400);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('const applyWo = () => {'), app.indexOf('let woMode = false;'));
+  ok(fn.includes("tf.winter_mark.value = ''; tf.winter_mark.required = true;") && fn.includes("tf.event_type.value = bad0 ? 'wechsel' : 'sichtpruefung';") && fn.includes('tf.case_id.value = w.open_order && w.open_order.id') && !fn.includes('tf.size.value'), 'Vorbereitung ohne Vorgabe von Kennzeichnung/Größe');
+  ok(app.includes("$('#tfspecgo', tf).onclick = () => { tf.size.value = s.size;") && app.includes('?sec=wo" id="cwrec"') && app.includes("(vid) => viewVehicle(vid, null, 'wo')") && app.includes('wo: woMode }'), 'eingebunden');
+  ok(app.includes("const posAxle = (p) => (/^VA/.test(p) ? 'lenkachse' : /^LA/.test(p) ? 'liftachse' : /^HA/.test(p) ? 'antriebsachse'"), 'Achszuordnung wie tire_specs');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['wo_rec', 'wo_rec_for', 'wo_rec_for_noorder', 'wo_rec_done', 'tfspec_hint', 'tfspec_take']) ok(STRINGS[l][x], `${x} ${l}`); ok(STRINGS[l].help_tires_s.includes(STRINGS[l].wo_rec), 'Hilfe ' + l); }
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
