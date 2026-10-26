@@ -143,7 +143,10 @@ export async function driverDetail(env, user, envName, id) {
   // ebenso Bemerkung/Erfassende der Auslesungen und Erfassende der Nachweise (20.10.2026: Fahrer sah den Vermerk der Leitung)
   const dlOut = isMgr(user) ? downloads : downloads.map(({ note, created_by_name, ...r }) => r);
   const docsOut = isMgr(user) ? docs : docs.map(({ created_by, created_by_name, ...r }) => r);
-  return { driver: d, documents: docsOut, license_checks: checksOut, license_checks_truncated: checksTruncated, vehicles, tacho, tacho_downloads: dlOut, tacho_downloads_truncated: downloadsTruncated, history_max: DRIVER_HIST_MAX, status: withTacho(driverStatus(docs, validCheck, berlinDate(), c), tacho), settings: c };
+  // Bußgelder mit Fahrverbot laut Schreiben (Backlog 367): nur Inhaber/Fuhrparkleitung, Schreiben noch nicht erledigt/eingestellt
+  const bans = isMgr(user) && d.user_id ? (await env.DB.prepare(`SELECT id, fine_no, driving_ban_months AS months, status, offense_at FROM fines WHERE environment=? AND driver_id=?
+    AND driving_ban_months IS NOT NULL AND status NOT IN ('eingestellt','erledigt') ORDER BY offense_at DESC`).bind(envName, d.user_id).all()).results : [];
+  return { ...(bans.length ? { driving_ban_fines: bans } : {}), driver: d, documents: docsOut, license_checks: checksOut, license_checks_truncated: checksTruncated, vehicles, tacho, tacho_downloads: dlOut, tacho_downloads_truncated: downloadsTruncated, history_max: DRIVER_HIST_MAX, status: withTacho(driverStatus(docs, validCheck, berlinDate(), c), tacho), settings: c };
 }
 
 export async function createDriver(env, user, envName, body) {

@@ -57,6 +57,24 @@ with sync_playwright() as p:
     check(q.locator('#fban').count()==0,'Hinweis nach dem Entfernen weg')
     check('3 Monate' in q.inner_text('.timeline'),'Verlauf zeigt alt → neu')
     check(not errs,f'Formular: keine Skriptfehler {errs[:2]}')
+    ctx.close()
+    # Fahrerakte (Backlog 367): offenes Schreiben mit Fahrverbot des verknüpften Kontos
+    me=api('GET','/api/me')['d']; envn=(me.get('user') or me).get('environment') or 'production'
+    du=api('POST','/api/users',{'username':'fv.fahrer','display_name':'FV Fahrer','role':'driver','environment':envn}); DUID=du['d']['id']
+    dr=api('POST','/api/drivers',{'display_name':'FV Fahrer','user_id':DUID}); check(dr['s']==201,f'Fahrerakte angelegt ({dr["s"]} {dr["d"]})'); DRID=dr['d']['id']
+    v=api('GET',f'/api/fines/{FID}')['d']['fine']['version']
+    c=api('POST',f'/api/fines/{FID}/commands',{'action':'confirm_driver','expected_version':v,'payload':{'driver_id':DUID,'basis':'manuell','evidence':'Tourenplan (Test)'}}); check(c['s']==200,f'Fahrer bestätigt ({c["s"]} {c["d"]})')
+    for lang in ['de','uk','en']:
+      api('PATCH','/api/me',{'language':lang})
+      for w,h in [(390,844),(1366,900)]:
+        ctx=br.new_context(viewport={'width':w,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+        q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'fv.inhaber','password':PW}])
+        q.goto(B+'/#/drivers/'+DRID); q.wait_for_selector('#dban', timeout=15000)
+        check(M2[lang] in q.inner_text('#dban') and q.locator('#dban a').count()==1,f'{lang} {w}px: Fahrerakte zeigt das Fahrverbot')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Fahrerakte ohne Querscrollen')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/fahrverbot_akte_{lang}_{w}.png')
+        check(not errs,f'{lang} {w}px Akte: keine Skriptfehler {errs[:2]}')
+        ctx.close()
     br.close()
 print('FEHLER: '+str(len(fails)) if fails else 'OK')
 raise SystemExit(1 if fails else 0)

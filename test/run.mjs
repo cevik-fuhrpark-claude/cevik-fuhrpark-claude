@@ -22443,6 +22443,19 @@ await test('Backlog 365: Fahrzeugzuordnung eines Fahrers mit offenem Bußgeld mi
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].drv_ban_warn.includes('{list}') && STRINGS[l].drv_ban_warn.includes(STRINGS[l].fs_erledigt), l);
 });
 
+await test('Backlog 367: Fahrerakte zeigt Inhaber/Fuhrparkleitung offene Bußgelder mit Fahrverbot des verknüpften Kontos (Nummer, Monate, Status, Link); Fahrer selbst und erledigte/eingestellte nicht', async () => {
+  const { U } = await freshWorld();
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Fahrer W', user_id: U.driver.id }); eq(dr.status, 201, JSON.stringify(dr.data)); const DID = dr.data.id;
+  const f = await U.fleet.post('/api/fines', { kind: 'bussgeldbescheid', authority: 'Bußgeldstelle FV3', reference: 'AZ-FV3-1', offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 86400000).toISOString(), plate_in_letter: 'SZ-YC 5513', driving_ban_months: 1 }); eq(f.status, 201);
+  const g = await U.fleet.post('/api/fines', { kind: 'bussgeldbescheid', authority: 'Bußgeldstelle FV3', reference: 'AZ-FV3-2', offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 86400000).toISOString(), plate_in_letter: 'SZ-YC 5513', driving_ban_months: 2 }); eq(g.status, 201);
+  const db = U.fleet.env.DB.db; db.prepare(`UPDATE fines SET driver_id=?, status='fahrer_informiert', driver_informed_at=? WHERE id IN (?,?)`).run(U.driver.id, new Date().toISOString(), f.data.id, g.data.id);
+  db.prepare(`UPDATE fines SET status='eingestellt' WHERE id=?`).run(g.data.id);
+  const x = (await U.fleet.get('/api/drivers/' + DID)).data; eq(JSON.stringify((x.driving_ban_fines || []).map((b) => [b.id, b.fine_no, b.months, b.status])), JSON.stringify([[f.data.id, f.data.fine_no, 1, 'fahrer_informiert']]));
+  const own = await U.driver.get('/api/drivers/' + DID); eq(own.status, 200, JSON.stringify(own.data)); eq(own.data.driving_ban_fines, undefined, 'Fahrer: nicht in der Akte (sieht das Schreiben unter „Meine Bußgelder“)');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="dban"') && app.includes("t('drv_ban_file')"), 'Akte');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].drv_ban_file, l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
