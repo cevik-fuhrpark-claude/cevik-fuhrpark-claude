@@ -5422,6 +5422,52 @@ async function viewDefects() {
 }
 
 // ---------- Reifen über die Flotte ----------
+// Backlog 407 (Blickwinkel „Winterreifen bestellen“, Fortsetzung von 406): Winterreifen-Aufträge für mehrere Lkw in einem Schritt –
+// nur Inhaber/Fuhrparkleitung, nur in den Winter-Reitern, Lkw mit offenem Auftrag nicht wählbar. Die App ruft je Lkw den bestehenden
+// Einzelauftrag (`POST /api/vehicles/:id/tires/winter-order`) nacheinander auf – gleiche Prüfungen, gleiches Abfragebudget je Aufruf;
+// `request_key` je Lkw aus einem Schlüssel je Absenden (erneutes Senden nach Netzabbruch legt nichts doppelt an). Fehler je Lkw werden
+// gesammelt, die übrigen laufen weiter.
+const woBatchHtml = (f, rows) => {
+  if (!isMgr() || !['winter_bad', 'winter_unknown'].includes(f)) return '';
+  const cand = rows.filter((x) => x.kind !== 'anhaenger');
+  if (!cand.filter((x) => !x.winter_order).length) return '';
+  return `<details class="panel noprint" id="wobatch"><summary>${esc(t('wob_title'))}</summary><p class="small muted">${esc(t('wob_hint'))}</p><form id="wobf" novalidate>
+    <div class="actions" style="margin:8px 0"><button type="button" class="btn secondary" data-wob="1">${esc(t('mb_all'))}</button><button type="button" class="btn secondary" data-wob="0">${esc(t('mb_none'))}</button> <span class="small muted" id="wobcount" aria-live="polite"></span></div>
+    <div class="list" style="max-height:340px;overflow:auto">${cand.map((x) => `<label class="row" style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:8px 10px;margin:0"><input type="checkbox" name="wobid" value="${esc(x.vehicle_id)}" data-plate="${esc(x.plate)}"${x.winter_order ? ' disabled' : ''}> ${plate(x.plate)}<span class="title" style="white-space:normal;flex:1 1 150px">${x.winter_order ? `<span class="small muted">🔧 ${esc(t('mo_open'))} ${esc(x.winter_order.case_no)}</span>` : esc(x.site || '')}</span></label>`).join('')}</div>
+    <label for="wobws">${esc(t('workshop'))}</label><select id="wobws" name="workshop_site">${wsOptions(null)}</select>
+    <label for="wobd">${esc(t('wo_date'))}</label><input type="date" id="wobd" name="planned_date" min="${bDate()}">
+    <label for="wobp">${esc(t('urgency'))}</label><select id="wobp" name="priority"><option value="niedrig">${esc(t('prio_niedrig'))}</option><option value="mittel">${esc(t('prio_mittel'))}</option></select>
+    <label for="wobn">${esc(t('note'))}</label><input id="wobn" name="note" maxlength="300">
+    <div class="actions"><button class="btn" id="wobgo">${esc(t('wob_send'))}</button></div></form></details>`;
+};
+function wireWoBatch() {
+  const fm = $('#wobf'); if (!fm) return;
+  const boxes = () => $$('#wobf input[name=wobid]:not(:disabled)');
+  const cnt = () => { $('#wobcount').textContent = tn('mb_selected', boxes().filter((x) => x.checked).length); };
+  boxes().forEach((x) => (x.onchange = cnt)); cnt();
+  $$('[data-wob]', fm).forEach((b) => (b.onclick = () => { boxes().forEach((x) => (x.checked = b.dataset.wob === '1')); cnt(); }));
+  fm.onsubmit = async (e) => {
+    e.preventDefault();
+    const sel = boxes().filter((x) => x.checked);
+    if (!sel.length) { toast(t('wob_pick'), true); return; }
+    if (!fm.workshop_site.value) { toast(t('wob_ws'), true); markInvalid(fm.workshop_site, t('wob_ws')); fm.workshop_site.focus(); return; }
+    const body = { workshop_site: fm.workshop_site.value, priority: fm.priority.value, ...(fm.planned_date.value ? { planned_date: fm.planned_date.value } : {}), ...(fm.note.value.trim() ? { note: fm.note.value.trim() } : {}) };
+    // Schlüssel je Inhalt (wie „Reifen erfassen“): gleiche Eingaben erneut → dieselben Aufträge; geänderte Eingaben → neue Kennung
+    const ck = JSON.stringify([body, sel.map((x) => x.value)]); if (fm.dataset.ck !== ck) { fm.dataset.ck = ck; fm.dataset.key = uid(); }
+    const go = $('#wobgo'); go.disabled = true;
+    const ok = []; const bad = [];
+    for (const [i, x] of sel.entries()) {
+      go.textContent = t('wob_progress').replace('{i}', i + 1).replace('{m}', sel.length);
+      try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(x.value)}/tires/winter-order`, { ...body, request_key: `${fm.dataset.key.slice(0, 24)}-${x.value.slice(-20)}` }); ok.push({ plate: x.dataset.plate, id: r.id, case_no: r.case_no }); }
+      catch (err) { bad.push({ plate: x.dataset.plate, msg: err.offline ? t('wob_offline') : err.message }); if (err.offline) { for (const y of sel.slice(i + 1)) bad.push({ plate: y.dataset.plate, msg: t('wob_offline') }); break; } }
+    }
+    if (!go.isConnected) return;
+    if (!bad.length) document.querySelectorAll('.toast.err').forEach((x) => x.remove()); // Hinweis eines früheren Versuchs (z. B. „Werkstatt wählen“) ist erledigt
+    S.woRes = `<p class="panel ${bad.length ? 'warn' : 'ok'}" style="margin-top:8px" data-wobdone><b>${esc(tn('wob_done', ok.length))}</b>${ok.length ? `<br><span class="small">${ok.map((o) => `${esc(o.plate)} · <a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a>`).join('; ')}</span>` : ''}</p>${bad.length ? `<p class="small"><b>${esc(t('wob_failed'))}</b></p><ul class="small" data-wobfail>${bad.map((b) => `<li>${esc(b.plate)}: ${esc(b.msg)}</li>`).join('')}</ul>` : ''}`;
+    await viewFleetTires();
+    const res = $('#wobres'); if (res) res.scrollIntoView({ block: 'nearest' });
+  };
+}
 // Backlog 406: Winterreifen-Bedarf je Achse und Reifengröße (Server `winter_need`), auch im Druck – Grundlage für die Anfrage beim Reifendienst
 const winterNeedHtml = (n) => `<section class="panel" id="twneed"><h2 style="margin-top:0">${esc(t('twn_title'))}</h2><p class="small muted">${esc(t('twn_hint'))}</p>
   ${n.groups.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('twn_axle'))}</th><th>${esc(t('twn_size'))}</th><th>${esc(t('twn_positions'))}</th><th>${esc(t('twn_vehicles'))}</th></tr></thead><tbody>${n.groups.map((g) => `<tr data-twn="${esc(g.axle)}"><td>${esc(t('axle_' + g.axle))}</td><td>${g.size ? `<b>${esc(g.size)}</b>` : `<span class="muted">${esc(t('twn_nosize'))}</span>`}${g.unverified ? `<br><span class="small muted">${esc(t('twn_unverified').replace('{n}', fmtNum(g.unverified)))}</span>` : ''}</td><td><b>${fmtNum(g.positions)}</b></td><td>${fmtNum(g.vehicles)}<br><span class="small" style="white-space:normal">${g.plates.map((pl, i) => g.vehicle_ids && g.vehicle_ids[i] ? `<a href="#/vehicles/${encodeURIComponent(g.vehicle_ids[i])}?sec=tires">${esc(pl)}</a>` : esc(pl)).join(', ')}</span></td></tr>`).join('')}</tbody></table></div>` : ''}
@@ -5444,7 +5490,8 @@ async function viewFleetTires() {
     <div class="actions noprint"><button type="button" class="btn secondary" id="trcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="trprt">${esc(t('print'))}</button></div>
     ${printHead([`${t('print_filter')}: ${(tabs.find(([k]) => k === f) || [, t('filter_all')])[1]}`, r.site ? `${t('site')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', rows.length)])}
     ${(f === 'winter_bad' || f === 'winter_unknown') && r.winter_need && (r.winter_need.groups.length || r.winter_need.missing_positions) ? winterNeedHtml(r.winter_need) : ''}
-    <div class="list">${rows.map((x) => `<a class="row ${x.status === 'unter_minimum' ? 'p-kritisch' : x.status === 'warnung' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}?sec=tires">${plate(x.plate)}<span class="title">${x.min_tread_mm === null ? '–' : esc(fmtMm(x.min_tread_mm))}</span><span class="chip ${cls[x.status]}">${esc(t('ts_' + x.status))}</span>${x.winter === 'nicht_erfuellt' ? `<span class="chip kritisch">${esc(t('ws_nicht_erfuellt'))}</span>` : ''}<span class="sub">${[x.kind === 'anhaenger' && esc(t('vk_anhaenger')), x.site && esc(x.site), `${esc(tn('tires_measured_n', x.measured_positions))}`, x.below_min && `${x.below_min}× < ${fmtMm(r.legal_min_tread_mm)}`, x.spare_below_min && esc(t('tires_spare_below').replace('{min}', fmtNum(r.legal_min_tread_mm))), x.oldest_measure_at && `${esc(t('tires_oldest'))} ${fmtD(x.oldest_measure_at)}`, x.oldest_dot_months !== null && `${esc(t('tires_oldest_dot'))} ${esc(tireAge(x.oldest_dot_months))}${x.age_warn ? ` (${x.age_warn}× ${esc(tn('tire_age_warn', r.warn_age_years))})` : ''}`, wf && x.winter_noncompliant.length && esc(t('winter_bad').replace('{p}', x.winter_noncompliant.map(posL).join(', '))), wf && x.winter_missing.length && esc(t('winter_missing').replace('{p}', x.winter_missing.map(posL).join(', '))), wf && x.winter_order && `🔧 ${esc(t('mo_open'))} ${esc(x.winter_order.case_no)}`, wf && x.winter_closed_order && `⚠ ${esc(t('wo_closed_short').replace('{no}', x.winter_closed_order.case_no))}`].filter(Boolean).join(' · ')}</span></a>`).join('') || noneP()}</div>${wf ? `<p class="small muted">${esc(t('winter_rule'))}</p>` : ''}`, 'more');
+    <div class="list">${rows.map((x) => `<a class="row ${x.status === 'unter_minimum' ? 'p-kritisch' : x.status === 'warnung' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}?sec=tires">${plate(x.plate)}<span class="title">${x.min_tread_mm === null ? '–' : esc(fmtMm(x.min_tread_mm))}</span><span class="chip ${cls[x.status]}">${esc(t('ts_' + x.status))}</span>${x.winter === 'nicht_erfuellt' ? `<span class="chip kritisch">${esc(t('ws_nicht_erfuellt'))}</span>` : ''}<span class="sub">${[x.kind === 'anhaenger' && esc(t('vk_anhaenger')), x.site && esc(x.site), `${esc(tn('tires_measured_n', x.measured_positions))}`, x.below_min && `${x.below_min}× < ${fmtMm(r.legal_min_tread_mm)}`, x.spare_below_min && esc(t('tires_spare_below').replace('{min}', fmtNum(r.legal_min_tread_mm))), x.oldest_measure_at && `${esc(t('tires_oldest'))} ${fmtD(x.oldest_measure_at)}`, x.oldest_dot_months !== null && `${esc(t('tires_oldest_dot'))} ${esc(tireAge(x.oldest_dot_months))}${x.age_warn ? ` (${x.age_warn}× ${esc(tn('tire_age_warn', r.warn_age_years))})` : ''}`, wf && x.winter_noncompliant.length && esc(t('winter_bad').replace('{p}', x.winter_noncompliant.map(posL).join(', '))), wf && x.winter_missing.length && esc(t('winter_missing').replace('{p}', x.winter_missing.map(posL).join(', '))), wf && x.winter_order && `🔧 ${esc(t('mo_open'))} ${esc(x.winter_order.case_no)}`, wf && x.winter_closed_order && `⚠ ${esc(t('wo_closed_short').replace('{no}', x.winter_closed_order.case_no))}`].filter(Boolean).join(' · ')}</span></a>`).join('') || noneP()}</div>${woBatchHtml(f, rows)}${S.woRes ? `<div id="wobres" class="noprint" role="status">${S.woRes}</div>` : ''}${wf ? `<p class="small muted">${esc(t('winter_rule'))}</p>` : ''}`, 'more');
+  S.woRes = ''; wireWoBatch();
   $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tireFilter = b.dataset.tf; viewFleetTires(); }));
   // CSV: alle Fahrzeuge (gewählter Standort) mit Status und Reifengrößen je Achse – unabhängig vom Filterknopf
   $('#trcsv').onclick = async () => { try { download(await api('GET', '/api/tires/fleet?format=csv' + (r.site ? '&site=' + encodeURIComponent(r.site) : '')), `fuhrpark-reifen_${envFn()}_${bDate()}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };

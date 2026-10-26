@@ -23074,6 +23074,26 @@ await test('Backlog 406 (Blickwinkel „Winterreifen bestellen, bevor der erste 
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('id="twneed"') && app.includes('r.winter_need'), 'Oberfläche');
 });
+await test('Backlog 407 (Fortsetzung „Winterreifen bestellen“): Winterreifen-Aufträge für mehrere Lkw – Oberfläche ruft je Lkw den Einzelauftrag mit eigenem request_key auf (Wiederholung ohne Dubletten), nur Leitung, Lkw mit offenem Auftrag gesperrt', async () => {
+  const { U, V1 } = await freshWorld();
+  const V2 = 'VIN:WDB9630051L917317';
+  for (const v of [V1, V2]) for (const p of ['VA-L', 'VA-R']) eq((await U.ws.post(`/api/vehicles/${v}/tires/events`, { event_type: 'sichtpruefung', position: p, winter_mark: 'ms' })).status, 201);
+  // derselbe Schlüssel je Lkw (wie die App ihn bildet) → beim erneuten Senden derselbe Auftrag
+  const key = (k, v) => `${k.slice(0, 24)}-${v.slice(-20)}`; const k = 'abcdefghijklmnopqrstuvwxyz0123';
+  const r1 = await U.fleet.post(`/api/vehicles/${V1}/tires/winter-order`, { workshop_site: 'DORTMUND', priority: 'niedrig', request_key: key(k, V1) });
+  eq(r1.status, 201, JSON.stringify(r1.data)); ok(key(k, V1).length <= 64);
+  const again = await U.fleet.post(`/api/vehicles/${V1}/tires/winter-order`, { workshop_site: 'DORTMUND', priority: 'niedrig', request_key: key(k, V1) });
+  ok(again.data.duplicate === true && again.data.id === r1.data.id, JSON.stringify(again.data));
+  eq((await U.fleet.post(`/api/vehicles/${V2}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: key(k, V2) })).status, 201);
+  const ft = (await U.fleet.get('/api/tires/fleet')).data;
+  ok(ft.rows.filter((x) => x.winter === 'nicht_erfuellt').every((x) => x.winter_order), 'beide mit offenem Auftrag');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('const woBatchHtml = '), app.indexOf('// Backlog 406: Winterreifen-Bedarf je Achse'));
+  ok(fn.includes("if (!isMgr() || !['winter_bad', 'winter_unknown'].includes(f)) return '';") && fn.includes("x.winter_order ? ' disabled' : ''") && fn.includes('fm.onsubmit = async') && fn.includes('request_key: `${fm.dataset.key.slice(0, 24)}-${x.value.slice(-20)}`') && fn.includes('/tires/winter-order'), 'Oberfläche');
+  ok(app.includes('S.woRes = \'\'; wireWoBatch();'), 'eingebunden');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['wob_title', 'wob_hint', 'wob_send', 'wob_pick', 'wob_ws', 'wob_progress', 'wob_failed', 'wob_offline']) ok(STRINGS[l][x], `${x} ${l}`); ok(PLURALS[l].wob_done, 'Plural ' + l); }
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
