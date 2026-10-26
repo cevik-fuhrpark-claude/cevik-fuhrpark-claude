@@ -332,6 +332,38 @@ export async function addTrainingBatch(env, user, envName, body) {
   return { created: out.filter((x) => x.status === 'neu').length, existing: out.filter((x) => x.status === 'vorhanden').length, rows: out };
 }
 
+// Backlog 411 (Blickwinkel „Halbjährliche Führerscheinkontrolle aller Fahrer an einem Tag“): Kontrolle „in Ordnung“ für mehrere Fahrer in einem
+// Schritt (nur Inhaber/Fuhrparkleitung, nur aktive Fahrer, höchstens 200). Mängel/nicht vorgelegt bewusst nur einzeln in der Fahrerakte (Vermerk je
+// Person Pflicht). Gleiche Kontrolle (Tag, Ergebnis, Vermerk) wie die neueste desselben Tages → nicht doppelt (wie die Einzelerfassung).
+export async function addLicenseCheckBatch(env, user, envName, body) {
+  if (!isMgr(user)) throw forbidden();
+  if (!Array.isArray(body.driver_ids) || !body.driver_ids.length) throw bad('validation', 'Bitte mindestens einen Fahrer auswählen.');
+  const ids = [...new Set(body.driver_ids.map((x) => str(x, { max: 40, field: 'Fahrer' })).filter(Boolean))];
+  if (ids.length > BATCH_DOCS_MAX) throw bad('validation', 'Höchstens 200 Fahrer je Erfassung.');
+  const on = date(body.checked_on, 'Kontrolldatum', { required: true, notFuture: true });
+  if (body.result !== undefined && body.result !== 'in_ordnung') throw bad('validation', 'Sammelerfassung nur für „in Ordnung“ – Mängel bitte einzeln in der Fahrerakte erfassen.');
+  const note = str(body.note, { max: 500, field: 'Bemerkung' }) || null;
+  const found = (await env.DB.prepare(`SELECT d.id, d.display_name, d.active FROM json_each(?1) j JOIN drivers d ON d.id=j.value AND d.environment=?2`).bind(JSON.stringify(ids), envName).all()).results;
+  const byId = new Map(found.map((d) => [d.id, d]));
+  if (ids.some((x) => !byId.has(x))) throw notFound('Fahrer nicht gefunden.');
+  const inactive = found.filter((d) => !d.active);
+  if (inactive.length) throw bad('driver_inactive', `Ausgeschiedene Fahrer: ${inactive.map((d) => d.display_name).join(', ')}.`, { drivers: inactive.map((d) => ({ id: d.id, display_name: d.display_name })) });
+  const now = nowIso(); const rows = ids.map((id) => [id, uuid(), uuid()]);
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO driver_license_checks(id,driver_id,checked_on,result,checked_by,note,created_at)
+      SELECT json_extract(j.value,'$[1]'), json_extract(j.value,'$[0]'), ?2, 'in_ordnung', ?3, ?4, ?5 FROM json_each(?1) j
+      JOIN drivers d ON d.id=json_extract(j.value,'$[0]') AND d.environment=?6 AND d.active=1
+      WHERE NOT EXISTS (SELECT 1 FROM (SELECT result, note FROM driver_license_checks WHERE driver_id=json_extract(j.value,'$[0]') AND checked_on=?2 AND cancelled_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1) x
+        WHERE x.result='in_ordnung' AND x.note IS ?4)`).bind(JSON.stringify(rows), on, user.id, note, now, envName),
+    env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) SELECT json_extract(j.value,'$[2]'), ?2, 'driver.license_check', json_extract(j.value,'$[0]'),
+      json_object('checked_on',?3,'result','in_ordnung','batch',json('true')), ?4 FROM json_each(?1) j WHERE EXISTS (SELECT 1 FROM driver_license_checks x WHERE x.id=json_extract(j.value,'$[1]'))`)
+      .bind(JSON.stringify(rows), user.id, on, now),
+  ]);
+  const made = new Set((await env.DB.prepare(`SELECT x.id FROM json_each(?1) j JOIN driver_license_checks x ON x.id=json_extract(j.value,'$[1]')`).bind(JSON.stringify(rows)).all()).results.map((x) => x.id));
+  const out = rows.map(([id, cid]) => ({ driver_id: id, display_name: byId.get(id).display_name, status: made.has(cid) ? 'neu' : 'vorhanden', ...(made.has(cid) ? { id: cid } : {}) }));
+  return { created: out.filter((x) => x.status === 'neu').length, existing: out.filter((x) => x.status === 'vorhanden').length, rows: out };
+}
+
 // Nachweis stornieren (Tippfehler, falsche Person): bleibt mit Begründung im Verlauf, zählt nicht mehr. War er der gültige Nachweis einer
 // Einzelart (Führerschein/Fahrerkarte/Code 95), gilt wieder der neueste verbliebene – im selben Stapel (19.10.2026).
 export async function cancelDriverDocument(env, user, envName, id, docId, body = {}) {

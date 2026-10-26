@@ -23182,9 +23182,37 @@ await test('Backlog 410 (Blickwinkel „Jährliche Fahrerunterweisung – viele 
   const [p1, p2] = await Promise.all([U.fleet.post('/api/drivers/trainings', { ...body, driver_ids: [E] }), U.fleet.post('/api/drivers/trainings', { ...body, driver_ids: [E] })]);
   eq(p1.data.created + p2.data.created, 1); eq((await docsOf(E)).length, 1);
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("if (!isMgr() || S.drvInactive || !list.length) return '';") && app.includes("api('POST', '/api/drivers/trainings', b)") && app.includes("S.dtbRes = ''; wireDtb();") && app.includes('${dtbHtml(list)}'), 'Oberfläche');
+  ok(app.includes("if (!isMgr() || S.drvInactive || !list.length) return '';") && app.includes("api('POST', '/api/drivers/trainings', b)") && app.includes("S.dtbRes = ''; S.dlbRes = ''; wireDtb();") && app.includes('${dtbHtml(list)}'), 'Oberfläche');
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['dtb_title', 'dtb_hint', 'dtb_date', 'dtb_ev_ph', 'dtb_pick', 'dtb_send', 'dtb_none', 'dtb_was', 'dtb_inactive']) ok(STRINGS[l][x], `${x} ${l}`); for (const x of ['dtb_done', 'dtb_existing', 'dtb_selected']) ok(PLURALS[l][x], `Plural ${x} ${l}`); ok(STRINGS[l].help_drivers_s.includes(STRINGS[l].dtb_title), 'Hilfe ' + l); }
+});
+await test('Backlog 411 (Blickwinkel „Halbjährliche Führerscheinkontrolle aller Fahrer an einem Tag“): Kontrolle „in Ordnung“ für mehrere Fahrer – nur Leitung, nur in Ordnung, nur aktive Fahrer, gleiche Kontrolle nicht doppelt, Status „aktuell“, Protokoll je Fahrer', async () => {
+  const { e, U } = await freshWorld();
+  eq((await U.own.put('/api/settings', { license_check_months: 6 })).status, 200);
+  const mk = async (n) => (await U.fleet.post('/api/drivers', { display_name: n })).data.id;
+  const A = await mk('Anna Kontrolle'); const B = await mk('Bernd Kontrolle'); const C = await mk('Carl Weg');
+  eq((await U.fleet.patch(`/api/drivers/${C}`, { active: false })).status, 200);
+  const before = (await U.fleet.get('/api/drivers')).data.drivers.find((d) => d.id === A).status.check.status; eq(before, 'fehlt');
+  const body = { driver_ids: [A, B], checked_on: BERLIN_TODAY };
+  for (const u of [U.ws, U.driver, U.viewer]) eq((await u.post('/api/drivers/license-checks', body)).status, 403);
+  for (const x of [{ driver_ids: [] }, { result: 'maengel', note: 'x' }, { result: 'nicht_vorgelegt' }, { checked_on: '' }, { checked_on: '2099-01-01' }]) eq((await U.fleet.post('/api/drivers/license-checks', { ...body, ...x })).status, 400, JSON.stringify(x));
+  eq((await U.fleet.post('/api/drivers/license-checks', { ...body, driver_ids: [A, 'nix'] })).status, 404);
+  const ic = await U.fleet.post('/api/drivers/license-checks', { ...body, driver_ids: [A, C] }); eq(ic.status, 400); eq(ic.data.error || ic.data.code, 'driver_inactive');
+  eq((await U.fleet.get(`/api/drivers/${A}`)).data.license_checks.length, 0, 'nichts angelegt');
+  const r = await U.fleet.post('/api/drivers/license-checks', { ...body, result: 'in_ordnung' });
+  eq(r.status, 201, JSON.stringify(r.data)); eq(r.data.created, 2);
+  const da = (await U.fleet.get(`/api/drivers/${A}`)).data; eq(da.license_checks.length, 1); eq(da.license_checks[0].result, 'in_ordnung'); eq(da.license_checks[0].checked_on, BERLIN_TODAY);
+  eq((await U.fleet.get('/api/drivers')).data.drivers.find((d) => d.id === A).status.check.status, 'ok');
+  const r2 = await U.fleet.post('/api/drivers/license-checks', body); eq(r2.data.created, 0); eq(r2.data.existing, 2);
+  // nach einer Einzelkontrolle mit Mangel am selben Tag zählt „in Ordnung“ wieder als neue Kontrolle (wie Einzelerfassung)
+  eq((await U.fleet.post(`/api/drivers/${B}/license-checks`, { checked_on: BERLIN_TODAY, result: 'maengel', note: 'Klasse fehlt' })).status, 201);
+  const r3 = await U.fleet.post('/api/drivers/license-checks', body); eq(r3.data.rows.find((x) => x.driver_id === B).status, 'neu'); eq(r3.data.rows.find((x) => x.driver_id === A).status, 'vorhanden');
+  const au = (await e.DB.prepare(`SELECT detail FROM audit_log WHERE action='driver.license_check' AND target IN (?,?)`).bind(A, B).all()).results;
+  eq(au.filter((x) => JSON.parse(x.detail).batch === true).length, 3);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const DLB_DUE = ['faellig', 'bald', 'fehlt'];") && app.includes("api('POST', '/api/drivers/license-checks', b)") && app.includes("result: 'in_ordnung' };") && app.includes('${dtbHtml(list)}${dlbHtml(list)}'), 'Oberfläche');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['dlb_title', 'dlb_hint', 'dlb_pick', 'dlb_due', 'dlb_send']) ok(STRINGS[l][x], `${x} ${l}`); ok(PLURALS[l].dlb_done); ok(STRINGS[l].help_drivers_s.includes(STRINGS[l].dlb_title), 'Hilfe ' + l); }
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
