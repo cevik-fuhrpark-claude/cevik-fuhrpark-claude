@@ -10,6 +10,7 @@ RET={'de':'Vor der Rückgabe','uk':'Перед поверненням','en':'Bef
 OPEN={'de':'offene Vorgänge: 1','uk':'відкриті справи: 1','en':'open cases: 1'}
 CLEAR={'de':'keine offenen Vorgänge','uk':'немає відкритих справ','en':'no open cases'}
 LEASE={'de':'Leasing-/Mietfahrzeug','uk':'Лізинговий/орендований транспорт','en':'Leased/rented vehicle'}
+SVC={'de':'Wartungs-/Servicevertrag','uk':'Договір на обслуговування/сервіс','en':'Maintenance/service contract'}  # Backlog 414
 NOKM={'de':'Noch kein km-Stand','uk':'Показник пробігу ще не внесено','en':'No odometer reading'}
 fails=[]
 def check(c,m):
@@ -32,6 +33,8 @@ with sync_playwright() as p:
     api('POST','/api/vehicles',{'vin':V2[4:],'plate':'VR-LR 2882','site':'Dortmund'})
     r1=api('POST',f'/api/vehicles/{V1}/contracts',{'kind':'leasing','partner':'UI-Rückgabe-Leasing','evidence':'UI-Test','start_date':d(-700),'end_date':d(25)})
     r2=api('POST',f'/api/vehicles/{V2}/contracts',{'kind':'miete','partner':'UI-Rückgabe-Miete','evidence':'UI-Test','start_date':d(-60),'end_date':d(15)})
+    r3=api('POST',f'/api/vehicles/{V1}/contracts',{'kind':'wartung','partner':'UI-Full-Service','evidence':'UI-Test','start_date':d(-700),'end_date':d(400)})
+    check(r3['s'] in (200,201),f'Wartungsvertrag angelegt {r3["s"]}')
     check(r1['s'] in (200,201) and r2['s'] in (200,201),f'Verträge angelegt {r1["s"]}/{r2["s"]}')
     c=api('POST','/api/cases',{'vehicle_id':V1,'description':'Delle Seitenverkleidung (UI-Test Rückgabe)','priority':'niedrig','driveability':'fahrbereit','workshop_site':'DORTMUND','request_key':str(uuid.uuid4())})
     check(c['s'] in (200,201),'Vorgang angelegt '+str(c['s'])+' '+str(c['d'])[:200])
@@ -58,6 +61,7 @@ with sync_playwright() as p:
         q.goto(B+'/#/cases/'+c['d']['id']); q.wait_for_selector('[data-vilease]', state='attached', timeout=15000)
         vt=q.locator('details.vinfo').first.inner_text()
         check(LEASE[lang] in vt and 'UI-Rückgabe-Leasing' in vt,f'{lang} {w}px: Vorgang nennt Leasingvertrag')
+        check(SVC[lang] in vt and 'UI-Full-Service' in vt and q.locator('[data-viservice]').count()==1,f'{lang} {w}px: Vorgang nennt Wartungsvertrag (Backlog 414)')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: Vorgang ohne Querscrollen')
         if SHOTS: q.locator('details.vinfo').first.screenshot(path=f'{SHOTS}/rueckgabe_vorgang_{lang}_{w}.png')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')

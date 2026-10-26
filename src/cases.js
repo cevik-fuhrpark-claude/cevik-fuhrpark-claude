@@ -407,10 +407,11 @@ export async function getCaseDetail(env, user, envName, caseId) {
             (SELECT case_id, name AS item, 'part' AS item_kind, supplier, warranty_until, created_at FROM parts WHERE warranty_until >= ?5
              UNION ALL SELECT case_id, supplier AS item, 'external' AS item_kind, supplier, warranty_until, created_at FROM external_costs WHERE warranty_until >= ?5) g ON g.case_id=x.id
            WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.created_at < ?6 AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY g.warranty_until, g.created_at LIMIT ${WARR_CASE_MAX + 1}) w) AS warranties,
-        -- Backlog 290 (Leasing-/Mietfahrzeug beschädigt): am Meldetag laufende Leasing-/Mietverträge – nur für die Leitung (?8), Verträge sind Geschäftsdaten
+        -- Backlog 290 (Leasing-/Mietfahrzeug beschädigt): am Meldetag laufende Leasing-/Mietverträge – nur für die Leitung (?8), Verträge sind Geschäftsdaten;
+        -- Backlog 414 (Full-Service-/Wartungsvertrag): laufende Wartungsverträge ebenso (Leistungsumfang prüfen, bevor die eigene Werkstatt auf eigene Kosten repariert)
         (SELECT json_group_array(json_object('kind', k.kind, 'partner', k.partner, 'contract_no', k.contract_no, 'end_date', k.end_date)) FROM
-          (SELECT kind, partner, contract_no, end_date FROM vehicle_contracts WHERE ?8=1 AND vehicle_id=?1 AND kind IN ('leasing','miete') AND (ended_on IS NULL OR ended_on >= ?5)
-            AND (start_date IS NULL OR start_date <= ?5) ORDER BY end_date IS NULL, end_date LIMIT 5) k) AS leases,
+          (SELECT kind, partner, contract_no, end_date FROM vehicle_contracts WHERE ?8=1 AND vehicle_id=?1 AND kind IN ('leasing','miete','wartung') AND (ended_on IS NULL OR ended_on >= ?5)
+            AND (start_date IS NULL OR start_date <= ?5) ORDER BY kind='wartung', end_date IS NULL, end_date LIMIT 5) k) AS leases,
         ${HUSP_ONE_SQL}
       FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate(), c.id, berlinDate(c.created_at), c.created_at, wsOnly, isManager(user) ? 1 : 0).first();
     const km = kmn && kmn.km !== null && kmn.km !== undefined ? { km: kmn.km, measured_at: kmn.measured_at } : null;

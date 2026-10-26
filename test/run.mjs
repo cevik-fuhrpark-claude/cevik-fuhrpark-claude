@@ -23284,6 +23284,28 @@ await test('Backlog 413 (Blickwinkel „Jahresabschluss: Kosten 2026 für die St
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['crq_year', 'crq_prev', 'crq_12m']) ok(STRINGS[l][x], `${x} ${l}`); ok(STRINGS[l].help_costs_s.includes(STRINGS[l].crq_12m), 'Hilfe ' + l); }
 });
+await test('Backlog 414 (Blickwinkel „Fahrzeug im Full-Service-Leasing: Werkstattkosten trägt der Leasinggeber“): Kurzinfo im Vorgang nennt der Leitung auch laufende Wartungs-/Full-Service-Verträge (nach Leasing/Miete; nicht beendete/künftige, nicht Lesezugriff/Werkstatt); eigener Hinweis DE/UK/EN, Hilfe', async () => {
+  const { U, newCase, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'wartung', partner: 'Service GmbH', contract_no: 'FS-9', start_date: day(-100), end_date: day(300), evidence: 'Full-Service-Vertrag' })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Leasing AG', start_date: day(-100), end_date: day(500), evidence: 'Leasingvertrag' })).status, 201);
+  const old = (await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'wartung', partner: 'Alt-Service', start_date: day(-900), end_date: day(-400), evidence: 'Wartungsvertrag alt' })).data.id;
+  eq((await U.fleet.post(`/api/contracts/${old}/end`, { ended_on: day(-400), end_note: 'ausgelaufen' })).status, 200);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'wartung', partner: 'Künftig-Service', start_date: day(60), evidence: 'Wartungsvertrag neu' })).status, 201);
+  const id = await newCase({ description: 'Bremsen quietschen' });
+  const vi = (await U.fleet.get(`/api/cases/${id}`)).data.vehicle_info;
+  eq(JSON.stringify(vi.lease_contracts), JSON.stringify([{ kind: 'leasing', partner: 'Leasing AG', contract_no: null, end_date: day(500) }, { kind: 'wartung', partner: 'Service GmbH', contract_no: 'FS-9', end_date: day(300) }]), 'Leasing zuerst, dann laufender Wartungsvertrag');
+  ok(!('lease_contracts' in (await U.viewer.get(`/api/cases/${id}`)).data.vehicle_info), 'Lesezugriff ohne Verträge');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['vi_service', 'vi_service_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(!/\d/.test(STRINGS[l].vi_service_hint), 'keine Frist/kein Betrag ' + l);
+    ok(/Full-Service|full service|full-service/i.test(STRINGS[l].help_contracts_s), 'Hilfe Verträge ' + l);
+  }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-viservice') && app.includes("const svc = ls.filter((l) => l.kind === 'wartung')"), 'eigene Zeile in der Kurzinfo');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
