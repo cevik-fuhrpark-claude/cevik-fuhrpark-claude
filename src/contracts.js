@@ -410,7 +410,7 @@ export async function contractFindings(env, settings, envName = 'production') {
     const s = contractStatus(c, km.get(c.vehicle_id), today, w);
     const base = { vehicle_id: c.vehicle_id, owner_role: 'fleet' };
     if (s.end && s.end.status === 'abgelaufen') out.push({ ...base, code: 'CONTRACT_ENDED', subject: `${c.id}|end`, severity: 'handeln', requires_decision: 1,
-      ...fm('CONTRACT_ENDED', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, ...ret(c) }), next_action: 'Rückgabe/Verlängerung klären; Vertrag in der Fahrzeugakte beenden oder mit neuem Nachweis aktualisieren.' });
+      ...fm('CONTRACT_ENDED', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, ...ret(c) }), next_action: c.kind === 'versicherung' ? 'Versicherungsschutz bzw. Folgevertrag klären; Vertrag beenden oder Folgevertrag mit Nachweis erfassen.' : 'Rückgabe/Verlängerung klären; Vertrag in der Fahrzeugakte beenden oder mit neuem Nachweis aktualisieren.' });
     else if (s.end && s.end.status === 'laeuft_aus') out.push({ ...base, code: 'CONTRACT_ENDS_SOON', subject: `${c.id}|end`, severity: 'hinweis', requires_decision: 0,
       ...fm('CONTRACT_ENDS_SOON', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, days: s.end.days, ...ret(c) }), next_action: 'Rückgabe, Verlängerung oder Ersatzfahrzeug klären.' });
     if (s.notice && s.notice.status === 'bald') out.push({ ...base, code: 'CONTRACT_NOTICE_DUE', subject: `${c.id}|notice`, severity: 'hinweis', requires_decision: 1,

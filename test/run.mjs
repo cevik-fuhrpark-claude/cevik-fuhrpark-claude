@@ -22889,6 +22889,38 @@ await test('Backlog 399 (Randnotiz 398): Datenqualität „Reifengröße der Ant
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['dq_tire_size_after_tacho', 'dq_last_tacho']) ok(STRINGS[l][k], `${l}.${k}`);
   const fs = await import('node:fs'); ok(fs.readFileSync(new URL('../public/csv.js', import.meta.url), 'utf8').includes("i.check === 'tire_size_after_tacho'"), 'Anzeige in der App-Sprache');
 });
+await test('Backlog 400–403 (Blickwinkel „Lkw abgemeldet / Versicherung beendet, steht aber in Betrieb“): Datenqualität „kein laufender Versicherungsvertrag“ (nur wenn je einer erfasst war), Wiederinbetriebnahme nennt es, CONTRACT_ENDED mit Versicherungstext, „Mein Fahrzeug“ kennzeichnet ruhende Fahrzeuge', async () => {
+  const { U, V1 } = await freshWorld();
+  const dq = async () => (await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'insurance_none_running' && i.vehicle_id === V1);
+  eq((await dq()).length, 0, 'ohne erfassten Vertrag kein Hinweis');
+  const c1 = (await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Muster-Versicherung AG', contract_no: 'P-400', evidence: 'Police P-400' })).data.id;
+  eq((await dq()).length, 0, 'laufender Vertrag');
+  eq((await U.fleet.post(`/api/contracts/${c1}/end`, { ended_on: bDayOff(-1), end_note: 'Lkw abgemeldet' })).status, 200);
+  const it = await dq(); eq(it.length, 1); eq(it[0].severity, 'hinweis'); ok(it[0].detail.includes('Muster-Versicherung AG (P-400)') && it[0].detail_args.ended === bDayOff(-1), JSON.stringify(it[0]));
+  // abgelaufener, nicht beendeter Vertrag: Befund CONTRACT_ENDED mit Versicherungstext; Datenqualität ebenfalls
+  const c2 = (await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Zweit-Vers', start_date: bDayOff(-400), end_date: bDayOff(-2), evidence: 'Police Z' })).data;
+  ok(c2.id, JSON.stringify(c2)); eq((await dq()).length, 1, 'Ende überschritten läuft nicht');
+  await U.fleet.post('/api/agent/run');
+  const f = (await U.fleet.get('/api/master')).data.findings.find((x) => x.finding_code === 'CONTRACT_ENDED' && x.vehicle_id === V1);
+  ok(f && /Versicherungsschutz/.test(f.next_action), JSON.stringify(f));
+  // ruhend → wieder in Auswertungen: Rückkehr-Prüfung nennt fehlende Versicherung
+  eq((await U.fleet.post(`/api/vehicles/${V1}/evaluation`, { excluded: true, reason: 'abgemeldet' })).status, 200);
+  eq((await dq()).length, 0, 'ruhend: kein Hinweis');
+  // Fahrer: „Mein Fahrzeug“ kennzeichnet das ruhende Fahrzeug
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test' })).status, 201);
+  let mv = (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1); eq(mv.eval_excluded, true);
+  const back = await U.fleet.post(`/api/vehicles/${V1}/evaluation`, { excluded: false }); eq(back.status, 200); eq(back.data.return_check.insurance_none_running, true, JSON.stringify(back.data));
+  mv = (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1); eq(mv.eval_excluded, false);
+  // neuer laufender Vertrag → alles still
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Neu-Vers', evidence: 'Police N' })).status, 201);
+  eq((await dq()).length, 0, 'Folgevertrag');
+  const r2 = await U.fleet.post(`/api/vehicles/${V1}/evaluation`, { excluded: true, reason: 'x' }); eq(r2.status, 200);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/evaluation`, { excluded: false })).data.return_check.insurance_none_running, false);
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['dq_insurance_none_running', 'dq_ins_ended', 'rc_no_insurance', 'drv_resting']) ok(STRINGS[l][k], `${l}.${k}`);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-drvresting') && app.includes("rc.insurance_none_running ? t('rc_no_insurance')"), 'Oberfläche');
+  ok(fs.readFileSync(new URL('../public/csv.js', import.meta.url), 'utf8').includes("i.check === 'insurance_none_running'"), 'Anzeige in der App-Sprache');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

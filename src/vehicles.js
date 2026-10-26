@@ -623,14 +623,17 @@ async function returnCheck(env, envName, vehicleId) {
       (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND kind NOT IN ('HU','SP') AND next_due_date < ?2 AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) AS o,
       (SELECT COUNT(*) FROM cases WHERE vehicle_id=?1 AND environment=?3 AND safety_lock=1 AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS l,
       (SELECT COUNT(*) FROM vehicle_contracts WHERE vehicle_id=?1 AND ended_on IS NULL AND end_date IS NOT NULL AND end_date < ?2) AS c,
-      (SELECT MAX(measured_at) FROM odometer_readings WHERE vehicle_id=?1) AS k`).bind(vehicleId, today, envName).first();
+      (SELECT MAX(measured_at) FROM odometer_readings WHERE vehicle_id=?1) AS k,
+      -- Backlog 401: Versicherung erfasst, aber keine läuft (beendet oder Ende überschritten) – beim Abmelden meist beendet
+      (EXISTS (SELECT 1 FROM vehicle_contracts WHERE vehicle_id=?1 AND kind='versicherung') AND NOT EXISTS (SELECT 1 FROM vehicle_contracts WHERE vehicle_id=?1 AND kind='versicherung'
+        AND (ended_on IS NULL OR ended_on >= ?2) AND (end_date IS NULL OR end_date >= ?2))) AS ni`).bind(vehicleId, today, envName).first();
   let overdue = row.o || 0; let unclear = 0;
   const x = (await loadHuSpInputs(env, [vehicleId])).get(vehicleId);
   if (x) {
     const h = huSpFor(x, today, maintenanceWarnDays((await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first() || {}).value));
     for (const y of [h.hu, h.sp]) { if (!y) continue; if (y.status === 'ueberfaellig') overdue++; else if (y.status === 'ungeklaert') unclear++; }
   }
-  return { overdue_inspections: overdue, unclear_inspections: unclear, locked_cases: row.l || 0, expired_contracts: row.c || 0, last_km_at: row.k || null };
+  return { overdue_inspections: overdue, unclear_inspections: unclear, locked_cases: row.l || 0, expired_contracts: row.c || 0, insurance_none_running: !!row.ni, last_km_at: row.k || null };
 }
 
 export async function setVehicleEvaluation(env, user, envName, vehicleId, body) {
@@ -769,7 +772,7 @@ export async function endAssignment(env, user, envName, assignmentId) {
 export async function myVehicles(env, user, envName) {
   if (user.role !== 'driver') throw forbidden();
   const now = nowIso();
-  const vs = (await env.DB.prepare(`SELECT v.id, v.plate, v.kind, v.site, v.manufacturer, v.model, v.trailer_plate, d.valid_from FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id
+  const vs = (await env.DB.prepare(`SELECT v.id, v.plate, v.kind, v.site, v.manufacturer, v.model, v.trailer_plate, COALESCE(v.eval_excluded,0) AS eval_excluded, d.valid_from FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id
     WHERE d.user_id=? AND (d.valid_to IS NULL OR d.valid_to > ?) AND v.active=1 ORDER BY d.valid_from DESC`).bind(user.id, now).all()).results;
   if (!vs.length) return { vehicles: [] };
   // Gespann: gekoppelter Anhänger bzw. Zugmaschine laut Stammliste (fest gekoppelt) – deren Sperre betrifft die Fahrt ebenfalls
@@ -846,7 +849,8 @@ export async function myVehicles(env, user, envName) {
   const nextInsp = (vid) => [...rules.results.filter((r) => r.vehicle_id === vid && r.next_due_date && !['HU', 'SP'].includes(r.kind) && !(r.kind === 'Rückruf' && r.last_done_date)), ...(virtBy.get(vid) || [])].sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)).slice(0, 4).map(({ kind, next_due_date, planned_date }) => ({ kind, next_due_date, planned_date: planned_date >= today ? planned_date : null }));
   return {
     vehicles: vs.map((v) => ({
-      ...v, locked: !!(lockMap.get(v.id) || {}).locked, open_cases_total: (lockMap.get(v.id) || {}).open || 0,
+      // Backlog 403: ruhend → Hinweis an den Fahrer
+      ...v, eval_excluded: !!v.eval_excluded, locked: !!(lockMap.get(v.id) || {}).locked, open_cases_total: (lockMap.get(v.id) || {}).open || 0,
       my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id && c.mine).map(({ mine: _m, check_item: _c, safety_lock: _s, planned_date: _p, parts_expected_date: _e, ...c }) => c),
       // alle offenen (vorher still 10 – ältere sicherheitsrelevante verdrängt, 20.10.2026); gesperrte/kritische zuerst
       known_defects: defects(v.id),
