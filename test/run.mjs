@@ -24151,6 +24151,14 @@ await test('Backlog 442 (Folge aus 441, Rückruf eines Teilelieferanten): gefund
   }
 });
 
+await test('Backlog 443 (Folge aus 441): „Wo noch verbaut?“ an der Teilenummer im Vorgang (Inhaber/Leitung/Werkstatt, ab 3 Zeichen) belegt die Suche der Teile-Verwendung vor; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes(`\${['owner', 'fleet', 'workshop'].includes(S.me.role) && p.part_number.trim().length >= 3 ? \` <a class="small noprint" href="#/stock/usage" data-puq="\${esc(p.part_number)}">\${esc(t('ptu_more'))}</a>\``), 'Link im Vorgang');
+  ok(app.includes("e.target.closest('a[data-puq]')") && app.includes("sessionStorage.setItem('cfp_pu_q', a.dataset.puq)"), 'Suche vorbelegt');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ptu_more && STRINGS[l].help_stock_s.includes(STRINGS[l].ptu_more), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

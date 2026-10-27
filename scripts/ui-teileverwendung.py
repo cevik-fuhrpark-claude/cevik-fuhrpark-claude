@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (27.10.2026, Backlog 441, Blickwinkel „Rückruf eines Teilelieferanten: an welchen Lkw ist Teil X verbaut?“):
 # Leitung öffnet Lager → „Teile-Verwendung (Rückruf)“, sucht die Teilenummer in anderer Schreibweise und findet den Einbau mit Fahrzeug,
 # Vorgang, Lieferant, Gewährleistung; aus der Artikelakte „Wo verbaut?“ ist die Suche vorbelegt; Werkstatt eines anderen Standorts findet
-# nichts; Backlog 442: Leitung erfasst die gefundenen Fahrzeuge als offenen Rückruf (Vorschau → Übernehmen). DE 390, UK 820, EN 1366; kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (CFP_URL, Standard Port 8787);
+# nichts; Backlog 442: Leitung erfasst die gefundenen Fahrzeuge als offenen Rückruf (Vorschau → Übernehmen); Backlog 443: „Wo noch verbaut?“ im Vorgang. DE 390, UK 820, EN 1366; kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (CFP_URL, Standard Port 8787);
 # Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -75,6 +75,12 @@ with sync_playwright() as p:
         q.click('#purcapply'); q.wait_for_selector('#purcres a[href="#/maintenance"]', timeout=10000)
         mr = [m for m in (api('GET', f'/api/vehicles/VIN:{vin}')['d'].get('maintenance') or []) if m['kind'] == 'Rückruf']
         check(len(mr) == 1 and mr[0]['evidence'].startswith(f'TN-RS {n}') and not mr[0]['next_due_date'], f'{lang}: Rückruf offen in der Akte, ohne Frist')
+        # Backlog 443: im Vorgang „Wo noch verbaut?“ an der Teilenummer
+        q.evaluate("sessionStorage.removeItem('cfp_pu_q')")
+        q.goto(B + f'/#/cases/{cid}'); q.wait_for_selector('a[data-puq]', timeout=15000)
+        check(q.inner_text('a[data-puq]').strip() == T['ptu_more'], f'{lang}: Link im Vorgang')
+        q.click('a[data-puq]'); q.wait_for_selector(f'#putab a[href="#/cases/{cid}"]', timeout=10000)
+        check(q.input_value('#puq') == pn, f'{lang}: aus dem Vorgang vorbelegt')
         # Artikelakte → „Wo verbaut?“ belegt die Suche mit der Teilenummer vor
         q.evaluate("sessionStorage.removeItem('cfp_pu_q')")
         q.goto(B + f'/#/stock/{sid}'); q.wait_for_selector('#itempu', timeout=15000)
