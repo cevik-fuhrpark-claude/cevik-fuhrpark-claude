@@ -24304,6 +24304,28 @@ await test('Backlog 449 (Blickwinkel „Lieferant liefert nur einen Teil der Bes
   ok(app.includes("case 'parts_partial':") && app.includes('partsPartialRow(pw)') && app.includes("'wait_parts', 'parts_partial',"), 'Oberfläche');
 });
 
+await test('Backlog 450 (Folge aus 449, Wareneingang): nach dem Buchen wartende Aufträge der Werkstatt mit Vermerk; „Vermerk passt“ nur bei Lieferant/Artikelname/Teilenummer (Schreibweise egal) im Vermerk; Listenfelder für die Werkstatt vorhanden; DE/UK/EN', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const a = await toRepair();
+  eq((await cmd(U.ws, a, 'wait_parts', {}, 'Bremsbelag-Satz BB 4711 bestellt')).status, 200);
+  const row = (await U.ws.get('/api/cases?status=open')).data.cases.find((x) => x.id === a);
+  for (const k of ['case_no', 'plate', 'workshop_site', 'parts_wait_note', 'status_since']) ok(row[k], 'Werkstatt-Liste liefert ' + k);
+  eq((await U.wsMuc.get('/api/cases?status=open')).data.cases.some((x) => x.id === a), false, 'andere Werkstatt sieht den Auftrag nicht');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('async function rcptWaiting('), app.indexOf('\n}\n', app.indexOf('async function rcptWaiting(')));
+  ok(fn.length > 100 && fn.includes("c.status === 'wartet_teile' && c.workshop_site === site") && fn.includes("replace(/[^a-z0-9]/g, '')") && fn.includes('data-rcwhit'), 'Abgleich in der Oberfläche');
+  ok(app.includes('if (!res.duplicate) rcptWaiting(body.site, body.supplier,'), 'Aufruf nach dem Buchen (nicht bei Wiederholung)');
+  // Abgleich nachgebaut: Teilenummer in anderer Schreibweise passt
+  const low = (x) => String(x || '').toLowerCase(); const pn = (x) => low(x).replace(/[^a-z0-9]/g, '');
+  const note = row.parts_wait_note; ok(pn(note).includes(pn('bb-4711')), 'Teilenummer BB-4711 passt');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['rcw_title', 'rcw_hint', 'rcw_match', 'rcw_no_note']) ok(STRINGS[l][k], `${l}: ${k}`);
+    ok(STRINGS[l].rcw_hint.includes('{a}') && STRINGS[l].rcw_hint.includes('{b}') && STRINGS[l].rcw_hint.includes(STRINGS[l].rcw_match), l + ': Hinweis');
+    ok(STRINGS[l].help_stock_s.includes(STRINGS[l].rcw_match) && STRINGS[l].help_stock_s.includes(STRINGS[l].act_parts_partial), l + ': Hilfe Lager');
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

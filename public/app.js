@@ -3923,8 +3923,24 @@ async function viewStockReceipt() {
       const names = new Map(items.map((i) => [i.id, i]));
       $('#rcres').innerHTML = `<section class="panel ok" id="rcdone"><p><b>${esc(t('rcpt_done').replace('{n}', res.lines))}</b>${body.document_ref ? ' · ' + esc(body.document_ref) : ''}</p>${res.items ? `<ul>${res.items.map((x) => `<li><a href="#/stock/${esc(x.id)}">${esc(x.name)}</a>: +${fmtNum(x.qty)} ${esc(unitL((names.get(x.id) || {}).unit || 'Stk'))} · ${esc(t('on_hand'))} ${fmtNum(x.on_hand)}</li>`).join('')}</ul>` : ''}</section>`;
       $('#rclines').innerHTML = ''; $('#rcsup').value = ''; $('#rcdoc').value = ''; $('#rcnote').value = ''; addLine();
+      if (!res.duplicate) rcptWaiting(body.site, body.supplier, (res.items || []).map((x) => names.get(x.id) || x));
     } catch (err) { toast(err.message, true); }
   };
+}
+// Backlog 450 (Folge aus 449, Blickwinkel „Wareneingang: gelieferte Teile gehören zu einem wartenden Auftrag“): nach dem Buchen die Aufträge
+// dieser Werkstatt im Status „wartet auf Teile“ mit ihrem Vermerk zeigen – nennt der Vermerk den Lieferanten, einen gelieferten Artikel oder
+// dessen Teilenummer, steht der Auftrag oben mit Kennzeichnung. Reine Textübereinstimmung, keine Zuordnung, nichts wird automatisch gebucht.
+async function rcptWaiting(site, supplier, got) {
+  let cs; try { cs = (await api('GET', '/api/cases?status=open')).cases; } catch { return; }
+  const box = $('#rcres'); if (!box || !$('#rcdone')) return;
+  const w = cs.filter((c) => c.status === 'wartet_teile' && c.workshop_site === site);
+  if (!w.length) return;
+  const low = (x) => String(x || '').toLowerCase(); const pn = (x) => low(x).replace(/[^a-z0-9]/g, '');
+  const keys = [...(supplier && supplier.trim().length >= 3 ? [{ k: low(supplier.trim()) }] : []), ...got.flatMap((i) => [...(i.name && i.name.trim().length >= 4 ? [{ k: low(i.name.trim()) }] : []), ...(pn(i.part_number).length >= 4 ? [{ p: pn(i.part_number) }] : [])])];
+  const hit = (c) => { const n = low(c.parts_wait_note); const np = pn(c.parts_wait_note); return !!n && keys.some((x) => (x.k ? n.includes(x.k) : np.includes(x.p))); };
+  const rows = w.map((c) => ({ c, m: hit(c), d: partsWaitDays(c) })).sort((a, b) => (b.m - a.m) || ((b.d || 0) - (a.d || 0)));
+  box.insertAdjacentHTML('beforeend', `<section class="panel" id="rcwait"><h3>${esc(t('rcw_title'))} <span class="chip">${rows.length}</span></h3><p class="small muted">${esc(t('rcw_hint').replace('{a}', t('act_resume_repair')).replace('{b}', t('act_parts_partial')))}</p>
+    <ul>${rows.map(({ c, m, d }) => `<li${m ? ' data-rcwhit' : ''}><a href="#/cases/${esc(c.id)}">${esc(c.case_no)} · ${esc(c.plate)}</a>${m ? ` <span class="chip mittel">${esc(t('rcw_match'))}</span>` : ''}<div class="small">${c.parts_wait_note ? `${esc(t('parts_wait_for'))}: ${ltxt(clipTxt(c.parts_wait_note, 120))}` : `<span class="muted">${esc(t('rcw_no_note'))}</span>`}${d ? ` · ${esc(t('parts_wait_days').replace('{d}', nDays(d)))}` : ''}</div></li>`).join('')}</ul></section>`);
 }
 
 // Backlog 443: „Wo noch verbaut?“ an einer Teilenummer im Vorgang – belegt die Suche der Teile-Verwendung vor (vor dem Seitenwechsel)

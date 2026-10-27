@@ -245,6 +245,7 @@ UI-Hinweis zum Termin: Leitung setzt Termin mit Hinweis („nur vormittags“), 
 UI-Suche nach Rechnung/Teil: Leitung findet den Vorgang über Rechnungsnummer (Liste) und Lieferant (Lupe), Werkstatt über die Teilenummer, nicht über die Rechnung, DE 390/UK 820/EN 1366|ui-suche-rechnung.py|/tmp/cfp-suche-rechnung.log
 UI-Teile-Verwendung (Rückruf): Leitung findet über Lager und Artikelakte „Wo verbaut?“ den Einbau per Teilenummer in anderer Schreibweise, Werkstatt anderer Standort nichts, DE 390/UK 820/EN 1366|ui-teileverwendung.py|/tmp/cfp-teileverwendung.log
 UI-Wareneingang: Werkstatt bucht eine Lieferung mit zwei Positionen (Lieferant/Lieferschein einmal), Pflichtmenge, doppelter Artikel abgewiesen, DE 390/UK 820/EN 1366|ui-wareneingang.py|/tmp/cfp-wareneingang.log
+UI-Wareneingang: wartende Aufträge der Werkstatt mit Vermerk, passender (Teilenummer) oben gekennzeichnet, DE 390/UK 820/EN 1366|ui-wareneingang-wartend.py|/tmp/cfp-wareneingang-wartend.log
 UI-Standort mit Stand: Werkstatt trägt Standort ein, Vorgang/Werkstattplan/Akte/Disposition nennen „Stand …“, Hilfe Disposition, DE 390/UK 820/EN 1366|ui-standort-stand.py|/tmp/cfp-standort-stand.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
