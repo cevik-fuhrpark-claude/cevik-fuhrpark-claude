@@ -162,7 +162,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     let reason = null; try { reason = JSON.parse(deact.detail || '{}').reason || null; } catch { reason = null; }
     inactiveInfo = isManager(user) ? { since: deact.created_at, reason, by_name: deact.display_name || null } : { since: deact.created_at };
   }
-  let caseRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, description, created_at, closed_at, workshop_ack_at, ${FIRST_ACK_SQL('cases')}, workshop_site, origin, parent_case_id, safety_lock, maintenance_rule_id, maintenance_event_id, reporter_id, (SELECT u.role FROM users u WHERE u.id=cases.reporter_id) AS reporter_role, suggested_workshop_site, vehicle_location, tow_service, towed_on, handover_keys, handover_papers, pickup_note
+  let caseRows = (await env.DB.prepare(`SELECT id, case_no, status, priority, description, created_at, closed_at, workshop_ack_at, ${FIRST_ACK_SQL('cases')}, workshop_site, origin, parent_case_id, safety_lock, maintenance_rule_id, maintenance_event_id, reporter_id, (SELECT u.role FROM users u WHERE u.id=cases.reporter_id) AS reporter_role, suggested_workshop_site, vehicle_location, vehicle_location_at, tow_service, towed_on, handover_keys, handover_papers, pickup_note
     FROM cases WHERE vehicle_id=? AND environment=? ORDER BY created_at DESC`).bind(vehicleId, envName).all()).results;
   const allCases = caseRows; // ungefiltert – für „Prüfung nicht bestanden“ (gleiche Regel wie Fahrzeugliste)
   // Vorgänge, die die Person öffnen darf – Verweise (Kontrolle, Reifenereignis) nur darauf verlinken (22.10.2026: Werkstatt sah in Akte/Zeitleiste

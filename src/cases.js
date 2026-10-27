@@ -1360,7 +1360,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const from = { location: c.vehicle_location || null, service: c.tow_service || null, on: c.towed_on || null };
       const to = { location: loc, service: svc, on };
       if (from.location === to.location && from.service === to.service && from.on === to.on) throw bad('validation', 'Standort ist unverändert.');
-      set.vehicle_location = loc; set.tow_service = svc; set.towed_on = on;
+      // Zeitpunkt der Angabe (Migration 0094): „Stand …“ in Vorgang, Akte, Werkstattplan und Disposition; alles leer = entfernt
+      set.vehicle_location = loc; set.tow_service = svc; set.towed_on = on; set.vehicle_location_at = loc || svc || on ? now : null;
       payload = { from: from.location || from.service || from.on ? from : null, to: loc || svc || on ? to : null };
       break;
     }

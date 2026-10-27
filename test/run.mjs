@@ -24048,6 +24048,33 @@ await test('Backlog 439 (Blickwinkel „Rechnung der Fremdfirma kommt per Post �
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].case_search_mgr && STRINGS[l].case_search_ws, l); ok(/1187|Rechnungs|рахун|invoice/i.test(STRINGS[l].help_costs_s.split('|').pop()) && /Rechnungs|рахун|invoice/i.test(STRINGS[l].search_hint), l + ': Hilfe/Suchhinweis'); }
 });
 
+await test('Backlog 440 (Blickwinkel „Lkw kommt von der Fremdfirma zurück – Standortangabe veraltet?“): Standort des Fahrzeugs mit Zeitpunkt (Migration 0094, Bestand aus dem Verlauf), Vorgang/Akte/Werkstattplan liefern ihn, Entfernen leert ihn; Anzeige „Stand …“ DE/UK/EN', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld();
+  const id = await newCase({ description: 'Reifen innen abgefahren' });
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Achsvermessung extern')).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200);
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: bDayOff(1) })).status, 200);
+  const t0 = Date.now();
+  eq((await cmd(U.ws, id, 'set_vehicle_location', { vehicle_location: 'Fa. Prüfstand, Achsvermessung' })).status, 200);
+  const c1 = (await U.fleet.get(`/api/cases/${id}`)).data.case; ok(c1.vehicle_location_at && Math.abs(Date.parse(c1.vehicle_location_at) - t0) < 60000, JSON.stringify(c1.vehicle_location_at));
+  const it = (await U.fleet.get('/api/workshop/plan?days=7')).data.days.flatMap((x) => x.items).find((x) => x.id === id); eq(it.vehicle_location_at, c1.vehicle_location_at, 'Werkstattplan');
+  const vc = (await U.fleet.get(`/api/vehicles/${V1}`)).data.cases.find((x) => x.id === id); eq(vc.vehicle_location_at, c1.vehicle_location_at, 'Fahrzeugakte');
+  ok((await U.fleet.get('/api/cases?status=open')).data.cases.find((x) => x.id === id).vehicle_location_at, 'Vorgangsliste');
+  // Bestand: Migration setzt den Zeitpunkt aus dem letzten Verlaufseintrag
+  e.DB.db.prepare('UPDATE cases SET vehicle_location_at=NULL WHERE id=?').run(id);
+  const fs = await import('node:fs'); const sql = fs.readFileSync(new URL('../migrations/0094_case_vehicle_location_at.sql', import.meta.url), 'utf8');
+  e.DB.db.exec(sql.slice(sql.indexOf('UPDATE cases')));
+  const ev = (await U.fleet.get(`/api/cases/${id}`)).data.events.filter((x) => x.action === 'set_vehicle_location').pop();
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.case.vehicle_location_at, ev.created_at, 'aus dem Verlauf');
+  // alles leer = entfernt, Zeitpunkt auch
+  eq((await cmd(U.ws, id, 'set_vehicle_location', { vehicle_location: '' })).status, 200);
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.case.vehicle_location_at, null);
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/\$\{vlAt\((c|i)\)\}/g) || []).length, 4, 'Vorgang, Akte, Disposition, Werkstattplan');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].vl_as_of && STRINGS[l].help_dispo_s.includes(STRINGS[l].vl_title) && STRINGS[l].help_dispo_s.includes(STRINGS[l].vl_as_of), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

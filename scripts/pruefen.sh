@@ -241,6 +241,7 @@ UI-Tachograph ungeklärt: Fahrer sieht Fahrtenschreiber ohne Termin als „Frist
 UI-Dublette Gespann: Meldeformular zeigt Mängel des gekoppelten Aufliegers, Hinweis Gespannteil beim Ablehnen, Meldezeit der Dublette im Original, DE 390/UK 820/EN 1366|ui-dublette-gespann.py|/tmp/cfp-dublette-gespann.log
 UI-Hinweis zum Termin: Leitung setzt Termin mit Hinweis („nur vormittags“), Vorgang/Verlauf/Werkstattplan und Disposition (Geplante Termine, Nicht einplanen) zeigen ihn, DE 390/UK 820/EN 1366|ui-termin-hinweis.py|/tmp/cfp-termin-hinweis.log
 UI-Suche nach Rechnung/Teil: Leitung findet den Vorgang über Rechnungsnummer (Liste) und Lieferant (Lupe), Werkstatt über die Teilenummer, nicht über die Rechnung, DE 390/UK 820/EN 1366|ui-suche-rechnung.py|/tmp/cfp-suche-rechnung.log
+UI-Standort mit Stand: Werkstatt trägt Standort ein, Vorgang/Werkstattplan/Akte/Disposition nennen „Stand …“, Hilfe Disposition, DE 390/UK 820/EN 1366|ui-standort-stand.py|/tmp/cfp-standort-stand.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log
