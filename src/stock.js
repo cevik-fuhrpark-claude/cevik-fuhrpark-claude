@@ -82,6 +82,17 @@ export async function listStock(env, user, envName, query) {
 // Idempotent über request_key (je Position „<Schlüssel>-<Nr.>“): Wiederholung nach verlorener Antwort bucht nichts doppelt.
 export const RECEIPT_MAX_LINES = 50;
 const NOT_IN_SITE = 'Artikel nicht in diesem Lager.';
+// Backlog 452 (Folge aus 449, Teillieferung im Lager): Zugang zu einem Artikel mit Bestellvermerk – deckt die Menge die vermerkte Bestellmenge,
+// endet der Vermerk wie bisher; ist sie kleiner (Teillieferung), bleibt der Vermerk mit der Restmenge (Liefertermin/Bemerkung unverändert) stehen,
+// damit der Bestellvorschlag den Rest nicht erneut als „noch zu bestellen“ zeigt. Kommt der Rest nicht: „Vermerk aufheben“.
+// Reihenfolge im Stapel: erst beenden (gedeckt oder ohne Menge), dann Rest mindern – beide gegen den Stand in der Transaktion, nicht den gelesenen.
+const ORDER_EPS = 0.0005;
+function orderAfterReceipt(env, id, qty, now) {
+  return [env.DB.prepare(`UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=?1
+      WHERE id=?2 AND ordered_on IS NOT NULL AND (ordered_qty IS NULL OR ordered_qty - ?3 <= ${ORDER_EPS})`).bind(now, id, qty),
+    env.DB.prepare(`UPDATE stock_items SET ordered_qty=round(ordered_qty - ?3, 3), updated_at=?1 WHERE id=?2 AND ordered_on IS NOT NULL AND ordered_qty - ?3 > ${ORDER_EPS}`).bind(now, id, qty)];
+}
+
 export async function receipt(env, user, envName, body) {
   const site = siteScope(user, body && body.site);
   if (!site) throw bad('validation', 'Lager angeben.');
@@ -98,7 +109,7 @@ export async function receipt(env, user, envName, body) {
   if (ids.some((x) => !x)) throw bad('validation', 'Jede Position braucht einen Artikel.');
   if (new Set(ids).size !== ids.length) throw bad('validation', 'Ein Artikel steht mehrfach im Wareneingang – Mengen bitte zusammenfassen.');
   const items = new Map((await env.DB.prepare(`SELECT * FROM stock_items WHERE environment=? AND site=? AND id IN (SELECT value FROM json_each(?))`).bind(envName, site, JSON.stringify(ids)).all()).results.map((i) => [i.id, i]));
-  const now = nowIso(); const stmts = []; const out = [];
+  const now = nowIso(); const stmts = []; const out = []; const out_rest = new Map();
   lines.forEach((l, idx) => {
     const it = items.get(ids[idx]);
     if (!it) throw bad('validation', `Position ${idx + 1}: ${NOT_IN_SITE}`);
@@ -113,7 +124,8 @@ export async function receipt(env, user, envName, body) {
       if (Number(price) !== Number(it.unit_price_net ?? NaN)) stmts.push(env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)`)
         .bind(uuid(), user.id, 'stock.price', null, JSON.stringify({ item: it.id, name: it.name, site: it.site, changed: { unit_price_net: { from: it.unit_price_net ?? null, to: price } } }), now));
     }
-    stmts.push(env.DB.prepare('UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=? WHERE id=? AND ordered_on IS NOT NULL').bind(now, it.id));
+    stmts.push(...orderAfterReceipt(env, it.id, qty, now));
+    if (it.ordered_on && it.ordered_qty !== null && it.ordered_qty - qty > ORDER_EPS) out_rest.set(it.id, r3(it.ordered_qty - qty));
     out.push({ id: it.id, name: it.name, qty });
   });
   stmts.push(auditStmt(env, user.id, 'stock.receipt', null, { site, supplier, document_ref: docRef, lines: out.length, environment: envName }));
@@ -121,7 +133,7 @@ export async function receipt(env, user, envName, body) {
     if (rk && String(e && e.message).includes('UNIQUE')) return { ok: true, duplicate: true, lines: lines.length };
     throw e;
   }
-  for (const o of out) o.on_hand = await onHand(env, o.id);
+  for (const o of out) { o.on_hand = await onHand(env, o.id); if (out_rest.has(o.id)) o.order_rest = out_rest.get(o.id); }
   return { ok: true, lines: out.length, items: out };
 }
 async function loadItem(env, user, envName, id) {
@@ -256,7 +268,7 @@ export async function addMovement(env, user, envName, id, body) {
     .bind(uuid(), user.id, 'stock.price', null, JSON.stringify({ item: id, name: it.name, site: it.site, changed: { unit_price_net: { from: it.unit_price_net ?? null, to: price } } }), nowIso()));
   // Lieferung eingegangen: Bestellvermerk endet (Teillieferung → neu vermerken, falls noch offen)
   // unabhängig vom vorher gelesenen Stand (20.10.2026: Vermerk zwischen Lesen und Buchen gesetzt → blieb nach der Lieferung stehen)
-  if (type === 'zugang') stmts.push(env.DB.prepare('UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=? WHERE id=? AND ordered_on IS NOT NULL').bind(nowIso(), id));
+  if (type === 'zugang') stmts.push(...orderAfterReceipt(env, id, qty, nowIso()));
   if (qty < 0) stmts.push(...stockGuardNonNegative(env, id));
   try { await env.DB.batch(stmts); } catch (e) {
     if (rkey && String(e && e.message).includes('UNIQUE')) {
@@ -268,7 +280,8 @@ export async function addMovement(env, user, envName, id, body) {
     if (isCheck(e)) { const av = await onHand(env, id); throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
     throw e;
   }
-  return { ok: true, on_hand: await onHand(env, id) };
+  const rest = type === 'zugang' && it.ordered_on && it.ordered_qty !== null && it.ordered_qty - qty > ORDER_EPS ? r3(it.ordered_qty - qty) : null;
+  return { ok: true, on_hand: await onHand(env, id), ...(rest !== null ? { order_rest: rest } : {}) };
 }
 
 // Bestellvermerk setzen/aufheben (nur Vermerk, es wird nichts bestellt oder versendet)

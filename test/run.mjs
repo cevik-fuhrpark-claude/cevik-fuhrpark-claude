@@ -3208,8 +3208,11 @@ await test('Lager-Bestellvermerk: offen nach Bestellung im Bestellvorschlag, end
   ok(csv.includes(`Bestellvermerk-Teil;Stk;;2;10;8;0;5;40;;${deD(today)};20;${deD(today)};;0`), 'CSV-Zeile: ' + csv.split('\r\n').find((l) => l.includes('Bestellvermerk')));
   eq((await users.ws.req('DELETE', `/api/stock/${id}/order`)).status, 200); eq((await ro()).ordered_on, null, 'manuell aufgehoben');
   await users.ws.put(`/api/stock/${id}/order`, { qty: 8 });
-  await users.ws.post(`/api/stock/${id}/movements`, { type: 'zugang', qty: 3, supplier: 'Teilehandel' });
-  r = await ro(); eq(r.ordered_on, null, 'Zugang beendet den Vermerk'); eq(r.shortfall, 5);
+  // Backlog 452: Teillieferung (3 von 8) – Vermerk bleibt mit Restmenge 5; der Rest (5) deckt ihn und beendet ihn
+  const z1 = await users.ws.post(`/api/stock/${id}/movements`, { type: 'zugang', qty: 3, supplier: 'Teilehandel' }); eq(z1.data.order_rest, 5, 'Antwort nennt Rest');
+  r = await ro(); eq(r.ordered_qty, 5, 'Teillieferung: Rest bleibt vermerkt'); eq(r.shortfall, 5); eq(r.open_after_order, 0, 'nichts doppelt bestellen');
+  const z2 = await users.ws.post(`/api/stock/${id}/movements`, { type: 'zugang', qty: 5, supplier: 'Teilehandel' }); eq(z2.data.order_rest, undefined);
+  { const it = (await users.ws.get(`/api/stock/${id}`)).data.item; eq(it.ordered_on, null, 'Zugang deckt den Rest – Vermerk endet'); eq(it.on_hand, 10); }
   ok((await owner.get('/api/admin/audit?action=stock.order')).data.entries.length >= 3, 'protokolliert');
   await users.ws.patch(`/api/stock/${id}`, { active: false });
 });
@@ -24335,6 +24338,35 @@ await test('Backlog 451 (Blickwinkel „Mechaniker bucht Arbeitszeit auf den fal
   ok(app.includes("const bkFor = ['record_work', 'add_part', 'add_external_cost'].includes(action)") && app.includes('<h3>${esc(t(\'act_\' + action))}</h3>${bkFor}'), 'Formular');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].bk_for && STRINGS[l].bk_check, l); ok(STRINGS[l].help_ws_s.includes(STRINGS[l].bk_for), l + ': Hilfe'); }
+});
+
+await test('Backlog 452 (Folge aus 449, Teillieferung im Lager): Wareneingang/Zugang kleiner als vermerkte Bestellmenge → Vermerk bleibt mit Restmenge (Termin/Bemerkung unverändert), Antwort nennt Rest; deckender Zugang oder Vermerk ohne Menge endet wie bisher; Hilfe DE/UK/EN', async () => {
+  const { U, e } = await freshWorld(); const db = e.DB.db;
+  const mk = async (b) => { const r = await U.ws.post('/api/stock', b); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const a = await mk({ site: 'DORTMUND', name: 'Bremsbelag-Satz', part_number: 'BB-4711', min_qty: 12 });
+  const b = await mk({ site: 'DORTMUND', name: 'Ölfilter', min_qty: 2 });
+  const today = (await U.ws.get('/api/stock/journal')).data.to;
+  const eta = new Date(Date.parse(today) + 5 * 864e5).toISOString().slice(0, 10);
+  eq((await U.ws.put(`/api/stock/${a}/order`, { qty: '10', eta, note: 'Teile Nord, Auftrag 77' })).status, 200);
+  eq((await U.ws.put(`/api/stock/${b}/order`, { qty: '2' })).status, 200);
+  const r = await U.ws.post('/api/stock/receipt', { site: 'DORTMUND', supplier: 'Teile Nord', request_key: 'rcpt-452-1', lines: [{ item_id: a, qty: '4' }, { item_id: b, qty: '3' }] });
+  eq(r.status, 201, JSON.stringify(r.data));
+  eq(r.data.items.find((x) => x.id === a).order_rest, 6, 'Rest in der Antwort'); eq(r.data.items.find((x) => x.id === b).order_rest, undefined, 'mehr geliefert als bestellt: kein Rest');
+  let ia = db.prepare('SELECT ordered_qty, ordered_on, ordered_eta, ordered_note FROM stock_items WHERE id=?').get(a);
+  eq(JSON.stringify(ia), JSON.stringify({ ordered_qty: 6, ordered_on: today, ordered_eta: eta, ordered_note: 'Teile Nord, Auftrag 77' }), 'Vermerk mit Rest');
+  eq(db.prepare('SELECT ordered_on FROM stock_items WHERE id=?').get(b).ordered_on, null, 'gedeckt → beendet');
+  const ro = (await U.ws.get('/api/stock?reorder=1')).data.items.find((i) => i.id === a);
+  eq(ro.shortfall, 8); eq(ro.open_after_order, 2, 'nur echte Lücke bleibt zu bestellen');
+  // Wiederholung desselben Wareneingangs mindert nicht erneut
+  eq((await U.ws.post('/api/stock/receipt', { site: 'DORTMUND', request_key: 'rcpt-452-1', lines: [{ item_id: a, qty: '4' }, { item_id: b, qty: '3' }] })).data.duplicate, true);
+  eq(db.prepare('SELECT ordered_qty FROM stock_items WHERE id=?').get(a).ordered_qty, 6, 'keine doppelte Minderung');
+  // Rest mit Rundung (5,9996 ≈ 6) deckt den Vermerk
+  eq((await U.ws.post(`/api/stock/${a}/movements`, { type: 'zugang', qty: '5,9996' })).status, 201);
+  eq(db.prepare('SELECT ordered_on FROM stock_items WHERE id=?').get(a).ordered_on, null, 'Rest geliefert → beendet');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].rcpt_order_rest.includes('{q}') && STRINGS[l].rcpt_order_rest.includes('{u}'), l); }
+  ok(STRINGS.de.help_stock_s.includes('bei einer Teillieferung bleibt er mit der Restmenge stehen'), 'Hilfe DE');
+  const fs = await import('node:fs'); ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('data-rcrest'), 'Wareneingang zeigt Rest');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

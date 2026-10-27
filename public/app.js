@@ -3924,7 +3924,7 @@ async function viewStockReceipt() {
       key = uid().replace(/[^\w-]/g, '');
       toast('✓');
       const names = new Map(items.map((i) => [i.id, i]));
-      $('#rcres').innerHTML = `<section class="panel ok" id="rcdone"><p><b>${esc(t('rcpt_done').replace('{n}', res.lines))}</b>${body.document_ref ? ' · ' + esc(body.document_ref) : ''}</p>${res.items ? `<ul>${res.items.map((x) => `<li><a href="#/stock/${esc(x.id)}">${esc(x.name)}</a>: +${fmtNum(x.qty)} ${esc(unitL((names.get(x.id) || {}).unit || 'Stk'))} · ${esc(t('on_hand'))} ${fmtNum(x.on_hand)}</li>`).join('')}</ul>` : ''}</section>`;
+      $('#rcres').innerHTML = `<section class="panel ok" id="rcdone"><p><b>${esc(t('rcpt_done').replace('{n}', res.lines))}</b>${body.document_ref ? ' · ' + esc(body.document_ref) : ''}</p>${res.items ? `<ul>${res.items.map((x) => `<li><a href="#/stock/${esc(x.id)}">${esc(x.name)}</a>: +${fmtNum(x.qty)} ${esc(unitL((names.get(x.id) || {}).unit || 'Stk'))} · ${esc(t('on_hand'))} ${fmtNum(x.on_hand)}${x.order_rest ? ` <span class="chip mittel" data-rcrest>${esc(t('rcpt_order_rest').replace('{q}', fmtNum(x.order_rest)).replace('{u}', unitL((names.get(x.id) || {}).unit || 'Stk')))}</span>` : ''}</li>`).join('')}</ul>` : ''}</section>`;
       $('#rclines').innerHTML = ''; $('#rcsup').value = ''; $('#rcdoc').value = ''; $('#rcnote').value = ''; addLine();
       if (!res.duplicate) rcptWaiting(body.site, body.supplier, (res.items || []).map((x) => names.get(x.id) || x));
     } catch (err) { toast(err.message, true); }

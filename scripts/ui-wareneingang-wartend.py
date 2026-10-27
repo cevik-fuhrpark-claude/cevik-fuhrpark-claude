@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (27.10.2026, Backlog 450, Folge aus 449): Nach dem Wareneingang zeigt die Seite die Aufträge dieser Werkstatt, die auf Teile
 # warten, mit Vermerk; der Auftrag, dessen Vermerk die gelieferte Teilenummer (andere Schreibweise) nennt, steht oben mit „Vermerk passt“.
-# DE 390, UK 820, EN 1366; kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (CFP_URL, Standard Port 8787); Screenshots: CFP_SHOTS=<Ordner>.
+# Backlog 452: Teillieferung gegen einen Bestellvermerk nennt den Rest. DE 390, UK 820, EN 1366; kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (CFP_URL, Standard Port 8787); Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
 from playwright.sync_api import sync_playwright
 B = os.environ.get('CFP_URL', 'http://localhost:8787'); PW = 'Sicheres-Passwort-2026'; SHOTS = os.environ.get('CFP_SHOTS')
@@ -37,6 +37,7 @@ with sync_playwright() as p:
         print('—', lang, w)
         n = str(uuid.uuid4().int)[:5]
         ia = wsapi('POST', '/api/stock', {'site': 'DORTMUND', 'name': f'Bremsbelag {n}', 'part_number': f'BB-{n}'})['d']['id']
+        wsapi('PUT', f'/api/stock/{ia}/order', {'qty': '5'})  # Backlog 452: Teillieferung 2 von 5 → Rest 3 bleibt vermerkt
         ids = []
         for note in [f'Lenkgetriebe, Herstellerteil (Lieferung offen) {n}', f'Bremsbelag-Satz bb {n} bestellt']:
             r = api('POST', '/api/cases', {'vehicle_id': 'VIN:' + vin, 'description': f'Werkstattauftrag {n}', 'priority': 'mittel', 'driveability': 'fahrbereit', 'workshop_site': 'DORTMUND', 'request_key': f'ww-{tag}-{n}-{len(ids)}'})
@@ -50,6 +51,9 @@ with sync_playwright() as p:
         q.fill('#rcsup', f'Teile Süd {n}'); q.select_option('#rclines .rcl:nth-child(1) select', ia); q.fill('#rclines .rcl:nth-child(1) .rcq', '2')
         q.click('#rcbook'); q.wait_for_selector('#rcwait', timeout=10000)
         txt = q.inner_text('#rcwait')
+        rest = q.inner_text('[data-rcrest]') if q.locator('[data-rcrest]').count() else ''
+        check(T['rcpt_order_rest'].replace('{q}', '3').split('{u}')[0].strip() in rest, f'{lang}: Rest der Bestellung genannt ({rest!r})')
+        check(wsapi('GET', f'/api/stock/{ia}')['d']['item']['ordered_qty'] == 3, f'{lang}: Vermerk mit Restmenge')
         check(T['rcw_title'] in txt and T['act_parts_partial'] in txt, f'{lang}: Abschnitt mit Hinweis')
         lis = q.locator('#rcwait li')
         first = lis.first.inner_text()
