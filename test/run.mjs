@@ -23974,8 +23974,8 @@ await test('Backlog 437 (Blickwinkel „Zwei Fahrer melden denselben Schaden am 
   }
 });
 
-await test('Backlog 438 (Blickwinkel „Lkw für einen halben Tag zur Achsvermessung/zum Bremsprüfstand bei einer Fremdfirma“): Hinweis zum Werkstatttermin (Migration 0093) – setzen, nur ändern, beim Verschieben im Plan behalten, mit dem Termin entfernen; Werkstattplan, Kalender, Verlauf, Texte DE/UK/EN', async () => {
-  const { U, cmd, newCase } = await freshWorld();
+await test('Backlog 438 (Blickwinkel „Lkw für einen halben Tag zur Achsvermessung/zum Bremsprüfstand bei einer Fremdfirma“): Hinweis zum Werkstatttermin (Migration 0093) – setzen, nur ändern, beim Verschieben im Plan behalten, mit dem Termin entfernen; Werkstattplan, Kalender, Verlauf, Fahrer, Texte DE/UK/EN', async () => {
+  const { U, cmd, newCase, V1 } = await freshWorld();
   const id = await newCase({ description: 'Reifen vorne innen einseitig abgefahren' });
   eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Achsvermessung extern')).status, 200);
   eq((await cmd(U.ws, id, 'acknowledge')).status, 200);
@@ -23984,6 +23984,10 @@ await test('Backlog 438 (Blickwinkel „Lkw für einen halben Tag zur Achsvermes
   eq(r.status, 200, JSON.stringify(r.data));
   const cs = async () => (await U.fleet.get(`/api/cases/${id}`)).data;
   eq((await cs()).case.planned_note, 'nur vormittags – Abholung 13 Uhr bei Fa. Prüfstand');
+  // Fahrer des Lkw (bringt ihn oft selbst hin) sieht den Hinweis bei „Werkstatttermin“ in „Mein Fahrzeug“, nicht in den eigenen Meldungen
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, end_previous: false })).status, 201);
+  const mv = (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1);
+  ok(mv && mv.planned_workshop_date === d1 && mv.planned_workshop_note === 'nur vormittags – Abholung 13 Uhr bei Fa. Prüfstand' && !JSON.stringify(mv.my_open_cases).includes('planned_note'), JSON.stringify(mv && { d: mv.planned_workshop_date, n: mv.planned_workshop_note }));
   // Werkstattplan (Leitung, Werkstatt, Lesen) und Kalender-Export zeigen den Hinweis
   for (const u of [U.fleet, U.ws, U.viewer]) { const it = (await u.get('/api/workshop/plan?days=7')).data.days.flatMap((x) => x.items).find((x) => x.id === id); ok(it && it.planned_note === 'nur vormittags – Abholung 13 Uhr bei Fa. Prüfstand', JSON.stringify(it)); }
   const raw = (await U.fleet.get('/api/workshop/plan?days=7&format=ics')).data; const ics = (typeof raw === 'string' ? raw : new TextDecoder().decode(raw)).replace(/\r?\n[ \t]/g, '');
@@ -24009,7 +24013,7 @@ await test('Backlog 438 (Blickwinkel „Lkw für einen halben Tag zur Achsvermes
   // Oberfläche und Texte
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('name="planned_note" maxlength="200"') && app.includes("if (action === 'set_planned_date') p.planned_note = p.planned_date ?"), 'Formular');
-  ok((app.match(/data-plannote/g) || []).length >= 4 && app.includes('data-ev-plannote'), 'Anzeige Vorgang, Plan, Disposition, Verlauf');
+  ok((app.match(/data-plannote/g) || []).length >= 6 && app.includes('data-ev-plannote') && app.includes('v.planned_workshop_note ?'), 'Anzeige Vorgang, Plan, Disposition, Verlauf');
   const { STRINGS, translateValidation } = await import('../public/i18n.js');
   const ics3 = fs.readFileSync(new URL('../public/ics-texts.js', import.meta.url), 'utf8'); eq((ics3.match(/plan_note: '/g) || []).length, 3, 'Kalendertexte DE/UK/EN');
   for (const l of ['de', 'uk', 'en']) {
@@ -24017,6 +24021,31 @@ await test('Backlog 438 (Blickwinkel „Lkw für einen halben Tag zur Achsvermes
     ok(STRINGS[l].help_ws_s.includes(STRINGS[l].plan_note_lbl) && STRINGS[l].help_dispo_s.includes(STRINGS[l].plan_note_lbl), `${l}: Hilfe`);
     if (l !== 'de') for (const m of ['Hinweis zum Termin nur zusammen mit einem Termin angeben.', 'Hinweis zum Termin ist zu lang (max. 200 Zeichen).']) { const x = translateValidation(l, m); ok(x && x !== m && !/Hinweis zum Termin/.test(x), `${l}: ${x}`); }
   }
+});
+
+await test('Backlog 439 (Blickwinkel „Rechnung der Fremdfirma kommt per Post – zu welchem Vorgang gehört sie?“): Vorgangssuche findet Inhaber/Fuhrparkleitung über Rechnungsnummer und Lieferant der Fremdleistung (Schreibweise egal), Leitung und Werkstatt des Auftrags über Teilenummer/Beleg/Lieferant der Teile, andere nicht; Texte DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const id = await newCase({ description: 'Reifen innen abgefahren' });
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Achsvermessung')).status, 200);
+  eq((await cmd(U.fleet, id, 'add_external_cost', { supplier: 'Achsvermessung Müller GmbH', invoice_no: 'KVA-2026-1187', amount_net: '180,00', valuation: 'estimate' })).status, 200);
+  const other = await newCase({ description: 'Spiegel lose' });
+  const hits = async (u, q) => { const r = await u.get('/api/cases?status=&q=' + encodeURIComponent(q)); eq(r.status, 200, q); return r.data.cases.map((c) => c.id); };
+  for (const q of ['KVA-2026-1187', 'kva-2026-1187', '1187', 'MÜLLER', 'müller', 'Achsvermessung Müller']) { const h = await hits(U.fleet, q); ok(h.includes(id) && !h.includes(other), 'Leitung: ' + q + ' ' + JSON.stringify(h)); }
+  for (const u of [U.ws, U.viewer, U.driver]) ok(!(await hits(u, '1187')).includes(id), 'ohne Kostenrecht kein Treffer über die Rechnung');
+  ok((await hits(U.ws, 'abgefahren')).includes(id), 'Gegenprobe: Werkstatt findet den Vorgang über den Text');
+  // Teile: Teilenummer, Beleg, Lieferant – Leitung und Werkstatt des Auftrags (nicht andere Werkstatt, nicht Lesen/Fahrer)
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200); eq((await cmd(U.ws, id, 'start_repair')).status, 200);
+  eq((await cmd(U.ws, id, 'add_part', { name: 'Spurstangenkopf', part_number: '81.95301-6195', quantity: 1, supplier: 'Teile Nord KG', document_ref: 'LS-4711' })).status, 200);
+  for (const q of ['81.95301', 'ls-4711', 'TEILE NORD']) { ok((await hits(U.ws, q)).includes(id), 'Werkstatt: ' + q); ok((await hits(U.fleet, q)).includes(id), 'Leitung: ' + q); }
+  for (const u of [U.wsMuc, U.viewer, U.driver]) ok(!(await hits(u, '81.95301')).includes(id), 'andere Werkstatt/Lesen/Fahrer: kein Treffer über das Teil');
+  // viele Suchwörter: gebundene Werte bleiben unter der D1-Grenze
+  eq((await U.fleet.get('/api/cases?status=&q=' + encodeURIComponent('aussen spiegel lose links rechts'))).status, 200);
+  // CSV-Export nutzt dieselbe Suche
+  const csv = await U.fleet.get('/api/cases?status=&format=csv&q=1187'); eq(csv.status, 200); const ct = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data); ok(ct.split('\n').filter((l) => l.trim()).length === 2, 'CSV: Kopf + 1 Zeile');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search')"), 'Suchfeld-Hinweis für Leitung/Werkstatt');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].case_search_mgr && STRINGS[l].case_search_ws, l); ok(/1187|Rechnungs|рахун|invoice/i.test(STRINGS[l].help_costs_s.split('|').pop()) && /Rechnungs|рахун|invoice/i.test(STRINGS[l].search_hint), l + ': Hilfe/Suchhinweis'); }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

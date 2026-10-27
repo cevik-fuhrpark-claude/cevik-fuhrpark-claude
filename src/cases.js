@@ -174,10 +174,22 @@ export async function listCases(env, user, envName, query, meta = null) {
       // instr statt LIKE (D1: Muster über 50 Byte → Fehler, 19.10.2026); lower() wie LIKE für A–Z, Varianten für andere Buchstaben
       wordSql.push(`(${vs.map(() => `instr(lower(c.description), lower(?)) > 0`).join(' OR ')})`); wordArgs.push(...vs);
     }
+    // Backlog 439 (Blickwinkel „Rechnung der Fremdfirma kommt per Post – zu welchem Vorgang gehört sie?“): Inhaber/Fuhrparkleitung (sehen
+    // Kosten) finden Vorgänge auch über Rechnungs-/Belegnummer und Lieferant der Fremdleistungen; Inhaber/Leitung und Werkstatt (nur Aufträge
+    // ihres Standorts) über Teilenummer, Beleg und Lieferant der Teile (z. B. Rückruf/Gewährleistung). Ganzer Suchtext; zwei Schreibweisen
+    // (klein/GROSS) reichen, weil lower() in SQLite nur A–Z angleicht – wenige gebundene Werte (D1-Grenze 100)
+    const cv = [...new Set([q.toLocaleLowerCase('de'), q.toLocaleUpperCase('de')])];
+    const inCols = (cols) => `(${cv.flatMap(() => cols.map((col) => `instr(lower(${col}), lower(?)) > 0`)).join(' OR ')})`;
+    const costSql = canSeeCosts(user) ? `
+      OR EXISTS (SELECT 1 FROM external_costs ec WHERE ec.case_id=c.id AND ${inCols(['ec.invoice_no', 'ec.supplier'])})` : '';
+    const partWs = user.role === 'workshop' && user.workshop_site;
+    const partSql = canSeeCosts(user) || partWs ? `
+      OR EXISTS (SELECT 1 FROM parts pt WHERE pt.case_id=c.id${partWs ? ' AND c.workshop_site=?' : ''} AND ${inCols(['pt.part_number', 'pt.document_ref', 'pt.supplier'])})` : '';
+    const searchArgs = [...(costSql ? cv.flatMap((x) => [x, x]) : []), ...(partSql ? [...(partWs ? [user.workshop_site] : []), ...cv.flatMap((x) => [x, x, x])] : [])];
     // früheres Kennzeichen des Fahrzeugs (Backlog 256): Rechnung/Gutachten nennt nach einer Umkennzeichnung oft noch das alte
     where.push(`((${wordSql.join(' AND ')}) OR instr(lower(c.case_no), lower(?)) > 0 OR instr(${PLATE_KEY_SQL('v.plate')}, ?) > 0
-      OR EXISTS (SELECT 1 FROM vehicle_plates vp WHERE vp.vehicle_id=c.vehicle_id AND instr(${PLATE_KEY_SQL('vp.plate')}, ?) > 0))`);
-    args.push(...wordArgs, q, plateKey.length >= 2 ? plateKey : '\u0000', plateKey.length >= 2 ? plateKey : '\u0000');
+      OR EXISTS (SELECT 1 FROM vehicle_plates vp WHERE vp.vehicle_id=c.vehicle_id AND instr(${PLATE_KEY_SQL('vp.plate')}, ?) > 0)${costSql}${partSql})`);
+    args.push(...wordArgs, q, plateKey.length >= 2 ? plateKey : '\u0000', plateKey.length >= 2 ? plateKey : '\u0000', ...searchArgs);
   }
   const limit = intParam(query.limit, 200, 1, query.__export ? 5000 : 500);
   const rows = (await env.DB.prepare(`${withSql}

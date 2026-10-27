@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (27.10.2026, Backlog 438, Blickwinkel „Lkw für einen halben Tag zur Achsvermessung/zum Bremsprüfstand bei einer
 # Fremdfirma“): Leitung setzt im Vorgang „Termin“ mit „Hinweis zum Termin“ (Formular in der Oberfläche); Vorgang zeigt den Hinweis
 # beim Werkstatttermin, Verlauf „Hinweis zum Termin: – → …“; Werkstattplan zeigt ihn in der Zeile; Disposition sieht ihn unter
-# „Geplante Termine (7 Tage)“ und unter „Nicht einplanen“. DE 390, UK 820, EN 1366; kein Querscrollen, keine Skriptfehler.
+# „Geplante Termine (7 Tage)“ und unter „Nicht einplanen“; Fahrer des Lkw sieht ihn in „Mein Fahrzeug“. DE 390, UK 820, EN 1366; kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server (CFP_URL, Standard Port 8787); Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid, datetime
 from playwright.sync_api import sync_playwright
@@ -74,6 +74,18 @@ with sync_playwright() as p:
         check(q.evaluate(noscroll), f'{lang}: Dispo ohne Querscrollen')
         if SHOTS: q.locator(f'a.row[href="#/cases/{cid}"]').last.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/termin-hinweis-dispo-{lang}-{w}.png')
         check(not errs, f'{lang}: keine Skriptfehler (Disposition) {errs[:1]}'); ctx.close()
+        # Fahrer des Lkw: „Mein Fahrzeug“ nennt den Hinweis beim Werkstatttermin (er bringt den Lkw oft selbst hin)
+        du = f'th.fahrer.{tag}{i}'
+        r = api('POST', '/api/users', {'username': du, 'display_name': 'TH Fahrer', 'role': 'driver', 'environment': envname})
+        c0 = br.new_context(); q0 = c0.new_page(); q0.goto(B); q0.evaluate(JS, ['POST', '/api/invite/accept', {'token': r['d']['invite_token'], 'password': PW}]); c0.close()
+        check(api('POST', f'/api/vehicles/VIN:{vin}/drivers', {'user_id': r['d'].get('id') or r['d'].get('user', {}).get('id'), 'end_previous': False})['s'] == 201, f'{lang}: Fahrer zugeordnet')
+        ctx = br.new_context(viewport={'width': w, 'height': h}); q = ctx.new_page(); errs = []; q.on('pageerror', lambda e: errs.append(str(e)))
+        q.goto(B); q.evaluate(JS, ['POST', '/api/login', {'username': du, 'password': PW}]); q.evaluate(JS, ['PATCH', '/api/me', {'language': lang}]); q.evaluate("localStorage.setItem('cfp_lang', %r)" % lang)
+        q.goto(B + '/#/'); q.reload(); q.wait_for_selector('dd [data-plannote]', timeout=15000)
+        check(NOTE[lang] in q.inner_text('dd [data-plannote]'), f'{lang}: Fahrer sieht den Hinweis in „Mein Fahrzeug“')
+        check(q.evaluate(noscroll), f'{lang}: Fahrer ohne Querscrollen')
+        if SHOTS: q.locator('dd [data-plannote]').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/termin-hinweis-fahrer-{lang}-{w}.png')
+        check(not errs, f'{lang}: keine Skriptfehler (Fahrer) {errs[:1]}'); ctx.close()
         # aufräumen: Termin entfernen (Hinweis geht mit), damit andere Skripte unverändert bleiben
         api('POST', f'/api/cases/{cid}/commands', {'action': 'set_planned_date', 'command_id': str(uuid.uuid4()), 'expected_version': ver(), 'payload': {'planned_date': None}})
         check(api('GET', f'/api/cases/{cid}')['d']['case']['planned_note'] is None, f'{lang}: Hinweis mit dem Termin entfernt')
