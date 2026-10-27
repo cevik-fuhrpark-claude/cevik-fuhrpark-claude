@@ -7,7 +7,7 @@ import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentF
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday, STATES } from './holidays.js';
-import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen } from './emhours.js';
+import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen, tzDiff, nextOpenLocal } from './emhours.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
 // Backlog 381: alle bevorzugten Sprachen des Geräts in Reihenfolge prüfen (z. B. ru-RU, uk-UA → uk; vorher nur die erste → Deutsch)
@@ -4430,7 +4430,9 @@ const emWinText = (w) => `${dayRanges(w.days).map(([a, b]) => (a === b ? t('em_w
 // Backlog 430: mehrere Zeitspannen mit „; “ (z. B. „Fr, So 18:00–06:00 (bis zum Folgetag); Sa, So ganztags“)
 const emHoursText = (h) => (!h ? '' : `${windowsOf(h).map(emWinText).join('; ')}${h.no_holidays ? ` · ${t('em_no_hol_short')}${h.holiday_state ? ` (${t('em_hol_state_short').replace('{x}', t('st_' + h.holiday_state))})` : ''}` : ''}`);
 // Backlog 432: „wieder ab 06:00“ / „wieder ab morgen 06:00“ / „wieder ab Mo 06:00“ (laut Eintrag, deutsche Zeit)
-const emNextText = (h, now) => { const n = nextOpen(h, now); if (!n) return ''; const when = n.in_days === 0 ? n.hm : n.in_days === 1 ? `${t('em_tomorrow')} ${n.hm}` : `${t('em_wd_' + n.wd)} ${n.in_days > 6 ? fmtD(n.day) + ' ' : ''}${n.hm}`; return ` <span class="small muted emnext" data-emnext="${esc(n.day + ' ' + n.hm)}" style="white-space:nowrap">${esc(t('em_next_open').replace('{x}', when))}</span>`; };
+const emNextText = (h, now) => { const n = nextOpen(h, now); if (!n) return ''; const when = n.in_days === 0 ? n.hm : n.in_days === 1 ? `${t('em_tomorrow')} ${n.hm}` : `${t('em_wd_' + n.wd)} ${n.in_days > 6 ? fmtD(n.day) + ' ' : ''}${n.hm}`; const loc = nextOpenLocal(n, undefined, now); const locTxt = loc ? ` <span style="white-space:nowrap">(${esc(t('em_next_local').replace('{x}', `${loc.day !== n.day ? t('em_wd_' + (((new Date(loc.day + 'T12:00:00Z').getUTCDay() + 6) % 7) + 1)) + ' ' : ''}${loc.hm}`))})</span>` : ''; return ` <span class="small muted emnext" data-emnext="${esc(n.day + ' ' + n.hm)}"${loc ? ` data-emnextlocal="${esc(loc.day + ' ' + loc.hm)}"` : ''}><span style="white-space:nowrap">${esc(t('em_next_open').replace('{x}', when))}</span>${locTxt}</span>`; };
+// Backlog 433: Gerät in anderer Zeitzone (Fahrer im Ausland) → Hinweis, dass die Zeiten deutsche Zeit sind, mit beiden Uhrzeiten
+const emTzNote = (contacts, now = new Date()) => { if (!contacts.some((c) => c.hours)) return ''; const z = tzDiff(now); return z ? `<p class="panel small" data-emtz role="note">🕒 ${esc(t('em_tz_note').replace('{b}', z.berlin).replace('{l}', z.local))}</p>` : ''; };
 // erreichbare bzw. ohne Zeiten zuerst, laut Eintrag gerade nicht erreichbare danach (Reihenfolge sonst wie vom Server)
 const emSortNow = (list, now) => list.map((c, i) => ({ c, i, r: reachableNow(c.hours, now) })).sort((a, b) => (a.r === false) - (b.r === false) || a.i - b.i);
 function emRows(list, now = new Date()) {
@@ -4467,6 +4469,7 @@ async function viewEmergency(vid) {
   if (!d) html += `<div class="panel alert">${esc(t('offline_view'))}</div><p class="muted">${esc(t('em_offline_none'))}</p>`;
   else {
     if (cachedAt) html += `<div class="panel alert">${esc(t('offline_view'))} (${esc(t('as_of'))} ${fmtDT(cachedAt)})</div>`;
+    html += emTzNote([...d.general, ...d.vehicles.flatMap((v) => v.contacts)]);
     for (const v of d.vehicles) { const bd = emBreakdownInfo(v); if (v.contacts.length || bd) html += `<h2>${plate(v.plate)}${v.contacts.length ? ` <span class="small muted">${esc(t('em_for_vehicle'))}</span>` : ''}</h2>${bd}${v.contacts.length ? emRows(v.contacts) : ''}`; }
     if (d.general.length) html += `<h2>${esc(t('em_general'))}</h2>${emRows(d.general)}`;
     if (!d.general.length && !d.vehicles.some((v) => v.contacts.length)) html += `<p class="muted" id="emnone">${esc(t(d.can_edit ? 'em_none_mgr' : 'em_none'))}</p>`;

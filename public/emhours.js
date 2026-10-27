@@ -68,6 +68,38 @@ export function nextOpen(h, date = new Date(), days = 8) {
   return null;
 }
 
+// Backlog 433 (Blickwinkel „Fahrer im Ausland, Handy in Ortszeit: ‚wieder ab 06:00‘ – deutsche Zeit oder Ortszeit?“): Die Zeiten gelten
+// in deutscher Zeit. Weicht die Uhr des Geräts davon ab (andere Zeitzone, z. B. Türkei, Rumänien, Großbritannien), nennt die Anzeige beide.
+// tz = Zeitzone des Geräts (Standard: laut Browser); ungültige Zeitzone → keine Aussage (null).
+const fmtCache = new Map();
+function hmIn(date, tz) {
+  let f = fmtCache.get(tz);
+  if (!f) { f = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); fmtCache.set(tz, f); }
+  const p = Object.fromEntries(f.formatToParts(date).map((x) => [x.type, x.value]));
+  return { day: `${p.year}-${p.month}-${p.day}`, hm: `${p.hour === '24' ? '00' : p.hour}:${p.minute}` };
+}
+export const deviceTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { return null; } };
+// {berlin, local, tz} wenn die Gerätezeit jetzt von der deutschen Zeit abweicht, sonst null
+export function tzDiff(date = new Date(), tz = deviceTz()) {
+  if (!tz) return null;
+  let loc; try { loc = hmIn(date, tz); } catch { return null; }
+  const b = berlin(date);
+  return loc.day === b.day && loc.hm === b.hm ? null : { berlin: b.hm, local: loc.hm, local_day: loc.day, berlin_day: b.day, tz };
+}
+// deutsche Wandzeit (Tag + „HH:MM“) → Zeitpunkt (Date); bei der Zeitumstellung gilt die erste passende Angabe
+export function berlinInstant(day, hm) {
+  const guess = Date.parse(`${day}T${hm}:00Z`);
+  for (const off of [120, 60]) { const d = new Date(guess - off * 60000); const b = berlin(d); if (b.day === day && b.hm === hm) return d; }
+  return new Date(guess - 60 * 60000); // Uhrzeit fällt in die übersprungene Stunde (Ende März 02:xx) – Näherung MEZ
+}
+// Beginn laut nextOpen in Gerätezeit: {hm, day} oder null, wenn die Gerätezeit nicht abweicht
+export function nextOpenLocal(n, tz = deviceTz(), date = new Date()) {
+  if (!n || !tz) return null;
+  const at = berlinInstant(n.day, n.hm);
+  if (!tzDiff(at, tz) && !tzDiff(date, tz)) return null;
+  try { return hmIn(at, tz); } catch { return null; }
+}
+
 // Backlog 429: Lücken einer Woche, in denen laut Eintrag keine der Nummern besetzt ist (ohne Feiertage). null = keine Aussage möglich
 // (keine Nummer oder eine Nummer ohne Zeiten – die gilt als „unbekannt“); [] = lückenlos; sonst [{from:{wd,hm}, to:{wd,hm}}] (Ende ausgeschlossen),
 // eine durchgehend unbesetzte Woche als [{all:true}].

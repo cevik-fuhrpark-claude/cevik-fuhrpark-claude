@@ -23840,6 +23840,28 @@ await test('Backlog 432 (Blickwinkel „Büro nachts ‚jetzt nicht besetzt‘ �
   ok(app.includes("${r === false ? emNextText(c.hours, now) : ''}") && app.includes('data-emnext'), 'Oberfläche');
 });
 
+await test('Backlog 433 (Blickwinkel „Fahrer im Ausland, Handy in Ortszeit – deutsche Zeit oder Ortszeit?“): Abweichung der Gerätezeit erkannt (Zeitzonen, Sommerzeit, Zeitumstellung), „wieder ab“ zusätzlich in Gerätezeit; Hinweis und Texte DE/UK/EN', async () => {
+  const { tzDiff, berlinInstant, nextOpen, nextOpenLocal } = await import('../public/emhours.js');
+  const d = new Date('2026-10-27T20:00:00Z'); // Di 21:00 MEZ
+  eq(JSON.stringify(tzDiff(d, 'Europe/Istanbul')), JSON.stringify({ berlin: '21:00', local: '23:00', local_day: '2026-10-27', berlin_day: '2026-10-27', tz: 'Europe/Istanbul' }), 'Türkei +2 h');
+  eq(tzDiff(d, 'Europe/London').local, '20:00', 'Großbritannien −1 h');
+  eq(tzDiff(d, 'Europe/Warsaw'), null, 'Polen gleiche Zeit'); eq(tzDiff(d, 'Europe/Berlin'), null); eq(tzDiff(d, 'Kein/Ort'), null, 'ungültige Zeitzone'); eq(tzDiff(d, null), null);
+  eq(tzDiff(new Date('2026-10-27T23:30:00Z'), 'Europe/Istanbul').local_day, '2026-10-28', 'anderer Kalendertag');
+  eq(tzDiff(new Date('2026-07-01T10:00:00Z'), 'Europe/Istanbul').local, '13:00', 'Sommer: +1 h'); eq(tzDiff(new Date('2026-07-01T10:00:00Z'), 'Europe/Kyiv').local, '13:00');
+  eq(berlinInstant('2026-07-01', '06:00').toISOString(), '2026-07-01T04:00:00.000Z', 'MESZ'); eq(berlinInstant('2026-12-01', '06:00').toISOString(), '2026-12-01T05:00:00.000Z', 'MEZ');
+  eq(berlinInstant('2026-10-25', '02:30').toISOString(), '2026-10-25T00:30:00.000Z', 'doppelte Stunde: erste'); eq(berlinInstant('2026-03-29', '02:30').toISOString(), '2026-03-29T01:30:00.000Z', 'übersprungene Stunde');
+  const office = { days: '12345', from: '06:00', to: '18:00' };
+  const n = nextOpen(office, d);
+  eq(JSON.stringify(nextOpenLocal(n, 'Europe/Istanbul', d)), JSON.stringify({ day: '2026-10-28', hm: '08:00' })); eq(nextOpenLocal(n, 'Europe/Warsaw', d), null); eq(nextOpenLocal(null, 'Europe/Istanbul', d), null);
+  eq(nextOpenLocal(nextOpen({ days: '3', from: '23:30', to: '23:45' }, d), 'Europe/Istanbul', d).day, '2026-10-29', 'Beginn am Folgetag in Gerätezeit');
+  eq(nextOpenLocal(nextOpen(office, new Date('2026-10-23T18:00:00Z')), 'Europe/London', new Date('2026-10-23T18:00:00Z')).hm, '05:00', 'über die Zeitumstellung: Mo 06:00 MEZ = 05:00 London');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].em_tz_note.includes('{b}') && STRINGS[l].em_tz_note.includes('{l}') && STRINGS[l].em_next_local.includes('{x}'), l); ok(STRINGS[l].help_accident_s.includes(STRINGS[l].em_next_open.replace(' {x}', ' …')) && /112/.test(STRINGS[l].help_accident_s.split('|').pop()), `Hilfe ${l}`); }
+  ok(STRINGS.de.help_accident_s.includes('deutscher Zeit. Zeigt das Handy'), 'Hilfe DE nennt Gerätezeit');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('html += emTzNote([...d.general, ...d.vehicles.flatMap((v) => v.contacts)]);') && app.includes('data-emnextlocal'), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
