@@ -313,8 +313,11 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const { c, access } = await loadCase(env, user, envName, caseId);
   const vehicle = await env.DB.prepare('SELECT * FROM vehicles WHERE id=?').bind(c.vehicle_id).first();
   // reach: 0 = deaktiviert, 1 = erreichbar, 2 = aktiv, aber nicht benachrichtigbar (ohne Passwort/andere Umgebung; Regel wie candidateUsers.reporter_ok)
+  // + Zuordnung des Melders zur Meldezeit (Backlog 421, nur Leitung) in derselben Abfrage (Abfragebudget Vorgangsdetail ≤ 20)
   const reporter = await env.DB.prepare(`SELECT display_name, CASE WHEN role='driver' OR was_driver=1 THEN 'driver' ELSE role END AS role,
-    CASE WHEN active<>1 THEN 0 WHEN password_hash IS NOT NULL AND (environment=? OR role='owner') THEN 1 ELSE 2 END AS reach FROM users WHERE id=?`).bind(c.environment, c.reporter_id).first();
+    CASE WHEN active<>1 THEN 0 WHEN password_hash IS NOT NULL AND (environment=?1 OR role='owner') THEN 1 ELSE 2 END AS reach,
+    ${isManager(user) ? `CASE WHEN role='driver' OR was_driver=1 THEN ${REPORTER_ASSIGN_SQL} END` : 'NULL'} AS assign_rows FROM users WHERE id=?2`)
+    .bind(c.environment, c.reporter_id, ...(isManager(user) ? [c.vehicle_id, c.created_at] : [])).first();
   const receivedBy = isManager(user) && c.fleet_received_by ? await env.DB.prepare(`SELECT display_name AS name, CASE WHEN active=1 AND role IN ('owner','fleet') THEN 1 ELSE 0 END AS current FROM users WHERE id=?`).bind(c.fleet_received_by).first() : null;
   const events = (await env.DB.prepare(`SELECT e.id, e.action, e.from_status, e.to_status, e.note, e.payload, e.created_at, e.actor_role, u.display_name AS actor_name
     FROM case_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.case_id=? ORDER BY e.created_at`).bind(c.id).all()).results
@@ -394,6 +397,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
   if (user.role === 'owner' || user.role === 'fleet') Object.assign(detail, await claimForCase(env, c.id, c.vehicle_id));
   // Fahrer laut Zuordnung/Abfahrtskontrolle zum Schadenzeitpunkt (Backlog 285) – nur Leitung (Fahrerdaten), nur wenn angegeben
   if (isManager(user) && c.occurred_at) detail.occurred_drivers = await driversAtOccurrence(env, envName, c);
+  // Backlog 421 (Blickwinkel „Fahrer tauscht unterwegs den Lkw mit einem Kollegen“): Melder (Fahrer) war zur Meldezeit laut Zuordnung nicht diesem
+  // Fahrzeug bzw. dessen Gespann zugeordnet – nur Leitung (Fahrerdaten), nur Hinweis, ändert keine Zuordnung
+  if (isManager(user) && reporter?.role === 'driver') { const ra = reporterAssignment(c, JSON.parse(reporter.assign_rows || '[]')); if (ra) detail.reporter_assignment = ra; }
   if (user.role !== 'driver') {
     // Kurzinfo zum Fahrzeug (nur gespeicherte Daten): weitere offene Vorgänge, Prüfungen ≤ 30 Tage/überfällig, letzter km-Stand –
     // damit die Werkstatt z. B. eine fällige Prüfung beim selben Aufenthalt mit erledigen kann
@@ -733,6 +739,24 @@ export async function driversAtOccurrence(env, envName, c) {
     out.push({ user_id: r.user_id, display_name: r.display_name, basis: r.basis, at: r.at, until: r.until || null, ...(r.vehicle_id !== c.vehicle_id ? { via_plate: r.plate } : {}) });
   }
   return { day_only: dayOnly, drivers: out, truncated: rows.length > 20 };
+}
+
+// Zuordnung des Melders zur Meldezeit (Backlog 421). Gespann = Fahrzeug + fest gekoppelte Zugmaschine/Anhänger laut Stammliste.
+// Teilabfrage für getCaseDetail: ?1 Umgebung, ?2 Melder, ?3 Fahrzeug, ?4 Meldezeit → JSON-Liste {u, n, p, h} (h = Zuordnung zum Gespann)
+const GESPANN_SQL = `SELECT ?3 UNION SELECT x.id FROM vehicles x JOIN vehicles v ON v.id=?3 WHERE v.kind='anhaenger' AND x.kind='lkw' AND x.id<>v.id
+    AND ${PLATE_KEY_SQL('x.trailer_plate')}<>'' AND ${PLATE_KEY_SQL('x.trailer_plate')}=${PLATE_KEY_SQL('v.plate')}
+  UNION SELECT x.id FROM vehicles x JOIN vehicles v ON v.id=?3 WHERE v.kind='lkw' AND x.kind='anhaenger' AND x.id<>v.id AND ${PLATE_KEY_SQL('v.trailer_plate')}<>'' AND ${PLATE_KEY_SQL('v.trailer_plate')}=${PLATE_KEY_SQL('x.plate')}`;
+const REPORTER_ASSIGN_SQL = `(SELECT json_group_array(json_object('u', r.user_id, 'n', r.display_name, 'p', r.plate, 'h', r.here)) FROM (
+    SELECT d.user_id, u2.display_name, vv.plate, CASE WHEN d.vehicle_id IN (${GESPANN_SQL}) THEN 1 ELSE 0 END AS here FROM driver_vehicles d
+      JOIN users u2 ON u2.id=d.user_id JOIN vehicles vv ON vv.id=d.vehicle_id
+      WHERE d.environment=?1 AND d.valid_from <= ?4 AND (d.valid_to IS NULL OR d.valid_to > ?4) AND (d.user_id=?2 OR d.vehicle_id IN (${GESPANN_SQL}))
+      ORDER BY vv.plate, u2.display_name LIMIT 60) r)`;
+// null = Melder war dem Gespann zugeordnet; sonst eigene Kennzeichen des Melders und Namen der dem Gespann zugeordneten Personen (je ≤ 10)
+export function reporterAssignment(c, rows) {
+  if (rows.some((r) => r.u === c.reporter_id && r.h)) return null;
+  const own = [...new Set(rows.filter((r) => r.u === c.reporter_id).map((r) => r.p))].slice(0, 10);
+  const others = [...new Set(rows.filter((r) => r.u !== c.reporter_id && r.h).map((r) => r.n))].slice(0, 10);
+  return { own_plates: own, vehicle_drivers: others };
 }
 
 // Wiedervorlage: Kalenderdatum ab heute (Berlin), höchstens 1 Jahr voraus

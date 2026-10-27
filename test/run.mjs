@@ -23420,6 +23420,45 @@ await test('Backlog 420 (Folge aus 419, geteiltes Werkstatt-Tablet): Einstellung
   ok(app.includes("field('work_day_max_hours', t('work_day_setting'))"), 'Feld in den Einstellungen');
 });
 
+await test('Backlog 421 (Blickwinkel „Fahrer tauscht unterwegs den Lkw mit einem Kollegen“): Leitung sieht im Vorgang, dass der Melder zur Meldezeit nicht diesem Fahrzeug/Gespann zugeordnet war (eigene Kennzeichen, zugeordnete Personen); Gespann zählt als zugeordnet; Fahrer/Lesezugriff ohne Angabe; Hinweis im Formular (DE/UK/EN)', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const vs = (await U.fleet.get('/api/vehicles')).data.vehicles; const V2 = vs.find((v) => v.plate === 'SZ-KC 5515').id;
+  // Anhänger fest gekoppelt an SZ-KC 5515 (Stammliste)
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,kind,active,eval_excluded,created_at,updated_at) VALUES('VIN:T421','T421','SZ-YC 5514','anhaenger',1,0,?,?)`).run(now, now);
+  db.prepare(`UPDATE vehicles SET trailer_plate='SZ-YC 5514' WHERE id=?`).run(V2);
+  const kollege = await (async () => { const x = await U.own.post('/api/users', { username: 'w.kollege', display_name: 'Kollege K', role: 'driver', environment: 'test' }); return x.data.id; })();
+  const past = new Date(Date.now() - 86400000).toISOString();
+  const ins = (id, uid, vid, from = past) => db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,environment,created_by,created_at) VALUES(?,?,?,?,NULL,'test',?,?)`).run(id, uid, vid, from, U.fleet.id, now);
+  ins('dv421a', U.driver.id, V1); ins('dv421b', kollege, V2);
+  const report = async (vid) => { const r = await U.driver.post('/api/cases', { vehicle_id: vid, description: 'Spiegel rechts lose nach Tausch', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  // eigenes Fahrzeug: kein Hinweis
+  const own = await report(V1); ok(!('reporter_assignment' in (await U.fleet.get(`/api/cases/${own}`)).data), 'eigenes Fahrzeug: kein Hinweis');
+  // Lkw des Kollegen: Hinweis mit eigenem Kennzeichen und Kollegen
+  const swap = await report(V2); let d = (await U.fleet.get(`/api/cases/${swap}`)).data;
+  eq(JSON.stringify(d.reporter_assignment), JSON.stringify({ own_plates: ['SZ-YC 5513'], vehicle_drivers: ['Kollege K'] }), 'Tausch erkannt');
+  // Anhänger des Kollegen-Lkw: Kollege über das Gespann zugeordnet
+  const tr = await report('VIN:T421'); eq((await U.fleet.get(`/api/cases/${tr}`)).data.reporter_assignment.vehicle_drivers.join(), 'Kollege K', 'Gespann: Kollege über die Zugmaschine');
+  // Fahrer, Lesezugriff, Werkstatt: keine Angabe
+  for (const u of [U.driver, U.viewer]) ok(!('reporter_assignment' in (await u.get(`/api/cases/${swap}`)).data), 'nur Leitung');
+  // Fahrer selbst ist dem Gespann zugeordnet (Anhänger seines Lkw bzw. Lkw seines Anhängers): kein Hinweis
+  ins('dv421c', U.driver.id, V2, new Date().toISOString()); const tr2 = await report('VIN:T421'); ok(!('reporter_assignment' in (await U.fleet.get(`/api/cases/${tr2}`)).data), 'Anhänger des eigenen Lkw: kein Hinweis');
+  db.prepare(`UPDATE driver_vehicles SET valid_to=? WHERE id='dv421c'`).run(new Date().toISOString());
+  // Zuordnung später geändert: maßgeblich ist die Meldezeit
+  d = (await U.fleet.get(`/api/cases/${swap}`)).data; ok(d.reporter_assignment, 'Hinweis bleibt nach späterer Änderung (Meldezeit)');
+  // Springer ohne Zuordnung: Hinweis „keinem Fahrzeug zugeordnet“
+  db.prepare(`UPDATE driver_vehicles SET valid_to=? WHERE id='dv421a'`).run(new Date().toISOString());
+  const spr = await report(V2); eq(JSON.stringify((await U.fleet.get(`/api/cases/${spr}`)).data.reporter_assignment), JSON.stringify({ own_plates: [], vehicle_drivers: ['Kollege K'] }), 'ohne eigene Zuordnung');
+  // Meldung durch Leitung: kein Hinweis
+  const byFleet = (await U.fleet.post('/api/cases', { vehicle_id: V2, description: 'Spiegel rechts lose', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  ok(!('reporter_assignment' in (await U.fleet.get(`/api/cases/${byFleet}`)).data), 'nur Meldungen von Fahrern');
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${repAssign(d.reporter_assignment)}') && app.includes('notMineHint(vs, id) + departureLockBox(') && app.includes('notMineHint(vs, sel && sel.value)'), 'Vorgang, Abfahrtskontrolle, Meldeformular');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['notmine_hint', 'rep_assign', 'rep_assign_not', 'rep_assign_own', 'rep_assign_none', 'rep_assign_drv', 'rep_assign_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].notmine_hint.includes('{p}') && STRINGS[l].rep_assign_own.includes('{p}') && STRINGS[l].rep_assign_drv.includes('{n}'), `Platzhalter ${l}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
