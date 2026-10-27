@@ -398,3 +398,6 @@ form[aria-busy="true"] button:not([type="button"]), button[aria-busy="true"], a[
 /* Menü „Mehr“: lange Einträge (z. B. UK „Коротка інструкція для водіїв (оголошення)“) umbrechen statt abschneiden – 19.10.2026 */
 .morelist .row svg { width: 20px; height: 20px; flex: 0 0 auto; }
 .morelist .row .title { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; hyphens: auto; }
+/* [CLAUDE] Backlog 427: Panne & Notfall – laut Eintrag gerade nicht erreichbare Nummern nach unten sortiert (Anruf bleibt möglich) */
+.emrow.emclosed .title b { font-weight: 600; }
+.emrow .emhours { font-variant-numeric: tabular-nums; }

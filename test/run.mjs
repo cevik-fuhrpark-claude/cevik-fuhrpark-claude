@@ -3364,7 +3364,7 @@ await test('Panne & Notfall: Rufnummern je Umgebung (alle/Standort/Fahrzeug), Fa
   const d = (await users.driver.get('/api/emergency')).data;
   eq(d.general.length, before + 1); const gg = d.general.find((c) => c.id === g.data.id);
   eq(gg.phone, '+49 (0)123 456-78', 'Leerzeichen zusammengefasst'); eq(gg.scope, 'all'); eq(gg.note, 'rund um die Uhr');
-  eq(Object.keys(gg).sort().join(), 'id,kind,label,note,phone,scope,site', 'ohne Verfasser/Zeitstempel');
+  eq(Object.keys(gg).sort().join(), 'hours,id,kind,label,note,phone,scope,site', 'ohne Verfasser/Zeitstempel (hours seit Backlog 427)');
   const dv = d.vehicles.find((x) => x.id === VID); eq(dv.contacts.map((c) => c.id).join(), [v.data.id, s.data.id].join(), 'Fahrzeug vor Standort');
   eq(dv.contacts[1].site, vsite.trim(), 'Standort in Anzeige-Schreibweise des Fahrzeugstamms');
   const o = (await users.driver.get(`/api/emergency?vehicle_id=${encodeURIComponent(other.id)}`)).data;
@@ -8195,7 +8195,7 @@ await test('Protokoll-Details: häufige Schlüssel in DE/UK/EN, Werte unverände
   eq(auditDetailText('de', { from: { a: { b: 1 } } }), 'von: {"a":{"b":1}}', 'tief verschachtelt bleibt JSON');
   eq(auditDetailText('de', 'freier Text'), 'freier Text', 'Text unverändert');
   eq(auditDetailText('de', null), '', 'leer');
-  for (const k of AUDIT_DETAIL_KEY_CODES) ok((k === 'active' ? /^[а-яіїєґ’ ()]+: так$/i : /^[а-яіїєґ’ ()]+: 1$/i).test(auditDetailText('uk', { [k]: 1 })), `${k} uk übersetzt`); // active 0/1 (ältere Einträge) = ja/nein
+  for (const k of AUDIT_DETAIL_KEY_CODES) ok((k === 'active' || k === 'hours_no_holidays' ? /^[а-яіїєґ’ ()]+: так$/i : /^[а-яіїєґ’ ()]+: 1$/i).test(auditDetailText('uk', { [k]: 1 })), `${k} uk übersetzt`); // active 0/1 (ältere Einträge) = ja/nein
   const fs = await import('node:fs');
   ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('auditDetailText(S.lang, d, refs)') && fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('det(e.detail, e.refs)'), 'Ansicht nutzt Detailtext mit aufgelösten Kennungen');
   // aufgelöste Kennungen ersetzen nur die Anzeige des jeweiligen Schlüssels
@@ -23662,6 +23662,51 @@ await test('Backlog 426 (Blickwinkel „Werkstatt-Tablet auf Ukrainisch, Mechani
   for (const l of ['de', 'uk', 'en']) { for (const k of ['pt_file', 'pt_file_none']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_ws_s.includes(STRINGS[l].pt_file.split(' (')[0]), `Hilfe ${l}`); }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('${partFileSelect(d)}') && app.includes('${partFileLink(p, d)}') && app.includes('data-partfile'), 'Oberfläche');
+});
+
+await test('Backlog 427 (Blickwinkel „Fahrer ruft nachts an: Lkw springt nicht an – wer hat Bereitschaft?“, Migration 0090): Erreichbarkeit je Rufnummer (Wochentage, Uhrzeit, über Mitternacht, Feiertage) – Prüfung, Anzeige „jetzt erreichbar/nicht besetzt“, Protokoll; Texte DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const bad = async (b, msg) => { const r = await U.fleet.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo', phone: '0231 100', ...b }); eq(r.status, 400, JSON.stringify(b)); ok(msg.test(r.data.message || ''), r.data.message); };
+  await bad({ hours_from: '06:00', hours_to: '18:00' }, /Wochentage wählen/);
+  await bad({ hours_days: '12345', hours_from: '06:00' }, /beide angeben/);
+  await bad({ hours_days: '12345', hours_from: '25:00', hours_to: '06:00' }, /beide angeben/);
+  await bad({ hours_days: '1238' }, /Wochentage ungültig/);
+  await bad({ hours_days: '12345', hours_no_holidays: 'vielleicht' }, /Feiertagen: ungültiger Wert/);
+  const office = await U.fleet.post('/api/emergency/contacts', { kind: 'dispo', label: 'Disposition Büro', phone: '0231 100', hours_days: ['5', '1', '2', '3', '4', '1'], hours_from: '06:00', hours_to: '18:00', hours_no_holidays: true }); eq(office.status, 201, JSON.stringify(office.data));
+  const night = await U.fleet.post('/api/emergency/contacts', { kind: 'werkstatt', label: 'Werkstatt-Bereitschaft', phone: '0231 200', hours_days: '1234567', hours_from: '18:00', hours_to: '06:00' }); eq(night.status, 201);
+  const plain = await U.fleet.post('/api/emergency/contacts', { kind: 'panne', label: 'Schutzbrief', phone: '0800 300' }); eq(plain.status, 201);
+  const g = (await U.driver.get('/api/emergency')).data.general;
+  const by = (id) => g.find((c) => c.id === id);
+  eq(JSON.stringify(by(office.data.id).hours), JSON.stringify({ days: '12345', from: '06:00', to: '18:00', no_holidays: true }), 'sortiert, ohne Doppel');
+  eq(by(night.data.id).hours.to, '06:00'); eq(by(plain.data.id).hours, null, 'ohne Zeiten: keine Aussage');
+  // Teiländerung: nur Uhrzeit → Wochentage bleiben; Uhrzeit leeren → ganztags; Wochentage leeren → alles leer
+  let p = await U.fleet.req('PATCH', `/api/emergency/contacts/${office.data.id}`, { hours_from: '07:00', hours_to: '17:00' }); eq(p.status, 200); eq(p.data.changed.sort().join(), 'hours_from,hours_to');
+  p = await U.fleet.req('PATCH', `/api/emergency/contacts/${office.data.id}`, { hours_from: '', hours_to: '' }); eq(p.status, 200);
+  let l = (await U.fleet.get('/api/emergency/contacts')).data.contacts.find((c) => c.id === office.data.id); eq(JSON.stringify(l.hours), JSON.stringify({ days: '12345', from: null, to: null, no_holidays: true }));
+  eq((await U.fleet.req('PATCH', `/api/emergency/contacts/${office.data.id}`, { hours_days: '', hours_from: '', hours_to: '' })).status, 200);
+  l = (await U.fleet.get('/api/emergency/contacts')).data.contacts.find((c) => c.id === office.data.id); eq(l.hours, null, 'Zeiten entfernt');
+  eq((await U.fleet.req('PATCH', `/api/emergency/contacts/${office.data.id}`, { hours_from: '06:00', hours_to: '18:00' })).status, 400, 'Uhrzeit ohne Wochentage');
+  eq((await U.fleet.req('PATCH', `/api/emergency/contacts/${office.data.id}`, { phone: '0231 101' })).data.changed.join(), 'phone', 'andere Änderung lässt Zeiten unberührt');
+  const au = (await U.own.get('/api/admin/audit?action=emergency')).data.entries; ok(au.some((x) => x.action === 'emergency.update' && JSON.stringify(x.detail).includes('hours_from')), 'Protokoll alt/neu');
+  // Rechenregel in deutscher Zeit (2026-10-27 = Dienstag, MEZ)
+  const { reachableNow, dayRanges, normDays } = await import('../public/emhours.js');
+  const day = { days: '12345', from: '06:00', to: '18:00' }; const ov = { days: '12345', from: '18:00', to: '06:00' };
+  eq(reachableNow(null), null); eq(reachableNow(day, new Date('2026-10-27T09:00:00Z')), true, 'Di 10:00');
+  eq(reachableNow(day, new Date('2026-10-27T17:00:00Z')), false, 'Di 18:00 = Ende ausgeschlossen');
+  eq(reachableNow(day, new Date('2026-07-01T04:30:00Z')), true, 'Mi 06:30 MESZ'); eq(reachableNow(day, new Date('2026-07-01T03:30:00Z')), false, 'Mi 05:30 MESZ');
+  eq(reachableNow(day, new Date('2026-10-31T09:00:00Z')), false, 'Samstag');
+  eq(reachableNow(ov, new Date('2026-10-31T03:00:00Z')), true, 'Sa 04:00 gehört zum Freitag'); eq(reachableNow(ov, new Date('2026-11-02T03:00:00Z')), false, 'Mo 04:00: Sonntag nicht eingetragen');
+  eq(reachableNow(ov, new Date('2026-11-02T17:30:00Z')), true, 'Mo 18:30');
+  eq(reachableNow({ days: '12345', from: null, to: null, no_holidays: true }, new Date('2026-12-25T10:00:00Z')), false, '1. Weihnachtstag');
+  eq(reachableNow({ days: '12345', from: null, to: null }, new Date('2026-12-25T10:00:00Z')), true, 'ohne Feiertagsregel');
+  eq(reachableNow({ ...ov, no_holidays: true }, new Date('2026-12-26T02:00:00Z')), false, 'Nacht ab Feiertag'); eq(reachableNow(ov, new Date('2026-12-26T02:00:00Z')), true);
+  eq(reachableNow({ days: '1234567', from: '08:00', to: '08:00' }, new Date('2026-10-27T05:00:00Z')), true, 'von = bis: 24 Stunden');
+  eq(JSON.stringify(dayRanges('123567')), '[[1,3],[5,7]]'); eq(normDays('5512'), '125'); eq(normDays('0'), null);
+  const { STRINGS } = await import('../public/i18n.js'); const fs = await import('node:fs');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['em_hours', 'em_hours_hint', 'em_open_now', 'em_closed_now', 'em_all_closed', 'em_allday', 'em_overnight', 'em_no_hol', 'em_wd_1', 'em_wd_7']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_accident_s.includes(STRINGS[l].em_open_now), `Hilfe ${l}`); }
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("import { reachableNow, dayRanges } from './emhours.js';") && app.includes('data-emopen') && app.includes('data-emallclosed') && app.includes('data-emwd'), 'Oberfläche');
+  ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/emhours.js'"), 'Service Worker (ohne Netz)');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
