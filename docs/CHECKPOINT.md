@@ -52,7 +52,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 777 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 10 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 778 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 10 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -81,6 +81,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - Neuer Index → `npm run lasttest` (bei Tabellen, die dauerhaft wachsen, auch `npm run lasttest:wachstum`) und mit der letzten Messung in `docs/BETRIEB.md` vergleichen: ein Index kann bestehende Abfragen schlechter umplanen (0070 machte Nachweisliste/Kennzahlen 30× langsamer, erst 22.10. gefunden; Wächter `CORR` fängt nur korrelierte Suchen über `environment`).
 - Am Handy brechen Wörter wegen `#app { overflow-wrap: anywhere }` in engen Flex-/Grid-Zeilen mitten im Wort um: Beschriftungen neben Feldern/Chips mit `white-space:nowrap` bzw. eigener Zeile bauen; der Rauchtest (`WORDSPLIT`) meldet es seit 24.10.2026.
 - Erledigter Backlog-Punkt → Eintrag (durchgestrichen, mit Sitzung/Test) unten an `docs/BACKLOG_ERLEDIGT.md` anhängen, nicht in CHECKPOINT stehen lassen (26.10.2026: CHECKPOINT war mit 316 erledigten Punkten 343 KB groß und nicht mehr in einem Stück lesbar).
+- Neue Textschlüssel in `public/i18n.js` vorher auf vorhandene Namen prüfen (`grep -n "\bschluessel:" public/i18n.js`): ein `Object.assign` am Dateiende überschreibt gleichnamige Schlüssel still (27.10.2026: `pu_title`/`pu_hint` der Teile-Verwendung überschrieben den Abholvermerk, erst Test 425 fand es).
 - Abfragebudget: jeder API-Aufruf ≤ 50 D1-Abfragen (Test), Agent ≤ 40; vor neuen Agent-Prüfungen `scripts/agentprofil.mjs`.
 - Während `pruefen.sh` läuft, `scripts/restart-dev.sh` nie aufrufen – auch nicht in einem Worktree: es beendet immer den Server auf Port 8787 (25.10.2026 dadurch `ui-ersatzfahrzeug` scheinbar rot). Eigenen Server im Worktree nur mit `PORT=8788 node … scripts/dev-server.mjs` starten und per PID beenden.
 

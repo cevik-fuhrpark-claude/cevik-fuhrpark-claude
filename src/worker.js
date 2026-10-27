@@ -1,6 +1,6 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
 import { icsLang } from '../public/ics-texts.js';
-import { plateCmp, b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, pointDec, cleanText } from './util.js';
+import { plateCmp, b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, fileSlug, pointDec, cleanText } from './util.js';
 import * as auth from './auth.js';
 import * as totp from './totp.js';
 import { personExport } from './privacy.js';
@@ -16,6 +16,7 @@ import { MIGRATIONS } from './schema.js';
 import { integrationRouter } from './integration.js';
 import * as tires from './tires.js';
 import * as stock from './stock.js';
+import * as partsUsage from './partsusage.js';
 import * as fines from './fines.js';
 import * as drivers from './drivers.js';
 import * as tacho from './tacho.js';
@@ -522,6 +523,15 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/stock/asof' && m === 'GET') {
     const rep = await stock.stockAsOf(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') return new Response(stock.stockAsOfCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-lagerbestand-stichtag_${envName}_${rep.date}${siteSuffix(rep.site)}.csv"` } });
+    return json(rep);
+  }
+  // Backlog 441: Teile-Verwendung (Rückruf eines Teilelieferanten) – wo ist Teil X laut Vorgang verbaut?
+  if (path === '/api/parts/usage' && m === 'GET') {
+    const rep = await partsUsage.partsUsage(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') === 'csv') {
+      await auth.audit(env, user.id, 'reports.parts_usage_export', null, { q: rep.q, from: rep.from, to: rep.to, rows: rep.items.length, vehicles: rep.vehicles.length, environment: envName });
+      return new Response(partsUsage.partsUsageCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', ...(rep.truncated ? { 'x-cfp-truncated': String(rep.max) } : {}), 'content-disposition': `attachment; filename="fuhrpark-teileverwendung_${envName}_${fileSlug(rep.q).slice(0, 40) || 'suche'}${rep.from ? '_' + rep.from : ''}${rep.to ? '_' + rep.to : ''}.csv"` } });
+    }
     return json(rep);
   }
   if (path === '/api/stock/journal' && m === 'GET') {

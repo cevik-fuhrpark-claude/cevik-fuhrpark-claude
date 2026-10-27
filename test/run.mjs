@@ -24075,6 +24075,56 @@ await test('Backlog 440 (Blickwinkel „Lkw kommt von der Fremdfirma zurück –
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].vl_as_of && STRINGS[l].help_dispo_s.includes(STRINGS[l].vl_title) && STRINGS[l].help_dispo_s.includes(STRINGS[l].vl_as_of), l);
 });
 
+await test('Backlog 441 (Blickwinkel „Rückruf eines Teilelieferanten: an welchen Lkw ist Teil X verbaut?“): Teile-Verwendung über alle Vorgänge (Teilenummer ohne Schreibweise, Bezeichnung, Lieferant, Beleg, Zeitraum), Werkstatt nur eigener Standort, Lesen/Fahrer 403, CSV mit Protokoll, keine Preise; Oberfläche und Texte DE/UK/EN', async () => {
+  const { U, cmd, newCase, V1 } = await freshWorld();
+  const V2 = 'VIN:WDB9630051L917317';
+  const a = await newCase({ description: 'Lenkung schlägt' });
+  eq((await cmd(U.fleet, a, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Spurstange')).status, 200);
+  eq((await cmd(U.ws, a, 'start_repair')).status, 200);
+  eq((await cmd(U.ws, a, 'add_part', { name: 'Spurstangenkopf', part_number: '81.95301-6195', quantity: 2, unit_price_net: '45,10', valuation: 'actual', supplier: 'Teile Nord KG', document_ref: 'LS-4711', warranty_until: bDayOff(400) })).status, 200);
+  const b = await newCase({ vehicle_id: V2, description: 'Spiel in der Lenkung' }, U.fleet);
+  eq((await cmd(U.fleet, b, 'approve_repair', { workshop_site: 'MUENCHEN' }, 'Spurstange')).status, 200);
+  eq((await cmd(U.wsMuc, b, 'start_repair')).status, 200);
+  eq((await cmd(U.wsMuc, b, 'add_part', { name: 'Spurstangenkopf links', part_number: '8195301 6195', quantity: 1, supplier: 'Teile Süd' })).status, 200);
+  eq((await cmd(U.wsMuc, b, 'add_part', { name: 'Ölfilter', part_number: 'W 11 102', quantity: 1 })).status, 200);
+  const get = (u, q, x = '') => u.get('/api/parts/usage?q=' + encodeURIComponent(q) + x);
+  // Teilenummer in anderer Schreibweise findet beide Einbauten (zwei Fahrzeuge), sortiert nach Kennzeichen
+  for (const q of ['81953016195', '81.95301-6195', '81 95301', '8195301-6195']) {
+    const r = await get(U.fleet, q); eq(r.status, 200, q); eq(r.data.items.length, 2, q + JSON.stringify(r.data.items.map((i) => i.part_number))); eq(r.data.vehicles.length, 2, q);
+  }
+  const r1 = (await get(U.fleet, '81953016195')).data;
+  ok(r1.items.every((i) => !('unit_price_net' in i) && !('user_id' in i)), 'keine Preise, keine Personen');
+  const ia = r1.items.find((i) => i.case_id === a); eq(ia.vehicle_id, V1); eq(ia.quantity, 2); eq(ia.supplier, 'Teile Nord KG'); eq(ia.document_ref, 'LS-4711'); eq(ia.warranty_until, bDayOff(400)); eq(ia.case_status, 'in_reparatur'); eq(ia.workshop_site, 'DORTMUND');
+  // Bezeichnung (Schreibweise/Umlaut), Lieferant, Beleg
+  eq((await get(U.fleet, 'ÖLFILTER')).data.items.length, 1, 'Umlaut groß'); eq((await get(U.fleet, 'ölfilter')).data.items.length, 1, 'Umlaut klein');
+  eq((await get(U.fleet, 'teile süd')).data.items.length, 1, 'Lieferant'); eq((await get(U.fleet, 'ls-4711')).data.items.length, 1, 'Beleg');
+  eq((await get(U.fleet, 'Spurstangenkopf')).data.items.length, 2, 'Bezeichnung');
+  // Werkstatt: nur Aufträge des eigenen Standorts; Lesen/Fahrer kein Zugriff; zu kurze Suche 400
+  eq((await get(U.ws, '81953016195')).data.items.map((i) => i.case_id).join(), a, 'Werkstatt Dortmund');
+  eq((await get(U.wsMuc, '81953016195')).data.items.map((i) => i.case_id).join(), b, 'Werkstatt München');
+  for (const u of [U.viewer, U.driver]) eq((await get(u, '81953016195')).status, 403);
+  eq((await get(U.fleet, 'ab')).status, 400); eq((await get(U.fleet, '819', '&from=2026-13-01')).status, 400); eq((await get(U.fleet, '819', '&from=2026-10-02&to=2026-10-01')).status, 400);
+  // Zeitraum: Einbau heute liegt im Zeitraum bis heute, nicht in einem Zeitraum vor gestern
+  eq((await get(U.fleet, '81953016195', `&from=${bDayOff(-1)}&to=${bDayOff(0)}`)).data.items.length, 2);
+  eq((await get(U.fleet, '81953016195', `&to=${bDayOff(-2)}`)).data.items.length, 0);
+  // CSV: Kopf + 2 Zeilen, Teilenummer, Protokoll-Eintrag
+  const csv = await U.fleet.get('/api/parts/usage?format=csv&q=81953016195'); eq(csv.status, 200);
+  const ct = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data);
+  const lines = ct.split('\r\n').filter((l) => l.trim()); eq(lines.length, 3, ct); ok(lines[0].includes('Kennzeichen;Fahrzeugstandort') && lines[0].includes('Gewährleistung bis') && !/Preis|Betrag/.test(lines[0]), lines[0]);
+  ok(ct.includes('SZ-YC 5513') && ct.includes('SZ-KC 5515') && ct.includes('Teile Nord KG') && ct.includes('In Reparatur'), ct);
+  ok((await U.own.get('/api/admin/audit?action=reports.')).data.entries.some((x) => x.action === 'reports.parts_usage_export'), 'Export im Protokoll');
+  // Oberfläche: Route, Knöpfe in Lagerliste und Artikelakte; Texte DE/UK/EN
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('[/^#\\/stock\\/usage$/, viewPartsUsage]') && app.indexOf('[/^#\\/stock\\/usage$/') < app.indexOf('[/^#\\/stock\\/([\\w-]+)$/, viewStockItem]'), 'Route vor der Artikel-Route');
+  ok(app.includes('href="#/stock/usage" id="spu"') && app.includes("$('#itempu').onclick") && app.includes("sessionStorage.setItem('cfp_pu_q', it.part_number || it.name)"), 'Knöpfe');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['ptu_title', 'ptu_item_btn', 'ptu_hint', 'ptu_hint_ws', 'ptu_q', 'ptu_q_ph', 'ptu_from', 'ptu_installed', 'ptu_case', 'ptu_sum', 'ptu_none', 'ptu_removed_hint', 'ptu_truncated']) ok(STRINGS[l][k], l + ' ' + k);
+    ok(STRINGS[l].help_stock_s.includes(STRINGS[l].ptu_title) && STRINGS[l].help_stock_s.includes(STRINGS[l].ptu_item_btn.split(' (')[0]), l + ': Hilfe');
+    ok(STRINGS[l].ptu_sum.includes('{n}') && STRINGS[l].ptu_sum.includes('{v}'), l);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
