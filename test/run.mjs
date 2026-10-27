@@ -23453,7 +23453,7 @@ await test('Backlog 421 (Blickwinkel „Fahrer tauscht unterwegs den Lkw mit ein
   ok(!('reporter_assignment' in (await U.fleet.get(`/api/cases/${byFleet}`)).data), 'nur Meldungen von Fahrern');
   // Oberfläche und Texte
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('${repAssign(d.reporter_assignment)}') && app.includes('notMineHint(vs, id) + departureLockBox(') && app.includes('notMineHint(vs, sel && sel.value)'), 'Vorgang, Abfahrtskontrolle, Meldeformular');
+  ok(app.includes('${repAssign(d.reporter_assignment, c.vehicle_id)}') && app.includes('notMineHint(vs, id) + departureLockBox(') && app.includes('notMineHint(vs, sel && sel.value)'), 'Vorgang, Abfahrtskontrolle, Meldeformular');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['notmine_hint', 'rep_assign', 'rep_assign_not', 'rep_assign_own', 'rep_assign_none', 'rep_assign_drv', 'rep_assign_hint']) ok(STRINGS[l][k], `${l}.${k}`);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].notmine_hint.includes('{p}') && STRINGS[l].rep_assign_own.includes('{p}') && STRINGS[l].rep_assign_drv.includes('{n}'), `Platzhalter ${l}`);

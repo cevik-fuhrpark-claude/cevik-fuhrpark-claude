@@ -1784,9 +1784,9 @@ function notMineHint(vs, id) {
   if (!mine.length || !v || v.assigned || (v.coupled && mine.some((m) => m.id === v.coupled.id))) return '';
   return `<div class="panel warn small" data-notmine role="status">${esc(t('notmine_hint').replace('{p}', mine.map((m) => m.plate).join(', ')))}</div>`;
 }
-function repAssign(a) {
+function repAssign(a, vid) {
   if (!a) return '';
-  return `<dt>${esc(t('rep_assign'))}</dt><dd data-repassign><span class="chip mittel">${esc(t('rep_assign_not'))}</span><ul class="small" style="margin:4px 0 0;padding-left:18px"><li>${a.own_plates.length ? esc(t('rep_assign_own').replace('{p}', a.own_plates.join(', '))) : esc(t('rep_assign_none'))}</li>${a.vehicle_drivers.length ? `<li>${esc(t('rep_assign_drv').replace('{n}', a.vehicle_drivers.join(', ')))}</li>` : ''}</ul><p class="small muted" style="margin:2px 0 0">${esc(t('rep_assign_hint'))}</p></dd>`;
+  return `<dt>${esc(t('rep_assign'))}</dt><dd data-repassign><span class="chip mittel">${esc(t('rep_assign_not'))}</span><ul class="small" style="margin:4px 0 0;padding-left:18px"><li>${a.own_plates.length ? esc(t('rep_assign_own').replace('{p}', a.own_plates.join(', '))) : esc(t('rep_assign_none'))}</li>${a.vehicle_drivers.length ? `<li>${esc(t('rep_assign_drv').replace('{n}', a.vehicle_drivers.join(', ')))}</li>` : ''}</ul><p class="small muted" style="margin:2px 0 0">${esc(t('rep_assign_hint'))} <a href="#/vehicles/${esc(vid)}" class="noprint">${esc(t('vehicle_file'))} ›</a></p></dd>`;
 }
 function occDrivers(o) {
   if (!o) return '';
@@ -2064,7 +2064,7 @@ async function viewCase(id) {
     <dl class="kv">
       <dt>${esc(t('urgency'))}</dt><dd><span class="chip ${esc(c.priority)}">${esc(t('prio_' + c.priority))}</span>${prioLine}</dd>
       <dt>${esc(t('driveable'))}</dt><dd>${c.origin === 'kontrolle' && c.reported_driveability === 'unbekannt' ? `<span data-drvcheck>${esc(t('drv_not_asked_check'))}${S.me.role === 'driver' && OPEN_CASE_ST.includes(c.status) ? ' – ' + esc(t('check_defect_clarify')) : ''}</span>` : esc(t('drv_' + c.reported_driveability))}</dd>
-      ${d.reporter_name || d.reporter_name_hidden ? `<dt>${esc(t('reported_by'))}</dt><dd>${esc(pnm(d.reporter_name, d.reporter_name_hidden))} · ${fmtDT(c.created_at)}</dd>` : `<dt>${esc(t('date'))}</dt><dd>${fmtDT(c.created_at)}</dd>`}${repAssign(d.reporter_assignment)}
+      ${d.reporter_name || d.reporter_name_hidden ? `<dt>${esc(t('reported_by'))}</dt><dd>${esc(pnm(d.reporter_name, d.reporter_name_hidden))} · ${fmtDT(c.created_at)}</dd>` : `<dt>${esc(t('date'))}</dt><dd>${fmtDT(c.created_at)}</dd>`}${repAssign(d.reporter_assignment, c.vehicle_id)}
       ${c.occurred_at ? `<dt>${esc(t('occurred'))}</dt><dd data-occurred>${fmtOccurred(c.occurred_at)}${occLate(c)}</dd>${occDrivers(d.occurred_drivers)}` : ''}
       <dt>${esc(t('received'))}</dt><dd>${c.fleet_received_at ? fmtDT(c.fleet_received_at) : esc(t('not_yet'))}${c.fleet_received_at && d.received_by ? ` · ${esc(d.received_by.name)}${d.received_by.current ? '' : ` <span class="chip mittel" data-recvgone>${esc(t('recv_gone'))}</span>`}` : ''}</dd>
       <dt>${esc(t('workshop'))}</dt><dd>${esc(wsName(c.workshop_site || c.suggested_workshop_site))}${c.planned_date ? ' · ' + esc(t('planned')) + ' ' + fmtD(c.planned_date) : ''}</dd>${c.followup_on && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? `<dt>${esc(t('followup'))}</dt><dd><span class="chip${c.followup_on <= bDate() ? ' mittel' : ''}">${fmtD(c.followup_on)}</span>${c.followup_note ? ' ' + esc(c.followup_note) : ''}</dd>` : ''}

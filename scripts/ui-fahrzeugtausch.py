@@ -70,6 +70,7 @@ with sync_playwright() as p:
         tx=m.inner_text('[data-repassign]')
         check(NOTA[lang] in tx and own in tx and f'FT Kollege {n}' in tx,f'{lang} {w}px: Leitung sieht Zuordnung des Melders ({tx[:60]!r})')
         check(m.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Vorgang ohne Querscrollen')
+        check(m.locator('[data-repassign] a[href^="#/vehicles/"]').count()==1,f'{lang} {w}px: Link zur Fahrzeugakte')
         if SHOTS: m.locator('[data-repassign]').scroll_into_view_if_needed(); m.screenshot(path=f'{SHOTS}/tausch_vorgang_{lang}_{w}.png')
         m.goto(B+'/#/fines/'+fz['d']['id']); m.reload(); m.wait_for_selector('input[name=cand]',timeout=15000)
         row=[x for x in m.locator('label.row').all_inner_texts() if f'FT Kollege {n}' in x]
