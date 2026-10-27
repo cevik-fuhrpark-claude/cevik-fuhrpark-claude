@@ -24326,6 +24326,17 @@ await test('Backlog 450 (Folge aus 449, Wareneingang): nach dem Buchen wartende 
   }
 });
 
+await test('Backlog 451 (Blickwinkel „Mechaniker bucht Arbeitszeit auf den falschen Auftrag“): Buchungsformulare (Arbeitszeit/Teil/Fremdleistung) nennen Auftrag + Kennzeichen und dass Buchungen nicht änderbar sind; Hilfe Werkstatt DE/UK/EN; Server bietet weiterhin keine Änderung an', async () => {
+  const { U, toRepair } = await freshWorld();
+  const a = await toRepair(); const d = (await U.ws.get(`/api/cases/${a}`)).data;
+  ok(d.case.case_no && d.vehicle.plate, 'Auftragsnummer/Kennzeichen im Vorgang');
+  ok(!d.allowed_actions.some((x) => /storno|cancel_|edit_work|edit_part/.test(x)), 'keine Änderungsaktion – Hinweis bleibt wahr');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const bkFor = ['record_work', 'add_part', 'add_external_cost'].includes(action)") && app.includes('<h3>${esc(t(\'act_\' + action))}</h3>${bkFor}'), 'Formular');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].bk_for && STRINGS[l].bk_check, l); ok(STRINGS[l].help_ws_s.includes(STRINGS[l].bk_for), l + ': Hilfe'); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

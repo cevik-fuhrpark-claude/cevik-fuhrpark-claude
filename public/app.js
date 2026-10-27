@@ -2560,7 +2560,10 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     if (nm && pn) nm.addEventListener('change', () => { const hit = r.suggestions.find((x) => x.name === nm.value); if (hit && hit.part_number && !pn.value) pn.value = hit.part_number; });
   }).catch(() => {});
   if (action === 'record_work') api('GET', '/api/work-suggestions').then((r) => { const dl = $('#worksugg'); if (dl) dl.innerHTML = r.suggestions.map((x) => `<option value="${esc(x)}">`).join(''); }).catch(() => {});
-  box.innerHTML = `<form class="panel" id="af"><h3>${esc(t('act_' + action))}</h3>${f.join('')}<div class="actions"><button class="btn">${esc(t('save'))}</button><button type="button" class="btn secondary" id="ac">${esc(t('cancel'))}</button></div></form>`;
+  // Backlog 451 (Blickwinkel „Mechaniker bucht Arbeitszeit auf den falschen Auftrag“): Buchungen lassen sich (noch) nicht ändern – Auftrag und
+  // Fahrzeug stehen deshalb direkt im Formular (am Tablet ist der Kopf des Vorgangs nach dem Öffnen des Formulars weggescrollt)
+  const bkFor = ['record_work', 'add_part', 'add_external_cost'].includes(action) ? `<p class="panel small" id="afcase"><b>${esc(t('bk_for'))}: ${esc(c.case_no || '')} · ${esc((d && d.vehicle && d.vehicle.plate) || c.plate || '')}</b>${c.description ? `<br><span class="muted">${ltxt(clipTxt(c.description, 80))}</span>` : ''}<br><span class="muted">${esc(t('bk_check'))}</span></p>` : '';
+  box.innerHTML = `<form class="panel" id="af"><h3>${esc(t('act_' + action))}</h3>${bkFor}${f.join('')}<div class="actions"><button class="btn">${esc(t('save'))}</button><button type="button" class="btn secondary" id="ac">${esc(t('cancel'))}</button></div></form>`;
   if (!restore) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   // Tastatur/Screenreader: Fokus ins Formular, „Abbrechen“ gibt ihn an den auslösenden Knopf zurück (21.10.2026: blieb auf dem Knopf bzw. fiel auf body)
   if (!restore) { const h3 = box.querySelector('#af h3'); if (h3) { h3.tabIndex = -1; h3.focus({ preventScroll: true }); } } // Überschrift statt Feld: keine Bildschirmtastatur am Tablet
