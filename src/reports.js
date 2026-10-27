@@ -809,6 +809,11 @@ export async function defectReport(env, user, envName, query = {}) {
 // ---- Werkstattplan: geplante Termine je Tag (Vorgänge mit Termin, geplante Prüftermine), überfällig geplant, ohne Termin ----
 // Nur gespeicherte Termine; die App plant nichts selbst. Werkstattrolle sieht nur den eigenen Standort.
 const PLAN_STATUSES = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'];
+// Backlog 457 (Blickwinkel „Leitung gibt fünf Aufträge für denselben Tag frei – sieht die Werkstatt die Tagesreihenfolge?“):
+// eine feste Reihenfolge je Tag, gleich auf Startseite (`dayOrder` in public/app.js) und im Werkstattplan – gesperrt/kritisch,
+// dann mittel, dann niedrig; bei gleicher Dringlichkeit die ältere Meldung zuerst. Vorher Plan nur „kritisch zuerst“, Startseite
+// nach letzter Änderung (Reihenfolge sprang nach jedem Kommentar). Eine Uhrzeit/Wunschreihenfolge gibt es nicht (Hinweis zum Termin).
+export const PLAN_DAY_ORDER = "CASE WHEN c.priority='kritisch' OR c.safety_lock=1 THEN 0 WHEN c.priority='mittel' THEN 1 ELSE 2 END, c.created_at, c.id";
 export async function workshopPlan(env, user, envName, query = {}) {
   if (!['owner', 'fleet', 'viewer', 'workshop', 'dispatch'].includes(user.role)) throw forbidden();
   const days = intParam(query.days, 14, 1, 60);
@@ -820,7 +825,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const [cs, mt, vs, mo] = await Promise.all([
     env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, v.eval_excluded, c.status, c.priority, c.safety_lock, c.workshop_site, c.vehicle_location, c.vehicle_location_at, c.handover_keys, c.handover_papers, c.planned_date, c.planned_note, c.parts_expected_date, c.workshop_ack_at, c.version, substr(c.description,1,300) AS description, c.maintenance_rule_id, c.tire_order
       FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status IN (${PLAN_STATUSES.map(() => '?').join(',')})${sf}
-      ORDER BY c.planned_date, c.priority='kritisch' DESC, c.created_at`).bind(envName, ...PLAN_STATUSES, ...(site ? [site] : [])).all(),
+      ORDER BY c.planned_date, ${PLAN_DAY_ORDER}`).bind(envName, ...PLAN_STATUSES, ...(site ? [site] : [])).all(),
     // ruhende Fahrzeuge mit eingetragenem Termin erscheinen gekennzeichnet (wie ihre Aufträge) – vorher war ihr Prüftermin unsichtbar (23.10.2026)
     env.DB.prepare(`SELECT m.id, m.vehicle_id, v.plate, v.site AS vehicle_site, v.kind AS vehicle_kind, v.eval_excluded, m.kind, m.planned_date, m.next_due_date FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
       WHERE v.active=1 AND m.planned_date IS NOT NULL AND m.planned_date >= ? AND m.planned_date <= ? ORDER BY m.planned_date, v.plate`).bind(today, to).all(),

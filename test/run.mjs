@@ -24437,6 +24437,42 @@ await test('Backlog 455 (Folge aus 454, Leitung gibt mit Termin frei): Hinweis/P
   for (const [l, w] of [['de', '· Termin '], ['uk', '· Термін '], ['en', '· Workshop date ']]) ok(STRINGS[l].help_ws_s.includes(w), l + ': Hilfe Werkstatt nennt den Termin im Hinweis');
 });
 
+await test('Backlog 457 (Blickwinkel „Leitung gibt fünf Aufträge für denselben Tag frei – sieht die Werkstatt die Tagesreihenfolge?“): feste Tagesreihenfolge gesperrt/kritisch → mittel → niedrig, dann ältere Meldung – gleich im Werkstattplan und auf der Startseite, unabhängig von späteren Änderungen (DE/UK/EN)', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const day = new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + 3 * 864e5).toISOString().slice(0, 10);
+  const pause = () => new Promise((r) => setTimeout(r, 5));
+  // fünf Freigaben für denselben Tag: n1 (niedrig, älteste), m1 (mittel), n2 (niedrig, wird gesperrt), k1 (kritisch, jüngste), m2 (mittel)
+  const ids = {};
+  for (const [k, prio] of [['n1', 'niedrig'], ['m1', 'mittel'], ['n2', 'niedrig'], ['k1', 'kritisch'], ['m2', 'mittel']]) { ids[k] = await newCase({ priority: prio }); await pause(); }
+  for (const k of Object.keys(ids)) eq((await cmd(U.fleet, ids[k], 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day }, 'Tag ' + k)).status, 200, 'Freigabe ' + k);
+  eq((await cmd(U.fleet, ids.n2, 'set_safety_lock', {}, 'Bremse')).status, 200, 'Sperre n2');
+  // spätere Änderung am ältesten Auftrag darf die Reihenfolge nicht ändern (vorher Startseite nach updated_at)
+  eq((await cmd(U.ws, ids.m2, 'comment', {}, 'Rückfrage zur Teilenummer')).status, 200, 'Kommentar m2');
+  // gesperrt und kritisch gleichrangig → ältere Meldung (n2) zuerst
+  const want = ['n2', 'k1', 'm1', 'm2', 'n1'].map((k) => ids[k]);
+  const name = (arr) => arr.map((id) => Object.keys(ids).find((k) => ids[k] === id)).join(',');
+  const plan = (await U.ws.get('/api/workshop/plan?days=7')).data;
+  const d = plan.days.find((x) => x.date === day); ok(d, 'Tag im Plan');
+  eq(name(d.items.filter((x) => x.type === 'case').map((x) => x.id)), name(want), 'Werkstattplan Tagesreihenfolge');
+  // Startseite: derselbe Vergleich wie in public/app.js (Quelltext ausgewertet) über die Vorgangsliste
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.match(/const dayRank = [^\n]+\nconst dayOrder = [^\n]+/)[0];
+  const dayOrder = new Function(src + '\nreturn dayOrder;')();
+  const rows = (await U.ws.get('/api/cases?status=open&limit=500')).data.cases.filter((c) => c.planned_date === day);
+  eq(name([...rows].sort(dayOrder).map((c) => c.id)), name(want), 'Startseite Tagesreihenfolge');
+  eq(name([...rows].reverse().sort(dayOrder).map((c) => c.id)), name(want), 'unabhängig von der Lieferreihenfolge');
+  const wb = app.slice(app.indexOf('async function workshopBoard('), app.indexOf('\nfunction hj('));
+  ok(wb.includes("c.planned_date === today).sort(dayOrder)") && wb.includes('dayOrder(a, b));'), 'Heute geplant und Termin überschritten sortiert');
+  ok(wb.includes("k === 'ws_planned_today' && l.length > 1") && app.includes('id="wpdayorder"'), 'Hinweis zur Reihenfolge auf Startseite und im Plan');
+  const rep = fs.readFileSync(new URL('../src/reports.js', import.meta.url), 'utf8');
+  ok(rep.includes('ORDER BY c.planned_date, ${PLAN_DAY_ORDER}'), 'Plan nutzt PLAN_DAY_ORDER');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].day_order_hint && STRINGS[l].day_order_hint.includes(STRINGS[l].plan_note_lbl.split(' ').slice(1).join(' ')), l + ': Hinweis nennt „Hinweis zum Termin“');
+    ok(STRINGS[l].help_ws_s.includes(STRINGS[l].ws_planned_today) && STRINGS[l].help_ws_s.includes(STRINGS[l].plan_note_lbl.split(' ').slice(1).join(' ')), l + ': Hilfe Werkstatt erklärt die Tagesreihenfolge');
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

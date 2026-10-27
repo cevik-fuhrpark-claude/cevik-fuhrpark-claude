@@ -216,6 +216,7 @@ UI-Teillieferung eingegangen: Formular, „Wartet noch auf“, Anzahl + ursprün
 UI-Buchungsformulare nennen Auftrag + Kennzeichen, Hinweis „nicht änderbar“, DE/UK/EN 390/820/1366|ui-buchung-auftrag.py|/tmp/cfp-buchung-auftrag.log
 UI-Werkstatt-Startseite Kurzablauf eines Auftrags (Knopf-Beschriftungen, Ausblenden bleibt), Vorab-Info bricht um, DE/UK/EN 390/820/1366|ui-werkstatt-kurzablauf.py|/tmp/cfp-werkstatt-kurzablauf.log
 UI-Werkstatt-Startseite: Auftrag oben hervorgehoben und im Arbeitsschritt – „steht auch oben“, Gesamtzahl ohne Doppelzählung, DE/UK/EN 390/820/1366|ui-werkstatt-doppelt.py|/tmp/cfp-werkstatt-doppelt.log
+UI-Werkstatt-Tagesreihenfolge: „Heute geplant“ und Werkstattplan gesperrt → mittel → niedrig, ältere Meldung zuerst, Hinweis zum Termin, DE/UK/EN 390/820/1366|ui-werkstatt-tagesreihenfolge.py|/tmp/cfp-werkstatt-tagesreihenfolge.log
 UI-Werkstatt-Startseite wartet auf Teile: längste Wartezeit zuerst, Wartet auf/Wartezeit/kein Liefertermin in Listen, DE/UK/EN 390/820/1366|ui-teile-nachfassen.py|/tmp/cfp-teile-nachfassen.log
 UI-Neuer Fahrer erster Tag: Einladung in gewählter Sprache, Kontrolle mit Mangel → Ergebnisseite „vor der Abfahrt klären“, Fahrbereitschaft „nicht abgefragt“, HU/SP ausgeschrieben, DE/UK/EN 390/820/1366|ui-fahrer-erster-tag.py|/tmp/cfp-fahrer-erster-tag.log
 UI-Herstellerwerkstatt: Freigabe extern ohne Warnung, Werkstattplan mit Standort, Fremdleistung 0 € mit Vermerk, Hinweis 0/leer, DE/UK/EN 390/820/1366|ui-herstellerwerkstatt.py|/tmp/cfp-herstellerwerkstatt.log

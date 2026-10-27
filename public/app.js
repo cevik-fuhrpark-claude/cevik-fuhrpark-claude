@@ -931,6 +931,11 @@ function bindWsFlow() {
   const b = $('#wsflowhide'); if (!b) return;
   b.onclick = () => { try { localStorage.setItem(wsFlowKey(), '1'); } catch {} const d = $('#wsflow'); if (d) d.open = false; b.closest('.actions').remove(); };
 }
+// Backlog 457 (Blickwinkel „Leitung gibt fünf Aufträge für denselben Tag frei – sieht die Werkstatt die Tagesreihenfolge?“): feste Reihenfolge
+// je Tag wie im Werkstattplan (PLAN_DAY_ORDER in src/reports.js) – gesperrt/kritisch, mittel, niedrig; gleiche Dringlichkeit: ältere Meldung zuerst.
+// Vorher nach letzter Änderung (sprang nach jedem Kommentar). Eine Uhrzeit vereinbart die Leitung im „Hinweis zum Termin“.
+const dayRank = (c) => (c.priority === 'kritisch' || c.safety_lock ? 0 : c.priority === 'mittel' ? 1 : 2);
+const dayOrder = (a, b) => dayRank(a) - dayRank(b) || String(a.created_at).localeCompare(String(b.created_at)) || String(a.id).localeCompare(String(b.id));
 // Werkstatt-Tagesübersicht: Aufträge des eigenen Standorts nach Arbeitsschritt, dazu Prüftermine der nächsten 14 Tage
 async function workshopBoard() {
   // Nur Arbeitsvorrat: eigene Meldungen an Fahrzeugen anderer Werkstätten (Zugriff „lesen“) erschienen sonst unter
@@ -948,8 +953,8 @@ async function workshopBoard() {
   // Mangel bei der Abfahrtskontrolle erneut festgestellt (letzte 3 Tage) – zuerst, damit die Werkstatt ihn vorzieht
   // Heute geplant und Termin überschritten (nicht begonnen) – oben, nur gespeicherte Termine
   const today = bDate();
-  const passed = open.filter((c) => c.status === 'werkstatt_freigegeben' && c.planned_date && c.planned_date < today);
-  const todayL = open.filter((c) => ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status) && c.planned_date === today);
+  const passed = open.filter((c) => c.status === 'werkstatt_freigegeben' && c.planned_date && c.planned_date < today).sort((a, b) => a.planned_date.localeCompare(b.planned_date) || dayOrder(a, b));
+  const todayL = open.filter((c) => ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status) && c.planned_date === today).sort(dayOrder);
   if (todayL.length) lanes.unshift(['ws_planned_today', todayL]);
   // Mängelbeseitigung aus Prüfung (HU/SP/UVV mit erheblichen Mängeln) – Nachprüfung folgt, daher hervorgehoben
   const fromInsp = open.filter((c) => c.maintenance_event_id && ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status));
@@ -974,7 +979,7 @@ async function workshopBoard() {
   const alsoAbove = (c) => (above.has(c.id) ? `<b data-alsoabove>↑ ${esc(t('ws_also_above'))}: ${esc(above.get(c.id).join(' · '))}</b> · ` : '');
   let noteDone = false;
   const dupNote = (k) => { if (noteDone || !above.size || !STEP_KEYS.includes(k)) return ''; noteDone = true; return `<p class="small muted" id="wsdupnote">${esc(tn('ws_dup_note', total))}</p>`; };
-  let html = wsFlow() + shown.map(([k, l]) => `${dupNote(k)}<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${caseList(l, '', STEP_KEYS.includes(k) ? alsoAbove : null)}${k === 'ws_repeat' ? `<p class="small"><a href="${esc(hj('#/cases?f=repeat'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
+  let html = wsFlow() + shown.map(([k, l]) => `${dupNote(k)}<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${k === 'ws_planned_today' && l.length > 1 ? `<p class="small muted" id="wsdayorder">${esc(t('day_order_hint'))}</p>` : ''}${caseList(l, '', STEP_KEYS.includes(k) ? alsoAbove : null)}${k === 'ws_repeat' ? `<p class="small"><a href="${esc(hj('#/cases?f=repeat'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
   try {
     const ov = await api('GET', '/api/maintenance');
     // ≤ 14 Tage nach Datum oder nach km fällig/überschritten (Warnschwelle aus den Einstellungen) – gleiche Status wie die Prüftermin-Übersicht
@@ -5509,7 +5514,7 @@ async function viewPlan(sec) {
   }
   // Fällig ohne Termin (nach Datum oder km): Sprung in die Fahrzeugakte, dort Termin planen oder Werkstattauftrag anlegen
   const drow = (i) => `<a class="row ${i.status === 'ueberfaellig' ? 'p-kritisch' : 'p-mittel'}" href="${doneHref(i)}" data-fromplan>${plate(i.plate)}<span class="title">${esc(mk(i.kind))}${i.next_due_date ? ' · ' + esc(t('next_due')) + ' ' + fmtD(i.next_due_date) : ''}</span><span class="chip ${i.status === 'ueberfaellig' ? 'kritisch' : 'mittel'}">${esc(i.status === 'ohne_termin' && i.recall_ref ? t('vi_recall_open') : t('ms_' + i.status))}${i.by_km ? ' · km' : ''}</span>${subs(vsTag(i), kmTxt(i), i.recall_ref && esc(i.recall_ref), i.prev_cycle_open && `<span data-mdue-prev>${esc(t('wplan_sp_prev_open').replace('{m}', `${i.prev_cycle_open.slice(5, 7)}/${i.prev_cycle_open.slice(0, 4)}`))}</span>`, i.past_planned_date && `${esc(t('wplan_mdue_past'))} ${fmtD(i.past_planned_date)}`, i.planned_after_due && `<span data-mdue-late>${esc(t('wplan_mdue_late').replace('{d}', fmtD(i.planned_after_due)))}</span>`, other(i))}</a>`;
-  let html = `<h1>${esc(t('wplan'))}</h1><p class="small muted noprint">${esc(t('wplan_hint'))}</p>
+  let html = `<h1>${esc(t('wplan'))}</h1><p class="small muted noprint">${esc(t('wplan_hint'))}</p>${r.days.some((d) => d.items.filter((x) => x.type === 'case').length > 1) ? `<p class="small muted noprint" id="wpdayorder">${esc(t('day_order_hint'))}</p>` : ''}
     <p class="print-only small">${printStamp()} · ${site || r.site ? esc(wsName(site || r.site)) + ' · ' : ''}${r.vehicle_site ? esc(t('kpi_vsite')) + ': ' + esc(r.vehicle_site === 'ohne' ? t('cs_nosite') : r.vehicle_site) + ' · ' : ''}${fmtD(r.from)} – ${fmtD(r.to)} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
       ${mgr ? `<div><label for="psite">${esc(t('workshop'))}</label><select id="psite"><option value="">${esc(t('all'))}</option>${wsAll().map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>` : ''}
