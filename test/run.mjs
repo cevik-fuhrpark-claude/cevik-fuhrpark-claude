@@ -24211,7 +24211,7 @@ await test('Backlog 445 (Blickwinkel „Lieferung mit mehreren Positionen kommt 
   }
 });
 
-await test('Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile – wer fasst nach?“): Vorgangsliste nennt im Status „wartet auf Teile“ den Vermerk (worauf gewartet wird), sonst null; Werkstatt-Startseite längste Wartezeit zuerst, Wartezeit/„kein Liefertermin“ in Listen und „Heute zu tun“ (447) DE/UK/EN', async () => {
+await test('Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile – wer fasst nach?“): Vorgangsliste nennt im Status „wartet auf Teile“ den Vermerk (worauf gewartet wird), sonst null; Werkstatt-Startseite längste Wartezeit zuerst, Wartezeit/„kein Liefertermin“ in Listen und „Heute zu tun“ (447), Suche über den Vermerk (448) DE/UK/EN', async () => {
   const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
   const a = await toRepair(); const b = await toRepair();
   eq((await cmd(U.ws, a, 'wait_parts', {}, 'Luftfederbalg hinten, bestellt bei Teile Nord')).status, 200);
@@ -24229,7 +24229,15 @@ await test('Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile �
   eq((await U.ws.get('/api/cases?status=open')).data.cases.find((x) => x.id === a).parts_wait_note, null, 'nach „fortsetzen“');
   eq((await cmd(U.ws, a, 'wait_parts', {}, 'Nachlieferung Schrauben')).status, 200);
   eq((await U.ws.get('/api/cases?status=open')).data.cases.find((x) => x.id === a).parts_wait_note, 'Nachlieferung Schrauben', 'neuester Vermerk');
+  // Backlog 448: Suche findet wartende Aufträge über den Vermerk (auch Groß-/Kleinschreibung), nach „fortsetzen“ nicht mehr
+  for (const u of [U.ws, U.fleet]) {
+    eq((await u.get('/api/cases?status=open&q=' + encodeURIComponent('schrauben'))).data.cases.map((x) => x.id).join(), a, 'Suche über „Wartet auf“');
+    eq((await u.get('/api/cases?status=&q=' + encodeURIComponent('Teile Nord'))).data.cases.length, 0, 'älterer Vermerk zählt nicht');
+  }
+  eq((await cmd(U.ws, a, 'resume_repair')).status, 200);
+  eq((await U.fleet.get('/api/cases?status=&q=Schrauben')).data.cases.length, 0, 'nach „fortsetzen“ nicht mehr');
   const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].search_hint.includes(STRINGS[l].parts_wait_for), l + ': Suchhinweis');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('${partsEta(c)}${partsWaitList(c)}') && app.includes("data-pwnoeta") && app.includes("t('parts_wait_days')"), 'Liste');
   ok(/\['st_wartet_teile', open\.filter\(\(c\) => c\.status === 'wartet_teile'\)\.sort\(/.test(app), 'Werkstatt-Startseite sortiert');

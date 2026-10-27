@@ -185,10 +185,14 @@ export async function listCases(env, user, envName, query, meta = null) {
     const partWs = user.role === 'workshop' && user.workshop_site;
     const partSql = canSeeCosts(user) || partWs ? `
       OR EXISTS (SELECT 1 FROM parts pt WHERE pt.case_id=c.id${partWs ? ' AND c.workshop_site=?' : ''} AND ${inCols(['pt.part_number', 'pt.document_ref', 'pt.supplier'])})` : '';
-    const searchArgs = [...(costSql ? cv.flatMap((x) => [x, x]) : []), ...(partSql ? [...(partWs ? [user.workshop_site] : []), ...cv.flatMap((x) => [x, x, x])] : [])];
+    // Backlog 448 (Folge aus 446, Lieferant ruft an / Leitung fasst beim Lieferanten nach): wartende Aufträge auch über den Vermerk
+    // „worauf gewartet wird“ (letztes wait_parts, z. B. „bestellt bei Teile Nord“) – gleiche Angabe wie parts_wait_note der Liste
+    const waitSql = `
+      OR (c.status IN ('wartet_teile') AND ${inCols(["(SELECT e.note FROM case_events e WHERE e.case_id=c.id AND e.action='wait_parts' ORDER BY e.created_at DESC LIMIT 1)"])})`;
+    const searchArgs = [...(costSql ? cv.flatMap((x) => [x, x]) : []), ...(partSql ? [...(partWs ? [user.workshop_site] : []), ...cv.flatMap((x) => [x, x, x])] : []), ...cv];
     // früheres Kennzeichen des Fahrzeugs (Backlog 256): Rechnung/Gutachten nennt nach einer Umkennzeichnung oft noch das alte
     where.push(`((${wordSql.join(' AND ')}) OR instr(lower(c.case_no), lower(?)) > 0 OR instr(${PLATE_KEY_SQL('v.plate')}, ?) > 0
-      OR EXISTS (SELECT 1 FROM vehicle_plates vp WHERE vp.vehicle_id=c.vehicle_id AND instr(${PLATE_KEY_SQL('vp.plate')}, ?) > 0)${costSql}${partSql})`);
+      OR EXISTS (SELECT 1 FROM vehicle_plates vp WHERE vp.vehicle_id=c.vehicle_id AND instr(${PLATE_KEY_SQL('vp.plate')}, ?) > 0)${costSql}${partSql}${waitSql})`);
     args.push(...wordArgs, q, plateKey.length >= 2 ? plateKey : '\u0000', plateKey.length >= 2 ? plateKey : '\u0000', ...searchArgs);
   }
   const limit = intParam(query.limit, 200, 1, query.__export ? 5000 : 500);
