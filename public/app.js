@@ -905,6 +905,14 @@ const dispoReturnKnown = (c) => {
 };
 // Backlog 378: worauf gewartet wird, Verschiebungen des Liefertermins (z. B. Teile falsch geliefert) und letzter Vermerk dazu – vorher nur im Verlauf
 const partsWaitRows = (pw) => `${pw.note ? `<dt>${esc(t('parts_wait_for'))}</dt><dd id="pwnote">${esc(pw.note)} <span class="muted small">· ${esc(t('parts_wait_since'))} ${fmtDT(pw.since)}</span></dd>` : ''}${pw.postponed || pw.last_change_note ? `<dt>${esc(t('parts_eta_changes'))}</dt><dd id="pwmoves">${pw.postponed ? `<span class="chip mittel">${esc(tn('parts_postponed', pw.postponed))}</span>${pw.first_eta ? ` <span class="small">${esc(t('parts_first_eta'))} ${fmtD(pw.first_eta)}</span>` : ''}` : ''}${pw.last_change_note ? `${pw.postponed ? '<br>' : ''}<span class="small">${esc(t('parts_last_change'))} (${fmtDT(pw.last_change_at)}): ${esc(pw.last_change_note)}</span>` : ''}</dd>` : ''}`;
+// Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile – wer fasst nach?“): in Listen worauf gewartet wird, die Wartezeit
+// in Kalendertagen (Berliner Tage seit Beginn des Status) und „kein Liefertermin angegeben“ – vorher nur im Vorgang zu sehen
+const partsWaitDays = (c) => (c.status_since ? Math.max(0, Math.round((Date.parse(bDate()) - Date.parse(BERLIN_FMT.format(new Date(c.status_since)))) / 864e5)) : null);
+const partsWaitList = (c) => {
+  if (c.status !== 'wartet_teile') return '';
+  const d = partsWaitDays(c);
+  return `${c.parts_wait_note ? ` · <span data-pwnote>${esc(t('parts_wait_for'))}: ${ltxt(clipTxt(c.parts_wait_note, 60))}</span>` : ''}${d ? ` · <b data-pwdays>${esc(t('parts_wait_days').replace('{d}', nDays(d)))}</b>` : ''}${c.parts_expected_date ? '' : ` <span class="chip mittel" data-pwnoeta>${esc(t('parts_eta_none'))}</span>`}`;
+};
 const partsEta = (c, sep = ' · ', label = true) => c.status === 'wartet_teile' && c.parts_expected_date ? `${sep}<b>${label ? esc(t('parts_eta')) + ' ' : ''}${fmtD(c.parts_expected_date)}</b>${c.parts_expected_date < bDate() ? ` <span class="chip kritisch">${esc(t('parts_eta_passed'))}</span>` : ''}` : '';
 // Werkstatt-Tagesübersicht: Aufträge des eigenen Standorts nach Arbeitsschritt, dazu Prüftermine der nächsten 14 Tage
 async function workshopBoard() {
@@ -915,7 +923,8 @@ async function workshopBoard() {
     ['ws_to_ack', open.filter((c) => c.status === 'werkstatt_freigegeben' && !c.workshop_ack_at)],
     ['ws_to_start', open.filter((c) => c.status === 'werkstatt_freigegeben' && c.workshop_ack_at)],
     ['st_in_reparatur', open.filter((c) => c.status === 'in_reparatur')],
-    ['st_wartet_teile', open.filter((c) => c.status === 'wartet_teile')],
+    // längste Wartezeit zuerst – bei diesem Auftrag zuerst beim Lieferanten nachfassen (Backlog 446)
+    ['st_wartet_teile', open.filter((c) => c.status === 'wartet_teile').sort((a, b) => String(a.status_since || a.updated_at).localeCompare(String(b.status_since || b.updated_at)))],
     ['st_abschlusskontrolle', open.filter((c) => c.status === 'abschlusskontrolle')],
     ['ws_preview', open.filter((c) => c.status === 'gemeldet')],
   ];
@@ -1220,7 +1229,7 @@ function caseList(list, empty) {
     ${plate(c.plate, { locked: c.safety_lock })}
     <span class="title">${woTag(c)}${ltxt(cDesc(c.description))}</span>
     <span class="chip ${esc(c.status === 'fahrzeug_freigegeben' ? 'ok' : c.priority)}">${esc(t('st_' + c.status))}</span>
-    <span class="sub">${esc(c.case_no)} · ${esc(t('prio_' + c.priority))}${c.safety_lock ? ' · ' + esc(t('locked')) : ''}${c.file_count ? ` · <span data-fc title="${esc(t('files'))}">📎 ${Number(c.file_count)}</span>` : ''}${c.access === 'preview' ? ' · ' + esc(t('preview_hint')) : ''}${c.tow_service && OPEN_CASE_ST.includes(c.status) ? ` · <b class="towtag">${esc(t('vl_towed_chip'))}</b>` : ''}${hoMissing(c).length ? ` · <b class="hotag">${esc(hoMissing(c).join(', '))}</b>` : ''}${c.planned_date && ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status) ? ` · <b>${esc(t('planned'))} ${fmtD(c.planned_date)}</b>${c.planned_note ? ` <span data-plannote>(${esc(clipTxt(c.planned_note, 60))})</span>` : ''}` : ''} · ${fmtDT(c.updated_at)}${recentRepeat(c) ? ` · <b>${esc(t('act_repeat_finding'))} ${fmtDT(c.last_repeat_at)}</b>` : ''}${partsEta(c)}${c.cost_over_limit_at ? ` · <span class="chip mittel">${esc(t('cost_approval_pending'))}</span>` : ''}${c.maintenance_event_id ? ` · <b>${esc(t('md_case'))}</b>` : ''}${c.duplicate_of_no ? ` · ${esc(t('dup_of'))} ${esc(c.duplicate_of_no)}` : ''}${c.followup_on && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? ` · <span class="chip${c.followup_on <= bDate() ? ' mittel' : ''}">${esc(t('followup'))} ${fmtD(c.followup_on)}</span>` : ''}</span></a>`).join('')}</div>`;
+    <span class="sub${c.status === 'wartet_teile' ? ' wrap' : ''}">${esc(c.case_no)} · ${esc(t('prio_' + c.priority))}${c.safety_lock ? ' · ' + esc(t('locked')) : ''}${c.file_count ? ` · <span data-fc title="${esc(t('files'))}">📎 ${Number(c.file_count)}</span>` : ''}${c.access === 'preview' ? ' · ' + esc(t('preview_hint')) : ''}${c.tow_service && OPEN_CASE_ST.includes(c.status) ? ` · <b class="towtag">${esc(t('vl_towed_chip'))}</b>` : ''}${hoMissing(c).length ? ` · <b class="hotag">${esc(hoMissing(c).join(', '))}</b>` : ''}${c.planned_date && ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status) ? ` · <b>${esc(t('planned'))} ${fmtD(c.planned_date)}</b>${c.planned_note ? ` <span data-plannote>(${esc(clipTxt(c.planned_note, 60))})</span>` : ''}` : ''} · ${fmtDT(c.updated_at)}${recentRepeat(c) ? ` · <b>${esc(t('act_repeat_finding'))} ${fmtDT(c.last_repeat_at)}</b>` : ''}${partsEta(c)}${partsWaitList(c)}${c.cost_over_limit_at ? ` · <span class="chip mittel">${esc(t('cost_approval_pending'))}</span>` : ''}${c.maintenance_event_id ? ` · <b>${esc(t('md_case'))}</b>` : ''}${c.duplicate_of_no ? ` · ${esc(t('dup_of'))} ${esc(c.duplicate_of_no)}` : ''}${c.followup_on && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? ` · <span class="chip${c.followup_on <= bDate() ? ' mittel' : ''}">${esc(t('followup'))} ${fmtD(c.followup_on)}</span>` : ''}</span></a>`).join('')}</div>`;
 }
 
 // Filter der Vorgangsliste: offen/abgeschlossen/alle bzw. „Mangel erneut festgestellt“ (offen, letzte 3 Tage)

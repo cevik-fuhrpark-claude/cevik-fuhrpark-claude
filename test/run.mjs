@@ -24211,6 +24211,34 @@ await test('Backlog 445 (Blickwinkel „Lieferung mit mehreren Positionen kommt 
   }
 });
 
+await test('Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile – wer fasst nach?“): Vorgangsliste nennt im Status „wartet auf Teile“ den Vermerk (worauf gewartet wird), sonst null; Werkstatt-Startseite längste Wartezeit zuerst, Wartezeit/„kein Liefertermin“ in Listen DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
+  const a = await toRepair(); const b = await toRepair();
+  eq((await cmd(U.ws, a, 'wait_parts', {}, 'Luftfederbalg hinten, bestellt bei Teile Nord')).status, 200);
+  // Auftrag a wartet seit drei Wochen
+  const old = new Date(Date.now() - 21 * 864e5).toISOString();
+  db.prepare(`UPDATE case_events SET created_at=? WHERE case_id=? AND action='wait_parts'`).run(old, a);
+  for (const [n, u] of [['Werkstatt', U.ws], ['Leitung', U.fleet], ['Lesen', U.viewer]]) {
+    const cs = (await u.get('/api/cases?status=open')).data.cases;
+    const ra = cs.find((x) => x.id === a); const rb = cs.find((x) => x.id === b);
+    eq(ra.parts_wait_note, 'Luftfederbalg hinten, bestellt bei Teile Nord', n); eq(rb.status, 'in_reparatur'); eq(rb.parts_wait_note, null, n + ': anderer Status');
+    eq(ra.status_since, old, n + ': seit Beginn des Wartens'); eq(ra.parts_expected_date, null);
+  }
+  // Teile da → kein Vermerk mehr in der Liste; erneutes Warten zeigt den neuen Vermerk
+  eq((await cmd(U.ws, a, 'resume_repair')).status, 200);
+  eq((await U.ws.get('/api/cases?status=open')).data.cases.find((x) => x.id === a).parts_wait_note, null, 'nach „fortsetzen“');
+  eq((await cmd(U.ws, a, 'wait_parts', {}, 'Nachlieferung Schrauben')).status, 200);
+  eq((await U.ws.get('/api/cases?status=open')).data.cases.find((x) => x.id === a).parts_wait_note, 'Nachlieferung Schrauben', 'neuester Vermerk');
+  const { STRINGS } = await import('../public/i18n.js');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${partsEta(c)}${partsWaitList(c)}') && app.includes("data-pwnoeta") && app.includes("t('parts_wait_days')"), 'Liste');
+  ok(/\['st_wartet_teile', open\.filter\(\(c\) => c\.status === 'wartet_teile'\)\.sort\(/.test(app), 'Werkstatt-Startseite sortiert');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].parts_wait_days && STRINGS[l].parts_wait_days.includes('{d}'), l + ' parts_wait_days');
+    ok(STRINGS[l].help_ws_s.includes(STRINGS[l].parts_eta_none) && STRINGS[l].help_ws_s.includes(STRINGS[l].parts_wait_for), l + ': Hilfe Werkstatt');
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

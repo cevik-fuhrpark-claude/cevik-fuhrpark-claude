@@ -200,7 +200,9 @@ export async function listCases(env, user, envName, query, meta = null) {
       -- Disposition „seit“: Beginn der aktuellen Sperre bzw. des aktuellen Status (20.10.2026, Backlog 98; vorher Meldezeitpunkt/letzte Änderung)
       CASE WHEN c.safety_lock=1 THEN COALESCE((SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='set_safety_lock'), c.created_at) END AS lock_since,
       (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.to_status=c.status AND (e.from_status IS NULL OR e.from_status<>e.to_status)) AS status_since,
-      (SELECT d.case_no FROM cases d WHERE d.id=c.duplicate_of) AS duplicate_of_no
+      (SELECT d.case_no FROM cases d WHERE d.id=c.duplicate_of) AS duplicate_of_no,
+      -- Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile – wer fasst nach?“): worauf gewartet wird, schon in der Liste
+      CASE c.status WHEN 'wartet_teile' THEN (SELECT e.note FROM case_events e WHERE e.case_id=c.id AND e.action='wait_parts' ORDER BY e.created_at DESC LIMIT 1) END AS parts_wait_note
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN users u ON u.id=c.reporter_id
     WHERE ${where.join(' AND ')}
     ORDER BY ${Object.hasOwn(CASE_SORTS, query.sort) ? CASE_SORTS[query.sort] : CASE_SORTS.priority}

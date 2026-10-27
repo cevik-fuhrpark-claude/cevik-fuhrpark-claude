@@ -212,6 +212,7 @@ UI-Hinweise Kamera beschlagen, Kühler-/Luftschlauch geplatzt, Kühlergrill lose
 UI-Bußgeld mit Fahrverbot: Auswahl beim Erfassen, Chip, Hinweis § 21 StVG, Ändern/Entfernen, DE/UK/EN 390/820/1366|ui-fahrverbot.py|/tmp/cfp-fahrverbot.log
 UI-Bußgeld Zustellstand der Fahrerinformation und Einwand des Fahrers, DE/UK/EN 390/820/1366|ui-bussgeld-zustellung.py|/tmp/cfp-bussgeld-zustellung.log
 UI-Vorgang wartet auf Teile: worauf gewartet wird, Liefertermin verschoben (Falschlieferung), Grund im Formular, DE/UK/EN 390/820/1366|ui-teile-falschlieferung.py|/tmp/cfp-teile-falschlieferung.log
+UI-Werkstatt-Startseite wartet auf Teile: längste Wartezeit zuerst, Wartet auf/Wartezeit/kein Liefertermin in Listen, DE/UK/EN 390/820/1366|ui-teile-nachfassen.py|/tmp/cfp-teile-nachfassen.log
 UI-Neuer Fahrer erster Tag: Einladung in gewählter Sprache, Kontrolle mit Mangel → Ergebnisseite „vor der Abfahrt klären“, Fahrbereitschaft „nicht abgefragt“, HU/SP ausgeschrieben, DE/UK/EN 390/820/1366|ui-fahrer-erster-tag.py|/tmp/cfp-fahrer-erster-tag.log
 UI-Herstellerwerkstatt: Freigabe extern ohne Warnung, Werkstattplan mit Standort, Fremdleistung 0 € mit Vermerk, Hinweis 0/leer, DE/UK/EN 390/820/1366|ui-herstellerwerkstatt.py|/tmp/cfp-herstellerwerkstatt.log
 UI-Unfall in Polen: Unfall-Hinweis bei Zusammenstoß/зіткнення/collision mit Unfallbericht-Schritt, Gegner-Kennzeichen ohne D-Band, DE/UK/EN 390/820/1366|ui-unfall-polen.py|/tmp/cfp-unfall-polen.log
