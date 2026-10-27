@@ -24371,10 +24371,10 @@ await test('Backlog 452 (Folge aus 449, Teillieferung im Lager): Wareneingang/Zu
 
 await test('Backlog 453 (Blickwinkel „Neue Werkstatt-Aushilfe, erster Tag am Tablet (UK)“): Werkstatt-Startseite zeigt den Kurzablauf eines Auftrags mit den echten Knopf-Beschriftungen (DE/UK/EN), ausblendbar je Konto; Vorab-Info-Zeilen brechen um statt den Hinweis abzuschneiden', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('let html = wsFlow() + lanes.filter('), 'Kurzablauf oben auf der Werkstatt-Startseite');
+  ok(app.includes('let html = wsFlow() + shown.map('), 'Kurzablauf oben auf der Werkstatt-Startseite');
   ok(app.includes("render(html, 'home');\n  bindWsFlow();"), 'Ausblenden gebunden');
   ok(app.includes("b.onclick = () => { try { localStorage.setItem(wsFlowKey(), '1'); } catch {}"), 'Ausblenden als Eigenschaft, Speicher abgesichert');
-  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' ? ' wrap' : ''"), 'Vorab-Info bricht um');
+  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' || xh ? ' wrap' : ''"), 'Vorab-Info bricht um');
   // die genannten Knöpfe gibt es wirklich (Server-Aktionen der Werkstatt)
   const { U, toRepair } = await freshWorld();
   const a = await toRepair(); const acts = (await U.ws.get(`/api/cases/${a}`)).data.allowed_actions;
@@ -24387,6 +24387,29 @@ await test('Backlog 453 (Blickwinkel „Neue Werkstatt-Aushilfe, erster Tag am T
     for (const [k, v] of Object.entries(ph)) { ok(STRINGS[l][k], `${l}: ${k}`); for (const x of v) ok(STRINGS[l][k].includes(x), `${l}: ${k} ${x}`); }
     for (const k of ['acknowledge', 'start_repair', 'record_work', 'add_part', 'wait_parts', 'resume_repair', 'inspection', 'request_quality_check']) ok(STRINGS[l]['act_' + k], `${l}: act_${k}`);
   }
+});
+
+await test('Backlog 454 (Blickwinkel „derselbe Auftrag steht in ‚Heute geplant‘ und ‚Neu – bitte übernehmen‘“): Werkstatt-Startseite kennzeichnet Aufträge im Arbeitsschritt, die oben schon hervorgehoben sind, und nennt die Gesamtzahl offener Aufträge einmal (DE/UK/EN)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i = app.indexOf('async function workshopBoard('); const body = app.slice(i, app.indexOf('\nfunction hj(', i));
+  // Arbeitsschritte = genau die ursprünglichen Abschnitte (alles andere wird oben per unshift hervorgehoben)
+  const steps = body.match(/const lanes = \[([\s\S]*?)\n  \];/)[1].match(/\['(\w+)', open\.filter/g).map((x) => x.slice(2, -14));
+  const sk = JSON.parse(body.match(/const STEP_KEYS = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
+  eq(sk.join(','), steps.join(','), 'STEP_KEYS = Abschnitte nach Arbeitsschritt');
+  const unshifted = [...body.matchAll(/lanes\.unshift\(\['(\w+)'/g)].map((m) => m[1]);
+  ok(unshifted.length >= 6 && unshifted.every((k) => !sk.includes(k)), 'hervorgehobene Abschnitte sind keine Arbeitsschritte: ' + unshifted.join(','));
+  ok(body.includes("caseList(l, '', STEP_KEYS.includes(k) ? alsoAbove : null)"), 'Kennzeichnung nur in den Arbeitsschritten');
+  ok(body.includes("tn('ws_dup_note', total)") && body.includes('new Set(shown.flatMap('), 'Gesamtzahl ohne Doppelzählung');
+  ok(app.includes("function caseList(list, empty, extra) {") && app.includes('${xh}${esc(c.case_no)}'), 'caseList mit Zusatz vorn in der Unterzeile');
+  // Fall aus dem Blickwinkel: freigegeben, nicht übernommen, Termin heute → beide Bedingungen treffen zu
+  const { U, cmd, newCase } = await freshWorld();
+  const id = await newCase(); const today = BERLIN_TODAY;
+  const r = await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: today }, 'freigegeben, Termin heute');
+  ok(r.status === 200, 'Freigabe mit Termin ' + r.status + ' ' + JSON.stringify(r.data));
+  const row = (await U.ws.get('/api/cases?status=open&limit=500')).data.cases.find((c) => c.id === id);
+  ok(row && row.status === 'werkstatt_freigegeben' && !row.workshop_ack_at && row.planned_date === today, 'erscheint in „Neu – bitte übernehmen“ und „Heute geplant“: ' + JSON.stringify(row && { s: row.status, a: row.workshop_ack_at, p: row.planned_date }));
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].ws_also_above && STRINGS[l].help_ws_s.includes('↑ ' + STRINGS[l].ws_also_above), l + ': Hilfe nennt den Zusatz'); ok(STRINGS[l].ws_dup_note && STRINGS[l].ws_dup_note.includes(': {n}.'), l + ': neutrale Zahlform'); }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
