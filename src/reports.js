@@ -555,7 +555,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const site = query.site ? String(query.site).slice(0, 20) : null;
   const cases = site ? allCases.filter((c) => (c.workshop_site || 'ohne') === site) : allCases;
   const ids = cases.map((c) => c.id);
-  const events = ids.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload, CASE WHEN action IN ('wait_parts','set_parts_eta') THEN payload END AS parts_payload FROM case_events WHERE case_id IN (SELECT value FROM json_each(?)) ORDER BY case_id, created_at`)
+  const events = ids.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload, CASE WHEN action IN ('wait_parts','set_parts_eta','parts_partial') THEN payload END AS parts_payload FROM case_events WHERE case_id IN (SELECT value FROM json_each(?)) ORDER BY case_id, created_at`)
     .bind(JSON.stringify(ids)).all()).results : [];
   const evBy = new Map();
   for (const e of events) { if (!evBy.has(e.case_id)) evBy.set(e.case_id, []); evBy.get(e.case_id).push(e); }
@@ -607,7 +607,7 @@ export async function kpiReport(env, user, envName, query = {}) {
     for (const e of evs) {
       let pl = null; if (e.parts_payload) { try { pl = JSON.parse(e.parts_payload); } catch { pl = null; } }
       if (e.to_status === 'wartet_teile' && seg === null) seg = { eta: (pl && pl.parts_expected_date) || null };
-      else if (seg && e.action === 'set_parts_eta') seg.eta = (pl && pl.to) || null;
+      else if (seg && (e.action === 'set_parts_eta' || (e.action === 'parts_partial' && pl && 'to' in pl))) seg.eta = (pl && pl.to) || null;
       else if (seg && e.to_status && e.to_status !== 'wartet_teile') closeSeg(e.created_at);
     }
     if (seg) closeSeg(null);

@@ -24249,6 +24249,61 @@ await test('Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile �
   }
 });
 
+await test('Backlog 449 (Blickwinkel „Lieferant liefert nur einen Teil der Bestellung“): „Teillieferung eingegangen“ – Status bleibt „wartet auf Teile“, Wartezeit läuft weiter, Vermerk „worauf noch gewartet wird“ in Liste/Suche/Vorgang, Rest-Liefertermin optional (zählt wie Terminänderung), kein Push, Rechte, DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 864e5));
+  const a = await toRepair();
+  eq((await cmd(U.ws, a, 'parts_partial', {}, 'nur Bremsscheibe')).status, 403, 'nur im Status „wartet auf Teile“');
+  eq((await cmd(U.ws, a, 'wait_parts', { parts_expected_date: day(3) }, 'Bremsscheiben + Beläge, bestellt bei Teile Nord')).status, 200);
+  const old = new Date(Date.now() - 10 * 864e5).toISOString();
+  db.prepare(`UPDATE case_events SET created_at=? WHERE case_id=? AND action='wait_parts'`).run(old, a);
+  ok((await U.fleet.get(`/api/cases/${a}`)).data.allowed_actions.includes('parts_partial'), 'Leitung darf');
+  ok(!(await U.viewer.get(`/api/cases/${a}`)).data.allowed_actions.includes('parts_partial'), 'Lesen nicht');
+  eq((await cmd(U.wsMuc, a, 'parts_partial', {}, 'Beläge fehlen')).status === 200, false, 'fremde Werkstatt nicht');
+  eq((await cmd(U.ws, a, 'parts_partial', {})).status, 400, 'Vermerk Pflicht');
+  eq((await cmd(U.ws, a, 'parts_partial', { parts_expected_date: day(-1) }, 'Beläge fehlen')).status, 400, 'neuer Termin nicht in der Vergangenheit');
+  const n0 = db.prepare('SELECT COUNT(*) AS n FROM notifications').get().n;
+  // ohne Termin-Feld: Termin bleibt; Status und Wartebeginn bleiben
+  const r1 = await cmd(U.ws, a, 'parts_partial', {}, 'Beläge fehlen noch, Scheiben geliefert'); eq(r1.status, 200, JSON.stringify(r1.data));
+  eq(db.prepare('SELECT COUNT(*) AS n FROM notifications').get().n, n0, 'kein Push');
+  let d = (await U.fleet.get(`/api/cases/${a}`)).data;
+  eq(d.case.status, 'wartet_teile'); eq(d.case.parts_expected_date, day(3), 'Termin unverändert'); eq((await U.fleet.get('/api/cases?status=open')).data.cases.find((x) => x.id === a).status_since, old, 'Wartezeit läuft weiter');
+  eq(d.parts_wait.note, 'Beläge fehlen noch, Scheiben geliefert'); eq(d.parts_wait.original_note, 'Bremsscheiben + Beläge, bestellt bei Teile Nord');
+  eq(d.parts_wait.partial_count, 1); eq(d.parts_wait.last_partial_by, 'WS DO'); eq(d.parts_wait.since, old); eq(d.parts_wait.changes, 0);
+  // Arbeitszeit/eingebaute Teile lassen sich im Status buchen (Auftrag teilweise fortsetzen)
+  eq((await cmd(U.ws, a, 'add_part', { name: 'Bremsscheibe', quantity: 2 })).status, 200, 'Teil buchen');
+  eq((await cmd(U.ws, a, 'record_work', { hours: 1.5, description: 'Scheiben getauscht' })).status, 200, 'Arbeitszeit buchen');
+  // zweite Teillieferung mit späterem Rest-Termin → zählt als Verschiebung; unveränderter überschrittener Termin bleibt ohne Fehler
+  eq((await cmd(U.ws, a, 'parts_partial', { parts_expected_date: day(6) }, 'Belag hinten links fehlt')).status, 200);
+  d = (await U.ws.get(`/api/cases/${a}`)).data;
+  eq(d.case.parts_expected_date, day(6)); eq(d.parts_wait.partial_count, 2); eq(d.parts_wait.postponed, 1); eq(d.parts_wait.first_eta, day(3));
+  ok(!d.parts_wait.last_change_note, 'Teillieferungs-Vermerk ist kein „Grund der Terminänderung“');
+  const ev = d.events.filter((x) => x.action === 'parts_partial'); eq(ev.length, 2); eq(JSON.stringify(ev[1].payload), JSON.stringify({ from: day(3), to: day(6) }));
+  db.prepare('UPDATE cases SET parts_expected_date=? WHERE id=?').run(day(-2), a);
+  eq((await cmd(U.ws, a, 'parts_partial', { parts_expected_date: day(-2) }, 'Belag kommt mit Expressversand')).status, 200, 'überschrittener Termin unverändert');
+  eq((await U.ws.get(`/api/cases/${a}`)).data.case.parts_expected_date, day(-2));
+  eq((await cmd(U.ws, a, 'parts_partial', { parts_expected_date: '' }, 'Belag – Termin offen')).status, 200, 'Termin entfernen');
+  // Liste und Suche zeigen den neuesten Vermerk; der ursprüngliche zählt nicht mehr
+  for (const u of [U.ws, U.fleet, U.viewer]) {
+    const row = (await u.get('/api/cases?status=open')).data.cases.find((x) => x.id === a);
+    eq(row.parts_wait_note, 'Belag – Termin offen'); eq(row.parts_expected_date, null);
+  }
+  eq((await U.fleet.get('/api/cases?status=open&q=' + encodeURIComponent('termin offen'))).data.cases.map((x) => x.id).join(), a, 'Suche neuer Vermerk');
+  eq((await U.fleet.get('/api/cases?status=open&q=' + encodeURIComponent('Teile Nord'))).data.cases.length, 0, 'alter Vermerk nicht');
+  // alles da → fortsetzen; Kennzahlenbericht läuft fehlerfrei
+  eq((await cmd(U.ws, a, 'resume_repair')).status, 200);
+  eq((await U.ws.get('/api/cases?status=open')).data.cases.find((x) => x.id === a).parts_wait_note, null);
+  const bm = day(0).slice(0, 7); eq((await U.fleet.get(`/api/reports/kpi?from=${bm}&to=${bm}`)).status, 200, 'Kennzahlen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['act_parts_partial', 'pp_hint', 'pp_note', 'pp_note_hint', 'pp_eta', 'pp_eta_hint', 'pp_label', 'pp_count', 'pp_last', 'pp_orig', 'parts_wait_still']) ok(STRINGS[l][k], `${l}: ${k}`);
+    ok(STRINGS[l].pp_count.includes('{n}'), l + ' pp_count');
+    ok(STRINGS[l].help_ws_s.includes(STRINGS[l].act_parts_partial), l + ': Hilfe Werkstatt');
+  }
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("case 'parts_partial':") && app.includes('partsPartialRow(pw)') && app.includes("'wait_parts', 'parts_partial',"), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

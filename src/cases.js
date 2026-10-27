@@ -188,7 +188,7 @@ export async function listCases(env, user, envName, query, meta = null) {
     // Backlog 448 (Folge aus 446, Lieferant ruft an / Leitung fasst beim Lieferanten nach): wartende Aufträge auch über den Vermerk
     // „worauf gewartet wird“ (letztes wait_parts, z. B. „bestellt bei Teile Nord“) – gleiche Angabe wie parts_wait_note der Liste
     const waitSql = `
-      OR (c.status IN ('wartet_teile') AND ${inCols(["(SELECT e.note FROM case_events e WHERE e.case_id=c.id AND e.action='wait_parts' ORDER BY e.created_at DESC LIMIT 1)"])})`;
+      OR (c.status IN ('wartet_teile') AND ${inCols(["(SELECT e.note FROM case_events e WHERE e.case_id=c.id AND e.action IN ('wait_parts','parts_partial') ORDER BY e.created_at DESC LIMIT 1)"])})`;
     const searchArgs = [...(costSql ? cv.flatMap((x) => [x, x]) : []), ...(partSql ? [...(partWs ? [user.workshop_site] : []), ...cv.flatMap((x) => [x, x, x])] : []), ...cv];
     // früheres Kennzeichen des Fahrzeugs (Backlog 256): Rechnung/Gutachten nennt nach einer Umkennzeichnung oft noch das alte
     where.push(`((${wordSql.join(' AND ')}) OR instr(lower(c.case_no), lower(?)) > 0 OR instr(${PLATE_KEY_SQL('v.plate')}, ?) > 0
@@ -206,7 +206,7 @@ export async function listCases(env, user, envName, query, meta = null) {
       (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.to_status=c.status AND (e.from_status IS NULL OR e.from_status<>e.to_status)) AS status_since,
       (SELECT d.case_no FROM cases d WHERE d.id=c.duplicate_of) AS duplicate_of_no,
       -- Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile – wer fasst nach?“): worauf gewartet wird, schon in der Liste
-      CASE c.status WHEN 'wartet_teile' THEN (SELECT e.note FROM case_events e WHERE e.case_id=c.id AND e.action='wait_parts' ORDER BY e.created_at DESC LIMIT 1) END AS parts_wait_note
+      CASE c.status WHEN 'wartet_teile' THEN (SELECT e.note FROM case_events e WHERE e.case_id=c.id AND e.action IN ('wait_parts','parts_partial') ORDER BY e.created_at DESC LIMIT 1) END AS parts_wait_note
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN users u ON u.id=c.reporter_id
     WHERE ${where.join(' AND ')}
     ORDER BY ${Object.hasOwn(CASE_SORTS, query.sort) ? CASE_SORTS[query.sort] : CASE_SORTS.priority}
@@ -322,11 +322,17 @@ export function partsWaitOf(events) {
   for (let k = events.length - 1; k >= 0; k--) if (events[k].action === 'wait_parts') { i = k; break; }
   if (i < 0) return null;
   const w = events[i];
-  const moves = events.slice(i + 1).filter((e) => e.action === 'set_parts_eta' && e.payload);
+  const after = events.slice(i + 1);
+  // Terminänderungen: „Liefertermin Teile“ und Teillieferungen mit neuem Termin für den Rest (Backlog 449)
+  const moves = after.filter((e) => (e.action === 'set_parts_eta' || e.action === 'parts_partial') && e.payload && 'to' in e.payload);
   const postponed = moves.filter((e) => e.payload.from && (!e.payload.to || e.payload.to > e.payload.from)).length;
   const firstEta = (w.payload && w.payload.parts_expected_date) || (moves[0] && moves[0].payload.to) || null;
-  const lastNoted = [...moves].reverse().find((e) => e.note);
-  return { note: w.note || null, since: w.created_at, first_eta: firstEta, changes: moves.length, postponed, ...(lastNoted ? { last_change_note: lastNoted.note, last_change_at: lastNoted.created_at } : {}) };
+  const lastNoted = [...moves].reverse().find((e) => e.note && e.action === 'set_parts_eta');
+  const partials = after.filter((e) => e.action === 'parts_partial');
+  const lastPartial = partials[partials.length - 1];
+  return { note: lastPartial ? lastPartial.note : (w.note || null), since: w.created_at, first_eta: firstEta, changes: moves.length, postponed,
+    ...(lastNoted ? { last_change_note: lastNoted.note, last_change_at: lastNoted.created_at } : {}),
+    ...(lastPartial ? { partial_count: partials.length, last_partial_at: lastPartial.created_at, last_partial_by: lastPartial.actor_name || null, original_note: w.note || null } : {}) };
 }
 
 export async function getCaseDetail(env, user, envName, caseId) {
@@ -836,7 +842,7 @@ export function allowedActions(user, c, access) {
       if (ws || mgr) a.push('wait_parts', 'inspection', 'request_quality_check', 'set_planned_date');
       break;
     case 'wartet_teile':
-      if (ws || mgr) a.push('resume_repair', 'set_planned_date', 'set_parts_eta');
+      if (ws || mgr) a.push('resume_repair', 'parts_partial', 'set_planned_date', 'set_parts_eta');
       break;
     case 'abschlusskontrolle':
       if (mgr) a.push('return_for_rework', 'technical_release');
@@ -1588,6 +1594,19 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const eta = p.parts_expected_date ? partsDate(p.parts_expected_date) : null;
       if (eta === (c.parts_expected_date || null)) throw bad('validation', 'Liefertermin ist unverändert.');
       set.parts_expected_date = eta; payload = { from: c.parts_expected_date || null, to: eta };
+      break;
+    }
+    case 'parts_partial': {
+      // Backlog 449 (Blickwinkel „Lieferant liefert nur einen Teil der Bestellung“): Teillieferung eingegangen – Status bleibt „wartet auf Teile“
+      // (Arbeitszeit/Teile lassen sich in diesem Status bereits buchen), der Vermerk sagt, worauf NOCH gewartet wird (ersetzt in Listen/Suche den
+      // ursprünglichen Vermerk, der im Vorgang sichtbar bleibt). Liefertermin für den Rest optional laut Lieferant; ohne Push, Wartezeit läuft weiter.
+      requireNote('Bitte angeben, worauf noch gewartet wird.');
+      if (Object.prototype.hasOwnProperty.call(p, 'parts_expected_date')) {
+        const cur = c.parts_expected_date || null;
+        const raw = p.parts_expected_date ? String(p.parts_expected_date) : null;
+        const eta = raw && raw !== cur ? partsDate(raw) : raw; // unveränderter (auch überschrittener) Termin bleibt stehen
+        if (eta !== cur) { set.parts_expected_date = eta; payload = { from: cur, to: eta }; }
+      }
       break;
     }
     case 'resume_repair':
