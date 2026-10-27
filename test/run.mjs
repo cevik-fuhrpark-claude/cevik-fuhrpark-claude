@@ -24412,6 +24412,31 @@ await test('Backlog 454 (Blickwinkel „derselbe Auftrag steht in ‚Heute gepla
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].ws_also_above && STRINGS[l].help_ws_s.includes('↑ ' + STRINGS[l].ws_also_above), l + ': Hilfe nennt den Zusatz'); ok(STRINGS[l].ws_dup_note && STRINGS[l].ws_dup_note.includes(': {n}.'), l + ': neutrale Zahlform'); }
 });
 
+await test('Backlog 455 (Folge aus 454, Leitung gibt mit Termin frei): Hinweis/Push „Neuer Werkstattauftrag“ nennt den Werkstatttermin (nur Datum, Sprache der Person, beim Sprachwechsel umgeschrieben); ohne Termin unverändert', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const { dateLang } = await import('../src/util.js'); const { localizedBody } = await import('../src/notify.js');
+  const day = new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + 2 * 864e5).toISOString().slice(0, 10);
+  const a = await newCase(); eq((await cmd(U.fleet, a, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day }, 'mit Termin')).status, 200);
+  const b = await newCase(); eq((await cmd(U.fleet, b, 'approve_repair', { workshop_site: 'DORTMUND' }, 'ohne Termin')).status, 200);
+  const ns = (await U.ws.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'approved');
+  const na = ns.find((n) => n.case_id === a); const nb = ns.find((n) => n.case_id === b);
+  ok(na && na.body.endsWith(` · Termin ${dateLang(day, 'de')} · TEST`), 'mit Termin: ' + (na && na.body));
+  ok(nb && !nb.body.includes('Termin') && /· niedrig · TEST$/.test(nb.body), 'ohne Termin: ' + (nb && nb.body));
+  // gespeichert auf Deutsch → in der aktuellen Sprache der Person umgeschrieben (Priorität und Termin)
+  const de = `S-2026-0001 · DO-AB 1 · mittel · Termin ${dateLang(day, 'de')}`;
+  eq(localizedBody({ kind: 'approved', body: de }, 'en'), `S-2026-0001 · DO-AB 1 · medium · Workshop date ${dateLang(day, 'en')}`);
+  eq(localizedBody({ kind: 'approved', body: de + ' · TEST' }, 'uk'), `S-2026-0001 · DO-AB 1 · середній · Термін ${dateLang(day, 'uk')} · TEST`);
+  eq(localizedBody({ kind: 'approved', body: `S-2026-0001 · DO-AB 1 · medium · Workshop date ${dateLang(day, 'en')}` }, 'de'), de);
+  // unbekannte Form bleibt unverändert; andere Arten werten den Zusatz nicht aus
+  eq(localizedBody({ kind: 'approved', body: 'S-1 · X · mittel · Irgendwas 01.02.2026' }, 'en'), 'S-1 · X · mittel · Irgendwas 01.02.2026');
+  eq(localizedBody({ kind: 'comment', body: de }, 'en'), de);
+  // nach Arbeitsbeginn (Kostenfreigabe läuft als „approved“ an die Werkstatt) kein Termin im Text
+  const src = (await import('node:fs')).readFileSync(new URL('../src/notify.js', import.meta.url), 'utf8');
+  ok(src.includes("k === 'approved' && c.status === 'werkstatt_freigegeben' && c.planned_date"), 'Termin nur bei freigegebenem Auftrag');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, w] of [['de', '· Termin '], ['uk', '· Термін '], ['en', '· Workshop date ']]) ok(STRINGS[l].help_ws_s.includes(w), l + ': Hilfe Werkstatt nennt den Termin im Hinweis');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
