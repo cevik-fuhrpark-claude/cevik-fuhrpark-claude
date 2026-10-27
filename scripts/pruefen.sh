@@ -236,6 +236,7 @@ UI-Notfall-Bereitschaft: Erreichbarkeit je Rufnummer, „jetzt erreichbar/nicht 
 UI-Notfall-Wochenende: zwei Zeitspannen je Rufnummer (Fr 18 – Mo 06), Anzeige, Formular, Meldung bei Unvollständigem, Bundesland-Feiertage, DE/UK/EN 390/820/1366|ui-notfall-wochenende.py|/tmp/cfp-notfall-wochenende.log
 UI-Notfall-Zeitzone: Gerät im Ausland (andere Zeitzone) – Hinweis „deutsche Zeit“ mit beiden Uhrzeiten, „wieder ab“ mit Gerätezeit; gleiche Zeit ohne Hinweis, DE/UK/EN 390/820/1366|ui-notfall-zeitzone.py|/tmp/cfp-notfall-zeitzone.log
 UI-Notfall-Feiertage: Feiertage der nächsten 60 Tage ohne besetzte Nummer in „Rufnummern pflegen“, DE/UK/EN 390/820/1366|ui-notfall-feiertage.py|/tmp/cfp-notfall-feiertage.log
+UI-HU-Mängel: Hinweis zum Fälligkeitsfeld je Prüfergebnis, Hinweis geringe Mängel in der Akte, DE/UK/EN 390/820/1366|ui-hu-maengel.py|/tmp/cfp-hu-maengel.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log

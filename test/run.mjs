@@ -23887,6 +23887,34 @@ await test('Backlog 434 (Blickwinkel „Allerheiligen und Weihnachten: Büro zu 
   ok(app.includes("emGapsPanel(d.contacts) + emHolGapsPanel(d.contacts)") && app.includes('data-emholgap='), 'Oberfläche');
 });
 
+await test('Backlog 435 (Blickwinkel „HU-Prüfbericht mit erheblichen bzw. geringen Mängeln“): Hinweis zum Fälligkeitsfeld je Ergebnis, Hinweis bei geringen Mängeln in der Akte, Hilfe DE/UK/EN; Server unverändert', async () => {
+  const VR = 'VIN:WDB96340310743500';
+  eq((await owner.post('/api/vehicles', { plate: 'HU-MG 435', vin: VR.slice(4), site: 'Dortmund' })).status, 201);
+  const d0 = bDayOff(-10), d1 = bDayOff(-3);
+  // erhebliche Mängel ohne Fälligkeit → „Frist ungeklärt“ mit Hinweis Nachprüfung (unverändertes Verhalten, auf das der neue Text verweist)
+  eq((await users.fleet.post(`/api/vehicles/${encodeURIComponent(VR)}/husp/HU/complete`, { done_date: d0, evidence: 'HU-Bericht 435-1', result: 'erhebliche_maengel' })).status, 200);
+  let hu = (await users.fleet.get(`/api/vehicles/${VR}`)).data.hu_sp.hu;
+  eq(hu.status, 'ungeklaert'); ok(JSON.stringify(hu.notes).includes('Nachprüfung'), 'Hinweis Nachprüfung');
+  // Nachprüfung mit geringen Mängeln und Fälligkeit laut neuer Plakette → belegte Fälligkeit, kein Mängelauftrag möglich
+  const due = `${Number(d1.slice(0, 4)) + 1}-${d1.slice(5, 7)}-28`;
+  eq((await users.fleet.post(`/api/vehicles/${encodeURIComponent(VR)}/husp/HU/complete`, { done_date: d1, evidence: 'HU-Nachprüfung 435-2', result: 'geringe_maengel', next_due_date: due })).status, 200);
+  const v = (await users.fleet.get(`/api/vehicles/${VR}`)).data; hu = v.hu_sp.hu;
+  eq(hu.last_result, 'geringe_maengel'); ok(hu.due && hu.status !== 'ungeklaert', `Fälligkeit belegt (${hu.status})`);
+  const ev = v.maintenance_history.find((h) => h.evidence === 'HU-Nachprüfung 435-2');
+  eq((await users.fleet.post(`/api/maintenance/events/${ev.id}/order`, { workshop_site: 'DORTMUND' })).status, 400, 'geringe Mängel: kein Mängelauftrag (Frage an den Auftraggeber)');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-hsreshint>${esc(t(\'husp_done_hint\'))}'), 'Hinweis im HU/SP-Formular');
+  ok(app.includes("t(DEFECT_RESULTS.includes(r) ? 'husp_bad_hint' : r === 'geringe_maengel' ? 'husp_minor_hint' : 'husp_done_hint')"), 'Hinweis wechselt mit dem Ergebnis');
+  ok(app.includes('${minorResHtml(h, v, !!nextOf(h))}') && /function minorResHtml[^]*?geringe_maengel[^]*?superseded/.test(app), 'Hinweis geringe Mängel nur an der letzten Durchführung');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['husp_done_hint', 'husp_bad_hint', 'husp_minor_hint', 'res_minor_hint']) ok(STRINGS[l][k] && STRINGS[l][k].length > 40, `${l} ${k}`);
+    ok(STRINGS[l].husp_bad_hint.includes(STRINGS[l].documented_due.replace(/ \(.*\)$/, '')), `${l}: Feldname im Hinweis`);
+    ok(STRINGS[l].help_dates_s.includes(STRINGS[l].report_damage), `Hilfe ${l} nennt „${STRINGS[l].report_damage}“`);
+  }
+  ok(/geringen Mängeln/.test(STRINGS.de.help_dates_s) && /minor defects/.test(STRINGS.en.help_dates_s) && /незначними недоліками/.test(STRINGS.uk.help_dates_s), 'Hilfe-Absatz geringe Mängel');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
