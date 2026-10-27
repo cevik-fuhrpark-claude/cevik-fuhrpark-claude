@@ -1313,8 +1313,14 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     case 'set_planned_date': {
       // Werkstatttermin setzen/verschieben/entfernen (leer); ohne Statuswechsel und ohne Push
       const d = p.planned_date ? planDate(p.planned_date) : null;
-      if (d === (c.planned_date || null)) throw bad('validation', 'Termin ist unverändert.');
-      set.planned_date = d; payload = { from: c.planned_date || null, to: d };
+      // Hinweis zum Termin (Migration 0093, Blickwinkel „Lkw einen halben Tag zur Achsvermessung bei einer Fremdfirma“): z. B. „nur vormittags,
+      // Abholung 13 Uhr, Fa. …“ – nicht mitgeschickt = bleibt (Termin im Plan verschieben), leer = entfernen, ohne Termin immer leer
+      const oldNote = c.planned_note || null;
+      const pn = p.planned_note === undefined ? oldNote : str(p.planned_note, { max: 200, field: 'Hinweis zum Termin' });
+      if (pn && !d && p.planned_note !== undefined) throw bad('validation', 'Hinweis zum Termin nur zusammen mit einem Termin angeben.');
+      const newNote = d ? pn : null;
+      if (d === (c.planned_date || null) && newNote === oldNote) throw bad('validation', 'Termin ist unverändert.');
+      set.planned_date = d; set.planned_note = newNote; payload = { from: c.planned_date || null, to: d, ...(newNote !== oldNote ? { note_from: oldNote, note_to: newNote } : {}) };
       // Auftrag aus Prüftermin verschoben: der vom Auftrag übernommene Prüftermin (gleicher Tag) zieht mit – sonst stand das Fahrzeug im Plan an
       // zwei Tagen (23.10.2026). Nur im Betrieb: Prüftermine gelten für beide Umgebungen, ein Testauftrag ändert keine Betriebsplanung.
       if (d && c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=? AND planned_date=?').bind(d, now, c.maintenance_rule_id, c.planned_date));
@@ -1468,7 +1474,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       requireNote('Bitte Grund für den Werkstattwechsel angeben.');
       if (site === c.workshop_site) throw bad('validation', 'Werkstatt ist unverändert.');
       // Termin gehörte zur bisherigen Werkstatt – die neue legt ihren eigenen bei der Übernahme fest (bleibt im Verlauf)
-      set.workshop_site = site; set.workshop_ack_at = null; set.workshop_ack_by = null; set.planned_date = null;
+      set.workshop_site = site; set.workshop_ack_at = null; set.workshop_ack_by = null; set.planned_date = null; set.planned_note = null;
       // Backlog 263 (Teilagent „Werkstatt fällt eine Woche aus“): vom Auftrag übernommener Prüftermin (gleicher Tag) entfällt mit – sonst stand
       // das Fahrzeug im Werkstattplan weiter am alten Tag der bisherigen Werkstatt (wie set_planned_date, nur im Betrieb)
       if (c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=NULL, updated_at=? WHERE id=? AND planned_date=?').bind(now, c.maintenance_rule_id, c.planned_date));

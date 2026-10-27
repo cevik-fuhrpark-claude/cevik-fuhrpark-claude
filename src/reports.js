@@ -818,7 +818,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const sf = site ? ' AND c.workshop_site=?' : '';
   const canPlan = ['owner', 'fleet', 'workshop'].includes(user.role);
   const [cs, mt, vs, mo] = await Promise.all([
-    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, v.eval_excluded, c.status, c.priority, c.safety_lock, c.workshop_site, c.vehicle_location, c.handover_keys, c.handover_papers, c.planned_date, c.parts_expected_date, c.workshop_ack_at, c.version, substr(c.description,1,300) AS description, c.maintenance_rule_id, c.tire_order
+    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, v.eval_excluded, c.status, c.priority, c.safety_lock, c.workshop_site, c.vehicle_location, c.handover_keys, c.handover_papers, c.planned_date, c.planned_note, c.parts_expected_date, c.workshop_ack_at, c.version, substr(c.description,1,300) AS description, c.maintenance_rule_id, c.tire_order
       FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status IN (${PLAN_STATUSES.map(() => '?').join(',')})${sf}
       ORDER BY c.planned_date, c.priority='kritisch' DESC, c.created_at`).bind(envName, ...PLAN_STATUSES, ...(site ? [site] : [])).all(),
     // ruhende Fahrzeuge mit eingetragenem Termin erscheinen gekennzeichnet (wie ihre Aufträge) – vorher war ihr Prüftermin unsichtbar (23.10.2026)
@@ -846,8 +846,9 @@ export async function workshopPlan(env, user, envName, query = {}) {
   // Wie oft wurde der Termin schon verschoben (Verlauf set_planned_date mit altem und neuem Termin)? Eine Abfrage für alle Aufträge mit Termin
   // (Blickwinkel „Termin verpasst“, 24.10.2026 – im Plan sah man ein mehrfach verschobenes Fahrzeug nicht)
   const withDate = cs.results.filter((c) => c.planned_date).map((c) => c.id);
+  // nur echte Verschiebungen: eine reine Änderung des Hinweises zum Termin (Migration 0093) hat from = to
   const moves = new Map(withDate.length ? (await env.DB.prepare(`SELECT case_id, COUNT(*) AS n FROM case_events WHERE action='set_planned_date' AND case_id IN (SELECT value FROM json_each(?))
-      AND json_extract(payload,'$.from') IS NOT NULL AND json_extract(payload,'$.to') IS NOT NULL GROUP BY case_id`).bind(JSON.stringify(withDate)).all()).results.map((x) => [x.case_id, x.n]) : []);
+      AND json_extract(payload,'$.from') IS NOT NULL AND json_extract(payload,'$.to') IS NOT NULL AND json_extract(payload,'$.from') <> json_extract(payload,'$.to') GROUP BY case_id`).bind(JSON.stringify(withDate)).all()).results.map((x) => [x.case_id, x.n]) : []);
   for (const c of cs.results) {
     // can_plan: Termin direkt aus dem Plan setzbar – gleiche Regel wie Vorgangsbefehl set_planned_date (nach Übernahme)
     const item = { type: 'case', ...c, eval_excluded: !!c.eval_excluded, coupled: coupled(c.vehicle_id), safety_lock: !!c.safety_lock, can_plan: canPlan && (c.status !== 'werkstatt_freigegeben' || !!c.workshop_ack_at), ...(moves.get(c.id) ? { reschedules: moves.get(c.id) } : {}) };
@@ -933,7 +934,7 @@ export function workshopPlanIcs(plan, envName, lang = 'de') {
   for (const d of plan.days) for (const i of d.items) {
     ev.push(i.type === 'case'
       ? { uid: `plan-case-${i.id}`, date: d.date, summary: I.tx('plan_case', { no: i.case_no, plate: i.plate }) + (envName === 'test' ? ` (${I.tx('test_tag')})` : ''),
-        description: I.tx('plan_status', { status: I.status(i.status) }) + (i.status === 'wartet_teile' && i.parts_expected_date ? ' · ' + I.tx('plan_parts_eta', { d: I.d(i.parts_expected_date) }) : '') + (i.tire_order === 'winter' ? ' · ' + I.label('wo_tag') : '') + (i.safety_lock ? ' · ' + I.label('locked') : '') + cpl(i) }
+        description: I.tx('plan_status', { status: I.status(i.status) }) + (i.status === 'wartet_teile' && i.parts_expected_date ? ' · ' + I.tx('plan_parts_eta', { d: I.d(i.parts_expected_date) }) : '') + (i.tire_order === 'winter' ? ' · ' + I.label('wo_tag') : '') + (i.safety_lock ? ' · ' + I.label('locked') : '') + cpl(i) + (i.planned_note ? ' · ' + I.tx('plan_note', { n: i.planned_note }) : '') }
       : { uid: `plan-maint-${i.id}`, date: d.date, summary: I.tx('plan_maint', { kind: I.kind(i.kind), plate: i.plate }), description: [i.next_due_date ? I.tx('plan_due_by', { d: I.d(i.next_due_date) }) : '', cpl(i).slice(3)].filter(Boolean).join(' · ') });
   }
   return icsCalendar(`${I.tx('cal_plan')}${plan.site ? ' ' + plan.site : ''}${plan.vehicle_site ? ' – ' + I.tx('plan_vsite', { site: plan.vehicle_site === 'ohne' ? I.tx('no_site') : plan.vehicle_site }) : ''}`, ev);

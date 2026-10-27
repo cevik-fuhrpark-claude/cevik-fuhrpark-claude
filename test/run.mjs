@@ -23974,6 +23974,51 @@ await test('Backlog 437 (Blickwinkel „Zwei Fahrer melden denselben Schaden am 
   }
 });
 
+await test('Backlog 438 (Blickwinkel „Lkw für einen halben Tag zur Achsvermessung/zum Bremsprüfstand bei einer Fremdfirma“): Hinweis zum Werkstatttermin (Migration 0093) – setzen, nur ändern, beim Verschieben im Plan behalten, mit dem Termin entfernen; Werkstattplan, Kalender, Verlauf, Texte DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const id = await newCase({ description: 'Reifen vorne innen einseitig abgefahren' });
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Achsvermessung extern')).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200);
+  const d1 = bDayOff(3), d2 = bDayOff(4);
+  let r = await cmd(U.ws, id, 'set_planned_date', { planned_date: d1, planned_note: 'nur vormittags – Abholung 13 Uhr bei Fa. Prüfstand' });
+  eq(r.status, 200, JSON.stringify(r.data));
+  const cs = async () => (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq((await cs()).case.planned_note, 'nur vormittags – Abholung 13 Uhr bei Fa. Prüfstand');
+  // Werkstattplan (Leitung, Werkstatt, Lesen) und Kalender-Export zeigen den Hinweis
+  for (const u of [U.fleet, U.ws, U.viewer]) { const it = (await u.get('/api/workshop/plan?days=7')).data.days.flatMap((x) => x.items).find((x) => x.id === id); ok(it && it.planned_note === 'nur vormittags – Abholung 13 Uhr bei Fa. Prüfstand', JSON.stringify(it)); }
+  const raw = (await U.fleet.get('/api/workshop/plan?days=7&format=ics')).data; const ics = (typeof raw === 'string' ? raw : new TextDecoder().decode(raw)).replace(/\r?\n[ \t]/g, '');
+  ok(ics.includes('Hinweis zum Termin: nur vormittags – Abholung 13 Uhr bei Fa. Prüfstand'), 'Kalender');
+  // nur den Hinweis ändern (gleicher Termin) – keine Verschiebung im Plan, Verlauf mit alt → neu
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: d1, planned_note: 'ganzer Tag' })).status, 200);
+  let it = (await U.fleet.get('/api/workshop/plan?days=7')).data.days.flatMap((x) => x.items).find((x) => x.id === id);
+  ok(it.planned_note === 'ganzer Tag' && !it.reschedules, JSON.stringify(it));
+  const ev = (await cs()).events.filter((x) => x.action === 'set_planned_date').pop();
+  ok(ev.payload.from === d1 && ev.payload.to === d1 && ev.payload.note_from.startsWith('nur vormittags') && ev.payload.note_to === 'ganzer Tag', JSON.stringify(ev.payload));
+  // nichts geändert → abgewiesen
+  r = await cmd(U.ws, id, 'set_planned_date', { planned_date: d1, planned_note: 'ganzer Tag' }); eq(r.status, 400); ok(/unverändert/.test(JSON.stringify(r.data)), JSON.stringify(r.data));
+  // Verschieben aus dem Werkstattplan (ohne Hinweis-Feld) behält den Hinweis
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: d2 }, 'Fremdfirma erst Freitag frei')).status, 200);
+  ok((await cs()).case.planned_note === 'ganzer Tag', 'Hinweis bleibt beim Verschieben');
+  // leer = entfernen; zu lang; ohne Termin abgewiesen; Termin entfernen entfernt den Hinweis
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: d2, planned_note: '' })).status, 200); eq((await cs()).case.planned_note, null);
+  r = await cmd(U.ws, id, 'set_planned_date', { planned_date: d2, planned_note: 'x'.repeat(201) }); eq(r.status, 400); ok(/Hinweis zum Termin ist zu lang/.test(JSON.stringify(r.data)), JSON.stringify(r.data));
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: d2, planned_note: 'vormittags' })).status, 200);
+  r = await cmd(U.ws, id, 'set_planned_date', { planned_date: null, planned_note: 'vormittags' }); eq(r.status, 400); ok(/nur zusammen mit einem Termin/.test(JSON.stringify(r.data)), JSON.stringify(r.data));
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: null })).status, 200);
+  const c = (await cs()).case; ok(c.planned_date === null && c.planned_note === null, JSON.stringify(c));
+  // Oberfläche und Texte
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('name="planned_note" maxlength="200"') && app.includes("if (action === 'set_planned_date') p.planned_note = p.planned_date ?"), 'Formular');
+  ok((app.match(/data-plannote/g) || []).length >= 4 && app.includes('data-ev-plannote'), 'Anzeige Vorgang, Plan, Disposition, Verlauf');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  const ics3 = fs.readFileSync(new URL('../public/ics-texts.js', import.meta.url), 'utf8'); eq((ics3.match(/plan_note: '/g) || []).length, 3, 'Kalendertexte DE/UK/EN');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['plan_note_lbl', 'plan_note_hint', 'ev_plan_note']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].help_ws_s.includes(STRINGS[l].plan_note_lbl) && STRINGS[l].help_dispo_s.includes(STRINGS[l].plan_note_lbl), `${l}: Hilfe`);
+    if (l !== 'de') for (const m of ['Hinweis zum Termin nur zusammen mit einem Termin angeben.', 'Hinweis zum Termin ist zu lang (max. 200 Zeichen).']) { const x = translateValidation(l, m); ok(x && x !== m && !/Hinweis zum Termin/.test(x), `${l}: ${x}`); }
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
