@@ -3,7 +3,7 @@
 // „nicht an bundesweiten Feiertagen“). Die App gibt keine Zeiten vor: ohne Angabe gilt „keine Zeiten eingetragen“ (keine Aussage).
 // Gerechnet in deutscher Zeit (Europe/Berlin), auch ohne Netz aus dem zuletzt geladenen Stand. Ende vor Beginn = über Mitternacht
 // (z. B. Fr 18:00 – Sa 06:00 gehört zum Freitag). Gemeinsam von Server (Prüfung) und Oberfläche (Anzeige) genutzt.
-import { holidayIn } from './holidays.js';
+import { holidayIn, federalHoliday, stateHoliday } from './holidays.js';
 
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const isHm = (s) => typeof s === 'string' && HM.test(s);
@@ -119,6 +119,37 @@ export function coverageGaps(hoursList) {
     gaps.push({ from: { wd: rot[i].wd, hm: rot[i].hm }, to: { wd: end.wd, hm: end.hm } });
   }
   return gaps.sort((x, y) => x.from.wd - y.from.wd || (x.from.hm < y.from.hm ? -1 : 1));
+}
+
+// Backlog 434 (Blickwinkel „Allerheiligen und Weihnachten: Büro zu – ist für die Fahrer überhaupt jemand erreichbar?“): Feiertage der nächsten
+// `days` Tage, an denen wegen „nicht an Feiertagen“ zusätzliche Zeiten ohne besetzte Nummer entstehen (nur laut Eintrag; Feiertag je Nummer
+// bundesweit bzw. mit deren Bundesland). null = keine Aussage (keine Nummer bzw. eine ohne Zeiten); sonst [{day, wd, hol:[{key, states}],
+// ranges:[[von, bis]] (bis „24:00“ = Tagesende), all}] – je Tag die durch den Feiertag zusätzlich unbesetzten Zeiten.
+export function holidayGaps(hoursList, date = new Date(), days = 60) {
+  if (!hoursList.length || hoursList.some((h) => !h || !h.days)) return null;
+  const hs = hoursList.filter((h) => h.no_holidays);
+  if (!hs.length) return [];
+  const b = [...new Set(['00:00', ...hoursList.flatMap((h) => windowsOf(h).flatMap((w) => (w.from ? [w.from, w.to] : [])))])].sort();
+  const out = []; let { day, wd } = berlin(date);
+  for (let i = 0; i < days; i++) {
+    const prev = prevDay(day);
+    const hit = hs.some((h) => holidayIn(day, h.holiday_state || null) || holidayIn(prev, h.holiday_state || null));
+    if (hit) {
+      const closed = (withHol) => b.map((hm) => !hoursList.some((h) => openAt(h, wd, hm, withHol && !!holidayIn(day, h.holiday_state || null), withHol && !!holidayIn(prev, h.holiday_state || null))));
+      const c1 = closed(true), c0 = closed(false);
+      if (c1.some((x, k) => x && !c0[k])) {
+        const ranges = [];
+        c1.forEach((x, k) => { if (!x || c0[k]) return; /* nur die durch den Feiertag zusätzlich unbesetzten Zeiten */ const to = b[k + 1] || '24:00'; const last = ranges[ranges.length - 1]; if (last && last[1] === b[k]) last[1] = to; else ranges.push([b[k], to]); });
+        const fed = federalHoliday(day); const hol = [];
+        if (fed) hol.push({ key: fed, states: [] });
+        else { const m = new Map(); for (const h of hs) { const k = h.holiday_state && stateHoliday(day, h.holiday_state); if (k) m.set(k, [...new Set([...(m.get(k) || []), h.holiday_state])].sort()); } for (const [key, states] of m) hol.push({ key, states }); }
+        if (!hol.length) { const pf = federalHoliday(prev); if (pf) hol.push({ key: pf, states: [], prev: true }); else for (const h of hs) { const k = h.holiday_state && stateHoliday(prev, h.holiday_state); if (k && !hol.some((x) => x.key === k)) hol.push({ key: k, states: [h.holiday_state], prev: true }); } }
+        out.push({ day, wd, hol, ranges, all: ranges.length === 1 && ranges[0][0] === '00:00' && ranges[0][1] === '24:00' });
+      }
+    }
+    day = nextDay(day); wd = wd === 7 ? 1 : wd + 1;
+  }
+  return out;
 }
 
 // Wochentage zusammengefasst: „12345“ → [[1,5]], „1357“ → [[1,1],[3,3],[5,5],[7,7]]

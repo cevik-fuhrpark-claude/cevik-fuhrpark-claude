@@ -23738,7 +23738,7 @@ await test('Backlog 429: Lücken der Erreichbarkeit (Nummern „für alle Fahrze
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const k of ['em_gaps_title', 'em_gaps_hint', 'em_gaps_none', 'em_gaps_all']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_accident_s.includes(STRINGS[l].em_manage), `Hilfe ${l}`); }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('${showArch ? \'\' : emGapsPanel(d.contacts)}') && app.includes('id="emgaps"'), 'Pflegeseite');
+  ok(app.includes('${showArch ? \'\' : emGapsPanel(d.contacts)') && app.includes('id="emgaps"'), 'Pflegeseite'); // seit Backlog 434 mit Feiertags-Abschnitt dahinter
 });
 
 await test('Backlog 430 (Blickwinkel „Wochenend-Bereitschaft Fr 18:00 – Mo 06:00“, Migration 0091): bis zu zwei weitere Zeitspannen je Rufnummer – Prüfung, Anzeige, Lücken, Teiländerung, Protokoll; Texte DE/UK/EN', async () => {
@@ -23860,6 +23860,31 @@ await test('Backlog 433 (Blickwinkel „Fahrer im Ausland, Handy in Ortszeit –
   ok(STRINGS.de.help_accident_s.includes('deutscher Zeit. Zeigt das Handy'), 'Hilfe DE nennt Gerätezeit');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('html += emTzNote([...d.general, ...d.vehicles.flatMap((v) => v.contacts)]);') && app.includes('data-emnextlocal'), 'Oberfläche');
+});
+
+await test('Backlog 434 (Blickwinkel „Allerheiligen und Weihnachten: Büro zu – ist überhaupt jemand erreichbar?“): Feiertage der nächsten 60 Tage mit zusätzlichen unbesetzten Zeiten (bundesweit, Bundesland, Nacht danach), Anzeige und Texte DE/UK/EN', async () => {
+  const { holidayGaps } = await import('../public/emhours.js');
+  const at = new Date('2026-10-27T08:00:00Z');
+  const office = { days: '12345', from: '06:00', to: '18:00', no_holidays: true }, night = { days: '1234567', from: '18:00', to: '06:00' };
+  const G = (list, d = at, n = 70) => JSON.stringify(holidayGaps(list, d, n));
+  eq(G([office, night]), JSON.stringify([{ day: '2026-12-25', wd: 5, hol: [{ key: 'weihnacht1', states: [] }], ranges: [['06:00', '18:00']], all: false }, { day: '2027-01-01', wd: 5, hol: [{ key: 'neujahr', states: [] }], ranges: [['06:00', '18:00']], all: false }]), 'Weihnachten/Neujahr am Freitag; 26.12. Samstag ohne Büro → keine zusätzliche Lücke');
+  eq(G([{ ...office, days: '1234567', holiday_state: 'NW' }], at, 40), JSON.stringify([{ day: '2026-11-01', wd: 7, hol: [{ key: 'allerheiligen', states: ['NW'] }], ranges: [['06:00', '18:00']], all: false }]), 'Allerheiligen NRW: Bürozeit entfällt');
+  eq(G([{ ...office, days: '1234567' }], at, 40), '[]', 'ohne Bundesland: Allerheiligen kein Feiertag');
+  eq(G([{ ...office, no_holidays: false }, night]), '[]', 'ohne „nicht an Feiertagen“ keine Feiertagslücke');
+  eq(G([office, { ...night, no_holidays: true }]).includes('"key":"weihnacht1","states":[],"prev":true') || G([office, { ...night, no_holidays: true }]).includes('2026-12-26'), true, 'Nacht nach dem Feiertag');
+  const n2 = holidayGaps([{ days: '1234567', from: '18:00', to: '06:00', no_holidays: true }], new Date('2026-12-20T08:00:00Z'), 10);
+  eq(JSON.stringify(n2.find((x) => x.day === '2026-12-27')), JSON.stringify({ day: '2026-12-27', wd: 7, hol: [{ key: 'weihnacht2', states: [], prev: true }], ranges: [['00:00', '06:00']], all: false }), 'Bereitschaft am 26.12. entfällt bis 06:00 des Folgetags (nur zusätzliche Zeit)');
+  eq(JSON.stringify(n2.find((x) => x.day === '2026-12-25').ranges), JSON.stringify([['18:00', '24:00']]), 'Heiligabend-Nacht bis 06:00 besetzt (24.12. kein Feiertag), am 25.12. ab 18:00 nicht');
+  eq(holidayGaps([]), null); eq(holidayGaps([office, null]), null, 'Nummer ohne Zeiten → keine Aussage');
+  eq(G([{ ...office, days: '1234567', holiday_state: 'BY' }, { days: '1234567', from: null, to: null, no_holidays: true, holiday_state: 'NW' }], new Date('2027-01-01T08:00:00Z'), 10), JSON.stringify([{ day: '2027-01-01', wd: 5, hol: [{ key: 'neujahr', states: [] }], ranges: [['00:00', '24:00']], all: true }, { day: '2027-01-06', wd: 3, hol: [{ key: 'heilige3', states: ['BY'] }], ranges: [], all: false }].filter((x) => x.ranges.length)), 'Hl. Drei Könige nur BY – NRW-Nummer ganztags besetzt → keine Lücke');
+  const { STRINGS } = await import('../public/i18n.js'); const { STATE_HOLIDAY_KEYS, HOLIDAY_KEYS } = await import('../public/holidays.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].em_holgaps_title && STRINGS[l].em_holgaps_hint && STRINGS[l].em_hol_after.includes('{x}'), l);
+    for (const k of [...STATE_HOLIDAY_KEYS, ...HOLIDAY_KEYS]) ok(STRINGS[l]['hol_' + k], `${l} hol_${k}`);
+    ok(/60/.test(STRINGS[l].help_accident_s), `Hilfe ${l}`);
+  }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("emGapsPanel(d.contacts) + emHolGapsPanel(d.contacts)") && app.includes('data-emholgap='), 'Oberfläche');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
