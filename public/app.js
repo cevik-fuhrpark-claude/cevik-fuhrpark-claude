@@ -4434,6 +4434,15 @@ function emRows(list, now = new Date()) {
   const allClosed = rows.length && rows.every((x) => x.r === false);
   return `${allClosed ? `<p class="panel warn small" data-emallclosed role="note">${esc(t('em_all_closed'))}</p>` : ''}<div class="list">${rows.map(({ c, r }) => `<div class="row emrow${r === false ? ' emclosed' : ''}"${r === null ? '' : ` data-emopen="${r ? 1 : 0}"`}><span aria-hidden="true">☎</span><span class="title"><b>${esc(c.label)}</b> <span class="chip">${esc(t('em_kind_' + c.kind))}</span>${r === null ? '' : ` <span class="chip ${r ? 'ok' : 'muted'}">${esc(t(r ? 'em_open_now' : 'em_closed_now'))}</span>`}${c.hours ? `<br><span class="small emhours">${esc(t('em_hours_short'))}: ${esc(emHoursText(c.hours))}</span>` : ''}${c.note ? `<br><span class="small">${esc(c.note)}</span>` : ''}${(() => { const a = telAbroad(c.phone); return a ? `<br><span class="small muted emabroad">${esc(t('em_abroad'))}: <a href="${esc(a.href)}" aria-label="${esc(t('em_abroad_call').replace('{x}', c.label))}">${esc(a.label)}</a></span>` : ''; })()}</span><a class="btn" href="${esc(telHref(c.phone))}" aria-label="${esc(t('em_call_x').replace('{x}', c.label))}">${esc(c.phone)}</a></div>`).join('')}</div>`;
 }
+// Backlog 428: „Angaben für den Pannendienst“ je Fahrzeug – nur Werte aus dem Fahrzeugstamm/Reifengrößen (fehlend = Zeile entfällt), aufklappbar
+function emBreakdownInfo(v) {
+  const rows = [];
+  if (v.vin) rows.push(`<dt>${esc(t('em_bd_vin'))}</dt><dd class="embdvin" translate="no">${esc(v.vin)}</dd>`);
+  if (v.manufacturer || v.model) rows.push(`<dt>${esc(t('em_bd_make'))}</dt><dd>${esc([v.manufacturer, v.model].filter(Boolean).join(' '))}${v.kind ? ` <span class="small muted">· ${esc(t('vk_' + v.kind))}</span>` : ''}</dd>`);
+  if (v.tires && v.tires.length) rows.push(`<dt>${esc(t('em_bd_tires'))}</dt><dd>${v.tires.map((x) => `${esc(t('axle_' + x.axle))}: <b translate="no">${esc(x.size)}</b>${x.verified ? '' : ` <span class="small muted">(${esc(t('em_bd_unverified'))})</span>`}`).join('<br>')}</dd>`);
+  if (!rows.length) return '';
+  return `<details class="panel small" data-embd style="margin:0 0 10px"><summary><b>${esc(t('em_bd_title'))}</b></summary><p class="muted" style="margin:6px 0">${esc(t('em_bd_hint'))}</p><dl class="kv">${rows.join('')}</dl></details>`;
+}
 async function viewEmergency(vid) {
   render(`<p class="muted">${esc(t('loading'))}</p>`, 'more');
   const key = `cfp_emerg_${S.me.id}_${S.me.role === 'owner' && S.viewEnv ? S.viewEnv : S.me.environment}_${vid || ''}`; // Ansicht Test/Betrieb des Inhabers getrennt (18.10.2026)
@@ -4454,7 +4463,7 @@ async function viewEmergency(vid) {
   if (!d) html += `<div class="panel alert">${esc(t('offline_view'))}</div><p class="muted">${esc(t('em_offline_none'))}</p>`;
   else {
     if (cachedAt) html += `<div class="panel alert">${esc(t('offline_view'))} (${esc(t('as_of'))} ${fmtDT(cachedAt)})</div>`;
-    for (const v of d.vehicles) if (v.contacts.length) html += `<h2>${plate(v.plate)} <span class="small muted">${esc(t('em_for_vehicle'))}</span></h2>${emRows(v.contacts)}`;
+    for (const v of d.vehicles) { const bd = emBreakdownInfo(v); if (v.contacts.length || bd) html += `<h2>${plate(v.plate)}${v.contacts.length ? ` <span class="small muted">${esc(t('em_for_vehicle'))}</span>` : ''}</h2>${bd}${v.contacts.length ? emRows(v.contacts) : ''}`; }
     if (d.general.length) html += `<h2>${esc(t('em_general'))}</h2>${emRows(d.general)}`;
     if (!d.general.length && !d.vehicles.some((v) => v.contacts.length)) html += `<p class="muted" id="emnone">${esc(t(d.can_edit ? 'em_none_mgr' : 'em_none'))}</p>`;
     if (d.can_edit && !cachedAt) html += `<div class="actions noprint"><a class="btn secondary" href="#/emergency/edit">${esc(t('em_manage'))}</a></div>`;

@@ -23709,6 +23709,22 @@ await test('Backlog 427 (Blickwinkel „Fahrer ruft nachts an: Lkw springt nicht
   ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/emhours.js'"), 'Service Worker (ohne Netz)');
 });
 
+await test('Backlog 428 (Blickwinkel „Pannendienst fragt nach FIN, Hersteller und Reifengröße“): Panne & Notfall liefert je Fahrzeug FIN, Hersteller/Modell, Art und Reifengrößen je Achse mit Prüfstatus – nur vorhandene Werte; Oberfläche und Texte DE/UK/EN', async () => {
+  const { U, V1 } = await freshWorld();
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'antriebsachse', size: '315/80 R22.5' })).status, 200);
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/specs`, { axle: 'lenkachse', size: '385/65 R22.5', verified: true })).status, 200);
+  const r = await U.driver.get(`/api/emergency?vehicle_id=${encodeURIComponent(V1)}`); eq(r.status, 200);
+  const v = r.data.vehicles.find((x) => x.id === V1); ok(v, 'Fahrzeug in der Antwort');
+  eq(v.vin, 'WMA15SZZ2HM722774'); eq(v.manufacturer, 'MAN'); eq(v.model, null, 'Modell nicht erfunden'); eq(v.kind, 'lkw');
+  eq(JSON.stringify(v.tires), JSON.stringify([{ axle: 'lenkachse', size: '385/65 R22.5', verified: true }, { axle: 'antriebsachse', size: '315/80 R22.5', verified: false }]), 'Achsreihenfolge, Prüfstatus');
+  const o = (await U.driver.get('/api/emergency?vehicle_id=VIN:WDB9630051L917317')).data.vehicles[0]; eq(o.manufacturer, 'DAIMLER'); eq(o.tires.length, 0, 'ohne Reifengrößen leer');
+  eq((await U.fleet.get('/api/emergency')).data.vehicles.length, 0, 'ohne Fahrzeug keine Angaben');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['em_bd_title', 'em_bd_hint', 'em_bd_vin', 'em_bd_make', 'em_bd_tires', 'em_bd_unverified']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_accident_s.includes(STRINGS[l].em_bd_title), `Hilfe ${l}`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('const bd = emBreakdownInfo(v);') && app.includes('data-embd'), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

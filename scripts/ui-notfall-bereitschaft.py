@@ -2,7 +2,7 @@
 # Rufnummern mit eingetragener Erreichbarkeit → „Panne & Notfall“ zeigt „jetzt erreichbar“/„jetzt nicht besetzt“, sortiert gerade nicht
 # besetzte Nummern nach unten und warnt, wenn alle Nummern eines Abschnitts laut Eintrag nicht besetzt sind. Pflegeformular: Wochentage,
 # von/bis, „nicht an Feiertagen“. Zeitunabhängig: „erreichbar“ = alle Wochentage ganztags, „nicht besetzt“ = nur ein Wochentag, der
-# weder heute noch gestern ist (deutsche Zeit). DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# weder heute noch gestern ist (deutsche Zeit). Backlog 428: aufklappbare „Angaben für den Pannendienst“ (FIN, Reifengröße). DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server (scripts/dev-server.mjs). Screenshots: CFP_SHOTS=<Ordner>.
 import os, datetime
 from zoneinfo import ZoneInfo
@@ -35,6 +35,8 @@ with sync_playwright() as p:
     for i in range(2):
         vin=f'WDB98{R:05d}N{i:04d}00'; vins.append(vin)
         check(api('POST','/api/vehicles',{'plate':f'NB-R {R%900}{i}','vin':vin,'kind':'lkw','site':'Dortmund'})['s']==201,'Fahrzeug angelegt')
+    check(api('POST',f'/api/vehicles/VIN:{vins[0]}/tires/specs',{'axle':'antriebsachse','size':'315/80 R22.5'})['s']==200,'Reifengröße eingetragen')
+    BD={'de':'Angaben für den Pannendienst','uk':'Дані для аварійної служби','en':'Details for the breakdown service'}
     def add(b):
         r=api('POST','/api/emergency/contacts',b); check(r['s']==201,f'Rufnummer angelegt {r["s"]} {r["d"]}'); ids.append(r['d']['id']); return r['d']['id']
     # Fahrzeug 1: Büro (nicht besetzt) zuerst angelegt, Bereitschaft (erreichbar) danach → Anzeige: Bereitschaft oben
@@ -51,6 +53,8 @@ with sync_playwright() as p:
         check(len(labels)==2 and f'Bereitschaft {R}' in labels[0] and f'Büro {R}' in labels[1],f'{lang} {w}px: erreichbare Nummer oben, nicht besetzte unten')
         check(OPEN[lang] in labels[0] and CLOSED[lang] in labels[1],f'{lang} {w}px: Chips „erreichbar/nicht besetzt“')
         check(LEG[lang] in labels[1] and '06:00–18:00' in labels[1],f'{lang} {w}px: Zeiten angezeigt')
+        m.click('[data-embd] summary'); bd=m.inner_text('[data-embd]')
+        check(BD[lang] in bd and vins[0] in bd and '315/80 R22.5' in bd,f'{lang} {w}px: Angaben für den Pannendienst (Backlog 428)')
         check(m.locator('[data-emallclosed]').count()==0,f'{lang} {w}px: kein Hinweis „alle nicht besetzt“, solange eine erreichbar ist')
         check(m.evaluate(noscroll),f'{lang} {w}px: Panne & Notfall ohne Querscrollen')
         if SHOTS: m.screenshot(path=f'{SHOTS}/notfall_bereitschaft_{lang}_{w}.png')

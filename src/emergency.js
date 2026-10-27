@@ -4,6 +4,7 @@
 // gepflegt von Inhaber, Fuhrparkleitung und Disposition.
 import { nowIso, uuid, bad, forbidden, notFound, str, normPlate, conflict, laterIso, flag } from './util.js';
 import { normDays, isHm } from '../public/emhours.js';
+import { AXLES, axleFits } from './tires.js';
 import { audit } from './auth.js';
 import { siteKey, siteLabels } from './reports.js';
 
@@ -72,6 +73,19 @@ export async function emergencyView(env, user, envName, query = {}) {
   const out = vehicles.map((v) => ({ id: v.id, plate: v.plate,
     contacts: all.filter((c) => c.vehicle_id === v.id || (!c.vehicle_id && c.site && v.site && siteKey(c.site) === siteKey(v.site) && !shown.has(c.id) && shown.add(c.id)))
       .sort((a, b) => (a.vehicle_id ? 0 : 1) - (b.vehicle_id ? 0 : 1) || sortContacts(a, b)).map(pub) }));
+  // Backlog 428 (Blickwinkel „Pannendienst fragt nach FIN, Hersteller und Reifengröße“): Fahrzeugangaben aus dem Stamm, ohne Netz mit gespeichert.
+  // Nur vorhandene Werte (fehlend = nicht angezeigt); Reifengrößen je Achse mit Prüfstatus (am Fahrzeug bestätigt oder nur laut Quelle).
+  if (out.length) {
+    const ids = JSON.stringify(out.map((v) => v.id));
+    const [info, specs] = await Promise.all([
+      env.DB.prepare('SELECT id, kind, manufacturer, model FROM vehicles WHERE id IN (SELECT value FROM json_each(?))').bind(ids).all(),
+      env.DB.prepare('SELECT vehicle_id, axle, size, verified FROM tire_specs WHERE vehicle_id IN (SELECT value FROM json_each(?))').bind(ids).all()]);
+    for (const v of out) {
+      const i = info.results.find((x) => x.id === v.id) || {};
+      v.vin = String(v.id).startsWith('VIN:') ? v.id.slice(4) : null; v.kind = i.kind || null; v.manufacturer = i.manufacturer || null; v.model = i.model || null;
+      v.tires = specs.results.filter((x) => x.vehicle_id === v.id && axleFits(i.kind, x.axle)).sort((a, b) => AXLES.indexOf(a.axle) - AXLES.indexOf(b.axle)).map((x) => ({ axle: x.axle, size: x.size, verified: !!x.verified }));
+    }
+  }
   return { general, vehicles: out, can_edit: WRITE.includes(user.role) };
 }
 
