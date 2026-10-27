@@ -238,6 +238,7 @@ UI-Notfall-Zeitzone: Gerät im Ausland (andere Zeitzone) – Hinweis „deutsche
 UI-Notfall-Feiertage: Feiertage der nächsten 60 Tage ohne besetzte Nummer in „Rufnummern pflegen“, DE/UK/EN 390/820/1366|ui-notfall-feiertage.py|/tmp/cfp-notfall-feiertage.log
 UI-HU-Mängel: Hinweis zum Fälligkeitsfeld je Prüfergebnis, Hinweis geringe Mängel in der Akte, DE/UK/EN 390/820/1366|ui-hu-maengel.py|/tmp/cfp-hu-maengel.log
 UI-Tachograph ungeklärt: Fahrer sieht Fahrtenschreiber ohne Termin als „Frist ungeklärt“, Hinweis beim Anlegen nur bei Tachograph, DE 390/UK 820/EN 1366|ui-tacho-ungeklaert.py|/tmp/cfp-tacho-ungeklaert.log
+UI-Dublette Gespann: Meldeformular zeigt Mängel des gekoppelten Aufliegers, Hinweis Gespannteil beim Ablehnen, Meldezeit der Dublette im Original, DE 390/UK 820/EN 1366|ui-dublette-gespann.py|/tmp/cfp-dublette-gespann.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log

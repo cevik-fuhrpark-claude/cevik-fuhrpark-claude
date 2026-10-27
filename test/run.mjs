@@ -23947,6 +23947,33 @@ await test('Backlog 436 (Blickwinkel „Fahrtenschreiber-Kalibrierung läuft ab�
   }
 });
 
+await test('Backlog 437 (Blickwinkel „Zwei Fahrer melden denselben Schaden am gekoppelten Auflieger“): Meldeformular zeigt Mängel/Sperre des gekoppelten Fahrzeugs, Original nennt Meldezeit der Dubletten, Hinweis Gespannteil im Ablehnen-Formular, Texte DE/UK/EN', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'DG-Z 437', vin: 'WDB96340310743701', site: 'Dortmund', trailer_plate: 'DG-H 437' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'DG-H 437', vin: 'WDB96340310743702', site: 'Dortmund', kind: 'anhaenger' })).status, 201);
+  const VZ = 'VIN:WDB96340310743701', VH = 'VIN:WDB96340310743702';
+  eq((await users.fleet.post(`/api/vehicles/${VZ}/drivers`, { user_id: users.driver.id, end_previous: false })).status, 201);
+  const a = await users.fleet.post('/api/cases', { vehicle_id: VH, description: 'Plane Auflieger links eingerissen (beim Abstellen)', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  eq(a.status, 201);
+  // Fahrer der Zugmaschine sieht den Mangel des gekoppelten Aufliegers (Datenquelle des Meldeformulars)
+  const mv = (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VZ);
+  ok(mv.coupled && mv.coupled.id === VH && mv.coupled.known_defects.some((k) => /Plane Auflieger/.test(k.description)), 'bekannter Mangel des Aufliegers');
+  const b = await users.driver.post('/api/cases', { vehicle_id: VH, description: 'Plane links kaputt (bei Übernahme)', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  eq(b.status, 201);
+  const cur = (await users.fleet.get(`/api/cases/${b.data.id}`)).data.case;
+  eq((await users.fleet.post(`/api/cases/${b.data.id}/commands`, { action: 'reject', command_id: rk(), expected_version: cur.version, payload: { duplicate_of: a.data.id }, note: 'Dublette' })).status, 200);
+  const orig = (await users.fleet.get(`/api/cases/${a.data.id}`)).data;
+  ok(orig.duplicates.length === 1 && orig.duplicates[0].created_at, 'Meldezeit der Dublette geliefert');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('const cv = !v && known && sel ? coupledKnown(known, sel.value) : null;') && app.includes('${knownDefects(cv.known_defects)}'), 'Meldeformular: gekoppeltes Fahrzeug');
+  ok(app.includes("(${esc(t('reported_at_short'))} ${fmtDT(x.created_at)})"), 'Meldezeit je Dublette');
+  ok(app.includes("t('dup_coupled_hint').replace('{a}', t('act_correct_vehicle'))"), 'Hinweis Gespannteil');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].dup_coupled_hint.includes('{a}') && STRINGS[l].reported_at_short, l);
+    ok(STRINGS[l].help_fleet_s.includes(STRINGS[l].act_correct_vehicle + '“, ') || STRINGS[l].help_fleet_s.includes(STRINGS[l].act_correct_vehicle + '», ') || STRINGS[l].help_fleet_s.includes(STRINGS[l].act_correct_vehicle + '”, '), `Hilfe ${l}`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

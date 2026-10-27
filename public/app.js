@@ -1938,7 +1938,11 @@ async function viewNew(preId) {
   // Bekannte Mängel des gewählten (eigenen) Fahrzeugs anzeigen, damit nichts doppelt gemeldet wird
   if (S.me.role === 'driver' && mine.length) {
     let known = null;
-    const showKnown = () => { const sel = $('input[name=veh]:checked'); const box = $('#known'); if (!box) return; const v = known && sel && known.find((x) => x.id === sel.value); box.innerHTML = notMineHint(vs, sel && sel.value) + (v ? coupledAlert(v.coupled) + knownDefects(v.known_defects) : ''); };
+    const showKnown = () => { const sel = $('input[name=veh]:checked'); const box = $('#known'); if (!box) return; const v = known && sel && known.find((x) => x.id === sel.value);
+      // gekoppelter Auflieger/Zugmaschine gewählt (Backlog 437): dessen bekannte Mängel und Sperre wie in der Abfahrtskontrolle – sonst meldete
+      // Fahrer B bei der Übernahme denselben Schaden wie Fahrer A beim Abstellen
+      const cv = !v && known && sel ? coupledKnown(known, sel.value) : null;
+      box.innerHTML = notMineHint(vs, sel && sel.value) + (v ? coupledAlert(v.coupled) + knownDefects(v.known_defects) : cv ? `${cv.locked ? `<div class="alert" role="alert" style="margin-bottom:8px" data-cplocked><b>${esc(t('scan_locked'))}</b></div>` : ''}${knownDefects(cv.known_defects)}` : ''); };
     showKnown();
     api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => { known = myVehCached(); showKnown(); });
     $$('input[name=veh]').forEach((r) => r.addEventListener('change', showKnown));
@@ -2087,7 +2091,7 @@ async function viewCase(id) {
       ${c.location_note ? `<dt>${esc(t('location_shown'))}</dt><dd>${esc(c.location_note)}</dd>` : ''}
       ${vehLocInfo(c)}${handoverInfo(c)}${pickupInfo(c)}
       ${d.parent ? `<dt>${esc(t('parent'))}</dt><dd>${d.parent.id ? `<a href="#/cases/${esc(d.parent.id)}">${esc(d.parent.case_no)}</a>` : esc(d.parent.case_no)}</dd>` : ''}
-      ${d.duplicate_of ? `<dt>${esc(t('dup_of'))}</dt><dd>${S.me.role === 'driver' || !d.duplicate_of.id ? esc(d.duplicate_of.case_no) : `<a href="#/cases/${esc(d.duplicate_of.id)}">${esc(d.duplicate_of.case_no)}</a>`}</dd>` : ''}${d.duplicates && d.duplicates.length ? `<dt>${esc(t('duplicates'))}</dt><dd>${d.duplicates.map((x) => `<a href="#/cases/${esc(x.id)}">${esc(x.case_no)}</a>`).join(', ')}</dd>` : ''}
+      ${d.duplicate_of ? `<dt>${esc(t('dup_of'))}</dt><dd>${S.me.role === 'driver' || !d.duplicate_of.id ? esc(d.duplicate_of.case_no) : `<a href="#/cases/${esc(d.duplicate_of.id)}">${esc(d.duplicate_of.case_no)}</a>`}</dd>` : ''}${d.duplicates && d.duplicates.length ? `<dt>${esc(t('duplicates'))}</dt><dd>${d.duplicates.map((x) => `<span style="white-space:nowrap" data-dupat><a href="#/cases/${esc(x.id)}">${esc(x.case_no)}</a>${x.created_at ? ` <span class="small muted">(${esc(t('reported_at_short'))} ${fmtDT(x.created_at)})</span>` : ''}</span>`).join(', ')}</dd>` : ''}
       ${!['driver'].includes(S.me.role) ? `<dt>${esc(t('vehicle_file'))}</dt><dd><a href="#/vehicles/${esc(d.vehicle.id)}">${esc(d.vehicle.plate)}</a></dd>` : ''}
     </dl>${vehInfo(d.vehicle_info, c)}</section>`;
 
@@ -2483,6 +2487,8 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
       // Kurzinfo liefert nur die 5 neuesten anderen offenen Vorgänge; gibt es mehr, wird die vollständige Liste nachgeladen (unten)
       const vi = (d && d.vehicle_info) || {}; const oc = vi.other_open_cases || []; const more = Math.max(0, (vi.other_open_total || 0) - oc.length);
       if (oc.length) f.push(`<label for="dupsel">${esc(t('dup_select'))}<span class="hint">${esc(t('dup_hint'))}</span></label><select id="dupsel" name="duplicate_of"><option value="">${esc(t('dup_none'))}</option>${oc.map((o) => `<option value="${esc(o.id)}">${esc(o.case_no)} · ${esc(t('st_' + o.status))}</option>`).join('')}</select>${more ? `<p class="small muted" id="dupmore">${esc(tn('dup_loading', more))}</p>` : ''}`);
+      // Backlog 437: Dublette nur zum selben Fahrzeug – bei Meldung am anderen Gespannteil zuerst das Fahrzeug korrigieren
+      f.push(`<p class="small muted" data-dupcoupled>${esc(t('dup_coupled_hint').replace('{a}', t('act_correct_vehicle')))}</p>`);
       break;
     }
     case 'approve_costs': f.push(`<p class="small muted">${esc(t('cost_approve_hint'))}</p>${extDocList(d)}`); break;
