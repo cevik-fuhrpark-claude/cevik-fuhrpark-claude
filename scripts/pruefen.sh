@@ -227,6 +227,7 @@ UI-Unterweisung für mehrere Fahrer (ohne Auswahl Hinweis, alle erfasst mit Link
 UI-Führerscheinkontrolle für mehrere Fahrer (Fällige auswählen, Link je Fahrer, danach aktuell, erneut ohne Dubletten), DE/UK/EN 390/820/1366|ui-fs-kontrolle-mehrere.py|/tmp/cfp-fs-kontrolle-mehrere.log
 UI-Stundensatz-Verlauf (bisherigen Satz behalten, Liste, Entfernen), DE/UK/EN 390/820/1366|ui-stundensatz-verlauf.py|/tmp/cfp-stundensatz-verlauf.log
 UI-Kostenbericht Schnellwahl (laufendes Jahr, Vorjahr, letzte 12 Monate), DE/UK/EN 390/820/1366|ui-kosten-schnellwahl.py|/tmp/cfp-kosten-schnellwahl.log
+UI-Arbeitszeit am Tag (eigene Summe je Auftrag, Rest bis 24 h, Doppel-Warnung), DE/UK/EN 390/820/1366|ui-arbeitszeit-tag.py|/tmp/cfp-arbeitszeit-tag.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log

@@ -663,6 +663,7 @@ async function handleApi(request, env, ctx, url) {
     return json({ cases: list, site: meta.site ?? null, site_options: meta.site_options || [], ...(user.role === 'driver' ? {} : { stale_days: meta.stale_days ?? null }), truncated: !!meta.truncated, limit: Math.min(Number(q.limit) || 200, 500) });
   }
   if (path === '/api/work-suggestions' && m === 'GET') return json(await cases.workSuggestions(env, user, envName));
+  if (path === '/api/work-day' && m === 'GET') return json(await cases.myWorkDay(env, user, envName, Object.fromEntries(url.searchParams)));
   if (path === '/api/part-suggestions' && m === 'GET') return json(await cases.partSuggestions(env, user, envName));
   if (path === '/api/cases/batch' && m === 'POST') return json(await cases.createCaseBatch(env, ctx, user, envName, await readJson(request)), 201);
   if (path === '/api/cases' && m === 'POST') return json(await cases.createCase(env, ctx, user, envName, await readJson(request)), 201);

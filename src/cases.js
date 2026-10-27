@@ -205,6 +205,24 @@ export async function workSuggestions(env, user, envName) {
   return { suggestions: rows.map((r) => r.d) };
 }
 
+// Eigene Arbeitszeit eines Tages (Backlog 419, Blickwinkel „Mechaniker bucht Arbeitszeit für zwei Aufträge am selben Tag“):
+// Summe über alle Vorgänge wie die 24-h-Tagesgrenze, Aufteilung je Auftrag nur für die aktuelle Umgebung; nur das eigene Konto,
+// keine Auswertung anderer Personen.
+export async function myWorkDay(env, user, envName, q = {}) {
+  if (!['owner', 'fleet', 'workshop'].includes(user.role)) throw forbidden();
+  const date = str(q.date, { max: 10 }) || berlinDate();
+  if (!isCalendarDate(date)) throw bad('validation', 'Datum ungültig.');
+  const rows = (await env.DB.prepare(`SELECT w.case_id, c.case_no, v.plate, c.environment AS e, SUM(w.hours) AS h, COUNT(*) AS n FROM work_entries w
+    JOIN cases c ON c.id=w.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id WHERE w.user_id=? AND w.work_date=? GROUP BY w.case_id ORDER BY MIN(w.created_at)`)
+    .bind(user.id, date).all()).results;
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const total = rows.reduce((a, r) => a + (Number(r.h) || 0), 0);
+  const mine = rows.filter((r) => r.e === envName);
+  const other = rows.filter((r) => r.e !== envName).reduce((a, r) => a + (Number(r.h) || 0), 0);
+  return { date, hours: r2(total), remaining: r2(Math.max(0, 24 - total)), other_environment_hours: r2(other),
+    cases: mine.map((r) => ({ case_id: r.case_id, case_no: r.case_no, plate: r.plate || null, hours: r2(Number(r.h) || 0), entries: r.n })) };
+}
+
 // Vorschläge für Teile: bisher erfasste Teile der eigenen Werkstatt (Bezeichnung + Teilenummer, ohne Preise)
 export async function partSuggestions(env, user, envName) {
   if (!['owner', 'fleet', 'workshop'].includes(user.role)) throw forbidden();

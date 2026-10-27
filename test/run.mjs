@@ -23359,6 +23359,36 @@ await test('Backlog 417 (Blickwinkel Full-Service): Befunde „Vertrag endet bal
   ok(STRINGS.en, 'i18n geladen');
 });
 
+await test('Backlog 419 (Blickwinkel „Mechaniker bucht Arbeitszeit für zwei Aufträge am selben Tag“): eigene Tagessumme je Auftrag, Rest bis 24 h, andere Umgebung nur als Summe; nur eigenes Konto, Fahrer/Lesezugriff gesperrt; Formular zeigt es (DE/UK/EN)', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const ra = await toRepair(); const rb = await toRepair();
+  const yd = new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
+  const r0 = (await U.ws.get('/api/work-day')).data; eq(r0.date, BERLIN_TODAY, 'ohne Datum heute (Berlin)'); eq(r0.hours, 0); eq(r0.remaining, 24); eq(r0.cases.length, 0);
+  eq((await cmd(U.ws, ra, 'record_work', { hours: 3.5, description: 'Bremse vorn', work_date: yd })).status, 200);
+  eq((await cmd(U.ws, rb, 'record_work', { hours: 2, description: 'Licht', work_date: yd })).status, 200);
+  eq((await cmd(U.ws, ra, 'record_work', { hours: 1.25, description: 'Bremse hinten', work_date: yd })).status, 200);
+  eq((await cmd(U.fleet, rb, 'record_work', { hours: 6, description: 'Leitung prüft', work_date: yd })).status, 200);
+  const r = (await U.ws.get('/api/work-day?date=' + yd)).data;
+  eq(r.hours, 6.75, 'nur eigenes Konto'); eq(r.remaining, 17.25); eq(r.other_environment_hours, 0);
+  eq(r.cases.map((x) => `${x.case_id === ra ? 'a' : 'b'}:${x.hours}:${x.entries}`).join(), 'a:4.75:2,b:2:1', 'je Auftrag in Buchungsreihenfolge');
+  ok(r.cases.every((x) => x.case_no && x.plate), 'Nummer und Kennzeichen');
+  ok(!JSON.stringify(r).includes('Bremse'), 'keine Tätigkeitstexte');
+  eq((await U.fleet.get('/api/work-day?date=' + yd)).data.hours, 6, 'Leitung sieht nur die eigene Zeit');
+  e.DB.db.prepare(`UPDATE cases SET environment='production' WHERE id=?`).run(rb);
+  const r2 = (await U.ws.get('/api/work-day?date=' + yd)).data;
+  eq(r2.hours, 6.75, 'Summe wie Tagesgrenze über beide Umgebungen'); eq(r2.other_environment_hours, 2); eq(r2.cases.map((x) => x.case_id).join(), ra, 'Auftrag der anderen Umgebung nicht genannt');
+  e.DB.db.prepare(`UPDATE cases SET environment='test' WHERE id=?`).run(rb);
+  for (const u of [U.driver, U.viewer]) eq((await u.get('/api/work-day')).status, 403, 'nur Werkstatt/Leitung/Inhaber');
+  eq((await U.ws.get('/api/work-day?date=2026-02-30')).status, 400, 'ungültiges Datum');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['wd_none', 'wd_sum', 'wd_this', 'wd_other_env', 'wd_left', 'wd_same_case']) {
+    ok(STRINGS[l][k], `${k} ${l}`);
+    if (k !== 'wd_this' && k !== 'wd_same_case') ok(/\{[dh]\}/.test(STRINGS[l][k]), `${k} mit Platzhalter ${l}`);
+  }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (action === 'record_work') workDayWatch(c);") && app.includes("api('GET', '/api/work-day?date='") && app.includes('data-wdsame'), 'Formular lädt die Tagessumme');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

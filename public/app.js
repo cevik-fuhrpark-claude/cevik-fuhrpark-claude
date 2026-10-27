@@ -2459,7 +2459,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     case 'set_vehicle_location': f.push(`<p class="small muted" id="vlhint">${esc(t('vl_hint'))}</p><label>${esc(t('vl_title'))}<span class="hint">${esc(t('vl_location_hint'))}</span></label><input name="vehicle_location" maxlength="300" autocomplete="off" value="${esc(c.vehicle_location || '')}"><label>${esc(t('vl_service'))}</label><input name="tow_service" maxlength="120" autocomplete="off" value="${esc(c.tow_service || '')}"><label>${esc(t('vl_on'))}</label><input type="date" name="towed_on" max="${bDate()}" value="${esc(c.towed_on || '')}"><p class="small muted">${esc(t('vl_clear_hint'))}</p>`); break;
     case 'set_occurred_at': f.push(`<p class="small muted">${esc(t('occ_set_hint'))}</p>${occurredFields(c.occurred_at, true)}`); break;
     case 'set_planned_date': f.push(`<label>${esc(t('planned'))}<span class="hint">${esc(t('planned_clear_hint'))}</span></label><input type="date" name="planned_date" value="${esc(c.planned_date || '')}">`); break;
-    case 'record_work': f.push(`<label>${esc(t('hours'))}</label><input name="hours" inputmode="decimal" required><label>${esc(t('activity'))}</label><input name="description" required list="worksugg" autocomplete="off"><datalist id="worksugg"></datalist><label>${esc(t('date'))}</label><input type="date" name="work_date" value="${bDate()}" max="${bDate()}" min="${workDateMin(c.created_at)}">`); break;
+    case 'record_work': f.push(`<label>${esc(t('hours'))}</label><input name="hours" inputmode="decimal" required><label>${esc(t('activity'))}</label><input name="description" required list="worksugg" autocomplete="off"><datalist id="worksugg"></datalist><label>${esc(t('date'))}</label><input type="date" name="work_date" value="${bDate()}" max="${bDate()}" min="${workDateMin(c.created_at)}"><p class="small muted" id="workday" data-workday aria-live="polite"></p>`); break;
     case 'add_part': f.push(`<div id="stocksel"></div><div id="freepart">`); f.push(`<label>${esc(t('part_name'))}</label><input name="name" required list="partsugg" autocomplete="off"><datalist id="partsugg"></datalist><label>${esc(t('part_number'))}</label><input name="part_number"><label>${esc(t('qty'))}</label><input name="quantity" inputmode="decimal" value="1"><label>${esc(t('price_net'))}</label><input name="unit_price_net" inputmode="decimal"><label class="check"><input type="checkbox" name="estimate"> ${esc(t('estimate'))}</label><label>${esc(t('supplier'))}</label><input name="supplier"></div><label>${esc(t('warranty_until'))}<span class="hint">${esc(t('warranty_hint'))}</span></label><input type="date" name="warranty_until" style="max-width:220px">`); break;
     case 'add_open_item': f.push(`<label>${esc(t('open_items'))}</label><input name="description" required><label class="check"><input type="checkbox" name="safety_relevant"> ${esc(t('safety_relevant'))}</label>${oiFileSelect(d)}`); break;
     case 'add_external_cost': f.push(`<label>${esc(t('supplier'))}</label><input name="supplier" required><label>${esc(t('invoice_no'))}</label><input name="invoice_no"><label>${esc(t('amount_net'))}<span class="hint">${esc(t('ext_amount_hint'))}</span></label><input name="amount_net" inputmode="decimal"><label class="check"><input type="checkbox" name="estimate"> ${esc(t('estimate'))}</label><label class="check"><input type="checkbox" name="covers_work_and_parts"> ${esc(t('covers_all'))}</label><label>${esc(t('warranty_until'))}<span class="hint">${esc(t('warranty_hint'))}</span></label><input type="date" name="warranty_until" style="max-width:220px">${extFileSelect(d)}`); break;
@@ -2516,6 +2516,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   const stockP = action === 'add_part' ? loadStockSelect(c) : null; // Promise erst am Ende zurückgeben – die Handler unten müssen gesetzt werden
   if ($('#dupsel')) $('#dupsel').onchange = () => { const ta = $('#af textarea[name=note]'); const o = $('#dupsel').selectedOptions[0]; if (ta && !ta.value && $('#dupsel').value) ta.value = `${t('dup_of')} ${o.textContent.split(' · ')[0]}`; };
   offDayWatch($$('#af input[name=planned_date]'));
+  if (action === 'record_work') workDayWatch(c);
   $('#af').onsubmit = (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -2536,6 +2537,27 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     return cmd(action, fd.get('note') || null, p); // Promise zurück: zentrale Sperre bis zum Ende (Doppelklick)
   };
   return stockP;
+}
+
+// Eigene Arbeitszeit am gewählten Tag über alle Aufträge (Backlog 419): Mechaniker mit zwei Aufträgen am selben Tag sieht, was schon gebucht ist,
+// wie viel bis zur 24-h-Grenze bleibt und ob für diesen Auftrag an dem Tag schon etwas erfasst ist (Doppelbuchung nach Funkloch/Schichtwechsel)
+function workDayWatch(c) {
+  const inp = $('#af input[name=work_date]'); const box = $('#workday'); if (!inp || !box) return;
+  let seq = 0;
+  const load = () => {
+    const d = inp.value; const my = ++seq;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { box.textContent = ''; return; }
+    api('GET', '/api/work-day?date=' + encodeURIComponent(d)).then((r) => {
+      if (my !== seq || !document.body.contains(box)) return;
+      const h = (x) => fmtNum(x, { maximumFractionDigits: 2 });
+      if (!r.hours) { box.innerHTML = esc(t('wd_none').replace('{d}', fmtD(r.date))); return; }
+      const list = r.cases.map((x) => `${x.case_id === c.id ? `<b data-wdthis>${esc(x.case_no)} (${esc(t('wd_this'))})</b>` : esc(x.case_no)}${x.plate ? ' · ' + esc(x.plate) : ''}: <span style="white-space:nowrap">${esc(h(x.hours))} ${esc(t('wd_h'))}</span>`).join('; ');
+      const same = r.cases.some((x) => x.case_id === c.id);
+      box.innerHTML = `${esc(t('wd_sum').replace('{d}', fmtD(r.date)).replace('{h}', h(r.hours)))}${list ? ' – ' + list : ''}${r.other_environment_hours ? ' · ' + esc(t('wd_other_env').replace('{h}', h(r.other_environment_hours))) : ''}. ${esc(t('wd_left').replace('{h}', h(r.remaining)))}${same ? `<br><b data-wdsame>⚠ ${esc(t('wd_same_case'))}</b>` : ''}`;
+    }).catch(() => { if (my === seq) box.textContent = ''; });
+  };
+  inp.addEventListener('change', load); inp.addEventListener('input', load);
+  setTimeout(load, 0); // nach einer Entwurfs-Wiederherstellung den dann gesetzten Tag lesen
 }
 
 // ---------- Kontrollen ----------
