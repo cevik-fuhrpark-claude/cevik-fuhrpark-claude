@@ -24563,6 +24563,43 @@ await test('Backlog 459 (Blickwinkel „Lkw hat nächste Woche einen Werkstattte
   void cb;
 });
 
+await test('Backlog 460 (Blickwinkel „Werkstatt verschiebt den Termin kurzfristig – erfährt die Disposition es?“): Terminänderung heute bis 7 Tage → Hinweis „Werkstatttermin geändert“ an Disposition und die andere Seite, nicht dringend, mit neuem Termin (DE/UK/EN); weiter weg oder nur Hinweistext → keiner', async () => {
+  const { e, U, cmd, newCase } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'p.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test', language: 'uk' });
+  const D = new Client(worker, e, 'p.dispo'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const dmy = (d) => d.split('-').reverse().join('.');
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(3) }, 'Termin')).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200);
+  const pc = async (c) => (await c.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'plan_changed' && n.case_id === id);
+  eq((await pc(D)).length, 0, 'Freigabe allein: kein „geändert“');
+  // Werkstatt zieht vor (3 → 1 Tag): Disposition (UK) + Leitung, nicht die Werkstatt selbst
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(1) })).status, 200);
+  let d = await pc(D); eq(d.length, 1, 'Disposition informiert');
+  ok(d[0].title === 'Термін у майстерні змінено' && d[0].body.includes(dmy(day(1))) && !d[0].urgent, 'Titel UK, neuer Termin, nicht dringend: ' + JSON.stringify(d[0]));
+  eq((await pc(U.fleet)).length, 1, 'Leitung informiert (Werkstatt hat geändert)'); eq((await pc(U.ws)).length, 0, 'Werkstatt nicht (selbst geändert)');
+  // nur Hinweis zum Termin geändert → kein Hinweis
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(1), planned_note: 'erst ab 10 Uhr' })).status, 200);
+  eq((await pc(D)).length, 1, 'Hinweistext allein: kein neuer Hinweis');
+  // aus dem Zeitraum heraus (1 → 20): informiert; weit weg → weit weg (20 → 25): nicht
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(20) })).status, 200); eq((await pc(D)).length, 2, 'aus 7 Tagen verschoben');
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(25) })).status, 200); eq((await pc(D)).length, 2, 'beide Termine weit weg: kein Hinweis');
+  // Leitung legt in den Zeitraum: Disposition + Werkstatt, nicht die Leitung
+  eq((await cmd(U.fleet, id, 'set_planned_date', { planned_date: day(7) })).status, 200);
+  eq((await pc(D)).length, 3, 'Tag 7 noch im Zeitraum'); eq((await pc(U.ws)).length, 1, 'Werkstatt informiert (Leitung hat geändert)'); eq((await pc(U.fleet)).length, 2, 'Leitung: zwei Änderungen der Werkstatt, nicht die eigene');
+  // Termin entfernt: Hinweis ohne Datum
+  eq((await cmd(U.fleet, id, 'set_planned_date', { planned_date: '' })).status, 200);
+  d = await pc(D); eq(d.length, 4, 'Termin entfernt'); ok(!/\d{2}\.\d{2}\.\d{4}/.test(d[0].body), 'ohne Datum: ' + d[0].body);
+  // Text je Sprache umgeschrieben; Push-Einstellungen
+  const { localizedBody, localizedTitle } = await import('../src/notify.js');
+  const ws1 = (await pc(U.ws)).find((n) => n.body.includes(dmy(day(7))));
+  ok(localizedTitle(ws1, 'en') === 'Workshop date changed' && localizedBody(ws1, 'en').includes(new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC' }).format(new Date(day(7) + 'T12:00:00Z'))) && localizedBody(ws1, 'de').includes('Termin ' + dmy(day(7))), 'Sprachwechsel: ' + localizedBody(ws1, 'en'));
+  ok((await D.get('/api/me/notify-prefs')).data.kinds.includes('plan_changed') && (await U.ws.get('/api/me/notify-prefs')).data.kinds.includes('plan_changed') && !(await U.driver.get('/api/me/notify-prefs')).data.kinds.includes('plan_changed'), 'abschaltbar für Disposition/Werkstatt, nicht für Fahrer');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].pk_plan_changed && STRINGS[l].help_dispo_s.includes(localizedTitle({ kind: 'plan_changed', title: 'Werkstatttermin geändert' }, l)), l + ': Push-Art und Hilfe');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

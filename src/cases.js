@@ -717,6 +717,8 @@ export function oneYearBack(day) {
   return md === '02-29' ? `${y}-02-28` : `${y}-${md}`;
 }
 // Gleicher Kalendertag im Folgejahr (29.02. → 28.02.) – „höchstens ein Jahr“ (vorher heute + 366 Tage: ein Tag zu viel, 21.10.2026)
+// Kalendertag + n Tage (JJJJ-MM-TT, ohne Zeitzone)
+export function addDaysIso(day, n) { const [y, m, d] = day.split('-').map(Number); const x = new Date(Date.UTC(y, m - 1, d + n)); return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; }
 export function oneYearAhead(day) {
   const y = Number(day.slice(0, 4)) + 1; const md = day.slice(5);
   return md === '02-29' ? `${y}-02-28` : `${y}-${md}`;
@@ -1348,6 +1350,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Auftrag aus Prüftermin verschoben: der vom Auftrag übernommene Prüftermin (gleicher Tag) zieht mit – sonst stand das Fahrzeug im Plan an
       // zwei Tagen (23.10.2026). Nur im Betrieb: Prüftermine gelten für beide Umgebungen, ein Testauftrag ändert keine Betriebsplanung.
       if (d && c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=? AND planned_date=?').bind(d, now, c.maintenance_rule_id, c.planned_date));
+      // Backlog 460: Termin geändert, der heute bis in 7 Tagen lag oder jetzt dort liegt → Hinweis an Disposition und die andere Seite
+      // (vorher ohne Push: die Disposition plante den Lkw am alten Tag ein bzw. nicht ein). Weiter weg: nur Verlauf/Plan.
+      { const near = (x) => !!x && x >= berlinDate() && x <= addDaysIso(berlinDate(), 7);
+        if (d !== (c.planned_date || null) && (near(d) || near(c.planned_date))) notifyKind = 'plan_changed'; }
       break;
     }
     case 'set_followup': {
