@@ -19486,7 +19486,7 @@ await test('Backlog 222 (Teilagent „Fahrzeug wird abgeschleppt – wer sieht w
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   for (const n of ['vehicle_location', 'tow_service', 'towed_on']) ok(app.includes(`name="${n}"`), `Formularfeld ${n}`);
   ok(app.includes('${vehLocInfo(c)}') && app.includes('<span data-vloc>') && app.includes('class="towtag"'), 'Anzeige im Vorgang, in „Nicht einplanen“ und in der Vorgangsliste');
-  ok(app.includes("['set_followup', 'set_planned_date', 'set_vehicle_location', 'set_occurred_at'].includes(e.action)"), 'Verlauf alt → neu');
+  ok(app.includes("['set_followup', 'set_planned_date', 'set_vehicle_location', 'set_handover', 'set_occurred_at'].includes(e.action)"), 'Verlauf alt → neu');
   const { STRINGS, translateValidation } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) {
     for (const k of ['act_set_vehicle_location', 'vl_title', 'vl_hint', 'vl_location_hint', 'vl_service', 'vl_on', 'vl_towed_chip', 'vl_unknown', 'vl_clear_hint']) ok(STRINGS[l][k], `${l}.${k}`);
@@ -23491,6 +23491,67 @@ await test('Backlog 422 (Folge aus 421, Fahrzeugtausch): Bußgeld-Kandidat aus d
   // Oberfläche und Texte
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("+ candElse(c) : "), 'Kandidat zeigt den Hinweis');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cand_elsewhere && STRINGS[l].cand_elsewhere.includes('{p}'), `${l}.cand_elsewhere`);
+});
+
+await test('Backlog 423 (Blickwinkel „Werkstatt bekommt den Lkw ohne Schlüssel/Fahrzeugschein“): Werkstatt/Leitung tragen Schlüssel und Fahrzeugschein ein (Migration 0087), „fehlt“ informiert Leitung und Melder, Anzeige in Vorgang/Liste/Werkstattplan, Verlauf alt → neu, Texte DE/UK/EN', async () => {
+  const { e, U, cmd, newCase } = await freshWorld(); const db = e.DB.db;
+  const id = await newCase();
+  const dispatch = await (async () => { const x = await U.own.post('/api/users', { username: 'w.dispo423', display_name: 'Dispo', role: 'dispatch', environment: 'test' }); const c = new Client(worker, e, 'w.dispo423'); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; })();
+  const allowed = async (u) => (await u.get(`/api/cases/${id}`)).data.allowed_actions || [];
+  ok((await allowed(U.fleet)).includes('set_handover'), 'Leitung schon bei „gemeldet“');
+  ok(!(await allowed(U.ws)).includes('set_handover'), 'Vorschlags-Werkstatt vor der Freigabe nicht');
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'freigegeben')).status, 200);
+  ok((await allowed(U.ws)).includes('set_handover'), 'beauftragte Werkstatt nach Freigabe');
+  ok(!(await allowed(U.wsMuc)).includes('set_handover'), 'fremde Werkstatt nicht');
+  for (const u of [dispatch, U.driver, U.viewer]) { ok(!(await allowed(u)).includes('set_handover'), 'nur lesend'); ok([403, 404].includes((await cmd(u, id, 'set_handover', { keys: 'fehlt' })).status), 'abgewiesen'); }
+  // Prüfung: nur da/fehlt/leer, unverändert, Vermerk max. 300
+  const r0 = await cmd(U.ws, id, 'set_handover', { keys: 'weg' }); eq(r0.status, 400); ok(/Fahrzeugschlüssel/.test(r0.data.message), r0.data.message);
+  eq((await cmd(U.ws, id, 'set_handover', {})).status, 400, 'leer ohne Eintrag = unverändert');
+  eq((await cmd(U.ws, id, 'set_handover', { keys: 'fehlt' }, 'x'.repeat(301))).status, 400, 'Vermerk zu lang');
+  // Werkstatt: Schlüssel fehlt, Schein da → Hinweis an Leitung und Melder, nicht an die Werkstatt selbst; kein Statuswechsel
+  const before = (await U.fleet.get(`/api/cases/${id}`)).data.case.status;
+  const r1 = await cmd(U.ws, id, 'set_handover', { keys: 'fehlt', papers: 'da' }, 'Schlüssel vermutlich beim Fahrer'); eq(r1.status, 200, JSON.stringify(r1.data));
+  let d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq(d.case.handover_keys, 'fehlt'); eq(d.case.handover_papers, 'da'); eq(d.case.status, before, 'kein Statuswechsel');
+  const ev = d.events.filter((x) => x.action === 'set_handover').pop();
+  eq(ev.payload.from, null); eq(ev.payload.to.keys, 'fehlt'); eq(ev.payload.missing.join(), 'keys'); eq(ev.note, 'Schlüssel vermutlich beim Fahrer');
+  const n = (uid) => db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE kind='handover_missing' AND user_id=? AND case_id=?`).get(uid, id).n;
+  eq(n(U.fleet.id), 1, 'Leitung'); eq(n(U.driver.id), 1, 'Melder'); eq(n(U.ws.id), 0, 'nicht an die Werkstatt selbst');
+  // Disposition und Melder sehen den Eintrag; Liste und Werkstattplan liefern die Angaben
+  eq((await dispatch.get(`/api/cases/${id}`)).data.case.handover_keys, 'fehlt', 'Disposition sieht es');
+  eq((await U.driver.get(`/api/cases/${id}`)).data.case.handover_keys, 'fehlt', 'Melder sieht es');
+  eq((await U.fleet.get('/api/cases?status=open')).data.cases.find((c) => c.id === id).handover_keys, 'fehlt', 'Liste');
+  const plan = (await U.ws.get('/api/workshop/plan?days=7')).data;
+  eq(plan.unplanned.find((i) => i.id === id).handover_keys, 'fehlt', 'Werkstattplan');
+  // Schein fehlt zusätzlich: neuer Hinweis; bereits fehlender Schlüssel zählt nicht erneut
+  eq((await cmd(U.ws, id, 'set_handover', { keys: 'fehlt', papers: 'fehlt' })).status, 200);
+  eq(n(U.fleet.id), 2, 'zweiter Hinweis (Schein)');
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.events.filter((x) => x.action === 'set_handover').pop().payload.missing.join(), 'papers', 'nur neu fehlend');
+  // Leitung klärt: alles da → kein Hinweis
+  eq((await cmd(U.fleet, id, 'set_handover', { keys: 'da', papers: 'da' }, 'Fahrer hat Schlüssel gebracht')).status, 200);
+  eq(n(U.fleet.id), 2, 'kein Hinweis beim Klären'); eq(n(U.driver.id), 2);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(d.events.filter((x) => x.action === 'set_handover').pop().payload.from.keys, 'fehlt', 'Verlauf alt → neu');
+  // leer = entfernen; abgeschlossene Vorgänge nicht mehr
+  eq((await cmd(U.ws, id, 'set_handover', { keys: '', papers: '' })).status, 200);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(d.case.handover_keys, null); eq(d.case.handover_papers, null); eq(d.events.filter((x) => x.action === 'set_handover').pop().payload.to, null);
+  db.prepare(`UPDATE cases SET status='fahrzeug_freigegeben' WHERE id=?`).run(id);
+  ok(!(await allowed(U.fleet)).includes('set_handover'), 'nicht an abgeschlossenen Vorgängen');
+  // Push-Abwahl: nicht dringend, für Melder-Rollen abschaltbar
+  const { MUTABLE_KINDS, mutableKindsFor, nt } = await import('../src/notify.js');
+  ok(MUTABLE_KINDS.includes('handover_missing') && mutableKindsFor('driver').includes('handover_missing') && !mutableKindsFor('viewer').includes('handover_missing'), 'abschaltbar');
+  ok(nt('uk', 'handover_missing') !== nt('de', 'handover_missing') && nt('en', 'handover_missing') !== nt('de', 'handover_missing'), 'Push-Titel DE/UK/EN');
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${vehLocInfo(c)}${handoverInfo(c)}') && app.includes('class="hotag"') && app.includes('data-hotag'), 'Vorgang, Liste, Werkstattplan');
+  ok(app.includes('id="ho_keys" name="keys"') && app.includes('id="ho_papers" name="papers"'), 'Formularfelder');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['act_set_handover', 'ho_title', 'ho_keys', 'ho_papers', 'ho_none', 'ho_da', 'ho_fehlt', 'ho_keys_missing', 'ho_papers_missing', 'ho_hint', 'pk_handover_missing']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].help_ws_s.includes(STRINGS[l].act_set_handover) && STRINGS[l].help_fleet_s.includes(STRINGS[l].ho_keys_missing), `Hilfe ${l}`);
+  }
+  for (const l of ['uk', 'en']) for (const m of ['Angaben zu Schlüssel/Fahrzeugschein sind unverändert.', 'Vermerk ist zu lang (max. 300 Zeichen).', 'Fahrzeugschlüssel: ungültiger Wert.', 'Fahrzeugschein: ungültiger Wert.']) {
+    const tr = translateValidation(l, m); ok(tr && tr !== m && !/Schlüssel|schein/.test(tr), `Prüftext ${l}: ${m} → ${tr}`);
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -14,6 +14,7 @@ export const WARR_CASE_MAX = 20;
 export const WARR_VEH_MAX = 50;
 
 export const PRIORITIES = ['niedrig', 'mittel', 'kritisch'];
+export const HANDOVER_VALUES = ['da', 'fehlt']; // Backlog 423: Schlüssel/Fahrzeugschein bei der Werkstatt
 export const DRIVEABILITY = ['unbekannt', 'fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit'];
 export const STATUSES = ['gemeldet', 'werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle', 'fahrzeug_freigegeben', 'abgelehnt'];
 const OPEN_STATUSES = ['gemeldet', 'werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'];
@@ -796,6 +797,9 @@ export function allowedActions(user, c, access) {
   // Standort/Abschleppung (Migration 0079, Teilagent „Fahrzeug wird abgeschleppt“): Leitung an offenen Vorgängen, Werkstatt solange sie
   // das Fahrzeug holt bzw. repariert (nicht mehr in der Abschlusskontrolle); Disposition/Lesende sehen den Eintrag
   if (OPEN_STATUSES.includes(c.status) && (mgr || (ws && c.status !== 'abschlusskontrolle'))) a.push('set_vehicle_location');
+  // Schlüssel/Fahrzeugschein bei der Werkstatt (Backlog 423, Migration 0087): Leitung an offenen Vorgängen, die beauftragte Werkstatt in allen
+  // ihren offenen Status (auch in der Abschlusskontrolle – Schlüssel kann noch fehlen bzw. nachgereicht werden); Disposition/Lesende sehen es
+  if (OPEN_STATUSES.includes(c.status) && (mgr || (ws && c.status !== 'gemeldet'))) a.push('set_handover');
   // Schadenzeitpunkt (Backlog 285): Leitung trägt ihn nach bzw. berichtigt ihn – auch nach dem Abschluss (Versicherer/Gutachter fragen später nach)
   if (mgr && c.origin === 'meldung' && c.status !== 'abgelehnt') a.push('set_occurred_at');
   switch (c.status) {
@@ -1339,6 +1343,20 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (from.location === to.location && from.service === to.service && from.on === to.on) throw bad('validation', 'Standort ist unverändert.');
       set.vehicle_location = loc; set.tow_service = svc; set.towed_on = on;
       payload = { from: from.location || from.service || from.on ? from : null, to: loc || svc || on ? to : null };
+      break;
+    }
+    case 'set_handover': {
+      // Backlog 423 (Blickwinkel „Werkstatt bekommt den Lkw ohne Schlüssel/Fahrzeugschein“): je Gegenstand „bei der Werkstatt“/„fehlt“/
+      // nicht angegeben (leer). Neu „fehlt“ → Hinweis an Leitung und Melder (hat den Schlüssel oft noch); ohne Statuswechsel.
+      const val = (v, field) => (v === undefined || v === null || v === '' ? null : oneOf(v, HANDOVER_VALUES, field));
+      const to = { keys: val(p.keys, 'Fahrzeugschlüssel'), papers: val(p.papers, 'Fahrzeugschein') };
+      const from = { keys: c.handover_keys || null, papers: c.handover_papers || null };
+      if (from.keys === to.keys && from.papers === to.papers) throw bad('validation', 'Angaben zu Schlüssel/Fahrzeugschein sind unverändert.');
+      if (note && note.length > 300) throw bad('validation', 'Vermerk ist zu lang (max. 300 Zeichen).');
+      set.handover_keys = to.keys; set.handover_papers = to.papers;
+      payload = { from: from.keys || from.papers ? from : null, to: to.keys || to.papers ? to : null };
+      const newlyMissing = ['keys', 'papers'].filter((k) => to[k] === 'fehlt' && from[k] !== 'fehlt');
+      if (newlyMissing.length) { payload.missing = newlyMissing; notifyKind = 'handover_missing'; }
       break;
     }
     case 'set_occurred_at': {
