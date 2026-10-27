@@ -54,10 +54,14 @@ with sync_playwright() as p:
     check(cmd(w0,ids['A'],'wait_parts',{},'Luftfederbalg hinten – bestellt bei Teile Nord')==200,'A wartet (ohne Liefertermin)')
     old=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(days=21)).strftime('%Y-%m-%dT%H:%M:%S.000Z')
     def fake(route):
-        r=route.fetch(); d=r.json()
-        for c in d.get('cases',[]):
-            if c['id']==ids['A']: c['status_since']=old
-        route.fulfill(response=r, body=json.dumps(d))
+        # Seite kann beim Schließen noch eine Anfrage offen haben („Response has been disposed“, 27.10.2026 in pruefen.sh) – dann nichts tun
+        try:
+            r=route.fetch(); d=r.json()
+            for c in d.get('cases',[]):
+                if c['id']==ids['A']: c['status_since']=old
+            route.fulfill(response=r, body=json.dumps(d))
+        except Exception:
+            pass
     for lang in ['de','uk','en']:
       w0.evaluate(JS,['PATCH','/api/me',{'language':lang}])
       for w,h in [(390,844),(820,1180),(1366,900)]:
@@ -88,7 +92,7 @@ with sync_playwright() as p:
             check(DAYS[lang] in t and NOETA[lang] in t,f'{lang}: Vorgangsliste zeigt Wartezeit/„kein Liefertermin“')
             check(q.evaluate(noscroll),f'{lang}: Vorgangsliste ohne Querscrollen')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs[:1]}')
-        ctx.close()
+        q.unroute_all(behavior='ignoreErrors'); ctx.close()
     # Backlog 447: Leitung (Inhaber) – „Heute zu tun“ → „Warten auf Teile“
     TODO={'de':'Warten auf Teile','uk':'Очікують запчастин','en':'Waiting for parts'}
     for lang in ['de','uk','en']:
@@ -106,6 +110,6 @@ with sync_playwright() as p:
             check(q.evaluate(noscroll),f'{lang} {w}px Leitung: ohne Querscrollen')
             if SHOTS: q.screenshot(path=f'{SHOTS}/teile_nachfassen_leitung_{lang}_{w}.png')
             check(not errs,f'{lang} {w}px Leitung: keine Skriptfehler {errs[:1]}')
-            ctx.close()
+            q.unroute_all(behavior='ignoreErrors'); ctx.close()
     br.close()
 print('alles grün' if not fails else f'{len(fails)} Fehler'); raise SystemExit(1 if fails else 0)
