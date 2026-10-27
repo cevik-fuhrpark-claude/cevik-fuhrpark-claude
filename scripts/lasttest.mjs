@@ -73,6 +73,22 @@ console.log(`${N_CASES} Vorgänge in ${((performance.now() - t0) / 1000).toFixed
     }
   }
   await env.DB.batch(batch); console.log(`${n} Teile-Ereignisse (synthetisch) für die Kennzahl Termintreue`); }
+// Teile-Buchungen (synthetisch, direkt in die DB) für die Teile-Verwendung (Rückruf, Backlog 441: bewusst ohne Index, Volltabellen-Suche
+// über `parts`): je Vorgang 7 Positionen aus 40 Teilenummern in wechselnder Schreibweise – ≈ 21 000 Zeilen bei 3000 Vorgängen (27.10.2026)
+{ const me = (await owner.get('/api/me')).data.user.id;
+  const st = env.DB.prepare(`INSERT INTO parts (id, case_id, user_id, name, part_number, quantity, unit, unit_price_net, valuation, supplier, document_ref, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const batch = []; let n = 0;
+  for (const [i, id] of ids.entries()) for (let k = 0; k < 7; k++) {
+    const pn = (i * 7 + k) % 40; const spelled = [`BB-${4700 + pn}`, `bb ${4700 + pn}`, `BB${4700 + pn}`][(i + k) % 3];
+    batch.push(st.bind(`lt-pt-${n++}`, id, me, `Lastteil ${pn}`, spelled, 1 + (k % 3), 'Stk', k % 4 ? 12.5 + pn : null, k % 4 ? 'actual' : 'unvalued', `Lieferant ${pn % 5}`, `LS-${i}`, new Date(Date.now() - (i % 300) * 86400000).toISOString()));
+  }
+  for (let j = 0; j < batch.length; j += 500) await env.DB.batch(batch.slice(j, j + 500));
+  console.log(`${n} Teile-Buchungen (synthetisch) für die Teile-Verwendung`);
+  for (let k = 0; k < 10; k++) {
+    await timed('Teile-Verwendung Treffer', () => owner.get('/api/parts/usage?q=' + encodeURIComponent('bb-' + (4700 + (k % 40)))));
+    await timed('Teile-Verwendung ohne Tr.', () => owner.get('/api/parts/usage?q=XYZ-0000'));
+  }
+}
 for (let k = 0; k < 20; k++) {
   await timed('Werkstattplan 30 Tage', () => owner.get('/api/workshop/plan?days=30'));
   await timed('Vorgangsliste', () => owner.get('/api/cases'));
