@@ -2017,7 +2017,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -4290,7 +4290,7 @@ await test('Einstellungen Regel = Wirkung: Vorwarnung 0 Tage wirkt als 0 (Fahrer
   const { warnDaysOf, contractStatus } = await import('../src/contracts.js');
   const { SETTING_RULES, SETTING_DEFAULTS } = await import('../src/settings.js');
   eq((await owner.get('/api/settings')).data.defaults.contract_warn_days, 60, 'Standardwerte in der Antwort (Platzhalter im Formular)');
-  eq(Object.keys(SETTING_DEFAULTS).sort().join(), 'contract_warn_days,driver_doc_warn_days,maintenance_warn_days,tacho_warn_days');
+  eq(Object.keys(SETTING_DEFAULTS).sort().join(), 'contract_warn_days,driver_doc_warn_days,maintenance_warn_days,tacho_warn_days,work_day_max_hours');
   const fs = await import('node:fs');
   for (const f of ['maintenance', 'agent', 'vehicles', 'drivers', 'tacho', 'contracts']) ok(!/\|\| (30|60|7)\b|: (30|60|7);/.test(fs.readFileSync(new URL(`../src/${f}.js`, import.meta.url), 'utf8').replace(/max: \d+/g, '')), `${f}.js: kein eigener Standardwert neben SETTING_DEFAULTS`);
   eq(SETTING_RULES.contract_warn_days.min, 0); eq(SETTING_RULES.driver_doc_warn_days.min, 0);
@@ -23387,6 +23387,37 @@ await test('Backlog 419 (Blickwinkel „Mechaniker bucht Arbeitszeit für zwei A
   }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("if (action === 'record_work') workDayWatch(c);") && app.includes("api('GET', '/api/work-day?date='") && app.includes('data-wdsame'), 'Formular lädt die Tagessumme');
+});
+
+await test('Backlog 420 (Folge aus 419, geteiltes Werkstatt-Tablet): Einstellung „höchstens Stunden je Konto und Tag“ (leer = 24, 1–96 ganzzahlig) wirkt auf Vorprüfung, Stapel-Guard, Tagesanzeige und Meldungstext (DE/UK/EN)', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const ra = await toRepair(); const rb = await toRepair();
+  const yd = new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
+  const st = (await U.own.get('/api/settings')).data; eq(st.defaults.work_day_max_hours, 24, 'Standard 24 als Platzhalter');
+  for (const bad of ['0', '97', '7,5', 'abc']) eq((await U.own.put('/api/settings', { work_day_max_hours: bad })).status, 400, 'abgewiesen: ' + bad);
+  eq((await U.fleet.put('/api/settings', { work_day_max_hours: '30' })).status, 403, 'nur Inhaber');
+  eq((await cmd(U.ws, ra, 'record_work', { hours: 20, description: 'Mechaniker A', work_date: yd })).status, 200);
+  const o1 = await cmd(U.ws, rb, 'record_work', { hours: 8, description: 'Mechaniker B', work_date: yd });
+  eq(o1.status, 400, 'Standard 24 h'); ok(o1.data.message.startsWith('Höchstens 24 Stunden'), o1.data.message);
+  eq((await U.own.put('/api/settings', { work_day_max_hours: '30' })).status, 200);
+  eq((await cmd(U.ws, rb, 'record_work', { hours: 8, description: 'Mechaniker B', work_date: yd })).status, 200, 'mit 30 h erlaubt');
+  const o2 = await cmd(U.ws, rb, 'record_work', { hours: 2.5, description: 'Mechaniker C', work_date: yd });
+  eq(o2.status, 400); eq(o2.data.message, `Höchstens 30 Stunden je Benutzerkonto und Arbeitstag – am ${yd.split('-').reverse().join('.')} sind bereits 28 h erfasst.`);
+  const { translateValidation } = await import('../public/i18n.js');
+  ok(/^At most 30 hours .* 28 h are already recorded on \d{2}\/\d{2}\/\d{4}\.$/.test(translateValidation('en', o2.data.message)), translateValidation('en', o2.data.message));
+  ok(/^Не більше 30 годин .* вже внесено 28 год\.$/.test(translateValidation('uk', o2.data.message)), translateValidation('uk', o2.data.message));
+  const d = (await U.ws.get('/api/work-day?date=' + yd)).data; eq(`${d.hours}/${d.limit}/${d.remaining}`, '28/30/2', 'Tagesanzeige mit Einstellung');
+  // gleichzeitig: Stapel-Guard mit derselben Grenze
+  const v1 = (await U.fleet.get(`/api/cases/${ra}`)).data.case.version; const v2 = (await U.fleet.get(`/api/cases/${rb}`)).data.case.version;
+  const par = await Promise.all([U.ws.post(`/api/cases/${ra}/commands`, { action: 'record_work', command_id: rk(), expected_version: v1, payload: { hours: 1.5, description: 'X', work_date: yd } }),
+    U.ws.post(`/api/cases/${rb}/commands`, { action: 'record_work', command_id: rk(), expected_version: v2, payload: { hours: 1.5, description: 'Y', work_date: yd } })]);
+  eq(par.map((r) => r.status).sort().join(), '200,400', 'gleichzeitig nur eine');
+  eq((await U.own.put('/api/settings', { work_day_max_hours: '' })).status, 200, 'leer = Standard');
+  eq((await U.ws.get('/api/work-day?date=' + yd)).data.limit, 24);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].wd_left.includes('{max}') && !/24/.test(STRINGS[l].wd_left), 'Anzeige ohne feste 24 ' + l); ok(STRINGS[l].work_day_setting && STRINGS[l].work_day_setting_hint, 'Einstellung beschriftet ' + l); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("field('work_day_max_hours', t('work_day_setting'))"), 'Feld in den Einstellungen');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

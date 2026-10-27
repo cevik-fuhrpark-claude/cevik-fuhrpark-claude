@@ -6,6 +6,7 @@ import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile, fineVehiclesSql } from './fines.js';
 import { siteSelection } from './reports.js';
+import { SETTING_DEFAULTS } from './settings.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { huSpFor, HUSP_ONE_SQL, huSpInputFromRow } from './inspection_rules.js';
 // Laufende Gewährleistungen: Kurzinfo im Vorgang höchstens 20, Fahrzeugakte höchstens 50 (früheste Abläufe zuerst; mehr → *_truncated)
@@ -215,11 +216,12 @@ export async function myWorkDay(env, user, envName, q = {}) {
   const rows = (await env.DB.prepare(`SELECT w.case_id, c.case_no, v.plate, c.environment AS e, SUM(w.hours) AS h, COUNT(*) AS n FROM work_entries w
     JOIN cases c ON c.id=w.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id WHERE w.user_id=? AND w.work_date=? GROUP BY w.case_id ORDER BY MIN(w.created_at)`)
     .bind(user.id, date).all()).results;
+  const lim = workLimitOf((await env.DB.prepare(`SELECT value FROM settings WHERE key='work_day_max_hours'`).first())?.value);
   const r2 = (x) => Math.round(x * 100) / 100;
   const total = rows.reduce((a, r) => a + (Number(r.h) || 0), 0);
   const mine = rows.filter((r) => r.e === envName);
   const other = rows.filter((r) => r.e !== envName).reduce((a, r) => a + (Number(r.h) || 0), 0);
-  return { date, hours: r2(total), remaining: r2(Math.max(0, 24 - total)), other_environment_hours: r2(other),
+  return { date, hours: r2(total), limit: lim, remaining: r2(Math.max(0, lim - total)), other_environment_hours: r2(other),
     cases: mine.map((r) => ({ case_id: r.case_id, case_no: r.case_no, plate: r.plate || null, hours: r2(Number(r.h) || 0), entries: r.n })) };
 }
 
@@ -1537,13 +1539,13 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (date > berlinDate() || date < earliest) throw bad('validation', `Arbeitsdatum: nicht in der Zukunft und nicht vor dem ${earliest.split('-').reverse().join('.')}.`);
       // höchstens 24 Stunden je Benutzerkonto und Arbeitstag über alle Vorgänge (vorher 3 × 24 h am selben Tag möglich, 17.10.2026) – Vorprüfung
       // für die verständliche Meldung, Prüfung im Stapel gegen gleichzeitige Buchungen
-      const dayH = await workHoursOn(env, user.id, date);
-      if (dayH + hours > 24 + 1e-9) throw bad('validation', workDayMsg(date, dayH));
+      const { h: dayH, lim: dayLim } = await workHoursOn(env, user.id, date);
+      if (dayH + hours > dayLim + 1e-9) throw bad('validation', workDayMsg(date, dayH, dayLim));
       const wid = uuid();
       // Standort zum Buchungszeitpunkt (Werkstatt-Auslastung bleibt nach einem Werkstattwechsel bei der buchenden Werkstatt, Migration 0060)
       extra.push(env.DB.prepare('INSERT INTO work_entries(id,case_id,user_id,work_date,hours,description,created_at,site) VALUES (?,?,?,?,?,?,?,?)')
         .bind(wid, c.id, user.id, date, hours, desc, now, c.workshop_site || null),
-        env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN COALESCE(SUM(hours),0) <= 24.000000001 THEN 1 ELSE 0 END FROM work_entries WHERE user_id=? AND work_date=?').bind(user.id, date),
+        env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN COALESCE(SUM(hours),0) <= ? + 0.000000001 THEN 1 ELSE 0 END FROM work_entries WHERE user_id=? AND work_date=?').bind(dayLim, user.id, date),
         env.DB.prepare('DELETE FROM cmd_guard'));
       workGuard = { date, hours };
       payload = { work_entry_id: wid, hours, work_date: date, description: desc };
@@ -1728,8 +1730,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       { const av = await onHand(env, stockGuardItem.id); throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${stockGuardItem.unit}). Zugang buchen oder Teil ohne Lager erfassen.`, { available: av, unit: stockGuardItem.unit, no_stock_hint: true }); }
     }
     if (String(e && e.message).includes('CHECK') && workGuard) {
-      const dayH = await workHoursOn(env, user.id, workGuard.date);
-      if (dayH + workGuard.hours > 24 + 1e-9) throw bad('validation', workDayMsg(workGuard.date, dayH));
+      const { h: dayH, lim: dayLim } = await workHoursOn(env, user.id, workGuard.date);
+      if (dayH + workGuard.hours > dayLim + 1e-9) throw bad('validation', workDayMsg(workGuard.date, dayH, dayLim));
     }
     if (String(e && e.message).includes('CHECK')) {
       throw conflict('version_conflict', 'Der Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
@@ -1780,14 +1782,16 @@ function checkedWhileLockedStmt(env, envName, user, inspId, performedAt, odo, ve
       JSON.stringify({ inspection_id: inspId, code: 'departure_check_while_locked', performed_at: performedAt, ...(odo !== null && odo !== undefined ? { km: odo } : {}), ...extra }), now, performedAt, vehicleId);
 }
 
-// gebuchte Arbeitsstunden einer Person an einem Tag über alle Vorgänge (Tagesgrenze 24 h)
+// gebuchte Arbeitsstunden einer Person an einem Tag über alle Vorgänge und die Tagesgrenze je Konto (Einstellung `work_day_max_hours`,
+// leer = 24 h; Backlog 420: geteiltes Werkstatt-Tablet mit mehreren Mechanikern unter einem Konto)
+const workLimitOf = (v) => { const n = Number(v); return v !== null && v !== undefined && v !== '' && Number.isInteger(n) && n >= 1 && n <= 96 ? n : SETTING_DEFAULTS.work_day_max_hours; };
 async function workHoursOn(env, userId, date) {
-  const r = await env.DB.prepare('SELECT COALESCE(SUM(hours),0) AS h FROM work_entries WHERE user_id=? AND work_date=?').bind(userId, date).first();
+  const r = await env.DB.prepare(`SELECT COALESCE(SUM(hours),0) AS h, (SELECT value FROM settings WHERE key='work_day_max_hours') AS lim FROM work_entries WHERE user_id=? AND work_date=?`).bind(userId, date).first();
   // ungerundet: Vorprüfung und Stapel-Guard müssen dieselbe Summe vergleichen (23.10.2026: 8,002 + 8,002 + 8 h → endloser „Vorgang geändert“)
-  return r ? Number(r.h) || 0 : 0;
+  return { h: r ? Number(r.h) || 0 : 0, lim: workLimitOf(r && r.lim) };
 }
 // je Benutzerkonto (ein geteiltes Werkstatt-Tablet = ein Konto für mehrere Mechaniker, 23.10.2026) – gerundet nur für den Text
-const workDayMsg = (date, h) => `Höchstens 24 Stunden je Benutzerkonto und Arbeitstag – am ${date.split('-').reverse().join('.')} sind bereits ${String(Math.round(h * 100) / 100).replace('.', ',')} h erfasst.`;
+const workDayMsg = (date, h, lim) => `Höchstens ${lim} Stunden je Benutzerkonto und Arbeitstag – am ${date.split('-').reverse().join('.')} sind bereits ${String(Math.round(h * 100) / 100).replace('.', ',')} h erfasst.`;
 
 // ---------- Fahrzeugkontrolle nach Reparatur / Abfahrtskontrolle ----------
 

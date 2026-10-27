@@ -24,11 +24,12 @@ export const SETTING_RULES = {
   case_stale_days: { int: true, min: 1, max: 365 },
   repair_cost_limit_net: { min: 0, max: 1000000 },
   user_unused_days: { int: true, min: 0, max: 3650 },
+  work_day_max_hours: { int: true, min: 1, max: 96 }, // Backlog 420: Tagesgrenze Arbeitszeit je Konto (geteiltes Werkstatt-Tablet), leer = 24
   ...Object.fromEntries(SLA_KEYS.map((k) => [k, { int: true, min: 1, max: 43200 }])),
 };
 // Standardwerte bei leerem Feld (einzige Quelle: Verbraucher, Einstellungs-Antwort `defaults`, Platzhalter im Formular; Bezeichnungen per Test geprüft).
 // Alle übrigen Einstellungen: leer = aus bzw. nicht festgelegt (keine eigene Vorgabe der App).
-export const SETTING_DEFAULTS = { maintenance_warn_days: 30, driver_doc_warn_days: 30, tacho_warn_days: 7, contract_warn_days: 60 };
+export const SETTING_DEFAULTS = { maintenance_warn_days: 30, driver_doc_warn_days: 30, tacho_warn_days: 7, contract_warn_days: 60, work_day_max_hours: 24 };
 // Vorwarnung Prüftermine/Wartung (Tage) aus dem gespeicherten Text: 0 bleibt 0, leer/ungültig = Standard (einzige Auswertung für Übersicht, Akte, Agent, Kalender).
 export function maintenanceWarnDays(v) {
   const n = v === undefined || v === null || v === '' ? NaN : Number(v);
