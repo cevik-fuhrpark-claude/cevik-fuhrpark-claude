@@ -777,7 +777,7 @@ export async function myVehicles(env, user, envName) {
   if (!vs.length) return { vehicles: [] };
   // Gespann: gekoppelter Anhänger bzw. Zugmaschine laut Stammliste (fest gekoppelt) – deren Sperre betrifft die Fahrt ebenfalls
   // bewertete vor ruhenden Fahrzeugen (ruhendes Doppel mit gleichem Kennzeichen verdeckte sonst Sperre und Hinweise des echten Anhängers, 18.10.2026)
-  const pool = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate FROM vehicles WHERE active=1 AND (kind='anhaenger' OR (kind='lkw' AND trailer_plate IS NOT NULL AND trailer_plate<>'')) ORDER BY COALESCE(eval_excluded,0), created_at`).all()).results;
+  const pool = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate, COALESCE(eval_excluded,0) AS eval_excluded FROM vehicles WHERE active=1 AND (kind='anhaenger' OR (kind='lkw' AND trailer_plate IS NOT NULL AND trailer_plate<>'')) ORDER BY COALESCE(eval_excluded,0), created_at`).all()).results;
   const coupledOf = new Map();
   for (const v of vs) {
     const p = v.kind === 'anhaenger'
@@ -846,6 +846,18 @@ export async function myVehicles(env, user, envName) {
         planned_date: WS.includes(c.status) && c.planned_date >= today ? c.planned_date : null,
         // Teile-Liefertermin laut Werkstatt (nur ab heute – ein überschrittener Termin ist Sache der Werkstatt/Leitung)
         parts_expected_date: c.status === 'wartet_teile' && c.parts_expected_date >= today ? c.parts_expected_date : null }));
+  // Fahrtenschreiber-Prüfung (§ 57b StVZO) beim Lkw ohne Frist: wie HU/SP „fehlend = ungeklärt“ statt still weglassen (Backlog 436,
+  // Blickwinkel „Kalibrierung läuft ab“ – bei der Straßenkontrolle wird das Einbauschild geprüft). Nicht bei Anhängern und ruhenden Fahrzeugen
+  // (gleiche Pflichtliste wie Lückenliste/Datenqualität); eine Frist wird nicht angenommen.
+  {
+    const kindOf = new Map([...vs.map((v) => [v.id, v]), ...[...coupledOf.values()].map((p) => [p.id, p])]);
+    for (const [vid, v] of kindOf) {
+      if (v.kind === 'anhaenger' || Number(v.eval_excluded) || !REQUIRED_KINDS.includes('Tachograph')) continue;
+      if (rules.results.some((r) => r.vehicle_id === vid && r.kind === 'Tachograph' && r.next_due_date)) continue;
+      if (!unclearBy.has(vid)) unclearBy.set(vid, []);
+      unclearBy.get(vid).push('Tachograph');
+    }
+  }
   const nextInsp = (vid) => [...rules.results.filter((r) => r.vehicle_id === vid && r.next_due_date && !['HU', 'SP'].includes(r.kind) && !(r.kind === 'Rückruf' && r.last_done_date)), ...(virtBy.get(vid) || [])].sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)).slice(0, 4).map(({ kind, next_due_date, planned_date }) => ({ kind, next_due_date, planned_date: planned_date >= today ? planned_date : null }));
   return {
     vehicles: vs.map((v) => ({

@@ -23915,6 +23915,38 @@ await test('Backlog 435 (Blickwinkel „HU-Prüfbericht mit erheblichen bzw. ger
   ok(/geringen Mängeln/.test(STRINGS.de.help_dates_s) && /minor defects/.test(STRINGS.en.help_dates_s) && /незначними недоліками/.test(STRINGS.uk.help_dates_s), 'Hilfe-Absatz geringe Mängel');
 });
 
+await test('Backlog 436 (Blickwinkel „Fahrtenschreiber-Kalibrierung läuft ab“): „Mein Fahrzeug“ meldet Tachograph ohne Termin als ungeklärt (Lkw und gekoppelte Zugmaschine, nicht Anhänger), mit Termin als Datum; Hinweis beim Anlegen, Hilfe DE/UK/EN', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'TK-Z 436', vin: 'WDB96340310743601', site: 'Dortmund', trailer_plate: 'TK-H 436' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'TK-H 436', vin: 'WDB96340310743602', site: 'Dortmund', kind: 'anhaenger' })).status, 201);
+  const VZ = 'VIN:WDB96340310743601', VH = 'VIN:WDB96340310743602';
+  eq((await users.fleet.post(`/api/vehicles/${VH}/drivers`, { user_id: users.driver.id, end_previous: false })).status, 201);
+  eq((await users.fleet.post(`/api/vehicles/${VZ}/drivers`, { user_id: users.driver.id, end_previous: false })).status, 201);
+  const my = async (id) => (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === id);
+  let z = await my(VZ), hz = await my(VH);
+  ok(z.inspections_unclear.includes('Tachograph'), 'Lkw ohne Tachograph-Eintrag → ungeklärt');
+  ok(!hz.inspections_unclear.includes('Tachograph'), 'Anhänger: kein Fahrtenschreiber');
+  ok(hz.coupled && hz.coupled.id === VZ && hz.coupled.inspections_unclear.includes('Tachograph'), 'gekoppelte Zugmaschine beim Anhänger ebenfalls ungeklärt');
+  // Eintrag ohne Termin bleibt ungeklärt; mit Termin laut Einbauschild → Datum statt ungeklärt
+  const r = await users.fleet.post(`/api/vehicles/${VZ}/maintenance`, { kind: 'Tachograph', evidence: 'Einbauschild fehlt noch' });
+  eq(r.status, 201);
+  ok((await my(VZ)).inspections_unclear.includes('Tachograph'), 'ohne Termin weiter ungeklärt');
+  const due = bDayOff(400);
+  eq((await users.fleet.post(`/api/maintenance/${r.data.id}/complete`, { done_date: bDayOff(-1), evidence: 'Prüfbescheinigung 436', result: 'ohne_maengel', next_due_date: due })).status, 200);
+  z = await my(VZ);
+  ok(!z.inspections_unclear.includes('Tachograph'), 'mit Termin nicht mehr ungeklärt');
+  ok(z.next_inspections.some((x) => x.kind === 'Tachograph' && x.next_due_date === due), 'Termin laut Nachweis angezeigt');
+  // ruhende Fahrzeuge (aus allen Bewertungen ausgenommen) bleiben außen vor
+  const fs = await import('node:fs'); const src = fs.readFileSync(new URL('../src/vehicles.js', import.meta.url), 'utf8');
+  ok(src.includes("if (v.kind === 'anhaenger' || Number(v.eval_excluded) || !REQUIRED_KINDS.includes('Tachograph')) continue;"), 'Anhänger/ruhend ausgenommen');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-mftacho') && app.includes("th.hidden = mfk.kind.value !== 'Tachograph'"), 'Hinweis beim Anlegen nur bei Tachograph');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].rule_tacho_hint.includes('57b') && STRINGS[l].rule_tacho_hint.includes(STRINGS[l].ms_ungeklaert), `${l} rule_tacho_hint`);
+    ok(STRINGS[l].help_dates_s.includes('57b') && STRINGS[l].help_dates_s.includes(STRINGS[l].drv_unclear_fleet) && STRINGS[l].help_dates_s.includes(STRINGS[l].my_vehicle), `Hilfe ${l}`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
