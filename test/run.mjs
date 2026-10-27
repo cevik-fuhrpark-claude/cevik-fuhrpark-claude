@@ -24516,6 +24516,53 @@ await test('Backlog 458 (Blickwinkel „Disposition fragt am Nachmittag: welcher
   void b;
 });
 
+await test('Backlog 459 (Blickwinkel „Lkw hat nächste Woche einen Werkstatttermin – darf die Disposition ihn bis dahin einplanen?“): erteilter, nicht begonnener Werkstattauftrag mit künftigem Termin ohne Sperre/Standort steht nicht in „Nicht einplanen“, sondern in „Bis zum Werkstatttermin einplanbar“ mit Vortag (DE/UK/EN)', async () => {
+  const { e, U, cmd, newCase } = await freshWorld(); void e;
+  const x = await U.own.post('/api/users', { username: 'u.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
+  const D = new Client(worker, e, 'u.dispo'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const V2 = 'VIN:WDB9630051L917317';
+  // V1: Termin in 4 Tagen mit Hinweis → einplanbar bis Tag 3; V2: Termin heute → Nicht einplanen
+  const a = await newCase({ description: 'Bremsbeläge vorne prüfen', driveability: 'eingeschraenkt' });
+  eq((await cmd(U.fleet, a, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(4) }, 'Termin')).status, 200);
+  eq((await cmd(U.ws, a, 'acknowledge')).status, 200, 'Werkstatt übernimmt');
+  eq((await cmd(U.ws, a, 'set_planned_date', { planned_date: day(4), planned_note: 'bis 7 Uhr bringen' })).status, 200, 'Hinweis zum Termin');
+  const b = await newCase({ vehicle_id: V2, description: 'Spiegel locker' });
+  eq((await cmd(U.fleet, b, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(0) }, 'Termin heute')).status, 200);
+  const open = (await D.get('/api/cases?status=open&limit=500')).data.cases;
+  const ca = open.find((c) => c.id === a); const cb = open.find((c) => c.id === b);
+  ok(ca && ca.status === 'werkstatt_freigegeben' && ca.planned_date === day(4) && ca.planned_note === 'bis 7 Uhr bringen' && ca.reported_driveability === 'eingeschraenkt' && 'vehicle_location' in ca && 'tow_service' in ca, 'Liste liefert die nötigen Felder');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i0 = app.indexOf('function dispoUpcoming('); const src = app.slice(i0, app.indexOf('\n// Werkstatt-Startseite: Winterreifen', i0));
+  const { STRINGS } = await import('../public/i18n.js');
+  const fmt = (d) => d ? d.split('-').reverse().join('.') : '–';
+  const run = (lang, cs) => new Function('bDate', 'esc', 't', 'plate', 'fmtD', 'fmtDue', 'fmtDT', 'wsName', 'clipTxt', 'ltxt', 'cDesc', 'plateCmp', 'translateLockReason', 'hoMissing', 'vlAt', 'partsEta', 'dispoReturnKnown', 'S', src + '\nreturn dispoCases;')(
+    () => BERLIN_TODAY, (v) => String(v), (k) => STRINGS[lang][k] || k, (p) => `[${p}]`, fmt, fmt, (v) => v, (v) => v, (v) => v, (v) => v, (v) => v, (p, q) => String(p).localeCompare(String(q)), (l, v) => v, () => [], () => '', () => '', () => true, { lang })(cs);
+  const cnt = (h, re) => (h.match(re) || []).length;
+  for (const lang of ['de', 'uk', 'en']) {
+    const L = STRINGS[lang];
+    const h = run(lang, open);
+    const [np, upc] = h.split('id="dupc"');
+    ok(upc && np.includes(L.dispo_not_plannable) && np.includes('[SZ-KC 5515]') && !np.includes('[SZ-YC 5513]'), lang + ': Termin heute → Nicht einplanen, künftiger Termin nicht');
+    eq(cnt(h, /data-dupc>/g), 1, lang + ': genau ein einplanbares Fahrzeug');
+    ok(upc.includes('[SZ-YC 5513]') && upc.includes(L.dispo_upcoming_until.replace('{d}', fmt(day(3)))) && upc.includes(L.dispo_upcoming_on.replace('{d}', fmt(day(4)))) && upc.includes('bis 7 Uhr bringen') && upc.includes(L.dispo_upcoming_limited), lang + ': Vortag, Termin, Hinweis, eingeschränkt');
+    ok(L.dispo_upcoming_hint.includes('{w}') && h.includes(L.av_werkstatt), lang + ': Hinweis nennt die Fahrzeugleiste');
+    ok(L.help_dispo_s.includes(L.dispo_upcoming) && L.help_dispo_s.includes(L.plan_note_lbl), lang + ': Hilfe Disposition');
+  }
+  // jede Ausschlussbedingung führt zurück nach „Nicht einplanen“
+  for (const [why, patch] of [['gesperrt', { safety_lock: 1 }], ['begonnen', { status: 'in_reparatur' }], ['Standort eingetragen', { vehicle_location: 'Hof Fa. Müller' }], ['abgeschleppt', { tow_service: 'ADAC' }], ['nicht fahrbereit', { reported_driveability: 'nicht_fahrbereit' }], ['Termin heute', { planned_date: day(0) }], ['ohne Termin', { planned_date: null }]]) {
+    const h = run('de', [{ ...ca, ...patch }]);
+    ok(!h.includes('data-dupc>') && h.includes('[SZ-YC 5513]') && h.includes(STRINGS.de.dispo_not_plannable), 'ausgeschlossen: ' + why);
+  }
+  // zweiter offener Vorgang, der das Fahrzeug blockiert (in Reparatur) → nur „Nicht einplanen“, nicht doppelt
+  const h2 = run('de', [ca, { ...cb, vehicle_id: ca.vehicle_id, plate: ca.plate, status: 'in_reparatur' }]);
+  ok(!h2.includes('data-dupc>') && h2.includes(STRINGS.de.dispo_not_plannable), 'blockierender zweiter Vorgang');
+  // nur einplanbare Fahrzeuge: „alles in Ordnung“ + Abschnitt; frühester Termin je Fahrzeug
+  const h3 = run('de', [ca, { ...ca, id: 'x2', planned_date: day(2) }]);
+  ok(h3.includes(STRINGS.de.dispo_all_ok) && cnt(h3, /data-dupc>/g) === 1 && h3.includes(STRINGS.de.dispo_upcoming_until.replace('{d}', fmt(day(1)))), 'frühester Termin je Fahrzeug, Vortag');
+  void cb;
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
