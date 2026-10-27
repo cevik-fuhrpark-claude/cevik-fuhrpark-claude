@@ -4,7 +4,7 @@ import { caseDescText, checkKeysFor } from '../public/check-labels.js';
 import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
-import { canReadFineFile, fineVehiclesSql } from './fines.js';
+import { canReadFineFile, fineVehiclesSql, gespannVehiclesSql } from './fines.js';
 import { siteSelection } from './reports.js';
 import { SETTING_DEFAULTS } from './settings.js';
 import { winterMarks, winterStatus } from './tires.js';
@@ -743,9 +743,7 @@ export async function driversAtOccurrence(env, envName, c) {
 
 // Zuordnung des Melders zur Meldezeit (Backlog 421). Gespann = Fahrzeug + fest gekoppelte Zugmaschine/Anhänger laut Stammliste.
 // Teilabfrage für getCaseDetail: ?1 Umgebung, ?2 Melder, ?3 Fahrzeug, ?4 Meldezeit → JSON-Liste {u, n, p, h} (h = Zuordnung zum Gespann)
-const GESPANN_SQL = `SELECT ?3 UNION SELECT x.id FROM vehicles x JOIN vehicles v ON v.id=?3 WHERE v.kind='anhaenger' AND x.kind='lkw' AND x.id<>v.id
-    AND ${PLATE_KEY_SQL('x.trailer_plate')}<>'' AND ${PLATE_KEY_SQL('x.trailer_plate')}=${PLATE_KEY_SQL('v.plate')}
-  UNION SELECT x.id FROM vehicles x JOIN vehicles v ON v.id=?3 WHERE v.kind='lkw' AND x.kind='anhaenger' AND x.id<>v.id AND ${PLATE_KEY_SQL('v.trailer_plate')}<>'' AND ${PLATE_KEY_SQL('v.trailer_plate')}=${PLATE_KEY_SQL('x.plate')}`;
+const GESPANN_SQL = gespannVehiclesSql('?3');
 const REPORTER_ASSIGN_SQL = `(SELECT json_group_array(json_object('u', r.user_id, 'n', r.display_name, 'p', r.plate, 'h', r.here)) FROM (
     SELECT d.user_id, u2.display_name, vv.plate, CASE WHEN d.vehicle_id IN (${GESPANN_SQL}) THEN 1 ELSE 0 END AS here FROM driver_vehicles d
       JOIN users u2 ON u2.id=d.user_id JOIN vehicles vv ON vv.id=d.vehicle_id

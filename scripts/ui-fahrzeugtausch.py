@@ -1,12 +1,14 @@
 # [CLAUDE] UI-Test (27.10.2026, Backlog 421, Blickwinkel „Fahrer tauscht unterwegs den Lkw mit einem Kollegen“): Fahrer mit zugeordnetem Lkw
 # wählt in Abfahrtskontrolle bzw. Meldeformular den Lkw eines Kollegen → Hinweis „nicht dir zugeordnet (dein Fahrzeug: …)“; eigenes Fahrzeug
 # ohne Hinweis. Leitung sieht im Vorgang „Zuordnung des Melders: nicht diesem Fahrzeug zugeordnet“ mit eigenem Kennzeichen und Kollegen.
+# Backlog 422: Bußgeld am Lkw des Kollegen – Kandidat „Kollege“ nennt seine Abfahrtskontrolle am anderen Fahrzeug.
 # DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (scripts/dev-server.mjs).
-import os
+import os, datetime
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
+ELSE={'de':'anderen Fahrzeug','uk':'іншому транспортному засобі','en':'different vehicle'}
 NOTA={'de':'nicht diesem Fahrzeug zugeordnet','uk':'не закріплений за цим','en':'not assigned to this vehicle'}
 fails=[]
 def check(c,m):
@@ -53,6 +55,14 @@ with sync_playwright() as p:
         check(r['s']==201,f'{lang} {w}px: Meldung gesendet')
         check(not errs,f'{lang} {w}px: Fahrer ohne Skriptfehler {errs[:1]}')
         ctx.close()
+        # Backlog 422: Kollege (zugeordnet „other“) macht die Abfahrtskontrolle am eigenen Lkw des Fahrers → Bußgeld an „other“ nennt das beim Kandidaten
+        kc=br.new_context(); kq=kc.new_page(); kq.goto(B)
+        kq.evaluate(JS,['POST','/api/invite/accept',{'token':k['d']['invite_token'],'password':PW}]); kq.evaluate(JS,['POST','/api/login',{'username':f'ft.kollege{R}.{n}','password':PW}])
+        keys=[i['key'] for i in kq.evaluate(JS,['GET','/api/meta',None])['d']['checklist']]
+        check(kq.evaluate(JS,['POST','/api/inspections',{'kind':'abfahrt','vehicle_id':vo,'request_key':f'ft-tk-{R}-{n}','items':[{'key':x,'result':'ok'} for x in keys]}])['s']==201,'Kollege kontrolliert den Lkw des Fahrers')
+        kc.close()
+        fz=api('POST','/api/fines',{'kind':'anhoerung','authority':'Stadt Dortmund','reference':f'AZ-FT-{R}-{n}','offense_type':'parken','offense_at':datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),'plate_in_letter':other,'amount_eur':30})
+        check(fz['s']==201,f'Bußgeld angelegt {fz["s"]}')
         # Leitung sieht den Hinweis im Vorgang
         ctx=br.new_context(viewport={'width':w,'height':h}); m=ctx.new_page(); errs=[]; m.on('pageerror',lambda e: errs.append(str(e)))
         m.goto(B); m.evaluate(JS,['POST','/api/login',{'username':'ft.inhaber','password':PW}]); m.evaluate(JS,['PATCH','/api/me',{'language':lang}])
@@ -61,6 +71,11 @@ with sync_playwright() as p:
         check(NOTA[lang] in tx and own in tx and f'FT Kollege {n}' in tx,f'{lang} {w}px: Leitung sieht Zuordnung des Melders ({tx[:60]!r})')
         check(m.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Vorgang ohne Querscrollen')
         if SHOTS: m.locator('[data-repassign]').scroll_into_view_if_needed(); m.screenshot(path=f'{SHOTS}/tausch_vorgang_{lang}_{w}.png')
+        m.goto(B+'/#/fines/'+fz['d']['id']); m.reload(); m.wait_for_selector('input[name=cand]',timeout=15000)
+        row=[x for x in m.locator('label.row').all_inner_texts() if f'FT Kollege {n}' in x]
+        check(row and ELSE[lang] in row[0] and own in row[0],f'{lang} {w}px: Bußgeld-Kandidat nennt Kontrolle am anderen Fahrzeug ({(row or [""])[0][:90]!r})')
+        check(m.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Bußgeld ohne Querscrollen')
+        if SHOTS: m.locator('input[name=cand]').first.scroll_into_view_if_needed(); m.screenshot(path=f'{SHOTS}/tausch_bussgeld_{lang}_{w}.png')
         check(not errs,f'{lang} {w}px: Leitung ohne Skriptfehler {errs[:1]}')
         ctx.close()
     br.close()

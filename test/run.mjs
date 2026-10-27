@@ -23459,6 +23459,40 @@ await test('Backlog 421 (Blickwinkel „Fahrer tauscht unterwegs den Lkw mit ein
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].notmine_hint.includes('{p}') && STRINGS[l].rep_assign_own.includes('{p}') && STRINGS[l].rep_assign_drv.includes('{n}'), `Platzhalter ${l}`);
 });
 
+await test('Backlog 422 (Folge aus 421, Fahrzeugtausch): Bußgeld-Kandidat aus der Zuordnung nennt Abfahrtskontrollen am Tattag an einem anderen Fahrzeug (Gespann zählt nicht als anderes); Text im Nachweis und DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const V2 = (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.plate === 'SZ-KC 5515').id;
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,kind,active,eval_excluded,created_at,updated_at) VALUES('VIN:T422','T422','SZ-YC 5514','anhaenger',1,0,?,?)`).run(now, now);
+  db.prepare(`UPDATE vehicles SET trailer_plate='SZ-YC 5514' WHERE id=?`).run(V2);
+  const x = await U.own.post('/api/users', { username: 'w.kollege422', display_name: 'Kollege K', role: 'driver', environment: 'test' });
+  const K = new Client(worker, e, 'w.kollege422'); await K.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); K.id = x.data.id;
+  const past = new Date(Date.now() - 2 * 86400000).toISOString();
+  const ins = (id, uid, vid) => db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,environment,created_by,created_at) VALUES(?,?,?,?,NULL,'test',?,?)`).run(id, uid, vid, past, U.fleet.id, now);
+  ins('dv422a', U.driver.id, V1); ins('dv422b', K.id, V2);
+  const keys = (await U.driver.get('/api/meta')).data.checklist.map((i) => i.key);
+  const check = async (u, vid) => eq((await u.post('/api/inspections', { kind: 'abfahrt', vehicle_id: vid, request_key: rk(), items: keys.map((k) => ({ key: k, result: 'ok' })) })).status, 201, 'Kontrolle');
+  // Tausch: Kollege K (zugeordnet SZ-KC 5515) kontrolliert SZ-YC 5513, Fahrer W kontrolliert SZ-KC 5515
+  await check(K, V1); await check(U.driver, V2);
+  const fine = async (plate, ref) => { const r = await U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt Dortmund Bußgeldstelle', reference: ref, offense_type: 'geschwindigkeit', offense_at: new Date().toISOString(), location: 'B1', plate_in_letter: plate, amount_eur: 70, response_due: BERLIN_TODAY }); eq(r.status, 201); return (await U.fleet.get(`/api/fines/${r.data.id}`)).data.candidates; };
+  let c = await fine('SZ-KC 5515', 'AZ-422-1');
+  const kc = c.find((o) => o.user_id === K.id && o.basis === 'zuordnung'); ok(kc, 'Kollege aus Zuordnung');
+  eq(kc.checks_elsewhere.map((o) => o.plate).join(), 'SZ-YC 5513', 'Kontrolle am anderen Fahrzeug genannt');
+  ok(/– am Tattag Abfahrtskontrolle an SZ-YC 5513 \d{2}:\d{2} Uhr$/.test(kc.evidence), 'Nachweistext: ' + kc.evidence);
+  ok(c.some((o) => o.user_id === U.driver.id && o.basis === 'manuell'), 'Fahrer W über seine Kontrolle');
+  // Anhänger des Kollegen-Lkw: Kollege über die Zugmaschine; Kontrolle am fremden Lkw genannt
+  c = await fine('SZ-YC 5514', 'AZ-422-2'); ok(c.find((o) => o.user_id === K.id).checks_elsewhere, 'Anhänger: ebenfalls genannt');
+  // Fahrer W kontrolliert den Anhänger seines Tausch-Lkw – Gespann von 5515 ist kein „anderes Fahrzeug“; Bußgeld an 5513 (W zugeordnet): W hat 5515 kontrolliert
+  await check(U.driver, 'VIN:T422');
+  c = await fine('SZ-YC 5513', 'AZ-422-3'); const w = c.find((o) => o.user_id === U.driver.id && o.basis === 'zuordnung');
+  eq(w.checks_elsewhere.map((o) => o.plate).sort().join(), 'SZ-KC 5515,SZ-YC 5514', 'beide Kontrollen außerhalb des Gespanns 5513');
+  // ohne Kontrolle woanders: kein Feld
+  db.prepare(`DELETE FROM inspections WHERE performed_by=?`).run(K.id);
+  c = await fine('SZ-KC 5515', 'AZ-422-4'); ok(!('checks_elsewhere' in c.find((o) => o.user_id === K.id)), 'ohne Kontrolle woanders kein Hinweis');
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("+ candElse(c) : "), 'Kandidat zeigt den Hinweis');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cand_elsewhere && STRINGS[l].cand_elsewhere.includes('{p}'), `${l}.cand_elsewhere`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

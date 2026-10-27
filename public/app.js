@@ -4832,7 +4832,9 @@ const fineEvTr = (s) => {
   const k = /^Abfahrtskontrolle am Tattag (\d{2}:\d{2}) Uhr(?: – Zugmaschine (.+))?$/.exec(s || '');
   return k ? t('cand_check').replace('{t}', k[1]) + (k[2] ? ' – ' + t('cand_via').replace('{p}', k[2]) : '') : s || '';
 };
-const candEv = (c) => (c.since ? t('cand_since').replace('{d}', fmtD(c.since)) + (c.until ? ' ' + t('cand_until').replace('{d}', fmtD(c.until)) : '') + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') + (c.assign_evidence ? ` (${evTr(c.assign_evidence)})` : '') : c.check_at ? t('cand_check').replace('{t}', fmtDT(c.check_at)) + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') : c.evidence || '');
+// Backlog 422: zugeordnete Person hat am Tattag die Abfahrtskontrolle an einem anderen Fahrzeug gemacht (Hinweis auf Fahrzeugtausch)
+const candElse = (c) => (c.checks_elsewhere && c.checks_elsewhere.length ? ' – ' + t('cand_elsewhere').replace('{p}', c.checks_elsewhere.map((x) => `${x.plate} ${fmtDT(x.at)}`).join(', ')) : '');
+const candEv = (c) => (c.since ? t('cand_since').replace('{d}', fmtD(c.since)) + (c.until ? ' ' + t('cand_until').replace('{d}', fmtD(c.until)) : '') + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') + (c.assign_evidence ? ` (${evTr(c.assign_evidence)})` : '') + candElse(c) : c.check_at ? t('cand_check').replace('{t}', fmtDT(c.check_at)) + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') : c.evidence || '');
 // Planungshilfe: km-Prognose fällt in die nächsten 30 Tage (ändert keinen Status, nur Anzeige)
 const fcSoon = (r, today, days = 30) => !!(r.km_forecast && r.km_forecast.date && Date.parse(r.km_forecast.date) - Date.parse(today) <= days * 86400000);
 // „ungeklärt“ (km-Zähler gesunken bzw. HU/SP-Frist ungeklärt) überdeckt im Gesamtstatus eine Datumsfälligkeit – die bleibt einzuplanen (Server: date_status)

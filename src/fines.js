@@ -93,6 +93,9 @@ async function loadFine(env, user, envName, id) {
 // Kopplung laut Stammliste maßgeblich) – Kandidaten auch von dort (17.10.2026: vorher keiner angeboten)
 export const fineVehiclesSql = (vid) => `SELECT ${vid} UNION SELECT x.id FROM vehicles x JOIN vehicles v ON v.id=${vid} WHERE v.kind='anhaenger' AND x.kind='lkw' AND x.id<>v.id
   AND ${PLATE_KEY_SQL('x.trailer_plate')}<>'' AND ${PLATE_KEY_SQL('x.trailer_plate')}=${PLATE_KEY_SQL('v.plate')}`;
+// Gespann in beide Richtungen: Fahrzeug + fest gekoppelte Zugmaschine (bei Anhänger) bzw. Anhänger (bei Lkw) laut Stammliste (Backlog 421/422)
+export const gespannVehiclesSql = (vid) => `${fineVehiclesSql(vid)} UNION SELECT x.id FROM vehicles x JOIN vehicles v ON v.id=${vid} WHERE v.kind='lkw' AND x.kind='anhaenger' AND x.id<>v.id
+  AND ${PLATE_KEY_SQL('v.trailer_plate')}<>'' AND ${PLATE_KEY_SQL('v.trailer_plate')}=${PLATE_KEY_SQL('x.plate')}`;
 export async function driverCandidates(env, envName, f) {
   if (!f.vehicle_id) return [];
   const out = [];
@@ -106,9 +109,24 @@ export async function driverCandidates(env, envName, f) {
     out.push({ user_id: a.user_id, display_name: a.display_name, basis: 'zuordnung', evidence: `Fahrzeugzuordnung seit ${berlinDateTime(a.valid_from).slice(0, 10)}${until}${via}${a.evidence ? ' (' + a.evidence + ')' : ''}`, since: berlinDate(a.valid_from), ...(a.valid_to ? { until: berlinDate(a.valid_to) } : {}), assign_evidence: a.evidence || null, ...(via ? { via_plate: a.plate } : {}) });
   }
   const day = berlinDate(f.offense_at);
+  const winFrom = new Date(Date.parse(day + 'T00:00:00Z') - 4 * 3600000).toISOString(); const winTo = new Date(Date.parse(day + 'T23:59:59Z') + 2 * 3600000).toISOString();
+  // Backlog 422 (Folge aus 421, Blickwinkel „Fahrer tauscht unterwegs den Lkw mit einem Kollegen“): zugeordnete Person hat am Tattag die
+  // Abfahrtskontrolle an einem anderen Fahrzeug gemacht → beim Kandidaten nennen (Hinweis auf Tausch); nur Information, keine Automatik
+  const aIds = [...new Set(out.map((o) => o.user_id))];
+  if (aIds.length) {
+    const el = (await env.DB.prepare(`SELECT i.performed_by AS user_id, i.created_at, vv.plate FROM inspections i JOIN vehicles vv ON vv.id=i.vehicle_id
+      WHERE i.performed_by IN (SELECT value FROM json_each(?1)) AND i.environment=?2 AND i.kind='abfahrt' AND i.vehicle_id NOT IN (${gespannVehiclesSql('?3')})
+        AND i.created_at BETWEEN ?4 AND ?5 ORDER BY i.created_at LIMIT 50`).bind(JSON.stringify(aIds), envName, f.vehicle_id, winFrom, winTo).all()).results.filter((x) => berlinDate(x.created_at) === day);
+    for (const o of out) {
+      const mine = el.filter((x) => x.user_id === o.user_id).slice(0, 3);
+      if (!mine.length) continue;
+      o.checks_elsewhere = mine.map((x) => ({ plate: x.plate, at: x.created_at }));
+      o.evidence += ` – am Tattag Abfahrtskontrolle an ${mine.map((x) => `${x.plate} ${berlinDateTime(x.created_at).slice(-5)} Uhr`).join(', ')}`;
+    }
+  }
   const checks = (await env.DB.prepare(`SELECT i.performed_by AS user_id, u.display_name, i.created_at, i.vehicle_id, vv.plate FROM inspections i JOIN users u ON u.id=i.performed_by JOIN vehicles vv ON vv.id=i.vehicle_id
     WHERE i.vehicle_id IN (${fineVehiclesSql('?1')}) AND i.environment=?2 AND u.environment=?2 AND i.kind='abfahrt' AND u.role='driver' AND i.created_at BETWEEN ?3 AND ?4`)
-    .bind(f.vehicle_id, envName, new Date(Date.parse(day + 'T00:00:00Z') - 4 * 3600000).toISOString(), new Date(Date.parse(day + 'T23:59:59Z') + 2 * 3600000).toISOString()).all()).results;
+    .bind(f.vehicle_id, envName, winFrom, winTo).all()).results;
   for (const c of checks) {
     if (berlinDate(c.created_at) !== day) continue;
     if (out.some((o) => o.user_id === c.user_id && o.basis === 'manuell')) continue; // je Person einmal (mehrere Kontrollen am Tattag)
