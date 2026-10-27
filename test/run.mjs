@@ -23741,6 +23741,46 @@ await test('Backlog 429: Lücken der Erreichbarkeit (Nummern „für alle Fahrze
   ok(app.includes('${showArch ? \'\' : emGapsPanel(d.contacts)}') && app.includes('id="emgaps"'), 'Pflegeseite');
 });
 
+await test('Backlog 430 (Blickwinkel „Wochenend-Bereitschaft Fr 18:00 – Mo 06:00“, Migration 0091): bis zu zwei weitere Zeitspannen je Rufnummer – Prüfung, Anzeige, Lücken, Teiländerung, Protokoll; Texte DE/UK/EN', async () => {
+  const { U, e } = await freshWorld();
+  const base = { kind: 'werkstatt', label: 'Bereitschaft', phone: '0231 900' };
+  const bad = async (b, msg) => { const r = await U.fleet.post('/api/emergency/contacts', { ...base, ...b }); eq(r.status, 400, JSON.stringify(b)); ok(msg.test(r.data.message || ''), r.data.message); };
+  await bad({ hours_more: [{ days: '67' }] }, /Wochentage wählen/);
+  await bad({ hours_days: '57', hours_more: [{ from: '08:00', to: '12:00' }] }, /Weitere Zeitspanne: bitte die Wochentage/);
+  await bad({ hours_days: '57', hours_more: [{ days: '6', from: '08:00' }] }, /beide angeben/);
+  await bad({ hours_days: '57', hours_more: [{ days: '9' }] }, /Wochentage ungültig/);
+  await bad({ hours_days: '57', hours_more: [{ days: '6' }, { days: '7' }, { days: '1' }] }, /höchstens 2 weitere/);
+  await bad({ hours_days: '57', hours_more: 'Sa' }, /ungültiger Wert/);
+  const r = await U.fleet.post('/api/emergency/contacts', { ...base, hours_days: '75', hours_from: '18:00', hours_to: '06:00', hours_more: [{ days: ['7', '6'], from: '', to: '' }] }); eq(r.status, 201, JSON.stringify(r.data));
+  const h = (await U.driver.get('/api/emergency')).data.general.find((c) => c.id === r.data.id).hours;
+  eq(JSON.stringify(h), JSON.stringify({ days: '57', from: '18:00', to: '06:00', no_holidays: false, more: [{ days: '67', from: null, to: null }] }), 'normalisiert, more nur wenn eingetragen');
+  const { reachableNow, coverageGaps } = await import('../public/emhours.js');
+  // 2026-10-30 = Freitag (MEZ = UTC+1)
+  for (const [iso, exp, why] of [['2026-10-30T16:30:00Z', false, 'Fr 17:30'], ['2026-10-30T17:30:00Z', true, 'Fr 18:30'], ['2026-10-31T12:00:00Z', true, 'Sa Mittag (weitere Zeitspanne)'], ['2026-11-01T12:00:00Z', true, 'So Mittag'], ['2026-11-02T04:30:00Z', true, 'Mo 05:30 (So 18–06)'], ['2026-11-02T05:30:00Z', false, 'Mo 06:30'], ['2026-11-03T12:00:00Z', false, 'Di Mittag']]) eq(reachableNow(h, new Date(iso)), exp, why);
+  const gaps = coverageGaps([h, { days: '12345', from: '06:00', to: '18:00' }]);
+  eq(gaps.length, 4, 'Mo–Do 18:00–06:00 bleiben offen'); eq(JSON.stringify(gaps[0]), JSON.stringify({ from: { wd: 1, hm: '18:00' }, to: { wd: 2, hm: '06:00' } }));
+  eq(JSON.stringify(coverageGaps([{ ...h, more: [{ days: '1234', from: '18:00', to: '06:00' }, { days: '67', from: null, to: null }] }, { days: '12345', from: '06:00', to: '18:00' }])), '[]', 'mit zweiter weiterer Zeitspanne lückenlos');
+  // Teiländerung: andere Felder lassen weitere Zeitspannen stehen; [] entfernt sie; Wochentage leeren entfernt alles
+  let p = await U.fleet.req('PATCH', `/api/emergency/contacts/${r.data.id}`, { hours_from: '17:00', hours_to: '07:00' }); eq(p.status, 200); eq(p.data.changed.sort().join(), 'hours_from,hours_to');
+  const get = async () => (await U.fleet.get('/api/emergency/contacts')).data.contacts.find((c) => c.id === r.data.id).hours;
+  eq(JSON.stringify((await get()).more), JSON.stringify([{ days: '67', from: null, to: null }]), 'bleibt');
+  p = await U.fleet.req('PATCH', `/api/emergency/contacts/${r.data.id}`, { hours_more: [{ days: '6', from: '00:00', to: '00:00' }, { days: '7' }] }); eq(p.status, 200); eq(p.data.changed.join(), 'hours_more');
+  p = await U.fleet.req('PATCH', `/api/emergency/contacts/${r.data.id}`, { hours_more: [] }); eq(p.status, 200); eq((await get()).more, undefined, 'entfernt');
+  eq((await U.fleet.req('PATCH', `/api/emergency/contacts/${r.data.id}`, { hours_more: [{ days: '6' }] })).status, 200);
+  eq((await U.fleet.req('PATCH', `/api/emergency/contacts/${r.data.id}`, { hours_days: '', hours_from: '', hours_to: '' })).status, 200);
+  eq(await get(), null, 'Wochentage leeren entfernt auch weitere Zeitspannen');
+  const row = await e.DB.prepare('SELECT hours_more FROM emergency_contacts WHERE id=?').bind(r.data.id).first(); eq(row.hours_more, null);
+  // Protokoll lesbar
+  const au = (await U.own.get('/api/admin/audit?action=emergency')).data.entries.find((x) => x.action === 'emergency.update' && x.detail && x.detail.hours_more);
+  ok(au, 'Protokoll alt → neu');
+  const { auditDetailText, STRINGS } = await import('../public/i18n.js');
+  ok(auditDetailText('de', { hours_more: { from: null, to: '[{"days":"67","from":null,"to":null}]' } }).includes('Weitere Zeitspannen: – → Sa, So ganztags'), auditDetailText('de', { hours_more: { from: null, to: '[{"days":"67","from":null,"to":null}]' } }));
+  ok(auditDetailText('en', { hours_more: { from: null, to: '[{"days":"5","from":"18:00","to":"06:00"}]' } }).includes('Fri 18:00–06:00'), 'EN');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['em_more_title', 'em_more_n', 'em_more_hint']) ok(STRINGS[l][k], `${l}.${k}`); ok(!/eine Zeitspanne je Nummer|один проміжок часу на номер|one time span per number/.test(STRINGS[l].em_hours_hint), `Hinweis ${l} aktualisiert`); ok(/06:00/.test(STRINGS[l].help_accident_s), `Hilfe ${l}`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-emmore') && app.includes('b.hours_more = ') && app.includes('windowsOf(h).map(emWinText)'), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

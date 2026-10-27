@@ -24,14 +24,22 @@ function berlin(date) {
 }
 const prevDay = (d) => new Date(Date.parse(d + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
 
-// Erreichbar an Wochentag wd (1–7) um hm („HH:MM“)? holToday/holPrev: heute bzw. gestern bundesweiter Feiertag (für „nicht an Feiertagen“)
-export function openAt(h, wd, hm, holToday = false, holPrev = false) {
+// Backlog 430: weitere Zeitspannen derselben Nummer (h.more, höchstens zwei) – „nicht an Feiertagen“ gilt für alle
+export const MORE_MAX = 2;
+export const windowsOf = (h) => (!h || !h.days ? [] : [h, ...(Array.isArray(h.more) ? h.more : [])].filter((w) => w && w.days).map((w) => ({ days: String(w.days), from: w.from || null, to: w.to || null, no_holidays: !!h.no_holidays })));
+
+// eine Zeitspanne: erreichbar an Wochentag wd (1–7) um hm („HH:MM“)? holToday/holPrev: heute bzw. gestern bundesweiter Feiertag
+function openWin(h, wd, hm, holToday, holPrev) {
   const ok = (d, hol) => h.days.includes(String(d)) && !(h.no_holidays && hol);
   if (!h.from) return ok(wd, holToday); // ganze Tage
   if (h.to > h.from) return ok(wd, holToday) && hm >= h.from && hm < h.to;
   // über Mitternacht (bzw. von = bis: 24 Stunden ab Beginn)
   if (hm >= h.from && ok(wd, holToday)) return true;
   return hm < h.to && ok(wd === 1 ? 7 : wd - 1, holPrev);
+}
+// Erreichbar laut Eintrag (eine der Zeitspannen) an Wochentag wd um hm?
+export function openAt(h, wd, hm, holToday = false, holPrev = false) {
+  return windowsOf(h).some((w) => openWin(w, wd, hm, holToday, holPrev));
 }
 
 // Erreichbarkeit jetzt: null = keine Zeiten eingetragen; sonst true/false
@@ -46,7 +54,7 @@ export function reachableNow(h, date = new Date()) {
 // eine durchgehend unbesetzte Woche als [{all:true}].
 export function coverageGaps(hoursList) {
   if (!hoursList.length || hoursList.some((h) => !h || !h.days)) return null;
-  const b = [...new Set(['00:00', ...hoursList.flatMap((h) => (h.from ? [h.from, h.to] : []))])].sort();
+  const b = [...new Set(['00:00', ...hoursList.flatMap((h) => windowsOf(h).flatMap((w) => (w.from ? [w.from, w.to] : [])))])].sort();
   const seg = [];
   for (let wd = 1; wd <= 7; wd++) for (const hm of b) seg.push({ wd, hm, open: hoursList.some((h) => openAt(h, wd, hm)) });
   if (seg.every((x) => !x.open)) return [{ all: true }];
