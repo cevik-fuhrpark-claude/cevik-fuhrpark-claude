@@ -7,7 +7,7 @@ import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentF
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday } from './holidays.js';
-import { reachableNow, dayRanges } from './emhours.js';
+import { reachableNow, dayRanges, coverageGaps } from './emhours.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
 // Backlog 381: alle bevorzugten Sprachen des Geräts in Reihenfolge prüfen (z. B. ru-RU, uk-UA → uk; vorher nur die erste → Deutsch)
@@ -4471,6 +4471,15 @@ async function viewEmergency(vid) {
   html += `<p style="margin-top:16px">${mayReport() ? `<a href="${vid ? `#/new/${esc(vid)}` : '#/new'}">${esc(t('report_damage'))} ›</a> · ` : ''}<a href="#/help?s=accident">${esc(t('help_accident_t'))} ›</a></p>`;
   render(html, 'more');
 }
+// Backlog 429: Lücken der Erreichbarkeit über die Nummern „für alle Fahrzeuge“ (nur wenn alle Zeiten tragen; Feiertage nicht eingerechnet)
+function emGapsPanel(contacts) {
+  const g = coverageGaps(contacts.filter((c) => c.scope === 'all').map((c) => c.hours));
+  if (!g) return '';
+  if (!g.length) return `<p class="panel small" id="emgaps" data-gaps="0" role="note">${esc(t('em_gaps_none'))}</p>`;
+  const wd = (x) => t('em_wd_' + x.wd);
+  const txt = g[0].all ? t('em_gaps_all') : g.map((x) => `${wd(x.from)} ${x.from.hm} – ${x.to.wd === x.from.wd && x.to.hm > x.from.hm ? '' : wd(x.to) + ' '}${x.to.hm}`).join('; ');
+  return `<section class="panel warn small" id="emgaps" data-gaps="${g.length}" role="note"><p style="margin:0"><b>${esc(t('em_gaps_title'))}</b></p><p style="margin:4px 0" translate="no">${esc(txt)}</p><p class="muted" style="margin:0">${esc(t('em_gaps_hint'))}</p></section>`;
+}
 async function viewEmergencyEdit() {
   render(`<p class="muted">${esc(t('loading'))}</p>`, 'more');
   const showArch = !!S.emArch;
@@ -4495,7 +4504,7 @@ async function viewEmergencyEdit() {
   const rows = d.contacts.map((c) => `<div class="row emman"><span class="title"><b>${esc(c.label)}</b> · <a class="emphone" href="${esc(telHref(c.phone))}">${esc(c.phone)}</a> <span class="chip">${esc(t('em_kind_' + c.kind))}</span><br><span class="small">${esc(t('em_scope'))}: ${esc(emScope(c))}${c.note ? ' · ' + esc(c.note) : ''}</span>${c.hours ? `<br><span class="small emhours">${esc(t('em_hours_short'))}: ${esc(emHoursText(c.hours))}</span>` : ''}<br><span class="small muted">${showArch ? `${esc(t('em_archived_at'))} ${fmtDT(c.archived_at)} · ${esc(c.archived_by_name || '')}` : `${fmtDT(c.updated_at)} · ${esc(c.changed_by_name || '')}`}</span></span>${showArch ? '' : `<span class="actions" style="margin:0"><button type="button" class="btn secondary" data-emedit="${esc(c.id)}">${esc(t('em_edit'))}</button><button type="button" class="btn secondary" data-emarch="${esc(c.id)}">${esc(t('em_archive'))}</button></span>`}</div>`).join('');
   render(`<p class="noprint"><a class="backlink" href="#/emergency">‹ ${esc(t('back'))}</a></p><h1>${esc(t('em_manage'))}</h1><p class="small muted">${esc(t('em_manage_hint'))}</p>
     <div class="actions" role="group" aria-label="${esc(t('em_manage'))}"><button type="button" class="btn ${showArch ? 'secondary' : ''}" data-emtab="0" aria-pressed="${!showArch}">${esc(t('em_active'))}</button><button type="button" class="btn ${showArch ? '' : 'secondary'}" data-emtab="1" aria-pressed="${showArch}">${esc(t('em_archive_list'))}</button></div>
-    ${form}${showArch ? '' : `<p class="small muted" id="emcount">${esc(t('em_count').replace('{n}', d.contacts.length).replace('{m}', d.max_active))}</p>`}
+    ${showArch ? '' : emGapsPanel(d.contacts)}${form}${showArch ? '' : `<p class="small muted" id="emcount">${esc(t('em_count').replace('{n}', d.contacts.length).replace('{m}', d.max_active))}</p>`}
     ${showArch && d.truncated ? `<p class="small muted" id="emartrunc">${esc(t('em_arch_truncated').replace('{n}', d.contacts.length))}</p>` : ''}<div class="list" id="emlist">${rows || noneP()}</div>`, 'more');
   $$('[data-emtab]').forEach((b) => (b.onclick = () => { S.emArch = b.dataset.emtab === '1'; S.emEdit = null; viewEmergencyEdit(); }));
   const f = $('#emf');

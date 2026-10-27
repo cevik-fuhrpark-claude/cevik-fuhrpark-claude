@@ -18,6 +18,8 @@ def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
     if not c: fails.append(m)
 noscroll='()=>document.documentElement.scrollWidth<=innerWidth+1'
+# HTML des ersten Abschnitts (Fahrzeug) bis zur nächsten Überschrift – allgemeine Nummern anderer Skripte/Tests bleiben außen vor
+SEC='''() => { const h = document.querySelector('#app h2'); let x = h && h.nextElementSibling; let out = ''; while (x && x.tagName !== 'H2') { out += x.outerHTML; x = x.nextElementSibling; } return out; }'''
 today=datetime.datetime.now(ZoneInfo('Europe/Berlin')).isoweekday(); yest=7 if today==1 else today-1
 other=next(str(d) for d in range(1,8) if d not in (today,yest))
 with sync_playwright() as p:
@@ -43,28 +45,32 @@ with sync_playwright() as p:
     office=add({'kind':'dispo','label':f'Büro {R}','phone':f'0231 {R} 1','scope':'vehicle','vehicle_id':'VIN:'+vins[0],'hours_days':other,'hours_from':'06:00','hours_to':'18:00','hours_no_holidays':True})
     oncall=add({'kind':'werkstatt','label':f'Bereitschaft {R}','phone':f'0231 {R} 2','scope':'vehicle','vehicle_id':'VIN:'+vins[0],'hours_days':'1234567'})
     add({'kind':'dispo','label':f'Nur Büro {R}','phone':f'0231 {R} 3','scope':'vehicle','vehicle_id':'VIN:'+vins[1],'hours_days':other})
+    add({'kind':'dispo','label':f'Büro allgemein {R}','phone':f'0231 {R} 4','hours_days':other,'hours_from':'06:00','hours_to':'18:00'})
+    gen_all_hours=all(c['hours'] for c in api('GET','/api/emergency/contacts')['d']['contacts'] if c['scope']=='all')
     for lang in ['de','uk','en']:
       for w,h in [(390,844),(820,1180),(1366,900)]:
         ctx=br.new_context(viewport={'width':w,'height':h}); m=ctx.new_page(); errs=[]; m.on('pageerror',lambda e: errs.append(str(e)))
         m.goto(B); m.context.add_cookies(a.context.cookies()); m.evaluate(JS,['PATCH','/api/me',{'language':lang}])
         m.goto(B+'/#/emergency?v=VIN:'+vins[0]); m.reload(); m.wait_for_selector('[data-emopen]',timeout=15000)
         rows=m.locator('.emrow[data-emopen]')
-        labels=[rows.nth(i).inner_text() for i in range(rows.count())]
+        labels=[x for x in (rows.nth(i).inner_text() for i in range(rows.count())) if f'Bereitschaft {R}' in x or f'Büro {R}' in x]
         check(len(labels)==2 and f'Bereitschaft {R}' in labels[0] and f'Büro {R}' in labels[1],f'{lang} {w}px: erreichbare Nummer oben, nicht besetzte unten')
         check(OPEN[lang] in labels[0] and CLOSED[lang] in labels[1],f'{lang} {w}px: Chips „erreichbar/nicht besetzt“')
         check(LEG[lang] in labels[1] and '06:00–18:00' in labels[1],f'{lang} {w}px: Zeiten angezeigt')
         m.click('[data-embd] summary'); bd=m.inner_text('[data-embd]')
         check(BD[lang] in bd and vins[0] in bd and '315/80 R22.5' in bd,f'{lang} {w}px: Angaben für den Pannendienst (Backlog 428)')
-        check(m.locator('[data-emallclosed]').count()==0,f'{lang} {w}px: kein Hinweis „alle nicht besetzt“, solange eine erreichbar ist')
+        check('data-emallclosed' not in m.evaluate(SEC),f'{lang} {w}px: kein Hinweis „alle nicht besetzt“, solange eine erreichbar ist')
         check(m.evaluate(noscroll),f'{lang} {w}px: Panne & Notfall ohne Querscrollen')
         if SHOTS: m.screenshot(path=f'{SHOTS}/notfall_bereitschaft_{lang}_{w}.png')
         m.goto(B+'/#/emergency?v=VIN:'+vins[1]); m.wait_for_selector('[data-emallclosed]',timeout=15000)
-        check(m.locator('[data-emallclosed]').count()==1 and '112' in m.inner_text('[data-emallclosed]'),f'{lang} {w}px: Hinweis „gerade keine Nummer besetzt“ mit 112')
+        check('data-emallclosed' in m.evaluate(SEC) and '112' in m.inner_text('[data-emallclosed] >> nth=0'),f'{lang} {w}px: Hinweis „gerade keine Nummer besetzt“ mit 112')
         # Pflegeformular: Bürozeiten ändern
         m.goto(B+'/#/emergency/edit'); m.wait_for_selector(f'[data-emedit="{office}"]',timeout=15000)
+        if SHOTS: m.screenshot(path=f'{SHOTS}/notfall_luecken_{lang}_{w}.png')
         m.click(f'[data-emedit="{office}"]'); m.wait_for_selector('#emhrs',timeout=5000)
         check(m.locator('[data-emwd]:checked').count()==1 and m.is_checked('#emnohol') and m.input_value('#emfrom')=='06:00',f'{lang} {w}px: Formular übernimmt Zeiten')
         check(m.evaluate(noscroll),f'{lang} {w}px: Pflegeformular ohne Querscrollen')
+        check((m.locator('#emgaps[data-gaps]').count()==1 and m.get_attribute('#emgaps','data-gaps')!='0') if gen_all_hours else m.locator('#emgaps').count()==0,f'{lang} {w}px: Lücken der Erreichbarkeit (Backlog 429)')
         if SHOTS: m.locator('#emhrs').scroll_into_view_if_needed(); m.screenshot(path=f'{SHOTS}/notfall_formular_{lang}_{w}.png')
         m.fill('#emfrom','07:30'); m.fill('#emto','16:00'); m.click('#emf button.btn:not(.secondary)')
         m.wait_for_function(f'() => !document.querySelector("#emcancel")',timeout=15000)

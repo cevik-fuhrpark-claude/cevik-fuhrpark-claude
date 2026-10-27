@@ -23705,7 +23705,7 @@ await test('Backlog 427 (Blickwinkel „Fahrer ruft nachts an: Lkw springt nicht
   const { STRINGS } = await import('../public/i18n.js'); const fs = await import('node:fs');
   for (const l of ['de', 'uk', 'en']) { for (const k of ['em_hours', 'em_hours_hint', 'em_open_now', 'em_closed_now', 'em_all_closed', 'em_allday', 'em_overnight', 'em_no_hol', 'em_wd_1', 'em_wd_7']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_accident_s.includes(STRINGS[l].em_open_now), `Hilfe ${l}`); }
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("import { reachableNow, dayRanges } from './emhours.js';") && app.includes('data-emopen') && app.includes('data-emallclosed') && app.includes('data-emwd'), 'Oberfläche');
+  ok(/import \{ reachableNow, dayRanges[^}]*\} from '\.\/emhours\.js';/.test(app) && app.includes('data-emopen') && app.includes('data-emallclosed') && app.includes('data-emwd'), 'Oberfläche');
   ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/emhours.js'"), 'Service Worker (ohne Netz)');
 });
 
@@ -23723,6 +23723,22 @@ await test('Backlog 428 (Blickwinkel „Pannendienst fragt nach FIN, Hersteller 
   for (const l of ['de', 'uk', 'en']) { for (const k of ['em_bd_title', 'em_bd_hint', 'em_bd_vin', 'em_bd_make', 'em_bd_tires', 'em_bd_unverified']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_accident_s.includes(STRINGS[l].em_bd_title), `Hilfe ${l}`); }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('const bd = emBreakdownInfo(v);') && app.includes('data-embd'), 'Oberfläche');
+});
+
+await test('Backlog 429: Lücken der Erreichbarkeit (Nummern „für alle Fahrzeuge“) – Woche lückenlos/mit Lücken, über Mitternacht und Sonntag→Montag als eine Lücke, ohne Zeiten keine Aussage; Pflegeseite und Texte DE/UK/EN', async () => {
+  const { coverageGaps, openAt } = await import('../public/emhours.js');
+  const G = (l) => JSON.stringify(coverageGaps(l));
+  eq(G([]), 'null', 'keine Nummer'); eq(G([{ days: '12345', from: '06:00', to: '18:00' }, null]), 'null', 'eine Nummer ohne Zeiten → keine Aussage');
+  eq(G([{ days: '1234567', from: null, to: null }]), '[]', 'rund um die Uhr');
+  eq(G([{ days: '12345', from: '06:00', to: '18:00' }, { days: '1234567', from: '18:00', to: '06:00' }]), JSON.stringify([{ from: { wd: 6, hm: '06:00' }, to: { wd: 6, hm: '18:00' } }, { from: { wd: 7, hm: '06:00' }, to: { wd: 7, hm: '18:00' } }]), 'nur Wochenende tagsüber');
+  eq(G([{ days: '12345', from: '06:00', to: '18:00' }, { days: '12345', from: '18:00', to: '06:00' }]), JSON.stringify([{ from: { wd: 6, hm: '06:00' }, to: { wd: 1, hm: '06:00' } }]), 'Sa 06:00 bis Mo 06:00 als eine Lücke');
+  const g = coverageGaps([{ days: '12345', from: '06:00', to: '18:00' }]); eq(g.length, 5); eq(JSON.stringify(g[4]), JSON.stringify({ from: { wd: 5, hm: '18:00' }, to: { wd: 1, hm: '06:00' } }), 'Fr 18:00 – Mo 06:00');
+  eq(G([{ days: '135', from: '07:45', to: '07:50' }]).includes('"07:50"'), true, 'krumme Uhrzeiten');
+  ok(openAt({ days: '5', from: '22:00', to: '02:00', no_holidays: true }, 6, '01:00', false, true) === false && openAt({ days: '5', from: '22:00', to: '02:00' }, 6, '01:00', false, true) === true, 'Feiertag am Vortag');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['em_gaps_title', 'em_gaps_hint', 'em_gaps_none', 'em_gaps_all']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_accident_s.includes(STRINGS[l].em_manage), `Hilfe ${l}`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${showArch ? \'\' : emGapsPanel(d.contacts)}') && app.includes('id="emgaps"'), 'Pflegeseite');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
