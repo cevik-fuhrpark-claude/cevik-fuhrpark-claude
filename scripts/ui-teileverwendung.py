@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (27.10.2026, Backlog 441, Blickwinkel „Rückruf eines Teilelieferanten: an welchen Lkw ist Teil X verbaut?“):
 # Leitung öffnet Lager → „Teile-Verwendung (Rückruf)“, sucht die Teilenummer in anderer Schreibweise und findet den Einbau mit Fahrzeug,
 # Vorgang, Lieferant, Gewährleistung; aus der Artikelakte „Wo verbaut?“ ist die Suche vorbelegt; Werkstatt eines anderen Standorts findet
-# nichts; Backlog 442: Leitung erfasst die gefundenen Fahrzeuge als offenen Rückruf (Vorschau → Übernehmen); Backlog 443: „Wo noch verbaut?“ im Vorgang. DE 390, UK 820, EN 1366; kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (CFP_URL, Standard Port 8787);
+# nichts; Backlog 442: Leitung erfasst die gefundenen Fahrzeuge als offenen Rückruf (Vorschau → Übernehmen); Backlog 443: „Wo noch verbaut?“ im Vorgang; Backlog 444: „Noch im Lager“. DE 390, UK 820, EN 1366; kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (CFP_URL, Standard Port 8787);
 # Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -43,7 +43,7 @@ with sync_playwright() as p:
         check(cmd(api, 'approve_repair', {'workshop_site': 'DORTMUND'}, 'Spurstange tauschen')['s'] == 200, f'{lang}: freigegeben')
         check(cmd(wsapi, 'acknowledge')['s'] == 200 and cmd(wsapi, 'start_repair')['s'] == 200, f'{lang}: Werkstatt übernimmt')
         check(cmd(wsapi, 'add_part', {'name': 'Spurstangenkopf', 'part_number': pn, 'quantity': 1, 'supplier': f'Teile Nord {n}', 'document_ref': f'LS-{n}', 'warranty_until': '2028-06-30'})['s'] == 200, f'{lang}: Teil')
-        st = api('POST', '/api/stock', {'site': 'DORTMUND', 'name': 'Spurstangenkopf', 'part_number': pn, 'unit': 'Stk'})
+        st = api('POST', '/api/stock', {'site': 'DORTMUND', 'name': 'Spurstangenkopf', 'part_number': pn, 'unit': 'Stk', 'initial_qty': '2'})
         check(st['s'] == 201, f'{lang}: Lagerartikel {st}')
         sid = st['d'].get('id') or st['d'].get('item', {}).get('id')
         cno = api('GET', f'/api/cases/{cid}')['d']['case']['case_no']
@@ -60,6 +60,7 @@ with sync_playwright() as p:
         txt = q.inner_text('#putab')
         check(q.locator('#putab tbody tr').count() == 1 and plate in txt and cno in txt and f'Teile Nord {n}' in txt and f'LS-{n}' in txt, f'{lang}: Einbau mit Fahrzeug, Vorgang, Lieferant, Beleg')
         check(T['ptu_sum'].replace('{n}', '1').replace('{v}', '1') in q.inner_text('#pusum'), f'{lang}: Zusammenfassung')
+        check(q.locator(f'#pustock a[href="#/stock/{sid}"]').count() == 1 and T['ptu_stock_title'] in q.inner_text('#pustock'), f'{lang}: Backlog 444 „Noch im Lager“ mit Artikel')
         check(q.is_enabled('#pucsv') and q.is_enabled('#puprt'), f'{lang}: CSV/Drucken aktiv')
         check(q.evaluate(noscroll), f'{lang}: ohne Querscrollen')
         # Backlog 442: gefundene Fahrzeuge als offenen Rückruf erfassen (Vorschau → Übernehmen), danach in der Fahrzeugakte offen

@@ -24159,6 +24159,22 @@ await test('Backlog 443 (Folge aus 441): „Wo noch verbaut?“ an der Teilenumm
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ptu_more && STRINGS[l].help_stock_s.includes(STRINGS[l].ptu_more), l);
 });
 
+await test('Backlog 444 (Folge aus 441): Teile-Verwendung nennt passende Lagerartikel mit Bestand (Teilenummer ohne Schreibweise, Bezeichnung), nicht Bestand 0, Werkstatt nur eigenes Lager, ohne Preise; Oberfläche „Noch im Lager“ DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  eq((await U.fleet.post('/api/stock', { site: 'DORTMUND', name: 'Spurstangenkopf', part_number: '81.95301-6195', initial_qty: '3', unit_price_net: '40,00' })).status, 201);
+  eq((await U.fleet.post('/api/stock', { site: 'MUENCHEN', name: 'Spurstangenkopf', part_number: '81 95301 6195' })).status, 201);
+  eq((await U.fleet.post('/api/stock', { site: 'MUENCHEN', name: 'Spurstangenkopf links', initial_qty: '1' })).status, 201);
+  const r = (await U.fleet.get('/api/parts/usage?q=81953016195')).data;
+  eq(r.items.length, 0); eq(r.stock.length, 1, JSON.stringify(r.stock)); eq(r.stock[0].site, 'DORTMUND'); eq(r.stock[0].on_hand, 3); ok(!('unit_price_net' in r.stock[0]), 'ohne Preis'); eq(r.stock_truncated, false);
+  eq((await U.fleet.get('/api/parts/usage?q=spurstangenkopf')).data.stock.length, 2, 'Bezeichnung (klein)');
+  eq((await U.wsMuc.get('/api/parts/usage?q=spurstangenkopf')).data.stock.map((i) => i.site).join(), 'MUENCHEN', 'Werkstatt nur eigenes Lager');
+  eq((await U.ws.get('/api/parts/usage?q=81953016195')).data.stock.length, 1);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="pustock"') && app.includes('rep.stock.map('), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ptu_stock_title && STRINGS[l].ptu_stock_hint && STRINGS[l].help_stock_s.includes(STRINGS[l].ptu_stock_title), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

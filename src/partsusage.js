@@ -45,7 +45,15 @@ export async function partsUsage(env, user, envName, query = {}) {
     const x = byV.get(i.vehicle_id) || { vehicle_id: i.vehicle_id, plate: i.plate, site: i.vehicle_site, active: i.vehicle_active, eval_excluded: i.eval_excluded, count: 0, last_date: i.date };
     x.count++; if (i.date > x.last_date) x.last_date = i.date; byV.set(i.vehicle_id, x);
   }
-  return { q, from: from || null, to: to || null, environment: envName, workshop_site: ws ? user.workshop_site : null, truncated, max: PARTS_USAGE_MAX, items, vehicles: [...byV.values()] };
+  // Backlog 444: passende Lagerartikel mit Bestand (Rückruf betrifft oft auch noch nicht verbaute Teile) – gleiche Suche über Teilenummer und
+  // Bezeichnung, Werkstatt nur das eigene Lager; Zeitraum gilt hier nicht (Bestand ist heute). Ohne Preise.
+  const sv = caseVariants(q);
+  const stock = (await env.DB.prepare(`SELECT * FROM (SELECT i.id, i.site, i.name, i.part_number, i.unit, i.location, i.active, ROUND(COALESCE((SELECT SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id),0),3) AS on_hand
+    FROM stock_items i WHERE i.environment=?${ws ? ' AND i.site=?' : ''}
+      AND ((? <> '' AND instr(${pnKeySql('i.part_number')}, ?) > 0) OR ${sv.map(() => "instr(lower(i.name), lower(?)) > 0").join(' OR ')})
+    ) WHERE on_hand > 0 ORDER BY site, name LIMIT 201`).bind(envName, ...(ws ? [user.workshop_site] : []), key, key, ...sv).all()).results
+    .map((i) => ({ ...i, active: i.active !== 0 }));
+  return { q, from: from || null, to: to || null, environment: envName, workshop_site: ws ? user.workshop_site : null, truncated, max: PARTS_USAGE_MAX, items, vehicles: [...byV.values()], stock: stock.slice(0, 200), stock_truncated: stock.length > 200 };
 }
 
 export function partsUsageCsv(rep, csvCell) {
