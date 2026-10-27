@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (27.10.2026, Backlog 441, Blickwinkel „Rückruf eines Teilelieferanten: an welchen Lkw ist Teil X verbaut?“):
 # Leitung öffnet Lager → „Teile-Verwendung (Rückruf)“, sucht die Teilenummer in anderer Schreibweise und findet den Einbau mit Fahrzeug,
 # Vorgang, Lieferant, Gewährleistung; aus der Artikelakte „Wo verbaut?“ ist die Suche vorbelegt; Werkstatt eines anderen Standorts findet
-# nichts. DE 390, UK 820, EN 1366; kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (CFP_URL, Standard Port 8787);
+# nichts; Backlog 442: Leitung erfasst die gefundenen Fahrzeuge als offenen Rückruf (Vorschau → Übernehmen). DE 390, UK 820, EN 1366; kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (CFP_URL, Standard Port 8787);
 # Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -62,7 +62,19 @@ with sync_playwright() as p:
         check(T['ptu_sum'].replace('{n}', '1').replace('{v}', '1') in q.inner_text('#pusum'), f'{lang}: Zusammenfassung')
         check(q.is_enabled('#pucsv') and q.is_enabled('#puprt'), f'{lang}: CSV/Drucken aktiv')
         check(q.evaluate(noscroll), f'{lang}: ohne Querscrollen')
+        # Backlog 442: gefundene Fahrzeuge als offenen Rückruf erfassen (Vorschau → Übernehmen), danach in der Fahrzeugakte offen
+        q.click('#purc summary'); q.wait_for_selector('#purcref', timeout=5000)
+        check(q.locator('#purcpick input[name=purcveh]:checked').count() == 1, f'{lang}: Fahrzeug vorgewählt')
+        q.click('#purcprev'); q.wait_for_timeout(300)
+        check(q.locator('#purctab').count() == 0, f'{lang}: ohne Referenz keine Vorschau')
+        q.fill('#purcref', f'TN-RS {n}'); q.fill('#purcnote', 'Spurstangenkopf tauschen'); q.click('#purcprev')
+        q.wait_for_selector('#purcapply', timeout=10000)
+        check(plate in q.inner_text('#purctab') and T['ia_neu'] in q.inner_text('#purctab'), f'{lang}: Vorschau „neu“')
+        check(q.evaluate(noscroll), f'{lang}: Rückruf-Bereich ohne Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/teileverwendung-{lang}-{w}.png', full_page=True)
+        q.click('#purcapply'); q.wait_for_selector('#purcres a[href="#/maintenance"]', timeout=10000)
+        mr = [m for m in (api('GET', f'/api/vehicles/VIN:{vin}')['d'].get('maintenance') or []) if m['kind'] == 'Rückruf']
+        check(len(mr) == 1 and mr[0]['evidence'].startswith(f'TN-RS {n}') and not mr[0]['next_due_date'], f'{lang}: Rückruf offen in der Akte, ohne Frist')
         # Artikelakte → „Wo verbaut?“ belegt die Suche mit der Teilenummer vor
         q.evaluate("sessionStorage.removeItem('cfp_pu_q')")
         q.goto(B + f'/#/stock/{sid}'); q.wait_for_selector('#itempu', timeout=15000)
@@ -81,6 +93,8 @@ with sync_playwright() as p:
         q.wait_for_selector('#punone', timeout=10000)
         check(T['ptu_hint_ws'] in q.inner_text('#app'), f'{lang}: Hinweis Werkstatt')
         check(q.locator('#putab').count() == 0, f'{lang}: Werkstatt München sieht den Dortmunder Einbau nicht')
+        q.evaluate("sessionStorage.setItem('cfp_pu_q', 'Spurstangenkopf')"); q.goto(B + '/#/stock'); q.wait_for_selector('#spu', timeout=15000); q.click('#spu'); q.wait_for_selector('#puq', timeout=10000); q.wait_for_timeout(800)
+        check(q.locator('#purc').count() == 0, f'{lang}: Werkstatt ohne Rückruf-Erfassung')
         check(q.evaluate(noscroll), f'{lang}: Werkstatt ohne Querscrollen')
         check(not errs, f'{lang}: keine Skriptfehler (Werkstatt) {errs[:1]}'); ctx.close()
     br.close()

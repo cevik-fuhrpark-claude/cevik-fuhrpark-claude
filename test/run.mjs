@@ -1592,7 +1592,7 @@ await test('Import-Vorschauen: Zeilenhinweise (übersprungene Zeilen) auf Ukrain
   eq(r3.data.skipped_no_vehicle.length, 2, 'bisheriges Feld bleibt');
   eq(tr('uk', r3.data.skipped[1].reason), 'VIN недійсний/відсутній');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  eq((app.match(/reasonText\([xy]\.reason\)/g) || []).length, 6, 'alle sechs Import-Vorschauen (inkl. Reifen, Lager) nutzen die Übersetzung');
+  eq((app.match(/reasonText\([xy]\.reason\)/g) || []).length, 7, 'alle sieben Import-Vorschauen (inkl. Reifen, Lager, Rückruf aus der Teile-Verwendung – Backlog 442) nutzen die Übersetzung');
   ok(!/esc\([xy]\.reason\)/.test(app), 'kein unübersetzter Grund mehr');
 });
 await test('CSV-Dateien aus Excel (Windows-1252) werden erkannt: Umlaute in Kopfzeile und Werten bleiben erhalten', async () => {
@@ -24122,6 +24122,32 @@ await test('Backlog 441 (Blickwinkel „Rückruf eines Teilelieferanten: an welc
     for (const k of ['ptu_title', 'ptu_item_btn', 'ptu_hint', 'ptu_hint_ws', 'ptu_q', 'ptu_q_ph', 'ptu_from', 'ptu_installed', 'ptu_case', 'ptu_sum', 'ptu_none', 'ptu_removed_hint', 'ptu_truncated']) ok(STRINGS[l][k], l + ' ' + k);
     ok(STRINGS[l].help_stock_s.includes(STRINGS[l].ptu_title) && STRINGS[l].help_stock_s.includes(STRINGS[l].ptu_item_btn.split(' (')[0]), l + ': Hilfe');
     ok(STRINGS[l].ptu_sum.includes('{n}') && STRINGS[l].ptu_sum.includes('{v}'), l);
+  }
+});
+
+await test('Backlog 442 (Folge aus 441, Rückruf eines Teilelieferanten): gefundene Fahrzeuge in einem Schritt als offenen Rückruf erfassen – CSV der Oberfläche (Kennzeichen, FIN, Referenz, Frist, Bemerkung; Anführungszeichen) über den Rückruf-Import: Vorschau, Übernehmen, nie doppelt, Frist nur laut Eingabe; nur Inhaber/Leitung; Texte DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const q2 = (x) => `"${String(x).replace(/"/g, '""')}"`;
+  const csv = (rows) => ['Kennzeichen;FIN;Referenz;Frist;Bemerkung', ...rows.map((r) => r.map(q2).join(';'))].join('\r\n');
+  const ref = 'TN-RS 2026/14; "Spurstange"';
+  const text = csv([['SZ-YC 5513', 'WMA15SZZ2HM722774', ref, '', 'Spurstangenkopf 81.95301-6195 tauschen'], ['SZ-KC 5515', 'WDB9630051L917317', ref, bDayOff(60), '']]);
+  const imp = (u, dry) => u.req('POST', '/api/maintenance/recalls/import' + (dry ? '?dry_run=1' : ''), text, { 'content-type': 'text/csv' });
+  const pv = await imp(U.fleet, true); eq(pv.status, 200, JSON.stringify(pv.data)); eq(pv.data.created, 2, JSON.stringify(pv.data)); eq(pv.data.skipped.length, 0);
+  eq(pv.data.rows.map((r) => r.matched_by).join(), 'FIN,FIN'); eq(pv.data.rows[0].reference, ref, 'Semikolon/Anführungszeichen bleiben erhalten');
+  for (const u of [U.ws, U.viewer, U.driver]) eq((await imp(u, true)).status, 403);
+  const ap = await imp(U.fleet, false); eq(ap.data.created, 2);
+  const again = await imp(U.fleet, false); eq(again.data.created, 0); eq(again.data.unchanged, 2, 'nie doppelt');
+  const v1 = (await U.fleet.get('/api/vehicles/VIN:WMA15SZZ2HM722774')).data; const r1 = (v1.maintenance || v1.rules || []).filter((m) => m.kind === 'Rückruf');
+  eq(r1.length, 1, JSON.stringify(Object.keys(v1))); eq(r1[0].next_due_date, null, 'keine Frist erfunden'); ok(r1[0].evidence.startsWith(ref) && r1[0].evidence.includes('81.95301-6195'), r1[0].evidence);
+  const v2 = (await U.fleet.get('/api/vehicles/VIN:WDB9630051L917317')).data; const r2 = (v2.maintenance || v2.rules || []).filter((m) => m.kind === 'Rückruf'); eq(r2[0].next_due_date, bDayOff(60), 'Frist laut Eingabe');
+  // Oberfläche: Bereich nur für Inhaber/Leitung, nur Fahrzeuge in Betrieb, CSV wie oben, Vorschau → Übernehmen
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('const rcVeh = rep && isMgr() ? rep.vehicles.filter((v) => v.active) : [];') && app.includes("['Kennzeichen;FIN;Referenz;Frist;Bemerkung'") && app.includes("const q2 = (x) => `\"${String(x).replace(/\"/g, '\"\"')}\"`;"), 'Bereich und CSV');
+  ok(app.includes("api('POST', '/api/maintenance/recalls/import?dry_run=1', text") && app.includes('id="purcapply"'), 'Vorschau, dann Übernehmen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['ptu_rc_title', 'ptu_rc_hint', 'ptu_rc_ref', 'ptu_rc_note_ph', 'ptu_rc_due', 'ptu_rc_vehicles', 'ptu_rc_off', 'ptu_rc_done_link', 'ptu_rc_need_ref']) ok(STRINGS[l][k], l + ' ' + k);
+    ok(STRINGS[l].help_stock_s.includes(STRINGS[l].ptu_rc_title), l + ': Hilfe'); ok(STRINGS[l].ptu_rc_off.includes('{n}'), l);
   }
 });
 

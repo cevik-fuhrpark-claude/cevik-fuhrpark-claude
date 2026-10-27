@@ -3868,6 +3868,17 @@ async function viewPartsUsage() {
   const qs = `q=${encodeURIComponent(q)}${from ? '&from=' + encodeURIComponent(from) : ''}${to ? '&to=' + encodeURIComponent(to) : ''}`;
   let rep = null;
   if (q.trim().length >= 3) { try { rep = await api('GET', '/api/parts/usage?' + qs); } catch (err) { toast(err.message, true); rep = null; } }
+  // Backlog 442: betroffene Fahrzeuge (in Betrieb) in einem Schritt als offenen Rückruf erfassen – über den vorhandenen Rückruf-Import
+  // (Vorschau, dann Übernehmen; gleiche Referenz am Fahrzeug nie doppelt; Frist nur laut Schreiben). Nur Inhaber/Fuhrparkleitung.
+  const rcVeh = rep && isMgr() ? rep.vehicles.filter((v) => v.active) : [];
+  const rcOff = rep && isMgr() ? rep.vehicles.length - rcVeh.length : 0;
+  const rcPanel = () => (!rcVeh.length ? '' : `<details class="panel noprint" id="purc"><summary>${esc(t('ptu_rc_title'))}</summary><p class="small muted">${esc(t('ptu_rc_hint'))}</p>
+    <form id="purcf" novalidate><label for="purcref">${esc(t('ptu_rc_ref'))}</label><input id="purcref" maxlength="120" required autocomplete="off">
+      <label for="purcnote">${esc(t('note'))}</label><input id="purcnote" maxlength="120" placeholder="${esc(t('ptu_rc_note_ph'))}">
+      <label for="purcdue">${esc(t('ptu_rc_due'))}</label><input type="date" id="purcdue" style="max-width:200px">
+      <p class="small" style="margin:12px 0 6px"><b>${esc(t('ptu_rc_vehicles'))}</b></p><div class="vehpick multi" id="purcpick">${rcVeh.map((v) => `<label><input type="checkbox" name="purcveh" value="${esc(v.vehicle_id)}" data-plate="${esc(v.plate)}" checked>${plate(v.plate)}${v.eval_excluded ? `<span class="small muted">${esc(t('eval_excluded'))}</span>` : ''}</label>`).join('')}</div>
+      ${rcOff ? `<p class="small muted" id="purcoff">${esc(t('ptu_rc_off').replace('{n}', rcOff))}</p>` : ''}
+      <div class="actions"><button class="btn secondary" id="purcprev">${esc(t('preview'))}</button></div></form><div id="purcres" role="status" aria-live="polite"></div></details>`);
   const vChip = (i) => (!i.vehicle_active ? ` <span class="chip" data-puinact>${esc(t('inactive_vehicles'))}</span>` : i.eval_excluded ? ` <span class="chip" data-pudorm>${esc(t('eval_excluded'))}</span>` : '');
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('ptu_title'))}</h1>
     <p class="small muted">${esc(t(S.me.role === 'workshop' ? 'ptu_hint_ws' : 'ptu_hint'))}</p>
@@ -3879,9 +3890,31 @@ async function viewPartsUsage() {
     ${rep && rep.items.length ? `<p id="pusum"><b>${esc(t('ptu_sum').replace('{n}', rep.items.length).replace('{v}', rep.vehicles.length))}</b></p><p class="small muted">${esc(t('ptu_removed_hint'))}</p>
       <div class="scroll"><table class="stack printsm" id="putab"><thead><tr><th>${esc(t('vehicle'))}</th><th>${esc(t('ptu_installed'))}</th><th>${esc(t('part_name'))}</th><th>${esc(t('qty'))}</th><th>${esc(t('supplier'))}</th><th>${esc(t('doc_ref'))}</th><th>${esc(t('ptu_case'))}</th></tr></thead><tbody>
       ${rep.items.map((i) => `<tr><td><a href="#/vehicles/${encodeURIComponent(i.vehicle_id)}">${esc(i.plate)}</a>${vChip(i)}${i.vehicle_site ? `<div class="small muted">${esc(i.vehicle_site)}</div>` : ''}</td><td>${esc(fmtD(i.date))}</td><td>${esc(i.name)}${i.part_number ? `<div class="small muted pn">${esc(i.part_number)}</div>` : ''}${i.warranty_until ? `<div class="small">${esc(t('warranty_until_d').replace('{d}', fmtD(i.warranty_until)))}</div>` : ''}${i.from_stock ? `<div class="small muted">${esc(t('from_stock'))}</div>` : ''}</td><td>${fmtNum(i.quantity)} ${esc(unitL(i.unit))}</td><td>${esc(i.supplier || '–')}</td><td>${esc(i.document_ref || '–')}</td><td><a href="#/cases/${esc(i.case_id)}">${esc(i.case_no)}</a><div class="small muted">${esc(t('st_' + i.case_status))}${i.workshop_site ? ' · ' + esc(wsName(i.workshop_site)) : ''}</div></td></tr>`).join('')}
-      </tbody></table></div>` : rep ? `<p class="muted" id="punone">${esc(t('ptu_none'))}</p>` : ''}`, 'more');
+      </tbody></table></div>${rcPanel()}` : rep ? `<p class="muted" id="punone">${esc(t('ptu_none'))}</p>` : ''}`, 'more');
   $('#puf').onsubmit = (e) => { e.preventDefault(); ss('cfp_pu_q', $('#puq').value.trim()); ss('cfp_pu_from', $('#pufrom').value); ss('cfp_pu_to', $('#puto').value); viewPartsUsage(); };
   $('#puprt').onclick = () => window.print();
+  if ($('#purcf')) {
+    const q2 = (x) => `"${String(x).replace(/"/g, '""')}"`;
+    // CSV wie „Rückrufe importieren“: FIN (sonst Kennzeichen), Referenz, Frist (nur wenn eingetragen), Bemerkung
+    const csvOf = () => ['Kennzeichen;FIN;Referenz;Frist;Bemerkung', ...$$('input[name=purcveh]').filter((x) => x.checked).map((x) => [x.dataset.plate, x.value.startsWith('VIN:') ? x.value.slice(4) : '', $('#purcref').value.trim(), $('#purcdue').value, $('#purcnote').value.trim()].map(q2).join(';'))].join('\r\n');
+    const act = (a) => (a === 'erledigt' ? t('ms_erledigt') : t('ia_' + a));
+    const show = (r, applied, text) => {
+      const box = $('#purcres');
+      box.innerHTML = `<p><b>${esc(applied ? '✓' : t('preview'))}</b> · ${esc(t('ia_neu'))}: ${r.created} · ${esc(t('ia_aktualisiert'))}: ${r.updated} · ${esc(t('ia_unverändert'))}: ${r.unchanged} · ${esc(t('skipped'))}: ${r.skipped.length}</p>
+        ${r.rows.length ? `<div class="scroll"><table class="stack" id="purctab"><thead><tr><th>${esc(t('vehicle'))}</th><th>${esc(t('recall_ref'))}</th><th>${esc(t('next_due'))}</th><th></th></tr></thead><tbody>${r.rows.map((x) => `<tr><td style="white-space:nowrap">${esc(x.plate)}</td><td>${esc(x.reference)}${x.note ? `<br><span class="small muted">${esc(reasonText(x.note))}</span>` : ''}</td><td>${x.action === 'erledigt' ? `${esc(t('done_on'))} ${fmtD(x.done_on)}` : x.next_due_date ? fmtD(x.next_due_date) : esc(t('vi_recall_open'))}</td><td><span class="chip ${x.action === 'neu' ? 'ok' : x.action === 'aktualisiert' ? 'mittel' : ''}">${esc(act(x.action))}</span></td></tr>`).join('')}</tbody></table></div>` : ''}
+        ${r.skipped.length ? `<ul class="small">${r.skipped.map((x) => `<li>${x.plate ? esc(x.plate) + ': ' : ''}${esc(reasonText(x.reason))}</li>`).join('')}</ul>` : ''}
+        ${applied ? `<p class="small"><a href="#/maintenance">${esc(t('ptu_rc_done_link'))}</a></p>` : r.created || r.updated ? `<div class="actions"><button type="button" class="btn" id="purcapply">${esc(t('apply_import'))}</button></div>` : ''}`;
+      const ap = $('#purcapply');
+      if (ap) ap.onclick = async () => { ap.disabled = true; try { const done = await api('POST', '/api/maintenance/recalls/import', text, { headers: { 'content-type': 'text/csv' } }); toast('✓'); show(done, true, text); } catch (err) { ap.disabled = false; toast(err.message, true); } };
+    };
+    $('#purcf').onsubmit = async (e) => {
+      e.preventDefault();
+      if (!$('#purcref').value.trim()) { toast(t('ptu_rc_need_ref'), true); markInvalid($('#purcref'), t('ptu_rc_need_ref')); $('#purcref').focus(); return; }
+      if (!$$('input[name=purcveh]').some((x) => x.checked)) { toast(t('mc_need_one'), true); markInvalid($('#purcpick'), t('mc_need_one')); return; }
+      const text = csvOf();
+      try { show(await api('POST', '/api/maintenance/recalls/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } }), false, text); } catch (err) { toast(err.message, true); }
+    };
+  }
   $('#pucsv').onclick = async () => { try { downloadChecked(await api('GET', '/api/parts/usage?format=csv&' + qs), `fuhrpark-teileverwendung_${envFn()}_${q.replace(/[^\w-]/g, '').slice(0, 40) || 'suche'}${from ? '_' + from : ''}${to ? '_' + to : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
