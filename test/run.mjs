@@ -24473,6 +24473,49 @@ await test('Backlog 457 (Blickwinkel „Leitung gibt fünf Aufträge für densel
   }
 });
 
+await test('Backlog 458 (Blickwinkel „Disposition fragt am Nachmittag: welcher Lkw ist morgen früh wieder da?“): Startseite Disposition „Wieder einsatzbereit (heute/gestern freigegeben)“ mit Freigabezeit und Abholvermerk; blockierte und ältere Freigaben nicht (DE/UK/EN)', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db;
+  const x = await U.own.post('/api/users', { username: 'w.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
+  const D = new Client(worker, e, 'w.dispo'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  eq((await U.own.post('/api/vehicles', { vin: 'WDB9634031L400099', plate: 'SZ-YC 9901', site: 'Dortmund' })).status, 201, 'drittes Fahrzeug');
+  const V2 = 'VIN:WDB9630051L917317'; const V3 = 'VIN:WDB9634031L400099';
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const release = async (vehicle_id, pickup) => {
+    const id = await toRepair({ vehicle_id });
+    eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+    eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    eq((await cmd(U.ws, id, 'request_quality_check', pickup ? { pickup_note: pickup } : {}, 'fertig')).status, 200);
+    eq((await cmd(U.fleet, id, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200, 'Freigabe');
+    return id;
+  };
+  const a = await release(V1, 'Schlüssel beim Pförtner, Lkw Platz 4');
+  const b = await release(V2); // danach neuer offener Auftrag am selben Fahrzeug → bleibt in „Nicht einplanen“
+  const b2 = await toRepair({ vehicle_id: V2 });
+  const c = await release(V3); db.prepare('UPDATE cases SET closed_at=? WHERE id=?').run(new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') - 3 * 864e5).toISOString(), c);
+  // Disposition bekommt freigegebene Vorgänge mit closed_at und Abholvermerk über die Liste
+  const rows = (await D.get('/api/cases?status=fahrzeug_freigegeben&sort=updated&limit=200')).data.cases;
+  ok(rows.find((r) => r.id === a)?.pickup_note === 'Schlüssel beim Pförtner, Lkw Platz 4' && rows.every((r) => r.closed_at), 'Liste liefert closed_at/Abholvermerk');
+  const open = (await D.get('/api/cases?status=open&limit=500')).data.cases; ok(open.some((o) => o.id === b2), 'neuer Auftrag offen');
+  // Oberflächenlogik aus public/app.js (Quelltext) mit einfachen Platzhaltern ausgeführt
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i0 = app.indexOf('const DISPO_BLOCK_ST'); const src = app.slice(i0, app.indexOf('\nfunction dispoCases(', i0));
+  const { STRINGS } = await import('../public/i18n.js');
+  const BERLIN_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
+  const bDate = (n = 0) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const run = (lang) => new Function('api', 'bDate', 'BERLIN_FMT', 'esc', 't', 'plate', 'ltxt', 'clipTxt', 'cDesc', 'fmtDT', 'wsName', 'langAttr', src + '\nreturn dispoBack;')(
+    async (m, path) => { const r = await D.get(path); return r.data; }, bDate, BERLIN_FMT, (v) => String(v), (k) => STRINGS[lang][k] || k, (p) => `[${p}]`, (v) => v, (v) => v, (v) => v, (v) => v, (v) => v, () => '');
+  for (const lang of ['de', 'uk', 'en']) {
+    const html = await run(lang)(open, '');
+    ok(html.includes(STRINGS[lang].dispo_back) && html.includes(STRINGS[lang].pu_title) && html.includes('Schlüssel beim Pförtner'), lang + ': Abschnitt mit Abholvermerk');
+    eq((html.match(/data-dback/g) || []).length, 1, lang + ': nur das freie Fahrzeug (V2 blockiert, V3 vor 3 Tagen)');
+    ok(html.includes('[SZ-YC 5513]') && !html.includes('[SZ-KC 5515]') && !html.includes('[SZ-YC 9901]'), lang + ': richtige Fahrzeuge');
+    ok(STRINGS[lang].help_dispo_s.includes(STRINGS[lang].dispo_back) && STRINGS[lang].help_dispo_s.includes(STRINGS[lang].pu_title), lang + ': Hilfe Disposition');
+  }
+  eq(await run('de')(open.concat([{ vehicle_id: (await D.get(`/api/cases/${a}`)).data.case.vehicle_id, status: 'gemeldet', safety_lock: 1 }]), ''), '', 'gesperrt durch neue Meldung → nicht wieder einsatzbereit');
+  ok(app.includes("if (cases !== null) html += await dispoBack(dcs, hq);"), 'Startseite Disposition ruft den Abschnitt auf');
+  void b;
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
