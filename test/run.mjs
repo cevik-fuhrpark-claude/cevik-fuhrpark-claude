@@ -23820,6 +23820,26 @@ await test('Backlog 431 (Blickwinkel „Allerheiligen – Büro in Dortmund gesc
   ok(app.includes('id="emstate"') && app.includes('b.hours_holiday_state = ') && app.includes("t('em_hol_state_short')"), 'Oberfläche');
 });
 
+await test('Backlog 432 (Blickwinkel „Büro nachts ‚jetzt nicht besetzt‘ – ab wann wieder?“): nächster Beginn der Erreichbarkeit laut Eintrag (heute/morgen/Wochentag, über Mitternacht, weitere Zeitspannen, Feiertage inkl. Bundesland); Anzeige und Texte DE/UK/EN', async () => {
+  const { nextOpen } = await import('../public/emhours.js');
+  const N = (h, iso) => { const n = nextOpen(h, new Date(iso)); return n ? `${n.day} ${n.hm} +${n.in_days}` : 'null'; };
+  const office = { days: '12345', from: '06:00', to: '18:00', no_holidays: true };
+  eq(N(office, '2026-10-27T03:00:00Z'), '2026-10-27 06:00 +0', 'Di 04:00 → heute 06:00');
+  eq(N(office, '2026-10-27T20:00:00Z'), '2026-10-28 06:00 +1', 'Di 21:00 → morgen');
+  eq(N(office, '2026-10-30T19:00:00Z'), '2026-11-02 06:00 +3', 'Fr abends → Mo');
+  eq(N({ ...office, holiday_state: 'NW' }, '2026-06-03T19:00:00Z'), '2026-06-05 06:00 +2', 'Fronleichnam (NRW) übersprungen');
+  eq(N(office, '2026-06-03T19:00:00Z'), '2026-06-04 06:00 +1', 'ohne Bundesland: Fronleichnam normaler Tag');
+  eq(N(office, '2026-12-23T19:00:00Z'), '2026-12-24 06:00 +1'); eq(N(office, '2026-12-24T19:00:00Z'), '2026-12-28 06:00 +4', 'Weihnachten + Wochenende');
+  eq(N({ days: '5', from: '18:00', to: '06:00' }, '2026-10-31T06:00:00Z'), '2026-11-06 18:00 +6', 'Sa 07:00 → nächster Fr 18:00');
+  eq(N({ days: '57', from: '18:00', to: '06:00', more: [{ days: '67', from: null, to: null }] }, '2026-11-02T06:00:00Z'), '2026-11-06 18:00 +4', 'weitere Zeitspanne');
+  eq(N({ days: '3', from: '10:00', to: '11:00' }, '2026-07-01T07:30:00Z'), '2026-07-01 10:00 +0', 'MESZ');
+  eq(N(null, '2026-10-27T03:00:00Z'), 'null'); eq(N({ days: '1', from: null, to: null, no_holidays: true }, '2026-12-28T12:00:00Z', 8), '2027-01-04 00:00 +7', 'eine Woche voraus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].em_next_open.includes('{x}') && STRINGS[l].em_tomorrow, l); ok(STRINGS[l].help_accident_s.includes(STRINGS[l].em_next_open.replace(' {x}', ' …')), `Hilfe ${l}`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("${r === false ? emNextText(c.hours, now) : ''}") && app.includes('data-emnext'), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

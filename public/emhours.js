@@ -51,6 +51,23 @@ export function reachableNow(h, date = new Date()) {
   return openAt(h, now.wd, now.hm, !!holidayIn(now.day, st), !!holidayIn(prevDay(now.day), st));
 }
 
+// Backlog 432 (Blickwinkel „Fahrer steht nachts liegen, Büro ‚jetzt nicht besetzt‘ – ab wann wieder?“): nächster Beginn einer Erreichbarkeit
+// laut Eintrag in deutscher Zeit, höchstens `days` Tage voraus (Feiertage wie bei „jetzt“ eingerechnet). null = keine Zeiten bzw. nicht absehbar.
+// Ergebnis {day: JJJJ-MM-TT, wd, hm, in_days} (in_days 0 = heute, 1 = morgen). Nur sinnvoll, wenn gerade nicht erreichbar.
+const nextDay = (d) => new Date(Date.parse(d + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
+export function nextOpen(h, date = new Date(), days = 8) {
+  if (!h || !h.days) return null;
+  const now = berlin(date); const st = h.holiday_state || null;
+  const b = [...new Set(['00:00', ...windowsOf(h).flatMap((w) => (w.from ? [w.from, w.to] : []))])].sort();
+  let day = now.day; let wd = now.wd;
+  for (let i = 0; i <= days; i++) {
+    const hol = !!holidayIn(day, st); const holP = !!holidayIn(prevDay(day), st);
+    for (const hm of b) { if (i === 0 && hm <= now.hm) continue; if (openAt(h, wd, hm, hol, holP)) return { day, wd, hm, in_days: i }; }
+    day = nextDay(day); wd = wd === 7 ? 1 : wd + 1;
+  }
+  return null;
+}
+
 // Backlog 429: Lücken einer Woche, in denen laut Eintrag keine der Nummern besetzt ist (ohne Feiertage). null = keine Aussage möglich
 // (keine Nummer oder eine Nummer ohne Zeiten – die gilt als „unbekannt“); [] = lückenlos; sonst [{from:{wd,hm}, to:{wd,hm}}] (Ende ausgeschlossen),
 // eine durchgehend unbesetzte Woche als [{all:true}].

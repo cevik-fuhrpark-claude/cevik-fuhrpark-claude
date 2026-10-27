@@ -7,7 +7,7 @@ import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentF
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday, STATES } from './holidays.js';
-import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX } from './emhours.js';
+import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen } from './emhours.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
 // Backlog 381: alle bevorzugten Sprachen des Geräts in Reihenfolge prüfen (z. B. ru-RU, uk-UA → uk; vorher nur die erste → Deutsch)
@@ -4429,12 +4429,14 @@ const emScope = (c) => (c.scope === 'vehicle' ? (c.plate || t('em_scope_vehicle'
 const emWinText = (w) => `${dayRanges(w.days).map(([a, b]) => (a === b ? t('em_wd_' + a) : `${t('em_wd_' + a)}${b === a + 1 ? ', ' : '–'}${t('em_wd_' + b)}`)).join(', ')} ${w.from ? `${w.from}–${w.to}${w.to <= w.from ? ` (${t('em_overnight')})` : ''}` : t('em_allday')}`;
 // Backlog 430: mehrere Zeitspannen mit „; “ (z. B. „Fr, So 18:00–06:00 (bis zum Folgetag); Sa, So ganztags“)
 const emHoursText = (h) => (!h ? '' : `${windowsOf(h).map(emWinText).join('; ')}${h.no_holidays ? ` · ${t('em_no_hol_short')}${h.holiday_state ? ` (${t('em_hol_state_short').replace('{x}', t('st_' + h.holiday_state))})` : ''}` : ''}`);
+// Backlog 432: „wieder ab 06:00“ / „wieder ab morgen 06:00“ / „wieder ab Mo 06:00“ (laut Eintrag, deutsche Zeit)
+const emNextText = (h, now) => { const n = nextOpen(h, now); if (!n) return ''; const when = n.in_days === 0 ? n.hm : n.in_days === 1 ? `${t('em_tomorrow')} ${n.hm}` : `${t('em_wd_' + n.wd)} ${n.in_days > 6 ? fmtD(n.day) + ' ' : ''}${n.hm}`; return ` <span class="small muted emnext" data-emnext="${esc(n.day + ' ' + n.hm)}" style="white-space:nowrap">${esc(t('em_next_open').replace('{x}', when))}</span>`; };
 // erreichbare bzw. ohne Zeiten zuerst, laut Eintrag gerade nicht erreichbare danach (Reihenfolge sonst wie vom Server)
 const emSortNow = (list, now) => list.map((c, i) => ({ c, i, r: reachableNow(c.hours, now) })).sort((a, b) => (a.r === false) - (b.r === false) || a.i - b.i);
 function emRows(list, now = new Date()) {
   const rows = emSortNow(list, now);
   const allClosed = rows.length && rows.every((x) => x.r === false);
-  return `${allClosed ? `<p class="panel warn small" data-emallclosed role="note">${esc(t('em_all_closed'))}</p>` : ''}<div class="list">${rows.map(({ c, r }) => `<div class="row emrow${r === false ? ' emclosed' : ''}"${r === null ? '' : ` data-emopen="${r ? 1 : 0}"`}><span aria-hidden="true">☎</span><span class="title"><b>${esc(c.label)}</b> <span class="chip">${esc(t('em_kind_' + c.kind))}</span>${r === null ? '' : ` <span class="chip ${r ? 'ok' : 'muted'}">${esc(t(r ? 'em_open_now' : 'em_closed_now'))}</span>`}${c.hours ? `<br><span class="small emhours">${esc(t('em_hours_short'))}: ${esc(emHoursText(c.hours))}</span>` : ''}${c.note ? `<br><span class="small">${esc(c.note)}</span>` : ''}${(() => { const a = telAbroad(c.phone); return a ? `<br><span class="small muted emabroad">${esc(t('em_abroad'))}: <a href="${esc(a.href)}" aria-label="${esc(t('em_abroad_call').replace('{x}', c.label))}">${esc(a.label)}</a></span>` : ''; })()}</span><a class="btn" href="${esc(telHref(c.phone))}" aria-label="${esc(t('em_call_x').replace('{x}', c.label))}">${esc(c.phone)}</a></div>`).join('')}</div>`;
+  return `${allClosed ? `<p class="panel warn small" data-emallclosed role="note">${esc(t('em_all_closed'))}</p>` : ''}<div class="list">${rows.map(({ c, r }) => `<div class="row emrow${r === false ? ' emclosed' : ''}"${r === null ? '' : ` data-emopen="${r ? 1 : 0}"`}><span aria-hidden="true">☎</span><span class="title"><b>${esc(c.label)}</b> <span class="chip">${esc(t('em_kind_' + c.kind))}</span>${r === null ? '' : ` <span class="chip ${r ? 'ok' : 'muted'}">${esc(t(r ? 'em_open_now' : 'em_closed_now'))}</span>`}${r === false ? emNextText(c.hours, now) : ''}${c.hours ? `<br><span class="small emhours">${esc(t('em_hours_short'))}: ${esc(emHoursText(c.hours))}</span>` : ''}${c.note ? `<br><span class="small">${esc(c.note)}</span>` : ''}${(() => { const a = telAbroad(c.phone); return a ? `<br><span class="small muted emabroad">${esc(t('em_abroad'))}: <a href="${esc(a.href)}" aria-label="${esc(t('em_abroad_call').replace('{x}', c.label))}">${esc(a.label)}</a></span>` : ''; })()}</span><a class="btn" href="${esc(telHref(c.phone))}" aria-label="${esc(t('em_call_x').replace('{x}', c.label))}">${esc(c.phone)}</a></div>`).join('')}</div>`;
 }
 // Backlog 428: „Angaben für den Pannendienst“ je Fahrzeug – nur Werte aus dem Fahrzeugstamm/Reifengrößen (fehlend = Zeile entfällt), aufklappbar
 function emBreakdownInfo(v) {

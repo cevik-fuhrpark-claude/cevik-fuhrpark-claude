@@ -12,6 +12,7 @@ TXT={'de':('Fr, So 18:00–06:00','Sa, So ganztags','Weitere Zeitspanne','bitte 
      'uk':('Пт, Нд 18:00–06:00','Сб, Нд цілодобово','Додатковий проміжок','оберіть дні тижня'),
      'en':('Fri, Sun 18:00–06:00','Sat, Sun all day','Further time span','choose the weekdays')}
 STN={'de':'Nordrhein-Westfalen','uk':'Північний Рейн-Вестфалія','en':'North Rhine-Westphalia'}
+NX={'de':'wieder ab','uk':'знову з','en':'again from'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -41,6 +42,9 @@ with sync_playwright() as p:
         m.goto(B+'/#/emergency?v=VIN:'+vin); m.reload(); m.wait_for_selector('.emrow .emhours',timeout=15000)
         row=next((x for x in m.locator('.emrow').all_inner_texts() if f'WE-Bereitschaft {R}' in x),'')
         check(a1 in row and a2 in row,f'{lang} {w}px: Panne & Notfall zeigt beide Zeitspannen')
+        # Backlog 432: gerade nicht besetzt → „wieder ab …“
+        nx=m.evaluate(f'''() => {{ const r = [...document.querySelectorAll('.emrow')].find((x) => x.textContent.includes('WE-Bereitschaft {R}')); return r ? [r.classList.contains('emclosed'), !!r.querySelector('[data-emnext]'), (r.querySelector('[data-emnext]') || {{}}).textContent || ''] : null; }}''')
+        check(nx and (nx[1] and NX[lang] in nx[2] if nx[0] else not nx[1]),f'{lang} {w}px: „wieder ab …“ nur bei nicht besetzt {nx}')
         check(m.evaluate(noscroll),f'{lang} {w}px: Panne & Notfall ohne Querscrollen')
         if SHOTS: m.screenshot(path=f'{SHOTS}/notfall_wochenende_{lang}_{w}.png')
         m.goto(B+'/#/emergency/edit'); m.wait_for_selector(f'[data-emedit="{cid}"]',timeout=15000)
