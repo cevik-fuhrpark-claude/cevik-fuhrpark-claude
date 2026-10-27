@@ -24211,7 +24211,7 @@ await test('Backlog 445 (Blickwinkel „Lieferung mit mehreren Positionen kommt 
   }
 });
 
-await test('Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile – wer fasst nach?“): Vorgangsliste nennt im Status „wartet auf Teile“ den Vermerk (worauf gewartet wird), sonst null; Werkstatt-Startseite längste Wartezeit zuerst, Wartezeit/„kein Liefertermin“ in Listen DE/UK/EN', async () => {
+await test('Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile – wer fasst nach?“): Vorgangsliste nennt im Status „wartet auf Teile“ den Vermerk (worauf gewartet wird), sonst null; Werkstatt-Startseite längste Wartezeit zuerst, Wartezeit/„kein Liefertermin“ in Listen und „Heute zu tun“ (447) DE/UK/EN', async () => {
   const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
   const a = await toRepair(); const b = await toRepair();
   eq((await cmd(U.ws, a, 'wait_parts', {}, 'Luftfederbalg hinten, bestellt bei Teile Nord')).status, 200);
@@ -24233,6 +24233,8 @@ await test('Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile �
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('${partsEta(c)}${partsWaitList(c)}') && app.includes("data-pwnoeta") && app.includes("t('parts_wait_days')"), 'Liste');
   ok(/\['st_wartet_teile', open\.filter\(\(c\) => c\.status === 'wartet_teile'\)\.sort\(/.test(app), 'Werkstatt-Startseite sortiert');
+  // Backlog 447: „Heute zu tun“ der Leitung nennt Wartezeit, fehlenden Liefertermin und Werkstatt
+  ok(/\['todo_parts', [^\n]*t\('parts_eta_none'\)[^\n]*t\('parts_wait_days'\)[^\n]*wsName\(c\.workshop_site\)/.test(app), 'Heute zu tun: Warten auf Teile');
   for (const l of ['de', 'uk', 'en']) {
     ok(STRINGS[l].parts_wait_days && STRINGS[l].parts_wait_days.includes('{d}'), l + ' parts_wait_days');
     ok(STRINGS[l].help_ws_s.includes(STRINGS[l].parts_eta_none) && STRINGS[l].help_ws_s.includes(STRINGS[l].parts_wait_for), l + ': Hilfe Werkstatt');

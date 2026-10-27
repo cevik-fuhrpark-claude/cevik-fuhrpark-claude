@@ -2,7 +2,8 @@
 # Werkstatt-Startseite „Wartet auf Teile“: längste Wartezeit zuerst, je Zeile „Wartet auf: …“, „Wartezeit: 21 Tage“ und
 # „kein Liefertermin angegeben“ (nur ohne Termin); Vorgangsliste zeigt dasselbe. Das Alter wird über die Antwort von
 # GET /api/cases (status_since) vorgetäuscht – der Server rechnet nichts davon. DE/UK/EN bei 390/820/1366 px, kein Querscrollen,
-# keine Skriptfehler. Braucht den Dev-Server (scripts/dev-server.mjs). Screenshots: CFP_SHOTS=<Ordner>.
+# keine Skriptfehler. Backlog 447: „Heute zu tun“ der Leitung nennt bei „Warten auf Teile“ Wartezeit, „kein Liefertermin“ und Werkstatt.
+# Braucht den Dev-Server (scripts/dev-server.mjs). Screenshots: CFP_SHOTS=<Ordner>.
 import os, json, datetime
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -27,7 +28,7 @@ with sync_playwright() as p:
         for un in ['ab.inhaber','ws.inhaber','ft.inhaber','tf.inhaber']:
             if api('POST','/api/login',{'username':un,'password':PW})['s']==200: ok=True; break
         check(ok,'Anmeldung Inhaber')
-    me=api('GET','/api/me')['d']; envn=(me.get('user') or me).get('environment') or 'production'
+    me=api('GET','/api/me')['d']; me_name=(me.get('user') or me).get('username') or 'tn.inhaber'; envn=(me.get('user') or me).get('environment') or 'production'
     R=os.getpid()%100000; n=[0]
     def cmd(page,cid,action,payload=None,note=None):
         n[0]+=1; v=page.evaluate(JS,['GET',f'/api/cases/{cid}',None])['d']['case']['version']
@@ -88,5 +89,23 @@ with sync_playwright() as p:
             check(q.evaluate(noscroll),f'{lang}: Vorgangsliste ohne Querscrollen')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs[:1]}')
         ctx.close()
+    # Backlog 447: Leitung (Inhaber) – „Heute zu tun“ → „Warten auf Teile“
+    TODO={'de':'Warten auf Teile','uk':'Очікують запчастин','en':'Waiting for parts'}
+    for lang in ['de','uk','en']:
+        api('PATCH','/api/me',{'language':lang})
+        for w,h in [(390,844),(1366,900)]:
+            ctx=br.new_context(viewport={'width':w,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+            q.route('**/api/cases?status=open*',fake); q.goto(B)
+            q.evaluate(JS,['POST','/api/login',{'username':me_name,'password':PW}]); q.goto(B+'/#/'); q.reload()
+            q.wait_for_function("(l)=>[...document.querySelectorAll('details summary')].some(s=>s.textContent.includes(l))", arg=TODO[lang], timeout=15000)
+            q.evaluate("(l)=>{ const d=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary').textContent.includes(l)); d.open=true; d.scrollIntoView(); }", TODO[lang])
+            rows=q.evaluate("(l)=>{ const d=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary').textContent.includes(l)); return [...d.querySelectorAll('a.row')].map(r=>({href:r.getAttribute('href'), txt:r.innerText})); }", TODO[lang])
+            ra=[r for r in rows if r['href']==f'#/cases/{ids["A"]}']; rb=[r for r in rows if r['href']==f'#/cases/{ids["B"]}']
+            check(ra and DAYS[lang] in ra[0]['txt'] and NOETA[lang] in ra[0]['txt'] and 'DORTMUND' not in ra[0]['txt'],f'{lang} {w}px Leitung: Wartezeit/„kein Liefertermin“ ({ra[0]["txt"] if ra else None!r})')
+            check(rb and NOETA[lang] not in rb[0]['txt'] and DAYS[lang] not in rb[0]['txt'],f'{lang} {w}px Leitung: B mit Termin')
+            check(q.evaluate(noscroll),f'{lang} {w}px Leitung: ohne Querscrollen')
+            if SHOTS: q.screenshot(path=f'{SHOTS}/teile_nachfassen_leitung_{lang}_{w}.png')
+            check(not errs,f'{lang} {w}px Leitung: keine Skriptfehler {errs[:1]}')
+            ctx.close()
     br.close()
 print('alles grün' if not fails else f'{len(fails)} Fehler'); raise SystemExit(1 if fails else 0)
