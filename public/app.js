@@ -1199,6 +1199,11 @@ function handoverInfo(c) {
   if (!c.handover_keys && !c.handover_papers) return '';
   return `<dt>${esc(t('ho_title'))}</dt><dd id="handover"><span style="white-space:nowrap">${esc(t('ho_keys'))}:</span> ${hoVal(c.handover_keys)}<br><span style="white-space:nowrap">${esc(t('ho_papers'))}:</span> ${hoVal(c.handover_papers)}</dd>`;
 }
+// Abholvermerk nach der Reparatur (Backlog 425, Migration 0088): wo Fahrzeug/Schlüssel/Fahrzeugschein zur Abholung liegen – laut Werkstatt/Leitung
+function pickupInfo(c) {
+  if (!c.pickup_note) return '';
+  return `<dt>${esc(t('pu_title'))}</dt><dd id="pickup" style="white-space:pre-wrap"${langAttr(c.pickup_note)}>${esc(c.pickup_note)}</dd>`;
+}
 function vehLocInfo(c) {
   if (!c.vehicle_location && !c.tow_service) return '';
   const tow = c.tow_service ? `<span class="chip mittel">${esc(t('vl_towed_chip'))}</span> ${esc(c.tow_service)}${c.towed_on ? ' · ' + fmtD(c.towed_on) : ''}` : '';
@@ -2079,7 +2084,7 @@ async function viewCase(id) {
       ${c.status === 'wartet_teile' && d.parts_wait ? partsWaitRows(d.parts_wait) : ''}
       ${c.status !== 'gemeldet' ? `<dt>${esc(t('workshop_ack'))}</dt><dd>${c.workshop_ack_at ? fmtDT(c.workshop_ack_at) : esc(t('not_yet'))}</dd>` : ''}
       ${c.location_note ? `<dt>${esc(t('location_shown'))}</dt><dd>${esc(c.location_note)}</dd>` : ''}
-      ${vehLocInfo(c)}${handoverInfo(c)}
+      ${vehLocInfo(c)}${handoverInfo(c)}${pickupInfo(c)}
       ${d.parent ? `<dt>${esc(t('parent'))}</dt><dd>${d.parent.id ? `<a href="#/cases/${esc(d.parent.id)}">${esc(d.parent.case_no)}</a>` : esc(d.parent.case_no)}</dd>` : ''}
       ${d.duplicate_of ? `<dt>${esc(t('dup_of'))}</dt><dd>${S.me.role === 'driver' || !d.duplicate_of.id ? esc(d.duplicate_of.case_no) : `<a href="#/cases/${esc(d.duplicate_of.id)}">${esc(d.duplicate_of.case_no)}</a>`}</dd>` : ''}${d.duplicates && d.duplicates.length ? `<dt>${esc(t('duplicates'))}</dt><dd>${d.duplicates.map((x) => `<a href="#/cases/${esc(x.id)}">${esc(x.case_no)}</a>`).join(', ')}</dd>` : ''}
       ${!['driver'].includes(S.me.role) ? `<dt>${esc(t('vehicle_file'))}</dt><dd><a href="#/vehicles/${esc(d.vehicle.id)}">${esc(d.vehicle.plate)}</a></dd>` : ''}
@@ -2139,7 +2144,7 @@ async function viewCase(id) {
     if (Object.keys(sum).length > 1 || closed) html += `<h2>${esc(t('time_per_status'))}</h2><dl class="kv">${Object.entries(sum).map(([st, ms]) => `<dt>${esc(t('st_' + st))}${!closed && st === cur ? ` (${esc(t('current'))})` : ''}</dt><dd>${dur(ms)}</dd>`).join('')}</dl>`;
   }
   // Verlauf + Kommentar
-  html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(t('act_' + e.action) !== 'act_' + e.action ? t('act_' + e.action) : e.action === 'create' ? t('report_sent') : e.action)}</b>${e.actor_name || e.actor_name_hidden ? ' · ' + esc(pnm(e.actor_name, e.actor_name_hidden)) : ''}${e.to_status && e.from_status !== e.to_status ? ` → ${esc(t('st_' + e.to_status))}` : ''}${e.note ? `<div style="white-space:pre-wrap"${langAttr(evNote(e))}>${esc(evNote(e))}</div>` : ''}${e.action === 'cost_limit_exceeded' && e.payload ? `<div class="small muted">${esc(t('costs'))} ${eur(e.payload.total_net)} > ${esc(t((e.payload.approved_net || 0) > (e.payload.limit_net || 0) ? 'cost_approved_upto' : 'cost_limit'))} ${eur(Math.max(e.payload.limit_net, e.payload.approved_net || 0))}</div>` : ''}${e.action === 'correct_vehicle' && e.payload && e.payload.inspection_id ? `<div class="small muted cvinsp">${esc(cvInspText(e.payload))}</div>` : ''}${e.action === 'approve_costs' && e.payload ? `<div class="small muted">${esc(t('cost_approved_upto'))} ${eur(e.payload.approved_net)}</div>` : ''}${e.action === 'set_parts_eta' && e.payload ? `<div class="small muted">${e.payload.from ? fmtD(e.payload.from) : '–'} → ${e.payload.to ? fmtD(e.payload.to) : '–'}</div>` : evFromTo(e)}${e.payload && e.payload.planned_to ? `<div class="small muted">${esc(t('planned'))}: ${e.payload.planned_from ? fmtD(e.payload.planned_from) + ' → ' : ''}${fmtD(e.payload.planned_to)}</div>` : ''}${e.payload && e.payload.parts_expected_date ? `<div class="small muted">${esc(t('parts_eta'))} ${fmtD(e.payload.parts_expected_date)}</div>` : ''}${e.payload && e.payload.winter_open_confirmed ? `<div class="small muted wqev">❄ ${esc(t('wq_ev_open'))}${[...(e.payload.noncompliant || []), ...(e.payload.missing || [])].length ? ': ' + esc([...(e.payload.noncompliant || []), ...(e.payload.missing || [])].join(', ')) : ''}</div>` : ''}</li>`).join('')}</ol>`;
+  html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(t('act_' + e.action) !== 'act_' + e.action ? t('act_' + e.action) : e.action === 'create' ? t('report_sent') : e.action)}</b>${e.actor_name || e.actor_name_hidden ? ' · ' + esc(pnm(e.actor_name, e.actor_name_hidden)) : ''}${e.to_status && e.from_status !== e.to_status ? ` → ${esc(t('st_' + e.to_status))}` : ''}${e.note ? `<div style="white-space:pre-wrap"${langAttr(evNote(e))}>${esc(evNote(e))}</div>` : ''}${e.action === 'cost_limit_exceeded' && e.payload ? `<div class="small muted">${esc(t('costs'))} ${eur(e.payload.total_net)} > ${esc(t((e.payload.approved_net || 0) > (e.payload.limit_net || 0) ? 'cost_approved_upto' : 'cost_limit'))} ${eur(Math.max(e.payload.limit_net, e.payload.approved_net || 0))}</div>` : ''}${e.action === 'correct_vehicle' && e.payload && e.payload.inspection_id ? `<div class="small muted cvinsp">${esc(cvInspText(e.payload))}</div>` : ''}${e.action === 'approve_costs' && e.payload ? `<div class="small muted">${esc(t('cost_approved_upto'))} ${eur(e.payload.approved_net)}</div>` : ''}${e.action === 'set_parts_eta' && e.payload ? `<div class="small muted">${e.payload.from ? fmtD(e.payload.from) : '–'} → ${e.payload.to ? fmtD(e.payload.to) : '–'}</div>` : evFromTo(e)}${e.payload && e.payload.planned_to ? `<div class="small muted">${esc(t('planned'))}: ${e.payload.planned_from ? fmtD(e.payload.planned_from) + ' → ' : ''}${fmtD(e.payload.planned_to)}</div>` : ''}${e.payload && e.payload.parts_expected_date ? `<div class="small muted">${esc(t('parts_eta'))} ${fmtD(e.payload.parts_expected_date)}</div>` : ''}${e.payload && e.payload.pickup_for_driver ? `<div class="small muted" data-puev>${esc(t('pu_ev_driver'))}${e.payload.pickup_valid_until ? ' · ' + esc(t('pu_valid_until')) + ' ' + fmtD(e.payload.pickup_valid_until) : ''}</div>` : ''}${e.payload && e.payload.winter_open_confirmed ? `<div class="small muted wqev">❄ ${esc(t('wq_ev_open'))}${[...(e.payload.noncompliant || []), ...(e.payload.missing || [])].length ? ': ' + esc([...(e.payload.noncompliant || []), ...(e.payload.missing || [])].join(', ')) : ''}</div>` : ''}</li>`).join('')}</ol>`;
   if (A.includes('comment')) html += `<form id="cf"><label for="ct">${esc(t('act_comment'))}</label><textarea id="ct" required minlength="3"></textarea>${S.me.role !== 'driver' ? `<fieldset style="border:0;padding:0;margin:8px 0"><legend class="small muted">${esc(t('notify_only'))}</legend><div style="display:flex;gap:14px;flex-wrap:wrap">${[['fleet', t('role_fleet')], ['workshop', t('role_workshop')], ['reporter', t('reported_by')]].filter(([k]) => k !== 'workshop' || (c.status !== 'abgelehnt' && (c.workshop_site || c.suggested_workshop_site))).map(([k, l]) => { const off = k === 'reporter' && d.reporter_unreachable; return `<label class="small${off ? ' muted' : ''}" style="display:flex;gap:6px;align-items:center;min-height:44px"><input type="checkbox" data-nt="${k}"${off ? ' disabled' : ''}> ${esc(l)}${off ? ` <span style="white-space:nowrap">(${esc(t(d.reporter_unreachable === 'inactive' ? 'reporter_off_inactive' : 'reporter_off_other'))})</span>` : ''}</label>`; }).join('')}</div></fieldset>` : ''}<div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form>`;
   render(html, 'cases', { defer: true });
   $('#cprt').onclick = () => window.print();
@@ -2499,6 +2504,10 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   }
   // Backlog 424: Schlüssel/Fahrzeugschein noch als „fehlt“ eingetragen – freigegebenes Fahrzeug stünde ohne Schlüssel da (kein Server-Stopp, nur Hinweis)
   if (['technical_release', 'request_quality_check'].includes(action) && hoMissing(c).length) f.push(`<p class="panel warn small" id="relho">${esc(t('ho_release_warn').replace('{x}', hoMissing(c).join(', ')))}</p>`);
+  if (['technical_release', 'request_quality_check'].includes(action)) {
+    f.push(`<label for="pu_note">${esc(t('pu_title'))}<span class="hint">${esc(t('pu_hint'))}</span></label><textarea id="pu_note" name="pickup_note" maxlength="300" rows="2">${esc(c.pickup_note || '')}</textarea>`);
+    if (action === 'technical_release') f.push(`<label class="check"><input type="checkbox" name="pickup_for_driver" id="pu_drv"> ${esc(t('pu_for_driver'))}</label><div id="pu_until_box" hidden><label for="pu_until">${esc(t('pu_valid_until'))}<span class="hint">${esc(t('pu_valid_until_hint'))}</span></label><input type="date" id="pu_until" name="pickup_valid_until" min="${esc(bDate())}"></div>`);
+  }
   if (action === 'technical_release' && c.cost_over_limit_at) f.push(`<p class="panel warn small" id="relcost">${esc(t('err_cost_approval_open'))}</p>`);
   // 21.10.2026: Server weist in diesen Zuständen immer ab – Hinweis vor dem Absenden (wie Kostenfreigabe)
   if (action === 'reject' && c.safety_lock) f.push(`<p class="panel warn small" id="rejlock">${esc(t('err_safety_lock_active'))}</p>`);
@@ -2527,6 +2536,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   $('#ac').onclick = () => { box.innerHTML = ''; S.openAct = null; actDraft(c.id).clear(); const ab = document.querySelector(`button[data-act="${action}"]`); if (ab) ab.focus(); };
   // Wiedervorlage: ein inzwischen vergangenes Datum bleibt nur unverändert zulässig – nach einer Änderung gilt „ab heute“ wie am Server
   // (vorher bot das Feld alle Tage ab dem alten Datum an, der Server wies sie mit „liegt in der Vergangenheit“ ab, 21.10.2026)
+  if ($('#pu_drv')) $('#pu_drv').onchange = () => { $('#pu_until_box').hidden = !$('#pu_drv').checked; };
   if (action === 'set_followup') { const fi = $('#af input[name=followup_on]'); if (fi) fi.onchange = () => { fi.min = fi.value === (c.followup_on || '') ? fi.min : bDate(); }; }
   if (action === 'reject' && $('#dupmore')) loadDupOptions(c);
   if (action === 'correct_vehicle') api('GET', '/api/vehicles').then((r) => {
@@ -2546,7 +2556,8 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     const fd = new FormData(e.target);
     const p = { ...preset };
     for (const [k, v] of fd.entries()) if (k !== 'note' && v !== '') p[k] = v;
-    for (const k of ['confirm', 'confirm_winter_open', 'confirm_duplicate_invoice', 'safety_relevant', 'covers_work_and_parts']) if (k in p) p[k] = true;
+    for (const k of ['confirm', 'confirm_winter_open', 'confirm_duplicate_invoice', 'safety_relevant', 'covers_work_and_parts', 'pickup_for_driver']) if (k in p) p[k] = true;
+    if (!p.pickup_for_driver) delete p.pickup_valid_until;
     if (p.estimate) { p.valuation = 'estimate'; delete p.estimate; }
     if (action === 'set_occurred_at') {
       const occ = occurredValue(fd.get('occ_date') || '', fd.get('occ_time') || ''); delete p.occ_date; delete p.occ_time;
@@ -3120,6 +3131,9 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   { const vlc = d.cases.filter((c) => OPEN_CASE_ST.includes(c.status) && (c.vehicle_location || c.tow_service));
     // Backlog 424: offener Vorgang mit fehlendem Schlüssel/Fahrzeugschein – in der Fahrzeugakte oben (Disposition/Leitung suchen dort zuerst)
     const hoc = d.cases.filter((c) => hoMissing(c).length);
+    // Abholvermerk des letzten Werkstattaufenthalts (Backlog 425): nur solange das Fahrzeug nicht wieder bei einer Werkstatt ist
+    const puLast = d.cases.filter((c) => c.status === 'fahrzeug_freigegeben' && c.closed_at).sort((x, y) => (y.closed_at > x.closed_at ? 1 : -1))[0];
+    if (puLast && puLast.pickup_note && !d.cases.some((c) => ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'].includes(c.status))) html += `<div class="panel small" id="vpickup"><b>${esc(t('pu_title'))}:</b> <span${langAttr(puLast.pickup_note)}>${esc(puLast.pickup_note)}</span> – <a href="#/cases/${esc(puLast.id)}">${esc(puLast.case_no)}</a> · ${esc(t('st_fahrzeug_freigegeben'))} ${fmtDT(puLast.closed_at)}</div>`;
     if (hoc.length) html += `<div class="panel warn" id="vho">${hoc.map((c) => `<b>${esc(t('ho_title'))}:</b> ${esc(hoMissing(c).join(', '))} – <a href="#/cases/${esc(c.id)}">${esc(c.case_no)}</a>`).join('<br>')}</div>`;
     if (vlc.length) html += `<div class="panel warn" id="vvehloc">${vlc.map((c) => `<b>${esc(t('vl_title'))}:</b> ${c.vehicle_location ? esc(c.vehicle_location) : `<span class="muted">${esc(t('vl_unknown'))}</span>`}${c.tow_service ? ` · <span class="chip mittel">${esc(t('vl_towed_chip'))}</span> ${esc(c.tow_service)}${c.towed_on ? ' · ' + fmtD(c.towed_on) : ''}` : ''} – <a href="#/cases/${esc(c.id)}">${esc(c.case_no)}</a>`).join('<br>')}</div>`; }
   if (S.me.role !== 'driver') html += `<section class="panel" id="vnotes" aria-live="polite"></section>`;

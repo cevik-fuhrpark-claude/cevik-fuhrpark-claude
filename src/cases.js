@@ -9,6 +9,7 @@ import { siteSelection } from './reports.js';
 import { SETTING_DEFAULTS } from './settings.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { huSpFor, HUSP_ONE_SQL, huSpInputFromRow } from './inspection_rules.js';
+import { noteActiveSql, NOTES_MAX_ACTIVE } from './vnotes.js';
 // Laufende Gewährleistungen: Kurzinfo im Vorgang höchstens 20, Fahrzeugakte höchstens 50 (früheste Abläufe zuerst; mehr → *_truncated)
 export const WARR_CASE_MAX = 20;
 export const WARR_VEH_MAX = 50;
@@ -1707,6 +1708,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
         if (!['erfuellt', 'nicht_pflichtig'].includes(w.status) && !flag(p.confirm_winter_open, 'Bestätigung')) throw bad('winter_open', 'Winterreifen laut Reifenerfassung noch nicht erfüllt. Bitte zuerst die Reifen mit Winterkennzeichnung erfassen – oder ausdrücklich bestätigen, dass ohne vollständige Erfassung abgeschlossen wird (Grund im Vermerk).');
         payload = { winter_status: w.status, ...(!['erfuellt', 'nicht_pflichtig'].includes(w.status) ? { winter_open_confirmed: true, noncompliant: w.noncompliant, missing: w.missing } : {}) };
       }
+      // Abholvermerk (Backlog 425): Werkstatt weiß, wo Schlüssel/Fahrzeugschein und Fahrzeug zur Abholung liegen – optional, ≤ 300
+      { const pn = str(p.pickup_note, { max: 300, field: 'Abholung' }); if (pn) { set.pickup_note = pn; payload = { ...(payload || {}), pickup_note: true }; } }
       toStatus = 'abschlusskontrolle';
       notifyKind = 'quality_check';
       break;
@@ -1729,9 +1732,31 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const insp = await repairInspection(env, c.id);
       if (!insp.latest) throw bad('inspection_missing', 'Fahrzeugkontrolle nach Reparatur fehlt.');
       if (!insp.current) throw bad('inspection_after_rework_missing', 'Nach der Nacharbeit ist eine neue Fahrzeugkontrolle nach der Reparatur nötig.');
+      // Abholvermerk (Backlog 425, Blickwinkel „Fahrer findet den Schlüssel nach der Werkstatt nicht“): optional, übernimmt bzw. berichtigt
+      // den Eintrag der Werkstatt; auf Wunsch zusätzlich als „Hinweis zum Fahrzeug“ für die zugeordneten Fahrer (die den Vorgang nicht sehen).
+      // Nicht in den Push-Text (Sperrbildschirm: Ablageort des Schlüssels).
+      const pickup = str(p.pickup_note, { max: 300, field: 'Abholung' });
+      if (pickup) set.pickup_note = pickup;
+      const pickupForDriver = flag(p.pickup_for_driver, 'Für Fahrer sichtbar');
+      let pickupUntil = null;
+      if (pickupForDriver) {
+        if (!(pickup || c.pickup_note)) throw bad('validation', 'Abholung: bitte zuerst eintragen, wo Schlüssel/Fahrzeugschein liegen.');
+        if (p.pickup_valid_until !== undefined && p.pickup_valid_until !== null && p.pickup_valid_until !== '') {
+          pickupUntil = String(p.pickup_valid_until);
+          if (!isCalendarDate(pickupUntil)) throw bad('validation', '„Gültig bis“ ist kein gültiges Datum (JJJJ-MM-TT).');
+          if (pickupUntil < berlinDate()) throw bad('validation', '„Gültig bis“ darf nicht in der Vergangenheit liegen.');
+          if (pickupUntil > oneYearAhead(berlinDate())) throw bad('validation', 'Abholung: „Gültig bis“ liegt mehr als ein Jahr in der Zukunft.');
+        }
+        const nn = await env.DB.prepare(`SELECT COUNT(*) AS n FROM vehicle_notes WHERE vehicle_id=? AND environment=? AND ${noteActiveSql()}`).bind(c.vehicle_id, envName, berlinDate()).first();
+        if (nn.n >= NOTES_MAX_ACTIVE) throw bad('validation', `Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`);
+        // Höchstzahl in derselben Anweisung wie addNote; läuft im selben Stapel wie die Freigabe (Versions-Guard rollt beides zurück)
+        extra.push(env.DB.prepare(`INSERT INTO vehicle_notes(id,environment,vehicle_id,text,for_driver,created_by,created_at,valid_until) SELECT ?1,?2,?3,?4,1,?5,?6,?7
+          WHERE (SELECT COUNT(*) FROM vehicle_notes WHERE vehicle_id=?3 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?8)) < ?9`)
+          .bind(uuid(), envName, c.vehicle_id, `${c.case_no}: ${pickup || c.pickup_note}`, user.id, now, pickupUntil, berlinDate(), NOTES_MAX_ACTIVE));
+      }
       toStatus = 'fahrzeug_freigegeben'; set.closed_at = now; set.safety_lock = 0; set.safety_lock_reason = null;
       const nonSafety = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen'`).bind(c.id).first();
-      payload = { remaining_open_items: nonSafety.n };
+      payload = { remaining_open_items: nonSafety.n, ...(pickup && pickup !== c.pickup_note ? { pickup_note: true } : {}), ...(pickupForDriver ? { pickup_for_driver: true, pickup_valid_until: pickupUntil } : {}) };
       notifyKind = 'released';
       break;
     }

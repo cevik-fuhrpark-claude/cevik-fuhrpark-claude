@@ -230,6 +230,7 @@ UI-Kostenbericht Schnellwahl (laufendes Jahr, Vorjahr, letzte 12 Monate), DE/UK/
 UI-Arbeitszeit am Tag (eigene Summe je Auftrag, Rest bis 24 h, Doppel-Warnung), DE/UK/EN 390/820/1366|ui-arbeitszeit-tag.py|/tmp/cfp-arbeitszeit-tag.log
 UI-Fahrzeugtausch unterwegs: Hinweis „nicht dir zugeordnet“ in Kontrolle/Meldung, Zuordnung des Melders im Vorgang (Leitung), DE/UK/EN 390/820/1366|ui-fahrzeugtausch.py|/tmp/cfp-fahrzeugtausch.log
 UI-Werkstatt ohne Schlüssel/Fahrzeugschein: „fehlt“ im Vorgang, Vorgangsliste, Werkstattplan, DE/UK/EN 390/820/1366|ui-werkstatt-schluessel.py|/tmp/cfp-werkstatt-schluessel.log
+UI-Abholung nach der Reparatur: Abholvermerk Werkstatt → Freigabe → Fahrerhinweis, Vorgang/Fahrzeugakte, DE/UK/EN 390/820/1366|ui-abholung.py|/tmp/cfp-abholung.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log

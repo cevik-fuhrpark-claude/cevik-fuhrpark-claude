@@ -23571,6 +23571,72 @@ await test('Backlog 424 (Folge aus 423): fehlender Schlüssel/Fahrzeugschein in 
   }
 });
 
+await test('Backlog 425 (Blickwinkel „Fahrzeug kommt aus der Werkstatt zurück, Fahrer findet den Schlüssel nicht“): Abholvermerk bei „Bereit zur Abschlusskontrolle“/Freigabe (Migration 0088), optional als Hinweis für die Fahrer, Vorgang/Fahrzeugakte, nie im Push-Text, nicht in der Integrations-API; Texte DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db;
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const toQc = async (pickup) => {
+    const id = await toRepair();
+    eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+    eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    const r = await cmd(U.ws, id, 'request_quality_check', pickup === undefined ? {} : { pickup_note: pickup }, 'fertig'); return { id, r };
+  };
+  // Werkstatt: zu lang abgewiesen, sonst gespeichert und im Verlauf markiert
+  { const id = await toRepair(); eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'x' })).status, 200); eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    const r = await cmd(U.ws, id, 'request_quality_check', { pickup_note: 'x'.repeat(301) }, 'fertig'); eq(r.status, 400); ok(/Abholung/.test(r.data.message), r.data.message); }
+  const { id, r } = await toQc('Schlüssel im Schlüsselkasten Halle 2, Fach 7; Lkw auf Platz 4');
+  eq(r.status, 200, JSON.stringify(r.data));
+  let d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq(d.case.pickup_note, 'Schlüssel im Schlüsselkasten Halle 2, Fach 7; Lkw auf Platz 4');
+  ok(d.events.find((x) => x.action === 'request_quality_check').payload.pickup_note === true, 'Verlauf');
+  // Push-/Hinweistexte nennen den Ablageort nie (Sperrbildschirm)
+  ok(!db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE case_id=? AND (body LIKE '%Fach 7%' OR title LIKE '%Fach 7%')`).get(id).n, 'nicht im Push-Text');
+  // Freigabe ohne Angabe: Eintrag der Werkstatt bleibt; mit Fahrerhinweis: Prüfungen, dann Hinweis für Fahrer im selben Stapel
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test' })).status, 201);
+  const bad1 = await cmd(U.fleet, id, 'technical_release', { confirm: true, pickup_for_driver: true, pickup_valid_until: '2020-01-01' }, 'Kontrolle ok'); eq(bad1.status, 400, 'Vergangenheit');
+  const bad2 = await cmd(U.fleet, id, 'technical_release', { confirm: true, pickup_for_driver: true, pickup_valid_until: '2099-01-01' }, 'Kontrolle ok'); eq(bad2.status, 400, 'mehr als ein Jahr');
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.case.status, 'abschlusskontrolle', 'abgewiesene Freigabe ändert nichts');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM vehicle_notes WHERE vehicle_id=?`).get(V1).n, 0, 'kein Hinweis bei Abweisung');
+  const rel = await cmd(U.fleet, id, 'technical_release', { confirm: true, pickup_for_driver: true }, 'Kontrolle ok'); eq(rel.status, 200, JSON.stringify(rel.data));
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq(d.case.status, 'fahrzeug_freigegeben'); eq(d.case.pickup_note, 'Schlüssel im Schlüsselkasten Halle 2, Fach 7; Lkw auf Platz 4', 'Werkstatt-Eintrag bleibt');
+  const ev = d.events.find((x) => x.action === 'technical_release'); ok(ev.payload.pickup_for_driver === true && ev.payload.pickup_valid_until === null && !ev.payload.pickup_note, JSON.stringify(ev.payload));
+  const note = db.prepare(`SELECT * FROM vehicle_notes WHERE vehicle_id=?`).get(V1);
+  ok(note && note.for_driver === 1 && note.text === `${d.case.case_no}: Schlüssel im Schlüsselkasten Halle 2, Fach 7; Lkw auf Platz 4` && note.created_by === U.fleet.id && note.valid_until === null, JSON.stringify(note));
+  // Fahrer sieht den Hinweis an seinem Fahrzeug (Vorgang selbst nur als Melder)
+  const mine = (await U.driver.get('/api/me/vehicles')).data;
+  ok(JSON.stringify(mine).includes('Fach 7'), 'Fahrer sieht den Hinweis');
+  // Fahrzeugakte liefert den Vermerk (Leitung)
+  eq((await U.fleet.get(`/api/vehicles/${V1}`)).data.cases.find((c) => c.id === id).pickup_note, 'Schlüssel im Schlüsselkasten Halle 2, Fach 7; Lkw auf Platz 4', 'Fahrzeugakte');
+  // Integrations-API ohne Abholvermerk
+  { const src = (await import('node:fs')).readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8'); ok(!src.includes('pickup_note') && !/FROM cases c[^`]*SELECT c\.\*/.test(src), 'nicht in der Integrations-API'); }
+  // Leitung berichtigt bei der Freigabe; „für Fahrer“ ohne jeden Vermerk abgewiesen; gültig bis wird übernommen
+  const b = await toQc(); eq(b.r.status, 200);
+  const r3 = await cmd(U.fleet, b.id, 'technical_release', { confirm: true, pickup_for_driver: true }, 'Kontrolle ok'); eq(r3.status, 400); ok(/Abholung/.test(r3.data.message), r3.data.message);
+  const { berlinDate } = await import('../src/util.js'); const until = berlinDate();
+  eq((await cmd(U.fleet, b.id, 'technical_release', { confirm: true, pickup_note: 'Schlüssel beim Pförtner', pickup_for_driver: true, pickup_valid_until: until }, 'Kontrolle ok')).status, 200);
+  d = (await U.fleet.get(`/api/cases/${b.id}`)).data; eq(d.case.pickup_note, 'Schlüssel beim Pförtner');
+  ok(d.events.find((x) => x.action === 'technical_release').payload.pickup_note === true, 'Berichtigung im Verlauf');
+  eq(db.prepare(`SELECT valid_until FROM vehicle_notes WHERE text LIKE '%Pförtner%'`).get().valid_until, until);
+  // Höchstzahl aktiver Hinweise gilt auch hier
+  const c = await toQc('Schlüssel am Empfang'); eq(c.r.status, 200);
+  const { NOTES_MAX_ACTIVE } = await import('../src/vnotes.js');
+  const n0 = db.prepare(`SELECT COUNT(*) AS n FROM vehicle_notes WHERE vehicle_id=?`).get(V1).n;
+  for (let i = n0; i < NOTES_MAX_ACTIVE; i++) eq((await U.fleet.post(`/api/vehicles/${V1}/notes`, { text: 'Hinweis ' + i })).status, 201);
+  const r4 = await cmd(U.fleet, c.id, 'technical_release', { confirm: true, pickup_for_driver: true }, 'Kontrolle ok'); eq(r4.status, 400); ok(/Höchstens/.test(r4.data.message), r4.data.message);
+  eq((await cmd(U.fleet, c.id, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200, 'ohne Fahrerhinweis weiter möglich');
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${handoverInfo(c)}${pickupInfo(c)}') && app.includes('id="pu_note" name="pickup_note"') && app.includes('name="pickup_for_driver"') && app.includes('id="vpickup"') && app.includes('data-puev'), 'Vorgang, Formular, Fahrzeugakte, Verlauf');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['pu_title', 'pu_hint', 'pu_for_driver', 'pu_valid_until', 'pu_valid_until_hint', 'pu_ev_driver']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].help_ws_s.includes(STRINGS[l].pu_title) && STRINGS[l].help_fleet_s.includes(STRINGS[l].pu_title), `Hilfe ${l}`);
+  }
+  for (const l of ['uk', 'en']) for (const m of ['Abholung: bitte zuerst eintragen, wo Schlüssel/Fahrzeugschein liegen.', 'Abholung: „Gültig bis“ liegt mehr als ein Jahr in der Zukunft.', 'Abholung ist zu lang (max. 300 Zeichen).']) {
+    const tr = translateValidation(l, m); ok(tr && tr !== m && !/Abholung|Schlüssel/.test(tr), `Prüftext ${l}: ${m} → ${tr}`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
