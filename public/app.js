@@ -916,6 +916,21 @@ const partsWaitList = (c) => {
   return `${c.parts_wait_note ? ` · <span data-pwnote>${esc(t('parts_wait_for'))}: ${ltxt(clipTxt(c.parts_wait_note, 60))}</span>` : ''}${d ? ` · <b data-pwdays>${esc(t('parts_wait_days').replace('{d}', nDays(d)))}</b>` : ''}${c.parts_expected_date ? '' : ` <span class="chip mittel" data-pwnoeta>${esc(t('parts_eta_none'))}</span>`}`;
 };
 const partsEta = (c, sep = ' · ', label = true) => c.status === 'wartet_teile' && c.parts_expected_date ? `${sep}<b>${label ? esc(t('parts_eta')) + ' ' : ''}${fmtD(c.parts_expected_date)}</b>${c.parts_expected_date < bDate() ? ` <span class="chip kritisch">${esc(t('parts_eta_passed'))}</span>` : ''}` : '';
+// Backlog 453 (Blickwinkel „Neue Werkstatt-Aushilfe, erster Tag am Tablet (UK)“): Kurzablauf eines Auftrags oben auf der Werkstatt-Startseite –
+// Schrittnamen sind die Knopf-Beschriftungen der App (gleiche Schlüssel), aufgeklappt bis die Person „Ausblenden“ tippt (je Konto im Browser gemerkt,
+// danach zugeklappt erreichbar). Nur Oberfläche, keine Daten.
+const wsFlowKey = () => 'cfp_wsflow_' + (S.me ? S.me.id : '');
+function wsFlow() {
+  let hidden = false; try { hidden = localStorage.getItem(wsFlowKey()) === '1'; } catch {}
+  const q = (k) => t('act_' + k);
+  const steps = [t('wsf_1').replace('{a}', () => q('acknowledge')), t('wsf_2').replace('{a}', () => q('start_repair')), t('wsf_3').replace('{a}', () => q('record_work')).replace('{b}', () => q('add_part')),
+    t('wsf_4').replace('{a}', () => q('wait_parts')).replace('{b}', () => q('resume_repair')), t('wsf_5').replace('{a}', () => q('inspection')).replace('{b}', () => q('request_quality_check')), t('wsf_6')];
+  return `<details class="panel noprint" id="wsflow"${hidden ? '' : ' open'}><summary><b>${esc(t('wsf_title'))}</b></summary><ol style="margin:8px 0 4px;padding-left:1.4em">${steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>${hidden ? '' : `<div class="actions"><button type="button" class="btn secondary" id="wsflowhide">${esc(t('wsf_hide'))}</button></div>`}</details>`;
+}
+function bindWsFlow() {
+  const b = $('#wsflowhide'); if (!b) return;
+  b.onclick = () => { try { localStorage.setItem(wsFlowKey(), '1'); } catch {} const d = $('#wsflow'); if (d) d.open = false; b.closest('.actions').remove(); };
+}
 // Werkstatt-Tagesübersicht: Aufträge des eigenen Standorts nach Arbeitsschritt, dazu Prüftermine der nächsten 14 Tage
 async function workshopBoard() {
   // Nur Arbeitsvorrat: eigene Meldungen an Fahrzeugen anderer Werkstätten (Zugriff „lesen“) erschienen sonst unter
@@ -949,7 +964,7 @@ async function workshopBoard() {
   // wie die verlinkte Liste (repeat_days=3) inkl. Vorab-Info („gemeldet“ mit Vorschlag dieser Werkstatt) – vorher zählte die Startseite n, die Liste n+1 (20.10.2026)
   const rep = open.filter((c) => recentRepeat(c));
   if (rep.length) lanes.unshift(['ws_repeat', rep]);
-  let html = lanes.filter(([, l]) => l.length).map(([k, l]) => `<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${caseList(l)}${k === 'ws_repeat' ? `<p class="small"><a href="${esc(hj('#/cases?f=repeat'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
+  let html = wsFlow() + lanes.filter(([, l]) => l.length).map(([k, l]) => `<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${caseList(l)}${k === 'ws_repeat' ? `<p class="small"><a href="${esc(hj('#/cases?f=repeat'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
   try {
     const ov = await api('GET', '/api/maintenance');
     // ≤ 14 Tage nach Datum oder nach km fällig/überschritten (Warnschwelle aus den Einstellungen) – gleiche Status wie die Prüftermin-Übersicht
@@ -1069,6 +1084,7 @@ async function viewHome() {
     }
   }
   render(html, 'home');
+  bindWsFlow();
   pushNudge().catch(() => {});
   const trb = $('#todoretry'); if (trb) trb.onclick = async () => { await viewHome(); };
   // Liste mit demselben Standort wie die gezählte Tafel (Standard-Standort bzw. „alle“)
@@ -1231,7 +1247,7 @@ function caseList(list, empty) {
     ${plate(c.plate, { locked: c.safety_lock })}
     <span class="title">${woTag(c)}${ltxt(cDesc(c.description))}</span>
     <span class="chip ${esc(c.status === 'fahrzeug_freigegeben' ? 'ok' : c.priority)}">${esc(t('st_' + c.status))}</span>
-    <span class="sub${c.status === 'wartet_teile' ? ' wrap' : ''}">${esc(c.case_no)} · ${esc(t('prio_' + c.priority))}${c.safety_lock ? ' · ' + esc(t('locked')) : ''}${c.file_count ? ` · <span data-fc title="${esc(t('files'))}">📎 ${Number(c.file_count)}</span>` : ''}${c.access === 'preview' ? ' · ' + esc(t('preview_hint')) : ''}${c.tow_service && OPEN_CASE_ST.includes(c.status) ? ` · <b class="towtag">${esc(t('vl_towed_chip'))}</b>` : ''}${hoMissing(c).length ? ` · <b class="hotag">${esc(hoMissing(c).join(', '))}</b>` : ''}${c.planned_date && ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status) ? ` · <b>${esc(t('planned'))} ${fmtD(c.planned_date)}</b>${c.planned_note ? ` <span data-plannote>(${esc(clipTxt(c.planned_note, 60))})</span>` : ''}` : ''} · ${fmtDT(c.updated_at)}${recentRepeat(c) ? ` · <b>${esc(t('act_repeat_finding'))} ${fmtDT(c.last_repeat_at)}</b>` : ''}${partsEta(c)}${partsWaitList(c)}${c.cost_over_limit_at ? ` · <span class="chip mittel">${esc(t('cost_approval_pending'))}</span>` : ''}${c.maintenance_event_id ? ` · <b>${esc(t('md_case'))}</b>` : ''}${c.duplicate_of_no ? ` · ${esc(t('dup_of'))} ${esc(c.duplicate_of_no)}` : ''}${c.followup_on && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? ` · <span class="chip${c.followup_on <= bDate() ? ' mittel' : ''}">${esc(t('followup'))} ${fmtD(c.followup_on)}</span>` : ''}</span></a>`).join('')}</div>`;
+    <span class="sub${c.status === 'wartet_teile' || c.access === 'preview' ? ' wrap' : ''}">${esc(c.case_no)} · ${esc(t('prio_' + c.priority))}${c.safety_lock ? ' · ' + esc(t('locked')) : ''}${c.file_count ? ` · <span data-fc title="${esc(t('files'))}">📎 ${Number(c.file_count)}</span>` : ''}${c.access === 'preview' ? ' · ' + esc(t('preview_hint')) : ''}${c.tow_service && OPEN_CASE_ST.includes(c.status) ? ` · <b class="towtag">${esc(t('vl_towed_chip'))}</b>` : ''}${hoMissing(c).length ? ` · <b class="hotag">${esc(hoMissing(c).join(', '))}</b>` : ''}${c.planned_date && ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status) ? ` · <b>${esc(t('planned'))} ${fmtD(c.planned_date)}</b>${c.planned_note ? ` <span data-plannote>(${esc(clipTxt(c.planned_note, 60))})</span>` : ''}` : ''} · ${fmtDT(c.updated_at)}${recentRepeat(c) ? ` · <b>${esc(t('act_repeat_finding'))} ${fmtDT(c.last_repeat_at)}</b>` : ''}${partsEta(c)}${partsWaitList(c)}${c.cost_over_limit_at ? ` · <span class="chip mittel">${esc(t('cost_approval_pending'))}</span>` : ''}${c.maintenance_event_id ? ` · <b>${esc(t('md_case'))}</b>` : ''}${c.duplicate_of_no ? ` · ${esc(t('dup_of'))} ${esc(c.duplicate_of_no)}` : ''}${c.followup_on && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? ` · <span class="chip${c.followup_on <= bDate() ? ' mittel' : ''}">${esc(t('followup'))} ${fmtD(c.followup_on)}</span>` : ''}</span></a>`).join('')}</div>`;
 }
 
 // Filter der Vorgangsliste: offen/abgeschlossen/alle bzw. „Mangel erneut festgestellt“ (offen, letzte 3 Tage)

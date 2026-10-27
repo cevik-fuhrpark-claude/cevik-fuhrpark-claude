@@ -24369,6 +24369,26 @@ await test('Backlog 452 (Folge aus 449, Teillieferung im Lager): Wareneingang/Zu
   const fs = await import('node:fs'); ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('data-rcrest'), 'Wareneingang zeigt Rest');
 });
 
+await test('Backlog 453 (Blickwinkel „Neue Werkstatt-Aushilfe, erster Tag am Tablet (UK)“): Werkstatt-Startseite zeigt den Kurzablauf eines Auftrags mit den echten Knopf-Beschriftungen (DE/UK/EN), ausblendbar je Konto; Vorab-Info-Zeilen brechen um statt den Hinweis abzuschneiden', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('let html = wsFlow() + lanes.filter('), 'Kurzablauf oben auf der Werkstatt-Startseite');
+  ok(app.includes("render(html, 'home');\n  bindWsFlow();"), 'Ausblenden gebunden');
+  ok(app.includes("b.onclick = () => { try { localStorage.setItem(wsFlowKey(), '1'); } catch {}"), 'Ausblenden als Eigenschaft, Speicher abgesichert');
+  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' ? ' wrap' : ''"), 'Vorab-Info bricht um');
+  // die genannten Knöpfe gibt es wirklich (Server-Aktionen der Werkstatt)
+  const { U, toRepair } = await freshWorld();
+  const a = await toRepair(); const acts = (await U.ws.get(`/api/cases/${a}`)).data.allowed_actions;
+  for (const k of ['record_work', 'add_part', 'wait_parts', 'inspection', 'request_quality_check']) ok(acts.includes(k), 'Aktion ' + k + ' in ' + acts.join(','));
+  const { STRINGS } = await import('../public/i18n.js');
+  const ph = { wsf_1: ['{a}'], wsf_2: ['{a}'], wsf_3: ['{a}', '{b}'], wsf_4: ['{a}', '{b}'], wsf_5: ['{a}', '{b}'], wsf_6: [] };
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].wsf_title && STRINGS[l].wsf_hide, l);
+    ok(STRINGS[l].help_ws_s.includes(STRINGS[l].wsf_hide) && STRINGS[l].help_ws_s.includes(STRINGS[l].wsf_title.replace(/ \(.*$/, '')), l + ': Hilfe nennt Kurzablauf');
+    for (const [k, v] of Object.entries(ph)) { ok(STRINGS[l][k], `${l}: ${k}`); for (const x of v) ok(STRINGS[l][k].includes(x), `${l}: ${k} ${x}`); }
+    for (const k of ['acknowledge', 'start_repair', 'record_work', 'add_part', 'wait_parts', 'resume_repair', 'inspection', 'request_quality_check']) ok(STRINGS[l]['act_' + k], `${l}: act_${k}`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
