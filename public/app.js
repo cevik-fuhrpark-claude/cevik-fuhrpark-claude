@@ -417,7 +417,7 @@ const routes = [
   [/^#\/?$/, viewHome], [/^#\/cases(?:\?f=\w+)?$/, viewCases], [/^#\/cases\/([\w-]+)$/, viewCase], [/^#\/new$/, viewNew], [/^#\/new\/multi$/, viewNewMulti], [/^#\/new\/(VIN:[A-Z0-9]+)$/, viewNew], [/^#\/vehicles\/qr$/, viewQrSheet], [/^#\/v\/(VIN:[A-Z0-9]+)$/, viewScan], [/^#\/check\/(VIN:[A-Z0-9]+)$/, viewDepartureCheck], [/^#\/vehicles\/qr\/(VIN:[A-Z0-9]+)$/, viewQrSheet],
   [/^#\/vehicles(?:\?f=\w+)?$/, viewVehicles], [/^#\/vehicles\/(VIN:[A-Z0-9]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?ev=([\w-]+)$/, viewVehicle], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?sec=tires$/, (vid) => viewVehicle(vid, null, 'tires')], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\?sec=wo$/, (vid) => viewVehicle(vid, null, 'wo')], [/^#\/vehicles\/(VIN:[A-Z0-9]+\?done=[\w-]+)$/, (x) => viewVehicle(x.split('?done=')[0], null, 'done:' + x.split('?done=')[1])], [/^#\/vehicles\/(VIN:[A-Z0-9]+)\/timeline(?:\?f=(\w+))?$/, viewTimeline], [/^#\/inbox$/, viewInbox], [/^#\/push$/, () => { location.replace(notifHref({})); }],
   [/^#\/master(?:\?(q|sev)=([^&]*))?$/, viewMaster], [/^#\/plan(?:\?s=(mdue))?$/, (sec) => viewPlan(sec)], [/^#\/users$/, viewUsers], [/^#\/settings(?:\?s=([a-z_]+))?$/, (sec) => viewSettings(sec)], [/^#\/more(?:\?o=(sess))?$/, (o) => viewMore(o)],
-  [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/guide(?:\?l=(de|uk|en))?$/, (l) => viewDriverGuide(l)], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/stock\/usage$/, viewPartsUsage], [/^#\/stock\/count$/, viewStockCount], [/^#\/stock\/asof$/, viewStockAsOf], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/tacho\/history$/, viewTachoHistory], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/records$/, viewDriverRecords], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit(?:\?u=([\w-]+))?$/, (u) => viewAudit(false, u)], [/^#\/audit\?v=(VIN:[A-Z0-9]+)$/, (v) => viewAudit(false, undefined, v)], [/^#\/usage$/, viewUsage], [/^#\/readiness$/, viewReadiness], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/emergency(?:\?v=(VIN:[A-Z0-9]+)(?:&from=file)?)?$/, viewEmergency], [/^#\/emergency\/edit$/, viewEmergencyEdit], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance(?:\?f=(gaps|due|noplan|all))?$/, viewMaint], [/^#\/maintenance\/multi$/, viewMaintMulti], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
+  [/^#\/check$/, viewDepartureCheck], [/^#\/check\/paper$/, viewCheckPaper], [/^#\/guide(?:\?l=(de|uk|en))?$/, (l) => viewDriverGuide(l)], [/^#\/stock$/, viewStock], [/^#\/stock\/reorder$/, viewReorder], [/^#\/stock\/journal$/, viewStockJournal], [/^#\/stock\/usage$/, viewPartsUsage], [/^#\/stock\/receipt$/, viewStockReceipt], [/^#\/stock\/count$/, viewStockCount], [/^#\/stock\/asof$/, viewStockAsOf], [/^#\/fines$/, viewFines], [/^#\/drivers$/, viewDrivers], [/^#\/tacho$/, viewTacho], [/^#\/tacho\/history$/, viewTachoHistory], [/^#\/contracts$/, viewContracts], [/^#\/claims$/, viewClaims], [/^#\/drivers\/records$/, viewDriverRecords], [/^#\/drivers\/([\w-]+)$/, viewDriver], [/^#\/costs$/, viewCosts], [/^#\/kpi$/, viewKpi], [/^#\/defects$/, viewDefects], [/^#\/audit(?:\?u=([\w-]+))?$/, (u) => viewAudit(false, u)], [/^#\/audit\?v=(VIN:[A-Z0-9]+)$/, (v) => viewAudit(false, undefined, v)], [/^#\/usage$/, viewUsage], [/^#\/readiness$/, viewReadiness], [/^#\/quality(?:\?f=(\w+))?$/, viewQuality], [/^#\/wsload$/, viewWsLoad], [/^#\/telematics$/, viewTelematics], [/^#\/help(?:\?s=([\w-]+))?(?:[?&]q=([^&#]*))?$/, viewHelp], [/^#\/search$/, viewSearch], [/^#\/emergency(?:\?v=(VIN:[A-Z0-9]+)(?:&from=file)?)?$/, viewEmergency], [/^#\/emergency\/edit$/, viewEmergencyEdit], [/^#\/tires(?:\?f=\w+)?$/, viewFleetTires], [/^#\/maintenance(?:\?f=(gaps|due|noplan|all))?$/, viewMaint], [/^#\/maintenance\/multi$/, viewMaintMulti], [/^#\/fines\/([\w-]+)$/, viewFine], [/^#\/stock\/([\w-]+)$/, viewStockItem], [/^#\/inspect\/([\w-]+)$/, viewInspection],
 ];
 // `vs` aus Startseiten-Sprüngen (hj): Standortfilter der Zielliste setzen ('*' = alle), dann ohne `vs` weiter (Routen-Muster bleiben streng)
 const VS_KEYS = { cases: 'caseVsite', vehicles: 'vehSite', plan: 'planVsite', tires: 'tireSite', quality: 'dqSite', maintenance: 'maintSite', tacho: 'tachoSite' };
@@ -3650,7 +3650,7 @@ async function viewStock() {
     <details class="panel noprint" id="simp"><summary>${esc(t('stock_import'))}</summary><p class="small muted">${esc(t('stock_import_hint'))}</p>
       ${sites.length > 1 ? `<label for="simpsite">${esc(t('workshop'))}</label><select id="simpsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
       <label for="simpf">${esc(t('csv_file'))}</label><input type="file" id="simpf" accept=".csv,.txt,text/csv,text/plain"><div id="simpr"></div></details>
-    <div class="actions"><button type="button" class="btn secondary" id="scsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="sprt">${esc(t('print'))}</button><a class="btn secondary" href="#/stock/journal">${esc(t('stock_journal'))}</a><a class="btn secondary" href="#/stock/asof" id="sasof">${esc(t('asof_title'))}</a><a class="btn secondary" href="#/stock/usage" id="spu">${esc(t('ptu_title'))}</a><a class="btn secondary" href="#/stock/reorder">${esc(t('reorder'))}${nReorder ? ` <span class="chip mittel">${nReorder}</span>` : ''}</a></div>
+    <div class="actions"><button type="button" class="btn secondary" id="scsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="sprt">${esc(t('print'))}</button><a class="btn secondary" href="#/stock/receipt" id="srcpt">${esc(t('rcpt_title'))}</a><a class="btn secondary" href="#/stock/journal">${esc(t('stock_journal'))}</a><a class="btn secondary" href="#/stock/asof" id="sasof">${esc(t('asof_title'))}</a><a class="btn secondary" href="#/stock/usage" id="spu">${esc(t('ptu_title'))}</a><a class="btn secondary" href="#/stock/reorder">${esc(t('reorder'))}${nReorder ? ` <span class="chip mittel">${nReorder}</span>` : ''}</a></div>
     ${items.length ? `<details class="panel noprint" id="inv"><summary>${esc(t('inventory'))}</summary><p class="small muted">${esc(t('inventory_hint'))}</p>
       ${sites.length > 1 ? `<label for="invsite">${esc(t('workshop'))}</label><select id="invsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
       <p class="small" id="invlast"></p><p class="noprint actions"><a class="btn secondary" href="#/stock/count" id="invsheet">${esc(t('count_sheet'))}</a><a class="btn secondary" href="#/stock/journal" id="invdiffs">${esc(t('inventory_diffs'))}</a></p><div id="invdraft"></div><div id="invlist"></div><label for="invnote">${esc(t('note'))}</label><input id="invnote" maxlength="300">
@@ -3857,6 +3857,61 @@ async function viewStockJournal() {
   $('#jprt').onclick = () => window.print();
   if ($('#jitemclr')) $('#jitemclr').onclick = () => { ss('cfp_sj_item', ''); viewStockJournal(); };
   $('#jcsv').onclick = async () => { try { downloadChecked(await api('GET', '/api/stock/journal?format=csv&' + qs), `fuhrpark-${inv ? 'inventurdifferenzen' : 'lagerjournal'}_${envFn()}_${from}_${to}${site ? '_' + site : ''}${rep && rep.item && rep.item.part_number ? '_' + rep.item.part_number.replace(/[^\w-]/g, '') : ''}.csv`); } catch (err) { toast(err.message, true); } };
+}
+
+// Backlog 445 (Blickwinkel „Lieferung mit mehreren Positionen kommt – Wareneingang“): Lieferant/Lieferschein einmal, mehrere Artikel eines Lagers
+// in einem Schritt als Zugang buchen (ganz oder gar nicht, Wiederholung bucht nichts doppelt).
+async function viewStockReceipt() {
+  if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`);
+  const items = (await api('GET', '/api/stock')).items.filter((i) => i.active);
+  const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site) : S.meta.workshops.filter((w) => items.some((i) => i.site === w.code));
+  if (!items.length || !sites.length) return render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="muted" id="rcnone">${esc(t('rcpt_no_items'))}</p>`, 'more');
+  let key = uid().replace(/[^\w-]/g, '');
+  render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="small muted">${esc(t('rcpt_hint'))}</p>
+    <form id="rcf" class="panel" novalidate>${sites.length > 1 ? `<label for="rcsite">${esc(t('workshop'))}</label><select id="rcsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
+      <label for="rcsup">${esc(t('supplier'))}</label><input id="rcsup" maxlength="120"><label for="rcdoc">${esc(t('doc_ref'))}</label><input id="rcdoc" maxlength="200"><label for="rcnote">${esc(t('note'))}</label><input id="rcnote" maxlength="500">
+      <h3 style="margin-top:16px">${esc(t('rcpt_lines'))}</h3><div id="rclines"></div>
+      <div class="actions"><button type="button" class="btn secondary" id="rcadd">${esc(t('rcpt_add'))}</button></div>
+      <p class="small" id="rcsum" role="status" aria-live="polite"></p>
+      <div class="actions"><button class="btn" id="rcbook">${esc(t('rcpt_book'))}</button></div></form><div id="rcres"></div>`, 'more');
+  const site = () => ($('#rcsite') ? $('#rcsite').value : sites[0].code);
+  const opts = () => `<option value="">–</option>${items.filter((i) => i.site === site()).map((i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`).join('')}`;
+  let n = 0;
+  const sum = () => { const k = $$('#rclines .rcl').filter((r) => $('select', r).value).length; $('#rcsum').textContent = t('rcpt_count').replace('{n}', k); };
+  const addLine = () => {
+    if ($$('#rclines .rcl').length >= 50) { toast(t('rcpt_max'), true); return; }
+    n += 1; const d = document.createElement('div'); d.className = 'rcl'; d.style.cssText = 'border-top:1px solid var(--rule);padding-top:8px;margin-top:8px';
+    d.innerHTML = `<label for="rci${n}">${esc(t('part_name'))}</label><select id="rci${n}" class="rci">${opts()}</select>
+      <div class="grid2"><div><label for="rcq${n}">${esc(t('qty'))}</label><input id="rcq${n}" class="rcq" inputmode="decimal"></div><div><label for="rcp${n}">${esc(t('price_net'))}</label><input id="rcp${n}" class="rcp" inputmode="decimal"></div></div>
+      <button type="button" class="btn secondary rcdel">${esc(t('rcpt_remove'))}</button>`;
+    $('#rclines').append(d);
+    $('select', d).onchange = sum; $('.rcdel', d).onclick = () => { d.remove(); if (!$$('#rclines .rcl').length) addLine(); sum(); };
+    sum();
+  };
+  addLine();
+  $('#rcadd').onclick = () => addLine();
+  if ($('#rcsite')) $('#rcsite').onchange = () => { $$('#rclines .rci').forEach((x) => { x.innerHTML = opts(); }); sum(); };
+  $('#rcf').onsubmit = async (e) => {
+    e.preventDefault();
+    const rows = $$('#rclines .rcl').filter((r) => $('select', r).value || $('.rcq', r).value.trim());
+    if (!rows.length) { toast(t('rcpt_need_line'), true); return; }
+    for (const r of rows) {
+      if (!$('select', r).value) { toast(t('rcpt_need_item'), true); markInvalid($('select', r), t('rcpt_need_item')); $('select', r).focus(); return; }
+      if (!$('.rcq', r).value.trim()) { toast(t('rcpt_need_qty'), true); markInvalid($('.rcq', r), t('rcpt_need_qty')); $('.rcq', r).focus(); return; }
+    }
+    const ids = rows.map((r) => $('select', r).value);
+    if (new Set(ids).size !== ids.length) { toast(t('rcpt_twice'), true); return; }
+    const body = { site: site(), supplier: $('#rcsup').value.trim() || null, document_ref: $('#rcdoc').value.trim() || null, note: $('#rcnote').value.trim() || null, request_key: key,
+      lines: rows.map((r) => ({ item_id: $('select', r).value, qty: $('.rcq', r).value.trim(), unit_price_net: $('.rcp', r).value.trim() || null })) };
+    try {
+      const res = await api('POST', '/api/stock/receipt', body);
+      key = uid().replace(/[^\w-]/g, '');
+      toast('✓');
+      const names = new Map(items.map((i) => [i.id, i]));
+      $('#rcres').innerHTML = `<section class="panel ok" id="rcdone"><p><b>${esc(t('rcpt_done').replace('{n}', res.lines))}</b>${body.document_ref ? ' · ' + esc(body.document_ref) : ''}</p>${res.items ? `<ul>${res.items.map((x) => `<li><a href="#/stock/${esc(x.id)}">${esc(x.name)}</a>: +${fmtNum(x.qty)} ${esc(unitL((names.get(x.id) || {}).unit || 'Stk'))} · ${esc(t('on_hand'))} ${fmtNum(x.on_hand)}</li>`).join('')}</ul>` : ''}</section>`;
+      $('#rclines').innerHTML = ''; $('#rcsup').value = ''; $('#rcdoc').value = ''; $('#rcnote').value = ''; addLine();
+    } catch (err) { toast(err.message, true); }
+  };
 }
 
 // Backlog 443: „Wo noch verbaut?“ an einer Teilenummer im Vorgang – belegt die Suche der Teile-Verwendung vor (vor dem Seitenwechsel)

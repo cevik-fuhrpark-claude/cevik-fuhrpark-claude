@@ -76,6 +76,54 @@ export async function listStock(env, user, envName, query) {
   return list;
 }
 
+// Backlog 445 (Blickwinkel „Lieferung mit mehreren Positionen kommt – Wareneingang“): ein Lieferschein, mehrere Artikel eines Lagers in einem
+// Schritt als Zugang buchen – Lieferant/Beleg einmal, je Position Menge und (optional) Einkaufspreis. Gleiche Regeln wie der einzelne Zugang
+// (Artikelpreis wird zum Einkaufspreis, alter Preis ins Protokoll, Bestellvermerk endet), alles in einem Stapel (ganz oder gar nicht).
+// Idempotent über request_key (je Position „<Schlüssel>-<Nr.>“): Wiederholung nach verlorener Antwort bucht nichts doppelt.
+export const RECEIPT_MAX_LINES = 50;
+const NOT_IN_SITE = 'Artikel nicht in diesem Lager.';
+export async function receipt(env, user, envName, body) {
+  const site = siteScope(user, body && body.site);
+  if (!site) throw bad('validation', 'Lager angeben.');
+  const rk = requestKey(body);
+  const lines = Array.isArray(body.lines) ? body.lines : null;
+  if (!lines || !lines.length) throw bad('validation', 'Mindestens eine Position angeben.');
+  if (lines.length > RECEIPT_MAX_LINES) throw bad('validation', 'Höchstens 50 Positionen je Wareneingang.');
+  if (rk) {
+    const dup = (await env.DB.prepare('SELECT COUNT(*) AS n FROM stock_movements WHERE request_key=? OR (request_key > ? AND request_key < ?)').bind(rk, rk + '-', rk + '.').first()).n;
+    if (dup) return { ok: true, duplicate: true, lines: lines.length };
+  }
+  const supplier = str(body.supplier, { max: 120, field: 'Lieferant' }); const docRef = str(body.document_ref, { max: 200, field: 'Beleg' }); const note = str(body.note, { max: 500, field: 'Bemerkung' });
+  const ids = lines.map((l) => String((l && l.item_id) || '').slice(0, 64));
+  if (ids.some((x) => !x)) throw bad('validation', 'Jede Position braucht einen Artikel.');
+  if (new Set(ids).size !== ids.length) throw bad('validation', 'Ein Artikel steht mehrfach im Wareneingang – Mengen bitte zusammenfassen.');
+  const items = new Map((await env.DB.prepare(`SELECT * FROM stock_items WHERE environment=? AND site=? AND id IN (SELECT value FROM json_each(?))`).bind(envName, site, JSON.stringify(ids)).all()).results.map((i) => [i.id, i]));
+  const now = nowIso(); const stmts = []; const out = [];
+  lines.forEach((l, idx) => {
+    const it = items.get(ids[idx]);
+    if (!it) throw bad('validation', `Position ${idx + 1}: ${NOT_IN_SITE}`);
+    if (!it.active) throw bad('validation', `Position ${idx + 1}: Artikel ist deaktiviert.`);
+    const qty = r3(num(l.qty, { min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
+    if (!(qty > 0)) throw bad('validation', `Position ${idx + 1}: Menge muss größer 0 sein.`);
+    const price = num(l.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+    stmts.push(env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
+      VALUES (?,?,?,'zugang',?,NULL,?,?,?,?,?,?,?)`).bind(uuid(), envName, it.id, qty, price, supplier, docRef, note, user.id, now, rk ? `${rk}-${idx + 1}` : null));
+    if (price !== null) {
+      stmts.push(env.DB.prepare('UPDATE stock_items SET unit_price_net=?, updated_at=? WHERE id=?').bind(price, now, it.id));
+      if (Number(price) !== Number(it.unit_price_net ?? NaN)) stmts.push(env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)`)
+        .bind(uuid(), user.id, 'stock.price', null, JSON.stringify({ item: it.id, name: it.name, site: it.site, changed: { unit_price_net: { from: it.unit_price_net ?? null, to: price } } }), now));
+    }
+    stmts.push(env.DB.prepare('UPDATE stock_items SET ordered_qty=NULL, ordered_on=NULL, ordered_eta=NULL, ordered_note=NULL, ordered_by=NULL, updated_at=? WHERE id=? AND ordered_on IS NOT NULL').bind(now, it.id));
+    out.push({ id: it.id, name: it.name, qty });
+  });
+  stmts.push(auditStmt(env, user.id, 'stock.receipt', null, { site, supplier, document_ref: docRef, lines: out.length, environment: envName }));
+  try { await env.DB.batch(stmts); } catch (e) {
+    if (rk && String(e && e.message).includes('UNIQUE')) return { ok: true, duplicate: true, lines: lines.length };
+    throw e;
+  }
+  for (const o of out) o.on_hand = await onHand(env, o.id);
+  return { ok: true, lines: out.length, items: out };
+}
 async function loadItem(env, user, envName, id) {
   const it = await env.DB.prepare('SELECT * FROM stock_items WHERE id=? AND environment=?').bind(id, envName).first();
   if (!it) throw notFound('Artikel nicht gefunden.');

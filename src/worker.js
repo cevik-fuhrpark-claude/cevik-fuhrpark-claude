@@ -542,6 +542,7 @@ async function handleApi(request, env, ctx, url) {
     }
     return json(rep);
   }
+  if (path === '/api/stock/receipt' && m === 'POST') return json(await stock.receipt(env, user, envName, await readJson(request, 128 * 1024)), 201); // Backlog 445: Wareneingang
   if (path === '/api/stock/inventory' && m === 'POST') return json(await stock.inventory(env, user, envName, await readJson(request, 512 * 1024), { dryRun: url.searchParams.get('dry_run') === '1' }));
   if (path === '/api/stock' && m === 'POST') return json(await stock.createItem(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/stock\/([\w-]+)$/)) && m === 'GET') return json(await stock.itemDetail(env, user, envName, mm[1]));

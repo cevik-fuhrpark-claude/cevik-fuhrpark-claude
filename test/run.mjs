@@ -1514,6 +1514,9 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     ['`Vorgang ${o.case_no} ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.`', 'Vorgang V-2026-0007 ist selbst eine Dublette – bitte den ursprünglichen Vorgang wählen.', 'Заявка V-2026-0007 сама є дублікатом – виберіть початкову заявку.', 'Case V-2026-0007 is itself a duplicate – please choose the original case.'],
     ['`${field}: höchstens 2 Nachkommastellen.`', 'Betrag: höchstens 2 Nachkommastellen.', 'Сума: не більше 2 знаків після коми.', 'Amount: at most 2 decimal places.'],
     ['`Unbekannter Prüfpunkt ${it.key}.`', 'Unbekannter Prüfpunkt xyz.', 'Невідомий пункт перевірки xyz.', 'Unknown check item xyz.'],
+    ['`Position ${idx + 1}: ${NOT_IN_SITE}`', 'Position 1: Artikel nicht in diesem Lager.', 'Позиція 1: Артикула немає на цьому складі.', 'Line 1: Item is not in this stock location.'],
+    ['`Position ${idx + 1}: Artikel ist deaktiviert.`', 'Position 2: Artikel ist deaktiviert.', 'Позиція 2: Позицію деактивовано.', 'Line 2: Item is deactivated.'],
+    ['`Position ${idx + 1}: Menge muss größer 0 sein.`', 'Position 3: Menge muss größer 0 sein.', 'Позиція 3: Кількість має бути більшою за 0.', 'Line 3: Quantity must be greater than 0.'],
     ["`Arbeitsdatum: nicht in der Zukunft und nicht vor dem ${earliest.split('-').reverse().join('.')}.`", 'Arbeitsdatum: nicht in der Zukunft und nicht vor dem 17.10.2025.', 'Дата роботи: не в майбутньому і не раніше 17.10.2025.', 'Work date: not in the future and not before 17/10/2025.'],
   ];
   for (const [code, de, uk, en] of tpl) { ok(src.includes(code), `Vorlage im Server: ${code}`); eq(tv('uk', de), uk, de); eq(tv('en', de), en, de); }
@@ -24173,6 +24176,39 @@ await test('Backlog 444 (Folge aus 441): Teile-Verwendung nennt passende Lagerar
   ok(app.includes('id="pustock"') && app.includes('rep.stock.map('), 'Oberfläche');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ptu_stock_title && STRINGS[l].ptu_stock_hint && STRINGS[l].help_stock_s.includes(STRINGS[l].ptu_stock_title), l);
+});
+
+await test('Backlog 445 (Blickwinkel „Lieferung mit mehreren Positionen kommt – Wareneingang“): mehrere Artikel eines Lagers in einem Schritt als Zugang (Lieferant/Beleg einmal, Preis wird Artikelpreis, Bestellvermerk endet), ganz oder gar nicht, Wiederholung bucht nichts doppelt, Werkstatt nur eigenes Lager, Texte DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const mk = async (u, b) => { const r = await u.post('/api/stock', b); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const a = await mk(U.ws, { site: 'DORTMUND', name: 'Ölfilter', part_number: 'W 11 102', unit_price_net: '8,00' });
+  const b = await mk(U.ws, { site: 'DORTMUND', name: 'Luftfilter', initial_qty: '1' });
+  const c = await mk(U.wsMuc, { site: 'MUENCHEN', name: 'Ölfilter' });
+  eq((await U.ws.req('PUT', `/api/stock/${b}/order`, { qty: '4' })).status, 200, 'Bestellvermerk');
+  const body = { site: 'DORTMUND', supplier: 'Teile Nord KG', document_ref: 'LS-9001', request_key: 'rcpt-test-1', lines: [{ item_id: a, qty: '5', unit_price_net: '7,50' }, { item_id: b, qty: '4' }] };
+  const r = await U.ws.post('/api/stock/receipt', body); eq(r.status, 201, JSON.stringify(r.data)); eq(r.data.lines, 2);
+  const da = (await U.ws.get(`/api/stock/${a}`)).data; eq(da.item.on_hand, 5); eq(da.item.unit_price_net, 7.5, 'Preis wird Artikelpreis');
+  const mv = da.movements[0]; eq(mv.type, 'zugang'); eq(mv.supplier, 'Teile Nord KG'); eq(mv.document_ref, 'LS-9001');
+  const db = (await U.ws.get(`/api/stock/${b}`)).data; eq(db.item.on_hand, 5); eq(db.item.ordered_on, null, 'Bestellvermerk endet'); eq(db.item.unit_price_net, null, 'ohne Preis bleibt unbewertet');
+  // Wiederholung (verlorene Antwort): nichts doppelt
+  const r2 = await U.ws.post('/api/stock/receipt', body); eq(r2.data.duplicate, true); eq((await U.ws.get(`/api/stock/${a}`)).data.item.on_hand, 5);
+  // ganz oder gar nicht: fremdes Lager / doppelter Artikel / Menge 0 → nichts gebucht
+  for (const lines of [[{ item_id: a, qty: '1' }, { item_id: c, qty: '1' }], [{ item_id: a, qty: '1' }, { item_id: a, qty: '2' }], [{ item_id: a, qty: '1' }, { item_id: b, qty: '0' }], []]) {
+    const x = await U.ws.post('/api/stock/receipt', { site: 'DORTMUND', lines }); eq(x.status, 400, JSON.stringify(x.data));
+  }
+  eq((await U.ws.get(`/api/stock/${a}`)).data.item.on_hand, 5, 'nichts gebucht');
+  eq((await U.ws.post('/api/stock/receipt', { site: 'MUENCHEN', lines: [{ item_id: c, qty: '1' }] })).status, 403, 'Werkstatt nur eigenes Lager');
+  for (const u of [U.viewer, U.driver]) eq((await u.post('/api/stock/receipt', { site: 'DORTMUND', lines: [{ item_id: a, qty: '1' }] })).status, 403);
+  eq((await U.fleet.post('/api/stock/receipt', { site: 'MUENCHEN', lines: [{ item_id: c, qty: '2' }] })).status, 201, 'Leitung jedes Lager');
+  ok((await U.own.get('/api/admin/audit?action=stock.')).data.entries.some((x) => x.action === 'stock.receipt'), 'Protokoll');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  eq(translateValidation('en', 'Position 2: Artikel nicht in diesem Lager.'), 'Line 2: Item is not in this stock location.');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('[/^#\\/stock\\/receipt$/, viewStockReceipt]') && app.includes('href="#/stock/receipt" id="srcpt"') && app.includes("api('POST', '/api/stock/receipt', body)"), 'Oberfläche');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['rcpt_title', 'rcpt_hint', 'rcpt_lines', 'rcpt_add', 'rcpt_remove', 'rcpt_book', 'rcpt_count', 'rcpt_max', 'rcpt_need_line', 'rcpt_need_item', 'rcpt_need_qty', 'rcpt_twice', 'rcpt_done', 'rcpt_no_items']) ok(STRINGS[l][k], l + ' ' + k);
+    ok(STRINGS[l].help_stock_s.includes(STRINGS[l].rcpt_title), l + ': Hilfe');
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
