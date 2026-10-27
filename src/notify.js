@@ -140,7 +140,7 @@ export function localizedBody(n, lang) {
 // nötig“ und „Neuer Werkstattauftrag“). Inhaber/Leitung: alle. Melder-Arten (Eingang, Abgelehnt, Weitergeleitet …) bekommt jede meldende Rolle.
 const REPORTER_KINDS = ['received', 'rejected', 'withdrawn', 'priority_changed', 'forwarded', 'released', 'safety_lock_lifted', 'comment', 'handover_missing'];
 const KINDS_BY_ROLE = {
-  driver: REPORTER_KINDS,
+  driver: [...REPORTER_KINDS, 'plan_changed'],
   // „Neue Meldung“ erreicht Disposition/Werkstatt nur dringend (nicht abschaltbar) – die Abwahl war wirkungslos (20.10.2026)
   dispatch: [...REPORTER_KINDS, 'waiting_parts', 'plan_changed'],
   workshop: [...REPORTER_KINDS, 'approved', 'rework', 'cost_approved', 'reassigned_away', 'plan_changed'],
@@ -236,6 +236,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       // dazu die jeweils andere Seite (Werkstatt ändert → Leitung/Inhaber, Leitung ändert → Werkstatt); nie dringend
       add(usersByRole(['dispatch']));
       if (ctxData.actor && ctxData.actor.role === 'workshop') add(usersByRole(['fleet', 'owner'])); else add(workshopUsers);
+      // Backlog 461: Melder und zugeordnete Fahrer bringen den Lkw oft selbst zur Werkstatt („Mein Fahrzeug“ zeigt den Termin, aber ohne Hinweis)
+      add(reporter); add(assignedDrivers());
       break;
     case 'reassigned':
       // Werkstattwechsel (17.10.2026): neue Werkstatt bekommt „Neuer Werkstattauftrag“, die bisherige erfährt die Abgabe

@@ -24595,9 +24595,35 @@ await test('Backlog 460 (Blickwinkel „Werkstatt verschiebt den Termin kurzfris
   const { localizedBody, localizedTitle } = await import('../src/notify.js');
   const ws1 = (await pc(U.ws)).find((n) => n.body.includes(dmy(day(7))));
   ok(localizedTitle(ws1, 'en') === 'Workshop date changed' && localizedBody(ws1, 'en').includes(new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC' }).format(new Date(day(7) + 'T12:00:00Z'))) && localizedBody(ws1, 'de').includes('Termin ' + dmy(day(7))), 'Sprachwechsel: ' + localizedBody(ws1, 'en'));
-  ok((await D.get('/api/me/notify-prefs')).data.kinds.includes('plan_changed') && (await U.ws.get('/api/me/notify-prefs')).data.kinds.includes('plan_changed') && !(await U.driver.get('/api/me/notify-prefs')).data.kinds.includes('plan_changed'), 'abschaltbar für Disposition/Werkstatt, nicht für Fahrer');
+  ok((await D.get('/api/me/notify-prefs')).data.kinds.includes('plan_changed') && (await U.ws.get('/api/me/notify-prefs')).data.kinds.includes('plan_changed') , 'abschaltbar für Disposition/Werkstatt');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].pk_plan_changed && STRINGS[l].help_dispo_s.includes(localizedTitle({ kind: 'plan_changed', title: 'Werkstatttermin geändert' }, l)), l + ': Push-Art und Hilfe');
+});
+
+await test('Backlog 461 (Blickwinkel „Fahrer bringt den Lkw selbst zur Werkstatt – erfährt er den verschobenen Termin?“): „Werkstatttermin geändert“ auch an Melder und zugeordnete Fahrer (ohne Vorgangslink für fremde Vorgänge), nicht an andere Fahrer; abschaltbar', async () => {
+  const { e, U, cmd, newCase } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  // zweiter Fahrer, dem Fahrzeug zugeordnet; dritter Fahrer ohne Zuordnung
+  const mk = async (un) => { const x = await U.own.post('/api/users', { username: un, display_name: un, role: 'driver', environment: 'test' }); const c = new Client(worker, e, un); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return { c, id: x.data.id || x.data.user?.id }; };
+  const d2 = await mk('p.fahrer2'); const d3 = await mk('p.fahrer3');
+  const uid2 = (await d2.c.get('/api/me')).data.user.id;
+  const asg = await U.fleet.post('/api/vehicles/VIN:WMA15SZZ2HM722774/drivers', { user_id: uid2, evidence: 'Dienstplan' });
+  ok([200, 201].includes(asg.status), 'Zuordnung ' + JSON.stringify(asg.data));
+  ok((await d2.c.get('/api/me/vehicles')).data.vehicles.length === 1, 'Fahrer 2 sieht das Fahrzeug');
+  const id = await newCase(); // Melder: U.driver
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(5) }, 'Termin')).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200);
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(2) })).status, 200);
+  const pc = async (c) => (await c.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'plan_changed');
+  const r = await pc(U.driver); eq(r.length, 1, 'Melder informiert'); eq(r[0].case_id, id, 'Melder mit Vorgangslink');
+  const a = await pc(d2.c); eq(a.length, 1, 'zugeordneter Fahrer informiert'); eq(a[0].case_id, null, 'ohne Link auf den fremden Vorgang'); ok(!a[0].urgent, 'nicht dringend');
+  eq((await pc(d3.c)).length, 0, 'nicht zugeordneter Fahrer nicht');
+  ok((await d2.c.get('/api/me/notify-prefs')).data.kinds.includes('plan_changed'), 'für Fahrer abschaltbar');
+  const { STRINGS } = await import('../public/i18n.js'); const { localizedTitle } = await import('../src/notify.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_myveh_s.includes(localizedTitle({ kind: 'plan_changed', title: 'Werkstatttermin geändert' }, l)), l + ': Hilfe Mein Fahrzeug');
+  // abgeschaltet: Hinweis bleibt in der Liste, Push-Einstellung wird gespeichert
+  eq((await d2.c.put('/api/me/notify-prefs', { muted: ['plan_changed'] })).status, 200);
+  ok((await d2.c.get('/api/me/notify-prefs')).data.muted.includes('plan_changed'), 'gespeichert');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
