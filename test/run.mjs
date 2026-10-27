@@ -23554,6 +23554,23 @@ await test('Backlog 423 (Blickwinkel „Werkstatt bekommt den Lkw ohne Schlüsse
   }
 });
 
+await test('Backlog 424 (Folge aus 423): fehlender Schlüssel/Fahrzeugschein in Fahrzeugakte (Leitung, Disposition), Disposition „Nicht einplanen“ und als Warnung im Freigabe-/Abschlusskontroll-Formular; Hilfe DE/UK/EN', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld();
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'freigegeben')).status, 200);
+  eq((await cmd(U.ws, id, 'set_handover', { keys: 'fehlt' })).status, 200);
+  const x = await U.own.post('/api/users', { username: 'w.dispo424', display_name: 'Dispo', role: 'dispatch', environment: 'test' }); const D = new Client(worker, e, 'w.dispo424'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  for (const u of [U.fleet, D]) { const vc = (await u.get(`/api/vehicles/${V1}`)).data.cases.find((c) => c.id === id); eq(vc.handover_keys, 'fehlt', 'Fahrzeugakte'); eq(vc.handover_papers, null); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="vho"') && app.includes('data-hodispo') && app.includes('id="relho"'), 'Fahrzeugakte, Disposition, Freigabe-Warnung');
+  ok(app.includes("['technical_release', 'request_quality_check'].includes(action) && hoMissing(c).length"), 'Warnung auch bei „Bereit zur Abschlusskontrolle“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].ho_release_warn && STRINGS[l].ho_release_warn.includes('{x}') && STRINGS[l].ho_release_warn.includes(STRINGS[l].act_set_handover), `${l}.ho_release_warn`);
+    ok(STRINGS[l].help_fleet_s.includes(STRINGS[l].dispo_not_plannable) && STRINGS[l].help_fleet_s.includes(STRINGS[l].act_technical_release), `Hilfe ${l}`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
