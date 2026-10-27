@@ -3,7 +3,7 @@
 // „nicht an bundesweiten Feiertagen“). Die App gibt keine Zeiten vor: ohne Angabe gilt „keine Zeiten eingetragen“ (keine Aussage).
 // Gerechnet in deutscher Zeit (Europe/Berlin), auch ohne Netz aus dem zuletzt geladenen Stand. Ende vor Beginn = über Mitternacht
 // (z. B. Fr 18:00 – Sa 06:00 gehört zum Freitag). Gemeinsam von Server (Prüfung) und Oberfläche (Anzeige) genutzt.
-import { federalHoliday } from './holidays.js';
+import { holidayIn } from './holidays.js';
 
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const isHm = (s) => typeof s === 'string' && HM.test(s);
@@ -46,7 +46,9 @@ export function openAt(h, wd, hm, holToday = false, holPrev = false) {
 export function reachableNow(h, date = new Date()) {
   if (!h || !h.days) return null;
   const now = berlin(date);
-  return openAt(h, now.wd, now.hm, !!federalHoliday(now.day), !!federalHoliday(prevDay(now.day)));
+  // Backlog 431: mit Bundesland zusätzlich dessen landesweite Feiertage (z. B. Allerheiligen in NRW/Bayern)
+  const st = h.holiday_state || null;
+  return openAt(h, now.wd, now.hm, !!holidayIn(now.day, st), !!holidayIn(prevDay(now.day), st));
 }
 
 // Backlog 429: Lücken einer Woche, in denen laut Eintrag keine der Nummern besetzt ist (ohne Feiertage). null = keine Aussage möglich

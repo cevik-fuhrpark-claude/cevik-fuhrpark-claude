@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (27.10.2026, Backlog 430, Blickwinkel „Wochenend-Bereitschaft Fr 18:00 – Mo 06:00“): eine Rufnummer mit zwei Zeitspannen
 # (Fr, So 18:00–06:00 + Sa, So ganztags) – „Panne & Notfall“ und Pflegeliste zeigen beide Zeitspannen; das Formular übernimmt sie
 # (Bereich „Weitere Zeitspanne“ aufgeklappt), eine zweite weitere Zeitspanne lässt sich ergänzen und wird gespeichert; unvollständige
-# Zeitspanne (Uhrzeit ohne Wochentage) → verständliche Meldung, nichts gespeichert. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Zeitspanne (Uhrzeit ohne Wochentage) → verständliche Meldung, nichts gespeichert. Backlog 431: Bundesland für landesweite Feiertage wählen. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server (scripts/dev-server.mjs). Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -11,6 +11,7 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
 TXT={'de':('Fr, So 18:00–06:00','Sa, So ganztags','Weitere Zeitspanne','bitte die Wochentage'),
      'uk':('Пт, Нд 18:00–06:00','Сб, Нд цілодобово','Додатковий проміжок','оберіть дні тижня'),
      'en':('Fri, Sun 18:00–06:00','Sat, Sun all day','Further time span','choose the weekdays')}
+STN={'de':'Nordrhein-Westfalen','uk':'Північний Рейн-Вестфалія','en':'North Rhine-Westphalia'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -62,7 +63,16 @@ with sync_playwright() as p:
         m.click('#emf button.btn:not(.secondary)'); m.wait_for_function('() => !document.querySelector("#emcancel")',timeout=15000)
         cur=next(c for c in api('GET','/api/emergency/contacts')['d']['contacts'] if c['id']==cid)['hours']
         check(cur.get('more')==WE+[{'days':'1','from':'00:00','to':'06:00'}] and cur['days']=='57',f'{lang} {w}px: zweite weitere Zeitspanne gespeichert {cur}')
-        api('PATCH',f'/api/emergency/contacts/{cid}',{'hours_more':WE})
+        # Backlog 431: Bundesland für landesweite Feiertage (Auswahl erst mit „nicht an Feiertagen“)
+        m.click(f'[data-emedit="{cid}"]'); m.wait_for_selector('#emstate',timeout=5000)
+        check(m.is_disabled('#emstate'),f'{lang} {w}px: Bundesland ohne „nicht an Feiertagen“ gesperrt')
+        m.check('#emnohol'); m.select_option('#emstate','NW'); m.click('#emf button.btn:not(.secondary)'); m.wait_for_function('() => !document.querySelector("#emcancel")',timeout=15000)
+        cur=next(c for c in api('GET','/api/emergency/contacts')['d']['contacts'] if c['id']==cid)['hours']
+        check(cur.get('holiday_state')=='NW' and cur['no_holidays'],f'{lang} {w}px: Bundesland gespeichert {cur}')
+        li=next((x for x in m.locator('.emman').all_inner_texts() if f'WE-Bereitschaft {R}' in x),'')
+        check(STN[lang] in li,f'{lang} {w}px: Pflegeliste nennt das Bundesland')
+        if SHOTS: m.screenshot(path=f'{SHOTS}/notfall_bundesland_{lang}_{w}.png')
+        api('PATCH',f'/api/emergency/contacts/{cid}',{'hours_more':WE,'hours_no_holidays':False})
         check(not errs,f'{lang} {w}px: ohne Skriptfehler {errs[:1]}')
         ctx.close()
     api('POST',f'/api/emergency/contacts/{cid}/archive')

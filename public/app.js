@@ -6,7 +6,7 @@ import { svg as qrSvg } from './qr.js';
 import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentFindingsCsv, usersCsv, sortUsers, filterUsers, isUnusedUser, inviteExpired, readCsvFile as readCsvRaw } from './csv.js';
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
-import { federalHoliday } from './holidays.js';
+import { federalHoliday, STATES } from './holidays.js';
 import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX } from './emhours.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
@@ -4428,7 +4428,7 @@ const emScope = (c) => (c.scope === 'vehicle' ? (c.plate || t('em_scope_vehicle'
 // Erreichbarkeit laut Eintrag (Backlog 427): „Mo–Fr 06:00–18:00“, „Sa, So ganztags“, „Fr 18:00–06:00 (bis zum Folgetag)“, „nicht an Feiertagen“
 const emWinText = (w) => `${dayRanges(w.days).map(([a, b]) => (a === b ? t('em_wd_' + a) : `${t('em_wd_' + a)}${b === a + 1 ? ', ' : '–'}${t('em_wd_' + b)}`)).join(', ')} ${w.from ? `${w.from}–${w.to}${w.to <= w.from ? ` (${t('em_overnight')})` : ''}` : t('em_allday')}`;
 // Backlog 430: mehrere Zeitspannen mit „; “ (z. B. „Fr, So 18:00–06:00 (bis zum Folgetag); Sa, So ganztags“)
-const emHoursText = (h) => (!h ? '' : `${windowsOf(h).map(emWinText).join('; ')}${h.no_holidays ? ` · ${t('em_no_hol_short')}` : ''}`);
+const emHoursText = (h) => (!h ? '' : `${windowsOf(h).map(emWinText).join('; ')}${h.no_holidays ? ` · ${t('em_no_hol_short')}${h.holiday_state ? ` (${t('em_hol_state_short').replace('{x}', t('st_' + h.holiday_state))})` : ''}` : ''}`);
 // erreichbare bzw. ohne Zeiten zuerst, laut Eintrag gerade nicht erreichbare danach (Reihenfolge sonst wie vom Server)
 const emSortNow = (list, now) => list.map((c, i) => ({ c, i, r: reachableNow(c.hours, now) })).sort((a, b) => (a.r === false) - (b.r === false) || a.i - b.i);
 function emRows(list, now = new Date()) {
@@ -4499,7 +4499,8 @@ async function viewEmergencyEdit() {
       <div class="chips" role="group" aria-label="${esc(t('em_hours_days'))}">${[1, 2, 3, 4, 5, 6, 7].map((d) => `<label class="check" style="white-space:nowrap;display:inline-flex;margin-right:10px"><input type="checkbox" data-emwd="${d}"${e.hours && e.hours.days.includes(String(d)) ? ' checked' : ''}> ${esc(t('em_wd_' + d))}</label>`).join('')}</div>
       <div class="grid2"><div><label for="emfrom">${esc(t('em_hours_from'))}</label><input type="time" id="emfrom" name="hours_from" value="${esc((e.hours && e.hours.from) || '')}"></div><div><label for="emto">${esc(t('em_hours_to'))}</label><input type="time" id="emto" name="hours_to" value="${esc((e.hours && e.hours.to) || '')}"></div></div>
       ${(() => { const more = (e.hours && e.hours.more) || []; return `<details id="emmore" style="margin:.4rem 0"${more.length ? ' open' : ''}><summary>${esc(t('em_more_title'))}</summary><p class="small muted" style="margin:.3rem 0">${esc(t('em_more_hint'))}</p>${Array.from({ length: MORE_MAX }, (_, i) => { const w = more[i] || {}; return `<div class="emmorew" data-emmore="${i}" role="group" aria-label="${esc(t('em_more_n').replace('{n}', i + 1))}"><p class="small" style="margin:.4rem 0 .2rem"><b>${esc(t('em_more_n').replace('{n}', i + 1))}</b></p><div class="chips">${[1, 2, 3, 4, 5, 6, 7].map((d) => `<label class="check" style="white-space:nowrap;display:inline-flex;margin-right:10px"><input type="checkbox" data-emmwd="${d}"${w.days && String(w.days).includes(String(d)) ? ' checked' : ''}> ${esc(t('em_wd_' + d))}</label>`).join('')}</div><div class="grid2"><div><label for="emmf${i}">${esc(t('em_hours_from'))}</label><input type="time" id="emmf${i}" data-emmfrom value="${esc(w.from || '')}"></div><div><label for="emmt${i}">${esc(t('em_hours_to'))}</label><input type="time" id="emmt${i}" data-emmto value="${esc(w.to || '')}"></div></div></div>`; }).join('')}</details>`; })()}
-      <label class="check"><input type="checkbox" id="emnohol"${e.hours && e.hours.no_holidays ? ' checked' : ''}> ${esc(t('em_no_hol'))}</label></fieldset>
+      <label class="check"><input type="checkbox" id="emnohol"${e.hours && e.hours.no_holidays ? ' checked' : ''}> ${esc(t('em_no_hol'))}</label>
+      <div id="emst"><label for="emstate">${esc(t('em_hol_state'))}</label><select id="emstate"${e.hours && e.hours.no_holidays ? '' : ' disabled'}><option value="">${esc(t('em_hol_state_none'))}</option>${STATES.map((x) => opt(x, (e.hours && e.hours.holiday_state) || '', t('st_' + x))).join('')}</select><p class="small muted" style="margin:.2rem 0 0">${esc(t('em_hol_state_hint'))}</p></div></fieldset>
     <label>${esc(t('em_scope'))}</label><select name="scope" id="emscope">${['all', 'site', 'vehicle'].map((k) => opt(k, e.scope, t('em_scope_' + k))).join('')}</select>
     <div id="emsite"${e.scope === 'site' ? '' : ' hidden'}><label>${esc(t('site'))}</label><select name="site">${(() => { const cur = (e.site && sites.find((x) => siteKeyUi(x) === siteKeyUi(e.site))) || e.site; return [...new Set([...sites, ...(cur ? [cur] : [])])].map((x) => opt(x, cur, x)).join(''); })()}</select></div>
     <div id="emveh"${e.scope === 'vehicle' ? '' : ' hidden'}><label>${esc(t('vehicle'))}</label><select name="vehicle_id">${vs.slice().sort((a, b) => plateCmp(a.plate, b.plate)).map((v) => opt(v.id, e.vehicle_id, v.plate)).join('')}${e.vehicle_id && !vs.some((v) => v.id === e.vehicle_id) ? opt(e.vehicle_id, e.vehicle_id, e.plate || e.vehicle_id) : ''}</select></div>
@@ -4514,6 +4515,7 @@ async function viewEmergencyEdit() {
   if (f) {
     const natHint = () => { const a = telAbroad(f.elements.phone.value); $('#emnat').hidden = !a; $('#emnat').textContent = a ? t('em_phone_national').replace('{p}', a.label) : ''; };
     f.elements.phone.addEventListener('input', natHint); natHint();
+    $('#emnohol').onchange = () => { $('#emstate').disabled = !$('#emnohol').checked; };
     $('#emscope').onchange = () => { const sc = $('#emscope').value; $('#emsite').hidden = sc !== 'site'; $('#emveh').hidden = sc !== 'vehicle'; };
     const cc = $('#emcancel'); if (cc) cc.onclick = () => { S.emEdit = null; viewEmergencyEdit(); };
     f.onsubmit = async (ev) => {
@@ -4523,6 +4525,7 @@ async function viewEmergencyEdit() {
       // Erreichbarkeit: Wochentage aus den Kästchen; ohne Wochentage keine Zeiten (Server weist Uhrzeit ohne Tage ab)
       b.hours_days = $$('[data-emwd]').filter((x) => x.checked).map((x) => x.dataset.emwd).join('');
       b.hours_no_holidays = !!b.hours_days && $('#emnohol').checked;
+      b.hours_holiday_state = b.hours_no_holidays ? $('#emstate').value || null : null; // Backlog 431
       // Backlog 430: weitere Zeitspannen – ganz leere Blöcke entfallen; unvollständige gehen an den Server (der nennt, was fehlt)
       b.hours_more = $$('[data-emmore]').map((x) => ({ days: $$('[data-emmwd]', x).filter((c) => c.checked).map((c) => c.dataset.emmwd).join(''), from: $('[data-emmfrom]', x).value || null, to: $('[data-emmto]', x).value || null })).filter((w) => w.days || w.from || w.to);
       if (!b.hours_days && !b.hours_more.length) b.hours_more = null;

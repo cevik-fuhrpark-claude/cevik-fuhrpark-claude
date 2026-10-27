@@ -20853,7 +20853,7 @@ await test('Backlog 267 (Blickwinkel „Feiertage und Brückentage“): bundeswe
   for (const l of ['de', 'uk', 'en']) { for (const k of HOLIDAY_KEYS) ok(STRINGS[l]['hol_' + k], `${l}.hol_${k}`); for (const k of ['due_holiday_hint', 'plan_holiday_hint']) ok(STRINGS[l][k], `${l}.${k}`); }
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("import { federalHoliday } from './holidays.js';") && app.includes('&& !federalHoliday(d.date)') && app.includes('if (federalHoliday(ds)) continue;') && app.includes('data-hol title='), 'Werkstattplan');
+  ok(/import \{ federalHoliday[^}]*\} from '\.\/holidays\.js';/.test(app) && app.includes('&& !federalHoliday(d.date)') && app.includes('if (federalHoliday(ds)) continue;') && app.includes('data-hol title='), 'Werkstattplan');
   ok(app.includes("const dueOffHint = (iso) => (federalHoliday(iso) ? t('due_holiday_hint')"), 'Antwortfrist');
   ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/holidays.js'"), 'Service Worker');
 });
@@ -23779,6 +23779,45 @@ await test('Backlog 430 (Blickwinkel „Wochenend-Bereitschaft Fr 18:00 – Mo 0
   for (const l of ['de', 'uk', 'en']) { for (const k of ['em_more_title', 'em_more_n', 'em_more_hint']) ok(STRINGS[l][k], `${l}.${k}`); ok(!/eine Zeitspanne je Nummer|один проміжок часу на номер|one time span per number/.test(STRINGS[l].em_hours_hint), `Hinweis ${l} aktualisiert`); ok(/06:00/.test(STRINGS[l].help_accident_s), `Hilfe ${l}`); }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-emmore') && app.includes('b.hours_more = ') && app.includes('windowsOf(h).map(emWinText)'), 'Oberfläche');
+});
+
+await test('Backlog 431 (Blickwinkel „Allerheiligen – Büro in Dortmund geschlossen“, Migration 0092): „nicht an Feiertagen“ optional mit landesweiten Feiertagen eines Bundeslands – Feiertagsregeln, Prüfung, Anzeige, Protokoll; Texte DE/UK/EN', async () => {
+  const { stateHoliday, holidayIn, STATES, STATE_HOLIDAY_KEYS } = await import('../public/holidays.js');
+  eq(STATES.length, 16);
+  for (const [d, st, exp] of [['2026-11-01', 'NW', 'allerheiligen'], ['2026-11-01', 'BY', 'allerheiligen'], ['2026-11-01', 'HE', null], ['2026-06-04', 'NW', 'fronleichnam'], ['2027-05-27', 'BY', 'fronleichnam'], ['2026-06-04', 'NI', null],
+    ['2026-01-06', 'BY', 'heilige3'], ['2026-01-06', 'NW', null], ['2026-10-31', 'NI', 'reformation'], ['2017-10-31', 'NI', null], ['2026-11-18', 'SN', 'busstag'], ['2027-11-17', 'SN', 'busstag'], ['2026-03-08', 'BE', 'frauentag'], ['2022-03-08', 'MV', null],
+    ['2026-08-15', 'SL', 'mariae'], ['2026-08-15', 'BY', null], ['2026-09-20', 'TH', 'kindertag'], ['2026-04-05', 'BB', 'ostersonntag'], ['2026-05-24', 'BB', 'pfingstsonntag'], ['2026-11-01', 'XX', null], ['2026-12-25', 'NW', null]]) eq(stateHoliday(d, st), exp, `${d} ${st}`);
+  eq(holidayIn('2026-12-25', 'NW'), 'weihnacht1', 'bundesweit eingeschlossen'); eq(holidayIn('2026-11-01', null), null);
+  const { STRINGS, auditDetailText } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const st of STATES) ok(STRINGS[l]['st_' + st], `${l}.st_${st}`); for (const k of ['em_hol_state', 'em_hol_state_none', 'em_hol_state_short', 'em_hol_state_hint']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_accident_s.includes(l === 'de' ? 'Allerheiligen' : l === 'uk' ? 'День усіх святих' : 'All Saints'), `Hilfe ${l}`); }
+  eq(STATE_HOLIDAY_KEYS.length, 10);
+  const { U, e } = await freshWorld();
+  const base = { kind: 'dispo', label: 'Büro Dortmund', phone: '0231 555', hours_days: '12345', hours_from: '07:00', hours_to: '17:00' };
+  const bad = async (b, msg) => { const r = await U.fleet.post('/api/emergency/contacts', { ...base, ...b }); eq(r.status, 400, JSON.stringify(b)); ok(msg.test(r.data.message || ''), r.data.message); };
+  await bad({ hours_no_holidays: true, hours_holiday_state: 'NRW' }, /Bundesland: ungültiger Wert/);
+  await bad({ hours_holiday_state: 'NW' }, /nur zusammen mit/);
+  await bad({ hours_days: '', hours_from: '', hours_to: '', hours_holiday_state: 'NW' }, /nur zusammen mit|Wochentage wählen/);
+  const r = await U.fleet.post('/api/emergency/contacts', { ...base, hours_no_holidays: true, hours_holiday_state: 'NW' }); eq(r.status, 201, JSON.stringify(r.data));
+  const h = (await U.driver.get('/api/emergency')).data.general.find((c) => c.id === r.data.id).hours;
+  eq(JSON.stringify(h), JSON.stringify({ days: '12345', from: '07:00', to: '17:00', no_holidays: true, holiday_state: 'NW' }));
+  const { reachableNow } = await import('../public/emhours.js');
+  // Fronleichnam 04.06.2026 (Donnerstag) 10:00 MESZ = 08:00 UTC
+  eq(reachableNow(h, new Date('2026-06-04T08:00:00Z')), false, 'Fronleichnam in NRW geschlossen');
+  eq(reachableNow({ ...h, holiday_state: 'NI' }, new Date('2026-06-04T08:00:00Z')), true, 'in Niedersachsen kein Feiertag');
+  eq(reachableNow({ ...h, holiday_state: undefined }, new Date('2026-06-04T08:00:00Z')), true, 'ohne Bundesland nur bundesweit');
+  eq(reachableNow({ days: '1234567', from: '22:00', to: '06:00', no_holidays: true, holiday_state: 'BY' }, new Date('2026-11-02T03:00:00Z')), false, 'Nacht ab Allerheiligen (Vortag Feiertag)');
+  eq(reachableNow({ days: '1234567', from: '22:00', to: '06:00', no_holidays: false, holiday_state: 'BY' }, new Date('2026-11-02T03:00:00Z')), true, 'ohne Feiertagsregel');
+  // „nicht an Feiertagen“ abwählen → Bundesland entfällt; erneut wählen ohne Bundesland → nur bundesweit
+  let p = await U.fleet.req('PATCH', `/api/emergency/contacts/${r.data.id}`, { hours_no_holidays: false }); eq(p.status, 200); eq(p.data.changed.sort().join(), 'hours_holiday_state,hours_no_holidays');
+  const row = await e.DB.prepare('SELECT hours_holiday_state FROM emergency_contacts WHERE id=?').bind(r.data.id).first(); eq(row.hours_holiday_state, null);
+  p = await U.fleet.req('PATCH', `/api/emergency/contacts/${r.data.id}`, { hours_no_holidays: true, hours_holiday_state: 'BY' }); eq(p.status, 200);
+  p = await U.fleet.req('PATCH', `/api/emergency/contacts/${r.data.id}`, { hours_from: '06:00' , hours_to: '18:00' }); eq(p.status, 200); eq(p.data.changed.sort().join(), 'hours_from,hours_to', 'Bundesland bleibt');
+  p = await U.fleet.req('PATCH', `/api/emergency/contacts/${r.data.id}`, { hours_holiday_state: '' }); eq(p.status, 200); eq(p.data.changed.join(), 'hours_holiday_state');
+  eq((await U.fleet.get('/api/emergency/contacts')).data.contacts.find((c) => c.id === r.data.id).hours.holiday_state, undefined, 'nur bundesweit');
+  ok((await U.own.get('/api/admin/audit?action=emergency')).data.entries.some((x) => x.detail && x.detail.hours_holiday_state), 'Protokoll');
+  ok(auditDetailText('de', { hours_holiday_state: { from: null, to: 'NW' } }).includes('Feiertage des Bundeslands: – → Nordrhein-Westfalen'), auditDetailText('de', { hours_holiday_state: { from: null, to: 'NW' } }));
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="emstate"') && app.includes('b.hours_holiday_state = ') && app.includes("t('em_hol_state_short')"), 'Oberfläche');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

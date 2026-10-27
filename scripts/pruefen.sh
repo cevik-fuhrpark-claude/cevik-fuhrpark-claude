@@ -233,7 +233,7 @@ UI-Werkstatt ohne Schlüssel/Fahrzeugschein: „fehlt“ im Vorgang, Vorgangslis
 UI-Abholung nach der Reparatur: Abholvermerk Werkstatt → Freigabe → Fahrerhinweis, Vorgang/Fahrzeugakte, DE/UK/EN 390/820/1366|ui-abholung.py|/tmp/cfp-abholung.log
 UI-Teilefoto: Foto/PDF zum Teil (Typenschild) im Formular, Teileliste mit Link, DE/UK/EN 390/820/1366|ui-teilefoto.py|/tmp/cfp-teilefoto.log
 UI-Notfall-Bereitschaft: Erreichbarkeit je Rufnummer, „jetzt erreichbar/nicht besetzt“, Sortierung, Hinweis alle nicht besetzt, Pflegeformular, DE/UK/EN 390/820/1366|ui-notfall-bereitschaft.py|/tmp/cfp-notfall-bereitschaft.log
-UI-Notfall-Wochenende: zwei Zeitspannen je Rufnummer (Fr 18 – Mo 06), Anzeige, Formular, Meldung bei Unvollständigem, DE/UK/EN 390/820/1366|ui-notfall-wochenende.py|/tmp/cfp-notfall-wochenende.log
+UI-Notfall-Wochenende: zwei Zeitspannen je Rufnummer (Fr 18 – Mo 06), Anzeige, Formular, Meldung bei Unvollständigem, Bundesland-Feiertage, DE/UK/EN 390/820/1366|ui-notfall-wochenende.py|/tmp/cfp-notfall-wochenende.log
 UI-Mehrere Hinweise im Meldeformular: wichtigster offen, weitere aufklappbar|ui-hinweise-gruppiert.py|/tmp/cfp-hinweise-gruppiert.log
 UI-Fahrtenschreiber-Hinweis in der Abfahrtskontrolle|ui-abfahrt-fahrtenschreiber.py|/tmp/cfp-abfahrt-fahrtenschreiber.log
 UI-Panne im Ausland: Nummern mit +49, Hinweis Inlandsformat, Hilfe|ui-ausland-nummern.py|/tmp/cfp-ausland-nummern.log

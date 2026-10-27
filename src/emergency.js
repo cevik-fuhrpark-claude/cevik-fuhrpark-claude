@@ -4,6 +4,7 @@
 // gepflegt von Inhaber, Fuhrparkleitung und Disposition.
 import { nowIso, uuid, bad, forbidden, notFound, str, normPlate, conflict, laterIso, flag } from './util.js';
 import { normDays, isHm, MORE_MAX } from '../public/emhours.js';
+import { STATES } from '../public/holidays.js';
 import { AXLES, axleFits } from './tires.js';
 import { audit } from './auth.js';
 import { siteKey, siteLabels } from './reports.js';
@@ -33,9 +34,9 @@ export const phoneKey = (x) => { const p = String(x).replaceAll('(0)', '').repla
 // Erreichbarkeit laut Eintrag (Backlog 427): null = keine Zeiten eingetragen
 // Backlog 430: weitere Zeitspannen (`more`) nur, wenn eingetragen
 const moreOf = (r) => { try { const m = r.hours_more ? JSON.parse(r.hours_more) : null; return Array.isArray(m) && m.length ? m : null; } catch { return null; } };
-const hoursOf = (r) => { if (!r.hours_days) return null; const more = moreOf(r); return { days: r.hours_days, from: r.hours_from || null, to: r.hours_to || null, no_holidays: !!r.hours_no_holidays, ...(more ? { more } : {}) }; };
+const hoursOf = (r) => { if (!r.hours_days) return null; const more = moreOf(r); return { days: r.hours_days, from: r.hours_from || null, to: r.hours_to || null, no_holidays: !!r.hours_no_holidays, ...(r.hours_no_holidays && r.hours_holiday_state ? { holiday_state: r.hours_holiday_state } : {}), ...(more ? { more } : {}) }; };
 const pub = (r) => ({ id: r.id, kind: r.kind, label: r.label, phone: r.phone, note: r.note || null, scope: r.vehicle_id ? 'vehicle' : r.site ? 'site' : 'all', site: r.site || null, hours: hoursOf(r) });
-const HCOLS = 'hours_days, hours_from, hours_to, hours_no_holidays, hours_more';
+const HCOLS = 'hours_days, hours_from, hours_to, hours_no_holidays, hours_more, hours_holiday_state';
 
 async function activeContacts(env, envName) {
   return (await env.DB.prepare(`SELECT id, kind, label, phone, note, site, vehicle_id, ${HCOLS} FROM emergency_contacts WHERE environment=? AND archived_at IS NULL`).bind(envName).all()).results;
@@ -95,7 +96,7 @@ export async function emergencyView(env, user, envName, query = {}) {
 export async function listContacts(env, user, envName, query = {}) {
   if (!WRITE.includes(user.role)) throw forbidden();
   const archived = query.archived === '1';
-  const rows = (await env.DB.prepare(`SELECT c.id, c.kind, c.label, c.phone, c.note, c.site, c.vehicle_id, c.hours_days, c.hours_from, c.hours_to, c.hours_no_holidays, c.hours_more, v.plate, v.active AS vehicle_active, c.created_at, c.updated_at, c.archived_at,
+  const rows = (await env.DB.prepare(`SELECT c.id, c.kind, c.label, c.phone, c.note, c.site, c.vehicle_id, c.hours_days, c.hours_from, c.hours_to, c.hours_no_holidays, c.hours_more, c.hours_holiday_state, v.plate, v.active AS vehicle_active, c.created_at, c.updated_at, c.archived_at,
       COALESCE(uu.display_name, cu.display_name) AS changed_by_name, au.display_name AS archived_by_name
     FROM emergency_contacts c LEFT JOIN vehicles v ON v.id=c.vehicle_id JOIN users cu ON cu.id=c.created_by LEFT JOIN users uu ON uu.id=c.updated_by LEFT JOIN users au ON au.id=c.archived_by
     WHERE c.environment=? AND c.archived_at IS ${archived ? 'NOT NULL' : 'NULL'} ORDER BY ${archived ? 'c.archived_at DESC, c.rowid DESC' : 'c.created_at'} LIMIT ?`).bind(envName, EMERGENCY_ARCHIVE_MAX + 1).all()).results;
@@ -110,8 +111,8 @@ export async function listContacts(env, user, envName, query = {}) {
 // PATCH: nur mitgesendete Felder ändern sich; die Prüfung gilt für das Ergebnis.
 function readHours(body, ex) {
   const has = (k) => body[k] !== undefined;
-  const any = ['hours_days', 'hours_from', 'hours_to', 'hours_no_holidays', 'hours_more'].some(has);
-  if (!any) return { hours_days: ex.hours_days ?? null, hours_from: ex.hours_from ?? null, hours_to: ex.hours_to ?? null, hours_no_holidays: ex.hours_no_holidays ?? null, hours_more: ex.hours_more ?? null };
+  const any = ['hours_days', 'hours_from', 'hours_to', 'hours_no_holidays', 'hours_more', 'hours_holiday_state'].some(has);
+  if (!any) return { hours_days: ex.hours_days ?? null, hours_from: ex.hours_from ?? null, hours_to: ex.hours_to ?? null, hours_no_holidays: ex.hours_no_holidays ?? null, hours_more: ex.hours_more ?? null, hours_holiday_state: ex.hours_holiday_state ?? null };
   const rawDays = has('hours_days') ? body.hours_days : ex.hours_days;
   const tm = (k) => { const v = has(k) ? body[k] : ex[k]; return v === null || v === undefined || v === '' ? null : String(v).trim(); };
   const from = tm('hours_from'); const to = tm('hours_to');
@@ -119,14 +120,19 @@ function readHours(body, ex) {
   const emptyDays = (v) => v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length);
   const empty = emptyDays(rawDays);
   const more = has('hours_more') ? readMore(body.hours_more, emptyDays) : (empty ? null : ex.hours_more ?? null);
+  // Backlog 431: Bundesland für landesweite Feiertage – nur zusammen mit „nicht an Feiertagen“ (abgewählt → entfällt)
+  const stRaw = has('hours_holiday_state') ? body.hours_holiday_state : null;
+  if (stRaw !== null && stRaw !== '' && !STATES.includes(stRaw)) throw bad('validation', 'Bundesland: ungültiger Wert.');
+  if (stRaw && !noHol) throw bad('validation', 'Bundesland nur zusammen mit „nicht an Feiertagen“.');
+  const st = !noHol ? null : has('hours_holiday_state') ? stRaw || null : ex.hours_holiday_state ?? null;
   if (empty) {
-    if (from || to || (has('hours_no_holidays') && noHol) || more) throw bad('validation', 'Erreichbarkeit: bitte die Wochentage wählen.');
-    return { hours_days: null, hours_from: null, hours_to: null, hours_no_holidays: null, hours_more: null };
+    if (from || to || (has('hours_no_holidays') && noHol) || more || stRaw) throw bad('validation', 'Erreichbarkeit: bitte die Wochentage wählen.');
+    return { hours_days: null, hours_from: null, hours_to: null, hours_no_holidays: null, hours_more: null, hours_holiday_state: null };
   }
   const days = normDays(rawDays);
   if (!days) throw bad('validation', 'Erreichbarkeit: Wochentage ungültig.');
   if (!!from !== !!to || (from && (!isHm(from) || !isHm(to)))) throw bad('validation', 'Erreichbarkeit: Uhrzeit „von“ und „bis“ beide angeben (HH:MM) oder beide leer lassen.');
-  return { hours_days: days, hours_from: from, hours_to: to, hours_no_holidays: noHol ? 1 : null, hours_more: more };
+  return { hours_days: days, hours_from: from, hours_to: to, hours_no_holidays: noHol ? 1 : null, hours_more: more, hours_holiday_state: st };
 }
 
 // Backlog 430: weitere Zeitspannen derselben Nummer (z. B. Wochenend-Bereitschaft Fr 18:00 – Mo 06:00 = „Fr, So 18:00–06:00“ + „Sa, So ganztags“).
@@ -197,10 +203,10 @@ export async function addContact(env, user, envName, body) {
   if (n.n >= EMERGENCY_MAX_ACTIVE) throw bad('validation', 'Höchstens 50 aktive Rufnummern – bitte nicht mehr gültige archivieren.');
   const id = uuid(); const now = nowIso();
   // Höchstzahl in derselben Anweisung (parallele Anlagen überschritten sie vorher, 17.10.2026)
-  const r = await env.DB.prepare(`INSERT INTO emergency_contacts(id,environment,kind,label,phone,note,site,vehicle_id,created_by,created_at,updated_at,hours_days,hours_from,hours_to,hours_no_holidays,hours_more) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?13,?14,?15,?16,?17
+  const r = await env.DB.prepare(`INSERT INTO emergency_contacts(id,environment,kind,label,phone,note,site,vehicle_id,created_by,created_at,updated_at,hours_days,hours_from,hours_to,hours_no_holidays,hours_more,hours_holiday_state) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?13,?14,?15,?16,?17,?18
     WHERE (SELECT COUNT(*) FROM emergency_contacts WHERE environment=?2 AND archived_at IS NULL) < ?12
       AND NOT EXISTS (SELECT 1 FROM emergency_contacts WHERE environment=?2 AND archived_at IS NULL AND ${PK('phone')}=${PK('?5')} AND kind=?3 AND site IS ?7 AND vehicle_id IS ?8)`)
-    .bind(id, envName, f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, now, now, EMERGENCY_MAX_ACTIVE, f.hours_days, f.hours_from, f.hours_to, f.hours_no_holidays, f.hours_more).run();
+    .bind(id, envName, f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, now, now, EMERGENCY_MAX_ACTIVE, f.hours_days, f.hours_from, f.hours_to, f.hours_no_holidays, f.hours_more, f.hours_holiday_state).run();
   if (!(r.meta && r.meta.changes)) {
     // dieselbe Rufnummer mit derselben Art und Geltung ist bereits aktiv (Doppelklick/parallel ergab sonst zwei gleiche Einträge, 17.10.2026)
     if (await env.DB.prepare(`SELECT 1 AS x FROM emergency_contacts WHERE environment=? AND archived_at IS NULL AND ${PK('phone')}=? AND kind=? AND site IS ? AND vehicle_id IS ?`).bind(envName, phoneKey(f.phone), f.kind, f.site, f.vehicle_id).first()) throw conflict('duplicate_contact', 'Diese Rufnummer ist mit derselben Art und Geltung bereits eingetragen.');
@@ -223,9 +229,9 @@ export async function updateContact(env, user, envName, id, body) {
   if (!changed.length) return { ok: true, changed: [] };
   // atomar: nicht archiviert und unverändert seit dem Lesen (gleichzeitiges Archivieren/Ändern)
   // dieselbe Dublettenregel wie beim Anlegen (Ändern erzeugte vorher die Dublette, die die Anlage abweist, 17.10.2026)
-  const r = await env.DB.prepare(`UPDATE emergency_contacts SET kind=?1, label=?2, phone=?3, note=?4, site=?5, vehicle_id=?6, updated_by=?7, updated_at=?8, hours_days=?12, hours_from=?13, hours_to=?14, hours_no_holidays=?15, hours_more=?16 WHERE id=?9 AND archived_at IS NULL AND updated_at=?10
+  const r = await env.DB.prepare(`UPDATE emergency_contacts SET kind=?1, label=?2, phone=?3, note=?4, site=?5, vehicle_id=?6, updated_by=?7, updated_at=?8, hours_days=?12, hours_from=?13, hours_to=?14, hours_no_holidays=?15, hours_more=?16, hours_holiday_state=?17 WHERE id=?9 AND archived_at IS NULL AND updated_at=?10
       AND NOT EXISTS (SELECT 1 FROM emergency_contacts d WHERE d.environment=?11 AND d.archived_at IS NULL AND d.id<>?9 AND ${PK('d.phone')}=${PK('?3')} AND d.kind=?1 AND d.site IS ?5 AND d.vehicle_id IS ?6)`)
-    .bind(f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, laterIso(ex.updated_at), id, ex.updated_at, envName, f.hours_days, f.hours_from, f.hours_to, f.hours_no_holidays, f.hours_more).run();
+    .bind(f.kind, f.label, f.phone, f.note, f.site, f.vehicle_id, user.id, laterIso(ex.updated_at), id, ex.updated_at, envName, f.hours_days, f.hours_from, f.hours_to, f.hours_no_holidays, f.hours_more, f.hours_holiday_state).run();
   if ((!r.meta || r.meta.changes !== 1) && await env.DB.prepare(`SELECT 1 AS x FROM emergency_contacts WHERE environment=? AND archived_at IS NULL AND id<>? AND ${PK('phone')}=? AND kind=? AND site IS ? AND vehicle_id IS ?`).bind(envName, id, phoneKey(f.phone), f.kind, f.site, f.vehicle_id).first()) throw conflict('duplicate_contact', 'Diese Rufnummer ist mit derselben Art und Geltung bereits eingetragen.');
   if (!r.meta || r.meta.changes !== 1) throw conflict('version_conflict', 'Rufnummer wurde zwischenzeitlich geändert oder archiviert. Bitte neu laden.');
   await audit(env, user.id, 'emergency.update', id, Object.fromEntries(changed.map((k) => [k, { from: ex[k] ?? null, to: f[k] ?? null }])));

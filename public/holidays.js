@@ -25,3 +25,34 @@ export function federalHoliday(d) {
   return holidaysOf(y).get(d) || null;
 }
 export const HOLIDAY_KEYS = ['neujahr', 'karfreitag', 'ostermontag', 'tag_der_arbeit', 'himmelfahrt', 'pfingstmontag', 'einheit', 'weihnacht1', 'weihnacht2'];
+
+// [CLAUDE] 27.10.2026 Backlog 431 (Blickwinkel „Allerheiligen – Büro in Dortmund geschlossen, App sagt ‚jetzt erreichbar‘“): landesweit geltende
+// gesetzliche Feiertage je Bundesland (Feiertagsgesetze der Länder), zusätzlich zu den bundesweiten. Nur landesweit geltende Tage – örtlich
+// begrenzte (Mariä Himmelfahrt in Teilen Bayerns, Augsburger Friedensfest, Fronleichnam in Teilen Sachsens/Thüringens) bewusst nicht.
+// Genutzt nur dort, wo der Betrieb das Bundesland selbst wählt (Erreichbarkeit einer Rufnummer) – keine Zuordnung Standort → Land.
+export const STATES = ['BW', 'BY', 'BE', 'BB', 'HB', 'HH', 'HE', 'MV', 'NI', 'NW', 'RP', 'SL', 'SN', 'ST', 'SH', 'TH'];
+const STATE_RULES = [
+  ['heilige3', ['BW', 'BY', 'ST'], (y) => `${y}-01-06`],
+  ['frauentag', ['BE', 'MV'], (y) => `${y}-03-08`, { BE: 2019, MV: 2023 }],
+  ['ostersonntag', ['BB'], (y, e) => iso(e)],
+  ['pfingstsonntag', ['BB'], (y, e) => iso(e + 49 * 86400000)],
+  ['fronleichnam', ['BW', 'BY', 'HE', 'NW', 'RP', 'SL'], (y, e) => iso(e + 60 * 86400000)],
+  ['mariae', ['SL'], (y) => `${y}-08-15`],
+  ['kindertag', ['TH'], (y) => `${y}-09-20`, { TH: 2019 }],
+  ['reformation', ['BB', 'HB', 'HH', 'MV', 'NI', 'SN', 'ST', 'SH', 'TH'], (y) => `${y}-10-31`, { HB: 2018, HH: 2018, NI: 2018, SH: 2018 }],
+  ['allerheiligen', ['BW', 'BY', 'NW', 'RP', 'SL'], (y) => `${y}-11-01`],
+  // Buß- und Bettag: Mittwoch vor dem 23. November
+  ['busstag', ['SN'], (y) => { let ms = Date.UTC(y, 10, 22); while (new Date(ms).getUTCDay() !== 3) ms -= 86400000; return iso(ms); }],
+];
+const stCache = new Map();
+// Schlüssel des landesweiten Feiertags (ohne bundesweite) an diesem Tag im Bundesland st oder null
+export function stateHoliday(d, st) {
+  if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d) || !STATES.includes(st)) return null;
+  const y = Number(d.slice(0, 4)); if (y < 1900 || y > 2200) return null;
+  const k = `${y}|${st}`;
+  if (!stCache.has(k)) { const e = easterSunday(y); stCache.set(k, new Map(STATE_RULES.filter(([, sts, , from]) => sts.includes(st) && !(from && from[st] && y < from[st])).map(([key, , day]) => [day(y, e), key]))); }
+  return stCache.get(k).get(d) || null;
+}
+// bundesweiter oder (mit Bundesland) landesweiter Feiertag
+export const holidayIn = (d, st) => federalHoliday(d) || (st ? stateHoliday(d, st) : null);
+export const STATE_HOLIDAY_KEYS = STATE_RULES.map(([k]) => k);
