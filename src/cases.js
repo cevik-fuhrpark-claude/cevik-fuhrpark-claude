@@ -1611,11 +1611,17 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const stockPriced = !!stockItem && stockItem.unit_price_net !== null && stockItem.unit_price_net !== undefined;
       const valuation = price === null ? 'unvalued' : stockPriced ? (oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart'), 'actual') : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const warranty = warrantyDate(p.warranty_until);
-      extra.push(env.DB.prepare(`INSERT INTO parts(id,case_id,user_id,name,part_number,quantity,unit,unit_price_net,valuation,supplier,document_ref,stock_item_id,created_at,warranty_until)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(pid, c.id, user.id, name, stockItem ? stockItem.part_number : str(p.part_number, { max: 80 }), qty,
+      // Foto/PDF zum Teil (Backlog 426: Typenschild/Teilenummer fotografiert): optional eine Datei dieses Vorgangs derselben Umgebung
+      let ptFile = null;
+      if (p.file_id !== undefined && p.file_id !== null && p.file_id !== '') {
+        ptFile = await env.DB.prepare('SELECT id, filename FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(p.file_id, { max: 40, field: 'Datei' }), c.id, envName).first();
+        if (!ptFile) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
+      }
+      extra.push(env.DB.prepare(`INSERT INTO parts(id,case_id,user_id,name,part_number,quantity,unit,unit_price_net,valuation,supplier,document_ref,stock_item_id,created_at,warranty_until,file_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(pid, c.id, user.id, name, stockItem ? stockItem.part_number : str(p.part_number, { max: 80 }), qty,
         stockItem ? stockItem.unit : (str(p.unit, { max: 20 }) || 'Stk'), price, valuation, stockItem ? `Lager ${stockItem.site}` : str(p.supplier, { max: 120 }),
-        str(p.document_ref, { max: 200 }), stockItem ? stockItem.id : null, now, warranty));
-      payload = { part_id: pid, name, quantity: qty, unit_price_net: price, valuation, stock_item_id: stockItem ? stockItem.id : null, ...(warranty ? { warranty_until: warranty } : {}) };
+        str(p.document_ref, { max: 200 }), stockItem ? stockItem.id : null, now, warranty, ptFile ? ptFile.id : null));
+      payload = { part_id: pid, name, quantity: qty, unit_price_net: price, valuation, stock_item_id: stockItem ? stockItem.id : null, ...(warranty ? { warranty_until: warranty } : {}), ...(ptFile ? { file_id: ptFile.id, file_name: ptFile.filename } : {}) };
       break;
     }
     case 'add_open_item': {

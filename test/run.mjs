@@ -23637,6 +23637,33 @@ await test('Backlog 425 (Blickwinkel „Fahrzeug kommt aus der Werkstatt zurück
   }
 });
 
+await test('Backlog 426 (Blickwinkel „Werkstatt-Tablet auf Ukrainisch, Mechaniker fotografiert die Teilenummer“, Migration 0089): Teil mit Foto/PDF desselben Vorgangs – fremde Datei abgewiesen (nichts gebucht, Lager unverändert), Detail/Verlauf, auch bei Lagerentnahme; Oberfläche und Texte DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair, newCase } = await freshWorld(); const db = e.DB.db;
+  const id = await toRepair(); const other = await newCase({ description: 'Spiegel lose (anderer Vorgang)' }, U.fleet);
+  const img = () => concatBytes(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), crypto.getRandomValues(new Uint8Array(300)));
+  const up = async (cid, name, u = U.ws) => { const r = await u.req('POST', `/api/cases/${cid}/files`, img(), { 'content-type': 'image/jpeg', 'x-filename': name }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const mine = await up(id, 'typenschild.jpg'); const foreign = await up(other, 'fremd.jpg', U.fleet);
+  const x = await cmd(U.ws, id, 'add_part', { name: 'Фільтр паливний', part_number: 'A 000 477 13 02', quantity: 1, file_id: foreign }); eq(x.status, 400); ok(/Datei dieses Vorgangs/.test(x.data.message || ''), x.data.message);
+  eq(db.prepare('SELECT COUNT(*) AS n FROM parts WHERE case_id=?').get(id).n, 0, 'nichts gebucht');
+  eq((await cmd(U.ws, id, 'add_part', { name: 'Фільтр паливний', part_number: 'A 000 477 13 02', quantity: 1, file_id: mine })).status, 200);
+  eq((await cmd(U.ws, id, 'add_part', { name: 'Ohne Foto', quantity: 1 })).status, 200);
+  let d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq(d.parts.find((p) => p.name === 'Фільтр паливний').file_id, mine); eq(d.parts.find((p) => p.name === 'Ohne Foto').file_id, null);
+  const ev = d.events.find((v) => v.action === 'add_part' && v.payload && v.payload.file_id); eq(ev.payload.file_id, mine); eq(ev.payload.file_name, 'typenschild.jpg');
+  // Lagerentnahme mit Foto; fremde Datei bei Lagerentnahme: Bestand bleibt unverändert
+  const it = await U.ws.post('/api/stock', { name: 'Ölfilter', unit_price_net: 5, initial_qty: 3 }); eq(it.status, 201, JSON.stringify(it.data)); const sid = it.data.id;
+  const onHand = async () => (await U.ws.get(`/api/stock/${sid}`)).data.item.on_hand;
+  eq((await cmd(U.ws, id, 'add_part', { stock_item_id: sid, quantity: 1, file_id: foreign })).status, 400); eq(await onHand(), 3, 'Lager unverändert');
+  eq((await cmd(U.ws, id, 'add_part', { stock_item_id: sid, quantity: 1, file_id: mine })).status, 200); eq(await onHand(), 2);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(d.parts.find((p) => p.stock_item_id === sid).file_id, mine, 'Lagerentnahme mit Foto');
+  // Integrations-API liefert keine Teile-Dateien
+  ok(!(await import('node:fs')).readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8').includes('parts.file_id'), 'nicht in der Integrations-API');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['pt_file', 'pt_file_none']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_ws_s.includes(STRINGS[l].pt_file.split(' (')[0]), `Hilfe ${l}`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${partFileSelect(d)}') && app.includes('${partFileLink(p, d)}') && app.includes('data-partfile'), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
