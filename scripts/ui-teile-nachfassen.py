@@ -52,7 +52,11 @@ with sync_playwright() as p:
     # B zuerst auf „wartet“ gesetzt (Server-Reihenfolge), A bekommt in der Antwort ein drei Wochen altes „seit“ → muss oben stehen
     check(cmd(w0,ids['B'],'wait_parts',{'parts_expected_date':eta},'Bremsschlauch vorne links')==200,'B wartet (mit Liefertermin)')
     check(cmd(w0,ids['A'],'wait_parts',{},'Luftfederbalg hinten – bestellt bei Teile Nord')==200,'A wartet (ohne Liefertermin)')
-    old=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(days=21)).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+    # 21 Berliner Kalendertage zurück, 12:00 Berliner Zeit (28.10.2026: „jetzt − 21×24 h“ lag zwischen 22 und 23 Uhr UTC nach der
+    # Zeitumstellung schon am Folgetag in Berlin → „20 Tage“, nur UK/EN liefen nach 22 Uhr UTC und wurden rot)
+    from zoneinfo import ZoneInfo
+    _bz=ZoneInfo('Europe/Berlin'); _d=datetime.datetime.now(_bz).date()-datetime.timedelta(days=21)
+    old=datetime.datetime.combine(_d, datetime.time(12,0), tzinfo=_bz).astimezone(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
     def fake(route):
         # Seite kann beim Schließen noch eine Anfrage offen haben („Response has been disposed“, 27.10.2026 in pruefen.sh) – dann nichts tun
         try:
