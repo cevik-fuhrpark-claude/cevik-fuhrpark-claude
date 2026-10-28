@@ -24764,6 +24764,35 @@ await test('Backlog 465 (Teilagent-Fund 2 aus 464): „Mein Fahrzeug“ nennt St
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_myveh_s.includes(STRINGS[l].vl_title), l + ': Hilfe Mein Fahrzeug');
 });
 
+await test('Backlog 466 (Teilagent-Fund 3 aus 464): Freigabe mit Abholhinweis „für Fahrer sichtbar“ → Push an zugeordnete Fahrer endet mit „Abholhinweis: Mein Fahrzeug“ (fester Satz, kein Ablageort, DE/UK/EN zurückübersetzbar); Melder und Freigaben ohne Häkchen ohne Zusatz', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'k.fahrer2', display_name: 'Fahrer 2', role: 'driver', environment: 'test' });
+  const d2 = new Client(worker, e, 'k.fahrer2'); await d2.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const uid2 = (await d2.get('/api/me')).data.user.id;
+  ok([200, 201].includes((await U.fleet.post('/api/vehicles/VIN:WMA15SZZ2HM722774/drivers', { user_id: uid2, evidence: 'Dienstplan' })).status), 'Zuordnung');
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const release = async (payload) => {
+    const id = await toRepair();
+    eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+    eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+    eq((await cmd(U.fleet, id, 'technical_release', { confirm: true, ...payload }, 'Kontrolle ok')).status, 200);
+    return id;
+  };
+  const rel = async (c) => (await c.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'released');
+  await release({ pickup_note: 'Schlüssel im Tresor Pförtner', pickup_for_driver: true });
+  const a = await rel(d2); eq(a.length, 1); ok(a[0].body.endsWith(' · Abholhinweis: Mein Fahrzeug · TEST'), 'zugeordneter Fahrer: Zusatz ' + a[0].body);
+  ok(!a[0].body.includes('Tresor'), 'kein Ablageort im Push');
+  const r = await rel(U.driver); ok(r.length === 1 && !r[0].body.includes('Abholhinweis'), 'Melder (mit Vorgangslink) ohne Zusatz');
+  const { localizedBody } = await import('../src/notify.js');
+  ok(localizedBody(a[0], 'uk').endsWith(' · Інформація для отримання: Мій транспорт · TEST'), 'UK: ' + localizedBody(a[0], 'uk'));
+  ok(localizedBody(a[0], 'en').endsWith(' · Pick-up note: My vehicle · TEST'), 'EN: ' + localizedBody(a[0], 'en'));
+  await release({ pickup_note: 'Schlüssel beim Pförtner' });
+  const b = await rel(d2); eq(b.length, 2); ok(b.filter((n) => n.body.includes('Abholhinweis')).length === 1, 'ohne „für Fahrer sichtbar“ kein Zusatz');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, s] of [['de', 'Abholhinweis: Mein Fahrzeug'], ['uk', 'Інформація для отримання: Мій транспорт'], ['en', 'Pick-up note: My vehicle']]) ok(STRINGS[l].help_myveh_s.includes(s), l + ': Hilfe');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

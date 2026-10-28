@@ -9,7 +9,7 @@ import { localizedAgentBody, localizedAgentTitle } from './agent.js';
 const PRIO = { de: { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' }, uk: { niedrig: 'низький', mittel: 'середній', kritisch: 'критичний' }, en: { niedrig: 'low', mittel: 'medium', kritisch: 'critical' } };
 const T = {
   de: {
-    planned_on: 'Termin',
+    planned_on: 'Termin', pickup_hint: 'Abholhinweis: Mein Fahrzeug',
     created: 'Neue Schadensmeldung', created_urgent: 'KRITISCH: neue Meldung (ungeprüft)', received: 'Meldung ist eingegangen',
     priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', forwarded: 'Meldung an Werkstatt übergeben', rejected: 'Meldung abgelehnt', withdrawn: 'Werkstattauftrag ohne Reparatur beendet',
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
@@ -21,7 +21,7 @@ const T = {
     res_gefaehrliche_maengel: 'gefährliche Mängel', res_verkehrsunsicher: 'verkehrsunsicher', do_not_plan: 'nicht einplanen',
   },
   uk: {
-    planned_on: 'Термін',
+    planned_on: 'Термін', pickup_hint: 'Інформація для отримання: Мій транспорт',
     created: 'Нове повідомлення про пошкодження', created_urgent: 'КРИТИЧНО: нове повідомлення (неперевірене)', received: 'Повідомлення отримано',
     priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', forwarded: 'Повідомлення передано до майстерні', rejected: 'Повідомлення відхилено', withdrawn: 'Замовлення майстерні завершено без ремонту',
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
@@ -33,7 +33,7 @@ const T = {
     res_gefaehrliche_maengel: 'небезпечні дефекти', res_verkehrsunsicher: 'небезпечний для руху', do_not_plan: 'не планувати',
   },
   en: {
-    planned_on: 'Workshop date',
+    planned_on: 'Workshop date', pickup_hint: 'Pick-up note: My vehicle',
     created: 'New damage report', created_urgent: 'CRITICAL: new report (unverified)', received: 'Report received',
     priority_changed: 'Priority changed', approved: 'New workshop order', forwarded: 'Report handed over to workshop', rejected: 'Report rejected', withdrawn: 'Workshop order ended without repair',
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
@@ -120,6 +120,9 @@ export function localizedBody(n, lang) {
   if (NO_CASE_BODY.has(n.kind) || !T.de[n.kind]) return b;
   const test = b.endsWith(' · TEST') ? ' · TEST' : '';
   let core = test ? b.slice(0, -test.length) : b;
+  // Backlog 466: fester Zusatz „Abholhinweis: Mein Fahrzeug“ der Freigabe an zugeordnete Fahrer
+  let pk = '';
+  if (n.kind === 'released') for (const l of LANGS) { const x = ' · ' + T[l].pickup_hint; if (core.endsWith(x)) { core = core.slice(0, -x.length); pk = ' · ' + T[L].pickup_hint; break; } }
   // „ · Termin TT.MM.JJJJ“ (nur „Neuer Werkstattauftrag“, Backlog 455) nach der Priorität
   let plan = null;
   if (n.kind === 'approved' || n.kind === 'plan_changed') {
@@ -133,7 +136,7 @@ export function localizedBody(n, lang) {
   const i = core2.lastIndexOf(' · ');
   const prio = i > 0 ? core2.slice(i + 3) : null;
   if (!prio || !PRIO_KEY.has(prio)) return b;
-  return `${core2.slice(0, i + 3)}${PRIO[L][PRIO_KEY.get(prio)]}${why ? ' · ' + T[L]['why_' + why] : ''}${plan ? ` · ${T[L].planned_on} ${dateLang(plan, L)}` : ''}${test}`;
+  return `${core2.slice(0, i + 3)}${PRIO[L][PRIO_KEY.get(prio)]}${why ? ' · ' + T[L]['why_' + why] : ''}${plan ? ` · ${T[L].planned_on} ${dateLang(plan, L)}` : ''}${pk}${test}`;
 }
 
 // Abschaltbare Arten, die eine Rolle überhaupt bekommen kann (Empfängerregeln in caseRecipients; 19.10.2026: Fahrer sahen z. B. „Kostenfreigabe
@@ -307,7 +310,9 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     // Backlog 455: „Neuer Werkstattauftrag“ nennt den bei der Freigabe gesetzten Werkstatttermin (nur Datum, kein Freitext)
     // Backlog 460: „Werkstatttermin geändert“ nennt den neuen Termin (entfernt → ohne Datum)
     const plan = (k === 'approved' && c.status === 'werkstatt_freigegeben' && c.planned_date) || (k === 'plan_changed' && c.planned_date) ? ` · ${T[lang].planned_on} ${dateLang(c.planned_date, lang)}` : '';
-    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${k === 'created' ? urgentWhy(c, urgent, lang) : ''}${plan}${c.environment === 'test' ? ' · TEST' : ''}`;
+    // Backlog 466: Freigabe mit Abholhinweis „für Fahrer sichtbar“ → zugeordnete Fahrer (ohne Vorgangslink) erfahren, wo er steht – fester Satz, kein Ablageort im Sperrbildschirm
+    const pk = k === 'released' && u.assigned && ctxData.payload && ctxData.payload.pickup_for_driver ? ' · ' + T[lang].pickup_hint : '';
+    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${k === 'created' ? urgentWhy(c, urgent, lang) : ''}${plan}${pk}${c.environment === 'test' ? ' · TEST' : ''}`;
     rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned || u.away ? null : c.id, event_key: eventKey, kind: k, urgent: urgent ? 1 : 0, title, body, created_at: now, lang });
   }
   const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at, environment: r.environment }));
