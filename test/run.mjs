@@ -25856,7 +25856,7 @@ await test('Backlog 578: „Art – Titel“ auch in Agentenbefunden (MAINT_*), 
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('vi.inspections_due.map((m) => `${esc(mkR(m))} '), 'Kurzinfo');
 });
 
-await test('Backlog 580 (Blickwinkel „Diktat/Tippfehler, Deutsch nicht Muttersprache“): Sicherheitshinweise erkennen Schreibweisen ohne Umlaut, getrennt geschrieben, Tippfehler und Umschrift (Leck, Reifenpanne, Radmuttern, Warnleuchte, Bremsen) – ohne neue Fehlalarme', async () => {
+await test('Backlog 580–582 (Blickwinkel „Diktat/Tippfehler, Deutsch nicht Muttersprache“): Sicherheitshinweise erkennen Schreibweisen ohne Umlaut, getrennt geschrieben, Tippfehler und Umschrift (Leck, Reifenpanne, Radmuttern, Warnleuchte, Bremsen, Lenkung, Feuer) – ohne neue Fehlalarme (Bremsscheibe ist kein Glasschaden)', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const R = (n) => new RegExp(app.match(new RegExp(`const ${n} = \\/(.+)\\/i;`))[1], 'i');
   const T = {
@@ -25866,6 +25866,10 @@ await test('Backlog 580 (Blickwinkel „Diktat/Tippfehler, Deutsch nicht Mutters
     WARNLIGHT_HINT: [['warn leuchte rot', 'warn lampe an', 'Kontroll leuchte an', 'Warn-Lampe leuchtet'], ['Warnweste fehlt', 'Rücklicht Lampe ist rot']],
     BRAKE_HINT: [['Bremse quitscht', 'bremse kaput', 'Bremsbelag abgefahren', 'Bremsbelaege runter', 'Bremspedal geht durch', 'Bremsen funktionieren nicht richtig', 'tormoza ne rabotayut', 'Bremsscheibe gerissen'], ['Bremsen neu gemacht', 'Bremslicht kaputt', 'Bremsleuchte defekt', 'Bremsbeläge gewechselt', 'Berg runter gefahren']],
   };
+  // Backlog 581/582
+  T.STEER_HINT = [['Lenkung schwer', 'Lenkung locker', 'Lenkung lose', 'lenkung spielt', 'lenkung ziet nach rechts', 'Lenkung blokiert', 'rul tugoy', 'rul ne krutitsya'], ['Lenkung eingestellt', 'Lenkradschloss klemmt', 'Lenkung geprüft ohne Befund']];
+  T.FIRE_HINT = [['pozhar v kabine', 'dym iz motora'], ['Pozharskaya', 'dymka']];
+  T.GLASS_HINT = [['Scheibe gerissen', 'Windschutzscheibe Steinschlag'], ['Brems Scheibe gerissen', 'Brems-Scheibe gerissen']];
   for (const [n, [pos, neg]] of Object.entries(T)) { const re = R(n); for (const x of pos) ok(re.test(x), `${n} erwartet: ${x}`); for (const x of neg) ok(!re.test(x), `${n} nicht: ${x}`); }
 });
 
