@@ -148,13 +148,14 @@ export async function costReport(env, user, envName, query = {}) {
       vehicle_active: v.active === 0 ? false : true,
       hours: r2(r.hours), work_net: rate === null && !periods.length ? null : r2(r.work_net), parts_actual_net: r2(r.parts_actual_net), parts_estimate_net: r2(r.parts_estimate_net),
       external_actual_net: r2(r.external_actual_net), external_estimate_net: r2(r.external_estimate_net),
-      actual_net: r2(actual), valued_items: r.valued_items, estimate_net: r2(estimate), unvalued_items: r.unvalued_items, complete: r.unvalued_items === 0, late_items: r.late_items,
+      actual_net: r2(actual), valued_items: r.valued_items, estimate_net: r2(estimate), unvalued_items: r.unvalued_items, complete: r.unvalued_items === 0 && !(estimate > 0), late_items: r.late_items,
       // nur unbewertete Teile/Fremdleistungen in der Zeile → Spalte ohne Betrag (nie „0 €“), wie „–“ in der App (18.10.2026)
       ...(r.pu && !r.pv ? { parts_unvalued_only: true } : {}), ...(r.eu && !r.ev ? { external_unvalued_only: true } : {}),
     };
   }).sort((a, b) => (a.plate || a.vehicle_id).localeCompare(b.plate || b.vehicle_id) || a.month.localeCompare(b.month));
   const totals = out.reduce((t, r) => ({ actual_net: t.actual_net + r.actual_net, valued_items: t.valued_items + r.valued_items, estimate_net: t.estimate_net + r.estimate_net, unvalued_items: t.unvalued_items + r.unvalued_items, hours: t.hours + r.hours }),
     { actual_net: 0, valued_items: 0, estimate_net: 0, unvalued_items: 0, hours: 0 });
+  // Backlog 519: „vollständig bewertet“ für Zeilen/Standorte wie je Fahrzeug (seit 19.10.): keine unbewerteten UND keine geschätzten Positionen
   // Summe je Fahrzeug-Standort (Stammdaten; ohne Standort = 'ohne') – nur Zusammenfassung der Zeilen, keine eigene Bewertung
   const siteMap = new Map();
   for (const r of out) {
@@ -163,7 +164,7 @@ export async function costReport(env, user, envName, query = {}) {
     s.actual_net += r.actual_net; s.valued_items += r.valued_items; s.estimate_net += r.estimate_net; s.unvalued_items += r.unvalued_items; s.hours += r.hours; s.vehicles.add(r.vehicle_id);
     siteMap.set(k, s);
   }
-  const sites = [...siteMap.values()].map((s) => ({ site: s.site, actual_net: r2(s.actual_net), valued_items: s.valued_items, estimate_net: r2(s.estimate_net), unvalued_items: s.unvalued_items, hours: r2(s.hours), vehicles: s.vehicles.size, complete: s.unvalued_items === 0 }))
+  const sites = [...siteMap.values()].map((s) => ({ site: s.site, actual_net: r2(s.actual_net), valued_items: s.valued_items, estimate_net: r2(s.estimate_net), unvalued_items: s.unvalued_items, hours: r2(s.hours), vehicles: s.vehicles.size, complete: s.unvalued_items === 0 && !(s.estimate_net > 0) }))
     .sort((a, b) => (a.site === 'ohne') - (b.site === 'ohne') || b.actual_net - a.actual_net || a.site.localeCompare(b.site));
   // Kosten je Kilometer: gefahrene km im Zeitraum nach derselben Regel wie „Fahrleistung je Monat“ der Fahrzeugakte (16.10.2026)
   const kmOf = await periodMileage(env, from, to, vehicleFilter);
@@ -185,7 +186,7 @@ export async function costReport(env, user, envName, query = {}) {
     cost_per_km: km && !(v.valued_items === 0 && (v.unvalued_items > 0 || v.estimate_net > 0)) ? roundMilli(v.actual_net / km) : null, complete: v.unvalued_items === 0 && !(v.estimate_net > 0) };
   }).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
   // Vertragsraten (Leasing/Miete/…) getrennt von der Instandhaltung – nur Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten; nicht über die Integrations-API)
-  const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates) : undefined;
+  const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates, label) : undefined;
   // Versicherungserstattungen (nur Leitung) getrennt ausgewiesen – werden NICHT von den Instandhaltungskosten abgezogen
   const claim_reimbursements = user && ['owner', 'fleet'].includes(user.role) ? await claimReimbursements(env, envName, from, to, vehicleFilter, plates) : undefined;
   return { from, to, environment: envName, site: siteFilter ? sel.site : null, site_options: siteOptions, hourly_rate_net: rate, hourly_rate_periods: periods.map((x) => ({ valid_until: x.u, rate_net: x.r })), rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), valued_items: totals.valued_items, estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) },
@@ -280,7 +281,7 @@ export const COST_DEFINITIONS = {
   late_items: 'Je Zeile: Arbeitszeit-Positionen (je Vorgang, Monat und Buchungstag), die erst nach Ende des Monats gebucht wurden (Berliner Kalender); in den Einzelpositionen je Buchungstag eigene Zeile (`late`)',
   estimates: 'Geschätzte Positionen getrennt (estimate_net), fehlender Preis/Satz = unbewertet (unvalued_items), nie 0 €',
 };
-export async function contractCosts(env, from, to, vehicleFilter, plates) {
+export async function contractCosts(env, from, to, vehicleFilter, plates, label = null) {
   const rows = (await env.DB.prepare(`SELECT id, vehicle_id, kind, partner, start_date, end_date, ended_on, monthly_rate_net FROM vehicle_contracts${vehicleFilter ? ' WHERE vehicle_id=?' : ''}`)
     .bind(...(vehicleFilter ? [vehicleFilter] : [])).all()).results;
   const today = berlinDate(); const nowM = today.slice(0, 7);
@@ -301,7 +302,8 @@ export async function contractCosts(env, from, to, vehicleFilter, plates) {
     const b = endM < hiM ? endM : hiM;
     const n = a <= b ? monthsBetween(a, b) : 0;
     if (!n) continue;
-    const e = per.get(c.vehicle_id) || { vehicle_id: c.vehicle_id, plate: v.plate, site: v.site, net: 0, contracts: [] };
+    // Backlog 518: Standort in Anzeige-Schreibweise wie die Zeilen, außer Betrieb gekennzeichnet (Jahresabschluss: Rate eines verkauften Lkw)
+    const e = per.get(c.vehicle_id) || { vehicle_id: c.vehicle_id, plate: v.plate, site: v.site ? ((label && label.get(siteKey(v.site))) || v.site) : null, vehicle_active: v.active !== 0, net: 0, contracts: [] };
     e.net += n * c.monthly_rate_net; e.contracts.push({ id: c.id, kind: c.kind, partner: c.partner, months: n, monthly_rate_net: c.monthly_rate_net, net: r2(n * c.monthly_rate_net) });
     per.set(c.vehicle_id, e); total += n * c.monthly_rate_net;
   }
@@ -374,7 +376,7 @@ export async function costItems(env, user, envName, query = {}) {
   const inRange = (m) => m >= from && m <= to;
   const dayOf = (d) => (d.length === 10 ? d : berlinDate(d));
   const items = [];
-  const base = (x, day) => { const v = vmap.get(x.vehicle_id); return { date: day, month: day.slice(0, 7), case_no: x.case_no, plate: v.plate, site: v.site ? (sel.label.get(siteKey(v.site)) || v.site) : null, vehicle_active: v.active !== 0 }; };
+  const base = (x, day) => { const v = vmap.get(x.vehicle_id); return { date: day, month: day.slice(0, 7), case_no: x.case_no, plate: v.plate, vehicle_id: x.vehicle_id, site: v.site ? (sel.label.get(siteKey(v.site)) || v.site) : null, vehicle_active: v.active !== 0 }; };
   // Arbeitszeit: je Vorgang und Monat eine Position, Betrag fortlaufend gerundet (Monate eines Vorgangs ergeben den Betrag der Akte)
   const wm = new Map();
   // nach Monatsende gebuchte Arbeitszeit als eigene Position je Buchungstag (Backlog 189: vorher 2 h aus Dezember + im Februar nachgebuchte 3 h
@@ -416,9 +418,9 @@ export function costItemsCsv(rep) {
   const cell = csvCell;
   const ART = { arbeitszeit: 'Arbeitszeit', teil: 'Teil', fremdleistung: 'Fremdleistung' };
   const WERT = { actual: 'belegt', estimate: 'geschätzt', unvalued: 'unbewertet' };
-  const lines = [['Datum', 'Monat', 'Vorgang', 'Kennzeichen', 'Standort', 'Fahrzeugstatus', 'Art', 'Bezeichnung', 'Lieferant', 'Rechnung/Beleg', 'Menge', 'Einheit', 'Einzelpreis netto', 'Betrag netto', 'Wertart', 'Zählt in Summe belegt', 'Erfasst am', 'Beleg-Datei in App (Dateiname)'].join(';')];
+  const lines = [['Datum', 'Monat', 'Vorgang', 'Kennzeichen', 'Standort', 'Fahrzeugstatus', 'Art', 'Bezeichnung', 'Lieferant', 'Rechnung/Beleg', 'Menge', 'Einheit', 'Einzelpreis netto', 'Betrag netto', 'Wertart', 'Zählt in Summe belegt', 'Erfasst am', 'Beleg-Datei in App (Dateiname)', 'FIN-Schlüssel'].join(';')]; // Backlog 517: FIN am Ende (Kennzeichen kann übergehen)
   for (const i of rep.items) lines.push([i.date.split('-').reverse().join('.'), i.month, cell(i.case_no), cell(i.plate), cell(i.site), i.vehicle_active ? 'aktiv' : 'außer Betrieb', ART[i.type], cell(i.description), cell(i.supplier), cell(i.document),
-    num(i.quantity), cell(i.unit), num(i.unit_price_net), num(i.amount_net), WERT[i.valuation], i.counted ? (i.valuation === 'actual' && i.amount_net !== null ? 'ja' : 'nein') : 'nein (durch Fremdleistung ersetzt)', i.recorded_at ? berlinDateTime(i.recorded_at) : '', i.type === 'fremdleistung' ? (i.has_file ? cell(i.file_name || 'ja') : 'nein') : ''].join(';'));
+    num(i.quantity), cell(i.unit), num(i.unit_price_net), num(i.amount_net), WERT[i.valuation], i.counted ? (i.valuation === 'actual' && i.amount_net !== null ? 'ja' : 'nein') : 'nein (durch Fremdleistung ersetzt)', i.recorded_at ? berlinDateTime(i.recorded_at) : '', i.type === 'fremdleistung' ? (i.has_file ? cell(i.file_name || 'ja') : 'nein') : '', cell(i.vehicle_id)].join(';'));
   if (rep.truncated) lines.push(`Gekürzt: nur die ersten ${COST_ITEMS_MAX} Positionen – Zeitraum verkleinern.`);
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }

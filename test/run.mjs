@@ -13352,7 +13352,7 @@ await test('Verbesserung 19.10. (38): Reserverad unter 1,6 mm ist kein kritische
   const fr = (await U.fleet.get('/api/tires/fleet')).data.rows.find((x) => x.vehicle_id === V1);
   eq(fr.status, 'warnung', 'Fahrzeug: wie Warnung, nicht „unter Minimum“'); eq(fr.below_min, 0); eq(fr.spare_below_min, 1); eq(fr.min_tread_mm, 8, 'kleinste Profiltiefe der montierten Reifen');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/tires/fleet?format=csv')).data).trim().split('\r\n');
-  ok(csv[0].endsWith(';Reserverad unter 1,6 mm'), 'CSV-Spalte'); ok(csv.some((l) => l.startsWith('SZ-YC 5513;') && l.endsWith(';ja')), 'CSV ja');
+  ok(csv[0].endsWith(';Reserverad unter 1,6 mm;Winter: Termin Werkstattauftrag'), 'CSV-Spalte'); ok(csv.some((l) => l.startsWith('SZ-YC 5513;') && l.endsWith(';ja;')), 'CSV ja'); // Backlog 521: Termin am Ende
   eq((await U.fleet.post('/api/agent/run')).status, 200);
   const fs1 = (await U.fleet.get('/api/master')).data.findings;
   ok(!fs1.some((f) => f.finding_code === 'TIRE_BELOW_MINIMUM'), 'kein kritischer Befund');
@@ -18242,8 +18242,8 @@ await test('Geteiltes Werkstatt-Konto / Rückrufaktion / Monatswechsel (Teilagen
   const m = BERLIN_TODAY.slice(0, 7);
   const it = await F.get(`/api/reports/costs?from=${m}&to=${m}&part=items`); eq(it.status, 200);
   const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(it.data).trim().split('\r\n');
-  ok(lines[0].endsWith(';Zählt in Summe belegt;Erfasst am;Beleg-Datei in App (Dateiname)'), lines[0]); // letzte Spalte seit Backlog 237, Dateiname seit 247
-  ok(lines.slice(1).length >= 2 && lines.slice(1).every((l) => /;\d{2}\.\d{2}\.\d{4} \d{2}:\d{2};(ja|nein)?$/.test(l)), lines.slice(1).join(' / '));
+  ok(lines[0].endsWith(';Zählt in Summe belegt;Erfasst am;Beleg-Datei in App (Dateiname);FIN-Schlüssel'), lines[0]); // Backlog 517: FIN am Ende // letzte Spalte seit Backlog 237, Dateiname seit 247
+  ok(lines.slice(1).length >= 2 && lines.slice(1).every((l) => /;\d{2}\.\d{2}\.\d{4} \d{2}:\d{2};(ja|nein)?;VIN:[A-Z0-9]+$/.test(l)), lines.slice(1).join(' / '));
   const k = await F.get(`/api/reports/kpi?from=${m}&to=${m}`); eq(k.status, 200);
   ok(Math.abs(Date.parse(k.data.generated_at) - Date.now()) < 60000, 'generated_at'); ok(/Abrufzeitpunkt/.test(k.data.definitions.status_basis));
   ok(app.includes("t('kpi_status_basis').replace('{at}', fmtDT(r.generated_at))") && app.includes("' ' + esc(t('cost_rate_today'))"), 'Anzeige');
@@ -19983,8 +19983,8 @@ await test('Backlog 237 (Blickwinkel „Monatsende – Kosten an die Buchhaltung
   const ev = rv.items.find((i) => i.document === 'BU-4711'); eq(ev.description, null); eq(ev.supplier, 'Reifen Test'); eq(ev.has_file, true);
   // CSV: neue letzte Spalte, bestehende Spalten unverändert an ihrer Stelle
   const csv = costItemsCsv(ra).split('\r\n');
-  ok(csv[0].endsWith(';Erfasst am;Beleg-Datei in App (Dateiname)'), 'Kopfzeile');
-  const la = csv.find((l) => l.includes('BU-4711')); ok(la && la.endsWith(';reifen-rechnung.pdf') && la.includes(';Fremdleistung;4× Reifen HA, Achsvermessung;Reifen Test;BU-4711;'), la);
+  ok(csv[0].endsWith(';Erfasst am;Beleg-Datei in App (Dateiname);FIN-Schlüssel'), 'Kopfzeile');
+  const la = csv.find((l) => l.includes('BU-4711')); ok(la && la.split(';').at(-2) === 'reifen-rechnung.pdf' && la.includes(';Fremdleistung;4× Reifen HA, Achsvermessung;Reifen Test;BU-4711;'), la);
   const lw = csv.find((l) => l.includes(';Arbeitszeit;')); if (lw) ok(lw.endsWith(';'), 'Arbeitszeit: Spalte leer');
   // HTTP: Filter + Protokoll + Dateiname mit Stand
   const r = await users.fleet.get(`/api/reports/costs?from=${m}&to=${m}&vehicle_id=VIN:${VA}&part=items`);
@@ -20030,9 +20030,9 @@ await test('Backlog 247 (Blickwinkel „Steuerberatung mit Lesezugriff“): Einz
     eq(a.description, role === 'viewer' ? null : 'Bremse VA', role + ': Bemerkung nur Leitung');
     const csv = costItemsCsv(rep).split('\r\n');
     const la = csv.find((l) => l.includes('SB-4701')); const lb = csv.find((l) => l.includes('SB-4702'));
-    const last = la.split(';').pop();
+    const last = la.split(';').at(-2); // Backlog 517: danach FIN-Schlüssel
     ok(!/^[=+\-@]/.test(last.replace(/^"/, '')) && last.includes('Rechnung SB-1.pdf'), role + ': Formelschutz + Dateiname: ' + last);
-    ok(lb.endsWith(';nein'), role + ': ohne Beleg ' + lb);
+    ok(lb.split(';').at(-2) === 'nein', role + ': ohne Beleg ' + lb);
   }
   // Lesezugriff sieht denselben Dateinamen in der Dateiliste des Vorgangs
   const viewer = await invite(owner, { username: 'test.lesen.steuer', display_name: 'Test Lesezugriff Steuerberatung', role: 'viewer', environment: 'test' });
@@ -25295,6 +25295,30 @@ await test('Backlog 510–516 (Blickwinkel „Monatsende: km-Meldung an den Leas
   const src = fs.readFileSync(new URL('../src/contracts.js', import.meta.url), 'utf8'); ok(src.includes('ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS latest_km'), '516: Agent gleiche Reihenfolge');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['ct_km_noread', 'rws_choose', 'rws_drop_plan', 'rws_drop_ack', 'stock_none_ws']) ok(STRINGS[l][k], `${l}.${k}`);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].rws_drop_plan.includes('{d}') && STRINGS[l].stock_none_ws.includes('{ws}'), l);
+});
+
+await test('Backlog 517–521 (Blickwinkel „Kosten je Fahrzeug zum Jahresende“ / „Winterreifen-Umrüstung im November“): Einzelpositionen-CSV mit FIN, Vertragsraten mit Anzeige-Standort und „außer Betrieb“, „vollständig bewertet“ auch bei Schätzungen nein, Winter-Fortschritt, Termin des Winterauftrags in Listen und CSV', async () => {
+  const { U, V1, cmd, toRepair } = await freshWorld();
+  const id = await toRepair();
+  const ext = await cmd(U.fleet, id, 'add_external_cost', { description: 'Abschleppen', supplier: 'Abschlepp GmbH', valuation: 'estimate', amount_net: 120 });
+  eq(ext.status, 200, 'Fremdleistung geschätzt ' + JSON.stringify(ext.data));
+  const ym = bDayOff(0).slice(0, 7);
+  const rep = (await U.fleet.get(`/api/reports/costs?from=${ym}&to=${ym}`)).data;
+  { const row = rep.rows.find((r) => r.vehicle_id === V1); ok(row && row.estimate_net > 0 && row.complete === false, '519: Zeile mit Schätzung nicht vollständig ' + JSON.stringify(row)); ok(rep.sites.every((s) => !(s.estimate_net > 0) || s.complete === false), '519: Standorte'); }
+  const csv = new TextDecoder().decode((await U.fleet.get(`/api/reports/costs?part=items&from=${ym}&to=${ym}&format=csv`)).data).replace(/^﻿/, '').trim().split('\r\n');
+  ok(csv[0].endsWith(';Beleg-Datei in App (Dateiname);FIN-Schlüssel'), '517: Kopf ' + csv[0]);
+  if (csv.length > 1) ok(csv.slice(1).filter((l) => !l.startsWith('Gekürzt')).every((l) => l.endsWith(';' + V1)), '517: FIN in jeder Zeile');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'LeaseCo', evidence: 'L-9', start_date: '2026-01-01', end_date: '2029-12-31', monthly_rate_net: 1000 })).status, 201);
+  const cc = (await U.fleet.get(`/api/reports/costs?from=${ym}&to=${ym}`)).data.contract_costs; const cv = cc.vehicles.find((v) => v.vehicle_id === V1);
+  ok(cv && cv.vehicle_active === true && 'site' in cv, '518: ' + JSON.stringify(cv));
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("${eur(v.net)}${v.vehicle_active === false ? ` <span class=\"chip\" data-cinact>"), '518: Chip');
+  ok(app.includes("t('tires_winter_prog').replace('{ok}', fmtNum(r.totals.winter_ok || 0))") && app.includes('data-wprog'), '520');
+  ok(!app.includes("`🔧 ${esc(t('mo_open'))} ${esc(x.winter_order.case_no)}`") && !app.includes("x.open_order && `🔧 ${esc(t('mo_open'))} ${esc(x.open_order.case_no)}`") && app.includes('const woApptTxt = (o) =>'), '521: Termin in den Winterlisten');
+  const tc = new TextDecoder().decode((await U.fleet.get('/api/tires/fleet?format=csv')).data).replace(/^﻿/, '').split('\r\n'); ok(tc[0].endsWith(';Winter: Termin Werkstattauftrag'), '521: CSV ' + tc[0].slice(-80));
+  ok(tc.slice(1).filter(Boolean).every((l) => l.split(';').length === tc[0].split(';').length), '521: Spaltenzahl');
+  const { winterOrders } = await import('../src/tires.js'); ok(String(winterOrders).includes('planned_date: x.planned_date || null'), '521: Server');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].tires_winter_prog.includes('{ok}') && STRINGS[l].tires_winter_prog.includes('{n}'), l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -88,14 +88,14 @@ export function winterStatus(kind, { marks, seen }) {
 export const WINTER_CLOSED_DAYS = 60;
 export async function winterOrders(env, envName, vehicleId = null) {
   const since = berlinWindowStartIso(WINTER_CLOSED_DAYS); // 60 Berliner Kalendertage einschließlich heute (19.10.2026; vorher 24-h-Blöcke)
-  const r = (await env.DB.prepare(`SELECT vehicle_id, id, case_no, status, closed_at, reporter_id, workshop_site, suggested_workshop_site FROM cases WHERE environment=? AND tire_order='winter'
+  const r = (await env.DB.prepare(`SELECT vehicle_id, id, case_no, status, closed_at, planned_date, reporter_id, workshop_site, suggested_workshop_site FROM cases WHERE environment=? AND tire_order='winter'
     AND (status NOT IN ('fahrzeug_freigegeben','abgelehnt') OR (status='fahrzeug_freigegeben' AND closed_at >= ?))${vehicleId ? ' AND vehicle_id=?' : ''} ORDER BY closed_at DESC`)
     .bind(...(vehicleId ? [envName, since, vehicleId] : [envName, since])).all()).results;
   const open = new Map(); const closed = new Map();
   for (const x of r) {
     // Zugriffsfelder nicht enumerierbar mitführen (nur für caseAccess, nie in der Antwort)
     const acc = (o) => Object.defineProperty(o, 'acc', { value: { status: x.status, reporter_id: x.reporter_id, workshop_site: x.workshop_site, suggested_workshop_site: x.suggested_workshop_site }, enumerable: false });
-    if (x.status !== 'fahrzeug_freigegeben') open.set(x.vehicle_id, acc({ id: x.id, case_no: x.case_no }));
+    if (x.status !== 'fahrzeug_freigegeben') open.set(x.vehicle_id, acc({ id: x.id, case_no: x.case_no, planned_date: x.planned_date || null })); // Backlog 521: Termin des Winterauftrags
     else if (!closed.has(x.vehicle_id)) closed.set(x.vehicle_id, acc({ id: x.id, case_no: x.case_no, closed_at: x.closed_at }));
   }
   // Hinweis nur bei offener Lage ohne neuen Auftrag
@@ -495,7 +495,7 @@ export async function fleetTiresCsv(env, ov, csvCell) {
   for (const s of specs) { if (!byV.has(s.vehicle_id)) byV.set(s.vehicle_id, {}); byV.get(s.vehicle_id)[s.axle] = s; }
   const mm = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const head = ['Kennzeichen', 'Fahrzeugart', 'Standort', 'Status', 'Kleinste Profiltiefe (mm)', 'Gemessene Positionen', `Unter ${mm(ov.legal_min_tread_mm)} mm`, 'Unter Warnschwelle',
-    'Älteste letzte Messung', 'Alter (Tage)', `Messung älter als ${ov.stale_days} ${ov.stale_days === 1 ? 'Tag' : 'Tage'}`, ...AXLES.map((a) => `Größe ${AXLE_DE[a]}`), 'Größen geprüft', 'Winterreifen (Alpine-Symbol)', 'Winter: Positionen ohne Alpine-Symbol', 'Winter: Positionen nicht erfasst', 'Winter: offener Werkstattauftrag', 'Ältester Reifen (Herstellwoche laut DOT)', 'Ältester Reifen (Monate)', 'Reifen über Warnalter', 'Winter: Auftrag abgeschlossen, Lage offen', `Reserverad unter ${mm(ov.legal_min_tread_mm)} mm`];
+    'Älteste letzte Messung', 'Alter (Tage)', `Messung älter als ${ov.stale_days} ${ov.stale_days === 1 ? 'Tag' : 'Tage'}`, ...AXLES.map((a) => `Größe ${AXLE_DE[a]}`), 'Größen geprüft', 'Winterreifen (Alpine-Symbol)', 'Winter: Positionen ohne Alpine-Symbol', 'Winter: Positionen nicht erfasst', 'Winter: offener Werkstattauftrag', 'Ältester Reifen (Herstellwoche laut DOT)', 'Ältester Reifen (Monate)', 'Reifen über Warnalter', 'Winter: Auftrag abgeschlossen, Lage offen', `Reserverad unter ${mm(ov.legal_min_tread_mm)} mm`, 'Winter: Termin Werkstattauftrag'];
   const lines = [head.join(';')];
   for (const r of ov.rows) {
     const sp = Object.fromEntries(Object.entries(byV.get(r.vehicle_id) || {}).filter(([a]) => axleFits(r.kind, a)));
@@ -503,7 +503,7 @@ export async function fleetTiresCsv(env, ov, csvCell) {
     const checked = !list.length ? '' : list.every((s) => s.verified) ? 'ja' : list.some((s) => s.verified) ? 'teilweise' : 'nein (Quellwerte)';
     lines.push([csvCell(r.plate), r.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(r.site), r.status === 'warnung' && !r.below_warn && r.spare_below_min ? 'Reserverad abgefahren' : TS_DE[r.status], mm(r.min_tread_mm), r.measured_positions, r.below_min, r.below_warn,
       r.oldest_measure_at ? berlinDate(r.oldest_measure_at) : '', r.oldest_age_days ?? '', r.measured_positions ? (r.stale ? 'ja' : 'nein') : '',
-      ...AXLES.map((a) => (sp[a] ? csvCell(sp[a].size) : '')), checked, WS_DE[r.winter], (r.winter_noncompliant || []).join(' '), (r.winter_missing || []).join(' '), r.winter_order ? r.winter_order.case_no : '', r.oldest_dot_date || '', r.oldest_dot_months ?? '', ov.warn_age_years === null ? '' : r.age_warn, r.winter_closed_order ? r.winter_closed_order.case_no : '', r.spare_below_min ? 'ja' : ''].join(';'));
+      ...AXLES.map((a) => (sp[a] ? csvCell(sp[a].size) : '')), checked, WS_DE[r.winter], (r.winter_noncompliant || []).join(' '), (r.winter_missing || []).join(' '), r.winter_order ? r.winter_order.case_no : '', r.oldest_dot_date || '', r.oldest_dot_months ?? '', ov.warn_age_years === null ? '' : r.age_warn, r.winter_closed_order ? r.winter_closed_order.case_no : '', r.spare_below_min ? 'ja' : '', r.winter_order && r.winter_order.planned_date ? r.winter_order.planned_date : ''].join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
