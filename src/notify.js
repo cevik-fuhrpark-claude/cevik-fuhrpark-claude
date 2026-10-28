@@ -14,7 +14,7 @@ const T = {
     priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', forwarded: 'Meldung an Werkstatt übergeben', rejected: 'Meldung abgelehnt', withdrawn: 'Werkstattauftrag ohne Reparatur beendet',
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
     quality_check: 'Bereit zur Abschlusskontrolle', rework: 'Nacharbeit angefordert', released: 'Fahrzeug technisch freigegeben',
-    safety_lock: 'Fahrzeug gesperrt', safety_lock_lifted: 'Sperre aufgehoben', still_locked: 'Fahrzeug bleibt gesperrt (weiterer offener Vorgang)', comment: 'Neuer Kommentar', file_added: 'Foto/Datei zur Meldung nachgereicht', open_item_safety: 'Sicherheitsrelevante Restarbeit', open_item: 'Neue Restarbeit (Werkstatt)', open_item_safety_resolved: 'Sicherheitsrelevante Restarbeit erledigt (Werkstatt)', plan_changed: 'Werkstatttermin geändert', handover_missing: 'Schlüssel oder Fahrzeugschein fehlt',
+    safety_lock: 'Fahrzeug gesperrt', safety_lock_lifted: 'Sperre aufgehoben', still_locked: 'Fahrzeug bleibt gesperrt (weiterer offener Vorgang)', comment: 'Neuer Kommentar', file_added: 'Foto/Datei zur Meldung nachgereicht', question: 'Rückfrage zu Ihrer Meldung', open_item_safety: 'Sicherheitsrelevante Restarbeit', open_item: 'Neue Restarbeit (Werkstatt)', open_item_safety_resolved: 'Sicherheitsrelevante Restarbeit erledigt (Werkstatt)', plan_changed: 'Werkstatttermin geändert', handover_missing: 'Schlüssel oder Fahrzeugschein fehlt',
     agent: 'Fuhrparkagent: Handlungsbedarf', cost_limit: 'Kostenfreigabe nötig (Grenze überschritten)', cost_approved: 'Kosten freigegeben', reassigned_away: 'Auftrag an andere Werkstatt übergeben', inspection_defect: 'Prüfung mit gefährlichen Mängeln', fine: 'Neues Schreiben einer Behörde', test: 'Testbenachrichtigung', test_body: 'Push funktioniert auf diesem Gerät.',
     new_login: 'Neue Anmeldung auf einem anderen Gerät', new_login_body: '{d} · {t}. Waren Sie das nicht? Mehr → Mein Konto: unter „Meine Anmeldungen (Geräte)“ das Gerät abmelden und das Passwort ändern.', unknown_device: 'Unbekanntes Gerät',
     why_nicht_fahrbereit: 'nicht fahrbereit', why_gesperrt: 'gesperrt',
@@ -26,7 +26,7 @@ const T = {
     priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', forwarded: 'Повідомлення передано до майстерні', rejected: 'Повідомлення відхилено', withdrawn: 'Замовлення майстерні завершено без ремонту',
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
     quality_check: 'Готово до фінального контролю', rework: 'Потрібна доробка', released: 'Транспорт технічно допущено',
-    safety_lock: 'Транспорт заблоковано', safety_lock_lifted: 'Блокування знято', still_locked: 'Транспорт залишається заблокованим (інша відкрита справа)', comment: 'Новий коментар', file_added: 'До повідомлення додано фото/файл', open_item_safety: 'Залишкова робота (безпека)', open_item: 'Нова незавершена робота (майстерня)', open_item_safety_resolved: 'Критичну для безпеки незавершену роботу виконано (майстерня)', handover_missing: 'Бракує ключа або свідоцтва про реєстрацію',
+    safety_lock: 'Транспорт заблоковано', safety_lock_lifted: 'Блокування знято', still_locked: 'Транспорт залишається заблокованим (інша відкрита справа)', comment: 'Новий коментар', file_added: 'До повідомлення додано фото/файл', question: 'Уточнення щодо вашого повідомлення', open_item_safety: 'Залишкова робота (безпека)', open_item: 'Нова незавершена робота (майстерня)', open_item_safety_resolved: 'Критичну для безпеки незавершену роботу виконано (майстерня)', handover_missing: 'Бракує ключа або свідоцтва про реєстрацію',
     plan_changed: 'Термін у майстерні змінено', agent: 'Агент автопарку: потрібні дії', cost_limit: 'Потрібне погодження витрат (ліміт перевищено)', cost_approved: 'Витрати погоджено', reassigned_away: 'Замовлення передано іншій майстерні', inspection_defect: 'Огляд із небезпечними дефектами', fine: 'Новий лист від органу влади', test: 'Тестове сповіщення', test_body: 'Push працює на цьому пристрої.',
     new_login: 'Новий вхід на іншому пристрої', new_login_body: '{d} · {t}. Це були не ви? Ще → Мій акаунт: у «Мої входи (пристрої)» вийдіть на цьому пристрої та змініть пароль.', unknown_device: 'Невідомий пристрій',
     why_nicht_fahrbereit: 'не на ходу', why_gesperrt: 'заблоковано',
@@ -38,7 +38,7 @@ const T = {
     priority_changed: 'Priority changed', approved: 'New workshop order', forwarded: 'Report handed over to workshop', rejected: 'Report rejected', withdrawn: 'Workshop order ended without repair',
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
     quality_check: 'Ready for final inspection', rework: 'Rework requested', released: 'Vehicle technically released',
-    safety_lock: 'Vehicle locked', safety_lock_lifted: 'Lock lifted', still_locked: 'Vehicle remains locked (another open case)', comment: 'New comment', file_added: 'Photo/file added to the report', open_item_safety: 'Safety-relevant open item', open_item: 'New open item (workshop)', open_item_safety_resolved: 'Safety-relevant open item resolved (workshop)', handover_missing: 'Key or registration certificate missing', plan_changed: 'Workshop date changed',
+    safety_lock: 'Vehicle locked', safety_lock_lifted: 'Lock lifted', still_locked: 'Vehicle remains locked (another open case)', comment: 'New comment', file_added: 'Photo/file added to the report', question: 'Question about your report', open_item_safety: 'Safety-relevant open item', open_item: 'New open item (workshop)', open_item_safety_resolved: 'Safety-relevant open item resolved (workshop)', handover_missing: 'Key or registration certificate missing', plan_changed: 'Workshop date changed',
     agent: 'Fleet agent: action required', cost_limit: 'Cost approval needed (limit exceeded)', cost_approved: 'Costs approved', reassigned_away: 'Order handed over to another workshop', inspection_defect: 'Inspection with dangerous defects', fine: 'New letter from an authority', test: 'Test notification', test_body: 'Push works on this device.',
     new_login: 'New sign-in on another device', new_login_body: '{d} · {t}. Not you? More → My account: under “My sign-ins (devices)” sign out that device and change your password.', unknown_device: 'Unknown device',
     why_nicht_fahrbereit: 'not roadworthy', why_gesperrt: 'locked',
@@ -258,20 +258,22 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       // „Fahrzeug technisch freigegeben“, obwohl es gesperrt blieb) – alle erhalten stattdessen „bleibt gesperrt“ (dringend)
       if (kind !== 'safety_lock' && ctxData.still_locked) for (let i = 0; i < list.length; i++) list[i] = { ...list[i], kind: 'still_locked' };
       break;
-    case 'comment': {
+    case 'comment': case 'question': {
       // Optional gezielt: payload.notify ⊆ ['reporter','fleet','workshop'] (Standard: alle Beteiligten)
+      // Backlog 463: Rückfrage – der Melder bekommt „Rückfrage zu Ihrer Meldung“ (nicht abschaltbar, nicht dringend), alle anderen „Neuer Kommentar“
       const want = Array.isArray(ctxData.payload?.notify) && ctxData.payload.notify.length ? new Set(ctxData.payload.notify) : null;
+      const asComment = (rows) => (kind === 'question' ? rows.map((u) => ({ ...u, kind: 'comment' })) : rows);
       if (!want || want.has('reporter')) add(reporter);
-      if (!want || want.has('fleet')) add(usersByRole(['fleet', 'owner']));
+      if (!want || want.has('fleet')) add(asComment(usersByRole(['fleet', 'owner'])));
       // Werkstatt nur mit Zugriff (abgelehnte Meldung: Vorschlags-Werkstatt sah den Vorgang nicht – Hinweis führte ins Leere);
       // bei „gemeldet“ hat die vorgeschlagene Werkstatt Vorschauzugriff – „nur Werkstatt“ erreichte dort niemanden (19.10.2026)
       // (dort nur bei ausdrücklicher Auswahl – Standard bleibt ohne Vorschau-Werkstatt)
-      if (c.status === 'gemeldet' ? want && want.has('workshop') : (!want || want.has('workshop')) && c.status !== 'abgelehnt') add(workshopUsers);
+      if (c.status === 'gemeldet' ? want && want.has('workshop') : (!want || want.has('workshop')) && c.status !== 'abgelehnt') add(asComment(workshopUsers));
       break;
     }
   }
   const actorId = ctxData.actor?.id;
-  return { list: list.filter((u) => u.id !== actorId), urgent: kind.startsWith('cost_') || kind === 'plan_changed' || kind === 'file_added' ? false : urgent || (kind !== 'safety_lock' && !!ctxData.still_locked && ['released', 'safety_lock_lifted'].includes(kind)) }; // Kostenhinweise nie dringend
+  return { list: list.filter((u) => u.id !== actorId), urgent: kind.startsWith('cost_') || kind === 'plan_changed' || kind === 'file_added' || kind === 'question' ? false : urgent || (kind !== 'safety_lock' && !!ctxData.still_locked && ['released', 'safety_lock_lifted'].includes(kind)) }; // Kostenhinweise nie dringend
 }
 
 // Hinweise anlegen (doppelte Ereignisse je Person werden ignoriert) und die tatsächlich neuen zurückgeben.

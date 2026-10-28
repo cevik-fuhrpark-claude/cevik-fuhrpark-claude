@@ -24665,6 +24665,53 @@ await test('Backlog 462 (Blickwinkel „Leitung bittet den Fahrer, ein Foto nach
   }
 });
 
+await test('Backlog 463 (Folge aus 462): Rückfrage an den Melder als offener Zustand – nur Leitung/Inhaber mit „Gemeldet von“, Hinweis „question“ an den Melder (nicht abschaltbar), q_state open → answered (Kommentar oder Datei des Melders) → erledigt durch Leitung; Filter question=open|answered', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const id = await newCase();
+  const st = async (c) => { const r = await c.get('/api/cases?status=open'); return r.data.cases.find((x) => x.id === id); };
+  const inF = async (c, q) => (await c.get('/api/cases?status=open&question=' + q)).data.cases.some((x) => x.id === id);
+  eq((await cmd(U.fleet, id, 'comment', { question: true }, 'Bitte Foto nachreichen')).status, 400, 'ohne „Gemeldet von“ abgelehnt');
+  eq((await cmd(U.driver, id, 'comment', { question: true, notify: ['reporter'] }, 'Frage?')).status, 403, 'Fahrer stellt keine Rückfrage');
+  eq((await st(U.fleet)).q_state, null, 'noch keine Rückfrage');
+  eq((await cmd(U.fleet, id, 'comment', { question: true, notify: ['reporter'] }, 'Welcher Spiegel – links oder rechts? Bitte Foto.')).status, 200);
+  const d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.case.fleet_received_at, 'Rückfrage bestätigt den Eingang'); eq(d.case.q_state, 'open', 'Detail: offen'); ok(d.case.q_at, 'Zeitpunkt der Rückfrage');
+  ok(d.events.some((e) => e.action === 'comment' && e.payload && e.payload.question), 'Verlauf kennzeichnet die Rückfrage');
+  ok(!('q_reply' in d.case) && !('q_lead' in d.case), 'keine Rohzeiten');
+  const n = (await U.driver.get('/api/notifications')).data.notifications.filter((x) => x.kind === 'question');
+  eq(n.length, 1, 'Melder: Hinweis „Rückfrage“'); eq(n[0].case_id, id); ok(!n[0].urgent, 'nicht dringend');
+  ok(!(await U.driver.get('/api/me/notify-prefs')).data.kinds.includes('question'), 'Rückfrage nicht abschaltbar');
+  eq((await st(U.driver)).q_state, 'open', 'Fahrer sieht offene Rückfrage in seiner Liste');
+  ok(await inF(U.fleet, 'open'), 'Filter offen'); ok(!(await inF(U.fleet, 'answered')), 'nicht beantwortet');
+  eq((await U.fleet.get('/api/cases?question=egal')).status, 400, 'ungültiger Filter');
+  // Antwort per Kommentar
+  eq((await cmd(U.driver, id, 'comment', {}, 'Rechts, Foto folgt')).status, 200);
+  eq((await st(U.fleet)).q_state, 'answered', 'Antwort eingegangen'); ok(await inF(U.fleet, 'answered'), 'Filter beantwortet'); ok(!(await inF(U.fleet, 'open')), 'nicht mehr offen');
+  ok((await U.fleet.get('/api/notifications')).data.notifications.some((x) => x.kind === 'comment' && x.case_id === id), 'Leitung erfährt die Antwort');
+  // Leitung handelt → erledigt
+  eq((await cmd(U.fleet, id, 'change_priority', { priority: 'mittel' }, 'nach Antwort')).status, 200);
+  eq((await st(U.fleet)).q_state, null, 'nach Handlung der Leitung erledigt');
+  // zweite Rückfrage, Antwort per Foto
+  eq((await cmd(U.fleet, id, 'comment', { question: true, notify: ['reporter'] }, 'Foto fehlt noch')).status, 200);
+  eq((await st(U.fleet)).q_state, 'open');
+  const png = concatBytes(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), crypto.getRandomValues(new Uint8Array(300)));
+  eq((await U.driver.req('POST', `/api/cases/${id}/files`, png, { 'content-type': 'image/png', 'x-filename': 'spiegel.png' })).status, 201);
+  eq((await st(U.fleet)).q_state, 'answered', 'Foto gilt als Antwort');
+  ok((await U.fleet.get('/api/notifications')).data.notifications.some((x) => x.kind === 'file_added' && x.case_id === id), 'Hinweis Foto nachgereicht');
+  // abgeschlossener Vorgang: kein Zustand, keine neue Rückfrage
+  eq((await cmd(U.fleet, id, 'reject', {}, 'kein Schaden')).status, 200);
+  const cl = (await U.fleet.get(`/api/cases/${id}`)).data.case; eq(cl.q_state, null, 'abgeschlossen ohne Rückfrage-Stand');
+  eq((await cmd(U.fleet, id, 'comment', { question: true, notify: ['reporter'] }, 'noch was')).status, 400, 'keine Rückfrage an geschlossenem Vorgang');
+  // eigene Meldung der Leitung: keine Rückfrage an sich selbst
+  const own = await newCase({}, U.fleet);
+  eq((await cmd(U.fleet, own, 'comment', { question: true, notify: ['reporter'] }, 'an mich')).status, 400);
+  const { STRINGS } = await import('../public/i18n.js'); const { localizedTitle } = await import('../src/notify.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].help_fleet_s.includes(STRINGS[l].q_ask) && STRINGS[l].help_fleet_s.includes(STRINGS[l].q_answered) && STRINGS[l].help_fleet_s.includes(localizedTitle({ kind: 'question', title: 'Rückfrage zu Ihrer Meldung' }, l)), l + ': Hilfe Leitung');
+    ok(STRINGS[l].help_report_s.includes(STRINGS[l].q_drv_title), l + ': Hilfe Melden nennt die Rückfrage');
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

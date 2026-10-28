@@ -19,6 +19,18 @@ export const HANDOVER_VALUES = ['da', 'fehlt']; // Backlog 423: Schlüssel/Fahrz
 export const DRIVEABILITY = ['unbekannt', 'fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit'];
 export const STATUSES = ['gemeldet', 'werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle', 'fahrzeug_freigegeben', 'abgelehnt'];
 const OPEN_STATUSES = ['gemeldet', 'werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'];
+// Backlog 463: Rückfrage an den Melder (Kommentar der Leitung mit payload.question) – Stand nur aus vorhandenen Daten abgeleitet, keine Frist:
+// offen = keine spätere Antwort des Melders (Kommentar oder Datei); beantwortet = Antwort danach und seither nichts von Leitung/Inhaber
+const Q_AT_SQL = `(SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='comment' AND json_extract(e.payload,'$.question')=1)`;
+const Q_REPLY_SQL = `MAX(COALESCE((SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='comment' AND e.actor_id=c.reporter_id),''),
+  COALESCE((SELECT MAX(f.created_at) FROM files f WHERE f.case_id=c.id AND f.uploaded_by=c.reporter_id),''))`;
+const Q_LEAD_SQL = `(SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.actor_role IN ('fleet','owner'))`;
+const Q_COLS_SQL = `${Q_AT_SQL} AS q_at, ${Q_REPLY_SQL} AS q_reply, ${Q_LEAD_SQL} AS q_lead`;
+export function questionState(r) {
+  if (!r.q_at || !OPEN_STATUSES.includes(r.status)) return null;
+  if (!r.q_reply || r.q_reply <= r.q_at) return 'open';
+  return r.q_lead && r.q_lead > r.q_reply ? null : 'answered';
+}
 const WORK_STATUSES = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'];
 const MAX_FILES = 10;
 export const VEHICLE_DOC_READ = ['owner', 'fleet', 'workshop', 'viewer', 'dispatch'];
@@ -130,6 +142,12 @@ export async function listCases(env, user, envName, query, meta = null) {
   if (on(query.locked)) where.push('c.safety_lock = 1');
   // „Eingang nicht bestätigt“ (Backlog 278, Teilagent „Sturmnacht“): gleiche Regel wie „Heute zu tun → Eingang bestätigen“ der Startseite
   if (on(query.unreceived)) where.push(user.role === 'driver' ? '0' : `c.status = 'gemeldet' AND c.fleet_received_at IS NULL`);
+  // Backlog 463: „Rückfrage offen“ / „Antwort vom Melder eingegangen“ (gleiche Regel wie questionState; Fahrer: eigene Meldungen)
+  if (query.question === 'open' || query.question === 'answered') {
+    where.push(`c.status IN (${OPEN_STATUSES.map((x) => `'${x}'`).join(',')}) AND ${Q_AT_SQL} IS NOT NULL AND ` + (query.question === 'open'
+      ? `${Q_REPLY_SQL} <= ${Q_AT_SQL}`
+      : `${Q_REPLY_SQL} > ${Q_AT_SQL} AND COALESCE(${Q_LEAD_SQL},'') <= ${Q_REPLY_SQL}`));
+  } else if (query.question !== undefined && query.question !== '') throw bad('validation', 'question: open oder answered.');
   // „Kostenfreigabe ausstehend“ (Backlog 239): gleiche Regel wie „Heute zu tun“ (offen und `cost_over_limit_at` gesetzt; Fahrer nie)
   if (on(query.cost_approval)) where.push(user.role === 'driver' ? '0' : `c.cost_over_limit_at IS NOT NULL AND c.status IN (${OPEN_STATUSES.map((x) => `'${x}'`).join(',')})`);
   // Filter „Gewährleistung prüfen“: frühere Vorgänge desselben Fahrzeugs mit Teil/Fremdleistung, deren Gewährleistung am Meldetag
@@ -204,7 +222,7 @@ export async function listCases(env, user, envName, query, meta = null) {
       -- Disposition „seit“: Beginn der aktuellen Sperre bzw. des aktuellen Status (20.10.2026, Backlog 98; vorher Meldezeitpunkt/letzte Änderung)
       CASE WHEN c.safety_lock=1 THEN COALESCE((SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='set_safety_lock'), c.created_at) END AS lock_since,
       (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.to_status=c.status AND (e.from_status IS NULL OR e.from_status<>e.to_status)) AS status_since,
-      (SELECT d.case_no FROM cases d WHERE d.id=c.duplicate_of) AS duplicate_of_no,
+      (SELECT d.case_no FROM cases d WHERE d.id=c.duplicate_of) AS duplicate_of_no, ${Q_COLS_SQL},
       -- Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile – wer fasst nach?“): worauf gewartet wird, schon in der Liste
       CASE c.status WHEN 'wartet_teile' THEN (SELECT e.note FROM case_events e WHERE e.case_id=c.id AND e.action IN ('wait_parts','parts_partial') ORDER BY e.created_at DESC LIMIT 1) END AS parts_wait_note
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN users u ON u.id=c.reporter_id
@@ -298,6 +316,8 @@ function shapeOmit(user) {
 // extraOmit: zusätzlich weggelassene Schlüssel (Liste: reporter_role nach hideDriverName-Regel)
 export function shapeCase(c, user, extraOmit = null) {
   const omit = shapeOmit(user); const out = {};
+  // Backlog 463: Rückfrage-Stand statt der Rohzeiten (Antwort-/Leitungszeit bleiben intern)
+  if ('q_at' in c) { const qs = questionState(c); c = { ...c, q_state: qs, q_at: qs ? c.q_at : null }; delete c.q_reply; delete c.q_lead; }
   // Kostenfreigabe „ausstehend“ nur an offenen Vorgängen (abgelehnt/abgeschlossen: Verlauf behält cost_limit_exceeded)
   const open = OPEN_STATUSES.includes(c.status);
   for (const k in c) {
@@ -336,8 +356,11 @@ export function partsWaitOf(events) {
 }
 
 export async function getCaseDetail(env, user, envName, caseId) {
-  const { c, access } = await loadCase(env, user, envName, caseId);
-  const vehicle = await env.DB.prepare('SELECT * FROM vehicles WHERE id=?').bind(c.vehicle_id).first();
+  const { c: c0, access } = await loadCase(env, user, envName, caseId);
+  // Backlog 463: Rückfrage-Stand und Fahrzeug in einer Abfrage (Abfragebudget Vorgangsdetail)
+  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL} FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?`).bind(c0.id).first();
+  const c = { ...c0, q_at: vq ? vq.q_at : null, q_reply: vq ? vq.q_reply : null, q_lead: vq ? vq.q_lead : null };
+  const vehicle = vq ? (({ q_at, q_reply, q_lead, ...v }) => v)(vq) : null;
   // reach: 0 = deaktiviert, 1 = erreichbar, 2 = aktiv, aber nicht benachrichtigbar (ohne Passwort/andere Umgebung; Regel wie candidateUsers.reporter_ok)
   // + Zuordnung des Melders zur Meldezeit (Backlog 421, nur Leitung) in derselben Abfrage (Abfragebudget Vorgangsdetail ≤ 20)
   const reporter = await env.DB.prepare(`SELECT display_name, CASE WHEN role='driver' OR was_driver=1 THEN 'driver' ELSE role END AS role,
@@ -1286,6 +1309,16 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       requireNote('Kommentar ist leer.');
       if (Array.isArray(p.notify)) { const n = [...new Set(p.notify.filter((x) => ['reporter', 'fleet', 'workshop'].includes(x)))]; if (n.length) payload.notify = n; }
       notifyKind = 'comment';
+      // Backlog 463: Rückfrage an den Melder – nur Leitung/Inhaber, an offener Meldung einer anderen Person, „Gemeldet von“ ausgewählt
+      if (flag(p.question, 'question')) {
+        if (!['fleet', 'owner'].includes(user.role)) throw forbidden();
+        if (!(payload.notify || []).includes('reporter')) throw bad('question_needs_reporter', 'Rückfrage nur mit „Nur benachrichtigen: Gemeldet von“.');
+        if (c.reporter_id === user.id) throw bad('question_own_case', 'Rückfrage an sich selbst ist nicht möglich.');
+        if (!OPEN_STATUSES.includes(c.status)) throw bad('question_closed', 'Rückfrage nur an offenen Vorgängen.');
+        payload.question = true; notifyKind = 'question';
+        // wer zurückfragt, hat die Meldung gesehen: Eingang gilt als bestätigt (wie „Priorität ändern“)
+        if (!c.fleet_received_at) { set.fleet_received_at = now; set.fleet_received_by = user.id; }
+      }
       break;
     case 'receive':
       set.fleet_received_at = now; set.fleet_received_by = user.id;
