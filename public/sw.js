@@ -5,7 +5,7 @@
 // version.json, erst nach vollständigem Laden aktiv; ohne Verbindung wird nur aus dem jüngsten vollständigen Cache bedient.
 const PREFIX = 'cfp-shell-';
 const META = 'cfp-meta';
-const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/i18n.js', '/check-labels.js', '/holidays.js', '/emhours.js', '/finding-labels.js', '/finding-messages.js', '/ics-texts.js', '/qr.js', '/csv.js', '/help.js', '/manifest.webmanifest', '/boot.js', '/build-version.js', '/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/version.json'];
+const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/i18n-core.js', '/i18n-de.js', '/i18n-uk.js', '/i18n-en.js', '/check-labels.js', '/holidays.js', '/emhours.js', '/finding-labels.js', '/finding-messages.js', '/ics-texts.js', '/qr.js', '/csv.js', '/help.js', '/manifest.webmanifest', '/boot.js', '/build-version.js', '/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/version.json'];
 async function currentCache() {
   const r = await (await caches.open(META)).match('/__current');
   return r ? r.text() : null;

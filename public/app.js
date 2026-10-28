@@ -1,6 +1,7 @@
 // [CLAUDE] Cevik Fuhrpark – Oberfläche (ohne Framework, mobil zuerst)
 import { caseDescText, stockNoteText } from './check-labels.js';
-import { STRINGS, PLURALS, CHECK_LABELS, translateValidation, deLimitText, translateImportReason, translateNextAction, translateLockReason, auditActionLabel, auditDetailText } from './i18n.js';
+import { STRINGS, PLURALS, CHECK_LABELS, translateValidation, deLimitText, translateImportReason, translateNextAction, translateLockReason, auditActionLabel, auditDetailText, loadLang, langLoaded } from './i18n-core.js';
+// Backlog 588: Texte je Sprache als eigenes Paket (scripts/build-i18n.mjs aus i18n.js); geladen wird nur das der aktiven Sprache
 import { findingMessage, posWord } from './finding-messages.js';
 import { svg as qrSvg } from './qr.js';
 import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentFindingsCsv, usersCsv, sortUsers, filterUsers, isUnusedUser, inviteExpired, readCsvFile as readCsvRaw } from './csv.js';
@@ -21,8 +22,15 @@ const readCsvFile = async (f) => { try { return await readCsvRaw(f); } catch (e)
 // Anfrageschlüssel je Formularinhalt: gleicher Inhalt (Wiederholung nach verlorener Antwort) = gleicher Schlüssel, geänderter Inhalt = neue Buchung
 // (21.10.2026: Lager – nach „Keine Verbindung“ korrigierte Buchung wurde als Wiederholung still verworfen)
 const rkFor = (form, b) => { const sig = JSON.stringify(b); if (!form.dataset.rk || form.dataset.rkSig !== sig) { form.dataset.rk = crypto.randomUUID(); form.dataset.rkSig = sig; } return form.dataset.rk; };
-window.__cfpBooted = true; // Module vollständig geladen – Start-Wächter (boot.js) bleibt still
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
+// Sprachpaket vor dem ersten Bild (Backlog 588); fehlt es (offline gewählte Sprache, Paket nicht im Cache), eine andere Sprache;
+// fehlen alle, meldet der Start-Wächter den Ladefehler
+if (!['de', 'uk', 'en'].includes(S.lang)) S.lang = 'de';
+window.__cfpLoading = true; // Start-Wächter: Module da, Sprachpaket lädt noch (langsame Verbindung ≠ Ladefehler)
+await loadLang(S.lang).catch(async (e) => { for (const l of ['de', 'uk', 'en']) if (l !== S.lang) { try { await loadLang(l); S.lang = l; return; } catch { /* nächste */ } } throw e; });
+// Sprache gewechselt (Auswahl, Konto, Einladung): Paket nachladen; scheitert das (offline ohne Cache), bleibt die bisherige Sprache
+const ensureLang = async (l) => { if (langLoaded(l)) return true; try { await loadLang(l); return true; } catch { if (S.lang === l) S.lang = ['de', 'uk', 'en'].find(langLoaded) || 'de'; return false; } };
+window.__cfpBooted = true; // Module und Sprachpaket vollständig geladen – Start-Wächter (boot.js) bleibt still
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 // Name einer Person; für Lesezugriff ausgeblendete Fahrernamen (Server setzt <feld>_hidden) als Hinweistext
@@ -445,6 +453,7 @@ async function route() {
   const pub = /^#\/(login|setup|invite\/)/.test(h);
   // Seitenwechsel während eine Seite noch lädt (langsames Netz, schnelles Tippen): die ältere Seite darf die neuere nicht überschreiben
   const gen = S.routeGen = (S.routeGen || 0) + 1;
+  await ensureLang(S.lang); // Sprachauswahl auf Anmelde-/Einrichtungsseite (Backlog 588)
   try {
     if (!S.me && !pub) {
       try {
@@ -462,6 +471,7 @@ async function route() {
         if (!cached) { const st = await api('GET', '/api/setup/status').catch(() => ({})); if (!st.needs_setup && /^#\/((new|check|v)\/VIN:[A-Z0-9]+|cases\/[\w-]+|fines\/[\w-]+|vehicles\/(VIN|VIN%3A)[:A-Z0-9]+|more\?o=sess|push)$/.test(h)) { try { sessionStorage.setItem('cfp_after_login', h); } catch {} } location.hash = st.needs_setup ? '#/setup' : '#/login'; return; }
         S.me = cached.me; S.meta = cached.meta; S.lang = S.me.language || S.lang; S.offlineStart = true;
       }
+      await ensureLang(S.lang); // Kontosprache (Backlog 588)
       if (S.me.role === 'owner') S.viewEnv = localStorage.getItem('cfp_env') || null;
       // Push angetippt bei geschlossener App: Umgebung aus „?env=“ übernehmen (Inhaber), danach aus der Adresse entfernen
       { const pe = new URLSearchParams(location.search).get('env'); if (pe) { pushEnv(pe); history.replaceState(history.state, '', location.pathname + location.hash); } }
@@ -909,6 +919,7 @@ async function viewInvite(token) {
   catch (e) { render(`<div class="center"><div class="panel narrow alert" id="invbad"><p>${esc(e.message)}</p><p class="small">${esc(t('forgot_pw_hint'))}</p><div class="actions"><a class="btn block" href="#/login">${esc(t('login'))}</a></div>${langSelect()}</div></div>`); bindLang(); return; }
   // Backlog 381: Sprache, die die Leitung beim Anlegen gewählt hat, gilt auf der Einladungsseite (umstellbar unten)
   if (info.language && ['de', 'uk', 'en'].includes(info.language) && info.language !== S.lang) { S.lang = info.language; try { localStorage.setItem('cfp_lang', info.language); } catch {} }
+  await ensureLang(S.lang);
   render(`<div class="center"><form id="f" class="narrow panel" novalidate><h1>${esc(t('welcome'))}, ${esc(info.display_name)}</h1>
     <p class="muted">${esc(t('username'))}: <b>${esc(info.username)}</b> · ${esc(t('role_' + info.role))}${info.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>
     <label for="p">${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label>${pwField('new-password', ' minlength="10"')}
@@ -5061,6 +5072,7 @@ function guideFill(lang, s) {
 }
 function viewDriverGuide(l) {
   const g = ['de', 'uk', 'en'].includes(l) ? l : S.guideLang || S.lang || 'de';
+  if (!langLoaded(g)) { ensureLang(g).then((ok) => viewDriverGuide(ok ? g : S.lang)); return; } // Aushang in anderer Sprache: Paket nachladen (Backlog 588; ohne Netz/Cache: Oberflächensprache)
   S.guideLang = g;
   const gt = (k) => (STRINGS[g] && STRINGS[g][k]) || STRINGS.de[k] || k;
   const addr = `${location.origin}/`;
@@ -5325,7 +5337,7 @@ function fMsg(stored, fallback) {
 }
 const AF_SEVS = ['all', 'act', 'kritisch', 'handeln', 'hinweis', 'info'];
 const afSevMatch = (sel, sv) => sel === 'all' || sv === sel || (sel === 'act' && (sv === 'kritisch' || sv === 'handeln'));
-const fcLabel = (code) => (code && STRINGS.de['fc_' + code] ? `<b style="display:block">${esc(t('fc_' + code))}</b>` : '');
+const fcLabel = (code) => (code && (STRINGS[S.lang]['fc_' + code] || STRINGS.de['fc_' + code]) ? `<b style="display:block">${esc(t('fc_' + code))}</b>` : '');
 // Leistung bei großem Bestand (22.10.2026, Fund Teilagent „Oberfläche bei großem Bestand“): offene Entscheidungen zuerst 100
 // („weitere anzeigen“), Schweregrad-Knopf baut aus den geladenen Daten neu auf (vorher /api/master je Klick neu, bis 4,6 MB),
 // Suche entprellt mit vorab berechnetem Zeilentext (vorher je Taste alle Zeilen neu gelesen, Hänger bis 1,7 s bei 3000 Befunden).

@@ -16464,6 +16464,7 @@ await test('Fehlersuche 21.10. (PWA/Druck/Leistung): Start-Wächter bei gemischt
   for (let i = 0; i < 20; i++) d.timers.at(-1)[0]();
   ok(!d.el.innerHTML.includes('bootfail'), 'langsam: wartet bis 120 s'); d.timers.at(-1)[0](); ok(d.el.innerHTML.includes('bootfail'), 'nach 120 s: Hinweis „Neu laden“');
   const e2 = mk(false, true); e2.timers.find((x) => x[1] === 15000)[0](); e2.L.doc_DOMContentLoaded(); e2.timers.at(-1)[0](); ok(e2.el.innerHTML.includes('bootfail'), 'Dokument geladen, App nicht gestartet: Hinweis');
+  const f2 = mk(false, true); f2.L.doc_DOMContentLoaded(); f2.win.__cfpLoading = true; f2.timers.find((x) => x[1] === 15000)[0](); ok(!f2.el.innerHTML.includes('bootfail') && f2.el.innerHTML.includes('bootslow'), 'Sprachpaket lädt noch (Backlog 588): kein Ladefehler');
   // 3. Service Worker: SHELL mit boot.js und Icons; version.json ohne Netz → Fehler statt (ggf. älterer) Cache-Fassung
   const sw = rd('sw.js');
   const shell = JSON.parse(sw.match(/const SHELL = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
@@ -25957,6 +25958,55 @@ await test('Backlog 590 (Fund pruefen.sh: ui-kleine-handys rot seit 567/572): Ta
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8'); ok(css.includes('font-size: min(0.75rem, 18px, max(15px, 4.2vw));'), 'Tab-Schrift');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("Kontrolle: 'Kon\\u00ADtrolle'"), 'TAB_SHY Kontrolle');
+});
+
+await test('Backlog 588: Sprachpakete – App lädt nur Kern + Paket der eigenen Sprache; Pakete aus i18n.js erzeugt, aktuell, vollständig (deutsche Rückfalle wie t()), Kern ohne Texte, Offline-Cache, Nachladen nach Fehler', async () => {
+  const fs = await import('node:fs'); const { isDeepStrictEqual } = await import('node:util'); const { pathToFileURL } = await import('node:url');
+  const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const B = await import('../scripts/build-i18n.mjs');
+  const M = await import('../public/i18n.js');
+  // erzeugte Dateien entsprechen der Quelle (npm run build vergessen → rot)
+  eq(rd('i18n-core.js'), B.coreSource(rd('i18n.js')).core, 'i18n-core.js aktuell');
+  for (const l of B.LANGS) ok(rd(`i18n-${l}.js`).includes(`export const S = ${JSON.stringify(B.packStrings(M.STRINGS, l))};`) && rd(`i18n-${l}.js`).includes(`export const P = ${JSON.stringify(M.PLURALS[l])};`), `i18n-${l}.js aktuell`);
+  // Kern frisch laden: ohne Texte, nach loadLang je Sprache dieselben Nachschlagewerte wie bisher t(): Sprache || Deutsch
+  const C = await import('../public/i18n-core.js?t=' + Date.now());
+  ok(Object.keys(C.STRINGS.uk).length === 0 && Object.keys(C.PLURALS.de).length === 0 && !C.langLoaded('uk'), 'Kern ohne Texte');
+  ok(Buffer.byteLength(rd('i18n-core.js')) < Buffer.byteLength(rd('i18n.js')) / 5, 'Kern < 20 % von i18n.js');
+  for (const l of B.LANGS) {
+    await C.loadLang(l); ok(C.langLoaded(l), 'geladen ' + l);
+    const bad = [...new Set([...Object.keys(M.STRINGS.de), ...Object.keys(M.STRINGS[l])])].filter((k) => (C.STRINGS[l][k] || k) !== (M.STRINGS[l][k] || M.STRINGS.de[k] || k));
+    ok(!bad.length, `${l}: abweichende Texte ${bad.slice(0, 5).join(', ')}`);
+    ok(isDeepStrictEqual(C.PLURALS[l], M.PLURALS[l]), `${l}: PLURALS gleich`);
+  }
+  eq(C.STRINGS.uk.fc_UNKNOWN_NONE, undefined); ok(C.STRINGS.uk[Object.keys(M.STRINGS.uk).find((k) => k.startsWith('fc_'))], 'Befund-Kurzbezeichnungen (FINDING_LABELS) im Paket');
+  // alle übrigen Exporte unverändert (Funktionen textgleich)
+  for (const k of Object.keys(M)) {
+    if (k === 'STRINGS' || k === 'PLURALS') continue;
+    if (typeof M[k] === 'function') eq(String(C[k]), String(M[k]), 'Funktion ' + k); else ok(isDeepStrictEqual(C[k], M[k]), 'Export ' + k);
+  }
+  // Funktionen mit Texten aus dem Paket: Ergebnis wie mit i18n.js
+  eq(C.translateLockReason('uk', 'Fahrer meldet: Bremse'), M.translateLockReason('uk', 'Fahrer meldet: Bremse'), 'Sperrgrund');
+  // unbekannte Sprache → Deutsch; fehlgeschlagenes Laden ist wiederholbar
+  await C.loadLang('xx'); ok(C.langLoaded('de'));
+  const tmp = fs.mkdtempSync((await import('node:os')).tmpdir() + '/cfp-i18n-');
+  for (const f of ['i18n-core.js', 'ics-texts.js', 'check-labels.js', 'i18n-de.js']) fs.copyFileSync(new URL('../public/' + f, import.meta.url), tmp + '/' + f);
+  const T = await import(pathToFileURL(tmp + '/i18n-core.js').href);
+  let failed = false; try { await T.loadLang('uk'); } catch { failed = true; } ok(failed && !T.langLoaded('uk'), 'Paket fehlt → Fehler');
+  fs.copyFileSync(new URL('../public/i18n-uk.js', import.meta.url), tmp + '/i18n-uk.js'); await T.loadLang('uk'); ok(T.langLoaded('uk') && T.STRINGS.uk.login, 'erneuter Versuch lädt');
+  fs.rmSync(tmp, { recursive: true, force: true });
+  // App: Kern statt i18n.js, Paket vor dem Start-Signal, Nachladen beim Sprachwechsel, Aushang in anderer Sprache
+  const app = rd('app.js');
+  ok(app.includes("} from './i18n-core.js';") && !app.includes("from './i18n.js'"), 'app.js importiert den Kern');
+  const iL = app.indexOf('await loadLang(S.lang)'), iB = app.indexOf('window.__cfpBooted = true;'); ok(iL > 0 && iL < iB, 'Sprachpaket vor dem Start-Signal');
+  ok(app.includes('await ensureLang(S.lang); // Sprachauswahl') && app.includes('await ensureLang(S.lang); // Kontosprache') && app.includes('ensureLang(g).then((ok) => viewDriverGuide(ok ? g : S.lang))'), 'Nachladen bei Sprachwechsel/Aushang');
+  ok(!/STRINGS\.de\['fc_' \+ code\] \?/.test(app), 'fcLabel ohne deutsches Paket');
+  // Offline-Hülle: Kern und alle Pakete (Sprachwechsel ohne Netz), i18n.js selbst nicht mehr nötig
+  const shell = JSON.parse(rd('sw.js').match(/const SHELL = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
+  for (const f of ['/i18n-core.js', ...B.LANGS.map((l) => `/i18n-${l}.js`)]) ok(shell.includes(f), 'SHELL ' + f);
+  ok(!shell.includes('/i18n.js'), 'i18n.js nicht im Cache');
+  ok(/import\(`\.\/i18n-\$\{l\}\.js`\)/.test(rd('i18n-core.js')), 'Kern lädt Pakete relativ');
+  // Build: Pakete vor dem Versions-Hash (sonst bemerkt die App neue Texte nicht)
+  const bs = fs.readFileSync(new URL('../scripts/build-schema.mjs', import.meta.url), 'utf8'); ok(bs.indexOf('buildI18n()') > 0 && bs.indexOf('buildI18n()') < bs.indexOf('const version = appVersion()'), 'Build-Reihenfolge');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

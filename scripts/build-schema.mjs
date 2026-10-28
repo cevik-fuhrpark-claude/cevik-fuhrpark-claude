@@ -26,6 +26,9 @@ const blobs = Object.entries(tableColumns).flatMap(([t, cs]) => cs.filter((c) =>
 if (blobs.length) console.log('Hinweis: BLOB-Spalten (nicht JSON-fähig): ' + blobs.join(', '));
 console.log(`schema.js: ${migrations.length} Migration(en), ${migrations.reduce((n, m) => n + m.statements.length, 0)} Statements`);
 
+// Sprachpakete aus public/i18n.js erzeugen (Backlog 588) – vor dem Versions-Hash, damit er die Pakete einschließt
+await (await import('./build-i18n.mjs')).buildI18n();
+
 // App-Version = Hash über alle Dateien in public/ (ohne version.json). Die App vergleicht sie im Hintergrund und bietet
 // „Neu laden“ an, wenn eine neuere Fassung bereitsteht (lange offene Tablets/Handys bekommen Fehlerbehebungen sonst erst spät).
 export function appVersion() {
