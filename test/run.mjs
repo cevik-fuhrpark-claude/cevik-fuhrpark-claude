@@ -19188,7 +19188,7 @@ await test('Backlog 212 (Teilagent „Fahrtenschreiber gestört unterwegs“): M
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) {
     ok(STRINGS[l].tacho_hint_title && STRINGS[l].tacho_hint_title.includes('165/2014'), 'Titel ' + l);
-    const st = STRINGS[l].tacho_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    const st = STRINGS[l].tacho_hint_steps.split('|'); eq(st.length, 5, 'Schritte ' + l); /* Backlog 568: + Fundort der Kartennummer */
     ok(/37/.test(st[0]) && /37/.test(st[1]) && /29, 35/.test(st[2]), 'Artikelangaben ' + l);
     ok(/7/.test(st[2]) && /15/.test(st[2]), '7/15 Kalendertage ' + l);
   }
@@ -25681,6 +25681,51 @@ await test('Backlog 565: Bußgeldliste – Auswahl „Antwortfrist fehlt“ (gle
   ok(app.includes("const noDueN = own ? 0 : list.filter(noDue).length;") && app.includes('id="fnodue"') && app.includes("S.fineNoDue ? `${t('print_filter')}: ${t('fine_no_due')}` : ''") && app.includes('${shownF.map((f) =>'), 'Oberfläche');
   // gleiche Statusliste wie der Server-Befund FINE_NO_DUE
   const src = (await import('node:fs')).readFileSync(new URL('../src/fines.js', import.meta.url), 'utf8'); ok(src.includes("f.status IN ('eingegangen','fahrer_ermittelt','fahrer_informiert')") && src.includes("code: 'FINE_NO_DUE'"), 'Server-Regel');
+});
+
+await test('Backlog 567 (Blickwinkel „große Systemschrift / Browser-Zoom 200 %“): Raster grid2 nie breiter als die Spalte, Tab-Beschriftung bis 18 px und 3 Zeilen, Seitentitel mit Silbentrennung, Dateiauswahl begrenzt, Kopfzeile bei niedriger Höhe nicht fest', async () => {
+  const css = (await import('node:fs')).readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(css.includes('grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr))') && !css.includes('minmax(280px, 1fr)'), 'grid2');
+  ok(css.includes('font-size: min(0.75rem, 18px); min-height: 60px;') && css.includes('-webkit-line-clamp: 3; -webkit-box-orient: vertical;'), 'Tabbar');
+  ok(css.includes('#app h1, #app h2 { overflow-wrap: break-word; hyphens: auto;'), 'Titel');
+  ok(css.includes('#app input[type=file] { max-width: 100%; }'), 'Dateiauswahl');
+  ok(css.includes('@media (max-width: 260px) { .row { grid-template-columns: minmax(0, 1fr); }'), 'Zeilen einspaltig bei Zoom 200 %');
+  ok(/@media \(max-height: 420px\) \{ \.topbar \{ position: static; \} \}/.test(css) && css.indexOf('@media (max-height: 420px)') > css.indexOf('.topbar { position: sticky'), 'Kopfzeile');
+  const html = (await import('node:fs')).readFileSync(new URL('../public/index.html', import.meta.url), 'utf8'); ok(!/user-scalable\s*=\s*no|maximum-scale\s*=\s*1(?![.\d])/.test(html), 'Zoom nicht gesperrt');
+});
+
+await test('Backlog 568 (Blickwinkel „Fahrerkarte defekt/verloren“): Hinweis auch bei „водійська картка“, „тахокарта“, „карта водія“, „Fahrer-Karte“, „driver’s card“ (nicht Tankkarte), Fundort der Kartennummer, Hilfe Fahrerakte/Störung mit Ersatzkarte (DE/UK/EN)', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/const TACHO_HINT = \/(.+)\/i;/)[1], 'i');
+  for (const x of ['водійська картка не читається', 'втратив водійську картку', 'тахокарта не зчитується', 'карта водія зламалась', 'Fahrer-Karte kaputt', 'driver’s card lost', "driver's card stolen", 'drivers card broken']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Tankkarte gesperrt', 'fuel card lost', 'паливна картка не працює', 'карта АЗС заблокована', 'Tachometer zeigt nichts']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  const path = { de: 'Mehr → Meine Fahrerakte', uk: 'Ще → Моя картка водія', en: 'More → My driver file' };
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.tacho_hint_steps.split('|')[3].includes(path[l]) && path[l].endsWith(S.my_driver_file) && path[l].startsWith(S.nav_more || S.more), 'Fundort ' + l);
+    ok(S.help_tachofault_s.endsWith(S.dk2_fahrerkarte + (l === 'uk' ? '».' : l === 'en' ? '” record.' : '“.')), 'Störungshilfe nennt die Ersatzkarte ' + l + ': ' + S.help_tachofault_s.slice(-80));
+    ok(S.help_drivers_s.split('|')[2].includes(S.dk2_fahrerkarte), 'Fahrerakte-Hilfe ' + l);
+    for (const k of ['tcard_mgr_t', 'tcard_mgr_s', 'tcard_mgr_link']) ok(S[k], k + ' ' + l);
+    ok(S.tcard_mgr_s.includes(S.dk2_fahrerkarte), 'Vorgangshinweis nennt die Nachweisart ' + l);
+  }
+});
+
+await test('Backlog 569 (Blickwinkel „Fahrerkarte defekt/verloren“): Vorgang mit Fahrerkarte/Fahrtenschreiber in der Beschreibung – Leitung erhält die Fahrerakte des Melders (reporter_driver_id), Fahrer/Werkstatt/Lesezugriff nicht; Hinweis mit Link nur für die Leitung', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Fahrer mit Karte', user_id: U.driver.id }); ok(dr.status === 200 || dr.status === 201, JSON.stringify(dr.data));
+  const r = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'Fahrerkarte wird nicht gelesen', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }); eq(r.status, 201, JSON.stringify(r.data));
+  const f = (await U.fleet.get(`/api/cases/${r.data.id}`)).data; eq(f.reporter_driver_id, dr.data.id || dr.data.driver?.id, 'Leitung: Akte des Melders');
+  for (const k of ['driver', 'viewer']) if (U[k]) ok(!('reporter_driver_id' in (await U[k].get(`/api/cases/${r.data.id}`)).data), k + ' ohne Akte');
+  // Melder ohne Fahrerakte → kein Feld
+  const r2 = await U.fleet.post('/api/cases', { vehicle_id: V1, description: 'Tachograph Fehler', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }); eq(r2.status, 201);
+  ok(!('reporter_driver_id' in (await U.fleet.get(`/api/cases/${r2.data.id}`)).data), 'ohne Akte kein Feld');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("${isMgr() && TACHO_HINT.test(cDesc(c.description) || '') ? `<div class=\"panel\" data-tachocard>") && app.includes("d.reporter_driver_id ? '#/drivers/' + esc(d.reporter_driver_id) : '#/drivers'"), 'Hinweis im Vorgang');
+});
+
+await test('Backlog 573: Dispo-Terminplan – Zusatz „· nächster Werktag“ darf umbrechen (UK „наступний робочий день“ verbreiterte die Startseite am Handy auf 390 px)', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("` <b data-pnwd style=\"white-space:normal\">· ${esc(t('next_workday'))}</b>`"), 'Zusatz umbrechbar');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

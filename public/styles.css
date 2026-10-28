@@ -38,7 +38,7 @@
 html, body { margin: 0; background: var(--paper); color: var(--ink); font: 100%/1.5 var(--body); -webkit-text-size-adjust: 100%; }
 html { scroll-padding-top: 4rem; scroll-padding-bottom: 110px; } /* unten: Tabbar */
 /* Platz unter dem Inhalt ≥ Höhe der Tabbar (zweizeilige Beschriftung, große Schrift; vorher 76 px – letzte Karte lag unter der Tabbar) */
-body { min-height: 100vh; padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
+body { min-height: 100vh; padding-bottom: calc(max(110px, 3.375rem + 50px) + env(safe-area-inset-bottom)); } /* Backlog 567: wächst mit der Schrift (Tabbar bis 3 Zeilen à 18 px ≈ 126 px) */
 a { color: inherit; }
 h1, h2, h3 { font-family: var(--din); font-weight: 600; letter-spacing: 0.01em; line-height: 1.2; margin: 0 0 0.5rem; }
 h1 { font-size: 1.6rem; }
@@ -49,6 +49,11 @@ p { margin: 0 0 0.75rem; max-width: 70ch; }
    Tabellen, Kennzeichen und Eingabefelder behalten ihre Breite (Tabellen scrollen in .scroll). */
 #app { overflow-wrap: anywhere; }
 #app table, #app .plate, #app input, #app select, #app textarea { overflow-wrap: normal; }
+/* Backlog 567: Seitentitel bei großer Schrift mit Trennstrich statt „Abfahrtskon|trolle“; überlange Wörter brechen weiterhin um */
+#app h1, #app h2 { overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; }
+/* Backlog 567: Dateiauswahl (Fotos) nie breiter als die Spalte – bei Zoom 200 % war „Choose Files …“ abgeschnitten */
+#app input[type=file] { max-width: 100%; }
+#app input[type=file]::file-selector-button { white-space: normal; max-width: 100%; }
 .muted { color: var(--steel); }
 .small { font-size: 0.875rem; }
 :focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; box-shadow: 0 0 0 2px var(--ink); } /* dunkler Ring: Gelb allein 1,9:1 auf Weiß (WCAG 1.4.11 verlangt 3:1), 21.10.2026 */
@@ -57,6 +62,7 @@ input:is([type=date],[type=month],[type=time],[type=datetime-local]):focus-withi
 [tabindex="-1"]:focus-visible { box-shadow: none; } /* Überschriften mit programmatischem Fokus (Seitenwechsel): wie bisher nur gelb */
 
 /* Rahmen */
+/* Backlog 567: bei sehr niedriger Höhe (Zoom 200 %, Querformat) scrollt die Kopfzeile mit statt ein Fünftel des Bildes zu belegen – Regel unten */
 .topbar { position: sticky; top: 0; z-index: 10; background: var(--bar); color: #fff; display: flex; align-items: center; gap: 12px; padding: 10px 16px; padding-top: calc(10px + env(safe-area-inset-top)); }
 .topbar .brand { font-family: var(--din); font-size: 1.15rem; font-weight: 600; display: flex; gap: 0.3em; align-items: center; }
 .topbar .brand small { font-weight: 400; opacity: 0.7; font-size: 0.8rem; }
@@ -69,10 +75,11 @@ input:is([type=date],[type=month],[type=time],[type=datetime-local]):focus-withi
 main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 
 .tabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; background: var(--surface); border-top: 1px solid var(--rule); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding-bottom: env(safe-area-inset-bottom); } /* minmax(0,…): lange Beschriftung schiebt „Mehr“ nicht aus dem Bild (21.10.2026) */
-.tabbar a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 10px; text-decoration: none; color: var(--steel); font-size: min(0.75rem, 15px); min-height: 60px; justify-content: center; position: relative; }
+.tabbar a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 10px; text-decoration: none; color: var(--steel); font-size: min(0.75rem, 18px); min-height: 60px; justify-content: center; position: relative; }
 .tabbar a svg { width: 24px; height: 24px; }
 /* Beschriftung silbentrennen statt mitten im Wort umbrechen („Abfahrts-kontrolle“ statt „Abfahrtskont|rolle“, 19.10.2026); ohne Trennwörterbuch bleibt der Notumbruch */
-.tabbar a > span:last-child { text-align: center; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; max-width: 100%; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tabbar a > span:last-child { text-align: center; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; max-width: 100%; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+/* Backlog 567 (Blickwinkel „große Systemschrift“): Deckel 18 statt 15 px (wächst mit bis 150 %), bis zu 3 Zeilen statt 2 (ab 130 % war „Abfahrtskontrolle“ im aktiven Tab abgeschnitten) */
 .tabbar a.active { color: var(--ink); font-weight: 600; }
 .tabbar a.active::before { content: ''; position: absolute; top: 0; left: 25%; right: 25%; height: 3px; background: var(--signal); }
 .tabbar a.report { color: var(--ink); } .tabbar a.report span.dot { color: var(--signal-ink); }
@@ -135,6 +142,8 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 .row.p-niedrig { border-left-color: var(--steel); }
 .row .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .sub { grid-column: 2 / 4; color: var(--steel); font-size: 0.875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Backlog 567: Browser-Zoom 200 % am Handy (≈ 180 CSS-px): Zeilen einspaltig – Kennzeichen, Titel und Status untereinander statt seitlich aus dem Bild */
+@media (max-width: 260px) { .row { grid-template-columns: minmax(0, 1fr); } .row .sub { grid-column: auto; } .row > .plate { min-width: 0; justify-self: start; } }
 /* lange Befundliste (Management): nur sichtbare Zeilen layouten (3000 Befunde ≈ 1,4 s Layout am günstigen Handy, 22.10.2026) */
 @media screen { #afl > .row { content-visibility: auto; contain-intrinsic-size: auto 88px; } }
 /* Bidi-Steuerzeichen in Altdaten wirken nur im eigenen Feld (22.10.2026) */
@@ -318,12 +327,14 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
   .list { gap: 0; } .list .row { min-height: 0; padding: 4px 6px; border-width: 0 0 1px 3px; border-radius: 0; }
 }
 .print-only { display: none; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; } .grid2 > .panel { margin: 0; }
+@media (max-height: 420px) { .topbar { position: static; } }
+/* Backlog 567: min(280px, 100%) – bei Browser-Zoom 200 % (≈ 180 CSS-px Breite) schob die 280-px-Spalte das Meldeformular seitlich aus dem Bild */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 12px; } .grid2 > .panel { margin: 0; }
 /* [CLAUDE] QR-Code für Einladungslinks: feste Schwarz/Weiß-Darstellung, gut scanbar */
 .qr svg { width: min(240px, 70vw); height: auto; display: block; border-radius: 4px; }
 @media print { .qr svg { width: 50mm; } }
 /* [CLAUDE] QR-Aufkleber je Fahrzeug (Druckbogen) */
-.qrsheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.qrsheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 12px; }
 .qrcard { display: flex; gap: 12px; align-items: center; background: #fff; color: #000; border: 1px dashed var(--rule); border-radius: var(--radius-m); padding: 10px; break-inside: avoid; }
 .qrcard .qr svg { width: 120px; }
 .qrcard p { margin: 4px 0; }

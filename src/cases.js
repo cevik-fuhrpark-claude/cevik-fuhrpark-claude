@@ -392,7 +392,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
   // + Zuordnung des Melders zur Meldezeit (Backlog 421, nur Leitung) in derselben Abfrage (Abfragebudget Vorgangsdetail ≤ 20)
   const reporter = await env.DB.prepare(`SELECT display_name, CASE WHEN role='driver' OR was_driver=1 THEN 'driver' ELSE role END AS role,
     CASE WHEN active<>1 THEN 0 WHEN password_hash IS NOT NULL AND (environment=?1 OR role='owner') THEN 1 ELSE 2 END AS reach,
-    ${isManager(user) ? `CASE WHEN role='driver' OR was_driver=1 THEN ${REPORTER_ASSIGN_SQL} END` : 'NULL'} AS assign_rows FROM users WHERE id=?2`)
+    ${isManager(user) ? `CASE WHEN role='driver' OR was_driver=1 THEN ${REPORTER_ASSIGN_SQL} END` : 'NULL'} AS assign_rows,
+    ${isManager(user) ? `(SELECT d.id FROM drivers d WHERE d.user_id=users.id AND d.environment=?1)` : 'NULL'} AS driver_id FROM users WHERE id=?2`)
     .bind(c.environment, c.reporter_id, ...(isManager(user) ? [c.vehicle_id, c.created_at] : [])).first();
   const receivedBy = isManager(user) && c.fleet_received_by ? await env.DB.prepare(`SELECT display_name AS name, CASE WHEN active=1 AND role IN ('owner','fleet') THEN 1 ELSE 0 END AS current FROM users WHERE id=?`).bind(c.fleet_received_by).first() : null;
   const events = (await env.DB.prepare(`SELECT e.id, e.action, e.from_status, e.to_status, e.note, e.payload, e.created_at, e.actor_role, u.display_name AS actor_name
@@ -463,6 +464,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
     ...(user.role !== 'driver' && reporter && reporter.reach !== 1 ? { reporter_unreachable: reporter.reach === 0 ? 'inactive' : 'other' } : {}),
     // Eingang bestätigt von (Backlog 258b, Leitungswechsel): Leitung sieht Name und ob das Konto noch Leitung ist
     ...(isManager(user) && receivedBy ? { received_by: receivedBy } : {}),
+    // Fahrerakte des Melders (Backlog 569, Blickwinkel „Fahrerkarte defekt/verloren“): nur Leitung, für den Link „Ersatzkarte in der Fahrerakte erfassen“
+    ...(isManager(user) && reporter?.driver_id ? { reporter_driver_id: reporter.driver_id } : {}),
     events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : user.role === 'viewer' ? events.map((e) => (e.actor_role === 'driver' ? { ...e, actor_name: null, actor_name_hidden: true } : e)) : events).map((e) => (hiddenPayloads.includes(e.action) ? { ...e, payload: null, ...(hiddenNotes.includes(e.action) && e.note ? { note: null, note_hidden: true } : {}) } : e)),
     files, open_items: openItems, inspections, followups, parent, duplicates, duplicate_of: duplicateOf, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
     maintenance_event: mevent || null,
