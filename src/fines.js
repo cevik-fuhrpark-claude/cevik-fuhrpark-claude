@@ -125,14 +125,17 @@ export async function driverCandidates(env, envName, f) {
     }
   }
   const checks = (await env.DB.prepare(`SELECT i.performed_by AS user_id, u.display_name, i.created_at, i.vehicle_id, vv.plate FROM inspections i JOIN users u ON u.id=i.performed_by JOIN vehicles vv ON vv.id=i.vehicle_id
-    WHERE i.vehicle_id IN (${fineVehiclesSql('?1')}) AND i.environment=?2 AND u.environment=?2 AND i.kind='abfahrt' AND u.role='driver' AND i.created_at BETWEEN ?3 AND ?4`)
-    .bind(f.vehicle_id, envName, winFrom, winTo).all()).results;
-  for (const c of checks) {
-    if (berlinDate(c.created_at) !== day) continue;
-    if (out.some((o) => o.user_id === c.user_id && o.basis === 'manuell')) continue; // je Person einmal (mehrere Kontrollen am Tattag)
+    WHERE i.vehicle_id IN (${fineVehiclesSql('?1')}) AND i.environment=?2 AND u.environment=?2 AND i.kind='abfahrt' AND u.role='driver' AND i.created_at BETWEEN ?3 AND ?4 ORDER BY i.created_at`)
+    .bind(f.vehicle_id, envName, winFrom, winTo).all()).results.filter((c) => berlinDate(c.created_at) === day);
+  // Backlog 553 (Blickwinkel „Anhörungsbogen per Post“): je Person die letzte Kontrolle vor der Tatzeit (sonst die erste danach, gekennzeichnet
+  // „nach der Tatzeit“) – vorher zufällige Reihenfolge und eine Kontrolle am Nachmittag zählte wie eine vor der Tat
+  const offT = Date.parse(f.offense_at);
+  const pick = new Map();
+  for (const c of checks) { const before = Date.parse(c.created_at) <= offT; const cur = pick.get(c.user_id); if (!cur || (before && (cur.after || Date.parse(c.created_at) > Date.parse(cur.c.created_at)))) pick.set(c.user_id, { c, after: !before }); }
+  for (const { c, after } of [...pick.values()].sort((a, b) => Date.parse(a.c.created_at) - Date.parse(b.c.created_at))) {
     // Kontrolle an der gekoppelten Zugmaschine: im Nachweis nennen (wie bei Zuordnungen) – sonst behauptete der Aktenvermerk eine Kontrolle am Anhänger (20.10.2026)
     const via = c.vehicle_id !== f.vehicle_id ? ` – Zugmaschine ${c.plate}` : '';
-    out.push({ user_id: c.user_id, display_name: c.display_name, basis: 'manuell', evidence: `Abfahrtskontrolle am Tattag ${berlinDateTime(c.created_at).slice(-5)} Uhr${via}`, check_at: c.created_at, ...(via ? { via_plate: c.plate } : {}) });
+    out.push({ user_id: c.user_id, display_name: c.display_name, basis: 'manuell', evidence: `Abfahrtskontrolle am Tattag ${berlinDateTime(c.created_at).slice(-5)} Uhr${after ? ' – nach der Tatzeit' : ''}${via}`, check_at: c.created_at, ...(after ? { after_offense: true } : {}), ...(via ? { via_plate: c.plate } : {}) });
   }
   return out;
 }
@@ -171,8 +174,10 @@ export async function fineDetail(env, user, envName, id) {
     // Hinweis vor dem Bestätigen statt stiller Liste – keine Automatik (Backlog 376)
     {
       const za = new Set(out.candidates.filter((c) => c.basis === 'zuordnung').map((c) => c.user_id));
-      const ch = new Set(out.candidates.filter((c) => c.basis === 'manuell').map((c) => c.user_id));
+      const ch = new Set(out.candidates.filter((c) => c.basis === 'manuell' && !c.after_offense).map((c) => c.user_id));
       if (za.size && ch.size && (za.size !== ch.size || [...za].some((u) => !ch.has(u)))) out.candidates_differ = true;
+      // Backlog 554: mehrere Fahrer zur Tatzeit zugeordnet (Springer neben Stammfahrer) – die Zuordnung allein belegt nicht, wer fuhr
+      if (za.size >= 2) out.assignments_ambiguous = true;
     }
     // Zustellstand der Fahrerinformation (Backlog 375, Blickwinkel „Zeugenfragebogen, Frist 1 Woche, Fahrer im Urlaub“): ob der Push
     // das Gerät erreicht hat – nicht, ob/wann er geöffnet wurde (keine Verhaltenskontrolle); die Quittung zeigt die Kenntnisnahme

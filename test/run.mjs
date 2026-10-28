@@ -15434,7 +15434,7 @@ await test('Fehlersuche 20.10. (18): Vertrag nach bestätigtem Tachotausch „un
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/S\.pendCmd && S\.pendCmd\.key === key && Date\.now\(\) - S\.pendCmd\.at < 10 \* 60000 \? S\.pendCmd\.id : uid\(\)/.test(app) && app.includes('command_id: commandId, expected_version: c.version') && app.includes('S.pendCmd = null; if (r && r.no_workshop_user)'), 'Befehlswiederholung mit gleicher Kennung');
   ok(/fineTrunc = !!fr\.truncated/.test(app) && app.includes('id="gftrunc"'), 'Suche: Hinweis auf die 500 jüngsten Schreiben');
-  ok(app.includes("Uhr(?: – Zugmaschine (.+))?$/") , 'Nachweis-Übersetzung mit Zugmaschine');
+  ok(app.includes("Uhr( – nach der Tatzeit)?(?: – Zugmaschine (.+))?$/") , 'Nachweis-Übersetzung mit Zugmaschine');
   const api = fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8'); ok(!api.includes('/api/fines/:id/command`'), 'Doku: /commands');
   // Server: gleiche command_id → duplicate (Grundlage der App-Wiederholung)
   const cid = (await F.post('/api/cases', { vehicle_id: V1, description: 'Spiegel lose', priority: 'niedrig', driveability: 'fahrbereit', request_key: 'fx-rk-1' })).data.id;
@@ -24502,7 +24502,7 @@ await test('Backlog 458 (Blickwinkel „Disposition fragt am Nachmittag: welcher
   const a = await release(V1, 'Schlüssel beim Pförtner, Lkw Platz 4');
   const b = await release(V2); // danach neuer offener Auftrag am selben Fahrzeug → bleibt in „Nicht einplanen“
   const b2 = await toRepair({ vehicle_id: V2 });
-  const c = await release(V3); db.prepare('UPDATE cases SET closed_at=? WHERE id=?').run(new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') - 3 * 864e5).toISOString(), c);
+  const c = await release(V3); db.prepare('UPDATE cases SET closed_at=? WHERE id=?').run(new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') - 8 * 864e5).toISOString(), c); // vor dem letzten Werktag (Backlog 556: seit dem letzten Werktag, höchstens 5 Tage nach Ostern)
   // Disposition bekommt freigegebene Vorgänge mit closed_at und Abholvermerk über die Liste
   const rows = (await D.get('/api/cases?status=fahrzeug_freigegeben&sort=updated&limit=200')).data.cases;
   ok(rows.find((r) => r.id === a)?.pickup_note === 'Schlüssel beim Pförtner, Lkw Platz 4' && rows.every((r) => r.closed_at), 'Liste liefert closed_at/Abholvermerk');
@@ -24513,12 +24513,13 @@ await test('Backlog 458 (Blickwinkel „Disposition fragt am Nachmittag: welcher
   const { STRINGS } = await import('../public/i18n.js');
   const BERLIN_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
   const bDate = (n = 0) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
-  const run = (lang) => new Function('api', 'bDate', 'BERLIN_FMT', 'esc', 't', 'plate', 'ltxt', 'clipTxt', 'cDesc', 'fmtDT', 'wsName', 'langAttr', src + '\nreturn dispoBack;')(
-    async (m, path) => { const r = await D.get(path); return r.data; }, bDate, BERLIN_FMT, (v) => String(v), (k) => STRINGS[lang][k] || k, (p) => `[${p}]`, (v) => v, (v) => v, (v) => v, (v) => v, (v) => v, () => '');
+  const { federalHoliday } = await import('../public/holidays.js');
+  const run = (lang) => new Function('api', 'bDate', 'BERLIN_FMT', 'esc', 't', 'plate', 'ltxt', 'clipTxt', 'cDesc', 'fmtDT', 'wsName', 'langAttr', 'federalHoliday', 'fmtD', src + '\nreturn dispoBack;')(
+    async (m, path) => { const r = await D.get(path); return r.data; }, bDate, BERLIN_FMT, (v) => String(v), (k) => STRINGS[lang][k] || k, (p) => `[${p}]`, (v) => v, (v) => v, (v) => v, (v) => v, (v) => v, () => '', federalHoliday, (v) => v);
   for (const lang of ['de', 'uk', 'en']) {
     const html = await run(lang)(open, '');
-    ok(html.includes(STRINGS[lang].dispo_back) && html.includes(STRINGS[lang].pu_title) && html.includes('Schlüssel beim Pförtner'), lang + ': Abschnitt mit Abholvermerk');
-    eq((html.match(/data-dback/g) || []).length, 1, lang + ': nur das freie Fahrzeug (V2 blockiert, V3 vor 3 Tagen)');
+    ok((html.includes(STRINGS[lang].dispo_back) || html.includes(STRINGS[lang].dispo_back_since.split('{d}')[0])) && html.includes(STRINGS[lang].pu_title) && html.includes('Schlüssel beim Pförtner'), lang + ': Abschnitt mit Abholvermerk');
+    eq((html.match(/data-dback/g) || []).length, 1, lang + ': nur das freie Fahrzeug (V2 blockiert, V3 vor 8 Tagen)');
     ok(html.includes('[SZ-YC 5513]') && !html.includes('[SZ-KC 5515]') && !html.includes('[SZ-YC 9901]'), lang + ': richtige Fahrzeuge');
     ok(STRINGS[lang].help_dispo_s.includes(STRINGS[lang].dispo_back) && STRINGS[lang].help_dispo_s.includes(STRINGS[lang].pu_title), lang + ': Hilfe Disposition');
   }
@@ -25461,6 +25462,37 @@ await test('Backlog 546–551 (Blickwinkel „Jahresinventur am Tablet“ / „n
     ok(PLURALS[l].inventory_uncounted_confirm && PLURALS[l].asof_inv_after, `${l} Plural`);
     ok(STRINGS[l].help_handover_s.split('|').length === 8, `${l}: Hilfe 8 Schritte`);
   }
+});
+
+await test('Backlog 553–556 (Blickwinkel „Anhörungsbogen per Post“ / „Disposition plant am Freitag den Montag“): Kontrolle nach der Tatzeit gekennzeichnet und nicht im Widerspruchs-Hinweis, mehrere zugeordnete Fahrer → Hinweis, Vorwarnung laut Einstellung für „Heute zu tun“, „Wieder einsatzbereit“ seit dem letzten Werktag', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const t0 = new Date(Date.now() - 4 * 86400000); t0.setUTCHours(6, 0, 0, 0); const off = new Date(t0.getTime() + 3 * 3600000); // Tat 09:00 UTC
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES ('dv-553',?,?,?,?,?,'test')`).run(U.driver.id, V1, new Date(t0.getTime() - 30 * 86400000).toISOString(), U.fleet.id, now);
+  const f = await U.fleet.post('/api/fines', { kind: 'anhoerung', offense_type: 'geschwindigkeit', offense_at: off.toISOString(), plate_in_letter: 'SZ-YC 5513', authority: 'Stadt S', reference: 'AZ-553' }); eq(f.status, 201, JSON.stringify(f.data));
+  const v = await U.own.post('/api/users', { username: 'springer.553', display_name: 'Springer 553', role: 'driver', environment: 'test' }); const vid = v.data.id || (v.data.user && v.data.user.id);
+  // Springer macht seine Kontrolle erst am Nachmittag (nach der Tat), der Stammfahrer vor der Tat
+  db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,items,result,created_at) VALUES ('i-553a','test',?,'abfahrt','v1',?,'[]','ok',?)`).run(V1, vid, new Date(off.getTime() + 5 * 3600000).toISOString());
+  db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,items,result,created_at) VALUES ('i-553b','test',?,'abfahrt','v1',?,'[]','ok',?)`).run(V1, U.driver.id, t0.toISOString());
+  let d = (await U.fleet.get('/api/fines/' + f.data.id)).data;
+  const man = d.candidates.filter((c) => c.basis === 'manuell'); eq(man.length, 2);
+  eq(man[0].user_id, U.driver.id, '553: nach Zeit sortiert'); eq(man[1].after_offense, true, '553: nach der Tatzeit'); ok(man[1].evidence.includes('– nach der Tatzeit'), man[1].evidence);
+  eq(d.candidates_differ, undefined, '553: Kontrolle nach der Tat zählt nicht als Widerspruch'); eq(d.assignments_ambiguous, undefined);
+  // zweite gleichzeitige Zuordnung (Springer neben Stammfahrer)
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES ('dv-553b',?,?,?,?,?,'test')`).run(vid, V1, new Date(t0.getTime() - 86400000).toISOString(), U.fleet.id, now);
+  d = (await U.fleet.get('/api/fines/' + f.data.id)).data; eq(d.assignments_ambiguous, true, '554');
+  // 555: warn_days
+  eq((await U.fleet.get('/api/fines?status=open')).data.warn_days, null, 'ohne Einstellung null');
+  db.prepare(`INSERT INTO settings(key,value,updated_at) VALUES ('fine_warn_days','14',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(now);
+  eq((await U.fleet.get('/api/fines?status=open')).data.warn_days, 14, '555');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(Number.isInteger(fs.warn_days) ? bDate(fs.warn_days) : in7)") && app.includes('data-fcmulti') && app.includes("t('cand_after')"), '553–555 Oberfläche');
+  // 556: letzter Werktag vor heute
+  const m = app.match(/function lastWorkdayBefore\(iso\) \{[\s\S]*?\n\}/); ok(m, 'Hilfsfunktion');
+  const { federalHoliday } = await import('../public/holidays.js');
+  const lw = new Function('federalHoliday', m[0] + '\nreturn lastWorkdayBefore;')(federalHoliday);
+  eq(lw('2026-11-02'), '2026-10-30', 'Mo → Fr'); eq(lw('2026-11-01'), '2026-10-30', 'So → Fr'); eq(lw('2026-11-03'), '2026-11-02', 'Di → Mo'); eq(lw('2026-12-28'), '2026-12-24', 'nach Weihnachten → Do 24.12.');
+  ok(app.includes('const from = lastWorkdayBefore(bDate());'), '556 eingebunden');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['cand_after', 'fine_cand_multi', 'dispo_back_since']) ok(STRINGS[l][k], `${l}.${k}`);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

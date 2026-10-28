@@ -2995,3 +2995,11 @@ Object.assign(STRINGS.en, { help_handover_t: 'Taking over as new fleet manager (
 Object.assign(STRINGS.de, { vnote_author_inactive: 'Konto deaktiviert – Inhalt prüfen' });
 Object.assign(STRINGS.uk, { vnote_author_inactive: 'обліковий запис деактивовано – перевірте зміст' });
 Object.assign(STRINGS.en, { vnote_author_inactive: 'account deactivated – check content' });
+// [CLAUDE] Backlog 553/554: Fahrerermittlung zum Anhörungsbogen
+Object.assign(STRINGS.de, { cand_after: 'nach der Tatzeit', fine_cand_multi: 'Zur Tatzeit sind mehrere Fahrer diesem Fahrzeug zugeordnet – die Zuordnung allein belegt nicht, wer gefahren ist (Tourenplan/Telematik prüfen).' });
+Object.assign(STRINGS.uk, { cand_after: 'після часу порушення', fine_cand_multi: 'На час порушення до цього транспорту закріплено кількох водіїв – саме закріплення не доводить, хто керував (перевірте план рейсів/телематику).' });
+Object.assign(STRINGS.en, { cand_after: 'after the time of the offence', fine_cand_multi: 'Several drivers are assigned to this vehicle at the time of the offence – the assignment alone does not prove who drove (check the trip plan/telematics).' });
+// [CLAUDE] Backlog 556: „Wieder einsatzbereit“ seit dem letzten Werktag
+Object.assign(STRINGS.de, { dispo_back_since: 'Wieder einsatzbereit (freigegeben seit {d})' });
+Object.assign(STRINGS.uk, { dispo_back_since: 'Знову готові до роботи (випущено з {d})' });
+Object.assign(STRINGS.en, { dispo_back_since: 'Ready again (released since {d})' });

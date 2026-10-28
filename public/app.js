@@ -1161,10 +1161,19 @@ function dispoBoard(cs, defects = [], coupled = new Map(), dormant = new Set()) 
 // Vorher verschwand ein Fahrzeug nach der Freigabe still aus „Nicht einplanen“ (nur ein Push), wo es abzuholen ist, stand nur im Vorgang.
 const DISPO_BLOCK_ST = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'];
 const DISPO_BACK_LIMIT = 200;
+function lastWorkdayBefore(iso) {
+  // reine Kalenderrechnung (UTC-Mittag als Anker, Jahr/Monat/Tag ohne toISOString – Wächter für Berliner Kalendertage)
+  const ymd = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  let d = new Date(Date.parse(iso + 'T12:00:00Z'));
+  for (let i = 0; i < 10; i++) { d = new Date(d.getTime() - 86400000); const wd = d.getUTCDay(); if (wd !== 0 && wd !== 6 && !federalHoliday(ymd(d))) return ymd(d); }
+  return ymd(new Date(Date.parse(iso + 'T12:00:00Z') - 86400000));
+}
 async function dispoBack(open, hq = '') {
   let rows;
   try { rows = (await api('GET', `/api/cases?status=fahrzeug_freigegeben&sort=updated&limit=${DISPO_BACK_LIMIT}${hq ? '&vsite=' + hq : ''}`)).cases; } catch { return ''; }
-  const from = bDate(-1);
+  // Backlog 556 (Blickwinkel „Disposition plant am Freitag den Montag“): seit dem letzten Werktag vor heute (Sa/So und bundesweite Feiertage
+  // übersprungen) – vorher „gestern“: am Sonntag/Montag fehlten die Freitags-Freigaben samt Abholvermerk
+  const from = lastWorkdayBefore(bDate());
   const blocked = new Set(open.filter((c) => c.safety_lock || DISPO_BLOCK_ST.includes(c.status)).map((c) => c.vehicle_id));
   const byV = new Map();
   for (const c of rows) {
@@ -1175,7 +1184,7 @@ async function dispoBack(open, hq = '') {
   const more = rows.length >= DISPO_BACK_LIMIT && rows.length && BERLIN_FMT.format(new Date(rows[rows.length - 1].updated_at)) >= from;
   const list = [...byV.values()].sort((a, b) => String(b.closed_at).localeCompare(String(a.closed_at)));
   if (!list.length) return '';
-  return `<h2 id="dback">${esc(t('dispo_back'))} <span class="chip ok">${list.length}${more ? '+' : ''}</span></h2><p class="small muted">${esc(t('dispo_back_hint'))}</p><div class="list">${list.map((c) => `<a class="row p-niedrig" href="#/cases/${esc(c.id)}" data-dback>${plate(c.plate)}<span class="title" style="white-space:normal">${ltxt(clipTxt(cDesc(c.description), 80))}</span><span class="chip ok" style="white-space:nowrap">${esc(t('dispo_back_at'))} ${fmtDT(c.closed_at)}</span><span class="sub wrap">${esc(c.case_no)}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${c.pickup_note ? ` · <b data-dbpickup>${esc(t('pu_title'))}:</b> <span${langAttr(c.pickup_note)}>${esc(clipTxt(c.pickup_note, 120))}</span>` : ''}</span></a>`).join('')}</div>`;
+  return `<h2 id="dback">${esc(from === bDate(-1) ? t('dispo_back') : t('dispo_back_since').replace('{d}', fmtD(from)))} <span class="chip ok">${list.length}${more ? '+' : ''}</span></h2><p class="small muted">${esc(t('dispo_back_hint'))}</p><div class="list">${list.map((c) => `<a class="row p-niedrig" href="#/cases/${esc(c.id)}" data-dback>${plate(c.plate)}<span class="title" style="white-space:normal">${ltxt(clipTxt(cDesc(c.description), 80))}</span><span class="chip ok" style="white-space:nowrap">${esc(t('dispo_back_at'))} ${fmtDT(c.closed_at)}</span><span class="sub wrap">${esc(c.case_no)}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${c.pickup_note ? ` · <b data-dbpickup>${esc(t('pu_title'))}:</b> <span${langAttr(c.pickup_note)}>${esc(clipTxt(c.pickup_note, 120))}</span>` : ''}</span></a>`).join('')}</div>`;
 }
 // Backlog 459 (Blickwinkel „Lkw hat nächste Woche einen Werkstatttermin – darf die Disposition ihn bis dahin einplanen?“): ein erteilter
 // Werkstattauftrag mit Termin nach heute, noch nicht begonnen, ohne Sperre, ohne eingetragenen Standort/Abschleppung und nicht „nicht
@@ -1252,7 +1261,7 @@ async function fleetTodo() {
   const [cs, ov, fs, tc, dr, ct, cl, wi, af] = await Promise.all([
     api('GET', '/api/cases?status=open&limit=500').then((r) => r.cases).catch(soft([])),
     api('GET', '/api/maintenance').catch(soft(null)),
-    api('GET', '/api/fines?status=open').then((r) => r.fines).catch(soft([])),
+    api('GET', '/api/fines?status=open').then((r) => Object.assign(r.fines, { warn_days: r.warn_days })).catch(soft([])),
     isMgr() ? api('GET', '/api/tacho').catch(soft(null)) : null,
     isMgr() ? api('GET', '/api/drivers').then((r) => r.drivers).catch(soft([])) : [],
     isMgr() ? api('GET', '/api/contracts?filter=aktiv').then((r) => r.contracts).catch(soft([])) : [],
@@ -1297,7 +1306,7 @@ async function fleetTodo() {
       (c) => `${c.plate} · ${t('ck_' + c.kind)} · ${c.status.notice && c.status.notice.by >= today && c.status.notice.by <= in7 ? t('ct_notice_by') + ' ' + fmtD(c.status.notice.by) : t('ct_end') + ' ' + fmtD(c.end_date)}${c.end_date < today ? ' !' : ''}`, 'mittel'],
     ['todo_claims', cl, (c) => `#/cases/${c.case_id}`, (c) => `${c.case_no} · ${c.plate} · ${c.insurer} · ${tn('claim_days_open', c.days_open)}`, ''],
     ['todo_winter', wi, (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}?sec=tires`, (x) => `${x.plate} · ${t('winter_bad').replace('{p}', x.noncompliant.map(posL).join(', '))}${x.open_order ? ` · 🔧 ${t('mo_open')} ${x.open_order.case_no}` : ''}${x.closed_order ? ` · ⚠ ${t('wo_closed_short').replace('{no}', x.closed_order.case_no)}` : ''}`, ''],
-    ['todo_fines', fs.filter((f) => f.response_due && f.response_due <= in7 && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status)), (f) => `#/fines/${f.id}`, (f) => `${f.fine_no} · ${f.plate || f.plate_in_letter} · ${fmtDue(f.response_due)}${f.response_due < today ? ' !' : ''}`, 'mittel'],
+    ['todo_fines', fs.filter((f) => f.response_due && f.response_due <= (Number.isInteger(fs.warn_days) ? bDate(fs.warn_days) : in7) && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status)), (f) => `#/fines/${f.id}`, (f) => `${f.fine_no} · ${f.plate || f.plate_in_letter} · ${fmtDue(f.response_due)}${f.response_due < today ? ' !' : ''}`, 'mittel'],
   ].filter(([, list]) => list.length);
   const failNote = failed ? `<section class="panel alert" role="alert" data-todofail><b>${esc(t('todo_partial_fail'))}</b> <button type="button" class="btn secondary" id="todoretry">${esc(t('retry'))}</button></section>` : '';
   if (failed && !groups.length) return failNote;
@@ -4380,7 +4389,7 @@ async function viewFine(id) {
   if (A.includes('upload') && d.files.length < FINE_FILES_MAX) html += `<label class="btn secondary noprint" style="margin-top:8px;display:inline-flex">${esc(t('upload'))}<input id="ff" type="file" accept="application/pdf,image/jpeg,image/png" hidden></label>`;
   else if (A.includes('upload')) html += `<p class="small muted" id="ffull">${esc(t('files_full').replace('{max}', FINE_FILES_MAX))}</p>`;
   if (A.includes('confirm_driver')) {
-    html += `<div class="noprint"><h2>${esc(t('candidates'))}</h2>${d.candidates.length ? `<div class="list">${d.candidates.map((c, i) => `<label class="row"><input type="radio" name="cand" value="${i}"><span class="title">${esc(c.display_name)}</span><span class="chip">${esc(t('fb_' + c.basis))}</span><span class="sub" style="white-space:normal">${esc(candEv(c))}</span></label>`).join('')}</div>` : `<p class="muted">${esc(t('no_candidates'))}</p>`}${d.candidates_differ ? `<p class="panel alert small" data-fcdiff role="note">${esc(t('fine_cand_differ'))}</p>` : ''}</div>
+    html += `<div class="noprint"><h2>${esc(t('candidates'))}</h2>${d.candidates.length ? `<div class="list">${d.candidates.map((c, i) => `<label class="row"><input type="radio" name="cand" value="${i}"><span class="title">${esc(c.display_name)}</span><span class="chip">${esc(t('fb_' + c.basis))}</span><span class="sub" style="white-space:normal">${esc(candEv(c))}</span></label>`).join('')}</div>` : `<p class="muted">${esc(t('no_candidates'))}</p>`}${d.candidates_differ ? `<p class="panel alert small" data-fcdiff role="note">${esc(t('fine_cand_differ'))}</p>` : ''}${d.assignments_ambiguous ? `<p class="panel alert small" data-fcmulti role="note">${esc(t('fine_cand_multi'))}</p>` : ''}</div>
       <form id="cf" class="panel"><h3>${esc(t('confirm_driver'))}</h3><label>${esc(t('role_driver'))}</label><select name="driver_id" id="drv"><option value="">–</option></select>
       <label>${esc(t('driver_without_account'))}</label><input name="driver_name_note"><label>${esc(t('basis'))}</label><select name="basis">${['zuordnung', 'tourenplan', 'telematik', 'fahrerangabe', 'manuell'].map((b) => `<option value="${b}">${esc(t('fb_' + b))}</option>`).join('')}</select>
       <label>${esc(t('evidence'))}</label><input name="evidence" required><div class="actions"><button class="btn">${esc(t('confirm_driver'))}</button></div></form>`;
@@ -5336,12 +5345,12 @@ const fineEvTr = (s) => {
   const m = /^Fahrzeugzuordnung seit (\d{4}-\d{2}-\d{2}|\d{2}\.\d{2}\.\d{4})(?: bis (\d{2}\.\d{2}\.\d{4}))?(?: – Zugmaschine (.+?))?(?: \((.*)\))?$/.exec(s || '');
   const iso = (x) => (x.includes('.') ? x.split('.').reverse().join('-') : x);
   if (m) return candEv({ since: iso(m[1]), until: m[2] ? iso(m[2]) : null, via_plate: m[3] || null, assign_evidence: m[4] || null });
-  const k = /^Abfahrtskontrolle am Tattag (\d{2}:\d{2}) Uhr(?: – Zugmaschine (.+))?$/.exec(s || '');
-  return k ? t('cand_check').replace('{t}', k[1]) + (k[2] ? ' – ' + t('cand_via').replace('{p}', k[2]) : '') : s || '';
+  const k = /^Abfahrtskontrolle am Tattag (\d{2}:\d{2}) Uhr( – nach der Tatzeit)?(?: – Zugmaschine (.+))?$/.exec(s || '');
+  return k ? t('cand_check').replace('{t}', k[1]) + (k[2] ? ' – ' + t('cand_after') : '') + (k[3] ? ' – ' + t('cand_via').replace('{p}', k[3]) : '') : s || '';
 };
 // Backlog 422: zugeordnete Person hat am Tattag die Abfahrtskontrolle an einem anderen Fahrzeug gemacht (Hinweis auf Fahrzeugtausch)
 const candElse = (c) => (c.checks_elsewhere && c.checks_elsewhere.length ? ' – ' + t('cand_elsewhere').replace('{p}', c.checks_elsewhere.map((x) => `${x.plate} ${fmtDT(x.at)}`).join(', ')) : '');
-const candEv = (c) => (c.since ? t('cand_since').replace('{d}', fmtD(c.since)) + (c.until ? ' ' + t('cand_until').replace('{d}', fmtD(c.until)) : '') + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') + (c.assign_evidence ? ` (${evTr(c.assign_evidence)})` : '') + candElse(c) : c.check_at ? t('cand_check').replace('{t}', fmtDT(c.check_at)) + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') : c.evidence || '');
+const candEv = (c) => (c.since ? t('cand_since').replace('{d}', fmtD(c.since)) + (c.until ? ' ' + t('cand_until').replace('{d}', fmtD(c.until)) : '') + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') + (c.assign_evidence ? ` (${evTr(c.assign_evidence)})` : '') + candElse(c) : c.check_at ? t('cand_check').replace('{t}', fmtDT(c.check_at)) + (c.after_offense ? ' – ' + t('cand_after') : '') + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') : c.evidence || '');
 // Planungshilfe: km-Prognose fällt in die nächsten 30 Tage (ändert keinen Status, nur Anzeige)
 const fcSoon = (r, today, days = 30) => !!(r.km_forecast && r.km_forecast.date && Date.parse(r.km_forecast.date) - Date.parse(today) <= days * 86400000);
 // „ungeklärt“ (km-Zähler gesunken bzw. HU/SP-Frist ungeklärt) überdeckt im Gesamtstatus eine Datumsfälligkeit – die bleibt einzuplanen (Server: date_status)

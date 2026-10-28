@@ -650,7 +650,10 @@ async function handleApi(request, env, ctx, url) {
       await auth.audit(env, user.id, 'reports.fines.export', null, { rows: list.length, with_driver: withDriver, environment: envName, site: sel.site, ...(sel.truncated ? { truncated: true } : {}) });
       return new Response(fines.finesCsv(list, maint.csvCell, withDriver), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bussgelder_${envName}_${day}${siteSuffix(sel.site)}.csv"`, ...trunc } });
     }
-    return json({ fines: list, site: sel.site, site_options: sel.site_options, truncated: !!sel.truncated });
+    // Backlog 555: Vorwarnung laut Einstellung `fine_warn_days` (wie Agent und Kalender) – die Startseite „Heute zu tun“ nutzt sie statt fester 7 Tage
+    const fw = await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();
+    const warnDays = fw && fw.value !== '' && Number(fw.value) >= 0 ? Number(fw.value) : null;
+    return json({ fines: list, site: sel.site, site_options: sel.site_options, truncated: !!sel.truncated, warn_days: warnDays });
   }
   if (path === '/api/fines' && m === 'POST') return json(await fines.createFine(env, user, envName, await readJson(request)), 201);
   if ((mm = path.match(/^\/api\/fines\/([\w-]+)$/)) && m === 'GET') return json(await fines.fineDetail(env, user, envName, mm[1]));
