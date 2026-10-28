@@ -24854,6 +24854,55 @@ await test('Backlog 468 (Folge aus 467): „Ohne Reparatur beendet“ statt „A
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].wd_again_hint && STRINGS[l].vi_kind_withdrawn !== STRINGS[l].st_abgelehnt, `${l}: Texte`);
 });
 
+await test('Backlog 469 (Blickwinkel „Teil aus einem ruhenden Lkw in einen anderen umbauen“): Rückkehr (wieder in Auswertungen / wieder in Betrieb) nennt aktive Fahrzeughinweise und offene Restarbeiten (davon sicherheitsrelevant) – abgelaufene/archivierte Hinweise nicht', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld();
+  const vp = `/api/vehicles/${V1}`;
+  const nt = await U.fleet.post(`${vp}/notes`, { text: 'Anlasser ausgebaut für SZ-KC 5515 (Test)' }); eq(nt.status, 201);
+  const old = await U.fleet.post(`${vp}/notes`, { text: 'alter Hinweis' }); eq(old.status, 201);
+  await e.DB.prepare('UPDATE vehicle_notes SET valid_until=? WHERE text=?').bind('2020-01-01', 'alter Hinweis').run();
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Spiegel links fehlt', safety_relevant: true })).status, 200);
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Lackierung', safety_relevant: false })).status, 200);
+  eq((await U.fleet.post(`${vp}/evaluation`, { excluded: true, reason: 'Teilespender (Test)' })).status, 200);
+  const inc = await U.fleet.post(`${vp}/evaluation`, { excluded: false }); eq(inc.status, 200);
+  let rc = inc.data.return_check; eq(rc.active_notes, 1, 'nur der aktive Hinweis'); eq(rc.open_items, 2); eq(rc.open_items_safety, 1);
+  // archivieren → nicht mehr gezählt
+  const nid = (await U.fleet.get(`${vp}/notes`)).data.notes.find((n) => n.text.startsWith('Anlasser')).id;
+  eq((await U.fleet.post(`${vp}/notes/${nid}/archive`, {})).status, 200);
+  eq((await U.fleet.post(`${vp}/evaluation`, { excluded: true, reason: 'nochmal (Test)' })).status, 200);
+  rc = (await U.fleet.post(`${vp}/evaluation`, { excluded: false })).data.return_check; eq(rc.active_notes, 0, 'archiviert'); eq(rc.open_items, 2);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("rc.active_notes ? tn('rc_notes', rc.active_notes)") && app.includes("tn('rc_open_items', rc.open_items)"), 'Anzeige in returnCheckText');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['rc_notes', 'rc_open_items']) ok(STRINGS[l][k] && PLURALS[l][k], `${l}.${k}`);
+});
+
+await test('Backlog 470 (Blickwinkel „Teilespender“): Teile-Verwendung → Rückruf erfassen wählt ruhende Fahrzeuge nicht vor (bleiben wählbar, mit Hinweis); aktive weiter vorgewählt', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes(`data-plate="\${esc(v.plate)}"\${v.eval_excluded ? ' data-purcdorm' : ' checked'}>`), 'ruhend nicht vorgewählt, sonst vorgewählt');
+  ok(app.includes("t('ptu_rc_dormant_hint')"), 'Hinweis am ruhenden Fahrzeug');
+  ok(app.includes("rep.vehicles.filter((v) => v.active)"), 'ruhende bleiben in der Auswahl (nur außer Betrieb fehlt)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ptu_rc_dormant_hint, `${l}.ptu_rc_dormant_hint`);
+});
+
+await test('Backlog 471 (Blickwinkel „Teilespender“): Teile-Verwendung findet „Ausbau aus <Kennzeichen>“ im Lieferant auch ohne Leerzeichen/Bindestriche; Hinweis am Lieferant-Feld des Teils und Hilfe Werkstatt DE/UK/EN', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const a = await toRepair({ description: 'Anlasser defekt' });
+  eq((await cmd(U.ws, a, 'add_part', { name: 'Anlasser', quantity: 1, supplier: 'Ausbau aus SZ-KC 5515' })).status, 200);
+  const d = (await U.fleet.get(`/api/cases/${a}`)).data; const pa = d.parts.find((x) => x.name === 'Anlasser');
+  ok(pa && pa.unit_price_net === null, 'ohne Preis gebucht'); eq(d.costs.complete, false, 'unbewertet, nie 0 €');
+  const get = (u, q) => u.get('/api/parts/usage?q=' + encodeURIComponent(q));
+  for (const q of ['SZ-KC 5515', 'SZKC5515', 'szkc 5515', 'KC-5515']) { const r = await get(U.fleet, q); eq(r.status, 200); eq(r.data.items.map((i) => i.case_id).join(), a, q); }
+  eq((await get(U.ws, 'SZKC5515')).data.items.length, 1, 'Werkstatt eigener Standort');
+  eq((await get(U.wsMuc, 'SZKC5515')).data.items.length, 0, 'fremder Standort');
+  eq((await get(U.fleet, 'SZKC9999')).data.items.length, 0, 'anderes Kennzeichen');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("data-psuphint>${esc(t('part_supplier_hint'))}"), 'Hinweis am Lieferant-Feld');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, s] of [['de', 'Ausbau aus <Kennzeichen>'], ['uk', 'Ausbau aus <номер>'], ['en', 'Ausbau aus <plate>']]) { ok(STRINGS[l].part_supplier_hint.includes(s), l); ok(STRINGS[l].help_ws_s.includes(s), l + ': Hilfe'); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

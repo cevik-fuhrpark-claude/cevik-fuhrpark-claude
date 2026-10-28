@@ -24,8 +24,9 @@ export async function partsUsage(env, user, envName, query = {}) {
   // Bezeichnung/Lieferant/Beleg: instr statt LIKE (D1: Muster > 50 Byte), Schreibweisen-Varianten für Umlaute/Kyrillisch (lower() nur A–Z)
   const vs = caseVariants(q);
   const textSql = vs.flatMap(() => ['p.name', 'p.supplier', 'p.document_ref'].map((c) => `instr(lower(COALESCE(${c},'')), lower(?)) > 0`)).join(' OR ');
-  const where = ['c.environment=?', `((? <> '' AND instr(${pnKeySql('p.part_number')}, ?) > 0) OR ${textSql})`];
-  const args = [envName, key, key, ...vs.flatMap((v) => [v, v, v])];
+  // Backlog 471 (Blickwinkel „Teilespender“): Lieferant zusätzlich ohne Leerzeichen/Bindestriche – „Ausbau aus DO-SP 9“ findet man auch mit „DOSP9“
+  const where = ['c.environment=?', `((? <> '' AND (instr(${pnKeySql('p.part_number')}, ?) > 0 OR instr(${pnKeySql('p.supplier')}, ?) > 0)) OR ${textSql})`];
+  const args = [envName, key, key, key, ...vs.flatMap((v) => [v, v, v])];
   if (ws) { where.push('c.workshop_site=?'); args.push(user.workshop_site); }
   if (from) { where.push('p.created_at >= ?'); args.push(berlinDayStartIso(from)); }
   if (to) { where.push('p.created_at < ?'); args.push(berlinDayStartIso(new Date(Date.parse(to) + 86400000).toISOString().slice(0, 10))); }

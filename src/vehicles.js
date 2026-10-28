@@ -626,14 +626,19 @@ async function returnCheck(env, envName, vehicleId) {
       (SELECT MAX(measured_at) FROM odometer_readings WHERE vehicle_id=?1) AS k,
       -- Backlog 401: Versicherung erfasst, aber keine läuft (beendet oder Ende überschritten) – beim Abmelden meist beendet
       (EXISTS (SELECT 1 FROM vehicle_contracts WHERE vehicle_id=?1 AND kind='versicherung') AND NOT EXISTS (SELECT 1 FROM vehicle_contracts WHERE vehicle_id=?1 AND kind='versicherung'
-        AND (ended_on IS NULL OR ended_on >= ?2) AND (end_date IS NULL OR end_date >= ?2))) AS ni`).bind(vehicleId, today, envName).first();
+        AND (ended_on IS NULL OR ended_on >= ?2) AND (end_date IS NULL OR end_date >= ?2))) AS ni,
+      -- Backlog 469 (Blickwinkel „Teil aus einem ruhenden Lkw in einen anderen umbauen“): aktive Fahrzeughinweise (z. B. „Anlasser ausgebaut“) und
+      -- offene Restarbeiten dieser Umgebung – beim Außer-Betrieb-Nehmen schon genannt (Backlog 370), bei der Rückkehr fehlten sie
+      (SELECT COUNT(*) FROM vehicle_notes WHERE vehicle_id=?1 AND environment=?3 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?2)) AS n,
+      (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen') AS oi,
+      (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen' AND oi.safety_relevant=1) AS ois`).bind(vehicleId, today, envName).first();
   let overdue = row.o || 0; let unclear = 0;
   const x = (await loadHuSpInputs(env, [vehicleId])).get(vehicleId);
   if (x) {
     const h = huSpFor(x, today, maintenanceWarnDays((await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first() || {}).value));
     for (const y of [h.hu, h.sp]) { if (!y) continue; if (y.status === 'ueberfaellig') overdue++; else if (y.status === 'ungeklaert') unclear++; }
   }
-  return { overdue_inspections: overdue, unclear_inspections: unclear, locked_cases: row.l || 0, expired_contracts: row.c || 0, insurance_none_running: !!row.ni, last_km_at: row.k || null };
+  return { overdue_inspections: overdue, unclear_inspections: unclear, locked_cases: row.l || 0, expired_contracts: row.c || 0, insurance_none_running: !!row.ni, active_notes: row.n || 0, open_items: row.oi || 0, open_items_safety: row.ois || 0, last_km_at: row.k || null };
 }
 
 export async function setVehicleEvaluation(env, user, envName, vehicleId, body) {
