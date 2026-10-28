@@ -25900,6 +25900,25 @@ await test('Backlog 584 (Blickwinkel „Kühlauflieger“, Folge aus 583): Kühl
   for (const x of ['Kühlaggregat Wartung fällig', 'Temperaturschreiber geprüft', 'Temperaturschreiber Ausdruck liegt bei', 'Temperatur im Laderaum ok', 'Kühlwasser läuft aus', 'Kuehlwasser tropft', 'Motorkühlung defekt', 'Klimaanlage kühlt nicht', 'Kalte Bremse', 'Kühlschrank in der Kabine defekt']) ok(!re.test(x), 'kein Hinweis: ' + x);
 });
 
+await test('Backlog 585 (Folge aus 580, Blickwinkel „Diktat/Tippfehler“): Hinweise erkennen Umlaute als blanken Vokal (hangt, Kotflugel, uberhitzt, Tur, Schlussel, bemangelt, schliesst), Rückspiegel, Kotflügel lose/locker und Polizei-/BAG-„Mängel“ – ohne Fehlalarme bei Temperatur, Tour, Natur, Mangel an Fahrern', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const R = (n) => new RegExp(app.match(new RegExp(`const ${n} = \\/(.+)\\/i;`))[1], 'i');
+  const T = {
+    MIRROR_HINT: [['Rückspiegel kaputt', 'Ruckspiegel kaputt', 'Rueckspiegel abgebrochen', 'Spiegel beschadigt'], ['Rückspiegel eingestellt']],
+    DOOR_HINT: [['Tur geht nicht zu', 'Hecktur klemmt'], ['Tour nach Hamburg', 'Temperatur geht nicht hoch', 'Tür offen gelassen']],
+    SUSP_HINT: [['Auflieger hangt schief'], []],
+    LIGHTS_HINT: [['Rucklicht defekt'], []],
+    ENGINE_HINT: [['Motor uberhitzt'], []],
+    TOLL_HINT: [['Mautgerat zeigt rot'], []],
+    LOST_HINT: [['Schlussel verloren'], []],
+    LOOSE_HINT: [['Kotflugel lose', 'Kotflügel locker', 'Unterfahrschutz lose'], ['Kotflügel lackiert']],
+    ROADCHK_HINT: [['BAG Kontrolle Mängel', 'Polizei hat Mängel festgestellt', 'Polizei kontrolle Ladungssicherung bemangelt'], ['Polizei war da, alles ok', 'Mangel an Fahrern', 'Mängel an der Rechnung']],
+    SAFETYKIT_HINT: [['Feuerloscher abgelaufen'], []],
+    COUPLING_HINT: [['Sattelkupplung schliesst nicht richtig', 'Auflieger hat sich gelost'], []],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const re = R(n); for (const x of pos) ok(re.test(x), `${n} erwartet: ${x}`); for (const x of neg) ok(!re.test(x), `${n} nicht: ${x}`); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
