@@ -25893,6 +25893,13 @@ await test('Backlog 583 (Blickwinkel „Kühlauflieger: Kühlgerät, ATP, Temper
   ok(cal.includes('Kühlgerät') && cal.includes('ATP-Bescheinigung') && cal.includes('Temperaturschreiber'), 'Kalender mit Bezeichnungen');
 });
 
+await test('Backlog 584 (Blickwinkel „Kühlauflieger“, Folge aus 583): Kühlgeräte-Hinweis erkennt Schreibweisen ohne Umlaut/Tippfehler, defekten Temperaturschreiber/Datenlogger und steigende Laderaumtemperatur – ohne neue Fehlalarme', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/const REEFER_HINT = \/(.+)\/i;/)[1], 'i');
+  for (const x of ['Temperaturschreiber defekt', 'Datenlogger zeigt nichts an', 'Thermograph druckt nicht', 'Temperatur im Laderaum steigt', 'Temperatur im Kühlkoffer zu hoch', 'Kuehlaggregat ausgefallen', 'Kuhlung kaput', 'Kaelteaggregat Stoerung', 'Kuehlgeraet faellt aus', 'temperature recorder broken', 'data logger not working', 'Kühlaggregat ausgefallen', 'reefer not cooling']) ok(re.test(x), 'erwartet: ' + x);
+  for (const x of ['Kühlaggregat Wartung fällig', 'Temperaturschreiber geprüft', 'Temperaturschreiber Ausdruck liegt bei', 'Temperatur im Laderaum ok', 'Kühlwasser läuft aus', 'Kuehlwasser tropft', 'Motorkühlung defekt', 'Klimaanlage kühlt nicht', 'Kalte Bremse', 'Kühlschrank in der Kabine defekt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
