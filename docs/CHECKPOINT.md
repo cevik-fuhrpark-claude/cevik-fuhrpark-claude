@@ -52,7 +52,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung.
 
 ## Tests
-`npm test` → 813 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 10 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 814 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 10 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
@@ -280,5 +280,4 @@ Erledigte Punkte (durchgestrichen) stehen seit 26.10.2026 in **`docs/BACKLOG_ERL
 195. Eigene Verbesserung (ohne Freigabe, laufend): weitere Blickwinkel per Teilagent, z. B. „Neue Mitarbeiterin der Disposition, erster Tag“, „Werkstatt-Tablet mit fremder Sprache (UK) und Fotos“, „Monatsende: Kilometerstände für Leasing“. Funde ohne Freigabe umsetzen, Fachliches als Frage.
 206. Nach Antwort auf „Wiederinbetriebnahme“ (A/B/E): Ruhe-/Außer-Betrieb-Intervalle aus dem Protokoll in Verfügbarkeit (`fleetAvailability`) und Vertragskosten (`contractCosts`) berücksichtigen; km-Sprung-Warnung mit Schwelle aus den Einstellungen.
 262. Arbeitszeit als **Schätzung** (Folge aus 259) – **erst nach Antwort** auf „Zusatzbefund in der Reparatur“ (e) bzw. „Kostenpositionen stornieren“ (Backlog 97): Geprüft 25.10.2026 – `work_entries` zählt in Tagesgrenze 24 h, Auslastung, Berichte und CSV; eine Schätzung dort würde diese verfälschen. Umsetzbar wäre z. B. eine geschätzte Stundenzahl je Auftrag nur für die Kostengrenze; offen ist, wann eine Schätzung durch Ist ersetzt gilt.
-488. Eigene Verbesserung (ohne Freigabe, Teilagent „Werkstatt-Wochenabschluss“ Fund 2): „Meine Arbeitszeit“ für die ganze Woche (Mo–So, Berliner Datum, nur das eigene Konto wie Backlog 419) – z. B. `GET /api/work-day?week=JJJJ-MM-TT`, Tage ohne Buchung nur anzeigen, nicht bewerten; Testumgebung getrennt (`other_environment_hours`).
 97. Kostenpositionen stornieren/Schätzung durch Rechnung ersetzen – **erst nach Antwort** auf die Frage „Kostenpositionen stornieren“.

@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test Backlog 419 (Blickwinkel „Mechaniker bucht Arbeitszeit für zwei Aufträge am selben Tag“): Formular „Arbeitszeit erfassen“
 # zeigt unter dem Datum, was mit diesem Konto am gewählten Tag schon erfasst ist (je Auftrag, Rest bis 24 h), aktualisiert sich beim Datumswechsel
 # und warnt, wenn für denselben Auftrag an dem Tag schon Zeit gebucht ist. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
-# Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
+# Backlog 488: „Meine Arbeitszeit in dieser Woche“ aufklappbar (7 Tage). Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -55,6 +55,12 @@ with sync_playwright() as p:
         check(q.locator('[data-wdthis]').count()==1,f'{lang}/{w}: dieser Auftrag hervorgehoben + Doppel-Warnung')
         check(q.evaluate(noscroll),f'{lang}/{w}: Warnung ohne Querscrollen')
         if SHOTS: q.locator('#af').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/arbeitszeit_doppelt_{lang}_{w}.png')
+        # Backlog 488: eigene Woche aufklappen – 7 Tage, gestriger Auftrag mit Nummer
+        q.click('#wdweek summary'); q.wait_for_selector('[data-wdweek]',timeout=15000)
+        wt=q.inner_text('#wdweekb')
+        check(q.locator('[data-wdweek] li').count()==7 and no0 in wt and q.locator('[data-wdday]').count()==1,f'{lang}/{w}: Woche mit 7 Tagen und Auftrag ({wt[:120]!r})')
+        check(q.evaluate(noscroll),f'{lang}/{w}: Woche ohne Querscrollen')
+        if SHOTS: q.locator('#wdweek').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/arbeitszeit_woche_{lang}_{w}.png')
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs}')
         c.close()
     api('PATCH','/api/me',{'language':'de'})

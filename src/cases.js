@@ -259,6 +259,7 @@ export async function myWorkDay(env, user, envName, q = {}) {
   if (!['owner', 'fleet', 'workshop'].includes(user.role)) throw forbidden();
   const date = str(q.date, { max: 10 }) || berlinDate();
   if (!isCalendarDate(date)) throw bad('validation', 'Datum ungültig.');
+  if (q.week === '1') return myWorkWeek(env, user, envName, date);
   const rows = (await env.DB.prepare(`SELECT w.case_id, c.case_no, v.plate, c.environment AS e, SUM(w.hours) AS h, COUNT(*) AS n FROM work_entries w
     JOIN cases c ON c.id=w.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id WHERE w.user_id=? AND w.work_date=? GROUP BY w.case_id ORDER BY MIN(w.created_at)`)
     .bind(user.id, date).all()).results;
@@ -269,6 +270,21 @@ export async function myWorkDay(env, user, envName, q = {}) {
   const other = rows.filter((r) => r.e !== envName).reduce((a, r) => a + (Number(r.h) || 0), 0);
   return { date, hours: r2(total), limit: lim, remaining: r2(Math.max(0, lim - total)), other_environment_hours: r2(other),
     cases: mine.map((r) => ({ case_id: r.case_id, case_no: r.case_no, plate: r.plate || null, hours: r2(Number(r.h) || 0), entries: r.n })) };
+}
+
+// Backlog 488 (Blickwinkel „Werkstatt-Wochenabschluss am Freitag“): eigene Arbeitszeit der Kalenderwoche (Mo–So) des Datums – je Tag Summe wie
+// die Tagesgrenze (alle Umgebungen, Anteil der anderen getrennt), Aufträge nur der aktuellen Umgebung. Tage ohne Buchung werden nur gezeigt, nicht bewertet.
+async function myWorkWeek(env, user, envName, date) {
+  const d0 = new Date(date + 'T12:00:00Z'); const mon = new Date(d0.getTime() - ((d0.getUTCDay() + 6) % 7) * 86400000);
+  const days = Array.from({ length: 7 }, (_, i) => new Date(mon.getTime() + i * 86400000).toISOString().slice(0, 10));
+  const rows = (await env.DB.prepare(`SELECT w.work_date AS d, w.case_id, c.case_no, v.plate, c.environment AS e, SUM(w.hours) AS h FROM work_entries w
+    JOIN cases c ON c.id=w.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id WHERE w.user_id=? AND w.work_date BETWEEN ? AND ? GROUP BY w.work_date, w.case_id ORDER BY w.work_date, MIN(w.created_at)`)
+    .bind(user.id, days[0], days[6]).all()).results;
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const out = days.map((d) => { const r = rows.filter((x) => x.d === d); const mine = r.filter((x) => x.e === envName);
+    return { date: d, hours: r2(r.reduce((a, x) => a + (Number(x.h) || 0), 0)), other_environment_hours: r2(r.filter((x) => x.e !== envName).reduce((a, x) => a + (Number(x.h) || 0), 0)),
+      cases: mine.map((x) => ({ case_id: x.case_id, case_no: x.case_no, plate: x.plate || null, hours: r2(Number(x.h) || 0) })) }; });
+  return { week: true, from: days[0], to: days[6], hours: r2(out.reduce((a, x) => a + x.hours, 0)), other_environment_hours: r2(out.reduce((a, x) => a + x.other_environment_hours, 0)), days: out };
 }
 
 // Vorschläge für Teile: bisher erfasste Teile der eigenen Werkstatt (Bezeichnung + Teilenummer, ohne Preise)

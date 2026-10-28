@@ -2915,3 +2915,7 @@ Object.assign(STRINGS.en, { tomorrow: 'tomorrow' });
 Object.assign(STRINGS.de, { filter_open_items: 'Freigegeben, Restarbeiten offen', ws_open_items_hint: 'Das Fahrzeug ist freigegeben; diese Restarbeiten sind nicht sicherheitsrelevant und noch zu erledigen bzw. zu klären (im Vorgang „Restarbeit erledigt“).' });
 Object.assign(STRINGS.uk, { filter_open_items: 'Допущено, залишкові роботи відкриті', ws_open_items_hint: 'Транспорт допущено; ці залишкові роботи не критичні для безпеки, але їх ще треба виконати або з’ясувати (у справі «Залишкову роботу виконано»).' });
 Object.assign(STRINGS.en, { filter_open_items: 'Released, open items pending', ws_open_items_hint: 'The vehicle is released; these open items are not safety-relevant and still need to be done or clarified (in the case: “Open item done”).' });
+// [CLAUDE] Backlog 488: eigene Arbeitszeit der Woche im Formular „Arbeitszeit erfassen“
+Object.assign(STRINGS.de, { wd_week: 'Meine Arbeitszeit in dieser Woche', wd_week_sum: 'Woche {a} – {b}, mit diesem Konto erfasst: {h} h (Tage ohne Eintrag: –)' });
+Object.assign(STRINGS.uk, { wd_week: 'Мій робочий час цього тижня', wd_week_sum: 'Тиждень {a} – {b}, внесено з цього облікового запису: {h} год (дні без запису: –)' });
+Object.assign(STRINGS.en, { wd_week: 'My working time this week', wd_week_sum: 'Week {a} – {b}, recorded with this account: {h} h (days without entries: –)' });

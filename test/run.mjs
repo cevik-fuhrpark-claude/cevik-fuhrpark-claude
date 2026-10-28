@@ -25130,6 +25130,28 @@ await test('Backlog 483–487 (Blickwinkel „Disposition plant abends den näch
   ok(app.includes("f === 'open_items' ? 'status=fahrzeug_freigegeben&open_items=1'") && app.includes("caseFilterQ('open_items') + '&limit=200'") && app.includes('<span data-oi>'), 'Oberfläche: Filter, Startseite Werkstatt, Zahl in der Zeile');
 });
 
+await test('Backlog 488 (Blickwinkel „Werkstatt-Wochenabschluss“): eigene Arbeitszeit der Woche (Mo–So, Berliner Datum) – Summen je Tag, Aufträge nur der aktuellen Umgebung, nur das eigene Konto, Tage ohne Eintrag 0; Formular lädt beim Aufklappen (DE/UK/EN)', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const id = await toRepair();
+  const today = bDayOff(0); const wd = (new Date(today + 'T12:00:00Z').getUTCDay() + 6) % 7; const mon = bDayOff(-wd);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 2.5, description: 'Leuchte', work_date: today })).status, 200);
+  if (mon !== today) eq((await cmd(U.ws, id, 'record_work', { hours: 4, description: 'Kabel', work_date: mon })).status, 200);
+  eq((await cmd(U.fleet, id, 'record_work', { hours: 1, description: 'fremd', work_date: today })).status, 200, 'anderes Konto');
+  const r = (await U.ws.get('/api/work-day?week=1&date=' + today)).data;
+  eq(r.from, mon); eq(r.days.length, 7); eq(r.to, r.days[6].date);
+  const dT = r.days.find((x) => x.date === today); eq(dT.hours, 2.5, 'nur eigenes Konto'); eq(dT.cases[0].case_id, id);
+  eq(r.hours, mon !== today ? 6.5 : 2.5, 'Wochensumme');
+  ok(r.days.filter((x) => x.date !== today && x.date !== mon).every((x) => x.hours === 0 && x.cases.length === 0), 'Tage ohne Eintrag 0');
+  const sun = (await U.ws.get('/api/work-day?week=1&date=' + r.to)).data; eq(sun.from, mon, 'Sonntag gehört zur selben Woche');
+  eq((await U.driver.get('/api/work-day?week=1')).status, 403, 'Fahrer nicht');
+  eq((await U.ws.get('/api/work-day?week=1&date=2026-02-30')).status, 400, 'ungültiges Datum');
+  const day = (await U.ws.get('/api/work-day?date=' + today)).data; eq(day.hours, 2.5, 'Tagesansicht unverändert'); ok(!('days' in day));
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes(`<details id="wdweek" class="small">`) && app.includes("api('GET', '/api/work-day?week=1&date=' + encodeURIComponent(d))") && app.includes("wk.addEventListener('toggle', loadWeek)"), 'Formular');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].wd_week && ['{a}', '{b}', '{h}'].every((k) => STRINGS[l].wd_week_sum.includes(k)), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
