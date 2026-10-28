@@ -24793,6 +24793,67 @@ await test('Backlog 466 (Teilagent-Fund 3 aus 464): Freigabe mit Abholhinweis �
   for (const [l, s] of [['de', 'Abholhinweis: Mein Fahrzeug'], ['uk', 'Інформація для отримання: Мій транспорт'], ['en', 'Pick-up note: My vehicle']]) ok(STRINGS[l].help_myveh_s.includes(s), l + ': Hilfe');
 });
 
+await test('Backlog 467 (Blickwinkel „Sporadische Störung – Werkstatt findet keinen Fehler“): Vorgangsdetail „Zum Fahrzeug“ nennt die in den 90 Tagen vor der Meldung abgeschlossenen Vorgänge (freigegeben/ohne Reparatur beendet/abgelehnt) mit Abschlussvermerk; keine Dubletten, nichts nach der Meldung, Werkstatt nur eigene, Fahrer nichts', async () => {
+  const { e, U, cmd, newCase, toRepair } = await freshWorld();
+  const a = await toRepair({ description: 'Motorwarnleuchte geht ab und zu an' });
+  eq((await cmd(U.fleet, a, 'withdraw_order', {}, 'Kein Fehler feststellbar, Fehlerspeicher leer')).status, 200);
+  const b = await newCase({ description: 'Rückleuchte flackert' });
+  eq((await cmd(U.fleet, b, 'reject', {}, 'Kein Mangel – Stecker nachgedrückt')).status, 200);
+  const dup = await newCase({ description: 'Warnleuchte (doppelt gemeldet)' });
+  eq((await cmd(U.fleet, dup, 'reject', {}, 'doppelt')).status, 200);
+  await e.DB.prepare('UPDATE cases SET duplicate_of=? WHERE id=?').bind(a, dup).run();
+  const late = await newCase({ description: 'Spiegel locker' });
+  const n = await newCase({ description: 'Motorwarnleuchte wieder an' });
+  // Meldezeit sicher nach den Abschlüssen, „late“ erst danach abgeschlossen
+  await e.DB.prepare('UPDATE cases SET created_at=? WHERE id=?').bind(new Date(Date.now() + 1000).toISOString(), n).run();
+  await new Promise((r) => setTimeout(r, 1100));
+  eq((await cmd(U.fleet, late, 'reject', {}, 'nach der neuen Meldung abgeschlossen')).status, 200);
+  let vi = (await U.fleet.get(`/api/cases/${n}`)).data.vehicle_info;
+  eq(vi.recent_closed.map((x) => x.id).sort().join(), [a, b].sort().join(), 'freigegeben/beendet/abgelehnt, ohne Dublette und ohne später abgeschlossene');
+  const ra = vi.recent_closed.find((x) => x.id === a), rb = vi.recent_closed.find((x) => x.id === b);
+  eq(ra.kind, 'withdrawn'); eq(ra.status, 'abgelehnt'); eq(ra.note, 'Kein Fehler feststellbar, Fehlerspeicher leer'); eq(ra.description, 'Motorwarnleuchte geht ab und zu an');
+  eq(rb.kind, 'rejected'); eq(rb.note, 'Kein Mangel – Stecker nachgedrückt'); eq(vi.recent_closed_truncated, false);
+  // Werkstatt: nur Vorgänge des eigenen Standorts (abgelehnte Meldung ohne Werkstatt nicht); Fahrer: keine Fahrzeug-Kurzinfo; Lesezugriff sieht sie
+  eq((await cmd(U.fleet, n, 'approve_repair', { workshop_site: 'DORTMUND' }, 'prüfen')).status, 200);
+  eq((await U.ws.get(`/api/cases/${n}`)).data.vehicle_info.recent_closed.map((x) => x.id).join(), a, 'Werkstatt: nur eigener Standort');
+  ok([403, 404].includes((await U.wsMuc.get(`/api/cases/${n}`)).status), 'fremde Werkstatt ohne Zugriff');
+  ok(!('vehicle_info' in (await U.driver.get(`/api/cases/${n}`)).data), 'Fahrer ohne Fahrzeug-Kurzinfo');
+  eq((await U.viewer.get(`/api/cases/${n}`)).data.vehicle_info.recent_closed.length, 2, 'Lesezugriff');
+  // älter als 90 Tage vor der Meldung → nicht mehr genannt
+  await e.DB.prepare('UPDATE cases SET closed_at=? WHERE id=?').bind(new Date(Date.now() - 91 * 86400000).toISOString(), b).run();
+  vi = (await U.fleet.get(`/api/cases/${n}`)).data.vehicle_info; eq(vi.recent_closed.map((x) => x.id).join(), a, 'älter als 90 Tage');
+  // mehr als 5 → neueste 5 + truncated
+  for (let i = 0; i < 5; i++) { const x = await newCase({ description: 'Alt ' + i }); eq((await cmd(U.fleet, x, 'reject', {}, 'Test')).status, 200); await e.DB.prepare('UPDATE cases SET closed_at=? WHERE id=?').bind(new Date(Date.now() - (i + 2) * 86400000).toISOString(), x).run(); }
+  vi = (await U.fleet.get(`/api/cases/${n}`)).data.vehicle_info; eq(vi.recent_closed.length, 5); eq(vi.recent_closed_truncated, true);
+  ok(vi.recent_closed.every((x, i, l) => !i || l[i - 1].closed_at >= x.closed_at), 'neueste zuerst');
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-virecent') && app.includes("t('vi_kind_' + o.kind)") && app.includes('vi.recent_closed_truncated'), 'Anzeige in vehInfo');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['vi_recent_closed', 'vi_recent_closed_hint', 'vi_kind_withdrawn', 'vi_kind_rejected', 'vi_close_note', 'vi_recent_more']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_ws_s.includes(STRINGS[l].vi_kind_withdrawn), `${l}: Hilfe Werkstatt`); }
+});
+
+await test('Backlog 468 (Folge aus 467): „Ohne Reparatur beendet“ statt „Abgelehnt“ in Liste/Vorgang (Status abgelehnt mit Werkstatt, keine Dublette – wie Kennzahl), Fahrer/Melder bekommt Hinweis „Störung erneut → neu melden“; Daten dafür auch in der Fahrersicht', async () => {
+  const { U, cmd, newCase, toRepair } = await freshWorld();
+  const a = await toRepair({ description: 'Bremse zieht manchmal nach links' });
+  eq((await cmd(U.fleet, a, 'withdraw_order', {}, 'Kein Fehler feststellbar, Probefahrt ohne Befund')).status, 200);
+  const b = await newCase({ description: 'Hupe leise' });
+  eq((await cmd(U.fleet, b, 'reject', {}, 'Kein Mangel')).status, 200);
+  const dc = (await U.driver.get(`/api/cases/${a}`)).data.case;
+  ok(dc.status === 'abgelehnt' && dc.workshop_site && !dc.duplicate_of, 'Fahrer: Status, Werkstatt und Dublette im Vorgang ' + JSON.stringify([dc.status, dc.workshop_site, dc.duplicate_of]));
+  const rb = (await U.driver.get(`/api/cases/${b}`)).data.case; ok(rb.status === 'abgelehnt' && !rb.workshop_site, 'abgelehnte Meldung ohne Werkstatt');
+  const mine = (await U.driver.get('/api/cases?status=closed')).data.cases; const la = mine.find((x) => x.id === a), lb = mine.find((x) => x.id === b);
+  ok(la && la.workshop_site && !la.duplicate_of && lb && !lb.workshop_site, 'Liste des Fahrers trägt die Unterscheidung');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const isWithdrawn = (c) => c.status === 'abgelehnt' && !!c.workshop_site && !c.duplicate_of;"), 'Regel wie Kennzahl withdrawn');
+  ok((app.match(/\$\{esc\(stTxt\(c\)\)\}/g) || []).length >= 2, 'Liste und Vorgangskopf');
+  ok(app.includes('data-wdagain'), 'Hinweis im Vorgang');
+  const rep = (await import('node:fs')).readFileSync(new URL('../src/reports.js', import.meta.url), 'utf8');
+  ok(rep.includes("if (c.duplicate_of) x.duplicates++; if (c.workshop_site) x.withdrawn++;"), 'Kennzahl unverändert (Dubletten zählen dort getrennt)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].wd_again_hint && STRINGS[l].vi_kind_withdrawn !== STRINGS[l].st_abgelehnt, `${l}: Texte`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -10,6 +10,8 @@ import { SETTING_DEFAULTS } from './settings.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { huSpFor, HUSP_ONE_SQL, huSpInputFromRow } from './inspection_rules.js';
 import { noteActiveSql, NOTES_MAX_ACTIVE } from './vnotes.js';
+// Backlog 467: abgeschlossene Vorgänge desselben Fahrzeugs in den 90 Tagen vor der Meldung – Kurzinfo im Vorgang höchstens 5
+const RECENT_CLOSED_MAX = 5;
 // Laufende Gewährleistungen: Kurzinfo im Vorgang höchstens 20, Fahrzeugakte höchstens 50 (früheste Abläufe zuerst; mehr → *_truncated)
 export const WARR_CASE_MAX = 20;
 export const WARR_VEH_MAX = 50;
@@ -487,8 +489,17 @@ export async function getCaseDetail(env, user, envName, caseId) {
         (SELECT json_group_array(json_object('kind', k.kind, 'partner', k.partner, 'contract_no', k.contract_no, 'end_date', k.end_date)) FROM
           (SELECT kind, partner, contract_no, end_date FROM vehicle_contracts WHERE ?8=1 AND vehicle_id=?1 AND kind IN ('leasing','miete','wartung') AND (ended_on IS NULL OR ended_on >= ?5)
             AND (start_date IS NULL OR start_date <= ?5) ORDER BY kind='wartung', end_date IS NULL, end_date LIMIT 5) k) AS leases,
+        -- Backlog 467 (Blickwinkel „Sporadische Störung – Werkstatt findet keinen Fehler“): in den 90 Tagen vor dieser Meldung abgeschlossene Vorgänge
+        -- desselben Fahrzeugs (freigegeben, ohne Reparatur beendet, Meldung abgelehnt; keine Dubletten) mit Abschlussvermerk – die zweite Meldung
+        -- „Warnleuchte wieder an“ kam sonst ohne Vorgeschichte in die Werkstatt. Werkstatt nur eigener Standort (abgelehnte Meldungen ohne Werkstatt nicht)
+        (SELECT json_group_array(json_object('id', r.id, 'case_no', r.case_no, 'status', r.status, 'kind', r.kind, 'description', r.description, 'closed_at', r.closed_at, 'note', r.note)) FROM
+          (SELECT x.id, x.case_no, x.status, CASE WHEN x.status='fahrzeug_freigegeben' THEN 'released' WHEN x.workshop_site IS NOT NULL THEN 'withdrawn' ELSE 'rejected' END AS kind,
+            substr(x.description, 1, 120) AS description, x.closed_at,
+            (SELECT substr(e.note, 1, 200) FROM case_events e WHERE e.case_id=x.id AND e.to_status=x.status AND e.note IS NOT NULL AND trim(e.note)<>'' ORDER BY e.created_at DESC LIMIT 1) AS note
+           FROM cases x WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.status IN ('fahrzeug_freigegeben','abgelehnt') AND x.duplicate_of IS NULL
+             AND x.closed_at IS NOT NULL AND x.closed_at <= ?6 AND x.closed_at >= ?9 AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY x.closed_at DESC LIMIT ${RECENT_CLOSED_MAX + 1}) r) AS recent_closed,
         ${HUSP_ONE_SQL}
-      FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate(), c.id, berlinDate(c.created_at), c.created_at, wsOnly, isManager(user) ? 1 : 0).first();
+      FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate(), c.id, berlinDate(c.created_at), c.created_at, wsOnly, isManager(user) ? 1 : 0, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString()).first();
     const km = kmn && kmn.km !== null && kmn.km !== undefined ? { km: kmn.km, measured_at: kmn.measured_at } : null;
     // HU/SP ohne eigenen Eintrag mit berechenbarer Frist (z. B. SP aus HU + Erstzulassung) wie Übersicht/Werkstattplan/Fahrer-Startseite
     // (21.10.2026: überfällige berechnete SP fehlte im Vorgang – Werkstatt erfuhr nicht, dass sie beim selben Aufenthalt fällig ist). Nichts angelegt;
@@ -518,7 +529,10 @@ export async function getCaseDetail(env, user, envName, caseId) {
         AND status='fahrzeug_freigegeben' AND closed_at IS NOT NULL AND closed_at <= ? AND closed_at >= ? ${wsOnly ? 'AND workshop_site=?' : ''} ORDER BY closed_at DESC LIMIT 5`)
         .bind(...[c.vehicle_id, envName, c.id, c.check_item, c.created_at, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString(), ...(wsOnly ? [wsOnly] : [])]).all()).results;
     }
-    detail.vehicle_info = { other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, inspections_due_days: dueDays, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties, warranties_truncated: warrantiesTruncated, warranties_max: WARR_CASE_MAX };
+    // Backlog 467: eine Zeile mehr gelesen → recent_closed_truncated (nie still kappen)
+    const recentClosed = kmn && kmn.recent_closed ? JSON.parse(kmn.recent_closed) : [];
+    const recentClosedTruncated = recentClosed.length > RECENT_CLOSED_MAX; if (recentClosedTruncated) recentClosed.length = RECENT_CLOSED_MAX;
+    detail.vehicle_info = { recent_closed: recentClosed, recent_closed_truncated: recentClosedTruncated, other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, inspections_due_days: dueDays, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties, warranties_truncated: warrantiesTruncated, warranties_max: WARR_CASE_MAX };
     if (isManager(user)) detail.vehicle_info.lease_contracts = kmn && kmn.leases ? JSON.parse(kmn.leases) : [];
   }
   if (seesWork) {
