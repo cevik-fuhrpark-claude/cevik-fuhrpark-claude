@@ -305,6 +305,8 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
   .print-summary details:not([open]) { display: block !important; }
   /* Listenzeilen im Ausdruck vollständig (am Bildschirm einzeilig mit „…“) */
   .row .title, .row .sub { white-space: normal !important; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+  /* Fotobeschriftung (Datum/Uhrzeit/Rolle) im Ausdruck vollständig – am Bildschirm „…“ mit Tooltip (Backlog 497) */
+  .thumbs figure.thumb figcaption span { white-space: normal !important; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
   .scroll { overflow: visible; }
   table { break-inside: auto; } tr { break-inside: avoid; } thead { display: table-header-group; }
   /* Überschrift nicht allein am Seitenende (19.10.2026: „Vertragsraten …“ in Kosten je Fahrzeug) */

@@ -25177,6 +25177,22 @@ await test('Backlog 489–494 (Blickwinkel „Kennzeichen in verschiedenen Schre
   ok(searchKey('Befund SZ-YC 5513 (S-2026-1)').includes(searchKey('szyc 5513')), 'searchKey trifft Schreibweisen');
 });
 
+await test('Backlog 495–500 (Blickwinkel „Vorgang als Auftrag für eine Fremdwerkstatt drucken“ / „Fahrzeugakte beim Verkauf drucken“): FIN/Hersteller/Anhänger am Vorgang (nicht Fahrer), Navigationslinks nicht im Druck, Fotobeschriftung im Druck vollständig, Reifenverlauf im Druck, Reparaturen der Akte mit Datum, „überfällig“ als Wort', async () => {
+  const { U, newCase, V1 } = await freshWorld();
+  const id = await newCase();
+  const dF = (await U.fleet.get(`/api/cases/${id}`)).data; ok(dF.vehicle.vin && 'manufacturer' in dF.vehicle && 'trailer_plate' in dF.vehicle, 'Leitung: Stammsatz');
+  const dD = (await U.driver.get(`/api/cases/${id}`)).data; ok(!dD.vehicle.vin, 'Fahrer: ohne FIN');
+  const vd = (await U.fleet.get(`/api/vehicles/${V1}`)).data; ok(vd.cases.length && vd.cases.every((c) => c.updated_at), '499: Vorgänge der Akte mit updated_at');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(app.includes(`!['driver'].includes(S.me.role) && d.vehicle.vin ? \`<dt>\${esc(t('vin'))}</dt><dd translate="no" data-cvin>`), '495: FIN am Vorgang');
+  const c0 = app.indexOf('async function viewCase('); const vc = app.slice(c0, app.indexOf('\nasync function ', c0 + 10));
+  ok(!vc.includes(`<a href="#/vehicles/\${esc(c.vehicle_id)}">\${esc(t('vehicle_file'))} ›</a>`) && vc.includes('<span class="noprint"><a href="#/vehicles/${esc(c.vehicle_id)}?sec=wo" id="cwrec">'), '496: Links im Vorgang noprint');
+  const v0 = app.indexOf('function vehInfo(vi, c) {'); ok(!app.slice(v0, app.indexOf('\n}\n', v0)).includes('<a href="#/vehicles/${encodeURIComponent(c.vehicle_id)}'), '496: Links in „Zum Fahrzeug“ noprint');
+  const pr = css.slice(css.indexOf('@media print {\n  :root')); ok(pr.slice(0, pr.indexOf('\n}\n')).includes('.thumbs figure.thumb figcaption span { white-space: normal !important;'), '497: Fotobeschriftung im Druck');
+  ok(/const PRINT_OPEN = '[^']*#tirehistd/.test(app) && app.includes('<details class="panel" id="tirehistd">'), '498: Reifenverlauf im Druck');
+  ok(app.includes("${days < 0 ? ` · <span data-mover>${esc(t('ms_ueberfaellig'))}</span>` : ''}"), '500: überfällig als Wort');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
