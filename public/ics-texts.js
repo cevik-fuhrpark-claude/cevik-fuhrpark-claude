@@ -4,25 +4,25 @@
 export const ICS_LANGS = ['de', 'uk', 'en'];
 
 // gespeicherter deutscher Name der Prüf-/Wartungsart → Schlüssel (wie MK_KEYS in app.js); HU/SP/UVV sind Fachkürzel und bleiben
-export const ICS_MK_KEYS = { Tachograph: 'tacho', 'Ölwechsel': 'oil', Inspektion: 'service', Bremsen: 'brakes', Reifen: 'tires', 'Hydraulik/Aufbau': 'hydraulics', 'Feuerlöscher': 'extinguisher', Verbandkasten: 'firstaid', Ladungssicherung: 'loadsec', 'Rückruf': 'recall', Sonstiges: 'other' };
+export const ICS_MK_KEYS = { Tachograph: 'tacho', 'Ölwechsel': 'oil', Inspektion: 'service', Bremsen: 'brakes', Reifen: 'tires', 'Hydraulik/Aufbau': 'hydraulics', 'Feuerlöscher': 'extinguisher', Verbandkasten: 'firstaid', Ladungssicherung: 'loadsec', Ladebordwand: 'taillift', Ladekran: 'crane', 'Rückruf': 'recall', Sonstiges: 'other' };
 
 export const ICS_LABELS = {
   de: {
-    mk_tacho: 'Tachograph', mk_oil: 'Ölwechsel', mk_service: 'Inspektion', mk_brakes: 'Bremsen', mk_tires: 'Reifen', mk_hydraulics: 'Hydraulik/Aufbau', mk_extinguisher: 'Feuerlöscher', mk_firstaid: 'Verbandkasten', mk_loadsec: 'Ladungssicherung', mk_recall: 'Rückruf', mk_other: 'Sonstiges',
+    mk_tacho: 'Tachograph', mk_oil: 'Ölwechsel', mk_service: 'Inspektion', mk_brakes: 'Bremsen', mk_tires: 'Reifen', mk_hydraulics: 'Hydraulik/Aufbau', mk_extinguisher: 'Feuerlöscher', mk_firstaid: 'Verbandkasten', mk_loadsec: 'Ladungssicherung', mk_taillift: 'Ladebordwand', mk_crane: 'Ladekran', mk_recall: 'Rückruf', mk_other: 'Sonstiges',
     st_gemeldet: 'Gemeldet', st_werkstatt_freigegeben: 'Werkstatt freigegeben', st_in_reparatur: 'In Reparatur', st_wartet_teile: 'Wartet auf Teile', st_abschlusskontrolle: 'Abschlusskontrolle',
     ck_leasing: 'Leasing', ck_miete: 'Miete', ck_finanzierung: 'Finanzierung', ck_versicherung: 'Versicherung', ck_wartung: 'Wartungsvertrag', ck_sonstiges: 'Sonstiger Vertrag',
     fk_anhoerung: 'Anhörung', fk_zeugenfragebogen: 'Zeugenfragebogen', fk_bussgeldbescheid: 'Bußgeldbescheid', fk_verwarnung: 'Verwarnung', fk_maut: 'Mautnacherhebung', fk_sonstiges: 'Sonstiges',
     wo_tag: 'Winterreifen', locked: 'Gesperrt',
   },
   uk: {
-    mk_tacho: 'Тахограф', mk_oil: 'Заміна оливи', mk_service: 'Техобслуговування', mk_brakes: 'Гальма', mk_tires: 'Шини', mk_hydraulics: 'Гідравліка/надбудова', mk_extinguisher: 'Вогнегасник', mk_firstaid: 'Аптечка', mk_loadsec: 'Кріплення вантажу', mk_recall: 'Відкликання (виробник)', mk_other: 'Інше',
+    mk_tacho: 'Тахограф', mk_oil: 'Заміна оливи', mk_service: 'Техобслуговування', mk_brakes: 'Гальма', mk_tires: 'Шини', mk_hydraulics: 'Гідравліка/надбудова', mk_extinguisher: 'Вогнегасник', mk_firstaid: 'Аптечка', mk_loadsec: 'Кріплення вантажу', mk_taillift: 'Гідроборт', mk_crane: 'Кран-маніпулятор', mk_recall: 'Відкликання (виробник)', mk_other: 'Інше',
     st_gemeldet: 'Повідомлено', st_werkstatt_freigegeben: 'Передано в майстерню', st_in_reparatur: 'У ремонті', st_wartet_teile: 'Очікує запчастини', st_abschlusskontrolle: 'Фінальний контроль',
     ck_leasing: 'Лізинг', ck_miete: 'Оренда', ck_finanzierung: 'Фінансування', ck_versicherung: 'Страхування', ck_wartung: 'Договір обслуговування', ck_sonstiges: 'Інший договір',
     fk_anhoerung: 'Запит на пояснення', fk_zeugenfragebogen: 'Анкета свідка', fk_bussgeldbescheid: 'Постанова про штраф', fk_verwarnung: 'Попередження', fk_maut: 'Донарахування мита', fk_sonstiges: 'Інше',
     wo_tag: 'Зимові шини', locked: 'Заблоковано',
   },
   en: {
-    mk_tacho: 'Tachograph', mk_oil: 'Oil change', mk_service: 'Service', mk_brakes: 'Brakes', mk_tires: 'Tyres', mk_hydraulics: 'Hydraulics/body', mk_extinguisher: 'Fire extinguisher', mk_firstaid: 'First-aid kit', mk_loadsec: 'Load securing', mk_recall: 'Recall (manufacturer)', mk_other: 'Other',
+    mk_tacho: 'Tachograph', mk_oil: 'Oil change', mk_service: 'Service', mk_brakes: 'Brakes', mk_tires: 'Tyres', mk_hydraulics: 'Hydraulics/body', mk_extinguisher: 'Fire extinguisher', mk_firstaid: 'First-aid kit', mk_loadsec: 'Load securing', mk_taillift: 'Tail lift', mk_crane: 'Loader crane', mk_recall: 'Recall (manufacturer)', mk_other: 'Other',
     st_gemeldet: 'Reported', st_werkstatt_freigegeben: 'Approved for workshop', st_in_reparatur: 'In repair', st_wartet_teile: 'Waiting for parts', st_abschlusskontrolle: 'Final inspection',
     ck_leasing: 'Leasing', ck_miete: 'Rental', ck_finanzierung: 'Financing', ck_versicherung: 'Insurance', ck_wartung: 'Maintenance contract', ck_sonstiges: 'Other contract',
     fk_anhoerung: 'Hearing notice', fk_zeugenfragebogen: 'Witness questionnaire', fk_bussgeldbescheid: 'Penalty notice', fk_verwarnung: 'Warning', fk_maut: 'Toll back-charge', fk_sonstiges: 'Other',

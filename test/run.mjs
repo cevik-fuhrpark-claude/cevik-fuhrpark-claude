@@ -25728,6 +25728,67 @@ await test('Backlog 573: Dispo-Terminplan – Zusatz „· nächster Werktag“ 
   ok(app.includes("` <b data-pnwd style=\"white-space:normal\">· ${esc(t('next_workday'))}</b>`"), 'Zusatz umbrechbar');
 });
 
+await test('Backlog 572: kurze Tab-Beschriftung der Abfahrtskontrolle (DE „Kontrolle“, EN „Check“) – passt bei großer Schrift, Vollname bleibt als aria-label', async () => {
+  const { STRINGS } = await import('../public/i18n.js');
+  eq(STRINGS.de.nav_check_tab, 'Kontrolle'); eq(STRINGS.en.nav_check_tab, 'Check'); eq(STRINGS.uk.nav_check_tab, 'Перевірка');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].nav_check !== STRINGS[l].nav_check_tab && STRINGS[l].nav_check.length > STRINGS[l].nav_check_tab.length, 'Vollname ' + l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("tabs.push(['#/check', 'truck', t('nav_check_tab'), 'check', t('nav_check')]);") && app.includes('${full && full !== label ? ` aria-label="${esc(full)}"` : \'\'}'), 'aria-label');
+});
+
+await test('Backlog 574 (Blickwinkel „Ladebordwand/Ladekran prüfen“): eigene Prüfarten Ladebordwand und Ladekran – beide am selben Lkw (vorher nur ein „Hydraulik/Aufbau“), je Art höchstens einer, Intervall nur laut Eingabe, Import-Aliase, Texte DE/UK/EN inkl. Kalender', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const { normalizeKind } = await import('../src/maintenance.js');
+  eq(normalizeKind('Hubladebühne'), 'Ladebordwand'); eq(normalizeKind('Ladebuehne'), 'Ladebordwand'); eq(normalizeKind('Kran'), 'Ladekran'); eq(normalizeKind('ladebordwand'), 'Ladebordwand');
+  const meta = (await U.fleet.get('/api/meta')).data.maintenance_kinds; ok(meta.includes('Ladebordwand') && meta.includes('Ladekran'), 'Meta');
+  const a = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/maintenance`, { kind: 'Ladebordwand', last_done_date: '2026-03-10', interval_months: 12, evidence: 'Prüfbuch Ladebordwand' }); eq(a.status, 201, JSON.stringify(a.data)); eq(a.data.next_due_date, '2027-03-10');
+  const b = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/maintenance`, { kind: 'Ladekran', next_due_date: '2027-01-31', evidence: 'Kranprüfbuch' }); eq(b.status, 201, JSON.stringify(b.data));
+  const c = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/maintenance`, { kind: 'Ladebordwand', next_due_date: '2027-05-31', evidence: 'zweiter' }); eq(c.status, 409, 'je Art höchstens ein Termin');
+  const n = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/maintenance`, { kind: 'Ladekran', evidence: 'ohne' }); ok(n.status === 409, 'zweiter Kran abgelehnt');
+  const { STRINGS } = await import('../public/i18n.js'); const { ICS_LABELS, ICS_MK_KEYS } = await import('../public/ics-texts.js');
+  eq(ICS_MK_KEYS.Ladebordwand, 'taillift'); eq(ICS_MK_KEYS.Ladekran, 'crane');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['mk_taillift', 'mk_crane']) { ok(STRINGS[l][k], k + ' ' + l); eq(ICS_LABELS[l][k], STRINGS[l][k], 'Kalender ' + k + ' ' + l); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("Ladebordwand: 'taillift', Ladekran: 'crane'"), 'MK_KEYS');
+});
+
+await test('Backlog 575 (Blickwinkel „Ladebordwand/Ladekran prüfen“): Prüfmangel und Nachprüfung bei „Sonstiges“/Rückruf je Termin statt je Art – Mangel am einen Termin bleibt offen, wenn ein anderer „Sonstiges“-Termin später ohne Mängel erledigt wird (Übersicht, CSV, Fahrzeugakte)', async () => {
+  const { e, U, V1 } = await freshWorld(); const VV = encodeURIComponent(V1);
+  const a = await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'Sonstiges', last_done_date: bDayOff(-400), interval_months: 12, evidence: 'Prüfung Aufbau A' }); eq(a.status, 201, JSON.stringify(a.data));
+  const b = await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'Sonstiges', last_done_date: bDayOff(-400), interval_months: 12, evidence: 'Prüfung Aufbau B' }); eq(b.status, 201, JSON.stringify(b.data));
+  eq((await U.fleet.post(`/api/maintenance/${a.data.id}/complete`, { done_date: bDayOff(-20), evidence: 'Bericht A', result: 'erhebliche_maengel' })).status, 200);
+  eq((await U.fleet.post(`/api/maintenance/${b.data.id}/complete`, { done_date: bDayOff(-5), evidence: 'Bericht B', result: 'ohne_maengel' })).status, 200);
+  const ov = (await U.fleet.get('/api/maintenance')).data; const evA = ov.defects_without_case.find((x) => x.evidence === 'Bericht A');
+  ok(evA, 'Mangel am Termin A bleibt offen: ' + JSON.stringify(ov.defects_without_case)); eq(evA.rule_id, a.data.id, 'rule_id in der Liste');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/maintenance?format=csv')).data).split('\r\n').join('\n').split('\n');
+  const rowA = csv.find((l) => l.includes('Bericht A')); const rowB = csv.find((l) => l.includes('Bericht B'));
+  ok(rowA && /erhebliche Mängel am .* kein Mängelauftrag angelegt/.test(rowA), 'CSV A: ' + rowA); ok(rowB && !/kein Mängelauftrag/.test(rowB) && /ohne Mängel/.test(rowB), 'CSV B: ' + rowB);
+  // zweite Durchführung am selben Termin A überholt den Mangel weiterhin
+  eq((await U.fleet.post(`/api/maintenance/${a.data.id}/complete`, { done_date: bDayOff(-1), evidence: 'Nachprüfung A', result: 'ohne_maengel' })).status, 200);
+  ok(!(await U.fleet.get('/api/maintenance')).data.defects_without_case.some((x) => x.evidence === 'Bericht A'), 'Nachprüfung am selben Termin erledigt');
+  // HU/UVV unverändert je Art (eine Regel je Fahrzeug)
+  const src = (await import('node:fs')).readFileSync(new URL('../src/maintenance.js', import.meta.url), 'utf8'); ok(src.includes("(e2.kind NOT IN ('Rückruf','Sonstiges') OR e2.rule_id=e.rule_id)"), 'SQL-Regel');
+  const { MULTI_RULE_KINDS } = await import('../src/vehicles.js'); eq(MULTI_RULE_KINDS.join(), 'Rückruf,Sonstiges', 'Liste wie im SQL');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("(!['Rückruf', 'Sonstiges'].includes(h.kind) || e.rule_id === h.rule_id)"), 'Fahrzeugakte');
+});
+
+await test('Backlog 576: Prüftermin ohne Intervall (z. B. Verbandkasten mit Ablaufdatum) – „erledigt“ ohne neuen Termin wird abgelehnt statt still aus der Erinnerung zu fallen; mit Datum, mit Intervall bzw. ohne bisherigen Termin wie bisher; Formular verlangt das Datum (DE/UK/EN)', async () => {
+  const { e, U, V1 } = await freshWorld(); const VV = encodeURIComponent(V1);
+  const MSG = 'Dieser Prüftermin hat kein Intervall – bitte den nächsten Termin laut Nachweis (z. B. Ablaufdatum) angeben, sonst entfällt die Erinnerung.';
+  const vk = await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'Verbandkasten', next_due_date: bDayOff(30), evidence: 'Ablaufdatum Packung' }); eq(vk.status, 201, JSON.stringify(vk.data));
+  const r1 = await U.fleet.post(`/api/maintenance/${vk.data.id}/complete`, { done_date: bDayOff(0), evidence: 'Kasten getauscht' }); eq(r1.status, 400); eq(r1.data.message, MSG);
+  const r2 = await U.fleet.post(`/api/maintenance/${vk.data.id}/complete`, { done_date: bDayOff(0), evidence: 'Kasten getauscht', next_due_date: bDayOff(1500) }); eq(r2.status, 200, JSON.stringify(r2.data));
+  eq((await U.fleet.get(`/api/vehicles/${VV}`)).data.maintenance.find((m) => m.id === vk.data.id).next_due_date, bDayOff(1500), 'neues Ablaufdatum');
+  const fl = await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'Feuerlöscher', last_done_date: bDayOff(-700), interval_months: 24, evidence: 'Plakette' }); eq(fl.status, 201);
+  eq((await U.fleet.post(`/api/maintenance/${fl.data.id}/complete`, { done_date: bDayOff(0), evidence: 'Prüfung' })).status, 200, 'mit Intervall ohne Datum');
+  const so = await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'Sonstiges', evidence: 'ohne Termin' }); eq(so.status, 201);
+  eq((await U.fleet.post(`/api/maintenance/${so.data.id}/complete`, { done_date: bDayOff(0), evidence: 'einmal geprüft' })).status, 200, 'ohne bisherigen Termin wie bisher');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].mdone_no_interval, 'Hinweis ' + l); /* Fehlertext UK/EN: Wächter-Test über V_MORE */
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const need = !['HU', 'SP'].includes(m.kind) && !m.interval_months && !m.interval_km && !!m.next_due_date;") && app.includes("name=\"next_due_date\"${need ? ' required' : ''}>") && app.includes("t(need ? 'documented_due_req' : 'documented_due')"), 'Formular');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].documented_due_req && STRINGS[l].documented_due_req !== STRINGS[l].documented_due, 'Pflicht-Beschriftung ' + l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

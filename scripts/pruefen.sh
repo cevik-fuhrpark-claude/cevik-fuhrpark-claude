@@ -317,6 +317,8 @@ UI-Fahrerakte Klassen, unbenannte Unterweisung, Notfall zurück zur Akte|ui-fahr
 UI-Reaktionsfrist kritisch sofort, Benutzer nach Aktivieren, Hilfe Zugänge|ui-reaktionsfrist-benutzer.py|/tmp/cfp-reaktionsfrist-benutzer.log
 UI-Bußgeld mehrdeutiges Kennzeichen, Vertrag km unter Übernahme|ui-bussgeld-mehrdeutig-vertrag.py|/tmp/cfp-bussgeld-mehrdeutig-vertrag.log
 UI-Großer Bestand: Lagerjournal-Karten, Lagersuche entprellt, QR-Bogen|ui-grossbestand-lager.py|/tmp/cfp-grossbestand.log
+UI-Große Systemschrift/Zoom 200 % und Fahrerkarte-Hinweis im Vorgang (Backlog 567–569, 572)|ui-grosse-schrift.py|/tmp/cfp-grosse-schrift.log
+UI-Ladebordwand/Ladekran, Termin ohne Intervall (Backlog 574, 576)|ui-aufbau-pruefarten.py|/tmp/cfp-aufbau-pruefarten.log
 '
 N=0
 NL='

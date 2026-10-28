@@ -168,7 +168,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     // Nachprüfung (nächste spätere Durchführung derselben Prüfart, ≤ 12 Monate, am/nach dem Freigabetag des Mängelauftrags) erneut mit erheblichen Mängeln
     env.DB.prepare(`SELECT n.id, n.vehicle_id, v.plate, n.kind, n.done_date, n.result, e.done_date AS first_date, MAX(c.case_no) AS case_no
       FROM maintenance_events e JOIN cases c ON c.maintenance_event_id=e.id AND c.environment=? AND c.status='fahrzeug_freigegeben'
-      JOIN maintenance_events n ON n.id = (SELECT x.id FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND x.id<>e.id
+      JOIN maintenance_events n ON n.id = (SELECT x.id FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND (x.kind NOT IN ('Rückruf','Sonstiges') OR x.rule_id=e.rule_id) AND x.id<>e.id
         AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)) ORDER BY x.done_date, x.created_at LIMIT 1)
       JOIN vehicles v ON v.id=e.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 AND n.done_date >= ? AND ${berlinDaySql('c.closed_at')} <= n.done_date

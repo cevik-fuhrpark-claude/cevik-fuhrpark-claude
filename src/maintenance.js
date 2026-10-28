@@ -22,6 +22,8 @@ const KIND_ALIASES = new Map([
   ['sp', 'SP'], ['sicherheitsprüfung', 'SP'], ['sicherheitspruefung', 'SP'],
   ['uvv', 'UVV'], ['uvv-prüfung', 'UVV'], ['uvv-pruefung', 'UVV'],
   ['feuerloescher', 'Feuerlöscher'], ['feuerlöscherprüfung', 'Feuerlöscher'], ['verbandskasten', 'Verbandkasten'], ['erste-hilfe-kasten', 'Verbandkasten'], ['spanngurte', 'Ladungssicherung'], ['zurrgurte', 'Ladungssicherung'],
+  ['hubladebühne', 'Ladebordwand'], ['hubladebuehne', 'Ladebordwand'], ['ladebühne', 'Ladebordwand'], ['ladebuehne', 'Ladebordwand'], ['ladebordwandprüfung', 'Ladebordwand'], ['ladebordwandpruefung', 'Ladebordwand'],
+  ['kran', 'Ladekran'], ['lkw-kran', 'Ladekran'], ['ladekranprüfung', 'Ladekran'], ['ladekranpruefung', 'Ladekran'], ['krananlage', 'Ladekran'],
   ['rückrufaktion', 'Rückruf'], ['rueckruf', 'Rückruf'], ['rueckrufaktion', 'Rückruf'], ['werkstattaktion', 'Rückruf'], ['herstelleraktion', 'Rückruf'], ['recall', 'Rückruf'],
   ['tachograph', 'Tachograph'], ['tacho', 'Tachograph'], ['tachoprüfung', 'Tachograph'], ['tachopruefung', 'Tachograph'], ['fahrtenschreiber', 'Tachograph'], ['kontrollgerät', 'Tachograph'], ['kontrollgeraet', 'Tachograph'],
 ]);
@@ -174,7 +176,7 @@ function noResultSql(recordedBy = null, limit = 200, vf = null) {
   return [`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 ${vf ? 'AND v.id IN (SELECT value FROM json_each(?))' : ''} AND e.result IS NULL AND e.source IN ('erfasst','erledigt') AND e.kind IN (${REQUIRED_KINDS.map(() => '?').join(',')}) AND e.done_date >= ?
       ${recordedBy ? 'AND e.recorded_by = ?' : ''}
-      AND NOT EXISTS (SELECT 1 FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND x.id<>e.id
+      AND NOT EXISTS (SELECT 1 FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND (x.kind NOT IN ('Rückruf','Sonstiges') OR x.rule_id=e.rule_id) AND x.id<>e.id
         AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)))
       ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [...(vf ? [vf] : []), ...REQUIRED_KINDS, berlinDate(new Date(Date.now() - 180 * 86400000).toISOString()), ...(recordedBy ? [recordedBy] : [])]];
 }
@@ -195,10 +197,10 @@ export function defectsWithoutCaseQuery(env, envName, limit = 200, vf = null) {
   return env.DB.prepare(sql).bind(...params);
 }
 function defectsWithoutCaseSql(envName, limit = 200, vf = null) {
-  return [`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date, e.result, e.evidence FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
+  return [`SELECT e.id, e.vehicle_id, e.rule_id, v.plate, e.kind, e.done_date, e.result, e.evidence FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 ${vf ? 'AND v.id IN (SELECT value FROM json_each(?))' : ''} AND e.done_date >= ? AND e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
       AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=e.vehicle_id AND c.environment=? AND c.status<>'abgelehnt' AND ${berlinDaySql('c.created_at')} >= e.done_date AND ${FIXING_CASE_SQL}) -- Berliner Tag (Auftrag 00:30 Uhr am Prüftag zählt, 17.10.2026)
-      AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
+      AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND (e2.kind NOT IN ('Rückruf','Sonstiges') OR e2.rule_id=e.rule_id) AND e2.id<>e.id
         AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
       ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [...(vf ? [vf] : []), addMonths(berlinDate(), -12), envName]];
 }
@@ -211,13 +213,13 @@ export function reinspectionPendingQuery(env, envName) {
   return env.DB.prepare(sql).bind(...params);
 }
 function reinspectionPendingSql(envName, limit = 200, vf = null) {
-  return [`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date, e.result, e.evidence, c.id AS case_id, c.case_no, c.closed_at
+  return [`SELECT e.id, e.vehicle_id, e.rule_id, v.plate, e.kind, e.done_date, e.result, e.evidence, c.id AS case_id, c.case_no, c.closed_at
       FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
       JOIN cases c ON c.maintenance_event_id=e.id AND c.environment=? AND c.status='fahrzeug_freigegeben'
       WHERE v.active=1 AND v.eval_excluded=0 ${vf ? 'AND v.id IN (SELECT value FROM json_each(?))' : ''} AND e.done_date >= ? AND e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')
       AND c.closed_at = (SELECT MAX(c3.closed_at) FROM cases c3 WHERE c3.maintenance_event_id=e.id AND c3.environment=c.environment AND c3.status='fahrzeug_freigegeben')
       AND NOT EXISTS (SELECT 1 FROM cases c2 WHERE c2.maintenance_event_id=e.id AND c2.environment=c.environment AND c2.status NOT IN ('fahrzeug_freigegeben','abgelehnt'))
-      AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
+      AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND (e2.kind NOT IN ('Rückruf','Sonstiges') OR e2.rule_id=e.rule_id) AND e2.id<>e.id
         AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
       ORDER BY c.closed_at DESC LIMIT ${Number(limit)}`, [envName, ...(vf ? [vf] : []), addMonths(berlinDate(), -12)]];
 }
@@ -226,8 +228,8 @@ function reinspectionPendingSql(envName, limit = 200, vf = null) {
 // Cloudflare begrenzt die Abfragen je Aufruf (Agent, Übersicht). Gleiche SQL-Bausteine wie die Einzelabfragen; je Teil ein JSON-Array.
 // Die Reihenfolge innerhalb eines Aggregats ist in SQLite nicht zugesichert – daher nach dem Lesen wie in der Einzelabfrage sortiert.
 const EVENT_LISTS = {
-  defects_without_case: [defectsWithoutCaseSql, ['id', 'vehicle_id', 'plate', 'kind', 'done_date', 'result', 'evidence'], (a, b) => String(b.done_date).localeCompare(String(a.done_date))],
-  reinspection_pending: [reinspectionPendingSql, ['id', 'vehicle_id', 'plate', 'kind', 'done_date', 'result', 'evidence', 'case_id', 'case_no', 'closed_at'], (a, b) => String(a.closed_at).localeCompare(String(b.closed_at))],
+  defects_without_case: [defectsWithoutCaseSql, ['id', 'vehicle_id', 'rule_id', 'plate', 'kind', 'done_date', 'result', 'evidence'], (a, b) => String(b.done_date).localeCompare(String(a.done_date))],
+  reinspection_pending: [reinspectionPendingSql, ['id', 'vehicle_id', 'rule_id', 'plate', 'kind', 'done_date', 'result', 'evidence', 'case_id', 'case_no', 'closed_at'], (a, b) => String(a.closed_at).localeCompare(String(b.closed_at))],
   result_missing: [(envName, limit, vf) => noResultSql(null, limit, vf), ['id', 'vehicle_id', 'plate', 'kind', 'done_date'], (a, b) => String(b.done_date).localeCompare(String(a.done_date))],
 };
 // vehicleIds: nur diese Fahrzeuge (Standortfilter, vor dem LIMIT); je Liste höchstens 200, eine Zeile mehr gelesen →
@@ -352,9 +354,10 @@ const STATUS_DE = { ueberfaellig: 'überfällig', faellig: 'bald fällig', ok: '
 // Backlog 382 (Blickwinkel „Betriebskontrolle/BG-Prüfung angekündigt“): jüngstes eingetragenes Prüfergebnis je Fahrzeug und Prüfart
 // (gleiche Regel „neuere Durchführung überholt ältere“ wie die Prüfmängel-Listen) – eine Abfrage für den CSV-Export
 export async function latestResults(env) {
-  const r = (await env.DB.prepare(`SELECT e.vehicle_id, e.kind, e.done_date, e.result FROM maintenance_events e WHERE NOT EXISTS (SELECT 1 FROM maintenance_events e2
-    WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))`).all()).results;
-  return new Map(r.map((x) => [`${x.vehicle_id}|${x.kind}`, x]));
+  const r = (await env.DB.prepare(`SELECT e.vehicle_id, e.kind, e.rule_id, e.done_date, e.result FROM maintenance_events e WHERE NOT EXISTS (SELECT 1 FROM maintenance_events e2
+    WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND (e2.kind NOT IN ('Rückruf','Sonstiges') OR e2.rule_id=e.rule_id) AND e2.id<>e.id AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))`).all()).results;
+  // Rückruf/Sonstiges (mehrere Termine je Fahrzeug, Backlog 575): je Termin statt je Art
+  return new Map(r.map((x) => [MULTI_RULE_KINDS.includes(x.kind) ? `${x.vehicle_id}|${x.kind}|${x.rule_id}` : `${x.vehicle_id}|${x.kind}`, x]));
 }
 const deDate = (d) => (d ? `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}` : '');
 
@@ -378,11 +381,11 @@ export function maintFilterRows(ov, filter, dueBy = null) {
 
 export function maintenanceCsv(ov, latest = null) {
   const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Prüfart', 'Letzte Prüfung', 'Nächster Termin', 'Tage bis Termin', 'Status', 'Nachweis', 'Fahrzeugart', 'Fällig bei km', 'Aktueller km-Stand', 'Rest-km', 'km-Fälligkeit voraussichtlich (Prognose)', 'km bei letzter Prüfung', 'Intervall km', ...(latest ? ['Letztes Prüfergebnis', 'Prüfmangel offen'] : []), 'Geplanter Werkstatttermin', 'Werkstattauftrag (Nr.)'].join(';')];
-  const open = new Map();
-  for (const d of ov.defects_without_case || []) open.set(`${d.vehicle_id}|${d.kind}`, `${RESULT_DE[d.result] || d.result} am ${deDate(d.done_date)} – kein Mängelauftrag angelegt`);
-  for (const d of ov.reinspection_pending || []) if (!open.has(`${d.vehicle_id}|${d.kind}`)) open.set(`${d.vehicle_id}|${d.kind}`, `${RESULT_DE[d.result] || d.result} am ${deDate(d.done_date)} – Auftrag ${d.case_no} erledigt, Nachprüfung nicht eingetragen`);
-  const extra = (vid, kind) => { if (!latest) return []; const l = latest.get(`${vid}|${kind}`); return [l ? (l.result ? csvCell(`${RESULT_DE[l.result] || l.result} (${deDate(l.done_date)})`) : REQUIRED_KINDS.includes(kind) ? csvCell(`kein Ergebnis eingetragen (${deDate(l.done_date)})`) : '') : '', csvCell(open.get(`${vid}|${kind}`) || '')]; };
-  for (const r of ov.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), csvCell(r.site), csvCell(r.kind), r.last_done_date || '', r.next_due_date || '', r.days ?? '', STATUS_DE[r.status], csvCell(r.evidence), r.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', r.next_due_km ?? '', r.current_km ?? '', r.km_remaining ?? '', r.km_forecast ? r.km_forecast.date : '', r.kind === 'HU' || r.kind === 'SP' ? '' : r.last_done_km ?? '', r.interval_km ?? '', ...extra(r.vehicle_id, r.kind), r.planned_date || '', r.open_order ? csvText(r.open_order.case_no) : ''].join(';'));
+  const open = new Map(); const ok_ = (vid, kind, rid) => (MULTI_RULE_KINDS.includes(kind) ? `${vid}|${kind}|${rid}` : `${vid}|${kind}`); // Backlog 575: Sonstiges/Rückruf je Termin
+  for (const d of ov.defects_without_case || []) open.set(ok_(d.vehicle_id, d.kind, d.rule_id), `${RESULT_DE[d.result] || d.result} am ${deDate(d.done_date)} – kein Mängelauftrag angelegt`);
+  for (const d of ov.reinspection_pending || []) if (!open.has(ok_(d.vehicle_id, d.kind, d.rule_id))) open.set(ok_(d.vehicle_id, d.kind, d.rule_id), `${RESULT_DE[d.result] || d.result} am ${deDate(d.done_date)} – Auftrag ${d.case_no} erledigt, Nachprüfung nicht eingetragen`);
+  const extra = (vid, kind, rid) => { if (!latest) return []; const l = latest.get(ok_(vid, kind, rid)); return [l ? (l.result ? csvCell(`${RESULT_DE[l.result] || l.result} (${deDate(l.done_date)})`) : REQUIRED_KINDS.includes(kind) ? csvCell(`kein Ergebnis eingetragen (${deDate(l.done_date)})`) : '') : '', csvCell(open.get(ok_(vid, kind, rid)) || '')]; };
+  for (const r of ov.rows) lines.push([csvCell(r.plate), csvCell(r.vehicle_id), csvCell(r.site), csvCell(r.kind), r.last_done_date || '', r.next_due_date || '', r.days ?? '', STATUS_DE[r.status], csvCell(r.evidence), r.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', r.next_due_km ?? '', r.current_km ?? '', r.km_remaining ?? '', r.km_forecast ? r.km_forecast.date : '', r.kind === 'HU' || r.kind === 'SP' ? '' : r.last_done_km ?? '', r.interval_km ?? '', ...extra(r.vehicle_id, r.kind, r.id), r.planned_date || '', r.open_order ? csvText(r.open_order.case_no) : ''].join(';'));
   for (const g of ov.gaps) for (const k of g.missing) lines.push([csvCell(g.plate), csvCell(g.vehicle_id), csvCell(g.site), csvCell(k), '', '', '', 'kein Termin hinterlegt', '', g.vehicle_kind === 'anhaenger' ? 'Anhänger' : 'Lkw', '', '', '', '', '', '', ...(latest ? ['', ''] : []), '', ''].join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
@@ -837,7 +840,7 @@ const SOURCE_DE = { bestand: 'Bestand (Übernahme)', erfasst: 'erfasst', erledig
 // Auftrag der Umgebung mit Verknüpfung auf diese Durchführung; Nachprüfung = nächste spätere Durchführung derselben Prüfart am Fahrzeug.
 // result_addable: ohne Ergebnis und neueste ihrer Art am Fahrzeug – wie das Formular „Prüfergebnis nachtragen“ in der Fahrzeugakte (Direktsprung ?ev=).
 const DEFECT_SQL = `e.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')`;
-const NEXT_EVENT_SQL = (col) => `CASE WHEN ${DEFECT_SQL} THEN (SELECT e2.${col} FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
+const NEXT_EVENT_SQL = (col) => `CASE WHEN ${DEFECT_SQL} THEN (SELECT e2.${col} FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND (e2.kind NOT IN ('Rückruf','Sonstiges') OR e2.rule_id=e.rule_id) AND e2.id<>e.id
       AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)) ORDER BY e2.done_date, e2.created_at LIMIT 1) END`;
 const DEFECT_CASE_SQL = (col) => `CASE WHEN ${DEFECT_SQL} THEN (SELECT c.${col} FROM cases c WHERE c.maintenance_event_id=e.id AND c.environment=?1 AND c.status<>'abgelehnt' ORDER BY c.created_at DESC LIMIT 1) END`;
 
@@ -855,7 +858,7 @@ export async function maintenanceHistory(env, user, query = {}, envName = 'produ
   const rows = (await env.DB.prepare(`SELECT e.id AS event_id, e.vehicle_id, v.plate, v.kind AS vehicle_kind, v.site, e.kind, e.done_date, e.done_km, e.result, e.evidence, e.source, u.display_name AS recorded_by_name, e.created_at,
       ${DEFECT_CASE_SQL('id')} AS defect_case_id, ${DEFECT_CASE_SQL('case_no')} AS defect_case_no, ${DEFECT_CASE_SQL('status')} AS defect_case_status,
       ${NEXT_EVENT_SQL('done_date')} AS reinspection_date, ${NEXT_EVENT_SQL('result')} AS reinspection_result,
-      CASE WHEN e.result IS NULL AND NOT EXISTS (SELECT 1 FROM maintenance_events e3 WHERE e3.vehicle_id=e.vehicle_id AND e3.kind=e.kind AND e3.id<>e.id
+      CASE WHEN e.result IS NULL AND NOT EXISTS (SELECT 1 FROM maintenance_events e3 WHERE e3.vehicle_id=e.vehicle_id AND e3.kind=e.kind AND (e3.kind NOT IN ('Rückruf','Sonstiges') OR e3.rule_id=e.rule_id) AND e3.id<>e.id
         AND (e3.done_date > e.done_date OR (e3.done_date = e.done_date AND e3.created_at > e.created_at))) THEN 1 ELSE 0 END AS result_addable
     FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN users u ON u.id=e.recorded_by
     WHERE e.done_date >= ?2 AND e.done_date <= ?3 ${kind ? 'AND e.kind = ?4' : ''} ORDER BY e.done_date DESC, v.plate LIMIT 5001`)

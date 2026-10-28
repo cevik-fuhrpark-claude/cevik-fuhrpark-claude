@@ -16,8 +16,9 @@ import { kmRejection } from './telematics.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 // Feuerlöscher/Verbandkasten/Ladungssicherung: Intervall bzw. Ablaufdatum trägt die Fuhrparkleitung selbst ein (keine Vorgabe der App)
+// Ladebordwand/Ladekran (Backlog 574): eigene Arten, damit beide am selben Lkw je einen Termin haben können (vorher nur ein „Hydraulik/Aufbau“) – Intervall trägt die Leitung ein
 // Rückruf: einmalige Hersteller-/Werkstattaktion (Schreiben bzw. KBA-Referenz als Nachweis), Frist nur laut Schreiben, kein Intervall
-export const MAINT_KINDS = ['HU', 'SP', 'UVV', 'Tachograph', 'Ölwechsel', 'Inspektion', 'Bremsen', 'Reifen', 'Hydraulik/Aufbau', 'Feuerlöscher', 'Verbandkasten', 'Ladungssicherung', 'Rückruf', 'Sonstiges'];
+export const MAINT_KINDS = ['HU', 'SP', 'UVV', 'Tachograph', 'Ölwechsel', 'Inspektion', 'Bremsen', 'Reifen', 'Hydraulik/Aufbau', 'Feuerlöscher', 'Verbandkasten', 'Ladungssicherung', 'Ladebordwand', 'Ladekran', 'Rückruf', 'Sonstiges'];
 export const ONE_TIME_KINDS = ['Rückruf'];
 // Arten, die je Fahrzeug mehrfach vorkommen dürfen (mehrere Rückrufe, verschiedene sonstige Prüfungen)
 export const MULTI_RULE_KINDS = ['Rückruf', 'Sonstiges'];
@@ -53,7 +54,7 @@ export async function listVehicles(env, user, envName, query = {}) {
       -- jüngste Prüfung (≤ 12 Monate) mit gefährlichen Mängeln/verkehrsunsicher, keine neuere derselben Art, kein Vorgang seitdem (wie „Prüfmangel ohne Auftrag“)
       (SELECT e.kind || '|' || e.done_date || '|' || e.result FROM maintenance_events e WHERE e.vehicle_id=v.id AND v.eval_excluded=0 AND e.done_date >= ?
         AND e.result IN ('gefaehrliche_maengel','verkehrsunsicher')
-        AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND e2.id<>e.id
+        AND NOT EXISTS (SELECT 1 FROM maintenance_events e2 WHERE e2.vehicle_id=e.vehicle_id AND e2.kind=e.kind AND (e2.kind NOT IN ('Rückruf','Sonstiges') OR e2.rule_id=e.rule_id) AND e2.id<>e.id
           AND (e2.done_date > e.done_date OR (e2.done_date = e.done_date AND e2.created_at > e.created_at)))
         AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status<>'abgelehnt' AND ${berlinDaySql('c.created_at')} >= e.done_date AND ${FIXING_CASE_SQL})
         ORDER BY e.result='verkehrsunsicher' DESC, e.done_date DESC LIMIT 1) AS failed_insp,
@@ -1242,6 +1243,8 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   if (docKm !== null && km !== null && docKm <= km) throw bad('validation', 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.');
   if (docKm !== null && km !== null && r.interval_km && docKm === km + r.interval_km) docKm = null;
   const next = docNext || (!husp && r.interval_months ? addMonths(date, r.interval_months) : null);
+  // Backlog 576: Termin ohne Intervall (z. B. Verbandkasten mit Ablaufdatum) fiel nach „erledigt“ ohne neues Datum still aus Erinnerung/Kalender
+  if (!husp && !oneTime && !next && r.next_due_date && !r.interval_km && docKm === null) throw bad('validation', 'Dieser Prüftermin hat kein Intervall – bitte den nächsten Termin laut Nachweis (z. B. Ablaufdatum) angeben, sonst entfällt die Erinnerung.');
   const result = body.result ? oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis') : null;
   // Atomar (17.10.2026):
   // - Regel (letzte Durchführung, Fälligkeit) nur ändern, wenn diese Durchführung nicht älter ist als die gespeicherte – ein nachgetragener

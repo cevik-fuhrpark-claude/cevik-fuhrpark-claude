@@ -444,7 +444,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const parent = parentRow ? (caseAccess(user, parentRow) ? { id: parentRow.id, case_no: parentRow.case_no } : { case_no: parentRow.case_no }) : null;
   // Prüfung des Mängelauftrags + jüngste spätere Durchführung derselben Prüfart am Fahrzeug (= eingetragene Nachprüfung)
   const mevent = c.maintenance_event_id ? await env.DB.prepare(`SELECT e.id, e.kind, e.done_date, e.result,
-      (SELECT json_object('done_date', n.done_date, 'result', n.result, 'evidence', n.evidence) FROM maintenance_events n WHERE n.vehicle_id=e.vehicle_id AND n.kind=e.kind AND n.id<>e.id
+      (SELECT json_object('done_date', n.done_date, 'result', n.result, 'evidence', n.evidence) FROM maintenance_events n WHERE n.vehicle_id=e.vehicle_id AND n.kind=e.kind AND (n.kind NOT IN ('Rückruf','Sonstiges') OR n.rule_id=e.rule_id) AND n.id<>e.id
         AND (n.done_date > e.done_date OR (n.done_date = e.done_date AND n.created_at > e.created_at)) ORDER BY n.done_date DESC, n.created_at DESC LIMIT 1) AS reinspection
       FROM maintenance_events e WHERE e.id=?`).bind(c.maintenance_event_id).first() : null;
   if (mevent) mevent.reinspection = mevent.reinspection ? JSON.parse(mevent.reinspection) : null;
