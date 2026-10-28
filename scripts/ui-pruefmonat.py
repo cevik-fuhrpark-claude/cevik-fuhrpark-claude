@@ -51,6 +51,10 @@ with sync_playwright() as p:
         q.locator(row).first.click(); q.wait_for_selector('form[data-mdone]:not([hidden])', timeout=15000)
         fm = q.locator('form[data-mdone]:not([hidden])').first
         fm.locator('input[name=evidence]').fill(f'UVV-Protokoll erledigt {i}')
+        # Backlog 576: Termin ohne Intervall verlangt den nächsten Termin laut Nachweis (sonst entfiele die Erinnerung)
+        nd = fm.locator('input[name=next_due_date]')
+        check(nd.get_attribute('required') is not None and fm.locator('[data-mdonenoint]').count() == 1, f'{lang}: ohne Intervall nächster Termin Pflicht mit Hinweis')
+        nd.fill((datetime.date.today() + datetime.timedelta(days=365)).isoformat())
         if SHOTS: q.screenshot(path=f'{SHOTS}/pruefmonat-formular-{lang}-{w}.png')
         fm.locator('button.btn').click()
         q.wait_for_function("() => location.hash === '#/maintenance'", timeout=15000)
