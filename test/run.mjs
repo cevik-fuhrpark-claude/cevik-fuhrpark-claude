@@ -25017,6 +25017,29 @@ await test('Backlog 475–477 (Blickwinkel „Disposition Bayern morgens: welche
   ok(!app.includes('<span class="sub">${[x.missing.length'), 'Winterreifen Werkstatt');
 });
 
+await test('Backlog 478/479 (Blickwinkel „geteiltes Werkstatt-Tablet“): Abmelden schließt angezeigte Mitteilungen der Person; Rückfrage, wenn ungesicherte Entwürfe/Inventurzählungen dieser Person verloren gehen (nur eigene, abgelaufene nicht), DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const p0 = app.indexOf('async function pushOffForLogout('); const po = app.slice(p0, app.indexOf('\n}\n', p0));
+  ok(po.includes('reg.getNotifications()') && po.includes('n.close()') && po.indexOf('getNotifications') < po.indexOf('if (!sub) return null'), 'Mitteilungen schließen, auch ohne Abo');
+  ok(app.includes("if (!(await logoutOutboxOk())) return;"), 'Abmelden fragt über logoutOutboxOk');
+  const d0 = app.indexOf('function logoutDraftCount('); const src = app.slice(d0, app.indexOf('\n}\n', d0) + 2);
+  const mem = () => { const o = {}; Object.defineProperty(o, 'getItem', { value: (k) => (k in o ? o[k] : null) }); Object.defineProperty(o, 'setItem', { value: (k, v) => { o[k] = String(v); } }); return o; };
+  const ss = mem(); const ls = mem();
+  const count = (S) => new Function('S', 'sessionStorage', 'localStorage', 'FORM_DRAFT_MS', src + '\nreturn logoutDraftCount();')(S, ss, ls, 12 * 3600000);
+  const now = new Date().toISOString(); const old = new Date(Date.now() - 13 * 3600000).toISOString();
+  ss.setItem('cfp_fd_act_C1_U1_production', JSON.stringify({ at: now, v: { hours: '1,5' } }));
+  ss.setItem('cfp_fd_report_U2_production', JSON.stringify({ at: now, v: { d: 'x' } }));
+  ss.setItem('cfp_fd_check_U1_production', JSON.stringify({ at: old, v: { a: 'ok' } }));
+  ss.setItem('cfp_fd_report_U1_test', JSON.stringify({ at: now, v: {} }));
+  ls.setItem('cfp_inv_U1_production_DORTMUND', JSON.stringify({ at: now, counts: { i1: '3' } }));
+  ls.setItem('cfp_inv_U2_production_DORTMUND', JSON.stringify({ at: now, counts: { i1: '3' } }));
+  eq(count({ me: { id: 'U1' } }), 2, 'eigener Aktionsentwurf + eigene Inventur; fremde, abgelaufene und leere nicht');
+  eq(count({ me: null }), 0, 'ohne Anmeldung nichts');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(PLURALS[l].logout_drafts_confirm && PLURALS[l].logout_drafts_confirm.one && STRINGS[l].logout_drafts_confirm, l); }
+  for (const f of ['few', 'many']) ok(PLURALS.uk.logout_drafts_confirm[f], 'uk ' + f);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

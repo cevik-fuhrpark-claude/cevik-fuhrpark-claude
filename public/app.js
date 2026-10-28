@@ -1622,7 +1622,18 @@ async function uploadPhotosSafeRun(path, body, r, target, files, sb, who) {
 async function logoutOutboxOk() {
   if (outboxGet().some((x) => !x.failed) && navigator.onLine !== false) await flushOutbox().catch(() => {});
   const pend = outboxGet().filter((x) => !x.failed).length;
-  return !pend || confirm(tn('logout_outbox_confirm', pend));
+  if (pend && !confirm(tn('logout_outbox_confirm', pend))) return false;
+  // Backlog 479: ungesicherte Formularentwürfe (Arbeitszeit/Teil nach Netzabbruch, Meldung, Kontrolle) und Inventurzählungen dieser Person
+  // werden beim Abmelden gelöscht (gewollt: geteiltes Gerät) – vorher ohne Rückfrage
+  const dr = logoutDraftCount();
+  return !dr || confirm(tn('logout_drafts_confirm', dr));
+}
+function logoutDraftCount() {
+  if (!S.me) return 0;
+  const mid = `_${S.me.id}_`; let n = 0;
+  try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_fd_') && k.includes(mid)) { const x = JSON.parse(sessionStorage.getItem(k) || 'null'); if (x && x.v && Object.keys(x.v).length && Date.now() - Date.parse(x.at) < FORM_DRAFT_MS) n++; } } catch {}
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith(`cfp_inv_${S.me.id}_`)) { const x = JSON.parse(localStorage.getItem(k) || 'null'); if (x && x.counts && Date.now() - Date.parse(x.at) < 14 * 86400000) n++; } } catch {}
+  return n;
 }
 // who: beim Absenden festgehaltene Person (outboxWho) – nach 401 ist S.me schon zurückgesetzt (Anmeldung in anderem Tab beendet, 21.10.2026)
 const outboxWho = () => (S.me ? { id: S.me.id, name: S.me.display_name, env: S.me.role === 'owner' && S.viewEnv ? S.viewEnv : S.me.environment, key: outboxKey() } : null);
@@ -5184,7 +5195,11 @@ window.addEventListener('afterprint', () => { for (const d of document.querySele
 async function pushOffForLogout() {
   try {
     if (!('serviceWorker' in navigator)) return null;
-    const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+    const reg = await navigator.serviceWorker.getRegistration();
+    // Backlog 478 (Blickwinkel „geteiltes Werkstatt-Tablet“): angezeigte Mitteilungen der abgemeldeten Person schließen – sonst standen
+    // „Vorgangsnummer · Kennzeichen“ oder „Neue Anmeldung …“ weiter in der Leiste/auf dem Sperrbildschirm und öffneten unter dem nächsten Konto
+    try { if (reg && reg.getNotifications) for (const n of await reg.getNotifications()) n.close(); } catch { /* ohne Mitteilungen */ }
+    const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
     if (!sub) return null;
     const ep = sub.endpoint; sub.unsubscribe().catch(() => {}); return ep;
   } catch { return null; }

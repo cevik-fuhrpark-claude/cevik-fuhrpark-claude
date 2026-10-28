@@ -124,6 +124,7 @@ UI-Versicherungsfall bei Dublette (Hinweis statt Formular), Alle gelesen|ui-vers
 UI-Führerscheinkontrolle stornieren (Verlauf, Begründung)|ui-fuehrerscheinkontrolle-storno.py|/tmp/cfp-fk-storno.log
 UI-Startseite: Sprung mit Standortfilter wie Zähler|ui-startseite-sprung-standort.py|/tmp/cfp-sprung-standort.log
 UI-Werkstatt-Befehl nach Funkloch nicht doppelt|ui-befehl-funkloch.py|/tmp/cfp-befehl-funkloch.log
+UI-Abmelden am geteilten Tablet: Rückfrage bei ungesicherten Entwürfen, Mitteilungen geschlossen, DE/UK/EN 820/390/1366|ui-abmelden-entwurf.py|/tmp/cfp-abmelden-entwurf.log
 UI-Vorgang nennt berechnete SP, Nachweistext übersetzt|ui-vorgang-sp-berechnet.py|/tmp/cfp-vorgang-sp.log
 UI-Stammdaten auf gelesenem Stand, Bußgeld Anhänger/Übernahme|ui-stammdaten-stand-bussgeld-anhaenger.py|/tmp/cfp-stand-bussgeld.log
 UI-Berechtigungsfehler mit Grund (Kontrolle nach Reparatur, Status)|ui-berechtigung-grund.py|/tmp/cfp-berechtigung-grund.log

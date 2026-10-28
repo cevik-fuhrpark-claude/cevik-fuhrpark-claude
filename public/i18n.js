@@ -2900,4 +2900,9 @@ Object.assign(STRINGS.en, { kd_drv_not: 'reported as not drivable' });
 Object.assign(STRINGS.de, { dispo_limited_new: 'Eingeschränkt fahrbereit gemeldet, noch ohne Werkstattauftrag' });
 Object.assign(STRINGS.uk, { dispo_limited_new: 'Повідомлено «обмежено на ходу», ще без замовлення майстерні' });
 Object.assign(STRINGS.en, { dispo_limited_new: 'Reported as driveable with restrictions, no workshop order yet' });
+// [CLAUDE] Backlog 479: Rückfrage beim Abmelden, wenn ungesicherte Entwürfe verloren gehen
+Object.assign(PLURALS.de, { logout_drafts_confirm: { one: '{n} nicht gespeicherte Eingabe (z. B. Arbeitszeit, Teil, Meldung oder Inventurzählung) geht beim Abmelden verloren. Trotzdem abmelden?', other: '{n} nicht gespeicherte Eingaben (z. B. Arbeitszeit, Teil, Meldung oder Inventurzählung) gehen beim Abmelden verloren. Trotzdem abmelden?' } });
+Object.assign(PLURALS.uk, { logout_drafts_confirm: { one: '{n} незбережене введення (напр. робочий час, деталь, заявка або інвентаризація) буде втрачено під час виходу. Все одно вийти?', few: '{n} незбережені введення (напр. робочий час, деталь, заявка або інвентаризація) буде втрачено під час виходу. Все одно вийти?', many: '{n} незбережених введень (напр. робочий час, деталь, заявка або інвентаризація) буде втрачено під час виходу. Все одно вийти?', other: '{n} незбереженого введення (напр. робочий час, деталь, заявка або інвентаризація) буде втрачено під час виходу. Все одно вийти?' } });
+Object.assign(PLURALS.en, { logout_drafts_confirm: { one: '{n} unsaved entry (e.g. labour time, part, report or stock count) will be lost when you sign out. Sign out anyway?', other: '{n} unsaved entries (e.g. labour time, part, report or stock count) will be lost when you sign out. Sign out anyway?' } });
 
+for (const l of ['de', 'uk', 'en']) STRINGS[l].logout_drafts_confirm = PLURALS[l].logout_drafts_confirm.other;
