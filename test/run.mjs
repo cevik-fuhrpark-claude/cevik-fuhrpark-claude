@@ -25278,6 +25278,7 @@ await test('Backlog 510–516 (Blickwinkel „Monatsende: km-Meldung an den Leas
   eq(contractStatus({ km_allowance: 1000, start_km: 5 }, null, '2026-10-28', 30).overall, 'hinweis', '510: ohne km-Stand');
   eq(contractStatus({ km_allowance: 1000, start_km: null }, null, '2026-10-28', 30).overall, 'hinweis', '510: ohne km bei Übernahme');
   eq(contractStatus({ km_allowance: 1000, start_km: 5 }, { km: 100, measured_at: '2026-10-01T10:00:00Z' }, '2026-10-28', 30).overall, 'ok', 'mit km-Stand ok');
+  eq(contractStatus({ km_allowance: 1000, start_km: 5, start_date: '2026-12-01' }, { km: 100, measured_at: '2026-10-01T10:00:00Z' }, '2026-10-28', 30).overall, 'ok', '510: künftiger Beginn ohne Hinweis (Review)');
   const V2 = 'VIN:WDB96340312345671';
   eq((await U.fleet.post('/api/vehicles', { vin: V2.slice(4), plate: 'LS-KM 1', site: 'Dortmund' })).status, 201);
   eq((await U.fleet.post(`/api/vehicles/${V2}/contracts`, { kind: 'miete', partner: 'MietCo', evidence: 'M-1', start_date: '2026-01-01', end_date: '2028-12-31' })).status, 201);

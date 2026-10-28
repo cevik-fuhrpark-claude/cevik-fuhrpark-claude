@@ -80,8 +80,9 @@ export function contractStatus(c, latest, today, warnDays, endLatest) {
   }
   if (c.km_allowance) km = kmStatus(c, latest, true);
   const handeln = (end && end.status === 'abgelaufen') || (km && km.status === 'ueber');
-  const hinweis = (end && end.status === 'laeuft_aus') || (notice && notice.status === 'bald') || (km && (km.status === 'prognose_ueber' || km.status === 'zaehler' || km.status === 'unter_start' || km.status === 'ohne_km' || km.status === 'ohne_start'));
-  // Backlog 510: Kontingent ohne km-Stand bzw. ohne „km bei Übernahme“ ist nicht „in Ordnung“ (Datenqualität stufte es schon als Lücke ein) – „Hinweis“, kein Agentenbefund
+  const hinweis = (end && end.status === 'laeuft_aus') || (notice && notice.status === 'bald') || (km && (km.status === 'prognose_ueber' || km.status === 'zaehler' || km.status === 'unter_start' || (km.status === 'ohne_km' && !(c.start_date && c.start_date > today)) || km.status === 'ohne_start'));
+  // Backlog 510: Kontingent ohne km-Stand bzw. ohne „km bei Übernahme“ ist nicht „in Ordnung“ (Datenqualität stufte es schon als Lücke ein) – „Hinweis“, kein Agentenbefund;
+  // Vertrag mit künftigem Beginn: noch kein km-Stand nötig (wie Datenqualität `contract_km_no_reading`)
   return { overall: handeln ? 'handeln' : hinweis ? 'hinweis' : 'ok', end, notice, km };
 }
 
@@ -344,7 +345,7 @@ export async function contractOverview(env, user, query = {}, envName = null) {
 }
 
 // Backlog 512: laufender Leasing-/Mietvertrag eines Lkw ohne Kontingent und ohne Ablesung bis zum Stichtag – sonst nicht von einem Anhänger zu unterscheiden
-export const noReading = (c) => ['leasing', 'miete'].includes(c.kind) && !c.ended_on && !c.reading && !c.km_allowance && c.vehicle_kind !== 'anhaenger';
+export const noReading = (c) => ['leasing', 'miete'].includes(c.kind) && !c.ended_on && !(c.start_date && c.start_date > berlinDate()) && !c.reading && !c.km_allowance && c.vehicle_kind !== 'anhaenger';
 const KM_ST_DE = { ok: 'im Kontingent', ueber: 'Kontingent überschritten', prognose_ueber: 'Prognose über Kontingent', ohne_km: 'kein km-Stand',
   ohne_start: 'km bei Übernahme fehlt', zaehler: 'nicht berechenbar (Zähler-Rücksprung)', unter_start: 'km-Stand unter km bei Übernahme' };
 // Herkunft einer Ablesung im Klartext (wie `odoSrc` der App, deutsch für die CSV)

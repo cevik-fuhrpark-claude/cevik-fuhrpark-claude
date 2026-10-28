@@ -3552,7 +3552,7 @@ function ctLines(c, { noEvidence = false } = {}) {
   // „km bei Übernahme“ fehlt) – der Stand für die Meldung an den Leasinggeber, mit Herkunft; nie geschätzt
   if (c.reading && !(s.km && s.km.driven !== undefined)) out.push(`<span data-ctread>${esc(t('km'))}: ${fmtKm(c.reading.km)} <span class="small muted">(${esc(t('ct_km_read'))} ${fmtD(c.reading.measured_at)}${c.reading.source ? ' · ' + esc(odoSrc(c.reading.source)) : ''})</span></span>`);
   // Backlog 512: Leasing/Miete eines Lkw ohne Kontingent und ohne jede Ablesung (bis Stichtag) – gleiche Regel wie die CSV (`noReading`)
-  if (['leasing', 'miete'].includes(c.kind) && !c.ended_on && 'reading' in c && !c.reading && !c.km_allowance && c.vehicle_kind !== 'anhaenger') out.push(`<span class="muted" data-ctnoread>${esc(t('ct_km_noread'))}</span>`);
+  if (['leasing', 'miete'].includes(c.kind) && !c.ended_on && !(c.start_date && c.start_date > bDate()) && 'reading' in c && !c.reading && !c.km_allowance && c.vehicle_kind !== 'anhaenger') out.push(`<span class="muted" data-ctnoread>${esc(t('ct_km_noread'))}</span>`);
   if (c.monthly_rate_net !== null) out.push(`${esc(t('ct_rate'))}: ${eur(c.monthly_rate_net)}`);
   if (!noEvidence) out.push(`<span class="small muted">${esc(t('evidence'))}: ${esc(c.evidence)}${c.note ? ' · ' + esc(c.note) : ''}</span>`);
   if (c.ended_on) out.push(`<span class="small">${esc(t('ct_ended_on'))} ${fmtD(c.ended_on)}${c.end_note ? ' · ' + esc(c.end_note) : ''}</span>`);
