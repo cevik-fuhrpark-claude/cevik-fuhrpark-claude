@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (28.10.2026, Backlog 472/473, Blickwinkel „Überführungsfahrt zur Werkstatt“): Mangel „eingeschränkt fahrbereit“
 # mit Werkstattauftrag (Termin morgen). „Mein Fahrzeug“ der zugeordneten Fahrer (DE/UK/EN) zeigt beim bekannten Mangel die Werkstatt und
 # „laut Meldung eingeschränkt fahrbereit“, beim Termin die Werkstatt; die Disposition sieht den Hinweis auch bei Termin heute („Nicht
-# einplanen“) und im Terminplan; Backlog 474: Link „eingeschränkt gemeldet, noch ohne Werkstattauftrag“ → gefilterte Liste. 390/820/1366 px ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
+# einplanen“) und im Terminplan; Backlog 474: Link „eingeschränkt gemeldet, noch ohne Werkstattauftrag“ → gefilterte Liste; Backlog 476: Prüfmangel eines Anhängers ohne Vorgang nennt den gekoppelten Lkw. 390/820/1366 px ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -47,6 +47,12 @@ with sync_playwright() as p:
     c2=api('POST','/api/cases',{'vehicle_id':'VIN:'+vin2,'description':'Getriebe schaltet hart','priority':'mittel','driveability':'eingeschraenkt','request_key':str(uuid.uuid4())})['d']['id']
     check(cmd(api,c2,'approve_repair',{'workshop_site':'DORTMUND','planned_date':today},'Überführung heute')['s']==200,'Auftrag mit Termin heute')
     api('POST','/api/cases',{'vehicle_id':'VIN:'+vin3,'description':'Lenkung schwergängig','priority':'mittel','driveability':'eingeschraenkt','request_key':str(uuid.uuid4())})
+    # Backlog 476: Anhänger mit Prüfung „verkehrsunsicher“ ohne Vorgang → Tafel nennt den gekoppelten Lkw
+    api('POST','/api/vehicles',{'vin':'WDB9634031L400224','plate':'UF-AH 4','site':'Dortmund','kind':'anhaenger'})
+    api('POST','/api/vehicles',{'vin':'WDB9634031L400225','plate':'UF-AB 5','site':'Dortmund','trailer_plate':'UF-AH 4'})
+    r=api('POST','/api/vehicles/VIN:WDB9634031L400224/maintenance',{'kind':'UVV','last_done_date':(datetime.date.fromisoformat(today)-datetime.timedelta(days=300)).isoformat(),'interval_months':12,'evidence':'UI-Test Überführung'})
+    check(r['s'] in (200,201),'UVV Anhänger angelegt '+str(r['s']))
+    check(api('POST',f"/api/maintenance/{r['d']['id']}/complete",{'done_date':(datetime.date.fromisoformat(today)-datetime.timedelta(days=1)).isoformat(),'evidence':'UI-Test Protokoll','result':'verkehrsunsicher'})['s']==200,'UVV verkehrsunsicher')
     for lang,un in drivers+disp:
       for wd,h in [(390,844),(820,1180),(1366,900)]:
         ctx=br.new_context(viewport={'width':wd,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
@@ -63,6 +69,7 @@ with sync_playwright() as p:
             q.wait_for_timeout(800)
             n=q.locator('[data-dupclim]').count(); txts=[q.locator('[data-dupclim]').nth(i).inner_text() for i in range(n)]
             check(n>=2 and all(LIM[lang] in x for x in txts),f'Dispo {lang} {wd}px: Hinweis in „Nicht einplanen“/Plan ({n})')
+            check(q.locator('[data-inspcoupled]').count()==1 and 'UF-AB 5' in q.inner_text('[data-inspcoupled]'),f'Dispo {lang} {wd}px: Prüfmangel des Anhängers nennt den Lkw')
             check(q.locator('#dlimited').count()==1 and '(1)' in q.inner_text('#dlimited'),f'Dispo {lang} {wd}px: Link „eingeschränkt gemeldet, ohne Auftrag (1)“')
             q.click('#dlimited'); q.wait_for_selector('.seg-tabs a.on[data-f="limited"]',timeout=15000); q.wait_for_timeout(500)
             check('UF-AB 3' in q.inner_text('#app') and 'UF-AB 1' not in q.inner_text('#app'),f'Dispo {lang} {wd}px: Liste zeigt nur die Meldung ohne Auftrag')

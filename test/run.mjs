@@ -24976,11 +24976,45 @@ await test('Backlog 474 (Blickwinkel „Überführungsfahrt“, Teilagent-Fund 3
   eq((await ids(D)).join(), a, 'Disposition: nur a'); eq((await ids(U.fleet)).join(), a, 'Leitung: nur a');
   eq((await ids(U.driver)).length, 0, 'Fahrer nie');
   ok(!(await ids(D)).includes(c), 'fahrbereit nicht');
+  const csv = new TextDecoder().decode((await U.fleet.get('/api/cases?format=csv&status=open&limited=1')).data);
+  ok(csv.includes('Kupplung rutscht') && !csv.includes('Spiegel locker') && !csv.includes('Bremse zieht'), 'CSV gefiltert');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("c.status === 'gemeldet' && !c.safety_lock && c.reported_driveability === 'eingeschraenkt'") && app.includes("id=\"dlimited\""), 'Tafel-Link mit gleicher Regel');
   ok(app.includes("f === 'limited' ? 'status=open&limited=1'") && app.includes("limited: 'dispo_limited_new'"), 'Filter in der Vorgangsliste');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].dispo_limited_new, l); ok(STRINGS[l].help_dispo_s.includes(STRINGS[l].dispo_limited_new), l + ': Hilfe Disposition'); }
+});
+
+await test('Backlog 475–477 (Blickwinkel „Disposition Bayern morgens: welche Lkw des eigenen Standorts sind einsatzbereit?“): Zähler der Tafel mit Standortregel wie Server/Liste (siteKeyUi); Prüfmangel ohne Vorgang nennt den gekoppelten Lkw/Anhänger; Unterzeilen Terminplan/Winterreifen umbrechen', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  // 475: eine Regel für Startseite, Fahrzeugliste und Server
+  ok(app.includes('        const nk = siteKeyUi;') && !app.includes("String(x).trim().toLocaleLowerCase('de') : 'ohne');\n        const wn"), 'Tafel nutzt siteKeyUi');
+  const k0 = app.indexOf('const siteKeyUi = '); const siteKeyUi = new Function(app.slice(k0, app.indexOf('\n', k0)) + '\nreturn siteKeyUi;')();
+  const { siteKey } = await import('../src/reports.js').catch(() => ({}));
+  for (const [a, b] of [['Nürnberg  Süd', 'nürnberg süd'], [' Nürnberg Süd ', 'NÜRNBERG SÜD'], ['', null]]) {
+    eq(siteKeyUi(a), siteKeyUi(b), JSON.stringify(a));
+    if (typeof siteKey === 'function' && a) eq(siteKey(a), siteKey(b), 'Server ' + JSON.stringify(a));
+  }
+  // 476: Prüfmangel ohne Vorgang mit Gespannpartner
+  const { STRINGS } = await import('../public/i18n.js');
+  const i0 = app.indexOf('const DISPO_DEFECTS'); const src = app.slice(i0, app.indexOf('\n// Werkstatt-Startseite: Winterreifen', i0));
+  const fmt = (d) => d ? d.split('-').reverse().join('.') : '–';
+  for (const lang of ['de', 'uk', 'en']) {
+    const L = STRINGS[lang];
+    const board = new Function('bDate', 'esc', 't', 'plate', 'fmtD', 'fmtDue', 'fmtDT', 'wsName', 'clipTxt', 'ltxt', 'cDesc', 'plateCmp', 'translateLockReason', 'hoMissing', 'vlAt', 'partsEta', 'dispoReturnKnown', 'S', 'mk', src + '\nreturn dispoBoard;')(
+      () => BERLIN_TODAY, (v) => String(v), (k) => L[k] || k, (p) => `[${p}]`, fmt, fmt, (v) => v, (v) => v, (v) => v, (v) => v, (v) => v, (p, q) => String(p).localeCompare(String(q)), (l, v) => v, () => [], () => '', () => '', () => true, { lang }, (k) => k);
+    const def = [{ vehicle_id: 'T1', plate: 'SZ-YC 5514', result: 'verkehrsunsicher', kind: 'HU', done_date: BERLIN_TODAY }, { vehicle_id: 'L9', plate: 'SZ-YC 5599', result: 'gefaehrliche_maengel', kind: 'SP', done_date: BERLIN_TODAY }];
+    const h = board([], def, new Map([['T1', { kind: 'lkw', plate: 'SZ-YC 5513' }]]));
+    ok(h.includes(`<b data-inspcoupled>${L.truck} SZ-YC 5513</b>`), lang + ': Lkw zum Anhänger genannt');
+    eq((h.match(/data-inspcoupled/g) || []).length, 1, lang + ': ohne Gespann kein Zusatz');
+    ok(h.includes('class="sub wrap" data-inspsub'), lang + ': Unterzeile bricht um');
+  }
+  // 477: Terminplan- und Winterreifen-Unterzeilen umbrechen (vorher ab 421 px „…“)
+  const j0 = app.indexOf('function dispoSub('); const sub = app.slice(j0, app.indexOf('\n}\n', j0) + 2);
+  const runSub = new Function('esc', 't', 'wsName', 'clipTxt', 'planVehTag', 'fmtD', sub + '\nreturn dispoSub;')((v) => String(v), (k) => STRINGS.de[k] || k, (v) => v, (v) => v, () => '', (v) => v);
+  ok(runSub({ type: 'case', case_no: 'S-1', workshop_site: 'DORTMUND', planned_note: 'nur vormittags' }).startsWith('<span class="sub wrap">'), 'Terminplan');
+  const w0 = app.indexOf('async function dispoWinter('); ok(w0 > 0 && app.slice(w0, app.indexOf('\n}\n', w0)).includes('<span class="sub wrap">${[x.missing.length'), 'Winterreifen Disposition');
+  ok(!app.includes('<span class="sub">${[x.missing.length'), 'Winterreifen Werkstatt');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
