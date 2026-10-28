@@ -24743,6 +24743,27 @@ await test('Backlog 464 (Blickwinkel „Fahrer holt den Lkw nach der Reparatur a
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_myveh_s.includes(STRINGS[l].rel_items_title), l + ': Hilfe Mein Fahrzeug');
 });
 
+await test('Backlog 465 (Teilagent-Fund 2 aus 464): „Mein Fahrzeug“ nennt Standort/Abschleppdienst offener Vorgänge mit Stand – auch für zugeordnete Fahrer fremder Meldungen; eigene Vorgangsliste unverändert', async () => {
+  const { e, U, cmd, toRepair, newCase } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 's.fahrer2', display_name: 'Fahrer 2', role: 'driver', environment: 'test' });
+  const d2 = new Client(worker, e, 's.fahrer2'); await d2.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const uid2 = (await d2.get('/api/me')).data.user.id;
+  ok([200, 201].includes((await U.fleet.post('/api/vehicles/VIN:WMA15SZZ2HM722774/drivers', { user_id: uid2, evidence: 'Dienstplan' })).status), 'Zuordnung');
+  const id = await toRepair();
+  const kd = async () => (await d2.get('/api/me/vehicles')).data.vehicles[0].known_defects.find((k) => k.id === null);
+  let k = await kd(); eq(k.vehicle_location, null); eq(k.tow_service, null); eq(k.vehicle_location_at, null, 'ohne Angabe kein Stand');
+  eq((await cmd(U.fleet, id, 'set_vehicle_location', { vehicle_location: 'Fa. Achsprofi, Hof 2', tow_service: 'Abschlepp Nord', towed_on: BERLIN_TODAY })).status, 200);
+  k = await kd();
+  eq(k.vehicle_location, 'Fa. Achsprofi, Hof 2'); eq(k.tow_service, 'Abschlepp Nord'); eq(k.towed_on, BERLIN_TODAY); ok(k.vehicle_location_at, 'Stand der Angabe'); eq(k.id, null, 'weiter ohne Link auf fremden Vorgang');
+  const own = await newCase({}, d2); eq((await cmd(U.fleet, own, 'set_vehicle_location', { vehicle_location: 'Rastplatz A2' })).status, 200);
+  const mine = (await d2.get('/api/me/vehicles')).data.vehicles[0].my_open_cases;
+  ok(mine.length && !('vehicle_location' in mine[0]), 'eigene Vorgangsliste ohne neue Felder');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-kdloc'), 'Anzeige in den bekannten Mängeln');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_myveh_s.includes(STRINGS[l].vl_title), l + ': Hilfe Mein Fahrzeug');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

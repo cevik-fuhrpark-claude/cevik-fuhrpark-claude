@@ -2153,7 +2153,7 @@ function knownDefects(list) {
   return `<details class="known"${list.length <= 3 ? ' open' : ''}><summary>${esc(t('known_defects'))} (${list.length})</summary><ul class="small">${list.map((k) => {
     // Prüfpunkt in der Oberflächensprache, Mangeltext mit eigener Sprache (lang=, Backlog 229)
     const txt = `${k.check_item ? esc(checkLabel(k.check_item)) + ': ' : ''}${ltxt(k.description.replace(/^\[Kontrolle [^\]]*\]\s*[a-z_]+:\s*/, ''))}`;
-    return `<li><span class="chip ${esc(k.priority)}">${esc(t('prio_' + k.priority))}</span> ${k.id ? `<a href="#/cases/${esc(k.id)}">${txt}</a>` : txt} <span class="muted">· ${esc(t('st_' + k.status))} · ${fmtD(k.created_at)}${k.planned_date ? ' · ' + esc(t('planned_ws_short')) + ' ' + fmtD(k.planned_date) : ''}${k.parts_expected_date ? ' · ' + esc(t('parts_eta')) + ' ' + fmtD(k.parts_expected_date) : ''}</span></li>`; }).join('')}</ul></details>`;
+    return `<li><span class="chip ${esc(k.priority)}">${esc(t('prio_' + k.priority))}</span> ${k.id ? `<a href="#/cases/${esc(k.id)}">${txt}</a>` : txt} <span class="muted">· ${esc(t('st_' + k.status))} · ${fmtD(k.created_at)}${k.planned_date ? ' · ' + esc(t('planned_ws_short')) + ' ' + fmtD(k.planned_date) : ''}${k.parts_expected_date ? ' · ' + esc(t('parts_eta')) + ' ' + fmtD(k.parts_expected_date) : ''}</span>${k.vehicle_location || k.tow_service ? `<br><span data-kdloc>📍 ${esc(t('vl_title'))}: ${k.vehicle_location ? esc(k.vehicle_location) : `<span class="muted">${esc(t('vl_unknown'))}</span>`}${k.tow_service ? ` · <span class="chip mittel">${esc(t('vl_towed_chip'))}</span> ${esc(k.tow_service)}${k.towed_on ? ' · ' + fmtD(k.towed_on) : ''}` : ''}${vlAt(k)}</span>` : ''}</li>`; }).join('')}</ul></details>`;
 }
 
 // ---------- Vorgang ----------
