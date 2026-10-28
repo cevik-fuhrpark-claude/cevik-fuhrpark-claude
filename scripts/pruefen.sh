@@ -87,6 +87,7 @@ UI-Prüftermine nächster Monat („fällig bis“, Sprung ins Formular und zur�
 UI-Vertretung Werkstatt (Wechsel ohne bisherige Werkstatt, Termin entfällt) und Verträge „keine Ablesung“ (Backlog 512–514)|ui-vertretung.py|/tmp/cfp-vertretung.log
 UI-Leihhandy am ersten Arbeitstag (Passwort anzeigen, lateinischer Benutzername, abgelehnte Meldungen beim Abmelden, Abmelden ohne Netz) und Versicherungsfälle zum Quartalsende (Backlog 527–535)|ui-leihhandy.py|/tmp/cfp-leihhandy.log
 UI-Nachtpanne (Notfall-Panel vor dem Foto-Upload, Liste „nicht fahrbereit“ + Ort) und Prüftermine des Folgejahres (Prüfart, bis Ende nächsten Jahres, Anhänger) (Backlog 536–545)|ui-nachtpanne.py|/tmp/cfp-nachtpanne.log
+UI-Inventur am Tablet (Reihenfolge wie Zählliste, Blindzählung, nicht gezählte Artikel) und Hilfe „Übernahme als neue Fuhrparkleitung“ (Backlog 546–551)|ui-inventur-tablet.py|/tmp/cfp-inventur-tablet.log
 UI-Inhaber am Handy (Teilausfall Startseite, Erledigt mit Rückfrage, Zurück-Scroll, Umschalten auf Detailseite, Einrichtungsstand → Feld)|ui-inhaber-unterwegs.py|/tmp/cfp-inhaber.log
 UI-Stichtag Kennzahlen, Stundensatz-Hinweis, Rückruf am ruhenden Fahrzeug|ui-stichtag-rueckruf.py|/tmp/cfp-stichtag.log
 UI-Urlaubsrückkehr „Ältere laden“, Kontrolle bei gesperrtem Anhänger|ui-urlaub-anhaenger.py|/tmp/cfp-urlaub.log

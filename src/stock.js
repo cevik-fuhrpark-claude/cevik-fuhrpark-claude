@@ -572,7 +572,15 @@ export async function stockAsOf(env, user, envName, query = {}) {
   const items = rows.map((r) => ({ ...r, qty: r3(r.qty || 0) })).filter((r) => r.qty !== 0).map((r) => ({ ...r, active: !!r.active,
     value_purchase_net: r.last_purchase_price === null ? null : r2(r.qty * r.last_purchase_price), value_today_net: r.price_today === null ? null : r2(r.qty * r.price_today) }));
   const sum = (k) => ({ value_net: r2(items.reduce((a, i) => a + (i[k] || 0), 0)), unvalued: items.filter((i) => i[k] === null).length });
-  return { date, site, environment: envName, items, summary: { count: items.length, purchase: sum('value_purchase_net'), today: sum('value_today_net'), negative: items.filter((i) => i.qty < 0).length } };
+  // Backlog 549 (Blickwinkel „Jahresinventur zum 31.12.“): nach dem Stichtag gebuchte Inventurdifferenzen sind im Bestand zum Stichtag nicht enthalten –
+  // Anzahl und erster Buchungstag für einen Hinweis (keine rückwirkende Buchung; gleiche Erkennung wie die Inventurdifferenzen im Journal)
+  const ia = await env.DB.prepare(`SELECT COUNT(*) AS n, MIN(m.created_at) AS first_at FROM stock_movements m JOIN stock_items i ON i.id=m.item_id
+    WHERE i.environment=? ${site ? 'AND i.site=?' : ''} AND m.created_at >= ? AND m.type='korrektur' AND m.transfer_id IS NULL
+      AND m.document_ref GLOB 'Inventur [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND m.note GLOB 'Inventur *: gezählt *'`).bind(...[envName, ...(site ? [site] : []), end]).first();
+  // Backlog 546: Reihenfolge nach Lager und Bezeichnung in deutscher Sortierung (vorher Bytefolge: „Ölfilter“ hinter „Zündkerze“)
+  const coll = new Intl.Collator('de', { numeric: true, sensitivity: 'base' });
+  items.sort((a, b) => coll.compare(a.site || '', b.site || '') || coll.compare(a.name || '', b.name || ''));
+  return { date, site, environment: envName, items, inventory_after: { count: ia ? ia.n : 0, first_date: ia && ia.first_at ? berlinDate(ia.first_at) : null }, summary: { count: items.length, purchase: sum('value_purchase_net'), today: sum('value_today_net'), negative: items.filter((i) => i.qty < 0).length } };
 }
 export function stockAsOfCsv(rep, csvCell) {
   const head = ['Stichtag', 'Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand zum Stichtag', 'Letzter Einkaufspreis netto bis Stichtag', 'Wert netto (letzter Einkaufspreis)', 'Artikelpreis netto (heute)', 'Wert netto (Artikelpreis heute)', 'Artikel aktiv'];

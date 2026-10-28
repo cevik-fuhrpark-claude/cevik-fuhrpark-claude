@@ -2928,7 +2928,7 @@ await test('Lager: CSV-Bestandsliste und Inventur (Vorschau, Korrektur mit Grund
   eq((await users.prodFleet.get('/api/stock')).data.last_inventory.DORTMUND, undefined, 'Testinventur nicht im Betrieb');
   ok(!('last_inventory' in (await users.ws.get('/api/stock?reorder=1')).data), 'Bestellvorschlag unverändert');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(/confirm\(invPrev\.length \? tn\('inventory_book_confirm', invPrev\.length\)/.test(app) && app.includes('preview: invPrev.map'), 'Oberfläche fragt nach und sendet die geprüften Abweichungen');
+  ok(/confirm\(\(?invPrev\.length \? tn\('inventory_book_confirm', invPrev\.length\)/.test(app) && app.includes('preview: invPrev.map'), 'Oberfläche fragt nach und sendet die geprüften Abweichungen');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].inventory_book_confirm.includes('{n}') && STRINGS[l].inventory_recheck && STRINGS[l].err_inventory_changed, 'Texte ' + l);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].inventory_close && STRINGS[l].inventory_close_confirm && STRINGS[l].inventory_closed && ['{d}', '{c}', '{x}'].every((x) => STRINGS[l].inventory_last.includes(x)) && STRINGS[l].inventory_last_none, 'Abschluss-Texte ' + l);
@@ -6771,8 +6771,10 @@ await test('Hinweise: Filter alle/ungelesen/dringend mit Anzahlen (nur Anzeige),
   eq(list.filter(NF.all).length, 4); eq(list.filter(NF.unread).length, 2, 'ungelesen = weder geöffnet noch quittiert'); eq(list.filter(NF.urgent).length, 2);
   for (const lang of ['de', 'uk', 'en']) ok(STRINGS[lang].nf_unread && STRINGS[lang].nf_urgent && STRINGS[lang].nf_none, `Texte ${lang}`);
   ok(/NF\[S\.inboxF\] \? S\.inboxF : n\.counts\.unread \? 'unread' : 'all'/.test(app), 'ohne Wahl: Ungelesen, solange vorhanden (Zähler über alle); gewählter Filter bleibt');
-  const n = await users.fleet.get('/api/notifications');
-  eq(n.data.unread, n.data.notifications.filter(NF.unread).length, 'gleiche Regel wie der Zähler am Glockensymbol');
+  // gefiltert nach „ungelesen“, damit die Liste nicht an der Anzeigegrenze endet (zeitreise 28.10.2026: ab 11/2027 > 100 Hinweise, Liste gekappt)
+  const n = await users.fleet.get('/api/notifications?filter=unread');
+  if (n.data.truncated) ok(n.data.notifications.length === n.data.max && n.data.unread > n.data.max, 'gekappt nur über der Grenze');
+  else eq(n.data.unread, n.data.notifications.filter(NF.unread).length, 'gleiche Regel wie der Zähler am Glockensymbol');
 });
 
 await test('Lesezugriff: Fahrernamen in Vorgängen, Fahrzeugakte, Zeitleiste und Reifen ausgeblendet; Werkstatt-/Leitungsnamen bleiben', async () => {
@@ -20625,7 +20627,9 @@ await test('Backlog 258a (Blickwinkel „Leitungswechsel“): Eingang einer nie 
   eq((await f()).length, 0, 'bestätigt → kein Bewertungsbefund');
   db.prepare(`INSERT INTO vehicle_notes(id,vehicle_id,environment,text,created_by,created_at) VALUES ('vn-lw',?,'test','Bei Panne Handy Leitung anrufen',?,?)`).run('VIN:WMA15SZZ2HM722774', U.fleet.id, new Date().toISOString());
   const dz = await U.own.patch(`/api/users/${U.fleet.id}`, { active: false }); eq(dz.status, 200);
-  eq(JSON.stringify(dz.data.fleet_handover), JSON.stringify({ received_untriaged: 1, notes: 1, emergency: 0, last_fleet: true }), 'Übergabe-Hinweis (258d)');
+  const { notes_plates: np552, ...fh258 } = dz.data.fleet_handover; eq(JSON.stringify(fh258), JSON.stringify({ received_untriaged: 1, notes: 1, emergency: 0, last_fleet: true }), 'Übergabe-Hinweis (258d)');
+  eq((np552 || []).length, 1, 'Backlog 552: Kennzeichen des Fahrzeugs mit dem Hinweis');
+  const vn = await U.ws.get('/api/vehicles/VIN:WMA15SZZ2HM722774/notes'); eq(vn.status, 200, JSON.stringify(vn.data)); eq((vn.data.notes.find((n) => n.id === 'vn-lw') || {}).created_by_active, false, 'Backlog 552: Hinweis eines deaktivierten Kontos');
   eq((await f()).join(), 'CRITICAL_UNTRIAGED', 'Bestätigung des deaktivierten Kontos zählt nicht');
   // Rolle gewechselt (nicht mehr Leitung) zählt ebenso nicht; aktive Leitung zählt
   db.prepare(`UPDATE users SET active=1, role='dispatch' WHERE id=?`).run(U.fleet.id);
@@ -22797,7 +22801,7 @@ await test('Backlog 385 (Randnotiz 384): Führerscheinkontrolle ohne eingestellt
   eq((await U.fleet.post(`/api/drivers/${D}/license-checks`, { checked_on: bDayOff(-1), result: 'maengel', note: 'Klasse CE abgelaufen' })).status, 201);
   d = (await U.fleet.get(`/api/drivers/${D}`)).data; eq(d.status.check.status, 'mangel'); ok(!d.status.check.no_interval);
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].lc_no_interval, `${l}.lc_no_interval`);
-  const fs = await import('node:fs'); ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes("st.check.no_interval ? ` · <span class=\"muted\">${esc(t('lc_no_interval'))}"), 'Akte zeigt den Hinweis');
+  const fs = await import('node:fs'); ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes("st.check.no_interval ? ` · <span class=\"muted\">${esc(ownerT('lc_no_interval'))}"), 'Akte zeigt den Hinweis');
 });
 await test('Backlog 386–389 (Blickwinkel „Lkw drei Wochen in der Herstellerwerkstatt“): Externe Werkstatt ohne Konto ist kein kritischer Befund (Hinweis an die Leitung, Antwort external_workshop), „ohne Bewegung“ an die Leitung mit eingetragener Wiedervorlage, Werkstattplan mit Standort, Fremdleistung 0 € mit Vermerk in der Kostentabelle', async () => {
   const { e, U, cmd, newCase } = await freshWorld();
@@ -25428,6 +25432,35 @@ await test('Backlog 541–545 (Blickwinkel „UVV/Tachograph des Folgejahres im 
   ok(app.includes("value=\"${esc(m.planned_date && m.planned_date <= bDate() ? m.planned_date : bDate())}\"") && app.includes('data-mdoneplan'), '542');
   ok(app.includes("${r.due_month ? ` · ${esc(t('due_until_end'))} ${esc(r.due_month)}` : r.next_due_date ? ` · ${fmtD(r.next_due_date)}` : ''}${!ov.site && r.site"), '544 Sammeltermin-Zeile');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['mkind_label', 'mdueby_year', 'mdone_from_plan']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
+await test('Backlog 546–551 (Blickwinkel „Jahresinventur am Tablet“ / „neue Fuhrparkleiterin“): Stichtagsbestand meldet später gebuchte Inventurdifferenzen und sortiert nach Sprache, Inventurliste wie Zählliste mit Teilenummer/Lagerort/Blindzählung, Fortschritt „nicht gezählt“, Einstellungs-Hinweise „nur Inhaber“, Hilfe „Übernahme“', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const mk = async (name, location) => { const r = await U.ws.post('/api/stock', { name, location, initial_qty: 3 }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const zk = await mk('Zündkerze', 'B1'); const of = await mk('Ölfilter', 'B2');
+  // Inventurdifferenz heute gebucht → im Bestand zum gestrigen Stichtag nicht enthalten
+  const inv = await U.ws.post('/api/stock/inventory?dry_run=1', { counts: [{ item_id: of, counted: '2' }] }); eq(inv.status, 200, JSON.stringify(inv.data));
+  const bk = await U.ws.post('/api/stock/inventory', { counts: [{ item_id: of, counted: '2' }], preview: inv.data.differences.map((d) => ({ item_id: d.item_id, book: d.book, counted: d.counted })) }); eq(bk.status, 200, JSON.stringify(bk.data));
+  // Anfangsbestand liegt vor dem Stichtag
+  db.prepare(`UPDATE stock_movements SET created_at=? WHERE item_id IN (?,?) AND type<>'korrektur'`).run(new Date(Date.now() - 5 * 864e5).toISOString(), zk, of);
+  const a = await U.ws.get('/api/stock/asof?date=' + bDayOff(-1)); eq(a.status, 200, JSON.stringify(a.data));
+  eq(a.data.inventory_after.count, 1, '549: später gebuchte Inventurdifferenz'); eq(a.data.inventory_after.first_date, bDayOff(0));
+  const names = a.data.items.filter((i) => [zk, of].includes(i.id)).map((i) => i.name); eq(names.join(','), 'Ölfilter,Zündkerze', '546: deutsche Sortierung (Ö vor Z)');
+  eq((await U.ws.get('/api/stock/asof?date=' + bDayOff(0))).data.inventory_after.count, 0, 'Stichtag heute: nichts danach');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const its = items.filter((i) => i.site === invSite()).sort((a, b) => (a.location ? 0 : 1) - (b.location ? 0 : 1) || coll.compare(a.location || '', b.location || '') || coll.compare(a.name, b.name));"), '546 Reihenfolge wie Zählliste');
+  ok(app.includes('<div class="small muted pn">${esc(i.part_number)}</div>') && app.includes('data-invloc=') && app.includes("$('#invbookshow').onchange"), '546/548');
+  ok(app.includes("tn('inventory_uncounted_confirm', n)") && app.includes('data-invprog') && app.includes(" + uncTxt())) return;"), '547');
+  ok(app.includes('id="sainvafter"'), '549 Anzeige');
+  ok(app.includes("ownerT('no_rate')") && app.includes("ownerT('lc_no_interval')") && app.includes("ownerT('filter_stale_off')") && !/[^r]T\('no_rate'\)/.test(app), '550');
+  ok(app.includes("parts.unshift('fleet', 'handover', 'release',") && app.includes('data-noteinactive'), '551/552');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['inventory_show_book', 'inventory_loc', 'inventory_loc_none', 'inventory_progress', 'inventory_uncounted_list', 'asof_inv_after', 'lc_no_interval_mgr', 'filter_stale_off_mgr', 'no_rate_mgr', 'help_handover_t', 'help_handover_s', 'vnote_author_inactive']) ok(STRINGS[l][k], `${l}.${k}`);
+    for (const k of ['lc_no_interval_mgr', 'filter_stale_off_mgr', 'no_rate_mgr']) ok(/Inhaber|власник|owner/.test(STRINGS[l][k]), `${l}.${k} nennt den Inhaber`);
+    ok(PLURALS[l].inventory_uncounted_confirm && PLURALS[l].asof_inv_after, `${l} Plural`);
+    ok(STRINGS[l].help_handover_s.split('|').length === 8, `${l}: Hilfe 8 Schritte`);
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

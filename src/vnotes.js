@@ -21,13 +21,13 @@ export async function listNotes(env, user, envName, vehicleId, query = {}) {
   const archived = query.archived === '1';
   const today = berlinDate();
   // Archiv: archivierte und abgelaufene Hinweise (abgelaufen = „gültig bis“ vor heute), jüngstes Ende zuerst
-  const rows = (await env.DB.prepare(`SELECT n.id, n.text, n.for_driver, n.created_at, n.archived_at, n.valid_until, u.display_name AS created_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS created_by_role, a.display_name AS archived_by_name
+  const rows = (await env.DB.prepare(`SELECT n.id, n.text, n.for_driver, n.created_at, n.archived_at, n.valid_until, u.display_name AS created_by_name, u.active AS created_by_active, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS created_by_role, a.display_name AS archived_by_name
     FROM vehicle_notes n JOIN users u ON u.id=n.created_by LEFT JOIN users a ON a.id=n.archived_by
     WHERE n.vehicle_id=? AND n.environment=? AND ${archived ? 'NOT (' + noteActiveSql('n.') + ')' : noteActiveSql('n.')}
     ORDER BY ${archived ? 'COALESCE(n.archived_at, n.valid_until)' : 'n.created_at'} DESC, n.rowid DESC LIMIT ?`).bind(vehicleId, envName, today, NOTES_ARCHIVE_MAX + 1).all()).results;
   // aktive Hinweise sind auf NOTES_MAX_ACTIVE begrenzt; nur das Archiv wächst – dort Hinweis statt stillem Abschneiden
   const truncated = rows.length > NOTES_ARCHIVE_MAX; if (truncated) rows.length = NOTES_ARCHIVE_MAX;
-  return { ...(archived ? { truncated, max: NOTES_ARCHIVE_MAX } : { max_active: NOTES_MAX_ACTIVE }), notes: rows.map((r) => ({ ...hideDriverName(user, r, 'created_by_name', 'created_by_role'), for_driver: !!r.for_driver, expired: !r.archived_at && !!r.valid_until && r.valid_until < today })), can_write: WRITE.includes(user.role) };
+  return { ...(archived ? { truncated, max: NOTES_ARCHIVE_MAX } : { max_active: NOTES_MAX_ACTIVE }), notes: rows.map((r) => { const o = { ...hideDriverName(user, r, 'created_by_name', 'created_by_role'), for_driver: !!r.for_driver, created_by_active: !!r.created_by_active, expired: !r.archived_at && !!r.valid_until && r.valid_until < today }; if (o.created_by_name_hidden) delete o.created_by_active; return o; }), can_write: WRITE.includes(user.role) };
 }
 
 export async function addNote(env, user, envName, vehicleId, body) {
