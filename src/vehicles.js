@@ -38,7 +38,8 @@ export async function listVehicles(env, user, envName, query = {}) {
       (SELECT COUNT(*) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')) AS in_workshop,
       (SELECT km FROM odometer_readings o WHERE o.vehicle_id=v.id ORDER BY measured_at DESC LIMIT 1) AS last_km,
       (SELECT MAX(measured_at) FROM odometer_readings o WHERE o.vehicle_id=v.id) AS last_km_at,
-      (SELECT MIN(next_due_date) FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.next_due_date IS NOT NULL AND m.kind NOT IN ('HU','SP') AND NOT (m.kind='Rückruf' AND m.last_done_date IS NOT NULL)) AS next_due, -- erledigter Rückruf hat keine Frist (wie Übersicht/Agent, 20.10.2026)
+      -- Backlog 561: Datum + Art der frühesten Fälligkeit (bei gleichem Datum alphabetisch erste Art; HU/SP siehe unten)
+      (SELECT m.next_due_date || '|' || m.kind FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.next_due_date IS NOT NULL AND m.kind NOT IN ('HU','SP') AND NOT (m.kind='Rückruf' AND m.last_done_date IS NOT NULL) ORDER BY m.next_due_date, m.kind LIMIT 1) AS next_due, -- erledigter Rückruf hat keine Frist (wie Übersicht/Agent, 20.10.2026)
       -- nächste km-Fälligkeit (belegter Wert vor „km bei letzter Durchführung + Intervall“, wie ruleDueKm; HU/SP nur nach Datum)
       -- + Zeitpunkt der km-Grundlage dieser Regel und letzter km-Rücksprung (Tachotausch) – wie kmDue: danach kein Rest aus gemischten Zählern
       (SELECT x.k || '|' || x.kb || '|' || x.ldk || '|' || x.ldd || '|' || x.kind FROM (SELECT COALESCE(m.due_km, m.last_done_km + NULLIF(m.interval_km, 0)) AS k, COALESCE(m.km_basis_at, m.updated_at, '') AS kb,
@@ -65,7 +66,8 @@ export async function listVehicles(env, user, envName, query = {}) {
       (SELECT group_concat(p.plate, '|') FROM (SELECT plate FROM vehicle_plates p WHERE p.vehicle_id=v.id ORDER BY p.valid_until DESC LIMIT 10) p) AS fp
     FROM vehicles v WHERE v.active=? ORDER BY v.plate`).bind(envName, envName, envName, envName, envName, today, today, envName, addMonths(today, -12), envName, envName, today, envName, active).all()).results;
   // letzte Abfahrtskontrolle je Fahrzeug – nur Information (ohne Einsatzplan keine Pflichtbewertung)
-  for (const v of rows) { const [at, result, by] = v.last_check ? v.last_check.split('|') : [null, null, null]; v.last_check_at = at; v.last_check_result = result; v._lcBy = by || null; delete v.last_check;
+  for (const v of rows) { { const nd = v.next_due ? String(v.next_due) : null; const i = nd ? nd.indexOf('|') : -1; v.next_due = nd ? (i < 0 ? nd : nd.slice(0, i)) : null; v.next_due_kind = nd && i >= 0 ? nd.slice(i + 1) : null; }
+    const [at, result, by] = v.last_check ? v.last_check.split('|') : [null, null, null]; v.last_check_at = at; v.last_check_result = result; v._lcBy = by || null; delete v.last_check;
     v.former_plates = v.fp ? [...new Set(String(v.fp).split('|').filter((x) => x && x !== v.plate))] : []; delete v.fp;
     // nächster geplanter Prüftermin ab heute + Prüfart(en) an diesem Tag
     const [pd, pk] = v.planned_inspection ? v.planned_inspection.split('|') : [null, null]; v.planned_inspection_date = pd; v.planned_inspection_kind = pk || null; delete v.planned_inspection;
@@ -95,7 +97,8 @@ export async function listVehicles(env, user, envName, query = {}) {
         const y = kind === 'HU' ? h.hu : h.sp;
         // HU/SP immer nach der zentralen Regel (wie Übersicht/Agent/Akte): ein gespeicherter Rohwert galt sonst auch nach „nicht SP-pflichtig“ (21.10.2026)
         if (!y || !y.due || y.status === 'nicht_sp_pflichtig') continue;
-        if (!v.next_due || y.due < v.next_due) v.next_due = y.due;
+        // gleiches Datum: HU/SP als Art nennen (gesetzliche Frist vor z. B. UVV)
+        if (!v.next_due || y.due < v.next_due || (y.due === v.next_due && !['HU', 'SP'].includes(v.next_due_kind))) { v.next_due = y.due; v.next_due_kind = kind; }
       }
     }
   }
@@ -117,7 +120,7 @@ export async function listVehicles(env, user, envName, query = {}) {
     const p = byId.get(v.trailer_id || v.truck_id);
     // Prüfstand des gekoppelten Fahrzeugs (25.10.2026, Teilagent „Disposition sucht Ersatzfahrzeug“): Lkw-Zeile zeigte „Keine offenen Meldungen“,
     // obwohl der Anhänger HU/SP überfällig oder „verkehrsunsicher“ war – nur Information, availability bleibt unverändert
-    v.coupled = p ? { id: p.id, plate: p.plate, kind: p.kind, availability: p.availability, eval_excluded: p.eval_excluded ? 1 : 0, next_due: p.next_due || null,
+    v.coupled = p ? { id: p.id, plate: p.plate, kind: p.kind, availability: p.availability, eval_excluded: p.eval_excluded ? 1 : 0, next_due: p.next_due || null, next_due_kind: p.next_due ? p.next_due_kind || null : null,
       km_remaining: p.km_remaining ?? null, failed_inspection: p.failed_inspection || null } : null;
   }
   for (const v of list) { if (user.role !== 'driver') delete v._lcBy; }
@@ -466,6 +469,8 @@ export function vehiclesCsv(list, csvCell) {
   head.push('Prüfung nicht bestanden', 'Prüfung gekoppeltes Fahrzeug');
   // Backlog 485 (Blickwinkel „Disposition plant abends den nächsten Tag“): Termine und Hinweise wie in der Listenzeile – am Ende, Spaltenpositionen bleiben
   head.push('Geplanter Werkstatttermin', 'Geplante Prüfung', 'Art geplante Prüfung', 'Teile erwartet am', 'Aktive Hinweise');
+  // Backlog 561: Art der nächsten Prüfung/Wartung (Spalte „Nächste Prüfung“) – am Ende, Spaltenpositionen bleiben
+  head.push('Art nächste Prüfung');
   const lines = [head.join(';')];
   for (const v of list) lines.push([csvCell(v.plate), csvCell(v.vin), v.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(v.site), csvCell(v.manufacturer), csvCell(v.model), v.build_year ?? '',
     csvCell(v.trailer_plate), csvCell(v.master_status), AV_DE[v.availability] || v.availability, v.open_cases ?? '', v.last_km ?? '', v.next_due || '',
@@ -477,7 +482,7 @@ export function vehiclesCsv(list, csvCell) {
     // offene Herstellerrückrufe (Anzahl) – ebenfalls am Ende angehängt
     v.open_recalls ?? 0, ...(withAF ? [v.agent_findings_open ?? 0, v.agent_findings_critical ?? 0] : []),
     v.active === 0 || v.active === false ? 'außer Betrieb' : v.eval_excluded ? 'ruhend (nicht in Bewertungen)' : 'aktiv', failedCell(v.failed_inspection, csvCell), failedCell(v.coupled && v.coupled.failed_inspection, csvCell),
-    v.planned_workshop_date || '', v.planned_inspection_date || '', csvCell(v.planned_inspection_kind), v.parts_expected_date || '', v.notes_active ?? 0].join(';'));
+    v.planned_workshop_date || '', v.planned_inspection_date || '', csvCell(v.planned_inspection_kind), v.parts_expected_date || '', v.notes_active ?? 0, csvCell(v.next_due ? v.next_due_kind : '')].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 

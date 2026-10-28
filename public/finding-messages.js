@@ -85,6 +85,7 @@ export const FINDING_MESSAGES = {
     FINE_DRIVER_OPEN: '{label}: Fahrer zur Tatzeit noch nicht ermittelt.',
     FINE_DRIVING_BAN: '{label}: Fahrverbot laut Schreiben ({n} {n#Monat/Monate}).',
     FINE_DRIVER_DISPUTED: '{label}: Der ermittelte Fahrer widerspricht (nicht gefahren) – Ermittlung prüfen.',
+    FINE_NO_DUE: '{label}: Antwortfrist nicht erfasst – bitte aus dem Schreiben nachtragen.',
   },
   uk: {
     NO_FLEET_RECIPIENT: 'У цьому середовищі немає активного керівника автопарку з доступом – повідомлення не мають отримувача.',
@@ -164,6 +165,7 @@ export const FINDING_MESSAGES = {
     FINE_DRIVER_OPEN: '{label}: водія на момент порушення ще не встановлено.',
     FINE_DRIVING_BAN: '{label}: заборона керування згідно з листом ({n} {n#місяць/місяці/місяців}).',
     FINE_DRIVER_DISPUTED: '{label}: визначений водій заперечує (не керував) – перевірте встановлення водія.',
+    FINE_NO_DUE: '{label}: строк відповіді не внесено – додайте його з листа.',
   },
   en: {
     NO_FLEET_RECIPIENT: 'No active fleet manager with access in this environment – notifications have no recipient.',
@@ -243,6 +245,7 @@ export const FINDING_MESSAGES = {
     FINE_DRIVER_OPEN: '{label}: driver at the time of the offence not yet identified.',
     FINE_DRIVING_BAN: '{label}: driving ban according to the letter ({n} {n#month/months}).',
     FINE_DRIVER_DISPUTED: '{label}: the identified driver objects (did not drive) – check the identification.',
+    FINE_NO_DUE: '{label}: response deadline not recorded – please add it from the letter.',
   },
 };
 

@@ -1864,6 +1864,7 @@ const NEXT_ACTIONS = [
   ['Mit dem Fahrer klären, wann der Führerschein abgegeben wird; in diesem Zeitraum nicht als Fahrer einsetzen.', 'З’ясуйте з водієм, коли він здасть посвідчення водія; у цей період не залучайте його як водія.', 'Clarify with the driver when the licence will be surrendered; do not use them as a driver during that period.'],
   ['Einwand des Fahrers prüfen (Urlaub, Vertretung, Tourenplan) und Fahrer bestätigen oder neu ermitteln.', 'Перевірте заперечення водія (відпустка, заміна, план рейсів) і підтвердьте водія або визначте заново.', 'Check the driver’s objection (holiday, cover, trip plan) and confirm the driver or identify again.'],
   ['Fahrer anhand Zuordnung/Tourenplan/Telematik bestätigen.', 'Підтвердьте водія за закріпленням/планом рейсів/телематикою.', 'Confirm the driver using assignment/tour plan/telematics.'],
+  ['Antwortfrist aus dem Schreiben unter „Angaben ändern“ nachtragen.', 'Додайте строк відповіді з листа в розділі «Змінити дані».', 'Add the response deadline from the letter under “Change details”.'],
   ['Fahrerkarte auslesen und Auslesung erfassen.', 'Зчитайте картку водія і внесіть зчитування.', 'Download the driver card and record the download.'],
   ['Auslesung einplanen.', 'Заплануйте зчитування.', 'Schedule the download.'],
   ['Fahrtenschreiber auslesen und Auslesung erfassen.', 'Зчитайте тахограф і внесіть зчитування.', 'Download the tachograph and record the download.'],
@@ -3003,3 +3004,30 @@ Object.assign(STRINGS.en, { cand_after: 'after the time of the offence', fine_ca
 Object.assign(STRINGS.de, { dispo_back_since: 'Wieder einsatzbereit (freigegeben seit {d})' });
 Object.assign(STRINGS.uk, { dispo_back_since: 'Знову готові до роботи (випущено з {d})' });
 Object.assign(STRINGS.en, { dispo_back_since: 'Ready again (released since {d})' });
+Object.assign(STRINGS.de, { fine_sameday_title: 'Zuordnungswechsel am Tattag', fine_sameday_start: 'Zuordnung begonnen', fine_sameday_end: 'Zuordnung beendet', fine_sameday_note: 'Gespeichert ist die Uhrzeit der Eingabe in der App, nicht die der tatsächlichen Fahrzeugübergabe.' });
+Object.assign(STRINGS.uk, { fine_sameday_title: 'Зміна закріплення в день порушення', fine_sameday_start: 'закріплення розпочато', fine_sameday_end: 'закріплення завершено', fine_sameday_note: 'Збережено час внесення в застосунку, а не фактичної передачі транспорту.' });
+Object.assign(STRINGS.en, { fine_sameday_title: 'Assignment changes on the day of the offence', fine_sameday_start: 'assignment started', fine_sameday_end: 'assignment ended', fine_sameday_note: 'The time stored is when it was entered in the app, not the actual vehicle handover.' });
+Object.assign(STRINGS.de, { fine_no_due: 'Antwortfrist fehlt', fine_no_due_hint: 'Antwortfrist laut Schreiben unter „Angaben ändern“ nachtragen – die App schätzt keine Frist.' });
+Object.assign(STRINGS.uk, { fine_no_due: 'Строк відповіді не внесено', fine_no_due_hint: 'Додайте строк відповіді з листа в розділі «Змінити дані» – застосунок не оцінює строки.' });
+Object.assign(STRINGS.en, { fine_no_due: 'Response deadline missing', fine_no_due_hint: 'Add the response deadline from the letter under “Change details” – the app does not estimate deadlines.' });
+Object.assign(STRINGS.de, { dispo_due_soon: 'Prüfung/Wartung fällig bis {d}', dispo_due_soon_hint: 'Fristen laut Fahrzeugakte von heute bis zum nächsten Werktag (Wochenende und Feiertage eingeschlossen) – vor dem Einplanen klären, ob die Prüfung rechtzeitig stattfindet.', next_workday: 'nächster Werktag' });
+Object.assign(STRINGS.uk, { dispo_due_soon: 'Огляд/ТО до {d}', dispo_due_soon_hint: 'Строки з картки транспорту від сьогодні до наступного робочого дня (включно з вихідними та святами) – перед плануванням з’ясуйте, чи огляд відбудеться вчасно.', next_workday: 'наступний робочий день' });
+Object.assign(STRINGS.en, { dispo_due_soon: 'Inspection/maintenance due by {d}', dispo_due_soon_hint: 'Deadlines from the vehicle file from today until the next working day (weekends and public holidays included) – before scheduling, check whether the inspection will take place in time.', next_workday: 'next working day' });
+Object.assign(STRINGS.de, { dispo_print_title: 'Disposition – Tagesübersicht' });
+Object.assign(STRINGS.uk, { dispo_print_title: 'Диспетчеризація – огляд дня' });
+Object.assign(STRINGS.en, { dispo_print_title: 'Dispatch – daily overview' });
+Object.assign(STRINGS.de, { inventory_counted_at: 'heute schon gezählt um {t}', inventory_counted_today_hint: 'Bitte klären, ob dieselben Teile doppelt gezählt wurden (zweite Person/zweites Gerät). Gebucht wird die jetzt eingetragene Menge gegen den aktuellen Buchbestand.' });
+Object.assign(STRINGS.uk, { inventory_counted_at: 'сьогодні вже пораховано о {t}', inventory_counted_today_hint: 'З’ясуйте, чи ті самі деталі не пораховано двічі (інша особа/інший пристрій). Проводиться щойно внесена кількість щодо поточного облікового залишку.' });
+Object.assign(STRINGS.en, { inventory_counted_at: 'already counted today at {t}', inventory_counted_today_hint: 'Please check whether the same parts were counted twice (another person/another device). The quantity now entered is booked against the current book stock.' });
+Object.assign(STRINGS.de, { inventory_counted_today: 'Heute schon gezählt: {n}' });
+Object.assign(STRINGS.uk, { inventory_counted_today: 'Сьогодні вже пораховано: {n}' });
+Object.assign(STRINGS.en, { inventory_counted_today: 'Already counted today: {n}' });
+Object.assign(PLURALS.de, { inventory_counted_today: { one: '{n} Artikel wurde heute schon gezählt und gebucht', other: '{n} Artikel wurden heute schon gezählt und gebucht' } });
+Object.assign(PLURALS.uk, { inventory_counted_today: { one: '{n} позицію сьогодні вже пораховано й проведено', few: '{n} позиції сьогодні вже пораховано й проведено', many: '{n} позицій сьогодні вже пораховано й проведено' } });
+Object.assign(PLURALS.en, { inventory_counted_today: { one: '{n} item was already counted and booked today', other: '{n} items were already counted and booked today' } });
+Object.assign(STRINGS.de, { dq_note_inactive_author: 'Fahrzeughinweis eines deaktivierten Kontos', dq_note_for_driver: 'für Fahrer sichtbar' });
+Object.assign(STRINGS.uk, { dq_note_inactive_author: 'Примітка до транспорту від деактивованого акаунта', dq_note_for_driver: 'видно водіям' });
+Object.assign(STRINGS.en, { dq_note_inactive_author: 'Vehicle note by a deactivated account', dq_note_for_driver: 'visible to drivers' });
+Object.assign(STRINGS.de, { ue_fleet_questions: 'Offene Rückfragen dieses Kontos an Melder: {n} – Antworten kommen weiter im Vorgang an (Vorgänge → „Rückfrage offen“).', ue_fleet_followups: 'Von diesem Konto gesetzte Wiedervorlagen offener Vorgänge: {n} – bitte übernehmen (Vorgänge → „Wiedervorlage“).' });
+Object.assign(STRINGS.uk, { ue_fleet_questions: 'Відкриті уточнювальні запитання цього облікового запису до авторів повідомлень: {n} – відповіді й далі надходять у заявку (Заявки → «Питання відкрите»).', ue_fleet_followups: 'Нагадування у відкритих заявках, встановлені цим обліковим записом: {n} – перейміть їх (Заявки → «Нагадування»).' });
+Object.assign(STRINGS.en, { ue_fleet_questions: 'Open questions from this account to reporters: {n} – replies still arrive in the case (Cases → “Question open”).', ue_fleet_followups: 'Follow-ups set by this account on open cases: {n} – please take them over (Cases → “Follow-up”).' });

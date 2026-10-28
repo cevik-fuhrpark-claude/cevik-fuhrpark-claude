@@ -104,6 +104,7 @@ PRINT = {
     'owner': ['guide', 'vehicles//timeline', 'claims', 'tacho', 'tacho/history', 'drivers/records', 'quality', 'stock', 'cases', 'cases/', 'vehicles', 'vehicles/', 'maintenance', 'plan', 'stock/', 'stock/reorder', 'stock/journal', 'defects', 'contracts', 'fines', 'drivers', 'tires', 'vehicles/qr', 'vehicles/qr/', 'stock/count', 'stock/asof', 'stock/usage', 'telematics', 'master', 'costs', 'kpi', 'fines/', 'drivers/', 'wsload', 'users', 'audit'],
     'workshop': ['cases/', 'stock', 'stock/', 'stock/reorder', 'stock/count', 'stock/asof', 'stock/usage', 'plan'],
     'driver': ['check/paper'],
+    'dispatch': [''],  # Dispo-Startseite (Backlog 560)
 }
 # Ausdruckvermerk: Druckzeitpunkt (Datum + Uhrzeit), angemeldete Person und „CEVIK“ – außer Papier-Formular/QR-Bogen/Aushang (ohne Personennamen)
 PRINT_CHECK = """(who) => {

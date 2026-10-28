@@ -692,8 +692,16 @@ export async function updateUser(env, actor, userId, body) {
         (SELECT COUNT(*) FROM emergency_contacts WHERE created_by=?1 AND environment=?2 AND archived_at IS NULL) AS emergency,
         -- Backlog 552: Kennzeichen der Fahrzeuge mit diesen Hinweisen (vorher nur die Anzahl – an welchen Fahrzeugen suchen?)
         (SELECT group_concat(p, '|') FROM (SELECT DISTINCT v.plate AS p FROM vehicle_notes n JOIN vehicles v ON v.id=n.vehicle_id WHERE n.created_by=?1 AND n.environment=?2 AND n.archived_at IS NULL AND (n.valid_until IS NULL OR n.valid_until >= ?3) ORDER BY v.plate LIMIT 30)) AS notes_plates,
-        NOT EXISTS (SELECT 1 FROM users WHERE id<>?1 AND role='fleet' AND active=1 AND environment=?2) AS last_fleet`).bind(userId, target.environment, berlinDate()).first();
-    if (h && (h.received_untriaged || h.notes || h.emergency || h.last_fleet)) handover = { received_untriaged: h.received_untriaged, notes: h.notes, ...(h.notes ? { notes_plates: String(h.notes_plates || '').split('|').filter(Boolean) } : {}), emergency: h.emergency, last_fleet: !!h.last_fleet };
+        NOT EXISTS (SELECT 1 FROM users WHERE id<>?1 AND role='fleet' AND active=1 AND environment=?2) AS last_fleet,
+        -- Backlog 563: offene Rückfragen dieses Kontos (letzte Rückfrage von ihm, Melder hat seither nicht geantwortet) und von ihm gesetzte Wiedervorlagen
+        (SELECT COUNT(*) FROM cases c WHERE c.environment=?2 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')
+          AND (SELECT e.actor_id FROM case_events e WHERE e.case_id=c.id AND e.action='comment' AND json_extract(e.payload,'$.question')=1 ORDER BY e.created_at DESC LIMIT 1)=?1
+          AND MAX(COALESCE((SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='comment' AND e.actor_id=c.reporter_id),''),
+            COALESCE((SELECT MAX(f.created_at) FROM files f WHERE f.case_id=c.id AND f.uploaded_by=c.reporter_id),''))
+            <= (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='comment' AND json_extract(e.payload,'$.question')=1)) AS questions_open,
+        (SELECT COUNT(*) FROM cases c WHERE c.environment=?2 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt') AND c.followup_on IS NOT NULL
+          AND (SELECT e.actor_id FROM case_events e WHERE e.case_id=c.id AND e.action='set_followup' ORDER BY e.created_at DESC LIMIT 1)=?1) AS followups`).bind(userId, target.environment, berlinDate()).first();
+    if (h && (h.received_untriaged || h.notes || h.emergency || h.last_fleet || h.questions_open || h.followups)) handover = { received_untriaged: h.received_untriaged, notes: h.notes, ...(h.notes ? { notes_plates: String(h.notes_plates || '').split('|').filter(Boolean) } : {}), emergency: h.emergency, last_fleet: !!h.last_fleet, questions_open: h.questions_open || 0, followups: h.followups || 0 };
   }
   return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active || siteChanged,
     ...(driverFile ? { driver_file_active: driverFile } : {}), ...(orphaned ? { workshop_orphaned_cases: orphaned, workshop_site: oldSite } : {}), ...(invitesVoided ? { invites_voided: invitesVoided } : {}),

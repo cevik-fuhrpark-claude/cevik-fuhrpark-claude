@@ -28,6 +28,7 @@ export function dqDetailText(i, t, fmtD, mk = (k) => k, x = {}) {
   if (i.check === 'km_rule_no_base' && a.kind) return `${mk(a.kind)} · ${km(a.interval_km)}`;
   if ((i.check === 'km_inspection_rejected' || i.check === 'telematics_km_rejected') && a.cmp)
     return `${a.source ? a.source + ': ' : ''}${km(a.km)} (${fmtD(a.day)}) ${a.cmp === 'lt' ? '<' : '>'} ${km(a.other_km)}${a.other_day ? ` (${fmtD(a.other_day)})` : ''}`;
+  if (i.check === 'note_inactive_author' && a.name !== undefined) return `${a.name}${a.for_driver ? ' · ' + t('dq_note_for_driver') : ''}: ${a.text}`;
   if (i.check === 'vin_similar' && a.pos) return `${a.other_plate} · ${a.other_vin} · ${t('dq_vin_pos').replace('{n}', a.pos)}`;
   if (a.contract_kind) return `${t('ck_' + a.contract_kind)} · ${a.partner}${a.start_km !== undefined ? ` · ${km(a.km)} < ${km(a.start_km)}` : ''}`;
   if (a.role) return `${a.name} (${t('role_' + a.role)})${a.expired ? ' – ' + t('dq_invite_expired') : ''}`;

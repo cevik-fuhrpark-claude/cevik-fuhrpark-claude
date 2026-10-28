@@ -16,6 +16,8 @@ import { spRequired, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 // Schweregrad: fehler = widersprüchlich, luecke = fehlt für Auswertungen, hinweis = sollte gepflegt werden
 export const CHECKS = {
   duplicate_plate: 'fehler', vin_similar: 'fehler', trailer_unknown: 'fehler', trailer_multi: 'fehler', assignment_inactive_user: 'fehler',
+  // Fahrzeughinweis eines deaktivierten Kontos noch aktiv (Backlog 563) – Inhalt prüfen, ggf. archivieren
+  note_inactive_author: 'hinweis',
   missing_site: 'luecke', no_km: 'luecke', km_stale: 'hinweis', missing_inspection: 'luecke',
   km_inspection_rejected: 'hinweis',
   // km-Stand kleiner als der vorherige, ohne Begründung gespeichert (z. B. Tippfehler bei „Prüfung erledigt“) – km-Fälligkeiten werden „ungeklärt“
@@ -274,6 +276,14 @@ export async function dataQuality(env, user, envName, query = {}) {
   for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) { const lt = k.prev_km !== null && k.odometer_km < k.prev_km; addA('km_inspection_rejected', v, lt ? `${k.odometer_km} km (${berlinDate(k.created_at)}) < ${k.prev_km} km` : `${k.odometer_km} km (${berlinDate(k.created_at)}) > ${k.next_km} km`,
     { km: k.odometer_km, day: berlinDate(k.created_at), other_km: lt ? k.prev_km : k.next_km, cmp: lt ? 'lt' : 'gt' }); } }
   for (const a of assigns.results) if (!a.active) items.push({ check: 'assignment_inactive_user', severity: CHECKS.assignment_inactive_user, vehicle_id: a.vehicle_id, plate: a.plate, detail: a.display_name });
+  // Backlog 563 (Blickwinkel „neue Fuhrparkleiterin“): aktive Fahrzeughinweise eines deaktivierten Kontos – Inhalt prüfen (Hinweise für Fahrer zuerst)
+  const nia = (await env.DB.prepare(`SELECT n.vehicle_id, v.plate, u.display_name, n.for_driver, n.text FROM vehicle_notes n JOIN users u ON u.id=n.created_by JOIN vehicles v ON v.id=n.vehicle_id
+    WHERE n.environment=? AND n.archived_at IS NULL AND (n.valid_until IS NULL OR n.valid_until >= ?) AND u.active=0 AND v.active=1 ORDER BY n.for_driver DESC, n.created_at DESC`).bind(envName, berlinDate()).all()).results;
+  for (const n of nia) {
+    const txt = String(n.text || '').replace(/\s+/g, ' ').trim(); const clip = txt.length > 80 ? txt.slice(0, 79) + '…' : txt;
+    items.push({ check: 'note_inactive_author', severity: CHECKS.note_inactive_author, vehicle_id: n.vehicle_id, plate: n.plate,
+      detail: `${n.display_name}${n.for_driver ? ' · für Fahrer sichtbar' : ''}: ${clip}`, detail_args: { name: n.display_name, for_driver: !!n.for_driver, text: clip } });
+  }
   const withVu = new Set(vu.results.map((r) => r.vehicle_id));
   for (const v of vs) if (v.kind === 'lkw' && !withVu.has(v.id)) add('vu_no_download', v);
   const CK_DE = { leasing: 'Leasing', miete: 'Miete', finanzierung: 'Finanzierung', versicherung: 'Versicherung', wartung: 'Wartungsvertrag', sonstiges: 'Vertrag' };

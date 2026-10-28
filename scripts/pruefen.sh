@@ -88,6 +88,7 @@ UI-Vertretung Werkstatt (Wechsel ohne bisherige Werkstatt, Termin entfällt) und
 UI-Leihhandy am ersten Arbeitstag (Passwort anzeigen, lateinischer Benutzername, abgelehnte Meldungen beim Abmelden, Abmelden ohne Netz) und Versicherungsfälle zum Quartalsende (Backlog 527–535)|ui-leihhandy.py|/tmp/cfp-leihhandy.log
 UI-Nachtpanne (Notfall-Panel vor dem Foto-Upload, Liste „nicht fahrbereit“ + Ort) und Prüftermine des Folgejahres (Prüfart, bis Ende nächsten Jahres, Anhänger) (Backlog 536–545)|ui-nachtpanne.py|/tmp/cfp-nachtpanne.log
 UI-Inventur am Tablet (Reihenfolge wie Zählliste, Blindzählung, nicht gezählte Artikel) und Hilfe „Übernahme als neue Fuhrparkleitung“ (Backlog 546–551)|ui-inventur-tablet.py|/tmp/cfp-inventur-tablet.log
+UI-Inventur „heute schon gezählt“ (Backlog 562), DE 390/UK 820/EN 1366|ui-inventur-heute-gezaehlt.py|/tmp/cfp-inventur-heute-gezaehlt.log
 UI-Inhaber am Handy (Teilausfall Startseite, Erledigt mit Rückfrage, Zurück-Scroll, Umschalten auf Detailseite, Einrichtungsstand → Feld)|ui-inhaber-unterwegs.py|/tmp/cfp-inhaber.log
 UI-Stichtag Kennzahlen, Stundensatz-Hinweis, Rückruf am ruhenden Fahrzeug|ui-stichtag-rueckruf.py|/tmp/cfp-stichtag.log
 UI-Urlaubsrückkehr „Ältere laden“, Kontrolle bei gesperrtem Anhänger|ui-urlaub-anhaenger.py|/tmp/cfp-urlaub.log
@@ -229,6 +230,7 @@ UI-Werkstatt-Startseite Kurzablauf eines Auftrags (Knopf-Beschriftungen, Ausblen
 UI-Werkstatt-Startseite: Auftrag oben hervorgehoben und im Arbeitsschritt – „steht auch oben“, Gesamtzahl ohne Doppelzählung, DE/UK/EN 390/820/1366|ui-werkstatt-doppelt.py|/tmp/cfp-werkstatt-doppelt.log
 UI-Werkstatt-Tagesreihenfolge: „Heute geplant“ und Werkstattplan gesperrt → mittel → niedrig, ältere Meldung zuerst, Hinweis zum Termin, DE/UK/EN 390/820/1366|ui-werkstatt-tagesreihenfolge.py|/tmp/cfp-werkstatt-tagesreihenfolge.log
 UI-Disposition „Wieder einsatzbereit (heute/gestern freigegeben)“: nur freie Fahrzeuge, Freigabezeit, Abholvermerk, DE/UK/EN 390/820/1366|ui-dispo-wieder-da.py|/tmp/cfp-dispo-wieder-da.log
+UI-Disposition Fristen bis zum nächsten Werktag, Art der nächsten Fälligkeit (Backlog 559/561), DE/UK/EN 390/820/1366|ui-dispo-naechster-werktag.py|/tmp/cfp-dispo-naechster-werktag.log
 UI-Foto vom Melder nachgereicht: Verlauf „Foto/Datei nachgereicht“ mit Dateiname, Hinweis an die Leitung, Foto beim Melden ohne Eintrag, DE/UK/EN 390/820/1366|ui-foto-nachgereicht.py|/tmp/cfp-foto-nachgereicht.log
 UI-Rückfrage an den Melder: Häkchen im Kommentar, Fahrer-Startseite/Vorgang, Antwort → „beantwortet“ in Vorgang, Liste und Heute zu tun, DE/UK/EN 390/820/1366|ui-rueckfrage-melder.py|/tmp/cfp-rueckfrage-melder.log
 UI-Restarbeiten nach der Freigabe in „Mein Fahrzeug“ der Fahrer, ohne Link, DE/UK/EN 390/820/1366|ui-restarbeit-fahrer.py|/tmp/cfp-restarbeit-fahrer.log
@@ -285,6 +287,7 @@ UI-Heute zu tun nach dem Urlaub: Kostenfreigaben älteste zuerst, „+N“ führ
 UI-Bußgeld ändern (Frist), deaktivierter Kandidat, Umgebung|ui-bussgeld-aendern.py|/tmp/cfp-bussgeld-aendern.log
 UI-Bußgeld Befund-Link, Zurücksetzen auf Eingegangen|ui-bussgeld-befundlink.py|/tmp/cfp-bussgeld-befundlink.log
 UI-Bußgeld-Verlauf mit Fahrernamen, Kandidat-Nachweis übersetzt, berechnete SP beim Fahrer, Reifenverlauf|ui-bussgeld-verlauf-sp-fahrer.py|/tmp/cfp-bussgeld-verlauf-sp-fahrer.log
+UI-Bußgeld Zuordnungswechsel am Tattag mit Uhrzeit (Backlog 557), DE/UK/EN 390/820/1366|ui-bussgeld-tattag-zuordnung.py|/tmp/cfp-bussgeld-tattag-zuordnung.log
 UI-Dokumentangaben korrigieren|ui-dokument-korrigieren.py|/tmp/cfp-dokument-korrigieren.log
 UI-Dokument-Gültigkeit (Chips), Dublette mit anderen Angaben öffnet Korrektur|ui-dokument-status.py|/tmp/cfp-dokument-status.log
 UI-Wiedervorlage behält Vermerk, Suche findet außer Betrieb, Chip-Zeilen 390 px|ui-wiedervorlage-suche.py|/tmp/cfp-wiedervorlage-suche.log

@@ -437,6 +437,11 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
   }
   const countedN = body.counts.filter((c) => !(c.counted === '' || c.counted === null || c.counted === undefined)).length;
   const result = { site, counted_items: seen.size, counted: countedN, differences: diffs, booked: 0 };
+  // Backlog 562 (Blickwinkel „Jahresinventur“): Artikel, die heute schon gezählt und gebucht wurden (zweite Person/zweites Tablet) –
+  // nur Hinweis mit Uhrzeit und Menge; gebucht wird trotzdem nach der Regel oben (Buchbestand ↔ Zählmenge)
+  const ct = countedList.map((x) => items.get(x.id)).filter((it) => it.last_counted_at && berlinDate(it.last_counted_at) === date)
+    .map((it) => ({ item_id: it.id, name: it.name, part_number: it.part_number || null, unit: it.unit, at: it.last_counted_at, qty: it.last_counted_qty ?? null }));
+  if (ct.length) result.already_counted_today = ct;
   if (dryRun) return result;
   if (!countedN) throw bad('validation', 'Keine Zählmengen eingetragen – nichts zu buchen.');
   // Optional (Oberfläche sendet sie immer): die geprüften Abweichungen. Weicht das heutige Ergebnis ab (Buchbestand hat sich seit der

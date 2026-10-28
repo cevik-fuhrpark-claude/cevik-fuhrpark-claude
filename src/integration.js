@@ -242,7 +242,7 @@ export async function integrationRouter(request, env, ctx, url) {
     const q = await dataQuality(env, { role: 'owner' }, envParam(url), Object.fromEntries(url.searchParams));
     const by_severity = { fehler: 0, luecke: 0, hinweis: 0 };
     for (const i of q.items) by_severity[i.severity]++;
-    const NAMED = new Set(['assignment_inactive_user']);
+    const NAMED = new Set(['assignment_inactive_user', 'note_inactive_author']); // Namen/Hinweistext nicht über die Schnittstelle
     const items = q.items.filter((i) => i.vehicle_id).map((i) => ({ check: i.check, severity: i.severity, vehicle_id: i.vehicle_id, plate: i.plate,
       event_id: i.event_id || null, case_id: i.case_id || null, detail: NAMED.has(i.check) ? null : i.detail }));
     // site/site_options/other_hidden wie in der App (22.10.2026: fehlten – ein Tippfehler im Standort lieferte still eine leere Liste)

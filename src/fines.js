@@ -105,8 +105,12 @@ export async function driverCandidates(env, envName, f) {
     const via = a.vehicle_id !== f.vehicle_id ? ` – Zugmaschine ${a.plate}` : '';
     if (out.some((o) => o.user_id === a.user_id && o.basis === 'zuordnung')) continue;
     // beendete Zuordnung: Ende im Aktenvermerk nennen (23.10.2026, Teilagent Fahrerwechsel – vorher klang „seit …“ nach heute noch zugeordnet)
-    const until = a.valid_to ? ` bis ${berlinDateTime(a.valid_to).slice(0, 10)}` : '';
-    out.push({ user_id: a.user_id, display_name: a.display_name, basis: 'zuordnung', evidence: `Fahrzeugzuordnung seit ${berlinDateTime(a.valid_from).slice(0, 10)}${until}${via}${a.evidence ? ' (' + a.evidence + ')' : ''}`, since: berlinDate(a.valid_from), ...(a.valid_to ? { until: berlinDate(a.valid_to) } : {}), assign_evidence: a.evidence || null, ...(via ? { via_plate: a.plate } : {}) });
+    // Backlog 557: Beginn/Ende am Tattag mit Uhrzeit (gespeichert ist die Uhrzeit der Eingabe, nicht der Übergabe – Hinweis in der Oberfläche)
+    const offDay = berlinDate(f.offense_at);
+    const sinceT = berlinDate(a.valid_from) === offDay ? berlinDateTime(a.valid_from).slice(-5) : null;
+    const untilT = a.valid_to && berlinDate(a.valid_to) === offDay ? berlinDateTime(a.valid_to).slice(-5) : null;
+    const until = a.valid_to ? ` bis ${berlinDateTime(a.valid_to).slice(0, 10)}${untilT ? ` ${untilT} Uhr` : ''}` : '';
+    out.push({ user_id: a.user_id, display_name: a.display_name, basis: 'zuordnung', evidence: `Fahrzeugzuordnung seit ${berlinDateTime(a.valid_from).slice(0, 10)}${sinceT ? ` ${sinceT} Uhr` : ''}${until}${via}${a.evidence ? ' (' + a.evidence + ')' : ''}`, since: berlinDate(a.valid_from), ...(sinceT ? { since_time: sinceT } : {}), ...(a.valid_to ? { until: berlinDate(a.valid_to) } : {}), ...(untilT ? { until_time: untilT } : {}), assign_evidence: a.evidence || null, ...(via ? { via_plate: a.plate } : {}) });
   }
   const day = berlinDate(f.offense_at);
   const winFrom = new Date(Date.parse(day + 'T00:00:00Z') - 4 * 3600000).toISOString(); const winTo = new Date(Date.parse(day + 'T23:59:59Z') + 2 * 3600000).toISOString();
@@ -140,6 +144,25 @@ export async function driverCandidates(env, envName, f) {
   return out;
 }
 
+// Backlog 557 (Blickwinkel „Anhörungsbogen“): Zuordnungen des Fahrzeugs (inkl. Gespann), die am Tattag begonnen oder geendet haben –
+// auch solche, die zur Tatzeit nicht galten (Übergabe am Vormittag/Nachmittag). Nur Information für die Ermittlung, keine Automatik.
+export async function sameDayAssignments(env, envName, f) {
+  if (!f.vehicle_id || !f.offense_at) return [];
+  const day = berlinDate(f.offense_at);
+  const winFrom = new Date(Date.parse(day + 'T00:00:00Z') - 4 * 3600000).toISOString(); const winTo = new Date(Date.parse(day + 'T23:59:59Z') + 2 * 3600000).toISOString();
+  const rows = (await env.DB.prepare(`SELECT d.user_id, u.display_name, d.valid_from, d.valid_to, d.vehicle_id, vv.plate FROM driver_vehicles d JOIN users u ON u.id=d.user_id JOIN vehicles vv ON vv.id=d.vehicle_id
+    WHERE d.vehicle_id IN (${fineVehiclesSql('?1')}) AND d.environment=?2 AND ((d.valid_from BETWEEN ?3 AND ?4) OR (d.valid_to BETWEEN ?3 AND ?4)) ORDER BY d.valid_from LIMIT 50`)
+    .bind(f.vehicle_id, envName, winFrom, winTo).all()).results;
+  const offT = Date.parse(f.offense_at); const out = [];
+  for (const r of rows) {
+    for (const [change, at] of [['start', r.valid_from], ['end', r.valid_to]]) {
+      if (!at || berlinDate(at) !== day) continue;
+      out.push({ user_id: r.user_id, display_name: r.display_name, change, at, time: berlinDateTime(at).slice(-5), after_offense: Date.parse(at) > offT, ...(r.vehicle_id !== f.vehicle_id ? { via_plate: r.plate } : {}) });
+    }
+  }
+  return out.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
 export async function fineDetail(env, user, envName, id) {
   const f = await loadFine(env, user, envName, id);
   const events = (await env.DB.prepare(`SELECT e.*, u.display_name AS actor_name FROM fine_events e LEFT JOIN users u ON u.id=e.actor_id WHERE fine_id=? ORDER BY created_at`).bind(id).all()).results;
@@ -169,6 +192,7 @@ export async function fineDetail(env, user, envName, id) {
     for (const e of events) { let p = null; try { p = e.payload ? JSON.parse(e.payload) : null; } catch {} if (p && p.driver_id) evIds.add(p.driver_id); if (p && p.driver_reset && p.driver_reset.driver_id) evIds.add(p.driver_reset.driver_id); }
     out.event_driver_names = evIds.size ? Object.fromEntries((await env.DB.prepare('SELECT id, display_name FROM users WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify([...evIds])).all()).results.map((u) => [u.id, u.display_name])) : {};
     out.candidates = await driverCandidates(env, envName, f);
+    { const sd = await sameDayAssignments(env, envName, f); if (sd.length) out.same_day_assignments = sd; }
     { const dp = await disputeOf(env, f); if (dp) out.driver_dispute = dp; }
     // Zuordnung und Abfahrtskontrolle am Tattag nennen verschiedene Fahrer (z. B. zugeordneter Fahrer im Urlaub, Vertretung fuhr):
     // Hinweis vor dem Bestätigen statt stiller Liste – keine Automatik (Backlog 376)
@@ -582,6 +606,8 @@ export async function fineFindings(env, environment, settings = null) {
       if (days < 0) out.push({ code: 'FINE_OVERDUE', f, severity: 'handeln', requires_decision: 1, ...fm('FINE_OVERDUE', { label, due: f.response_due }), next_action: 'Sofort beantworten bzw. Fristverlängerung klären.' });
       else if (warnDays !== null && days <= warnDays) out.push({ code: 'FINE_DUE_SOON', f, severity: 'hinweis', requires_decision: 0, ...fm(days === 0 ? 'FINE_DUE_TODAY' : 'FINE_DUE_SOON', { label, due: f.response_due, days }), next_action: f.status === 'eingegangen' ? 'Fahrer ermitteln und Schreiben beantworten.' : 'Schreiben fristgerecht beantworten.' });
     }
+    // Backlog 558: offenes Schreiben ohne erfasste Antwortfrist – nur zum Nachtragen aus dem Schreiben (keine Frist schätzen)
+    else out.push({ code: 'FINE_NO_DUE', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_NO_DUE', { label }), next_action: 'Antwortfrist aus dem Schreiben unter „Angaben ändern“ nachtragen.' });
     if (!f.vehicle_id && pickVehicleByPlate(vehs, f.plate_in_letter).ambiguous) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_AMBIGUOUS', { label, plate: f.plate_in_letter }), next_action: 'Fahrzeugstamm prüfen: Kennzeichen steht an mehreren aktiven Fahrzeugen (Datenqualität).' });
     else if (!f.vehicle_id && (pickVehicleByPlate(vehs, f.plate_in_letter).vehicle || formerPick(vplates, f.plate_in_letter, f.offense_at))) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_MATCHABLE', { label, plate: f.plate_in_letter }), next_action: 'Bußgeld öffnen, unter „Angaben ändern“ speichern – das Fahrzeug wird übernommen.' });
     else if (!f.vehicle_id && trailerOf(vehs, f.plate_in_letter)) out.push({ code: 'FINE_VEHICLE_UNKNOWN', f, severity: 'hinweis', requires_decision: 0, ...fm('FINE_VEHICLE_TRAILER', { label, plate: f.plate_in_letter, truck: trailerOf(vehs, f.plate_in_letter).plate }), next_action: 'Anhänger im Fahrzeugstamm anlegen, danach im Bußgeld unter „Angaben ändern“ speichern.' });

@@ -5362,8 +5362,8 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   vk = await vrow(users.fleet);
   eq(vk.next_due_km, 380000, 'belegte km-Fälligkeit, kleinste zuerst'); eq(vk.next_due_km_kind, 'Inspektion'); eq(vk.km_remaining, -20000);
   const vcs = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise'), 'CSV-Kopf: km-Spalten am Ende (Leitung: danach Agentenbefunde)');
-  ok(/;380000;Inspektion;-20000;0;\d+;\d+;aktiv;[^;]*;[^;]*;[^;]*;[^;]*;[^;]*;[^;]*;\d+$/.test(vcs.find((l) => l.startsWith('WP-LN 1;'))), 'CSV-Zeile: km-Fälligkeit');
+  ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise;Art nächste Prüfung'), 'CSV-Kopf: km-Spalten am Ende (Leitung: danach Agentenbefunde)');
+  ok(/;380000;Inspektion;-20000;0;\d+;\d+;aktiv;[^;]*;[^;]*;[^;]*;[^;]*;[^;]*;[^;]*;\d+;[^;]*$/.test(vcs.find((l) => l.startsWith('WP-LN 1;'))), 'CSV-Zeile: km-Fälligkeit');
   ok(!('next_due_km' in (await users.driver.get('/api/vehicles')).data.vehicles[0]), 'Fahrer: keine Wartungsdaten');
   const av = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles.find((v) => v.id === VP);
   eq(JSON.stringify([av.next_due_km, av.next_due_km_kind, av.km_remaining]), JSON.stringify([380000, 'Inspektion', -20000]), 'Integrations-API: km-Fälligkeit');
@@ -5797,8 +5797,8 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   eq(vl.find((x) => x.vin === 'WDB96340310555651').open_recalls, 1, 'Liste: ein offener Rückruf');
   ok(vl.filter((x) => x.vin !== 'WDB96340310555651').every((x) => x.open_recalls === 0), 'andere Fahrzeuge: 0');
   const vcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(vcsv[0].endsWith(';Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise'), 'CSV-Kopf: Rückrufe vor den Agentenbefunden');
-  ok(/;1;\d+;\d+;aktiv;[^;]*;[^;]*;[^;]*;[^;]*;[^;]*;[^;]*;\d+$/.test(vcsv.find((l) => l.startsWith('VT-FL 1;'))), 'CSV-Zeile: 1 offener Rückruf');
+  ok(vcsv[0].endsWith(';Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise;Art nächste Prüfung'), 'CSV-Kopf: Rückrufe vor den Agentenbefunden');
+  ok(/;1;\d+;\d+;aktiv;[^;]*;[^;]*;[^;]*;[^;]*;[^;]*;[^;]*;\d+;[^;]*$/.test(vcsv.find((l) => l.startsWith('VT-FL 1;'))), 'CSV-Zeile: 1 offener Rückruf');
   ok((await users.driver.get('/api/vehicles')).data.vehicles.every((x) => !('open_recalls' in x)), 'Fahrer: kein Rückruf-Feld');
   // Rückrufschreiben als eigene Dokumentart in der Fahrzeugakte (Meta, Upload, Anzeige; Übersetzung je Sprache)
   ok((await users.fleet.get('/api/meta')).data.doc_kinds.includes('rueckruf'), 'Dokumentart Rückrufschreiben');
@@ -7490,7 +7490,7 @@ await test('Alle Druckansichten: Ausdruckvermerk mit Zeitpunkt und Person, im UI
     (routeOf[fn] = routeOf[fn] || []).push(base);
   }
   const pm = smoke.match(/PRINT = \{([\s\S]*?)\n\}/); ok(pm, 'PRINT-Liste im Rauchtest fehlt');
-  const covered = new Set([...pm[1].matchAll(/'([^']+)'/g)].map((x) => x[1]));
+  const covered = new Set([...pm[1].matchAll(/'([^']*)'/g)].map((x) => x[1])); // '' = Startseite (Dispo, Backlog 560)
   const miss = [];
   for (const n of printing) {
     const body = fns[n];
@@ -7685,10 +7685,10 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
     const r = await c.get('/api/vehicles'); ok(r.status === 200 && r.data.vehicles.every((x) => !('agent_findings_open' in x) && !('agent_findings_critical' in x) && !('af' in x)), 'Rolle ohne Leitung: Feld sichtbar');
   }
   const csvL = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(csvL[0].endsWith(';Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise'), 'CSV Leitung: Spalten am Ende');
+  ok(csvL[0].endsWith(';Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise;Art nächste Prüfung'), 'CSV Leitung: Spalten am Ende');
   ok(csvL.find((l) => l.startsWith('AF-BEF 1;')).includes(`;${db.n};${db.c || 0};aktiv;;;`), 'CSV-Zeile = Datenbank (danach leere Prüfspalten)');
   const csvD = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.dispatch.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(csvD[0].endsWith(';Offene Rückrufe;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise'), 'CSV Disposition: ohne Agentenbefunde');
+  ok(csvD[0].endsWith(';Offene Rückrufe;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise;Art nächste Prüfung'), 'CSV Disposition: ohne Agentenbefunde');
   const iv = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles; ok(iv.every((x) => !('agent_findings_open' in x)), 'Integrations-API unverändert');
   const plan = env.DB.db.prepare("EXPLAIN QUERY PLAN SELECT (SELECT COUNT(*) FROM agent_findings f WHERE f.vehicle_id=v.id AND f.environment=? AND f.status='offen') FROM vehicles v").all('test').map((p) => p.detail).join(' | ');
   ok(/idx_findings_vehicle/.test(plan), 'Index nicht genutzt: ' + plan);
@@ -12664,7 +12664,7 @@ await test('Fehlersuche 18.10. (19): Fahrzeuge – ruhendes Doppel mit gleichem 
   eq(mine.coupled.id, 'VIN:WMA15SZZ2HM700002'); eq(mine.coupled.locked, true, 'Fahrer sieht die Sperre des echten Anhängers');
   // CSV: Spalte „Bewertung/Betrieb“
   const lines = dec(await U.fleet.get('/api/vehicles?format=csv')).split('\r\n');
-  ok(lines[0].endsWith(';Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise')); ok(lines.find((l) => l.startsWith('SZ-A1;')).endsWith(';ruhend (nicht in Bewertungen);;;;;;;0'));
+  ok(lines[0].endsWith(';Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise;Art nächste Prüfung')); ok(lines.find((l) => l.startsWith('SZ-A1;')).endsWith(';ruhend (nicht in Bewertungen);;;;;;;0;'));
   // eigener Export ohne Spalte „Fahrzeugart“: „Art km-Fälligkeit“ gilt nicht als Fahrzeugart
   const own0 = dec(await own.get('/api/vehicles?format=csv')).replace(/^﻿/, '').split('\r\n').filter(Boolean).map((l) => l.split(';'));
   const kIdx = own0[0].indexOf('Fahrzeugart'); const noKind = own0.map((cs) => cs.filter((_, i) => i !== kIdx).join(';')).join('\n');
@@ -15240,7 +15240,7 @@ await test('Fehlersuche 20.10. (16): Führerscheinkontrolle am selben Tag korrig
   const order = vt.split('\n').slice(1).filter(Boolean).map((l) => l.split(';')[0].replace(/"/g, '')); ok(order[0].startsWith('ÖHR'), order.join('|'));
   ok(app.includes("`fuhrpark-fahrzeuge_${envFn()}${inact ? '_ausser-betrieb' : ''}_"), 'Dateiname App');
   // 5. erledigter Rückruf mit gespeicherter Altfrist zählt nicht als nächste Prüfung
-  ok(rd('src/vehicles.js').includes("m.next_due_date IS NOT NULL AND m.kind NOT IN ('HU','SP') AND NOT (m.kind='Rückruf' AND m.last_done_date IS NOT NULL)) AS next_due"), 'Fahrzeugliste');
+  ok(rd('src/vehicles.js').includes("m.next_due_date IS NOT NULL AND m.kind NOT IN ('HU','SP') AND NOT (m.kind='Rückruf' AND m.last_done_date IS NOT NULL) ORDER BY m.next_due_date, m.kind LIMIT 1) AS next_due"), 'Fahrzeugliste (seit Backlog 561 mit Art)');
   // 6. Startseite: ruhende Fahrzeuge nicht in der Leiste, nur als Anzahl; Filter „überfällig“ ohne ruhende
   const d0 = (await U.fleet.get('/api/dashboard')).data.vehicles;
   db.prepare("UPDATE vehicles SET eval_excluded=1 WHERE id='VIN:WDB9630051L917317'").run();
@@ -17963,7 +17963,7 @@ await test('Fahrerwechsel bei offenem Bußgeld (Teilagent 23.10.): Tatzeit vor d
   for (const l of ['uk', 'en']) ok(translateValidation(l, 'Fahrer bereits ermittelt – Tatzeit nur vor der Fahrerermittlung änderbar.') !== 'Fahrer bereits ermittelt – Tatzeit nur vor der Fahrerermittlung änderbar.', l);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('<form id="uf"><label>${esc(t(\'offense_at\'))}</label><input type="datetime-local" name="offense_at"') && app.includes('b.offense_at = uf.offense_at.value'), 'Formular „Angaben ändern“ mit Tatzeit');
-  ok(app.includes("(?: bis (\\d{2}\\.\\d{2}\\.\\d{4}))?"), 'Vermerk „bis“ übersetzt');
+  ok(app.includes("(?: bis (\\d{2}\\.\\d{2}\\.\\d{4})(?: (\\d{2}:\\d{2}) Uhr)?)?"), 'Vermerk „bis“ übersetzt (seit Backlog 557 mit Uhrzeit am Tattag)');
 });
 
 await test('Reifenwechsel-Saison / Jahresabschluss Kosten (Teilagenten 23.10.): Einzelpositionen-CSV stimmt mit den Summen überein, Fahrzeugstatus in Bericht und CSV; Reifen-Erfassung bleibt offen, Listen springen zum Abschnitt Reifen', async () => {
@@ -18395,7 +18395,7 @@ await test('Bußgeld-Antwortfrist am Wochenende: Anzeige mit Wochentag und Marki
   const isWeekendD = eval(m[1]);
   eq([isWeekendD('2026-10-24'), isWeekendD('2026-10-25'), isWeekendD('2026-10-26'), isWeekendD('2026-10-23'), isWeekendD(null), isWeekendD('2026-03-29')].join(), 'true,true,false,false,false,true', 'Sa/So erkannt, Zeitumstellung egal');
   ok(app.includes("${f.response_due ? ' · ' + esc(t('response_due')) + ' ' + esc(fmtDue(f.response_due)) : ''}"), 'Liste');
-  ok(app.includes("<dd>${f.response_due ? esc(fmtDue(f.response_due)) : '–'}${dueOffHint(f.response_due) ?"), 'Detail mit Hinweis (Wochenende/Feiertag, Backlog 267)');
+  ok(app.includes("<dd>${f.response_due ? esc(fmtDue(f.response_due)) : '–' + (") && app.includes("fine_no_due_hint'))}</div>` : '')}${dueOffHint(f.response_due) ?"), 'Detail mit Hinweis (Wochenende/Feiertag, Backlog 267; seit Backlog 558 mit „Antwortfrist fehlt“)');
   ok(app.includes("${fmtDue(f.response_due)}${f.response_due < today ? ' !' : ''}"), 'Startseite „Heute zu tun“');
   eq((app.match(/dueWeekendWatch\(\);/g) || []).length, 2, 'Formularhinweis bei Erfassen und Ändern');
   for (const l of ['de', 'uk', 'en']) for (const k of ['due_weekend', 'due_weekend_hint']) ok(typeof STRINGS[l][k] === 'string' && STRINGS[l][k].length > 3, `${l}: ${k}`);
@@ -19066,7 +19066,7 @@ await test('Backlog 207 (HU-Tag in der Werkstatt): SP mit erheblichen Mängeln n
 await test('Backlog 209 (Panne – Ersatzfahrzeug): Dispo-Startseite verlinkt „Gespann gesperrt (n)“, Fahrzeugliste markiert Termine „(heute)“, Hilfe erklärt „Keine offenen Meldungen“ (DE/UK/EN)', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes(`href="\${hj('#/vehicles?f=coupled_locked')}" id="dcoupled"`), 'Link auf den Filter');
-  ok(app.includes("const cl = dvs.filter((v) => !v.eval_excluded && v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt'"), 'gleiche Regel wie cLocked');
+  ok(app.includes("const clL = dvs.filter((v) => !v.eval_excluded && v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt'"), 'gleiche Regel wie cLocked');
   ok(app.includes("const cLocked = (v) => !v.eval_excluded && v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt';"), 'Filterregel unverändert');
   ok(app.includes('+ todayMark(v.planned_workshop_date)') && app.includes('+ todayMark(v.planned_inspection_date)'), '(heute) in der Liste');
   const { STRINGS } = await import('../public/i18n.js');
@@ -19778,7 +19778,7 @@ await test('Backlog 231 (Teilagent „Disposition sucht Ersatzfahrzeug“): Lkw-
   const { parseCsv } = await import('../src/util.js');
   const rows = parseCsv(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.dispatch.get('/api/vehicles?format=csv')).data).replace(/^﻿/, ''));
   const h = rows[0]; const iO = h.indexOf('Prüfung nicht bestanden'); const iC = h.indexOf('Prüfung gekoppeltes Fahrzeug');
-  ok(iO > 0 && iC === iO + 1 && iC === h.length - 6, 'Spalten am Ende: ' + h.join('|'));
+  ok(iO > 0 && iC === iO + 1 && iC === h.length - 7, 'Spalten am Ende: ' + h.join('|'));
   const rT = rows.find((r) => r[0] === 'ER-LK 1'); const rA = rows.find((r) => r[0] === 'ER-AH 1');
   eq(rT[iO], ''); eq(rT[iC], `Tachograph ${bDayOff(-2)} verkehrsunsicher`); eq(rA[iO], `Tachograph ${bDayOff(-2)} verkehrsunsicher`);
   ok(rows.slice(1).every((r) => r.length === h.length), 'alle Zeilen gleich breit');
@@ -20627,7 +20627,7 @@ await test('Backlog 258a (Blickwinkel „Leitungswechsel“): Eingang einer nie 
   eq((await f()).length, 0, 'bestätigt → kein Bewertungsbefund');
   db.prepare(`INSERT INTO vehicle_notes(id,vehicle_id,environment,text,created_by,created_at) VALUES ('vn-lw',?,'test','Bei Panne Handy Leitung anrufen',?,?)`).run('VIN:WMA15SZZ2HM722774', U.fleet.id, new Date().toISOString());
   const dz = await U.own.patch(`/api/users/${U.fleet.id}`, { active: false }); eq(dz.status, 200);
-  const { notes_plates: np552, ...fh258 } = dz.data.fleet_handover; eq(JSON.stringify(fh258), JSON.stringify({ received_untriaged: 1, notes: 1, emergency: 0, last_fleet: true }), 'Übergabe-Hinweis (258d)');
+  const { notes_plates: np552, ...fh258 } = dz.data.fleet_handover; eq(JSON.stringify(fh258), JSON.stringify({ received_untriaged: 1, notes: 1, emergency: 0, last_fleet: true, questions_open: 0, followups: 0 }), 'Übergabe-Hinweis (258d; seit Backlog 563 mit Rückfragen/Wiedervorlagen)');
   eq((np552 || []).length, 1, 'Backlog 552: Kennzeichen des Fahrzeugs mit dem Hinweis');
   const vn = await U.ws.get('/api/vehicles/VIN:WMA15SZZ2HM722774/notes'); eq(vn.status, 200, JSON.stringify(vn.data)); eq((vn.data.notes.find((n) => n.id === 'vn-lw') || {}).created_by_active, false, 'Backlog 552: Hinweis eines deaktivierten Kontos');
   eq((await f()).join(), 'CRITICAL_UNTRIAGED', 'Bestätigung des deaktivierten Kontos zählt nicht');
@@ -25117,7 +25117,7 @@ await test('Backlog 483–487 (Blickwinkel „Disposition plant abends den näch
   const { parseCsv } = await import('../src/util.js');
   const rows = parseCsv(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/vehicles?format=csv')).data).replace(/^﻿/, ''));
   const h = rows[0]; const iW = h.indexOf('Geplanter Werkstatttermin');
-  ok(iW > h.indexOf('Prüfung gekoppeltes Fahrzeug') && h.slice(iW).join('|') === 'Geplanter Werkstatttermin|Geplante Prüfung|Art geplante Prüfung|Teile erwartet am|Aktive Hinweise', 'Spalten am Ende: ' + h.slice(iW).join('|'));
+  ok(iW > h.indexOf('Prüfung gekoppeltes Fahrzeug') && h.slice(iW).join('|') === 'Geplanter Werkstatttermin|Geplante Prüfung|Art geplante Prüfung|Teile erwartet am|Aktive Hinweise|Art nächste Prüfung', 'Spalten am Ende: ' + h.slice(iW).join('|'));
   const r1 = rows.find((r) => r[1] === V1.slice(4)); const [y, m, d] = bDayOff(1).split('-');
   eq(r1[iW], `${d}.${m}.${y}`, 'Werkstatttermin TT.MM.JJJJ'); eq(r1[iW + 4], '1', 'aktive Hinweise');
   ok(rows.slice(1).every((r) => r.length === h.length), 'alle Zeilen gleich breit');
@@ -25493,6 +25493,194 @@ await test('Backlog 553–556 (Blickwinkel „Anhörungsbogen per Post“ / „D
   eq(lw('2026-11-02'), '2026-10-30', 'Mo → Fr'); eq(lw('2026-11-01'), '2026-10-30', 'So → Fr'); eq(lw('2026-11-03'), '2026-11-02', 'Di → Mo'); eq(lw('2026-12-28'), '2026-12-24', 'nach Weihnachten → Do 24.12.');
   ok(app.includes('const from = lastWorkdayBefore(bDate());'), '556 eingebunden');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['cand_after', 'fine_cand_multi', 'dispo_back_since']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
+await test('Backlog 557 (Blickwinkel „Anhörungsbogen“): Zuordnungswechsel am Tattag mit Uhrzeit (auch nicht mehr/noch nicht gültige Zuordnungen), Uhrzeit im Kandidaten-Nachweis, Übersetzung des Aktenvermerks', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const t0 = new Date(Date.now() - 4 * 86400000); t0.setUTCHours(6, 0, 0, 0); const off = new Date(t0.getTime() + 3 * 3600000); // Tat 09:00 UTC
+  const end = new Date(t0.getTime() + 3600000).toISOString(); // Übergabe 07:00 UTC, vor der Tat
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,created_by,created_at,environment) VALUES ('dv-557a',?,?,?,?,?,?,'test')`).run(U.driver.id, V1, new Date(t0.getTime() - 30 * 86400000).toISOString(), end, U.fleet.id, now);
+  const v = await U.own.post('/api/users', { username: 'springer.557', display_name: 'Springer 557', role: 'driver', environment: 'test' }); const vid = v.data.id || (v.data.user && v.data.user.id);
+  const v2 = await U.own.post('/api/users', { username: 'spaet.557', display_name: 'Spaet 557', role: 'driver', environment: 'test' }); const vid2 = v2.data.id || (v2.data.user && v2.data.user.id);
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES ('dv-557b',?,?,?,?,?,'test')`).run(vid, V1, end, U.fleet.id, now);
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES ('dv-557c',?,?,?,?,?,'test')`).run(vid2, V1, new Date(off.getTime() + 5 * 3600000).toISOString(), U.fleet.id, now);
+  // Zuordnung an einem anderen Tag: nicht in der Liste
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,created_by,created_at,environment) VALUES ('dv-557d',?,?,?,?,?,?,'test')`).run(vid2, V1, new Date(t0.getTime() - 60 * 86400000).toISOString(), new Date(t0.getTime() - 50 * 86400000).toISOString(), U.fleet.id, now);
+  const f = await U.fleet.post('/api/fines', { kind: 'anhoerung', offense_type: 'geschwindigkeit', offense_at: off.toISOString(), plate_in_letter: 'SZ-YC 5513', authority: 'Stadt S', reference: 'AZ-557' }); eq(f.status, 201, JSON.stringify(f.data));
+  const d = (await U.fleet.get('/api/fines/' + f.data.id)).data;
+  const sd = d.same_day_assignments; ok(Array.isArray(sd), JSON.stringify(d).slice(0, 300)); eq(sd.length, 3, JSON.stringify(sd));
+  eq(sd[0].user_id, U.driver.id); eq(sd[0].change, 'end'); eq(sd[0].after_offense, false);
+  eq(sd[1].user_id, vid); eq(sd[1].change, 'start'); eq(sd[2].user_id, vid2); eq(sd[2].after_offense, true, 'nach der Tat');
+  const { berlinDateTime } = await import('../src/util.js'); eq(sd[1].time, berlinDateTime(end).slice(-5));
+  const za = d.candidates.filter((c) => c.basis === 'zuordnung'); eq(za.length, 1, 'nur die zur Tatzeit gültige Zuordnung'); eq(za[0].user_id, vid);
+  eq(za[0].since_time, sd[1].time); ok(za[0].evidence.includes(` ${sd[1].time} Uhr`), za[0].evidence);
+  // gespeicherter Aktenvermerk mit Uhrzeit wird in der Oberfläche weiter erkannt (Übersetzung)
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const lit = app.match(/const m = (\/\^Fahrzeugzuordnung seit .*?\$\/)\.exec/); ok(lit, 'Regex gefunden');
+  const re = new Function('return ' + lit[1])();
+  const m = re.exec(za[0].evidence); ok(m && m[2] === sd[1].time, 'seit mit Uhrzeit: ' + za[0].evidence);
+  const m2 = re.exec('Fahrzeugzuordnung seit 01.10.2026 bis 12.10.2026 07:15 Uhr – Zugmaschine SZ-YC 1 (Zuordnung durch Fuhrparkleitung)'); ok(m2 && m2[4] === '07:15' && m2[5] === 'SZ-YC 1' && m2[6] === 'Zuordnung durch Fuhrparkleitung', 'bis mit Uhrzeit');
+  ok(re.exec('Fahrzeugzuordnung seit 01.10.2026'), 'alter Vermerk ohne Uhrzeit');
+  ok(app.includes('${sameDayHtml(d.same_day_assignments)}') && app.includes('data-fcsameday'), 'Oberfläche');
+  const vw = await U.viewer.get('/api/fines/' + f.data.id); eq(vw.data.same_day_assignments, undefined, 'nicht für Leserechte');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['fine_sameday_title', 'fine_sameday_start', 'fine_sameday_end', 'fine_sameday_note']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
+await test('Backlog 558 (Blickwinkel „Anhörungsbogen“): offenes Schreiben ohne Antwortfrist → Agent-Hinweis FINE_NO_DUE (nie geschätzte Frist), weg nach Nachtrag bzw. Erledigung; Chip in Liste/Detail', async () => {
+  const { e, U } = await freshWorld();
+  const off = new Date(Date.now() - 3 * 86400000).toISOString();
+  const f = await U.fleet.post('/api/fines', { kind: 'anhoerung', offense_type: 'parken', offense_at: off, plate_in_letter: 'SZ-YC 5513', authority: 'Stadt S', reference: 'AZ-558' }); eq(f.status, 201, JSON.stringify(f.data));
+  const { fineFindings } = await import('../src/fines.js');
+  let fx = (await fineFindings(e, 'test')).filter((x) => x.f.id === f.data.id && x.code === 'FINE_NO_DUE');
+  eq(fx.length, 1, 'Hinweis ohne Frist'); eq(fx[0].severity, 'hinweis'); eq(fx[0].requires_decision, 0);
+  eq(Object.keys(JSON.parse(fx[0].message_args).a).join(), 'label', 'keine geschätzte Frist im Befund');
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  for (const l of ['de', 'uk', 'en']) { const m = renderFindingMessage('FINE_NO_DUE', { label: 'X' }, l); ok(m && m.startsWith('X:') && !m.includes('FINE_NO_DUE'), l + ' Text ' + m); }
+  const fl = (await import('node:fs')).readFileSync(new URL('../public/finding-labels.js', import.meta.url), 'utf8'); eq((fl.match(/FINE_NO_DUE:/g) || []).length, 3, 'Bezeichnung DE/UK/EN');
+  // Frist nachgetragen → Hinweis weg, ggf. FINE_DUE_SOON/OVERDUE nach den bestehenden Regeln
+  const d = (await U.fleet.get('/api/fines/' + f.data.id)).data;
+  const due = new Date(Date.now() + 20 * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post('/api/fines/' + f.data.id + '/commands', { action: 'update', expected_version: d.fine.version, payload: { response_due: due, authority: 'Stadt S' } }); eq(r.status, 200, JSON.stringify(r.data));
+  fx = (await fineFindings(e, 'test')).filter((x) => x.f.id === f.data.id && x.code === 'FINE_NO_DUE'); eq(fx.length, 0, 'nach Nachtrag weg');
+  // Oberfläche + Übersetzung des nächsten Schritts
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/data-fnodue/g) || []).length, 2, 'Chip in Liste und Detail');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['fine_no_due', 'fine_no_due_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+  const i18n = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8'); ok(i18n.includes("['Antwortfrist aus dem Schreiben unter „Angaben ändern“ nachtragen.',"), 'nächster Schritt übersetzt');
+});
+
+await test('Backlog 559/561 (Blickwinkel „Disposition Freitag → Montag“): Art der nächsten Fälligkeit in Fahrzeugliste/CSV (auch gekoppelt, HU/SP bei gleichem Datum), Fristen bis zum nächsten Werktag auf der Dispo-Tafel, Wochentag + „nächster Werktag“', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString(); const V2 = 'VIN:WDB9630051L917317';
+  const d2 = bDayOff(2), d5 = bDayOff(5);
+  const rule = (id, vid, kind, due, extra = '') => db.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,next_due_date,evidence,created_by,created_at,updated_at${extra ? ',due_source' : ''}) VALUES (?,?,?,?,'Beleg',?,?,?${extra ? ",'nachweis'" : ''})`).run(id, vid, kind, due, U.fleet.id, now, now);
+  rule('r561a', V1, 'UVV', d2); rule('r561b', V1, 'Tachograph', d2); rule('r561c', V1, 'UVV-alt', d5);
+  rule('r561d', V2, 'UVV', d5);
+  // Anhänger an V1 gekoppelt
+  const tr = await U.fleet.post('/api/vehicles', { plate: 'SZ-AH 561', vin: 'WSM00000000561561', kind: 'anhaenger', site: 'Dortmund' }); ok([200, 201].includes(tr.status), JSON.stringify(tr.data));
+  db.prepare(`UPDATE vehicles SET trailer_plate='SZ-AH 561' WHERE id=?`).run(V1); rule('r561e', 'VIN:WSM00000000561561', 'UVV', d5);
+  let vs = (await U.fleet.get('/api/vehicles')).data.vehicles; const byId = (id) => vs.find((v) => v.id === id);
+  eq(byId(V1).next_due, d2); eq(byId(V1).next_due_kind, 'Tachograph', 'gleiches Datum: alphabetisch erste Art');
+  eq(byId(V2).next_due_kind, 'UVV'); eq(byId(V1).coupled && byId(V1).coupled.next_due_kind, 'UVV', 'gekoppelt mit Art');
+  eq(byId('VIN:WSM00000000561561').coupled.plate, byId(V1).plate, 'Anhänger kennt Zugmaschine');
+  // HU mit gleichem Datum wie UVV: HU wird als Art genannt
+  rule('r561f', V2, 'HU', d5, 'nachweis');
+  vs = (await U.fleet.get('/api/vehicles')).data.vehicles;
+  if (byId(V2).next_due === d5) eq(byId(V2).next_due_kind, 'HU', 'HU vor UVV bei gleichem Datum'); else ok(byId(V2).next_due < d5 && ['HU', 'SP'].includes(byId(V2).next_due_kind), 'HU/SP-Regel: ' + byId(V2).next_due + ' ' + byId(V2).next_due_kind);
+  // CSV: Art am Ende
+  const csv = new TextDecoder().decode((await U.fleet.get('/api/vehicles?format=csv')).data).replace(/^\uFEFF/, '').split(/\r?\n/);
+  ok(csv[0].endsWith(';Art nächste Prüfung'), csv[0].slice(-60)); ok(csv.find((l) => l.startsWith('SZ-YC 5513;')).endsWith(';Tachograph'), 'CSV-Zelle');
+  eq(new Set(csv.filter((l) => l).map((l) => l.split(';').length)).size, 1, 'gleiche Spaltenzahl');
+  // Oberfläche: nächster Werktag + Tafel
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/function nextWorkdayAfter\(iso\) \{[\s\S]*?\n\}/); ok(m, 'Hilfsfunktion');
+  const { federalHoliday } = await import('../public/holidays.js');
+  const nw = new Function('federalHoliday', m[0] + '\nreturn nextWorkdayAfter;')(federalHoliday);
+  eq(nw('2026-10-30'), '2026-11-02', 'Fr → Mo'); eq(nw('2026-10-31'), '2026-11-02', 'Sa → Mo'); eq(nw('2026-11-02'), '2026-11-03', 'Mo → Di');
+  eq(nw('2026-12-23'), '2026-12-24', 'Mi → Do 24.12. (kein Feiertag)'); eq(nw('2026-12-24'), '2026-12-28', 'Do 24.12. → Mo 28.12.'); eq(nw('2027-03-25'), '2027-03-30', 'Do vor Karfreitag → Di nach Ostermontag');
+  eq(nw('2026-12-31'), '2027-01-04', 'Silvester → Mo 04.01. (Neujahr Fr, Wochenende)');
+  ok(app.includes("html += dispoDueSoon(dvs, (v) =>") && app.includes('data-dduesoon') && app.includes('data-dduecoupled') && app.includes('data-pnwd'), 'Dispo-Tafel');
+  ok(app.includes("esc(t('next_due')) + ' ' + fmtD(v.next_due) + (v.next_due_kind ? ' (' + esc(mk(v.next_due_kind)) + ')' : '')"), 'Fahrzeugliste mit Art');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['dispo_due_soon', 'dispo_due_soon_hint', 'next_workday']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
+await test('Backlog 560 (Blickwinkel „Disposition Freitag → Montag“): Dispo-Startseite druckbar – Druckkopf mit Standort, Warnhinweise (überfällig, Gespann gesperrt, eingeschränkt fahrbereit) mit Kennzeichen nur im Ausdruck', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/function dispoPrintLine\(key, label, items, alert = false\) \{[\s\S]*?\n\}/); ok(m, 'Hilfsfunktion');
+  const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;'); const plateCmp = (a, b) => String(a).localeCompare(String(b), 'de', { numeric: true });
+  const f = new Function('esc', 'plateCmp', m[0] + '\nreturn dispoPrintLine;')(esc, plateCmp);
+  eq(f('x', 'L', []), '', 'leer → nichts');
+  const h = f('mover', 'Überfällig', ['SZ-YC 5517', 'SZ-YC 5501 <b>'], true);
+  ok(h.includes('class="print-only panel small alert"') && h.includes('data-dprint="mover"') && h.includes('(2)') && h.indexOf('SZ-YC 5501') < h.indexOf('SZ-YC 5517') && h.includes('&lt;b>'), h);
+  for (const k of ["dispoPrintLine('limited',", "dispoPrintLine('mover',", "dispoPrintLine('coupled',"]) ok(app.includes(k), k);
+  ok(app.includes('<div data-dprinthead>${printHead([t(\'dispo_print_title\')') && app.includes("const dpr = $('#dprint'); if (dpr) dpr.onclick = () => window.print();"), 'Druckkopf + Knopf');
+  const css = (await import('node:fs')).readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8'); ok(/\.print-only \{ display: none; \}/.test(css), 'am Bildschirm verborgen');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dispo_print_title, l);
+});
+
+await test('Backlog 562 (Blickwinkel „Jahresinventur“): zweite Zählung desselben Artikels am selben Tag → Vorschau nennt „heute schon gezählt“ mit Uhrzeit und Menge; andere Artikel und frühere Tage nicht', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const a = await U.ws.post('/api/stock', { name: 'Ölfilter 562', part_number: 'OF-562', initial_qty: 5 }); eq(a.status, 201, JSON.stringify(a.data));
+  const b = await U.ws.post('/api/stock', { name: 'Luftfilter 562', part_number: 'LF-562', initial_qty: 3 }); eq(b.status, 201);
+  const c = await U.ws.post('/api/stock', { name: 'Keilriemen 562', part_number: 'KR-562', initial_qty: 2 }); eq(c.status, 201);
+  const ida = a.data.id || a.data.item.id, idb = b.data.id || b.data.item.id, idc = c.data.id || c.data.item.id;
+  let p = await U.ws.post('/api/stock/inventory?dry_run=1', { site: 'DORTMUND', counts: [{ item_id: ida, counted: 5 }] }); eq(p.status, 200); eq(p.data.already_counted_today, undefined, 'noch nicht gezählt');
+  // erste Person zählt A (ohne Abweichung) und B (Abweichung)
+  eq((await U.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: ida, counted: 5 }, { item_id: idb, counted: 2 }] })).status, 200);
+  // C wurde gestern gezählt
+  db.prepare(`UPDATE stock_items SET last_counted_at=?, last_counted_qty=2 WHERE id=?`).run(new Date(Date.now() - 2 * 86400000).toISOString(), idc);
+  p = await U.fleet.post('/api/stock/inventory?dry_run=1', { site: 'DORTMUND', counts: [{ item_id: ida, counted: 6 }, { item_id: idb, counted: '' }, { item_id: idc, counted: 2 }] }); eq(p.status, 200, JSON.stringify(p.data));
+  const ct = p.data.already_counted_today; ok(Array.isArray(ct) && ct.length === 1, JSON.stringify(ct));
+  eq(ct[0].item_id, ida); eq(ct[0].qty, 5); ok(ct[0].at && ct[0].name === 'Ölfilter 562' && ct[0].part_number === 'OF-562', JSON.stringify(ct[0]));
+  // Buchung wird dadurch nicht verhindert (nur Hinweis)
+  const bk = await U.fleet.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: ida, counted: 6 }], preview: p.data.differences.filter((d) => d.item_id === ida).map((d) => ({ item_id: d.item_id, book: d.book, counted: d.counted })) });
+  eq(bk.status, 200, JSON.stringify(bk.data));
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('(booked ? \'\' : prog() + ctToday(r))') && app.includes('data-invtoday'), 'Oberfläche');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['inventory_counted_at', 'inventory_counted_today_hint']) ok(STRINGS[l][k], `${l}.${k}`); ok(PLURALS[l].inventory_counted_today, l + ' Plural'); }
+});
+
+await test('Backlog 563 (Blickwinkel „neue Fuhrparkleiterin“): Datenqualität „Fahrzeughinweis eines deaktivierten Kontos“ (für Fahrer zuerst, Schnittstelle ohne Namen/Text), Übergabehinweis nennt offene Rückfragen und Wiedervorlagen des Kontos', async () => {
+  const { e, U, cmd, newCase } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const lw = await U.own.post('/api/users', { username: 'lw.563', display_name: 'Leitung Alt 563', role: 'fleet', environment: 'test' });
+  const L = new Client(worker, e, 'lw.563'); await L.post('/api/invite/accept', { token: lw.data.invite_token, password: 'Sicheres-Passwort-2026' }); L.id = lw.data.id;
+  // Hinweise: einer für Fahrer, einer intern, einer archiviert, einer abgelaufen, einer von aktiver Leitung
+  const V1 = 'VIN:WMA15SZZ2HM722774', V2 = 'VIN:WDB9630051L917317';
+  const ins = (id, vid, txt, fd, by, extra = {}) => db.prepare(`INSERT INTO vehicle_notes(id,vehicle_id,environment,text,for_driver,created_by,created_at,archived_at,valid_until) VALUES (?,?,'test',?,?,?,?,?,?)`).run(id, vid, txt, fd, by, now, extra.archived || null, extra.until || null);
+  ins('n563a', V1, 'Intern: Ladebordwand prüfen', 0, L.id); ins('n563b', V2, 'Bei Panne   Handy 0170 anrufen ' + 'x'.repeat(100), 1, L.id);
+  ins('n563c', V1, 'archiviert', 1, L.id, { archived: now }); ins('n563d', V1, 'abgelaufen', 1, L.id, { until: '2020-01-01' }); ins('n563e', V1, 'aktiv von aktiver Leitung', 1, U.fleet.id);
+  // Rückfrage (offen) und Wiedervorlage durch das alte Konto; zweite Rückfrage beantwortet
+  const c1 = await newCase(); const c2 = await newCase(); const c3 = await newCase();
+  eq((await cmd(L, c1, 'comment', { question: true, notify: ['reporter'] }, 'Bitte Foto nachreichen')).status, 200);
+  eq((await cmd(L, c2, 'comment', { question: true, notify: ['reporter'] }, 'Wo steht der Lkw?')).status, 200);
+  await new Promise((r) => setTimeout(r, 5));
+  eq((await cmd(U.driver, c2, 'comment', {}, 'Hof Dortmund')).status, 200);
+  const fu = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+  eq((await cmd(L, c3, 'set_followup', { followup_on: fu })).status, 200);
+  const dz = await U.own.patch(`/api/users/${L.id}`, { active: false }); eq(dz.status, 200, JSON.stringify(dz.data));
+  const fh = dz.data.fleet_handover; ok(fh, 'Übergabehinweis'); eq(fh.questions_open, 1, 'offene Rückfrage (beantwortete nicht)'); eq(fh.followups, 1, 'Wiedervorlage'); eq(fh.notes, 2);
+  const dq = (await U.fleet.get('/api/admin/data-quality')).data; const ni = dq.items.filter((x) => x.check === 'note_inactive_author');
+  eq(ni.length, 2, JSON.stringify(ni)); eq(ni[0].vehicle_id, V2, 'für Fahrer zuerst'); eq(ni[0].severity, 'hinweis');
+  ok(ni[0].detail_args.for_driver === true && ni[0].detail_args.name === 'Leitung Alt 563' && ni[0].detail_args.text.length <= 80 && ni[0].detail_args.text.startsWith('Bei Panne Handy'), JSON.stringify(ni[0]));
+  const { dqDetailText } = await import('../public/csv.js'); const { STRINGS } = await import('../public/i18n.js');
+  const tEn = (k) => STRINGS.en[k] || k; ok(dqDetailText(ni[0], tEn, (x) => x).startsWith('Leitung Alt 563 · visible to drivers: Bei Panne'), dqDetailText(ni[0], tEn, (x) => x));
+  for (const l of ['de', 'uk', 'en']) for (const k of ['dq_note_inactive_author', 'dq_note_for_driver', 'ue_fleet_questions', 'ue_fleet_followups']) ok(STRINGS[l][k], `${l}.${k}`);
+  // Integrations-API: ohne Namen/Text
+  const anon = new Client(worker, e, 'anon');
+  const r = await anon.req('GET', '/api/integration/v1/data-quality?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' }); eq(r.status, 200, JSON.stringify(r.data));
+  const it = r.data.items.filter((x) => x.check === 'note_inactive_author'); eq(it.length, 2); ok(it.every((x) => x.detail === null && !('detail_args' in x)), 'kein Name/Text');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("t('ue_fleet_questions')") && app.includes("t('ue_fleet_followups')"), 'Oberfläche');
+});
+
+await test('Backlog 564: Dispo „fällig bis nächster Werktag“ aus allen Prüfterminen (zweite Frist neben einer überfälligen, mehrere Arten, erledigt/ruhend/anderer Standort nicht), ohne Liste Rückfall auf next_due', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/function dispoDueSoon\(dvs, inSite, mrows = null\) \{[\s\S]*?\n\}/); ok(m, 'Funktion');
+  const T = { today: 'heute', next_due: 'Fällig', dispo_due_soon: 'bis {d}', dispo_due_soon_hint: 'H', vk_anhaenger: 'Anhänger', vk_lkw: 'Lkw' };
+  const f = new Function('bDate', 'nextWorkdayAfter', 'plateCmp', 'esc', 't', 'fmtDue', 'mk', 'plate', m[0] + '\nreturn dispoDueSoon;')(
+    () => '2026-10-30', () => '2026-11-02', (a, b) => String(a).localeCompare(String(b)), (x) => String(x), (k) => T[k] || k, (d) => 'D' + d, (k) => k, (p) => `[${p}]`);
+  const dvs = [{ id: 'a', plate: 'A-1', next_due: '2026-10-01', next_due_kind: 'UVV' }, { id: 'b', plate: 'B-1', next_due: '2026-11-01', next_due_kind: 'SP', coupled: { kind: 'anhaenger', plate: 'AH-1' } },
+    { id: 'c', plate: 'C-1', eval_excluded: 1 }, { id: 'd', plate: 'D-1', site: 'MUC' }];
+  const rows = [{ vehicle_id: 'a', kind: 'UVV', next_due_date: '2026-10-01', status: 'ueberfaellig' }, { vehicle_id: 'a', kind: 'HU', next_due_date: '2026-11-02', status: 'faellig' },
+    { vehicle_id: 'b', kind: 'SP', next_due_date: '2026-11-01', status: 'faellig' }, { vehicle_id: 'b', kind: 'Tachograph', next_due_date: '2026-10-30', status: 'faellig' },
+    { vehicle_id: 'b', kind: 'Rückruf', next_due_date: '2026-10-31', status: 'erledigt' }, { vehicle_id: 'c', kind: 'HU', next_due_date: '2026-10-31', status: 'faellig' },
+    { vehicle_id: 'd', kind: 'HU', next_due_date: '2026-10-31', status: 'faellig' }, { vehicle_id: 'a', kind: 'UVV2', next_due_date: '2026-11-03', status: 'ok' }];
+  const h = f(dvs, (v) => v.site !== 'MUC', rows);
+  eq((h.match(/data-dduesoon/g) || []).length, 2, h); ok(h.indexOf('[B-1]') < h.indexOf('[A-1]'), 'früheste Frist zuerst');
+  ok(h.includes('Tachograph (heute) · SP (D2026-11-01)'), 'mehrere Arten'); ok(h.includes('>HU<') && !h.includes('UVV2') && !h.includes('Rückruf') && !h.includes('C-1') && !h.includes('D-1'), h);
+  ok(h.includes('data-dduecoupled>🔗 Anhänger AH-1'), 'Gespann');
+  const h2 = f(dvs, () => true, null); eq((h2.match(/data-dduesoon/g) || []).length, 1, 'Rückfall next_due'); ok(h2.includes('[B-1]') && h2.includes('>SP<'), h2);
+  eq(f(dvs, () => true, []), '', 'leer');
+  ok(app.includes("dmo && Array.isArray(dmo.rows) ? dmo.rows : null);"), 'Tafel nutzt die Prüfterminliste');
+});
+
+await test('Backlog 565: Bußgeldliste – Auswahl „Antwortfrist fehlt“ (gleiche Regel wie Chip/Agent-Hinweis, nur Leitung/Lesende, Druckkopf nennt die Auswahl)', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/const noDue = \(f\) => (.*?);\n/); ok(m, 'Regel');
+  const noDue = new Function('return (f) => ' + m[1])();
+  ok(noDue({ response_due: null, status: 'eingegangen' }) && noDue({ status: 'fahrer_informiert' }), 'offen ohne Frist');
+  ok(!noDue({ response_due: '2026-11-01', status: 'eingegangen' }) && !noDue({ response_due: null, status: 'bezahlt' }) && !noDue({ response_due: null, status: 'beantwortet' }), 'mit Frist bzw. nicht offen');
+  ok(app.includes("const noDueN = own ? 0 : list.filter(noDue).length;") && app.includes('id="fnodue"') && app.includes("S.fineNoDue ? `${t('print_filter')}: ${t('fine_no_due')}` : ''") && app.includes('${shownF.map((f) =>'), 'Oberfläche');
+  // gleiche Statusliste wie der Server-Befund FINE_NO_DUE
+  const src = (await import('node:fs')).readFileSync(new URL('../src/fines.js', import.meta.url), 'utf8'); ok(src.includes("f.status IN ('eingegangen','fahrer_ermittelt','fahrer_informiert')") && src.includes("code: 'FINE_NO_DUE'"), 'Server-Regel');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
