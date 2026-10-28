@@ -24626,6 +24626,45 @@ await test('Backlog 461 (Blickwinkel „Fahrer bringt den Lkw selbst zur Werksta
   ok((await d2.c.get('/api/me/notify-prefs')).data.muted.includes('plan_changed'), 'gespeichert');
 });
 
+await test('Backlog 462 (Blickwinkel „Leitung bittet den Fahrer, ein Foto nachzureichen – erfährt sie, dass es da ist?“): Datei des Melders nach dem Eingang → Verlauf „file_added“ + ein gebündelter, nicht dringender Hinweis an Leitung/Inhaber (Werkstatt erst mit Auftrag); Fotos beim Melden und Uploads der Leitung ohne', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const png = () => concatBytes(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), crypto.getRandomValues(new Uint8Array(300)));
+  const up = (c, id, name) => c.req('POST', `/api/cases/${id}/files`, png(), { 'content-type': 'image/png', 'x-filename': name });
+  const fa = async (c) => (await c.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'file_added');
+  const evs = async (id) => (await U.fleet.get(`/api/cases/${id}`)).data.events.filter((e) => e.action === 'file_added');
+  const id = await newCase();
+  eq((await up(U.driver, id, 'beim-melden.png')).status, 201);
+  eq((await evs(id)).length, 0, 'Foto beim Melden: kein Verlaufseintrag');
+  eq((await fa(U.fleet)).length, 0, 'Foto beim Melden: kein eigener Hinweis');
+  eq((await cmd(U.fleet, id, 'receive')).status, 200);
+  eq((await cmd(U.fleet, id, 'comment', { notify: ['reporter'] }, 'Bitte Foto vom Spiegel nachreichen')).status, 200);
+  eq((await up(U.driver, id, 'spiegel.png')).status, 201);
+  eq((await up(U.driver, id, 'spiegel2.png')).status, 201);
+  const e1 = await evs(id); eq(e1.length, 2, 'je Datei ein Verlaufseintrag'); eq(e1[0].payload.filename, 'spiegel.png'); eq(e1[0].from_status, e1[0].to_status, 'Status unverändert');
+  const f = await fa(U.fleet); eq(f.length, 1, 'mehrere Fotos am Stück → ein Hinweis'); eq(f[0].case_id, id, 'mit Vorgangslink'); ok(!f[0].urgent, 'nicht dringend');
+  eq((await fa(U.ws)).length, 0, 'Werkstatt ohne Auftrag nicht'); eq((await fa(U.driver)).length, 0, 'Melder selbst nicht');
+  // mit Werkstattauftrag erfährt es auch die Werkstatt
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'freigegeben')).status, 200);
+  eq((await up(U.driver, id, 'nachtrag.png')).status, 201);
+  eq((await fa(U.ws)).length, 1, 'Werkstatt mit Auftrag informiert');
+  // Uploads der Leitung/Werkstatt bleiben wie bisher (kein Eintrag)
+  eq((await up(U.fleet, id, 'leitung.png')).status, 201); eq((await up(U.ws, id, 'werkstatt.png')).status, 201);
+  eq((await evs(id)).length, 3, 'nur Nachreichungen des Melders im Verlauf');
+  // abgelehnte Meldung: Fahrer darf nicht mehr hochladen
+  const id2 = await newCase(); eq((await cmd(U.fleet, id2, 'reject', {}, 'kein Mangel')).status, 200);
+  eq((await up(U.driver, id2, 'zu-spaet.png')).status, 403);
+  // Einstellungen/Texte
+  ok((await U.fleet.get('/api/me/notify-prefs')).data.kinds.includes('file_added'), 'für Leitung abschaltbar');
+  ok((await U.ws.get('/api/me/notify-prefs')).data.kinds.includes('file_added'), 'für Werkstatt abschaltbar');
+  ok(!(await U.driver.get('/api/me/notify-prefs')).data.kinds.includes('file_added'), 'Fahrer bekommt die Art nicht');
+  const { STRINGS } = await import('../public/i18n.js'); const { localizedTitle } = await import('../src/notify.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].help_fleet_s.includes(localizedTitle({ kind: 'file_added', title: 'Foto/Datei zur Meldung nachgereicht' }, l)), l + ': Hilfe Leitung nennt den Hinweis');
+    ok(STRINGS[l].help_fleet_s.includes(STRINGS[l].act_file_added), l + ': Hilfe nennt den Verlaufseintrag');
+    ok(STRINGS[l].pk_file_added, l + ': Push-Einstellung beschriftet');
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

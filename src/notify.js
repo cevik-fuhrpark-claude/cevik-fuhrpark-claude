@@ -14,7 +14,7 @@ const T = {
     priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', forwarded: 'Meldung an Werkstatt übergeben', rejected: 'Meldung abgelehnt', withdrawn: 'Werkstattauftrag ohne Reparatur beendet',
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
     quality_check: 'Bereit zur Abschlusskontrolle', rework: 'Nacharbeit angefordert', released: 'Fahrzeug technisch freigegeben',
-    safety_lock: 'Fahrzeug gesperrt', safety_lock_lifted: 'Sperre aufgehoben', still_locked: 'Fahrzeug bleibt gesperrt (weiterer offener Vorgang)', comment: 'Neuer Kommentar', open_item_safety: 'Sicherheitsrelevante Restarbeit', open_item: 'Neue Restarbeit (Werkstatt)', open_item_safety_resolved: 'Sicherheitsrelevante Restarbeit erledigt (Werkstatt)', plan_changed: 'Werkstatttermin geändert', handover_missing: 'Schlüssel oder Fahrzeugschein fehlt',
+    safety_lock: 'Fahrzeug gesperrt', safety_lock_lifted: 'Sperre aufgehoben', still_locked: 'Fahrzeug bleibt gesperrt (weiterer offener Vorgang)', comment: 'Neuer Kommentar', file_added: 'Foto/Datei zur Meldung nachgereicht', open_item_safety: 'Sicherheitsrelevante Restarbeit', open_item: 'Neue Restarbeit (Werkstatt)', open_item_safety_resolved: 'Sicherheitsrelevante Restarbeit erledigt (Werkstatt)', plan_changed: 'Werkstatttermin geändert', handover_missing: 'Schlüssel oder Fahrzeugschein fehlt',
     agent: 'Fuhrparkagent: Handlungsbedarf', cost_limit: 'Kostenfreigabe nötig (Grenze überschritten)', cost_approved: 'Kosten freigegeben', reassigned_away: 'Auftrag an andere Werkstatt übergeben', inspection_defect: 'Prüfung mit gefährlichen Mängeln', fine: 'Neues Schreiben einer Behörde', test: 'Testbenachrichtigung', test_body: 'Push funktioniert auf diesem Gerät.',
     new_login: 'Neue Anmeldung auf einem anderen Gerät', new_login_body: '{d} · {t}. Waren Sie das nicht? Mehr → Mein Konto: unter „Meine Anmeldungen (Geräte)“ das Gerät abmelden und das Passwort ändern.', unknown_device: 'Unbekanntes Gerät',
     why_nicht_fahrbereit: 'nicht fahrbereit', why_gesperrt: 'gesperrt',
@@ -26,7 +26,7 @@ const T = {
     priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', forwarded: 'Повідомлення передано до майстерні', rejected: 'Повідомлення відхилено', withdrawn: 'Замовлення майстерні завершено без ремонту',
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
     quality_check: 'Готово до фінального контролю', rework: 'Потрібна доробка', released: 'Транспорт технічно допущено',
-    safety_lock: 'Транспорт заблоковано', safety_lock_lifted: 'Блокування знято', still_locked: 'Транспорт залишається заблокованим (інша відкрита справа)', comment: 'Новий коментар', open_item_safety: 'Залишкова робота (безпека)', open_item: 'Нова незавершена робота (майстерня)', open_item_safety_resolved: 'Критичну для безпеки незавершену роботу виконано (майстерня)', handover_missing: 'Бракує ключа або свідоцтва про реєстрацію',
+    safety_lock: 'Транспорт заблоковано', safety_lock_lifted: 'Блокування знято', still_locked: 'Транспорт залишається заблокованим (інша відкрита справа)', comment: 'Новий коментар', file_added: 'До повідомлення додано фото/файл', open_item_safety: 'Залишкова робота (безпека)', open_item: 'Нова незавершена робота (майстерня)', open_item_safety_resolved: 'Критичну для безпеки незавершену роботу виконано (майстерня)', handover_missing: 'Бракує ключа або свідоцтва про реєстрацію',
     plan_changed: 'Термін у майстерні змінено', agent: 'Агент автопарку: потрібні дії', cost_limit: 'Потрібне погодження витрат (ліміт перевищено)', cost_approved: 'Витрати погоджено', reassigned_away: 'Замовлення передано іншій майстерні', inspection_defect: 'Огляд із небезпечними дефектами', fine: 'Новий лист від органу влади', test: 'Тестове сповіщення', test_body: 'Push працює на цьому пристрої.',
     new_login: 'Новий вхід на іншому пристрої', new_login_body: '{d} · {t}. Це були не ви? Ще → Мій акаунт: у «Мої входи (пристрої)» вийдіть на цьому пристрої та змініть пароль.', unknown_device: 'Невідомий пристрій',
     why_nicht_fahrbereit: 'не на ходу', why_gesperrt: 'заблоковано',
@@ -38,7 +38,7 @@ const T = {
     priority_changed: 'Priority changed', approved: 'New workshop order', forwarded: 'Report handed over to workshop', rejected: 'Report rejected', withdrawn: 'Workshop order ended without repair',
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
     quality_check: 'Ready for final inspection', rework: 'Rework requested', released: 'Vehicle technically released',
-    safety_lock: 'Vehicle locked', safety_lock_lifted: 'Lock lifted', still_locked: 'Vehicle remains locked (another open case)', comment: 'New comment', open_item_safety: 'Safety-relevant open item', open_item: 'New open item (workshop)', open_item_safety_resolved: 'Safety-relevant open item resolved (workshop)', handover_missing: 'Key or registration certificate missing', plan_changed: 'Workshop date changed',
+    safety_lock: 'Vehicle locked', safety_lock_lifted: 'Lock lifted', still_locked: 'Vehicle remains locked (another open case)', comment: 'New comment', file_added: 'Photo/file added to the report', open_item_safety: 'Safety-relevant open item', open_item: 'New open item (workshop)', open_item_safety_resolved: 'Safety-relevant open item resolved (workshop)', handover_missing: 'Key or registration certificate missing', plan_changed: 'Workshop date changed',
     agent: 'Fleet agent: action required', cost_limit: 'Cost approval needed (limit exceeded)', cost_approved: 'Costs approved', reassigned_away: 'Order handed over to another workshop', inspection_defect: 'Inspection with dangerous defects', fine: 'New letter from an authority', test: 'Test notification', test_body: 'Push works on this device.',
     new_login: 'New sign-in on another device', new_login_body: '{d} · {t}. Not you? More → My account: under “My sign-ins (devices)” sign out that device and change your password.', unknown_device: 'Unknown device',
     why_nicht_fahrbereit: 'not roadworthy', why_gesperrt: 'locked',
@@ -51,7 +51,7 @@ export const nt = (lang, key) => (T[lang] && T[lang][key]) || T.de[key];
 
 // Nicht dringende Ereignisarten, deren Push jede Person für sich abschalten kann (dringende und Sicherheitsereignisse nie)
 export const MUTABLE_KINDS = ['created', 'received', 'priority_changed', 'approved', 'rejected', 'withdrawn', 'acknowledged', 'started', 'waiting_parts', 'resumed',
-  'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder', 'cost_limit', 'cost_approved', 'reassigned_away', 'forwarded', 'open_item', 'handover_missing', 'plan_changed'];
+  'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder', 'cost_limit', 'cost_approved', 'reassigned_away', 'forwarded', 'open_item', 'handover_missing', 'plan_changed', 'file_added'];
 // Titel von Vorgangs-Hinweisen in der aktuellen Sprache der Person anzeigen (gespeichert wird die Sprache zum Zeitpunkt des Versands)
 export function localizedTitle(n, lang) {
   const L = T[lang] ? lang : 'de';
@@ -143,7 +143,7 @@ const KINDS_BY_ROLE = {
   driver: [...REPORTER_KINDS, 'plan_changed'],
   // „Neue Meldung“ erreicht Disposition/Werkstatt nur dringend (nicht abschaltbar) – die Abwahl war wirkungslos (20.10.2026)
   dispatch: [...REPORTER_KINDS, 'waiting_parts', 'plan_changed'],
-  workshop: [...REPORTER_KINDS, 'approved', 'rework', 'cost_approved', 'reassigned_away', 'plan_changed'],
+  workshop: [...REPORTER_KINDS, 'approved', 'rework', 'cost_approved', 'reassigned_away', 'plan_changed', 'file_added'],
   viewer: [],
 };
 export function mutableKindsFor(role) { const k = KINDS_BY_ROLE[role]; return k ? MUTABLE_KINDS.filter((x) => k.includes(x)) : MUTABLE_KINDS; }
@@ -228,6 +228,11 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
     case 'cost_limit':
       add(usersByRole(['fleet', 'owner']));
       break;
+    case 'file_added':
+      // Backlog 462: Melder reicht nach dem Eingang ein Foto/eine Datei nach – Leitung/Inhaber; Werkstatt nur mit Auftrag (Zugriff)
+      add(usersByRole(['fleet', 'owner']));
+      if (!['gemeldet', 'abgelehnt'].includes(c.status)) add(workshopUsers);
+      break;
     case 'cost_approved':
       add(workshopUsers);
       break;
@@ -266,7 +271,7 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
     }
   }
   const actorId = ctxData.actor?.id;
-  return { list: list.filter((u) => u.id !== actorId), urgent: kind.startsWith('cost_') || kind === 'plan_changed' ? false : urgent || (kind !== 'safety_lock' && !!ctxData.still_locked && ['released', 'safety_lock_lifted'].includes(kind)) }; // Kostenhinweise nie dringend
+  return { list: list.filter((u) => u.id !== actorId), urgent: kind.startsWith('cost_') || kind === 'plan_changed' || kind === 'file_added' ? false : urgent || (kind !== 'safety_lock' && !!ctxData.still_locked && ['released', 'safety_lock_lifted'].includes(kind)) }; // Kostenhinweise nie dringend
 }
 
 // Hinweise anlegen (doppelte Ereignisse je Person werden ignoriert) und die tatsächlich neuen zurückgeben.
@@ -289,7 +294,7 @@ async function insertNotifications(env, rows) {
 export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
   const { list, urgent } = await recipientsFor(env, c, kind, ctxData);
   const vehicle = ctxData.vehicle || await env.DB.prepare('SELECT plate FROM vehicles WHERE id=?').bind(c.vehicle_id).first();
-  const eventKey = `${c.id}:${kind}:${c.version}`;
+  const eventKey = ctxData.eventKey || `${c.id}:${kind}:${c.version}`;
   const now = nowIso();
   const rows = [];
   for (const u of list) {

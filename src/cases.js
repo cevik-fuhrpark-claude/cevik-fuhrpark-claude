@@ -2195,7 +2195,7 @@ export function sniffType(bytes) {
   return null;
 }
 
-export async function uploadFile(env, user, envName, caseId, request) {
+export async function uploadFile(env, user, envName, caseId, request, ctx = null) {
   const { c, access } = await loadCase(env, user, envName, caseId);
   // Fahrer dürfen Fotos an eigene offene Meldungen hängen
   const driverOwn = user.role === 'driver' && c.reporter_id === user.id && OPEN_STATUSES.includes(c.status);
@@ -2218,6 +2218,11 @@ export async function uploadFile(env, user, envName, caseId, request) {
   const filename = rawName.replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'datei';
   const id = uuid();
   const key = `${envName}/${c.id}/${id}`;
+  // Backlog 462 (Blickwinkel „Leitung bittet den Fahrer, ein Foto nachzureichen – erfährt sie, dass es da ist?“): lädt der Melder (Fahrer/
+  // Disposition; Werkstatt dokumentiert ohnehin laufend) nach dem Eingang bei der Leitung eine Datei zu seiner offenen Meldung hoch, entsteht ein Verlaufseintrag und ein Hinweis.
+  // Fotos direkt beim Melden (vor dem Eingang) lösen nichts aus – dafür gab es schon „Neue Schadensmeldung“.
+  const lateByReporter = c.reporter_id === user.id && ['driver', 'dispatch'].includes(user.role) && !!c.fleet_received_at && OPEN_STATUSES.includes(c.status);
+  const addedAt = nowIso();
   await env.FILES.put(key, buf, { metadata: { type, case_id: c.id, env: envName } });
   try {
     // Höchstzahl und Dublette in derselben Anweisung geprüft – parallele Uploads (zwei Geräte, Offline-Postausgang) überschritten sonst die 10
@@ -2226,7 +2231,11 @@ export async function uploadFile(env, user, envName, caseId, request) {
       SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE (SELECT COUNT(*) FROM files WHERE case_id=?2) < ?11 AND NOT EXISTS (SELECT 1 FROM files WHERE case_id=?2 AND sha256=?8)`)
       .bind(id, c.id, envName, key, filename, type, buf.length, sha, user.id, nowIso(), MAX_FILES),
     // neue Datei ist Bewegung am Vorgang („Ohne Bewegung“, „zuletzt geändert“ – 20.10.2026)
-    env.DB.prepare('UPDATE cases SET updated_at=? WHERE id=? AND EXISTS (SELECT 1 FROM files WHERE id=?)').bind(nowIso(), c.id, id)]);
+    env.DB.prepare('UPDATE cases SET updated_at=? WHERE id=? AND EXISTS (SELECT 1 FROM files WHERE id=?)').bind(nowIso(), c.id, id),
+    // Backlog 462: Nachreichung durch den Melder nach dem Eingang bei der Leitung → Verlaufseintrag (im selben Stapel, nur wenn eingetragen)
+    ...(lateByReporter ? [env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
+      SELECT ?,?,?,?,?,'file_added',?,?,?,?,NULL,?,? WHERE EXISTS (SELECT 1 FROM files WHERE id=?)`)
+      .bind(uuid(), c.id, envName, user.id, user.role, c.status, c.status, c.version, c.version, JSON.stringify({ file_id: id, filename, content_type: type }), addedAt, id)] : [])]);
     if (!(ins.meta && ins.meta.changes)) {
       await env.FILES.delete(key);
       const d2 = await env.DB.prepare('SELECT id FROM files WHERE case_id=? AND sha256=?').bind(c.id, sha).first();
@@ -2238,6 +2247,8 @@ export async function uploadFile(env, user, envName, caseId, request) {
     await env.FILES.delete(key);
     throw e;
   }
+  // mehrere Fotos am Stück → ein Hinweis je Melder und 10-Minuten-Fenster (technische Bündelung, keine fachliche Frist)
+  if (lateByReporter) await notifyCaseEvent(env, ctx, c, 'file_added', { actor: user, eventKey: `${c.id}:file_added:${user.id}:${addedAt.slice(0, 15)}` });
   return { id, duplicate: false, content_type: type, size: buf.length };
 }
 
