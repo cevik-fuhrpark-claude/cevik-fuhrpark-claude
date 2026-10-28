@@ -25686,7 +25686,7 @@ await test('Backlog 565: Bußgeldliste – Auswahl „Antwortfrist fehlt“ (gle
 await test('Backlog 567 (Blickwinkel „große Systemschrift / Browser-Zoom 200 %“): Raster grid2 nie breiter als die Spalte, Tab-Beschriftung bis 18 px und 3 Zeilen, Seitentitel mit Silbentrennung, Dateiauswahl begrenzt, Kopfzeile bei niedriger Höhe nicht fest', async () => {
   const css = (await import('node:fs')).readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
   ok(css.includes('grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr))') && !css.includes('minmax(280px, 1fr)'), 'grid2');
-  ok(css.includes('font-size: min(0.75rem, 18px); min-height: 60px;') && css.includes('-webkit-line-clamp: 3; -webkit-box-orient: vertical;'), 'Tabbar');
+  ok(css.includes('font-size: min(0.75rem, 18px, max(15px, 4.2vw)); min-height: 60px;') && css.includes('-webkit-line-clamp: 3; -webkit-box-orient: vertical;'), 'Tabbar');
   ok(css.includes('#app h1, #app h2 { overflow-wrap: break-word; hyphens: auto;'), 'Titel');
   ok(css.includes('#app input[type=file] { max-width: 100%; }'), 'Dateiauswahl');
   ok(css.includes('@media (max-width: 260px) { .row { grid-template-columns: minmax(0, 1fr); }'), 'Zeilen einspaltig bei Zoom 200 %');
@@ -25944,6 +25944,12 @@ await test('Backlog 589: Prüftermin-Import nennt bei „Prüfart unbekannt“ d
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("/^Prüfart unbekannt: /.test(x.reason || '')") && app.includes('data-impkinds') && app.includes(".filter((k) => k !== 'Rückruf').map((k) => esc(k) + (mk(k) !== k"), 'Liste in der Vorschau');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].imp_kinds_allowed && STRINGS[l].imp_kinds_allowed.includes('Art'), 'Text ' + l);
+});
+
+await test('Backlog 590 (Fund pruefen.sh: ui-kleine-handys rot seit 567/572): Tab-Schrift auf schmalen Handys höchstens ≈ 4,2 vw (mind. 15 px, sonst bis 18 px), „Kontrolle“ mit weicher Trennstelle', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8'); ok(css.includes('font-size: min(0.75rem, 18px, max(15px, 4.2vw));'), 'Tab-Schrift');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("Kontrolle: 'Kon\\u00ADtrolle'"), 'TAB_SHY Kontrolle');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

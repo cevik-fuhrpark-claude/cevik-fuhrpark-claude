@@ -311,7 +311,7 @@ const ICON = {
 
 // Tab-Beschriftungen mit weichen Trennstellen (22.10.2026, Teilagent „kleine Handys“): ohne Trennwörterbuch brach der Browser mitten im Wort
 // ohne Strich um („Managemen|t“, „Abfahrtskont|rolle“, „Повідоми|ти“); U+00AD trennt nur, wenn es nötig ist
-const TAB_SHY = { Abfahrtskontrolle: 'Abfahrts\u00ADkontrolle', Management: 'Manage\u00ADment', 'Übersicht': 'Über\u00ADsicht', 'Vorgänge': 'Vor\u00ADgänge', Fahrzeuge: 'Fahr\u00ADzeuge',
+const TAB_SHY = { Abfahrtskontrolle: 'Abfahrts\u00ADkontrolle', Kontrolle: 'Kon\u00ADtrolle', Management: 'Manage\u00ADment', 'Übersicht': 'Über\u00ADsicht', 'Vorgänge': 'Vor\u00ADgänge', Fahrzeuge: 'Fahr\u00ADzeuge',
   Overview: 'Over\u00ADview', Vehicles: 'Vehi\u00ADcles', 'Повідомити': 'Пові\u00ADдомити', 'Транспорт': 'Тран\u00ADспорт', 'Керівництво': 'Керів\u00ADництво', 'Перевірка': 'Пере\u00ADвірка', 'виїздом': 'ви\u00ADїздом', 'Заявки': 'Заяв\u00ADки' };
 const tabShy = (label) => String(label).split(' ').map((w) => TAB_SHY[w] || w).join(' ');
 function frame(content, active) {
