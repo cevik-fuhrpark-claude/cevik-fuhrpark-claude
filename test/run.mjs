@@ -25272,6 +25272,31 @@ await test('Backlog 507–509 (Blickwinkel „Fahrer mit Diensthandy und Lkw-Tab
   ok(sw.includes("(/Mobile/.test(ua) ? 'Android' : 'Android-Tablet')") && app.includes("(/Mobile/.test(ua) ? 'Android' : 'Android-Tablet')") && app.includes('navigator.maxTouchPoints > 1'), '509: gleiche Regel in App und Service Worker');
 });
 
+await test('Backlog 510–516 (Blickwinkel „Monatsende: km-Meldung an den Leasinggeber“ / „Werkstatt Bayern vertritt Dortmund“): Kontingent ohne km-Stand ist Hinweis, Stichtag heute zulässig, Leasing ohne Kontingent/Ablesung als „kein km-Stand“, Werkstattwechsel ohne bisherige Werkstatt mit Hinweis, Lagername beim Teil', async () => {
+  const { U, V1 } = await freshWorld();
+  const { contractStatus } = await import('../src/contracts.js');
+  eq(contractStatus({ km_allowance: 1000, start_km: 5 }, null, '2026-10-28', 30).overall, 'hinweis', '510: ohne km-Stand');
+  eq(contractStatus({ km_allowance: 1000, start_km: null }, null, '2026-10-28', 30).overall, 'hinweis', '510: ohne km bei Übernahme');
+  eq(contractStatus({ km_allowance: 1000, start_km: 5 }, { km: 100, measured_at: '2026-10-01T10:00:00Z' }, '2026-10-28', 30).overall, 'ok', 'mit km-Stand ok');
+  const V2 = 'VIN:WDB96340312345671';
+  eq((await U.fleet.post('/api/vehicles', { vin: V2.slice(4), plate: 'LS-KM 1', site: 'Dortmund' })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${V2}/contracts`, { kind: 'miete', partner: 'MietCo', evidence: 'M-1', start_date: '2026-01-01', end_date: '2028-12-31' })).status, 201);
+  const ov = (await U.fleet.get('/api/contracts')).data; const c = ov.contracts.find((x) => x.vehicle_id === V2);
+  ok(c && c.reading === null && c.vehicle_kind === 'lkw', '512: Grundlage ' + JSON.stringify(c && { r: c.reading, k: c.vehicle_kind }));
+  const csv = new TextDecoder().decode((await U.fleet.get('/api/contracts?format=csv')).data).replace(/^﻿/, '').split('\r\n');
+  const head = csv[0].split(';'); const row = csv.find((l) => l.startsWith('LS-KM 1;')).split(';');
+  eq(row[head.indexOf('km-Status')], 'kein km-Stand', '512: CSV');
+  eq((await U.fleet.get(`/api/contracts?as_of=${bDayOff(0)}`)).status, 200, '511: Stichtag heute');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("S.ctAsOf = v && v <= bDate() ? v : '';"), '511: Oberfläche');
+  ok(app.includes("!c.km_allowance && c.vehicle_kind !== 'anhaenger') out.push(`<span class=\"muted\" data-ctnoread>"), '512: Zeile in der Liste');
+  ok(app.includes("S.meta.workshops.filter((w) => w.code !== c.workshop_site)") && app.includes('${rwsDrop(c)}') && app.includes('${rwsDrop(i)}'), '513/514');
+  ok(app.includes("`<label>${esc(t('from_stock'))}: ${esc(wsName(c.workshop_site))}</label>") && app.includes("t('stock_none_ws')"), '515');
+  const src = fs.readFileSync(new URL('../src/contracts.js', import.meta.url), 'utf8'); ok(src.includes('ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS latest_km'), '516: Agent gleiche Reihenfolge');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['ct_km_noread', 'rws_choose', 'rws_drop_plan', 'rws_drop_ack', 'stock_none_ws']) ok(STRINGS[l][k], `${l}.${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].rws_drop_plan.includes('{d}') && STRINGS[l].stock_none_ws.includes('{ws}'), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -2634,7 +2634,8 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   switch (action) {
     case 'change_priority': f.push(`<label>${esc(t('new_priority'))}</label><select name="priority">${prioOpts(c.priority)}</select>`); break;
     case 'approve_repair': f.push(`<label>${esc(t('workshop'))}</label><select name="workshop_site">${wsOpts}</select><label>${esc(t('urgency'))}</label><select name="priority">${prioOpts(c.priority)}</select><label>${esc(t('planned'))}</label><input type="date" name="planned_date">`); break;
-    case 'reassign_workshop': f.push(`<label>${esc(t('workshop'))}</label><select name="workshop_site">${wsOpts}</select>`); break;
+    // Backlog 513/514: ohne die bisherige Werkstatt (Server lehnt „unverändert“ ab, wie im Werkstattplan) und Hinweis, dass Termin/Übernahme entfallen
+    case 'reassign_workshop': f.push(`<label>${esc(t('workshop'))}</label><select name="workshop_site" required><option value="">${esc(t('rws_choose'))}</option>${S.meta.workshops.filter((w) => w.code !== c.workshop_site).map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>${rwsDrop(c)}`); break;
     // Meldung am falschen Fahrzeug (Backlog 254): Auswahl wird nachgeladen (aktive Fahrzeuge ohne das bisherige)
     case 'correct_vehicle': f.push(`<p class="small muted" id="cvhint">${esc(t(c.origin === 'kontrolle' && c.check_item ? 'cv_hint_insp' : 'cv_hint'))}${c.safety_lock ? ' ' + esc(t('cv_hint_lock')) : ''}</p><label for="cvveh">${esc(t('cv_new_vehicle'))}</label><select id="cvveh" name="vehicle_id" required><option value="">${esc(t('loading'))}</option></select>`); break;
     case 'reject': {
@@ -3550,6 +3551,8 @@ function ctLines(c, { noEvidence = false } = {}) {
   // letzte Ablesung zum Stichtag/bis „Beendet am“ auch ohne berechenbare Kontingent-Zeile (Backlog 241: ohne Kontingent, nach Tachotausch,
   // „km bei Übernahme“ fehlt) – der Stand für die Meldung an den Leasinggeber, mit Herkunft; nie geschätzt
   if (c.reading && !(s.km && s.km.driven !== undefined)) out.push(`<span data-ctread>${esc(t('km'))}: ${fmtKm(c.reading.km)} <span class="small muted">(${esc(t('ct_km_read'))} ${fmtD(c.reading.measured_at)}${c.reading.source ? ' · ' + esc(odoSrc(c.reading.source)) : ''})</span></span>`);
+  // Backlog 512: Leasing/Miete eines Lkw ohne Kontingent und ohne jede Ablesung (bis Stichtag) – gleiche Regel wie die CSV (`noReading`)
+  if (['leasing', 'miete'].includes(c.kind) && !c.ended_on && 'reading' in c && !c.reading && !c.km_allowance && c.vehicle_kind !== 'anhaenger') out.push(`<span class="muted" data-ctnoread>${esc(t('ct_km_noread'))}</span>`);
   if (c.monthly_rate_net !== null) out.push(`${esc(t('ct_rate'))}: ${eur(c.monthly_rate_net)}`);
   if (!noEvidence) out.push(`<span class="small muted">${esc(t('evidence'))}: ${esc(c.evidence)}${c.note ? ' · ' + esc(c.note) : ''}</span>`);
   if (c.ended_on) out.push(`<span class="small">${esc(t('ct_ended_on'))} ${fmtD(c.ended_on)}${c.end_note ? ' · ' + esc(c.end_note) : ''}</span>`);
@@ -3627,7 +3630,7 @@ async function viewContracts() {
       <label for="ctsrc">${esc(t('ct_import_src'))}</label><input id="ctsrc" maxlength="300"><input type="file" id="ctimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('ct_import'))}" style="margin-top:8px"><div id="ctimpr"></div></details>`, 'more');
   $$('[data-cf]').forEach((b) => (b.onclick = () => { S.ctFilter = b.dataset.cf; viewContracts(); }));
   $('#ctk').onchange = () => { S.ctKind = $('#ctk').value; viewContracts(); };
-  const ao = $('#ctasof'); if (ao) ao.onchange = () => { const v = ao.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctAsOf = v && v < bDate() ? v : ''; if (S.ctAsOf) S.ctEndsBy = ''; viewContracts(); };
+  const ao = $('#ctasof'); if (ao) ao.onchange = () => { const v = ao.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctAsOf = v && v <= bDate() ? v : ''; /* Backlog 511: heute als Stichtag zulässig (Monatsletzter am Monatsende) */ if (S.ctAsOf) S.ctEndsBy = ''; viewContracts(); };
   const aox = $('#ctasofx'); if (aox) aox.onclick = () => { S.ctAsOf = ''; viewContracts(); };
   const ebEl = $('#ctendsby'); if (ebEl) ebEl.onchange = () => { const v = ebEl.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctEndsBy = v; viewContracts(); };
   $$('[data-ctq]').forEach((b) => (b.onclick = () => { S.ctEndsBy = quarterEnd(bDate(), Number(b.dataset.ctq)); viewContracts(); }));
@@ -3738,12 +3741,17 @@ async function renderTires(id, el, keep = null) {
 }
 
 
+// Backlog 514: beim Werkstattwechsel entfallen Termin und Übernahme der bisherigen Werkstatt (Server: planned_date/workshop_ack_at = null)
+const rwsDrop = (c) => (c.planned_date ? `<p class="small muted" data-rwsdrop>${esc(t('rws_drop_plan').replace('{d}', fmtD(c.planned_date)))}</p>` : c.workshop_ack_at ? `<p class="small muted" data-rwsdrop>${esc(t('rws_drop_ack'))}</p>` : '');
 async function loadStockSelect(c) {
   const el = $('#stocksel'); if (!el) return;
   let items = [];
-  try { items = (await api('GET', `/api/stock?site=${encodeURIComponent(c.workshop_site || '')}`)).items.filter((i) => i.site === c.workshop_site && i.on_hand > 0); } catch { return; }
-  if (!items.length) return;
-  el.innerHTML = `<label>${esc(t('from_stock'))}</label><select name="stock_item_id"><option value="">${esc(t('without_stock'))}</option>${items.map((i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`).join('')}</select><p class="small muted" id="stockpricehint" hidden>${esc(t('stock_out_price_hint'))}</p>`;
+  let siteItems = [];
+  try { siteItems = (await api('GET', `/api/stock?site=${encodeURIComponent(c.workshop_site || '')}`)).items.filter((i) => i.site === c.workshop_site); items = siteItems.filter((i) => i.on_hand > 0); } catch { return; }
+  // Backlog 515 (Blickwinkel „Werkstatt Bayern vertritt Dortmund“): angeboten wird nur das Lager der zuständigen Werkstatt – Name nennen; geführtes
+  // Lager ohne Bestand → kurzer Hinweis statt still fehlender Auswahl
+  if (!items.length) { if (siteItems.length && c.workshop_site) el.innerHTML = `<p class="small muted" data-stocknone>${esc(t('stock_none_ws').replace('{ws}', wsName(c.workshop_site)))}</p>`; return; }
+  el.innerHTML = `<label>${esc(t('from_stock'))}: ${esc(wsName(c.workshop_site))}</label><select name="stock_item_id"><option value="">${esc(t('without_stock'))}</option>${items.map((i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`).join('')}</select><p class="small muted" id="stockpricehint" hidden>${esc(t('stock_out_price_hint'))}</p>`;
   const sel = $('select', el); el._items = items;
   sel.onchange = () => {
     const fp = $('#freepart'); fp.querySelector('[name=name]').required = !sel.value; $$('[name=name],[name=part_number],[name=supplier]', fp).forEach((x) => { x.disabled = !!sel.value; });
@@ -5695,7 +5703,7 @@ async function viewPlan(sec) {
   // Werkstatt wechseln direkt im Plan (Backlog 265, Teilagent „Werkstatt fällt eine Woche aus“): Leitung, Aufträge im Status „freigegeben“
   // (wie der Vorgangsbefehl reassign_workshop), Grund Pflicht; aktive Werkstätten außer der bisherigen
   const canWs = (i) => i.type === 'case' && isMgr() && i.status === 'werkstatt_freigegeben';
-  const wsForm = (i) => canWs(i) ? `<details class="planws noprint"><summary>${esc(t('act_reassign_workshop'))}</summary><label for="pw-${esc(i.id)}">${esc(t('workshop'))}</label><select id="pw-${esc(i.id)}">${(S.meta.workshops || []).filter((w) => w.code !== i.workshop_site).map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select><input type="text" id="pwr-${esc(i.id)}" maxlength="2000" placeholder="${esc(t('pws_reason_ph'))}" aria-label="${esc(t('pws_reason_ph'))}"><button type="button" class="btn secondary" data-pws="${esc(i.id)}">${esc(t('save'))}</button></details>` : '';
+  const wsForm = (i) => canWs(i) ? `<details class="planws noprint"><summary>${esc(t('act_reassign_workshop'))}</summary><label for="pw-${esc(i.id)}">${esc(t('workshop'))}</label><select id="pw-${esc(i.id)}">${(S.meta.workshops || []).filter((w) => w.code !== i.workshop_site).map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>${rwsDrop(i)}<input type="text" id="pwr-${esc(i.id)}" maxlength="2000" placeholder="${esc(t('pws_reason_ph'))}" aria-label="${esc(t('pws_reason_ph'))}"><button type="button" class="btn secondary" data-pws="${esc(i.id)}">${esc(t('save'))}</button></details>` : '';
   const prow = (i, base) => i.type === 'case' && canEdit ? `<div class="planitem">${base}${setForm(i)}${wsForm(i)}</div>` : base;
   const drowC = (i) => (canWs(i) ? `<div class="planitem">${row(i)}${wsForm(i)}</div>` : row(i));
   if (r.overdue.length) html += `<h2>${esc(t('wplan_overdue'))} <span class="chip kritisch">${r.overdue.length}</span></h2><div class="list">${r.overdue.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip kritisch">${fmtD(i.planned_date)} · `))).join('')}</div>`;

@@ -80,7 +80,8 @@ export function contractStatus(c, latest, today, warnDays, endLatest) {
   }
   if (c.km_allowance) km = kmStatus(c, latest, true);
   const handeln = (end && end.status === 'abgelaufen') || (km && km.status === 'ueber');
-  const hinweis = (end && end.status === 'laeuft_aus') || (notice && notice.status === 'bald') || (km && (km.status === 'prognose_ueber' || km.status === 'zaehler' || km.status === 'unter_start'));
+  const hinweis = (end && end.status === 'laeuft_aus') || (notice && notice.status === 'bald') || (km && (km.status === 'prognose_ueber' || km.status === 'zaehler' || km.status === 'unter_start' || km.status === 'ohne_km' || km.status === 'ohne_start'));
+  // Backlog 510: Kontingent ohne km-Stand bzw. ohne „km bei Übernahme“ ist nicht „in Ordnung“ (Datenqualität stufte es schon als Lücke ein) – „Hinweis“, kein Agentenbefund
   return { overall: handeln ? 'handeln' : hinweis ? 'hinweis' : 'ok', end, notice, km };
 }
 
@@ -267,7 +268,7 @@ const readingOf = (x) => (x && x.km !== null && x.km !== undefined ? { km: x.km,
 // Verträge eines Fahrzeugs (Fahrzeugakte); latest = letzter km-Stand der Akte
 // Vertragsdokument: Dateiname nur, wenn das Dokument in der angezeigten Umgebung liegt (sonst file_other_env)
 export async function vehicleContracts(env, vehicleId, latest, settings, envName) {
-  const rows = (await env.DB.prepare(`SELECT c.*, (SELECT v.active FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_active, u.display_name AS created_by_name, f.filename AS file_name, f.doc_kind AS file_doc_kind FROM vehicle_contracts c LEFT JOIN users u ON u.id=c.created_by
+  const rows = (await env.DB.prepare(`SELECT c.*, (SELECT v.active FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_active, (SELECT v.kind FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_kind, u.display_name AS created_by_name, f.filename AS file_name, f.doc_kind AS file_doc_kind FROM vehicle_contracts c LEFT JOIN users u ON u.id=c.created_by
     LEFT JOIN files f ON f.id=c.file_id AND f.environment=?
     WHERE c.vehicle_id=? ORDER BY c.ended_on IS NOT NULL, c.ended_on DESC, c.end_date IS NULL, c.end_date`).bind(envName || '', vehicleId).all()).results;
   const today = berlinDate(); const w = warnDaysOf(settings); const endKm = await endKmByContract(env, rows);
@@ -342,6 +343,8 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   return { today, as_of: asOf, ends_by: endsBy, generated_on: realToday, warn_days: w, filter, kind, site: sel.site, site_options: sel.options, counts, contracts: list, monthly_rate_sum_net: rated.length ? Math.round(rated.reduce((s, c) => s + c.monthly_rate_net, 0) * 100) / 100 : null, unrated: active.length - rated.length };
 }
 
+// Backlog 512: laufender Leasing-/Mietvertrag eines Lkw ohne Kontingent und ohne Ablesung bis zum Stichtag – sonst nicht von einem Anhänger zu unterscheiden
+export const noReading = (c) => ['leasing', 'miete'].includes(c.kind) && !c.ended_on && !c.reading && !c.km_allowance && c.vehicle_kind !== 'anhaenger';
 const KM_ST_DE = { ok: 'im Kontingent', ueber: 'Kontingent überschritten', prognose_ueber: 'Prognose über Kontingent', ohne_km: 'kein km-Stand',
   ohne_start: 'km bei Übernahme fehlt', zaehler: 'nicht berechenbar (Zähler-Rücksprung)', unter_start: 'km-Stand unter km bei Übernahme' };
 // Herkunft einer Ablesung im Klartext (wie `odoSrc` der App, deutsch für die CSV)
@@ -373,7 +376,7 @@ export function contractsCsv(ov) {
       c.monthly_rate_net === null ? '' : String(c.monthly_rate_net).replace('.', ','), c.km_allowance, c.start_km, s.km && s.km.driven !== undefined ? s.km.driven : '',
       s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.vehicle_eval_excluded ? 'ja' : 'nein',
       c.reading ? c.reading.km : '', c.reading && c.reading.measured_at ? berlinDate(c.reading.measured_at) : '',
-      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : '', ov.as_of || ov.today, c.reading ? odoSourceDe(c.reading.source) : '',
+      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : noReading(c) ? 'kein km-Stand' : '', ov.as_of || ov.today, c.reading ? odoSourceDe(c.reading.source) : '',
       c.return_check ? c.return_check.open_cases : '', c.return_check ? c.return_check.open_items : ''].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
@@ -417,7 +420,7 @@ export function endAction(kind, ended) {
 }
 export async function contractFindings(env, settings, envName = 'production') {
   const rows = (await env.DB.prepare(`SELECT c.*, v.plate, v.active AS vehicle_active,
-      (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC LIMIT 1) AS latest_km,
+      (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS latest_km,
       ${KM_DROP_SQL('c.vehicle_id')} AS drop_at,
       CASE WHEN c.kind IN ('leasing','miete') AND c.end_date IS NOT NULL THEN (SELECT COUNT(*) FROM cases k WHERE k.vehicle_id=c.vehicle_id AND k.environment=?1 AND k.status IN ${OPEN_CASE_ST}) END AS open_cases,
       CASE WHEN c.kind IN ('leasing','miete') AND c.end_date IS NOT NULL THEN (SELECT COUNT(*) FROM cases k JOIN open_items i ON i.case_id=k.id AND i.status='offen' WHERE k.vehicle_id=c.vehicle_id AND k.environment=?1 AND k.status='fahrzeug_freigegeben') END AS open_items
