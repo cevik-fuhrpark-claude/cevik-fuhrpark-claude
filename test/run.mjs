@@ -24903,6 +24903,65 @@ await test('Backlog 471 (Blickwinkel „Teilespender“): Teile-Verwendung finde
   for (const [l, s] of [['de', 'Ausbau aus <Kennzeichen>'], ['uk', 'Ausbau aus <номер>'], ['en', 'Ausbau aus <plate>']]) { ok(STRINGS[l].part_supplier_hint.includes(s), l); ok(STRINGS[l].help_ws_s.includes(s), l + ': Hilfe'); }
 });
 
+await test('Backlog 472 (Blickwinkel „Überführungsfahrt zur Werkstatt“): „Mein Fahrzeug“ nennt bei bekannten Mängeln die beauftragte Werkstatt (nicht den Vorschlag der Meldung) und „laut Meldung eingeschränkt/nicht fahrbereit“; Werkstatt beim geplanten Termin; eigene Vorgangsliste ohne neue Felder', async () => {
+  const { e, U, cmd, newCase } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'q.fahrer2', display_name: 'Fahrer 2', role: 'driver', environment: 'test' });
+  const d2 = new Client(worker, e, 'q.fahrer2'); await d2.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const uid2 = (await d2.get('/api/me')).data.user.id;
+  ok([200, 201].includes((await U.fleet.post('/api/vehicles/VIN:WMA15SZZ2HM722774/drivers', { user_id: uid2, evidence: 'Dienstplan' })).status), 'Zuordnung');
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const a = await newCase({ description: 'Kupplung rutscht, Überführung nach Dortmund', driveability: 'eingeschraenkt' });
+  const b = await newCase({ description: 'Spiegel locker', driveability: 'fahrbereit' });
+  const veh = async () => (await d2.get('/api/me/vehicles')).data.vehicles[0];
+  const kd = (v, id) => v.known_defects.find((k) => k.case_no === id);
+  const caseNo = async (id) => (await U.fleet.get(`/api/cases/${id}`)).data.case.case_no;
+  const na = await caseNo(a); const nb = await caseNo(b);
+  let v = await veh();
+  eq(kd(v, na).driveability, 'eingeschraenkt'); eq(kd(v, na).workshop_site, null, 'gemeldet: kein Vorschlag als Ziel'); eq(kd(v, na).id, null, 'fremde Meldung ohne Link');
+  eq(kd(v, nb).driveability, null, 'fahrbereit: kein Hinweis');
+  eq((await cmd(U.fleet, a, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(2) }, 'Überführung')).status, 200);
+  v = await veh();
+  eq(kd(v, na).workshop_site, 'DORTMUND'); eq(kd(v, na).driveability, 'eingeschraenkt'); eq(v.planned_workshop_date, day(2)); eq(v.planned_workshop_sites.join(), 'DORTMUND', 'Werkstatt beim Termin');
+  const own = await newCase({ driveability: 'eingeschraenkt' }, d2); eq((await cmd(U.fleet, own, 'approve_repair', { workshop_site: 'DORTMUND' }, 'eigene')).status, 200);
+  v = await veh(); eq(kd(v, await caseNo(own)).id, own, 'eigene Meldung mit Link');
+  const mine = v.my_open_cases;
+  ok(mine.length && !('workshop_site' in mine[0]) && !('reported_driveability' in mine[0]), 'eigene Vorgangsliste ohne neue Felder');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-kdws') && app.includes('data-kddrv') && app.includes('data-plannedws'), 'Anzeige in „Mein Fahrzeug“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].kd_drv_not, l + '.kd_drv_not'); ok(STRINGS[l].help_myveh_s.includes(STRINGS[l].dispo_upcoming_limited), l + ': Hilfe Mein Fahrzeug'); }
+});
+
+await test('Backlog 473 (Blickwinkel „Überführungsfahrt“): „laut Meldung eingeschränkt fahrbereit“ auch am Termintag („Nicht einplanen“, nicht bei Sperre) und im Terminplan der Disposition (Werkstattplan liefert reported_driveability)', async () => {
+  const { e, U, cmd, newCase } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'q.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
+  const D = new Client(worker, e, 'q.dispo'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const a = await newCase({ description: 'Kupplung rutscht', driveability: 'eingeschraenkt' });
+  eq((await cmd(U.fleet, a, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: BERLIN_TODAY }, 'Überführung heute')).status, 200);
+  const plan = await D.get('/api/workshop/plan?days=7'); eq(plan.status, 200);
+  const it = plan.data.days.flatMap((d) => d.items).find((i) => i.id === a);
+  ok(it, 'Termin im Plan'); eq(it.reported_driveability, 'eingeschraenkt');
+  const open = (await D.get('/api/cases?status=open&limit=500')).data.cases;
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i0 = app.indexOf('function dispoUpcoming('); const src = app.slice(i0, app.indexOf('\n// Werkstatt-Startseite: Winterreifen', i0));
+  const { STRINGS } = await import('../public/i18n.js');
+  const fmt = (d) => d ? d.split('-').reverse().join('.') : '–';
+  const run = (lang, cs) => new Function('bDate', 'esc', 't', 'plate', 'fmtD', 'fmtDue', 'fmtDT', 'wsName', 'clipTxt', 'ltxt', 'cDesc', 'plateCmp', 'translateLockReason', 'hoMissing', 'vlAt', 'partsEta', 'dispoReturnKnown', 'S', src + '\nreturn dispoCases;')(
+    () => BERLIN_TODAY, (v) => String(v), (k) => STRINGS[lang][k] || k, (p) => `[${p}]`, fmt, fmt, (v) => v, (v) => v, (v) => v, (v) => v, (v) => v, (p, q) => String(p).localeCompare(String(q)), (l, v) => v, () => [], () => '', () => '', () => true, { lang })(cs);
+  for (const lang of ['de', 'uk', 'en']) {
+    const h = run(lang, open.filter((c) => c.id === a));
+    ok(!h.includes('id="dupc"'), lang + ': Termin heute → nicht „bis zum Termin einplanbar“');
+    ok(h.includes(`<b data-dupclim>${STRINGS[lang].dispo_upcoming_limited}</b>`), lang + ': Hinweis in „Nicht einplanen“');
+    const hl = run(lang, open.filter((c) => c.id === a).map((c) => ({ ...c, safety_lock: 1 })));
+    ok(!hl.includes('data-dupclim'), lang + ': bei Sperre nur die Sperre');
+  }
+  const j0 = app.indexOf('function dispoSub('); const sub = app.slice(j0, app.indexOf('\n}\n', j0) + 2);
+  const runSub = (i) => new Function('esc', 't', 'wsName', 'clipTxt', 'planVehTag', 'fmtD', sub + '\nreturn dispoSub;')((v) => String(v), (k) => STRINGS.de[k] || k, (v) => v, (v) => v, () => '', (v) => v)(i);
+  ok(runSub({ ...it, type: 'case' }).includes('data-dupclim'), 'Terminplan zeigt den Hinweis');
+  ok(!runSub({ ...it, type: 'case', safety_lock: true }).includes('data-dupclim'), 'nicht bei Sperre');
+  ok(!runSub({ ...it, type: 'case', reported_driveability: 'fahrbereit' }).includes('data-dupclim'), 'nicht bei fahrbereit');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

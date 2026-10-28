@@ -795,7 +795,7 @@ export async function myVehicles(env, user, envName) {
     env.DB.prepare(`SELECT vehicle_id, MAX(safety_lock) AS locked, COUNT(*) AS open FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') GROUP BY vehicle_id`).bind(envName, ids).all(),
     // alle offenen Vorgänge der eigenen Fahrzeuge (ohne Namen der Meldenden): Fahrer sieht bekannte Mängel und meldet sie nicht doppelt
-    env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, substr(description,1,300) AS description, created_at, check_item, safety_lock, planned_date, planned_note, parts_expected_date, vehicle_location, tow_service, towed_on, vehicle_location_at, reporter_id=? AS mine
+    env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, substr(description,1,300) AS description, created_at, check_item, safety_lock, planned_date, planned_note, parts_expected_date, vehicle_location, tow_service, towed_on, vehicle_location_at, workshop_site, reported_driveability, reporter_id=? AS mine
       FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC LIMIT 200`).bind(user.id, envName, ids).all(),
     env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, planned_date, due_km, interval_km, last_done_km, last_done_date, km_basis_at, updated_at FROM maintenance_rules WHERE vehicle_id IN (SELECT value FROM json_each(?))
@@ -856,6 +856,10 @@ export async function myVehicles(env, user, envName) {
         // Backlog 465: wo das Fahrzeug laut Vorgang steht bzw. wer es abgeschleppt hat (wie Disposition; nur Angaben aus dem Vorgang, mit Stand)
         vehicle_location: c.vehicle_location || null, tow_service: c.tow_service || null, towed_on: c.tow_service ? c.towed_on || null : null, vehicle_location_at: c.vehicle_location || c.tow_service ? c.vehicle_location_at || null : null,
         planned_date: WS.includes(c.status) && c.planned_date >= today ? c.planned_date : null,
+        // Backlog 472 (Blickwinkel „Überführungsfahrt zur Werkstatt“): beauftragte Werkstatt (nur nach Auftrag – der Vorschlag der Meldung kann
+        // noch geändert werden) und Fahrbereitschaft laut Meldung, wenn eingeschränkt/nicht fahrbereit (der überführende Fahrer sah beides nirgends)
+        workshop_site: c.status !== 'gemeldet' && c.workshop_site ? c.workshop_site : null,
+        driveability: ['eingeschraenkt', 'nicht_fahrbereit'].includes(c.reported_driveability) ? c.reported_driveability : null,
         // Teile-Liefertermin laut Werkstatt (nur ab heute – ein überschrittener Termin ist Sache der Werkstatt/Leitung)
         parts_expected_date: c.status === 'wartet_teile' && c.parts_expected_date >= today ? c.parts_expected_date : null }));
   // Fahrtenschreiber-Prüfung (§ 57b StVZO) beim Lkw ohne Frist: wie HU/SP „fehlend = ungeklärt“ statt still weglassen (Backlog 436,
@@ -875,12 +879,14 @@ export async function myVehicles(env, user, envName) {
     vehicles: vs.map((v) => ({
       // Backlog 403: ruhend → Hinweis an den Fahrer
       ...v, eval_excluded: !!v.eval_excluded, locked: !!(lockMap.get(v.id) || {}).locked, open_cases_total: (lockMap.get(v.id) || {}).open || 0,
-      my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id && c.mine).map(({ mine: _m, check_item: _c, safety_lock: _s, planned_date: _p, planned_note: _n, parts_expected_date: _e, vehicle_location: _l, tow_service: _t, towed_on: _o, vehicle_location_at: _a, ...c }) => c),
+      my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id && c.mine).map(({ mine: _m, check_item: _c, safety_lock: _s, planned_date: _p, planned_note: _n, parts_expected_date: _e, vehicle_location: _l, tow_service: _t, towed_on: _o, vehicle_location_at: _a, workshop_site: _w, reported_driveability: _d, ...c }) => c),
       // alle offenen (vorher still 10 – ältere sicherheitsrelevante verdrängt, 20.10.2026); gesperrte/kritische zuerst
       known_defects: defects(v.id), open_items_after_release: relOf(v.id),
       next_inspections: nextInsp(v.id), inspections_unclear: unclearBy.get(v.id) || [],
       planned_workshop_date: minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)),
       // Hinweis zum Termin (Backlog 438, z. B. „Abgabe 7 Uhr bei Fa. …, Abholung 13 Uhr“) – der Fahrer bringt den Lkw oft selbst hin
+      // Backlog 472: Werkstatt(en) des nächsten Termins – der Fahrer bringt den Lkw oft selbst hin (z. B. Überführung nach Dortmund)
+      planned_workshop_sites: (() => { const d = minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)); return d ? [...new Set(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status) && c.planned_date === d && c.workshop_site).map((c) => c.workshop_site))] : []; })(),
       planned_workshop_note: (() => { const d = minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)); return d ? mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status) && c.planned_date === d && c.planned_note).map((c) => c.planned_note).join(' · ') || null : null; })(),
       planned_inspection: (() => { const r = rules.results.filter((x) => x.vehicle_id === v.id && x.planned_date >= today).sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0]; return r ? { kind: r.kind, planned_date: r.planned_date } : null; })(),
       last_km: (({ vehicle_id, km, measured_at }) => (vehicle_id ? { vehicle_id, km, measured_at } : null))(kmMap.get(v.id) || {}),
