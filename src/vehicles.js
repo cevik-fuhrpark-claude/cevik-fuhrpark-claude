@@ -461,6 +461,8 @@ export function vehiclesCsv(list, csvCell) {
   head.push('Bewertung/Betrieb');
   // Prüfung nicht bestanden (erhebliche/gefährliche Mängel, verkehrsunsicher) wie Listen-Chip und /v1/availability – exportierte Liste „Keine offenen Meldungen“ zeigte sie nicht (25.10.2026)
   head.push('Prüfung nicht bestanden', 'Prüfung gekoppeltes Fahrzeug');
+  // Backlog 485 (Blickwinkel „Disposition plant abends den nächsten Tag“): Termine und Hinweise wie in der Listenzeile – am Ende, Spaltenpositionen bleiben
+  head.push('Geplanter Werkstatttermin', 'Geplante Prüfung', 'Art geplante Prüfung', 'Teile erwartet am', 'Aktive Hinweise');
   const lines = [head.join(';')];
   for (const v of list) lines.push([csvCell(v.plate), csvCell(v.vin), v.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(v.site), csvCell(v.manufacturer), csvCell(v.model), v.build_year ?? '',
     csvCell(v.trailer_plate), csvCell(v.master_status), AV_DE[v.availability] || v.availability, v.open_cases ?? '', v.last_km ?? '', v.next_due || '',
@@ -471,7 +473,8 @@ export function vehiclesCsv(list, csvCell) {
     v.next_due_km ?? '', csvCell(v.next_due_km_kind), v.km_remaining ?? '',
     // offene Herstellerrückrufe (Anzahl) – ebenfalls am Ende angehängt
     v.open_recalls ?? 0, ...(withAF ? [v.agent_findings_open ?? 0, v.agent_findings_critical ?? 0] : []),
-    v.active === 0 || v.active === false ? 'außer Betrieb' : v.eval_excluded ? 'ruhend (nicht in Bewertungen)' : 'aktiv', failedCell(v.failed_inspection, csvCell), failedCell(v.coupled && v.coupled.failed_inspection, csvCell)].join(';'));
+    v.active === 0 || v.active === false ? 'außer Betrieb' : v.eval_excluded ? 'ruhend (nicht in Bewertungen)' : 'aktiv', failedCell(v.failed_inspection, csvCell), failedCell(v.coupled && v.coupled.failed_inspection, csvCell),
+    v.planned_workshop_date || '', v.planned_inspection_date || '', csvCell(v.planned_inspection_kind), v.parts_expected_date || '', v.notes_active ?? 0].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 

@@ -660,7 +660,7 @@ async function handleApi(request, env, ctx, url) {
       if (user.role === 'driver') throw forbidden();
       const cmeta = {};
       const rows = await cases.listCases(env, user, envName, { ...q, limit: CASES_CSV_MAX, __export: true }, cmeta);
-      await auth.audit(env, user.id, 'reports.cases.export', null, { status: q.status || null, q: q.q ? '(Suche)' : null, vsite: q.vsite || null, ...Object.fromEntries(['warranty', 'followup', 'stale', 'repeat_days', 'vehicle_id', 'sort'].filter((k) => q[k]).map((k) => [k, String(q[k]).slice(0, 60)])), rows: rows.length, ...(cmeta.truncated ? { truncated: true } : {}), environment: envName });
+      await auth.audit(env, user.id, 'reports.cases.export', null, { status: q.status || null, q: q.q ? '(Suche)' : null, vsite: q.vsite || null, ...Object.fromEntries(['warranty', 'followup', 'stale', 'repeat_days', 'vehicle_id', 'sort', 'priority', 'locked', 'question', 'cost_approval', 'unreceived', 'limited', 'open_items', 'ws'] /* Backlog 486: alle Listenfilter im Protokoll */.filter((k) => q[k]).map((k) => [k, String(q[k]).slice(0, 60)])), rows: rows.length, ...(cmeta.truncated ? { truncated: true } : {}), environment: envName });
       const fmt = (iso) => (iso ? berlinDateTime(iso) : '');
       // Versicherungsfall-Spalten nur für Inhaber/Fuhrparkleitung (eine Abfrage)
       const claimMap = ['owner', 'fleet'].includes(user.role)

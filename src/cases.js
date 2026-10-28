@@ -147,6 +147,9 @@ export async function listCases(env, user, envName, query, meta = null) {
   // Backlog 474 (Blickwinkel „Überführungsfahrt“, Teilagent-Fund 3): „eingeschränkt fahrbereit gemeldet, noch ohne Werkstattauftrag“ – diese
   // Meldungen standen auf der Tafel der Disposition nirgends (nicht gesperrt, kein Auftrag). Nur Information, blockiert nichts.
   if (on(query.limited)) where.push(user.role === 'driver' ? '0' : `c.status = 'gemeldet' AND c.safety_lock = 0 AND c.reported_driveability = 'eingeschraenkt'`);
+  // Backlog 487 (Blickwinkel „Werkstatt-Wochenabschluss am Freitag“): Vorgänge mit offenen Restarbeiten – nach der technischen Freigabe standen sie
+  // in keiner Liste der Werkstatt (nur Agentenbefund an die Leitung). Mit `status=fahrzeug_freigegeben` die freigegebenen; Fahrer nie.
+  if (on(query.open_items)) where.push(user.role === 'driver' ? '0' : `EXISTS (SELECT 1 FROM open_items oi WHERE oi.case_id=c.id AND oi.status='offen')`);
   // Backlog 463: „Rückfrage offen“ / „Antwort vom Melder eingegangen“ (gleiche Regel wie questionState; Fahrer: eigene Meldungen)
   if (query.question === 'open' || query.question === 'answered') {
     where.push(`c.status IN (${OPEN_STATUSES.map((x) => `'${x}'`).join(',')}) AND ${Q_AT_SQL} IS NOT NULL AND ` + (query.question === 'open'

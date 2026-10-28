@@ -2906,3 +2906,12 @@ Object.assign(PLURALS.uk, { logout_drafts_confirm: { one: '{n} незбереж�
 Object.assign(PLURALS.en, { logout_drafts_confirm: { one: '{n} unsaved entry (e.g. labour time, part, report or stock count) will be lost when you sign out. Sign out anyway?', other: '{n} unsaved entries (e.g. labour time, part, report or stock count) will be lost when you sign out. Sign out anyway?' } });
 
 for (const l of ['de', 'uk', 'en']) STRINGS[l].logout_drafts_confirm = PLURALS[l].logout_drafts_confirm.other;
+
+// [CLAUDE] Backlog 484: Markierung „(morgen)“ an geplanten Terminen der Fahrzeugliste
+Object.assign(STRINGS.de, { tomorrow: 'morgen' });
+Object.assign(STRINGS.uk, { tomorrow: 'завтра' });
+Object.assign(STRINGS.en, { tomorrow: 'tomorrow' });
+// [CLAUDE] Backlog 487: freigegebene Aufträge mit offenen Restarbeiten (Filter der Vorgangsliste, Werkstatt-Startseite)
+Object.assign(STRINGS.de, { filter_open_items: 'Freigegeben, Restarbeiten offen', ws_open_items_hint: 'Das Fahrzeug ist freigegeben; diese Restarbeiten sind nicht sicherheitsrelevant und noch zu erledigen bzw. zu klären (im Vorgang „Restarbeit erledigt“).' });
+Object.assign(STRINGS.uk, { filter_open_items: 'Допущено, залишкові роботи відкриті', ws_open_items_hint: 'Транспорт допущено; ці залишкові роботи не критичні для безпеки, але їх ще треба виконати або з’ясувати (у справі «Залишкову роботу виконано»).' });
+Object.assign(STRINGS.en, { filter_open_items: 'Released, open items pending', ws_open_items_hint: 'The vehicle is released; these open items are not safety-relevant and still need to be done or clarified (in the case: “Open item done”).' });

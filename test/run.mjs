@@ -5360,8 +5360,8 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   vk = await vrow(users.fleet);
   eq(vk.next_due_km, 380000, 'belegte km-Fälligkeit, kleinste zuerst'); eq(vk.next_due_km_kind, 'Inspektion'); eq(vk.km_remaining, -20000);
   const vcs = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug'), 'CSV-Kopf: km-Spalten am Ende (Leitung: danach Agentenbefunde)');
-  ok(/;380000;Inspektion;-20000;0;\d+;\d+;aktiv;[^;]*;[^;]*$/.test(vcs.find((l) => l.startsWith('WP-LN 1;'))), 'CSV-Zeile: km-Fälligkeit');
+  ok(vcs[0].endsWith(';Zustand gekoppeltes Fahrzeug;Nächste km-Fälligkeit;Art km-Fälligkeit;Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise'), 'CSV-Kopf: km-Spalten am Ende (Leitung: danach Agentenbefunde)');
+  ok(/;380000;Inspektion;-20000;0;\d+;\d+;aktiv;[^;]*;[^;]*;[^;]*;[^;]*;[^;]*;[^;]*;\d+$/.test(vcs.find((l) => l.startsWith('WP-LN 1;'))), 'CSV-Zeile: km-Fälligkeit');
   ok(!('next_due_km' in (await users.driver.get('/api/vehicles')).data.vehicles[0]), 'Fahrer: keine Wartungsdaten');
   const av = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles.find((v) => v.id === VP);
   eq(JSON.stringify([av.next_due_km, av.next_due_km_kind, av.km_remaining]), JSON.stringify([380000, 'Inspektion', -20000]), 'Integrations-API: km-Fälligkeit');
@@ -5795,8 +5795,8 @@ await test('Herstellerrückruf: einmalig (kein Intervall), Frist nur laut Schrei
   eq(vl.find((x) => x.vin === 'WDB96340310555651').open_recalls, 1, 'Liste: ein offener Rückruf');
   ok(vl.filter((x) => x.vin !== 'WDB96340310555651').every((x) => x.open_recalls === 0), 'andere Fahrzeuge: 0');
   const vcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(vcsv[0].endsWith(';Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug'), 'CSV-Kopf: Rückrufe vor den Agentenbefunden');
-  ok(/;1;\d+;\d+;aktiv;[^;]*;[^;]*$/.test(vcsv.find((l) => l.startsWith('VT-FL 1;'))), 'CSV-Zeile: 1 offener Rückruf');
+  ok(vcsv[0].endsWith(';Rest-km;Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise'), 'CSV-Kopf: Rückrufe vor den Agentenbefunden');
+  ok(/;1;\d+;\d+;aktiv;[^;]*;[^;]*;[^;]*;[^;]*;[^;]*;[^;]*;\d+$/.test(vcsv.find((l) => l.startsWith('VT-FL 1;'))), 'CSV-Zeile: 1 offener Rückruf');
   ok((await users.driver.get('/api/vehicles')).data.vehicles.every((x) => !('open_recalls' in x)), 'Fahrer: kein Rückruf-Feld');
   // Rückrufschreiben als eigene Dokumentart in der Fahrzeugakte (Meta, Upload, Anzeige; Übersetzung je Sprache)
   ok((await users.fleet.get('/api/meta')).data.doc_kinds.includes('rueckruf'), 'Dokumentart Rückrufschreiben');
@@ -7681,10 +7681,10 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
     const r = await c.get('/api/vehicles'); ok(r.status === 200 && r.data.vehicles.every((x) => !('agent_findings_open' in x) && !('agent_findings_critical' in x) && !('af' in x)), 'Rolle ohne Leitung: Feld sichtbar');
   }
   const csvL = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(csvL[0].endsWith(';Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug'), 'CSV Leitung: Spalten am Ende');
-  ok(csvL.find((l) => l.startsWith('AF-BEF 1;')).endsWith(`;${db.n};${db.c || 0};aktiv;;`), 'CSV-Zeile = Datenbank (danach leere Prüfspalten)');
+  ok(csvL[0].endsWith(';Offene Rückrufe;Offene Agentenbefunde;davon kritisch;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise'), 'CSV Leitung: Spalten am Ende');
+  ok(csvL.find((l) => l.startsWith('AF-BEF 1;')).includes(`;${db.n};${db.c || 0};aktiv;;;`), 'CSV-Zeile = Datenbank (danach leere Prüfspalten)');
   const csvD = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.dispatch.get('/api/vehicles?format=csv')).data).split('\r\n');
-  ok(csvD[0].endsWith(';Offene Rückrufe;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug'), 'CSV Disposition: ohne Agentenbefunde');
+  ok(csvD[0].endsWith(';Offene Rückrufe;Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise'), 'CSV Disposition: ohne Agentenbefunde');
   const iv = (await anon.req('GET', '/api/integration/v1/availability?environment=test', undefined, { authorization: 'Bearer integration-token-xyz' })).data.vehicles; ok(iv.every((x) => !('agent_findings_open' in x)), 'Integrations-API unverändert');
   const plan = env.DB.db.prepare("EXPLAIN QUERY PLAN SELECT (SELECT COUNT(*) FROM agent_findings f WHERE f.vehicle_id=v.id AND f.environment=? AND f.status='offen') FROM vehicles v").all('test').map((p) => p.detail).join(' | ');
   ok(/idx_findings_vehicle/.test(plan), 'Index nicht genutzt: ' + plan);
@@ -12660,7 +12660,7 @@ await test('Fehlersuche 18.10. (19): Fahrzeuge – ruhendes Doppel mit gleichem 
   eq(mine.coupled.id, 'VIN:WMA15SZZ2HM700002'); eq(mine.coupled.locked, true, 'Fahrer sieht die Sperre des echten Anhängers');
   // CSV: Spalte „Bewertung/Betrieb“
   const lines = dec(await U.fleet.get('/api/vehicles?format=csv')).split('\r\n');
-  ok(lines[0].endsWith(';Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug')); ok(lines.find((l) => l.startsWith('SZ-A1;')).endsWith(';ruhend (nicht in Bewertungen);;'));
+  ok(lines[0].endsWith(';Bewertung/Betrieb;Prüfung nicht bestanden;Prüfung gekoppeltes Fahrzeug;Geplanter Werkstatttermin;Geplante Prüfung;Art geplante Prüfung;Teile erwartet am;Aktive Hinweise')); ok(lines.find((l) => l.startsWith('SZ-A1;')).endsWith(';ruhend (nicht in Bewertungen);;;;;;;0'));
   // eigener Export ohne Spalte „Fahrzeugart“: „Art km-Fälligkeit“ gilt nicht als Fahrzeugart
   const own0 = dec(await own.get('/api/vehicles?format=csv')).replace(/^﻿/, '').split('\r\n').filter(Boolean).map((l) => l.split(';'));
   const kIdx = own0[0].indexOf('Fahrzeugart'); const noKind = own0.map((cs) => cs.filter((_, i) => i !== kIdx).join(';')).join('\n');
@@ -19770,7 +19770,7 @@ await test('Backlog 231 (Teilagent „Disposition sucht Ersatzfahrzeug“): Lkw-
   const { parseCsv } = await import('../src/util.js');
   const rows = parseCsv(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.dispatch.get('/api/vehicles?format=csv')).data).replace(/^﻿/, ''));
   const h = rows[0]; const iO = h.indexOf('Prüfung nicht bestanden'); const iC = h.indexOf('Prüfung gekoppeltes Fahrzeug');
-  ok(iO > 0 && iC === iO + 1 && iC === h.length - 1, 'Spalten am Ende: ' + h.join('|'));
+  ok(iO > 0 && iC === iO + 1 && iC === h.length - 6, 'Spalten am Ende: ' + h.join('|'));
   const rT = rows.find((r) => r[0] === 'ER-LK 1'); const rA = rows.find((r) => r[0] === 'ER-AH 1');
   eq(rT[iO], ''); eq(rT[iC], `Tachograph ${bDayOff(-2)} verkehrsunsicher`); eq(rA[iO], `Tachograph ${bDayOff(-2)} verkehrsunsicher`);
   ok(rows.slice(1).every((r) => r.length === h.length), 'alle Zeilen gleich breit');
@@ -20187,7 +20187,7 @@ await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes(`<a class="statlink" id="stcrit" href="\${hj('#/cases?f=critical')}">`) && app.includes(`<a class="statlink" id="stlock" href="\${hj('#/cases?f=locked')}">`) && app.includes(`id="stopen" href="\${hj('#/cases?f=open')}"`), 'Startseite verlinkt');
   ok(app.includes("f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1'"), 'Listenfilter');
-  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
+  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
   const { translateValidation } = await import('../public/i18n.js');
   for (const l of ['uk', 'en']) ok(translateValidation(l, 'Priorität: niedrig, mittel oder kritisch.') !== 'Priorität: niedrig, mittel oder kritisch.', l);
 });
@@ -25084,6 +25084,50 @@ await test('Backlog 481/482 (Blickwinkel „Springer holt den Lkw eines kranken 
   ok(app.includes('coupledAlert(v.coupled) + drvNotes(v.notes) + knownDefects(v.known_defects) + relItems(v.open_items_after_release) + coupledDefects(v.coupled)'), 'Meldeformular: eigenes Fahrzeug');
   ok(app.includes('${drvNotes(cv.notes)}${knownDefects(cv.known_defects)}${relItems(cv.open_items_after_release)}'), 'Meldeformular: gekoppeltes Fahrzeug gewählt');
   ok(app.includes('      ${drvNotes(v.notes)}\n'), 'Startseite nutzt dieselbe Funktion');
+});
+
+await test('Backlog 483–487 (Blickwinkel „Disposition plant abends den nächsten Tag“ / „Werkstatt-Wochenabschluss“): Druckkopf „ruhend“/„Eingang nicht bestätigt“ wie Knopf/Reiter, Termin morgen markiert, Fahrzeug-CSV mit Terminen/Hinweisen, Export-Protokoll mit allen Filtern, Filter „Freigegeben, Restarbeiten offen“', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld();
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  // 483: Druckköpfe
+  ok(app.includes("av === 'dormant' ? t('eval_excluded') : t('av_' + av)"), 'ruhend im Druckkopf');
+  ok(app.includes("const fLabel = t(f === 'unreceived' && !isMgr() ? 'dispo_unreceived' : CF_LABEL[f] || f);"), 'Druckkopf wie Reiter');
+  // 484: (morgen) nach Berliner Datum
+  const i0 = app.indexOf('const todayMark ='); const tm = app.slice(i0, app.indexOf('\n', i0));
+  const mark = new Function('bDate', 'esc', 't', tm + '\nreturn todayMark;')((n = 0) => (n ? '2026-10-29' : '2026-10-28'), (v) => v, (k) => k);
+  ok(mark('2026-10-28').includes('data-today') && mark('2026-10-29').includes('data-tomorrow') && mark('2026-10-30') === '' && mark(null) === '', 'heute/morgen/sonst nichts');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].tomorrow && STRINGS[l].filter_open_items && STRINGS[l].ws_open_items_hint.includes(STRINGS[l].act_resolve_open_item), l);
+  // 485: Fahrzeug-CSV
+  const id = await toRepair();
+  eq((await cmd(U.fleet, id, 'set_planned_date', { planned_date: bDayOff(1) })).status, 200, 'Termin morgen');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/notes`, { text: 'Schlüssel im Büro', for_driver: false })).status, 201);
+  const { parseCsv } = await import('../src/util.js');
+  const rows = parseCsv(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/vehicles?format=csv')).data).replace(/^﻿/, ''));
+  const h = rows[0]; const iW = h.indexOf('Geplanter Werkstatttermin');
+  ok(iW > h.indexOf('Prüfung gekoppeltes Fahrzeug') && h.slice(iW).join('|') === 'Geplanter Werkstatttermin|Geplante Prüfung|Art geplante Prüfung|Teile erwartet am|Aktive Hinweise', 'Spalten am Ende: ' + h.slice(iW).join('|'));
+  const r1 = rows.find((r) => r[1] === V1.slice(4)); const [y, m, d] = bDayOff(1).split('-');
+  eq(r1[iW], `${d}.${m}.${y}`, 'Werkstatttermin TT.MM.JJJJ'); eq(r1[iW + 4], '1', 'aktive Hinweise');
+  ok(rows.slice(1).every((r) => r.length === h.length), 'alle Zeilen gleich breit');
+  // 486: Export-Protokoll nennt die Filter
+  eq((await U.ws.get('/api/cases?format=csv&status=open&priority=niedrig&ws=DORTMUND')).status, 200);
+  const au = e.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='reports.cases.export' ORDER BY created_at DESC, rowid DESC LIMIT 1`).get();
+  const pl = JSON.parse(au.detail); eq(pl.priority, 'niedrig'); eq(pl.ws, 'DORTMUND');
+  // 487: Filter freigegebene Vorgänge mit offenen Restarbeiten
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Verkleidung provisorisch' })).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+  { const tr = await cmd(U.fleet, id, 'technical_release', { confirm: true }, 'Kontrolle ok'); eq(tr.status, 200, JSON.stringify(tr.data)); }
+  const q = '/api/cases?status=fahrzeug_freigegeben&open_items=1';
+  const wl = (await U.ws.get(q)).data.cases; ok(wl.length === 1 && wl[0].id === id && wl[0].open_items === 1, 'Werkstatt findet den Auftrag');
+  eq((await U.wsMuc.get(q)).data.cases.length, 0, 'fremde Werkstatt nicht'); eq((await U.driver.get(q)).data.cases.length, 0, 'Fahrer nie');
+  eq((await U.fleet.get(q)).data.cases.length, 1, 'Leitung');
+  const oi = (await U.ws.get(`/api/cases/${id}`)).data.open_items.find((o) => o.status === 'offen');
+  eq((await cmd(U.ws, id, 'resolve_open_item', { open_item_id: oi.id }, 'erledigt')).status, 200);
+  eq((await U.ws.get(q)).data.cases.length, 0, 'nach Erledigung nicht mehr');
+  ok(app.includes("f === 'open_items' ? 'status=fahrzeug_freigegeben&open_items=1'") && app.includes("caseFilterQ('open_items') + '&limit=200'") && app.includes('<span data-oi>'), 'Oberfläche: Filter, Startseite Werkstatt, Zahl in der Zeile');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
