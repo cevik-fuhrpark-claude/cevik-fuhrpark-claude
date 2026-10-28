@@ -81,6 +81,7 @@ UI-Reifen-Saison, Bußgeld-Tatzeit ändern, Kosten-Einzelpositionen|ui-saison-bu
 UI-Springer: Abfahrtskontrolle zeigt Sperre (auch fremdes Fahrzeug), Startseite → Auslesungen|ui-springer-sperre.py|/tmp/cfp-springer.log
 UI-Springer: Hinweise für Fahrer und Mängel des gekoppelten Anhängers in Abfahrtskontrolle/Melden (Backlog 481/482)|ui-springer-hinweise.py|/tmp/cfp-springer-hinweise.log
 UI-Wochenabschluss: Werkstatt-Startseite „Freigegeben, Restarbeiten offen“, Listenfilter, Termin morgen in der Fahrzeugliste (Backlog 483–487)|ui-wochenabschluss.py|/tmp/cfp-wochenabschluss.log
+UI-QR-Scan: offene Meldung auf der Scan-Seite, außer Betrieb → Akte, Scan-Ziel nach Sitzungsablauf (Backlog 492–494)|ui-qr-scan.py|/tmp/cfp-qr-scan.log
 UI-Inhaber am Handy (Teilausfall Startseite, Erledigt mit Rückfrage, Zurück-Scroll, Umschalten auf Detailseite, Einrichtungsstand → Feld)|ui-inhaber-unterwegs.py|/tmp/cfp-inhaber.log
 UI-Stichtag Kennzahlen, Stundensatz-Hinweis, Rückruf am ruhenden Fahrzeug|ui-stichtag-rueckruf.py|/tmp/cfp-stichtag.log
 UI-Urlaubsrückkehr „Ältere laden“, Kontrolle bei gesperrtem Anhänger|ui-urlaub-anhaenger.py|/tmp/cfp-urlaub.log

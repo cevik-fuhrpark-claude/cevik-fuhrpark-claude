@@ -1,7 +1,7 @@
 // [CLAUDE] Authentifizierung: Einladung -> eigenes Passwort, Sitzungen per HttpOnly-Cookie
 import { cutText, cleanText,
   nowIso, uuid, sha256Hex, randomToken, hashPassword, timingSafeEqual, parseCookies,
-  bad, forbidden, conflict, laterIso, HttpError, str, oneOf, flag, berlinDayStartIso, berlinDateTime, berlinDateTimeLang, berlinDate, isCalendarDate, likeEsc, caseVariants, intParam } from './util.js';
+  bad, forbidden, conflict, laterIso, HttpError, str, oneOf, flag, berlinDayStartIso, berlinDateTime, berlinDateTimeLang, berlinDate, isCalendarDate, likeEsc, caseVariants, intParam, normPlate, PLATE_KEY_SQL } from './util.js';
 import { createChallenge, redeemChallenge } from './totp.js';
 import { notifyUsers, nt } from './notify.js';
 
@@ -835,8 +835,11 @@ function auditQ(qs, where, args) {
   // instr statt LIKE: D1 lehnt LIKE-Muster über 50 Byte ab (Suchfeld 60 Zeichen → 500, 19.10.2026); lower() = LIKE-Verhalten für A–Z,
   // Varianten (caseVariants) für andere Buchstaben
   const IN = (col) => `instr(lower(${col}), lower(?)) > 0`;
-  where.push('(' + vs.map(() => ['a.target', 'a.detail', 'u.username', 'u.display_name', 'tu.username', 'tu.display_name', 'tv.plate', 'td.display_name'].map(IN).join(' OR ')).join(' OR ') + ')');
+  // Backlog 491: Kennzeichen des betroffenen Fahrzeugs auch normalisiert („SZYC5513“, „sz yc 5513“ wie die Vorgangssuche) – ein Platzhalter mehr
+  const pk = normPlate(qs);
+  where.push('(' + vs.map(() => ['a.target', 'a.detail', 'u.username', 'u.display_name', 'tu.username', 'tu.display_name', 'tv.plate', 'td.display_name'].map(IN).join(' OR ')).join(' OR ') + ` OR instr(${PLATE_KEY_SQL('tv.plate')}, ?) > 0)`);
   for (const v of vs) args.push(...Array(8).fill(v)); // td = Fahrerakte (Ziel der Fahrerakte-Einträge, 20.10.2026)
+  args.push(pk.length >= 2 ? pk : '\u0000');
 }
 // Bereich: ein Aktions-Präfix oder mehrere, durch Komma getrennt (z. B. „invite.,password.,totp.“ für Zugang & Sicherheit), höchstens 8 × 40 Zeichen
 function auditPrefix(query) {

@@ -8723,7 +8723,7 @@ await test('Fahrzeugliste: Suche findet Hersteller/Modell, Liste zeigt beides; P
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
-  ok(app.includes("(v.manufacturer || '') + ' ' + (v.model || '')).toLowerCase())}\"") , 'Suchtext enthält Hersteller und Modell');
+  ok(app.includes("(v.manufacturer || '') + ' ' + (v.model || '') + ' ' + (v.former_plates || []).join(' ')).toLowerCase())}\"") , 'Suchtext enthält Hersteller und Modell');
   ok(app.includes("esc([v.manufacturer, v.model, v.build_year].filter(Boolean).join(' '))"), 'Liste zeigt Hersteller, Modell, Baujahr');
   eq((i18n.match(/veh_search_ph: '/g) || []).length, 3, 'Platzhalter DE/UK/EN');
   ok(app.includes("t('veh_search_ph')"), 'Platzhalter genutzt');
@@ -17430,7 +17430,7 @@ await test('Management-Seite bei großem Bestand: offene Entscheidungen zuerst 1
   const vm = app.slice(app.indexOf('async function viewMaster('), app.indexOf('// ---------- Prüftermine (Fuhrpark gesamt)'));
   ok(/const DEC_SHOW = 100;/.test(app) && vm.includes('decOpen.slice(0, DEC_SHOW)') && vm.includes("$('#decall')"), 'Entscheidungen begrenzt');
   ok(vm.includes("const p = cached || await api('GET', '/api/master');") && vm.includes('S.afSev = b.dataset.afsev; viewMaster(undefined, undefined, p);'), 'Schweregrad aus geladenen Daten');
-  ok(!/afRows\) r\.style\.display = [^;]*r\.textContent/.test(vm) && vm.includes('afText.set(r, r.textContent.toLocaleLowerCase())') && vm.includes('setTimeout(applyAf'), 'Suche vorab berechnet + entprellt');
+  ok(!/afRows\) r\.style\.display = [^;]*r\.textContent/.test(vm) && vm.includes('afText.set(r, searchKey(r.textContent))') && vm.includes('setTimeout(applyAf'), 'Suche vorab berechnet + entprellt');
   ok(/@media screen \{ #afl > \.row \{ content-visibility: auto;/.test(css), 'nur Bildschirm');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l].dec_shown), `${l}.dec_shown neutral`);
   // Server: Master-Eingang liefert weiterhin alle offenen (Zähler/Druckkopf unverändert)
@@ -25150,6 +25150,31 @@ await test('Backlog 488 (Blickwinkel „Werkstatt-Wochenabschluss“): eigene Ar
   ok(app.includes(`<details id="wdweek" class="small">`) && app.includes("api('GET', '/api/work-day?week=1&date=' + encodeURIComponent(d))") && app.includes("wk.addEventListener('toggle', loadWeek)"), 'Formular');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].wd_week && ['{a}', '{b}', '{h}'].every((k) => STRINGS[l].wd_week_sum.includes(k)), l);
+});
+
+await test('Backlog 489–494 (Blickwinkel „Kennzeichen in verschiedenen Schreibweisen suchen“ / „QR-Aufkleber auf dem Hof scannen“): Fahrzeugliste findet frühere Kennzeichen, Befund- und Protokollsuche normalisiert, Scan nach Sitzungsablauf, außer Betrieb → Akte, offene Meldung/Werkstatt auf der Scan-Seite', async () => {
+  const { U } = await freshWorld();
+  eq((await U.own.post('/api/vehicles', { plate: 'SZ-QR 494', vin: 'WDB96340310749401', site: 'Dortmund' })).status, 201);
+  const VQ = 'VIN:WDB96340310749401';
+  eq((await U.fleet.post(`/api/vehicles/${VQ}/active`, { active: false, reason: 'verkauft' })).status, 200, 'außer Betrieb');
+  // 491: Protokollsuche über das normalisierte Kennzeichen des betroffenen Fahrzeugs
+  for (const q of ['SZQR494', 'sz qr 494']) {
+    const r = await U.own.get('/api/admin/audit?q=' + encodeURIComponent(q)); eq(r.status, 200);
+    ok(r.data.entries.some((e) => e.target === VQ && e.action === 'vehicle.deactivate'), 'Protokoll findet ' + q);
+  }
+  eq((await U.own.get('/api/admin/audit?q=' + encodeURIComponent('50%_'))).status, 200, 'Sonderzeichen');
+  // 493: Akte des außer Betrieb genommenen Fahrzeugs für Rollen mit Akte, nicht für Fahrer
+  ok(!(await U.viewer.get('/api/vehicles')).data.vehicles.some((v) => v.id === VQ), 'nicht in der Liste');
+  eq((await U.viewer.get('/api/vehicles/' + VQ)).status, 200, 'Lesezugriff: Akte'); eq((await U.driver.get('/api/vehicles/' + VQ)).status, 403, 'Fahrer nicht');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(v.model || '') + ' ' + (v.former_plates || []).join(' ')).toLowerCase())"), '489: Fahrzeugliste mit früheren Kennzeichen');
+  ok(app.includes("const q = $('#afq') ? searchKey((S.afQ || '').trim()) : '';") && app.includes('afText.set(r, searchKey(r.textContent))'), '490: Befundsuche normalisiert');
+  ok(app.includes("if (/^#\\/(new|check|v)\\/VIN:[A-Z0-9]+$/.test(h0)) { try { sessionStorage.setItem('cfp_after_login', h0); } catch {} } location.hash = '#/login';"), '492: Scan-Ziel bei Sitzungsablauf');
+  const i0 = app.indexOf('async function viewScan('); const vsrc = app.slice(i0, app.indexOf('\n}\n', i0));
+  ok(vsrc.includes("await api('GET', '/api/vehicles/' + encodeURIComponent(id)); location.hash = '#/vehicles/' + id;") && vsrc.includes("location.hash = mayReport() ? '#/new' : '#/'"), '493: Scan außer Betrieb');
+  ok(vsrc.includes("['werkstatt', 'meldung_offen'].includes(v.availability)") && vsrc.includes("t('av_' + v.availability)"), '494: Scan zeigt offene Meldung/Werkstatt');
+  const { searchKey } = new Function('SK_CYR', app.slice(app.indexOf('const searchKey ='), app.indexOf('\n', app.indexOf('const searchKey ='))) + '\nreturn { searchKey };')(new Proxy({}, { get: (_, c) => c }));
+  ok(searchKey('Befund SZ-YC 5513 (S-2026-1)').includes(searchKey('szyc 5513')), 'searchKey trifft Schreibweisen');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
