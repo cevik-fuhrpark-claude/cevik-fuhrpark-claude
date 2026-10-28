@@ -20187,7 +20187,7 @@ await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes(`<a class="statlink" id="stcrit" href="\${hj('#/cases?f=critical')}">`) && app.includes(`<a class="statlink" id="stlock" href="\${hj('#/cases?f=locked')}">`) && app.includes(`id="stopen" href="\${hj('#/cases?f=open')}"`), 'Startseite verlinkt');
   ok(app.includes("f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1'"), 'Listenfilter');
-  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
+  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
   const { translateValidation } = await import('../public/i18n.js');
   for (const l of ['uk', 'en']) ok(translateValidation(l, 'Priorität: niedrig, mittel oder kritisch.') !== 'Priorität: niedrig, mittel oder kritisch.', l);
 });
@@ -24960,6 +24960,27 @@ await test('Backlog 473 (Blickwinkel „Überführungsfahrt“): „laut Meldung
   ok(runSub({ ...it, type: 'case' }).includes('data-dupclim'), 'Terminplan zeigt den Hinweis');
   ok(!runSub({ ...it, type: 'case', safety_lock: true }).includes('data-dupclim'), 'nicht bei Sperre');
   ok(!runSub({ ...it, type: 'case', reported_driveability: 'fahrbereit' }).includes('data-dupclim'), 'nicht bei fahrbereit');
+});
+
+await test('Backlog 474 (Blickwinkel „Überführungsfahrt“, Teilagent-Fund 3): Filter `limited` = gemeldet, eingeschränkt fahrbereit, ohne Sperre/Auftrag; Fahrer nie; Link auf der Tafel der Disposition mit gleicher Regel; DE/UK/EN', async () => {
+  const { e, U, cmd, newCase } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'r.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
+  const D = new Client(worker, e, 'r.dispo'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const a = await newCase({ description: 'Kupplung rutscht', driveability: 'eingeschraenkt' });
+  const b = await newCase({ vehicle_id: 'VIN:WDB9630051L917317', description: 'Spiegel locker', driveability: 'eingeschraenkt' });
+  const c = await newCase({ description: 'Licht flackert', driveability: 'fahrbereit' });
+  const d = await newCase({ vehicle_id: 'VIN:WDB9630051L917317', description: 'Bremse zieht', driveability: 'eingeschraenkt' });
+  eq((await cmd(U.fleet, b, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Auftrag')).status, 200, 'b beauftragt');
+  eq((await cmd(U.fleet, d, 'set_safety_lock', {}, 'Bremse')).status, 200, 'd gesperrt');
+  const ids = async (u) => (await u.get('/api/cases?status=open&limited=1&limit=500')).data.cases.map((k) => k.id);
+  eq((await ids(D)).join(), a, 'Disposition: nur a'); eq((await ids(U.fleet)).join(), a, 'Leitung: nur a');
+  eq((await ids(U.driver)).length, 0, 'Fahrer nie');
+  ok(!(await ids(D)).includes(c), 'fahrbereit nicht');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("c.status === 'gemeldet' && !c.safety_lock && c.reported_driveability === 'eingeschraenkt'") && app.includes("id=\"dlimited\""), 'Tafel-Link mit gleicher Regel');
+  ok(app.includes("f === 'limited' ? 'status=open&limited=1'") && app.includes("limited: 'dispo_limited_new'"), 'Filter in der Vorgangsliste');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].dispo_limited_new, l); ok(STRINGS[l].help_dispo_s.includes(STRINGS[l].dispo_limited_new), l + ': Hilfe Disposition'); }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

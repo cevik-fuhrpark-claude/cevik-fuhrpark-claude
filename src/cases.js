@@ -144,6 +144,9 @@ export async function listCases(env, user, envName, query, meta = null) {
   if (on(query.locked)) where.push('c.safety_lock = 1');
   // „Eingang nicht bestätigt“ (Backlog 278, Teilagent „Sturmnacht“): gleiche Regel wie „Heute zu tun → Eingang bestätigen“ der Startseite
   if (on(query.unreceived)) where.push(user.role === 'driver' ? '0' : `c.status = 'gemeldet' AND c.fleet_received_at IS NULL`);
+  // Backlog 474 (Blickwinkel „Überführungsfahrt“, Teilagent-Fund 3): „eingeschränkt fahrbereit gemeldet, noch ohne Werkstattauftrag“ – diese
+  // Meldungen standen auf der Tafel der Disposition nirgends (nicht gesperrt, kein Auftrag). Nur Information, blockiert nichts.
+  if (on(query.limited)) where.push(user.role === 'driver' ? '0' : `c.status = 'gemeldet' AND c.safety_lock = 0 AND c.reported_driveability = 'eingeschraenkt'`);
   // Backlog 463: „Rückfrage offen“ / „Antwort vom Melder eingegangen“ (gleiche Regel wie questionState; Fahrer: eigene Meldungen)
   if (query.question === 'open' || query.question === 'answered') {
     where.push(`c.status IN (${OPEN_STATUSES.map((x) => `'${x}'`).join(',')}) AND ${Q_AT_SQL} IS NOT NULL AND ` + (query.question === 'open'
