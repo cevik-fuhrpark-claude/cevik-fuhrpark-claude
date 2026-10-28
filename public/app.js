@@ -1038,7 +1038,7 @@ async function viewHome() {
     catch { try { const c = JSON.parse(localStorage.getItem(mvKey) || 'null'); if (c) { mv = c.vehicles; mvOffline = c.at; } } catch {} }
     if (mvOffline || cases === null) html += `<div class="panel alert">${esc(t('offline_view'))}${mvOffline ? ` (${esc(t('as_of'))} ${fmtDT(mvOffline)})` : ''}</div>`;
     if (mv && mv.length) html += `<h2>${esc(t('my_vehicle'))}</h2>${mv.map((v) => { const ob = outboxVeh(v.id); const obc = v.coupled && v.coupled.id ? outboxVeh(v.coupled.id) : { n: 0, crit: false }; const obCrit = ob.crit || obc.crit; const obN = ob.n + obc.n; return `<section class="panel ${v.locked || v.coupled?.locked || obCrit ? 'alert' : ''}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${plate(v.plate, { locked: v.locked })}${coupledLockedChip(v.coupled)}${v.locked ? `<span class="chip kritisch">${esc(t('locked'))} – ${esc(t('do_not_drive'))}</span>` : v.open_cases_total ? `<span class="chip mittel">${esc(tn('open_reports_n', v.open_cases_total))}</span>` : obN || v.coupled?.locked || v.coupled?.open_cases_total ? '' : `<span class="chip ok">${esc(t('no_open_reports'))}</span>`}${v.coupled && !v.coupled.locked && v.coupled.open_cases_total ? `<span class="chip mittel" data-coupledopen>${esc(v.coupled.plate)}: ${esc(tn('open_reports_n', v.coupled.open_cases_total))}</span>` : ''}${obN ? `<span class="chip ${obCrit ? 'kritisch' : 'mittel'}" data-outboxveh>${esc(tn('outbox_veh_pending', obN))}</span>` : ''}</div>${obCrit ? `<p role="alert" data-outboxcrit><b>⚠ ${esc(t('outbox_veh_crit'))}</b></p>` : ''}
-      ${(v.notes || []).filter((n) => !n.valid_until || n.valid_until >= bDate()).length ? `<div class="vnotes-drv" role="note">${v.notes.filter((n) => !n.valid_until || n.valid_until >= bDate()).map((n) => `<p><b>ⓘ ${n.plate ? esc(n.plate) + ': ' : ''}${esc(n.text)}</b> <span class="small muted">${fmtD(n.created_at)}${n.valid_until ? ' · ' + esc(t('vnote_until').replace('{d}', fmtD(n.valid_until))) : ''}</span></p>`).join('')}</div>` : ''}
+      ${drvNotes(v.notes)}
       ${v.eval_excluded ? `<p class="small" role="note" data-drvresting><b>⚠ ${esc(t('drv_resting'))}</b></p>` : ''}
       ${v.winter ? `<p class="small" role="note" data-drvwinter><b>❄ ${esc(t('drv_winter').replace('{p}', v.winter.noncompliant.map(posL).join(', ')))}</b></p>` : ''}
       <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${myPlanned(v)}${drvInspRows(v)}${(v.km_due || []).map((r) => `<dt>${esc(mk(r.kind))}</dt><dd>${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining < 0 ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ` <span class="small">(${esc(t('km_left'))} ${fmtKm(r.km_remaining)})</span>`}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${r.planned_date === bDate() ? ' (' + esc(t('today')) + ')' : ''}</span>` : ''}</dd>`).join('')}</dl>${knownDefects(v.known_defects)}${relItems(v.open_items_after_release)}${drvCoupled(v.coupled)}</section>`; }).join('')}`;
@@ -2058,7 +2058,7 @@ async function viewNew(preId) {
       // gekoppelter Auflieger/Zugmaschine gewählt (Backlog 437): dessen bekannte Mängel und Sperre wie in der Abfahrtskontrolle – sonst meldete
       // Fahrer B bei der Übernahme denselben Schaden wie Fahrer A beim Abstellen
       const cv = !v && known && sel ? coupledKnown(known, sel.value) : null;
-      box.innerHTML = notMineHint(vs, sel && sel.value) + (v ? coupledAlert(v.coupled) + knownDefects(v.known_defects) + relItems(v.open_items_after_release) : cv ? `${cv.locked ? `<div class="alert" role="alert" style="margin-bottom:8px" data-cplocked><b>${esc(t('scan_locked'))}</b></div>` : ''}${knownDefects(cv.known_defects)}` : ''); };
+      box.innerHTML = notMineHint(vs, sel && sel.value) + (v ? coupledAlert(v.coupled) + drvNotes(v.notes) + knownDefects(v.known_defects) + relItems(v.open_items_after_release) + coupledDefects(v.coupled) : cv ? `${cv.locked ? `<div class="alert" role="alert" style="margin-bottom:8px" data-cplocked><b>${esc(t('scan_locked'))}</b></div>` : ''}${drvNotes(cv.notes)}${knownDefects(cv.known_defects)}${relItems(cv.open_items_after_release)}` : ''); };
     showKnown();
     api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => { known = myVehCached(); showKnown(); });
     $$('input[name=veh]').forEach((r) => r.addEventListener('change', showKnown));
@@ -2162,6 +2162,18 @@ function drvInspRows(v) {
     + (v.inspections_unclear || []).map((k) => `<dt>${esc(dk(k))}</dt><dd><span class="chip mittel" data-unclear>${esc(t('ms_ungeklaert'))}</span> <span class="small muted" data-unclearwho>${esc(t('drv_unclear_fleet'))}</span></dd>`).join('');
 }
 // Gekoppelter Anhänger bzw. Zugmaschine: HU/SP-/Prüftermine und bekannte Mängel (Backlog 202) – Sperre steht schon oben im Kopf der Karte
+// Backlog 481 (Blickwinkel „Springer holt den Lkw eines kranken Kollegen“): Hinweise für Fahrer auch in Abfahrtskontrolle und Meldeformular –
+// wer über den QR-Aufkleber kommt, sieht die Startseite „Mein Fahrzeug“ nie (abgelaufene Hinweise nicht, auch offline aus dem Zwischenspeicher)
+function drvNotes(notes) {
+  const list = (notes || []).filter((n) => !n.valid_until || n.valid_until >= bDate());
+  return list.length ? `<div class="vnotes-drv" role="note">${list.map((n) => `<p><b>ⓘ ${n.plate ? esc(n.plate) + ': ' : ''}${esc(n.text)}</b> <span class="small muted">${fmtD(n.created_at)}${n.valid_until ? ' · ' + esc(t('vnote_until').replace('{d}', fmtD(n.valid_until))) : ''}</span></p>`).join('')}</div>` : '';
+}
+// Backlog 482 (gleicher Blickwinkel): bekannte Mängel/Restarbeiten des gekoppelten Anhängers bzw. der Zugmaschine in Abfahrtskontrolle und Meldeformular,
+// wenn das eigene Fahrzeug gewählt ist – sonst wird ein bekannter Anhängermangel (Prüfpunkt „Kupplung/Anhänger“) erneut gemeldet. Ohne Prüftermine (die stehen auf der Startseite).
+function coupledDefects(c) {
+  if (!c || (!(c.known_defects || []).length && !(c.open_items_after_release || []).length)) return '';
+  return `<div class="drv-coupled" data-coupled><p style="margin:10px 0 0"><b>${esc(t(c.kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(c.plate)}</b></p>${knownDefects(c.known_defects)}${relItems(c.open_items_after_release)}</div>`;
+}
 function drvCoupled(c) {
   if (!c || (!(c.next_inspections || []).length && !(c.inspections_unclear || []).length && !(c.known_defects || []).length && !(c.open_items_after_release || []).length)) return '';
   const rows = drvInspRows(c);
@@ -3102,7 +3114,7 @@ function coupledLockedChip(c) {
 // Melde-/Kontrollformular: gesperrter Anhänger bzw. gesperrtes Zugfahrzeug des gewählten eigenen Fahrzeugs
 // Abfahrtskontrolle: Sperre des gewählten Fahrzeugs (Liste oder „Meine Fahrzeuge“) + gekoppeltes Fahrzeug + bekannte Mängel (23.10.2026)
 // Gekoppeltes Fahrzeug eines eigenen Fahrzeugs (z. B. Anhänger ohne eigene Zuordnung): Sperre und bekannte Mängel aus „Mein Fahrzeug“ (Backlog 202)
-function coupledKnown(known, id) { const p = known.find((x) => x.coupled && x.coupled.id === id); return p ? { locked: p.coupled.locked, known_defects: p.coupled.known_defects || [] } : null; }
+function coupledKnown(known, id) { const p = known.find((x) => x.coupled && x.coupled.id === id); return p ? { locked: p.coupled.locked, known_defects: p.coupled.known_defects || [], open_items_after_release: p.coupled.open_items_after_release || [], notes: p.notes || [] } : null; }
 // Wieder in Betrieb / wieder in Auswertungen (Backlog 204): was vor der ersten Fahrt zu klären ist – km-Stand immer, Rest nur wenn vorhanden
 function returnCheckText(rc) {
   if (!rc) return '';
@@ -3117,7 +3129,7 @@ const todayMark = (d) => (d && d === bDate() ? ` <b data-today>(${esc(t('today')
 function departureLockBox(sv, kv) {
   const locked = (kv && kv.locked) || (sv && sv.availability === 'gesperrt');
   const c = (kv && kv.coupled) || (sv && sv.coupled && sv.coupled.availability === 'gesperrt' ? { ...sv.coupled, locked: true } : null);
-  return (sv ? outboxVehAlert(sv.id) : '') + (locked ? `<div class="alert" role="alert" style="margin-bottom:8px"><b>${esc(t('scan_locked'))}</b></div>` : '') + coupledAlert(c) + (kv ? knownDefects(kv.known_defects) : '');
+  return (sv ? outboxVehAlert(sv.id) : '') + (locked ? `<div class="alert" role="alert" style="margin-bottom:8px"><b>${esc(t('scan_locked'))}</b></div>` : '') + coupledAlert(c) + (kv ? drvNotes(kv.notes) + knownDefects(kv.known_defects) + relItems(kv.open_items_after_release) + coupledDefects(kv.coupled) : '');
 }
 const lockedWarn = (r) => (r && r.vehicle_locked ? ` · ${t('locked')} – ${t('do_not_drive')}` : '') + (r && r.coupled_locked ? ` · ${coupledLockedText(r.coupled_locked)}` : ''); // gekoppeltes Gespann gesperrt (23.10.2026)
 const coupledAlert = (c) => (c && c.locked ? `<div class="alert" role="alert" style="margin-bottom:8px">${esc(coupledLockedText(c))}</div>` : '');

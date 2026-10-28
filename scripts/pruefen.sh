@@ -79,6 +79,7 @@ UI-Disposition erster Tag (Rückkehr ungeklärt in Reparatur, neue unbestätigte
 UI-Fahrzeugakte „Was fehlt noch?“ (Datenqualität je Fahrzeug)|ui-akte-wasfehlt.py|/tmp/cfp-akte-wasfehlt.log
 UI-Reifen-Saison, Bußgeld-Tatzeit ändern, Kosten-Einzelpositionen|ui-saison-bussgeld-kosten.py|/tmp/cfp-saison.log
 UI-Springer: Abfahrtskontrolle zeigt Sperre (auch fremdes Fahrzeug), Startseite → Auslesungen|ui-springer-sperre.py|/tmp/cfp-springer.log
+UI-Springer: Hinweise für Fahrer und Mängel des gekoppelten Anhängers in Abfahrtskontrolle/Melden (Backlog 481/482)|ui-springer-hinweise.py|/tmp/cfp-springer-hinweise.log
 UI-Inhaber am Handy (Teilausfall Startseite, Erledigt mit Rückfrage, Zurück-Scroll, Umschalten auf Detailseite, Einrichtungsstand → Feld)|ui-inhaber-unterwegs.py|/tmp/cfp-inhaber.log
 UI-Stichtag Kennzahlen, Stundensatz-Hinweis, Rückruf am ruhenden Fahrzeug|ui-stichtag-rueckruf.py|/tmp/cfp-stichtag.log
 UI-Urlaubsrückkehr „Ältere laden“, Kontrolle bei gesperrtem Anhänger|ui-urlaub-anhaenger.py|/tmp/cfp-urlaub.log

@@ -25057,6 +25057,35 @@ await test('Backlog 480 (Blickwinkel „geteiltes Werkstatt-Tablet“): Lagerart
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].case_conflict_kept, l);
 });
 
+await test('Backlog 481/482 (Blickwinkel „Springer holt den Lkw eines kranken Kollegen“): Abfahrtskontrolle und Meldeformular zeigen Hinweise für Fahrer (abgelaufene nicht) sowie bekannte Mängel/Restarbeiten des gekoppelten Anhängers, wenn die Zugmaschine gewählt ist', async () => {
+  const { U } = await freshWorld(); const users = U, owner = U.own;
+  eq((await owner.post('/api/vehicles', { plate: 'SP-Z 481', vin: 'WDB96340310748101', site: 'Dortmund', trailer_plate: 'SP-H 481' })).status, 201);
+  eq((await owner.post('/api/vehicles', { plate: 'SP-H 481', vin: 'WDB96340310748102', site: 'Dortmund', kind: 'anhaenger' })).status, 201);
+  const VZ = 'VIN:WDB96340310748101', VH = 'VIN:WDB96340310748102';
+  eq((await users.fleet.post(`/api/vehicles/${VZ}/drivers`, { user_id: users.driver.id, end_previous: false })).status, 201);
+  eq((await users.fleet.post(`/api/vehicles/${VZ}/notes`, { text: 'Steht auf Autohof A2, Schlüssel an der Kasse', for_driver: true })).status, 201, 'Hinweis für den Springer');
+  eq((await users.fleet.post(`/api/vehicles/${VH}/notes`, { text: 'Hecktür klemmt – bekannt', for_driver: true })).status, 201);
+  eq((await users.fleet.post('/api/cases', { vehicle_id: VH, description: 'Rückleuchte Auflieger rechts gesprungen', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).status, 201);
+  const mv = (await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VZ);
+  ok(mv.notes.some((n) => /Autohof A2/.test(n.text)) && mv.notes.some((n) => n.plate === 'SP-H 481'), 'Hinweise Lkw + Anhänger geliefert');
+  ok(mv.coupled && mv.coupled.known_defects.some((k) => /Rückleuchte/.test(k.description)), 'Mangel des Anhängers geliefert');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = (name) => { const i = app.indexOf(`function ${name}(`); return app.slice(i, app.indexOf('\n}\n', i) + 2); };
+  const src = ['drvNotes', 'coupledDefects', 'departureLockBox', 'coupledKnown'].map(fn).join('\n');
+  const T = { trailer: 'Anhänger', truck: 'Lkw', vnote_until: 'bis {d}', scan_locked: 'GESPERRT' };
+  const lib = new Function('esc', 't', 'fmtD', 'bDate', 'knownDefects', 'relItems', 'outboxVehAlert', 'coupledAlert', src + '\nreturn { drvNotes, coupledDefects, departureLockBox, coupledKnown };')(
+    (v) => String(v), (k) => T[k] || k, (v) => v, () => '2026-10-28', (l) => (l || []).map((k) => `<kd>${k.description}</kd>`).join(''), (l) => (l || []).map((o) => `<ri>${o.description}</ri>`).join(''), () => '', () => '');
+  const h = lib.departureLockBox({ id: VZ }, mv);
+  ok(h.includes('class="vnotes-drv"') && h.includes('Autohof A2') && h.includes('SP-H 481: Hecktür klemmt'), 'Abfahrtskontrolle: Hinweise für Fahrer');
+  ok(h.includes('data-coupled') && h.includes('Anhänger SP-H 481') && h.includes('<kd>Rückleuchte Auflieger rechts gesprungen</kd>'), 'Abfahrtskontrolle: Mangel des gekoppelten Anhängers');
+  const ck = lib.coupledKnown([mv], VH); ok(lib.departureLockBox({ id: VH }, ck).includes('Hecktür klemmt'), 'Anhänger gewählt: Hinweise des Gespanns');
+  eq(lib.drvNotes([{ text: 'alt', created_at: '2026-10-01', valid_until: '2026-10-27' }]), '', 'abgelaufener Hinweis nicht');
+  eq(lib.coupledDefects({ plate: 'X', kind: 'anhaenger', known_defects: [], open_items_after_release: [], next_inspections: [{}] }), '', 'ohne Mängel kein Block (Prüftermine nur auf der Startseite)');
+  ok(app.includes('coupledAlert(v.coupled) + drvNotes(v.notes) + knownDefects(v.known_defects) + relItems(v.open_items_after_release) + coupledDefects(v.coupled)'), 'Meldeformular: eigenes Fahrzeug');
+  ok(app.includes('${drvNotes(cv.notes)}${knownDefects(cv.known_defects)}${relItems(cv.open_items_after_release)}'), 'Meldeformular: gekoppeltes Fahrzeug gewählt');
+  ok(app.includes('      ${drvNotes(v.notes)}\n'), 'Startseite nutzt dieselbe Funktion');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
