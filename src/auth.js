@@ -444,8 +444,10 @@ export async function changePassword(env, user, body) {
 }
 
 // ---- Eigene Anmeldungen (Geräte): ansehen, einzeln oder alle anderen abmelden ----
+// Backlog 509: Android ohne „Mobile“ im User-Agent = Tablet (Chrome/Samsung/Firefox setzen „Mobile“ nur am Handy) – Diensthandy und Lkw-Tablet
+// desselben Kontos waren in „Meine Anmeldungen“, „Bekannte Geräte“ und im Anmelde-Hinweis nicht zu unterscheiden
 export function deviceFromUa(ua = '') {
-  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : null;
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? (/Mobile/.test(ua) ? 'Android' : 'Android-Tablet') : /Windows/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : null;
   const br = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : null;
   return [br, os].filter(Boolean).join(' · ') || 'Unbekanntes Gerät';
 }

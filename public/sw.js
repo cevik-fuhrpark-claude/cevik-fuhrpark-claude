@@ -96,7 +96,7 @@ self.addEventListener('pushsubscriptionchange', (e) => {
       if (!sub) return;
       const j = sub.toJSON();
       const ua = self.navigator.userAgent || '';
-      const label = /Android/.test(ua) ? 'Android' : /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Windows/.test(ua) ? 'Windows-PC' : /Mac/.test(ua) ? 'Mac' : null;
+      const label = /Android/.test(ua) ? (/Mobile/.test(ua) ? 'Android' : 'Android-Tablet') : /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Windows/.test(ua) ? 'Windows-PC' : /Mac/.test(ua) ? 'Mac' : null;
       await fetch('/api/push/subscribe', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-cfp': '1' },
         body: JSON.stringify({ endpoint: j.endpoint, keys: j.keys, ...(label ? { device_label: label } : {}) }) });
     } catch {}

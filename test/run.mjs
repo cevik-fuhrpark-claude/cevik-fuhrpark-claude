@@ -4701,7 +4701,9 @@ await test('Letzte Abfahrtskontrolle je Fahrzeug in Liste, Akte und CSV (nur Inf
   const d = (await users.fleet.get('/api/vehicles/' + encodeURIComponent(V1))).data;
   eq(d.last_check.created_at, last.created_at); eq(d.last_check.kind, 'abfahrt');
   const dv = (await users.driver.get('/api/vehicles')).data.vehicles.find((x) => x.id === V1);
-  ok(dv && !('last_check_at' in dv), 'Fahrerliste ohne Kontrollinfo');
+  // Backlog 508: Fahrer sehen nur die eigene letzte Kontrolle (zweites Gerät), nie die anderer
+  const lastBy = (await env.DB.prepare(`SELECT performed_by FROM inspections WHERE vehicle_id=? AND environment='test' AND kind='abfahrt' ORDER BY created_at DESC LIMIT 1`).bind(V1).first()).performed_by;
+  ok(dv && (lastBy === users.driver.id ? dv.last_check_at === last.created_at : !('last_check_at' in dv)), 'Fahrerliste nur mit eigener Kontrollinfo');
   // Kontrolle nach Reparatur zählt nicht als Abfahrtskontrolle; anderes Fahrzeug ohne Kontrolle → leer
   const other = (await users.fleet.get('/api/vehicles')).data.vehicles.find((x) => x.id !== V1 && !x.last_check_at);
   if (other) eq(other.last_check_result, null);
@@ -8504,7 +8506,7 @@ await test('Hinweise: Zähler über alle (nicht nur die neuesten 100), Filter se
       ok(vi.includes('const again = async () => { const o = np.open; await viewInbox();'), 'Quittieren/Filter: Bereich bleibt offen');
       ok(!/onclick = async \(\) => \{ await api/.test(app), 'keine Aktion ohne Fehlerbehandlung (sonst stiller Abbruch ohne Netz)'); }
     for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_push_s.includes(STRINGS[l].nf_reload), 'Hilfe „Push“ nennt „' + STRINGS[l].nf_reload + '“'); }
-  ok(app.includes('function paintBadge()') && app.slice(app.indexOf('async function refreshUnread('), app.indexOf('async function refreshUnread(') + 300).includes('paintBadge()'), 'Zahl wird an Ort und Stelle aktualisiert');
+  ok(app.includes('function paintBadge()') && app.slice(app.indexOf('async function refreshUnread('), app.indexOf('async function refreshUnread(') + 1200).includes('paintBadge()'), 'Zahl wird an Ort und Stelle aktualisiert');
   for (const l of ['de', 'uk', 'en']) { const h = STRINGS[l].help_push_s; ok(h.includes(String(NOTIF_MAX)) && h.includes(STRINGS[l].nf_unread) && h.includes(STRINGS[l].mark_read) && h.includes(STRINGS[l].notifications), 'Hilfe „Push“ ' + l + ' nennt Grenze und echte Namen'); }
 });
 
@@ -18883,7 +18885,7 @@ await test('Backlog 200: noch nicht gesendete kritische Meldung/Kontrolle im Pos
   // Einbindung: Startseite (eigenes und gekoppeltes Fahrzeug, grün nur ohne Postausgang), Abfahrtskontrolle
   ok(app.includes("const ob = outboxVeh(v.id); const obc = v.coupled && v.coupled.id ? outboxVeh(v.coupled.id)"), 'Startseite');
   ok(app.includes("obN || v.coupled?.locked || v.coupled?.open_cases_total ? '' : `<span class=\"chip ok\">${esc(t('no_open_reports'))}</span>`"), 'kein grünes „keine offenen Meldungen“');
-  ok(app.includes("return (sv ? outboxVehAlert(sv.id) : '') + (locked ?"), 'Abfahrtskontrolle');
+  ok(app.includes("return (sv ? outboxVehAlert(sv.id) : '') + today + (locked ?"), 'Abfahrtskontrolle');
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].outbox_veh_crit && STRINGS[l].outbox_veh_crit !== STRINGS.de.outbox_veh_crit || l === 'de', l); ok(PLURALS[l].outbox_veh_pending && PLURALS[l].outbox_veh_pending.one.includes('{n}') && PLURALS[l].outbox_veh_pending.other.includes('{n}'), l); }
   ok(PLURALS.uk.outbox_veh_pending.few && PLURALS.uk.outbox_veh_pending.many, 'uk Formen');
@@ -22742,18 +22744,18 @@ await test('Backlog 382 (Blickwinkel „Betriebskontrolle/BG-Prüfung angekündi
   eq((await U.fleet.post(`/api/maintenance/${tg.data.id}/complete`, { done_date: day(-3), evidence: 'Prüfbescheinigung 7' })).status, 200);
   const csv = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv')).data).replace(/^\uFEFF/, '');
   const lines = csv.trim().split('\r\n'); const head = lines[0].split(';');
-  ok(head.at(-2) === 'Letztes Prüfergebnis' && head.at(-1) === 'Prüfmangel offen', head.join('|'));
+  ok(head.at(-4) === 'Letztes Prüfergebnis' && head.at(-3) === 'Prüfmangel offen', head.join('|')); // Backlog 505: danach Werkstatttermin/Auftrag
   const cols = (l) => l.split(';').length; ok(lines.every((l) => cols(l) === head.length), 'gleiche Spaltenzahl');
   const de = (d) => d.split('-').reverse().join('.');
   const u = lines.find((l) => l.includes(';UVV;')).split(';');
-  ok(u.at(-2) === `verkehrsunsicher (${de(day(-6))})` && u.at(-1) === `verkehrsunsicher am ${de(day(-6))} – kein Mängelauftrag angelegt`, u.join('|'));
+  ok(u.at(-4) === `verkehrsunsicher (${de(day(-6))})` && u.at(-3) === `verkehrsunsicher am ${de(day(-6))} – kein Mängelauftrag angelegt`, u.join('|'));
   const t = lines.find((l) => l.includes(';Tachograph;')).split(';');
-  ok(t.at(-2) === `kein Ergebnis eingetragen (${de(day(-3))})` && t.at(-1) === '', t.join('|'));
+  ok(t.at(-4) === `kein Ergebnis eingetragen (${de(day(-3))})` && t.at(-3) === '', t.join('|'));
   ok(lines.some((l) => l.includes('kein Termin hinterlegt')), 'Lückenzeilen weiter da');
   // Mängelauftrag angelegt → kein „kein Mängelauftrag angelegt“ mehr
   const ord = await U.fleet.post('/api/cases', { vehicle_id: V1, description: 'UVV-Mängel beheben', priority: 'kritisch', driveability: 'nicht_fahrbereit', workshop_site: 'DORTMUND', request_key: rk() }); eq(ord.status, 201);
   const csv2 = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv')).data);
-  const u2 = csv2.split('\r\n').find((l) => l.includes(';UVV;')).split(';'); eq(u2.at(-1), '', 'Auftrag angelegt'); ok(u2.at(-2).startsWith('verkehrsunsicher'), 'Ergebnis bleibt sichtbar');
+  const u2 = csv2.split('\r\n').find((l) => l.includes(';UVV;')).split(';'); eq(u2.at(-3), '', 'Auftrag angelegt'); ok(u2.at(-4).startsWith('verkehrsunsicher'), 'Ergebnis bleibt sichtbar');
 });
 await test('Backlog 383/384 (Blickwinkel „Betriebskontrolle/BG-Prüfung angekündigt“): Fahrer-CSV nennt fehlende Fahrerkarte/Code 95 als „nicht erfasst“ (Status unverändert), Auslesungs-CSV listet Fahrer ohne Fahrerkarte, Auslesungsverlauf listet aktive Fahrer/Lkw ohne jede Auslesung als „keine Auslesung erfasst – Frist ungeklärt“ (ohne Lückentage); Texte DE/UK/EN', async () => {
   const { U, V1 } = await freshWorld();
@@ -25214,6 +25216,60 @@ await test('Backlog 501–503 (Blickwinkel „Montag 7 Uhr: Master-Eingang abarb
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("afLink(m.case_id, m.payload.finding_code, m.finding_subject) || (m.vehicle_id ? `<a href=\"#/vehicles/${esc(m.vehicle_id)}\">${esc(t('vehicle_file'))}</a>` : ''))") && !app.includes("${m.case_id ? ' · ' + afLink("), '501: Link ohne Vorgang');
   ok(app.includes('if (!cached && !S.mDecKeep) S.mDecAll = false; S.mDecKeep = false;') && app.includes("S.mDecKeep = true; await viewMaster();"), '502: „alle anzeigen“ bleibt');
+});
+
+await test('Backlog 504–506 (Blickwinkel „Prüftermine für den nächsten Monat vorbereiten“): CSV mit Filter/„fällig bis“ wie die Liste, Spalten Werkstatttermin/Auftrag, Liste springt ins Formular „Durchführung erfassen“', async () => {
+  const { U, V1 } = await freshWorld();
+  const mk = async (kind, d) => { const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind, next_due_date: bDayOff(d), evidence: 'Beleg ' + kind }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const a = await mk('UVV', 40); await mk('Tachograph', 75);
+  const rows = async (q) => { const r = await U.fleet.get('/api/maintenance?format=csv' + q); eq(r.status, 200); return new TextDecoder().decode(r.data).replace(/^﻿/, '').trim().split('\r\n'); };
+  const all = await rows(''); ok(all.some((l) => l.includes(';UVV;')) && all.some((l) => l.includes(';Tachograph;')) && all.some((l) => l.includes('kein Termin hinterlegt')), 'ohne Filter wie bisher');
+  ok(all[0].endsWith(';Letztes Prüfergebnis;Prüfmangel offen;Geplanter Werkstatttermin;Werkstattauftrag (Nr.)'), all[0]);
+  const due = await rows('&filter=due'); ok(!due.some((l) => l.includes(';UVV;')) && !due.some((l) => l.includes('kein Termin hinterlegt')), '504: ohne „fällig bis“ nur Warnfrist, keine Lücken');
+  const by = await rows('&filter=due&due_by=' + bDayOff(45)); ok(by.some((l) => l.includes(';UVV;')) && !by.some((l) => l.includes(';Tachograph;')), '504: fällig bis +45 enthält UVV (+40), nicht Tachograph (+75)');
+  eq((await U.fleet.get('/api/maintenance?format=csv&filter=xyz')).status, 400); eq((await U.fleet.get('/api/maintenance?format=csv&filter=due&due_by=2026-13-45')).status, 400);
+  const gaps = await rows('&filter=gaps'); ok(gaps.length > 1 && gaps.slice(1).every((l) => l.includes('kein Termin hinterlegt')), 'gaps: nur Lückenzeilen');
+  const pd = bDayOff(20); const pb = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: pd, ids: [a] }); eq(pb.status, 200, JSON.stringify(pb.data));
+  const np = await rows('&filter=noplan&due_by=' + bDayOff(45)); ok(!np.some((l) => l.includes(';UVV;')), '505: eingeplant → nicht in „fällig, nicht eingeplant“');
+  const u = (await rows('&filter=all')).find((l) => l.includes(';UVV;')).split(';'); eq(u.at(-2), pd.split('-').reverse().join('.'), '505: Geplanter Werkstatttermin'); eq(u.at(-1), '', 'kein Auftrag');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m0 = app.indexOf('async function viewMaint('); const vm = app.slice(m0, app.indexOf('\nasync function ', m0 + 10));
+  ok(vm.includes("`/api/maintenance?format=csv&filter=${encodeURIComponent(f)}${dueBy ? '&due_by=' + dueBy : ''}`"), '505: CSV mit Filter der Liste');
+  ok(vm.includes("S.fromPlan = '#/maintenance'") && vm.includes("'?done=' + encodeURIComponent(r.id)") && vm.includes('!r.virtual'), '506: Sprung ins Formular, Rücksprung zur Liste');
+  ok(vm.includes("f === 'due' ? inWin(r)") && vm.includes('new Date(Date.UTC(y, m + 1, 0))'), '504: Liste nutzt „fällig bis“');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['mdueby_label', 'mdueby_next', 'mdueby_clear', 'mdueby_hint', 'mdueby_tab']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
+await test('Backlog 507–509 (Blickwinkel „Fahrer mit Diensthandy und Lkw-Tablet unter einem Konto“): Leiste schließt anderswo gelesene Mitteilungen (tray_unread), Abfahrtskontrolle zeigt „heute bereits erfasst“, Android-Tablet getrennt vom Handy', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const ins = db.prepare(`INSERT INTO notifications(id,environment,user_id,case_id,event_key,kind,urgent,title,body,created_at,push_status) VALUES (?,?,?,?,?,?,?,?,?,?,'accepted')`);
+  const a = crypto.randomUUID(), b = crypto.randomUUID(), c = crypto.randomUUID();
+  for (const id of [a, b]) ins.run(id, 'test', U.driver.id, null, 'tr-' + id, 'agent', 1, 'T', 'x', new Date().toISOString());
+  ins.run(c, 'test', U.fleet.id, null, 'tr-' + c, 'agent', 1, 'T', 'x', new Date().toISOString());
+  eq((await U.driver.post(`/api/notifications/${a}/opened`)).status, 200);
+  const r = (await U.driver.get(`/api/notifications?count=1&tray=${a},${b},${c},bad%20id`)).data;
+  ok(Array.isArray(r.tray_unread) && r.tray_unread.length === 1 && r.tray_unread[0] === b, '507: nur ungelesene eigene ' + JSON.stringify(r));
+  ok(!('tray_unread' in (await U.driver.get('/api/notifications?count=1')).data), 'ohne tray unverändert');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("'&tray=' + tray.map((x) => x.data.id).join(',')") && app.includes('if (!keep.has(x.data.id)) { try { x.close(); }'), '507: Oberfläche schließt');
+  ok(app.includes('S.unread = 0; paintBadge(); refreshUnread(true); again();'), '507: nach „alle gelesen“');
+  // 508: letzte Kontrolle heute
+  const insI = db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,case_id,kind,template_version,performed_by,odometer_km,items,result,created_at) VALUES (?,?,?,NULL,'abfahrt','v1',?,NULL,'[]',?,?)`);
+  const vsOf = async () => (await U.driver.get('/api/vehicles')).data.vehicles.find((v) => v.id === V1);
+  insI.run(crypto.randomUUID(), 'test', V1, U.driver.id, 'maengel', new Date(Date.now() - 60000).toISOString());
+  let sv = await vsOf(); ok(sv.last_check_result === 'maengel' && sv.last_check_at && !('_lcBy' in sv), '508: eigene Kontrolle sichtbar ' + JSON.stringify(sv));
+  insI.run(crypto.randomUUID(), 'test', V1, U.fleet.id, 'ok', new Date().toISOString());
+  sv = await vsOf(); ok(!('last_check_at' in sv), '508: Kontrolle einer anderen Person nicht sichtbar');
+  ok((await U.fleet.get('/api/vehicles')).data.vehicles.every((v) => !('_lcBy' in v)), 'keine interne Spalte für Leitung');
+  ok(app.includes("BERLIN_FMT.format(new Date(sv.last_check_at)) === bDate()") && app.includes('last_check_at: v.last_check_at || null'), '508: Hinweis + Offline-Cache');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['dc_today_done', 'dc_today_ok', 'dc_today_def']) ok(STRINGS[l][k], `${l}.${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dc_today_done.includes('{t}') && STRINGS[l].dc_today_done.includes('{r}'), l);
+  // 509
+  const { deviceFromUa } = await import('../src/auth.js');
+  eq(deviceFromUa('Mozilla/5.0 (Linux; Android 14; SM-X200) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'), 'Chrome · Android-Tablet');
+  eq(deviceFromUa('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36'), 'Chrome · Android');
+  const sw = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  ok(sw.includes("(/Mobile/.test(ua) ? 'Android' : 'Android-Tablet')") && app.includes("(/Mobile/.test(ua) ? 'Android' : 'Android-Tablet')") && app.includes('navigator.maxTouchPoints > 1'), '509: gleiche Regel in App und Service Worker');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

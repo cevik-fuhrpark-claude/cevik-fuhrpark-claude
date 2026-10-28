@@ -45,7 +45,7 @@ export async function listVehicles(env, user, envName, query = {}) {
           COALESCE(m.last_done_km, '') AS ldk, COALESCE(m.last_done_date, '') AS ldd, m.kind FROM maintenance_rules m
         WHERE m.vehicle_id=v.id AND m.kind NOT IN ('HU','SP') AND NOT (m.kind='Rückruf' AND m.last_done_date IS NOT NULL)) x WHERE x.k IS NOT NULL ORDER BY x.k, x.kind LIMIT 1) AS next_km,
       ${KM_DROP_SQL('v.id')} AS km_drop,
-      (SELECT i.created_at || '|' || i.result FROM inspections i WHERE i.vehicle_id=v.id AND i.environment=? AND i.kind='abfahrt' ORDER BY i.created_at DESC LIMIT 1) AS last_check,
+      (SELECT i.created_at || '|' || i.result || '|' || i.performed_by FROM inspections i WHERE i.vehicle_id=v.id AND i.environment=? AND i.kind='abfahrt' ORDER BY i.created_at DESC LIMIT 1) AS last_check,
       (SELECT MIN(c.planned_date) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile') AND c.planned_date >= ?) AS planned_workshop_date,
       (SELECT m.planned_date || '|' || group_concat(m.kind, ', ') FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.planned_date = (SELECT MIN(m2.planned_date) FROM maintenance_rules m2 WHERE m2.vehicle_id=v.id AND m2.planned_date >= ?)) AS planned_inspection,
       (SELECT MAX(c.parts_expected_date) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status='wartet_teile') AS parts_expected_date,
@@ -65,7 +65,7 @@ export async function listVehicles(env, user, envName, query = {}) {
       (SELECT group_concat(p.plate, '|') FROM (SELECT plate FROM vehicle_plates p WHERE p.vehicle_id=v.id ORDER BY p.valid_until DESC LIMIT 10) p) AS fp
     FROM vehicles v WHERE v.active=? ORDER BY v.plate`).bind(envName, envName, envName, envName, envName, today, today, envName, addMonths(today, -12), envName, envName, today, envName, active).all()).results;
   // letzte Abfahrtskontrolle je Fahrzeug – nur Information (ohne Einsatzplan keine Pflichtbewertung)
-  for (const v of rows) { const [at, result] = v.last_check ? v.last_check.split('|') : [null, null]; v.last_check_at = at; v.last_check_result = result; delete v.last_check;
+  for (const v of rows) { const [at, result, by] = v.last_check ? v.last_check.split('|') : [null, null, null]; v.last_check_at = at; v.last_check_result = result; v._lcBy = by || null; delete v.last_check;
     v.former_plates = v.fp ? [...new Set(String(v.fp).split('|').filter((x) => x && x !== v.plate))] : []; delete v.fp;
     // nächster geplanter Prüftermin ab heute + Prüfart(en) an diesem Tag
     const [pd, pk] = v.planned_inspection ? v.planned_inspection.split('|') : [null, null]; v.planned_inspection_date = pd; v.planned_inspection_kind = pk || null; delete v.planned_inspection;
@@ -120,9 +120,12 @@ export async function listVehicles(env, user, envName, query = {}) {
     v.coupled = p ? { id: p.id, plate: p.plate, kind: p.kind, availability: p.availability, eval_excluded: p.eval_excluded ? 1 : 0, next_due: p.next_due || null,
       km_remaining: p.km_remaining ?? null, failed_inspection: p.failed_inspection || null } : null;
   }
+  for (const v of list) { if (user.role !== 'driver') delete v._lcBy; }
   if (user.role === 'driver') {
     const assigned = (await env.DB.prepare(`SELECT vehicle_id FROM driver_vehicles WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)`).bind(user.id, nowIso()).all()).results.map((r) => r.vehicle_id);
-    list = list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, manufacturer: v.manufacturer, trailer_plate: v.trailer_plate, truck_plate: v.truck_plate, assigned: assigned.includes(v.id), availability: v.availability, coupled: v.coupled && { id: v.coupled.id, plate: v.coupled.plate, kind: v.coupled.kind, availability: v.coupled.availability } })); // Fahrer: Prüfstand des Gespanns wie bisher nicht in der Liste
+    list = list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, manufacturer: v.manufacturer, trailer_plate: v.trailer_plate, truck_plate: v.truck_plate, assigned: assigned.includes(v.id), availability: v.availability, coupled: v.coupled && { id: v.coupled.id, plate: v.coupled.plate, kind: v.coupled.kind, availability: v.coupled.availability },
+      // Backlog 508: letzte Abfahrtskontrolle nur, wenn sie von dieser Person stammt (zweites Gerät desselben Kontos) – nie Kontrollen anderer Fahrer
+      ...(v._lcBy === user.id ? { last_check_at: v.last_check_at, last_check_result: v.last_check_result } : {}) })); // Fahrer: Prüfstand des Gespanns wie bisher nicht in der Liste
     list.sort((a, b) => (b.assigned - a.assigned) || plateCmp(a.plate, b.plate));
   } else list.sort((a, b) => plateCmp(a.plate, b.plate)); // Auswahllisten (Melden, Kontrolle) übernehmen diese Reihenfolge
   return list;

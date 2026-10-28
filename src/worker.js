@@ -346,7 +346,12 @@ async function handleApi(request, env, ctx, url) {
       return new Response(maint.maintenanceIcs(ov, undefined, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.ics"` } });
     }
     if (url.searchParams.get('format') === 'csv') {
-      await auth.audit(env, user.id, 'maintenance.export', null, { rows: ov.rows.length, gaps: ov.gaps.length, site: ov.site });
+      // Backlog 505: optional Auswahl wie die Liste (`filter`, `due_by`); ohne `filter` wie bisher alle Einträge + Lücken
+      const filter = url.searchParams.get('filter'); const dueBy = url.searchParams.get('due_by') || null;
+      if (filter !== null && !maint.MAINT_FILTERS.includes(filter)) throw new HttpError(400, 'validation', 'Unbekannter Filter.');
+      if (dueBy !== null && (!/^\d{4}-\d{2}-\d{2}$/.test(dueBy) || Number.isNaN(Date.parse(dueBy + 'T00:00:00Z')))) throw new HttpError(400, 'validation', 'Datum „fällig bis“ ungültig.');
+      if (filter) { ov.rows = maint.maintFilterRows(ov, filter, dueBy); if (!['all', 'gaps'].includes(filter)) ov.gaps = []; }
+      await auth.audit(env, user.id, 'maintenance.export', null, { rows: ov.rows.length, gaps: ov.gaps.length, site: ov.site, ...(filter ? { filter } : {}), ...(dueBy ? { due_by: dueBy } : {}) });
       return new Response(maint.maintenanceCsv(ov, await maint.latestResults(env)), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.csv"` } });
     }
     return json(ov);
@@ -708,7 +713,13 @@ async function handleApi(request, env, ctx, url) {
       FROM notifications n WHERE n.user_id=? AND (n.environment=? OR n.kind='new_login') AND n.hidden_at IS NULL`).bind(user.id, envName).first();
     const listAsOf = nowIso(); // „Alle gelesen“ markiert nur bis zu diesem Stand (danach eingetroffene bleiben ungelesen)
     const counts = { all: c.all_n, unread: c.unread_n, urgent: c.urgent_n };
-    if (url.searchParams.get('count') === '1') return json({ unread: counts.unread, counts });
+    if (url.searchParams.get('count') === '1') {
+      // Backlog 507 (Blickwinkel „Fahrer mit Diensthandy und Tablet“): `tray=<id,…>` (≤ 50 Kennungen der am Gerät angezeigten Mitteilungen) →
+      // `tray_unread`: welche davon noch ungelesen sind; das Gerät schließt die übrigen (auf dem anderen Gerät gelesen/quittiert). Nur eigene Hinweise.
+      const tray = (url.searchParams.get('tray') || '').split(',').filter((x) => /^[\w-]{1,64}$/.test(x)).slice(0, 50);
+      const tu = tray.length ? (await env.DB.prepare(`SELECT n.id FROM notifications n WHERE n.user_id=? AND n.id IN (SELECT value FROM json_each(?)) AND n.hidden_at IS NULL AND ${UNREAD}`).bind(user.id, JSON.stringify(tray)).all()).results.map((x) => x.id) : null;
+      return json({ unread: counts.unread, counts, ...(tu ? { tray_unread: tu } : {}) });
+    }
     const filter = { unread: UNREAD, urgent: 'n.urgent=1' }[url.searchParams.get('filter') || ''] || null;
     // „Ältere laden“: weiter nach dem letzten angezeigten Eintrag (before = Kennung), gleiche Sortierung – vorher waren nach den neuesten
     // 100 ältere ungelesene unerreichbar (23.10.2026, Rückkehr aus dem Urlaub mit 300 Hinweisen)

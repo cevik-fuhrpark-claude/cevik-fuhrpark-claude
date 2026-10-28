@@ -1371,6 +1371,8 @@ const V_MORE = [
   ['Rückfrage an sich selbst ist nicht möglich.', 'Уточнення самому собі неможливе.', 'You cannot ask yourself a question.'],
   ['Rückfrage nur an offenen Vorgängen.', 'Уточнення лише для відкритих заявок.', 'Questions are only possible on open cases.'],
   ['question: open oder answered.', 'question: open або answered.', 'question: open or answered.'],
+  ['Unbekannter Filter.', 'Невідомий фільтр.', 'Unknown filter.'],
+  ['Datum „fällig bis“ ungültig.', 'Недійсна дата «до терміну».', 'Invalid “due by” date.'],
 ];
 for (const [de, uk, en] of V_MORE) { VALIDATION_TEXTS.uk[de] = uk; VALIDATION_TEXTS.en[de] = en; }
 Object.assign(VALIDATION_TEXTS.uk, { cv_busy: 'Інші дефекти цієї перевірки вже в роботі ({v}) – транспорт виправити не можна. Відхиліть і повідомте заново для правильного транспорту.' });
@@ -2919,3 +2921,11 @@ Object.assign(STRINGS.en, { filter_open_items: 'Released, open items pending', w
 Object.assign(STRINGS.de, { wd_week: 'Meine Arbeitszeit in dieser Woche', wd_week_sum: 'Woche {a} – {b}, mit diesem Konto erfasst: {h} h (Tage ohne Eintrag: –)' });
 Object.assign(STRINGS.uk, { wd_week: 'Мій робочий час цього тижня', wd_week_sum: 'Тиждень {a} – {b}, внесено з цього облікового запису: {h} год (дні без запису: –)' });
 Object.assign(STRINGS.en, { wd_week: 'My working time this week', wd_week_sum: 'Week {a} – {b}, recorded with this account: {h} h (days without entries: –)' });
+// [CLAUDE] Backlog 504: Prüftermine „fällig bis“ (z. B. Monatsende des nächsten Monats) zusätzlich zur Warnfrist
+Object.assign(STRINGS.de, { mdueby_label: 'Fällig bis', mdueby_next: 'bis Ende nächsten Monats', mdueby_clear: 'nur Warnfrist', mdueby_hint: '„Überfällig + bald fällig“ und „Fällig, nicht eingeplant“ enthalten zusätzlich alle eingetragenen Fristen bis {d}.', mdueby_tab: 'Fällig bis {d}' });
+Object.assign(STRINGS.uk, { mdueby_label: 'Термін до', mdueby_next: 'до кінця наступного місяця', mdueby_clear: 'лише строк попередження', mdueby_hint: '«прострочено + скоро» і «Строк настав, не заплановано» додатково містять усі внесені строки до {d}.', mdueby_tab: 'Термін до {d}' });
+Object.assign(STRINGS.en, { mdueby_label: 'Due by', mdueby_next: 'by end of next month', mdueby_clear: 'warning period only', mdueby_hint: '“overdue + due soon” and “Due, not scheduled” also include all recorded deadlines up to {d}.', mdueby_tab: 'Due by {d}' });
+// [CLAUDE] Backlog 508: Abfahrtskontrolle heute bereits erfasst (z. B. auf einem zweiten Gerät)
+Object.assign(STRINGS.de, { dc_today_done: 'Für dieses Fahrzeug liegt heute bereits eine Abfahrtskontrolle vor ({t}, {r}). Nur erneut erfassen, wenn sich seitdem etwas geändert hat.', dc_today_ok: 'ohne Mangel', dc_today_def: 'mit Mangel' });
+Object.assign(STRINGS.uk, { dc_today_done: 'Для цього транспорту сьогодні вже є передрейсова перевірка ({t}, {r}). Вносьте повторно, лише якщо відтоді щось змінилося.', dc_today_ok: 'без дефектів', dc_today_def: 'з дефектом' });
+Object.assign(STRINGS.en, { dc_today_done: 'A departure check for this vehicle has already been recorded today ({t}, {r}). Only record it again if something has changed since then.', dc_today_ok: 'no defects', dc_today_def: 'with defect' });
