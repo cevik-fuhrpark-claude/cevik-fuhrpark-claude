@@ -215,10 +215,13 @@ export async function listCases(env, user, envName, query, meta = null) {
     // „worauf gewartet wird“ (letztes wait_parts, z. B. „bestellt bei Teile Nord“) – gleiche Angabe wie parts_wait_note der Liste
     const waitSql = `
       OR (c.status IN ('wartet_teile') AND ${inCols(["(SELECT e.note FROM case_events e WHERE e.case_id=c.id AND e.action IN ('wait_parts','parts_partial') ORDER BY e.created_at DESC LIMIT 1)"])})`;
-    const searchArgs = [...(costSql ? cv.flatMap((x) => [x, x]) : []), ...(partSql ? [...(partWs ? [user.workshop_site] : []), ...cv.flatMap((x) => [x, x, x])] : []), ...cv];
+    // Backlog 537 (Blickwinkel „Reifenplatzer nachts auf der Autobahn“): auch Ort laut Meldung und eingetragener Standort („A2“, „Rastplatz“)
+    const locSql = `
+      OR ${inCols(['c.location_note', 'c.vehicle_location'])}`;
+    const searchArgs = [...(costSql ? cv.flatMap((x) => [x, x]) : []), ...(partSql ? [...(partWs ? [user.workshop_site] : []), ...cv.flatMap((x) => [x, x, x])] : []), ...cv, ...cv.flatMap((x) => [x, x])];
     // früheres Kennzeichen des Fahrzeugs (Backlog 256): Rechnung/Gutachten nennt nach einer Umkennzeichnung oft noch das alte
     where.push(`((${wordSql.join(' AND ')}) OR instr(lower(c.case_no), lower(?)) > 0 OR instr(${PLATE_KEY_SQL('v.plate')}, ?) > 0
-      OR EXISTS (SELECT 1 FROM vehicle_plates vp WHERE vp.vehicle_id=c.vehicle_id AND instr(${PLATE_KEY_SQL('vp.plate')}, ?) > 0)${costSql}${partSql}${waitSql})`);
+      OR EXISTS (SELECT 1 FROM vehicle_plates vp WHERE vp.vehicle_id=c.vehicle_id AND instr(${PLATE_KEY_SQL('vp.plate')}, ?) > 0)${costSql}${partSql}${waitSql}${locSql})`);
     args.push(...wordArgs, q, plateKey.length >= 2 ? plateKey : '\u0000', plateKey.length >= 2 ? plateKey : '\u0000', ...searchArgs);
   }
   const limit = intParam(query.limit, 200, 1, query.__export ? 5000 : 500);

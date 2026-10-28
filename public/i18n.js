@@ -1372,6 +1372,7 @@ const V_MORE = [
   ['Rückfrage nur an offenen Vorgängen.', 'Уточнення лише для відкритих заявок.', 'Questions are only possible on open cases.'],
   ['question: open oder answered.', 'question: open або answered.', 'question: open or answered.'],
   ['Unbekannter Filter.', 'Невідомий фільтр.', 'Unknown filter.'],
+  ['Unbekannte Prüfart.', 'Невідомий вид перевірки.', 'Unknown inspection type.'],
   ['Datum „fällig bis“ ungültig.', 'Недійсна дата «до терміну».', 'Invalid “due by” date.'],
 ];
 for (const [de, uk, en] of V_MORE) { VALIDATION_TEXTS.uk[de] = uk; VALIDATION_TEXTS.en[de] = en; }
@@ -2580,9 +2581,10 @@ Object.assign(STRINGS.uk, { push_err_denied: 'Не вдалося увімкну
   home_site_hint_dispo: 'Попереднє значення фільтра «Локація» у списках (огляд, транспорт, заявки, план майстерні, терміни перевірок). Лише відображення – будь-коли можна вибрати «Усі».', dispo_winter_incomplete: 'Зимові шини – дані внесено не повністю' });
 Object.assign(STRINGS.en, { push_err_denied: 'Push could not be enabled: the browser does not allow it (e.g. private/incognito window or notifications blocked for this site). Please use a normal browser window or the installed app and allow notifications.', push_err_service: 'Push could not be enabled: the browser’s push service is currently unreachable. Please try again later.', push_err_state: 'Push could not be enabled: this device already has a different push registration. Reload the page and try again.', push_err_other: 'Push could not be enabled. Please reload the page and try again.',
   home_site_hint_dispo: 'Preset for the “Site” filter in the lists (overview, vehicles, cases, workshop plan, inspection dates). Display only – you can choose “All” at any time.', dispo_winter_incomplete: 'Winter tyres – recording incomplete' });
-Object.assign(STRINGS.de, { location_shown: 'Standort des Fahrzeugs' });
-Object.assign(STRINGS.uk, { location_shown: 'Місцезнаходження' });
-Object.assign(STRINGS.en, { location_shown: 'Vehicle location' });
+// Backlog 536: „Ort laut Meldung“ (vorher gleich beschriftet wie der eingetragene „Standort des Fahrzeugs“)
+Object.assign(STRINGS.de, { location_shown: 'Ort laut Meldung' });
+Object.assign(STRINGS.uk, { location_shown: 'Місце за повідомленням' });
+Object.assign(STRINGS.en, { location_shown: 'Location as reported' });
 
 // Backlog 200 (23.10.2026, Teilagent „Unfall nachts“): noch nicht gesendete Meldung/Kontrolle im Postausgang wirkt auf dem eigenen Gerät
 Object.assign(STRINGS.de, { outbox_veh_pending: 'Meldungen noch nicht gesendet: {n}', outbox_veh_crit: 'Gemeldet: kritisch / nicht fahrbereit – noch nicht gesendet. Nicht fahren, Disposition anrufen.' });
@@ -2959,3 +2961,11 @@ Object.assign(PLURALS.uk, { logout_failed_confirm: { one: '{n} повідомл�
   outbox_orphan_failed: { one: '{n} повідомлення від {name} відхилено сервером, воно є лише на цьому пристрої – {name} має увійти тут і перевірити його на головній сторінці (надіслати ще раз або видалити).', few: '{n} повідомлення від {name} відхилено сервером, вони є лише на цьому пристрої – {name} має увійти тут і перевірити їх на головній сторінці (надіслати ще раз або видалити).', many: '{n} повідомлень від {name} відхилено сервером, вони є лише на цьому пристрої – {name} має увійти тут і перевірити їх на головній сторінці (надіслати ще раз або видалити).' } });
 Object.assign(PLURALS.en, { logout_failed_confirm: { one: '{n} report was rejected by the server and is only stored on this device. Please open it on the start page first: copy the text, send again or discard. Sign out anyway?', other: '{n} reports were rejected by the server and are only stored on this device. Please open them on the start page first: copy the text, send again or discard. Sign out anyway?' },
   outbox_orphan_failed: { one: '{n} report from {name} was rejected by the server and is only stored on this device – {name} must sign in here and check it on the start page (send again or discard).', other: '{n} reports from {name} were rejected by the server and are only stored on this device – {name} must sign in here and check them on the start page (send again or discard).' } });
+// [CLAUDE] Backlog 536–540: liegengebliebenes Fahrzeug in Listen erkennbar, Foto-Stand im Notfall-Panel
+Object.assign(STRINGS.de, { cl_not_drivable: 'nicht fahrbereit (laut Meldung)', photos_done: '✓ Fotos übertragen' });
+Object.assign(STRINGS.uk, { cl_not_drivable: 'не може їхати (за повідомленням)', photos_done: '✓ Фото передано' });
+Object.assign(STRINGS.en, { cl_not_drivable: 'not drivable (as reported)', photos_done: '✓ Photos uploaded' });
+// [CLAUDE] Backlog 541–545: Prüftermine des Folgejahres planen (Prüfart, „bis Ende nächsten Jahres“, Durchführung vom geplanten Termin)
+Object.assign(STRINGS.de, { mkind_label: 'Prüfart', mdueby_year: 'bis Ende nächsten Jahres', mdone_from_plan: 'Datum vom geplanten Werkstatttermin übernommen – bitte prüfen.' });
+Object.assign(STRINGS.uk, { mkind_label: 'Вид перевірки', mdueby_year: 'до кінця наступного року', mdone_from_plan: 'Дату взято із запланованого терміну майстерні – будь ласка, перевірте.' });
+Object.assign(STRINGS.en, { mkind_label: 'Inspection type', mdueby_year: 'by end of next year', mdone_from_plan: 'Date taken from the planned workshop appointment – please check.' });

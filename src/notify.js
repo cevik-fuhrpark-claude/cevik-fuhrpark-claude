@@ -74,7 +74,10 @@ const DNP = new Set(LANGS.map((l) => T[l].do_not_plan));
 // neue Meldung“ endete auf „· niedrig“ ohne Grund). Nur feste Wörter – keine Schadensbeschreibung im Sperrbildschirm.
 const WHY_KEY = new Map(LANGS.flatMap((l) => ['nicht_fahrbereit', 'gesperrt'].map((k) => [T[l]['why_' + k], k])));
 export function urgentWhy(c, urgent, lang) {
-  if (!urgent || c.priority === 'kritisch') return '';
+  if (!urgent) return '';
+  // Backlog 538 (Blickwinkel „Reifenplatzer nachts auf der Autobahn“): bei „kritisch“ zusätzlich „nicht fahrbereit“ – nachts auf dem Sperrbildschirm
+  // unterscheidet das einen liegengebliebenen Lkw vom kritischen Mangel an einem fahrenden; „gesperrt“ bleibt bei kritisch weg (ergibt sich aus der Priorität)
+  if (c.priority === 'kritisch') return c.reported_driveability === 'nicht_fahrbereit' ? ' · ' + nt(lang, 'why_nicht_fahrbereit') : '';
   const k = c.safety_lock ? 'gesperrt' : c.reported_driveability === 'nicht_fahrbereit' ? 'nicht_fahrbereit' : null;
   return k ? ' · ' + nt(lang, 'why_' + k) : '';
 }

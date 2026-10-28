@@ -341,17 +341,26 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/maintenance$/)) && m === 'POST') return json(await veh.addMaintenanceRule(env, user, mm[1], await readJson(request)), 201);
   if (path === '/api/maintenance' && m === 'GET') {
     const ov = await maint.maintenanceOverview(env, user, envName, { site: url.searchParams.get('site') });
-    if (url.searchParams.get('format') === 'ics') {
-      await auth.audit(env, user.id, 'maintenance.export_ics', null, { rows: ov.rows.length, site: ov.site });
+    // Backlog 541/543: Prüfart (`kind`) für CSV und Kalender; der Kalender nimmt wie die CSV (Backlog 505) `filter`/`due_by` der Liste
+    const fmt = url.searchParams.get('format');
+    const kind = fmt ? url.searchParams.get('kind') : null;
+    if (kind !== null && kind !== '' && !veh.MAINT_KINDS.includes(kind)) throw new HttpError(400, 'validation', 'Unbekannte Prüfart.');
+    if (kind) { ov.rows = ov.rows.filter((r) => r.kind === kind); ov.gaps = []; }
+    if (fmt === 'ics') {
+      const filter = url.searchParams.get('filter'); const dueBy = url.searchParams.get('due_by') || null;
+      if (filter !== null && !maint.MAINT_FILTERS.includes(filter)) throw new HttpError(400, 'validation', 'Unbekannter Filter.');
+      if (dueBy !== null && (!/^\d{4}-\d{2}-\d{2}$/.test(dueBy) || Number.isNaN(Date.parse(dueBy + 'T00:00:00Z')))) throw new HttpError(400, 'validation', 'Datum „fällig bis“ ungültig.');
+      if (filter) ov.rows = maint.maintFilterRows(ov, filter, dueBy);
+      await auth.audit(env, user.id, 'maintenance.export_ics', null, { rows: ov.rows.length, site: ov.site, ...(filter ? { filter } : {}), ...(dueBy ? { due_by: dueBy } : {}), ...(kind ? { kind } : {}) });
       return new Response(maint.maintenanceIcs(ov, undefined, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.ics"` } });
     }
-    if (url.searchParams.get('format') === 'csv') {
+    if (fmt === 'csv') {
       // Backlog 505: optional Auswahl wie die Liste (`filter`, `due_by`); ohne `filter` wie bisher alle Einträge + Lücken
       const filter = url.searchParams.get('filter'); const dueBy = url.searchParams.get('due_by') || null;
       if (filter !== null && !maint.MAINT_FILTERS.includes(filter)) throw new HttpError(400, 'validation', 'Unbekannter Filter.');
       if (dueBy !== null && (!/^\d{4}-\d{2}-\d{2}$/.test(dueBy) || Number.isNaN(Date.parse(dueBy + 'T00:00:00Z')))) throw new HttpError(400, 'validation', 'Datum „fällig bis“ ungültig.');
       if (filter) { ov.rows = maint.maintFilterRows(ov, filter, dueBy); if (!['all', 'gaps'].includes(filter)) ov.gaps = []; }
-      await auth.audit(env, user.id, 'maintenance.export', null, { rows: ov.rows.length, gaps: ov.gaps.length, site: ov.site, ...(filter ? { filter } : {}), ...(dueBy ? { due_by: dueBy } : {}) });
+      await auth.audit(env, user.id, 'maintenance.export', null, { rows: ov.rows.length, gaps: ov.gaps.length, site: ov.site, ...(filter ? { filter } : {}), ...(dueBy ? { due_by: dueBy } : {}), ...(kind ? { kind } : {}) });
       return new Response(maint.maintenanceCsv(ov, await maint.latestResults(env)), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.csv"` } });
     }
     return json(ov);

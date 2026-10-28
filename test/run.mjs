@@ -18016,7 +18016,7 @@ await test('Urlaubsvertretung / Monatsplanung (Teilagenten 23.10.): Werkstattpla
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('${[7, 14, 30, 60].map((n) =>'), 'Plan bis 60 Tage');
   ok((app.match(/subs\(vsTag\(i\),/g) || []).length === 3, 'Standort in Auftrag, Prüftermin, fällig ohne Termin');
-  ok(app.includes("werkstattplan_${envFn()}_${bDate()}${site ? '_' + fnPart(site) : ''}${r.vehicle_site ? '_' + fnPart(r.vehicle_site) : ''}.ics") && app.includes("fuhrpark-prueftermine_${ov.today}${ov.site ? '_' + fnPart(ov.site) : ''}.ics"), 'ICS-Dateinamen mit Standort');
+  ok(app.includes("werkstattplan_${envFn()}_${bDate()}${site ? '_' + fnPart(site) : ''}${r.vehicle_site ? '_' + fnPart(r.vehicle_site) : ''}.ics") && app.includes("fuhrpark-prueftermine_${ov.today}${ov.site ? '_' + fnPart(ov.site) : ''}_${f}${dueBy ? '_bis-' + dueBy : ''}${mKind ? '_' + fnPart(mKind) : ''}.ics"), 'ICS-Dateinamen mit Standort');
   ok(app.includes('id="decdone"') && app.includes("!['offen', 'gesehen'].includes(m.decision_status) && m.decided_at"), 'Abschnitt zuletzt entschieden');
 });
 
@@ -18034,7 +18034,7 @@ await test('Springer / Auslesung / Datensicherung (Teilagenten 23.10.): Abfahrts
   const dep = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('async function viewDepartureCheck(') + 6000);
   ok(dep.includes("departureLockBox(vs.find((x) => x.id === id)") && dep.includes("v.availability === 'gesperrt' ? ' – ' + esc(t('locked'))"), 'Kontrolle zeigt Sperre aus der Fahrzeugliste');
   ok(dep.indexOf('showKnown();') < dep.indexOf("if (S.me.role === 'driver') api('GET', '/api/me/vehicles')"), 'Sperre auch für andere Rollen / vor „Meine Fahrzeuge“');
-  ok(app.includes("${extra}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);") && app.includes('if (lockedPage) {') && app.includes("photos_failed', failed) : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);"), 'Hinweis nach Senden und aus dem Postausgang');
+  ok(app.includes("${extra}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);") && app.includes('if (lockedPage) {') && app.includes("photos_failed', failed) : ''}${r.urgent_push_recipients === 0 ? ' · ⚠ ' + t('no_push_reach') : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked || r.urgent_push_recipients === 0);"), 'Hinweis nach Senden und aus dem Postausgang');
   // 2. Fahrzeugwechsel mit „Bisherige Zuordnung beenden“: Ende steht im Protokoll des alten Fahrzeugs
   eq((await U.fleet.post(`/api/vehicles/${V2}/drivers`, { user_id: U.driver.id })).status, 201);
   eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, end_previous: true })).status, 201);
@@ -18314,7 +18314,7 @@ await test('Anhänger abgestellt / Urlaubsrückkehr / neuer Standort (Teilagente
   eq(ap2.status, 200); eq(ap2.data.no_workshop_user, undefined, 'mit Konto kein Hinweis');
   // 6. App: Gespann-Sperre in der Kontrollantwort, Hinweis beim Außer-Betrieb-Nehmen, Filter ohne ruhende, „Ältere laden“, Standort-Schlüssel, Werkstatt-Vorauswahl
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("(r && r.coupled_locked ? ` · ${coupledLockedText(r.coupled_locked)}` : '')") && (app.match(/!!r\.vehicle_locked \|\| !!r\.coupled_locked\)/g) || []).length === 2, 'Kontrollantwort');
+  ok(app.includes("(r && r.coupled_locked ? ` · ${coupledLockedText(r.coupled_locked)}` : '')") && (app.match(/!!r\.vehicle_locked \|\| !!r\.coupled_locked( \|\| r\.urgent_push_recipients === 0)?\)/g) || []).length === 2, 'Kontrollantwort');
   ok(app.includes("t('trailer_deact_warn').replace('{list}'") && app.includes("const cLocked = (v) => !v.eval_excluded &&"), 'Anhänger');
   ok(app.includes('id="nmore"') && app.includes("before=${encodeURIComponent(last)}") && app.includes("api('GET', '/api/notifications?filter=' + (NF[S.inboxF] ? S.inboxF : 'unread'))"), 'Hinweise');
   ok(app.includes('const dk = siteKeyUi;') && app.includes('const sk = siteKeyUi;') && app.includes('byName.length === 1 ? byName[0] : null'), 'Standort');
@@ -18904,9 +18904,13 @@ await test('Backlog 201: Push „KRITISCH: neue Meldung“ bei Priorität niedri
     ok(/ · (nicht fahrbereit|не на ходу|not roadworthy|gesperrt|заблоковано|locked)( · TEST)?$/.test(r.body), 'Grund am Ende: ' + r.body); // Leitung meldet „nicht fahrbereit“ → Sperre
     ok(!r.body.includes('Achse'), 'keine Beschreibung');
   }
-  // Priorität „kritisch“: kein Zusatz (Titel und Priorität sagen es schon)
+  // Priorität „kritisch“: kein „gesperrt“ (ergibt sich aus der Priorität), aber „nicht fahrbereit“ (Backlog 538: liegengebliebener Lkw)
   const k = await users.fleet.post('/api/cases', { vehicle_id: VW, description: 'Grundtest kritisch', priority: 'kritisch', driveability: 'nicht_fahrbereit', request_key: rk() });
-  for (const r of env.DB.db.prepare(`SELECT body FROM notifications WHERE event_key LIKE ? AND kind='created'`).all(k.data.id + ':created:%')) ok(!/fahrbereit|на ходу|roadworthy/.test(r.body), 'kein Zusatz bei kritisch: ' + r.body);
+  const kb = env.DB.db.prepare(`SELECT body FROM notifications WHERE event_key LIKE ? AND kind='created'`).all(k.data.id + ':created:%'); ok(kb.length, 'Hinweise da');
+  for (const r of kb) ok(/(nicht fahrbereit|не на ходу|not roadworthy)( · TEST)?$/.test(r.body) && !/gesperrt|заблоковано|locked/.test(r.body), 'Zusatz bei kritisch: ' + r.body);
+  eq(urgentWhy({ priority: 'kritisch', safety_lock: 1, reported_driveability: 'fahrbereit' }, true, 'de'), '', 'kritisch + fahrbereit: kein Zusatz');
+  eq(urgentWhy({ priority: 'kritisch', safety_lock: 1, reported_driveability: 'nicht_fahrbereit' }, true, 'de'), ' · nicht fahrbereit');
+  eq(localizedBody({ kind: 'created', body: 'T-2026-0009 · SZ-YC 1 · kritisch · nicht fahrbereit' }, 'uk').endsWith(' · не на ходу'), true, 'Rückübersetzung bei kritisch');
   // Grundregel
   eq(urgentWhy({ priority: 'mittel', safety_lock: 1, reported_driveability: 'nicht_fahrbereit' }, true, 'en'), ' · locked');
   eq(urgentWhy({ priority: 'niedrig', reported_driveability: 'nicht_fahrbereit' }, true, 'uk'), ' · не на ходу');
@@ -21017,7 +21021,7 @@ await test('Backlog 282 (Blickwinkel „Inhaber fällt aus“): Einrichtungsstan
 await test('Backlog 283 (Blickwinkel „Sonntag 03:00“): nach dem Senden einer kritischen bzw. „nicht fahrbereit“-Meldung zeigt die App auch mit Netz den Anruf-Hinweis mit „Panne & Notfall“/112 und „Meldung öffnen“; Texte DE/UK/EN', async () => {
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].open_report, `${l}.open_report`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("if (sb.isConnected && (body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit')) {") && app.includes('data-sentcritical><p><b>${esc(t(\'report_sent\'))}: ${esc(r.case_no)}</b></p>') && app.includes("<p data-nopush><b>⚠ ${esc(t('no_push_reach'))}</b></p>` : ''}${callBox(body.vehicle_id)}"), 'Ergebnisseite');
+  ok(app.includes("const crit = body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit';") && app.includes("if (crit && sb.isConnected) {") && app.includes('data-sentcritical><p><b>${esc(t(\'report_sent\'))}: ${esc(r.case_no)}</b></p>') && app.includes("<p data-nopush><b>⚠ ${esc(t('no_push_reach'))}</b></p>` : ''}${callBox(body.vehicle_id)}"), 'Ergebnisseite');
   const ui = (await import('node:fs')).readFileSync(new URL('../scripts/ui-formularentwurf.py', import.meta.url), 'utf8'); ok(ui.includes('[data-sentcritical] [data-callbox]'), 'UI-Skript prüft den Hinweis');
 });
 
@@ -24256,7 +24260,8 @@ await test('Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile �
 
 await test('Backlog 449 (Blickwinkel „Lieferant liefert nur einen Teil der Bestellung“): „Teillieferung eingegangen“ – Status bleibt „wartet auf Teile“, Wartezeit läuft weiter, Vermerk „worauf noch gewartet wird“ in Liste/Suche/Vorgang, Rest-Liefertermin optional (zählt wie Terminänderung), kein Push, Rechte, DE/UK/EN', async () => {
   const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
-  const day = (n) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date(Date.now() + n * 864e5));
+  // Kalendertage in Berlin (zeitreise 28.10.2026: „jetzt − 24 h“ lag am Tag der Zeitumstellung 25.10. um 23:50 noch auf demselben Tag)
+  const day = bDayOff;
   const a = await toRepair();
   eq((await cmd(U.ws, a, 'parts_partial', {}, 'nur Bremsscheibe')).status, 403, 'nur im Status „wartet auf Teile“');
   eq((await cmd(U.ws, a, 'wait_parts', { parts_expected_date: day(3) }, 'Bremsscheiben + Beläge, bestellt bei Teile Nord')).status, 200);
@@ -25234,7 +25239,7 @@ await test('Backlog 504–506 (Blickwinkel „Prüftermine für den nächsten Mo
   const u = (await rows('&filter=all')).find((l) => l.includes(';UVV;')).split(';'); eq(u.at(-2), pd.split('-').reverse().join('.'), '505: Geplanter Werkstatttermin'); eq(u.at(-1), '', 'kein Auftrag');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const m0 = app.indexOf('async function viewMaint('); const vm = app.slice(m0, app.indexOf('\nasync function ', m0 + 10));
-  ok(vm.includes("`/api/maintenance?format=csv&filter=${encodeURIComponent(f)}${dueBy ? '&due_by=' + dueBy : ''}`"), '505: CSV mit Filter der Liste');
+  ok(vm.includes("`/api/maintenance?format=csv&filter=${encodeURIComponent(f)}${dueBy ? '&due_by=' + dueBy : ''}${mkQ}`"), '505: CSV mit Filter der Liste');
   ok(vm.includes("S.fromPlan = '#/maintenance'") && vm.includes("'?done=' + encodeURIComponent(r.id)") && vm.includes('!r.virtual'), '506: Sprung ins Formular, Rücksprung zur Liste');
   ok(vm.includes("f === 'due' ? inWin(r)") && vm.includes('new Date(Date.UTC(y, m + 1, 0))'), '504: Liste nutzt „fällig bis“');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['mdueby_label', 'mdueby_next', 'mdueby_clear', 'mdueby_hint', 'mdueby_tab']) ok(STRINGS[l][k], `${l}.${k}`);
@@ -25385,6 +25390,44 @@ await test('Backlog 532–535 (Blickwinkel „Neuer Fahrer, erster Arbeitstag mi
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const k of ['logout_offline', 'login_latin_hint', 'pw_show', 'pw_hide']) ok(STRINGS[l][k], `${l}.${k}`); for (const k of ['logout_failed_confirm', 'outbox_orphan_failed']) ok(PLURALS[l][k] && PLURALS[l][k][l === 'uk' ? 'many' : 'other'], `${l} Plural ${k}`); }
   ok(!/[Ѐ-ӿ]/.test(STRINGS.uk.login_latin_hint.match(/\(.*?\)/)[0].replace('напр.', '')), 'Beispiel im ukrainischen Hinweis lateinisch');
+});
+
+await test('Backlog 536–540 (Blickwinkel „Reifenplatzer nachts auf der Autobahn“): Ort laut Meldung eigen beschriftet und im Standort-Formular/der Akte, Suche findet den Ort, Liste mit „nicht fahrbereit“ + Ort, Push nennt „nicht fahrbereit“ auch bei kritisch, Notfall-Panel vor den Fotos, Warnung „niemand per Push“ beim späteren Senden', async () => {
+  const { U, V1 } = await freshWorld();
+  const c = await U.fleet.post('/api/cases', { vehicle_id: V1, description: 'Reifenplatzer vorne links', priority: 'kritisch', driveability: 'nicht_fahrbereit', location_note: 'A2 km 312 Ri. Hannover', request_key: 'rk-536-' + Date.now() });
+  eq(c.status, 201, JSON.stringify(c.data));
+  const s1 = await U.fleet.get('/api/cases?q=' + encodeURIComponent('km 312')); eq(s1.status, 200); ok(s1.data.cases.some((x) => x.id === c.data.id), '537: Suche über Ort laut Meldung');
+  const hit = s1.data.cases.find((x) => x.id === c.data.id); eq(hit.reported_driveability, 'nicht_fahrbereit'); eq(hit.location_note, 'A2 km 312 Ri. Hannover', 'Liste trägt Ort und Fahrbereitschaft');
+  const v = await U.fleet.get('/api/vehicles/' + encodeURIComponent(V1)); ok(v.data.cases.some((x) => x.id === c.data.id && x.location_note === 'A2 km 312 Ri. Hannover'), '536: Akte kennt den Ort laut Meldung');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].location_shown && STRINGS[l].location_shown !== STRINGS[l].vl_title, `${l}: Ort laut Meldung ≠ Standort des Fahrzeugs`); for (const k of ['cl_not_drivable', 'photos_done']) ok(STRINGS[l][k], `${l}.${k}`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("<b data-notdrv>${esc(t('cl_not_drivable'))}</b>") && app.includes('<span data-locnote>📍'), '537 Liste');
+  ok(app.includes('data-vlreported>') && app.includes("c.location_note ? `${esc(t('location_shown'))}: ${esc(c.location_note)}`"), '536 Formular/Akte');
+  ok(app.includes("const { failed, later } = files.length ? await uploadPhotosSafe('/api/cases', body, r, r.id, files, ph, who)") && app.indexOf('data-phstate') < app.indexOf("files, ph, who)"), '540 Panel vor dem Hochladen');
+  ok(app.includes("${r.urgent_push_recipients === 0 ? ' · ⚠ ' + t('no_push_reach') : ''}`, !!failed"), '539');
+});
+
+await test('Backlog 541–545 (Blickwinkel „UVV/Tachograph des Folgejahres im Dezember planen“): Prüfart-Auswahl für Liste/CSV/Kalender, Kalender mit Filter/„fällig bis“, Sammeltermin-Zeilen mit Fälligkeit/Anhänger, „bis Ende nächsten Jahres“, Durchführung vom geplanten Termin vorbelegt', async () => {
+  const { U, V1 } = await freshWorld();
+  const mk = async (kind, d) => { const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind, next_due_date: bDayOff(d), evidence: 'Beleg ' + kind }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  await mk('UVV', 40); await mk('Tachograph', 75); await mk('Ölwechsel', 10);
+  const csv = async (q) => { const r = await U.fleet.get('/api/maintenance?format=csv' + q); eq(r.status, 200, q); return new TextDecoder().decode(r.data).replace(/^﻿/, '').trim().split('\r\n').slice(1); };
+  const u = await csv('&filter=all&kind=UVV'); ok(u.length >= 1 && u.every((l) => l.includes(';UVV;')), '541 CSV nur UVV: ' + u.join(' | '));
+  const g = await csv('&kind=Tachograph'); ok(g.every((l) => l.includes(';Tachograph;')) && !g.some((l) => l.includes('kein Termin hinterlegt')), '541: mit Prüfart keine Lückenzeilen');
+  eq((await U.fleet.get('/api/maintenance?format=csv&kind=Kaffee')).status, 400, 'unbekannte Prüfart');
+  const ics = async (q) => { const r = await U.fleet.get('/api/maintenance?format=ics' + q); eq(r.status, 200, q); return typeof r.data === 'string' ? r.data : new TextDecoder().decode(r.data); };
+  const all = await ics(''); const n = (x) => (x.match(/BEGIN:VEVENT/g) || []).length;
+  const due = await ics('&filter=due&due_by=' + bDayOff(45)); ok(n(due) < n(all) && n(due) >= 2, `543: Kalender mit „fällig bis“ (${n(due)} von ${n(all)})`);
+  const onlyU = await ics('&filter=all&kind=UVV'); eq(n(onlyU), 1, '543 + 541: Kalender nur UVV');
+  eq((await U.fleet.get('/api/maintenance?format=ics&filter=xyz')).status, 400); eq((await U.fleet.get('/api/maintenance?format=ics&due_by=2026-02-31x')).status, 400);
+  eq((await U.fleet.get('/api/maintenance?kind=Kaffee')).status, 200, 'Liste (JSON) ignoriert kind wie bisher');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const mKind = S.maintKind && mKinds.includes(S.maintKind) ? S.maintKind : null;") && app.includes("${mkQ}` + msQ)") && (app.match(/\$\{mkQ\}` \+ msQ\)/g) || []).length === 2, '541 Oberfläche (CSV + Kalender)');
+  ok(app.includes("S.maintDueBy = `${Number(ov.today.slice(0, 4)) + 1}-12-31`"), '545');
+  ok(app.includes("value=\"${esc(m.planned_date && m.planned_date <= bDate() ? m.planned_date : bDate())}\"") && app.includes('data-mdoneplan'), '542');
+  ok(app.includes("${r.due_month ? ` · ${esc(t('due_until_end'))} ${esc(r.due_month)}` : r.next_due_date ? ` · ${fmtD(r.next_due_date)}` : ''}${!ov.site && r.site"), '544 Sammeltermin-Zeile');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['mkind_label', 'mdueby_year', 'mdone_from_plan']) ok(STRINGS[l][k], `${l}.${k}`);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
