@@ -25171,7 +25171,7 @@ await test('Backlog 489–494 (Blickwinkel „Kennzeichen in verschiedenen Schre
   ok(app.includes("const q = $('#afq') ? searchKey((S.afQ || '').trim()) : '';") && app.includes('afText.set(r, searchKey(r.textContent))'), '490: Befundsuche normalisiert');
   ok(app.includes("if (/^#\\/(new|check|v)\\/VIN:[A-Z0-9]+$/.test(h0)) { try { sessionStorage.setItem('cfp_after_login', h0); } catch {} } location.hash = '#/login';"), '492: Scan-Ziel bei Sitzungsablauf');
   const i0 = app.indexOf('async function viewScan('); const vsrc = app.slice(i0, app.indexOf('\n}\n', i0));
-  ok(vsrc.includes("await api('GET', '/api/vehicles/' + encodeURIComponent(id)); location.hash = '#/vehicles/' + id;") && vsrc.includes("location.hash = mayReport() ? '#/new' : '#/'"), '493: Scan außer Betrieb');
+  ok(vsrc.includes("catch (e) { if (e && e.status === 401) return; }") && vsrc.includes("await api('GET', '/api/vehicles/' + encodeURIComponent(id)); location.hash = '#/vehicles/' + id;") && vsrc.includes("location.hash = mayReport() ? '#/new' : '#/'"), '493: Scan außer Betrieb');
   ok(vsrc.includes("['werkstatt', 'meldung_offen'].includes(v.availability)") && vsrc.includes("t('av_' + v.availability)"), '494: Scan zeigt offene Meldung/Werkstatt');
   const { searchKey } = new Function('SK_CYR', app.slice(app.indexOf('const searchKey ='), app.indexOf('\n', app.indexOf('const searchKey ='))) + '\nreturn { searchKey };')(new Proxy({}, { get: (_, c) => c }));
   ok(searchKey('Befund SZ-YC 5513 (S-2026-1)').includes(searchKey('szyc 5513')), 'searchKey trifft Schreibweisen');
@@ -25191,6 +25191,29 @@ await test('Backlog 495–500 (Blickwinkel „Vorgang als Auftrag für eine Frem
   const pr = css.slice(css.indexOf('@media print {\n  :root')); ok(pr.slice(0, pr.indexOf('\n}\n')).includes('.thumbs figure.thumb figcaption span { white-space: normal !important;'), '497: Fotobeschriftung im Druck');
   ok(/const PRINT_OPEN = '[^']*#tirehistd/.test(app) && app.includes('<details class="panel" id="tirehistd">'), '498: Reifenverlauf im Druck');
   ok(app.includes("${days < 0 ? ` · <span data-mover>${esc(t('ms_ueberfaellig'))}</span>` : ''}"), '500: überfällig als Wort');
+});
+
+await test('Backlog 501–503 (Blickwinkel „Montag 7 Uhr: Master-Eingang abarbeiten“): „zuletzt entschieden“ verlinkt auch Ziele ohne Vorgang, „alle anzeigen“ bleibt nach gesehen/erledigt offen, „nicht zugestellt“ mit Vorgang trägt Fahrzeug und „Betroffen: Nr. (Kennzeichen)“', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test-Zuordnung' })).status, 201);
+  const id = await newCase({}, U.fleet);
+  eq((await cmd(U.fleet, id, 'set_safety_lock', {}, 'Spiegelhalter gebrochen')).status, 200);
+  eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+  const f = db.prepare(`SELECT id, case_id, vehicle_id, message, message_args, fingerprint FROM agent_findings WHERE finding_code='URGENT_NOT_DELIVERED' AND status='offen'`).get();
+  ok(f && f.case_id === id && f.vehicle_id === V1, '503: Fahrzeug gesetzt ' + JSON.stringify(f));
+  const cno = (await U.fleet.get(`/api/cases/${id}`)).data.case.case_no; const plate = (await U.fleet.get(`/api/vehicles/${V1}`)).data.vehicle.plate;
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  const args = JSON.parse(f.message_args || '{}').a;
+  for (const [l, w] of [['de', 'Betroffen'], ['uk', 'Стосується'], ['en', 'Affected']]) { const m = renderFindingMessage('URGENT_NOT_DELIVERED', args, l); ok(m.includes(`${w}: ${cno} (${plate})`), `${l}: ${m}`); }
+  ok(f.message.includes(`${cno} (${plate})`), 'gespeicherter Text');
+  const vf = (await U.fleet.get(`/api/vehicles/${V1}`)).data; ok((vf.agent_findings || []).some((x) => x.finding_code === 'URGENT_NOT_DELIVERED' || x.code === 'URGENT_NOT_DELIVERED'), 'in der Fahrzeugakte');
+  const nIn = db.prepare('SELECT COUNT(*) n FROM master_inbox').get().n;
+  eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+  eq(db.prepare('SELECT COUNT(*) n FROM master_inbox').get().n, nIn, 'zweiter Lauf: keine neue Übergabe');
+  eq(db.prepare(`SELECT fingerprint FROM agent_findings WHERE id=?`).get(f.id).fingerprint, f.fingerprint, 'Fingerabdruck unverändert');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("afLink(m.case_id, m.payload.finding_code, m.finding_subject) || (m.vehicle_id ? `<a href=\"#/vehicles/${esc(m.vehicle_id)}\">${esc(t('vehicle_file'))}</a>` : ''))") && !app.includes("${m.case_id ? ' · ' + afLink("), '501: Link ohne Vorgang');
+  ok(app.includes('if (!cached && !S.mDecKeep) S.mDecAll = false; S.mDecKeep = false;') && app.includes("S.mDecKeep = true; await viewMaster();"), '502: „alle anzeigen“ bleibt');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

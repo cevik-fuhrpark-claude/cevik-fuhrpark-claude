@@ -135,7 +135,7 @@ const BASICS_SQL = `SELECT
   (SELECT json_group_array(json_object('id', id, 'case_no', case_no, 'vehicle_id', vehicle_id, 'plate', plate, 'n', n)) FROM (SELECT c.id, c.case_no, c.vehicle_id, v.plate, COUNT(o.id) AS n
      FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.active=1 JOIN open_items o ON o.case_id=c.id AND o.status='offen'
      WHERE c.environment=?1 AND c.status='fahrzeug_freigegeben' GROUP BY c.id)) AS released_open,
-  (SELECT json_group_array(json_object('case_id', case_id, 'vehicle_id', vehicle_id, 'n', n, 'who', json(who),
+  (SELECT json_group_array(json_object('case_id', case_id, 'vehicle_id', COALESCE(vehicle_id, (SELECT x.vehicle_id FROM cases x WHERE x.id=case_id)), 'n', n, 'who', json(who),
      -- Bezeichnung für den gebündelten Befund (Backlog 194): Vorgang „Nr. (Kennzeichen)“ bzw. Kennzeichen des Fahrzeugs
      'label', CASE WHEN case_id IS NOT NULL THEN (SELECT x.case_no || ' (' || xv.plate || ')' FROM cases x JOIN vehicles xv ON xv.id=x.vehicle_id WHERE x.id=case_id)
        WHEN vehicle_id IS NOT NULL THEN (SELECT xv.plate FROM vehicles xv WHERE xv.id=vehicle_id) END)) FROM (SELECT q.cid AS case_id, MAX(q.vref) AS vehicle_id, COUNT(DISTINCT q.user_id) AS n,
@@ -392,8 +392,10 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         next_action: 'Empfänger telefonisch informieren; Push auf deren Geräten aktivieren.' });
     }
     for (const u of undelivered) {
-      add({ code: 'URGENT_NOT_DELIVERED', subject: u.case_id || (u.vehicle_id ? `vehicle:${u.vehicle_id}` : 'system'), case_id: u.case_id, ...(u.case_id || !u.vehicle_id ? {} : { vehicle_id: u.vehicle_id }), severity: 'handeln', owner_role: 'fleet',
-        ...fm('URGENT_NOT_DELIVERED', { n: u.n, who: undeliveredWho(u.who) }),
+      // Backlog 503 (Blickwinkel „Montag 7 Uhr: Master-Eingang abarbeiten“): auch mit Vorgang das Fahrzeug setzen (Akte, Zähler der Fahrzeugliste,
+      // Suche #/master?q=<Kennzeichen>) und „Betroffen: Nr. (Kennzeichen)“ nennen – Fingerabdruck unverändert (keine neue Übergabe)
+      add({ code: 'URGENT_NOT_DELIVERED', subject: u.case_id || (u.vehicle_id ? `vehicle:${u.vehicle_id}` : 'system'), case_id: u.case_id, ...(u.vehicle_id ? { vehicle_id: u.vehicle_id } : {}), severity: 'handeln', owner_role: 'fleet',
+        ...fm('URGENT_NOT_DELIVERED', { n: u.n, who: undeliveredWho(u.who), label: u.label || null }),
         next_action: 'Empfänger telefonisch informieren; Push auf deren Geräten aktivieren.' });
     }
 
