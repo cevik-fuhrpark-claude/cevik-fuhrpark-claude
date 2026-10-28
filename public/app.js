@@ -4167,6 +4167,15 @@ async function viewStockItem(id) {
     const b = { type: 'korrektur', qty: String(-it.on_hand), note: e.target.elements.namedItem('note').value.trim() }; b.request_key = rkFor(e.target, b);
     try { await api('POST', `/api/stock/${id}/movements`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
   $('#mf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } b.request_key = rkFor(e.target, b); try { await api('POST', `/api/stock/${id}/movements`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
+  // Backlog 480 (Blickwinkel „geteiltes Werkstatt-Tablet“): nach einem Versionskonflikt ist die Ansicht neu geladen – eigene Eingaben zurück ins
+  // Formular – nur die selbst geänderten Felder, die Änderung der anderen Person bleibt sichtbar und wird nicht still zurückgesetzt (vorher
+  // „Bitte neu laden“, jeder neue Versuch scheiterte am alten Stand; Neuladen verwarf die Eingaben)
+  if (S.stockLost && S.stockLost.id === id) {
+    const L = S.stockLost; S.stockLost = null; const f = $('#' + L.form); const dp = f && f.closest('details');
+    if (f) { for (const [k, v] of Object.entries(L.v)) { const el = f.elements.namedItem(k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; } if (dp) dp.open = true;
+      f.insertAdjacentHTML('afterbegin', `<div class="panel warn small" role="status" data-stocklost>${esc(t('case_conflict_kept'))}</div>`); dp && dp.scrollIntoView({ block: 'center' }); }
+  }
+  const stockConflict = (err, form, v, codes) => { if (!codes.includes(err.code)) return false; S.stockLost = { id, form, v }; viewStockItem(id); return true; };
   // Artikel-Stammdaten: alle Felder senden (leer = entfernen); Deaktivieren mit Restbestand nur nach Rückfrage
   $('#itedf').onsubmit = async (e) => { e.preventDefault(); const g = (k) => e.target.elements.namedItem(k);
     const b = { name: g('name').value, part_number: g('part_number').value, min_qty: g('min_qty').value, location: g('location').value, unit_price_net: g('unit_price_net').value, active: g('active').checked };
@@ -4177,10 +4186,10 @@ async function viewStockItem(id) {
     for (const k of Object.keys(b)) if (b[k] === was[k]) delete b[k];
     if (!Object.keys(b).length) { toast(t('item_unchanged')); return; }
     if (it.updated_at) b.expected_updated_at = it.updated_at;
-    try { const r = await api('PATCH', `/api/stock/${id}`, b); toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
+    try { const r = await api('PATCH', `/api/stock/${id}`, b); toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { if (!stockConflict(err, 'itedf', Object.fromEntries(Object.entries(b).filter(([k]) => k !== 'expected_updated_at')), ['version_conflict'])) toast(err.message, true); } };
   if ($('#of')) $('#of').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); for (const k of ['eta', 'note']) if (!b[k]) delete b[k];
-    try { await api('PUT', `/api/stock/${id}/order`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
-  if ($('#ordclr')) $('#ordclr').onclick = async () => { try { await api('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`); viewStockItem(id); } catch (err) { toast(err.message, true); } };
+    try { await api('PUT', `/api/stock/${id}/order`, b); viewStockItem(id); } catch (err) { if (!stockConflict(err, 'of', b, ['order_changed', 'stock_order_exists'])) toast(err.message, true); } };
+  if ($('#ordclr')) $('#ordclr').onclick = async () => { try { await api('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`); viewStockItem(id); } catch (err) { if (['order_changed', 'stock_order_exists'].includes(err.code)) { toast(err.message, true); viewStockItem(id); } else toast(err.message, true); } };
   if ($('#tf')) $('#tf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); if (!b.note) delete b.note; b.request_key = rkFor(e.target, b);
     try { const r = await api('POST', `/api/stock/${id}/transfer`, b); toast(t('transfer_done').replace('{q}', fmtNum(r.qty)).replace('{u}', unitL(it.unit)).replace('{w}', wsName(b.to_site)) + (r.target_created ? ' · ' + t('transfer_created') : '')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
 }

@@ -25040,6 +25040,23 @@ await test('Backlog 478/479 (Blickwinkel „geteiltes Werkstatt-Tablet“): Abme
   for (const f of ['few', 'many']) ok(PLURALS.uk.logout_drafts_confirm[f], 'uk ' + f);
 });
 
+await test('Backlog 480 (Blickwinkel „geteiltes Werkstatt-Tablet“): Lagerartikel/Bestellvermerk – Versionskonflikt lädt die Ansicht neu und setzt nur die eigenen geänderten Felder zurück ins Formular (Hinweis DE/UK/EN); Server weist den alten Stand weiter ab', async () => {
+  const { U } = await freshWorld();
+  const iid = (await U.ws.post('/api/stock', { name: 'Konfliktartikel', part_number: 'KA-1', min_qty: 2, location: 'Regal A', initial_qty: 3 })).data.id;
+  const it0 = (await U.ws.get('/api/stock/' + iid)).data.item;
+  eq((await U.fleet.patch('/api/stock/' + iid, { location: 'Regal B', expected_updated_at: it0.updated_at })).status, 200, 'B ändert');
+  const r = await U.ws.patch('/api/stock/' + iid, { min_qty: '5', expected_updated_at: it0.updated_at }); eq(r.status, 409); eq(r.data.code || r.data.error, 'version_conflict');
+  const it1 = (await U.ws.get('/api/stock/' + iid)).data.item;
+  eq((await U.ws.patch('/api/stock/' + iid, { min_qty: '5', expected_updated_at: it1.updated_at })).status, 200, 'zweiter Versuch auf neuem Stand');
+  const it2 = (await U.ws.get('/api/stock/' + iid)).data.item; eq(it2.min_qty, 5); eq(it2.location, 'Regal B', 'fremde Änderung bleibt');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("stockConflict(err, 'itedf', Object.fromEntries(Object.entries(b).filter(([k]) => k !== 'expected_updated_at')), ['version_conflict'])"), 'Stammdaten: nur geänderte Felder gemerkt');
+  ok(app.includes("stockConflict(err, 'of', b, ['order_changed', 'stock_order_exists'])"), 'Bestellvermerk');
+  ok(app.includes("data-stocklost>${esc(t('case_conflict_kept'))}"), 'Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].case_conflict_kept, l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

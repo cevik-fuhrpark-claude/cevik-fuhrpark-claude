@@ -285,6 +285,7 @@ UI-Offline-Postausgang (Fotos, Wiederholung, keine Verluste)|ui-postausgang.py|/
 UI-Offline-Postausgang abgewiesen (sichtbar, erneut senden, verwerfen)|ui-postausgang-abgewiesen.py|/tmp/cfp-postausgang-abgewiesen.log
 UI-Konflikt-Meldungen in der Sprache|ui-konfliktsprache.py|/tmp/cfp-konfliktsprache.log
 UI-Artikel-Stammdaten bearbeiten|ui-artikel-bearbeiten.py|/tmp/cfp-artikel-bearbeiten.log
+UI-Lagerartikel Versionskonflikt: Ansicht neu geladen, eigene Eingaben bleiben, fremde Änderung nicht zurückgesetzt, DE/UK/EN 390/820/1366|ui-lager-konflikt.py|/tmp/cfp-lager-konflikt.log
 UI-Dokumentsprache (html lang)|ui-html-lang.py|/tmp/cfp-htmllang.log
 UI-Start-Wächter (gemischte Module nach Deployment)|ui-startwaechter.py|/tmp/cfp-startwaechter.log
 UI-Langsames Netz (Seitenwechsel beim Hochladen, Fotos am Vorgang, Lagerbuchung)|ui-netz-seitenwechsel.py|/tmp/cfp-netz-seitenwechsel.log
