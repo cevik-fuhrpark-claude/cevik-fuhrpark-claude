@@ -9,7 +9,7 @@ with sync_playwright() as p:
     s=api('POST','/api/setup',{'setup_code':'test-setup-code-123','username':'mk.inhaber','display_name':'MK Inhaber'})
     api('POST','/api/invite/accept',{'token':s['d']['invite_token'],'password':PW}); api('POST','/api/login',{'username':'mk.inhaber','password':PW})
     vid=api('POST','/api/vehicles',{'plate':'DO-MK 1','vin':'WDB96340310776011','site':'Dortmund'})['d']['id']
-    for b in [{'kind':'Verbandkasten','next_due_date':'2027-03-31','evidence':'Ablaufdatum'},{'kind':'Ladebordwand','last_done_date':'2026-02-01','interval_months':12,'evidence':'Prüfbuch LBW'},{'kind':'Ladekran','next_due_date':'2026-12-31','evidence':'Kranbuch'}]:
+    for b in [{'kind':'Verbandkasten','next_due_date':'2027-03-31','evidence':'Ablaufdatum'},{'kind':'Ladebordwand','last_done_date':'2026-02-01','interval_months':12,'evidence':'Prüfbuch LBW'},{'kind':'Ladekran','next_due_date':'2026-12-31','evidence':'Kranbuch'},{'kind':'Sonstiges','title':'Kühlaggregat','last_done_date':'2026-01-15','interval_months':12,'evidence':'Wartungsheft'}]:
         r=api('POST',f'/api/vehicles/{vid}/maintenance',b); 
         if r['s']!=201: fails.append(('anlegen',b['kind'],r))
     for lang in ['de','uk','en']:
@@ -21,6 +21,10 @@ with sync_playwright() as p:
         txt=q.inner_text('main')
         for k in {'de':['Ladebordwand','Ladekran'],'uk':['Гідроборт','Кран-маніпулятор'],'en':['Tail lift','Loader crane']}[lang]:
             if k not in txt: fails.append((lang,w,'fehlt',k))
+        if ' – Kühlaggregat' not in txt: fails.append((lang,w,'Titel fehlt'))
+        # Formular „Prüftermin anlegen“: Titel nur bei „Sonstiges“ sichtbar und Pflicht (Backlog 577)
+        fv=q.evaluate("()=>{const f=document.getElementById('mf'); f.closest('details').open=true; const r=[]; for (const k of ['UVV','Sonstiges']) { f.kind.value=k; f.kind.dispatchEvent(new Event('change')); const ti=f.querySelector('#mftitle'); r.push([f.querySelector('[data-mftitle]').hidden, ti.required, ti.disabled]); } return r; }")
+        if fv!=[[True,False,True],[False,True,False]]: fails.append((lang,w,'Titelfeld',fv))
         n=q.evaluate("()=>document.querySelectorAll('[data-mdonenoint]').length")
         req=q.evaluate("()=>[...document.querySelectorAll('form[data-mdone]')].filter(f=>f.querySelector('input[name=next_due_date]')?.required).length")
         if n!=2 or req!=2: fails.append((lang,w,'hinweis',n,req))  # Verbandkasten + Ladekran ohne Intervall

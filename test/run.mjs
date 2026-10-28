@@ -22752,18 +22752,18 @@ await test('Backlog 382 (Blickwinkel „Betriebskontrolle/BG-Prüfung angekündi
   eq((await U.fleet.post(`/api/maintenance/${tg.data.id}/complete`, { done_date: day(-3), evidence: 'Prüfbescheinigung 7' })).status, 200);
   const csv = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv')).data).replace(/^\uFEFF/, '');
   const lines = csv.trim().split('\r\n'); const head = lines[0].split(';');
-  ok(head.at(-4) === 'Letztes Prüfergebnis' && head.at(-3) === 'Prüfmangel offen', head.join('|')); // Backlog 505: danach Werkstatttermin/Auftrag
+  ok(head.at(-5) === 'Letztes Prüfergebnis' && head.at(-4) === 'Prüfmangel offen', head.join('|')); // Backlog 505: danach Werkstatttermin/Auftrag, Backlog 577: Titel
   const cols = (l) => l.split(';').length; ok(lines.every((l) => cols(l) === head.length), 'gleiche Spaltenzahl');
   const de = (d) => d.split('-').reverse().join('.');
   const u = lines.find((l) => l.includes(';UVV;')).split(';');
-  ok(u.at(-4) === `verkehrsunsicher (${de(day(-6))})` && u.at(-3) === `verkehrsunsicher am ${de(day(-6))} – kein Mängelauftrag angelegt`, u.join('|'));
+  ok(u.at(-5) === `verkehrsunsicher (${de(day(-6))})` && u.at(-4) === `verkehrsunsicher am ${de(day(-6))} – kein Mängelauftrag angelegt`, u.join('|'));
   const t = lines.find((l) => l.includes(';Tachograph;')).split(';');
-  ok(t.at(-4) === `kein Ergebnis eingetragen (${de(day(-3))})` && t.at(-3) === '', t.join('|'));
+  ok(t.at(-5) === `kein Ergebnis eingetragen (${de(day(-3))})` && t.at(-4) === '', t.join('|'));
   ok(lines.some((l) => l.includes('kein Termin hinterlegt')), 'Lückenzeilen weiter da');
   // Mängelauftrag angelegt → kein „kein Mängelauftrag angelegt“ mehr
   const ord = await U.fleet.post('/api/cases', { vehicle_id: V1, description: 'UVV-Mängel beheben', priority: 'kritisch', driveability: 'nicht_fahrbereit', workshop_site: 'DORTMUND', request_key: rk() }); eq(ord.status, 201);
   const csv2 = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv')).data);
-  const u2 = csv2.split('\r\n').find((l) => l.includes(';UVV;')).split(';'); eq(u2.at(-3), '', 'Auftrag angelegt'); ok(u2.at(-4).startsWith('verkehrsunsicher'), 'Ergebnis bleibt sichtbar');
+  const u2 = csv2.split('\r\n').find((l) => l.includes(';UVV;')).split(';'); eq(u2.at(-4), '', 'Auftrag angelegt'); ok(u2.at(-5).startsWith('verkehrsunsicher'), 'Ergebnis bleibt sichtbar');
 });
 await test('Backlog 383/384 (Blickwinkel „Betriebskontrolle/BG-Prüfung angekündigt“): Fahrer-CSV nennt fehlende Fahrerkarte/Code 95 als „nicht erfasst“ (Status unverändert), Auslesungs-CSV listet Fahrer ohne Fahrerkarte, Auslesungsverlauf listet aktive Fahrer/Lkw ohne jede Auslesung als „keine Auslesung erfasst – Frist ungeklärt“ (ohne Lückentage); Texte DE/UK/EN', async () => {
   const { U, V1 } = await freshWorld();
@@ -25234,14 +25234,14 @@ await test('Backlog 504–506 (Blickwinkel „Prüftermine für den nächsten Mo
   const a = await mk('UVV', 40); await mk('Tachograph', 75);
   const rows = async (q) => { const r = await U.fleet.get('/api/maintenance?format=csv' + q); eq(r.status, 200); return new TextDecoder().decode(r.data).replace(/^﻿/, '').trim().split('\r\n'); };
   const all = await rows(''); ok(all.some((l) => l.includes(';UVV;')) && all.some((l) => l.includes(';Tachograph;')) && all.some((l) => l.includes('kein Termin hinterlegt')), 'ohne Filter wie bisher');
-  ok(all[0].endsWith(';Letztes Prüfergebnis;Prüfmangel offen;Geplanter Werkstatttermin;Werkstattauftrag (Nr.)'), all[0]);
+  ok(all[0].endsWith(';Letztes Prüfergebnis;Prüfmangel offen;Geplanter Werkstatttermin;Werkstattauftrag (Nr.);Titel'), all[0]); // Backlog 577: Titel am Ende
   const due = await rows('&filter=due'); ok(!due.some((l) => l.includes(';UVV;')) && !due.some((l) => l.includes('kein Termin hinterlegt')), '504: ohne „fällig bis“ nur Warnfrist, keine Lücken');
   const by = await rows('&filter=due&due_by=' + bDayOff(45)); ok(by.some((l) => l.includes(';UVV;')) && !by.some((l) => l.includes(';Tachograph;')), '504: fällig bis +45 enthält UVV (+40), nicht Tachograph (+75)');
   eq((await U.fleet.get('/api/maintenance?format=csv&filter=xyz')).status, 400); eq((await U.fleet.get('/api/maintenance?format=csv&filter=due&due_by=2026-13-45')).status, 400);
   const gaps = await rows('&filter=gaps'); ok(gaps.length > 1 && gaps.slice(1).every((l) => l.includes('kein Termin hinterlegt')), 'gaps: nur Lückenzeilen');
   const pd = bDayOff(20); const pb = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: pd, ids: [a] }); eq(pb.status, 200, JSON.stringify(pb.data));
   const np = await rows('&filter=noplan&due_by=' + bDayOff(45)); ok(!np.some((l) => l.includes(';UVV;')), '505: eingeplant → nicht in „fällig, nicht eingeplant“');
-  const u = (await rows('&filter=all')).find((l) => l.includes(';UVV;')).split(';'); eq(u.at(-2), pd.split('-').reverse().join('.'), '505: Geplanter Werkstatttermin'); eq(u.at(-1), '', 'kein Auftrag');
+  const u = (await rows('&filter=all')).find((l) => l.includes(';UVV;')).split(';'); eq(u.at(-3), pd.split('-').reverse().join('.'), '505: Geplanter Werkstatttermin'); eq(u.at(-2), '', 'kein Auftrag');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const m0 = app.indexOf('async function viewMaint('); const vm = app.slice(m0, app.indexOf('\nasync function ', m0 + 10));
   ok(vm.includes("`/api/maintenance?format=csv&filter=${encodeURIComponent(f)}${dueBy ? '&due_by=' + dueBy : ''}${mkQ}`"), '505: CSV mit Filter der Liste');
@@ -25787,6 +25787,26 @@ await test('Backlog 576: Prüftermin ohne Intervall (z. B. Verbandkasten mit Abl
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("const need = !['HU', 'SP'].includes(m.kind) && !m.interval_months && !m.interval_km && !!m.next_due_date;") && app.includes("name=\"next_due_date\"${need ? ' required' : ''}>") && app.includes("t(need ? 'documented_due_req' : 'documented_due')"), 'Formular');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].documented_due_req && STRINGS[l].documented_due_req !== STRINGS[l].documented_due, 'Pflicht-Beschriftung ' + l);
+});
+
+await test('Backlog 577 (Migration 0095): Titel je Prüftermin „Sonstiges“ – bleibt beim „erledigt“ erhalten, Sammelanlage erkennt denselben Titel (Groß/klein egal) auch nach dem Erledigen, Titel nur bei „Sonstiges“, Übersicht/CSV mit Titel, Formular DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld(); const VV = encodeURIComponent(V1);
+  const a = await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'Sonstiges', title: 'Kühlaggregat', last_done_date: bDayOff(-300), interval_months: 12, evidence: 'Wartungsheft' }); eq(a.status, 201, JSON.stringify(a.data));
+  eq((await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'UVV', title: 'x', evidence: 'y' })).status, 400, 'Titel nur bei Sonstiges');
+  eq((await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'Sonstiges', title: 'x'.repeat(81), evidence: 'y' })).status, 400, 'max. 80 Zeichen');
+  eq((await U.fleet.post(`/api/maintenance/${a.data.id}/complete`, { done_date: bDayOff(0), evidence: 'Bericht 4711' })).status, 200);
+  const m = (await U.fleet.get(`/api/vehicles/${VV}`)).data.maintenance.find((x) => x.id === a.data.id); eq(m.title, 'Kühlaggregat', 'Titel bleibt'); eq(m.evidence, 'Bericht 4711');
+  const b1 = await U.fleet.post('/api/maintenance/create-batch', { kind: 'Sonstiges', title: 'kühlaggregat', evidence: 'anderer Text', vehicle_ids: [V1] }); eq(b1.status, 200, JSON.stringify(b1.data)); eq(b1.data.created.length, 0, 'gleicher Titel → schon angelegt'); eq(b1.data.unchanged, 1);
+  const b2 = await U.fleet.post('/api/maintenance/create-batch', { kind: 'Sonstiges', title: 'Ladebordwand Zusatz', evidence: 'Wartungsheft', vehicle_ids: [V1] }); eq(b2.data.created.length, 1, 'anderer Titel → neu');
+  const b3 = await U.fleet.post('/api/maintenance/create-batch', { kind: 'Sonstiges', evidence: 'Bericht 4711', vehicle_ids: [V1] }); eq(b3.data.created.length, 1, 'ohne Titel: Termine mit Titel zählen nicht als gleich');
+  const b4 = await U.fleet.post('/api/maintenance/create-batch', { kind: 'Sonstiges', evidence: 'Bericht 4711', vehicle_ids: [V1] }); eq(b4.data.unchanged, 1, 'ohne Titel wie bisher über den Nachweis');
+  eq((await U.fleet.post('/api/maintenance/create-batch', { kind: 'Bremsen', title: 'x', evidence: 'y', vehicle_ids: [V1] })).status, 400);
+  const ov = (await U.fleet.get('/api/maintenance')).data; ok(ov.rows.some((r) => r.id === a.data.id && r.title === 'Kühlaggregat'), 'Übersicht');
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/maintenance?format=csv')).data).split(/\r?\n/);
+  ok(csv[0].endsWith(';Titel'), 'CSV-Spalte am Ende'); ok(csv.some((l) => l.includes('Bericht 4711') && l.endsWith(';Kühlaggregat')), 'CSV-Wert');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['rule_title', 'rule_title_ph', 'rule_title_hint']) ok(STRINGS[l][k], k + ' ' + l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const mkR = (r) => mk(r.kind) + (r && r.title ? ' – ' + r.title : '');") && app.includes('<tr><td>${esc(mkR(m))}</td>') && app.includes("ti.disabled = !o; ti.required = o;") && app.includes("...($('#mck').value === 'Sonstiges' && $('#mct').value.trim() ? { title: $('#mct').value.trim() } : {})"), 'Oberfläche');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

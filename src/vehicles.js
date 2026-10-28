@@ -943,6 +943,7 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   if (!v) throw notFound();
   const kind = oneOf(body.kind, MAINT_KINDS, 'Art');
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
+  const title = ruleTitle(kind, body.title);
   // ganze Zahlen (19.10.2026: „1,5“ Monate wurde still zu 2 – Frist verschoben; der Import weist das schon ab)
   const months = body.interval_months ? num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate' }) : null;
   const km = body.interval_km ? num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', grouped: true }) : null;
@@ -978,10 +979,10 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
     return conflict('rule_exists', 'Für dieses Fahrzeug gibt es bereits einen Prüftermin dieser Art – bitte den vorhandenen bearbeiten bzw. „erledigt“ erfassen.', r ? { rule_id: r.id } : undefined);
   };
   if (single && await env.DB.prepare('SELECT 1 FROM maintenance_rules WHERE vehicle_id=? AND kind=? LIMIT 1').bind(vehicleId, kind).first()) throw await ruleExists();
-  const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,km_basis_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, husp ? null : months, km, lastDate, lastKm, dueKm, nextDue, evidence, user.id, now, now, dueSource,
+  const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,km_basis_at,title)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, husp ? null : months, km, lastDate, lastKm, dueKm, nextDue, evidence, user.id, now, now, dueSource,
       // letzte Durchführung vor einem km-Rücksprung (Tachotausch): km vom alten Zähler → km-Fälligkeit bleibt „ungeklärt“ (18.10.2026)
-      lastDate ? kmBasisForDone(parseKmDrop((await env.DB.prepare(`SELECT ${KM_DROP_SQL('?')} AS d`).bind(vehicleId).first() || {}).d), lastDate, null, now) : now)];
+      lastDate ? kmBasisForDone(parseKmDrop((await env.DB.prepare(`SELECT ${KM_DROP_SQL('?')} AS d`).bind(vehicleId).first() || {}).d), lastDate, null, now) : now, title)];
   if (single) stmts.push(env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN COUNT(*) <= 1 THEN 1 ELSE 0 END FROM maintenance_rules WHERE vehicle_id=? AND kind=?`).bind(vehicleId, kind), env.DB.prepare('DELETE FROM cmd_guard'));
   if (lastDate) stmts.push(maintEventStmt(env, { rule_id: id, vehicle_id: vehicleId, kind, done_date: lastDate, done_km: lastKm, evidence, source: 'erfasst', user_id: user.id }));
   try { await env.DB.batch(stmts); } catch (e) { if (single && String(e && e.message).includes('CHECK')) throw await ruleExists(); throw e; }
@@ -1054,11 +1055,18 @@ export async function planMaintenanceBatch(env, user, body) {
 // Übersprungen und einzeln gemeldet: unbekannt, außer Betrieb, ruhend (aus Bewertungen ausgenommen), Art schon vorhanden (je Fahrzeug nur
 // ein Eintrag dieser Art). Bei „Sonstiges“ gilt derselbe Nachweistext am selben Fahrzeug als bereits angelegt (erneutes Senden → unverändert).
 export const CREATE_BATCH_MAX = 200;
+// Titel je Prüftermin (Backlog 577): nur bei „Sonstiges“ (mehrere Termine je Fahrzeug), höchstens 80 Zeichen; leer = ohne Titel
+export function ruleTitle(kind, raw) {
+  const t = str(raw, { max: 80, field: 'Titel' });
+  if (t && kind !== 'Sonstiges') throw bad('validation', 'Ein Titel ist nur bei der Prüfart „Sonstiges“ vorgesehen.');
+  return t || null;
+}
 export async function addMaintenanceRuleBatch(env, user, body) {
   if (!isManager(user)) throw forbidden();
   const kind = oneOf(body.kind, MAINT_KINDS, 'Art');
   if (kind === 'HU' || kind === 'SP' || ONE_TIME_KINDS.includes(kind)) throw bad('validation', 'HU/SP und Rückrufe bitte je Fahrzeug bzw. über „Rückrufe importieren“ anlegen.');
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
+  const title = ruleTitle(kind, body.title);
   const months = body.interval_months ? num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate' }) : null;
   const km = body.interval_km ? num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', grouped: true }) : null;
   if ((months !== null && !Number.isInteger(months)) || (km !== null && !Number.isInteger(km))) throw bad('validation', 'Intervall als ganze Zahl angeben.');
@@ -1070,8 +1078,9 @@ export async function addMaintenanceRuleBatch(env, user, body) {
   const ids = [...new Set(raw)];
   const single = !MULTI_RULE_KINDS.includes(kind);
   // vorhandener Eintrag: bei Einzelarten jede gleiche Art, bei „Sonstiges“ nur derselbe Nachweistext (gleiche Aktion)
-  const SAME = `SELECT 1 FROM maintenance_rules m WHERE m.vehicle_id=%V AND m.kind=?${single ? '' : ' AND m.evidence=?'}`;
-  const sameArgs = single ? [kind] : [kind, evidence];
+  // Backlog 577: mit Titel gilt der Titel als Kennung (der Nachweis wird beim „erledigt“ überschrieben), ohne Titel wie bisher der Nachweis
+  const SAME = `SELECT 1 FROM maintenance_rules m WHERE m.vehicle_id=%V AND m.kind=?${single ? '' : title ? ' AND lower(m.title)=lower(?)' : ' AND m.title IS NULL AND m.evidence=?'}`;
+  const sameArgs = single ? [kind] : [kind, title || evidence];
   const rows = (await env.DB.prepare(`SELECT v.id, v.plate, v.active, v.eval_excluded, EXISTS(${SAME.replace('%V', 'v.id')}) AS has FROM vehicles v WHERE v.id IN (SELECT value FROM json_each(?))`)
     .bind(...sameArgs, JSON.stringify(ids)).all()).results || [];
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -1091,9 +1100,9 @@ export async function addMaintenanceRuleBatch(env, user, body) {
     const j = (k) => `json_extract(j.value,'$.${k}')`;
     await env.DB.batch([
       // Doppelschutz im selben INSERT (zwei gleichzeitige Klicks/Tabs): nur Fahrzeuge ohne passenden Eintrag
-      env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,km_basis_at)
-        SELECT ${j('id')}, ${j('vehicle_id')}, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ? FROM json_each(?) j WHERE NOT EXISTS (${SAME.replace('%V', j('vehicle_id'))})`)
-        .bind(kind, months, km, nextDue || null, evidence, user.id, now, now, nextDue ? 'nachweis' : 'berechnet', now, JSON.stringify(todo.map(({ id, vehicle_id }) => ({ id, vehicle_id }))), ...sameArgs),
+      env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,km_basis_at,title)
+        SELECT ${j('id')}, ${j('vehicle_id')}, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ? FROM json_each(?) j WHERE NOT EXISTS (${SAME.replace('%V', j('vehicle_id'))})`)
+        .bind(kind, months, km, nextDue || null, evidence, user.id, now, now, nextDue ? 'nachweis' : 'berechnet', now, title, JSON.stringify(todo.map(({ id, vehicle_id }) => ({ id, vehicle_id }))), ...sameArgs),
       // Protokoll je angelegtem Eintrag (Ziel = Fahrzeug)
       env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) SELECT ${j('a')}, ?, 'maintenance.rule_add', ${j('vehicle_id')}, json_object('kind', ?, 'rule_id', ${j('id')}, 'batch', json('true')${nextDue ? ", 'next_due_date', ?" : ''}), ?
         FROM json_each(?) j WHERE EXISTS (SELECT 1 FROM maintenance_rules m WHERE m.id=${j('id')})`)
