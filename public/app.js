@@ -5585,6 +5585,7 @@ async function viewMaint(fq) {
   const inp = $('#mimp');
   // Lückenzeilen aus dem eigenen Export (nicht ausgefüllt) getrennt und zugeklappt – sonst verdecken sie die echten Hinweise
   const GAP_ROW = 'Kein Termin eingetragen – Zeile bleibt unverändert';
+  // Backlog 589: bei „Prüfart unbekannt“ die erlaubten Arten nennen (Spalte „Art“ erwartet den deutschen Namen bzw. einen Alias, Rückrufe eigener Import)
   const skipList = (list, title, open) => (list.length ? `<details ${open ? 'open' : ''}><summary>${esc(title)} (${list.length})</summary><ul class="small">${list.map((x) => `<li>${esc(t('line'))} ${x.line}${x.plate ? ' · ' + esc(x.plate) : ''}: ${esc(reasonText(x.reason))}</li>`).join('')}</ul></details>` : '');
   if (inp) inp.onchange = async () => {
     const file = inp.files[0]; if (!file) return;
@@ -5593,7 +5594,7 @@ async function viewMaint(fq) {
       const box = $('#mimpr'); if (!box) return;
       box.innerHTML = `<p><b>${esc(applied ? '✓' : t('preview'))}</b> · ${esc(t('ia_neu'))}: ${r.created} · ${esc(t('ia_aktualisiert'))}: ${r.updated} · ${esc(t('ia_unverändert'))}: ${r.unchanged} · ${esc(t('skipped'))}: ${r.skipped.length}</p>
         ${r.rows.length ? `<div class="scroll"><table><thead><tr><th>${esc(t('line'))}</th><th></th><th>${esc(t('kind'))}</th><th>${esc(t('next_due'))}</th><th></th></tr></thead><tbody>${r.rows.map((x) => `<tr><td>${x.line}</td><td style="white-space:nowrap">${esc(x.plate)}</td><td>${esc(mk(x.kind))}</td><td>${x.next_due_date || !x.next_due_km ? fmtD(x.next_due_date) : ''}${x.next_due_basis === 'berechnet' ? ` <span class="small muted">${esc(t('db_berechnet'))}</span>` : ''}${x.previous_due_date && x.previous_due_date !== x.next_due_date ? ` <span class="small muted">(${fmtD(x.previous_due_date)})</span>` : ''}${x.next_due_km ? `${x.next_due_date ? '<br>' : ''}<span>${esc(t('due_at_km'))} ${fmtKm(x.next_due_km)}</span>${x.previous_due_km && x.previous_due_km !== x.next_due_km ? ` <span class="small muted">(${fmtKm(x.previous_due_km)})</span>` : ''}` : ''}</td><td><span class="chip ${x.action === 'neu' ? 'ok' : x.action === 'aktualisiert' ? 'mittel' : ''}">${esc(t('ia_' + x.action))}</span></td></tr>`).join('')}</tbody></table></div>` : ''}
-        ${skipList(r.skipped.filter((x) => x.reason !== GAP_ROW), t('skipped'), !applied)}${skipList(r.skipped.filter((x) => x.reason === GAP_ROW), t('imp_gap_rows'), false)}
+        ${skipList(r.skipped.filter((x) => x.reason !== GAP_ROW), t('skipped'), !applied)}${skipList(r.skipped.filter((x) => x.reason === GAP_ROW), t('imp_gap_rows'), false)}${r.skipped.some((x) => /^Prüfart unbekannt: /.test(x.reason || '')) ? `<p class="small" data-impkinds>${esc(t('imp_kinds_allowed'))}: ${(S.meta.maintenance_kinds || []).filter((k) => k !== 'Rückruf').map((k) => esc(k) + (mk(k) !== k ? ' (' + esc(mk(k)) + ')' : '')).join(', ')}</p>` : ''}
         ${!applied && (r.created || r.updated) ? `<div class="actions"><button type="button" class="btn" id="mapply">${esc(t('apply_import'))}</button></div>` : ''}`;
       const ap = $('#mapply');
       if (ap) ap.onclick = async () => { ap.disabled = true; try { const done = await api('POST', '/api/maintenance/import', text, { headers: { 'content-type': 'text/csv' } }); toast('✓'); await viewMaint(); show(done, true); } catch (err) { ap.disabled = false; toast(err.message, true); } };

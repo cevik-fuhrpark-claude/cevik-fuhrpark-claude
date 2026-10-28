@@ -25934,6 +25934,18 @@ await test('Backlog 586 (Folge aus 585, Stichprobe Ukrainisch/Russisch): Hinweis
   for (const [n, [pos, neg]] of Object.entries(T)) { const re = R(n); for (const x of pos) ok(re.test(x), `${n} erwartet: ${x}`); for (const x of neg) ok(!re.test(x), `${n} nicht: ${x}`); }
 });
 
+await test('Backlog 589: Prüftermin-Import nennt bei „Prüfart unbekannt“ die möglichen Arten (deutscher Name für die Spalte „Art“, Übersetzung dahinter, ohne Rückruf); neue Arten aus 583 per Import', async () => {
+  const { U, V1 } = await freshWorld();
+  const plate = (await U.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.vehicle?.plate;
+  const csv = ['Kennzeichen;FIN;Art;Fällig;Zuletzt;Intervall Monate;Nachweis', `${plate};;Luftballon;2027-01-01;;;Beleg`, `${plate};;Kühlaggregat;2027-04-30;;;Wartungsnachweis`, `${plate};;ATP;2029-06-30;;;ATP-Bescheinigung`].join('\n');
+  const r = await U.fleet.req('POST', '/api/maintenance/import?dry_run=1', csv, { 'content-type': 'text/csv' }); eq(r.status, 200, JSON.stringify(r.data));
+  ok(r.data.skipped.some((x) => x.reason === 'Prüfart unbekannt: Luftballon'), 'unbekannte Art');
+  eq(r.data.rows.map((x) => x.kind).sort().join(','), 'ATP-Bescheinigung,Kühlgerät', 'Aliase der neuen Arten');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("/^Prüfart unbekannt: /.test(x.reason || '')") && app.includes('data-impkinds') && app.includes(".filter((k) => k !== 'Rückruf').map((k) => esc(k) + (mk(k) !== k"), 'Liste in der Vorschau');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].imp_kinds_allowed && STRINGS[l].imp_kinds_allowed.includes('Art'), 'Text ' + l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

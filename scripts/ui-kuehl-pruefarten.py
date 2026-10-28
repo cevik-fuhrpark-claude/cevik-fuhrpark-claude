@@ -1,4 +1,4 @@
-# [CLAUDE] UI-Test (28.10.2026): Backlog 583 (Kühlauflieger: Prüfarten Kühlgerät, ATP, Temperaturschreiber). Braucht einen frischen Dev-Server (scripts/dev-server.mjs).
+# [CLAUDE] UI-Test (28.10.2026): Backlog 583/589 (Kühlauflieger: Prüfarten Kühlgerät, ATP, Temperaturschreiber). Braucht einen frischen Dev-Server (scripts/dev-server.mjs).
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL', 'http://localhost:8787'); PW='Sicheres-Passwort-2026'; SH=os.environ.get('CFP_SHOTS') or '/tmp'
@@ -28,6 +28,16 @@ with sync_playwright() as p:
         if q.evaluate('document.documentElement.scrollWidth')>w: fails.append((lang,w,'sw'))
         if errs: fails.append((lang,w,errs[:1]))
         if w==390: q.screenshot(path=f'{SH}/m583_{lang}.png', full_page=True)
+        # Backlog 589: Import-Vorschau nennt bei „Prüfart unbekannt“ die möglichen Arten
+        q.goto(B+'/#/maintenance'); q.wait_for_selector('#mimp',state='attached',timeout=30000)
+        q.set_input_files('#mimp', files=[{'name':'p.csv','mimeType':'text/csv','buffer':'Kennzeichen;FIN;Art;Fällig;Zuletzt;Intervall Monate;Nachweis\nDO-KP 1;;Luftballon;2027-01-01;;;Beleg\n'.encode('utf-8')}])
+        q.wait_for_selector('[data-impkinds]',timeout=20000); kt=q.inner_text('[data-impkinds]')
+        for k in ['Kühlgerät','ATP-Bescheinigung','Temperaturschreiber','Ladebordwand']:
+            if k not in kt: fails.append((lang,w,'Importliste fehlt',k))
+        if 'Rückruf' in kt: fails.append((lang,w,'Rückruf in Importliste'))
+        if lang!='de' and L[lang][1] not in kt: fails.append((lang,w,'Übersetzung fehlt',L[lang][1]))
+        if q.evaluate('document.documentElement.scrollWidth')>w: fails.append((lang,w,'sw import'))
+        if w==390: q.screenshot(path=f'{SH}/m589_{lang}.png')
         ctx.close()
     br.close()
 print('FEHLER' if fails else 'alles grün', fails)
