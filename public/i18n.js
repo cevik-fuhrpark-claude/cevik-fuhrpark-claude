@@ -2941,3 +2941,7 @@ Object.assign(STRINGS.en, { rws_choose: '– choose new workshop –', rws_drop_
 Object.assign(STRINGS.de, { tires_winter_prog: 'Lkw mit erfüllter Winterbereifung laut Erfassung: {ok} von {n}' });
 Object.assign(STRINGS.uk, { tires_winter_prog: 'Вантажівки з виконаними зимовими вимогами за записами: {ok} з {n}' });
 Object.assign(STRINGS.en, { tires_winter_prog: 'Trucks meeting the winter tyre requirement as recorded: {ok} of {n}' });
+// [CLAUDE] Backlog 522/523: „Heute zu tun“ – Schlüssel/Fahrzeugschein fehlt bei der Werkstatt; Kommentar-Empfänger „Fuhrparkleitung / Inhaber“
+Object.assign(STRINGS.de, { todo_handover: 'Werkstatt: Schlüssel/Fahrzeugschein fehlt', nt_fleet_owner: 'Fuhrparkleitung / Inhaber' });
+Object.assign(STRINGS.uk, { todo_handover: 'Майстерня: бракує ключа/техпаспорта', nt_fleet_owner: 'Керівник автопарку / власник' });
+Object.assign(STRINGS.en, { todo_handover: 'Workshop: key/registration document missing', nt_fleet_owner: 'Fleet manager / owner' });

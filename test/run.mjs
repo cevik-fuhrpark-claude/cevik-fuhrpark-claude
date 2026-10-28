@@ -25322,6 +25322,17 @@ await test('Backlog 517–521 (Blickwinkel „Kosten je Fahrzeug zum Jahresende�
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].tires_winter_prog.includes('{ok}') && STRINGS[l].tires_winter_prog.includes('{n}'), l);
 });
 
+await test('Backlog 522/523 (Blickwinkel „Leitung im Urlaub, Inhaber vertritt am Handy“): „Heute zu tun“ nennt fehlenden Schlüssel/Fahrzeugschein bei der Werkstatt, Kommentar-Empfänger heißt „Fuhrparkleitung / Inhaber“', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const id = await toRepair();
+  const r = await cmd(U.ws, id, 'set_handover', { keys: 'fehlt', papers: 'da' }); eq(r.status, 200, JSON.stringify(r.data));
+  const c = (await U.fleet.get('/api/cases?status=open&limit=500')).data.cases.find((x) => x.id === id); eq(c.handover_keys, 'fehlt', 'Liste trägt Übergabe für „Heute zu tun“');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("['todo_handover', cs.filter((c) => hoMissing(c).length)"), '522');
+  ok(app.includes("['fleet', t('nt_fleet_owner')], ['workshop'"), '523');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['todo_handover', 'nt_fleet_owner']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
