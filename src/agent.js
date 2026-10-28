@@ -439,20 +439,20 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       // km-Fälligkeit (belegt oder aus Intervall + letzter Durchführung in km) – nur mit belegtem km-Stand
       const k = kmDue(r, latestKm.get(r.vehicle_id), warnKm);
       if (k && k.km_status === 'ueberfaellig') add({ code: 'MAINTENANCE_OVERDUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-        ...fm('MAINT_KM_OVERDUE', { plate: r.plate, kind: r.kind, due: k.next_due_km, km: k.current_km, date: berlinDateTime(k.km_measured_at).slice(0, 10) }), next_action: planned ? 'Geplanten Termin wahrnehmen; Einsatzfähigkeit fachlich prüfen.' : 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
+        ...fm('MAINT_KM_OVERDUE', { plate: r.plate, kind: r.kind, title: r.title || null, due: k.next_due_km, km: k.current_km, date: berlinDateTime(k.km_measured_at).slice(0, 10) }), next_action: planned ? 'Geplanten Termin wahrnehmen; Einsatzfähigkeit fachlich prüfen.' : 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
       else if (k && k.km_status === 'faellig') add({ code: 'MAINTENANCE_DUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-        ...fm('MAINT_KM_DUE', { plate: r.plate, kind: r.kind, due: k.next_due_km, km: k.current_km, rest: k.km_remaining }), next_action: planned ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
+        ...fm('MAINT_KM_DUE', { plate: r.plate, kind: r.kind, title: r.title || null, due: k.next_due_km, km: k.current_km, rest: k.km_remaining }), next_action: planned ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
       // km-Zähler nach der letzten Änderung der Regel gesunken (Tachotausch o. Ä.): Fälligkeit nach km ungeklärt statt falscher Restlaufleistung
       else if (k && k.km_status === 'ungeklaert' && k.km_unclear === 'counter_drop') add({ code: 'INSPECTION_UNCLEAR', subject: `${r.id}|km|zaehler`, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-        ...fm('MAINT_KM_UNCLEAR', { plate: r.plate, kind: r.kind, date: berlinDateTime(k.km_drop_at).slice(0, 10) }), next_action: 'Durchführung mit km-Stand des neuen Zählers erfassen oder km-Fälligkeit mit Nachweis neu eintragen.' });
+        ...fm('MAINT_KM_UNCLEAR', { plate: r.plate, kind: r.kind, title: r.title || null, date: berlinDateTime(k.km_drop_at).slice(0, 10) }), next_action: 'Durchführung mit km-Stand des neuen Zählers erfassen oder km-Fälligkeit mit Nachweis neu eintragen.' });
       if (r.kind === 'HU' || r.kind === 'SP') continue; // HU/SP: zentrale Berechnung nach StVZO Anlage VIII (unten)
       const due = r.next_due_date;
       if (!due) continue;
       const days = Math.round((Date.parse(due) - Date.parse(today)) / 86400000);
       if (days < 0) add({ code: 'MAINTENANCE_OVERDUE', subject: r.id, vehicle_id: r.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-        ...fm('MAINT_DATE_OVERDUE', { plate: r.plate, kind: r.kind, days: -days, due }), next_action: planned ? 'Geplanten Termin wahrnehmen; Einsatzfähigkeit fachlich prüfen.' : 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
+        ...fm('MAINT_DATE_OVERDUE', { plate: r.plate, kind: r.kind, title: r.title || null, days: -days, due }), next_action: planned ? 'Geplanten Termin wahrnehmen; Einsatzfähigkeit fachlich prüfen.' : 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
       else if (days <= warnDays) add({ code: 'MAINTENANCE_DUE', subject: r.id, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-        ...fm('MAINT_DATE_DUE', { plate: r.plate, kind: r.kind, due, days }), next_action: planned ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
+        ...fm('MAINT_DATE_DUE', { plate: r.plate, kind: r.kind, title: r.title || null, due, days }), next_action: planned ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
     }
 
     // HU/SP nach StVZO Anlage VIII: gespiegelte Fälligkeiten aktualisieren (nur Betrieb-Lauf, protokolliert) und Befunde bilden

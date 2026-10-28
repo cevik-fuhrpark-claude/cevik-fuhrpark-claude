@@ -25840,6 +25840,22 @@ await test('Backlog 579: Prüftermin bearbeiten (Titel, Intervall mit Neuberechn
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("${isMgr() && !['HU', 'SP'].includes(m.kind) ? maintEditHtml(m) : ''}") && app.includes("$$('form[data-mend]').forEach((fm) => (fm.onsubmit = async (e) =>"), 'Oberfläche');
 });
 
+await test('Backlog 578: „Art – Titel“ auch in Agentenbefunden (MAINT_*), Kalendereinträgen und der Kurzinfo zum Fahrzeug im Vorgang; ohne Titel unverändert', async () => {
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  eq(renderFindingMessage('MAINT_DATE_DUE', { plate: 'A-1', kind: 'Sonstiges', title: 'Kühlaggregat', due: '2026-11-05', days: 8 }, 'de'), 'A-1: Sonstiges – Kühlaggregat fällig am 2026-11-05 (in 8 Tagen).');
+  eq(renderFindingMessage('MAINT_DATE_DUE', { plate: 'A-1', kind: 'UVV', title: null, due: '2026-11-05', days: 8 }, 'de'), 'A-1: UVV fällig am 2026-11-05 (in 8 Tagen).');
+  for (const l of ['uk', 'en']) ok(renderFindingMessage('MAINT_DATE_OVERDUE', { plate: 'A-1', kind: 'Sonstiges', title: 'Kühlaggregat', due: '2026-10-01', days: 3 }, l).includes(' – Kühlaggregat'), l);
+  const agent = (await import('node:fs')).readFileSync(new URL('../src/agent.js', import.meta.url), 'utf8'); eq((agent.match(/kind: r\.kind, title: r\.title \|\| null,/g) || []).length, 5, 'alle fünf MAINT-Befunde');
+  const { maintenanceIcs } = await import('../src/maintenance.js');
+  const ics = maintenanceIcs({ rows: [{ id: 'r1', vehicle_id: 'V9', kind: 'Sonstiges', title: 'Kühlaggregat', next_due_date: '2026-12-31', plate: 'T-X 1', date_status: 'ok', evidence: 'x' }, { id: 'r2', vehicle_id: 'V9', kind: 'UVV', next_due_date: '2026-12-30', plate: 'T-X 1', date_status: 'ok', evidence: 'y' }] }, undefined, 'de');
+  ok(ics.includes('SUMMARY:Sonstiges – Kühlaggregat fällig – T-X 1') && ics.includes('SUMMARY:UVV fällig – T-X 1'), ics.split('\n').filter((l) => l.startsWith('SUMMARY')).join(' | '));
+  const { e, U, V1 } = await freshWorld(); const VV = encodeURIComponent(V1);
+  eq((await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'Sonstiges', title: 'Kühlaggregat', next_due_date: bDayOff(10), evidence: 'Heft' })).status, 201);
+  const c = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'Kühlung schwach', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }); eq(c.status, 201);
+  const d = (await U.fleet.get(`/api/cases/${c.data.id}`)).data; ok(d.vehicle_info && d.vehicle_info.inspections_due.some((m) => m.title === 'Kühlaggregat'), JSON.stringify(d.vehicle_info && d.vehicle_info.inspections_due));
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('vi.inspections_due.map((m) => `${esc(mkR(m))} '), 'Kurzinfo');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

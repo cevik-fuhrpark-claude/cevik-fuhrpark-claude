@@ -822,7 +822,7 @@ export function maintenanceIcs(ov, stamp = new Date().toISOString(), lang = 'de'
   // ein erneuter Import ersetzt den Termin statt ihn zu verdoppeln; berechnete Zeile ohne leeren „Nachweis:“ (20.10.2026)
   // erledigter Rückruf: gespeicherte Frist zählt nicht mehr (wie Übersicht/Agent; 20.10.2026)
   const uidOf = (r) => (r.kind === 'HU' || r.kind === 'SP' ? `husp-${r.vehicle_id}-${r.kind}` : r.id);
-  const events = ov.rows.filter((r) => r.next_due_date && r.date_status !== 'erledigt').map((r) => ({ uid: uidOf(r), date: r.next_due_date, summary: I.tx('maint_due', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
+  const events = ov.rows.filter((r) => r.next_due_date && r.date_status !== 'erledigt').map((r) => ({ uid: uidOf(r), date: r.next_due_date, summary: I.tx('maint_due', { kind: I.kind(r.kind) + (r.title ? ' – ' + r.title : ''), plate: r.plate || r.vehicle_id }), /* Backlog 578: Titel bei „Sonstiges“ */
     description: (r.virtual ? I.tx('maint_desc_calc') : I.tx('maint_desc', { evidence: r.evidence === HUSP_RULE_EVIDENCE ? I.tx('ev_husp_rule') : icsEv(r.evidence) })) + (r.last_done_date ? ' · ' + I.tx('maint_last', { d: I.d(r.last_done_date) }) : ''), alarm: `${I.kind(r.kind)} ${r.plate || ''}`, alarmDays: ov.warn_days }));
   // geplante Werkstatttermine (ab heute) als eigene Termine ohne Erinnerung – nur gespeicherte Plan-Daten, nichts berechnet
   const today = ov.today || berlinDate();
