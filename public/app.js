@@ -974,7 +974,7 @@ async function workshopBoard() {
   // Kosten über der Freigabegrenze: vor größeren weiteren Arbeiten Freigabe der Fuhrparkleitung abwarten
   const costWait = open.filter((c) => c.cost_over_limit_at);
   if (costWait.length) lanes.unshift(['cost_approval_pending', costWait]);
-  const partsDue = open.filter((c) => c.status === 'wartet_teile' && c.parts_expected_date && c.parts_expected_date <= bDate(1));
+  const partsDue = open.filter((c) => c.status === 'wartet_teile' && c.parts_expected_date && c.parts_expected_date <= bDate(1)).sort((a, b) => a.parts_expected_date.localeCompare(b.parts_expected_date) || dayOrder(a, b)); // Backlog 525: überschrittene zuerst
   if (partsDue.length) lanes.unshift(['ws_parts_due', partsDue]);
   if (passed.length) lanes.unshift(['todo_plan_passed', passed]);
   // wie die verlinkte Liste (repeat_days=3) inkl. Vorab-Info („gemeldet“ mit Vorschlag dieser Werkstatt) – vorher zählte die Startseite n, die Liste n+1 (20.10.2026)
@@ -4102,7 +4102,8 @@ async function viewStockReceipt() {
 // dieser Werkstatt im Status „wartet auf Teile“ mit ihrem Vermerk zeigen – nennt der Vermerk den Lieferanten, einen gelieferten Artikel oder
 // dessen Teilenummer, steht der Auftrag oben mit Kennzeichnung. Reine Textübereinstimmung, keine Zuordnung, nichts wird automatisch gebucht.
 async function rcptWaiting(site, supplier, got) {
-  let cs; try { cs = (await api('GET', '/api/cases?status=open')).cases; } catch { return; }
+  // Backlog 524: nur „wartet auf Teile“ dieser Werkstatt abfragen (vorher erste 200 offene aller Standorte → wartende konnten fehlen)
+  let cs; try { cs = (await api('GET', `/api/cases?status=wartet_teile&ws=${encodeURIComponent(site)}&limit=500`)).cases; } catch { return; }
   const box = $('#rcres'); if (!box || !$('#rcdone')) return;
   const w = cs.filter((c) => c.status === 'wartet_teile' && c.workshop_site === site);
   if (!w.length) return;
@@ -4111,7 +4112,7 @@ async function rcptWaiting(site, supplier, got) {
   const hit = (c) => { const n = low(c.parts_wait_note); const np = pn(c.parts_wait_note); return !!n && keys.some((x) => (x.k ? n.includes(x.k) : np.includes(x.p))); };
   const rows = w.map((c) => ({ c, m: hit(c), d: partsWaitDays(c) })).sort((a, b) => (b.m - a.m) || ((b.d || 0) - (a.d || 0)));
   box.insertAdjacentHTML('beforeend', `<section class="panel" id="rcwait"><h3>${esc(t('rcw_title'))} <span class="chip">${rows.length}</span></h3><p class="small muted">${esc(t('rcw_hint').replace('{a}', t('act_resume_repair')).replace('{b}', t('act_parts_partial')))}</p>
-    <ul>${rows.map(({ c, m, d }) => `<li${m ? ' data-rcwhit' : ''}><a href="#/cases/${esc(c.id)}">${esc(c.case_no)} · ${esc(c.plate)}</a>${m ? ` <span class="chip mittel">${esc(t('rcw_match'))}</span>` : ''}<div class="small">${c.parts_wait_note ? `${esc(t('parts_wait_for'))}: ${ltxt(clipTxt(c.parts_wait_note, 120))}` : `<span class="muted">${esc(t('rcw_no_note'))}</span>`}${d ? ` · ${esc(t('parts_wait_days').replace('{d}', nDays(d)))}` : ''}</div></li>`).join('')}</ul></section>`);
+    <ul>${rows.map(({ c, m, d }) => `<li${m ? ' data-rcwhit' : ''}><a href="#/cases/${esc(c.id)}">${esc(c.case_no)} · ${esc(c.plate)}</a>${m ? ` <span class="chip mittel">${esc(t('rcw_match'))}</span>` : ''}<div class="small">${c.parts_wait_note ? `${esc(t('parts_wait_for'))}: ${ltxt(clipTxt(c.parts_wait_note, 120))}` : `<span class="muted">${esc(t('rcw_no_note'))}</span>`}${d ? ` · ${esc(t('parts_wait_days').replace('{d}', nDays(d)))}` : ''}${partsEta(c)}</div></li>`).join('')}</ul></section>`); // Backlog 524: Liefertermin
 }
 
 // Backlog 443: „Wo noch verbaut?“ an einer Teilenummer im Vorgang – belegt die Suche der Teile-Verwendung vor (vor dem Seitenwechsel)

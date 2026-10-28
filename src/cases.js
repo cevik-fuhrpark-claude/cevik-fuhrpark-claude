@@ -309,14 +309,14 @@ const CLAIM_DE = { gemeldet: 'gemeldet', in_pruefung: 'in Prüfung', reguliert: 
 // workshopNames (optional): Map Werkstatt-Code → Name (20.10.2026: CSV zeigte „MUENCHEN“ statt „Werkstatt München“)
 export function casesCsv(rows, csvCell, fmt, claims = null, workshopNames = null) {
   const head = ['Vorgang', 'Kennzeichen', 'Standort', 'Priorität', 'Status', 'Sicherheitssperre', 'Fahrbereit laut Meldung', 'Werkstatt', 'Beschreibung', 'Gemeldet am', 'Gemeldet von',
-    'Eingang bestätigt', 'Werkstatt übernommen', 'Abgeschlossen', 'Offene Restarbeiten', 'Fotos/Dateien', 'Werkstatttermin', ...(claims ? ['Versicherungsfall', 'Versicherer', 'Schadennummer', 'Kostenfreigabe ausstehend'] : []), 'Herkunft', 'Dublette von', 'Wiedervorlage', 'Schadenzeitpunkt laut Meldung'];
+    'Eingang bestätigt', 'Werkstatt übernommen', 'Abgeschlossen', 'Offene Restarbeiten', 'Fotos/Dateien', 'Werkstatttermin', ...(claims ? ['Versicherungsfall', 'Versicherer', 'Schadennummer', 'Kostenfreigabe ausstehend'] : []), 'Herkunft', 'Dublette von', 'Wiedervorlage', 'Schadenzeitpunkt laut Meldung', 'Teile erwartet am', 'Wartet auf (Vermerk)'] // Backlog 526: Nachfassen beim Lieferanten;
   const lines = [head.join(';')];
   for (const c of rows) {
     const k = claims && claims.get(c.id);
     lines.push([csvCell(c.case_no), csvCell(c.plate), csvCell(c.vehicle_site), PRIO_DE[c.priority] || c.priority, CASE_STATUS_DE[c.status] || csvCell(c.status), c.safety_lock ? 'ja' : 'nein',
       DRV_DE[c.reported_driveability] || csvCell(c.reported_driveability), csvCell((workshopNames && workshopNames.get(c.workshop_site)) || c.workshop_site), csvCell(caseDescText(c.description, 'de')), fmt(c.created_at), csvCell(c.reporter_name_hidden ? 'Fahrer/in (Name ausgeblendet)' : c.reporter_name), fmt(c.fleet_received_at), fmt(c.workshop_ack_at), fmt(c.closed_at),
       c.open_items ?? '', c.file_count ?? '', c.planned_date ? c.planned_date.split('-').reverse().join('.') : '',
-      ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), quoteCell(csvCell(k ? k.claim_no : '')), c.cost_over_limit_at && OPEN_STATUSES.includes(c.status) ? 'ja' : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no), c.followup_on ? csvCell(c.followup_on.split('-').reverse().join('.') + (c.followup_note ? ' – ' + c.followup_note : '')) : '', csvCell(occurredCsv(c.occurred_at))].join(';'));
+      ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), quoteCell(csvCell(k ? k.claim_no : '')), c.cost_over_limit_at && OPEN_STATUSES.includes(c.status) ? 'ja' : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no), c.followup_on ? csvCell(c.followup_on.split('-').reverse().join('.') + (c.followup_note ? ' – ' + c.followup_note : '')) : '', csvCell(occurredCsv(c.occurred_at)), c.status === 'wartet_teile' && c.parts_expected_date ? c.parts_expected_date.split('-').reverse().join('.') : '', c.status === 'wartet_teile' ? csvCell(c.parts_wait_note) : ''].join(';'));
   }
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
