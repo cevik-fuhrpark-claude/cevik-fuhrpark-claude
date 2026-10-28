@@ -25919,6 +25919,20 @@ await test('Backlog 585 (Folge aus 580, Blickwinkel „Diktat/Tippfehler“): Hi
   for (const [n, [pos, neg]] of Object.entries(T)) { const re = R(n); for (const x of pos) ok(re.test(x), `${n} erwartet: ${x}`); for (const x of neg) ok(!re.test(x), `${n} nicht: ${x}`); }
 });
 
+await test('Backlog 586 (Folge aus 585, Stichprobe Ukrainisch/Russisch): Hinweise erkennen Verb-zuerst-Sätze (Не працює задній ліхтар, Висить бризковик), Мастило тече, Сідло (Sattelkupplung), Бортовий пристрій/Toll Collect червоний und Поліція оштрафувала – ohne Fehlalarme', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const R = (n) => new RegExp(app.match(new RegExp(`const ${n} = \\/(.+)\\/i;`))[1], 'i');
+  const T = {
+    LIGHTS_HINT: [['Не працює задній ліхтар', 'Не горить фара'], ['Ліхтар працює', 'Не працює кондиціонер']],
+    LEAK_HINT: [['Мастило тече'], []],
+    COUPLING_HINT: [['Сідло не закривається', 'Седло не закрывается'], ['Сідло водія зламане']],
+    TOLL_HINT: [['Бортовий пристрій червоний', 'Toll Collect червоний'], []],
+    ROADCHK_HINT: [['Поліція оштрафувала'], []],
+    LOOSE_HINT: [['Висить бризковик', 'Відірвався бризковик', 'Відпав бампер'], ['Бризковик замінили']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const re = R(n); for (const x of pos) ok(re.test(x), `${n} erwartet: ${x}`); for (const x of neg) ok(!re.test(x), `${n} nicht: ${x}`); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
