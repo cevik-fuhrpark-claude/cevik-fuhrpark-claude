@@ -1012,6 +1012,54 @@ export async function planMaintenance(env, user, ruleId, body) {
 // anderer Termin ab heute (nur mit `replace` ersetzt – vorher überschrieb ein Sammeltermin bestehende Absprachen still). HU/SP ohne eigenen
 // Eintrag (`husp:…`) einzeln in der Fahrzeugakte einplanen (Eintrag wird dort erst angelegt). Kein Termin entfernen über diesen Weg.
 export const PLAN_BATCH_MAX = 200;
+// Backlog 579 (Blickwinkel „Ladebordwand/Ladekran“): Prüftermin bearbeiten bzw. beenden (nur Inhaber/Fuhrparkleitung, protokolliert).
+// Bearbeiten: Titel (nur „Sonstiges“), Intervall Monate (nicht HU/SP/Rückruf; leer = ohne Intervall), Bezeichnung/Nachweis. Eine berechnete
+// Fälligkeit (letzte Durchführung + Intervall) wird mit dem neuen Intervall neu berechnet; eine Fälligkeit laut Nachweis bleibt unverändert.
+// Beenden (z. B. Kran abgebaut): Fälligkeit, Intervalle und geplanter Termin entfallen, die Durchführungen bleiben im Verlauf; Begründung Pflicht.
+// Ohne Durchführungen und Aufträge darf ein Eintrag ganz entfernt werden (Tippfehler beim Anlegen). HU/SP: Frist rechnet die App – hier nicht.
+async function ruleForEdit(env, user, ruleId) {
+  if (!isManager(user)) throw forbidden();
+  const r = await env.DB.prepare(`SELECT m.*, (SELECT COUNT(*) FROM maintenance_events e WHERE e.rule_id=m.id) AS n_events,
+      (SELECT COUNT(*) FROM cases c WHERE c.maintenance_rule_id=m.id) AS n_cases,
+      (SELECT COUNT(*) FROM cases c WHERE c.maintenance_rule_id=m.id AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS n_open
+    FROM maintenance_rules m WHERE m.id=?`).bind(ruleId).first();
+  if (!r) throw notFound();
+  if (r.kind === 'HU' || r.kind === 'SP') throw bad('validation', 'HU/SP-Fristen berechnet die App nach StVZO – hier nicht bearbeitbar.');
+  return r;
+}
+export async function editMaintenanceRule(env, user, ruleId, body) {
+  const r = await ruleForEdit(env, user, ruleId);
+  const ch = {};
+  if ('title' in body) ch.title = ruleTitle(r.kind, body.title);
+  if ('evidence' in body) ch.evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
+  if ('interval_months' in body) {
+    if (ONE_TIME_KINDS.includes(r.kind) && body.interval_months) throw bad('validation', 'Rückruf ist eine einmalige Aktion – kein Intervall angeben.');
+    const mo = body.interval_months === null || String(body.interval_months).trim() === '' ? null : num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate' });
+    if (mo !== null && !Number.isInteger(mo)) throw bad('validation', 'Intervall als ganze Zahl angeben.');
+    ch.interval_months = mo;
+    // berechnete Fälligkeit neu (Nachweis-Fälligkeit bleibt); ohne Intervall bleibt die bisherige Fälligkeit stehen
+    if (r.due_source !== 'nachweis' && r.last_done_date && mo) ch.next_due_date = addMonths(r.last_done_date, mo);
+  }
+  const keys = Object.keys(ch).filter((k) => (ch[k] ?? null) !== (r[k] ?? null));
+  if (!keys.length) return { ok: true, changed: [] };
+  await env.DB.prepare(`UPDATE maintenance_rules SET ${keys.map((k) => `${k}=?`).join(', ')}, updated_at=? WHERE id=?`).bind(...keys.map((k) => ch[k]), nowIso(), ruleId).run();
+  await audit(env, user.id, 'maintenance.rule_edit', r.vehicle_id, { kind: r.kind, rule_id: ruleId, changed: Object.fromEntries(keys.map((k) => [k, { from: r[k] ?? null, to: ch[k] ?? null }])) });
+  return { ok: true, changed: keys, next_due_date: 'next_due_date' in ch ? ch.next_due_date : r.next_due_date };
+}
+export async function endMaintenanceRule(env, user, ruleId, body) {
+  const r = await ruleForEdit(env, user, ruleId);
+  const reason = str(body.reason, { required: true, max: 300, field: 'Begründung' });
+  if (r.n_open) throw conflict('open_order', 'Zu diesem Prüftermin ist noch ein Werkstattauftrag offen – erst abschließen oder ablehnen.');
+  if (!r.n_events && !r.n_cases) {
+    await env.DB.prepare('DELETE FROM maintenance_rules WHERE id=? AND NOT EXISTS (SELECT 1 FROM maintenance_events WHERE rule_id=?) AND NOT EXISTS (SELECT 1 FROM cases WHERE maintenance_rule_id=?)').bind(ruleId, ruleId, ruleId).run();
+    await audit(env, user.id, 'maintenance.rule_delete', r.vehicle_id, { kind: r.kind, rule_id: ruleId, title: r.title || null, evidence: r.evidence, reason });
+    return { ok: true, deleted: true };
+  }
+  await env.DB.prepare('UPDATE maintenance_rules SET next_due_date=NULL, interval_months=NULL, interval_km=NULL, due_km=NULL, planned_date=NULL, due_source=NULL, updated_at=? WHERE id=?').bind(nowIso(), ruleId).run();
+  await audit(env, user.id, 'maintenance.rule_end', r.vehicle_id, { kind: r.kind, rule_id: ruleId, title: r.title || null, next_due_date: r.next_due_date, interval_months: r.interval_months, interval_km: r.interval_km, reason });
+  return { ok: true, deleted: false };
+}
+
 export async function planMaintenanceBatch(env, user, body) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
   const d = planDate(str(body.planned_date, { required: true, max: 10, field: 'Termin' }));

@@ -29,6 +29,11 @@ with sync_playwright() as p:
         req=q.evaluate("()=>[...document.querySelectorAll('form[data-mdone]')].filter(f=>f.querySelector('input[name=next_due_date]')?.required).length")
         if n!=2 or req!=2: fails.append((lang,w,'hinweis',n,req))  # Verbandkasten + Ladekran ohne Intervall
         q.evaluate("()=>{const f=document.querySelector('[data-mdonenoint]').closest('form'); f.hidden=false; f.scrollIntoView();}"); q.wait_for_timeout(200)
+        # Backlog 579: „Prüftermin bearbeiten oder beenden“ je Eintrag (4 Einträge, kein HU/SP), aufgeklappt ohne Querscrollen
+        nb=q.evaluate("()=>{const b=[...document.querySelectorAll('[data-meditbox]')]; b.forEach(x=>x.open=true); return b.length}")
+        if nb!=4: fails.append((lang,w,'editbox',nb))
+        tv=q.evaluate("()=>[...document.querySelectorAll('form[data-medit] input[name=title]')].map(i=>i.value)")
+        if tv!=['Kühlaggregat']: fails.append((lang,w,'titel im formular',tv))
         if q.evaluate('document.documentElement.scrollWidth')>w: fails.append((lang,w,'sw'))
         if errs: fails.append((lang,w,errs[:1]))
         if w==390: q.screenshot(path=f'{SH}/m576_{lang}.png')

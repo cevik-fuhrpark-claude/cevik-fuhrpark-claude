@@ -25809,6 +25809,37 @@ await test('Backlog 577 (Migration 0095): Titel je Prüftermin „Sonstiges“ �
   ok(app.includes("const mkR = (r) => mk(r.kind) + (r && r.title ? ' – ' + r.title : '');") && app.includes('<tr><td>${esc(mkR(m))}</td>') && app.includes("ti.disabled = !o; ti.required = o;") && app.includes("...($('#mck').value === 'Sonstiges' && $('#mct').value.trim() ? { title: $('#mct').value.trim() } : {})"), 'Oberfläche');
 });
 
+await test('Backlog 579: Prüftermin bearbeiten (Titel, Intervall mit Neuberechnung nur bei berechneter Fälligkeit, Bezeichnung) und beenden (Verlauf bleibt, Begründung Pflicht, offener Auftrag blockiert) bzw. entfernen ohne Durchführung – nur Leitung, nicht HU/SP, protokolliert', async () => {
+  const { e, U, V1 } = await freshWorld(); const VV = encodeURIComponent(V1); const db = e.DB.db;
+  const k = await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'Ladekran', last_done_date: '2026-02-10', interval_months: 12, evidence: 'Kranbuch' }); eq(k.status, 201); eq(k.data.next_due_date, '2027-02-10');
+  for (const r of ['driver', 'workshop', 'viewer']) if (U[r]) eq((await U[r].patch(`/api/maintenance/${k.data.id}`, { interval_months: 6 })).status, 403, r);
+  const p1 = await U.fleet.patch(`/api/maintenance/${k.data.id}`, { interval_months: 24, evidence: 'Kranprüfbuch Nr. 7' }); eq(p1.status, 200, JSON.stringify(p1.data)); eq(p1.data.next_due_date, '2028-02-10', 'neu berechnet');
+  eq((await U.fleet.patch(`/api/maintenance/${k.data.id}`, { title: 'x' })).status, 400, 'Titel nur Sonstiges');
+  eq((await U.fleet.patch(`/api/maintenance/${k.data.id}`, { interval_months: 24 })).data.changed.length, 0, 'keine Änderung');
+  const n = await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'Verbandkasten', last_done_date: '2026-01-05', next_due_date: '2029-06-30', evidence: 'Packung' }); eq(n.status, 201);
+  eq((await U.fleet.patch(`/api/maintenance/${n.data.id}`, { interval_months: 12 })).data.next_due_date, '2029-06-30', 'Nachweis-Fälligkeit bleibt');
+  const so = await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'Sonstiges', evidence: 'alter Eintrag ohne Titel', next_due_date: '2027-01-31' }); eq(so.status, 201);
+  eq((await U.fleet.patch(`/api/maintenance/${so.data.id}`, { title: 'Kühlaggregat' })).status, 200); eq(db.prepare('SELECT title FROM maintenance_rules WHERE id=?').get(so.data.id).title, 'Kühlaggregat', 'Titel nachgetragen');
+  // HU/SP nicht
+  const hu = db.prepare(`SELECT id FROM maintenance_rules WHERE kind='HU' LIMIT 1`).get(); if (hu) eq((await U.fleet.patch(`/api/maintenance/${hu.id}`, { evidence: 'x' })).status, 400, 'HU nicht bearbeitbar');
+  // beenden: Begründung Pflicht, Verlauf bleibt
+  eq((await U.fleet.post(`/api/maintenance/${k.data.id}/end`, {})).status, 400, 'Begründung Pflicht');
+  const en = await U.fleet.post(`/api/maintenance/${k.data.id}/end`, { reason: 'Ladekran abgebaut' }); eq(en.status, 200, JSON.stringify(en.data)); eq(en.data.deleted, false);
+  const row = db.prepare('SELECT next_due_date, interval_months, planned_date FROM maintenance_rules WHERE id=?').get(k.data.id); eq(row.next_due_date, null); eq(row.interval_months, null);
+  ok(db.prepare('SELECT COUNT(*) AS n FROM maintenance_events WHERE rule_id=?').get(k.data.id).n >= 1, 'Durchführung bleibt');
+  ok(!(await U.fleet.get('/api/maintenance')).data.rows.some((r) => r.id === k.data.id && ['ueberfaellig', 'faellig'].includes(r.status)), 'keine Fälligkeit mehr');
+  // ohne Durchführungen/Aufträge: ganz entfernt
+  const del = await U.fleet.post(`/api/maintenance/${so.data.id}/end`, { reason: 'Tippfehler' }); eq(del.data.deleted, true); ok(!db.prepare('SELECT 1 FROM maintenance_rules WHERE id=?').get(so.data.id), 'entfernt');
+  // offener Werkstattauftrag blockiert
+  const o = await U.fleet.post(`/api/vehicles/${VV}/maintenance`, { kind: 'Ladebordwand', next_due_date: '2026-12-31', evidence: 'LBW' }); eq(o.status, 201);
+  const ord = await U.fleet.post(`/api/maintenance/${o.data.id}/order`, { workshop_site: 'DORTMUND', priority: 'niedrig', request_key: rk() }); ok(ord.status === 201 || ord.status === 200, JSON.stringify(ord.data));
+  eq((await U.fleet.post(`/api/maintenance/${o.data.id}/end`, { reason: 'x' })).status, 409, 'offener Auftrag');
+  const acts = db.prepare(`SELECT action FROM audit_log WHERE action LIKE 'maintenance.rule_%'`).all().map((x) => x.action);
+  ok(acts.includes('maintenance.rule_edit') && acts.includes('maintenance.rule_end') && acts.includes('maintenance.rule_delete'), acts.join());
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const x of ['medit_title', 'medit_hint', 'mend_reason', 'mend_btn', 'mend_confirm', 'mend_ended', 'mend_deleted', 'medit_nochange']) ok(STRINGS[l][x], x + ' ' + l);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("${isMgr() && !['HU', 'SP'].includes(m.kind) ? maintEditHtml(m) : ''}") && app.includes("$$('form[data-mend]').forEach((fm) => (fm.onsubmit = async (e) =>"), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
