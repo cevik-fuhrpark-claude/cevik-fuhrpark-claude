@@ -786,7 +786,7 @@ export async function myVehicles(env, user, envName) {
     if (p && p.id !== v.id) coupledOf.set(v.id, p);
   }
   const ids = JSON.stringify([...new Set([...vs.map((v) => v.id), ...[...coupledOf.values()].map((p) => p.id)])]);
-  const [locks, mine, rules, kms, notes, warnKmRow, tireEv] = await Promise.all([
+  const [locks, mine, rules, kms, notes, warnKmRow, tireEv, relItems] = await Promise.all([
     env.DB.prepare(`SELECT vehicle_id, MAX(safety_lock) AS locked, COUNT(*) AS open FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') GROUP BY vehicle_id`).bind(envName, ids).all(),
     // alle offenen Vorgänge der eigenen Fahrzeuge (ohne Namen der Meldenden): Fahrer sieht bekannte Mängel und meldet sie nicht doppelt
@@ -803,7 +803,12 @@ export async function myVehicles(env, user, envName) {
     env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_km'`).first(),
     // Winterkennzeichnung der Reifen (nur eigene Lkw, ohne Personen) – gleiche Regel wie Fahrzeugakte
     env.DB.prepare(`SELECT vehicle_id, position, event_type, winter_mark FROM tire_events WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC`).bind(envName, JSON.stringify(vs.map((v) => v.id))).all(),
+    // Backlog 464 (Blickwinkel „Fahrer holt den Lkw nach der Reparatur ab“): offene (nicht sicherheitsrelevante) Restarbeiten technisch
+    // freigegebener Vorgänge – der Vorgang ist geschlossen, die Restarbeit steht sonst nirgends beim Fahrer (ohne Personen, ohne Link)
+    env.DB.prepare(`SELECT c.vehicle_id, substr(o.description,1,300) AS description, o.created_at, c.case_no, c.closed_at FROM open_items o JOIN cases c ON c.id=o.case_id
+      WHERE c.environment=? AND c.vehicle_id IN (SELECT value FROM json_each(?)) AND c.status='fahrzeug_freigegeben' AND o.status='offen' ORDER BY o.created_at DESC LIMIT 100`).bind(envName, ids).all(),
   ]);
+  const relOf = (vid) => relItems.results.filter((r) => r.vehicle_id === vid).map(({ vehicle_id, ...r }) => r);
   // HU/SP ohne eigenen Eintrag, deren Frist sich berechnen lässt (z. B. SP aus HU + Erstzulassung): wie Übersicht/Akte als Zeile ohne Regel
   // (20.10.2026: überfällige berechnete SP fehlte auf der Fahrer-Startseite). Es wird nichts angelegt.
   const virtBy = new Map(); const unclearBy = new Map();
@@ -865,7 +870,7 @@ export async function myVehicles(env, user, envName) {
       ...v, eval_excluded: !!v.eval_excluded, locked: !!(lockMap.get(v.id) || {}).locked, open_cases_total: (lockMap.get(v.id) || {}).open || 0,
       my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id && c.mine).map(({ mine: _m, check_item: _c, safety_lock: _s, planned_date: _p, planned_note: _n, parts_expected_date: _e, ...c }) => c),
       // alle offenen (vorher still 10 – ältere sicherheitsrelevante verdrängt, 20.10.2026); gesperrte/kritische zuerst
-      known_defects: defects(v.id),
+      known_defects: defects(v.id), open_items_after_release: relOf(v.id),
       next_inspections: nextInsp(v.id), inspections_unclear: unclearBy.get(v.id) || [],
       planned_workshop_date: minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)),
       // Hinweis zum Termin (Backlog 438, z. B. „Abgabe 7 Uhr bei Fa. …, Abholung 13 Uhr“) – der Fahrer bringt den Lkw oft selbst hin
@@ -886,7 +891,7 @@ export async function myVehicles(env, user, envName) {
       // gekoppeltes Fahrzeug: Sperre, offene Vorgänge, bekannte Mängel (Verweis nur auf eigene Meldungen) und HU/SP-/Prüftermine – bei der Straßenkontrolle zählt das
       // ganze Gespann (Backlog 202, Teilagent „Straßenkontrolle“: überfällige HU des Anhängers und dessen Mängel waren für den Fahrer unsichtbar)
       coupled: coupledOf.has(v.id) ? (({ id, plate, kind }) => ({ id, plate, kind, locked: !!(lockMap.get(id) || {}).locked, open_cases_total: (lockMap.get(id) || {}).open || 0,
-        known_defects: defects(id), next_inspections: nextInsp(id), inspections_unclear: unclearBy.get(id) || [] }))(coupledOf.get(v.id)) : null,
+        known_defects: defects(id), open_items_after_release: relOf(id), next_inspections: nextInsp(id), inspections_unclear: unclearBy.get(id) || [] }))(coupledOf.get(v.id)) : null,
     })),
   };
 }

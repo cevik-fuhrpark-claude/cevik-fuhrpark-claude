@@ -220,6 +220,7 @@ UI-Werkstatt-Tagesreihenfolge: „Heute geplant“ und Werkstattplan gesperrt �
 UI-Disposition „Wieder einsatzbereit (heute/gestern freigegeben)“: nur freie Fahrzeuge, Freigabezeit, Abholvermerk, DE/UK/EN 390/820/1366|ui-dispo-wieder-da.py|/tmp/cfp-dispo-wieder-da.log
 UI-Foto vom Melder nachgereicht: Verlauf „Foto/Datei nachgereicht“ mit Dateiname, Hinweis an die Leitung, Foto beim Melden ohne Eintrag, DE/UK/EN 390/820/1366|ui-foto-nachgereicht.py|/tmp/cfp-foto-nachgereicht.log
 UI-Rückfrage an den Melder: Häkchen im Kommentar, Fahrer-Startseite/Vorgang, Antwort → „beantwortet“ in Vorgang, Liste und Heute zu tun, DE/UK/EN 390/820/1366|ui-rueckfrage-melder.py|/tmp/cfp-rueckfrage-melder.log
+UI-Restarbeiten nach der Freigabe in „Mein Fahrzeug“ der Fahrer, ohne Link, DE/UK/EN 390/820/1366|ui-restarbeit-fahrer.py|/tmp/cfp-restarbeit-fahrer.log
 UI-Disposition „Bis zum Werkstatttermin einplanbar“: künftiger Termin nicht in „Nicht einplanen“, Vortag, Hinweis zum Termin, DE/UK/EN 390/820/1366|ui-dispo-bis-termin.py|/tmp/cfp-dispo-bis-termin.log
 UI-Werkstatt-Startseite wartet auf Teile: längste Wartezeit zuerst, Wartet auf/Wartezeit/kein Liefertermin in Listen, DE/UK/EN 390/820/1366|ui-teile-nachfassen.py|/tmp/cfp-teile-nachfassen.log
 UI-Neuer Fahrer erster Tag: Einladung in gewählter Sprache, Kontrolle mit Mangel → Ergebnisseite „vor der Abfahrt klären“, Fahrbereitschaft „nicht abgefragt“, HU/SP ausgeschrieben, DE/UK/EN 390/820/1366|ui-fahrer-erster-tag.py|/tmp/cfp-fahrer-erster-tag.log

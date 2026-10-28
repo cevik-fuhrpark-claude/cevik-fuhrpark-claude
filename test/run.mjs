@@ -18949,7 +18949,7 @@ await test('Backlog 202 (Straßenkontrolle): „Mein Fahrzeug“ zeigt HU/SP und
   // Oberfläche
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('obN || v.coupled?.locked || v.coupled?.open_cases_total ? \'\' : `<span class="chip ok">'), 'grün nur ohne Anhänger-Sperre/-Meldungen');
-  ok(app.includes('${knownDefects(v.known_defects)}${drvCoupled(v.coupled)}</section>'), 'Anhänger-Block');
+  ok(app.includes('${knownDefects(v.known_defects)}${relItems(v.open_items_after_release)}${drvCoupled(v.coupled)}</section>'), 'Anhänger-Block (Backlog 464: Restarbeiten nach Freigabe davor)');
   ok(app.includes("(v.inspections_unclear || []).map((k) => `<dt>${esc(dk(k))}</dt><dd><span class=\"chip mittel\" data-unclear>${esc(t('ms_ungeklaert'))}"), 'ungeklärt angezeigt (seit Backlog 380 ausgeschrieben)');
   ok(app.includes('known.find((x) => x.id === id) || coupledKnown(known, id)'), 'Abfahrtskontrolle: Anhänger-Mängel');
 });
@@ -24710,6 +24710,37 @@ await test('Backlog 463 (Folge aus 462): Rückfrage an den Melder als offener Zu
     ok(STRINGS[l].help_fleet_s.includes(STRINGS[l].q_ask) && STRINGS[l].help_fleet_s.includes(STRINGS[l].q_answered) && STRINGS[l].help_fleet_s.includes(localizedTitle({ kind: 'question', title: 'Rückfrage zu Ihrer Meldung' }, l)), l + ': Hilfe Leitung');
     ok(STRINGS[l].help_report_s.includes(STRINGS[l].q_drv_title), l + ': Hilfe Melden nennt die Rückfrage');
   }
+});
+
+await test('Backlog 464 (Blickwinkel „Fahrer holt den Lkw nach der Reparatur ab“): offene, nicht sicherheitsrelevante Restarbeiten freigegebener Vorgänge stehen in „Mein Fahrzeug“ jedes zugeordneten Fahrers (ohne Link/Personen), erledigte und abgebrochene Aufträge nicht', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'r.fahrer2', display_name: 'Fahrer 2', role: 'driver', environment: 'test' });
+  const d2 = new Client(worker, e, 'r.fahrer2'); await d2.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const uid2 = (await d2.get('/api/me')).data.user.id;
+  ok([200, 201].includes((await U.fleet.post('/api/vehicles/VIN:WMA15SZZ2HM722774/drivers', { user_id: uid2, evidence: 'Dienstplan' })).status), 'Zuordnung');
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Halter Seitenverkleidung provisorisch befestigt' })).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+  const mv = async () => (await d2.get('/api/me/vehicles')).data.vehicles[0];
+  eq((await mv()).open_items_after_release.length, 0, 'vor der Freigabe: steht unter offenen Vorgängen, nicht doppelt');
+  eq((await cmd(U.fleet, id, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200);
+  const v = await mv(); const r = v.open_items_after_release;
+  eq(r.length, 1, 'Restarbeit nach Freigabe sichtbar'); eq(r[0].description, 'Halter Seitenverkleidung provisorisch befestigt'); ok(r[0].case_no && r[0].closed_at, 'Nummer und Freigabedatum');
+  ok(!('id' in r[0]) && !('created_by' in r[0]) && !('case_id' in r[0]), 'ohne Link/Personen'); eq(v.known_defects.length, 0, 'kein offener Vorgang mehr');
+  // erledigt → weg
+  const oi = (await U.ws.get(`/api/cases/${id}`)).data.open_items[0];
+  eq((await cmd(U.ws, id, 'resolve_open_item', { open_item_id: oi.id }, 'nachgearbeitet')).status, 200);
+  eq((await mv()).open_items_after_release.length, 0, 'erledigte Restarbeit nicht mehr angezeigt');
+  // Auftrag ohne Reparatur beendet: offene Restarbeit zählt nicht als „freigegeben“
+  const id2 = await toRepair();
+  eq((await cmd(U.ws, id2, 'add_open_item', { description: 'Stoßfänger' })).status, 200);
+  eq((await cmd(U.fleet, id2, 'withdraw_order', {}, 'Verkauf')).status, 200);
+  eq((await mv()).open_items_after_release.length, 0, 'abgebrochener Auftrag nicht');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_myveh_s.includes(STRINGS[l].rel_items_title), l + ': Hilfe Mein Fahrzeug');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
