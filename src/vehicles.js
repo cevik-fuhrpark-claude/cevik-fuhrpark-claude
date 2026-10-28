@@ -17,8 +17,10 @@ import { kmRejection } from './telematics.js';
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 // Feuerlöscher/Verbandkasten/Ladungssicherung: Intervall bzw. Ablaufdatum trägt die Fuhrparkleitung selbst ein (keine Vorgabe der App)
 // Ladebordwand/Ladekran (Backlog 574): eigene Arten, damit beide am selben Lkw je einen Termin haben können (vorher nur ein „Hydraulik/Aufbau“) – Intervall trägt die Leitung ein
+// Kühlgerät/ATP/Temperaturschreiber (Backlog 583, Blickwinkel „Kühlauflieger“): Wartung des Kühlaggregats, ATP-Bescheinigung (Ablauf laut Bescheinigung/Plakette)
+// und Prüfung/Kalibrierung des Temperaturschreibers als eigene Arten – Intervall bzw. Ablaufdatum nur laut Eingabe, keine Vorgabe der App
 // Rückruf: einmalige Hersteller-/Werkstattaktion (Schreiben bzw. KBA-Referenz als Nachweis), Frist nur laut Schreiben, kein Intervall
-export const MAINT_KINDS = ['HU', 'SP', 'UVV', 'Tachograph', 'Ölwechsel', 'Inspektion', 'Bremsen', 'Reifen', 'Hydraulik/Aufbau', 'Feuerlöscher', 'Verbandkasten', 'Ladungssicherung', 'Ladebordwand', 'Ladekran', 'Rückruf', 'Sonstiges'];
+export const MAINT_KINDS = ['HU', 'SP', 'UVV', 'Tachograph', 'Ölwechsel', 'Inspektion', 'Bremsen', 'Reifen', 'Hydraulik/Aufbau', 'Feuerlöscher', 'Verbandkasten', 'Ladungssicherung', 'Ladebordwand', 'Ladekran', 'Kühlgerät', 'ATP-Bescheinigung', 'Temperaturschreiber', 'Rückruf', 'Sonstiges'];
 export const ONE_TIME_KINDS = ['Rückruf'];
 // Arten, die je Fahrzeug mehrfach vorkommen dürfen (mehrere Rückrufe, verschiedene sonstige Prüfungen)
 export const MULTI_RULE_KINDS = ['Rückruf', 'Sonstiges'];

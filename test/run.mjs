@@ -25873,6 +25873,26 @@ await test('Backlog 580–582 (Blickwinkel „Diktat/Tippfehler, Deutsch nicht M
   for (const [n, [pos, neg]] of Object.entries(T)) { const re = R(n); for (const x of pos) ok(re.test(x), `${n} erwartet: ${x}`); for (const x of neg) ok(!re.test(x), `${n} nicht: ${x}`); }
 });
 
+await test('Backlog 583 (Blickwinkel „Kühlauflieger: Kühlgerät, ATP, Temperaturschreiber“): eigene Prüfarten Kühlgerät, ATP und Temperaturschreiber – alle drei am selben Anhänger neben Ladebordwand, je Art höchstens einer, Intervall/Ablauf nur laut Eingabe, Import-Aliase, Texte DE/UK/EN inkl. Kalender und Hilfe', async () => {
+  const { U, V1 } = await freshWorld();
+  const { normalizeKind } = await import('../src/maintenance.js');
+  for (const [x, k] of [['Kühlaggregat', 'Kühlgerät'], ['Kuehlgeraet', 'Kühlgerät'], ['kühlgerät', 'Kühlgerät'], ['Kälteaggregat', 'Kühlgerät'], ['ATP-Bescheinigung', 'ATP-Bescheinigung'], ['atp', 'ATP-Bescheinigung'], ['ATP-Zertifikat', 'ATP-Bescheinigung'], ['Datenlogger', 'Temperaturschreiber'], ['Thermograph', 'Temperaturschreiber'], ['temperaturschreiber', 'Temperaturschreiber']]) eq(normalizeKind(x), k, x);
+  eq(normalizeKind('Kühlschrank'), null, 'Kühlschrank ist keine Prüfart');
+  const meta = (await U.fleet.get('/api/meta')).data.maintenance_kinds; for (const k of ['Kühlgerät', 'ATP-Bescheinigung', 'Temperaturschreiber']) ok(meta.includes(k), 'Meta ' + k);
+  const P = `/api/vehicles/${encodeURIComponent(V1)}/maintenance`;
+  const a = await U.fleet.post(P, { kind: 'Kühlgerät', last_done_date: '2026-04-15', interval_months: 12, evidence: 'Wartungsnachweis Kühlaggregat' }); eq(a.status, 201, JSON.stringify(a.data)); eq(a.data.next_due_date, '2027-04-15');
+  const b = await U.fleet.post(P, { kind: 'ATP-Bescheinigung', next_due_date: '2029-06-30', evidence: 'ATP-Bescheinigung' }); eq(b.status, 201, JSON.stringify(b.data)); eq(b.data.next_due_date, '2029-06-30', 'Ablauf laut Bescheinigung, nicht berechnet');
+  const c = await U.fleet.post(P, { kind: 'Temperaturschreiber', last_done_date: '2026-02-01', evidence: 'Prüfbericht', next_due_date: '2027-02-01' }); eq(c.status, 201, JSON.stringify(c.data));
+  const d = await U.fleet.post(P, { kind: 'Ladebordwand', next_due_date: '2027-01-31', evidence: 'Prüfbuch' }); eq(d.status, 201, 'Ladebordwand daneben');
+  for (const k of ['Kühlgerät', 'ATP-Bescheinigung', 'Temperaturschreiber']) eq((await U.fleet.post(P, { kind: k, next_due_date: '2027-05-31', evidence: 'zweiter' })).status, 409, 'je Art höchstens ein Termin: ' + k);
+  const { STRINGS } = await import('../public/i18n.js'); const { ICS_LABELS, ICS_MK_KEYS } = await import('../public/ics-texts.js');
+  eq(ICS_MK_KEYS['Kühlgerät'], 'reefer'); eq(ICS_MK_KEYS['ATP-Bescheinigung'], 'atp'); eq(ICS_MK_KEYS.Temperaturschreiber, 'templog');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['mk_reefer', 'mk_atp', 'mk_templog']) { ok(STRINGS[l][k], k + ' ' + l); eq(ICS_LABELS[l][k], STRINGS[l][k], 'Kalender ' + k + ' ' + l); } for (const k of ['mk_reefer', 'mk_atp', 'mk_templog']) ok(STRINGS[l].help_dates_s.includes(STRINGS[l][k]), 'Hilfe nennt ' + k + ' ' + l); ok(!/Kühlaggregat|reefer unit|холодильна установка'/.test(STRINGS[l].rule_title_ph), 'Platzhalter „Sonstiges“ nennt keine eigene Art mehr ' + l); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("'Kühlgerät': 'reefer', 'ATP-Bescheinigung': 'atp', Temperaturschreiber: 'templog'"), 'MK_KEYS');
+  const ics = await U.fleet.get('/api/maintenance?format=ics'); eq(ics.status, 200); const cal = new TextDecoder().decode(ics.data);
+  ok(cal.includes('Kühlgerät') && cal.includes('ATP-Bescheinigung') && cal.includes('Temperaturschreiber'), 'Kalender mit Bezeichnungen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

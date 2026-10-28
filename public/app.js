@@ -67,7 +67,7 @@ const t = (k) => (STRINGS[S.lang] && STRINGS[S.lang][k]) || STRINGS.de[k] || k;
 // Leere Liste: Text statt nacktem „–“ (Teilagent „Erster Tag der Fuhrparkleitung“, 22.10.2026)
 const noneP = () => `<p class="muted" data-none>${esc(t('no_entries'))}</p>`;
 // Prüf-/Wartungsarten: gespeichert wird der deutsche Name (Server, CSV, Agent); angezeigt in der App-Sprache. HU/SP/UVV sind Fachkürzel.
-const MK_KEYS = { Tachograph: 'tacho', 'Ölwechsel': 'oil', Inspektion: 'service', Bremsen: 'brakes', Reifen: 'tires', 'Hydraulik/Aufbau': 'hydraulics', 'Feuerlöscher': 'extinguisher', Verbandkasten: 'firstaid', Ladungssicherung: 'loadsec', Ladebordwand: 'taillift', Ladekran: 'crane', 'Rückruf': 'recall', Sonstiges: 'other' };
+const MK_KEYS = { Tachograph: 'tacho', 'Ölwechsel': 'oil', Inspektion: 'service', Bremsen: 'brakes', Reifen: 'tires', 'Hydraulik/Aufbau': 'hydraulics', 'Feuerlöscher': 'extinguisher', Verbandkasten: 'firstaid', Ladungssicherung: 'loadsec', Ladebordwand: 'taillift', Ladekran: 'crane', 'Kühlgerät': 'reefer', 'ATP-Bescheinigung': 'atp', Temperaturschreiber: 'templog', 'Rückruf': 'recall', Sonstiges: 'other' };
 // Backlog 577: Prüfart mit Titel („Sonstiges – Ladebordwand Prüfbuch“); ohne Titel nur die Art
 const mkR = (r) => mk(r.kind) + (r && r.title ? ' – ' + r.title : '');
 const mk = (k) => (MK_KEYS[k] ? t('mk_' + MK_KEYS[k]) : k);

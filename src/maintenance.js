@@ -24,6 +24,9 @@ const KIND_ALIASES = new Map([
   ['feuerloescher', 'Feuerlöscher'], ['feuerlöscherprüfung', 'Feuerlöscher'], ['verbandskasten', 'Verbandkasten'], ['erste-hilfe-kasten', 'Verbandkasten'], ['spanngurte', 'Ladungssicherung'], ['zurrgurte', 'Ladungssicherung'],
   ['hubladebühne', 'Ladebordwand'], ['hubladebuehne', 'Ladebordwand'], ['ladebühne', 'Ladebordwand'], ['ladebuehne', 'Ladebordwand'], ['ladebordwandprüfung', 'Ladebordwand'], ['ladebordwandpruefung', 'Ladebordwand'],
   ['kran', 'Ladekran'], ['lkw-kran', 'Ladekran'], ['ladekranprüfung', 'Ladekran'], ['ladekranpruefung', 'Ladekran'], ['krananlage', 'Ladekran'],
+  ['kühlaggregat', 'Kühlgerät'], ['kuehlaggregat', 'Kühlgerät'], ['kuehlgeraet', 'Kühlgerät'], ['kühlmaschine', 'Kühlgerät'], ['kälteaggregat', 'Kühlgerät'], ['kaelteaggregat', 'Kühlgerät'], ['kühlgerätewartung', 'Kühlgerät'], ['kuehlgeraetewartung', 'Kühlgerät'], ['kühlaggregat-wartung', 'Kühlgerät'],
+  ['atp', 'ATP-Bescheinigung'], ['atp-zertifikat', 'ATP-Bescheinigung'], ['atp-prüfung', 'ATP-Bescheinigung'], ['atp-pruefung', 'ATP-Bescheinigung'], ['atp-zulassung', 'ATP-Bescheinigung'], ['atp-bescheinigung', 'ATP-Bescheinigung'],
+  ['temperaturschreiberprüfung', 'Temperaturschreiber'], ['temperaturschreiberpruefung', 'Temperaturschreiber'], ['temperaturschreiber-kalibrierung', 'Temperaturschreiber'], ['temperaturrekorder', 'Temperaturschreiber'], ['datenlogger', 'Temperaturschreiber'], ['thermograph', 'Temperaturschreiber'], ['thermograf', 'Temperaturschreiber'],
   ['rückrufaktion', 'Rückruf'], ['rueckruf', 'Rückruf'], ['rueckrufaktion', 'Rückruf'], ['werkstattaktion', 'Rückruf'], ['herstelleraktion', 'Rückruf'], ['recall', 'Rückruf'],
   ['tachograph', 'Tachograph'], ['tacho', 'Tachograph'], ['tachoprüfung', 'Tachograph'], ['tachopruefung', 'Tachograph'], ['fahrtenschreiber', 'Tachograph'], ['kontrollgerät', 'Tachograph'], ['kontrollgeraet', 'Tachograph'],
 ]);
