@@ -142,7 +142,9 @@ export async function claimForCase(env, caseId, vehicleId) {
 // Übersicht (Mehr → Versicherungsfälle): offen/alle/Status; Kosten des Vorgangs (nur belegte Ist-Kosten) und Saldo nach Erstattung
 export async function claimOverview(env, user, envName, query = {}) {
   if (!isMgr(user)) throw forbidden();
-  const filter = ['offen', 'gutachten', 'alle', ...CLAIM_STATUS].includes(query.filter) ? query.filter : 'offen';
+  // Backlog 527/531 (Blickwinkel „Quartalsende: offene Versicherungsfälle“): Filter „nachfassen“ (Frist aus `claim_followup_days`) und
+  // „ohne_erstattung“ (reguliert, aber keine Erstattung eingetragen – neutral, eine Regulierung ohne Zahlung bleibt möglich)
+  const filter = ['offen', 'gutachten', 'nachfassen', 'ohne_erstattung', 'alle', ...CLAIM_STATUS].includes(query.filter) ? query.filter : 'offen';
   const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('workshop_hourly_rate_net','claim_followup_days')
     UNION ALL SELECT '__rp', json_group_array(json_object('u', valid_until, 'r', rate_net)) FROM hourly_rate_periods`).all()).results.map((r) => [r.key, r.value]));
   const rv = sets.get('workshop_hourly_rate_net');
@@ -190,9 +192,14 @@ export async function claimOverview(env, user, envName, query = {}) {
     const excluded = !!vehicle_excluded;
     return { fp_search, ...sh, eval_excluded: excluded, followup_due: !excluded && followupDays !== null && sh.open && sh.days_open >= followupDays, case_cost_net: cost, cost_incomplete: items > 0 && !complete, balance_net: cost !== null && r.reimbursed_net !== null ? r2(cost - r.reimbursed_net) : null };
   });
-  const counts = { offen: 0, gutachten: 0, alle: list.length }; for (const s of CLAIM_STATUS) counts[s] = 0;
-  for (const c of list) { counts[c.status]++; if (c.open) counts.offen++; if (c.appraisal_pending) counts.gutachten++; }
-  if (filter === 'offen') list = list.filter((c) => c.open); else if (filter === 'gutachten') list = list.filter((c) => c.appraisal_pending); else if (filter !== 'alle') list = list.filter((c) => c.status === filter);
+  const noReimb = (c) => c.status === 'reguliert' && (c.reimbursed_net === null || c.reimbursed_net === undefined);
+  const counts = { offen: 0, gutachten: 0, nachfassen: 0, ohne_erstattung: 0, alle: list.length }; for (const s of CLAIM_STATUS) counts[s] = 0;
+  for (const c of list) { counts[c.status]++; if (c.open) counts.offen++; if (c.appraisal_pending) counts.gutachten++; if (c.followup_due) counts.nachfassen++; if (noReimb(c)) counts.ohne_erstattung++; }
+  if (filter === 'offen') list = list.filter((c) => c.open); else if (filter === 'gutachten') list = list.filter((c) => c.appraisal_pending);
+  else if (filter === 'nachfassen') list = list.filter((c) => c.followup_due); else if (filter === 'ohne_erstattung') list = list.filter(noReimb);
+  else if (filter !== 'alle') list = list.filter((c) => c.status === filter);
+  // Backlog 528: bei „offen“/„nachfassen“ die am längsten offenen Fälle zuerst (vorher neueste zuerst – die dringendsten standen im Ausdruck hinten)
+  if (filter === 'offen' || filter === 'nachfassen') list.sort((a, b) => String(a.reported_on || '').localeCompare(String(b.reported_on || '')) || String(a.case_no).localeCompare(String(b.case_no)));
   // Suche (24.10.2026, Backlog 219): Der Versicherer der Gegenseite nennt am Telefon nur „seine“ Schadennummer oder das Kennzeichen.
   // Gesucht wird in dem, was die Leitung selbst eingetragen hat – ohne neue Datenbankabfrage (die Liste liegt bereits vor):
   // Kennzeichen (auch ohne Trennzeichen), Vorgangsnummer, Versicherer/Schadennummer beider Seiten und Gutachter. Kein Freitext-Vermerk.
@@ -235,13 +242,16 @@ export async function claimOverview(env, user, envName, query = {}) {
 export function claimsCsv(ov, { thirdParty = false } = {}) {
   const head = ['Kennzeichen', 'Vorgang', 'Versicherer', 'Schadennummer', 'Gemeldet am', 'Status', 'Tage offen', 'Selbstbeteiligung netto (EUR)', 'Erstattung netto (EUR)', 'Erstattet am',
     'Kosten Vorgang belegt netto (EUR)', 'Saldo nach Erstattung (EUR)', 'Nachweis', 'Bemerkung',
-    'Gutachter', 'Besichtigung am', 'Gutachten eingegangen am', 'Schadenhöhe laut Gutachten netto (EUR)', 'Gutachten ausstehend', 'Kennzeichen Unfallgegner', 'Versicherer Unfallgegner', 'Schadennummer Unfallgegner', 'Polizeidienststelle', 'Polizeiliches Aktenzeichen', 'Anzeige erstattet am', 'Schreiben verknüpft', 'Fahrzeug ruhend (nicht in Summen)', 'Kosten vollständig bewertet', 'Vertragsnummer', 'Vorgang angelegt am', 'Kennzeichen zum Meldedatum', 'Schadenzeitpunkt laut Meldung'];
+    'Gutachter', 'Besichtigung am', 'Gutachten eingegangen am', 'Schadenhöhe laut Gutachten netto (EUR)', 'Gutachten ausstehend', 'Kennzeichen Unfallgegner', 'Versicherer Unfallgegner', 'Schadennummer Unfallgegner', 'Polizeidienststelle', 'Polizeiliches Aktenzeichen', 'Anzeige erstattet am', 'Schreiben verknüpft', 'Fahrzeug ruhend (nicht in Summen)', 'Kosten vollständig bewertet', 'Vertragsnummer', 'Vorgang angelegt am', 'Kennzeichen zum Meldedatum', 'Schadenzeitpunkt laut Meldung',
+    // Backlog 529: am Ende angehängt (bestehende Spaltenpositionen bleiben)
+    'Fahrzeug-Standort', 'Nachfassen fällig'];
   const drop = thirdParty ? new Set([12, 13]) : new Set(); const keep = (_, i) => !drop.has(i);
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.filter(keep).join(';')];
   for (const c of ov.claims) lines.push([c.plate, c.case_no, c.insurer, c.claim_no, c.reported_on, STATUS_DE[c.status], c.days_open ?? '', n(c.deductible_net), n(c.reimbursed_net), c.reimbursed_on,
     n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.appraiser, c.appraisal_on, c.appraisal_received_on, n(c.appraisal_net), c.appraisal_pending ? 'ja' : 'nein', c.opponent_plate, c.opponent_insurer, c.opponent_claim_no, c.police_station, c.police_ref, c.police_reported_on,
-    c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein', c.cost_incomplete ? 'nein' : c.case_cost_net !== null ? 'ja' : '', c.contract_no, c.case_created_at ? berlinDate(c.case_created_at) : '', c.plate_at_report || c.plate, occurredCsv(c.case_occurred_at)].map((x, i) => ([3, 21, 23, 28].includes(i) ? csvText(x) : csvCell(x))).filter(keep).join(';'));
+    c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein', c.cost_incomplete ? 'nein' : c.case_cost_net !== null ? 'ja' : '', c.contract_no, c.case_created_at ? berlinDate(c.case_created_at) : '', c.plate_at_report || c.plate, occurredCsv(c.case_occurred_at),
+    c.vehicle_site || '', c.followup_due ? 'ja' : c.open && ov.followup_days ? 'nein' : ''].map((x, i) => ([3, 21, 23, 28].includes(i) ? csvText(x) : csvCell(x))).filter(keep).join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 

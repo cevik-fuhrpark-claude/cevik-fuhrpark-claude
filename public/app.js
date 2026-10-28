@@ -808,24 +808,39 @@ setInterval(pollUnread, 120000);
 // Anmeldeseite: unversendete Meldungen auf diesem Gerät (Anmeldung beendet, z. B. Leerlauf/Passwortwechsel) – nur Name und Anzahl,
 // damit die Person sich hier anmeldet und sie gesendet werden (18.10.2026: lagen sonst ohne Hinweis im Gerät)
 function orphanOutboxNote() {
-  const by = new Map();
-  try { for (const k of Object.keys(localStorage)) if (k.startsWith('cfp_outbox_')) for (const x of JSON.parse(localStorage.getItem(k) || '[]')) { const n = x.user_name; if (n) by.set(n, (by.get(n) || 0) + 1); } } catch {}
-  return by.size ? `<p class="small alert" id="orphan_outbox" role="note">${[...by].map(([n, c]) => esc(tn('outbox_orphan', c).replaceAll('{name}', n))).join('<br>')}</p>` : '';
+  // Backlog 532 (Blickwinkel „Neuer Fahrer mit Leihhandy“): vom Server abgelehnte Meldungen getrennt nennen – erneutes Anmelden sendet sie
+  // nicht von selbst, die Person muss sie prüfen (Text kopieren, erneut senden oder verwerfen)
+  const by = new Map(); const bad = new Map();
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith('cfp_outbox_')) for (const x of JSON.parse(localStorage.getItem(k) || '[]')) { const n = x.user_name; if (!n) continue; const m = x.failed ? bad : by; m.set(n, (m.get(n) || 0) + 1); } } catch {}
+  const lines = [...[...by].map(([n, c]) => tn('outbox_orphan', c).replaceAll('{name}', n)), ...[...bad].map(([n, c]) => tn('outbox_orphan_failed', c).replaceAll('{name}', n))];
+  return lines.length ? `<p class="small alert" id="orphan_outbox" role="note">${lines.map(esc).join('<br>')}</p>` : '';
+}
+// Backlog 535: Passwortfeld mit Knopf „Passwort anzeigen“ (Einladung und Anmeldung) – auf fremder Handytastatur vertippt man sich leicht,
+// und ein verbrauchter Einladungslink mit falsch getipptem Passwort kostet am ersten Arbeitstag eine neue Einladung
+const pwField = (ac, extra = '') => `<div class="pwrow" style="display:flex;gap:6px;align-items:center"><input id="p" type="password" autocomplete="${ac}"${extra} required style="flex:1;min-width:0"><button type="button" class="btn secondary small" id="pwshow" aria-pressed="false" aria-controls="p" style="white-space:nowrap">${esc(t('pw_show'))}</button></div>`;
+function bindPwShow() {
+  const b = $('#pwshow'); if (!b) return;
+  b.onclick = () => { const p = $('#p'); const show = p.type === 'password'; p.type = show ? 'text' : 'password'; b.setAttribute('aria-pressed', String(show)); b.textContent = t(show ? 'pw_hide' : 'pw_show'); };
 }
 function viewLogin() {
   render(`<div class="center"><form id="f" class="narrow panel">
     <h1>CEVIK ${esc(t('app'))}</h1><p class="muted small">[CLAUDE]</p>
-    <label for="u">${esc(t('username'))}</label><input id="u" autocomplete="username" required autocapitalize="none">
-    <label for="p">${esc(t('password'))}</label><input id="p" type="password" autocomplete="current-password" required>
+    <label for="u">${esc(t('username'))}</label><input id="u" autocomplete="username" required autocapitalize="none" autocorrect="off" spellcheck="false"><p class="small alert" id="ulatin" role="alert" hidden>${esc(t('login_latin_hint'))}</p>
+    <label for="p">${esc(t('password'))}</label>${pwField('current-password')}
     <div class="actions"><button class="btn block">${esc(t('login'))}</button></div>${orphanOutboxNote()}
     <details class="small" style="margin-top:8px"><summary>${esc(t('forgot_pw'))}</summary><p class="muted">${esc(t('forgot_pw_hint'))}</p></details>
     ${langSelect()}
   </form></div>`);
-  bindLang();
+  bindLang(); bindPwShow();
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     try {
-      const r = await api('POST', '/api/login', { username: $('#u').value.trim(), password: $('#p').value, device_id: deviceId() });
+      // Backlog 534: Benutzernamen sind lateinisch ohne Leerzeichen – Leerzeichen (Autokorrektur „y. cevik“) entfernen, kyrillische Eingabe
+      // (fremde Tastatur) nicht senden, sondern Hinweis zeigen: jeder Fehlversuch zählt sonst zur Sperre
+      const un = $('#u').value.replace(/\s+/g, ''); const ul = $('#ulatin');
+      if (/[\u0400-\u04FF]/.test(un)) { ul.hidden = false; $('#u').focus(); return; }
+      ul.hidden = true;
+      const r = await api('POST', '/api/login', { username: un, password: $('#p').value, device_id: deviceId() });
       if (r.second_factor) { viewLoginCode(r.challenge); return; }
       afterLogin();
     } catch (err) { toast(err.message, true); }
@@ -894,9 +909,9 @@ async function viewInvite(token) {
   if (info.language && ['de', 'uk', 'en'].includes(info.language) && info.language !== S.lang) { S.lang = info.language; try { localStorage.setItem('cfp_lang', info.language); } catch {} }
   render(`<div class="center"><form id="f" class="narrow panel" novalidate><h1>${esc(t('welcome'))}, ${esc(info.display_name)}</h1>
     <p class="muted">${esc(t('username'))}: <b>${esc(info.username)}</b> · ${esc(t('role_' + info.role))}${info.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>
-    <label for="p">${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input id="p" type="password" autocomplete="new-password" minlength="10" required>
+    <label for="p">${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label>${pwField('new-password', ' minlength="10"')}
     <div class="actions"><button class="btn block">${esc(t('set_password'))}</button></div>${langSelect()}</form></div>`);
-  bindLang();
+  bindLang(); bindPwShow();
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     try { const r = await api('POST', '/api/invite/accept', { token, password: $('#p').value, device_id: deviceId() }); resetUserState(); /* evtl. im Tab angemeldete andere Person: Sprache ging sonst verloren (user_mismatch), Ansichtszustand wurde vererbt (20.10.2026) */ if (r.second_factor) { viewLoginCode(r.challenge); return; } await api('PATCH', '/api/me', { language: S.lang }).catch(() => {}); S.me = null; location.hash = '#/'; }
@@ -1241,7 +1256,7 @@ async function fleetTodo() {
     isMgr() ? api('GET', '/api/tacho').catch(soft(null)) : null,
     isMgr() ? api('GET', '/api/drivers').then((r) => r.drivers).catch(soft([])) : [],
     isMgr() ? api('GET', '/api/contracts?filter=aktiv').then((r) => r.contracts).catch(soft([])) : [],
-    isMgr() ? api('GET', '/api/claims?filter=offen').then((r) => r.claims.filter((c) => c.followup_due)).catch(soft([])) : [],
+    isMgr() ? api('GET', '/api/claims?filter=nachfassen').then((r) => r.claims).catch(soft([])) : [],
     // Lkw ohne Alpine-Symbol laut Erfassung – Entscheidung zur Umrüstung liegt bei der Fuhrparkleitung (nur Information, keine Sperre)
     isMgr() ? api('GET', '/api/tires/winter').then((r) => r.noncompliant).catch(soft([])) : [],
     // Fahrzeuge mit kritischen offenen Agentenbefunden (Felder nur für Inhaber/Fuhrparkleitung, Umgebung der Person)
@@ -1641,6 +1656,9 @@ async function logoutOutboxOk() {
   if (outboxGet().some((x) => !x.failed) && navigator.onLine !== false) await flushOutbox().catch(() => {});
   const pend = outboxGet().filter((x) => !x.failed).length;
   if (pend && !confirm(tn('logout_outbox_confirm', pend))) return false;
+  // Backlog 532: abgelehnte Meldungen (auch aus der anderen Umgebung) liegen nur auf diesem Gerät – vor dem Abmelden ausdrücklich nachfragen
+  const bad = outboxGet().filter((x) => x.failed).length + otherEnvOutbox().length;
+  if (bad && !confirm(tn('logout_failed_confirm', bad))) return false;
   // Backlog 479: ungesicherte Formularentwürfe (Arbeitszeit/Teil nach Netzabbruch, Meldung, Kontrolle) und Inventurzählungen dieser Person
   // werden beim Abmelden gelöscht (gewollt: geteiltes Gerät) – vorher ohne Rückfrage
   const dr = logoutDraftCount();
@@ -2495,10 +2513,11 @@ async function viewClaims() {
   let r;
   // ungültiger Zeitraum (400): Filter zurücksetzen und einmal neu laden; ohne gesetzte Filter normale Fehlerbehandlung (keine Schleife)
   try { r = await api('GET', `/api/claims?filter=${f}${csq}${qq}`); } catch (err) { if (!pq) throw err; S.clFrom = S.clTo = S.clIns = null; toast(err.message, true); return viewClaims(); }
-  const tabs = ['offen', 'gutachten', 'alle', 'reguliert', 'abgelehnt'];
-  const fName = (x) => (x === 'offen' ? t('claim_f_open') : x === 'gutachten' ? t('ca_pending') : x === 'alle' ? t('filter_all') : t('cls_' + x));
+  // Backlog 527/531: „Nachfassen fällig“ (nur mit eingestellter Frist), „reguliert ohne eingetragene Erstattung“ und „zurückgezogen“ als eigene Reiter
+  const tabs = ['offen', ...(r.followup_days || f === 'nachfassen' ? ['nachfassen'] : []), 'gutachten', 'alle', 'reguliert', ...(r.counts.ohne_erstattung || f === 'ohne_erstattung' ? ['ohne_erstattung'] : []), 'abgelehnt', 'zurueckgezogen'];
+  const fName = (x) => (x === 'offen' ? t('claim_f_open') : x === 'gutachten' ? t('ca_pending') : x === 'alle' ? t('filter_all') : x === 'nachfassen' ? t('todo_claims') : x === 'ohne_erstattung' ? t('claim_f_noreimb') : t('cls_' + x));
   const fLabel = fName(f);
-  let html = `<h1>${esc(t('claims'))}</h1>${printHead([`${t('print_filter')}: ${fLabel}`, r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', r.from || r.to ? `${t('claim_period')}: ${r.from ? fmtD(r.from) : '…'} – ${r.to ? fmtD(r.to) : '…'}` : '', r.insurer ? `${t('claim_insurer')}: ${r.insurer}` : '', t('print_count').replace('{n}', r.claims.length)])}${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
+  let html = `<h1>${esc(t('claims'))}</h1>${printHead([`${t('print_filter')}: ${fLabel}`, r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', r.from || r.to ? `${t('claim_period')}: ${r.from ? fmtD(r.from) : '…'} – ${r.to ? fmtD(r.to) : '…'}` : '', r.insurer ? `${t('claim_insurer')}: ${r.insurer}` : '', q ? t('claim_print_search').replace('{q}', q) : '', t('print_count').replace('{n}', r.claims.length)])}${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
     <div class="actions noprint" style="flex-wrap:wrap">${tabs.map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-clf="${x}">${esc(fName(x))} (${r.counts[x] || 0})</button>`).join('')}</div>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('clsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : ''}
     <div class="actions noprint" style="margin-top:0;align-items:end;flex-wrap:wrap" id="clper"><div><label for="clfrom">${esc(t('claim_from'))}</label><input type="date" id="clfrom" value="${esc(r.from || '')}"></div><div><label for="clto">${esc(t('claim_to'))}</label><input type="date" id="clto" value="${esc(r.to || '')}"></div>${(r.insurer_options || []).length > 1 || r.insurer ? `<div><label for="clins">${esc(t('claim_insurer'))}</label><select id="clins"><option value="">${esc(t('filter_all'))}</option>${[...new Set([...(r.insurer_options || []), ...(r.insurer ? [r.insurer] : [])])].map((x) => `<option value="${esc(x)}"${x === r.insurer ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div>` : ''}</div>
@@ -2517,7 +2536,7 @@ async function viewClaims() {
   $('#clto').onchange = () => { S.clTo = $('#clto').value || null; viewClaims(); };
   const cli = $('#clins'); if (cli) cli.onchange = () => { S.clIns = cli.value || null; viewClaims(); };
   $('#clprt').onclick = () => window.print();
-  $('#clcsv').onclick = async () => { try { download(await api('GET', `/api/claims?format=csv&filter=${f}${csq}${qq}${$('#cl3p').checked ? '&third_party=1' : ''}`), `fuhrpark-versicherungsfaelle_${envFn()}_${r.today}${r.site ? '_' + fnPart(r.site) : ''}${r.from || r.to ? '_' + (r.from || '') + '-' + (r.to || '') : ''}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#clcsv').onclick = async () => { try { download(await api('GET', `/api/claims?format=csv&filter=${f}${csq}${qq}${$('#cl3p').checked ? '&third_party=1' : ''}`), `fuhrpark-versicherungsfaelle_${envFn()}_${r.today}${r.site ? '_' + fnPart(r.site) : ''}${r.from || r.to ? '_' + (r.from || '') + '-' + (r.to || '') : ''}${q ? '_suche-' + fnPart(q) : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 // Verlauf der Auslesungen (Fahrerakte, Fahrzeugakte): stornierte durchgestrichen mit Begründung; Leitung kann stornieren (18.10.2026)
@@ -6230,7 +6249,8 @@ function viewMore(open) {
   const tfa = $('#tfa');
   tfa.ontoggle = () => { if (tfa.open) loadTotp().catch((err) => toast(err.message, true)); };
   // Abmelden ohne Netz: Meldung statt stillem Abbruch (Sitzung bliebe sonst unbemerkt bestehen – geteilte Tablets); bereits abgelaufen (401): trotzdem aufräumen
-  $('#lo').onclick = async () => { if (!(await logoutOutboxOk())) return; try { await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }); } catch (err) { if (err.status !== 401) { toast(err.message, true); return; } } clearOfflineData(); resetUserState(); markSession(''); location.hash = '#/login'; };
+  // Backlog 533: ohne Verbindung stehender Hinweis (#lo_off) statt kurzer Einblendung, damit das Gerät nicht angemeldet weitergegeben wird
+  $('#lo').onclick = async () => { if (!(await logoutOutboxOk())) return; try { await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }); } catch (err) { if (err.status !== 401) { if (err.offline) { const box = $('#lo_off') || Object.assign(document.createElement('p'), { id: 'lo_off', className: 'small alert' }); box.setAttribute('role', 'alert'); box.textContent = t('logout_offline'); $('#lo').closest('.actions').after(box); return; } toast(err.message, true); return; } } clearOfflineData(); resetUserState(); markSession(''); location.hash = '#/login'; };
   $('#pw').onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target)));
     // Passwörter nicht im offenen Formular stehen lassen; der Server meldet andere Geräte ab (19.10.2026)
     e.target.reset(); const dd = e.target.closest('details'); if (dd) dd.open = false; toast('✓ ' + t('pw_changed_others')); } catch (err) { toast(err.message, true); } };

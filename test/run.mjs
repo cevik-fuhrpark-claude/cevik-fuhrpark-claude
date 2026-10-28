@@ -5726,7 +5726,7 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   let cd = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(cd.file_id, fid); eq(cd.file_name, 'abrechnung.pdf');
   eq((await users.fleet.put(P, { note: 'Rückfrage erledigt' })).status, 200);
   eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, fid, 'ohne Feld unverändert');
-  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft;Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung\r\n'), 'CSV-Spalte');
+  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft;Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig\r\n'), 'CSV-Spalte');
   eq((await users.fleet.put(P, { file_id: null })).status, 200);
   eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, null, 'Verknüpfung aufgehoben');
   eq((await users.fleet.put(P, { file_id: fid })).status, 200);
@@ -12519,7 +12519,7 @@ await test('Versicherungsfälle: ruhendes Fahrzeug bleibt sichtbar, aber ohne Na
   eq(ov.reimbursed_sum_net, null, 'nicht in der Summe'); eq(ov.reimbursed_sum_excluded_net, 750.5, 'eigene Zeile');
   eq(ov.claims.find((c) => c.case_id === B).followup_due, false, 'ruhend: kein Nachfass-Hinweis (wie Agent)');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/claims?format=csv&filter=alle')).data);
-  ok(csv.includes(';Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung\r\n'), 'CSV-Kopf'); ok(/;ja;(ja|nein|);[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n/.test(csv.split('\r\n').slice(1).join('\r\n') + '\r\n'), 'CSV-Wert ja');
+  ok(csv.includes(';Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig\r\n'), 'CSV-Kopf'); ok(/;ja;(ja|nein|);[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n/.test(csv.split('\r\n').slice(1).join('\r\n') + '\r\n'), 'CSV-Wert ja');
 });
 
 await test('Fehlersuche 18.10. (16): Bußgeld-Standort/„offen“ vor der Grenze, Frist-Obergrenze; Lagerpreis mit Dezimalkomma, Umlagerungs-Schlüssel je Artikel; Profiltiefe gerundet, Messalter in Berliner Kalendertagen', async () => {
@@ -14272,7 +14272,7 @@ await test('Fehlersuche 19.10. (Fahrzeugimport/Lager/Push/Versicherung): Anhäng
   const cl = (await U.fleet.get('/api/claims?filter=alle')).data.claims.find((c) => c.case_id === cid);
   eq(cl.case_cost_net, null); eq(cl.cost_incomplete, true);
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/claims?filter=alle&format=csv')).data);
-  ok(/;Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung\r\n/.test(csv) && /;nein;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n$/.test(csv), csv.slice(-120));
+  ok(/;Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig\r\n/.test(csv) && /;nein;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n$/.test(csv), csv.slice(-120));
   ok(app.includes("c.cost_incomplete ? ` · ${esc(t('claim_case_cost'))} –"), 'Übersicht zeigt „unvollständig“');
   // 5. Lager-Buchungstexte: Import-Anfangsbestand und Einheit übersetzt; deaktivierter Artikel im Import markiert
   const { stockNoteText } = await import('../public/check-labels.js');
@@ -19111,7 +19111,7 @@ await test('Backlog 210 (Versicherungsschaden mit Gutachter): Gutachter, Besicht
   // Oberfläche und Texte
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   for (const n of ['appraiser', 'appraisal_on', 'appraisal_received_on', 'appraisal_net']) ok(app.includes(`name="${n}"`), `Formularfeld ${n}`);
-  ok(app.includes("const tabs = ['offen', 'gutachten', 'alle', 'reguliert', 'abgelehnt'];"), 'Filterknopf');
+  ok(app.includes("'gutachten', 'alle', 'reguliert', ...(r.counts.ohne_erstattung"), 'Filterknopf');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const k of ['ca_title', 'ca_hint', 'ca_appraiser', 'ca_on', 'ca_on_hint', 'ca_received', 'ca_net', 'ca_net_hint', 'ca_pending']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_claims_s.includes(STRINGS[l].ca_pending), `${l}: Hilfe`); }
 });
@@ -20963,7 +20963,7 @@ await test('Backlog 275–277: Versicherungsfälle – Summen je Meldejahr (Selb
   const y25 = d.sums.by_year.find((y) => y.year === '2025'); eq(y25.n, 2); eq(y25.deductible_net, 1000); eq(y25.reimbursed_net, 2000); eq(y25.appraisal_net, 1500);
   eq(d.sums.total.n, 3); eq(d.sums.total.deductible_net, 2000); eq(d.sums.by_year[0].year, '2026', 'neuestes Jahr zuerst');
   const csv = await U.fleet.get('/api/claims?format=csv&filter=alle'); const txt = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data); const L = txt.trim().split('\r\n');
-  ok(L[0].endsWith(';Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung'), 'Kopf'); ok(L.some((l) => l.includes('2025-03-01') || l.includes('01.03.2025')) && L.find((l) => /2025-03-01|01\.03\.2025/.test(l)).endsWith(';SZ-ALT 1;'), 'altes Kennzeichen beim ersten Fall');
+  ok(L[0].endsWith(';Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig'), 'Kopf'); ok(L.some((l) => l.includes('2025-03-01') || l.includes('01.03.2025')) && L.find((l) => /2025-03-01|01\.03\.2025/.test(l)).match(/;SZ-ALT 1;[^;]*;[^;]*;[^;]*$/), 'altes Kennzeichen beim ersten Fall');
   ok(txt.includes('Max Muster') && L[0].includes(';Bemerkung;'), 'normal mit Bemerkung');
   const c3 = await U.fleet.get('/api/claims?format=csv&filter=alle&third_party=1'); const t3 = typeof c3.data === 'string' ? c3.data : new TextDecoder().decode(c3.data);
   ok(!t3.includes('Max Muster') && !t3.includes('Schreiben vom') && !t3.split('\r\n')[0].includes('Bemerkung') && !t3.split('\r\n')[0].includes('Nachweis'), 'für Dritte ohne Freitext');
@@ -25345,6 +25345,46 @@ await test('Backlog 524–526 (Blickwinkel „Teile für drei wartende Aufträge
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("`/api/cases?status=wartet_teile&ws=${encodeURIComponent(site)}&limit=500`") && app.includes("nDays(d)))}` : ''}${partsEta(c)}</div>"), '524');
   ok(app.includes("c.parts_expected_date <= bDate(1)).sort((a, b) => a.parts_expected_date.localeCompare(b.parts_expected_date) || dayOrder(a, b))"), '525');
+});
+
+await test('Backlog 527–531 (Blickwinkel „Quartalsende: offene Versicherungsfälle“): Filter „Nachfassen fällig“ und „reguliert ohne Erstattung“ mit Zählern, offene älteste zuerst, CSV mit Standort/Nachfassen, Ausdruck nennt die Suche, Reiter „zurückgezogen“', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const ins = db.prepare(`INSERT INTO insurance_claims(id,environment,case_id,vehicle_id,insurer,reported_on,status,evidence,created_by,created_at,updated_at,reimbursed_net,reimbursed_on) VALUES (?,'test',?,?,'Vers',?,?,'Test',?,?,?,?,?)`);
+  const mk = async (id, day, st, re = null, ro = null) => ins.run(id, await newCase({ description: 'Fall ' + id }, U.fleet), V1, day, st, U.fleet.id, now, now, re, ro);
+  await mk('q-neu', bDayOff(-10), 'gemeldet'); await mk('q-alt', bDayOff(-80), 'in_pruefung'); await mk('q-mitte', bDayOff(-40), 'gemeldet');
+  await mk('q-reg', bDayOff(-90), 'reguliert', 900, bDayOff(-20)); await mk('q-reg0', bDayOff(-70), 'reguliert'); await mk('q-zur', bDayOff(-60), 'zurueckgezogen');
+  db.prepare('UPDATE vehicles SET site=? WHERE id=?').run('Lager Nord', V1);
+  const get = async (q) => { const r = await U.fleet.get('/api/claims?' + q); eq(r.status, 200, JSON.stringify(r.data)); return r.data; };
+  let d = await get('filter=nachfassen'); eq(d.claims.length, 0, 'ohne Frist leer'); eq(d.counts.nachfassen, 0); eq(d.filter, 'nachfassen');
+  db.prepare(`INSERT INTO settings(key,value,updated_at) VALUES ('claim_followup_days','30',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(now);
+  d = await get('filter=nachfassen'); eq(d.claims.map((c) => c.id).join(), 'q-alt,q-mitte', '527 + 528 älteste zuerst'); eq(d.counts.nachfassen, 2);
+  d = await get('filter=offen'); eq(d.claims.map((c) => c.id).join(), 'q-alt,q-mitte,q-neu', '528: offen älteste zuerst');
+  d = await get('filter=alle'); eq(d.claims[0].id, 'q-neu', 'alle: neueste zuerst wie bisher'); eq(d.counts.ohne_erstattung, 1); eq(d.counts.zurueckgezogen, 1);
+  d = await get('filter=ohne_erstattung'); eq(d.claims.map((c) => c.id).join(), 'q-reg0', '531');
+  const txt = new TextDecoder().decode((await U.fleet.get('/api/claims?format=csv&filter=offen')).data).replace(/^﻿/, '').trim().split('\r\n');
+  ok(txt[0].endsWith(';Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig'), '529 Kopf');
+  ok(txt[1].endsWith(';Lager Nord;ja') && txt[3].endsWith(';Lager Nord;nein'), '529 Zeilen: ' + txt[1].slice(-40) + ' / ' + txt[3].slice(-40));
+  const t3 = new TextDecoder().decode((await U.fleet.get('/api/claims?format=csv&filter=offen&third_party=1')).data).replace(/^﻿/, '').split('\r\n')[0];
+  eq(t3.split(';').length, txt[0].split(';').length - 2, 'Export für Dritte: weiterhin genau Nachweis/Bemerkung weg'); ok(t3.endsWith(';Fahrzeug-Standort;Nachfassen fällig'));
+  // ruhendes Fahrzeug: nie „Nachfassen fällig“ (wie der Agent)
+  db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1); eq((await get('filter=nachfassen')).counts.nachfassen, 0, 'ruhend');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("...(r.followup_days || f === 'nachfassen' ? ['nachfassen'] : [])") && app.includes("'abgelehnt', 'zurueckgezogen'];"), '527/531 Reiter');
+  ok(app.includes("q ? t('claim_print_search').replace('{q}', q) : ''") && app.includes("${q ? '_suche-' + fnPart(q) : ''}.csv"), '530 Ausdruck/Dateiname');
+  ok(app.includes("api('GET', '/api/claims?filter=nachfassen').then((r) => r.claims)"), 'Startseite nutzt den Serverfilter');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['claim_f_noreimb', 'claim_print_search', 'todo_claims', 'cls_zurueckgezogen']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
+await test('Backlog 532–535 (Blickwinkel „Neuer Fahrer, erster Arbeitstag mit Leihhandy“): Abmelden fragt bei abgelehnten Meldungen nach, Anmeldeseite trennt abgelehnte, Abmelden ohne Netz mit stehendem Hinweis, Benutzername lateinisch ohne Leerzeichen, Passwort anzeigen', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const bad = outboxGet().filter((x) => x.failed).length + otherEnvOutbox().length;\n  if (bad && !confirm(tn('logout_failed_confirm', bad))) return false;"), '532 Abmelden');
+  ok(app.includes("tn('outbox_orphan_failed', c)") && app.includes('const m = x.failed ? bad : by;'), '532 Anmeldeseite');
+  ok(app.includes("if (err.offline) { const box = $('#lo_off')") && app.includes("box.textContent = t('logout_offline')"), '533');
+  ok(app.includes('autocapitalize="none" autocorrect="off" spellcheck="false"') && app.includes("const un = $('#u').value.replace(/\\s+/g, '')") && app.includes('/[\\u0400-\\u04FF]/.test(un)'), '534');
+  ok(app.includes("${pwField('new-password', ' minlength=\"10\"')}") && app.includes("${pwField('current-password')}") && (app.match(/bindPwShow\(\);/g) || []).length === 2, '535');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['logout_offline', 'login_latin_hint', 'pw_show', 'pw_hide']) ok(STRINGS[l][k], `${l}.${k}`); for (const k of ['logout_failed_confirm', 'outbox_orphan_failed']) ok(PLURALS[l][k] && PLURALS[l][k][l === 'uk' ? 'many' : 'other'], `${l} Plural ${k}`); }
+  ok(!/[Ѐ-ӿ]/.test(STRINGS.uk.login_latin_hint.match(/\(.*?\)/)[0].replace('напр.', '')), 'Beispiel im ukrainischen Hinweis lateinisch');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

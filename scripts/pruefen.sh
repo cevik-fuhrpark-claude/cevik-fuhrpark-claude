@@ -85,6 +85,7 @@ UI-QR-Scan: offene Meldung auf der Scan-Seite, außer Betrieb → Akte, Scan-Zie
 UI-Druck Vorgang: FIN/Hersteller/Anhänger am Vorgang, keine Navigationslinks im Druck (Backlog 495–497)|ui-druck-auftrag.py|/tmp/cfp-druck-auftrag.log
 UI-Prüftermine nächster Monat („fällig bis“, Sprung ins Formular und zurück), Abfahrtskontrolle „heute bereits erfasst“ (Backlog 504–508)|ui-pruefmonat.py|/tmp/cfp-pruefmonat.log
 UI-Vertretung Werkstatt (Wechsel ohne bisherige Werkstatt, Termin entfällt) und Verträge „keine Ablesung“ (Backlog 512–514)|ui-vertretung.py|/tmp/cfp-vertretung.log
+UI-Leihhandy am ersten Arbeitstag (Passwort anzeigen, lateinischer Benutzername, abgelehnte Meldungen beim Abmelden, Abmelden ohne Netz) und Versicherungsfälle zum Quartalsende (Backlog 527–535)|ui-leihhandy.py|/tmp/cfp-leihhandy.log
 UI-Inhaber am Handy (Teilausfall Startseite, Erledigt mit Rückfrage, Zurück-Scroll, Umschalten auf Detailseite, Einrichtungsstand → Feld)|ui-inhaber-unterwegs.py|/tmp/cfp-inhaber.log
 UI-Stichtag Kennzahlen, Stundensatz-Hinweis, Rückruf am ruhenden Fahrzeug|ui-stichtag-rueckruf.py|/tmp/cfp-stichtag.log
 UI-Urlaubsrückkehr „Ältere laden“, Kontrolle bei gesperrtem Anhänger|ui-urlaub-anhaenger.py|/tmp/cfp-urlaub.log

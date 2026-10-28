@@ -16,7 +16,7 @@ def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
     if not c: fails.append(m)
 def form_login(page,user):
-    page.goto(B+'/#/login'); page.fill('#u',user); page.fill('#p',PW); page.click('#f button')
+    page.goto(B+'/#/login'); page.fill('#u',user); page.fill('#p',PW); page.click('#f button.block')
     page.wait_for_function("()=>!location.hash.startsWith('#/login')")
 def count(page):
     return len([x for x in page.evaluate(JS,['GET','/api/notifications',None])['d']['notifications'] if x['kind']=='new_login'])
