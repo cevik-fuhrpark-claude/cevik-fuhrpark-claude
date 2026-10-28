@@ -195,6 +195,16 @@ Folgeläufe ≈ 150 ms / 23 Abfragen / **2 geschriebene Zeilen** (vorher ≈ 320
 den Zeitpunkt („seit 10.10.2026 14:05“) statt einer laufenden Minutenzahl, und unveränderte Befunde werden nicht neu geschrieben –
 wichtig für das D1-Schreibkontingent (Gratis-Tarif 100 000 Zeilen/Tag bei 2 × 96 Läufen/Tag). In der Oberfläche steht je Befund „offen seit“.
 
+## Startzeit (erster Aufruf, `scripts/startzeit.py`)
+Messung ohne Cache bis zur sichtbaren Anmelde-/Einrichtungsseite, Handy 390 px, CPU-Drosselung 4×, Netz wie Chrome DevTools.
+Server mit Kompression wie Cloudflare: `CFP_GZIP=1 PORT=8788 node --experimental-sqlite scripts/dev-server.mjs`, dann
+`CFP_URL=http://localhost:8788 CFP_NETZE=slow3g,fast3g,ohne python3 scripts/startzeit.py`. Kein Prüfskript (Werte schwanken ± 1 s).
+
+| Stand | Slow 3G (50 KB/s, 2 s Latenz) | Fast 3G (180 KB/s) | ohne Drosselung | übertragen |
+|---|---|---|---|---|
+| 28.10.2026 vorher (alle Sprachen in `i18n.js`) | **Ladefehler** nach ≈ 20 s (Start-Wächter, Backlog 592) | 7,9–8,3 s | 0,9–1,1 s | 776 KB |
+| 28.10.2026 nach 592 (Wächter wartet beim Laden) | 26,7–26,8 s | – | – | 777 KB |
+
 ## Gesamtprüfung `scripts/pruefen.sh`
 `sh scripts/pruefen.sh [--schnell] [--ohne-tests] [--ohne-rauch] [--nur <Namensteil>] [--ab <Namensteil>]` – `npm test`, alle UI-Skripte (Liste `UI_SKRIPTE` im Skript, je frischer Dev-Server) und die Rauchtests; bricht beim ersten Fehler mit Fehlercode ab.
 `--schnell` nur Rauchtest hell (ohne dunkel/Ukrainisch/Englisch/HTML-Probe/Zeitreise/UI-Zeitreise), `--ohne-tests` überspringt `npm test`, `--ohne-rauch` lässt Rauchtests und Zeitreise weg,

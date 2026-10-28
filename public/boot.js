@@ -2,11 +2,14 @@
 // neue app.js trifft auf alte i18n.js aus dem Offline-Cache) oder startet die App nicht binnen 15 s, steht statt „Lädt…“ ein Hinweis
 // mit „Neu laden“. Online werden dabei die zwischengespeicherten App-Dateien verworfen, damit alle Dateien derselben Fassung neu kommen;
 // offline bleibt der Cache erhalten (Offline-Start). 21.10.2026 – vorher blieb die App dauerhaft bei „Lädt…“ stehen.
+// Langsame Verbindung (Backlog 588, 28.10.2026): Solange die Module noch geladen werden (DOMContentLoaded steht aus), zeigt der
+// Wächter nach 15 s nur „Lädt noch – langsame Verbindung“ und wartet bis 120 s. Vorher meldete er bei „Slow 3G“ (≈ 20 s Ladezeit)
+// fälschlich einen Ladefehler, und „Neu laden“ verwarf den Cache und begann von vorn.
 (function () {
   var T = {
-    de: ['Die App konnte nicht vollständig geladen werden.', 'Neu laden'],
-    uk: ['Не вдалося повністю завантажити застосунок.', 'Перезавантажити'],
-    en: ['The app could not be loaded completely.', 'Reload'],
+    de: ['Die App konnte nicht vollständig geladen werden.', 'Neu laden', 'Lädt noch – langsame Verbindung. Bitte warten …'],
+    uk: ['Не вдалося повністю завантажити застосунок.', 'Перезавантажити', 'Ще завантажується – повільне з’єднання. Зачекайте, будь ласка …'],
+    en: ['The app could not be loaded completely.', 'Reload', 'Still loading – slow connection. Please wait …'],
   };
   function lang() {
     var l = '';
@@ -31,6 +34,18 @@
     b.textContent = t[1];
     b.onclick = reload;
   }
+  var loaded = false, waited = 15000;
+  if (document.addEventListener) document.addEventListener('DOMContentLoaded', function () { loaded = true; });
+  function check() {
+    if (window.__cfpBooted) return;
+    if (!loaded && waited < 120000) {
+      var p = document.getElementById('bootslow');
+      if (!p) { var app = document.getElementById('app'); if (app && !document.getElementById('bootfail')) { app.innerHTML = '<main><p id="bootslow" role="status" style="padding:16px"></p></main>'; p = document.getElementById('bootslow'); } }
+      if (p) p.textContent = T[lang()][2];
+      waited += 5000; setTimeout(check, 5000); return;
+    }
+    fail();
+  }
   window.addEventListener('error', function () { setTimeout(fail, 0); });
-  setTimeout(fail, 15000);
+  setTimeout(check, 15000);
 })();

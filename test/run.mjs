@@ -16443,20 +16443,27 @@ await test('Fehlersuche 21.10. (PWA/Druck/Leistung): Start-Wächter bei gemischt
   const mk = (booted, online) => {
     const L = {}; const timers = []; let reloaded = 0; const deleted = [];
     const el = { innerHTML: '', _q: {}, querySelector(sel) { return (this._q[sel] ||= { textContent: '', onclick: null }); } };
-    const doc = { getElementById: (id) => (id === 'app' ? el : id === 'bootfail' ? (el.innerHTML.includes('bootfail') ? {} : null) : null) };
+    const slow = { textContent: '' };
+    const doc = { getElementById: (id) => (id === 'app' ? el : id === 'bootfail' ? (el.innerHTML.includes('bootfail') ? {} : null) : id === 'bootslow' ? (el.innerHTML.includes('bootslow') ? slow : null) : null), addEventListener: (n, f) => (L['doc_' + n] = f) };
     const win = { __cfpBooted: booted, addEventListener: (n, f) => (L[n] = f) };
     const cachesF = { keys: async () => ['cfp-shell-a', 'cfp-meta', 'other'], delete: async (k) => { deleted.push(k); return true; } };
     win.caches = cachesF;
     new Function('window', 'document', 'localStorage', 'navigator', 'location', 'setTimeout', 'caches', boot)(win, doc, { getItem: () => 'uk' }, { onLine: online, language: 'de' }, { reload: () => { reloaded++; } }, (f, ms) => timers.push([f, ms]), cachesF);
-    return { L, timers, el, win, get reloaded() { return reloaded; }, deleted };
+    return { L, timers, el, win, slow, get reloaded() { return reloaded; }, deleted };
   };
   const a = mk(false, true); a.L.error(); a.timers.find((x) => x[1] === 0)[0]();
   ok(a.el.innerHTML.includes('bootfail'), 'Hinweis statt „Lädt…“'); eq(a.el._q['#bootfail button'].textContent, 'Перезавантажити');
   a.el._q['#bootfail button'].onclick(); await new Promise((r) => setTimeout(r, 5));
   eq(a.deleted.sort().join(','), 'cfp-meta,cfp-shell-a', 'online: App-Cache verworfen'); eq(a.reloaded, 1);
-  const b = mk(false, false); b.timers.find((x) => x[1] === 15000)[0](); b.el._q['#bootfail button'].onclick(); await new Promise((r) => setTimeout(r, 5));
+  const b = mk(false, false); b.L.doc_DOMContentLoaded(); b.timers.find((x) => x[1] === 15000)[0](); b.el._q['#bootfail button'].onclick(); await new Promise((r) => setTimeout(r, 5));
   eq(b.deleted.length, 0, 'offline: Cache bleibt'); eq(b.reloaded, 1);
   const c = mk(true, true); c.L.error(); c.timers.forEach((x) => x[0]()); eq(c.el.innerHTML, '', 'gestartete App: still');
+  // Backlog 588: Module laden noch (langsame Verbindung) → nach 15 s „Lädt noch“, kein Ladefehler; Fehler erst nach 120 s oder nach geladenem Dokument
+  const d = mk(false, true); d.timers.find((x) => x[1] === 15000)[0]();
+  ok(!d.el.innerHTML.includes('bootfail') && d.el.innerHTML.includes('bootslow'), 'langsam: kein Ladefehler'); eq(d.slow.textContent, 'Ще завантажується – повільне з’єднання. Зачекайте, будь ласка …');
+  for (let i = 0; i < 20; i++) d.timers.at(-1)[0]();
+  ok(!d.el.innerHTML.includes('bootfail'), 'langsam: wartet bis 120 s'); d.timers.at(-1)[0](); ok(d.el.innerHTML.includes('bootfail'), 'nach 120 s: Hinweis „Neu laden“');
+  const e2 = mk(false, true); e2.timers.find((x) => x[1] === 15000)[0](); e2.L.doc_DOMContentLoaded(); e2.timers.at(-1)[0](); ok(e2.el.innerHTML.includes('bootfail'), 'Dokument geladen, App nicht gestartet: Hinweis');
   // 3. Service Worker: SHELL mit boot.js und Icons; version.json ohne Netz → Fehler statt (ggf. älterer) Cache-Fassung
   const sw = rd('sw.js');
   const shell = JSON.parse(sw.match(/const SHELL = (\[[^\]]*\])/)[1].replace(/'/g, '"'));

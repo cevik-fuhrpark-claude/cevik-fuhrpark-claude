@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test Start-Wächter (boot.js, 21.10.2026): Passen geladene Module nicht zusammen (Netzabbruch nach einem Deployment – neue
 # app.js, alte i18n.js aus dem Offline-Cache), steht statt dauerhaft „Lädt…“ ein Hinweis mit „Neu laden“ in der Gerätesprache (DE/UK/EN);
-# „Neu laden“ startet die App. Normaler Start: kein Hinweis. 390/820/1366 px. Dev-Server: CFP_URL (Standard Port 8787). Screenshots: CFP_SHOTS.
+# „Neu laden“ startet die App. Normaler Start: kein Hinweis. 390/820/1366 px.
+# Backlog 588 (28.10.2026): langsame Verbindung (30 KB/s) → nach 15 s „Lädt noch“ statt Ladefehler, danach startet die App (DE 390 px). Dev-Server: CFP_URL (Standard Port 8787). Screenshots: CFP_SHOTS.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); SHOTS=os.environ.get('CFP_SHOTS')
@@ -29,6 +30,18 @@ with sync_playwright() as p:
         pg.unroute('**/i18n.js'); pg.get_by_role('button',name=TXT[lang][1]).click(); pg.wait_for_timeout(1500)
         check(pg.evaluate('window.__cfpBooted===true') and pg.locator('#bootfail').count()==0, f'{lang} {w}: „Neu laden“ startet die App')
         c.close()
+    c=br.new_context(viewport={'width':390,'height':844},locale='de-DE',service_workers='block'); pg=c.new_page()
+    cdp=c.new_cdp_session(pg); cdp.send('Network.enable'); cdp.send('Network.setCacheDisabled',{'cacheDisabled':True})
+    cdp.send('Network.emulateNetworkConditions',{'offline':False,'latency':2000,'downloadThroughput':30000,'uploadThroughput':30000})
+    pg.goto(B,wait_until='commit')
+    try: pg.wait_for_function("()=>document.getElementById('bootslow')||document.getElementById('bootfail')||window.__cfpBooted",timeout=90000); t=pg.inner_text('#app')
+    except Exception: t=''
+    check('Lädt noch – langsame Verbindung' in t and pg.locator('#bootfail').count()==0, f'de 390: langsame Verbindung – „Lädt noch“ statt Ladefehler ({t[:60]!r})')
+    if SHOTS: pg.screenshot(path=f'{SHOTS}/startwaechter_langsam_de_390.png')
+    try: pg.wait_for_function('()=>window.__cfpBooted===true',timeout=120000,polling=500); ok=True
+    except Exception as e: ok=False; print('    ', str(e)[:200], pg.inner_text('#app')[:80])
+    check(ok and pg.locator('#bootfail').count()==0, 'de 390: langsame Verbindung – App startet danach')
+    c.close()
     br.close()
 print('Start-Wächter: '+('alles grün' if not fails else 'FEHLER: '+' | '.join(fails)))
 raise SystemExit(1 if fails else 0)
