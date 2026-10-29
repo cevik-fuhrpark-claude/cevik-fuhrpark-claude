@@ -482,6 +482,18 @@ export function withTacho(status, tc) {
 }
 
 // Fristenliste als CSV (nur Inhaber/Fuhrparkleitung; Aufruf wird protokolliert). Nur gespeicherte Daten, leere Zelle = nicht erfasst.
+// Backlog 611 (Blickwinkel „Jahresplanung 2027“): Fristen einer Akte bis zu einem Stichtag (Nachweise „gültig bis“, nächste Führerscheinkontrolle,
+// Auslesung Fahrerkarte spätestens) – nur vorhandene Daten, nichts berechnet; früheste zuerst. Leer = nichts bis zum Stichtag.
+export function driverDueItems(d, tc, dueBy) {
+  const out = [];
+  for (const i of d.status.items || []) if (i.valid_until && i.valid_until <= dueBy) out.push({ kind: i.kind, ...(i.title ? { title: i.title } : {}), date: i.valid_until, status: i.status });
+  const ck = d.status.check || {};
+  if (ck.due && ck.due <= dueBy) out.push({ kind: 'kontrolle', date: ck.due, status: ck.status });
+  if (tc && tc.due && tc.due <= dueBy) out.push({ kind: 'auslesung', date: tc.due, status: tc.status });
+  return out.sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));
+}
+export const validDay = (x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x) && !Number.isNaN(Date.parse(x + 'T00:00:00Z')) && new Date(x + 'T00:00:00Z').toISOString().slice(0, 10) === x;
+
 export function driversCsv(list, tachoByDriver, cell) {
   const DOV = { ok: 'in Ordnung', hinweis: 'Hinweis', kritisch: 'kritisch' };
   const DCK = { ok: 'aktuell', faellig: 'fällig', bald: 'bald fällig', fehlt: 'keine erfasst', mangel: 'Mangel' };

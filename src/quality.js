@@ -233,7 +233,9 @@ export async function dataQuality(env, user, envName, query = {}) {
   const needHs = vs.filter((v) => ['HU', 'SP'].some((k) => !hasRule.has(`${v.id}|${k}`)));
   if (needHs.length) {
     const today = berlinDate();
-    for (const [vid, x] of await loadHuSpInputs(env, needHs.map((v) => v.id))) { const h = huSpFor(x, today, 30); if (h.hu && h.hu.due) hasRule.add(`${vid}|HU`); if (h.sp && (h.sp.due || h.sp.status === 'erste_sp_kuenftig')) hasRule.add(`${vid}|SP`); }
+    for (const [vid, x] of await loadHuSpInputs(env, needHs.map((v) => v.id))) { const h = huSpFor(x, today, 30); if (h.hu && h.hu.due) hasRule.add(`${vid}|HU`); if (h.sp && (h.sp.due || h.sp.status === 'erste_sp_kuenftig')) hasRule.add(`${vid}|SP`);
+      // Backlog 610: HU/SP „Frist ungeklärt“ ohne Datum bei belegter HU steht wie in der Prüftermin-Übersicht mit Grund unter „Frist ungeklärt“ (keine Lücke)
+      for (const k of ['HU', 'SP']) { const y = k === 'HU' ? h.hu : h.sp; if (y && !y.due && y.status === 'ungeklaert' && h.hu.last_done && (y.notes || []).length) hasRule.add(`${vid}|${k}`); } }
   }
   const pulledBy = new Map();
   const siteLabel = siteLabels(vs);

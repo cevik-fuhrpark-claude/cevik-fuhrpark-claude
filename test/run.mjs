@@ -527,7 +527,7 @@ await test('Prüftermin-Übersicht: Fälligkeiten, Lückenliste HU/SP/UVV/Tacho,
   ok(hu && hu.next_due_date === HU_DUE && hu.plate === 'SZ-YC 5513', 'HU-Termin mit Kennzeichen');
   ok(['faellig', 'ueberfaellig', 'ok'].includes(hu.status) && typeof hu.days === 'number', 'Status und Tage');
   const g1 = r.data.gaps.find((g) => g.vehicle_id === V1); const g2 = r.data.gaps.find((g) => g.vehicle_id === V2);
-  eq(g1.missing.join(','), 'SP,UVV,Tachograph', 'V1 ohne SP/UVV/Tacho'); eq(g2.missing.length, 4, 'V2 ohne alle Pflichtprüfungen');
+  eq(g1.missing.join(','), 'UVV,Tachograph', 'V1 ohne UVV/Tacho (SP: Frist ungeklärt mit Grund, Backlog 610)'); ok(r.data.rows.some((x) => x.vehicle_id === V1 && x.kind === 'SP' && x.status === 'ungeklaert' && x.next_due_date === null), 'V1 SP ungeklärt'); eq(g2.missing.length, 4, 'V2 ohne alle Pflichtprüfungen');
   eq(r.data.totals.vehicles_with_gaps, 2);
   eq((await users.driver.get('/api/maintenance')).status, 403, 'Fahrer');
   eq((await users.ws.get('/api/maintenance')).status, 200, 'Werkstatt liest');
@@ -7044,7 +7044,9 @@ await test('CSV-Rundreise: eigene Exporte (Fahrzeuge, Prüftermine, Verträge) l
   const lines = mt.trim().split('\r\n');
   const gaps = lines.filter((l) => l.includes(';kein Termin hinterlegt;'));
   ok(gaps.length > 0, 'Testdaten mit Lücken');
-  eq(mr.data.skipped.filter((s) => s.reason === gapReason).length, gaps.length, 'jede Lückenzeile mit ruhigem Hinweis');
+  // Backlog 610: SP „Frist ungeklärt“ ohne Datum/Nachweis (berechnete Zeile) wird ebenso ruhig übersprungen
+  const quiet = lines.filter((l) => { const c = l.split(';'); return c[7] === 'Frist ungeklärt' && !c[4] && !c[5] && !c[8]; });
+  eq(mr.data.skipped.filter((s) => s.reason === gapReason).length, gaps.length + quiet.length, 'jede Lückenzeile mit ruhigem Hinweis');
   ok(mr.data.skipped.every((s) => s.reason === gapReason || /^Kein Datum/.test(s.reason) || s.reason === 'Rückrufe über „Rückrufe importieren“ oder einzeln in der Fahrzeugakte erfassen'), 'sonst nur Zeilen ohne Datum (km-Fälligkeit/ungeklärt) bzw. Rückrufe: ' + JSON.stringify(mr.data.skipped.filter((s) => s.reason !== gapReason)));
   // Arbeitsweise „Lücken in Excel füllen“: Termin + Nachweis in eine Lückenzeile eintragen → genau ein neuer Termin
   const c = gaps[0].split(';'); c[5] = '2027-03-31'; c[7] = ''; c[8] = 'Prüfbericht Testlauf';
@@ -9579,16 +9581,18 @@ await test('Datenqualität: Prüfungslücken nach derselben Regel wie die Prüft
   const { ensureSchema } = await import('../src/worker.js'); const { maintenanceOverview } = await import('../src/maintenance.js'); const { dataQuality } = await import('../src/quality.js');
   const e = makeEnv(); await ensureSchema(e); const db = e.DB.db; db.exec('PRAGMA foreign_keys=OFF'); const now = new Date().toISOString();
   const veh = (id, plate, cls, kg) => db.prepare(`INSERT INTO vehicles(id,vin,plate,site,manufacturer,build_year,kind,zgm_class,zgm_kg,active,created_at,updated_at) VALUES (?,?,?,'Dortmund','MAN',2020,'lkw',?,?,1,?,?)`).run(id, id.slice(4), plate, cls, kg, now, now);
-  veh('VIN:A', 'T-DQ 1', '3_5_7_5', null); veh('VIN:B', 'T-DQ 2', null, 7000); veh('VIN:C', 'T-DQ 3', 'ueber_12', null); veh('VIN:D', 'T-DQ 4', null, null);
+  veh('VIN:A', 'T-DQ 1', '3_5_7_5', null); veh('VIN:B', 'T-DQ 2', null, 7000); veh('VIN:C', 'T-DQ 3', 'ueber_12', null); veh('VIN:D', 'T-DQ 4', null, null); veh('VIN:E', 'T-DQ 5', 'ueber_12', null);
   const rule = (id, vid, kind, next) => db.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,last_done_date,next_due_date,evidence,created_by,created_at,updated_at,due_source) VALUES (?,?,?,'2026-03-10',?,'Beleg','u',?,?,'nachweis')`).run(id, vid, kind, next, now, now);
-  for (const vid of ['VIN:A', 'VIN:B', 'VIN:C', 'VIN:D']) { rule(vid + 'u', vid, 'UVV', '2027-03-10'); rule(vid + 't', vid, 'Tachograph', '2028-03-10'); }
+  for (const vid of ['VIN:A', 'VIN:B', 'VIN:C', 'VIN:D', 'VIN:E']) { rule(vid + 'u', vid, 'UVV', '2027-03-10'); rule(vid + 't', vid, 'Tachograph', '2028-03-10'); }
   for (const vid of ['VIN:A', 'VIN:B', 'VIN:D']) rule(vid + 'h', vid, 'HU', '2027-03-31');
   rule('VIN:Ch', 'VIN:C', 'HU', null); rule('VIN:Cs', 'VIN:C', 'SP', null); // Frist ungeklärt bzw. ohne Datum – Eintrag vorhanden
   const ov = await maintenanceOverview(e, { role: 'owner' }, 'production');
   const q = await dataQuality(e, { role: 'owner' }, 'production');
   const gapsQ = q.items.filter((i) => i.check === 'missing_inspection').map((i) => `${i.plate}:${i.detail}`).sort();
   const gapsO = ov.gaps.map((g) => `${g.plate}:${(g.missing || []).join(', ')}`).sort();
-  eq(JSON.stringify(gapsQ), JSON.stringify(['T-DQ 4:SP']), 'Datenqualität Lücken:');
+  // Backlog 610: T-DQ 4 (HU belegt, zGM fehlt) steht jetzt unter „Frist ungeklärt“ mit Grund statt als Lücke; T-DQ 5 ohne HU bleibt Lücke
+  eq(JSON.stringify(gapsQ), JSON.stringify(['T-DQ 5:HU, SP']), 'Datenqualität Lücken:');
+  ok(ov.rows.some((r) => r.plate === 'T-DQ 4' && r.kind === 'SP' && r.status === 'ungeklaert' && r.note_codes.some((c) => c.code === 'sp_no_class')), 'T-DQ 4 SP ungeklärt mit Grund');
   eq(JSON.stringify(gapsO), JSON.stringify(gapsQ), 'Übersicht = Datenqualität:');
 });
 
@@ -22763,18 +22767,18 @@ await test('Backlog 382 (Blickwinkel „Betriebskontrolle/BG-Prüfung angekündi
   eq((await U.fleet.post(`/api/maintenance/${tg.data.id}/complete`, { done_date: day(-3), evidence: 'Prüfbescheinigung 7' })).status, 200);
   const csv = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv')).data).replace(/^\uFEFF/, '');
   const lines = csv.trim().split('\r\n'); const head = lines[0].split(';');
-  ok(head.at(-5) === 'Letztes Prüfergebnis' && head.at(-4) === 'Prüfmangel offen', head.join('|')); // Backlog 505: danach Werkstatttermin/Auftrag, Backlog 577: Titel
+  ok(head.at(-6) === 'Letztes Prüfergebnis' && head.at(-5) === 'Prüfmangel offen', head.join('|')); // Backlog 610: „Hinweis zur Frist“ am Ende // Backlog 505: danach Werkstatttermin/Auftrag, Backlog 577: Titel
   const cols = (l) => l.split(';').length; ok(lines.every((l) => cols(l) === head.length), 'gleiche Spaltenzahl');
   const de = (d) => d.split('-').reverse().join('.');
   const u = lines.find((l) => l.includes(';UVV;')).split(';');
-  ok(u.at(-5) === `verkehrsunsicher (${de(day(-6))})` && u.at(-4) === `verkehrsunsicher am ${de(day(-6))} – kein Mängelauftrag angelegt`, u.join('|'));
+  ok(u.at(-6) === `verkehrsunsicher (${de(day(-6))})` && u.at(-5) === `verkehrsunsicher am ${de(day(-6))} – kein Mängelauftrag angelegt`, u.join('|'));
   const t = lines.find((l) => l.includes(';Tachograph;')).split(';');
-  ok(t.at(-5) === `kein Ergebnis eingetragen (${de(day(-3))})` && t.at(-4) === '', t.join('|'));
+  ok(t.at(-6) === `kein Ergebnis eingetragen (${de(day(-3))})` && t.at(-5) === '', t.join('|'));
   ok(lines.some((l) => l.includes('kein Termin hinterlegt')), 'Lückenzeilen weiter da');
   // Mängelauftrag angelegt → kein „kein Mängelauftrag angelegt“ mehr
   const ord = await U.fleet.post('/api/cases', { vehicle_id: V1, description: 'UVV-Mängel beheben', priority: 'kritisch', driveability: 'nicht_fahrbereit', workshop_site: 'DORTMUND', request_key: rk() }); eq(ord.status, 201);
   const csv2 = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv')).data);
-  const u2 = csv2.split('\r\n').find((l) => l.includes(';UVV;')).split(';'); eq(u2.at(-4), '', 'Auftrag angelegt'); ok(u2.at(-5).startsWith('verkehrsunsicher'), 'Ergebnis bleibt sichtbar');
+  const u2 = csv2.split('\r\n').find((l) => l.includes(';UVV;')).split(';'); eq(u2.at(-5), '', 'Auftrag angelegt'); ok(u2.at(-6).startsWith('verkehrsunsicher'), 'Ergebnis bleibt sichtbar');
 });
 await test('Backlog 383/384 (Blickwinkel „Betriebskontrolle/BG-Prüfung angekündigt“): Fahrer-CSV nennt fehlende Fahrerkarte/Code 95 als „nicht erfasst“ (Status unverändert), Auslesungs-CSV listet Fahrer ohne Fahrerkarte, Auslesungsverlauf listet aktive Fahrer/Lkw ohne jede Auslesung als „keine Auslesung erfasst – Frist ungeklärt“ (ohne Lückentage); Texte DE/UK/EN', async () => {
   const { U, V1 } = await freshWorld();
@@ -25246,14 +25250,14 @@ await test('Backlog 504–506 (Blickwinkel „Prüftermine für den nächsten Mo
   const a = await mk('UVV', 40); await mk('Tachograph', 75);
   const rows = async (q) => { const r = await U.fleet.get('/api/maintenance?format=csv' + q); eq(r.status, 200); return new TextDecoder().decode(r.data).replace(/^﻿/, '').trim().split('\r\n'); };
   const all = await rows(''); ok(all.some((l) => l.includes(';UVV;')) && all.some((l) => l.includes(';Tachograph;')) && all.some((l) => l.includes('kein Termin hinterlegt')), 'ohne Filter wie bisher');
-  ok(all[0].endsWith(';Letztes Prüfergebnis;Prüfmangel offen;Geplanter Werkstatttermin;Werkstattauftrag (Nr.);Titel'), all[0]); // Backlog 577: Titel am Ende
+  ok(all[0].endsWith(';Letztes Prüfergebnis;Prüfmangel offen;Geplanter Werkstatttermin;Werkstattauftrag (Nr.);Titel;Hinweis zur Frist'), all[0]); // Backlog 577: Titel am Ende
   const due = await rows('&filter=due'); ok(!due.some((l) => l.includes(';UVV;')) && !due.some((l) => l.includes('kein Termin hinterlegt')), '504: ohne „fällig bis“ nur Warnfrist, keine Lücken');
   const by = await rows('&filter=due&due_by=' + bDayOff(45)); ok(by.some((l) => l.includes(';UVV;')) && !by.some((l) => l.includes(';Tachograph;')), '504: fällig bis +45 enthält UVV (+40), nicht Tachograph (+75)');
   eq((await U.fleet.get('/api/maintenance?format=csv&filter=xyz')).status, 400); eq((await U.fleet.get('/api/maintenance?format=csv&filter=due&due_by=2026-13-45')).status, 400);
   const gaps = await rows('&filter=gaps'); ok(gaps.length > 1 && gaps.slice(1).every((l) => l.includes('kein Termin hinterlegt')), 'gaps: nur Lückenzeilen');
   const pd = bDayOff(20); const pb = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: pd, ids: [a] }); eq(pb.status, 200, JSON.stringify(pb.data));
   const np = await rows('&filter=noplan&due_by=' + bDayOff(45)); ok(!np.some((l) => l.includes(';UVV;')), '505: eingeplant → nicht in „fällig, nicht eingeplant“');
-  const u = (await rows('&filter=all')).find((l) => l.includes(';UVV;')).split(';'); eq(u.at(-3), pd.split('-').reverse().join('.'), '505: Geplanter Werkstatttermin'); eq(u.at(-2), '', 'kein Auftrag');
+  const u = (await rows('&filter=all')).find((l) => l.includes(';UVV;')).split(';'); eq(u.at(-4), pd.split('-').reverse().join('.'), '505: Geplanter Werkstatttermin'); eq(u.at(-3), '', 'kein Auftrag');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const m0 = app.indexOf('async function viewMaint('); const vm = app.slice(m0, app.indexOf('\nasync function ', m0 + 10));
   ok(vm.includes("`/api/maintenance?format=csv&filter=${encodeURIComponent(f)}${dueBy ? '&due_by=' + dueBy : ''}${mkQ}`"), '505: CSV mit Filter der Liste');
@@ -25815,7 +25819,7 @@ await test('Backlog 577 (Migration 0095): Titel je Prüftermin „Sonstiges“ �
   eq((await U.fleet.post('/api/maintenance/create-batch', { kind: 'Bremsen', title: 'x', evidence: 'y', vehicle_ids: [V1] })).status, 400);
   const ov = (await U.fleet.get('/api/maintenance')).data; ok(ov.rows.some((r) => r.id === a.data.id && r.title === 'Kühlaggregat'), 'Übersicht');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/maintenance?format=csv')).data).split(/\r?\n/);
-  ok(csv[0].endsWith(';Titel'), 'CSV-Spalte am Ende'); ok(csv.some((l) => l.includes('Bericht 4711') && l.endsWith(';Kühlaggregat')), 'CSV-Wert');
+  ok(csv[0].endsWith(';Titel;Hinweis zur Frist'), 'CSV-Spalte am Ende'); ok(csv.some((l) => l.includes('Bericht 4711') && l.endsWith(';Kühlaggregat;')), 'CSV-Wert');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['rule_title', 'rule_title_ph', 'rule_title_hint']) ok(STRINGS[l][k], k + ' ' + l);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("const mkR = (r) => mk(r.kind) + (r && r.title ? ' – ' + r.title : '');") && app.includes('<tr><td>${esc(mkR(m))}</td>') && app.includes("ti.disabled = !o; ti.required = o;") && app.includes("...($('#mck').value === 'Sonstiges' && $('#mct').value.trim() ? { title: $('#mct').value.trim() } : {})"), 'Oberfläche');
@@ -26424,6 +26428,63 @@ await test('Backlog 609 (Blickwinkel „Auftrag ohne Reparatur beendet – was s
   ok((await U.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.cases.some((c) => c.id === id), 'Leitung sieht ihn in der Akte');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("${o.id ? `<a href=\"#/cases/${esc(o.id)}\">${esc(o.case_no)}</a>` : `<b>${esc(o.case_no)}</b>`}"), 'Kurzinfo ohne Link bei fehlender Kennung');
+});
+
+await test('Backlog 610 (Blickwinkel „Jahresplanung 2027“): SP „Frist ungeklärt“ ohne Datum (Erstzulassung fehlt) als Zeile mit Grund in Reiter, Zähler und CSV statt stummer Lücke; ohne HU bleibt die Lücke', async () => {
+  const { U, V1 } = await freshWorld(); const V2 = 'VIN:WDB9630051L917317';
+  for (const V of [V1, V2]) eq((await U.fleet.post(`/api/vehicles/${V}/spec`, { zgm_class: 'ueber_12', spec_source: 'Test: Fahrzeugschein F.2' })).status, 200);
+  const hu = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', last_done_date: bDayOff(-90), evidence: 'HU-Bericht Test' }); eq(hu.status, 201, JSON.stringify(hu.data));
+  const ov = (await U.fleet.get('/api/maintenance')).data;
+  const sp = ov.rows.find((r) => r.vehicle_id === V1 && r.kind === 'SP');
+  ok(sp && sp.status === 'ungeklaert' && sp.next_due_date === null && sp.virtual && sp.note_codes.some((c) => c.code === 'sp_start_unclear'), 'SP-Zeile ungeklärt mit Grund ' + JSON.stringify(sp));
+  ok(ov.totals.unclear >= 1, 'Zähler „Frist ungeklärt“');
+  ok(!ov.gaps.some((g) => g.vehicle_id === V1 && g.missing.includes('SP')), 'keine Lücke SP mehr für V1');
+  ok(ov.gaps.some((g) => g.vehicle_id === V2 && g.missing.includes('HU') && g.missing.includes('SP')), 'ohne HU bleibt HU/SP Lücke');
+  ok(!ov.rows.some((r) => r.vehicle_id === V2 && (r.kind === 'SP' || r.kind === 'HU')), 'ohne HU keine ungeklärte Zeile');
+  const rows = async (q) => new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv' + q)).data).replace(/^﻿/, '').trim().split('\r\n');
+  const un = await rows('&filter=ungeklaert');
+  ok(un[0].endsWith(';Titel;Hinweis zur Frist'), un[0]);
+  const l = un.find((x) => x.includes(';SP;')); ok(l && l.includes(';Frist ungeklärt;') && l.split(';').at(-1).includes('Erstzulassung fehlt'), 'CSV mit Grund: ' + l);
+  ok(!(await rows('&filter=gaps')).some((x) => x.startsWith('SZ-YC 5513;') && x.includes(';SP;')), 'nicht zusätzlich als Lücke');
+  ok((await rows('&filter=all')).filter((x) => x.includes(';HU;') && x.startsWith('SZ-YC 5513;')).every((x) => x.split(';').at(-1) === ''), 'HU in Ordnung: Hinweis leer');
+  // ICS: ohne Datum kein Termin
+  const ics = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=ics')).data); ok(!ics.includes(`husp-${V1}-SP`), 'kein Kalendertermin ohne Datum');
+  // Erstzulassung nachgetragen → berechnete Frist statt „ungeklärt ohne Datum“
+  eq((await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', first_registration: '2015-03-01', spec_source: 'Test: Fahrzeugschein B' })).status, 200);
+  const sp2 = (await U.fleet.get('/api/maintenance')).data.rows.find((r) => r.vehicle_id === V1 && r.kind === 'SP');
+  ok(sp2 && sp2.next_due_date && sp2.due_basis === 'berechnet', 'mit Erstzulassung berechnet ' + JSON.stringify(sp2));
+});
+
+await test('Backlog 611 (Blickwinkel „Jahresplanung 2027“): Fahrerliste „Fristen bis“ – nur Akten mit Frist bis zum Stichtag (auch noch „in Ordnung“), früheste zuerst, CSV gleich gefiltert, ungültiges Datum 400, nur Leitung', async () => {
+  const { U } = await freshWorld();
+  const mkD = async (name, kind, vu) => { const a = await U.fleet.post('/api/drivers', { display_name: name }); eq(a.status, 201, JSON.stringify(a.data));
+    if (kind) eq((await U.fleet.post(`/api/drivers/${a.data.id}/documents`, { kind, valid_until: vu, evidence: 'Original gesehen', ...(kind === 'fuehrerschein' ? { license_classes: 'CE' } : {}) })).status, 201); return a.data.id; };
+  const y1 = Number(BERLIN_TODAY.slice(0, 4)) + 1;
+  const a = await mkD('Anna Spät', 'fahrerkarte', `${y1}-11-30`); const b = await mkD('Bert Früh', 'code95', `${y1}-02-15`); const c = await mkD('Carl Später', 'fuehrerschein', `${y1 + 1}-01-01`);
+  const r = await U.fleet.get(`/api/drivers?due_by=${y1}-12-31`); eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.due_by, `${y1}-12-31`);
+  eq(r.data.drivers.map((d) => d.id).join(','), [b, a].join(','), 'früheste zuerst, ohne Carl (Frist danach)');
+  const da = r.data.drivers.find((d) => d.id === a); ok(da.due_items.length === 1 && da.due_items[0].kind === 'fahrerkarte' && da.due_items[0].date === `${y1}-11-30` && da.due_items[0].status === 'ok', 'auch „in Ordnung“ mit Datum ' + JSON.stringify(da.due_items));
+  eq((await U.fleet.get('/api/drivers')).data.drivers.length, 3, 'ohne Stichtag alle');
+  for (const bad of [`${y1}-02-30`, 'morgen', `${y1}-13-01`]) eq((await U.fleet.get('/api/drivers?due_by=' + bad)).status, 400, bad);
+  const csv = new TextDecoder().decode((await U.fleet.get(`/api/drivers?format=csv&due_by=${y1}-12-31`)).data).trim().split('\r\n');
+  eq(csv.length, 3, 'CSV: Kopf + 2'); ok(csv[1].startsWith('Bert Früh;') && csv[2].startsWith('Anna Spät;'), csv.join('|'));
+  // Fahrer: eigene Akte, Parameter ohne Wirkung
+  const dr = await U.driver.get(`/api/drivers?due_by=${y1}-12-31`); eq(dr.status, 200); ok(!dr.data.due_by, 'Fahrer ohne Filter');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("ddue ? 'due_by=' + ddue : ''") && app.includes('id="ddueby"') && app.includes("dr.due_by ? '_bis_' + dr.due_by : ''"), 'Oberfläche mit Stichtag, CSV-Dateiname');
+});
+
+await test('Backlog 612/613 (Blickwinkel „Jahresplanung 2027“): Prüftermine mit „Fällig bis“ nach Fälligkeitsmonat gruppiert (überfällig zuerst, ohne Datum zuletzt); Verträge mit Schnellwahl „bis Ende nächsten Jahres“; Texte DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m0 = app.indexOf('async function viewMaint('); const vm = app.slice(m0, app.indexOf('\nasync function ', m0 + 10));
+  ok(vm.includes("const mGrpOn = !!dueBy && (f === 'due' || f === 'noplan')") && vm.includes('fmtMonth(k)') && vm.includes("(mGrpOn ? [...rows].sort("), '612: Gruppen nur mit Stichtag in den Fällig-Reitern');
+  const mGk = (r) => (r.status === 'ueberfaellig' ? '0' : r.next_due_date ? '1' + r.next_due_date : '2');
+  const rows = [{ status: 'ok', next_due_date: '2027-03-31' }, { status: 'ungeklaert', next_due_date: null }, { status: 'faellig', next_due_date: '2026-11-30' }, { status: 'ueberfaellig', next_due_date: '2026-10-01' }, { status: 'ok', next_due_date: '2027-01-15' }];
+  eq([...rows].sort((a, b) => (mGk(a) < mGk(b) ? -1 : mGk(a) > mGk(b) ? 1 : 0)).map((r) => r.next_due_date || '-').join(','), '2026-10-01,2026-11-30,2027-01-15,2027-03-31,-', 'Reihenfolge');
+  ok(vm.includes("const mGk = (r) => (r.status === 'ueberfaellig' ? '0' : r.next_due_date ? '1' + r.next_due_date : '2');"), 'gleiche Sortierregel');
+  ok(app.includes(`id="ctyear"`) && app.includes("S.ctEndsBy = `${Number(bDate().slice(0, 4)) + 1}-12-31`"), '613: Verträge bis Ende nächsten Jahres');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['mgrp_none', 'ddue_label', 'ddue_clear', 'ddue_hint', 'mdueby_year']) ok(STRINGS[l][k], `${l}.${k}`);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

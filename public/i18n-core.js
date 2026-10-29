@@ -379,6 +379,7 @@ const V_MORE = [
   ['Unbekannter Filter.', 'Невідомий фільтр.', 'Unknown filter.'],
   ['Unbekannte Prüfart.', 'Невідомий вид перевірки.', 'Unknown inspection type.'],
   ['Datum „fällig bis“ ungültig.', 'Недійсна дата «до терміну».', 'Invalid “due by” date.'],
+  ['Datum „Fristen bis“ ungültig.', 'Недійсна дата «Строки до».', 'Invalid “Deadlines by” date.'],
 ];
 for (const [de, uk, en] of V_MORE) { VALIDATION_TEXTS.uk[de] = uk; VALIDATION_TEXTS.en[de] = en; }
 Object.assign(VALIDATION_TEXTS.uk, { cv_busy: 'Інші дефекти цієї перевірки вже в роботі ({v}) – транспорт виправити не можна. Відхиліть і повідомте заново для правильного транспорту.' });
@@ -1111,6 +1112,8 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 606: Kostenbericht – Schnellwahl Vormonat (Monatsprüfung)
 // Backlog 607: geplanter Prüftermin nach Fristende
 // Backlog 608: Werkstattplan – Termine des gekoppelten Fahrzeugs
+// Backlog 611 (Blickwinkel „Jahresplanung 2027“): Fahrerliste „Fristen bis“
+// Backlog 612: Prüftermine mit „Fällig bis“ nach Monat gruppiert
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

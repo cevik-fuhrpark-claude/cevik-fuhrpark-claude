@@ -102,6 +102,7 @@ UI-Aktionsformular nach Netzabbruch (Entwurf je Vorgang, keine Doppelbuchung)|ui
 UI-Jahresabschluss (Erfassungstag je Kostenposition, Rückfrage rückwirkende Vertragsrate/Arbeitsdatum im Vormonat, „nachträglich erfasst“)|ui-jahresabschluss.py|/tmp/cfp-jahresabschluss.log
 UI-Fahrerakte ausgeschieden (Hinweis Konto aktiv) und Wiedereinstellung (Rückfrage alte Akte)|ui-fahrer-ausgeschieden.py|/tmp/cfp-fahrer-ausgeschieden.log
 UI-Benutzer deaktivieren nennt beendete Fahrzeugzuordnungen|ui-austritt-zuordnung.py|/tmp/cfp-austritt-zuordnung.log
+UI-Jahresplanung (Fahrer „Fristen bis“, Prüftermine nach Monat, SP ungeklärt, Verträge)|ui-jahresplanung.py|/tmp/cfp-jahresplanung.log
 UI-Kommentar an deaktivierten Melder: Kästchen ausgegraut, Hinweis niemand benachrichtigt|ui-kommentar-melder.py|/tmp/cfp-kommentar-melder.log
 UI-Fahrer zuordnen mit ausgeschiedener Fahrerakte: Auswahl und Warnhinweis|ui-zuordnung-akte-ausgeschieden.py|/tmp/cfp-zuordnung-akte.log
 UI-Werkstattplan: Auftrag nach Fristende und mehrfach verschoben|ui-plan-verschoben.py|/tmp/cfp-plan-verschoben.log

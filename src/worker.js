@@ -580,12 +580,20 @@ async function handleApi(request, env, ctx, url) {
     // Leitung: Gesamtstatus mit Auslese-Frist wie CSV und Akte (Fahrer: listDrivers liefert die eigene Akte schon so)
     const tr = ['owner', 'fleet'].includes(user.role) ? await tacho.tachoRows(env, envName, await tacho.warnDays(env), undefined, q.inactive === '1' ? 0 : 1) : null;
     if (tr) { const tb = new Map(tr.drivers.map((x) => [x.id, x])); list = list.map((d) => ({ ...d, status: drivers.withTacho(d.status, tb.get(d.id)) })); }
+    // Backlog 611: „Fristen bis“ (Leitung) – nur Akten mit einer Frist bis zum Stichtag, früheste zuerst, mit den betroffenen Fristen (`due_items`)
+    const dueBy = tr && q.due_by ? q.due_by : null;
+    if (dueBy) {
+      if (!drivers.validDay(dueBy)) throw new HttpError(400, 'validation', 'Datum „Fristen bis“ ungültig.');
+      const tb = new Map(tr.drivers.map((x) => [x.id, x]));
+      list = list.map((d) => ({ ...d, due_items: drivers.driverDueItems(d, tb.get(d.id), dueBy) })).filter((d) => d.due_items.length)
+        .sort((a, b) => a.due_items[0].date.localeCompare(b.due_items[0].date) || drivers.byName(a, b));
+    }
     if (q.format === 'csv') {
       if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
-      await auth.audit(env, user.id, 'reports.drivers.export', null, { rows: list.length, environment: envName, site: dsel ? dsel.site : null });
-      return new Response(drivers.driversCsv(list, new Map(tr.drivers.map((x) => [x.id, x])), maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-fristen_${envName}_${berlinDate()}.csv"` } });
+      await auth.audit(env, user.id, 'reports.drivers.export', null, { rows: list.length, environment: envName, site: dsel ? dsel.site : null, ...(dueBy ? { due_by: dueBy } : {}) });
+      return new Response(drivers.driversCsv(list, new Map(tr.drivers.map((x) => [x.id, x])), maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-fristen_${envName}_${berlinDate()}${dueBy ? '_bis_' + dueBy : ''}.csv"` } });
     }
-    return json({ drivers: list, ...(dsel ? { site: dsel.site, site_options: dsel.options, no_site_hidden: noSiteHidden, linked_user_ids: await drivers.linkedUserIds(env) } : {}) });
+    return json({ drivers: list, ...(dueBy ? { due_by: dueBy } : {}), ...(dsel ? { site: dsel.site, site_options: dsel.options, no_site_hidden: noSiteHidden, linked_user_ids: await drivers.linkedUserIds(env) } : {}) });
   }
   if (path === '/api/drivers' && m === 'POST') return json(await drivers.createDriver(env, user, envName, await readJson(request)), 201);
   // Nachweise/Führerscheinkontrollen aller Fahrer für einen Zeitraum (Backlog 246, Betriebsprüfung) – vor /api/drivers/:id

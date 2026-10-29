@@ -1378,6 +1378,7 @@ const V_MORE = [
   ['Unbekannter Filter.', 'Невідомий фільтр.', 'Unknown filter.'],
   ['Unbekannte Prüfart.', 'Невідомий вид перевірки.', 'Unknown inspection type.'],
   ['Datum „fällig bis“ ungültig.', 'Недійсна дата «до терміну».', 'Invalid “due by” date.'],
+  ['Datum „Fristen bis“ ungültig.', 'Недійсна дата «Строки до».', 'Invalid “Deadlines by” date.'],
 ];
 for (const [de, uk, en] of V_MORE) { VALIDATION_TEXTS.uk[de] = uk; VALIDATION_TEXTS.en[de] = en; }
 Object.assign(VALIDATION_TEXTS.uk, { cv_busy: 'Інші дефекти цієї перевірки вже в роботі ({v}) – транспорт виправити не можна. Відхиліть і повідомте заново для правильного транспорту.' });
@@ -3086,3 +3087,11 @@ Object.assign(STRINGS.en, { plan_coupled_dates: '{v} planned on' });
 Object.assign(STRINGS.de, { cost_dormant_hidden: 'Ruhende Fahrzeuge mit Kosten im Zeitraum: {n} – ruhende Fahrzeuge zählen in keiner Auswertung, auch nicht für Monate vor dem Ruhendsetzen.' });
 Object.assign(STRINGS.uk, { cost_dormant_hidden: 'Транспорт із позначкою «Неактивний облік» і витратами за період: {n} – такий транспорт не враховується в жодному звіті, навіть за місяці до встановлення позначки.' });
 Object.assign(STRINGS.en, { cost_dormant_hidden: 'Dormant vehicles with costs in the period: {n} – dormant vehicles are left out of every evaluation, including months before they were set dormant.' });
+// Backlog 611 (Blickwinkel „Jahresplanung 2027“): Fahrerliste „Fristen bis“
+Object.assign(STRINGS.de, { ddue_label: 'Fristen bis', ddue_clear: 'alle Fahrer', ddue_hint: 'Nur Fahrer mit einer Frist bis {d} (Nachweise, Führerscheinkontrolle, Auslesung Fahrerkarte) – früheste zuerst. Fehlende Nachweise erscheinen hier nicht.' });
+Object.assign(STRINGS.uk, { ddue_label: 'Строки до', ddue_clear: 'усі водії', ddue_hint: 'Лише водії зі строком до {d} (документи, перевірка посвідчення, зчитування картки водія) – найраніші спочатку. Відсутні документи тут не показуються.' });
+Object.assign(STRINGS.en, { ddue_label: 'Deadlines by', ddue_clear: 'all drivers', ddue_hint: 'Only drivers with a deadline by {d} (documents, licence check, driver card download) – earliest first. Missing documents are not shown here.' });
+// Backlog 612: Prüftermine mit „Fällig bis“ nach Monat gruppiert
+Object.assign(STRINGS.de, { mgrp_none: 'ohne Datum' });
+Object.assign(STRINGS.uk, { mgrp_none: 'без дати' });
+Object.assign(STRINGS.en, { mgrp_none: 'no date' });
