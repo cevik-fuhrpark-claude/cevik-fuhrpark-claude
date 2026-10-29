@@ -2447,7 +2447,7 @@ async function viewCase(id) {
   // Mehr gewählt als noch frei: nur die ersten freien hochladen, der Rest wird vorher genannt (kein Serverfehler je Datei);
   // Fehler gesammelt in einer Meldung nach dem Neuaufbau (sonst überdeckt eine Meldung die andere)
   const fi = $('#file'); if (fi) fi.onchange = async () => {
-    const all = [...fi.files]; const take = all.slice(0, filesFree); const skipped = all.slice(filesFree); const errs = [];
+    const all = [...fi.files]; const take = all.slice(0, filesFree); const skipped = all.slice(filesFree); const errs = []; const dupes = [];
     // Fortschritt sichtbar; bei Netzabbruch die restlichen Fotos in den Postausgang (21.10.2026: 16 s ohne Anzeige, danach „Keine Verbindung“
     // für Fotos, die schon am Server lagen, und der Rest war verloren)
     const prog = document.createElement('span'); prog.className = 'small muted'; prog.setAttribute('role', 'status'); fi.after(prog); fi.disabled = true;
@@ -2456,8 +2456,17 @@ async function viewCase(id) {
     let later = 0;
     for (const [i, file] of take.entries()) {
       prog.textContent = ` ${t('uploading')} ${i + 1}/${take.length}`;
-      try { const blob = await prepareUpload(file); await api('POST', `/api/cases/${c.id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, ...ox, headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); }
+      try {
+        const blob = await prepareUpload(file);
+        // Backlog 603 (Blickwinkel „Werkstatt-Tablet UK mit Fotos“): Format/Größe vor dem Hochladen prüfen – sonst lud ein 20-MB-Scan
+        // erst komplett hoch (bei langsamem WLAN Zeitüberschreitung → Postausgang → später erneut abgelehnt) bzw. HEIC kam als „zu groß“ zurück
+        const rej = uploadReject(blob, file.name); if (rej) { errs.push(`${file.name}: ${rej}`); continue; }
+        const r = await api('POST', `/api/cases/${c.id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, ...ox, headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } });
+        if (r && r.duplicate) dupes.push(file.name); // gleiche Datei schon am Vorgang – Server legt keine zweite an
+      }
       catch (err) {
+        // Höchstzahl inzwischen erreicht (zweites Gerät): einmal mit Zahl melden, restliche Dateien nicht einzeln versuchen
+        if (err.code === 'too_many') { errs.push(t('files_full').replace('{max}', PHOTO_MAX)); break; }
         if (photoRetry(err)) { later = await photosLater('/api/cases', { request_key: uid() }, c, c.id, take.slice(i), who); if (!later) errs.push(`${file.name}: ${err.message}`); break; }
         errs.push(`${file.name}: ${err.message}`);
       }
@@ -2467,6 +2476,7 @@ async function viewCase(id) {
     // nur neu aufbauen, wenn Seite und Umgebung noch dieselben sind (sonst überschrieb der Vorgang die inzwischen gewählte Ansicht)
     if (location.hash === hash0 && (!who || (outboxWho() || {}).env === who.env)) await viewCase(c.id).catch(() => {});
     if (skipped.length) errs.unshift(tn('files_skipped', skipped.length).replace('{max}', PHOTO_MAX).replace('{names}', skipped.map((f) => f.name).join(', ')));
+    if (dupes.length) errs.push(`${t('file_dup')}: ${dupes.join(', ')}`);
     if (errs.length) toast(errs.join(' · '), true); else if (take.length && !later) toast('✓');
   };
 }
@@ -2588,6 +2598,15 @@ function photoLimitWatch(input) {
     note.hidden = n <= PHOTO_MAX;
     note.textContent = n > PHOTO_MAX ? t('photos_over_max').replace('{n}', n).replace('{max}', PHOTO_MAX) : '';
   };
+}
+// Backlog 603: wie der Server (src/cases.js MAX_FILE_BYTES, erlaubte Typen) – Ablehnung schon im Browser, mit Hinweis bei HEIC/HEIF
+const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+function uploadReject(blob, name = '') {
+  const tp = String(blob.type || '').toLowerCase();
+  if (/heic|heif/.test(tp) || /\.(heic|heif)$/i.test(name) && !UPLOAD_TYPES.includes(tp)) return t('file_heic_hint');
+  if (tp && !UPLOAD_TYPES.includes(tp)) return t('err_type');
+  if (blob.size > UPLOAD_MAX_BYTES) return t('err_too_large');
+  return '';
 }
 async function prepareUpload(file) {
   if (!file.type.startsWith('image/') || file.type === 'image/gif') return file;

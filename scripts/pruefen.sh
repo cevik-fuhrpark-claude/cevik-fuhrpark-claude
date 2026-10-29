@@ -305,6 +305,7 @@ UI-Modul-Ladehinweis (Fahrzeugakte bei langsamem Netz, Weiterklick, Ladefehler, 
 UI-Hilfe-Paket (Hilfe-Schritte nachgeladen, Suche, Ladefehler, Backlog 597)|ui-hilfe-paket.py|/tmp/cfp-hilfe-paket.log
 UI-Vorabruf beim Start (modulepreload, /api/me aus boot.js, Funkloch, Anmeldung, Backlog 596)|ui-vorabruf-anmeldung.py|/tmp/cfp-vorabruf-anmeldung.log
 UI-Verträge „Ende Vormonat“, km-Stand neben Kontingent, Stichtag ohne Prognose (Backlog 601)|ui-vertrag-vormonat.py|/tmp/cfp-vertrag-vormonat.log
+UI-Vorgangsdateien auf Ukrainisch: zu groß/HEIC vor dem Hochladen, Dublette gemeldet (Backlog 603)|ui-vorgang-dateien-pruefung.py|/tmp/cfp-vorgang-dateien-pruefung.log
 UI-Langsames Netz (Seitenwechsel beim Hochladen, Fotos am Vorgang, Lagerbuchung)|ui-netz-seitenwechsel.py|/tmp/cfp-netz-seitenwechsel.log
 UI-Zwei Tabs (Abmelden/Personenwechsel, Meldung bei abgelaufener Anmeldung)|ui-tabs-anmeldung.py|/tmp/cfp-tabs-anmeldung.log
 UI-Kleines Handy 320 px und große Schrift (Kontrolle, Tabbar, Kopfzeile)|ui-kleines-handy.py|/tmp/cfp-kleines-handy.log
