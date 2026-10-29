@@ -164,7 +164,7 @@ export async function claimOverview(env, user, envName, query = {}) {
   const rate = rateOf(rv); const periods = ratePeriods(sets.get('__rp')); // Stundensatz-Verlauf (Backlog 412)
   const fu = Number(sets.get('claim_followup_days'));
   const followupDays = fu > 0 ? fu : null;
-  const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, c.created_at AS case_created_at, c.occurred_at AS case_occurred_at, k.contract_no, v.plate,
+  const rows = (await env.DB.prepare(`SELECT ic.*, c.case_no, c.status AS case_status, c.description, c.created_at AS case_created_at, c.occurred_at AS case_occurred_at, c.location_note AS case_location, k.contract_no, v.plate,
       -- Kennzeichen zum Meldedatum (Backlog 276): früheres Kennzeichen, das an dem Tag noch galt, sonst das heutige
       COALESCE((SELECT vp.plate FROM vehicle_plates vp WHERE vp.vehicle_id=ic.vehicle_id AND vp.valid_until > ic.reported_on ORDER BY vp.valid_until LIMIT 1), v.plate) AS plate_at_report, v.site AS vehicle_site, v.eval_excluded AS vehicle_excluded,
       (SELECT COALESCE(SUM(w.hours),0) FROM work_entries w WHERE w.case_id=c.id) AS hours,
@@ -257,14 +257,16 @@ export function claimsCsv(ov, { thirdParty = false } = {}) {
     'Kosten Vorgang belegt netto (EUR)', 'Saldo nach Erstattung (EUR)', 'Nachweis', 'Bemerkung',
     'Gutachter', 'Besichtigung am', 'Gutachten eingegangen am', 'Schadenhöhe laut Gutachten netto (EUR)', 'Gutachten ausstehend', 'Kennzeichen Unfallgegner', 'Versicherer Unfallgegner', 'Schadennummer Unfallgegner', 'Polizeidienststelle', 'Polizeiliches Aktenzeichen', 'Anzeige erstattet am', 'Schreiben verknüpft', 'Fahrzeug ruhend (nicht in Summen)', 'Kosten vollständig bewertet', 'Vertragsnummer', 'Vorgang angelegt am', 'Kennzeichen zum Meldedatum', 'Schadenzeitpunkt laut Meldung',
     // Backlog 529: am Ende angehängt (bestehende Spaltenpositionen bleiben)
-    'Fahrzeug-Standort', 'Nachfassen fällig'];
+    'Fahrzeug-Standort', 'Nachfassen fällig',
+    // Backlog 632 (Blickwinkel „Diebstahl auf dem Rastplatz“): Schadenort laut Meldung (kein Personenbezug, auch im Export für Dritte)
+    'Ort laut Meldung'];
   const drop = thirdParty ? new Set([12, 13]) : new Set(); const keep = (_, i) => !drop.has(i);
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.filter(keep).join(';')];
   for (const c of ov.claims) lines.push([c.plate, c.case_no, c.insurer, c.claim_no, c.reported_on, STATUS_DE[c.status], c.days_open ?? '', n(c.deductible_net), n(c.reimbursed_net), c.reimbursed_on,
     n(c.case_cost_net), n(c.balance_net), c.evidence, c.note, c.appraiser, c.appraisal_on, c.appraisal_received_on, n(c.appraisal_net), c.appraisal_pending ? 'ja' : 'nein', c.opponent_plate, c.opponent_insurer, c.opponent_claim_no, c.police_station, c.police_ref, c.police_reported_on,
     c.file_id ? 'ja' : 'nein', c.eval_excluded ? 'ja' : 'nein', c.cost_incomplete ? 'nein' : c.case_cost_net !== null ? 'ja' : '', c.contract_no, c.case_created_at ? berlinDate(c.case_created_at) : '', c.plate_at_report || c.plate, occurredCsv(c.case_occurred_at),
-    c.vehicle_site || '', c.followup_due ? 'ja' : c.open && ov.followup_days ? 'nein' : ''].map((x, i) => ([3, 21, 23, 28].includes(i) ? csvText(x) : csvCell(x))).filter(keep).join(';'));
+    c.vehicle_site || '', c.followup_due ? 'ja' : c.open && ov.followup_days ? 'nein' : '', c.case_location || ''].map((x, i) => ([3, 21, 23, 28].includes(i) ? csvText(x) : csvCell(x))).filter(keep).join(';'));
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 

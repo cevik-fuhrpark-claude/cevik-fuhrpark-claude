@@ -5726,7 +5726,7 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   let cd = (await users.fleet.get(`/api/cases/${cid}`)).data.claim; eq(cd.file_id, fid); eq(cd.file_name, 'abrechnung.pdf');
   eq((await users.fleet.put(P, { note: 'Rückfrage erledigt' })).status, 200);
   eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, fid, 'ohne Feld unverändert');
-  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft;Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig\r\n'), 'CSV-Spalte');
+  ok(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/claims?format=csv&filter=alle')).data).includes(';Schreiben verknüpft;Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig;Ort laut Meldung\r\n'), 'CSV-Spalte');
   eq((await users.fleet.put(P, { file_id: null })).status, 200);
   eq((await users.fleet.get(`/api/cases/${cid}`)).data.claim.file_id, null, 'Verknüpfung aufgehoben');
   eq((await users.fleet.put(P, { file_id: fid })).status, 200);
@@ -12525,7 +12525,7 @@ await test('Versicherungsfälle: ruhendes Fahrzeug bleibt sichtbar, aber ohne Na
   eq(ov.reimbursed_sum_net, null, 'nicht in der Summe'); eq(ov.reimbursed_sum_excluded_net, 750.5, 'eigene Zeile');
   eq(ov.claims.find((c) => c.case_id === B).followup_due, false, 'ruhend: kein Nachfass-Hinweis (wie Agent)');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/claims?format=csv&filter=alle')).data);
-  ok(csv.includes(';Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig\r\n'), 'CSV-Kopf'); ok(/;ja;(ja|nein|);[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n/.test(csv.split('\r\n').slice(1).join('\r\n') + '\r\n'), 'CSV-Wert ja');
+  ok(csv.includes(';Fahrzeug ruhend (nicht in Summen);Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig;Ort laut Meldung\r\n'), 'CSV-Kopf'); ok(/;ja;(ja|nein|);[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n/.test(csv.split('\r\n').slice(1).join('\r\n') + '\r\n'), 'CSV-Wert ja');
 });
 
 await test('Fehlersuche 18.10. (16): Bußgeld-Standort/„offen“ vor der Grenze, Frist-Obergrenze; Lagerpreis mit Dezimalkomma, Umlagerungs-Schlüssel je Artikel; Profiltiefe gerundet, Messalter in Berliner Kalendertagen', async () => {
@@ -14278,7 +14278,7 @@ await test('Fehlersuche 19.10. (Fahrzeugimport/Lager/Push/Versicherung): Anhäng
   const cl = (await U.fleet.get('/api/claims?filter=alle')).data.claims.find((c) => c.case_id === cid);
   eq(cl.case_cost_net, null); eq(cl.cost_incomplete, true);
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/claims?filter=alle&format=csv')).data);
-  ok(/;Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig\r\n/.test(csv) && /;nein;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n$/.test(csv), csv.slice(-120));
+  ok(/;Kosten vollständig bewertet;Vertragsnummer;Vorgang angelegt am;Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig;Ort laut Meldung\r\n/.test(csv) && /;nein;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*;[^;\r\n]*\r\n$/.test(csv), csv.slice(-120));
   ok(app.includes("c.cost_incomplete ? ` · ${esc(t('claim_case_cost'))} –"), 'Übersicht zeigt „unvollständig“');
   // 5. Lager-Buchungstexte: Import-Anfangsbestand und Einheit übersetzt; deaktivierter Artikel im Import markiert
   const { stockNoteText } = await import('../public/check-labels.js');
@@ -20986,7 +20986,7 @@ await test('Backlog 275–277: Versicherungsfälle – Summen je Meldejahr (Selb
   const y25 = d.sums.by_year.find((y) => y.year === '2025'); eq(y25.n, 2); eq(y25.deductible_net, 1000); eq(y25.reimbursed_net, 2000); eq(y25.appraisal_net, 1500);
   eq(d.sums.total.n, 3); eq(d.sums.total.deductible_net, 2000); eq(d.sums.by_year[0].year, '2026', 'neuestes Jahr zuerst');
   const csv = await U.fleet.get('/api/claims?format=csv&filter=alle'); const txt = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data); const L = txt.trim().split('\r\n');
-  ok(L[0].endsWith(';Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig'), 'Kopf'); ok(L.some((l) => l.includes('2025-03-01') || l.includes('01.03.2025')) && L.find((l) => /2025-03-01|01\.03\.2025/.test(l)).match(/;SZ-ALT 1;[^;]*;[^;]*;[^;]*$/), 'altes Kennzeichen beim ersten Fall');
+  ok(L[0].endsWith(';Kennzeichen zum Meldedatum;Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig;Ort laut Meldung'), 'Kopf'); ok(L.some((l) => l.includes('2025-03-01') || l.includes('01.03.2025')) && L.find((l) => /2025-03-01|01\.03\.2025/.test(l)).match(/;SZ-ALT 1;[^;]*;[^;]*;[^;]*;[^;]*$/), 'altes Kennzeichen beim ersten Fall');
   ok(txt.includes('Max Muster') && L[0].includes(';Bemerkung;'), 'normal mit Bemerkung');
   const c3 = await U.fleet.get('/api/claims?format=csv&filter=alle&third_party=1'); const t3 = typeof c3.data === 'string' ? c3.data : new TextDecoder().decode(c3.data);
   ok(!t3.includes('Max Muster') && !t3.includes('Schreiben vom') && !t3.split('\r\n')[0].includes('Bemerkung') && !t3.split('\r\n')[0].includes('Nachweis'), 'für Dritte ohne Freitext');
@@ -25388,10 +25388,10 @@ await test('Backlog 527–531 (Blickwinkel „Quartalsende: offene Versicherungs
   d = await get('filter=alle'); eq(d.claims[0].id, 'q-neu', 'alle: neueste zuerst wie bisher'); eq(d.counts.ohne_erstattung, 1); eq(d.counts.zurueckgezogen, 1);
   d = await get('filter=ohne_erstattung'); eq(d.claims.map((c) => c.id).join(), 'q-reg0', '531');
   const txt = new TextDecoder().decode((await U.fleet.get('/api/claims?format=csv&filter=offen')).data).replace(/^﻿/, '').trim().split('\r\n');
-  ok(txt[0].endsWith(';Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig'), '529 Kopf');
-  ok(txt[1].endsWith(';Lager Nord;ja') && txt[3].endsWith(';Lager Nord;nein'), '529 Zeilen: ' + txt[1].slice(-40) + ' / ' + txt[3].slice(-40));
+  ok(txt[0].endsWith(';Schadenzeitpunkt laut Meldung;Fahrzeug-Standort;Nachfassen fällig;Ort laut Meldung'), '529 Kopf');
+  ok(txt[1].endsWith(';Lager Nord;ja;') && txt[3].endsWith(';Lager Nord;nein;'), '529 Zeilen: ' + txt[1].slice(-40) + ' / ' + txt[3].slice(-40));
   const t3 = new TextDecoder().decode((await U.fleet.get('/api/claims?format=csv&filter=offen&third_party=1')).data).replace(/^﻿/, '').split('\r\n')[0];
-  eq(t3.split(';').length, txt[0].split(';').length - 2, 'Export für Dritte: weiterhin genau Nachweis/Bemerkung weg'); ok(t3.endsWith(';Fahrzeug-Standort;Nachfassen fällig'));
+  eq(t3.split(';').length, txt[0].split(';').length - 2, 'Export für Dritte: weiterhin genau Nachweis/Bemerkung weg'); ok(t3.endsWith(';Fahrzeug-Standort;Nachfassen fällig;Ort laut Meldung'));
   // ruhendes Fahrzeug: nie „Nachfassen fällig“ (wie der Agent)
   db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1); eq((await get('filter=nachfassen')).counts.nachfassen, 0, 'ruhend');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -26794,6 +26794,54 @@ await test('Backlog 629 (Teilagent-Fund „Panne in Frankreich“): externe Werk
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['act_quality_release', 'qrel_hint', 'qrel_pu_prefill', 'qrel_step2_failed']) ok(STRINGS[l][k], `${l}.${k}`);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].qrel_hint.includes('{a}') && STRINGS[l].qrel_hint.includes('{b}') && STRINGS[l].qrel_step2_failed.includes('{msg}') && STRINGS[l].qrel_step2_failed.includes('{b}'), l + ' Platzhalter');
+});
+
+await test('Backlog 630–632 (Blickwinkel „Diebstahl über Nacht auf dem Rastplatz“): Diebstahl-/Planenhinweis erkennt fehlende Ladung und aufgeschnittene Plane (DE/UK/EN); Datenqualität theft_no_claim; Versicherungs-CSV und -Liste mit Ort laut Meldung', async () => {
+  const { U, newCase } = await freshWorld();
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const T = new RegExp(app.match(/\nconst THEFT_HINT = \/(.+)\/i;/)[1], 'i'); const P = new RegExp(app.match(/\nconst TARP_HINT = \/(.+)\/i;/)[1], 'i');
+  for (const x of ['Plane aufgeschlitzt, Ladung fehlt', 'Plane aufgeschlitzt, 3 Paletten fehlen', 'Тент порізаний, частини вантажу немає', 'cargo missing, curtain cut', 'нет груза', 'вантаж зник']) ok(T.test(x), 'Diebstahl: ' + x);
+  for (const x of ['Ladung verrutscht', 'Paletten weggerutscht', 'Leistungseinbruch am Berg', 'Ladung nass']) ok(!T.test(x), 'kein Diebstahl: ' + x);
+  for (const x of ['Plane aufgeschnitten', 'Plane zerschnitten', 'тент порізали', 'Тент напівпричепа порізаний', 'тент порезали', 'curtain cut']) ok(P.test(x), 'Plane: ' + x);
+  // Server-Wörter der Datenqualität erkennt auch das Meldeformular (eine Erkennung)
+  const q = await import('../src/quality.js');
+  for (const w of [...q.THEFT_WORDS_LAT, ...q.THEFT_WORDS_CYR]) ok(T.test(w + (w.endsWith('ж') ? 'а' : '')), 'Formular erkennt ' + w);
+  // 631
+  const theft = await newCase({ description: 'Diesel abgezapft, Tankdeckel aufgebrochen', location_note: 'Rastplatz A2 Lipperland Süd' });
+  const theftUk = await newCase({ description: 'КРАДІЖКА пального на стоянці' });
+  const both = await newCase({ description: 'Unfall beim Rangieren, Spiegel gestohlen' });
+  const withClaim = await newCase({ description: 'Batterien gestohlen' });
+  const plain = await newCase({ description: 'Rückleuchte defekt' });
+  eq((await U.fleet.put(`/api/cases/${withClaim}/claim`, { insurer: 'Teilkasko AG', reported_on: bDayOff(0), evidence: 'Schadenmeldung' })).status, 200);
+  eq((await U.fleet.put(`/api/cases/${theft}/claim`, { insurer: 'Teilkasko AG', reported_on: bDayOff(0), evidence: 'Schadenmeldung' })).status, 200);
+  let dq = (await U.fleet.get('/api/admin/data-quality')).data;
+  const th = dq.items.filter((i) => i.check === 'theft_no_claim').map((i) => i.case_id);
+  eq(th.join(), theftUk, 'nur Diebstahl ohne Versicherungsfall (Großschreibung UK erkannt), Unfall nur unter accident_no_claim');
+  ok(dq.items.some((i) => i.check === 'accident_no_claim' && i.case_id === both) && !th.includes(plain), 'Unfall/normal');
+  eq(dq.items.find((i) => i.check === 'theft_no_claim').severity, 'hinweis');
+  // 632
+  const ov = (await U.fleet.get('/api/claims?filter=alle')).data; eq(ov.claims.find((c) => c.case_id === theft).case_location, 'Rastplatz A2 Lipperland Süd');
+  for (const tp of ['', '&third_party=1']) {
+    const L = new TextDecoder().decode((await U.fleet.get('/api/claims?format=csv&filter=alle' + tp)).data).replace(/^\uFEFF/, '').trim().split('\r\n');
+    ok(L[0].endsWith(';Nachfassen fällig;Ort laut Meldung'), 'Kopf ' + tp); ok(L.some((l) => l.endsWith(';Rastplatz A2 Lipperland Süd')), 'Zeile ' + tp);
+  }
+  ok(app.includes('<span data-clloc${langAttr(c.case_location)}>'), 'Liste zeigt den Ort');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dq_theft_no_claim, l);
+});
+
+await test('Backlog 634 (Teilagent-Fund „Diebstahl auf dem Rastplatz“): Meldung am Lkw nennt Auflieger/Plane → Hinweis, den gekoppelten Auflieger zusätzlich zu melden (nicht bei Kupplung, nicht am Auflieger selbst); Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const R = new RegExp(app.match(/\nconst TRAILER_DMG = \/(.+)\/i;/)[1], 'i');
+  for (const x of ['Тент напівпричепа порізаний', 'Plane aufgeschlitzt', 'Auflieger Rücklicht defekt', 'trailer light broken', 'тент полуприцепа порезан', 'причіп пошкоджено']) ok(R.test(x), 'Auflieger: ' + x);
+  for (const x of ['Anhängerkupplung defekt', 'Aufliegerkupplung', 'trailer hitch broken', 'Sattelkupplung klemmt', 'Spiegel kaputt', 'прицепное устройство', 'Planetengetriebe']) ok(!R.test(x), 'kein Auflieger: ' + x);
+  ok(app.includes("const show = !!(v && v.kind !== 'anhaenger' && v.trailer_plate && TRAILER_DMG.test($('#d').value));"), 'nur Lkw mit gekoppeltem Auflieger');
+  ok(app.includes("const hints = () => { $('#trlr').hidden = !trailerHint();") && app.includes("$$('input[name=veh]').forEach((x) => x.addEventListener('change', hints));"), 'bei Text- und Fahrzeugwechsel');
+  ok(/const HINT_ORDER = \[[^\]]*'trlr'/.test(app) && app.includes('<div id="trlr" class="panel" hidden role="status"></div>'), 'Hinweisgruppe');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].trlr_title.includes('{p}') && STRINGS[l].trlr_text.includes('{p}'), l); }
+  ok(STRINGS.de.help_theft_s.includes('jedes Fahrzeug einzeln melden') && STRINGS.uk.help_theft_s.includes('повідомте про кожен транспорт окремо') && STRINGS.en.help_theft_s.includes('report each vehicle separately'), 'Hilfe');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

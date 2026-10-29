@@ -1131,6 +1131,8 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 624: Verträge gesammelt beenden bzw. Vertragsende eintragen (Mehr → Verträge)
 // Backlog 625: Verträge nach Vertragspartner, Folgevertrag
 // Backlog 629: externe Werkstatt (EXTERN, ohne Werkstattkonto) – Abschlusskontrolle und Freigabe in einem Schritt
+// Backlog 631: Datenqualität – Diebstahl ohne Versicherungsfall
+// Backlog 634: Schaden am Auflieger bei Meldung am Lkw
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

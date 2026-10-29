@@ -265,6 +265,7 @@ UI-Fahrzeugtausch unterwegs: Hinweis „nicht dir zugeordnet“ in Kontrolle/Mel
 UI-Werkstatt ohne Schlüssel/Fahrzeugschein: „fehlt“ im Vorgang, Vorgangsliste, Werkstattplan, DE/UK/EN 390/820/1366|ui-werkstatt-schluessel.py|/tmp/cfp-werkstatt-schluessel.log
 UI-Abholung nach der Reparatur: Abholvermerk Werkstatt → Freigabe → Fahrerhinweis, Vorgang/Fahrzeugakte, DE/UK/EN 390/820/1366|ui-abholung.py|/tmp/cfp-abholung.log
 UI-Externe Werkstatt: Abschlusskontrolle + Freigabe in einem Schritt, Abholvermerk aus Standort, DE/UK/EN 390/820/1366|ui-extern-abschluss.py|/tmp/cfp-extern-abschluss.log
+UI-Diebstahl auf dem Rastplatz: Diebstahl-/Planen-/Auflieger-Hinweis im Meldeformular, Versicherungsliste mit Ort, DE/UK/EN 390/820/1366|ui-diebstahl-rastplatz.py|/tmp/cfp-diebstahl-rastplatz.log
 UI-Teilefoto: Foto/PDF zum Teil (Typenschild) im Formular, Teileliste mit Link, DE/UK/EN 390/820/1366|ui-teilefoto.py|/tmp/cfp-teilefoto.log
 UI-Notfall-Bereitschaft: Erreichbarkeit je Rufnummer, „jetzt erreichbar/nicht besetzt“, Sortierung, Hinweis alle nicht besetzt, Pflegeformular, DE/UK/EN 390/820/1366|ui-notfall-bereitschaft.py|/tmp/cfp-notfall-bereitschaft.log
 UI-Notfall-Wochenende: zwei Zeitspannen je Rufnummer (Fr 18 – Mo 06), Anzeige, Formular, Meldung bei Unvollständigem, Bundesland-Feiertage, DE/UK/EN 390/820/1366|ui-notfall-wochenende.py|/tmp/cfp-notfall-wochenende.log
