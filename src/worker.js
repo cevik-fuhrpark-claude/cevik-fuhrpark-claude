@@ -478,6 +478,14 @@ async function handleApi(request, env, ctx, url) {
   // Kostenbericht je Fahrzeug/Monat
   if (path === '/api/reports/costs' && m === 'GET') {
     const rep = await reports.costReport(env, user, envName, Object.fromEntries(url.searchParams));
+    // Backlog 616: Jahres-/Zeitraum-CSV je Fahrzeug mit Summenzeilen (Monats-CSV unverändert)
+    if (url.searchParams.get('format') === 'csv' && url.searchParams.get('part') === 'vehicles') {
+      const ids = rep.vehicles.map((v) => v.vehicle_id);
+      const since = new Map(ids.length ? (await env.DB.prepare(`SELECT a.target, MAX(a.created_at) AS at FROM audit_log a JOIN vehicles v ON v.id=a.target AND v.active=0
+        WHERE a.action='vehicle.deactivate' AND a.target IN (SELECT value FROM json_each(?)) GROUP BY a.target`).bind(JSON.stringify(ids)).all()).results.map((x) => [x.target, x.at]) : []);
+      await auth.audit(env, user.id, 'reports.costs.export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site, part: 'vehicles' });
+      return new Response(reports.costVehiclesCsv(rep, since), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kosten-je-fahrzeug_${envName}_${rep.from}_${rep.to}_${reports.standTag(rep.generated_at)}.csv"` } });
+    }
     if (url.searchParams.get('format') === 'csv') {
       await auth.audit(env, user.id, 'reports.costs.export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site });
       return new Response(reports.costReportCsv(rep), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kosten_${envName}_${rep.from}_${rep.to}_${reports.standTag(rep.generated_at)}.csv"` } });

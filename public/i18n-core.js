@@ -1114,6 +1114,8 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 608: Werkstattplan – Termine des gekoppelten Fahrzeugs
 // Backlog 611 (Blickwinkel „Jahresplanung 2027“): Fahrerliste „Fristen bis“
 // Backlog 612: Prüftermine mit „Fällig bis“ nach Monat gruppiert
+// Backlog 614: Kosten je km – Kostenmonate außerhalb der km-Ablesungen
+// Backlog 616: Kosten-CSV je Fahrzeug
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

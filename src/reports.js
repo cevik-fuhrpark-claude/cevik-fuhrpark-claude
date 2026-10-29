@@ -184,10 +184,17 @@ export async function costReport(env, user, envName, query = {}) {
   for (const k of kmRows) if (!perVehicle.has(k.vehicle_id) && plates.has(k.vehicle_id) && !plates.get(k.vehicle_id).eval_excluded && (!vehicleFilter || k.vehicle_id === vehicleFilter)) {
     const v = plates.get(k.vehicle_id); perVehicle.set(k.vehicle_id, { vehicle_id: k.vehicle_id, plate: v.plate, site: v.site ? (label.get(siteKey(v.site)) || v.site) : null, actual_net: 0, valued_items: 0, estimate_net: 0, unvalued_items: 0 });
   }
+  // Backlog 614 (Blickwinkel „Jahreskosten für den Steuerberater“): Kostenmonate außerhalb der km-Ablesungen (z. B. Kosten im Juli, letzter km-Stand
+  // 30.06.) → €/km bezieht Kosten ohne gefahrene km ein: `km_partial` (Anzeige „km-Stände nur …“). Monatsgenau, nichts wird geschätzt.
+  const costMonths = new Map();
+  for (const r of out) if (r.actual_net > 0 || r.estimate_net > 0 || r.unvalued_items > 0) { const c = costMonths.get(r.vehicle_id) || [r.month, r.month]; costMonths.set(r.vehicle_id, [r.month < c[0] ? r.month : c[0], r.month > c[1] ? r.month : c[1]]); }
+  const kmPartial = (vid, k) => { const c = costMonths.get(vid); if (!c || !k || k.km === null || !k.to_at) return false;
+    const toM = berlinDate(k.to_at).slice(0, 7); const fromM = k.basis === 'first_in_period' && k.from_at ? berlinDate(k.from_at).slice(0, 7) : null;
+    return c[1] > toM || (fromM !== null && c[0] < fromM); };
   const vehicles = [...perVehicle.values()].map((v) => {
     const k = kmOf.get(v.vehicle_id);
     const km = k ? k.km : null;
-    const kmInfo = k ? { km_status: k.status, km_basis: k.basis, km_from_at: k.from_at, km_to_at: k.to_at } : { km_status: 'no_reading', km_basis: null, km_from_at: null, km_to_at: null };
+    const kmInfo = k ? { km_status: k.status, km_basis: k.basis, km_from_at: k.from_at, km_to_at: k.to_at, ...(kmPartial(v.vehicle_id, k) ? { km_partial: true } : {}) } : { km_status: 'no_reading', km_basis: null, km_from_at: null, km_to_at: null };
     return { ...v, actual_net: r2(v.actual_net), estimate_net: r2(v.estimate_net), km, ...kmInfo, // nur geschätzte/unbewertete Positionen → kein €/km (vorher „0,000 €/km“ ohne Hinweis); Schätzung im Zeitraum → €/km unvollständig (19.10.2026)
     cost_per_km: km && !(v.valued_items === 0 && (v.unvalued_items > 0 || v.estimate_net > 0)) ? roundMilli(v.actual_net / km) : null, complete: v.unvalued_items === 0 && !(v.estimate_net > 0) };
   }).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
@@ -292,16 +299,19 @@ export async function contractCosts(env, from, to, vehicleFilter, plates, label 
     .bind(...(vehicleFilter ? [vehicleFilter] : [])).all()).results;
   const today = berlinDate(); const nowM = today.slice(0, 7);
   const hiM = to < nowM ? to : nowM;
-  const per = new Map(); let without_start = 0; let without_rate = 0; let total = 0;
+  const per = new Map(); let without_start = 0; let without_rate = 0; let total = 0; const dormantV = new Set(); let dormantC = 0;
   for (const c of rows) {
     const v = plates.get(c.vehicle_id);
-    if (!v || v.eval_excluded) continue;
+    if (!v) continue;
     // vor Beginn beendet (Storno) – keine Rate (18.10.2026: im selben Monat zählte sonst eine volle Monatsrate)
     if (c.ended_on && c.start_date && c.ended_on < c.start_date) continue;
     // Beginn erst nach heute (z. B. am 25. des laufenden Monats) – noch keine Rate (19.10.2026: zählte bisher eine volle Monatsrate)
     if (c.start_date && c.start_date > today) continue;
     const endM = (c.ended_on || c.end_date || nowM).slice(0, 7);
     if (c.start_date && (c.start_date.slice(0, 7) > hiM || endM < from)) continue; // Laufzeit außerhalb des Zeitraums
+    // Backlog 615: ruhende Fahrzeuge zählen nicht (Entscheidung 10.10.2026) – ihre im Zeitraum laufenden Verträge werden aber gezählt und gemeldet
+    // (vorher fehlten z. B. Versicherungsraten eines ruhenden Lkw in der Jahresaufstellung ohne jeden Hinweis); kein Betrag
+    if (v.eval_excluded) { if (c.start_date || endM >= from) { dormantV.add(c.vehicle_id); dormantC++; } continue; }
     if (!c.start_date) { if (endM >= from) without_start++; continue; }
     if (c.monthly_rate_net === null) { without_rate++; continue; }
     const a = c.start_date.slice(0, 7) > from ? c.start_date.slice(0, 7) : from;
@@ -314,7 +324,7 @@ export async function contractCosts(env, from, to, vehicleFilter, plates, label 
     per.set(c.vehicle_id, e); total += n * c.monthly_rate_net;
   }
   const vehicles = [...per.values()].map((e) => ({ ...e, net: r2(e.net) })).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
-  return { until_month: hiM, total_net: vehicles.length ? r2(total) : null, vehicles, without_start, without_rate };
+  return { until_month: hiM, total_net: vehicles.length ? r2(total) : null, vehicles, without_start, without_rate, ...(dormantC ? { excluded_dormant: { vehicles: dormantV.size, contracts: dormantC } } : {}) };
 }
 
 // Erstattungen laut Abrechnung des Versicherers, deren Erstattungsdatum im Zeitraum liegt (Monat nach Berliner Kalender = Datum ohne Uhrzeit).
@@ -342,6 +352,41 @@ export function costReportCsv(rep) {
       r.external_unvalued_only ? '' : num(r.external_actual_net), num(r.external_estimate_net), ist, num(r.estimate_net), r.unvalued_items, r.complete ? 'ja' : 'nein', num(r.km), r.vehicle_active === false ? 'außer Betrieb' : 'aktiv'].join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
+}
+
+// Backlog 616 (Blickwinkel „Jahreskosten für den Steuerberater“): eine Zeile je Fahrzeug für den gewählten Zeitraum (Summe der Monatszeilen, keine eigene
+// Bewertung) + Summenzeilen je Standort und gesamt. Unbewertet bleibt leer (nie 0), €/km nur wie im Bericht, „km-Zeitraum unvollständig“ = km_partial.
+// `inactiveSince`: Map Fahrzeug → Zeitpunkt der Außerbetriebnahme laut Protokoll. Die Monats-CSV (costReportCsv) bleibt unverändert.
+export function costVehiclesCsv(rep, inactiveSince = new Map()) {
+  const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
+  const cell = csvCell;
+  const head = ['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Von (Monat)', 'Bis (Monat)', 'Stunden', 'Arbeitszeit netto', 'Teile netto', 'Teile geschätzt netto', 'Fremdleistung netto', 'Fremdleistung geschätzt netto',
+    'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet', 'Gefahrene km', 'km-Ablesung von', 'km-Ablesung bis', 'Kosten je km netto (belegt)', 'km-Zeitraum unvollständig', 'Fahrzeugstatus', 'Außer Betrieb seit'];
+  const agg = new Map(); const blank = () => ({ hours: 0, work: 0, workV: false, workU: false, pa: 0, paV: false, paU: false, pe: 0, ea: 0, eaV: false, eaU: false, ee: 0, actual: 0, est: 0, valued: 0, unvalued: 0, active: true });
+  for (const r of rep.rows) {
+    const a = agg.get(r.vehicle_id) || blank();
+    a.hours += r.hours; if (r.work_net === null) { if (r.hours > 0) a.workU = true; } else { a.work += r.work_net; if (r.hours > 0 || r.work_net) a.workV = true; }
+    if (r.parts_unvalued_only) a.paU = true; else { a.pa += r.parts_actual_net; if (r.parts_actual_net) a.paV = true; }
+    if (r.external_unvalued_only) a.eaU = true; else { a.ea += r.external_actual_net; if (r.external_actual_net) a.eaV = true; }
+    a.pe += r.parts_estimate_net; a.ee += r.external_estimate_net; a.actual += r.actual_net; a.est += r.estimate_net; a.valued += r.valued_items; a.unvalued += r.unvalued_items;
+    if (r.vehicle_active === false) a.active = false; agg.set(r.vehicle_id, a);
+  }
+  const amt = (v, valued, unvaluedOnly) => (unvaluedOnly && !valued ? '' : num(r2(v)));
+  const lines = [head.join(';')]; const sums = new Map(); const total = blank();
+  const add = (t, a) => { for (const k of ['hours', 'work', 'pa', 'pe', 'ea', 'ee', 'actual', 'est', 'valued', 'unvalued']) t[k] += a[k]; t.workV ||= a.workV; t.workU ||= a.workU; t.paV ||= a.paV; t.paU ||= a.paU; t.eaV ||= a.eaV; t.eaU ||= a.eaU; };
+  const row = (label, vid, site, a, v) => [label, vid, site, rep.from, rep.to, num(r2(a.hours)), amt(a.work, a.workV, a.workU), amt(a.pa, a.paV, a.paU), num(r2(a.pe)), amt(a.ea, a.eaV, a.eaU), num(r2(a.ee)),
+    a.valued === 0 && a.unvalued > 0 ? '' : num(r2(a.actual)), num(r2(a.est)), a.unvalued, a.unvalued === 0 && !(a.est > 0) ? 'ja' : 'nein',
+    v ? num(v.km) : '', v && v.km !== null && v.km_from_at ? berlinDate(v.km_from_at) : '', v && v.km !== null && v.km_to_at ? berlinDate(v.km_to_at) : '', v ? num(v.cost_per_km) : '', v && v.km_partial ? 'ja' : '', v ? (a.active ? 'aktiv' : 'außer Betrieb') : '', v && inactiveSince.get(v.vehicle_id) ? berlinDate(inactiveSince.get(v.vehicle_id)) : ''];
+  for (const v of rep.vehicles) {
+    const a = agg.get(v.vehicle_id) || blank(); if (!agg.has(v.vehicle_id) && inactiveSince.has(v.vehicle_id)) a.active = false;
+    lines.push(row(cell(v.plate), cell(v.vehicle_id), cell(v.site), a, v).join(';'));
+    const k = siteKey(v.site); const s = sums.get(k) || { site: v.site || 'ohne Standort', a: blank() }; add(s.a, a); sums.set(k, s); add(total, a);
+  }
+  if (rep.vehicles.length) {
+    for (const s of [...sums.values()].sort((x, y) => String(x.site).localeCompare(String(y.site), 'de'))) lines.push(row(cell('Summe Standort'), '', cell(s.site), s.a, null).join(';'));
+    lines.push(row(cell('Summe gesamt'), '', '', total, null).join(';'));
+  }
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
 // Einzelpositionen des Kostenberichts (Jahresabschluss/Steuerberater, 23.10.2026): je Teil und Fremdleistung eine Zeile mit Lieferant und

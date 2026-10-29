@@ -26487,6 +26487,66 @@ await test('Backlog 612/613 (Blickwinkel „Jahresplanung 2027“): Prüftermine
   for (const l of ['de', 'uk', 'en']) for (const k of ['mgrp_none', 'ddue_label', 'ddue_clear', 'ddue_hint', 'mdueby_year']) ok(STRINGS[l][k], `${l}.${k}`);
 });
 
+await test('Backlog 614/615 (Blickwinkel „Jahreskosten für den Steuerberater“): €/km mit Kosten in Monaten nach der letzten km-Ablesung → km_partial (Hinweis in der App); Verträge ruhender Fahrzeuge im Zeitraum gezählt und gemeldet, nicht gerechnet', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db; const V2 = 'VIN:WDB9630051L917317';
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: 100 })).status, 200);
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'record_work', { hours: 2, description: 'Bremse' })).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Nacharbeit' })).status, 200);
+  const we = db.prepare('SELECT id FROM work_entries WHERE case_id=? ORDER BY created_at, rowid').all(id); eq(we.length, 2);
+  db.prepare('UPDATE work_entries SET work_date=? WHERE id=?').run('2026-01-12', we[0].id); db.prepare('UPDATE work_entries SET work_date=? WHERE id=?').run('2026-07-14', we[1].id);
+  const odo = (i, km, at) => db.prepare('INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)').run('b614-' + i, V1, km, at, 'manuell', null, at);
+  odo(1, 100000, '2025-12-31T10:00:00Z'); odo(2, 130000, '2026-06-30T10:00:00Z');
+  const rep = async () => { const r = await U.fleet.get('/api/reports/costs?from=2026-01&to=2026-09'); eq(r.status, 200, JSON.stringify(r.data)); return r.data; };
+  let v = (await rep()).vehicles.find((x) => x.vehicle_id === V1);
+  ok(v && v.km === 30000 && v.km_partial === true && v.cost_per_km !== null, 'Juli-Kosten nach letztem km-Stand 30.06. → km_partial ' + JSON.stringify(v));
+  odo(3, 135000, '2026-07-31T10:00:00Z');
+  v = (await rep()).vehicles.find((x) => x.vehicle_id === V1); ok(v && v.km === 35000 && !v.km_partial, 'mit Juli-Ablesung vollständig ' + JSON.stringify(v));
+  // ruhendes Fahrzeug mit laufender Versicherung
+  const c = await U.fleet.post(`/api/vehicles/${V2}/contracts`, { kind: 'versicherung', partner: 'Test-Versicherung', evidence: 'Police 1', start_date: '2025-01-01', monthly_rate_net: 150 }); eq(c.status, 201, JSON.stringify(c.data));
+  let cc = (await rep()).contract_costs; ok(cc.vehicles.some((x) => x.vehicle_id === V2) && !cc.excluded_dormant, 'aktiv: gerechnet');
+  db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V2);
+  cc = (await rep()).contract_costs; ok(!cc.vehicles.some((x) => x.vehicle_id === V2), 'ruhend: nicht gerechnet');
+  eq(JSON.stringify(cc.excluded_dormant), JSON.stringify({ vehicles: 1, contracts: 1 }), 'ruhend: gemeldet');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("tn('cc_dormant', cc.excluded_dormant.contracts)") && app.includes('data-ckmpartial'), 'Oberfläche');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].ckm_partial && STRINGS[l].ckm_partial_hint, l); ok(PLURALS[l] && PLURALS[l].cc_dormant && PLURALS[l].cc_dormant.one, l + ' Plural'); }
+});
+
+await test('Backlog 616 (Blickwinkel „Jahreskosten für den Steuerberater“): Kosten-CSV je Fahrzeug – Summe der Monatszeilen, unbewertet leer, km/€/km/km_partial, außer Betrieb seit, Summenzeilen je Standort und gesamt; Monats-CSV unverändert', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db; const V2 = 'VIN:WDB9630051L917317';
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: 100 })).status, 200);
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'record_work', { hours: 2, description: 'Bremse' })).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1.5, description: 'Nacharbeit' })).status, 200);
+  const we = db.prepare('SELECT id FROM work_entries WHERE case_id=? ORDER BY created_at, rowid').all(id);
+  db.prepare('UPDATE work_entries SET work_date=? WHERE id=?').run('2026-02-03', we[0].id); db.prepare('UPDATE work_entries SET work_date=? WHERE id=?').run('2026-05-04', we[1].id);
+  const odo = (i, km, at) => db.prepare('INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)').run('b616-' + i, V1, km, at, 'manuell', null, at);
+  odo(1, 200000, '2025-12-30T10:00:00Z'); odo(2, 210000, '2026-03-31T10:00:00Z');
+  const rows = async (q) => { const r = await U.fleet.get('/api/reports/costs?from=2026-01&to=2026-09&format=csv' + q); eq(r.status, 200); return new TextDecoder().decode(r.data).replace(/^﻿/, '').trim().split('\r\n').map((l) => l.split(';')); };
+  const c = await rows('&part=vehicles'); const h = c[0];
+  eq(h.length, 22, 'Spalten'); ok(h[0] === 'Kennzeichen' && h.at(-1) === 'Außer Betrieb seit' && h.includes('km-Zeitraum unvollständig'), h.join('|'));
+  const col = (r, n) => r[h.indexOf(n)];
+  const v = c.find((r) => r[1] === V1); ok(v, 'Zeile V1');
+  eq(col(v, 'Stunden'), '3,5'); eq(col(v, 'Arbeitszeit netto'), '350'); eq(col(v, 'Summe belegt netto'), '350'); eq(col(v, 'Gefahrene km'), '10000');
+  eq(col(v, 'Kosten je km netto (belegt)'), '0,035'); eq(col(v, 'km-Zeitraum unvollständig'), 'ja', 'Mai-Kosten nach letzter Ablesung 31.03.'); eq(col(v, 'km-Ablesung bis'), '31.03.2026'); eq(col(v, 'Fahrzeugstatus'), 'aktiv');
+  const sumSite = c.filter((r) => r[0] === 'Summe Standort'); const sumAll = c.find((r) => r[0] === 'Summe gesamt');
+  ok(sumSite.length >= 1 && sumAll && col(sumAll, 'Summe belegt netto') === '350' && col(sumAll, 'Stunden') === '3,5' && col(sumAll, 'Gefahrene km') === '', 'Summenzeilen ' + JSON.stringify(sumAll));
+  // Monats-CSV unverändert (17 Spalten)
+  const m = await rows(''); eq(m[0].length, 17, 'Monats-CSV'); eq(m.filter((r) => r[1] === V1).length, 2, 'zwei Monate');
+  // außer Betrieb seit (Protokoll)
+  // offener Vorgang verhindert die Außerbetriebnahme über die API – Zustand wie nach „außer Betrieb nehmen“ direkt setzen
+  db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(V1); db.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES ('b616-a',NULL,'vehicle.deactivate',?,'{}','2026-08-20T08:00:00Z')`).run(V1);
+  const c2 = await rows('&part=vehicles'); const v2 = c2.find((r) => r[1] === V1);
+  ok(v2 && col(v2, 'Fahrzeugstatus') === 'außer Betrieb' && col(v2, 'Außer Betrieb seit') === '20.08.2026', 'außer Betrieb seit ' + JSON.stringify(v2));
+  ok(!c2.some((r) => r[1] === V2) || col(c2.find((r) => r[1] === V2), 'Summe belegt netto') !== undefined, 'V2 ohne Kosten optional');
+  // Werkstatt/Lesezugriff: gleiche Rechte wie der Kostenbericht
+  eq((await U.driver.get('/api/reports/costs?from=2026-01&to=2026-09&format=csv&part=vehicles')).status, 403, 'Fahrer');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('&format=csv&part=vehicles') && app.includes('id="csvv"'), 'Knopf');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cost_vehicles_csv && STRINGS[l].cost_vehicles_csv_hint, l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
