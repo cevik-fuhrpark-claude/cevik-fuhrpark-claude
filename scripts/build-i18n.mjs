@@ -4,6 +4,8 @@
 // Die App lädt beim Start nur den Kern und das Paket ihrer Sprache statt aller drei Sprachen (i18n.js: 1,6 MB / ≈ 430 KB gzip).
 // Jedes Paket ist vollständig: fehlt ein Text in UK/EN, steht dort der deutsche (wie bisher die Rückfallsprache in t()) –
 // Deutsch muss daher nicht zusätzlich geladen werden.
+//   public/i18n-de-hilfe.js/-uk-/-en- – Schritte der Hilfe-Abschnitte (`help_*_s`, ≈ 45 % eines Pakets), erst beim Öffnen der Hilfe
+//   bzw. der Suche geladen (Backlog 597, `loadHelp()`); Titel `help_*_t` bleiben im Hauptpaket.
 // Aufruf über scripts/build-schema.mjs (npm run build / npm test / Cloudflare-Build) – nicht von Hand bearbeiten.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -73,16 +75,32 @@ export function loadLang(l) {
   return LOADING[l];
 }
 export const LANGS = ['de', 'uk', 'en'];
+// Hilfe-Schritte (Backlog 597): eigenes Paket je Sprache; nach einem Fehler neuer Versuch mit „?r=N“ (Browser merkt sich fehlgeschlagene Importe)
+const HELP_LOADING = {}, HELP_TRY = {};
+export const helpLoaded = (l) => !!HELP_LOADING[l] && HELP_LOADING[l].done === true;
+export function loadHelp(l) {
+  if (!LANGS.includes(l)) l = 'de';
+  if (!HELP_LOADING[l]) {
+    const p = import(\`./i18n-\${l}-hilfe.js\${HELP_TRY[l] ? \`?r=\${HELP_TRY[l]}\` : ''}\`).then((m) => { Object.assign(STRINGS[l], m.S); p.done = true; })
+      .catch((e) => { delete HELP_LOADING[l]; HELP_TRY[l] = (HELP_TRY[l] || 0) + 1; throw e; });
+    HELP_LOADING[l] = p;
+  }
+  return HELP_LOADING[l];
+}
 `;
   return { core: HEAD + core, removed };
 }
 
 // Texte einer Sprache mit deutscher Rückfalle wie t(): Wert der Sprache, sonst (fehlend/leer) der deutsche
-export function packStrings(STRINGS, l) {
+export function allStrings(STRINGS, l) {
   const out = { ...STRINGS[l] };
   if (l !== 'de') for (const [k, v] of Object.entries(STRINGS.de)) if (!out[k] && v) out[k] = v;
   return out;
 }
+export const isHelpStep = (k) => /^help_[a-z0-9_]+_s$/.test(k);
+// Hauptpaket ohne Hilfe-Schritte bzw. nur die Hilfe-Schritte (Backlog 597)
+export function packStrings(STRINGS, l) { return Object.fromEntries(Object.entries(allStrings(STRINGS, l)).filter(([k]) => !isHelpStep(k))); }
+export function helpStrings(STRINGS, l) { return Object.fromEntries(Object.entries(allStrings(STRINGS, l)).filter(([k]) => isHelpStep(k))); }
 
 export async function buildI18n() {
   const src = readFileSync(new URL('i18n.js', pub), 'utf8');
@@ -94,8 +112,11 @@ export async function buildI18n() {
     const txt = `${HEAD}export const S = ${JSON.stringify(packStrings(M.STRINGS, l))};\nexport const P = ${JSON.stringify(M.PLURALS[l])};\n`;
     writeFileSync(new URL(`i18n-${l}.js`, pub), txt);
     sizes[l] = Math.round(Buffer.byteLength(txt) / 1024);
+    const help = `${HEAD}export const S = ${JSON.stringify(helpStrings(M.STRINGS, l))};\n`;
+    writeFileSync(new URL(`i18n-${l}-hilfe.js`, pub), help);
+    sizes[l + '-hilfe'] = Math.round(Buffer.byteLength(help) / 1024);
   }
-  console.log(`i18n: Kern ${Math.round(Buffer.byteLength(core) / 1024)} KB (${removed} Textanweisungen ausgelagert), Pakete ${LANGS.map((l) => `${l} ${sizes[l]} KB`).join(', ')}`);
+  console.log(`i18n: Kern ${Math.round(Buffer.byteLength(core) / 1024)} KB (${removed} Textanweisungen ausgelagert), Pakete ${LANGS.map((l) => `${l} ${sizes[l]} KB + Hilfe ${sizes[l + '-hilfe']} KB`).join(', ')}`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) await buildI18n();

@@ -1115,3 +1115,15 @@ export function loadLang(l) {
   return LOADING[l];
 }
 export const LANGS = ['de', 'uk', 'en'];
+// Hilfe-Schritte (Backlog 597): eigenes Paket je Sprache; nach einem Fehler neuer Versuch mit „?r=N“ (Browser merkt sich fehlgeschlagene Importe)
+const HELP_LOADING = {}, HELP_TRY = {};
+export const helpLoaded = (l) => !!HELP_LOADING[l] && HELP_LOADING[l].done === true;
+export function loadHelp(l) {
+  if (!LANGS.includes(l)) l = 'de';
+  if (!HELP_LOADING[l]) {
+    const p = import(`./i18n-${l}-hilfe.js${HELP_TRY[l] ? `?r=${HELP_TRY[l]}` : ''}`).then((m) => { Object.assign(STRINGS[l], m.S); p.done = true; })
+      .catch((e) => { delete HELP_LOADING[l]; HELP_TRY[l] = (HELP_TRY[l] || 0) + 1; throw e; });
+    HELP_LOADING[l] = p;
+  }
+  return HELP_LOADING[l];
+}

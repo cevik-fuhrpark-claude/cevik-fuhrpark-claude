@@ -25973,7 +25973,7 @@ await test('Backlog 588: Sprachpakete – App lädt nur Kern + Paket der eigenen
   ok(Object.keys(C.STRINGS.uk).length === 0 && Object.keys(C.PLURALS.de).length === 0 && !C.langLoaded('uk'), 'Kern ohne Texte');
   ok(Buffer.byteLength(rd('i18n-core.js')) < Buffer.byteLength(rd('i18n.js')) / 5, 'Kern < 20 % von i18n.js');
   for (const l of B.LANGS) {
-    await C.loadLang(l); ok(C.langLoaded(l), 'geladen ' + l);
+    await C.loadLang(l); ok(C.langLoaded(l), 'geladen ' + l); await C.loadHelp(l); // Hilfe-Schritte als eigenes Paket (Backlog 597)
     const bad = [...new Set([...Object.keys(M.STRINGS.de), ...Object.keys(M.STRINGS[l])])].filter((k) => (C.STRINGS[l][k] || k) !== (M.STRINGS[l][k] || M.STRINGS.de[k] || k));
     ok(!bad.length, `${l}: abweichende Texte ${bad.slice(0, 5).join(', ')}`);
     ok(isDeepStrictEqual(C.PLURALS[l], M.PLURALS[l]), `${l}: PLURALS gleich`);
@@ -26056,6 +26056,42 @@ await test('Backlog 593–595: App-Module – app-main.js lädt beim Start, Verw
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-modul-ladehinweis.py|'), 'UI-Test Backlog 595 in pruefen.sh');
   const M = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(M.STRINGS[l].lazy_load_failed, 'lazy_load_failed ' + l);
+});
+
+await test('Backlog 597: Hilfe-Schritte als eigenes Sprachpaket – Hauptpaket ohne help_*_s (Titel bleiben), Hilfe-Paket je Sprache aktuell und vollständig (deutsche Rückfalle), erst Hilfe/Suche laden, Offline-Cache, neuer Versuch nach Fehler', async () => {
+  const fs = await import('node:fs'); const { pathToFileURL } = await import('node:url');
+  const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const B = await import('../scripts/build-i18n.mjs');
+  const M = await import('../public/i18n.js');
+  const steps = Object.keys(M.STRINGS.de).filter(B.isHelpStep);
+  ok(steps.length > 20 && steps.every((k) => M.STRINGS.de[k.replace(/_s$/, '_t')]), `Hilfe-Abschnitte erkannt (${steps.length}), je Abschnitt ein Titel`);
+  for (const l of B.LANGS) {
+    const main = B.packStrings(M.STRINGS, l), help = B.helpStrings(M.STRINGS, l);
+    ok(!Object.keys(main).some(B.isHelpStep) && steps.every((k) => main[k.replace(/_s$/, '_t')]), `${l}: Hauptpaket ohne Schritte, mit Titeln`);
+    ok(steps.every((k) => help[k] === (M.STRINGS[l][k] || M.STRINGS.de[k])), `${l}: Hilfe-Paket vollständig (deutsche Rückfalle wie t())`);
+    eq(rd(`i18n-${l}-hilfe.js`).includes(`export const S = ${JSON.stringify(help)};`), true, `i18n-${l}-hilfe.js aktuell`);
+    // Ladegröße: Hauptpaket deutlich kleiner als vorher (alles in einem)
+    ok(Buffer.byteLength(rd(`i18n-${l}.js`)) < Buffer.byteLength(JSON.stringify(B.allStrings(M.STRINGS, l))) * 0.75, `${l}: Hauptpaket < 75 %`);
+  }
+  // Laden: Fehler → neuer Versuch mit ?r=N (Browser merkt sich fehlgeschlagene Importe), danach Texte da
+  const tmp = fs.mkdtempSync((await import('node:os')).tmpdir() + '/cfp-help-');
+  for (const f of ['i18n-core.js', 'ics-texts.js', 'check-labels.js', 'i18n-uk.js']) fs.copyFileSync(new URL('../public/' + f, import.meta.url), tmp + '/' + f);
+  const T = await import(pathToFileURL(tmp + '/i18n-core.js').href);
+  await T.loadLang('uk'); ok(!T.helpLoaded('uk') && !T.STRINGS.uk.help_report_s && T.STRINGS.uk.help_report_t, 'ohne Hilfe-Paket: Titel ja, Schritte nein');
+  let failed = false; try { await T.loadHelp('uk'); } catch { failed = true; } ok(failed && !T.helpLoaded('uk'), 'Hilfe-Paket fehlt → Fehler');
+  fs.copyFileSync(new URL('../public/i18n-uk-hilfe.js', import.meta.url), tmp + '/i18n-uk-hilfe.js');
+  await T.loadHelp('uk'); ok(T.helpLoaded('uk') && T.STRINGS.uk.help_report_s === B.helpStrings(M.STRINGS, 'uk').help_report_s, 'erneuter Versuch lädt');
+  ok(/\?r=\$\{HELP_TRY\[l\]\}/.test(rd('i18n-core.js')), 'neuer Versuch unter neuer Adresse');
+  fs.rmSync(tmp, { recursive: true, force: true });
+  // App: Hilfe lädt das Paket vor dem Aufbau (Fehler → Fehlerseite), Suche nur mit geladenem Paket; Start lädt es nicht
+  const app = rd('app.js');
+  ok(/async function viewHelp\(want, q\) \{\n[^\n]*\n  try \{ await loadHelp\(S\.lang\); \} catch \(e\) \{ console\.error\(e\); throw new Error\(t\('lazy_load_failed'\)\); \}/.test(app), 'viewHelp lädt das Paket');
+  ok(app.includes("await loadHelp(S.lang).catch(() => {}); // Hilfe-Schritte") && app.includes('const hs = !helpLoaded(S.lang) ? [] : (helpMatches('), 'Suche: Hilfe-Treffer nur mit Paket');
+  eq((app.match(/help_\$\{[a-z]+\}_s/g) || []).length, 3, 'Schritte nur in Hilfe und Suche benutzt');
+  ok(!/loadHelp\(/.test(app.slice(0, app.indexOf('async function route('))), 'Start lädt das Hilfe-Paket nicht');
+  const shell = JSON.parse(rd('sw.js').match(/const SHELL = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
+  for (const l of B.LANGS) ok(shell.includes(`/i18n-${l}-hilfe.js`), `SHELL /i18n-${l}-hilfe.js`);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-hilfe-paket.py|'), 'UI-Test in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

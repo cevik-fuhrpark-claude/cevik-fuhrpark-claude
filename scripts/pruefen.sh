@@ -302,6 +302,7 @@ UI-Dokumentsprache (html lang)|ui-html-lang.py|/tmp/cfp-htmllang.log
 UI-Start-Wächter (gemischte Module nach Deployment)|ui-startwaechter.py|/tmp/cfp-startwaechter.log
 UI-Sprachpakete (nur eigene Sprache laden, Wechsel lädt nach, Backlog 588)|ui-sprachpakete.py|/tmp/cfp-sprachpakete.log
 UI-Modul-Ladehinweis (Fahrzeugakte bei langsamem Netz, Weiterklick, Ladefehler, Backlog 595)|ui-modul-ladehinweis.py|/tmp/cfp-modul-ladehinweis.log
+UI-Hilfe-Paket (Hilfe-Schritte nachgeladen, Suche, Ladefehler, Backlog 597)|ui-hilfe-paket.py|/tmp/cfp-hilfe-paket.log
 UI-Langsames Netz (Seitenwechsel beim Hochladen, Fotos am Vorgang, Lagerbuchung)|ui-netz-seitenwechsel.py|/tmp/cfp-netz-seitenwechsel.log
 UI-Zwei Tabs (Abmelden/Personenwechsel, Meldung bei abgelaufener Anmeldung)|ui-tabs-anmeldung.py|/tmp/cfp-tabs-anmeldung.log
 UI-Kleines Handy 320 px und große Schrift (Kontrolle, Tabbar, Kopfzeile)|ui-kleines-handy.py|/tmp/cfp-kleines-handy.log
