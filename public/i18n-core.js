@@ -52,6 +52,7 @@ export { CHECK_LABELS } from './check-labels.js';
 // [CLAUDE] Backlog 431: Bundesland für landesweite Feiertage (Erreichbarkeit einer Rufnummer)
 // [CLAUDE] Hilfe: Kennzahlen Instandhaltung lesen (Inhaber/Fuhrparkleitung)
 // Backlog 618: HU/SP mit erheblichen/gefährlichen Mängeln ohne spätere bestandene Prüfung (Fahrzeugliste, Gespann)
+// Backlog 620: HU-Formular – SP am selben Tag, Prüfbericht als Datei
 // Hilfe: Nachfassen bei Vorgängen ohne Bewegung (nur wenn der Inhaber die Tage eingestellt hat)
 // [CLAUDE] Weitere Server-Fehler in der App-Sprache (Werkstatt/Fahrer arbeiten oft auf Ukrainisch/Englisch); Deutsch zeigt den Server-Text
 

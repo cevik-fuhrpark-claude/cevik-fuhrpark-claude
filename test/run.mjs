@@ -19959,7 +19959,7 @@ await test('Backlog 236 (Werkstatt arbeitet den Sammeltermin ab): Werkstattplan 
   ok(plan.includes("const canDone = isMgr() || S.me.role === 'workshop';") && plan.includes("/^[\\w-]+$/.test(i.id) ? '?done='") && (plan.match(/href="\$\{doneHref\(i\)\}" data-fromplan/g) || []).length === 2, 'Plan-Zeilen (Termin und fällig) verlinken das Formular');
   ok(plan.includes("$$('a[data-fromplan]').forEach((a) => (a.onclick = () => { S.fromPlan = location.hash || '#/plan'; }));"), 'Herkunft gemerkt');
   const vv = app.slice(app.indexOf('async function viewVehicle('), app.indexOf('\nasync function ', app.indexOf('async function viewVehicle(') + 10));
-  ok(vv.includes("if (sec && sec.startsWith('done:'))") && vv.includes('const doneNext = () =>') && (vv.match(/doneToast\(await api\('POST', .{0,80}, b\)\); doneNext\(\);/g) || []).length === 2, 'Formular geöffnet, Rückkehr nach dem Speichern');
+  ok(vv.includes("if (sec && sec.startsWith('done:'))") && vv.includes('const doneNext = () =>') && (vv.match(/doneToast\(await api\('POST', .{0,80}, b\)\); doneNext\(\);/g) || []).length === 1 && vv.includes('doneToast(r); doneNext();') /* HU/SP-Formular (Backlog 620): erst nach SP/Prüfbericht */, 'Formular geöffnet, Rückkehr nach dem Speichern');
   // Plan liefert die Eintrags-id der geplanten Prüftermine (Grundlage des Links)
   const vin = 'WDB96340310995831';
   eq((await owner.post('/api/vehicles', { plate: 'SM-AB 1', vin, site: 'Dortmund' })).status, 201);
@@ -23349,7 +23349,7 @@ await test('Backlog 415 (Folge aus 414): Formular „Werkstattauftrag anlegen“
     ok(STRINGS[l].help_contracts_s.includes(STRINGS[l].mo_create), 'Hilfe nennt den Knopf wörtlich ' + l);
   }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('data-mosvc') && app.includes("const svcRun = (d.contracts || []).filter((c) => c.kind === 'wartung' && !c.ended_on") && app.includes('maintOrderHtml(m.id, m.kind, mOrders, vS)') && app.includes('huSpHtml(d.hu_sp, vS, canMaint, mOrders)'), 'Hinweis im Formular der Akte');
+  ok(app.includes('data-mosvc') && app.includes("const svcRun = (d.contracts || []).filter((c) => c.kind === 'wartung' && !c.ended_on") && app.includes('maintOrderHtml(m.id, m.kind, mOrders, vS)') && app.includes('huSpHtml(d.hu_sp, vS, canMaint, mOrders, '), 'Hinweis im Formular der Akte');
 });
 
 await test('Backlog 416 (Folge aus 414): Werkstattplan „Fällig – ohne Termin“ nennt der Leitung laufende Wartungs-/Full-Service-Verträge je Fahrzeug (nicht Werkstatt/Lesezugriff, nicht beendete/künftige); Formular-Hinweis wie in der Akte', async () => {
@@ -26598,6 +26598,29 @@ await test('Backlog 617–619 (Blickwinkel „HU-Prüfer auf dem Hof“): SP mit
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-reinsp') && app.includes('data-creinsp'), 'Chips in Liste und Gespann');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].reinsp_open_chip && STRINGS[l].reinsp_open_title, l);
+});
+
+await test('Backlog 620 (Blickwinkel „HU-Prüfer auf dem Hof“): HU-Formular mit Datum aus geplantem Termin, „SP am selben Tag“ (eigenes Ergebnis, zweiter Aufruf) und Prüfbericht als Dokument; Hilfe DE/UK/EN', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-hsspsame') && app.includes('data-hsspbox') && app.includes('name="sp_result"') && app.includes('name="report_file"'), 'Formularfelder');
+  ok(app.includes('documents?kind=pruefbericht&note=') && app.includes("data-hskind=\"SP\"]"), 'Ablage als Prüfbericht, SP über ihr eigenes Formular');
+  ok(app.includes('x.planned_date && x.planned_date <= bDate() ? x.planned_date'), 'Datum aus geplantem Termin');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['hs_sp_same', 'hs_sp_same_hint', 'hs_report_file', 'hs_report_file_hint', 'hs_saved_partly']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_dates_s.includes('620'), `${l}: Hilfe`); }
+  ok(STRINGS.uk.hs_report_file_hint.includes(STRINGS.uk.dk_pruefbericht) && STRINGS.en.hs_report_file_hint.includes(STRINGS.en.dk_pruefbericht), 'Hinweis nennt die Dokumentart wie die Ablage');
+  // Server: dieselben Aufrufe wie die Oberfläche
+  const { U } = await freshWorld(); const V = 'VIN:WMA15SZZ2HM722774';
+  eq((await U.ws.post(`/api/vehicles/${V}/spec`, { zgm_class: 'ueber_12', spec_source: 'x' })).status, 403, 'nur Leitung pflegt Masse');
+  eq((await U.fleet.post(`/api/vehicles/${V}/spec`, { zgm_class: 'ueber_12', spec_source: 'Test' })).status, 200);
+  const day = bDayOff(-1);
+  eq((await U.ws.post(`/api/vehicles/${V}/husp/HU/complete`, { done_date: day, evidence: 'TÜV 2001 (Test)', result: 'ohne_maengel' })).status, 200);
+  eq((await U.ws.post(`/api/vehicles/${V}/husp/SP/complete`, { done_date: day, evidence: 'TÜV 2001 (Test)', result: 'geringe_maengel' })).status, 200, 'Werkstatt: SP mit demselben Nachweis');
+  const pdf = new TextEncoder().encode('%PDF-1.4\n% HU+SP Test 620\n%%EOF');
+  const note = `HU+SP ${day}: TÜV 2001 (Test)`;
+  eq((await U.ws.req('POST', `/api/vehicles/${V}/documents?kind=pruefbericht&note=${encodeURIComponent(note)}`, pdf, { 'content-type': 'application/pdf', 'x-filename': encodeURIComponent('bericht.pdf') })).status, 201, 'Werkstatt darf Prüfbericht ablegen');
+  const d = (await U.fleet.get(`/api/vehicles/${V}`)).data;
+  ok(d.documents.some((f) => f.doc_kind === 'pruefbericht' && f.doc_note === note), 'Dokument mit Notiz');
+  eq(d.hu_sp.sp.status, 'ok', 'SP geringe Mängel: in Ordnung'); ok(d.hu_sp.sp.due && d.hu_sp.hu.due, 'beide Fristen');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

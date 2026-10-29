@@ -105,6 +105,7 @@ UI-Benutzer deaktivieren nennt beendete Fahrzeugzuordnungen|ui-austritt-zuordnun
 UI-Jahresplanung (Fahrer „Fristen bis“, Prüftermine nach Monat, SP ungeklärt, Verträge)|ui-jahresplanung.py|/tmp/cfp-jahresplanung.log
 UI-Jahreskosten (CSV je Fahrzeug, Verträge ruhender Fahrzeuge)|ui-jahreskosten.py|/tmp/cfp-jahreskosten.log
 UI-Nachprüfung offen (HU/SP mit erheblichen Mängeln, Lkw + Anhänger, ohne Frist aus der nicht bestandenen Prüfung)|ui-nachpruefung-offen.py|/tmp/cfp-nachpruefung-offen.log
+UI-HU+SP am selben Tag in einem Formular (Datum aus Termin, SP-Ergebnis, Prüfbericht als Dokument)|ui-husp-zusammen.py|/tmp/cfp-husp-zusammen.log
 UI-Kommentar an deaktivierten Melder: Kästchen ausgegraut, Hinweis niemand benachrichtigt|ui-kommentar-melder.py|/tmp/cfp-kommentar-melder.log
 UI-Fahrer zuordnen mit ausgeschiedener Fahrerakte: Auswahl und Warnhinweis|ui-zuordnung-akte-ausgeschieden.py|/tmp/cfp-zuordnung-akte.log
 UI-Werkstattplan: Auftrag nach Fristende und mehrfach verschoben|ui-plan-verschoben.py|/tmp/cfp-plan-verschoben.log
