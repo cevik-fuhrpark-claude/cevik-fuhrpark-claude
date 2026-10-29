@@ -71,7 +71,7 @@ function readBody(body, existing = {}, user = null) {
 // Versicherungsfall anlegen oder ändern (je Vorgang höchstens einer). Versicherer wird – wenn leer – aus dem gewählten Versicherungsvertrag übernommen.
 export async function saveClaim(env, user, envName, caseId, body) {
   if (!isMgr(user)) throw forbidden();
-  const c = await env.DB.prepare('SELECT id, case_no, vehicle_id, duplicate_of FROM cases WHERE id=? AND environment=?').bind(caseId, envName).first();
+  const c = await env.DB.prepare('SELECT id, case_no, vehicle_id, duplicate_of, occurred_at, created_at FROM cases WHERE id=? AND environment=?').bind(caseId, envName).first();
   if (!c) throw notFound('Vorgang nicht gefunden.');
   const ex = await env.DB.prepare('SELECT * FROM insurance_claims WHERE case_id=?').bind(c.id).first();
   // als Dublette abgelehnter Vorgang: neuen Versicherungsfall beim ursprünglichen Vorgang erfassen (19.10.2026: sonst zwei Fälle für einen Schaden,
@@ -84,9 +84,15 @@ export async function saveClaim(env, user, envName, caseId, body) {
   const staleErr = () => conflict('version_conflict', ex ? 'Versicherungsfall wurde zwischenzeitlich geändert. Bitte neu laden.' : 'Versicherungsfall wurde zwischenzeitlich angelegt. Bitte neu laden.');
   if (stale && !ex) throw staleErr();
   const f = readBody(body, ex || {}, user);
+  let warning = null;
   if (f.contract_id) {
-    const k = await env.DB.prepare(`SELECT id, partner FROM vehicle_contracts WHERE id=? AND vehicle_id=? AND kind='versicherung'`).bind(f.contract_id, c.vehicle_id).first();
+    const k = await env.DB.prepare(`SELECT id, partner, start_date, end_date, ended_on FROM vehicle_contracts WHERE id=? AND vehicle_id=? AND kind='versicherung'`).bind(f.contract_id, c.vehicle_id).first();
     if (!k) throw bad('validation', 'Versicherungsvertrag: bitte einen Versicherungsvertrag dieses Fahrzeugs wählen.');
+    // Backlog 621 (Blickwinkel „Versichererwechsel zum 01.01.“): Vertrag galt am Schadentag (Schadenzeitpunkt, sonst Meldetag) nicht – nur Warnung,
+    // nicht blockierend (Laufzeit im System kann unvollständig sein); vorher wurde der Fall still dem falschen Versicherer zugeordnet
+    const day = occurrenceDay(c);
+    const end = k.ended_on || k.end_date || null;
+    if (day && ((k.start_date && k.start_date > day) || (end && end < day))) warning = { code: 'contract_not_valid_at_occurrence', day, start_date: k.start_date || null, end_date: end };
     // Vertrag gewechselt, Versicherer unverändert mitgesendet (Formular füllt ihn vor) → Partner des neuen Vertrags (17.10.2026)
     if (!f.insurer || (ex && ex.contract_id !== f.contract_id && f.insurer === ex.insurer)) f.insurer = k.partner;
   }
@@ -107,18 +113,25 @@ export async function saveClaim(env, user, envName, caseId, body) {
     await env.DB.prepare(`INSERT INTO insurance_claims(id,case_id,environment,vehicle_id,contract_id,insurer,claim_no,reported_on,status,deductible_net,reimbursed_net,reimbursed_on,evidence,note,file_id,appraiser,appraisal_on,appraisal_received_on,appraisal_net,opponent_plate,opponent_insurer,opponent_claim_no,police_station,police_ref,police_reported_on,created_by,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(case_id) DO NOTHING`).bind(id, c.id, envName, c.vehicle_id, f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, f.appraiser, f.appraisal_on, f.appraisal_received_on, f.appraisal_net, f.opponent_plate, f.opponent_insurer, f.opponent_claim_no, f.police_station, f.police_ref, f.police_reported_on, user.id, now, now).run()
       .then((r) => { if (!(r.meta && r.meta.changes)) throw conflict('version_conflict', 'Versicherungsfall wurde zwischenzeitlich angelegt. Bitte neu laden.'); });
-    await audit(env, user.id, 'claim.create', id, { case_no: c.case_no, insurer: f.insurer, status: f.status });
-    return { id, created: true };
+    await audit(env, user.id, 'claim.create', id, { case_no: c.case_no, insurer: f.insurer, status: f.status, ...(warning ? { warning: warning.code } : {}) });
+    return { id, created: true, ...(warning ? { warning } : {}) };
   }
   const changed = Object.keys(f).filter((k) => f[k] !== ex[k]);
-  if (!changed.length) return { id: ex.id, changed: [], ...(stale ? { duplicate: true } : {}) };
+  if (!changed.length) return { id: ex.id, changed: [], ...(stale ? { duplicate: true } : {}), ...(warning ? { warning } : {}) };
   if (stale) throw staleErr();
   // nur auf dem gelesenen Stand (parallele Änderungen überschrieben sich sonst still, 17.10.2026)
   const r = await env.DB.prepare(`UPDATE insurance_claims SET contract_id=?,insurer=?,claim_no=?,reported_on=?,status=?,deductible_net=?,reimbursed_net=?,reimbursed_on=?,evidence=?,note=?,file_id=?,appraiser=?,appraisal_on=?,appraisal_received_on=?,appraisal_net=?,opponent_plate=?,opponent_insurer=?,opponent_claim_no=?,police_station=?,police_ref=?,police_reported_on=?,updated_at=? WHERE id=? AND updated_at=?`)
     .bind(f.contract_id, f.insurer, f.claim_no, f.reported_on, f.status, f.deductible_net, f.reimbursed_net, f.reimbursed_on, f.evidence, f.note, f.file_id, f.appraiser, f.appraisal_on, f.appraisal_received_on, f.appraisal_net, f.opponent_plate, f.opponent_insurer, f.opponent_claim_no, f.police_station, f.police_ref, f.police_reported_on, laterIso(ex.updated_at), ex.id, ex.updated_at).run();
   if (!(r.meta && r.meta.changes)) throw conflict('version_conflict', 'Versicherungsfall wurde zwischenzeitlich geändert. Bitte neu laden.');
   await audit(env, user.id, 'claim.update', ex.id, { case_no: c.case_no, changed: Object.fromEntries(changed.map((k) => [k, { from: ex[k], to: f[k] }])) });
-  return { id: ex.id, changed };
+  return { id: ex.id, changed, ...(warning ? { warning } : {}) };
+}
+
+// Schadentag eines Vorgangs (Berliner Kalendertag): Schadenzeitpunkt (Tag oder Zeitpunkt), sonst Meldezeit
+export function occurrenceDay(c) {
+  const o = c && (c.occurred_at || c.created_at);
+  if (!o) return null;
+  return String(o).length === 10 ? String(o) : berlinDate(o);
 }
 
 // „Gutachten ausstehend“: Besichtigung eingetragen, noch kein Eingang des Gutachtens, Fall offen (keine eigene Frist – nur Zustand)
@@ -127,15 +140,15 @@ const shape = (r, today) => ({ ...r, open: OPEN_STATUS.includes(r.status), days_
 
 // Für die Vorgangsansicht (nur Leitung): Versicherungsfall + Versicherungsverträge des Fahrzeugs zur Auswahl (eine Abfrage)
 export async function claimForCase(env, caseId, vehicleId) {
-  const rows = (await env.DB.prepare(`SELECT 'claim' AS t, ic.id, ic.contract_id, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.deductible_net, ic.reimbursed_net, ic.reimbursed_on, ic.evidence, ic.note, ic.updated_at, ic.file_id, ic.appraiser, ic.appraisal_on, ic.appraisal_received_on, ic.appraisal_net, ic.opponent_plate, ic.opponent_insurer, ic.opponent_claim_no, ic.police_station, ic.police_ref, ic.police_reported_on, f.filename AS file_name, NULL AS partner, NULL AS contract_no, NULL AS end_date, NULL AS ended_on
+  const rows = (await env.DB.prepare(`SELECT 'claim' AS t, ic.id, ic.contract_id, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.deductible_net, ic.reimbursed_net, ic.reimbursed_on, ic.evidence, ic.note, ic.updated_at, ic.file_id, ic.appraiser, ic.appraisal_on, ic.appraisal_received_on, ic.appraisal_net, ic.opponent_plate, ic.opponent_insurer, ic.opponent_claim_no, ic.police_station, ic.police_ref, ic.police_reported_on, f.filename AS file_name, NULL AS partner, NULL AS contract_no, NULL AS end_date, NULL AS ended_on, NULL AS start_date
       FROM insurance_claims ic LEFT JOIN files f ON f.id=ic.file_id AND f.environment=ic.environment WHERE ic.case_id=?1
-    UNION ALL SELECT 'contract', k.id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, k.partner, k.contract_no, k.end_date, k.ended_on
+    UNION ALL SELECT 'contract', k.id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, k.partner, k.contract_no, k.end_date, k.ended_on, k.start_date
       FROM vehicle_contracts k WHERE k.vehicle_id=?2 AND k.kind='versicherung'`).bind(caseId, vehicleId).all()).results;
   const claim = rows.find((r) => r.t === 'claim');
   const today = berlinDate();
   return {
-    claim: claim ? shape(Object.fromEntries(Object.entries(claim).filter(([k]) => !['t', 'partner', 'contract_no', 'end_date', 'ended_on'].includes(k))), today) : null,
-    insurance_contracts: rows.filter((r) => r.t === 'contract').map((r) => ({ id: r.id, partner: r.partner, contract_no: r.contract_no, end_date: r.end_date, ended_on: r.ended_on })),
+    claim: claim ? shape(Object.fromEntries(Object.entries(claim).filter(([k]) => !['t', 'partner', 'contract_no', 'end_date', 'ended_on', 'start_date'].includes(k))), today) : null,
+    insurance_contracts: rows.filter((r) => r.t === 'contract').map((r) => ({ id: r.id, partner: r.partner, contract_no: r.contract_no, start_date: r.start_date || null, end_date: r.end_date, ended_on: r.ended_on })),
   };
 }
 

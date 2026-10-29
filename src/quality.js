@@ -45,6 +45,7 @@ export const CHECKS = {
   tire_size_after_tacho: 'hinweis',
   // Backlog 400: aktives Fahrzeug, für das ein Kfz-Versicherungsvertrag erfasst ist, aber keiner läuft (beendet/Ende überschritten); ohne je erfassten Vertrag kein Hinweis
   insurance_none_running: 'hinweis',
+  insurance_gap: 'hinweis', // Backlog 623: Lücke im erfassten Versicherungsschutz
   // Prüfergebnis mit erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher, aber kein Vorgang zum Fahrzeug seit der Prüfung
   inspection_defects_no_case: 'luecke',
   // Nachprüfung nach freigegebenem Mängelauftrag zeigt erneut erhebliche/gefährliche Mängel bzw. verkehrsunsicher (Wiederholungsmangel)
@@ -105,7 +106,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (sel0.site) vf = JSON.stringify(all.filter((v) => sel0.match(v.site)).map((v) => v.id));
   }
   const VF = vf ? 'AND i.vehicle_id IN (SELECT value FROM json_each(?))' : '';
-  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates, claimNoOcc, tireTacho, insNone] = await Promise.all([
+  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates, claimNoOcc, tireTacho, insNone, insAll] = await Promise.all([
     // aktive Fahrzeuge inkl. ruhender (nur für die Anhänger-Suche; Prüfungen laufen über die bewerteten)
     // dazu außer Betrieb genommene Anhänger (nur für „Anhänger außer Betrieb“, 23.10.2026) – gleich danach abgetrennt
     env.DB.prepare(`SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate, zgm_class, zgm_kg, eval_excluded, active FROM vehicles WHERE active=1 OR kind='anhaenger'`).all(),
@@ -200,6 +201,10 @@ export async function dataQuality(env, user, envName, query = {}) {
       FROM vehicles v WHERE v.active=1 AND v.eval_excluded=0 AND EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=v.id AND c.kind='versicherung')
       AND NOT EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=v.id AND c.kind='versicherung' AND (c.ended_on IS NULL OR c.ended_on >= ?) AND (c.end_date IS NULL OR c.end_date >= ?))
       ${vf ? 'AND v.id IN (SELECT value FROM json_each(?))' : ''} ORDER BY v.plate LIMIT ${DQ_MAX + 1}`).bind(berlinDate(), berlinDate(), ...(vf ? [vf] : [])).all(),
+    // Backlog 623: alle Versicherungsverträge aktiver, bewerteter Fahrzeuge (Lücke beim Versichererwechsel) + Vorwarnzeit Verträge
+    env.DB.prepare(`SELECT c.vehicle_id, v.plate, c.partner, c.contract_no, c.start_date, COALESCE(c.ended_on, c.end_date) AS eff_end, (SELECT value FROM settings WHERE key='contract_warn_days') AS warn
+      FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.kind='versicherung' AND v.active=1 AND v.eval_excluded=0
+      ${vf ? 'AND c.vehicle_id IN (SELECT value FROM json_each(?))' : ''}`).bind(...(vf ? [vf] : [])).all(),
   ]);
   const offTrailers = new Map(veh.results.filter((v) => !v.active).map((v) => [normPlate(v.plate), v]));
   veh.results = veh.results.filter((v) => v.active);
@@ -322,6 +327,28 @@ export async function dataQuality(env, user, envName, query = {}) {
     items.push({ check: 'insurance_none_running', severity: CHECKS.insurance_none_running, vehicle_id: r.vehicle_id, plate: r.plate,
       detail: `Letzter Versicherungsvertrag ${x.partner || ''}${x.no ? ' (' + x.no + ')' : ''} beendet am ${x.end ? x.end.split('-').reverse().join('.') : '–'} – kein laufender erfasst`,
       detail_args: { partner: x.partner || null, contract_no: x.no || null, ended: x.end || null } }); }
+  // Backlog 623: Lücke im erfassten Versicherungsschutz – ein Vertrag endet (in den letzten 365 Tagen oder innerhalb der Vorwarnzeit) und der nächste
+  // beginnt erst später bzw. es ist (noch) keiner erfasst. Bereits ganz ohne laufenden Vertrag meldet `insurance_none_running`. Nur erfasste Daten.
+  { const today = berlinDate(); const plus = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+    const w0 = Number((insAll.results[0] || {}).warn); const warn = Number.isFinite(w0) && w0 >= 0 && String((insAll.results[0] || {}).warn ?? '') !== '' ? w0 : 60;
+    const byV = new Map(); for (const c of insAll.results) { if (!byV.has(c.vehicle_id)) byV.set(c.vehicle_id, []); byV.get(c.vehicle_id).push(c); }
+    for (const [vid, cs] of byV) {
+      let hit = null;
+      for (const a of cs) {
+        if (!a.eff_end || a.eff_end < plus(today, -365) || a.eff_end > plus(today, warn)) continue;
+        const next = plus(a.eff_end, 1);
+        if (cs.some((b) => b !== a && (b.start_date || '0000-00-00') <= next && (b.eff_end || '9999-12-31') > a.eff_end)) continue; // nahtlos fortgesetzt
+        const later = cs.filter((b) => b !== a && b.start_date && b.start_date > next).sort((x, y) => x.start_date.localeCompare(y.start_date))[0] || null;
+        if (!later && a.eff_end < today) continue; // nichts läuft mehr → insurance_none_running
+        if (!hit || a.eff_end < hit.a.eff_end) hit = { a, later };
+      }
+      if (!hit) continue;
+      const { a, later } = hit; const gapDays = later ? Math.round((Date.parse(later.start_date) - Date.parse(a.eff_end)) / 86400000) - 1 : null;
+      const nm = (c) => c.partner + (c.contract_no ? ` (${c.contract_no})` : ''); const de = (d) => d.split('-').reverse().join('.');
+      items.push({ check: 'insurance_gap', severity: CHECKS.insurance_gap, vehicle_id: vid, plate: a.plate,
+        detail: later ? `${nm(a)} bis ${de(a.eff_end)}, ${nm(later)} ab ${de(later.start_date)} – ${gapDays} ${gapDays === 1 ? 'Tag' : 'Tage'} ohne erfassten Vertrag` : `${nm(a)} endet am ${de(a.eff_end)} – kein Folgevertrag erfasst`,
+        detail_args: { partner: a.partner, contract_no: a.contract_no || null, end: a.eff_end, next_partner: later ? later.partner : null, next_start: later ? later.start_date : null, gap_days: gapDays } });
+    } }
   for (const c of claimNoOcc.results) items.push({ check: 'claim_no_occurred', severity: CHECKS.claim_no_occurred, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${c.reported_on}` });
   for (const c of acc365.results) items.push({ check: 'accident_no_claim', severity: CHECKS.accident_no_claim, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${berlinDate(c.created_at)}` });
   const RES_DE = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };

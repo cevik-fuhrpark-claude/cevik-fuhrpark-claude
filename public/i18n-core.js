@@ -53,6 +53,8 @@ export { CHECK_LABELS } from './check-labels.js';
 // [CLAUDE] Hilfe: Kennzahlen Instandhaltung lesen (Inhaber/Fuhrparkleitung)
 // Backlog 618: HU/SP mit erheblichen/gefährlichen Mängeln ohne spätere bestandene Prüfung (Fahrzeugliste, Gespann)
 // Backlog 620: HU-Formular – SP am selben Tag, Prüfbericht als Datei
+// Backlog 621: Versicherungsfall – Vertrag am Schadentag
+// Backlog 622/623: Datenqualität – Versicherungsverträge überschneiden sich bzw. Lücke im erfassten Versicherungsschutz
 // Hilfe: Nachfassen bei Vorgängen ohne Bewegung (nur wenn der Inhaber die Tage eingestellt hat)
 // [CLAUDE] Weitere Server-Fehler in der App-Sprache (Werkstatt/Fahrer arbeiten oft auf Ukrainisch/Englisch); Deutsch zeigt den Server-Text
 
@@ -1120,6 +1122,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 612: Prüftermine mit „Fällig bis“ nach Monat gruppiert
 // Backlog 614: Kosten je km – Kostenmonate außerhalb der km-Ablesungen
 // Backlog 616: Kosten-CSV je Fahrzeug
+// Backlog 622 (Blickwinkel „Versichererwechsel zum 01.01.“): Vertragsimport – neuer Vertrag läuft neben einem nicht beendeten gleicher Art
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

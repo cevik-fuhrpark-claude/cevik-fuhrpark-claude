@@ -26623,6 +26623,61 @@ await test('Backlog 620 (Blickwinkel „HU-Prüfer auf dem Hof“): HU-Formular 
   eq(d.hu_sp.sp.status, 'ok', 'SP geringe Mängel: in Ordnung'); ok(d.hu_sp.sp.due && d.hu_sp.hu.due, 'beide Fristen');
 });
 
+await test('Backlog 621 (Blickwinkel „Versichererwechsel zum 01.01.“): Versicherungsfall mit Vertrag, der am Schadentag nicht lief → gespeichert mit Warnung; Vertragsauswahl mit Laufzeit, gültiger Vertrag vorausgewählt (DE/UK/EN)', async () => {
+  const { U, cmd, newCase, V1 } = await freshWorld();
+  const mk = async (b) => { const r = await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', evidence: 'Police (Test)', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const kOld = await mk({ partner: 'Alt-Versicherung AG', contract_no: 'A-1', start_date: '2025-01-01', end_date: bDayOff(-10) });
+  const kNew = await mk({ partner: 'Neu-Versicherung SE', contract_no: 'N-1', start_date: bDayOff(-9) });
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: bDayOff(-12) })).status, 200);
+  const put = (b) => U.fleet.put(`/api/cases/${id}/claim`, { reported_on: BERLIN_TODAY, evidence: 'Schadenmeldung (Test)', ...b });
+  const r1 = await put({ contract_id: kNew }); eq(r1.status, 200, JSON.stringify(r1.data));
+  eq(r1.data.warning?.code, 'contract_not_valid_at_occurrence', 'neuer Vertrag galt am Schadentag noch nicht'); eq(r1.data.warning.day, bDayOff(-12)); eq(r1.data.warning.start_date, bDayOff(-9));
+  const cl = (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq(cl.claim.insurer, 'Neu-Versicherung SE', 'trotzdem gespeichert');
+  ok(cl.insurance_contracts.find((k) => k.id === kOld).start_date === '2025-01-01', 'Laufzeit in der Auswahl');
+  const r2 = await put({ contract_id: kOld, insurer: 'Alt-Versicherung AG', expected_updated_at: cl.claim.updated_at }); eq(r2.status, 200, JSON.stringify(r2.data)); ok(!r2.data.warning, 'alter Vertrag passt');
+  // Schadentag nach dem Wechsel → alter (beendeter) Vertrag warnt
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: bDayOff(-5) })).status, 200);
+  const r3 = await put({ contract_id: kOld, insurer: 'Alt-Versicherung AG' }); eq(r3.data.warning?.end_date, bDayOff(-10), 'Ende genannt');
+  // ohne Vertrag: keine Warnung
+  ok(!(await put({ contract_id: null, insurer: 'Alt-Versicherung AG' })).data.warning, 'ohne Vertrag');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-claimprek') && app.includes("r.warning.code === 'contract_not_valid_at_occurrence'") && app.includes('kPeriod(k)'), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].claim_contract_pre.includes('{d}') && STRINGS[l].claim_contract_invalid.includes('{p}'), l);
+});
+
+await test('Backlog 622/623 (Blickwinkel „Versichererwechsel zum 01.01.“): Vertragsimport nennt neue Verträge, die neben einem nicht beendeten gleicher Art laufen; Datenqualität `insurance_gap` bei Lücke bzw. fehlendem Folgevertrag (nicht bei nahtlosem Wechsel, nicht doppelt zu insurance_none_running)', async () => {
+  const { U, V1 } = await freshWorld(); const V2 = 'VIN:WDB9630051L917317';
+  const mk = async (v, b) => { const r = await U.fleet.post(`/api/vehicles/${v}/contracts`, { kind: 'versicherung', evidence: 'Police (Test)', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  // 622: Altvertrag ohne Ende an V1 → Importzeile „parallel“
+  await mk(V1, { partner: 'Alt-Versicherung AG', contract_no: 'A-1', start_date: '2025-01-01' });
+  const csv = `Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Monatsrate netto;Nachweis\nSZ-YC 5513;Versicherung;Neu-Versicherung SE;N-1;${bDayOff(20)};250;Police N-1\nSZ-KC 5515;Versicherung;Neu-Versicherung SE;N-2;${bDayOff(20)};250;Police N-2`;
+  const pv = await U.fleet.req('POST', '/api/contracts/import?dry_run=1', csv, { 'content-type': 'text/csv' }); eq(pv.status, 200, JSON.stringify(pv.data));
+  eq(pv.data.counts.parallel, 1, 'eine Zeile parallel'); const r1 = pv.data.rows.find((r) => r.vehicle_id === V1);
+  eq(r1.parallel?.partner, 'Alt-Versicherung AG'); eq(r1.parallel.end_date, null); ok(!pv.data.rows.find((r) => r.vehicle_id === V2).parallel, 'V2 ohne Altvertrag');
+  // 623: Lücken
+  const dq = async () => (await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'insurance_gap');
+  eq((await dq()).length, 0, 'Altvertrag ohne Ende: keine Lücke');
+  // V2: Vertrag endet in 10 Tagen, kein Folgevertrag → Hinweis
+  const k2 = await mk(V2, { partner: 'Alt-Versicherung AG', contract_no: 'A-2', start_date: '2025-01-01', end_date: bDayOff(10) });
+  let d = await dq(); eq(d.length, 1, 'kein Folgevertrag'); eq(d[0].vehicle_id, V2); eq(d[0].severity, 'hinweis'); eq(d[0].detail_args.end, bDayOff(10)); eq(d[0].detail_args.next_start, null);
+  // Folgevertrag erst 2 Tage später → Lücke von 1 Tag
+  const k3 = await mk(V2, { partner: 'Neu-Versicherung SE', contract_no: 'N-2', start_date: bDayOff(12) });
+  d = await dq(); eq(d.length, 1); eq(d[0].detail_args.gap_days, 1, 'ein Tag ohne Vertrag'); eq(d[0].detail_args.next_start, bDayOff(12));
+  const { dqDetailText } = await import('../public/csv.js'); const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { const tx = dqDetailText(d[0], (k) => STRINGS[l][k] || k, (x) => x); ok(tx.includes(bDayOff(12)) && tx.includes('1') && !tx.includes('dq_'), `${l}: ${tx}`); ok(STRINGS[l].dq_insurance_gap && STRINGS[l].ct_parallel && STRINGS[l].dq_ins_no_next, l); }
+  // nahtlos (Beginn = Ende + 1) → kein Hinweis
+  eq((await U.fleet.patch(`/api/contracts/${k3}`, { start_date: bDayOff(11) })).status, 200);
+  eq((await dq()).length, 0, 'nahtloser Wechsel');
+  // V1: Altvertrag nachträglich beendet (gestern), nichts Neues → insurance_none_running, nicht zusätzlich insurance_gap
+  const kA = (await U.fleet.get(`/api/vehicles/${V1}`)).data.contracts.find((c) => c.contract_no === 'A-1').id;
+  eq((await U.fleet.post(`/api/contracts/${kA}/end`, { ended_on: bDayOff(-1), end_note: 'gekündigt (Test)' })).status, 200);
+  const all = (await U.fleet.get('/api/admin/data-quality')).data.items;
+  ok(all.some((i) => i.check === 'insurance_none_running' && i.vehicle_id === V1) && !all.some((i) => i.check === 'insurance_gap' && i.vehicle_id === V1), 'kein Doppelbefund');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('data-ctpar') && app.includes("tn('ct_parallel_n'"), 'Vorschau');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

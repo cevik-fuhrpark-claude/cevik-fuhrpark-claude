@@ -30,6 +30,8 @@ export function dqDetailText(i, t, fmtD, mk = (k) => k, x = {}) {
     return `${a.source ? a.source + ': ' : ''}${km(a.km)} (${fmtD(a.day)}) ${a.cmp === 'lt' ? '<' : '>'} ${km(a.other_km)}${a.other_day ? ` (${fmtD(a.other_day)})` : ''}`;
   if (i.check === 'note_inactive_author' && a.name !== undefined) return `${a.name}${a.for_driver ? ' · ' + t('dq_note_for_driver') : ''}: ${a.text}`;
   if (i.check === 'vin_similar' && a.pos) return `${a.other_plate} · ${a.other_vin} · ${t('dq_vin_pos').replace('{n}', a.pos)}`;
+  // Backlog 623: Lücke im erfassten Versicherungsschutz
+  if (i.check === 'insurance_gap' && a.end) return `${a.partner || ''}${a.contract_no ? ` (${a.contract_no})` : ''} · ${a.next_start ? t('dq_ins_gap').replace('{d}', fmtD(a.end)).replace('{s}', fmtD(a.next_start)).replace('{p}', a.next_partner || '').replace('{n}', a.gap_days) : t('dq_ins_no_next').replace('{d}', fmtD(a.end))}`;
   if (a.contract_kind) return `${t('ck_' + a.contract_kind)} · ${a.partner}${a.start_km !== undefined ? ` · ${km(a.km)} < ${km(a.start_km)}` : ''}`;
   if (a.role) return `${a.name} (${t('role_' + a.role)})${a.expired ? ' – ' + t('dq_invite_expired') : ''}`;
   if (i.check === 'insurance_none_running') return `${a.partner || ''}${a.contract_no ? ` (${a.contract_no})` : ''} · ${t('dq_ins_ended').replace('{d}', a.ended ? fmtD(a.ended) : '–')}`;

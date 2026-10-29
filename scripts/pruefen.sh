@@ -106,6 +106,7 @@ UI-Jahresplanung (Fahrer „Fristen bis“, Prüftermine nach Monat, SP ungeklä
 UI-Jahreskosten (CSV je Fahrzeug, Verträge ruhender Fahrzeuge)|ui-jahreskosten.py|/tmp/cfp-jahreskosten.log
 UI-Nachprüfung offen (HU/SP mit erheblichen Mängeln, Lkw + Anhänger, ohne Frist aus der nicht bestandenen Prüfung)|ui-nachpruefung-offen.py|/tmp/cfp-nachpruefung-offen.log
 UI-HU+SP am selben Tag in einem Formular (Datum aus Termin, SP-Ergebnis, Prüfbericht als Dokument)|ui-husp-zusammen.py|/tmp/cfp-husp-zusammen.log
+UI-Versichererwechsel (Vertrag am Schadentag, Import „läuft parallel“, Datenqualität Lücke)|ui-versichererwechsel.py|/tmp/cfp-versichererwechsel.log
 UI-Kommentar an deaktivierten Melder: Kästchen ausgegraut, Hinweis niemand benachrichtigt|ui-kommentar-melder.py|/tmp/cfp-kommentar-melder.log
 UI-Fahrer zuordnen mit ausgeschiedener Fahrerakte: Auswahl und Warnhinweis|ui-zuordnung-akte-ausgeschieden.py|/tmp/cfp-zuordnung-akte.log
 UI-Werkstattplan: Auftrag nach Fristende und mehrfach verschoben|ui-plan-verschoben.py|/tmp/cfp-plan-verschoben.log

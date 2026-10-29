@@ -594,10 +594,15 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     // zwei neue Zeilen derselben Vertragsnummer (anderer oder fehlender Beginn) wären zwei laufende Verträge – das Formular weist das
     // schon ab (`sameContract` gegen laufenden Vertrag); die Einfüge-Prüfung sieht Zeilen derselben Anweisung nicht (18.10.2026)
     if (status === 'neu' && rows.some((r) => r.status === 'neu' && r.vehicle_id === v.id && sameContract({ ...r, ended_on: null }, f))) return skip('doppelt in der Datei');
-    rows.push({ line, vehicle_id: v.id, plate: v.plate, ...f, status });
+    // Backlog 622 (Blickwinkel „Versichererwechsel zum 01.01.“): neuer Vertrag läuft neben einem nicht beendeten Vertrag gleicher Art, dessen Laufzeit
+    // den Beginn überdeckt (ohne Ende oder Ende ≥ Beginn) – Vorschau nennt ihn (Raten zählen im Kostenbericht doppelt, Altvertrag Ende eintragen).
+    // Nur Hinweis: z. B. Haftpflicht und Kasko bei verschiedenen Versicherern laufen legitim parallel.
+    const par = status === 'neu' ? exRes.results.find((c) => c.vehicle_id === v.id && c.kind === f.kind && !c.ended_on && (!c.end_date || !f.start_date || c.end_date >= f.start_date)
+      && (!f.end_date || !c.start_date || c.start_date <= f.end_date)) : null;
+    rows.push({ line, vehicle_id: v.id, plate: v.plate, ...f, status, ...(par ? { parallel: { partner: par.partner, contract_no: par.contract_no || null, start_date: par.start_date || null, end_date: par.end_date || null } } : {}) });
   });
   const fresh = rows.filter((r) => r.status === 'neu');
-  const result = { dry_run: dryRun, counts: { neu: fresh.length, vorhanden: rows.length - fresh.length, uebersprungen: skipped.length }, rows, skipped }; // höchstens 500 Zeilen – vorher still auf 300 gekürzt (17.10.2026)
+  const result = { dry_run: dryRun, counts: { neu: fresh.length, vorhanden: rows.length - fresh.length, uebersprungen: skipped.length, ...(fresh.some((r) => r.parallel) ? { parallel: fresh.filter((r) => r.parallel).length } : {}) }, rows, skipped }; // `parallel` nur wenn > 0 (Backlog 622) // höchstens 500 Zeilen – vorher still auf 300 gekürzt (17.10.2026)
   if (dryRun || !fresh.length) return result;
   const now = nowIso();
   const drops = new Map((await env.DB.prepare(`SELECT v.id, ${KM_DROP_SQL('v.id')} AS d FROM vehicles v WHERE v.id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify([...new Set(fresh.map((r) => r.vehicle_id))])).all()).results.map((x) => [x.id, parseKmDrop(x.d)]));
