@@ -26094,6 +26094,40 @@ await test('Backlog 597: Hilfe-Schritte als eigenes Sprachpaket – Hauptpaket o
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-hilfe-paket.py|'), 'UI-Test in pruefen.sh');
 });
 
+await test('Backlog 596: schnellerer Start – index.html fordert alle Start-Module per modulepreload an (erzeugt, aktuell), boot.js ruft /api/me vorab (nicht auf Anmelde-/Einrichtungs-/Einladungsseiten), api() übernimmt den Vorabruf nur als erste Anfrage GET /api/me', async () => {
+  const fs = await import('node:fs');
+  const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const B = await import('../scripts/build-app.mjs');
+  const html = rd('index.html'), main = rd('app-main.js');
+  const mods = B.startModules(main);
+  ok(mods.includes('i18n-core.js') && mods.includes('ics-texts.js') && mods.includes('csv.js') && !mods.includes('app-main.js'), 'Start-Module transitiv: ' + mods.join(', '));
+  ok(!mods.some((m) => /^app-/.test(m) || /^i18n-(de|uk|en)(-hilfe)?\.js$/.test(m)), 'keine nachgeladenen Module/Sprachpakete in der Liste');
+  eq(B.withPreloads(html, mods), html, 'index.html aktuell (npm run build)');
+  const pre = [...html.matchAll(/<link rel="modulepreload" href="\/([^"]+)">/g)].map((m) => m[1]);
+  eq(pre.join(','), mods.join(','), 'modulepreload = Start-Module');
+  ok(html.indexOf('modulepreload') < html.indexOf('</head>'), 'Vorab-Links im Kopf');
+  const shell = JSON.parse(rd('sw.js').match(/const SHELL = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
+  for (const m of pre) ok(shell.includes('/' + m), 'Offline-Hülle /' + m);
+  // Ersetzen ist stabil (zweimal bauen ändert nichts), alter Block wird ersetzt
+  const h2 = B.withPreloads(B.withPreloads(html, ['a.js']), mods); eq(h2, html, 'Block ersetzbar');
+  // boot.js: Vorabruf nur außerhalb öffentlicher Seiten, mit CSRF-Kopf, Ablehnung abgefangen; Sprache wie deviceLang()
+  const boot = rd('boot.js');
+  ok(/if \(window\.fetch && !\/\^#\\\/\(login\|setup\|invite\\\/\)\/\.test\(location\.hash \|\| ''\)\)/.test(boot), 'kein Vorabruf auf #/login, #/setup, #/invite/');
+  ok(boot.includes("window.__cfpMe = fetch('/api/me', { method: 'GET', headers: h, credentials: 'same-origin' });") && boot.includes("'x-cfp': '1'") && boot.includes('window.__cfpMe.catch('), 'Vorabruf mit x-cfp, Fehler abgefangen');
+  ok(boot.includes('navigator.languages'), 'boot.js prüft alle Gerätesprachen wie app.js');
+  // Sprache in boot.js = deviceLang() in app.js (sonst wird das falsche Paket vorab geladen)
+  const bl = new Function('navigator', 'localStorage', 'location', 'document', 'window', 'setTimeout', boot.replace(/^\(function \(\) \{/m, '(function () { window.__lang = lang;').replace(/\}\)\(\);\s*$/, '})();'));
+  for (const [langs, exp] of [[['ru-RU', 'uk-UA'], 'uk'], [['fr-FR', 'en-US'], 'en'], [['fr-FR'], 'de'], [['de-AT', 'en'], 'de']]) {
+    const win = { addEventListener() {} };
+    bl({ languages: langs, language: langs[0] }, { getItem: () => null }, { hash: '#/login' }, { addEventListener() {}, createElement: () => ({}), head: { appendChild() {} } }, win, () => 0);
+    eq(win.__lang(), exp, 'boot-Sprache ' + langs.join(','));
+  }
+  // app.js: Vorabruf immer verwerfen, nur für GET /api/me benutzen
+  const src = rd('app.js');
+  ok(src.includes("const pre = window.__cfpMe; window.__cfpMe = null;") && src.includes("const usePre = !!pre && method === 'GET' && path === '/api/me';") && src.includes('res = usePre ? await pre : await fetch('), 'api(): Vorabruf nur als erste Anfrage GET /api/me');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-vorabruf-anmeldung.py|'), 'UI-Test Backlog 596 in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -226,10 +226,32 @@ function tokensRefs(src, toks, d) {
   return wordsOf(src.slice(d.start, d.end));
 }
 
+// Backlog 596 (29.10.2026): Alle beim Start statisch importierten Module als <link rel="modulepreload"> in index.html – der Browser
+// lädt sie sonst erst, nachdem app-main.js (bzw. i18n-core.js) angekommen ist (je eine Latenz mehr, Slow 3G ≈ 2 s je Stufe).
+// Das Sprachpaket der gemerkten Sprache ergänzt boot.js (Sprache steht erst im Browser fest).
+export function startModules(mainTxt, read = (f) => readFileSync(new URL(f, pub), 'utf8')) {
+  const seen = new Set(), todo = [['app-main.js', mainTxt]];
+  while (todo.length) {
+    const [f, txt] = todo.shift(); if (seen.has(f)) continue; seen.add(f);
+    for (const m of txt.matchAll(/^import [^;]*? from '\.\/([^']+)';?$/gm)) if (!seen.has(m[1])) todo.push([m[1], read(m[1])]);
+  }
+  seen.delete('app-main.js');
+  return [...seen].sort();
+}
+const PRE_A = '<!-- modulepreload: erzeugt durch scripts/build-app.mjs -->', PRE_E = '<!-- /modulepreload -->';
+export function withPreloads(html, mods) {
+  const block = PRE_A + '\n' + mods.map((f) => `<link rel="modulepreload" href="/${f}">`).join('\n') + '\n' + PRE_E;
+  const a = html.indexOf(PRE_A), e = html.indexOf(PRE_E);
+  if (a >= 0 && e > a) return html.slice(0, a) + block + html.slice(e + PRE_E.length);
+  return html.replace('<link rel="stylesheet" href="/styles.css">', '<link rel="stylesheet" href="/styles.css">\n' + block);
+}
+
 export function buildApp() {
   const src = readFileSync(new URL('app.js', pub), 'utf8');
   const { files, stubs, moved } = splitApp(src);
   for (const [f, txt] of Object.entries(files)) writeFileSync(new URL(f, pub), txt);
+  const idx = readFileSync(new URL('index.html', pub), 'utf8'), idx2 = withPreloads(idx, startModules(files['app-main.js']));
+  if (idx2 !== idx) writeFileSync(new URL('index.html', pub), idx2);
   const kb = (f) => Math.round(Buffer.byteLength(files[f]) / 1024);
   console.log(`app: app.js ${Math.round(Buffer.byteLength(src) / 1024)} KB → app-main ${kb('app-main.js')} KB + ${Object.keys(GROUPS).map((g) => `app-${g} ${kb(`app-${g}.js`)} KB`).join(' + ')} (${moved} Deklarationen ausgelagert, ${stubs.size} Platzhalter)`);
 }

@@ -14,8 +14,11 @@
   function lang() {
     var l = '';
     try { l = localStorage.getItem('cfp_lang') || ''; } catch (e) { l = ''; }
-    if (!T[l]) { var n = (navigator.language || 'de').toLowerCase(); l = n.indexOf('uk') === 0 ? 'uk' : n.indexOf('en') === 0 ? 'en' : 'de'; }
-    return l;
+    if (T[l]) return l;
+    // wie deviceLang() in app.js: alle bevorzugten Sprachen des Geräts in Reihenfolge (Backlog 596: sonst lud der Vorabruf ein anderes Paket)
+    var ls = []; try { ls = [].concat(navigator.languages || [], navigator.language || ''); } catch (e) { ls = [navigator.language || '']; }
+    for (var i = 0; i < ls.length; i++) { var n = String(ls[i] || '').toLowerCase(); if (n.indexOf('uk') === 0) return 'uk'; if (n.indexOf('en') === 0) return 'en'; if (n.indexOf('de') === 0) return 'de'; }
+    return 'de';
   }
   function reload() {
     var done = function () { location.reload(); };
@@ -50,6 +53,17 @@
   try {
     ['/i18n-core.js', '/i18n-' + lang() + '.js'].forEach(function (h) { var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = h; document.head.appendChild(l); });
   } catch (e) { /* nur Beschleunigung */ }
+  // Backlog 596 (29.10.2026): Anmeldestatus (/api/me) gleich mit den Modulen abfragen statt erst nach app-main.js (Slow 3G ≈ 2 s
+  // Latenz weniger). api() in app.js übernimmt die Antwort nur als allererste API-Anfrage und nur für GET /api/me; jede andere erste
+  // Anfrage verwirft sie (z. B. Anmeldung → danach frische Abfrage). Nicht auf Anmelde-/Einrichtungs-/Einladungsseiten.
+  try {
+    if (window.fetch && !/^#\/(login|setup|invite\/)/.test(location.hash || '')) {
+      var h = { 'x-cfp': '1', 'x-cfp-lang': lang() };
+      window.__cfpMeT0 = Date.now();
+      window.__cfpMe = fetch('/api/me', { method: 'GET', headers: h, credentials: 'same-origin' });
+      window.__cfpMe.catch(function () { /* app.js meldet „offline“ wie bei eigener Anfrage */ });
+    }
+  } catch (e) { window.__cfpMe = null; }
   window.addEventListener('error', function () { setTimeout(fail, 0); });
   setTimeout(check, 15000);
 })();

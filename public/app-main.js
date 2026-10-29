@@ -191,8 +191,12 @@ async function api(method, path, body, extra = {}) {
   // timeoutMs: Zeitlimit (Foto-Uploads) – ohne Antwort gilt die Anfrage als Netzabbruch (21.10.2026: „Lade Foto 2/5“ hing ohne Ende,
   // nach Neuladen fehlten die restlichen Fotos still); dann greift der Postausgang für die restlichen Fotos
   const sig = extra.timeoutMs && typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(extra.timeoutMs) : undefined;
-  const t0 = Date.now();
-  try { res = await fetch(path, { method, headers, body: b, credentials: 'same-origin', ...(sig ? { signal: sig } : {}) }); }
+  let t0 = Date.now();
+  // Backlog 596: Vorabruf von /api/me aus boot.js – nur als allererste API-Anfrage übernommen, sonst verworfen (nie veraltet)
+  const pre = window.__cfpMe; window.__cfpMe = null;
+  const usePre = !!pre && method === 'GET' && path === '/api/me';
+  if (usePre) t0 = window.__cfpMeT0 || t0;
+  try { res = usePre ? await pre : await fetch(path, { method, headers, body: b, credentials: 'same-origin', ...(sig ? { signal: sig } : {}) }); }
   catch { const e = new Error(t('offline')); e.offline = true; throw e; }
   try { clockSample(res.headers.get('date'), t0, Date.now()); } catch {}
   // Hintergrund-Aufruf (Glocke, Postausgang, Netz wieder da) mit 401, während die Person etwas eingibt: nicht zur Anmeldung springen –
