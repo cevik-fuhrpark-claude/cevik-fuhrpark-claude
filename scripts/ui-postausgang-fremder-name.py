@@ -47,7 +47,14 @@ async def main():
         # Tab 1: Netz wieder da
         await t1.unroute('**/api/**', ab)
         await t1.evaluate("window.dispatchEvent(new Event('online'))"); await t1.wait_for_timeout(2500)
-        await t3.click('#sb'); await t3.wait_for_timeout(2500)
+        # Tab 3 kann inzwischen neu geladen sein (Abmelden/Anmelden im anderen Tab, Backlog „Anmeldung über Tabs hinweg“ 21.10.2026) und
+        # steht dann auf der Anmeldeseite bzw. im Formular der neuen Person – beides zulässig; nur ein noch offenes Formular von Anna senden.
+        # (29.10.2026: je nach Zeitpunkt der Abmeldung lag Tab 3 auf der Anmeldeseite – Skript wartete 30 s auf „#sb“ und war rot)
+        await t3.wait_for_timeout(1000)
+        if await t3.locator('#sb').count() and 'ANNA' in (await t3.input_value('#d') if await t3.locator('#d').count() else ''):
+            await t3.click('#sb'); await t3.wait_for_timeout(2500)
+        else:
+            print('Tab 3: neu geladen (', t3.url.split('#')[-1], ') – Formular von Anna nicht mehr offen')
         cases = (await api('GET', '/api/cases?f=all'))['d']['cases']
         bad = False
         for c in cases:
