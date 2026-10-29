@@ -1,6 +1,6 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
 import { icsLang } from '../public/ics-texts.js';
-import { plateCmp, b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, fileSlug, pointDec, cleanText } from './util.js';
+import { plateCmp, b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, fileSlug, pointDec, cleanText, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL } from './util.js';
 import * as auth from './auth.js';
 import * as totp from './totp.js';
 import { personExport } from './privacy.js';
@@ -716,6 +716,8 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/inspections' && m === 'POST') return json(await cases.submitInspection(env, ctx, user, envName, await readJson(request)), 201);
 
   // Benachrichtigungen & Push
+  // Hinweisarten, bei denen die Liste das fest gekoppelte Fahrzeug eines gesperrten Vorgangs nennt (Backlog 605)
+  const COUPLED_NOTE_KINDS = ['created', 'safety_lock', 'still_locked', 'priority_changed'];
   if (path === '/api/notifications' && m === 'GET') {
     // Zähler immer über ALLE Hinweise der Person (nicht nur die angezeigten) – sonst fehlt im Zähler/Reiter, was älter als die neuesten NOTIF_MAX ist.
     // ?filter=unread|urgent filtert serverseitig (ältere ungelesene erscheinen so auch bei vielen Hinweisen); ?count=1 nur die Zähler (Kennzahl am Menü).
@@ -747,6 +749,20 @@ async function handleApi(request, env, ctx, url) {
       .bind(user.id, envName, ...(cur ? [cur.created_at, cur.created_at, cur.r] : []), NOTIF_MAX + 1).all()).results;
     const truncated = rows.length > NOTIF_MAX; if (truncated) rows.length = NOTIF_MAX;
     for (const r of rows) { Object.assign(r, currentLangText(r)); delete r.lang; if (r.kind === 'new_login') { if (r.ref && r.ref === ownRef) r.own_device = true; r.ref = null; } }
+    // Backlog 605 (Blickwinkel „Disposition, erster Tag“): Sperr-/Meldehinweis nennt nur das gesperrte Fahrzeug – das fest gekoppelte
+    // (Stammliste) gleich dazu, solange der Vorgang das Fahrzeug JETZT sperrt (aktueller Stand, nicht der Stand beim Versand). Eine Abfrage.
+    const lockIds = [...new Set(rows.filter((r) => r.case_id && COUPLED_NOTE_KINDS.includes(r.kind)).map((r) => r.case_id))];
+    if (lockIds.length) {
+      const PK = PLATE_KEY_SQL;
+      const cp = (await env.DB.prepare(`SELECT c.id AS case_id, o.plate, o.kind FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
+        JOIN vehicles o ON o.active=1 AND o.id<>v.id AND ${COUPLING_PREFERRED_SQL('v')} AND ${COUPLING_PREFERRED_SQL('o')} AND (
+          (v.kind='anhaenger' AND o.kind='lkw' AND ${PK('o.trailer_plate')}<>'' AND ${PK('o.trailer_plate')}=${PK('v.plate')})
+          OR (v.kind='lkw' AND o.kind='anhaenger' AND ${PK('v.trailer_plate')}<>'' AND ${PK('o.plate')}=${PK('v.trailer_plate')}))
+        WHERE c.id IN (SELECT value FROM json_each(?)) AND c.environment=? AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')
+        ORDER BY o.plate`).bind(JSON.stringify(lockIds), envName).all()).results;
+      const byCase = new Map(); for (const x of cp) if (!byCase.has(x.case_id)) byCase.set(x.case_id, { plate: x.plate, kind: x.kind });
+      for (const r of rows) if (byCase.has(r.case_id) && COUPLED_NOTE_KINDS.includes(r.kind)) r.coupled_locked = byCase.get(r.case_id);
+    }
     const q = await env.DB.prepare('SELECT push_quiet_from, push_quiet_to FROM users WHERE id=?').bind(user.id).first();
     return json({ as_of: listAsOf, notifications: rows, unread: counts.unread, counts, filter: filter ? url.searchParams.get('filter') : 'all', truncated, max: NOTIF_MAX, quiet: q && q.push_quiet_from ? { from: q.push_quiet_from, to: q.push_quiet_to } : null });
   }

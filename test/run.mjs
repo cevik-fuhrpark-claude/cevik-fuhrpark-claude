@@ -26233,6 +26233,49 @@ await test('Backlog 603 (Blickwinkel „Werkstatt-Tablet UK mit Fotos“): Datei
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-vorgang-dateien-pruefung.py|'), 'UI-Test in pruefen.sh');
 });
 
+await test('Backlog 605 (Blickwinkel „Disposition, erster Tag“): Sperr-Hinweis nennt das fest gekoppelte Fahrzeug (nur solange gesperrt), Fahrzeugliste schreibt „überfällig“ aus, Hilfe Disposition nennt die eigenen Hinweise (Sie-Form, Winterreifen unvollständig); DE/UK/EN', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const x = await U.own.post('/api/users', { username: 'w.dispo605', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
+  const dispo = new Client(worker, e, 'w.dispo605'); await dispo.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,kind,site,active,eval_excluded,created_at,updated_at) VALUES('VIN:AH605','AH605','SZ-AH 605','anhaenger','Dortmund',1,0,?,?)`).run(now, now);
+  db.prepare(`UPDATE vehicles SET trailer_plate='SZ-AH 605' WHERE id=?`).run(V1);
+  const list = async () => (await dispo.get('/api/notifications?filter=')).data.notifications;
+  // kritische Meldung am Anhänger sperrt → Hinweis an die Disposition nennt das Zugfahrzeug
+  const A = await newCase({ vehicle_id: 'VIN:AH605', description: 'Bremsleitung undicht', priority: 'kritisch', driveability: 'nicht_fahrbereit' }, U.fleet);
+  eq(db.prepare('SELECT safety_lock FROM cases WHERE id=?').get(A).safety_lock, 1, 'Anhänger gesperrt');
+  let n = (await list()).filter((r) => r.case_id === A);
+  ok(n.length >= 1, 'Disposition erhält Hinweis ' + JSON.stringify(n));
+  ok(n.every((r) => r.coupled_locked && r.coupled_locked.plate === 'SZ-YC 5513' && r.coupled_locked.kind === 'lkw'), 'Zugfahrzeug genannt ' + JSON.stringify(n.map((r) => [r.kind, r.coupled_locked])));
+  // Gegenrichtung: Meldung am Lkw nennt den Anhänger
+  const L = await newCase({ description: 'Lenkung schlägt', priority: 'kritisch', driveability: 'nicht_fahrbereit' }, U.fleet);
+  n = (await list()).filter((r) => r.case_id === L);
+  ok(n.length && n.every((r) => r.coupled_locked && r.coupled_locked.plate === 'SZ-AH 605' && r.coupled_locked.kind === 'anhaenger'), 'Anhänger genannt');
+  // nicht mehr gesperrt → kein Gespann-Vermerk mehr (aktueller Stand)
+  db.prepare('UPDATE cases SET safety_lock=0 WHERE id=?').run(A);
+  ok((await list()).filter((r) => r.case_id === A).every((r) => !r.coupled_locked), 'ohne Sperre kein Vermerk');
+  // Fahrzeug ohne Kopplung: kein Vermerk
+  const V2 = (await newCase({ vehicle_id: 'VIN:WDB9630051L917317', description: 'Achse', priority: 'kritisch', driveability: 'nicht_fahrbereit' }, U.fleet));
+  ok((await list()).filter((r) => r.case_id === V2).every((r) => !r.coupled_locked), 'ohne Gespann kein Vermerk');
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(app.includes("t('notif_coupled_locked')") && app.includes('data-ncoupled'), 'Hinweisliste zeigt den Vermerk');
+  ok(app.includes("data-overdue>${esc(t('overdue'))}: ${esc(t('next_due'))}"), 'Fahrzeugliste: „überfällig“ ausgeschrieben');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].notif_coupled_locked && STRINGS[l].notif_coupled_locked.includes('{v}'), l + ' Text Gespann');
+    const h = STRINGS[l].help_dispo_s; const parts = h.split('|');
+    ok(h.includes(STRINGS[l].dispo_winter_incomplete), l + ' Hilfe erklärt „Erfassung unvollständig“');
+    ok(parts.some((p) => p.startsWith(STRINGS[l].dispo_winter_incomplete) || p.includes(STRINGS[l].dispo_winter_incomplete)), l);
+    ok(parts.length >= 20, l + ' Absätze getrennt: ' + parts.length);
+    ok(parts.every((p) => p.length < 900), l + ' kein überlanger Absatz');
+  }
+  ok(!/\b(du|dich|dir|dein\w*)\b/.test(STRINGS.de.help_dispo_s), 'DE Hilfe Disposition durchgehend „Sie“');
+  ok(STRINGS.de.help_dispo_s.includes('Welche Hinweise (und Push) die Disposition bekommt'), 'DE Hinweis-Absatz');
+  // Hinweis-Absatz deckt die Empfängerregeln ab (src/notify.js: dispatch bei Wartet auf Teile, Termin geändert, ohne Reparatur beendet)
+  const nt = fs.readFileSync(new URL('../src/notify.js', import.meta.url), 'utf8');
+  ok(/waiting_parts'\) add\(usersByRole\(\['dispatch'\]\)\)/.test(nt) && /case 'withdrawn':[\s\S]{0,300}usersByRole\(\['dispatch'\]\)/.test(nt), 'Empfängerregeln unverändert – sonst Hilfe anpassen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

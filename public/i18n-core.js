@@ -1106,6 +1106,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 579: Prüftermin bearbeiten / beenden
 // Backlog 589: Prüftermin-Import – erlaubte Prüfarten bei „Prüfart unbekannt“
 // Backlog 593: ausgelagerter App-Bereich konnte nicht geladen werden (z. B. Funkloch beim ersten Aufruf)
+// Backlog 605: gekoppeltes Fahrzeug im Sperr-Hinweis (Hinweisliste)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
