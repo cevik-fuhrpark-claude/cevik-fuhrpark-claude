@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test (29.10.2026, Backlog 596) – schnellerer Start: Start-Module per modulepreload, /api/me schon aus boot.js:
-# 1. Angemeldet, Neustart: genau eine Anfrage /api/me (Vorabruf wird übernommen), Startseite in der Kontosprache (UK), alle
+# 1. Angemeldet, Neustart: genau eine Anfrage /api/me und /api/meta (Vorabrufe werden übernommen, Backlog 598), Startseite in der Kontosprache (UK), alle
 #    statischen Module und das Sprachpaket kommen ohne Doppel-Download.
 # 2. Nicht angemeldet: Vorabruf liefert 401 → Anmeldeseite; Anmeldung über das Formular → Startseite mit dem richtigen Namen
 #    (der alte 401-Vorabruf wird nicht noch einmal benutzt).
@@ -38,6 +38,10 @@ async def main():
         await q.goto(B + '/#/'); await q.wait_for_selector('nav', timeout=15000); await q.wait_for_timeout(800); reqs.clear(); await q.reload(); await q.wait_for_selector('nav', timeout=15000); await q.wait_for_timeout(800)
         me = [r for r in reqs if r.split('?')[0] == '/api/me']
         _r('ok: angemeldet – genau eine Anfrage /api/me (Vorabruf übernommen)' if len(me) == 1 else f'FEHLER: /api/me {len(me)}× angefragt: {reqs}')
+        meta = [r for r in reqs if r.split('?')[0] == '/api/meta']
+        _r('ok: angemeldet – genau eine Anfrage /api/meta (Vorabruf übernommen)' if len(meta) == 1 else f'FEHLER: /api/meta {len(meta)}× angefragt: {reqs}')
+        _r('ok: /api/me und /api/meta gleich aus boot.js angefordert (vor version.json aus app-main.js)' if reqs.index('/api/me') < reqs.index('/api/meta') < reqs.index('/version.json') else f'FEHLER: Reihenfolge {reqs}')
+        _r('ok: Vorabrufe nach Gebrauch verworfen' if await q.evaluate("() => window.__cfpPre") is None else 'FEHLER: Vorabruf-Liste bleibt stehen')
         js = [r.split('?')[0] for r in reqs if r.split('?')[0].endswith('.js')]
         dup = sorted({r for r in js if js.count(r) > 1})
         _r('ok: keine Datei doppelt geladen' if not dup else f'FEHLER: doppelt geladen: {dup}')
@@ -76,12 +80,12 @@ async def main():
         if OUT: await q2.screenshot(path=f'{OUT}/vorabruf-nach-anmeldung-390.png')
 
         # 5. erste API-Anfrage ist nicht /api/me → Vorabruf verworfen
-        left = await q2.evaluate("() => window.__cfpMe")
+        left = await q2.evaluate("() => window.__cfpPre")
         _r('ok: Vorabruf nach Gebrauch verworfen' if left is None else f'FEHLER: Vorabruf noch vorhanden: {left!r}')
-        await q2.evaluate("""() => { window.__cfpMe = Promise.resolve(new Response('{"error":"x"}', { status: 401, headers: { 'content-type': 'application/json' } })); }""")
+        await q2.evaluate("""() => { const r = () => Promise.resolve(new Response('{"error":"x"}', { status: 401, headers: { 'content-type': 'application/json' } })); window.__cfpPre = [['/api/me', r()], ['/api/meta', r()]]; }""")
         # ein Hintergrund-/Aktionsaufruf (nicht /api/me) muss den Vorabruf verwerfen, ohne ihn zu benutzen
         await q2.goto(B + '/#/cases'); await q2.wait_for_timeout(1500)
-        left = await q2.evaluate("() => window.__cfpMe")
+        left = await q2.evaluate("() => window.__cfpPre")
         still = await q2.locator('input[type=password]').count()
         _r('ok: fremde erste Anfrage verwirft den Vorabruf (keine Abmeldung durch alte Antwort)' if left is None and not still else f'FEHLER: Vorabruf {left!r}, Anmeldeseite {still}')
 

@@ -196,11 +196,13 @@ async function api(method, path, body, extra = {}) {
   // nach Neuladen fehlten die restlichen Fotos still); dann greift der Postausgang für die restlichen Fotos
   const sig = extra.timeoutMs && typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(extra.timeoutMs) : undefined;
   let t0 = Date.now();
-  // Backlog 596: Vorabruf von /api/me aus boot.js – nur als allererste API-Anfrage übernommen, sonst verworfen (nie veraltet)
-  const pre = window.__cfpMe; window.__cfpMe = null;
-  const usePre = !!pre && method === 'GET' && path === '/api/me';
+  // Backlog 596/598: Vorabrufe aus boot.js (/api/me, dann /api/meta) – nur als erste API-Anfragen in genau dieser Reihenfolge übernommen;
+  // jede abweichende Anfrage verwirft alle (nie eine veraltete Antwort, z. B. 401 von vor der Anmeldung)
+  const preQ = window.__cfpPre, pre = preQ && preQ.shift();
+  const usePre = !!pre && method === 'GET' && path === pre[0];
+  if (!usePre || !preQ.length) window.__cfpPre = null;
   if (usePre) t0 = window.__cfpMeT0 || t0;
-  try { res = usePre ? await pre : await fetch(path, { method, headers, body: b, credentials: 'same-origin', ...(sig ? { signal: sig } : {}) }); }
+  try { res = usePre ? await pre[1] : await fetch(path, { method, headers, body: b, credentials: 'same-origin', ...(sig ? { signal: sig } : {}) }); }
   catch { const e = new Error(t('offline')); e.offline = true; throw e; }
   try { clockSample(res.headers.get('date'), t0, Date.now()); } catch {}
   // Hintergrund-Aufruf (Glocke, Postausgang, Netz wieder da) mit 401, während die Person etwas eingibt: nicht zur Anmeldung springen –
@@ -988,10 +990,15 @@ function bindWsFlow() {
 const dayRank = (c) => (c.priority === 'kritisch' || c.safety_lock ? 0 : c.priority === 'mittel' ? 1 : 2);
 const dayOrder = (a, b) => dayRank(a) - dayRank(b) || String(a.created_at).localeCompare(String(b.created_at)) || String(a.id).localeCompare(String(b.id));
 // Werkstatt-Tagesübersicht: Aufträge des eigenen Standorts nach Arbeitsschritt, dazu Prüftermine der nächsten 14 Tage
+// Promise früh starten, aber erst beim await auswerten: ohne angehängten Fehlerzweig gälte eine Ablehnung, die vor dem await eintritt, als unbehandelt
+const early = (p) => { p.catch(() => {}); return p; };
 async function workshopBoard() {
   // Nur Arbeitsvorrat: eigene Meldungen an Fahrzeugen anderer Werkstätten (Zugriff „lesen“) erschienen sonst unter
   // „Neu – bitte übernehmen“, ließen sich aber nicht übernehmen (19.10.2026); sie stehen weiter in „Vorgänge“
-  const open = (await api('GET', '/api/cases?status=open&limit=500')).cases.filter((c) => c.access !== 'read');
+  // Backlog 600: alle Abfragen der Tafel gleichzeitig starten (vorher fünf nacheinander); Ergebnisse in derselben Reihenfolge eingebaut
+  const pOpen = api('GET', '/api/cases?status=open&limit=500'), pOv = early(api('GET', '/api/maintenance')), pNr = early(api('GET', '/api/me/inspections-without-result'));
+  const pRi = early(api('GET', '/api/cases?' + caseFilterQ('open_items') + '&limit=200')), pWin = early(wsWinter(vsDef('tireSite')));
+  const open = (await pOpen).cases.filter((c) => c.access !== 'read');
   const lanes = [
     ['ws_to_ack', open.filter((c) => c.status === 'werkstatt_freigegeben' && !c.workshop_ack_at)],
     ['ws_to_start', open.filter((c) => c.status === 'werkstatt_freigegeben' && c.workshop_ack_at)],
@@ -1032,7 +1039,7 @@ async function workshopBoard() {
   const dupNote = (k) => { if (noteDone || !above.size || !STEP_KEYS.includes(k)) return ''; noteDone = true; return `<p class="small muted" id="wsdupnote">${esc(tn('ws_dup_note', total))}</p>`; };
   let html = wsFlow() + shown.map(([k, l]) => `${dupNote(k)}<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${k === 'ws_planned_today' && l.length > 1 ? `<p class="small muted" id="wsdayorder">${esc(t('day_order_hint'))}</p>` : ''}${caseList(l, '', STEP_KEYS.includes(k) ? alsoAbove : null)}${k === 'ws_repeat' ? `<p class="small"><a href="${esc(hj('#/cases?f=repeat'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
   try {
-    const ov = await api('GET', '/api/maintenance');
+    const ov = await pOv;
     // ≤ 14 Tage nach Datum oder nach km fällig/überschritten (Warnschwelle aus den Einstellungen) – gleiche Status wie die Prüftermin-Übersicht
     const kmDueNow = (r) => ['ueberfaellig', 'faellig'].includes(r.km_status);
     const soon = ov.rows.filter((r) => (r.days !== null && r.days <= 14) || kmDueNow(r));
@@ -1043,16 +1050,16 @@ async function workshopBoard() {
   } catch {}
   // selbst erfasste Pflichtprüfungen ohne Ergebnis (≤ 180 Tage, neueste ihrer Art) – Sprung direkt zum Formular in der Fahrzeugakte
   try {
-    const nr = (await api('GET', '/api/me/inspections-without-result')).items;
+    const nr = (await pNr).items;
     if (nr.length) html += `<h2>${esc(t('res_missing_mine'))} <span class="chip">${nr.length}</span></h2><p class="small muted">${esc(t('res_missing_hint'))}</p><div class="list">${nr.map((r) => `<a class="row" href="#/vehicles/${encodeURIComponent(r.vehicle_id)}?ev=${encodeURIComponent(r.id)}">${plate(r.plate)}<span class="title">${esc(mk(r.kind))} · ${fmtD(r.done_date)}</span><span class="chip">${esc(t('res_add_go'))} ›</span></a>`).join('')}</div>`;
   } catch {}
   // Backlog 487: freigegebene Aufträge mit offenen Restarbeiten (nicht sicherheitsrelevant) – Arbeitsvorrat für ruhige Stunden/Wochenabschluss
   try {
-    const ri = (await api('GET', '/api/cases?' + caseFilterQ('open_items') + '&limit=200')).cases;
+    const ri = (await pRi).cases;
     if (ri.length) html += `<h2 id="wsoi">${esc(t('filter_open_items'))} <span class="chip">${ri.length}</span></h2><p class="small muted">${esc(t('ws_open_items_hint'))}</p>${caseList(ri.slice(0, 10))}<p class="small"><a href="${esc(hj('#/cases?f=open_items'))}">${esc(t('show_in_list'))} ›</a></p>`;
   } catch {}
   // Winterreifen: Lkw ohne Alpine-Symbol laut Erfassung als Arbeitsvorrat (umrüsten bzw. Erfassung nachholen) – nur Information, keine Sperre
-  html += await wsWinter(vsDef('tireSite'));
+  html += await pWin;
   return html + `<p class="navlinks"><a href="${esc(hj('#/cases'))}">${esc(t('all'))}</a> <a href="#/plan">${esc(t('wplan'))} ›</a></p>${helpLink('ws')}`;
 }
 // Sprünge von der Startseite: Zielliste mit dem Standort, für den der Zähler gilt (Backlog 102) – Leitung zählt flottenweit („alle“),
@@ -1071,12 +1078,16 @@ async function viewHome() {
   // nach dem Anmelden nur „Keine Verbindung“) – einmal je Anmeldung im Hintergrund, Fahrer siehe unten
   if (S.me.role !== 'driver' && mayReport() && navigator.onLine) vehCacheRefresh();
   let d, cases;
+  // Backlog 600: Teile der Startseite, die nicht von Zählern/Vorgängen abhängen, gleich mit anfordern (vorher erst danach – Werkstatt
+  // bis zu 7 Abfragen nacheinander, Fahrer 3). Fehler bleiben erhalten (early: erst beim await wirksam, vorher keine unbehandelte Ablehnung).
+  const mvP = S.me.role === 'driver' ? early(api('GET', '/api/me/vehicles')) : null;
+  const boardP = S.me.role === 'workshop' ? early(workshopBoard()) : S.me.role !== 'driver' && isMgr() ? early(fleetTodo()) : null;
   try {
     // Disposition mit Standard-Standort: Standort schon serverseitig filtern – sonst verdrängen neuere Vorgänge anderer Standorte die eigenen aus den 8 (19.10.2026)
     const dsite = S.me.role === 'dispatch' && S.me.home_site && !S.dispoAll ? '&vsite=' + encodeURIComponent(S.me.home_site) : '';
     // Zähler (Offen/Kritisch/Gesperrt) und Fahrzeugleiste ebenfalls je Standort (vorher flottenweit über der Standort-Tafel)
-    d = await api('GET', '/api/dashboard' + (dsite ? '?' + dsite.slice(1) : ''));
-    cases = (await api('GET', '/api/cases?status=open&limit=8' + dsite)).cases;
+    // Backlog 600: gleichzeitig statt nacheinander (je eine Latenz weniger; Slow 3G ≈ 2 s)
+    [d, cases] = await Promise.all([api('GET', '/api/dashboard' + (dsite ? '?' + dsite.slice(1) : '')), api('GET', '/api/cases?status=open&limit=8' + dsite).then((r) => r.cases)]);
   } catch (err) {
     if (!err.offline || S.me.role !== 'driver') throw err;
     d = {}; cases = null; // Fahrer ohne Netz: Startseite mit zuletzt gespeicherten Fahrzeugdaten
@@ -1086,7 +1097,7 @@ async function viewHome() {
     html += `<a class="btn block" href="#/new" style="margin:8px 0 12px">${esc(t('report_damage'))}</a><a class="btn secondary block" href="#/check">${esc(t('departure_check'))}</a><a class="btn secondary block" href="#/emergency" id="emhome" style="margin-top:8px">☎ ${esc(t('em_title'))}</a><p style="margin-top:8px"><a href="#/help">${esc(t('help'))} ›</a></p><section class="panel" id="pushnudge" hidden></section>`;
     const mvKey = `cfp_myveh_${S.me.id}_${S.me.environment}`;
     let mv = null; let mvOffline = false;
-    try { mv = (await api('GET', '/api/me/vehicles')).vehicles; try { localStorage.setItem(mvKey, JSON.stringify({ at: new Date().toISOString(), vehicles: mv })); } catch {}
+    try { mv = (await mvP).vehicles; try { localStorage.setItem(mvKey, JSON.stringify({ at: new Date().toISOString(), vehicles: mv })); } catch {}
       // Fahrzeugliste für „Schaden melden“/„Abfahrtskontrolle“ ohne Netz vorhalten (18.10.2026: ohne vorheriges Öffnen dieser Seiten offline unbenutzbar)
       vehCacheRefresh();
       // Rufnummern „Panne & Notfall“ ebenso vorhalten (20.10.2026: ohne vorheriges Öffnen mit Netz unterwegs leer)
@@ -1123,9 +1134,9 @@ async function viewHome() {
       const n = d.findings.filter((f) => ['kritisch', 'handeln'].includes(f.severity)).reduce((s, f) => s + f.n, 0);
       if (n) html += `<a class="panel alert" style="display:block;text-decoration:none" href="#/master?sev=act" id="homefind"><b>${esc(t('not_clear'))}</b> · ${esc(t('findings'))} (${esc(t('asev_act'))}): ${fmtNum(n)}</a>`;
     }
-    if (S.me.role === 'workshop') html += await workshopBoard();
+    if (S.me.role === 'workshop') html += await boardP;
     else {
-      if (isMgr()) html += await fleetTodo();
+      if (isMgr()) html += await boardP;
       if (S.me.role === 'dispatch') {
         // Standard-Standort aus „Mein Konto“: Tafel nur für diesen Standort – sichtbar vermerkt und jederzeit auf „alle“ umschaltbar
         const hs = S.me.home_site && !S.dispoAll ? S.me.home_site : '';
@@ -3674,9 +3685,10 @@ function ctLines(c, { noEvidence = false } = {}) {
   }
   // letzte Ablesung zum Stichtag/bis „Beendet am“ auch ohne berechenbare Kontingent-Zeile (Backlog 241: ohne Kontingent, nach Tachotausch,
   // „km bei Übernahme“ fehlt) – der Stand für die Meldung an den Leasinggeber, mit Herkunft; nie geschätzt
-  if (c.reading && !(s.km && s.km.driven !== undefined)) out.push(`<span data-ctread>${esc(t('km'))}: ${fmtKm(c.reading.km)} <span class="small muted">(${esc(t('ct_km_read'))} ${fmtD(c.reading.measured_at)}${c.reading.source ? ' · ' + esc(odoSrc(c.reading.source)) : ''})</span></span>`);
+  // Backlog 601: auch bei Kontingent-Zeile – der km-Stand ist die Zahl, die der Leasinggeber abfragt (vorher nur in der CSV)
+  if (c.reading) out.push(`<span data-ctread>${esc(t('km'))}: ${fmtKm(c.reading.km)} <span class="small muted">(${esc(t('ct_km_read'))} ${fmtD(c.reading.measured_at)}${c.reading.source ? ' · ' + esc(odoSrc(c.reading.source)) : ''})</span></span>`);
   // Backlog 512: Leasing/Miete eines Lkw ohne Kontingent und ohne jede Ablesung (bis Stichtag) – gleiche Regel wie die CSV (`noReading`)
-  if (['leasing', 'miete'].includes(c.kind) && !c.ended_on && !(c.start_date && c.start_date > bDate()) && 'reading' in c && !c.reading && !c.km_allowance && c.vehicle_kind !== 'anhaenger') out.push(`<span class="muted" data-ctnoread>${esc(t('ct_km_noread'))}</span>`);
+  if (c.no_reading) out.push(`<span class="muted" data-ctnoread>${esc(t('ct_km_noread'))}</span>`);
   if (c.monthly_rate_net !== null) out.push(`${esc(t('ct_rate'))}: ${eur(c.monthly_rate_net)}`);
   if (!noEvidence) out.push(`<span class="small muted">${esc(t('evidence'))}: ${esc(c.evidence)}${c.note ? ' · ' + esc(c.note) : ''}</span>`);
   if (c.ended_on) out.push(`<span class="small">${esc(t('ct_ended_on'))} ${fmtD(c.ended_on)}${c.end_note ? ' · ' + esc(c.end_note) : ''}</span>`);
@@ -3742,7 +3754,7 @@ async function viewContracts() {
     <p class="print-only small">${printStamp()} · ${esc(t('print_filter'))}: ${esc(t('cf_' + f))}${k ? ' · ' + esc(t('ck_' + k)) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''}${r.as_of ? ' · ' + esc(t('ct_asof')) + ': ' + fmtD(r.as_of) : ''}${r.ends_by ? ' · ' + esc(t('ct_endsby')) + ': ' + fmtD(r.ends_by) : ''} · ${esc(t('print_count').replace('{n}', r.contracts.length))} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="actions noprint" style="flex-wrap:wrap">${['aktiv', 'aktion', 'beendet', 'alle'].map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-cf="${x}">${esc(t('cf_' + x))} (${r.counts[x]})</button>`).join('')}</div>
     <div class="actions noprint" style="margin-top:0"><select id="ctk" aria-label="${esc(t('ct_kind'))}" style="max-width:260px"><option value="">${esc(t('ct_all_kinds'))}</option>${CT_KINDS.map((x) => `<option value="${x}"${k === x ? ' selected' : ''}>${esc(t('ck_' + x))}</option>`).join('')}</select>
-      <label class="small" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0"><span style="white-space:nowrap">${esc(t('ct_asof'))}</span> <input type="date" id="ctasof" value="${esc(asof)}" max="${bDate()}" style="max-width:170px"></label>${asof ? `<button type="button" class="btn secondary" id="ctasofx">${esc(t('ct_asof_clear'))}</button>` : ''}</div>
+      <label class="small" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0"><span style="white-space:nowrap">${esc(t('ct_asof'))}</span> <input type="date" id="ctasof" value="${esc(asof)}" max="${bDate()}" style="max-width:170px"></label>${asof ? `<button type="button" class="btn secondary" id="ctasofx">${esc(t('ct_asof_clear'))}</button>` : `<button type="button" class="btn secondary small" id="ctasofprev">${esc(t('ct_asof_prevmonth'))}</button>`}</div>
     ${!asof && f !== 'beendet' ? `<div class="actions noprint" style="margin-top:0;flex-wrap:wrap"><label class="small" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0"><span style="white-space:nowrap">${esc(t('ct_endsby'))}</span> <input type="date" id="ctendsby" value="${esc(eby)}" style="max-width:170px"></label><button type="button" class="btn secondary small" data-ctq="0">${esc(t('ct_endsby_q0'))}</button><button type="button" class="btn secondary small" data-ctq="1">${esc(t('ct_endsby_q1'))}</button>${eby ? `<button type="button" class="btn secondary small" id="ctendsbyx">${esc(t('ct_endsby_clear'))}</button>` : ''}</div>` : ''}
     ${r.ends_by ? `<p class="small" data-ct-endsby><span class="chip mittel" style="white-space:normal">${esc(t('ct_endsby_note').replace('{d}', fmtD(r.ends_by)))}</span></p>` : ''}
     ${r.as_of ? `<p class="small" data-ct-asof><span class="chip mittel" style="white-space:normal">${esc(t('ct_asof_note').replace('{d}', fmtD(r.as_of)))}</span></p>` : ''}
@@ -3756,6 +3768,8 @@ async function viewContracts() {
   $('#ctk').onchange = () => { S.ctKind = $('#ctk').value; viewContracts(); };
   const ao = $('#ctasof'); if (ao) ao.onchange = () => { const v = ao.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctAsOf = v && v <= bDate() ? v : ''; /* Backlog 511: heute als Stichtag zulässig (Monatsletzter am Monatsende) */ if (S.ctAsOf) S.ctEndsBy = ''; viewContracts(); };
   const aox = $('#ctasofx'); if (aox) aox.onclick = () => { S.ctAsOf = ''; viewContracts(); };
+  // Backlog 601: Monatsmeldung Leasing – Stichtag „Ende Vormonat“ mit einem Tipp (Berliner Datum)
+  const aop = $('#ctasofprev'); if (aop) aop.onclick = () => { const d = new Date(bDate().slice(0, 8) + '01T12:00:00Z'); d.setUTCDate(0); S.ctAsOf = d.toISOString().slice(0, 10); S.ctEndsBy = ''; viewContracts(); };
   const ebEl = $('#ctendsby'); if (ebEl) ebEl.onchange = () => { const v = ebEl.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctEndsBy = v; viewContracts(); };
   $$('[data-ctq]').forEach((b) => (b.onclick = () => { S.ctEndsBy = quarterEnd(bDate(), Number(b.dataset.ctq)); viewContracts(); }));
   const ebx = $('#ctendsbyx'); if (ebx) ebx.onclick = () => { S.ctEndsBy = ''; viewContracts(); };

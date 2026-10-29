@@ -66,7 +66,8 @@ function kmStatus(c, latest, forecast) {
 // Status eines Vertrags (reine Funktion, für Akte, Übersicht und Fuhrparkagent gleich)
 // endLatest (Backlog 197): letzte Ablesung bis Ende des Berliner Tags `ended_on` – beendeter Vertrag zeigt km zur Endabrechnung
 // (gleiche Regeln, ohne Prognose; Status bleibt „beendet“, kein Agentenbefund). Ohne endLatest wie bisher km: null bzw. „kein km-Stand“.
-export function contractStatus(c, latest, today, warnDays, endLatest) {
+// noForecast (Backlog 601): Stand zum Stichtag – keine lineare Hochrechnung (die Übersicht verspricht „nichts hochgerechnet“)
+export function contractStatus(c, latest, today, warnDays, endLatest, noForecast = false) {
   if (c.ended_on) return { overall: 'beendet', end: null, notice: null, km: endLatest !== undefined && c.km_allowance ? kmStatus(c, endLatest, false) : null };
   let end = null; let notice = null; let km = null;
   if (c.end_date) {
@@ -78,7 +79,7 @@ export function contractStatus(c, latest, today, warnDays, endLatest) {
       notice = { by, days: nd, status: d < 0 ? null : nd < 0 ? 'verstrichen' : nd <= warnDays ? 'bald' : 'ok' };
     }
   }
-  if (c.km_allowance) km = kmStatus(c, latest, true);
+  if (c.km_allowance) km = kmStatus(c, latest, !noForecast);
   const handeln = (end && end.status === 'abgelaufen') || (km && km.status === 'ueber');
   const hinweis = (end && end.status === 'laeuft_aus') || (notice && notice.status === 'bald') || (km && (km.status === 'prognose_ueber' || km.status === 'zaehler' || km.status === 'unter_start' || (km.status === 'ohne_km' && !(c.start_date && c.start_date > today)) || km.status === 'ohne_start'));
   // Backlog 510: Kontingent ohne km-Stand bzw. ohne „km bei Übernahme“ ist nicht „in Ordnung“ (Datenqualität stufte es schon als Lücke ein) – „Hinweis“, kein Agentenbefund;
@@ -311,8 +312,9 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   // Stichtag vor dem Beenden: Vertrag lief damals noch – Status wie laufend (km bis zum Stichtag), beendet erst ab `ended_on`
   const endKm = await endKmByContract(env, pre.filter((c) => !(asOf && c.ended_on && c.ended_on > asOf)));
   let list = pre.map(({ file_ok, ...c }) => ({ ...c, file_id: file_ok ? c.file_id : null, file_other_env: !!(c.file_id && !file_ok), vehicle_eval_excluded: !!c.vehicle_eval_excluded,
-    status: asOf && c.ended_on && c.ended_on > asOf ? contractStatus({ ...c, ended_on: null }, latestKm.get(c.vehicle_id), today, w) : contractStatus(c, latestKm.get(c.vehicle_id), today, w, c.km_allowance && endKm.has(c.id) ? endKm.get(c.id) : undefined),
+    status: asOf && c.ended_on && c.ended_on > asOf ? contractStatus({ ...c, ended_on: null }, latestKm.get(c.vehicle_id), today, w, undefined, true) : contractStatus(c, latestKm.get(c.vehicle_id), today, w, c.km_allowance && endKm.has(c.id) ? endKm.get(c.id) : undefined, !!asOf),
     reading: readingOf(c.ended_on && !(asOf && c.ended_on > asOf) ? endKm.get(c.id) : latestKm.get(c.vehicle_id)) }));
+  for (const c of list) c.no_reading = noReading(c, asOf); // Backlog 601: Hinweis „keine Ablesung“ zum Stichtag, gleiche Regel wie die CSV
   // Backlog 288 (Leasingrückgabe): Leasing/Miete endet bald bzw. ist abgelaufen → offene Vorgänge und offene Restarbeiten freigegebener
   // Vorgänge am Fahrzeug (eigene Umgebung, heutiger Stand – nicht zum Stichtag, der Verlauf offener Vorgänge wird nicht rekonstruiert)
   const retIds = asOf ? [] : [...new Set(list.filter((c) => RETURN_KINDS.includes(c.kind) && !c.ended_on && c.status.end && ['laeuft_aus', 'abgelaufen'].includes(c.status.end.status)).map((c) => c.vehicle_id))];
@@ -345,7 +347,8 @@ export async function contractOverview(env, user, query = {}, envName = null) {
 }
 
 // Backlog 512: laufender Leasing-/Mietvertrag eines Lkw ohne Kontingent und ohne Ablesung bis zum Stichtag – sonst nicht von einem Anhänger zu unterscheiden
-export const noReading = (c) => ['leasing', 'miete'].includes(c.kind) && !c.ended_on && !(c.start_date && c.start_date > berlinDate()) && !c.reading && !c.km_allowance && c.vehicle_kind !== 'anhaenger';
+// Backlog 601: zum Stichtag – Vertrag lief damals (danach beendet zählt mit, erst danach begonnen nicht)
+export const noReading = (c, asOf = null) => ['leasing', 'miete'].includes(c.kind) && !(c.ended_on && !(asOf && c.ended_on > asOf)) && !(c.start_date && c.start_date > (asOf || berlinDate())) && !c.reading && !c.km_allowance && c.vehicle_kind !== 'anhaenger';
 const KM_ST_DE = { ok: 'im Kontingent', ueber: 'Kontingent überschritten', prognose_ueber: 'Prognose über Kontingent', ohne_km: 'kein km-Stand',
   ohne_start: 'km bei Übernahme fehlt', zaehler: 'nicht berechenbar (Zähler-Rücksprung)', unter_start: 'km-Stand unter km bei Übernahme' };
 // Herkunft einer Ablesung im Klartext (wie `odoSrc` der App, deutsch für die CSV)
@@ -377,7 +380,7 @@ export function contractsCsv(ov) {
       c.monthly_rate_net === null ? '' : String(c.monthly_rate_net).replace('.', ','), c.km_allowance, c.start_km, s.km && s.km.driven !== undefined ? s.km.driven : '',
       s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.vehicle_eval_excluded ? 'ja' : 'nein',
       c.reading ? c.reading.km : '', c.reading && c.reading.measured_at ? berlinDate(c.reading.measured_at) : '',
-      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : noReading(c) ? 'kein km-Stand' : '', ov.as_of || ov.today, c.reading ? odoSourceDe(c.reading.source) : '',
+      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : noReading(c, ov.as_of) ? 'kein km-Stand' : '', ov.as_of || ov.today, c.reading ? odoSourceDe(c.reading.source) : '',
       c.return_check ? c.return_check.open_cases : '', c.return_check ? c.return_check.open_items : ''].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';

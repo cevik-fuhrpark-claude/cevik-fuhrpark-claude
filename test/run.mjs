@@ -18789,7 +18789,8 @@ await test('Backlog 196 (Monatsende Leasing): Vertragsübersicht/CSV zum Stichta
   eq(head.slice(0, 20).join('|').startsWith('Kennzeichen|Vertragsart|Vertragspartner'), true);
   eq(head.slice(20, 25).join('|'), 'km-Stand|Ablesung vom|Mehr-km (+) / Minder-km (−) bisher|km-Status|Stichtag'); // seit Backlog 241 folgt „Ablesung Quelle“
   const la = lines.find((l) => l.startsWith('LE-AS 1')).split(';'); const lb = lines.find((l) => l.startsWith('LE-AS 2')).split(';');
-  eq(la.slice(20, 25).join('|'), `130000|${day(-30).split('-').reverse().join('.')}|-10000|Prognose über Kontingent|${day(-10).split('-').reverse().join('.')}`);
+  // Backlog 601: zum Stichtag keine Hochrechnung (vorher „Prognose über Kontingent“ trotz „nichts hochgerechnet“)
+  eq(la.slice(20, 25).join('|'), `130000|${day(-30).split('-').reverse().join('.')}|-10000|im Kontingent|${day(-10).split('-').reverse().join('.')}`);
   eq(lb.slice(20, 25).join('|'), `||||${day(-10).split('-').reverse().join('.')}`.replace('||||', '|||kein km-Stand|'));
   const cd = (await own.req('GET', `/api/contracts?filter=alle&format=csv&as_of=${day(-10)}`)); ok(String(cd.headers.get('content-disposition')).includes(`stichtag-${day(-10)}`), 'Dateiname mit Stichtag');
   const csvNow = new TextDecoder().decode((await own.get('/api/contracts?filter=alle&format=csv')).data);
@@ -25308,7 +25309,7 @@ await test('Backlog 510–516 (Blickwinkel „Monatsende: km-Meldung an den Leas
   eq((await U.fleet.get(`/api/contracts?as_of=${bDayOff(0)}`)).status, 200, '511: Stichtag heute');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("S.ctAsOf = v && v <= bDate() ? v : '';"), '511: Oberfläche');
-  ok(app.includes("!c.km_allowance && c.vehicle_kind !== 'anhaenger') out.push(`<span class=\"muted\" data-ctnoread>"), '512: Zeile in der Liste');
+  ok(app.includes('if (c.no_reading) out.push(`<span class="muted" data-ctnoread>') && c.no_reading === true, '512: Zeile in der Liste (seit 601 aus no_reading, gleiche Regel wie CSV)');
   ok(app.includes("S.meta.workshops.filter((w) => w.code !== c.workshop_site)") && app.includes('${rwsDrop(c)}') && app.includes('${rwsDrop(i)}'), '513/514');
   ok(app.includes("`<label>${esc(t('from_stock'))}: ${esc(wsName(c.workshop_site))}</label>") && app.includes("t('stock_none_ws')"), '515');
   const src = fs.readFileSync(new URL('../src/contracts.js', import.meta.url), 'utf8'); ok(src.includes('ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS latest_km'), '516: Agent gleiche Reihenfolge');
@@ -26094,7 +26095,7 @@ await test('Backlog 597: Hilfe-Schritte als eigenes Sprachpaket – Hauptpaket o
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-hilfe-paket.py|'), 'UI-Test in pruefen.sh');
 });
 
-await test('Backlog 596: schnellerer Start – index.html fordert alle Start-Module per modulepreload an (erzeugt, aktuell), boot.js ruft /api/me vorab (nicht auf Anmelde-/Einrichtungs-/Einladungsseiten), api() übernimmt den Vorabruf nur als erste Anfrage GET /api/me', async () => {
+await test('Backlog 596: schnellerer Start – index.html fordert alle Start-Module per modulepreload an (erzeugt, aktuell), boot.js ruft /api/me und /api/meta vorab (nicht auf Anmelde-/Einrichtungs-/Einladungsseiten), api() übernimmt sie nur als erste Anfragen in dieser Reihenfolge (Backlog 598)', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const B = await import('../scripts/build-app.mjs');
@@ -26113,7 +26114,7 @@ await test('Backlog 596: schnellerer Start – index.html fordert alle Start-Mod
   // boot.js: Vorabruf nur außerhalb öffentlicher Seiten, mit CSRF-Kopf, Ablehnung abgefangen; Sprache wie deviceLang()
   const boot = rd('boot.js');
   ok(/if \(window\.fetch && !\/\^#\\\/\(login\|setup\|invite\\\/\)\/\.test\(location\.hash \|\| ''\)\)/.test(boot), 'kein Vorabruf auf #/login, #/setup, #/invite/');
-  ok(boot.includes("window.__cfpMe = fetch('/api/me', { method: 'GET', headers: h, credentials: 'same-origin' });") && boot.includes("'x-cfp': '1'") && boot.includes('window.__cfpMe.catch('), 'Vorabruf mit x-cfp, Fehler abgefangen');
+  ok(boot.includes("window.__cfpPre = ['/api/me', '/api/meta'].map(") && boot.includes("var pr = fetch(u, { method: 'GET', headers: h, credentials: 'same-origin' });") && boot.includes("'x-cfp': '1'") && boot.includes('pr.catch('), 'Vorabruf /api/me + /api/meta (Backlog 598) mit x-cfp, Fehler abgefangen');
   ok(boot.includes('navigator.languages'), 'boot.js prüft alle Gerätesprachen wie app.js');
   // Sprache in boot.js = deviceLang() in app.js (sonst wird das falsche Paket vorab geladen)
   const bl = new Function('navigator', 'localStorage', 'location', 'document', 'window', 'setTimeout', boot.replace(/^\(function \(\) \{/m, '(function () { window.__lang = lang;').replace(/\}\)\(\);\s*$/, '})();'));
@@ -26124,8 +26125,81 @@ await test('Backlog 596: schnellerer Start – index.html fordert alle Start-Mod
   }
   // app.js: Vorabruf immer verwerfen, nur für GET /api/me benutzen
   const src = rd('app.js');
-  ok(src.includes("const pre = window.__cfpMe; window.__cfpMe = null;") && src.includes("const usePre = !!pre && method === 'GET' && path === '/api/me';") && src.includes('res = usePre ? await pre : await fetch('), 'api(): Vorabruf nur als erste Anfrage GET /api/me');
+  ok(src.includes("const preQ = window.__cfpPre, pre = preQ && preQ.shift();") && src.includes("const usePre = !!pre && method === 'GET' && path === pre[0];") && src.includes("if (!usePre || !preQ.length) window.__cfpPre = null;") && src.includes('res = usePre ? await pre[1] : await fetch('), 'api(): Vorabrufe nur in Reihenfolge als erste Anfragen');
+  // Verhalten der Übernahme-Regel (aus api() nachgebildet): abweichende Anfrage verwirft alle, Reihenfolge zählt
+  const take = (win, method, path) => { const preQ = win.__cfpPre, pre = preQ && preQ.shift(); const usePre = !!pre && method === 'GET' && path === pre[0]; if (!usePre || !preQ.length) win.__cfpPre = null; return usePre; };
+  const mk = () => ({ __cfpPre: [['/api/me', 1], ['/api/meta', 2]] });
+  { const w = mk(); ok(take(w, 'GET', '/api/me') && take(w, 'GET', '/api/meta') && w.__cfpPre === null && !take(w, 'GET', '/api/meta'), 'me → meta übernommen, danach nichts mehr'); }
+  { const w = mk(); ok(!take(w, 'POST', '/api/login') && w.__cfpPre === null && !take(w, 'GET', '/api/me'), 'Anmeldung zuerst → alle verworfen'); }
+  { const w = mk(); ok(!take(w, 'GET', '/api/meta') && w.__cfpPre === null, 'meta vor me → verworfen'); }
+  { const w = mk(); ok(take(w, 'GET', '/api/me') && !take(w, 'GET', '/api/setup/status') && w.__cfpPre === null, 'nach 401 (setup/status) → meta verworfen'); }
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-vorabruf-anmeldung.py|'), 'UI-Test Backlog 596 in pruefen.sh');
+});
+
+await test('Backlog 600: Startseite fragt gleichzeitig statt nacheinander – Zähler + Vorgänge parallel, Fahrer-Fahrzeuge, Werkstatt-Tafel und Leitungs-Aufgaben früh gestartet; early() ohne unbehandelte Ablehnung', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const body = (name) => { const a = src.indexOf(`async function ${name}(`); const e = src.indexOf('\n}\n', a); ok(a >= 0 && e > a, name + ' gefunden'); return src.slice(a, e); };
+  const home = body('viewHome'), board = body('workshopBoard');
+  ok(/\[d, cases\] = await Promise\.all\(\[api\('GET', '\/api\/dashboard'/.test(home), 'Zähler und Vorgänge gleichzeitig');
+  ok(home.indexOf("const mvP = S.me.role === 'driver' ? early(api('GET', '/api/me/vehicles'))") >= 0 && home.indexOf('const mvP') < home.indexOf('await Promise.all'), 'Fahrer-Fahrzeuge vor dem ersten await angefordert');
+  ok(home.indexOf("early(workshopBoard())") >= 0 && home.indexOf("early(fleetTodo())") >= 0 && home.indexOf('const boardP') < home.indexOf('await Promise.all'), 'Werkstatt-Tafel/Leitungs-Aufgaben früh gestartet');
+  ok(!/await workshopBoard\(\)|await fleetTodo\(\)|await api\('GET', '\/api\/me\/vehicles'\)/.test(home), 'keine nachgelagerten Abfragen mehr in viewHome');
+  // Werkstatt-Tafel: alle Abfragen vor dem ersten await gestartet
+  const firstAwait = board.indexOf('await ');
+  for (const q of ["api('GET', '/api/cases?status=open&limit=500')", "early(api('GET', '/api/maintenance'))", "early(api('GET', '/api/me/inspections-without-result'))", "early(api('GET', '/api/cases?' + caseFilterQ('open_items') + '&limit=200'))", "early(wsWinter(vsDef('tireSite')))"]) {
+    const i = board.indexOf(q); ok(i >= 0 && i < firstAwait, 'Tafel startet früh: ' + q);
+  }
+  ok(!/await api\(/.test(board), 'Tafel ohne nachgelagerte await api(');
+  // early(): Fehler bleibt beim await erhalten, vorher keine unbehandelte Ablehnung
+  const m = src.match(/^const early = (\(p\) => \{ p\.catch\(\(\) => \{\}\); return p; \});$/m); ok(m, 'early() vorhanden');
+  const early = eval(m[1]);
+  let unhandled = 0; const h = () => { unhandled++; }; process.on('unhandledRejection', h);
+  const p = early(Promise.reject(new Error('offline')));
+  await new Promise((r) => setTimeout(r, 20));
+  let caught = null; try { await p; } catch (e) { caught = e.message; }
+  process.off('unhandledRejection', h);
+  eq(unhandled, 0, 'keine unbehandelte Ablehnung'); eq(caught, 'offline', 'Fehler beim await erhalten');
+});
+
+await test('Backlog 601 (Blickwinkel „Monatsende: km für den Leasinggeber“): Stichtag ohne Hochrechnung, „keine Ablesung“ zum Stichtag (danach beendet zählt, danach begonnen nicht), km-Stand auch bei Kontingent sichtbar, Knopf „Ende Vormonat“', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner');
+  const s0 = await own.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'mo.inhaber', display_name: 'Mo' });
+  await own.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const de = (d) => d.split('-').reverse().join('.');
+  for (const [i, p] of [[1, 'MO-NT 1'], [2, 'MO-NT 2'], [3, 'MO-NT 3']]) eq((await own.post('/api/vehicles', { plate: p, vin: `WDB9634031060100${i}`, site: 'Dortmund' })).status, 201);
+  const V = (i) => `VIN:WDB9634031060100${i}`;
+  const ct = async (v, b) => { const x = await own.post(`/api/vehicles/${v}/contracts`, { kind: 'leasing', partner: 'LeaseCo', evidence: 'Vertrag', ...b }); eq(x.status, 201, JSON.stringify(x.data)); return x.data.id; };
+  // 1: Kontingent, auf Kurs zur Überschreitung (Prognose heute ja, zum Stichtag nein)
+  await ct(V(1), { contract_no: 'K', start_date: day(-200), end_date: day(165), km_allowance: 50000, start_km: 0 });
+  await own.post(`/api/vehicles/${V(1)}/odometer`, { km: 0, measured_on: day(-200) }); await own.post(`/api/vehicles/${V(1)}/odometer`, { km: 40000, measured_on: day(-40) });
+  // 2: ohne Kontingent, ohne Ablesung, nach dem Stichtag (day(-10)) beendet → zum Stichtag „keine Ablesung“
+  const c2 = await ct(V(2), { contract_no: 'E', start_date: day(-300), end_date: day(300) });
+  eq((await own.post(`/api/contracts/${c2}/end`, { ended_on: day(-3), end_note: 'zurückgegeben' })).status, 200);
+  // 3: ohne Kontingent, ohne Ablesung, erst nach dem Stichtag begonnen → zum Stichtag kein Hinweis
+  await ct(V(3), { contract_no: 'N', start_date: day(-5), end_date: day(700) });
+  const row = (ov, no) => ov.contracts.find((c) => c.contract_no === no);
+  const now = (await own.get('/api/contracts?filter=alle')).data;
+  ok(row(now, 'K').status.km.forecast_driven > 50000 && row(now, 'K').status.km.status === 'prognose_ueber', 'heute: Prognose wie bisher');
+  eq(row(now, 'E').no_reading, false, 'heute beendet: kein Hinweis'); eq(row(now, 'N').no_reading, true, 'heute laufend ohne Ablesung: Hinweis');
+  const ov = (await own.get(`/api/contracts?filter=alle&as_of=${day(-10)}`)).data;
+  const k = row(ov, 'K').status;
+  eq(k.km.forecast_driven, null, 'Stichtag: keine Prognose'); eq(k.km.status, 'ok'); eq(k.overall, 'ok', 'kein Hinweis aus Prognose'); eq(k.km.driven, 40000);
+  eq(row(ov, 'E').no_reading, true, 'nach dem Stichtag beendet: lief damals → keine Ablesung');
+  eq(row(ov, 'N').no_reading, false, 'nach dem Stichtag begonnen: kein Hinweis');
+  const csv = new TextDecoder().decode((await own.get(`/api/contracts?filter=alle&format=csv&as_of=${day(-10)}`)).data).replace(/^﻿/, '');
+  const ln = (p) => csv.split('\r\n').find((l) => l.startsWith(p)).split(';');
+  eq(ln('MO-NT 1')[12], '', 'CSV: keine Prognose zum Stichtag'); eq(ln('MO-NT 1')[23], 'im Kontingent');
+  eq(ln('MO-NT 2')[23], 'kein km-Stand', 'CSV: beendet nach Stichtag'); eq(ln('MO-NT 3')[23], '', 'CSV: begonnen nach Stichtag');
+  eq(ln('MO-NT 1')[24], de(day(-10)));
+  // Oberfläche: km-Stand auch neben der Kontingent-Zeile, Hinweis aus no_reading, Knopf „Ende Vormonat“ (DE/UK/EN)
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('  if (c.reading) out.push(`<span data-ctread>') && app.includes('  if (c.no_reading) out.push(`<span class="muted" data-ctnoread>'), 'ctLines: km-Stand immer, Hinweis aus no_reading');
+  ok(app.includes('id="ctasofprev"') && /const aop = \$\('#ctasofprev'\); if \(aop\) aop\.onclick = \(\) => \{ const d = new Date\(bDate\(\)\.slice\(0, 8\) \+ '01T12:00:00Z'\); d\.setUTCDate\(0\);/.test(app), 'Knopf Ende Vormonat');
+  for (const [today, exp] of [['2026-03-05', '2026-02-28'], ['2028-03-01', '2028-02-29'], ['2027-01-31', '2026-12-31']]) { const d = new Date(today.slice(0, 8) + '01T12:00:00Z'); d.setUTCDate(0); eq(d.toISOString().slice(0, 10), exp, 'Vormonatsende ' + today); }
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ct_asof_prevmonth, 'ct_asof_prevmonth ' + l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
