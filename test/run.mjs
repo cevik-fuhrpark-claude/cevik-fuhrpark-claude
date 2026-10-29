@@ -26011,7 +26011,7 @@ await test('Backlog 588: Sprachpakete – App lädt nur Kern + Paket der eigenen
   const bs = fs.readFileSync(new URL('../scripts/build-schema.mjs', import.meta.url), 'utf8'); ok(bs.indexOf('buildI18n()') > 0 && bs.indexOf('buildI18n()') < bs.indexOf('const version = appVersion()'), 'Build-Reihenfolge');
 });
 
-await test('Backlog 593/594: App-Module – app-main.js lädt beim Start, Verwaltung/Lager/Fahrzeugakte erst beim Aufruf; erzeugt aus app.js, aktuell, gültig, Platzhalter async, Offline-Cache, Ladefehler übersetzt', async () => {
+await test('Backlog 593–595: App-Module – app-main.js lädt beim Start, Verwaltung/Lager/Fahrzeugakte erst beim Aufruf (Ladehinweis, neuer Versuch); erzeugt aus app.js, aktuell, gültig, Platzhalter async, Offline-Cache, Ladefehler übersetzt', async () => {
   const fs = await import('node:fs'); const { execFileSync } = await import('node:child_process');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const B = await import('../scripts/build-app.mjs');
@@ -26049,6 +26049,11 @@ await test('Backlog 593/594: App-Module – app-main.js lädt beim Start, Verwal
   for (const f of Object.keys(files)) ok(shell.includes('/' + f), 'SHELL /' + f);
   ok(!shell.includes('/app.js'), 'Quelle app.js nicht mehr in der Hülle');
   ok(/delete LAZY_MODULES\[g\];[^\n]*throw new Error\(t\('lazy_load_failed'\)\)/.test(main), 'Ladefehler: erneut versuchbar, übersetzte Meldung');
+  // Backlog 595: erneuter Versuch unter neuer Adresse (Browser merkt sich fehlgeschlagene Importe), „Lädt…“ nach 300 ms nur für dieselbe Seite
+  ok(/LAZY_TRY\[g\] = \(LAZY_TRY\[g\] \|\| 0\) \+ 1/.test(main) && main.includes("import(`./app-${g}.js${LAZY_TRY[g] ? `?r=${LAZY_TRY[g]}` : ''}`)"), 'Ladefehler: neuer Versuch mit ?r=N');
+  ok(main.includes("if (!LAZY_READY[g] && LAZY_MODULES[g] === p && S.routeGen === gen && location.hash === h) render(`<p class=\"muted\">${esc(t('loading'))}</p>`); }, LAZY_HINT_MS)") && /LAZY_HINT_MS = 300\b/.test(main), 'Ladehinweis nur solange dieselbe Seite lädt');
+  ok(/ignoreSearch: true/.test(rd('sw.js')), 'App-Hülle findet ?r=N-Adressen');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-modul-ladehinweis.py|'), 'UI-Test Backlog 595 in pruefen.sh');
   const M = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(M.STRINGS[l].lazy_load_failed, 'lazy_load_failed ' + l);
 });

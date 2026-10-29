@@ -4263,10 +4263,15 @@ if ('serviceWorker' in navigator) {
 document.documentElement.lang = S.lang;
 route();
 
-// Ausgelagerte Bereiche (Backlog 593): einmal laden; Fehler (z. B. offline ohne Cache) → beim nächsten Aufruf erneut versuchen
-const LAZY_MODULES = {};
+// Ausgelagerte Bereiche (Backlog 593): einmal laden; Fehler (z. B. offline ohne Cache) → beim nächsten Aufruf erneut versuchen.
+// Backlog 595: dauert das erste Laden länger als 300 ms (langsames Netz), zeigt die Seite „Lädt…“ statt still die vorige Seite –
+// nur solange noch dieselbe Seite aufgerufen ist (kein Überschreiben einer inzwischen geöffneten anderen Seite).
+// Erneuter Versuch nach einem Fehler mit „?r=N“: der Browser merkt sich ein fehlgeschlagenes import() je Adresse und lieferte sonst
+// bis zum Neuladen immer wieder denselben Fehler (UI-Test 29.10.2026); die App-Hülle im Service Worker findet die Datei trotzdem (ignoreSearch).
+const LAZY_MODULES = {}, LAZY_READY = {}, LAZY_TRY = {}, LAZY_HINT_MS = 300;
 function lazyModule(g) {
-  if (!LAZY_MODULES[g]) LAZY_MODULES[g] = import(`./app-${g}.js`).catch((e) => { delete LAZY_MODULES[g]; console.error(e); throw new Error(t('lazy_load_failed')); });
+  if (!LAZY_MODULES[g]) LAZY_MODULES[g] = import(`./app-${g}.js${LAZY_TRY[g] ? `?r=${LAZY_TRY[g]}` : ''}`).then((m) => { LAZY_READY[g] = true; return m; }).catch((e) => { delete LAZY_MODULES[g]; LAZY_TRY[g] = (LAZY_TRY[g] || 0) + 1; console.error(e); throw new Error(t('lazy_load_failed')); });
+  if (!LAZY_READY[g]) { const gen = S.routeGen, h = location.hash, p = LAZY_MODULES[g]; setTimeout(() => { if (!LAZY_READY[g] && LAZY_MODULES[g] === p && S.routeGen === gen && location.hash === h) render(`<p class="muted">${esc(t('loading'))}</p>`); }, LAZY_HINT_MS); }
   return LAZY_MODULES[g];
 }
 
