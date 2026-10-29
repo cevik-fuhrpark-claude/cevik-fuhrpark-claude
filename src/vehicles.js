@@ -96,6 +96,10 @@ export async function listVehicles(env, user, envName, query = {}) {
     for (const [vid, x] of hin) {
       const v = byId.get(vid); if (!v) continue;
       const h = huSpFor(x, today, wd);
+      // Backlog 618: HU/SP mit erheblichen/gefährlichen Mängeln ohne spätere bestandene Prüfung → „Nachprüfung offen“ (vorher nur ein Datum aus der
+      // nicht bestandenen Prüfung bzw. gar kein Hinweis bei erheblichen Mängeln); HU vor SP
+      const re = (h.hu && h.hu.reinspection) || (h.sp && h.sp.reinspection) || null;
+      if (re && !v.eval_excluded) v.reinspection_open = re;
       for (const kind of ['HU', 'SP']) {
         const y = kind === 'HU' ? h.hu : h.sp;
         // HU/SP immer nach der zentralen Regel (wie Übersicht/Agent/Akte): ein gespeicherter Rohwert galt sonst auch nach „nicht SP-pflichtig“ (21.10.2026)
@@ -124,7 +128,7 @@ export async function listVehicles(env, user, envName, query = {}) {
     // Prüfstand des gekoppelten Fahrzeugs (25.10.2026, Teilagent „Disposition sucht Ersatzfahrzeug“): Lkw-Zeile zeigte „Keine offenen Meldungen“,
     // obwohl der Anhänger HU/SP überfällig oder „verkehrsunsicher“ war – nur Information, availability bleibt unverändert
     v.coupled = p ? { id: p.id, plate: p.plate, kind: p.kind, availability: p.availability, eval_excluded: p.eval_excluded ? 1 : 0, next_due: p.next_due || null, next_due_kind: p.next_due ? p.next_due_kind || null : null,
-      km_remaining: p.km_remaining ?? null, failed_inspection: p.failed_inspection || null } : null;
+      km_remaining: p.km_remaining ?? null, failed_inspection: p.failed_inspection || null, reinspection_open: p.reinspection_open || null } : null;
   }
   for (const v of list) { if (user.role !== 'driver') delete v._lcBy; }
   if (user.role === 'driver') {
@@ -1269,6 +1273,13 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   const date = str(body.done_date, { required: true, max: 10, field: 'Datum' });
   if (!isCalendarDate(date)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   if (date > berlinDate()) throw bad('validation', 'Durchführungsdatum liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
+  // Backlog 619 (Blickwinkel „HU-Prüfer auf dem Hof“): Untergrenze wie Erstzulassung/Baujahr – 05.01.1900 (Tippfehler) landete im Verlauf und in der Nachweisliste
+  if (date < '1950-01-01') throw bad('validation', 'Durchführungsdatum vor 1950 ist nicht plausibel.');
+  if (r.kind === 'HU' || r.kind === 'SP') {
+    const fr = (await env.DB.prepare('SELECT first_registration FROM vehicles WHERE id=?').bind(r.vehicle_id).first() || {}).first_registration;
+    // Erstzulassung ggf. nur JJJJ-MM: Vergleich nach Monat (eine HU/SP vor der Zulassung gibt es nicht)
+    if (fr && date.slice(0, 7) < String(fr).slice(0, 7)) throw bad('validation', 'Durchführungsdatum liegt vor der Erstzulassung des Fahrzeugs.');
+  }
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
   const km = body.done_km != null && String(body.done_km).trim() !== '' ? kmNum(body.done_km, { field: 'km' }) : null;
   if (r.interval_km && km === null && r.kind !== 'HU' && r.kind !== 'SP') throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.');

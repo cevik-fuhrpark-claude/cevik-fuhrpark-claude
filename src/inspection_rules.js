@@ -83,10 +83,18 @@ export function computeHuSp(vehicle, events, opts = {}) {
   const sorted = (k) => events.filter((e) => e.kind === k && e.done_date).sort((a, b) => a.done_date.localeCompare(b.done_date));
   const lastSp = sorted('SP').pop(); const lastHu = sorted('HU').pop();
   const sp = res.sp;
-  if (lastSp && BAD_RESULTS.includes(lastSp.result) && (!lastHu || lastSp.done_date > lastHu.done_date) && !['ueberfaellig', 'nicht_sp_pflichtig'].includes(sp.status)) {
+  // Backlog 617 (Blickwinkel „HU-Prüfer auf dem Hof“): HU und SP am selben Tag (üblich: Prüfer macht beides) – eine HU ohne Mängel am selben Tag
+  // hebt die nicht bestandene SP nicht auf (vorher `>`: SP mit erheblichen Mängeln stand dann auf „in Ordnung“)
+  if (lastSp && BAD_RESULTS.includes(lastSp.result) && (!lastHu || lastSp.done_date >= lastHu.done_date) && !['ueberfaellig', 'nicht_sp_pflichtig'].includes(sp.status)) {
     sp.status = 'ungeklaert';
     note(sp, 'sp_bad_result', 'Letzte SP mit erheblichen/gefährlichen Mängeln – Nachprüfung belegen.');
+    // Backlog 618: die aus der nicht bestandenen Prüfung berechnete Frist ist keine gültige Frist (keine neue Plakette) – kein Datum weitergeben
+    // (Liste, Kalender, gespeicherte Fälligkeit zeigten sonst z. B. „SP 04/2027“); ein Nachweis (Plakette/Beleg) bleibt
+    if (sp.due_basis === 'berechnet') { sp.due = null; sp.due_basis = null; }
   }
+  // Nachprüfung offen (Backlog 618): Art, Tag und Ergebnis der nicht bestandenen Prüfung für Fahrzeugliste/Gespann (nur Information)
+  if (res.hu.note_codes.some((n) => n.code === 'hu_bad_result')) res.hu.reinspection = { kind: 'HU', done_date: lastHu.done_date, result: lastHu.result };
+  if (sp.note_codes.some((n) => n.code === 'sp_bad_result')) sp.reinspection = { kind: 'SP', done_date: lastSp.done_date, result: lastSp.result };
   return res;
 }
 function computeHuSpRaw(vehicle, events, { today, warnDays = SETTING_DEFAULTS.maintenance_warn_days, documented = {}, planned = {} } = {}) {
@@ -123,6 +131,9 @@ function computeHuSpRaw(vehicle, events, { today, warnDays = SETTING_DEFAULTS.ma
   }
   if (lastHu && BAD_RESULTS.includes(lastHu.result) && hu.status !== 'ueberfaellig') {
     hu.status = 'ungeklaert'; note(hu, 'hu_bad_result', 'Letzte HU mit erheblichen/gefährlichen Mängeln – Nachprüfung belegen.');
+    // Backlog 618 (Blickwinkel „HU-Prüfer auf dem Hof“): keine neue Plakette → die aus dieser HU berechnete Frist (z. B. 10/2027) ist nicht gültig;
+    // vorher standen Kalender, Fahrzeugliste („Nächste Fälligkeit“) und gespeicherte Fälligkeit auf diesem Datum. Ein Nachweis bleibt.
+    if (hu.due_basis === 'berechnet') { hu.due = null; hu.due_basis = null; }
   }
 
   // ---------- SP ----------

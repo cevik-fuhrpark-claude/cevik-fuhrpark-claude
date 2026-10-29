@@ -51,6 +51,7 @@ export { CHECK_LABELS } from './check-labels.js';
 // [CLAUDE] Panne & Notfall (Rufnummern für unterwegs; fest nur Notruf 112)
 // [CLAUDE] Backlog 431: Bundesland für landesweite Feiertage (Erreichbarkeit einer Rufnummer)
 // [CLAUDE] Hilfe: Kennzahlen Instandhaltung lesen (Inhaber/Fuhrparkleitung)
+// Backlog 618: HU/SP mit erheblichen/gefährlichen Mängeln ohne spätere bestandene Prüfung (Fahrzeugliste, Gespann)
 // Hilfe: Nachfassen bei Vorgängen ohne Bewegung (nur wenn der Inhaber die Tage eingestellt hat)
 // [CLAUDE] Weitere Server-Fehler in der App-Sprache (Werkstatt/Fahrer arbeiten oft auf Ukrainisch/Englisch); Deutsch zeigt den Server-Text
 
@@ -188,6 +189,8 @@ const V_MORE = [
   ['Liefertermin im Format JJJJ-MM-TT.', 'Дата постачання у форматі РРРР-ММ-ДД.', 'Delivery date in format YYYY-MM-DD.'],
   ['Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.', 'Останнє проведення в майбутньому – заплановані терміни вносьте через «Запланувати візит».', 'The last completion is in the future – enter planned dates via “Plan workshop date”.'],
   ['Durchführungsdatum liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.', 'Дата проведення в майбутньому – заплановані терміни вносьте через «Запланувати візит».', 'The completion date is in the future – enter planned dates via “Plan workshop date”.'],
+  ['Durchführungsdatum vor 1950 ist nicht plausibel.', 'Дата проведення до 1950 року неправдоподібна.', 'A completion date before 1950 is not plausible.'],
+  ['Durchführungsdatum liegt vor der Erstzulassung des Fahrzeugs.', 'Дата проведення раніша за першу реєстрацію транспортного засобу.', 'The completion date is before the vehicle’s first registration.'],
   ['Lager (Werkstatt) angeben.', 'Вкажіть склад (майстерню).', 'Specify the store (workshop).'],
   ['Kündigungsfrist nur zusammen mit einem Vertragsende (laut Vertrag).', 'Строк розірвання – лише разом із кінцем договору (згідно з договором).', 'Notice period only together with a contract end (as per contract).'],
   ['Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.', 'Вкажіть пробіг на момент проведення – ця перевірка має інтервал у кілометрах.', 'Enter the odometer at completion – this inspection has a kilometre interval.'],

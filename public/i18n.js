@@ -942,6 +942,10 @@ Object.assign(STRINGS.en, { dispo_insp_defects: 'Inspection failed – no order 
 Object.assign(STRINGS.de, { insp_failed_chip: 'Prüfung nicht bestanden' });
 Object.assign(STRINGS.uk, { insp_failed_chip: 'Огляд не пройдено' });
 Object.assign(STRINGS.en, { insp_failed_chip: 'Inspection failed' });
+// Backlog 618: HU/SP mit erheblichen/gefährlichen Mängeln ohne spätere bestandene Prüfung (Fahrzeugliste, Gespann)
+Object.assign(STRINGS.de, { reinsp_open_chip: 'Nachprüfung offen', reinsp_open_title: 'Keine gültige neue Frist – Nachprüfung mit Ergebnis eintragen; die Frist steht im Prüfbericht.' });
+Object.assign(STRINGS.uk, { reinsp_open_chip: 'Потрібен повторний огляд', reinsp_open_title: 'Нового чинного строку немає – внесіть повторний огляд із результатом; строк зазначено у звіті огляду.' });
+Object.assign(STRINGS.en, { reinsp_open_chip: 'Re-inspection open', reinsp_open_title: 'No valid new deadline – record the re-inspection with its result; the deadline is stated in the inspection report.' });
 Object.assign(STRINGS.de, { res_add: 'Prüfergebnis nachtragen', res_add_ph: 'z. B. Prüfbericht-Nr.', res_add_hint: 'Nur möglich, solange kein Ergebnis eingetragen ist – ein eingetragenes Ergebnis wird nicht überschrieben. Bei gefährlichen Mängeln/verkehrsunsicher an einer aktuellen Prüfung werden Leitung und Disposition sofort informiert.', dq_inspection_no_result: 'Pflichtprüfung ohne Prüfergebnis (in der App erfasst, ≤ 180 Tage)' });
 Object.assign(STRINGS.uk, { res_add: 'Додати результат огляду', res_add_ph: 'напр., № протоколу огляду', res_add_hint: 'Можливо, лише поки результат не внесено – внесений результат не перезаписується. При небезпечних недоліках/«небезпечний для руху» на актуальному огляді керівництво й диспетчерська отримують сповіщення одразу.', dq_inspection_no_result: 'Обов’язковий огляд без результату (внесено в застосунку, ≤ 180 днів)' });
 Object.assign(STRINGS.en, { res_add: 'Add inspection result', res_add_ph: 'e.g. inspection report no.', res_add_hint: 'Only possible while no result is recorded – a recorded result is never overwritten. For dangerous defects/unroadworthy on a current inspection, management and dispatch are informed immediately.', dq_inspection_no_result: 'Mandatory inspection without result (recorded in the app, ≤ 180 days)' });
@@ -1187,6 +1191,8 @@ const V_MORE = [
   ['Liefertermin im Format JJJJ-MM-TT.', 'Дата постачання у форматі РРРР-ММ-ДД.', 'Delivery date in format YYYY-MM-DD.'],
   ['Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.', 'Останнє проведення в майбутньому – заплановані терміни вносьте через «Запланувати візит».', 'The last completion is in the future – enter planned dates via “Plan workshop date”.'],
   ['Durchführungsdatum liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.', 'Дата проведення в майбутньому – заплановані терміни вносьте через «Запланувати візит».', 'The completion date is in the future – enter planned dates via “Plan workshop date”.'],
+  ['Durchführungsdatum vor 1950 ist nicht plausibel.', 'Дата проведення до 1950 року неправдоподібна.', 'A completion date before 1950 is not plausible.'],
+  ['Durchführungsdatum liegt vor der Erstzulassung des Fahrzeugs.', 'Дата проведення раніша за першу реєстрацію транспортного засобу.', 'The completion date is before the vehicle’s first registration.'],
   ['Lager (Werkstatt) angeben.', 'Вкажіть склад (майстерню).', 'Specify the store (workshop).'],
   ['Kündigungsfrist nur zusammen mit einem Vertragsende (laut Vertrag).', 'Строк розірвання – лише разом із кінцем договору (згідно з договором).', 'Notice period only together with a contract end (as per contract).'],
   ['Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.', 'Вкажіть пробіг на момент проведення – ця перевірка має інтервал у кілометрах.', 'Enter the odometer at completion – this inspection has a kilometre interval.'],

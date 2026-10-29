@@ -26547,6 +26547,59 @@ await test('Backlog 616 (Blickwinkel „Jahreskosten für den Steuerberater“):
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cost_vehicles_csv && STRINGS[l].cost_vehicles_csv_hint, l);
 });
 
+await test('Backlog 617–619 (Blickwinkel „HU-Prüfer auf dem Hof“): SP mit erheblichen Mängeln am HU-Tag nicht „in Ordnung“; nicht bestandene HU/SP ohne berechnetes Datum, „Nachprüfung offen“ in Fahrzeugliste/Gespann; Durchführung vor 1950/vor Erstzulassung abgewiesen', async () => {
+  const { computeHuSp } = await import('../src/inspection_rules.js');
+  const L = { kind: 'lkw', zgm_class: 'ueber_12', first_registration: '2015-01-01' };
+  const o = { today: '2026-11-02', warnDays: 30 };
+  // 617: HU ohne Mängel und SP mit erheblichen Mängeln am selben Tag
+  const a = computeHuSp(L, [{ kind: 'HU', done_date: '2026-10-28', result: 'ohne_maengel' }, { kind: 'SP', done_date: '2026-10-28', result: 'erhebliche_maengel' }], o);
+  eq(a.sp.status, 'ungeklaert', 'SP am HU-Tag nicht bestanden'); ok(a.sp.note_codes.some((n) => n.code === 'sp_bad_result'), 'Hinweis');
+  eq(a.sp.due, null, '618: kein Datum aus der nicht bestandenen SP'); eq(a.sp.reinspection.kind, 'SP'); eq(a.hu.status, 'ok'); eq(a.hu.due, '2027-10-31', 'HU bestanden: Frist bleibt');
+  // 618: HU + SP mit erheblichen Mängeln
+  const b = computeHuSp(L, [{ kind: 'HU', done_date: '2026-10-28', result: 'erhebliche_maengel' }, { kind: 'SP', done_date: '2026-10-28', result: 'erhebliche_maengel' }], o);
+  eq(b.hu.status, 'ungeklaert'); eq(b.hu.due, null, 'kein 10/2027'); eq(b.hu.due_basis, null); eq(b.hu.reinspection.kind, 'HU'); eq(b.hu.reinspection.result, 'erhebliche_maengel');
+  // Nachweis (Plakette/Bericht) bleibt
+  const c = computeHuSp(L, [{ kind: 'HU', done_date: '2026-10-28', result: 'erhebliche_maengel' }], { ...o, documented: { HU: { due: '2026-11-30' } } });
+  eq(c.hu.due, '2026-11-30', 'Nachweis bleibt'); eq(c.hu.status, 'ungeklaert');
+  // geringe Mängel: unverändert mit Frist
+  const d = computeHuSp(L, [{ kind: 'HU', done_date: '2026-10-28', result: 'geringe_maengel' }, { kind: 'SP', done_date: '2026-10-28', result: 'geringe_maengel' }], o);
+  ok(d.hu.due && d.hu.status === 'ok' && !d.hu.reinspection && d.sp.status === 'ok' && d.sp.due, 'geringe Mängel');
+  // Nachprüfung ohne Mängel → HU wieder mit Frist
+  const f = computeHuSp(L, [{ kind: 'HU', done_date: '2026-10-28', result: 'erhebliche_maengel' }, { kind: 'HU', done_date: '2026-11-15', result: 'ohne_maengel' }], { ...o, today: '2026-11-20' });
+  eq(f.hu.status, 'ok'); eq(f.hu.due, '2027-11-30'); ok(!f.hu.reinspection, 'erledigt');
+  // API
+  const { e, U } = await freshWorld(); const db = e.DB.db; const V1 = 'VIN:WMA15SZZ2HM722774';
+  eq((await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', first_registration: '2015-03-01', spec_source: 'Test: Fahrzeugschein B' })).status, 200);
+  // 619: Untergrenzen
+  const old = await U.fleet.post(`/api/vehicles/${V1}/husp/HU/complete`, { done_date: '1900-01-05', evidence: 'Tippfehler (Test)' }); eq(old.status, 400, JSON.stringify(old.data));
+  const preEz = await U.fleet.post(`/api/vehicles/${V1}/husp/HU/complete`, { done_date: '2015-02-20', evidence: 'vor EZ (Test)' }); eq(preEz.status, 400, JSON.stringify(preEz.data));
+  const { translateValidation, STRINGS } = await import('../public/i18n.js');
+  for (const m of [old.data.message, preEz.data.message]) ok(translateValidation('uk', m) && translateValidation('en', m), 'übersetzt: ' + m);
+  ok(!db.prepare(`SELECT 1 FROM maintenance_rules WHERE vehicle_id=? AND kind='HU'`).get(V1), 'abgewiesen: kein Eintrag zurückgelassen');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/husp/HU/complete`, { done_date: '2015-03-20', evidence: 'erste HU im Zulassungsmonat (Test)', result: 'ohne_maengel' })).status, 200, 'gleicher Monat wie EZ erlaubt');
+  // HU + SP am selben Tag, beide erhebliche Mängel
+  const day = bDayOff(-1);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/husp/HU/complete`, { done_date: day, evidence: 'TÜV 1003 (Test)', result: 'erhebliche_maengel' })).status, 200);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/husp/SP/complete`, { done_date: day, evidence: 'TÜV 1003 (Test)', result: 'erhebliche_maengel' })).status, 200);
+  const rows = (await U.fleet.get('/api/maintenance')).data.rows.filter((r) => r.vehicle_id === V1);
+  const hu = rows.find((r) => r.kind === 'HU'); const sp = rows.find((r) => r.kind === 'SP');
+  ok(hu && hu.next_due_date === null && hu.status === 'ungeklaert' && hu.note_codes.some((n) => n.code === 'hu_bad_result'), 'Übersicht HU ' + JSON.stringify(hu));
+  ok(sp && sp.next_due_date === null && sp.status === 'ungeklaert', 'Übersicht SP ' + JSON.stringify(sp));
+  eq(db.prepare(`SELECT next_due_date FROM maintenance_rules WHERE vehicle_id=? AND kind='HU'`).get(V1).next_due_date, null, 'gespeicherte Fälligkeit geleert');
+  const lv = (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === V1);
+  eq(lv.reinspection_open?.kind, 'HU', 'Fahrzeugliste ' + JSON.stringify(lv.reinspection_open)); eq(lv.reinspection_open.done_date, day);
+  ok(!['HU', 'SP'].includes(lv.next_due_kind), 'keine Fälligkeit aus der nicht bestandenen Prüfung: ' + lv.next_due);
+  const ics = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=ics')).data); ok(!/SUMMARY:[^\r\n]*SZ-YC 5513/.test(ics), 'kein Kalendertermin');
+  ok(!('reinspection_open' in (await U.driver.get('/api/vehicles')).data.vehicles.find((v) => v.id === V1)), 'Fahrer: Feld nicht enthalten');
+  // Nachprüfung ohne Mängel heute → Hinweis weg, HU wieder mit Frist
+  eq((await U.fleet.post(`/api/vehicles/${V1}/husp/HU/complete`, { done_date: BERLIN_TODAY, evidence: 'TÜV 1010 Nachprüfung (Test)', result: 'ohne_maengel' })).status, 200);
+  const lv2 = (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === V1);
+  ok(!lv2.reinspection_open, 'Nachprüfung eingetragen'); ok(db.prepare(`SELECT next_due_date FROM maintenance_rules WHERE vehicle_id=? AND kind='HU'`).get(V1).next_due_date, 'Frist wieder berechnet');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-reinsp') && app.includes('data-creinsp'), 'Chips in Liste und Gespann');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].reinsp_open_chip && STRINGS[l].reinsp_open_title, l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
