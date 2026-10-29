@@ -3099,9 +3099,9 @@ Object.assign(STRINGS.de, { mgrp_none: 'ohne Datum' });
 Object.assign(STRINGS.uk, { mgrp_none: 'без дати' });
 Object.assign(STRINGS.en, { mgrp_none: 'no date' });
 // Backlog 614: Kosten je km – Kostenmonate außerhalb der km-Ablesungen
-Object.assign(STRINGS.de, { ckm_partial: 'km-Stände nur {a}–{b}', ckm_partial_hint: 'Im Zeitraum gibt es Kosten in Monaten ohne km-Ablesung – €/km enthält Kosten ohne die dazugehörigen km. km-Stand zum Zeitraumende erfassen.' });
-Object.assign(STRINGS.uk, { ckm_partial: 'показники км лише {a}–{b}', ckm_partial_hint: 'У періоді є витрати в місяцях без показника км – €/км містить витрати без відповідних км. Внесіть показник км на кінець періоду.' });
-Object.assign(STRINGS.en, { ckm_partial: 'odometer readings only {a}–{b}', ckm_partial_hint: 'There are costs in months without an odometer reading – €/km includes costs without the matching km. Record a reading at the end of the period.' });
+Object.assign(STRINGS.de, { cc_dormant: '{n} Verträge ruhender Fahrzeuge laufen im Zeitraum – nicht gerechnet', ckm_partial: 'km-Stände nur {a}–{b}', ckm_partial_hint: 'Im Zeitraum gibt es Kosten in Monaten ohne km-Ablesung – €/km enthält Kosten ohne die dazugehörigen km. km-Stand zum Zeitraumende erfassen.' });
+Object.assign(STRINGS.uk, { cc_dormant: '{n} договорів транспорту з позначкою «Неактивний облік» діють у періоді – не враховано', ckm_partial: 'показники км лише {a}–{b}', ckm_partial_hint: 'У періоді є витрати в місяцях без показника км – €/км містить витрати без відповідних км. Внесіть показник км на кінець періоду.' });
+Object.assign(STRINGS.en, { cc_dormant: '{n} contracts of dormant vehicles run in the period – not calculated', ckm_partial: 'odometer readings only {a}–{b}', ckm_partial_hint: 'There are costs in months without an odometer reading – €/km includes costs without the matching km. Record a reading at the end of the period.' });
 // Backlog 616: Kosten-CSV je Fahrzeug
 Object.assign(STRINGS.de, { cost_vehicles_csv: 'CSV je Fahrzeug', cost_vehicles_csv_hint: 'Eine Zeile je Fahrzeug für den Zeitraum (Stunden, Arbeitszeit, Teile, Fremdleistung, km, €/km, außer Betrieb seit) mit Summen je Standort und gesamt – z. B. für den Jahresabschluss.' });
 Object.assign(STRINGS.uk, { cost_vehicles_csv: 'CSV по транспорту', cost_vehicles_csv_hint: 'Один рядок на транспорт за період (години, робота, запчастини, сторонні послуги, км, €/км, не в експлуатації з) із сумами за місцем і загалом – напр. для річного звіту.' });

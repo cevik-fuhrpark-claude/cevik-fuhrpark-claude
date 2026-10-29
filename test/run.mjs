@@ -7069,7 +7069,7 @@ const csvExportUrls = () => {
   return {
     'fuhrpark-fahrzeuge': '/api/vehicles?format=csv', 'fuhrpark-vertraege': '/api/contracts?format=csv', 'fuhrpark-prueftermine': '/api/maintenance?format=csv',
     'fuhrpark-durchgefuehrte-pruefungen': `/api/maintenance/history?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`, 'fuhrpark-reifen': '/api/tires/fleet?format=csv',
-    'fuhrpark-protokoll': `/api/admin/audit?format=csv&from=${BERLIN_TODAY}&to=${BERLIN_TODAY}`, 'fuhrpark-kosten': `/api/reports/costs?format=csv&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kostenpositionen': `/api/reports/costs?part=items&from=${y}-01&to=${COST_TO}`,
+    'fuhrpark-protokoll': `/api/admin/audit?format=csv&from=${BERLIN_TODAY}&to=${BERLIN_TODAY}`, 'fuhrpark-kosten': `/api/reports/costs?format=csv&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kostenpositionen': `/api/reports/costs?part=items&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kosten-je-fahrzeug': `/api/reports/costs?format=csv&part=vehicles&from=${y}-01&to=${COST_TO}`,
     'werkstatt-auslastung': '/api/reports/workshop-load?weeks=4&format=csv', 'fuhrpark-kennzahlen': `/api/reports/kpi?format=csv&from=${y}-01&to=${COST_TO}`,
     'fuhrpark-kennzahlen-prio': `/api/reports/kpi?format=csv&part=priority&from=${y}-01&to=${COST_TO}`,
     'fuhrpark-bestellvorschlag': '/api/stock?reorder=1&format=csv', 'fuhrpark-lager': '/api/stock?format=csv', 'fuhrpark-lagerjournal': `/api/stock/journal?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`,
@@ -20022,7 +20022,7 @@ await test('Backlog 237 (Blickwinkel „Monatsende – Kosten an die Buchhaltung
   eq(standTag('2026-01-15T07:05:00Z'), 'stand-2026-01-15-0805', 'Winterzeit');
   // Oberfläche: Dateinamen der beiden Knöpfe mit Abrufzeitpunkt, Hinweis in drei Sprachen
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  eq((app.match(/fnPart\(rep\.site\) : ''\}_\$\{standTag\(\)\}\.csv`/g) || []).length, 2, 'beide Kosten-CSVs');
+  eq((app.match(/fnPart\(rep\.site\) : ''\}_\$\{standTag\(\)\}\.csv`/g) || []).length, 3, 'alle drei Kosten-CSVs (Backlog 616: je Fahrzeug)');
   ok(app.includes('function standTag() { const x = BERLIN_DT_FMT.format(new Date(nowMs()))'), 'Serverzeit, Berlin');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cost_items_csv_hint.includes('(stand'), l + ': Hinweis Stand');
