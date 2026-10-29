@@ -493,9 +493,12 @@ async function route() {
       if (!m) continue;
       // Optionale Gruppen ohne Treffer bleiben undefined (decodeURIComponent(undefined) ergäbe die Zeichenkette „undefined“), kaputte %-Folgen roh
       await fn(...m.slice(1).map(routeArg));
-      // Inzwischen wurde eine neuere Seite aufgerufen: war sie schon fertig, hat diese (ältere) Seite sie überschrieben → neu aufbauen
-      if (gen !== S.routeGen) { if ((S.routeDone || 0) > gen) route(); return; }
+      // Inzwischen wurde eine neuere Seite aufgerufen: war sie schon fertig, hat diese (ältere) Seite sie überschrieben → neu aufbauen.
+      // Läuft die neuere noch, kann sie ihre Seite schon gezeigt haben und lädt nur noch Teile nach (Fahrzeugakte: Notizen, Reifen) –
+      // dann baut sie nach ihrem Ende neu auf (29.10.2026, Backlog 594: nachgeladenes Modul machte die Reihenfolge sichtbar).
+      if (gen !== S.routeGen) { if ((S.routeDone || 0) > gen) route(); else S.routeStale = S.routeGen; return; }
       S.routeDone = gen;
+      if (S.routeStale === gen) { S.routeStale = 0; route(); return; }
       // Screenreader/Tastatur: nach Seitenwechsel Fokus auf die Überschrift (nicht bei Neuaufbau derselben Seite)
       // – außer die Ansicht hat selbst ein Feld fokussiert (z. B. Direktsprung ?ev= zum Formular „Prüfergebnis nachtragen“)
       const ae = document.activeElement;

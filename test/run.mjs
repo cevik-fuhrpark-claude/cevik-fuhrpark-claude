@@ -7942,7 +7942,7 @@ await test('Anmelde-Hinweis bei neuem Gerät: erste Anmeldung still, bekanntes G
   for (const p of ["'/api/login', {", "'/api/login/totp', {", "'/api/invite/accept', {"]) ok(new RegExp(p.replace(/[/.()]/g, '\\$&') + "[^\\n]*device_id: deviceId\\(\\)").test(app), 'Kennung bei ' + p);
   ok(app.includes("x.kind === 'new_login' ? '#/more?o=sess'"), 'Hinweis öffnet Geräteliste');
   // Seitenwechsel während des Ladens: ältere Seite überschreibt die neuere nicht (Fund beim UI-Test dieses Punkts)
-  ok(/const gen = S\.routeGen = /.test(app) && app.includes('if (gen !== S.routeGen) { if ((S.routeDone || 0) > gen) route(); return; }') && app.includes('if (gen !== S.routeGen) return;'), 'Seitenwechsel-Schutz im Router');
+  ok(/const gen = S\.routeGen = /.test(app) && app.includes('if (gen !== S.routeGen) { if ((S.routeDone || 0) > gen) route(); else S.routeStale = S.routeGen; return; }') && app.includes('if (gen !== S.routeGen) return;'), 'Seitenwechsel-Schutz im Router');
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-neues-geraet.py'), 'UI-Test in pruefen.sh');
   ok(!/clearOfflineData[\s\S]{0,400}cfp_device/.test(app.slice(app.indexOf('function clearOfflineData'), app.indexOf('function clearOfflineData') + 400)), 'Kennung bleibt beim Abmelden');
 });
@@ -26011,7 +26011,7 @@ await test('Backlog 588: Sprachpakete – App lädt nur Kern + Paket der eigenen
   const bs = fs.readFileSync(new URL('../scripts/build-schema.mjs', import.meta.url), 'utf8'); ok(bs.indexOf('buildI18n()') > 0 && bs.indexOf('buildI18n()') < bs.indexOf('const version = appVersion()'), 'Build-Reihenfolge');
 });
 
-await test('Backlog 593: App-Module – app-main.js lädt beim Start, Verwaltung/Lager erst beim Aufruf; erzeugt aus app.js, aktuell, gültig, Platzhalter async, Offline-Cache, Ladefehler übersetzt', async () => {
+await test('Backlog 593/594: App-Module – app-main.js lädt beim Start, Verwaltung/Lager/Fahrzeugakte erst beim Aufruf; erzeugt aus app.js, aktuell, gültig, Platzhalter async, Offline-Cache, Ladefehler übersetzt', async () => {
   const fs = await import('node:fs'); const { execFileSync } = await import('node:child_process');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const B = await import('../scripts/build-app.mjs');
@@ -26035,6 +26035,12 @@ await test('Backlog 593: App-Module – app-main.js lädt beim Start, Verwaltung
     ok(!main.includes(`from './app-${g}.js'`), g + ': nicht statisch importiert');
   }
   ok(stubs.has('viewSettings') && stubs.has('viewStock') && stubs.has('viewDriver'), 'Router-Ziele haben Platzhalter');
+  // Backlog 594: Fahrzeugakte (mit Reifen/Prüfterminen) und Mehrfach-Meldung nachgeladen; Start-Modul kleiner
+  ok(stubs.get('viewVehicle') === 'fahrzeug' && stubs.get('viewNewMulti') === 'verwaltung', 'Fahrzeugakte/Mehrfach-Meldung ausgelagert');
+  ok(/^async function renderTires\(/m.test(rd('app-fahrzeug.js')) && !/^async function renderTires\(/m.test(main), 'Reifen-Abschnitt wandert mit der Fahrzeugakte');
+  // Seitenwechsel während des Starts: ältere Seite (Startseite) endet, während die neuere (nachgeladene Akte) noch Teile lädt → neuere baut neu auf
+  ok(/else S\.routeStale = S\.routeGen; return; \}\n\s*S\.routeDone = gen;\n\s*if \(S\.routeStale === gen\) \{ S\.routeStale = 0; route\(\); return; \}/.test(main), 'route(): ältere Seite überschreibt laufende neuere nicht dauerhaft');
+  ok(Buffer.byteLength(main) < Buffer.byteLength(rd('app.js')) * 0.66, `Start-Modul < 66 % von app.js (${Math.round(Buffer.byteLength(main) / 1024)} KB)`);
   ok(/^async function viewHome\(/m.test(main) && /^async function viewNew\(/m.test(main) && /^async function viewCase\(/m.test(main) && /^async function viewDepartureCheck\(/m.test(main), 'Fahrer-Ansichten bleiben im Start-Modul');
   ok(Buffer.byteLength(main) < Buffer.byteLength(rd('app.js')) * 0.75, `Start-Modul < 75 % von app.js (${Math.round(Buffer.byteLength(main) / 1024)} KB)`);
   // Start, Offline-Hülle, Ladefehler

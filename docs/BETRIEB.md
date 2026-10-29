@@ -206,8 +206,9 @@ Server mit Kompression wie Cloudflare: `CFP_GZIP=1 PORT=8788 node --experimental
 | 28.10.2026 nach 592 (Wächter wartet beim Laden) | 26,7–26,8 s | – | – | 777 KB |
 | 28.10.2026 nach 588 (Sprachpakete, `modulepreload`) | 20,8–21,4 s | 6,2–6,5 s | – | 512–542 KB |
 | 29.10.2026 nach 593 (App-Module, `app-main.js`) | 18,5–18,6 s | 5,4 s | 0,5 s | 424–455 KB |
+| 29.10.2026 nach 594 (Fahrzeugakte `app-fahrzeug.js`, Mehrfach-Meldung in Verwaltung) | 17,8 s | 5,2–5,3 s | 0,8 s | 400–431 KB |
 
-Seit Backlog 588 lädt die App `i18n-core.js` (≈ 58 KB gzip) und nur das Paket der eigenen Sprache (`i18n-de.js` ≈ 114, `-uk` ≈ 140, `-en` ≈ 107 KB gzip) statt `i18n.js` (≈ 430 KB gzip). Größter Block danach: `app.js` (≈ 296 KB gzip). Seit Backlog 593 lädt der Start nur `app-main.js` (≈ 203 KB gzip); Verwaltung/Auswertung (`app-verwaltung.js` ≈ 74 KB gzip) und Lager (`app-lager.js` ≈ 19 KB gzip) kommen beim ersten Aufruf nach (offline aus der App-Hülle).
+Seit Backlog 588 lädt die App `i18n-core.js` (≈ 58 KB gzip) und nur das Paket der eigenen Sprache (`i18n-de.js` ≈ 114, `-uk` ≈ 140, `-en` ≈ 107 KB gzip) statt `i18n.js` (≈ 430 KB gzip). Größter Block danach: `app.js` (≈ 296 KB gzip). Seit Backlog 593 lädt der Start nur `app-main.js` (≈ 203 KB gzip); Verwaltung/Auswertung (`app-verwaltung.js` ≈ 74 KB gzip) und Lager (`app-lager.js` ≈ 19 KB gzip) kommen beim ersten Aufruf nach (offline aus der App-Hülle). Seit Backlog 594 ist `app-main.js` ≈ 182 KB gzip: die Fahrzeugakte (`app-fahrzeug.js` ≈ 26 KB gzip, mit Reifen/Prüfterminen/Notizen) und die Mehrfach-Meldung (in `app-verwaltung.js`) kommen beim ersten Aufruf nach.
 
 ## Gesamtprüfung `scripts/pruefen.sh`
 `sh scripts/pruefen.sh [--schnell] [--ohne-tests] [--ohne-rauch] [--nur <Namensteil>] [--ab <Namensteil>]` – `npm test`, alle UI-Skripte (Liste `UI_SKRIPTE` im Skript, je frischer Dev-Server) und die Rauchtests; bricht beim ersten Fehler mit Fehlercode ab.

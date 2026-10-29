@@ -11,12 +11,15 @@ import { pathToFileURL } from 'node:url';
 const pub = new URL('../public/', import.meta.url);
 const HEAD = '// [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)\n';
 
-// Ausgelagerte Bereiche: Einstiegsfunktionen je Gruppe (Ansichten für Verwaltung/Auswertung bzw. Lager). Nie hierher: alles, was
-// Fahrer/Werkstatt beim Start oder offline ohne vorherigen Aufruf brauchen (Startseite, Meldung, Vorgang, Abfahrtskontrolle, Notfall).
+// Ausgelagerte Bereiche: Einstiegsfunktionen je Gruppe (Ansichten für Verwaltung/Auswertung, Lager, Fahrzeugakte). Nie hierher: alles, was
+// Fahrer/Werkstatt beim Start brauchen (Startseite, Meldung, Vorgang, Abfahrtskontrolle, Notfall). Jede Gruppe steht in der Offline-Hülle
+// (SHELL in public/sw.js), ist also nach der ersten Installation auch ohne Netz und ohne vorherigen Aufruf verfügbar.
 export const GROUPS = {
   verwaltung: ['viewSettings', 'viewUsers', 'viewAudit', 'viewKpi', 'viewCosts', 'viewQuality', 'viewMaster', 'viewClaims', 'viewContracts',
     'viewEmergencyEdit', 'viewFines', 'viewFine', 'viewTacho', 'viewTachoHistory', 'viewDriverRecords', 'viewDrivers', 'viewDriver', 'viewUsage',
-    'viewReadiness', 'viewWsLoad', 'viewTelematics', 'viewQrSheet', 'viewDefects', 'viewFleetTires', 'viewPlan', 'viewMaint', 'viewMaintMulti', 'viewTimeline'],
+    'viewReadiness', 'viewWsLoad', 'viewTelematics', 'viewQrSheet', 'viewDefects', 'viewFleetTires', 'viewPlan', 'viewMaint', 'viewMaintMulti', 'viewTimeline',
+    'viewNewMulti'], // Backlog 594: Mehrfach-Meldung nur Inhaber/Fuhrparkleitung
+  fahrzeug: ['viewVehicle'], // Backlog 594: Fahrzeugakte (inkl. Reifen, Verträge, Prüftermine) – größte Einzelansicht, ≈ 26 KB gzip
   lager: ['viewStock', 'viewStockCount', 'viewReorder', 'viewStockAsOf', 'viewStockJournal', 'viewStockReceipt', 'viewPartsUsage', 'viewStockItem'],
 };
 
