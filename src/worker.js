@@ -330,6 +330,7 @@ async function handleApi(request, env, ctx, url) {
     if (url.searchParams.get('format') === 'ics') return new Response(contracts.contractsIcs(ov, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-vertraege_${ov.today}.ics"` } });
     return json(ov);
   }
+  if (path === '/api/contracts/batch' && m === 'POST') return json(await contracts.contractBatch(env, user, await readJson(request))); // Backlog 624
   if (path === '/api/contracts/import' && m === 'POST') {
     await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();

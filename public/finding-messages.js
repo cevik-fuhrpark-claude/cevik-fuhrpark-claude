@@ -58,8 +58,8 @@ export const FINDING_MESSAGES = {
     STOCK_ORDER_OVERDUE: 'Lager {site}: {name}[[ ({pn})]] – Liefertermin überschritten.[[ Bestellt {oq} {unit} am {oon}, Liefertermin laut Lieferant {eta}.]] Bestand {stock} {unit}, Mindestbestand {min}.',
     STOCK_BELOW_MIN: 'Lager {site}: {name}[[ ({pn})]] – Bestand {stock} {unit}, Mindestbestand {min}.',
     STOCK_BELOW_MIN_ORD: 'Lager {site}: {name}[[ ({pn})]] – Bestand {stock} {unit}, Mindestbestand {min}. Bestellt {oq} {unit} am {oon}[[, Liefertermin laut Lieferant {eta}]]. Noch zu bestellen: {open} {unit}.',
-    CONTRACT_ENDED: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) endete laut Eintrag am {end} – in der App noch nicht als beendet markiert[[ – offene Vorgänge am Fahrzeug: {open}]][[ – offene Restarbeiten nach Freigabe: {items}]].',
-    CONTRACT_ENDS_SOON: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) endet am {end} (in {days} {days#Tag/Tagen})[[ – offene Vorgänge am Fahrzeug: {open}]][[ – offene Restarbeiten nach Freigabe: {items}]].',
+    CONTRACT_ENDED: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) endete laut Eintrag am {end} – in der App noch nicht als beendet markiert[[ – offene Vorgänge am Fahrzeug: {open}]][[ – offene Restarbeiten nach Freigabe: {items}]][[ – Folgevertrag {succ} ab {succ_from} erfasst]].',
+    CONTRACT_ENDS_SOON: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) endet am {end} (in {days} {days#Tag/Tagen})[[ – offene Vorgänge am Fahrzeug: {open}]][[ – offene Restarbeiten nach Freigabe: {items}]][[ – Folgevertrag {succ} ab {succ_from} erfasst]].',
     CONTRACT_NOTICE_DUE: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) – Kündigung laut Vertrag spätestens bis {by} ({months} {months#Monat/Monate} vor Ende {end}).',
     CONTRACT_KM_OVER: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) – km-Kontingent {allow:km} km überschritten (seit Übernahme {driven:km} km).',
     CONTRACT_KM_FORECAST: '{plate}: {ckind|CKIND} ({partner}[[, Nr. {no}]]) – bei gleicher Fahrleistung voraussichtlich {fc:km} km bis Vertragsende (Kontingent {allow:km} km; Prognose).',
@@ -138,8 +138,8 @@ export const FINDING_MESSAGES = {
     STOCK_ORDER_OVERDUE: 'Склад {site}: {name}[[ ({pn})]] – строк поставки минув.[[ Замовлено {oq} {unit} {oon}, строк поставки за постачальником {eta}.]] Залишок {stock} {unit}, мінімальний запас {min}.',
     STOCK_BELOW_MIN: 'Склад {site}: {name}[[ ({pn})]] – залишок {stock} {unit}, мінімальний запас {min}.',
     STOCK_BELOW_MIN_ORD: 'Склад {site}: {name}[[ ({pn})]] – залишок {stock} {unit}, мінімальний запас {min}. Замовлено {oq} {unit} {oon}[[, строк поставки за постачальником {eta}]]. Ще замовити: {open} {unit}.',
-    CONTRACT_ENDED: '{plate}: {ckind|CKIND} ({partner}[[, № {no}]]) закінчився за записом {end} – у застосунку ще не позначений як завершений[[ – відкриті справи щодо транспорту: {open}]][[ – відкриті залишкові роботи після допуску: {items}]].',
-    CONTRACT_ENDS_SOON: '{plate}: {ckind|CKIND} ({partner}[[, № {no}]]) закінчується {end} (через {days} дн.)[[ – відкриті справи щодо транспорту: {open}]][[ – відкриті залишкові роботи після допуску: {items}]].',
+    CONTRACT_ENDED: '{plate}: {ckind|CKIND} ({partner}[[, № {no}]]) закінчився за записом {end} – у застосунку ще не позначений як завершений[[ – відкриті справи щодо транспорту: {open}]][[ – відкриті залишкові роботи після допуску: {items}]][[ – наступний договір {succ} з {succ_from} внесено]].',
+    CONTRACT_ENDS_SOON: '{plate}: {ckind|CKIND} ({partner}[[, № {no}]]) закінчується {end} (через {days} дн.)[[ – відкриті справи щодо транспорту: {open}]][[ – відкриті залишкові роботи після допуску: {items}]][[ – наступний договір {succ} з {succ_from} внесено]].',
     CONTRACT_NOTICE_DUE: '{plate}: {ckind|CKIND} ({partner}[[, № {no}]]) – розірвання за договором не пізніше {by} ({months} міс. до кінця {end}).',
     CONTRACT_KM_OVER: '{plate}: {ckind|CKIND} ({partner}[[, № {no}]]) – ліміт пробігу {allow:km} км перевищено (з моменту отримання {driven:km} км).',
     CONTRACT_KM_FORECAST: '{plate}: {ckind|CKIND} ({partner}[[, № {no}]]) – за такого ж пробігу орієнтовно {fc:km} км до кінця договору (ліміт {allow:km} км; прогноз).',
@@ -218,8 +218,8 @@ export const FINDING_MESSAGES = {
     STOCK_ORDER_OVERDUE: 'Store {site}: {name}[[ ({pn})]] – delivery date passed.[[ Ordered {oq} {unit} on {oon}, delivery date per supplier {eta}.]] Stock {stock} {unit}, minimum stock {min}.',
     STOCK_BELOW_MIN: 'Store {site}: {name}[[ ({pn})]] – stock {stock} {unit}, minimum stock {min}.',
     STOCK_BELOW_MIN_ORD: 'Store {site}: {name}[[ ({pn})]] – stock {stock} {unit}, minimum stock {min}. Ordered {oq} {unit} on {oon}[[, delivery date per supplier {eta}]]. Still to order: {open} {unit}.',
-    CONTRACT_ENDED: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) ended on {end} according to the record – not yet marked as ended in the app[[ – open cases on the vehicle: {open}]][[ – open remaining jobs after release: {items}]].',
-    CONTRACT_ENDS_SOON: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) ends on {end} (in {days} {days#day/days})[[ – open cases on the vehicle: {open}]][[ – open remaining jobs after release: {items}]].',
+    CONTRACT_ENDED: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) ended on {end} according to the record – not yet marked as ended in the app[[ – open cases on the vehicle: {open}]][[ – open remaining jobs after release: {items}]][[ – follow-up contract {succ} from {succ_from} recorded]].',
+    CONTRACT_ENDS_SOON: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) ends on {end} (in {days} {days#day/days})[[ – open cases on the vehicle: {open}]][[ – open remaining jobs after release: {items}]][[ – follow-up contract {succ} from {succ_from} recorded]].',
     CONTRACT_NOTICE_DUE: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) – notice per contract by {by} at the latest ({months} {months#month/months} before end {end}).',
     CONTRACT_KM_OVER: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) – mileage allowance {allow:km} km exceeded ({driven:km} km since handover).',
     CONTRACT_KM_FORECAST: '{plate}: {ckind|CKIND} ({partner}[[, no. {no}]]) – at the same usage approx. {fc:km} km by contract end (allowance {allow:km} km; forecast).',
@@ -302,7 +302,7 @@ const pluralWord = (v, forms, lang) => {
 // Für die Anzeige (nicht für den gespeicherten deutschen Text) im Format der Sprache: DE/UK „05.01.2027“, EN „05/01/2027“ –
 // wie die übrige Oberfläche (vorher z. B. „abgelaufen am 2027-01-05“ bzw. auf Englisch „on 05.01.2027“).
 // Nur Platzhalter, die laut Vorlagen Datumswerte tragen (Teilenummern o. Ä. wie „12.34.5678“ bleiben unverändert)
-export const DATE_ARGS = new Set(['date', 'due', 'end', 'eta', 'last', 'planned', 'hu', 'at', 'oon', 'by']);
+export const DATE_ARGS = new Set(['date', 'due', 'end', 'eta', 'last', 'planned', 'hu', 'at', 'oon', 'by', 'succ_from']);
 // Dezimalzahlen (Profiltiefe, Lagermengen) für die Anzeige im Zahlenformat der Sprache (DE „1,4“, EN „1.4“); gespeicherter deutscher Text unverändert
 export const NUM_ARGS = new Set(['mm', 'limit', 'stock', 'min', 'oq', 'open']);
 export function localNumArg(v, lang) {

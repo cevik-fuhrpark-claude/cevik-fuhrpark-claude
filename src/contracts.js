@@ -247,6 +247,57 @@ export async function endContract(env, user, id, body) {
   return { id, ended_on: on };
 }
 
+// Backlog 624 (Blickwinkel „Versichererwechsel zum 01.01.“): mehrere laufende Verträge auf einmal beenden (`mode: end`, gleiche Regeln wie
+// „Vertrag beenden“, Datum nicht in der Zukunft) oder ein Vertragsende eintragen (`mode: end_date`, z. B. im Dezember alle Altverträge zum 31.12.;
+// vorhandenes anderes Ende nur mit `replace`). Jeder Vertrag einzeln auf dem gelesenen Stand; nicht Übernommenes wird je Vertrag mit Grund gemeldet.
+// Feste Abfragezahl: Auswahl, ein Stapel Änderungen, ein Protokoll-Eintrag je Vertrag über json_each.
+export const CONTRACT_BATCH_MAX = 200;
+export async function contractBatch(env, user, body) {
+  if (!isMgr(user)) throw forbidden();
+  const mode = oneOf(body.mode, ['end', 'end_date'], 'Aktion');
+  const ids = Array.isArray(body.ids) ? [...new Set(body.ids.map((x) => String(x)))] : [];
+  if (!ids.length || ids.length > CONTRACT_BATCH_MAX) throw bad('validation', '1 bis 200 Verträge auswählen.'); // = CONTRACT_BATCH_MAX
+  if (ids.some((x) => !/^[\w-]{1,64}$/.test(x))) throw bad('validation', 'Auswahl ungültig – bitte neu laden.');
+  const today = berlinDate();
+  let on = null; let note = null; let endDate = null;
+  if (mode === 'end') { on = date(body.ended_on, 'Beendet am', { notFuture: true }) || today; note = str(body.end_note, { required: true, max: 300, field: 'Grund' }); }
+  else { endDate = date(body.end_date, 'Vertragsende'); if (!endDate) throw bad('validation', 'Vertragsende angeben.'); }
+  const replace = flagLike(body.replace);
+  const rows = (await env.DB.prepare(`SELECT c.id, c.kind, c.partner, c.contract_no, c.start_date, c.end_date, c.ended_on, c.updated_at, v.plate FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id
+    WHERE c.id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(ids)).all()).results;
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const skipped = []; const todo = [];
+  const sk = (c, id, code) => skipped.push({ id, plate: c ? c.plate : null, kind: c ? c.kind : null, partner: c ? c.partner : null, code });
+  for (const id of ids) {
+    const c = byId.get(id);
+    if (!c) { sk(null, id, 'not_found'); continue; }
+    if (c.ended_on) { sk(c, id, 'already_ended'); continue; }
+    if (mode === 'end' && c.start_date && on < c.start_date && c.start_date <= today) { sk(c, id, 'before_start'); continue; }
+    if (mode === 'end_date') {
+      if (c.start_date && endDate <= c.start_date) { sk(c, id, 'end_before_start'); continue; }
+      if (c.end_date === endDate) { sk(c, id, 'unchanged'); continue; }
+      if (c.end_date && !replace) { sk(c, id, 'has_end'); continue; }
+    }
+    todo.push(c);
+  }
+  const done = [];
+  if (todo.length) {
+    const stmts = todo.map((c) => (mode === 'end'
+      ? env.DB.prepare('UPDATE vehicle_contracts SET ended_on=?, end_note=?, updated_at=? WHERE id=? AND ended_on IS NULL AND updated_at=?').bind(on, note, laterIso(c.updated_at), c.id, c.updated_at)
+      : env.DB.prepare('UPDATE vehicle_contracts SET end_date=?, updated_at=? WHERE id=? AND ended_on IS NULL AND updated_at=?').bind(endDate, laterIso(c.updated_at), c.id, c.updated_at)));
+    const res = [];
+    for (let i = 0; i < stmts.length; i += 90) res.push(...(await env.DB.batch(stmts.slice(i, i + 90))));
+    todo.forEach((c, i) => { if (res[i] && res[i].meta && res[i].meta.changes) done.push(c); else sk(c, c.id, 'changed'); });
+    if (done.length) {
+      const det = done.map((c) => ({ id: c.id, d: mode === 'end' ? { vehicle: c.plate, ended_on: on, note, batch: true } : { vehicle: c.plate, changed: { end_date: { from: c.end_date || null, to: endDate } }, batch: true } }));
+      await env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at)
+        SELECT lower(hex(randomblob(16))), ?1, ?2, json_extract(value,'$.id'), json_extract(value,'$.d'), ?3 FROM json_each(?4)`)
+        .bind(user.id, mode === 'end' ? 'contract.end' : 'contract.update', nowIso(), JSON.stringify(det)).run();
+    }
+  }
+  return { ok: true, mode, ...(mode === 'end' ? { ended_on: on } : { end_date: endDate }), done: done.map((c) => ({ id: c.id, plate: c.plate, kind: c.kind, partner: c.partner })), skipped };
+}
+
 // Backlog 197: letzte Ablesung (und letzter km-Rücksprung) bis Ende des Berliner Tags `ended_on` je beendetem Vertrag mit Kontingent –
 // eine Sammelabfrage über json_each, nur wenn es solche Verträge gibt. Ergebnis Map Vertrags-ID → {km, measured_at, source, drop_at, drop_rec} | null
 // Seit Backlog 241 für alle beendeten Verträge (km-Stand zur Rückgabe auch ohne Kontingent); km-Status weiterhin nur mit Kontingent
@@ -422,25 +473,34 @@ const END_NEXT = [
 export function endAction(kind, ended) {
   return END_NEXT.find((e) => e.ended === !!ended && (!e.kinds || e.kinds.includes(kind))).next_action;
 }
+// Backlog 624: Folgevertrag erfasst → nächster Schritt nur noch „beenden“ (Texte als next_action-Einträge für den Übersetzungs-Wächter)
+const SUCC_NEXT = {
+  ended: { next_action: 'Folgevertrag ist erfasst – Vertrag in der App beenden (Mehr → Verträge: „Mehrere Verträge beenden“ oder in der Fahrzeugakte).' },
+  soon: { next_action: 'Folgevertrag ist erfasst – nach dem Vertragsende den Vertrag in der App beenden.' },
+};
+const succOf = (c) => { if (!c.succ) return {}; const i = c.succ.lastIndexOf('|'); return { succ: c.succ.slice(0, i), succ_from: c.succ.slice(i + 1) }; };
 export async function contractFindings(env, settings, envName = 'production') {
   const rows = (await env.DB.prepare(`SELECT c.*, v.plate, v.active AS vehicle_active,
       (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS latest_km,
       ${KM_DROP_SQL('c.vehicle_id')} AS drop_at,
       CASE WHEN c.kind IN ('leasing','miete') AND c.end_date IS NOT NULL THEN (SELECT COUNT(*) FROM cases k WHERE k.vehicle_id=c.vehicle_id AND k.environment=?1 AND k.status IN ${OPEN_CASE_ST}) END AS open_cases,
-      CASE WHEN c.kind IN ('leasing','miete') AND c.end_date IS NOT NULL THEN (SELECT COUNT(*) FROM cases k JOIN open_items i ON i.case_id=k.id AND i.status='offen' WHERE k.vehicle_id=c.vehicle_id AND k.environment=?1 AND k.status='fahrzeug_freigegeben') END AS open_items
+      CASE WHEN c.kind IN ('leasing','miete') AND c.end_date IS NOT NULL THEN (SELECT COUNT(*) FROM cases k JOIN open_items i ON i.case_id=k.id AND i.status='offen' WHERE k.vehicle_id=c.vehicle_id AND k.environment=?1 AND k.status='fahrzeug_freigegeben') END AS open_items,
+      -- Backlog 624: Folgevertrag gleicher Art, der spätestens am Tag nach dem Ende beginnt (Versichererwechsel) – nur Text/nächster Schritt
+      CASE WHEN c.end_date IS NOT NULL THEN (SELECT n.partner || '|' || n.start_date FROM vehicle_contracts n WHERE n.vehicle_id=c.vehicle_id AND n.kind=c.kind AND n.id<>c.id AND n.ended_on IS NULL
+        AND n.start_date IS NOT NULL AND n.start_date > COALESCE(c.start_date, '') AND n.start_date <= date(c.end_date, '+1 day') ORDER BY n.start_date LIMIT 1) END AS succ
     FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.ended_on IS NULL AND (c.end_date IS NOT NULL OR c.km_allowance IS NOT NULL)`).bind(envName).all()).results;
   if (!rows.length) return [];
   const km = new Map(rows.filter((r) => r.latest_km).map((r) => { const [k, at] = r.latest_km.split('|'); return [r.vehicle_id, { km: Number(k), measured_at: at, ...parseKmDrop(r.drop_at) }]; }));
   const today = berlinDate(); const w = warnDaysOf(settings); const out = [];
   // nur Zahlen > 0 (sonst entfällt der optionale Abschnitt der Meldung)
-  const ret = (c) => ({ ...(c.open_cases > 0 ? { open: c.open_cases } : {}), ...(c.open_items > 0 ? { items: c.open_items } : {}) });
+  const ret = (c) => ({ ...(c.open_cases > 0 ? { open: c.open_cases } : {}), ...(c.open_items > 0 ? { items: c.open_items } : {}), ...succOf(c) });
   for (const c of rows) {
     const s = contractStatus(c, km.get(c.vehicle_id), today, w);
     const base = { vehicle_id: c.vehicle_id, owner_role: 'fleet' };
     if (s.end && s.end.status === 'abgelaufen') out.push({ ...base, code: 'CONTRACT_ENDED', subject: `${c.id}|end`, severity: 'handeln', requires_decision: 1,
-      ...fm('CONTRACT_ENDED', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, ...ret(c) }), next_action: endAction(c.kind, true) });
+      ...fm('CONTRACT_ENDED', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, ...ret(c) }), next_action: c.succ ? SUCC_NEXT.ended.next_action : endAction(c.kind, true) });
     else if (s.end && s.end.status === 'laeuft_aus') out.push({ ...base, code: 'CONTRACT_ENDS_SOON', subject: `${c.id}|end`, severity: 'hinweis', requires_decision: 0,
-      ...fm('CONTRACT_ENDS_SOON', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, days: s.end.days, ...ret(c) }), next_action: endAction(c.kind, false) });
+      ...fm('CONTRACT_ENDS_SOON', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, end: c.end_date, days: s.end.days, ...ret(c) }), next_action: c.succ ? SUCC_NEXT.soon.next_action : endAction(c.kind, false) });
     if (s.notice && s.notice.status === 'bald') out.push({ ...base, code: 'CONTRACT_NOTICE_DUE', subject: `${c.id}|notice`, severity: 'hinweis', requires_decision: 1,
       ...fm('CONTRACT_NOTICE_DUE', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, by: s.notice.by, months: c.notice_months, end: c.end_date }), next_action: 'Entscheiden: kündigen oder verlängern. Frist und Form laut Vertrag prüfen.' });
     // Schweregrad wie die Vertragsübersicht (Status „handeln“, bis 19.10.2026 hier nur „hinweis“)

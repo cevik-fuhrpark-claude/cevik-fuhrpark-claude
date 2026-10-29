@@ -3790,6 +3790,44 @@ function quarterEnd(ymd, off = 0) {
   const yy = y + Math.floor((em - 1) / 12); const mm = ((em - 1) % 12) + 1;
   const last = new Date(Date.UTC(yy, mm, 0)).getUTCDate(); return `${yy}-${String(mm).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
 }
+// Backlog 624 (Blickwinkel „Versichererwechsel zum 01.01.“): mehrere laufende Verträge der aktuellen Ansicht beenden oder ein Vertragsende eintragen
+function ctBatch(list) {
+  if (!list.length) return { html: '', bind: () => {} };
+  const res = S.ctbRes || ''; const open = !!S.ctbOpen; S.ctbRes = ''; S.ctbOpen = false;
+  const html = `<details class="panel noprint" id="ctbatch"${open ? ' open' : ''}><summary>${esc(t('ctb_title'))}</summary><p class="small muted">${esc(t('ctb_hint'))}</p>${res}
+    <form id="ctbf"><fieldset style="border:0;padding:0;margin:0"><legend class="small"><b>${esc(t('ctb_action'))}</b></legend>
+      <label class="check"><input type="radio" name="mode" value="end_date" checked> ${esc(t('ctb_mode_end_date'))}</label><label class="check"><input type="radio" name="mode" value="end"> ${esc(t('ctb_mode_end'))}</label></fieldset>
+      <div data-ctbm="end_date"><label for="ctbdate">${esc(t('ct_end'))}</label><input type="date" id="ctbdate" name="end_date" style="max-width:200px"><label class="check small"><input type="checkbox" name="replace"> ${esc(t('ctb_replace'))}</label></div>
+      <div data-ctbm="end" hidden><label for="ctbon">${esc(t('ct_ended_on'))}</label><input type="date" id="ctbon" name="ended_on" max="${bDate()}" value="${bDate()}" style="max-width:200px"><label for="ctbnote">${esc(t('ct_end_reason'))}</label><input id="ctbnote" name="end_note" maxlength="300" placeholder="${esc(t('ctb_note_ph'))}"></div>
+      <div class="actions" style="margin:8px 0"><button type="button" class="btn secondary" id="ctball">${esc(t('mb_all'))}</button><button type="button" class="btn secondary" id="ctbnone">${esc(t('mb_none'))}</button> <span class="small muted" id="ctbcount" aria-live="polite"></span></div>
+      <div class="list" style="max-height:340px;overflow:auto">${list.slice(0, 200).map((c) => `<label class="row" style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:8px 10px;margin:0"><input type="checkbox" name="ctbid" value="${esc(c.id)}"> ${plate(c.plate)}<span class="title" style="white-space:normal;flex:1 1 150px">${esc(t('ck_' + c.kind))} · ${esc(c.partner)}${c.contract_no ? ' · ' + esc(c.contract_no) : ''} <span class="small muted">(${c.start_date ? fmtD(c.start_date) : '…'}–${c.end_date ? fmtD(c.end_date) : '…'})</span></span></label>`).join('')}</div>${impMore(list.length, 200)}
+      <div class="actions"><button class="btn" id="ctbgo">${esc(t('ctb_submit'))}</button></div></form></details>`;
+  return { html, bind };
+  function bind() {
+  const fm = $('#ctbf'); if (!fm) return;
+  const boxes = () => $$('#ctbf input[name=ctbid]');
+  const cnt = () => { $('#ctbcount').textContent = tn('mb_selected', boxes().filter((x) => x.checked).length); };
+  boxes().forEach((x) => (x.onchange = cnt)); cnt();
+  $('#ctball').onclick = () => { boxes().forEach((x) => (x.checked = true)); cnt(); };
+  $('#ctbnone').onclick = () => { boxes().forEach((x) => (x.checked = false)); cnt(); };
+  const sync = () => { const m = fm.mode.value; $$('#ctbf [data-ctbm]').forEach((d) => { d.hidden = d.dataset.ctbm !== m; }); fm.end_date.required = m === 'end_date'; fm.end_note.required = m === 'end'; };
+  $$('#ctbf input[name=mode]').forEach((x) => (x.onchange = sync)); sync();
+  fm.onsubmit = async (e) => {
+    e.preventDefault();
+    const ids = boxes().filter((x) => x.checked).map((x) => x.value);
+    if (!ids.length) { toast(t('mb_pick'), true); return; }
+    const m = fm.mode.value;
+    if (m === 'end' && !confirm(t('ctb_confirm_end').replace('{n}', ids.length))) return;
+    try {
+      const r = await api('POST', '/api/contracts/batch', m === 'end' ? { mode: m, ids, ended_on: fm.ended_on.value || null, end_note: fm.end_note.value } : { mode: m, ids, end_date: fm.end_date.value, replace: fm.replace.checked });
+      const skip = (r.skipped || []).map((x) => `<li>${x.plate ? esc(x.plate) + ' · ' : ''}${x.kind ? esc(t('ck_' + x.kind)) + ' · ' : ''}${x.partner ? esc(x.partner) + ': ' : ''}${esc(t('ctb_sk_' + x.code))}</li>`).join('');
+      S.ctbRes = `<div class="panel ${skip ? 'warn' : 'ok'}" style="margin-top:8px" data-ctbres><b>${esc(t(m === 'end' ? 'ctb_done_end' : 'ctb_done_date').replace('{n}', r.done.length).replace('{d}', fmtD(m === 'end' ? r.ended_on : r.end_date)))}</b>${skip ? `<br><span class="small">${esc(t('ctb_skipped'))}:</span><ul class="small" style="margin:4px 0 0 18px">${skip}</ul>` : ''}</div>`;
+      S.ctbOpen = true; toast('✓');
+      await viewContracts();
+    } catch (err) { toast(err.message, true); }
+  };
+  }
+}
 async function viewContracts() {
   const f = S.ctFilter || 'aktiv'; const k = S.ctKind || '';
   const cts = vsDef('ctSite') || ''; const asof = S.ctAsOf || '';
@@ -3798,6 +3836,7 @@ async function viewContracts() {
   // Stichtag (Backlog 196): km/Status zum Ende des Berliner Tags – nur Ablesungen bis dahin; gilt für Liste, Ausdruck und CSV
   const sq = (cts ? '&site=' + encodeURIComponent(cts) : '') + (asof ? '&as_of=' + asof : '') + (eby ? '&ends_by=' + eby : '');
   const r = await api('GET', `/api/contracts?filter=${f}${k ? '&kind=' + k : ''}${sq}`);
+  const ctb = ctBatch(r.contracts.filter((c) => !c.ended_on)); // Backlog 624
   render(`<h1>${esc(t('ct_title'))}</h1>${helpLink('contracts')}<p class="small muted">${esc(t('ct_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(t('print_filter'))}: ${esc(t('cf_' + f))}${k ? ' · ' + esc(t('ck_' + k)) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''}${r.as_of ? ' · ' + esc(t('ct_asof')) + ': ' + fmtD(r.as_of) : ''}${r.ends_by ? ' · ' + esc(t('ct_endsby')) + ': ' + fmtD(r.ends_by) : ''} · ${esc(t('print_count').replace('{n}', r.contracts.length))} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="actions noprint" style="flex-wrap:wrap">${['aktiv', 'aktion', 'beendet', 'alle'].map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-cf="${x}">${esc(t('cf_' + x))} (${r.counts[x]})</button>`).join('')}</div>
@@ -3810,9 +3849,11 @@ async function viewContracts() {
     ${f !== 'beendet' ? `<p>${esc(t('ct_rate_sum'))}: <b>${eur(r.monthly_rate_sum_net)}</b>${r.unrated ? ` <span class="small muted">· ${r.unrated} ${esc(t('ct_unrated'))}</span>` : ''}${r.contracts.some((c) => c.vehicle_eval_excluded) ? ` <span class="small muted">· ${esc(t('ct_excluded_hint'))}</span>` : ''}</p>` : ''}
     <div class="list">${r.contracts.length ? r.contracts.map((c) => `<a class="row ${c.status.overall === 'handeln' ? 'p-kritisch' : c.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${plate(c.plate)}<span class="title">${c.vehicle_eval_excluded ? `<span class="chip">${esc(t('eval_excluded'))}</span> ` : ''}${esc(t('ck_' + c.kind))} · ${esc(c.partner)}</span>${ctChip(c.status)}<span class="sub" style="white-space:normal">${ctLines(c, { noEvidence: true }).join(' · ').replace(/<br>/g, ' · ')}${c.file_id ? ` · 📎 ${esc(t('ct_doc_linked'))}` : ''}</span>${ctRet(c.return_check)}</a>`).join('') : `<p class="muted">${esc(t('ct_none'))}</p>`}</div>
     <div class="actions noprint"><button type="button" class="btn secondary" id="ctcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="ctics" title="${esc(t('ct_ics_hint'))}">${esc(t('export_ics'))}</button><button type="button" class="btn secondary" id="ctprt">${esc(t('print'))}</button></div>
+    ${ctb.html}
     <details class="panel noprint"><summary>${esc(t('ct_import'))}</summary><p class="small muted">${esc(t('ct_import_hint'))}</p>
       <label for="ctsrc">${esc(t('ct_import_src'))}</label><input id="ctsrc" maxlength="300"><input type="file" id="ctimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('ct_import'))}" style="margin-top:8px"><div id="ctimpr"></div></details>`, 'more');
   $$('[data-cf]').forEach((b) => (b.onclick = () => { S.ctFilter = b.dataset.cf; viewContracts(); }));
+  ctb.bind();
   $('#ctk').onchange = () => { S.ctKind = $('#ctk').value; viewContracts(); };
   const ao = $('#ctasof'); if (ao) ao.onchange = () => { const v = ao.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctAsOf = v && v <= bDate() ? v : ''; /* Backlog 511: heute als Stichtag zulässig (Monatsletzter am Monatsende) */ if (S.ctAsOf) S.ctEndsBy = ''; viewContracts(); };
   const aox = $('#ctasofx'); if (aox) aox.onclick = () => { S.ctAsOf = ''; viewContracts(); };

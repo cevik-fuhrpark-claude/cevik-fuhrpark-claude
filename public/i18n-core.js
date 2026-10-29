@@ -192,6 +192,9 @@ const V_MORE = [
   ['Liefertermin im Format JJJJ-MM-TT.', 'Дата постачання у форматі РРРР-ММ-ДД.', 'Delivery date in format YYYY-MM-DD.'],
   ['Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.', 'Останнє проведення в майбутньому – заплановані терміни вносьте через «Запланувати візит».', 'The last completion is in the future – enter planned dates via “Plan workshop date”.'],
   ['Durchführungsdatum liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.', 'Дата проведення в майбутньому – заплановані терміни вносьте через «Запланувати візит».', 'The completion date is in the future – enter planned dates via “Plan workshop date”.'],
+  ['Auswahl ungültig – bitte neu laden.', 'Вибір недійсний – оновіть сторінку.', 'Selection invalid – please reload.'],
+  ['1 bis 200 Verträge auswählen.', 'Виберіть від 1 до 200 договорів.', 'Select 1 to 200 contracts.'],
+  ['Vertragsende angeben.', 'Вкажіть кінець договору.', 'Enter the contract end.'],
   ['Durchführungsdatum vor 1950 ist nicht plausibel.', 'Дата проведення до 1950 року неправдоподібна.', 'A completion date before 1950 is not plausible.'],
   ['Durchführungsdatum liegt vor der Erstzulassung des Fahrzeugs.', 'Дата проведення раніша за першу реєстрацію транспортного засобу.', 'The completion date is before the vehicle’s first registration.'],
   ['Lager (Werkstatt) angeben.', 'Вкажіть склад (майстерню).', 'Specify the store (workshop).'],
@@ -647,6 +650,8 @@ const NEXT_ACTIONS = [
   ['Wartung ab Vertragsende klären: Verlängerung, Folgevertrag oder eigene Werkstatt.', 'З’ясуйте обслуговування після закінчення договору: продовження, новий договір або власна майстерня.', 'Clarify maintenance from the end of the contract: extension, follow-up contract or your own workshop.'],
   ['Vertragsende laut Vertrag abwickeln; Vertrag in der Fahrzeugakte beenden oder Verlängerung/Folgevertrag mit Nachweis erfassen.', 'Оформіть закінчення договору згідно з його умовами; завершіть договір у картці транспорту або внесіть продовження/новий договір з підтвердженням.', 'Settle the end of the contract per its terms; end the contract in the vehicle file or record an extension/follow-up contract with evidence.'],
   ['Vertragsende laut Vertrag klären: Verlängerung, Folgevertrag oder Abschluss.', 'З’ясуйте закінчення договору згідно з його умовами: продовження, новий договір або завершення.', 'Clarify the end of the contract per its terms: extension, follow-up contract or completion.'],
+  ['Folgevertrag ist erfasst – Vertrag in der App beenden (Mehr → Verträge: „Mehrere Verträge beenden“ oder in der Fahrzeugakte).', 'Наступний договір внесено – завершіть договір у застосунку (Ще → Договори: «Завершити кілька договорів» або в картці транспорту).', 'Follow-up contract recorded – end the contract in the app (More → Contracts: “End several contracts” or in the vehicle record).'],
+  ['Folgevertrag ist erfasst – nach dem Vertragsende den Vertrag in der App beenden.', 'Наступний договір внесено – після закінчення договору завершіть його в застосунку.', 'Follow-up contract recorded – end the contract in the app after its end date.'],
   ['Entscheiden: kündigen oder verlängern. Frist und Form laut Vertrag prüfen.', 'Вирішіть: розірвати чи продовжити. Перевірте строк і форму згідно з договором.', 'Decide: terminate or extend. Check deadline and form per contract.'],
   ['Mehrkilometer-Regelung im Vertrag prüfen; ggf. Vertrag anpassen.', 'Перевірте в договорі умови щодо перевищення пробігу; за потреби змініть договір.', 'Check the excess mileage clause in the contract; adjust the contract if needed.'],
   ['Einsatz des Fahrzeugs bzw. Vertragsanpassung prüfen.', 'Перевірте використання транспорту або зміну договору.', 'Review the vehicle’s use or a contract adjustment.'],
@@ -1123,6 +1128,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 614: Kosten je km – Kostenmonate außerhalb der km-Ablesungen
 // Backlog 616: Kosten-CSV je Fahrzeug
 // Backlog 622 (Blickwinkel „Versichererwechsel zum 01.01.“): Vertragsimport – neuer Vertrag läuft neben einem nicht beendeten gleicher Art
+// Backlog 624: Verträge gesammelt beenden bzw. Vertragsende eintragen (Mehr → Verträge)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

@@ -26678,6 +26678,46 @@ await test('Backlog 622/623 (Blickwinkel „Versichererwechsel zum 01.01.“): V
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('data-ctpar') && app.includes("tn('ct_parallel_n'"), 'Vorschau');
 });
 
+await test('Backlog 624 (Blickwinkel „Versichererwechsel zum 01.01.“): Verträge gesammelt mit Vertragsende versehen (auch künftig, ersetzen nur ausdrücklich) bzw. beenden, Gründe je Vertrag, Protokoll; Befund nennt erfassten Folgevertrag', async () => {
+  const { e, U, V1 } = await freshWorld(); const V2 = 'VIN:WDB9630051L917317'; const db = e.DB.db;
+  const mk = async (v, b) => { const r = await U.fleet.post(`/api/vehicles/${v}/contracts`, { kind: 'versicherung', evidence: 'Police (Test)', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const a1 = await mk(V1, { partner: 'Alt-Versicherung AG', contract_no: 'A-1', start_date: '2025-01-01' });
+  const a2 = await mk(V2, { partner: 'Alt-Versicherung AG', contract_no: 'A-2', start_date: '2025-01-01', end_date: bDayOff(200) });
+  const fut = await mk(V2, { partner: 'Später AG', contract_no: 'S-1', start_date: bDayOff(40) });
+  const end = bDayOff(20);
+  eq((await U.ws.post('/api/contracts/batch', { mode: 'end_date', ids: [a1], end_date: end })).status, 403, 'Werkstatt');
+  for (const bad of [{ mode: 'x', ids: [a1], end_date: end }, { mode: 'end_date', ids: [], end_date: end }, { mode: 'end_date', ids: [a1] }, { mode: 'end', ids: [a1], ended_on: bDayOff(1), end_note: 'x' }, { mode: 'end', ids: [a1] }, { mode: 'end_date', ids: Array.from({ length: 201 }, (_, i) => 'x' + i), end_date: end }])
+    eq((await U.fleet.post('/api/contracts/batch', bad)).status, 400, JSON.stringify(bad).slice(0, 80));
+  let r = await U.fleet.post('/api/contracts/batch', { mode: 'end_date', ids: [a1, a2, fut, 'gibt-es-nicht'], end_date: end });
+  eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.done.map((x) => x.id).join(), a1, 'nur A-1');
+  const code = (id) => r.data.skipped.find((x) => x.id === id)?.code;
+  eq(code(a2), 'has_end'); eq(code(fut), 'end_before_start'); eq(code('gibt-es-nicht'), 'not_found');
+  eq(db.prepare('SELECT end_date FROM vehicle_contracts WHERE id=?').get(a1).end_date, end);
+  r = await U.fleet.post('/api/contracts/batch', { mode: 'end_date', ids: [a1, a2], end_date: end, replace: true });
+  eq(r.data.done.map((x) => x.id).join(), a2, 'ersetzt'); eq(r.data.skipped[0].code, 'unchanged');
+  ok(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='contract.update' AND target IN (?,?) AND json_extract(detail,'$.batch')=1`).get(a1, a2).n === 2, 'Protokoll je Vertrag');
+  // Folgevertrag ab Ende + 1 → Befund nennt ihn
+  const n1 = await mk(V1, { partner: 'Neu-Versicherung SE', contract_no: 'N-1', start_date: bDayOff(21) });
+  const { contractFindings } = await import('../src/contracts.js');
+  const f = (await contractFindings(e, new Map(), 'test')).find((x) => x.code === 'CONTRACT_ENDS_SOON' && x.vehicle_id === V1);
+  ok(f && f.message.includes('Folgevertrag Neu-Versicherung SE ab') && f.next_action.startsWith('Folgevertrag ist erfasst'), JSON.stringify(f && [f.message, f.next_action]));
+  const f2 = (await contractFindings(e, new Map(), 'test')).find((x) => x.code === 'CONTRACT_ENDS_SOON' && x.vehicle_id === V2);
+  ok(f2 && !f2.message.includes('Folgevertrag') && !f2.next_action.startsWith('Folgevertrag ist erfasst'), 'ohne Folgevertrag wie bisher');
+  const { renderFindingMessage } = await import('../public/finding-messages.js'); const { translateValidation } = await import('../public/i18n.js');
+  const args = JSON.parse(f.message_args || '{}');
+  for (const l of ['uk', 'en']) { const tx = renderFindingMessage(args.k, args.a, l, { dates: true }); ok(tx.includes('Neu-Versicherung SE') && !tx.includes('{'), `${l}: ${tx}`); ok(translateValidation(l, f.next_action) !== f.next_action || l === 'de', `${l}: nächster Schritt übersetzt`); }
+  // Beenden (heute) inkl. bereits beendet
+  r = await U.fleet.post('/api/contracts/batch', { mode: 'end', ids: [a1, a2], end_note: 'Versichererwechsel (Test)' });
+  eq(r.data.done.length, 2); eq(r.data.ended_on, BERLIN_TODAY);
+  r = await U.fleet.post('/api/contracts/batch', { mode: 'end', ids: [a1], end_note: 'nochmal' }); eq(r.data.skipped[0].code, 'already_ended');
+  eq(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='contract.end' AND target IN (?,?)`).get(a1, a2).n, 2);
+  ok(!(await U.fleet.get('/api/contracts?filter=aktiv')).data.contracts.some((c) => c.id === a1), 'nicht mehr aktiv');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("api('POST', '/api/contracts/batch'") && app.includes('id="ctbf"'), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['ctb_title', 'ctb_hint', 'ctb_submit', 'ctb_sk_not_found', 'ctb_sk_already_ended', 'ctb_sk_before_start', 'ctb_sk_end_before_start', 'ctb_sk_unchanged', 'ctb_sk_has_end', 'ctb_sk_changed']) ok(STRINGS[l][k], `${l}.${k}`);
+  void n1;
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

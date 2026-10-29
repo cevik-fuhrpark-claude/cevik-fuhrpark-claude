@@ -3320,6 +3320,7 @@ function ctRet(rc) {
 }
 
 
+
 async function viewContracts(...a) { return (await lazyModule('verwaltung')).viewContracts(...a); }
 
 // Reifenalter in Monaten → „6 J. 9 Mon.“ bzw. „9 Mon.“
