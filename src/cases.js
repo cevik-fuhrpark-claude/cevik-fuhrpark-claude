@@ -13,6 +13,8 @@ import { noteActiveSql, NOTES_MAX_ACTIVE } from './vnotes.js';
 // Backlog 467: abgeschlossene Vorgänge desselben Fahrzeugs in den 90 Tagen vor der Meldung – Kurzinfo im Vorgang höchstens 5
 const RECENT_CLOSED_MAX = 5;
 // Laufende Gewährleistungen: Kurzinfo im Vorgang höchstens 20, Fahrzeugakte höchstens 50 (früheste Abläufe zuerst; mehr → *_truncated)
+// Backlog 626: Vergleichsschlüssel einer Rechnungsnummer – führendes „Nr./No./N°/Nº“ weg, nur ASCII-Buchstaben und Ziffern, Großschreibung
+export const invoiceKey = (v) => String(v || '').trim().replace(/^(?:nr|no|n°|nº|num(?:ber|éro|ero)?)[.:\s]+/i, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 export const WARR_CASE_MAX = 20;
 export const WARR_VEH_MAX = 50;
 
@@ -312,14 +314,14 @@ const CLAIM_DE = { gemeldet: 'gemeldet', in_pruefung: 'in Prüfung', reguliert: 
 // workshopNames (optional): Map Werkstatt-Code → Name (20.10.2026: CSV zeigte „MUENCHEN“ statt „Werkstatt München“)
 export function casesCsv(rows, csvCell, fmt, claims = null, workshopNames = null) {
   const head = ['Vorgang', 'Kennzeichen', 'Standort', 'Priorität', 'Status', 'Sicherheitssperre', 'Fahrbereit laut Meldung', 'Werkstatt', 'Beschreibung', 'Gemeldet am', 'Gemeldet von',
-    'Eingang bestätigt', 'Werkstatt übernommen', 'Abgeschlossen', 'Offene Restarbeiten', 'Fotos/Dateien', 'Werkstatttermin', ...(claims ? ['Versicherungsfall', 'Versicherer', 'Schadennummer', 'Kostenfreigabe ausstehend'] : []), 'Herkunft', 'Dublette von', 'Wiedervorlage', 'Schadenzeitpunkt laut Meldung', 'Teile erwartet am', 'Wartet auf (Vermerk)'] // Backlog 526: Nachfassen beim Lieferanten;
+    'Eingang bestätigt', 'Werkstatt übernommen', 'Abgeschlossen', 'Offene Restarbeiten', 'Fotos/Dateien', 'Werkstatttermin', ...(claims ? ['Versicherungsfall', 'Versicherer', 'Schadennummer', 'Kostenfreigabe ausstehend'] : []), 'Herkunft', 'Dublette von', 'Wiedervorlage', 'Schadenzeitpunkt laut Meldung', 'Teile erwartet am', 'Wartet auf (Vermerk)', 'Ort laut Meldung', 'Standort des Fahrzeugs', 'Abschleppdienst', 'Abgeschleppt am'] // Backlog 526: Nachfassen beim Lieferanten; Backlog 627: Ort/Standort/Abschleppung (Panne im Ausland)
   const lines = [head.join(';')];
   for (const c of rows) {
     const k = claims && claims.get(c.id);
     lines.push([csvCell(c.case_no), csvCell(c.plate), csvCell(c.vehicle_site), PRIO_DE[c.priority] || c.priority, CASE_STATUS_DE[c.status] || csvCell(c.status), c.safety_lock ? 'ja' : 'nein',
       DRV_DE[c.reported_driveability] || csvCell(c.reported_driveability), csvCell((workshopNames && workshopNames.get(c.workshop_site)) || c.workshop_site), csvCell(caseDescText(c.description, 'de')), fmt(c.created_at), csvCell(c.reporter_name_hidden ? 'Fahrer/in (Name ausgeblendet)' : c.reporter_name), fmt(c.fleet_received_at), fmt(c.workshop_ack_at), fmt(c.closed_at),
       c.open_items ?? '', c.file_count ?? '', c.planned_date ? c.planned_date.split('-').reverse().join('.') : '',
-      ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), quoteCell(csvCell(k ? k.claim_no : '')), c.cost_over_limit_at && OPEN_STATUSES.includes(c.status) ? 'ja' : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no), c.followup_on ? csvCell(c.followup_on.split('-').reverse().join('.') + (c.followup_note ? ' – ' + c.followup_note : '')) : '', csvCell(occurredCsv(c.occurred_at)), c.status === 'wartet_teile' && c.parts_expected_date ? c.parts_expected_date.split('-').reverse().join('.') : '', c.status === 'wartet_teile' ? csvCell(c.parts_wait_note) : ''].join(';'));
+      ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), quoteCell(csvCell(k ? k.claim_no : '')), c.cost_over_limit_at && OPEN_STATUSES.includes(c.status) ? 'ja' : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no), c.followup_on ? csvCell(c.followup_on.split('-').reverse().join('.') + (c.followup_note ? ' – ' + c.followup_note : '')) : '', csvCell(occurredCsv(c.occurred_at)), c.status === 'wartet_teile' && c.parts_expected_date ? c.parts_expected_date.split('-').reverse().join('.') : '', c.status === 'wartet_teile' ? csvCell(c.parts_wait_note) : '', csvCell(c.location_note), csvCell(c.vehicle_location), csvCell(c.tow_service), c.towed_on ? c.towed_on.split('-').reverse().join('.') : ''].join(';'));
   }
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
@@ -1793,10 +1795,16 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const invNo0 = str(p.invoice_no, { max: 60 });
       const dupConfirmed = flag(p.confirm_duplicate_invoice, 'Bestätigung');
       if (invNo0 && !dupConfirmed) {
-        const rows = (await env.DB.prepare(`SELECT c.id AS case_id, c.case_no, e.supplier, e.amount_net, e.created_at FROM external_costs e JOIN cases c ON c.id=e.case_id
+        // Backlog 626 (Blickwinkel „Panne in Frankreich“): Schreibweise egal – „FA-2026/118“, „FA 2026 118“, „N° FA.2026.118“ gelten als dieselbe
+        // Nummer (Vergleichsschlüssel `invoiceKey`: nur Buchstaben/Ziffern, ohne führendes „Nr./No./N°“). Vorauswahl in SQL über die längste
+        // Ziffernfolge (LIKE, kurz), Vergleich in JS; ohne Ziffern wie bisher genau (ohne Groß-/Kleinschreibung).
+        const key = invoiceKey(invNo0); const digits = (invNo0.match(/\d+/g) || []).sort((a, b) => b.length - a.length)[0] || '';
+        let rows = (await env.DB.prepare(`SELECT c.id AS case_id, c.case_no, e.supplier, e.amount_net, e.created_at, e.invoice_no FROM external_costs e JOIN cases c ON c.id=e.case_id
           WHERE e.invoice_no = ?1 COLLATE NOCASE AND c.environment=?2 ORDER BY e.created_at LIMIT 10`).bind(invNo0, envName).all()).results;
+        if (!rows.length && key && digits) rows = (await env.DB.prepare(`SELECT c.id AS case_id, c.case_no, e.supplier, e.amount_net, e.created_at, e.invoice_no FROM external_costs e JOIN cases c ON c.id=e.case_id
+          WHERE e.invoice_no LIKE '%' || ?1 || '%' AND c.environment=?2 ORDER BY e.created_at LIMIT 500`).bind(digits.slice(0, 40), envName).all()).results.filter((r) => invoiceKey(r.invoice_no) === key).slice(0, 10);
         if (rows.length) {
-          const matches = rows.map((r) => ({ case_no: r.case_no, case_id: r.case_id, supplier: r.supplier, amount_net: r.amount_net, booked_at: r.created_at, same_case: r.case_id === c.id }));
+          const matches = rows.map((r) => ({ case_no: r.case_no, case_id: r.case_id, supplier: r.supplier, amount_net: r.amount_net, booked_at: r.created_at, same_case: r.case_id === c.id, invoice_no: r.invoice_no }));
           throw bad('duplicate_invoice', 'Diese Rechnungsnummer ist bereits als Fremdleistung erfasst. Bitte prüfen (doppelte Buchung?) und nur bei Bedarf ausdrücklich bestätigen, z. B. bei einer Sammelrechnung für mehrere Fahrzeuge.', { invoice_no: invNo0, matches });
         }
       }
