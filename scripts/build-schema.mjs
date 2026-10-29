@@ -28,6 +28,8 @@ console.log(`schema.js: ${migrations.length} Migration(en), ${migrations.reduce(
 
 // Sprachpakete aus public/i18n.js erzeugen (Backlog 588) – vor dem Versions-Hash, damit er die Pakete einschließt
 await (await import('./build-i18n.mjs')).buildI18n();
+// App-Module aus public/app.js erzeugen (Backlog 593): app-main.js + selten genutzte Bereiche zum Nachladen
+(await import('./build-app.mjs')).buildApp();
 
 // App-Version = Hash über alle Dateien in public/ (ohne version.json). Die App vergleicht sie im Hintergrund und bietet
 // „Neu laden“ an, wenn eine neuere Fassung bereitsteht (lange offene Tablets/Handys bekommen Fehlerbehebungen sonst erst spät).

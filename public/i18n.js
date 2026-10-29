@@ -3059,3 +3059,7 @@ Object.assign(STRINGS.en, { medit_title: 'Edit or end inspection entry', medit_h
 Object.assign(STRINGS.de, { imp_kinds_allowed: 'Mögliche Prüfarten (so in die Spalte „Art“ schreiben)' });
 Object.assign(STRINGS.uk, { imp_kinds_allowed: 'Можливі види перевірок (так писати в стовпці «Art»)' });
 Object.assign(STRINGS.en, { imp_kinds_allowed: 'Possible inspection types (write them like this in the “Art” column)' });
+// Backlog 593: ausgelagerter App-Bereich konnte nicht geladen werden (z. B. Funkloch beim ersten Aufruf)
+Object.assign(STRINGS.de, { lazy_load_failed: 'Dieser Bereich der App konnte nicht geladen werden. Bitte Verbindung prüfen und erneut versuchen.' });
+Object.assign(STRINGS.uk, { lazy_load_failed: 'Не вдалося завантажити цей розділ застосунку. Перевірте з’єднання та спробуйте ще раз.' });
+Object.assign(STRINGS.en, { lazy_load_failed: 'This part of the app could not be loaded. Please check the connection and try again.' });

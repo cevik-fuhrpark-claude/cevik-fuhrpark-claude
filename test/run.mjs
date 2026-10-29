@@ -7742,14 +7742,14 @@ await test('Wächter Offline-Hülle: jedes von app.js (transitiv) geladene Modul
   const shell = JSON.parse(sw.match(/const SHELL = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
   const missingFiles = shell.filter((f) => f !== '/' && !existsSync(new URL('../public' + f, import.meta.url)));
   ok(!missingFiles.length, `SHELL-Datei fehlt in public/: ${missingFiles.join(', ')}`);
-  const seen = new Set(); const todo = ['app.js'];
+  const seen = new Set(); const todo = ['app-main.js', ...Object.keys((await import('../scripts/build-app.mjs')).GROUPS).map((g) => `app-${g}.js`)]; // Backlog 593: App-Module aus app.js
   while (todo.length) {
     const f = todo.pop(); if (seen.has(f)) continue; seen.add(f);
     for (const m of rd(f).matchAll(/^import [^;]*? from '\.\/([^']+)'/gm)) todo.push(m[1]);
   }
   const notCached = [...seen].filter((f) => !shell.includes('/' + f));
   ok(!notCached.length, `Modul nicht im Offline-Cache (SHELL in public/sw.js, CACHE-Version erhöhen): ${notCached.join(', ')}`);
-  ok(/src="\/app\.js"/.test(rd('index.html')), 'index.html lädt /app.js');
+  ok(/src="\/app-main\.js"/.test(rd('index.html')), 'index.html lädt /app-main.js (erzeugt aus app.js)');
   console.log(`     ${seen.size} Module, ${shell.length} Hüllen-Dateien`);
 });
 
@@ -16437,7 +16437,7 @@ await test('Fehlersuche 21.10. (PWA/Druck/Leistung): Start-Wächter bei gemischt
   ok(app.includes("kind === 'dt' ? { day: '2-digit', month: '2-digit', year: 'numeric'"), 'Zeitstempel mit vierstelligem Jahr');
   ok(!app.includes("<th>${esc(t('kind'))}</th><th></th>") && app.includes("t('driver_inactive')"), 'Fahrerakte: Spaltenkopf, Einzahl');
   // 2. Start-Wächter
-  const html = rd('index.html'); ok(html.indexOf('/boot.js') > 0 && html.indexOf('/boot.js') < html.indexOf('/app.js'), 'boot.js vor app.js');
+  const html = rd('index.html'); ok(html.indexOf('/boot.js') > 0 && html.indexOf('/boot.js') < html.indexOf('/app-main.js'), 'boot.js vor app-main.js');
   ok(/^langReady\.then\(\(\) => \{ window\.__cfpBooted = true; \}/m.test(app), 'app.js meldet Start (nach dem Sprachpaket, Backlog 588)');
   const boot = rd('boot.js');
   const mk = (booted, online) => {
@@ -26009,6 +26009,42 @@ await test('Backlog 588: Sprachpakete – App lädt nur Kern + Paket der eigenen
   ok(/import\(`\.\/i18n-\$\{l\}\.js`\)/.test(rd('i18n-core.js')), 'Kern lädt Pakete relativ');
   // Build: Pakete vor dem Versions-Hash (sonst bemerkt die App neue Texte nicht)
   const bs = fs.readFileSync(new URL('../scripts/build-schema.mjs', import.meta.url), 'utf8'); ok(bs.indexOf('buildI18n()') > 0 && bs.indexOf('buildI18n()') < bs.indexOf('const version = appVersion()'), 'Build-Reihenfolge');
+});
+
+await test('Backlog 593: App-Module – app-main.js lädt beim Start, Verwaltung/Lager erst beim Aufruf; erzeugt aus app.js, aktuell, gültig, Platzhalter async, Offline-Cache, Ladefehler übersetzt', async () => {
+  const fs = await import('node:fs'); const { execFileSync } = await import('node:child_process');
+  const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const B = await import('../scripts/build-app.mjs');
+  // Zerleger: Zeichenketten, Vorlagen mit ${…}, Kommentare und Regex-Literale verschieben keine Klammern
+  const src = "const a = /[}{]/g, b = `x${ {c: '}'}.c }y`; // }\nfunction f(x) { return x / 2 / 1; }\nasync function g() { if (/\\//.test('}')) return '{'; }\nlet n = 1;\nconst o = { p() { return 1; } };\n";
+  eq(B.topDecls(src).map((d) => d.names.join(',') + ':' + d.kind).join(' '), 'a,b:const f:function g:async n:let o:const', 'oberste Deklarationen');
+  // erzeugte Dateien entsprechen der Quelle (npm run build vergessen → rot)
+  const { files, stubs } = B.splitApp(rd('app.js'));
+  for (const [f, txt] of Object.entries(files)) eq(rd(f), txt, f + ' aktuell');
+  // gültiges JavaScript (Modul-Syntax inkl. Export nur vorhandener Namen)
+  for (const f of Object.keys(files)) execFileSync(process.execPath, ['--check', new URL('../public/' + f, import.meta.url).pathname]);
+  // jede Einstiegsfunktion ausgelagert; Router/Aufrufer in app-main nutzen async-Platzhalter, die das Modul nachladen
+  const main = rd('app-main.js');
+  for (const [g, names] of Object.entries(B.GROUPS)) {
+    const mod = rd(`app-${g}.js`);
+    ok(/^import \{[^}]*\} from '\.\/app-main\.js';$/m.test(mod), g + ': importiert aus app-main.js');
+    for (const n of names) {
+      ok(new RegExp(`^(?:async )?function ${n}\\(`, 'm').test(mod), `${n} in app-${g}.js`);
+      if (stubs.has(n)) ok(main.includes(`async function ${n}(...a) { return (await lazyModule('${g}')).${n}(...a); }`), `${n}: Platzhalter in app-main.js`);
+    }
+    ok(!main.includes(`from './app-${g}.js'`), g + ': nicht statisch importiert');
+  }
+  ok(stubs.has('viewSettings') && stubs.has('viewStock') && stubs.has('viewDriver'), 'Router-Ziele haben Platzhalter');
+  ok(/^async function viewHome\(/m.test(main) && /^async function viewNew\(/m.test(main) && /^async function viewCase\(/m.test(main) && /^async function viewDepartureCheck\(/m.test(main), 'Fahrer-Ansichten bleiben im Start-Modul');
+  ok(Buffer.byteLength(main) < Buffer.byteLength(rd('app.js')) * 0.75, `Start-Modul < 75 % von app.js (${Math.round(Buffer.byteLength(main) / 1024)} KB)`);
+  // Start, Offline-Hülle, Ladefehler
+  ok(/<script type="module" src="\/app-main\.js"><\/script>/.test(rd('index.html')) && !/src="\/app\.js"/.test(rd('index.html')), 'index.html lädt app-main.js');
+  const shell = JSON.parse(rd('sw.js').match(/const SHELL = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
+  for (const f of Object.keys(files)) ok(shell.includes('/' + f), 'SHELL /' + f);
+  ok(!shell.includes('/app.js'), 'Quelle app.js nicht mehr in der Hülle');
+  ok(/delete LAZY_MODULES\[g\];[^\n]*throw new Error\(t\('lazy_load_failed'\)\)/.test(main), 'Ladefehler: erneut versuchbar, übersetzte Meldung');
+  const M = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(M.STRINGS[l].lazy_load_failed, 'lazy_load_failed ' + l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

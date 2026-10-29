@@ -1105,6 +1105,7 @@ Object.assign(FIELD_NAMES.en, { 'Hinweis zum Termin': 'Note on the date' });
 Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NAMES.en, { 'Titel': 'Title' }); // Backlog 577
 // Backlog 579: Prüftermin bearbeiten / beenden
 // Backlog 589: Prüftermin-Import – erlaubte Prüfarten bei „Prüfart unbekannt“
+// Backlog 593: ausgelagerter App-Bereich konnte nicht geladen werden (z. B. Funkloch beim ersten Aufruf)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
