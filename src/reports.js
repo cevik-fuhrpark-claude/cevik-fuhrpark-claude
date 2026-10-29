@@ -74,7 +74,7 @@ export async function costReport(env, user, envName, query = {}) {
   const rows = new Map();
   const row = (vehicleId, month) => {
     const k = `${vehicleId}|${month}`;
-    if (!rows.has(k)) rows.set(k, { vehicle_id: vehicleId, month, cases_opened: 0, late_items: 0, hours: 0, work_net: 0, parts_actual_net: 0, parts_estimate_net: 0, external_actual_net: 0, external_estimate_net: 0, unvalued_items: 0, valued_items: 0, pv: 0, pu: 0, ev: 0, eu: 0 });
+    if (!rows.has(k)) rows.set(k, { vehicle_id: vehicleId, month, cases_opened: 0, late_items: 0, hours: 0, work_net: 0, parts_actual_net: 0, parts_estimate_net: 0, external_actual_net: 0, external_estimate_net: 0, unvalued_items: 0, valued_items: 0, pv: 0, pu: 0, ev: 0, eu: 0, wv: 0, wu: 0 });
     return rows.get(k);
   };
   const inRange = (m) => m >= from && m <= to;
@@ -104,7 +104,7 @@ export async function costReport(env, user, envName, query = {}) {
     const k = `${w.case_id}|${m}|${wr}`;
     if (!(w.hours > 0) || workItem.has(k)) continue;
     workItem.add(k);
-    if (wr === 'u') r.unvalued_items++; else r.valued_items++;
+    if (wr === 'u') { r.unvalued_items++; r.wu++; } else { r.valued_items++; r.wv++; }
   }
   { const cum = new Map(); // je Vorgang (und Satz-Abschnitt): Stunden der Vormonate
     for (const x of [...workHours.values()].sort((a, b) => (a.case_id === b.case_id ? (a.p !== b.p ? a.p - b.p : a.m < b.m ? -1 : 1) : a.case_id < b.case_id ? -1 : 1))) {
@@ -135,7 +135,12 @@ export async function costReport(env, user, envName, query = {}) {
   const siteFilter = query.site ? String(query.site).slice(0, 60) : null;
   const plates = siteFilter ? new Map([...allPlates].filter(([, v]) => sel.match(v.site))) : allPlates;
   // ruhende Fahrzeuge (Inhaberentscheidung) zählen in keiner Auswertung
-  for (const [k, r] of rows) if ((plates.get(r.vehicle_id) || {}).eval_excluded || (siteFilter && !plates.has(r.vehicle_id))) rows.delete(k);
+  // Backlog 606: ruhend ist ein heutiger Zustand – Kosten aus Monaten davor fallen ebenfalls heraus; die Zahl solcher Fahrzeuge wird gemeldet
+  const dormantIds = new Set();
+  for (const [k, r] of rows) {
+    if ((plates.get(r.vehicle_id) || {}).eval_excluded && (r.hours > 0 || r.valued_items || r.unvalued_items || r.parts_estimate_net || r.external_estimate_net)) dormantIds.add(r.vehicle_id);
+    if ((plates.get(r.vehicle_id) || {}).eval_excluded || (siteFilter && !plates.has(r.vehicle_id))) rows.delete(k);
+  }
   const out = [...rows.values()].map((r) => {
     const v = plates.get(r.vehicle_id) || {};
     // Summe aus den gerundeten Spalten (18.10.2026: Zeile 4,99 + 1 + 0 ergab „Summe belegt“ 6)
@@ -146,11 +151,12 @@ export async function costReport(env, user, envName, query = {}) {
       vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site ? (label.get(siteKey(v.site)) || v.site) : null, month: r.month, cases_opened: r.cases_opened,
       // außer Betrieb genommen (z. B. im Jahr verkauft) kennzeichnen – Jahresabschluss (23.10.2026, Teilagent Kostenbericht)
       vehicle_active: v.active === 0 ? false : true,
-      hours: r2(r.hours), work_net: rate === null && !periods.length ? null : r2(r.work_net), parts_actual_net: r2(r.parts_actual_net), parts_estimate_net: r2(r.parts_estimate_net),
+      // Backlog 606: nur unbewertete Arbeitszeit (Satz-Verlauf vorhanden, aktueller Satz leer) → kein Betrag statt „0“ (wie Teile/Fremdleistungen)
+      hours: r2(r.hours), work_net: (rate === null && !periods.length) || (r.wu && !r.wv) ? null : r2(r.work_net), parts_actual_net: r2(r.parts_actual_net), parts_estimate_net: r2(r.parts_estimate_net),
       external_actual_net: r2(r.external_actual_net), external_estimate_net: r2(r.external_estimate_net),
       actual_net: r2(actual), valued_items: r.valued_items, estimate_net: r2(estimate), unvalued_items: r.unvalued_items, complete: r.unvalued_items === 0 && !(estimate > 0), late_items: r.late_items,
       // nur unbewertete Teile/Fremdleistungen in der Zeile → Spalte ohne Betrag (nie „0 €“), wie „–“ in der App (18.10.2026)
-      ...(r.pu && !r.pv ? { parts_unvalued_only: true } : {}), ...(r.eu && !r.ev ? { external_unvalued_only: true } : {}),
+      ...(r.wu && !r.wv ? { work_unvalued_only: true } : {}), ...(r.pu && !r.pv ? { parts_unvalued_only: true } : {}), ...(r.eu && !r.ev ? { external_unvalued_only: true } : {}),
     };
   }).sort((a, b) => (a.plate || a.vehicle_id).localeCompare(b.plate || b.vehicle_id) || a.month.localeCompare(b.month));
   const totals = out.reduce((t, r) => ({ actual_net: t.actual_net + r.actual_net, valued_items: t.valued_items + r.valued_items, estimate_net: t.estimate_net + r.estimate_net, unvalued_items: t.unvalued_items + r.unvalued_items, hours: t.hours + r.hours }),
@@ -189,7 +195,7 @@ export async function costReport(env, user, envName, query = {}) {
   const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates, label) : undefined;
   // Versicherungserstattungen (nur Leitung) getrennt ausgewiesen – werden NICHT von den Instandhaltungskosten abgezogen
   const claim_reimbursements = user && ['owner', 'fleet'].includes(user.role) ? await claimReimbursements(env, envName, from, to, vehicleFilter, plates) : undefined;
-  return { from, to, environment: envName, site: siteFilter ? sel.site : null, site_options: siteOptions, hourly_rate_net: rate, hourly_rate_periods: periods.map((x) => ({ valid_until: x.u, rate_net: x.r })), rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), valued_items: totals.valued_items, estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) },
+  return { from, to, environment: envName, site: siteFilter ? sel.site : null, site_options: siteOptions, hourly_rate_net: rate, hourly_rate_periods: periods.map((x) => ({ valid_until: x.u, rate_net: x.r })), ...(dormantIds.size ? { excluded_dormant: { vehicles: dormantIds.size } } : {}), rows: out, vehicles, sites, contract_costs, claim_reimbursements, totals: { actual_net: r2(totals.actual_net), valued_items: totals.valued_items, estimate_net: r2(totals.estimate_net), unvalued_items: totals.unvalued_items, hours: r2(totals.hours) },
     // Zuordnungsregeln und Abrufzeitpunkt wie /v1/kpi (Backlog 188, Jahresabschluss): im Januar nachgetragene Dezember-Rechnungen, rückdatierte
     // Arbeitszeit oder eine geänderte Vertragsrate ändern Werte vergangener Monate – Abnehmer (n8n/Buchhaltung) sehen, wann und wonach gerechnet wurde
     generated_at: new Date().toISOString(), definitions: COST_DEFINITIONS };
@@ -879,6 +885,10 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const others = (i, own) => [...(vDates.get(i.vehicle_id) || [])].filter((d) => d !== own).sort();
   for (const [d, items] of byDay) for (const i of items) i.other_dates = others(i, d);
   for (const i of [...overdue, ...inWork, ...unplanned]) i.other_dates = others(i, null);
+  // Backlog 608: Tage des fest gekoppelten Fahrzeugs (Stammliste) – ein Gespann fiele sonst an zwei Tagen aus; nur Hinweis, nichts wird verschoben
+  const cDates = (i, own) => (i.coupled ? [...(vDates.get(i.coupled.id) || [])].filter((d) => d !== own).sort() : []);
+  for (const [d, items] of byDay) for (const i of items) i.coupled_dates = cDates(i, d);
+  for (const i of [...overdue, ...inWork, ...unplanned]) i.coupled_dates = cDates(i, null);
   // Fällige Prüfungen/Wartung ohne Termin (nach Datum ODER nach km überschritten/bald fällig – gleiche Status wie die Prüftermin-Übersicht,
   // km-Vorwarnung nur mit eingestellter Schwelle). Ohne kommenden Plan-Termin und ohne offenen Werkstattauftrag (der steht oben als Auftrag).
   // Nur Anzeige: die App plant nichts selbst. Geplante Prüftermine im Zeitraum erhalten die km-Fälligkeit zur Anzeige.
@@ -886,6 +896,8 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const ovById = new Map(ov.rows.map((r) => [r.id, r]));
   for (const [, items] of byDay) for (const i of items) if (i.type === 'maintenance') {
     const o = ovById.get(i.id);
+    // Backlog 607: geplanter Prüftermin im Zeitraum, aber nach Fristende – Hinweis wie bei Aufträgen (vorher nur außerhalb des Zeitraums)
+    if (o && o.next_due_date && i.planned_date && i.planned_date > o.next_due_date) i.after_due_date = o.next_due_date;
     if (o) Object.assign(i, { status: o.status, next_due_km: o.next_due_km ?? null, km_remaining: o.km_remaining ?? null, km_status: o.km_status ?? null, ...(o.km_unclear ? { km_unclear: o.km_unclear, km_drop_at: o.km_drop_at || null } : {}) });
   }
   // Auftrag aus einem Prüftermin mit Termin nach dessen Frist (z. B. zweimal verschoben, weil das Fahrzeug nicht kam): Hinweis am Auftrag –
@@ -912,7 +924,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
       by_km: DUE.includes(r.km_status), past_planned_date: r.planned_date && r.planned_date < today ? r.planned_date : null, planned_after_due: lateBeyond(r) ? r.planned_date : null,
       ...(r.kind === 'Rückruf' && !r.last_done_date ? { recall_ref: r.evidence } : {}), ...(prevOpen(r) ? { prev_cycle_open: r.prev_cycle_open } : {}) }))
     .sort((a, b) => (b.status === 'ueberfaellig') - (a.status === 'ueberfaellig') || String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')) || String(a.plate).localeCompare(String(b.plate)));
-  for (const i of maintenance_due) i.other_dates = others(i, null);
+  for (const i of maintenance_due) { i.other_dates = others(i, null); i.coupled = coupled(i.vehicle_id); i.coupled_dates = cDates(i, null); }
   // Backlog 416: laufende Wartungs-/Full-Service-Verträge je Fahrzeug (nur Inhaber/Leitung – Verträge sind Geschäftsdaten), damit der Auftrag
   // nicht ungeprüft an die eigene Werkstatt geht; eine Abfrage nur, wenn Fälliges ohne Termin angezeigt wird
   if (maintenance_due.length && user && ['owner', 'fleet'].includes(user.role)) {

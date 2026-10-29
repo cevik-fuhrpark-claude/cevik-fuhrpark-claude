@@ -169,11 +169,16 @@ function computeHuSpRaw(vehicle, events, { today, warnDays = SETTING_DEFAULTS.ma
         // Nachweis (Plakette/Beleg) wird nie übergangen: passt er zur ersten SP, gilt er; sonst Widerspruch → ungeklärt (19.10.2026)
         if (spDoc && spDoc.slice(0, 7) === firstSpDue.slice(0, 7)) return useDoc('sp_doc_matches', 'Fälligkeit laut Nachweis (Plakette/Beleg) stimmt mit der Berechnung überein.');
         if (spDoc) return firstConflict();
-        sp.status = 'erste_sp_kuenftig'; sp.prognosis = firstSpDue;
-        note(sp, 'sp_starts_later', `SP-Pflicht beginnt erst; erste SP ${firstSpMonths} Monate nach Erstzulassung (Prognose).`, { m: firstSpMonths });
-        return { hu, sp, ...RULE_INFO };
+        // Backlog 607 (Blickwinkel „Prüftermine des nächsten Monats planen“): innerhalb der Vorwarnzeit gilt dieselbe Frist, die ab dem Folgetag
+        // als verbindlich verstrichen behandelt wird, schon als „bald fällig“ (vorher sprang die erste SP von „künftig“ direkt auf „überfällig“
+        // und fehlte in „Fällig bis …“, „Fällig – ohne Termin“ und im Agentenbefund) – weiter unten wie die verstrichene Frist ausgewertet
+        if (statusFor(firstSpDue, today, warnDays) === 'ok') {
+          sp.status = 'erste_sp_kuenftig'; sp.prognosis = firstSpDue;
+          note(sp, 'sp_starts_later', `SP-Pflicht beginnt erst; erste SP ${firstSpMonths} Monate nach Erstzulassung (Prognose).`, { m: firstSpMonths });
+          return { hu, sp, ...RULE_INFO };
+        }
       }
-      // Erste SP-Frist ist verstrichen, bevor die SP 6 Monate nach dieser HU greift (HU etwas vor dem Turnus): die erste SP ist fällig
+      // Erste SP-Frist ist verstrichen (oder in der Vorwarnzeit, Backlog 607), bevor die SP 6 Monate nach dieser HU greift (HU etwas vor dem Turnus): die erste SP ist fällig
       // (18.10.2026: stand vorher dauerhaft auf „erste SP künftig“ mit vergangener Prognose – die versäumte erste SP wurde nie gemeldet)
       const firstDone = sps.filter((x) => x.done_date >= prevMonthStart(firstSpDue));
       if (firstDone.length) {

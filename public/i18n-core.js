@@ -619,6 +619,7 @@ const NEXT_ACTIONS = [
   ['Prüftermin vereinbaren; Einsatzfähigkeit fachlich prüfen. Kein automatisches Verschieben.', 'Домовтеся про дату огляду; фахово перевірте придатність до експлуатації. Без автоматичного перенесення.', 'Arrange an inspection date; have roadworthiness checked by an expert. No automatic postponement.'],
   ['Geplanten Termin wahrnehmen; Einsatzfähigkeit fachlich prüfen.', 'Дотримайтеся запланованої дати; фахово перевірте придатність до експлуатації.', 'Keep the planned appointment; have roadworthiness checked by an expert.'],
   ['Geplanten Termin wahrnehmen und Durchführung belegen.', 'Дотримайтеся запланованої дати і підтвердьте виконання.', 'Keep the planned appointment and record evidence of completion.'],
+  ['Geplanter Termin liegt nach dem Fristende – früheren Termin vereinbaren.', 'Запланована дата пізніша за кінцевий термін – домовтеся про ранішу.', 'The planned date is after the deadline – arrange an earlier one.'],
   ['Prüfbericht/Fahrzeugschein prüfen und fehlende Angaben in der Fahrzeugakte nachtragen.', 'Перевірте протокол огляду/техпаспорт і доповніть відсутні дані в картці транспорту.', 'Check the inspection report/registration document and add missing details to the vehicle file.'],
   ['Gültiges Dokument beschaffen und in der Fahrzeugakte hinterlegen.', 'Отримайте дійсний документ і збережіть у картці транспорту.', 'Obtain a valid document and store it in the vehicle file.'],
   ['Verlängerung/Nachfolgedokument veranlassen.', 'Організуйте продовження/новий документ.', 'Arrange renewal or a successor document.'],
@@ -1107,6 +1108,9 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 589: Prüftermin-Import – erlaubte Prüfarten bei „Prüfart unbekannt“
 // Backlog 593: ausgelagerter App-Bereich konnte nicht geladen werden (z. B. Funkloch beim ersten Aufruf)
 // Backlog 605: gekoppeltes Fahrzeug im Sperr-Hinweis (Hinweisliste)
+// Backlog 606: Kostenbericht – Schnellwahl Vormonat (Monatsprüfung)
+// Backlog 607: geplanter Prüftermin nach Fristende
+// Backlog 608: Werkstattplan – Termine des gekoppelten Fahrzeugs
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

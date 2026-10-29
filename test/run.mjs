@@ -19162,7 +19162,9 @@ await test('Backlog 211 (Totalschaden): Werkstattauftrag „Ohne Reparatur beend
   eq(d.case.status, 'abgelehnt'); ok(d.case.closed_at, 'abgeschlossen');
   const ev = d.events.find((e) => e.action === 'withdraw_order'); ok(ev, 'Verlauf'); eq(ev.from_status, 'werkstatt_freigegeben'); eq(ev.note, 'Totalschaden laut Gutachten'); eq(ev.payload.open_items_left, 1);
   ok(d.work_entries && d.work_entries.length === 1 || (d.costs && d.costs.unvalued_items >= 0), 'Arbeitszeit bleibt');
-  const nk = env.DB.db.prepare(`SELECT u.role FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.case_id=? AND n.kind='withdrawn'`).all(cid).map((r) => r.role);
+  // Backlog 609: Werkstatt-Hinweis ohne Vorgangslink (kein Zugriff mehr) – über den Text (Vorgangsnummer) zuordnen
+  const nk = env.DB.db.prepare(`SELECT u.role FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.kind='withdrawn' AND (n.case_id=? OR (n.case_id IS NULL AND u.role='workshop' AND instr(n.body, ?) > 0))`).all(cid, d.case.case_no).map((r) => r.role);
+  ok(!env.DB.db.prepare(`SELECT 1 FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.kind='withdrawn' AND n.case_id=? AND u.role='workshop'`).get(cid), 'Werkstatt-Hinweis ohne Link');
   ok(nk.includes('workshop') && nk.includes('dispatch'), 'Werkstatt und Disposition informiert: ' + nk.join(','));
   ok((await users.ws.get('/api/me/notify-prefs')).data.kinds.includes('withdrawn'), 'abschaltbar (Werkstatt)');
   ok((await users.driver.get('/api/me/notify-prefs')).data.kinds.includes('withdrawn'), 'abschaltbar (Melder-Art)');
@@ -23305,7 +23307,7 @@ await test('Backlog 413 (Blickwinkel „Jahresabschluss: Kosten 2026 für die St
   const y = Number(BERLIN_TODAY.slice(0, 4)); const ym = BERLIN_TODAY.slice(0, 7);
   for (const [f, to] of [[`${y}-01`, ym], [`${y - 1}-01`, `${y - 1}-12`]]) { const r = await U.fleet.get(`/api/reports/costs?from=${f}&to=${to}`); eq(r.status, 200, f); eq(`${r.data.from}/${r.data.to}`, `${f}/${to}`); }
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("const costQuick = [['year', `${cy}-01`, bYm()], ['prev', `${Number(cy) - 1}-01`, `${Number(cy) - 1}-12`], ['12m', bYm(11), bYm()]];") && app.includes("$$('[data-crq]').forEach((bt) =>"), 'Oberfläche');
+  ok(app.includes("const costQuick = [['prevm', bYm(1), bYm(1)], ['year', `${cy}-01`, bYm()], ['prev', `${Number(cy) - 1}-01`, `${Number(cy) - 1}-12`], ['12m', bYm(11), bYm()]];") && app.includes("$$('[data-crq]').forEach((bt) =>"), 'Oberfläche');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['crq_year', 'crq_prev', 'crq_12m']) ok(STRINGS[l][x], `${x} ${l}`); ok(STRINGS[l].help_costs_s.includes(STRINGS[l].crq_12m), 'Hilfe ' + l); }
 });
@@ -24836,7 +24838,8 @@ await test('Backlog 467 (Blickwinkel „Sporadische Störung – Werkstatt finde
   eq(rb.kind, 'rejected'); eq(rb.note, 'Kein Mangel – Stecker nachgedrückt'); eq(vi.recent_closed_truncated, false);
   // Werkstatt: nur Vorgänge des eigenen Standorts (abgelehnte Meldung ohne Werkstatt nicht); Fahrer: keine Fahrzeug-Kurzinfo; Lesezugriff sieht sie
   eq((await cmd(U.fleet, n, 'approve_repair', { workshop_site: 'DORTMUND' }, 'prüfen')).status, 200);
-  eq((await U.ws.get(`/api/cases/${n}`)).data.vehicle_info.recent_closed.map((x) => x.id).join(), a, 'Werkstatt: nur eigener Standort');
+  { const wr = (await U.ws.get(`/api/cases/${n}`)).data.vehicle_info.recent_closed; eq(wr.length, 1, 'Werkstatt: nur eigener Standort'); eq(wr[0].kind, 'withdrawn'); eq(wr[0].note, 'Kein Fehler feststellbar, Fehlerspeicher leer');
+    eq(wr[0].id, null, 'Backlog 609: ohne Reparatur beendet → für die Werkstatt ohne Link (kein Zugriff)'); ok([403, 404].includes((await U.ws.get(`/api/cases/${a}`)).status), 'Werkstatt öffnet ihn nicht'); }
   ok([403, 404].includes((await U.wsMuc.get(`/api/cases/${n}`)).status), 'fremde Werkstatt ohne Zugriff');
   ok(!('vehicle_info' in (await U.driver.get(`/api/cases/${n}`)).data), 'Fahrer ohne Fahrzeug-Kurzinfo');
   eq((await U.viewer.get(`/api/cases/${n}`)).data.vehicle_info.recent_closed.length, 2, 'Lesezugriff');
@@ -26273,7 +26276,154 @@ await test('Backlog 605 (Blickwinkel „Disposition, erster Tag“): Sperr-Hinwe
   ok(STRINGS.de.help_dispo_s.includes('Welche Hinweise (und Push) die Disposition bekommt'), 'DE Hinweis-Absatz');
   // Hinweis-Absatz deckt die Empfängerregeln ab (src/notify.js: dispatch bei Wartet auf Teile, Termin geändert, ohne Reparatur beendet)
   const nt = fs.readFileSync(new URL('../src/notify.js', import.meta.url), 'utf8');
-  ok(/waiting_parts'\) add\(usersByRole\(\['dispatch'\]\)\)/.test(nt) && /case 'withdrawn':[\s\S]{0,300}usersByRole\(\['dispatch'\]\)/.test(nt), 'Empfängerregeln unverändert – sonst Hilfe anpassen');
+  ok(/waiting_parts'\) add\(usersByRole\(\['dispatch'\]\)\)/.test(nt) && /case 'withdrawn':[\s\S]{0,600}usersByRole\(\['dispatch'\]\)/.test(nt), 'Empfängerregeln unverändert – sonst Hilfe anpassen');
+});
+
+await test('Backlog 606 (Blickwinkel „Inhaber prüft die Kosten des Vormonats“): Arbeitszeit nur mit fehlendem aktuellem Satz → kein Betrag statt 0 (Bericht, CSV), Kurzregel nennt Arbeitstag/Erfassung, Schnellwahl „Vormonat“; DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld();
+  const day = (n) => { const d = new Date(BERLIN_TODAY + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const { costReport, costReportCsv } = await import('../src/reports.js');
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: 80 })).status, 200);
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: 100, hourly_rate_keep_until: day(-40) })).status, 200, 'Verlauf');
+  const r0 = await U.own.put('/api/settings', { workshop_hourly_rate_net: '' }); eq(r0.status, 200, 'Satz geleert ' + JSON.stringify(r0.data));
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'record_work', { work_date: BERLIN_TODAY, hours: 2, description: 'Diagnose' })).status, 200);
+  const m = BERLIN_TODAY.slice(0, 7);
+  let rep = await costReport(e, { role: 'owner' }, 'test', { from: m, to: m });
+  let row = rep.rows.find((x) => x.vehicle_id === V1 && x.month === m);
+  ok(rep.hourly_rate_periods.length >= 1, 'Verlauf vorhanden');
+  eq(row.hours, 2); eq(row.work_net, null, 'nur unbewertete Arbeitszeit → kein Betrag'); eq(row.work_unvalued_only, true); eq(row.unvalued_items, 1); eq(row.actual_net, 0);
+  const line = costReportCsv(rep).split('\n').find((l) => l.includes('SZ-YC 5513'));
+  const head = costReportCsv(rep).split('\n')[0].replace(/^﻿/, '').split(';'); const cells = line.split(';');
+  const wi = head.findIndex((h) => /Arbeitszeit/.test(h) && /netto/i.test(h)); ok(wi > 0, 'Spalte Arbeitszeit netto ' + head.join('|'));
+  eq(cells[wi], '', 'CSV-Zelle leer statt 0');
+  // mit Satz: wieder bewertet (Flag fehlt)
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: 90 })).status, 200);
+  rep = await costReport(e, { role: 'owner' }, 'test', { from: m, to: m }); row = rep.rows.find((x) => x.vehicle_id === V1 && x.month === m);
+  eq(row.work_net, 180); eq(row.work_unvalued_only, undefined);
+  eq(rep.excluded_dormant, undefined, 'ohne ruhende kein Hinweis');
+  // ruhend gesetzt: Kosten verschwinden (Inhaberentscheidung), der Bericht meldet aber die Zahl
+  e.DB.db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(V1);
+  rep = await costReport(e, { role: 'owner' }, 'test', { from: m, to: m });
+  ok(!rep.rows.some((x) => x.vehicle_id === V1), 'ruhend nicht in den Zeilen'); eq(JSON.stringify(rep.excluded_dormant), JSON.stringify({ vehicles: 1 }));
+  e.DB.db.prepare('UPDATE vehicles SET eval_excluded=0 WHERE id=?').run(V1);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(app.includes("tn('cost_dormant_hidden', rep.excluded_dormant.vehicles)"), 'Hinweis ruhende');
+  ok(app.includes("const costQuick = [['prevm', bYm(1), bYm(1)],") && app.includes(".replace('{m}', fmtMonth(f))"), 'Schnellwahl Vormonat');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].crq_prevm && STRINGS[l].crq_prevm.includes('{m}'), 'crq_prevm ' + l);
+    ok(STRINGS[l].help_costs_s.includes(STRINGS[l].crq_prevm.replace(' {m}', '')), 'Hilfe nennt Vormonat ' + l);
+  }
+  ok(/Arbeitstag/.test(STRINGS.de.cost_rules) && /Erfassung/.test(STRINGS.de.cost_rules) && !/Buchungsdatum/.test(STRINGS.de.cost_rules), 'DE Kurzregel');
+  ok(/днем роботи/.test(STRINGS.uk.cost_rules) && /work date/.test(STRINGS.en.cost_rules), 'UK/EN Kurzregel');
+});
+
+await test('Backlog 607 (Blickwinkel „Fuhrparkleitung plant am 25. die Prüftermine des nächsten Monats“): erste SP aus der Erstzulassung wird in der Vorwarnzeit „bald fällig“ mit Frist (vorher erst am Folgetag „überfällig“), belegte SP im Vormonat zählt, Nachweis-Regeln unverändert', async () => {
+  const { computeHuSp } = await import('../src/inspection_rules.js');
+  const v = { kind: 'lkw', zgm_class: 'ueber_12', first_registration: '2024-03-15' }; // erste SP 30 Monate → 30.09.2026
+  const ev = [{ kind: 'HU', done_date: '2025-03-10' }, { kind: 'HU', done_date: '2026-02-20' }]; // SP aus HU-Zyklus erst 31.08.2026 < 30.09. → erste SP maßgeblich
+  let r = computeHuSp(v, ev, { today: '2026-08-15', warnDays: 30 }).sp;
+  eq(r.status, 'erste_sp_kuenftig', 'außerhalb der Vorwarnzeit Prognose'); eq(r.due ?? null, null);
+  r = computeHuSp(v, ev, { today: '2026-09-05', warnDays: 30 }).sp;
+  eq(r.status, 'bald_faellig', 'in der Vorwarnzeit'); eq(r.due, '2026-09-30'); eq(r.due_basis, 'berechnet'); ok(r.note_codes.some((n) => n.code === 'sp_first_due'));
+  r = computeHuSp(v, ev, { today: '2026-09-30', warnDays: 30 }).sp; eq(r.status, 'bald_faellig', 'am Fristtag'); eq(r.due, '2026-09-30');
+  r = computeHuSp(v, ev, { today: '2026-10-01', warnDays: 30 }).sp; eq(r.status, 'ueberfaellig', 'Folgetag wie bisher'); eq(r.due, '2026-09-30');
+  // SP im Vormonat (August) durchgeführt → in Ordnung, keine Warnung
+  r = computeHuSp(v, [...ev, { kind: 'SP', done_date: '2026-08-20' }], { today: '2026-09-05', warnDays: 30 }).sp; eq(r.status, 'ok', 'SP im Vormonat belegt');
+  // Vorwarnung 0 Tage (Einstellung): erst am Fristtag „bald fällig“
+  eq(computeHuSp(v, ev, { today: '2026-09-05', warnDays: 0 }).sp.status, 'erste_sp_kuenftig'); eq(computeHuSp(v, ev, { today: '2026-09-30', warnDays: 0 }).sp.status, 'bald_faellig');
+  // passender Nachweis gilt, abweichender → ungeklärt (unverändert)
+  r = computeHuSp(v, ev, { today: '2026-09-05', warnDays: 30, documented: { SP: { due: '2026-09-30' } } }).sp; eq(r.due_basis, 'nachweis'); ok(r.status !== 'ungeklaert');
+  r = computeHuSp(v, ev, { today: '2026-09-05', warnDays: 30, documented: { SP: { due: '2026-12-31' } } }).sp; eq(r.status, 'ungeklaert');
+});
+
+await test('Backlog 607 (2): Prüftermin nach Fristende geplant – einzeln und als Sammeltermin gespeichert, aber gemeldet (`after_due`), Werkstattplan zeigt den Hinweis auch im Zeitraum; DE/UK/EN', async () => {
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const V2 = 'VIN:WDB9630051L917317';
+  const a = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/maintenance`, { kind: 'UVV', next_due_date: day(10), evidence: 'UVV-Nachweis' }); eq(a.status, 201, JSON.stringify(a.data));
+  const b = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V2)}/maintenance`, { kind: 'UVV', next_due_date: day(30), evidence: 'UVV-Nachweis' }); eq(b.status, 201);
+  // einzeln: vor der Frist kein Hinweis, danach mit Frist
+  let r = await U.fleet.post(`/api/maintenance/${a.data.id}/plan`, { planned_date: day(5) }); eq(r.status, 200); eq(r.data.after_due, undefined, 'vor der Frist');
+  r = await U.fleet.post(`/api/maintenance/${a.data.id}/plan`, { planned_date: day(12) }); eq(r.status, 200, 'trotzdem gespeichert'); eq(r.data.after_due, day(10)); eq(r.data.planned_date, day(12));
+  r = await U.fleet.post(`/api/maintenance/${a.data.id}/plan`, { planned_date: day(10) }); eq(r.data.after_due, undefined, 'am Fristtag erlaubt');
+  // Sammeltermin: nur der Eintrag mit früherer Frist wird gemeldet
+  r = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: day(20), ids: [a.data.id, b.data.id], replace: true }); eq(r.status, 200, JSON.stringify(r.data));
+  const pa = r.data.planned.find((x) => x.id === a.data.id), pb = r.data.planned.find((x) => x.id === b.data.id);
+  eq(pa.after_due, day(10)); eq(pb.after_due, undefined);
+  // Werkstattplan: Termin im Zeitraum, aber nach Fristende → after_due_date am Eintrag
+  const p = (await U.fleet.get('/api/workshop/plan?days=30')).data;
+  const items = p.days.flatMap((d) => d.items).filter((i) => i.type === 'maintenance');
+  eq(items.find((i) => i.id === a.data.id).after_due_date, day(10)); eq(items.find((i) => i.id === b.data.id).after_due_date, undefined);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(app.includes('data-afterdue>') && app.includes('data-mbafterdue>') && app.includes("t('plan_after_due')"), 'Oberfläche zeigt die Hinweise');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].plan_after_due.includes('{d}') && STRINGS[l].plan_after_due.includes('{due}'), l); ok(STRINGS[l].mb_after_due, l); }
+});
+
+await test('Backlog 608 (b): Werkstattplan nennt Termine des fest gekoppelten Fahrzeugs (`coupled_dates`) – Gespann fiele an zwei Tagen aus; nur Hinweis, Hilfe Disposition; DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,kind,site,active,eval_excluded,created_at,updated_at) VALUES('VIN:AH608','AH608','SZ-AH 608','anhaenger','Dortmund',1,0,?,?)`).run(now, now);
+  db.prepare(`UPDATE vehicles SET trailer_plate='SZ-AH 608' WHERE id=?`).run(V1);
+  const a = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/maintenance`, { kind: 'UVV', next_due_date: day(40), evidence: 'UVV-Nachweis' }); eq(a.status, 201);
+  const b = await U.fleet.post(`/api/vehicles/${encodeURIComponent('VIN:AH608')}/maintenance`, { kind: 'UVV', next_due_date: day(40), evidence: 'UVV-Nachweis' }); eq(b.status, 201);
+  eq((await U.fleet.post(`/api/maintenance/${a.data.id}/plan`, { planned_date: day(3) })).status, 200);
+  eq((await U.fleet.post(`/api/maintenance/${b.data.id}/plan`, { planned_date: day(9) })).status, 200);
+  let p = (await U.fleet.get('/api/workshop/plan?days=14')).data;
+  const it = (id) => p.days.flatMap((d) => d.items).find((i) => i.id === id);
+  eq(JSON.stringify(it(a.data.id).coupled_dates), JSON.stringify([day(9)]), 'Lkw nennt Termin des Anhängers'); eq(it(a.data.id).coupled.plate, 'SZ-AH 608');
+  eq(JSON.stringify(it(b.data.id).coupled_dates), JSON.stringify([day(3)]), 'Anhänger nennt Termin des Lkw');
+  // gleicher Tag → kein Hinweis
+  eq((await U.fleet.post(`/api/maintenance/${b.data.id}/plan`, { planned_date: day(3) })).status, 200);
+  p = (await U.fleet.get('/api/workshop/plan?days=14')).data;
+  eq(it(a.data.id).coupled_dates.length, 0, 'gleicher Tag'); eq(it(b.data.id).coupled_dates.length, 0);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(app.includes("t('plan_coupled_dates')") && app.includes('data-cdates'), 'Anzeige im Plan');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].plan_coupled_dates.includes('{v}'), l); ok(STRINGS[l].help_dispo_s.includes('🔗 SZ-… ') && STRINGS[l].help_dispo_s.includes(STRINGS[l].plan_coupled_dates.replace('{v} ', '')), 'Hilfe ' + l); }
+});
+
+await test('Backlog 608 (a): geplanter Prüftermin nach Fristende zählt nicht als eingeplant (Filter „ohne Termin“), Agent rät „früheren Termin vereinbaren“ statt „wahrnehmen“; Übersetzung', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const a = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/maintenance`, { kind: 'UVV', next_due_date: day(10), evidence: 'UVV-Nachweis' }); eq(a.status, 201);
+  const noplan = async () => { const r = await U.fleet.get('/api/maintenance?format=csv&filter=noplan'); const txt = typeof r.data === 'string' ? r.data : new TextDecoder().decode(r.data); return txt.includes(';UVV;') ? [a.data.id] : []; };
+  const f = () => db.prepare(`SELECT next_action FROM agent_findings WHERE finding_code='MAINTENANCE_DUE' AND vehicle_id=? AND status='offen'`).get(V1);
+  ok((await noplan()).includes(a.data.id), 'ohne Termin');
+  eq((await U.fleet.post(`/api/maintenance/${a.data.id}/plan`, { planned_date: day(5) })).status, 200);
+  ok(!(await noplan()).includes(a.data.id), 'Termin vor der Frist → eingeplant');
+  await U.fleet.post('/api/agent/run', {}); eq(f().next_action, 'Geplanten Termin wahrnehmen und Durchführung belegen.');
+  eq((await U.fleet.post(`/api/maintenance/${a.data.id}/plan`, { planned_date: day(14) })).status, 200);
+  ok((await noplan()).includes(a.data.id), 'Termin nach der Frist → weiter „ohne Termin“');
+  await U.fleet.post('/api/agent/run', {}); eq(f().next_action, 'Geplanter Termin liegt nach dem Fristende – früheren Termin vereinbaren.');
+  const src = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(src.includes("['Geplanter Termin liegt nach dem Fristende – früheren Termin vereinbaren.', 'Запланована дата"), 'UK/EN-Übersetzung des nächsten Schritts');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('r.planned_date >= ov.today && !(r.next_due_date && r.planned_date > r.next_due_date)'), 'Oberfläche: gleiche Regel für „ohne Termin“');
+});
+
+await test('Backlog 609 (Blickwinkel „Auftrag ohne Reparatur beendet – was sieht die Werkstatt?“): keine toten Links – alte Werkstatt-Hinweise ausgeblendet, neuer Hinweis ohne Vorgangslink, Akte/Zeitleiste ohne den beendeten Auftrag; Melder und Leitung unverändert', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db;
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1.5, description: 'Fehlersuche' })).status, 200);
+  ok(db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND case_id=? AND hidden_at IS NULL').get(U.ws.id, id).n > 0, 'Werkstatt hatte Hinweise zum Auftrag');
+  eq((await cmd(U.fleet, id, 'withdraw_order', {}, 'Totalschaden')).status, 200);
+  const wn = (await U.ws.get('/api/notifications')).data.notifications;
+  ok(!wn.some((x) => x.case_id === id), 'keine Werkstatt-Hinweise mit Link auf den beendeten Auftrag');
+  ok(wn.some((x) => x.kind === 'withdrawn' && x.case_id === null), 'Hinweis „ohne Reparatur beendet“ ohne Link');
+  ok([403, 404].includes((await U.ws.get(`/api/cases/${id}`)).status), 'Werkstatt hat keinen Zugriff');
+  const vd = (await U.ws.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data;
+  for (const c of vd.cases) eq((await U.ws.get(`/api/cases/${c.id}`)).status, 200, 'Akte verlinkt nur Öffenbares ' + c.case_no);
+  ok(!vd.cases.some((c) => c.id === id), 'Akte ohne beendeten Auftrag');
+  const tl = (await U.ws.get(`/api/vehicles/${encodeURIComponent(V1)}/timeline`)).data;
+  ok(Array.isArray(tl.items) && !tl.items.some((x) => x.case_id === id), 'Zeitleiste ohne beendeten Auftrag');
+  // Melder (Fahrer) behält Link, Leitung sieht den Auftrag
+  ok((await U.driver.get('/api/notifications')).data.notifications.some((x) => x.case_id === id && x.kind === 'withdrawn'), 'Melder mit Link');
+  ok((await U.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.cases.some((c) => c.id === id), 'Leitung sieht ihn in der Akte');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("${o.id ? `<a href=\"#/cases/${esc(o.id)}\">${esc(o.case_no)}</a>` : `<b>${esc(o.case_no)}</b>`}"), 'Kurzinfo ohne Link bei fehlender Kennung');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

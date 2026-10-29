@@ -177,7 +177,8 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // Vorgänge, die die Person öffnen darf – Verweise (Kontrolle, Reifenereignis) nur darauf verlinken (22.10.2026: Werkstatt sah in Akte/Zeitleiste
   // „Details“-Links auf Vorgänge einer anderen Werkstatt → „Vorgang nicht gefunden“)
   const okCase = ['owner', 'fleet', 'dispatch', 'viewer'].includes(user.role) ? null : new Set(allCases.filter((c) => caseAccess(user, c)).map((c) => c.id));
-  if (user.role === 'workshop') caseRows = caseRows.filter((c) => c.workshop_site === user.workshop_site && c.status !== 'gemeldet');
+  // Backlog 609: „ohne Reparatur beendete“ Aufträge (abgelehnt) darf die Werkstatt nicht öffnen (caseAccess) – nicht mehr als toter Link in Akte/Zeitleiste
+  if (user.role === 'workshop') caseRows = caseRows.filter((c) => c.workshop_site === user.workshop_site && c.status !== 'gemeldet' && c.status !== 'abgelehnt');
   caseRows = caseRows.map(({ reporter_id: _r, reporter_role: _rr, suggested_workshop_site: _s, ...c }) => c);
   const inspections = (await env.DB.prepare(`SELECT i.id, i.kind, i.result, i.odometer_km, i.created_at, i.received_at, i.case_id, u.display_name AS performed_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS performed_by_role
     FROM inspections i JOIN users u ON u.id=i.performed_by WHERE i.vehicle_id=? AND i.environment=? ORDER BY i.created_at DESC LIMIT ?`).bind(vehicleId, envName, inspCap).all()).results;
@@ -995,7 +996,7 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
 // Geplanter Werkstatttermin für eine Prüfung (ersetzt keine Durchführung, verschiebt keine Frist)
 export async function planMaintenance(env, user, ruleId, body) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
-  const r = await env.DB.prepare('SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, v.active FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?').bind(ruleId).first();
+  const r = await env.DB.prepare('SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, m.next_due_date, v.active FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?').bind(ruleId).first();
   if (!r) throw notFound();
   // gleiche Prüfung wie Werkstatttermine: echtes Kalenderdatum, nicht mehr als 1 Jahr zurück / 2 Jahre voraus
   const d = body.planned_date ? planDate(str(body.planned_date, { max: 10, field: 'Termin' })) : null;
@@ -1005,7 +1006,8 @@ export async function planMaintenance(env, user, ruleId, body) {
   if (d && ONE_TIME_KINDS.includes(r.kind) && r.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
   await env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=?').bind(d, nowIso(), ruleId).run();
   await audit(env, user.id, 'maintenance.plan', r.vehicle_id, { kind: r.kind, planned_date: d });
-  return { ok: true, planned_date: d };
+  // Backlog 607: Termin nach Fristende wird gespeichert (die Werkstatt hat ggf. nichts früher frei), aber gemeldet – nichts wird verschoben
+  return { ok: true, planned_date: d, ...(d && r.next_due_date && d > r.next_due_date ? { after_due: r.next_due_date } : {}) };
 }
 
 // Sammeltermin (Backlog 235, Blickwinkel „Fuhrparkleitung plant die UVV aller Fahrzeuge an einem Tag“): denselben Termin für mehrere
@@ -1070,7 +1072,7 @@ export async function planMaintenanceBatch(env, user, body) {
   const ids = [...new Set(raw)];
   const replace = flag(body.replace);
   const today = berlinDate();
-  const rows = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, m.planned_date, v.active, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
+  const rows = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, m.planned_date, m.next_due_date, v.active, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
     WHERE m.id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(ids.filter((x) => !x.startsWith('husp:')))).all()).results || [];
   const byId = new Map(rows.map((r) => [r.id, r]));
   const skipped = []; const planned = []; let unchanged = 0;
@@ -1083,7 +1085,7 @@ export async function planMaintenanceBatch(env, user, body) {
     if (ONE_TIME_KINDS.includes(r.kind) && r.last_done_date) { skipped.push({ ...base, code: 'already_done' }); continue; }
     if (r.planned_date === d) { unchanged++; continue; }
     if (r.planned_date && r.planned_date >= today && !replace) { skipped.push({ ...base, code: 'planned_other', planned_date: r.planned_date }); continue; }
-    planned.push({ ...base, previous: r.planned_date || null });
+    planned.push({ ...base, previous: r.planned_date || null, ...(r.next_due_date && d > r.next_due_date ? { after_due: r.next_due_date } : {}) });
   }
   if (planned.length) {
     const now = nowIso();

@@ -378,7 +378,8 @@ export function maintFilterRows(ov, filter, dueBy = null) {
   const sel = { all: () => true, gaps: () => false, due: inWin, ueberfaellig: (r) => r.status === 'ueberfaellig', ungeklaert: (r) => r.status === 'ungeklaert',
     km: (r) => r.km_status === 'ueberfaellig' || r.km_status === 'faellig',
     fc30: (r) => !!(r.km_forecast && r.km_forecast.date && Date.parse(r.km_forecast.date) - Date.parse(today) <= 30 * 86400000),
-    noplan: (r) => (inWin(r) || kmUnclearDateDue(r)) && !(r.planned_date && r.planned_date >= today) }[filter];
+    // Backlog 608: Termin nach dem Fristende zählt nicht als eingeplant (bleibt in „ohne Termin“ sichtbar)
+    noplan: (r) => (inWin(r) || kmUnclearDateDue(r)) && !(r.planned_date && r.planned_date >= today && !(r.next_due_date && r.planned_date > r.next_due_date)) }[filter];
   return sel ? ov.rows.filter(sel) : ov.rows;
 }
 

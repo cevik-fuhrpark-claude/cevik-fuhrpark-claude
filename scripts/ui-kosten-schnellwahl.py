@@ -18,13 +18,14 @@ with sync_playwright() as p:
     if s['s']==200: api('POST','/api/invite/accept',{'token':s['d']['invite_token'],'password':PW})
     check(api('POST','/api/login',{'username':'ks.inhaber','password':PW})['s']==200,'Anmeldung Inhaber')
     ym=a.evaluate("() => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()).slice(0, 7)"); y=int(ym[:4])
+    pm=(f'{y-1}-12' if ym[5:]=='01' else f'{y}-{int(ym[5:])-1:02d}')  # Backlog 606: Vormonat
     for lang in ['de','uk','en']:
       for w,h in [(390,844),(820,1180),(1366,900)]:
         c=br.new_context(viewport={'width':w,'height':h}); q=c.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'ks.inhaber','password':PW},None]); q.evaluate(JS,['PATCH','/api/me',{'language':lang},None])
         q.goto(B+'/#/costs'); q.wait_for_selector('#crq',timeout=15000)
         check(q.get_attribute('[data-crq="12m"]','aria-pressed')=='true',f'{lang}/{w}: Standard = letzte 12 Monate markiert')
-        for k,f,t in [('prev',f'{y-1}-01',f'{y-1}-12'),('year',f'{y}-01',ym),('12m',None,ym)]:
+        for k,f,t in [('prevm',pm,pm),('prev',f'{y-1}-01',f'{y-1}-12'),('year',f'{y}-01',ym),('12m',None,ym)]:
             q.click(f'[data-crq="{k}"]'); q.wait_for_function(f"() => document.querySelector('[data-crq=\"{k}\"]')?.getAttribute('aria-pressed') === 'true'",timeout=15000)
             fr=q.input_value('#cr input[name=from]'); to=q.input_value('#cr input[name=to]')
             check((f is None or fr==f) and to==t,f'{lang}/{w}: {k} → {fr}–{to}')

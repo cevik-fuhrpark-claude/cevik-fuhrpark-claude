@@ -77,6 +77,7 @@ UI-Schichtwechsel am Werkstatt-Tablet (Konflikt, Eingaben behalten, 401 leert Of
 UI-Disposition im Tagesgeschäft (Rückkehr ungeklärt, Ruhend, Überfällig-Link) und Restbestand ausbuchen|ui-dispo-tagesgeschaeft.py|/tmp/cfp-dispo-tag.log
 UI-Disposition erster Tag (Rückkehr ungeklärt in Reparatur, neue unbestätigte Meldungen)|ui-dispo-erster-tag.py|/tmp/cfp-dispo-erster-tag.log
 UI-Disposition Gespann im Sperr-Hinweis, „überfällig“ in der Fahrzeugliste (Backlog 605)|ui-dispo-gespann-hinweis.py|/tmp/cfp-dispo-gespann-hinweis.log
+UI-Werkstattplan: Prüftermin nach Fristende, Termine des gekoppelten Fahrzeugs (Backlog 607/608)|ui-plan-frist-gespann.py|/tmp/cfp-plan-frist-gespann.log
 UI-Fahrzeugakte „Was fehlt noch?“ (Datenqualität je Fahrzeug)|ui-akte-wasfehlt.py|/tmp/cfp-akte-wasfehlt.log
 UI-Reifen-Saison, Bußgeld-Tatzeit ändern, Kosten-Einzelpositionen|ui-saison-bussgeld-kosten.py|/tmp/cfp-saison.log
 UI-Springer: Abfahrtskontrolle zeigt Sperre (auch fremdes Fahrzeug), Startseite → Auslesungen|ui-springer-sperre.py|/tmp/cfp-springer.log
@@ -252,7 +253,7 @@ UI-Verträge „Ende/Kündigung bis“ (Quartalsende, eigenes Datum, alle Termin
 UI-Unterweisung für mehrere Fahrer (ohne Auswahl Hinweis, alle erfasst mit Link, erneut ohne Dubletten, Akte), DE/UK/EN 390/820/1366|ui-unterweisung-mehrere.py|/tmp/cfp-unterweisung-mehrere.log
 UI-Führerscheinkontrolle für mehrere Fahrer (Fällige auswählen, Link je Fahrer, danach aktuell, erneut ohne Dubletten), DE/UK/EN 390/820/1366|ui-fs-kontrolle-mehrere.py|/tmp/cfp-fs-kontrolle-mehrere.log
 UI-Stundensatz-Verlauf (bisherigen Satz behalten, Liste, Entfernen), DE/UK/EN 390/820/1366|ui-stundensatz-verlauf.py|/tmp/cfp-stundensatz-verlauf.log
-UI-Kostenbericht Schnellwahl (laufendes Jahr, Vorjahr, letzte 12 Monate), DE/UK/EN 390/820/1366|ui-kosten-schnellwahl.py|/tmp/cfp-kosten-schnellwahl.log
+UI-Kostenbericht Schnellwahl (Vormonat, laufendes Jahr, Vorjahr, letzte 12 Monate), DE/UK/EN 390/820/1366|ui-kosten-schnellwahl.py|/tmp/cfp-kosten-schnellwahl.log
 UI-Arbeitszeit am Tag (eigene Summe je Auftrag, Rest bis 24 h, Doppel-Warnung), DE/UK/EN 390/820/1366|ui-arbeitszeit-tag.py|/tmp/cfp-arbeitszeit-tag.log
 UI-Fahrzeugtausch unterwegs: Hinweis „nicht dir zugeordnet“ in Kontrolle/Meldung, Zuordnung des Melders im Vorgang (Leitung), DE/UK/EN 390/820/1366|ui-fahrzeugtausch.py|/tmp/cfp-fahrzeugtausch.log
 UI-Werkstatt ohne Schlüssel/Fahrzeugschein: „fehlt“ im Vorgang, Vorgangsliste, Werkstattplan, DE/UK/EN 390/820/1366|ui-werkstatt-schluessel.py|/tmp/cfp-werkstatt-schluessel.log

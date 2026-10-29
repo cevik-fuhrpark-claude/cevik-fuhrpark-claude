@@ -211,7 +211,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       break;
     case 'withdrawn':
       // Auftrag ohne Reparatur beendet: Melder, Werkstatt (Arbeit einstellen) und Disposition (Fahrzeug kommt nicht repariert zurück)
-      add(reporter); add(workshopUsers); add(usersByRole(['dispatch']));
+      // Backlog 609: Werkstatt hat danach keinen Zugriff mehr (Status abgelehnt) – Hinweis ohne Vorgangslink (wie „an andere Werkstatt übergeben“)
+      add(reporter); add(workshopUsers.map((u) => ({ ...u, away: 1 }))); add(usersByRole(['dispatch']));
       break;
     case 'approved': case 'rework':
       add(workshopUsers);

@@ -520,7 +520,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
         -- Backlog 467 (Blickwinkel „Sporadische Störung – Werkstatt findet keinen Fehler“): in den 90 Tagen vor dieser Meldung abgeschlossene Vorgänge
         -- desselben Fahrzeugs (freigegeben, ohne Reparatur beendet, Meldung abgelehnt; keine Dubletten) mit Abschlussvermerk – die zweite Meldung
         -- „Warnleuchte wieder an“ kam sonst ohne Vorgeschichte in die Werkstatt. Werkstatt nur eigener Standort (abgelehnte Meldungen ohne Werkstatt nicht)
-        (SELECT json_group_array(json_object('id', r.id, 'case_no', r.case_no, 'status', r.status, 'kind', r.kind, 'description', r.description, 'closed_at', r.closed_at, 'note', r.note)) FROM
+        (SELECT json_group_array(json_object('id', CASE WHEN ?7 IS NOT NULL AND r.status='abgelehnt' THEN NULL ELSE r.id END, 'case_no', r.case_no, 'status', r.status, 'kind', r.kind, 'description', r.description, 'closed_at', r.closed_at, 'note', r.note)) FROM
           (SELECT x.id, x.case_no, x.status, CASE WHEN x.status='fahrzeug_freigegeben' THEN 'released' WHEN x.workshop_site IS NOT NULL THEN 'withdrawn' ELSE 'rejected' END AS kind,
             substr(x.description, 1, 120) AS description, x.closed_at,
             (SELECT substr(e.note, 1, 200) FROM case_events e WHERE e.case_id=x.id AND e.to_status=x.status AND e.note IS NOT NULL AND trim(e.note)<>'' ORDER BY e.created_at DESC LIMIT 1) AS note
@@ -1644,6 +1644,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const openRest = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen'`).bind(c.id).first();
       payload = { from_status: c.status, open_items_left: openRest.n };
       toStatus = 'abgelehnt'; set.closed_at = now;
+      // Backlog 609: bisherige Hinweise der Werkstatt zum Auftrag ausblenden (Link → „Vorgang nicht gefunden“), wie beim Werkstattwechsel; Melder behält sie
+      if (c.workshop_site) extra.push(env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE case_id=? AND hidden_at IS NULL
+        AND user_id IN (SELECT id FROM users WHERE role='workshop' AND workshop_site=?) AND user_id<>?`).bind(now, c.id, c.workshop_site, c.reporter_id || ''));
       notifyKind = 'withdrawn';
       break;
     }
