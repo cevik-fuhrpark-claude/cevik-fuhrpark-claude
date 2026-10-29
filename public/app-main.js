@@ -2270,10 +2270,14 @@ function knownDefects(list) {
 }
 
 // ---------- Vorgang ----------
+// Backlog 629: Vorgang bei der externen Werkstatt (EXTERN, kein Werkstattkonto) in Reparatur, Leitung darf zur Abschlusskontrolle geben
+const isQualityRelease = (c, A) => c.status === 'in_reparatur' && c.workshop_site === 'EXTERN' && ['owner', 'fleet'].includes(S.me.role) && (A || []).includes('request_quality_check');
 async function viewCase(id) {
   const d = await api('GET', '/api/cases/' + id);
   const c = d.case;
-  const A = d.allowed_actions;
+  // Backlog 629: externe Werkstatt ohne Konto – Leitung führt Abschlusskontrolle und Freigabe selbst aus; kombinierter Knopf (nur Oberfläche,
+  // zwei Befehle nacheinander, Server-Prüfungen unverändert)
+  const A = isQualityRelease(c, d.allowed_actions) ? d.allowed_actions.flatMap((a) => (a === 'request_quality_check' ? [a, 'quality_release'] : [a])) : d.allowed_actions;
   const prioLine = c.reported_priority !== c.priority ? ` <span class="muted small">(${esc(t('reported_prio'))}: ${esc(t('prio_' + c.reported_priority))})</span>` : '';
   // Sichten nach einer Meldungswelle (Backlog 280): Leitung springt zur nächsten nicht bestätigten Meldung (gesperrte/kritische zuerst)
   let html = `<p class="noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center"><a class="backlink" href="#/cases">‹ ${esc(t('back'))}</a>${isMgr() ? `<button type="button" class="btn secondary" id="nextunrec" style="margin-left:auto">${esc(t('next_unreceived'))} ›</button>` : ''}</p>
@@ -2312,7 +2316,7 @@ async function viewCase(id) {
   // Aktionen
   const main = A.filter((a) => !['comment', 'upload', 'inspection', 'resolve_open_item'].includes(a));
   if (main.length || A.includes('inspection')) {
-    html += `<div class="actions">${A.includes('inspection') ? `<a class="btn" href="#/inspect/${esc(c.id)}">${esc(t('act_inspection'))}</a>` : ''}${main.map((a) => `<button class="btn ${['reject', 'set_safety_lock', 'withdraw_order'].includes(a) ? 'danger' : a === 'technical_release' ? 'go' : ['record_work', 'add_part', 'add_open_item', 'add_external_cost', 'change_priority', 'reassign_workshop', 'correct_vehicle', 'lift_safety_lock', 'return_for_rework', 'set_planned_date', 'set_parts_eta', 'set_followup', 'set_vehicle_location', 'set_handover', 'set_occurred_at'].includes(a) ? 'secondary' : ''}" data-act="${esc(a)}">${esc(t('act_' + a))}</button>`).join('')}</div><div id="actform"></div>`;
+    html += `<div class="actions">${A.includes('inspection') ? `<a class="btn" href="#/inspect/${esc(c.id)}">${esc(t('act_inspection'))}</a>` : ''}${main.map((a) => `<button class="btn ${['reject', 'set_safety_lock', 'withdraw_order'].includes(a) ? 'danger' : ['technical_release', 'quality_release'].includes(a) ? 'go' : ['record_work', 'add_part', 'add_open_item', 'add_external_cost', 'change_priority', 'reassign_workshop', 'correct_vehicle', 'lift_safety_lock', 'return_for_rework', 'set_planned_date', 'set_parts_eta', 'set_followup', 'set_vehicle_location', 'set_handover', 'set_occurred_at'].includes(a) ? 'secondary' : ''}" data-act="${esc(a)}">${esc(t('act_' + a))}</button>`).join('')}</div><div id="actform"></div>`;
   } else html += `<div id="actform"></div>`;
 
   // Dateien
@@ -2370,11 +2374,13 @@ async function viewCase(id) {
 
   // Befehlskennung je Inhalt: wiederholtes Absenden desselben Eintrags nach verlorener Antwort (Funkloch) nutzt dieselbe command_id –
   // der Server meldet dann „duplicate“ statt doppelt zu buchen (20.10.2026: 2 × 1,5 h Arbeitszeit, doppelte Lagerentnahme); nach Erfolg verworfen
-  const cmd = async (action, note, payload = {}) => {
+  // opts.formAction: Formular, aus dem der Befehl kommt (kombinierter Knopf, Backlog 629); opts.next(r): Folgeschritt statt Neuladen
+  const cmd = async (action, note, payload = {}, opts = {}) => {
+    const fAct = opts.formAction || action;
     const key = JSON.stringify([c.id, action, note ?? null, payload]);
     // nur kurz nach dem Fehlschlag wiederverwenden: am geteilten Tablet bucht später ein anderer Mechaniker evtl. denselben Inhalt (23.10.2026)
     const commandId = S.pendCmd && S.pendCmd.key === key && Date.now() - S.pendCmd.at < 10 * 60000 ? S.pendCmd.id : uid(); S.pendCmd = { key, id: commandId, at: Date.now() };
-    try { const r = await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }); if (S.cmdOffline && S.cmdOffline.key === key) S.cmdOffline = null; S.pendCmd = null; if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true); else if (r && r.external_workshop) toast(t('ext_ws_hint')); else if (r && r.no_recipients) toast(t('no_recipients_warn'), true); else toast(r && r.duplicate ? t('cmd_duplicate') : '✓'); if (S.openAct && S.openAct.action === action) S.openAct = null; actDraft(c.id).clear(); viewCase(c.id); }
+    try { const r = await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }); if (S.cmdOffline && S.cmdOffline.key === key) S.cmdOffline = null; S.pendCmd = null; if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true); else if (r && r.external_workshop) toast(t('ext_ws_hint')); else if (r && r.no_recipients) toast(t('no_recipients_warn'), true); else toast(r && r.duplicate ? t('cmd_duplicate') : '✓'); if (S.openAct && S.openAct.action === fAct) S.openAct = null; actDraft(c.id).clear(); if (opts.next) return opts.next(r); viewCase(c.id); }
     // Konflikt: Befehl wurde NICHT ausgeführt – Eingaben (z. B. Kommentartext) beim Neuladen behalten (17.10.2026: Text war nach 409 weg)
     // cost_approval_open: Server hat die Kostengrenze eben markiert (Version +1) – neu laden, damit „Kosten freigeben“ erscheint (20.10.2026)
     // Schichtwechsel 22.10.2026: allgemeines „bitte neu laden“ führte zum Neuladen im Browser – dann waren die Eingaben weg. Die App lädt selbst
@@ -2383,7 +2389,7 @@ async function viewCase(id) {
     // doch angekommene Buchung sein (nach 10 Min. neue Kennung) – dann nicht „jemand anderes“ melden, sondern zuerst den Verlauf prüfen lassen
     // (Backlog 186, Werkstatt-Tablet in der Halle: sonst doppelte Arbeitszeit)
     catch (err) {
-      if (err.offline) { S.cmdOffline = { key, at: Date.now() }; actDraftSave(c.id, action); }
+      if (err.offline) { S.cmdOffline = { key, at: Date.now() }; actDraftSave(c.id, fAct); }
       const maybeMine = err.code === 'version_conflict' && S.cmdOffline && S.cmdOffline.key === key;
       const generic = err.code === 'version_conflict' && action !== 'approve_costs';
       if (!generic) toast(err.offline ? `${err.message} ${t('cmd_offline_kept')}` : err.message, true);
@@ -2681,7 +2687,9 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   const box = $('#actform');
   S.openAct = { caseId: c.id, action, preset };
   const f = [];
-  const needsNote = ['change_priority', 'set_safety_lock', 'lift_safety_lock', 'approve_repair', 'reassign_workshop', 'correct_vehicle', 'reject', 'withdraw_order', 'wait_parts', 'parts_partial', 'resolve_open_item', 'request_quality_check', 'return_for_rework', 'technical_release', 'approve_costs'];
+  const needsNote = ['change_priority', 'set_safety_lock', 'lift_safety_lock', 'approve_repair', 'reassign_workshop', 'correct_vehicle', 'reject', 'withdraw_order', 'wait_parts', 'parts_partial', 'resolve_open_item', 'request_quality_check', 'return_for_rework', 'technical_release', 'approve_costs', 'quality_release'];
+  const qrel = action === 'quality_release'; // Backlog 629: beide Schritte in einem Formular
+  const isQc = action === 'request_quality_check' || qrel; const isRel = action === 'technical_release' || qrel;
   const wsOpts = S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${(c.workshop_site || c.suggested_workshop_site) === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('');
   const prioOpts = (sel) => ['niedrig', 'mittel', 'kritisch'].map((p) => `<option value="${p}"${p === sel ? ' selected' : ''}>${esc(t('prio_' + p))}</option>`).join('');
   switch (action) {
@@ -2717,22 +2725,25 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   }
   // Backlog 395 (Blickwinkel „Getriebetausch – Fahrtenschreiber“): Arbeiten/Teile/Fremdleistungen/Beschreibung nennen Getriebe, Tachogeber oder
   // Fahrtenschreiber → Hinweis § 57b StVZO vor Abschlusskontrolle/Freigabe (reine Information, keine Frist, kein Prüftermin angelegt)
-  if (['request_quality_check', 'technical_release'].includes(action) && d && TACHO_WORK.test([c.description, ...(d.parts || []).map((x) => x.name), ...(d.work || []).map((x) => x.description), ...(d.external_costs || []).map((x) => `${x.supplier || ''} ${x.note || ''}`)].join(' | '))) f.push(`<p class="panel small" data-tachowork>${esc(t('tacho_work_hint'))}</p>`);
+  if (qrel) f.push(`<p class="panel small" id="qrelhint">${esc(t('qrel_hint').replace('{a}', t('act_request_quality_check')).replace('{b}', t('act_technical_release')))}</p>`);
+  if ((isQc || isRel) && d && TACHO_WORK.test([c.description, ...(d.parts || []).map((x) => x.name), ...(d.work || []).map((x) => x.description), ...(d.external_costs || []).map((x) => `${x.supplier || ''} ${x.note || ''}`)].join(' | '))) f.push(`<p class="panel small" data-tachowork>${esc(t('tacho_work_hint'))}</p>`);
   // Winterreifen-Auftrag: Lage noch nicht erfüllt → Hinweis + ausdrückliche Bestätigung (Server verlangt sie ebenfalls)
-  if (action === 'request_quality_check' && d && d.tire_winter && !['erfuellt', 'nicht_pflichtig'].includes(d.tire_winter.status)) f.push(`<p class="panel small" id="wqopen">${esc(t('wq_open_hint'))}</p><label class="check"><input type="checkbox" name="confirm_winter_open" required> ${esc(t('wq_open_confirm'))}</label>`);
+  if (isQc && d && d.tire_winter && !['erfuellt', 'nicht_pflichtig'].includes(d.tire_winter.status)) f.push(`<p class="panel small" id="wqopen">${esc(t('wq_open_hint'))}</p><label class="check"><input type="checkbox" name="confirm_winter_open" required> ${esc(t('wq_open_confirm'))}</label>`);
   // Nacharbeit nach der letzten Kontrolle nach Reparatur → neue Kontrolle nötig (Server prüft ebenso); offene Kostenfreigabe sperrt die Freigabe
-  if (action === 'request_quality_check' && d && Array.isArray(d.inspections) && Array.isArray(d.events)) {
+  if (isQc && d && Array.isArray(d.inspections) && Array.isArray(d.events)) {
     const li = d.inspections.filter((i) => i.kind === 'nach_reparatur').map((i) => i.created_at).sort().pop();
     const rw = d.events.filter((e) => e.action === 'return_for_rework').map((e) => e.created_at).sort().pop();
     if (li && rw && li <= rw) f.push(`<p class="panel warn small" id="rwinsp">${esc(t('err_inspection_after_rework_missing'))}</p>`);
   }
   // Backlog 424: Schlüssel/Fahrzeugschein noch als „fehlt“ eingetragen – freigegebenes Fahrzeug stünde ohne Schlüssel da (kein Server-Stopp, nur Hinweis)
-  if (['technical_release', 'request_quality_check'].includes(action) && hoMissing(c).length) f.push(`<p class="panel warn small" id="relho">${esc(t('ho_release_warn').replace('{x}', hoMissing(c).join(', ')))}</p>`);
-  if (['technical_release', 'request_quality_check'].includes(action)) {
-    f.push(`<label for="pu_note">${esc(t('pu_title'))}<span class="hint">${esc(t('pu_hint'))}</span></label><textarea id="pu_note" name="pickup_note" maxlength="300" rows="2">${esc(c.pickup_note || '')}</textarea>`);
-    if (action === 'technical_release') f.push(`<label class="check"><input type="checkbox" name="pickup_for_driver" id="pu_drv"> ${esc(t('pu_for_driver'))}</label><div id="pu_until_box" hidden><label for="pu_until">${esc(t('pu_valid_until'))}<span class="hint">${esc(t('pu_valid_until_hint'))}</span></label><input type="date" id="pu_until" name="pickup_valid_until" min="${esc(bDate())}"></div>`);
+  if ((isQc || isRel) && hoMissing(c).length) f.push(`<p class="panel warn small" id="relho">${esc(t('ho_release_warn').replace('{x}', hoMissing(c).join(', ')))}</p>`);
+  if (isQc || isRel) {
+    // Backlog 629: ohne Abholvermerk mit dem eingetragenen Standort vorbelegen (externe Werkstatt – Fahrzeug steht dort)
+    const puPre = !c.pickup_note && qrel && c.vehicle_location ? c.vehicle_location.slice(0, 300) : '';
+    f.push(`<label for="pu_note">${esc(t('pu_title'))}<span class="hint">${esc(t('pu_hint'))}</span></label><textarea id="pu_note" name="pickup_note" maxlength="300" rows="2">${esc(c.pickup_note || puPre)}</textarea>${puPre ? `<p class="small muted" id="qrelpu">${esc(t('qrel_pu_prefill'))}</p>` : ''}`);
+    if (isRel) f.push(`<label class="check"><input type="checkbox" name="pickup_for_driver" id="pu_drv"> ${esc(t('pu_for_driver'))}</label><div id="pu_until_box" hidden><label for="pu_until">${esc(t('pu_valid_until'))}<span class="hint">${esc(t('pu_valid_until_hint'))}</span></label><input type="date" id="pu_until" name="pickup_valid_until" min="${esc(bDate())}"></div>`);
   }
-  if (action === 'technical_release' && c.cost_over_limit_at) f.push(`<p class="panel warn small" id="relcost">${esc(t('err_cost_approval_open'))}</p>`);
+  if (isRel && c.cost_over_limit_at) f.push(`<p class="panel warn small" id="relcost">${esc(t('err_cost_approval_open'))}</p>`);
   // 21.10.2026: Server weist in diesen Zuständen immer ab – Hinweis vor dem Absenden (wie Kostenfreigabe)
   if (action === 'reject' && c.safety_lock) f.push(`<p class="panel warn small" id="rejlock">${esc(t('err_safety_lock_active'))}</p>`);
   if (action === 'withdraw_order') {
@@ -2742,9 +2753,9 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     if (oi.some((o) => o.safety_relevant)) f.push(`<p class="panel warn small" id="wdsafety">${esc(t('err_safety_items_open'))}</p>`);
     else if (oi.length) f.push(`<p class="small" id="wdleft">${esc(t('withdraw_left').replace('{n}', oi.length))}</p>`);
   }
-  if (['technical_release', 'lift_safety_lock'].includes(action) && d && Array.isArray(d.open_items) && d.open_items.some((o) => o.status === 'offen' && o.safety_relevant)) f.push(`<p class="panel warn small" id="relsafety">${esc(t('err_safety_items_open'))}</p>`);
-  if (['technical_release', 'lift_safety_lock'].includes(action)) f.push(`<label class="check"><input type="checkbox" name="confirm" required> ${esc(t('confirm'))}</label>`);
-  const noteLabel = action === 'parts_partial' ? t('pp_note') : action === 'approve_repair' ? t('scope') : ['technical_release'].includes(action) ? t('evidence') : needsNote.includes(action) ? t('reason') : t('note');
+  if ((isRel || action === 'lift_safety_lock') && d && Array.isArray(d.open_items) && d.open_items.some((o) => o.status === 'offen' && o.safety_relevant)) f.push(`<p class="panel warn small" id="relsafety">${esc(t('err_safety_items_open'))}</p>`);
+  if (isRel || action === 'lift_safety_lock') f.push(`<label class="check"><input type="checkbox" name="confirm" required> ${esc(t('confirm'))}</label>`);
+  const noteLabel = action === 'parts_partial' ? t('pp_note') : action === 'approve_repair' ? t('scope') : isRel ? t('evidence') : needsNote.includes(action) ? t('reason') : t('note');
   f.push(`<label>${esc(noteLabel)}${action === 'set_parts_eta' ? `<span class="hint">${esc(t('parts_eta_note_hint'))}</span>` : action === 'parts_partial' ? `<span class="hint">${esc(t('pp_note_hint'))}</span>` : ''}</label><textarea name="note"${needsNote.includes(action) ? ' required minlength="3"' : ''}${['set_followup', 'set_handover'].includes(action) ? ' maxlength="300"' : ''}>${action === 'set_followup' ? esc(c.followup_note || '') : ''}</textarea>`);
   if (action === 'add_part') api('GET', '/api/part-suggestions').then((r) => {
     const dl = $('#partsugg'); if (!dl) return;
@@ -2798,6 +2809,20 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     if (p.stock_item_id) { delete p.name; delete p.part_number; delete p.supplier; if (!fd.get('unit_price_net')) delete p.unit_price_net; } else delete p.stock_item_id;
     // Arbeitsdatum vor dem laufenden Monat: Buchung ändert einen vergangenen Monat im Kostenbericht (Backlog 189, Jahresabschluss)
     if (action === 'record_work' && p.work_date && p.work_date < bDate().slice(0, 7) + '-01' && !confirm(t('work_past_month_confirm').replace('{m}', fmtMonth(p.work_date.slice(0, 7))))) return;
+    if (qrel) {
+      // Backlog 629: erst „Zur Abschlusskontrolle“ (Abholvermerk, Winterreifen-Bestätigung), dann „Technisch freigeben“ mit der neuen Version;
+      // scheitert der zweite Schritt (z. B. Kostenfreigabe nötig), steht der Vorgang in der Abschlusskontrolle und die Meldung nennt den Grund
+      const note = fd.get('note') || null;
+      const q = {}; if (p.pickup_note) q.pickup_note = p.pickup_note; if (p.confirm_winter_open) q.confirm_winter_open = true;
+      const rel = { confirm: true }; if (p.pickup_for_driver) { rel.pickup_for_driver = true; if (p.pickup_valid_until) rel.pickup_valid_until = p.pickup_valid_until; }
+      return cmd('request_quality_check', note, q, { formAction: action, next: async () => {
+        try {
+          const cur = await api('GET', '/api/cases/' + c.id);
+          if (cur.case.status === 'abschlusskontrolle') { await api('POST', `/api/cases/${c.id}/commands`, { action: 'technical_release', command_id: uid(), expected_version: cur.case.version, note, payload: rel }); toast('✓'); }
+        } catch (err) { toast(t('qrel_step2_failed').replace('{msg}', err.message).replace('{b}', t('act_technical_release')), true); }
+        await viewCase(c.id);
+      } });
+    }
     return cmd(action, fd.get('note') || null, p); // Promise zurück: zentrale Sperre bis zum Ende (Doppelklick)
   };
   return stockP;

@@ -18460,7 +18460,7 @@ await test('Werkstatt-Tablet in der Halle (Teilagent 23.10.): Kontrolle nach Rep
   const vi = app.slice(app.indexOf('async function viewInspection('), app.indexOf('async function viewDepartureCheck('));
   ok(vi.includes(`<input type="hidden" name="rk" value="\${esc(uid())}">`) && vi.includes("const draft = bindFormDraft('insp_' + caseId, form, '', null);") && vi.includes('const key = form.rk.value || uid();'), 'Entwurf + Kennung im Entwurf');
   ok(vi.includes("draft.clear();") && vi.includes("if (err.offline) draft.save(); toast(err.offline ? `${err.message} ${t('form_draft_kept')}` : err.message, true);"), 'Entwurf nach Erfolg gelöscht, bei Netzabbruch gesichert');
-  ok(app.includes("if (err.offline) { S.cmdOffline = { key, at: Date.now() }; actDraftSave(c.id, action); }") && app.includes("toast(t(maybeMine ? 'cmd_maybe_saved' : 'case_conflict_kept'), true);") && app.includes("`${err.message} ${t('cmd_offline_kept')}`"), 'Befehle: Hinweise bei Netzabbruch/Konflikt danach');
+  ok(app.includes("if (err.offline) { S.cmdOffline = { key, at: Date.now() }; actDraftSave(c.id, fAct); }") && app.includes("toast(t(maybeMine ? 'cmd_maybe_saved' : 'case_conflict_kept'), true);") && app.includes("`${err.message} ${t('cmd_offline_kept')}`"), 'Befehle: Hinweise bei Netzabbruch/Konflikt danach');
   for (const l of ['de', 'uk', 'en']) for (const k of ['form_draft_kept', 'cmd_offline_kept', 'cmd_maybe_saved']) ok(typeof STRINGS[l][k] === 'string' && STRINGS[l][k].length > 10, `${l}: ${k}`);
   // Server: Kontrolle nach Reparatur mit derselben Anfragekennung zweimal → eine Kontrolle („duplicate“)
   eq((await owner.post('/api/vehicles', { plate: 'WH-HL 1', vin: 'WDB96340310555701', site: 'Dortmund' })).status, 201);
@@ -18479,8 +18479,8 @@ await test('Aktionsformular nach Netzabbruch (Backlog 187): Eingaben samt Befehl
   const { STRINGS } = await import('../public/i18n.js');
   ok(app.includes("const actDraft = (caseId) => formDraft('act_' + caseId, $('#af'));") && app.includes("formDraft('act_' + caseId, af).save({ action, preset: S.openAct.preset || {}, cmd: S.pendCmd || null });"), 'Entwurf mit Aktion, Vorbelegung und Befehlskennung');
   ok(app.includes('sessionStorage.setItem(key, JSON.stringify({ ...extra, at: new Date().toISOString(), v, photos }));'), 'Zusatzfelder überschreiben Zeit/Werte nicht');
-  ok(app.includes('if (err.offline) { S.cmdOffline = { key, at: Date.now() }; actDraftSave(c.id, action); }'), 'Sicherung bei Netzabbruch');
-  ok(app.includes("if (S.openAct && S.openAct.action === action) S.openAct = null; actDraft(c.id).clear(); viewCase(c.id); }"), 'nach Erfolg gelöscht');
+  ok(app.includes('if (err.offline) { S.cmdOffline = { key, at: Date.now() }; actDraftSave(c.id, fAct); }'), 'Sicherung bei Netzabbruch');
+  ok(app.includes("if (S.openAct && S.openAct.action === fAct) S.openAct = null; actDraft(c.id).clear(); if (opts.next) return opts.next(r); viewCase(c.id); }"), 'nach Erfolg gelöscht');
   ok(app.includes("if (maybeMine) { S.cmdOffline = null; actDraft(c.id).clear(); }"), 'bei vermutlich angekommener Eingabe gelöscht');
   ok(app.includes("S.openAct = null; actDraft(c.id).clear(); const ab") && app.includes("S.lostAct = null; S.openAct = null; actDraft(c.id).clear(); box.innerHTML = '';"), 'Abbrechen/Hinweis schließen löschen den Entwurf');
   ok(app.includes("if (x && x.action && A.includes(x.action)) { S.openAct = { caseId: c.id, action: x.action, preset: x.preset || {} }; actDr = x; }") && app.includes("S.lostAct = { caseId: c.id, action: x.action, note, payload }; ad.clear(); }"), 'Wiederherstellen bzw. Hinweis bei nicht mehr erlaubter Aktion');
@@ -22895,7 +22895,7 @@ await test('Backlog 395–398 (Blickwinkel „Getriebetausch/Reifengröße – F
   const re = new RegExp(app.match(/\nconst TACHO_WORK = \/(.+)\/i;/)[1], 'i');
   for (const x of ['Austauschgetriebe ZF TraXon', 'Tachogeber (Impulsgeber KITAS) ersetzt', 'Fahrtenschreiber neu verplombt', 'gearbox replaced', 'Заміна коробки передач', 'датчик швидкості замінено', 'тахограф']) ok(re.test(x), 'Hinweis: ' + x);
   for (const x of ['Bremsbeläge vorne', 'Rückleuchte links', 'Kupplungsnehmerzylinder']) ok(!re.test(x), 'kein Hinweis: ' + x);
-  ok(app.includes("['request_quality_check', 'technical_release'].includes(action) && d && TACHO_WORK.test(") && app.includes('data-tachowork'), 'Formularhinweis');
+  ok(app.includes("(isQc || isRel) && d && TACHO_WORK.test(") && app.includes('data-tachowork'), 'Formularhinweis');
   ok(app.includes("m.kind === 'Tachograph' ? `<p class=\"small muted\" data-tachodone>"), 'Durchführung Tachograph');
   ok(app.includes("w.code === 'tacho_check_possible' ? t('tacho_check_possible')") && app.includes("r.tacho_check_possible) toast(t('tacho_check_possible'))"), 'Reifenhinweis');
   const { STRINGS } = await import('../public/i18n.js');
@@ -23594,7 +23594,7 @@ await test('Backlog 424 (Folge aus 423): fehlender Schlüssel/Fahrzeugschein in 
   for (const u of [U.fleet, D]) { const vc = (await u.get(`/api/vehicles/${V1}`)).data.cases.find((c) => c.id === id); eq(vc.handover_keys, 'fehlt', 'Fahrzeugakte'); eq(vc.handover_papers, null); }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('id="vho"') && app.includes('data-hodispo') && app.includes('id="relho"'), 'Fahrzeugakte, Disposition, Freigabe-Warnung');
-  ok(app.includes("['technical_release', 'request_quality_check'].includes(action) && hoMissing(c).length"), 'Warnung auch bei „Bereit zur Abschlusskontrolle“');
+  ok(app.includes("(isQc || isRel) && hoMissing(c).length"), 'Warnung auch bei „Bereit zur Abschlusskontrolle“');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) {
     ok(STRINGS[l].ho_release_warn && STRINGS[l].ho_release_warn.includes('{x}') && STRINGS[l].ho_release_warn.includes(STRINGS[l].act_set_handover), `${l}.ho_release_warn`);
@@ -26761,6 +26761,39 @@ await test('Backlog 626–628 (Blickwinkel „Panne in Frankreich, externe Werks
   const re = new RegExp(app.match(/\nconst TACHO_WORK = \/(.+)\/i;/)[1], 'i');
   for (const x of ['Remplacement boîte de vitesses', 'chronotachygraphe recalibré', 'capteur de vitesse neuf']) ok(re.test(x), x);
   ok(!re.test('Remplacement pare-brise'), 'Windschutzscheibe nicht');
+});
+
+await test('Backlog 629 (Teilagent-Fund „Panne in Frankreich“): externe Werkstatt ohne Konto – Leitung führt Abschlusskontrolle und Freigabe nacheinander mit einem Vermerk aus (Ablauf des kombinierten Knopfs), Server-Prüfungen unverändert; Knopf nur bei EXTERN in Reparatur für Inhaber/Fuhrparkleitung', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const id = await newCase({ workshop_site: 'EXTERN', description: 'Getriebe defekt (Frankreich)' });
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'EXTERN' }, 'Panne Frankreich')).status, 200);
+  eq((await cmd(U.fleet, id, 'start_repair')).status, 200, 'Leitung startet für die externe Werkstatt');
+  let d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.allowed_actions.includes('request_quality_check') && !d.allowed_actions.includes('technical_release'), 'in Reparatur: nur Abschlusskontrolle');
+  // Schritt 1 scheitert ohne Kontrolle → Status bleibt (kombinierter Knopf führt Schritt 2 dann nicht aus)
+  eq((await cmd(U.fleet, id, 'add_external_cost', { supplier: 'Garage Dupont', invoice_no: 'FA-629', amount_net: 900 })).status, 200);
+  const r0 = await cmd(U.fleet, id, 'request_quality_check', { pickup_note: 'Garage Dupont, Beaune' }, 'Getriebe getauscht');
+  eq(r0.status, 400); eq(r0.data.error, 'inspection_missing');
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.case.status, 'in_reparatur');
+  const items = (await U.fleet.get('/api/meta')).data.checklist.map((c) => ({ key: c.key, result: 'ok' }));
+  eq((await U.fleet.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.fleet, id, 'set_vehicle_location', { vehicle_location: 'Garage Dupont, Beaune (FR)' })).status, 200);
+  const note = 'Getriebe getauscht, Probefahrt ok (Rechnung FA-629)';
+  const r1 = await cmd(U.fleet, id, 'request_quality_check', { pickup_note: 'Garage Dupont, Beaune (FR)' }, note); eq(r1.status, 200); eq(r1.data.status, 'abschlusskontrolle');
+  const cur = (await U.fleet.get(`/api/cases/${id}`)).data.case; eq(cur.status, 'abschlusskontrolle');
+  const r2 = await U.fleet.post(`/api/cases/${id}/commands`, { action: 'technical_release', command_id: rk(), expected_version: cur.version, note, payload: { confirm: true, pickup_for_driver: true } });
+  eq(r2.status, 200); eq(r2.data.status, 'fahrzeug_freigegeben');
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq(d.case.pickup_note, 'Garage Dupont, Beaune (FR)');
+  eq(d.events.filter((e) => ['request_quality_check', 'technical_release'].includes(e.action)).map((e) => e.note).join('|'), `${note}|${note}`, 'beide Schritte mit demselben Vermerk');
+  // Oberfläche: Bedingung, Formular, Texte (DE/UK/EN)
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/const isQualityRelease = \(c, A\) => c\.status === 'in_reparatur' && c\.workshop_site === 'EXTERN' && \['owner', 'fleet'\]\.includes\(S\.me\.role\)/.test(app), 'Bedingung des Knopfs');
+  ok(app.includes("return cmd('request_quality_check', note, q, { formAction: action, next:") && app.includes("action: 'technical_release', command_id: uid(), expected_version: cur.case.version"), 'zwei Befehle nacheinander mit neuer Version');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['act_quality_release', 'qrel_hint', 'qrel_pu_prefill', 'qrel_step2_failed']) ok(STRINGS[l][k], `${l}.${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].qrel_hint.includes('{a}') && STRINGS[l].qrel_hint.includes('{b}') && STRINGS[l].qrel_step2_failed.includes('{msg}') && STRINGS[l].qrel_step2_failed.includes('{b}'), l + ' Platzhalter');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
