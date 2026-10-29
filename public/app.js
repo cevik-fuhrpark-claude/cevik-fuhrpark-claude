@@ -23,14 +23,18 @@ const readCsvFile = async (f) => { try { return await readCsvRaw(f); } catch (e)
 // (21.10.2026: Lager – nach „Keine Verbindung“ korrigierte Buchung wurde als Wiederholung still verworfen)
 const rkFor = (form, b) => { const sig = JSON.stringify(b); if (!form.dataset.rk || form.dataset.rkSig !== sig) { form.dataset.rk = crypto.randomUUID(); form.dataset.rkSig = sig; } return form.dataset.rk; };
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
-// Sprachpaket vor dem ersten Bild (Backlog 588); fehlt es (offline gewählte Sprache, Paket nicht im Cache), eine andere Sprache;
-// fehlen alle, meldet der Start-Wächter den Ladefehler
+// Sprachpaket vor dem ersten Bild (Backlog 588): route() wartet darauf. Bewusst ohne Top-Level-await – sonst liefen der Rest dieses
+// Moduls (u. a. die hashchange-Anmeldung) erst nach dem Paket, und das Ereignis „load“ käme vor der fertigen App (UI-Test rot).
+// Fehlt das Paket (offline gewählte Sprache, nicht im Cache), gilt eine andere Sprache; fehlen alle, meldet der Start-Wächter den Ladefehler.
 if (!['de', 'uk', 'en'].includes(S.lang)) S.lang = 'de';
 window.__cfpLoading = true; // Start-Wächter: Module da, Sprachpaket lädt noch (langsame Verbindung ≠ Ladefehler)
-await loadLang(S.lang).catch(async (e) => { for (const l of ['de', 'uk', 'en']) if (l !== S.lang) { try { await loadLang(l); S.lang = l; return; } catch { /* nächste */ } } throw e; });
+const langReady = loadLang(S.lang).catch(async (e) => {
+  for (const l of ['de', 'uk', 'en']) if (l !== S.lang) { try { await loadLang(l); S.lang = l; return; } catch { /* nächste */ } }
+  window.__cfpLoading = false; window.dispatchEvent(new Event('error')); throw e;
+});
+langReady.then(() => { window.__cfpBooted = true; }, () => {}); // Module und Sprachpaket geladen – Start-Wächter (boot.js) bleibt still
 // Sprache gewechselt (Auswahl, Konto, Einladung): Paket nachladen; scheitert das (offline ohne Cache), bleibt die bisherige Sprache
 const ensureLang = async (l) => { if (langLoaded(l)) return true; try { await loadLang(l); return true; } catch { if (S.lang === l) S.lang = ['de', 'uk', 'en'].find(langLoaded) || 'de'; return false; } };
-window.__cfpBooted = true; // Module und Sprachpaket vollständig geladen – Start-Wächter (boot.js) bleibt still
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 // Name einer Person; für Lesezugriff ausgeblendete Fahrernamen (Server setzt <feld>_hidden) als Hinweistext
@@ -453,6 +457,7 @@ async function route() {
   const pub = /^#\/(login|setup|invite\/)/.test(h);
   // Seitenwechsel während eine Seite noch lädt (langsames Netz, schnelles Tippen): die ältere Seite darf die neuere nicht überschreiben
   const gen = S.routeGen = (S.routeGen || 0) + 1;
+  try { await langReady; } catch { return; } // erstes Sprachpaket (Backlog 588); fehlt jede Sprache: Start-Wächter zeigt den Ladefehler
   await ensureLang(S.lang); // Sprachauswahl auf Anmelde-/Einrichtungsseite (Backlog 588)
   try {
     if (!S.me && !pub) {

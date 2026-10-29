@@ -16438,7 +16438,7 @@ await test('Fehlersuche 21.10. (PWA/Druck/Leistung): Start-Wächter bei gemischt
   ok(!app.includes("<th>${esc(t('kind'))}</th><th></th>") && app.includes("t('driver_inactive')"), 'Fahrerakte: Spaltenkopf, Einzahl');
   // 2. Start-Wächter
   const html = rd('index.html'); ok(html.indexOf('/boot.js') > 0 && html.indexOf('/boot.js') < html.indexOf('/app.js'), 'boot.js vor app.js');
-  ok(/^window\.__cfpBooted = true;/m.test(app), 'app.js meldet Start');
+  ok(/^langReady\.then\(\(\) => \{ window\.__cfpBooted = true; \}/m.test(app), 'app.js meldet Start (nach dem Sprachpaket, Backlog 588)');
   const boot = rd('boot.js');
   const mk = (booted, online) => {
     const L = {}; const timers = []; let reloaded = 0; const deleted = [];
@@ -25997,7 +25997,9 @@ await test('Backlog 588: Sprachpakete – App lädt nur Kern + Paket der eigenen
   // App: Kern statt i18n.js, Paket vor dem Start-Signal, Nachladen beim Sprachwechsel, Aushang in anderer Sprache
   const app = rd('app.js');
   ok(app.includes("} from './i18n-core.js';") && !app.includes("from './i18n.js'"), 'app.js importiert den Kern');
-  const iL = app.indexOf('await loadLang(S.lang)'), iB = app.indexOf('window.__cfpBooted = true;'); ok(iL > 0 && iL < iB, 'Sprachpaket vor dem Start-Signal');
+  const iL = app.indexOf('const langReady = loadLang(S.lang)'), iB = app.indexOf('langReady.then(() => { window.__cfpBooted = true; }'); ok(iL > 0 && iL < iB, 'Sprachpaket vor dem Start-Signal');
+  ok(!/^await /m.test(app), 'kein Top-Level-await (hashchange-Anmeldung und „load“ wie vorher)'); ok(app.includes('try { await langReady; } catch { return; }'), 'route() wartet auf das Sprachpaket');
+  ok(app.indexOf('try { await langReady; }') < app.indexOf('await ensureLang(S.lang); // Sprachauswahl'), 'Reihenfolge in route()');
   ok(app.includes('await ensureLang(S.lang); // Sprachauswahl') && app.includes('await ensureLang(S.lang); // Kontosprache') && app.includes('ensureLang(g).then((ok) => viewDriverGuide(ok ? g : S.lang))'), 'Nachladen bei Sprachwechsel/Aushang');
   ok(!/STRINGS\.de\['fc_' \+ code\] \?/.test(app), 'fcLabel ohne deutsches Paket');
   // Offline-Hülle: Kern und alle Pakete (Sprachwechsel ohne Netz), i18n.js selbst nicht mehr nötig
