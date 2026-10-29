@@ -26204,6 +26204,35 @@ await test('Backlog 601 (Blickwinkel „Monatsende: km für den Leasinggeber“)
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ct_asof_prevmonth, 'ct_asof_prevmonth ' + l);
 });
 
+await test('Backlog 603 (Blickwinkel „Werkstatt-Tablet UK mit Fotos“): Dateien am Vorgang – Format/Größe im Browser geprüft (HEIC mit Hinweis, 5 MB wie Server), Dublette gemeldet, Höchstzahl einmal mit Zahl; DE/UK/EN', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const srv = fs.readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  // Grenzen wie der Server
+  ok(/const MAX_FILE_BYTES = 5 \* 1024 \* 1024;/.test(srv) && app.includes('UPLOAD_MAX_BYTES = 5 * 1024 * 1024'), '5 MB wie Server');
+  const types = (srv.match(/'image\/jpeg'[^\]\n]*'application\/pdf'/) || [''])[0];
+  for (const tp of ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']) ok(app.includes(`'${tp}'`) && (types.includes(tp) || srv.includes(`'${tp}'`)), 'Typ ' + tp);
+  const a = app.indexOf('function uploadReject('); const e = app.indexOf('\n}\n', a);
+  const t = (k) => k;
+  const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], UPLOAD_MAX_BYTES = 5 * 1024 * 1024; // eslint-disable-line no-unused-vars
+  const uploadReject = eval('(' + app.slice(a, e + 2) + ')');
+  eq(uploadReject({ type: 'image/jpeg', size: 300000 }, 'a.jpg'), '', 'JPG ok');
+  eq(uploadReject({ type: 'application/pdf', size: 5 * 1024 * 1024 }, 'r.pdf'), '', 'genau 5 MB ok');
+  eq(uploadReject({ type: 'application/pdf', size: 5 * 1024 * 1024 + 1 }, 'r.pdf'), 'err_too_large', 'zu groß vor dem Hochladen');
+  eq(uploadReject({ type: 'image/heic', size: 9e6 }, 'IMG_1.HEIC'), 'file_heic_hint', 'HEIC mit Hinweis (nicht „zu groß“)');
+  eq(uploadReject({ type: '', size: 1e6 }, 'IMG_2.heif'), 'file_heic_hint', 'HEIF ohne Typ');
+  eq(uploadReject({ type: 'image/jpeg', size: 4e5 }, 'IMG_3.HEIC'), '', 'in JPG umgewandeltes HEIC ok');
+  eq(uploadReject({ type: 'image/gif', size: 1e5 }, 'x.gif'), 'err_type', 'GIF');
+  // Ablauf im Vorgang
+  ok(app.includes("const rej = uploadReject(blob, file.name); if (rej) { errs.push(`${file.name}: ${rej}`); continue; }"), 'Prüfung vor dem Hochladen');
+  ok(app.includes('if (r && r.duplicate) dupes.push(file.name);') && app.includes("if (dupes.length) errs.push(`${t('file_dup')}: ${dupes.join(', ')}`);"), 'Dublette gemeldet');
+  ok(app.includes("if (err.code === 'too_many') { errs.push(t('files_full').replace('{max}', PHOTO_MAX)); break; }"), 'Höchstzahl einmal');
+  ok(/if \(dupe\) return \{ id: dupe\.id, duplicate: true \};/.test(srv), 'Server meldet duplicate');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].file_heic_hint && STRINGS[l].file_dup && STRINGS[l].err_type && STRINGS[l].err_too_large && STRINGS[l].files_full.includes('{max}'), 'Texte ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-vorgang-dateien-pruefung.py|'), 'UI-Test in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
