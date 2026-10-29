@@ -26196,8 +26196,10 @@ await test('Backlog 601 (Blickwinkel „Monatsende: km für den Leasinggeber“)
   // Oberfläche: km-Stand auch neben der Kontingent-Zeile, Hinweis aus no_reading, Knopf „Ende Vormonat“ (DE/UK/EN)
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('  if (c.reading) out.push(`<span data-ctread>') && app.includes('  if (c.no_reading) out.push(`<span class="muted" data-ctnoread>'), 'ctLines: km-Stand immer, Hinweis aus no_reading');
-  ok(app.includes('id="ctasofprev"') && /const aop = \$\('#ctasofprev'\); if \(aop\) aop\.onclick = \(\) => \{ const d = new Date\(bDate\(\)\.slice\(0, 8\) \+ '01T12:00:00Z'\); d\.setUTCDate\(0\);/.test(app), 'Knopf Ende Vormonat');
-  for (const [today, exp] of [['2026-03-05', '2026-02-28'], ['2028-03-01', '2028-02-29'], ['2027-01-31', '2026-12-31']]) { const d = new Date(today.slice(0, 8) + '01T12:00:00Z'); d.setUTCDate(0); eq(d.toISOString().slice(0, 10), exp, 'Vormonatsende ' + today); }
+  ok(app.includes('id="ctasofprev"') && app.includes("if (aop) aop.onclick = () => { S.ctAsOf = bDate(-Number(bDate().slice(8, 10)));"), 'Knopf Ende Vormonat (Berliner Datum)');
+  // gleiche Rechnung wie bDate(days): heute minus Tag des Monats
+  const minus = (ymd, n) => { const [y, m, d] = ymd.split('-').map(Number); const x = new Date(Date.UTC(y, m - 1, d - n)); return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; };
+  for (const [today, exp] of [['2026-03-05', '2026-02-28'], ['2028-03-01', '2028-02-29'], ['2027-01-31', '2026-12-31'], ['2026-10-29', '2026-09-30']]) eq(minus(today, Number(today.slice(8, 10))), exp, 'Vormonatsende ' + today);
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ct_asof_prevmonth, 'ct_asof_prevmonth ' + l);
 });

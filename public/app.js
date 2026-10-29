@@ -3769,7 +3769,7 @@ async function viewContracts() {
   const ao = $('#ctasof'); if (ao) ao.onchange = () => { const v = ao.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctAsOf = v && v <= bDate() ? v : ''; /* Backlog 511: heute als Stichtag zulässig (Monatsletzter am Monatsende) */ if (S.ctAsOf) S.ctEndsBy = ''; viewContracts(); };
   const aox = $('#ctasofx'); if (aox) aox.onclick = () => { S.ctAsOf = ''; viewContracts(); };
   // Backlog 601: Monatsmeldung Leasing – Stichtag „Ende Vormonat“ mit einem Tipp (Berliner Datum)
-  const aop = $('#ctasofprev'); if (aop) aop.onclick = () => { const d = new Date(bDate().slice(0, 8) + '01T12:00:00Z'); d.setUTCDate(0); S.ctAsOf = d.toISOString().slice(0, 10); S.ctEndsBy = ''; viewContracts(); };
+  const aop = $('#ctasofprev'); if (aop) aop.onclick = () => { S.ctAsOf = bDate(-Number(bDate().slice(8, 10))); S.ctEndsBy = ''; viewContracts(); }; // heute minus Tag des Monats = Monatsletzter davor
   const ebEl = $('#ctendsby'); if (ebEl) ebEl.onchange = () => { const v = ebEl.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctEndsBy = v; viewContracts(); };
   $$('[data-ctq]').forEach((b) => (b.onclick = () => { S.ctEndsBy = quarterEnd(bDate(), Number(b.dataset.ctq)); viewContracts(); }));
   const ebx = $('#ctendsbyx'); if (ebx) ebx.onclick = () => { S.ctEndsBy = ''; viewContracts(); };
