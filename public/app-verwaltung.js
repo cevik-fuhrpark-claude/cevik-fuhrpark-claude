@@ -119,7 +119,8 @@ function quarterEnd(ymd, off = 0) {
 }
 // Backlog 624 (Blickwinkel „Versichererwechsel zum 01.01.“): mehrere laufende Verträge der aktuellen Ansicht beenden oder ein Vertragsende eintragen
 function ctBatch(list) {
-  if (!list.length) return { html: '', bind: () => {} };
+  // keine laufenden Verträge mehr in der Ansicht (z. B. gerade alle beendet): Ergebnis trotzdem zeigen
+  if (!list.length) { const res = S.ctbRes || ''; S.ctbRes = ''; S.ctbOpen = false; return { html: res ? `<div class="noprint" id="ctbatch">${res}</div>` : '', bind: () => {} }; }
   const res = S.ctbRes || ''; const open = !!S.ctbOpen; S.ctbRes = ''; S.ctbOpen = false;
   const html = `<details class="panel noprint" id="ctbatch"${open ? ' open' : ''}><summary>${esc(t('ctb_title'))}</summary><p class="small muted">${esc(t('ctb_hint'))}</p>${res}
     <form id="ctbf"><fieldset style="border:0;padding:0;margin:0"><legend class="small"><b>${esc(t('ctb_action'))}</b></legend>
@@ -161,11 +162,12 @@ async function viewContracts() {
   // Backlog 409: „Ende/Kündigung bis“ (laufende Verträge mit Vertragsende oder Kündigungsfrist bis zum Datum) – nicht zusammen mit dem Stichtag
   const eby = !asof && f !== 'beendet' ? S.ctEndsBy || '' : '';
   // Stichtag (Backlog 196): km/Status zum Ende des Berliner Tags – nur Ablesungen bis dahin; gilt für Liste, Ausdruck und CSV
-  const sq = (cts ? '&site=' + encodeURIComponent(cts) : '') + (asof ? '&as_of=' + asof : '') + (eby ? '&ends_by=' + eby : '');
+  const ctp = S.ctPartner || ''; // Backlog 625: Vertragspartner
+  const sq = (cts ? '&site=' + encodeURIComponent(cts) : '') + (asof ? '&as_of=' + asof : '') + (eby ? '&ends_by=' + eby : '') + (ctp ? '&partner=' + encodeURIComponent(ctp) : '');
   const r = await api('GET', `/api/contracts?filter=${f}${k ? '&kind=' + k : ''}${sq}`);
   const ctb = ctBatch(r.contracts.filter((c) => !c.ended_on)); // Backlog 624
   render(`<h1>${esc(t('ct_title'))}</h1>${helpLink('contracts')}<p class="small muted">${esc(t('ct_hint'))}</p>
-    <p class="print-only small">${printStamp()} · ${esc(t('print_filter'))}: ${esc(t('cf_' + f))}${k ? ' · ' + esc(t('ck_' + k)) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''}${r.as_of ? ' · ' + esc(t('ct_asof')) + ': ' + fmtD(r.as_of) : ''}${r.ends_by ? ' · ' + esc(t('ct_endsby')) + ': ' + fmtD(r.ends_by) : ''} · ${esc(t('print_count').replace('{n}', r.contracts.length))} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    <p class="print-only small">${printStamp()} · ${esc(t('print_filter'))}: ${esc(t('cf_' + f))}${k ? ' · ' + esc(t('ck_' + k)) : ''}${r.partner ? ' · ' + esc(r.partner) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''}${r.as_of ? ' · ' + esc(t('ct_asof')) + ': ' + fmtD(r.as_of) : ''}${r.ends_by ? ' · ' + esc(t('ct_endsby')) + ': ' + fmtD(r.ends_by) : ''} · ${esc(t('print_count').replace('{n}', r.contracts.length))} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="actions noprint" style="flex-wrap:wrap">${['aktiv', 'aktion', 'beendet', 'alle'].map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-cf="${x}">${esc(t('cf_' + x))} (${r.counts[x]})</button>`).join('')}</div>
     <div class="actions noprint" style="margin-top:0"><select id="ctk" aria-label="${esc(t('ct_kind'))}" style="max-width:260px"><option value="">${esc(t('ct_all_kinds'))}</option>${CT_KINDS.map((x) => `<option value="${x}"${k === x ? ' selected' : ''}>${esc(t('ck_' + x))}</option>`).join('')}</select>
       <label class="small" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0"><span style="white-space:nowrap">${esc(t('ct_asof'))}</span> <input type="date" id="ctasof" value="${esc(asof)}" max="${bDate()}" style="max-width:170px"></label>${asof ? `<button type="button" class="btn secondary" id="ctasofx">${esc(t('ct_asof_clear'))}</button>` : `<button type="button" class="btn secondary small" id="ctasofprev">${esc(t('ct_asof_prevmonth'))}</button>`}</div>
@@ -173,8 +175,9 @@ async function viewContracts() {
     ${r.ends_by ? `<p class="small" data-ct-endsby><span class="chip mittel" style="white-space:normal">${esc(t('ct_endsby_note').replace('{d}', fmtD(r.ends_by)))}</span></p>` : ''}
     ${r.as_of ? `<p class="small" data-ct-asof><span class="chip mittel" style="white-space:normal">${esc(t('ct_asof_note').replace('{d}', fmtD(r.as_of)))}</span></p>` : ''}
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('ctsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : ''}
+    ${(r.partner_options || []).length > 1 || r.partner ? `<div class="actions noprint" style="margin-top:0"><select id="ctpartner" aria-label="${esc(t('ct_partner'))}" style="max-width:320px"><option value="">${esc(t('ct_all_partners'))}</option>${(r.partner_options || []).map((x) => `<option value="${esc(x.partner)}"${r.partner && x.partner.toLocaleLowerCase('de') === r.partner.toLocaleLowerCase('de') ? ' selected' : ''}>${esc(x.partner)} (${x.n})</option>`).join('')}</select></div>` : ''}
     ${f !== 'beendet' ? `<p>${esc(t('ct_rate_sum'))}: <b>${eur(r.monthly_rate_sum_net)}</b>${r.unrated ? ` <span class="small muted">· ${r.unrated} ${esc(t('ct_unrated'))}</span>` : ''}${r.contracts.some((c) => c.vehicle_eval_excluded) ? ` <span class="small muted">· ${esc(t('ct_excluded_hint'))}</span>` : ''}</p>` : ''}
-    <div class="list">${r.contracts.length ? r.contracts.map((c) => `<a class="row ${c.status.overall === 'handeln' ? 'p-kritisch' : c.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${plate(c.plate)}<span class="title">${c.vehicle_eval_excluded ? `<span class="chip">${esc(t('eval_excluded'))}</span> ` : ''}${esc(t('ck_' + c.kind))} · ${esc(c.partner)}</span>${ctChip(c.status)}<span class="sub" style="white-space:normal">${ctLines(c, { noEvidence: true }).join(' · ').replace(/<br>/g, ' · ')}${c.file_id ? ` · 📎 ${esc(t('ct_doc_linked'))}` : ''}</span>${ctRet(c.return_check)}</a>`).join('') : `<p class="muted">${esc(t('ct_none'))}</p>`}</div>
+    <div class="list">${r.contracts.length ? r.contracts.map((c) => `<a class="row ${c.status.overall === 'handeln' ? 'p-kritisch' : c.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${plate(c.plate)}<span class="title">${c.vehicle_eval_excluded ? `<span class="chip">${esc(t('eval_excluded'))}</span> ` : ''}${esc(t('ck_' + c.kind))} · ${esc(c.partner)}</span>${ctChip(c.status)}<span class="sub" style="white-space:normal">${ctLines(c, { noEvidence: true }).join(' · ').replace(/<br>/g, ' · ')}${c.file_id ? ` · 📎 ${esc(t('ct_doc_linked'))}` : ''}${c.successor ? ` · <span data-ctsucc>${esc(t('ct_successor').replace('{p}', c.successor.partner + (c.successor.contract_no ? ' · ' + c.successor.contract_no : '')).replace('{d}', fmtD(c.successor.start_date)))}</span>` : ''}</span>${ctRet(c.return_check)}</a>`).join('') : `<p class="muted">${esc(t('ct_none'))}</p>`}</div>
     <div class="actions noprint"><button type="button" class="btn secondary" id="ctcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="ctics" title="${esc(t('ct_ics_hint'))}">${esc(t('export_ics'))}</button><button type="button" class="btn secondary" id="ctprt">${esc(t('print'))}</button></div>
     ${ctb.html}
     <details class="panel noprint"><summary>${esc(t('ct_import'))}</summary><p class="small muted">${esc(t('ct_import_hint'))}</p>
@@ -191,6 +194,7 @@ async function viewContracts() {
   { const cy = $('#ctyear'); if (cy) cy.onclick = () => { S.ctEndsBy = `${Number(bDate().slice(0, 4)) + 1}-12-31`; viewContracts(); }; } // Backlog 613: Jahresplanung wie Prüftermine (545)
   const ebx = $('#ctendsbyx'); if (ebx) ebx.onclick = () => { S.ctEndsBy = ''; viewContracts(); };
   const ctsEl = $('#ctsite'); if (ctsEl) ctsEl.onchange = () => { S.ctSite = ctsEl.value; viewContracts(); };
+  const ctpEl = $('#ctpartner'); if (ctpEl) ctpEl.onchange = () => { S.ctPartner = ctpEl.value; viewContracts(); };
   $('#ctprt').onclick = () => window.print();
   const inp = $('#ctimp');
   inp.onchange = async () => {
@@ -209,7 +213,7 @@ async function viewContracts() {
     try { show(await api('POST', '/api/contracts/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
   };
   $('#ctics').onclick = async () => { try { download(await api('GET', `/api/contracts?format=ics&filter=aktiv${k ? '&kind=' + k : ''}${sq.replace(/&as_of=[^&]*/, '')}`), `fuhrpark-vertraege_${r.today}${r.site ? '_' + fnPart(r.site) : ''}.ics`); } catch (err) { toast(err.message, true); } };
-  $('#ctcsv').onclick = async () => { try { download(await api('GET', `/api/contracts?format=csv&filter=${f}${k ? '&kind=' + k : ''}${sq}`), `fuhrpark-vertraege_${r.as_of ? 'stichtag-' + r.as_of : r.today}${r.ends_by ? '_bis-' + r.ends_by : ''}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#ctcsv').onclick = async () => { try { download(await api('GET', `/api/contracts?format=csv&filter=${f}${k ? '&kind=' + k : ''}${sq}`), `fuhrpark-vertraege_${r.as_of ? 'stichtag-' + r.as_of : r.today}${r.ends_by ? '_bis-' + r.ends_by : ''}${r.site ? '_' + fnPart(r.site) : ''}${r.partner ? '_' + fnPart(r.partner) : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 async function viewFines() {
   const fsite = S.me.role === 'driver' ? '' : (vsDef('fineSite') || '');

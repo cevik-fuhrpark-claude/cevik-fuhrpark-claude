@@ -40,6 +40,7 @@ with sync_playwright() as p:
         q.goto(B + '/#/contracts'); q.wait_for_selector('#ctimp', state='attached')
         q.evaluate("() => { const d = document.querySelector('#ctimp').closest('details'); if (d) d.open = true; }")
         q.set_input_files('#ctimp', f.name); q.wait_for_selector('#ctimpr [data-ctpar]', timeout=15000)
+        check(q.locator('#ctpartner').count() == 1, f'{lang}: Auswahl Vertragspartner (Backlog 625)')
         check('Alt-Versicherung' in q.inner_text('#ctimpr [data-ctpar]') or 'Neu-Versicherung' in q.inner_text('#ctimpr [data-ctpar]'), f'{lang}: Vorschau „läuft parallel“')
         check(q.locator('[data-ctparhint]').count() == 1, f'{lang}: Hinweis unter der Vorschau')
         if SHOTS: q.screenshot(path=f'{SHOTS}/vwechsel-import-{lang}-{w}.png', full_page=True)

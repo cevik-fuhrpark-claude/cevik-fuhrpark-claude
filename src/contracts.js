@@ -359,12 +359,23 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   // Filter „Fahrzeug-Standort“ (Standort laut Fahrzeugstamm, Schreibweisen zusammengefasst) – vor den Zählern, damit diese zum Standort passen
   const sel = siteSelection(rows.results.map((r) => ({ site: r.vehicle_site })), query.site);
   // Vertragsart ebenfalls vor den Zählern (vorher „Handlungsbedarf (2)“ bei leerer Liste der gewählten Art, 17.10.2026)
-  const pre = rows.results.filter((c) => (!sel.site || sel.match(c.vehicle_site)) && (!kind || c.kind === kind));
+  const pre0 = rows.results.filter((c) => (!sel.site || sel.match(c.vehicle_site)) && (!kind || c.kind === kind));
+  // Backlog 625 (Blickwinkel „Versichererwechsel“): Vertragspartner (Schreibweise egal) – Auswahl aus den Partnern der Ansicht (Standort/Art), vor den Zählern
+  const pMap = new Map(); for (const c of pre0) { const k = lcDe(c.partner); if (!k) continue; const x = pMap.get(k) || { partner: String(c.partner).trim(), n: 0 }; x.n++; if (x.partner === x.partner.toLocaleLowerCase('de') && String(c.partner).trim() !== String(c.partner).trim().toLocaleLowerCase('de')) x.partner = String(c.partner).trim(); pMap.set(k, x); } // Anzeige: Schreibweise mit Großbuchstaben bevorzugt
+  const partnerOptions = [...pMap.values()].sort((a, b) => a.partner.localeCompare(b.partner, 'de'));
+  const partnerQ = query.partner ? str(query.partner, { max: 120, field: 'Vertragspartner' }) : '';
+  const partner = partnerQ && pMap.has(lcDe(partnerQ)) ? pMap.get(lcDe(partnerQ)).partner : partnerQ || null;
+  const pre = partner ? pre0.filter((c) => lcDe(c.partner) === lcDe(partner)) : pre0;
+  // Backlog 625: Folgevertrag gleicher Art am selben Fahrzeug (Beginn nach dem eigenen Beginn, spätestens am Tag nach dem Ende) – aus allen Verträgen
+  const next1 = (d) => new Date(Date.parse(d + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
+  const succOfC = (c) => { const e = c.ended_on || c.end_date; if (!e) return null;
+    const n = rows.results.filter((x) => x.vehicle_id === c.vehicle_id && x.kind === c.kind && x.id !== c.id && x.start_date && x.start_date > (c.start_date || '') && x.start_date <= next1(e)).sort((a, b) => a.start_date.localeCompare(b.start_date))[0];
+    return n ? { id: n.id, partner: n.partner, contract_no: n.contract_no || null, start_date: n.start_date } : null; };
   // Stichtag vor dem Beenden: Vertrag lief damals noch – Status wie laufend (km bis zum Stichtag), beendet erst ab `ended_on`
   const endKm = await endKmByContract(env, pre.filter((c) => !(asOf && c.ended_on && c.ended_on > asOf)));
   let list = pre.map(({ file_ok, ...c }) => ({ ...c, file_id: file_ok ? c.file_id : null, file_other_env: !!(c.file_id && !file_ok), vehicle_eval_excluded: !!c.vehicle_eval_excluded,
     status: asOf && c.ended_on && c.ended_on > asOf ? contractStatus({ ...c, ended_on: null }, latestKm.get(c.vehicle_id), today, w, undefined, true) : contractStatus(c, latestKm.get(c.vehicle_id), today, w, c.km_allowance && endKm.has(c.id) ? endKm.get(c.id) : undefined, !!asOf),
-    reading: readingOf(c.ended_on && !(asOf && c.ended_on > asOf) ? endKm.get(c.id) : latestKm.get(c.vehicle_id)) }));
+    reading: readingOf(c.ended_on && !(asOf && c.ended_on > asOf) ? endKm.get(c.id) : latestKm.get(c.vehicle_id)), successor: succOfC(c) }));
   for (const c of list) c.no_reading = noReading(c, asOf); // Backlog 601: Hinweis „keine Ablesung“ zum Stichtag, gleiche Regel wie die CSV
   // Backlog 288 (Leasingrückgabe): Leasing/Miete endet bald bzw. ist abgelaufen → offene Vorgänge und offene Restarbeiten freigegebener
   // Vorgänge am Fahrzeug (eigene Umgebung, heutiger Stand – nicht zum Stichtag, der Verlauf offener Vorgänge wird nicht rekonstruiert)
@@ -394,7 +405,7 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   // Summe der Monatsraten nur über aktive Verträge mit hinterlegter Rate (fehlende Rate = unbewertet, nie 0 €)
   const active = running;
   const rated = active.filter((c) => c.monthly_rate_net !== null);
-  return { today, as_of: asOf, ends_by: endsBy, generated_on: realToday, warn_days: w, filter, kind, site: sel.site, site_options: sel.options, counts, contracts: list, monthly_rate_sum_net: rated.length ? Math.round(rated.reduce((s, c) => s + c.monthly_rate_net, 0) * 100) / 100 : null, unrated: active.length - rated.length };
+  return { today, as_of: asOf, ends_by: endsBy, generated_on: realToday, warn_days: w, filter, kind, site: sel.site, site_options: sel.options, partner, partner_options: partnerOptions, counts, contracts: list, monthly_rate_sum_net: rated.length ? Math.round(rated.reduce((s, c) => s + c.monthly_rate_net, 0) * 100) / 100 : null, unrated: active.length - rated.length };
 }
 
 // Backlog 512: laufender Leasing-/Mietvertrag eines Lkw ohne Kontingent und ohne Ablesung bis zum Stichtag – sonst nicht von einem Anhänger zu unterscheiden
@@ -423,7 +434,9 @@ export function contractsCsv(ov) {
     // Backlog 241: Herkunft der Ablesung (Rückfragen des Leasinggebers, Telematik-Ausreißer)
     'Ablesung Quelle',
     // Backlog 288: nur bei Leasing/Miete, die bald enden bzw. abgelaufen sind (heutiger Stand, leer = nicht geprüft)
-    'Offene Vorgänge (Rückgabe)', 'Offene Restarbeiten nach Freigabe (Rückgabe)'];
+    'Offene Vorgänge (Rückgabe)', 'Offene Restarbeiten nach Freigabe (Rückgabe)',
+    // Backlog 625: Folgevertrag gleicher Art (Versichererwechsel, Leasing-Nachfolger)
+    'Folgevertrag'];
   const lines = [head.join(';')];
   for (const c of ov.contracts) {
     const s = c.status;
@@ -432,7 +445,8 @@ export function contractsCsv(ov) {
       s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.vehicle_eval_excluded ? 'ja' : 'nein',
       c.reading ? c.reading.km : '', c.reading && c.reading.measured_at ? berlinDate(c.reading.measured_at) : '',
       s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : noReading(c, ov.as_of) ? 'kein km-Stand' : '', ov.as_of || ov.today, c.reading ? odoSourceDe(c.reading.source) : '',
-      c.return_check ? c.return_check.open_cases : '', c.return_check ? c.return_check.open_items : ''].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
+      c.return_check ? c.return_check.open_cases : '', c.return_check ? c.return_check.open_items : '',
+      c.successor ? `${c.successor.partner}${c.successor.contract_no ? ' (' + c.successor.contract_no + ')' : ''} ab ${c.successor.start_date.split('-').reverse().join('.')}` : ''].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }

@@ -1129,6 +1129,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 616: Kosten-CSV je Fahrzeug
 // Backlog 622 (Blickwinkel „Versichererwechsel zum 01.01.“): Vertragsimport – neuer Vertrag läuft neben einem nicht beendeten gleicher Art
 // Backlog 624: Verträge gesammelt beenden bzw. Vertragsende eintragen (Mehr → Verträge)
+// Backlog 625: Verträge nach Vertragspartner, Folgevertrag
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

@@ -21153,9 +21153,9 @@ await test('Backlog 288 (Blickwinkel „Leasingrückgabe“): Leasing/Miete ende
   ok(!(await U.fleet.get(`/api/contracts?filter=alle&as_of=${day(-1)}`)).data.contracts.some((c) => c.return_check), 'Stichtag ohne Rückgabeprüfung');
   // CSV
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/contracts?filter=alle&format=csv')).data).split('\r\n');
-  ok(csv[0].endsWith(';Offene Vorgänge (Rückgabe);Offene Restarbeiten nach Freigabe (Rückgabe)'), 'CSV-Kopf');
-  const row = csv.find((l) => l.includes('Leasing AG')); ok(row && row.endsWith(';1;1'), 'CSV-Werte Leasing');
-  ok(csv.find((l) => l.includes('Mietpartner')).endsWith(';0;0'), 'CSV-Werte Miete'); ok(csv.find((l) => l.includes('Versicherer')).endsWith(';;'), 'CSV leer bei Versicherung');
+  ok(csv[0].endsWith(';Offene Vorgänge (Rückgabe);Offene Restarbeiten nach Freigabe (Rückgabe);Folgevertrag'), 'CSV-Kopf (Backlog 625: Folgevertrag angehängt)');
+  const row = csv.find((l) => l.includes('Leasing AG')); ok(row && row.endsWith(';1;1;'), 'CSV-Werte Leasing');
+  ok(csv.find((l) => l.includes('Mietpartner')).endsWith(';0;0;'), 'CSV-Werte Miete'); ok(csv.find((l) => l.includes('Versicherer')).endsWith(';;;'), 'CSV leer bei Versicherung');
   // Agentenbefund in der Testumgebung nennt die Zahlen, Betrieb nicht
   eq((await U.fleet.post('/api/agent/run')).status, 200);
   const f = (await U.fleet.get('/api/master')).data.findings.find((x) => x.finding_code === 'CONTRACT_ENDS_SOON' && x.message.includes('Leasing AG'));
@@ -26716,6 +26716,27 @@ await test('Backlog 624 (Blickwinkel „Versichererwechsel zum 01.01.“): Vertr
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['ctb_title', 'ctb_hint', 'ctb_submit', 'ctb_sk_not_found', 'ctb_sk_already_ended', 'ctb_sk_before_start', 'ctb_sk_end_before_start', 'ctb_sk_unchanged', 'ctb_sk_has_end', 'ctb_sk_changed']) ok(STRINGS[l][k], `${l}.${k}`);
   void n1;
+});
+
+await test('Backlog 625 (Blickwinkel „Versichererwechsel“): Vertragsübersicht nach Vertragspartner (Schreibweise egal, Auswahl mit Anzahl, Zähler/CSV gefiltert), Folgevertrag je Vertrag (Übersicht, CSV-Spalte)', async () => {
+  const { U, V1 } = await freshWorld(); const V2 = 'VIN:WDB9630051L917317';
+  const mk = async (v, b) => { const r = await U.fleet.post(`/api/vehicles/${v}/contracts`, { kind: 'versicherung', evidence: 'Police (Test)', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const a1 = await mk(V1, { partner: 'Alt-Versicherung AG', contract_no: 'A-1', start_date: '2025-01-01', end_date: bDayOff(20) });
+  await mk(V2, { partner: 'alt-versicherung ag ', contract_no: 'A-2', start_date: '2025-01-01' });
+  await mk(V1, { partner: 'Neu-Versicherung SE', contract_no: 'N-1', start_date: bDayOff(21) });
+  await mk(V1, { kind: 'leasing', partner: 'Leasing GmbH', start_date: '2025-01-01' });
+  const all = (await U.fleet.get('/api/contracts?filter=alle&kind=versicherung')).data;
+  eq(all.partner_options.length, 2, 'Schreibweisen zusammengefasst ' + JSON.stringify(all.partner_options)); eq(all.partner_options.find((x) => x.partner.startsWith('Alt')).n, 2);
+  const r = (await U.fleet.get('/api/contracts?filter=alle&kind=versicherung&partner=' + encodeURIComponent('ALT-VERSICHERUNG AG'))).data;
+  eq(r.contracts.length, 2, 'nur Altverträge'); eq(r.counts.alle, 2, 'Zähler gefiltert'); eq(r.partner, 'Alt-Versicherung AG');
+  const c1 = r.contracts.find((c) => c.id === a1); eq(c1.successor?.partner, 'Neu-Versicherung SE'); eq(c1.successor.start_date, bDayOff(21));
+  ok(!r.contracts.find((c) => c.id !== a1).successor, 'ohne Ende kein Folgevertrag');
+  eq((await U.fleet.get('/api/contracts?filter=alle&partner=Unbekannt')).data.contracts.length, 0, 'unbekannter Partner: leer');
+  const csv = new TextDecoder().decode((await U.fleet.get('/api/contracts?format=csv&filter=alle&partner=' + encodeURIComponent('Alt-Versicherung AG'))).data).replace(/^\uFEFF/, '').trim().split('\r\n');
+  ok(csv[0].endsWith(';Folgevertrag'), csv[0].slice(-80)); eq(csv.length, 3, 'CSV gefiltert');
+  ok(csv.some((l) => l.endsWith(`;Neu-Versicherung SE (N-1) ab ${bDayOff(21).split('-').reverse().join('.')}`)), 'Spalte Folgevertrag');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="ctpartner"') && app.includes('data-ctsucc'), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ct_all_partners && STRINGS[l].ct_successor.includes('{p}'), l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
