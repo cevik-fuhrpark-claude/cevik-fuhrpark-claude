@@ -21498,7 +21498,7 @@ await test('Backlog 307 (Blickwinkel „Ladung verrutscht während der Fahrt“)
   }
   ok(app.includes(`<div id="load" class="panel" hidden role="status">`), 'Panel #load');
   ok(app.includes("$('#load').hidden = !LOAD_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  { const o = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, '')); ok(o.indexOf('brake') < o.indexOf('load') && o.indexOf('load') < o.indexOf('leak') && o.slice(o.indexOf('load') + 1, o.indexOf('leak')).every((x) => x === 'deck'), 'Gruppierung: nach Bremse, vor Leck (dazwischen nur Ladeetage, Backlog 354)'); }
+  { const o = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, '')); ok(o.indexOf('brake') < o.indexOf('load') && o.indexOf('load') < o.indexOf('leak') && o.slice(o.indexOf('load') + 1, o.indexOf('leak')).every((x) => ['deck', 'lashgear'].includes(x)), 'Gruppierung: nach Bremse, vor Leck (dazwischen nur Sicherungsmittel und Ladeetage, Backlog 354/692)'); }
   ok(helpAfter(app, 'load', 'tarp'), 'Hilfe-Abschnitt load nach tarp');
 });
 
@@ -27324,7 +27324,27 @@ await test('Backlog 690–691 (Blickwinkel „Fahrer rutscht beim Absteigen aus 
   ok(app.includes('<div id="step" class="panel" hidden role="status">'), 'Panel #step');
   ok(app.includes("$('#step').hidden = !STEP_HINT.test($('#d').value);") && app.indexOf("$('#step').hidden") < app.indexOf("$('#loose').hidden") && app.indexOf("$('#step').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung vor dem Lose-Teile-Hinweis und vor bindFormDraft');
   ok(app.includes("'susp', 'step', 'loose'"), 'Reihenfolge vor „loses Teil“');
-  ok(app.includes("'pfilter', 'step', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'pfilter', 'step', "), 'Hilfe-Abschnitt für meldende Rollen');
+});
+await test('Backlog 692–693 (Blickwinkel „Vor dem Laden: Zurrgurte, Kantenschutz oder Antirutschmatten fehlen bzw. sind beschädigt“): Meldeformular zeigt Schritte (nicht ohne ausreichende Sicherung laden/losfahren, Leitung klärt Ersatz, beschädigte Gurte aussortieren, was fehlt/Fotos, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; „Sicherheitsgurt defekt“, „Zurrgurte nachbestellt“, „Kantenschutz nötig“, „немає ременя безпеки“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const LASHGEAR_HINT = \/(.+)\/i;/m); ok(m, 'LASHGEAR_HINT auf Modulebene'); eq((app.match(/const LASHGEAR_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Zurrgurte fehlen', 'Spanngurte sind eingerissen', 'nur noch zwei Spanngurte an Bord, zu wenig', 'Kantenschutz fehlt', 'Antirutschmatten fehlen', 'keine Antirutschmatten', 'zu wenig Zurrgurte', 'Sperrbalken klemmt', 'Gurte ausgefranst', 'Zurrgurt ohne Etikett', 'beschädigte Spanngurte', 'lashing straps missing', 'not enough straps', 'edge protectors missing', 'straps are frayed', 'немає стяжних ременів', 'стяжки порвані', 'не хватает ремней', 'кутники відсутні']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Sicherheitsgurt defekt', 'Gurt klemmt beim Anschnallen', 'Gurtstraffer defekt', 'seat belt broken', 'Zurrgurte nachbestellt', 'Zurrgurte wieder da', 'Kantenschutz nötig', 'Ladung verrutscht', 'Ladungssicherung bemängelt', 'straps ordered', 'ремінь безпеки зламаний', 'немає ременя безпеки', 'нет ремня безопасности', 'Spiegel kaputt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.lashgear_hint_title, 'Titel ' + l);
+    const st = S.lashgear_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.lashgear_hint_steps), 'keine Zahl/Menge/Frist ' + l);
+    ok([S.drv_eingeschraenkt, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_lashgear_t && S.help_lashgear_s.includes(S.lashgear_hint_steps) && S.help_lashgear_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="lashgear" class="panel" hidden role="status">'), 'Panel #lashgear');
+  ok(app.includes("$('#lashgear').hidden = !LASHGEAR_HINT.test($('#d').value);") && app.indexOf("$('#lashgear').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'load', 'lashgear', 'deck'"), 'Reihenfolge nach verrutschter Ladung');
+  ok(app.includes("'step', 'lashgear', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
