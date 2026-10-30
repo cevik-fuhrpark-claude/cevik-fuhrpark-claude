@@ -27503,6 +27503,14 @@ await test('Backlog 741–742 (Blickwinkel „Ladeboden, Bordwand, Seitenwand od
   ok(app.includes("'lashgear', 'deck', 'floor', 'leak'"), 'Reihenfolge nach Ladeetage, vor Leck');
   ok(app.includes("'underrun', 'floor', 'tyre'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
+await test('Backlog 743 (Sonde über vorhandene Muster, 30.10.2026 20:15): „Lkw zieht nicht richtig“, „Motor zieht schlecht“, „zieht kaum noch am Berg“, „вантажівка не тягне“, „машина не тянет“ → Motor-Schritte (Leistungsverlust); „zieht nach links“, „zieht nicht nach links“, „Kupplung/Lüfter zieht nicht“, „zieht Wasser“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const ENGINE_HINT = \/(.+)\/i;/m); ok(m, 'ENGINE_HINT auf Modulebene');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Lkw zieht nicht richtig', 'Motor zieht schlecht', 'Lkw zieht kaum noch am Berg', 'er zieht nur schlecht', 'Lkw zieht nicht mehr', 'вантажівка не тягне', 'погано тягне в гору', 'машина не тянет', 'плохо тянет']) ok(re.test(x), 'Motor-Hinweis: ' + x);
+  for (const x of ['Lkw zieht nach links', 'Lkw zieht nicht nach links', 'Kupplung zieht nicht', 'Lüfter zieht nicht', 'zieht Wasser', 'Spiegel kaputt', 'ремінь тягне вліво']) ok(!re.test(x), 'kein Motor-Hinweis: ' + x);
+});
 await test('Backlog 737–738 (Sonde über vorhandene Muster, 30.10.2026 19:15): „Anhänger/Auflieger/Lkw bremst nicht/schlecht/kaum“, „trailer not braking“, „won\'t brake“, „причіп не гальмує“, „прицеп не тормозит“ → Bremse (sicherheitsrelevant, zeigte bisher nichts); „Fahrtschreiber“ → Fahrtenschreiber; „Maut Box“ → Mautgerät; „Schlafkabine“ nass → Wasser im Fahrerhaus; Wechselrichter/Spannungswandler → Ausstattung Fahrerhaus; Hilfe nennt das Beispiel DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
