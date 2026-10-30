@@ -27179,7 +27179,7 @@ await test('Backlog 674–676 (Blickwinkel „Personen im Laderaum entdeckt – 
   }
   ok(app.includes('<div id="stow" class="panel" hidden role="status">'), 'Panel #stow');
   ok(app.includes("$('#stow').hidden = !STOW_HINT.test($('#d').value);") && app.indexOf("$('#stow').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("'storm', 'bridge', 'stow', 'trlr'"), 'Reihenfolge nach Brückenanprall');
+  ok(app.includes("'storm', 'bridge', 'stow', 'roofice', 'trlr'"), 'Reihenfolge nach Brückenanprall (Backlog 678: Eis/Schnee auf dem Dach direkt dahinter)');
   ok(app.includes("const stowNoRef = !theftNoRef && !hitrunNoRef && !vandalNoRef && !bridgeNoRef && STOW_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimstow'), 'Hinweis nur ohne Aktenzeichen, nicht doppelt');
   ok(app.includes("'leak', 'stow', 'custdmg'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -27192,6 +27192,33 @@ await test('Backlog 677 (Blickwinkel „Radfahrer beim Rechtsabbiegen übersehen
   for (const x of ['Fahrradträger defekt', 'Fußgängerüberweg', 'Fußgängerzone Lieferung', 'pedestrian crossing light broken', 'bike rack broken', 'Radfahrer hat gewunken', 'cyclist lane closed', 'Radweg gesperrt']) ok(!re.test(x), 'kein Unfall-Hinweis: ' + x);
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(/112/.test(STRINGS[l].acc_steps), 'Unfall-Hinweis nennt den Notruf ' + l);
+});
+
+await test('Backlog 678–680 (Blickwinkel „Eis/Schnee auf dem Aufliegerdach“): Meldeformular zeigt Schritte (nicht so losfahren, nicht ungesichert aufs Dach, Räumanlage/Leitung, sonst „nicht fahrbereit“; gelöst und getroffen → anhalten, Polizei, 112), Versicherungsabschnitt ohne Versicherungsfall nennt die Haftpflicht-Klärung laut Vertrag; Hilfe DE/UK/EN; „Schnee auf der Straße“, „Frontscheibe vereist“, „Eis im Laderaum“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const ROOFICE_HINT = \/(.+)\/i;/m); ok(m, 'ROOFICE_HINT auf Modulebene'); eq((app.match(/const ROOFICE_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Schnee auf dem Aufliegerdach, keine Räumanlage am Hof', 'Eis auf dem Dach des Aufliegers', 'Eisplatte ist vom Dach geflogen', 'Eisplatten auf der Plane', 'dicke Schneeschicht auf dem Auflieger', 'Dach vereist', 'Planendach voller Schnee', 'Kofferdach mit dickem Eis', 'Schnee liegt auf dem Dach, wie räumen?', 'Dacheis hat sich gelöst', 'Schneelast auf der Plane', 'Eis vom Dach auf das Auto hinter mir gefallen', 'Snow on the trailer roof', 'ice sheet flew off the roof', 'roof covered with ice', 'icy roof on the trailer', 'Лід на даху причепа', 'крижина злетіла з даху', 'сніг на тенті', 'лед на крыше прицепа', 'дах у снігу', 'крыша обледенела']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Schnee auf der Straße', 'Eis auf der Fahrbahn', 'Frontscheibe vereist', 'Spiegel vereist', 'Eisen auf dem Dach gefunden', 'Eiskratzer fehlt', 'Kühlaufbau innen vereist', 'Kühlung vereist im Auflieger', 'Eis im Laderaum', 'Dachluke undicht', 'Schneeketten aufgezogen', 'Schneefall, Straße glatt', 'Plane gerissen', 'snow on the road', 'ice on the windscreen', 'roof hatch leaking', 'лід на дорозі', 'сніг на дорозі', 'лёд на лобовом стекле']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.roofice_hint_title, 'Titel ' + l);
+    const st = S.roofice_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(st[1].includes(S.driveable) && st[1].includes(S.drv_nicht_fahrbereit), 'Schritt 2 nennt die Auswahl im Formular ' + l);
+    ok(st[2].includes('112') && st[2].includes('110'), 'Schritt 3 nennt Polizei/Notruf ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год|€|EUR|km|cm|Euro)/i.test(S.roofice_hint_steps), 'keine erfundene Frist/Zahl ' + l);
+    ok(S.help_roofice_t && S.help_roofice_s.includes(S.roofice_hint_steps) && S.help_roofice_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+    ok(S.claim_roofice_hint.includes('{b}') && !/\d/.test(S.claim_roofice_hint), 'Versicherungs-Hinweis nennt den Knopf, keine Zahlen ' + l);
+  }
+  ok(app.includes('<div id="roofice" class="panel" hidden role="status">'), 'Panel #roofice');
+  ok(app.includes("$('#roofice').hidden = !ROOFICE_HINT.test($('#d').value);") && app.indexOf("$('#roofice').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'vibr', 'deck', 'roofice', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("const rooficeNoClaim = !cl && ROOFICE_HINT.test(desc || '');") && app.includes('data-claimroofice'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
+  // Server speichert die Beschreibung unverändert
+  const { U, newCase } = await freshWorld();
+  const c = await newCase({ description: 'Eisplatte vom Aufliegerdach geflogen, Pkw dahinter getroffen' });
+  const g = (await U.fleet.get(`/api/cases/${c}`)).data; ok(re.test(g.case ? g.case.description : g.description), 'Beschreibung erkannt');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
