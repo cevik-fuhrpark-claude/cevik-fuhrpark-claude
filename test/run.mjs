@@ -27277,11 +27277,31 @@ await test('Backlog 685–687 (Blickwinkel „Kennzeichen verloren, gestohlen od
   ok(app.includes("$('#loose').hidden = !LOOSE_HINT.test($('#numplate').hidden ? $('#d').value : $('#d').value.replace(NUMPLATE_WORDS, ' '));"), 'Lose-Teile-Hinweis ohne Kennzeichenwörter');
   ok(app.includes("$('#numplate').hidden = !NUMPLATE_HINT.test($('#d').value);") && app.indexOf("$('#numplate').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'lost', 'numplate', 'fuelcard'"), 'Reihenfolge nach Schlüssel/Papiere');
-  ok(app.includes("'cargo', 'numplate', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'cargo', 'numplate', "), 'Hilfe-Abschnitt für meldende Rollen');
   ok(app.includes("const numplateHint = NUMPLATE_HINT.test(desc || '');") && app.includes('data-claimnumplate'), 'Hinweis an die Leitung im Vorgang');
   const { U, newCase } = await freshWorld();
   const c = await newCase({ description: 'Kennzeichen hinten über Nacht abgeschraubt, Polizei informiert' });
   const g = (await U.fleet.get(`/api/cases/${c}`)).data; ok(re.test(g.case ? g.case.description : g.description), 'Beschreibung erkannt');
+});
+await test('Backlog 688–689 (Blickwinkel „Partikelfilter (DPF) voll – Regeneration nötig oder bricht ab“): Meldeformular zeigt Schritte (Anweisung im Display/Betriebsanleitung, Leitung entscheidet, Standregeneration nur im Freien und nicht über brennbarem Material, Fotos/seit wann/Kurzstrecke, Auswahl „Kann das Fahrzeug fahren?“) vor dem allgemeinen Warnleuchten-Hinweis; Hilfe DE/UK/EN; „DPF gereinigt“, „Partikelfilter regeneriert, alles ok“, „Luftfilter voll“, „Regen ins Fahrerhaus“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const PFILTER_HINT = \/(.+)\/i;/m); ok(m, 'PFILTER_HINT auf Modulebene'); eq((app.match(/const PFILTER_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Partikelfilter voll', 'DPF-Leuchte an', 'Dieselpartikelfilter verstopft', 'Rußpartikelfilter Warnung im Display', 'Partikelfilter muss regeneriert werden', 'Partikelfilter regeneriert nicht', 'Regeneration läuft nicht', 'Regeneration bricht immer ab', 'Display verlangt Standregeneration', 'Abgasnachbehandlung Störung', 'Freibrennen klappt nicht', 'DPF full', 'DPF light on', 'particulate filter blocked', 'parked regen required', 'regen keeps failing', 'сажовий фільтр забився', 'сажевый фильтр забит', 'регенерація не проходить', 'регенерация не запускается']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Partikelfilter laut Rechnung getauscht', 'DPF gereinigt', 'Partikelfilter wurde gereinigt', 'Partikelfilter regeneriert, alles ok', 'Regeneration erfolgreich abgeschlossen', 'DPF cleaned', 'Luftfilter voll', 'Kraftstofffilter verstopft', 'Tank voll', 'Regen ins Fahrerhaus', 'heavy rain, regen', 'it is raining', 'Spiegel kaputt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.pfilter_hint_title, 'Titel ' + l);
+    const st = S.pfilter_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.pfilter_hint_steps), 'keine erfundene Zahl/Frist/Temperatur ' + l);
+    ok([S.drv_nicht_fahrbereit, S.drv_eingeschraenkt, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_pfilter_t && S.help_pfilter_s.includes(S.pfilter_hint_steps) && S.help_pfilter_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="pfilter" class="panel" hidden role="status">'), 'Panel #pfilter');
+  ok(app.includes("$('#pfilter').hidden = !PFILTER_HINT.test($('#d').value);") && app.indexOf("$('#pfilter').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'leak', 'pfilter', 'warnlight'"), 'vor dem allgemeinen Warnleuchten-Hinweis (aufgeklappt, wenn beide passen)');
+  ok(app.includes("'numplate', 'pfilter', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
