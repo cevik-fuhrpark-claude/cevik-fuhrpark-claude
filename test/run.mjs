@@ -27449,6 +27449,26 @@ await test('Backlog 729–730 (Blickwinkel „Gaspedal klemmt/hängt, Fußmatte 
   ok(helpAfter(app, 'pedal', 'parkbrake'), 'Hilfe-Abschnitt für meldende Rollen nach Feststellbremse');
 });
 
+await test('Backlog 733–734 (Sonde über vorhandene Muster, 30.10.2026 17:15): heiß gelaufene/überhitzte/nachlassende Bremsen → Bremse; „Bremsen rauchen“, „stinkt nach Verbranntem“ → Rauch/Brandgeruch; „springt schlecht an“ → Startprobleme; „verliert Ladung“ → Ladung; „im Graben“/„ins Bankett abgerutscht“ → festgefahren; Rolltor klemmt → Tür; „durch Wasser gefahren“ → Unwetter/Hochwasser; Schlüssel eingeschlossen/ausgesperrt → verloren; BALM (früher BAG) bei Kontrollen erkannt und in den Texten genannt', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    BRAKE_HINT: [['Bremsen überhitzt', 'Bremse glüht', 'Bremsen riechen verbrannt', 'Bremsen lassen bergab nach', 'Bremse lässt nach', 'brakes overheating', 'brakes are fading', 'гальма перегрілися', 'тормоза перегрелись'], ['Bremsen getauscht, waren überhitzt', 'Bremslicht defekt', 'Motor überhitzt']],
+    FIRE_HINT: [['Bremsen rauchen', 'Lkw stinkt nach verbranntem', 'es riecht nach verschmortem Kabel', 'Räder qualmen'], ['Rauchen in der Kabine', 'Reifen gewechselt']],
+    NOSTART_HINT: [['Lkw springt schlecht an', 'Motor startet schlecht morgens', 'springt nur schwer an', 'startet erst nach mehreren Versuchen', 'hard to start', 'starts badly'], ['Lkw startet gut', 'Start geht schnell']],
+    LOAD_HINT: [['Lkw verliert Ladung', 'Ladung fällt runter', 'lost part of the load', 'losing cargo'], ['Ladung verladen', 'Fahrer verliert Schlüssel']],
+    STUCK_HINT: [['Lkw im Graben', 'in den Graben gerutscht', 'ins Bankett abgerutscht', 'truck in a ditch', 'у кюветі'], ['Grabenarbeiten an der Straße', 'Bankett frisch gemäht']],
+    DOOR_HINT: [['Rolltor klemmt', 'Rolltor geht nicht auf', 'Rolltür lässt sich nicht schließen', 'roller shutter stuck'], ['Rolltor repariert, klemmte', 'Rolltor beim Kunden', 'Rolltor beim Kunden klemmt', 'Rolltor der Halle geht nicht auf']],
+    STORM_HINT: [['durch Wasser gefahren', 'durch tiefes Wasser gefahren', 'Motor hat Wasser angesaugt', 'drove through deep water'], ['Wasser getankt', 'Wasserflasche']],
+    LOST_HINT: [['Schlüssel im Lkw eingeschlossen', 'Schlüssel in der Kabine eingeschlossen', 'habe mich ausgesperrt', 'keys locked inside the cab', 'locked myself out', 'Lkw abgeschlossen Schlüssel drin', 'Tür zugefallen, Schlüssel steckt'], ['Schlüssel abgeschlossen im Spind', 'Lkw abgeschlossen', 'Lkw abgeschlossen, Schlüssel bei mir']],
+    ROADCHK_HINT: [['bei der BALM-Kontrolle Mängel festgestellt', 'BALM hat bemängelt', 'BAG Kontrolle Mängel'], ['BALM Kontrolle, alles ok']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].roadchk_hint_steps.includes('BALM') && STRINGS[l].help_roadchk_t.includes('BALM') && STRINGS[l].help_roadchk_t.includes('BAG'), 'BALM (früher BAG) genannt ' + l); }
+});
+
 await test('Backlog 731–732 (Blickwinkel „Jemand verletzt sich bei der Arbeit am Fahrzeug – Be-/Entladen, Kuppeln, Plane, Ladebordwand“): Meldeformular zeigt eigene Schritte (Erste Hilfe/Notruf, Gefahrenstelle sichern, Vorgesetzte direkt informieren, Verletzte fahren nicht weiter, keine Angaben zur Verletzung/Gesundheit/Namen in der Meldung, nur Fahrzeugmangel mit Fotos, Auswahl „Weiß nicht“); „Arbeitsunfall“ zeigt nicht die Verkehrsunfall-Schritte; Hilfe DE/UK/EN ohne Frist; Verneinungen, Reifen-„Verletzung“, „Verletzungsgefahr“, „Palette vom Auflieger gefallen“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
