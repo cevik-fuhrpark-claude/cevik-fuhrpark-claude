@@ -27403,6 +27403,14 @@ await test('Backlog 720–722 (Blickwinkel „Batterie ausgelaufen, gast oder au
   ok(helpAfter(app, 'batt', 'elec'), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
+await test('Backlog 723 (Sonde über vorhandene Muster): Funkgerät/CB-Funk und Sitzheizung defekt zeigen die Schritte für Ausstattung im Fahrerhaus (DE/UK/EN); „repariert“, „wieder ok“, „Funk mit Disposition“, „раціон“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const CK = new RegExp(app.match(/^const CABKIT_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['Funkgerät kaputt', 'CB-Funk geht nicht', 'CB Funkgerät defekt', 'Sitzheizung geht nicht', 'Sitzheizung defekt', 'CB radio not working', 'seat heating broken', 'рація не працює', 'підігрів сидіння не працює']) ok(CK.test(x), 'Hinweis: ' + x);
+  for (const x of ['Funkgerät repariert', 'Sitzheizung wieder ok', 'Funk mit Disposition', 'раціон закінчився']) ok(!CK.test(x), 'kein Hinweis: ' + x);
+});
+
 await test('Backlog 718–719 (Blickwinkel „Kabel blank, durchgescheuert oder verschmort, Sicherung fliegt raus, Anhängerkabel beschädigt“): Meldeformular zeigt Schritte (Schmorgeruch → anhalten/Brand-Schritte, nichts anfassen/flicken/überbrücken, beschädigtes Anhängerkabel → nicht weiterfahren, Leitung entscheidet, Beleuchtung/Warnleuchten/Marder eigene Schritte, Ort/Fotos aus sicherem Abstand, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; Marder, Ladekabel/USB, „repariert“, „Kurzschluss behoben“, Ladungssicherung lösen nichts aus', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
