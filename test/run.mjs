@@ -27138,6 +27138,29 @@ await test('Backlog 668–670 (Blickwinkel „Lkw bleibt an Brücke/Unterführun
   ok(app.includes("'storm', 'bridge', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
+await test('Backlog 671–673 (Blickwinkel „Lkw steht nicht mehr da – vom Ordnungsamt/der Polizei abgeschleppt, umgesetzt oder mit Parkkralle“): Meldeformular zeigt Schritte (erst Polizei fragen, sonst wie Diebstahl; Kralle nicht entfernen, Schreiben fotografieren; Abholung nur nach Absprache, Fahrzeug rundum prüfen); Vorgang nennt der Leitung Kosten als Fremdleistung und Schreiben unter Bußgelder; Hilfe DE/UK/EN; Abschleppen nach Panne, Schlauchschelle, Ladung umgesetzt lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const TOW_HINT = \/(.+)\/i;/m); ok(m, 'TOW_HINT auf Modulebene'); eq((app.match(/const TOW_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Lkw ist weg, wurde vom Ordnungsamt abgeschleppt', 'Fahrzeug abgeschleppt und umgesetzt, steht auf dem Verwahrplatz', 'Parkkralle am Rad', 'Polizei hat den Auflieger abschleppen lassen', 'Im Halteverbot abgeschleppt', 'Stadt hat den Lkw umgesetzt', 'Truck towed away by police', 'Trailer impounded in France', 'wheel clamp on the truck', 'the truck was clamped', 'Вантажівку забрали на штрафмайданчик', 'Поліція евакуювала тягач', 'блокиратор на колесе']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Lkw abgeschleppt in die Werkstatt', 'Abschleppwagen bestellt, Panne', 'hose clamp broken', 'Schlauchschelle lose', 'Polizeikontrolle ohne Beanstandung', 'towed to the workshop', 'Евакуатор відвіз на СТО', 'Ladung umgesetzt', 'Fahrer umgesetzt auf anderen Lkw', 'Polizei war da, alles ok', 'Klemme am Kabel']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.tow_hint_title, 'Titel ' + l);
+    const st = S.tow_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(/110/.test(st[0]), 'Polizei fragen ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год|€|EUR|km)/i.test(S.tow_hint_steps) && !/€|EUR/.test(S.claim_tow_hint), 'keine erfundene Frist/Kosten ' + l);
+    ok(S.help_tow_t && S.help_tow_s.includes(S.tow_hint_steps) && S.help_tow_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+    ok(S.claim_tow_hint.includes('{f}'), 'Hinweis nennt die Bußgeld-Ansicht ' + l);
+  }
+  ok(app.includes('<div id="tow" class="panel" hidden role="status">'), 'Panel #tow');
+  ok(app.includes("$('#tow').hidden = !TOW_HINT.test($('#d').value);") && app.indexOf("$('#tow').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'roadchk', 'theft', 'tow', 'reefer'"), 'Reihenfolge nach Diebstahl');
+  ok(app.includes("const towHint = TOW_HINT.test(desc || '');") && app.includes("t('claim_tow_hint').replace('{f}', t('fines'))") && app.includes('data-claimtow'), 'Hinweis an die Leitung im Vorgang');
+  ok(app.includes("'nostart', 'tow', 'warnlight'"), 'Hilfe-Abschnitt für meldende Rollen');
+});
+
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
   const { e, U, newCase, cmd } = await freshWorld(); const db = e.DB.db;
   const open1 = await newCase({ description: 'Spiegel locker' }); const done = await newCase({ description: 'Wischer defekt' });
