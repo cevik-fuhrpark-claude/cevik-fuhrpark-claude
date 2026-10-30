@@ -21651,7 +21651,7 @@ await test('Backlog 314 (Blickwinkel „Teil hängt herunter, schleift oder wurd
     ok(L.loose_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="loose" class="panel" hidden role="status">`), 'Panel #loose');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#loose').hidden = !LOOSE_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#loose').hidden = !LOOSE_HINT.test($('#numplate').hidden ? $('#d').value : $('#d').value.replace(NUMPLATE_WORDS, ' '));"); /* Backlog 685: Kennzeichenwörter zählen nicht als loses Teil */ ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('loose') && order.indexOf('acc') < order.indexOf('loose') && order.indexOf('flat') < order.indexOf('loose') && order.indexOf('loose') < order.indexOf('mirror') && order.indexOf('loose') < order.indexOf('tarp'), 'Gruppierung: Unfall/Reifenpanne vor losem Teil vor Spiegel/Plane');
   ok(helpAfter(app, 'loose', 'visib'), 'Hilfe-Abschnitt loose nach visib');
@@ -27247,10 +27247,40 @@ await test('Backlog 682–684 (Blickwinkel „Ladungsschaden beim Kunden reklami
   ok(app.includes('<div id="cargo" class="panel" hidden role="status">'), 'Panel #cargo');
   ok(app.includes("$('#cargo').hidden = !CARGO_HINT.test($('#d').value);") && app.indexOf("$('#cargo').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'tarp', 'custdmg', 'cargo', 'glass'"), 'Reihenfolge nach Schaden beim Kunden');
-  ok(app.includes("'deck', 'roofice', 'cargo', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'deck', 'roofice', 'cargo', "), 'Hilfe-Abschnitt für meldende Rollen');
   ok(app.includes("const cargoNoClaim = !cl && CARGO_HINT.test(desc || '');") && app.includes('data-claimcargo'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
   const { U, newCase } = await freshWorld();
   const c = await newCase({ description: 'Kunde reklamiert Transportschaden, Kartons nass – Plane undicht?' });
+  const g = (await U.fleet.get(`/api/cases/${c}`)).data; ok(re.test(g.case ? g.case.description : g.description), 'Beschreibung erkannt');
+});
+await test('Backlog 685–687 (Blickwinkel „Kennzeichen verloren, gestohlen oder unleserlich“): Meldeformular zeigt Schritte (Mangel, Leitung entscheidet über Weiterfahrt, Polizei bei Diebstahl, Ort notieren, Ersatz über Zulassungsstelle, nichts eigenmächtig nachmachen), Vorgang nennt der Leitung Stammdaten/frühere Kennzeichen; Hilfe DE/UK/EN; „Kennzeichen SZ-YC 5501, Spiegel kaputt“, „Kennzeichenbeleuchtung defekt“, „немає номера телефону“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const NUMPLATE_HINT = \/(.+)\/i;/m); ok(m, 'NUMPLATE_HINT auf Modulebene'); eq((app.match(/const NUMPLATE_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Kennzeichen verloren', 'Nummernschild abgefallen', 'hinteres Kennzeichen fehlt', 'Kennzeichen am Auflieger ist abgefallen', 'Kennzeichen wurde gestohlen', 'Kennzeichen über Nacht abgeschraubt', 'kein Kennzeichen mehr dran', 'Kennzeichen unleserlich', 'verlorenes Kennzeichen', 'beide Kennzeichen geklaut', 'Kennzeichendiebstahl', 'lost the number plate', 'rear number plate missing', 'licence plate fell off', 'someone stole the number plates', 'номерний знак загубився', 'номер відпав', 'вкрали номери', 'украли номера', 'номерной знак потерял']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Kennzeichen SZ-YC 5501, Spiegel kaputt', 'Kennzeichen: SZ-YC 5550 Bremse defekt', 'Fahrzeug mit Kennzeichen SZ-YC 5517 Plane gerissen', 'Kennzeichen der Zugmaschine SZ-YC 5501 Spiegel abgefallen', 'Kennzeichenbeleuchtung defekt', 'Kennzeichenhalter lose', 'number plate light broken', 'plate SZ-YC 5501 mirror broken', 'Kennzeichen geändert', 'neues Kennzeichen montiert', 'номер SZ-YC5501 пошкоджено дзеркало', 'немає номера телефону', 'нет номера заказа', 'Spiegel kaputt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.numplate_hint_title, 'Titel ' + l);
+    const st = S.numplate_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(/110/.test(st[1]) && /112/.test(st[1]), 'Schritt 2 nennt Polizei-Notruf ' + l);
+    ok(/Zulassungsstelle/.test(st[3]), 'Schritt 4 nennt die Zulassungsstelle ' + l);
+    ok(['{p}', '{e}', '{f}'].every((x) => S.claim_numplate_hint.includes(x)) && !/\d/.test(S.claim_numplate_hint), 'Leitungs-Hinweis mit Platzhaltern, ohne Zahl/Frist ' + l);
+    ok(S.help_numplate_t && S.help_numplate_s.includes(S.numplate_hint_steps) && S.help_numplate_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+    ok(S.cp_title && S.edit_master && S.former_plates, 'Bezugstexte vorhanden ' + l);
+  }
+  ok(app.includes('<div id="numplate" class="panel" hidden role="status">'), 'Panel #numplate');
+  const L = new RegExp(app.match(/^const LOOSE_HINT = \/(.+)\/i;/m)[1], 'i'); const W = new RegExp(app.match(/^const NUMPLATE_WORDS = \/(.+)\/gi;/m)[1], 'gi');
+  for (const x of ['Kennzeichen abgefallen', 'Rear number plate fell off', 'Номерний знак відпав у дорозі']) ok(L.test(x) && !L.test(x.replace(W, ' ')), 'Kennzeichen allein zählt nicht zusätzlich als loses Teil: ' + x);
+  ok(L.test('Kennzeichen abgefallen, Stoßstange hängt herunter'.replace(W, ' ')), 'anderes loses Teil bleibt erkannt');
+  ok(app.includes("$('#loose').hidden = !LOOSE_HINT.test($('#numplate').hidden ? $('#d').value : $('#d').value.replace(NUMPLATE_WORDS, ' '));"), 'Lose-Teile-Hinweis ohne Kennzeichenwörter');
+  ok(app.includes("$('#numplate').hidden = !NUMPLATE_HINT.test($('#d').value);") && app.indexOf("$('#numplate').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'lost', 'numplate', 'fuelcard'"), 'Reihenfolge nach Schlüssel/Papiere');
+  ok(app.includes("'cargo', 'numplate', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("const numplateHint = NUMPLATE_HINT.test(desc || '');") && app.includes('data-claimnumplate'), 'Hinweis an die Leitung im Vorgang');
+  const { U, newCase } = await freshWorld();
+  const c = await newCase({ description: 'Kennzeichen hinten über Nacht abgeschraubt, Polizei informiert' });
   const g = (await U.fleet.get(`/api/cases/${c}`)).data; ok(re.test(g.case ? g.case.description : g.description), 'Beschreibung erkannt');
 });
 
