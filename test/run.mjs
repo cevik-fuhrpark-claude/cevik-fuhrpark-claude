@@ -21411,7 +21411,7 @@ await test('Backlog 303 (Blickwinkel „Kühlaggregat des Kühlaufliegers fällt
     ok(L.reefer_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="reefer" class="panel" hidden role="status">`), 'Panel #reefer');
-  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test(dck);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'reefer', 'fire'), 'Hilfe-Abschnitt reefer nach fire');
 });
 
@@ -21449,7 +21449,7 @@ await test('Backlog 305 (Blickwinkel „Plane des Aufliegers gerissen, Ladung na
     ok(L.tarp_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="tarp" class="panel" hidden role="status">`), 'Panel #tarp');
-  ok(app.includes("$('#tarp').hidden = !TARP_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#tarp').hidden = !TARP_HINT.test(dck);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'tarp', 'brake'), 'Hilfe-Abschnitt tarp nach brake');
 });
 
@@ -21561,7 +21561,7 @@ await test('Backlog 310 (Blickwinkel „Beleuchtung am Lkw/Auflieger ausgefallen
     ok(L.lights_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="lights" class="panel" hidden role="status">`), 'Panel #lights');
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test($('#d').value); $('#door')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck); $('#door')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('lights') && order.indexOf('mirror') < order.indexOf('lights') && order.indexOf('lights') < order.indexOf('glass'), 'Gruppierung: Unfall/Spiegel vor Licht vor Glas');
   ok(helpAfter(app, 'lights', 'coupling'), 'Hilfe-Abschnitt lights nach coupling');
@@ -26839,7 +26839,7 @@ await test('Backlog 634 (Teilagent-Fund „Diebstahl auf dem Rastplatz“): Meld
   for (const x of ['Тент напівпричепа порізаний', 'Plane aufgeschlitzt', 'Auflieger Rücklicht defekt', 'trailer light broken', 'тент полуприцепа порезан', 'причіп пошкоджено']) ok(R.test(x), 'Auflieger: ' + x);
   for (const x of ['Anhängerkupplung defekt', 'Aufliegerkupplung', 'trailer hitch broken', 'Sattelkupplung klemmt', 'Spiegel kaputt', 'прицепное устройство', 'Planetengetriebe']) ok(!R.test(x), 'kein Auflieger: ' + x);
   ok(app.includes("const show = !!(v && v.kind !== 'anhaenger' && v.trailer_plate && TRAILER_DMG.test($('#d').value) && !FOREIGN_TRAILER.test($('#d').value));"), 'nur Lkw mit gekoppeltem Auflieger (Backlog 640: nicht bei fremdem Auflieger)');
-  ok(app.includes("const hints = () => { const dsk = noSticker($('#d').value); $('#trlr').hidden = !trailerHint();") && app.includes("$$('input[name=veh]').forEach((x) => x.addEventListener('change', hints));"), 'bei Text- und Fahrzeugwechsel');
+  ok(app.includes("const hints = () => { const dsk = noSticker($('#d').value); const dck = noCabkit($('#d').value); $('#trlr').hidden = !trailerHint();") && app.includes("$$('input[name=veh]').forEach((x) => x.addEventListener('change', hints));"), 'bei Text- und Fahrzeugwechsel');
   ok(/const HINT_ORDER = \[[^\]]*'trlr'/.test(app) && app.includes('<div id="trlr" class="panel" hidden role="status"></div>'), 'Hinweisgruppe');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].trlr_title.includes('{p}') && STRINGS[l].trlr_text.includes('{p}'), l); }
@@ -27346,6 +27346,33 @@ await test('Backlog 692–693 (Blickwinkel „Vor dem Laden: Zurrgurte, Kantensc
   ok(app.includes("'load', 'lashgear', 'deck'"), 'Reihenfolge nach verrutschter Ladung');
   ok(app.includes("'step', 'lashgear', "), 'Hilfe-Abschnitt für meldende Rollen');
 });
+await test('Backlog 698–699 (Blickwinkel „Fahrerhaus-Ausstattung defekt – Kühlschrank, Liege, Sonnenblende, Vorhang, Steckdose, Innenlicht“): Meldeformular zeigt Schritte (Leitung plant, Auswahl „Kann das Fahrzeug fahren?“, nicht verriegelnde Liege/Klappe sichern, Elektrik nicht selbst öffnen, was/wo/Fotos ohne Privates); Kühlschrank in der Kabine/Leselicht/Kabinenvorhang lösen keine Kühlaufbau-, Beleuchtungs- oder Planen-Schritte aus; Hilfe DE/UK/EN; Anhänger-Steckdose, Rollo am Auflieger, „liegen“, „Kühlschrank repariert“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const H = (n) => { const m = app.match(new RegExp('^const ' + n + ' = /(.+)/(i?);$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], m[2]); };
+  eq((app.match(/const CABKIT_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = H('CABKIT_HINT'); const RF = H('REEFER_HINT'); const LI = H('LIGHTS_HINT'); const TA = H('TARP_HINT');
+  const strip = (s) => s.replace(new RegExp(re.source, 'gi'), ' ');
+  for (const x of ['Kühlschrank defekt', 'Kühlbox geht nicht', 'Liege kaputt', 'obere Liege lässt sich nicht verriegeln', 'Bett im Fahrerhaus gebrochen', 'Sonnenblende abgebrochen', 'Sonnenblende hält nicht', 'Vorhang gerissen', 'Gardinen lassen sich nicht schließen', 'Steckdose im Fahrerhaus ohne Strom', 'Leselampe defekt', 'Innenbeleuchtung geht nicht', 'Lattenrost gebrochen', 'Matratze kaputt', 'Handschuhfach klemmt', 'Stauklappe lässt sich nicht öffnen', 'Liegen-Haltenetz gerissen', 'Radio defekt', 'fridge not working', 'bunk broken', 'sun visor broken', 'cab curtain torn', 'reading light not working', 'glove box won\'t close', 'холодильник у кабіні не працює', 'спальне місце зламане', 'сонцезахисний козирок відірваний', 'шторка порвана', 'розетка в кабіні не працює', 'радіо не працює']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Steckdose am Anhänger defekt', 'EBS-Steckdose defekt', 'Rollo am Auflieger klemmt', 'curtain torn', 'Ladung liegen lassen', 'Teile liegen auf der Straße', 'Kühlschrank repariert', 'Radio defekt, repariert', 'Kühlaggregat defekt', 'Ladebett gebrochen', 'Kühlschrank leer', 'Sitz kaputt', 'Klimaanlage kühlt nicht', 'Fahrertür lässt sich nicht schließen', 'Rücklicht defekt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  ok(RF.test('холодильник у кабіні не працює') && !RF.test(strip('холодильник у кабіні не працює')), 'Kühlschrank in der Kabine ist kein Kühlaufbau');
+  ok(LI.test('reading light not working') && !LI.test(strip('reading light not working')), 'Leselicht ist keine Fahrzeugbeleuchtung');
+  ok(TA.test('cab curtain torn') && !TA.test(strip('cab curtain torn')), 'Kabinenvorhang ist keine Plane');
+  ok(RF.test(strip('Kühlaggregat defekt, Radio defekt')), 'eigener Kühlaufbau-Schaden bleibt erkannt');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.cabkit_hint_title, 'Titel ' + l);
+    const st = S.cabkit_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.cabkit_hint_steps) && !/\d/.test(S.help_cabkit_s), 'keine Zahl/Frist ' + l);
+    ok([S.drv_fahrbereit, S.drv_unbekannt].every((x) => st[0].includes(x)), 'Schritt 1 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_cabkit_t && S.help_cabkit_s.includes(S.cabkit_hint_steps) && S.help_cabkit_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="cabkit" class="panel" hidden role="status">'), 'Panel #cabkit');
+  ok(app.includes("$('#cabkit').hidden = !CABKIT_HINT.test($('#d').value);") && app.indexOf("$('#cabkit').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'seat', 'cabkit', 'mirror'"), 'Reihenfolge nach Sitz');
+  ok(app.includes("'sticker', 'cabkit', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+});
+
 await test('Backlog 696–697 (Blickwinkel „Umweltplakette bzw. HU-Plakette fehlt, abgefallen oder unleserlich“): Meldeformular zeigt Schritte (Leitung klärt Ersatz/Weiterfahrt, ohne Umweltplakette keine Umweltzone, nichts selbst nachkleben/übertragen, welche Plakette/Fotos, Auswahl „Kann das Fahrzeug fahren?“); Plakette am Kennzeichen/an der Scheibe löst keine Kennzeichen-, Glas- oder Lose-Teil-Schritte aus; Hilfe DE/UK/EN; „Umweltplakette erneuert“, „HU-Plakette abgelaufen“, Maut-/QR-Aufkleber lösen nichts aus', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -27372,7 +27399,7 @@ await test('Backlog 696–697 (Blickwinkel „Umweltplakette bzw. HU-Plakette fe
   ok(app.includes("$('#sticker').hidden = !STICKER_HINT.test($('#d').value);") && app.indexOf("$('#sticker').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("{ let dl = dsk; if (!$('#numplate')") && app.includes("const numplateHint = NUMPLATE_HINT.test(noSticker(desc));"), 'Lose-Teil- und Leitungs-Hinweis ohne Plaketten-Fundstelle');
   ok(app.includes("'numplate', 'sticker', 'fuelcard'"), 'Reihenfolge nach Kennzeichen');
-  ok(app.includes("'contour', 'sticker', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'contour', 'sticker', 'cabkit', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 694–695 (Blickwinkel „Konturmarkierung, Rückstrahler oder Warntafel abgerissen/fehlt“): Meldeformular zeigt Schritte (Mangel, Leitung entscheidet, reinigen, lose Teile nur gefahrlos abnehmen, was/wo/Fotos, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; Scheinwerfer-Reflektor, Warnweste, „світловідбивний жилет“, „Konturmarkierung erneuert“, „Warntafel nötig“ lösen nichts aus', async () => {
@@ -27393,7 +27420,7 @@ await test('Backlog 694–695 (Blickwinkel „Konturmarkierung, Rückstrahler od
   ok(app.includes('<div id="contour" class="panel" hidden role="status">'), 'Panel #contour');
   ok(app.includes("$('#contour').hidden = !CONTOUR_HINT.test($('#d').value);") && app.indexOf("$('#contour').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'lights', 'contour', 'visib'"), 'Reihenfolge nach Beleuchtung');
-  ok(app.includes("'lashgear', 'contour', 'sticker', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'lashgear', 'contour', 'sticker', 'cabkit', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
