@@ -1112,6 +1112,7 @@ Object.assign(FIELD_NAMES.en, { 'Hinweis zum Termin': 'Note on the date' });
 // [CLAUDE] Backlog 549: nach dem Stichtag gebuchte Inventurdifferenzen
 // [CLAUDE] Backlog 550: Hinweise auf Einstellungen für Rollen ohne Einstellungen
 // [CLAUDE] Backlog 551: Hilfe „Übernahme als neue Fuhrparkleitung“ (nur Wegweiser zu vorhandenen Funktionen)
+// Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Hinweise beim Deaktivieren/Ausscheiden, Hilfe-Checkliste
 // [CLAUDE] Backlog 552: Hinweis eines deaktivierten Kontos
 // [CLAUDE] Backlog 553/554: Fahrerermittlung zum Anhörungsbogen
 // [CLAUDE] Backlog 556: „Wieder einsatzbereit“ seit dem letzten Werktag

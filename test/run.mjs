@@ -27039,6 +27039,46 @@ await test('Backlog 653–655 (Blickwinkel „Parkschaden – Unfallgegner unbek
   ok(!dq.items.some((i) => i.case_id === plain && ['claim_hitrun_no_police', 'accident_no_claim'].includes(i.check)), 'normaler Vorgang ohne Befund');
 });
 
+await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
+  const { e, U, newCase, cmd } = await freshWorld(); const db = e.DB.db;
+  const open1 = await newCase({ description: 'Spiegel locker' }); const done = await newCase({ description: 'Wischer defekt' });
+  eq((await cmd(U.fleet, done, 'reject', { reason: 'erledigt vor Ort' }, 'gemeldet')).status, 200);
+  const plate = db.prepare('SELECT plate FROM vehicles WHERE id=?').get('VIN:WMA15SZZ2HM722774').plate;
+  const fine = await U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt Dortmund', reference: 'AZ-656', offense_type: 'geschwindigkeit', offense_at: new Date().toISOString(), plate_in_letter: plate, response_due: bDayOff(10) }); eq(fine.status, 201, JSON.stringify(fine.data));
+  eq((await U.fleet.post(`/api/fines/${fine.data.id}/commands`, { action: 'confirm_driver', payload: { driver_id: U.driver.id, basis: 'manuell', evidence: 'Tourenplan' } })).status, 200);
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Fahrer 656', personnel_no: 'P-656', user_id: U.driver.id }); eq(dr.status, 201);
+  eq((await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'fahrerkarte', valid_until: bDayOff(400), evidence: 'Kopie Fahrerkarte' })).status, 201);
+  const r = await U.own.patch(`/api/users/${U.driver.id}`, { active: false }); eq(r.status, 200);
+  eq(r.data.card_download && r.data.card_download.last_on, null, 'Fahrerkarte ohne erfasste Auslesung');
+  eq(JSON.stringify(r.data.driver_handover), JSON.stringify({ cases: [db.prepare('SELECT case_no FROM cases WHERE id=?').get(open1).case_no], cases_total: 1, fines: 1 }), 'offene Meldung und Bußgeld');
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { active: true })).data.driver_handover, undefined, 'Reaktivieren ohne Zusatz');
+  // Auslesung gestern → Datum; Akte ausgeschieden nennt es ebenso
+  const dl = await U.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: dr.data.id, downloaded_on: bDayOff(-1), evidence: 'Auslesung' }); eq(dl.status, 201, JSON.stringify(dl.data));
+  const off = await U.fleet.patch(`/api/drivers/${dr.data.id}`, { active: false }); eq(off.status, 200);
+  eq(off.data.card_download.last_on, bDayOff(-1), 'Akte nennt die letzte Auslesung'); ok(off.data.account_still_active, 'Konto-Hinweis bleibt');
+  eq((await U.fleet.patch(`/api/drivers/${dr.data.id}`, { active: true })).status, 200);
+  // heute ausgelesen → kein Hinweis
+  eq((await U.fleet.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: dr.data.id, downloaded_on: bDayOff(0), evidence: 'Auslesung letzter Tag' })).status, 201);
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { active: false })).data.card_download, undefined, 'am letzten Tag ausgelesen');
+  // Akte ohne Fahrerkarte und ohne Auslesung: kein Hinweis
+  const dr2 = await U.fleet.post('/api/drivers', { display_name: 'Ohne Karte 656' }); eq(dr2.status, 201);
+  eq((await U.fleet.patch(`/api/drivers/${dr2.data.id}`, { active: false })).data.card_download, undefined, 'ohne Fahrerkarte nichts');
+  // Leitung ausscheidend: kein Fahrer-Zusatz
+  ok(!('driver_handover' in (await U.own.patch(`/api/users/${U.fleet.id}`, { active: false })).data), 'nur bei Fahrern');
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (dh && dh.cases_total) h.push(t('ue_drv_cases')") && app.includes("if (r && r.card_download) h.push(r.card_download.last_on ? t('ue_card_dl')"), 'Hinweise nach dem Speichern');
+  eq((app.match(/r\.card_download\.last_on \? t\('ue_card_dl'\)/g) || []).length, 2, 'Benutzer und Fahrerakte');
+  ok(app.includes("'drivers', 'leaver', 'contracts'"), 'Hilfe-Abschnitt für Inhaber/Leitung');
+  const { STRINGS } = await import('../public/i18n.js');
+  const n = STRINGS.de.help_leaver_s.split('|').length;
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.ue_card_dl.includes('{d}') && S.ue_card_dl_none && S.ue_drv_cases.includes('{list}') && S.ue_drv_fines.includes('{n}'), 'Texte ' + l);
+    eq(S.help_leaver_s.split('|').length, n, 'Schritte ' + l); ok(S.help_leaver_t, 'Titel ' + l);
+    for (const k of ['driver_file', 'tacho_record', 'users', 'assign_driver', 'dq']) ok(S.help_leaver_s.includes(S[k]), `Hilfe nennt „${S[k]}“ ` + l);
+    ok(!/\d+\s*(Tag|day|дн|Monat|month|міс)/i.test(S.help_leaver_s + S.ue_card_dl), 'keine erfundene Frist ' + l);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

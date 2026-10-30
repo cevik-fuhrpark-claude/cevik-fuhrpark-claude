@@ -606,7 +606,7 @@ async function viewDriver(id) {
     const b = Object.fromEntries(Object.entries(all).filter(([k, v]) => v !== was[k])); if (!Object.keys(b).length) { toast('✓'); return; }
     if (d.updated_at) b.expected_updated_at = d.updated_at; try { const r = await api('PATCH', `/api/drivers/${id}`, b);
       // ausgeschieden: verknüpftes Konto weiter aktiv / Fahrzeug weiter zugeordnet → Hinweis (Backlog 190)
-      const h = []; if (r && r.account_still_active) h.push(t('dr_left_account_active').replace('{name}', r.account_still_active.name)); if (r && r.open_assignments) h.push(tn('dr_left_assignments', r.open_assignments));
+      const h = []; if (r && r.account_still_active) h.push(t('dr_left_account_active').replace('{name}', r.account_still_active.name)); if (r && r.open_assignments) h.push(tn('dr_left_assignments', r.open_assignments)); if (r && r.card_download) h.push(r.card_download.last_on ? t('ue_card_dl').replace('{d}', fmtD(r.card_download.last_on)) : t('ue_card_dl_none')); // Backlog 656
       toast(h.length ? h.join(' ') : '✓'); viewDriver(id); } catch (err) { toast(linkedMsg(err), true); } };
 }
 // Fahrzeug außer Betrieb kenntlich (Nachfolger kann dasselbe Kennzeichen tragen, 23.10.2026)
@@ -1566,6 +1566,11 @@ function userUpdateHints(r) {
   if (r && r.workshop_orphaned_cases) h.push(tn('ue_ws_orphaned', r.workshop_orphaned_cases).replace('{site}', wsName(r.workshop_site)));
   // Leitungswechsel (Backlog 258d): was hängt noch an der ausscheidenden Fuhrparkleitung
   const fh = r && r.fleet_handover;
+  // Backlog 656/657: ausscheidender Fahrer – letzte erfasste Auslesung der Fahrerkarte, offene Meldungen, Bußgeldvorgänge ohne Bestätigung
+  const dh = r && r.driver_handover;
+  if (dh && dh.cases_total) h.push(t('ue_drv_cases').replace('{n}', dh.cases_total).replace('{list}', dh.cases.join(', ') + (dh.cases_total > dh.cases.length ? ', …' : '')));
+  if (dh && dh.fines) h.push(t('ue_drv_fines').replace('{n}', dh.fines));
+  if (r && r.card_download) h.push(r.card_download.last_on ? t('ue_card_dl').replace('{d}', fmtD(r.card_download.last_on)) : t('ue_card_dl_none'));
   if (fh) { if (fh.received_untriaged) h.push(t('ue_fleet_recv').replace('{n}', fh.received_untriaged)); if (fh.notes) h.push(t('ue_fleet_notes').replace('{n}', fh.notes) + ((fh.notes_plates || []).length ? ' · ' + fh.notes_plates.join(', ') : '')); if (fh.emergency) h.push(t('ue_fleet_emerg').replace('{n}', fh.emergency)); if (fh.questions_open) h.push(t('ue_fleet_questions').replace('{n}', fh.questions_open)); if (fh.followups) h.push(t('ue_fleet_followups').replace('{n}', fh.followups)); if (fh.last_fleet) h.push(t('ue_fleet_last')); }
   return h;
 }

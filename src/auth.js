@@ -673,13 +673,25 @@ export async function updateUser(env, actor, userId, body) {
   // letzter Werkstatt-Zugang eines Standorts mit offenen Aufträgen – eine Abfrage
   const deact = !!target.active && !active;
   const oldSite = target.role === 'workshop' && target.workshop_site && (!active || role !== 'workshop' || siteChanged || environment !== target.environment) ? target.workshop_site : null;
-  let driverFile = null; let orphaned = 0;
+  let driverFile = null; let orphaned = 0; let cardDl = null; let drvHandover = null;
+  const leaver = deact && target.role === 'driver';
   if (deact || oldSite) {
+    // Backlog 656/657 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“, nur Anzeige): letzte erfasste Auslesung der
+    // Fahrerkarte (Akte mit Fahrerkarte oder Auslesung), offene Meldungen des Fahrers und Bußgelder ohne seine Bestätigung – Rückfragen
+    // erreichen ihn nach dem Deaktivieren nicht mehr; nichts wird geändert, keine Frist
     const h = await env.DB.prepare(`SELECT CASE WHEN ?4 = 1 THEN (SELECT json_object('id', id, 'name', display_name) FROM drivers WHERE user_id=?1 AND active=1) END AS df,
+        CASE WHEN ?5 = 1 THEN (SELECT json_object('last_on', (SELECT MAX(t.downloaded_on) FROM tacho_downloads t WHERE t.driver_id=d.id AND t.kind='fahrerkarte' AND t.cancelled_at IS NULL),
+          'card', EXISTS (SELECT 1 FROM driver_documents x WHERE x.driver_id=d.id AND x.kind='fahrerkarte' AND x.cancelled_at IS NULL)) FROM drivers d WHERE d.user_id=?1) END AS cd,
+        CASE WHEN ?5 = 1 THEN (SELECT group_concat(n, '|') FROM (SELECT case_no AS n FROM cases WHERE reporter_id=?1 AND environment=?3 AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at LIMIT 20)) END AS oc,
+        CASE WHEN ?5 = 1 THEN (SELECT COUNT(*) FROM cases WHERE reporter_id=?1 AND environment=?3 AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')) ELSE 0 END AS ocn,
+        CASE WHEN ?5 = 1 THEN (SELECT COUNT(*) FROM fines WHERE driver_id=?1 AND environment=?3 AND status IN ('fahrer_ermittelt','fahrer_informiert') AND driver_ack_at IS NULL) ELSE 0 END AS fn,
         CASE WHEN ?2 IS NULL THEN 0 ELSE (SELECT COUNT(*) FROM cases c WHERE c.environment=?3 AND c.workshop_site=?2 AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile')
           AND NOT EXISTS (SELECT 1 FROM users u WHERE u.role='workshop' AND u.active=1 AND u.environment=?3 AND u.workshop_site=?2)) END AS orphan`)
-      .bind(userId, oldSite, target.environment, deact ? 1 : 0).first();
+      .bind(userId, oldSite, target.environment, deact ? 1 : 0, leaver ? 1 : 0).first();
     driverFile = h && h.df ? JSON.parse(h.df) : null; orphaned = (h && h.orphan) || 0;
+    const cd = h && h.cd ? JSON.parse(h.cd) : null;
+    if (cd && (cd.card || cd.last_on) && !(cd.last_on && cd.last_on >= berlinDate())) cardDl = { last_on: cd.last_on || null };
+    if (h && (h.ocn || h.fn)) drvHandover = { cases: String(h.oc || '').split('|').filter(Boolean), cases_total: h.ocn || 0, fines: h.fn || 0 };
   }
   // Leitungswechsel (Backlog 258d, nur Anzeige): scheidet eine Fuhrparkleitung aus bzw. wechselt Rolle/Umgebung – was hängt noch an ihr?
   // Meldungen mit ihrem Eingang, die nie bewertet wurden; von ihr angelegte aktive Fahrzeughinweise/Notfallnummern (oft ihre Handynummer);
@@ -705,7 +717,8 @@ export async function updateUser(env, actor, userId, body) {
   }
   return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active || siteChanged,
     ...(driverFile ? { driver_file_active: driverFile } : {}), ...(orphaned ? { workshop_orphaned_cases: orphaned, workshop_site: oldSite } : {}), ...(invitesVoided ? { invites_voided: invitesVoided } : {}),
-    ...(endedAssign.length ? { ended_assignments: [...new Set(endedAssign.map((a) => a.plate || a.vehicle_id))] } : {}), ...(handover ? { fleet_handover: handover } : {}) };
+    ...(endedAssign.length ? { ended_assignments: [...new Set(endedAssign.map((a) => a.plate || a.vehicle_id))] } : {}), ...(handover ? { fleet_handover: handover } : {}),
+    ...(cardDl ? { card_download: cardDl } : {}), ...(drvHandover ? { driver_handover: drvHandover } : {}) };
 }
 
 export async function resetInvite(env, actor, userId) {

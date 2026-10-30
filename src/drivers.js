@@ -261,9 +261,19 @@ export async function updateDriver(env, user, envName, id, body) {
   // „Fahrer verlässt das Unternehmen“): Hinweis statt stiller Weiterarbeit (Push, Kontrollen, Meldungen gingen weiter); nichts automatisch geändert
   if (changed.active && changed.active.to === false && f.user_id) {
     const u = await env.DB.prepare(`SELECT u.display_name, u.active, (SELECT COUNT(*) FROM driver_vehicles dv WHERE dv.user_id=u.id AND (dv.valid_to IS NULL OR dv.valid_to > ?)) AS n FROM users u WHERE u.id=?`).bind(nowIso(), f.user_id).first();
-    if (u && (u.active || u.n)) return { ok: true, ...(u.active ? { account_still_active: { name: u.display_name } } : {}), ...(u.n ? { open_assignments: u.n } : {}) };
+    if (u && (u.active || u.n)) return { ok: true, ...(u.active ? { account_still_active: { name: u.display_name } } : {}), ...(u.n ? { open_assignments: u.n } : {}), ...(await cardDownloadHint(env, id)) };
   }
+  if (changed.active && changed.active.to === false) return { ok: true, ...(await cardDownloadHint(env, id)) };
   return { ok: true };
+}
+
+// Backlog 656 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): beim Ausscheiden letzte erfasste Auslesung der Fahrerkarte
+// nennen (nur Akten mit Fahrerkarte oder Auslesung; heute ausgelesen → kein Hinweis). Danach werten Übersicht und Agent den Fahrer nicht mehr aus.
+async function cardDownloadHint(env, driverId) {
+  const r = await env.DB.prepare(`SELECT (SELECT MAX(t.downloaded_on) FROM tacho_downloads t WHERE t.driver_id=?1 AND t.kind='fahrerkarte' AND t.cancelled_at IS NULL) AS last_on,
+    EXISTS (SELECT 1 FROM driver_documents x WHERE x.driver_id=?1 AND x.kind='fahrerkarte' AND x.cancelled_at IS NULL) AS card`).bind(driverId).first();
+  if (!r || !(r.card || r.last_on) || (r.last_on && r.last_on >= berlinDate())) return {};
+  return { card_download: { last_on: r.last_on || null } };
 }
 
 export async function addDriverDocument(env, user, envName, id, body) {

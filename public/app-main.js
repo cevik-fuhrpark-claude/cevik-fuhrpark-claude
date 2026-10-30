@@ -4106,7 +4106,7 @@ function helpSections(r) {
   if (r === 'workshop') parts.unshift('ws', 'costlimit', 'stock');
   if (r === 'workshop') parts.splice(parts.indexOf('stock') + 1, 0, 'tires');
   // Backlog 551: „Übernahme als neue Fuhrparkleitung“ – Wegweiser zu vorhandenen Ansichten (Inhaber/Fuhrparkleitung)
-  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'handover', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'costs', 'drivers', 'contracts', 'claims', 'fines', 'tires', 'stock');
+  if (['owner', 'fleet'].includes(r)) parts.unshift('fleet', 'handover', 'release', 'costlimit', 'dates', 'defects', 'kpi', 'costs', 'drivers', 'leaver', 'contracts', 'claims', 'fines', 'tires', 'stock');
   if (r === 'owner') parts.splice(parts.indexOf('stock') + 1, 0, 'privacy', 'settings');
   // Benutzer, Zugänge & Protokoll: Benutzerverwaltung hat Inhaber und Fuhrparkleitung (Protokoll nur Inhaber – im Text vermerkt)
   if (['owner', 'fleet'].includes(r)) parts.splice(parts.indexOf('stock') + 1, 0, 'access');
