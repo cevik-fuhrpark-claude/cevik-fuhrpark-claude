@@ -27541,6 +27541,16 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 749 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ladekontrolle leuchtet/geht an“ → Warnleuchten; „Diesel (komplett) leergefahren“ → Kraftstoff ausgegangen; „Ladekontrolle an der Rampe gemacht“ (Ladungskontrolle), „Lkw leer gefahren“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    WARNLIGHT_HINT: [['Ladekontrolle leuchtet', 'Ladekontrolle geht an', 'Ladekontrolle brennt rot', 'Ladekontrolle an', 'Ladekontrolle ist an, Batterie lädt nicht'], ['Ladekontrolle an der Rampe gemacht', 'Ladekontrolle gemacht, alles ok', 'Ladekontrolle beim Kunden']],
+    DRYFUEL_HINT: [['Diesel leer gefahren', 'Diesel komplett leergefahren'], ['Lkw leer gefahren', 'mit Diesel getankt und leer gefahren nach Dortmund']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+});
 await test('Backlog 745 (Sonde über vorhandene Muster, 30.10.2026 21:15): „Gangschaltung hakt“, „Schalthebel klemmt“, „Gänge lassen sich schwer schalten“, „Gang lässt sich nur schwer einlegen“, „can\'t get into reverse“, „задня не вмикається“, „задняя не включается“ → Getriebe-Schritte; „Sattelkupplung/Tür/Blinkerhebel klemmt“, „can\'t get into the cab“, „задня фара не працює“ nicht; Hilfe nennt das Beispiel DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
