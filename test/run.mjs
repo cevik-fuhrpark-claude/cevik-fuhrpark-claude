@@ -19276,7 +19276,7 @@ await test('Backlog 293 (Blickwinkel „Wildunfall nachts auf der Landstraße“
     ok(STRINGS[l].claim_wild_hint && STRINGS[l].wild_hint_title, 'Texte ' + l);
   }
   ok(app.includes(`<div id="wild" class="panel" hidden role="status">`), 'Panel #wild');
-  ok(app.includes("const wild = WILD_HINT.test($('#d').value); $('#wild').hidden = !wild;") && app.includes("$('#acc').hidden = wild || hitrun || !ACC_HINT.test($('#d').value);"), 'Wildunfall ersetzt die allgemeinen Unfall-Hinweise (Backlog 653: Unfallflucht ebenso)');
+  ok(app.includes("const wild = WILD_HINT.test($('#d').value); $('#wild').hidden = !wild;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !ACC_HINT.test($('#d').value);"), 'Wildunfall ersetzt die allgemeinen Unfall-Hinweise (Backlog 653: Unfallflucht ebenso)');
   ok(app.includes("const wildHint = WILD_HINT.test(desc || '') && !(cl && cl.file_id);") && app.includes('data-claimwild'), 'Versicherungs-Hinweis bis eine Datei verknüpft ist');
   ok(app.includes("const parts = ['report', 'accident', 'wild', "), 'Hilfe-Abschnitt wild nach Unfall');
 });
@@ -27018,10 +27018,10 @@ await test('Backlog 653–655 (Blickwinkel „Parkschaden – Unfallgegner unbek
     ok(S.dq_claim_hitrun_no_police, 'Datenqualität ' + l);
   }
   ok(app.includes('<div id="hitrun" class="panel" hidden role="status">'), 'Panel #hitrun');
-  ok(app.includes("const hitrun = !wild && HITRUN_HINT.test($('#d').value); $('#hitrun').hidden = !hitrun; $('#acc').hidden = wild || hitrun || !ACC_HINT.test($('#d').value);"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor');
+  ok(app.includes("const hitrun = !wild && HITRUN_HINT.test($('#d').value); $('#hitrun').hidden = !hitrun;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !ACC_HINT.test($('#d').value);"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor (Backlog 668: Brückenanprall ebenso)');
   ok(app.indexOf("$('#hitrun').hidden = !hitrun") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun',/.test(app), 'Reihenfolge direkt nach Unfall/Wildunfall');
-  ok(app.includes("'custdmg', 'hitrun', 'vandal', 'marten', 'storm', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen (Backlog 661/664/667: Vandalismus, Marder, Unwetter direkt dahinter)');
+  ok(app.includes("'custdmg', 'hitrun', 'vandal', 'marten', 'storm', 'bridge', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen (Backlog 661/664/667: Vandalismus, Marder, Unwetter direkt dahinter)');
   ok(app.includes("const hitrunNoRef = !theftNoRef && HITRUN_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimhitrun'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt zum Diebstahl-Hinweis');
   // Datenqualität (655)
   const hr = await newCase({ description: 'Parkschaden über Nacht, Verursacher unbekannt' });
@@ -27112,6 +27112,30 @@ await test('Backlog 665–667 (Blickwinkel „Unwetter: Ast/Baum auf dem Lkw, Ha
   ok(app.includes("$('#storm').hidden = !STORM_HINT.test($('#d').value);") && app.indexOf("$('#storm').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun', 'vandal', 'storm',/.test(app), 'Reihenfolge nach Vandalismus');
   ok(app.includes("const stormNoClaim = !cl && STORM_HINT.test(desc || '');") && app.includes('data-claimstorm'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
+});
+
+await test('Backlog 668–670 (Blickwinkel „Lkw bleibt an Brücke/Unterführung/Tankstellendach hängen – Durchfahrtshöhe“): Meldeformular zeigt eigene Schritte statt der allgemeinen Unfall-Hinweise (Polizei bei Brücke, Brückenschild, nicht weiterfahren/zurücksetzen, „nicht fahrbereit“, nicht ohne Meldung wegfahren, Fotos mit Höhenschild); Vorgang ohne Aktenzeichen nennt der Leitung Anzeige und Versicherer; Hilfe DE/UK/EN; Wechselbrücke, Kippbrücke, Brückentag, Bridgestone, Hinterachse („задній міст“) lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const BRIDGE_HINT = \/(.+)\/i;/m); ok(m, 'BRIDGE_HINT auf Modulebene'); eq((app.match(/const BRIDGE_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Brücke angefahren, Koffer oben aufgerissen', 'Mit dem Auflieger an der Eisenbahnbrücke hängen geblieben', 'Gegen die Unterführung gefahren', 'unter der Brücke stecken geblieben', 'Durchfahrtshöhe nicht beachtet, Plane kaputt', 'Tankstellendach touchiert', 'Parkhauseinfahrt mitgenommen', 'Brückenanprall auf der B1', 'Lkw zu hoch für die Unterführung', 'Höhenbegrenzung erwischt', 'Vordach der Kundenhalle angefahren', 'Bruecke gerammt', 'hit a low bridge', 'Bridge strike on the A40', 'trailer roof scraped the underpass', 'got stuck under the bridge', 'clipped the petrol station canopy', 'height barrier damaged the roof', 'Врізався в міст, пошкоджено кузов', 'Застряг під мостом', 'зачепив шляхопровід дахом', 'Врезался в мост на трассе', 'зачепив навіс АЗС', 'не помітив обмеження висоти']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Wechselbrücke angefahren', 'Kippbrücke geht nicht hoch', 'Ladebrücke defekt', 'Brückentag frei', 'Überladebrücke klemmt', 'Rampe angefahren', 'Hoftor angefahren', 'Unter der Brücke geparkt, alles gut', 'Bridgestone Reifen platt', 'bridge the gap', 'Задній міст гуде', 'вдарив задній міст об бордюр', 'Ведущий мост течёт', 'Brücke morgen gesperrt, Umleitung', 'Höhe der Ladung 4 m', 'Parkhaus voll', 'Brückenwaage kaputt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.bridge_hint_title, 'Titel ' + l);
+    const st = S.bridge_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(/110/.test(st[0]) && /112/.test(st[0]), 'Polizei 110 / Notruf 112 ' + l);
+    ok(st[1].includes(S.driveable) && st[1].includes(S.drv_nicht_fahrbereit), 'Schritt 2 nennt die Auswahl im Formular ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год|€|EUR|km|cm|m\b|м\b)/i.test(S.bridge_hint_steps), 'keine erfundene Frist/Höhe ' + l);
+    ok(S.help_bridge_t && S.help_bridge_s.includes(S.bridge_hint_steps) && S.help_bridge_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+    ok(S.cp_bridge_hint.includes(S.cp_title), 'Versicherungs-Hinweis nennt den Abschnitt „' + S.cp_title + '“ ' + l);
+  }
+  ok(app.includes('<div id="bridge" class="panel" hidden role="status">'), 'Panel #bridge');
+  ok(app.includes("const bridge = !wild && !hitrun && BRIDGE_HINT.test($('#d').value); $('#bridge').hidden = !bridge;") && app.indexOf("$('#bridge').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft, Wildunfall/Unfallflucht gehen vor');
+  ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun', 'vandal', 'storm', 'bridge',/.test(app), 'Reihenfolge nach Unwetter');
+  ok(app.includes("const bridgeNoRef = !theftNoRef && !hitrunNoRef && !vandalNoRef && BRIDGE_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimbridge'), 'Hinweis nur ohne Aktenzeichen, nicht doppelt zu Diebstahl/Unfallflucht/Vandalismus');
+  ok(app.includes("'storm', 'bridge', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
