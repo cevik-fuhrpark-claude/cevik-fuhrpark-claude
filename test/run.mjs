@@ -27378,6 +27378,21 @@ await test('Backlog 713 (Prüfung vorhandener Muster mit der Sonde): Ladebordwan
   for (const [re, x] of [[DO, 'Ladebordwand repariert'], [DO, 'Ladebordwand Fehler behoben'], [DO, 'Hebebühne in der Werkstatt frei'], [VI, 'Spiegel beschlagen'], [LG, 'Rungen vorhanden'], [EN, 'Turbolader neu'], [EN, 'Turbo-Diesel']]) ok(!re.test(x), 'kein Hinweis: ' + x);
 });
 
+await test('Backlog 715 (Prüfung vorhandener Muster mit der Sonde): Palettenkasten klemmt/geht nicht auf oder zu/Schloss kaputt → Türen/Klappen; Assistent piept ständig → Assistenzsysteme; Fenster klemmt → Fenster; EBS/ABS am Anhänger Warnung/Fehler → Bremsen; Reifen/Achse heiß oder qualmt → Rad/Radlager; Dachspoiler lose → loses Teil; Türschloss eingefroren → Schloss; Erledigtes löst nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const H = (n) => { const m = app.match(new RegExp('^const ' + n + ' = /(.+)/(i?);$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], m[2]); };
+  const DO = H('DOOR_HINT'), AD = H('ADAS_HINT'), WI = H('WINDOW_HINT'), BR = H('BRAKE_HINT'), WH = H('WHEEL_HINT'), LO = H('LOOSE_HINT'), CL = H('CABLOCK_HINT');
+  for (const x of ['Palettenkasten klemmt', 'Palettenkasten Schloss kaputt', 'Palettenkasten geht nicht auf', 'Palettenkasten geht nicht zu', 'Palettenkastenschloss defekt', 'pallet box won\'t close', 'Ящик для піддонів не закривається']) ok(DO.test(x), 'Palettenkasten: ' + x);
+  for (const x of ['Spurhalteassistent piept ständig', 'Abbiegeassistent warnt dauernd', 'Notbremsassistent piept ohne Grund']) ok(AD.test(x), 'Assistent: ' + x);
+  for (const x of ['Fenster klemmt', 'Fahrerfenster klemmt']) ok(WI.test(x), 'Fenster: ' + x);
+  for (const x of ['ABS-Stecker Anhänger Fehler', 'Anhänger EBS Warnung', 'EBS-Fehler am Auflieger', 'EBS-Warnung', 'trailer EBS fault']) ok(BR.test(x), 'EBS/ABS: ' + x);
+  for (const x of ['Achse Anhänger heiß', 'Reifen heiß', 'Reifen qualmt', 'Aufliegerachse raucht', 'trailer tyre smoking', 'axle running hot']) ok(WH.test(x), 'heiß: ' + x);
+  for (const x of ['Dachspoiler lose', 'Dachspoiler abgerissen', 'Seitenspoiler hängt herunter']) ok(LO.test(x), 'Spoiler: ' + x);
+  for (const x of ['Türschloss eingefroren', 'Schlüssel eingefroren']) ok(CL.test(x), 'Schloss: ' + x);
+  for (const [re, x] of [[DO, 'Palettenkasten repariert'], [AD, 'Spurhalteassistent piept kurz beim Überfahren'], [WI, 'Scheibenwischer klemmt'], [BR, 'EBS Fehler behoben'], [BR, 'EBS-Fehler behoben'], [BR, 'Abs. 3 Fehler'], [BR, 'absolut Fehler'], [WH, 'Achse heißt Liftachse'], [WH, 'Reifen gewechselt'], [LO, 'Dachspoiler montiert'], [CL, 'Türschloss repariert']]) ok(!re.test(x), 'kein Hinweis: ' + x);
+});
+
 await test('Backlog 711–712 (Blickwinkel „Mäuse, Bettwanzen oder Ungeziefer im Fahrerhaus“): Meldeformular zeigt eigene Schritte (nichts selbst bekämpfen, Leitung organisiert Reinigung, Kot nicht trocken auffegen/aussaugen, lüften, Bettzeug nicht mitnehmen, angefressene Kabel → Marder-Schritte, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; „keine Mäuse“, „Ungeziefer in der Ladung“, „Ameisen auf dem Parkplatz“, „Fliegengitter kaputt“, „insects on the windscreen“ lösen nichts aus', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
