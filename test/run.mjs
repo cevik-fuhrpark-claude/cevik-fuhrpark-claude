@@ -27194,6 +27194,15 @@ await test('Backlog 677 (Blickwinkel „Radfahrer beim Rechtsabbiegen übersehen
   for (const l of ['de', 'uk', 'en']) ok(/112/.test(STRINGS[l].acc_steps), 'Unfall-Hinweis nennt den Notruf ' + l);
 });
 
+await test('Backlog 681 (Blickwinkel „Glätte – Lkw von der Straße abgekommen“): „von der Straße/Autobahn abgekommen“, „kam von der Fahrbahn ab“, „Böschung hinunter“, „Lkw liegt auf der Seite“ zeigen die allgemeinen Unfall-Hinweise (DE/EN/UK/RU); „Ladung liegt auf der Seite“, „bog von der Straße ab“, „von der Autobahn abgefahren“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/\nconst ACC_HINT = \/(.+)\/i;/)[1], 'i');
+  for (const x of ['Lkw ist von der Straße abgekommen', 'Lkw kam auf Glätte von der Fahrbahn ab', 'Sattelzug ist von der Autobahn abgekommen', 'ins Feld abgerutscht', 'Gespann die Böschung hinuntergerutscht', 'Lkw liegt auf der Seite', 'Auflieger lag auf der Seite', 'truck left the road on ice', 'the lorry went off the road', 'trailer is lying on its side', 'вантажівка з\'їхала з дороги', 'фура вилетіла з траси', 'грузовик лежит на боку']) ok(re.test(x), 'Unfall-Hinweis: ' + x);
+  for (const x of ['Ladung liegt auf der Seite', 'Palette lag auf der Seite', 'Fahrer bog von der Straße ab', 'von der Autobahn abgefahren zum Tanken', 'Lkw kam auf der Seite nicht rein', 'left the depot late', 'Straße gesperrt', 'Fahrbahn glatt, langsam gefahren']) ok(!re.test(x), 'kein Unfall-Hinweis: ' + x);
+  ok(app.includes('// Backlog 681 (30.10.2026'), 'Kommentar am Muster');
+});
+
 await test('Backlog 678–680 (Blickwinkel „Eis/Schnee auf dem Aufliegerdach“): Meldeformular zeigt Schritte (nicht so losfahren, nicht ungesichert aufs Dach, Räumanlage/Leitung, sonst „nicht fahrbereit“; gelöst und getroffen → anhalten, Polizei, 112), Versicherungsabschnitt ohne Versicherungsfall nennt die Haftpflicht-Klärung laut Vertrag; Hilfe DE/UK/EN; „Schnee auf der Straße“, „Frontscheibe vereist“, „Eis im Laderaum“ lösen nichts aus', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
