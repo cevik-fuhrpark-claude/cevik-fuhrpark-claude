@@ -208,6 +208,7 @@ UI-Fahrerhaus-Ausstattung: eigene Schritte bei defektem Kühlschrank/Liege/Vorha
 UI-Wasser-Fahrerhaus: eigene Schritte bei undichter Dachluke/Wasser im Fahrerhaus, keine Planen-/Fenster-Schritte, Wasser im Laderaum nicht, Hilfe, DE/UK/EN 390/820/1366|ui-wasser-fahrerhaus.py|/tmp/cfp-wasser-fahrerhaus.log
 UI-Telematikgerät: eigene Schritte bei defektem Telematik-/Ortungsgerät oder Navi, keine Tachograph-Schritte, „Navi repariert“ nicht, Hilfe, DE/UK/EN 390/820/1366|ui-telematik-geraet.py|/tmp/cfp-telematik-geraet.log
 UI-Ölstand: eigene Schritte bei niedrigem Ölstand/nachgefülltem Motoröl, keine Undichtigkeits-Schritte, Hydrauliköl nicht, Hilfe, DE/UK/EN 390/820/1366|ui-oelstand.py|/tmp/cfp-oelstand.log
+UI-Feststellbremse: eigene Schritte bei Feststellbremse hält nicht/Lkw weggerollt statt Bremsen-Schritte, „löst nicht“ nur Bremse, Hilfe, DE/UK/EN 390/820/1366|ui-feststellbremse.py|/tmp/cfp-feststellbremse.log
 UI-Fahrer letzter Arbeitstag: Hinweise beim Deaktivieren (offene Meldungen, Fahrerkarte), Hilfe-Abschnitt, DE/UK/EN 390/820/1366|ui-fahrer-letzter-tag.py|/tmp/cfp-fahrer-letzter-tag.log
 UI-Reifenpanne-Hinweis im Meldeformular und Hilfe|ui-reifenpanne.py|/tmp/cfp-reifenpanne.log
 UI-Hinweis Beanstandung bei Polizei-/BAG-Kontrolle im Meldeformular und Hilfe|ui-kontrolle-beanstandet.py|/tmp/cfp-kontrolle-beanstandet.log

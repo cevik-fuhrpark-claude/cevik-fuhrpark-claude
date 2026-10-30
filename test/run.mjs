@@ -21430,7 +21430,7 @@ await test('Backlog 304 (Blickwinkel „Bremsen ziehen schief, quietschen oder v
     ok(L.brake_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="brake" class="panel" hidden role="status">`), 'Panel #brake');
-  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake($('#d').value));"), 'Hinweis abhängig von der Beschreibung (ohne Feststellbremsen-Fundstelle, Backlog 707)');
   ok(helpAfter(app, 'brake', 'reefer'), 'Hilfe-Abschnitt brake nach reefer');
 });
 
@@ -27355,6 +27355,33 @@ await test('Backlog 706 (Lücken aus der Prüfung am Code): „Stützfuß klemmt
   for (const x of ['Bremsen klemmen', 'Kupplung klemmen', 'Tür klemmt']) ok(!CO.test(x), 'keine Kupplung: ' + x);
   for (const x of ['Spritzschutz abgerissen', 'Spritzlappen hängt herunter', 'Schmutzfänger verloren', 'Schmutzfänger abgerissen']) ok(LO.test(x), 'loses Teil: ' + x);
   ok(!LO.test('Spritzschutz erneuert'), 'erneuert → nichts');
+});
+
+await test('Backlog 707–709 (Blickwinkel „Feststellbremse hält nicht – Lkw rollt weg“): Meldeformular zeigt eigene Schritte (nicht unbeaufsichtigt abstellen, Unterlegkeile, nie vor/hinter ein rollendes Fahrzeug, Leitung anrufen, nicht weiterfahren, Verletzte → Notruf, Schaden → Unfall-Schritte, nicht selbst an der Bremse arbeiten, Auswahl „Kann das Fahrzeug fahren?“) statt der Bremsen-Schritte; Hilfe DE/UK/EN; „Feststellbremse löst nicht“, „Handbremse defekt“, „Lkw rollt am Berg zurück“, „Palette rollt weg“ lösen nichts aus; Druckluft baut keinen Druck auf → Bremsen-Schritte', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const H = (n) => { const m = app.match(new RegExp('^const ' + n + ' = /(.+)/(i?);$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], m[2]); };
+  eq((app.match(/const PARKBRAKE_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = H('PARKBRAKE_HINT'); const BR = H('BRAKE_HINT');
+  const spans = new RegExp(re.source, 'gi'); const noPb = (s) => s.replace(spans, ' ');
+  for (const x of ['Handbremse hält nicht', 'Feststellbremse hält nicht mehr', 'Feststellbremse hält den Lkw nicht', 'Handbremse haelt nicht', 'Feststellbremse greift nicht', 'Handbremse zieht nicht', 'Feststellbremse lässt sich nicht einlegen', 'Parkbremse hält nicht', 'Auflieger-Feststellbremse hält nicht', 'Lkw ist weggerollt', 'Lkw rollt von allein weg', 'Fahrzeug rollte beim Abstellen los', 'Auflieger ist beim Abkuppeln weggerollt', 'Zugmaschine ins Rollen gekommen', 'rollt trotz angezogener Feststellbremse', 'parking brake does not hold', 'handbrake won’t hold', "handbrake won't hold", 'parking brake not holding', 'truck rolled away', 'trailer started rolling away', 'стоянкове гальмо не тримає', 'ручник не тримає', 'ручник не держит', 'вантажівка відкотилася', 'фура покотилася сама']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Feststellbremse löst nicht', 'Handbremse defekt', 'Handbremse hält wieder', 'Feststellbremse kontrolliert', 'Lkw rollt beim Anfahren am Berg zurück', 'Palette rollt weg', 'Reifen rollt weg', 'Fahrzeug abgestellt, Handbremse angezogen', 'Ladung rollt', 'parking brake light on', 'Feststellbremse festgefroren', 'Handbremse repariert', 'Er rollt nicht', 'Bremse zieht nach links']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  ok(BR.test('Feststellbremse greift nicht') && !BR.test(noPb('Feststellbremse greift nicht')), 'Bremsen-Schritte entfallen, wenn nur die Feststellbremse nicht hält');
+  ok(BR.test(noPb('Handbremse hält nicht, Bremse zieht nach links')) && BR.test(noPb('Feststellbremse löst nicht')), 'eigene Bremsen-Auffälligkeit bleibt erkannt');
+  for (const x of ['Druckluftanlage baut keinen Druck auf', 'Kompressor baut keinen Druck auf', 'Druck baut sich nicht auf', 'Luftdruck baut sich nur langsam auf', 'Lkw baut keinen Luftdruck auf', 'kein Druck im Druckluftsystem', 'air pressure won’t build', 'compressor not building pressure', 'тиск повітря не набирається', 'давление не набирается']) ok(BR.test(x), 'Bremsen-Schritte: ' + x);
+  for (const x of ['Reifendruck niedrig', 'Kompressor defekt, Kühlschrank warm', 'Aufbau beschädigt', 'Druckluft ok', 'Hydraulik baut keinen Druck auf', 'Ladebordwand baut nicht auf']) ok(!BR.test(x), 'keine Bremsen-Schritte: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.parkbrake_hint_title, 'Titel ' + l);
+    const st = S.parkbrake_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.parkbrake_hint_steps) && !/\d/.test(S.help_parkbrake_s), 'keine Zahl/Frist ' + l);
+    ok([S.drv_nicht_fahrbereit, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_parkbrake_t && S.help_parkbrake_s.includes(S.parkbrake_hint_steps) && S.help_parkbrake_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="parkbrake" class="panel" hidden role="status">'), 'Panel #parkbrake');
+  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake($('#d').value)); $('#parkbrake').hidden = !PARKBRAKE_HINT.test($('#d').value);") && app.indexOf("$('#parkbrake').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'brake', 'parkbrake', 'steer'"), 'Reihenfolge nach Bremse');
+  ok(helpAfter(app, 'parkbrake', 'brake'), 'Hilfe-Abschnitt für meldende Rollen nach Bremse');
 });
 
 await test('Backlog 704–705 (Blickwinkel „Motorölstand zu niedrig, Öl nachgefüllt oder hoher Ölverbrauch“): Meldeformular zeigt Schritte (Warnung → anhalten/Leitung, nachfüllen nur laut Unterweisung und Betriebsanleitung, Undichtigkeit eigene Schritte, Anzeige/Sorte/Menge laut Gebinde/Fotos, Auswahl „Kann das Fahrzeug fahren?“); keine Ölsorte/Menge/Frist vorgegeben; Hilfe DE/UK/EN; Hydraulik-/Getriebeöl, Ölwechsel, „Ölstand ok“, „beim Service“ lösen nichts aus', async () => {
