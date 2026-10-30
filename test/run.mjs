@@ -27503,6 +27503,14 @@ await test('Backlog 741–742 (Blickwinkel „Ladeboden, Bordwand, Seitenwand od
   ok(app.includes("'lashgear', 'deck', 'floor', 'leak'"), 'Reihenfolge nach Ladeetage, vor Leck');
   ok(app.includes("'underrun', 'floor', 'tyre'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
+await test('Backlog 746 (Sonde über vorhandene Muster, 30.10.2026 21:15): „запах палива в кабіні“, „пахне паливом“ → Leck-Schritte (Kraftstoffgeruch); „палива вистачає“, „запах гуми“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const LEAK_HINT = \/(.+)\/i;/m); ok(m, 'LEAK_HINT auf Modulebene');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['запах палива в кабіні', 'пахне паливом', 'запах дизеля в кабіні']) ok(re.test(x), 'Leck-Hinweis: ' + x);
+  for (const x of ['палива вистачає', 'запах гуми']) ok(!re.test(x), 'kein Leck-Hinweis: ' + x);
+});
 await test('Backlog 745 (Sonde über vorhandene Muster, 30.10.2026 21:15): „Gangschaltung hakt“, „Schalthebel klemmt“, „Gänge lassen sich schwer schalten“, „Gang lässt sich nur schwer einlegen“, „can\'t get into reverse“, „задня не вмикається“, „задняя не включается“ → Getriebe-Schritte; „Sattelkupplung/Tür/Blinkerhebel klemmt“, „can\'t get into the cab“, „задня фара не працює“ nicht; Hilfe nennt das Beispiel DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
