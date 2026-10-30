@@ -21651,7 +21651,7 @@ await test('Backlog 314 (Blickwinkel „Teil hängt herunter, schleift oder wurd
     ok(L.loose_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="loose" class="panel" hidden role="status">`), 'Panel #loose');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#loose').hidden = !LOOSE_HINT.test($('#numplate').hidden ? $('#d').value : $('#d').value.replace(NUMPLATE_WORDS, ' '));"); /* Backlog 685: Kennzeichenwörter zählen nicht als loses Teil */ ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("if (!$('#numplate').hidden) dl = dl.replace(NUMPLATE_WORDS, ' '); if (!$('#step').hidden) dl = dl.replace(STEP_WORDS, ' '); $('#loose').hidden = !LOOSE_HINT.test(dl);"); /* Backlog 685: Kennzeichenwörter zählen nicht als loses Teil */ ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('loose') && order.indexOf('acc') < order.indexOf('loose') && order.indexOf('flat') < order.indexOf('loose') && order.indexOf('loose') < order.indexOf('mirror') && order.indexOf('loose') < order.indexOf('tarp'), 'Gruppierung: Unfall/Reifenpanne vor losem Teil vor Spiegel/Plane');
   ok(helpAfter(app, 'loose', 'visib'), 'Hilfe-Abschnitt loose nach visib');
@@ -27274,7 +27274,7 @@ await test('Backlog 685–687 (Blickwinkel „Kennzeichen verloren, gestohlen od
   const L = new RegExp(app.match(/^const LOOSE_HINT = \/(.+)\/i;/m)[1], 'i'); const W = new RegExp(app.match(/^const NUMPLATE_WORDS = \/(.+)\/gi;/m)[1], 'gi');
   for (const x of ['Kennzeichen abgefallen', 'Rear number plate fell off', 'Номерний знак відпав у дорозі']) ok(L.test(x) && !L.test(x.replace(W, ' ')), 'Kennzeichen allein zählt nicht zusätzlich als loses Teil: ' + x);
   ok(L.test('Kennzeichen abgefallen, Stoßstange hängt herunter'.replace(W, ' ')), 'anderes loses Teil bleibt erkannt');
-  ok(app.includes("$('#loose').hidden = !LOOSE_HINT.test($('#numplate').hidden ? $('#d').value : $('#d').value.replace(NUMPLATE_WORDS, ' '));"), 'Lose-Teile-Hinweis ohne Kennzeichenwörter');
+  ok(app.includes("if (!$('#numplate').hidden) dl = dl.replace(NUMPLATE_WORDS, ' '); if (!$('#step').hidden) dl = dl.replace(STEP_WORDS, ' '); $('#loose').hidden = !LOOSE_HINT.test(dl);"), 'Lose-Teile-Hinweis ohne Kennzeichenwörter');
   ok(app.includes("$('#numplate').hidden = !NUMPLATE_HINT.test($('#d').value);") && app.indexOf("$('#numplate').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'lost', 'numplate', 'fuelcard'"), 'Reihenfolge nach Schlüssel/Papiere');
   ok(app.includes("'cargo', 'numplate', "), 'Hilfe-Abschnitt für meldende Rollen');
@@ -27301,7 +27301,30 @@ await test('Backlog 688–689 (Blickwinkel „Partikelfilter (DPF) voll – Rege
   ok(app.includes('<div id="pfilter" class="panel" hidden role="status">'), 'Panel #pfilter');
   ok(app.includes("$('#pfilter').hidden = !PFILTER_HINT.test($('#d').value);") && app.indexOf("$('#pfilter').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'leak', 'pfilter', 'warnlight'"), 'vor dem allgemeinen Warnleuchten-Hinweis (aufgeklappt, wenn beide passen)');
-  ok(app.includes("'numplate', 'pfilter', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'numplate', 'pfilter', "), 'Hilfe-Abschnitt für meldende Rollen');
+});
+await test('Backlog 690–691 (Blickwinkel „Fahrer rutscht beim Absteigen aus – Trittstufe oder Haltegriff defekt“): Meldeformular zeigt Schritte (nicht belasten, Gesicht zum Fahrzeug/fester Halt, glatte Stufen säubern, bei Verletzung Erste Hilfe und Vorgesetzte direkt – keine Verletzungsangaben in die Meldung, Fotos/Seite) statt zusätzlich „loses Teil“; Hilfe DE/UK/EN; „next step broken“, „Haltegriff repariert, wieder fest“, „Türgriff defekt“, „Fahrbahn glatt“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const STEP_HINT = \/(.+)\/i;/m); ok(m, 'STEP_HINT auf Modulebene'); eq((app.match(/const STEP_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Trittstufe lose', 'Trittstufe Fahrerseite abgebrochen', 'Haltegriff wackelt', 'Aufstieg vereist', 'Einstieg sehr rutschig', 'Leiter am Auflieger verbogen', 'Aufstiegstritt kaputt', 'beim Absteigen ausgerutscht', 'Beim Aussteigen gestürzt', 'aus der Kabine gefallen', 'cab step broken', 'grab handle loose', 'steps are icy', 'slipped getting out of the cab', 'fell from the step', 'підніжка зламана', 'поручень відламався', 'подножка сломана', 'посковзнувся з кабіни', 'поскользнулся выходя']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['next step broken', 'Haltegriff repariert, wieder fest', 'Trittstufe wieder befestigt', 'Haltegriff geputzt', 'Türgriff defekt', 'Griff der Ladebordwand', 'Fahrbahn glatt', 'Straße glatt, Lkw rutscht', 'Leitung informiert', 'Leiterplatte defekt', 'step by step', 'Spiegel kaputt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const L = new RegExp(app.match(/^const LOOSE_HINT = \/(.+)\/i;/m)[1], 'i'); const W = new RegExp(app.match(/^const STEP_WORDS = \/(.+)\/gi;/m)[1], 'gi');
+  for (const x of ['Trittstufe abgerissen', 'Haltegriff lose', 'cab step broken']) ok(L.test(x) && re.test(x) && !L.test(x.replace(W, ' ')), 'Stufe/Griff zählt nicht zusätzlich als loses Teil: ' + x);
+  ok(L.test('Trittstufe abgerissen, Stoßstange hängt herunter'.replace(W, ' ')), 'anderes loses Teil bleibt erkannt');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.step_hint_title, 'Titel ' + l);
+    const st = S.step_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.step_hint_steps), 'keine Zahl/Frist ' + l);
+    ok(S.help_step_t && S.help_step_s.includes(S.step_hint_steps) && S.help_step_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(/Verletzung gehören nicht in diese Meldung/.test(STRINGS.de.step_hint_steps) && /do not belong in this report/.test(STRINGS.en.step_hint_steps), 'Datensparsamkeit: keine Verletzungsangaben im Fahrzeugvorgang');
+  ok(app.includes('<div id="step" class="panel" hidden role="status">'), 'Panel #step');
+  ok(app.includes("$('#step').hidden = !STEP_HINT.test($('#d').value);") && app.indexOf("$('#step').hidden") < app.indexOf("$('#loose').hidden") && app.indexOf("$('#step').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung vor dem Lose-Teile-Hinweis und vor bindFormDraft');
+  ok(app.includes("'susp', 'step', 'loose'"), 'Reihenfolge vor „loses Teil“');
+  ok(app.includes("'pfilter', 'step', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
