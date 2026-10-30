@@ -27346,6 +27346,39 @@ await test('Backlog 692–693 (Blickwinkel „Vor dem Laden: Zurrgurte, Kantensc
   ok(app.includes("'load', 'lashgear', 'deck'"), 'Reihenfolge nach verrutschter Ladung');
   ok(app.includes("'step', 'lashgear', "), 'Hilfe-Abschnitt für meldende Rollen');
 });
+await test('Backlog 706 (Lücken aus der Prüfung am Code): „Stützfuß klemmt“ (Einzahl) und „Stützfüße klemmen“ zeigen die Kupplungs-Schritte, „Spritzschutz abgerissen“/„Spritzlappen hängt herunter“ die Schritte zum losen Teil; „Bremsen klemmen“, „Kupplung klemmen“ nicht als Kupplung/Sattel', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const H = (n) => { const m = app.match(new RegExp('^const ' + n + ' = /(.+)/(i?);$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], m[2]); };
+  const CO = H('COUPLING_HINT'); const LO = H('LOOSE_HINT');
+  for (const x of ['Stützfuß klemmt', 'Stützfuss lässt sich nicht kurbeln', 'Stützfüße klemmen', 'Stützfuß verbogen', 'Stützwinde lässt sich nicht kurbeln']) ok(CO.test(x), 'Kupplung: ' + x);
+  for (const x of ['Bremsen klemmen', 'Kupplung klemmen', 'Tür klemmt']) ok(!CO.test(x), 'keine Kupplung: ' + x);
+  for (const x of ['Spritzschutz abgerissen', 'Spritzlappen hängt herunter', 'Schmutzfänger verloren', 'Schmutzfänger abgerissen']) ok(LO.test(x), 'loses Teil: ' + x);
+  ok(!LO.test('Spritzschutz erneuert'), 'erneuert → nichts');
+});
+
+await test('Backlog 704–705 (Blickwinkel „Motorölstand zu niedrig, Öl nachgefüllt oder hoher Ölverbrauch“): Meldeformular zeigt Schritte (Warnung → anhalten/Leitung, nachfüllen nur laut Unterweisung und Betriebsanleitung, Undichtigkeit eigene Schritte, Anzeige/Sorte/Menge laut Gebinde/Fotos, Auswahl „Kann das Fahrzeug fahren?“); keine Ölsorte/Menge/Frist vorgegeben; Hilfe DE/UK/EN; Hydraulik-/Getriebeöl, Ölwechsel, „Ölstand ok“, „beim Service“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const OILLEVEL_HINT = \/(.+)\/i;/m); ok(m, 'OILLEVEL_HINT auf Modulebene'); eq((app.match(/const OILLEVEL_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Ölstand zu niedrig', 'Ölstand unter Minimum', 'Motoröl nachgefüllt', 'Öl nachgefüllt', 'Öl muss nachgefüllt werden', 'zu wenig Öl', 'Ölverbrauch sehr hoch', 'Lkw braucht viel Öl', 'Ölstand laut Peilstab am Minimum', 'Oelstand zu niedrig', 'oil level low', 'low oil level', 'topped up the engine oil', 'burning oil', 'рівень оливи низький', 'мало масла', 'долив оливу', 'уровень масла ниже минимума']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Hydrauliköl nachgefüllt', 'Getriebeöl nachgefüllt', 'Ölwechsel fällig', 'Öldruck-Warnleuchte', 'low oil pressure', 'Ölstand ok', 'Ölstand in Ordnung', 'Öl nachgefüllt beim Service', 'Kühlwasser niedrig', 'AdBlue nachgefüllt', 'Öllampe leuchtet', 'Ölfleck unter dem Lkw']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.oillevel_hint_title, 'Titel ' + l);
+    const st = S.oillevel_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.oillevel_hint_steps) && !/\d/.test(S.help_oillevel_s), 'keine Zahl/Frist/Menge ' + l);
+    ok(!/\b\d*W-?\d+\b|SAE|ACEA|Liter|litre|літр/i.test(S.oillevel_hint_steps + S.help_oillevel_s), 'keine Ölsorte oder Menge vorgegeben ' + l);
+    ok([S.drv_fahrbereit, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_oillevel_t && S.help_oillevel_s.includes(S.oillevel_hint_steps) && S.help_oillevel_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="oillevel" class="panel" hidden role="status">'), 'Panel #oillevel');
+  ok(app.includes("$('#oillevel').hidden = !OILLEVEL_HINT.test($('#d').value);") && app.indexOf("$('#oillevel').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'engine', 'oillevel', 'gear'"), 'Reihenfolge nach Motor');
+  ok(app.includes("'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+});
+
 await test('Backlog 702–703 (Blickwinkel „Telematik-/Ortungsgerät, Navi oder Bordtablet defekt“): Meldeformular zeigt Schritte (Leitung/Disposition informieren, telefonisch abstimmen, nicht ins Gerät eingreifen, während der Fahrt nicht bedienen, Tachograph eigene Schritte, Gerät/Anzeige/Foto, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; Tachograph, „Navi repariert“, „keine Ortung nötig“, „Navi zeigt falsche Route“, „Tablet defekt“ lösen nichts aus', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -27366,7 +27399,7 @@ await test('Backlog 702–703 (Blickwinkel „Telematik-/Ortungsgerät, Navi ode
   ok(app.includes('<div id="telem" class="panel" hidden role="status">'), 'Panel #telem');
   ok(app.includes("$('#telem').hidden = !TELEM_HINT.test($('#d').value);") && app.indexOf("$('#telem').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'dash', 'telem', 'adas'"), 'Reihenfolge nach Armaturen');
-  ok(app.includes("'cableak', 'telem', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 700–701 (Blickwinkel „Wasser im Fahrerhaus – Dachluke oder Fahrerhaus undicht“): Meldeformular zeigt Schritte (nasse Elektrik nicht benutzen, Leitung sofort informieren, Dachluke nur von innen abdecken – nicht aufs Dach steigen, Nasses trocknen/Schimmel melden, wo/wann/Fotos, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; Kühlwasser, Wasser im Diesel, Wasser im Laderaum, Plane undicht, „Fußraum nass gereinigt“ lösen nichts aus', async () => {
@@ -27387,7 +27420,7 @@ await test('Backlog 700–701 (Blickwinkel „Wasser im Fahrerhaus – Dachluke 
   ok(app.includes('<div id="cableak" class="panel" hidden role="status">'), 'Panel #cableak');
   ok(app.includes("$('#cableak').hidden = !CABLEAK_HINT.test($('#d').value);") && app.indexOf("$('#cableak').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'window', 'cableak', 'cablock'"), 'Reihenfolge nach Fenster');
-  ok(app.includes("'cabkit', 'cableak', 'telem', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'cabkit', 'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 698–699 (Blickwinkel „Fahrerhaus-Ausstattung defekt – Kühlschrank, Liege, Sonnenblende, Vorhang, Steckdose, Innenlicht“): Meldeformular zeigt Schritte (Leitung plant, Auswahl „Kann das Fahrzeug fahren?“, nicht verriegelnde Liege/Klappe sichern, Elektrik nicht selbst öffnen, was/wo/Fotos ohne Privates); Kühlschrank in der Kabine/Leselicht/Kabinenvorhang lösen keine Kühlaufbau-, Beleuchtungs- oder Planen-Schritte aus; Hilfe DE/UK/EN; Anhänger-Steckdose, Rollo am Auflieger, „liegen“, „Kühlschrank repariert“ lösen nichts aus', async () => {
@@ -27414,7 +27447,7 @@ await test('Backlog 698–699 (Blickwinkel „Fahrerhaus-Ausstattung defekt – 
   ok(app.includes('<div id="cabkit" class="panel" hidden role="status">'), 'Panel #cabkit');
   ok(app.includes("$('#cabkit').hidden = !CABKIT_HINT.test($('#d').value);") && app.indexOf("$('#cabkit').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'seat', 'cabkit', 'mirror'"), 'Reihenfolge nach Sitz');
-  ok(app.includes("'sticker', 'cabkit', 'cableak', 'telem', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'sticker', 'cabkit', 'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 696–697 (Blickwinkel „Umweltplakette bzw. HU-Plakette fehlt, abgefallen oder unleserlich“): Meldeformular zeigt Schritte (Leitung klärt Ersatz/Weiterfahrt, ohne Umweltplakette keine Umweltzone, nichts selbst nachkleben/übertragen, welche Plakette/Fotos, Auswahl „Kann das Fahrzeug fahren?“); Plakette am Kennzeichen/an der Scheibe löst keine Kennzeichen-, Glas- oder Lose-Teil-Schritte aus; Hilfe DE/UK/EN; „Umweltplakette erneuert“, „HU-Plakette abgelaufen“, Maut-/QR-Aufkleber lösen nichts aus', async () => {
@@ -27443,7 +27476,7 @@ await test('Backlog 696–697 (Blickwinkel „Umweltplakette bzw. HU-Plakette fe
   ok(app.includes("$('#sticker').hidden = !STICKER_HINT.test($('#d').value);") && app.indexOf("$('#sticker').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("{ let dl = dsk; if (!$('#numplate')") && app.includes("const numplateHint = NUMPLATE_HINT.test(noSticker(desc));"), 'Lose-Teil- und Leitungs-Hinweis ohne Plaketten-Fundstelle');
   ok(app.includes("'numplate', 'sticker', 'fuelcard'"), 'Reihenfolge nach Kennzeichen');
-  ok(app.includes("'contour', 'sticker', 'cabkit', 'cableak', 'telem', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'contour', 'sticker', 'cabkit', 'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 694–695 (Blickwinkel „Konturmarkierung, Rückstrahler oder Warntafel abgerissen/fehlt“): Meldeformular zeigt Schritte (Mangel, Leitung entscheidet, reinigen, lose Teile nur gefahrlos abnehmen, was/wo/Fotos, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; Scheinwerfer-Reflektor, Warnweste, „світловідбивний жилет“, „Konturmarkierung erneuert“, „Warntafel nötig“ lösen nichts aus', async () => {
@@ -27464,7 +27497,7 @@ await test('Backlog 694–695 (Blickwinkel „Konturmarkierung, Rückstrahler od
   ok(app.includes('<div id="contour" class="panel" hidden role="status">'), 'Panel #contour');
   ok(app.includes("$('#contour').hidden = !CONTOUR_HINT.test($('#d').value);") && app.indexOf("$('#contour').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'lights', 'contour', 'visib'"), 'Reihenfolge nach Beleuchtung');
-  ok(app.includes("'lashgear', 'contour', 'sticker', 'cabkit', 'cableak', 'telem', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'lashgear', 'contour', 'sticker', 'cabkit', 'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
