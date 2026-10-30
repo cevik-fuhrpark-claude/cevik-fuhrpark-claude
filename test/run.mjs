@@ -27378,6 +27378,31 @@ await test('Backlog 713 (Prüfung vorhandener Muster mit der Sonde): Ladebordwan
   for (const [re, x] of [[DO, 'Ladebordwand repariert'], [DO, 'Ladebordwand Fehler behoben'], [DO, 'Hebebühne in der Werkstatt frei'], [VI, 'Spiegel beschlagen'], [LG, 'Rungen vorhanden'], [EN, 'Turbolader neu'], [EN, 'Turbo-Diesel']]) ok(!re.test(x), 'kein Hinweis: ' + x);
 });
 
+await test('Backlog 720–722 (Blickwinkel „Batterie ausgelaufen, gast oder aufgebläht, Batteriekasten offen, Batterietrennschalter defekt“): Meldeformular zeigt Schritte (Säure ätzend/Gase, keine Funken/Starthilfe/Kabel, Säure nicht anfassen und mit Wasser spülen, heiß/aufgebläht → Leitung sofort, Rauch → Brand-Schritte, Deckel/Trennschalter → Leitung entscheidet, leere Batterie/Kabel eigene Schritte, Ort/Fotos aus sicherem Abstand, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; leere Batterie, Kabel/Pole, „getauscht“/„repariert“, Handy-Akku lösen nichts aus; Lücken Spannratsche, „Ad Blue“, Ersatzradhalter', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const BATT_HINT = \/(.+)\/i;$/m); ok(m, 'BATT_HINT auf Modulebene'); eq((app.match(/const BATT_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Batterie ausgelaufen, Säure am Rahmen', 'Batterie gast und stinkt nach faulen Eiern', 'Batterie ist aufgebläht', 'Starterbatterie sehr heiß', 'Batteriesäure läuft am Rahmen runter', 'Batteriekasten Deckel fehlt', 'Batteriekastendeckel lose', 'Batteriedeckel abgebrochen', 'Batterietrennschalter geht nicht', 'Batteriehauptschalter lässt sich nicht einschalten', 'Hauptschalter klemmt', 'battery leaking acid', 'battery swollen', 'battery box cover missing', 'battery isolator switch broken', 'master switch not working', 'акумулятор тече', 'акумулятор здувся', 'кришка акумулятора відсутня', 'вимикач маси не працює']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Batterie leer', 'Batterie getauscht', 'Batterie geladen', 'Batteriekabel lose', 'Batteriepol korrodiert', 'Hauptschalter repariert', 'Trennschalter wurde gewechselt', 'Handy Akku heiß', 'Batterien für Taschenlampe fehlen', 'Säure im Magen', 'battery charged', 'battery replaced, was leaking']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const H = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const [LG, EN, LO] = ['LASHGEAR_HINT', 'ENGINE_HINT', 'LOOSE_HINT'].map(H);
+  for (const [r, x] of [[LG, 'Spannratsche kaputt'], [LG, 'Zurrratsche defekt'], [EN, 'Ad Blue Warnung, Leistung reduziert'], [EN, 'Ad-Blue leer'], [EN, 'ad blue warning'], [LO, 'Ersatzradhalter lose']]) ok(r.test(x), 'Lücke geschlossen: ' + x);
+  for (const [r, x] of [[LG, 'Spannratsche neu'], [EN, 'AdBlue nachgefüllt'], [EN, 'Ad Blue getankt']]) ok(!r.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.batt_hint_title, 'Titel ' + l);
+    const st = S.batt_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.batt_hint_steps) && !/\d/.test(S.help_batt_s), 'keine Zahl/Frist ' + l);
+    ok([S.drv_nicht_fahrbereit, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_batt_t && S.help_batt_s.includes(S.batt_hint_steps) && S.help_batt_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="batt" class="panel" hidden role="status">'), 'Panel #batt');
+  ok(app.includes("$('#batt').hidden = !BATT_HINT.test($('#d').value);") && app.indexOf("$('#batt').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'elec', 'batt', 'engine'"), 'Reihenfolge nach Elektrik, vor Motor');
+  ok(helpAfter(app, 'batt', 'elec'), 'Hilfe-Abschnitt für meldende Rollen');
+});
+
 await test('Backlog 718–719 (Blickwinkel „Kabel blank, durchgescheuert oder verschmort, Sicherung fliegt raus, Anhängerkabel beschädigt“): Meldeformular zeigt Schritte (Schmorgeruch → anhalten/Brand-Schritte, nichts anfassen/flicken/überbrücken, beschädigtes Anhängerkabel → nicht weiterfahren, Leitung entscheidet, Beleuchtung/Warnleuchten/Marder eigene Schritte, Ort/Fotos aus sicherem Abstand, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; Marder, Ladekabel/USB, „repariert“, „Kurzschluss behoben“, Ladungssicherung lösen nichts aus', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -27395,7 +27420,7 @@ await test('Backlog 718–719 (Blickwinkel „Kabel blank, durchgescheuert oder 
   }
   ok(app.includes('<div id="elec" class="panel" hidden role="status">'), 'Panel #elec');
   ok(app.includes("$('#elec').hidden = !ELEC_HINT.test($('#d').value);") && app.indexOf("$('#elec').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("'gelfuel', 'elec', 'engine'"), 'Reihenfolge nach Diesel/Kälte, vor Motor');
+  ok(app.includes("'gelfuel', 'elec', 'batt', 'engine'"), 'Reihenfolge nach Diesel/Kälte, vor Batterie/Motor (Backlog 720)');
   ok(helpAfter(app, 'elec', 'grease'), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
