@@ -27021,7 +27021,7 @@ await test('Backlog 653–655 (Blickwinkel „Parkschaden – Unfallgegner unbek
   ok(app.includes("const hitrun = !wild && HITRUN_HINT.test($('#d').value); $('#hitrun').hidden = !hitrun; $('#acc').hidden = wild || hitrun || !ACC_HINT.test($('#d').value);"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor');
   ok(app.indexOf("$('#hitrun').hidden = !hitrun") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun',/.test(app), 'Reihenfolge direkt nach Unfall/Wildunfall');
-  ok(app.includes("'custdmg', 'hitrun', 'vandal', 'marten', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen (Backlog 661/664: Vandalismus, Marder direkt dahinter)');
+  ok(app.includes("'custdmg', 'hitrun', 'vandal', 'marten', 'storm', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen (Backlog 661/664/667: Vandalismus, Marder, Unwetter direkt dahinter)');
   ok(app.includes("const hitrunNoRef = !theftNoRef && HITRUN_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimhitrun'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt zum Diebstahl-Hinweis');
   // Datenqualität (655)
   const hr = await newCase({ description: 'Parkschaden über Nacht, Verursacher unbekannt' });
@@ -27088,6 +27088,30 @@ await test('Backlog 662–664 (Blickwinkel „Marder hat Kabel/Schläuche angefr
   ok(app.includes("$('#marten').hidden = !MARTEN_HINT.test($('#d').value);") && app.indexOf("$('#marten').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'warnlight', 'marten', 'gelfuel'"), 'Reihenfolge nach Warnleuchte');
   ok(app.includes("const martenNoClaim = !cl && MARTEN_HINT.test(desc || '');") && app.includes('data-claimmarten'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
+});
+
+await test('Backlog 665–667 (Blickwinkel „Unwetter: Ast/Baum auf dem Lkw, Hagel, Hochwasser auf dem Hof“): Meldeformular zeigt Schritte (im Wasser gestanden → Motor nicht starten, Baum/Leitungen Abstand, Fotos, Sammelmeldung), Versicherungsabschnitt ohne Versicherungsfall nennt die Prüfung laut Vertrag; Hilfe DE/UK/EN; „Ansturm“, „Sturmhaube“, „Wasser im Fahrerhaus“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const STORM_HINT = \/(.+)\/i;/m); ok(m, 'STORM_HINT auf Modulebene'); eq((app.match(/const STORM_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Unwetter in der Nacht, Plane zerrissen', 'Sturmschaden am Auflieger', 'Sturm hat das Hoftor auf die Kabine gedrückt', 'Orkanböe hat den Spiegel abgerissen', 'Hagelschaden am Dach', 'Hagel – Dellen überall', 'Baum auf den Lkw gefallen', 'Ast ist auf die Motorhaube gekracht', 'Ast ist aufs Dach runtergefallen', 'umgestürzter Baum blockiert die Ausfahrt', 'Hochwasser auf dem Hof, Lkw stand bis zur Achse im Wasser', 'Hof überflutet', 'Starkregen, Wasser im Motorraum', 'storm damage on the trailer', 'hail dents on the roof', 'Hailstorm overnight', 'yard flooded', 'a fallen tree hit the cab', 'tree fell on the truck', 'Буря пошкодила тент', 'ГРАД побив дах', 'дерево впало на кабіну', 'впала гілка на капот', 'двір затоплено', 'повінь на стоянці', 'ураган', 'упало дерево на прицеп', 'подтопление стоянки']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Ansturm in der Werkstatt', 'Sturmhaube im Fahrerhaus vergessen', 'Wasser im Fahrerhaus, Dachluke undicht', 'Astloch in der Bordwand', 'Bastelei am Kabel', 'Reifen platt', 'Rast auf dem Parkplatz', 'floodlight broken', 'brainstorm', 'Ленінград', 'Волгоград', 'нагорода', 'відкат воріт', 'Kühlwasserverlust', 'Fahrzeug gewaschen']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.storm_hint_title, 'Titel ' + l);
+    const st = S.storm_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(st[0].includes(S.driveable) && st[0].includes(S.drv_nicht_fahrbereit), 'Schritt 1 nennt die Auswahl im Formular ' + l);
+    ok(/112/.test(st[1]), 'Feuerwehr 112 ' + l);
+    ok(st[3].includes(S.multi_title), 'Sammelmeldung mit dem Namen der Ansicht ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год|€|EUR|km|cm)/i.test(S.storm_hint_steps), 'keine erfundene Frist/Zahl ' + l);
+    ok(S.help_storm_t && S.help_storm_s.includes(S.storm_hint_steps) && S.help_storm_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+    ok(S.claim_storm_hint.includes('{b}'), 'Versicherungs-Hinweis nennt den Knopf ' + l);
+  }
+  ok(app.includes('<div id="storm" class="panel" hidden role="status">'), 'Panel #storm');
+  ok(app.includes("$('#storm').hidden = !STORM_HINT.test($('#d').value);") && app.indexOf("$('#storm').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun', 'vandal', 'storm',/.test(app), 'Reihenfolge nach Vandalismus');
+  ok(app.includes("const stormNoClaim = !cl && STORM_HINT.test(desc || '');") && app.includes('data-claimstorm'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {

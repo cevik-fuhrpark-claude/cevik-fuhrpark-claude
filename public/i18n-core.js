@@ -1068,6 +1068,7 @@ Object.assign(FIELD_NAMES.uk, { Sprache: 'Мова' });
 Object.assign(FIELD_NAMES.en, { Sprache: 'Language' });
 // Backlog 384 (Blickwinkel „Betriebskontrolle“): Auslesungsverlauf ohne jede Auslesung
 // Backlog 404 (Blickwinkel „Hagelschaden an mehreren Lkw auf dem Hof“): Sammelmeldung gleicher Schaden an mehreren Fahrzeugen
+// Backlog 665–667 (30.10.2026, Blickwinkel „Unwetter: Ast/Baum auf dem Lkw, Hagel, Hochwasser auf dem Hof“): Schritte im Meldeformular, Hinweis Versicherungsschutz, Hilfe
 // [CLAUDE] Backlog 405: Prüftermin für mehrere Fahrzeuge anlegen (Sammelanlage, z. B. Wintercheck)
 // [CLAUDE] Backlog 406: Winterreifen-Bedarf je Reifengröße (Reifen-Flotte, Reiter „Winter nicht erfüllt“)
 // [CLAUDE] Backlog 407: Winterreifen-Aufträge für mehrere Lkw (Reifen-Flotte, Winter-Reiter)

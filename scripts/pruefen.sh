@@ -192,6 +192,7 @@ UI-Fehlbetankung: Warnzeile bei „Weiß nicht“/„fahrbereit“, neue Schreib
 UI-Unfallflucht: eigene Schritte statt Unfall-Hinweis, Hinweis Anzeige/Gegner unbekannt im Vorgang, DE/UK/EN 390/820/1366|ui-unfallflucht.py|/tmp/cfp-unfallflucht.log
 UI-Vandalismus: eigene Schritte, nicht doppelt zu Diebstahl, Hinweis Anzeige im Vorgang, DE/UK/EN 390/820/1366|ui-vandalismus.py|/tmp/cfp-vandalismus.log
 UI-Marder: eigene Schritte, Bremsscheibe angefressen nicht, Hinweis Versicherungsschutz im Vorgang, DE/UK/EN 390/820/1366|ui-marder.py|/tmp/cfp-marder.log
+UI-Unwetter: eigene Schritte, Sturmhaube nicht, Hinweis Versicherungsschutz im Vorgang, DE/UK/EN 390/820/1366|ui-unwetter.py|/tmp/cfp-unwetter.log
 UI-Fahrer letzter Arbeitstag: Hinweise beim Deaktivieren (offene Meldungen, Fahrerkarte), Hilfe-Abschnitt, DE/UK/EN 390/820/1366|ui-fahrer-letzter-tag.py|/tmp/cfp-fahrer-letzter-tag.log
 UI-Reifenpanne-Hinweis im Meldeformular und Hilfe|ui-reifenpanne.py|/tmp/cfp-reifenpanne.log
 UI-Hinweis Beanstandung bei Polizei-/BAG-Kontrolle im Meldeformular und Hilfe|ui-kontrolle-beanstandet.py|/tmp/cfp-kontrolle-beanstandet.log
