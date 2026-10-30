@@ -188,6 +188,7 @@ UI-Glasschaden-Hinweis im Meldeformular, Vorgang und Hilfe|ui-glasschaden.py|/tm
 UI-Wildunfall-Hinweis im Meldeformular, Vorgang und Hilfe|ui-wildunfall.py|/tmp/cfp-wildunfall.log
 UI-Schlüssel/Fahrzeugschein-verloren-Hinweis im Meldeformular und Hilfe|ui-schluessel-verloren.py|/tmp/cfp-schluessel-verloren.log
 UI-Fehlbetankungs-Hinweis im Meldeformular und Hilfe|ui-falsch-getankt.py|/tmp/cfp-falsch-getankt.log
+UI-Fehlbetankung: Warnzeile bei „Weiß nicht“/„fahrbereit“, neue Schreibweisen, Hinweis für die Leitung im Vorgang, DE/UK/EN 390/820/1366|ui-fehlbetankung-sperre.py|/tmp/cfp-fehlbetankung-sperre.log
 UI-Reifenpanne-Hinweis im Meldeformular und Hilfe|ui-reifenpanne.py|/tmp/cfp-reifenpanne.log
 UI-Hinweis Beanstandung bei Polizei-/BAG-Kontrolle im Meldeformular und Hilfe|ui-kontrolle-beanstandet.py|/tmp/cfp-kontrolle-beanstandet.log
 UI-Hinweis Fahrzeug springt nicht an im Meldeformular und Hilfe|ui-springt-nicht-an.py|/tmp/cfp-springt-nicht-an.log

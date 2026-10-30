@@ -26973,6 +26973,30 @@ await test('Backlog 643–648 (Blickwinkel „Springer findet bei der Abfahrtsko
   ok(/unbekannt/.test(STRINGS.de.occ_date_hint) && /unknown/.test(STRINGS.en.occ_date_hint) && /невідомо/.test(STRINGS.uk.occ_date_hint), 'Hinweis Schadenzeitpunkt unbekannt');
 });
 
+await test('Backlog 649–652 (Blickwinkel „Falsch getankt – Motor schon gestartet?“): weitere Schreibweisen lösen den Fehlbetankungs-Hinweis aus (ohne normales Nachfüllen), Schritt fragt nach Zündung/Motor und Fahrt, Warnzeile bei „Weiß nicht“/„fahrbereit“, Hinweis für die Leitung im Versicherungsabschnitt; DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const FUEL_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['AdBlue in Dieseltank getankt', 'Diesel in AdBlue-Tank gefüllt', 'AdBlue statt Diesel getankt', 'Diesel statt AdBlue eingefüllt', 'Harnstoff in Dieseltank', 'AdBlue in the diesel-tank', 'AdBlue instead of diesel', 'Diesel into the AdBlue tank', 'Залив адблю в паливний бак', 'Залив дизель у бак AdBlue', 'Залил солярку в бак для мочевины']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['AdBlue nachgefüllt', 'AdBlue in den Tank nachgefüllt', 'AdBlue in den AdBlue-Tank nachgefüllt', 'Dieselgeruch im AdBlue-Bereich', 'Diesel getankt, AdBlue nachgefüllt', 'Заправив AdBlue у бак', 'Заправив дизель', 'AdBlue-Tank leer', 'Diesel versulzt', 'AdBlue eingefroren']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  const kw = { de: ['Zündung', 'gefahren'], uk: ['запалювання', 'їхали'], en: ['ignition', 'drove'] };
+  for (const l of ['de', 'uk', 'en']) {
+    const st = STRINGS[l].fuel_hint_steps.split('|'); eq(st.length, 4, 'weiter vier Schritte ' + l);
+    ok(kw[l].every((k) => st[2].includes(k)), 'Schritt 3 fragt nach Zündung/Motor und Fahrt ' + l); ok(!/\d/.test(STRINGS[l].fuel_hint_steps), 'keine Zahl ' + l);
+    ok(STRINGS[l].fuel_drv_warn.includes('{a}') && STRINGS[l].fuel_drv_warn.includes('{b}') && !/\d/.test(STRINGS[l].fuel_drv_warn), 'Warnzeile mit Platzhaltern ' + l);
+    ok(STRINGS[l].claim_fuel_hint.includes('{b}') && !/\d/.test(STRINGS[l].claim_fuel_hint), 'Leitungs-Hinweis nennt den Knopf ' + l);
+  }
+  ok(app.includes('<p id="fueldrv" class="small" hidden'), 'Warnzeile im Panel, außerhalb der einklappbaren Liste');
+  ok(app.includes("['unbekannt', 'fahrbereit'].includes(d.value)") && app.includes("$$('input[name=drv]').forEach((x) => x.addEventListener('change', fuelDrv));") && app.includes("$('#fuel').hidden = !FUEL_HINT.test($('#d').value); fuelDrv();"), 'Warnzeile folgt Beschreibung und Fahrbereitschaft');
+  ok(app.includes("const fuelNoClaim = !cl && FUEL_HINT.test(desc || '');") && app.includes('data-claimfuel'), 'Leitungs-Hinweis nur ohne Versicherungsfall');
+  // Server: nur „nicht fahrbereit“ sperrt (Grund für die Warnzeile)
+  const { U, V1 } = await freshWorld();
+  const r1 = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'AdBlue in Dieseltank getankt', priority: 'niedrig', driveability: 'unbekannt', request_key: rk() });
+  eq(r1.status, 201); eq(r1.data.safety_lock, false, 'ohne „nicht fahrbereit“ keine Sperre');
+  const r2 = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'AdBlue in Dieseltank getankt', priority: 'niedrig', driveability: 'nicht_fahrbereit', request_key: rk() });
+  eq(r2.data.safety_lock, true, 'mit „nicht fahrbereit“ gesperrt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

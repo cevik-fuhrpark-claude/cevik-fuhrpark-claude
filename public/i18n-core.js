@@ -38,6 +38,7 @@ export { CHECK_LABELS } from './check-labels.js';
 // Hinweis „Diebstahl/Einbruch“ im Meldeformular (Backlog 214) und Hilfe-Abschnitt dazu (Backlog 215) – keine Fristen, nur Ablauf
 // Backlog 294 (Blickwinkel „Fahrer verliert unterwegs Fahrzeugschlüssel oder Fahrzeugschein“): Hinweise im Meldeformular + Hilfe-Abschnitt; reine Information, keine Frist
 // Backlog 295 (Blickwinkel „Falsch getankt – AdBlue im Dieseltank“): Hinweise im Meldeformular + Hilfe-Abschnitt; reine Information, keine Frist, keine Literangabe
+// Backlog 651/652 (Blickwinkel „Falsch getankt – AdBlue im Dieseltank“, 30.10.2026): Warnzeile bei passender Fahrbereitschaft, Hinweis für die Leitung im Versicherungsabschnitt
 // Backlog 307: Blickwinkel „Ladung verrutscht während der Fahrt“
 // Backlog 308: Blickwinkel „Spiegel abgefahren“
 // Backlog 311: Blickwinkel „Tür/Ladebordwand/Hecktür schließt nicht“
