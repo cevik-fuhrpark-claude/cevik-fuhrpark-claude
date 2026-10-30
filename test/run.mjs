@@ -27357,6 +27357,15 @@ await test('Backlog 706 (Lücken aus der Prüfung am Code): „Stützfuß klemmt
   ok(!LO.test('Spritzschutz erneuert'), 'erneuert → nichts');
 });
 
+await test('Backlog 714 (Blickwinkel „Kraftstoffdiebstahl über Nacht bemerkt“): „Tank leer gesaugt“, „Diesel fehlt im Tank“, „weniger im Tank als abends“, „nachts abgepumpt“, „fuel drained overnight“, „Planenschlitzer“ zeigen die Diebstahl-Schritte; Abpumpen nach Fehlbetankung, „Tank leer gefahren“, „Diesel nachgefüllt“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const THEFT_HINT = \/(.+)\/i;(?: *\/\/.*)?$/m); ok(m, 'THEFT_HINT auf Modulebene');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Tank leer gesaugt über Nacht', 'Tank leergesaugt', 'Diesel fehlt im Tank', 'AdBlue fehlt aus dem Tank', 'morgens viel weniger im Tank als abends', 'Diesel nachts abgepumpt', 'Kraftstoff abgesaugt über Nacht', 'fuel drained overnight', 'diesel drained while parked', 'Planenschlitzer am Rastplatz', 'Diesel abgezapft']) ok(re.test(x), 'Diebstahl: ' + x);
+  for (const x of ['Werkstatt hat den Tank abgepumpt wegen falsch getankt', 'Tank leergepumpt nach Fehlbetankung', 'Tank leer gefahren', 'Diesel im Tank nachgefüllt', 'Kraftstoff fehlt, Tankanzeige spinnt', 'fuel drained by the workshop']) ok(!re.test(x), 'kein Diebstahl: ' + x);
+});
+
 await test('Backlog 713 (Prüfung vorhandener Muster mit der Sonde): Ladebordwand/Hebebühne piept, zeigt Fehler/Störung → Türen/Ladebordwand; Spiegelheizung defekt → Heizung/Sicht; Rungen fehlen → Ladungssicherungsmittel; Turbolader pfeift/defekt → Motor; Erledigtes („Fehler behoben“, „Rungen vorhanden“, „Turbolader neu“) löst nichts aus', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
