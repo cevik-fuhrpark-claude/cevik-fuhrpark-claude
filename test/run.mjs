@@ -27469,6 +27469,21 @@ await test('Backlog 733–734 (Sonde über vorhandene Muster, 30.10.2026 17:15):
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].roadchk_hint_steps.includes('BALM') && STRINGS[l].help_roadchk_t.includes('BALM') && STRINGS[l].help_roadchk_t.includes('BAG'), 'BALM (früher BAG) genannt ' + l); }
 });
 
+await test('Backlog 737–738 (Sonde über vorhandene Muster, 30.10.2026 19:15): „Anhänger/Auflieger/Lkw bremst nicht/schlecht/kaum“, „trailer not braking“, „won\'t brake“, „причіп не гальмує“, „прицеп не тормозит“ → Bremse (sicherheitsrelevant, zeigte bisher nichts); „Fahrtschreiber“ → Fahrtenschreiber; „Maut Box“ → Mautgerät; „Schlafkabine“ nass → Wasser im Fahrerhaus; Wechselrichter/Spannungswandler → Ausstattung Fahrerhaus; Hilfe nennt das Beispiel DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    BRAKE_HINT: [['Anhänger bremst nicht', 'Auflieger bremst schlecht', 'Lkw bremst nicht richtig', 'bremst kaum noch', 'bremst bergab immer schwächer', 'trailer not braking', 'lorry won\'t brake', 'truck brakes badly', 'причіп не гальмує', 'напівпричіп погано гальмує', 'прицеп не тормозит'], ['Vordermann bremst nicht rechtzeitig', 'Er bremst ab', 'Bremse repariert, bremst wieder gut', 'bremst gut', 'didn\'t brake in time', 'won\'t brake in time', 'Bremslicht defekt']],
+    TACHO_HINT: [['Fahrtschreiber Fehler', 'Fahrtschreiber defekt'], ['Fahrtenbuch fehlt']],
+    TOLL_HINT: [['Maut Box rot', 'Maut-Box rot', 'Mautbox rot'], ['Mautbox ok', 'Maut bezahlt']],
+    CABLEAK_HINT: [['Schlafkabine nass', 'Wasser in der Schlafkabine', 'Schlafkabine undicht'], ['Schlafkabine gereinigt']],
+    CABKIT_HINT: [['Wechselrichter defekt', 'Spannungswandler kaputt'], ['Wechselrichter eingebaut']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_brake_s.includes('Anhänger bremst nicht') && STRINGS.uk.help_brake_s.includes('причіп не гальмує') && STRINGS.en.help_brake_s.includes('trailer not braking'), 'Hilfe nennt das Beispiel DE/UK/EN');
+});
 await test('Backlog 735–736 (Blickwinkel „Schranke, Poller, Laterne, Zaun, Verkehrsschild oder Leitplanke angefahren – fremde Sache beschädigt“): Meldeformular zeigt eigene Schritte statt der allgemeinen Unfall-Hinweise (anhalten/sichern, Gefahr melden, nicht ohne Meldung weiterfahren – Eigentümer bzw. Polizei, Zettel reicht nicht, Fotos/Ansprechstelle, kein Schuldanerkenntnis, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN ohne Frist; Wildunfall/Unfallflucht/Brücke/Kunde gehen vor; „Rolltor“, „Seitenwand“, „Mast vom Kran“, „Schranke geht nicht auf“, Verneinungen nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
