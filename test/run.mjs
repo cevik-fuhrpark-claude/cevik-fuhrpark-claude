@@ -27426,6 +27426,33 @@ await test('Backlog 725–726 (Blickwinkel „Ersatzrad fehlt, ist platt oder be
   ok(helpAfter(app, 'spare', 'safetykit'), 'Hilfe-Abschnitt für meldende Rollen nach Sicherheitsausrüstung');
 });
 
+await test('Backlog 727–728 (Blickwinkel „Wespen-, Hornissen- oder Bienennest am Fahrzeug, Stich“): Meldeformular zeigt eigene Schritte (Abstand, nicht selbst entfernen, Leitung entscheidet, nicht losfahren solange Spiegel/Tür/Sicht behindert, Stich mit Atemnot/Schwellung → Notruf, Fotos aus sicherem Abstand, Auswahl „Weiß nicht“ bis zur Entscheidung); Hilfe DE/UK/EN ohne Frist; „entfernt“, „ist weg“, „keine Wespen“, Insekten auf der Scheibe, „оси“ (Achsen) nicht; „Wespen im Fahrerhaus“ ohne Ungeziefer-Schritte', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const NEST_HINT = \/(.+)\/i;$/m); ok(m, 'NEST_HINT auf Modulebene'); eq((app.match(/const NEST_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Wespennest am Spiegel', 'Wespennest im Außenspiegel links', 'Hornissennest unter der Plane', 'Bienenschwarm am Anhänger', 'Wespen am Spiegel', 'Wespen im Fahrerhaus', 'Hornissen fliegen aus dem Staukasten', 'Wespen kommen aus dem Tankdeckel', 'Fahrer von Wespe gestochen', 'Nest von Wespen im Radkasten', 'wasp nest on the mirror', 'hornets in the toolbox', 'bees swarm on the trailer', 'stung by a wasp', 'гніздо ос у дзеркалі', 'осине гніздо на причепі', 'шершні в кабіні', 'рій бджіл на причепі', 'гнездо ос в зеркале']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Wespennest entfernt', 'Wespennest wurde beseitigt', 'kein Wespennest mehr', 'keine Wespen am Spiegel', 'Wespennest ist weg', 'Insekten auf der Frontscheibe', 'Fliegen im Fahrerhaus', 'Mäuse im Fahrerhaus', 'wasp nest removed', 'Spiegel kaputt', 'гніздо ос прибрали', 'оси на причепі погнуті', 'Biene Maja Aufkleber']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const PE = new RegExp(app.match(/^const PEST_HINT = \/(.+)\/i;$/m)[1], 'i');
+  const NW = new RegExp(app.match(/^const NEST_WORDS = \/(.+)\/gi;$/m)[1], 'gi');
+  ok(PE.test('Wespen im Fahrerhaus') && !PE.test('Wespen im Fahrerhaus'.replace(NW, ' ')), 'Wespen im Fahrerhaus: Ungeziefer-Schritte entfallen neben den Nest-Schritten');
+  ok(PE.test('Mäuse und Wespen in der Kabine'.replace(NW, ' ')) || PE.test('Wespen und Mäuse im Fahrerhaus'.replace(NW, ' ')), 'Mäuse daneben bleiben erkannt');
+  const MI = new RegExp(app.match(/^const MIRROR_HINT = \/(.+)\/i;$/m)[1], 'i');
+  ok(!MI.test('Wespennest am Spiegel'), 'keine Spiegel-Schritte beim Nest am Spiegel');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.nest_hint_title, 'Titel ' + l);
+    const st = S.nest_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.nest_hint_steps) && !/\d/.test(S.help_nest_s), 'keine Zahl/Frist ' + l);
+    ok([S.drv_fahrbereit, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_nest_t && S.help_nest_s.includes(S.nest_hint_steps) && S.help_nest_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="nest" class="panel" hidden role="status">'), 'Panel #nest');
+  ok(app.includes("$('#nest').hidden = !nest;") && app.indexOf("$('#nest').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'cablock', 'pest', 'nest', 'stuck'"), 'Reihenfolge nach Ungeziefer');
+  ok(helpAfter(app, 'nest', 'pest'), 'Hilfe-Abschnitt für meldende Rollen nach Ungeziefer');
+});
+
 await test('Backlog 724 (Sonde über vorhandene Muster): Kurbelstütze/Stützbeine klemmen → Kupplung; Spritzschutz/Schmutzfänger fehlt → loses Teil; Thermoschreiber/-drucker → Kühlung; Fahrzeugpapiere fehlen → verloren; Assistent spinnt → Assistenzsysteme; Niveauregulierung geht nicht → Federung; Schiebeplane klemmt → Plane; Kondenswasser im Lufttank → Bremsen; Fracht-/Lieferpapiere, „Teile fehlen“, „wieder angebracht“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -27531,8 +27558,9 @@ await test('Backlog 711–712 (Blickwinkel „Mäuse, Bettwanzen oder Ungeziefer
     ok(S.help_pest_t && S.help_pest_s.includes(S.pest_hint_steps) && S.help_pest_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="pest" class="panel" hidden role="status">'), 'Panel #pest');
-  ok(app.includes("$('#pest').hidden = !PEST_HINT.test($('#d').value);") && app.indexOf("$('#pest').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("'cablock', 'pest', 'stuck'"), 'Reihenfolge nach Fahrerhaus-Schloss');
+  // seit Backlog 727 ohne Wespen-/Hornissenwörter, wenn die Nest-Schritte erscheinen
+  ok(app.includes("$('#pest').hidden = !PEST_HINT.test(nest ? $('#d').value.replace(NEST_WORDS, ' ') : $('#d').value);") && app.indexOf("$('#pest').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'cablock', 'pest', 'nest', 'stuck'"), 'Reihenfolge nach Fahrerhaus-Schloss');
   ok(helpAfter(app, 'pest', 'cabtilt'), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
