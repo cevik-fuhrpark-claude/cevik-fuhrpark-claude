@@ -27184,6 +27184,16 @@ await test('Backlog 674–676 (Blickwinkel „Personen im Laderaum entdeckt – 
   ok(app.includes("'leak', 'stow', 'custdmg'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
+await test('Backlog 677 (Blickwinkel „Radfahrer beim Rechtsabbiegen übersehen“): Zusammenstoß mit Radfahrer, Fußgänger, Motorrad- oder E-Scooter-Fahrer ohne das Wort „Unfall“ zeigt die allgemeinen Unfall-Hinweise (DE/EN/UK/RU); Fahrradträger, Fußgängerüberweg, Radweg, „Radfahrer hat gewunken“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/\nconst ACC_HINT = \/(.+)\/i;/)[1], 'i');
+  for (const x of ['Radfahrer beim Abbiegen übersehen', 'Beim Rechtsabbiegen einen Radfahrer übersehen', 'Radfahrer erfasst', 'Fahrradfahrer gestreift, ist gestürzt', 'Motorradfahrer touchiert', 'Radfahrer hat Spiegel abgefahren', 'Fußgängerin verletzt beim Rangieren', 'E-Scooter gestreift', 'cyclist hit while turning', 'knocked down a pedestrian', 'collided with a motorcyclist', 'pedestrian was hit by the trailer', 'збив велосипедиста', 'зачепив пішохода', 'сбил пешехода']) ok(re.test(x), 'Unfall-Hinweis: ' + x);
+  for (const x of ['Fahrradträger defekt', 'Fußgängerüberweg', 'Fußgängerzone Lieferung', 'pedestrian crossing light broken', 'bike rack broken', 'Radfahrer hat gewunken', 'cyclist lane closed', 'Radweg gesperrt']) ok(!re.test(x), 'kein Unfall-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(/112/.test(STRINGS[l].acc_steps), 'Unfall-Hinweis nennt den Notruf ' + l);
+});
+
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
   const { e, U, newCase, cmd } = await freshWorld(); const db = e.DB.db;
   const open1 = await newCase({ description: 'Spiegel locker' }); const done = await newCase({ description: 'Wischer defekt' });
