@@ -27403,6 +27403,29 @@ await test('Backlog 720–722 (Blickwinkel „Batterie ausgelaufen, gast oder au
   ok(helpAfter(app, 'batt', 'elec'), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
+await test('Backlog 725–726 (Blickwinkel „Ersatzrad fehlt, ist platt oder beschädigt, Halter klemmt“): Meldeformular zeigt eigene Schritte (Leitung entscheidet vor der Abfahrt, nichts aus anderem Fahrzeug ohne Meldung, Halter nicht mit Gewalt/nicht unter das Fahrzeug, nicht selbst aufpumpen/montieren, lose Teile/platter Reifen eigene Schritte, Auswahl „Weiß nicht“ bis zur Entscheidung); Hilfe DE/UK/EN ohne Frist/Pflichtvorgabe; „lose“, „montiert“, „ersetzt“, „Ersatzteile“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const SPARE_HINT = \/(.+)\/i;$/m); ok(m, 'SPARE_HINT auf Modulebene'); eq((app.match(/const SPARE_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Ersatzrad fehlt', 'Reserverad nicht da', 'Ersatzrad ist platt', 'Ersatzreifen beschädigt', 'kein Ersatzrad an Bord', 'Ersatzradhalter klemmt', 'Reserveradwinde lässt sich nicht kurbeln', 'Ersatzradhalterung festgerostet', 'spare wheel missing', 'no spare tyre', 'spare wheel carrier stuck', 'запасне колесо відсутнє', 'немає запаски', 'запаска спущена']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Ersatzrad lose', 'Ersatzrad montiert', 'Ersatzrad wieder da', 'Ersatzrad geprüft, in Ordnung', 'Reifen platt, Ersatzrad montiert', 'Ersatzradhalter lose', 'spare wheel replaced, was flat', 'Ersatzrad ersetzt, war platt', 'Ersatzteile fehlen', 'запаска висить']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const LO = new RegExp(app.match(/^const LOOSE_HINT = \/(.+)\/i;$/m)[1], 'i');
+  ok(LO.test('Ersatzrad lose') && !LO.test('Ersatzrad fehlt'), 'loses Ersatzrad bleibt bei „loses Teil“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.spare_hint_title, 'Titel ' + l);
+    const st = S.spare_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.spare_hint_steps) && !/\d/.test(S.help_spare_s), 'keine Zahl/Frist ' + l);
+    ok([S.drv_fahrbereit, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_spare_t && S.help_spare_s.includes(S.spare_hint_steps) && S.help_spare_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="spare" class="panel" hidden role="status">'), 'Panel #spare');
+  ok(app.includes("$('#spare').hidden = !SPARE_HINT.test($('#d').value);") && app.indexOf("$('#spare').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'safetykit', 'spare', 'roadchk'"), 'Reihenfolge nach Sicherheitsausrüstung');
+  ok(helpAfter(app, 'spare', 'safetykit'), 'Hilfe-Abschnitt für meldende Rollen nach Sicherheitsausrüstung');
+});
+
 await test('Backlog 724 (Sonde über vorhandene Muster): Kurbelstütze/Stützbeine klemmen → Kupplung; Spritzschutz/Schmutzfänger fehlt → loses Teil; Thermoschreiber/-drucker → Kühlung; Fahrzeugpapiere fehlen → verloren; Assistent spinnt → Assistenzsysteme; Niveauregulierung geht nicht → Federung; Schiebeplane klemmt → Plane; Kondenswasser im Lufttank → Bremsen; Fracht-/Lieferpapiere, „Teile fehlen“, „wieder angebracht“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

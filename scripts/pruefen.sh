@@ -211,6 +211,7 @@ UI-Ölstand: eigene Schritte bei niedrigem Ölstand/nachgefülltem Motoröl, kei
 UI-Schmierung: eigene Schritte bei leerer Zentralschmierung/trockener Sattelplatte, keine Kupplungs-Schritte, „in Ordnung“ nicht, Hilfe, DE/UK/EN 390/820/1366|ui-schmierung.py|/tmp/cfp-schmierung.log
 UI-Elektrik: eigene Schritte bei blankem/durchgescheuertem Kabel und Sicherung, keine Marder-Schritte, „Kabel repariert“ nicht, Hilfe, DE/UK/EN 390/820/1366|ui-elektrik.py|/tmp/cfp-elektrik.log
 UI-Batterie: eigene Schritte bei ausgelaufener/aufgeblähter Batterie, fehlendem Batteriekastendeckel, Trennschalter, keine Startprobleme-Schritte, „Batterie getauscht“ nicht, Hilfe, DE/UK/EN 390/820/1366|ui-batterie.py|/tmp/cfp-batterie.log
+UI-Ersatzrad: eigene Schritte bei fehlendem/plattem/beschädigtem Ersatzrad und klemmendem Halter, keine Schritte für lose Teile, „Ersatzrad montiert“ nicht, Hilfe, DE/UK/EN 390/820/1366|ui-ersatzrad.py|/tmp/cfp-ersatzrad.log
 UI-Feststellbremse: eigene Schritte bei Feststellbremse hält nicht/Lkw weggerollt statt Bremsen-Schritte, „löst nicht“ nur Bremse, Hilfe, DE/UK/EN 390/820/1366|ui-feststellbremse.py|/tmp/cfp-feststellbremse.log
 UI-Ungeziefer: eigene Schritte bei Mäusen/Bettwanzen/Ungeziefer im Fahrerhaus, keine Marder-Schritte, Ungeziefer in der Ladung nicht, Hilfe, DE/UK/EN 390/820/1366|ui-ungeziefer.py|/tmp/cfp-ungeziefer.log
 UI-Fahrer letzter Arbeitstag: Hinweise beim Deaktivieren (offene Meldungen, Fahrerkarte), Hilfe-Abschnitt, DE/UK/EN 390/820/1366|ui-fahrer-letzter-tag.py|/tmp/cfp-fahrer-letzter-tag.log
