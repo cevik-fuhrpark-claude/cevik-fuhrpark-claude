@@ -27511,6 +27511,36 @@ await test('Backlog 746 (Sonde über vorhandene Muster, 30.10.2026 21:15): „з
   for (const x of ['запах палива в кабіні', 'пахне паливом', 'запах дизеля в кабіні']) ok(re.test(x), 'Leck-Hinweis: ' + x);
   for (const x of ['палива вистачає', 'запах гуми']) ok(!re.test(x), 'kein Leck-Hinweis: ' + x);
 });
+await test('Backlog 747 (Blickwinkel „Kraftstoff ausgegangen, Tank leergefahren“): Meldeformular zeigt eigene Schritte (absichern, nicht dauernd starten, Kraftstoffanlage ggf. entlüften, Leitung anrufen, Kanister nur nach Freigabe, auffälliger Verbrauch → Diebstahl/Leck, Standort/letztes Tanken, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; „leer gefahren“ (Leerfahrt), „Wassertank/AdBlue-Tank leer“, „Tank leer gemacht“, „Diesel getankt“, „out of fuel cards“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const DRYFUEL_HINT = \/(.+)\/i;/m); ok(m, 'DRYFUEL_HINT auf Modulebene'); eq((app.match(/const DRYFUEL_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['kein Diesel mehr', 'Lkw hat keinen Diesel mehr', 'Diesel ist alle', 'Sprit alle', 'Kraftstoff ausgegangen', 'mir ist der Diesel ausgegangen', 'ohne Diesel liegen geblieben', 'Tank leergefahren', 'den Tank komplett leergefahren', 'Tank ist leer', 'Motor aus, Tank leer', 'out of diesel', 'ran out of diesel', 'ran out of fuel on the A2', 'truck ran dry', 'the fuel tank is empty', 'no fuel left', 'скінчилось пальне', 'закінчилася солярка', 'немає пального', 'паливний бак порожній', 'кончилось топливо', 'кончилась солярка', 'бак пустой']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Lkw leer gefahren, steht', 'bin leer gefahren nach Dortmund', 'Batterie leergefahren', 'Wassertank leer', 'AdBlue Tank leer', 'AdBlue-Tank leer', 'Tank leer gemacht für die Reparatur', 'Diesel getankt', 'Tank voll', 'Dieselgeruch in der Kabine', 'Diesel ausgelaufen', 'Tankanzeige spinnt', 'out of fuel cards', 'палива вистачає', 'Spiegel kaputt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.dryfuel_hint_title, 'Titel ' + l);
+    const st = S.dryfuel_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.dryfuel_hint_steps) && !/\d/.test(S.help_dryfuel_s), 'keine Zahl/Menge/Frist ' + l);
+    ok([S.driveable, S.drv_nicht_fahrbereit, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_dryfuel_t && S.help_dryfuel_s.includes(S.dryfuel_hint_steps) && S.help_dryfuel_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="dryfuel" class="panel" hidden role="status">'), 'Panel #dryfuel');
+  ok(app.includes("$('#dryfuel').hidden = !DRYFUEL_HINT.test($('#d').value);") && app.indexOf("$('#dryfuel').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'fuel', 'fuelcap', 'dryfuel', 'nostart'"), 'Reihenfolge nach Tankdeckel, vor Startproblemen');
+  ok(helpAfter(app, 'dryfuel', 'gelfuel'), 'Hilfe-Abschnitt nach Diesel versulzt');
+});
+await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Batterie entladen/tiefentladen“ → Startprobleme; „zischt an der Luftleitung“, „air leak hissing“, „шипить повітря“ → Bremse/Druckluft; „air leak at the tyre“, „шипить повітря з колеса“, „air conditioning“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    NOSTART_HINT: [['Batterie entladen', 'Batterie ist tiefentladen', 'Batterien über Nacht entladen'], ['Batterie geladen', 'Lkw entladen beim Kunden', 'Batterie geladen, Lkw entladen']],
+    BRAKE_HINT: [['zischt an der Luftleitung', 'es zischt an der Bremsleitung', 'air leak hissing', 'air is leaking under the trailer', 'hissing air behind the cab', 'шипить повітря', 'воздух шипит'], ['air leak at the tyre', 'air conditioning leak', 'шипить повітря з колеса', 'Luftleitung ok']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+});
 await test('Backlog 745 (Sonde über vorhandene Muster, 30.10.2026 21:15): „Gangschaltung hakt“, „Schalthebel klemmt“, „Gänge lassen sich schwer schalten“, „Gang lässt sich nur schwer einlegen“, „can\'t get into reverse“, „задня не вмикається“, „задняя не включается“ → Getriebe-Schritte; „Sattelkupplung/Tür/Blinkerhebel klemmt“, „can\'t get into the cab“, „задня фара не працює“ nicht; Hilfe nennt das Beispiel DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
