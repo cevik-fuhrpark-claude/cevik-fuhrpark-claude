@@ -27403,6 +27403,27 @@ await test('Backlog 720–722 (Blickwinkel „Batterie ausgelaufen, gast oder au
   ok(helpAfter(app, 'batt', 'elec'), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
+await test('Backlog 724 (Sonde über vorhandene Muster): Kurbelstütze/Stützbeine klemmen → Kupplung; Spritzschutz/Schmutzfänger fehlt → loses Teil; Thermoschreiber/-drucker → Kühlung; Fahrzeugpapiere fehlen → verloren; Assistent spinnt → Assistenzsysteme; Niveauregulierung geht nicht → Federung; Schiebeplane klemmt → Plane; Kondenswasser im Lufttank → Bremsen; Fracht-/Lieferpapiere, „Teile fehlen“, „wieder angebracht“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const H = (n) => { const m = app.match(new RegExp('^const ' + n + ' = /(.+)/(i?);$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], m[2]); };
+  const cases = {
+    COUPLING_HINT: [['Kurbelstütze klemmt', 'Stützbeine gehen nicht runter', 'Stützen gehen nicht hoch', 'landing legs won\'t go down'], ['Stützen der Kunden', 'Kurbelstütze repariert und gefettet']],
+    LOOSE_HINT: [['Spritzschutz fehlt', 'Spritzlappen fehlt hinten links', 'Schmutzfänger fehlen', 'mud flaps missing', 'бризковик відсутній'], ['Spritzschutz wieder angebracht', 'Teile fehlen']],
+    REEFER_HINT: [['Thermoschreiber kaputt', 'Thermodrucker druckt nicht', 'Temperaturdrucker defekt', 'temperature printer not printing'], ['Thermoskanne kaputt']],
+    LOST_HINT: [['Fahrzeugpapiere fehlen', 'Papiere fehlen im Lkw', 'Schlüssel fehlt'], ['Frachtpapiere fehlen', 'Lieferpapiere fehlen']],
+    ADAS_HINT: [['Spurassistent spinnt', 'Notbremsassistent spinnt', 'Assistent spinnt'], ['Spurrillen auf der Autobahn']],
+    SUSP_HINT: [['Niveauregulierung geht nicht', 'Niveauregulierung spinnt', 'Luftfederung funktioniert nicht'], ['Luftfederung wieder in Ordnung']],
+    TARP_HINT: [['Schiebeplane klemmt', 'Schiebeverdeck geht nicht auf', 'Plane lässt sich nicht schieben'], ['Plane geprüft, alles gut']],
+    BRAKE_HINT: [['Kondenswasser im Drucklufttank', 'Wasser im Lufttank', 'Lufttank undicht'], ['Wasser im Kühlschrank']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(cases)) {
+    const re = H(n);
+    for (const x of pos) ok(re.test(x), n + ' Hinweis: ' + x);
+    for (const x of neg) ok(!re.test(x), n + ' kein Hinweis: ' + x);
+  }
+});
+
 await test('Backlog 723 (Sonde über vorhandene Muster): Funkgerät/CB-Funk und Sitzheizung defekt zeigen die Schritte für Ausstattung im Fahrerhaus (DE/UK/EN); „repariert“, „wieder ok“, „Funk mit Disposition“, „раціон“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
