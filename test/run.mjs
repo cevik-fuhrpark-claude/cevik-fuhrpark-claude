@@ -19276,7 +19276,7 @@ await test('Backlog 293 (Blickwinkel „Wildunfall nachts auf der Landstraße“
     ok(STRINGS[l].claim_wild_hint && STRINGS[l].wild_hint_title, 'Texte ' + l);
   }
   ok(app.includes(`<div id="wild" class="panel" hidden role="status">`), 'Panel #wild');
-  ok(app.includes("const wild = WILD_HINT.test($('#d').value); $('#wild').hidden = !wild;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !ACC_HINT.test($('#d').value);"), 'Wildunfall ersetzt die allgemeinen Unfall-Hinweise (Backlog 653: Unfallflucht ebenso)');
+  ok(app.includes("const wild = WILD_HINT.test($('#d').value); $('#wild').hidden = !wild;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !accReal;"), 'Wildunfall ersetzt die allgemeinen Unfall-Hinweise (Backlog 653: Unfallflucht ebenso)');
   ok(app.includes("const wildHint = WILD_HINT.test(desc || '') && !(cl && cl.file_id);") && app.includes('data-claimwild'), 'Versicherungs-Hinweis bis eine Datei verknüpft ist');
   ok(app.includes("const parts = ['report', 'accident', 'wild', "), 'Hilfe-Abschnitt wild nach Unfall');
 });
@@ -27018,7 +27018,7 @@ await test('Backlog 653–655 (Blickwinkel „Parkschaden – Unfallgegner unbek
     ok(S.dq_claim_hitrun_no_police, 'Datenqualität ' + l);
   }
   ok(app.includes('<div id="hitrun" class="panel" hidden role="status">'), 'Panel #hitrun');
-  ok(app.includes("const hitrun = !wild && HITRUN_HINT.test($('#d').value); $('#hitrun').hidden = !hitrun;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !ACC_HINT.test($('#d').value);"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor (Backlog 668: Brückenanprall ebenso)');
+  ok(app.includes("const hitrun = !wild && HITRUN_HINT.test($('#d').value); $('#hitrun').hidden = !hitrun;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !accReal;"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor (Backlog 668: Brückenanprall ebenso)');
   ok(app.indexOf("$('#hitrun').hidden = !hitrun") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun',/.test(app), 'Reihenfolge direkt nach Unfall/Wildunfall');
   ok(app.includes("'custdmg', 'hitrun', 'vandal', 'marten', 'storm', 'bridge', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen (Backlog 661/664/667: Vandalismus, Marder, Unwetter direkt dahinter)');
@@ -27323,7 +27323,7 @@ await test('Backlog 690–691 (Blickwinkel „Fahrer rutscht beim Absteigen aus 
   ok(/Verletzung gehören nicht in diese Meldung/.test(STRINGS.de.step_hint_steps) && /do not belong in this report/.test(STRINGS.en.step_hint_steps), 'Datensparsamkeit: keine Verletzungsangaben im Fahrzeugvorgang');
   ok(app.includes('<div id="step" class="panel" hidden role="status">'), 'Panel #step');
   ok(app.includes("$('#step').hidden = !STEP_HINT.test($('#d').value);") && app.indexOf("$('#step').hidden") < app.indexOf("$('#loose').hidden") && app.indexOf("$('#step').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung vor dem Lose-Teile-Hinweis und vor bindFormDraft');
-  ok(app.includes("'susp', 'step', 'loose'"), 'Reihenfolge vor „loses Teil“');
+  ok(app.includes("'susp', 'step', 'injury', 'loose'"), 'Reihenfolge vor „loses Teil“ (seit Backlog 731 Arbeitsunfall dazwischen)');
   ok(app.includes("'pfilter', 'step', "), 'Hilfe-Abschnitt für meldende Rollen');
 });
 await test('Backlog 692–693 (Blickwinkel „Vor dem Laden: Zurrgurte, Kantenschutz oder Antirutschmatten fehlen bzw. sind beschädigt“): Meldeformular zeigt Schritte (nicht ohne ausreichende Sicherung laden/losfahren, Leitung klärt Ersatz, beschädigte Gurte aussortieren, was fehlt/Fotos, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; „Sicherheitsgurt defekt“, „Zurrgurte nachbestellt“, „Kantenschutz nötig“, „немає ременя безпеки“ lösen nichts aus', async () => {
@@ -27447,6 +27447,32 @@ await test('Backlog 729–730 (Blickwinkel „Gaspedal klemmt/hängt, Fußmatte 
   ok(app.includes("$('#pedal').hidden = !PEDAL_HINT.test($('#d').value);") && app.indexOf("$('#pedal').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'brake', 'parkbrake', 'pedal', 'steer'"), 'Reihenfolge nach Feststellbremse');
   ok(helpAfter(app, 'pedal', 'parkbrake'), 'Hilfe-Abschnitt für meldende Rollen nach Feststellbremse');
+});
+
+await test('Backlog 731–732 (Blickwinkel „Jemand verletzt sich bei der Arbeit am Fahrzeug – Be-/Entladen, Kuppeln, Plane, Ladebordwand“): Meldeformular zeigt eigene Schritte (Erste Hilfe/Notruf, Gefahrenstelle sichern, Vorgesetzte direkt informieren, Verletzte fahren nicht weiter, keine Angaben zur Verletzung/Gesundheit/Namen in der Meldung, nur Fahrzeugmangel mit Fotos, Auswahl „Weiß nicht“); „Arbeitsunfall“ zeigt nicht die Verkehrsunfall-Schritte; Hilfe DE/UK/EN ohne Frist; Verneinungen, Reifen-„Verletzung“, „Verletzungsgefahr“, „Palette vom Auflieger gefallen“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const INJURY_HINT = \/(.+)\/i;$/m); ok(m, 'INJURY_HINT auf Modulebene'); eq((app.match(/const INJURY_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Arbeitsunfall beim Abladen', 'Betriebsunfall', 'Fahrer verletzt beim Abladen', 'Ich habe mich an der Ladebordwand verletzt', 'Finger in der Bordwand eingeklemmt', 'beim Kuppeln die Hand gequetscht', 'Kollege ist von der Ladefläche gefallen', 'Ich bin vom Auflieger gefallen', 'Fahrer beim Planen ausgerutscht und gestürzt', 'Schnittwunde an der Ratsche', 'Kopf an der Heckklappe gestoßen', 'Fuß umgeknickt an der Rampe', 'driver injured while unloading', 'work accident at the tail lift', 'I hurt my hand on the ratchet', 'finger trapped in the tail lift', 'driver fell off the trailer', 'нещасний випадок на роботі', 'водій травмувався під час розвантаження', 'защемив палець бортом', 'впав з причепа', 'водитель травмировался при разгрузке', 'прищемил палец', 'упал с прицепа']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Parkschaden, niemand verletzt', 'Unfall, keine Verletzten', 'Unfall ohne Verletzte', 'Fahrer nicht verletzt', 'Reifen verletzt', 'Verletzung an der Reifenflanke', 'Verletzungsgefahr an der scharfen Kante', 'Palette vom Auflieger gefallen', 'Ladung gefallen', 'no one injured', 'nobody was injured', 'tyre cut', 'ніхто не травмувався', 'без травм', 'Spiegel gebrochen', 'Runge gebrochen', 'Kurbel abgebrochen', 'Handbremse defekt', 'Rücken der Sitzlehne gebrochen', 'Finger-Scanner geht nicht']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const ACC = new RegExp(app.match(/^const ACC_HINT = \/(.+)\/i;$/m)[1], 'i');
+  const w = app.match(/^const INJURY_WORDS = \/(.+)\/gi;$/m); ok(w, 'INJURY_WORDS auf Modulebene');
+  const W = new RegExp(w[1], 'gi');
+  for (const x of ['Arbeitsunfall beim Abladen', 'Betriebsunfall', 'Unfall beim Abladen, Finger eingeklemmt', 'work accident at the tail lift']) ok(ACC.test(x) && !ACC.test(x.replace(W, ' ')), 'kein Verkehrsunfall: ' + x);
+  ok(ACC.test('Unfall auf der A2, Fahrer verletzt'.replace(W, ' ')), 'Verkehrsunfall mit Verletzten bleibt Unfall');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.injury_hint_title, 'Titel ' + l);
+    const st = S.injury_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.injury_hint_steps) && !/\d/.test(S.help_injury_s), 'keine Zahl/Frist ' + l);
+    ok(st[3].includes(S.drv_unbekannt) && st[3].includes(S.driveable), 'Schritt 4 nennt Feld und Auswahl wörtlich ' + l);
+    ok(S.help_injury_t && S.help_injury_s.includes(S.injury_hint_steps) && S.help_injury_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="injury" class="panel" hidden role="status">'), 'Panel #injury');
+  ok(app.includes("$('#injury').hidden = !injhit || wild || hitrun || bridge || accReal || !$('#step').hidden || !$('#stow').hidden;") && app.indexOf("$('#injury').hidden") < app.indexOf("bindFormDraft('new'") && app.indexOf("$('#step').hidden = ") < app.indexOf("$('#injury').hidden"), 'Prüfung im Listener nach Trittstufe, vor bindFormDraft');
+  ok(app.includes("'susp', 'step', 'injury', 'loose'"), 'Reihenfolge nach Trittstufe');
+  ok(helpAfter(app, 'injury', 'pedal'), 'Hilfe-Abschnitt für meldende Rollen nach Gaspedal');
 });
 
 await test('Backlog 727–728 (Blickwinkel „Wespen-, Hornissen- oder Bienennest am Fahrzeug, Stich“): Meldeformular zeigt eigene Schritte (Abstand, nicht selbst entfernen, Leitung entscheidet, nicht losfahren solange Spiegel/Tür/Sicht behindert, Stich mit Atemnot/Schwellung → Notruf, Fotos aus sicherem Abstand, Auswahl „Weiß nicht“ bis zur Entscheidung); Hilfe DE/UK/EN ohne Frist; „entfernt“, „ist weg“, „keine Wespen“, Insekten auf der Scheibe, „оси“ (Achsen) nicht; „Wespen im Fahrerhaus“ ohne Ungeziefer-Schritte', async () => {
