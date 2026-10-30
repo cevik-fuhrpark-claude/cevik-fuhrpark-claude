@@ -27357,6 +27357,29 @@ await test('Backlog 706 (Lücken aus der Prüfung am Code): „Stützfuß klemmt
   ok(!LO.test('Spritzschutz erneuert'), 'erneuert → nichts');
 });
 
+await test('Backlog 711–712 (Blickwinkel „Mäuse, Bettwanzen oder Ungeziefer im Fahrerhaus“): Meldeformular zeigt eigene Schritte (nichts selbst bekämpfen, Leitung organisiert Reinigung, Kot nicht trocken auffegen/aussaugen, lüften, Bettzeug nicht mitnehmen, angefressene Kabel → Marder-Schritte, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; „keine Mäuse“, „Ungeziefer in der Ladung“, „Ameisen auf dem Parkplatz“, „Fliegengitter kaputt“, „insects on the windscreen“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const H = (n) => { const m = app.match(new RegExp('^const ' + n + ' = /(.+)/(i?);$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], m[2]); };
+  eq((app.match(/const PEST_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = H('PEST_HINT');
+  for (const x of ['Mäuse im Fahrerhaus', 'Mäusekot in der Kabine', 'Ungeziefer im Fahrerhaus', 'Bettwanzen', 'Bettwanzen in der Schlafkabine', 'Kakerlaken in der Kabine', 'Ameisen im Fahrerhaus', 'Ratte unter der Liege', 'Maden im Kühlschrank', 'In der Kabine sind Mäuse', 'Matratze hat Milben', 'Maeuse im Fuehrerhaus', 'bed bugs in the sleeper', 'mice in the cab', 'mouse droppings', 'cockroaches in my cabin', 'миші в кабіні', 'клопи', 'тарган у кабіні', 'тараканы в кабине', 'мыши в кабине']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Mäuse haben Kabel angefressen', 'Ungeziefer in der Ladung', 'Ameisen auf dem Parkplatz', 'Insektenschutzgitter fehlt', 'Kabine gereinigt', 'Maus vom Bordtablet defekt', 'Wanzen', 'Fliegengitter kaputt', 'Kabine kippt nicht', 'bugs on the windscreen', 'insects on the windscreen', 'keine Mäuse im Fahrerhaus', 'Fahrerhaus kontrolliert, keine Mäuse', 'no mice in the cab']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  ok(H('MARTEN_HINT').test('Mäuse haben Kabel angefressen'), 'angefressene Kabel bleiben bei den Marder-Schritten');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.pest_hint_title, 'Titel ' + l);
+    const st = S.pest_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.pest_hint_steps) && !/\d/.test(S.help_pest_s), 'keine Zahl/Frist ' + l);
+    ok([S.drv_fahrbereit, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_pest_t && S.help_pest_s.includes(S.pest_hint_steps) && S.help_pest_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="pest" class="panel" hidden role="status">'), 'Panel #pest');
+  ok(app.includes("$('#pest').hidden = !PEST_HINT.test($('#d').value);") && app.indexOf("$('#pest').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'cablock', 'pest', 'stuck'"), 'Reihenfolge nach Fahrerhaus-Schloss');
+  ok(helpAfter(app, 'pest', 'cabtilt'), 'Hilfe-Abschnitt für meldende Rollen');
+});
+
 await test('Backlog 710 (Prüfung vorhandener Muster mit einer Sonde über alle *_HINT): Reifendruckkontrolle/RDKS/TPMS-Warnung → Reifen-Schritte statt Bremsen-Schritte (defekter Sensor weiter ohne Hinweis, Backlog 323); Liftachse senkt nicht ab/bleibt oben → Federung; Unterlegkeile verloren → Bordausrüstung; Tank-/Kraftstoffanzeige defekt/falsch → Armaturen; Kardan-/Gelenkwelle schlägt → Vibration; Erledigtes und „Display zeigt falsche Sprache“ lösen nichts aus', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
