@@ -19237,7 +19237,7 @@ await test('Backlog 214/215 (Teilagent „Fahrzeug gestohlen / Einbruch“): Mel
   }
   ok(app.includes(`<div id="theft" class="panel" hidden role="status">`), 'Panel #theft');
   ok(app.includes("'tachofault', 'theft', 'glass', "), 'Hilfe-Abschnitt theft');
-  ok(app.indexOf("$('#theft').hidden = !THEFT_HINT.test") > 0 && app.indexOf("$('#theft').hidden = !THEFT_HINT.test") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.indexOf("const theft = THEFT_HINT.test($('#d').value); $('#theft').hidden = !theft;") > 0 && app.indexOf("$('#theft').hidden = !theft;") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft (Backlog 659: Ergebnis in `theft` für den Vandalismus-Hinweis)');
 });
 
 await test('Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“): Meldeformular zeigt bei Glasschaden Hinweise (Fotos mit Größenvergleich, Sichtfeld, Weiterfahrt klären, früh melden; DE/UK/EN), Hilfe-Abschnitt, Hinweis im Versicherungsabschnitt nur ohne Versicherungsfall; Bremsscheibe/Scheibenwischer/Spiegel lösen nichts aus', async () => {
@@ -27021,7 +27021,7 @@ await test('Backlog 653–655 (Blickwinkel „Parkschaden – Unfallgegner unbek
   ok(app.includes("const hitrun = !wild && HITRUN_HINT.test($('#d').value); $('#hitrun').hidden = !hitrun; $('#acc').hidden = wild || hitrun || !ACC_HINT.test($('#d').value);"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor');
   ok(app.indexOf("$('#hitrun').hidden = !hitrun") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun',/.test(app), 'Reihenfolge direkt nach Unfall/Wildunfall');
-  ok(app.includes("'custdmg', 'hitrun', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'custdmg', 'hitrun', 'vandal', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen (Backlog 661: Vandalismus direkt dahinter)');
   ok(app.includes("const hitrunNoRef = !theftNoRef && HITRUN_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimhitrun'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt zum Diebstahl-Hinweis');
   // Datenqualität (655)
   const hr = await newCase({ description: 'Parkschaden über Nacht, Verursacher unbekannt' });
@@ -27037,6 +27037,35 @@ await test('Backlog 653–655 (Blickwinkel „Parkschaden – Unfallgegner unbek
   eq(dq.items.find((i) => i.check === 'claim_hitrun_no_police').severity, 'hinweis');
   ok(dq.items.some((i) => i.check === 'accident_no_claim' && i.case_id === noClaim), 'Fahrerflucht ohne Versicherungsfall unter accident_no_claim');
   ok(!dq.items.some((i) => i.case_id === plain && ['claim_hitrun_no_police', 'accident_no_claim'].includes(i.check)), 'normaler Vorgang ohne Befund');
+});
+
+await test('Backlog 659–661 (Blickwinkel „Vandalismus über Nacht – Reifen zerstochen, Graffiti“): Meldeformular zeigt bei mutwilliger Beschädigung eigene Schritte (fahrbereit prüfen, Anzeige, Fotos, Ort/Zeit), nicht zusätzlich zu Diebstahl/Unfallflucht; Versicherungsabschnitt verlangt die Anzeige; Hilfe DE/UK/EN', async () => {
+  const { U, newCase } = await freshWorld();
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const VANDAL_HINT = \/(.+)\/i;/m); ok(m, 'VANDAL_HINT auf Modulebene'); eq((app.match(/const VANDAL_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Vandalismus über Nacht auf dem Hof', 'Vandalen haben die Spiegel abgetreten', 'Anzeige wegen Sachbeschädigung erstattet', 'Auflieger mutwillig beschädigt', 'Lack absichtlich zerkratzt', 'Graffiti auf der Plane', 'Kabine mit Farbe beschmiert', 'Seitenwand besprayt', 'Plane besprüht', 'zwei Reifen zerstochen', 'Reifen am Auflieger aufgestochen', 'Reifen über Nacht aufgeschlitzt', 'Ventile abgeschraubt', 'Tyres slashed overnight', 'someone slashed the tyres', 'trailer spray-painted', 'vandalised at the rest area', 'Vandalized cab', 'deliberately damaged the mirror', 'criminal damage at the depot', 'Вандали пошкодили дзеркала', 'ВАНДАЛІЗМ на стоянці', 'графіті на тенті', 'граффити на прицепе', 'навмисно пошкодили фари', 'умышленно повредили', 'Порізали шини вночі', 'проткнули колесо', 'порезали колеса', 'кабіну розмалювали']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Reifen platt', 'Lack beim Rangieren zerkratzt', 'Plane aufgeschlitzt, Ladung fehlt', 'Diesel gestohlen', 'absichtlich langsam gefahren', 'Scheibe mit Wasser gereinigt', 'Sachverständiger kommt morgen', 'Reifendruck geprüft', 'Ventil undicht', 'tyre punctured by a nail', 'Unfall beim Rückwärtsfahren', 'прокололи колесо на трасі', 'шина спущена', 'Spiegel abgefahren']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.vandal_hint_title, 'Titel ' + l);
+    const st = S.vandal_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(st[0].includes(S.driveable) && st[0].includes(S.drv_nicht_fahrbereit), 'Schritt 1 nennt die Auswahl im Formular ' + l);
+    ok(/112/.test(st[1]) && /110/.test(st[1]), 'Notrufnummern ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год|€|EUR)/i.test(S.vandal_hint_steps), 'keine erfundene Frist ' + l);
+    ok(S.help_vandal_t && S.help_vandal_s.includes(S.vandal_hint_steps) && S.help_vandal_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+    ok(S.cp_vandal_hint.includes(S.cp_title), 'Versicherungs-Hinweis nennt den Anzeige-Abschnitt ' + l);
+  }
+  ok(app.includes('<div id="vandal" class="panel" hidden role="status">'), 'Panel #vandal');
+  ok(app.includes("const theft = THEFT_HINT.test($('#d').value); $('#theft').hidden = !theft; $('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test($('#d').value);"), 'nicht zusätzlich zu Diebstahl/Unfallflucht');
+  ok(app.indexOf("$('#vandal').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun', 'vandal',/.test(app), 'Reihenfolge direkt nach Unfallflucht');
+  ok(app.includes("const vandalNoRef = !theftNoRef && !hitrunNoRef && VANDAL_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimvandal'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt');
+  // Server speichert die Beschreibung unverändert; Versicherungsfall mit Anzeige bleibt möglich
+  const c = await newCase({ description: 'Vandalismus: zwei Reifen zerstochen, Graffiti am Auflieger' });
+  eq((await U.fleet.put(`/api/cases/${c}/claim`, { insurer: 'Kasko AG', reported_on: bDayOff(0), evidence: 'Schadenmeldung', police_station: 'PP Dortmund', police_ref: 'AZ 659/26' })).status, 200);
+  const g = (await U.fleet.get(`/api/cases/${c}`)).data; ok(re.test(g.case ? g.case.description : g.description), 'Beschreibung erkannt');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
