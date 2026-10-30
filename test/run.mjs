@@ -17402,7 +17402,7 @@ await test('Backlog 129: nachgereichte Offline-Kontrolle trägt Empfangszeit (re
   const x = (await U.own.get(`/api/admin/users/${U.driver.id}/data-export`)).data;
   ok(JSON.stringify(x).includes('"received_at"'), 'Datenauskunft');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  eq((app.match(/t\('insp_received_late'\)/g) || []).length, 2, 'Akte + Zeitleiste');
+  eq((app.match(/t\('insp_received_late'\)/g) || []).length, 3, 'Akte + Zeitleiste + Vorgang (Ursprungskontrolle, Backlog 643)');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(/\{d\}/.test(STRINGS[l].insp_received_late || ''), l);
 });
 
@@ -26939,6 +26939,38 @@ await test('Backlog 640–642 (Blickwinkel „Fremder Auflieger vom Kunden“): 
   const { localizedBody } = await import('../src/notify.js');
   const en = localizedBody({ kind: 'still_locked', body: n.body }, 'en'); ok(en.includes(`locked by ${trNo} (FA-AH 641)`), en);
   ok(localizedBody({ kind: 'still_locked', body: en }, 'uk').includes(`блокує ${trNo} (FA-AH 641)`), 'zurück UK');
+});
+
+await test('Backlog 643–648 (Blickwinkel „Springer findet bei der Abfahrtskontrolle einen Vorschaden“): Vorgang zeigt Ursprungskontrolle (Durchführung, nachgereicht, km), Leitung zusätzlich „Prüfpunkt zuletzt ohne Befund“ (ohne Namen); Schadenzeitpunkt auch für Kontroll-Mängel samt Datenqualität; Link „Schaden melden“ in der Kontrolle; Texte DE/UK/EN', async () => {
+  const { U, cmd, newCase, V1 } = await freshWorld();
+  const { CHECKLIST } = await import('../src/cases.js'); const K = CHECKLIST.map((i) => i.key);
+  const at1 = new Date(Date.now() - 2 * 86400000).toISOString(); const at2 = new Date(Date.now() - 3 * 3600000).toISOString();
+  const items = (bad) => K.map((k) => (k === bad ? { key: k, result: 'mangel', note: 'Spiegel rechts abgerissen – bei Übernahme vorgefunden' } : { key: k, result: 'ok' }));
+  eq((await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: items(null), odometer_km: 100000, performed_at: at1 })).status, 201);
+  const r = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: items(K[1]), odometer_km: 100500, performed_at: at2 });
+  eq(r.status, 201, JSON.stringify(r.data)); const id = r.data.followups[0].id;
+  let d = (await U.fleet.get(`/api/cases/${id}`)).data; const si = d.source_inspection;
+  ok(si, 'Ursprungskontrolle'); eq(si.performed_at, at2); ok(si.received_at && si.received_at > at2, 'nachgereicht'); eq(si.odometer_km, 100500); eq(si.last_ok_at, at1, 'zuletzt ohne Befund');
+  ok(!JSON.stringify(si).includes(U.driver.id), 'keine Personenkennung');
+  const dd = (await U.driver.get(`/api/cases/${id}`)).data.source_inspection;  ok(dd && dd.performed_at === at2 && !('last_ok_at' in dd), 'Fahrer: Kontrolle, aber kein Vergleich');
+  // Schadenzeitpunkt (Leitung) jetzt auch am Kontroll-Mangel; Datenqualität bei Versicherungsfall ohne Zeitpunkt
+  ok((d.allowed_actions || d.actions || []).includes('set_occurred_at'), 'Aktion Schadenzeitpunkt');
+  eq((await U.fleet.put(`/api/cases/${id}/claim`, { insurer: 'Test-Versicherung', reported_on: BERLIN_TODAY, status: 'gemeldet', evidence: 'Schadenmeldung per Mail' })).status, 200);
+  const dq = async () => (await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'claim_no_occurred' && i.case_id === id);
+  eq((await dq()).length, 1, 'Hinweis ohne Zeitpunkt');
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: at1.slice(0, 10) })).status, 200);
+  eq((await dq()).length, 0, 'nach Nachtrag weg'); d = (await U.fleet.get(`/api/cases/${id}`)).data; ok(d.case.occurred_at && d.occurred_drivers && Array.isArray(d.occurred_drivers.drivers), 'Fahrer zum Schadenzeitpunkt'); ok(d.occurred_drivers.drivers.length >= 1, 'Fahrer laut Kontrolle am Schadentag');
+  // Ohne frühere „ok“-Kontrolle: null; Meldung ohne Kontrolle: kein Block
+  const r3 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: items(K[2]) }); eq(r3.status, 201);
+  const id3 = r3.data.followups.find((f) => f && f.id && f.id !== id).id; ok(id3);
+  const s3 = (await U.fleet.get(`/api/cases/${id3}`)).data.source_inspection; eq(s3.received_at, null); ok('last_ok_at' in s3);
+  const m = await newCase({ description: 'Delle Tür links' }); ok(!(await U.fleet.get(`/api/cases/${m}`)).data.source_inspection, 'Meldung ohne Ursprungskontrolle');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${srcInsp(d.source_inspection)}') && app.includes('id="dcdmglink"') && app.includes("'#/new/' + $('#v').value"), 'Oberfläche');
+  ok(app.includes("(c.origin === 'kontrolle' && c.check_item && !c.parent_case_id)) && !c.occurred_at"), 'Hinweis Versicherungsfall');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['srci_lbl', 'srci_val', 'srci_lastok', 'srci_lastok_none', 'srci_window', 'dc_damage_hint']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].srci_val.includes('{d}'), l); }
+  ok(/unbekannt/.test(STRINGS.de.occ_date_hint) && /unknown/.test(STRINGS.en.occ_date_hint) && /невідомо/.test(STRINGS.uk.occ_date_hint), 'Hinweis Schadenzeitpunkt unbekannt');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

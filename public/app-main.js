@@ -2027,6 +2027,15 @@ function groupHints(opened) {
     b.textContent = t(fold ? 'hint_show' : 'hint_hide'); b.setAttribute('aria-expanded', String(!fold));
   }
 }
+// Backlog 643/647: Ursprungskontrolle eines Mangels aus der Abfahrtskontrolle (Durchführung, nachgereicht, km); Leitung: Prüfpunkt zuletzt ohne Befund
+function srcInsp(si) {
+  if (!si) return '';
+  const late = si.received_at ? ` <span class="small muted">(${esc(t('insp_received_late').replace('{d}', fmtDT(si.received_at)))})</span>` : '';
+  const km = si.odometer_km !== null && si.odometer_km !== undefined ? ` · ${esc(t('km'))} ${fmtKm(si.odometer_km)}` : '';
+  let h = `<dt>${esc(t('srci_lbl'))}</dt><dd data-srcinsp>${esc(t('srci_val').replace('{d}', fmtDT(si.performed_at)))}${late}${km}</dd>`;
+  if ('last_ok_at' in si) h += `<dt>${esc(t('srci_lastok'))}</dt><dd data-lastok>${si.last_ok_at ? esc(t('srci_val').replace('{d}', fmtDT(si.last_ok_at))) : `<span class="muted">${esc(t('srci_lastok_none'))}</span>`}<br><span class="small muted">${esc(t('srci_window'))}</span></dd>`;
+  return h;
+}
 function occLate(c) {
   const a = c.occurred_at.length === 10 ? c.occurred_at : BERLIN_FMT.format(new Date(c.occurred_at)); const b = BERLIN_FMT.format(new Date(c.created_at));
   const n = Math.round((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / 86400000);
@@ -2314,6 +2323,7 @@ async function viewCase(id) {
       <dt>${esc(t('urgency'))}</dt><dd><span class="chip ${esc(c.priority)}">${esc(t('prio_' + c.priority))}</span>${prioLine}</dd>
       <dt>${esc(t('driveable'))}</dt><dd>${c.origin === 'kontrolle' && c.reported_driveability === 'unbekannt' ? `<span data-drvcheck>${esc(t('drv_not_asked_check'))}${S.me.role === 'driver' && OPEN_CASE_ST.includes(c.status) ? ' – ' + esc(t('check_defect_clarify')) : ''}</span>` : esc(t('drv_' + c.reported_driveability))}</dd>
       ${d.reporter_name || d.reporter_name_hidden ? `<dt>${esc(t('reported_by'))}</dt><dd>${esc(pnm(d.reporter_name, d.reporter_name_hidden))} · ${fmtDT(c.created_at)}</dd>` : `<dt>${esc(t('date'))}</dt><dd>${fmtDT(c.created_at)}</dd>`}${repAssign(d.reporter_assignment, c.vehicle_id)}
+      ${srcInsp(d.source_inspection)}
       ${c.occurred_at ? `<dt>${esc(t('occurred'))}</dt><dd data-occurred>${fmtOccurred(c.occurred_at)}${occLate(c)}</dd>${occDrivers(d.occurred_drivers)}` : ''}
       <dt>${esc(t('received'))}</dt><dd>${c.fleet_received_at ? fmtDT(c.fleet_received_at) : esc(t('not_yet'))}${c.fleet_received_at && d.received_by ? ` · ${esc(d.received_by.name)}${d.received_by.current ? '' : ` <span class="chip mittel" data-recvgone>${esc(t('recv_gone'))}</span>`}` : ''}</dd>
       <dt>${esc(t('workshop'))}</dt><dd>${esc(wsName(c.workshop_site || c.suggested_workshop_site))}${c.planned_date ? ' · ' + esc(t('planned')) + ' ' + fmtD(c.planned_date) : ''}${c.planned_date && c.planned_note ? `<br><span class="small" data-plannote>${esc(t('plan_note_lbl'))}: ${esc(c.planned_note)}</span>` : ''}</dd>${c.followup_on && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? `<dt>${esc(t('followup'))}</dt><dd><span class="chip${c.followup_on <= bDate() ? ' mittel' : ''}">${fmtD(c.followup_on)}</span>${c.followup_note ? ' ' + esc(c.followup_note) : ''}</dd>` : ''}
@@ -2555,7 +2565,7 @@ function claimSection(cl, contracts, files = [], desc = '', c = null, coupled = 
   const validK = contracts.filter((k) => validAt(k, occDay));
   const preK = validK.length === 1 ? validK[0].id : null;
   // Backlog 287: offener Versicherungsfall ohne Schadenzeitpunkt am Vorgang (wie Datenqualität `claim_no_occurred`) – Hinweis mit Knopfname
-  const noOcc = !!(cl && c && c.origin === 'meldung' && !c.occurred_at && ['gemeldet', 'in_pruefung'].includes(cl.status));
+  const noOcc = !!(cl && c && (c.origin === 'meldung' || (c.origin === 'kontrolle' && c.check_item && !c.parent_case_id)) && !c.occurred_at && ['gemeldet', 'in_pruefung'].includes(cl.status));
   // Meldung nennt Diebstahl/Einbruch, aber kein Aktenzeichen erfasst (Backlog 221): nur Hinweis, keine Frist, kein Befund
   const theftNoRef = THEFT_HINT.test(desc || '') && !(cl && cl.police_ref);
   // Backlog 291: Glasschaden ohne Versicherungsfall – Hinweis an die Leitung, Versicherungsschutz laut Vertrag zu prüfen (nichts angenommen)
@@ -3029,9 +3039,13 @@ async function viewDepartureCheck(preId) {
   render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${helpLink('check')}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned && vs.filter((x) => x.assigned).length === 1 ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}${v.availability === 'gesperrt' ? ' – ' + esc(t('locked')) : ''}</option>`).join('')}</select><div id="known"></div>
     ${checklistHtml()}${tachoPanel()}${glassPanel(true)}<label for="km">${esc(t('km'))}</label><input id="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12">
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('check_photos_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
-    <div class="actions"><button class="btn block" id="sb">${esc(t('submit_inspection'))}</button></div></form><p class="small"><a href="#/check/paper">${esc(t('paper_form'))}</a> – ${esc(t('paper_hint'))}</p>`, 'check');
+    <div class="actions"><button class="btn block" id="sb">${esc(t('submit_inspection'))}</button></div></form><p class="small"><a href="#/check/paper">${esc(t('paper_form'))}</a> – ${esc(t('paper_hint'))}</p><p class="small" id="dcdmg">${esc(t('dc_damage_hint'))} <a id="dcdmglink" href="#/new">${esc(t('report_damage'))} ›</a></p>`, 'check');
   const form = $('#f'); bindChecklist(form);
+  // Backlog 646: Schaden außerhalb der Prüfpunkte (Delle, Kratzer, Plane – auch vorgefunden) → Meldung mit dem gewählten Fahrzeug
+  const dmgLink = () => { const a = $('#dcdmglink'); if (a) a.href = /^VIN:[A-Z0-9]+$/.test($('#v').value) ? '#/new/' + $('#v').value : '#/new'; };
+  $('#v').addEventListener('change', dmgLink);
   if (preId) { if (vs.some((v) => v.id === preId)) $('#v').value = preId; else toast(t('qr_vehicle_unknown'), true); }
+  dmgLink();
   // Mangel nennt Fahrtenschreiber/Fahrerkarte (z. B. „Kontrollleuchten: Tacho-Fehler“): dieselben Pflichten wie im Meldeformular (Backlog 216);
   // Listener vor bindFormDraft – wiederhergestellte Entwürfe melden input/change
   // Backlog 292: Mangel nennt einen Glasschaden (z. B. „Spiegel, Scheiben, Wischer: Steinschlag“) → Glasschaden-Hinweis wie im Meldeformular

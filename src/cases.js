@@ -387,9 +387,22 @@ export function partsWaitOf(events) {
 export async function getCaseDetail(env, user, envName, caseId) {
   const { c: c0, access } = await loadCase(env, user, envName, caseId);
   // Backlog 463: Rückfrage-Stand und Fahrzeug in einer Abfrage (Abfragebudget Vorgangsdetail)
-  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL} FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?`).bind(c0.id).first();
+  // Backlog 643/647 (Blickwinkel „Springer findet bei der Abfahrtskontrolle einen Vorschaden“): Mangel aus einer Abfahrtskontrolle zeigt die
+  // Ursprungskontrolle (Durchführung, nachgereicht, km) – offline gespeicherte Kontrollen stehen sonst mit der Sendezeit im Vorgang. Für die Leitung
+  // zusätzlich die letzte frühere Abfahrtskontrolle desselben Fahrzeugs mit diesem Prüfpunkt „ok“ (nur Datum, kein Name, keine Bewertung).
+  // Teilabfrage in der Fahrzeug-Abfrage (Abfragebudget Vorgangsdetail)
+  const fromInsp = c0.origin === 'kontrolle' && c0.check_item && !c0.parent_case_id;
+  const mgrUser = isManager(user);
+  const srcSql = fromInsp ? `, (SELECT json_object('performed_at', s.created_at, 'received_at', s.received_at, 'odometer_km', s.odometer_km,
+        'last_ok_at', ${mgrUser ? `(SELECT p.created_at FROM inspections p WHERE p.environment=s.environment AND p.vehicle_id=s.vehicle_id AND p.kind='abfahrt' AND p.created_at < s.created_at
+          AND EXISTS (SELECT 1 FROM json_each(p.items) j WHERE json_extract(j.value,'$.key')=?3 AND json_extract(j.value,'$.result')='ok') ORDER BY p.created_at DESC LIMIT 1)` : 'NULL'})
+      FROM inspections s WHERE s.environment=?2 AND s.vehicle_id=c.vehicle_id AND s.kind='abfahrt' AND s.case_id IS NULL AND EXISTS (SELECT 1 FROM json_each(s.items) j
+        WHERE json_extract(j.value,'$.followup_case_id')=c.id AND json_extract(j.value,'$.repeat') IS NULL) ORDER BY s.created_at ASC LIMIT 1) AS src_insp` : '';
+  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}${srcSql} FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
+    .bind(c0.id, ...(fromInsp ? [envName, ...(mgrUser ? [c0.check_item] : [])] : [])).first();
   const c = { ...c0, q_at: vq ? vq.q_at : null, q_reply: vq ? vq.q_reply : null, q_lead: vq ? vq.q_lead : null };
-  const vehicle = vq ? (({ q_at, q_reply, q_lead, ...v }) => v)(vq) : null;
+  const srcInsp = vq && vq.src_insp ? JSON.parse(vq.src_insp) : null;
+  const vehicle = vq ? (({ q_at, q_reply, q_lead, src_insp, ...v }) => v)(vq) : null;
   // reach: 0 = deaktiviert, 1 = erreichbar, 2 = aktiv, aber nicht benachrichtigbar (ohne Passwort/andere Umgebung; Regel wie candidateUsers.reporter_ok)
   // + Zuordnung des Melders zur Meldezeit (Backlog 421, nur Leitung) in derselben Abfrage (Abfragebudget Vorgangsdetail ≤ 20)
   const reporter = await env.DB.prepare(`SELECT display_name, CASE WHEN role='driver' OR was_driver=1 THEN 'driver' ELSE role END AS role,
@@ -481,6 +494,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
   // Backlog 421 (Blickwinkel „Fahrer tauscht unterwegs den Lkw mit einem Kollegen“): Melder (Fahrer) war zur Meldezeit laut Zuordnung nicht diesem
   // Fahrzeug bzw. dessen Gespann zugeordnet – nur Leitung (Fahrerdaten), nur Hinweis, ändert keine Zuordnung
   if (isManager(user) && reporter?.role === 'driver') { const ra = reporterAssignment(c, JSON.parse(reporter.assign_rows || '[]')); if (ra) detail.reporter_assignment = ra; }
+  // Backlog 643/647: Ursprungskontrolle (aus derselben Abfrage wie das Fahrzeug, s. o.)
+  if (srcInsp) detail.source_inspection = { performed_at: srcInsp.performed_at, received_at: srcInsp.received_at || null, odometer_km: srcInsp.odometer_km ?? null, ...(isManager(user) ? { last_ok_at: srcInsp.last_ok_at || null } : {}) };
   if (user.role !== 'driver') {
     // Kurzinfo zum Fahrzeug (nur gespeicherte Daten): weitere offene Vorgänge, Prüfungen ≤ 30 Tage/überfällig, letzter km-Stand –
     // damit die Werkstatt z. B. eine fällige Prüfung beim selben Aufenthalt mit erledigen kann
@@ -915,7 +930,8 @@ export function allowedActions(user, c, access) {
   // ihren offenen Status (auch in der Abschlusskontrolle – Schlüssel kann noch fehlen bzw. nachgereicht werden); Disposition/Lesende sehen es
   if (OPEN_STATUSES.includes(c.status) && (mgr || (ws && c.status !== 'gemeldet'))) a.push('set_handover');
   // Schadenzeitpunkt (Backlog 285): Leitung trägt ihn nach bzw. berichtigt ihn – auch nach dem Abschluss (Versicherer/Gutachter fragen später nach)
-  if (mgr && c.origin === 'meldung' && c.status !== 'abgelehnt') a.push('set_occurred_at');
+  // Backlog 644: auch Mangel aus der Abfahrtskontrolle (Zeitpunkt der Entdeckung ≠ Zeitpunkt des Schadens, z. B. Vorschaden bei Übernahme)
+  if (mgr && (c.origin === 'meldung' || (c.origin === 'kontrolle' && c.check_item && !c.parent_case_id)) && c.status !== 'abgelehnt') a.push('set_occurred_at');
   switch (c.status) {
     case 'gemeldet':
       if (mgr) { if (!c.fleet_received_at) a.push('receive'); a.push('approve_repair', 'reject'); }

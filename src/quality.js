@@ -196,7 +196,7 @@ export async function dataQuality(env, user, envName, query = {}) {
       WHERE t.source_plate IS NOT NULL OR (t.km IS NOT NULL AND t.gps_time IS NOT NULL) OR v.active=0`).all(),
     // Backlog 285: offener Versicherungsfall, dessen Vorgang (Meldung) keinen Schadenzeitpunkt nennt – Versicherer fragen das Schadendatum ab
     env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, ic.reported_on FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id
-      WHERE ic.environment=? AND ic.status IN ('gemeldet','in_pruefung') AND c.origin='meldung' AND c.occurred_at IS NULL AND v.eval_excluded=0
+      WHERE ic.environment=? AND ic.status IN ('gemeldet','in_pruefung') AND (c.origin='meldung' OR (c.origin='kontrolle' AND c.check_item IS NOT NULL AND c.parent_case_id IS NULL)) AND c.occurred_at IS NULL AND v.eval_excluded=0
       ${vf ? 'AND ic.vehicle_id IN (SELECT value FROM json_each(?))' : ''} ORDER BY ic.reported_on DESC LIMIT ${DQ_MAX + 1}`).bind(envName, ...(vf ? [vf] : [])).all(),
     // Backlog 399: Größenänderungen der Antriebsachse (Protokoll, Index target/action) nach dem Tag der letzten Tachographenprüfung; nur Fahrzeuge mit erfasster Prüfung
     env.DB.prepare(`SELECT m.vehicle_id, v.plate, m.last_done_date, a.created_at, a.detail FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
