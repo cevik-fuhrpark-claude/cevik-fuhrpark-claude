@@ -21498,7 +21498,7 @@ await test('Backlog 307 (Blickwinkel „Ladung verrutscht während der Fahrt“)
   }
   ok(app.includes(`<div id="load" class="panel" hidden role="status">`), 'Panel #load');
   ok(app.includes("$('#load').hidden = !LOAD_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
-  { const o = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, '')); ok(o.indexOf('brake') < o.indexOf('load') && o.indexOf('load') < o.indexOf('leak') && o.slice(o.indexOf('load') + 1, o.indexOf('leak')).every((x) => ['deck', 'lashgear'].includes(x)), 'Gruppierung: nach Bremse, vor Leck (dazwischen nur Sicherungsmittel und Ladeetage, Backlog 354/692)'); }
+  { const o = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, '')); ok(o.indexOf('brake') < o.indexOf('load') && o.indexOf('load') < o.indexOf('leak') && o.slice(o.indexOf('load') + 1, o.indexOf('leak')).every((x) => ['deck', 'lashgear', 'floor'].includes(x)), 'Gruppierung: nach Bremse, vor Leck (dazwischen nur Sicherungsmittel, Ladeetage und Ladeboden, Backlog 354/692/741)'); }
   ok(helpAfter(app, 'load', 'tarp'), 'Hilfe-Abschnitt load nach tarp');
 });
 
@@ -27482,6 +27482,26 @@ await test('Backlog 739–740 (Sonde über vorhandene Muster, 30.10.2026 19:15):
   const oil = g('OILLEVEL_HINT'); for (const x of ['Öldruck zu niedrig', 'low oil pressure']) ok(!oil.test(x), 'Ölstand-Schritte nicht bei: ' + x);
   ok(STRINGS.de.help_warnlight_s.includes('Öldruck zu niedrig') && STRINGS.uk.help_warnlight_s.includes('низький тиск оливи') && STRINGS.en.help_warnlight_s.includes('low oil pressure'), 'Hilfe nennt den Öldruck DE/UK/EN');
   ok(STRINGS.de.help_susp_s.includes('Federbruch') && STRINGS.uk.help_susp_s.includes('ресора зламалась') && STRINGS.en.help_susp_s.includes('broken spring'), 'Hilfe nennt den Federbruch DE/UK/EN');
+});
+await test('Backlog 741–742 (Blickwinkel „Ladeboden, Bordwand, Seitenwand oder Runge beschädigt“): Meldeformular zeigt Schritte (Boden nicht mehr befahren/betreten, nicht weiter laden, geladen → Ladung/lose Teile prüfen, Leitung anrufen, nicht selbst reparieren, Schaden beim Kunden bestätigen lassen, was/wo/Fotos, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; „Ladebordwand defekt“, „Bordwand lässt sich nicht schließen“, „Fußmatte“, „Bodenblech durchgerostet“, „Rungen fehlen“, „стійка стабілізатора“ lösen ihn nicht aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const FLOOR_HINT = \/(.+)\/i;/m); ok(m, 'FLOOR_HINT auf Modulebene'); eq((app.match(/const FLOOR_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Ladeboden gebrochen', 'Boden im Auflieger kaputt', 'Loch im Ladeboden', 'Stapler ist durch den Ladeboden gebrochen', 'Ladeboden ist morsch', 'Bodenbretter gebrochen', 'Bordwand verbogen', 'beschädigte Bordwand hinten links', 'Seitenwand eingedrückt', 'Stirnwand beschädigt', 'Runge verbogen', 'Mittelrunge abgebrochen', 'Dach vom Auflieger eingerissen', 'Aufliegerdach hat ein Loch', 'trailer floor damaged', 'hole in the trailer floor', 'side board bent', 'headboard damaged', 'floorboards rotten', 'підлога в причепі зламана', 'борт погнутий', 'борт пошкоджений', 'пол в прицепе проломлен']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Ladeboden ok', 'kein Ladeboden beschädigt', 'Ladeboden wurde repariert', 'Ladeboden gebrochen, wurde getauscht', 'Seitenwand nicht beschädigt', 'Bordwand lässt sich nicht schließen', 'Ladebordwand defekt', 'Ladebordwand geht nicht hoch', 'Fußmatte unter dem Pedal', 'floor mat slipped', 'Boden im Fahrerhaus nass', 'Bodenblech durchgerostet', 'Rungen fehlen', 'Plane gerissen', 'Koffer kaputt', 'Paletten gebrochen', 'Spiegel kaputt', 'на борту немає аптечки', 'стійка стабілізатора зламана']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.floor_hint_title, 'Titel ' + l);
+    const st = S.floor_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.floor_hint_steps), 'keine Zahl/Menge/Frist ' + l);
+    ok([S.driveable, S.drv_nicht_fahrbereit, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_floor_t && S.help_floor_s.includes(S.floor_hint_steps) && S.help_floor_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="floor" class="panel" hidden role="status">'), 'Panel #floor');
+  ok(app.includes("$('#floor').hidden = !FLOOR_HINT.test($('#d').value);") && app.indexOf("$('#floor').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'lashgear', 'deck', 'floor', 'leak'"), 'Reihenfolge nach Ladeetage, vor Leck');
+  ok(app.includes("'underrun', 'floor', 'tyre'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 await test('Backlog 737–738 (Sonde über vorhandene Muster, 30.10.2026 19:15): „Anhänger/Auflieger/Lkw bremst nicht/schlecht/kaum“, „trailer not braking“, „won\'t brake“, „причіп не гальмує“, „прицеп не тормозит“ → Bremse (sicherheitsrelevant, zeigte bisher nichts); „Fahrtschreiber“ → Fahrtenschreiber; „Maut Box“ → Mautgerät; „Schlafkabine“ nass → Wasser im Fahrerhaus; Wechselrichter/Spannungswandler → Ausstattung Fahrerhaus; Hilfe nennt das Beispiel DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');

@@ -1153,6 +1153,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // [CLAUDE] Backlog 688–689 (30.10.2026, Blickwinkel „Partikelfilter (DPF) voll – Regeneration nötig oder bricht ab“): Schritte im Meldeformular, Hilfe
 // [CLAUDE] Backlog 690–691 (30.10.2026, Blickwinkel „Fahrer rutscht beim Absteigen aus – Trittstufe oder Haltegriff defekt“): Schritte im Meldeformular, Hilfe
 // [CLAUDE] Backlog 692–693 (30.10.2026, Blickwinkel „Vor dem Laden: Zurrgurte, Kantenschutz oder Antirutschmatten fehlen bzw. sind beschädigt“): Schritte im Meldeformular, Hilfe
+// [CLAUDE] Backlog 741–742 (30.10.2026, Blickwinkel „Ladeboden, Bordwand, Seitenwand oder Runge beschädigt“): eigene Schritte im Meldeformular und Hilfe-Abschnitt.
 // [CLAUDE] Backlog 694–695 (30.10.2026, Blickwinkel „Konturmarkierung, Rückstrahler oder Warntafel abgerissen/fehlt“): Schritte im Meldeformular, Hilfe
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
