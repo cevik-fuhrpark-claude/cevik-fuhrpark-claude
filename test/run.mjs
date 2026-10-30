@@ -27426,6 +27426,29 @@ await test('Backlog 725–726 (Blickwinkel „Ersatzrad fehlt, ist platt oder be
   ok(helpAfter(app, 'spare', 'safetykit'), 'Hilfe-Abschnitt für meldende Rollen nach Sicherheitsausrüstung');
 });
 
+await test('Backlog 729–730 (Blickwinkel „Gaspedal klemmt/hängt, Fußmatte unter dem Pedal, Lkw beschleunigt von selbst“): Meldeformular zeigt eigene Schritte (während der Fahrt Kupplung/Neutral, kräftig bremsen, Warnblinker, sicher anhalten, Motor erst im Stand aus; nicht weiterfahren, Leitung anrufen; Fußmatte/Gegenstände im Stand entfernen, nie übereinander; Auswahl „Nein, nicht fahrbereit“ bzw. „Weiß nicht“); Hilfe DE/UK/EN ohne Frist; Brems-/Kupplungspedal, „repariert“, „Fußmatte fehlt“, „Gas geben“, „beschleunigt schlecht“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const PEDAL_HINT = \/(.+)\/i;$/m); ok(m, 'PEDAL_HINT auf Modulebene'); eq((app.match(/const PEDAL_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Gaspedal klemmt', 'Gaspedal hängt', 'Gaspedal bleibt hängen', 'Gaspedal kommt nicht mehr zurück', 'Gaspedal locker', 'Gaspedal abgebrochen', 'Pedal klemmt', 'Gas hängt', 'Fußmatte unter dem Gaspedal', 'Fußmatte rutscht unter das Bremspedal', 'Fußmatte klemmt', 'Lkw beschleunigt von selbst', 'Motor geht nicht vom Gas', 'Drehzahl bleibt hoch', 'accelerator pedal stuck', 'throttle sticking', 'floor mat stuck under the gas pedal', 'truck accelerates by itself', 'педаль газу заїдає', 'педаль газа залипает', 'килимок під педаллю', 'розганяється сама']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Gaspedal repariert', 'Gaspedal getauscht, klemmte', 'Fußmatte fehlt', 'Fußmatte schmutzig', 'Bremspedal geht durch', 'Kupplungspedal bleibt unten', 'Gas geben', 'Gasflasche leer', 'Lkw beschleunigt schlecht', 'Drehzahlmesser defekt', 'accelerator pedal replaced', 'Pedal in Ordnung']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const BR = new RegExp(app.match(/^const BRAKE_HINT = \/(.+)\/i;$/m)[1], 'i');
+  ok(BR.test('Bremspedal geht durch') && !BR.test('Gaspedal klemmt'), 'Bremspedal bleibt bei den Bremsen-Schritten');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.pedal_hint_title, 'Titel ' + l);
+    const st = S.pedal_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.pedal_hint_steps) && !/\d/.test(S.help_pedal_s), 'keine Zahl/Frist ' + l);
+    ok([S.drv_nicht_fahrbereit, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_pedal_t && S.help_pedal_s.includes(S.pedal_hint_steps) && S.help_pedal_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="pedal" class="panel" hidden role="status">'), 'Panel #pedal');
+  ok(app.includes("$('#pedal').hidden = !PEDAL_HINT.test($('#d').value);") && app.indexOf("$('#pedal').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'brake', 'parkbrake', 'pedal', 'steer'"), 'Reihenfolge nach Feststellbremse');
+  ok(helpAfter(app, 'pedal', 'parkbrake'), 'Hilfe-Abschnitt für meldende Rollen nach Feststellbremse');
+});
+
 await test('Backlog 727–728 (Blickwinkel „Wespen-, Hornissen- oder Bienennest am Fahrzeug, Stich“): Meldeformular zeigt eigene Schritte (Abstand, nicht selbst entfernen, Leitung entscheidet, nicht losfahren solange Spiegel/Tür/Sicht behindert, Stich mit Atemnot/Schwellung → Notruf, Fotos aus sicherem Abstand, Auswahl „Weiß nicht“ bis zur Entscheidung); Hilfe DE/UK/EN ohne Frist; „entfernt“, „ist weg“, „keine Wespen“, Insekten auf der Scheibe, „оси“ (Achsen) nicht; „Wespen im Fahrerhaus“ ohne Ungeziefer-Schritte', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -27602,7 +27625,7 @@ await test('Backlog 707–709 (Blickwinkel „Feststellbremse hält nicht – Lk
   }
   ok(app.includes('<div id="parkbrake" class="panel" hidden role="status">'), 'Panel #parkbrake');
   ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake($('#d').value)); $('#parkbrake').hidden = !PARKBRAKE_HINT.test($('#d').value);") && app.indexOf("$('#parkbrake').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("'brake', 'parkbrake', 'steer'"), 'Reihenfolge nach Bremse');
+  ok(app.includes("'brake', 'parkbrake', 'pedal', 'steer'"), 'Reihenfolge nach Bremse (seit Backlog 729 Gaspedal dazwischen)');
   ok(helpAfter(app, 'parkbrake', 'brake'), 'Hilfe-Abschnitt für meldende Rollen nach Bremse');
 });
 
