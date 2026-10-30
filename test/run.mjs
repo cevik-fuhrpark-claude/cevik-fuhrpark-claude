@@ -27357,6 +27357,21 @@ await test('Backlog 706 (Lücken aus der Prüfung am Code): „Stützfuß klemmt
   ok(!LO.test('Spritzschutz erneuert'), 'erneuert → nichts');
 });
 
+await test('Backlog 710 (Prüfung vorhandener Muster mit einer Sonde über alle *_HINT): Reifendruckkontrolle/RDKS/TPMS-Warnung → Reifen-Schritte statt Bremsen-Schritte (defekter Sensor weiter ohne Hinweis, Backlog 323); Liftachse senkt nicht ab/bleibt oben → Federung; Unterlegkeile verloren → Bordausrüstung; Tank-/Kraftstoffanzeige defekt/falsch → Armaturen; Kardan-/Gelenkwelle schlägt → Vibration; Erledigtes und „Display zeigt falsche Sprache“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const H = (n) => { const m = app.match(new RegExp('^const ' + n + ' = /(.+)/(i?);$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], m[2]); };
+  const T = H('TYRE_HINT'), B = H('BRAKE_HINT'), SU = H('SUSP_HINT'), SK = H('SAFETYKIT_HINT'), D = H('DASH_HINT'), V = H('VIBR_HINT');
+  for (const x of ['Reifendruckkontrolle meldet Druckverlust', 'RDKS Warnung', 'RDKS warnt hinten links', 'Reifendrucküberwachung meldet zu wenig Druck', 'TPMS warning', 'tyre pressure monitor light on']) ok(T.test(x), 'Reifen: ' + x);
+  ok(!B.test('Reifendruckkontrolle meldet Druckverlust') && !B.test('RDKS meldet Druckverlust hinten links'), 'Druckverlust laut Reifendruckkontrolle → keine Bremsen-Schritte');
+  ok(B.test('Druckverlust an der Bremse') && B.test('Druckluft verliert, Druckverlust im Kreis'), 'Druckverlust an Bremse/Druckluft bleibt erkannt');
+  for (const x of ['Liftachse senkt nicht ab', 'Liftachse senkt sich nicht', 'Liftachse bleibt oben', 'Liftachse geht nicht runter', 'Liftachse lässt sich nicht absenken', 'Liftachse hebt nicht']) ok(SU.test(x), 'Federung: ' + x);
+  for (const x of ['Unterlegkeile verloren', 'Unterlegkeil liegen gelassen', 'Warnweste verloren', 'wheel chocks lost']) ok(SK.test(x), 'Bordausrüstung: ' + x);
+  for (const x of ['Tankanzeige defekt', 'Tankanzeige geht nicht', 'Kraftstoffanzeige zeigt nichts', 'Tankanzeige zeigt falsch', 'Tankanzeige zeigt falschen Wert', 'Tankanzeige springt', 'fuel gauge not working', 'fuel gauge wrong']) ok(D.test(x), 'Armaturen: ' + x);
+  for (const x of ['Kardanwelle schlägt', 'Gelenkwelle klappert', 'Antriebswelle hat Spiel', 'Mittellager ausgeschlagen', 'prop shaft knocking', 'driveshaft vibrating']) ok(V.test(x), 'Vibration: ' + x);
+  for (const [re, x] of [[T, 'RDKS geprüft'], [T, 'RDKS-Sensor defekt'], [T, 'Reifendrucksensor defekt'], [T, 'RDKS zeigt nichts'], [SU, 'Liftachse repariert'], [SK, 'Unterlegkeile vorhanden'], [D, 'Tankanzeige ok'], [D, 'Display zeigt falsche Sprache'], [V, 'Kardanwelle getauscht'], [V, 'Kardanwelle abgeschmiert']]) ok(!re.test(x), 'kein Hinweis: ' + x);
+});
+
 await test('Backlog 707–709 (Blickwinkel „Feststellbremse hält nicht – Lkw rollt weg“): Meldeformular zeigt eigene Schritte (nicht unbeaufsichtigt abstellen, Unterlegkeile, nie vor/hinter ein rollendes Fahrzeug, Leitung anrufen, nicht weiterfahren, Verletzte → Notruf, Schaden → Unfall-Schritte, nicht selbst an der Bremse arbeiten, Auswahl „Kann das Fahrzeug fahren?“) statt der Bremsen-Schritte; Hilfe DE/UK/EN; „Feststellbremse löst nicht“, „Handbremse defekt“, „Lkw rollt am Berg zurück“, „Palette rollt weg“ lösen nichts aus; Druckluft baut keinen Druck auf → Bremsen-Schritte', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
