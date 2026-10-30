@@ -491,6 +491,25 @@ export async function getCaseDetail(env, user, envName, caseId) {
       AND status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') ${wsOnly ? "AND workshop_site=? AND status<>'gemeldet'" : ''} ORDER BY created_at DESC LIMIT 5`)
       .bind(...[c.vehicle_id, envName, c.id, ...(wsOnly ? [wsOnly] : [])]).all()).results;
     const othersTotal = othersRows.length ? othersRows[0].total : 0;
+    // Backlog 633 (Blickwinkel „Diebstahl auf dem Rastplatz“): fest gekoppeltes Fahrzeug (Kopplung laut Stammliste wie otherLockCaseNo) mit seinen offenen
+    // Vorgängen – Auflieger-Vorgang nennt die Zugmaschine und umgekehrt; für die Leitung zusätzlich der Versicherungsfall (Versicherer, Nummer,
+    // Polizeiangaben) zum Übernehmen. Werkstatt nur Vorgänge ihres Standorts (wie oben), eine Zeile mehr gelesen → coupled_truncated
+    const PK = PLATE_KEY_SQL;
+    const coupledRows = (await env.DB.prepare(`SELECT o.id AS vehicle_id, o.plate, o.kind, x.id, x.case_no, x.status, x.priority, x.safety_lock, substr(x.description, 1, 120) AS description,
+        ${isManager(user) ? "(SELECT json_object('insurer', ic.insurer, 'claim_no', ic.claim_no, 'police_station', ic.police_station, 'police_ref', ic.police_ref, 'police_reported_on', ic.police_reported_on) FROM insurance_claims ic WHERE ic.case_id=x.id)" : 'NULL'} AS claim
+      FROM vehicles o JOIN vehicles v ON v.id=?1
+      LEFT JOIN cases x ON x.vehicle_id=o.id AND x.environment=?2 AND x.status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') ${wsOnly ? "AND x.workshop_site=?3 AND x.status<>'gemeldet'" : ''}
+      WHERE o.active=1 AND o.id<>v.id AND ${COUPLING_PREFERRED_SQL('v')} AND ${COUPLING_PREFERRED_SQL('o')} AND (
+        (v.kind='anhaenger' AND o.kind='lkw' AND ${PK('o.trailer_plate')}<>'' AND ${PK('o.trailer_plate')}=${PK('v.plate')})
+        OR (v.kind='lkw' AND o.kind='anhaenger' AND ${PK('v.trailer_plate')}<>'' AND ${PK('o.plate')}=${PK('v.trailer_plate')}))
+      ORDER BY o.plate, x.created_at DESC LIMIT ${COUPLED_CASE_MAX + 1}`).bind(...[c.vehicle_id, envName, ...(wsOnly ? [wsOnly] : [])]).all()).results;
+    const coupledTruncated = coupledRows.filter((r) => r.id).length > COUPLED_CASE_MAX;
+    const coupled = [];
+    for (const r of coupledRows) {
+      let g = coupled.find((x) => x.vehicle_id === r.vehicle_id);
+      if (!g) { g = { vehicle_id: r.vehicle_id, plate: r.plate, kind: r.kind, open_cases: [] }; coupled.push(g); }
+      if (r.id && g.open_cases.length + coupled.reduce((n, x) => n + (x === g ? 0 : x.open_cases.length), 0) < COUPLED_CASE_MAX) g.open_cases.push({ id: r.id, case_no: r.case_no, status: r.status, priority: r.priority, safety_lock: r.safety_lock, description: r.description, ...(r.claim ? { claim: JSON.parse(r.claim) } : {}) });
+    }
     const others = othersRows.map(({ total, ...o }) => o);
     // Backlog 398 (Blickwinkel „Getriebetausch – Fahrtenschreiber“): Fenster wie die Vorwarnung der Prüftermine, mindestens 30 Tage
     // (vorher fest 30 – bei Vorwarnung 60 meldete der Agent „fällig in 45 Tagen“, der Vorgang in der Werkstatt zeigte nichts)
@@ -562,7 +581,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
     // Backlog 467: eine Zeile mehr gelesen → recent_closed_truncated (nie still kappen)
     const recentClosed = kmn && kmn.recent_closed ? JSON.parse(kmn.recent_closed) : [];
     const recentClosedTruncated = recentClosed.length > RECENT_CLOSED_MAX; if (recentClosedTruncated) recentClosed.length = RECENT_CLOSED_MAX;
-    detail.vehicle_info = { recent_closed: recentClosed, recent_closed_truncated: recentClosedTruncated, other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, inspections_due_days: dueDays, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties, warranties_truncated: warrantiesTruncated, warranties_max: WARR_CASE_MAX };
+    detail.vehicle_info = { recent_closed: recentClosed, recent_closed_truncated: recentClosedTruncated, other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, inspections_due_days: dueDays, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties, warranties_truncated: warrantiesTruncated, warranties_max: WARR_CASE_MAX, coupled, coupled_truncated: coupledTruncated };
     if (isManager(user)) detail.vehicle_info.lease_contracts = kmn && kmn.leases ? JSON.parse(kmn.leases) : [];
   }
   if (seesWork) {
@@ -609,6 +628,7 @@ export function warrantyDate(v) {
 // Kontrolle nach Reparatur: jüngste überhaupt (latest) und ob sie nach der letzten Rückgabe zur Nacharbeit erfasst wurde (current).
 // Nach „Nacharbeit“ wurde erneut am Fahrzeug gearbeitet – die alte Kontrolle belegt diesen Stand nicht mehr.
 // Weiterer offener, gesperrter Vorgang am Fahrzeug oder am fest gekoppelten Gespann (Kopplung laut Stammliste) – Vorgangsnummer oder null
+const COUPLED_CASE_MAX = 10; // Backlog 633: offene Vorgänge des gekoppelten Fahrzeugs im Vorgangsdetail
 async function otherLockCaseNo(env, c) {
   const PK = PLATE_KEY_SQL;
   const r = await env.DB.prepare(`SELECT x.case_no FROM cases x WHERE x.environment=?1 AND x.id<>?2 AND x.safety_lock=1 AND x.status NOT IN ('fahrzeug_freigegeben','abgelehnt')

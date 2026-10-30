@@ -247,6 +247,7 @@ const V_MORE = [
   ['Spalte „Referenz“ (Rückrufnummer laut Schreiben) erforderlich.', 'Потрібен стовпець «Referenz» (номер відкликання згідно з листом).', 'Column “Referenz” (recall number as stated in the letter) required.'],
   ['Nur Inhaber und Fuhrparkleitung dürfen Rückrufe importieren.', 'Імпортувати відкликання можуть лише власник і керівник автопарку.', 'Only the owner and fleet management may import recalls.'],
   ['Dieser Rückruf ist bereits durchgeführt.', 'Це відкликання вже виконано.', 'This recall has already been carried out.'],
+  ['Dieser Prüftermin hat kein km-Intervall – bitte die nächste km-Fälligkeit oder den nächsten Termin laut Nachweis angeben, sonst entfällt die Erinnerung.', 'Для цього огляду немає інтервалу за км – вкажіть наступний строк за км або наступну дату згідно з документом, інакше нагадування зникне.', 'This inspection has no km interval – enter the next due km or the next date per the record, otherwise the reminder is dropped.'],
   ['Dieser Prüftermin hat kein Intervall – bitte den nächsten Termin laut Nachweis (z. B. Ablaufdatum) angeben, sonst entfällt die Erinnerung.', 'Для цього огляду немає інтервалу – вкажіть наступний строк згідно з документом (напр. термін придатності), інакше нагадування зникне.', 'This inspection has no interval – enter the next date per the record (e.g. expiry date), otherwise the reminder is dropped.'],
   ['Ein Titel ist nur bei der Prüfart „Sonstiges“ vorgesehen.', 'Назва передбачена лише для виду перевірки «Інше».', 'A title is only intended for the inspection type “Other”.'],
   ['HU/SP-Fristen berechnet die App nach StVZO – hier nicht bearbeitbar.', 'Строки ТО/SP застосунок розраховує за StVZO – тут не редагуються.', 'The app calculates HU/SP deadlines per StVZO – not editable here.'],
@@ -1133,6 +1134,9 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 629: externe Werkstatt (EXTERN, ohne Werkstattkonto) – Abschlusskontrolle und Freigabe in einem Schritt
 // Backlog 631: Datenqualität – Diebstahl ohne Versicherungsfall
 // Backlog 634: Schaden am Auflieger bei Meldung am Lkw
+// Backlog 633: Gespann im Vorgang, Polizeiangaben übernehmen, gleiche Schadennummer
+// Backlog 635/637/638: km-Fälligkeit – Stand-Datum, fehlender km-Stand
+// Backlog 636: km-Fälligkeit ohne Intervall beim Erledigen
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

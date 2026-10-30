@@ -6996,8 +6996,10 @@ await test('Prüftermin-Import nach km: „Fällig bei km“ laut Beleg, „km b
   const b = await users.fleet.post(`${vp}/maintenance`, { kind: 'Bremsen', due_km: '200.000', evidence: 'Werkstattbeleg Test' });
   eq(b.status, 201);
   eq((await row('Bremsen')).next_due_km, 200000);
-  eq((await users.fleet.post(`/api/maintenance/${b.data.id}/complete`, { done_date: day(0), evidence: 'Bremsen erneuert Test', done_km: 189000 })).status, 200);
-  const br = await row('Bremsen'); eq(br.due_km, null); eq(br.next_due_km, null, 'ohne Intervall nach Erledigung keine km-Fälligkeit');
+  // Backlog 636 (Blickwinkel „Wartung nach km“): ohne Intervall fiel die km-Fälligkeit beim Erledigen still weg – jetzt neue Fälligkeit laut Beleg nötig
+  eq((await users.fleet.post(`/api/maintenance/${b.data.id}/complete`, { done_date: day(0), evidence: 'Bremsen erneuert Test', done_km: 189000 })).status, 400, 'ohne neue Fälligkeit abgewiesen');
+  eq((await users.fleet.post(`/api/maintenance/${b.data.id}/complete`, { done_date: day(0), evidence: 'Bremsen erneuert Test', done_km: 189000, next_due_km: 300000 })).status, 200);
+  const br = await row('Bremsen'); eq(br.due_km, 300000); eq(br.next_due_km, 300000, 'neue km-Fälligkeit laut Beleg');
   // Erledigen mit neuer km-Fälligkeit laut Beleg (Serviceanzeige); unplausibel/HU abgewiesen
   const oel = (await row('Ölwechsel')).id;
   eq((await users.fleet.post(`/api/maintenance/${oel}/complete`, { done_date: day(0), evidence: 'Ölwechsel Test', done_km: 189000, next_due_km: 180000 })).status, 400);
@@ -7216,7 +7218,7 @@ await test('Jeder API-Aufruf der Testsuite bleibt bei ≤ 50 D1-Abfragen (Cloudf
   // Vorgangsdetail: Kosten aus bereits geladenen Positionen (12.10.: 24 → 20)
   const caseMax = Math.max(...per(/^\/api\/cases\/:id$/));
   console.log(`     Vorgangsdetail max. ${caseMax} Abfragen`);
-  ok(caseMax <= 20, `Vorgangsdetail braucht ${caseMax} Abfragen`);
+  ok(caseMax <= 21, `Vorgangsdetail braucht ${caseMax} Abfragen`); // Backlog 633: +1 (gekoppeltes Fahrzeug)
   // Zeitleiste lädt nur die nötigen Teile der Akte (12.10.: vorher 28)
   const tlMax = Math.max(...per(/^\/api\/vehicles\/[^/]+\/timeline$/)), akteMax = Math.max(...per(/^\/api\/vehicles\/(:vin|VIN[^/]+)$/));
   if (process.env.CFP_TOP) { const m = new Map(); for (const w of QSTAT.perRequest.slice(1)) { const k = w.method + " " + w.path; m.set(k, Math.max(m.get(k) || 0, w.n)); } console.log([...m].sort((a, b) => b[1] - a[1]).slice(0, 15).map((x) => x.join(" = ")).join("\n")); }
@@ -7614,7 +7616,7 @@ await test('Agentenbefunde: Meldungstext aus gemeinsamer Vorlage – Panel in DE
   const orphan = keys.filter((k) => !used.has(k));
   ok(!orphan.length, `Vorlage wird nirgends verwendet: ${orphan.join(', ')}`);
   // 3) Formatierung: Zahlen je Sprache, optionale Abschnitte, Listen, Rückfall
-  ok(renderFindingMessage('MAINT_KM_DUE', { plate: 'X', kind: 'Öl', due: 120000, km: 118500, rest: 1500 }, 'de') === 'X: Öl fällig bei 120.000 km – Stand 118.500 km (noch 1.500 km).', 'km deutsch');
+  ok(renderFindingMessage('MAINT_KM_DUE', { plate: 'X', kind: 'Öl', due: 120000, km: 118500, rest: 1500, date: '30.10.2026' }, 'de') === 'X: Öl fällig bei 120.000 km – Stand 118.500 km (abgelesen 30.10.2026, noch 1.500 km).', 'km deutsch (Backlog 639: mit Ablesedatum)');
   ok(renderFindingMessage('MAINT_KM_DUE', { plate: 'X', kind: 'Öl', due: 120000, km: 118500, rest: 1500 }, 'en').includes('120,000 km'), 'km englisch');
   ok(renderFindingMessage('CASE_FOLLOWUP_DUE', { label: 'S-1', date: '01.11.2026', note: null }, 'de') === 'S-1: Wiedervorlage am 01.11.2026.', 'optionaler Abschnitt entfällt');
   ok(renderFindingMessage('CASE_FOLLOWUP_DUE', { label: 'S-1', date: '01.11.2026', note: 'Rückruf' }, 'en') === 'S-1: follow-up on 01.11.2026 – Rückruf.', 'optionaler Abschnitt mit Vermerk (Vermerk bleibt unübersetzt)');
@@ -19454,7 +19456,7 @@ await test('Backlog 221 (Teilagent „Kraftstoffdiebstahl am Rastplatz“): Vers
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/^const THEFT_HINT = \//m.test(app), 'THEFT_HINT auf Modulebene (eine Erkennung für Meldeformular und Versicherungsfall)');
   eq((app.match(/const THEFT_HINT = /g) || []).length, 1, 'nur eine Definition');
-  ok(app.includes("claimSection(d.claim, d.insurance_contracts, d.files || [], c.description, c)"), 'Beschreibung wird übergeben');
+  ok(app.includes("claimSection(d.claim, d.insurance_contracts, d.files || [], c.description, c, "), 'Beschreibung wird übergeben');
   ok(app.includes("const theftNoRef = THEFT_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('id="cptheft"'), 'Hinweis nur ohne Aktenzeichen');
   const m = app.match(/const THEFT_HINT = \/(.+)\/i;/); const re = new RegExp(m[1], 'i');
   ok(re.test('Diesel am Rastplatz abgezapft') && re.test('Tankdeckel aufgebrochen') && !re.test('Leistungseinbruch am Berg'), 'Erkennung');
@@ -22767,18 +22769,18 @@ await test('Backlog 382 (Blickwinkel „Betriebskontrolle/BG-Prüfung angekündi
   eq((await U.fleet.post(`/api/maintenance/${tg.data.id}/complete`, { done_date: day(-3), evidence: 'Prüfbescheinigung 7' })).status, 200);
   const csv = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv')).data).replace(/^\uFEFF/, '');
   const lines = csv.trim().split('\r\n'); const head = lines[0].split(';');
-  ok(head.at(-6) === 'Letztes Prüfergebnis' && head.at(-5) === 'Prüfmangel offen', head.join('|')); // Backlog 610: „Hinweis zur Frist“ am Ende // Backlog 505: danach Werkstatttermin/Auftrag, Backlog 577: Titel
+  ok(head.at(-7) === 'Letztes Prüfergebnis' && head.at(-6) === 'Prüfmangel offen', head.join('|')); // Backlog 637: „km-Stand vom“ angehängt // Backlog 610: „Hinweis zur Frist“ am Ende // Backlog 505: danach Werkstatttermin/Auftrag, Backlog 577: Titel
   const cols = (l) => l.split(';').length; ok(lines.every((l) => cols(l) === head.length), 'gleiche Spaltenzahl');
   const de = (d) => d.split('-').reverse().join('.');
   const u = lines.find((l) => l.includes(';UVV;')).split(';');
-  ok(u.at(-6) === `verkehrsunsicher (${de(day(-6))})` && u.at(-5) === `verkehrsunsicher am ${de(day(-6))} – kein Mängelauftrag angelegt`, u.join('|'));
+  ok(u.at(-7) === `verkehrsunsicher (${de(day(-6))})` && u.at(-6) === `verkehrsunsicher am ${de(day(-6))} – kein Mängelauftrag angelegt`, u.join('|'));
   const t = lines.find((l) => l.includes(';Tachograph;')).split(';');
-  ok(t.at(-6) === `kein Ergebnis eingetragen (${de(day(-3))})` && t.at(-5) === '', t.join('|'));
+  ok(t.at(-7) === `kein Ergebnis eingetragen (${de(day(-3))})` && t.at(-6) === '', t.join('|'));
   ok(lines.some((l) => l.includes('kein Termin hinterlegt')), 'Lückenzeilen weiter da');
   // Mängelauftrag angelegt → kein „kein Mängelauftrag angelegt“ mehr
   const ord = await U.fleet.post('/api/cases', { vehicle_id: V1, description: 'UVV-Mängel beheben', priority: 'kritisch', driveability: 'nicht_fahrbereit', workshop_site: 'DORTMUND', request_key: rk() }); eq(ord.status, 201);
   const csv2 = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv')).data);
-  const u2 = csv2.split('\r\n').find((l) => l.includes(';UVV;')).split(';'); eq(u2.at(-5), '', 'Auftrag angelegt'); ok(u2.at(-6).startsWith('verkehrsunsicher'), 'Ergebnis bleibt sichtbar');
+  const u2 = csv2.split('\r\n').find((l) => l.includes(';UVV;')).split(';'); eq(u2.at(-6), '', 'Auftrag angelegt'); ok(u2.at(-7).startsWith('verkehrsunsicher'), 'Ergebnis bleibt sichtbar'); // Backlog 637: Spalte angehängt
 });
 await test('Backlog 383/384 (Blickwinkel „Betriebskontrolle/BG-Prüfung angekündigt“): Fahrer-CSV nennt fehlende Fahrerkarte/Code 95 als „nicht erfasst“ (Status unverändert), Auslesungs-CSV listet Fahrer ohne Fahrerkarte, Auslesungsverlauf listet aktive Fahrer/Lkw ohne jede Auslesung als „keine Auslesung erfasst – Frist ungeklärt“ (ohne Lückentage); Texte DE/UK/EN', async () => {
   const { U, V1 } = await freshWorld();
@@ -25250,14 +25252,14 @@ await test('Backlog 504–506 (Blickwinkel „Prüftermine für den nächsten Mo
   const a = await mk('UVV', 40); await mk('Tachograph', 75);
   const rows = async (q) => { const r = await U.fleet.get('/api/maintenance?format=csv' + q); eq(r.status, 200); return new TextDecoder().decode(r.data).replace(/^﻿/, '').trim().split('\r\n'); };
   const all = await rows(''); ok(all.some((l) => l.includes(';UVV;')) && all.some((l) => l.includes(';Tachograph;')) && all.some((l) => l.includes('kein Termin hinterlegt')), 'ohne Filter wie bisher');
-  ok(all[0].endsWith(';Letztes Prüfergebnis;Prüfmangel offen;Geplanter Werkstatttermin;Werkstattauftrag (Nr.);Titel;Hinweis zur Frist'), all[0]); // Backlog 577: Titel am Ende
+  ok(all[0].endsWith(';Letztes Prüfergebnis;Prüfmangel offen;Geplanter Werkstatttermin;Werkstattauftrag (Nr.);Titel;Hinweis zur Frist;km-Stand vom'), all[0]); // Backlog 577: Titel am Ende
   const due = await rows('&filter=due'); ok(!due.some((l) => l.includes(';UVV;')) && !due.some((l) => l.includes('kein Termin hinterlegt')), '504: ohne „fällig bis“ nur Warnfrist, keine Lücken');
   const by = await rows('&filter=due&due_by=' + bDayOff(45)); ok(by.some((l) => l.includes(';UVV;')) && !by.some((l) => l.includes(';Tachograph;')), '504: fällig bis +45 enthält UVV (+40), nicht Tachograph (+75)');
   eq((await U.fleet.get('/api/maintenance?format=csv&filter=xyz')).status, 400); eq((await U.fleet.get('/api/maintenance?format=csv&filter=due&due_by=2026-13-45')).status, 400);
   const gaps = await rows('&filter=gaps'); ok(gaps.length > 1 && gaps.slice(1).every((l) => l.includes('kein Termin hinterlegt')), 'gaps: nur Lückenzeilen');
   const pd = bDayOff(20); const pb = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: pd, ids: [a] }); eq(pb.status, 200, JSON.stringify(pb.data));
   const np = await rows('&filter=noplan&due_by=' + bDayOff(45)); ok(!np.some((l) => l.includes(';UVV;')), '505: eingeplant → nicht in „fällig, nicht eingeplant“');
-  const u = (await rows('&filter=all')).find((l) => l.includes(';UVV;')).split(';'); eq(u.at(-4), pd.split('-').reverse().join('.'), '505: Geplanter Werkstatttermin'); eq(u.at(-3), '', 'kein Auftrag');
+  const u = (await rows('&filter=all')).find((l) => l.includes(';UVV;')).split(';'); eq(u.at(-5), pd.split('-').reverse().join('.'), '505: Geplanter Werkstatttermin'); eq(u.at(-4), '', 'kein Auftrag'); // Backlog 637: Spalte angehängt
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const m0 = app.indexOf('async function viewMaint('); const vm = app.slice(m0, app.indexOf('\nasync function ', m0 + 10));
   ok(vm.includes("`/api/maintenance?format=csv&filter=${encodeURIComponent(f)}${dueBy ? '&due_by=' + dueBy : ''}${mkQ}`"), '505: CSV mit Filter der Liste');
@@ -25819,7 +25821,7 @@ await test('Backlog 577 (Migration 0095): Titel je Prüftermin „Sonstiges“ �
   eq((await U.fleet.post('/api/maintenance/create-batch', { kind: 'Bremsen', title: 'x', evidence: 'y', vehicle_ids: [V1] })).status, 400);
   const ov = (await U.fleet.get('/api/maintenance')).data; ok(ov.rows.some((r) => r.id === a.data.id && r.title === 'Kühlaggregat'), 'Übersicht');
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/maintenance?format=csv')).data).split(/\r?\n/);
-  ok(csv[0].endsWith(';Titel;Hinweis zur Frist'), 'CSV-Spalte am Ende'); ok(csv.some((l) => l.includes('Bericht 4711') && l.endsWith(';Kühlaggregat;')), 'CSV-Wert');
+  ok(csv[0].endsWith(';Titel;Hinweis zur Frist;km-Stand vom'), 'CSV-Spalte am Ende'); ok(csv.some((l) => l.includes('Bericht 4711') && l.endsWith(';Kühlaggregat;;')), 'CSV-Wert');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['rule_title', 'rule_title_ph', 'rule_title_hint']) ok(STRINGS[l][k], k + ' ' + l);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("const mkR = (r) => mk(r.kind) + (r && r.title ? ' – ' + r.title : '');") && app.includes('<tr><td>${esc(mkR(m))}</td>') && app.includes("ti.disabled = !o; ti.required = o;") && app.includes("...($('#mck').value === 'Sonstiges' && $('#mct').value.trim() ? { title: $('#mct').value.trim() } : {})"), 'Oberfläche');
@@ -26443,10 +26445,10 @@ await test('Backlog 610 (Blickwinkel „Jahresplanung 2027“): SP „Frist unge
   ok(!ov.rows.some((r) => r.vehicle_id === V2 && (r.kind === 'SP' || r.kind === 'HU')), 'ohne HU keine ungeklärte Zeile');
   const rows = async (q) => new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv' + q)).data).replace(/^﻿/, '').trim().split('\r\n');
   const un = await rows('&filter=ungeklaert');
-  ok(un[0].endsWith(';Titel;Hinweis zur Frist'), un[0]);
-  const l = un.find((x) => x.includes(';SP;')); ok(l && l.includes(';Frist ungeklärt;') && l.split(';').at(-1).includes('Erstzulassung fehlt'), 'CSV mit Grund: ' + l);
+  ok(un[0].endsWith(';Titel;Hinweis zur Frist;km-Stand vom'), un[0]);
+  const l = un.find((x) => x.includes(';SP;')); ok(l && l.includes(';Frist ungeklärt;') && l.split(';').at(-2).includes('Erstzulassung fehlt'), 'CSV mit Grund: ' + l);
   ok(!(await rows('&filter=gaps')).some((x) => x.startsWith('SZ-YC 5513;') && x.includes(';SP;')), 'nicht zusätzlich als Lücke');
-  ok((await rows('&filter=all')).filter((x) => x.includes(';HU;') && x.startsWith('SZ-YC 5513;')).every((x) => x.split(';').at(-1) === ''), 'HU in Ordnung: Hinweis leer');
+  ok((await rows('&filter=all')).filter((x) => x.includes(';HU;') && x.startsWith('SZ-YC 5513;')).every((x) => x.split(';').at(-2) === ''), 'HU in Ordnung: Hinweis leer');
   // ICS: ohne Datum kein Termin
   const ics = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=ics')).data); ok(!ics.includes(`husp-${V1}-SP`), 'kein Kalendertermin ohne Datum');
   // Erstzulassung nachgetragen → berechnete Frist statt „ungeklärt ohne Datum“
@@ -26842,6 +26844,75 @@ await test('Backlog 634 (Teilagent-Fund „Diebstahl auf dem Rastplatz“): Meld
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].trlr_title.includes('{p}') && STRINGS[l].trlr_text.includes('{p}'), l); }
   ok(STRINGS.de.help_theft_s.includes('jedes Fahrzeug einzeln melden') && STRINGS.uk.help_theft_s.includes('повідомте про кожен транспорт окремо') && STRINGS.en.help_theft_s.includes('report each vehicle separately'), 'Hilfe');
+});
+
+await test('Backlog 633 (Teilagent-Fund „Diebstahl auf dem Rastplatz“): Vorgangsdetail nennt das fest gekoppelte Fahrzeug mit offenen Vorgängen (Auflieger ↔ Zugmaschine), Versicherungsfall/Polizeiangaben nur für die Leitung, Werkstatt nur eigene; Oberfläche übernimmt Polizeiangaben, Hinweis gleiche Schadennummer', async () => {
+  const { U, newCase, cmd } = await freshWorld();
+  eq((await U.own.post('/api/vehicles', { plate: 'GS-AH 633', vin: 'WDB96340310633001', kind: 'anhaenger', site: 'Dortmund' })).status, 201);
+  eq((await U.own.post('/api/vehicles', { plate: 'GS-LK 633', vin: 'WDB96340310633002', kind: 'lkw', site: 'Dortmund', trailer_plate: 'GS-AH 633' })).status, 201);
+  eq((await U.own.post('/api/vehicles', { plate: 'GS-LK 634', vin: 'WDB96340310633003', kind: 'lkw', site: 'Dortmund' })).status, 201);
+  const truck = await newCase({ vehicle_id: 'VIN:WDB96340310633002', description: 'Diesel abgezapft, Tankdeckel aufgebrochen' }, U.fleet);
+  const trailer = await newCase({ vehicle_id: 'VIN:WDB96340310633001', description: 'Plane aufgeschlitzt, Ladung fehlt' }, U.fleet);
+  const single = await newCase({ vehicle_id: 'VIN:WDB96340310633003', description: 'Spiegel lose' }, U.fleet);
+  eq((await U.fleet.put(`/api/cases/${truck}/claim`, { insurer: 'Teilkasko AG', claim_no: 'SN-777', reported_on: bDayOff(0), evidence: 'Schadenmeldung', police_station: 'PI Bielefeld', police_ref: 'AZ 4711/26', police_reported_on: bDayOff(0) })).status, 200);
+  let d = (await U.fleet.get(`/api/cases/${trailer}`)).data;
+  const g = d.vehicle_info.coupled; eq(g.length, 1); eq(g[0].plate, 'GS-LK 633'); eq(g[0].kind, 'lkw', 'Auflieger-Vorgang nennt die Zugmaschine');
+  eq(g[0].open_cases.map((o) => o.id).join(), truck); eq(g[0].open_cases[0].claim.police_ref, 'AZ 4711/26'); eq(g[0].open_cases[0].claim.claim_no, 'SN-777');
+  d = (await U.fleet.get(`/api/cases/${truck}`)).data; eq(d.vehicle_info.coupled[0].plate, 'GS-AH 633'); eq(d.vehicle_info.coupled[0].open_cases[0].id, trailer); ok(!('claim' in d.vehicle_info.coupled[0].open_cases[0]), 'ohne Versicherungsfall kein Feld');
+  eq((await U.fleet.get(`/api/cases/${single}`)).data.vehicle_info.coupled.length, 0, 'ohne Kopplung leer');
+  // Werkstatt nur Vorgänge ihres Standorts (nicht „gemeldet“), ohne Versicherungsfall
+  eq((await cmd(U.fleet, truck, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Tankdeckel')).status, 200);
+  const wsT = (await U.ws.get(`/api/cases/${truck}`)).data; eq(wsT.vehicle_info.coupled[0].open_cases.length, 0, 'Werkstatt: Auflieger-Vorgang noch nicht an sie freigegeben');
+  eq((await cmd(U.fleet, trailer, 'approve_repair', { workshop_site: 'MUENCHEN' }, 'Plane')).status, 200);
+  eq((await U.ws.get(`/api/cases/${truck}`)).data.vehicle_info.coupled[0].open_cases.length, 0, 'Werkstatt: fremder Standort nicht');
+  eq((await U.wsMuc.get(`/api/cases/${trailer}`)).data.vehicle_info.coupled[0].open_cases.length, 0, 'München sieht DO-Auftrag nicht');
+  ok(!JSON.stringify((await U.wsMuc.get(`/api/cases/${trailer}`)).data.vehicle_info).includes('AZ 4711'), 'Werkstatt ohne Polizeiangaben');
+  // Oberfläche
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("claimSection(d.claim, d.insurance_contracts, d.files || [], c.description, c, (d.vehicle_info && d.vehicle_info.coupled) || [])") && app.includes('data-cppull="${i}"') && app.includes("$$('[data-cppull]').forEach((b) => (b.onclick = () => {"), 'Polizeiangaben übernehmen');
+  ok(app.includes('data-claimsameno') && app.includes('data-vicoupled'), 'gleiche Schadennummer, Gespann in der Kurzinfo');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['vi_coupled', 'vi_coupled_none', 'vi_coupled_more', 'cp_pull', 'cp_pull_confirm', 'cp_pulled', 'claim_same_no']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
+await test('Backlog 635–639 (Blickwinkel „Wartung nach km“): Fahrzeugakte rechnet Rest-km/Status wie die Prüftermine (belegter km-Stand der Durchführung, Vorwarnung, Stand-Datum, ohne km-Stand); km-Fälligkeit ohne Intervall verlangt beim Erledigen eine neue Fälligkeit; Agent nennt das Ablesedatum', async () => {
+  const { e, U } = await freshWorld(); const V = 'VIN:WMA15SZZ2HM722774'; const vp = `/api/vehicles/${V}`;
+  const day = (n) => bDayOff(n);
+  eq((await U.fleet.post(`${vp}/odometer`, { km: 200000 })).status, 201);
+  await e.DB.prepare(`UPDATE odometer_readings SET measured_at=? WHERE vehicle_id=?`).bind(day(-60) + 'T08:00:00.000Z', V).run();
+  const r1 = await U.fleet.post(`${vp}/maintenance`, { kind: 'Ölwechsel', interval_km: 100000, last_done_km: 290000, last_done_date: day(-10), evidence: 'Werkstattrechnung' }); eq(r1.status, 201);
+  const ov = (await U.fleet.get('/api/maintenance')).data.rows.find((r) => r.rule_id === r1.data.id || r.id === r1.data.id);
+  let m = (await U.fleet.get(`${vp}`)).data.maintenance.find((x) => x.id === r1.data.id);
+  eq(m.km_remaining, 100000, 'Akte: Rest ab belegter Durchführung (vorher 190 000)'); eq(m.km_status, 'ok'); ok(m.km_measured_at, 'Stand-Datum');
+  if (ov) eq(ov.km_remaining, m.km_remaining, 'gleich wie Prüftermin-Übersicht');
+  // Vorwarnung in km
+  eq((await U.own.put('/api/settings', { maintenance_warn_km: 100000 })).status, 200);
+  m = (await U.fleet.get(`${vp}`)).data.maintenance.find((x) => x.id === r1.data.id); eq(m.km_status, 'faellig', 'Akte: bald fällig nach km');
+  // Agent: Ablesedatum im Befund
+  const { runFleetAgent } = await import('../src/agent.js');
+  await runFleetAgent(e, { waitUntil() {} }, 'test', 'test');
+  const f = await e.DB.prepare(`SELECT * FROM agent_findings WHERE finding_code='MAINTENANCE_DUE' AND subject_key=? AND environment='test'`).bind(r1.data.id + '|km').first();
+  ok(f && /\d{2}\.\d{2}\.\d{4}/.test(JSON.stringify(f)) && JSON.stringify(f).includes('100.000'), 'Befund mit Ablesedatum: ' + JSON.stringify(f));
+  // Fahrzeug ohne km-Stand: ohne_km
+  const r2 = await U.fleet.post('/api/vehicles/VIN:WDB9630051L917317/maintenance', { kind: 'Ölwechsel', interval_km: 50000, last_done_km: 100000, last_done_date: day(-5), evidence: 'Rechnung' }); eq(r2.status, 201);
+  eq((await U.fleet.get('/api/vehicles/VIN:WDB9630051L917317')).data.maintenance.find((x) => x.id === r2.data.id).km_status, 'ohne_km');
+  // 637: CSV „km-Stand vom“ (am Ende), ohne km-Stand benannt; Werkstattplan mit Stand-Datum
+  const L = new TextDecoder().decode((await U.fleet.get('/api/maintenance?format=csv')).data).replace(/^\uFEFF/, '').trim().split('\r\n');
+  ok(L[0].endsWith(';Hinweis zur Frist;km-Stand vom'), 'CSV-Kopf ' + L[0].slice(-60));
+  ok(L.some((l) => l.includes('SZ-YC 5513') && /;\d{2}\.\d{2}\.\d{4}$/.test(l)), 'Datum'); ok(L.some((l) => l.endsWith(';kein km-Stand erfasst')), 'ohne km-Stand');
+  ok(L.slice(1).every((l) => l.split(';').length >= L[0].split(';').length || l.includes('"')), 'Spaltenzahl');
+  const { readFileSync: rfs } = await import('node:fs'); ok(rfs(new URL('../src/reports.js', import.meta.url), 'utf8').includes('km_measured_at: r.km_measured_at ?? null'), 'Werkstattplan liefert Stand-Datum');
+  // 636: km-Fälligkeit laut Nachweis ohne Intervall
+  const r3 = await U.fleet.post(`${vp}/maintenance`, { kind: 'Sonstiges', title: 'Service', due_km: 210000, evidence: 'Serviceanzeige' }); eq(r3.status, 201);
+  const c1 = await U.fleet.post(`/api/maintenance/${r3.data.id}/complete`, { done_date: day(0), done_km: 211000, evidence: 'Rechnung' });
+  eq(c1.status, 400); ok(/km-Intervall/.test(c1.data.message || c1.data.error_text || JSON.stringify(c1.data)), 'Meldung');
+  eq((await U.fleet.post(`/api/maintenance/${r3.data.id}/complete`, { done_date: day(0), done_km: 211000, next_due_km: 260000, evidence: 'Rechnung' })).status, 200, 'mit neuer km-Fälligkeit');
+  m = (await U.fleet.get(`${vp}`)).data.maintenance.find((x) => x.id === r3.data.id); eq(m.due_km, 260000);
+  // Oberfläche
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const rest = m.km_remaining !== undefined ? m.km_remaining : latest ? next - latest.km : null;") && app.includes('data-kmsoon') && app.includes('data-kmasof') && app.includes('data-kmnone') && app.includes('data-mdonenokm'), 'Akte/Liste/Formular');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['km_as_of', 'km_none_unclear', 'mdone_no_km_interval']) ok(STRINGS[l][k], `${l}.${k}`);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -2368,7 +2368,7 @@ async function viewCase(id) {
   // Als Dublette abgelehnt ohne eigenen Fall: kein Formular (Server lehnt ab), Hinweis auf den Ursprungsvorgang (20.10.2026)
   if (d.insurance_contracts) html += d.duplicate_of && !d.claim
     ? `<section class="panel"><h3>${esc(t('claim_title'))}</h3><p class="small muted">${esc(t('claim_dup_hint'))}${d.duplicate_of.id ? ` <a href="#/cases/${esc(d.duplicate_of.id)}">${esc(d.duplicate_of.case_no)}</a>` : ''}</p></section>`
-    : claimSection(d.claim, d.insurance_contracts, d.files || [], c.description, c);
+    : claimSection(d.claim, d.insurance_contracts, d.files || [], c.description, c, (d.vehicle_info && d.vehicle_info.coupled) || []);
   // Dauer je Status (aus dem Verlauf: gespeicherte Statuswechsel, aktueller Status bis jetzt)
   {
     const spans = []; let cur = 'gemeldet'; let since = c.created_at;
@@ -2423,6 +2423,14 @@ async function viewCase(id) {
     } catch (err) { toast(err.message, true); }
   };
   $$('[data-act]').forEach((b) => (b.onclick = () => actionForm(b.dataset.act, c, cmd, {}, d)));
+  // Backlog 633: Polizeiangaben aus dem Versicherungsfall des gekoppelten Fahrzeugs übernehmen (nur Vorbelegung, gespeichert wird erst mit „Speichern“)
+  $$('[data-cppull]').forEach((b) => (b.onclick = () => {
+    const f = b.closest('form'); if (!f) return;
+    const map = { police_station: b.dataset.st, police_ref: b.dataset.ref, police_reported_on: b.dataset.on };
+    if (Object.entries(map).some(([k, v]) => f.elements[k] && f.elements[k].value && f.elements[k].value !== v) && !confirm(t('cp_pull_confirm'))) return;
+    for (const [k, v] of Object.entries(map)) if (f.elements[k]) { f.elements[k].value = v || ''; f.elements[k].dispatchEvent(new Event('input', { bubbles: true })); }
+    toast(t('cp_pulled'));
+  }));
   $$('[data-resolve]').forEach((b) => (b.onclick = () => actionForm('resolve_open_item', c, cmd, { open_item_id: b.dataset.resolve })));
   // Restarbeit → Folgeauftrag (Backlog 260): kleines Formular unter der Zeile, Dringlichkeit vorbelegt wie bei Kontroll-Mängeln
   $$('[data-oifu]').forEach((b) => (b.onclick = () => {
@@ -2532,7 +2540,11 @@ function claimPoliceInfo(cl) {
   if (cl.police_reported_on) rows.push(`<dt>${esc(t('cp_on'))}</dt><dd>${fmtD(cl.police_reported_on)}</dd>`);
   return `<h4 style="margin:.4rem 0 .2rem">${esc(t('cp_title'))}</h4><dl class="kv">${rows.join('')}</dl>`;
 }
-function claimSection(cl, contracts, files = [], desc = '', c = null) {
+function claimSection(cl, contracts, files = [], desc = '', c = null, coupled = []) {
+  // Backlog 633: Versicherungsfälle offener Vorgänge am gekoppelten Fahrzeug – Polizeiangaben übernehmen, gleiche Schadennummer als Hinweis
+  const cpc = coupled.flatMap((g) => g.open_cases.filter((o) => o.claim).map((o) => ({ ...o.claim, case_no: o.case_no, plate: g.plate })));
+  const cpPull = cpc.filter((x) => x.police_station || x.police_ref || x.police_reported_on);
+  const sameNo = cl && cl.claim_no ? cpc.filter((x) => x.claim_no && x.claim_no.trim().toUpperCase() === cl.claim_no.trim().toUpperCase()) : [];
   // Backlog 621 (Blickwinkel „Versichererwechsel zum 01.01.“): Laufzeit je Vertrag in der Auswahl; neuer Fall: genau ein am Schadentag gültiger Vertrag vorausgewählt
   const occDay = c ? (c.occurred_at ? (String(c.occurred_at).length === 10 ? c.occurred_at : BERLIN_FMT.format(new Date(c.occurred_at))) : c.created_at ? BERLIN_FMT.format(new Date(c.created_at)) : null) : null;
   const kEnd = (k) => k.ended_on || k.end_date || null;
@@ -2552,7 +2564,7 @@ function claimSection(cl, contracts, files = [], desc = '', c = null) {
   const money = (k) => (cl && cl[k] !== null && cl[k] !== undefined ? esc(decIn(cl[k])) : ''); // EN mit Punkt wie Bußgeld-Formular (19.10.2026)
   const info = cl ? `<p style="margin-top:0">${claimChip(cl.status)} ${esc(cl.insurer)}${cl.claim_no ? ` · ${esc(t('claim_no'))} ${esc(cl.claim_no)}` : ''}</p>
     <dl class="kv"><dt>${esc(t('claim_reported'))}</dt><dd>${fmtD(cl.reported_on)}${cl.days_open !== null ? ` · ${esc(tn('claim_days_open', cl.days_open))}` : ''}</dd>${cl.deductible_net !== null ? `<dt>${esc(t('claim_deductible'))}</dt><dd>${eur(cl.deductible_net)}</dd>` : ''}${cl.reimbursed_net !== null ? `<dt>${esc(t('claim_reimbursed'))}</dt><dd>${eur(cl.reimbursed_net)} · ${fmtD(cl.reimbursed_on)}</dd>` : ''}</dl>
-    ${claimAppraisalInfo(cl)}${claimOpponentInfo(cl)}${claimPoliceInfo(cl)}<p class="small muted">${esc(t('evidence'))}: ${esc(cl.evidence)}${cl.note ? ' · ' + esc(cl.note) : ''}</p>${cl.file_id && cl.file_name ? `<p class="small">📎 ${esc(t('claim_file'))}: <a href="${fileUrl(cl.file_id)}" target="_blank" rel="noopener">${esc(cl.file_name)}</a></p>` : ''}` : `<p class="muted small" style="margin-top:0">${esc(t('claim_none'))}</p>`;
+    ${sameNo.map((x) => `<p class="small" data-claimsameno>ℹ️ ${esc(t('claim_same_no').replace('{c}', x.case_no).replace('{p}', x.plate))}</p>`).join('')}${claimAppraisalInfo(cl)}${claimOpponentInfo(cl)}${claimPoliceInfo(cl)}<p class="small muted">${esc(t('evidence'))}: ${esc(cl.evidence)}${cl.note ? ' · ' + esc(cl.note) : ''}</p>${cl.file_id && cl.file_name ? `<p class="small">📎 ${esc(t('claim_file'))}: <a href="${fileUrl(cl.file_id)}" target="_blank" rel="noopener">${esc(cl.file_name)}</a></p>` : ''}` : `<p class="muted small" style="margin-top:0">${esc(t('claim_none'))}</p>`;
   return `<section class="panel"><h3 style="margin-top:0">${esc(t('claim_title'))}</h3>${theftNoRef ? `<p class="small" id="cptheft">⚠️ ${esc(t('cp_theft_hint'))}</p>` : ''}${glassNoClaim ? `<p class="small" data-claimglass>ℹ️ ${esc(t('claim_glass_hint').replace('{b}', t('claim_add')))}</p>` : ''}${wildHint ? `<p class="small" data-claimwild>ℹ️ ${esc(t('claim_wild_hint'))}</p>` : ''}${noOcc ? `<p class="small" data-claimnoocc>⚠️ ${esc(t('claim_no_occ_hint').replace('{b}', t('act_set_occurred_at')))}</p>` : ''}${info}<details class="noprint"><summary>${esc(t(cl ? 'claim_edit' : 'claim_add'))}</summary><form id="clf"><input type="hidden" name="expected_updated_at" value="${cl ? esc(cl.updated_at || '') : ''}">
     <p class="small muted">${esc(t('claim_hint'))}</p>
     <label>${esc(t('claim_contract'))}</label><select name="contract_id"><option value="">${esc(t('claim_no_contract'))}</option>${contracts.map((k) => `<option value="${esc(k.id)}"${(cl ? cl.contract_id === k.id : preK === k.id) ? ' selected' : ''}>${esc(k.partner)}${k.contract_no ? ' · ' + esc(k.contract_no) : ''}${kPeriod(k)}${k.ended_on ? ` (${esc(t('cs_beendet'))})` : ''}</option>`).join('')}</select>${!cl && preK ? `<p class="small muted" data-claimprek>${esc(t('claim_contract_pre').replace('{d}', fmtD(occDay)))}</p>` : ''}
@@ -2573,7 +2585,7 @@ function claimSection(cl, contracts, files = [], desc = '', c = null) {
     <label>${esc(t('co_plate'))}</label><input name="opponent_plate" maxlength="20" value="${v('opponent_plate')}">
     <label>${esc(t('co_insurer'))}</label><input name="opponent_insurer" maxlength="120" value="${v('opponent_insurer')}">
     <label>${esc(t('co_claim_no'))}</label><input name="opponent_claim_no" maxlength="60" value="${v('opponent_claim_no')}"></fieldset>
-    <fieldset class="panel" style="margin:.6rem 0"><legend>${esc(t('cp_title'))}</legend><p class="small muted" style="margin-top:0">${esc(t('cp_hint'))}</p>
+    <fieldset class="panel" style="margin:.6rem 0"><legend>${esc(t('cp_title'))}</legend><p class="small muted" style="margin-top:0">${esc(t('cp_hint'))}</p>${cpPull.map((x, i) => `<button type="button" class="btn secondary" data-cppull="${i}" data-st="${esc(x.police_station || '')}" data-ref="${esc(x.police_ref || '')}" data-on="${esc(x.police_reported_on || '')}">${esc(t('cp_pull').replace('{c}', `${x.case_no} (${x.plate})`))}</button>`).join(' ')}
     <label>${esc(t('cp_station'))}</label><input name="police_station" maxlength="120" value="${v('police_station')}">
     <label>${esc(t('cp_ref'))}</label><input name="police_ref" maxlength="60" value="${v('police_ref')}">
     <label>${esc(t('cp_on'))}</label><input type="date" name="police_reported_on" max="${bDate()}" value="${v('police_reported_on')}"></fieldset>
@@ -3595,10 +3607,13 @@ function vehInfo(vi, c) {
   const ls = (vi && vi.lease_contracts) || []; // Backlog 290: nur Leitung
   // Backlog 467: in den 90 Tagen vor der Meldung abgeschlossene Vorgänge (ohne die schon unter „Gleicher Prüfpunkt“ genannten)
   const rc = ((vi && vi.recent_closed) || []).filter((o) => !prev.some((p) => p.id === o.id));
-  if (!vi || (!vi.other_open_total && !vi.inspections_due.length && !vi.last_km && !prev.length && !vn.length && !wr.length && !ls.length && !rc.length)) return '';
+  const cpl = (vi && vi.coupled) || []; // Backlog 633: fest gekoppeltes Fahrzeug mit offenen Vorgängen
+  if (!vi || (!cpl.length && !vi.other_open_total && !vi.inspections_due.length && !vi.last_km && !prev.length && !vn.length && !wr.length && !ls.length && !rc.length)) return '';
   const today = bDate();
   const parts = [];
   if (vi.other_open_total) parts.push(`<dt>${esc(t('vi_other_cases'))}</dt><dd>${vi.other_open_cases.map((o) => `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a> <span class="chip ${esc(o.priority)}">${esc(t('st_' + o.status))}</span>${o.safety_lock ? ` <span class="chip kritisch">${esc(t('locked'))}</span>` : ''}${o.description ? `<br><span class="small" data-ocdesc>${ltxt(clipTxt(cDesc(o.description), 90))}${o.created_at ? ` <span class="muted">· ${fmtDT(o.created_at)}</span>` : ''}</span>` : ''}`).join('<br>')}${vi.other_open_total > vi.other_open_cases.length ? `<br><span class="small muted">+${vi.other_open_total - vi.other_open_cases.length}</span>` : ''}</dd>`);
+  for (const g of cpl) parts.unshift(`<dt>${esc(t('vi_coupled').replace('{p}', g.plate).replace('{k}', t(g.kind === 'anhaenger' ? 'trailer' : 'truck')))}</dt><dd data-vicoupled>${S.me.role !== 'workshop' ? `<a href="#/vehicles/${esc(g.vehicle_id)}">${esc(t('vehicle_file'))} ›</a>` : ''}${g.open_cases.length ? g.open_cases.map((o) => `<br><a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a> <span class="chip ${esc(o.priority)}">${esc(t('st_' + o.status))}</span>${o.safety_lock ? ` <span class="chip kritisch">${esc(t('locked'))}</span>` : ''}${o.claim ? ` <span class="chip" data-vicclaim>${esc(t('claim_title'))}: ${esc(o.claim.insurer || '')}${o.claim.claim_no ? ' · ' + esc(o.claim.claim_no) : ''}</span>` : ''}${o.description ? `<br><span class="small"${langAttr(o.description)}>${ltxt(clipTxt(cDesc(o.description), 80))}</span>` : ''}`).join('') : `<br><span class="small muted">${esc(t('vi_coupled_none'))}</span>`}</dd>`);
+  if (vi.coupled_truncated) parts.unshift(`<dd class="small muted" data-vicoupledmore>${esc(t('vi_coupled_more'))}</dd>`);
   if (vi.inspections_due.length) parts.push(`<dt>${esc(t('vi_due').replace('{days}', nDays(vi.inspections_due_days || 30)))}${vi.inspections_due.some((m) => m.recall_ref) ? ' · ' + esc(t('vi_recalls')) : ''}</dt><dd>${vi.inspections_due.map((m) => `${esc(mkR(m))} ${m.next_due_date ? fmtD(m.next_due_date) : esc(t('vi_recall_open'))}${m.next_due_date && m.next_due_date < today ? ` <span class="chip kritisch">${esc(t('ms_ueberfaellig'))}</span>` : ''}${m.recall_ref ? ` <span class="small muted">(${esc(m.recall_ref)})</span>` : ''}`).join('<br>')}${(vi.inspections_due_total || 0) > vi.inspections_due.length ? `<br><span class="small muted" id="vidmore">+${vi.inspections_due_total - vi.inspections_due.length} · <a class="noprint" href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${esc(t('vi_due_all'))} ›</a></span>` : ''}</dd>`);
   if (rc.length) parts.push(`<dt>${esc(t('vi_recent_closed'))}</dt><dd data-virecent>${rc.map((o) => `${o.id ? `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a>` : `<b>${esc(o.case_no)}</b>`} <span class="chip">${esc(o.kind === 'released' ? t('st_fahrzeug_freigegeben') : t('vi_kind_' + o.kind))}</span> <span class="small muted">${fmtD(o.closed_at)}</span>${o.description ? `<br><span class="small">${ltxt(clipTxt(cDesc(o.description), 90))}</span>` : ''}${o.note ? `<br><span class="small muted">${esc(t('vi_close_note'))}: ${ltxt(clipTxt(o.note, 160))}</span>` : ''}`).join('<br>')}${vi.recent_closed_truncated ? `<br><span class="small muted">${esc(t('vi_recent_more'))} · <a class="noprint" href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a></span>` : ''}<div class="small muted">${esc(t('vi_recent_closed_hint'))}</div></dd>`);
   if (prev.length) parts.unshift(`<dt>${esc(t('vi_prev_same'))}</dt><dd>${prev.map((o) => `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a> · ${esc(t('st_fahrzeug_freigegeben'))} ${fmtD(o.closed_at)}`).join('<br>')}<div class="small muted">${esc(t('vi_prev_same_hint'))}</div></dd>`);
@@ -3609,7 +3624,7 @@ function vehInfo(vi, c) {
   if (lsl.length) parts.unshift(`<dt>${esc(t('vi_lease'))}</dt><dd data-vilease>${lsl.map((l) => `${esc(t('ck_' + l.kind))} · ${esc(l.partner)}${l.contract_no ? ' · ' + esc(l.contract_no) : ''}${l.end_date ? ` <span class="small muted">${esc(t('vi_lease_until').replace('{d}', fmtD(l.end_date)))}</span>` : ''}`).join('<br>')}<div class="small muted">${esc(t('vi_lease_hint'))}</div></dd>`);
   if (vn.length) parts.unshift(`<dt>${esc(t('vnotes'))}</dt><dd>${vn.map((n) => `<b>ⓘ ${esc(n.text)}</b>${n.valid_until ? ` <span class="small muted">${esc(t('vnote_until').replace('{d}', fmtD(n.valid_until)))}</span>` : ''}`).join('<br>')}</dd>`);
   if (vi.last_km) parts.push(`<dt>${esc(t('km'))}</dt><dd>${fmtKm(vi.last_km.km)} <span class="small muted">(${fmtD(vi.last_km.measured_at)})</span></dd>`);
-  return `<details class="small vinfo" style="margin-top:8px"${vi.other_open_total || prev.length || rc.length || vn.length || wr.length || ls.length || vi.inspections_due.some((m) => m.recall_ref || (m.next_due_date && m.next_due_date < today)) ? ' open' : ''}><summary><b>${esc(t('vi_title'))}</b></summary><dl class="kv">${parts.join('')}</dl></details>`;
+  return `<details class="small vinfo" style="margin-top:8px"${cpl.some((g) => g.open_cases.length) || vi.other_open_total || prev.length || rc.length || vn.length || wr.length || ls.length || vi.inspections_due.some((m) => m.recall_ref || (m.next_due_date && m.next_due_date < today)) ? ' open' : ''}><summary><b>${esc(t('vi_title'))}</b></summary><dl class="kv">${parts.join('')}</dl></details>`;
 }
 
 // Nach Scan des Fahrzeug-Aufklebers: Auswahl „Schaden melden“ / „Abfahrtskontrolle“ für dieses Fahrzeug

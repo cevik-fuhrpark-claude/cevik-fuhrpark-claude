@@ -964,7 +964,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const lateBeyond = (r) => !!(r.planned_date && r.planned_date > to && r.next_due_date && r.planned_date > r.next_due_date);
   const maintenance_due = ov.rows.filter((r) => (DUE.includes(r.status) || kmUnclearDateDue(r) || openRecall(r) || prevOpen(r)) && (!(r.planned_date && r.planned_date >= today) || lateBeyond(r)) && !r.open_order)
     .map((r) => ({ type: 'maintenance_due', id: r.id, vehicle_id: r.vehicle_id, plate: r.plate, vehicle_site: r.site, vehicle_kind: r.vehicle_kind, kind: r.kind, status: kmUnclearDateDue(r) ? r.date_status : r.status,
-      next_due_date: r.next_due_date, days: r.days, next_due_km: r.next_due_km ?? null, km_remaining: r.km_remaining ?? null, km_status: r.km_status ?? null,
+      next_due_date: r.next_due_date, days: r.days, next_due_km: r.next_due_km ?? null, km_remaining: r.km_remaining ?? null, km_status: r.km_status ?? null, km_measured_at: r.km_measured_at ?? null, // Backlog 637: Stand-Datum
       ...(r.km_unclear ? { km_unclear: r.km_unclear, km_drop_at: r.km_drop_at || null } : {}),
       by_km: DUE.includes(r.km_status), past_planned_date: r.planned_date && r.planned_date < today ? r.planned_date : null, planned_after_due: lateBeyond(r) ? r.planned_date : null,
       ...(r.kind === 'Rückruf' && !r.last_done_date ? { recall_ref: r.evidence } : {}), ...(prevOpen(r) ? { prev_cycle_open: r.prev_cycle_open } : {}) }))

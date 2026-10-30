@@ -247,7 +247,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
           km_rejected_below: rej && rej.direction === 'below' ? rej.recorded_km : null,
           km_rejected_above: rej && rej.direction === 'above' ? { km: rej.recorded_km, at: rej.recorded_at } : null }; })
     : [];
-  const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','tacho_warn_days','contract_warn_days')`).all()).results.map((r) => [r.key, r.value]));
+  const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','tacho_warn_days','contract_warn_days','maintenance_warn_km')`).all()).results.map((r) => [r.key, r.value]));
   const husp = tl ? null : huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), maintenanceWarnDays(sets.get('maintenance_warn_days')));
   const failedInspection = failedInspectionOf(v, maintenanceHistory, allCases, addMonths(berlinDate(), -12));
   // Pflichtprüfung in der App erfasst (≤ 180 Tage, neueste ihrer Art) ohne Prüfergebnis – gleiche Regel wie Datenqualität `inspection_no_result`, ohne Zusatzabfrage
@@ -256,12 +256,16 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const resultMissing = v.active && !v.eval_excluded ? maintenanceHistory.filter((e) => e.result === null && ['erfasst', 'erledigt'].includes(e.source) && REQUIRED_KINDS.includes(e.kind)
     && e.done_date >= sinceNr && !maintenanceHistory.some((x) => x.id !== e.id && x.kind === e.kind && newer(e, x))).map((e) => ({ event_id: e.id, kind: e.kind, done_date: e.done_date })) : [];
   // Fahrleistungs-Prognose für km-Fälligkeiten (nur Planungshilfe, gleiche Regel wie die Prüftermin-Übersicht) – Abfrage nur bei km-Regeln
-  if (!tl && odometer[0] && maintenance.some((m) => ruleDueKm(m) !== null)) {
-    const b = await env.DB.prepare(`SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at >= date(?, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY measured_at LIMIT 1`).bind(vehicleId, odometer[0].measured_at).first();
-    const latest = { km: odometer[0].km, measured_at: odometer[0].measured_at, ...kmDrop, base_km: b ? b.km : null, base_at: b ? b.measured_at : null };
+  // Backlog 635 (Blickwinkel „Wartung nach km“): Rest-km/Status wie Prüftermin-Übersicht und Agent (belegter km-Stand der letzten Durchführung,
+  // Vorwarnung `maintenance_warn_km`, Stand-Datum) – vorher rechnete die Akte im Browser nur mit der letzten Ablesung und ohne „bald fällig“
+  if (!tl && maintenance.some((m) => ruleDueKm(m) !== null)) {
+    const b = odometer[0] ? await env.DB.prepare(`SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at >= date(?, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY measured_at LIMIT 1`).bind(vehicleId, odometer[0].measured_at).first() : null;
+    const latest = odometer[0] ? { km: odometer[0].km, measured_at: odometer[0].measured_at, ...kmDrop, base_km: b ? b.km : null, base_at: b ? b.measured_at : null } : null;
     const today = berlinDate();
+    const warnKm = Number(sets.get('maintenance_warn_km')) > 0 ? Number(sets.get('maintenance_warn_km')) : null;
     for (const m of maintenance) if (ruleDueKm(m) !== null) {
-      const k = kmDue(m, latest, null, today); m.km_forecast = k ? k.km_forecast || null : null;
+      const k = kmDue(m, latest, warnKm, today); m.km_forecast = k ? k.km_forecast || null : null;
+      if (k) { m.km_status = k.km_status; m.km_remaining = k.km_remaining; m.km_measured_at = k.km_measured_at; }
       if (k && k.km_unclear) { m.km_unclear = k.km_unclear; m.km_drop_at = k.km_drop_at; }
     }
   }
@@ -1317,6 +1321,9 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   const next = docNext || (!husp && r.interval_months ? addMonths(date, r.interval_months) : null);
   // Backlog 576: Termin ohne Intervall (z. B. Verbandkasten mit Ablaufdatum) fiel nach „erledigt“ ohne neues Datum still aus Erinnerung/Kalender
   if (!husp && !oneTime && !next && r.next_due_date && !r.interval_km && docKm === null) throw bad('validation', 'Dieser Prüftermin hat kein Intervall – bitte den nächsten Termin laut Nachweis (z. B. Ablaufdatum) angeben, sonst entfällt die Erinnerung.');
+  // Backlog 636 (Blickwinkel „Wartung nach km“): km-Fälligkeit laut Nachweis ohne km-Intervall (z. B. Serviceanzeige) fiel nach „erledigt“ ohne neue
+  // Fälligkeit still weg (Regel „ohne Termin“) – wie 576 beim Datum: nächste km-Fälligkeit oder nächsten Termin laut Nachweis verlangen
+  if (!husp && !oneTime && !next && !r.next_due_date && !r.interval_km && r.due_km !== null && r.due_km !== undefined && docKm === null) throw bad('validation', 'Dieser Prüftermin hat kein km-Intervall – bitte die nächste km-Fälligkeit oder den nächsten Termin laut Nachweis angeben, sonst entfällt die Erinnerung.');
   const result = body.result ? oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis') : null;
   // Atomar (17.10.2026):
   // - Regel (letzte Durchführung, Fälligkeit) nur ändern, wenn diese Durchführung nicht älter ist als die gespeicherte – ein nachgetragener
