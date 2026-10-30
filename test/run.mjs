@@ -27161,6 +27161,29 @@ await test('Backlog 671–673 (Blickwinkel „Lkw steht nicht mehr da – vom Or
   ok(app.includes("'nostart', 'tow', 'warnlight'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
+await test('Backlog 674–676 (Blickwinkel „Personen im Laderaum entdeckt – blinde Passagiere am Rastplatz/Hafen“): Meldeformular zeigt Schritte (nicht allein öffnen, Polizei 110/112, bei Lebensgefahr 112; nicht weiterbewegen, Siegel/Plane nicht verändern; letzte Kontrolle notieren, Fotos nur ohne Gefahr); Vorgang ohne Aktenzeichen nennt der Leitung die Anzeige; Hilfe DE/UK/EN; Klopfen/Geräusche im Anhänger, Ladung verrutscht lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const STOW_HINT = \/(.+)\/i;/m); ok(m, 'STOW_HINT auf Modulebene'); eq((app.match(/const STOW_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Blinde Passagiere im Laderaum entdeckt', 'Personen im Auflieger gefunden, Plane aufgeschlitzt', 'Flüchtlinge in dem Kühlauflieger gehört', 'Jemand hat sich versteckt, Siegel kaputt', 'Menschen sind am Rastplatz eingestiegen', 'stowaways found at Calais', 'people hiding in the trailer', 'migrants found inside the load', 'Люди в причепі, знайшли на парковці', 'Мигранты в кузове', 'сховались під тентом у причепі']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Klopfen im Anhänger', 'Geräusche im Auflieger', 'Leiter im Laderaum umgefallen', 'Personen verletzt bei Unfall', 'Kunde hat die Ladung geprüft', 'people at the customer were rude', 'somebody scratched the trailer', 'Ladung verrutscht im Auflieger', 'Двигун стукає в кабіні', 'Fahrer im Auflieger beim Laden']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.stow_hint_title, 'Titel ' + l);
+    const st = S.stow_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(/110/.test(st[0]) && /112/.test(st[0]), 'Polizei 110 / Notruf 112 ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год|€|EUR|km)/i.test(S.stow_hint_steps), 'keine erfundene Frist/Zahl ' + l);
+    ok(S.help_stow_t && S.help_stow_s.includes(S.stow_hint_steps) && S.help_stow_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+    ok(S.cp_stow_hint.includes(S.cp_title), 'Hinweis nennt den Abschnitt „' + S.cp_title + '“ ' + l);
+  }
+  ok(app.includes('<div id="stow" class="panel" hidden role="status">'), 'Panel #stow');
+  ok(app.includes("$('#stow').hidden = !STOW_HINT.test($('#d').value);") && app.indexOf("$('#stow').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'storm', 'bridge', 'stow', 'trlr'"), 'Reihenfolge nach Brückenanprall');
+  ok(app.includes("const stowNoRef = !theftNoRef && !hitrunNoRef && !vandalNoRef && !bridgeNoRef && STOW_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimstow'), 'Hinweis nur ohne Aktenzeichen, nicht doppelt');
+  ok(app.includes("'leak', 'stow', 'custdmg'"), 'Hilfe-Abschnitt für meldende Rollen');
+});
+
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
   const { e, U, newCase, cmd } = await freshWorld(); const db = e.DB.db;
   const open1 = await newCase({ description: 'Spiegel locker' }); const done = await newCase({ description: 'Wischer defekt' });
