@@ -27344,7 +27344,27 @@ await test('Backlog 692–693 (Blickwinkel „Vor dem Laden: Zurrgurte, Kantensc
   ok(app.includes('<div id="lashgear" class="panel" hidden role="status">'), 'Panel #lashgear');
   ok(app.includes("$('#lashgear').hidden = !LASHGEAR_HINT.test($('#d').value);") && app.indexOf("$('#lashgear').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'load', 'lashgear', 'deck'"), 'Reihenfolge nach verrutschter Ladung');
-  ok(app.includes("'step', 'lashgear', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'step', 'lashgear', "), 'Hilfe-Abschnitt für meldende Rollen');
+});
+await test('Backlog 694–695 (Blickwinkel „Konturmarkierung, Rückstrahler oder Warntafel abgerissen/fehlt“): Meldeformular zeigt Schritte (Mangel, Leitung entscheidet, reinigen, lose Teile nur gefahrlos abnehmen, was/wo/Fotos, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; Scheinwerfer-Reflektor, Warnweste, „світловідбивний жилет“, „Konturmarkierung erneuert“, „Warntafel nötig“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const CONTOUR_HINT = \/(.+)\/i;/m); ok(m, 'CONTOUR_HINT auf Modulebene'); eq((app.match(/const CONTOUR_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Konturmarkierung abgerissen', 'Konturmarkierung am Auflieger hängt herunter', 'Reflexstreifen links fehlen', 'Rückstrahler hinten kaputt', 'Warntafel fehlt', 'Warntafel hinten rechts ist abgefallen', 'abgerissene Konturmarkierung', 'fehlende Rückstrahler', 'Konturstreifen löst sich', 'Heckmarkierung stark verschmutzt', 'Katzenauge zerbrochen', 'keine Warntafeln am Heck', 'conspicuity tape is peeling off', 'reflective strips missing', 'rear marker boards damaged', 'missing reflectors', 'світловідбивна стрічка відклеїлась', 'немає катафота', 'светоотражающая лента оторвана']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Scheinwerferreflektor blind', 'Reflektor im Scheinwerfer kaputt', 'headlight reflector damaged', 'damaged headlight reflector', 'Warnweste fehlt', 'Warndreieck fehlt', 'немає світловідбивного жилета', 'светоотражающий жилет порван', 'Konturmarkierung erneuert', 'Konturmarkierung abgerissen, wieder angebracht', 'Warntafel nötig', 'Rückstrahler gereinigt', 'Rücklicht defekt', 'Begrenzungsleuchte defekt', 'reflectors replaced', 'Spiegel kaputt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.contour_hint_title, 'Titel ' + l);
+    const st = S.contour_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.contour_hint_steps), 'keine Zahl/Frist ' + l);
+    ok([S.drv_eingeschraenkt, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_contour_t && S.help_contour_s.includes(S.contour_hint_steps) && S.help_contour_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="contour" class="panel" hidden role="status">'), 'Panel #contour');
+  ok(app.includes("$('#contour').hidden = !CONTOUR_HINT.test($('#d').value);") && app.indexOf("$('#contour').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'lights', 'contour', 'visib'"), 'Reihenfolge nach Beleuchtung');
+  ok(app.includes("'lashgear', 'contour', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
