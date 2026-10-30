@@ -27378,6 +27378,27 @@ await test('Backlog 713 (Prüfung vorhandener Muster mit der Sonde): Ladebordwan
   for (const [re, x] of [[DO, 'Ladebordwand repariert'], [DO, 'Ladebordwand Fehler behoben'], [DO, 'Hebebühne in der Werkstatt frei'], [VI, 'Spiegel beschlagen'], [LG, 'Rungen vorhanden'], [EN, 'Turbolader neu'], [EN, 'Turbo-Diesel']]) ok(!re.test(x), 'kein Hinweis: ' + x);
 });
 
+await test('Backlog 718–719 (Blickwinkel „Kabel blank, durchgescheuert oder verschmort, Sicherung fliegt raus, Anhängerkabel beschädigt“): Meldeformular zeigt Schritte (Schmorgeruch → anhalten/Brand-Schritte, nichts anfassen/flicken/überbrücken, beschädigtes Anhängerkabel → nicht weiterfahren, Leitung entscheidet, Beleuchtung/Warnleuchten/Marder eigene Schritte, Ort/Fotos aus sicherem Abstand, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; Marder, Ladekabel/USB, „repariert“, „Kurzschluss behoben“, Ladungssicherung lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const ELEC_HINT = \/(.+)\/i;$/m); ok(m, 'ELEC_HINT auf Modulebene'); eq((app.match(/const ELEC_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Kabelbaum durchgescheuert', 'Kabel liegt blank', 'Kabel hängt herunter', 'Stromkabel schmort', 'Kabel angeschmort', 'Kurzschluss', 'Sicherung fliegt immer raus', 'Sicherung brennt durch', 'Batteriekabel lose', 'Batteriepol korrodiert', 'Anhängerkabel abgerissen', 'Spiralkabel gerissen', 'Stecker Anhänger lose', 'Steckdose Anhänger defekt', 'exposed wires', 'wiring chafed', 'fuse keeps blowing', 'trailer cable damaged', 'Кабель оголений', 'проводка перетерта', 'запобіжник постійно вибиває', 'коротке замикання']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Kabel repariert', 'Kabel angefressen', 'Kabelbaum erneuert', 'Kurzschluss behoben', 'Ladekabel vom Handy kaputt', 'USB-Kabel defekt', 'Ladungssicherung defekt', 'Sicherung der Ladung lose', 'Kabelbinder gerissen', 'Fuhrparkleitung informiert', 'Bremsleitung undicht', 'Stecker vom Kühlschrank lose']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.elec_hint_title, 'Titel ' + l);
+    const st = S.elec_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.elec_hint_steps) && !/\d/.test(S.help_elec_s), 'keine Zahl/Frist ' + l);
+    ok([S.drv_nicht_fahrbereit, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_elec_t && S.help_elec_s.includes(S.elec_hint_steps) && S.help_elec_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="elec" class="panel" hidden role="status">'), 'Panel #elec');
+  ok(app.includes("$('#elec').hidden = !ELEC_HINT.test($('#d').value);") && app.indexOf("$('#elec').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'gelfuel', 'elec', 'engine'"), 'Reihenfolge nach Diesel/Kälte, vor Motor');
+  ok(helpAfter(app, 'elec', 'grease'), 'Hilfe-Abschnitt für meldende Rollen');
+});
+
 await test('Backlog 716–717 (Blickwinkel „Zentralschmieranlage leer oder mit Fehler, Sattelkupplung trocken“): Meldeformular zeigt Schritte (Leitung entscheidet, Fett nur laut Unterweisung/Betriebsanleitung, nicht an Pumpe/Leitungen schrauben, Undichtigkeit/Ankuppeln eigene Schritte, Anzeige/Fett laut Gebinde/Fotos, Auswahl „Kann das Fahrzeug fahren?“); keine Fettsorte/Menge/Intervalle/Frist; Hilfe DE/UK/EN; „in Ordnung“, „beim Service nachgefüllt“, „Fehler behoben“, „Sattelkupplung gefettet“ lösen nichts aus', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
