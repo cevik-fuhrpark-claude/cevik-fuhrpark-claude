@@ -26958,7 +26958,7 @@ await test('Backlog 643–648 (Blickwinkel „Springer findet bei der Abfahrtsko
   eq((await U.fleet.put(`/api/cases/${id}/claim`, { insurer: 'Test-Versicherung', reported_on: BERLIN_TODAY, status: 'gemeldet', evidence: 'Schadenmeldung per Mail' })).status, 200);
   const dq = async () => (await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'claim_no_occurred' && i.case_id === id);
   eq((await dq()).length, 1, 'Hinweis ohne Zeitpunkt');
-  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: at1.slice(0, 10) })).status, 200);
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: (await import('../src/util.js')).berlinDate(at1) })).status, 200);
   eq((await dq()).length, 0, 'nach Nachtrag weg'); d = (await U.fleet.get(`/api/cases/${id}`)).data; ok(d.case.occurred_at && d.occurred_drivers && Array.isArray(d.occurred_drivers.drivers), 'Fahrer zum Schadenzeitpunkt'); ok(d.occurred_drivers.drivers.length >= 1, 'Fahrer laut Kontrolle am Schadentag');
   // Ohne frühere „ok“-Kontrolle: null; Meldung ohne Kontrolle: kein Block
   const r3 = await U.driver.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, request_key: rk(), items: items(K[2]) }); eq(r3.status, 201);
@@ -27540,6 +27540,20 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
     BRAKE_HINT: [['zischt an der Luftleitung', 'es zischt an der Bremsleitung', 'air leak hissing', 'air is leaking under the trailer', 'hissing air behind the cab', 'шипить повітря', 'воздух шипит'], ['air leak at the tyre', 'air conditioning leak', 'шипить повітря з колеса', 'Luftleitung ok']],
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+});
+await test('Backlog 750–751 (Sonde über vorhandene Muster, 30.10.2026 23:15): „AdBlue ist alle/ausgegangen“, „kein AdBlue mehr“, „out of AdBlue“, „закінчився AdBlue“ → Motor-Schritte; „Anhänger hängt rechts tiefer“, „Auflieger hängt auf einer Seite“, „Lkw ist hinten abgesackt“, „trailer sits lower on one side“, „причіп перекошений“ → Federung; „AdBlue alle 2 Wochen“, „steht schief/tiefer“ (Parken am Hang), „Seite der Straße“, „завалился на бок“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    ENGINE_HINT: [['AdBlue ist alle', 'AdBlue alle!', 'AdBlue ausgegangen', 'AdBlue unterwegs aufgebraucht', 'kein AdBlue mehr', 'ran out of AdBlue', 'out of AdBlue', 'no AdBlue left', 'закінчився AdBlue', 'AdBlue скінчився', 'кончился AdBlue'], ['AdBlue alle 2 Wochen nachfüllen', 'AdBlue alle 500 km prüfen', 'AdBlue nachgefüllt', 'Reifen platt']],
+    SUSP_HINT: [['Auflieger hängt auf einer Seite', 'Anhänger hängt rechts tiefer', 'Lkw hängt hinten links runter', 'Anhänger liegt links tiefer', 'Auflieger hängt einseitig tiefer', 'Lkw ist hinten abgesackt', 'trailer sits lower on one side', 'truck sits low on the left', 'причіп перекошений'], ['Lkw steht tiefer als die Rampe', 'Lkw hängt hinten an der Rampe', 'Plane hängt links runter', 'Auflieger hängt am Lkw', 'Ladung ist abgesackt', 'trailer is lower than the dock', 'truck sits at the back of the yard', 'Lkw steht auf einer Seite der Straße', 'Lkw steht schief geparkt am Hang', 'Auflieger steht links tiefer', 'прицеп завалился на бок']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+  ok(!g('DRYFUEL_HINT').test('AdBlue ist alle') && !g('DRYFUEL_HINT').test('kein AdBlue mehr'), 'AdBlue alle bleibt Motor, nicht Kraftstoff ausgegangen');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_engine_s.includes('AdBlue ist alle') && STRINGS.uk.help_engine_s.includes('закінчився AdBlue') && STRINGS.en.help_engine_s.includes('out of AdBlue'), 'Hilfe Motor nennt das Beispiel DE/UK/EN');
+  ok(STRINGS.de.help_susp_s.includes('Anhänger hängt rechts tiefer') && STRINGS.uk.help_susp_s.includes('причіп перекошений') && STRINGS.en.help_susp_s.includes('trailer sits lower on one side'), 'Hilfe Federung nennt das Beispiel DE/UK/EN');
 });
 await test('Backlog 749 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ladekontrolle leuchtet/geht an“ → Warnleuchten; „Diesel (komplett) leergefahren“ → Kraftstoff ausgegangen; „Ladekontrolle an der Rampe gemacht“ (Ladungskontrolle), „Lkw leer gefahren“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
