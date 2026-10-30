@@ -27503,6 +27503,16 @@ await test('Backlog 741–742 (Blickwinkel „Ladeboden, Bordwand, Seitenwand od
   ok(app.includes("'lashgear', 'deck', 'floor', 'leak'"), 'Reihenfolge nach Ladeetage, vor Leck');
   ok(app.includes("'underrun', 'floor', 'tyre'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
+await test('Backlog 745 (Sonde über vorhandene Muster, 30.10.2026 21:15): „Gangschaltung hakt“, „Schalthebel klemmt“, „Gänge lassen sich schwer schalten“, „Gang lässt sich nur schwer einlegen“, „can\'t get into reverse“, „задня не вмикається“, „задняя не включается“ → Getriebe-Schritte; „Sattelkupplung/Tür/Blinkerhebel klemmt“, „can\'t get into the cab“, „задня фара не працює“ nicht; Hilfe nennt das Beispiel DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const GEAR_HINT = \/(.+)\/i;/m); ok(m, 'GEAR_HINT auf Modulebene');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Gangschaltung hakt', 'Schalthebel klemmt', 'Gänge lassen sich schwer schalten', 'Gang lässt sich nur schwer einlegen', 'can\'t get into reverse', 'can\'t get it into gear', 'задня не вмикається', 'задняя не включается']) ok(re.test(x), 'Getriebe-Hinweis: ' + x);
+  for (const x of ['Sattelkupplung klemmt', 'Tür klemmt', 'Blinkerhebel klemmt', 'can\'t get into the cab', 'задня фара не працює', 'Getriebe repariert']) ok(!re.test(x), 'kein Getriebe-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_gear_s.includes('Schalthebel klemmt') && STRINGS.uk.help_gear_s.includes('задня не вмикається') && STRINGS.en.help_gear_s.includes('can’t get into reverse'), 'Hilfe nennt das Beispiel DE/UK/EN');
+});
 await test('Backlog 744 (Sonde über vorhandene Muster, 30.10.2026 21:15): „Radlauf abgerissen“, „Radlaufverkleidung hängt herunter“, „Radhausschale schleift“, „Radlauf fehlt“, „fender broke off“, „wheel arch liner hanging“, „підкрилок відірвався“, „крило відламалося“, „подкрылок оторвало“ → Schritte „Teil hängt herunter/verloren“; „Radlager defekt“, „Radlauf repariert“, „Kotflügel gebrochen“, „mudguard broken“ nicht; Hilfe nennt das Beispiel DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
