@@ -27469,6 +27469,20 @@ await test('Backlog 733–734 (Sonde über vorhandene Muster, 30.10.2026 17:15):
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].roadchk_hint_steps.includes('BALM') && STRINGS[l].help_roadchk_t.includes('BALM') && STRINGS[l].help_roadchk_t.includes('BAG'), 'BALM (früher BAG) genannt ' + l); }
 });
 
+await test('Backlog 739–740 (Sonde über vorhandene Muster, 30.10.2026 19:15): „Öldruck zu niedrig/fällt“, „Öldruckwarnung“, „low oil pressure“, „низький тиск оливи“, „давление масла упало“ → Warnleuchten-Schritte (rot: anhalten, Motor aus; Ölstand-Schritte bleiben ohne Öldruck, Backlog 704), Hilfe nennt den Öldruck; „Federbruch“, „Feder gebrochen“, „broken spring“ → Federung; Hilfe-Beispiele DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    WARNLIGHT_HINT: [['Öldruck zu niedrig', 'Öldruck fällt im Leerlauf', 'Öldruckwarnung', 'Öldruck Warnung', 'oil pressure warning', 'low oil pressure', 'низький тиск оливи', 'тиск мастила впав', 'низкое давление масла', 'давление масла упало'], ['Öldruck normal', 'Öldruck ok', 'Ölstand ok']],
+    SUSP_HINT: [['Federbruch', 'Feder gebrochen', 'Blattfeder hinten links gebrochen', 'die Feder ist gebrochen', 'broken spring', 'leaf spring snapped'], ['Feder gebrochen, wurde getauscht', 'Türfeder', 'Spring cleaning']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+  const { STRINGS } = await import('../public/i18n.js');
+  const oil = g('OILLEVEL_HINT'); for (const x of ['Öldruck zu niedrig', 'low oil pressure']) ok(!oil.test(x), 'Ölstand-Schritte nicht bei: ' + x);
+  ok(STRINGS.de.help_warnlight_s.includes('Öldruck zu niedrig') && STRINGS.uk.help_warnlight_s.includes('низький тиск оливи') && STRINGS.en.help_warnlight_s.includes('low oil pressure'), 'Hilfe nennt den Öldruck DE/UK/EN');
+  ok(STRINGS.de.help_susp_s.includes('Federbruch') && STRINGS.uk.help_susp_s.includes('ресора зламалась') && STRINGS.en.help_susp_s.includes('broken spring'), 'Hilfe nennt den Federbruch DE/UK/EN');
+});
 await test('Backlog 737–738 (Sonde über vorhandene Muster, 30.10.2026 19:15): „Anhänger/Auflieger/Lkw bremst nicht/schlecht/kaum“, „trailer not braking“, „won\'t brake“, „причіп не гальмує“, „прицеп не тормозит“ → Bremse (sicherheitsrelevant, zeigte bisher nichts); „Fahrtschreiber“ → Fahrtenschreiber; „Maut Box“ → Mautgerät; „Schlafkabine“ nass → Wasser im Fahrerhaus; Wechselrichter/Spannungswandler → Ausstattung Fahrerhaus; Hilfe nennt das Beispiel DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
