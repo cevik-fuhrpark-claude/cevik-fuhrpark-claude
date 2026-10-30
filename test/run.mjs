@@ -27357,6 +27357,18 @@ await test('Backlog 706 (Lücken aus der Prüfung am Code): „Stützfuß klemmt
   ok(!LO.test('Spritzschutz erneuert'), 'erneuert → nichts');
 });
 
+await test('Backlog 713 (Prüfung vorhandener Muster mit der Sonde): Ladebordwand/Hebebühne piept, zeigt Fehler/Störung → Türen/Ladebordwand; Spiegelheizung defekt → Heizung/Sicht; Rungen fehlen → Ladungssicherungsmittel; Turbolader pfeift/defekt → Motor; Erledigtes („Fehler behoben“, „Rungen vorhanden“, „Turbolader neu“) löst nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const H = (n) => { const m = app.match(new RegExp('^const ' + n + ' = /(.+)/(i?);$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], m[2]); };
+  const DO = H('DOOR_HINT'), VI = H('VISIB_HINT'), LG = H('LASHGEAR_HINT'), EN = H('ENGINE_HINT');
+  for (const x of ['Ladebordwand piept', 'Ladebordwand Fehler', 'Ladebordwand zeigt Störung', 'Hebebühne reagiert nicht', 'Ladebordwand blinkt', 'tail lift fault', 'tail lift beeping']) ok(DO.test(x), 'Ladebordwand: ' + x);
+  for (const x of ['Spiegelheizung defekt', 'Spiegelheizung geht nicht']) ok(VI.test(x), 'Sicht: ' + x);
+  for (const x of ['Rungen fehlen', 'Rungen sind kaputt', 'keine Rungen an Bord', 'Steckrungen fehlen']) ok(LG.test(x), 'Ladungssicherung: ' + x);
+  for (const x of ['Turbolader pfeift', 'Turbo defekt', 'Turbolader verliert Öl', 'turbo whistling', 'turbocharger failed']) ok(EN.test(x), 'Motor: ' + x);
+  for (const [re, x] of [[DO, 'Ladebordwand repariert'], [DO, 'Ladebordwand Fehler behoben'], [DO, 'Hebebühne in der Werkstatt frei'], [VI, 'Spiegel beschlagen'], [LG, 'Rungen vorhanden'], [EN, 'Turbolader neu'], [EN, 'Turbo-Diesel']]) ok(!re.test(x), 'kein Hinweis: ' + x);
+});
+
 await test('Backlog 711–712 (Blickwinkel „Mäuse, Bettwanzen oder Ungeziefer im Fahrerhaus“): Meldeformular zeigt eigene Schritte (nichts selbst bekämpfen, Leitung organisiert Reinigung, Kot nicht trocken auffegen/aussaugen, lüften, Bettzeug nicht mitnehmen, angefressene Kabel → Marder-Schritte, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; „keine Mäuse“, „Ungeziefer in der Ladung“, „Ameisen auf dem Parkplatz“, „Fliegengitter kaputt“, „insects on the windscreen“ lösen nichts aus', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
