@@ -631,12 +631,12 @@ export function warrantyDate(v) {
 const COUPLED_CASE_MAX = 10; // Backlog 633: offene Vorgänge des gekoppelten Fahrzeugs im Vorgangsdetail
 async function otherLockCaseNo(env, c) {
   const PK = PLATE_KEY_SQL;
-  const r = await env.DB.prepare(`SELECT x.case_no FROM cases x WHERE x.environment=?1 AND x.id<>?2 AND x.safety_lock=1 AND x.status NOT IN ('fahrzeug_freigegeben','abgelehnt')
+  const r = await env.DB.prepare(`SELECT x.case_no, (SELECT p.plate FROM vehicles p WHERE p.id=x.vehicle_id) AS plate FROM cases x WHERE x.environment=?1 AND x.id<>?2 AND x.safety_lock=1 AND x.status NOT IN ('fahrzeug_freigegeben','abgelehnt')
     AND (x.vehicle_id=?3 OR x.vehicle_id IN (SELECT o.id FROM vehicles o JOIN vehicles v ON v.id=?3 WHERE o.active=1 AND o.id<>v.id AND ${COUPLING_PREFERRED_SQL('v')} AND ${COUPLING_PREFERRED_SQL('o')} AND (
       (v.kind='anhaenger' AND o.kind='lkw' AND ${PK('o.trailer_plate')}<>'' AND ${PK('o.trailer_plate')}=${PK('v.plate')})
       OR (v.kind='lkw' AND o.kind='anhaenger' AND ${PK('v.trailer_plate')}<>'' AND ${PK('o.plate')}=${PK('v.trailer_plate')}))))
     ORDER BY x.created_at LIMIT 1`).bind(c.environment, c.id, c.vehicle_id).first();
-  return r ? r.case_no : null;
+  return r ? { case_no: r.case_no, plate: r.plate } : null; // Backlog 641: mit Kennzeichen für den Hinweistext
 }
 
 async function repairInspection(env, caseId) {

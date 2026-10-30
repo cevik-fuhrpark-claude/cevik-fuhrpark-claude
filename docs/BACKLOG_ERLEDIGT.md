@@ -546,3 +546,6 @@ Aus `docs/CHECKPOINT.md` verschoben (26.10.2026), damit der Wiederaufnahmepunkt 
 637. ~~erledigt 30.10.2026 (gleicher Blickwinkel; drei CSV-Wächter angepasst)~~: „km-Stand vom …“ in Akte, Prüftermin-Liste, Werkstattplan und Prüftermin-CSV (Spalte am Ende).
 638. ~~erledigt 30.10.2026 (gleicher Blickwinkel)~~: km-Regel ohne km-Stand → „kein km-Stand erfasst – Fälligkeit nach km ungeklärt“ (Akte, Liste, CSV).
 639. ~~erledigt 30.10.2026 (gleicher Blickwinkel)~~: Agentenbefund „bald fällig nach km“ nennt das Ablesedatum (DE/UK/EN).
+640. ~~erledigt 30.10.2026 (Blickwinkel „Fremder Auflieger vom Kunden“; Test „Backlog 640–642 …“)~~: Fehler aus 634 – Meldeformular schickte bei „Auflieger vom Kunden/fremder Auflieger“ zum eigenen gekoppelten Auflieger; Hinweis jetzt unterdrückt, Text nennt den Fall „fremder Auflieger → am Lkw melden, Kennzeichen in die Beschreibung“.
+641. ~~erledigt 30.10.2026 (gleicher Blickwinkel)~~: Push „Fahrzeug bleibt gesperrt“ nennt den sperrenden Vorgang mit Kennzeichen („gesperrt durch S-… (Kennzeichen)“, DE/UK/EN, beim Sprachwechsel übersetzt; keine Beschreibung im Sperrbildschirm).
+642. ~~erledigt 30.10.2026 (gleicher Blickwinkel)~~: Unfall-Hinweis bei Rangierschaden („Rangierschaden“, „beim Rangieren … angefahren/gestoßen/touchiert“, EN/UK/RU), Kupplungs-Hinweis „hakt/schließt schwer“, Licht-Hinweis mit bis zu 6 Wörtern Abstand.

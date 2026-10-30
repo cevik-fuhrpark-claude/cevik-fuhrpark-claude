@@ -26838,7 +26838,7 @@ await test('Backlog 634 (Teilagent-Fund „Diebstahl auf dem Rastplatz“): Meld
   const R = new RegExp(app.match(/\nconst TRAILER_DMG = \/(.+)\/i;/)[1], 'i');
   for (const x of ['Тент напівпричепа порізаний', 'Plane aufgeschlitzt', 'Auflieger Rücklicht defekt', 'trailer light broken', 'тент полуприцепа порезан', 'причіп пошкоджено']) ok(R.test(x), 'Auflieger: ' + x);
   for (const x of ['Anhängerkupplung defekt', 'Aufliegerkupplung', 'trailer hitch broken', 'Sattelkupplung klemmt', 'Spiegel kaputt', 'прицепное устройство', 'Planetengetriebe']) ok(!R.test(x), 'kein Auflieger: ' + x);
-  ok(app.includes("const show = !!(v && v.kind !== 'anhaenger' && v.trailer_plate && TRAILER_DMG.test($('#d').value));"), 'nur Lkw mit gekoppeltem Auflieger');
+  ok(app.includes("const show = !!(v && v.kind !== 'anhaenger' && v.trailer_plate && TRAILER_DMG.test($('#d').value) && !FOREIGN_TRAILER.test($('#d').value));"), 'nur Lkw mit gekoppeltem Auflieger (Backlog 640: nicht bei fremdem Auflieger)');
   ok(app.includes("const hints = () => { $('#trlr').hidden = !trailerHint();") && app.includes("$$('input[name=veh]').forEach((x) => x.addEventListener('change', hints));"), 'bei Text- und Fahrzeugwechsel');
   ok(/const HINT_ORDER = \[[^\]]*'trlr'/.test(app) && app.includes('<div id="trlr" class="panel" hidden role="status"></div>'), 'Hinweisgruppe');
   const { STRINGS } = await import('../public/i18n.js');
@@ -26913,6 +26913,32 @@ await test('Backlog 635–639 (Blickwinkel „Wartung nach km“): Fahrzeugakte 
   const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("const rest = m.km_remaining !== undefined ? m.km_remaining : latest ? next - latest.km : null;") && app.includes('data-kmsoon') && app.includes('data-kmasof') && app.includes('data-kmnone') && app.includes('data-mdonenokm'), 'Akte/Liste/Formular');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['km_as_of', 'km_none_unclear', 'mdone_no_km_interval']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
+await test('Backlog 640–642 (Blickwinkel „Fremder Auflieger vom Kunden“): kein Hinweis auf den eigenen Auflieger bei Kundenauflieger; „bleibt gesperrt“ nennt sperrenden Vorgang und Kennzeichen (DE/UK/EN, übersetzbar); Unfall-Hinweis bei Rangierschaden, Kupplung „hakt“, Licht mit Abstand', async () => {
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => new RegExp(app.match(new RegExp('\\nconst ' + n + ' = /(.+)/i;'))[1], 'i');
+  const F = g('FOREIGN_TRAILER'), A = g('ACC_HINT'), C = g('COUPLING_HINT'), Li = g('LIGHTS_HINT');
+  for (const x of ['Rangierschaden am Auflieger vom Kunden XY-K 123', 'Fremder Auflieger, Plane gerissen', 'тент причепа клієнта порваний', 'customer trailer light broken']) ok(F.test(x), 'fremd: ' + x);
+  ok(!F.test('Plane aufgeschlitzt, Ladung fehlt'), 'eigener Auflieger');
+  ok(app.includes("TRAILER_DMG.test($('#d').value) && !FOREIGN_TRAILER.test($('#d').value)") && app.includes("t('trlr_text').replaceAll('{p}', v.trailer_plate)"), 'Hinweis unterdrückt, Kennzeichen zweimal');
+  for (const x of ['Rangierschaden am Auflieger vom Kunden', 'Beim Rangieren angefahren, Auflieger des Kunden beschädigt', 'Beim Rangieren Kundenauflieger an Poller gestoßen', 'while reversing I hit a bollard', 'під час маневрування зачепив стовп']) ok(A.test(x), 'Unfall: ' + x);
+  for (const x of ['Rangieren war schwierig', 'beim Rangieren Spiegel eingeklappt']) ok(!A.test(x), 'kein Unfall: ' + x);
+  ok(C.test('Sattelkupplung Verriegelung hakt, schließt schwer'), 'Kupplung hakt'); ok(Li.test('Rückleuchte links am Auflieger des Kunden defekt'), 'Licht mit Abstand');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok((STRINGS[l].trlr_text.match(/\{p\}/g) || []).length === 2, l + ' trlr_text');
+  // 641: Lkw mit gekoppeltem Auflieger; Auflieger gesperrt, Sperre am Lkw aufgehoben → Melder erfährt, wer sperrt
+  const { e, U, cmd, newCase } = await freshWorld(); const db = e.DB.db;
+  eq((await U.own.post('/api/vehicles', { plate: 'FA-AH 641', vin: 'WDB96340310641001', kind: 'anhaenger', site: 'Dortmund' })).status, 201);
+  eq((await U.own.post('/api/vehicles', { plate: 'FA-LK 641', vin: 'WDB96340310641002', kind: 'lkw', site: 'Dortmund', trailer_plate: 'FA-AH 641' })).status, 201);
+  const tr = await newCase({ vehicle_id: 'VIN:WDB96340310641001', description: 'Bremse Auflieger defekt', driveability: 'nicht_fahrbereit' });
+  const lk = await newCase({ vehicle_id: 'VIN:WDB96340310641002', description: 'Sattelkupplung hakt', driveability: 'nicht_fahrbereit' });
+  const trNo = db.prepare('SELECT case_no FROM cases WHERE id=?').get(tr).case_no;
+  eq((await cmd(U.fleet, lk, 'lift_safety_lock', { confirm: true }, 'Kupplung geprüft')).status, 200);
+  const n = db.prepare('SELECT kind, body, lang FROM notifications WHERE user_id=? AND case_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1').get(U.driver.id, lk);
+  eq(n.kind, 'still_locked'); ok(n.body.includes(`gesperrt durch ${trNo} (FA-AH 641)`), n.body);
+  const { localizedBody } = await import('../src/notify.js');
+  const en = localizedBody({ kind: 'still_locked', body: n.body }, 'en'); ok(en.includes(`locked by ${trNo} (FA-AH 641)`), en);
+  ok(localizedBody({ kind: 'still_locked', body: en }, 'uk').includes(`блокує ${trNo} (FA-AH 641)`), 'zurück UK');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

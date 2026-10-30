@@ -9,7 +9,7 @@ import { localizedAgentBody, localizedAgentTitle } from './agent.js';
 const PRIO = { de: { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' }, uk: { niedrig: 'низький', mittel: 'середній', kritisch: 'критичний' }, en: { niedrig: 'low', mittel: 'medium', kritisch: 'critical' } };
 const T = {
   de: {
-    planned_on: 'Termin', pickup_hint: 'Abholhinweis: Mein Fahrzeug',
+    planned_on: 'Termin', pickup_hint: 'Abholhinweis: Mein Fahrzeug', locked_by: 'gesperrt durch {c} ({p})',
     created: 'Neue Schadensmeldung', created_urgent: 'KRITISCH: neue Meldung (ungeprüft)', received: 'Meldung ist eingegangen',
     priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', forwarded: 'Meldung an Werkstatt übergeben', rejected: 'Meldung abgelehnt', withdrawn: 'Werkstattauftrag ohne Reparatur beendet',
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
@@ -21,7 +21,7 @@ const T = {
     res_gefaehrliche_maengel: 'gefährliche Mängel', res_verkehrsunsicher: 'verkehrsunsicher', do_not_plan: 'nicht einplanen',
   },
   uk: {
-    planned_on: 'Термін', pickup_hint: 'Інформація для отримання: Мій транспорт',
+    planned_on: 'Термін', pickup_hint: 'Інформація для отримання: Мій транспорт', locked_by: 'блокує {c} ({p})',
     created: 'Нове повідомлення про пошкодження', created_urgent: 'КРИТИЧНО: нове повідомлення (неперевірене)', received: 'Повідомлення отримано',
     priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', forwarded: 'Повідомлення передано до майстерні', rejected: 'Повідомлення відхилено', withdrawn: 'Замовлення майстерні завершено без ремонту',
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
@@ -33,7 +33,7 @@ const T = {
     res_gefaehrliche_maengel: 'небезпечні дефекти', res_verkehrsunsicher: 'небезпечний для руху', do_not_plan: 'не планувати',
   },
   en: {
-    planned_on: 'Workshop date', pickup_hint: 'Pick-up note: My vehicle',
+    planned_on: 'Workshop date', pickup_hint: 'Pick-up note: My vehicle', locked_by: 'locked by {c} ({p})',
     created: 'New damage report', created_urgent: 'CRITICAL: new report (unverified)', received: 'Report received',
     priority_changed: 'Priority changed', approved: 'New workshop order', forwarded: 'Report handed over to workshop', rejected: 'Report rejected', withdrawn: 'Workshop order ended without repair',
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
@@ -126,6 +126,8 @@ export function localizedBody(n, lang) {
   // Backlog 466: fester Zusatz „Abholhinweis: Mein Fahrzeug“ der Freigabe an zugeordnete Fahrer
   let pk = '';
   if (n.kind === 'released') for (const l of LANGS) { const x = ' · ' + T[l].pickup_hint; if (core.endsWith(x)) { core = core.slice(0, -x.length); pk = ' · ' + T[L].pickup_hint; break; } }
+  // Backlog 641: „Fahrzeug bleibt gesperrt“ nennt den sperrenden Vorgang und dessen Fahrzeug (z. B. gekoppelter Anhänger)
+  if (n.kind === 'still_locked') for (const l of LANGS) { const pre = ' · ' + T[l].locked_by.split('{c}')[0]; const ix = core.lastIndexOf(pre); const m = ix > 0 ? /^(\S+) \((.+)\)$/.exec(core.slice(ix + pre.length)) : null; if (m) { core = core.slice(0, ix); pk = ' · ' + T[L].locked_by.replace('{c}', m[1]).replace('{p}', m[2]); break; } }
   // „ · Termin TT.MM.JJJJ“ (nur „Neuer Werkstattauftrag“, Backlog 455) nach der Priorität
   let plan = null;
   if (n.kind === 'approved' || n.kind === 'plan_changed') {
@@ -316,7 +318,9 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     const plan = (k === 'approved' && c.status === 'werkstatt_freigegeben' && c.planned_date) || (k === 'plan_changed' && c.planned_date) ? ` · ${T[lang].planned_on} ${dateLang(c.planned_date, lang)}` : '';
     // Backlog 466: Freigabe mit Abholhinweis „für Fahrer sichtbar“ → zugeordnete Fahrer (ohne Vorgangslink) erfahren, wo er steht – fester Satz, kein Ablageort im Sperrbildschirm
     const pk = k === 'released' && u.assigned && ctxData.payload && ctxData.payload.pickup_for_driver ? ' · ' + T[lang].pickup_hint : '';
-    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${k === 'created' ? urgentWhy(c, urgent, lang) : ''}${plan}${pk}${c.environment === 'test' ? ' · TEST' : ''}`;
+    // Backlog 641 (Blickwinkel „Fremder Auflieger“): „Fahrzeug bleibt gesperrt“ nennt Vorgangsnummer und Kennzeichen des sperrenden Vorgangs (keine Beschreibung)
+    const lb = k === 'still_locked' && ctxData.still_locked && ctxData.still_locked.case_no ? ' · ' + T[lang].locked_by.replace('{c}', ctxData.still_locked.case_no).replace('{p}', ctxData.still_locked.plate || '') : '';
+    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${k === 'created' ? urgentWhy(c, urgent, lang) : ''}${plan}${pk}${lb}${c.environment === 'test' ? ' · TEST' : ''}`;
     rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned || u.away ? null : c.id, event_key: eventKey, kind: k, urgent: urgent ? 1 : 0, title, body, created_at: now, lang });
   }
   const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at, environment: r.environment }));
