@@ -36,6 +36,7 @@ export { CHECK_LABELS } from './check-labels.js';
 // Hilfe „Fahrtenschreiber gestört“ (Backlog 213): dieselben Pflichten wie der Hinweis im Meldeformular, dazu der Weg in der App
 // Teilagent „Fahrer im Ausland mit Panne“ (Backlog 217): deutsche Nummern im Inlandsformat zusätzlich mit +49 anbieten, Hinweis beim Eintragen
 // Hinweis „Diebstahl/Einbruch“ im Meldeformular (Backlog 214) und Hilfe-Abschnitt dazu (Backlog 215) – keine Fristen, nur Ablauf
+// Backlog 653/654 (Blickwinkel „Parkschaden – Unfallgegner unbekannt (Unfallflucht)“): Schritte im Meldeformular, Hilfe, Hinweis im Versicherungsabschnitt
 // Backlog 294 (Blickwinkel „Fahrer verliert unterwegs Fahrzeugschlüssel oder Fahrzeugschein“): Hinweise im Meldeformular + Hilfe-Abschnitt; reine Information, keine Frist
 // Backlog 295 (Blickwinkel „Falsch getankt – AdBlue im Dieseltank“): Hinweise im Meldeformular + Hilfe-Abschnitt; reine Information, keine Frist, keine Literangabe
 // Backlog 651/652 (Blickwinkel „Falsch getankt – AdBlue im Dieseltank“, 30.10.2026): Warnzeile bei passender Fahrbereitschaft, Hinweis für die Leitung im Versicherungsabschnitt

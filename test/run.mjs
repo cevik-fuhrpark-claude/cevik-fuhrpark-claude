@@ -19276,7 +19276,7 @@ await test('Backlog 293 (Blickwinkel „Wildunfall nachts auf der Landstraße“
     ok(STRINGS[l].claim_wild_hint && STRINGS[l].wild_hint_title, 'Texte ' + l);
   }
   ok(app.includes(`<div id="wild" class="panel" hidden role="status">`), 'Panel #wild');
-  ok(app.includes("const wild = WILD_HINT.test($('#d').value); $('#wild').hidden = !wild; $('#acc').hidden = wild || !ACC_HINT.test($('#d').value);"), 'Wildunfall ersetzt die allgemeinen Unfall-Hinweise');
+  ok(app.includes("const wild = WILD_HINT.test($('#d').value); $('#wild').hidden = !wild;") && app.includes("$('#acc').hidden = wild || hitrun || !ACC_HINT.test($('#d').value);"), 'Wildunfall ersetzt die allgemeinen Unfall-Hinweise (Backlog 653: Unfallflucht ebenso)');
   ok(app.includes("const wildHint = WILD_HINT.test(desc || '') && !(cl && cl.file_id);") && app.includes('data-claimwild'), 'Versicherungs-Hinweis bis eine Datei verknüpft ist');
   ok(app.includes("const parts = ['report', 'accident', 'wild', "), 'Hilfe-Abschnitt wild nach Unfall');
 });
@@ -26995,6 +26995,48 @@ await test('Backlog 649–652 (Blickwinkel „Falsch getankt – Motor schon ges
   eq(r1.status, 201); eq(r1.data.safety_lock, false, 'ohne „nicht fahrbereit“ keine Sperre');
   const r2 = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'AdBlue in Dieseltank getankt', priority: 'niedrig', driveability: 'nicht_fahrbereit', request_key: rk() });
   eq(r2.data.safety_lock, true, 'mit „nicht fahrbereit“ gesperrt');
+});
+
+await test('Backlog 653–655 (Blickwinkel „Parkschaden – Unfallgegner unbekannt (Unfallflucht)“): Meldeformular zeigt bei Unfallflucht/Parkschaden eigene Schritte statt der allgemeinen Unfall-Hinweise (DE/UK/EN, Hilfe); Versicherungsabschnitt verlangt Anzeige und nennt „Gegner unbekannt → leer lassen“; Datenqualität claim_hitrun_no_police und Unfallflucht in accident_no_claim', async () => {
+  const { U, newCase } = await freshWorld();
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const HITRUN_HINT = \/(.+)\/i;/m); ok(m, 'HITRUN_HINT auf Modulebene'); eq((app.match(/const HITRUN_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Fahrerflucht auf dem Rastplatz', 'Parkschaden hinten links', 'Unfallflucht, Stoßstange eingedrückt', 'Lkw über Nacht angefahren und der Verursacher ist abgehauen', 'Spiegel touchiert, Fahrer einfach davongefahren', 'Auflieger beschädigt, ohne einen Zettel zu hinterlassen', 'Verursacher unbekannt', 'hit and run at the rest area', 'Hit-and-run, bumper damaged', 'trailer damaged while parked', 'the other driver fled the scene', 'Водій втік з місця ДТП', 'винуватець втекла', 'Пошкодили на стоянці, водій поїхав з місця пригоди', 'Водитель скрылся', 'уехал с места происшествия']) ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Unfall beim Rangieren', 'Lkw falsch geparkt', 'Fluchtweg im Aufbau blockiert', 'Notausgang klemmt', 'Kratzer am Spiegel, bin weitergefahren', 'Utечка масла', 'утечка масла', 'витік оливи', 'збіг обставин', 'Reifen platt', 'Diesel gestohlen', 'Parken auf dem Hof nicht möglich', 'fled to the cab because of rain']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const q = await import('../src/quality.js');
+  for (const w of [...q.HITRUN_WORDS_LAT, ...q.HITRUN_WORDS_CYR]) ok(re.test(w), 'Formular erkennt das Datenqualitäts-Wort ' + w);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.hitrun_hint_title, 'Titel ' + l);
+    const st = S.hitrun_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(/112/.test(st[0]) && /110/.test(st[0]), 'Notrufnummern ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год|€|EUR)/i.test(S.hitrun_hint_steps), 'keine erfundene Frist ' + l);
+    ok(S.help_hitrun_t && S.help_hitrun_s.includes(S.hitrun_hint_steps) && S.help_hitrun_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+    ok(S.cp_hitrun_hint.includes(S.cp_title) && S.cp_hitrun_hint.includes(S.co_title), 'Versicherungs-Hinweis nennt Anzeige- und Gegner-Abschnitt ' + l);
+    ok(S.dq_claim_hitrun_no_police, 'Datenqualität ' + l);
+  }
+  ok(app.includes('<div id="hitrun" class="panel" hidden role="status">'), 'Panel #hitrun');
+  ok(app.includes("const hitrun = !wild && HITRUN_HINT.test($('#d').value); $('#hitrun').hidden = !hitrun; $('#acc').hidden = wild || hitrun || !ACC_HINT.test($('#d').value);"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor');
+  ok(app.indexOf("$('#hitrun').hidden = !hitrun") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun',/.test(app), 'Reihenfolge direkt nach Unfall/Wildunfall');
+  ok(app.includes("'custdmg', 'hitrun', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("const hitrunNoRef = !theftNoRef && HITRUN_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimhitrun'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt zum Diebstahl-Hinweis');
+  // Datenqualität (655)
+  const hr = await newCase({ description: 'Parkschaden über Nacht, Verursacher unbekannt' });
+  const hrUk = await newCase({ description: 'ВТЕЧА з місця ДТП, бампер пошкоджено' });
+  const withPol = await newCase({ description: 'Fahrerflucht, Spiegel abgerissen' });
+  const plain = await newCase({ description: 'Bremsleuchte defekt' });
+  const noClaim = await newCase({ description: 'Fahrerflucht am Hof, Plane eingerissen' });
+  for (const c of [hr, hrUk, withPol, plain]) eq((await U.fleet.put(`/api/cases/${c}/claim`, { insurer: 'Kasko AG', reported_on: bDayOff(0), evidence: 'Schadenmeldung' })).status, 200);
+  eq((await U.fleet.put(`/api/cases/${withPol}/claim`, { insurer: 'Kasko AG', reported_on: bDayOff(0), evidence: 'Schadenmeldung', police_station: 'PP Dortmund, Wache Nord', police_ref: 'AZ 4711/26' })).status, 200);
+  const dq = (await U.fleet.get('/api/admin/data-quality')).data;
+  const hits = dq.items.filter((i) => i.check === 'claim_hitrun_no_police').map((i) => i.case_id).sort();
+  eq(hits.join(), [hr, hrUk].sort().join(), 'nur Unfallflucht-Fälle ohne Anzeige (Großschreibung UK erkannt)');
+  eq(dq.items.find((i) => i.check === 'claim_hitrun_no_police').severity, 'hinweis');
+  ok(dq.items.some((i) => i.check === 'accident_no_claim' && i.case_id === noClaim), 'Fahrerflucht ohne Versicherungsfall unter accident_no_claim');
+  ok(!dq.items.some((i) => i.case_id === plain && ['claim_hitrun_no_police', 'accident_no_claim'].includes(i.check)), 'normaler Vorgang ohne Befund');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

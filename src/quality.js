@@ -14,6 +14,11 @@ const ACC_CYR = [...new Set(ACC_WORDS_CYR.flatMap(caseVariants))];
 export const THEFT_WORDS_LAT = ['diebstahl', 'gestohlen', 'geklaut', 'entwendet', 'abgezapft', 'aufgebrochen', 'theft', 'stolen', 'siphon'];
 export const THEFT_WORDS_CYR = ['крадіж', 'вкрал', 'викрал', 'вкрад', 'викрад', 'украл', 'украд'];
 const THEFT_CYR = [...new Set(THEFT_WORDS_CYR.flatMap(caseVariants))];
+// Backlog 655 (Blickwinkel „Parkschaden – Unfallgegner unbekannt (Unfallflucht)“): Wortstämme wie HITRUN_HINT im Meldeformular (ein Test vergleicht beide)
+export const HITRUN_WORDS_LAT = ['fahrerflucht', 'unfallflucht', 'parkschaden', 'hit and run', 'hit-and-run', 'fled the scene'];
+export const HITRUN_WORDS_CYR = ['втік', 'втекл', 'втеча', 'втечі', 'втечу', 'скрылся', 'скрылась'];
+const HITRUN_CYR = [...new Set(HITRUN_WORDS_CYR.flatMap(caseVariants))];
+const hitrunSql = () => `(${HITRUN_WORDS_LAT.map(() => 'instr(lower(c.description),?)>0').join(' OR ')} OR ${HITRUN_CYR.map(() => 'instr(c.description,?)>0').join(' OR ')})`;
 import { siteKey, siteLabels, siteSelection } from './reports.js';
 import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery } from './maintenance.js';
 import { spRequired, loadHuSpInputs, huSpFor } from './inspection_rules.js';
@@ -46,6 +51,8 @@ export const CHECKS = {
   accident_no_claim: 'hinweis',
   // Backlog 631: Vorgang nennt Diebstahl (DE/UK/EN), kein Versicherungsfall – nur Hinweis (Polizeianzeige/Teilkasko klären), Unfall-Vorgänge nur dort
   theft_no_claim: 'hinweis',
+  // Backlog 655: offener Versicherungsfall, Vorgang nennt Unfallflucht/Parkschaden, keine Angabe zur polizeilichen Anzeige – nur Hinweis
+  claim_hitrun_no_police: 'hinweis',
   // offener Versicherungsfall ohne Schadenzeitpunkt am Vorgang (Backlog 285) – im Vorgang „Schadenzeitpunkt“ nachtragen
   claim_no_occurred: 'hinweis',
   // Backlog 399: Reifengröße der Antriebsachse nach der letzten Tachographenprüfung geändert (Protokoll `tires.spec`) – Prüfung nach § 57b StVZO klären
@@ -113,7 +120,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (sel0.site) vf = JSON.stringify(all.filter((v) => sel0.match(v.site)).map((v) => v.id));
   }
   const VF = vf ? 'AND i.vehicle_id IN (SELECT value FROM json_each(?))' : '';
-  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates, claimNoOcc, tireTacho, insNone, insAll, theft365] = await Promise.all([
+  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates, claimNoOcc, tireTacho, insNone, insAll, theft365, hitrunNoPol] = await Promise.all([
     // aktive Fahrzeuge inkl. ruhender (nur für die Anhänger-Suche; Prüfungen laufen über die bewerteten)
     // dazu außer Betrieb genommene Anhänger (nur für „Anhänger außer Betrieb“, 23.10.2026) – gleich danach abgetrennt
     env.DB.prepare(`SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate, zgm_class, zgm_kg, eval_excluded, active FROM vehicles WHERE active=1 OR kind='anhaenger'`).all(),
@@ -169,8 +176,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     // Abgelehnte Meldungen nicht, wohl aber „ohne Reparatur beendete“ Werkstattaufträge (abgelehnt mit Werkstatt, z. B. Totalschaden – Backlog 211)
     env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.created_at FROM cases c JOIN vehicles v ON v.id=c.vehicle_id
       WHERE c.environment=? AND c.created_at >= ? AND (c.status<>'abgelehnt' OR c.workshop_site IS NOT NULL) AND v.eval_excluded=0
-      AND (instr(lower(c.description),'unfall')>0 OR instr(lower(c.description),'accident')>0 OR ${ACC_CYR.map(() => 'instr(c.description,?)>0').join(' OR ')})
-      AND NOT EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.case_id=c.id) ${vf ? 'AND c.vehicle_id IN (SELECT value FROM json_each(?))' : ''} ORDER BY c.created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, berlinWindowStartIso(365), ...ACC_CYR, ...(vf ? [vf] : [])).all(),
+      AND (instr(lower(c.description),'unfall')>0 OR instr(lower(c.description),'accident')>0 OR ${ACC_CYR.map(() => 'instr(c.description,?)>0').join(' OR ')} OR ${hitrunSql()})
+      AND NOT EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.case_id=c.id) ${vf ? 'AND c.vehicle_id IN (SELECT value FROM json_each(?))' : ''} ORDER BY c.created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, berlinWindowStartIso(365), ...ACC_CYR, ...HITRUN_WORDS_LAT, ...HITRUN_CYR, ...(vf ? [vf] : [])).all(),
     // Prüfungen der letzten 12 Monate mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher ohne Vorgang zum Fahrzeug seit dem Prüfdatum
     defectsWithoutCaseQuery(env, envName, DQ_MAX + 1, vf).all(),
     // Nachprüfung (nächste spätere Durchführung derselben Prüfart, ≤ 12 Monate, am/nach dem Freigabetag des Mängelauftrags) erneut mit erheblichen Mängeln
@@ -218,11 +225,16 @@ export async function dataQuality(env, user, envName, query = {}) {
       AND (${THEFT_WORDS_LAT.map(() => 'instr(lower(c.description),?)>0').join(' OR ')} OR ${THEFT_CYR.map(() => 'instr(c.description,?)>0').join(' OR ')})
       AND NOT (instr(lower(c.description),'unfall')>0 OR instr(lower(c.description),'accident')>0 OR ${ACC_CYR.map(() => 'instr(c.description,?)>0').join(' OR ')})
       AND NOT EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.case_id=c.id) ${vf ? 'AND c.vehicle_id IN (SELECT value FROM json_each(?))' : ''} ORDER BY c.created_at DESC LIMIT ${DQ_MAX + 1}`).bind(envName, berlinWindowStartIso(365), ...THEFT_WORDS_LAT, ...THEFT_CYR, ...ACC_CYR, ...(vf ? [vf] : [])).all(),
+    // Backlog 655: offener Versicherungsfall (gemeldet/in Prüfung) zu einer Unfallflucht ohne Dienststelle, Aktenzeichen und Anzeigedatum
+    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, ic.reported_on FROM insurance_claims ic JOIN cases c ON c.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id
+      WHERE ic.environment=? AND ic.status IN ('gemeldet','in_pruefung') AND v.eval_excluded=0 AND ${hitrunSql()}
+      AND (ic.police_station IS NULL OR trim(ic.police_station)='') AND (ic.police_ref IS NULL OR trim(ic.police_ref)='') AND ic.police_reported_on IS NULL
+      ${vf ? 'AND ic.vehicle_id IN (SELECT value FROM json_each(?))' : ''} ORDER BY ic.reported_on DESC LIMIT ${DQ_MAX + 1}`).bind(envName, ...HITRUN_WORDS_LAT, ...HITRUN_CYR, ...(vf ? [vf] : [])).all(),
   ]);
   const offTrailers = new Map(veh.results.filter((v) => !v.active).map((v) => [normPlate(v.plate), v]));
   veh.results = veh.results.filter((v) => v.active);
   const truncatedChecks = [];
-  for (const [check, res] of [['km_inspection_rejected', insKm], ['accident_no_claim', acc365], ['theft_no_claim', theft365], ['inspection_defects_no_case', defects], ['reinspection_defects_again', again], ['inspection_no_result', noResult], ['claim_no_occurred', claimNoOcc], ['insurance_none_running', insNone]]) {
+  for (const [check, res] of [['km_inspection_rejected', insKm], ['accident_no_claim', acc365], ['theft_no_claim', theft365], ['claim_hitrun_no_police', hitrunNoPol], ['inspection_defects_no_case', defects], ['reinspection_defects_again', again], ['inspection_no_result', noResult], ['claim_no_occurred', claimNoOcc], ['insurance_none_running', insNone]]) {
     if (res.results.length > DQ_MAX) { truncatedChecks.push(check); res.results = res.results.slice(0, DQ_MAX); }
   }
   const vs = veh.results.filter((v) => !v.eval_excluded);
@@ -363,6 +375,7 @@ export async function dataQuality(env, user, envName, query = {}) {
         detail_args: { partner: a.partner, contract_no: a.contract_no || null, end: a.eff_end, next_partner: later ? later.partner : null, next_start: later ? later.start_date : null, gap_days: gapDays } });
     } }
   for (const c of claimNoOcc.results) items.push({ check: 'claim_no_occurred', severity: CHECKS.claim_no_occurred, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${c.reported_on}` });
+  for (const c of hitrunNoPol.results) items.push({ check: 'claim_hitrun_no_police', severity: CHECKS.claim_hitrun_no_police, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${c.reported_on}` });
   for (const c of theft365.results) items.push({ check: 'theft_no_claim', severity: CHECKS.theft_no_claim, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${berlinDate(c.created_at)}` });
   for (const c of acc365.results) items.push({ check: 'accident_no_claim', severity: CHECKS.accident_no_claim, vehicle_id: c.vehicle_id, plate: c.plate, case_id: c.id, detail: `${c.case_no} · ${berlinDate(c.created_at)}` });
   const RES_DE = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
