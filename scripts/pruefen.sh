@@ -203,6 +203,7 @@ UI-Partikelfilter: eigene Schritte vor Warnleuchte, DPF gereinigt nicht, Hilfe, 
 UI-Trittstufe: eigene Schritte statt loses Teil, repariert nicht, Hilfe, DE/UK/EN 390/820/1366|ui-trittstufe.py|/tmp/cfp-trittstufe.log
 UI-Zurrgurte: eigene Schritte bei fehlenden Sicherungsmitteln, Sicherheitsgurt nicht, Hilfe, DE/UK/EN 390/820/1366|ui-zurrgurte.py|/tmp/cfp-zurrgurte.log
 UI-Konturmarkierung: eigene Schritte bei abgerissener Konturmarkierung/Rückstrahler/Warntafel, Warnweste nicht, Hilfe, DE/UK/EN 390/820/1366|ui-konturmarkierung.py|/tmp/cfp-konturmarkierung.log
+UI-Plakette: eigene Schritte bei fehlender/unleserlicher Umwelt-/HU-Plakette, keine Kennzeichen-/Glas-Schritte, Mautvignette nicht, Hilfe, DE/UK/EN 390/820/1366|ui-plakette.py|/tmp/cfp-plakette.log
 UI-Fahrer letzter Arbeitstag: Hinweise beim Deaktivieren (offene Meldungen, Fahrerkarte), Hilfe-Abschnitt, DE/UK/EN 390/820/1366|ui-fahrer-letzter-tag.py|/tmp/cfp-fahrer-letzter-tag.log
 UI-Reifenpanne-Hinweis im Meldeformular und Hilfe|ui-reifenpanne.py|/tmp/cfp-reifenpanne.log
 UI-Hinweis Beanstandung bei Polizei-/BAG-Kontrolle im Meldeformular und Hilfe|ui-kontrolle-beanstandet.py|/tmp/cfp-kontrolle-beanstandet.log

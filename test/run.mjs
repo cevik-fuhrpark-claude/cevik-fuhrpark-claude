@@ -19256,8 +19256,8 @@ await test('Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“)
     ok(STRINGS[l].claim_glass_hint.includes('{b}') && STRINGS[l].claim_add, 'Versicherungs-Hinweis nennt den Knopf ' + l);
   }
   ok(app.includes(`<div id="glass" class="panel" hidden role="status">`), 'Panel #glass');
-  const lp = app.indexOf("$('#glass').hidden = !GLASS_HINT.test($('#d').value)"); ok(lp > 0 && lp < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("const glassNoClaim = !cl && GLASS_HINT.test(desc || '');") && app.includes('data-claimglass'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
+  const lp = app.indexOf("$('#glass').hidden = !GLASS_HINT.test(dsk)"); ok(lp > 0 && lp < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("const glassNoClaim = !cl && GLASS_HINT.test(noSticker(desc));") && app.includes('data-claimglass'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
   ok(app.includes("'theft', 'glass', "), 'Hilfe-Abschnitt glass für meldende Rollen');
 });
 
@@ -26839,7 +26839,7 @@ await test('Backlog 634 (Teilagent-Fund „Diebstahl auf dem Rastplatz“): Meld
   for (const x of ['Тент напівпричепа порізаний', 'Plane aufgeschlitzt', 'Auflieger Rücklicht defekt', 'trailer light broken', 'тент полуприцепа порезан', 'причіп пошкоджено']) ok(R.test(x), 'Auflieger: ' + x);
   for (const x of ['Anhängerkupplung defekt', 'Aufliegerkupplung', 'trailer hitch broken', 'Sattelkupplung klemmt', 'Spiegel kaputt', 'прицепное устройство', 'Planetengetriebe']) ok(!R.test(x), 'kein Auflieger: ' + x);
   ok(app.includes("const show = !!(v && v.kind !== 'anhaenger' && v.trailer_plate && TRAILER_DMG.test($('#d').value) && !FOREIGN_TRAILER.test($('#d').value));"), 'nur Lkw mit gekoppeltem Auflieger (Backlog 640: nicht bei fremdem Auflieger)');
-  ok(app.includes("const hints = () => { $('#trlr').hidden = !trailerHint();") && app.includes("$$('input[name=veh]').forEach((x) => x.addEventListener('change', hints));"), 'bei Text- und Fahrzeugwechsel');
+  ok(app.includes("const hints = () => { const dsk = noSticker($('#d').value); $('#trlr').hidden = !trailerHint();") && app.includes("$$('input[name=veh]').forEach((x) => x.addEventListener('change', hints));"), 'bei Text- und Fahrzeugwechsel');
   ok(/const HINT_ORDER = \[[^\]]*'trlr'/.test(app) && app.includes('<div id="trlr" class="panel" hidden role="status"></div>'), 'Hinweisgruppe');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].trlr_title.includes('{p}') && STRINGS[l].trlr_text.includes('{p}'), l); }
@@ -27275,10 +27275,10 @@ await test('Backlog 685–687 (Blickwinkel „Kennzeichen verloren, gestohlen od
   for (const x of ['Kennzeichen abgefallen', 'Rear number plate fell off', 'Номерний знак відпав у дорозі']) ok(L.test(x) && !L.test(x.replace(W, ' ')), 'Kennzeichen allein zählt nicht zusätzlich als loses Teil: ' + x);
   ok(L.test('Kennzeichen abgefallen, Stoßstange hängt herunter'.replace(W, ' ')), 'anderes loses Teil bleibt erkannt');
   ok(app.includes("if (!$('#numplate').hidden) dl = dl.replace(NUMPLATE_WORDS, ' '); if (!$('#step').hidden) dl = dl.replace(STEP_WORDS, ' '); $('#loose').hidden = !LOOSE_HINT.test(dl);"), 'Lose-Teile-Hinweis ohne Kennzeichenwörter');
-  ok(app.includes("$('#numplate').hidden = !NUMPLATE_HINT.test($('#d').value);") && app.indexOf("$('#numplate').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("'lost', 'numplate', 'fuelcard'"), 'Reihenfolge nach Schlüssel/Papiere');
+  ok(app.includes("$('#numplate').hidden = !NUMPLATE_HINT.test(dsk);") && app.indexOf("$('#numplate').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'lost', 'numplate', 'sticker', 'fuelcard'"), 'Reihenfolge nach Schlüssel/Papiere');
   ok(app.includes("'cargo', 'numplate', "), 'Hilfe-Abschnitt für meldende Rollen');
-  ok(app.includes("const numplateHint = NUMPLATE_HINT.test(desc || '');") && app.includes('data-claimnumplate'), 'Hinweis an die Leitung im Vorgang');
+  ok(app.includes("const numplateHint = NUMPLATE_HINT.test(noSticker(desc));") && app.includes('data-claimnumplate'), 'Hinweis an die Leitung im Vorgang');
   const { U, newCase } = await freshWorld();
   const c = await newCase({ description: 'Kennzeichen hinten über Nacht abgeschraubt, Polizei informiert' });
   const g = (await U.fleet.get(`/api/cases/${c}`)).data; ok(re.test(g.case ? g.case.description : g.description), 'Beschreibung erkannt');
@@ -27346,6 +27346,35 @@ await test('Backlog 692–693 (Blickwinkel „Vor dem Laden: Zurrgurte, Kantensc
   ok(app.includes("'load', 'lashgear', 'deck'"), 'Reihenfolge nach verrutschter Ladung');
   ok(app.includes("'step', 'lashgear', "), 'Hilfe-Abschnitt für meldende Rollen');
 });
+await test('Backlog 696–697 (Blickwinkel „Umweltplakette bzw. HU-Plakette fehlt, abgefallen oder unleserlich“): Meldeformular zeigt Schritte (Leitung klärt Ersatz/Weiterfahrt, ohne Umweltplakette keine Umweltzone, nichts selbst nachkleben/übertragen, welche Plakette/Fotos, Auswahl „Kann das Fahrzeug fahren?“); Plakette am Kennzeichen/an der Scheibe löst keine Kennzeichen-, Glas- oder Lose-Teil-Schritte aus; Hilfe DE/UK/EN; „Umweltplakette erneuert“, „HU-Plakette abgelaufen“, Maut-/QR-Aufkleber lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const H = (n) => { const m = app.match(new RegExp('^const ' + n + ' = /(.+)/(i?);$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], m[2]); };
+  eq((app.match(/const STICKER_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = H('STICKER_HINT'); const NP = H('NUMPLATE_HINT'); const GL = H('GLASS_HINT'); const LO = H('LOOSE_HINT');
+  const strip = (s) => s.replace(new RegExp(re.source, 'gi'), ' ');
+  for (const x of ['Umweltplakette fehlt', 'HU-Plakette am Kennzeichen fehlt', 'TÜV-Plakette hinten abgefallen', 'Plakette am Kennzeichen unleserlich', 'Umweltplakette nach Scheibentausch nicht mehr da', 'keine Umweltplakette', 'fehlende HU-Plakette', 'Feinstaubplakette an der Windschutzscheibe beschädigt', 'Lkw ohne Umweltplakette', 'Prüfplakette löst sich', 'emissions sticker missing', 'inspection sticker fell off', 'no emissions sticker', 'немає екологічної наклейки', 'екологічна наклейка відклеїлась', 'наклейка техогляду відпала', 'нет зеленой наклейки']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Umweltplakette erneuert', 'HU-Plakette abgefallen, neu geklebt', 'keine Umweltplakette nötig', 'HU-Plakette abgelaufen', 'Plakette fällig im März', 'Kennzeichen fehlt', 'Mautvignette fehlt', 'toll sticker missing', 'QR-Aufkleber abgefallen', 'QR-наклейка відпала', 'Aufkleber abgefallen', 'emissions sticker replaced']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  for (const x of ['HU-Plakette am Kennzeichen fehlt', 'Plakette am Kennzeichen unleserlich']) { ok(NP.test(x), 'ohne Bereinigung träfe Kennzeichen: ' + x); ok(!NP.test(strip(x)), 'Kennzeichen-Schritte nicht bei: ' + x); }
+  ok(GL.test('Feinstaubplakette an der Windschutzscheibe beschädigt') && !GL.test(strip('Feinstaubplakette an der Windschutzscheibe beschädigt')), 'Glas-Schritte nicht bei Plakette an der Scheibe');
+  ok(!LO.test(strip('TÜV-Plakette hinten abgefallen')), 'kein loses Teil');
+  ok(NP.test(strip('Plakette am Kennzeichen fehlt, Kennzeichen verbogen')), 'eigener Kennzeichenschaden bleibt erkannt');
+  ok(GL.test(strip('Umweltplakette fehlt, Steinschlag in der Windschutzscheibe')), 'eigener Glasschaden bleibt erkannt');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.sticker_hint_title, 'Titel ' + l);
+    const st = S.sticker_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.sticker_hint_steps) && !/\d/.test(S.help_sticker_s), 'keine Zahl/Frist ' + l);
+    ok([S.drv_eingeschraenkt, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_sticker_t && S.help_sticker_s.includes(S.sticker_hint_steps) && S.help_sticker_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="sticker" class="panel" hidden role="status">'), 'Panel #sticker');
+  ok(app.includes("$('#sticker').hidden = !STICKER_HINT.test($('#d').value);") && app.indexOf("$('#sticker').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("{ let dl = dsk; if (!$('#numplate')") && app.includes("const numplateHint = NUMPLATE_HINT.test(noSticker(desc));"), 'Lose-Teil- und Leitungs-Hinweis ohne Plaketten-Fundstelle');
+  ok(app.includes("'numplate', 'sticker', 'fuelcard'"), 'Reihenfolge nach Kennzeichen');
+  ok(app.includes("'contour', 'sticker', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+});
+
 await test('Backlog 694–695 (Blickwinkel „Konturmarkierung, Rückstrahler oder Warntafel abgerissen/fehlt“): Meldeformular zeigt Schritte (Mangel, Leitung entscheidet, reinigen, lose Teile nur gefahrlos abnehmen, was/wo/Fotos, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; Scheinwerfer-Reflektor, Warnweste, „світловідбивний жилет“, „Konturmarkierung erneuert“, „Warntafel nötig“ lösen nichts aus', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -27364,7 +27393,7 @@ await test('Backlog 694–695 (Blickwinkel „Konturmarkierung, Rückstrahler od
   ok(app.includes('<div id="contour" class="panel" hidden role="status">'), 'Panel #contour');
   ok(app.includes("$('#contour').hidden = !CONTOUR_HINT.test($('#d').value);") && app.indexOf("$('#contour').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'lights', 'contour', 'visib'"), 'Reihenfolge nach Beleuchtung');
-  ok(app.includes("'lashgear', 'contour', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'lashgear', 'contour', 'sticker', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
