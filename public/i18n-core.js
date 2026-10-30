@@ -1154,6 +1154,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // [CLAUDE] Backlog 690–691 (30.10.2026, Blickwinkel „Fahrer rutscht beim Absteigen aus – Trittstufe oder Haltegriff defekt“): Schritte im Meldeformular, Hilfe
 // [CLAUDE] Backlog 692–693 (30.10.2026, Blickwinkel „Vor dem Laden: Zurrgurte, Kantenschutz oder Antirutschmatten fehlen bzw. sind beschädigt“): Schritte im Meldeformular, Hilfe
 // [CLAUDE] Backlog 694–695 (30.10.2026, Blickwinkel „Konturmarkierung, Rückstrahler oder Warntafel abgerissen/fehlt“): Schritte im Meldeformular, Hilfe
+// [CLAUDE] Backlog 696–697 (30.10.2026, Blickwinkel „Umweltplakette oder HU-Plakette fehlt, abgefallen oder unleserlich“): Schritte im Meldeformular, Hilfe
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

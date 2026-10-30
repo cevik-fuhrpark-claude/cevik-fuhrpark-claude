@@ -27276,7 +27276,7 @@ await test('Backlog 685–687 (Blickwinkel „Kennzeichen verloren, gestohlen od
   ok(L.test('Kennzeichen abgefallen, Stoßstange hängt herunter'.replace(W, ' ')), 'anderes loses Teil bleibt erkannt');
   ok(app.includes("if (!$('#numplate').hidden) dl = dl.replace(NUMPLATE_WORDS, ' '); if (!$('#step').hidden) dl = dl.replace(STEP_WORDS, ' '); $('#loose').hidden = !LOOSE_HINT.test(dl);"), 'Lose-Teile-Hinweis ohne Kennzeichenwörter');
   ok(app.includes("$('#numplate').hidden = !NUMPLATE_HINT.test($('#d').value);") && app.indexOf("$('#numplate').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("'lost', 'numplate', 'fuelcard'"), 'Reihenfolge nach Schlüssel/Papiere');
+  ok(app.includes("'lost', 'numplate', "), 'Reihenfolge nach Schlüssel/Papiere');
   ok(app.includes("'cargo', 'numplate', "), 'Hilfe-Abschnitt für meldende Rollen');
   ok(app.includes("const numplateHint = NUMPLATE_HINT.test(desc || '');") && app.includes('data-claimnumplate'), 'Hinweis an die Leitung im Vorgang');
   const { U, newCase } = await freshWorld();
@@ -27364,7 +27364,33 @@ await test('Backlog 694–695 (Blickwinkel „Konturmarkierung, Rückstrahler od
   ok(app.includes('<div id="contour" class="panel" hidden role="status">'), 'Panel #contour');
   ok(app.includes("$('#contour').hidden = !CONTOUR_HINT.test($('#d').value);") && app.indexOf("$('#contour').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'lights', 'contour', 'visib'"), 'Reihenfolge nach Beleuchtung');
-  ok(app.includes("'lashgear', 'contour', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'lashgear', 'contour', "), 'Hilfe-Abschnitt für meldende Rollen');
+});
+await test('Backlog 696–697 (Blickwinkel „Umweltplakette oder HU-Plakette fehlt, abgefallen oder unleserlich“): Meldeformular zeigt Schritte (nicht in Umweltzonen, Leitung klärt Ersatz/Tour; HU-Plakette über die Prüfstelle, nichts nachmachen/umkleben; gestohlen → wann zuletzt in Ordnung, Fotos; Auswahl „Kann das Fahrzeug fahren?“); „HU-Plakette am Kennzeichen fehlt“ zeigt nicht die Kennzeichen-Schritte; „HU-Plakette abgelaufen“, „neue Plakette geklebt“, „Plakette nötig“ lösen nichts aus; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const get = (n) => { const m = app.match(new RegExp('^const ' + n + ' = /(.+)/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const re = get('ECOBADGE_HINT'); eq((app.match(/const ECOBADGE_HINT = /g) || []).length, 1, 'nur eine Definition');
+  for (const x of ['Umweltplakette fehlt', 'Umweltplakette ist abgefallen', 'grüne Plakette an der Scheibe abgekratzt', 'Feinstaubplakette unleserlich', 'HU-Plakette am Kennzeichen fehlt', 'TÜV-Plakette abgefallen', 'Prüfplakette hinten nicht mehr lesbar', 'keine Umweltplakette', 'gestohlene HU-Plakette', 'Kennzeichen fehlt, Umweltplakette auch weg', 'emissions sticker missing', 'MOT sticker fell off', 'no emissions sticker', 'екологічна наліпка відклеїлась', 'немає екологічної наліпки', 'нет экологической наклейки']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['HU-Plakette abgelaufen', 'neue Plakette geklebt', 'Umweltplakette fehlt, neu geklebt', 'Umweltplakette erneuert', 'Plakette nötig', 'Kennzeichen fehlt', 'QR-Aufkleber fehlt', 'HU fällig', 'emissions sticker replaced', 'наліпка на дверях']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  // Kennzeichen-Schritte nur, wenn nach Entfernen der Plaketten-Stellen noch „Kennzeichen … fehlt“ bleibt
+  const num = get('NUMPLATE_HINT'); ok(app.includes("const ECOBADGE_ALL = new RegExp(ECOBADGE_HINT.source, 'gi');"), 'ECOBADGE_ALL');
+  const all = new RegExp(re.source, 'gi');
+  ok(num.test('HU-Plakette am Kennzeichen fehlt') && !num.test('HU-Plakette am Kennzeichen fehlt'.replace(all, ' ')), 'nur Plakette → keine Kennzeichen-Schritte');
+  ok(num.test('Kennzeichen fehlt, Umweltplakette auch weg'.replace(all, ' ')), 'Kennzeichen und Plakette → beide');
+  ok(app.includes("$('#numplate').hidden = !NUMPLATE_HINT.test($('#d').value); $('#ecobadge').hidden = !ECOBADGE_HINT.test($('#d').value); if (!$('#ecobadge').hidden && !$('#numplate').hidden && !NUMPLATE_HINT.test($('#d').value.replace(ECOBADGE_ALL, ' '))) $('#numplate').setAttribute('hidden', '');"), 'Kennzeichen-Schritte bei reiner Plakette ausgeblendet');
+  ok(app.indexOf("$('#ecobadge').hidden") < app.indexOf("bindFormDraft('new'") && app.indexOf("$('#ecobadge').hidden") < app.indexOf("!$('#numplate').hidden) dl = dl.replace(NUMPLATE_WORDS"), 'vor bindFormDraft und vor der Lose-Teile-Prüfung');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.ecobadge_hint_title, 'Titel ' + l);
+    const st = S.ecobadge_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.ecobadge_hint_steps), 'keine Zahl/Frist ' + l);
+    ok([S.drv_eingeschraenkt, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_ecobadge_t && S.help_ecobadge_s.includes(S.ecobadge_hint_steps) && S.help_ecobadge_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="ecobadge" class="panel" hidden role="status">'), 'Panel #ecobadge');
+  ok(app.includes("'numplate', 'ecobadge', "), 'Reihenfolge nach Kennzeichen');
+  ok(app.includes("'contour', 'ecobadge', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
