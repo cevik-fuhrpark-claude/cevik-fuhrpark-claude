@@ -27378,6 +27378,28 @@ await test('Backlog 713 (Prüfung vorhandener Muster mit der Sonde): Ladebordwan
   for (const [re, x] of [[DO, 'Ladebordwand repariert'], [DO, 'Ladebordwand Fehler behoben'], [DO, 'Hebebühne in der Werkstatt frei'], [VI, 'Spiegel beschlagen'], [LG, 'Rungen vorhanden'], [EN, 'Turbolader neu'], [EN, 'Turbo-Diesel']]) ok(!re.test(x), 'kein Hinweis: ' + x);
 });
 
+await test('Backlog 716–717 (Blickwinkel „Zentralschmieranlage leer oder mit Fehler, Sattelkupplung trocken“): Meldeformular zeigt Schritte (Leitung entscheidet, Fett nur laut Unterweisung/Betriebsanleitung, nicht an Pumpe/Leitungen schrauben, Undichtigkeit/Ankuppeln eigene Schritte, Anzeige/Fett laut Gebinde/Fotos, Auswahl „Kann das Fahrzeug fahren?“); keine Fettsorte/Menge/Intervalle/Frist; Hilfe DE/UK/EN; „in Ordnung“, „beim Service nachgefüllt“, „Fehler behoben“, „Sattelkupplung gefettet“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const GREASE_HINT = \/(.+)\/i;$/m); ok(m, 'GREASE_HINT auf Modulebene'); eq((app.match(/const GREASE_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Zentralschmierung leer', 'Zentralschmieranlage Fehler', 'Zentralschmierung zeigt Fehler im Display', 'Schmieranlage fördert nicht', 'Fettbehälter leer', 'Zentralschmierung nachgefüllt', 'Sattelplatte trocken', 'Sattelkupplung nicht gefettet', 'Sattelkupplung muss gefettet werden', 'central lubrication empty', 'grease pump fault', 'fifth wheel dry', 'Централізоване змащення порожнє', 'система змащення помилка', 'сідло сухе']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Zentralschmierung in Ordnung', 'Zentralschmierung beim Service nachgefüllt', 'Zentralschmierung Fehler behoben', 'Sattelkupplung gefettet', 'Sattelkupplung klemmt', 'Fett auf der Straße', 'Lkw abgeschmiert', 'Hände trocken', 'Ölstand zu niedrig']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.grease_hint_title, 'Titel ' + l);
+    const st = S.grease_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.grease_hint_steps) && !/\d/.test(S.help_grease_s), 'keine Zahl/Frist/Menge/Intervall ' + l);
+    ok(!/NLGI|Lithium|Gramm|gram|грам|Liter|litre|літр/i.test(S.grease_hint_steps + S.help_grease_s), 'keine Fettsorte oder Menge vorgegeben ' + l);
+    ok([S.drv_fahrbereit, S.drv_unbekannt].every((x) => st[3].includes(x)), 'Schritt 4 nennt die Auswahl wörtlich ' + l);
+    ok(S.help_grease_t && S.help_grease_s.includes(S.grease_hint_steps) && S.help_grease_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="grease" class="panel" hidden role="status">'), 'Panel #grease');
+  ok(app.includes("$('#grease').hidden = !GREASE_HINT.test($('#d').value);") && app.indexOf("$('#grease').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'coupling', 'grease', 'cabtilt'"), 'Reihenfolge nach Kupplung');
+  ok(helpAfter(app, 'grease', 'coupling'), 'Hilfe-Abschnitt für meldende Rollen nach Kupplung');
+});
+
 await test('Backlog 715 (Prüfung vorhandener Muster mit der Sonde): Palettenkasten klemmt/geht nicht auf oder zu/Schloss kaputt → Türen/Klappen; Assistent piept ständig → Assistenzsysteme; Fenster klemmt → Fenster; EBS/ABS am Anhänger Warnung/Fehler → Bremsen; Reifen/Achse heiß oder qualmt → Rad/Radlager; Dachspoiler lose → loses Teil; Türschloss eingefroren → Schloss; Erledigtes löst nichts aus', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
