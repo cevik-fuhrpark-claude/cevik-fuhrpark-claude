@@ -27222,11 +27222,35 @@ await test('Backlog 678–680 (Blickwinkel „Eis/Schnee auf dem Aufliegerdach�
   }
   ok(app.includes('<div id="roofice" class="panel" hidden role="status">'), 'Panel #roofice');
   ok(app.includes("$('#roofice').hidden = !ROOFICE_HINT.test($('#d').value);") && app.indexOf("$('#roofice').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("'vibr', 'deck', 'roofice', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("'vibr', 'deck', 'roofice'"), 'Hilfe-Abschnitt für meldende Rollen');
   ok(app.includes("const rooficeNoClaim = !cl && ROOFICE_HINT.test(desc || '');") && app.includes('data-claimroofice'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
   // Server speichert die Beschreibung unverändert
   const { U, newCase } = await freshWorld();
   const c = await newCase({ description: 'Eisplatte vom Aufliegerdach geflogen, Pkw dahinter getroffen' });
+  const g = (await U.fleet.get(`/api/cases/${c}`)).data; ok(re.test(g.case ? g.case.description : g.description), 'Beschreibung erkannt');
+});
+await test('Backlog 682–684 (Blickwinkel „Ladungsschaden beim Kunden reklamiert“): Meldeformular zeigt Schritte (Vermerk auf Frachtbrief/Lieferschein, kein Schuldanerkenntnis, Fotos vor dem Entladen, Temperaturausdruck, Ware nicht eigenmächtig entsorgen, Ursache am Fahrzeug), Versicherungsabschnitt ohne Versicherungsfall nennt die Klärung laut Vertrag; Hilfe DE/UK/EN; „Kunde hat angerufen“, „Ladung verrutscht“, „вантажівка пошкоджена“ lösen nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const CARGO_HINT = \/(.+)\/i;/m); ok(m, 'CARGO_HINT auf Modulebene'); eq((app.match(/const CARGO_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Kunde reklamiert Transportschaden', 'Ladung beschädigt', 'Ware beim Kunden beschädigt angekommen', 'Empfänger verweigert die Annahme', 'Kunde nimmt die Ware nicht an', 'Annahme verweigert, Kartons nass', 'Tiefkühlware angetaut angekommen', 'Paletten zerdrückt', 'Kunde hat Lieferung abgelehnt', 'unter Vorbehalt auf dem Frachtbrief quittiert', 'Bruchschaden an der Ladung', 'cargo damaged in transit', 'customer rejected the load', 'damaged goods at delivery', 'pallets crushed', 'consignee refused delivery', 'Пошкоджений вантаж', 'вантаж пошкоджено', 'груз поврежден', 'клієнт відмовився приймати вантаж', 'клиент отказался от груза']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Kunde hat angerufen', 'Kunde wartet', 'Kunde ist nicht da', 'Ladebordwand defekt', 'Plane gerissen', 'Ladung verrutscht', 'Load shifted', 'Ladungssicherung fehlt', 'Gurte beschädigt', 'Stapler hat Auflieger beschädigt', 'Rampe beim Kunden beschädigt', 'Spiegel beschädigt', 'Kühlung ausgefallen', 'load sensor faulty', 'customer called', 'вантажівка пошкоджена', 'Вантажівку пошкоджено', 'грузовик поврежден', 'Ware geliefert']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.cargo_hint_title, 'Titel ' + l);
+    const st = S.cargo_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(/CMR/.test(st[0]), 'Schritt 1 nennt den Frachtbrief (CMR) ' + l);
+    ok(!/\d/.test(S.cargo_hint_steps) && !/\d/.test(S.claim_cargo_hint), 'keine erfundene Frist/Zahl ' + l);
+    ok(S.help_cargo_t && S.help_cargo_s.includes(S.cargo_hint_steps) && S.help_cargo_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="cargo" class="panel" hidden role="status">'), 'Panel #cargo');
+  ok(app.includes("$('#cargo').hidden = !CARGO_HINT.test($('#d').value);") && app.indexOf("$('#cargo').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'tarp', 'custdmg', 'cargo', 'glass'"), 'Reihenfolge nach Schaden beim Kunden');
+  ok(app.includes("'deck', 'roofice', 'cargo', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
+  ok(app.includes("const cargoNoClaim = !cl && CARGO_HINT.test(desc || '');") && app.includes('data-claimcargo'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
+  const { U, newCase } = await freshWorld();
+  const c = await newCase({ description: 'Kunde reklamiert Transportschaden, Kartons nass – Plane undicht?' });
   const g = (await U.fleet.get(`/api/cases/${c}`)).data; ok(re.test(g.case ? g.case.description : g.description), 'Beschreibung erkannt');
 });
 

@@ -1147,6 +1147,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 635/637/638: km-Fälligkeit – Stand-Datum, fehlender km-Stand
 // Backlog 636: km-Fälligkeit ohne Intervall beim Erledigen
 // [CLAUDE] Backlog 678–680 (30.10.2026, Blickwinkel „Eis/Schnee auf dem Aufliegerdach“): Schritte im Meldeformular, Hinweis an die Leitung, Hilfe
+// [CLAUDE] Backlog 682–684 (30.10.2026, Blickwinkel „Ladungsschaden beim Kunden reklamiert“): Schritte im Meldeformular, Hinweis an die Leitung, Hilfe
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

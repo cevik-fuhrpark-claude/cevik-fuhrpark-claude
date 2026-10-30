@@ -197,6 +197,7 @@ UI-Brückenanprall: eigene Schritte statt Unfall-Hinweis, Wechselbrücke nicht, 
 UI-Abgeschleppt/Parkkralle: eigene Schritte, Abschleppen nach Panne nicht, Hinweis Kosten/Bußgeld im Vorgang, DE/UK/EN 390/820/1366|ui-abgeschleppt.py|/tmp/cfp-abgeschleppt.log
 UI-Blinde Passagiere: eigene Schritte, Klopfen im Anhänger nicht, Hinweis Anzeige im Vorgang, DE/UK/EN 390/820/1366|ui-blinde-passagiere.py|/tmp/cfp-blinde-passagiere.log
 UI-Eis/Schnee auf dem Dach: eigene Schritte, Schnee auf der Straße nicht, Hinweis Haftpflicht im Vorgang, DE/UK/EN 390/820/1366|ui-dachschnee.py|/tmp/cfp-dachschnee.log
+UI-Ladungsschaden: eigene Schritte, Kunde hat angerufen nicht, Hinweis Klärung laut Vertrag im Vorgang, DE/UK/EN 390/820/1366|ui-ladungsschaden.py|/tmp/cfp-ladungsschaden.log
 UI-Fahrer letzter Arbeitstag: Hinweise beim Deaktivieren (offene Meldungen, Fahrerkarte), Hilfe-Abschnitt, DE/UK/EN 390/820/1366|ui-fahrer-letzter-tag.py|/tmp/cfp-fahrer-letzter-tag.log
 UI-Reifenpanne-Hinweis im Meldeformular und Hilfe|ui-reifenpanne.py|/tmp/cfp-reifenpanne.log
 UI-Hinweis Beanstandung bei Polizei-/BAG-Kontrolle im Meldeformular und Hilfe|ui-kontrolle-beanstandet.py|/tmp/cfp-kontrolle-beanstandet.log
