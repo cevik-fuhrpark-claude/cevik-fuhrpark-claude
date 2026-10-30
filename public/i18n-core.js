@@ -38,6 +38,7 @@ export { CHECK_LABELS } from './check-labels.js';
 // Hinweis „Diebstahl/Einbruch“ im Meldeformular (Backlog 214) und Hilfe-Abschnitt dazu (Backlog 215) – keine Fristen, nur Ablauf
 // Backlog 653/654 (Blickwinkel „Parkschaden – Unfallgegner unbekannt (Unfallflucht)“): Schritte im Meldeformular, Hilfe, Hinweis im Versicherungsabschnitt
 // Backlog 659–661 (30.10.2026, Blickwinkel „Vandalismus über Nacht – Reifen zerstochen, Graffiti“): Schritte im Meldeformular, Hinweis für die Leitung im Versicherungsabschnitt, Hilfe
+// Backlog 662–664 (30.10.2026, Blickwinkel „Marder hat Kabel/Schläuche angefressen“): Schritte im Meldeformular, Hinweis Versicherungsschutz für die Leitung, Hilfe
 // Backlog 294 (Blickwinkel „Fahrer verliert unterwegs Fahrzeugschlüssel oder Fahrzeugschein“): Hinweise im Meldeformular + Hilfe-Abschnitt; reine Information, keine Frist
 // Backlog 295 (Blickwinkel „Falsch getankt – AdBlue im Dieseltank“): Hinweise im Meldeformular + Hilfe-Abschnitt; reine Information, keine Frist, keine Literangabe
 // Backlog 651/652 (Blickwinkel „Falsch getankt – AdBlue im Dieseltank“, 30.10.2026): Warnzeile bei passender Fahrbereitschaft, Hinweis für die Leitung im Versicherungsabschnitt

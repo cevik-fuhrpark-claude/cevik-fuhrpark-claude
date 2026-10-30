@@ -27021,7 +27021,7 @@ await test('Backlog 653–655 (Blickwinkel „Parkschaden – Unfallgegner unbek
   ok(app.includes("const hitrun = !wild && HITRUN_HINT.test($('#d').value); $('#hitrun').hidden = !hitrun; $('#acc').hidden = wild || hitrun || !ACC_HINT.test($('#d').value);"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor');
   ok(app.indexOf("$('#hitrun').hidden = !hitrun") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun',/.test(app), 'Reihenfolge direkt nach Unfall/Wildunfall');
-  ok(app.includes("'custdmg', 'hitrun', 'vandal', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen (Backlog 661: Vandalismus direkt dahinter)');
+  ok(app.includes("'custdmg', 'hitrun', 'vandal', 'marten', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen (Backlog 661/664: Vandalismus, Marder direkt dahinter)');
   ok(app.includes("const hitrunNoRef = !theftNoRef && HITRUN_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimhitrun'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt zum Diebstahl-Hinweis');
   // Datenqualität (655)
   const hr = await newCase({ description: 'Parkschaden über Nacht, Verursacher unbekannt' });
@@ -27066,6 +27066,28 @@ await test('Backlog 659–661 (Blickwinkel „Vandalismus über Nacht – Reifen
   const c = await newCase({ description: 'Vandalismus: zwei Reifen zerstochen, Graffiti am Auflieger' });
   eq((await U.fleet.put(`/api/cases/${c}/claim`, { insurer: 'Kasko AG', reported_on: bDayOff(0), evidence: 'Schadenmeldung', police_station: 'PP Dortmund', police_ref: 'AZ 659/26' })).status, 200);
   const g = (await U.fleet.get(`/api/cases/${c}`)).data; ok(re.test(g.case ? g.case.description : g.description), 'Beschreibung erkannt');
+});
+
+await test('Backlog 662–664 (Blickwinkel „Marder hat Kabel/Schläuche angefressen“): Meldeformular zeigt Schritte (Motor aus, ohne Werkzeug nachsehen, sonst „nicht fahrbereit“, Fotos, nicht selbst flicken, Abstellort), Versicherungsabschnitt ohne Versicherungsfall nennt die Prüfung laut Vertrag; Hilfe DE/UK/EN; „Bremsscheibe angefressen“ löst nichts aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const MARTEN_HINT = \/(.+)\/i;/m); ok(m, 'MARTEN_HINT auf Modulebene'); eq((app.match(/const MARTEN_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Marderschaden im Motorraum', 'Marder hat die Dämmmatte zerlegt', 'Steinmarder unter dem Fahrerhaus', 'Kabel am Motor angefressen', 'Kühlwasserschlauch über Nacht angefressen', 'Luftschlauch durchgebissen', 'Zündkabel zerbissen', 'Isolierung angeknabbert', 'Nager im Motorraum', 'marten damage in the engine bay', 'Rodents chewed the wiring', 'chewed through the coolant hose', 'cables chewed overnight', 'hose bitten through', 'Куниця погризла кабелі', 'КУНИЦЯ під кабіною', 'гризуни в моторному відсіку', 'перегризли шланг', 'куница погрызла провода', 'перегрызли кабель']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Bremsscheibe angefressen', 'Rost hat den Rahmen angefressen', 'Kabel defekt', 'Kühlwasserschlauch undicht', 'Reifen platt', 'Der Fahrer hat gefressen', 'chewing gum on the seat', 'lines on the road', 'кабель пошкоджено', 'шланг тече', 'Marktplatz Dortmund']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.marten_hint_title, 'Titel ' + l);
+    const st = S.marten_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(st[0].includes(S.driveable) && st[0].includes(S.drv_nicht_fahrbereit), 'Schritt 1 nennt die Auswahl im Formular ' + l);
+    ok(!/\d+\s*(Tag|day|дн|Stunde|hour|год|€|EUR|km)/i.test(S.marten_hint_steps), 'keine erfundene Frist/Zahl ' + l);
+    ok(S.help_marten_t && S.help_marten_s.includes(S.marten_hint_steps) && S.help_marten_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+    ok(S.claim_marten_hint.includes('{b}'), 'Versicherungs-Hinweis nennt den Knopf ' + l);
+  }
+  ok(app.includes('<div id="marten" class="panel" hidden role="status">'), 'Panel #marten');
+  ok(app.includes("$('#marten').hidden = !MARTEN_HINT.test($('#d').value);") && app.indexOf("$('#marten').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'warnlight', 'marten', 'gelfuel'"), 'Reihenfolge nach Warnleuchte');
+  ok(app.includes("const martenNoClaim = !cl && MARTEN_HINT.test(desc || '');") && app.includes('data-claimmarten'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
 });
 
 await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen – letzter Arbeitstag“): Deaktivieren eines Fahrers nennt offene Meldungen, Bußgeldvorgänge ohne Bestätigung und die letzte erfasste Auslesung der Fahrerkarte; Fahrerakte „ausgeschieden“ nennt die Auslesung; am letzten Tag ausgelesen → kein Hinweis; Hilfe-Checkliste DE/UK/EN', async () => {
