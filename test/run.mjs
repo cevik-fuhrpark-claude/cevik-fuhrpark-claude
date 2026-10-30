@@ -27179,7 +27179,7 @@ await test('Backlog 674–676 (Blickwinkel „Personen im Laderaum entdeckt – 
   }
   ok(app.includes('<div id="stow" class="panel" hidden role="status">'), 'Panel #stow');
   ok(app.includes("$('#stow').hidden = !STOW_HINT.test($('#d').value);") && app.indexOf("$('#stow').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("'storm', 'bridge', 'stow', 'roofice', 'trlr'"), 'Reihenfolge nach Brückenanprall (Backlog 678: Eis/Schnee auf dem Dach direkt dahinter)');
+  ok(app.includes("'storm', 'bridge', 'fixobj', 'stow', 'roofice', 'trlr'"), 'Reihenfolge nach Brückenanprall (Backlog 678: Eis/Schnee auf dem Dach dahinter; seit Backlog 735 fremde Sache angefahren dazwischen)');
   ok(app.includes("const stowNoRef = !theftNoRef && !hitrunNoRef && !vandalNoRef && !bridgeNoRef && STOW_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimstow'), 'Hinweis nur ohne Aktenzeichen, nicht doppelt');
   ok(app.includes("'leak', 'stow', 'custdmg'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -27467,6 +27467,27 @@ await test('Backlog 733–734 (Sonde über vorhandene Muster, 30.10.2026 17:15):
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].roadchk_hint_steps.includes('BALM') && STRINGS[l].help_roadchk_t.includes('BALM') && STRINGS[l].help_roadchk_t.includes('BAG'), 'BALM (früher BAG) genannt ' + l); }
+});
+
+await test('Backlog 735–736 (Blickwinkel „Schranke, Poller, Laterne, Zaun, Verkehrsschild oder Leitplanke angefahren – fremde Sache beschädigt“): Meldeformular zeigt eigene Schritte statt der allgemeinen Unfall-Hinweise (anhalten/sichern, Gefahr melden, nicht ohne Meldung weiterfahren – Eigentümer bzw. Polizei, Zettel reicht nicht, Fotos/Ansprechstelle, kein Schuldanerkenntnis, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN ohne Frist; Wildunfall/Unfallflucht/Brücke/Kunde gehen vor; „Rolltor“, „Seitenwand“, „Mast vom Kran“, „Schranke geht nicht auf“, Verneinungen nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const FIXOBJ_HINT = \/(.+)\/i;$/m); ok(m, 'FIXOBJ_HINT auf Modulebene'); eq((app.match(/const FIXOBJ_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Schranke angefahren', 'Beim Wenden Laterne angefahren', 'Habe beim Rangieren einen Poller umgefahren', 'Zaun umgefahren', 'Laternenmast gestreift', 'Verkehrsschild umgefahren', 'Leitplanke gestreift', 'Ampel umgefahren', 'Zapfsäule angefahren', 'Hoftor angefahren', 'Rückwärts gegen den Zaun gefahren', 'gegen einen Pfosten gefahren', 'Ich habe die Schranke an der Ausfahrt beschädigt', 'Schranke beim Ausfahren abgerissen', 'an der Tankstelle gegen die Zapfsäule gestoßen', 'Hauswand gestreift', 'hit a barrier', 'hit a bollard', 'reversed into a fence', 'clipped a lamp post', 'knocked down a road sign', 'damaged the fuel pump', 'врізався в шлагбаум', 'зачепив стовп', 'збив дорожній знак', 'наїхав на огорожу', 'врезался в столб', 'задел забор']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Schranke geht nicht auf', 'Schranke defekt', 'Schranke ist auf den Auflieger gefallen', 'Schranke hat Plane beschädigt', 'keine Schranke angefahren', 'Schranke nicht angefahren', 'Seitenwand beschädigt', 'Rolltor beschädigt', 'Rolltor angefahren', 'Kennzeichenschild beschädigt', 'Türpfosten verbogen', 'Mast vom Kran beschädigt', 'Spiegel abgefahren', 'Bordstein angefahren', 'Reifen am Bordstein beschädigt', 'sign the paper', 'gate code wrong', 'walls of the trailer damaged', 'hit by a barrier', 'ворота не відкриваються', 'знак аварійної зупинки відсутній', 'Stromkasten im Fahrerhaus defekt']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.fixobj_hint_title, 'Titel ' + l);
+    const st = S.fixobj_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.fixobj_hint_steps) && !/\d/.test(S.help_fixobj_s), 'keine Zahl/Frist ' + l);
+    ok(st[3].includes(S.driveable) && st[3].includes(S.drv_nicht_fahrbereit) && st[3].includes(S.drv_unbekannt), 'Schritt 4 nennt Feld und Auswahl wörtlich ' + l);
+    ok(S.help_fixobj_t && S.help_fixobj_s.includes(S.fixobj_hint_steps) && S.help_fixobj_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="fixobj" class="panel" hidden role="status">'), 'Panel #fixobj');
+  ok(app.includes("{ const fixobj = !wild && !hitrun && !bridge && $('#custdmg').hidden && FIXOBJ_HINT.test($('#d').value); $('#fixobj').hidden = !fixobj; $('#acc').hidden ||= fixobj; }") && app.indexOf("$('#custdmg').hidden = ") < app.indexOf("$('#fixobj').hidden") && app.indexOf("$('#acc').hidden = wild") < app.indexOf("$('#fixobj').hidden") && app.indexOf("$('#fixobj').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung nach Unfall/Kunde, ersetzt die allgemeinen Unfall-Hinweise, vor bindFormDraft');
+  ok(app.includes("'storm', 'bridge', 'fixobj', 'stow'"), 'Reihenfolge nach Brückenanprall');
+  ok(helpAfter(app, 'fixobj', 'injury'), 'Hilfe-Abschnitt für meldende Rollen nach Arbeitsunfall');
 });
 
 await test('Backlog 731–732 (Blickwinkel „Jemand verletzt sich bei der Arbeit am Fahrzeug – Be-/Entladen, Kuppeln, Plane, Ladebordwand“): Meldeformular zeigt eigene Schritte (Erste Hilfe/Notruf, Gefahrenstelle sichern, Vorgesetzte direkt informieren, Verletzte fahren nicht weiter, keine Angaben zur Verletzung/Gesundheit/Namen in der Meldung, nur Fahrzeugmangel mit Fotos, Auswahl „Weiß nicht“); „Arbeitsunfall“ zeigt nicht die Verkehrsunfall-Schritte; Hilfe DE/UK/EN ohne Frist; Verneinungen, Reifen-„Verletzung“, „Verletzungsgefahr“, „Palette vom Auflieger gefallen“ nicht', async () => {

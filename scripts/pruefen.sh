@@ -216,6 +216,7 @@ UI-Wespennest: eigene Schritte bei Wespen-/Hornissennest am Spiegel und Wespen i
 UI-Feststellbremse: eigene Schritte bei Feststellbremse hält nicht/Lkw weggerollt statt Bremsen-Schritte, „löst nicht“ nur Bremse, Hilfe, DE/UK/EN 390/820/1366|ui-feststellbremse.py|/tmp/cfp-feststellbremse.log
 UI-Gaspedal: eigene Schritte bei klemmendem Gaspedal/Fußmatte unter dem Pedal, keine Bremsen-/Feststellbremsen-Schritte, „Gaspedal repariert“ nicht, Hilfe, DE/UK/EN 390/820/1366|ui-gaspedal.py|/tmp/cfp-gaspedal.log
 UI-Arbeitsunfall: eigene Schritte bei Verletzung bei der Arbeit am Fahrzeug, keine Verkehrsunfall-Schritte, Verkehrsunfall mit Verletzten bleibt Unfall, „niemand verletzt“ nicht, Hilfe, DE/UK/EN 390/820/1366|ui-arbeitsunfall.py|/tmp/cfp-arbeitsunfall.log
+UI-Fremde-Sache: eigene Schritte bei angefahrener Schranke/Poller/Laterne/Zaun/Schild/Leitplanke statt allgemeiner Unfall-Hinweise, Brücke/Unfall ohne Gegenstand getrennt, „Schranke geht nicht auf“ nicht, Hilfe, DE/UK/EN 390/820/1366|ui-fremde-sache.py|/tmp/cfp-fremde-sache.log
 UI-Ungeziefer: eigene Schritte bei Mäusen/Bettwanzen/Ungeziefer im Fahrerhaus, keine Marder-Schritte, Ungeziefer in der Ladung nicht, Hilfe, DE/UK/EN 390/820/1366|ui-ungeziefer.py|/tmp/cfp-ungeziefer.log
 UI-Fahrer letzter Arbeitstag: Hinweise beim Deaktivieren (offene Meldungen, Fahrerkarte), Hilfe-Abschnitt, DE/UK/EN 390/820/1366|ui-fahrer-letzter-tag.py|/tmp/cfp-fahrer-letzter-tag.log
 UI-Reifenpanne-Hinweis im Meldeformular und Hilfe|ui-reifenpanne.py|/tmp/cfp-reifenpanne.log
