@@ -1995,7 +1995,11 @@ const STOP_WORK = /(?<![a-z])(?:stopp(?:ed|s)|quit(?:s|ted)?|ceased?)\s+(?:worki
 // Backlog 772: UK/RU mit vorangestelltem Prädikat („не працює кондиціонер“, „не работает автономка“, „не працюють двірники“) – der Gegenstand (1–4 Wörter bis
 // Satzzeichen/Präposition/Bindewort) wird hinter einem Trenner (⁘, kein Satzende) zusätzlich in Normalstellung angehängt („… ⁘ кондиціонер не працює“).
 const PRED_FIRST = /(?<![а-яіїєґё])(не\s+(?:працю[а-яіїєґ]*|работа[а-яё]*|функціону[а-яіїєґ]*|функциониру[а-яё]*))((?:\s+[^\s.,;!?:()]+){1,4}?)(?=\s*(?:$|[.,;!?:()\n])|\s+(?:і|й|та|и|а|але|но|бо|тому|потому|після|после|з|із|зі|с|со|вже|уже|ще|еще|ещё|в|у|на|при|під|под|від|от|до|коли|когда|хоча|хотя|знову|снова|опять)(?![а-яіїєґё]))/gi;
-const recurFix = (s) => String(s || '').replace(STOP_WORK, 'not working').replace(PRED_FIRST, (m, v, subj) => m + ' ⁘' + subj + ' ' + v).split(/([.;!?\n]+)/).map((part) => {
+// Backlog 773: Werkstatt-/Formularsprache „ohne Funktion“, „keine Funktion“, „funktionslos“, „tut (es) nicht (mehr)“, „ohne/kein Bild“, „Klimaanlage: geht nicht“,
+// EN „inoperative“, „out of order“, „no function“, „not functioning“, „does nothing“, „u/s“, UK/RU „не функціонує/функционирует“ werden wie „funktioniert nicht“/„not working“/„не працює“ gelesen
+const NO_FUNC = /(?<![a-zäöüß])(?:(?:ohne|keine)\s+funktion|funktionslos|(?:ohne|kein)\s+bild|tut\s+(?:es\s+|er\s+|sie\s+)?nicht(?:\s+mehr)?(?!\s+weh))(?![a-zäöüß])|(?<![a-z])(?:inoperative|out\s+of\s+order|no\s+function|not\s+functioning|does\s+nothing|u\/s)(?![a-z])|(?<![а-яіїєґё])не\s+(?:функціону[а-яіїєґ]*|функциониру[а-яё]*)/gi;
+const noFunc = (s) => s.replace(/(?<=[a-zäöüß])\s*:\s+(?=[a-zäöüß])/gi, ' ').replace(NO_FUNC, (m) => (/^[a-zäöüß]/i.test(m) ? (/^(?:ohne|kein|funktionslos|tut)/i.test(m) ? 'funktioniert nicht' : 'not working') : (/функциониру/i.test(m) ? 'не работает' : 'не працює')));
+const recurFix = (s) => noFunc(String(s || '').replace(STOP_WORK, 'not working')).replace(PRED_FIRST, (m, v, subj) => m + ' ⁘' + subj + ' ' + v).split(/([.;!?\n]+)/).map((part) => {
   const all = RECUR_MARK.test(part);
   return part.replace(FIX_WORD, (w, off) => (all || FIX_NEG.test(part.slice(0, off)) || FIX_PLAN.test(part.slice(0, off)) || FIX_PLAN_AFTER.test(part.slice(off + w.length)) || /(?:ти|ть|тися|ться)$/i.test(w) ? (/^\S*wieder/i.test(w) || /^(?:schon|immer)\s/i.test(w) ? '' : '◦') : w));
 }).join('');
