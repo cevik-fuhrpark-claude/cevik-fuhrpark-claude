@@ -333,6 +333,16 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 }
 .print-only { display: none; }
 @media (max-height: 420px) { .topbar { position: static; } }
+/* Backlog 790 (Blickwinkel „Fahrer hält das Handy quer im Fahrerhaus“): im Querformat am Handy belegte die Tabbar 65 px von ≈ 300 px sichtbarer Höhe
+   (mit Adressleiste über 20 %). Hier Symbol neben der Beschriftung, Melden-Punkt ohne Überstand: ≈ 46 px; Hochformat, Tablet und PC unverändert */
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 899px) {
+  html { scroll-padding-bottom: 64px; }
+  body { padding-bottom: calc(max(64px, 2.5rem + 24px) + env(safe-area-inset-bottom)); }
+  .tabbar a { flex-direction: row; gap: 6px; min-height: 44px; padding: 3px 4px; }
+  .tabbar a > span:last-child { text-align: start; -webkit-line-clamp: 2; }
+  .tabbar a.report span.dot { width: 36px; height: 36px; margin-top: 0; box-shadow: none; flex: none; }
+  .tabbar a svg { flex: none; }
+}
 /* Backlog 567: min(280px, 100%) – bei Browser-Zoom 200 % (≈ 180 CSS-px Breite) schob die 280-px-Spalte das Meldeformular seitlich aus dem Bild */
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 12px; } .grid2 > .panel { margin: 0; }
 /* [CLAUDE] QR-Code für Einladungslinks: feste Schwarz/Weiß-Darstellung, gut scanbar */

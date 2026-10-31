@@ -28728,6 +28728,21 @@ await test('Backlog 789 (Blickwinkel „Werkstatt-Tablet mit fremder Sprache (UK
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-anmeldeseite-sitzung.py|'), 'UI-Skript eingetragen');
 });
 
+await test('Backlog 790 (Blickwinkel „Fahrer hält das Handy quer im Fahrerhaus“): im Querformat am Handy ist die Tabbar kompakt (Symbol neben Beschriftung, Melden-Punkt ohne Überstand, Tippfläche ≥ 44 px, Platz unter dem Inhalt passend); Hochformat/Tablet/PC unverändert; UI-Prüfung `ui-querformat.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const q = '@media (orientation: landscape) and (max-height: 500px) and (max-width: 899px) {';
+  const i = css.indexOf(q); ok(i > 0, 'Querformat-Regel vorhanden');
+  const block = css.slice(i, css.indexOf('\n}', i));
+  ok(/\.tabbar a \{ flex-direction: row;[^}]*min-height: 44px;/.test(block), 'Tabs nebeneinander, mind. 44 px');
+  ok(/\.tabbar a\.report span\.dot \{[^}]*margin-top: 0;/.test(block), 'Melden-Punkt ragt nicht über die Leiste');
+  ok(/body \{ padding-bottom: calc\(max\(64px/.test(block) && block.includes('scroll-padding-bottom: 64px'), 'Abstand unter dem Inhalt passend zur kompakten Leiste');
+  // Die hohe Tabbar (Hochformat) bleibt die Grundregel
+  ok(/\.tabbar a \{ display: flex; flex-direction: column;[^}]*min-height: 60px;/.test(css), 'Hochformat unverändert');
+  ok(css.indexOf('@media (min-width: 900px) {') > 0 && !block.includes('220px'), 'Seitenleiste ab 900 px unberührt');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-querformat.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
