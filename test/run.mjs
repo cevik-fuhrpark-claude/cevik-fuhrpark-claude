@@ -27541,6 +27541,35 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 758 (Sonde über vorhandene Muster, 31.10.2026 03:15): Fehlgriffe behoben – „стяжний ремінь порвався“ ist kein Sicherheitsgurt, „brakes overheating“/„гальма перегріваються“ kein Motor, „landing gear stuck“ kein Getriebe; neu erkannt: „Kunde hat Lkw beschädigt“, „клієнт пошкодив машину“ → Schaden beim Kunden; „скол на лобовому“ → Glas; „Mäuse im Lkw“ → Ungeziefer; „люфт керма“ → Lenkung; „clutch won\'t disengage“ → Getriebe/Kupplung; „Kilometerzähler steht“, „датчик палива не працює“ → Anzeige; „вантажівку обікрали“ → Diebstahl; „двері не замикаються“, „роллета заклинила“, „Ladebordwand hängt schief“ → Türen/Ladebordwand; „бічний захист відірвався“ → lose Teile; „trailer temperature too high“, „температура в причепі висока“ → Kühlaggregat; „low oil pressure“, „тиск масла низький“ → Warnleuchte; „глушник гуркотить“ → Auspuff; „лиса резина“ → Reifen; „піднімна вісь не піднімається“ → Federung; „Königszapfen verschlissen“ → Kupplung; „дзеркало збили“ → Spiegel; „Gurt klemmt“ → Sitz/Gurt; „Motor geht aus“, „помилка AdBlue“ → Motor; „Rad blockiert“, „колесо заклинило“ → Bremse; Reparaturvermerke und Alltägliches nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    CUSTDMG_HINT: [['Kunde hat Lkw beschädigt', 'customer damaged the truck', 'клієнт пошкодив машину'], ['Kunde hat Lkw beschädigt, wurde repariert', 'Kunde hat angerufen', 'Kunde hat Ware beschädigt gemeldet', 'customer was happy', 'клієнт пошкодив машину, вже відремонтували']],
+    GLASS_HINT: [['скол на лобовому', 'лобове тріснуло', 'лобовое треснуло'], ['лобове замінили', 'лобовий вітер']],
+    PEST_HINT: [['Mäuse im Lkw', 'Ratten im Anhänger'], ['keine Mäuse im Lkw']],
+    STEER_HINT: [['люфт керма', 'люфт руля'], ['люфт керма усунули', 'люфт']],
+    GEAR_HINT: [['clutch won\'t disengage', 'не включается передача'], ['clutch released', 'не включается свет', 'landing gear stuck', 'landing gear won\'t wind up']],
+    DASH_HINT: [['Kilometerzähler steht', 'odometer not working', 'датчик палива не працює'], ['Kilometerzähler', 'Kilometerzähler steht bei 120000', 'датчик палива']],
+    THEFT_HINT: [['вантажівку обікрали', 'нас обокрали'], ['не обікрали', 'обікрали магазин']],
+    DOOR_HINT: [['двері не замикаються', 'роллета заклинила', 'Ladebordwand hängt schief'], ['двері не замикаються, відремонтували', 'двері зачинені', 'Ladebordwand hängt schief, repariert']],
+    LOOSE_HINT: [['бічний захист відірвався', 'боковая защита оторвалась'], ['бічний захист замінили']],
+    REEFER_HINT: [['trailer temperature too high', 'Carrier unit fault', 'температура в причепі висока'], ['trailer temperature fine', 'trailer temp ok', 'температура в причепі нормальна']],
+    WARNLIGHT_HINT: [['low oil pressure', 'тиск масла низький', 'низкое давление масла'], ['тиск масла нормальний', 'oil pressure ok']],
+    EXHAUST_HINT: [['глушник гуркотить', 'выхлоп громко ревет'], ['глушник замінили']],
+    TYRE_HINT: [['лиса резина', 'шини зовсім лисі'], ['лиса гора', 'резина нова']],
+    SUSP_HINT: [['піднімна вісь не піднімається', 'подъемная ось не поднимается'], ['піднімна вісь піднімається']],
+    COUPLING_HINT: [['Königszapfen verschlissen', 'kingpin worn', 'шкворень зношений'], ['Königszapfen', 'kingpin greased', 'шкворень змащений']],
+    MIRROR_HINT: [['дзеркало збили', 'зеркало сбили'], ['дзеркало', 'дзеркало збили, замінили']],
+    SEAT_HINT: [['Gurt klemmt', 'Sicherheitsgurt rollt nicht auf'], ['Gurt klemmt in der Ratsche', 'Gurt', 'стяжний ремінь порвався']],
+    LASHGEAR_HINT: [['стяжний ремінь порвався', 'стяжной ремень порвался'], ['стяжний ремінь']],
+    ENGINE_HINT: [['Motor geht aus', 'Motor geht immer wieder aus', 'Motor geht während der Fahrt aus', 'помилка AdBlue', 'ошибка адблю', 'engine overheating'], ['Motor geht aus beim Abstellen, normal', 'Motor geht aus, wenn ich die Zündung ausschalte', 'Motor geht automatisch aus', 'Motor geht an', 'AdBlue getankt', 'помилка AdBlue, усунули', 'brakes overheating', 'гальма перегріваються']],
+    BRAKE_HINT: [['Rad blockiert', 'Achse blockiert', 'wheel locked up', 'axle locked', 'колесо заклинило', 'brakes overheating'], ['Rad', 'wheel lock', 'wheel locks fitted', 'колесо', 'Rad blockiert, repariert']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+  ok(g('COUPLING_HINT').test('landing gear stuck'), 'Stützwinde bleibt Kupplung/Stützen');
+});
 await test('Backlog 757 (Sonde über vorhandene Muster, 31.10.2026 02:15): EN/UK-Gegenstücke zu bereits erkannten deutschen Formulierungen – „vehicle registration missing“, „свідоцтво про реєстрацію загубили“ → Verlust; „radiator leaking“, „diesel smell in cab“, „oil sump cracked“, „пробив піддон“, „Ölwanne aufgerissen“ → Undichtigkeit; „belt snapped“, „truck won\'t accelerate“, „не реагує на газ“ → Motor; „starter not turning“, „стартер не крутить“ → Startproblem; „дріт перетерся“ → Elektrik; „дзеркало хитається“ → Spiegel; „seat belt broken“ bleibt Sitz/Gurt, Fund-/Reparaturvermerke nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
