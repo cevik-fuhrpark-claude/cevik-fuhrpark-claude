@@ -46,6 +46,8 @@ with sync_playwright() as p:
         q.evaluate(JS,['PATCH','/api/me',{'language':'de'},None]); q.reload(); q.wait_for_selector('#main')
         # 2) Master-Eingang: Knöpfe und Rückfrage
         q.goto(B+'/#/more'); q.goto(B+'/#/master'); q.wait_for_selector('[data-dec][data-st="erledigt"]')
+        # 31.10.2026: unter Last kam der Knopf „gesehen“ einen Augenblick später (bounding_box None) – beide abwarten
+        q.wait_for_selector('[data-dec][data-st="gesehen"]'); q.wait_for_load_state('networkidle')
         bx=[q.locator(sel).first.bounding_box() for sel in ['[data-dec][data-st="gesehen"]','[data-dec][data-st="erledigt"]']]
         check(all(b and b['height']>=24 and b['width']>=24 for b in bx),f'{w}px: Knöpfe ≥ 24 px {[(round(b["width"]),round(b["height"])) for b in bx]}')
         ev=q.locator('[data-dec][data-st="erledigt"]').first.get_attribute('data-dec')

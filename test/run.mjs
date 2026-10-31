@@ -28886,6 +28886,23 @@ await test('Backlog 798 (Blickwinkel „Fahrer im Funkloch“): Meldung, Abfahrt
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-funkloch-senden-zeitlimit.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 799 (Blickwinkel „Werkstatt-Tablet im Funkloch der Halle“): Befehle am Vorgang mit Zeitlimit (SEND_TIMEOUT_MS) – ohne Antwort gilt es als Netzabbruch (Eingaben bleiben), gleiche command_id beim erneuten Speichern → duplicate; UI-Prüfung `ui-befehl-ohne-antwort.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const r = await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }, { timeoutMs: SEND_TIMEOUT_MS });"), 'Befehl mit Zeitlimit');
+  ok(app.includes("if (err.offline) { S.cmdOffline = { key, at: Date.now() }; actDraftSave(c.id, fAct); }"), 'Zeitüberschreitung → Netzabbruch-Zweig (Entwurf gesichert)');
+  ok(app.includes("note: $('#n').value || null }, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 799") && app.includes("} catch (err) { if (err.offline) draft.save(); toast(err.offline ? `${err.message} ${t('form_draft_kept')}` : err.message, true); }"), 'Kontrolle nach Reparatur mit Zeitlimit, Entwurf bleibt');
+  // Server: derselbe Befehl (command_id) erneut → keine zweite Buchung
+  const { U, cmd, toRepair } = await freshWorld();
+  const id = await toRepair();
+  const v = (await U.ws.get(`/api/cases/${id}`)).data.case.version;
+  const body = { action: 'record_work', command_id: 'oa-799-1', expected_version: v, payload: { hours: 1.5, description: 'Bremsbeläge gewechselt' } };
+  const a = await U.ws.post(`/api/cases/${id}/commands`, body); eq(a.status, 200, JSON.stringify(a.data));
+  const b = await U.ws.post(`/api/cases/${id}/commands`, body); ok(b.status < 300 && b.data.duplicate, 'erneut gesendet: duplicate ' + JSON.stringify(b.data));
+  eq((await U.ws.get(`/api/cases/${id}`)).data.work.length, 1, 'genau eine Arbeitszeit');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-befehl-ohne-antwort.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

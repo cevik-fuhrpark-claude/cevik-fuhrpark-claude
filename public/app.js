@@ -2752,12 +2752,14 @@ async function viewCase(id) {
   // Befehlskennung je Inhalt: wiederholtes Absenden desselben Eintrags nach verlorener Antwort (Funkloch) nutzt dieselbe command_id –
   // der Server meldet dann „duplicate“ statt doppelt zu buchen (20.10.2026: 2 × 1,5 h Arbeitszeit, doppelte Lagerentnahme); nach Erfolg verworfen
   // opts.formAction: Formular, aus dem der Befehl kommt (kombinierter Knopf, Backlog 629); opts.next(r): Folgeschritt statt Neuladen
+  // Backlog 799 (Blickwinkel „Werkstatt-Tablet im Funkloch der Halle“): Zeitlimit wie Meldungen (SEND_TIMEOUT_MS) – ohne Antwort blieb der
+  // Knopf ohne Ende gesperrt; jetzt gilt es als Netzabbruch (Eingaben bleiben, gleiche command_id beim erneuten Speichern → „duplicate“)
   const cmd = async (action, note, payload = {}, opts = {}) => {
     const fAct = opts.formAction || action;
     const key = JSON.stringify([c.id, action, note ?? null, payload]);
     // nur kurz nach dem Fehlschlag wiederverwenden: am geteilten Tablet bucht später ein anderer Mechaniker evtl. denselben Inhalt (23.10.2026)
     const commandId = S.pendCmd && S.pendCmd.key === key && Date.now() - S.pendCmd.at < 10 * 60000 ? S.pendCmd.id : uid(); S.pendCmd = { key, id: commandId, at: Date.now() };
-    try { const r = await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }); if (S.cmdOffline && S.cmdOffline.key === key) S.cmdOffline = null; S.pendCmd = null; if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true); else if (r && r.external_workshop) toast(t('ext_ws_hint')); else if (r && r.no_recipients) toast(t('no_recipients_warn'), true); else toast(r && r.duplicate ? t('cmd_duplicate') : '✓'); if (S.openAct && S.openAct.action === fAct) S.openAct = null; actDraft(c.id).clear(); if (opts.next) return opts.next(r); viewCase(c.id); }
+    try { const r = await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }, { timeoutMs: SEND_TIMEOUT_MS }); if (S.cmdOffline && S.cmdOffline.key === key) S.cmdOffline = null; S.pendCmd = null; if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true); else if (r && r.external_workshop) toast(t('ext_ws_hint')); else if (r && r.no_recipients) toast(t('no_recipients_warn'), true); else toast(r && r.duplicate ? t('cmd_duplicate') : '✓'); if (S.openAct && S.openAct.action === fAct) S.openAct = null; actDraft(c.id).clear(); if (opts.next) return opts.next(r); viewCase(c.id); }
     // Konflikt: Befehl wurde NICHT ausgeführt – Eingaben (z. B. Kommentartext) beim Neuladen behalten (17.10.2026: Text war nach 409 weg)
     // cost_approval_open: Server hat die Kostengrenze eben markiert (Version +1) – neu laden, damit „Kosten freigeben“ erscheint (20.10.2026)
     // Schichtwechsel 22.10.2026: allgemeines „bitte neu laden“ führte zum Neuladen im Browser – dann waren die Eingaben weg. Die App lädt selbst
@@ -3449,7 +3451,7 @@ async function viewInspection(caseId) {
     e.preventDefault();
     const key = form.rk.value || uid();
     try {
-      const r = await api('POST', '/api/inspections', { kind: 'nach_reparatur', case_id: caseId, request_key: key, checklist_version: S.meta.checklist_version || undefined, items: collectChecklist(form), odometer_km: $('#km').value || null, note: $('#n').value || null });
+      const r = await api('POST', '/api/inspections', { kind: 'nach_reparatur', case_id: caseId, request_key: key, checklist_version: S.meta.checklist_version || undefined, items: collectChecklist(form), odometer_km: $('#km').value || null, note: $('#n').value || null }, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 799
       draft.clear();
       toast(`${t('check_saved')}${r.followups.length ? ' · ' + r.followups.map((f) => f.case_no).join(', ') : ''}${kmWarn(r)}`, !!r.km_rejected);
       location.hash = '#/cases/' + caseId;
