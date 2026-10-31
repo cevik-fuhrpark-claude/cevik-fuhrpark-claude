@@ -27541,6 +27541,19 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 771 (Sonde Hupe UK/RU): „гудок не працює/не работает/сломался“, „сигнал зламався“, „не працює сигнал“, „не работает гудок“, „не працює звуковий сигнал“ zeigen den Armaturen-/Hupen-Hinweis; Blinker/Stopplicht/Warnblinker und Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", c) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const t = (x) => noFixed(recurFix(x));
+  const r = g('DASH_HINT'), li = g('LIGHTS_HINT');
+  for (const x of ['гудок не працює', 'гудок не работает', 'сигнал зламався', 'гудок сломался', 'не працює сигнал', 'не работает гудок', 'не працює звуковий сигнал', 'гудок заїло', 'клаксон не працює', 'сигнал не працює']) ok(r.test(t(x)), 'Hinweis: ' + x);
+  for (const x of ['не працює сигнал поворотника', 'сигнал поворотника не працює', 'не працює стоп-сигнал', 'сигнал аварійки не працює', 'гудок не работает, починили', 'гудки машин']) ok(!r.test(t(x)), 'kein Hinweis: ' + x);
+  for (const x of ['не працює сигнал поворотника', 'сигнал поворотника не працює', 'не працює стоп-сигнал']) ok(li.test(x), 'Licht-Hinweis bleibt: ' + x);
+});
 await test('Backlog 770 (Sonde AdBlue-Defekt): „AdBlue-Fehler“, „AdBlue-Pumpe defekt“, „AdBlue-System funktioniert nicht“, „AdBlue system not working/stopped working“, „AdBlue pump faulty“, „AdBlue error“, „система AdBlue не працює“, „насос AdBlue зламався“ zeigen die Motor-Schritte; „ohne Fehler“, „nachgefüllt“, Reparaturvermerk danach, Fehlbetankung/eingefroren nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
