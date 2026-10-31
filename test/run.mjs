@@ -27541,6 +27541,23 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 765 (Folge aus 764): Reparaturvermerk erkennt auch „ausgetauscht“, „ausgewechselt“, „instandgesetzt“, „поміняли“, „полагодили“, „поменяли“, „починили“ – wiederkehrend („obwohl ausgetauscht“, „знову, хоча полагодили“) und geplant („треба поміняти“, „нужно починить“) weiter mit Hinweis', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const a = app.indexOf('const FIX_WORD'), b = app.indexOf("}).join('');", a) + 12;
+  const recurFix = new Function(app.slice(a, b) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", c) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const t = (x) => noFixed(recurFix(x));
+  const T = {
+    BATT_HINT: [['Batterie ist aufgebläht, wieder kaputt, obwohl ausgetauscht', 'Batterie ist aufgebläht, nicht ausgetauscht'], ['Batterie ist aufgebläht, ausgetauscht', 'Batterie ist aufgebläht, ausgewechselt']],
+    NOSTART_HINT: [['не заводиться, треба поміняти акумулятор', 'не заводится, нужно починить', 'не заводиться знову, хоча полагодили', 'не заводиться, не полагодили'], ['не заводиться, поміняли акумулятор', 'не заводиться, полагодили', 'не заводится, починили', 'не заводится, поменяли аккумулятор']],
+    TELEM_HINT: [['Navi kaputt, muss instandgesetzt werden'], ['Navi kaputt, instandgesetzt']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(t(x)), n + ': ' + x); for (const x of neg) ok(!r.test(t(x)), n + ' nicht: ' + x); }
+  ok(noFixed(recurFix('проблема починається зранку')) === 'проблема починається зранку', '„починається“ ist kein Reparaturvermerk');
+});
 await test('Backlog 764 (Folge aus 761/763, Sonde Reparaturvermerke): ältere Hinweise zu Geräten/Ausstattung blenden sich zentral über noFixed bei echtem Reparaturvermerk im Satz aus („Batterie ist platt, getauscht“, „Navi kaputt - replaced“, „не заводиться, відремонтували“, „Fensterheber geht nicht, funktioniert wieder“); wiederkehrend, nicht behoben, „muss getauscht werden“, „needs to be replaced“, „треба замінити“ und ein Vermerk vor dem Befund weiter mit Hinweis; geplante Reparatur („muss getauscht werden“, „wird morgen getauscht“, „needs to be replaced“, „will be fixed“, „треба замінити“, „нужно отремонтировать“) gilt auch für ältere Muster mit eigenem Reparaturvermerk-Ausschluss nicht mehr als erledigt; Bremse/Lenkung/Reifen ohne noFixed', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -27572,7 +27589,7 @@ await test('Backlog 764 (Folge aus 761/763, Sonde Reparaturvermerke): ältere Hi
   // Bestehende Prüffälle der 20 Hinweise: noFixed ändert kein Ergebnis
   const src = readFileSync(new URL(import.meta.url), 'utf8');
   let k = 0; const self0 = src.indexOf("await test('Backlog 764 "), self1 = src.indexOf("await test('Backlog 763 ");
-  for (const m of src.matchAll(/^\s+([A-Z_]+_HINT): (\[\[.*\]\]),?$/gm)) { if ((m.index > self0 && m.index < self1) || !SET.includes(m[1].replace(/_HINT$/, ''))) continue; let v; try { v = Function('return ' + m[2])(); } catch { continue; } const r = g(m[1]); for (const x of [...v[0], ...(v[1] || [])]) { k++; ok(r.test(recurFix(x)) === r.test(t(x)), m[1] + ' unverändert durch noFixed: ' + x); } }
+  for (const m of src.matchAll(/^\s+([A-Z_]+_HINT): (\[\[.*\]\]),?$/gm)) { if (m.index < self1 || !SET.includes(m[1].replace(/_HINT$/, ''))) continue; let v; try { v = Function('return ' + m[2])(); } catch { continue; } const r = g(m[1]); for (const x of [...v[0], ...(v[1] || [])]) { k++; ok(r.test(recurFix(x)) === r.test(t(x)), m[1] + ' unverändert durch noFixed: ' + x); } }
   ok(k > 100, 'Prüffälle gegengeprüft: ' + k);
   // noFixed lässt Texte ohne echten Reparaturvermerk unverändert
   for (const x of ['Navi kaputt', 'Reifen platt, nicht repariert', 'muss getauscht werden', 'needs to be fixed', 'треба замінити', 'not working again']) ok(noFixed(recurFix(x)) === recurFix(x), 'unverändert: ' + x);
@@ -27632,7 +27649,7 @@ await test('Backlog 761 (Sonde Reparaturvermerke, 31.10.2026 05:15): wiederkehre
   // Bestehende Prüffälle aller Hinweis-Tests: recurFix ändert nichts, wo kein wiederkehrender Mangel beschrieben ist
   const src = readFileSync(new URL(import.meta.url), 'utf8');
   let n = 0; const self0 = src.indexOf("await test('Backlog 761 "), self1 = src.indexOf("await test('Backlog 760 ");
-  for (const m of src.matchAll(/^\s+([A-Z_]+_HINT): (\[\[.*\]\]),?$/gm)) { if (m.index > self0 && m.index < self1) continue; let v; try { v = Function('return ' + m[2])(); } catch { continue; } const r = (() => { try { return g(m[1]); } catch { return null; } })(); if (!r) continue; for (const x of [...v[0], ...(v[1] || [])]) { if (/obwohl|trotz|wieder\s+nicht|again|still|although|знову|хоча|опять|хотя|nicht\s+(?:\S+\s+)?(?:repariert|getauscht|ersetzt)|not\s+(?:been\s+)?(?:fixed|replaced|repaired)|не\s+(?:відремонт|замін)|werden|lassen|needs?\s+to\s+be|will\s+be|треба|потрібно|нужно|надо/i.test(x)) continue; n++; ok(r.test(x) === r.test(recurFix(x)), m[1] + ' unverändert: ' + x); } }
+  for (const m of src.matchAll(/^\s+([A-Z_]+_HINT): (\[\[.*\]\]),?$/gm)) { if (m.index > self0 && m.index < self1) continue; let v; try { v = Function('return ' + m[2])(); } catch { continue; } const r = (() => { try { return g(m[1]); } catch { return null; } })(); if (!r) continue; for (const x of [...v[0], ...(v[1] || [])]) { if (/obwohl|trotz|wieder\s+nicht|again|still|although|знову|хоча|опять|хотя|nicht\s+(?:\S+\s+)?(?:repariert|(?:aus)?getauscht|ersetzt)|not\s+(?:been\s+)?(?:fixed|replaced|repaired)|не\s+(?:відремонт|замін|полагод|поміня)|werden|lassen|needs?\s+to\s+be|will\s+be|треба|потрібно|нужно|надо/i.test(x)) continue; n++; ok(r.test(x) === r.test(recurFix(x)), m[1] + ' unverändert: ' + x); } }
   ok(n > 500, 'Prüffälle der übrigen Hinweis-Tests gegengeprüft: ' + n);
   ok(recurFix('Bremse quietscht, repariert') === 'Bremse quietscht, repariert' && recurFix('working again, fixed') === 'working again, fixed', 'Reparaturvermerke bleiben unverändert');
 });
