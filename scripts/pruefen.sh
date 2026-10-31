@@ -376,6 +376,7 @@ UI-Hinweise Ausfall nach Vermerk, Fensterheber langsam, Anlasser/Spiegelheizung,
 UI-Hinweise UK/RU mit Reparaturvermerk: Gaspedal, Konturmarkierung, Ersatzrad, Ladeboden, Schmierung, Federung, Lenkung, Plane (Backlog 782–784)|ui-hinweis-reparatur-ukru.py|/tmp/cfp-hinweis-reparatur-ukru.log
 UI-Kontrast hell/dunkel nach WCAG 1.4.3/1.4.11 auf den Hauptansichten (Inhaber, Fahrer, Werkstatt; Backlog 785–786)|ui-kontrast.py|/tmp/cfp-kontrast.log
 UI-Fahrzeugauswahl: Kennzeichen passt in die Karte (390–1366 px, Schrift 125 %; Backlog 787)|ui-fahrzeugwahl-breite.py|/tmp/cfp-fahrzeugwahl-breite.log
+UI-Verlauf eines Vorgangs in Vergangenheitsform statt Knopf-Beschriftung, Werkstatt UK/DE/EN (Backlog 788)|ui-verlauf-vergangenheit.py|/tmp/cfp-verlauf-vergangenheit.log
 '
 N=0
 NL='

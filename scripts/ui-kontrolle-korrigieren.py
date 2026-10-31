@@ -7,7 +7,8 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-ACT={'de':'Fahrzeug korrigieren','uk':'Виправити транспорт','en':'Correct vehicle'}
+ACT={'de':'Fahrzeug korrigiert','uk':'Транспорт виправлено','en':'Vehicle corrected'}  # Verlauf in Vergangenheitsform (Backlog 788)
+BTN={'de':'Fahrzeug korrigieren','uk':'Виправити транспорт','en':'Correct vehicle'}
 INSP={'de':'Ganze Abfahrtskontrolle umgehängt','uk':'Усю передрейсову перевірку перенесено','en':'Whole departure check moved'}
 KMM={'de':'übernommen','uk':'перенесено','en':'moved'}
 fails=[]
@@ -35,7 +36,7 @@ with sync_playwright() as p:
         ctx=br.new_context(viewport={'width':wd,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'kk.inhaber','password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
         q.goto(B+f'/#/cases/{cid}'); q.reload(); q.wait_for_selector('[data-act=correct_vehicle]',timeout=15000)
-        check(q.inner_text('[data-act=correct_vehicle]').strip()==ACT[lang],f'{lang} {wd}px: Knopf')
+        check(q.inner_text('[data-act=correct_vehicle]').strip()==BTN[lang],f'{lang} {wd}px: Knopf')
         q.click('[data-act=correct_vehicle]'); q.wait_for_selector(f'#cvveh option[value="VIN:{vb}"]',state='attached',timeout=15000)
         check(q.locator(f'#cvveh option[value="VIN:{va}"]').count()==0,f'{lang} {wd}px: bisheriges Fahrzeug nicht in der Auswahl')
         check(len(q.inner_text('#cvhint'))>80,f'{lang} {wd}px: Hinweis ganze Kontrolle')

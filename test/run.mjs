@@ -28692,6 +28692,27 @@ await test('Backlog 786–787 (Blickwinkel „Werkstatt-Tablet im Freien“): Ra
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-fahrzeugwahl-breite.py|') && pr.includes('|ui-kontrast.py|'), 'UI-Skripte eingetragen');
 });
 
+await test('Backlog 788 (Blickwinkel „Werkstatt-Tablet mit fremder Sprache (UK) und Fotos“): Verlauf eines Vorgangs nennt erledigte Schritte in der Vergangenheitsform (hev_<Aktion>, DE/UK/EN) statt der Knopf-Beschriftung; Knöpfe behalten act_; UI-Skript in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const cases = readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  const hev = Object.keys(STRINGS.de).filter((k) => k.startsWith('hev_'));
+  ok(hev.length >= 20, `hev_-Schlüssel: ${hev.length}`);
+  for (const k of hev) {
+    const a = k.slice(4);
+    ok(cases.includes(`case '${a}'`), `${k}: Befehl ${a} in src/cases.js`);
+    for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l]['act_' + a] && STRINGS[l][k] !== STRINGS[l]['act_' + a], `${l}.${k} unterscheidet sich von act_${a}`); }
+  }
+  for (const a of ['receive', 'approve_repair', 'acknowledge', 'start_repair', 'resume_repair', 'record_work', 'add_part', 'request_quality_check', 'return_for_rework', 'technical_release', 'withdraw_order', 'reject', 'set_safety_lock', 'lift_safety_lock'])
+    ok(hev.includes('hev_' + a), `Vergangenheitsform für ${a}`);
+  eq(STRINGS.uk.hev_approve_repair, 'Ремонт дозволено'); eq(STRINGS.de.hev_acknowledge, 'Auftrag übernommen');
+  ok(app.includes("const evLabel = (a) => (t('hev_' + a) !== 'hev_' + a ? t('hev_' + a) : t('act_' + a) !== 'act_' + a ? t('act_' + a) : '');"), 'Hilfsfunktion evLabel');
+  ok(app.includes("evLabel(e.action) ? evLabel(e.action) : e.action === 'create'"), 'Verlauf nutzt evLabel');
+  ok(app.includes("${esc(t('act_' + a))}</button>"), 'Knöpfe weiter mit act_');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-verlauf-vergangenheit.py|'), 'UI-Skript eingetragen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
