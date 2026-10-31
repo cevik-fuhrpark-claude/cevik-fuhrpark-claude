@@ -1,5 +1,5 @@
-# [CLAUDE] UI-Test (31.10.2026, Backlog 777–780): Meldeformular zeigt den passenden Hinweis bei Ausfall nach Reparaturvermerk ohne Verneinung
-# („Klima repariert, fällt aber wieder aus“), langsamem/hakendem Fensterheber, Anlasser/Spiegelheizung in allen Sprachen und UK „зламався“;
+# [CLAUDE] UI-Test (31.10.2026, Backlog 777–781): Meldeformular zeigt den passenden Hinweis bei Ausfall nach Reparaturvermerk ohne Verneinung
+# („Klima repariert, fällt aber wieder aus“), langsamem/hakendem Fensterheber, Anlasser/Spiegelheizung in allen Sprachen und UK „зламався“, Licht „фара зламалась“ (781);
 # Reparaturvermerk bzw. Abholung offen ohne Hinweis. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
@@ -8,7 +8,7 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 POS={'de':[('Klima repariert, fällt aber wieder aus','#climate'),('Fensterheber hakt und geht nur langsam hoch','#window'),('Anlasser geht nicht','#nostart')],
-     'uk':[('кондиціонер полагодили, але знову вимикається','#climate'),('склопідйомник зламався','#window'),('не працює підігрів дзеркал','#visib')],
+     'uk':[('кондиціонер полагодили, але знову вимикається','#climate'),('склопідйомник зламався','#window'),('не працює підігрів дзеркал','#visib'),('фара зламалась','#lights')],
      'en':[('air con fixed but keeps cutting out','#climate'),('power window slow','#window'),('starter motor broken','#nostart')]}
 NEG={'de':('Klima repariert, aber noch nicht abgeholt','#climate'),'uk':('склопідйомник зламався, замінили','#window'),'en':('starter replaced','#nostart')}
 fails=[]

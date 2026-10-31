@@ -27541,6 +27541,20 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 781 (Sonde Beleuchtung UK/RU „зламалась/зламався/сломалась“ wie „Scheinwerfer kaputt“/„headlight broken“): „фара зламалась“, „ліхтар зламався“, „стоп-сигнал/поворотник зламався“, „фара сломалась“ zeigen den Licht-Hinweis; UK/RU mit Reparaturvermerk („фара не світить, замінили“) jetzt wie DE/EN ohne Hinweis', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", app.indexOf('const noFixed')) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const t = (x) => noFixed(recurFix(x));
+  const run = (T) => { for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(t(x)), n + ': ' + x); for (const x of neg) ok(!r.test(t(x)), n + ' nicht: ' + x); } };
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck);"), 'Licht-Hinweis weiter ohne noFixed (eigener Reparaturvermerk-Ausschluss)');
+  const r = g('LIGHTS_HINT');
+  for (const x of ['фара зламалась', 'ліхтар зламався', 'стоп-сигнал зламався', 'поворотник зламався', 'фара сломалась', 'фара не світить', 'Scheinwerfer kaputt', 'headlight broken', 'фара знову не світить, хоча замінили']) ok(r.test(recurFix(x)), 'LIGHTS_HINT: ' + x);
+  for (const x of ['фара зламалась, замінили', 'фара розбита, замінили', 'фара не світить, замінили', 'не світить фара, замінили лампочку', 'фара сломалась, заменили', 'Scheinwerfer kaputt, getauscht']) ok(!r.test(recurFix(x)), 'LIGHTS_HINT nicht: ' + x);
+});
 await test('Backlog 780 (Sonde UK-Vergangenheitsform „зламався“): männliche Gegenstände mit „зламався“ („кондиціонер/склопідйомник/двірник/стартер/генератор/навігатор зламався“) zeigen den Hinweis wie „зламалась/зламаний“; mit Reparaturvermerk nicht; „генератор холодильної установки зламався“ bleibt beim Kühlaggregat', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
