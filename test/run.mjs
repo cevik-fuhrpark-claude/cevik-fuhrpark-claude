@@ -27541,6 +27541,18 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 763 (Folge aus 761): ältere Teilmuster Klima (EN) und Beleuchtung (DE/EN) mit Reparaturvermerk-Ausschluss – „a/c not cooling - fixed“, „tail light not working, replaced“, „Rücklicht defekt, funktioniert wieder“ ohne Hinweis; ohne Vermerk und bei wiederkehrendem Mangel weiter mit Hinweis', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const a = app.indexOf('const FIX_WORD'), b = app.indexOf("}).join('');", a) + 12;
+  const recurFix = new Function(app.slice(a, b) + '; return recurFix;')();
+  const T = {
+    CLIMATE_HINT: [['a/c not cooling', 'air conditioning not working', 'a/c not cooling again after being repaired', 'night heater not working, has not been fixed'], ['a/c not cooling - fixed', 'air conditioning not working, repaired', 'night heater not working - replaced']],
+    LIGHTS_HINT: [['tail light not working', 'Rücklicht defekt', 'Bremslicht kaputt', 'Rücklicht defekt wieder, obwohl getauscht', 'tail light not working again after it was replaced', 'brake light out, bulb not replaced'], ['tail light not working, replaced', 'Rücklicht defekt, funktioniert wieder', 'Bremslicht kaputt, getauscht', 'headlight out - fixed', 'brake light out, bulb replaced']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(recurFix(x)), n + ': ' + x); for (const x of neg) ok(!r.test(recurFix(x)), n + ' nicht: ' + x); }
+});
 await test('Backlog 762 (Folge aus 761): Hinweise an die Leitung im Versicherungsabschnitt des Vorgangs (Diebstahl ohne Aktenzeichen, Glas/Fehlbetankung ohne Versicherungsfall …) lesen die Meldung über recurFix – „бокове скло розбили знову, хоча замінили“, „пломба зірвана знову, хоча замінили“ zeigen den Hinweis, „…, замінили“ weiter nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -27584,7 +27596,7 @@ await test('Backlog 761 (Sonde Reparaturvermerke, 31.10.2026 05:15): wiederkehre
   // Bestehende Prüffälle aller Hinweis-Tests: recurFix ändert nichts, wo kein wiederkehrender Mangel beschrieben ist
   const src = readFileSync(new URL(import.meta.url), 'utf8');
   let n = 0; const self0 = src.indexOf("await test('Backlog 761 "), self1 = src.indexOf("await test('Backlog 760 ");
-  for (const m of src.matchAll(/^\s+([A-Z_]+_HINT): (\[\[.*\]\]),?$/gm)) { if (m.index > self0 && m.index < self1) continue; let v; try { v = Function('return ' + m[2])(); } catch { continue; } const r = (() => { try { return g(m[1]); } catch { return null; } })(); if (!r) continue; for (const x of [...v[0], ...(v[1] || [])]) { if (/obwohl|trotz|wieder\s+nicht|again|still|although|знову|хоча|опять|хотя|nicht\s+repariert|не\s+відремонт/i.test(x)) continue; n++; ok(r.test(x) === r.test(recurFix(x)), m[1] + ' unverändert: ' + x); } }
+  for (const m of src.matchAll(/^\s+([A-Z_]+_HINT): (\[\[.*\]\]),?$/gm)) { if (m.index > self0 && m.index < self1) continue; let v; try { v = Function('return ' + m[2])(); } catch { continue; } const r = (() => { try { return g(m[1]); } catch { return null; } })(); if (!r) continue; for (const x of [...v[0], ...(v[1] || [])]) { if (/obwohl|trotz|wieder\s+nicht|again|still|although|знову|хоча|опять|хотя|nicht\s+(?:\S+\s+)?(?:repariert|getauscht|ersetzt)|not\s+(?:been\s+)?(?:fixed|replaced|repaired)|не\s+(?:відремонт|замін)/i.test(x)) continue; n++; ok(r.test(x) === r.test(recurFix(x)), m[1] + ' unverändert: ' + x); } }
   ok(n > 500, 'Prüffälle der übrigen Hinweis-Tests gegengeprüft: ' + n);
   ok(recurFix('Bremse quietscht, repariert') === 'Bremse quietscht, repariert' && recurFix('working again, fixed') === 'working again, fixed', 'Reparaturvermerke bleiben unverändert');
 });
