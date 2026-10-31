@@ -28743,6 +28743,20 @@ await test('Backlog 790 (Blickwinkel „Fahrer hält das Handy quer im Fahrerhau
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-querformat.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 791 (Blickwinkel „Fahrer mit Bildschirmtastatur im Querformat“): bei ≤ 300 px Höhe ist die Tabbar ausgeblendet, solange in ein Textfeld getippt wird (Ankreuzfelder/Dateiauswahl lösen das nicht aus), Hinweise rücken nach unten; „Neue Hinweise“ klebt ohne mitlaufende Kopfzeile oben; UI-Prüfung `ui-tastatur-querformat.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const i = css.indexOf('@media (max-height: 300px) {'); ok(i > 0, 'Regel für niedrige Höhe vorhanden');
+  const block = css.slice(i, css.indexOf('\n}', i));
+  const sel = block.match(/body:has\((:is\([^{]*\)):focus\) \.tabbar \{ display: none; \}/); ok(sel, 'Tabbar beim Tippen ausgeblendet');
+  for (const ty of ['checkbox', 'radio', 'file', 'submit', 'button']) ok(sel[1].includes(`[type=${ty}]`), `Feldtyp ${ty} blendet die Tabbar nicht aus`);
+  ok(sel[1].includes('textarea'), 'Beschreibungsfeld zählt');
+  ok(/\.toast \{ bottom: calc\(8px/.test(block) && block.includes('scroll-padding-bottom: 8px'), 'Hinweise und Scroll-Abstand ohne Tabbar');
+  ok(/@media \(max-height: 420px\) \{ #nnew \{ top: env\(safe-area-inset-top\); \} \}/.test(css), '„Neue Hinweise“ ohne Lücke unter fehlender Kopfzeile');
+  ok(css.indexOf('@media (max-height: 420px) { .topbar { position: static; } }') > 0, 'Kopfzeile scrollt unter 420 px weiter mit (567)');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-tastatur-querformat.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

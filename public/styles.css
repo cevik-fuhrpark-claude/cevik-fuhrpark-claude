@@ -343,6 +343,17 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
   .tabbar a.report span.dot { width: 36px; height: 36px; margin-top: 0; box-shadow: none; flex: none; }
   .tabbar a svg { flex: none; }
 }
+/* Backlog 791 (Blickwinkel „Fahrer mit Bildschirmtastatur im Querformat“): Verkleinert die Bildschirmtastatur die Seite auf ≤ 300 px
+   Höhe (Querformat, Browser mit „resizes-content“, Zoom 200 %), belegte die Tabbar ein Viertel des Restes und verdeckte das untere
+   Ende des Beschreibungsfelds. Während in ein Textfeld getippt wird, ist sie ausgeblendet (Navigation ist dabei nicht gebraucht,
+   nach dem Schließen der Tastatur ist sie wieder da); Hinweise rücken nach unten, Scroll-Abstände schrumpfen. */
+@media (max-height: 300px) {
+  body:has(:is(input:not([type=checkbox], [type=radio], [type=file], [type=button], [type=submit], [type=reset], [type=range], [type=color]), textarea, [contenteditable="true"]):focus) .tabbar { display: none; }
+  html:has(:is(input:not([type=checkbox], [type=radio], [type=file], [type=button], [type=submit], [type=reset], [type=range], [type=color]), textarea, [contenteditable="true"]):focus) { scroll-padding-top: 8px; scroll-padding-bottom: 8px; }
+  body:has(:is(input:not([type=checkbox], [type=radio], [type=file], [type=button], [type=submit], [type=reset], [type=range], [type=color]), textarea, [contenteditable="true"]):focus) .toast { bottom: calc(8px + env(safe-area-inset-bottom)); }
+}
+/* Backlog 791: Kopfzeile scrollt unter 420 px Höhe mit (567) – „Neue Hinweise“ klebte dann 68 px unter dem oberen Rand über dem Inhalt */
+@media (max-height: 420px) { #nnew { top: env(safe-area-inset-top); } }
 /* Backlog 567: min(280px, 100%) – bei Browser-Zoom 200 % (≈ 180 CSS-px Breite) schob die 280-px-Spalte das Meldeformular seitlich aus dem Bild */
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 12px; } .grid2 > .panel { margin: 0; }
 /* [CLAUDE] QR-Code für Einladungslinks: feste Schwarz/Weiß-Darstellung, gut scanbar */

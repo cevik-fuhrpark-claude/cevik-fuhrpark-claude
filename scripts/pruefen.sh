@@ -379,6 +379,7 @@ UI-Fahrzeugauswahl: Kennzeichen passt in die Karte (390–1366 px, Schrift 125 %
 UI-Verlauf eines Vorgangs in Vergangenheitsform statt Knopf-Beschriftung, Werkstatt UK/DE/EN (Backlog 788)|ui-verlauf-vergangenheit.py|/tmp/cfp-verlauf-vergangenheit.log
 UI-Anmeldeseite bei gültiger Sitzung: zweiter Tab wechselt in die App, Hinweis „bereits angemeldet“ (Backlog 789)|ui-anmeldeseite-sitzung.py|/tmp/cfp-anmeldeseite-sitzung.log
 UI-Querformat am Handy: kompakte Tabbar, Beschriftungen vollständig, Inhalt über der Leiste (DE/UK/EN, Schrift 130 %; Backlog 790)|ui-querformat.py|/tmp/cfp-querformat.log
+UI-Bildschirmtastatur im Querformat: Tabbar beim Tippen ausgeblendet, Felder sichtbar (DE/UK/EN; Backlog 791)|ui-tastatur-querformat.py|/tmp/cfp-tastatur-querformat.log
 '
 N=0
 NL='
