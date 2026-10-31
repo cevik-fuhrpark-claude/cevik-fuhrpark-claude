@@ -2746,6 +2746,9 @@ function claimPoliceInfo(cl) {
   return `<h4 style="margin:.4rem 0 .2rem">${esc(t('cp_title'))}</h4><dl class="kv">${rows.join('')}</dl>`;
 }
 function claimSection(cl, contracts, files = [], desc = '', c = null, coupled = []) {
+  // Backlog 762: Hinweise an die Leitung (Diebstahl ohne Aktenzeichen, Glas/Marder/Unwetter/Fehlbetankung ohne Versicherungsfall …) wie im Meldeformular über recurFix –
+  // „Scheibe wieder gerissen, obwohl getauscht“ ist kein Reparaturvermerk (Backlog 761)
+  desc = recurFix(desc);
   // Backlog 633: Versicherungsfälle offener Vorgänge am gekoppelten Fahrzeug – Polizeiangaben übernehmen, gleiche Schadennummer als Hinweis
   const cpc = coupled.flatMap((g) => g.open_cases.filter((o) => o.claim).map((o) => ({ ...o.claim, case_no: o.case_no, plate: g.plate })));
   const cpPull = cpc.filter((x) => x.police_station || x.police_ref || x.police_reported_on);
