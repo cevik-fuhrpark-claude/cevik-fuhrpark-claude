@@ -620,7 +620,8 @@ const SESSION_MARK = 'cfp_session_user';
 function markSession(id) { try { if (localStorage.getItem(SESSION_MARK) !== id) localStorage.setItem(SESSION_MARK, id); } catch {} }
 window.addEventListener('storage', (e) => {
   // Tab steht auf der Anmeldeseite, in einem anderen Tab hat sich jemand angemeldet: Sitzung übernehmen statt zweiter Anmeldung (22.10.2026)
-  if (e.key === SESSION_MARK && !S.me && e.newValue && /^#\/login/.test(location.hash || '')) { location.reload(); return; }
+  // Backlog 789: früher location.reload() – die Adresse blieb „#/login“, nach dem Neuladen stand wieder das Anmeldeformular da; jetzt wie nach eigener Anmeldung weiter
+  if (e.key === SESSION_MARK && !S.me && e.newValue && /^#\/login/.test(location.hash || '')) { afterLogin(); return; }
   if (e.key !== SESSION_MARK || !S.me || S.offlineStart) return;
   if ((e.newValue || '') !== S.me.id) { resetUserState(); location.reload(); }
 });
@@ -857,7 +858,7 @@ function viewLogin() {
     <details class="small" style="margin-top:8px"><summary>${esc(t('forgot_pw'))}</summary><p class="muted">${esc(t('forgot_pw_hint'))}</p></details>
     ${langSelect()}
   </form></div>`);
-  bindLang(); bindPwShow();
+  bindLang(); bindPwShow(); loginSessionNote();
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     try {
@@ -871,6 +872,18 @@ function viewLogin() {
       afterLogin();
     } catch (err) { toast(err.message, true); }
   };
+}
+// Backlog 789 (Blickwinkel „Werkstatt-Tablet mit fremder Sprache (UK) und Fotos“): Anmeldeseite neu geladen, obwohl die Sitzung noch gilt
+// (Adresse „#/login“ nach abgelaufener Sitzung in einem Tab und Anmeldung in einem anderen, Lesezeichen) – Hinweis „bereits angemeldet als …“
+// mit „Weiter zur App“; das Formular bleibt für eine andere Person (Schichtwechsel). Nur wenn dieser Browser eine Sitzung kennt (SESSION_MARK),
+// Abfrage ohne den 401-Ablauf von api() (der leert sonst Offline-Daten).
+async function loginSessionNote() {
+  let mark = ''; try { mark = localStorage.getItem(SESSION_MARK) || ''; } catch {}
+  if (!mark) return;
+  let u = null; try { const r = await fetch('/api/me', { credentials: 'same-origin', headers: { 'x-cfp': '1' } }); if (r.ok) u = (await r.json()).user; } catch {}
+  const f = $('#f'); if (!u || !f || !/^#\/login/.test(location.hash || '') || $('#already')) return;
+  f.insertAdjacentHTML('afterbegin', `<div class="panel good" id="already" role="status"><p>${esc(t('login_already').replace('{name}', u.display_name || u.username))}</p><div class="actions"><a class="btn block" href="#/" id="alreadygo">${esc(t('login_continue'))}</a></div></div>`);
+  $('#alreadygo').onclick = (e) => { e.preventDefault(); afterLogin(); };
 }
 // Gerätekennung für den Anmelde-Hinweis bei neuem Gerät: zufällig, nur in diesem Browser, bleibt beim Abmelden erhalten (keine Zugangsdaten)
 function deviceId() {

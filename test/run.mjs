@@ -28713,6 +28713,21 @@ await test('Backlog 788 (Blickwinkel „Werkstatt-Tablet mit fremder Sprache (UK
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-verlauf-vergangenheit.py|'), 'UI-Skript eingetragen');
 });
 
+await test('Backlog 789 (Blickwinkel „Werkstatt-Tablet mit fremder Sprache (UK) und Fotos“): Anmeldung in einem anderen Tab führt einen Tab auf der Anmeldeseite in die App (vorher Neuladen auf „#/login“ = wieder Formular); Anmeldeseite mit gültiger Sitzung zeigt „bereits angemeldet als …“ (DE/UK/EN) ohne den 401-Ablauf von api()', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(app.includes("if (e.key === SESSION_MARK && !S.me && e.newValue && /^#\\/login/.test(location.hash || '')) { afterLogin(); return; }"), 'Tab-Übernahme über afterLogin()');
+  ok(!/SESSION_MARK && !S\.me && e\.newValue[^\n]*location\.reload\(\)/.test(app), 'kein Neuladen auf der Anmeldeseite');
+  ok(app.includes('bindLang(); bindPwShow(); loginSessionNote();'), 'Anmeldeseite prüft Sitzung');
+  const fn = app.slice(app.indexOf('async function loginSessionNote()'), app.indexOf('// Gerätekennung für den Anmelde-Hinweis'));
+  ok(fn.includes("localStorage.getItem(SESSION_MARK)") && fn.includes("if (!mark) return;"), 'nur bei bekannter Sitzung');
+  ok(fn.includes("await fetch('/api/me'") && !fn.includes("api('GET'"), 'eigene Abfrage statt api() (kein Leeren der Offline-Daten bei 401)');
+  ok(fn.includes("$('#alreadygo').onclick") && fn.includes('afterLogin()'), 'Weiter nutzt afterLogin()');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].login_already.includes('{name}') && STRINGS[l].login_continue, `${l}: Texte`); }
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-anmeldeseite-sitzung.py|'), 'UI-Skript eingetragen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

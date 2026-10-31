@@ -1159,6 +1159,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 788 (Blickwinkel „Werkstatt-Tablet mit fremder Sprache (UK) und Fotos“): Verlauf eines Vorgangs nennt erledigte Schritte in der
 // Vergangenheitsform statt mit der Knopf-Beschriftung („Reparatur freigeben · Inhaber“ las sich wie eine Aufforderung, auf UK „Дозволити ремонт“).
 // Fehlt ein hev_-Schlüssel, zeigt der Verlauf weiter act_<Aktion> (Nomen wie „Wiedervorlage“, „Standort / Abschleppung“ passen bereits).
+// Backlog 789: Anmeldeseite bei noch gültiger Sitzung
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
