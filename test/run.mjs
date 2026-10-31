@@ -18393,7 +18393,7 @@ await test('Formularentwurf (Backlog 183): Abfahrtskontrolle und Meldung sichern
   const nNew = app.slice(app.indexOf('async function viewNew('), app.indexOf('function myPlanned('));
   const nChk = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('function kmInputOk('));
   for (const [nm, src, path] of [['Meldung', nNew, '/api/cases'], ['Kontrolle', nChk, '/api/inspections']]) {
-    ok(src.includes(`await api('POST', '${path}', body);\n      draft.clear();`), `${nm}: Entwurf nach erfolgreichem Senden gelöscht`);
+    ok(src.includes(`await api('POST', '${path}', body, { timeoutMs: SEND_TIMEOUT_MS });\n      draft.clear();`), `${nm}: Entwurf nach erfolgreichem Senden gelöscht`);
     ok(src.includes(`outboxAdd('${path}', body, stored, who);\n        draft.clear();`), `${nm}: Entwurf nach Sicherung im Postausgang gelöscht`);
   }
   ok(app.includes("try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_') && k !== 'cfp_after_login') sessionStorage.removeItem(k); } catch {}"), 'Abmelden löscht Entwürfe');
@@ -28868,6 +28868,22 @@ await test('Backlog 797 (Blickwinkel „Fahrer im Funkloch mit älterem Handy“
   await new Promise((r) => setTimeout(r, 60)); ok(sig.aborted, 'nach Ablauf abgebrochen');
   eq(fn(undefined, undefined)(20), undefined, 'ohne AbortController: kein Signal, kein Fehler');
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-foto-zeitlimit-ohne-abortsignal.py|'), 'UI-Prüfung eingetragen');
+});
+
+await test('Backlog 798 (Blickwinkel „Fahrer im Funkloch“): Meldung, Abfahrtskontrolle und Postausgang senden mit Zeitlimit (60 s) – ohne Antwort wie Netzabbruch, Nachsenden mit demselben request_key ergibt keine Dublette; UI-Prüfung `ui-funkloch-senden-zeitlimit.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/^const SEND_TIMEOUT_MS = 60000;$/m.test(app), 'Frist 60 s');
+  ok(app.includes("const r = await api('POST', '/api/cases', body, { timeoutMs: SEND_TIMEOUT_MS });"), 'Meldung mit Zeitlimit');
+  ok(app.includes("const r = await api('POST', '/api/inspections', body, { timeoutMs: SEND_TIMEOUT_MS });"), 'Abfahrtskontrolle mit Zeitlimit');
+  ok(app.includes("if (!r) r = await api('POST', item.path || '/api/cases', sendBody, { ...ox, timeoutMs: SEND_TIMEOUT_MS });"), 'Postausgang mit Zeitlimit (Foto-Frist bleibt eigene)');
+  ok(/try \{ res = usePre \? await pre\[1\] : await fetch\([^\n]*signal: sig[^\n]*\); \}\n\s*catch \{ const e = new Error\(t\('offline'\)\); e\.offline = true; throw e; \}/.test(app), 'Abbruch gilt als Netzabbruch (offline → Postausgang)');
+  // Server: dieselbe Meldung (request_key) erneut gesendet → keine zweite Meldung
+  const { U, V1 } = await freshWorld();
+  const body = { vehicle_id: V1, description: 'Spiegel rechts abgebrochen (Funkloch)', priority: 'niedrig', driveability: 'fahrbereit', request_key: 'fl-798-1' };
+  const a = await U.driver.post('/api/cases', body); ok(a.status < 300, JSON.stringify(a.data));
+  const b = await U.driver.post('/api/cases', body); ok(b.status < 300 && b.data.duplicate && b.data.id === a.data.id, 'Nachsenden: duplicate mit derselben Meldung');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-funkloch-senden-zeitlimit.py|'), 'UI-Prüfung eingetragen');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

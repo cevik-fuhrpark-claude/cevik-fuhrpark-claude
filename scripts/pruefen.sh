@@ -385,6 +385,7 @@ UI-älterer Browser ohne randomUUID/color-mix(): Lagerbuchung gelingt, offene Pr
 UI-älterer Browser ohne Regex-Lookbehind (Safari < 16.4): App startet, Hinweise im Meldeformular wie neu (DE/UK/EN; Backlog 794)|ui-ohne-lookbehind.py|/tmp/cfp-ohne-lookbehind.log
 UI-älterer Browser ohne createImageBitmap (iOS < 15): große/gedrehte Fotos verkleinert hochgeladen (DE/UK/EN; Backlog 795)|ui-foto-ohne-imagebitmap.py|/tmp/cfp-foto-ohne-imagebitmap.log
 UI-Funkloch mit älterem Browser ohne AbortSignal.timeout: Foto-Upload bricht nach dem Zeitlimit ab, Foto im Postausgang (DE/UK/EN; Backlog 797)|ui-foto-zeitlimit-ohne-abortsignal.py|/tmp/cfp-foto-zeitlimit-ohne-abortsignal.log
+UI-Funkloch: Meldung/Abfahrtskontrolle ohne Antwort nach dem Zeitlimit im Postausgang, Nachsenden ohne Dublette (DE/UK/EN; Backlog 798)|ui-funkloch-senden-zeitlimit.py|/tmp/cfp-funkloch-senden-zeitlimit.log
 '
 N=0
 NL='

@@ -1542,6 +1542,10 @@ const photosDel = (key) => idbDo('readwrite', (st) => st.delete(key));
 const photoRetry = (err) => !!(err && (err.offline || err.status === 401 || err.status === 429 || err.status >= 500 || err.code === 'user_mismatch' || err.code === 'env_mismatch'));
 // Zeitlimit je Foto (verkleinert meist < 1 MB; 2 Minuten reichen auch bei sehr langsamem Netz)
 const PHOTO_TIMEOUT_MS = 120000;
+// Backlog 798 (Blickwinkel „Fahrer im Funkloch“): Meldung/Abfahrtskontrolle (kleine JSON-Anfrage) ohne Antwort nach 60 s wie Netzabbruch
+// behandeln – vorher stand „Senden“ im Funkloch ohne Ende, die Meldung kam nicht in den Postausgang. Doppelt angelegt wird nichts:
+// derselbe request_key liefert beim Nachsenden „duplicate“ (Server), falls die erste Anfrage doch angekommen war.
+const SEND_TIMEOUT_MS = 60000;
 async function uploadCasePhotos(caseId, list, ox = {}) {
   let failed = 0;
   for (const p of list) { try { await api('POST', `/api/cases/${caseId}/files`, p.blob, { timeoutMs: PHOTO_TIMEOUT_MS, ...ox, headers: { 'x-filename': encodeURIComponent(p.name), 'content-type': p.blob.type || 'application/octet-stream' } }); } catch (err) { if (photoRetry(err)) throw err; failed++; } }
@@ -1585,7 +1589,7 @@ async function flushOutboxRun() {
         // mit der Gerätezeit beim Senden: der Server rechnet eine falsch gehende Geräteuhr heraus (22.10.2026)
         const sendBody = item.path === '/api/inspections' && item.saved_at ? { ...item.body, performed_at: item.saved_at, client_now: new Date().toISOString() } : item.body;
         const ox = { asUser: item.user_id || S.me.id, env: item.env, keepDirty: true };
-        if (!r) r = await api('POST', item.path || '/api/cases', sendBody, ox);
+        if (!r) r = await api('POST', item.path || '/api/cases', sendBody, { ...ox, timeoutMs: SEND_TIMEOUT_MS });
         let failed = 0; let skippedTxt = '';
         if (item.photos) {
           const ph = await photosGet(item.body.request_key).catch(() => null);
@@ -2549,7 +2553,7 @@ async function viewNew(preId) {
     const body = { vehicle_id: veh.value, description: $('#d').value, priority: $('input[name=prio]:checked').value,
       driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key, ...(occ ? { occurred_at: occ } : {}) };
     try {
-      const r = await api('POST', '/api/cases', body);
+      const r = await api('POST', '/api/cases', body, { timeoutMs: SEND_TIMEOUT_MS });
       draft.clear();
       const files = photoFiles;
       // Backlog 283 (Teilagent „Sonntag 03:00“): kritisch/nicht fahrbereit – auch mit Netz die Bitte zum Anruf samt „Panne & Notfall“ zeigen
@@ -3493,7 +3497,7 @@ async function viewDepartureCheck(preId) {
     const hasDefect = body.items.some((i) => i.result === 'mangel');
     try {
       sb.disabled = true;
-      const r = await api('POST', '/api/inspections', body);
+      const r = await api('POST', '/api/inspections', body, { timeoutMs: SEND_TIMEOUT_MS });
       draft.clear();
       // Fotos gehören zum Mangel: an den (ersten) Folgeauftrag hängen; ohne Mangel wird nichts hochgeladen
       let failed = 0;

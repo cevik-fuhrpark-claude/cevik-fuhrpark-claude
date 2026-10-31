@@ -9,9 +9,15 @@ JS = """async ([m, path, body, env]) => { const h = { 'content-type': 'applicati
   const r = await fetch(path, { method: m, headers: h, body: body ? JSON.stringify(body) : undefined }); return { s: r.status, d: await r.json().catch(() => null) }; }"""
 VIN='VIN:WDB96340310778888'
 PNG=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEklEQVR4nGP4z8CAB+GTG8HSALfKY52fjcWfAAAAAElFTkSuQmCC')
+import zlib, struct
+def png(rgb):  # 4×4-PNG in einer Farbe – jedes Foto mit anderem Bildinhalt (31.10.2026: angehängte Bytes reichten nicht mehr – der
+    # <img>-Rückfall von Backlog 795 dekodiert solche Dateien, alle vier wurden zum selben JPEG und der Server erkannte Dubletten)
+    ch = lambda t, d: struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+    raw = b''.join(b'\x00' + bytes(rgb) * 4 for _ in range(4))
+    return b'\x89PNG\r\n\x1a\n' + ch(b'IHDR', struct.pack('>IIBBBBB', 4, 4, 8, 2, 0, 0, 0)) + ch(b'IDAT', zlib.compress(raw)) + ch(b'IEND', b'')
 fotos=[]
 for i in range(4):
-    f=os.path.join(tempfile.mkdtemp() if i==0 else os.path.dirname(fotos[0]),f'um-{i}.png'); open(f,'wb').write(PNG+bytes([i])); fotos.append(f)
+    f=os.path.join(tempfile.mkdtemp() if i==0 else os.path.dirname(fotos[0]),f'um-{i}.png'); open(f,'wb').write(png((40 + 60 * i, 200 - 40 * i, 90))); fotos.append(f)
 async def main():
   async with async_playwright() as p:
     br=await p.chromium.launch(); adm=await (await br.new_context()).new_page(); await adm.goto(B)

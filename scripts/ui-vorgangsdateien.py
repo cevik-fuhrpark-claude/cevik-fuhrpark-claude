@@ -9,6 +9,12 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
 UP = """async ([cid, n]) => { const b = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgAAAAAgABVKJPXQAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0));
   let ok = 0; for (let i = 0; i < n; i++) { const r = await fetch(`/api/cases/${cid}/files`, { method: 'POST', headers: { 'x-cfp': '1', 'x-filename': `vorab${i}.png`, 'content-type': 'image/png' }, body: Uint8Array.from([...b, 100 + i, cid.charCodeAt(0)]) }); ok += r.ok ? 1 : 0; } return ok; }"""
 PNG=bytes.fromhex('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082')
+import zlib, struct
+def png(rgb):  # 4×4-PNG in einer Farbe – verschiedene Bildinhalte (31.10.2026: angehängte Bytes reichten nicht mehr, der <img>-Rückfall
+    # von Backlog 795 dekodiert solche Dateien zum selben JPEG, der Server legte sie als Dubletten nur einmal ab)
+    ch = lambda t, d: struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+    raw = b''.join(b'\x00' + bytes(rgb) * 4 for _ in range(4))
+    return b'\x89PNG\r\n\x1a\n' + ch(b'IHDR', struct.pack('>IIBBBBB', 4, 4, 8, 2, 0, 0, 0)) + ch(b'IDAT', zlib.compress(raw)) + ch(b'IEND', b'')
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -29,7 +35,7 @@ with sync_playwright() as p:
         q.evaluate(JS,['POST','/api/login',{'username':'fm.inhaber','password':PW}])
         q.goto(B+f'/#/cases/{cid}'); q.wait_for_selector('#file',state='attached')
         check('Noch 3 von 10' in (q.inner_text('#filesfree') if q.locator('#filesfree').count() else ''),f'{w}px: „Noch 3 von 10 Dateien möglich“')
-        q.set_input_files('#file',[{'name':f'neu{k}.png','mimeType':'image/png','buffer':PNG+bytes([k, i])} for k in range(5)])
+        q.set_input_files('#file',[{'name':f'neu{k}.png','mimeType':'image/png','buffer':png((20 + 45 * k, 30 + 90 * i, 120))} for k in range(5)])
         q.wait_for_selector('#filesfull',timeout=15000)
         n=len(api('GET',f'/api/cases/{cid}')['d']['files'])
         check(n==10,f'{w}px: genau 10 Dateien am Vorgang ({n})')
