@@ -4960,7 +4960,7 @@ async function viewFines() {
   const fnd = $('#fnodue'); if (fnd) fnd.onchange = () => { S.fineNoDue = fnd.checked; viewFines(); };
   dueWeekendWatch();
   const nf = $('#nf');
-  if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; if (b.amount_eur) b.amount_eur = b.amount_eur.trim(); b.request_key = nf.dataset.rk || (nf.dataset.rk = uid()); try { const r = await api('POST', '/api/fines', b); if (r.duplicate) toast(t('fine_dup_existing').replace('{no}', r.fine_no), true); else if (!r.vehicle_matched) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); location.hash = '#/fines/' + r.id; } catch (err) { toast(err.message, true); } };
+  if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; if (b.amount_eur) b.amount_eur = b.amount_eur.trim(); b.request_key = nf.dataset.rk || (nf.dataset.rk = uid()); try { const r = await api('POST', '/api/fines', b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 803 */ if (r.duplicate) toast(t('fine_dup_existing').replace('{no}', r.fine_no), true); else if (!r.vehicle_matched) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); location.hash = '#/fines/' + r.id; } catch (err) { toast(err.message, true); } };
 }
 
 // Verlauf: Zielstatus bzw. geänderte Angaben aus payload (19.10.2026: nur „Status setzen“/„Angaben geändert“ ohne Inhalt)

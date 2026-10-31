@@ -28960,6 +28960,18 @@ await test('Backlog 802 (Blickwinkel „Werkstatt-Lager im Funkloch der Halle“
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-lager-funkloch.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 803 (Blickwinkel „Büro erfasst einen Bußgeldbescheid bei schlechtem Netz“): neuer Bußgeldvorgang mit Zeitlimit (SEND_TIMEOUT_MS); erneut speichern mit demselben request_key → vorhandener Vorgang (duplicate); UI-Prüfung `ui-bussgeld-funkloch.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("b.request_key = nf.dataset.rk || (nf.dataset.rk = uid()); try { const r = await api('POST', '/api/fines', b, { timeoutMs: SEND_TIMEOUT_MS });"), 'Anlage mit Zeitlimit, Schlüssel je Formular');
+  const { U } = await freshWorld();
+  const body = { kind: 'anhoerung', offense_type: 'parken', authority: 'Bußgeldstelle 803', offense_at: '2026-10-01T08:30', plate_in_letter: 'SZ-YC 5513', request_key: 'bf-803-a' };
+  const a = await U.own.post('/api/fines', body); ok(a.status < 300, 'angelegt ' + JSON.stringify(a.data));
+  const b = await U.own.post('/api/fines', body); ok(b.status < 300 && b.data.duplicate && b.data.id === a.data.id, 'erneut: derselbe Vorgang ' + JSON.stringify(b.data));
+  eq((await U.own.get('/api/fines')).data.fines.filter((f) => f.authority === 'Bußgeldstelle 803').length, 1, 'genau ein Vorgang');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-bussgeld-funkloch.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
