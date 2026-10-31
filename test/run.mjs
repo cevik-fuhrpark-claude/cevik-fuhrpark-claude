@@ -27541,6 +27541,29 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 753 (Sonde über vorhandene Muster, 31.10.2026 01:15): „Motor klopft/nagelt“, „engine knocking“, „двигун стукає“, „турбіна свистить“ → Motor; „ретардер не працює“ → Bremse; „Spurstange ausgeschlagen“ → Lenkung; „navigation not working“, „навігація не працює“ → Navi/Telematik; „ремінь безпеки заїдає“ → Sitz/Gurt; „Achslift geht nicht“ → Federung; „Zughaken defekt“, „опори не крутяться“ → Kupplung/Stützen; „Maut Gerät rot“ → Maut; „AdBlue Deckel fehlt“ → Tankdeckel; „Kühlauflieger kühlt nicht“ → Kühlgerät; „exhaust smell in cab“ → Auspuff; Reparatur-/„nicht mehr“-Vermerke und Alltägliches nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    ENGINE_HINT: [['Motor klopft', 'Motor nagelt stark', 'Dieselmotor hämmert', 'Motorklopfen', 'engine knocking', 'engine is knocking', 'knocking noise from the engine', 'двигун стукає', 'двигатель стучит', 'турбіна свистить', 'турбина свистит'], ['Motor klopft nicht mehr', 'Motor repariert, klopfte vorher', 'Fahrer klopft an die Tür', 'Motor nagelneu', 'Motorklopfen behoben', 'engine knocking fixed', 'двигун відремонтували', 'Turbine im Windpark']],
+    BRAKE_HINT: [['ретардер не працює', 'ретардер не работает'], ['ретардер відремонтували']],
+    STEER_HINT: [['Spurstange ausgeschlagen', 'Lenkung ausgeschlagen'], ['Spurstange getauscht', 'Spurstange']],
+    TELEM_HINT: [['navigation not working', 'навігація не працює', 'навигация не работает'], ['навігація', 'navigation app on phone']],
+    SEAT_HINT: [['ремінь безпеки заїдає', 'ремень безопасности заедает'], ['ремінь генератора заїдає']],
+    SUSP_HINT: [['Achslift geht nicht', 'Achslift defekt'], ['Achslift ok']],
+    COUPLING_HINT: [['Zughaken defekt', 'опори не крутяться', 'опори напівпричепа не опускаються', 'опоры не крутятся'], ['Zughaken', 'опори моста', 'опори відремонтували, не крутяться більше не']],
+    TOLL_HINT: [['Maut Gerät rot', 'Maut-Gerät defekt'], ['Maut gerät']],
+    FUELCAP_HINT: [['AdBlue Deckel fehlt', 'Diesel Deckel weg'], ['AdBlue nachgefüllt']],
+    REEFER_HINT: [['Kühlauflieger kühlt nicht', 'Kühlauflieger kühlt nicht mehr', 'Kühlauflieger Störung', 'Kühlkoffer wird nicht kalt'], ['Kühlauflieger beladen', 'Kühlauflieger sauber', 'Kühlauflieger kühlt wieder', 'Kühlauflieger hat Delle', 'Kühlauflieger Störung behoben']],
+    EXHAUST_HINT: [['exhaust smell in cab', 'exhaust fumes inside the cab'], ['exhaust smell outside']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+  ok(!g('BRAKE_HINT').test('Motor klopft') && !g('CABKIT_HINT').test('Zughaken defekt'), 'keine Doppelzuordnung');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_engine_s.includes('Motor klopft') && STRINGS.uk.help_engine_s.includes('двигун стукає') && STRINGS.en.help_engine_s.includes('engine knocking'), 'Hilfe Motor nennt das Beispiel DE/UK/EN');
+  ok(STRINGS.de.help_reefer_s.includes('Kühlauflieger kühlt nicht'), 'Hilfe Kühlgerät nennt das Beispiel');
+});
 await test('Backlog 752 (Sonde über vorhandene Muster, 31.10.2026 00:15): „Lkw schwimmt auf der Autobahn“, „кермо гуляє“, „truck wanders“ → Lenkung; „Kupplung geht schwer“, „clutch is heavy“, „зчеплення туге“ → Getriebe/Kupplung; „Wegfahrsperre aktiv“, „immobiliser“, „іммобілайзер“ → springt nicht an; „Lüfter läuft ständig“, „fan keeps running“, „вентилятор постійно працює“, „Wasserpumpe undicht“ → Motor; „Lkw baut keine Luft auf“, „не набирає повітря“ → Bremse/Druckluft; Ladung/Wasser/Fahrerhaus-Lüfter/Sattelkupplung/Reifen nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
