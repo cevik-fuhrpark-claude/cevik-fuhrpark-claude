@@ -23,18 +23,18 @@ function lbFallback(src, exact) {
     if (/^\\[wdsWDS]$/.test(x)) return '\\' + (x[1] === x[1].toLowerCase() ? x[1].toUpperCase() : x[1].toLowerCase());
     if (x.length === 1 && !/[\\^$.|?*+()[\]{}/]/.test(x)) return '[^' + (x === '-' ? '\\-' : x) + ']';
     return null; };
-  let out = ''; const st = [true]; let at = true; // at: Position am Anfang einer obersten Alternative (Startpunkt der Suche frei wählbar)
+  let out = ''; const st = [true]; let at = true;
   for (let i = 0; i < src.length;) {
     const c = src[i];
     if (c === '\\') { out += src.slice(i, i + 2); i += 2; at = false; continue; }
     if (c === '[') { const e = classEnd(i); out += src.slice(i, e); i = e; at = false; continue; }
     if (c === '(' && (src.startsWith('(?<=', i) || src.startsWith('(?<!', i))) {
       const e = groupEnd(i), inner = src.slice(i + 4, e - 1);
-      if (exact && at) { // nur hier exakt nachbildbar: ein Zeichen davor (oder Textanfang) wird mitgelesen – für .test() gleichwertig
+      if (exact && at) {
         if (src[i + 3] === '=') { out += '(?:' + lbFallback(inner, false) + ')'; at = false; }
         else { const one = negOne(inner); if (one) { out += '(?:^|' + one + ')'; at = false; } }
       }
-      i = e; continue; // sonst entfällt die Bedingung (trifft eher mehr, nie weniger)
+      i = e; continue;
     }
     if (c === '(') { const look = src.startsWith('(?=', i) || src.startsWith('(?!', i); const h = look || src.startsWith('(?:', i) ? 3 : src.startsWith('(?<', i) ? src.indexOf('>', i) + 1 - i : 1;
       st.push(at && !look); out += src.slice(i, i + h); i += h; at = at && !look; continue; }
@@ -2994,15 +2994,26 @@ function uploadReject(blob, name = '') {
   if (blob.size > UPLOAD_MAX_BYTES) return t('err_too_large');
   return '';
 }
+// Backlog 795 (Blickwinkel „Fahrer mit älterem Handy/Browser“): createImageBitmap fehlt in iOS/Safari < 15 – dort blieb das Foto unverkleinert
+// (Handyfoto oft > 5 MB → „Datei zu groß“). Rückfall: Bild über <img> dekodieren (berücksichtigt die Drehung laut EXIF wie createImageBitmap).
+async function decodeImage(file) {
+  if (typeof createImageBitmap === 'function') { try { const b = await createImageBitmap(file); return { src: b, w: b.width, h: b.height, done: () => {} }; } catch { /* weiter mit <img> */ } }
+  const url = URL.createObjectURL(file); const img = new Image();
+  try { img.src = url; await img.decode(); } catch (e) { URL.revokeObjectURL(url); throw e; }
+  return { src: img, w: img.naturalWidth, h: img.naturalHeight, done: () => URL.revokeObjectURL(url) };
+}
 async function prepareUpload(file) {
   if (!file.type.startsWith('image/') || file.type === 'image/gif') return file;
   try {
-    const bmp = await createImageBitmap(file);
-    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
-    const cv = document.createElement('canvas');
-    cv.width = Math.round(bmp.width * scale); cv.height = Math.round(bmp.height * scale);
-    cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
-    return await new Promise((res) => cv.toBlob((b) => res(b || file), 'image/jpeg', 0.82));
+    const bmp = await decodeImage(file);
+    try {
+      if (!bmp.w || !bmp.h) return file;
+      const scale = Math.min(1, 1600 / Math.max(bmp.w, bmp.h));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(bmp.w * scale); cv.height = Math.round(bmp.h * scale);
+      cv.getContext('2d').drawImage(bmp.src, 0, 0, cv.width, cv.height);
+      return await new Promise((res) => cv.toBlob((b) => res(b || file), 'image/jpeg', 0.82));
+    } finally { bmp.done(); }
   } catch { return file; }
 }
 

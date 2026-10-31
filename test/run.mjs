@@ -28841,6 +28841,19 @@ await test('Backlog 794 (Blickwinkel „Fahrer mit älterem Handy/Browser“): k
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-ohne-lookbehind.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 795 (Blickwinkel „Fahrer mit älterem Handy/Browser“): Fotos werden auch ohne createImageBitmap (iOS/Safari < 15) verkleinert – Rückfall über <img> (EXIF-Drehung wie createImageBitmap), Objekt-URL wird freigegeben; UI-Prüfung `ui-foto-ohne-imagebitmap.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i = app.indexOf('async function decodeImage(file) {'); ok(i > 0, 'decodeImage vorhanden');
+  const body = app.slice(i, app.indexOf('\n}\n', i));
+  ok(body.includes("typeof createImageBitmap === 'function'") && body.includes('new Image()') && body.includes('await img.decode()') && body.includes('img.naturalWidth'), 'createImageBitmap nur wenn vorhanden, sonst <img>');
+  ok((body.match(/URL\.revokeObjectURL\(url\)/g) || []).length === 2, 'Objekt-URL im Fehler- und im Erfolgsfall freigegeben');
+  const pu = app.slice(app.indexOf('async function prepareUpload(file) {'), app.indexOf('\n}\n', app.indexOf('async function prepareUpload(file) {')));
+  ok(pu.includes('await decodeImage(file)') && !pu.includes('createImageBitmap(') && pu.includes('finally { bmp.done(); }') && pu.includes('1600 / Math.max(bmp.w, bmp.h)'), 'prepareUpload nutzt decodeImage, Größe 1600 px');
+  eq((app.match(/createImageBitmap\(/g) || []).length, 1, 'createImageBitmap nur in decodeImage');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-foto-ohne-imagebitmap.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -228,6 +228,7 @@ haben einen Rückfall und sind je mit einem UI-Skript abgesichert, das einen äl
 - Regex-Lookbehind `(?<=…)`/`(?<!…)` (iOS/Safari < 16.4: Syntaxfehler, das ganze Modul startete nicht): `npm run build` setzt solche
   Literale in den erzeugten Modulen als `lbRx(String.raw…)` ein; ohne Lookbehind entsteht eine Ersatzfassung, die nie weniger trifft
   (Hinweise im Meldeformular eher öfter). In `public/app.js` bleiben die Literale unverändert (Backlog 794, `ui-ohne-lookbehind.py`).
+- `createImageBitmap` (iOS < 15): Fotos werden über `<img>` dekodiert und trotzdem auf 1600 px verkleinert (Backlog 795, `ui-foto-ohne-imagebitmap.py`).
 Neue JS/CSS-Funktionen deshalb vor dem Einsatz auf Unterstützung prüfen und ggf. mit Rückfall bauen.
 
 ## Gesamtprüfung `scripts/pruefen.sh`

@@ -228,6 +228,9 @@ function lazyModule(g) {
 // denselben Ausdruck, alte eine Fassung ohne Lookbehind (`lbFallback`). Die Quelle app.js bleibt unverändert (Tests lesen die Literale dort).
 // Drittes Argument 1 = Ausdruck wird nur mit `.test()` benutzt (ohne g/y): dann wird ein Lookbehind am Anfang einer Alternative exakt
 // nachgebildet; sonst (replace, .source, g) entfällt er – der Ausdruck trifft dann eher mehr (Hinweis öfter), nie weniger.
+// lbFallback: `at` = Position am Anfang einer obersten Alternative (Startpunkt der Suche frei wählbar). Nur dort ist ein Lookbehind exakt
+// nachbildbar (ein Zeichen davor bzw. Textanfang wird mitgelesen – für .test() gleichwertig); sonst entfällt die Bedingung (trifft eher mehr,
+// nie weniger). Kommentare stehen hier außerhalb der Funktionen, weil toString() sie sonst ins Start-Modul übernimmt (Größengrenze 66 %).
 export function lbRx(src, flags, testOnly) {
   if (lbRx.ok === undefined) { try { lbRx.ok = !!new RegExp('(?<=a)b'); } catch (e) { lbRx.ok = false; } }
   return new RegExp(lbRx.ok ? src : lbFallback(src, !!testOnly), flags);
@@ -239,18 +242,18 @@ export function lbFallback(src, exact) {
     if (/^\\[wdsWDS]$/.test(x)) return '\\' + (x[1] === x[1].toLowerCase() ? x[1].toUpperCase() : x[1].toLowerCase());
     if (x.length === 1 && !/[\\^$.|?*+()[\]{}/]/.test(x)) return '[^' + (x === '-' ? '\\-' : x) + ']';
     return null; };
-  let out = ''; const st = [true]; let at = true; // at: Position am Anfang einer obersten Alternative (Startpunkt der Suche frei wählbar)
+  let out = ''; const st = [true]; let at = true;
   for (let i = 0; i < src.length;) {
     const c = src[i];
     if (c === '\\') { out += src.slice(i, i + 2); i += 2; at = false; continue; }
     if (c === '[') { const e = classEnd(i); out += src.slice(i, e); i = e; at = false; continue; }
     if (c === '(' && (src.startsWith('(?<=', i) || src.startsWith('(?<!', i))) {
       const e = groupEnd(i), inner = src.slice(i + 4, e - 1);
-      if (exact && at) { // nur hier exakt nachbildbar: ein Zeichen davor (oder Textanfang) wird mitgelesen – für .test() gleichwertig
+      if (exact && at) {
         if (src[i + 3] === '=') { out += '(?:' + lbFallback(inner, false) + ')'; at = false; }
         else { const one = negOne(inner); if (one) { out += '(?:^|' + one + ')'; at = false; } }
       }
-      i = e; continue; // sonst entfällt die Bedingung (trifft eher mehr, nie weniger)
+      i = e; continue;
     }
     if (c === '(') { const look = src.startsWith('(?=', i) || src.startsWith('(?!', i); const h = look || src.startsWith('(?:', i) ? 3 : src.startsWith('(?<', i) ? src.indexOf('>', i) + 1 - i : 1;
       st.push(at && !look); out += src.slice(i, i + h); i += h; at = at && !look; continue; }

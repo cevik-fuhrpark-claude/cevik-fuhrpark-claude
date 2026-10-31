@@ -3060,15 +3060,26 @@ function uploadReject(blob, name = '') {
   if (blob.size > UPLOAD_MAX_BYTES) return t('err_too_large');
   return '';
 }
+// Backlog 795 (Blickwinkel „Fahrer mit älterem Handy/Browser“): createImageBitmap fehlt in iOS/Safari < 15 – dort blieb das Foto unverkleinert
+// (Handyfoto oft > 5 MB → „Datei zu groß“). Rückfall: Bild über <img> dekodieren (berücksichtigt die Drehung laut EXIF wie createImageBitmap).
+async function decodeImage(file) {
+  if (typeof createImageBitmap === 'function') { try { const b = await createImageBitmap(file); return { src: b, w: b.width, h: b.height, done: () => {} }; } catch { /* weiter mit <img> */ } }
+  const url = URL.createObjectURL(file); const img = new Image();
+  try { img.src = url; await img.decode(); } catch (e) { URL.revokeObjectURL(url); throw e; }
+  return { src: img, w: img.naturalWidth, h: img.naturalHeight, done: () => URL.revokeObjectURL(url) };
+}
 async function prepareUpload(file) {
   if (!file.type.startsWith('image/') || file.type === 'image/gif') return file;
   try {
-    const bmp = await createImageBitmap(file);
-    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
-    const cv = document.createElement('canvas');
-    cv.width = Math.round(bmp.width * scale); cv.height = Math.round(bmp.height * scale);
-    cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
-    return await new Promise((res) => cv.toBlob((b) => res(b || file), 'image/jpeg', 0.82));
+    const bmp = await decodeImage(file);
+    try {
+      if (!bmp.w || !bmp.h) return file;
+      const scale = Math.min(1, 1600 / Math.max(bmp.w, bmp.h));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(bmp.w * scale); cv.height = Math.round(bmp.h * scale);
+      cv.getContext('2d').drawImage(bmp.src, 0, 0, cv.width, cv.height);
+      return await new Promise((res) => cv.toBlob((b) => res(b || file), 'image/jpeg', 0.82));
+    } finally { bmp.done(); }
   } catch { return file; }
 }
 
