@@ -16616,7 +16616,7 @@ await test('Fehlersuche 21.10. (langsames Netz): Lagerbuchung mit gleichem Schl�
   const vc = app.slice(app.indexOf('    // km-Stand wie der Server prüfen'), app.indexOf('    // km-Stand wie der Server prüfen') + 6500); // 26.10.2026: Ergebnisseite für Fahrer mit Mangel (Backlog 379) verlängert den Block
   ok(vc.includes("if (sb.isConnected) location.hash = fTarget") && (vc.match(/if \(!err\.offline \|\| !sb\.isConnected\) \{ toast\(t\(err\.offline \? 'outbox_saved' : 'outbox_saved_login'\)\); return; \}/g) || []).length === 1, 'Kontrolle: kein Sprung/Überschreiben nach Seitenwechsel');
   ok(/signal: sig/.test(app) && /timeoutMs: PHOTO_TIMEOUT_MS, \.\.\.ox/.test(app), 'Foto-Zeitlimit');
-  ok(app.includes("b.request_key = rkFor(e.target, b); try { await api('POST', `/api/stock/${id}/movements`, b);"), 'Lager: Schlüssel je Inhalt');
+  ok(app.includes("b.request_key = rkFor(e.target, b); try { await api('POST', `/api/stock/${id}/movements`, b, { timeoutMs: SEND_TIMEOUT_MS });"), 'Lager: Schlüssel je Inhalt (Zeitlimit seit Backlog 802)');
 });
 
 await test('Fehlersuche 21.10. (zwei Tabs): Abmelden/andere Person in einem Tab lädt die anderen neu; Meldung/Kontrolle bei 401 oder user_mismatch im Postausgang der erfassenden Person', async () => {
@@ -24234,7 +24234,7 @@ await test('Backlog 445 (Blickwinkel „Lieferung mit mehreren Positionen kommt 
   const { STRINGS, translateValidation } = await import('../public/i18n.js');
   eq(translateValidation('en', 'Position 2: Artikel nicht in diesem Lager.'), 'Line 2: Item is not in this stock location.');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('[/^#\\/stock\\/receipt$/, viewStockReceipt]') && app.includes('href="#/stock/receipt" id="srcpt"') && app.includes("api('POST', '/api/stock/receipt', body)"), 'Oberfläche');
+  ok(app.includes('[/^#\\/stock\\/receipt$/, viewStockReceipt]') && app.includes('href="#/stock/receipt" id="srcpt"') && app.includes("api('POST', '/api/stock/receipt', body, { timeoutMs: SEND_TIMEOUT_MS })"), 'Oberfläche');
   for (const l of ['de', 'uk', 'en']) {
     for (const k of ['rcpt_title', 'rcpt_hint', 'rcpt_lines', 'rcpt_add', 'rcpt_remove', 'rcpt_book', 'rcpt_count', 'rcpt_max', 'rcpt_need_line', 'rcpt_need_item', 'rcpt_need_qty', 'rcpt_twice', 'rcpt_done', 'rcpt_no_items']) ok(STRINGS[l][k], l + ' ' + k);
     ok(STRINGS[l].help_stock_s.includes(STRINGS[l].rcpt_title), l + ': Hilfe');
@@ -28936,6 +28936,28 @@ await test('Backlog 801 (Blickwinkel „Funkloch“): Anmeldung mit Zeitlimit (S
   const a2 = await c2.post('/api/login', body); eq(a2.status, 200, 'erneute Anmeldung gelingt ' + JSON.stringify(a2.data));
   eq((await c2.get('/api/me')).status, 200, 'neue Sitzung gültig');
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-anmeldung-funkloch.py|'), 'UI-Prüfung eingetragen');
+});
+
+await test('Backlog 802 (Blickwinkel „Werkstatt-Lager im Funkloch der Halle“): Lagerbuchung, Umlagerung, Wareneingang und Inventur-Prüfung mit Zeitlimit (SEND_TIMEOUT_MS); erneut buchen mit demselben request_key → duplicate, Bestand nur einmal geändert; UI-Prüfung `ui-lager-funkloch.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq(app.split("try { await api('POST', `/api/stock/${id}/movements`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); }").length - 1, 2, 'Buchung und Restbestand ausbuchen mit Zeitlimit');
+  ok(app.includes("const r = await api('POST', `/api/stock/${id}/transfer`, b, { timeoutMs: SEND_TIMEOUT_MS });"), 'Umlagerung mit Zeitlimit');
+  ok(app.includes("const res = await api('POST', '/api/stock/receipt', body, { timeoutMs: SEND_TIMEOUT_MS });"), 'Wareneingang mit Zeitlimit');
+  ok(app.includes("api('POST', '/api/stock/inventory?dry_run=1', body(), { timeoutMs: SEND_TIMEOUT_MS })"), 'Inventur-Prüfung (nur Vorschau) mit Zeitlimit');
+  ok(!/api\('POST', '\/api\/stock\/inventory', \{[^\n]*timeoutMs/.test(app), 'Inventur-Buchung ohne request_key bewusst ohne Zeitlimit');
+  // Server: dieselbe Buchung/derselbe Wareneingang erneut (Antwort ging verloren) → duplicate, Bestand einmal
+  const { U } = await freshWorld();
+  const it = await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Bremsbelag 802', initial_qty: '10' }); eq(it.status, 201, JSON.stringify(it.data));
+  const id = it.data.id;
+  const mv = { type: 'entnahme', qty: '3', request_key: 'lf-802-a' };
+  eq((await U.ws.post(`/api/stock/${id}/movements`, mv)).status, 201);
+  const m2 = await U.ws.post(`/api/stock/${id}/movements`, mv); ok(m2.status < 300 && m2.data.duplicate, 'Buchung erneut: duplicate ' + JSON.stringify(m2.data));
+  const rc = { site: 'DORTMUND', document_ref: 'LS-802', request_key: 'lf-802-b', lines: [{ item_id: id, qty: '5' }] };
+  ok((await U.ws.post('/api/stock/receipt', rc)).status < 300, 'Wareneingang');
+  const r2 = await U.ws.post('/api/stock/receipt', rc); ok(r2.status < 300 && r2.data.duplicate, 'Wareneingang erneut: duplicate ' + JSON.stringify(r2.data));
+  eq((await U.ws.get(`/api/stock/${id}`)).data.item.on_hand, 12, 'Bestand 10 − 3 + 5, jede Buchung genau einmal');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-lager-funkloch.py|'), 'UI-Prüfung eingetragen');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

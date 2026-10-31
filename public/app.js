@@ -4562,7 +4562,7 @@ async function viewStock() {
     // Backlog 562: heute schon gezählt (andere Person/anderes Gerät) – Hinweis vor dem Buchen
     const ctToday = (r) => (r.already_counted_today && r.already_counted_today.length ? `<div class="panel warn small" role="note" data-invtoday><b>${esc(tn('inventory_counted_today', r.already_counted_today.length))}</b><ul style="margin:.3rem 0;padding-left:1.2rem">${r.already_counted_today.slice(0, 100).map((x) => `<li>${esc(x.name)}${x.part_number ? ' (' + esc(x.part_number) + ')' : ''}: ${esc(t('inventory_counted_at').replace('{t}', fmtHM(x.at)))}${x.qty !== null && x.qty !== undefined ? ` – ${esc(t('inventory_counted'))} ${fmtNum(x.qty)} ${esc(unitL(x.unit))}` : ''}</li>`).join('')}${r.already_counted_today.length > 100 ? '<li>…</li>' : ''}</ul><span class="muted">${esc(t('inventory_counted_today_hint'))}</span></div>` : '');
     const show = (r, booked) => { $('#invres').innerHTML = (booked ? '' : prog() + ctToday(r)) + (r.differences.length ? `<div class="list">${r.differences.map((d) => `<div class="row ${booked ? '' : 'p-mittel'}" data-invdiff style="grid-template-columns:minmax(0,1fr) auto"><span class="title" style="white-space:normal">${esc(d.name)}</span><b style="white-space:nowrap">${d.delta > 0 ? '+' : ''}${fmtNum(d.delta)} ${esc(unitL(d.unit))}</b><span class="sub" style="white-space:normal;grid-column:1/-1">${esc(t('inventory_book_qty'))} ${fmtNum(d.book)} → ${esc(t('inventory_counted'))} ${fmtNum(d.counted)}</span></div>`).join('')}</div>` : `<p>${esc(t('inventory_no_diff'))}</p>`); };
-    $('#invchk').onclick = async () => { try { const r = await api('POST', '/api/stock/inventory?dry_run=1', body()); show(r, false); invPrev = r.differences; $('#invbook').disabled = !(r.counted > 0); $('#invbook').textContent = t(r.differences.length ? 'inventory_book' : 'inventory_close'); } catch (err) { toast(err.message, true); } };
+    $('#invchk').onclick = async () => { try { const r = await api('POST', '/api/stock/inventory?dry_run=1', body(), { timeoutMs: SEND_TIMEOUT_MS }); show(r, false); invPrev = r.differences; $('#invbook').disabled = !(r.counted > 0); $('#invbook').textContent = t(r.differences.length ? 'inventory_book' : 'inventory_close'); } catch (err) { toast(err.message, true); } };
     $('#invbook').onclick = async () => {
       if (!invPrev) return;
       if (!confirm((invPrev.length ? tn('inventory_book_confirm', invPrev.length) : t('inventory_close_confirm')) + uncTxt())) return;
@@ -4756,7 +4756,9 @@ async function viewStockReceipt() {
     const body = { site: site(), supplier: $('#rcsup').value.trim() || null, document_ref: $('#rcdoc').value.trim() || null, note: $('#rcnote').value.trim() || null, request_key: key,
       lines: rows.map((r) => ({ item_id: $('select', r).value, qty: $('.rcq', r).value.trim(), unit_price_net: $('.rcp', r).value.trim() || null })) };
     try {
-      const res = await api('POST', '/api/stock/receipt', body);
+      // Backlog 802 (Blickwinkel „Werkstatt-Lager im Funkloch der Halle“): Buchungen mit Zeitlimit – ohne Antwort „Keine Verbindung“, Knopf frei;
+      // erneut buchen mit demselben request_key ergibt „duplicate“ (nichts doppelt gebucht)
+      const res = await api('POST', '/api/stock/receipt', body, { timeoutMs: SEND_TIMEOUT_MS });
       key = uid().replace(/[^\w-]/g, '');
       toast('✓');
       const names = new Map(items.map((i) => [i.id, i]));
@@ -4890,8 +4892,8 @@ async function viewStockItem(id) {
   // Restbestand eines deaktivierten Artikels ausbuchen (23.10.2026): Korrektur genau auf 0, Grund Pflicht
   if ($('#wof')) $('#wof').onsubmit = async (e) => { e.preventDefault(); if (!confirm(t('item_writeoff_confirm').replace('{q}', fmtNum(it.on_hand)).replace('{u}', unitL(it.unit)))) return;
     const b = { type: 'korrektur', qty: String(-it.on_hand), note: e.target.elements.namedItem('note').value.trim() }; b.request_key = rkFor(e.target, b);
-    try { await api('POST', `/api/stock/${id}/movements`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
-  $('#mf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } b.request_key = rkFor(e.target, b); try { await api('POST', `/api/stock/${id}/movements`, b); viewStockItem(id); } catch (err) { toast(err.message, true); } };
+    try { await api('POST', `/api/stock/${id}/movements`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { toast(err.message, true); } };
+  $('#mf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } b.request_key = rkFor(e.target, b); try { await api('POST', `/api/stock/${id}/movements`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { toast(err.message, true); } };
   // Backlog 480 (Blickwinkel „geteiltes Werkstatt-Tablet“): nach einem Versionskonflikt ist die Ansicht neu geladen – eigene Eingaben zurück ins
   // Formular – nur die selbst geänderten Felder, die Änderung der anderen Person bleibt sichtbar und wird nicht still zurückgesetzt (vorher
   // „Bitte neu laden“, jeder neue Versuch scheiterte am alten Stand; Neuladen verwarf die Eingaben)
@@ -4916,7 +4918,7 @@ async function viewStockItem(id) {
     try { await api('PUT', `/api/stock/${id}/order`, b); viewStockItem(id); } catch (err) { if (!stockConflict(err, 'of', b, ['order_changed', 'stock_order_exists'])) toast(err.message, true); } };
   if ($('#ordclr')) $('#ordclr').onclick = async () => { try { await api('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`); viewStockItem(id); } catch (err) { if (['order_changed', 'stock_order_exists'].includes(err.code)) { toast(err.message, true); viewStockItem(id); } else toast(err.message, true); } };
   if ($('#tf')) $('#tf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); if (!b.note) delete b.note; b.request_key = rkFor(e.target, b);
-    try { const r = await api('POST', `/api/stock/${id}/transfer`, b); toast(t('transfer_done').replace('{q}', fmtNum(r.qty)).replace('{u}', unitL(it.unit)).replace('{w}', wsName(b.to_site)) + (r.target_created ? ' · ' + t('transfer_created') : '')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
+    try { const r = await api('POST', `/api/stock/${id}/transfer`, b, { timeoutMs: SEND_TIMEOUT_MS }); toast(t('transfer_done').replace('{q}', fmtNum(r.qty)).replace('{u}', unitL(it.unit)).replace('{w}', wsName(b.to_site)) + (r.target_created ? ' · ' + t('transfer_created') : '')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
 }
 
 

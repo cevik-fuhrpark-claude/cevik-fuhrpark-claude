@@ -238,6 +238,7 @@ Zeigt das Handy Netz an, kommt aber keine Antwort, meldet der Browser keinen Feh
 - Foto-Upload `PHOTO_TIMEOUT_MS` (120 s), Meldung/Abfahrtskontrolle/Postausgang/Befehle/Kontrolle nach Reparatur `SEND_TIMEOUT_MS` (60 s) → Postausgang bzw. „nicht gespeichert – Eingaben bleiben“; erneutes Senden mit derselben Kennung ergibt keine Dublette (Backlog 797–799).
 - App-Start: Anmeldestatus (auch Vorabruf aus `boot.js`), Stammdaten und Fahrzeugauswahl `START_TIMEOUT_MS` (15 s) → Offline-Start mit dem zuletzt gespeicherten Konto; danach jede Abfrage `OFFLINE_GET_TIMEOUT_MS` (8 s), alle 30 s Hintergrundprüfung, ob der Server wieder antwortet (das Ereignis „online“ kommt in diesem Fall nie). Ohne gespeichertes Konto → Anmeldeseite (Backlog 800, `ui-funkloch-start.py`).
 - Anmeldung `SEND_TIMEOUT_MS` → „Keine Verbindung“, Knopf wieder frei (Backlog 801, `ui-anmeldung-funkloch.py`); Einladungslink und Zwei-Faktor-Code bewusst ohne (Wiederholung nicht gleichwertig).
+- Lager: Buchung/Restbestand ausbuchen, Umlagerung, Wareneingang, Inventur-Prüfung `SEND_TIMEOUT_MS` → „Keine Verbindung“; erneut buchen mit denselben Eingaben schickt denselben `request_key` → keine Doppelbuchung (Backlog 802, `ui-lager-funkloch.py`). Inventur-Buchung bewusst ohne (kein `request_key`; die Vorschau-Prüfung `inventory_changed` fängt Wiederholungen ab).
 - Bewusst ohne Zeitlimit: Exporte/Datensicherung und Ansichten mit Netz (große Antworten bei langsamer Verbindung).
 
 ## Gesamtprüfung `scripts/pruefen.sh`
