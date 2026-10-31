@@ -27541,6 +27541,24 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 774 (Sonde Gegenstand und Befund durch Vermerk getrennt): „Fensterheber repariert, geht aber nicht“, „…, aber geht immer noch nicht“, „Klima repariert, kühlt aber nicht“, „air con fixed but still not cold“, „Spiegelverstellung repariert, aber defekt“, „склопідйомник замінили, але все одно не працює“ zeigen den Hinweis; Abholung/Rechnung offen und reiner Vermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", app.indexOf('const noFixed')) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const t = (x) => noFixed(recurFix(x));
+  const T = {
+    WINDOW_HINT: [['Fensterheber repariert, geht aber nicht', 'Fensterheber repariert aber geht immer noch nicht', 'Fensterheber getauscht, aber wieder kaputt', 'склопідйомник замінили, але все одно не працює'], ['Fensterheber getauscht, aber noch nicht abgeholt', 'Fensterheber repariert', 'Fensterheber geht nicht, repariert', 'Fensterheber repariert, aber Rechnung fehlt']],
+    CLIMATE_HINT: [['Klima repariert, kühlt aber nicht', 'air con fixed but still not cold'], ['Klima repariert, kühlt wieder']],
+    MIRROR_HINT: [['Spiegelverstellung repariert, aber defekt'], []],
+    CABLOCK_HINT: [['Zentralverriegelung getauscht, funktioniert aber nicht'], []],
+    TELEM_HINT: [['Navi getauscht, geht aber trotzdem nicht'], ['Navi getauscht']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(t(x)), n + ': ' + x); for (const x of neg) ok(!r.test(t(x)), n + ' nicht: ' + x); }
+  ok(!/[.;!?]/.test(t('Fensterheber repariert, geht aber nicht')), 'Trenner ist kein Satzende');
+});
 await test('Backlog 773 (Sonde Werkstatt-/Formularsprache): „ohne Funktion“, „keine Funktion“, „funktionslos“, „tut nicht (mehr)“, „ohne Bild“, „Klimaanlage: geht nicht“, „inoperative“, „out of order“, „no function“, „does nothing“, „u/s“, „не функціонує/функционирует“ zeigen den Hinweis wie „funktioniert nicht“; „tut nicht weh“ und Reparaturvermerk nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
