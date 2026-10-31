@@ -231,6 +231,13 @@ input[type=checkbox], input[type=radio] { width: 22px; height: 22px; min-height:
 .seg label.bad:has(input:checked) { background: var(--stop-solid); color: #fff; }
 /* Tastatur: das Radio ist unsichtbar – Fokusrahmen an der Beschriftung zeigen */
 .seg label:has(input:focus-visible) { outline: 3px solid var(--signal); outline-offset: -3px; box-shadow: inset 0 0 0 5px var(--ink); position: relative; z-index: 1; }
+/* [CLAUDE] Backlog 792 (Blickwinkel „Fahrer mit älterem Handy/Browser“): Die Auswahl in Abfahrtskontrolle (OK/Mangel/entfällt) und
+   Fahrzeugwahl war nur über :has() sichtbar – Browser ohne :has() (Android-WebView/Chrome < 105, Samsung Internet < 20, Firefox < 121,
+   iOS < 15.4) zeigten nach dem Tippen nichts an. Dort bleibt das echte Auswahlfeld sichtbar. */
+@supports not selector(:has(*)) {
+  .seg input, .vehpick input { position: static; opacity: 1; pointer-events: auto; width: 20px; height: 20px; margin: 0 6px 0 0; flex: 0 0 auto; accent-color: var(--ink); }
+  .seg label { display: inline-flex; align-items: center; justify-content: center; }
+}
 .checkitem > span:first-child { min-width: 0; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; }
 .checkitem.missing { background: color-mix(in srgb, var(--stop) 10%, transparent); box-shadow: inset 4px 0 0 var(--stop); padding-left: 10px; }
 

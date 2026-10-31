@@ -28757,6 +28757,21 @@ await test('Backlog 791 (Blickwinkel „Fahrer mit Bildschirmtastatur im Querfor
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-tastatur-querformat.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 792 (Blickwinkel „Fahrer mit älterem Handy/Browser“): jedes Auswahlfeld, das unsichtbar ist und dessen Auswahl nur über :has() angezeigt wird, bleibt in Browsern ohne :has() sichtbar (`@supports not selector(:has(*))`); UI-Prüfung `ui-ohne-has.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const i = css.indexOf('@supports not selector(:has(*)) {'); ok(i > 0, 'Rückfallebene ohne :has() vorhanden');
+  const block = css.slice(i, css.indexOf('\n}', i));
+  const hidden = [...css.matchAll(/^([.\w -]+?) input \{[^}]*opacity: 0;/gm)].map((m) => m[1].trim());
+  ok(hidden.length >= 2, 'versteckte Auswahlfelder gefunden');
+  for (const h of hidden) {
+    if (!css.includes(`${h} label:has(input:checked)`) && !css.includes(`${h}:has(input:checked)`)) continue;
+    ok(new RegExp(`(^|[ ,{])${h.replace(/\./g, '\\.')} input[ ,{]`).test(block), `${h}: Auswahlfeld ohne :has() sichtbar`);
+  }
+  ok(/opacity: 1;/.test(block) && /position: static;/.test(block) && /pointer-events: auto;/.test(block), 'Feld sichtbar, im Fluss, antippbar');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-ohne-has.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
