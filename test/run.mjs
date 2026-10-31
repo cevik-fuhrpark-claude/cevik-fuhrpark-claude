@@ -27541,6 +27541,24 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 759 (Sonde über vorhandene Muster, 31.10.2026 03:15): Fehlgriff „BAG Kontrolle ohne Mängel“ (Kontrolle) behoben, „гальмівний диск тріснув“ ist Bremse statt Rad; neu erkannt: „Bremsbelag verschlissen“, „brake pads worn“, „колодки стерлися“, „brake disc cracked“ → Bremse; „Spurstangenkopf ausgeschlagen“, „tie rod bent“, „рульова тяга погнута“ → Lenkung; „Federbein gebrochen“ → Federung; „козирок зламався“ → Ausstattung; „лючок бака не відкривається“ → Tankdeckel; „Nebelscheinwerfer defekt“, „Kennzeichenbeleuchtung aus“, „протитуманка не працює“, „ліхтарі причепа не горять“ → Beleuchtung; „side skirt loose“, „spoiler ripped off“, „спойлер відірвався“ → lose Teile; „пломба зірвана“ → Diebstahl/Aufbruch; „roadside check found defects“, „поліція зупинила, знайшли несправності“ → Kontrolle; Reparaturvermerke und Alltägliches nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    BRAKE_HINT: [['Bremsbelag verschlissen', 'Bremsbeläge runter', 'Bremsen verschlissen', 'brake pads worn', 'brake pad wear warning', 'brake linings worn', 'brake disc cracked', 'колодки стерлися', 'тормозные колодки стерлись', 'гальмівний диск тріснув'], ['Bremsbeläge neu', 'Bremsbeläge', 'brake pads replaced', 'brake pads worn, replaced', 'колодки нові', 'гальмівний диск']],
+    WHEEL_HINT: [['диск тріснув'], ['гальмівний диск тріснув']],
+    STEER_HINT: [['Spurstangenkopf ausgeschlagen', 'Spurstange verbogen', 'tie rod bent', 'track rod end worn', 'рульова тяга погнута', 'рулевая тяга погнута'], ['Spurstange', 'tie rod replaced', 'рульова тяга нова']],
+    SUSP_HINT: [['Federbein gebrochen'], ['Federbein', 'Federbein gebrochen, getauscht']],
+    CABKIT_HINT: [['козирок зламався', 'козырек сломался'], ['козирок']],
+    FUELCAP_HINT: [['лючок бака не відкривається', 'лючок бензобака не відкривається'], ['лючок бака']],
+    LIGHTS_HINT: [['Nebelscheinwerfer defekt', 'Nebelleuchte kaputt', 'Kennzeichenbeleuchtung aus', 'протитуманка не працює', 'підсвітка номера не працює', 'ліхтарі причепа не горять'], ['Nebelscheinwerfer an', 'Kennzeichenbeleuchtung aus Kunststoff', 'Kennzeichenbeleuchtung', 'протитуманки ввімкнені']],
+    LOOSE_HINT: [['side skirt loose', 'side skirt hanging', 'roof spoiler ripped off', 'спойлер відірвався'], ['side skirt', 'spoiler adjusted', 'спойлер']],
+    THEFT_HINT: [['пломба зірвана', 'пломба зламана', 'пломбу зірвали'], ['пломба на месте', 'пломба ціла']],
+    ROADCHK_HINT: [['roadside check found defects', 'police inspection, defects found', 'перевірка BAG, знайшли недоліки', 'поліція зупинила, знайшли несправності', 'BAG Kontrolle, Mängel festgestellt'], ['police stopped me, no defects', 'BAG Kontrolle ohne Mängel', 'поліція перевірила, все добре']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+});
 await test('Backlog 758 (Sonde über vorhandene Muster, 31.10.2026 03:15): Fehlgriffe behoben – „стяжний ремінь порвався“ ist kein Sicherheitsgurt, „brakes overheating“/„гальма перегріваються“ kein Motor, „landing gear stuck“ kein Getriebe; neu erkannt: „Kunde hat Lkw beschädigt“, „клієнт пошкодив машину“ → Schaden beim Kunden; „скол на лобовому“ → Glas; „Mäuse im Lkw“ → Ungeziefer; „люфт керма“ → Lenkung; „clutch won\'t disengage“ → Getriebe/Kupplung; „Kilometerzähler steht“, „датчик палива не працює“ → Anzeige; „вантажівку обікрали“ → Diebstahl; „двері не замикаються“, „роллета заклинила“, „Ladebordwand hängt schief“ → Türen/Ladebordwand; „бічний захист відірвався“ → lose Teile; „trailer temperature too high“, „температура в причепі висока“ → Kühlaggregat; „low oil pressure“, „тиск масла низький“ → Warnleuchte; „глушник гуркотить“ → Auspuff; „лиса резина“ → Reifen; „піднімна вісь не піднімається“ → Federung; „Königszapfen verschlissen“ → Kupplung; „дзеркало збили“ → Spiegel; „Gurt klemmt“ → Sitz/Gurt; „Motor geht aus“, „помилка AdBlue“ → Motor; „Rad blockiert“, „колесо заклинило“ → Bremse; Reparaturvermerke und Alltägliches nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
