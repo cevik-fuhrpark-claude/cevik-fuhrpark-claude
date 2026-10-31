@@ -1981,7 +1981,9 @@ const FIX_NEG = /(?:(?<![a-zäöüß])(?:nicht|nie|kein\S*|not|never)|n['’]t|(
 // „треба замінити“, „нужно отремонтировать“) ist kein Reparaturvermerk – Infinitive (-ти/-ть) und Modalverben davor bzw. „werden/lassen“ danach.
 const FIX_PLAN = /(?:(?<![a-zäöüß])(?:muss|m(?:ü|ue)ssen|soll(?:te|en)?|wird|bitte)|(?<![a-z])(?:be|needs?|must|should|will))\s+(?:[a-zäöüß]+\s+){0,2}$/i;
 const FIX_PLAN_AFTER = /^\s+(?:werden|lassen)(?![a-zäöüß])/i;
-const recurFix = (s) => String(s || '').split(/([.;!?\n]+)/).map((part) => {
+// Backlog 769: EN „stopped/quit/ceased working“ wird wie „not working“ gelesen (Fenster, Navi, Spiegel, Sitz, Maut, Zentralverriegelung … kannten nur „not working“).
+const STOP_WORK = /(?<![a-z])(?:stopp(?:ed|s)|quit(?:s|ted)?|ceased?)\s+(?:working|functioning)(?![a-z])/gi;
+const recurFix = (s) => String(s || '').replace(STOP_WORK, 'not working').split(/([.;!?\n]+)/).map((part) => {
   const all = RECUR_MARK.test(part);
   return part.replace(FIX_WORD, (w, off) => (all || FIX_NEG.test(part.slice(0, off)) || FIX_PLAN.test(part.slice(0, off)) || FIX_PLAN_AFTER.test(part.slice(off + w.length)) || /(?:ти|ть|тися|ться)$/i.test(w) ? (/^\S*wieder/i.test(w) || /^(?:schon|immer)\s/i.test(w) ? '' : '◦') : w));
 }).join('');
