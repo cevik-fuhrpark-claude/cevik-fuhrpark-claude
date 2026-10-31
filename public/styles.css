@@ -55,6 +55,8 @@ p { margin: 0 0 0.75rem; max-width: 70ch; }
 #app input[type=file] { max-width: 100%; }
 #app input[type=file]::file-selector-button { white-space: normal; max-width: 100%; }
 .muted { color: var(--steel); }
+/* Backlog 785: Platzhalter in Eingabefeldern – Browser-Grau hatte im Dunkelmodus nur 3,4:1 (WCAG 1.4.3 verlangt 4,5:1); Stahlgrau erreicht hell 6,1:1, dunkel 6,9:1 */
+::placeholder { color: var(--steel); opacity: 1; }
 .small { font-size: 0.875rem; }
 :focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; box-shadow: 0 0 0 2px var(--ink); } /* dunkler Ring: Gelb allein 1,9:1 auf Weiß (WCAG 1.4.11 verlangt 3:1), 21.10.2026 */
 /* Datumsfelder: der Tab-Stopp auf dem Kalendersymbol setzt kein :focus-visible – Ring über :focus-within (22.10.2026) */

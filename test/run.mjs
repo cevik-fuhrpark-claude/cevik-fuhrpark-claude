@@ -28649,6 +28649,29 @@ await test('Backlog 656–658 (Blickwinkel „Fahrer verlässt das Unternehmen �
   }
 });
 
+await test('Backlog 785 (Blickwinkel „Werkstatt-Tablet im Freien bei Sonnenlicht“): Farbpaare der Oberfläche erreichen in hell und dunkel den WCAG-Kontrast (Text ≥ 4,5:1); Platzhalter in Eingabefeldern nutzen Stahlgrau statt Browser-Grau (dunkel vorher 3,4:1); UI-Prüfung `ui-kontrast.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const vars = (block) => Object.fromEntries([...block.matchAll(/--([a-z-]+):\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1], m[2]]));
+  const light = vars(css.slice(css.indexOf(':root {'), css.indexOf('}', css.indexOf(':root {'))));
+  const di = css.indexOf('@media (prefers-color-scheme: dark)'); ok(di > 0, 'Dunkel-Block');
+  const dark = { ...light, ...vars(css.slice(di, css.indexOf('}', css.indexOf(':root {', di)))) };
+  const lum = (h) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; const [r, g, b] = [1, 3, 5].map((i) => f(parseInt(h.slice(i, i + 2), 16))); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  // [Schrift, Hintergrund] – wie in styles.css verwendet (Text, gedämpfter Text, Chips/Panels, feste Flächen mit weißer Schrift)
+  const pairs = [['ink', 'paper'], ['ink', 'surface'], ['steel', 'paper'], ['steel', 'surface'], ['mid', 'mid-bg'], ['go', 'go-bg'], ['stop', 'stop-bg'],
+    ['signal-ink', 'signal'], ['#ffffff', 'bar'], ['#ffffff', 'stop-solid'], ['#ffffff', 'go-solid'], ['#ffffff', 'test'], ['#ffffff', 'eu']];
+  for (const [name, T] of [['hell', light], ['dunkel', dark]]) {
+    for (const [fg, bg] of pairs) {
+      const a = fg.startsWith('#') ? fg : T[fg], b = T[bg]; ok(a && b, `Farbe fehlt ${fg}/${bg} (${name})`);
+      const q = ratio(a, b); ok(q >= 4.5, `${name}: --${fg} auf --${bg} nur ${q.toFixed(2)}:1`);
+    }
+  }
+  ok(ratio('#ffffff', '#7d52b3') >= 4.5 && css.includes('#7d52b3 14px 28px); color: #fff'), 'Testband-Streifen');
+  ok(/::placeholder\s*\{\s*color:\s*var\(--steel\);\s*opacity:\s*1;/.test(css), 'Platzhalter in Stahlgrau, volle Deckkraft');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-kontrast.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

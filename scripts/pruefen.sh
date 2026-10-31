@@ -374,6 +374,7 @@ UI-Ladebordwand/Ladekran, Termin ohne Intervall (Backlog 574, 576)|ui-aufbau-pru
 UI-Kühlauflieger Kühlgerät/ATP/Temperaturschreiber, Import-Arten (Backlog 583, 589)|ui-kuehl-pruefarten.py|/tmp/cfp-kuehl-pruefarten.log
 UI-Hinweise Ausfall nach Vermerk, Fensterheber langsam, Anlasser/Spiegelheizung, UK „зламався“, Licht (Backlog 777–781)|ui-hinweis-ausfall-langsam.py|/tmp/cfp-hinweis-ausfall-langsam.log
 UI-Hinweise UK/RU mit Reparaturvermerk: Gaspedal, Konturmarkierung, Ersatzrad, Ladeboden, Schmierung, Federung, Lenkung, Plane (Backlog 782–784)|ui-hinweis-reparatur-ukru.py|/tmp/cfp-hinweis-reparatur-ukru.log
+UI-Kontrast hell/dunkel nach WCAG 1.4.3 auf den Hauptansichten (Inhaber, Fahrer, Werkstatt; Backlog 785)|ui-kontrast.py|/tmp/cfp-kontrast.log
 '
 N=0
 NL='
