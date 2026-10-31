@@ -1999,7 +1999,21 @@ const INTERMIT = [
   [/(?<![а-яіїєґё])(?:глюч(?:ить|ать|ит|ат)|глюка[а-яіїєґ]*|барахл(?:ить|ять|ит|ят)|працю(?:є|ють)\s+через\s+раз)(?![а-яіїєґё])/gi, 'не працює'],
   [/(?<![а-яіїєґё])работа(?:ет|ют)\s+через\s+раз(?![а-яіїєґё])/gi, 'не работает'],
 ];
-const noFunc = (s) => INTERMIT.reduce((a, [re, to]) => a.replace(re, to), s).replace(/(?<=[a-zäöüß])\s*:\s+(?=[a-zäöüß])/gi, ' ').replace(NO_FUNC, (m) => (/^[a-zäöüß]/i.test(m) ? (/^(?:ohne|kein|funktionslos|tut)/i.test(m) ? 'funktioniert nicht' : 'not working') : (/функциониру/i.test(m) ? 'не работает' : 'не працює')));
+// Backlog 776: Umgangssprache/Tippfehler beim schnellen Tippen – „geht net/ned/nich“, „funzt nicht“, „get nicht“, „funktionirt“, „kaput“, „defeckt/defekd“, „is kaputt“,
+// „hinüber/im Eimer/im Arsch“, EN „not workin“, „dont/don't work“, „aint working“ werden in die Normalform gebracht (nur nach den passenden Verben, „cargo net“ bleibt)
+const COLLOQ = [
+  [/(?<![a-zäöüß])(?:funzt|funtzt|funktionirt|funktionier|funkioniert|funktoniert|funktionert|funkzioniert)(?![a-zäöüß])/gi, 'funktioniert'],
+  [/(?<![a-zäöüß])get(?=\s+(?:nicht|net|ned|nich|nit|mehr\s+nicht)(?![a-zäöüß]))/gi, 'geht'],
+  [/(?<![a-zäöüß])(geht|funktioniert|l(?:ä|ae)uft|k(?:ü|ue)hlt|heizt|startet|schlie(?:ß|ss)t|(?:ö|oe)ffnet|reagiert|tut|ist|sind)(\s+(?:\S+\s+)?)(?:net|ned|nich|nit)(?![a-zäöüß])/gi, '$1$2nicht'],
+  [/(?<![a-zäöüß])kaput(?![a-zäöüßt])/gi, 'kaputt'],
+  [/(?<![a-zäöüß])(?:defeckt|defekd|deffekt|defeckd|defekkt)(?![a-zäöüß])/gi, 'defekt'],
+  [/(?<![a-zäöüß])is(?=\s+(?:\S+\s+)?(?:kaputt|defekt|hinüber)(?![a-zäöüß]))/gi, 'ist'],
+  [/(?<![a-zäöüß])(?:ist|sind)\s+(?:\S+\s+)?(?:hin(?:ü|ue)ber|im\s+eimer|im\s+arsch)(?![a-zäöüß])|(?<![a-zäöüß])(?:im\s+eimer|im\s+arsch)(?![a-zäöüß])/gi, 'ist kaputt'],
+  [/(?<![a-z])workin(?![a-z'’g])/gi, 'working'],
+  [/(?<![a-z])(?:dont|don['’]t)\s+work(?![a-z])/gi, "doesn't work"],
+  [/(?<![a-z])ain['’]?t\s+working(?![a-z])/gi, 'not working'],
+];
+const noFunc = (s) => INTERMIT.reduce((a, [re, to]) => a.replace(re, to), COLLOQ.reduce((a, [re, to]) => a.replace(re, to), s)).replace(/(?<=[a-zäöüß])\s*:\s+(?=[a-zäöüß])/gi, ' ').replace(NO_FUNC, (m) => (/^[a-zäöüß]/i.test(m) ? (/^(?:ohne|kein|funktionslos|tut)/i.test(m) ? 'funktioniert nicht' : 'not working') : (/функциониру/i.test(m) ? 'не работает' : 'не працює')));
 const recurFix = (s) => noFunc(String(s || '').replace(STOP_WORK, 'not working')).replace(PRED_FIRST, (m, v, subj) => m + ' ⁘' + subj + ' ' + v).split(/([.;!?\n]+)/).map((part) => {
   const all = RECUR_MARK.test(part);
   return part.replace(FIX_WORD, (w, off) => (all || FIX_NEG.test(part.slice(0, off)) || FIX_PLAN.test(part.slice(0, off)) || FIX_PLAN_AFTER.test(part.slice(off + w.length)) || /(?:ти|ть|тися|ться)$/i.test(w) ? (/^\S*wieder/i.test(w) || /^(?:schon|immer)\s/i.test(w) ? '' : '◦') : w));

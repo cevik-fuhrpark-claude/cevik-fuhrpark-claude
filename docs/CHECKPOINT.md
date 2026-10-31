@@ -52,7 +52,7 @@ Schema-Migration läuft automatisch beim ersten Request (`src/schema.js` wird au
 - `public/` – PWA ohne Framework, DE/UK/EN, Service Worker mit Push-Quittung. Texte nur in `public/i18n.js` pflegen; `npm run build` erzeugt daraus `i18n-core.js` + `i18n-de/-uk/-en.js` (Backlog 588, nie von Hand ändern; Test prüft Aktualität). `app.js` importiert aus `i18n-core.js` und lädt nur das Paket der aktiven Sprache; die Hilfe-Schritte (`help_*_s`) stehen in eigenen Paketen `i18n-<sprache>-hilfe.js` und werden erst von Hilfe/Suche per `loadHelp()` geladen (Backlog 597); UI-Skripte dürfen weiter `import('/i18n.js')` nutzen. **App-Module (Backlog 593):** `public/app.js` bleibt die einzige Quelle der Oberfläche; `npm run build` (`scripts/build-app.mjs`) erzeugt `app-main.js` (lädt `index.html`) sowie `app-verwaltung.js`/`app-lager.js`/`app-fahrzeug.js` (selten genutzte Ansichten bzw. Fahrzeugakte, per `import()` beim ersten Aufruf; Gruppen in `GROUPS`, jede Gruppe auch in `SHELL` von `public/sw.js`). Erzeugte Dateien nie von Hand ändern (Test „Backlog 593“ prüft Aktualität).
 
 ## Tests
-`npm test` → 964 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 10 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
+`npm test` → 965 automatisierte Abnahmetests (`CFP_QPLAN=1 npm test` listet zusätzlich alle Volltabellen-Suchen je Tabelle) (T02–T18 der Projektdokumentation + Sicherheit); `npm run zeitreise` → dieselben Tests zu 10 kritischen Uhrzeiten/Daten. Lokaler UI-Server:
 `node --experimental-sqlite scripts/dev-server.mjs` (Port 8787, In-Memory-DB).
 
 ## Stand 10.10.2026
