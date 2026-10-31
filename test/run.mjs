@@ -27541,6 +27541,23 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 766 (Folge aus 764/765, Sonde Vermerk vor dem Befund): „Fensterheber getauscht, aber geht nicht“, „power window fixed but not working“, „склопідйомник замінили, але не працює“, „стеклоподъемник заменили, но не работает“ zeigen den Hinweis; „…, getauscht“ und „getauscht, aber noch nicht abgeholt“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const a = app.indexOf('const FIX_WORD'), b = app.indexOf("}).join('');", a) + 12;
+  const recurFix = new Function(app.slice(a, b) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", c) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const t = (x) => noFixed(recurFix(x));
+  const T = {
+    WINDOW_HINT: [['Fensterheber getauscht, aber geht nicht', 'power window fixed but not working', "power window fixed but it doesn't close", 'склопідйомник замінили, але не працює', 'стеклоподъемник заменили, но не работает'],
+      ['Fensterheber geht nicht, getauscht', 'Fensterheber geht nicht, getauscht, aber noch nicht abgeholt', 'power window not working, fixed but not picked up yet', 'склопідйомник не працює, замінили, але ще не забрали', 'Fensterheber geht nicht, getauscht, funktioniert aber wieder']],
+    NOSTART_HINT: [['Batterie getauscht, aber springt nicht an', 'акумулятор замінили, але не заводиться'], ['Batterie ist platt, getauscht']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(t(x)), n + ': ' + x); for (const x of neg) ok(!r.test(t(x)), n + ' nicht: ' + x); }
+  ok(noFixed('Reifen gewechselt, aber alles gut') === ' '.repeat('Reifen gewechselt'.length) + ', aber alles gut', 'Gegensatz ohne Verneinung bleibt Reparaturvermerk');
+});
 await test('Backlog 765 (Folge aus 764): Reparaturvermerk erkennt auch „ausgetauscht“, „ausgewechselt“, „instandgesetzt“, „поміняли“, „полагодили“, „поменяли“, „починили“ – wiederkehrend („obwohl ausgetauscht“, „знову, хоча полагодили“) und geplant („треба поміняти“, „нужно починить“) weiter mit Hinweis', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
