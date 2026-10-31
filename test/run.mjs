@@ -27541,6 +27541,29 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 772 (Sonde UK/RU Prädikat vorn): „не працює кондиціонер“, „не работает автономка“, „не працюють двірники“, „не працює центральний замок“, „не працює склопідйомник/навігатор/гідроборт“ zeigen denselben Hinweis wie in Normalstellung; Reparaturvermerk danach blendet aus, „знову, хоча замінили“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const a = app.indexOf('const STOP_WORK'); ok(a > 0 && app.indexOf('const PRED_FIRST') > a && app.indexOf('const PRED_FIRST') < app.indexOf('const recurFix'), 'PRED_FIRST vor recurFix');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", c) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const t = (x) => noFixed(recurFix(x));
+  const T = {
+    CLIMATE_HINT: [['не працює кондиціонер', 'не работает кондиционер', 'не працює автономка', 'не работает автономка', 'не працює кондиціонер в кабіні', 'не працює кондиціонер знову, хоча замінили'], ['не працює кондиціонер, відремонтували', 'не работает кондиционер, починили']],
+    WINDOW_HINT: [['не працює склопідйомник'], ['не працює склопідйомник, замінили']],
+    TELEM_HINT: [['не працює навігатор'], []],
+    CABLOCK_HINT: [['не працює центральний замок'], []],
+    VISIB_HINT: [['не працюють двірники'], []],
+    DASH_HINT: [['не працює спідометр'], []],
+    DOOR_HINT: [['не працює гідроборт'], []],
+    TACHO_HINT: [['не працює тахограф'], []],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(t(x)), n + ': ' + x); for (const x of neg) ok(!r.test(t(x)), n + ' nicht: ' + x); }
+  ok(recurFix('кондиціонер не працює') === 'кондиціонер не працює', 'Normalstellung unverändert');
+  ok(!/[.;!?]/.test(recurFix('не працює кондиціонер в кабіні').replace('не працює кондиціонер в кабіні', '')), 'Trenner ist kein Satzende');
+});
 await test('Backlog 771 (Sonde Hupe UK/RU): „гудок не працює/не работает/сломался“, „сигнал зламався“, „не працює сигнал“, „не работает гудок“, „не працює звуковий сигнал“ zeigen den Armaturen-/Hupen-Hinweis; Blinker/Stopplicht/Warnblinker und Reparaturvermerk nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -27741,7 +27764,7 @@ await test('Backlog 761 (Sonde Reparaturvermerke, 31.10.2026 05:15): wiederkehre
   // Bestehende Prüffälle aller Hinweis-Tests: recurFix ändert nichts, wo kein wiederkehrender Mangel beschrieben ist
   const src = readFileSync(new URL(import.meta.url), 'utf8');
   let n = 0; const self0 = src.indexOf("await test('Backlog 761 "), self1 = src.indexOf("await test('Backlog 760 ");
-  for (const m of src.matchAll(/^\s+([A-Z_]+_HINT): (\[\[.*\]\]),?$/gm)) { if (m.index > self0 && m.index < self1) continue; let v; try { v = Function('return ' + m[2])(); } catch { continue; } const r = (() => { try { return g(m[1]); } catch { return null; } })(); if (!r) continue; for (const x of [...v[0], ...(v[1] || [])]) { if (/obwohl|trotz|wieder\s+nicht|again|still|although|знову|хоча|опять|хотя|nicht\s+(?:\S+\s+)?(?:repariert|(?:aus)?getauscht|ersetzt)|not\s+(?:been\s+)?(?:fixed|replaced|repaired)|не\s+(?:відремонт|замін|полагод|поміня)|werden|lassen|needs?\s+to\s+be|will\s+be|треба|потрібно|нужно|надо|(?:stopp(?:ed|s)|quit|ceased?)\s+(?:working|functioning)/i.test(x)) continue; n++; ok(r.test(x) === r.test(recurFix(x)), m[1] + ' unverändert: ' + x); } }
+  for (const m of src.matchAll(/^\s+([A-Z_]+_HINT): (\[\[.*\]\]),?$/gm)) { if (m.index > self0 && m.index < self1) continue; let v; try { v = Function('return ' + m[2])(); } catch { continue; } const r = (() => { try { return g(m[1]); } catch { return null; } })(); if (!r) continue; for (const x of [...v[0], ...(v[1] || [])]) { if (/obwohl|trotz|wieder\s+nicht|again|still|although|знову|хоча|опять|хотя|nicht\s+(?:\S+\s+)?(?:repariert|(?:aus)?getauscht|ersetzt)|not\s+(?:been\s+)?(?:fixed|replaced|repaired)|не\s+(?:відремонт|замін|полагод|поміня)|werden|lassen|needs?\s+to\s+be|will\s+be|треба|потрібно|нужно|надо|(?:stopp(?:ed|s)|quit|ceased?)\s+(?:working|functioning)/i.test(x) || recurFix(x).includes('⁘')) continue; n++; ok(r.test(x) === r.test(recurFix(x)), m[1] + ' unverändert: ' + x); } }
   ok(n > 500, 'Prüffälle der übrigen Hinweis-Tests gegengeprüft: ' + n);
   ok(recurFix('Bremse quietscht, repariert') === 'Bremse quietscht, repariert' && recurFix('working again, fixed') === 'working again, fixed', 'Reparaturvermerke bleiben unverändert');
 });
