@@ -27541,6 +27541,29 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 782 (Sonde Reparaturvermerk UK/RU in Hinweisen ohne noFixed): „педаль газу заїдає, замінили“, „коврик под педалью, убрали“, „немає катафота, замінили“, „світловідбивна стрічка відклеїлась, приклеїли“, „підлога в причепі зламана, заварили“, „сідло сухе, полагодили“, „запаска спущена, замінили“ zeigen wie DE/EN keinen Hinweis; ohne Vermerk weiter; „акумулятор потік“ → Batterie', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", app.indexOf('const noFixed')) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  for (const [n, h] of [['PEDAL_HINT', 'dv'], ['CONTOUR_HINT', 'dv'], ['FLOOR_HINT', 'dv'], ['GREASE_HINT', 'dv'], ['SPARE_HINT', 'dv'], ['BATT_HINT', 'dfx']]) ok(app.includes('.hidden = !' + n + '.test(' + h + ');'), n + ' prüft ' + h);
+  const T = {
+    PEDAL_HINT: [['педаль газу заїдає', 'педаль газа заедает', 'килимок під педаллю', 'коврик под педалью', 'педаль газу знову заїдає, хоча замінили', 'Gaspedal klemmt'],
+      ['педаль газу заїдає, замінили', 'педаль газа заедает, отремонтировали', 'педаль газу залипає, полагодили', 'килимок під педаллю, прибрали', 'коврик под педалью, убрали', 'Gaspedal klemmt, repariert', 'Gaspedal klemmt, замінили']],
+    CONTOUR_HINT: [['немає катафота', 'світловідбивна стрічка відклеїлась', 'светоотражающая лента оторвана'],
+      ['немає катафота, замінили', 'світловідбивна стрічка відклеїлась, приклеїли', 'светоотражающая лента оторвана, наклеили', 'катафот брудний, помили']],
+    FLOOR_HINT: [['підлога в причепі зламана', 'пол в прицепе проломлен', 'борт пошкоджений'],
+      ['підлога в причепі зламана, заварили', 'пол в прицепе проломлен, заменили', 'борт пошкоджений, відремонтували']],
+    GREASE_HINT: [['Централізоване змащення порожнє', 'сідло сухе'], ['Централізоване змащення порожнє, усунули', 'сідло сухе, полагодили', 'система смазки ошибка, устранили']],
+    SPARE_HINT: [['запаска спущена', 'нет запаски', 'Ersatzrad fehlt'], ['запаска спущена, замінили', 'нет запаски, заменили', 'запасне колесо пошкоджене, замінили', 'Ersatzrad platt, getauscht']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(recurFix(x)), n + ': ' + x); for (const x of neg) ok(!r.test(recurFix(x)), n + ' nicht: ' + x); }
+  const b = g('BATT_HINT');
+  for (const x of ['акумулятор потік', 'аккумулятор потек', 'акумулятор протік']) ok(b.test(noFixed(recurFix(x))), 'BATT_HINT: ' + x);
+  for (const x of ['акумулятор потік, замінили', 'аккумулятор потек, заменили', 'акумулятор розряджений']) ok(!b.test(noFixed(recurFix(x))), 'BATT_HINT nicht: ' + x);
+});
 await test('Backlog 781 (Sonde Beleuchtung UK/RU „зламалась/зламався/сломалась“ wie „Scheinwerfer kaputt“/„headlight broken“): „фара зламалась“, „ліхтар зламався“, „стоп-сигнал/поворотник зламався“, „фара сломалась“ zeigen den Licht-Hinweis; UK/RU mit Reparaturvermerk („фара не світить, замінили“) jetzt wie DE/EN ohne Hinweis', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
