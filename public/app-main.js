@@ -934,7 +934,9 @@ function viewLogin() {
       const un = $('#u').value.replace(/\s+/g, ''); const ul = $('#ulatin');
       if (/[\u0400-\u04FF]/.test(un)) { ul.hidden = false; $('#u').focus(); return; }
       ul.hidden = true;
-      const r = await api('POST', '/api/login', { username: un, password: $('#p').value, device_id: deviceId() });
+      // Backlog 801 (Blickwinkel „Funkloch“): ohne Antwort blieb „Anmelden“ ohne Ende gesperrt – Zeitlimit wie beim Senden, danach „Keine Verbindung“
+      // (erneute Anmeldung ist unschädlich; Einladungslink/Zwei-Faktor-Code bewusst ohne, dort wäre die Wiederholung nicht gleichwertig)
+      const r = await api('POST', '/api/login', { username: un, password: $('#p').value, device_id: deviceId() }, { timeoutMs: SEND_TIMEOUT_MS });
       if (r.second_factor) { viewLoginCode(r.challenge); return; }
       afterLogin();
     } catch (err) { toast(err.message, true); }

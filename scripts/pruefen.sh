@@ -388,6 +388,7 @@ UI-Funkloch mit älterem Browser ohne AbortSignal.timeout: Foto-Upload bricht na
 UI-Funkloch: Meldung/Abfahrtskontrolle ohne Antwort nach dem Zeitlimit im Postausgang, Nachsenden ohne Dublette (DE/UK/EN; Backlog 798)|ui-funkloch-senden-zeitlimit.py|/tmp/cfp-funkloch-senden-zeitlimit.log
 UI-Werkstatt-Tablet im Funkloch: Befehl ohne Antwort nach dem Zeitlimit „nicht gespeichert“, erneut speichern ohne Doppelbuchung (DE/UK/EN; Backlog 799)|ui-befehl-ohne-antwort.py|/tmp/cfp-befehl-ohne-antwort.log
 UI-Funkloch beim App-Start (Netz angezeigt, keine Antwort): Offline-Start nach dem Zeitlimit, Meldung im Postausgang, Nachsenden ohne Dublette (DE/UK/EN; Backlog 800)|ui-funkloch-start.py|/tmp/cfp-funkloch-start.log
+UI-Anmeldung im Funkloch: nach dem Zeitlimit „Keine Verbindung“, Knopf frei, Eingaben bleiben, erneut anmelden (DE/UK/EN; Backlog 801)|ui-anmeldung-funkloch.py|/tmp/cfp-anmeldung-funkloch.log
 '
 N=0
 NL='

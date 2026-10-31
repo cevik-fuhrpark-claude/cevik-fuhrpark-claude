@@ -28922,6 +28922,22 @@ await test('Backlog 800 (Blickwinkel „Fahrer im Funkloch – Netz angezeigt, a
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-funkloch-start.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 801 (Blickwinkel „Funkloch“): Anmeldung mit Zeitlimit (SEND_TIMEOUT_MS) – ohne Antwort „Keine Verbindung“, Knopf wieder frei; Einladung/Zwei-Faktor-Code bewusst ohne; erneute Anmeldung unschädlich; UI-Prüfung `ui-anmeldung-funkloch.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const r = await api('POST', '/api/login', { username: un, password: $('#p').value, device_id: deviceId() }, { timeoutMs: SEND_TIMEOUT_MS });"), 'Anmeldung mit Zeitlimit');
+  ok(!/api\('POST', '\/api\/invite\/accept'[^\n]*timeoutMs/.test(app), 'Einladungslink ohne Zeitlimit (Wiederholung wäre nicht gleichwertig)');
+  // Server: zweimal hintereinander anmelden (erste Antwort ging verloren) → beide gültig, keine Sperre
+  const { e } = await freshWorld();
+  const c1 = new Client(worker, e, 'anon');
+  const body = { username: 'w.fahrer', password: 'Sicheres-Passwort-2026', device_id: 'a'.repeat(32) };
+  const a1 = await c1.post('/api/login', body); eq(a1.status, 200, 'erste Anmeldung (Antwort ging verloren) ' + JSON.stringify(a1.data));
+  const c2 = new Client(worker, e, 'anon');
+  const a2 = await c2.post('/api/login', body); eq(a2.status, 200, 'erneute Anmeldung gelingt ' + JSON.stringify(a2.data));
+  eq((await c2.get('/api/me')).status, 200, 'neue Sitzung gültig');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-anmeldung-funkloch.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
