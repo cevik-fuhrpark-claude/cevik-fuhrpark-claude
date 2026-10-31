@@ -384,6 +384,7 @@ UI-älterer Browser ohne :has(): Auswahl in Abfahrtskontrolle/Fahrzeugwahl sicht
 UI-älterer Browser ohne randomUUID/color-mix(): Lagerbuchung gelingt, offene Prüfzeile markiert (DE/UK/EN; Backlog 793)|ui-ohne-randomuuid.py|/tmp/cfp-ohne-randomuuid.log
 UI-älterer Browser ohne Regex-Lookbehind (Safari < 16.4): App startet, Hinweise im Meldeformular wie neu (DE/UK/EN; Backlog 794)|ui-ohne-lookbehind.py|/tmp/cfp-ohne-lookbehind.log
 UI-älterer Browser ohne createImageBitmap (iOS < 15): große/gedrehte Fotos verkleinert hochgeladen (DE/UK/EN; Backlog 795)|ui-foto-ohne-imagebitmap.py|/tmp/cfp-foto-ohne-imagebitmap.log
+UI-Funkloch mit älterem Browser ohne AbortSignal.timeout: Foto-Upload bricht nach dem Zeitlimit ab, Foto im Postausgang (DE/UK/EN; Backlog 797)|ui-foto-zeitlimit-ohne-abortsignal.py|/tmp/cfp-foto-zeitlimit-ohne-abortsignal.log
 '
 N=0
 NL='

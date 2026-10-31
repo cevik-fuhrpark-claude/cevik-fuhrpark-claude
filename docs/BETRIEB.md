@@ -230,6 +230,7 @@ haben einen Rückfall und sind je mit einem UI-Skript abgesichert, das einen äl
   Literale in den erzeugten Modulen als `lbRx(String.raw…)` ein; ohne Lookbehind entsteht eine Ersatzfassung, die nie weniger trifft
   (Hinweise im Meldeformular eher öfter). In `public/app.js` bleiben die Literale unverändert (Backlog 794, `ui-ohne-lookbehind.py`).
 - `createImageBitmap` (iOS < 15): Fotos werden über `<img>` dekodiert und trotzdem auf 1600 px verkleinert (Backlog 795, `ui-foto-ohne-imagebitmap.py`).
+- `AbortSignal.timeout` (Chrome < 103, iOS < 16): Zeitlimit des Foto-Uploads über `AbortController` + `setTimeout` (`timeoutSignal`) – ohne Rückfall hing „Lade Foto 1/1“ im Funkloch ohne Ende (Backlog 797, `ui-foto-zeitlimit-ohne-abortsignal.py`).
 Neue JS/CSS-Funktionen deshalb vor dem Einsatz auf Unterstützung prüfen und ggf. mit Rückfall bauen.
 
 ## Gesamtprüfung `scripts/pruefen.sh`

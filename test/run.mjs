@@ -28854,6 +28854,22 @@ await test('Backlog 795 (Blickwinkel „Fahrer mit älterem Handy/Browser“): F
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-foto-ohne-imagebitmap.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 797 (Blickwinkel „Fahrer im Funkloch mit älterem Handy“): Foto-Upload hat auch ohne AbortSignal.timeout (Chrome < 103, iOS < 16) ein Zeitlimit – Rückfall AbortController + setTimeout; danach Postausgang; UI-Prüfung `ui-foto-zeitlimit-ohne-abortsignal.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i = app.indexOf('function timeoutSignal(ms) {'); ok(i > 0, 'timeoutSignal vorhanden');
+  const body = app.slice(i, app.indexOf('\n}\n', i));
+  ok(body.includes('AbortSignal.timeout(ms)') && body.includes('new AbortController()') && body.includes('setTimeout(() => c.abort(), ms)'), 'nativ, sonst AbortController + setTimeout');
+  eq((app.match(/AbortSignal\.timeout\(/g) || []).length, 1, 'AbortSignal.timeout nur in timeoutSignal');
+  ok(app.includes('const sig = extra.timeoutMs ? timeoutSignal(extra.timeoutMs) : undefined;'), 'api() nutzt den Rückfall');
+  // Verhalten: ohne AbortSignal.timeout bricht das Signal nach der Frist ab
+  const fn = new Function('AbortSignal', 'AbortController', body + '\n}\nreturn timeoutSignal;');
+  const sig = fn({}, AbortController)(20); ok(sig && !sig.aborted, 'Signal zunächst offen');
+  await new Promise((r) => setTimeout(r, 60)); ok(sig.aborted, 'nach Ablauf abgebrochen');
+  eq(fn(undefined, undefined)(20), undefined, 'ohne AbortController: kein Signal, kein Fehler');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-foto-zeitlimit-ohne-abortsignal.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

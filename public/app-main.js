@@ -208,6 +208,13 @@ function plate(p, opts = {}) {
 }
 
 // ---------- API ----------
+// Backlog 797 (Blickwinkel „Fahrer im Funkloch mit älterem Handy“): AbortSignal.timeout fehlt in Chrome/Android-WebView < 103 und iOS < 16 –
+// dort hatte der Foto-Upload gar kein Zeitlimit und „Lade Foto 2/5“ hing im Funkloch ohne Ende. Rückfall: AbortController + setTimeout.
+function timeoutSignal(ms) {
+  try { if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) return AbortSignal.timeout(ms); } catch {}
+  if (typeof AbortController === 'undefined') return undefined;
+  const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal;
+}
 async function api(method, path, body, extra = {}) {
   const headers = { 'x-cfp': '1', ...(extra.headers || {}), ...(extra.bg ? { 'x-cfp-bg': '1' } : {}) };
   // Zahlen werden nach der hier angezeigten Sprache gelesen (geteiltes Konto: andere Geräte können eine andere Sprache zeigen, 23.10.2026)
@@ -230,7 +237,7 @@ async function api(method, path, body, extra = {}) {
   if (!extra.bg) lastApiAt = Date.now(); // Hintergrund-Abfragen (Zahl am Glockensymbol) zählen nicht als Bedienung – auch serverseitig nicht (x-cfp-bg)
   // timeoutMs: Zeitlimit (Foto-Uploads) – ohne Antwort gilt die Anfrage als Netzabbruch (21.10.2026: „Lade Foto 2/5“ hing ohne Ende,
   // nach Neuladen fehlten die restlichen Fotos still); dann greift der Postausgang für die restlichen Fotos
-  const sig = extra.timeoutMs && typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(extra.timeoutMs) : undefined;
+  const sig = extra.timeoutMs ? timeoutSignal(extra.timeoutMs) : undefined;
   let t0 = Date.now();
   // Backlog 596/598: Vorabrufe aus boot.js (/api/me, dann /api/meta) – nur als erste API-Anfragen in genau dieser Reihenfolge übernommen;
   // jede abweichende Anfrage verwirft alle (nie eine veraltete Antwort, z. B. 401 von vor der Anmeldung)
