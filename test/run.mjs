@@ -28672,6 +28672,26 @@ await test('Backlog 785 (Blickwinkel „Werkstatt-Tablet im Freien bei Sonnenlic
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-kontrast.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 786–787 (Blickwinkel „Werkstatt-Tablet im Freien“): Rahmen von Eingabefeldern heben sich mit ≥ 3:1 von Fläche und Papier ab (WCAG 1.4.11, hell/dunkel; vorher 1,4:1); Fahrzeugauswahl-Karten mindestens so breit wie das Kennzeichen (vorher ragte es am Tablet heraus); UI-Skripte in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const vars = (block) => Object.fromEntries([...block.matchAll(/--([a-z-]+):\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1], m[2]]));
+  const light = vars(css.slice(css.indexOf(':root {'), css.indexOf('}', css.indexOf(':root {'))));
+  const di = css.indexOf('@media (prefers-color-scheme: dark)');
+  const dark = { ...light, ...vars(css.slice(di, css.indexOf('}', css.indexOf(':root {', di)))) };
+  const lum = (h) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; const [r, g, b] = [1, 3, 5].map((i) => f(parseInt(h.slice(i, i + 2), 16))); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  ok(light.field && dark.field && light.field !== dark.field, 'Variable --field hell und dunkel');
+  for (const [name, T] of [['hell', light], ['dunkel', dark]]) for (const bg of ['surface', 'paper']) {
+    const q = ratio(T.field, T[bg]); ok(q >= 3, `${name}: Feldrahmen auf --${bg} nur ${q.toFixed(2)}:1`);
+  }
+  ok(/^input, select, textarea \{[^}]*border: 1\.5px solid var\(--field\)/m.test(css), 'Eingabefelder nutzen --field');
+  const m = css.match(/^\.vehpick \{[^}]*minmax\(min\(100%, max\((\d+)px, ([\d.]+)rem\)\)/m); ok(m, 'Spaltenbreite der Fahrzeugauswahl');
+  ok(Number(m[1]) >= 172 && Number(m[2]) >= 10.75, 'Karte ≥ Kennzeichen (≈ 9,2rem) + Innenabstand');
+  ok(2 * Number(m[1]) + 8 <= 390 - 32, 'am Handy (390 px) weiterhin 2 Spalten');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-fahrzeugwahl-breite.py|') && pr.includes('|ui-kontrast.py|'), 'UI-Skripte eingetragen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -2,6 +2,7 @@
 # WCAG 2.1 (1.4.3) auf den Hauptansichten in hell und dunkel. Für jedes sichtbare Element mit eigenem Text wird die Schriftfarbe
 # gegen den tatsächlich darunterliegenden Hintergrund (Vorfahren mit Hintergrundfarbe, Deckkraft eingerechnet) gemessen:
 # normaler Text ≥ 4,5:1, großer Text (≥ 24 px bzw. ≥ 18,66 px fett) ≥ 3:1. Deaktivierte Bedienelemente sind nach WCAG ausgenommen.
+# Dazu Rahmen von Eingabefeldern ≥ 3:1 zur Umgebung (WCAG 1.4.11, Backlog 786).
 # Rollen Inhaber, Fahrer und Werkstatt, 390/1366 px, DE. Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -25,7 +26,7 @@ AUDIT = r"""() => {
     if (['SCRIPT', 'STYLE', 'svg', 'SVG', 'OPTION', 'TEMPLATE'].includes(el.tagName) || el.closest('svg')) continue;
     const own = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join(' ').trim();
     const isField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) && !['hidden', 'checkbox', 'radio', 'file', 'range', 'color'].includes(el.type);
-    const txt = isField ? (el.value || el.placeholder || (el.tagName === 'SELECT' ? el.options[el.selectedIndex]?.text : '') || '') : own;
+    const txt = isField ? (el.value || el.placeholder || (el.tagName === 'SELECT' ? el.options[el.selectedIndex]?.text : '') || '(leer)') : own;
     if (!txt || !/[\p{L}\p{N}]/u.test(txt)) continue;
     const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) continue;
     const cs = getComputedStyle(el); if (cs.visibility !== 'visible' || cs.display === 'none') continue;
@@ -34,6 +35,9 @@ AUDIT = r"""() => {
     if (isField && !el.value && el.placeholder) { /* Platzhalter: eigene Farbe */ }
     const fgs = isField && !el.value && el.placeholder ? getComputedStyle(el, '::placeholder').color : cs.color; const fg0 = parse(fgs); if (!fg0) continue;
     const bg = bgOf(el); if (bg.img) continue;
+    // Backlog 786 (WCAG 1.4.11): Rahmen eines Eingabefelds muss sich mit ≥ 3:1 von der Umgebung abheben
+    if (isField && el.parentElement && parseFloat(cs.borderTopWidth) > 0) { const pb = bgOf(el.parentElement); const bc = parse(cs.borderTopColor);
+      if (bc && !pb.img) { const qb = ratio(over(bc, pb.c), pb.c); if (qb + 0.005 < 3) out.push(['Rahmen: ' + txt.slice(0, 30), Math.round(qb * 100) / 100, 3, cs.borderTopColor, 'rgb(' + pb.c.slice(0, 3).map(Math.round).join(',') + ')', el.tagName.toLowerCase() + '[rahmen]']); } }
     const o = opac(el); const fg = over([fg0[0], fg0[1], fg0[2], fg0[3] * o], bg.c);
     const size = parseFloat(cs.fontSize), bold = Number(cs.fontWeight) >= 700;
     const large = size >= 24 || (bold && size >= 18.66);

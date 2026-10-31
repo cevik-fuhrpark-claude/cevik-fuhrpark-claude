@@ -6,6 +6,7 @@
   --ink: #18222b;
   --steel: #556472;
   --rule: #d3dad8;
+  --field: #76838e;        /* Rahmen von Eingabefeldern: ≥ 3:1 zu Fläche und Papier (WCAG 1.4.11, Backlog 786) */
   --signal: #f2b01e;       /* Warnweste / Rundumleuchte: primäre Aktionen */
   --signal-ink: #2a1f00;
   --stop: #c4291f;         /* Sperre, kritisch */
@@ -28,7 +29,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #121a20; --surface: #1b252d; --ink: #e8eef0; --steel: #9fb0bb; --rule: #2d3a44;
+    --paper: #121a20; --surface: #1b252d; --ink: #e8eef0; --steel: #9fb0bb; --rule: #2d3a44; --field: #71838f;
     --stop-bg: #3a1714; --go-bg: #12301f; --mid-bg: #3a2a0c; --mid: #f0a540; --go: #5cc58b; --stop: #ff6b5e; --bar: #0a1015;
     color-scheme: dark;
   }
@@ -186,7 +187,7 @@ div.alert:not(.panel) { color: var(--stop); background: var(--stop-bg); border: 
 /* Formulare */
 label { display: block; font-weight: 600; margin: 14px 0 6px; }
 label .hint { font-weight: 400; color: var(--steel); display: block; font-size: 0.875rem; }
-input, select, textarea { width: 100%; font: inherit; padding: 12px; border: 1.5px solid var(--rule); border-radius: var(--radius-s); background: var(--surface); color: var(--ink); min-height: 48px; }
+input, select, textarea { width: 100%; font: inherit; padding: 12px; border: 1.5px solid var(--field); border-radius: var(--radius-s); background: var(--surface); color: var(--ink); min-height: 48px; }
 input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--stop); box-shadow: 0 0 0 1px var(--stop); }
 textarea { min-height: 110px; resize: vertical; }
 input[type=checkbox], input[type=radio] { width: 22px; height: 22px; min-height: 0; accent-color: var(--ink); }
@@ -207,7 +208,8 @@ input[type=checkbox], input[type=radio] { width: 22px; height: 22px; min-height:
 .choice b { display: block; }
 .choice:has(input:checked) { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .choice.c-kritisch:has(input:checked) { border-color: var(--stop); background: var(--stop-bg); box-shadow: none; }
-.vehpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, max(150px, 8rem)), 1fr)); gap: 8px; }
+/* Backlog 787: Mindestbreite = Kennzeichen (≈ 9,2rem) + Innenabstand/Rahmen – bei 150 px ragte das Schild am Tablet (820 px, 5 Spalten) aus der Karte; am Handy bleiben 2 Spalten */
+.vehpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, max(172px, 10.75rem)), 1fr)); gap: 8px; }
 .vehpick label { margin: 0; padding: 10px; border: 2px solid var(--rule); border-radius: var(--radius-m); background: var(--surface); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-weight: 400; cursor: pointer; }
 .vehpick label:has(input:checked) { border-color: var(--ink); }
 .vehpick input { position: absolute; opacity: 0; pointer-events: none; }
