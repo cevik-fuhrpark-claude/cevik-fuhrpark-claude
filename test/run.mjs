@@ -27541,6 +27541,34 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 760 (Sonde über vorhandene Muster, 31.10.2026 04:15): Fehlgriff „windscreen wipers not working“/„Frontscheibe beschlagen“ zeigte Glasschaden – jetzt nur Sicht/Wischer; Kühlwasserverlust DE/UK/EN einheitlich Undichtigkeit + Motor; neu erkannt: „put petrol in“ → Fehlbetankung; „Scheibenwaschanlage spritzt nicht“, „washer not spraying“ → Sicht; „ліжко зламалось“ → Ausstattung; „key broken in the lock“ → Schloss; „не вистачає гайки на колесі“ → Rad; „Loch in der Plane“, „hole in the tarp“, „дірка в тенті“ → Plane; „Auflieger hat sich während der Fahrt gelöst“ → Kupplung; „Luftfederung zu tief“, „машину кренить“ → Federung; „травить повітря“ → Druckluft/Bremse, am Rad → Reifen; „wheel losing air“ → Reifen; „кермо б\'є“ → Lenkung; „не перемикаються передачі“ → Getriebe; „air con not cold“ → Klima; „water in the cab“, „вода в кабіні“ → Wasser im Fahrerhaus; „кабіна не піднімається“ → Kippen; „бокове скло розбили“ → Glas; „Begrenzungsleuchte fehlt“, „marker light missing“ → Beleuchtung; Reparaturvermerke und Routine nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    GLASS_HINT: [['windscreen cracked', 'Frontscheibe Riss', 'Frontscheibe Steinschlag', 'бокове скло розбили', 'розбили бокове скло'], ['windscreen wipers not working', 'windscreen washer jets blocked', 'Frontscheibe beschlagen', 'windscreen fogged up', 'бокове скло розбили, замінили']],
+    LEAK_HINT: [['Kühlwasser verliert', 'Kühlmittel tropft', 'втрачає охолоджувальну рідину', 'охолоджувальна рідина тече', 'losing coolant'], ['Kühlwasser verliert, repariert', 'Kühlwasser nachgefüllt', 'охолоджувальна рідина', 'coolant topped up']],
+    ENGINE_HINT: [['losing coolant', 'truck losing coolant', 'coolant level keeps dropping', 'Kühlwasser verliert'], ['coolant topped up', 'losing coolant - fixed']],
+    FUEL_HINT: [['put petrol in', 'I put petrol in the tank'], ['put petrol in the generator', 'put diesel in', 'put petrol in, fixed']],
+    VISIB_HINT: [['Scheibenwaschanlage spritzt nicht', 'Waschdüse verstopft', 'Wischwasserpumpe geht nicht', 'washer not spraying', 'windscreen washer jets blocked', 'screenwash pump not working'], ['Scheibenwaschanlage', 'Waschdüse verstopft, gereinigt und getauscht', 'washer fluid topped up', 'washer not spraying - fixed']],
+    CABKIT_HINT: [['ліжко зламалось', 'кровать в кабине сломалась'], ['ліжко нове', 'ліжко зламалось, відремонтували']],
+    CABLOCK_HINT: [['key broken in the lock', 'key snapped off', 'broke the key'], ['key broken, replaced', 'key', 'keyboard broken']],
+    WHEEL_HINT: [['не вистачає гайки на колесі', 'на колесі не вистачає двох гайок'], ['не вистачає документів', 'не вистачає гайки на колесі, замінили']],
+    TARP_HINT: [['Dachplane Loch', 'Loch in der Plane', 'Plane hat ein Loch', 'hole in the tarp', 'hole in the trailer roof', 'дірка в тенті', 'дірка в даху причепа'], ['hole in the roof', 'Dachplane Loch, erneuert', 'Plane', 'Loch im Boden']],
+    COUPLING_HINT: [['Anhänger abgekoppelt beim Fahren', 'Auflieger hat sich während der Fahrt gelöst', 'Anhänger hat sich abgekoppelt'], ['Anhänger abgekoppelt', 'Anhänger abgekoppelt und abgestellt', 'Auflieger abgekoppelt beim Kunden']],
+    SUSP_HINT: [['Luftfederung zu tief', 'Fahrhöhe zu niedrig', 'air suspension too low', 'машину кренить на один бік', 'крен на один бік'], ['Luftfederung', 'Luftfederung zu tief, repariert', 'air suspension']],
+    BRAKE_HINT: [['травить повітря', 'травить повітря з причепа', 'травит воздух'], ['колесо травить повітря', 'шина травить повітря', 'травить повітря, відремонтували']],
+    TYRE_HINT: [['колесо травить повітря', 'wheel losing air', 'tyre keeps losing air'], ['wheel', 'wheel losing air - replaced']],
+    STEER_HINT: [['кермо б\'є', 'руль бьет', 'кермо трясеться'], ['кермо', 'кермо б\'є, відремонтували']],
+    GEAR_HINT: [['не перемикаються передачі', 'передачі не включаються', 'не переключаются скорости'], ['передачі', 'не перемикаються передачі, відремонтували']],
+    CLIMATE_HINT: [['air con not cold', 'a/c not cooling', 'aircon isn\'t cold'], ['air con on', 'air con not cold - fixed']],
+    CABLEAK_HINT: [['water in the cab', 'water getting into the cab', 'вода в кабіні'], ['water in the cab, fixed', 'water bottle', 'вода']],
+    CABTILT_HINT: [['кабіна не піднімається', 'кабина не поднимается'], ['кабіна', 'кабіна не піднімається, відремонтували']],
+    LIGHTS_HINT: [['Begrenzungsleuchte fehlt', 'Umrissleuchte abgerissen', 'marker light missing', 'side marker lights knocked off'], ['Begrenzungsleuchte', 'marker light missing, replaced', 'marker light']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+  ok(!g('TARP_HINT').test('trailer losing air') && !g('TYRE_HINT').test('trailer losing air'), '„trailer losing air“ bleibt mehrdeutig ohne Hinweis');
+});
 await test('Backlog 759 (Sonde über vorhandene Muster, 31.10.2026 03:15): Fehlgriff „BAG Kontrolle ohne Mängel“ (Kontrolle) behoben, „гальмівний диск тріснув“ ist Bremse statt Rad; neu erkannt: „Bremsbelag verschlissen“, „brake pads worn“, „колодки стерлися“, „brake disc cracked“ → Bremse; „Spurstangenkopf ausgeschlagen“, „tie rod bent“, „рульова тяга погнута“ → Lenkung; „Federbein gebrochen“ → Federung; „козирок зламався“ → Ausstattung; „лючок бака не відкривається“ → Tankdeckel; „Nebelscheinwerfer defekt“, „Kennzeichenbeleuchtung aus“, „протитуманка не працює“, „ліхтарі причепа не горять“ → Beleuchtung; „side skirt loose“, „spoiler ripped off“, „спойлер відірвався“ → lose Teile; „пломба зірвана“ → Diebstahl/Aufbruch; „roadside check found defects“, „поліція зупинила, знайшли несправності“ → Kontrolle; Reparaturvermerke und Alltägliches nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
