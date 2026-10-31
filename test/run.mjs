@@ -27541,6 +27541,32 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 755 (Sonde über vorhandene Muster, 31.10.2026 02:15): „Getriebe heult“, „gearbox whining“, „коробка гуде“ → Getriebe; „brake pedal goes to the floor“, „педаль гальма провалюється“, „parking brake won\'t release“, „ручник не відпускається“, „помилка EBS причепа“ → Bremse; „air suspension dropping“, „пневмопідвіска опускається“, „лопнула ресора“, „Stoßdämpfer undicht“, „shock absorber leaking“, „амортизатор тече“ → Federung; „колесо спускає“ → Reifen; „диск тріснув“ → Rad; „горить ABS“ → Warnleuchte; „air con smells“, „кондиціонер смердить“ → Klima; „Heizung bläst kalt“, „heater blowing cold“, „пічка дує холодним“ → Sicht/Heizung; „Spiegelverstellung geht nicht“, „mirror adjustment not working“ → Spiegel; „тече вода в кабіну“ → Wasser im Fahrerhaus; „seat won\'t go up“, „сидіння не піднімається“ → Sitz; „низький рівень масла“ → Ölstand; Reparaturvermerke (auch vor dem Befund) und Alltägliches nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    GEAR_HINT: [['Getriebe heult', 'Getriebe macht komische Geräusche', 'gearbox whining', 'transmission grinding', 'коробка гуде', 'коробка передач виє', 'кпп воет'], ['Getriebe', 'Getriebe heult nicht mehr', 'Getriebe repariert, heult nicht', 'Getriebe heult, wurde repariert', 'gearbox whining fixed', 'gearbox replaced, no noise', 'коробка передач', 'коробку відремонтували, гуде вже менше']],
+    BRAKE_HINT: [['brake pedal goes to the floor', 'brake pedal goes all the way to the floor', 'brake pedal sinks', 'педаль гальма провалюється', 'педаль тормоза проваливается', 'parking brake won\'t release', 'handbrake will not release', 'ручник не відпускається', 'помилка EBS причепа', 'ошибка ABS прицепа'], ['brake pedal on the floor mat', 'brake pedal goes down normally', 'педаль гальма', 'parking brake released', 'handbrake won\'t release, repaired', 'ручник']],
+    SUSP_HINT: [['air suspension dropping', 'air bag leaking', 'пневмопідвіска опускається', 'пневмоподвеска опускается', 'лопнула ресора', 'ресора тріснула', 'Stoßdämpfer undicht', 'Stoßdämpfer verliert Öl', 'shock absorber leaking', 'амортизатор тече'], ['air suspension ok', 'air suspension lowered for loading', 'пневмопідвіска опущена для завантаження', 'Stoßdämpfer getauscht', 'Stoßdämpfer', 'shock absorber replaced', 'амортизатор']],
+    TYRE_HINT: [['колесо спускає', 'шина спускает'], ['колесо накачали', 'колесо спускає, замінили']],
+    WHEEL_HINT: [['диск тріснув', 'диск колеса треснул'], ['диск', 'диск колеса новий']],
+    WARNLIGHT_HINT: [['горить ABS', 'горит EBS'], ['горить зелений', 'ABS']],
+    CLIMATE_HINT: [['air con smells', 'a/c stinks', 'кондиціонер смердить', 'кондиционер воняет'], ['air con smell fixed', 'кондиціонер']],
+    VISIB_HINT: [['Heizung bläst kalt', 'Heizung bläst nur kalt', 'heater blowing cold', 'cab heater only blows cold', 'пічка дує холодним'], ['Heizung bläst warm', 'heater blowing warm', 'parking heater blowing cold', 'пічка дує гарячим']],
+    MIRROR_HINT: [['Spiegelverstellung geht nicht', 'Spiegelverstellung defekt', 'mirror adjustment not working'], ['Spiegelverstellung', 'mirror adjustment ok']],
+    CABLEAK_HINT: [['тече вода в кабіну', 'течет вода в кабину'], ['тече вода на дорозі']],
+    SEAT_HINT: [['seat won\'t go up', 'driver\'s seat will not adjust', 'сидіння не піднімається', 'сиденье не опускается'], ['сидіння', 'seat']],
+    OILLEVEL_HINT: [['низький рівень масла', 'рівень масла низький', 'низкий уровень масла'], ['рівень масла нормальний', 'рівень масла в нормі']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+  ok(!g('CLIMATE_HINT').test('Heizung bläst kalt') && !g('FLAT_HINT').test('колесо спускає'), 'keine Doppelzuordnung Heizung/Klima bzw. Reifenpanne');
+  const { STRINGS } = await import('../public/i18n.js');
+  const has = (k, de, uk, en) => ok(STRINGS.de[k].includes(de) && STRINGS.uk[k].includes(uk) && STRINGS.en[k].includes(en), 'Hilfe ' + k + ' nennt das Beispiel DE/UK/EN');
+  has('help_gear_s', 'Getriebe heult', 'коробка гуде', 'gearbox whining');
+  has('help_brake_s', 'Druckluft zischt', 'педаль гальма провалюється', 'brake pedal goes to the floor');
+  has('help_susp_s', 'Stoßdämpfer undicht', 'пневмопідвіска опускається', 'air suspension dropping');
+});
 await test('Backlog 754 (Sonde über vorhandene Muster, 31.10.2026 02:15): „engine temperature high“, „температура двигуна висока“ → Motor; „wheel bearing noise“ → Rad; „won\'t start“ (ohne Subjekt), „Zündschlüssel steckt fest“ → Startproblem; „бризговик відірвався“ → lose Teile; „es zischt am Anhänger“, „hissing at the trailer“ → Druckluft/Bremse; „Kühlschrank im Lkw kaputt“, „Gardine abgerissen“, „Handyhalterung abgebrochen“ → Ausstattung; „стоп-сигнал“ ist Bremslicht, nicht Hupe; Reparaturvermerke und Alltägliches nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
