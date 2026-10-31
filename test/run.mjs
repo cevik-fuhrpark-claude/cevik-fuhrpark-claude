@@ -19237,7 +19237,7 @@ await test('Backlog 214/215 (Teilagent „Fahrzeug gestohlen / Einbruch“): Mel
   }
   ok(app.includes(`<div id="theft" class="panel" hidden role="status">`), 'Panel #theft');
   ok(app.includes("'tachofault', 'theft', 'glass', "), 'Hilfe-Abschnitt theft');
-  ok(app.indexOf("const theft = THEFT_HINT.test($('#d').value); $('#theft').hidden = !theft;") > 0 && app.indexOf("$('#theft').hidden = !theft;") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft (Backlog 659: Ergebnis in `theft` für den Vandalismus-Hinweis)');
+  ok(app.indexOf("const theft = THEFT_HINT.test(dv); $('#theft').hidden = !theft;") > 0 && app.indexOf("$('#theft').hidden = !theft;") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft (Backlog 659: Ergebnis in `theft` für den Vandalismus-Hinweis)');
 });
 
 await test('Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“): Meldeformular zeigt bei Glasschaden Hinweise (Fotos mit Größenvergleich, Sichtfeld, Weiterfahrt klären, früh melden; DE/UK/EN), Hilfe-Abschnitt, Hinweis im Versicherungsabschnitt nur ohne Versicherungsfall; Bremsscheibe/Scheibenwischer/Spiegel lösen nichts aus', async () => {
@@ -19276,7 +19276,7 @@ await test('Backlog 293 (Blickwinkel „Wildunfall nachts auf der Landstraße“
     ok(STRINGS[l].claim_wild_hint && STRINGS[l].wild_hint_title, 'Texte ' + l);
   }
   ok(app.includes(`<div id="wild" class="panel" hidden role="status">`), 'Panel #wild');
-  ok(app.includes("const wild = WILD_HINT.test($('#d').value); $('#wild').hidden = !wild;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !accReal;"), 'Wildunfall ersetzt die allgemeinen Unfall-Hinweise (Backlog 653: Unfallflucht ebenso)');
+  ok(app.includes("const wild = WILD_HINT.test(dv); $('#wild').hidden = !wild;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !accReal;"), 'Wildunfall ersetzt die allgemeinen Unfall-Hinweise (Backlog 653: Unfallflucht ebenso)');
   ok(app.includes("const wildHint = WILD_HINT.test(desc || '') && !(cl && cl.file_id);") && app.includes('data-claimwild'), 'Versicherungs-Hinweis bis eine Datei verknüpft ist');
   ok(app.includes("const parts = ['report', 'accident', 'wild', "), 'Hilfe-Abschnitt wild nach Unfall');
 });
@@ -21240,7 +21240,7 @@ await test('Backlog 294 (Blickwinkel „Fahrer verliert unterwegs Fahrzeugschlü
     ok(STRINGS[l].lost_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="lost" class="panel" hidden role="status">`), 'Panel #lost');
-  ok(app.includes("$('#lost').hidden = !LOST_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#lost').hidden = !LOST_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   ok(app.includes("'theft', 'glass', 'lost', "), 'Hilfe-Abschnitt lost nach Glasschaden');
 });
 
@@ -21259,7 +21259,7 @@ await test('Backlog 295 (Blickwinkel „Falsch getankt – AdBlue im Dieseltank�
     ok(STRINGS[l].fuel_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="fuel" class="panel" hidden role="status">`), 'Panel #fuel');
-  ok(app.includes("$('#fuel').hidden = !FUEL_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#fuel').hidden = !FUEL_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   ok(app.includes("'glass', 'lost', 'fuel', "), 'Hilfe-Abschnitt fuel nach lost');
 });
 
@@ -21278,7 +21278,7 @@ await test('Backlog 296 (Blickwinkel „Reifenpanne auf der Autobahn“): Meldef
     ok(STRINGS[l].flat_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="flat" class="panel" hidden role="status">`), 'Panel #flat');
-  ok(app.includes("$('#flat').hidden = !FLAT_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#flat').hidden = !FLAT_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   ok(app.includes("'lost', 'fuel', 'flat', "), 'Hilfe-Abschnitt flat nach fuel');
 });
 
@@ -21297,7 +21297,7 @@ await test('Backlog 297 (Blickwinkel „Ladungssicherung bei Polizeikontrolle be
     ok(STRINGS[l].roadchk_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="roadchk" class="panel" hidden role="status">`), 'Panel #roadchk');
-  ok(app.includes("$('#roadchk').hidden = !ROADCHK_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#roadchk').hidden = !ROADCHK_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   ok(app.includes("'fuel', 'flat', 'roadchk', "), 'Hilfe-Abschnitt roadchk nach flat');
 });
 
@@ -21316,7 +21316,7 @@ await test('Backlog 298 (Blickwinkel „Lkw springt morgens bei Kälte nicht an�
     ok(STRINGS[l].nostart_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="nostart" class="panel" hidden role="status">`), 'Panel #nostart');
-  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   ok(app.includes("'flat', 'roadchk', 'nostart', "), 'Hilfe-Abschnitt nostart nach roadchk');
 });
 
@@ -21335,7 +21335,7 @@ await test('Backlog 299 (Blickwinkel „Motorwarnleuchte rot während der Fahrt�
     ok(L.warnlight_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="warnlight" class="panel" hidden role="status">`), 'Panel #warnlight');
-  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'warnlight', 'nostart'), 'Hilfe-Abschnitt warnlight nach nostart');
 });
 
@@ -21354,7 +21354,7 @@ await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lk
     ok(L.leak_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="leak" class="panel" hidden role="status">`), 'Panel #leak');
-  ok(app.includes("$('#leak').hidden = !LEAK_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#leak').hidden = !LEAK_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'leak', 'warnlight'), 'Hilfe-Abschnitt leak nach warnlight');
 });
 
@@ -21373,7 +21373,7 @@ await test('Backlog 301 (Blickwinkel „Auflieger beim Kunden beschädigt (Rampe
     ok(L.custdmg_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="custdmg" class="panel" hidden role="status">`), 'Panel #custdmg');
-  ok(app.includes("$('#custdmg').hidden = !CUSTDMG_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#custdmg').hidden = !CUSTDMG_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'custdmg', 'leak'), 'Hilfe-Abschnitt custdmg nach leak');
 });
 
@@ -21392,7 +21392,7 @@ await test('Backlog 302 (Blickwinkel „Rauch oder Brandgeruch aus dem Motorraum
     ok(L.fire_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="fire" class="panel" hidden role="status">`), 'Panel #fire');
-  ok(app.includes("$('#fire').hidden = !FIRE_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#fire').hidden = !FIRE_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'fire', 'custdmg'), 'Hilfe-Abschnitt fire nach custdmg');
 });
 
@@ -21430,7 +21430,7 @@ await test('Backlog 304 (Blickwinkel „Bremsen ziehen schief, quietschen oder v
     ok(L.brake_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="brake" class="panel" hidden role="status">`), 'Panel #brake');
-  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake($('#d').value));"), 'Hinweis abhängig von der Beschreibung (ohne Feststellbremsen-Fundstelle, Backlog 707)');
+  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv));"), 'Hinweis abhängig von der Beschreibung (ohne Feststellbremsen-Fundstelle, Backlog 707)');
   ok(helpAfter(app, 'brake', 'reefer'), 'Hilfe-Abschnitt brake nach reefer');
 });
 
@@ -21497,7 +21497,7 @@ await test('Backlog 307 (Blickwinkel „Ladung verrutscht während der Fahrt“)
     ok(L.load_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="load" class="panel" hidden role="status">`), 'Panel #load');
-  ok(app.includes("$('#load').hidden = !LOAD_HINT.test($('#d').value);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#load').hidden = !LOAD_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   { const o = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, '')); ok(o.indexOf('brake') < o.indexOf('load') && o.indexOf('load') < o.indexOf('leak') && o.slice(o.indexOf('load') + 1, o.indexOf('leak')).every((x) => ['deck', 'lashgear', 'floor'].includes(x)), 'Gruppierung: nach Bremse, vor Leck (dazwischen nur Sicherungsmittel, Ladeetage und Ladeboden, Backlog 354/692/741)'); }
   ok(helpAfter(app, 'load', 'tarp'), 'Hilfe-Abschnitt load nach tarp');
 });
@@ -21518,7 +21518,7 @@ await test('Backlog 308 (Blickwinkel „Spiegel abgefahren“): Meldeformular ze
     ok(L.mirror_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="mirror" class="panel" hidden role="status">`), 'Panel #mirror');
-  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test($('#d').value); $('#coupling')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test(dv); $('#coupling')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('mirror') && order.indexOf('mirror') < order.indexOf('glass'), 'Gruppierung: Unfall vor Spiegel vor Glas');
   ok(helpAfter(app, 'mirror', 'load'), 'Hilfe-Abschnitt mirror nach load');
@@ -21539,7 +21539,7 @@ await test('Backlog 309 (Blickwinkel „Auflieger lässt sich nicht sicher kuppe
     ok(L.coupling_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="coupling" class="panel" hidden role="status">`), 'Panel #coupling');
-  ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test($('#d').value); $('#lights')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test(dv); $('#lights')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('coupling') && order.indexOf('brake') < order.indexOf('coupling') && order.indexOf('coupling') < order.indexOf('load'), 'Gruppierung: Unfall/Bremse vor Kupplung vor Ladung');
   ok(helpAfter(app, 'coupling', 'mirror'), 'Hilfe-Abschnitt coupling nach mirror');
@@ -21583,7 +21583,7 @@ await test('Backlog 311 (Blickwinkel „Tür/Ladebordwand/Hecktür schließt nic
     ok(L.door_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="door" class="panel" hidden role="status">`), 'Panel #door');
-  ok(app.includes("$('#door').hidden = !DOOR_HINT.test($('#d').value); $('#stuck')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dv); $('#stuck')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('door') && order.indexOf('load') < order.indexOf('door') && order.indexOf('door') < order.indexOf('custdmg') && order.indexOf('door') < order.indexOf('theft'), 'Gruppierung: Unfall/Ladung vor Tür vor Diebstahl/Kundenschaden');
   ok(helpAfter(app, 'door', 'lights'), 'Hilfe-Abschnitt door nach lights');
@@ -21605,7 +21605,7 @@ await test('Backlog 312 (Blickwinkel „Lkw festgefahren oder kommt bei Glätte 
     ok(L.stuck_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="stuck" class="panel" hidden role="status">`), 'Panel #stuck');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#stuck').hidden = !STUCK_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#stuck').hidden = !STUCK_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('stuck') && order.indexOf('flat') < order.indexOf('stuck') && order.indexOf('stuck') < order.indexOf('roadchk') && order.indexOf('stuck') < order.indexOf('nostart'), 'Gruppierung: Unfall/Reifenpanne vor festgefahren vor Kontrolle/springt nicht an');
   ok(helpAfter(app, 'stuck', 'door'), 'Hilfe-Abschnitt stuck nach door');
@@ -21628,7 +21628,7 @@ await test('Backlog 313 (Blickwinkel „Heizung/Gebläse/Scheibenwischer fällt 
     ok(L.visib_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="visib" class="panel" hidden role="status">`), 'Panel #visib');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('visib') && order.indexOf('acc') < order.indexOf('visib') && order.indexOf('visib') < order.indexOf('glass') && order.indexOf('visib') < order.indexOf('nostart'), 'Gruppierung: Unfall vor Sicht vor Glasschaden/springt nicht an (beschlagene Windschutzscheibe zeigt Sicht offen, Glas eingeklappt)');
   ok(helpAfter(app, 'visib', 'stuck'), 'Hilfe-Abschnitt visib nach stuck');
@@ -21674,7 +21674,7 @@ await test('Backlog 315 (Blickwinkel „Fahrerassistenzsystem fällt aus oder br
     ok(L.adas_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="adas" class="panel" hidden role="status">`), 'Panel #adas');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#adas').hidden = !ADAS_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#adas').hidden = !ADAS_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('adas') && order.indexOf('acc') < order.indexOf('adas') && order.indexOf('brake') < order.indexOf('adas') && order.indexOf('warnlight') < order.indexOf('adas') && order.indexOf('adas') < order.indexOf('mirror'), 'Gruppierung: Unfall/Bremse/Warnleuchte vor Assistent vor Spiegel');
   ok(helpAfter(app, 'adas', 'loose'), 'Hilfe-Abschnitt adas nach loose');
@@ -21697,7 +21697,7 @@ await test('Backlog 316 (Blickwinkel „Lenkung schwergängig, hat Spiel oder Lk
     ok(L.steer_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="steer" class="panel" hidden role="status">`), 'Panel #steer');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#steer').hidden = !STEER_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#steer').hidden = !STEER_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('steer') && order.indexOf('acc') < order.indexOf('steer') && order.indexOf('flat') < order.indexOf('steer') && order.indexOf('brake') < order.indexOf('steer') && order.indexOf('steer') < order.indexOf('warnlight') && order.indexOf('steer') < order.indexOf('adas'), 'Gruppierung: Unfall/Reifen/Bremse vor Lenkung vor Warnleuchte/Assistent');
   ok(helpAfter(app, 'steer', 'adas'), 'Hilfe-Abschnitt steer nach adas');
@@ -21721,7 +21721,7 @@ await test('Backlog 317 (Blickwinkel „Motor im Notlauf, verliert Leistung oder
     ok(L.engine_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="engine" class="panel" hidden role="status">`), 'Panel #engine');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#engine').hidden = !ENGINE_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#engine').hidden = !ENGINE_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('engine') && order.indexOf('fire') < order.indexOf('engine') && order.indexOf('steer') < order.indexOf('engine') && order.indexOf('warnlight') < order.indexOf('engine') && order.indexOf('engine') < order.indexOf('adas') && order.indexOf('engine') < order.indexOf('nostart'), 'Gruppierung: Brand/Lenkung/Warnleuchte vor Motor vor Assistent/Startproblem');
   ok(helpAfter(app, 'engine', 'steer'), 'Hilfe-Abschnitt engine nach steer');
@@ -21745,7 +21745,7 @@ await test('Backlog 318 (Blickwinkel „Luftfederung defekt oder Lkw/Auflieger h
     ok(L.susp_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="susp" class="panel" hidden role="status">`), 'Panel #susp');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#susp').hidden = !SUSP_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#susp').hidden = !SUSP_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('susp') && order.indexOf('flat') < order.indexOf('susp') && order.indexOf('brake') < order.indexOf('susp') && order.indexOf('coupling') < order.indexOf('susp') && order.indexOf('susp') < order.indexOf('loose') && order.indexOf('susp') < order.indexOf('load'), 'Gruppierung: Reifen/Bremse/Kupplung vor Federung vor losem Teil/Ladung');
   ok(helpAfter(app, 'susp', 'engine'), 'Hilfe-Abschnitt susp nach engine');
@@ -21769,7 +21769,7 @@ await test('Backlog 319 (Blickwinkel „Getriebe schaltet nicht, Gang geht nicht
     ok(L.gear_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="gear" class="panel" hidden role="status">`), 'Panel #gear');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#gear').hidden = !GEAR_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#gear').hidden = !GEAR_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('gear') && order.indexOf('brake') < order.indexOf('gear') && order.indexOf('warnlight') < order.indexOf('gear') && order.indexOf('engine') < order.indexOf('gear') && order.indexOf('gear') < order.indexOf('adas') && order.indexOf('gear') < order.indexOf('stuck'), 'Gruppierung: Bremse/Warnleuchte/Motor vor Getriebe vor Assistent/festgefahren');
   ok(helpAfter(app, 'gear', 'susp'), 'Hilfe-Abschnitt gear nach susp');
@@ -21801,7 +21801,7 @@ await test('Backlog 321 (Blickwinkel „Sicherheitsgurt oder Fahrersitz defekt�
     ok(L.seat_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="seat" class="panel" hidden role="status">`), 'Panel #seat');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#seat').hidden = !SEAT_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#seat').hidden = !SEAT_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('seat') && order.indexOf('acc') < order.indexOf('seat') && order.indexOf('steer') < order.indexOf('seat') && order.indexOf('adas') < order.indexOf('seat') && order.indexOf('seat') < order.indexOf('mirror') && order.indexOf('seat') < order.indexOf('door'), 'Gruppierung: Unfall/Lenkung/Assistent vor Gurt/Sitz vor Spiegel/Tür');
   ok(helpAfter(app, 'seat', 'gear'), 'Hilfe-Abschnitt seat nach gear');
@@ -21849,7 +21849,7 @@ await test('Backlog 324 (Blickwinkel „Kombiinstrument, Display oder Hupe ausge
     ok(L.dash_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="dash" class="panel" hidden role="status">`), 'Panel #dash');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#dash').hidden = !DASH_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#dash').hidden = !DASH_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('dash') && order.indexOf('brake') < order.indexOf('dash') && order.indexOf('warnlight') < order.indexOf('dash') && order.indexOf('engine') < order.indexOf('dash') && order.indexOf('dash') < order.indexOf('adas') && order.indexOf('dash') < order.indexOf('tacho'), 'Gruppierung: Bremse/Warnleuchte/Motor vor Anzeige vor Assistent/Fahrtenschreiber');
   ok(helpAfter(app, 'dash', 'seat'), 'Hilfe-Abschnitt dash nach seat');
@@ -21873,7 +21873,7 @@ await test('Backlog 325 (Blickwinkel „Auspuff laut oder undicht, Abgase im Fah
     ok(L.exhaust_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="exhaust" class="panel" hidden role="status">`), 'Panel #exhaust');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#exhaust').hidden = !EXHAUST_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#exhaust').hidden = !EXHAUST_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('exhaust') && order.indexOf('fire') < order.indexOf('exhaust') && order.indexOf('acc') < order.indexOf('exhaust') && order.indexOf('exhaust') < order.indexOf('flat') && order.indexOf('exhaust') < order.indexOf('loose') && order.indexOf('exhaust') < order.indexOf('engine'), 'Gruppierung: Brand/Unfall vor Abgas vor Reifen/loses Teil/Motor');
   ok(helpAfter(app, 'exhaust', 'dash'), 'Hilfe-Abschnitt exhaust nach dash');
@@ -21897,7 +21897,7 @@ await test('Backlog 326 (Blickwinkel „Fahrerhaus lässt sich nicht kippen oder
     ok(L.cabtilt_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="cabtilt" class="panel" hidden role="status">`), 'Panel #cabtilt');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#cabtilt').hidden = !CABTILT_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#cabtilt').hidden = !CABTILT_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('cabtilt') && order.indexOf('brake') < order.indexOf('cabtilt') && order.indexOf('coupling') < order.indexOf('cabtilt') && order.indexOf('cabtilt') < order.indexOf('susp') && order.indexOf('cabtilt') < order.indexOf('door'), 'Gruppierung: Bremse/Sattelkupplung vor Fahrerhaus vor Federung/Tür');
   ok(helpAfter(app, 'cabtilt', 'exhaust'), 'Hilfe-Abschnitt cabtilt nach exhaust');
@@ -21921,7 +21921,7 @@ await test('Backlog 327 (Blickwinkel „Diesel versulzt oder AdBlue eingefroren�
     ok(L.gelfuel_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="gelfuel" class="panel" hidden role="status">`), 'Panel #gelfuel');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#gelfuel').hidden = !GELFUEL_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#gelfuel').hidden = !GELFUEL_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('gelfuel') && order.indexOf('warnlight') < order.indexOf('gelfuel') && order.indexOf('gelfuel') < order.indexOf('engine') && order.indexOf('gelfuel') < order.indexOf('fuel') && order.indexOf('gelfuel') < order.indexOf('nostart'), 'Gruppierung: Warnleuchte vor Diesel/AdBlue vor Motor/Falschtanken/springt nicht an');
   ok(helpAfter(app, 'gelfuel', 'cabtilt'), 'Hilfe-Abschnitt gelfuel nach cabtilt');
@@ -21945,7 +21945,7 @@ await test('Backlog 328 (Blickwinkel „Warndreieck, Verbandkasten, Feuerlösche
     ok(L.safetykit_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="safetykit" class="panel" hidden role="status">`), 'Panel #safetykit');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#safetykit').hidden = !SAFETYKIT_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#safetykit').hidden = !SAFETYKIT_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('safetykit') && order.indexOf('fire') < order.indexOf('safetykit') && order.indexOf('warnlight') < order.indexOf('safetykit') && order.indexOf('stuck') < order.indexOf('safetykit') && order.indexOf('safetykit') < order.indexOf('roadchk') && order.indexOf('safetykit') < order.indexOf('theft'), 'Gruppierung: Brand/Warnleuchte/Festgefahren vor Ausrüstung vor Kontrolle/Diebstahl');
   ok(helpAfter(app, 'safetykit', 'gelfuel'), 'Hilfe-Abschnitt safetykit nach gelfuel');
@@ -21979,7 +21979,7 @@ await test('Backlog 330 (Blickwinkel „Rad wackelt, Radmuttern locker oder Radl
     ok(L.wheel_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="wheel" class="panel" hidden role="status">`), 'Panel #wheel');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#wheel').hidden = !WHEEL_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#wheel').hidden = !WHEEL_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('wheel') && order.indexOf('fire') < order.indexOf('wheel') && order.indexOf('acc') < order.indexOf('wheel') && order.indexOf('flat') < order.indexOf('wheel') && order.indexOf('wheel') < order.indexOf('brake') && order.indexOf('wheel') < order.indexOf('loose'), 'Gruppierung: Brand/Unfall/Reifenpanne vor Rad vor Bremse/lose Teile');
   ok(helpAfter(app, 'wheel', 'safetykit'), 'Hilfe-Abschnitt wheel nach safetykit');
@@ -22003,7 +22003,7 @@ await test('Backlog 331 (Blickwinkel „Mautgerät (OBU) zeigt Rot oder ist ausg
     ok(L.toll_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="toll" class="panel" hidden role="status">`), 'Panel #toll');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#toll').hidden = !TOLL_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#toll').hidden = !TOLL_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('toll') && order.indexOf('fire') < order.indexOf('toll') && order.indexOf('acc') < order.indexOf('toll') && order.indexOf('wheel') < order.indexOf('toll') && order.indexOf('lost') < order.indexOf('toll') && order.indexOf('toll') < order.indexOf('tacho'), 'Gruppierung: Sicherheitshinweise vor Maut, Maut vor Fahrtenschreiber');
   ok(helpAfter(app, 'toll', 'wheel'), 'Hilfe-Abschnitt toll nach wheel');
@@ -22047,7 +22047,7 @@ await test('Backlog 334 (Blickwinkel „Standheizung oder Klimaanlage im Fahrerh
     ok(L.climate_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="climate" class="panel" hidden role="status">`), 'Panel #climate');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#climate').hidden = !CLIMATE_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#climate').hidden = !CLIMATE_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('climate') && order.indexOf('fire') < order.indexOf('climate') && order.indexOf('exhaust') < order.indexOf('climate') && order.indexOf('visib') < order.indexOf('climate') && order.indexOf('climate') < order.indexOf('door'), 'Gruppierung: Brand/Abgase/Sicht vor Standheizung/Klima vor Tür');
   ok(helpAfter(app, 'climate', 'toll'), 'Hilfe-Abschnitt climate nach toll');
@@ -22072,7 +22072,7 @@ await test('Backlog 335 (Blickwinkel „Fensterheber defekt – Seitenscheibe ge
     ok(L.window_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="window" class="panel" hidden role="status">`), 'Panel #window');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#window').hidden = !WINDOW_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#window').hidden = !WINDOW_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('window') && order.indexOf('door') < order.indexOf('window') && order.indexOf('window') < order.indexOf('theft') && order.indexOf('window') < order.indexOf('glass'), 'Gruppierung: Tür vor Fenster vor Diebstahl/Glas');
   ok(helpAfter(app, 'window', 'climate'), 'Hilfe-Abschnitt window nach climate');
@@ -22102,7 +22102,7 @@ await test('Backlog 337 (Blickwinkel „Tankdeckel oder AdBlue-Deckel verloren, 
     for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
   }
   ok(app.includes(`<div id="fuelcap" class="panel" hidden role="status">`), 'Panel #fuelcap');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#fuelcap').hidden = !FUELCAP_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#fuelcap').hidden = !FUELCAP_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('fuelcap') && order.indexOf('leak') < order.indexOf('fuelcap') && order.indexOf('theft') < order.indexOf('fuelcap') && order.indexOf('fuel') < order.indexOf('fuelcap') && order.indexOf('fuelcap') < order.indexOf('glass'), 'Gruppierung: Leck/Diebstahl/Fehlbetankung vor Tankdeckel vor Glas');
   ok(helpAfter(app, 'fuelcap', 'window'), 'Hilfe-Abschnitt fuelcap nach window');
@@ -22139,7 +22139,7 @@ await test('Backlog 340 (Blickwinkel „Tankkarte verloren, gestohlen oder an de
     for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
   }
   ok(app.includes(`<div id="fuelcard" class="panel" hidden role="status">`), 'Panel #fuelcard');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#fuelcard').hidden = !FUELCARD_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#fuelcard').hidden = !FUELCARD_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('fuelcard') && order.indexOf('theft') < order.indexOf('fuelcard') && order.indexOf('lost') < order.indexOf('fuelcard') && order.indexOf('fuelcard') < order.indexOf('toll'), 'Gruppierung: Diebstahl/Schlüssel vor Tankkarte vor Maut');
   ok(helpAfter(app, 'fuelcard', 'fuelcap'), 'Hilfe-Abschnitt fuelcard nach fuelcap');
@@ -22163,7 +22163,7 @@ await test('Backlog 341 (Blickwinkel „Unterfahrschutz oder Seitenschutz verbog
     for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
   }
   ok(app.includes(`<div id="underrun" class="panel" hidden role="status">`), 'Panel #underrun');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#underrun').hidden = !UNDERRUN_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#underrun').hidden = !UNDERRUN_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('underrun') && order.indexOf('loose') < order.indexOf('underrun') && order.indexOf('acc') < order.indexOf('underrun') && order.indexOf('underrun') < order.indexOf('load'), 'Gruppierung: Unfall/lose Teile vor Unterfahrschutz vor Ladung');
   ok(helpAfter(app, 'underrun', 'fuelcard'), 'Hilfe-Abschnitt underrun nach fuelcard');
@@ -22211,7 +22211,7 @@ await test('Backlog 345 (Blickwinkel „Reifen beschädigt, verliert Luft oder i
     for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
   }
   ok(app.includes(`<div id="tyre" class="panel" hidden role="status">`), 'Panel #tyre');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#tyre').hidden = !TYRE_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#tyre').hidden = !TYRE_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('tyre') && order.indexOf('flat') < order.indexOf('tyre') && order.indexOf('tyre') < order.indexOf('wheel') && order.indexOf('tyre') < order.indexOf('brake'), 'Gruppierung: Reifenpanne vor Reifenschaden vor Rad/Bremse');
   ok(helpAfter(app, 'tyre', 'underrun'), 'Hilfe-Abschnitt tyre nach underrun');
@@ -22250,7 +22250,7 @@ await test('Backlog 348 (Blickwinkel „Fahrerhaus lässt sich nicht abschließe
     for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
   }
   ok(app.includes(`<div id="cablock" class="panel" hidden role="status">`), 'Panel #cablock');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#cablock').hidden = !CABLOCK_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#cablock').hidden = !CABLOCK_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('cablock') && order.indexOf('door') < order.indexOf('cablock') && order.indexOf('window') < order.indexOf('cablock') && order.indexOf('cablock') < order.indexOf('theft') && order.indexOf('cablock') < order.indexOf('lost'), 'Gruppierung: Tür/Fenster vor Abschließen vor Diebstahl/Schlüssel verloren');
   ok(helpAfter(app, 'cablock', 'tyre'), 'Hilfe-Abschnitt cablock nach tyre');
@@ -22285,7 +22285,7 @@ await test('Backlog 350 (Blickwinkel „Lkw vibriert, schaukelt oder flattert“
     for (const e of ex) ok(re.test(e), 'Hilfe-Beispiel löst Hinweis aus: ' + e);
   }
   ok(app.includes(`<div id="vibr" class="panel" hidden role="status">`), 'Panel #vibr');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#vibr').hidden = !VIBR_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#vibr').hidden = !VIBR_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('vibr') && order.indexOf('flat') < order.indexOf('vibr') && order.indexOf('wheel') < order.indexOf('vibr') && order.indexOf('steer') < order.indexOf('vibr') && order.indexOf('vibr') < order.indexOf('susp') && order.indexOf('vibr') < order.indexOf('load'), 'Gruppierung: Reifen/Rad/Lenkung vor Vibration vor Federung/Ladung');
   ok(helpAfter(app, 'vibr', 'cablock'), 'Hilfe-Abschnitt vibr nach cablock');
@@ -22344,7 +22344,7 @@ await test('Backlog 354 (Blickwinkel „Autotransporter: Ladeetage, Auffahrrampe
     for (const e of ex) ok(re.test(e), 'Hilfe-Beispiel löst Hinweis aus: ' + e);
   }
   ok(app.includes(`<div id="deck" class="panel" hidden role="status">`), 'Panel #deck');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#deck').hidden = !DECK_HINT.test($('#d').value);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#deck').hidden = !DECK_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('deck') && order.indexOf('load') < order.indexOf('deck') && order.indexOf('deck') < order.indexOf('leak'), 'Gruppierung: Ladung vor Ladeetage vor Leck');
   ok(helpAfter(app, 'deck', 'vibr'), 'Hilfe-Abschnitt deck nach vibr');
@@ -26839,7 +26839,7 @@ await test('Backlog 634 (Teilagent-Fund „Diebstahl auf dem Rastplatz“): Meld
   for (const x of ['Тент напівпричепа порізаний', 'Plane aufgeschlitzt', 'Auflieger Rücklicht defekt', 'trailer light broken', 'тент полуприцепа порезан', 'причіп пошкоджено']) ok(R.test(x), 'Auflieger: ' + x);
   for (const x of ['Anhängerkupplung defekt', 'Aufliegerkupplung', 'trailer hitch broken', 'Sattelkupplung klemmt', 'Spiegel kaputt', 'прицепное устройство', 'Planetengetriebe']) ok(!R.test(x), 'kein Auflieger: ' + x);
   ok(app.includes("const show = !!(v && v.kind !== 'anhaenger' && v.trailer_plate && TRAILER_DMG.test($('#d').value) && !FOREIGN_TRAILER.test($('#d').value));"), 'nur Lkw mit gekoppeltem Auflieger (Backlog 640: nicht bei fremdem Auflieger)');
-  ok(app.includes("const hints = () => { const dsk = noSticker($('#d').value); const dck = noCabkit($('#d').value); $('#trlr').hidden = !trailerHint();") && app.includes("$$('input[name=veh]').forEach((x) => x.addEventListener('change', hints));"), 'bei Text- und Fahrzeugwechsel');
+  ok(app.includes("const hints = () => { const dv = recurFix($('#d').value); const dsk = noSticker(dv); const dck = noCabkit(dv); $('#trlr').hidden = !trailerHint();") && app.includes("$$('input[name=veh]').forEach((x) => x.addEventListener('change', hints));"), 'bei Text- und Fahrzeugwechsel');
   ok(/const HINT_ORDER = \[[^\]]*'trlr'/.test(app) && app.includes('<div id="trlr" class="panel" hidden role="status"></div>'), 'Hinweisgruppe');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].trlr_title.includes('{p}') && STRINGS[l].trlr_text.includes('{p}'), l); }
@@ -26987,7 +26987,7 @@ await test('Backlog 649–652 (Blickwinkel „Falsch getankt – Motor schon ges
     ok(STRINGS[l].claim_fuel_hint.includes('{b}') && !/\d/.test(STRINGS[l].claim_fuel_hint), 'Leitungs-Hinweis nennt den Knopf ' + l);
   }
   ok(app.includes('<p id="fueldrv" class="small" hidden'), 'Warnzeile im Panel, außerhalb der einklappbaren Liste');
-  ok(app.includes("['unbekannt', 'fahrbereit'].includes(d.value)") && app.includes("$$('input[name=drv]').forEach((x) => x.addEventListener('change', fuelDrv));") && app.includes("$('#fuel').hidden = !FUEL_HINT.test($('#d').value); fuelDrv();"), 'Warnzeile folgt Beschreibung und Fahrbereitschaft');
+  ok(app.includes("['unbekannt', 'fahrbereit'].includes(d.value)") && app.includes("$$('input[name=drv]').forEach((x) => x.addEventListener('change', fuelDrv));") && app.includes("$('#fuel').hidden = !FUEL_HINT.test(dv); fuelDrv();"), 'Warnzeile folgt Beschreibung und Fahrbereitschaft');
   ok(app.includes("const fuelNoClaim = !cl && FUEL_HINT.test(desc || '');") && app.includes('data-claimfuel'), 'Leitungs-Hinweis nur ohne Versicherungsfall');
   // Server: nur „nicht fahrbereit“ sperrt (Grund für die Warnzeile)
   const { U, V1 } = await freshWorld();
@@ -27018,7 +27018,7 @@ await test('Backlog 653–655 (Blickwinkel „Parkschaden – Unfallgegner unbek
     ok(S.dq_claim_hitrun_no_police, 'Datenqualität ' + l);
   }
   ok(app.includes('<div id="hitrun" class="panel" hidden role="status">'), 'Panel #hitrun');
-  ok(app.includes("const hitrun = !wild && HITRUN_HINT.test($('#d').value); $('#hitrun').hidden = !hitrun;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !accReal;"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor (Backlog 668: Brückenanprall ebenso)');
+  ok(app.includes("const hitrun = !wild && HITRUN_HINT.test(dv); $('#hitrun').hidden = !hitrun;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !accReal;"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor (Backlog 668: Brückenanprall ebenso)');
   ok(app.indexOf("$('#hitrun').hidden = !hitrun") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun',/.test(app), 'Reihenfolge direkt nach Unfall/Wildunfall');
   ok(app.includes("'custdmg', 'hitrun', 'vandal', 'marten', 'storm', 'bridge', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen (Backlog 661/664/667: Vandalismus, Marder, Unwetter direkt dahinter)');
@@ -27058,7 +27058,7 @@ await test('Backlog 659–661 (Blickwinkel „Vandalismus über Nacht – Reifen
     ok(S.cp_vandal_hint.includes(S.cp_title), 'Versicherungs-Hinweis nennt den Anzeige-Abschnitt ' + l);
   }
   ok(app.includes('<div id="vandal" class="panel" hidden role="status">'), 'Panel #vandal');
-  ok(app.includes("const theft = THEFT_HINT.test($('#d').value); $('#theft').hidden = !theft; $('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test($('#d').value);"), 'nicht zusätzlich zu Diebstahl/Unfallflucht');
+  ok(app.includes("const theft = THEFT_HINT.test(dv); $('#theft').hidden = !theft; $('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv);"), 'nicht zusätzlich zu Diebstahl/Unfallflucht');
   ok(app.indexOf("$('#vandal').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun', 'vandal',/.test(app), 'Reihenfolge direkt nach Unfallflucht');
   ok(app.includes("const vandalNoRef = !theftNoRef && !hitrunNoRef && VANDAL_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimvandal'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt');
@@ -27085,7 +27085,7 @@ await test('Backlog 662–664 (Blickwinkel „Marder hat Kabel/Schläuche angefr
     ok(S.claim_marten_hint.includes('{b}'), 'Versicherungs-Hinweis nennt den Knopf ' + l);
   }
   ok(app.includes('<div id="marten" class="panel" hidden role="status">'), 'Panel #marten');
-  ok(app.includes("$('#marten').hidden = !MARTEN_HINT.test($('#d').value);") && app.indexOf("$('#marten').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#marten').hidden = !MARTEN_HINT.test(dv);") && app.indexOf("$('#marten').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'warnlight', 'marten', 'gelfuel'"), 'Reihenfolge nach Warnleuchte');
   ok(app.includes("const martenNoClaim = !cl && MARTEN_HINT.test(desc || '');") && app.includes('data-claimmarten'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
 });
@@ -27109,7 +27109,7 @@ await test('Backlog 665–667 (Blickwinkel „Unwetter: Ast/Baum auf dem Lkw, Ha
     ok(S.claim_storm_hint.includes('{b}'), 'Versicherungs-Hinweis nennt den Knopf ' + l);
   }
   ok(app.includes('<div id="storm" class="panel" hidden role="status">'), 'Panel #storm');
-  ok(app.includes("$('#storm').hidden = !STORM_HINT.test($('#d').value);") && app.indexOf("$('#storm').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#storm').hidden = !STORM_HINT.test(dv);") && app.indexOf("$('#storm').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun', 'vandal', 'storm',/.test(app), 'Reihenfolge nach Vandalismus');
   ok(app.includes("const stormNoClaim = !cl && STORM_HINT.test(desc || '');") && app.includes('data-claimstorm'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
 });
@@ -27132,7 +27132,7 @@ await test('Backlog 668–670 (Blickwinkel „Lkw bleibt an Brücke/Unterführun
     ok(S.cp_bridge_hint.includes(S.cp_title), 'Versicherungs-Hinweis nennt den Abschnitt „' + S.cp_title + '“ ' + l);
   }
   ok(app.includes('<div id="bridge" class="panel" hidden role="status">'), 'Panel #bridge');
-  ok(app.includes("const bridge = !wild && !hitrun && BRIDGE_HINT.test($('#d').value); $('#bridge').hidden = !bridge;") && app.indexOf("$('#bridge').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft, Wildunfall/Unfallflucht gehen vor');
+  ok(app.includes("const bridge = !wild && !hitrun && BRIDGE_HINT.test(dv); $('#bridge').hidden = !bridge;") && app.indexOf("$('#bridge').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft, Wildunfall/Unfallflucht gehen vor');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun', 'vandal', 'storm', 'bridge',/.test(app), 'Reihenfolge nach Unwetter');
   ok(app.includes("const bridgeNoRef = !theftNoRef && !hitrunNoRef && !vandalNoRef && BRIDGE_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimbridge'), 'Hinweis nur ohne Aktenzeichen, nicht doppelt zu Diebstahl/Unfallflucht/Vandalismus');
   ok(app.includes("'storm', 'bridge', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen');
@@ -27155,7 +27155,7 @@ await test('Backlog 671–673 (Blickwinkel „Lkw steht nicht mehr da – vom Or
     ok(S.claim_tow_hint.includes('{f}'), 'Hinweis nennt die Bußgeld-Ansicht ' + l);
   }
   ok(app.includes('<div id="tow" class="panel" hidden role="status">'), 'Panel #tow');
-  ok(app.includes("$('#tow').hidden = !TOW_HINT.test($('#d').value);") && app.indexOf("$('#tow').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#tow').hidden = !TOW_HINT.test(dv);") && app.indexOf("$('#tow').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'roadchk', 'theft', 'tow', 'reefer'"), 'Reihenfolge nach Diebstahl');
   ok(app.includes("const towHint = TOW_HINT.test(desc || '');") && app.includes("t('claim_tow_hint').replace('{f}', t('fines'))") && app.includes('data-claimtow'), 'Hinweis an die Leitung im Vorgang');
   ok(app.includes("'nostart', 'tow', 'warnlight'"), 'Hilfe-Abschnitt für meldende Rollen');
@@ -27178,7 +27178,7 @@ await test('Backlog 674–676 (Blickwinkel „Personen im Laderaum entdeckt – 
     ok(S.cp_stow_hint.includes(S.cp_title), 'Hinweis nennt den Abschnitt „' + S.cp_title + '“ ' + l);
   }
   ok(app.includes('<div id="stow" class="panel" hidden role="status">'), 'Panel #stow');
-  ok(app.includes("$('#stow').hidden = !STOW_HINT.test($('#d').value);") && app.indexOf("$('#stow').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#stow').hidden = !STOW_HINT.test(dv);") && app.indexOf("$('#stow').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'storm', 'bridge', 'fixobj', 'stow', 'roofice', 'trlr'"), 'Reihenfolge nach Brückenanprall (Backlog 678: Eis/Schnee auf dem Dach dahinter; seit Backlog 735 fremde Sache angefahren dazwischen)');
   ok(app.includes("const stowNoRef = !theftNoRef && !hitrunNoRef && !vandalNoRef && !bridgeNoRef && STOW_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimstow'), 'Hinweis nur ohne Aktenzeichen, nicht doppelt');
   ok(app.includes("'leak', 'stow', 'custdmg'"), 'Hilfe-Abschnitt für meldende Rollen');
@@ -27221,7 +27221,7 @@ await test('Backlog 678–680 (Blickwinkel „Eis/Schnee auf dem Aufliegerdach�
     ok(S.claim_roofice_hint.includes('{b}') && !/\d/.test(S.claim_roofice_hint), 'Versicherungs-Hinweis nennt den Knopf, keine Zahlen ' + l);
   }
   ok(app.includes('<div id="roofice" class="panel" hidden role="status">'), 'Panel #roofice');
-  ok(app.includes("$('#roofice').hidden = !ROOFICE_HINT.test($('#d').value);") && app.indexOf("$('#roofice').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#roofice').hidden = !ROOFICE_HINT.test(dv);") && app.indexOf("$('#roofice').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'vibr', 'deck', 'roofice'"), 'Hilfe-Abschnitt für meldende Rollen');
   ok(app.includes("const rooficeNoClaim = !cl && ROOFICE_HINT.test(desc || '');") && app.includes('data-claimroofice'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
   // Server speichert die Beschreibung unverändert
@@ -27245,7 +27245,7 @@ await test('Backlog 682–684 (Blickwinkel „Ladungsschaden beim Kunden reklami
     ok(S.help_cargo_t && S.help_cargo_s.includes(S.cargo_hint_steps) && S.help_cargo_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="cargo" class="panel" hidden role="status">'), 'Panel #cargo');
-  ok(app.includes("$('#cargo').hidden = !CARGO_HINT.test($('#d').value);") && app.indexOf("$('#cargo').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#cargo').hidden = !CARGO_HINT.test(dv);") && app.indexOf("$('#cargo').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'tarp', 'custdmg', 'cargo', 'glass'"), 'Reihenfolge nach Schaden beim Kunden');
   ok(app.includes("'deck', 'roofice', 'cargo', "), 'Hilfe-Abschnitt für meldende Rollen');
   ok(app.includes("const cargoNoClaim = !cl && CARGO_HINT.test(desc || '');") && app.includes('data-claimcargo'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
@@ -27299,7 +27299,7 @@ await test('Backlog 688–689 (Blickwinkel „Partikelfilter (DPF) voll – Rege
     ok(S.help_pfilter_t && S.help_pfilter_s.includes(S.pfilter_hint_steps) && S.help_pfilter_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="pfilter" class="panel" hidden role="status">'), 'Panel #pfilter');
-  ok(app.includes("$('#pfilter').hidden = !PFILTER_HINT.test($('#d').value);") && app.indexOf("$('#pfilter').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#pfilter').hidden = !PFILTER_HINT.test(dv);") && app.indexOf("$('#pfilter').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'leak', 'pfilter', 'warnlight'"), 'vor dem allgemeinen Warnleuchten-Hinweis (aufgeklappt, wenn beide passen)');
   ok(app.includes("'numplate', 'pfilter', "), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -27322,7 +27322,7 @@ await test('Backlog 690–691 (Blickwinkel „Fahrer rutscht beim Absteigen aus 
   }
   ok(/Verletzung gehören nicht in diese Meldung/.test(STRINGS.de.step_hint_steps) && /do not belong in this report/.test(STRINGS.en.step_hint_steps), 'Datensparsamkeit: keine Verletzungsangaben im Fahrzeugvorgang');
   ok(app.includes('<div id="step" class="panel" hidden role="status">'), 'Panel #step');
-  ok(app.includes("$('#step').hidden = !STEP_HINT.test($('#d').value);") && app.indexOf("$('#step').hidden") < app.indexOf("$('#loose').hidden") && app.indexOf("$('#step').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung vor dem Lose-Teile-Hinweis und vor bindFormDraft');
+  ok(app.includes("$('#step').hidden = !STEP_HINT.test(dv);") && app.indexOf("$('#step').hidden") < app.indexOf("$('#loose').hidden") && app.indexOf("$('#step').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung vor dem Lose-Teile-Hinweis und vor bindFormDraft');
   ok(app.includes("'susp', 'step', 'injury', 'loose'"), 'Reihenfolge vor „loses Teil“ (seit Backlog 731 Arbeitsunfall dazwischen)');
   ok(app.includes("'pfilter', 'step', "), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -27342,7 +27342,7 @@ await test('Backlog 692–693 (Blickwinkel „Vor dem Laden: Zurrgurte, Kantensc
     ok(S.help_lashgear_t && S.help_lashgear_s.includes(S.lashgear_hint_steps) && S.help_lashgear_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="lashgear" class="panel" hidden role="status">'), 'Panel #lashgear');
-  ok(app.includes("$('#lashgear').hidden = !LASHGEAR_HINT.test($('#d').value);") && app.indexOf("$('#lashgear').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#lashgear').hidden = !LASHGEAR_HINT.test(dv);") && app.indexOf("$('#lashgear').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'load', 'lashgear', 'deck'"), 'Reihenfolge nach verrutschter Ladung');
   ok(app.includes("'step', 'lashgear', "), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -27398,7 +27398,7 @@ await test('Backlog 720–722 (Blickwinkel „Batterie ausgelaufen, gast oder au
     ok(S.help_batt_t && S.help_batt_s.includes(S.batt_hint_steps) && S.help_batt_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="batt" class="panel" hidden role="status">'), 'Panel #batt');
-  ok(app.includes("$('#batt').hidden = !BATT_HINT.test($('#d').value);") && app.indexOf("$('#batt').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#batt').hidden = !BATT_HINT.test(dv);") && app.indexOf("$('#batt').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'elec', 'batt', 'engine'"), 'Reihenfolge nach Elektrik, vor Motor');
   ok(helpAfter(app, 'batt', 'elec'), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -27421,7 +27421,7 @@ await test('Backlog 725–726 (Blickwinkel „Ersatzrad fehlt, ist platt oder be
     ok(S.help_spare_t && S.help_spare_s.includes(S.spare_hint_steps) && S.help_spare_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="spare" class="panel" hidden role="status">'), 'Panel #spare');
-  ok(app.includes("$('#spare').hidden = !SPARE_HINT.test($('#d').value);") && app.indexOf("$('#spare').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#spare').hidden = !SPARE_HINT.test(dv);") && app.indexOf("$('#spare').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'safetykit', 'spare', 'roadchk'"), 'Reihenfolge nach Sicherheitsausrüstung');
   ok(helpAfter(app, 'spare', 'safetykit'), 'Hilfe-Abschnitt für meldende Rollen nach Sicherheitsausrüstung');
 });
@@ -27444,7 +27444,7 @@ await test('Backlog 729–730 (Blickwinkel „Gaspedal klemmt/hängt, Fußmatte 
     ok(S.help_pedal_t && S.help_pedal_s.includes(S.pedal_hint_steps) && S.help_pedal_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="pedal" class="panel" hidden role="status">'), 'Panel #pedal');
-  ok(app.includes("$('#pedal').hidden = !PEDAL_HINT.test($('#d').value);") && app.indexOf("$('#pedal').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#pedal').hidden = !PEDAL_HINT.test(dv);") && app.indexOf("$('#pedal').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'brake', 'parkbrake', 'pedal', 'steer'"), 'Reihenfolge nach Feststellbremse');
   ok(helpAfter(app, 'pedal', 'parkbrake'), 'Hilfe-Abschnitt für meldende Rollen nach Feststellbremse');
 });
@@ -27499,7 +27499,7 @@ await test('Backlog 741–742 (Blickwinkel „Ladeboden, Bordwand, Seitenwand od
     ok(S.help_floor_t && S.help_floor_s.includes(S.floor_hint_steps) && S.help_floor_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="floor" class="panel" hidden role="status">'), 'Panel #floor');
-  ok(app.includes("$('#floor').hidden = !FLOOR_HINT.test($('#d').value);") && app.indexOf("$('#floor').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#floor').hidden = !FLOOR_HINT.test(dv);") && app.indexOf("$('#floor').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'lashgear', 'deck', 'floor', 'leak'"), 'Reihenfolge nach Ladeetage, vor Leck');
   ok(app.includes("'underrun', 'floor', 'tyre'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -27527,7 +27527,7 @@ await test('Backlog 747 (Blickwinkel „Kraftstoff ausgegangen, Tank leergefahre
     ok(S.help_dryfuel_t && S.help_dryfuel_s.includes(S.dryfuel_hint_steps) && S.help_dryfuel_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="dryfuel" class="panel" hidden role="status">'), 'Panel #dryfuel');
-  ok(app.includes("$('#dryfuel').hidden = !DRYFUEL_HINT.test($('#d').value);") && app.indexOf("$('#dryfuel').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#dryfuel').hidden = !DRYFUEL_HINT.test(dv);") && app.indexOf("$('#dryfuel').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'fuel', 'fuelcap', 'dryfuel', 'nostart'"), 'Reihenfolge nach Tankdeckel, vor Startproblemen');
   ok(helpAfter(app, 'dryfuel', 'gelfuel'), 'Hilfe-Abschnitt nach Diesel versulzt');
 });
@@ -27540,6 +27540,36 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
     BRAKE_HINT: [['zischt an der Luftleitung', 'es zischt an der Bremsleitung', 'air leak hissing', 'air is leaking under the trailer', 'hissing air behind the cab', 'шипить повітря', 'воздух шипит'], ['air leak at the tyre', 'air conditioning leak', 'шипить повітря з колеса', 'Luftleitung ok']],
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+});
+await test('Backlog 761 (Sonde Reparaturvermerke, 31.10.2026 05:15): wiederkehrender oder nicht behobener Mangel („wieder, obwohl repariert“, „nach Reparatur wieder“, „nicht repariert“, „again after being fixed“, „not been replaced“, „знову, хоча відремонтували“, „не відремонтували“, „опять, хотя отремонтировали“, „funktioniert wieder nicht“) blendet den Hinweis nicht mehr aus; echte Reparaturvermerke weiter ohne Hinweis; Meldeformular nutzt recurFix', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const a = app.indexOf('const FIX_WORD'), b = app.indexOf("}).join('');", a) + 12;
+  ok(a > 0 && b > a, 'recurFix auf Modulebene');
+  const recurFix = new Function(app.slice(a, b) + '; return recurFix;')();
+  ok(/const hints = \(\) => \{ const dv = recurFix\(\$\('#d'\)\.value\);/.test(app), 'Meldeformular prüft den Text über recurFix');
+  ok(!/const hints = \(\) => \{[^\n]*\$\('#d'\)\.value\)[^\n]*\$\('#d'\)\.value/.test(app), 'Hinweise lesen den Text nicht mehr ungefiltert');
+  const T = {
+    SUSP_HINT: [['Feder gebrochen, nicht repariert', 'Luftfederung zu tief wieder, obwohl repariert', 'Luftfederung zu tief, trotz Reparatur'], ['Luftfederung zu tief, repariert']],
+    STEER_HINT: [['кермо б\'є знову, хоча відремонтували', 'кермо б\'є, не відремонтували', 'руль бьет опять, хотя отремонтировали', 'кермо трясеться, після ремонту знову, хоча замінили'], ['руль бьет, отремонтировали', 'кермо б\'є, відремонтували, знову працює']],
+    LEAK_HINT: [['Kühlwasser verliert wieder, obwohl repariert', 'Kühlwasser verliert immer noch, obwohl Schlauch getauscht'], ['Kühlwasser verliert, repariert']],
+    TARP_HINT: [['Loch in der Plane, trotz Reparatur', 'Dachplane Loch, wurde schon repariert, jetzt wieder kaputt', 'hole in the tarp again, although it was fixed last week'], ['Dachplane Loch, erneuert', 'Loch in der Plane, repariert']],
+    GEAR_HINT: [['не перемикаються передачі, вже ремонтували, знову', 'передачі не включаються, ще не відремонтували'], ['не перемикаються передачі, відремонтували']],
+    CLIMATE_HINT: [['air con not cold again after being repaired', 'a/c not cooling, has not been fixed', 'air con not cold, still not fixed'], ['air con not cold - fixed', 'air con not cold, repaired']],
+    MIRROR_HINT: [['mirror adjustment not working again after being repaired', 'Spiegel kaputt, wurde schon mal ersetzt, jetzt erneut kaputt'], ['mirror adjustment not working - fixed']],
+    LIGHTS_HINT: [['Rücklicht funktioniert wieder nicht, obwohl getauscht', 'Bremslicht funktioniert schon wieder nicht', 'Begrenzungsleuchte fehlt, wurde nicht ersetzt'], ['Rücklicht funktioniert wieder', 'marker light missing, replaced']],
+    CABLOCK_HINT: [['key broken in the lock again, was replaced last week'], ['key broken, replaced']],
+    VISIB_HINT: [['Scheibenwaschanlage spritzt nicht, obwohl gewechselt'], ['Waschdüse verstopft, gereinigt und getauscht']],
+    ENGINE_HINT: [['Motor geht immer wieder aus'], ['losing coolant - fixed']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(recurFix(x)), n + ': ' + x); for (const x of neg) ok(!r.test(recurFix(x)), n + ' nicht: ' + x); }
+  // Bestehende Prüffälle aller Hinweis-Tests: recurFix ändert nichts, wo kein wiederkehrender Mangel beschrieben ist
+  const src = readFileSync(new URL(import.meta.url), 'utf8');
+  let n = 0; const self0 = src.indexOf("await test('Backlog 761 "), self1 = src.indexOf("await test('Backlog 760 ");
+  for (const m of src.matchAll(/^\s+([A-Z_]+_HINT): (\[\[.*\]\]),?$/gm)) { if (m.index > self0 && m.index < self1) continue; let v; try { v = Function('return ' + m[2])(); } catch { continue; } const r = (() => { try { return g(m[1]); } catch { return null; } })(); if (!r) continue; for (const x of [...v[0], ...(v[1] || [])]) { if (/obwohl|trotz|wieder\s+nicht|again|still|although|знову|хоча|опять|хотя|nicht\s+repariert|не\s+відремонт/i.test(x)) continue; n++; ok(r.test(x) === r.test(recurFix(x)), m[1] + ' unverändert: ' + x); } }
+  ok(n > 500, 'Prüffälle der übrigen Hinweis-Tests gegengeprüft: ' + n);
+  ok(recurFix('Bremse quietscht, repariert') === 'Bremse quietscht, repariert' && recurFix('working again, fixed') === 'working again, fixed', 'Reparaturvermerke bleiben unverändert');
 });
 await test('Backlog 760 (Sonde über vorhandene Muster, 31.10.2026 04:15): Fehlgriff „windscreen wipers not working“/„Frontscheibe beschlagen“ zeigte Glasschaden – jetzt nur Sicht/Wischer; Kühlwasserverlust DE/UK/EN einheitlich Undichtigkeit + Motor; neu erkannt: „put petrol in“ → Fehlbetankung; „Scheibenwaschanlage spritzt nicht“, „washer not spraying“ → Sicht; „ліжко зламалось“ → Ausstattung; „key broken in the lock“ → Schloss; „не вистачає гайки на колесі“ → Rad; „Loch in der Plane“, „hole in the tarp“, „дірка в тенті“ → Plane; „Auflieger hat sich während der Fahrt gelöst“ → Kupplung; „Luftfederung zu tief“, „машину кренить“ → Federung; „травить повітря“ → Druckluft/Bremse, am Rad → Reifen; „wheel losing air“ → Reifen; „кермо б\'є“ → Lenkung; „не перемикаються передачі“ → Getriebe; „air con not cold“ → Klima; „water in the cab“, „вода в кабіні“ → Wasser im Fahrerhaus; „кабіна не піднімається“ → Kippen; „бокове скло розбили“ → Glas; „Begrenzungsleuchte fehlt“, „marker light missing“ → Beleuchtung; Reparaturvermerke und Routine nicht', async () => {
   const { readFileSync } = await import('node:fs');
@@ -27822,7 +27852,7 @@ await test('Backlog 735–736 (Blickwinkel „Schranke, Poller, Laterne, Zaun, V
     ok(S.help_fixobj_t && S.help_fixobj_s.includes(S.fixobj_hint_steps) && S.help_fixobj_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="fixobj" class="panel" hidden role="status">'), 'Panel #fixobj');
-  ok(app.includes("{ const fixobj = !wild && !hitrun && !bridge && $('#custdmg').hidden && FIXOBJ_HINT.test($('#d').value); $('#fixobj').hidden = !fixobj; $('#acc').hidden ||= fixobj; }") && app.indexOf("$('#custdmg').hidden = ") < app.indexOf("$('#fixobj').hidden") && app.indexOf("$('#acc').hidden = wild") < app.indexOf("$('#fixobj').hidden") && app.indexOf("$('#fixobj').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung nach Unfall/Kunde, ersetzt die allgemeinen Unfall-Hinweise, vor bindFormDraft');
+  ok(app.includes("{ const fixobj = !wild && !hitrun && !bridge && $('#custdmg').hidden && FIXOBJ_HINT.test(dv); $('#fixobj').hidden = !fixobj; $('#acc').hidden ||= fixobj; }") && app.indexOf("$('#custdmg').hidden = ") < app.indexOf("$('#fixobj').hidden") && app.indexOf("$('#acc').hidden = wild") < app.indexOf("$('#fixobj').hidden") && app.indexOf("$('#fixobj').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung nach Unfall/Kunde, ersetzt die allgemeinen Unfall-Hinweise, vor bindFormDraft');
   ok(app.includes("'storm', 'bridge', 'fixobj', 'stow'"), 'Reihenfolge nach Brückenanprall');
   ok(helpAfter(app, 'fixobj', 'injury'), 'Hilfe-Abschnitt für meldende Rollen nach Arbeitsunfall');
 });
@@ -27925,7 +27955,7 @@ await test('Backlog 718–719 (Blickwinkel „Kabel blank, durchgescheuert oder 
     ok(S.help_elec_t && S.help_elec_s.includes(S.elec_hint_steps) && S.help_elec_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="elec" class="panel" hidden role="status">'), 'Panel #elec');
-  ok(app.includes("$('#elec').hidden = !ELEC_HINT.test($('#d').value);") && app.indexOf("$('#elec').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#elec').hidden = !ELEC_HINT.test(dv);") && app.indexOf("$('#elec').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'gelfuel', 'elec', 'batt', 'engine'"), 'Reihenfolge nach Diesel/Kälte, vor Batterie/Motor (Backlog 720)');
   ok(helpAfter(app, 'elec', 'grease'), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -27947,7 +27977,7 @@ await test('Backlog 716–717 (Blickwinkel „Zentralschmieranlage leer oder mit
     ok(S.help_grease_t && S.help_grease_s.includes(S.grease_hint_steps) && S.help_grease_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="grease" class="panel" hidden role="status">'), 'Panel #grease');
-  ok(app.includes("$('#grease').hidden = !GREASE_HINT.test($('#d').value);") && app.indexOf("$('#grease').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#grease').hidden = !GREASE_HINT.test(dv);") && app.indexOf("$('#grease').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'coupling', 'grease', 'cabtilt'"), 'Reihenfolge nach Kupplung');
   ok(helpAfter(app, 'grease', 'coupling'), 'Hilfe-Abschnitt für meldende Rollen nach Kupplung');
 });
@@ -27986,7 +28016,7 @@ await test('Backlog 711–712 (Blickwinkel „Mäuse, Bettwanzen oder Ungeziefer
   }
   ok(app.includes('<div id="pest" class="panel" hidden role="status">'), 'Panel #pest');
   // seit Backlog 727 ohne Wespen-/Hornissenwörter, wenn die Nest-Schritte erscheinen
-  ok(app.includes("$('#pest').hidden = !PEST_HINT.test(nest ? $('#d').value.replace(NEST_WORDS, ' ') : $('#d').value);") && app.indexOf("$('#pest').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#pest').hidden = !PEST_HINT.test(nest ? dv.replace(NEST_WORDS, ' ') : dv);") && app.indexOf("$('#pest').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'cablock', 'pest', 'nest', 'stuck'"), 'Reihenfolge nach Fahrerhaus-Schloss');
   ok(helpAfter(app, 'pest', 'cabtilt'), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -28028,7 +28058,7 @@ await test('Backlog 707–709 (Blickwinkel „Feststellbremse hält nicht – Lk
     ok(S.help_parkbrake_t && S.help_parkbrake_s.includes(S.parkbrake_hint_steps) && S.help_parkbrake_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="parkbrake" class="panel" hidden role="status">'), 'Panel #parkbrake');
-  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake($('#d').value)); $('#parkbrake').hidden = !PARKBRAKE_HINT.test($('#d').value);") && app.indexOf("$('#parkbrake').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)); $('#parkbrake').hidden = !PARKBRAKE_HINT.test(dv);") && app.indexOf("$('#parkbrake').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'brake', 'parkbrake', 'pedal', 'steer'"), 'Reihenfolge nach Bremse (seit Backlog 729 Gaspedal dazwischen)');
   ok(helpAfter(app, 'parkbrake', 'brake'), 'Hilfe-Abschnitt für meldende Rollen nach Bremse');
 });
@@ -28050,7 +28080,7 @@ await test('Backlog 704–705 (Blickwinkel „Motorölstand zu niedrig, Öl nach
     ok(S.help_oillevel_t && S.help_oillevel_s.includes(S.oillevel_hint_steps) && S.help_oillevel_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="oillevel" class="panel" hidden role="status">'), 'Panel #oillevel');
-  ok(app.includes("$('#oillevel').hidden = !OILLEVEL_HINT.test($('#d').value);") && app.indexOf("$('#oillevel').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#oillevel').hidden = !OILLEVEL_HINT.test(dv);") && app.indexOf("$('#oillevel').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'engine', 'oillevel', 'gear'"), 'Reihenfolge nach Motor');
   ok(app.includes("'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -28073,7 +28103,7 @@ await test('Backlog 702–703 (Blickwinkel „Telematik-/Ortungsgerät, Navi ode
     ok(S.help_telem_t && S.help_telem_s.includes(S.telem_hint_steps) && S.help_telem_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="telem" class="panel" hidden role="status">'), 'Panel #telem');
-  ok(app.includes("$('#telem').hidden = !TELEM_HINT.test($('#d').value);") && app.indexOf("$('#telem').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#telem').hidden = !TELEM_HINT.test(dv);") && app.indexOf("$('#telem').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'dash', 'telem', 'adas'"), 'Reihenfolge nach Armaturen');
   ok(app.includes("'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -28094,7 +28124,7 @@ await test('Backlog 700–701 (Blickwinkel „Wasser im Fahrerhaus – Dachluke 
     ok(S.help_cableak_t && S.help_cableak_s.includes(S.cableak_hint_steps) && S.help_cableak_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="cableak" class="panel" hidden role="status">'), 'Panel #cableak');
-  ok(app.includes("$('#cableak').hidden = !CABLEAK_HINT.test($('#d').value);") && app.indexOf("$('#cableak').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#cableak').hidden = !CABLEAK_HINT.test(dv);") && app.indexOf("$('#cableak').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'window', 'cableak', 'cablock'"), 'Reihenfolge nach Fenster');
   ok(app.includes("'cabkit', 'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -28121,7 +28151,7 @@ await test('Backlog 698–699 (Blickwinkel „Fahrerhaus-Ausstattung defekt – 
     ok(S.help_cabkit_t && S.help_cabkit_s.includes(S.cabkit_hint_steps) && S.help_cabkit_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="cabkit" class="panel" hidden role="status">'), 'Panel #cabkit');
-  ok(app.includes("$('#cabkit').hidden = !CABKIT_HINT.test($('#d').value);") && app.indexOf("$('#cabkit').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#cabkit').hidden = !CABKIT_HINT.test(dv);") && app.indexOf("$('#cabkit').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'seat', 'cabkit', 'mirror'"), 'Reihenfolge nach Sitz');
   ok(app.includes("'sticker', 'cabkit', 'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -28149,7 +28179,7 @@ await test('Backlog 696–697 (Blickwinkel „Umweltplakette bzw. HU-Plakette fe
     ok(S.help_sticker_t && S.help_sticker_s.includes(S.sticker_hint_steps) && S.help_sticker_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="sticker" class="panel" hidden role="status">'), 'Panel #sticker');
-  ok(app.includes("$('#sticker').hidden = !STICKER_HINT.test($('#d').value);") && app.indexOf("$('#sticker').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#sticker').hidden = !STICKER_HINT.test(dv);") && app.indexOf("$('#sticker').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("{ let dl = dsk; if (!$('#numplate')") && app.includes("const numplateHint = NUMPLATE_HINT.test(noSticker(desc));"), 'Lose-Teil- und Leitungs-Hinweis ohne Plaketten-Fundstelle');
   ok(app.includes("'numplate', 'sticker', 'fuelcard'"), 'Reihenfolge nach Kennzeichen');
   ok(app.includes("'contour', 'sticker', 'cabkit', 'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
@@ -28171,7 +28201,7 @@ await test('Backlog 694–695 (Blickwinkel „Konturmarkierung, Rückstrahler od
     ok(S.help_contour_t && S.help_contour_s.includes(S.contour_hint_steps) && S.help_contour_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="contour" class="panel" hidden role="status">'), 'Panel #contour');
-  ok(app.includes("$('#contour').hidden = !CONTOUR_HINT.test($('#d').value);") && app.indexOf("$('#contour').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#contour').hidden = !CONTOUR_HINT.test(dv);") && app.indexOf("$('#contour').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'lights', 'contour', 'visib'"), 'Reihenfolge nach Beleuchtung');
   ok(app.includes("'lashgear', 'contour', 'sticker', 'cabkit', 'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
