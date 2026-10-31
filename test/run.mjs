@@ -28772,6 +28772,34 @@ await test('Backlog 792 (Blickwinkel „Fahrer mit älterem Handy/Browser“): j
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-ohne-has.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 793 (Blickwinkel „Fahrer mit älterem Handy/Browser“): kein crypto.randomUUID ohne Rückfall (Lagerbuchung), uid() liefert ohne randomUUID eine UUID v4 aus getRandomValues, die jede Schlüsselprüfung annimmt; jede color-mix()-Regel (App + Werkstatt-Tafel) hat eine Ersatzangabe in `@supports not (… color-mix …)`; UI-Prüfung `ui-ohne-randomuuid.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs'); const { webcrypto } = await import('node:crypto');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const calls = [...app.matchAll(/crypto\.randomUUID\(\)/g)].length; eq(calls, 1, 'randomUUID() nur in uid() mit Rückfall');
+  ok(/const rkFor = [^\n]*form\.dataset\.rk = uid\(\)/.test(app), 'rkFor nutzt uid()');
+  const i = app.indexOf('const uid = () =>'); const j = app.indexOf('};', i); ok(i > 0 && j > i, 'uid() gefunden');
+  const make = new Function('crypto', `${app.slice(i, j + 2)}\nreturn uid;`);
+  const old = make({ getRandomValues: (a) => webcrypto.getRandomValues(a) });
+  const seen = new Set();
+  for (let k = 0; k < 500; k++) { const v = old(); ok(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v), `UUID v4: ${v}`); ok(/^[\w-]+$/.test(v) && v.length <= 64, 'Lager-/Bußgeld-Schlüsselprüfung'); seen.add(v); }
+  eq(seen.size, 500, 'keine Wiederholung');
+  eq(make({ randomUUID: () => 'neu', getRandomValues: () => { throw new Error('nicht nötig'); } })(), 'neu', 'neue Browser: randomUUID');
+  const stock = readFileSync(new URL('../src/stock.js', import.meta.url), 'utf8'); ok(stock.includes("!/^[\\w-]+$/.test(k)"), 'Lager prüft Schlüssel weiter so');
+  const sets = [['styles.css', readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')], ['werkstatt/index.html', readFileSync(new URL('../public/werkstatt/index.html', import.meta.url), 'utf8')]];
+  for (const [name, src] of sets) {
+    const bi = src.indexOf('@supports not (background: color-mix(in srgb, red 10%, transparent))'); ok(bi > 0, `${name}: Rückfallblock vorhanden`);
+    let depth = 0, k = src.indexOf('{', bi); const start = k; for (; k < src.length; k++) { if (src[k] === '{') depth++; else if (src[k] === '}' && --depth === 0) break; }
+    const block = src.slice(start, k); ok(!block.includes('color-mix('), `${name}: Rückfallblock ohne color-mix()`);
+    const rest = src.slice(0, bi) + src.slice(k);
+    const sels = [...rest.matchAll(/([^{}\n]+)\{[^{}]*color-mix\(/g)].map((m) => m[1].trim()).filter((x) => !/^(0%|50%|100%|from|to)/.test(x));
+    const frames = [...rest.matchAll(/@keyframes\s+([\w-]+)\s*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g)].filter((m) => m[0].includes('color-mix(')).map((m) => m[1]);
+    ok(sels.length + frames.length >= 1, `${name}: color-mix()-Regeln gefunden`);
+    for (const sel of sels) ok(block.includes(sel + '{') || block.includes(sel + ' {'), `${name}: Ersatz für „${sel}“`);
+    for (const f of frames) ok(new RegExp(`@keyframes\\s+${f}\\s*\\{`).test(block), `${name}: Ersatz für @keyframes ${f}`);
+  }
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-ohne-randomuuid.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -240,6 +240,11 @@ input[type=checkbox], input[type=radio] { width: 22px; height: 22px; min-height:
 }
 .checkitem > span:first-child { min-width: 0; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; }
 .checkitem.missing { background: color-mix(in srgb, var(--stop) 10%, transparent); box-shadow: inset 4px 0 0 var(--stop); padding-left: 10px; }
+/* Backlog 793 (Blickwinkel „Fahrer mit älterem Handy/Browser“): color-mix() fehlt in Chrome < 111 und iOS < 16.2 – mit var() verwirft der
+   Browser die Angabe erst beim Berechnen, eine vorangestellte Ersatzangabe greift dann nicht. Deshalb eigener Block. */
+@supports not (background: color-mix(in srgb, red 10%, transparent)) {
+  .checkitem.missing { background: var(--stop-bg); }
+}
 
 /* Verlauf */
 .timeline { list-style: none; padding: 0; margin: 0; border-left: 2px solid var(--rule); }

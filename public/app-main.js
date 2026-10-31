@@ -81,7 +81,12 @@ const MK_KEYS = { Tachograph: 'tacho', 'Ölwechsel': 'oil', Inspektion: 'service
 // Backlog 577: Prüfart mit Titel („Sonstiges – Ladebordwand Prüfbuch“); ohne Titel nur die Art
 const mkR = (r) => mk(r.kind) + (r && r.title ? ' – ' + r.title : '');
 const mk = (k) => (MK_KEYS[k] ? t('mk_' + MK_KEYS[k]) : k);
-const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
+// Backlog 793 (Blickwinkel „Fahrer mit älterem Handy/Browser“): Ohne crypto.randomUUID (Chrome < 92, iOS < 15.4) eine UUID v4 aus
+// crypto.getRandomValues – nur Hexziffern und Bindestriche. Vorher „Zeit + Math.random()“ mit Punkt: das Lager lehnte solche Schlüssel ab
+// (`request_key: ungültiger Wert`), zufällig war er auch nicht kryptografisch.
+const uid = () => { if (crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join(''); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`; };
 // Zeitpunkte immer in Berliner Zeit wie Server, Fristen und CSV (ein Gerät auf Kyjiwer Zeit zeigte sonst eine Stunde mehr –
 // z. B. Tatzeit im Bußgeld ≠ Schreiben). Formatierer je Sprache einmal erzeugt (Listen mit Hunderten Zeitstempeln).
 const DT_FMT = {};
