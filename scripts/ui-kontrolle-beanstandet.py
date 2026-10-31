@@ -9,7 +9,8 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Polizei hat die Ladungssicherung bemängelt, Weiterfahrt untersagt','uk':'Поліція виписала штраф за кріплення вантажу','en':'Police stopped me and gave a fine for load securing'}
 NO={'de':'Abfahrtskontrolle: Licht bemängelt','uk':'Контрольна лампа горить','en':'Warning light on after the departure check'}
-HT={'de':'Beanstandung bei einer Polizei- oder BAG-Kontrolle','uk':'Зауваження під час перевірки поліцією або BAG','en':'Objection at a police or BAG check'}
+# 31.10.2026: Hilfetitel nennt jetzt BALM (früher BAG) – Erwartung angepasst
+HT={'de':'Beanstandung bei einer Polizei- oder BALM-Kontrolle','uk':'Зауваження під час перевірки поліцією або BALM','en':'Objection at a police or BALM check'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
