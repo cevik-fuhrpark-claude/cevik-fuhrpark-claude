@@ -27541,6 +27541,16 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 783 (Sonde Reparaturvermerk Federung): nur die Federbein-/Feder-Zweige blendeten „…, repariert“ aus – „Luftfederung defekt, repariert“, „Liftachse geht nicht hoch, repariert“, „air suspension failed, repaired“, „Пневмоподушка лопнула, замінили“, „Ресора зламана, замінили“ zeigen jetzt keinen Federungs-Hinweis; ohne Vermerk, mit „obwohl repariert“/„хоча замінили“, „muss getauscht werden“ und „nicht mehr“ weiter', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const SUSP_HINT = \/(.+)\/i;$/m); ok(m, 'SUSP_HINT auf Modulebene');
+  const r = new RegExp(m[1], 'i');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  ok(app.includes("$('#susp').hidden = !SUSP_HINT.test(dv);"), 'Federungs-Hinweis prüft dv (eigener Ausschluss)');
+  for (const x of ['Luftfederung defekt', 'Liftachse geht nicht hoch', 'Liftachse geht nicht mehr hoch', 'air suspension failed', 'Пневмоподушка лопнула', 'Ресора зламана', 'Luftfederung wieder defekt, obwohl repariert', 'подушка лопнула знову, хоча замінили', 'Feder gebrochen, nicht repariert', 'Luftbalg kaputt, muss getauscht werden', 'air bag burst, needs to be replaced', 'Пневмоподушка лопнула, треба замінити', 'Auflieger hängt schief. Luftbalg getauscht']) ok(r.test(recurFix(x)), 'SUSP_HINT: ' + x);
+  for (const x of ['Luftfederung defekt, repariert', 'Liftachse geht nicht hoch, repariert', 'air suspension failed, repaired', 'Пневмоподушка лопнула, замінили', 'Ресора зламана, замінили', 'Подвеска не работает, отремонтировали', 'Auflieger hängt schief, Luftbalg getauscht', 'Federbein gebrochen, getauscht']) ok(!r.test(recurFix(x)), 'SUSP_HINT nicht: ' + x);
+});
 await test('Backlog 782 (Sonde Reparaturvermerk UK/RU in Hinweisen ohne noFixed): „педаль газу заїдає, замінили“, „коврик под педалью, убрали“, „немає катафота, замінили“, „світловідбивна стрічка відклеїлась, приклеїли“, „підлога в причепі зламана, заварили“, „сідло сухе, полагодили“, „запаска спущена, замінили“ zeigen wie DE/EN keinen Hinweis; ohne Vermerk weiter; „акумулятор потік“ → Batterie', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

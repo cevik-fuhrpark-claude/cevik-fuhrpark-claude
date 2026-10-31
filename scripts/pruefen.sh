@@ -373,7 +373,7 @@ UI-Große Systemschrift/Zoom 200 % und Fahrerkarte-Hinweis im Vorgang (Backlog 5
 UI-Ladebordwand/Ladekran, Termin ohne Intervall (Backlog 574, 576)|ui-aufbau-pruefarten.py|/tmp/cfp-aufbau-pruefarten.log
 UI-Kühlauflieger Kühlgerät/ATP/Temperaturschreiber, Import-Arten (Backlog 583, 589)|ui-kuehl-pruefarten.py|/tmp/cfp-kuehl-pruefarten.log
 UI-Hinweise Ausfall nach Vermerk, Fensterheber langsam, Anlasser/Spiegelheizung, UK „зламався“, Licht (Backlog 777–781)|ui-hinweis-ausfall-langsam.py|/tmp/cfp-hinweis-ausfall-langsam.log
-UI-Hinweise UK/RU mit Reparaturvermerk: Gaspedal, Konturmarkierung, Ersatzrad, Ladeboden, Schmierung (Backlog 782)|ui-hinweis-reparatur-ukru.py|/tmp/cfp-hinweis-reparatur-ukru.log
+UI-Hinweise UK/RU mit Reparaturvermerk: Gaspedal, Konturmarkierung, Ersatzrad, Ladeboden, Schmierung, Federung (Backlog 782–783)|ui-hinweis-reparatur-ukru.py|/tmp/cfp-hinweis-reparatur-ukru.log
 '
 N=0
 NL='
