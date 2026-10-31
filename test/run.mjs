@@ -27541,6 +27541,23 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 768 (Folge aus 764/767, Sonde „wieder“): „Warnleuchte geht wieder an“, „Standheizung geht wieder aus“, „air con stopped working again“ sind kein Reparaturvermerk; „kühlt/heizt/startet wieder nicht“ zeigt den Hinweis; „funktioniert wieder“, „geht wieder“, „working again“ bleiben Reparaturvermerk', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const a = app.indexOf('const FIX_WORD'), b = app.indexOf("}).join('');", a) + 12;
+  const recurFix = new Function(app.slice(a, b) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", c) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const t = (x) => noFixed(recurFix(x));
+  const T = {
+    WARNLIGHT_HINT: [['Warnleuchte geht wieder an', 'Motorkontrollleuchte leuchtet, geht wieder an'], ['Motorkontrollleuchte leuchtet, Sensor getauscht, geht wieder']],
+    CLIMATE_HINT: [['Standheizung geht wieder aus', 'air con stopped working again', 'Klimaanlage kühlt wieder nicht', 'Standheizung heizt wieder nicht', 'Klimaanlage kühlt schon wieder nicht', 'Klimaanlage kühlt wieder nicht, obwohl repariert'], ['air con not cold, working again', 'Klima kühlt nicht, repariert']],
+    NOSTART_HINT: [['Motor startet wieder nicht'], []],
+    WINDOW_HINT: [[], ['Fensterheber geht nicht, geht wieder', 'Fensterheber geht nicht, funktioniert wieder']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(t(x)), n + ': ' + x); for (const x of neg) ok(!r.test(t(x)), n + ' nicht: ' + x); }
+});
 await test('Backlog 767 (Folge aus 764/766): Klima-/Standheizungs-Hinweis liest den Text über noFixed – „Klima kühlt nicht, repariert“, „кондиціонер не працює, відремонтували“, „air con not cold, working again“ ohne Hinweis; wiederkehrend, geplant und „getauscht, aber kühlt nicht“ weiter mit Hinweis', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
