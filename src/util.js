@@ -22,6 +22,12 @@ export const bad = (code, message, extra) => new HttpError(400, code, message, e
 export const forbidden = (message = 'Keine Berechtigung für diese Aktion.', extra) => new HttpError(403, 'forbidden', message, extra);
 export const notFound = (message = 'Nicht gefunden.') => new HttpError(404, 'not_found', message);
 export const conflict = (code, message, extra) => new HttpError(409, code, message, extra);
+// Backlog 804 (Funkloch): optionaler Anfrageschlüssel je Formular (wie Bußgeld/Hinweis) – ≤ 80 Zeichen [A-Za-z0-9_.-], leer = keiner
+export const requestKey = (rk) => {
+  if (rk === undefined || rk === null || rk === '') return null;
+  if (typeof rk !== 'string' || rk.length > 80 || !/^[\w.-]+$/.test(rk)) throw bad('validation', 'request_key: ungültiger Wert.');
+  return rk;
+};
 
 export function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {

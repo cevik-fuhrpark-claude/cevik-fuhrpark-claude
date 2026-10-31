@@ -2,7 +2,7 @@
 // Grundsätze: Fristen nur aus Dokumenten (nichts berechnet/erfunden). Personenbezogene Daten: Inhaber und Fuhrparkleitung sehen alles,
 // ein Fahrer nur seine eigene Akte (über verknüpftes Konto), alle anderen Rollen nichts. Jede Änderung im Audit-Log.
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, flag, berlinDate, berlinDaySql, isCalendarDate, cutText } from './util.js';
+import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, requestKey, str, oneOf, flag, berlinDate, berlinDaySql, isCalendarDate, cutText } from './util.js';
 import { audit } from './auth.js';
 import { tachoStatus, warnDaysOf, TACHO_RULE, pnoKey, normName, periodOf } from './tacho.js';
 import { SETTING_DEFAULTS } from './settings.js';
@@ -285,6 +285,16 @@ export async function addDriverDocument(env, user, envName, id, body) {
   const valid = date(body.valid_until, 'Gültig bis');
   if (issued && valid && valid < issued) throw bad('validation', 'Gültig bis liegt vor dem Ausstellungsdatum.');
   if (['fahrerkarte', 'code95'].includes(kind) && !valid) throw bad('validation', 'Gültig bis laut Dokument angeben.');
+  // Backlog 804 (Funkloch): erneutes Senden mit demselben request_key → vorhandener Nachweis (sonst zweiter Eintrag in der Akte)
+  const rkey = requestKey(body.request_key);
+  const byKey = async () => {
+    if (!rkey) return null;
+    const p = await env.DB.prepare('SELECT id, driver_id, superseded FROM driver_documents WHERE created_by=? AND request_key=?').bind(user.id, rkey).first();
+    if (!p) return null;
+    if (p.driver_id !== id) throw conflict('ddoc_key_reused', 'request_key wurde bereits für einen anderen Nachweis verwendet.');
+    return { id: p.id, duplicate: true };
+  };
+  { const d = await byKey(); if (d) return d; }
   const docId = uuid(); const now = nowIso();
   const stmts = [];
   // Neuer Nachweis gleicher Art (außer Unterweisung/Sonstiges) ersetzt den bisherigen – Historie bleibt erhalten. Ein nachgetragener **älterer**
@@ -294,12 +304,12 @@ export async function addDriverDocument(env, user, envName, id, body) {
   const newerExists = `EXISTS (SELECT 1 FROM driver_documents x WHERE x.driver_id=?2 AND x.kind=?3 AND x.superseded=0 AND (
       (x.valid_until IS NOT NULL AND ?8 IS NOT NULL AND x.valid_until > ?8)
       OR ((x.valid_until IS NULL OR ?8 IS NULL) AND ?7 IS NOT NULL AND COALESCE(x.issued_on, ${berlinDaySql('x.created_at')}) > ?7)))`;
-  stmts.push(env.DB.prepare(`INSERT INTO driver_documents(id,driver_id,kind,title,number,license_classes,issued_on,valid_until,evidence,superseded,created_by,created_at)
-      VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,${single ? `CASE WHEN ${newerExists} THEN 1 ELSE 0 END` : '0'},?10,?11)`)
-    .bind(docId, id, kind, (str(body.title, { max: 120, field: 'Bezeichnung' }) || null)?.normalize('NFC') ?? null, str(body.number, { max: 40, field: 'Nummer' }), kind === 'fuehrerschein' ? str(body.license_classes, { max: 60, field: 'Klassen' }) : null, issued, valid, evidence, user.id, now));
+  stmts.push(env.DB.prepare(`INSERT INTO driver_documents(id,driver_id,kind,title,number,license_classes,issued_on,valid_until,evidence,superseded,created_by,created_at,request_key)
+      VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,${single ? `CASE WHEN ${newerExists} THEN 1 ELSE 0 END` : '0'},?10,?11,?12)`)
+    .bind(docId, id, kind, (str(body.title, { max: 120, field: 'Bezeichnung' }) || null)?.normalize('NFC') ?? null, str(body.number, { max: 40, field: 'Nummer' }), kind === 'fuehrerschein' ? str(body.license_classes, { max: 60, field: 'Klassen' }) : null, issued, valid, evidence, user.id, now, rkey));
   if (single) stmts.push(env.DB.prepare(`UPDATE driver_documents SET superseded=1 WHERE driver_id=?1 AND kind=?2 AND superseded=0 AND id<>?3
       AND (SELECT superseded FROM driver_documents WHERE id=?3)=0`).bind(id, kind, docId));
-  await env.DB.batch(stmts);
+  try { await env.DB.batch(stmts); } catch (e) { if (rkey && /UNIQUE/i.test(String(e && e.message))) { const d = await byKey(); if (d) return d; } throw e; } // paralleles Doppelsenden
   const older = single && (await env.DB.prepare('SELECT superseded FROM driver_documents WHERE id=?').bind(docId).first()).superseded === 1;
   await audit(env, user.id, 'driver.document', id, { kind, valid_until: valid, ...(older ? { history_only: true } : {}) });
   return { id: docId, ...(older ? { older_than_current: true } : {}) };

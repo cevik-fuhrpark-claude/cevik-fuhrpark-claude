@@ -28997,6 +28997,42 @@ await test('Backlog 804 (Blickwinkel „Funkloch“): Hinweis zum Fahrzeug mit r
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-hinweis-km-funkloch.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 804b (Blickwinkel „Funkloch“): Prüftermin (Sonstiges) und Nachweis in der Fahrerakte mit request_key wiederholsicher (zweimal/parallel senden → ein Eintrag, duplicate; anderer Bezug → 409), Vertrag/Führerscheinkontrolle zweimal → 409 (nie doppelt), Versicherungsfall mit Zeitlimit; Formulare mit Zeitlimit; UI-Prüfung `ui-akte-funkloch.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("b.request_key = rkFor(mf, b); try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/maintenance`, b, { timeoutMs: SEND_TIMEOUT_MS });"), 'Prüftermin: Schlüssel + Zeitlimit');
+  ok(app.includes("/contracts`, b, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); reload(); } catch (err) { if (lostDup(f, b, err, ['duplicate_contract']))"), 'Vertrag: Zeitlimit + „war bereits gespeichert“');
+  ok(app.includes("return post(`/api/drivers/${id}/documents`, b, ddf);") && app.includes("lcf, ['duplicate']);"), 'Fahrerakte: Nachweis mit Schlüssel, Kontrolle über Dublettenprüfung');
+  ok(app.includes("/claim`, b, { timeoutMs: SEND_TIMEOUT_MS });"), 'Versicherungsfall mit Zeitlimit');
+  const { U } = await freshWorld();
+  const V = '/api/vehicles/VIN:WMA15SZZ2HM722774';
+  const mb = { kind: 'Sonstiges', title: 'Ladekran 804', next_due_date: BERLIN_TODAY.slice(0, 4) + '-12-31', evidence: 'Plakette 804', request_key: 'mr-804-a' };
+  const m1 = await U.fleet.post(V + '/maintenance', mb); eq(m1.status, 201, JSON.stringify(m1.data));
+  const m2 = await U.fleet.post(V + '/maintenance', mb); ok(m2.status < 300 && m2.data.duplicate && m2.data.id === m1.data.id, 'Prüftermin erneut: derselbe ' + JSON.stringify(m2.data));
+  const [mp1, mp2] = await Promise.all([U.fleet.post(V + '/maintenance', { ...mb, request_key: 'mr-804-p' }), U.fleet.post(V + '/maintenance', { ...mb, request_key: 'mr-804-p' })]);
+  ok(mp1.status < 300 && mp2.status < 300 && mp1.data.id === mp2.data.id, 'parallel: ein Prüftermin ' + JSON.stringify([mp1.data, mp2.data]));
+  const rules = (await U.fleet.get(V)).data.maintenance.filter((r) => r.title === 'Ladekran 804'); eq(rules.length, 2, 'zwei Schlüssel → zwei Prüftermine, keine weiteren');
+  const other = (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id !== 'VIN:WMA15SZZ2HM722774');
+  const mx = await U.fleet.post('/api/vehicles/' + encodeURIComponent(other.id) + '/maintenance', mb); eq(mx.status, 409); eq(mx.data.error, 'maint_key_reused');
+  eq((await U.fleet.post(V + '/maintenance', { ...mb, request_key: 'a b' })).status, 400, 'ungültiger Schlüssel');
+  const d = await U.fleet.post('/api/drivers', { display_name: 'Funkloch Fahrer 804' }); eq(d.status, 201, JSON.stringify(d.data));
+  const D = `/api/drivers/${d.data.id}`;
+  const db = { kind: 'unterweisung', title: 'Ladungssicherung 804', issued_on: BERLIN_TODAY, evidence: 'Teilnehmerliste', request_key: 'dd-804-a' };
+  const d1 = await U.fleet.post(D + '/documents', db); eq(d1.status, 201, JSON.stringify(d1.data));
+  const d2 = await U.fleet.post(D + '/documents', db); ok(d2.status < 300 && d2.data.duplicate && d2.data.id === d1.data.id, 'Nachweis erneut: derselbe ' + JSON.stringify(d2.data));
+  const [dp1, dp2] = await Promise.all([U.fleet.post(D + '/documents', { ...db, kind: 'fuehrerschein', title: undefined, valid_until: '2033-01-31', request_key: 'dd-804-p' }), U.fleet.post(D + '/documents', { ...db, kind: 'fuehrerschein', title: undefined, valid_until: '2033-01-31', request_key: 'dd-804-p' })]);
+  ok(dp1.status < 300 && dp2.status < 300 && dp1.data.id === dp2.data.id, 'parallel: ein Führerschein ' + JSON.stringify([dp1.data, dp2.data]));
+  const docs = JSON.stringify((await U.fleet.get(D)).data);
+  eq((docs.match(/Ladungssicherung 804/g) || []).length, 1, 'genau eine Unterweisung');
+  const d3 = await U.fleet.post('/api/drivers', { display_name: 'Anderer Fahrer 804' });
+  const dx = await U.fleet.post(`/api/drivers/${d3.data.id}/documents`, db); eq(dx.status, 409); eq(dx.data.error, 'ddoc_key_reused');
+  const lc = { checked_on: BERLIN_TODAY, result: 'in_ordnung' };
+  eq((await U.fleet.post(D + '/license-checks', lc)).status, 201); const lc2 = await U.fleet.post(D + '/license-checks', lc); eq(lc2.status, 409); eq(lc2.data.error, 'duplicate', 'Kontrolle nie doppelt');
+  const cb = { kind: 'leasing', partner: 'Funkloch-Leasing', contract_no: 'FL-804', start_date: BERLIN_TODAY, end_date: '2030-12-31', evidence: 'Vertrag 804' };
+  eq((await U.fleet.post(V + '/contracts', cb)).status, 201); const c2 = await U.fleet.post(V + '/contracts', cb); eq(c2.status, 409); eq(c2.data.error, 'duplicate_contract', 'Vertrag nie doppelt');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-akte-funkloch.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

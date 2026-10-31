@@ -1,7 +1,7 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { caseDescText } from '../public/check-labels.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, intParam, kmNum, maxFutureDate, DUE_FAR_MSG, plateCmp, cutText } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, requestKey, str, num, oneOf, flag, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, intParam, kmNum, maxFutureDate, DUE_FAR_MSG, plateCmp, cutText } from './util.js';
 import { audit, auditStmt } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX, caseAccess } from './cases.js';
@@ -955,6 +955,16 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   const kind = oneOf(body.kind, MAINT_KINDS, 'Art');
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
   const title = ruleTitle(kind, body.title);
+  // Backlog 804 (Funkloch): erneutes Senden mit demselben request_key → vorhandener Prüftermin (Rückruf/Sonstiges wurden sonst doppelt angelegt)
+  const rkey = requestKey(body.request_key);
+  const byKey = async () => {
+    if (!rkey) return null;
+    const p = await env.DB.prepare('SELECT id, vehicle_id, next_due_date FROM maintenance_rules WHERE created_by=? AND request_key=?').bind(user.id, rkey).first();
+    if (!p) return null;
+    if (p.vehicle_id !== vehicleId) throw conflict('maint_key_reused', 'request_key wurde bereits für einen anderen Prüftermin verwendet.');
+    return { id: p.id, next_due_date: p.next_due_date, duplicate: true };
+  };
+  { const d = await byKey(); if (d) return d; }
   // ganze Zahlen (19.10.2026: „1,5“ Monate wurde still zu 2 – Frist verschoben; der Import weist das schon ab)
   const months = body.interval_months ? num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate' }) : null;
   const km = body.interval_km ? num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', grouped: true }) : null;
@@ -990,13 +1000,16 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
     return conflict('rule_exists', 'Für dieses Fahrzeug gibt es bereits einen Prüftermin dieser Art – bitte den vorhandenen bearbeiten bzw. „erledigt“ erfassen.', r ? { rule_id: r.id } : undefined);
   };
   if (single && await env.DB.prepare('SELECT 1 FROM maintenance_rules WHERE vehicle_id=? AND kind=? LIMIT 1').bind(vehicleId, kind).first()) throw await ruleExists();
-  const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,km_basis_at,title)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, husp ? null : months, km, lastDate, lastKm, dueKm, nextDue, evidence, user.id, now, now, dueSource,
+  const stmts = [env.DB.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,interval_months,interval_km,last_done_date,last_done_km,due_km,next_due_date,evidence,created_by,created_at,updated_at,due_source,request_key,km_basis_at,title)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, vehicleId, kind, husp ? null : months, km, lastDate, lastKm, dueKm, nextDue, evidence, user.id, now, now, dueSource, rkey,
       // letzte Durchführung vor einem km-Rücksprung (Tachotausch): km vom alten Zähler → km-Fälligkeit bleibt „ungeklärt“ (18.10.2026)
       lastDate ? kmBasisForDone(parseKmDrop((await env.DB.prepare(`SELECT ${KM_DROP_SQL('?')} AS d`).bind(vehicleId).first() || {}).d), lastDate, null, now) : now, title)];
   if (single) stmts.push(env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN COUNT(*) <= 1 THEN 1 ELSE 0 END FROM maintenance_rules WHERE vehicle_id=? AND kind=?`).bind(vehicleId, kind), env.DB.prepare('DELETE FROM cmd_guard'));
   if (lastDate) stmts.push(maintEventStmt(env, { rule_id: id, vehicle_id: vehicleId, kind, done_date: lastDate, done_km: lastKm, evidence, source: 'erfasst', user_id: user.id }));
-  try { await env.DB.batch(stmts); } catch (e) { if (single && String(e && e.message).includes('CHECK')) throw await ruleExists(); throw e; }
+  try { await env.DB.batch(stmts); } catch (e) {
+    if (rkey && /UNIQUE/i.test(String(e && e.message))) { const d = await byKey(); if (d) return d; } // paralleles Doppelsenden
+    if (single && String(e && e.message).includes('CHECK')) throw await ruleExists(); throw e;
+  }
   if (husp) await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [vehicleId] });
   return { id, next_due_date: husp ? (await env.DB.prepare('SELECT next_due_date FROM maintenance_rules WHERE id=?').bind(id).first()).next_due_date : nextDue };
 }

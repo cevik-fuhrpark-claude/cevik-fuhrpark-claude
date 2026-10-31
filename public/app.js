@@ -23,6 +23,10 @@ const readCsvFile = async (f) => { try { return await readCsvRaw(f); } catch (e)
 // (21.10.2026: Lager – nach „Keine Verbindung“ korrigierte Buchung wurde als Wiederholung still verworfen)
 // Backlog 793: uid() statt randomUUID – randomUUID fehlt in Android-WebView/Chrome < 92 und iOS < 15.4 (Buchung scheiterte dort mit Skriptfehler)
 const rkFor = (form, b) => { const sig = JSON.stringify(b); if (!form.dataset.rk || form.dataset.rkSig !== sig) { form.dataset.rk = uid(); form.dataset.rkSig = sig; } return form.dataset.rk; };
+// Backlog 804 (Funkloch): Antwort verloren (Zeitlimit/Netz) – meldet der Server beim erneuten Senden derselben Eingaben „gibt es bereits“,
+// war der erste Versuch gespeichert (nur für Endpunkte mit eindeutiger Dublettenprüfung: Vertrag, Führerscheinkontrolle)
+const lostMark = (form, b, err) => { if (err && err.offline) form.dataset.lostSig = JSON.stringify(b); };
+const lostDup = (form, b, err, codes) => !!err && codes.includes(err.code) && form.dataset.lostSig === JSON.stringify(b);
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
 // Sprachpaket vor dem ersten Bild (Backlog 588): route() wartet darauf. Bewusst ohne Top-Level-await – sonst liefen der Rest dieses
 // Moduls (u. a. die hashchange-Anmeldung) erst nach dem Paket, und das Ereignis „load“ käme vor der fertigen App (UI-Test rot).
@@ -2861,7 +2865,7 @@ async function viewCase(id) {
   if (S.openAct) { try { await actionForm(S.openAct.action, c, cmd, S.openAct.preset, d, { restore: true }); } catch { /* Lagerliste nicht ladbar: Formular ohne Lager */ } }
   if (actDr && $('#af')) restoreActDraft(c, actDr);
   finishRender();
-  const clf = $('#clf'); if (clf) clf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(clf)); for (const k of Object.keys(b)) if (b[k] === '') b[k] = null; try { const r = await api('PUT', `/api/cases/${c.id}/claim`, b); if (r && r.warning && r.warning.code === 'contract_not_valid_at_occurrence') toast(t('claim_contract_invalid').replace('{d}', fmtD(r.warning.day)).replace('{p}', `${r.warning.start_date ? fmtD(r.warning.start_date) : '…'}–${r.warning.end_date ? fmtD(r.warning.end_date) : '…'}`), true); else toast('✓'); viewCase(c.id); } catch (err) { toast(err.message, true); if (err.code === 'version_conflict') viewCase(c.id); } };
+  const clf = $('#clf'); if (clf) clf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(clf)); for (const k of Object.keys(b)) if (b[k] === '') b[k] = null; try { const r = await api('PUT', `/api/cases/${c.id}/claim`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 804: Wiederholung → version_conflict, nie doppelt */ if (r && r.warning && r.warning.code === 'contract_not_valid_at_occurrence') toast(t('claim_contract_invalid').replace('{d}', fmtD(r.warning.day)).replace('{p}', `${r.warning.start_date ? fmtD(r.warning.start_date) : '…'}–${r.warning.end_date ? fmtD(r.warning.end_date) : '…'}`), true); else toast('✓'); viewCase(c.id); } catch (err) { toast(err.message, true); if (err.code === 'version_conflict') viewCase(c.id); } };
   const cf = $('#cf'); if (cf) cf.onsubmit = (e) => { e.preventDefault(); const q = !!($('[data-q]', cf) || {}).checked; const notify = $$('[data-nt]', cf).filter((x) => x.checked).map((x) => x.dataset.nt); if (q && !notify.includes('reporter')) notify.push('reporter'); return cmd('comment', $('#ct').value, { ...(notify.length ? { notify } : {}), ...(q ? { question: true } : {}) }); };
   // Rückfrage (Backlog 463) geht immer an „Gemeldet von“: Häkchen mitsetzen
   const qbox = cf && $('[data-q]', cf); if (qbox) qbox.onchange = () => { const r = $('[data-nt="reporter"]', cf); if (qbox.checked && r) r.checked = true; };
@@ -4057,7 +4061,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   } catch (err) { toast(err.message, true); } };
   // Hinweis Fahrtenschreiber beim Anlegen (Backlog 436): nur bei Auswahl „Tachograph“, kein Intervall vorbelegt
   { const mfk = $('#mf'), th = mfk && mfk.querySelector('[data-mftacho]'), tt = mfk && mfk.querySelector('[data-mftitle]'); if (th) mfk.kind.onchange = () => { th.hidden = mfk.kind.value !== 'Tachograph'; const o = mfk.kind.value === 'Sonstiges'; const ti = mfk.querySelector('#mftitle'); tt.hidden = !o; ti.disabled = !o; ti.required = o; }; } // Backlog 577: Titel nur bei „Sonstiges“, dort Pflicht
-  const mf = $('#mf'); if (mf) mf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(mf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/maintenance`, b); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+  const mf = $('#mf'); if (mf) mf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(mf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; b.request_key = rkFor(mf, b); try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/maintenance`, b, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate) toast(t('saved_before')); viewVehicle(id); } catch (err) { toast(err.message, true); } }; // Backlog 804: Zeitlimit, Wiederholung ohne zweiten Prüftermin
   // Aus dem Werkstattplan (`?done=<Eintrag>`, Backlog 236): nach dem Speichern zurück in den Plan, sonst Akte neu laden
   const doneNext = () => { if (S.fromPlan && sec && sec.startsWith('done:')) { const h = S.fromPlan; S.fromPlan = null; location.hash = h; } else viewVehicle(id); };
   // Erledigt (UVV, Tachograph, Ausrüstung …): Formular statt Browser-Abfragen – Datum, ggf. km, Nachweis, optional Ergebnis und belegte nächste Fälligkeit
@@ -4186,7 +4190,7 @@ function ctSection(list, docs = null) {
     <details class="panel noprint"><summary>${esc(t('ct_add'))}</summary><p class="small muted">${esc(t('ct_hint'))}</p><form id="ctf">${ctForm({}, docs)}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>`;
 }
 function bindCtSection(id, reload) {
-  const f = $('#ctf'); if (f) f.onsubmit = async (e) => { e.preventDefault(); try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/contracts`, ctBody(f)); toast('✓'); reload(); } catch (err) { toast(err.message, true); } };
+  const f = $('#ctf'); if (f) f.onsubmit = async (e) => { e.preventDefault(); const b = ctBody(f); try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/contracts`, b, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); reload(); } catch (err) { if (lostDup(f, b, err, ['duplicate_contract'])) { toast(t('saved_before')); reload(); return; } lostMark(f, b, err); toast(err.message, true); } }; // Backlog 804
   // Ratenänderung an einem Vertrag, der vor dem laufenden Monat begann: gilt rückwirkend für alle Laufzeitmonate (Kostenbericht Vorjahr ändert sich) –
   // Rückfrage mit dem Weg „beenden + Folgevertrag“ (Backlog 188, Jahresabschluss)
   const rateRetro = (fm) => { const ri = fm.elements.monthly_rate_net; const sd = fm.elements.start_date;
@@ -5327,7 +5331,10 @@ async function viewDriver(id) {
   render(html, 'more');
   $('#ddprt').onclick = () => window.print();
   const dx = $('#ddex'); if (dx) dx.onclick = async () => { if (!confirm(t('data_export_hint'))) return; try { const r = await api('GET', `/api/drivers/${id}/data-export`); dexTrunc(r); download(r instanceof Blob ? r : new Blob([JSON.stringify(r, null, 1)], { type: 'application/json' }), `datenauskunft_fahrer_${String(d.personnel_no || d.display_name || id).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || String(id).slice(0, 8)}_${bDate()}.json`); } catch (err) { toast(err.message, true); } };
-  const post = async (path, b) => { for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', path, b); toast(r && r.older_than_current ? t('ddoc_older_saved') : '✓'); viewDriver(id); } catch (err) { toast(err.message, true); } };
+  // Backlog 804 (Funkloch): mit Formular Zeitlimit; Nachweis mit request_key (dupCodes leer), Führerscheinkontrolle über die Dublettenprüfung („duplicate“)
+  const post = async (path, b, form = null, dupCodes = null) => { for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; const sig = { ...b }; if (form && !dupCodes) b.request_key = rkFor(form, sig);
+    try { const r = await api('POST', path, b, form ? { timeoutMs: SEND_TIMEOUT_MS } : {}); toast(r && r.duplicate ? t('saved_before') : r && r.older_than_current ? t('ddoc_older_saved') : '✓'); viewDriver(id); }
+    catch (err) { if (form && dupCodes && lostDup(form, sig, err, dupCodes)) { toast(t('saved_before')); viewDriver(id); return; } if (form) lostMark(form, sig, err); toast(err.message, true); } };
   bindTachoCancel(document, () => viewDriver(id));
   // Nachweis stornieren (Tippfehler): bleibt mit Begründung im Verlauf, der neueste verbliebene gilt wieder
   $$('[data-lccancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('lc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/license-checks/${b.dataset.lccancel}/cancel`, { reason }); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
@@ -5335,9 +5342,9 @@ async function viewDriver(id) {
   const ddf = $('#ddf');
   // Klassen nur beim Führerschein (Server speichert sie sonst nicht – vorher still verworfen, 20.10.2026)
   if (ddf) { const cls = () => { $('#ddcls').hidden = ddf.kind.value !== 'fuehrerschein'; }; ddf.kind.onchange = cls; cls();
-    ddf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(ddf)); if (b.kind !== 'fuehrerschein') delete b.license_classes; return post(`/api/drivers/${id}/documents`, b); }; }
+    ddf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(ddf)); if (b.kind !== 'fuehrerschein') delete b.license_classes; return post(`/api/drivers/${id}/documents`, b, ddf); }; }
   const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); return post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }); };
-  const lcf = $('#lcf'); if (lcf) lcf.onsubmit = (e) => { e.preventDefault(); return post(`/api/drivers/${id}/license-checks`, Object.fromEntries(new FormData(lcf))); };
+  const lcf = $('#lcf'); if (lcf) lcf.onsubmit = (e) => { e.preventDefault(); return post(`/api/drivers/${id}/license-checks`, Object.fromEntries(new FormData(lcf)), lcf, ['duplicate']); };
   const edf = $('#edf'); if (edf) edf.onsubmit = async (e) => { e.preventDefault(); const all = Object.fromEntries(new FormData(edf)); all.active = !!edf.active.checked;
     // nur geänderte Felder auf dem gelesenen Stand senden (älteres Formular machte sonst z. B. eine Deaktivierung still rückgängig)
     const was = { display_name: d.display_name || '', personnel_no: d.personnel_no || '', site: d.site || '', active: !!d.active, user_id: d.user_id || '' };
