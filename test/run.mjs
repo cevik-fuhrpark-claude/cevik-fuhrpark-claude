@@ -27541,6 +27541,21 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 757 (Sonde über vorhandene Muster, 31.10.2026 02:15): EN/UK-Gegenstücke zu bereits erkannten deutschen Formulierungen – „vehicle registration missing“, „свідоцтво про реєстрацію загубили“ → Verlust; „radiator leaking“, „diesel smell in cab“, „oil sump cracked“, „пробив піддон“, „Ölwanne aufgerissen“ → Undichtigkeit; „belt snapped“, „truck won\'t accelerate“, „не реагує на газ“ → Motor; „starter not turning“, „стартер не крутить“ → Startproblem; „дріт перетерся“ → Elektrik; „дзеркало хитається“ → Spiegel; „seat belt broken“ bleibt Sitz/Gurt, Fund-/Reparaturvermerke nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    LOST_HINT: [['vehicle registration missing', 'registration papers lost', 'свідоцтво про реєстрацію загубили', 'немає свідоцтва про реєстрацію'], ['registration number', 'registration missing, found it in the glovebox', 'свідоцтво про реєстрацію']],
+    LEAK_HINT: [['radiator leaking', 'diesel smell in cab', 'smells of diesel inside the cab', 'oil sump cracked', 'пробив піддон', 'Ölwanne aufgerissen'], ['radiator replaced, was leaking', 'radiator', 'diesel smell outside', 'Ölwanne', 'Ölwanne gerissen, getauscht', 'sump']],
+    ENGINE_HINT: [['belt snapped', 'fan belt broke', 'alternator belt came off', 'truck won\'t accelerate', 'engine will not rev up', 'не реагує на газ'], ['belt', 'seat belt broken', 'ratchet belt broken', 'truck won\'t accelerate - fixed']],
+    NOSTART_HINT: [['starter not turning', 'starter motor just clicks', 'стартер не крутить'], ['starter replaced', 'стартер']],
+    ELEC_HINT: [['дріт перетерся', 'провод перетерся'], ['дріт']],
+    MIRROR_HINT: [['дзеркало хитається', 'зеркало болтается'], ['дзеркало']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+  ok(g('SEAT_HINT').test('seat belt broken'), 'Gurt bleibt Sitz/Gurt');
+});
 await test('Backlog 756 (Sonde über vorhandene Muster, 31.10.2026 02:15): Fehlgriffe behoben – „landing leg broken“ ist keine Verletzung, „карта застрягла в тахографі“ kein festgefahrener Lkw; neu erkannt: „Kupplungskopf undicht“, „red line to trailer leaking“ → Druckluft; „роз\'єм причепа зламаний“ → Elektrik; „tarp won\'t close“, „тент не закривається“, „Planenrahmen verbogen“ → Plane; „lane assist faulty“, „emergency brake assist activates for no reason“, „автоматичне гальмування спрацьовує“ → Assistenzsysteme; „Display hängt“, „screen frozen“, „екран завис“ → Armaturen/Display; „Navi spinnt“ → Navi', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
