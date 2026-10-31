@@ -27541,6 +27541,16 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 770 (Sonde AdBlue-Defekt): „AdBlue-Fehler“, „AdBlue-Pumpe defekt“, „AdBlue-System funktioniert nicht“, „AdBlue system not working/stopped working“, „AdBlue pump faulty“, „AdBlue error“, „система AdBlue не працює“, „насос AdBlue зламався“ zeigen die Motor-Schritte; „ohne Fehler“, „nachgefüllt“, Reparaturvermerk danach, Fehlbetankung/eingefroren nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = g('ENGINE_HINT');
+  for (const x of ['AdBlue-Fehler', 'AdBlue-Warnung', 'AdBlue Pumpe defekt', 'AdBlue-Pumpe ist seit gestern defekt', 'AdBlue-System funktioniert nicht', 'Adblue Dosiermodul Störung', 'AdBlue system not working', 'AdBlue system stopped working', 'AdBlue pump defect', 'AdBlue sensor faulty', 'AdBlue error', 'AdBlue система не працює', 'насос AdBlue зламався', 'система мочевины не работает', 'AdBlue Warnung', 'AdBlue leer', 'помилка AdBlue']) ok(r.test(recurFix(x)), 'Hinweis: ' + x);
+  for (const x of ['AdBlue Pumpe defekt, getauscht', 'AdBlue-Fehler behoben', 'AdBlue-System ohne Fehler', 'AdBlue ohne Warnung', 'AdBlue system no error', 'AdBlue nachgefüllt', 'AdBlue in den Dieseltank getankt', 'AdBlue-Leitung eingefroren', 'AdBlue pump faulty, replaced', 'насос AdBlue зламався, замінили', 'Dieselpumpe defekt', 'Sensor defekt']) ok(!r.test(recurFix(x)), 'kein Hinweis: ' + x);
+  ok(g('FUEL_HINT').test('AdBlue in den Dieseltank getankt') && g('GELFUEL_HINT').test('AdBlue-Leitung eingefroren'), 'Fehlbetankung/eingefroren bleiben bei ihren Hinweisen');
+});
 await test('Backlog 769 (Sonde EN „stopped working“): „power window / sat nav / mirror adjustment / seat adjustment / toll box / central locking stopped working“ zeigen den Hinweis wie „not working“; „…, replaced“ nicht, „again although replaced“ schon', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
