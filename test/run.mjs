@@ -27541,6 +27541,25 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 756 (Sonde über vorhandene Muster, 31.10.2026 02:15): Fehlgriffe behoben – „landing leg broken“ ist keine Verletzung, „карта застрягла в тахографі“ kein festgefahrener Lkw; neu erkannt: „Kupplungskopf undicht“, „red line to trailer leaking“ → Druckluft; „роз\'єм причепа зламаний“ → Elektrik; „tarp won\'t close“, „тент не закривається“, „Planenrahmen verbogen“ → Plane; „lane assist faulty“, „emergency brake assist activates for no reason“, „автоматичне гальмування спрацьовує“ → Assistenzsysteme; „Display hängt“, „screen frozen“, „екран завис“ → Armaturen/Display; „Navi spinnt“ → Navi', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    INJURY_HINT: [['leg broken', 'Bein gebrochen', 'driver\'s leg broken'], ['landing leg broken', 'support leg damaged']],
+    STUCK_HINT: [['вантажівка застрягла', 'Lkw steckt fest'], ['карта застрягла в тахографі', 'карточка водителя застряла']],
+    BRAKE_HINT: [['Kupplungskopf undicht', 'Kupplungskopf verliert Luft', 'red line to trailer leaking', 'yellow hose torn', 'palm coupling leaking'], ['Kupplungskopf', 'Kupplungskopf getauscht, undicht war er', 'red line', 'red line to trailer replaced, was leaking', 'yellow hose ok']],
+    ELEC_HINT: [['роз\'єм причепа зламаний', 'разъём прицепа сломан'], ['роз\'єм причепа']],
+    TARP_HINT: [['tarp won\'t close', 'curtainside will not tension', 'тент не закривається', 'Planenrahmen verbogen', 'Spriegel gebrochen'], ['tarp closed', 'tarp won\'t close - fixed', 'тент', 'Planenrahmen']],
+    ADAS_HINT: [['lane assist faulty', 'emergency brake assist activates for no reason', 'adaptive cruise not working', 'автоматичне гальмування спрацьовує', 'экстренное торможение срабатывает'], ['lane assist on', 'lane assist faulty, repaired', 'acc', 'emergency brake worked fine', 'автоматичне гальмування']],
+    DASH_HINT: [['Display hängt', 'Display hängt sich auf', 'Bildschirm eingefroren', 'screen frozen', 'dashboard display keeps freezing', 'екран завис'], ['Display zeigt km', 'Anzeige hängt am Kühlschrank', 'screen protector', 'екран']],
+    TELEM_HINT: [['Navi spinnt'], ['Navi', 'Fahrer spinnt', 'Kunde spinnt']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+  ok(g('COUPLING_HINT').test('landing leg broken') && g('TACHO_HINT').test('карта застрягла в тахографі'), 'Stützfuß bleibt Kupplung/Stützen, Karte bleibt Fahrtenschreiber');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.uk.help_adas_s.includes('автоматичне гальмування спрацьовує') && STRINGS.en.help_adas_s.includes('lane assist faulty'), 'Hilfe Assistenzsysteme nennt das Beispiel UK/EN');
+});
 await test('Backlog 755 (Sonde über vorhandene Muster, 31.10.2026 02:15): „Getriebe heult“, „gearbox whining“, „коробка гуде“ → Getriebe; „brake pedal goes to the floor“, „педаль гальма провалюється“, „parking brake won\'t release“, „ручник не відпускається“, „помилка EBS причепа“ → Bremse; „air suspension dropping“, „пневмопідвіска опускається“, „лопнула ресора“, „Stoßdämpfer undicht“, „shock absorber leaking“, „амортизатор тече“ → Federung; „колесо спускає“ → Reifen; „диск тріснув“ → Rad; „горить ABS“ → Warnleuchte; „air con smells“, „кондиціонер смердить“ → Klima; „Heizung bläst kalt“, „heater blowing cold“, „пічка дує холодним“ → Sicht/Heizung; „Spiegelverstellung geht nicht“, „mirror adjustment not working“ → Spiegel; „тече вода в кабіну“ → Wasser im Fahrerhaus; „seat won\'t go up“, „сидіння не піднімається“ → Sitz; „низький рівень масла“ → Ölstand; Reparaturvermerke (auch vor dem Befund) und Alltägliches nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
