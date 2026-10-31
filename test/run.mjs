@@ -22047,7 +22047,7 @@ await test('Backlog 334 (Blickwinkel „Standheizung oder Klimaanlage im Fahrerh
     ok(L.climate_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="climate" class="panel" hidden role="status">`), 'Panel #climate');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#climate').hidden = !CLIMATE_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#climate').hidden = !CLIMATE_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('climate') && order.indexOf('fire') < order.indexOf('climate') && order.indexOf('exhaust') < order.indexOf('climate') && order.indexOf('visib') < order.indexOf('climate') && order.indexOf('climate') < order.indexOf('door'), 'Gruppierung: Brand/Abgase/Sicht vor Standheizung/Klima vor Tür');
   ok(helpAfter(app, 'climate', 'toll'), 'Hilfe-Abschnitt climate nach toll');
@@ -27540,6 +27540,20 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
     BRAKE_HINT: [['zischt an der Luftleitung', 'es zischt an der Bremsleitung', 'air leak hissing', 'air is leaking under the trailer', 'hissing air behind the cab', 'шипить повітря', 'воздух шипит'], ['air leak at the tyre', 'air conditioning leak', 'шипить повітря з колеса', 'Luftleitung ok']],
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+});
+await test('Backlog 767 (Folge aus 764/766): Klima-/Standheizungs-Hinweis liest den Text über noFixed – „Klima kühlt nicht, repariert“, „кондиціонер не працює, відремонтували“, „air con not cold, working again“ ohne Hinweis; wiederkehrend, geplant und „getauscht, aber kühlt nicht“ weiter mit Hinweis', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
+  ok(hl.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx);"), 'Klima über dfx');
+  const m = app.match(/^const CLIMATE_HINT = \/(.+)\/i;(?: \/\/.*)?$/m); ok(m, 'CLIMATE_HINT auf Modulebene'); const r = new RegExp(m[1], 'i');
+  const a = app.indexOf('const FIX_WORD'), b = app.indexOf("}).join('');", a) + 12;
+  const recurFix = new Function(app.slice(a, b) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", c) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const t = (x) => noFixed(recurFix(x));
+  for (const x of ['Klima kühlt nicht', 'air con not cold', 'кондиціонер не працює', 'Klima kühlt nicht, muss repariert werden', 'Klimaanlage kühlt nicht, obwohl repariert', 'Klima getauscht, aber kühlt nicht', 'кондиціонер знову не працює, хоча відремонтували']) ok(r.test(t(x)), 'Hinweis: ' + x);
+  for (const x of ['Klima kühlt nicht, repariert', 'Klimaanlage kühlt nicht, funktioniert wieder', 'air con not cold, working again', 'кондиціонер не працює, відремонтували', 'кондиционер не работает, починили', 'Standheizung geht nicht, getauscht']) ok(!r.test(t(x)), 'kein Hinweis: ' + x);
 });
 await test('Backlog 766 (Folge aus 764/765, Sonde Vermerk vor dem Befund): „Fensterheber getauscht, aber geht nicht“, „power window fixed but not working“, „склопідйомник замінили, але не працює“, „стеклоподъемник заменили, но не работает“ zeigen den Hinweis; „…, getauscht“ und „getauscht, aber noch nicht abgeholt“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
