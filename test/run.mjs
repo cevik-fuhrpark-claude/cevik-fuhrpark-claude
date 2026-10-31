@@ -27541,6 +27541,25 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 754 (Sonde über vorhandene Muster, 31.10.2026 02:15): „engine temperature high“, „температура двигуна висока“ → Motor; „wheel bearing noise“ → Rad; „won\'t start“ (ohne Subjekt), „Zündschlüssel steckt fest“ → Startproblem; „бризговик відірвався“ → lose Teile; „es zischt am Anhänger“, „hissing at the trailer“ → Druckluft/Bremse; „Kühlschrank im Lkw kaputt“, „Gardine abgerissen“, „Handyhalterung abgebrochen“ → Ausstattung; „стоп-сигнал“ ist Bremslicht, nicht Hupe; Reparaturvermerke und Alltägliches nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    ENGINE_HINT: [['engine temperature high', 'engine temp is too high', 'coolant temperature very high', 'температура двигуна висока', 'висока температура двигуна', 'температура двигателя высокая'], ['engine temperature normal', 'engine temperature was high, fixed', 'температура двигуна нормальна', 'висока температура на вулиці', 'температура в кабіні висока']],
+    WHEEL_HINT: [['wheel bearing noise', 'wheel bearing making a noise', 'hub bearing rumbling'], ['wheel bearing replaced, no noise']],
+    NOSTART_HINT: [['won\'t start', 'Won’t start this morning', 'Kalt heute. Won\'t start', 'Zündschlüssel steckt fest', 'Zündschlüssel lässt sich nicht abziehen'], ['Fahrer won\'t start before 6 am', 'He won\'t start the tour today', 'won\'t start - repaired', 'Zündschlüssel abgegeben', 'Zündschlüssel steckt fest, repariert']],
+    LOOSE_HINT: [['бризговик відірвався', 'бризковик відірвався'], ['бризговик на місці']],
+    BRAKE_HINT: [['es zischt am Anhänger', 'zischt am Auflieger', 'zischt laut hinten am Auflieger', 'hissing at the trailer', 'hissing noise from the trailer'], ['es zischt am Anhänger am Reifen', 'zischt am Anhänger, Leitung getauscht', 'hissing from the trailer tyre', 'hissing at the trailer valve']],
+    CABKIT_HINT: [['Kühlschrank im Lkw kaputt', 'Gardine abgerissen', 'Handyhalterung abgebrochen'], ['Kühlschrank im Lkw voll', 'Gardine im Lkw zu', 'Gardine abgerissen, repariert', 'Handyhalterung']],
+    LIGHTS_HINT: [['стоп-сигнал не працює', 'стоп сигнал не працює'], []],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+  ok(!g('DASH_HINT').test('стоп-сигнал не працює') && !g('DASH_HINT').test('стоп сигнал не працює') && g('DASH_HINT').test('сигнал не працює'), 'Bremslicht ist nicht Hupe, Hupe bleibt erkannt');
+  ok(!g('FLAT_HINT').test('es zischt am Anhänger') && !g('TYRE_HINT').test('es zischt am Anhänger'), 'Zischen am Anhänger ohne Reifenbezug bleibt Druckluft');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.uk.help_engine_s.includes('температура двигуна висока') && STRINGS.en.help_engine_s.includes('engine temperature high'), 'Hilfe Motor nennt das Beispiel UK/EN');
+});
 await test('Backlog 753 (Sonde über vorhandene Muster, 31.10.2026 01:15): „Motor klopft/nagelt“, „engine knocking“, „двигун стукає“, „турбіна свистить“ → Motor; „ретардер не працює“ → Bremse; „Spurstange ausgeschlagen“ → Lenkung; „navigation not working“, „навігація не працює“ → Navi/Telematik; „ремінь безпеки заїдає“ → Sitz/Gurt; „Achslift geht nicht“ → Federung; „Zughaken defekt“, „опори не крутяться“ → Kupplung/Stützen; „Maut Gerät rot“ → Maut; „AdBlue Deckel fehlt“ → Tankdeckel; „Kühlauflieger kühlt nicht“ → Kühlgerät; „exhaust smell in cab“ → Auspuff; Reparatur-/„nicht mehr“-Vermerke und Alltägliches nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
