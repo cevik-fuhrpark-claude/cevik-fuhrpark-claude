@@ -27541,6 +27541,22 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 784 (Sonde Reparaturvermerk Lenkung/Plane): Lenkungs- und Planen-Hinweis hatten in keiner Sprache einen Reparaturvermerk-Ausschluss – „Lenkung geht schwer, repariert“, „steering heavy, fixed“, „Кермо туго повертається, відремонтували“, „Plane kaputt, repariert“, „Тент порваний, замінили“ zeigen keinen Hinweis mehr; ohne Vermerk, „muss repariert werden“ und „wurde schon repariert, jetzt wieder kaputt“ weiter', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const cabkit = new RegExp(g('CABKIT_HINT').source, 'gi'); ok(app.includes("const CABKIT_SPANS = new RegExp(CABKIT_HINT.source, 'gi');"), 'noCabkit wie im Test');
+  const noCabkit = (x) => String(x || '').replace(cabkit, ' ');
+  ok(app.includes("$('#steer').hidden = !STEER_HINT.test(dv);") && app.includes("$('#tarp').hidden = !TARP_HINT.test(dck);"), 'Hinweise prüfen dv bzw. dck');
+  const T = {
+    STEER_HINT: [(x) => recurFix(x), ['Lenkung geht schwer', 'Lenkung hat Spiel', 'Кермо туго повертається', 'Руль тянет влево', 'steering heavy', 'Lenkung hat Spiel, muss repariert werden', 'кермо трясеться, після ремонту знову, хоча замінили'],
+      ['Lenkung geht schwer, repariert', 'Lenkung hat Spiel, Spurstange getauscht', 'steering heavy, fixed', 'Кермо туго повертається, відремонтували', 'Руль тянет влево, отремонтировали']],
+    TARP_HINT: [(x) => noCabkit(recurFix(x)), ['Plane kaputt', 'Тент порваний', 'Тент має дірку', 'Dachplane Loch, wurde schon repariert, jetzt wieder kaputt'],
+      ['Plane kaputt, repariert', 'Plane gerissen, erneuert', 'Тент порваний, замінили', 'тент порезали, отремонтировали', 'tarp torn, repaired']],
+  };
+  for (const [n, [f, pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(f(x)), n + ': ' + x); for (const x of neg) ok(!r.test(f(x)), n + ' nicht: ' + x); }
+});
 await test('Backlog 783 (Sonde Reparaturvermerk Federung): nur die Federbein-/Feder-Zweige blendeten „…, repariert“ aus – „Luftfederung defekt, repariert“, „Liftachse geht nicht hoch, repariert“, „air suspension failed, repaired“, „Пневмоподушка лопнула, замінили“, „Ресора зламана, замінили“ zeigen jetzt keinen Federungs-Hinweis; ohne Vermerk, mit „obwohl repariert“/„хоча замінили“, „muss getauscht werden“ und „nicht mehr“ weiter', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

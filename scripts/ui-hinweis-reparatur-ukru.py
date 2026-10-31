@@ -1,4 +1,4 @@
-# [CLAUDE] UI-Test (31.10.2026, Backlog 782–783): UK/RU-Meldungen mit Reparaturvermerk („педаль газу заїдає, замінили“, „немає катафота, замінили“,
+# [CLAUDE] UI-Test (31.10.2026, Backlog 782–784): UK/RU-Meldungen mit Reparaturvermerk („педаль газу заїдає, замінили“, „немає катафота, замінили“,
 # „запаска спущена, замінили“, „підлога в причепі зламана, заварили“) zeigen wie DE/EN keinen Hinweis; ohne Vermerk erscheint er weiter
 # (Gaspedal, Konturmarkierung, Ersatzrad, Ladeboden, Zentralschmierung, Batterie „акумулятор потік“). 783: Federung „Luftfederung defekt, repariert“/„Пневмоподушка лопнула, замінили“ ohne Hinweis. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
@@ -7,12 +7,12 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-POS={'de':[('Gaspedal klemmt','#pedal'),('Ersatzrad fehlt','#spare'),('Luftfederung defekt','#susp')],
-     'uk':[('педаль газу заїдає','#pedal'),('немає катафота','#contour'),('запаска спущена','#spare'),('підлога в причепі зламана','#floor'),('сідло сухе','#grease'),('акумулятор потік','#batt'),('Пневмоподушка лопнула','#susp')],
+POS={'de':[('Gaspedal klemmt','#pedal'),('Ersatzrad fehlt','#spare'),('Luftfederung defekt','#susp'),('Lenkung geht schwer','#steer')],
+     'uk':[('педаль газу заїдає','#pedal'),('немає катафота','#contour'),('запаска спущена','#spare'),('підлога в причепі зламана','#floor'),('сідло сухе','#grease'),('акумулятор потік','#batt'),('Пневмоподушка лопнула','#susp'),('Тент порваний','#tarp')],
      'en':[('accelerator pedal stuck','#pedal'),('spare wheel missing','#spare')]}
-NEG={'de':[('Gaspedal klemmt, repariert','#pedal'),('Luftfederung defekt, repariert','#susp')],
-     'uk':[('педаль газу заїдає, замінили','#pedal'),('немає катафота, замінили','#contour'),('запаска спущена, замінили','#spare'),('підлога в причепі зламана, заварили','#floor'),('сідло сухе, полагодили','#grease'),('педаль газа заедает, отремонтировали','#pedal'),('Пневмоподушка лопнула, замінили','#susp')],
-     'en':[('accelerator pedal stuck, fixed','#pedal'),('air suspension failed, repaired','#susp')]}
+NEG={'de':[('Gaspedal klemmt, repariert','#pedal'),('Luftfederung defekt, repariert','#susp'),('Lenkung geht schwer, repariert','#steer'),('Plane kaputt, repariert','#tarp')],
+     'uk':[('педаль газу заїдає, замінили','#pedal'),('немає катафота, замінили','#contour'),('запаска спущена, замінили','#spare'),('підлога в причепі зламана, заварили','#floor'),('сідло сухе, полагодили','#grease'),('педаль газа заедает, отремонтировали','#pedal'),('Пневмоподушка лопнула, замінили','#susp'),('Тент порваний, замінили','#tarp'),('Кермо туго повертається, відремонтували','#steer')],
+     'en':[('accelerator pedal stuck, fixed','#pedal'),('air suspension failed, repaired','#susp'),('steering heavy, fixed','#steer')]}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
