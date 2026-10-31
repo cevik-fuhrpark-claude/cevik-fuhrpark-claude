@@ -27541,6 +27541,27 @@ await test('Backlog 748 (Sonde über vorhandene Muster, 30.10.2026 22:15): „Ba
   };
   for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
 });
+await test('Backlog 752 (Sonde über vorhandene Muster, 31.10.2026 00:15): „Lkw schwimmt auf der Autobahn“, „кермо гуляє“, „truck wanders“ → Lenkung; „Kupplung geht schwer“, „clutch is heavy“, „зчеплення туге“ → Getriebe/Kupplung; „Wegfahrsperre aktiv“, „immobiliser“, „іммобілайзер“ → springt nicht an; „Lüfter läuft ständig“, „fan keeps running“, „вентилятор постійно працює“, „Wasserpumpe undicht“ → Motor; „Lkw baut keine Luft auf“, „не набирає повітря“ → Bremse/Druckluft; Ladung/Wasser/Fahrerhaus-Lüfter/Sattelkupplung/Reifen nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const T = {
+    STEER_HINT: [['Lkw schwimmt', 'Lkw schwimmt auf der Autobahn', 'Lkw schwimmt bei Seitenwind', 'Lenkung schwimmt', 'Lkw wandert auf der Spur', 'truck wanders on the motorway', 'steering feels vague', 'кермо гуляє', 'руль гуляет'], ['Lkw schwimmt im Wasser', 'Ladung schwimmt', 'Lkw steht, Fahrer wandert', 'Lkw wandert in die Werkstatt', 'Lenkung repariert, Lkw schwamm vorher']],
+    GEAR_HINT: [['Kupplung geht schwer', 'Kupplung schwer', 'Kupplung lässt sich schwer treten', 'clutch is heavy', 'clutch pedal feels stiff', 'зчеплення туге', 'сцепление тугое', 'сцепление тяжело выжимается'], ['Sattelkupplung geht schwer', 'Kupplung schwer beschädigt', 'Kupplung repariert, ging schwer']],
+    NOSTART_HINT: [['Wegfahrsperre', 'Wegfahrsperre aktiv', 'immobiliser fault', 'immobilizer active', 'іммобілайзер блокує запуск', 'иммобилайзер'], ['Wegfahrsperre freigeschaltet', 'keine Wegfahrsperre', 'Wegfahrsperre repariert']],
+    ENGINE_HINT: [['Lüfter läuft ständig', 'Motorlüfter läuft die ganze Zeit', 'Lüfter läuft dauernd auf voller Stufe', 'fan keeps running', 'engine fan runs constantly', 'вентилятор постійно працює', 'вентилятор постоянно работает', 'Wasserpumpe undicht', 'water pump leaking'], ['Lüfter im Fahrerhaus läuft ständig', 'cab fan keeps running', 'вентилятор в кабине постоянно работает', 'Lüfter', 'Lüfter läuft ständig, wurde getauscht']],
+    BRAKE_HINT: [['Lkw baut keine Luft auf', 'baut kaum Druck auf', 'keine Luft im System', 'keine Luft mehr in den Kesseln', 'не набирає повітря', 'не качает воздух', 'air pressure won’t build up'], ['Reifen hat keine Luft', 'baut Luft auf', 'Fahrer baut keine Unfälle', 'Hydraulik baut keinen Druck auf', 'Kipper baut kaum Druck auf']],
+  };
+  for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(x), n + ': ' + x); for (const x of neg) ok(!r.test(x), n + ' nicht: ' + x); }
+  ok(!g('FLAT_HINT').test('Lkw baut keine Luft auf'), 'Druckluft bleibt Bremse, nicht Reifenpanne');
+  const { STRINGS } = await import('../public/i18n.js');
+  const has = (k, de, uk, en) => ok(STRINGS.de[k].includes(de) && STRINGS.uk[k].includes(uk) && STRINGS.en[k].includes(en), 'Hilfe ' + k + ' nennt das Beispiel DE/UK/EN');
+  has('help_steer_s', 'Lkw schwimmt auf der Autobahn', 'кермо гуляє', 'truck wanders on the motorway');
+  has('help_gear_s', 'Kupplung geht schwer', 'зчеплення туге', 'clutch is heavy');
+  has('help_nostart_s', 'Wegfahrsperre aktiv', 'іммобілайзер блокує запуск', 'immobiliser active');
+  has('help_engine_s', 'Lüfter läuft ständig', 'вентилятор постійно працює', 'fan keeps running');
+  has('help_brake_s', 'Lkw baut keine Luft auf', 'не набирає повітря', 'air pressure won’t build up');
+});
 await test('Backlog 750–751 (Sonde über vorhandene Muster, 30.10.2026 23:15): „AdBlue ist alle/ausgegangen“, „kein AdBlue mehr“, „out of AdBlue“, „закінчився AdBlue“ → Motor-Schritte; „Anhänger hängt rechts tiefer“, „Auflieger hängt auf einer Seite“, „Lkw ist hinten abgesackt“, „trailer sits lower on one side“, „причіп перекошений“ → Federung; „AdBlue alle 2 Wochen“, „steht schief/tiefer“ (Parken am Hang), „Seite der Straße“, „завалился на бок“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

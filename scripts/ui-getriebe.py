@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-TXT={'de':'Gang geht nicht rein','uk':'Коробка передач не перемикає','en':'Gearbox fault'}
+TXT={'de':'Kupplung geht schwer','uk':'Зчеплення туге','en':'Clutch is heavy'}
 BOTH={'de':'Unfall, Getriebe schaltet nicht mehr','uk':'ДТП, коробка передач не перемикає','en':'Accident, clutch slipping now'}
 NO={'de':'Auflieger lässt sich nicht kuppeln','uk':'Двері пошкоджені','en':'Reefer unit fault'}
 HT={'de':'Getriebe schaltet nicht, Gang geht nicht rein oder Kupplung rutscht','uk':'Коробка передач не перемикає, передача не вмикається або буксує зчеплення','en':'Gearbox not shifting, gear won’t engage or clutch slipping'}

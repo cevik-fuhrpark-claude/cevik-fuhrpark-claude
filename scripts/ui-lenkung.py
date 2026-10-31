@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-TXT={'de':'Lenkung schwergängig','uk':'Кермо туго повертається','en':'Truck pulls to the right'}
+TXT={'de':'Lkw schwimmt auf der Autobahn','uk':'Кермо гуляє','en':'Truck wanders on the motorway'}
 BOTH={'de':'Unfall, Lkw zieht nach links','uk':'ДТП, тягне вправо','en':'Accident, steering is very heavy'}
 NO={'de':'Lenkzeit überschritten','uk':'Двері пошкоджені','en':'Steering committee meeting'}
 HT={'de':'Lenkung schwergängig, mit Spiel oder Lkw zieht zur Seite','uk':'Кермо туго повертається, має люфт або вантажівку тягне вбік','en':'Steering heavy, with play or truck pulling to one side'}
