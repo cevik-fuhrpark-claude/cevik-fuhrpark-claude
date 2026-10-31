@@ -220,6 +220,16 @@ Seit Backlog 588 lädt die App `i18n-core.js` (≈ 58 KB gzip) und nur das Paket
 | 29.10.2026 vor 596 | 27,8 / 8,0 s | 25,7 / 7,4 s | 33,9 / 9,9 s |
 | 29.10.2026 nach 596/598/600 (Vorabrufe, Startseite parallel) | 18,1 / 5,3 s | 15,8 / 4,6 s | 17,8 / 5,1 s |
 
+## Ältere Handys und Browser (Stand 31.10.2026)
+Die App läuft ab etwa Android-WebView/Chrome 85 und iOS/Safari 14 (Syntax-Untergrenze der App-Module: `||=`, `?.`). Neuere Funktionen
+haben einen Rückfall und sind je mit einem UI-Skript abgesichert, das einen älteren Browser nachbildet:
+- CSS `:has()` (Chrome < 105, iOS < 15.4) – Auswahlfelder bleiben sichtbar (Backlog 792, `ui-ohne-has.py`).
+- `crypto.randomUUID` (Chrome < 92, iOS < 15.4) und CSS `color-mix()` (Chrome < 111, iOS < 16.2) (Backlog 793, `ui-ohne-randomuuid.py`).
+- Regex-Lookbehind `(?<=…)`/`(?<!…)` (iOS/Safari < 16.4: Syntaxfehler, das ganze Modul startete nicht): `npm run build` setzt solche
+  Literale in den erzeugten Modulen als `lbRx(String.raw…)` ein; ohne Lookbehind entsteht eine Ersatzfassung, die nie weniger trifft
+  (Hinweise im Meldeformular eher öfter). In `public/app.js` bleiben die Literale unverändert (Backlog 794, `ui-ohne-lookbehind.py`).
+Neue JS/CSS-Funktionen deshalb vor dem Einsatz auf Unterstützung prüfen und ggf. mit Rückfall bauen.
+
 ## Gesamtprüfung `scripts/pruefen.sh`
 `sh scripts/pruefen.sh [--schnell] [--ohne-tests] [--ohne-rauch] [--nur <Namensteil>] [--ab <Namensteil>]` – `npm test`, alle UI-Skripte (Liste `UI_SKRIPTE` im Skript, je frischer Dev-Server) und die Rauchtests; bricht beim ersten Fehler mit Fehlercode ab.
 `--schnell` nur Rauchtest hell (ohne dunkel/Ukrainisch/Englisch/HTML-Probe/Zeitreise/UI-Zeitreise), `--ohne-tests` überspringt `npm test`, `--ohne-rauch` lässt Rauchtests und Zeitreise weg,

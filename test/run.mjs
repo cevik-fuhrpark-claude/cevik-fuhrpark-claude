@@ -28800,6 +28800,47 @@ await test('Backlog 793 (Blickwinkel „Fahrer mit älterem Handy/Browser“): k
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-ohne-randomuuid.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 794 (Blickwinkel „Fahrer mit älterem Handy/Browser“): kein Regex-Literal mit Lookbehind in ausgelieferten Skripten (Safari/iOS < 16.4: Syntaxfehler, App startete nicht) – erzeugte Module bauen sie über lbRx(); Ersatzfassung ohne Lookbehind kompiliert, trifft nie weniger, bei reinen .test()-Ausdrücken meist exakt; UI-Prüfung `ui-ohne-lookbehind.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync, readdirSync } = await import('node:fs');
+  const B = await import('../scripts/build-app.mjs');
+  const rd = (f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const LB = /\(\?<[=!]/;
+  const lits = (code) => B.tokens(code).filter((x) => x.t === 'r').map((x) => code.slice(x.s, x.e));
+  // Quelle hat Lookbehind-Literale (Tests lesen sie dort), ausgelieferte Skripte keine
+  const srcLits = lits(rd('app.js')).filter((x) => LB.test(x)); ok(srcLits.length >= 50, `Lookbehind-Literale in app.js gefunden (${srcLits.length})`);
+  const served = [...readdirSync(new URL('../public/', import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'app.js' && f !== 'i18n.js'), 'werkstatt/app.js'];
+  ok(served.includes('app-main.js') && served.includes('boot.js') && served.includes('sw.js'), 'ausgelieferte Skripte gefunden');
+  for (const f of served) eq(lits(rd(f)).filter((x) => LB.test(x)).length, 0, `${f}: Lookbehind-Literale`);
+  const main = rd('app-main.js');
+  ok(/^function lbRx\(src, flags, testOnly\) \{/m.test(main) && /^function lbFallback\(src, exact\) \{/m.test(main), 'Helfer im Start-Modul');
+  const calls = [...main.matchAll(/lbRx\(String\.raw`((?:[^`\\]|\\.)*)`, '([a-z]*)'(, 1)?\)/g)];
+  eq(calls.length, srcLits.length, 'jedes Literal ersetzt');
+  for (const [i, m] of calls.entries()) eq(`/${m[1]}/${m[2]}`, srcLits[i], `Ausdruck ${i} unverändert`);
+  // Einzelfälle der Ersatzfassung
+  eq(B.lbFallback('(?<![a-zäöüß-])fahrrad', true), '(?:^|[^a-zäöüß-])fahrrad', 'Anfang exakt');
+  eq(B.lbFallback('foo|(?<![^a-z])bar|(?<!\\w)baz', true), 'foo|(?:^|[a-z])bar|(?:^|\\W)baz', 'jede oberste Alternative');
+  eq(B.lbFallback('(?:x|(?<=[a-z])\\s*:)', true), '(?:x|(?:[a-z])\\s*:)', 'positiv in Gruppe am Anfang');
+  eq(B.lbFallback('x(?<![a-z])y', true), 'xy', 'mitten im Ausdruck entfällt');
+  eq(B.lbFallback('(?=a)(?<!b)a', true), '(?=a)a', 'nach Lookahead entfällt');
+  eq(B.lbFallback('(?<!nicht\\s)kaputt', true), 'kaputt', 'mehrere Zeichen entfällt');
+  eq(B.lbFallback('(?<![a-z])kaput', false), 'kaput', 'replace/g: entfällt');
+  eq(B.lbFallback('[(?<!x)](?<![a-z])a', true), '[(?<!x)]a', 'Zeichenklasse bleibt');
+  const r = B.lbRx('(?<![a-z])ab', 'i', 1); ok(r instanceof RegExp && r.source === '(?<![a-z])ab' && r.flags === 'i', 'neue Browser: unveränderter Ausdruck');
+  // Ersatzfassungen gegen Beispieltexte der Tests (Stichprobe): nie weniger Treffer; reine .test()-Ausdrücke meist exakt
+  const tr = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8');
+  const corpus = [...new Set([...tr.matchAll(/'((?:[^'\\\n]|\\.){3,300})'|"((?:[^"\\\n]|\\.){3,300})"/g)].map((m) => (m[1] || m[2]).replace(/\\n/g, '\n')))].filter((x) => /\s/.test(x) && !/[{}();=<>]/.test(x)).filter((x, i) => i % 8 === 0);
+  ok(corpus.length > 1000, `Stichprobe (${corpus.length})`);
+  let exact = 0, only = 0;
+  for (const m of calls) {
+    const fb = B.lbFallback(m[1], !!m[3]); ok(!LB.test(fb), `Ersatz ohne Lookbehind: ${m[1].slice(0, 40)}`);
+    const o = new RegExp(m[1], m[2]), f = new RegExp(fb, m[2]); let d = 0;
+    for (const x of corpus) { o.lastIndex = 0; f.lastIndex = 0; const a = o.test(x), b = f.test(x); if (a && !b) ok(false, `Ersatz trifft weniger: „${x}“ – ${m[1].slice(0, 60)}`); if (a !== b) d++; }
+    if (m[3]) { only++; if (!d) exact++; }
+  }
+  ok(only >= 60 && exact >= 45, `reine .test()-Ausdrücke: ${exact} von ${only} auf der Stichprobe exakt`);
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-ohne-lookbehind.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

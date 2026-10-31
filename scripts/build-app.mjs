@@ -218,7 +218,78 @@ function lazyModule(g) {
     sizes[g] = Buffer.byteLength(out[`app-${g}.js`]);
   }
   out['app-main.js'] = `${HEAD}${main}\nexport { ${[...exportNames].sort().join(', ')} };\n`;
+  for (const f of Object.keys(out)) out[f] = lookbehindSafe(out[f], src).code;
   return { files: out, stubs, sizes, moved: owner.size };
+}
+
+// Backlog 794 (Blickwinkel „Fahrer mit älterem Handy/Browser“, 31.10.2026): Regex-Literale mit Lookbehind `(?<=…)`/`(?<!…)` sind in
+// Safari/iOS < 16.4 ein Syntaxfehler beim Laden – das ganze Modul (app-main.js) startete dort nicht (nur „Die App konnte nicht vollständig
+// geladen werden“). Die erzeugten Module enthalten solche Literale daher als `lbRx(String.raw`…`, 'flags'[, 1])`: neue Browser bauen
+// denselben Ausdruck, alte eine Fassung ohne Lookbehind (`lbFallback`). Die Quelle app.js bleibt unverändert (Tests lesen die Literale dort).
+// Drittes Argument 1 = Ausdruck wird nur mit `.test()` benutzt (ohne g/y): dann wird ein Lookbehind am Anfang einer Alternative exakt
+// nachgebildet; sonst (replace, .source, g) entfällt er – der Ausdruck trifft dann eher mehr (Hinweis öfter), nie weniger.
+export function lbRx(src, flags, testOnly) {
+  if (lbRx.ok === undefined) { try { lbRx.ok = !!new RegExp('(?<=a)b'); } catch (e) { lbRx.ok = false; } }
+  return new RegExp(lbRx.ok ? src : lbFallback(src, !!testOnly), flags);
+}
+export function lbFallback(src, exact) {
+  const classEnd = (i) => { for (let j = i + 1; j < src.length; j++) { if (src[j] === '\\') j++; else if (src[j] === ']') return j + 1; } return src.length; };
+  const groupEnd = (i) => { let d = 0; for (let j = i; j < src.length; j++) { const c = src[j]; if (c === '\\') j++; else if (c === '[') j = classEnd(j) - 1; else if (c === '(') d++; else if (c === ')' && --d === 0) return j + 1; } return src.length; };
+  const negOne = (x) => { const m = /^\[(\^?)((?:\\.|[^\]\\])*)\]$/.exec(x); if (m) return m[1] ? '[' + m[2] + ']' : '[^' + m[2] + ']';
+    if (/^\\[wdsWDS]$/.test(x)) return '\\' + (x[1] === x[1].toLowerCase() ? x[1].toUpperCase() : x[1].toLowerCase());
+    if (x.length === 1 && !/[\\^$.|?*+()[\]{}/]/.test(x)) return '[^' + (x === '-' ? '\\-' : x) + ']';
+    return null; };
+  let out = ''; const st = [true]; let at = true; // at: Position am Anfang einer obersten Alternative (Startpunkt der Suche frei wählbar)
+  for (let i = 0; i < src.length;) {
+    const c = src[i];
+    if (c === '\\') { out += src.slice(i, i + 2); i += 2; at = false; continue; }
+    if (c === '[') { const e = classEnd(i); out += src.slice(i, e); i = e; at = false; continue; }
+    if (c === '(' && (src.startsWith('(?<=', i) || src.startsWith('(?<!', i))) {
+      const e = groupEnd(i), inner = src.slice(i + 4, e - 1);
+      if (exact && at) { // nur hier exakt nachbildbar: ein Zeichen davor (oder Textanfang) wird mitgelesen – für .test() gleichwertig
+        if (src[i + 3] === '=') { out += '(?:' + lbFallback(inner, false) + ')'; at = false; }
+        else { const one = negOne(inner); if (one) { out += '(?:^|' + one + ')'; at = false; } }
+      }
+      i = e; continue; // sonst entfällt die Bedingung (trifft eher mehr, nie weniger)
+    }
+    if (c === '(') { const look = src.startsWith('(?=', i) || src.startsWith('(?!', i); const h = look || src.startsWith('(?:', i) ? 3 : src.startsWith('(?<', i) ? src.indexOf('>', i) + 1 - i : 1;
+      st.push(at && !look); out += src.slice(i, i + h); i += h; at = at && !look; continue; }
+    if (c === ')') { st.pop(); out += c; i++; at = false; continue; }
+    if (c === '|') { out += c; i++; at = st[st.length - 1]; continue; }
+    if (c === '^') { out += c; i++; continue; }
+    out += c; i++; at = false;
+  }
+  return out;
+}
+export const LB_HELPER = `
+// [CLAUDE] Backlog 794: Lookbehind-Ausdrücke auch in Safari/iOS < 16.4 (eingesetzt von scripts/build-app.mjs, Erklärung dort)
+${lbRx.toString()}
+${lbFallback.toString()}
+`;
+const LB_RE = /\(\?<[=!]/;
+export function lookbehindSafe(code, full = code) {
+  if (!LB_RE.test(code)) return { code, n: 0, testOnly: 0 };
+  const toks = tokens(code);
+  let out = '', last = 0, n = 0, testOnly = 0;
+  for (let k = 0; k < toks.length; k++) {
+    const t = toks[k];
+    if (t.t !== 'r') continue;
+    const lit = code.slice(t.s, t.e);
+    if (!LB_RE.test(lit)) continue;
+    const j = lit.lastIndexOf('/'), body = lit.slice(1, j), flags = lit.slice(j + 1);
+    if (body.includes('`') || body.includes('${')) throw new Error(`build-app: Lookbehind-Ausdruck mit \` bzw. \${ bei ${t.s} – lbRx nicht möglich`);
+    let only = false;
+    const p1 = toks[k - 1], p2 = toks[k - 2], p3 = toks[k - 3];
+    if (!/[gy]/.test(flags) && p1 && p1.v === '=' && p2 && p2.t === 'w' && p3 && p3.v === 'const') {
+      const name = p2.v; const uses = [...full.matchAll(new RegExp(`(?<![\\w$.])${name}(?![\\w$])`, 'g'))];
+      only = uses.length > 1 && uses.every((m) => full.startsWith('.test(', m.index + name.length) || full.startsWith(' = /', m.index + name.length));
+    }
+    out += code.slice(last, t.s) + `lbRx(String.raw\`${body}\`, '${flags}'${only ? ', 1' : ''})`; last = t.e; n++; if (only) testOnly++;
+  }
+  out += code.slice(last);
+  if (LB_RE.test(tokens(out).filter((t) => t.t === 'r').map((t) => out.slice(t.s, t.e)).join('\n'))) throw new Error('build-app: Lookbehind-Literal übrig');
+  // Helfer hinter die Kopfzeilen (Funktionsdeklarationen werden ohnehin vorgezogen)
+  return { code: out.replace(/\n\n/, '\n' + LB_HELPER + '\n'), n, testOnly };
 }
 
 // Wörter einer Deklaration (aus der Tokenliste, ohne Zeichenketten – Vorlagen-Ausdrücke separat)

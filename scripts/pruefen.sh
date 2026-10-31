@@ -382,6 +382,7 @@ UI-Querformat am Handy: kompakte Tabbar, Beschriftungen vollständig, Inhalt üb
 UI-Bildschirmtastatur im Querformat: Tabbar beim Tippen ausgeblendet, Felder sichtbar (DE/UK/EN; Backlog 791)|ui-tastatur-querformat.py|/tmp/cfp-tastatur-querformat.log
 UI-älterer Browser ohne :has(): Auswahl in Abfahrtskontrolle/Fahrzeugwahl sichtbar (DE/UK/EN; Backlog 792)|ui-ohne-has.py|/tmp/cfp-ohne-has.log
 UI-älterer Browser ohne randomUUID/color-mix(): Lagerbuchung gelingt, offene Prüfzeile markiert (DE/UK/EN; Backlog 793)|ui-ohne-randomuuid.py|/tmp/cfp-ohne-randomuuid.log
+UI-älterer Browser ohne Regex-Lookbehind (Safari < 16.4): App startet, Hinweise im Meldeformular wie neu (DE/UK/EN; Backlog 794)|ui-ohne-lookbehind.py|/tmp/cfp-ohne-lookbehind.log
 '
 N=0
 NL='
