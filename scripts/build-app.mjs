@@ -19,7 +19,7 @@ export const GROUPS = {
     'viewEmergencyEdit', 'viewFines', 'viewFine', 'viewTacho', 'viewTachoHistory', 'viewDriverRecords', 'viewDrivers', 'viewDriver', 'viewUsage',
     'viewReadiness', 'viewWsLoad', 'viewTelematics', 'viewQrSheet', 'viewDefects', 'viewFleetTires', 'viewPlan', 'viewMaint', 'viewMaintMulti', 'viewTimeline',
     'viewNewMulti'], // Backlog 594: Mehrfach-Meldung nur Inhaber/Fuhrparkleitung
-  fahrzeug: ['viewVehicle'], // Backlog 594: Fahrzeugakte (inkl. Reifen, Verträge, Prüftermine) – größte Einzelansicht, ≈ 26 KB gzip
+  fahrzeug: ['viewVehicle', 'viewVehicles'], // Backlog 796: Fahrzeugliste dazu (öffnet die Akte, gleiche Nutzer); Backlog 594: Fahrzeugakte (inkl. Reifen, Verträge, Prüftermine) – größte Einzelansicht, ≈ 26 KB gzip
   lager: ['viewStock', 'viewStockCount', 'viewReorder', 'viewStockAsOf', 'viewStockJournal', 'viewStockReceipt', 'viewPartsUsage', 'viewStockItem'],
 };
 

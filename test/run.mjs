@@ -28854,6 +28854,20 @@ await test('Backlog 795 (Blickwinkel „Fahrer mit älterem Handy/Browser“): F
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-foto-ohne-imagebitmap.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
+  const fs = await import('node:fs');
+  const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const B = await import('../scripts/build-app.mjs');
+  const { stubs } = B.splitApp(rd('app.js'));
+  const main = rd('app-main.js'), veh = rd('app-fahrzeug.js');
+  eq(stubs.get('viewVehicles'), 'fahrzeug', 'Router-Ziel #/vehicles hat Platzhalter');
+  ok(/^async function viewVehicles\(/m.test(veh) && !/^async function viewVehicles\(\) \{/m.test(main), 'Fahrzeugliste in app-fahrzeug.js');
+  ok(main.includes("async function viewVehicles(...a) { return (await lazyModule('fahrzeug')).viewVehicles(...a); }"), 'Platzhalter lädt die Gruppe');
+  for (const n of ['viewHome', 'viewNew', 'viewCase', 'viewDepartureCheck', 'workshopBoard']) ok(new RegExp(`^async function ${n}\\(`, 'm').test(main), n + ' bleibt im Start-Modul');
+  const r = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js'));
+  ok(r < 0.65, `Start-Modul < 65 % von app.js (${(r * 100).toFixed(2)} %) – Reserve für weitere Ergänzungen`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

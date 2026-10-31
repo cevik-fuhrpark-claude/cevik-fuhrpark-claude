@@ -3,6 +3,7 @@
 #    danach die Akte; beim zweiten Öffnen kein Ladehinweis mehr nötig (Modul geladen).
 # 2. Schneller Weiterklick, während das Modul lädt: die inzwischen geöffnete Seite bleibt stehen (kein „Lädt…“ und keine Akte darüber).
 # 3. Modul lädt gar nicht (Netzfehler): Fehlerseite mit übersetzter Meldung statt endlosem „Lädt…“; nächster Versuch lädt erneut.
+# Ausgangsseite ist die Vorgangsliste: seit Backlog 796 gehört auch die Fahrzeugliste zum Modul app-fahrzeug.js.
 # Handy 390 px.
 import asyncio, os
 def _r(m):
@@ -32,7 +33,7 @@ async def main():
         await q.route('**/app-fahrzeug.js*', slow)
         for lang in ['de', 'uk']:
             await api('PATCH', '/api/me', {'language': lang})
-            await q.goto(B + '/#/vehicles'); await q.reload(); await q.wait_for_selector('a.row', timeout=15000)
+            await q.goto(B + '/#/cases'); await q.reload(); await q.wait_for_selector('#main h1', timeout=15000)
             await q.goto(B + f'/#/vehicles/VIN:{VIN}'); await q.wait_for_timeout(1000)
             txt = await q.inner_text('#main')
             _r(f'ok: {lang} „{LOAD[lang]}“ während das Modul lädt' if LOAD[lang] in txt and 'ML-MO 1' not in txt else f'FEHLER: {lang} kein Ladehinweis: {txt[:200]!r}')
@@ -41,12 +42,12 @@ async def main():
             h1 = await q.inner_text('#main h1')
             _r(f'ok: {lang} Akte nach dem Laden ({h1})' if LOAD[lang] not in await q.inner_text('#main') else f'FEHLER: {lang} Ladehinweis bleibt')
             # zweites Öffnen: Modul ist da – kein Ladehinweis
-            await q.goto(B + '/#/vehicles'); await q.wait_for_selector('a.row'); await q.goto(B + f'/#/vehicles/VIN:{VIN}')
+            await q.goto(B + '/#/cases'); await q.wait_for_selector('#main h1'); await q.goto(B + f'/#/vehicles/VIN:{VIN}')
             seen = await q.evaluate("""() => new Promise((res) => { let s = false; const o = new MutationObserver(() => { if (document.querySelector('#main p.muted') && /Lädt…|Завантаження…/.test(document.querySelector('#main').textContent) && !document.querySelector('#tires')) s = true; });
               o.observe(document.getElementById('app'), { childList: true, subtree: true }); setTimeout(() => { o.disconnect(); res(s); }, 1500); })""")
             _r(f'ok: {lang} zweites Öffnen ohne Ladehinweis' if not seen else f'FEHLER: {lang} Ladehinweis trotz geladenem Modul')
             # neue Seite (Modul wieder ungeladen): Weiterklick während des Ladens
-            await q.goto(B + '/#/vehicles'); await q.reload(); await q.wait_for_selector('a.row', timeout=15000)
+            await q.goto(B + '/#/cases'); await q.reload(); await q.wait_for_selector('#main h1', timeout=15000)
             await q.goto(B + f'/#/vehicles/VIN:{VIN}'); await q.wait_for_timeout(100); await q.goto(B + '/#/cases'); await q.wait_for_timeout(4500)
             txt = await q.inner_text('#main')
             ok = LOAD[lang] not in txt and not await q.locator('#tires').count() and await q.locator('#main h1').count()
@@ -54,7 +55,7 @@ async def main():
         # Modul lädt nicht: Fehlerseite statt endlosem Ladehinweis, danach erneuter Versuch
         await api('PATCH', '/api/me', {'language': 'de'})
         mode['v'] = 'fail'
-        await q.goto(B + '/#/vehicles'); await q.reload(); await q.wait_for_selector('a.row', timeout=15000)
+        await q.goto(B + '/#/cases'); await q.reload(); await q.wait_for_selector('#main h1', timeout=15000)
         await q.goto(B + f'/#/vehicles/VIN:{VIN}'); await q.wait_for_timeout(2000)
         txt = await q.inner_text('#main')
         _r('ok: Ladefehler als Fehlerseite' if await q.locator('#errh').count() and 'Lädt…' not in txt else f'FEHLER: Ladefehler {txt[:200]!r}')
@@ -62,7 +63,7 @@ async def main():
         mode['v'] = 'ok'
         async def fast(route): await route.continue_()
         await q.unroute('**/app-fahrzeug.js*'); await q.route('**/app-fahrzeug.js*', fast)
-        await q.goto(B + '/#/vehicles'); await q.wait_for_selector('a.row'); await q.goto(B + f'/#/vehicles/VIN:{VIN}')
+        await q.goto(B + '/#/cases'); await q.wait_for_selector('#main h1'); await q.goto(B + f'/#/vehicles/VIN:{VIN}')
         await q.wait_for_selector('#tires', state='attached', timeout=15000)
         _r('ok: erneuter Versuch lädt die Akte')
         sw = await q.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')

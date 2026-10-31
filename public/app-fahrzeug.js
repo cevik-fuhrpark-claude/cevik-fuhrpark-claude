@@ -1,8 +1,119 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, S, TST, afLink, api, bDate, bindTachoCancel, caseList, checkLabel, ctChip, ctLines, ctRet, decIn, dqDetail, dur, esc, eur, eurIst, fMsg, fcLabel, fileUrl, fmtD, fmtDT, fmtKm, fmtMm, fmtMonth, fmtNum, hj, hoMissing, huNote, isMgr, kmFcHint, kmFcHtml, langAttr, mEv, mY, maintOrderHtml, mayReport, mk, mkR, noneP, plate, pnm, posL, prepareUpload, printStamp, provL, render, saveVehicleForm, stackTables, supplierLabel, t, tachoHistList, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, uid, vehicleForm, vlAt, warrChip, wsForSite, wsOptions } from './app-main.js';
+import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, S, TST, VEH_SORTS, afLink, announceHits, api, bDate, bindTachoCancel, caseList, checkLabel, ctChip, ctLines, ctRet, decIn, download, dqDetail, dur, envFn, esc, eur, eurIst, fMsg, fcLabel, fileUrl, fmtD, fmtDT, fmtKm, fmtMm, fmtMonth, fmtNum, hj, hoMissing, huNote, isMgr, kmFcHint, kmFcHtml, langAttr, mEv, mY, maintOrderHtml, mayReport, mk, mkR, noneP, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, render, searchKey, siteKeyUi, sortPref, stackTables, supplierLabel, t, tachoHistList, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, uid, vlAt, vsDef, warrChip, wsForSite, wsOptions } from './app-main.js';
 
 // Durchführung älter als die gespeicherte letzte: nur im Verlauf gespeichert, Fälligkeit unverändert – ausdrücklich sagen (17.10.2026)
 const doneToast = (r) => toast(r && r.older_than_last ? '✓ ' + t('mt_older_saved').replace('{d}', fmtD(r.last_done_date)) : '✓');
+function vehicleForm(v = {}) {
+  const f = (name, label, val, extra = '') => `<label>${esc(label)}</label><input name="${name}" value="${esc(val ?? '')}" ${extra}>`;
+  return `${v.trailer_vin ? `<input type="hidden" name="trailer_vin" value="${esc(v.trailer_vin)}">` : ''}${v.vin ? `<input type="hidden" name="vin" value="${esc(v.vin)}">` : f('vin', t('vin'), '', 'required minlength="17" maxlength="25" autocapitalize="characters" aria-describedby="vinhint"') + `<p class="small muted" id="vinhint">${esc(t('vin_hint_new'))}</p>`}
+    ${f('plate', t('plate_label'), v.plate, 'required maxlength="20" autocapitalize="characters"')}
+    <label>${esc(t('vehicle_kind'))}</label><select name="kind">${['lkw', 'anhaenger'].map((k) => `<option value="${k}"${(v.kind || 'lkw') === k ? ' selected' : ''}>${esc(t('vk_' + k))}</option>`).join('')}</select>
+    ${f('site', t('site'), v.site, 'maxlength="60"')}${f('manufacturer', t('manufacturer'), v.manufacturer, 'maxlength="60"')}${f('model', t('model_label'), v.model, 'maxlength="60"')}${f('build_year', t('year'), v.build_year, 'inputmode="numeric" maxlength="4"')}
+    ${f('trailer_plate', t('trailer') + ' (' + t('plate_label') + ')', v.trailer_plate, 'maxlength="20" autocapitalize="characters"')}${f('master_status', t('master_status'), v.master_status, 'maxlength="40"')}
+    ${f('source', t('evidence'), v.vin ? '' : '', 'maxlength="200"')}`;
+}
+async function saveVehicleForm(form, edit = false) {
+  const b = Object.fromEntries(new FormData(form));
+  for (const k in b) if (b[k] === '') delete b[k];
+  // Bearbeiten nimmt ein außer Betrieb genommenes Fahrzeug nicht wieder in Betrieb; Anlegen überschreibt nie ein Fahrzeug in Betrieb (409 vin_exists, 20.10.2026)
+  if (edit) b.keep_active = true; else b.create_only = true;
+  const r = await api('POST', '/api/vehicles', b);
+  // Hinweis, wenn dasselbe Kennzeichen schon an einem anderen Fahrzeug steht (gespeichert wird trotzdem – Mensch entscheidet)
+  const d = r && r.duplicate_plates;
+  if (d && d.length) {
+    const lst = d.slice(0, 3).map((x) => String(x.id).replace(/^VIN:/, '') + (!x.active ? ' (' + t('inactive_vehicles') + ')' : x.eval_excluded ? ' (' + t('eval_excluded') + ')' : '')).join(', ') + (d.length > 3 ? ` +${d.length - 3}` : '');
+    setTimeout(() => toast(t('dup_plate_warn').replace('{p}', String(b.plate || '').toUpperCase()).replace('{list}', lst), true), 400);
+  }
+  // Anhänger umgekennzeichnet: Zugmaschinen tragen noch das alte Anhänger-Kennzeichen → Gespann gelöst, bis dort nachgetragen
+  const tr = r && r.trailer_of_trucks;
+  if (tr && tr.length) setTimeout(() => toast(t('trailer_renamed_warn').replace('{old}', r.trailer_plate_old).replace('{list}', tr.map((x) => x.plate).join(', ')), true), d && d.length ? 6000 : 400);
+  // Standort geändert: was beim bisherigen Standort bleibt (offene Aufträge, geplante Prüftermine, gekoppeltes Fahrzeug) – reine Information (22.10.2026)
+  if (r && r.site_changed) {
+    const sh = [r.open_workshop_cases ? tn('veh_site_ws_open', r.open_workshop_cases).replace('{list}', (r.open_workshop_sites || []).join(', ')) : '',
+      r.planned_appointments ? tn('veh_site_planned', r.planned_appointments) : '',
+      ...(r.coupled_other_site || []).map((x) => t('veh_site_coupled').replace('{p}', x.plate).replace('{site}', x.site || t('cs_nosite'))),
+      (r.drivers_other_site || []).length ? t('veh_site_drivers').replace('{list}', () => r.drivers_other_site.map((x) => `${x.name} (${x.site})`).join(', ')) : ''].filter(Boolean);
+    if (sh.length) setTimeout(() => toast(sh.join(' · '), true), (d && d.length ? 6000 : 400) + (tr && tr.length ? 6000 : 0));
+  }
+  return r;
+}
+const VEH_AV_LINK = ['gesperrt', 'werkstatt', 'meldung_offen', 'einsatzbereit_lt_system', 'coupled_locked', 'with_notes', 'maint_overdue', 'recall_open', 'with_findings', 'with_findings_crit', 'dormant'];
+async function viewVehicles() {
+  const hf = new URLSearchParams(location.hash.split('?')[1] || '').get('f');
+  if (hf !== null) {
+    // Sprung aus einem Zähler: übrige Filter zurücksetzen (Art, außer Betrieb) – sonst zeigte die Liste weniger/andere Fahrzeuge als die Zahl (22.10.2026)
+    if (VEH_AV_LINK.includes(hf) && (!hf.startsWith('with_findings') || isMgr())) { S.vehAvail = hf; S.vehKind = 'all'; S.vehInactive = false; if (hf.startsWith('with_findings')) S.vehSort = 'findings'; }
+    try { history.replaceState(history.state, '', '#/vehicles'); } catch {}
+  }
+  const inact = !!S.vehInactive && isMgr();
+  const vs = (await api('GET', '/api/vehicles' + (inact ? '?inactive=1' : ''))).vehicles;
+  const f = S.vehKind || 'all';
+  const av = S.vehAvail || 'all';
+  const site = vsDef('vehSite') || '';
+  // Schreibweisen desselben Standorts (Dortmund/DORTMUND) als ein Eintrag – wie Kostenbericht und Datenqualität; angezeigt die häufigste
+  // ohne Standort = 'ohne' (wie Startseite/Server; 20.10.2026: Standard-Standort „ohne Standort“ ergab eine leere Liste)
+  const sk = siteKeyUi;
+  const siteCnt = new Map(); for (const v of vs) if (v.site && String(v.site).trim()) { const m = siteCnt.get(sk(v.site)) || new Map(); const raw = String(v.site).trim(); m.set(raw, (m.get(raw) || 0) + 1); siteCnt.set(sk(v.site), m); }
+  const sites = [...siteCnt.values()].map((m) => [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'))[0][0]).sort((a, b) => a.localeCompare(b, 'de'));
+  const base = vs.filter((v) => (!site || sk(v.site) === sk(site)) && (f === 'all' || v.kind === f));
+  // „Gespann gesperrt“: eigenes Fahrzeug nicht gesperrt, aber gekoppelter Anhänger/Lkw gesperrt (nur Information, Kopplung laut Stammliste)
+  const cLocked = (v) => !v.eval_excluded && v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt'; // ruhende nicht (wie die übrigen Verfügbarkeits-Knöpfe, 23.10.2026)
+  const nCL = base.filter(cLocked).length;
+  const nN = base.filter((v) => v.notes_active > 0).length; // aktive Hinweise zum Fahrzeug (nicht für Fahrer)
+  // Prüfung/Wartung überfällig: frühester Termin vor heute oder km-Fälligkeit überschritten (gespeicherte Werte, nur Anzeige)
+  const mOver = (v) => !v.eval_excluded && ((v.next_due && v.next_due < bDate()) || (v.km_remaining !== null && v.km_remaining !== undefined && v.km_remaining < 0)); // ruhende nicht (wie Übersicht/Agent, Entscheidung 10.10.2026)
+  const nMO = base.filter(mOver).length;
+  const nRC = base.filter((v) => v.open_recalls > 0).length; // offene Herstellerrückrufe (noch nicht durchgeführt)
+  const nAF = base.filter((v) => v.agent_findings_open > 0).length; const nAFC = base.filter((v) => v.agent_findings_critical > 0).length; // offene Agentenbefunde (nur Inhaber/Fuhrparkleitung bekommen das Feld)
+  const shown = base.filter((v) => av === 'all' || (av === 'coupled_locked' ? cLocked(v) : av === 'with_notes' ? v.notes_active > 0 : av === 'maint_overdue' ? mOver(v) : av === 'recall_open' ? v.open_recalls > 0 : av === 'with_findings' ? v.agent_findings_open > 0 : av === 'with_findings_crit' ? v.agent_findings_critical > 0 : av === 'dormant' ? !!v.eval_excluded : v.availability === av && !v.eval_excluded));
+  const nDo = base.filter((v) => v.eval_excluded).length; // ruhende eigener Knopf; Verfügbarkeits-Knöpfe ohne sie wie die Startseite (23.10.2026, Teilagent „Disposition“)
+  // Sortierung (nur Anzeige, gespeicherte Werte; fehlende Werte zuletzt bzw. bei „Abfahrtskontrolle“ zuerst – nie kontrolliert ist am ältesten)
+  const so = S.vehSort || (S.vehSort = sortPref('vehicles', VEH_SORTS, 'plate'));
+  const cmpStr = (a, b) => (a === b ? 0 : !a ? 1 : !b ? -1 : a < b ? -1 : 1);
+  const SORTS = { plate: (a, b) => plateCmp(a.plate, b.plate), next_due: (a, b) => cmpStr(a.next_due, b.next_due),
+    check_oldest: (a, b) => (a.last_check_at || '') < (b.last_check_at || '') ? -1 : (a.last_check_at || '') > (b.last_check_at || '') ? 1 : 0,
+    km_desc: (a, b) => (b.last_km ?? -1) - (a.last_km ?? -1),
+    // wenigste Rest-km zuerst (überschritten = negativ); ohne km-Fälligkeit oder ohne km-Stand ans Ende
+    km_due: (a, b) => (a.km_remaining ?? Infinity) - (b.km_remaining ?? Infinity) || 0,
+    // meiste offene Agentenbefunde zuerst (kritische vor allen anderen) – Felder gibt es nur für Inhaber/Fuhrparkleitung
+    findings: (a, b) => (b.agent_findings_critical || 0) - (a.agent_findings_critical || 0) || (b.agent_findings_open || 0) - (a.agent_findings_open || 0) };
+  if (S.me.role !== 'driver' && SORTS[so]) shown.sort((a, b) => SORTS[so](a, b) || plateCmp(a.plate, b.plate));
+  // Art-Reiter zählen innerhalb des gewählten Standorts (wie Verfügbarkeits-Knöpfe und Liste) – 20.10.2026
+  const bySite = vs.filter((v) => !site || sk(v.site) === sk(site));
+  const anyT = vs.some((v) => v.kind === 'anhaenger');
+  const nT = bySite.filter((v) => v.kind === 'anhaenger').length;
+  const AV = ['gesperrt', 'werkstatt', 'meldung_offen', 'einsatzbereit_lt_system'];
+  render(`<h1>${esc(t('vehicles'))}${inact ? ` · ${esc(t('inactive_vehicles'))}` : ''}</h1>${isMgr() ? `<details class="panel"><summary>${esc(t('new_vehicle'))}</summary><form id="nvf">${vehicleForm()}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
+    <p class="noprint"><label style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="inact" ${inact ? 'checked' : ''} style="width:auto"> ${esc(t('inactive_vehicles'))}</label></p>` : ''}<input id="q" class="noprint" type="search" autocomplete="off" placeholder="${esc(S.me.role === 'driver' ? 'SZ-…' : t('veh_search_ph'))}" aria-label="${esc(t('search_label'))}" style="margin-bottom:12px"><div id="vprl"></div>
+    ${anyT ? `<div class="actions" role="group" aria-label="${esc(t('kind'))}" style="margin-top:0">${[['all', t('filter_all'), bySite.length], ['lkw', t('vk_lkw'), bySite.length - nT], ['anhaenger', t('vk_anhaenger'), nT]].map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-vk="${k}">${esc(l)} (${n})</button>`).join('')}</div>` : ''}
+    ${S.me.role !== 'driver' ? `<div class="actions" style="flex-wrap:wrap;margin-top:0">${sites.length + (vs.some((v) => !(v.site && String(v.site).trim())) ? 1 : 0) > 1 || site ? `<select id="vsite" aria-label="${esc(t('site'))}" style="max-width:220px"><option value="">${esc(t('site'))}: ${esc(t('filter_all'))}</option>${sites.map((x) => `<option${sk(x) === sk(site) ? ' selected' : ''}>${esc(x)}</option>`).join('')}${site && site !== 'ohne' && !sites.some((x) => sk(x) === sk(site)) ? `<option selected>${esc(site)}</option>` : ''}${vs.some((v) => !(v.site && String(v.site).trim())) || site === 'ohne' ? `<option value="ohne"${site === 'ohne' ? ' selected' : ''}>${esc(t('cs_nosite'))}</option>` : ''}</select>` : ''}
+      ${[['all', t('filter_all'), base.length], ...AV.map((k) => [k, t('av_' + k), base.filter((v) => v.availability === k && !v.eval_excluded).length]), ...(nDo || av === 'dormant' ? [['dormant', t('eval_excluded'), nDo]] : []), ...(nCL || av === 'coupled_locked' ? [['coupled_locked', t('av_coupled_locked'), nCL]] : []), ...(nN || av === 'with_notes' ? [['with_notes', t('vnotes_with'), nN]] : []), ...(nMO || av === 'maint_overdue' ? [['maint_overdue', t('av_maint_overdue'), nMO]] : []), ...(nRC || av === 'recall_open' ? [['recall_open', t('av_recall_open'), nRC]] : []), ...(nAF || av === 'with_findings' ? [['with_findings', t('av_with_findings'), nAF]] : []), ...(av === 'with_findings_crit' ? [['with_findings_crit', t('av_with_findings_crit'), nAFC]] : [])].map(([k, l, n]) => `<button type="button" class="btn ${av === k ? '' : 'secondary'}" data-av="${k}">${esc(l)} (${n})</button>`).join('')}</div>` : ''}
+    ${S.me.role !== 'driver' ? `<div class="actions" style="margin-top:0;flex-wrap:wrap"><select id="vsort" aria-label="${esc(t('sort_by'))}" style="flex:1 1 100%;max-width:420px">${VEH_SORTS.filter((k) => k !== 'findings' || isMgr()).map((k) => `<option value="${k}"${so === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('vsort_' + k))}</option>`).join('')}</select><button type="button" class="btn secondary" id="vcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="vprt">${esc(t('print'))}</button>${isMgr() ? `<a class="btn secondary" href="#/vehicles/qr">${esc(t('qr_sheet'))}</a>` : ''}</div>` : ''}
+    <p id="vnohit" class="muted small" hidden>${esc(t('search_no_hits'))}</p><div class="list" id="vl">${shown.map((v) => `<a class="row ${v.availability === 'gesperrt' ? 'p-kritisch' : v.availability === 'werkstatt' ? 'p-mittel' : ''}" href="#/vehicles/${esc(v.id)}" data-s="${esc((v.plate + ' ' + (v.site || '') + ' ' + (v.vin || '') + ' ' + (v.trailer_plate || '') + ' ' + (v.truck_plate || '') + ' ' + (v.manufacturer || '') + ' ' + (v.model || '') + ' ' + (v.former_plates || []).join(' ')).toLowerCase())}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="title">${v.kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${v.eval_excluded ? `<span class="chip">${esc(t('eval_excluded'))}</span> ` : ''}${esc([v.manufacturer, v.model, v.build_year].filter(Boolean).join(' '))}</span><span class="chip ${v.availability === 'gesperrt' ? 'gesperrt' : ''}">${esc(t('av_' + v.availability))}</span><span class="sub">${coupledChip(v.coupled)}${v.failed_inspection ? `<b class="chip kritisch">${esc(t('insp_failed_chip'))}: ${esc(mk(v.failed_inspection.kind))} – ${esc(t('res_' + v.failed_inspection.result))}</b><br>` : v.reinspection_open ? `<span class="chip mittel" data-reinsp title="${esc(t('reinsp_open_title'))}">${esc(t('reinsp_open_chip'))}: ${esc(mk(v.reinspection_open.kind))} ${fmtD(v.reinspection_open.done_date)} – ${esc(t('res_' + v.reinspection_open.result))}</span><br>` : ''}${[v.site && esc(v.site), v.trailer_plate && esc(t('trailer')) + ' ' + esc(v.trailer_plate), v.truck_plate && esc(t('truck')) + ' ' + esc(v.truck_plate), v.next_due && (v.next_due < bDate() ? `<b class="chip kritisch" data-overdue>${esc(t('overdue'))}: ${esc(t('next_due'))} ${fmtD(v.next_due)}${v.next_due_kind ? ' (' + esc(mk(v.next_due_kind)) + ')' : ''}</b>` : esc(t('next_due')) + ' ' + fmtD(v.next_due) + (v.next_due_kind ? ' (' + esc(mk(v.next_due_kind)) + ')' : '')), v.next_due_km !== null && v.next_due_km !== undefined && (v.km_unclear ? `${esc(mk(v.next_due_km_kind))} ${esc(t('due_at_km'))} ${fmtKm(v.next_due_km)} <span class="chip mittel km-unclear" title="${esc(t('km_unclear_drop').replace('{d}', fmtD(v.km_drop_at)))}">${esc(t('ms_ungeklaert'))}</span>` : v.km_remaining !== null && v.km_remaining < 0 ? `<b class="chip kritisch">${esc(mk(v.next_due_km_kind))} ${esc(t('km_over'))} ${fmtKm(-v.km_remaining)}</b>` : `${esc(mk(v.next_due_km_kind))} ${esc(t('due_at_km'))} ${fmtKm(v.next_due_km)}`), v.last_km != null && fmtKm(v.last_km), v.last_check_at && esc(t('departure_check')) + ' ' + fmtD(v.last_check_at) + (v.last_check_result === 'maengel' ? ' (' + esc(t('defect')) + ')' : ''), v.planned_workshop_date && esc(t('planned_ws_short')) + ' ' + fmtD(v.planned_workshop_date) + todayMark(v.planned_workshop_date), v.planned_inspection_date && esc(t('planned_inspection')) + (v.planned_inspection_kind ? ' ' + esc(String(v.planned_inspection_kind).split(', ').map(mk).join(', ')) : '') + ' ' + fmtD(v.planned_inspection_date) + todayMark(v.planned_inspection_date), v.parts_expected_date && esc(t('parts_eta')) + ' ' + fmtD(v.parts_expected_date), v.notes_active && `<span class="chip">${esc(tn('vnotes_n', v.notes_active))}</span>`, v.open_recalls > 0 && `<span class="chip mittel">${esc(t('recall_open_n').replace('{n}', v.open_recalls))}</span>`, v.agent_findings_open > 0 && `<span class="chip ${v.agent_findings_critical > 0 ? 'kritisch' : 'mittel'}" data-af="${v.agent_findings_open}">${esc(t('vfind_n').replace('{n}', v.agent_findings_open))}${v.agent_findings_critical > 0 ? ' · ' + esc(t('vfind_crit').replace('{n}', v.agent_findings_critical)) : ''}</span>`].filter(Boolean).join(' · ')}</span></a>`).join('')}</div>${shown.length ? '' : `<p class="muted" data-vlempty>${esc(t(vs.length ? 'no_vehicles_filter' : (isMgr() ? 'no_vehicles_mgr' : 'no_vehicles_list')))}</p>`}`, 'vehicles');
+  $$('[data-vk]').forEach((b) => (b.onclick = () => { S.vehKind = b.dataset.vk; viewVehicles(); }));
+  $$('[data-av]').forEach((b) => (b.onclick = () => { S.vehAvail = b.dataset.av; viewVehicles(); }));
+  // CSV = angezeigte Auswahl in angezeigter Reihenfolge (Filter, Suche, Sortierung); ungefiltert der ganze Bestand (20.10.2026)
+  const vcsv = $('#vcsv'); if (vcsv) vcsv.onclick = async () => { try {
+    const vis = $$('#vl a').filter((a) => !a.hidden).map((a) => decodeURIComponent(a.getAttribute('href').split('/').pop()));
+    const sel = vis.length < vs.length || S.vehSort && S.vehSort !== 'plate' ? '&ids=' + encodeURIComponent(vis.join(',')) : '';
+    download(await api('GET', '/api/vehicles?format=csv' + (inact ? '&inactive=1' : '') + sel), `fuhrpark-fahrzeuge_${envFn()}${inact ? '_ausser-betrieb' : ''}_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
+  const vsite = $('#vsite'); if (vsite) vsite.onchange = () => { S.vehSite = vsite.value; viewVehicles(); };
+  const vsort = $('#vsort'); if (vsort) vsort.onchange = () => { S.vehSort = sortPref('vehicles', VEH_SORTS, 'plate', VEH_SORTS.includes(vsort.value) ? vsort.value : 'plate'); viewVehicles(); };
+  const ia = $('#inact'); if (ia) ia.onchange = () => { S.vehInactive = ia.checked; viewVehicles(); };
+  const nvf = $('#nvf'); if (nvf) nvf.onsubmit = async (e) => { e.preventDefault(); try { const r = await saveVehicleForm(nvf); toast('✓'); location.hash = '#/vehicles/' + encodeURIComponent(r.id); } catch (err) { toast(err.message, true); } };
+  // Ausdruck: gewählte Auswahl (Art, Verfügbarkeit, Standort, außer Betrieb), Suche, Sortierung und Anzahl sichtbarer Fahrzeuge
+  const avLabel = av === 'all' ? '' : av === 'coupled_locked' ? t('av_coupled_locked') : av === 'with_notes' ? t('vnotes_with') : av === 'maint_overdue' ? t('av_maint_overdue') : av === 'recall_open' ? t('av_recall_open') : av === 'dormant' ? t('eval_excluded') : t('av_' + av); // Backlog 483: „ruhend“ wie der Knopf (vorher „av_dormant“ im Druckkopf)
+  const vPrint = () => { const qq = $('#q').value.trim(); $('#vprl').innerHTML = printHead([
+    `${t('print_filter')}: ${[inact ? t('inactive_vehicles') : '', f !== 'all' ? t('vk_' + f) : '', avLabel, site ? `${t('site')} ${site === 'ohne' ? t('cs_nosite') : site}` : ''].filter(Boolean).join(', ') || t('filter_all')}`,
+    qq ? `${t('print_search')}: „${qq}“` : '', S.me.role !== 'driver' ? `${t('sort_by')}: ${t('vsort_' + so)}` : '', t('print_count').replace('{n}', $$('#vl a').filter((a) => !a.hidden).length)]); };
+  vPrint();
+  const vprt = $('#vprt'); if (vprt) vprt.onclick = () => window.print();
+  let vAnn = null;
+  $('#q').oninput = () => { const q = searchKey($('#q').value); $$('#vl a').forEach((a) => (a.hidden = q && !searchKey(a.dataset.s).includes(q))); vPrint();
+    // Trefferzahl für Screenreader (Liste wird nur ausgeblendet), entprellt; sichtbar „keine Treffer“ bei leerer Liste
+    const n = $$('#vl a').filter((a) => !a.hidden).length; const nh = $('#vnohit'); if (nh) nh.hidden = !(q && !n);
+    clearTimeout(vAnn); vAnn = setTimeout(() => announceHits(n), 400); };
+}
 // Wieder in Betrieb / wieder in Auswertungen (Backlog 204): was vor der ersten Fahrt zu klären ist – km-Stand immer, Rest nur wenn vorhanden
 function returnCheckText(rc) {
   if (!rc) return '';
@@ -11,6 +122,20 @@ function returnCheckText(rc) {
     // Backlog 469: aktive Hinweise (z. B. ausgebautes Teil) und offene Restarbeiten
     rc.active_notes ? tn('rc_notes', rc.active_notes) : '', rc.open_items ? tn('rc_open_items', rc.open_items) + (rc.open_items_safety ? ' ' + t('oi_safety_deact').replace('{n}', fmtNum(rc.open_items_safety)) : '') : '', rc.last_km_at ? t('rc_km').replace('{d}', fmtD(rc.last_km_at)) : t('rc_km_none')].filter(Boolean);
   return `${t('rc_head')}: ${parts.join(' · ')}`;
+}
+// „(heute)“ hinter einem geplanten Termin in Listen (Backlog 209: Prüftermin heute in der Fahrzeugliste nicht erkennbar – Ersatzsuche)
+// Backlog 484 (Blickwinkel „Disposition plant abends den nächsten Tag“): Termin morgen ebenso markieren (Berliner Datum)
+const todayMark = (d) => (d && d === bDate() ? ` <b data-today>(${esc(t('today'))})</b>` : d && d === bDate(1) ? ` <b data-tomorrow>(${esc(t('tomorrow'))})</b>` : '');
+function coupledChip(c) {
+  if (!c) return '';
+  const who = `${esc(t(c.kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(c.plate)}`;
+  let h = '';
+  if (['gesperrt', 'werkstatt', 'meldung_offen'].includes(c.availability)) h += `<span class="chip ${c.availability === 'gesperrt' ? 'kritisch' : 'mittel'}" data-cav>${who}: ${esc(t('av_' + c.availability))}</span> `;
+  // Prüfstand des gekoppelten Fahrzeugs (gleiche Regel wie „Prüfung/Wartung überfällig“; ruhende nicht) – sonst wählt die Disposition ein Gespann mit überfälligem Anhänger
+  if (c.failed_inspection) h += `<b class="chip kritisch" data-cfail>${who}: ${esc(t('insp_failed_chip'))}</b> `;
+  else if (c.reinspection_open && !c.eval_excluded) h += `<span class="chip mittel" data-creinsp title="${esc(t('reinsp_open_title'))}">${who}: ${esc(t('reinsp_open_chip'))}</span> `; // Backlog 618
+  if (!c.eval_excluded && ((c.next_due && c.next_due < bDate()) || (c.km_remaining !== null && c.km_remaining !== undefined && c.km_remaining < 0))) h += `<b class="chip kritisch" data-cover>${who}: ${esc(t('av_maint_overdue'))}</b> `;
+  return h;
 }
 const fmtBar = (n) => fmtNum(n) + (S.lang === 'uk' ? ' бар' : ' bar');
 // DOT ohne vorangestelltes „DOT“ anzeigen (Server nimmt den ganzen Code an; Anzeige war „DOT DOT U2LL …“)
@@ -476,4 +601,4 @@ async function renderTires(id, el, keep = null) {
 }
 const VEH_DOCS_MAX = 30;
 
-export { viewVehicle };
+export { viewVehicle, viewVehicles };
