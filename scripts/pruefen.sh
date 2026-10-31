@@ -391,6 +391,7 @@ UI-Funkloch beim App-Start (Netz angezeigt, keine Antwort): Offline-Start nach d
 UI-Anmeldung im Funkloch: nach dem Zeitlimit „Keine Verbindung“, Knopf frei, Eingaben bleiben, erneut anmelden (DE/UK/EN; Backlog 801)|ui-anmeldung-funkloch.py|/tmp/cfp-anmeldung-funkloch.log
 UI-Werkstatt-Lager im Funkloch: Buchung/Wareneingang ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut buchen ohne Doppelbuchung (DE/UK/EN; Backlog 802)|ui-lager-funkloch.py|/tmp/cfp-lager-funkloch.log
 UI-Bußgeld im Funkloch: Anlage ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern öffnet den vorhandenen Vorgang (DE/UK/EN; Backlog 803)|ui-bussgeld-funkloch.py|/tmp/cfp-bussgeld-funkloch.log
+UI-Hinweis zum Fahrzeug und Kilometerstand im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern ohne zweiten Eintrag (DE/UK/EN; Backlog 804)|ui-hinweis-km-funkloch.py|/tmp/cfp-hinweis-km-funkloch.log
 '
 N=0
 NL='

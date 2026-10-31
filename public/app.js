@@ -3895,7 +3895,8 @@ async function loadVehicleNotes(vid, showArchive = false) {
   $$('[data-arch]', box).forEach((b) => (b.onclick = async () => { try { await api('POST', `${base}/${b.dataset.arch}/archive`); loadVehicleNotes(vid, showArchive); } catch (err) { toast(err.message, true); } }));
   $('#vnar', box).onclick = () => loadVehicleNotes(vid, !showArchive);
   if ($('#vnf', box)) $('#vnf', box).onsubmit = async (e) => { e.preventDefault(); const fd = new FormData(e.target);
-    try { await api('POST', base, { text: fd.get('text'), for_driver: fd.get('for_driver') === 'on', valid_until: fd.get('valid_until') || null }); loadVehicleNotes(vid, showArchive); } catch (err) { toast(err.message, true); } };
+    const nb = { text: fd.get('text'), for_driver: fd.get('for_driver') === 'on', valid_until: fd.get('valid_until') || null }; nb.request_key = rkFor(e.target, nb); // Backlog 804: Zeitlimit, Wiederholung ohne zweiten Hinweis
+    try { await api('POST', base, nb, { timeoutMs: SEND_TIMEOUT_MS }); loadVehicleNotes(vid, showArchive); } catch (err) { toast(err.message, true); } };
 }
 
 async function viewVehicle(id, focusEv = null, sec = null) {
@@ -4109,7 +4110,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   const spf = $('#specf'); if (spf) spf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(spf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/spec`, b); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   const kf = $('#kf'); if (kf) kf.onsubmit = async (e) => {
     e.preventDefault();
-    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/odometer`, { km: kf.km.value, measured_on: kf.measured_on.value || null, note: kf.note.value || null }); if (r.warning) toast(r.warning_items ? `${t('km_warn_saved')}: ${r.warning_items.map((w) => t(w.dir === 'below' ? 'km_warn_below' : 'km_warn_above').replace('{km}', fmtNum(w.km)).replace('{d}', fmtD(w.at))).join(' · ')}` : r.warning, true); viewVehicle(id); }
+    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/odometer`, { km: kf.km.value, measured_on: kf.measured_on.value || null, note: kf.note.value || null }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 804: gleicher Stand am selben Tag = duplicate */ if (r.warning) toast(r.warning_items ? `${t('km_warn_saved')}: ${r.warning_items.map((w) => t(w.dir === 'below' ? 'km_warn_below' : 'km_warn_above').replace('{km}', fmtNum(w.km)).replace('{d}', fmtD(w.at))).join(' · ')}` : r.warning, true); viewVehicle(id); }
     catch (err) { toast(err.message, true); if (err.code === 'km_not_plausible') { $('#kmnote').hidden = false; kf.note.required = true; kf.note.focus(); } }
   };
   bindTachoCancel(document, () => viewVehicle(id));

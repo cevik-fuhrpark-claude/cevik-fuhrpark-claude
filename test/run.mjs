@@ -28972,6 +28972,31 @@ await test('Backlog 803 (Blickwinkel „Büro erfasst einen Bußgeldbescheid bei
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-bussgeld-funkloch.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 804 (Blickwinkel „Funkloch“): Hinweis zum Fahrzeug mit request_key wiederholsicher (zweimal senden → ein Hinweis, duplicate; fremdes Fahrzeug mit demselben Schlüssel → 409; ohne Schlüssel wie bisher), Kilometerstand zweimal senden → eine Zeile; beide Formulare mit Zeitlimit (SEND_TIMEOUT_MS); UI-Prüfung `ui-hinweis-km-funkloch.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("nb.request_key = rkFor(e.target, nb);") && app.includes("await api('POST', base, nb, { timeoutMs: SEND_TIMEOUT_MS });"), 'Hinweis: Schlüssel je Formularinhalt, Zeitlimit');
+  ok(/\/odometer`, \{ km: kf\.km\.value[^}]*\}, \{ timeoutMs: SEND_TIMEOUT_MS \}\)/.test(app), 'Kilometerstand mit Zeitlimit');
+  const { U } = await freshWorld();
+  const V = '/api/vehicles/VIN:WMA15SZZ2HM722774';
+  const body = { text: 'Funkloch 804 Hinweis', for_driver: false, request_key: 'vn-804-a' };
+  const a = await U.fleet.post(V + '/notes', body); eq(a.status, 201, JSON.stringify(a.data));
+  const b = await U.fleet.post(V + '/notes', body); ok(b.status < 300 && b.data.duplicate && b.data.id === a.data.id, 'erneut: derselbe Hinweis ' + JSON.stringify(b.data));
+  eq((await U.fleet.get(V + '/notes')).data.notes.filter((n) => n.text === body.text).length, 1, 'genau ein Hinweis');
+  const [p1, p2] = await Promise.all([U.fleet.post(V + '/notes', { ...body, request_key: 'vn-804-p' }), U.fleet.post(V + '/notes', { ...body, request_key: 'vn-804-p' })]);
+  ok(p1.status < 300 && p2.status < 300 && p1.data.id === p2.data.id, 'paralleles Doppelsenden: ein Hinweis ' + JSON.stringify([p1.data, p2.data]));
+  const other = (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id !== 'VIN:WMA15SZZ2HM722774');
+  const c = await U.fleet.post('/api/vehicles/' + encodeURIComponent(other.id) + '/notes', body); eq(c.status, 409, 'fremdes Fahrzeug'); eq(c.data.error, 'note_key_reused');
+  const d = await U.own.post(V + '/notes', body); eq(d.status, 201, 'andere Person, gleicher Schlüssel: eigener Hinweis');
+  eq((await U.fleet.post(V + '/notes', { text: 'ohne Schlüssel', request_key: 'a b' })).status, 400, 'ungültiger Schlüssel');
+  eq((await U.fleet.post(V + '/notes', { text: 'ohne Schlüssel' })).status, 201); eq((await U.fleet.post(V + '/notes', { text: 'ohne Schlüssel' })).status, 201, 'ohne Schlüssel wie bisher');
+  const k1 = await U.fleet.post(V + '/odometer', { km: 777804 }); eq(k1.status, 201, JSON.stringify(k1.data));
+  const k2 = await U.fleet.post(V + '/odometer', { km: 777804 }); ok(k2.status < 300 && k2.data.duplicate, 'km erneut: duplicate ' + JSON.stringify(k2.data));
+  const hist = (await U.fleet.get(V)).data;
+  const kms = JSON.stringify(hist).match(/777804/g) || []; ok(kms.length >= 1, 'km gespeichert');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-hinweis-km-funkloch.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

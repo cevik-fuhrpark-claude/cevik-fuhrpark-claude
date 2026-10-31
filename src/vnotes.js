@@ -1,5 +1,5 @@
 // [CLAUDE] Hinweise zum Fahrzeug: kurze Notizen je Fahrzeug/Umgebung, optional für zugeordnete Fahrer sichtbar; Archiv statt Löschen
-import { nowIso, uuid, bad, forbidden, notFound, str, flag, hideDriverName, berlinDate, isCalendarDate } from './util.js';
+import { nowIso, uuid, bad, conflict, forbidden, notFound, str, flag, hideDriverName, berlinDate, isCalendarDate } from './util.js';
 
 // aktiv = nicht archiviert und nicht abgelaufen („gültig bis“ heute einschließlich, Berliner Datum); Platzhalter ? = berlinDate()
 export const noteActiveSql = (a = '') => `${a}archived_at IS NULL AND (${a}valid_until IS NULL OR ${a}valid_until >= ?)`;
@@ -44,13 +44,32 @@ export async function addNote(env, user, envName, vehicleId, body) {
     // Jahres-Tippfehler (2062): Hinweis sonst praktisch dauerhaft (18.10.2026) – höchstens 20 Jahre wie die Fahrerakte
     if (validUntil > String(Number(today.slice(0, 4)) + 20) + today.slice(4)) throw bad('validation', '„Gültig bis“ liegt mehr als 20 Jahre in der Zukunft – bitte Jahr prüfen.');
   }
+  // Backlog 804 (Funkloch): optionaler request_key je Formular – erneutes Senden nach verlorener Antwort liefert den vorhandenen Hinweis
+  const rk = body.request_key;
+  if (rk !== undefined && rk !== null && rk !== '' && (typeof rk !== 'string' || rk.length > 80 || !/^[\w.-]+$/.test(rk))) throw bad('validation', 'request_key: ungültiger Wert.');
+  const rkey = rk ? rk : null;
+  const byKey = async () => {
+    if (!rkey) return null;
+    const prev = await env.DB.prepare('SELECT id, vehicle_id FROM vehicle_notes WHERE environment=? AND created_by=? AND request_key=?').bind(envName, user.id, rkey).first();
+    if (!prev) return null;
+    if (prev.vehicle_id !== vehicleId) throw conflict('note_key_reused', 'request_key wurde bereits für einen anderen Hinweis verwendet.');
+    return { id: prev.id, duplicate: true };
+  };
+  const dup = await byKey(); if (dup) return dup;
   const n = await env.DB.prepare(`SELECT COUNT(*) AS n FROM vehicle_notes WHERE vehicle_id=? AND environment=? AND ${noteActiveSql()}`).bind(vehicleId, envName, today).first();
   if (n.n >= NOTES_MAX_ACTIVE) throw bad('validation', `Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`);
   const id = uuid();
   // Höchstzahl in derselben Anweisung (parallele Anlagen überschritten sie vorher, 17.10.2026)
-  const r = await env.DB.prepare(`INSERT INTO vehicle_notes(id,environment,vehicle_id,text,for_driver,created_by,created_at,valid_until) SELECT ?1,?2,?3,?4,?5,?6,?7,?8
+  let r;
+  try {
+    r = await env.DB.prepare(`INSERT INTO vehicle_notes(id,environment,vehicle_id,text,for_driver,created_by,created_at,valid_until,request_key) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?11
     WHERE (SELECT COUNT(*) FROM vehicle_notes WHERE vehicle_id=?3 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?9)) < ?10`)
-    .bind(id, envName, vehicleId, text, flag(body.for_driver, 'Für Fahrer sichtbar') ? 1 : 0, user.id, nowIso(), validUntil, today, NOTES_MAX_ACTIVE).run();
+      .bind(id, envName, vehicleId, text, flag(body.for_driver, 'Für Fahrer sichtbar') ? 1 : 0, user.id, nowIso(), validUntil, today, NOTES_MAX_ACTIVE, rkey).run();
+  } catch (e) {
+    // paralleles Doppelsenden: eindeutiger Index greift → vorhandenen Hinweis liefern
+    if (rkey && /UNIQUE/i.test(String(e && e.message))) { const w = await byKey(); if (w) return w; }
+    throw e;
+  }
   if (!(r.meta && r.meta.changes)) throw bad('validation', `Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`);
   await audit(env, user.id, 'vehicle.note_add', vehicleId, { note: id, for_driver: flag(body.for_driver, 'Für Fahrer sichtbar'), valid_until: validUntil });
   return { id };

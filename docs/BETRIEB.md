@@ -240,6 +240,7 @@ Zeigt das Handy Netz an, kommt aber keine Antwort, meldet der Browser keinen Feh
 - Anmeldung `SEND_TIMEOUT_MS` → „Keine Verbindung“, Knopf wieder frei (Backlog 801, `ui-anmeldung-funkloch.py`); Einladungslink und Zwei-Faktor-Code bewusst ohne (Wiederholung nicht gleichwertig).
 - Lager: Buchung/Restbestand ausbuchen, Umlagerung, Wareneingang, Inventur-Prüfung `SEND_TIMEOUT_MS` → „Keine Verbindung“; erneut buchen mit denselben Eingaben schickt denselben `request_key` → keine Doppelbuchung (Backlog 802, `ui-lager-funkloch.py`). Inventur-Buchung bewusst ohne (kein `request_key`; die Vorschau-Prüfung `inventory_changed` fängt Wiederholungen ab).
 - Neuer Bußgeld-/Anhörungsvorgang `SEND_TIMEOUT_MS` → „Keine Verbindung“; erneut speichern öffnet den vorhandenen Vorgang (`request_key` je Formular; Backlog 803, `ui-bussgeld-funkloch.py`).
+- Fahrzeugakte: Hinweis zum Fahrzeug und Kilometerstand `SEND_TIMEOUT_MS` → „Keine Verbindung“; erneut speichern legt keinen zweiten Eintrag an (Hinweis: `request_key` je Formularinhalt, Migration 0096; Kilometerstand: gleicher Stand derselben Person am selben Tag = `duplicate`). Backlog 804, `ui-hinweis-km-funkloch.py`. Weitere Anlageformulare ohne `request_key` (Vertrag, Versicherungsfall, Prüftermin/Nachweis, Fahrerakte) noch ohne Zeitlimit.
 - Bewusst ohne Zeitlimit: Exporte/Datensicherung und Ansichten mit Netz (große Antworten bei langsamer Verbindung).
 
 ## Gesamtprüfung `scripts/pruefen.sh`

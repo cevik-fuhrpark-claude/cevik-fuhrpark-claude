@@ -1,10 +1,6 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, ltxt, markInvalid, nDays, noneP, partsEta, partsWaitDays, plate, printHead, printStamp, rc2, readCsvFile, reasonText, render, stockNoteText, t, tn, toast, uid, unitL, wsLabel, wsName } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, ltxt, markInvalid, nDays, noneP, partsEta, partsWaitDays, plate, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockNoteText, t, tn, toast, uid, unitL, wsLabel, wsName } from './app-main.js';
 
-// Anfrageschlüssel je Formularinhalt: gleicher Inhalt (Wiederholung nach verlorener Antwort) = gleicher Schlüssel, geänderter Inhalt = neue Buchung
-// (21.10.2026: Lager – nach „Keine Verbindung“ korrigierte Buchung wurde als Wiederholung still verworfen)
-// Backlog 793: uid() statt randomUUID – randomUUID fehlt in Android-WebView/Chrome < 92 und iOS < 15.4 (Buchung scheiterte dort mit Skriptfehler)
-const rkFor = (form, b) => { const sig = JSON.stringify(b); if (!form.dataset.rk || form.dataset.rkSig !== sig) { form.dataset.rk = uid(); form.dataset.rkSig = sig; } return form.dataset.rk; };
 // Lager-Buchungstexte in der Oberflächensprache (Standortcode → Name, Zahl/Datum im Sprachformat)
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
 async function viewStock() {
