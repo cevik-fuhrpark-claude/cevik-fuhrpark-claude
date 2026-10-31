@@ -185,6 +185,9 @@ function timeoutSignal(ms) {
   if (typeof AbortController === 'undefined') return undefined;
   const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal;
 }
+// Backlog 800: Zeitlimit für Anmeldestatus/Stammdaten beim App-Start und die Fahrzeugauswahl (kleine Antworten; Slow 3G ≈ 2–4 s);
+// nach einem Offline-Start kürzer (OFFLINE_GET_TIMEOUT_MS), damit die Meldung im Funkloch nicht zweimal so lange wartet
+const START_TIMEOUT_MS = 15000, OFFLINE_GET_TIMEOUT_MS = 8000;
 async function api(method, path, body, extra = {}) {
   const headers = { 'x-cfp': '1', ...(extra.headers || {}), ...(extra.bg ? { 'x-cfp-bg': '1' } : {}) };
   // Zahlen werden nach der hier angezeigten Sprache gelesen (geteiltes Konto: andere Geräte können eine andere Sprache zeigen, 23.10.2026)
@@ -207,6 +210,8 @@ async function api(method, path, body, extra = {}) {
   if (!extra.bg) lastApiAt = Date.now(); // Hintergrund-Abfragen (Zahl am Glockensymbol) zählen nicht als Bedienung – auch serverseitig nicht (x-cfp-bg)
   // timeoutMs: Zeitlimit (Foto-Uploads) – ohne Antwort gilt die Anfrage als Netzabbruch (21.10.2026: „Lade Foto 2/5“ hing ohne Ende,
   // nach Neuladen fehlten die restlichen Fotos still); dann greift der Postausgang für die restlichen Fotos
+  // Backlog 800: nach einem Offline-Start wegen Zeitüberschreitung hat jede Abfrage ein Zeitlimit (sonst hing z. B. die Fahrzeugauswahl)
+  if (method === 'GET' && S.offlineStart && !extra.bg) extra = { ...extra, timeoutMs: Math.min(extra.timeoutMs || OFFLINE_GET_TIMEOUT_MS, OFFLINE_GET_TIMEOUT_MS) };
   const sig = extra.timeoutMs ? timeoutSignal(extra.timeoutMs) : undefined;
   let t0 = Date.now();
   // Backlog 596/598: Vorabrufe aus boot.js (/api/me, dann /api/meta) – nur als erste API-Anfragen in genau dieser Reihenfolge übernommen;
@@ -215,7 +220,9 @@ async function api(method, path, body, extra = {}) {
   const usePre = !!pre && method === 'GET' && path === pre[0];
   if (!usePre || !preQ.length) window.__cfpPre = null;
   if (usePre) t0 = window.__cfpMeT0 || t0;
-  try { res = usePre ? await pre[1] : await fetch(path, { method, headers, body: b, credentials: 'same-origin', ...(sig ? { signal: sig } : {}) }); }
+  // Backlog 800: Vorabruf aus boot.js hat kein eigenes Zeitlimit – mit timeoutMs gegen eine Frist laufen lassen (sonst hing der Start ohne Ende)
+  const preWait = (pr) => (!extra.timeoutMs ? pr : Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), extra.timeoutMs))]));
+  try { res = usePre ? await preWait(pre[1]) : await fetch(path, { method, headers, body: b, credentials: 'same-origin', ...(sig ? { signal: sig } : {}) }); }
   catch { const e = new Error(t('offline')); e.offline = true; throw e; }
   try { clockSample(res.headers.get('date'), t0, Date.now()); } catch {}
   // Hintergrund-Aufruf (Glocke, Postausgang, Netz wieder da) mit 401, während die Person etwas eingibt: nicht zur Anmeldung springen –
@@ -481,7 +488,9 @@ async function route() {
   try {
     if (!S.me && !pub) {
       try {
-        const r = await api('GET', '/api/me'); S.me = r.user; markSession(r.user.id); lastActivity = Date.now(); S.lang = r.user.language || S.lang; S.offlineStart = false;
+        // Backlog 800 (Blickwinkel „Fahrer im Funkloch – Netz angezeigt, aber keine Antwort“): ohne Zeitlimit blieb der Start bei „Lädt…“
+        // stehen, obwohl ein Offline-Start mit Postausgang möglich wäre. Jetzt START_TIMEOUT_MS → wie Netzabbruch (Offline-Start).
+        const r = await api('GET', '/api/me', undefined, { timeoutMs: START_TIMEOUT_MS }); S.me = r.user; markSession(r.user.id); lastActivity = Date.now(); S.lang = r.user.language || S.lang; S.offlineStart = false;
         // Backlog 225: Kontosprache für die Anmeldeseite nach Abmeldung/Neustart merken (eigenes Handy); geteilte Werkstatt-Tablets ausgenommen (Backlog 82)
         if (r.user.language && r.user.role !== 'workshop') { try { if (!localStorage.getItem('cfp_lang_pending')) localStorage.setItem('cfp_lang', r.user.language); } catch {} }
         // offline gewählte Sprache jetzt speichern (18.10.2026: ging beim nächsten Start mit Netz verloren)
@@ -492,7 +501,7 @@ async function route() {
       catch (err) {
         // Funkloch beim App-Start: mit zuletzt gespeichertem Konto weiterarbeiten (Meldungen gehen in den Offline-Ausgang)
         const cached = err.offline ? offlineSession() : null;
-        if (!cached) { const st = await api('GET', '/api/setup/status').catch(() => ({})); if (!st.needs_setup && /^#\/((new|check|v)\/VIN:[A-Z0-9]+|cases\/[\w-]+|fines\/[\w-]+|vehicles\/(VIN|VIN%3A)[:A-Z0-9]+|more\?o=sess|push)$/.test(h)) { try { sessionStorage.setItem('cfp_after_login', h); } catch {} } location.hash = st.needs_setup ? '#/setup' : '#/login'; return; }
+        if (!cached) { const st = await api('GET', '/api/setup/status', undefined, { timeoutMs: START_TIMEOUT_MS }).catch(() => ({})); if (!st.needs_setup && /^#\/((new|check|v)\/VIN:[A-Z0-9]+|cases\/[\w-]+|fines\/[\w-]+|vehicles\/(VIN|VIN%3A)[:A-Z0-9]+|more\?o=sess|push)$/.test(h)) { try { sessionStorage.setItem('cfp_after_login', h); } catch {} } location.hash = st.needs_setup ? '#/setup' : '#/login'; return; }
         S.me = cached.me; S.meta = cached.meta; S.lang = S.me.language || S.lang; S.offlineStart = true;
       }
       await ensureLang(S.lang); // Kontosprache (Backlog 588)
@@ -500,7 +509,9 @@ async function route() {
       // Push angetippt bei geschlossener App: Umgebung aus „?env=“ übernehmen (Inhaber), danach aus der Adresse entfernen
       { const pe = new URLSearchParams(location.search).get('env'); if (pe) { pushEnv(pe); history.replaceState(history.state, '', location.pathname + location.hash); } }
       if (!S.offlineStart) {
-        S.meta = await api('GET', '/api/meta');
+        // Backlog 800: Stammdaten ebenfalls mit Zeitlimit; ohne Antwort die zuletzt gespeicherten desselben Kontos (sonst „Lädt…“ ohne Ende)
+        try { S.meta = await api('GET', '/api/meta', undefined, { timeoutMs: START_TIMEOUT_MS }); }
+        catch (err) { const c = err.offline ? offlineSession() : null; if (!c || c.me.id !== S.me.id) throw err; S.meta = c.meta; }
         saveOfflineSession();
         refreshUnread();
         pushRebind();
@@ -702,6 +713,21 @@ window.addEventListener('online', async () => {
     S.meta = await api('GET', '/api/meta'); saveOfflineSession(); refreshUnread(true); flushOutbox();
   } catch {}
 });
+// Backlog 800: Offline-Start wegen Zeitüberschreitung (Gerät meldet Netz, „online“ kommt also nie): alle 30 s im Hintergrund prüfen, ob
+// der Server wieder antwortet; erst dann wie bei „online“ weiter (Seite nur ohne Eingaben neu aufbauen, sonst Sitzung/Stammdaten auffrischen)
+let offlineProbeBusy = false;
+setInterval(async () => {
+  if (!S.offlineStart || offlineProbeBusy || navigator.onLine === false || document.visibilityState === 'hidden') return;
+  offlineProbeBusy = true;
+  try {
+    const r = await api('GET', '/api/me', undefined, { bg: true, keepDirty: true, timeoutMs: START_TIMEOUT_MS });
+    if (!S.offlineStart) return;
+    if (S.me && r.user && r.user.id !== S.me.id) { toast(t('err_user_mismatch'), true); setTimeout(() => location.reload(), 2500); return; }
+    if (!viewDirty()) { S.offlineStart = false; S.me = null; route(); return; }
+    S.me = r.user; S.offlineStart = false;
+    S.meta = await api('GET', '/api/meta', undefined, { bg: true, timeoutMs: START_TIMEOUT_MS }); saveOfflineSession(); refreshUnread(true); flushOutbox();
+  } catch { /* weiter offline */ } finally { offlineProbeBusy = false; }
+}, 30000);
 // Hat die Person in der aktuellen Ansicht etwas eingegeben oder ausgewählt? (vorsichtig: im Zweifel ja)
 function viewDirty() {
   const m = document.getElementById('main') || document.querySelector('main'); if (!m) return false;
@@ -1709,7 +1735,7 @@ function vehCacheRefresh(force = false) {
 }
 async function vehiclesCached() {
   const vkey = `cfp_veh_${S.me.id}_${envFn()}`;
-  try { const vs = (await api('GET', '/api/vehicles')).vehicles; try { localStorage.setItem(vkey + '_at', String(Date.now())); localStorage.setItem(vkey, JSON.stringify(vs.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, assigned: v.assigned, availability: v.availability, coupled: v.coupled || null, last_check_at: v.last_check_at || null, last_check_result: v.last_check_result || null })))); } catch {} return vs; }
+  try { const vs = (await api('GET', '/api/vehicles', undefined, { timeoutMs: START_TIMEOUT_MS })).vehicles; try { localStorage.setItem(vkey + '_at', String(Date.now())); localStorage.setItem(vkey, JSON.stringify(vs.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, assigned: v.assigned, availability: v.availability, coupled: v.coupled || null, last_check_at: v.last_check_at || null, last_check_result: v.last_check_result || null })))); } catch {} return vs; }
   catch (err) { if (!err.offline) throw err; let vs = null; try { vs = JSON.parse(localStorage.getItem(vkey) || 'null'); } catch {} if (!vs) throw err; return vs; }
 }
 // Netz bricht beim Foto-Upload des direkten Sendens ab: restliche Fotos auf dem Gerät speichern und über den Postausgang nachreichen

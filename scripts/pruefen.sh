@@ -387,6 +387,7 @@ UI-älterer Browser ohne createImageBitmap (iOS < 15): große/gedrehte Fotos ver
 UI-Funkloch mit älterem Browser ohne AbortSignal.timeout: Foto-Upload bricht nach dem Zeitlimit ab, Foto im Postausgang (DE/UK/EN; Backlog 797)|ui-foto-zeitlimit-ohne-abortsignal.py|/tmp/cfp-foto-zeitlimit-ohne-abortsignal.log
 UI-Funkloch: Meldung/Abfahrtskontrolle ohne Antwort nach dem Zeitlimit im Postausgang, Nachsenden ohne Dublette (DE/UK/EN; Backlog 798)|ui-funkloch-senden-zeitlimit.py|/tmp/cfp-funkloch-senden-zeitlimit.log
 UI-Werkstatt-Tablet im Funkloch: Befehl ohne Antwort nach dem Zeitlimit „nicht gespeichert“, erneut speichern ohne Doppelbuchung (DE/UK/EN; Backlog 799)|ui-befehl-ohne-antwort.py|/tmp/cfp-befehl-ohne-antwort.log
+UI-Funkloch beim App-Start (Netz angezeigt, keine Antwort): Offline-Start nach dem Zeitlimit, Meldung im Postausgang, Nachsenden ohne Dublette (DE/UK/EN; Backlog 800)|ui-funkloch-start.py|/tmp/cfp-funkloch-start.log
 '
 N=0
 NL='

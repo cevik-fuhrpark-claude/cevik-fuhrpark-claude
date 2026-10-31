@@ -233,6 +233,12 @@ haben einen Rückfall und sind je mit einem UI-Skript abgesichert, das einen äl
 - `AbortSignal.timeout` (Chrome < 103, iOS < 16): Zeitlimit des Foto-Uploads über `AbortController` + `setTimeout` (`timeoutSignal`) – ohne Rückfall hing „Lade Foto 1/1“ im Funkloch ohne Ende (Backlog 797, `ui-foto-zeitlimit-ohne-abortsignal.py`).
 Neue JS/CSS-Funktionen deshalb vor dem Einsatz auf Unterstützung prüfen und ggf. mit Rückfall bauen.
 
+## Funkloch: Zeitlimits der App (Stand 31.10.2026)
+Zeigt das Handy Netz an, kommt aber keine Antwort, meldet der Browser keinen Fehler – ohne Zeitlimit wartet die App ohne Ende.
+- Foto-Upload `PHOTO_TIMEOUT_MS` (120 s), Meldung/Abfahrtskontrolle/Postausgang/Befehle/Kontrolle nach Reparatur `SEND_TIMEOUT_MS` (60 s) → Postausgang bzw. „nicht gespeichert – Eingaben bleiben“; erneutes Senden mit derselben Kennung ergibt keine Dublette (Backlog 797–799).
+- App-Start: Anmeldestatus (auch Vorabruf aus `boot.js`), Stammdaten und Fahrzeugauswahl `START_TIMEOUT_MS` (15 s) → Offline-Start mit dem zuletzt gespeicherten Konto; danach jede Abfrage `OFFLINE_GET_TIMEOUT_MS` (8 s), alle 30 s Hintergrundprüfung, ob der Server wieder antwortet (das Ereignis „online“ kommt in diesem Fall nie). Ohne gespeichertes Konto → Anmeldeseite (Backlog 800, `ui-funkloch-start.py`).
+- Bewusst ohne Zeitlimit: Exporte/Datensicherung und Ansichten mit Netz (große Antworten bei langsamer Verbindung).
+
 ## Gesamtprüfung `scripts/pruefen.sh`
 `sh scripts/pruefen.sh [--schnell] [--ohne-tests] [--ohne-rauch] [--nur <Namensteil>] [--ab <Namensteil>]` – `npm test`, alle UI-Skripte (Liste `UI_SKRIPTE` im Skript, je frischer Dev-Server) und die Rauchtests; bricht beim ersten Fehler mit Fehlercode ab.
 `--schnell` nur Rauchtest hell (ohne dunkel/Ukrainisch/Englisch/HTML-Probe/Zeitreise/UI-Zeitreise), `--ohne-tests` überspringt `npm test`, `--ohne-rauch` lässt Rauchtests und Zeitreise weg,

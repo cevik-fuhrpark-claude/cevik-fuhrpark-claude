@@ -26134,7 +26134,7 @@ await test('Backlog 596: schnellerer Start – index.html fordert alle Start-Mod
   }
   // app.js: Vorabruf immer verwerfen, nur für GET /api/me benutzen
   const src = rd('app.js');
-  ok(src.includes("const preQ = window.__cfpPre, pre = preQ && preQ.shift();") && src.includes("const usePre = !!pre && method === 'GET' && path === pre[0];") && src.includes("if (!usePre || !preQ.length) window.__cfpPre = null;") && src.includes('res = usePre ? await pre[1] : await fetch('), 'api(): Vorabrufe nur in Reihenfolge als erste Anfragen');
+  ok(src.includes("const preQ = window.__cfpPre, pre = preQ && preQ.shift();") && src.includes("const usePre = !!pre && method === 'GET' && path === pre[0];") && src.includes("if (!usePre || !preQ.length) window.__cfpPre = null;") && src.includes('res = usePre ? await preWait(pre[1]) : await fetch('), 'api(): Vorabrufe nur in Reihenfolge als erste Anfragen');
   // Verhalten der Übernahme-Regel (aus api() nachgebildet): abweichende Anfrage verwirft alle, Reihenfolge zählt
   const take = (win, method, path) => { const preQ = win.__cfpPre, pre = preQ && preQ.shift(); const usePre = !!pre && method === 'GET' && path === pre[0]; if (!usePre || !preQ.length) win.__cfpPre = null; return usePre; };
   const mk = () => ({ __cfpPre: [['/api/me', 1], ['/api/meta', 2]] });
@@ -28877,7 +28877,7 @@ await test('Backlog 798 (Blickwinkel „Fahrer im Funkloch“): Meldung, Abfahrt
   ok(app.includes("const r = await api('POST', '/api/cases', body, { timeoutMs: SEND_TIMEOUT_MS });"), 'Meldung mit Zeitlimit');
   ok(app.includes("const r = await api('POST', '/api/inspections', body, { timeoutMs: SEND_TIMEOUT_MS });"), 'Abfahrtskontrolle mit Zeitlimit');
   ok(app.includes("if (!r) r = await api('POST', item.path || '/api/cases', sendBody, { ...ox, timeoutMs: SEND_TIMEOUT_MS });"), 'Postausgang mit Zeitlimit (Foto-Frist bleibt eigene)');
-  ok(/try \{ res = usePre \? await pre\[1\] : await fetch\([^\n]*signal: sig[^\n]*\); \}\n\s*catch \{ const e = new Error\(t\('offline'\)\); e\.offline = true; throw e; \}/.test(app), 'Abbruch gilt als Netzabbruch (offline → Postausgang)');
+  ok(/try \{ res = usePre \? await preWait\(pre\[1\]\) : await fetch\([^\n]*signal: sig[^\n]*\); \}\n\s*catch \{ const e = new Error\(t\('offline'\)\); e\.offline = true; throw e; \}/.test(app), 'Abbruch gilt als Netzabbruch (offline → Postausgang)');
   // Server: dieselbe Meldung (request_key) erneut gesendet → keine zweite Meldung
   const { U, V1 } = await freshWorld();
   const body = { vehicle_id: V1, description: 'Spiegel rechts abgebrochen (Funkloch)', priority: 'niedrig', driveability: 'fahrbereit', request_key: 'fl-798-1' };
@@ -28901,6 +28901,25 @@ await test('Backlog 799 (Blickwinkel „Werkstatt-Tablet im Funkloch der Halle�
   const b = await U.ws.post(`/api/cases/${id}/commands`, body); ok(b.status < 300 && b.data.duplicate, 'erneut gesendet: duplicate ' + JSON.stringify(b.data));
   eq((await U.ws.get(`/api/cases/${id}`)).data.work.length, 1, 'genau eine Arbeitszeit');
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-befehl-ohne-antwort.py|'), 'UI-Prüfung eingetragen');
+});
+
+await test('Backlog 800 (Blickwinkel „Fahrer im Funkloch – Netz angezeigt, aber keine Antwort“): App-Start mit Zeitlimit für Anmeldestatus (auch Vorabruf), Stammdaten und Fahrzeugauswahl → Offline-Start; danach jede Abfrage mit kurzem Zeitlimit und Hintergrundprüfung alle 30 s; UI-Prüfung `ui-funkloch-start.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  ok(/const START_TIMEOUT_MS = (\d+), OFFLINE_GET_TIMEOUT_MS = (\d+);/.test(app), 'Konstanten');
+  const [, st, og] = app.match(/const START_TIMEOUT_MS = (\d+), OFFLINE_GET_TIMEOUT_MS = (\d+);/).map(Number);
+  ok(st >= 10000 && st <= 30000 && og < st, 'Fristen plausibel (Slow 3G braucht für /api/me ≈ 2–4 s)');
+  ok(app.includes("const r = await api('GET', '/api/me', undefined, { timeoutMs: START_TIMEOUT_MS }); S.me = r.user;"), 'Anmeldestatus beim Start mit Zeitlimit');
+  ok(app.includes("res = usePre ? await preWait(pre[1]) :"), 'Vorabruf aus boot.js läuft gegen dieselbe Frist');
+  ok(app.includes("api('GET', '/api/setup/status', undefined, { timeoutMs: START_TIMEOUT_MS }).catch(() => ({}))"), 'ohne gespeichertes Konto: Einrichtungsstatus mit Zeitlimit → Anmeldeseite');
+  ok(app.includes("try { S.meta = await api('GET', '/api/meta', undefined, { timeoutMs: START_TIMEOUT_MS }); }") && app.includes("if (!c || c.me.id !== S.me.id) throw err; S.meta = c.meta;"), 'Stammdaten mit Zeitlimit, Rückfall nur auf gespeicherte Stammdaten desselben Kontos');
+  ok(app.includes("(await api('GET', '/api/vehicles', undefined, { timeoutMs: START_TIMEOUT_MS })).vehicles"), 'Fahrzeugauswahl mit Zeitlimit (Rückfall auf gespeicherte Fahrzeuge)');
+  ok(app.includes("if (method === 'GET' && S.offlineStart && !extra.bg) extra = { ...extra, timeoutMs: Math.min(extra.timeoutMs || OFFLINE_GET_TIMEOUT_MS, OFFLINE_GET_TIMEOUT_MS) };"), 'nach Offline-Start jede Abfrage mit kurzem Zeitlimit');
+  const iv = app.slice(app.indexOf('let offlineProbeBusy = false;'), app.indexOf('// Hat die Person in der aktuellen Ansicht etwas eingegeben'));
+  ok(iv.includes("navigator.onLine === false") && iv.includes("{ bg: true, keepDirty: true, timeoutMs: START_TIMEOUT_MS }") && iv.includes('if (!viewDirty()) { S.offlineStart = false; S.me = null; route(); return; }') && iv.includes('flushOutbox();') && iv.includes('}, 30000);'), 'Hintergrundprüfung: nur wenn „online“, ohne Eingaben neu aufbauen, sonst Postausgang senden');
+  ok(main.includes('START_TIMEOUT_MS') && main.includes('offlineProbeBusy'), 'Start-Modul enthält die Änderung (npm run build)');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-funkloch-start.py|'), 'UI-Prüfung eingetragen');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
