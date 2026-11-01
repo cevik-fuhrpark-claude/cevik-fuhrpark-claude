@@ -920,7 +920,7 @@ const BACKUP_TABLE_KEYS = {
 export const BACKUP_TABLE_KEY_CODES = Object.keys(BACKUP_TABLE_KEYS);
 // Einstellungen im Protokoll: Bezeichnung wie unter Einstellungen (STRINGS-Schlüssel); SLA-Fristen aus Umgebung · Schritt · Priorität
 const SETTING_LABEL_KEYS = { test_master_readonly: 'test_master_readonly', idle_logout_workshop_min: 'idle_ws', idle_logout_other_min: 'idle_other', workshop_hourly_rate_net: 'hourly_rate',
-  maintenance_warn_days: 'warn_days', maintenance_warn_km: 'warn_km', tire_warn_tread_mm: 'tire_warn', tire_warn_age_years: 'tire_warn_age', fine_warn_days: 'fine_warn',
+  maintenance_warn_days: 'warn_days', maintenance_warn_km: 'warn_km', tire_warn_tread_mm: 'tire_warn', tire_warn_age_years: 'tire_warn_age', tire_tread_rise_mm: 'tire_rise', fine_warn_days: 'fine_warn',
   driver_doc_warn_days: 'driver_doc_warn', license_check_months: 'license_check_months', tacho_warn_days: 'tacho_warn', contract_warn_days: 'ct_warn',
   claim_followup_days: 'claim_followup', case_stale_days: 'case_stale_setting', user_unused_days: 'unused_setting', repair_cost_limit_net: 'cost_limit_setting', work_day_max_hours: 'work_day_setting' };
 export const AUDIT_SETTING_KEYS = Object.keys(SETTING_LABEL_KEYS);
@@ -1182,6 +1182,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 835: Hinweis „letzter Arbeitstag ohne Arbeitszeit“ im Formular Arbeitszeit (Werkstatt)
 // Backlog 836: Abfahrtskontrolle – letzter km-Stand, Differenz, Hinweis bei kleinerem Stand bzw. einer Stelle mehr (Tippfehler)
 // Backlog 837: Fahrzeugakte „Kilometerstand erfassen“ – kleiner als der letzte Stand → nur mit Begründung
+// Backlog 847: Profiltiefe höher als zuletzt ohne Reifenwechsel (Einstellung tire_tread_rise_mm, leer = aus)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

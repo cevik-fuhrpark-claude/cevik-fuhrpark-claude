@@ -2020,7 +2020,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('dc_km_lower dc_km_digits mf_km_digits imp_km_digits odo_digits kf_km_lower mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('tread_rise dc_km_lower dc_km_digits mf_km_digits imp_km_digits odo_digits kf_km_lower mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -30347,6 +30347,61 @@ await test('Backlog 844 (Blickwinkel „Leasingvertrag: km bei Übernahme mit ei
   for (const l2 of ['de', 'uk', 'en']) ok(STRINGS[l2].ct_start_digits && STRINGS[l2].ct_start_digits.includes('{prev}'), 'Text ' + l2);
 });
 
+await test('Backlog 847 (Blickwinkel „Werkstatt misst die Profiltiefe an der falschen Position oder vertippt sich“): Einstellung tire_tread_rise_mm (leer = aus); Messung mit mehr Profil als die letzte derselben Position ohne Wechsel → Hinweis tread_rise (gespeichert wird trotzdem), Wechsel ohne Profil beendet den Vergleich; Reifenakte liefert tread_rise_mm; Formular/Einstellungen/Texte DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon'); const db = e.DB.db;
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const inv = async (b) => { const x = await own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; };
+  const W = await inv({ username: 'p.werkstatt', display_name: 'Werkstatt P', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\nDO-PT 8471;Dortmund;MAN;2019;WMA06XZZ8RP847001;;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const V = 'VIN:WMA06XZZ8RP847001';
+  const post = (b) => W.post(`/api/vehicles/${V}/tires/events`, { request_key: rk(), ...b });
+  const rises = (r) => (r.data.warning_items || []).filter((x) => x.code === 'tread_rise');
+  eq((await post({ event_type: 'messung', position: 'VA-L', tread_mm: '8,2' })).status, 201);
+  eq((await post({ event_type: 'messung', position: 'VA-R', tread_mm: '9' })).status, 201);
+  // Einstellung leer → nie ein Hinweis, Reifenakte null
+  let r = await post({ event_type: 'messung', position: 'VA-L', tread_mm: '14' }); eq(r.status, 201); eq(rises(r).length, 0, 'aus ohne Einstellung');
+  eq((await W.get(`/api/vehicles/${V}/tires`)).data.tread_rise_mm, null, 'Akte ohne Einstellung');
+  // Einstellung: Plausibilitätsgrenzen, Komma
+  eq((await own.put('/api/settings', { tire_tread_rise_mm: '0' })).status, 400, '0 abgewiesen');
+  eq((await own.put('/api/settings', { tire_tread_rise_mm: '1,5' })).status, 200);
+  eq((await own.get('/api/settings')).data.values.tire_tread_rise_mm, '1.5');
+  eq((await W.get(`/api/vehicles/${V}/tires`)).data.tread_rise_mm, 1.5, 'Akte liefert die Grenze');
+  // VA-L zuletzt 14 → 15 (+1,0) kein Hinweis; 16,5 (+1,5) Hinweis, gespeichert
+  r = await post({ event_type: 'messung', position: 'VA-L', tread_mm: '15' }); eq(rises(r).length, 0, 'unter der Grenze');
+  r = await post({ event_type: 'messung', position: 'VA-L', tread_mm: '16,5' }); eq(r.status, 201);
+  let w = rises(r); ok(w.length === 1 && w[0].position === 'VA-L' && w[0].tread_mm === 16.5 && w[0].prev_mm === 15 && w[0].prev_at && w[0].rise_mm === 1.5, JSON.stringify(w));
+  ok(r.data.warnings.some((x) => /höher als zuletzt/.test(x)), 'Text');
+  eq(db.prepare('SELECT tread_mm FROM tire_events WHERE id=?').get(r.data.id).tread_mm, 16.5, 'gespeichert');
+  // weniger Profil: nie ein Hinweis; Sammel-Erfassung nennt nur betroffene Positionen; Sichtprüfung mit Profil zählt wie Messung
+  r = await post({ event_type: 'messung', position: 'VA-L', tread_mm: '3' }); eq(rises(r).length, 0, 'weniger');
+  r = await post({ event_type: 'sichtpruefung', position: 'VA-L', positions: ['VA-R', 'HA-L-aussen'], tread_mm: '11' }); eq(r.status, 201, JSON.stringify(r.data));
+  w = rises(r); eq(w.map((x) => x.position).sort().join(','), 'VA-L,VA-R', 'nur Positionen mit Messung: ' + JSON.stringify(w));
+  // Wechsel: nie ein Hinweis; ohne Profilangabe beendet er den Vergleich, mit Profilangabe gilt diese
+  r = await post({ event_type: 'wechsel', position: 'VA-L', size: '385/65 R22.5', tread_mm: '25' }); eq(r.status, 201); eq(rises(r).length, 0, 'Wechsel selbst');
+  r = await post({ event_type: 'messung', position: 'VA-L', tread_mm: '20' }); eq(rises(r).length, 0, 'nach Wechsel mit Profil 25');
+  r = await post({ event_type: 'wechsel', position: 'VA-R', size: '385/65 R22.5' }); eq(r.status, 201);
+  r = await post({ event_type: 'messung', position: 'VA-R', tread_mm: '20' }); eq(rises(r).length, 0, 'nach Wechsel ohne Profil');
+  r = await post({ event_type: 'messung', position: 'VA-R', tread_mm: '21,5' }); eq(rises(r).length, 1, 'danach wieder Vergleich');
+  // Luftdruck-Messung ohne Profil: kein Hinweis
+  r = await post({ event_type: 'messung', position: 'VA-R', pressure_bar: '8,5' }); eq(rises(r).length, 0, 'nur Luftdruck');
+  eq((await own.put('/api/settings', { tire_tread_rise_mm: '' })).status, 200); eq((await own.get('/api/settings')).data.values.tire_tread_rise_mm, '');
+  r = await post({ event_type: 'messung', position: 'VA-R', tread_mm: '25' }); eq(rises(r).length, 0, 'wieder aus');
+  // Oberfläche + Texte
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rt = app.slice(app.indexOf('async function renderTires('), app.indexOf('\nasync function ', app.indexOf('async function renderTires(') + 10));
+  ok(rt.includes('<div id="tfrise" aria-live="polite"></div>') && rt.includes("tf.tread_mm.addEventListener('input', tfRise)") && rt.includes("t('tread_rise')") && rt.includes('d.tread_rise_mm'), 'Hinweis beim Tippen');
+  ok(rt.includes("w.code === 'tread_rise' ? t('tread_rise')"), 'Hinweis nach dem Speichern');
+  ok(app.includes("${field('tire_tread_rise_mm', t('tire_rise'))}") && app.includes("'tire_warn_tread_mm', 'tire_tread_rise_mm',"), 'Einstellungsfeld mit Dezimalkomma');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['tire_rise', 'tire_rise_hint']) ok(STRINGS[l][k], `${k} ${l}`);
+    ok(['{pos}', '{mm}', '{prev}', '{d}'].every((x) => STRINGS[l].tread_rise.includes(x)), 'tread_rise ' + l);
+    ok(/Mehr Profil als zuletzt|Більше протектора|More tread than last time/.test(STRINGS[l].help_tires_s), 'Hilfe ' + l);
+  }
+});
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

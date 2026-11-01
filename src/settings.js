@@ -18,6 +18,7 @@ export const SETTING_RULES = {
   maintenance_warn_km: { int: true, min: 1, max: 200000 },
   tire_warn_tread_mm: { min: 1.6, max: 30 },
   tire_warn_age_years: { int: true, min: 1, max: 20 },
+  tire_tread_rise_mm: { min: 0.1, max: 30 }, // Backlog 847: Hinweis „mehr Profil als zuletzt ohne Reifenwechsel“ ab diesem Anstieg (leer = aus)
   fine_warn_days: { int: true, min: 0, max: 365 },
   contract_warn_days: { int: true, min: 0, max: 730 },
   claim_followup_days: { int: true, min: 1, max: 365 },

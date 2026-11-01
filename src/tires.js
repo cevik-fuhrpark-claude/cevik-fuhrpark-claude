@@ -163,9 +163,10 @@ export async function tireOverview(env, user, envName, vehicleId) {
     }
     latest[e.position] = cur;
   }
-  const sRows = (await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('tire_warn_tread_mm','tire_warn_age_years')`).all()).results;
+  const sRows = (await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('tire_warn_tread_mm','tire_warn_age_years','tire_tread_rise_mm')`).all()).results;
   const setting = (k) => { const r = sRows.find((x) => x.key === k); return r && r.value !== '' ? Number(r.value) : null; };
   const warn = setting('tire_warn_tread_mm'); const ageYears = setting('tire_warn_age_years') > 0 ? setting('tire_warn_age_years') : null;
+  const riseMm = setting('tire_tread_rise_mm') > 0 ? setting('tire_tread_rise_mm') : null; // Backlog 847
   const wm = winterMarks(allEv);
   const wo = v.kind === 'anhaenger' ? null : await winterOrders(env, envName, vehicleId);
   const wOrder = wo ? wo.open.get(vehicleId) || null : null;
@@ -177,7 +178,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
     position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
     status: treadStatus(position, x.tread_mm, warn),
   })).sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position));
-  return { vehicle: v, last_km: lastKm ? { km: lastKm.km, measured_at: lastKm.measured_at } : null, specs, positions, allowed_positions: positionsForKind(v.kind), history, history_truncated: historyTruncated, history_max: TIRE_HIST_MAX, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: linkable(user, wOrder), closed_order: linkable(user, wo ? wo.closedIfOpen(vehicleId, w.status, allEv, v.kind) : null) }; })() };
+  return { vehicle: v, last_km: lastKm ? { km: lastKm.km, measured_at: lastKm.measured_at } : null, specs, positions, allowed_positions: positionsForKind(v.kind), history, history_truncated: historyTruncated, history_max: TIRE_HIST_MAX, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, tread_rise_mm: riseMm, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: linkable(user, wOrder), closed_order: linkable(user, wo ? wo.closedIfOpen(vehicleId, w.status, allEv, v.kind) : null) }; })() };
 }
 
 export async function addTireEvent(env, user, envName, vehicleId, body) {
@@ -223,6 +224,7 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const rk = str(body.request_key, { max: 80, field: 'request_key' }) || null;
   const known = async () => (rk ? (await env.DB.prepare('SELECT id, position, tread_mm, odometer_km FROM tire_events WHERE vehicle_id=? AND request_key=? AND recorded_by=? AND environment=? ORDER BY created_at, rowid').bind(vehicleId, rk, user.id, envName).all()).results : []);
   { const k = await known(); if (k.length) return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, ...(await kmWarn(env, vehicleId, k[0].odometer_km, warnOf(k[0].tread_mm, k.map((x) => x.position)))) }; }
+  const rise = await treadRise(env, envName, vehicleId, type, tread, positions); // vor dem Speichern: Vergleich mit dem bisherigen Stand
   const ids = positions.map(() => uuid());
   const res = await env.DB.batch(positions.map((pos, i) => env.DB.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,pressure_bar,size,brand,dot,odometer_km,case_id,note,recorded_by,created_at,winter_mark,request_key)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`).bind(ids[i], envName, vehicleId, pos, type, tread, pressure, size, brand, dot, odo, caseId, note, user.id, now, winter, rk)));
@@ -230,6 +232,7 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
     if (!k.length) throw conflict('request_key_reused', 'Dieser Buchungsschlüssel wurde bereits für eine andere Buchung verwendet.'); // fremde Kennung (andere Person/Umgebung)
     return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, ...(await kmWarn(env, vehicleId, k[0].odometer_km, warnOf(k[0].tread_mm, k.map((x) => x.position)))) }; }
   const w = await kmWarn(env, vehicleId, odo, warnOf(tread, positions));
+  for (const x of rise) { w.warning_items.push({ code: 'tread_rise', ...x }); w.warnings.push(`${x.position}: Profiltiefe ${x.tread_mm} mm ist höher als zuletzt (${x.prev_mm} mm) ohne erfassten Reifenwechsel – Position oder Wert prüfen; ggf. Wechsel bzw. Nachschneiden nachtragen.`); }
   // Backlog 396 (Blickwinkel „Getriebetausch – Fahrtenschreiber“): Wechsel an der Antriebsachse auf eine andere Größe als hinterlegt →
   // Hinweis, dass eine Prüfung des Fahrtenschreibers (§ 57b StVZO) nötig sein kann (reine Information, keine Frist, kein Prüftermin)
   if (type === 'wechsel' && size && positions.some((p) => p.startsWith('HA-'))) {
@@ -249,6 +252,21 @@ async function kmWarn(env, vehicleId, odo, w) {
     w.warnings.push(`km-Stand ${odo} km ist kleiner als der zuletzt erfasste Stand (${last.km} km) – anderes Fahrzeug oder Tippfehler?`);
   }
   return w;
+}
+// Backlog 847 (Blickwinkel „Werkstatt misst die Profiltiefe an der falschen Position oder vertippt sich“): Profil wächst nicht nach – mehr Profil
+// als die letzte Messung derselben Position (Wechsel ohne Profilangabe beendet den Vergleich) um mindestens die Einstellung `tire_tread_rise_mm` → Hinweis
+// (falsche Position, Tippfehler, nicht erfasster Wechsel oder Nachschneiden). Reine Information, gespeichert wird trotzdem; leer = aus (keine Vorgabe der App).
+async function treadRise(env, envName, vehicleId, type, tread, positions) {
+  if (type === 'wechsel' || tread === null || tread === undefined) return [];
+  const st = await env.DB.prepare(`SELECT value FROM settings WHERE key='tire_tread_rise_mm'`).first();
+  const lim = st && st.value !== '' ? Number(st.value) : null; if (!(lim > 0)) return [];
+  const rows = (await env.DB.prepare(`SELECT x.position, x.event_type, x.tread_mm, x.created_at FROM (
+      SELECT t.position, t.event_type, t.tread_mm, t.created_at, ROW_NUMBER() OVER (PARTITION BY t.position ORDER BY t.created_at DESC, t.rowid DESC) AS rn
+      FROM tire_events t WHERE t.environment=? AND t.vehicle_id=? AND t.position IN (SELECT value FROM json_each(?)) AND (t.tread_mm IS NOT NULL OR t.event_type='wechsel')) x WHERE x.rn=1`)
+    .bind(envName, vehicleId, JSON.stringify(positions)).all()).results;
+  // Rundung auf 3 Nachkommastellen wie die Erfassung (0,1 + 0,2 ≠ 0,3)
+  return positions.map((p) => rows.find((r) => r.position === p)).filter((r) => r && r.tread_mm !== null && Math.round((tread - r.tread_mm) * 1000) >= Math.round(lim * 1000))
+    .map((r) => ({ position: r.position, tread_mm: tread, prev_mm: r.tread_mm, prev_at: r.created_at, rise_mm: lim }));
 }
 const lastKmOf = (env, vehicleId) => env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC, created_at DESC LIMIT 1').bind(vehicleId).first();
 const sizeKey = (x) => String(x || '').toUpperCase().replace(/\s+/g, '');
