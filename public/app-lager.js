@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, partsEta, partsWaitDays, plate, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockNoteText, t, tn, toast, uid, unitL, wsLabel, wsName } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, partsEta, partsWaitDays, plate, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockNoteText, t, tn, toast, uid, unitL, wsLabel, wsName } from './app-main.js';
 
 // Lager-Buchungstexte in der Oberflächensprache (Standortcode → Name, Zahl/Datum im Sprachformat)
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
@@ -423,7 +423,9 @@ async function viewStockItem(id) {
   // „Bitte neu laden“, jeder neue Versuch scheiterte am alten Stand; Neuladen verwarf die Eingaben)
   if (S.stockLost && S.stockLost.id === id) {
     const L = S.stockLost; S.stockLost = null; const f = $('#' + L.form); const dp = f && f.closest('details');
-    if (f) { for (const [k, v] of Object.entries(L.v)) { const el = f.elements.namedItem(k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; } if (dp) dp.open = true;
+    // Backlog 814: Artikel-Stammdaten wie Vertrag/Fahrzeug – Felder der anderen Person markiert, gleiches Feld → Warnung, eigene schon gespeichert → „War bereits gespeichert“
+    if (f && L.mine) conflictKeep(f, L, 'stlost-' + L.form);
+    else if (f) { for (const [k, v] of Object.entries(L.v)) { const el = f.elements.namedItem(k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; } if (dp) dp.open = true;
       f.insertAdjacentHTML('afterbegin', `<div class="panel warn small" role="status" data-stocklost>${esc(t('case_conflict_kept'))}</div>`); dp && dp.scrollIntoView({ block: 'center' }); }
   }
   const stockConflict = (err, form, v, codes) => { if (!codes.includes(err.code)) return false; S.stockLost = { id, form, v }; viewStockItem(id); return true; };
@@ -437,7 +439,7 @@ async function viewStockItem(id) {
     for (const k of Object.keys(b)) if (b[k] === was[k]) delete b[k];
     if (!Object.keys(b).length) { toast(t('item_unchanged')); return; }
     if (it.updated_at) b.expected_updated_at = it.updated_at;
-    try { const r = await api('PATCH', `/api/stock/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805i: Wiederholung → Konflikt lädt mit gespeichertem Stand */ toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { if (!stockConflict(err, 'itedf', Object.fromEntries(Object.entries(b).filter(([k]) => k !== 'expected_updated_at')), ['version_conflict'])) toast(err.message, true); } };
+    try { const r = await api('PATCH', `/api/stock/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805i: Wiederholung → Konflikt lädt mit gespeichertem Stand */ toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { if (err.code === 'version_conflict') { S.stockLost = { id, form: 'itedf', ...conflictMine(e.target) }; viewStockItem(id); return; } toast(err.message, true); } };
   if ($('#of')) $('#of').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); for (const k of ['eta', 'note']) if (!b[k]) delete b[k];
     const ofm = e.target; try { await api('PUT', `/api/stock/${id}/order`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { if (lostDup(ofm, b, err, ['stock_order_exists'])) { toast(t('saved_before')); viewStockItem(id); return; } lostMark(ofm, b, err); /* Backlog 805i */ if (!stockConflict(err, 'of', b, ['order_changed', 'stock_order_exists'])) toast(err.message, true); } };
   if ($('#ordclr')) $('#ordclr').onclick = async () => { try { await api('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805j: Wiederholung → unverändert */ viewStockItem(id); } catch (err) { if (['order_changed', 'stock_order_exists'].includes(err.code)) { toast(err.message, true); viewStockItem(id); } else toast(err.message, true); } };

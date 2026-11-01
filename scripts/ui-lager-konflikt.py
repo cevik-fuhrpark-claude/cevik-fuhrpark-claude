@@ -2,6 +2,7 @@
 # A hat die Artikelakte offen, B ändert inzwischen den Lagerort; A ändert den Mindestbestand und speichert → Versionskonflikt:
 # Ansicht neu geladen, Hinweis „Inzwischen von jemand anderem geändert …“, A's Mindestbestand steht noch im Formular, B's Lagerort
 # ist sichtbar und wird beim zweiten Speichern nicht zurückgesetzt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Seit Backlog 814 gemeinsamer Konflikthinweis `[data-ctlost]` (wie Vertrag/Fahrzeug), Lagerort der anderen Person markiert.
 # Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -32,15 +33,15 @@ with sync_playwright() as p:
         it=api('GET',f'/api/stock/{iid}')['d']['item']
         check(api('PATCH',f'/api/stock/{iid}',{'location':'Regal B','expected_updated_at':it['updated_at']})['s']==200,f'{lang} {w}px: B ändert den Lagerort')
         q.fill('#ie_min','5'); q.click('#itedf button.btn')
-        q.wait_for_selector('[data-stocklost]',timeout=10000)
-        check(KEPT[lang] in q.inner_text('[data-stocklost]'),f'{lang} {w}px: Hinweis „Eingaben stehen noch im Formular“')
-        check(q.evaluate("document.querySelector('#itedp').open") and q.input_value('#ie_min')=='5' and q.input_value('#ie_loc')=='Regal B',f'{lang} {w}px: eigener Mindestbestand bleibt, fremder Lagerort sichtbar ({q.input_value("#ie_min")}/{q.input_value("#ie_loc")})')
+        q.wait_for_selector('[data-ctlost]',timeout=10000)
+        check(KEPT[lang] in q.inner_text('[data-ctlost]'),f'{lang} {w}px: Hinweis „Eingaben stehen noch im Formular“')
+        check(q.evaluate("document.querySelector('#itedp').open") and q.input_value('#ie_min')=='5' and q.input_value('#ie_loc')=='Regal B' and q.evaluate("document.querySelector('#ie_loc').classList.contains('ct-other')"),f'{lang} {w}px: fremder Lagerort markiert (Backlog 814), eigener Mindestbestand bleibt, fremder Lagerort sichtbar ({q.input_value("#ie_min")}/{q.input_value("#ie_loc")})')
         if SHOTS: q.screenshot(path=f'{SHOTS}/lager_konflikt_{lang}_{w}.png',full_page=True)
         q.evaluate("()=>document.querySelectorAll('.toast').forEach(x=>x.remove())")
         q.click('#itedf button.btn'); q.wait_for_timeout(1200)
         it=api('GET',f'/api/stock/{iid}')['d']['item']
         check(it['min_qty']==5 and it['location']=='Regal B',f'{lang} {w}px: zweites Speichern gelingt, Lagerort von B bleibt ({it["min_qty"]}/{it["location"]})')
-        check(q.locator('[data-stocklost]').count()==0,f'{lang} {w}px: Hinweis nach Erfolg weg')
+        check(q.locator('[data-ctlost]').count()==0,f'{lang} {w}px: Hinweis nach Erfolg weg')
         check(q.evaluate('document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')
         ctx.close()

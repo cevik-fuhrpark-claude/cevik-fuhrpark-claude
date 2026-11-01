@@ -22673,7 +22673,7 @@ await test('Backlog 377 (Blickwinkel „Fahrer im Urlaub“): Einwand des Fahrer
   ok((await U.driver.get('/api/fines/' + id)).data.allowed_actions.includes('driver_dispute'), 'erneut möglich');
   await U.fleet.post('/api/agent/run', {});
   eq(db.prepare(`SELECT COUNT(*) AS n FROM agent_findings WHERE environment='test' AND finding_code='FINE_DRIVER_DISPUTED' AND status='offen'`).get().n, 0, 'Befund erledigt');
-  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="fdisp"') && app.includes('id="dpf"') && app.includes("cmd('driver_dispute', {}, n)") && app.includes("driver_dispute: 'fine_dispute_ev'"), 'Oberfläche');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="fdisp"') && app.includes('id="dpf"') && app.includes("cmd('driver_dispute', {}, n, dpf)") /* seit Backlog 814 mit Formular */ && app.includes("driver_dispute: 'fine_dispute_ev'"), 'Oberfläche');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const k of ['fine_dispute', 'fine_dispute_hint', 'fine_dispute_reason', 'fine_dispute_send', 'fine_dispute_sent', 'fine_dispute_mgr', 'fine_dispute_ev']) ok(STRINGS[l][k], l + ' ' + k); ok(STRINGS[l].help_myfines_s.split('|').length === 3, 'Hilfe ' + l); }
   ok((await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8').includes("['Bitte Begründung angeben.', "), 'Servertext übersetzt');
@@ -25080,7 +25080,7 @@ await test('Backlog 480 (Blickwinkel „geteiltes Werkstatt-Tablet“): Lagerart
   eq((await U.ws.patch('/api/stock/' + iid, { min_qty: '5', expected_updated_at: it1.updated_at })).status, 200, 'zweiter Versuch auf neuem Stand');
   const it2 = (await U.ws.get('/api/stock/' + iid)).data.item; eq(it2.min_qty, 5); eq(it2.location, 'Regal B', 'fremde Änderung bleibt');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("stockConflict(err, 'itedf', Object.fromEntries(Object.entries(b).filter(([k]) => k !== 'expected_updated_at')), ['version_conflict'])"), 'Stammdaten: nur geänderte Felder gemerkt');
+  ok(app.includes("S.stockLost = { id, form: 'itedf', ...conflictMine(e.target) }; viewStockItem(id); return;") /* seit Backlog 814 */, 'Stammdaten: nur geänderte Felder gemerkt');
   ok(app.includes("stockConflict(err, 'of', b, ['order_changed', 'stock_order_exists'])"), 'Bestellvermerk');
   ok(app.includes("data-stocklost>${esc(t('case_conflict_kept'))}"), 'Hinweis');
   const { STRINGS } = await import('../public/i18n.js');
@@ -29506,6 +29506,33 @@ await test('Backlog 813 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig �
   const r = await U.fleet.post(`/api/cases/${id}/commands`, { action: 'set_planned_date', command_id: 'k813-' + Date.now(), expected_version: v0, payload: { planned_date: '2027-01-12' } });
   eq(r.status, 409); eq(r.data.error, 'version_conflict');
   eq((await U.fleet.get(`/api/cases/${id}`)).data.case.planned_date || null, null, 'nichts gespeichert');
+});
+
+await test('Backlog 814 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig dasselbe Bußgeld / denselben Lagerartikel“): Bußgeld „Ändern“ auf altem Stand → 409, Betrag der anderen bleibt; App lädt neu und behält die eigenen Eingaben (Ändern, Fahrer bestätigen, Status, Einwand); Artikel-Stammdaten über conflictKeep', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("S.fnLost = { id, form: fm.id, msg: err.message, ...conflictMine(fm) }; viewFine(id); return true;"), 'Bußgeld: Konflikt merkt eigene Eingaben');
+  ok(app.includes("catch (err) { if (fnLost(err, uf)) return; toast(err.message, true); }"), 'Ändern');
+  ok(app.includes("return cmd('confirm_driver', b, null, cf);") && app.includes("sf.note.value, sf);") && app.includes("return cmd('driver_dispute', {}, n, dpf);"), 'Fahrer bestätigen/Status/Einwand');
+  ok(app.includes("if (fm) conflictKeep(fm, L, 'fnlost-' + L.form); else toast(L.msg, true);"), 'nach dem Neuladen zurück ins Formular, sonst Meldung');
+  ok(app.includes("if (f && L.mine) conflictKeep(f, L, 'stlost-' + L.form);"), 'Lagerartikel: gemeinsamer Konflikthinweis');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-bussgeld-gleichzeitig.py|'), 'UI-Prüfung eingetragen');
+  const { U, e } = await freshWorld();
+  const fl2 = await (async () => { const x = await U.own.post('/api/users', { username: 'w.fuhrpark814', display_name: 'Leitung 814', role: 'fleet', environment: 'test' }); const c = new Client(worker, e, 'w.fuhrpark814'); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; })();
+  const r = await U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Bußgeldstelle 814', reference: 'AZ-814', offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'SZ YC 5513', amount_eur: 30, response_due: '2040-01-15' });
+  eq(r.status, 201, JSON.stringify(r.data)); const F = r.data.id;
+  const v0 = (await U.fleet.get('/api/fines/' + F)).data.fine.version;
+  // zweite Leitung korrigiert den Betrag; Leitung speichert danach auf altem Stand das Aktenzeichen (Formular sendet den alten Betrag mit)
+  eq((await fl2.post(`/api/fines/${F}/commands`, { action: 'update', payload: { amount_eur: 55 }, expected_version: v0 })).status, 200);
+  const a = await U.fleet.post(`/api/fines/${F}/commands`, { action: 'update', payload: { amount_eur: 30, reference: 'AZ-814-neu', authority: 'Bußgeldstelle 814' }, expected_version: v0 });
+  eq(a.status, 409, JSON.stringify(a.data)); eq(a.data.error, 'version_conflict');
+  let f = (await U.fleet.get('/api/fines/' + F)).data.fine; eq(f.amount_eur, 55, 'Betrag der anderen bleibt'); eq(f.reference, 'AZ-814');
+  // neu geladen (Betrag 55 im Formular, eigenes Aktenzeichen übernommen) → gelingt
+  eq((await U.fleet.post(`/api/fines/${F}/commands`, { action: 'update', payload: { amount_eur: 55, reference: 'AZ-814-neu', authority: 'Bußgeldstelle 814' }, expected_version: f.version })).status, 200);
+  f = (await U.fleet.get('/api/fines/' + F)).data.fine; eq(f.amount_eur, 55); eq(f.reference, 'AZ-814-neu');
+  // Fahrer bestätigen auf altem Stand → 409, nichts gespeichert
+  const c = await U.fleet.post(`/api/fines/${F}/commands`, { action: 'confirm_driver', payload: { driver_name_note: 'Fahrer laut Tourenplan', basis: 'tourenplan', evidence: 'Tourenplan KW 44' }, expected_version: v0 });
+  eq(c.status, 409); f = (await U.fleet.get('/api/fines/' + F)).data.fine; eq(f.driver_confirmed_at || null, null);
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

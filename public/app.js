@@ -4998,7 +4998,9 @@ async function viewStockItem(id) {
   // „Bitte neu laden“, jeder neue Versuch scheiterte am alten Stand; Neuladen verwarf die Eingaben)
   if (S.stockLost && S.stockLost.id === id) {
     const L = S.stockLost; S.stockLost = null; const f = $('#' + L.form); const dp = f && f.closest('details');
-    if (f) { for (const [k, v] of Object.entries(L.v)) { const el = f.elements.namedItem(k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; } if (dp) dp.open = true;
+    // Backlog 814: Artikel-Stammdaten wie Vertrag/Fahrzeug – Felder der anderen Person markiert, gleiches Feld → Warnung, eigene schon gespeichert → „War bereits gespeichert“
+    if (f && L.mine) conflictKeep(f, L, 'stlost-' + L.form);
+    else if (f) { for (const [k, v] of Object.entries(L.v)) { const el = f.elements.namedItem(k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; } if (dp) dp.open = true;
       f.insertAdjacentHTML('afterbegin', `<div class="panel warn small" role="status" data-stocklost>${esc(t('case_conflict_kept'))}</div>`); dp && dp.scrollIntoView({ block: 'center' }); }
   }
   const stockConflict = (err, form, v, codes) => { if (!codes.includes(err.code)) return false; S.stockLost = { id, form, v }; viewStockItem(id); return true; };
@@ -5012,7 +5014,7 @@ async function viewStockItem(id) {
     for (const k of Object.keys(b)) if (b[k] === was[k]) delete b[k];
     if (!Object.keys(b).length) { toast(t('item_unchanged')); return; }
     if (it.updated_at) b.expected_updated_at = it.updated_at;
-    try { const r = await api('PATCH', `/api/stock/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805i: Wiederholung → Konflikt lädt mit gespeichertem Stand */ toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { if (!stockConflict(err, 'itedf', Object.fromEntries(Object.entries(b).filter(([k]) => k !== 'expected_updated_at')), ['version_conflict'])) toast(err.message, true); } };
+    try { const r = await api('PATCH', `/api/stock/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805i: Wiederholung → Konflikt lädt mit gespeichertem Stand */ toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { if (err.code === 'version_conflict') { S.stockLost = { id, form: 'itedf', ...conflictMine(e.target) }; viewStockItem(id); return; } toast(err.message, true); } };
   if ($('#of')) $('#of').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); for (const k of ['eta', 'note']) if (!b[k]) delete b[k];
     const ofm = e.target; try { await api('PUT', `/api/stock/${id}/order`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { if (lostDup(ofm, b, err, ['stock_order_exists'])) { toast(t('saved_before')); viewStockItem(id); return; } lostMark(ofm, b, err); /* Backlog 805i */ if (!stockConflict(err, 'of', b, ['order_changed', 'stock_order_exists'])) toast(err.message, true); } };
   if ($('#ordclr')) $('#ordclr').onclick = async () => { try { await api('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805j: Wiederholung → unverändert */ viewStockItem(id); } catch (err) { if (['order_changed', 'stock_order_exists'].includes(err.code)) { toast(err.message, true); viewStockItem(id); } else toast(err.message, true); } };
@@ -5131,7 +5133,10 @@ async function viewFine(id) {
   render(html, 'more');
   $('#fdprt').onclick = () => window.print();
   // Backlog 805d (Funkloch): Zeitlimit; Wiederholung auf den Stand davor meldet der Server als `duplicate` (je Aktion geprüft, nie doppelt)
-  const cmd = async (action, payload = {}, note = null) => { try { const r = await api('POST', `/api/fines/${id}/commands`, { action, payload, note, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS }); toast(r && r.duplicate ? t('saved_before') : '✓'); viewFine(id); } catch (err) { toast(err.message, true); } };
+  // Backlog 814 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig dasselbe Bußgeld“): Konflikt in einem Formular → Ansicht neu laden, eigene
+  // Eingaben bleiben im Formular, Felder der anderen Person markiert (vorher „Bitte neu laden“ – Neuladen verwarf Nachweis/Notiz/Änderungen)
+  const fnLost = (err, fm) => { if (err.code !== 'version_conflict' || !fm || !fm.id) return false; S.fnLost = { id, form: fm.id, msg: err.message, ...conflictMine(fm) }; viewFine(id); return true; };
+  const cmd = async (action, payload = {}, note = null, fm = null) => { try { const r = await api('POST', `/api/fines/${id}/commands`, { action, payload, note, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS }); toast(r && r.duplicate ? t('saved_before') : '✓'); viewFine(id); } catch (err) { if (fnLost(err, fm)) return; toast(err.message, true); } };
   const cf = $('#cf');
   if (cf) {
     // nur Fahrer der Umgebung des Schreibens (Inhaber sieht Konten aller Umgebungen); Kandidaten ergänzen, auch wenn inzwischen deaktiviert/Rolle gewechselt (18.10.2026)
@@ -5144,12 +5149,12 @@ async function viewFine(id) {
       const ex = $('#drv'); if (ex) for (const c of d.candidates || []) if (c.user_id && ![...ex.options].some((o) => o.value === c.user_id)) ex.add(new Option(c.display_name, c.user_id));
     }
     $$('input[name=cand]').forEach((r) => (r.onchange = () => { const c = d.candidates[r.value]; $('#drv').value = c.user_id; cf.basis.value = c.basis; cf.evidence.value = candEv(c); cf.dataset.evShown = cf.evidence.value; cf.dataset.evDe = c.evidence; }));
-    cf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(cf)); if (cf.dataset.evShown && b.evidence === cf.dataset.evShown) b.evidence = cf.dataset.evDe; /* angezeigt in der Oberflächensprache, gespeichert wie vom Server (Übersetzung später über fineEvTr) */ if (!b.driver_id) delete b.driver_id; if (!b.driver_name_note) delete b.driver_name_note; return cmd('confirm_driver', b); };
+    cf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(cf)); if (cf.dataset.evShown && b.evidence === cf.dataset.evShown) b.evidence = cf.dataset.evDe; /* angezeigt in der Oberflächensprache, gespeichert wie vom Server (Übersetzung später über fineEvTr) */ if (!b.driver_id) delete b.driver_id; if (!b.driver_name_note) delete b.driver_name_note; return cmd('confirm_driver', b, null, cf); };
   }
   const inf = $('#inf'); if (inf) inf.onclick = () => cmd('inform_driver');
   const ack = $('#ack'); if (ack) ack.onclick = () => cmd('driver_ack');
-  const dpf = $('#dpf'); if (dpf) dpf.onsubmit = (e) => { e.preventDefault(); const n = dpf.note.value.trim(); if (!n) return; return cmd('driver_dispute', {}, n); };
-  const sf = $('#sf'); if (sf) sf.onsubmit = (e) => { e.preventDefault(); if (sf.status.value === 'eingegangen' && (f.driver_confirmed_at || f.driver_id || f.driver_name_note || f.driver_hidden) && !confirm(t('fine_reopen_confirm'))) return; return cmd('set_status', { status: sf.status.value }, sf.note.value); };
+  const dpf = $('#dpf'); if (dpf) dpf.onsubmit = (e) => { e.preventDefault(); const n = dpf.note.value.trim(); if (!n) return; return cmd('driver_dispute', {}, n, dpf); };
+  const sf = $('#sf'); if (sf) sf.onsubmit = (e) => { e.preventDefault(); if (sf.status.value === 'eingegangen' && (f.driver_confirmed_at || f.driver_id || f.driver_name_note || f.driver_hidden) && !confirm(t('fine_reopen_confirm'))) return; return cmd('set_status', { status: sf.status.value }, sf.note.value, sf); };
   // Behörde/Kennzeichen korrigierbar (19.10.2026); Kennzeichen nur senden, wenn geändert – Antwort meldet die neue Zuordnung
   dueWeekendWatch();
   const uf = $('#uf'); if (uf) uf.onsubmit = async (e) => { e.preventDefault();
@@ -5159,7 +5164,9 @@ async function viewFine(id) {
     if (!uf.offense_at.disabled && uf.offense_at.value && uf.offense_at.value !== berlinLocalDT(f.offense_at)) b.offense_at = uf.offense_at.value;
     if (!uf.plate_in_letter.disabled && (!f.vehicle_id || uf.plate_in_letter.value.trim().toUpperCase() !== String(f.plate_in_letter || ''))) b.plate_in_letter = uf.plate_in_letter.value.trim();
     try { const r = await api('POST', `/api/fines/${id}/commands`, { action: 'update', payload: b, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805d */
-      if (r.vehicle_matched === false) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); else toast(r.duplicate ? t('saved_before') : '✓'); viewFine(id); } catch (err) { toast(err.message, true); } };
+      if (r.vehicle_matched === false) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); else toast(r.duplicate ? t('saved_before') : '✓'); viewFine(id); } catch (err) { if (fnLost(err, uf)) return; toast(err.message, true); } };
+  // Backlog 814: nach dem Neuladen eigene Eingaben zurück ins Formular (gibt es das Formular nicht mehr – Aktion nicht mehr möglich –, Meldung)
+  if (S.fnLost && S.fnLost.id === id) { const L = S.fnLost; S.fnLost = null; const fm = $('#' + L.form); if (fm) conflictKeep(fm, L, 'fnlost-' + L.form); else toast(L.msg, true); }
   // Backlog 805c (Funkloch): Zeitlimit; gleiche Datei erneut = duplicate (Server prüft Prüfsumme), nach verlorener Antwort „War bereits gespeichert“;
   // Auswahl nach Fehler leeren – sonst löst dieselbe Datei kein zweites onchange aus
   const ff = $('#ff'); if (ff) ff.onchange = async () => { const file = ff.files[0]; if (!file) return; const fsig = [file.name, file.size, file.lastModified].join('|'); try { const blob = await prepareUpload(file); const r = await api('POST', `/api/fines/${id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); if (r && r.duplicate) toast(t(S.fineLostFile === fsig ? 'saved_before' : 'doc_duplicate')); S.fineLostFile = null; viewFine(id); } catch (err) { if (err && err.offline) S.fineLostFile = fsig; ff.value = ''; toast(err.message, true); } };
