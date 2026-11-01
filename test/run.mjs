@@ -29380,7 +29380,7 @@ await test('Backlog 807 (Blickwinkel „Fahrer im Ausland, Roaming teuer – Fot
 await test('Backlog 808 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig denselben Vertrag am Handy“): späteres Speichern auf altem Stand → 409 ohne stilles Überschreiben; App lädt neu und behält nur die eigenen Änderungen, Felder der anderen Person markiert', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("S.ctLost = { id: fm.dataset.ctedit, seen, mine }; reload(); return;"), 'Konflikt merkt eigene Änderungen und lädt neu');
+  ok(app.includes("S.ctLost = { id: fm.dataset.ctedit, ...conflictMine(fm) }; reload(); return;"), 'Konflikt merkt eigene Änderungen und lädt neu');
   ok(app.includes("el.classList.add('ct-other')"), 'Felder der anderen Person markiert');
   ok(readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8').includes('.ct-other {'), 'Markierung gestaltet');
   const { STRINGS } = await import('../public/i18n.js');
@@ -29401,6 +29401,21 @@ await test('Backlog 808 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig d
   ok(a2.data.changed.includes('monthly_rate_net') && !a2.data.changed.includes('note'), JSON.stringify(a2.data.changed));
   row = db.prepare('SELECT note, monthly_rate_net FROM vehicle_contracts WHERE id=?').get(ct.data.id);
   eq(row.note, 'Rückgabe vorbereiten'); eq(row.monthly_rate_net, 1100);
+});
+await test('Backlog 809 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig dieselbe Fahrerakte“): späteres Speichern auf altem Stand → 409, Änderung der anderen bleibt; App lädt neu und behält nur die eigenen Änderungen', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (err.code === 'version_conflict') { S.drLost = { id, ...conflictMine(edf) }; viewDriver(id); return; }"), 'Fahrerakte: Konflikt merkt eigene Änderungen');
+  ok(app.includes("conflictKeep($('#edf'), L, 'drlost')"), 'Fahrerakte: Eingaben nach dem Neuladen zurück');
+  const { e, U } = await freshWorld();
+  const db = e.DB.db;
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Fahrer 809', personnel_no: 'P-809' }); eq(dr.status, 201, JSON.stringify(dr.data));
+  const du0 = db.prepare('SELECT updated_at FROM drivers WHERE id=?').get(dr.data.id).updated_at;
+  const b = await U.fleet.patch(`/api/drivers/${dr.data.id}`, { site: 'DORTMUND', expected_updated_at: du0 }); eq(b.status, 200, JSON.stringify(b.data));
+  const a = await U.fleet.patch(`/api/drivers/${dr.data.id}`, { personnel_no: 'P-809-neu', expected_updated_at: du0 }); eq(a.status, 409); eq(a.data.error, 'version_conflict');
+  let row = db.prepare('SELECT site, personnel_no, updated_at FROM drivers WHERE id=?').get(dr.data.id); eq(row.site, 'DORTMUND'); eq(row.personnel_no, 'P-809');
+  const a2 = await U.fleet.patch(`/api/drivers/${dr.data.id}`, { personnel_no: 'P-809-neu', expected_updated_at: row.updated_at }); eq(a2.status, 200, JSON.stringify(a2.data));
+  row = db.prepare('SELECT site, personnel_no FROM drivers WHERE id=?').get(dr.data.id); eq(row.site, 'DORTMUND'); eq(row.personnel_no, 'P-809-neu');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

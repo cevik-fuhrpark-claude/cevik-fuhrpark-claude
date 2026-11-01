@@ -4237,6 +4237,18 @@ function ctLines(c, { noEvidence = false } = {}) {
   if (c.ended_on) out.push(`<span class="small">${esc(t('ct_ended_on'))} ${fmtD(c.ended_on)}${c.end_note ? ' · ' + esc(c.end_note) : ''}</span>`);
   return out;
 }
+// Backlog 808/809: Konflikt beim Speichern eines Stammdaten-Formulars – Werte lesen (dflt = Stand beim Rendern) und nach dem Neuladen nur die
+// selbst geänderten Felder ins frische Formular setzen; Felder, die die andere Person geändert hat, markieren (.ct-other), gleiches Feld → Warnung
+function formVals(fm, dflt) { const o = {}; for (const el of fm.elements) { if (!el.name || el.type === 'hidden') continue; o[el.name] = el.type === 'checkbox' ? (dflt ? el.defaultChecked : el.checked) : el.tagName === 'SELECT' ? (dflt ? ([...el.options].find((x) => x.defaultSelected) || el.options[0] || {}).value || '' : el.value) : (dflt ? el.defaultValue : el.value); } return o; }
+function conflictKeep(fm, L, hid) {
+  const dp = fm.closest('details'); const now = formVals(fm, true); const other = Object.keys(L.seen).filter((k) => k in now && now[k] !== L.seen[k]); const names = [];
+  for (const k of other) { const el = fm.elements.namedItem(k); if (!el) continue; el.classList.add('ct-other'); el.setAttribute('aria-describedby', hid); const lb = el.type === 'checkbox' ? el.closest('label') : el.previousElementSibling; if (lb && lb.tagName === 'LABEL') names.push((el.type === 'checkbox' ? lb.textContent : (lb.firstChild && lb.firstChild.textContent) || lb.textContent).trim()); }
+  const both = []; for (const [k, v] of Object.entries(L.mine)) { const el = fm.elements.namedItem(k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; if (other.includes(k) && now[k] !== v) both.push(k); }
+  if (dp) dp.open = true;
+  fm.insertAdjacentHTML('afterbegin', `<div class="panel warn small" role="status" id="${esc(hid)}" data-ctlost>${esc(t('case_conflict_kept'))}${names.length ? `<br>${esc(t('ct_other_fields'))}: <b>${esc(names.join(', '))}</b>` : ''}${both.length ? `<br>⚠️ ${esc(t('ct_both_fields'))}` : ''}</div>`);
+  const hn = fm.querySelector('[data-ctlost]'); if (hn) hn.scrollIntoView({ block: 'center' });
+}
+const conflictMine = (fm) => { const seen = formVals(fm, true), cur = formVals(fm, false); const mine = {}; for (const k of Object.keys(cur)) if (cur[k] !== seen[k]) mine[k] = cur[k]; return { seen, mine }; };
 function ctForm(c = {}, docs = null) {
   const v = (k) => (c[k] === null || c[k] === undefined ? '' : esc(String(c[k])));
   // Vertragsdokument: Auswahl aus der Dokumentablage des Fahrzeugs (nur angezeigte Umgebung); liegt die Verknüpfung in der anderen Umgebung, bleibt sie unverändert (Feld fehlt)
@@ -4265,16 +4277,9 @@ function bindCtSection(id, reload) {
   // Backlog 808 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig denselben Vertrag am Handy“): Konflikt → Ansicht neu laden, nur die
   // selbst geänderten Felder zurück ins frische Formular, Felder der anderen Person markieren (vorher: „Bitte neu laden“, jeder neue Versuch
   // scheiterte am alten Stand, Neuladen verwarf die Eingaben)
-  const ctVals = (fm, dflt) => { const o = {}; for (const el of fm.elements) { if (!el.name || el.type === 'hidden') continue; o[el.name] = el.type === 'checkbox' ? (dflt ? el.defaultChecked : el.checked) : el.tagName === 'SELECT' ? (dflt ? ([...el.options].find((x) => x.defaultSelected) || el.options[0] || {}).value || '' : el.value) : (dflt ? el.defaultValue : el.value); } return o; };
-  if (S.ctLost) { const L = S.ctLost; S.ctLost = null; const fm = $(`form[data-ctedit="${CSS.escape(L.id)}"]`); const dp = fm && fm.closest('details');
-    if (fm) { const now = ctVals(fm, true); const other = Object.keys(L.seen).filter((k) => k in now && now[k] !== L.seen[k]); const names = [];
-      for (const k of other) { const el = fm.elements.namedItem(k); if (!el) continue; el.classList.add('ct-other'); el.setAttribute('aria-describedby', 'ctlost-' + L.id); const lb = el.previousElementSibling; if (lb && lb.tagName === 'LABEL') names.push((lb.firstChild && lb.firstChild.textContent || lb.textContent).trim()); }
-      const both = []; for (const [k, v] of Object.entries(L.mine)) { const el = fm.elements.namedItem(k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; if (other.includes(k) && now[k] !== v) both.push(k); }
-      if (dp) dp.open = true;
-      fm.insertAdjacentHTML('afterbegin', `<div class="panel warn small" role="status" id="ctlost-${esc(L.id)}" data-ctlost>${esc(t('case_conflict_kept'))}${names.length ? `<br>${esc(t('ct_other_fields'))}: <b>${esc(names.join(', '))}</b>` : ''}${both.length ? `<br>⚠️ ${esc(t('ct_both_fields'))}` : ''}</div>`);
-      const hn = fm.querySelector('[data-ctlost]'); if (hn) hn.scrollIntoView({ block: 'center' }); } }
+  if (S.ctLost) { const L = S.ctLost; S.ctLost = null; const fm = $(`form[data-ctedit="${CSS.escape(L.id)}"]`); if (fm) conflictKeep(fm, L, 'ctlost-' + L.id); }
   $$('form[data-ctedit]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); if (rateRetro(fm) && !confirm(t('ct_rate_retro_confirm'))) return; try { const r = await api('PATCH', `/api/contracts/${fm.dataset.ctedit}`, { ...ctBody(fm), ...(fm.dataset.upd ? { expected_updated_at: fm.dataset.upd } : {}) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805j: Wiederholung → duplicate */ toast(r && r.duplicate ? t('saved_before') : '✓'); reload(); } catch (err) {
-    if (err.code === 'version_conflict') { const seen = ctVals(fm, true), cur = ctVals(fm, false); const mine = {}; for (const k of Object.keys(cur)) if (cur[k] !== seen[k]) mine[k] = cur[k]; S.ctLost = { id: fm.dataset.ctedit, seen, mine }; reload(); return; }
+    if (err.code === 'version_conflict') { S.ctLost = { id: fm.dataset.ctedit, ...conflictMine(fm) }; reload(); return; }
     toast(err.message, true); } }));
   $$('form[data-ctend]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', `/api/contracts/${fm.dataset.ctend}/end`, ctBody(fm), { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast(r && r.duplicate ? t('saved_before') : '✓'); reload(); } catch (err) { toast(err.message, true); } }));
 }
@@ -5429,6 +5434,8 @@ async function viewDriver(id) {
     ddf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(ddf)); if (b.kind !== 'fuehrerschein') delete b.license_classes; return post(`/api/drivers/${id}/documents`, b, ddf); }; }
   const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); return post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }, tdf, ['duplicate']); }; // Backlog 805
   const lcf = $('#lcf'); if (lcf) lcf.onsubmit = (e) => { e.preventDefault(); return post(`/api/drivers/${id}/license-checks`, Object.fromEntries(new FormData(lcf)), lcf, ['duplicate']); };
+  // Backlog 809: Konflikt (andere Leitung hat die Fahrerakte inzwischen geändert) → neu laden, eigene Änderungen bleiben im Formular
+  if (S.drLost && S.drLost.id === id) { const L = S.drLost; S.drLost = null; if ($('#edf')) conflictKeep($('#edf'), L, 'drlost'); }
   const edf = $('#edf'); if (edf) edf.onsubmit = async (e) => { e.preventDefault(); const all = Object.fromEntries(new FormData(edf)); all.active = !!edf.active.checked;
     // nur geänderte Felder auf dem gelesenen Stand senden (älteres Formular machte sonst z. B. eine Deaktivierung still rückgängig)
     const was = { display_name: d.display_name || '', personnel_no: d.personnel_no || '', site: d.site || '', active: !!d.active, user_id: d.user_id || '' };
@@ -5436,7 +5443,7 @@ async function viewDriver(id) {
     if (d.updated_at) b.expected_updated_at = d.updated_at; try { const r = await api('PATCH', `/api/drivers/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate) { toast(t('saved_before')); viewDriver(id); return; } // Backlog 805j
       // ausgeschieden: verknüpftes Konto weiter aktiv / Fahrzeug weiter zugeordnet → Hinweis (Backlog 190)
       const h = []; if (r && r.account_still_active) h.push(t('dr_left_account_active').replace('{name}', r.account_still_active.name)); if (r && r.open_assignments) h.push(tn('dr_left_assignments', r.open_assignments)); if (r && r.card_download) h.push(r.card_download.last_on ? t('ue_card_dl').replace('{d}', fmtD(r.card_download.last_on)) : t('ue_card_dl_none')); // Backlog 656
-      toast(h.length ? h.join(' ') : '✓'); viewDriver(id); } catch (err) { toast(linkedMsg(err), true); } };
+      toast(h.length ? h.join(' ') : '✓'); viewDriver(id); } catch (err) { if (err.code === 'version_conflict') { S.drLost = { id, ...conflictMine(edf) }; viewDriver(id); return; } toast(linkedMsg(err), true); } };
 }
 
 // Vom Server erzeugte Verlaufsvermerke (Kontrolle, erneut festgestellt) in der Oberflächensprache (17.10.2026: blieben deutsch);

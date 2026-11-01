@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test: Fahrerakte – nachgetragene ältere Fahrerkarte wird nur als Verlauf gespeichert (Hinweis in der App-Sprache, neue Karte
-# bleibt gültig) und Vertragsformular sendet den gelesenen Stand (veraltetes Formular → Konfliktmeldung statt stillem Überschreiben).
+# bleibt gültig) und Vertragsformular sendet den gelesenen Stand (veraltetes Formular → Konflikthinweis statt stillem Überschreiben; seit Backlog 808 neu geladen mit eigenen Eingaben).
 # DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -51,7 +51,8 @@ with sync_playwright() as p:
       q.wait_for_selector(f'form[data-ctedit="{cid}"]',state='attached',timeout=15000)
       api('PATCH',f'/api/contracts/{cid}',{'monthly_rate_net':1180})
       q.evaluate(f"""() => {{ const f = document.querySelector('form[data-ctedit="{cid}"]'); let el = f; while (el) {{ if (el.tagName === 'DETAILS') el.open = true; el = el.parentElement; }} }}""")
-      q.fill(f'form[data-ctedit="{cid}"] [name=note]','Ansprechpartner'); q.locator(f'form[data-ctedit="{cid}"] button').first.click(); q.wait_for_selector('.toast.err',timeout=8000)
+      q.fill(f'form[data-ctedit="{cid}"] [name=note]','Ansprechpartner'); q.locator(f'form[data-ctedit="{cid}"] button').first.click(); q.wait_for_selector(f'form[data-ctedit="{cid}"] [data-ctlost]',timeout=8000)  # seit Backlog 808: Hinweis im neu geladenen Formular statt Fehlermeldung
+      check(q.input_value(f'form[data-ctedit="{cid}"] [name=note]')=='Ansprechpartner' and q.input_value(f'form[data-ctedit="{cid}"] [name=monthly_rate_net]').replace('.',',').startswith('1180'),'Konflikt: eigene Bemerkung bleibt, Rate der anderen Person im Formular')
     except Exception as ex: ok=False; print('   ',ex)
     check(ok,'veraltetes Vertragsformular: Konfliktmeldung')
     rate=[c for c in api('GET',f'/api/vehicles/{vid}')['d']['contracts'] if c['id']==cid][0]['monthly_rate_net']

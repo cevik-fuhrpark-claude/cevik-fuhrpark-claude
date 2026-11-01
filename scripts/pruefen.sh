@@ -405,6 +405,7 @@ UI-Passwort ändern im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbin
 UI-Zeitzonen-Hinweis: Gerät auf Kyjiw/New York zeigt an Schadenzeitpunkt und Push-Ruhezeit den Unterschied zur deutschen Zeit, Gerät auf Berlin keinen Hinweis (DE/UK/EN; Backlog 806)|ui-zeitzone-hinweis.py|/tmp/cfp-zeitzone-hinweis.log
 UI-Fotos später senden (Roaming): Meldung geht sofort, Fotos bleiben auf dem Gerät, Vorgang zeigt „N Fotos folgen“, Startseite „Fotos jetzt senden“ bzw. „nicht senden“ (DE/UK/EN; Backlog 807)|ui-fotos-spaeter.py|/tmp/cfp-fotos-spaeter.log
 UI-Vertrag gleichzeitig bearbeitet: Konflikt lädt neu, eigene Änderungen bleiben im Formular, Felder der anderen Person markiert, zweites Speichern übernimmt beide (DE/UK/EN; Backlog 808)|ui-vertrag-gleichzeitig.py|/tmp/cfp-vertrag-gleichzeitig.log
+UI-Fahrerakte gleichzeitig bearbeitet: Konflikt lädt neu, eigene Änderungen bleiben im Formular, Felder der anderen Person markiert (DE/UK/EN; Backlog 809)|ui-fahrerakte-gleichzeitig.py|/tmp/cfp-fahrerakte-gleichzeitig.log
 '
 N=0
 NL='

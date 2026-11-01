@@ -48,7 +48,9 @@ with sync_playwright() as p:
         check(qa('PATCH',f'/api/drivers/{did}',{'active':False})['s']==200,'anderer Tab deaktiviert')
         sent=[]; q.on('request',lambda r: sent.append(r.post_data) if r.method=='PATCH' and '/api/drivers/' in r.url else None)
         q.fill('#edf [name=site]','Bochum'); q.click('#edf button.btn'); q.wait_for_timeout(1500)
-        check(any(MSG[lang] in t for t in q.locator('.toast').all_inner_texts()),'Konfliktmeldung: '+MSG[lang])
+        # seit Backlog 809: Akte neu geladen, Hinweis im Formular, eigener Standort bleibt, Deaktivierung der anderen Person markiert
+        check(q.locator('#edf [data-ctlost]').count()==1,'Konflikthinweis im neu geladenen Formular')
+        check(q.input_value('#edf [name=site]')=='Bochum' and not q.is_checked('#edf [name=active]') and q.evaluate("()=>document.querySelector('#edf [name=active]').classList.contains('ct-other')"),'eigener Standort bleibt, Deaktivierung übernommen und markiert')
         check(sent and '"active"' not in sent[0] and '"site":"Bochum"' in sent[0],'nur geänderte Felder gesendet: '+str(sent[:1]))
         dd=qa('GET',f'/api/drivers/{did}')['d']['driver']
         check(dd['active']==0 and (dd['site'] or '')!='Bochum','Deaktivierung bleibt')
