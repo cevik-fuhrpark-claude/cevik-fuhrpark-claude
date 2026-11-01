@@ -29535,6 +29535,39 @@ await test('Backlog 814 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig d
   eq(c.status, 409); f = (await U.fleet.get('/api/fines/' + F)).data.fine; eq(f.driver_confirmed_at || null, null);
 });
 
+await test('Backlog 815 (Blickwinkel „Werkstatt bucht Teile, Lager im anderen Standort“): Bestellvorschlag und Artikelakte nennen für die Leitung denselben Artikel mit Bestand in anderen Lagern (Schlüssel wie Umlagerung), CSV-Spalte; Werkstatt sieht weiter nur ihr Lager; Texte DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${otherStockP(d.other_stock, it.unit)}') && app.includes('data-otherstock>📦 ${esc(t(\'other_stock\'))}'), 'Oberfläche: Artikelakte + Bestellvorschlag');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].other_stock && STRINGS[l].other_stock_hint, 'Texte ' + l);
+  const { U } = await freshWorld();
+  const mk = async (b) => { const r = await U.fleet.post('/api/stock', b); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const A = await mk({ site: 'DORTMUND', name: 'Ölfilter 815', part_number: 'OF-815', min_qty: 4, initial_qty: 1 });
+  const M = await mk({ site: 'MUENCHEN', name: 'ölfilter  815', part_number: 'of-815', min_qty: 2, initial_qty: 6 });
+  await mk({ site: 'MUENCHEN', name: 'Luftfilter 815', part_number: 'LF-815', initial_qty: 9 });
+  const X = await mk({ site: 'EXTERN', name: 'Ölfilter 815', part_number: 'OF-815', initial_qty: 3 });
+  await mk({ site: 'EXTERN', name: 'Ölfilter 815', part_number: 'OF-815-B', initial_qty: 0 });
+  // deaktivierter Artikel zählt nicht
+  const xi = (await U.fleet.get('/api/stock/' + X)).data.item; eq((await U.fleet.patch('/api/stock/' + X, { active: false, expected_updated_at: xi.updated_at })).status, 200);
+  let ro = (await U.fleet.get('/api/stock?reorder=1')).data.items.find((i) => i.id === A); ok(ro, 'im Bestellvorschlag');
+  eq(JSON.stringify(ro.other_stock), JSON.stringify([{ site: 'MUENCHEN', item_id: M, on_hand: 6, min_qty: 2 }]), 'anderes Lager mit Bestand');
+  const det = (await U.fleet.get('/api/stock/' + A)).data; eq(det.other_stock.length, 1); eq(det.other_stock[0].item_id, M);
+  eq((await U.fleet.get('/api/stock/' + M)).data.other_stock.length, 1, 'Gegenrichtung: Dortmund hat 1');
+  // Werkstatt: nur eigenes Lager, keine Angabe zu anderen
+  const wro = (await U.ws.get('/api/stock?reorder=1')).data.items; ok(wro.every((i) => i.other_stock === undefined), 'Werkstatt ohne andere Lager');
+  eq((await U.ws.get('/api/stock/' + A)).data.other_stock, undefined);
+  const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/stock?reorder=1&format=csv')).data);
+  ok(csv.split('\r\n')[0].endsWith(';Noch zu bestellen;Vorrätig in anderen Lagern'), 'CSV-Kopf');
+  ok(csv.split('\r\n').find((l) => l.includes('Ölfilter 815')).endsWith(';Werkstatt München: 6'), 'CSV-Zeile: ' + csv.split('\r\n').find((l) => l.includes('Ölfilter 815')));
+  const wcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.ws.get('/api/stock?reorder=1&format=csv')).data);
+  ok(wcsv.split('\r\n')[0].endsWith(';Noch zu bestellen'), 'Werkstatt-CSV unverändert');
+  // nach Umlagerung (München → Dortmund 3) Bestand dort 3
+  eq((await U.fleet.post(`/api/stock/${M}/transfer`, { to_site: 'DORTMUND', qty: 3 })).status, 201);
+  ro = (await U.fleet.get('/api/stock?reorder=1')).data.items.find((i) => i.id === A); eq(ro, undefined, 'Dortmund jetzt bei Mindestbestand');
+  eq((await U.fleet.get('/api/stock/' + A)).data.other_stock[0].on_hand, 3);
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

@@ -69,6 +69,8 @@ export async function listStock(env, user, envName, query) {
           (SELECT MAX(m.created_at) FROM stock_movements m WHERE m.item_id=i.value AND m.type='zugang') AS last_receipt_at
         FROM json_each(?) i`).bind(JSON.stringify(list.map((r) => r.id))).all()).results.map((x) => [x.id, x]));
       list = list.map((r) => ({ ...r, last_supplier: last.get(r.id)?.last_supplier || null, last_receipt_date: last.get(r.id)?.last_receipt_at ? berlinDate(last.get(r.id).last_receipt_at) : null }));
+      // Backlog 815: derselbe Artikel in anderen Lagern vorrätig → Umlagerung statt Bestellung prüfen (nur Leitung – Werkstatt sieht nur ihr Lager)
+      if (isMgr(user)) { const other = await otherStock(env, envName, list); list = list.map((r) => ({ ...r, other_stock: other.get(r.id) || [] })); }
       // je Lager nach Lieferant gruppiert (ohne Lieferant zuletzt), dann Bezeichnung
       list.sort((a, b) => a.site.localeCompare(b.site) || (a.last_supplier === null) - (b.last_supplier === null) || String(a.last_supplier || '').localeCompare(String(b.last_supplier || ''), 'de') || a.name.localeCompare(b.name, 'de'));
     }
@@ -144,6 +146,19 @@ async function loadItem(env, user, envName, id) {
   return it;
 }
 
+// Backlog 815 (Blickwinkel „Werkstatt bucht Teile, Lager im anderen Standort“): derselbe Artikel (gleicher Schlüssel aus Bezeichnung +
+// Teilenummer wie bei der Umlagerung) mit Bestand > 0 in anderen, aktiven Lagern derselben Umgebung – je Artikel [{ site, item_id, on_hand, min_qty }].
+// Schlüssel in JS (ältere Zeilen ohne item_key, SQLite lower() ohne Umlaute); eine Abfrage für alle Artikel.
+export async function otherStock(env, envName, items) {
+  const out = new Map(); if (!items.length) return out;
+  const rows = (await env.DB.prepare(`SELECT i.id, i.site, i.name, i.part_number, i.min_qty, COALESCE((SELECT SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id),0) AS on_hand
+    FROM stock_items i WHERE i.environment=? AND i.active=1`).bind(envName).all()).results;
+  const byKey = new Map();
+  for (const r of rows) { const oh = r3(r.on_hand); if (!(oh > 0)) continue; const k = itemKey(r.name, r.part_number); if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push({ site: r.site, item_id: r.id, on_hand: oh, min_qty: r.min_qty }); }
+  for (const it of items) { const l = (byKey.get(itemKey(it.name, it.part_number)) || []).filter((o) => o.site !== it.site && o.item_id !== it.id).sort((a, b) => b.on_hand - a.on_hand || a.site.localeCompare(b.site)); if (l.length) out.set(it.id, l); }
+  return out;
+}
+
 export const ITEM_HISTORY_MAX = 200;
 export async function itemDetail(env, user, envName, id) {
   const it = await loadItem(env, user, envName, id);
@@ -151,7 +166,9 @@ export async function itemDetail(env, user, envName, id) {
     LEFT JOIN cases c ON c.id=m.case_id WHERE m.item_id=? ORDER BY m.created_at DESC LIMIT ?`).bind(id, ITEM_HISTORY_MAX + 1).all()).results;
   // eine Zeile mehr gelesen → es gibt ältere Buchungen (Hinweis + Verweis aufs Lagerjournal, gefiltert auf diesen Artikel)
   const movements_truncated = movements.length > ITEM_HISTORY_MAX; if (movements_truncated) movements.length = ITEM_HISTORY_MAX;
-  return { item: { ...it, on_hand: await onHand(env, id) }, movements, movements_truncated, movements_max: ITEM_HISTORY_MAX };
+  // Backlog 815: Bestand desselben Artikels in anderen Lagern (nur Leitung)
+  const other_stock = isMgr(user) ? (await otherStock(env, envName, [it])).get(it.id) || [] : undefined;
+  return { item: { ...it, on_hand: await onHand(env, id) }, movements, movements_truncated, movements_max: ITEM_HISTORY_MAX, ...(other_stock ? { other_stock } : {}) };
 }
 
 // Gleiche Bezeichnung + Teilenummer ohne Rücksicht auf Groß-/Kleinschreibung und Leerzeichen (der eindeutige Index unterscheidet
@@ -397,12 +414,15 @@ export function stockCsv(items, csvCell) {
 }
 
 // Bestellvorschlag als CSV: Fehlmenge bis Mindestbestand, Verbrauch 90 Tage, Wert nur mit hinterlegtem Preis (nie 0 €)
-export function reorderCsv(items, csvCell) {
-  const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Fehlmenge bis Mindestbestand', 'Verbrauch 90 Tage', 'Preis netto', 'Wert Fehlmenge netto', 'Letzter Lieferant', 'Letzter Zugang', 'Bestellt Menge', 'Bestellt am', 'Liefertermin laut Lieferant', 'Noch zu bestellen'];
+// Backlog 815: Spalte „Vorrätig in anderen Lagern“ nur, wenn die Liste sie enthält (Leitung), z. B. „DORTMUND: 4; HAMBURG: 1“
+export function reorderCsv(items, csvCell, wsNames = {}) {
+  const other = items.some((i) => i.other_stock !== undefined);
+  const head = ['Lager', 'Artikelnummer', 'Bezeichnung', 'Einheit', 'Lagerort', 'Bestand', 'Mindestbestand', 'Fehlmenge bis Mindestbestand', 'Verbrauch 90 Tage', 'Preis netto', 'Wert Fehlmenge netto', 'Letzter Lieferant', 'Letzter Zugang', 'Bestellt Menge', 'Bestellt am', 'Liefertermin laut Lieferant', 'Noch zu bestellen', ...(other ? ['Vorrätig in anderen Lagern'] : [])];
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const lines = [head.join(';')];
   for (const i of items) lines.push([csvCell(i.site), quoteCell(csvCell(i.part_number)), csvCell(i.name), csvCell(i.unit), csvCell(i.location), n(i.on_hand), n(i.min_qty), n(i.shortfall), n(i.used_90d),
-    n(i.unit_price_net), n(i.shortfall_value_net), csvCell(i.last_supplier), i.last_receipt_date || '', n(i.ordered_qty), i.ordered_on || '', i.ordered_eta || '', n(i.open_after_order)].join(';'));
+    n(i.unit_price_net), n(i.shortfall_value_net), csvCell(i.last_supplier), i.last_receipt_date || '', n(i.ordered_qty), i.ordered_on || '', i.ordered_eta || '', n(i.open_after_order),
+    ...(other ? [csvCell((i.other_stock || []).map((o) => `${wsNames[o.site] || o.site}: ${n(o.on_hand)}`).join('; '))] : [])].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 

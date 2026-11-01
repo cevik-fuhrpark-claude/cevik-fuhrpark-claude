@@ -3838,6 +3838,8 @@ async function viewStockReceipt(...a) { return (await lazyModule('lager')).viewS
 document.addEventListener('click', (e) => { const a = e.target && e.target.closest ? e.target.closest('a[data-puq]') : null; if (!a) return; try { sessionStorage.setItem('cfp_pu_q', a.dataset.puq); sessionStorage.setItem('cfp_pu_from', ''); sessionStorage.setItem('cfp_pu_to', ''); } catch { /* ohne Sitzungsspeicher: leeres Suchfeld */ } });
 async function viewPartsUsage(...a) { return (await lazyModule('lager')).viewPartsUsage(...a); }
 
+
+
 async function viewStockItem(...a) { return (await lazyModule('lager')).viewStockItem(...a); }
 
 
