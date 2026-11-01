@@ -3711,14 +3711,16 @@ function ctLines(c, { noEvidence = false } = {}) {
 }
 // Backlog 808/809: Konflikt beim Speichern eines Stammdaten-Formulars – Werte lesen (dflt = Stand beim Rendern) und nach dem Neuladen nur die
 // selbst geänderten Felder ins frische Formular setzen; Felder, die die andere Person geändert hat, markieren (.ct-other), gleiches Feld → Warnung
-function formVals(fm, dflt) { const o = {}; for (const el of fm.elements) { if (!el.name || el.type === 'hidden') continue; o[el.name] = el.type === 'checkbox' ? (dflt ? el.defaultChecked : el.checked) : el.tagName === 'SELECT' ? (dflt ? ([...el.options].find((x) => x.defaultSelected) || el.options[0] || {}).value || '' : el.value) : (dflt ? el.defaultValue : el.value); } return o; }
+// Backlog 812: Felder ohne `name` (z. B. Wochentage der Notfallnummer) nehmen über `data-cv` teil; `data-cvl` = Anzeigename im Konflikthinweis
+const cvEl = (fm, k) => fm.elements.namedItem(k) || fm.querySelector(`[data-cv="${CSS.escape(k)}"]`);
+function formVals(fm, dflt) { const o = {}; for (const el of fm.elements) { const nm = el.name || (el.dataset && el.dataset.cv); if (!nm || el.type === 'hidden') continue; o[nm] = el.type === 'checkbox' ? (dflt ? el.defaultChecked : el.checked) : el.tagName === 'SELECT' ? (dflt ? ([...el.options].find((x) => x.defaultSelected) || el.options[0] || {}).value || '' : el.value) : (dflt ? el.defaultValue : el.value); } return o; }
 function conflictKeep(fm, L, hid) {
   const dp = fm.closest('details'); const now = formVals(fm, true);
   // eigene, inzwischen gespeicherte Änderung (verlorene Antwort) bzw. andere Person setzte denselben Wert → nichts zu entscheiden
   if (Object.keys(L.mine).every((k) => !(k in now) || now[k] === L.mine[k]) && Object.keys(L.seen).every((k) => !(k in now) || now[k] === L.seen[k] || now[k] === L.mine[k])) { toast(t('saved_before')); return false; }
   const other = Object.keys(L.seen).filter((k) => k in now && now[k] !== L.seen[k] && now[k] !== L.mine[k]); const names = [];
-  for (const k of other) { const el = fm.elements.namedItem(k); if (!el) continue; el.classList.add('ct-other'); el.setAttribute('aria-describedby', hid); const lb = el.type === 'checkbox' ? el.closest('label') : el.previousElementSibling; if (lb && lb.tagName === 'LABEL') names.push((el.type === 'checkbox' ? lb.textContent : (lb.firstChild && lb.firstChild.textContent) || lb.textContent).trim()); }
-  const both = []; for (const [k, v] of Object.entries(L.mine)) { const el = fm.elements.namedItem(k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; if (other.includes(k) && now[k] !== v) both.push(k); }
+  for (const k of other) { const el = cvEl(fm, k); if (!el) continue; el.classList.add('ct-other'); el.setAttribute('aria-describedby', hid); if (el.dataset.cvl) { names.push(el.dataset.cvl); continue; } const lb = el.type === 'checkbox' ? el.closest('label') : el.previousElementSibling; if (lb && lb.tagName === 'LABEL') names.push((el.type === 'checkbox' ? lb.textContent : (lb.firstChild && lb.firstChild.textContent) || lb.textContent).trim()); }
+  const both = []; for (const [k, v] of Object.entries(L.mine)) { const el = cvEl(fm, k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; if (other.includes(k) && now[k] !== v) both.push(k); }
   if (dp) dp.open = true;
   fm.insertAdjacentHTML('afterbegin', `<div class="panel warn small" role="status" id="${esc(hid)}" data-ctlost>${esc(t('case_conflict_kept'))}${names.length ? `<br>${esc(t('ct_other_fields'))}: <b>${esc(names.join(', '))}</b>` : ''}${both.length ? `<br>⚠️ ${esc(t('ct_both_fields'))}` : ''}</div>`);
   const hn = fm.querySelector('[data-ctlost]'); if (hn) hn.scrollIntoView({ block: 'center' }); return true;

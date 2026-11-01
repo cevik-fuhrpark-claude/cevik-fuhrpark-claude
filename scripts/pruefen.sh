@@ -408,6 +408,7 @@ UI-Vertrag gleichzeitig bearbeitet: Konflikt lädt neu, eigene Änderungen bleib
 UI-Fahrerakte gleichzeitig bearbeitet: Konflikt lädt neu, eigene Änderungen bleiben im Formular, Felder der anderen Person markiert (DE/UK/EN; Backlog 809)|ui-fahrerakte-gleichzeitig.py|/tmp/cfp-fahrerakte-gleichzeitig.log
 UI-Fahrzeug gleichzeitig bearbeitet: Stammdaten-Konflikt lädt neu, eigene Änderungen bleiben im Formular, Felder der anderen Person markiert (DE/UK/EN; Backlog 810)|ui-fahrzeug-gleichzeitig.py|/tmp/cfp-fahrzeug-gleichzeitig.log
 UI-Versicherungsfall gleichzeitig bearbeitet: Konflikt lädt neu, eigene Änderungen bleiben im Formular, Felder der anderen Person markiert (DE/UK/EN; Backlog 811)|ui-versicherung-gleichzeitig.py|/tmp/cfp-versicherung-gleichzeitig.log
+UI-Notfallnummer und Benutzer gleichzeitig bearbeitet: Konflikt lädt neu, eigene Änderungen (auch Wochentage) bleiben, Felder der anderen Person markiert, Rolle nicht still zurückgesetzt (DE/UK/EN; Backlog 812)|ui-notfall-benutzer-gleichzeitig.py|/tmp/cfp-notfall-benutzer-gleichzeitig.log
 '
 N=0
 NL='

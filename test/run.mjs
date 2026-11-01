@@ -29452,6 +29452,46 @@ await test('Backlog 811 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig d
   cl = (await U.fleet.get(`/api/cases/${cs}`)).data.claim; eq(cl.claim_no, 'S-811'); eq(cl.evidence, 'Meldung 811 + Gutachten');
 });
 
+await test('Backlog 812 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig“): Benutzer bearbeiten mit gelesenen Werten – veraltet → 409, Rollenwechsel der anderen bleibt, Sprache/Passwort lösen keinen Konflikt aus, Wiederholung → unverändert; Notfallnummer → 409 und App behält eigene Eingaben inkl. Wochentage', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("body.expected = { display_name: u.display_name, role: u.role, environment: u.environment, workshop_site: u.workshop_site || null };"), 'Benutzer: gelesene Werte mitsenden');
+  ok(app.includes("conflictKeep(fm, L, 'uelost')"), 'Benutzer: Formular nach Konflikt mit eigenen Änderungen');
+  ok(app.includes("S.emLost = { id: edit.id, msg: err.message, ...conflictMine(emf) }; viewEmergencyEdit(); return;") && app.includes("conflictKeep(f, L, 'emlost')"), 'Notfallnummer: Konflikt behält Eingaben');
+  ok(/data-emwd="\$\{d\}" data-cv="emwd\$\{d\}"/.test(app) && app.includes('data-cv="emm${i}from"') && app.includes('id="emnohol" data-cv="emnohol"') && app.includes('id="emstate" data-cv="emstate"'), 'Wochentage/Zeitspannen/Feiertage nehmen am Konfliktvergleich teil');
+  ok(app.includes("const nm = el.name || (el.dataset && el.dataset.cv);"), 'formVals liest data-cv');
+  const { e, U } = await freshWorld();
+  const db = e.DB.db;
+  const id = U.driver.id;
+  const seen = { display_name: 'Fahrer W', role: 'driver', environment: 'test', workshop_site: null };
+  // Inhaber stuft den Fahrer zu „Lesen“ um; Leitung speichert danach auf altem Stand eine Namenskorrektur (sendet Rolle „Fahrer“ absolut)
+  eq((await U.own.patch(`/api/users/${id}`, { display_name: 'Fahrer W', role: 'viewer', expected: seen })).status, 200);
+  const a = await U.own.patch(`/api/users/${id}`, { display_name: 'Fahrer Weber', role: 'driver', expected: seen }); eq(a.status, 409, JSON.stringify(a.data)); eq(a.data.error, 'version_conflict');
+  let row = db.prepare('SELECT role, display_name FROM users WHERE id=?').get(id); eq(row.role, 'viewer', 'Rollenwechsel der anderen bleibt'); eq(row.display_name, 'Fahrer W');
+  // neu geladen: Speichern mit aktuellem Stand gelingt
+  const cur = { ...seen, role: 'viewer' };
+  eq((await U.own.patch(`/api/users/${id}`, { display_name: 'Fahrer Weber', role: 'viewer', expected: cur })).status, 200);
+  // Wiederholung nach verlorener Antwort (gleiche Werte, alter Stand) → unverändert statt Konflikt
+  const w = await U.own.patch(`/api/users/${id}`, { display_name: 'Fahrer Weber', role: 'viewer', expected: cur }); eq(w.status, 200, JSON.stringify(w.data)); eq(JSON.stringify(w.data.changed), '[]');
+  // Sprache/Push/Passwort ändern updated_at, aber nicht die Felder des Formulars → kein Konflikt
+  const ws0 = { display_name: 'WS DO', role: 'workshop', environment: 'test', workshop_site: 'DORTMUND' };
+
+  eq((await U.ws.patch('/api/me', { language: 'uk' })).status, 200);
+  db.prepare('UPDATE users SET updated_at=? WHERE id=?').run('2030-01-01T00:00:00.000Z', U.ws.id);
+  eq((await U.own.patch(`/api/users/${U.ws.id}`, { display_name: 'Werkstatt Dortmund', role: 'workshop', workshop_site: 'DORTMUND', expected: ws0 })).status, 200, 'nur updated_at geändert → kein Konflikt');
+  // ohne `expected` (ältere App, Aktivieren/Deaktivieren) wie bisher
+  eq((await U.own.patch(`/api/users/${U.viewer.id}`, { active: false })).status, 200);
+  // Fuhrparkleitung: gleiche Prüfung
+  eq((await U.fleet.patch(`/api/users/${id}`, { display_name: 'Fahrer X', role: 'viewer', expected: seen })).status, 409);
+  // Notfallnummer: zwei Leitungen bearbeiten gleichzeitig
+  const c = await U.fleet.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo 812', phone: '0231 812812' }); eq(c.status, 201, JSON.stringify(c.data));
+  const cid = c.data.id || (await U.fleet.get('/api/emergency/contacts')).data.contacts.find((x) => x.label === 'Dispo 812').id;
+  const u0 = (await U.fleet.get('/api/emergency/contacts')).data.contacts.find((x) => x.id === cid).updated_at;
+  eq((await U.fleet.patch(`/api/emergency/contacts/${cid}`, { kind: 'dispo', label: 'Dispo 812', phone: '0231 812813', expected_updated_at: u0 })).status, 200);
+  const ea = await U.fleet.patch(`/api/emergency/contacts/${cid}`, { kind: 'dispo', label: 'Dispo 812 Nacht', phone: '0231 812812', expected_updated_at: u0 }); eq(ea.status, 409); eq(ea.data.error, 'version_conflict');
+  eq((await U.fleet.get('/api/emergency/contacts')).data.contacts.find((x) => x.id === cid).phone, '0231 812813', 'Nummer der anderen bleibt');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

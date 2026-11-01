@@ -623,6 +623,17 @@ export async function updateUser(env, actor, userId, body) {
     && !(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first())) throw bad('validation', 'Unbekannte Werkstatt.');
   // nichts geändert (z. B. leerer Aufruf an ein deaktiviertes Konto): kein Protokoll, keine erneute Entwertung von Sitzungen/Einladungen (19.10.2026)
   if (role === target.role && environment === target.environment && !!active === !!target.active && display === target.display_name && (site || null) === (target.workshop_site || null)) return { ok: true, changed: [], sessions_ended: false };
+  // Backlog 812: „Benutzer bearbeiten“ sendet alle Felder absolut – ohne Prüfung machte das Speichern eine zwischenzeitliche Änderung einer
+  // anderen Leitung (z. B. Rollenwechsel) still rückgängig. Das Formular sendet die gelesenen Werte (`expected`); weicht der gespeicherte Stand
+  // ab → 409. Bewusst Feldvergleich statt `updated_at`: Passwort, Sprache, Push-Einstellungen und Zwei-Faktor ändern `updated_at` ebenfalls.
+  if (body.expected && typeof body.expected === 'object') {
+    const cur = { display_name: target.display_name, role: target.role, environment: target.environment, workshop_site: target.workshop_site || null, active: !!target.active };
+    for (const k of Object.keys(cur)) {
+      if (!(k in body.expected)) continue;
+      const ex = k === 'active' ? !!body.expected[k] : (body.expected[k] === '' || body.expected[k] === undefined ? null : body.expected[k]);
+      if (ex !== cur[k]) throw conflict('version_conflict', 'Der Benutzer wurde zwischenzeitlich geändert. Bitte neu laden.');
+    }
+  }
   const now = nowIso();
   // nur auf dem gelesenen Stand schreiben (Muster cmd_guard): vorher machte eine gleichzeitige Namensänderung eine Deaktivierung oder einen
   // Rollenwechsel still rückgängig (alle Felder absolut aus dem alten Stand zurückgeschrieben) – 17.10.2026
