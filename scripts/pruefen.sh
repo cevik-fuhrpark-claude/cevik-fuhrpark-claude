@@ -422,6 +422,7 @@ UI-Kontrolle nach Reparatur am falschen Auftrag: Kennzeichen groß, letzter km-S
 UI-Abfahrtskontrolle Anhänger: Hinweis am km-Feld „nur Achskilometerzähler des Anhängers“ (Wechsel, QR-Vorauswahl; DE/UK/EN; Backlog 827)|ui-abfahrt-anhaenger-km.py|/tmp/cfp-abfahrt-anhaenger-km.log
 UI-Reifen erfassen am Anhänger: Hinweis Achskilometerzähler, letzter km-Stand, Warnung bei kleinerem Stand (DE/UK/EN; Backlog 828)|ui-reifen-anhaenger-km.py|/tmp/cfp-reifen-anhaenger-km.log
 UI-Prüftermin erledigt am Anhänger: Hinweis Achskilometerzähler, letzter km-Stand, Differenz/Hinweis bei kleinerem Stand (DE/UK/EN; Backlog 829)|ui-wartung-anhaenger-km.py|/tmp/cfp-wartung-anhaenger-km.log
+UI-Kontrolle nach Reparatur am Anhänger: Hinweis Achskilometerzähler am km-Feld, beim Lkw nicht (DE/UK/EN; Backlog 831)|ui-kontrolle-anhaenger-km.py|/tmp/cfp-kontrolle-anhaenger-km.log
 '
 N=0
 NL='

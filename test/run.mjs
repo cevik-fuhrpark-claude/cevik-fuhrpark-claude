@@ -29930,6 +29930,16 @@ await test('Backlog 830 (Folge aus 829): „Kilometerstand erfassen“ in der Fa
   ok(app.includes("<form id=\"kf\"><label>${esc(t('km'))}${v.kind === 'anhaenger' ? `<span class=\"hint\" id=\"kfkmtr\">${esc(t('mdone_kmtr'))}</span>` : ''}</label>"), 'Hinweis am km-Feld');
 });
 
+await test('Backlog 831 (Folge aus 826/829): „Kontrolle nach Reparatur“ zeigt beim Anhänger am km-Feld den Hinweis „nur Achskilometerzähler des Anhängers“', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("<label for=\"km\">${esc(t('km'))}${veh.kind === 'anhaenger' ? `<span class=\"hint\" id=\"irvkmtr\">${esc(t('mdone_kmtr'))}</span>` : ''}${lastKm ?"), 'Hinweis am km-Feld der Kontrolle');
+  const fn = app.slice(app.indexOf('async function viewInspection('), app.indexOf('async function viewDepartureCheck('));
+  ok(fn.includes('irvkmtr') && fn.indexOf('const veh = d.vehicle') < fn.indexOf('irvkmtr'), 'in viewInspection, nach der Fahrzeug-Variablen');
+  const I = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(I.STRINGS[l].mdone_kmtr, 'Text mdone_kmtr ' + l);
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
