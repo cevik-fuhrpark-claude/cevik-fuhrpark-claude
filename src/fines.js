@@ -370,8 +370,16 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
     }
     // unbekannte Aktion → 400 unknown_action (vorher 403 „ist hier nicht möglich“, 20.10.2026)
     if (!['confirm_driver', 'inform_driver', 'set_status', 'update'].includes(action)) throw bad('unknown_action', 'Unbekannte Aktion.');
-    if (!fineActions(user, f).includes(action)) throw forbidden(`Aktion „${action}“ ist hier nicht möglich.`, { denied: 'fine_action_not_allowed', action, status: f.status });
-    if (body.expected_version !== undefined && Number(body.expected_version) !== f.version) throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
+    // Backlog 805d (Funkloch): Wiederholung von „Ändern“/„Fahrer bestätigen“ auf den Stand davor (Antwort verloren) – war der letzte Schritt
+    // genau diese Aktion derselben Person, wird die Wiederholung gegen den heutigen Stand geprüft: ergibt sie nichts Neues → Erfolg, sonst 409
+    let retry = false;
+    if (['update', 'confirm_driver'].includes(action) && body.expected_version !== undefined && Number(body.expected_version) === f.version - 1) {
+      const last = await env.DB.prepare('SELECT action, actor_id FROM fine_events WHERE fine_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1').bind(id).first();
+      retry = !!last && last.action === action && last.actor_id === user.id;
+    }
+    const staleErr = () => conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
+    if (!fineActions(user, f).includes(action)) { if (retry) throw staleErr(); throw forbidden(`Aktion „${action}“ ist hier nicht möglich.`, { denied: 'fine_action_not_allowed', action, status: f.status }); }
+    if (body.expected_version !== undefined && Number(body.expected_version) !== f.version && !retry) throw staleErr();
     switch (action) {
       case 'confirm_driver': {
         const basis = oneOf(p.basis, BASES, 'Grundlage');
@@ -396,6 +404,10 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         // ohne Information und konnte nie quittieren, weil die Quittung des alten Fahrers stehen blieb – 17.10.2026)
         set.driver_informed_at = null; set.driver_ack_at = null;
         payload = { basis, driver_id: set.driver_id, driver_name_note: set.driver_name_note };
+        if (retry) {
+          if (['driver_id', 'driver_name_note', 'driver_basis', 'driver_evidence', 'driver_confirmed_by'].every((k) => (set[k] ?? null) === (f[k] ?? null)) && f.status === 'fahrer_ermittelt') return { ok: true, version: f.version, duplicate: true };
+          throw staleErr();
+        }
         break;
       }
       case 'inform_driver': {
@@ -464,7 +476,8 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
           }
         }
         // nichts geändert: keine neue Version, kein Verlaufseintrag (ein offenes Formular bekam sonst unnötig 409, 18.10.2026)
-        if (!Object.keys(set).length || Object.keys(set).every((k) => (set[k] ?? null) === (f[k] ?? null))) return { ok: true, version: f.version, unchanged: true };
+        if (!Object.keys(set).length || Object.keys(set).every((k) => (set[k] ?? null) === (f[k] ?? null))) return { ok: true, version: f.version, unchanged: true, ...(retry ? { duplicate: true } : {}) };
+        if (retry) throw staleErr(); // Backlog 805d: Wiederholung mit anderen Angaben auf altem Stand
         // nur tatsächlich geänderte Angaben, mit bisherigem Wert (`prev`) – Verlauf zeigt alt → neu (19.10.2026)
         for (const k of Object.keys(set)) if ((set[k] ?? null) === (f[k] ?? null)) delete set[k];
         payload = { ...set, prev: Object.fromEntries(Object.keys(set).map((k) => [k, f[k] ?? null])), ...(plateAmbiguous ? { vehicle_ambiguous: true } : {}) };

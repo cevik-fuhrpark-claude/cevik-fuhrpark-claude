@@ -323,7 +323,8 @@ async function viewFine(id) {
   if (d.events) html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(FINE_EV[e.action] ? t(FINE_EV[e.action]) : e.action)}</b>${fineEvDetail(e, d.event_driver_names || {})}${e.actor_name ? ' · ' + esc(e.actor_name) : ''}${e.note ? `<div>${esc(e.note)}</div>` : ''}</li>`).join('')}</ol>`;
   render(html, 'more');
   $('#fdprt').onclick = () => window.print();
-  const cmd = async (action, payload = {}, note = null) => { try { await api('POST', `/api/fines/${id}/commands`, { action, payload, note, expected_version: f.version }); toast('✓'); viewFine(id); } catch (err) { toast(err.message, true); } };
+  // Backlog 805d (Funkloch): Zeitlimit; Wiederholung auf den Stand davor meldet der Server als `duplicate` (je Aktion geprüft, nie doppelt)
+  const cmd = async (action, payload = {}, note = null) => { try { const r = await api('POST', `/api/fines/${id}/commands`, { action, payload, note, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS }); toast(r && r.duplicate ? t('saved_before') : '✓'); viewFine(id); } catch (err) { toast(err.message, true); } };
   const cf = $('#cf');
   if (cf) {
     // nur Fahrer der Umgebung des Schreibens (Inhaber sieht Konten aller Umgebungen); Kandidaten ergänzen, auch wenn inzwischen deaktiviert/Rolle gewechselt (18.10.2026)
@@ -350,8 +351,8 @@ async function viewFine(id) {
     // Tatzeit (Berliner Ortszeit) nur senden, wenn geändert – sonst Minutenrundung = scheinbare Änderung (23.10.2026)
     if (!uf.offense_at.disabled && uf.offense_at.value && uf.offense_at.value !== berlinLocalDT(f.offense_at)) b.offense_at = uf.offense_at.value;
     if (!uf.plate_in_letter.disabled && (!f.vehicle_id || uf.plate_in_letter.value.trim().toUpperCase() !== String(f.plate_in_letter || ''))) b.plate_in_letter = uf.plate_in_letter.value.trim();
-    try { const r = await api('POST', `/api/fines/${id}/commands`, { action: 'update', payload: b, expected_version: f.version });
-      if (r.vehicle_matched === false) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); else toast('✓'); viewFine(id); } catch (err) { toast(err.message, true); } };
+    try { const r = await api('POST', `/api/fines/${id}/commands`, { action: 'update', payload: b, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805d */
+      if (r.vehicle_matched === false) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); else toast(r.duplicate ? t('saved_before') : '✓'); viewFine(id); } catch (err) { toast(err.message, true); } };
   // Backlog 805c (Funkloch): Zeitlimit; gleiche Datei erneut = duplicate (Server prüft Prüfsumme), nach verlorener Antwort „War bereits gespeichert“;
   // Auswahl nach Fehler leeren – sonst löst dieselbe Datei kein zweites onchange aus
   const ff = $('#ff'); if (ff) ff.onchange = async () => { const file = ff.files[0]; if (!file) return; const fsig = [file.name, file.size, file.lastModified].join('|'); try { const blob = await prepareUpload(file); const r = await api('POST', `/api/fines/${id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); if (r && r.duplicate) toast(t(S.fineLostFile === fsig ? 'saved_before' : 'doc_duplicate')); S.fineLostFile = null; viewFine(id); } catch (err) { if (err && err.offline) S.fineLostFile = fsig; ff.value = ''; toast(err.message, true); } };

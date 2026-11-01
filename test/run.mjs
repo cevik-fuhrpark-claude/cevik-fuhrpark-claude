@@ -29101,6 +29101,34 @@ await test('Backlog 805c (Blickwinkel „Funkloch“): Fahrzeug-Stammdaten, Reif
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-stammdaten-dokument-funkloch.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 805d (Blickwinkel „Funkloch“): Bußgeld-Befehle mit Zeitlimit; Wiederholung von „Ändern“/„Fahrer bestätigen“ auf den Stand davor → duplicate (keine zweite Version, kein zweiter Verlaufseintrag), andere Angaben oder andere Person → weiter 409', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("{ action, payload, note, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS }); toast(r && r.duplicate ? t('saved_before') : '✓');"), 'Befehle');
+  ok(app.includes("{ action: 'update', payload: b, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805d */") && app.includes("else toast(r.duplicate ? t('saved_before') : '✓');"), 'Ändern');
+  const { U, e } = await freshWorld();
+  const own = U.own;
+  const r = await U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Bußgeldstelle 805d', reference: 'AZ-805d', offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'SZ YC 5513', amount_eur: 30, response_due: '2040-01-15' });
+  eq(r.status, 201, JSON.stringify(r.data)); const F = r.data.id;
+  const ver = async () => (await U.fleet.get('/api/fines/' + F)).data.fine.version;
+  const evs = async () => (await U.fleet.get('/api/fines/' + F)).data.events.length;
+  let v0 = await ver();
+  const ub = { action: 'update', payload: { amount_eur: 35, reference: 'AZ-805d' }, expected_version: v0 };
+  eq((await U.fleet.post(`/api/fines/${F}/commands`, ub)).status, 200); const n1 = await evs(); eq(await ver(), v0 + 1);
+  const u2 = await U.fleet.post(`/api/fines/${F}/commands`, ub); eq(u2.status, 200, JSON.stringify(u2.data)); eq(u2.data.duplicate, true, 'Wiederholung'); eq(await ver(), v0 + 1); eq(await evs(), n1, 'kein zweiter Eintrag');
+  const u3 = await U.fleet.post(`/api/fines/${F}/commands`, { ...ub, payload: { amount_eur: 40 } }); eq(u3.status, 409, 'andere Angaben'); eq(u3.data.error, 'version_conflict');
+  const fl2 = await (async () => { const x = await own.post('/api/users', { username: 'w.fuhrpark2', display_name: 'Leitung 2', role: 'fleet', environment: 'test' }); const c = new Client(worker, e, 'w.fuhrpark2'); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; })();
+  const u4 = await fl2.post(`/api/fines/${F}/commands`, ub); eq(u4.status, 409, 'andere Person: ' + JSON.stringify(u4.data));
+  v0 = await ver();
+  const cb = { action: 'confirm_driver', payload: { driver_name_note: 'Fahrer laut Tourenplan', basis: 'tourenplan', evidence: 'Tourenplan KW 44' }, expected_version: v0 };
+  eq((await U.fleet.post(`/api/fines/${F}/commands`, cb)).status, 200); const n2 = await evs();
+  const c2 = await U.fleet.post(`/api/fines/${F}/commands`, cb); eq(c2.status, 200, JSON.stringify(c2.data)); eq(c2.data.duplicate, true); eq(await ver(), v0 + 1); eq(await evs(), n2);
+  eq((await U.fleet.post(`/api/fines/${F}/commands`, { ...cb, payload: { ...cb.payload, evidence: 'anderer Nachweis' } })).status, 409, 'anderer Nachweis');
+  // Wiederholung eines älteren Stands (zwei Schritte zurück) bleibt Konflikt
+  eq((await U.fleet.post(`/api/fines/${F}/commands`, { ...ub, expected_version: v0 - 1 })).status, 409);
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-bussgeld-befehl-funkloch.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
