@@ -2020,7 +2020,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -18460,7 +18460,7 @@ await test('Werkstatt-Tablet in der Halle (Teilagent 23.10.): Kontrolle nach Rep
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const { STRINGS } = await import('../public/i18n.js');
   const vi = app.slice(app.indexOf('async function viewInspection('), app.indexOf('async function viewDepartureCheck('));
-  ok(vi.includes(`<input type="hidden" name="rk" value="\${esc(uid())}">`) && vi.includes("const draft = bindFormDraft('insp_' + caseId, form, '', null);") && vi.includes('const key = form.rk.value || uid();'), 'Entwurf + Kennung im Entwurf');
+  ok(vi.includes(`<input type="hidden" name="rk" value="\${esc(uid())}">`) && vi.includes("const draft = bindFormDraft('insp_' + caseId, form, '', null, ['kmok']);") && vi.includes('const key = form.rk.value || uid();'), 'Entwurf + Kennung im Entwurf');
   ok(vi.includes("draft.clear();") && vi.includes("if (err.offline) draft.save(); toast(err.offline ? `${err.message} ${t('form_draft_kept')}` : err.message, true);"), 'Entwurf nach Erfolg gelöscht, bei Netzabbruch gesichert');
   ok(app.includes("if (err.offline) { S.cmdOffline = { key, at: Date.now() }; actDraftSave(c.id, fAct); }") && app.includes("toast(t(maybeMine ? 'cmd_maybe_saved' : 'case_conflict_kept'), true);") && app.includes("`${err.message} ${t('cmd_offline_kept')}`"), 'Befehle: Hinweise bei Netzabbruch/Konflikt danach');
   for (const l of ['de', 'uk', 'en']) for (const k of ['form_draft_kept', 'cmd_offline_kept', 'cmd_maybe_saved']) ok(typeof STRINGS[l][k] === 'string' && STRINGS[l][k].length > 10, `${l}: ${k}`);
@@ -29808,6 +29808,46 @@ await test('Backlog 825 (Folge aus 824): Auftrag am gekoppelten Fahrzeug nennt d
   ok(app.includes("const via = si.via ? ` · <span data-srcvia>${esc(t('srci_via')"), 'Anzeige im Auftrag');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].srci_via && STRINGS[l].srci_via.includes('{v}'), 'Text srci_via ' + l);
+});
+
+await test('Backlog 826 (Blickwinkel „Werkstatt-Tablet: Kontrolle nach Reparatur für den falschen Vorgang begonnen“): Werkstatt sieht den letzten km-Stand des Auftragsfahrzeugs; kleinerer Stand aus der Kontrolle bleibt an der Kontrolle (nicht in der Akte); Formular zeigt Fahrzeug groß und verlangt Bestätigung', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon'); const db = e.DB.db;
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const inv = async (b) => { const x = await own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; };
+  const users = { fleet: await inv({ username: 'i.leitung', display_name: 'Leitung I', role: 'fleet', environment: 'production' }),
+    ws: await inv({ username: 'i.werkstatt', display_name: 'Werkstatt I', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' }) };
+  const vin = 'WMA06XZZ8RP826001'; const V = 'VIN:' + vin;
+  eq((await users.fleet.post('/api/vehicles', { vin, plate: 'DO-CF 826', site: 'Dortmund', manufacturer: 'MAN' })).status, 201);
+  const k0 = await users.fleet.post(`/api/vehicles/${V}/odometer`, { km: 500000 }); eq(k0.status, 201, JSON.stringify(k0.data));
+  const o = await users.fleet.post(`/api/vehicles/${V}/tires/winter-order`, { workshop_site: 'DORTMUND', request_key: rk() }); eq(o.status, 201, JSON.stringify(o.data));
+  const id = o.data.id;
+  const cmd = async (action, payload = {}) => { const cur = (await users.fleet.get(`/api/cases/${id}`)).data.case; return users.ws.post(`/api/cases/${id}/commands`, { action, command_id: rk(), expected_version: cur.version, payload }); };
+  eq((await cmd('start_repair')).status, 200);
+  const d = (await users.ws.get(`/api/cases/${id}`)).data;
+  ok(d.vehicle && d.vehicle.plate === 'DO-CF 826' && d.vehicle.kind && d.vehicle.manufacturer === 'MAN', 'Fahrzeugdaten für die Kopfzeile: ' + JSON.stringify(d.vehicle && { plate: d.vehicle.plate, kind: d.vehicle.kind }));
+  ok(d.vehicle_info && d.vehicle_info.last_km && d.vehicle_info.last_km.km === 500000 && d.vehicle_info.last_km.measured_at, 'letzter km-Stand für die Werkstatt: ' + JSON.stringify(d.vehicle_info && d.vehicle_info.last_km));
+  // km des Lkw, vor dem der Mechaniker tatsächlich stand (kleiner) → gespeichert an der Kontrolle, nicht in der Akte
+  const items = (await users.ws.get('/api/meta')).data.checklist.map((c) => ({ key: c.key, result: 'ok' }));
+  const r = await users.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items, odometer_km: '312 000' });
+  eq(r.status, 201, JSON.stringify(r.data));
+  ok(r.data.km_rejected && r.data.km_rejected.previous_km === 500000 && r.data.km_rejected.km === 312000, 'Antwort meldet den kleineren Stand: ' + JSON.stringify(r.data.km_rejected));
+  eq(db.prepare('SELECT odometer_km FROM inspections WHERE id=?').get(r.data.id).odometer_km, 312000, 'Stand an der Kontrolle');
+  eq(db.prepare('SELECT km FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 1').get(V).km, 500000, 'Akte unverändert');
+  // Oberfläche + Texte
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const vi = app.slice(app.indexOf('async function viewInspection('), app.indexOf('async function viewDepartureCheck('));
+  ok(vi.includes("plate(veh.plate, { big: true })") && vi.includes("t('irv_submit')") && vi.includes("t('irv_last_km')"), 'Kopfzeile, Knopf und letzter Stand');
+  ok(/if \(kmLower\(\) && !\(\$\('#kmok'\) && \$\('#kmok'\)\.checked\)\) \{ toast\(t\('irv_km_confirm'\), true\);[^\n]*return; \}/.test(vi), 'Speichern erst nach Bestätigung bei kleinerem Stand');
+  ok(vi.indexOf("kmLower() && !") < vi.indexOf("await api('POST', '/api/inspections'"), 'Prüfung vor dem Senden');
+  ok(vi.includes("bindFormDraft('insp_' + caseId, form, '', null, ['kmok'])"), 'Bestätigung nicht im Entwurf');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['irv_plate_hint', 'irv_last_km', 'irv_km_diff', 'irv_km_lower', 'irv_km_lower_ok', 'irv_km_confirm', 'irv_submit']) ok(STRINGS[l][k], `Text ${k} ${l}`);
+    ok(STRINGS[l].irv_submit.includes('{plate}') && STRINGS[l].irv_km_lower.includes('{prev}') && STRINGS[l].irv_km_lower.includes('{plate}'), 'Platzhalter ' + l);
+    ok(STRINGS[l].help_ws_s.split('|').length >= 22, 'Hilfe-Absatz ' + l);
+  }
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
