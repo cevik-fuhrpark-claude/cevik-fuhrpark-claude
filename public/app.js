@@ -24,7 +24,7 @@ const readCsvFile = async (f) => { try { return await readCsvRaw(f); } catch (e)
 // Backlog 793: uid() statt randomUUID – randomUUID fehlt in Android-WebView/Chrome < 92 und iOS < 15.4 (Buchung scheiterte dort mit Skriptfehler)
 const rkFor = (form, b) => { const sig = JSON.stringify(b); if (!form.dataset.rk || form.dataset.rkSig !== sig) { form.dataset.rk = uid(); form.dataset.rkSig = sig; } return form.dataset.rk; };
 // Backlog 804 (Funkloch): Antwort verloren (Zeitlimit/Netz) – meldet der Server beim erneuten Senden derselben Eingaben „gibt es bereits“,
-// war der erste Versuch gespeichert (nur für Endpunkte mit eindeutiger Dublettenprüfung: Vertrag, Führerscheinkontrolle)
+// war der erste Versuch gespeichert (nur für Endpunkte mit eindeutiger Dublettenprüfung: Vertrag, Führerscheinkontrolle, Auslesung, Fahrerzuordnung)
 const lostMark = (form, b, err) => { if (err && err.offline) form.dataset.lostSig = JSON.stringify(b); };
 const lostDup = (form, b, err, codes) => !!err && codes.includes(err.code) && form.dataset.lostSig === JSON.stringify(b);
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
@@ -4118,7 +4118,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
     catch (err) { toast(err.message, true); if (err.code === 'km_not_plausible') { $('#kmnote').hidden = false; kf.note.required = true; kf.note.focus(); } }
   };
   bindTachoCancel(document, () => viewVehicle(id));
-  const tvf = $('#tvf'); if (tvf) tvf.onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: id, ...Object.fromEntries(new FormData(tvf)) }); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+  const tvf = $('#tvf'); if (tvf) tvf.onsubmit = async (e) => { e.preventDefault(); const tb = { kind: 'massenspeicher', vehicle_id: id, ...Object.fromEntries(new FormData(tvf)) }; try { await api('POST', '/api/tacho/downloads', tb, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewVehicle(id); } catch (err) { if (lostDup(tvf, tb, err, ['duplicate'])) { toast(t('saved_before')); viewVehicle(id); return; } lostMark(tvf, tb, err); toast(err.message, true); } }; // Backlog 805
   const df = $('#df');
   // Fahrerliste nachladen: nur Fahrer der angezeigten Umgebung (Inhaber sah sonst auch Betriebs-/Testkonten → 400), Ladefehler ersetzt
   // nicht die ganze Akte, ohne Fahrer Hinweis statt leerer Auswahl (20.10.2026)
@@ -4131,7 +4131,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   }
   if (df && us && us.length) {
     $('#drvsel').innerHTML = us.map((u) => `<option value="${esc(u.id)}">${esc(u.display_name)}${u.driver_record_active === 0 ? ` (${esc(t('drv_rec_left'))})` : ''}</option>`).join('');
-    df.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/drivers`, { user_id: $('#drvsel').value, end_previous: $('#endprev').checked }); if (r.driving_ban_fines && r.driving_ban_fines.length) toast(t('drv_ban_warn').replace('{list}', r.driving_ban_fines.map((b) => `${b.fine_no} (${tn('ban_months', b.months)})`).join(', ')), true); else if (r.driver_record_left) toast(t('drv_rec_left_warn'), true); else if (r.ended_previous.length) toast(`${t('ended_assignment')}: ${r.ended_previous.join(', ')}`); else if (r.other_open.length) toast(`${t('also_assigned')}: ${r.other_open.join(', ')}`, true); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+    df.onsubmit = async (e) => { e.preventDefault(); const db = { user_id: $('#drvsel').value, end_previous: $('#endprev').checked }; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/drivers`, db, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805 */ if (r.driving_ban_fines && r.driving_ban_fines.length) toast(t('drv_ban_warn').replace('{list}', r.driving_ban_fines.map((b) => `${b.fine_no} (${tn('ban_months', b.months)})`).join(', ')), true); else if (r.driver_record_left) toast(t('drv_rec_left_warn'), true); else if (r.ended_previous.length) toast(`${t('ended_assignment')}: ${r.ended_previous.join(', ')}`); else if (r.other_open.length) toast(`${t('also_assigned')}: ${r.other_open.join(', ')}`, true); viewVehicle(id); } catch (err) { if (lostDup(df, db, err, ['already_assigned'])) { toast(t('saved_before')); viewVehicle(id); return; } lostMark(df, db, err); toast(err.message, true); } };
   }
   // Zuordnung beenden wirkt auf die Fahrerermittlung (Bußgelder) – nachfragen
   $$('[data-end]').forEach((b) => (b.onclick = async () => { if (!confirm(t('end_assign_confirm').replace('{name}', b.dataset.name).replace('{plate}', d.vehicle.plate))) return; try { await api('DELETE', '/api/assignments/' + b.dataset.end); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
@@ -5343,7 +5343,7 @@ async function viewDriver(id) {
   // Klassen nur beim Führerschein (Server speichert sie sonst nicht – vorher still verworfen, 20.10.2026)
   if (ddf) { const cls = () => { $('#ddcls').hidden = ddf.kind.value !== 'fuehrerschein'; }; ddf.kind.onchange = cls; cls();
     ddf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(ddf)); if (b.kind !== 'fuehrerschein') delete b.license_classes; return post(`/api/drivers/${id}/documents`, b, ddf); }; }
-  const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); return post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }); };
+  const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); return post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }, tdf, ['duplicate']); }; // Backlog 805
   const lcf = $('#lcf'); if (lcf) lcf.onsubmit = (e) => { e.preventDefault(); return post(`/api/drivers/${id}/license-checks`, Object.fromEntries(new FormData(lcf)), lcf, ['duplicate']); };
   const edf = $('#edf'); if (edf) edf.onsubmit = async (e) => { e.preventDefault(); const all = Object.fromEntries(new FormData(edf)); all.active = !!edf.active.checked;
     // nur geänderte Felder auf dem gelesenen Stand senden (älteres Formular machte sonst z. B. eine Deaktivierung still rückgängig)

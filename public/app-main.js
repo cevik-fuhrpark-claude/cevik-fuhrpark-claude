@@ -60,7 +60,7 @@ const readCsvFile = async (f) => { try { return await readCsvRaw(f); } catch (e)
 // Backlog 793: uid() statt randomUUID – randomUUID fehlt in Android-WebView/Chrome < 92 und iOS < 15.4 (Buchung scheiterte dort mit Skriptfehler)
 const rkFor = (form, b) => { const sig = JSON.stringify(b); if (!form.dataset.rk || form.dataset.rkSig !== sig) { form.dataset.rk = uid(); form.dataset.rkSig = sig; } return form.dataset.rk; };
 // Backlog 804 (Funkloch): Antwort verloren (Zeitlimit/Netz) – meldet der Server beim erneuten Senden derselben Eingaben „gibt es bereits“,
-// war der erste Versuch gespeichert (nur für Endpunkte mit eindeutiger Dublettenprüfung: Vertrag, Führerscheinkontrolle)
+// war der erste Versuch gespeichert (nur für Endpunkte mit eindeutiger Dublettenprüfung: Vertrag, Führerscheinkontrolle, Auslesung, Fahrerzuordnung)
 const lostMark = (form, b, err) => { if (err && err.offline) form.dataset.lostSig = JSON.stringify(b); };
 const lostDup = (form, b, err, codes) => !!err && codes.includes(err.code) && form.dataset.lostSig === JSON.stringify(b);
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };

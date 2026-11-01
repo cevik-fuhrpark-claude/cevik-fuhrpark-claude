@@ -29060,6 +29060,21 @@ await test('Backlog 805a (Blickwinkel „Werkstatt erfasst Prüfungen/Reifen im 
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-pruefung-funkloch.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 805b (Blickwinkel „Funkloch“): Fahrtenschreiber-Auslesung (Fahrzeug/Fahrer) und Fahrerzuordnung mit Zeitlimit; Wiederholung legt nichts doppelt an (409 duplicate bzw. already_assigned), nach verlorener Antwort „War bereits gespeichert“; UI-Prüfung `ui-auslesung-zuordnung-funkloch.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("await api('POST', '/api/tacho/downloads', tb, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewVehicle(id); } catch (err) { if (lostDup(tvf, tb, err, ['duplicate']))"), 'Massenspeicher');
+  ok(app.includes("...Object.fromEntries(new FormData(tdf)) }, tdf, ['duplicate']);"), 'Fahrerkarte');
+  ok(app.includes("/drivers`, db, { timeoutMs: SEND_TIMEOUT_MS });") && app.includes("if (lostDup(df, db, err, ['already_assigned']))"), 'Fahrerzuordnung');
+  const { U } = await freshWorld();
+  const V = 'VIN:WMA15SZZ2HM722774';
+  const tb = { kind: 'massenspeicher', vehicle_id: V, downloaded_on: BERLIN_TODAY, evidence: 'MS 805' };
+  eq((await U.fleet.post('/api/tacho/downloads', tb)).status, 201); const t2 = await U.fleet.post('/api/tacho/downloads', tb); eq(t2.status, 409); eq(t2.data.error, 'duplicate', 'Auslesung nie doppelt');
+  const a1 = await U.fleet.post(`/api/vehicles/${V}/drivers`, { user_id: U.driver.id, evidence: 'Dispo 805' }); eq(a1.status, 201, JSON.stringify(a1.data));
+  const a2 = await U.fleet.post(`/api/vehicles/${V}/drivers`, { user_id: U.driver.id, evidence: 'Dispo 805' }); eq(a2.status, 409); eq(a2.data.error, 'already_assigned', 'Zuordnung nie doppelt');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-auslesung-zuordnung-funkloch.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

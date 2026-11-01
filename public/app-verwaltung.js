@@ -601,7 +601,7 @@ async function viewDriver(id) {
   // Klassen nur beim Führerschein (Server speichert sie sonst nicht – vorher still verworfen, 20.10.2026)
   if (ddf) { const cls = () => { $('#ddcls').hidden = ddf.kind.value !== 'fuehrerschein'; }; ddf.kind.onchange = cls; cls();
     ddf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(ddf)); if (b.kind !== 'fuehrerschein') delete b.license_classes; return post(`/api/drivers/${id}/documents`, b, ddf); }; }
-  const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); return post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }); };
+  const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); return post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }, tdf, ['duplicate']); }; // Backlog 805
   const lcf = $('#lcf'); if (lcf) lcf.onsubmit = (e) => { e.preventDefault(); return post(`/api/drivers/${id}/license-checks`, Object.fromEntries(new FormData(lcf)), lcf, ['duplicate']); };
   const edf = $('#edf'); if (edf) edf.onsubmit = async (e) => { e.preventDefault(); const all = Object.fromEntries(new FormData(edf)); all.active = !!edf.active.checked;
     // nur geänderte Felder auf dem gelesenen Stand senden (älteres Formular machte sonst z. B. eine Deaktivierung still rückgängig)
