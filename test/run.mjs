@@ -29924,6 +29924,12 @@ await test('Backlog 829 (Blickwinkel „Werkstatt trägt Wartung am Anhänger mi
   ok(/nicht gespeichert|не буде збережено|not be saved/.test(STRINGS.de.mdone_km_lower + STRINGS.uk.mdone_km_lower + STRINGS.en.mdone_km_lower), 'Hinweis nennt die Folge');
 });
 
+await test('Backlog 830 (Folge aus 829): „Kilometerstand erfassen“ in der Fahrzeugakte zeigt beim Anhänger den Hinweis „nur Achskilometerzähler des Anhängers“', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("<form id=\"kf\"><label>${esc(t('km'))}${v.kind === 'anhaenger' ? `<span class=\"hint\" id=\"kfkmtr\">${esc(t('mdone_kmtr'))}</span>` : ''}</label>"), 'Hinweis am km-Feld');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
