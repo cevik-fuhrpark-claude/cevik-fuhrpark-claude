@@ -3516,9 +3516,35 @@ async function viewDepartureCheck(preId) {
   photoLimitWatch($('#ph'));
   const draft = bindFormDraft('check', form, 'v', preId);
   tachoCheck();
+  // Backlog 823 (Blickwinkel „Fahrer wechselt mitten in der Abfahrtskontrolle das Fahrzeug“): Antworten, km-Stand und Fotos blieben beim
+  // Umstellen der Auswahl stehen und wurden still dem neuen Fahrzeug zugeschrieben (Mängel/Sperre am falschen Lkw, km-Stand des anderen
+  // Fahrzeugs). Jetzt Rückfrage unter der Auswahl: neu prüfen (leert alles) oder übernehmen (vorher falsch gewählt); Senden erst danach.
+  let dcVeh = $('#v').value, dcFrom = null; // zuletzt gewähltes Fahrzeug bzw. Fahrzeug, für das die Antworten eingetragen wurden
+  const dcHasInput = () => $$('input[type=radio]:checked', form).length > 0 || !!$('#km').value.trim() || !!($('#ph').files && $('#ph').files.length);
+  const dcPlate = (id) => { const v = vs.find((x) => x.id === id); return v ? v.plate : id; };
+  const dcClose = () => { dcFrom = null; const b = $('#dcsw'); if (b) b.remove(); };
+  // erst nach Entwurf/QR-Vorauswahl gebunden – deren Auswahl löst keine Rückfrage aus
+  $('#v').addEventListener('change', () => {
+    const nv = $('#v').value;
+    if (dcFrom && (nv === dcFrom || !nv)) { if (nv) { dcClose(); dcVeh = nv; } return; }
+    if (!dcFrom && dcVeh && nv && nv !== dcVeh && dcHasInput()) dcFrom = dcVeh;
+    if (nv) dcVeh = nv;
+    if (!dcFrom || !nv) return;
+    let box = $('#dcsw');
+    if (!box) { box = document.createElement('div'); box.id = 'dcsw'; box.className = 'panel alert'; box.setAttribute('role', 'alert'); $('#known').insertAdjacentElement('beforebegin', box); }
+    box.innerHTML = `<p><b>${esc(t('dcsw_title').replace('{from}', dcPlate(dcFrom)).replace('{to}', dcPlate(nv)))}</b></p><p class="small">${esc(t('dcsw_hint'))}</p><div class="actions"><button type="button" class="btn" id="dcswnew">${esc(t('dcsw_new'))}</button><button type="button" class="btn secondary" id="dcswkeep">${esc(t('dcsw_keep'))}</button></div>`;
+    $('#dcswnew').onclick = () => {
+      $$('.checkitem', form).forEach((row) => { $$('input[type=radio]', row).forEach((r) => (r.checked = false)); const det = $('.detail', row); det.hidden = true; $$('input', det).forEach((x) => { if (x.type === 'checkbox') x.checked = false; else { x.value = ''; x.required = false; } }); row.classList.remove('missing'); });
+      $('#km').value = ''; $('#ph').value = ''; $('#ph').dispatchEvent(new Event('change', { bubbles: true }));
+      dcClose(); tachoCheck(); draft.save(); toast(t('dcsw_cleared'));
+      const first = $('.checkitem input[type=radio]', form); if (first) first.focus();
+    };
+    $('#dcswkeep').onclick = () => { dcClose(); draft.save(); $('#v').focus(); };
+  });
   const key = uid();
   form.onsubmit = async (e) => {
     e.preventDefault();
+    if (dcFrom && $('#dcsw')) { $('#dcsw').scrollIntoView({ block: 'center' }); toast(t('dcsw_decide'), true); return; }
     const sb = $('#sb'); // festhalten – Seitenwechsel während des Hochladens (siehe Meldung)
     const who = outboxWho();
     // km-Stand wie der Server prüfen (0–5.000.000, ganze Zahl, Tausenderpunkt erlaubt) – sonst scheiterte die Kontrolle offline dauerhaft im Postausgang (20.10.2026)

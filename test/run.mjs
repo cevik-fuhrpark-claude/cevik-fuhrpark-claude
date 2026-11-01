@@ -29687,6 +29687,23 @@ await test('Backlog 821 (Blickwinkel „Inhaber mit Handy und PC“ – Einstell
   eq((await U.fleet.put('/api/settings', { repair_cost_limit_net: '1', expected: {} })).status, 403, 'nur Inhaber');
 });
 
+await test('Backlog 823 (Blickwinkel „Fahrer wechselt mitten in der Abfahrtskontrolle das Fahrzeug“): Rückfrage statt still übernommener Antworten/km/Fotos, Senden bis zur Entscheidung gesperrt, „Neu prüfen“ leert alles; Texte DE/UK/EN mit beiden Kennzeichen; UI-Prüfung eingetragen', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('function kmInputOk('));
+  ok(fn.includes("if (!dcFrom && dcVeh && nv && nv !== dcVeh && dcHasInput()) dcFrom = dcVeh;"), 'Rückfrage nur bei Eingaben und echtem Wechsel');
+  ok(fn.includes("const dcHasInput = () => $$('input[type=radio]:checked', form).length > 0 || !!$('#km').value.trim() || !!($('#ph').files && $('#ph').files.length);"), 'Antworten, km und Fotos zählen als Eingabe');
+  ok(fn.includes("if (dcFrom && $('#dcsw')) { $('#dcsw').scrollIntoView({ block: 'center' }); toast(t('dcsw_decide'), true); return; }"), 'Senden gesperrt');
+  ok(fn.indexOf("bindFormDraft('check', form, 'v', preId)") < fn.indexOf("$('#v').addEventListener('change', () => {\n    const nv"), 'erst nach Entwurf/QR-Vorauswahl gebunden');
+  ok(fn.includes("$('#km').value = ''; $('#ph').value = '';"), '„Neu prüfen“ leert km und Fotos');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['dcsw_title', 'dcsw_hint', 'dcsw_new', 'dcsw_keep', 'dcsw_cleared', 'dcsw_decide']) ok(STRINGS[l][k], `Text ${k} ${l}`);
+    ok(STRINGS[l].dcsw_title.includes('{from}') && STRINGS[l].dcsw_title.includes('{to}'), 'beide Kennzeichen ' + l);
+  }
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-abfahrt-fahrzeugwechsel.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

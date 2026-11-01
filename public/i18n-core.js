@@ -1166,6 +1166,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 807 (Blickwinkel „Fahrer im Ausland, Roaming teuer – Fotos später“): Fotos auf dem Gerät zurückhalten
 // [CLAUDE] Backlog 808: Vertrag gleichzeitig bearbeitet – Felder der anderen Person
 // [CLAUDE] Backlog 822: Einstellungen (nur Inhaber) – Konflikt kommt vom eigenen zweiten Gerät/Fenster, nicht von „jemand anderem“
+// [CLAUDE] Backlog 823: Fahrzeug mitten in der Abfahrtskontrolle gewechselt – Rückfrage statt still übernommener Antworten
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
