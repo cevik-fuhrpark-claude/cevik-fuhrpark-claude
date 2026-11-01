@@ -403,6 +403,7 @@ UI-Vertrag beenden und Hinweis archivieren im Funkloch: ohne Antwort nach dem Ze
 UI-Fahrerzuordnung beenden und Vertrag bearbeiten im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern meldet „War bereits gespeichert“ (DE/UK/EN; Backlog 805j)|ui-zuordnung-vertrag-funkloch.py|/tmp/cfp-zuordnung-vertrag-funkloch.log
 UI-Passwort ändern im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern meldet „War bereits gespeichert“ statt „Altes Passwort falsch“ (DE/UK/EN; Backlog 805k)|ui-passwort-funkloch.py|/tmp/cfp-passwort-funkloch.log
 UI-Zeitzonen-Hinweis: Gerät auf Kyjiw/New York zeigt an Schadenzeitpunkt und Push-Ruhezeit den Unterschied zur deutschen Zeit, Gerät auf Berlin keinen Hinweis (DE/UK/EN; Backlog 806)|ui-zeitzone-hinweis.py|/tmp/cfp-zeitzone-hinweis.log
+UI-Fotos später senden (Roaming): Meldung geht sofort, Fotos bleiben auf dem Gerät, Vorgang zeigt „N Fotos folgen“, Startseite „Fotos jetzt senden“ bzw. „nicht senden“ (DE/UK/EN; Backlog 807)|ui-fotos-spaeter.py|/tmp/cfp-fotos-spaeter.log
 '
 N=0
 NL='

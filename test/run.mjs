@@ -18389,7 +18389,7 @@ await test('Formularentwurf (Backlog 183): Abfahrtskontrolle und Meldung sichern
   ok(/sessionStorage\.setItem\(key, JSON\.stringify\(\{ \.\.\.extra, at: new Date\(\)\.toISOString\(\), v, photos \}\)\)/.test(app), 'Sitzungsspeicher, nicht localStorage');
   ok(app.includes("if (x && !(preId && x.v[vehField] && x.v[vehField] !== preId))"), 'QR eines anderen Fahrzeugs übernimmt den Entwurf nicht');
   ok(app.includes("const save = (e) => { if (e.isTrusted) d.save(); };"), 'nur echte Eingaben sichern');
-  ok(app.includes("const draft = bindFormDraft('new', $('#f'), 'veh', preId, ['vq']);") && app.includes("const draft = bindFormDraft('check', form, 'v', preId);"), 'beide Formulare angebunden');
+  ok(app.includes("const draft = bindFormDraft('new', $('#f'), 'veh', preId, ['vq', 'phlater']);") && app.includes("const draft = bindFormDraft('check', form, 'v', preId);"), 'beide Formulare angebunden');
   const nNew = app.slice(app.indexOf('async function viewNew('), app.indexOf('function myPlanned('));
   const nChk = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('function kmInputOk('));
   for (const [nm, src, path] of [['Meldung', nNew, '/api/cases'], ['Kontrolle', nChk, '/api/inspections']]) {
@@ -29340,6 +29340,42 @@ await test('Backlog 806 (Blickwinkel „Handy steht auf ukrainischer Zeit“): H
   ok(app.includes("${tzNote() ? `<div style=\"grid-column:1/-1\">${tzNote()}</div>` : ''}"), 'Push-Ruhezeit');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].tz_device_diff.includes('{d}') && STRINGS[l].tz_device_diff.includes('{now}'), 'Text ' + l);
+});
+
+await test('Backlog 807 (Blickwinkel „Fahrer im Ausland, Roaming teuer – Fotos später“): Meldung mit zurückgehaltenen Fotos – Ankündigung am Vorgang mit Anzahl eingegangener Fotos, ungültige Werte ignoriert, Wiederholung bleibt dieselbe Meldung; Oberfläche hält Fotos im Postausgang zurück', async () => {
+  const key = rk();
+  const body = { vehicle_id: V1, description: 'Spiegel rechts gebrochen (Polen)', priority: 'niedrig', driveability: 'fahrbereit', request_key: key, photos_later: 3 };
+  const r = await users.driver.post('/api/cases', body); eq(r.status, 201, 'Meldung:');
+  // Wiederholung aus dem Postausgang (auch ohne bzw. mit anderer Fotozahl) ist dieselbe Meldung – kein Konflikt
+  const again = await users.driver.post('/api/cases', { ...body, photos_later: 2 }); eq(again.data.duplicate, true, 'Wiederholung:'); eq(again.data.id, r.data.id);
+  let d = await users.fleet.get(`/api/cases/${r.data.id}`);
+  eq(JSON.stringify(d.data.photos_later), JSON.stringify({ announced: 3, received: 0 }), 'Leitung sieht Ankündigung');
+  eq((await users.driver.get(`/api/cases/${r.data.id}`)).data.photos_later.announced, 3, 'Fahrer sieht Ankündigung');
+  eq(d.data.events.find((e) => e.action === 'create').payload.photos_later, 3, 'Vermerk im Verlauf');
+  const png = concatBytes(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), crypto.getRandomValues(new Uint8Array(300)));
+  eq((await users.driver.req('POST', `/api/cases/${r.data.id}/files`, png, { 'content-type': 'image/png', 'x-filename': 'spiegel.png' })).status, 201, 'Foto nachgereicht:');
+  // Foto der Leitung zählt nicht als angekündigtes Foto der meldenden Person
+  const png2 = concatBytes(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), crypto.getRandomValues(new Uint8Array(300)));
+  eq((await users.fleet.req('POST', `/api/cases/${r.data.id}/files`, png2, { 'content-type': 'image/png', 'x-filename': 'leitung.png' })).status, 201, 'Foto Leitung:');
+  d = await users.fleet.get(`/api/cases/${r.data.id}`);
+  eq(d.data.photos_later.received, 1, 'eingegangen');
+  // ohne Angabe bzw. ungültig: kein Vermerk, Meldung wird nicht abgewiesen
+  for (const pl of [undefined, 0, 11, 2.5, 'drei', -1]) {
+    const x = await users.driver.post('/api/cases', { vehicle_id: V1, description: 'Prüfung Fotozahl ' + String(pl), request_key: rk(), ...(pl === undefined ? {} : { photos_later: pl }) });
+    eq(x.status, 201, 'Meldung mit ' + pl); eq((await users.fleet.get(`/api/cases/${x.data.id}`)).data.photos_later, undefined, 'kein Vermerk bei ' + pl);
+  }
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (item.hold && item.photo_target && !unmetered()) continue;"), 'Postausgang überspringt zurückgehaltene Fotos');
+  ok(app.includes("const held = await photosLater('/api/cases', body, r, r.id, files, who, true);"), 'direktes Senden hält Fotos zurück');
+  ok(app.includes("bindFormDraft('new', $('#f'), 'veh', preId, ['vq', 'phlater'])"), 'Auswahl nicht im Entwurf');
+  ok(/data-obx-release=\"\$\{esc\(c\.id\)\}\"/.test(app) && app.includes('data-obx-held-del'), 'Knöpfe senden/verwerfen');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['photos_later_opt', 'photos_later_hint', 'photos_held_fail', 'outbox_photos_held_hint', 'photos_send_now', 'photos_held_discard', 'photos_held_discard_confirm', 'photos_send_offline']) ok(STRINGS[l][k], k + ' ' + l);
+    ok(STRINGS[l].photos_later_case.includes('{n}') && STRINGS[l].photos_later_case.includes('{x}'), 'Vorgangstext ' + l);
+    ok(PLURALS[l].photos_held && PLURALS[l].outbox_photos_held, 'Mehrzahl ' + l);
+  }
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

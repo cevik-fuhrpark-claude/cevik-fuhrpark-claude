@@ -1648,11 +1648,12 @@ async function flushOutboxRun() {
   let busy = new Set();
   if (LOCKS && LOCKS.query) { try { busy = new Set(((await LOCKS.query()).held || []).map((l) => l.name)); } catch {} }
   flushing = true;
-  const done = new Set(); const failedNow = new Map(); const photoPending = new Map(); let kept = 0;
+  const done = new Set(); const failedNow = new Map(); const photoPending = new Map(); const heldNow = new Map(); let kept = 0;
   const key = outboxKey(); // Schlüssel festhalten: endet die Anmeldung mitten im Senden, wird der Stand trotzdem gespeichert (19.10.2026)
   try {
     for (const item of list) {
       if (!S.me) { kept++; break; } // Anmeldung beendet: nichts mehr ohne Konto senden
+      if (item.hold && item.photo_target && !unmetered()) continue; // Backlog 807: Fotos bewusst zurückgehalten – erst im WLAN bzw. auf Wunsch
       if (PHOTO_UPLOADING.has(item.body.request_key) || busy.has('cfp_photo_' + item.body.request_key)) { kept++; continue; } // lädt gerade im Vordergrund hoch (uploadPhotosSafe, auch in anderem Tab)
       try {
         // Meldung/Kontrolle schon angekommen, nur die Fotos fehlen noch (Netz brach beim Hochladen ab): nur Fotos nachreichen
@@ -1663,6 +1664,12 @@ async function flushOutboxRun() {
         const ox = { asUser: item.user_id || S.me.id, env: item.env, keepDirty: true };
         if (!r) r = await api('POST', item.path || '/api/cases', sendBody, { ...ox, timeoutMs: SEND_TIMEOUT_MS });
         let failed = 0; let skippedTxt = '';
+        // Backlog 807: offline gespeicherte Meldung mit zurückgehaltenen Fotos – nur die Meldung senden, Fotos bleiben mit Ziel-Vorgang auf dem Gerät
+        if (item.photos && item.hold && !unmetered()) {
+          heldNow.set(item.body.request_key, { target: photoTarget(item, r), case_no: r.case_no });
+          toast(`${t('report_sent')}: ${r.case_no} · ${tn('photos_held', item.photos)}${r.urgent_push_recipients === 0 ? ' · ⚠ ' + t('no_push_reach') : ''}`, r.urgent_push_recipients === 0);
+          continue;
+        }
         if (item.photos) {
           const ph = await photosGet(item.body.request_key).catch(() => null);
           const target = photoTarget(item, r);
@@ -1693,15 +1700,19 @@ async function flushOutboxRun() {
     }
   } finally {
     try { outboxSet(outboxGet(key).filter((x) => !done.has(x.body.request_key)).map((x) => (failedNow.has(x.body.request_key) ? { ...x, failed: failedNow.get(x.body.request_key) }
-      : photoPending.has(x.body.request_key) ? { ...x, photo_target: photoPending.get(x.body.request_key).target || null, case_no: photoPending.get(x.body.request_key).case_no || null } : x)), key); } catch {}
+      : photoPending.has(x.body.request_key) ? { ...x, photo_target: photoPending.get(x.body.request_key).target || null, case_no: photoPending.get(x.body.request_key).case_no || null }
+      : heldNow.has(x.body.request_key) ? { ...x, photo_target: heldNow.get(x.body.request_key).target || null, case_no: heldNow.get(x.body.request_key).case_no || null } : x)), key); } catch {}
     flushing = false;
   }
-  if (failedNow.size || done.size) refreshOutbox();
+  if (failedNow.size || done.size || heldNow.size) refreshOutbox();
   // gesendete Meldungen sofort in der Startseite zeigen (18.10.2026: erschienen erst nach dem Neuladen) – nur ohne Eingaben
   if (done.size && /^#\/?$/.test(location.hash || '#/') && !viewDirty()) route();
   if (kept && S.me && !S.outboxRetry) S.outboxRetry = setTimeout(() => { S.outboxRetry = null; if (navigator.onLine) flushOutbox(); }, 60000);
 }
 window.addEventListener('online', () => flushOutbox());
+// Backlog 807: Verbindung ohne Volumenkosten (WLAN/Kabel) – nur wo der Browser die Art meldet (Android/Chrome; iPhone nicht: dort „Fotos jetzt senden“)
+function unmetered() { try { const c = navigator.connection; return !!(c && (c.type === 'wifi' || c.type === 'ethernet')); } catch { return false; } }
+try { if (navigator.connection && navigator.connection.addEventListener) navigator.connection.addEventListener('change', () => { if (unmetered() && outboxGet().some((x) => x.hold && !x.failed)) flushOutbox(); }); } catch {}
 // Hinweis „wartet auf Verbindung“ und Liste der vom Server abgewiesenen Meldungen (Text zum Kopieren, erneut senden, verwerfen)
 function outboxText(x) {
   const b = x.body || {};
@@ -1722,7 +1733,8 @@ function otherEnvOutbox() {
 }
 function outboxBanner() {
   if (!S.me) return '';
-  const all = outboxGet(); const n = all.filter((x) => !x.failed && !x.photo_target).length; const np = all.filter((x) => !x.failed && x.photo_target).length; const bad = [...all.filter((x) => x.failed), ...otherEnvOutbox()];
+  const all = outboxGet(); const n = all.filter((x) => !x.failed && !x.photo_target).length; const np = all.filter((x) => !x.failed && x.photo_target && !x.hold).length;
+  const held = all.filter((x) => !x.failed && x.photo_target && x.hold); const nh = held.reduce((a, x) => a + (Number(x.photos) || 0), 0); const bad = [...all.filter((x) => x.failed), ...otherEnvOutbox()];
   let html = '';
   if (bad.length) {
     html += `<div class="panel alert" id="outbox_failed" role="alert"><h2>${esc(tn('outbox_failed_n', bad.length))}</h2><p class="small">${esc(tn('outbox_failed_hint', bad.length))}</p>${bad.map((x) => {
@@ -1735,6 +1747,8 @@ function outboxBanner() {
   }
   // Meldung schon angelegt, nur Fotos fehlen: eigener Text (sah sonst wie eine ungesendete Meldung aus → Doppelmeldung, 20.10.2026)
   if (n || np) html += `<div class="panel alert" id="outbox" role="status">${[n ? esc(tn('outbox_pending', n)) : '', np ? esc(tn('outbox_photos_pending', np)) : ''].filter(Boolean).join('<br>')}</div>`;
+  // Backlog 807: bewusst zurückgehaltene Fotos – eigener, ruhiger Hinweis mit „jetzt senden“ (kein Fehler, keine Wartezeit auf Verbindung)
+  if (nh) html += `<div class="panel" id="outbox_held" role="status" data-outboxheld><p>${esc(tn('outbox_photos_held', nh))} ${held.map((x) => (x.case_no ? `<a href="#/cases/${esc(x.photo_target)}">${esc(x.case_no)}</a>` : '')).filter(Boolean).join(', ')}</p><p class="small muted">${esc(t('outbox_photos_held_hint'))}</p><div class="actions"><button type="button" class="btn secondary" data-obx-release>${esc(t('photos_send_now'))}</button><button type="button" class="btn secondary" data-obx-held-del>${esc(t('photos_held_discard'))}</button></div></div>`;
   return html ? `<div id="outbox_area">${html}</div>` : '';
 }
 // Nach dem Senden: Hinweisbereich der aktuellen Seite aktualisieren, ohne die Seite neu aufzubauen (Eingaben bleiben)
@@ -1758,6 +1772,22 @@ function bindOutbox() {
     const rest = outboxGet(k).filter((x) => x.body.request_key !== rk);
     try { if (rest.length) localStorage.setItem(k, JSON.stringify(rest)); else localStorage.removeItem(k); } catch {}
     await photosDel(rk).catch(() => {}); refreshOutbox();
+  };
+  // Backlog 807: zurückgehaltene Fotos jetzt senden (alle bzw. die eines Vorgangs) oder bewusst verwerfen
+  for (const b of document.querySelectorAll('[data-obx-release]')) b.onclick = async () => {
+    const cid = b.dataset.obxRelease || '';
+    outboxSet(outboxGet().map((x) => (x.hold && x.photo_target && (!cid || x.photo_target === cid) ? { ...x, hold: undefined } : x)));
+    refreshOutbox(); if (navigator.onLine === false) { toast(t('photos_send_offline')); return; }
+    await flushOutbox();
+    if (cid && location.hash === '#/cases/' + cid && !viewDirty()) route();
+  };
+  for (const b of document.querySelectorAll('[data-obx-held-del]')) b.onclick = async () => {
+    if (!confirm(t('photos_held_discard_confirm'))) return;
+    // nach Schlüssel (outboxGet liefert bei jedem Aufruf neue Objekte)
+    const gone = new Set(outboxGet().filter((x) => x.hold && x.photo_target && !x.failed).map((x) => x.body.request_key));
+    outboxSet(outboxGet().filter((x) => !gone.has(x.body.request_key)));
+    for (const k of gone) await photosDel(k).catch(() => {});
+    refreshOutbox();
   };
   for (const b of document.querySelectorAll('[data-obx-retry]')) b.onclick = async () => {
     const key = b.dataset.obxRetry;
@@ -1783,13 +1813,13 @@ async function vehiclesCached() {
 }
 // Netz bricht beim Foto-Upload des direkten Sendens ab: restliche Fotos auf dem Gerät speichern und über den Postausgang nachreichen
 // (Meldung ist schon angelegt – Eintrag nur mit Fotoziel; 18.10.2026: Fotos gingen sonst verloren). Rückgabe: Anzahl gespeicherter Fotos.
-async function photosLater(path, body, r, target, files, who = outboxWho()) {
+async function photosLater(path, body, r, target, files, who = outboxWho(), hold = false) {
   try {
     if (!who) return 0;
     const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name });
     await photosPut(body.request_key, list);
     outboxAdd(path, body, list.length, who);
-    outboxSet(outboxGet(who.key).map((x) => (x.body.request_key === body.request_key ? { ...x, photo_target: target, case_no: r.case_no || null } : x)), who.key);
+    outboxSet(outboxGet(who.key).map((x) => (x.body.request_key === body.request_key ? { ...x, photo_target: target, case_no: r.case_no || null, ...(hold ? { hold: true } : {}) } : x)), who.key);
     return list.length;
   } catch { return 0; }
 }
@@ -2489,6 +2519,7 @@ async function viewNew(preId) {
     <label for="l">${esc(t('location'))}</label><input id="l" maxlength="300">
     ${occurredFields(null)}
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('photos_now_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
+    <div id="phlater_w" hidden><label class="check" style="margin-top:6px"><input type="checkbox" id="phlater"> ${esc(t('photos_later_opt'))}</label><p class="small muted" style="margin:2px 0 0">${esc(t('photos_later_hint'))}</p></div>
     <div class="actions"><button class="btn block" id="sb">${esc(t('send_report'))}</button></div></form>`, 'new');
   // Genau ein zugeordnetes Fahrzeug: vorauswählen (Fahrer kann jederzeit ein anderes wählen)
   if (mine.length === 1) { const r = $(`input[name=veh][value="${CSS.escape(mine[0].id)}"]`); if (r) r.checked = true; }
@@ -2543,7 +2574,9 @@ async function viewNew(preId) {
   $$('input[name=drv]').forEach((x) => x.addEventListener('change', fuelDrv));
   $$('input[name=veh]').forEach((x) => x.addEventListener('change', hints)); // Backlog 634: Hinweis hängt auch vom gewählten Fahrzeug ab
   photoLimitWatch($('#ph'));
-  const draft = bindFormDraft('new', $('#f'), 'veh', preId, ['vq']);
+  // Backlog 807: Auswahl „Fotos später senden“ nur mit gewählten Fotos zeigen (nicht im Entwurf gemerkt – Fotos werden nicht wiederhergestellt)
+  $('#ph').addEventListener('change', () => { const w = $('#phlater_w'); if (w) w.hidden = !($('#ph').files || []).length; if (w && w.hidden) $('#phlater').checked = false; });
+  const draft = bindFormDraft('new', $('#f'), 'veh', preId, ['vq', 'phlater']);
   const key = uid();
   // Suchfeld: Enter („Los“ am Handy) filtert nur – sendet nicht ab; ein ausgeblendetes gewähltes Fahrzeug wird abgewählt (19.10.2026:
   // Meldung ging sonst an das vorausgewählte, durch den Filter verdeckte Fahrzeug)
@@ -2564,8 +2597,11 @@ async function viewNew(preId) {
     sb.disabled = true;
     const who = outboxWho();
     const photoFiles = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
+    // Backlog 807 (Blickwinkel „Fahrer im Ausland, Roaming teuer“): Fotos auf dem Gerät zurückhalten – Meldung (Text) geht sofort, die Leitung
+    // sieht am Vorgang „N Fotos folgen“; gesendet wird im WLAN automatisch (wo der Browser es erkennt) oder per „Fotos jetzt senden“
+    const hold = !!(photoFiles.length && $('#phlater') && $('#phlater').checked);
     const body = { vehicle_id: veh.value, description: $('#d').value, priority: $('input[name=prio]:checked').value,
-      driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key, ...(occ ? { occurred_at: occ } : {}) };
+      driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key, ...(occ ? { occurred_at: occ } : {}), ...(hold ? { photos_later: photoFiles.length } : {}) };
     try {
       const r = await api('POST', '/api/cases', body, { timeoutMs: SEND_TIMEOUT_MS });
       draft.clear();
@@ -2577,8 +2613,16 @@ async function viewNew(preId) {
       const crit = body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit';
       let ph = sb;
       if (crit && sb.isConnected) {
-        render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert" data-sentcritical><p><b>${esc(t('report_sent'))}: ${esc(r.case_no)}</b></p>${files.length ? `<p class="small" id="phstate" data-phstate role="status">${esc(t('uploading'))} 1/${files.length}</p>` : ''}${r.urgent_push_recipients === 0 ? `<p data-nopush><b>⚠ ${esc(t('no_push_reach'))}</b></p>` : ''}${callBox(body.vehicle_id)}<p><a class="btn" href="#/cases/${esc(r.id)}">${esc(t('open_report'))} ›</a></p></div>`, 'new');
+        render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert" data-sentcritical><p><b>${esc(t('report_sent'))}: ${esc(r.case_no)}</b></p>${files.length ? `<p class="small" id="phstate" data-phstate role="status">${hold ? esc(tn('photos_held', files.length)) : `${esc(t('uploading'))} 1/${files.length}`}</p>` : ''}${r.urgent_push_recipients === 0 ? `<p data-nopush><b>⚠ ${esc(t('no_push_reach'))}</b></p>` : ''}${callBox(body.vehicle_id)}<p><a class="btn" href="#/cases/${esc(r.id)}">${esc(t('open_report'))} ›</a></p></div>`, 'new');
         ph = $('#phstate') || null;
+      }
+      if (hold) {
+        const held = await photosLater('/api/cases', body, r, r.id, files, who, true);
+        toast(`${t('report_sent')}: ${r.case_no} · ${held === files.length ? tn('photos_held', held) : t('photos_held_fail')}`, held !== files.length);
+        if (ph && ph.isConnected && ph !== sb && held !== files.length) ph.textContent = t('photos_held_fail');
+        if (crit && !sb.isConnected) return;
+        if (sb.isConnected) location.hash = '#/cases/' + r.id;
+        return;
       }
       const { failed, later } = files.length ? await uploadPhotosSafe('/api/cases', body, r, r.id, files, ph, who) : { failed: 0, later: 0 };
       toast(`${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}`, !!failed);
@@ -2596,6 +2640,7 @@ async function viewNew(preId) {
         if (files.length) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
         outboxAdd('/api/cases', body, stored, who);
         draft.clear();
+        if (hold && stored && who) outboxSet(outboxGet(who.key).map((x) => (x.body.request_key === key ? { ...x, hold: true } : x)), who.key);
         if (!err.offline || !sb.isConnected) { toast(t(err.offline ? 'outbox_saved' : 'outbox_saved_login')); return; }
         render(`<h1>${esc(t('report_damage'))}</h1><div class="panel alert" role="alert"><p><b>${esc(t('outbox_saved'))}</b></p>${files.length && !stored ? `<p>${esc(t('photos_offline'))}</p>` : stored ? `<p>${esc(tn('photos_stored', stored))}</p>` : ''}${body.priority === 'kritisch' || body.driveability === 'nicht_fahrbereit' ? callBox(body.vehicle_id) : ''}</div><div id="outbox_slot"></div><div class="actions"><a class="btn secondary" href="#/">${esc(t('back'))}</a></div>`, 'new');
         return;
@@ -2712,7 +2757,11 @@ async function viewCase(id) {
 
   // Dateien
   // Je Datei: wann und von wem (Rolle, Name nach denselben Regeln wie im Verlauf) – Schadensfoto des Fahrers vs. Reparaturfoto der Werkstatt (Backlog 223)
-  html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((f) => {
+  // Backlog 807: beim Melden angekündigte Fotos (auf dem Gerät zurückgehalten, z. B. Roaming) – Hinweis bis alle eingegangen sind bzw. der Vorgang endet
+  const pl = d.photos_later; const plHere = c.reporter_id === S.me.id && outboxGet().some((x) => x.hold && x.photo_target === c.id && !x.failed);
+  const plBox = pl && pl.received < pl.announced && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status)
+    ? `<div class="panel small" role="note" data-photoslater><p style="margin:0">📷 ${esc(t('photos_later_case').replace('{n}', pl.announced).replace('{x}', pl.received))}</p>${plHere ? `<div class="actions"><button type="button" class="btn secondary" data-obx-release="${esc(c.id)}">${esc(t('photos_send_now'))}</button></div>` : ''}</div>` : '';
+  html += `<h2>${esc(t('files'))}</h2>${plBox}<div class="thumbs">${d.files.map((f) => {
     const role = f.uploader_role ? t('role_' + f.uploader_role) : '';
     const name = f.uploaded_by_name_hidden ? t('name_hidden_driver') : (f.uploaded_by_name || '');
     const info = [fmtDT(f.created_at), role, name && name !== role ? name : ''].filter(Boolean);

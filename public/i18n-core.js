@@ -1160,6 +1160,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Vergangenheitsform statt mit der Knopf-Beschriftung („Reparatur freigeben · Inhaber“ las sich wie eine Aufforderung, auf UK „Дозволити ремонт“).
 // Fehlt ein hev_-Schlüssel, zeigt der Verlauf weiter act_<Aktion> (Nomen wie „Wiedervorlage“, „Standort / Abschleppung“ passen bereits).
 // Backlog 789: Anmeldeseite bei noch gültiger Sitzung
+// Backlog 807 (Blickwinkel „Fahrer im Ausland, Roaming teuer – Fotos später“): Fotos auf dem Gerät zurückhalten
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

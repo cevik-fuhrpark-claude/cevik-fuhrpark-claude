@@ -471,6 +471,10 @@ export async function getCaseDetail(env, user, envName, caseId) {
   // Vermerke zu Kosten-Aktionen enthalten oft Beträge („Freigabe bis 1.450 €“) – ohne Kostenrecht ausgeblendet (17.10.2026)
   const hiddenNotes = canSeeCosts(user) ? [] : ['cost_limit_exceeded', 'cost_limit_cleared', 'approve_costs', 'add_external_cost'];
   const hiddenPayloads = [...(canSeeCosts(user) ? [] : ['cost_limit_exceeded', 'cost_limit_cleared', 'approve_costs', 'add_external_cost']), ...(seesWork ? [] : ['add_part', 'record_work'])];
+  // Backlog 807 (Blickwinkel „Fahrer im Ausland, Roaming teuer – Fotos später“): beim Melden angekündigte, auf dem Gerät zurückgehaltene Fotos –
+  // Anzahl laut Meldung und bisher von der meldenden Person eingegangene Dateien (Leitung wartet sonst ohne Hinweis auf Bilder)
+  const plEv = events.find((e) => e.action === 'create');
+  const plN = plEv && plEv.payload && Number.isInteger(plEv.payload.photos_later) ? plEv.payload.photos_later : 0;
   const detail = {
     // Fahrer: nur die Fahrzeugangaben der Fahrer-Fahrzeugliste (21.10.2026: Vorgang lieferte den ganzen Stammsatz inkl. FIN und Vermerken der Leitung)
     case: shapeCase(c, user), access, vehicle: user.role === 'driver' && vehicle ? { id: vehicle.id, plate: vehicle.plate, kind: vehicle.kind, site: vehicle.site, manufacturer: vehicle.manufacturer, trailer_plate: vehicle.trailer_plate, active: vehicle.active } : vehicle, reporter_name: user.role === 'viewer' && reporter?.role === 'driver' ? null : reporter?.display_name || null,
@@ -482,6 +486,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
     // Fahrerakte des Melders (Backlog 569, Blickwinkel „Fahrerkarte defekt/verloren“): nur Leitung, für den Link „Ersatzkarte in der Fahrerakte erfassen“
     ...(isManager(user) && reporter?.driver_id ? { reporter_driver_id: reporter.driver_id } : {}),
     events: (user.role === 'driver' ? events.map(({ actor_name, ...e }) => e) : user.role === 'viewer' ? events.map((e) => (e.actor_role === 'driver' ? { ...e, actor_name: null, actor_name_hidden: true } : e)) : events).map((e) => (hiddenPayloads.includes(e.action) ? { ...e, payload: null, ...(hiddenNotes.includes(e.action) && e.note ? { note: null, note_hidden: true } : {}) } : e)),
+    ...(plN ? { photos_later: { announced: plN, received: files.filter((f) => f.uploaded_by === c.reporter_id).length } } : {}),
     files, open_items: openItems, inspections, followups, parent, duplicates, duplicate_of: duplicateOf, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
     maintenance_event: mevent || null,
     tire_winter: tireWinter,
@@ -1135,7 +1140,11 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
     const checkItem = origin === 'kontrolle' && body.check_item ? str(body.check_item, { max: 60, field: 'Prüfpunkt' }) : null;
     // Schadenzeitpunkt laut Meldung (Backlog 285): optional, nur bei Meldungen (Kontrolle/Prüftermin haben ihren eigenen Zeitpunkt)
     const occurred = origin === 'meldung' && !internal.origin ? occurredAt(body.occurred_at) : null;
-    specs.push({ vehicleId, description, reportedPriority, driveability, suggested, requestKey, location, origin, parentId, checkItem, occurred,
+    // Backlog 807: Anzahl der auf dem Gerät zurückgehaltenen Fotos (Roaming/WLAN) – nur Vermerk im Verlauf, nicht Teil der Inhaltsprüfung
+    // (dieselbe Meldung aus dem Postausgang bleibt dieselbe); ungültige Werte werden ignoriert statt die Meldung abzuweisen
+    const pl = Number(body.photos_later);
+    const photosLater = origin === 'meldung' && !internal.origin && Number.isInteger(pl) && pl >= 1 && pl <= 10 ? pl : 0;
+    specs.push({ vehicleId, description, reportedPriority, driveability, suggested, requestKey, location, origin, parentId, checkItem, occurred, photosLater,
       reporterNote: str(body.reporter_name_note, { max: 120, field: 'Name' }) });
     if (internal.origin) specs.at(-1).origin = internal.origin;
   }
@@ -1203,7 +1212,7 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
       priority: x.reportedPriority, driveability: x.driveability, safety_lock: safetyLock, lock_reason: lockReason, site: x.suggested, origin: x.origin,
       parent_case_id: x.parentId, check_item: x.checkItem, request_key: x.requestKey, content_hash: x.contentHash,
       maintenance_rule_id: internal.maintenance_rule_id || null, maintenance_event_id: internal.maintenance_event_id || null, tire_order: internal.tire_order || null });
-    events.push({ id: uuid(), case_id: id, payload: JSON.stringify({ priority: x.reportedPriority, driveability: x.driveability, safety_lock: !!safetyLock, origin: x.origin, parent_case_id: x.parentId }) });
+    events.push({ id: uuid(), case_id: id, payload: JSON.stringify({ priority: x.reportedPriority, driveability: x.driveability, safety_lock: !!safetyLock, origin: x.origin, parent_case_id: x.parentId, ...(x.photosLater ? { photos_later: x.photosLater } : {}) }) });
     results[i] = { id, case_no: caseNo, duplicate: false, safety_lock: !!safetyLock };
   });
   const v = (key) => `json_extract(value,'$.${key}')`;
