@@ -1513,7 +1513,7 @@ function wireWoBatch() {
     const ok = []; const bad = [];
     for (const [i, x] of sel.entries()) {
       go.textContent = t('wob_progress').replace('{i}', i + 1).replace('{m}', sel.length);
-      try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(x.value)}/tires/winter-order`, { ...body, request_key: `${fm.dataset.key.slice(0, 24)}-${x.value.slice(-20)}` }); ok.push({ plate: x.dataset.plate, id: r.id, case_no: r.case_no }); }
+      try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(x.value)}/tires/winter-order`, { ...body, request_key: `${fm.dataset.key.slice(0, 24)}-${x.value.slice(-20)}` }, { timeoutMs: SEND_TIMEOUT_MS }); ok.push({ plate: x.dataset.plate, id: r.id, case_no: r.case_no }); }
       catch (err) { bad.push({ plate: x.dataset.plate, msg: err.offline ? t('wob_offline') : err.message }); if (err.offline) { for (const y of sel.slice(i + 1)) bad.push({ plate: y.dataset.plate, msg: t('wob_offline') }); break; } }
     }
     if (!go.isConnected) return;

@@ -4072,7 +4072,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   $$('form[data-mdone]').forEach((fm) => (fm.onsubmit = async (e) => {
     e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k];
     fm.querySelector('button.btn').disabled = true;
-    try { doneToast(await api('POST', `/api/maintenance/${fm.dataset.mdone}/complete`, b)); doneNext(); } catch (err) { fm.querySelector('button.btn').disabled = false; toast(err.message, true); }
+    try { doneToast(await api('POST', `/api/maintenance/${fm.dataset.mdone}/complete`, b, { timeoutMs: SEND_TIMEOUT_MS })); /* Backlog 805: Wiederholung idempotent */ doneNext(); } catch (err) { fm.querySelector('button.btn').disabled = false; toast(err.message, true); }
   }));
   // HU/SP: Durchführung mit Prüfergebnis, Werkstatttermin planen, Fahrzeugdaten (zGM/Erstzulassung)
   // HU/SP ohne eigenen Eintrag („husp:SP“): Aktion über die Fahrzeugakte, der Server legt den Eintrag dabei an
@@ -4086,11 +4086,11 @@ async function viewVehicle(id, focusEv = null, sec = null) {
     e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); const spSame = !!b.sp_same; const spRes = b.sp_result; const file = fm.report_file && fm.report_file.files[0];
     delete b.sp_same; delete b.sp_result; delete b.report_file; for (const k of Object.keys(b)) if (b[k] === '') delete b[k];
     const kind = fm.dataset.hskind; let r;
-    try { r = await api('POST', hsUrl(fm.dataset.hsdone, 'complete'), b); } catch (err) { toast(err.message, true); return; }
+    try { r = await api('POST', hsUrl(fm.dataset.hsdone, 'complete'), b, { timeoutMs: SEND_TIMEOUT_MS }); } catch (err) { toast(err.message, true); return; }
     const errs = [];
     if (spSame) {
       const spForm = document.querySelector('form[data-hsdone][data-hskind="SP"]');
-      try { await api('POST', hsUrl(spForm ? spForm.dataset.hsdone : 'husp:SP', 'complete'), { done_date: b.done_date, evidence: b.evidence, ...(spRes ? { result: spRes } : {}) }); } catch (err) { errs.push(`${mk('SP')}: ${err.message}`); }
+      try { await api('POST', hsUrl(spForm ? spForm.dataset.hsdone : 'husp:SP', 'complete'), { done_date: b.done_date, evidence: b.evidence, ...(spRes ? { result: spRes } : {}) }, { timeoutMs: SEND_TIMEOUT_MS }); } catch (err) { errs.push(`${mk('SP')}: ${err.message}`); }
     }
     if (file) {
       const note = `${kind}${spSame ? '+SP' : ''} ${b.done_date}: ${b.evidence}`.slice(0, 200); // gespeicherter Text: Datum als JJJJ-MM-TT (nicht je Sprache)
@@ -4099,9 +4099,9 @@ async function viewVehicle(id, focusEv = null, sec = null) {
     if (errs.length) { toast(t('hs_saved_partly').replace('{k}', mk(kind)) + ' ' + errs.join(' · '), true); viewVehicle(id); return; }
     doneToast(r); doneNext();
   }));
-  $$('form[data-resadd]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { await api('POST', `/api/maintenance/events/${fm.dataset.resadd}/result`, b); toast('✓'); viewVehicle(id); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
-  $$('form[data-mdef]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const r = await api('POST', `/api/maintenance/events/${fm.dataset.mdef}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }); toast('✓ ' + r.case_no); location.hash = '#/cases/' + r.id; } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
-  $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const r = await api('POST', hsUrl(fm.dataset.mord, 'order'), { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }); toast('✓ ' + r.case_no); location.hash = '#/cases/' + r.id; } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
+  $$('form[data-resadd]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { await api('POST', `/api/maintenance/events/${fm.dataset.resadd}/result`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805: Wiederholung → result_exists, nie doppelt */ toast('✓'); viewVehicle(id); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
+  $$('form[data-mdef]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const r = await api('POST', `/api/maintenance/events/${fm.dataset.mdef}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓ ' + r.case_no); location.hash = '#/cases/' + r.id; } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
+  $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const r = await api('POST', hsUrl(fm.dataset.mord, 'order'), { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805 */ toast('✓ ' + r.case_no); location.hash = '#/cases/' + r.id; } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
   $$('form[data-medit]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); if ('interval_months' in b && !b.interval_months.trim()) b.interval_months = null; try { const r = await api('PATCH', '/api/maintenance/' + encodeURIComponent(fm.dataset.medit), b); toast(r && r.changed && r.changed.length ? '✓' : t('medit_nochange')); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
   $$('form[data-mend]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); if (!confirm(t('mend_confirm'))) return; try { const r = await api('POST', '/api/maintenance/' + encodeURIComponent(fm.dataset.mend) + '/end', { reason: fm.reason.value }); toast(t(r && r.deleted ? 'mend_deleted' : 'mend_ended')); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
   $$('form[data-hsplan]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', hsUrl(fm.dataset.hsplan, 'plan'), { planned_date: fm.planned_date.value || null }); if (r && r.after_due) toast(t('plan_after_due').replace('{d}', fmtD(r.planned_date)).replace('{due}', fmtD(r.after_due)), true); else toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
@@ -4390,13 +4390,13 @@ async function renderTires(id, el, keep = null) {
     // Erfassung (21.10.2026: wurden sonst als „duplicate“ verworfen und mit ✓ quittiert), nach Erfolg verworfen
     const ck = JSON.stringify(Object.entries(b).sort()); if (tf.dataset.ck !== ck) { tf.dataset.ck = ck; tf.dataset.key = uid(); }
     b.request_key = tf.dataset.key;
-    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b); const wl = (r.warning_items && r.warning_items.length ? r.warning_items.map((w) => (['tread_below_min', 'spare_below_min'].includes(w.code) ? t(w.code).replace('{mm}', fmtNum(w.tread_mm)).replace('{min}', fmtNum(w.min_mm)) : w.code === 'tacho_check_possible' ? t('tacho_check_possible') : '')).filter(Boolean) : r.warnings || []).filter(Boolean); if (wl.length) toast(wl.join(' · '), true); /* ein Fehler-Toast ersetzt den vorherigen – alle Warnungen in einem (20.10.2026) */ if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.map(posL).join(', ') : '✓');
+    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805: request_key je Formular */ const wl = (r.warning_items && r.warning_items.length ? r.warning_items.map((w) => (['tread_below_min', 'spare_below_min'].includes(w.code) ? t(w.code).replace('{mm}', fmtNum(w.tread_mm)).replace('{min}', fmtNum(w.min_mm)) : w.code === 'tacho_check_possible' ? t('tacho_check_possible') : '')).filter(Boolean) : r.warnings || []).filter(Boolean); if (wl.length) toast(wl.join(' · '), true); /* ein Fehler-Toast ersetzt den vorherigen – alle Warnungen in einem (20.10.2026) */ if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.map(posL).join(', ') : '✓');
       const ap = [...tf.position.options].map((o) => o.value); const nx = !b.positions && ap.indexOf(b.position) >= 0 ? ap[ap.indexOf(b.position) + 1] : null;
       renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode }); }
     catch (err) { toast(err.message, true); }
   };
   if ($('#woform', el)) $('#woform', el).onsubmit = async (e) => { e.preventDefault(); const fm = e.target; const b = Object.fromEntries(new FormData(fm)); if (!b.planned_date) delete b.planned_date; fm.querySelector('button').disabled = true;
-    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/winter-order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }); toast('✓ ' + r.case_no); renderTires(id, el); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } };
+    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/winter-order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓ ' + r.case_no); renderTires(id, el); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } };
   $$('[data-ver]', el).forEach((b) => (b.onclick = async () => { try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/specs`, { axle: b.dataset.ver, size: b.dataset.size, verified: true }); if (r && r.tacho_check_possible) toast(t('tacho_check_possible')); renderTires(id, el); } catch (err) { toast(err.message, true); } }));
 }
 
@@ -6825,7 +6825,7 @@ function wireWoBatch() {
     const ok = []; const bad = [];
     for (const [i, x] of sel.entries()) {
       go.textContent = t('wob_progress').replace('{i}', i + 1).replace('{m}', sel.length);
-      try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(x.value)}/tires/winter-order`, { ...body, request_key: `${fm.dataset.key.slice(0, 24)}-${x.value.slice(-20)}` }); ok.push({ plate: x.dataset.plate, id: r.id, case_no: r.case_no }); }
+      try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(x.value)}/tires/winter-order`, { ...body, request_key: `${fm.dataset.key.slice(0, 24)}-${x.value.slice(-20)}` }, { timeoutMs: SEND_TIMEOUT_MS }); ok.push({ plate: x.dataset.plate, id: r.id, case_no: r.case_no }); }
       catch (err) { bad.push({ plate: x.dataset.plate, msg: err.offline ? t('wob_offline') : err.message }); if (err.offline) { for (const y of sel.slice(i + 1)) bad.push({ plate: y.dataset.plate, msg: t('wob_offline') }); break; } }
     }
     if (!go.isConnected) return;

@@ -52,6 +52,7 @@ async def main():
             await q.fill('#vnf [name=text]', text)
             await q.route('**/notes', lost_answer)
             btn = q.locator('#vnf button').last
+            await q.evaluate("() => document.querySelectorAll('.toast').forEach((x) => x.remove())")
             await btn.click()
             _r(f'ok: {lang} {w}px Hinweis: nach dem Zeitlimit „{NOCONN[lang]}“' if await no_conn() else f'FEHLER: {lang} {w}px Hinweis hängt ohne Ende')
             _r(f'ok: {lang} Hinweis kam am Server an ({seen})' if seen and seen[0] in (200, 201) else f'FEHLER: Server-Antwort {seen}')
@@ -72,6 +73,7 @@ async def main():
             await q.fill('#kf [name=km]', str(base_km))
             await q.route('**/odometer', lost_answer)
             kb = q.locator('#kf button').last
+            await q.evaluate("() => document.querySelectorAll('.toast').forEach((x) => x.remove())")
             await kb.click()
             _r(f'ok: {lang} {w}px km: nach dem Zeitlimit „{NOCONN[lang]}“' if await no_conn() else f'FEHLER: {lang} {w}px km hängt ohne Ende')
             _r(f'ok: {lang} km kam am Server an ({seen})' if seen and seen[0] in (200, 201) else f'FEHLER: Server-Antwort {seen}')

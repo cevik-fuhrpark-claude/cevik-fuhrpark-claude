@@ -19961,7 +19961,7 @@ await test('Backlog 236 (Werkstatt arbeitet den Sammeltermin ab): Werkstattplan 
   ok(plan.includes("const canDone = isMgr() || S.me.role === 'workshop';") && plan.includes("/^[\\w-]+$/.test(i.id) ? '?done='") && (plan.match(/href="\$\{doneHref\(i\)\}" data-fromplan/g) || []).length === 2, 'Plan-Zeilen (Termin und fällig) verlinken das Formular');
   ok(plan.includes("$$('a[data-fromplan]').forEach((a) => (a.onclick = () => { S.fromPlan = location.hash || '#/plan'; }));"), 'Herkunft gemerkt');
   const vv = app.slice(app.indexOf('async function viewVehicle('), app.indexOf('\nasync function ', app.indexOf('async function viewVehicle(') + 10));
-  ok(vv.includes("if (sec && sec.startsWith('done:'))") && vv.includes('const doneNext = () =>') && (vv.match(/doneToast\(await api\('POST', .{0,80}, b\)\); doneNext\(\);/g) || []).length === 1 && vv.includes('doneToast(r); doneNext();') /* HU/SP-Formular (Backlog 620): erst nach SP/Prüfbericht */, 'Formular geöffnet, Rückkehr nach dem Speichern');
+  ok(vv.includes("if (sec && sec.startsWith('done:'))") && vv.includes('const doneNext = () =>') && (vv.match(/doneToast\(await api\('POST', .{0,80}, b(, \{ timeoutMs: SEND_TIMEOUT_MS \})?\)\); (\/\*[^*]*\*\/ )?doneNext\(\);/g) || []).length === 1 && vv.includes('doneToast(r); doneNext();') /* HU/SP-Formular (Backlog 620): erst nach SP/Prüfbericht */, 'Formular geöffnet, Rückkehr nach dem Speichern');
   // Plan liefert die Eintrags-id der geplanten Prüftermine (Grundlage des Links)
   const vin = 'WDB96340310995831';
   eq((await owner.post('/api/vehicles', { plate: 'SM-AB 1', vin, site: 'Dortmund' })).status, 201);
@@ -29031,6 +29031,33 @@ await test('Backlog 804b (Blickwinkel „Funkloch“): Prüftermin (Sonstiges) u
   const cb = { kind: 'leasing', partner: 'Funkloch-Leasing', contract_no: 'FL-804', start_date: BERLIN_TODAY, end_date: '2030-12-31', evidence: 'Vertrag 804' };
   eq((await U.fleet.post(V + '/contracts', cb)).status, 201); const c2 = await U.fleet.post(V + '/contracts', cb); eq(c2.status, 409); eq(c2.data.error, 'duplicate_contract', 'Vertrag nie doppelt');
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-akte-funkloch.py|'), 'UI-Prüfung eingetragen');
+});
+
+await test('Backlog 805a (Blickwinkel „Werkstatt erfasst Prüfungen/Reifen im Funkloch der Halle“): „erledigt“ (auch HU/SP), Prüfergebnis nachtragen, Werkstattauftrag aus Prüftermin/Prüfmangel, Reifenereignis und Winterreifen-Auftrag mit Zeitlimit (SEND_TIMEOUT_MS); Wiederholung legt nichts doppelt an (erledigt idempotent, Ergebnis → 409 result_exists, Auftrag/Reifen über request_key); UI-Prüfung `ui-pruefung-funkloch.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const x of ["/complete`, b, { timeoutMs: SEND_TIMEOUT_MS })", "hsUrl(fm.dataset.hsdone, 'complete'), b, { timeoutMs: SEND_TIMEOUT_MS })", "/result`, b, { timeoutMs: SEND_TIMEOUT_MS })", "hsUrl(fm.dataset.mord, 'order'), { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS })",
+    "/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS })", "/tires/events`, b, { timeoutMs: SEND_TIMEOUT_MS })"]) ok(app.includes(x), 'Zeitlimit: ' + x);
+  ok(app.includes("tires/winter-order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS })") && app.includes("request_key: `${fm.dataset.key.slice(0, 24)}-${x.value.slice(-20)}` }, { timeoutMs: SEND_TIMEOUT_MS })"), 'Winterreifen-Auftrag (einzeln + Sammel) mit Zeitlimit');
+  const { U } = await freshWorld();
+  const V = '/api/vehicles/VIN:WMA15SZZ2HM722774';
+  const rule = await U.fleet.post(V + '/maintenance', { kind: 'UVV', last_done_date: '2025-10-01', interval_months: 12, evidence: 'UVV alt' }); eq(rule.status, 201);
+  const cb = { done_date: BERLIN_TODAY, evidence: 'UVV-Bericht 805', done_km: 654321 };
+  const c1 = await U.ws.post(`/api/maintenance/${rule.data.id}/complete`, cb), c2 = await U.ws.post(`/api/maintenance/${rule.data.id}/complete`, cb);
+  ok(c1.status === 200 && c2.status === 200 && c1.data.next_due_date === c2.data.next_due_date, 'erledigt zweimal: gleiche Antwort ' + JSON.stringify([c1.data, c2.data]));
+  const v = (await U.fleet.get(V)).data;
+  eq(v.maintenance_history.filter((x) => x.evidence === 'UVV-Bericht 805').length, 1, 'eine Durchführung');
+  eq(v.odometer.filter((x) => x.km === 654321).length, 1, 'ein km-Stand aus der Durchführung');
+  const ev = v.maintenance_history.find((x) => x.evidence === 'UVV-Bericht 805');
+  const r1 = await U.ws.post(`/api/maintenance/events/${ev.id}/result`, { result: 'ohne_maengel', evidence: 'UVV-Bericht 805' }); eq(r1.status, 200, JSON.stringify(r1.data));
+  const r2 = await U.ws.post(`/api/maintenance/events/${ev.id}/result`, { result: 'ohne_maengel', evidence: 'UVV-Bericht 805' }); eq(r2.status, 409); eq(r2.data.error, 'result_exists', 'Ergebnis nie doppelt');
+  const rule2 = await U.fleet.post(V + '/maintenance', { kind: 'Bremsen', last_done_date: '2025-01-10', interval_months: 12, evidence: 'Bremsen alt' }); eq(rule2.status, 201);
+  const o1 = await U.fleet.post(`/api/maintenance/${rule2.data.id}/order`, { workshop_site: 'DORTMUND', request_key: 'mo-805-a' }); eq(o1.status, 201, JSON.stringify(o1.data));
+  const o2 = await U.fleet.post(`/api/maintenance/${rule2.data.id}/order`, { workshop_site: 'DORTMUND', request_key: 'mo-805-a' }); ok(o2.status < 300 && o2.data.duplicate && o2.data.id === o1.data.id, 'Auftrag erneut: derselbe ' + JSON.stringify(o2.data));
+  const tb = { position: 'VA-L', event_type: 'messung', tread_mm: 9, request_key: 'te-805-a' };
+  const t1 = await U.ws.post(V + '/tires/events', tb), t2 = await U.ws.post(V + '/tires/events', tb);
+  ok(t1.status === 201 && t2.status < 300 && t2.data.duplicate && t2.data.id === t1.data.id, 'Reifenereignis erneut: dasselbe ' + JSON.stringify([t1.data, t2.data]));
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-pruefung-funkloch.py|'), 'UI-Prüfung eingetragen');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

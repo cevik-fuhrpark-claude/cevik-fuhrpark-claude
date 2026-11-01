@@ -393,6 +393,7 @@ UI-Werkstatt-Lager im Funkloch: Buchung/Wareneingang ohne Antwort nach dem Zeitl
 UI-Bußgeld im Funkloch: Anlage ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern öffnet den vorhandenen Vorgang (DE/UK/EN; Backlog 803)|ui-bussgeld-funkloch.py|/tmp/cfp-bussgeld-funkloch.log
 UI-Hinweis zum Fahrzeug und Kilometerstand im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern ohne zweiten Eintrag (DE/UK/EN; Backlog 804)|ui-hinweis-km-funkloch.py|/tmp/cfp-hinweis-km-funkloch.log
 UI-Fahrzeug-/Fahrerakte im Funkloch: Prüftermin, Vertrag, Nachweis und Führerscheinkontrolle ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern ohne zweiten Eintrag (DE/UK/EN; Backlog 804)|ui-akte-funkloch.py|/tmp/cfp-akte-funkloch.log
+UI-Prüfung erledigt/Werkstattauftrag im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern ohne zweite Durchführung bzw. zweiten Auftrag (DE/UK/EN; Backlog 805)|ui-pruefung-funkloch.py|/tmp/cfp-pruefung-funkloch.log
 '
 N=0
 NL='

@@ -48,6 +48,7 @@ async def main():
                 await fill()
                 await q.route(glob, lost_answer)
                 btn = q.locator(sel + ' button').last
+                await q.evaluate("() => document.querySelectorAll('.toast').forEach((x) => x.remove())")
                 await btn.click()
                 ok = False
                 for _ in range(32):

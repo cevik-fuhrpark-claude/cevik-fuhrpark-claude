@@ -1360,7 +1360,13 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   // km-Stand der Durchführung im selben Stapel und mit derselben Plausibilität wie „Kilometerstand erfassen“ (18.10.2026: eine zwischen Prüfung
   // und Einfügen erfasste höhere Ablesung machte die Wartungs-Ablesung zum unbegründeten Rücksprung → alle km-Fälligkeiten „ungeklärt“).
   // Gleiche Ablesung (Fahrzeug/Zeitpunkt/Quelle) schon vorhanden → wie bisher nichts Neues; sonst muss sie eingefügt worden sein (Wächter).
-  const kmAt = date >= berlinDate() ? nowIso() : `${date}T12:00:00.000Z`; // heute → jetzt (12:00 UTC läge morgens in der Zukunft)
+  let kmAt = date >= berlinDate() ? nowIso() : `${date}T12:00:00.000Z`; // heute → jetzt (12:00 UTC läge morgens in der Zukunft)
+  // Backlog 805 (Funkloch, 01.11.2026): Wiederholung derselben heutigen Durchführung (Antwort verloren) legte mit „jetzt“ einen zweiten
+  // gleichen km-Stand an – vorhandene Ablesung derselben Quelle mit gleichem Stand am selben Berliner Tag wiederverwenden
+  if (km !== null && date >= berlinDate()) {
+    const prevKm = await env.DB.prepare(`SELECT measured_at FROM odometer_readings WHERE vehicle_id=? AND source=? AND km=? AND ${berlinDaySql('measured_at')}=? ORDER BY measured_at LIMIT 1`).bind(r.vehicle_id, `wartung:${r.kind}`, km, berlinDate()).first();
+    if (prevKm) kmAt = prevKm.measured_at;
+  }
   if (km !== null) {
     stmts.push(env.DB.prepare(`INSERT OR IGNORE INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at)
       SELECT ?1,?2,?3,?4,?5,?6,?7 WHERE COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?2 AND measured_at <= ?4 ORDER BY measured_at DESC, rowid DESC LIMIT 1), -1) <= ?3
