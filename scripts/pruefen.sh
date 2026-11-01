@@ -427,6 +427,7 @@ UI-Anhänger-km gleich Zugmaschine: Datenqualität, Zeitleisten-Markierung, Begr
 UI-Arbeitszeit: Hinweis letzter Arbeitstag ohne Eintrag, Knopf setzt das Datum, nur Werkstatt (DE/UK/EN; Backlog 835)|ui-arbeitszeit-vortag.py|/tmp/cfp-arbeitszeit-vortag.log
 UI-Abfahrtskontrolle km-Tippfehler: letzter Stand, Differenz, Hinweise kleiner/mehr Stellen, auch Fahrer (DE/UK/EN; Backlog 836)|ui-abfahrt-km-tippfehler.py|/tmp/cfp-abfahrt-km-tippfehler.log
 UI-Fahrzeugakte km erfassen: letzter Stand, Differenz, Hinweise kleiner/mehr Stellen, früheres Datum ohne Hinweis (DE/UK/EN; Backlog 837)|ui-akte-km-tippfehler.py|/tmp/cfp-akte-km-tippfehler.log
+UI-Zeitleiste km mit mehr Stellen: Datenqualität verlinkt, Hinweis mit vorherigem Stand, Begründung nachtragen löst ihn (DE/UK/EN; Backlog 838)|ui-zeitleiste-km-stellen.py|/tmp/cfp-zeitleiste-km-stellen.log
 '
 N=0
 NL='

@@ -77,6 +77,10 @@ export const CHECKS = {
   // Backlog 833 (Blickwinkel „km der Zugmaschine beim Anhänger eingetragen“): km-Stand eines fest gekoppelten Anhängers ist am selben
   // Berliner Tag genau gleich einem km-Stand seiner Zugmaschine (ohne Begründung) – vermutlich vom Tacho der Zugmaschine abgelesen
   trailer_km_equals_truck: 'hinweis',
+  // Backlog 838 (Blickwinkel „Integrations-API/Werkstatt meldet km mit einer Stelle zu viel“): km-Stand ohne Begründung mit mehr Stellen als der
+  // unmittelbar vorherige (> 0) und kein späterer kleinerer Stand – vermutlich eine Ziffer zu viel; spätere richtige Stände würden als „kleiner“
+  // abgewiesen. Keine km-Grenze (offene Frage „km-Sprung nach oben“) – nur die Stellenzahl; beim Überschreiten von 100 000 km normal → Begründung
+  km_digits_jump: 'hinweis',
 };
 
 // FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
@@ -321,6 +325,16 @@ export async function dataQuality(env, user, envName, query = {}) {
     for (const r of tk) { const v = vById.get(r.tr); if (v) addA('trailer_km_equals_truck', v, `${berlinDate(r.measured_at)}: ${r.km} km = ${r.tp} · ${r.source}${r.n > 1 ? ` · ${r.n}×` : ''}`,
       { day: berlinDate(r.measured_at), km: r.km, truck_plate: r.tp, source: r.source, n: r.n }); }
   }
+  // Backlog 838: eine Abfrage (Fensterfunktionen über die km-Stände), neuester Fall je Fahrzeug mit Anzahl; nur aktive, bewertete Fahrzeuge (vById)
+  const dj = (await env.DB.prepare(`WITH r AS (SELECT vehicle_id, km, measured_at, source, note, LAG(km) OVER w AS prev_km,
+      MIN(km) OVER (PARTITION BY vehicle_id ORDER BY measured_at, created_at, id ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING) AS later_min
+      FROM odometer_readings WINDOW w AS (PARTITION BY vehicle_id ORDER BY measured_at, created_at, id)),
+    m AS (SELECT vehicle_id, km, prev_km, measured_at, source, ROW_NUMBER() OVER (PARTITION BY vehicle_id ORDER BY measured_at DESC) AS rn, COUNT(*) OVER (PARTITION BY vehicle_id) AS n
+      FROM r WHERE prev_km > 0 AND (note IS NULL OR trim(note)='') AND length(CAST(CAST(km AS INTEGER) AS TEXT)) > length(CAST(CAST(prev_km AS INTEGER) AS TEXT))
+        AND (later_min IS NULL OR later_min >= km))
+    SELECT vehicle_id, km, prev_km, measured_at, source, n FROM m WHERE rn=1`).all()).results;
+  for (const r of dj) { const v = vById.get(r.vehicle_id); if (v) addA('km_digits_jump', v, `${berlinDate(r.measured_at)}: ${r.prev_km} → ${r.km} km · ${r.source}${r.n > 1 ? ` · ${r.n}×` : ''}`,
+    { day: berlinDate(r.measured_at), prev_km: r.prev_km, km: r.km, source: r.source, n: r.n }); }
   for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) { const lt = k.prev_km !== null && k.odometer_km < k.prev_km; addA('km_inspection_rejected', v, lt ? `${k.odometer_km} km (${berlinDate(k.created_at)}) < ${k.prev_km} km` : `${k.odometer_km} km (${berlinDate(k.created_at)}) > ${k.next_km} km`,
     { km: k.odometer_km, day: berlinDate(k.created_at), other_km: lt ? k.prev_km : k.next_km, cmp: lt ? 'lt' : 'gt' }); } }
   for (const a of assigns.results) if (!a.active) items.push({ check: 'assignment_inactive_user', severity: CHECKS.assignment_inactive_user, vehicle_id: a.vehicle_id, plate: a.plate, detail: a.display_name });

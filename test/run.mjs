@@ -2020,7 +2020,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('dc_km_lower dc_km_digits kf_km_lower mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('dc_km_lower dc_km_digits odo_digits kf_km_lower mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -16860,7 +16860,7 @@ await test('Backlog 115 (22.10.): Begründung zu einem km-Rücksprung nachtragen
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].odo_add_reason && STRINGS[l].odo_reason_prompt && STRINGS[l].odo_drop_unexplained, l);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("(i.check === 'km_drop_unexplained' || i.check === 'trailer_km_equals_truck') ? tlHash(esc(i.vehicle_id), 'maintenance')") && app.includes('data-odonote'), 'Datenqualität führt zur Zeitleiste mit Knopf'); // Backlog 833: auch Anhänger-km = Zugmaschine
+  ok(app.includes("(i.check === 'km_drop_unexplained' || i.check === 'trailer_km_equals_truck' || i.check === 'km_digits_jump') ? tlHash(esc(i.vehicle_id), 'maintenance')") && app.includes('data-odonote'), 'Datenqualität führt zur Zeitleiste mit Knopf'); // Backlog 833: auch Anhänger-km = Zugmaschine
 });
 await test('Backlog 114 (22.10.): „Dringende Benachrichtigung nicht zugestellt“ ohne Vorgang trägt das Fahrzeug aus dem Bezug (Link zur Fahrzeugakte statt „system“)', async () => {
   const { U, e } = await freshWorld(); const F = U.fleet; const V = 'VIN:WMA15SZZ2HM722774';
@@ -29983,7 +29983,7 @@ await test('Backlog 833 (Blickwinkel „km der Zugmaschine beim Anhänger einget
   // Oberfläche + Texte
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('data-odoeqtruck') && app.includes("t(b.dataset.odoeq ? 'odo_eq_prompt' : 'odo_reason_prompt')") && app.includes("(i.check === 'km_drop_unexplained' || i.check === 'trailer_km_equals_truck') ? tlHash"), 'Zeitleiste/Datenqualität');
+  ok(app.includes('data-odoeqtruck') && app.includes("b.dataset.odoeq ? 'odo_eq_prompt' : 'odo_reason_prompt'") && app.includes("(i.check === 'km_drop_unexplained' || i.check === 'trailer_km_equals_truck' || i.check === 'km_digits_jump') ? tlHash"), 'Zeitleiste/Datenqualität');
   for (const l of ['de', 'uk', 'en']) {
     for (const k of ['dq_trailer_km_equals_truck', 'dq_trkm_same', 'odo_eq_truck', 'odo_eq_prompt']) ok(STRINGS[l][k], `Text ${k} ${l}`);
     ok(STRINGS[l].dq_trkm_same.includes('{p}') && STRINGS[l].odo_eq_truck.includes('{p}'), 'Platzhalter ' + l);
@@ -30091,6 +30091,66 @@ await test('Backlog 837 (Folge aus 836): Hinweis „mehr Stellen als der letzte 
   ok((await own.post(`/api/vehicles/${V}/odometer`, { km: 98500 })).status < 300, 'Stand heute');
   const a = await own.get('/api/vehicles/' + encodeURIComponent(V));
   eq(a.data.odometer[0].km, 98500, 'neuester Stand zuerst');
+});
+
+await test('Backlog 838 (Blickwinkel „Integrations-API meldet km mit einer Stelle zu viel“): Datenqualität km_digits_jump bei km-Stand mit mehr Stellen als der vorherige (auch Telematik), erledigt durch Begründung oder späteren kleineren Stand; Zeitleiste km_digits mit eigener Rückfrage; Texte/Hilfe DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon'); const db = e.DB.db;
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const x = await own.post('/api/users', { username: 'q.leitung', display_name: 'Leitung Q', role: 'fleet', environment: 'production' });
+  const F = new Client(worker, e, 'q.leitung'); await F.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Fahrzeugart\n'
+    + 'DO-RQ 8381;Dortmund;MAN;2018;WMA06XZZ8RP838001;Lkw\nDO-RQ 8382;Dortmund;MAN;2018;WMA06XZZ8RP838002;Lkw\nDO-RQ 8383;Dortmund;MAN;2018;WMA06XZZ8RP838003;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const A = 'VIN:WMA06XZZ8RP838001'; const B = 'VIN:WMA06XZZ8RP838002'; const C = 'VIN:WMA06XZZ8RP838003';
+  const dq = async () => (await F.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'km_digits_jump');
+  const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  // A: normaler Verlauf ohne Stellenwechsel → kein Befund; erster Stand (ohne Vorgänger) zählt nie
+  eq((await F.post(`/api/vehicles/${A}/odometer`, { km: 100480, measured_on: day(3) })).status, 201);
+  eq((await F.post(`/api/vehicles/${A}/odometer`, { km: 100900, measured_on: day(2) })).status, 201);
+  eq((await F.post(`/api/vehicles/${C}/odometer`, { km: 99000, measured_on: day(2) })).status, 201);
+  eq((await dq()).length, 0, 'ohne Stellenwechsel kein Befund');
+  // A: Ziffer zu viel per Telematik (Integrations-API)
+  const H = { authorization: 'Bearer integration-token-xyz' };
+  const tel = await an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'WF-838', vin: 'WMA06XZZ8RP838001', gps_time: new Date(Date.now() - 86400000).toISOString(), lat: 51.5, lon: 7.4, km: 1009000 }] }, H);
+  eq(tel.status, 200, JSON.stringify(tel.data));
+  eq(db.prepare('SELECT MAX(km) AS k FROM odometer_readings WHERE vehicle_id=?').get(A).k, 1009000, 'Telematik-Stand übernommen (keine Grenze)');
+  let it = await dq();
+  eq(it.length, 1, JSON.stringify(it)); eq(it[0].vehicle_id, A); eq(it[0].severity, 'hinweis');
+  ok(it[0].detail_args && it[0].detail_args.prev_km === 100900 && it[0].detail_args.km === 1009000 && it[0].detail_args.n === 1 && /^telematik/.test(it[0].detail_args.source), 'Angaben: ' + JSON.stringify(it[0]));
+  const { dqDetailText } = await import('../public/csv.js'); const { STRINGS } = await import('../public/i18n.js');
+  ok(dqDetailText(it[0], (k) => STRINGS.en[k], (d) => d).includes('→'), 'Anzeige: ' + dqDetailText(it[0], (k) => STRINGS.en[k], (d) => d));
+  // Zeitleiste: Stand markiert mit vorherigem Stand; Fahrer sieht keine Kennung
+  let tl = (await F.get(`/api/vehicles/${A}/timeline?types=odometer`)).data.items;
+  const hit = tl.find((i) => i.km === 1009000);
+  ok(hit && hit.km_digits === 100900 && hit.odometer_id, 'Zeitleiste: ' + JSON.stringify(tl));
+  ok(!tl.some((i) => i.km !== 1009000 && i.km_digits), 'nur dieser Stand markiert');
+  // Berichtigung: richtiger (kleinerer) Stand mit Begründung → Befund erledigt, Markierung weg
+  eq((await F.post(`/api/vehicles/${A}/odometer`, { km: 101200, note: 'Telematik meldete eine Ziffer zu viel' })).status, 201);
+  eq((await dq()).length, 0, 'durch kleineren späteren Stand berichtigt');
+  ok(!(await F.get(`/api/vehicles/${A}/timeline?types=odometer`)).data.items.some((i) => i.km_digits), 'Zeitleiste ohne Markierung');
+  // B: Stand stimmt (100 000 km überschritten) → Begründung nachtragen erledigt den Hinweis
+  eq((await F.post(`/api/vehicles/${B}/odometer`, { km: 99800, measured_on: day(2) })).status, 201);
+  eq((await F.post(`/api/vehicles/${B}/odometer`, { km: 100150 })).status, 201);
+  it = await dq(); eq(it.length, 1); eq(it[0].vehicle_id, B);
+  tl = (await F.get(`/api/vehicles/${B}/timeline?types=odometer`)).data.items;
+  const hb = tl.find((i) => i.km === 100150); ok(hb && hb.km_digits === 99800, 'Zeitleiste B');
+  eq((await F.post(`/api/odometer/${hb.odometer_id}/note`, { note: '100 000 km überschritten, Stand stimmt' })).status, 200);
+  eq((await dq()).length, 0, 'mit Begründung kein Befund');
+  // ruhendes Fahrzeug: kein Befund
+  eq((await F.post(`/api/vehicles/${C}/odometer`, { km: 990000 })).status, 201);
+  eq((await dq()).length, 1, 'C meldet');
+  db.prepare('UPDATE vehicles SET eval_excluded=1 WHERE id=?').run(C);
+  eq((await dq()).length, 0, 'ruhend ausgenommen');
+  // Oberfläche + Texte
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-ododigits') && app.includes("b.dataset.odoeq === 'd' ? 'odo_digits_prompt'") && app.includes("i.check === 'km_digits_jump') ? tlHash"), 'Zeitleiste/Datenqualität');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['dq_km_digits_jump', 'odo_digits', 'odo_digits_prompt']) ok(STRINGS[l][k], `Text ${k} ${l}`);
+    ok(STRINGS[l].odo_digits.includes('{prev}'), 'Platzhalter ' + l);
+    ok(STRINGS[l].help_dates_s.split('|')[7].includes(STRINGS[l].odo_add_reason) && STRINGS[l].help_dates_s.split('|')[7].includes(STRINGS[l].add_km), 'Hilfe-Absatz ' + l);
+  }
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

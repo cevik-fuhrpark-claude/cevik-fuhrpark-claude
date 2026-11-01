@@ -417,7 +417,13 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
         AND ${berlinDaySql('z.measured_at')}=${berlinDaySql('o.measured_at')} LIMIT 1) AS tv FROM odometer_readings o WHERE o.id IN (SELECT value FROM json_each(?1)) AND o.km > 0 AND (o.note IS NULL OR trim(o.note)='')`)
       .bind(JSON.stringify(d.odometer.map((o) => o.id)), JSON.stringify([...tp.keys()])).all()).results) if (r.tv) eqTruck.set(r.id, tp.get(r.tv));
   }
-  for (const o of d.odometer) add('odometer', o.measured_at, { km: o.km, source: o.source, note: o.note, ...(isManager(user) ? { odometer_id: o.id, km_drop: !!o.km_drop, ...(eqTruck.has(o.id) ? { km_eq_truck: eqTruck.get(o.id) } : {}) } : {}) });
+  // Backlog 838: Stand ohne Begründung mit mehr Stellen als der vorherige (> 0), kein späterer kleinerer Stand (Datenqualität km_digits_jump) –
+  // vorheriger Stand zur Anzeige; ohne Abfrage aus der (absteigend sortierten) Liste, der älteste Eintrag der Liste bleibt ohne Vergleich
+  const kmLen = (k) => String(Math.trunc(Number(k))).length;
+  const digitsPrev = new Map();
+  if (isManager(user)) d.odometer.forEach((o, i) => { const p = d.odometer[i + 1];
+    if (p && p.km > 0 && !(o.note && String(o.note).trim()) && kmLen(o.km) > kmLen(p.km) && d.odometer.slice(0, i).every((x) => x.km >= o.km)) digitsPrev.set(o.id, p.km); });
+  for (const o of d.odometer) add('odometer', o.measured_at, { km: o.km, source: o.source, note: o.note, ...(isManager(user) ? { odometer_id: o.id, km_drop: !!o.km_drop, ...(eqTruck.has(o.id) ? { km_eq_truck: eqTruck.get(o.id) } : {}), ...(digitsPrev.has(o.id) ? { km_digits: digitsPrev.get(o.id) } : {}) } : {}) });
   for (const r of d.drivers) { add('driver_from', r.valid_from, { by: r.display_name, evidence: r.evidence }); add('driver_to', r.valid_to, { by: r.display_name }); }
   for (const f of d.documents) add('document', f.created_at, { doc_kind: f.doc_kind, text: f.filename, file_id: f.id, valid_until: f.doc_valid_until });
   for (const m of d.maintenance_history) add('maintenance', m.done_date, { maintenance_kind: m.kind, km: m.done_km, evidence: m.evidence, by: m.recorded_by_name, result: m.result || null });

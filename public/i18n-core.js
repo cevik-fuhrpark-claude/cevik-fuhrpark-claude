@@ -1173,6 +1173,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // [CLAUDE] Backlog 828: Reifen erfassen – km-Stand gegen den zuletzt erfassten Stand des Fahrzeugs (Anhänger mit km der Zugmaschine)
 // [CLAUDE] Backlog 829: Prüftermin erledigt – km-Feld mit Anhänger-Hinweis und zuletzt erfasstem Stand
 // [CLAUDE] Backlog 833: Datenqualität – km-Stand des Anhängers gleich dem der Zugmaschine am selben Tag (km der Zugmaschine eingetragen?)
+// Backlog 838: Datenqualität „km-Stand mit mehr Stellen als der vorherige“ + Zeitleiste
 // [CLAUDE] Backlog 834: Kontrolle am Anhänger – km-Stand gleich dem der Zugmaschine am selben Tag (Hinweis nach dem Speichern)
 // Backlog 835: Hinweis „letzter Arbeitstag ohne Arbeitszeit“ im Formular Arbeitszeit (Werkstatt)
 // Backlog 836: Abfahrtskontrolle – letzter km-Stand, Differenz, Hinweis bei kleinerem Stand bzw. einer Stelle mehr (Tippfehler)
