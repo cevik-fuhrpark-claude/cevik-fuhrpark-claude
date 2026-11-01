@@ -5153,7 +5153,7 @@ async function viewFine(id) {
   // Backlog 814 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig dasselbe Bußgeld“): Konflikt in einem Formular → Ansicht neu laden, eigene
   // Eingaben bleiben im Formular, Felder der anderen Person markiert (vorher „Bitte neu laden“ – Neuladen verwarf Nachweis/Notiz/Änderungen)
   const fnLost = (err, fm) => { if (err.code !== 'version_conflict' || !fm || !fm.id) return false; S.fnLost = { id, form: fm.id, msg: err.message, ...conflictMine(fm) }; viewFine(id); return true; };
-  const cmd = async (action, payload = {}, note = null, fm = null) => { try { const r = await api('POST', `/api/fines/${id}/commands`, { action, payload, note, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS }); toast(r && r.duplicate ? t('saved_before') : '✓'); viewFine(id); } catch (err) { if (fnLost(err, fm)) return; toast(err.message, true); } };
+  const cmd = async (action, payload = {}, note = null, fm = null) => { try { const r = await api('POST', `/api/fines/${id}/commands`, { action, payload, note, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS }); toast(r && r.duplicate ? t('saved_before') : '✓'); viewFine(id); } catch (err) { if (fnLost(err, fm)) return; /* Backlog 820: Knopf ohne Formular (Fahrer informieren/quittieren) → neu laden */ if (err.code === 'version_conflict') { await viewFine(id); toast(t('changed_reloaded'), true); return; } toast(err.message, true); } };
   const cf = $('#cf');
   if (cf) {
     // nur Fahrer der Umgebung des Schreibens (Inhaber sieht Konten aller Umgebungen); Kandidaten ergänzen, auch wenn inzwischen deaktiviert/Rolle gewechselt (18.10.2026)
@@ -6082,7 +6082,7 @@ async function viewMaster(argKey, argVal, cached) {
   // Entscheidung im Master-Eingang: ohne Netz Meldung statt stillem Abbruch; Doppeltippen sendet nicht zweimal
   // „Erledigt“ ist endgültig (Status steigt nur auf, schließt auch ältere Einträge desselben Befunds) – Rückfrage gegen Fehltipp am Handy (23.10.2026)
   $$('[data-dec]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); if (a.dataset.busy) return; if (a.dataset.st === 'erledigt' && !confirm(t('dec_resolve_confirm'))) return; a.dataset.busy = '1'; a.setAttribute('aria-disabled', 'true');
-    try { const r = await api('POST', `/api/master/${a.dataset.dec}/decision`, { decision_status: a.dataset.st, ...(a.dataset.was ? { expected_status: a.dataset.was } : {}) }, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate) toast(t('saved_before')); /* Backlog 805j */ S.mDecKeep = true; await viewMaster(); } catch (err) { toast(err.message, true); } finally { delete a.dataset.busy; a.removeAttribute('aria-disabled'); } }));
+    try { const r = await api('POST', `/api/master/${a.dataset.dec}/decision`, { decision_status: a.dataset.st, ...(a.dataset.was ? { expected_status: a.dataset.was } : {}) }, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate) toast(t('saved_before')); /* Backlog 805j */ S.mDecKeep = true; await viewMaster(); } catch (err) { /* Backlog 820: andere Leitung hat inzwischen entschieden → neu laden statt „Bitte neu laden“ */ if (err.code === 'version_conflict') { S.mDecKeep = true; await viewMaster(); toast(t('changed_reloaded'), true); } else toast(err.message, true); } finally { delete a.dataset.busy; a.removeAttribute('aria-disabled'); } }));
 }
 
 // ---------- Prüftermine (Fuhrpark gesamt) ----------

@@ -29640,6 +29640,16 @@ await test('Backlog 819 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig�
   eq((await U.fleet.patch(`/api/maintenance/${R}`, { evidence: 'Prüfbuch S. 5' })).status, 200, 'ohne expected wie bisher');
 });
 
+await test('Backlog 820 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig“ – Knöpfe ohne Formular): Konflikt bei Entscheidung im Master-Eingang bzw. Bußgeld-Knopf (Fahrer informieren/quittieren) lädt die Ansicht neu und meldet „aktualisiert“ statt „Bitte neu laden“; Texte DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (err.code === 'version_conflict') { S.mDecKeep = true; await viewMaster(); toast(t('changed_reloaded'), true); } else toast(err.message, true);"), 'Master-Eingang');
+  ok(app.includes("if (err.code === 'version_conflict') { await viewFine(id); toast(t('changed_reloaded'), true); return; }"), 'Bußgeld-Knöpfe');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].changed_reloaded && !/neu laden|reload|оновіть/i.test(STRINGS[l].changed_reloaded), 'Text ' + l);
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-master-gleichzeitig.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
