@@ -29075,6 +29075,32 @@ await test('Backlog 805b (Blickwinkel „Funkloch“): Fahrtenschreiber-Auslesun
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-auslesung-zuordnung-funkloch.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 805c (Blickwinkel „Funkloch“): Fahrzeug-Stammdaten, Reifengröße prüfen und Dokument-Upload der Akte mit Zeitlimit; Wiederholung der Stammdaten mit altem Stand und gleichen Werten → „unchanged“ statt Konflikt, abweichende Werte weiter 409; Reifengröße und Dokument nie doppelt; UI-Prüfung `ui-stammdaten-dokument-funkloch.py` steht in `pruefen.sh`', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("/spec`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805c */ toast(r && r.unchanged ? t('saved_before') : '✓');"), 'Stammdaten');
+  ok(app.includes("{ axle: b.dataset.ver, size: b.dataset.size, verified: true }, { timeoutMs: SEND_TIMEOUT_MS });"), 'Reifengröße');
+  ok(app.includes("blob, { timeoutMs: PHOTO_TIMEOUT_MS, headers: { 'x-filename'") && app.includes("t(docf.dataset.lostFile === fsig ? 'saved_before' : 'doc_duplicate')"), 'Dokument');
+  ok(app.includes("/documents?kind=pruefbericht&note=${encodeURIComponent(note)}`, blob, { timeoutMs: PHOTO_TIMEOUT_MS,"), 'Prüfbericht');
+  ok(app.includes("/api/fines/${id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS,") && app.includes("if (err && err.offline) S.fineLostFile = fsig; ff.value = '';"), 'Bußgeld-Datei');
+  const { U } = await freshWorld();
+  const V = 'VIN:WMA15SZZ2HM722774';
+  const st = (await U.fleet.get(`/api/vehicles/${V}`)).data.vehicle.updated_at;
+  const sb = { zgm_kg: 18000, first_registration: '2016-03-01', spec_source: 'Fahrzeugschein 805c', expected_updated_at: st };
+  const s1 = await U.fleet.post(`/api/vehicles/${V}/spec`, sb); eq(s1.status, 200, JSON.stringify(s1.data)); ok(!s1.data.unchanged);
+  const s2 = await U.fleet.post(`/api/vehicles/${V}/spec`, sb); eq(s2.status, 200, 'Wiederholung kein Konflikt'); eq(s2.data.unchanged, true);
+  const s3 = await U.fleet.post(`/api/vehicles/${V}/spec`, { ...sb, zgm_kg: 19000 }); eq(s3.status, 409, 'andere Werte auf altem Stand'); eq(s3.data.error, 'version_conflict');
+  const s4 = await U.fleet.post(`/api/vehicles/${V}/spec`, { ...sb, spec_source: 'anderer Nachweis' }); eq(s4.status, 409, 'anderer Nachweis auf altem Stand');
+  eq((await U.fleet.get(`/api/vehicles/${V}`)).data.vehicle.zgm_kg, 18000);
+  const t1 = await U.ws.post(`/api/vehicles/${V}/tires/specs`, { axle: 'lenkachse', size: '315/70 R22.5', verified: true }); eq(t1.status, 200);
+  const t2 = await U.ws.post(`/api/vehicles/${V}/tires/specs`, { axle: 'lenkachse', size: '315/70 R22.5', verified: true }); eq(t2.status, 200); eq(t2.data.unchanged, true, 'Reifengröße nie doppelt');
+  const pdf = new TextEncoder().encode('%PDF-1.4\n% 805c\n%%EOF'); const H = { 'content-type': 'application/pdf', 'x-filename': encodeURIComponent('zb1.pdf') };
+  eq((await U.fleet.req('POST', `/api/vehicles/${V}/documents?kind=zulassung&note=805c`, pdf, H)).status, 201);
+  const d2 = await U.fleet.req('POST', `/api/vehicles/${V}/documents?kind=zulassung&note=805c`, pdf, H); eq(d2.data.duplicate, true); eq(d2.data.differs, false);
+  eq((await U.fleet.get(`/api/vehicles/${V}`)).data.documents.filter((x) => JSON.stringify(x).includes('zb1.pdf')).length, 1, 'Dokument nie doppelt');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-stammdaten-dokument-funkloch.py|'), 'UI-Prüfung eingetragen');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

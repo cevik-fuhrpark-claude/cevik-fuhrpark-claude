@@ -1243,7 +1243,12 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   // gelesener Stand (Formular sendet `expected_updated_at`): zwischenzeitliche Änderung → 409 statt still überschreiben (21.10.2026, Backlog 105)
   const expected = body.expected_updated_at ? str(body.expected_updated_at, { max: 40, field: 'Stand' }) : null;
   const up = await env.DB.prepare('UPDATE vehicles SET zgm_class=?, zgm_kg=?, first_registration=?, spec_source=?, updated_at=? WHERE id=? AND (? IS NULL OR updated_at=?)').bind(cls, kg, ez, source, nowIso(), vehicleId, expected, expected).run();
-  if (expected && !(up.meta && up.meta.changes)) throw conflict('version_conflict', 'Inzwischen von jemand anderem geändert – bitte neu laden.');
+  if (expected && !(up.meta && up.meta.changes)) {
+    // Backlog 805c (Funkloch): Antwort verloren, erneutes Speichern derselben Eingaben – steht schon genau so da → kein Konflikt
+    const cur = await env.DB.prepare('SELECT zgm_class, zgm_kg, first_registration, spec_source FROM vehicles WHERE id=?').bind(vehicleId).first();
+    if (cur && (cur.zgm_class || null) === cls && (cur.zgm_kg ?? null) === kg && (cur.first_registration || null) === ez && cur.spec_source === source) return { ok: true, zgm_class: cls, husp_recalc: 0, unchanged: true };
+    throw conflict('version_conflict', 'Inzwischen von jemand anderem geändert – bitte neu laden.');
+  }
   await audit(env, user.id, 'vehicle.spec', vehicleId, { plate: v.plate, from: { zgm_class: v.zgm_class, zgm_kg: v.zgm_kg, first_registration: v.first_registration }, to: { zgm_class: cls, zgm_kg: kg, first_registration: ez }, source });
   const sync = await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [vehicleId] });
   return { ok: true, zgm_class: cls, husp_recalc: sync.changed };

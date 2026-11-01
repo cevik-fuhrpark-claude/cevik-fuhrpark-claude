@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, S, SEND_TIMEOUT_MS, TST, VEH_SORTS, afLink, announceHits, api, bDate, bindTachoCancel, caseList, checkLabel, ctChip, ctLines, ctRet, decIn, download, dqDetail, dur, envFn, esc, eur, eurIst, fMsg, fcLabel, fileUrl, fmtD, fmtDT, fmtKm, fmtMm, fmtMonth, fmtNum, hj, hoMissing, huNote, isMgr, kmFcHint, kmFcHtml, langAttr, lostDup, lostMark, mEv, mY, maintOrderHtml, mayReport, mk, mkR, noneP, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, render, rkFor, searchKey, siteKeyUi, sortPref, stackTables, supplierLabel, t, tachoHistList, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, uid, vlAt, vsDef, warrChip, wsForSite, wsOptions } from './app-main.js';
+import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, TST, VEH_SORTS, afLink, announceHits, api, bDate, bindTachoCancel, caseList, checkLabel, ctChip, ctLines, ctRet, decIn, download, dqDetail, dur, envFn, esc, eur, eurIst, fMsg, fcLabel, fileUrl, fmtD, fmtDT, fmtKm, fmtMm, fmtMonth, fmtNum, hj, hoMissing, huNote, isMgr, kmFcHint, kmFcHtml, langAttr, lostDup, lostMark, mEv, mY, maintOrderHtml, mayReport, mk, mkR, noneP, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, render, rkFor, searchKey, siteKeyUi, sortPref, stackTables, supplierLabel, t, tachoHistList, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, uid, vlAt, vsDef, warrChip, wsForSite, wsOptions } from './app-main.js';
 
 // Durchführung älter als die gespeicherte letzte: nur im Verlauf gespeichert, Fälligkeit unverändert – ausdrücklich sagen (17.10.2026)
 const doneToast = (r) => toast(r && r.older_than_last ? '✓ ' + t('mt_older_saved').replace('{d}', fmtD(r.last_done_date)) : '✓');
@@ -358,7 +358,8 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   const prt = $('#prt'); if (prt) prt.onclick = () => window.print();
   const docf = $('#docf'); if (docf) docf.onsubmit = async (e) => {
     e.preventDefault(); const file = docf.file.files[0]; if (!file) return;
-    try { const blob = file.type === 'application/pdf' ? file : await prepareUpload(file); const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/documents?kind=${encodeURIComponent(docf.kind.value)}&note=${encodeURIComponent(docf.note.value)}${docf.valid_until.value ? '&valid_until=' + docf.valid_until.value : ''}`, blob, { headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); if (r.duplicate && r.differs) {
+    const fsig = [file.name, file.size, file.lastModified, docf.kind.value, docf.note.value, docf.valid_until.value].join('|'); // Backlog 805c: Antwort verloren → „War bereits gespeichert“
+    try { const blob = file.type === 'application/pdf' ? file : await prepareUpload(file); const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/documents?kind=${encodeURIComponent(docf.kind.value)}&note=${encodeURIComponent(docf.note.value)}${docf.valid_until.value ? '&valid_until=' + docf.valid_until.value : ''}`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); /* Backlog 805c: gleiche Datei = duplicate, nie doppelt */ if (r.duplicate && r.differs) {
         // gleiche Datei mit anderen Angaben: nichts übernommen – Korrekturformular mit den neuen Angaben öffnen (19.10.2026: still verworfen)
         const want = { kind: docf.kind.value, note: docf.note.value, valid_until: docf.valid_until.value };
         toast(t('doc_duplicate_differs'), true); await viewVehicle(id);
@@ -367,7 +368,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
         await new Promise((res) => setTimeout(res, 0));
         const ed = $('#docedit'); const dd = $('#docedit-d');
         if (ed && dd && [...ed.file_id.options].some((o) => o.value === r.id)) { ed.file_id.value = r.id; ed.kind.value = want.kind; ed.note.value = want.note; ed.valid_until.value = want.valid_until; dd.open = true; dd.scrollIntoView({ block: 'start' }); }
-      } else { toast(r.duplicate ? t('doc_duplicate') : '✓'); viewVehicle(id); } } catch (err) { toast(err.message, true); }
+      } else { toast(r.duplicate ? t(docf.dataset.lostFile === fsig ? 'saved_before' : 'doc_duplicate') : '✓'); viewVehicle(id); } } catch (err) { if (err && err.offline) docf.dataset.lostFile = fsig; toast(err.message, true); }
   };
   // Angaben eines Dokuments korrigieren (Art, Bemerkung, „gültig bis“) – Formular mit den gelesenen Werten, Server prüft den gelesenen Stand
   const doced = $('#docedit'); if (doced) {
@@ -437,7 +438,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
     }
     if (file) {
       const note = `${kind}${spSame ? '+SP' : ''} ${b.done_date}: ${b.evidence}`.slice(0, 200); // gespeicherter Text: Datum als JJJJ-MM-TT (nicht je Sprache)
-      try { const blob = file.type === 'application/pdf' ? file : await prepareUpload(file); await api('POST', `/api/vehicles/${encodeURIComponent(id)}/documents?kind=pruefbericht&note=${encodeURIComponent(note)}`, blob, { headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); } catch (err) { errs.push(`${t('hs_report_file')}: ${err.message}`); }
+      try { const blob = file.type === 'application/pdf' ? file : await prepareUpload(file); await api('POST', `/api/vehicles/${encodeURIComponent(id)}/documents?kind=pruefbericht&note=${encodeURIComponent(note)}`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, /* Backlog 805c */ headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); } catch (err) { errs.push(`${t('hs_report_file')}: ${err.message}`); }
     }
     if (errs.length) { toast(t('hs_saved_partly').replace('{k}', mk(kind)) + ' ' + errs.join(' · '), true); viewVehicle(id); return; }
     doneToast(r); doneNext();
@@ -454,7 +455,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
     if (b) { const fm = $(`form[data-mdone="${CSS.escape(rid)}"]`); if (fm && fm.hidden) b.click(); if (fm) { fm.style.scrollMarginTop = '90px'; fm.scrollIntoView({ block: 'start' }); } }
     else { const hf = document.querySelector(`form[data-hsdone="${CSS.escape(rid)}"]`); const dt = hf && hf.closest('details'); if (dt) { dt.open = true; dt.style.scrollMarginTop = '90px'; dt.scrollIntoView({ block: 'start' }); hf.done_date.focus({ preventScroll: true }); } }
   }
-  const spf = $('#specf'); if (spf) spf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(spf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/spec`, b); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+  const spf = $('#specf'); if (spf) spf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(spf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/spec`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805c */ toast(r && r.unchanged ? t('saved_before') : '✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
   const kf = $('#kf'); if (kf) kf.onsubmit = async (e) => {
     e.preventDefault();
     try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/odometer`, { km: kf.km.value, measured_on: kf.measured_on.value || null, note: kf.note.value || null }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 804: gleicher Stand am selben Tag = duplicate */ if (r.warning) toast(r.warning_items ? `${t('km_warn_saved')}: ${r.warning_items.map((w) => t(w.dir === 'below' ? 'km_warn_below' : 'km_warn_above').replace('{km}', fmtNum(w.km)).replace('{d}', fmtD(w.at))).join(' · ')}` : r.warning, true); viewVehicle(id); }
@@ -598,7 +599,7 @@ async function renderTires(id, el, keep = null) {
   };
   if ($('#woform', el)) $('#woform', el).onsubmit = async (e) => { e.preventDefault(); const fm = e.target; const b = Object.fromEntries(new FormData(fm)); if (!b.planned_date) delete b.planned_date; fm.querySelector('button').disabled = true;
     try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/winter-order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓ ' + r.case_no); renderTires(id, el); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } };
-  $$('[data-ver]', el).forEach((b) => (b.onclick = async () => { try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/specs`, { axle: b.dataset.ver, size: b.dataset.size, verified: true }); if (r && r.tacho_check_possible) toast(t('tacho_check_possible')); renderTires(id, el); } catch (err) { toast(err.message, true); } }));
+  $$('[data-ver]', el).forEach((b) => (b.onclick = async () => { try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/specs`, { axle: b.dataset.ver, size: b.dataset.size, verified: true }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805c: Wiederholung = unchanged */ if (r && r.tacho_check_possible) toast(t('tacho_check_possible')); renderTires(id, el); } catch (err) { toast(err.message, true); } }));
 }
 const VEH_DOCS_MAX = 30;
 

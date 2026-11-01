@@ -395,6 +395,7 @@ UI-Hinweis zum Fahrzeug und Kilometerstand im Funkloch: ohne Antwort nach dem Ze
 UI-Fahrzeug-/Fahrerakte im Funkloch: Prüftermin, Vertrag, Nachweis und Führerscheinkontrolle ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern ohne zweiten Eintrag (DE/UK/EN; Backlog 804)|ui-akte-funkloch.py|/tmp/cfp-akte-funkloch.log
 UI-Prüfung erledigt/Werkstattauftrag im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern ohne zweite Durchführung bzw. zweiten Auftrag (DE/UK/EN; Backlog 805)|ui-pruefung-funkloch.py|/tmp/cfp-pruefung-funkloch.log
 UI-Fahrtenschreiber-Auslesung und Fahrerzuordnung im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern meldet „War bereits gespeichert“ (DE/UK/EN; Backlog 805)|ui-auslesung-zuordnung-funkloch.py|/tmp/cfp-auslesung-zuordnung-funkloch.log
+UI-Fahrzeug-Stammdaten und Dokument-Upload der Akte im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern meldet „War bereits gespeichert“ (DE/UK/EN; Backlog 805)|ui-stammdaten-dokument-funkloch.py|/tmp/cfp-stammdaten-dokument-funkloch.log
 '
 N=0
 NL='
