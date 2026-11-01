@@ -18050,7 +18050,7 @@ await test('Springer / Auslesung / Datensicherung (Teilagenten 23.10.): Abfahrts
   const dep = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('async function viewDepartureCheck(') + 6000);
   ok(dep.includes("departureLockBox(vs.find((x) => x.id === id)") && dep.includes("v.availability === 'gesperrt' ? ' – ' + esc(t('locked'))"), 'Kontrolle zeigt Sperre aus der Fahrzeugliste');
   ok(dep.indexOf('showKnown();') < dep.indexOf("if (S.me.role === 'driver') api('GET', '/api/me/vehicles')"), 'Sperre auch für andere Rollen / vor „Meine Fahrzeuge“');
-  ok(app.includes("${extra}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);") && app.includes('if (lockedPage) {') && app.includes("photos_failed', failed) : ''}${r.urgent_push_recipients === 0 ? ' · ⚠ ' + t('no_push_reach') : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked || r.urgent_push_recipients === 0);"), 'Hinweis nach Senden und aus dem Postausgang');
+  ok(app.includes("${extra}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.km_equals_truck || !!r.vehicle_locked || !!r.coupled_locked);") && app.includes('if (lockedPage) {') && app.includes("photos_failed', failed) : ''}${r.urgent_push_recipients === 0 ? ' · ⚠ ' + t('no_push_reach') : ''}`, !!failed || !!r.km_rejected || !!r.km_equals_truck || !!r.vehicle_locked || !!r.coupled_locked || r.urgent_push_recipients === 0);"), 'Hinweis nach Senden und aus dem Postausgang');
   // 2. Fahrzeugwechsel mit „Bisherige Zuordnung beenden“: Ende steht im Protokoll des alten Fahrzeugs
   eq((await U.fleet.post(`/api/vehicles/${V2}/drivers`, { user_id: U.driver.id })).status, 201);
   eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, end_previous: true })).status, 201);
@@ -29989,6 +29989,31 @@ await test('Backlog 833 (Blickwinkel „km der Zugmaschine beim Anhänger einget
     ok(STRINGS[l].dq_trkm_same.includes('{p}') && STRINGS[l].odo_eq_truck.includes('{p}'), 'Platzhalter ' + l);
     ok(/Achskilometerzähler|лічильник кілометрів на осі|hub odometer/.test(STRINGS[l].help_dates_s.split('|')[6]), 'Hilfe-Absatz ' + l);
   }
+});
+
+await test('Backlog 834 (Folge aus 833): Kontrolle am Anhänger mit dem km-Stand der Zugmaschine vom selben Tag → Antwort km_equals_truck (gespeichert wird trotzdem); Lkw und abweichender Stand ohne Hinweis; Hinweis-Text DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon');
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const x = await own.post('/api/users', { username: 'q.leitung', display_name: 'Leitung Q', role: 'fleet', environment: 'production' });
+  const F = new Client(worker, e, 'q.leitung'); await F.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\n'
+    + 'DO-RQ 8341;Dortmund;MAN;2018;WMA06XZZ8RP834001;DO-RQ 8342;Lkw\nDO-RQ 8342;Dortmund;Krone;2018;WKESDP27081834002;;ANH';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const TK = 'VIN:WMA06XZZ8RP834001'; const TR = 'VIN:WKESDP27081834002';
+  const { CHECKLIST } = await import('../src/cases.js');
+  const chk = (v, km) => F.post('/api/inspections', { kind: 'abfahrt', vehicle_id: v, items: CHECKLIST.map((i) => ({ key: i.key, result: 'ok' })), odometer_km: km, request_key: rk() });
+  let r = await chk(TK, 612400); eq(r.status, 201, JSON.stringify(r.data)); ok(!r.data.km_equals_truck, 'Lkw ohne Hinweis');
+  r = await chk(TR, 98100); eq(r.status, 201); ok(!r.data.km_equals_truck, 'eigener Stand ohne Hinweis');
+  r = await chk(TR, 612400); eq(r.status, 201, JSON.stringify(r.data));
+  eq(JSON.stringify(r.data.km_equals_truck), JSON.stringify({ plate: 'DO-RQ 8341' }), 'Hinweis');
+  eq(e.DB.db.prepare('SELECT km FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 1').get(TR).km, 612400, 'gespeichert wie bisher');
+  ok((await F.get('/api/admin/data-quality')).data.items.some((i) => i.check === 'trailer_km_equals_truck' && i.vehicle_id === TR), 'Datenqualität meldet es ebenfalls');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].km_eq_truck_saved && STRINGS[l].km_eq_truck_saved.includes('{p}'), 'Text ' + l);
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(r.km_equals_truck ? ' · ' + t('km_eq_truck_saved').replace('{p}', r.km_equals_truck.plate) : '')") && (app.match(/!!r\.km_equals_truck/g) || []).length >= 4, 'Hinweis in der Bestätigung (online, Postausgang, Kontrolle nach Reparatur)');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

@@ -2346,10 +2346,19 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
         OR (v.kind='lkw' AND o.kind='anhaenger' AND ${PK('v.trailer_plate')}<>'' AND ${PK('o.plate')}=${PK('v.trailer_plate')}))
       AND EXISTS (SELECT 1 FROM cases x WHERE x.environment=?1 AND x.vehicle_id=o.id AND x.safety_lock=1 AND x.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) LIMIT 1`).bind(envName, vehicleId).first() || null;
   }
+  // Backlog 834 (Folge aus 833): km-Stand am Anhänger genau gleich einem km-Stand der gekoppelten Zugmaschine am selben Berliner Tag –
+  // vermutlich deren Tacho abgelesen. Nur Hinweis in der Antwort (gespeichert wird wie bisher; die Datenqualität meldet es ebenfalls).
+  let kmEqTruck = null;
+  if (odo !== null && odo > 0 && !kmRejected) {
+    const PK = PLATE_KEY_SQL;
+    kmEqTruck = await env.DB.prepare(`SELECT o.plate FROM vehicles o JOIN vehicles v ON v.id=?1 WHERE v.kind='anhaenger' AND o.active=1 AND o.kind='lkw' AND o.id<>v.id
+        AND ${COUPLING_PREFERRED_SQL('v')} AND ${COUPLING_PREFERRED_SQL('o')} AND ${PK('o.trailer_plate')}<>'' AND ${PK('o.trailer_plate')}=${PK('v.plate')}
+        AND EXISTS (SELECT 1 FROM odometer_readings z WHERE z.vehicle_id=o.id AND z.km=?2 AND ${berlinDaySql('z.measured_at')}=?3) LIMIT 1`).bind(vehicleId, odo, berlinDate(performedAt)).first() || null;
+  }
   return { id, result: defects.length ? 'maengel' : 'ok', followups: followups.map(fuForUser), km_rejected: kmRejected, km_test_only: kmTestOnly, performed_at: performedAt, vehicle_locked: vehicleLocked,
     coupled_locked: coupledLocked ? { plate: coupledLocked.plate, kind: coupledLocked.kind } : null,
     ...(coupledTarget && defects.some((d) => d.on_coupled) ? { coupled_defects: { plate: coupledTarget.plate, kind: coupledTarget.kind, n: defects.filter((d) => d.on_coupled).length } } : {}),
-    ...(coupledMissing ? { coupled_missing: coupledMissing } : {}) };
+    ...(coupledMissing ? { coupled_missing: coupledMissing } : {}), ...(kmEqTruck ? { km_equals_truck: { plate: kmEqTruck.plate } } : {}) };
 }
 
 // ---------- Dateien ----------

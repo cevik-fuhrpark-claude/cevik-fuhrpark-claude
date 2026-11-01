@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test Backlog 833 (Blickwinkel „km der Zugmaschine beim Anhänger eingetragen“): Datenqualität zeigt
 # „Anhänger-km gleich dem Stand der Zugmaschine“ mit Detail in der Sprache und verlinkt die Zeitleiste (Filter Wartung);
 # dort Markierung „gleicher Stand wie Zugmaschine …“ und „Begründung nachtragen“ mit eigener Abfrage; danach Hinweis erledigt.
+# Backlog 834: Abfahrtskontrolle am Anhänger mit dem Stand der Zugmaschine zeigt nach dem Speichern den Hinweis.
 # DE/UK/EN bei 390/820/1366 px ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -10,6 +11,7 @@ JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, he
 BTN={'de':'Begründung nachtragen','uk':'Додати обґрунтування','en':'Add reason'}
 MARK={'de':'gleicher Stand wie Zugmaschine','uk':'такий самий показник, як у тягача','en':'same reading as tractor unit'}
 DQ={'de':'gleich Zugmaschine','uk':'як у тягача','en':'same as tractor unit'}
+TOAST={'de':'Tacho der Zugmaschine abgelesen?','uk':'зчитано з тахометра тягача?','en':'read from the tractor’s odometer?'}
 PROMPT={'de':'Achszähler','uk':'Лічильник на осі','en':'Hub odometer'}
 fails=[]
 def check(c,m):
@@ -57,6 +59,16 @@ with sync_playwright() as p:
         check('Achszähler zeigt zufällig denselben Stand' in q.inner_text('main') and not q.locator('[data-odoeqtruck]').count(),f'{lang} {w}px: Begründung angezeigt, Markierung weg')
         dq=q.evaluate(JS,['GET','/api/admin/data-quality'])['d']['items']
         check(not any(i['check']=='trailer_km_equals_truck' and i['vehicle_id']==TR for i in dq),f'{lang} {w}px: Datenqualität erledigt')
+        # Backlog 834: Abfahrtskontrolle am Anhänger mit dem heutigen Stand der Zugmaschine → Hinweis in der Bestätigung
+        api('POST',f'/api/vehicles/{TK}/odometer',{'km':650000+n})
+        q.evaluate("sessionStorage.clear()"); q.goto(B+'/#/check/'+TR); q.reload(); q.wait_for_selector('#f .checkitem',timeout=15000)
+        q.evaluate("() => document.querySelectorAll('.checkitem').forEach(r => r.querySelector('input[value=ok]').click())")
+        q.fill('#km',str(650000+n)); q.click('#sb')
+        q.wait_for_selector('.toast',timeout=15000); q.wait_for_timeout(300)
+        tt=' '.join(q.locator('.toast').all_inner_texts())
+        check(TOAST[lang] in tt and tp in tt,f'{lang} {w}px: Hinweis nach dem Speichern „{tt[:140]}“')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: Bestätigung ohne Querscrollen')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/akz_check_{lang}_{w}.png')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs[:2]}')
         c.close()
     br.close()

@@ -1684,7 +1684,7 @@ async function flushOutboxRun() {
           await photosDel(item.body.request_key).catch(() => {});
         }
         done.add(item.body.request_key);
-        toast(item.path === '/api/inspections' ? `${t('check_saved')}${skippedTxt ? ' · ' + skippedTxt : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}${cplNote(r)}${lockedWarn(r)}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${r.urgent_push_recipients === 0 ? ' · ⚠ ' + t('no_push_reach') : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked || r.urgent_push_recipients === 0);
+        toast(item.path === '/api/inspections' ? `${t('check_saved')}${skippedTxt ? ' · ' + skippedTxt : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}${cplNote(r)}${lockedWarn(r)}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${r.urgent_push_recipients === 0 ? ' · ⚠ ' + t('no_push_reach') : ''}`, !!failed || !!r.km_rejected || !!r.km_equals_truck || !!r.vehicle_locked || !!r.coupled_locked || r.urgent_push_recipients === 0);
         // Backlog 539: später gesendete dringende Meldung, die niemand per Push erreicht – Warnung wie beim Senden mit Netz (vorher nur „gesendet“)
       }
       catch (err) {
@@ -3378,7 +3378,7 @@ function cplUpdate(form, sv) {
 }
 // Telematik-km nicht übernommen: kleiner als davor erfasster bzw. größer als später erfasster Stand (src/telematics.js kmRejection)
 const tmKmRej = (dir, km, at) => dir === 'above' ? t('tm_km_rejected_next').replace('{km}', fmtKm(km)).replace('{date}', at ? fmtD(at) : '–') : t('tm_km_rejected').replace('{km}', fmtKm(km));
-const kmWarn = (r) => (r.km_rejected && r.km_rejected.next_km !== undefined ? ' · ' + t('km_not_taken_next').replace('{km}', fmtNum(r.km_rejected.km)).replace('{next}', fmtNum(r.km_rejected.next_km)) : r.km_rejected && r.km_rejected.previous_km === undefined ? ' · ' + t('km_not_taken_other').replace('{km}', fmtNum(r.km_rejected.km)) : r.km_rejected ? ' · ' + t('km_not_taken').replace('{km}', fmtNum(r.km_rejected.km)).replace('{prev}', fmtNum(r.km_rejected.previous_km)) : r.km_test_only ? ' · ' + t('km_test_only') : '');
+const kmWarn = (r) => (r.km_rejected && r.km_rejected.next_km !== undefined ? ' · ' + t('km_not_taken_next').replace('{km}', fmtNum(r.km_rejected.km)).replace('{next}', fmtNum(r.km_rejected.next_km)) : r.km_rejected && r.km_rejected.previous_km === undefined ? ' · ' + t('km_not_taken_other').replace('{km}', fmtNum(r.km_rejected.km)) : r.km_rejected ? ' · ' + t('km_not_taken').replace('{km}', fmtNum(r.km_rejected.km)).replace('{prev}', fmtNum(r.km_rejected.previous_km)) : r.km_test_only ? ' · ' + t('km_test_only') : '') + (r.km_equals_truck ? ' · ' + t('km_eq_truck_saved').replace('{p}', r.km_equals_truck.plate) : ''); // Backlog 834
 // Backlog 824: Antwort der Abfahrtskontrolle – Mängel am gekoppelten Fahrzeug bzw. gekoppeltes Fahrzeug nicht mehr vorhanden
 const cplNote = (r) => (r && r.coupled_defects ? ' · ' + tn('cpl_reported', r.coupled_defects.n).replace('{v}', `${t(r.coupled_defects.kind === 'anhaenger' ? 'trailer' : 'truck')} ${r.coupled_defects.plate}`) : '') + (r && r.coupled_missing ? ' · ' + t('cpl_missing') : '');
 function bindChecklist(form) {
@@ -3526,7 +3526,7 @@ async function viewInspection(caseId) {
     try {
       const r = await api('POST', '/api/inspections', { kind: 'nach_reparatur', case_id: caseId, request_key: key, checklist_version: S.meta.checklist_version || undefined, items: collectChecklist(form), odometer_km: $('#km').value || null, note: $('#n').value || null }, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 799
       draft.clear();
-      toast(`${t('check_saved')}${r.followups.length ? ' · ' + r.followups.map((f) => f.case_no).join(', ') : ''}${kmWarn(r)}`, !!r.km_rejected);
+      toast(`${t('check_saved')}${r.followups.length ? ' · ' + r.followups.map((f) => f.case_no).join(', ') : ''}${kmWarn(r)}`, !!r.km_rejected || !!r.km_equals_truck);
       location.hash = '#/cases/' + caseId;
     } catch (err) { if (err.offline) draft.save(); toast(err.offline ? `${err.message} ${t('form_draft_kept')}` : err.message, true); }
   };
@@ -3616,8 +3616,8 @@ async function viewDepartureCheck(preId) {
       const lockedPage = sb.isConnected && (r.vehicle_locked || r.coupled_locked);
       // Ergebnisseite „gesperrt“ nennt „gespeichert“ und die Sperre selbst – Einblendung nur noch für Foto-/km-Hinweise (verdeckte sonst die Überschrift)
       const extra = `${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}${cplNote(r)}`;
-      if (!lockedPage) toast(`${t('check_saved')}${extra}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);
-      else if (extra) toast(extra.slice(3), !!failed || !!r.km_rejected);
+      if (!lockedPage) toast(`${t('check_saved')}${extra}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.km_equals_truck || !!r.vehicle_locked || !!r.coupled_locked);
+      else if (extra) toast(extra.slice(3), !!failed || !!r.km_rejected || !!r.km_equals_truck);
       // Fahrzeug/Gespann gesperrt (Backlog 252, 25.10.2026): stehende rote Ergebnisseite mit Anruf-Knopf statt nur einer Einblendung,
       // die von selbst verschwindet – wie im Offline-Zweig; Folgeauftrag bleibt über den Knopf erreichbar
       if (lockedPage) {
