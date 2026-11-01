@@ -426,6 +426,7 @@ UI-Kontrolle nach Reparatur am Anhänger: Hinweis Achskilometerzähler am km-Fel
 UI-Anhänger-km gleich Zugmaschine: Datenqualität, Zeitleisten-Markierung, Begründung nachtragen (DE/UK/EN; Backlog 833)|ui-anhaenger-km-zugmaschine.py|/tmp/cfp-anhaenger-km-zugmaschine.log
 UI-Arbeitszeit: Hinweis letzter Arbeitstag ohne Eintrag, Knopf setzt das Datum, nur Werkstatt (DE/UK/EN; Backlog 835)|ui-arbeitszeit-vortag.py|/tmp/cfp-arbeitszeit-vortag.log
 UI-Abfahrtskontrolle km-Tippfehler: letzter Stand, Differenz, Hinweise kleiner/mehr Stellen, auch Fahrer (DE/UK/EN; Backlog 836)|ui-abfahrt-km-tippfehler.py|/tmp/cfp-abfahrt-km-tippfehler.log
+UI-Fahrzeugakte km erfassen: letzter Stand, Differenz, Hinweise kleiner/mehr Stellen, früheres Datum ohne Hinweis (DE/UK/EN; Backlog 837)|ui-akte-km-tippfehler.py|/tmp/cfp-akte-km-tippfehler.log
 '
 N=0
 NL='

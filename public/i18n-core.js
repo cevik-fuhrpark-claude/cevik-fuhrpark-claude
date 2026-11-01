@@ -1176,6 +1176,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // [CLAUDE] Backlog 834: Kontrolle am Anhänger – km-Stand gleich dem der Zugmaschine am selben Tag (Hinweis nach dem Speichern)
 // Backlog 835: Hinweis „letzter Arbeitstag ohne Arbeitszeit“ im Formular Arbeitszeit (Werkstatt)
 // Backlog 836: Abfahrtskontrolle – letzter km-Stand, Differenz, Hinweis bei kleinerem Stand bzw. einer Stelle mehr (Tippfehler)
+// Backlog 837: Fahrzeugakte „Kilometerstand erfassen“ – kleiner als der letzte Stand → nur mit Begründung
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

@@ -3594,7 +3594,7 @@ async function viewInspection(caseId) {
     if (k < lastKm.km) {
       const was = $('#kmok') && $('#kmok').checked;
       box.innerHTML = `<div class="panel warn" role="alert" id="kmlow"><p class="small" style="margin:0 0 6px">${esc(t('irv_km_lower').replace('{prev}', fmtNum(lastKm.km)).replace('{d}', fmtD(lastKm.measured_at)).replace('{plate}', veh.plate || ''))}</p><label style="display:flex;gap:8px;align-items:flex-start;font-weight:normal"><input type="checkbox" id="kmok"${was ? ' checked' : ''} style="width:auto;margin-top:3px"><span>${esc(t('irv_km_lower_ok').replace('{plate}', veh.plate || ''))}</span></label></div>`;
-    } else box.innerHTML = `<p class="small muted" id="kmdiff" style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - lastKm.km)))}</p>`;
+    } else box.innerHTML = `<p class="small muted" id="kmdiff" style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - lastKm.km)))}</p>${kmDigitsWarn(k, lastKm.km, 'id="kmdigits"')}`; // Backlog 837
   };
   $('#km').addEventListener('input', kmInfo);
   // Entwurf je Vorgang (Backlog 186, Werkstatt-Tablet in der Halle): Netzabbruch/Neuladen/Seitenwechsel verlieren die 18 Punkte nicht; die
@@ -3744,9 +3744,10 @@ function departureKmInfo(vs) {
   const raw = $('#km').value; const k = kmInputOk(raw) && raw.trim() ? Number(raw.replace(/[\s\u00a0.]/g, '')) : null;
   if (last === null || k === null) { box.innerHTML = ''; return; }
   if (k < last) { box.innerHTML = `<p class="panel warn small" role="alert" id="dckmlow" style="margin:4px 0 0">⚠️ ${esc(t('dc_km_lower').replace('{prev}', fmtNum(last)).replace('{d}', fmtD(v.last_km_at)))}</p>`; return; }
-  const more = String(k).length > String(last).length && last > 0;
-  box.innerHTML = `<p class="small muted" id="dckmdiff" style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - last)))}</p>${more ? `<p class="panel warn small" role="alert" id="dckmdigits" style="margin:4px 0 0">⚠️ ${esc(t('dc_km_digits').replace('{km}', fmtNum(k)).replace('{prev}', fmtNum(last)))}</p>` : ''}`;
+  box.innerHTML = `<p class="small muted" id="dckmdiff" style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - last)))}</p>${kmDigitsWarn(k, last, 'id="dckmdigits"')}`;
 }
+// Backlog 837 (Folge aus 836): mehr Stellen als der letzte Stand → Hinweis „Ziffern prüfen“ in allen km-Feldern mit bekanntem letztem Stand (keine km-Grenze)
+function kmDigitsWarn(k, last, attr) { return Number.isFinite(k) && Number.isFinite(last) && last > 0 && String(Math.trunc(k)).length > String(Math.trunc(last)).length ? `<p class="panel warn small" role="alert" ${attr} style="margin:4px 0 0">⚠️ ${esc(t('dc_km_digits').replace('{km}', fmtNum(k)).replace('{prev}', fmtNum(last)))}</p>` : ''; }
 function kmInputOk(v) { const x = String(v).replace(/[\s\u00a0]/g, ''); if (!/^\d+$/.test(x) && !/^[1-9]\d{0,2}(\.\d{3})+$/.test(x)) return false; const n = Number(x.replace(/\./g, '')); return n >= 0 && n <= 5000000; }
 
 // Papiervordruck der Abfahrtskontrolle (Notfall: Handy leer/defekt) – gleiche Prüfpunkte wie in der App
@@ -4174,7 +4175,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
     html += `<section class="panel" id="vmile"><h3>${esc(t('vm_title').replace('{n}', ml.max_months))}</h3><dl class="kv">${last ? `<dt>${esc(t('vm_last'))}</dt><dd>${esc(fmtKm(last.to_km))} <span class="muted">· ${fmtD(last.to_at)}</span></dd>` : ''}${ml.months.filter((x) => x.status !== 'no_reading').map((x) => `<dt>${esc(fmtMonth(x.month))}</dt><dd data-vm="${esc(x.status)}">${x.status === 'ok' ? `${esc(fmtKm(x.km))}${x.spans ? ` <span class="muted">· ${esc(t('vm_since').replace('{d}', fmtD(x.from_at)))}</span>` : ''}` : x.status === 'decrease' ? `<span class="muted">${esc(t('vm_decrease'))}</span>` : `<span class="muted">${esc(t('vm_first'))}: ${esc(fmtKm(x.to_km))}</span>`}</dd>`).join('')}${ml.total_km !== null ? `<dt><b>${esc(t('vm_total'))}</b></dt><dd><b>${esc(fmtKm(ml.total_km))}</b></dd>` : ''}</dl><p class="small muted">${esc(t('vm_rule'))}</p></section>`;
   }
   // km erfassen nur mit Recht (Lesezugriff bekam 403, 17.10.2026)
-  if (S.me.role !== 'viewer') html += `<details class="panel"><summary>${esc(t('add_km'))}</summary><form id="kf"><label>${esc(t('km'))}${v.kind === 'anhaenger' ? `<span class="hint" id="kfkmtr">${esc(t('mdone_kmtr'))}</span>` : ''}</label><input name="km" inputmode="numeric" required style="max-width:200px"><label>${esc(t('km_date'))}<span class="hint">${esc(t('km_date_hint'))}</span></label><input type="date" name="measured_on" max="${bDate()}" style="max-width:200px"><div id="kmnote" hidden><label>${esc(t('km_reason'))}</label><input name="note" maxlength="300"></div><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
+  if (S.me.role !== 'viewer') html += `<details class="panel"><summary>${esc(t('add_km'))}</summary><form id="kf"><label>${esc(t('km'))}${v.kind === 'anhaenger' ? `<span class="hint" id="kfkmtr">${esc(t('mdone_kmtr'))}</span>` : ''}</label>${d.odometer && d.odometer[0] ? `<p class="small muted" id="kflast" style="margin:0 0 4px">${esc(t('irv_last_km').replace('{km}', fmtNum(d.odometer[0].km)).replace('{d}', fmtD(d.odometer[0].measured_at)))}</p>` : ''}<input name="km" inputmode="numeric" required style="max-width:200px"><div id="kfkmd" aria-live="polite"></div><label>${esc(t('km_date'))}<span class="hint">${esc(t('km_date_hint'))}</span></label><input type="date" name="measured_on" max="${bDate()}" style="max-width:200px"><div id="kmnote" hidden><label>${esc(t('km_reason'))}</label><input name="note" maxlength="300"></div><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (canMaint) html += `<section class="panel noprint"><h3>${esc(t('ai'))}</h3><div id="ai"></div><button class="btn secondary" id="aib">${esc(t('ai_run'))}</button></section>`;
   render(html, isMgr() ? 'master' : 'vehicles');
   if ($('#vnotes')) loadVehicleNotes(v.id);
@@ -4256,7 +4257,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   $$('form[data-mdone] input[data-lastkm]').forEach((inp) => inp.addEventListener('input', () => {
     const box = inp.parentNode.querySelector('[data-mdkmd]'); if (!box) return; const last = Number(inp.dataset.lastkm); const val = inp.value;
     const k = /^ *[0-9][0-9 .]*$/.test(val) ? Number(val.replace(/[ .]/g, '')) : null;
-    box.innerHTML = k === null || !Number.isFinite(k) ? '' : k < last ? `<p class="panel warn small" role="alert" data-mdkmlow style="margin:4px 0 0">⚠️ ${esc(t('mdone_km_lower').replace('{prev}', fmtNum(last)))}</p>` : `<p class="small muted" data-mdkmdiff style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - last)))}</p>`;
+    box.innerHTML = k === null || !Number.isFinite(k) ? '' : k < last ? `<p class="panel warn small" role="alert" data-mdkmlow style="margin:4px 0 0">⚠️ ${esc(t('mdone_km_lower').replace('{prev}', fmtNum(last)))}</p>` : `<p class="small muted" data-mdkmdiff style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - last)))}</p>${kmDigitsWarn(k, last, 'data-mdkmdigits')}`; // Backlog 837
   }));
   $$('form[data-mdone]').forEach((fm) => (fm.onsubmit = async (e) => {
     e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k];
@@ -4310,7 +4311,17 @@ async function viewVehicle(id, focusEv = null, sec = null) {
     else { const hf = document.querySelector(`form[data-hsdone="${CSS.escape(rid)}"]`); const dt = hf && hf.closest('details'); if (dt) { dt.open = true; dt.style.scrollMarginTop = '90px'; dt.scrollIntoView({ block: 'start' }); hf.done_date.focus({ preventScroll: true }); } }
   }
   const spf = $('#specf'); if (spf) spf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(spf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/spec`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805c */ toast(r && r.unchanged ? t('saved_before') : '✓'); viewVehicle(id); } catch (err) { if (err.code === 'version_conflict') { S.vLost = { id, form: 'specf', ...conflictMine(spf) }; viewVehicle(id); return; } toast(err.message, true); } };
-  const kf = $('#kf'); if (kf) kf.onsubmit = async (e) => {
+  // Backlog 837 (Folge aus 836): „Kilometerstand erfassen“ zeigt den letzten Stand, beim Tippen die Differenz bzw. Hinweise (kleiner → nur mit
+  // Begründung; mehr Stellen → Ziffern prüfen). Nur für heute – ein nachgetragenes Ablesedatum vergleicht der Server mit den Nachbarwerten.
+  const kfo = d.odometer && d.odometer[0];
+  const kfInfo = () => {
+    const box = $('#kfkmd'); if (!box || !kfo) return; const raw = kf.km.value; const past = kf.measured_on.value && kf.measured_on.value < bDate();
+    const k = !past && raw.trim() && kmInputOk(raw) ? Number(raw.replace(/[\s\u00a0.]/g, '')) : null;
+    box.innerHTML = k === null ? '' : k < kfo.km ? `<p class="panel warn small" role="alert" id="kfkmlow" style="margin:4px 0 0">⚠️ ${esc(t('kf_km_lower').replace('{prev}', fmtNum(kfo.km)).replace('{d}', fmtD(kfo.measured_at)))}</p>`
+      : `<p class="small muted" id="kfkmdiff" style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - kfo.km)))}</p>${kmDigitsWarn(k, kfo.km, 'id="kfkmdigits"')}`;
+  };
+  const kf = $('#kf'); if (kf) { kf.km.addEventListener('input', kfInfo); kf.measured_on.addEventListener('input', kfInfo); kf.measured_on.addEventListener('change', kfInfo); }
+  if (kf) kf.onsubmit = async (e) => {
     e.preventDefault();
     try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/odometer`, { km: kf.km.value, measured_on: kf.measured_on.value || null, note: kf.note.value || null }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 804: gleicher Stand am selben Tag = duplicate */ if (r.warning) toast(r.warning_items ? `${t('km_warn_saved')}: ${r.warning_items.map((w) => t(w.dir === 'below' ? 'km_warn_below' : 'km_warn_above').replace('{km}', fmtNum(w.km)).replace('{d}', fmtD(w.at))).join(' · ')}` : r.warning, true); viewVehicle(id); }
     catch (err) { toast(err.message, true); if (err.code === 'km_not_plausible') { $('#kmnote').hidden = false; kf.note.required = true; kf.note.focus(); } }
@@ -4607,7 +4618,7 @@ async function renderTires(id, el, keep = null) {
     if (!d.last_km || k === null || !Number.isFinite(k)) { box.innerHTML = ''; return; }
     box.innerHTML = k < d.last_km.km
       ? `<p class="panel warn small" role="alert" id="tfkmlow" style="margin:4px 0 0">⚠️ ${esc(t('tfkm_lower').replace('{prev}', fmtNum(d.last_km.km)).replace('{d}', fmtD(d.last_km.measured_at)).replace('{plate}', (d.vehicle && d.vehicle.plate) || ''))}</p>`
-      : `<p class="small muted" id="tfkmdiff" style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - d.last_km.km)))}</p>`;
+      : `<p class="small muted" id="tfkmdiff" style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - d.last_km.km)))}</p>${kmDigitsWarn(k, d.last_km.km, 'id="tfkmdigits"')}`; // Backlog 837
   };
   if (tf) { tf.odometer_km.addEventListener('input', tfKm); tfKm(); }
   let woMode = false;
