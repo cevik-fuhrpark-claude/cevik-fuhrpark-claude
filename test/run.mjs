@@ -29850,6 +29850,19 @@ await test('Backlog 826 (Blickwinkel „Werkstatt-Tablet: Kontrolle nach Reparat
   }
 });
 
+await test('Backlog 827 (Blickwinkel „Anhänger ohne eigene Zugmaschine – Fremd-Zugmaschine holt ihn ab“): Abfahrtskontrolle am Anhänger zeigt am km-Feld den Hinweis „nur Achskilometerzähler des Anhängers“; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const dc = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('\nasync function ', app.indexOf('async function viewDepartureCheck(') + 10));
+  ok(dc.includes(`<label for="km">\${esc(t('km'))}<span class="hint" id="kmtr" hidden>\${esc(t('kmtr_hint'))}</span></label>`), 'Hinweis am km-Feld (verborgen)');
+  ok(dc.includes("$('#kmtr').hidden = !(v && v.kind === 'anhaenger');") && dc.includes("$('#v').addEventListener('change', kmTr);") && dc.includes('dmgLink(); cplSync(); kmTr();'), 'nur beim Anhänger, auch bei Vorauswahl/Wechsel');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].kmtr_hint && STRINGS[l].kmtr_hint.length > 40, 'Text kmtr_hint ' + l);
+    ok(/Achskilometerzähler|лічильника на осі|hub odometer/.test(STRINGS[l].help_check_s.split('|').pop()), 'Hilfe-Absatz ' + l);
+  }
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

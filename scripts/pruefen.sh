@@ -419,6 +419,7 @@ UI-Master-Eingang gleichzeitig: Entscheidung auf altem Stand → neu geladen, Me
 UI-Abfahrtskontrolle Fahrzeug gewechselt: Rückfrage mit beiden Kennzeichen, Senden gesperrt, neu prüfen leert alles, übernehmen sendet für das neue Fahrzeug (DE/UK/EN; Backlog 823)|ui-abfahrt-fahrzeugwechsel.py|/tmp/cfp-abfahrt-fahrzeugwechsel.log
 UI-Abfahrtskontrolle Gespann: Auswahl „Mangel betrifft“ mit beiden Kennzeichen, Auftrag am gekoppelten Fahrzeug, Zurücksetzen beim Fahrzeugwechsel (DE/UK/EN; Backlog 824)|ui-abfahrt-gespann.py|/tmp/cfp-abfahrt-gespann.log
 UI-Kontrolle nach Reparatur am falschen Auftrag: Kennzeichen groß, letzter km-Stand mit Differenz, kleinerer Stand nur mit Bestätigung (DE/UK/EN; Backlog 826)|ui-kontrolle-falscher-auftrag.py|/tmp/cfp-kontrolle-falscher-auftrag.log
+UI-Abfahrtskontrolle Anhänger: Hinweis am km-Feld „nur Achskilometerzähler des Anhängers“ (Wechsel, QR-Vorauswahl; DE/UK/EN; Backlog 827)|ui-abfahrt-anhaenger-km.py|/tmp/cfp-abfahrt-anhaenger-km.log
 '
 N=0
 NL='

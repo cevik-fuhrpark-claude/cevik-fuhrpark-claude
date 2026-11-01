@@ -1169,6 +1169,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // [CLAUDE] Backlog 823: Fahrzeug mitten in der Abfahrtskontrolle gewechselt – Rückfrage statt still übernommener Antworten
 // [CLAUDE] Backlog 824: Abfahrtskontrolle mit fest gekoppeltem Fahrzeug – Mangel am Anhänger bzw. an der Zugmaschine dort als Folgeauftrag
 // [CLAUDE] Backlog 826: Kontrolle nach Reparatur – Fahrzeug groß zeigen, km-Stand mit dem zuletzt erfassten vergleichen (falscher Auftrag auf dem Tablet)
+// [CLAUDE] Backlog 827: Abfahrtskontrolle am Anhänger – km-Stand nur vom Achskilometerzähler des Anhängers, nie von der Zugmaschine
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

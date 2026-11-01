@@ -3534,7 +3534,7 @@ async function viewDepartureCheck(preId) {
   const vs = await vehiclesCached();
   if (!vs.length) { render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${noVehiclesNote()}`, 'check'); return; }
   render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${helpLink('check')}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned && vs.filter((x) => x.assigned).length === 1 ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}${v.availability === 'gesperrt' ? ' – ' + esc(t('locked')) : ''}</option>`).join('')}</select><div id="known"></div>
-    ${checklistHtml(true)}${tachoPanel()}${glassPanel(true)}<label for="km">${esc(t('km'))}</label><input id="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12">
+    ${checklistHtml(true)}${tachoPanel()}${glassPanel(true)}<label for="km">${esc(t('km'))}<span class="hint" id="kmtr" hidden>${esc(t('kmtr_hint'))}</span></label><input id="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12">
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('check_photos_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
     <div class="actions"><button class="btn block" id="sb">${esc(t('submit_inspection'))}</button></div></form><p class="small"><a href="#/check/paper">${esc(t('paper_form'))}</a> – ${esc(t('paper_hint'))}</p><p class="small" id="dcdmg">${esc(t('dc_damage_hint'))} <a id="dcdmglink" href="#/new">${esc(t('report_damage'))} ›</a></p>`, 'check');
   const form = $('#f'); bindChecklist(form);
@@ -3545,7 +3545,11 @@ async function viewDepartureCheck(preId) {
   const cplSync = () => cplUpdate(form, vs.find((x) => x.id === $('#v').value));
   $('#v').addEventListener('change', cplSync);
   if (preId) { if (vs.some((v) => v.id === preId)) $('#v').value = preId; else toast(t('qr_vehicle_unknown'), true); }
-  dmgLink(); cplSync();
+  // Backlog 827 (Blickwinkel „Anhänger ohne eigene Zugmaschine – Fremd-Zugmaschine holt ihn ab“): beim Anhänger wurde der km-Stand der
+  // Zugmaschine eingetragen und landete in der Akte des Anhängers (Leasing-/Wartungs-km). Hinweis am km-Feld: nur Achskilometerzähler des Anhängers
+  const kmTr = () => { const v = vs.find((x) => x.id === $('#v').value); $('#kmtr').hidden = !(v && v.kind === 'anhaenger'); };
+  $('#v').addEventListener('change', kmTr);
+  dmgLink(); cplSync(); kmTr();
   // Mangel nennt Fahrtenschreiber/Fahrerkarte (z. B. „Kontrollleuchten: Tacho-Fehler“): dieselben Pflichten wie im Meldeformular (Backlog 216);
   // Listener vor bindFormDraft – wiederhergestellte Entwürfe melden input/change
   // Backlog 292: Mangel nennt einen Glasschaden (z. B. „Spiegel, Scheiben, Wischer: Steinschlag“) → Glasschaden-Hinweis wie im Meldeformular
