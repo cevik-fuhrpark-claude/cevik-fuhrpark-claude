@@ -357,7 +357,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   // Erfassung aufgeklappt – vorher ~4 Bildschirmhöhen Scrollen je Fahrzeug am Umrüsttag
   // Backlog 408: ?sec=wo (aus dem Winterreifen-Auftrag) = Reifen + Umrüstung vorbereitet
   renderTires(id, $('#tires'), sec === 'tires' ? { open: true } : sec === 'wo' ? { open: true, wo: true } : null).then(() => { if (sec !== 'tires' && sec !== 'wo') return; const h = $('#tires-h'); if (h) { h.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true }); } });
-  if (d.contracts) bindCtSection(id, () => viewVehicle(id));
+  if (d.contracts) bindCtSection(id, () => viewVehicle(id), d.odometer || []);
   const prt = $('#prt'); if (prt) prt.onclick = () => window.print();
   const docf = $('#docf'); if (docf) docf.onsubmit = async (e) => {
     e.preventDefault(); const file = docf.file.files[0]; if (!file) return;
@@ -532,7 +532,7 @@ function ctForm(c = {}, docs = null) {
     <label>${esc(t('ct_partner'))}</label><input name="partner" required maxlength="120" value="${v('partner')}"><label>${esc(t('ct_no'))}</label><input name="contract_no" maxlength="60" value="${v('contract_no')}">
     <label>${esc(t('ct_start'))}</label><input type="date" name="start_date" value="${v('start_date')}"><label>${esc(t('ct_end'))}</label><input type="date" name="end_date" value="${v('end_date')}">
     <label>${esc(t('ct_notice'))}</label><input name="notice_months" inputmode="numeric" value="${v('notice_months')}"><label>${esc(t('ct_km_allow'))}</label><input name="km_allowance" inputmode="numeric" value="${v('km_allowance')}">
-    <label>${esc(t('ct_start_km'))}<span class="hint">${esc(t('ct_start_km_hint'))}</span></label><input name="start_km" inputmode="numeric" value="${v('start_km')}"><label>${esc(t('ct_rate'))}</label><input name="monthly_rate_net" inputmode="decimal" value="${c.monthly_rate_net === null || c.monthly_rate_net === undefined ? '' : esc(decIn(c.monthly_rate_net))}">
+    <label>${esc(t('ct_start_km'))}<span class="hint">${esc(t('ct_start_km_hint'))}</span></label><input name="start_km" inputmode="numeric" value="${v('start_km')}"><div data-ctskw aria-live="polite"></div><label>${esc(t('ct_rate'))}</label><input name="monthly_rate_net" inputmode="decimal" value="${c.monthly_rate_net === null || c.monthly_rate_net === undefined ? '' : esc(decIn(c.monthly_rate_net))}">
     <label>${esc(t('evidence'))}</label><input name="evidence" required maxlength="300" value="${v('evidence')}"><label>${esc(t('note'))}</label><input name="note" maxlength="1000" value="${v('note')}">${docSel}`;
 }
 const ctDocLine = (c) => (c.file_id ? `<div><a href="${fileUrl(c.file_id)}" target="_blank" rel="noopener">📎 ${esc(t('ct_doc'))}: ${esc(c.file_name)}</a></div>` : c.file_other_env ? `<div class="small muted">📎 ${esc(t('ct_doc_other_env'))}</div>` : c.ended_on ? '' : `<div class="small muted">${esc(t('ct_doc_missing'))}</div>`);
@@ -543,7 +543,14 @@ function ctSection(list, docs = null) {
     <details class="noprint"><summary>${esc(t('ct_end_btn'))}</summary><form data-ctend="${esc(c.id)}">${ctRetEnd(c)}<label>${esc(t('ct_ended_on'))}</label><input type="date" name="ended_on" max="${bDate()}" value="${bDate()}"><label>${esc(t('ct_end_reason'))}</label><input name="end_note" required maxlength="300"><p class="small muted">${esc(t('ct_ended_note'))}</p><div class="actions"><button class="btn secondary">${esc(t('ct_end_btn'))}</button></div></form></details>`}</section>`).join('') : `<p class="muted">${esc(t('ct_none'))}</p>`}
     <details class="panel noprint"><summary>${esc(t('ct_add'))}</summary><p class="small muted">${esc(t('ct_hint'))}</p><form id="ctf">${ctForm({}, docs)}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>`;
 }
-function bindCtSection(id, reload) {
+function bindCtSection(id, reload, odo = []) {
+  // Backlog 845 (Folge aus 844): beim Tippen von „km bei Übernahme“ warnen, wenn die letzte geladene Ablesung bis zum Tag „Beginn“ mehr Stellen hat
+  // (vermutlich fehlt eine Ziffer). Nur Hinweis, Speichern bleibt möglich; ohne Beginn bzw. ohne Ablesung davor kein Hinweis.
+  $$('#ctf, form[data-ctedit]').forEach((fm) => { const w = fm.querySelector('[data-ctskw]'); if (!w || !fm.elements.start_km) return;
+    const upd = () => { const raw = String(fm.elements.start_km.value).replace(/[\s.]/g, ''); const k = /^\d+$/.test(raw) ? Number(raw) : NaN; const sd = fm.elements.start_date && fm.elements.start_date.value;
+      const pr = sd && k > 0 ? odo.filter((o) => o.measured_at && BERLIN_FMT.format(new Date(o.measured_at)) <= sd).sort((a, b) => String(b.measured_at).localeCompare(String(a.measured_at)))[0] : null;
+      w.innerHTML = pr && String(Math.trunc(pr.km)).length > String(Math.trunc(k)).length ? `<p class="panel warn small" role="alert" data-ctskdigits style="margin:4px 0 0">⚠️ ${esc(t('ct_start_digits').replace('{prev}', fmtKm(pr.km)))}</p>` : ''; };
+    fm.elements.start_km.addEventListener('input', upd); if (fm.elements.start_date) fm.elements.start_date.addEventListener('input', upd); });
   const f = $('#ctf'); if (f) f.onsubmit = async (e) => { e.preventDefault(); const b = ctBody(f); try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/contracts`, b, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); reload(); } catch (err) { if (lostDup(f, b, err, ['duplicate_contract'])) { toast(t('saved_before')); reload(); return; } lostMark(f, b, err); toast(err.message, true); } }; // Backlog 804
   // Ratenänderung an einem Vertrag, der vor dem laufenden Monat begann: gilt rückwirkend für alle Laufzeitmonate (Kostenbericht Vorjahr ändert sich) –
   // Rückfrage mit dem Weg „beenden + Folgevertrag“ (Backlog 188, Jahresabschluss)

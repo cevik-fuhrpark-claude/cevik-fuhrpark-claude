@@ -30333,6 +30333,7 @@ await test('Backlog 844 (Blickwinkel „Leasingvertrag: km bei Übernahme mit ei
   eq(ca2.status.km.status, 'ok'); ok(!('start_digits_prev' in ca2.status.km), 'nach Korrektur ohne Hinweis');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-ctstartdigits') && app.includes("t('ct_start_digits')"), 'Oberfläche');
+  ok(app.includes('data-ctskdigits') && app.includes('bindCtSection(id, () => viewVehicle(id), d.odometer || [])'), 'Backlog 845: Formular warnt beim Tippen');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l2 of ['de', 'uk', 'en']) ok(STRINGS[l2].ct_start_digits && STRINGS[l2].ct_start_digits.includes('{prev}'), 'Text ' + l2);
 });

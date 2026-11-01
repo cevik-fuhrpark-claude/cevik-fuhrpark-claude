@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test (01.11.2026, Backlog 844, Blickwinkel „Leasingvertrag: km bei Übernahme mit einer Ziffer zu wenig“): Vertragsübersicht und
-# Fahrzeugakte zeigen an der km-Zeile „km bei Übernahme hat weniger Stellen als der km-Stand vor Vertragsbeginn“ (nur beim betroffenen Vertrag); DE/UK/EN,
+# Fahrzeugakte zeigen an der km-Zeile (Backlog 845: auch das Formular „Vertrag erfassen“ beim Tippen) „km bei Übernahme hat weniger Stellen als der km-Stand vor Vertragsbeginn“ (nur beim betroffenen Vertrag); DE/UK/EN,
 # 390/820/1366 px, ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os, datetime
 from playwright.sync_api import sync_playwright
@@ -38,6 +38,17 @@ with sync_playwright() as p:
             check(('450' in txt),f'{lang} {w}: nennt km vor Beginn ({txt})')
             check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w} {route}: ohne Querscrollen')
             if SHOTS and n: q.locator('[data-ctstartdigits]').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/vertragstartkm-{lang}-{w}-{route[3:9]}.png')
+        # Backlog 845: Formular „Vertrag erfassen“ in der Akte warnt beim Tippen (Beginn nach der Ablesung 450 000)
+        q.goto(B+'/#/vehicles/VIN:WDB96340310844002'); q.reload(); q.wait_for_selector('#ctf', state='attached', timeout=15000)
+        q.evaluate("() => { const f = document.querySelector('#ctf'); f.closest('details').open = true; }")
+        q.fill('#ctf input[name=start_date]', d(-300)); q.fill('#ctf input[name=start_km]', '45000')
+        check(q.locator('#ctf [data-ctskdigits]').count()==1,f'{lang} {w}: Formular warnt bei 45 000')
+        if SHOTS: q.locator('#ctf [data-ctskdigits]').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/vertragstartkm-form-{lang}-{w}.png')
+        q.fill('#ctf input[name=start_km]', '450000')
+        check(q.locator('#ctf [data-ctskdigits]').count()==0,f'{lang} {w}: Formular ohne Hinweis bei 450 000')
+        q.fill('#ctf input[name=start_km]', '45000'); q.fill('#ctf input[name=start_date]', d(-320))
+        check(q.locator('#ctf [data-ctskdigits]').count()==0,f'{lang} {w}: Beginn vor der Ablesung → kein Hinweis')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w} Formular: ohne Querscrollen')
         check(not errs,f'{lang} {w}: keine Skriptfehler {errs[:2]}')
         c.close()
     br.close()
