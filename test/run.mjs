@@ -2020,7 +2020,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -29908,6 +29908,20 @@ await test('Backlog 828 (Blickwinkel „Werkstatt erfasst Reifen am Anhänger mi
     ok(STRINGS[l].tire_km_lower && STRINGS[l].tire_km_lower.includes('{km}') && STRINGS[l].tire_km_lower.includes('{prev}'), 'Text tire_km_lower ' + l);
     ok(/Achskilometerzähler|лічильник на осі|hub odometer/.test(STRINGS[l].help_tires_s.split('|').pop()), 'Hilfe-Absatz ' + l);
   }
+});
+
+await test('Backlog 829 (Blickwinkel „Werkstatt trägt Wartung am Anhänger mit km der Zugmaschine ein“): Formular „erledigt“ zeigt am km-Feld beim Anhänger den Hinweis „nur Achskilometerzähler“ und den zuletzt erfassten Stand, beim Tippen Differenz bzw. Hinweis bei kleinerem Stand; Texte DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const f = app.slice(app.indexOf('function maintDoneForm('), app.indexOf('\n}', app.indexOf('function maintDoneForm(')));
+  ok(f.startsWith('function maintDoneForm(m, v = null, lastKm = null)'), 'Signatur');
+  ok(f.includes("v && v.kind === 'anhaenger' ? `<span class=\"hint\" data-mdkmtr>${esc(t('mdone_kmtr'))}</span>`") && f.includes('data-mdkmlast') && f.includes('data-lastkm='), 'Hinweise am km-Feld');
+  ok(app.includes(".map((m) => maintDoneForm(m, v, d.odometer && d.odometer[0])).join('')") && !app.includes('.map(maintDoneForm)'), 'Aufruf mit Fahrzeug und letztem Stand');
+  ok(app.includes("$$('form[data-mdone] input[data-lastkm]').forEach((inp) => inp.addEventListener('input'") && app.includes("t('mdone_km_lower')"), 'Anzeige beim Tippen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].mdone_km_lower && STRINGS[l].mdone_km_lower.includes('{prev}'), 'Text mdone_km_lower ' + l); ok(STRINGS[l].mdone_kmtr && STRINGS[l].mdone_kmtr !== STRINGS[l].kmtr_hint, 'Text mdone_kmtr ' + l); }
+  // Server bleibt maßgeblich: kleinerer Stand wird abgewiesen (Bestand, Test „Durchführung km-Stand“), Hinweis-Text sagt das
+  ok(/nicht gespeichert|не буде збережено|not be saved/.test(STRINGS.de.mdone_km_lower + STRINGS.uk.mdone_km_lower + STRINGS.en.mdone_km_lower), 'Hinweis nennt die Folge');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

@@ -421,6 +421,7 @@ UI-Abfahrtskontrolle Gespann: Auswahl „Mangel betrifft“ mit beiden Kennzeich
 UI-Kontrolle nach Reparatur am falschen Auftrag: Kennzeichen groß, letzter km-Stand mit Differenz, kleinerer Stand nur mit Bestätigung (DE/UK/EN; Backlog 826)|ui-kontrolle-falscher-auftrag.py|/tmp/cfp-kontrolle-falscher-auftrag.log
 UI-Abfahrtskontrolle Anhänger: Hinweis am km-Feld „nur Achskilometerzähler des Anhängers“ (Wechsel, QR-Vorauswahl; DE/UK/EN; Backlog 827)|ui-abfahrt-anhaenger-km.py|/tmp/cfp-abfahrt-anhaenger-km.log
 UI-Reifen erfassen am Anhänger: Hinweis Achskilometerzähler, letzter km-Stand, Warnung bei kleinerem Stand (DE/UK/EN; Backlog 828)|ui-reifen-anhaenger-km.py|/tmp/cfp-reifen-anhaenger-km.log
+UI-Prüftermin erledigt am Anhänger: Hinweis Achskilometerzähler, letzter km-Stand, Differenz/Hinweis bei kleinerem Stand (DE/UK/EN; Backlog 829)|ui-wartung-anhaenger-km.py|/tmp/cfp-wartung-anhaenger-km.log
 '
 N=0
 NL='
