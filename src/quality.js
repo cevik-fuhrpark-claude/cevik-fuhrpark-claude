@@ -22,6 +22,7 @@ const hitrunSql = () => `(${HITRUN_WORDS_LAT.map(() => 'instr(lower(c.descriptio
 import { siteKey, siteLabels, siteSelection } from './reports.js';
 import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery } from './maintenance.js';
 import { spRequired, loadHuSpInputs, huSpFor } from './inspection_rules.js';
+import { axleFits, sizeKey } from './tires.js';
 
 // Schweregrad: fehler = widersprüchlich, luecke = fehlt für Auswertungen, hinweis = sollte gepflegt werden
 export const CHECKS = {
@@ -85,6 +86,10 @@ export const CHECKS = {
   // `tire_tread_rise_mm` über der vorherigen Messung derselben Position ohne Wechsel dazwischen und ohne Bemerkung – Position/Wert prüfen.
   // Leer = aus (keine Vorgabe der App); erledigt sich mit der nächsten Messung oder einem Wechsel an der Position
   tire_tread_rise: 'hinweis',
+  // Backlog 850 (Folge aus 849): zuletzt montierter Reifen einer Position (letzter Wechsel mit Größe, ohne Bemerkung) hat eine andere Größe als die
+  // für die Achse hinterlegte (Schreibweise egal) – falscher Reifen montiert, Tippfehler beim Wechsel oder Achsgröße veraltet/ungeprüft.
+  // Erledigt sich mit einem Wechsel in der hinterlegten Größe oder dem Anpassen der Achsgröße; Reserve ohne Achse nie
+  tire_size_differs: 'hinweis',
 };
 
 // FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
@@ -353,6 +358,20 @@ export async function dataQuality(env, user, envName, query = {}) {
     SELECT vehicle_id, position, tread_mm, prev_mm, created_at, prev_at, n FROM m WHERE rn=1`).bind(envName).all()).results;
   for (const r of tr) { const v = vById.get(r.vehicle_id); if (v) addA('tire_tread_rise', v, `${berlinDate(r.created_at)}: ${r.position} ${r.prev_mm} → ${r.tread_mm} mm (vorher ${berlinDate(r.prev_at)})${r.n > 1 ? ` · ${r.n} Positionen` : ''}`,
     { day: berlinDate(r.created_at), position: r.position, prev_mm: r.prev_mm, tread_mm: r.tread_mm, prev_day: berlinDate(r.prev_at), n: r.n }); }
+  // Backlog 850: eine Abfrage (Fensterfunktion je Fahrzeug/Position über die Wechsel, Index idx_tire_events_vehicle) mit der hinterlegten Achsgröße;
+  // Vergleich der Schreibweise wie bei der Erfassung (`sizeKey`). Achse passt zur Fahrzeugart (`axleFits`). Neuester Fall je Fahrzeug, n = Positionen
+  const sd = (await env.DB.prepare(`WITH e AS (SELECT vehicle_id, position, size, note, created_at, ROW_NUMBER() OVER (PARTITION BY vehicle_id, position ORDER BY created_at DESC, rowid DESC) AS rn
+        FROM tire_events WHERE environment=? AND event_type='wechsel' AND position<>'Reserve'),
+      l AS (SELECT vehicle_id, position, size, created_at, CASE WHEN substr(position,1,3)='VA-' THEN 'lenkachse' WHEN substr(position,1,3)='LA-' THEN 'liftachse'
+          WHEN substr(position,1,3)='HA-' THEN 'antriebsachse' WHEN substr(position,1,2)='AH' THEN 'anhaenger' END AS axle
+        FROM e WHERE rn=1 AND size IS NOT NULL AND trim(size)<>'' AND (note IS NULL OR trim(note)=''))
+    SELECT l.vehicle_id, l.position, l.axle, l.size, l.created_at, s.size AS spec, s.verified FROM l JOIN tire_specs s ON s.vehicle_id=l.vehicle_id AND s.axle=l.axle
+    ORDER BY l.created_at DESC`).bind(envName).all()).results;
+  const sdBy = new Map();
+  for (const r of sd) { const v = vById.get(r.vehicle_id); if (!v || !axleFits(v.kind, r.axle) || sizeKey(r.size) === sizeKey(r.spec)) continue;
+    const g = sdBy.get(v.id); if (g) g.n++; else sdBy.set(v.id, { v, r, n: 1 }); }
+  for (const { v, r, n } of sdBy.values()) addA('tire_size_differs', v, `${berlinDate(r.created_at)}: ${r.position} ${r.size} ≠ ${r.axle} ${r.spec}${r.verified ? '' : ' (ungeprüft)'}${n > 1 ? ` · ${n} Positionen` : ''}`,
+    { day: berlinDate(r.created_at), position: r.position, axle: r.axle, size: r.size, spec: r.spec, verified: !!r.verified, n });
   for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) { const lt = k.prev_km !== null && k.odometer_km < k.prev_km; addA('km_inspection_rejected', v, lt ? `${k.odometer_km} km (${berlinDate(k.created_at)}) < ${k.prev_km} km` : `${k.odometer_km} km (${berlinDate(k.created_at)}) > ${k.next_km} km`,
     { km: k.odometer_km, day: berlinDate(k.created_at), other_km: lt ? k.prev_km : k.next_km, cmp: lt ? 'lt' : 'gt' }); } }
   for (const a of assigns.results) if (!a.active) items.push({ check: 'assignment_inactive_user', severity: CHECKS.assignment_inactive_user, vehicle_id: a.vehicle_id, plate: a.plate, detail: a.display_name });

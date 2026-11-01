@@ -282,7 +282,7 @@ async function treadRise(env, envName, vehicleId, type, tread, positions) {
     .map((r) => ({ position: r.position, tread_mm: tread, prev_mm: r.tread_mm, prev_at: r.created_at, rise_mm: lim }));
 }
 const lastKmOf = (env, vehicleId) => env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC, created_at DESC LIMIT 1').bind(vehicleId).first();
-const sizeKey = (x) => String(x || '').toUpperCase().replace(/\s+/g, '');
+export const sizeKey = (x) => String(x || '').toUpperCase().replace(/\s+/g, '');
 // Warnungen zur Profiltiefe – auch bei der Wiederholung mit gleichem request_key aus den gespeicherten Einträgen (21.10.2026: Antwort ging verloren,
 // erneutes Senden zeigte nur „✓“ ohne „unter Minimum“)
 function warnOf(tread, positions) {

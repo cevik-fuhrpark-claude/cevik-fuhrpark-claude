@@ -30,6 +30,9 @@ export function dqDetailText(i, t, fmtD, mk = (k) => k, x = {}) {
   // Backlog 848: aktuelle Profilmessung höher als die vorherige derselben Position ohne Wechsel
   if (i.check === 'tire_tread_rise' && a.day) { const pos = x.pos || ((p) => p); const mm = x.mm || ((n) => `${n} mm`);
     return `${fmtD(a.day)}: ${pos(a.position)} ${mm(a.prev_mm)} → ${mm(a.tread_mm)} (${fmtD(a.prev_day)})${a.n > 1 ? ' · ' + t('dq_tr_npos').replace('{n}', a.n) : ''}`; }
+  // Backlog 850: zuletzt montierte Größe weicht von der hinterlegten Achsgröße ab
+  if (i.check === 'tire_size_differs' && a.day) { const pos = x.pos || ((p) => p); const ax = x.ax || ((v) => v);
+    return `${fmtD(a.day)}: ${pos(a.position)} ${a.size} ≠ ${ax(a.axle)}: ${a.spec}${a.verified ? '' : ` (${t('dq_sd_unverified')})`}${a.n > 1 ? ' · ' + t('dq_tr_npos').replace('{n}', a.n) : ''}`; }
   if (i.check === 'trailer_km_equals_truck' && a.day) return `${fmtD(a.day)}: ${km(a.km)} · ${t('dq_trkm_same').replace('{p}', a.truck_plate)}${a.source ? ' · ' + src(a.source) : ''}${a.n > 1 ? ` · ${a.n}×` : ''}`;
   if (i.check === 'km_rule_no_base' && a.kind) return `${mk(a.kind)} · ${km(a.interval_km)}`;
   if ((i.check === 'km_inspection_rejected' || i.check === 'telematics_km_rejected') && a.cmp)

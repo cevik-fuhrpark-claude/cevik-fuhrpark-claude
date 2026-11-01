@@ -30453,7 +30453,7 @@ await test('Backlog 848 (Folge aus 847): Datenqualität tire_tread_rise – aktu
   eq(dqDetailText(it, (k) => ({ dq_tr_npos: 'Positionen: {n}' })[k] || k, (x) => x.split('-').reverse().join('.'), (k) => k, { pos: (p) => 'Pos ' + p, mm: (n) => String(n).replace('.', ',') + ' mm' }), '01.11.2026: Pos VA-L 8 mm → 10,5 mm (01.10.2026) · Positionen: 2');
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("i.check === 'tire_tread_rise' ? `#/vehicles/${esc(i.vehicle_id)}?sec=tires`"), 'Link Reifen');
+  ok(app.includes("(i.check === 'tire_tread_rise' || i.check === 'tire_size_differs') ? `#/vehicles/${esc(i.vehicle_id)}?sec=tires`"), 'Link Reifen'); // seit Backlog 850 gemeinsam
   ok(app.split('pos: (p) => posL(p), mm: (n) => fmtMm(n)').length === 3, 'Ansicht und CSV übersetzen Position/mm');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) {
@@ -30502,6 +30502,59 @@ await test('Backlog 849 (Blickwinkel „Reifendienst montiert eine andere Größ
   for (const l of ['de', 'uk', 'en']) {
     ok(['{pos}', '{size}', '{spec}', '{axle}'].every((k) => STRINGS[l].size_differs.includes(k)), 'size_differs ' + l);
     ok(/Andere Größe beim Reifenwechsel|Інший розмір під час заміни шини|Different size at a tyre change/.test(STRINGS[l].help_tires_s), 'Hilfe ' + l);
+  }
+});
+await test('Backlog 850 (Folge aus 849): Datenqualität tire_size_differs – zuletzt montierte Größe je Position (letzter Wechsel mit Größe, ohne Bemerkung) weicht von der hinterlegten Achsgröße ab; Schreibweise egal, Reserve nie, Achse passend zur Fahrzeugart; neuester Fall je Fahrzeug mit Anzahl; erledigt durch Wechsel/Anpassen; Detail/Link/Texte DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon');
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const inv = async (b) => { const x = await own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; };
+  const W = await inv({ username: 's.werkstatt', display_name: 'Werkstatt S', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  const F = await inv({ username: 's.fuhrpark', display_name: 'Fuhrpark S', role: 'fleet', environment: 'production' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\nDO-PT 8501;Dortmund;MAN;2019;WMA06XZZ8RP850001;DO-PT 8502;Lkw\nDO-PT 8502;Dortmund;Krone;2019;WKESD000000850002;;Anhänger';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const V = 'VIN:WMA06XZZ8RP850001'; const T = 'VIN:WKESD000000850002';
+  const post = (v, b) => W.post(`/api/vehicles/${v}/tires/events`, { request_key: rk(), ...b });
+  const spec = (v, axle, size, verified = true) => W.post(`/api/vehicles/${v}/tires/specs`, { axle, size, verified });
+  const dq = async () => { const r = await F.get('/api/admin/data-quality'); eq(r.status, 200); return r.data.items.filter((i) => i.check === 'tire_size_differs'); };
+  // ohne hinterlegte Größe kein Befund
+  eq((await post(V, { event_type: 'wechsel', position: 'VA-L', size: '315/80 R22.5' })).status, 201);
+  eq((await dq()).length, 0, 'ohne Achsgröße');
+  eq((await spec(V, 'lenkachse', '385/65 R22.5', false)).status, 200);
+  let d = await dq(); eq(d.length, 1, JSON.stringify(d));
+  ok(d[0].severity === 'hinweis' && d[0].plate === 'DO-PT 8501' && d[0].detail_args.position === 'VA-L' && d[0].detail_args.axle === 'lenkachse' && d[0].detail_args.size === '315/80 R22.5' && d[0].detail_args.spec === '385/65 R22.5' && d[0].detail_args.verified === false && d[0].detail_args.n === 1 && /^\d{4}-\d{2}-\d{2}$/.test(d[0].detail_args.day), JSON.stringify(d[0]));
+  ok(/VA-L 315\/80 R22\.5 ≠ lenkachse 385\/65 R22\.5 \(ungeprüft\)/.test(d[0].detail), d[0].detail);
+  // Messung danach ändert nichts; zweite Position (Antriebsachse zählt hier mit) → neuester Fall + Anzahl
+  eq((await post(V, { event_type: 'messung', position: 'VA-L', tread_mm: '12' })).status, 201);
+  eq((await spec(V, 'antriebsachse', '315/80 R22.5')).status, 200);
+  eq((await post(V, { event_type: 'wechsel', position: 'HA-L-aussen', size: '295/80 R22.5' })).status, 201);
+  d = await dq(); ok(d.length === 1 && d[0].detail_args.position === 'HA-L-aussen' && d[0].detail_args.verified === true && d[0].detail_args.n === 2, JSON.stringify(d));
+  // Schreibweise egal; Wechsel in der hinterlegten Größe erledigt die Position
+  eq((await post(V, { event_type: 'wechsel', position: 'HA-L-aussen', size: '315/80r22.5' })).status, 201);
+  d = await dq(); ok(d.length === 1 && d[0].detail_args.position === 'VA-L' && d[0].detail_args.n === 1, JSON.stringify(d));
+  // Wechsel mit Bemerkung (z. B. Übergangsreifen) zählt nicht
+  eq((await post(V, { event_type: 'wechsel', position: 'VA-L', size: '315/80 R22.5', note: 'Ersatz bis Lieferung' })).status, 201); eq((await dq()).length, 0, 'Bemerkung');
+  eq((await post(V, { event_type: 'wechsel', position: 'VA-R', size: '315/80 R22.5' })).status, 201); eq((await dq()).length, 1, 'VA-R');
+  // Achsgröße anpassen erledigt
+  eq((await spec(V, 'lenkachse', '315/80 R22.5')).status, 200); eq((await dq()).length, 0, 'Achsgröße angepasst');
+  // Reserve nie; Anhänger mit Anhängerachse
+  eq((await spec(T, 'anhaenger', '385/65 R22.5')).status, 200);
+  eq((await post(T, { event_type: 'wechsel', position: 'Reserve', size: '445/45 R19.5' })).status, 201); eq((await dq()).length, 0, 'Reserve');
+  eq((await post(T, { event_type: 'wechsel', position: 'AH2-R', size: '445/45 R19.5' })).status, 201);
+  d = await dq(); ok(d.length === 1 && d[0].plate === 'DO-PT 8502' && d[0].detail_args.axle === 'anhaenger', JSON.stringify(d));
+  eq((await W.get('/api/admin/data-quality')).status, 403);
+  // Detail in der Sprache (Ansicht/CSV), Link zum Reifenabschnitt, Texte
+  const { dqDetailText } = await import('../public/csv.js');
+  const it = { check: 'tire_size_differs', detail: 'x', detail_args: { day: '2026-11-01', position: 'VA-L', axle: 'lenkachse', size: '315/80 R22.5', spec: '385/65 R22.5', verified: false, n: 2 } };
+  eq(dqDetailText(it, (k) => ({ dq_tr_npos: 'Positionen: {n}', dq_sd_unverified: 'ungeprüft' })[k] || k, (x) => x.split('-').reverse().join('.'), (k) => k, { pos: (p) => 'Pos ' + p, ax: (a) => 'Achse ' + a }), '01.11.2026: Pos VA-L 315/80 R22.5 ≠ Achse lenkachse: 385/65 R22.5 (ungeprüft) · Positionen: 2');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(i.check === 'tire_tread_rise' || i.check === 'tire_size_differs') ? `#/vehicles/${esc(i.vehicle_id)}?sec=tires`"), 'Link Reifen');
+  ok(app.split("mm: (n) => fmtMm(n), ax: (v) => t('axle_' + v)").length === 3, 'Ansicht und CSV übersetzen die Achse');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].dq_tire_size_differs && STRINGS[l].dq_sd_unverified, 'Texte ' + l);
+    ok(STRINGS[l].help_tires_s.includes(STRINGS[l].dq_tire_size_differs), 'Hilfe nennt die Prüfung ' + l);
   }
 });
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

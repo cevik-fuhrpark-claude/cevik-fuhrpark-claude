@@ -1185,6 +1185,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 847: Profiltiefe höher als zuletzt ohne Reifenwechsel (Einstellung tire_tread_rise_mm, leer = aus)
 // Backlog 849: Reifenwechsel mit anderer Größe als für die Achse hinterlegt
 // Backlog 848: Datenqualität – aktuelle Profilmessung höher als die vorherige derselben Position ohne Wechsel
+// Backlog 850: Datenqualität – zuletzt montierte Reifengröße weicht von der hinterlegten Achsgröße ab
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
