@@ -564,7 +564,7 @@ async function renderTires(id, el, keep = null) {
       <label>${esc(t('tread'))}</label><input name="tread_mm" inputmode="decimal"><label>${esc(t('pressure'))}</label><input name="pressure_bar" inputmode="decimal">
       <label>${esc(t('tire_sizes'))}</label><input name="size" maxlength="40" placeholder="315/70 R22.5"><p class="small" id="tfspec" hidden></p><label>${esc(t('brand'))}</label><input name="brand" maxlength="60"><label>${esc(t('dot'))}</label><input name="dot" maxlength="20" autocapitalize="characters" placeholder="DOT … 0124">
       <label>${esc(t('winter_mark'))}</label><select name="winter_mark"><option value="">${esc(t('wm_none'))}</option>${(S.meta.tire_winter_marks || []).map((w) => `<option value="${w}">${esc(t('wm_' + w))}</option>`).join('')}</select>
-      <label>${esc(t('km'))}</label><input name="odometer_km" inputmode="numeric"><label>${esc(t('note'))}</label><input name="note" maxlength="1000">
+      <label for="tfkm">${esc(t('km'))}${d.vehicle && d.vehicle.kind === 'anhaenger' ? `<span class="hint" id="tfkmtr">${esc(t('kmtr_hint'))}</span>` : ''}${d.last_km ? `<span class="hint" id="tfkmlast">${esc(t('irv_last_km').replace('{km}', fmtNum(d.last_km.km)).replace('{d}', fmtD(d.last_km.measured_at)))}</span>` : ''}</label><input id="tfkm" name="odometer_km" inputmode="numeric"><div id="tfkmd" aria-live="polite"></div><label>${esc(t('note'))}</label><input name="note" maxlength="1000">
       <input type="hidden" name="case_id"><p class="panel small" id="tfwo" hidden></p><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}</section>
     ${d.history.length ? `<details class="panel" id="tirehistd"><summary>${esc(t('history'))} (${d.history.length}${d.history_truncated ? '+' : ''})</summary>${d.history_truncated ? `<p class="small muted" id="tiretrunc">${esc(t('tire_hist_truncated').replace('{n}', d.history.length))} <a href="${tlHash(id, 'tire')}">${esc(t('timeline'))}</a></p>` : ''}<div class="scroll"><table class="stack" id="tirehist"><thead><tr><th>${esc(t('date'))}</th><th>${esc(t('position'))}</th><th>${esc(t('kind'))}</th><th>${esc(t('audit_person'))}</th></tr></thead><tbody>${d.history.map((h) => `<tr><td class="small">${fmtDT(h.created_at)}</td><td>${esc(posL(h.position))}</td><td>${esc(t('te_' + h.event_type))}${h.tread_mm !== null ? ' · ' + esc(fmtMm(h.tread_mm)) : ''}${h.pressure_bar !== null ? ' · ' + esc(fmtBar(h.pressure_bar)) : ''}${h.size ? ' · ' + esc(h.size) : ''}${h.brand ? ' · ' + esc(h.brand) : ''}${h.winter_mark ? ' · ' + esc(t('wm_' + h.winter_mark)) : ''}${h.note ? '<br><span class="small muted">' + esc(h.note) + '</span>' : ''}</td><td class="small">${esc(pnm(h.recorded_by_name, h.recorded_by_name_hidden))}</td></tr>`).join('')}</tbody></table></div></details>` : ''}`;
   stackTables(el);
@@ -604,6 +604,17 @@ async function renderTires(id, el, keep = null) {
     updSpec(); (bad0 ? tf.size : tf.winter_mark).focus();
     return true;
   };
+  // Backlog 828 (Blickwinkel „Werkstatt erfasst Reifen am Anhänger mit km der Zugmaschine“): Bezug zum zuletzt erfassten Stand des Fahrzeugs;
+  // kleiner → Hinweis (anderes Fahrzeug oder Tippfehler), gespeichert wird trotzdem (km bleibt nur am Reifenereignis)
+  const tfKm = () => {
+    const box = $('#tfkmd', tf); if (!box) return; const v = tf.odometer_km.value;
+    const k = /^ *[0-9][0-9 .]*$/.test(v) ? Number(v.replace(/[ .]/g, '')) : null;
+    if (!d.last_km || k === null || !Number.isFinite(k)) { box.innerHTML = ''; return; }
+    box.innerHTML = k < d.last_km.km
+      ? `<p class="panel warn small" role="alert" id="tfkmlow" style="margin:4px 0 0">⚠️ ${esc(t('tfkm_lower').replace('{prev}', fmtNum(d.last_km.km)).replace('{d}', fmtD(d.last_km.measured_at)).replace('{plate}', (d.vehicle && d.vehicle.plate) || ''))}</p>`
+      : `<p class="small muted" id="tfkmdiff" style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - d.last_km.km)))}</p>`;
+  };
+  if (tf) { tf.odometer_km.addEventListener('input', tfKm); tfKm(); }
   let woMode = false;
   if (tf) { tf.position.onchange = updSpec; tf.event_type.onchange = updSpec; updSpec(); if (keep && keep.wo) woMode = applyWo(); }
   const twp = $('#twopre', el); if (twp) twp.onclick = () => { woMode = applyWo(); if (woMode) tf.closest('details').scrollIntoView({ block: 'start' }); };
@@ -616,7 +627,7 @@ async function renderTires(id, el, keep = null) {
     // Erfassung (21.10.2026: wurden sonst als „duplicate“ verworfen und mit ✓ quittiert), nach Erfolg verworfen
     const ck = JSON.stringify(Object.entries(b).sort()); if (tf.dataset.ck !== ck) { tf.dataset.ck = ck; tf.dataset.key = uid(); }
     b.request_key = tf.dataset.key;
-    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805: request_key je Formular */ const wl = (r.warning_items && r.warning_items.length ? r.warning_items.map((w) => (['tread_below_min', 'spare_below_min'].includes(w.code) ? t(w.code).replace('{mm}', fmtNum(w.tread_mm)).replace('{min}', fmtNum(w.min_mm)) : w.code === 'tacho_check_possible' ? t('tacho_check_possible') : '')).filter(Boolean) : r.warnings || []).filter(Boolean); if (wl.length) toast(wl.join(' · '), true); /* ein Fehler-Toast ersetzt den vorherigen – alle Warnungen in einem (20.10.2026) */ if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.map(posL).join(', ') : '✓');
+    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805: request_key je Formular */ const wl = (r.warning_items && r.warning_items.length ? r.warning_items.map((w) => (['tread_below_min', 'spare_below_min'].includes(w.code) ? t(w.code).replace('{mm}', fmtNum(w.tread_mm)).replace('{min}', fmtNum(w.min_mm)) : w.code === 'tacho_check_possible' ? t('tacho_check_possible') : w.code === 'tire_km_lower' ? t('tire_km_lower').replace('{km}', fmtNum(w.km)).replace('{prev}', fmtNum(w.prev_km)) : '')).filter(Boolean) : r.warnings || []).filter(Boolean); if (wl.length) toast(wl.join(' · '), true); /* ein Fehler-Toast ersetzt den vorherigen – alle Warnungen in einem (20.10.2026) */ if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.map(posL).join(', ') : '✓');
       const ap = [...tf.position.options].map((o) => o.value); const nx = !b.positions && ap.indexOf(b.position) >= 0 ? ap[ap.indexOf(b.position) + 1] : null;
       renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode }); }
     catch (err) { toast(err.message, true); }

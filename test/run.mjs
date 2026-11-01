@@ -2020,7 +2020,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -29860,6 +29860,53 @@ await test('Backlog 827 (Blickwinkel „Anhänger ohne eigene Zugmaschine – Fr
   for (const l of ['de', 'uk', 'en']) {
     ok(STRINGS[l].kmtr_hint && STRINGS[l].kmtr_hint.length > 40, 'Text kmtr_hint ' + l);
     ok(/Achskilometerzähler|лічильника на осі|hub odometer/.test(STRINGS[l].help_check_s.split('|').pop()), 'Hilfe-Absatz ' + l);
+  }
+});
+
+await test('Backlog 828 (Blickwinkel „Werkstatt erfasst Reifen am Anhänger mit km der Zugmaschine“): Reifenakte liefert den letzten km-Stand; kleinerer km-Stand bei der Erfassung → Hinweis tire_km_lower (auch bei Wiederholung), gespeichert wird trotzdem, Akte unverändert; Formular mit Anhänger-Hinweis; Texte/Hilfe DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon'); const db = e.DB.db;
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const inv = async (b) => { const x = await own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; };
+  const F = await inv({ username: 'r.leitung', display_name: 'Leitung R', role: 'fleet', environment: 'production' });
+  const W = await inv({ username: 'r.werkstatt', display_name: 'Werkstatt R', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\n'
+    + 'DO-RK 8281;Dortmund;MAN;2018;WMA06XZZ8RP828001;DO-RK 8282;Lkw\nDO-RK 8282;Dortmund;Krone;2018;WKESDP27081828002;;ANH';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const TK = 'VIN:WMA06XZZ8RP828001'; const TR = 'VIN:WKESDP27081828002';
+  eq((await F.get(`/api/vehicles/${TR}/tires`)).data.last_km, null, 'ohne Ablesung kein Bezug');
+  eq((await F.post(`/api/vehicles/${TK}/odometer`, { km: 612000 })).status, 201);
+  eq((await F.post(`/api/vehicles/${TR}/odometer`, { km: 98000 })).status, 201);
+  const g = (await W.get(`/api/vehicles/${TR}/tires`)).data;
+  ok(g.last_km && g.last_km.km === 98000 && g.last_km.measured_at && g.vehicle.kind === 'anhaenger', 'Bezug Anhänger: ' + JSON.stringify(g.last_km));
+  // plausibler Stand: kein Hinweis
+  let ev = await W.post(`/api/vehicles/${TR}/tires/events`, { event_type: 'messung', position: 'AH1-L', tread_mm: '8', odometer_km: '98 500', request_key: rk() });
+  eq(ev.status, 201, JSON.stringify(ev.data)); ok(!ev.data.warning_items.some((w) => w.code === 'tire_km_lower'), 'kein Hinweis');
+  // Anhänger-Messung mit km-Stand, der kleiner ist (z. B. Ziffern vertauscht) → Hinweis, gespeichert
+  const key = rk();
+  ev = await W.post(`/api/vehicles/${TR}/tires/events`, { event_type: 'messung', position: 'AH1-R', tread_mm: '8', odometer_km: '89 000', request_key: key });
+  eq(ev.status, 201, JSON.stringify(ev.data));
+  const w = ev.data.warning_items.find((x) => x.code === 'tire_km_lower');
+  ok(w && w.km === 89000 && w.prev_km === 98000 && w.prev_at, 'Hinweis: ' + JSON.stringify(ev.data.warning_items)); ok(ev.data.warnings.some((x) => /kleiner als der zuletzt erfasste Stand/.test(x)), 'Text');
+  eq(db.prepare('SELECT odometer_km FROM tire_events WHERE id=?').get(ev.data.id).odometer_km, 89000, 'gespeichert am Reifeneintrag');
+  const re = await W.post(`/api/vehicles/${TR}/tires/events`, { event_type: 'messung', position: 'AH1-R', tread_mm: '8', odometer_km: '89 000', request_key: key });
+  ok(re.data.duplicate && re.data.warning_items.some((x) => x.code === 'tire_km_lower'), 'Wiederholung zeigt den Hinweis erneut');
+  eq(db.prepare('SELECT km FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC LIMIT 1').get(TR).km, 98000, 'Akte unverändert');
+  // Stand der Zugmaschine am Anhänger (größer) → kein Hinweis, aber Formular nennt den Anhänger-Zähler; Lkw bekommt keinen Anhänger-Hinweis
+  ev = await W.post(`/api/vehicles/${TK}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: '9', odometer_km: 612100, request_key: rk() });
+  ok(!ev.data.warning_items.some((x) => x.code === 'tire_km_lower'), 'Lkw plausibel');
+  // Oberfläche + Texte
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rt = app.slice(app.indexOf('async function renderTires('), app.indexOf('\nasync function ', app.indexOf('async function renderTires(') + 10));
+  ok(rt.includes("d.vehicle && d.vehicle.kind === 'anhaenger' ? `<span class=\"hint\" id=\"tfkmtr\">${esc(t('kmtr_hint'))}</span>`"), 'Anhänger-Hinweis am km-Feld');
+  ok(rt.includes("id=\"tfkmlast\"") && rt.includes("t('tfkm_lower')") && rt.includes("tf.odometer_km.addEventListener('input', tfKm); tfKm();"), 'letzter Stand + Hinweis beim Tippen');
+  ok(rt.includes("w.code === 'tire_km_lower' ? t('tire_km_lower')"), 'Hinweis nach dem Speichern');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].tfkm_lower && STRINGS[l].tfkm_lower.includes('{prev}') && STRINGS[l].tfkm_lower.includes('{plate}') && STRINGS[l].tfkm_lower.includes('{d}'), 'Text tfkm_lower ' + l);
+    ok(STRINGS[l].tire_km_lower && STRINGS[l].tire_km_lower.includes('{km}') && STRINGS[l].tire_km_lower.includes('{prev}'), 'Text tire_km_lower ' + l);
+    ok(/Achskilometerzähler|лічильник на осі|hub odometer/.test(STRINGS[l].help_tires_s.split('|').pop()), 'Hilfe-Absatz ' + l);
   }
 });
 

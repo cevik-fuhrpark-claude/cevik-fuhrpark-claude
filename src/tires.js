@@ -136,10 +136,11 @@ export async function tireOverview(env, user, envName, vehicleId) {
   // Der aktuelle Stand je Position (Profil, DOT, Winterkennzeichnung) wird dagegen aus ALLEN Ereignissen bestimmt – vorher nur aus den
   // neuesten 200: Positionen mit älterem letzten Ereignis (z. B. Reserverad, Anhänger) fielen dann aus Akte und Winterstatus heraus,
   // während die Flottenübersicht sie zeigte.
-  const [histRows, all] = await Promise.all([
+  const [histRows, all, lastKm] = await Promise.all([
     env.DB.prepare(`SELECT t.*, u.display_name AS recorded_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS recorded_by_role FROM tire_events t JOIN users u ON u.id=t.recorded_by
     WHERE t.environment=? AND t.vehicle_id=? ORDER BY t.created_at DESC LIMIT ?`).bind(envName, vehicleId, TIRE_HIST_MAX + 1).all(),
     env.DB.prepare(`SELECT position, event_type, tread_mm, dot, winter_mark, created_at FROM tire_events WHERE environment=? AND vehicle_id=? ORDER BY created_at DESC`).bind(envName, vehicleId).all(),
+    lastKmOf(env, vehicleId), // Backlog 828: Bezug für das km-Feld der Erfassung
   ]);
   const historyTruncated = histRows.results.length > TIRE_HIST_MAX;
   // Fahrer sehen Namen anderer Fahrer nicht (wie im Vorgang; vorher z. B. Vorgänger am Fahrzeug sichtbar, 17.10.2026) – nur den eigenen
@@ -176,7 +177,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
     position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
     status: treadStatus(position, x.tread_mm, warn),
   })).sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position));
-  return { vehicle: v, specs, positions, allowed_positions: positionsForKind(v.kind), history, history_truncated: historyTruncated, history_max: TIRE_HIST_MAX, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: linkable(user, wOrder), closed_order: linkable(user, wo ? wo.closedIfOpen(vehicleId, w.status, allEv, v.kind) : null) }; })() };
+  return { vehicle: v, last_km: lastKm ? { km: lastKm.km, measured_at: lastKm.measured_at } : null, specs, positions, allowed_positions: positionsForKind(v.kind), history, history_truncated: historyTruncated, history_max: TIRE_HIST_MAX, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: linkable(user, wOrder), closed_order: linkable(user, wo ? wo.closedIfOpen(vehicleId, w.status, allEv, v.kind) : null) }; })() };
 }
 
 export async function addTireEvent(env, user, envName, vehicleId, body) {
@@ -220,15 +221,15 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const brand = str(body.brand, { max: 60, field: 'Marke' }); const note = str(body.note, { max: 1000, field: 'Bemerkung' });
   // Wiederholung mit gleichem request_key (Netzabbruch, erneutes Absenden): keine doppelten Ereignisse, Antwort duplicate (19.10.2026, Migration 0064)
   const rk = str(body.request_key, { max: 80, field: 'request_key' }) || null;
-  const known = async () => (rk ? (await env.DB.prepare('SELECT id, position, tread_mm FROM tire_events WHERE vehicle_id=? AND request_key=? AND recorded_by=? AND environment=? ORDER BY created_at, rowid').bind(vehicleId, rk, user.id, envName).all()).results : []);
-  { const k = await known(); if (k.length) return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, ...warnOf(k[0].tread_mm, k.map((x) => x.position)) }; }
+  const known = async () => (rk ? (await env.DB.prepare('SELECT id, position, tread_mm, odometer_km FROM tire_events WHERE vehicle_id=? AND request_key=? AND recorded_by=? AND environment=? ORDER BY created_at, rowid').bind(vehicleId, rk, user.id, envName).all()).results : []);
+  { const k = await known(); if (k.length) return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, ...(await kmWarn(env, vehicleId, k[0].odometer_km, warnOf(k[0].tread_mm, k.map((x) => x.position)))) }; }
   const ids = positions.map(() => uuid());
   const res = await env.DB.batch(positions.map((pos, i) => env.DB.prepare(`INSERT INTO tire_events(id,environment,vehicle_id,position,event_type,tread_mm,pressure_bar,size,brand,dot,odometer_km,case_id,note,recorded_by,created_at,winter_mark,request_key)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`).bind(ids[i], envName, vehicleId, pos, type, tread, pressure, size, brand, dot, odo, caseId, note, user.id, now, winter, rk)));
   if (rk && res.every((r) => !(r.meta && r.meta.changes))) { const k = await known();
     if (!k.length) throw conflict('request_key_reused', 'Dieser Buchungsschlüssel wurde bereits für eine andere Buchung verwendet.'); // fremde Kennung (andere Person/Umgebung)
-    return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, ...warnOf(k[0].tread_mm, k.map((x) => x.position)) }; }
-  const w = warnOf(tread, positions);
+    return { id: k[0].id, ids: k.map((x) => x.id), positions: k.map((x) => x.position), duplicate: true, ...(await kmWarn(env, vehicleId, k[0].odometer_km, warnOf(k[0].tread_mm, k.map((x) => x.position)))) }; }
+  const w = await kmWarn(env, vehicleId, odo, warnOf(tread, positions));
   // Backlog 396 (Blickwinkel „Getriebetausch – Fahrtenschreiber“): Wechsel an der Antriebsachse auf eine andere Größe als hinterlegt →
   // Hinweis, dass eine Prüfung des Fahrtenschreibers (§ 57b StVZO) nötig sein kann (reine Information, keine Frist, kein Prüftermin)
   if (type === 'wechsel' && size && positions.some((p) => p.startsWith('HA-'))) {
@@ -237,6 +238,19 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   }
   return { id: ids[0], ids, positions, ...w };
 }
+// Backlog 828 (Blickwinkel „Werkstatt erfasst Reifen am Anhänger mit km der Zugmaschine“): km-Stand der Reifenerfassung kleiner als der
+// zuletzt erfasste Stand des Fahrzeugs → Hinweis (anderes Fahrzeug, z. B. Zugmaschine statt Anhänger, oder Tippfehler). Reine Information:
+// der km-Stand bleibt nur am Reifenereignis und ändert die Fahrzeugakte nicht; gespeichert wird trotzdem.
+async function kmWarn(env, vehicleId, odo, w) {
+  if (odo === null || odo === undefined) return w;
+  const last = await lastKmOf(env, vehicleId);
+  if (last && odo < last.km) {
+    w.warning_items.push({ code: 'tire_km_lower', km: odo, prev_km: last.km, prev_at: last.measured_at });
+    w.warnings.push(`km-Stand ${odo} km ist kleiner als der zuletzt erfasste Stand (${last.km} km) – anderes Fahrzeug oder Tippfehler?`);
+  }
+  return w;
+}
+const lastKmOf = (env, vehicleId) => env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC, created_at DESC LIMIT 1').bind(vehicleId).first();
 const sizeKey = (x) => String(x || '').toUpperCase().replace(/\s+/g, '');
 // Warnungen zur Profiltiefe – auch bei der Wiederholung mit gleichem request_key aus den gespeicherten Einträgen (21.10.2026: Antwort ging verloren,
 // erneutes Senden zeigte nur „✓“ ohne „unter Minimum“)
