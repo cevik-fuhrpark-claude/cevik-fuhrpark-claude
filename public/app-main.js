@@ -3212,7 +3212,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     case 'set_handover': f.push(`<p class="small muted" id="hohint">${esc(t('ho_hint'))}</p><label for="ho_keys">${esc(t('ho_keys'))}</label><select id="ho_keys" name="keys">${['', 'da', 'fehlt'].map((v) => `<option value="${v}"${(c.handover_keys || '') === v ? ' selected' : ''}>${esc(t(v ? 'ho_' + v : 'ho_none'))}</option>`).join('')}</select><label for="ho_papers">${esc(t('ho_papers'))}</label><select id="ho_papers" name="papers">${['', 'da', 'fehlt'].map((v) => `<option value="${v}"${(c.handover_papers || '') === v ? ' selected' : ''}>${esc(t(v ? 'ho_' + v : 'ho_none'))}</option>`).join('')}</select>`); break;
     case 'set_occurred_at': f.push(`<p class="small muted">${esc(t('occ_set_hint'))}</p>${occurredFields(c.occurred_at, true)}`); break;
     case 'set_planned_date': f.push(`<label>${esc(t('planned'))}<span class="hint">${esc(t('planned_clear_hint'))}</span></label><input type="date" name="planned_date" value="${esc(c.planned_date || '')}"><label for="plnote">${esc(t('plan_note_lbl'))}<span class="hint">${esc(t('plan_note_hint'))}</span></label><input id="plnote" name="planned_note" maxlength="200" autocomplete="off" value="${esc(c.planned_note || '')}">`); break;
-    case 'record_work': f.push(`<label>${esc(t('hours'))}</label><input name="hours" inputmode="decimal" required><label>${esc(t('activity'))}</label><input name="description" required list="worksugg" autocomplete="off"><datalist id="worksugg"></datalist><label>${esc(t('date'))}</label><input type="date" name="work_date" value="${bDate()}" max="${bDate()}" min="${workDateMin(c.created_at)}"><p class="small muted" id="workday" data-workday aria-live="polite"></p><details id="wdweek" class="small"><summary>${esc(t('wd_week'))}</summary><div id="wdweekb"></div></details>`); break;
+    case 'record_work': f.push(`<label>${esc(t('hours'))}</label><input name="hours" inputmode="decimal" required><label>${esc(t('activity'))}</label><input name="description" required list="worksugg" autocomplete="off"><datalist id="worksugg"></datalist><label>${esc(t('date'))}</label><input type="date" name="work_date" value="${bDate()}" max="${bDate()}" min="${workDateMin(c.created_at)}"><p class="small" id="wdprev" data-wdprev hidden></p><p class="small muted" id="workday" data-workday aria-live="polite"></p><details id="wdweek" class="small"><summary>${esc(t('wd_week'))}</summary><div id="wdweekb"></div></details>`); break;
     case 'add_part': f.push(`<div id="stocksel"></div><div id="freepart">`); f.push(`<label>${esc(t('part_name'))}</label><input name="name" required list="partsugg" autocomplete="off"><datalist id="partsugg"></datalist><label>${esc(t('part_number'))}</label><input name="part_number"><label>${esc(t('qty'))}</label><input name="quantity" inputmode="decimal" value="1"><label>${esc(t('price_net'))}</label><input name="unit_price_net" inputmode="decimal"><label class="check"><input type="checkbox" name="estimate"> ${esc(t('estimate'))}</label><label>${esc(t('supplier'))}<span class="hint" data-psuphint>${esc(t('part_supplier_hint'))}</span></label><input name="supplier" maxlength="120"></div><label>${esc(t('warranty_until'))}<span class="hint">${esc(t('warranty_hint'))}</span></label><input type="date" name="warranty_until" style="max-width:220px">${partFileSelect(d)}`); break;
     case 'add_open_item': f.push(`<label>${esc(t('open_items'))}</label><input name="description" required><label class="check"><input type="checkbox" name="safety_relevant"> ${esc(t('safety_relevant'))}</label>${oiFileSelect(d)}`); break;
     case 'add_external_cost': f.push(`<label>${esc(t('supplier'))}</label><input name="supplier" required><label>${esc(t('invoice_no'))}</label><input name="invoice_no"><label>${esc(t('amount_net'))}<span class="hint">${esc(t('ext_amount_hint'))}</span></label><input name="amount_net" inputmode="decimal"><label class="check"><input type="checkbox" name="estimate"> ${esc(t('estimate'))}</label><label class="check"><input type="checkbox" name="covers_work_and_parts"> ${esc(t('covers_all'))}</label><label>${esc(t('warranty_until'))}<span class="hint">${esc(t('warranty_hint'))}</span></label><input type="date" name="warranty_until" style="max-width:220px">${extFileSelect(d)}`); break;
@@ -3350,6 +3350,22 @@ function workDayWatch(c) {
     }).catch(() => { if (my === wseq) wb.textContent = ''; });
   };
   if (wk) wk.addEventListener('toggle', loadWeek);
+  // Backlog 835 (Blickwinkel „Mechaniker trägt am nächsten Morgen die Stunden vom Vortag nach“): Das Datum steht auf heute – wer die
+  // Arbeit des letzten Arbeitstags (Mo → Fr, Feiertage übersprungen) nachträgt, vergaß das Umstellen leicht. Für die Werkstatt ein Hinweis,
+  // wenn am letzten Arbeitstag mit diesem Konto nichts erfasst ist, mit Knopf, der das Datum setzt (nur Hinweis, nichts wird vorgegeben).
+  const pv = $('#wdprev');
+  if (pv && S.me && S.me.role === 'workshop') {
+    let pd = bDate(-1); for (let i = 0; i < 7 && (isWeekendD(pd) || holName(pd)); i++) pd = bDate(-2 - i);
+    if (pd >= (inp.min || '')) api('GET', '/api/work-day?date=' + encodeURIComponent(pd)).then((r) => {
+      if (!document.body.contains(pv) || r.hours) return;
+      pv.innerHTML = `${esc(t('wd_prev_none').replace('{d}', fmtDue(pd)))} <button type="button" class="btn secondary" data-wdprevgo style="white-space:nowrap">${esc(t('wd_prev_go').replace('{d}', fmtD(pd)))}</button>`;
+      pv.hidden = false;
+      const b = pv.querySelector('[data-wdprevgo]');
+      const sync = () => { pv.hidden = inp.value === pd; };
+      b.onclick = () => { inp.value = pd; inp.dispatchEvent(new Event('change')); };
+      inp.addEventListener('change', sync); inp.addEventListener('input', sync); sync();
+    }).catch(() => {});
+  }
   inp.addEventListener('change', loadWeek);
   inp.addEventListener('change', load); inp.addEventListener('input', load);
   setTimeout(load, 0); // nach einer Entwurfs-Wiederherstellung den dann gesetzten Tag lesen

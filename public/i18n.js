@@ -3458,3 +3458,7 @@ Object.assign(STRINGS.en, { odo_eq_truck: 'same reading as tractor unit {p} on t
 Object.assign(STRINGS.de, { km_eq_truck_saved: '⚠ km-Stand genau wie bei Zugmaschine {p} heute – Tacho der Zugmaschine abgelesen? Am Anhänger zählt nur der Achskilometerzähler.' });
 Object.assign(STRINGS.uk, { km_eq_truck_saved: '⚠ Пробіг такий самий, як сьогодні у тягача {p} – зчитано з тахометра тягача? Для причепа діє лише лічильник кілометрів на осі.' });
 Object.assign(STRINGS.en, { km_eq_truck_saved: '⚠ Reading identical to tractor unit {p} today – read from the tractor’s odometer? For trailers only the hub odometer counts.' });
+// Backlog 835: Hinweis „letzter Arbeitstag ohne Arbeitszeit“ im Formular Arbeitszeit (Werkstatt)
+Object.assign(STRINGS.de, { wd_prev_none: 'Am letzten Arbeitstag ({d}) ist mit diesem Konto keine Arbeitszeit erfasst. Arbeit von dort nachtragen? Dann das Datum umstellen.', wd_prev_go: 'Datum auf {d} setzen' });
+Object.assign(STRINGS.uk, { wd_prev_none: 'За останній робочий день ({d}) з цього облікового запису не внесено робочого часу. Дописати роботу за той день? Тоді змініть дату.', wd_prev_go: 'Встановити дату {d}' });
+Object.assign(STRINGS.en, { wd_prev_none: 'No working time was recorded with this account on the last working day ({d}). Adding work from that day? Then change the date.', wd_prev_go: 'Set date to {d}' });

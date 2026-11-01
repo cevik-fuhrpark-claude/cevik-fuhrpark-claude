@@ -30016,6 +30016,28 @@ await test('Backlog 834 (Folge aus 833): Kontrolle am Anhänger mit dem km-Stand
   ok(app.includes("(r.km_equals_truck ? ' · ' + t('km_eq_truck_saved').replace('{p}', r.km_equals_truck.plate) : '')") && (app.match(/!!r\.km_equals_truck/g) || []).length >= 4, 'Hinweis in der Bestätigung (online, Postausgang, Kontrolle nach Reparatur)');
 });
 
+await test('Backlog 835 (Blickwinkel „Mechaniker trägt am nächsten Morgen die Stunden vom Vortag nach“): Formular Arbeitszeit zeigt der Werkstatt den letzten Arbeitstag ohne Eintrag mit Knopf „Datum setzen“ (DE/UK/EN)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<p class="small" id="wdprev" data-wdprev hidden></p>'), 'Platz für den Hinweis im Formular Arbeitszeit');
+  const fn = app.slice(app.indexOf('function workDayWatch('), app.indexOf('function workDayWatch(') + 6000);
+  ok(/S\.me\.role === 'workshop'/.test(fn) && fn.includes('isWeekendD(pd) || holName(pd)'), 'nur Werkstatt; Wochenende/Feiertage werden übersprungen');
+  ok(fn.includes("pd >= (inp.min || '')") && fn.includes('r.hours) return'), 'nur innerhalb des zulässigen Datums und nur ohne erfasste Stunden');
+  ok(fn.includes('b.onclick = ') && fn.includes('inp.value = pd'), 'Knopf setzt nur das Datum (Handler als Eigenschaft)');
+  const I = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(I.STRINGS[l].wd_prev_none.includes('{d}') && I.STRINGS[l].wd_prev_go.includes('{d}'), 'Texte ' + l);
+  // Server: Tagesabfrage für ein vergangenes Datum liefert 0 h ohne Buchung (Grundlage des Hinweises)
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon');
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const x = await own.post('/api/users', { username: 'w.mech', display_name: 'Mechaniker W', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  ok(x.data && x.data.invite_token, 'Werkstatt-Konto angelegt');
+  const W = new Client(worker, e, 'w.mech'); await W.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const y = new Date(Date.now() - 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+  const r = await W.get('/api/work-day?date=' + y);
+  eq(r.status, 200); eq(r.data.hours, 0, 'keine Stunden am Vortag');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
