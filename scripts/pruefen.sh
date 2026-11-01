@@ -407,6 +407,7 @@ UI-Fotos später senden (Roaming): Meldung geht sofort, Fotos bleiben auf dem Ge
 UI-Vertrag gleichzeitig bearbeitet: Konflikt lädt neu, eigene Änderungen bleiben im Formular, Felder der anderen Person markiert, zweites Speichern übernimmt beide (DE/UK/EN; Backlog 808)|ui-vertrag-gleichzeitig.py|/tmp/cfp-vertrag-gleichzeitig.log
 UI-Fahrerakte gleichzeitig bearbeitet: Konflikt lädt neu, eigene Änderungen bleiben im Formular, Felder der anderen Person markiert (DE/UK/EN; Backlog 809)|ui-fahrerakte-gleichzeitig.py|/tmp/cfp-fahrerakte-gleichzeitig.log
 UI-Fahrzeug gleichzeitig bearbeitet: Stammdaten-Konflikt lädt neu, eigene Änderungen bleiben im Formular, Felder der anderen Person markiert (DE/UK/EN; Backlog 810)|ui-fahrzeug-gleichzeitig.py|/tmp/cfp-fahrzeug-gleichzeitig.log
+UI-Versicherungsfall gleichzeitig bearbeitet: Konflikt lädt neu, eigene Änderungen bleiben im Formular, Felder der anderen Person markiert (DE/UK/EN; Backlog 811)|ui-versicherung-gleichzeitig.py|/tmp/cfp-versicherung-gleichzeitig.log
 '
 N=0
 NL='

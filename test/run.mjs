@@ -14896,7 +14896,7 @@ await test('Fehlersuche 20.10. (11): durchgeführter Rückruf ohne Frist, Fahrer
   ok(app.includes("api('GET', '/api/emergency').then((d) => { try { localStorage.setItem(`cfp_emerg_${S.me.id}_${S.me.environment}_`"), 'vorab geladen');
   ok(app.includes('localStorage.getItem(key.slice(0, -vid.length))') && app.includes('&from=file'), 'Rückfall + Zurück');
   // 6. Versicherungsfälle/Kosten: Konflikt lädt neu, Link mit Fahrzeugstandort, Exporte mit Umgebung
-  ok(app.includes("toast(err.message, true); if (err.code === 'version_conflict') viewCase(c.id); } };") && app.includes("S.claimSite = v.site || 'ohne'"), 'Fall-Formular/Link');
+  ok(app.includes("if (err.code === 'version_conflict') { S.clLost = { id: c.id, ...conflictMine(clf) }; viewCase(c.id); return; }") /* seit Backlog 811: lädt neu und behält Eingaben */ && app.includes("S.claimSite = v.site || 'ohne'"), 'Fall-Formular/Link');
   ok(app.includes('`fuhrpark-versicherungsfaelle_${envFn()}_') && app.includes('`fuhrpark-vorgaenge_${envFn()}_'), 'Dateinamen');
   const cl = await F.get('/api/claims?format=csv'); ok(/fuhrpark-versicherungsfaelle_(production|test)_/.test(cl.headers.get('content-disposition') || ''), 'Server-Dateiname: ' + cl.headers.get('content-disposition'));
   // 7. Rückruf-Import: Vorschau nennt das Durchführungsdatum
@@ -29435,6 +29435,21 @@ await test('Backlog 810 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig d
   const s1 = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/spec`, { zgm_kg: '18000', spec_source: 'Fahrzeugschein 810', expected_updated_at: up0 }); eq(s1.status, 409); eq(s1.data.error, 'version_conflict');
   const s2 = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/spec`, { zgm_kg: '18000', spec_source: 'Fahrzeugschein 810', expected_updated_at: row.updated_at }); eq(s2.status, 200, JSON.stringify(s2.data));
   eq(db.prepare('SELECT zgm_kg FROM vehicles WHERE id=?').get(V1).zgm_kg, 18000);
+});
+await test('Backlog 811 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig denselben Versicherungsfall“): veraltetes Formular → 409, Erstattung der anderen bleibt; App lädt neu und behält die eigenen Änderungen', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (err.code === 'version_conflict') { S.clLost = { id: c.id, ...conflictMine(clf) }; viewCase(c.id); return; }"), 'Konflikt merkt eigene Änderungen');
+  ok(app.includes("conflictKeep($('#clf'), L, 'cllost')"), 'Eingaben nach dem Neuladen zurück');
+  const { U, newCase } = await freshWorld();
+  const cs = await newCase();
+  const c0 = await U.fleet.put(`/api/cases/${cs}/claim`, { insurer: 'Versicherer 811', reported_on: '2026-10-01', evidence: 'Meldung 811', expected_updated_at: null }); eq(c0.status, 200, JSON.stringify(c0.data));
+  const up0 = (await U.fleet.get(`/api/cases/${cs}`)).data.claim.updated_at; ok(up0, 'Stand des Versicherungsfalls');
+  const b = await U.fleet.put(`/api/cases/${cs}/claim`, { insurer: 'Versicherer 811', reported_on: '2026-10-01', evidence: 'Meldung 811', claim_no: 'S-811', expected_updated_at: up0 }); eq(b.status, 200, JSON.stringify(b.data));
+  const a = await U.fleet.put(`/api/cases/${cs}/claim`, { insurer: 'Versicherer 811', reported_on: '2026-10-01', evidence: 'Meldung 811 + Gutachten', expected_updated_at: up0 }); eq(a.status, 409); eq(a.data.error, 'version_conflict');
+  let cl = (await U.fleet.get(`/api/cases/${cs}`)).data.claim; eq(cl.claim_no, 'S-811'); eq(cl.evidence, 'Meldung 811');
+  const a2 = await U.fleet.put(`/api/cases/${cs}/claim`, { insurer: 'Versicherer 811', reported_on: '2026-10-01', evidence: 'Meldung 811 + Gutachten', claim_no: 'S-811', expected_updated_at: cl.updated_at }); eq(a2.status, 200, JSON.stringify(a2.data));
+  cl = (await U.fleet.get(`/api/cases/${cs}`)).data.claim; eq(cl.claim_no, 'S-811'); eq(cl.evidence, 'Meldung 811 + Gutachten');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
