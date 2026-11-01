@@ -1725,7 +1725,7 @@ async function viewSettings(sec) {
     ri.oninput = sync; $('#hrk').onchange = sync;
   }
   // Backlog 821 (Inhaber mit Handy und PC): nach Konflikt eigene Änderungen ins frisch geladene Formular, Felder des anderen Geräts markieren
-  if (S.setLost) { const L = S.setLost; S.setLost = null; const fm = $('#sf'); if (fm && conflictKeep(fm, L, 'setlost')) { const ri = $('#workshop_hourly_rate_net'); if (ri && 'workshop_hourly_rate_net' in L.mine) ri.dispatchEvent(new Event('input')); } }
+  if (S.setLost) { const L = S.setLost; S.setLost = null; const fm = $('#sf'); if (fm && conflictKeep(fm, L, 'setlost', true)) { const ri = $('#workshop_hourly_rate_net'); if (ri && 'workshop_hourly_rate_net' in L.mine) ri.dispatchEvent(new Event('input')); } }
   $$('[data-hrdel]').forEach((bt) => { bt.onclick = async () => {
     if (!confirm(t('hr_period_remove_confirm').replace('{d}', fmtD(bt.dataset.hrdel)))) return;
     try { await api('DELETE', `/api/settings/hourly-rate-periods/${encodeURIComponent(bt.dataset.hrdel)}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewSettings(); } catch (err) { /* Backlog 805k (Funkloch): Wiederholung → 404 */ if (lostDup(bt, {}, err, ['not_found'])) { toast(t('saved_before')); viewSettings(); return; } lostMark(bt, {}, err); toast(err.message, true); }

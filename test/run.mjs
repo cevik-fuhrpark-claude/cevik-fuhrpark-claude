@@ -29653,7 +29653,10 @@ await test('Backlog 820 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig�
 await test('Backlog 821 (Blickwinkel „Inhaber mit Handy und PC“ – Einstellungen auf zwei Geräten): mit gelesenen Werten auf altem Stand → 409 mit Schlüsseln, Wert des anderen Geräts bleibt, kein Stundensatz-Zeitraum; anderes Feld unberührt speicherbar; ohne expected wie bisher; App behält eigene Eingaben', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("if (err.code === 'version_conflict') { S.setLost = conflictMine(e.target); viewSettings(); return; }") && app.includes("conflictKeep(fm, L, 'setlost')"), 'App: Konflikt behält eigene Eingaben');
+  ok(app.includes("if (err.code === 'version_conflict') { S.setLost = conflictMine(e.target); viewSettings(); return; }") && app.includes("conflictKeep(fm, L, 'setlost', true)"), 'App: Konflikt behält eigene Eingaben');
+  // Backlog 822: Hinweis nennt das andere Gerät/Fenster statt „jemand anderes“ (Einstellungen nur Inhaber)
+  { const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['ctd_kept', 'ctd_other_fields', 'ctd_both_fields']) ok(STRINGS[l][k] && !/jemand|кимось|іншою особою|someone|other person/i.test(STRINGS[l][k]), `Text ${k} ${l}`);
+    ok(app.includes("t(dev ? 'ctd_kept' : 'case_conflict_kept')"), 'conflictKeep wählt den Text'); }
   ok(app.includes("b.expected = Object.fromEntries(Object.keys(b).filter((k) => k !== 'hourly_rate_keep_until').map((k) => [k, v[k] ?? null]));"), 'App sendet gelesene Rohwerte');
   ok(app.includes('<input type="checkbox" id="tmr" data-cv="test_master_readonly"'), 'Kontrollkästchen nimmt am Konfliktvergleich teil');
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-einstellungen-gleichzeitig.py|'), 'UI-Prüfung eingetragen');

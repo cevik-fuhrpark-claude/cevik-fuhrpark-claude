@@ -4258,7 +4258,7 @@ function ctLines(c, { noEvidence = false } = {}) {
 // Backlog 812: Felder ohne `name` (z. B. Wochentage der Notfallnummer) nehmen über `data-cv` teil; `data-cvl` = Anzeigename im Konflikthinweis
 const cvEl = (fm, k) => fm.elements.namedItem(k) || fm.querySelector(`[data-cv="${CSS.escape(k)}"]`);
 function formVals(fm, dflt) { const o = {}; for (const el of fm.elements) { const nm = el.name || (el.dataset && el.dataset.cv); if (!nm || el.type === 'hidden') continue; o[nm] = el.type === 'checkbox' ? (dflt ? el.defaultChecked : el.checked) : el.tagName === 'SELECT' ? (dflt ? ([...el.options].find((x) => x.defaultSelected) || el.options[0] || {}).value || '' : el.value) : (dflt ? el.defaultValue : el.value); } return o; }
-function conflictKeep(fm, L, hid) {
+function conflictKeep(fm, L, hid, dev = false) { // dev (Backlog 822): Konflikt vom eigenen zweiten Gerät/Fenster (Einstellungen, nur Inhaber)
   const dp = fm.closest('details'); const now = formVals(fm, true);
   // eigene, inzwischen gespeicherte Änderung (verlorene Antwort) bzw. andere Person setzte denselben Wert → nichts zu entscheiden
   if (Object.keys(L.mine).every((k) => !(k in now) || now[k] === L.mine[k]) && Object.keys(L.seen).every((k) => !(k in now) || now[k] === L.seen[k] || now[k] === L.mine[k])) { toast(t('saved_before')); return false; }
@@ -4266,7 +4266,7 @@ function conflictKeep(fm, L, hid) {
   for (const k of other) { const el = cvEl(fm, k); if (!el) continue; el.classList.add('ct-other'); el.setAttribute('aria-describedby', hid); if (el.dataset.cvl) { names.push(el.dataset.cvl); continue; } const lb = el.type === 'checkbox' ? el.closest('label') : el.previousElementSibling; if (lb && lb.tagName === 'LABEL') names.push((el.type === 'checkbox' ? lb.textContent : (lb.firstChild && lb.firstChild.textContent) || lb.textContent).trim()); }
   const both = []; for (const [k, v] of Object.entries(L.mine)) { const el = cvEl(fm, k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; if (other.includes(k) && now[k] !== v) both.push(k); }
   if (dp) dp.open = true;
-  fm.insertAdjacentHTML('afterbegin', `<div class="panel warn small" role="status" id="${esc(hid)}" data-ctlost>${esc(t('case_conflict_kept'))}${names.length ? `<br>${esc(t('ct_other_fields'))}: <b>${esc(names.join(', '))}</b>` : ''}${both.length ? `<br>⚠️ ${esc(t('ct_both_fields'))}` : ''}</div>`);
+  fm.insertAdjacentHTML('afterbegin', `<div class="panel warn small" role="status" id="${esc(hid)}" data-ctlost>${esc(t(dev ? 'ctd_kept' : 'case_conflict_kept'))}${names.length ? `<br>${esc(t(dev ? 'ctd_other_fields' : 'ct_other_fields'))}: <b>${esc(names.join(', '))}</b>` : ''}${both.length ? `<br>⚠️ ${esc(t(dev ? 'ctd_both_fields' : 'ct_both_fields'))}` : ''}</div>`);
   const hn = fm.querySelector('[data-ctlost]'); if (hn) hn.scrollIntoView({ block: 'center' }); return true;
 }
 const conflictMine = (fm) => { const seen = formVals(fm, true), cur = formVals(fm, false); const mine = {}; for (const k of Object.keys(cur)) if (cur[k] !== seen[k]) mine[k] = cur[k]; return { seen, mine }; };
@@ -7297,7 +7297,7 @@ async function viewSettings(sec) {
     ri.oninput = sync; $('#hrk').onchange = sync;
   }
   // Backlog 821 (Inhaber mit Handy und PC): nach Konflikt eigene Änderungen ins frisch geladene Formular, Felder des anderen Geräts markieren
-  if (S.setLost) { const L = S.setLost; S.setLost = null; const fm = $('#sf'); if (fm && conflictKeep(fm, L, 'setlost')) { const ri = $('#workshop_hourly_rate_net'); if (ri && 'workshop_hourly_rate_net' in L.mine) ri.dispatchEvent(new Event('input')); } }
+  if (S.setLost) { const L = S.setLost; S.setLost = null; const fm = $('#sf'); if (fm && conflictKeep(fm, L, 'setlost', true)) { const ri = $('#workshop_hourly_rate_net'); if (ri && 'workshop_hourly_rate_net' in L.mine) ri.dispatchEvent(new Event('input')); } }
   $$('[data-hrdel]').forEach((bt) => { bt.onclick = async () => {
     if (!confirm(t('hr_period_remove_confirm').replace('{d}', fmtD(bt.dataset.hrdel)))) return;
     try { await api('DELETE', `/api/settings/hourly-rate-periods/${encodeURIComponent(bt.dataset.hrdel)}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewSettings(); } catch (err) { /* Backlog 805k (Funkloch): Wiederholung → 404 */ if (lostDup(bt, {}, err, ['not_found'])) { toast(t('saved_before')); viewSettings(); return; } lostMark(bt, {}, err); toast(err.message, true); }

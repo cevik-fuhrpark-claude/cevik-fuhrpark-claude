@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-KEPT={'de':'Ihre Eingaben stehen noch im Formular','uk':'ваші дані залишилися у формі','en':'your entries are still in the form'}
+KEPT={'de':'anderen Gerät oder in einem anderen Fenster geändert','uk':'на іншому пристрої або в іншому вікні','en':'on another device or in another window'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -32,7 +32,7 @@ with sync_playwright() as p:
         hint=''
         try: q.wait_for_selector('#sf [data-ctlost]',timeout=10000); hint=q.inner_text('#sf [data-ctlost]')
         except Exception as ex: print('   ',ex)
-        check(KEPT[lang] in hint and '⚠' in hint,f'{lang} {w}px: Hinweis „Eingaben stehen noch im Formular“ mit Warnung gleiches Feld ({hint[:60]!r})')
+        check(KEPT[lang] in hint and '⚠' in hint,f'{lang} {w}px: Hinweis nennt das andere Gerät/Fenster, mit Warnung gleiches Feld (Backlog 822) ({hint[:60]!r})')
         check(q.input_value('#repair_cost_limit_net')==mine_lim and q.input_value('#maintenance_warn_days')==mine_days and q.evaluate("document.querySelector('#repair_cost_limit_net').classList.contains('ct-other')"),f'{lang} {w}px: eigene Eingaben bleiben, Kostengrenze markiert')
         v=api('GET','/api/settings')['d']['values']
         check(v.get('repair_cost_limit_net')==other_lim and v.get('maintenance_warn_days')=='30',f'{lang} {w}px: nichts still überschrieben ({v.get("repair_cost_limit_net")}/{v.get("maintenance_warn_days")})')
