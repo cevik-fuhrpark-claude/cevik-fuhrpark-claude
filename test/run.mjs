@@ -30402,6 +30402,65 @@ await test('Backlog 847 (Blickwinkel „Werkstatt misst die Profiltiefe an der f
     ok(/Mehr Profil als zuletzt|Більше протектора|More tread than last time/.test(STRINGS[l].help_tires_s), 'Hilfe ' + l);
   }
 });
+await test('Backlog 848 (Folge aus 847): Datenqualität tire_tread_rise – aktuelle Profilmessung je Position um mindestens tire_tread_rise_mm über der vorherigen ohne Wechsel und ohne Bemerkung; leer = aus; spätere Messung/Wechsel erledigt; neuester Fall je Fahrzeug mit Anzahl Positionen; Detail/Link/Texte DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon');
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const inv = async (b) => { const x = await own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; };
+  const W = await inv({ username: 'q.werkstatt', display_name: 'Werkstatt Q', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  const F = await inv({ username: 'q.fuhrpark', display_name: 'Fuhrpark Q', role: 'fleet', environment: 'production' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\nDO-PT 8481;Dortmund;MAN;2019;WMA06XZZ8RP848001;;Lkw\nDO-PT 8482;Dortmund;MAN;2019;WMA06XZZ8RP848002;;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const V = 'VIN:WMA06XZZ8RP848001'; const V2 = 'VIN:WMA06XZZ8RP848002';
+  const post = (v, b) => W.post(`/api/vehicles/${v}/tires/events`, { request_key: rk(), ...b });
+  const dq = async () => { const r = await F.get('/api/admin/data-quality'); eq(r.status, 200); return r.data.items.filter((i) => i.check === 'tire_tread_rise'); };
+  eq((await post(V, { event_type: 'messung', position: 'VA-L', tread_mm: '8' })).status, 201);
+  eq((await post(V, { event_type: 'messung', position: 'VA-L', tread_mm: '10' })).status, 201);
+  eq((await dq()).length, 0, 'Einstellung leer → aus');
+  eq((await own.put('/api/settings', { tire_tread_rise_mm: '1,5' })).status, 200);
+  let d = await dq(); eq(d.length, 1, JSON.stringify(d));
+  ok(d[0].severity === 'hinweis' && d[0].plate === 'DO-PT 8481' && d[0].detail_args.position === 'VA-L' && d[0].detail_args.prev_mm === 8 && d[0].detail_args.tread_mm === 10 && d[0].detail_args.n === 1 && /^\d{4}-\d{2}-\d{2}$/.test(d[0].detail_args.prev_day), JSON.stringify(d[0]));
+  ok(/VA-L 8 → 10 mm/.test(d[0].detail), d[0].detail);
+  // zweite Position (Sammel-Erfassung): neuester Fall + Anzahl; Rundung: genau +1,5 zählt, +1,4 nicht
+  eq((await post(V, { event_type: 'messung', position: 'VA-R', tread_mm: '9,2' })).status, 201);
+  eq((await post(V, { event_type: 'messung', position: 'VA-R', tread_mm: '10,6' })).status, 201);
+  eq((await dq())[0].detail_args.position, 'VA-L', '+1,4 unter der Grenze');
+  eq((await post(V, { event_type: 'sichtpruefung', position: 'VA-R', tread_mm: '12,1' })).status, 201);
+  d = await dq(); eq(d.length, 1, 'ein Befund je Fahrzeug'); ok(d[0].detail_args.position === 'VA-R' && d[0].detail_args.n === 2 && d[0].detail_args.prev_mm === 10.6, JSON.stringify(d[0]));
+  // spätere Messung derselben Position erledigt (auch mit weniger Profil), Wechsel ohne Profil ebenso
+  eq((await post(V, { event_type: 'messung', position: 'VA-R', tread_mm: '11,9' })).status, 201);
+  d = await dq(); ok(d.length === 1 && d[0].detail_args.position === 'VA-L' && d[0].detail_args.n === 1, JSON.stringify(d));
+  eq((await post(V, { event_type: 'wechsel', position: 'VA-L', size: '385/65 R22.5' })).status, 201);
+  eq((await dq()).length, 0, 'Wechsel erledigt');
+  eq((await post(V, { event_type: 'messung', position: 'VA-L', tread_mm: '20' })).status, 201);
+  eq((await dq()).length, 0, 'nach Wechsel ohne Profil kein Vergleich');
+  // nur Luftdruck danach: zählt nicht als spätere Messung
+  eq((await post(V, { event_type: 'messung', position: 'VA-L', tread_mm: '22' })).status, 201);
+  eq((await post(V, { event_type: 'messung', position: 'VA-L', pressure_bar: '8,5' })).status, 201);
+  eq((await dq())[0].detail_args.tread_mm, 22, 'Luftdruck ohne Profil ändert nichts');
+  // Messung mit Bemerkung (z. B. nachgeschnitten) zählt nicht
+  eq((await post(V2, { event_type: 'messung', position: 'HA-L-aussen', tread_mm: '6' })).status, 201);
+  eq((await post(V2, { event_type: 'messung', position: 'HA-L-aussen', tread_mm: '9', note: 'nachgeschnitten' })).status, 201);
+  ok(!(await dq()).some((i) => i.plate === 'DO-PT 8482'), 'Bemerkung');
+  eq((await post(V2, { event_type: 'messung', position: 'HA-L-aussen', tread_mm: '11' })).status, 201);
+  ok((await dq()).some((i) => i.plate === 'DO-PT 8482' && i.detail_args.prev_mm === 9), 'danach wieder Vergleich');
+  // Werkstatt sieht die Datenqualität nicht; Einstellung leer → wieder aus
+  eq((await W.get('/api/admin/data-quality')).status, 403);
+  eq((await own.put('/api/settings', { tire_tread_rise_mm: '' })).status, 200); eq((await dq()).length, 0, 'wieder aus');
+  // Detail in der Sprache (Ansicht/CSV), Link zum Reifenabschnitt, Texte
+  const { dqDetailText } = await import('../public/csv.js');
+  const it = { check: 'tire_tread_rise', detail: 'x', detail_args: { day: '2026-11-01', position: 'VA-L', prev_mm: 8, tread_mm: 10.5, prev_day: '2026-10-01', n: 2 } };
+  eq(dqDetailText(it, (k) => ({ dq_tr_npos: 'Positionen: {n}' })[k] || k, (x) => x.split('-').reverse().join('.'), (k) => k, { pos: (p) => 'Pos ' + p, mm: (n) => String(n).replace('.', ',') + ' mm' }), '01.11.2026: Pos VA-L 8 mm → 10,5 mm (01.10.2026) · Positionen: 2');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("i.check === 'tire_tread_rise' ? `#/vehicles/${esc(i.vehicle_id)}?sec=tires`"), 'Link Reifen');
+  ok(app.split('pos: (p) => posL(p), mm: (n) => fmtMm(n)').length === 3, 'Ansicht und CSV übersetzen Position/mm');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].dq_tire_tread_rise && STRINGS[l].dq_tr_npos.includes('{n}'), 'Texte ' + l);
+    ok(STRINGS[l].help_tires_s.includes(STRINGS[l].dq_tire_tread_rise.split(' (')[0]), 'Hilfe nennt die Prüfung ' + l);
+  }
+});
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

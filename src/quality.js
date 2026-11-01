@@ -81,6 +81,10 @@ export const CHECKS = {
   // unmittelbar vorherige (> 0) und kein späterer kleinerer Stand – vermutlich eine Ziffer zu viel; spätere richtige Stände würden als „kleiner“
   // abgewiesen. Keine km-Grenze (offene Frage „km-Sprung nach oben“) – nur die Stellenzahl; beim Überschreiten von 100 000 km normal → Begründung
   km_digits_jump: 'hinweis',
+  // Backlog 848 (Folge aus 847): aktuelle Profilmessung einer Position (letzter Eintrag mit Profil oder Wechsel) liegt um mindestens die Einstellung
+  // `tire_tread_rise_mm` über der vorherigen Messung derselben Position ohne Wechsel dazwischen und ohne Bemerkung – Position/Wert prüfen.
+  // Leer = aus (keine Vorgabe der App); erledigt sich mit der nächsten Messung oder einem Wechsel an der Position
+  tire_tread_rise: 'hinweis',
 };
 
 // FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
@@ -335,6 +339,20 @@ export async function dataQuality(env, user, envName, query = {}) {
     SELECT vehicle_id, km, prev_km, measured_at, source, n FROM m WHERE rn=1`).all()).results;
   for (const r of dj) { const v = vById.get(r.vehicle_id); if (v) addA('km_digits_jump', v, `${berlinDate(r.measured_at)}: ${r.prev_km} → ${r.km} km · ${r.source}${r.n > 1 ? ` · ${r.n}×` : ''}`,
     { day: berlinDate(r.measured_at), prev_km: r.prev_km, km: r.km, source: r.source, n: r.n }); }
+  // Backlog 848: eine Abfrage (Fensterfunktion je Fahrzeug/Position über tire_events, Index idx_tire_events_vehicle); Einstellung leer → keine Treffer.
+  // Gleiche Regel wie der Hinweis bei der Erfassung (`treadRise` in src/tires.js): Wechsel ohne Profil beendet den Vergleich, Rundung auf 0,001 mm.
+  // Nur die aktuelle Messung je Position (spätere Messung/Wechsel = erledigt); neuester Fall je Fahrzeug, n = Anzahl betroffener Positionen
+  const tr = (await env.DB.prepare(`WITH s AS (SELECT CAST(value AS REAL) AS lim FROM settings WHERE key='tire_tread_rise_mm' AND trim(value)<>''),
+      e AS (SELECT vehicle_id, position, event_type, tread_mm, note, created_at, rowid AS rid,
+        LAG(tread_mm) OVER w AS prev_mm, LAG(created_at) OVER w AS prev_at, LEAD(created_at) OVER w AS next_at
+        FROM tire_events WHERE environment=? AND (tread_mm IS NOT NULL OR event_type='wechsel') AND EXISTS (SELECT 1 FROM s)
+        WINDOW w AS (PARTITION BY vehicle_id, position ORDER BY created_at, rowid)),
+      m AS (SELECT e.*, ROW_NUMBER() OVER (PARTITION BY vehicle_id ORDER BY created_at DESC, rid DESC) AS rn, COUNT(*) OVER (PARTITION BY vehicle_id) AS n
+        FROM e JOIN s WHERE e.next_at IS NULL AND e.event_type<>'wechsel' AND e.tread_mm IS NOT NULL AND e.prev_mm IS NOT NULL
+          AND (e.note IS NULL OR trim(e.note)='') AND s.lim > 0 AND ROUND((e.tread_mm - e.prev_mm) * 1000) >= ROUND(s.lim * 1000))
+    SELECT vehicle_id, position, tread_mm, prev_mm, created_at, prev_at, n FROM m WHERE rn=1`).bind(envName).all()).results;
+  for (const r of tr) { const v = vById.get(r.vehicle_id); if (v) addA('tire_tread_rise', v, `${berlinDate(r.created_at)}: ${r.position} ${r.prev_mm} → ${r.tread_mm} mm (vorher ${berlinDate(r.prev_at)})${r.n > 1 ? ` · ${r.n} Positionen` : ''}`,
+    { day: berlinDate(r.created_at), position: r.position, prev_mm: r.prev_mm, tread_mm: r.tread_mm, prev_day: berlinDate(r.prev_at), n: r.n }); }
   for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) { const lt = k.prev_km !== null && k.odometer_km < k.prev_km; addA('km_inspection_rejected', v, lt ? `${k.odometer_km} km (${berlinDate(k.created_at)}) < ${k.prev_km} km` : `${k.odometer_km} km (${berlinDate(k.created_at)}) > ${k.next_km} km`,
     { km: k.odometer_km, day: berlinDate(k.created_at), other_km: lt ? k.prev_km : k.next_km, cmp: lt ? 'lt' : 'gt' }); } }
   for (const a of assigns.results) if (!a.active) items.push({ check: 'assignment_inactive_user', severity: CHECKS.assignment_inactive_user, vehicle_id: a.vehicle_id, plate: a.plate, detail: a.display_name });

@@ -434,6 +434,7 @@ UI-Agentenbefund km-Wartung mit mehr Stellen: „Ziffern prüfen“ + Prüfschri
 UI-Wartungsplan-Import km mit mehr Stellen: „Ziffern prüfen“ in Importvorschau und Formular der Fahrzeugakte (DE/UK/EN; Backlog 843)|ui-wartung-import-km-stellen.py|/tmp/cfp-wartung-import-km-stellen.log
 UI-Vertrag km bei Übernahme mit weniger Stellen: Hinweis in Vertragsübersicht und Fahrzeugakte (DE/UK/EN; Backlog 844)|ui-vertrag-start-km-stellen.py|/tmp/cfp-vertrag-start-km-stellen.log
 UI-Reifen Profiltiefe höher als zuletzt ohne Wechsel: Einstellung, Hinweis beim Tippen und nach dem Speichern (DE/UK/EN; Backlog 847)|ui-reifen-profil-anstieg.py|/tmp/cfp-reifen-profil-anstieg.log
+UI-Datenqualität Profiltiefe höher als die vorherige Messung: Befund, Detail übersetzt, Link Reifen (DE/UK/EN; Backlog 848)|ui-dq-profil-anstieg.py|/tmp/cfp-dq-profil-anstieg.log
 '
 N=0
 NL='
