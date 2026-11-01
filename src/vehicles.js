@@ -1080,7 +1080,21 @@ export async function editMaintenanceRule(env, user, ruleId, body) {
   }
   const keys = Object.keys(ch).filter((k) => (ch[k] ?? null) !== (r[k] ?? null));
   if (!keys.length) return { ok: true, changed: [] };
-  await env.DB.prepare(`UPDATE maintenance_rules SET ${keys.map((k) => `${k}=?`).join(', ')}, updated_at=? WHERE id=?`).bind(...keys.map((k) => ch[k]), nowIso(), ruleId).run();
+  // Backlog 819 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig“): optional `expected {title?, interval_months?, evidence?}` = gelesene
+  // Werte des Formulars (alle Felder werden absolut gesendet) – weicht ein gespeicherter Wert ab, 409 statt die Änderung der anderen Person still
+  // zurückzusetzen; atomar über die gelesenen Werte. Ohne `expected` wie bisher.
+  if (body.expected !== undefined) {
+    const ex = body.expected; if (!ex || typeof ex !== 'object' || Array.isArray(ex)) throw bad('validation', 'expected: ungültiger Wert.');
+    const stale = () => conflict('version_conflict', 'Der Prüftermin wurde zwischenzeitlich geändert. Bitte prüfen.');
+    for (const k of ['title', 'interval_months', 'evidence']) {
+      if (!(k in ex)) continue;
+      if (ex[k] !== null && !['string', 'number'].includes(typeof ex[k])) throw bad('validation', 'expected: ungültiger Wert.');
+      if (String(ex[k] ?? '').trim() !== String(r[k] ?? '').trim()) throw stale();
+    }
+    const u = await env.DB.prepare(`UPDATE maintenance_rules SET ${keys.map((k) => `${k}=?`).join(', ')}, updated_at=? WHERE id=? AND title IS ? AND interval_months IS ? AND evidence IS ?`)
+      .bind(...keys.map((k) => ch[k]), nowIso(), ruleId, r.title ?? null, r.interval_months ?? null, r.evidence ?? null).run();
+    if (!(u.meta && u.meta.changes)) throw stale();
+  } else await env.DB.prepare(`UPDATE maintenance_rules SET ${keys.map((k) => `${k}=?`).join(', ')}, updated_at=? WHERE id=?`).bind(...keys.map((k) => ch[k]), nowIso(), ruleId).run();
   await audit(env, user.id, 'maintenance.rule_edit', r.vehicle_id, { kind: r.kind, rule_id: ruleId, changed: Object.fromEntries(keys.map((k) => [k, { from: r[k] ?? null, to: ch[k] ?? null }])) });
   return { ok: true, changed: keys, next_due_date: 'next_due_date' in ch ? ch.next_due_date : r.next_due_date };
 }

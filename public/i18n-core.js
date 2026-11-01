@@ -120,6 +120,7 @@ const V_MORE = [
   ['Fahrerakte wurde zwischenzeitlich geändert. Bitte neu laden.', 'Картку водія тим часом змінено. Оновіть сторінку.', 'The driver record has been changed in the meantime. Please reload.'],
   ['Die Dokumentangaben wurden zwischenzeitlich geändert. Bitte neu laden.', 'Дані документа тим часом змінено. Оновіть сторінку.', 'The document details have been changed in the meantime. Please reload.'],
   ['Der Termin wurde zwischenzeitlich geändert. Bitte prüfen.', 'Термін тим часом змінено. Перевірте, будь ласка.', 'The appointment has been changed in the meantime. Please check.'],
+  ['Der Prüftermin wurde zwischenzeitlich geändert. Bitte prüfen.', 'Огляд тим часом змінено. Перевірте, будь ласка.', 'The inspection entry has been changed in the meantime. Please check.'],
   ['Für dieses Fahrzeug gibt es bereits einen Prüftermin dieser Art – bitte den vorhandenen bearbeiten bzw. „erledigt“ erfassen.', 'Для цього транспорту вже є строк огляду цього виду – відредагуйте наявний або внесіть «виконано».', 'This vehicle already has an inspection date of this type – please edit the existing one or record it as “done”.'],
   ['Gerät nicht gefunden.', 'Пристрій не знайдено.', 'Device not found.'],
   ['Eintrag nicht gefunden.', 'Запис не знайдено.', 'Entry not found.'],

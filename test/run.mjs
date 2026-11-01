@@ -29254,7 +29254,7 @@ await test('Backlog 805j (Blickwinkel „Funkloch“): Zuordnung beenden, Vertra
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   for (const [frag, what] of [["await api('DELETE', '/api/assignments/' + b.dataset.end, undefined, { timeoutMs: SEND_TIMEOUT_MS })", 'Zuordnung beenden'], ["if (lostDup(b, ab, err, ['not_found']))", 'Zuordnung: 404 nach verlorener Antwort'],
     ["{ ...ctBody(fm), ...(fm.dataset.upd ? { expected_updated_at: fm.dataset.upd } : {}) }, { timeoutMs: SEND_TIMEOUT_MS })", 'Vertrag bearbeiten'], ["await api('PATCH', `/api/drivers/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate)", 'Fahrerakte'],
-    ["encodeURIComponent(fm.dataset.medit), b, { timeoutMs: SEND_TIMEOUT_MS })", 'Prüftermin bearbeiten'], ["lostIs(doced, db) ? t('saved_before')", 'Dokumentangaben'], ["['already_excluded', 'already_included']", 'Bewertung'],
+    ["encodeURIComponent(fm.dataset.medit), { ...b, expected: ex }, { timeoutMs: SEND_TIMEOUT_MS })" /* seit Backlog 819 */, 'Prüftermin bearbeiten'], ["lostIs(doced, db) ? t('saved_before')", 'Dokumentangaben'], ["['already_excluded', 'already_included']", 'Bewertung'],
     ["lostDup(deact, { active: false }, err, ['already_inactive'])", 'außer Betrieb'], ["lostDup(react, { active: true }, err, ['already_active'])", 'wieder in Betrieb'], ["{ decision_status: a.dataset.st, ...(a.dataset.was ? { expected_status: a.dataset.was } : {}) }, { timeoutMs: SEND_TIMEOUT_MS })", 'Master-Entscheidung'],
     ["lostDup(f, mb, err, ['mapping_exists'])", 'Telematik-Zuordnung'], ["lostDup(nf, body, err, ['duplicate'])", 'Auslesung'], ["await api('PATCH', `/api/users/${u.id}`, body, { timeoutMs: SEND_TIMEOUT_MS })", 'Benutzer bearbeiten'],
     ["`/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`, undefined, { timeoutMs: SEND_TIMEOUT_MS })", 'Bestellvermerk löschen']]) ok(app.includes(frag), what);
@@ -29613,6 +29613,31 @@ await test('Backlog 818 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig�
   eq((await U.fleet.post(`/api/maintenance/${R}/plan`, { planned_date: day(30) })).status, 200); eq(await pd(), day(30));
   // Termin entfernen auf altem Stand → 409
   eq((await U.fleet.post(`/api/maintenance/${R}/plan`, { planned_date: null, expected_planned_date: day(20) })).status, 409); eq(await pd(), day(30));
+});
+
+await test('Backlog 819 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig“ – Prüftermin bearbeiten): mit gelesenen Werten auf altem Stand → 409, Intervall der anderen bleibt; Wiederholung mit gleichen Werten → unverändert; ohne expected wie bisher; App behält eigene Änderungen', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("S.meLost = { id, rid: fm.dataset.medit, msg: err.message, ...conflictMine(fm) }; viewVehicle(id); return;") && app.includes("conflictKeep(fm, L, 'melost')"), 'App: Konflikt behält eigene Änderungen');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-pruefung-bearbeiten-gleichzeitig.py|'), 'UI-Prüfung eingetragen');
+  const { U, e } = await freshWorld();
+  const fl2 = await (async () => { const x = await U.own.post('/api/users', { username: 'w.fuhrpark819', display_name: 'Leitung 819', role: 'fleet', environment: 'test' }); const c = new Client(worker, e, 'w.fuhrpark819'); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; })();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const V = (await U.fleet.get('/api/vehicles')).data.vehicles[0].id;
+  const rule = await U.fleet.post(`/api/vehicles/${V}/maintenance`, { kind: 'Sonstiges', title: 'Ladekran', last_done_date: day(-100), interval_months: 12, evidence: 'Prüfbuch' }); eq(rule.status, 201, JSON.stringify(rule.data));
+  const R = rule.data.id; const get = async () => (await U.fleet.get(`/api/vehicles/${V}`)).data.maintenance.find((m) => m.id === R);
+  const seen = { title: 'Ladekran', interval_months: '12', evidence: 'Prüfbuch' };
+  // zweite Leitung ändert das Intervall; Leitung korrigiert danach auf altem Stand den Nachweis (sendet Intervall 12 mit)
+  eq((await fl2.patch(`/api/maintenance/${R}`, { title: 'Ladekran', interval_months: '6', evidence: 'Prüfbuch', expected: seen })).status, 200);
+  const a = await U.fleet.patch(`/api/maintenance/${R}`, { title: 'Ladekran', interval_months: '12', evidence: 'Prüfbuch S. 4', expected: seen }); eq(a.status, 409, JSON.stringify(a.data)); eq(a.data.error, 'version_conflict');
+  let m = await get(); eq(m.interval_months, 6, 'Intervall der anderen bleibt'); eq(m.evidence, 'Prüfbuch');
+  // neu geladen: Speichern mit aktuellem Stand gelingt; Wiederholung → unverändert
+  const cur = { title: 'Ladekran', interval_months: '6', evidence: 'Prüfbuch' };
+  eq((await U.fleet.patch(`/api/maintenance/${R}`, { title: 'Ladekran', interval_months: '6', evidence: 'Prüfbuch S. 4', expected: cur })).status, 200);
+  const w = await U.fleet.patch(`/api/maintenance/${R}`, { title: 'Ladekran', interval_months: '6', evidence: 'Prüfbuch S. 4', expected: cur }); eq(w.status, 200); eq(JSON.stringify(w.data.changed), '[]');
+  m = await get(); eq(m.interval_months, 6); eq(m.evidence, 'Prüfbuch S. 4');
+  eq((await U.fleet.patch(`/api/maintenance/${R}`, { evidence: 'X', expected: ['x'] })).status, 400, 'expected als Liste');
+  eq((await U.fleet.patch(`/api/maintenance/${R}`, { evidence: 'Prüfbuch S. 5' })).status, 200, 'ohne expected wie bisher');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
