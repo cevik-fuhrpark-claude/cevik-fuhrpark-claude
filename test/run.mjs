@@ -30226,6 +30226,46 @@ await test('Backlog 841 (Folge aus 838): km-Fälligkeit fällig/überfällig mit
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].km_due_digits && STRINGS[l].km_due_digits.includes('{prev}'), 'Text ' + l);
 });
 
+await test('Backlog 842 (Folge aus 841): Agentenbefund km-Wartung fällig/überfällig nennt „Ziffern prüfen: vorher N km“ und den Prüfschritt zuerst, wenn die letzte Ablesung ohne Begründung mehr Stellen hat als die vorherige (Schwere unverändert); Begründung löst den Zusatz; DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon');
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const x = await own.post('/api/users', { username: 'q.leitung', display_name: 'Leitung Q', role: 'fleet', environment: 'production' });
+  const F = new Client(worker, e, 'q.leitung'); await F.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Fahrzeugart\nDO-RQ 8421;Dortmund;MAN;2018;WMA06XZZ8RP842001;Lkw\nDO-RQ 8422;Dortmund;MAN;2018;WMA06XZZ8RP842002;Lkw\nDO-RQ 8423;Dortmund;MAN;2018;WMA06XZZ8RP842003;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const A = 'VIN:WMA06XZZ8RP842001'; const B = 'VIN:WMA06XZZ8RP842002'; const C = 'VIN:WMA06XZZ8RP842003';
+  eq((await own.put('/api/settings', { maintenance_warn_km: 5000 })).status, 200);
+  const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const mk = async (v, last) => { const r = await F.post(`/api/vehicles/${v}/maintenance`, { kind: 'Ölwechsel', interval_km: 100000, last_done_km: last, evidence: 'Test 842' }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  // A: überfällig wegen Ziffer zu viel; B: überfällig ohne Stellensprung; C: fällig (Vorwarnung) mit Stellensprung 99 000 → 100 500
+  const ia = await mk(A, 50000); const ib = await mk(B, 50000); const ic = await mk(C, 1000);
+  for (const [v, a, b] of [[A, 140000, 1400500], [B, 140000, 160500], [C, 99000, 100500]]) {
+    eq((await F.post(`/api/vehicles/${v}/odometer`, { km: a, measured_on: day(5) })).status, 201);
+    eq((await F.post(`/api/vehicles/${v}/odometer`, { km: b })).status, 201);
+  }
+  await own.post('/api/agent/run', {});
+  const f = async (id, code) => e.DB.prepare(`SELECT * FROM agent_findings WHERE subject_key=? AND finding_code=? AND status != 'erledigt' ORDER BY rowid DESC LIMIT 1`).bind(`${id}|km`, code).first();
+  let fa = await f(ia, 'MAINTENANCE_OVERDUE'); const fb = await f(ib, 'MAINTENANCE_OVERDUE'); const fc = await f(ic, 'MAINTENANCE_DUE');
+  ok(fa && fa.severity === 'handeln', 'A überfällig, Schwere unverändert ' + JSON.stringify(fa));
+  ok(/Ziffern prüfen: vorher 140\.000 km\./.test(fa.message) && /^Zuerst den km-Stand prüfen/.test(fa.next_action), 'A nennt Ziffern ' + fa.message + ' | ' + fa.next_action);
+  ok(fb && !/Ziffern/.test(fb.message) && fb.next_action === 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.', 'B ohne Zusatz');
+  ok(fc && /Ziffern prüfen: vorher 99\.000 km\./.test(fc.message) && /^Zuerst den km-Stand prüfen/.test(fc.next_action), 'C (fällig) nennt Ziffern ' + (fc && fc.message));
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  const args = JSON.parse(fa.message_args).a; eq(args.prev, 140000, 'Argument prev');
+  ok(renderFindingMessage('MAINT_KM_OVERDUE', args, 'en').includes('Check the digits: previously 140,000 km.'), 'EN');
+  ok(renderFindingMessage('MAINT_KM_OVERDUE', args, 'uk').includes('Перевірте цифри'), 'UK');
+  ok(!renderFindingMessage('MAINT_KM_OVERDUE', { ...args, prev: null }, 'de').includes('Ziffern'), 'ohne prev kein Zusatz');
+  const src = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(src.includes(`['${fa.next_action}', `), 'nächster Schritt übersetzt (UK/EN)');
+  // Begründung an der letzten Ablesung → Befund ohne Zusatz
+  const tl = (await F.get(`/api/vehicles/${A}/timeline?types=odometer`)).data.items.find((i) => i.km === 1400500);
+  eq((await F.post(`/api/odometer/${tl.odometer_id}/note`, { note: 'Stand laut Tacho geprüft' })).status, 200);
+  await own.post('/api/agent/run', {});
+  fa = await f(ia, 'MAINTENANCE_OVERDUE');
+  ok(fa && !/Ziffern/.test(fa.message) && !/^Zuerst den km-Stand/.test(fa.next_action), 'mit Begründung ohne Zusatz ' + (fa && fa.message));
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

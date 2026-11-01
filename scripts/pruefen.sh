@@ -430,6 +430,7 @@ UI-Fahrzeugakte km erfassen: letzter Stand, Differenz, Hinweise kleiner/mehr Ste
 UI-Zeitleiste km mit mehr Stellen: Datenqualität verlinkt, Hinweis mit vorherigem Stand, Begründung nachtragen löst ihn (DE/UK/EN; Backlog 838)|ui-zeitleiste-km-stellen.py|/tmp/cfp-zeitleiste-km-stellen.log
 UI-Verträge km mit mehr Stellen: Hinweis „Ziffern vor der Meldung prüfen“ nur beim betroffenen Vertrag (DE/UK/EN; Backlog 840)|ui-vertrag-km-stellen.py|/tmp/cfp-vertrag-km-stellen.log
 UI-Wartung km mit mehr Stellen: Hinweis „Ziffern prüfen“ in Prüftermin-Übersicht und Fahrzeugakte (DE/UK/EN; Backlog 841)|ui-wartung-km-stellen.py|/tmp/cfp-wartung-km-stellen.log
+UI-Agentenbefund km-Wartung mit mehr Stellen: „Ziffern prüfen“ + Prüfschritt im Master-Panel und in der Fahrzeugakte (DE/UK/EN; Backlog 842)|ui-agent-km-stellen.py|/tmp/cfp-agent-km-stellen.log
 '
 N=0
 NL='

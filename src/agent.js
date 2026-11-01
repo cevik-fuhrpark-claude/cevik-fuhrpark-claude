@@ -426,12 +426,16 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       }
     }
 
+    // Backlog 842: letzte Ablesung mit mehr Stellen als die vorherige (ohne Begründung) – Fälligkeit beruht vermutlich auf einem Tippfehler;
+    // Status/Schwere unverändert (keine km-Grenze, offene Frage „km-Sprung nach oben“), nur Text und nächster Schritt nennen die Prüfung
+    // (nächster Schritt als Literal je Befund – Wächter-Test „Nächster Schritt“ liest die Texte aus dem Code)
     // Wartung/Prüftermine (nur aus belegten Regeln); „heute“ nach Berliner Kalender wie Übersicht und HU/SP-Regeln
     const today = berlinDate();
     const rules = (await env.DB.prepare(`SELECT m.*, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1`).all()).results;
     const warnDays = maintenanceWarnDays(settings.get('maintenance_warn_days'));
     const warnKm = Number(settings.get('maintenance_warn_km')) > 0 ? Number(settings.get('maintenance_warn_km')) : null;
-    const latestKm = rules.some((r) => ruleDueKm(r) !== null) ? await latestKmByVehicle(env) : new Map();
+    // withPrev (Backlog 842): vorheriger Stand je Fahrzeug in derselben Abfrage – Befund nennt „Ziffern prüfen“ wie Übersicht/Akte (Backlog 841)
+    const latestKm = rules.some((r) => ruleDueKm(r) !== null) ? await latestKmByVehicle(env, { withPrev: true }) : new Map();
     for (const r of rules) {
       if (r.kind === 'Rückruf' && r.last_done_date) continue; // durchgeführt: keine Folgefrist (20.10.2026)
       // geplanter Werkstatttermin (ab heute) wie bei HU/SP: nicht erneut „einplanen“ raten (23.10.2026, Rückrufaktion mit Termin + Auftrag)
@@ -439,9 +443,9 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       // km-Fälligkeit (belegt oder aus Intervall + letzter Durchführung in km) – nur mit belegtem km-Stand
       const k = kmDue(r, latestKm.get(r.vehicle_id), warnKm);
       if (k && k.km_status === 'ueberfaellig') add({ code: 'MAINTENANCE_OVERDUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-        ...fm('MAINT_KM_OVERDUE', { plate: r.plate, kind: r.kind, title: r.title || null, due: k.next_due_km, km: k.current_km, date: berlinDateTime(k.km_measured_at).slice(0, 10) }), next_action: planned ? 'Geplanten Termin wahrnehmen; Einsatzfähigkeit fachlich prüfen.' : 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
+        ...fm('MAINT_KM_OVERDUE', { plate: r.plate, kind: r.kind, title: r.title || null, due: k.next_due_km, km: k.current_km, date: berlinDateTime(k.km_measured_at).slice(0, 10), prev: k.km_digits_prev ?? null }), next_action: k.km_digits_prev ? 'Zuerst den km-Stand prüfen (mehr Stellen als der vorherige): falsch → richtigen Stand mit Begründung erfassen; stimmt → Begründung in der Zeitleiste nachtragen und Termin vereinbaren.' : planned ? 'Geplanten Termin wahrnehmen; Einsatzfähigkeit fachlich prüfen.' : 'Termin vereinbaren; Einsatzfähigkeit fachlich prüfen.' });
       else if (k && k.km_status === 'faellig') add({ code: 'MAINTENANCE_DUE', subject: `${r.id}|km`, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
-        ...fm('MAINT_KM_DUE', { plate: r.plate, kind: r.kind, title: r.title || null, due: k.next_due_km, km: k.current_km, rest: k.km_remaining, date: berlinDateTime(k.km_measured_at).slice(0, 10) }) /* Backlog 639: Ablesedatum wie „überfällig“ */, next_action: planned ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
+        ...fm('MAINT_KM_DUE', { plate: r.plate, kind: r.kind, title: r.title || null, due: k.next_due_km, km: k.current_km, rest: k.km_remaining, date: berlinDateTime(k.km_measured_at).slice(0, 10), prev: k.km_digits_prev ?? null }) /* Backlog 639: Ablesedatum wie „überfällig“ */, next_action: k.km_digits_prev ? 'Zuerst den km-Stand prüfen (mehr Stellen als der vorherige): falsch → richtigen Stand mit Begründung erfassen; stimmt → Begründung in der Zeitleiste nachtragen und Termin vereinbaren.' : planned ? 'Geplanten Termin wahrnehmen und Durchführung belegen.' : 'Werkstatttermin einplanen.' });
       // km-Zähler nach der letzten Änderung der Regel gesunken (Tachotausch o. Ä.): Fälligkeit nach km ungeklärt statt falscher Restlaufleistung
       else if (k && k.km_status === 'ungeklaert' && k.km_unclear === 'counter_drop') add({ code: 'INSPECTION_UNCLEAR', subject: `${r.id}|km|zaehler`, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
         ...fm('MAINT_KM_UNCLEAR', { plate: r.plate, kind: r.kind, title: r.title || null, date: berlinDateTime(k.km_drop_at).slice(0, 10) }), next_action: 'Durchführung mit km-Stand des neuen Zählers erfassen oder km-Fälligkeit mit Nachweis neu eintragen.' });
