@@ -25,6 +25,9 @@ const readCsvFile = async (f) => { try { return await readCsvRaw(f); } catch (e)
 const rkFor = (form, b) => { const sig = JSON.stringify(b); if (!form.dataset.rk || form.dataset.rkSig !== sig) { form.dataset.rk = uid(); form.dataset.rkSig = sig; } return form.dataset.rk; };
 // Backlog 804 (Funkloch): Antwort verloren (Zeitlimit/Netz) – meldet der Server beim erneuten Senden derselben Eingaben „gibt es bereits“,
 // war der erste Versuch gespeichert (nur für Endpunkte mit eindeutiger Dublettenprüfung: Vertrag, Führerscheinkontrolle, Auslesung, Fahrerzuordnung)
+// Backlog 805f (Funkloch): Vorgangsbefehle außerhalb der Vorgangsansicht (Werkstattplan) – dieselbe Kennung für denselben Inhalt kurz nach
+// einem Fehlschlag, damit der Server die Wiederholung als `duplicate` erkennt (Muster `S.pendCmd` in viewCase); nach Erfolg verworfen
+const cidFor = (key) => { const p = S.pendCid; const id = p && p.key === key && Date.now() - p.at < 10 * 60000 ? p.id : uid(); S.pendCid = { key, id, at: Date.now() }; return id; };
 const lostMark = (form, b, err) => { if (err && err.offline) form.dataset.lostSig = JSON.stringify(b); };
 const lostDup = (form, b, err, codes) => !!err && codes.includes(err.code) && form.dataset.lostSig === JSON.stringify(b);
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
@@ -2841,7 +2844,7 @@ async function viewCase(id) {
     f.onsubmit = async (e) => {
       e.preventDefault();
       try {
-        const r = await api('POST', `/api/cases/${encodeURIComponent(c.id)}/open-items/${encodeURIComponent(b.dataset.oifu)}/followup`, { priority: $('#oifp').value, note: $('#oifn').value.trim() || undefined });
+        const r = await api('POST', `/api/cases/${encodeURIComponent(c.id)}/open-items/${encodeURIComponent(b.dataset.oifu)}/followup`, { priority: $('#oifp').value, note: $('#oifn').value.trim() || undefined }, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 805f: Wiederholung → derselbe Folgeauftrag
         toast(t('oi_to_case_done').replace('{v}', () => r.case_no));
         location.hash = `#/cases/${encodeURIComponent(r.id)}`;
       } catch (err) { toast(err.message, true); }
@@ -3313,7 +3316,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
       return cmd('request_quality_check', note, q, { formAction: action, next: async () => {
         try {
           const cur = await api('GET', '/api/cases/' + c.id);
-          if (cur.case.status === 'abschlusskontrolle') { await api('POST', `/api/cases/${c.id}/commands`, { action: 'technical_release', command_id: uid(), expected_version: cur.case.version, note, payload: rel }); toast('✓'); }
+          if (cur.case.status === 'abschlusskontrolle') { await api('POST', `/api/cases/${c.id}/commands`, { action: 'technical_release', command_id: uid(), expected_version: cur.case.version, note, payload: rel }, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); } // Backlog 805f: Wiederholung über den Knopf „Technisch freigeben“
         } catch (err) { toast(t('qrel_step2_failed').replace('{msg}', err.message).replace('{b}', t('act_technical_release')), true); }
         await viewCase(c.id);
       } });
@@ -4106,7 +4109,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const r = await api('POST', hsUrl(fm.dataset.mord, 'order'), { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805 */ toast('✓ ' + r.case_no); location.hash = '#/cases/' + r.id; } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
   $$('form[data-medit]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); if ('interval_months' in b && !b.interval_months.trim()) b.interval_months = null; try { const r = await api('PATCH', '/api/maintenance/' + encodeURIComponent(fm.dataset.medit), b); toast(r && r.changed && r.changed.length ? '✓' : t('medit_nochange')); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
   $$('form[data-mend]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); if (!confirm(t('mend_confirm'))) return; try { const r = await api('POST', '/api/maintenance/' + encodeURIComponent(fm.dataset.mend) + '/end', { reason: fm.reason.value }); toast(t(r && r.deleted ? 'mend_deleted' : 'mend_ended')); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
-  $$('form[data-hsplan]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', hsUrl(fm.dataset.hsplan, 'plan'), { planned_date: fm.planned_date.value || null }); if (r && r.after_due) toast(t('plan_after_due').replace('{d}', fmtD(r.planned_date)).replace('{due}', fmtD(r.after_due)), true); else toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
+  $$('form[data-hsplan]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', hsUrl(fm.dataset.hsplan, 'plan'), { planned_date: fm.planned_date.value || null }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805f: Termin setzen ist wiederholbar */ if (r && r.after_due) toast(t('plan_after_due').replace('{d}', fmtD(r.planned_date)).replace('{due}', fmtD(r.after_due)), true); else toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
   // Direktsprung „Durchführung erfassen“ (Werkstattplan): Formular des Eintrags öffnen; HU/SP stehen im aufklappbaren Bereich der Prüfung
   if (sec && sec.startsWith('done:')) {
     const rid = sec.slice(5); const b = document.querySelector(`button[data-done="${CSS.escape(rid)}"]`);
@@ -6471,14 +6474,15 @@ async function viewPlan(sec) {
     return best && best.ds;
   };
   // Werkstattauftrag aus „Fällig – ohne Termin“ (nur Leitung, nicht HU/SP): bleibt im Plan, der Auftrag erscheint danach unter „Ohne Termin“
-  $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const x = await api('POST', `/api/maintenance/${fm.dataset.mord}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }); toast('✓ ' + x.case_no); viewPlan(); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
+  $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const x = await api('POST', `/api/maintenance/${fm.dataset.mord}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805f */ toast('✓ ' + x.case_no); viewPlan(); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
   offDayWatch($$('.planset input[type=date]'));
   $$('[data-psug]').forEach((b) => (b.onclick = () => { const i = all.find((x) => x.id === b.dataset.psug); const f = $('#pd-' + CSS.escape(i.id)); f.value = suggest(i) || ''; f.focus(); }));
   $$('[data-pset]').forEach((b) => (b.onclick = async () => {
     const i = all.find((x) => x.id === b.dataset.pset); const f = $('#pd-' + CSS.escape(i.id));
     if (!f.value) { toast(t('plan_pick_date'), true); f.focus(); return; }
     b.disabled = true;
-    try { await api('POST', `/api/cases/${i.id}/commands`, { action: 'set_planned_date', command_id: uid(), expected_version: i.version, note: ($('#pr-' + CSS.escape(i.id))?.value || '').trim() || null, payload: { planned_date: f.value } }); toast('✓'); viewPlan(); }
+    const pn = ($('#pr-' + CSS.escape(i.id))?.value || '').trim() || null;
+    try { const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'set_planned_date', command_id: cidFor(JSON.stringify([i.id, i.version, 'set_planned_date', pn, f.value])), expected_version: i.version, note: pn, payload: { planned_date: f.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; toast(x && x.duplicate ? t('saved_before') : '✓'); viewPlan(); } // Backlog 805f
     catch (err) { b.disabled = false; toast(err.message, true); if (err.code === 'version_conflict') viewPlan(); }
   }));
   const allCases = [...all, ...r.days.flatMap((d) => d.items.filter((x) => x.type === 'case'))];
@@ -6489,7 +6493,8 @@ async function viewPlan(sec) {
     if (!sel.value) return;
     b.disabled = true;
     try {
-      const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'reassign_workshop', command_id: uid(), expected_version: i.version, note, payload: { workshop_site: sel.value } });
+      const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'reassign_workshop', command_id: cidFor(JSON.stringify([i.id, i.version, 'reassign_workshop', note, sel.value])), expected_version: i.version, note, payload: { workshop_site: sel.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; // Backlog 805f
+      if (x && x.duplicate) { toast(t('saved_before')); viewPlan(); return; }
       toast(x && x.no_workshop_user ? t('no_ws_user_warn') : x && x.external_workshop ? t('ext_ws_hint') : '✓', !!(x && x.no_workshop_user)); viewPlan();
     } catch (err) { b.disabled = false; toast(err.message, true); if (err.code === 'version_conflict') viewPlan(); }
   }));

@@ -59,8 +59,7 @@ const readCsvFile = async (f) => { try { return await readCsvRaw(f); } catch (e)
 // (21.10.2026: Lager – nach „Keine Verbindung“ korrigierte Buchung wurde als Wiederholung still verworfen)
 // Backlog 793: uid() statt randomUUID – randomUUID fehlt in Android-WebView/Chrome < 92 und iOS < 15.4 (Buchung scheiterte dort mit Skriptfehler)
 const rkFor = (form, b) => { const sig = JSON.stringify(b); if (!form.dataset.rk || form.dataset.rkSig !== sig) { form.dataset.rk = uid(); form.dataset.rkSig = sig; } return form.dataset.rk; };
-// Backlog 804 (Funkloch): Antwort verloren (Zeitlimit/Netz) – meldet der Server beim erneuten Senden derselben Eingaben „gibt es bereits“,
-// war der erste Versuch gespeichert (nur für Endpunkte mit eindeutiger Dublettenprüfung: Vertrag, Führerscheinkontrolle, Auslesung, Fahrerzuordnung)
+
 const lostMark = (form, b, err) => { if (err && err.offline) form.dataset.lostSig = JSON.stringify(b); };
 const lostDup = (form, b, err, codes) => !!err && codes.includes(err.code) && form.dataset.lostSig === JSON.stringify(b);
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
@@ -2814,7 +2813,7 @@ async function viewCase(id) {
     f.onsubmit = async (e) => {
       e.preventDefault();
       try {
-        const r = await api('POST', `/api/cases/${encodeURIComponent(c.id)}/open-items/${encodeURIComponent(b.dataset.oifu)}/followup`, { priority: $('#oifp').value, note: $('#oifn').value.trim() || undefined });
+        const r = await api('POST', `/api/cases/${encodeURIComponent(c.id)}/open-items/${encodeURIComponent(b.dataset.oifu)}/followup`, { priority: $('#oifp').value, note: $('#oifn').value.trim() || undefined }, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 805f: Wiederholung → derselbe Folgeauftrag
         toast(t('oi_to_case_done').replace('{v}', () => r.case_no));
         location.hash = `#/cases/${encodeURIComponent(r.id)}`;
       } catch (err) { toast(err.message, true); }
@@ -3250,7 +3249,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
       return cmd('request_quality_check', note, q, { formAction: action, next: async () => {
         try {
           const cur = await api('GET', '/api/cases/' + c.id);
-          if (cur.case.status === 'abschlusskontrolle') { await api('POST', `/api/cases/${c.id}/commands`, { action: 'technical_release', command_id: uid(), expected_version: cur.case.version, note, payload: rel }); toast('✓'); }
+          if (cur.case.status === 'abschlusskontrolle') { await api('POST', `/api/cases/${c.id}/commands`, { action: 'technical_release', command_id: uid(), expected_version: cur.case.version, note, payload: rel }, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); } // Backlog 805f: Wiederholung über den Knopf „Technisch freigeben“
         } catch (err) { toast(t('qrel_step2_failed').replace('{msg}', err.message).replace('{b}', t('act_technical_release')), true); }
         await viewCase(c.id);
       } });

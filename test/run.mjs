@@ -20183,7 +20183,7 @@ await test('Blickwinkel „Termin verpasst“ (24.10.2026): HU/SP mit verstriche
   const { PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(PLURALS[l].plan_moved_n, l);
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("i.reschedules >= 2 && `") && app.includes("note: ($('#pr-' + CSS.escape(i.id))?.value || '').trim() || null"), 'Verschiebungen + Grund im Plan');
+  ok(app.includes("i.reschedules >= 2 && `") && app.includes("const pn = ($('#pr-' + CSS.escape(i.id))?.value || '').trim() || null;") && app.includes("expected_version: i.version, note: pn, payload: { planned_date: f.value } }"), 'Verschiebungen + Grund im Plan'); // Grund seit Backlog 805f als `pn`
   ok(app.includes("i.after_due_date && `<span class=\"chip kritisch\">${esc(t('wplan_mdue_late').replace('{d}', fmtD(i.planned_date)))} (${fmtD(i.after_due_date)})</span>`"), 'Hinweis im Plan');
 });
 
@@ -20859,7 +20859,7 @@ await test('Backlog 265: Werkstattplan liefert je Auftrag Status/Version/Werksta
   const p2 = (await U.fleet.get('/api/workshop/plan?days=7&site=DORTMUND')).data; ok(!p2.days.flatMap((d) => d.items).some((x) => x.id === id) && !p2.unplanned.some((x) => x.id === id), 'nicht mehr im Plan Dortmund');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['pws_reason_ph', 'pws_need_reason']) ok(STRINGS[l][k], `${l}.${k}`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("const canWs = (i) => i.type === 'case' && isMgr() && i.status === 'werkstatt_freigegeben';") && app.includes("action: 'reassign_workshop', command_id: uid(), expected_version: i.version"), 'Oberfläche');
+  ok(app.includes("const canWs = (i) => i.type === 'case' && isMgr() && i.status === 'werkstatt_freigegeben';") && app.includes("action: 'reassign_workshop', command_id: cidFor(JSON.stringify([i.id, i.version, 'reassign_workshop', note, sel.value])), expected_version: i.version"), 'Oberfläche'); // Kennung seit Backlog 805f stabil
 });
 
 await test('Backlog 266 (Blickwinkel „Kurzfristiges Mietfahrzeug“): Außer Betrieb nehmen nennt die Fahrer, deren Zuordnung endet (nur diese Umgebung); FIN-Hinweis im Formular „Fahrzeug anlegen“', async () => {
@@ -29150,6 +29150,33 @@ await test('Backlog 805e (Blickwinkel „Funkloch“): Fahrerakte, Fahrzeug und 
   const ub = { username: 'w.805e', display_name: 'Konto 805e', role: 'dispatch', environment: 'test' };
   eq((await U.own.post('/api/users', ub)).status, 201); const u2 = await U.own.post('/api/users', ub); eq(u2.status, 409); eq(u2.data.error, 'username_taken');
   const i18n = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8'); eq((i18n.match(/\buser_saved_before_invite:/g) || []).length, 3); eq((i18n.match(/\berr_driver_key_reused:/g) || []).length, 3);
+});
+
+await test('Backlog 805f (Blickwinkel „Funkloch“): Werkstattplan (Termin setzen, Werkstatt wechseln) mit Zeitlimit und gleicher Befehlskennung bei Wiederholung → duplicate (keine zweite Version); Prüftermin planen, Wartungsauftrag, Restarbeit → Folgeauftrag und Technisch-Freigeben-Schritt mit Zeitlimit', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const cidFor = (key) =>"), 'Helfer');
+  ok(app.includes("command_id: cidFor(JSON.stringify([i.id, i.version, 'set_planned_date', pn, f.value]))") && app.includes("payload: { planned_date: f.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; toast(x && x.duplicate ? t('saved_before') : '✓');"), 'Termin setzen');
+  ok(app.includes("command_id: cidFor(JSON.stringify([i.id, i.version, 'reassign_workshop', note, sel.value]))") && app.includes("if (x && x.duplicate) { toast(t('saved_before')); viewPlan(); return; }"), 'Werkstatt wechseln');
+  ok(app.includes("hsUrl(fm.dataset.hsplan, 'plan'), { planned_date: fm.planned_date.value || null }, { timeoutMs: SEND_TIMEOUT_MS });"), 'Prüftermin planen');
+  ok(app.includes("request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805f */"), 'Wartungsauftrag');
+  ok(app.includes("note: $('#oifn').value.trim() || undefined }, { timeoutMs: SEND_TIMEOUT_MS });"), 'Restarbeit');
+  ok(app.includes("command_id: uid(), expected_version: cur.case.version, note, payload: rel }, { timeoutMs: SEND_TIMEOUT_MS });"), 'Technisch freigeben');
+  const { U, cmd, newCase, e } = await freshWorld();
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Dortmund')).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200);
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const v = (await U.ws.get(`/api/cases/${id}`)).data.case.version;
+  const pb = { action: 'set_planned_date', command_id: 'cid-805f-1', expected_version: v, note: null, payload: { planned_date: day(4) } };
+  eq((await U.ws.post(`/api/cases/${id}/commands`, pb)).status, 200);
+  const p2 = await U.ws.post(`/api/cases/${id}/commands`, pb); eq(p2.status, 200); eq(p2.data.duplicate, true, 'Termin nie doppelt');
+  eq((await U.ws.get(`/api/cases/${id}`)).data.case.version, v + 1);
+  const rb = { action: 'reassign_workshop', command_id: 'cid-805f-2', expected_version: v + 1, note: 'ausgelastet', payload: { workshop_site: 'MUENCHEN' } };
+  eq((await U.fleet.post(`/api/cases/${id}/commands`, rb)).status, 200);
+  const r2 = await U.fleet.post(`/api/cases/${id}/commands`, rb); eq(r2.status, 200); eq(r2.data.duplicate, true, 'Wechsel nie doppelt');
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.case.version, v + 2);
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-werkstattplan-funkloch.py|'), 'UI-Prüfung eingetragen');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

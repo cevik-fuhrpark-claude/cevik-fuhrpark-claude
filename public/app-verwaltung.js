@@ -1,6 +1,11 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
 import { $, $$, BERLIN_DT_FMT, CT_KINDS, DEFECT_RESULTS, MORE_MAX, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, STATES, TM_PROV, TST, afLink, agentFindingsCsv, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindTachoCancel, cDesc, checkLabel, claimChip, clipTxt, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, decIn, defectItemsCsv, defectVehiclesCsv, download, downloadChecked, dqDetail, dur, emHoursText, envFn, esc, eur, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtKm, fmtMm, fmtMonth, fmtNum, helpLink, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isUnusedUser, isWeekendD, kmFcHtml, kmUnclearDateDue, langAttr, lostDup, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mk, mkR, nDays, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, planVehTag, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, qrSvg, readCsvFile, reasonText, render, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, sortPref, sortUsers, stackTables, t, tachoHistList, telAbroad, telHref, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, uiLoc, uid, usersCsv, vehiclesCached, vlAt, vsDef, woApptTxt, woTag, wsAll, wsLabel, wsName, wsOptions } from './app-main.js';
 
+// Backlog 804 (Funkloch): Antwort verloren (Zeitlimit/Netz) – meldet der Server beim erneuten Senden derselben Eingaben „gibt es bereits“,
+// war der erste Versuch gespeichert (nur für Endpunkte mit eindeutiger Dublettenprüfung: Vertrag, Führerscheinkontrolle, Auslesung, Fahrerzuordnung)
+// Backlog 805f (Funkloch): Vorgangsbefehle außerhalb der Vorgangsansicht (Werkstattplan) – dieselbe Kennung für denselben Inhalt kurz nach
+// einem Fehlschlag, damit der Server die Wiederholung als `duplicate` erkennt (Muster `S.pendCmd` in viewCase); nach Erfolg verworfen
+const cidFor = (key) => { const p = S.pendCid; const id = p && p.key === key && Date.now() - p.at < 10 * 60000 ? p.id : uid(); S.pendCid = { key, id, at: Date.now() }; return id; };
 // Folgetag eines Kalenderdatums JJJJ-MM-TT (Stundensatz-Verlauf: „ab“ = Tag nach „bis“)
 const bDateNext = (d) => { const [y, m, dd] = String(d).split('-').map(Number); const x = new Date(Date.UTC(y, m - 1, dd + 1)); return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; };
 const bYm = (back = 0) => { const [y, m] = bDate().slice(0, 7).split('-').map(Number); return new Date(Date.UTC(y, m - 1 - back, 1)).toISOString().slice(0, 7); };
@@ -1299,14 +1304,15 @@ async function viewPlan(sec) {
     return best && best.ds;
   };
   // Werkstattauftrag aus „Fällig – ohne Termin“ (nur Leitung, nicht HU/SP): bleibt im Plan, der Auftrag erscheint danach unter „Ohne Termin“
-  $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const x = await api('POST', `/api/maintenance/${fm.dataset.mord}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }); toast('✓ ' + x.case_no); viewPlan(); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
+  $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const x = await api('POST', `/api/maintenance/${fm.dataset.mord}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805f */ toast('✓ ' + x.case_no); viewPlan(); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
   offDayWatch($$('.planset input[type=date]'));
   $$('[data-psug]').forEach((b) => (b.onclick = () => { const i = all.find((x) => x.id === b.dataset.psug); const f = $('#pd-' + CSS.escape(i.id)); f.value = suggest(i) || ''; f.focus(); }));
   $$('[data-pset]').forEach((b) => (b.onclick = async () => {
     const i = all.find((x) => x.id === b.dataset.pset); const f = $('#pd-' + CSS.escape(i.id));
     if (!f.value) { toast(t('plan_pick_date'), true); f.focus(); return; }
     b.disabled = true;
-    try { await api('POST', `/api/cases/${i.id}/commands`, { action: 'set_planned_date', command_id: uid(), expected_version: i.version, note: ($('#pr-' + CSS.escape(i.id))?.value || '').trim() || null, payload: { planned_date: f.value } }); toast('✓'); viewPlan(); }
+    const pn = ($('#pr-' + CSS.escape(i.id))?.value || '').trim() || null;
+    try { const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'set_planned_date', command_id: cidFor(JSON.stringify([i.id, i.version, 'set_planned_date', pn, f.value])), expected_version: i.version, note: pn, payload: { planned_date: f.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; toast(x && x.duplicate ? t('saved_before') : '✓'); viewPlan(); } // Backlog 805f
     catch (err) { b.disabled = false; toast(err.message, true); if (err.code === 'version_conflict') viewPlan(); }
   }));
   const allCases = [...all, ...r.days.flatMap((d) => d.items.filter((x) => x.type === 'case'))];
@@ -1317,7 +1323,8 @@ async function viewPlan(sec) {
     if (!sel.value) return;
     b.disabled = true;
     try {
-      const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'reassign_workshop', command_id: uid(), expected_version: i.version, note, payload: { workshop_site: sel.value } });
+      const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'reassign_workshop', command_id: cidFor(JSON.stringify([i.id, i.version, 'reassign_workshop', note, sel.value])), expected_version: i.version, note, payload: { workshop_site: sel.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; // Backlog 805f
+      if (x && x.duplicate) { toast(t('saved_before')); viewPlan(); return; }
       toast(x && x.no_workshop_user ? t('no_ws_user_warn') : x && x.external_workshop ? t('ext_ws_hint') : '✓', !!(x && x.no_workshop_user)); viewPlan();
     } catch (err) { b.disabled = false; toast(err.message, true); if (err.code === 'version_conflict') viewPlan(); }
   }));
