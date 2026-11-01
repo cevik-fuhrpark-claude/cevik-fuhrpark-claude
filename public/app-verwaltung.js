@@ -687,7 +687,7 @@ async function viewEmergencyEdit() {
       // Backlog 430: weitere Zeitspannen – ganz leere Blöcke entfallen; unvollständige gehen an den Server (der nennt, was fehlt)
       b.hours_more = $$('[data-emmore]').map((x) => ({ days: $$('[data-emmwd]', x).filter((c) => c.checked).map((c) => c.dataset.emmwd).join(''), from: $('[data-emmfrom]', x).value || null, to: $('[data-emmto]', x).value || null })).filter((w) => w.days || w.from || w.to);
       if (!b.hours_days && !b.hours_more.length) b.hours_more = null;
-      try { if (edit) await api('PATCH', `/api/emergency/contacts/${edit.id}`, b); else await api('POST', '/api/emergency/contacts', b); toast(t('em_saved')); S.emEdit = null; viewEmergencyEdit(); } catch (err) { toast(err.message, true); }
+      const emf = f; try { if (edit) await api('PATCH', `/api/emergency/contacts/${edit.id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); else await api('POST', '/api/emergency/contacts', b, { timeoutMs: SEND_TIMEOUT_MS }); toast(t('em_saved')); S.emEdit = null; viewEmergencyEdit(); } catch (err) { /* Backlog 805i (Funkloch): Wiederholung der Anlage → duplicate_contact */ if (!edit && lostDup(emf, b, err, ['duplicate_contact'])) { toast(t('saved_before')); S.emEdit = null; viewEmergencyEdit(); return; } lostMark(emf, b, err); toast(err.message, true); }
     };
   }
   $$('[data-emedit]').forEach((b) => (b.onclick = async () => { S.emEdit = b.dataset.emedit; await viewEmergencyEdit(); window.scrollTo(0, 0); }));

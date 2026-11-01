@@ -29230,6 +29230,25 @@ await test('Backlog 805h (Blickwinkel „Funkloch“): Sammelaktionen (Sammelmel
   eq((await U.fleet.post('/api/drivers/trainings', tb)).status, 201); const t2 = await U.fleet.post('/api/drivers/trainings', tb); eq(t2.status, 201); eq(t2.data.created, 0, 'Unterweisung nie doppelt'); eq(t2.data.existing, 1);
 });
 
+await test('Backlog 805i (Blickwinkel „Funkloch“): Lagerartikel anlegen/ändern, Bestellvermerk und Notfall-Rufnummer anlegen/ändern mit Zeitlimit; Wiederholung nie doppelt (409 duplicate_item / stock_order_exists / duplicate_contact), nach verlorener Antwort „War bereits gespeichert“', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("await api('POST', '/api/stock', b, { timeoutMs: SEND_TIMEOUT_MS }); viewStock(); }") && app.includes("if (lostDup(sf, b, err, ['duplicate_item']))"), 'Lagerartikel');
+  ok(app.includes("await api('PATCH', `/api/stock/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS });"), 'Lagerartikel ändern');
+  ok(app.includes("await api('PUT', `/api/stock/${id}/order`, b, { timeoutMs: SEND_TIMEOUT_MS });") && app.includes("if (lostDup(ofm, b, err, ['stock_order_exists']))"), 'Bestellvermerk');
+  ok(app.includes("else await api('POST', '/api/emergency/contacts', b, { timeoutMs: SEND_TIMEOUT_MS });") && app.includes("if (!edit && lostDup(emf, b, err, ['duplicate_contact']))"), 'Rufnummer');
+  const { U } = await freshWorld();
+  const sb = { name: 'Filter 805i', part_number: 'F-805i' };
+  const s1 = await U.ws.post('/api/stock', sb); eq(s1.status, 201, JSON.stringify(s1.data));
+  const s2 = await U.ws.post('/api/stock', sb); eq(s2.status, 409); eq(s2.data.error, 'duplicate_item');
+  const id = s1.data.id;
+  eq((await U.ws.put(`/api/stock/${id}/order`, { qty: 4, note: 'Händler 805i' })).status, 200);
+  const o2 = await U.ws.put(`/api/stock/${id}/order`, { qty: 4, note: 'Händler 805i' }); eq(o2.status, 409); eq(o2.data.error, 'stock_order_exists');
+  const eb = { kind: 'dispo', label: 'Dispo 805i', phone: '0231 805900' };
+  eq((await U.fleet.post('/api/emergency/contacts', eb)).status, 201);
+  const e2 = await U.fleet.post('/api/emergency/contacts', eb); eq(e2.status, 409); eq(e2.data.error, 'duplicate_contact');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

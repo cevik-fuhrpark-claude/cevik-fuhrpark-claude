@@ -4599,7 +4599,7 @@ async function viewStock() {
     try { show(await api('POST', '/api/stock/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
   };
   if (S.simpDone && $('#simpr')) { const d = $('#simp'); d.open = true; const r = S.simpDone; S.simpDone = null; $('#simpr').innerHTML = `<p id="simpsum"><b>✓</b> · ${esc(wsName(r.site))} · ${esc(t('ia_neu'))}: ${r.created} · ${esc(t('ia_unverändert'))}: ${r.unchanged} · ${esc(t('skipped'))}: ${r.skipped.length}</p>`; }
-  $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['initial_qty', 'min_qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } try { await api('POST', '/api/stock', b); viewStock(); } catch (err) { toast(err.message, true); } };
+  $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['initial_qty', 'min_qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } const sf = e.target; try { await api('POST', '/api/stock', b, { timeoutMs: SEND_TIMEOUT_MS }); viewStock(); } catch (err) { /* Backlog 805i (Funkloch): Wiederholung → duplicate_item */ if (lostDup(sf, b, err, ['duplicate_item'])) { toast(t('saved_before')); viewStock(); return; } lostMark(sf, b, err); toast(err.message, true); } };
 }
 
 // Zählliste für die Inventur (Ausdruck zum Ausfüllen): je Lager nach Lagerort/Artikel, standardmäßig ohne Buchbestand (Blindzählung)
@@ -4925,9 +4925,9 @@ async function viewStockItem(id) {
     for (const k of Object.keys(b)) if (b[k] === was[k]) delete b[k];
     if (!Object.keys(b).length) { toast(t('item_unchanged')); return; }
     if (it.updated_at) b.expected_updated_at = it.updated_at;
-    try { const r = await api('PATCH', `/api/stock/${id}`, b); toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { if (!stockConflict(err, 'itedf', Object.fromEntries(Object.entries(b).filter(([k]) => k !== 'expected_updated_at')), ['version_conflict'])) toast(err.message, true); } };
+    try { const r = await api('PATCH', `/api/stock/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805i: Wiederholung → Konflikt lädt mit gespeichertem Stand */ toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { if (!stockConflict(err, 'itedf', Object.fromEntries(Object.entries(b).filter(([k]) => k !== 'expected_updated_at')), ['version_conflict'])) toast(err.message, true); } };
   if ($('#of')) $('#of').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); for (const k of ['eta', 'note']) if (!b[k]) delete b[k];
-    try { await api('PUT', `/api/stock/${id}/order`, b); viewStockItem(id); } catch (err) { if (!stockConflict(err, 'of', b, ['order_changed', 'stock_order_exists'])) toast(err.message, true); } };
+    const ofm = e.target; try { await api('PUT', `/api/stock/${id}/order`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { if (lostDup(ofm, b, err, ['stock_order_exists'])) { toast(t('saved_before')); viewStockItem(id); return; } lostMark(ofm, b, err); /* Backlog 805i */ if (!stockConflict(err, 'of', b, ['order_changed', 'stock_order_exists'])) toast(err.message, true); } };
   if ($('#ordclr')) $('#ordclr').onclick = async () => { try { await api('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`); viewStockItem(id); } catch (err) { if (['order_changed', 'stock_order_exists'].includes(err.code)) { toast(err.message, true); viewStockItem(id); } else toast(err.message, true); } };
   if ($('#tf')) $('#tf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); if (!b.note) delete b.note; b.request_key = rkFor(e.target, b);
     try { const r = await api('POST', `/api/stock/${id}/transfer`, b, { timeoutMs: SEND_TIMEOUT_MS }); toast(t('transfer_done').replace('{q}', fmtNum(r.qty)).replace('{u}', unitL(it.unit)).replace('{w}', wsName(b.to_site)) + (r.target_created ? ' · ' + t('transfer_created') : '')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
@@ -5617,7 +5617,7 @@ async function viewEmergencyEdit() {
       // Backlog 430: weitere Zeitspannen – ganz leere Blöcke entfallen; unvollständige gehen an den Server (der nennt, was fehlt)
       b.hours_more = $$('[data-emmore]').map((x) => ({ days: $$('[data-emmwd]', x).filter((c) => c.checked).map((c) => c.dataset.emmwd).join(''), from: $('[data-emmfrom]', x).value || null, to: $('[data-emmto]', x).value || null })).filter((w) => w.days || w.from || w.to);
       if (!b.hours_days && !b.hours_more.length) b.hours_more = null;
-      try { if (edit) await api('PATCH', `/api/emergency/contacts/${edit.id}`, b); else await api('POST', '/api/emergency/contacts', b); toast(t('em_saved')); S.emEdit = null; viewEmergencyEdit(); } catch (err) { toast(err.message, true); }
+      const emf = f; try { if (edit) await api('PATCH', `/api/emergency/contacts/${edit.id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); else await api('POST', '/api/emergency/contacts', b, { timeoutMs: SEND_TIMEOUT_MS }); toast(t('em_saved')); S.emEdit = null; viewEmergencyEdit(); } catch (err) { /* Backlog 805i (Funkloch): Wiederholung der Anlage → duplicate_contact */ if (!edit && lostDup(emf, b, err, ['duplicate_contact'])) { toast(t('saved_before')); S.emEdit = null; viewEmergencyEdit(); return; } lostMark(emf, b, err); toast(err.message, true); }
     };
   }
   $$('[data-emedit]').forEach((b) => (b.onclick = async () => { S.emEdit = b.dataset.emedit; await viewEmergencyEdit(); window.scrollTo(0, 0); }));
