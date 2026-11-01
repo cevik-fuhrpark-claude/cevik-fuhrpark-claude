@@ -29938,6 +29938,8 @@ await test('Backlog 831 (Folge aus 826/829): „Kontrolle nach Reparatur“ zeig
   ok(fn.includes('irvkmtr') && fn.indexOf('const veh = d.vehicle') < fn.indexOf('irvkmtr'), 'in viewInspection, nach der Fahrzeug-Variablen');
   const I = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(I.STRINGS[l].mdone_kmtr, 'Text mdone_kmtr ' + l);
+  const para = (l) => I.STRINGS[l].help_ws_s.split('|').find((x) => /^(Kontrolle nach Reparatur am richtigen|Перевірка після ремонту на правильному|Post-repair check on the right)/.test(x)) || '';
+  ok(/Achskilometerzähler des Anhängers/.test(para('de')) && /осі причепа/.test(para('uk')) && /hub odometer/.test(para('en')), 'Werkstatt-Hilfe: Absatz Kontrolle nach Reparatur nennt den Anhänger-Hinweis (DE/UK/EN)');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
