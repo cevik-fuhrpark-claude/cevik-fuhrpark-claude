@@ -155,6 +155,16 @@ export async function createDriver(env, user, envName, body) {
   const userId = await validLinkedUser(env, envName, body.user_id);
   const id = uuid(); const now = nowIso();
   const pno = str(body.personnel_no, { max: 40, field: 'Personalnummer' });
+  // Backlog 805e (Funkloch): erneutes Senden mit demselben request_key → vorhandene Akte (gleiche Namen sind erlaubt, sonst zweite Akte)
+  const rkey = requestKey(body.request_key);
+  const byKey = async () => {
+    if (!rkey) return null;
+    const p = await env.DB.prepare('SELECT id, environment FROM drivers WHERE created_by=? AND request_key=?').bind(user.id, rkey).first();
+    if (!p) return null;
+    if (p.environment !== envName) throw conflict('driver_key_reused', 'request_key wurde bereits für eine andere Fahrerakte verwendet.');
+    return { id: p.id, duplicate: true, duplicate_names: [] };
+  };
+  { const d = await byKey(); if (d) return d; }
   // Personalnummer je Umgebung unter aktiven Fahrern eindeutig (Schreibweise wie beim Auslesungen-Import) – Doppelklick/parallel ergab
   // sonst zwei Fahrer, und der Import übersprang danach jede Zeile „Fahrer nicht eindeutig“ (17.10.2026)
   // Vorprüfung mit derselben Vergleichsregel wie der Auslesungen-Import (`pnoKey`: ohne führende Nullen, Groß-/Kleinschreibung auch Ä/Д);
@@ -173,10 +183,15 @@ export async function createDriver(env, user, envName, body) {
   }
   let r;
   try {
-    r = await env.DB.prepare(`INSERT INTO drivers(id,environment,display_name,personnel_no,site,user_id,active,note,created_by,created_at,updated_at) SELECT ?1,?2,?3,?4,?5,?6,1,?7,?8,?9,?10
+    r = await env.DB.prepare(`INSERT INTO drivers(id,environment,display_name,personnel_no,site,user_id,active,note,created_by,created_at,updated_at,request_key) SELECT ?1,?2,?3,?4,?5,?6,1,?7,?8,?9,?10,?11
       WHERE ?4 IS NULL OR NOT EXISTS (SELECT 1 FROM drivers x WHERE x.environment=?2 AND x.active=1 AND lower(trim(x.personnel_no))=lower(?4))`)
-      .bind(id, envName, name, pno, str(body.site, { max: 60, field: 'Standort' }), userId, str(body.note, { max: 1000, field: 'Bemerkung' }), user.id, now, now).run();
-  } catch (e) { if (String(e.message).includes('UNIQUE')) throw await linkedConflict(env, userId); throw e; }
+      .bind(id, envName, name, pno, str(body.site, { max: 60, field: 'Standort' }), userId, str(body.note, { max: 1000, field: 'Bemerkung' }), user.id, now, now, rkey).run();
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE')) { const d = await byKey(); if (d) return d; throw await linkedConflict(env, userId); } // paralleles Doppelsenden
+    throw e;
+  }
+  // Personalnummer-Sperre griff, weil die erste (verlorene) Speicherung dieselbe Akte schon angelegt hat
+  if ((!r.meta || r.meta.changes !== 1) && rkey) { const d = await byKey(); if (d) return d; }
   if (!r.meta || r.meta.changes !== 1) throw conflict('duplicate_personnel_no', 'Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.');
   await audit(env, user.id, 'driver.create', id, { name, environment: envName, ...(pno ? { personnel_no: pno } : {}), ...(duplicateNames.length ? { duplicate_names: duplicateNames.length } : {}) });
   return { id, duplicate_names: duplicateNames };

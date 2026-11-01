@@ -17,7 +17,7 @@ async function saveVehicleForm(form, edit = false) {
   for (const k in b) if (b[k] === '') delete b[k];
   // Bearbeiten nimmt ein außer Betrieb genommenes Fahrzeug nicht wieder in Betrieb; Anlegen überschreibt nie ein Fahrzeug in Betrieb (409 vin_exists, 20.10.2026)
   if (edit) b.keep_active = true; else b.create_only = true;
-  const r = await api('POST', '/api/vehicles', b);
+  const r = await api('POST', '/api/vehicles', b, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 805e: Bearbeiten ist wiederholbar, Anlegen → vin_exists
   // Hinweis, wenn dasselbe Kennzeichen schon an einem anderen Fahrzeug steht (gespeichert wird trotzdem – Mensch entscheidet)
   const d = r && r.duplicate_plates;
   if (d && d.length) {
@@ -100,7 +100,8 @@ async function viewVehicles() {
   const vsite = $('#vsite'); if (vsite) vsite.onchange = () => { S.vehSite = vsite.value; viewVehicles(); };
   const vsort = $('#vsort'); if (vsort) vsort.onchange = () => { S.vehSort = sortPref('vehicles', VEH_SORTS, 'plate', VEH_SORTS.includes(vsort.value) ? vsort.value : 'plate'); viewVehicles(); };
   const ia = $('#inact'); if (ia) ia.onchange = () => { S.vehInactive = ia.checked; viewVehicles(); };
-  const nvf = $('#nvf'); if (nvf) nvf.onsubmit = async (e) => { e.preventDefault(); try { const r = await saveVehicleForm(nvf); toast('✓'); location.hash = '#/vehicles/' + encodeURIComponent(r.id); } catch (err) { toast(err.message, true); } };
+  // Backlog 805e (Funkloch): Anlegen mit Zeitlimit; nach verlorener Antwort meldet der Server für dieselbe FIN `vin_exists` → „War bereits gespeichert“, Akte öffnen
+  const nvf = $('#nvf'); if (nvf) nvf.onsubmit = async (e) => { e.preventDefault(); const sig = Object.fromEntries(new FormData(nvf)); try { const r = await saveVehicleForm(nvf); toast('✓'); location.hash = '#/vehicles/' + encodeURIComponent(r.id); } catch (err) { if (lostDup(nvf, sig, err, ['vin_exists']) && err.data && err.data.id) { toast(t('saved_before')); location.hash = '#/vehicles/' + encodeURIComponent(err.data.id); return; } lostMark(nvf, sig, err); toast(err.message, true); } };
   // Ausdruck: gewählte Auswahl (Art, Verfügbarkeit, Standort, außer Betrieb), Suche, Sortierung und Anzahl sichtbarer Fahrzeuge
   const avLabel = av === 'all' ? '' : av === 'coupled_locked' ? t('av_coupled_locked') : av === 'with_notes' ? t('vnotes_with') : av === 'maint_overdue' ? t('av_maint_overdue') : av === 'recall_open' ? t('av_recall_open') : av === 'dormant' ? t('eval_excluded') : t('av_' + av); // Backlog 483: „ruhend“ wie der Knopf (vorher „av_dormant“ im Druckkopf)
   const vPrint = () => { const qq = $('#q').value.trim(); $('#vprl').innerHTML = printHead([

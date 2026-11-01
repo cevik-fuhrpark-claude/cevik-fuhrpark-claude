@@ -18657,7 +18657,7 @@ await test('Wiedereinstellung (Backlog 191): neue Fahrerakte mit gleicher Person
   eq((await users.fleet.post('/api/drivers', { display_name: 'W. Fahrer', personnel_no: '191', check_inactive: true, confirm_inactive: true })).status, 201);
   eq((await users.fleet.post('/api/drivers', { display_name: 'Wieder Fahrer 191' })).status, 201, 'ohne Schalter unverändert');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("b.check_inactive = true;") && app.includes("r = await api('POST', '/api/drivers', { ...b, confirm_inactive: true }); }"), 'App fragt nach');
+  ok(app.includes("b.check_inactive = true;") && app.includes("r = await api('POST', '/api/drivers', { ...b, confirm_inactive: true }, { timeoutMs: SEND_TIMEOUT_MS }); }"), 'App fragt nach'); // Zeitlimit seit Backlog 805e
   ok(app.includes("toast(linkedMsg(err), true)"), 'App nennt die verknüpfte Akte');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['dr_inactive_match', 'dr_linked_to', 'dq_driver_account_file_inactive']) ok(STRINGS[l][k], `${l}: ${k}`);
@@ -29127,6 +29127,29 @@ await test('Backlog 805d (Blickwinkel „Funkloch“): Bußgeld-Befehle mit Zeit
   // Wiederholung eines älteren Stands (zwei Schritte zurück) bleibt Konflikt
   eq((await U.fleet.post(`/api/fines/${F}/commands`, { ...ub, expected_version: v0 - 1 })).status, 409);
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-bussgeld-befehl-funkloch.py|'), 'UI-Prüfung eingetragen');
+});
+
+await test('Backlog 805e (Blickwinkel „Funkloch“): Fahrerakte, Fahrzeug und Benutzer anlegen mit Zeitlimit; Fahrerakte mit request_key (Migration 0098) nie doppelt (auch mit Personalnummer), Fahrzeug-Wiederholung → 409 vin_exists mit id, Benutzer → 409 username_taken; UI meldet „War bereits gespeichert“', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("b.request_key = rkFor(f, b); /* Backlog 805e: je Formularinhalt */") && app.includes("r = await api('POST', '/api/drivers', b, { timeoutMs: SEND_TIMEOUT_MS });"), 'Fahrerakte');
+  ok(app.includes("if (lostDup(nvf, sig, err, ['vin_exists']) && err.data && err.data.id)") && app.includes("await api('POST', '/api/vehicles', b, { timeoutMs: SEND_TIMEOUT_MS });"), 'Fahrzeug');
+  ok(app.includes("if (lostDup(nf, b, err, ['username_taken'])) { await viewUsers(); toast(t('user_saved_before_invite')); return; }"), 'Benutzer');
+  const { U } = await freshWorld();
+  const db = { display_name: 'Fahrer 805e', personnel_no: '805-1', check_inactive: true, request_key: 'rk-805e-1' };
+  const d1 = await U.fleet.post('/api/drivers', db); eq(d1.status, 201, JSON.stringify(d1.data));
+  const d2 = await U.fleet.post('/api/drivers', db); eq(d2.status, 201, JSON.stringify(d2.data)); eq(d2.data.id, d1.data.id, 'gleiche Akte'); eq(d2.data.duplicate, true);
+  const db2 = { display_name: 'Fahrer 805e b', request_key: 'rk-805e-2' };
+  const e1 = await U.fleet.post('/api/drivers', db2); const e2 = await U.fleet.post('/api/drivers', db2); eq(e2.data.id, e1.data.id, 'ohne Personalnummer gleiche Akte');
+  eq((await U.fleet.get('/api/drivers')).data.drivers.filter((x) => x.display_name.startsWith('Fahrer 805e')).length, 2, 'genau zwei Akten');
+  // ohne Schlüssel wie bisher: gleicher Name erlaubt (nur Hinweis)
+  const e3 = await U.fleet.post('/api/drivers', { display_name: 'Fahrer 805e b' }); eq(e3.status, 201); ok(e3.data.id !== e1.data.id); eq(e3.data.duplicate_names.length, 1);
+  const vb = { vin: 'WDB96340310805E01', plate: 'TZ-805E 1', create_only: true };
+  eq((await U.own.post('/api/vehicles', vb)).status, 201);
+  const v2 = await U.own.post('/api/vehicles', vb); eq(v2.status, 409); eq(v2.data.error, 'vin_exists'); eq(v2.data.id, 'VIN:WDB96340310805E01');
+  const ub = { username: 'w.805e', display_name: 'Konto 805e', role: 'dispatch', environment: 'test' };
+  eq((await U.own.post('/api/users', ub)).status, 201); const u2 = await U.own.post('/api/users', ub); eq(u2.status, 409); eq(u2.data.error, 'username_taken');
+  const i18n = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8'); eq((i18n.match(/\buser_saved_before_invite:/g) || []).length, 3); eq((i18n.match(/\berr_driver_key_reused:/g) || []).length, 3);
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

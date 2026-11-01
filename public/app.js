@@ -3611,7 +3611,7 @@ async function saveVehicleForm(form, edit = false) {
   for (const k in b) if (b[k] === '') delete b[k];
   // Bearbeiten nimmt ein außer Betrieb genommenes Fahrzeug nicht wieder in Betrieb; Anlegen überschreibt nie ein Fahrzeug in Betrieb (409 vin_exists, 20.10.2026)
   if (edit) b.keep_active = true; else b.create_only = true;
-  const r = await api('POST', '/api/vehicles', b);
+  const r = await api('POST', '/api/vehicles', b, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 805e: Bearbeiten ist wiederholbar, Anlegen → vin_exists
   // Hinweis, wenn dasselbe Kennzeichen schon an einem anderen Fahrzeug steht (gespeichert wird trotzdem – Mensch entscheidet)
   const d = r && r.duplicate_plates;
   if (d && d.length) {
@@ -3698,7 +3698,8 @@ async function viewVehicles() {
   const vsite = $('#vsite'); if (vsite) vsite.onchange = () => { S.vehSite = vsite.value; viewVehicles(); };
   const vsort = $('#vsort'); if (vsort) vsort.onchange = () => { S.vehSort = sortPref('vehicles', VEH_SORTS, 'plate', VEH_SORTS.includes(vsort.value) ? vsort.value : 'plate'); viewVehicles(); };
   const ia = $('#inact'); if (ia) ia.onchange = () => { S.vehInactive = ia.checked; viewVehicles(); };
-  const nvf = $('#nvf'); if (nvf) nvf.onsubmit = async (e) => { e.preventDefault(); try { const r = await saveVehicleForm(nvf); toast('✓'); location.hash = '#/vehicles/' + encodeURIComponent(r.id); } catch (err) { toast(err.message, true); } };
+  // Backlog 805e (Funkloch): Anlegen mit Zeitlimit; nach verlorener Antwort meldet der Server für dieselbe FIN `vin_exists` → „War bereits gespeichert“, Akte öffnen
+  const nvf = $('#nvf'); if (nvf) nvf.onsubmit = async (e) => { e.preventDefault(); const sig = Object.fromEntries(new FormData(nvf)); try { const r = await saveVehicleForm(nvf); toast('✓'); location.hash = '#/vehicles/' + encodeURIComponent(r.id); } catch (err) { if (lostDup(nvf, sig, err, ['vin_exists']) && err.data && err.data.id) { toast(t('saved_before')); location.hash = '#/vehicles/' + encodeURIComponent(err.data.id); return; } lostMark(nvf, sig, err); toast(err.message, true); } };
   // Ausdruck: gewählte Auswahl (Art, Verfügbarkeit, Standort, außer Betrieb), Suche, Sortierung und Anzahl sichtbarer Fahrzeuge
   const avLabel = av === 'all' ? '' : av === 'coupled_locked' ? t('av_coupled_locked') : av === 'with_notes' ? t('vnotes_with') : av === 'maint_overdue' ? t('av_maint_overdue') : av === 'recall_open' ? t('av_recall_open') : av === 'dormant' ? t('eval_excluded') : t('av_' + av); // Backlog 483: „ruhend“ wie der Knopf (vorher „av_dormant“ im Druckkopf)
   const vPrint = () => { const qq = $('#q').value.trim(); $('#vprl').innerHTML = printHead([
@@ -5288,12 +5289,13 @@ async function viewDrivers() {
     const dc = $('#dueclr'); if (dc) dc.onclick = () => { S.drvDueBy = null; viewDrivers(); }; }
   $('#dprl').onclick = () => window.print();
   $('#dcsv').onclick = async () => { try { download(await api('GET', '/api/drivers?format=csv' + (dq ? '&' + dq : '')), `fuhrpark-fahrer-fristen_${envFn()}_${S.drvInactive ? 'inaktiv_' : ''}${bDate()}${dr.site ? '_' + fnPart(dr.site) : ''}${dr.due_by ? '_bis_' + dr.due_by : ''}.csv`); } catch (err) { toast(err.message, true); } };
-  const f = $('#ndf'); f.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(f)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; b.check_inactive = true; try {
+  const f = $('#ndf'); f.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(f)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; b.check_inactive = true; b.request_key = rkFor(f, b); /* Backlog 805e: je Formularinhalt */ try {
     // ausgeschiedene Akte mit gleicher Personalnummer/gleichem Namen (Wiedereinstellung, Backlog 191): nachfragen – Abbrechen öffnet die alte Akte
-    let r; try { r = await api('POST', '/api/drivers', b); } catch (err) {
+    let r; try { r = await api('POST', '/api/drivers', b, { timeoutMs: SEND_TIMEOUT_MS }); } catch (err) {
       const mm = err.code === 'inactive_match' && err.data && err.data.matches; if (!mm || !mm.length) throw err;
       if (!confirm(t('dr_inactive_match').replace('{list}', mm.map((x) => x.personnel_no ? `${x.display_name} (${x.personnel_no})` : x.display_name).join(', ')))) { location.hash = '#/drivers/' + mm[0].id; return; }
-      r = await api('POST', '/api/drivers', { ...b, confirm_inactive: true }); }
+      r = await api('POST', '/api/drivers', { ...b, confirm_inactive: true }, { timeoutMs: SEND_TIMEOUT_MS }); }
+    if (r.duplicate) toast(t('saved_before'));
     location.hash = '#/drivers/' + r.id;
     // gleichnamige aktive Fahrer: nur Hinweis, gespeichert ist die Akte trotzdem (gleiche Namen sind möglich, 23.10.2026)
     const dn = r && r.duplicate_names;
@@ -7084,7 +7086,9 @@ async function viewUsers() {
   $$('[data-unlock]').forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/users/${b.dataset.unlock}/unlock`); toast('✓'); viewUsers(); } catch (err) { toast(err.message, true); } }));
   const showInvite = (token) => { const link = `${location.origin}/#/invite/${token}`; $('#inv').innerHTML = `<div class="panel good"><p>${esc(t('invite_link'))}</p><input readonly value="${esc(link)}" id="il"><div class="actions"><button class="btn" id="cp">${esc(t('copy'))}</button></div><p class="small muted">${esc(t('invite_qr_hint'))}</p><div class="qr">${(() => { try { return qrSvg(link, { label: t('invite_link') }); } catch { return ''; } })()}</div></div>`; $('#cp').onclick = async () => { try { await navigator.clipboard.writeText(link); toast(t('copied')); } catch { $('#il').select(); } }; window.scrollTo(0, 0); };
   $('#rs').onchange = () => ($('#wsrow').hidden = $('#rs').value !== 'workshop');
-  $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); if (b.role !== 'workshop') delete b.workshop_site; if (!b.language) delete b.language; b.username = b.username.toLowerCase(); try { const r = await api('POST', '/api/users', b); await viewUsers(); showInvite(r.invite_token); } catch (err) { toast(err.message, true); } };
+  $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); if (b.role !== 'workshop') delete b.workshop_site; if (!b.language) delete b.language; b.username = b.username.toLowerCase(); const nf = e.target; try { const r = await api('POST', '/api/users', b, { timeoutMs: SEND_TIMEOUT_MS }); await viewUsers(); showInvite(r.invite_token); } catch (err) {
+    // Backlog 805e (Funkloch): Antwort verloren – erneutes Speichern meldet `username_taken`; der Einladungslink ging verloren → in der Liste neu erzeugen
+    if (lostDup(nf, b, err, ['username_taken'])) { await viewUsers(); toast(t('user_saved_before_invite')); return; } lostMark(nf, b, err); toast(err.message, true); } };
   // Konto mit Passwort: Rückfrage (frühere Links werden ungültig; Einlösen setzt ein neues Passwort und beendet alle Anmeldungen)
   $$('[data-inv]').forEach((b) => (b.onclick = async () => { if (b.dataset.haspw && !confirm(t('reinvite_confirm').replace('{name}', b.dataset.name))) return; try { const r = await api('POST', `/api/users/${b.dataset.inv}/invite`); showInvite(r.invite_token); } catch (err) { toast(err.message, true); } }));
   $$('[data-ue]').forEach((b) => (b.onclick = () => {
