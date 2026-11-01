@@ -1522,7 +1522,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
   for (const [code, de, uk, en] of tpl) { ok(src.includes(code), `Vorlage im Server: ${code}`); eq(tv('uk', de), uk, de); eq(tv('en', de), en, de); }
   eq(tv('uk', 'request_key doppelt.'), null, 'technische Integrationsfehler bleiben unübersetzt');
   // Neue Server-Texte fallen auf: jeder feste validation-Text ist übersetzt oder bewusst technisch (Integration/API)
-  const TECH = new Set(['request_key doppelt.', 'provider muss webfleet oder yellowfox sein.', 'items[] erforderlich.', 'driver_id oder vehicle_id angeben.', 'Ungültiger Push-Endpunkt.', 'Max. 500 Einträge je Aufruf.', 'environment muss test oder production sein.']);
+  const TECH = new Set(['request_key doppelt.', 'provider muss webfleet oder yellowfox sein.', 'items[] erforderlich.', 'driver_id oder vehicle_id angeben.', 'Ungültiger Push-Endpunkt.', 'Max. 500 Einträge je Aufruf.', 'environment muss test oder production sein.', 'expected_planned_date im Format JJJJ-MM-TT.' /* Backlog 818: gelesener Wert der App */]);
   const lits = [...src.matchAll(/bad\('validation', '([^']+)'\)/g)].map((m) => m[1]);
   ok(lits.length >= 100, 'Server-Texte gefunden');
   for (const l of new Set(lits)) ok(TECH.has(l) || (tv('uk', l) && tv('en', l)), `validation-Text ohne Übersetzung (in V_MORE ergänzen oder TECH): ${l}`);
@@ -29158,7 +29158,7 @@ await test('Backlog 805f (Blickwinkel „Funkloch“): Werkstattplan (Termin set
   ok(app.includes("const cidFor = (key) =>"), 'Helfer');
   ok(app.includes("command_id: cidFor(JSON.stringify([i.id, i.version, 'set_planned_date', pn, f.value]))") && app.includes("payload: { planned_date: f.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; toast(x && x.duplicate ? t('saved_before') : '✓');"), 'Termin setzen');
   ok(app.includes("command_id: cidFor(JSON.stringify([i.id, i.version, 'reassign_workshop', note, sel.value]))") && app.includes("if (x && x.duplicate) { toast(t('saved_before')); viewPlan(); return; }"), 'Werkstatt wechseln');
-  ok(app.includes("hsUrl(fm.dataset.hsplan, 'plan'), { planned_date: fm.planned_date.value || null }, { timeoutMs: SEND_TIMEOUT_MS });"), 'Prüftermin planen');
+  ok(app.includes("hsUrl(fm.dataset.hsplan, 'plan'), { planned_date: fm.planned_date.value || null, expected_planned_date: fm.planned_date.defaultValue || null }, { timeoutMs: SEND_TIMEOUT_MS });") /* seit Backlog 818 mit gelesenem Termin */, 'Prüftermin planen');
   ok(app.includes("request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805f */"), 'Wartungsauftrag');
   ok(app.includes("note: $('#oifn').value.trim() || undefined }, { timeoutMs: SEND_TIMEOUT_MS });"), 'Restarbeit');
   ok(app.includes("command_id: uid(), expected_version: cur.case.version, note, payload: rel }, { timeoutMs: SEND_TIMEOUT_MS });"), 'Technisch freigeben');
@@ -29588,6 +29588,31 @@ await test('Backlog 817 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig�
   let d = await doc(); eq(d.doc_valid_until, '2028-05-31'); eq(d.doc_note, 'Police neu');
   eq((await U.fleet.patch(`/api/vehicles/${encodeURIComponent(V)}/documents/${D}`, { kind: 'versicherung', note: 'Police neu', valid_until: '2026-06-30', expected: { kind: 'versicherung', note: 'Police neu', valid_until: '2028-05-31' } })).status, 200);
   d = await doc(); eq(d.doc_valid_until, '2026-06-30'); eq(d.doc_note, 'Police neu');
+});
+
+await test('Backlog 818 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig“ – Prüftermin planen): mit gelesenem Termin auf altem Stand → 409, Termin der anderen bleibt; gleicher Wunschtermin → unverändert; ohne Feld wie bisher; HU/SP ohne Eintrag ebenso; App lädt neu und behält das eigene Datum', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("S.hsLost = { id, rid: fm.dataset.hsplan, kind: fm.dataset.hskind || null, msg: err.message, ...conflictMine(fm) }; viewVehicle(id); return;"), 'Konflikt merkt eigenes Datum');
+  ok(app.includes("conflictKeep(fm, L, 'hslost')") && app.includes('data-hskind="${esc(k)}"'), 'nach dem Neuladen zurück ins Formular (HU/SP über die Prüfart)');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-pruefung-termin-gleichzeitig.py|'), 'UI-Prüfung eingetragen');
+  const { U } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const V = (await U.fleet.get('/api/vehicles')).data.vehicles[0].id;
+  const rule = await U.fleet.post(`/api/vehicles/${V}/maintenance`, { kind: 'UVV', last_done_date: day(-300), interval_months: 12, evidence: 'Test 818' }); eq(rule.status, 201, JSON.stringify(rule.data));
+  const R = rule.data.id; const pd = async () => (await U.fleet.get(`/api/vehicles/${V}`)).data.maintenance.find((m) => m.id === R).planned_date ?? null;
+  // Werkstatt setzt einen Termin (gelesen: keiner); Leitung speichert danach auf altem Stand einen anderen
+  eq((await U.ws.post(`/api/maintenance/${R}/plan`, { planned_date: day(10), expected_planned_date: null })).status, 200);
+  const a = await U.fleet.post(`/api/maintenance/${R}/plan`, { planned_date: day(20), expected_planned_date: '' }); eq(a.status, 409, JSON.stringify(a.data)); eq(a.data.error, 'version_conflict');
+  eq(await pd(), day(10), 'Termin der anderen bleibt');
+  // gleicher Wunschtermin (Wiederholung/andere Person setzte denselben) → unverändert, kein zweiter Protokolleintrag nötig
+  const w = await U.fleet.post(`/api/maintenance/${R}/plan`, { planned_date: day(10), expected_planned_date: '' }); eq(w.status, 200); eq(w.data.unchanged, true);
+  eq((await U.fleet.post(`/api/maintenance/${R}/plan`, { planned_date: day(20), expected_planned_date: day(10) })).status, 200); eq(await pd(), day(20));
+  eq((await U.fleet.post(`/api/maintenance/${R}/plan`, { planned_date: day(20), expected_planned_date: '2026-02-30' })).status, 400, 'ungültiger gelesener Termin');
+  // ohne Feld: wie bisher (z. B. ältere App)
+  eq((await U.fleet.post(`/api/maintenance/${R}/plan`, { planned_date: day(30) })).status, 200); eq(await pd(), day(30));
+  // Termin entfernen auf altem Stand → 409
+  eq((await U.fleet.post(`/api/maintenance/${R}/plan`, { planned_date: null, expected_planned_date: day(20) })).status, 409); eq(await pd(), day(30));
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

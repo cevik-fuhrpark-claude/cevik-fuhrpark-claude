@@ -1017,18 +1017,31 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
 // Geplanter Werkstatttermin für eine Prüfung (ersetzt keine Durchführung, verschiebt keine Frist)
 export async function planMaintenance(env, user, ruleId, body) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
-  const r = await env.DB.prepare('SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, m.next_due_date, v.active FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?').bind(ruleId).first();
+  const r = await env.DB.prepare('SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, m.next_due_date, m.planned_date, v.active FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?').bind(ruleId).first();
   if (!r) throw notFound();
+  // Backlog 818 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig“ – Prüftermin): optional `expected_planned_date` = gelesener Termin
+  // (leer = keiner). Weicht der gespeicherte ab, 409 statt die Absprache der anderen Person still zu überschreiben; steht schon der gewünschte
+  // Termin (eigene Wiederholung nach verlorener Antwort oder andere Person setzte denselben) → Erfolg ohne Änderung. Ohne Feld wie bisher.
+  const hasExp = body && Object.prototype.hasOwnProperty.call(body, 'expected_planned_date');
+  const exp = hasExp && body.expected_planned_date ? str(body.expected_planned_date, { max: 10, field: 'expected_planned_date' }) : null;
+  if (exp && !isCalendarDate(exp)) throw bad('validation', 'expected_planned_date im Format JJJJ-MM-TT.');
   // gleiche Prüfung wie Werkstatttermine: echtes Kalenderdatum, nicht mehr als 1 Jahr zurück / 2 Jahre voraus
   const d = body.planned_date ? planDate(str(body.planned_date, { max: 10, field: 'Termin' })) : null;
   // Termin setzen nur für aktive Fahrzeuge und nicht für erledigte Rückrufe (wie „Werkstattauftrag erstellen“; 18.10.2026 – Termin stand
   // sonst im Plan/Kalender); Termin entfernen bleibt immer möglich
   if (d && !r.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
   if (d && ONE_TIME_KINDS.includes(r.kind) && r.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
-  await env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=?').bind(d, nowIso(), ruleId).run();
+  const afterDue = d && r.next_due_date && d > r.next_due_date ? { after_due: r.next_due_date } : {};
+  if (hasExp) {
+    const stale = () => conflict('version_conflict', 'Der Termin wurde zwischenzeitlich geändert. Bitte prüfen.', { current_planned_date: r.planned_date ?? null });
+    if ((r.planned_date ?? null) === d) return { ok: true, planned_date: d, unchanged: true, ...afterDue };
+    if ((r.planned_date ?? null) !== exp) throw stale();
+    const u = await env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=? AND planned_date IS ?').bind(d, nowIso(), ruleId, exp).run();
+    if (!(u.meta && u.meta.changes)) throw stale();
+  } else await env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=?').bind(d, nowIso(), ruleId).run();
   await audit(env, user.id, 'maintenance.plan', r.vehicle_id, { kind: r.kind, planned_date: d });
   // Backlog 607: Termin nach Fristende wird gespeichert (die Werkstatt hat ggf. nichts früher frei), aber gemeldet – nichts wird verschoben
-  return { ok: true, planned_date: d, ...(d && r.next_due_date && d > r.next_due_date ? { after_due: r.next_due_date } : {}) };
+  return { ok: true, planned_date: d, ...afterDue };
 }
 
 // Sammeltermin (Backlog 235, Blickwinkel „Fuhrparkleitung plant die UVV aller Fahrzeuge an einem Tag“): denselben Termin für mehrere

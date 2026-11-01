@@ -412,6 +412,7 @@ UI-Notfallnummer und Benutzer gleichzeitig bearbeitet: Konflikt lädt neu, eigen
 UI-Werkstattplan gleichzeitig bearbeitet: Termin setzen auf altem Stand → Hinweis „Eingaben stehen noch im Formular“, Datum bleibt, zweiter Klick speichert (DE/UK/EN; Backlog 813)|ui-plan-gleichzeitig.py|/tmp/cfp-plan-gleichzeitig.log
 UI-Bußgeld gleichzeitig bearbeitet: Ändern/Fahrer bestätigen auf altem Stand → neu geladen, eigene Eingaben bleiben, Betrag der anderen markiert (DE/UK/EN; Backlog 814)|ui-bussgeld-gleichzeitig.py|/tmp/cfp-bussgeld-gleichzeitig.log
 UI-Lager: Bestellvorschlag/Artikelakte nennen denselben Artikel in anderen Lagern (Leitung), Werkstatt ohne (DE/UK/EN; Backlog 815)|ui-lager-anderes-lager.py|/tmp/cfp-lager-anderes-lager.log
+UI-Prüftermin gleichzeitig geplant: Termin auf altem Stand → neu geladen, eigenes Datum bleibt, Termin der anderen markiert (DE/UK/EN; Backlog 818)|ui-pruefung-termin-gleichzeitig.py|/tmp/cfp-pruefung-termin-gleichzeitig.log
 '
 N=0
 NL='
