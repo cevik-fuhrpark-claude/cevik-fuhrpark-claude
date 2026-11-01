@@ -777,6 +777,8 @@ export async function decideMasterItem(env, user, environment, eventId, body) {
   const exp = body.expected_status === undefined || body.expected_status === null ? null : oneOf(body.expected_status, ['offen', 'gesehen', 'entschieden', 'erledigt'], 'Stand');
   const before = await env.DB.prepare('SELECT decision_status, decided_by, decision_note, finding_id FROM master_inbox WHERE event_id=? AND environment=?').bind(String(eventId), environment).first();
   if (!before) throw notFound('Eintrag nicht gefunden.');
+  // Backlog 805j (Funkloch): Wiederholung nach verlorener Antwort – dieselbe Person hat genau diese Stufe schon gesetzt → kein Konflikt
+  if (exp !== null && exp !== st && before.decision_status === st && before.decided_by === user.id && (!note || note === before.decision_note)) return { ok: true, duplicate: true };
   // „gesehen“ auf schon gesehenem Eintrag: nichts ändern (19.10.2026: zweite Person überschrieb Person/Zeitpunkt ohne Protokoll)
   // Ausnahme (Backlog 258c): „gesehen“ von einer Person, die nicht mehr Leitung ist (deaktiviert/Rolle gewechselt) – neue Leitung übernimmt
   const takeover = st === 'gesehen' && before.decision_status === 'gesehen' && before.decided_by && before.decided_by !== user.id

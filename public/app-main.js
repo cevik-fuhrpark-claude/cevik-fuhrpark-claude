@@ -62,6 +62,7 @@ const rkFor = (form, b) => { const sig = JSON.stringify(b); if (!form.dataset.rk
 
 const lostMark = (form, b, err) => { if (err && err.offline) form.dataset.lostSig = JSON.stringify(b); };
 const lostDup = (form, b, err, codes) => !!err && codes.includes(err.code) && form.dataset.lostSig === JSON.stringify(b);
+
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
 // Sprachpaket vor dem ersten Bild (Backlog 588): route() wartet darauf. Bewusst ohne Top-Level-await – sonst liefen der Rest dieses
 // Moduls (u. a. die hashchange-Anmeldung) erst nach dem Paket, und das Ereignis „load“ käme vor der fertigen App (UI-Test rot).

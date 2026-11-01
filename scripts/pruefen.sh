@@ -400,6 +400,7 @@ UI-Bußgeld „Angaben ändern“ und „Fahrer bestätigen“ im Funkloch: ohne
 UI-Fahrerakte, Fahrzeug und Benutzer anlegen im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern meldet „War bereits gespeichert“, nie doppelt (DE/UK/EN; Backlog 805)|ui-anlegen-funkloch.py|/tmp/cfp-anlegen-funkloch.log
 UI-Werkstattplan „Termin setzen“ im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut setzen meldet „War bereits gespeichert“, keine zweite Version (DE/UK/EN; Backlog 805)|ui-werkstattplan-funkloch.py|/tmp/cfp-werkstattplan-funkloch.log
 UI-Vertrag beenden und Hinweis archivieren im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut beenden meldet „War bereits gespeichert“, erneut archivieren ohne Fehlermeldung (DE/UK/EN; Backlog 805)|ui-vertrag-hinweis-funkloch.py|/tmp/cfp-vertrag-hinweis-funkloch.log
+UI-Fahrerzuordnung beenden und Vertrag bearbeiten im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern meldet „War bereits gespeichert“ (DE/UK/EN; Backlog 805j)|ui-zuordnung-vertrag-funkloch.py|/tmp/cfp-zuordnung-vertrag-funkloch.log
 '
 N=0
 NL='

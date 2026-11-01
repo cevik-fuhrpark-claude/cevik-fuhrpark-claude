@@ -616,7 +616,7 @@ async function viewDriver(id) {
     // nur geänderte Felder auf dem gelesenen Stand senden (älteres Formular machte sonst z. B. eine Deaktivierung still rückgängig)
     const was = { display_name: d.display_name || '', personnel_no: d.personnel_no || '', site: d.site || '', active: !!d.active, user_id: d.user_id || '' };
     const b = Object.fromEntries(Object.entries(all).filter(([k, v]) => v !== was[k])); if (!Object.keys(b).length) { toast('✓'); return; }
-    if (d.updated_at) b.expected_updated_at = d.updated_at; try { const r = await api('PATCH', `/api/drivers/${id}`, b);
+    if (d.updated_at) b.expected_updated_at = d.updated_at; try { const r = await api('PATCH', `/api/drivers/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate) { toast(t('saved_before')); viewDriver(id); return; } // Backlog 805j
       // ausgeschieden: verknüpftes Konto weiter aktiv / Fahrzeug weiter zugeordnet → Hinweis (Backlog 190)
       const h = []; if (r && r.account_still_active) h.push(t('dr_left_account_active').replace('{name}', r.account_still_active.name)); if (r && r.open_assignments) h.push(tn('dr_left_assignments', r.open_assignments)); if (r && r.card_download) h.push(r.card_download.last_on ? t('ue_card_dl').replace('{d}', fmtD(r.card_download.last_on)) : t('ue_card_dl_none')); // Backlog 656
       toast(h.length ? h.join(' ') : '✓'); viewDriver(id); } catch (err) { toast(linkedMsg(err), true); } };
@@ -779,7 +779,7 @@ async function viewTacho() {
   };
   const nf = $('#tnf'); if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); const body = { kind: tab === 'drivers' ? 'fahrerkarte' : 'massenspeicher', downloaded_on: b.downloaded_on, evidence: b.evidence };
     body[tab === 'drivers' ? 'driver_id' : 'vehicle_id'] = b.target; if (b.note) body.note = b.note;
-    try { await api('POST', '/api/tacho/downloads', body); toast('✓'); viewTacho(); } catch (err) { toast(err.message, true); } };
+    try { await api('POST', '/api/tacho/downloads', body, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewTacho(); } catch (err) { /* Backlog 805j (Funkloch): Wiederholung → 409 duplicate */ if (lostDup(nf, body, err, ['duplicate'])) { toast(t('saved_before')); viewTacho(); return; } lostMark(nf, body, err); toast(err.message, true); } };
 }
 // Fuhrparkagent läuft planmäßig alle 15 (Betrieb) bzw. 30 Min. (Test): > 75 Min. ohne Lauf, offener Lauf oder Fehler → Hinweis
 const agentStale = (r) => !r || !!r.error || nowMs() - Date.parse(r.finished_at || r.started_at) > 75 * 60000 || (!r.finished_at && nowMs() - Date.parse(r.started_at) > 10 * 60000);
@@ -836,7 +836,7 @@ async function viewMaster(argKey, argVal, cached) {
   // Entscheidung im Master-Eingang: ohne Netz Meldung statt stillem Abbruch; Doppeltippen sendet nicht zweimal
   // „Erledigt“ ist endgültig (Status steigt nur auf, schließt auch ältere Einträge desselben Befunds) – Rückfrage gegen Fehltipp am Handy (23.10.2026)
   $$('[data-dec]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); if (a.dataset.busy) return; if (a.dataset.st === 'erledigt' && !confirm(t('dec_resolve_confirm'))) return; a.dataset.busy = '1'; a.setAttribute('aria-disabled', 'true');
-    try { await api('POST', `/api/master/${a.dataset.dec}/decision`, { decision_status: a.dataset.st, ...(a.dataset.was ? { expected_status: a.dataset.was } : {}) }); S.mDecKeep = true; await viewMaster(); } catch (err) { toast(err.message, true); } finally { delete a.dataset.busy; a.removeAttribute('aria-disabled'); } }));
+    try { const r = await api('POST', `/api/master/${a.dataset.dec}/decision`, { decision_status: a.dataset.st, ...(a.dataset.was ? { expected_status: a.dataset.was } : {}) }, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate) toast(t('saved_before')); /* Backlog 805j */ S.mDecKeep = true; await viewMaster(); } catch (err) { toast(err.message, true); } finally { delete a.dataset.busy; a.removeAttribute('aria-disabled'); } }));
 }
 const evTr = (e) => (e === 'Zuordnung durch Fuhrparkleitung' ? t('ev_assign_default') : e || '');
 // Fahrerkandidat (Bußgeld): Begründung in der App-Sprache; übernommen wird weiter der gespeicherte deutsche Nachweis
@@ -1375,12 +1375,13 @@ async function viewTelematics() {
   const tmc = $('#tmcsv'); if (tmc) tmc.onclick = async () => { try { download(await api('GET', '/api/telematics?format=csv' + (r.site ? '&site=' + encodeURIComponent(r.site) : '')), `fuhrpark-telematik-stand_${bDate()}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
   $$('[data-map]').forEach((f) => (f.onsubmit = async (e) => {
     e.preventDefault(); const u = r.unmatched[Number(f.dataset.map)];
-    try { await api('POST', '/api/telematics/mappings', { provider: u.provider, external_id: u.external_id, vehicle_id: f.vehicle_id.value, evidence: f.evidence.value }); toast('✓'); viewTelematics(); } catch (err) { toast(err.message, true); }
+    const mb = { provider: u.provider, external_id: u.external_id, vehicle_id: f.vehicle_id.value, evidence: f.evidence.value };
+    try { await api('POST', '/api/telematics/mappings', mb, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewTelematics(); } catch (err) { /* Backlog 805j (Funkloch): Wiederholung → mapping_exists */ if (lostDup(f, mb, err, ['mapping_exists'])) { toast(t('saved_before')); viewTelematics(); return; } lostMark(f, mb, err); toast(err.message, true); }
   }));
   $$('[data-unmap]').forEach((b) => (b.onclick = async () => {
     if (!confirm(t('tm_remove') + '?')) return;
     const u = b.dataset.unmap; const cut = u.indexOf('|'); const provider = u.slice(0, cut), ext = u.slice(cut + 1); // Geräte-ID darf „|“ enthalten (18.10.2026)
-    try { await api('DELETE', `/api/telematics/mappings?provider=${encodeURIComponent(provider)}&external_id=${encodeURIComponent(ext)}`); viewTelematics(); } catch (err) { toast(err.message, true); }
+    const ub = { u }; try { await api('DELETE', `/api/telematics/mappings?provider=${encodeURIComponent(provider)}&external_id=${encodeURIComponent(ext)}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); viewTelematics(); } catch (err) { /* Backlog 805j: Wiederholung → 404 */ if (lostDup(b, ub, err, ['not_found'])) { toast(t('saved_before')); viewTelematics(); return; } lostMark(b, ub, err); toast(err.message, true); }
   }));
 }
 async function viewQuality(pre) {
@@ -1630,7 +1631,7 @@ async function viewUsers() {
   $$('[data-revoke]').forEach((b) => (b.onclick = async () => { if (!confirm(t('revoke_sessions_confirm').replace('{name}', b.dataset.name))) return; try { const r = await api('POST', `/api/users/${b.dataset.revoke}/revoke-sessions`); toast(t('revoked_n').replace('{n}', r.sessions).replace('{p}', r.push_devices)); viewUsers(); } catch (err) { toast(err.message, true); } }));
   $$('[data-dex]').forEach((b) => (b.onclick = async () => { if (!confirm(t('data_export_hint'))) return; try { const x = await api('GET', `/api/admin/users/${b.dataset.dex}/data-export`); dexTrunc(x); download(x instanceof Blob ? x : new Blob([JSON.stringify(x, null, 1)], { type: 'application/json' }), `datenauskunft_${b.dataset.user}_${bDate()}.json`); } catch (err) { toast(err.message, true); } }));
   $$('[data-tfr]').forEach((b) => (b.onclick = async () => { if (!confirm(t('tf_reset_confirm').replace('{name}', b.dataset.name))) return; try { await api('POST', `/api/users/${b.dataset.tfr}/totp-reset`); toast('✓'); viewUsers(); } catch (err) { toast(err.message, true); } }));
-  $$('[data-unlock]').forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/users/${b.dataset.unlock}/unlock`); toast('✓'); viewUsers(); } catch (err) { toast(err.message, true); } }));
+  $$('[data-unlock]').forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/users/${b.dataset.unlock}/unlock`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewUsers(); } catch (err) { toast(err.message, true); } }));
   const showInvite = (token) => { const link = `${location.origin}/#/invite/${token}`; $('#inv').innerHTML = `<div class="panel good"><p>${esc(t('invite_link'))}</p><input readonly value="${esc(link)}" id="il"><div class="actions"><button class="btn" id="cp">${esc(t('copy'))}</button></div><p class="small muted">${esc(t('invite_qr_hint'))}</p><div class="qr">${(() => { try { return qrSvg(link, { label: t('invite_link') }); } catch { return ''; } })()}</div></div>`; $('#cp').onclick = async () => { try { await navigator.clipboard.writeText(link); toast(t('copied')); } catch { $('#il').select(); } }; window.scrollTo(0, 0); };
   $('#rs').onchange = () => ($('#wsrow').hidden = $('#rs').value !== 'workshop');
   $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); if (b.role !== 'workshop') delete b.workshop_site; if (!b.language) delete b.language; b.username = b.username.toLowerCase(); const nf = e.target; try { const r = await api('POST', '/api/users', b, { timeoutMs: SEND_TIMEOUT_MS }); await viewUsers(); showInvite(r.invite_token); } catch (err) {
@@ -1659,12 +1660,12 @@ async function viewUsers() {
       const ends = roleEnvChange || (u.role === 'workshop' && body.role === 'workshop' && (body.workshop_site || null) !== (u.workshop_site || null));
       if (!roleEnvChange && body.display_name === u.display_name && (body.role !== 'workshop' || body.workshop_site === u.workshop_site)) { toast(t('ue_none')); return; }
       if (ends && !confirm(t('ue_confirm').replace('{name}', u.display_name))) return;
-      try { const r = await api('PATCH', `/api/users/${u.id}`, body); const h = userUpdateHints(r); toast([r.sessions_ended && ends ? t('ue_saved_ended') : '✓', ...h].join(' · '), h.length > 0); viewUsers(); } catch (err) { toast(err.message, true); }
+      try { const r = await api('PATCH', `/api/users/${u.id}`, body, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805j: Wiederholung → unverändert */ const h = userUpdateHints(r); toast([r.sessions_ended && ends ? t('ue_saved_ended') : '✓', ...h].join(' · '), h.length > 0); viewUsers(); } catch (err) { toast(err.message, true); }
     };
     $('#uen').focus({ preventScroll: true }); $('#uef').scrollIntoView({ block: 'start' });
   }));
   // Deaktivieren beendet sofort alle Anmeldungen (z. B. am geteilten Tablet) – deshalb nachfragen; Aktivieren ohne Rückfrage
-  $$('[data-act]').forEach((b) => (b.onclick = async () => { if (b.dataset.on !== '1' && !confirm(t('deactivate_confirm').replace('{name}', b.dataset.name))) return; try { const r = await api('PATCH', `/api/users/${b.dataset.act}`, { active: b.dataset.on === '1' }); const h = userUpdateHints(r); if (h.length) toast(h.join(' · '), true); viewUsers(); } catch (err) { toast(err.message, true); } }));
+  $$('[data-act]').forEach((b) => (b.onclick = async () => { if (b.dataset.on !== '1' && !confirm(t('deactivate_confirm').replace('{name}', b.dataset.name))) return; try { const r = await api('PATCH', `/api/users/${b.dataset.act}`, { active: b.dataset.on === '1' }, { timeoutMs: SEND_TIMEOUT_MS }); const h = userUpdateHints(r); if (h.length) toast(h.join(' · '), true); viewUsers(); } catch (err) { toast(err.message, true); } }));
 }
 async function viewSettings(sec) {
   const s = await api('GET', '/api/settings');

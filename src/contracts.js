@@ -174,11 +174,13 @@ export async function updateContract(env, user, id, body, envName) {
   const c = await loadContract(env, id);
   if (c.ended_on) throw bad('contract_ended', 'Beendete Verträge werden nicht mehr geändert (Nachweis bleibt erhalten).');
   // Stand beim Öffnen des Formulars (die App sendet ihn): ein länger offenes Formular überschrieb sonst inzwischen gespeicherte Änderungen
-  if (body.expected_updated_at && String(body.expected_updated_at) !== c.updated_at) throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
+  const stale = !!body.expected_updated_at && String(body.expected_updated_at) !== c.updated_at;
   const f = readBody(body, c, user);
   // Vertragsdokument nur ändern, wenn das Feld mitgeschickt wird (Import/ältere Oberflächen lassen es unverändert)
   f.file_id = body.file_id !== undefined ? await checkFile(env, c.vehicle_id, envName, body.file_id) : c.file_id;
   const changed = Object.keys(f).filter((k) => f[k] !== c[k]);
+  // Backlog 805j (Funkloch): Wiederholung nach verlorener Antwort – Stand schon wie gesendet → „War bereits gespeichert“ statt Konflikt
+  if (stale) { if (!changed.length) return { id, changed: [], duplicate: true }; throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.'); }
   // km-Grundlage nach Zähler-Rücksprung geprüft (Formular sendet `confirm_km_basis`, wenn das Kontingent „nicht berechenbar“ ist): Speichern ohne
   // Änderung zählt als Bestätigung – ab jetzt wird wieder gerechnet (Stand des Vertrags = Grundlage, siehe contractStatus)
   if (!changed.length && flagLike(body.confirm_km_basis) && c.km_allowance) { // nur echte Bestätigung (18.10.2026: "false"/"0" bestätigte)

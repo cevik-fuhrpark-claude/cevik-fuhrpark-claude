@@ -8546,7 +8546,7 @@ await test('Oberfläche: jede Aktion mit API-Aufruf hat eine Fehlerbehandlung; n
   eq(h(new TypeError('x is null')), false, 'Programmfehler ohne API-Bezug: keine Meldung'); eq(h(undefined), false);
   eq(h(Object.assign(new Error('Konflikt'), { status: 409 })), true); eq(shown.length, 3);
   // Einzelfälle, die vorher still abbrachen
-  ok(app.includes("try { await api('POST', `/api/master/${a.dataset.dec}/decision`"), 'Master-Eingang: Entscheidung mit Fehlerbehandlung');
+  ok(app.includes("try { const r = await api('POST', `/api/master/${a.dataset.dec}/decision`"), 'Master-Eingang: Entscheidung mit Fehlerbehandlung');
   ok(app.includes("if (a.dataset.busy) return;"), 'Master-Eingang: Doppeltippen sendet nicht zweimal');
   ok(app.includes("if (pt) pt.onclick = async () => { pt.disabled = true; try {") && app.includes("const r = await api('POST', '/api/push/test', ep ? { endpoint: ep } : undefined);"), 'Push-Test mit Fehlerbehandlung');
 });
@@ -29247,6 +29247,55 @@ await test('Backlog 805i (Blickwinkel „Funkloch“): Lagerartikel anlegen/änd
   const eb = { kind: 'dispo', label: 'Dispo 805i', phone: '0231 805900' };
   eq((await U.fleet.post('/api/emergency/contacts', eb)).status, 201);
   const e2 = await U.fleet.post('/api/emergency/contacts', eb); eq(e2.status, 409); eq(e2.data.error, 'duplicate_contact');
+});
+
+await test('Backlog 805j (Blickwinkel „Funkloch“): Zuordnung beenden, Vertrag/Fahrerakte/Prüftermin/Dokumentangaben bearbeiten, Bewertung/außer Betrieb, Master-Entscheidung, Telematik-Zuordnung, Auslesung, Benutzer mit Zeitlimit; Wiederholung mit altem Stand → duplicate statt Konflikt', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const [frag, what] of [["await api('DELETE', '/api/assignments/' + b.dataset.end, undefined, { timeoutMs: SEND_TIMEOUT_MS })", 'Zuordnung beenden'], ["if (lostDup(b, ab, err, ['not_found']))", 'Zuordnung: 404 nach verlorener Antwort'],
+    ["{ ...ctBody(fm), ...(fm.dataset.upd ? { expected_updated_at: fm.dataset.upd } : {}) }, { timeoutMs: SEND_TIMEOUT_MS })", 'Vertrag bearbeiten'], ["await api('PATCH', `/api/drivers/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate)", 'Fahrerakte'],
+    ["encodeURIComponent(fm.dataset.medit), b, { timeoutMs: SEND_TIMEOUT_MS })", 'Prüftermin bearbeiten'], ["lostIs(doced, db) ? t('saved_before')", 'Dokumentangaben'], ["['already_excluded', 'already_included']", 'Bewertung'],
+    ["lostDup(deact, { active: false }, err, ['already_inactive'])", 'außer Betrieb'], ["lostDup(react, { active: true }, err, ['already_active'])", 'wieder in Betrieb'], ["{ decision_status: a.dataset.st, ...(a.dataset.was ? { expected_status: a.dataset.was } : {}) }, { timeoutMs: SEND_TIMEOUT_MS })", 'Master-Entscheidung'],
+    ["lostDup(f, mb, err, ['mapping_exists'])", 'Telematik-Zuordnung'], ["lostDup(nf, body, err, ['duplicate'])", 'Auslesung'], ["await api('PATCH', `/api/users/${u.id}`, body, { timeoutMs: SEND_TIMEOUT_MS })", 'Benutzer bearbeiten'],
+    ["`/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`, undefined, { timeoutMs: SEND_TIMEOUT_MS })", 'Bestellvermerk löschen']]) ok(app.includes(frag), what);
+  const { e, U, newCase, V1 } = await freshWorld();
+  const db = e.DB.db;
+  // Zuordnung: zweites Beenden bleibt 404 (App meldet nach verlorener Antwort „War bereits gespeichert“)
+  const as = await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: '805j' }); eq(as.status, 201, JSON.stringify(as.data));
+  eq((await U.fleet.req('DELETE', `/api/assignments/${as.data.id}`)).status, 200);
+  const a2 = await U.fleet.req('DELETE', `/api/assignments/${as.data.id}`); eq(a2.status, 404); eq(a2.data.error, 'not_found');
+  // Vertrag: Wiederholung mit altem Stand und gleichen Werten → duplicate; andere Werte → Konflikt
+  const ct = await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Leasing 805j', evidence: 'Vertrag 805j' }); eq(ct.status, 201, JSON.stringify(ct.data));
+  const up0 = db.prepare('SELECT updated_at FROM vehicle_contracts WHERE id=?').get(ct.data.id).updated_at;
+  const cb = { kind: 'leasing', partner: 'Leasing 805j', evidence: 'Vertrag 805j', contract_no: 'L-805', expected_updated_at: up0 };
+  const c1 = await U.fleet.patch(`/api/contracts/${ct.data.id}`, cb); eq(c1.status, 200, JSON.stringify(c1.data)); ok(!c1.data.duplicate);
+  const c2 = await U.fleet.patch(`/api/contracts/${ct.data.id}`, cb); eq(c2.status, 200, JSON.stringify(c2.data)); eq(c2.data.duplicate, true); eq(c2.data.changed.length, 0);
+  const c3 = await U.fleet.patch(`/api/contracts/${ct.data.id}`, { ...cb, contract_no: 'L-806' }); eq(c3.status, 409); eq(c3.data.error, 'version_conflict');
+  eq(db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='contract.update' AND target=?").get(ct.data.id).n, 1, 'nur eine Änderung protokolliert');
+  // Fahrerakte: dasselbe Muster
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Fahrer 805j', personnel_no: 'P-805j' }); eq(dr.status, 201, JSON.stringify(dr.data));
+  const du0 = db.prepare('SELECT updated_at FROM drivers WHERE id=?').get(dr.data.id).updated_at;
+  const d1 = await U.fleet.patch(`/api/drivers/${dr.data.id}`, { site: 'DORTMUND', active: false, expected_updated_at: du0 }); eq(d1.status, 200, JSON.stringify(d1.data)); ok(!d1.data.duplicate);
+  const d2 = await U.fleet.patch(`/api/drivers/${dr.data.id}`, { site: 'DORTMUND', active: false, expected_updated_at: du0 }); eq(d2.status, 200, JSON.stringify(d2.data)); eq(d2.data.duplicate, true);
+  const d3 = await U.fleet.patch(`/api/drivers/${dr.data.id}`, { site: 'MUENCHEN', expected_updated_at: du0 }); eq(d3.status, 409); eq(d3.data.error, 'version_conflict');
+  eq(db.prepare('SELECT site, active FROM drivers WHERE id=?').get(dr.data.id).site, 'DORTMUND');
+  // Fahrzeug außer Betrieb / ruhend: Wiederholung → already_* (App: „War bereits gespeichert“)
+  const V2 = 'VIN:WDB9630051L917317';
+  eq((await U.fleet.post(`/api/vehicles/${V2}/evaluation`, { excluded: true, reason: 'Verkauf 805j' })).status, 200);
+  const ev2 = await U.fleet.post(`/api/vehicles/${V2}/evaluation`, { excluded: true, reason: 'Verkauf 805j' }); eq(ev2.status, 409); eq(ev2.data.error, 'already_excluded');
+  eq((await U.fleet.post(`/api/vehicles/${V2}/active`, { active: false, reason: 'Verkauf 805j' })).status, 200);
+  const ac2 = await U.fleet.post(`/api/vehicles/${V2}/active`, { active: false, reason: 'Verkauf 805j' }); eq(ac2.status, 409); eq(ac2.data.error, 'already_inactive');
+  // Master-Entscheidung: dieselbe Person wiederholt mit altem Stand → duplicate; andere Person → weiter 409
+  await newCase({ priority: 'kritisch' });
+  eq((await U.fleet.post('/api/agent/run')).status, 200);
+  const item = (await U.fleet.get('/api/master')).data.inbox.find((x) => x.decision_status === 'offen'); ok(item, 'Eintrag');
+  eq((await U.fleet.post(`/api/master/${item.event_id}/decision`, { decision_status: 'erledigt', expected_status: 'offen' })).status, 200);
+  const m2 = await U.fleet.post(`/api/master/${item.event_id}/decision`, { decision_status: 'erledigt', expected_status: 'offen' }); eq(m2.status, 200, JSON.stringify(m2.data)); eq(m2.data.duplicate, true);
+  const x2 = await U.own.post('/api/users', { username: 'w.fuhrpark805j', display_name: 'Leitung 2', role: 'fleet', environment: 'test' });
+  const F2 = new Client(worker, e, 'f805j'); eq((await F2.post('/api/invite/accept', { token: x2.data.invite_token, password: 'Sicheres-Passwort-2026' })).status, 200);
+  const m3 = await F2.post(`/api/master/${item.event_id}/decision`, { decision_status: 'erledigt', expected_status: 'offen' }); eq(m3.status, 409, 'andere Person mit altem Stand');
+  const m4 = await U.fleet.post(`/api/master/${item.event_id}/decision`, { decision_status: 'erledigt', expected_status: 'offen', note: 'anderer Vermerk' }); eq(m4.status, 409, 'neuer Vermerk mit altem Stand bleibt Konflikt');
+  eq(db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='master.decision' AND target=?").get(item.event_id).n, 1);
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

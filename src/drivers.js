@@ -221,7 +221,6 @@ export async function updateDriver(env, user, envName, id, body) {
   const d = await loadDriver(env, user, envName, id);
   // Formular aus älterer Ansicht: nur auf dem gelesenen Stand speichern (17.10.2026: machte eine zwischenzeitliche Deaktivierung still rückgängig)
   const expected = body.expected_updated_at !== undefined && body.expected_updated_at !== null && body.expected_updated_at !== '' ? str(body.expected_updated_at, { max: 40, field: 'Stand' }) : null;
-  if (expected && expected !== d.updated_at) throw conflict('version_conflict', 'Fahrerakte wurde zwischenzeitlich geändert. Bitte neu laden.');
   const f = {
     display_name: body.display_name !== undefined ? str(body.display_name, { required: true, max: 120, field: 'Name' }) : d.display_name,
     personnel_no: body.personnel_no !== undefined ? str(body.personnel_no, { max: 40, field: 'Personalnummer' }) : d.personnel_no,
@@ -230,6 +229,12 @@ export async function updateDriver(env, user, envName, id, body) {
     active: body.active === undefined ? d.active : (flag(body.active, 'Aktiv', !!d.active) ? 1 : 0),
     note: body.note !== undefined ? str(body.note, { max: 1000, field: 'Bemerkung' }) : d.note,
   };
+  // Backlog 805j (Funkloch): Wiederholung nach verlorener Antwort – alle gesendeten Felder schon so gespeichert → „War bereits gespeichert“ statt Konflikt
+  if (expected && expected !== d.updated_at) {
+    const same = Object.keys(f).filter((k) => body[k] !== undefined).every((k) => (k === 'active' ? !!d[k] === !!f[k] : (d[k] ?? null) === (f[k] ?? null)));
+    if (same) return { ok: true, duplicate: true };
+    throw conflict('version_conflict', 'Fahrerakte wurde zwischenzeitlich geändert. Bitte neu laden.');
+  }
   // Personalnummer: gleiche Vergleichsregel wie beim Anlegen (pnoKey), vor dem Schreiben (23.10.2026)
   if ((body.personnel_no !== undefined || body.active !== undefined) && f.active === 1 && f.personnel_no) {
     const others = (await env.DB.prepare('SELECT personnel_no FROM drivers WHERE environment=? AND active=1 AND id<>? AND personnel_no IS NOT NULL').bind(d.environment || envName, id).all()).results;
