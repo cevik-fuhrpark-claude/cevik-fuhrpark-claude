@@ -1,6 +1,6 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
 import { icsLang } from '../public/ics-texts.js';
-import { plateCmp, b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, fileSlug, pointDec, cleanText, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL } from './util.js';
+import { plateCmp, b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, conflict, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, fileSlug, pointDec, cleanText, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL } from './util.js';
 import * as auth from './auth.js';
 import * as totp from './totp.js';
 import { personExport } from './privacy.js';
@@ -873,13 +873,38 @@ async function handleApi(request, env, ctx, url) {
     // Eine Anweisung für alle Schlüssel (vorher eine je Schlüssel – das volle Formular hat > 30 Felder); erst alle Werte prüfen (src/settings.js)
     const pairs = settingPairs(b, { decimalPoint: pointDec(user) });
     // Backlog 412: bisherigen Stundensatz für Arbeit bis einschließlich Datum behalten (vor dem Speichern prüfen, im selben Stapel anlegen)
+    // Backlog 821 (Blickwinkel „Inhaber mit Handy und PC – Einstellungen auf zwei Geräten“): optional `expected {schlüssel: gelesener Wert|null}`
+    // = gespeicherter Stand beim Öffnen des Formulars (Rohwert aus GET). Weicht ein Wert inzwischen ab (anderes Gerät/anderer Tab hat ihn geändert),
+    // 409 `version_conflict` mit den Schlüsseln statt still zu überschreiben; geprüft im selben Stapel (cmd_guard). Ohne `expected` wie bisher.
+    let exp = null;
+    if (b && b.expected !== undefined) {
+      const ex = b.expected;
+      if (!ex || typeof ex !== 'object' || Array.isArray(ex)) throw bad('validation', 'expected: ungültiger Wert.');
+      exp = {};
+      for (const [k, x] of Object.entries(ex)) {
+        if (!SETTINGS_KEYS.includes(k)) continue;
+        if (x !== null && typeof x !== 'string') throw bad('validation', 'expected: ungültiger Wert.');
+        exp[k] = x;
+      }
+    }
+    const staleKeys = async () => {
+      const ks = Object.keys(exp || {}); if (!ks.length) return [];
+      const cur = Object.fromEntries((await env.DB.prepare('SELECT key, value FROM settings WHERE key IN (SELECT value FROM json_each(?))').bind(JSON.stringify(ks)).all()).results.map((r) => [r.key, r.value]));
+      return ks.filter((k) => (cur[k] ?? null) !== exp[k]);
+    };
+    const staleErr = (keys) => conflict('version_conflict', 'Die Einstellungen wurden zwischenzeitlich geändert (anderes Gerät oder Fenster). Bitte prüfen.', { settings: keys });
+    { const st = await staleKeys(); if (st.length) throw staleErr(st); }
     const keep = await rates.keepRateStatement(env, user, b, pairs);
     let kept = null;
     if (pairs.length) {
       const up = env.DB.prepare(`INSERT INTO settings(key,value,updated_by,updated_at) SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), ?1, ?2 FROM json_each(?3) WHERE 1
         ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`).bind(user.id, nowIso(), JSON.stringify(pairs));
-      if (keep) { const res = await env.DB.batch([keep.stmt, up]); if (res[0].meta && res[0].meta.changes) kept = { valid_until: keep.until, rate_net: keep.rate }; }
-      else await up.run();
+      const guard = exp && Object.keys(exp).length ? [env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN EXISTS (SELECT 1 FROM json_each(?1) j LEFT JOIN settings s ON s.key=j.key
+        WHERE s.value IS NOT j.value) THEN 0 ELSE 1 END`).bind(JSON.stringify(exp)), env.DB.prepare('DELETE FROM cmd_guard')] : [];
+      try {
+        if (keep || guard.length) { const res = await env.DB.batch([...guard, ...(keep ? [keep.stmt] : []), up]); const kr = keep ? res[guard.length] : null; if (kr && kr.meta && kr.meta.changes) kept = { valid_until: keep.until, rate_net: keep.rate }; }
+        else await up.run();
+      } catch (e) { const st = await staleKeys(); if (st.length) throw staleErr(st); throw e; }
     }
     if (pairs.length) await auth.audit(env, user.id, 'settings.update', null, Object.fromEntries(pairs)); // nur geprüfte, gespeicherte Werte (unbekannte Schlüssel nicht ins Protokoll)
     if (kept) await auth.audit(env, user.id, 'settings.hourly_rate_period', null, kept);

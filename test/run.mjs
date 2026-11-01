@@ -29650,6 +29650,40 @@ await test('Backlog 820 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig�
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-master-gleichzeitig.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 821 (Blickwinkel „Inhaber mit Handy und PC“ – Einstellungen auf zwei Geräten): mit gelesenen Werten auf altem Stand → 409 mit Schlüsseln, Wert des anderen Geräts bleibt, kein Stundensatz-Zeitraum; anderes Feld unberührt speicherbar; ohne expected wie bisher; App behält eigene Eingaben', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (err.code === 'version_conflict') { S.setLost = conflictMine(e.target); viewSettings(); return; }") && app.includes("conflictKeep(fm, L, 'setlost')"), 'App: Konflikt behält eigene Eingaben');
+  ok(app.includes("b.expected = Object.fromEntries(Object.keys(b).filter((k) => k !== 'hourly_rate_keep_until').map((k) => [k, v[k] ?? null]));"), 'App sendet gelesene Rohwerte');
+  ok(app.includes('<input type="checkbox" id="tmr" data-cv="test_master_readonly"'), 'Kontrollkästchen nimmt am Konfliktvergleich teil');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-einstellungen-gleichzeitig.py|'), 'UI-Prüfung eingetragen');
+  const { U } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const vals = async () => (await U.own.get('/api/settings')).data;
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '1500', workshop_hourly_rate_net: '80' })).status, 200);
+  const pc = (await vals()).values; // PC-Fenster liest den Stand
+  // Handy ändert die Kostengrenze; PC speichert danach auf altem Stand eine andere Grenze
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '2000', expected: { repair_cost_limit_net: pc.repair_cost_limit_net } })).status, 200);
+  const a = await U.own.put('/api/settings', { repair_cost_limit_net: '1800', expected: { repair_cost_limit_net: pc.repair_cost_limit_net } });
+  eq(a.status, 409, JSON.stringify(a.data)); eq(a.data.error, 'version_conflict'); eq(JSON.stringify(a.data.settings), '["repair_cost_limit_net"]');
+  eq((await vals()).values.repair_cost_limit_net, '2000', 'Wert des Handys bleibt');
+  // Stundensatz mit „bisherigen Satz behalten“ auf altem Stand: abgelehnt, kein Zeitraum angelegt
+  eq((await U.own.put('/api/settings', { workshop_hourly_rate_net: '90', expected: { workshop_hourly_rate_net: pc.workshop_hourly_rate_net } })).status, 200);
+  const h = await U.own.put('/api/settings', { workshop_hourly_rate_net: '95', hourly_rate_keep_until: day(-1), expected: { workshop_hourly_rate_net: pc.workshop_hourly_rate_net } });
+  eq(h.status, 409, JSON.stringify(h.data)); let cur = await vals(); eq(cur.values.workshop_hourly_rate_net, '90'); eq(cur.hourly_rate_periods.length, 0, 'kein Zeitraum aus dem alten Satz');
+  // anderes Feld (vom anderen Gerät nicht geändert) speichert trotz altem Formular
+  eq((await U.own.put('/api/settings', { maintenance_warn_days: '21', expected: { maintenance_warn_days: pc.maintenance_warn_days ?? null } })).status, 200);
+  // neu geladen: gelingt; Wiederholung (verlorene Antwort) → 409, Wert ist bereits der eigene (App meldet „schon gespeichert“)
+  cur = (await vals()).values;
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '1800', expected: { repair_cost_limit_net: cur.repair_cost_limit_net } })).status, 200);
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '1800', expected: { repair_cost_limit_net: cur.repair_cost_limit_net } })).status, 409);
+  eq((await vals()).values.repair_cost_limit_net, '1800');
+  for (const ex of [['x'], 'x', { repair_cost_limit_net: 5 }]) eq((await U.own.put('/api/settings', { repair_cost_limit_net: '1700', expected: ex })).status, 400, 'expected ungültig: ' + JSON.stringify(ex));
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '1700', expected: { unbekannt: 'x' } })).status, 200, 'unbekannte Schlüssel ignoriert');
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '1600' })).status, 200, 'ohne expected wie bisher');
+  eq((await U.fleet.put('/api/settings', { repair_cost_limit_net: '1', expected: {} })).status, 403, 'nur Inhaber');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
