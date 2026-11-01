@@ -416,7 +416,16 @@ export async function changePassword(env, user, body) {
   const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
   await reauthLocked(env, user);
   const { hash } = await hashPassword(String(body.old_password || ''), row.password_salt);
-  if (!timingSafeEqual(hash, row.password_hash || '')) { await reauthFailed(env, user); throw bad('wrong_password', 'Altes Passwort falsch.'); } // 400 statt 401: die App wertete 401 als abgelaufene Sitzung und meldete ab (19.10.2026)
+  if (!timingSafeEqual(hash, row.password_hash || '')) {
+    // Backlog 805k (Funkloch): Wiederholung nach verlorener Antwort – das neue Passwort gilt schon (eigene Änderung in den letzten 10 Min.)
+    // → „War bereits gespeichert“ statt „Altes Passwort falsch“ (zählte sonst als Fehlversuch); jeder andere Fall bleibt ein Fehlversuch
+    if (typeof body.new_password === 'string' && body.new_password && await env.DB.prepare(`SELECT 1 AS x FROM audit_log WHERE target=? AND action='password.change' AND actor_id=? AND created_at > ? LIMIT 1`)
+      .bind(user.id, user.id, new Date(Date.now() - 10 * 60000).toISOString()).first()) {
+      const { hash: nh } = await hashPassword(body.new_password, row.password_salt);
+      if (timingSafeEqual(nh, row.password_hash || '')) { await reauthOk(env, user); return { ok: true, duplicate: true }; }
+    }
+    await reauthFailed(env, user); throw bad('wrong_password', 'Altes Passwort falsch.'); // 400 statt 401: die App wertete 401 als abgelaufene Sitzung und meldete ab (19.10.2026)
+  }
   await reauthOk(env, user);
   validatePassword(body.new_password, [row.username, row.display_name]);
   const { hash: ph, salt } = await hashPassword(body.new_password);

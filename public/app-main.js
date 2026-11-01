@@ -62,7 +62,8 @@ const rkFor = (form, b) => { const sig = JSON.stringify(b); if (!form.dataset.rk
 
 const lostMark = (form, b, err) => { if (err && err.offline) form.dataset.lostSig = JSON.stringify(b); };
 const lostDup = (form, b, err, codes) => !!err && codes.includes(err.code) && form.dataset.lostSig === JSON.stringify(b);
-
+// Backlog 805j: Antwort „unverändert“/„nicht gefunden“ auf die Wiederholung derselben Eingabe nach verlorener Antwort = erste Speicherung kam an
+const lostIs = (el, b) => !!el && el.dataset.lostSig === JSON.stringify(b);
 const S = { me: null, meta: null, lang: (() => { try { return localStorage.getItem('cfp_lang') || deviceLang(); } catch { return deviceLang(); } })(), viewEnv: null, unread: 0 };
 // Sprachpaket vor dem ersten Bild (Backlog 588): route() wartet darauf. Bewusst ohne Top-Level-await – sonst liefen der Rest dieses
 // Moduls (u. a. die hashchange-Anmeldung) erst nach dem Paket, und das Ereignis „load“ käme vor der fertigen App (UI-Test rot).
@@ -4470,7 +4471,7 @@ function viewMore(open) {
     }).catch(() => {});
     hs.onchange = async () => {
       try {
-        await api('PATCH', '/api/me', { home_site: hs.value });
+        await api('PATCH', '/api/me', { home_site: hs.value }, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 805k: Wiederholung unverändert
         S.me.home_site = hs.value || null;
         // neue Voreinstellung gilt sofort für alle Standortfilter dieser Sitzung
         for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite', 'dqSite', 'claimSite', 'ctSite', 'drvSite', 'tachoSite']) delete S[k];
@@ -4486,8 +4487,8 @@ function viewMore(open) {
       // Backlog 225: Push-Geräte ohne lebende Anmeldung (altes/verlorenes Handy) – Hinweis und Knopf auch, wenn nur „dieses Gerät“ angemeldet ist
       + (orphan > 0 ? `<p class="small" id="sessorphan">⚠ ${esc(t('sess_orphan_push').replace('{n}', orphan))}</p>` : '')
       + (list.length > 1 || orphan > 0 ? `<div class="actions"><button type="button" class="btn secondary" id="sessall">${esc(t('sign_out_others'))}</button></div>` : '');
-    $$('[data-sid]', box).forEach((b) => (b.onclick = async () => { try { await api('DELETE', `/api/me/sessions/${b.dataset.sid}`); toast('✓'); await loadSessions(); } catch (err) { toast(err.message, true); } }));
-    const all = $('#sessall', box); if (all) all.onclick = async () => { try { const r = await api('POST', '/api/me/sessions/revoke-others'); toast(t('sessions_ended_n').replace('{n}', r.revoked) + (r.push_devices ? ' · ' + t('push_revoked_n').replace('{n}', r.push_devices) : '')); await loadSessions(); } catch (err) { toast(err.message, true); } };
+    $$('[data-sid]', box).forEach((b) => (b.onclick = async () => { try { await api('DELETE', `/api/me/sessions/${b.dataset.sid}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); await loadSessions(); } catch (err) { /* Backlog 805k (Funkloch): Wiederholung → 404 */ if (lostDup(b, {}, err, ['not_found'])) { toast(t('saved_before')); await loadSessions(); return; } lostMark(b, {}, err); toast(err.message, true); } }));
+    const all = $('#sessall', box); if (all) all.onclick = async () => { try { const r = await api('POST', '/api/me/sessions/revoke-others', undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast(t('sessions_ended_n').replace('{n}', r.revoked) + (r.push_devices ? ' · ' + t('push_revoked_n').replace('{n}', r.push_devices) : '')); await loadSessions(); } catch (err) { toast(err.message, true); } };
     await loadKnown();
   };
   // Bekannte Geräte: „dieses Gerät“ über die Gerätekennung (Header, wird serverseitig nur gehasht verglichen); dieses Gerät kann nicht vergessen werden
@@ -4507,9 +4508,10 @@ function viewMore(open) {
   // Abmelden ohne Netz: Meldung statt stillem Abbruch (Sitzung bliebe sonst unbemerkt bestehen – geteilte Tablets); bereits abgelaufen (401): trotzdem aufräumen
   // Backlog 533: ohne Verbindung stehender Hinweis (#lo_off) statt kurzer Einblendung, damit das Gerät nicht angemeldet weitergegeben wird
   $('#lo').onclick = async () => { if (!(await logoutOutboxOk())) return; try { await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }); } catch (err) { if (err.status !== 401) { if (err.offline) { const box = $('#lo_off') || Object.assign(document.createElement('p'), { id: 'lo_off', className: 'small alert' }); box.setAttribute('role', 'alert'); box.textContent = t('logout_offline'); $('#lo').closest('.actions').after(box); return; } toast(err.message, true); return; } } clearOfflineData(); resetUserState(); markSession(''); location.hash = '#/login'; };
-  $('#pw').onsubmit = async (e) => { e.preventDefault(); try { await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target)));
+  $('#pw').onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target)), { timeoutMs: SEND_TIMEOUT_MS });
     // Passwörter nicht im offenen Formular stehen lassen; der Server meldet andere Geräte ab (19.10.2026)
-    e.target.reset(); const dd = e.target.closest('details'); if (dd) dd.open = false; toast('✓ ' + t('pw_changed_others')); } catch (err) { toast(err.message, true); } };
+    // Backlog 805k (Funkloch): Wiederholung nach verlorener Antwort – neues Passwort gilt schon → duplicate statt „Altes Passwort falsch“
+    e.target.reset(); const dd = e.target.closest('details'); if (dd) dd.open = false; toast(r && r.duplicate ? t('saved_before') : '✓ ' + t('pw_changed_others')); } catch (err) { toast(err.message, true); } };
 }
 
 // Mein Konto → Zwei-Faktor-Anmeldung: Status, Einrichten (QR + Schlüssel), Ersatzcodes einmalig, neue Ersatzcodes, Ausschalten
@@ -4532,7 +4534,7 @@ async function loadTotp() {
     $('#tfs').onsubmit = async (e) => {
       e.preventDefault();
       try {
-        const r = await api('POST', '/api/me/totp/setup', { password: $('#tfpw').value });
+        const r = await api('POST', '/api/me/totp/setup', { password: $('#tfpw').value }, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 805k: Wiederholung erzeugt nur einen neuen, noch nicht genutzten Schlüssel
         $('#tfpw').value = ''; $('#tfs').hidden = true;
         const key = r.secret.replace(/(.{4})/g, '$1 ').trim();
         $('#tfstep').innerHTML = `<p class="small">${esc(t('tf_scan'))}</p><div class="qr">${(() => { try { return qrSvg(r.uri, { label: t('tf_title') }); } catch { return ''; } })()}</div>
@@ -4542,12 +4544,16 @@ async function loadTotp() {
         $('#tfe').onsubmit = async (ev) => {
           ev.preventDefault();
           try {
-            const x = await api('POST', '/api/me/totp/enable', { code: $('#tfc').value.trim() });
+            const x = await api('POST', '/api/me/totp/enable', { code: $('#tfc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS });
             S.me.totp_enabled = true; tfChip();
             box.innerHTML = rcBlock(x.recovery_codes, t('tf_others_ended')) + `<div class="actions"><button type="button" class="btn" id="tfdone">OK</button></div>`;
             wireRc(x.recovery_codes);
             $('#tfdone').onclick = () => loadTotp();
-          } catch (err) { toast(err.message, true); }
+          } catch (err) {
+            // Backlog 805k (Funkloch): eingeschaltet, aber die Antwort mit den Ersatzcodes ging verloren → Hinweis, neue Ersatzcodes zu erzeugen
+            if (lostDup(ev.target, {}, err, ['totp_already'])) { S.me.totp_enabled = true; tfChip(); toast(t('tf_saved_before_rc'), true); loadTotp(); return; }
+            lostMark(ev.target, {}, err); toast(err.message, true);
+          }
         };
       } catch (err) { toast(err.message, true); }
     };
@@ -4559,13 +4565,13 @@ async function loadTotp() {
     <div id="tfout"></div>`;
   $('#tfr').onsubmit = async (e) => {
     e.preventDefault();
-    try { const x = await api('POST', '/api/me/totp/recovery-codes', { code: $('#tfrc').value.trim() }); $('#tfout').innerHTML = rcBlock(x.recovery_codes); wireRc(x.recovery_codes); $('#tfrc').value = ''; }
+    try { const x = await api('POST', '/api/me/totp/recovery-codes', { code: $('#tfrc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); $('#tfout').innerHTML = rcBlock(x.recovery_codes); wireRc(x.recovery_codes); $('#tfrc').value = ''; }
     catch (err) { toast(err.message, true); }
   };
   $('#tfd').onsubmit = async (e) => {
     e.preventDefault();
-    try { await api('POST', '/api/me/totp/disable', { password: $('#tfdpw').value, code: $('#tfdc').value.trim() }); S.me.totp_enabled = false; tfChip(); toast('✓'); loadTotp(); }
-    catch (err) { toast(err.message, true); }
+    const tfd = e.target; try { await api('POST', '/api/me/totp/disable', { password: $('#tfdpw').value, code: $('#tfdc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); S.me.totp_enabled = false; tfChip(); toast('✓'); loadTotp(); }
+    catch (err) { /* Backlog 805k (Funkloch): Wiederholung → totp_off */ if (lostDup(tfd, {}, err, ['totp_off'])) { S.me.totp_enabled = false; tfChip(); toast(t('saved_before')); loadTotp(); return; } lostMark(tfd, {}, err); toast(err.message, true); }
   };
 }
 
@@ -4667,4 +4673,4 @@ function lazyModule(g) {
   return LAZY_MODULES[g];
 }
 
-export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, MORE_MAX, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, STATES, TM_PROV, TST, VEH_SORTS, afLink, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindTachoCancel, cDesc, caseList, checkLabel, claimChip, clipTxt, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, decIn, defectItemsCsv, defectVehiclesCsv, download, downloadChecked, dqDetail, dur, emHoursText, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, helpLink, helpNorm, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isUnusedUser, isWeekendD, kmFcHint, kmFcHtml, kmUnclearDateDue, langAttr, lostDup, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mayReport, mk, mkR, nDays, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, partsWaitDays, planVehTag, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, qrSvg, rc2, readCsvFile, reasonText, render, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, sortPref, sortUsers, stackTables, stockNoteText, supplierLabel, t, tachoHistList, telAbroad, telHref, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, uiLoc, uid, unitL, usersCsv, vehiclesCached, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };
+export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, MORE_MAX, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, STATES, TM_PROV, TST, VEH_SORTS, afLink, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindTachoCancel, cDesc, caseList, checkLabel, claimChip, clipTxt, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, decIn, defectItemsCsv, defectVehiclesCsv, download, downloadChecked, dqDetail, dur, emHoursText, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, helpLink, helpNorm, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isUnusedUser, isWeekendD, kmFcHint, kmFcHtml, kmUnclearDateDue, langAttr, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mayReport, mk, mkR, nDays, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, partsWaitDays, planVehTag, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, qrSvg, rc2, readCsvFile, reasonText, render, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, sortPref, sortUsers, stackTables, stockNoteText, supplierLabel, t, tachoHistList, telAbroad, telHref, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, uiLoc, uid, unitL, usersCsv, vehiclesCached, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };

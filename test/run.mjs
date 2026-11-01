@@ -29298,6 +29298,31 @@ await test('Backlog 805j (Blickwinkel „Funkloch“): Zuordnung beenden, Vertra
   eq(db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='master.decision' AND target=?").get(item.event_id).n, 1);
 });
 
+await test('Backlog 805k (Blickwinkel „Funkloch“): Passwort ändern, Zwei-Faktor (einrichten/einschalten/Ersatzcodes/ausschalten/zurücksetzen), Sitzungen beenden, Startstandort, Stundensatz entfernen mit Zeitlimit; Passwort-Wiederholung nach verlorener Antwort → duplicate statt „Altes Passwort falsch“ (ohne Fehlversuch)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const [frag, what] of [["await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target)), { timeoutMs: SEND_TIMEOUT_MS })", 'Passwort'], ["r && r.duplicate ? t('saved_before') : '✓ ' + t('pw_changed_others')", 'Passwort: bereits gespeichert'],
+    ["'/api/me/totp/setup', { password: $('#tfpw').value }, { timeoutMs: SEND_TIMEOUT_MS })", '2FA einrichten'], ["lostDup(ev.target, {}, err, ['totp_already'])", '2FA einschalten: Ersatzcodes verloren'],
+    ["'/api/me/totp/recovery-codes', { code: $('#tfrc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS })", 'Ersatzcodes'], ["lostDup(tfd, {}, err, ['totp_off'])", '2FA ausschalten'], ["lostDup(b, {}, err, ['totp_off'])", '2FA zurücksetzen'],
+    ["`/api/users/${b.dataset.revoke}/revoke-sessions`, undefined, { timeoutMs: SEND_TIMEOUT_MS })", 'Anmeldungen beenden'], ["'/api/me/sessions/revoke-others', undefined, { timeoutMs: SEND_TIMEOUT_MS })", 'andere Anmeldungen'],
+    ["lostDup(bt, {}, err, ['not_found'])", 'Stundensatz entfernen'], ["{ home_site: hs.value }, { timeoutMs: SEND_TIMEOUT_MS })", 'Startstandort']]) ok(app.includes(frag), what);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].tf_saved_before_rc && STRINGS[l].tf_saved_before_rc.includes(STRINGS[l].tf_rc_new), 'Hinweis nennt den Knopf ' + l);
+  const { e, U } = await freshWorld();
+  const db = e.DB.db;
+  const fails = () => db.prepare('SELECT COALESCE(SUM(failures),0) n FROM login_attempts').get().n;
+  const pb = { old_password: 'Sicheres-Passwort-2026', new_password: 'Neues-Passwort-805k-Lang' };
+  eq((await U.fleet.post('/api/me/password', pb)).status, 200);
+  const f0 = fails();
+  const p2 = await U.fleet.post('/api/me/password', pb); eq(p2.status, 200, JSON.stringify(p2.data)); eq(p2.data.duplicate, true);
+  eq(fails(), f0, 'kein Fehlversuch');
+  eq(db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='password.change' AND target=?").get(U.fleet.id).n, 1, 'nur eine Änderung protokolliert');
+  const p3 = await U.fleet.post('/api/me/password', { old_password: 'Sicheres-Passwort-2026', new_password: 'Anderes-Passwort-805k-X' }); eq(p3.status, 400); eq(p3.data.error, 'wrong_password');
+  // ohne vorherige eigene Änderung: falsches altes Passwort bleibt falsch, auch wenn das „neue“ das aktuelle ist
+  const p4 = await U.ws.post('/api/me/password', { old_password: 'falsch-falsch-1', new_password: 'Sicheres-Passwort-2026' }); eq(p4.status, 400); eq(p4.data.error, 'wrong_password');
+  eq((await U.fleet.post('/api/login', { username: 'w.fuhrpark', password: 'Neues-Passwort-805k-Lang' })).status, 200, 'neues Passwort gilt');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
