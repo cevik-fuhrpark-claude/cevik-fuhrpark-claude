@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (01.11.2026, Backlog 850, Folge aus 849): Datenqualität listet „Montierte Reifengröße weicht von der hinterlegten ab“ –
-# Detail mit übersetzter Achse und Hinweis „nicht bestätigt“, Link zum Reifenabschnitt der Fahrzeugakte; nach Anpassen der Achsgröße kein Befund.
+# Detail mit übersetzter Achse und Hinweis „nicht bestätigt“, Link zum Reifenabschnitt der Fahrzeugakte, dort montierte Größe mit Kennzeichnung (Backlog 851); nach Wechsel in der hinterlegten Größe kein Befund (wiederholbar).
 # DE/UK/EN bei 390/820/1366 px, ohne Querscrollen/Skriptfehler. Braucht den Dev-Server.
-import os
+import os, time
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
@@ -20,7 +20,7 @@ with sync_playwright() as p:
     r=api('POST','/api/vehicles',{'vin':V[4:],'plate':'PA-DQ 850','site':'Dortmund','kind':'lkw'})
     check(r['s'] in (200,201,409),f'Fahrzeug angelegt ({r["s"]})')
     check(api('POST',f'/api/vehicles/{V}/tires/specs',{'axle':'lenkachse','size':'385/65 R22.5','verified':False})['s']==200,'Achsgröße (nicht bestätigt)')
-    m=api('POST',f'/api/vehicles/{V}/tires/events',{'event_type':'wechsel','position':'VA-L','size':'315/80 R22.5','request_key':'pa-850-va-l'})
+    m=api('POST',f'/api/vehicles/{V}/tires/events',{'event_type':'wechsel','position':'VA-L','size':'315/80 R22.5','request_key':f'pa-850-va-l-{time.time()}'})
     check(m['s'] in (200,201),f'Wechsel VA-L ({m["s"]})')
     for lang in ['de','uk','en']:
       for wd,h in [(390,844),(820,1180),(1366,900)]:
@@ -36,9 +36,13 @@ with sync_playwright() as p:
         if SHOTS: row.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/dq-groesse-{lang}-{wd}.png')
         row.click(); q.wait_for_selector('#tf',state='attached',timeout=15000)
         check('sec=tires' in q.url,f'{lang}/{wd}: Link öffnet den Reifenabschnitt')
+        q.wait_for_selector('[data-tsdiff="VA-L"]',timeout=15000); chip=q.locator('[data-tsdiff="VA-L"]').inner_text()
+        check(ax in chip and '385/65 R22.5' in chip and q.locator('[data-tsize="VA-L"]').is_visible(),f'{lang}/{wd}: Reifenakte zeigt montierte Größe + Abweichung {chip!r}')
+        if SHOTS: q.locator('[data-tsize="VA-L"]').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/akte-groesse-{lang}-{wd}.png')
         check(not errs,f'{lang}/{wd}: keine Skriptfehler {errs[:2]}')
         ctx.close()
-    check(api('POST',f'/api/vehicles/{V}/tires/specs',{'axle':'lenkachse','size':'315/80 R22.5','verified':True})['s']==200,'Achsgröße angepasst')
+    m=api('POST',f'/api/vehicles/{V}/tires/events',{'event_type':'wechsel','position':'VA-L','size':'385/65 R22.5','request_key':f'pa-850-va-l-ok-{time.time()}'})
+    check(m['s'] in (200,201),f'Wechsel in der hinterlegten Größe ({m["s"]})')
     d=api('GET','/api/admin/data-quality')['d']
     check(not any(i['check']=='tire_size_differs' and i['vehicle_id']==V for i in d['items']),'danach kein Befund')
     br.close()

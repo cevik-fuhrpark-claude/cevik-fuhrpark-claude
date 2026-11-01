@@ -30557,6 +30557,38 @@ await test('Backlog 850 (Folge aus 849): Datenqualität tire_size_differs – zu
     ok(STRINGS[l].help_tires_s.includes(STRINGS[l].dq_tire_size_differs), 'Hilfe nennt die Prüfung ' + l);
   }
 });
+await test('Backlog 851 (Folge aus 850): Reifenakte nennt je Position die zuletzt montierte Größe (letzter Wechsel) und kennzeichnet Abweichungen von der hinterlegten Achsgröße (size_differs, spec_size/spec_axle/spec_verified; Schreibweise egal, Reserve nie); Oberfläche/Texte/Hilfe DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon');
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const x = await own.post('/api/users', { username: 't.werkstatt', display_name: 'Werkstatt T', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  const W = new Client(worker, e, 't.werkstatt'); await W.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\nDO-PT 8511;Dortmund;MAN;2019;WMA06XZZ8RP851001;;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const V = 'VIN:WMA06XZZ8RP851001';
+  const post = (b) => W.post(`/api/vehicles/${V}/tires/events`, { request_key: rk(), ...b });
+  const pos = async (p) => { const r = await W.get(`/api/vehicles/${V}/tires`); eq(r.status, 200); return r.data.positions.find((x) => x.position === p); };
+  eq((await post({ event_type: 'messung', position: 'VA-L', tread_mm: '9' })).status, 201);
+  let p = await pos('VA-L'); ok(p.size === null && !p.size_differs, 'ohne Wechsel keine Größe');
+  eq((await post({ event_type: 'wechsel', position: 'VA-L', size: '315/80 R22.5' })).status, 201);
+  p = await pos('VA-L'); ok(p.size === '315/80 R22.5' && !p.size_differs, 'ohne Achsgröße keine Abweichung ' + JSON.stringify(p));
+  eq((await W.post(`/api/vehicles/${V}/tires/specs`, { axle: 'lenkachse', size: '385/65 R22.5', verified: false })).status, 200);
+  p = await pos('VA-L'); ok(p.size_differs === true && p.spec_size === '385/65 R22.5' && p.spec_axle === 'lenkachse' && p.spec_verified === false, JSON.stringify(p));
+  eq((await post({ event_type: 'messung', position: 'VA-L', tread_mm: '15' })).status, 201);
+  p = await pos('VA-L'); ok(p.size === '315/80 R22.5' && p.size_differs, 'Messung danach ändert die montierte Größe nicht');
+  eq((await post({ event_type: 'wechsel', position: 'VA-L', size: '385/65r22.5' })).status, 201);
+  p = await pos('VA-L'); ok(p.size === '385/65r22.5' && !p.size_differs, 'Schreibweise egal');
+  eq((await post({ event_type: 'wechsel', position: 'Reserve', size: '445/45 R19.5' })).status, 201);
+  p = await pos('Reserve'); ok(p.size === '445/45 R19.5' && !p.size_differs, 'Reserve ohne Achse');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-tsize="${esc(p.position)}"') && app.includes('data-tsdiff="${esc(p.position)}"') && app.includes("t('tire_size_diff_chip').replace('{axle}', t('axle_' + p.spec_axle))"), 'Anzeige in der Reifenakte');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].tire_mounted && STRINGS[l].tire_size_diff_chip.includes('{axle}') && STRINGS[l].tire_size_diff_chip.includes('{spec}'), 'Texte ' + l);
+    ok(STRINGS[l].help_tires_s.includes(STRINGS[l].tire_size_diff_chip.split(' (')[0]), 'Hilfe ' + l);
+  }
+});
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

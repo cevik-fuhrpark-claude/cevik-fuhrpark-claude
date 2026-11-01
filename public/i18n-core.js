@@ -1186,6 +1186,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 849: Reifenwechsel mit anderer Größe als für die Achse hinterlegt
 // Backlog 848: Datenqualität – aktuelle Profilmessung höher als die vorherige derselben Position ohne Wechsel
 // Backlog 850: Datenqualität – zuletzt montierte Reifengröße weicht von der hinterlegten Achsgröße ab
+// Backlog 851: Reifenakte – zuletzt montierte Größe je Position, Kennzeichnung bei Abweichung von der Achsgröße
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

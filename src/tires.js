@@ -141,7 +141,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
   const [histRows, all, lastKm] = await Promise.all([
     env.DB.prepare(`SELECT t.*, u.display_name AS recorded_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS recorded_by_role FROM tire_events t JOIN users u ON u.id=t.recorded_by
     WHERE t.environment=? AND t.vehicle_id=? ORDER BY t.created_at DESC LIMIT ?`).bind(envName, vehicleId, TIRE_HIST_MAX + 1).all(),
-    env.DB.prepare(`SELECT position, event_type, tread_mm, dot, winter_mark, created_at FROM tire_events WHERE environment=? AND vehicle_id=? ORDER BY created_at DESC`).bind(envName, vehicleId).all(),
+    env.DB.prepare(`SELECT position, event_type, tread_mm, dot, winter_mark, size, created_at FROM tire_events WHERE environment=? AND vehicle_id=? ORDER BY created_at DESC`).bind(envName, vehicleId).all(),
     lastKmOf(env, vehicleId), // Backlog 828: Bezug für das km-Feld der Erfassung
   ]);
   const historyTruncated = histRows.results.length > TIRE_HIST_MAX;
@@ -159,6 +159,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
     const cur = latest[e.position] || {};
     // letzter Messwert je Position; ein Wechsel setzt den Stand zurück
     if (!cur.event) cur.event = e;
+    if (cur.size === undefined && e.event_type === 'wechsel') cur.size = e.size || null; // Backlog 851: zuletzt montierte Größe (letzter Wechsel)
     if (cur.tread_mm === undefined && !cur.reset) {
       if (e.tread_mm !== null) { cur.tread_mm = e.tread_mm; cur.tread_at = e.created_at; }
       else if (e.event_type === 'wechsel') cur.reset = true;
@@ -176,9 +177,12 @@ export async function tireOverview(env, user, envName, vehicleId) {
   // nur Positionen, die zur heutigen Fahrzeugart passen (21.10.2026: nach Artwechsel Lkw ↔ Anhänger blieb ein Altwert „unter Minimum“ stehen, der sich
   // nicht mehr erfassen/klären ließ); die Ereignisse bleiben im Verlauf
   const allowed = positionsForKind(v.kind);
+  // Backlog 851: montierte Größe weicht von der hinterlegten Achsgröße ab (wie Datenqualität tire_size_differs; Schreibweise egal, Reserve ohne Achse)
+  const sizeDiff = (position, size) => { const sp = size ? specs.find((x) => x.axle === posAxle(position)) : null;
+    return sp && sizeKey(sp.size) !== sizeKey(size) ? { size_differs: true, spec_size: sp.size, spec_axle: sp.axle, spec_verified: !!sp.verified } : {}; };
   const positions = Object.entries(latest).filter(([position]) => allowed.includes(position)).map(([position, x]) => ({
     position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
-    status: treadStatus(position, x.tread_mm, warn),
+    status: treadStatus(position, x.tread_mm, warn), size: x.size ?? null, ...sizeDiff(position, x.size),
   })).sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position));
   return { vehicle: v, last_km: lastKm ? { km: lastKm.km, measured_at: lastKm.measured_at } : null, specs, positions, allowed_positions: positionsForKind(v.kind), history, history_truncated: historyTruncated, history_max: TIRE_HIST_MAX, legal_min_tread_mm: LEGAL_MIN_TREAD_MM, warn_tread_mm: warn, warn_age_years: ageYears, tread_rise_mm: riseMm, winter: (() => { const w = winterStatus(v.kind, wm); return { ...w, open_order: linkable(user, wOrder), closed_order: linkable(user, wo ? wo.closedIfOpen(vehicleId, w.status, allEv, v.kind) : null) }; })() };
 }
