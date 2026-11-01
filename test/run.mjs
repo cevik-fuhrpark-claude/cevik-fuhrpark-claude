@@ -30192,6 +30192,40 @@ await test('Backlog 840 (Blickwinkel „Monatsmeldung an den Leasinggeber mit ei
   for (const l2 of ['de', 'uk', 'en']) ok(STRINGS[l2].ct_km_digits && STRINGS[l2].ct_km_digits.includes('{prev}'), 'Text ' + l2);
 });
 
+await test('Backlog 841 (Folge aus 838): km-Fälligkeit fällig/überfällig mit letzter Ablesung, die mehr Stellen hat als die vorherige → km_digits_prev in Prüftermin-Übersicht und Fahrzeugakte (Status unverändert); Begründung löst den Hinweis; Text DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon');
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const x = await own.post('/api/users', { username: 'q.leitung', display_name: 'Leitung Q', role: 'fleet', environment: 'production' });
+  const F = new Client(worker, e, 'q.leitung'); await F.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Fahrzeugart\nDO-RQ 8411;Dortmund;MAN;2018;WMA06XZZ8RP841001;Lkw\nDO-RQ 8412;Dortmund;MAN;2018;WMA06XZZ8RP841002;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const A = 'VIN:WMA06XZZ8RP841001'; const B = 'VIN:WMA06XZZ8RP841002';
+  const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const ra = await F.post(`/api/vehicles/${A}/maintenance`, { kind: 'Ölwechsel', interval_km: 100000, last_done_km: 50000, evidence: 'Test 841' }); eq(ra.status, 201, JSON.stringify(ra.data));
+  const rb = await F.post(`/api/vehicles/${B}/maintenance`, { kind: 'Ölwechsel', interval_km: 100000, last_done_km: 50000, evidence: 'Test 841' }); eq(rb.status, 201);
+  eq((await F.post(`/api/vehicles/${A}/odometer`, { km: 140000, measured_on: day(5) })).status, 201);
+  eq((await F.post(`/api/vehicles/${A}/odometer`, { km: 1400500 })).status, 201);
+  eq((await F.post(`/api/vehicles/${B}/odometer`, { km: 140000, measured_on: day(5) })).status, 201);
+  eq((await F.post(`/api/vehicles/${B}/odometer`, { km: 160500 })).status, 201);
+  const row = async (id) => (await F.get('/api/maintenance')).data.rows.find((r) => r.id === id);
+  let a = await row(ra.data.id); const b = await row(rb.data.id);
+  eq(a.km_status, 'ueberfaellig', 'Status bleibt (keine km-Grenze)'); eq(a.km_digits_prev, 140000, 'Hinweis A ' + JSON.stringify(a));
+  eq(b.km_status, 'ueberfaellig'); ok(!('km_digits_prev' in b), 'B ohne Hinweis (gleiche Stellenzahl)');
+  const ma = (await F.get(`/api/vehicles/${A}`)).data.maintenance.find((m) => m.id === ra.data.id);
+  eq(ma.km_digits_prev, 140000, 'Fahrzeugakte ' + JSON.stringify(ma));
+  // Begründung an der letzten Ablesung → kein Hinweis mehr
+  const tl = (await F.get(`/api/vehicles/${A}/timeline?types=odometer`)).data.items.find((i) => i.km === 1400500);
+  eq((await F.post(`/api/odometer/${tl.odometer_id}/note`, { note: 'Stand laut Tacho geprüft' })).status, 200);
+  a = await row(ra.data.id); ok(!('km_digits_prev' in a), 'mit Begründung ohne Hinweis');
+  ok(!('km_digits_prev' in (await F.get(`/api/vehicles/${A}`)).data.maintenance.find((m) => m.id === ra.data.id)), 'Akte mit Begründung ohne Hinweis');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-kmdigits') && app.includes('${chip}${kmDigHtml(m)}') && app.includes('${kmDigHtml(i)}') && app.includes("r.km_digits_prev ? kmDigHtml(r)"), 'Oberfläche (Akte, Werkstattplan, Übersicht)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].km_due_digits && STRINGS[l].km_due_digits.includes('{prev}'), 'Text ' + l);
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

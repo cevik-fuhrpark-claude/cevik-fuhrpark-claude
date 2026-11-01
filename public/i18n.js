@@ -3454,6 +3454,10 @@ Object.assign(STRINGS.en, { dq_trailer_km_equals_truck: 'Trailer reading equals 
 Object.assign(STRINGS.de, { odo_eq_truck: 'gleicher Stand wie Zugmaschine {p} am selben Tag – Tacho der Zugmaschine abgelesen?', odo_eq_prompt: 'Begründung zu diesem km-Stand (z. B. „Achszähler zeigt zufällig denselben Stand“, „Stand der Zugmaschine, Anhänger ohne Zähler“). Der km-Wert bleibt unverändert.' });
 Object.assign(STRINGS.uk, { odo_eq_truck: 'такий самий показник, як у тягача {p} того ж дня – зчитано з тахометра тягача?', odo_eq_prompt: 'Обґрунтування цього показника (напр. «Лічильник на осі випадково показує те саме», «Показник тягача, причіп без лічильника»). Значення пробігу не змінюється.' });
 Object.assign(STRINGS.en, { odo_eq_truck: 'same reading as tractor unit {p} on the same day – read from the tractor’s odometer?', odo_eq_prompt: 'Reason for this odometer reading (e.g. “Hub odometer happens to show the same value”, “Tractor unit reading, trailer has no counter”). The odometer value stays unchanged.' });
+// Backlog 841: km-Fälligkeit mit letzter Ablesung, die mehr Stellen hat als die vorherige
+Object.assign(STRINGS.de, { km_due_digits: 'letzter km-Stand hat mehr Stellen als der vorherige ({prev}) – Ziffern prüfen' });
+Object.assign(STRINGS.uk, { km_due_digits: 'останній пробіг має більше цифр, ніж попередній ({prev}) – перевірте цифри' });
+Object.assign(STRINGS.en, { km_due_digits: 'last reading has more digits than the previous one ({prev}) – check the digits' });
 // Backlog 840: Verträge – letzte Ablesung mit mehr Stellen als die vorherige
 Object.assign(STRINGS.de, { ct_km_digits: 'km-Stand hat mehr Stellen als der vorherige ({prev}) – Ziffern vor der Meldung prüfen' });
 Object.assign(STRINGS.uk, { ct_km_digits: 'Пробіг має більше цифр, ніж попередній ({prev}) – перевірте цифри перед звітом' });

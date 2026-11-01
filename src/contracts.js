@@ -6,7 +6,7 @@ import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso, maxFutureDate } from './util.js';
 import { audit } from './auth.js';
-import { latestKmByVehicle, csvCell, csvText, KM_DROP_SQL, parseKmDrop, PLATE_FORMER_SKIP, plateFormerOther, formerPlatesAll } from './maintenance.js';
+import { latestKmByVehicle, kmDigitsPrev, csvCell, csvText, KM_DROP_SQL, parseKmDrop, PLATE_FORMER_SKIP, plateFormerOther, formerPlatesAll } from './maintenance.js';
 import { siteSelection } from './reports.js';
 import { SETTING_DEFAULTS } from './settings.js';
 
@@ -322,7 +322,6 @@ export async function endKmByContract(env, list) {
 // (vorher nur bei km-Kontingent und berechenbarem Status; ohne Kontingent oder nach Tachotausch fehlte der meldbare Stand). Nie geschätzt.
 // Backlog 840 (Blickwinkel „Monatsmeldung an den Leasinggeber mit einer Ziffer zu viel“): letzte Ablesung ohne Begründung mit mehr Stellen als
 // die vorherige (> 0) → `digits_prev` (vorheriger Stand) – Hinweis „Ziffern prüfen“ vor der Meldung; nur wenn die Abfrage prev_km liefert
-export const kmDigitsPrev = (x) => (x && x.prev_km > 0 && !(x.note && String(x.note).trim()) && String(Math.trunc(Number(x.km))).length > String(Math.trunc(Number(x.prev_km))).length ? x.prev_km : null);
 const readingOf = (x) => (x && x.km !== null && x.km !== undefined ? { km: x.km, measured_at: x.measured_at, source: x.source || null, ...(kmDigitsPrev(x) ? { digits_prev: kmDigitsPrev(x) } : {}) } : null);
 
 // Verträge eines Fahrzeugs (Fahrzeugakte); latest = letzter km-Stand der Akte

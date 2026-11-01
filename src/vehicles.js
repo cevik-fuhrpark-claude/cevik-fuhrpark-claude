@@ -262,12 +262,13 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // Vorwarnung `maintenance_warn_km`, Stand-Datum) – vorher rechnete die Akte im Browser nur mit der letzten Ablesung und ohne „bald fällig“
   if (!tl && maintenance.some((m) => ruleDueKm(m) !== null)) {
     const b = odometer[0] ? await env.DB.prepare(`SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at >= date(?, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY measured_at LIMIT 1`).bind(vehicleId, odometer[0].measured_at).first() : null;
-    const latest = odometer[0] ? { km: odometer[0].km, measured_at: odometer[0].measured_at, ...kmDrop, base_km: b ? b.km : null, base_at: b ? b.measured_at : null } : null;
+    // Backlog 841: vorherige Ablesung + Begründung für den Hinweis „mehr Stellen als vorher“ (Liste absteigend sortiert)
+    const latest = odometer[0] ? { km: odometer[0].km, measured_at: odometer[0].measured_at, ...kmDrop, base_km: b ? b.km : null, base_at: b ? b.measured_at : null, note: odometer[0].note, prev_km: odometer[1] ? odometer[1].km : null } : null;
     const today = berlinDate();
     const warnKm = Number(sets.get('maintenance_warn_km')) > 0 ? Number(sets.get('maintenance_warn_km')) : null;
     for (const m of maintenance) if (ruleDueKm(m) !== null) {
       const k = kmDue(m, latest, warnKm, today); m.km_forecast = k ? k.km_forecast || null : null;
-      if (k) { m.km_status = k.km_status; m.km_remaining = k.km_remaining; m.km_measured_at = k.km_measured_at; }
+      if (k) { m.km_status = k.km_status; m.km_remaining = k.km_remaining; m.km_measured_at = k.km_measured_at; if (k.km_digits_prev) m.km_digits_prev = k.km_digits_prev; }
       if (k && k.km_unclear) { m.km_unclear = k.km_unclear; m.km_drop_at = k.km_drop_at; }
     }
   }

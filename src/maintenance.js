@@ -70,6 +70,8 @@ export { parseCsv } from './util.js';
 // Kilometer-Intervall: fällig bei letzter Durchführung (km) + Intervall; nur wenn beides belegt ist.
 // Vorwarnung nur, wenn „maintenance_warn_km“ eingestellt ist (keine erfundene Schwelle) – sonst nur „überfällig“.
 // before (ISO, optional): nur Ablesungen vor diesem Zeitpunkt – Stichtag der Vertragsübersicht (Backlog 196), sonst wie bisher die letzte
+// Backlog 840/841: letzte Ablesung ohne Begründung mit mehr Stellen als die vorherige (> 0) → vorheriger Stand, sonst null
+export const kmDigitsPrev = (x) => (x && x.prev_km > 0 && !(x.note && String(x.note).trim()) && String(Math.trunc(Number(x.km))).length > String(Math.trunc(Number(x.prev_km))).length ? x.prev_km : null);
 export async function latestKmByVehicle(env, { withBase = false, before = null, withPrev = false } = {}) {
   const cut = before ? ' AND measured_at < ?1' : '';
   // withPrev (Backlog 840): km der unmittelbar vorherigen Ablesung und Begründung der letzten – für den Hinweis „mehr Stellen als vorher“
@@ -155,6 +157,9 @@ export function kmDue(rule, latest, warnKm, today = null) {
   // Rest 0 = fällig (wie der Fälligkeitstag beim Datum; 18.10.2026 vorher „in Ordnung“ genau bei „fällig bei km“)
   const st = remaining < 0 ? 'ueberfaellig' : remaining === 0 || (warnKm && remaining <= warnKm) ? 'faellig' : 'ok';
   const out = { next_due_km: next, current_km: curKm, km_measured_at: useDone ? (rule.last_done_date || latest.measured_at) : latest.measured_at, km_remaining: remaining, km_status: st };
+  // Backlog 841: fällig/überfällig nur wegen der letzten Ablesung, die mehr Stellen hat als die vorherige (ohne Begründung) → vorheriger Stand
+  // als Hinweis „Ziffern prüfen“ (nur wenn der Aufrufer prev_km mitliefert; Status bleibt unverändert, keine km-Grenze)
+  if (st !== 'ok' && !useDone && kmDigitsPrev(latest)) out.km_digits_prev = kmDigitsPrev(latest);
   if ('base_km' in latest) {
     // Prognose nie über einen km-Rücksprung hinweg (Ablesungen alter und neuer Zähler wären nicht vergleichbar)
     const rate = latest.drop_at && latest.base_at && latest.base_at < latest.drop_at ? null : kmRate(latest, { km: latest.base_km, measured_at: latest.base_at }, today);
@@ -264,7 +269,7 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
   const warnDays = maintenanceWarnDays(cfg.get('maintenance_warn_days'));
   const warnKm = Number(cfg.get('maintenance_warn_km')) > 0 ? Number(cfg.get('maintenance_warn_km')) : null;
   const today = berlinDate();
-  const latestKm = await latestKmByVehicle(env, { withBase: true });
+  const latestKm = await latestKmByVehicle(env, { withBase: true, withPrev: true });
   const allVehicles = (await env.DB.prepare('SELECT id, plate, site, kind FROM vehicles WHERE active=1 AND eval_excluded=0').all()).results;
   const sel = siteSelection(allVehicles, opts.site);
   const siteOptions = sel.options; const siteSel = sel.site; const sKey = sel.site !== null;
