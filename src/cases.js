@@ -393,10 +393,16 @@ export async function getCaseDetail(env, user, envName, caseId) {
   // Teilabfrage in der Fahrzeug-Abfrage (Abfragebudget Vorgangsdetail)
   const fromInsp = c0.origin === 'kontrolle' && c0.check_item && !c0.parent_case_id;
   const mgrUser = isManager(user);
+  // Backlog 825: Mangel am fest gekoppelten Fahrzeug (Backlog 824) – die Kontrolle liegt am Partner (Zugmaschine bzw. Anhänger); km gehört dorthin
+  const PKs = PLATE_KEY_SQL;
+  const srcVeh = `(s.vehicle_id=c.vehicle_id OR s.vehicle_id IN (SELECT o.id FROM vehicles o WHERE o.id<>v.id AND (
+      (v.kind='anhaenger' AND o.kind='lkw' AND ${PKs('o.trailer_plate')}<>'' AND ${PKs('o.trailer_plate')}=${PKs('v.plate')})
+      OR (v.kind='lkw' AND o.kind='anhaenger' AND ${PKs('v.trailer_plate')}<>'' AND ${PKs('o.plate')}=${PKs('v.trailer_plate')}))))`;
   const srcSql = fromInsp ? `, (SELECT json_object('performed_at', s.created_at, 'received_at', s.received_at, 'odometer_km', s.odometer_km,
+        'via', CASE WHEN s.vehicle_id<>c.vehicle_id THEN (SELECT json_object('plate', w.plate, 'kind', w.kind) FROM vehicles w WHERE w.id=s.vehicle_id) END,
         'last_ok_at', ${mgrUser ? `(SELECT p.created_at FROM inspections p WHERE p.environment=s.environment AND p.vehicle_id=s.vehicle_id AND p.kind='abfahrt' AND p.created_at < s.created_at
           AND EXISTS (SELECT 1 FROM json_each(p.items) j WHERE json_extract(j.value,'$.key')=?3 AND json_extract(j.value,'$.result')='ok') ORDER BY p.created_at DESC LIMIT 1)` : 'NULL'})
-      FROM inspections s WHERE s.environment=?2 AND s.vehicle_id=c.vehicle_id AND s.kind='abfahrt' AND s.case_id IS NULL AND EXISTS (SELECT 1 FROM json_each(s.items) j
+      FROM inspections s WHERE s.environment=?2 AND ${srcVeh} AND s.kind='abfahrt' AND s.case_id IS NULL AND EXISTS (SELECT 1 FROM json_each(s.items) j
         WHERE json_extract(j.value,'$.followup_case_id')=c.id AND json_extract(j.value,'$.repeat') IS NULL) ORDER BY s.created_at ASC LIMIT 1) AS src_insp` : '';
   const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}${srcSql} FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
     .bind(c0.id, ...(fromInsp ? [envName, ...(mgrUser ? [c0.check_item] : [])] : [])).first();
@@ -500,7 +506,10 @@ export async function getCaseDetail(env, user, envName, caseId) {
   // Fahrzeug bzw. dessen Gespann zugeordnet – nur Leitung (Fahrerdaten), nur Hinweis, ändert keine Zuordnung
   if (isManager(user) && reporter?.role === 'driver') { const ra = reporterAssignment(c, JSON.parse(reporter.assign_rows || '[]')); if (ra) detail.reporter_assignment = ra; }
   // Backlog 643/647: Ursprungskontrolle (aus derselben Abfrage wie das Fahrzeug, s. o.)
-  if (srcInsp) detail.source_inspection = { performed_at: srcInsp.performed_at, received_at: srcInsp.received_at || null, odometer_km: srcInsp.odometer_km ?? null, ...(isManager(user) ? { last_ok_at: srcInsp.last_ok_at || null } : {}) };
+  if (srcInsp) {
+    const via = srcInsp.via ? (typeof srcInsp.via === 'string' ? JSON.parse(srcInsp.via) : srcInsp.via) : null;
+    detail.source_inspection = { performed_at: srcInsp.performed_at, received_at: srcInsp.received_at || null, odometer_km: via ? null : srcInsp.odometer_km ?? null, ...(via ? { via: { plate: via.plate, kind: via.kind } } : {}), ...(isManager(user) ? { last_ok_at: srcInsp.last_ok_at || null } : {}) };
+  }
   if (user.role !== 'driver') {
     // Kurzinfo zum Fahrzeug (nur gespeicherte Daten): weitere offene Vorgänge, Prüfungen ≤ 30 Tage/überfällig, letzter km-Stand –
     // damit die Werkstatt z. B. eine fällige Prüfung beim selben Aufenthalt mit erledigen kann
@@ -1544,7 +1553,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (insp) {
         let items = []; try { items = (JSON.parse(insp.items || '[]') || []).filter((i) => i && typeof i === 'object'); } catch { items = []; }
         if (items.some((i) => i.repeat)) throw bad('correct_vehicle_repeat', 'Diese Kontrolle hat Mängel an bereits offenen Vorgängen erneut festgestellt – Fahrzeug lässt sich nicht korrigieren. Bitte ablehnen und am richtigen Fahrzeug neu melden.');
-        ids = [...new Set([c.id, ...items.filter((i) => typeof i.followup_case_id === 'string').map((i) => i.followup_case_id)])];
+        // Backlog 825: Mängel am gekoppelten Fahrzeug (Backlog 824) bleiben dort – sie gehören nicht zum gewählten Fahrzeug der Kontrolle
+        ids = [...new Set([c.id, ...items.filter((i) => typeof i.followup_case_id === 'string' && !i.on_coupled).map((i) => i.followup_case_id)])];
       }
       const idsJson = JSON.stringify(ids);
       const IN = '(SELECT value FROM json_each(?1))';

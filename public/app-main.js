@@ -2391,7 +2391,9 @@ function srcInsp(si) {
   if (!si) return '';
   const late = si.received_at ? ` <span class="small muted">(${esc(t('insp_received_late').replace('{d}', fmtDT(si.received_at)))})</span>` : '';
   const km = si.odometer_km !== null && si.odometer_km !== undefined ? ` · ${esc(t('km'))} ${fmtKm(si.odometer_km)}` : '';
-  let h = `<dt>${esc(t('srci_lbl'))}</dt><dd data-srcinsp>${esc(t('srci_val').replace('{d}', fmtDT(si.performed_at)))}${late}${km}</dd>`;
+  // Backlog 825: Mangel bei der Kontrolle des fest gekoppelten Fahrzeugs gemeldet (Backlog 824) – dessen Kennzeichen nennen
+  const via = si.via ? ` · <span data-srcvia>${esc(t('srci_via').replace('{v}', `${t(si.via.kind === 'anhaenger' ? 'trailer' : 'truck')} ${si.via.plate}`))}</span>` : '';
+  let h = `<dt>${esc(t('srci_lbl'))}</dt><dd data-srcinsp>${esc(t('srci_val').replace('{d}', fmtDT(si.performed_at)))}${late}${via}${km}</dd>`;
   if ('last_ok_at' in si) h += `<dt>${esc(t('srci_lastok'))}</dt><dd data-lastok>${si.last_ok_at ? esc(t('srci_val').replace('{d}', fmtDT(si.last_ok_at))) : `<span class="muted">${esc(t('srci_lastok_none'))}</span>`}<br><span class="small muted">${esc(t('srci_window'))}</span></dd>`;
   return h;
 }

@@ -2,7 +2,7 @@
 # Abfahrtskontrolle einer Zugmaschine mit fest gekoppeltem Anhänger zeigt jeder Mangel die Auswahl „Mangel betrifft“ (beide Kennzeichen);
 # „Anhänger“ gewählt → gesendet mit on_coupled, Antwort nennt den Anhänger, Auftrag liegt am Anhänger. Fahrzeug ohne Kopplung → keine Auswahl.
 # Wechsel Zugmaschine → Anhänger setzt „gekoppelt“ zurück (hieße sonst die Zugmaschine). DE/UK/EN bei 390/820/1366 px, ohne Querscrollen/
-# Skriptfehler. Braucht den Dev-Server.
+# Skriptfehler. Backlog 825: Auftrag am Anhänger nennt „durchgeführt an Zugfahrzeug …“. Braucht den Dev-Server.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -67,6 +67,13 @@ with sync_playwright() as p:
         fu=[f for f in res.get('followups',[]) if f and f.get('id')]
         cv=q.evaluate(JS,['GET','/api/cases/'+fu[0]['id']])['d'] if fu else None
         check(bool(cv) and cv['vehicle']['plate']=='GS-AN 824',f'{lang}/{wd}: Auftrag am Anhänger')
+        # Backlog 825: Auftrag am Anhänger nennt die Kontrolle der Zugmaschine
+        if fu:
+            q.goto(B+'/#/cases/'+fu[0]['id']); q.wait_for_timeout(300); q.reload(); q.wait_for_selector('[data-srcinsp]',timeout=15000)
+            vt=q.inner_text('[data-srcvia]') if q.locator('[data-srcvia]').count() else ''
+            check('GS-ZM 824' in vt,f'{lang}/{wd}: Auftrag nennt die Kontrolle der Zugmaschine ({vt!r})')
+            check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{wd}: Auftrag ohne Querscrollen')
+            if SHOTS: q.locator('[data-srcinsp]').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/gespann-auftrag-{lang}-{wd}.png')
         check(not errs,f'{lang}/{wd}: keine Skriptfehler {errs[:2]}')
         ctx.close()
     br.close()

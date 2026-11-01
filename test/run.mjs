@@ -29770,6 +29770,46 @@ await test('Backlog 824 (Blickwinkel „Fahrer mit Zugmaschine + Anhänger – A
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-abfahrt-gespann.py|'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 825 (Folge aus 824): Auftrag am gekoppelten Fahrzeug nennt die Ursprungskontrolle mit deren Kennzeichen (ohne fremden km-Stand); Fahrzeug-Korrektur des Zugmaschinen-Mangels lässt den Anhänger-Auftrag am Anhänger', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon'); const db = e.DB.db;
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const inv = async (b) => { const x = await own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; };
+  const F = await inv({ username: 'h.leitung', display_name: 'Leitung H', role: 'fleet', environment: 'production' });
+  const D = await inv({ username: 'h.fahrer', display_name: 'Fahrer H', role: 'driver', environment: 'production' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\n'
+    + 'SZ-YC 5513;Hamburg Nord;MAN;2016;WMA15SZZ2HM722774;SZ-YC 5514;Lkw\nSZ-YC 5514;Hamburg Nord;Krone;2016;VAK656EBDG1613170;;ANH\n'
+    + 'SZ-KC 5515;Hamburg Nord;DAIMLER;2015;WDB9630051L917317;;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const TK = 'VIN:WMA15SZZ2HM722774'; const TR = 'VIN:VAK656EBDG1613170'; const SOLO = 'VIN:WDB9630051L917317';
+  const base = (await D.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const withD = (arr) => base.map((i) => arr.find((x) => x.key === i.key) || i);
+  const ins = await D.post('/api/inspections', { kind: 'abfahrt', vehicle_id: TK, request_key: rk(), odometer_km: 412345, items: withD([
+    { key: 'reifen_zustand', result: 'mangel', note: 'Reifen Anhänger hinten rechts', on_coupled: true },
+    { key: 'beleuchtung', result: 'mangel', note: 'Abblendlicht links aus' }]) });
+  eq(ins.status, 201, JSON.stringify(ins.data));
+  const vOf = (id) => db.prepare('SELECT vehicle_id, check_item FROM cases WHERE id=?').get(id);
+  const trId = ins.data.followups.find((f) => vOf(f.id).vehicle_id === TR).id; const tkId = ins.data.followups.find((f) => vOf(f.id).vehicle_id === TK).id;
+  // Ursprungskontrolle am Anhänger-Auftrag: Zugmaschine genannt, km nicht (gehört zur Zugmaschine)
+  const sTr = (await F.get(`/api/cases/${trId}`)).data.source_inspection;
+  ok(sTr && sTr.performed_at && sTr.odometer_km === null && JSON.stringify(sTr.via) === JSON.stringify({ plate: 'SZ-YC 5513', kind: 'lkw' }) && 'last_ok_at' in sTr, 'Anhänger-Auftrag: ' + JSON.stringify(sTr));
+  const sTk = (await F.get(`/api/cases/${tkId}`)).data.source_inspection;
+  ok(sTk && sTk.odometer_km === 412345 && !('via' in sTk), 'Zugmaschinen-Auftrag unverändert: ' + JSON.stringify(sTk));
+  const dTr = (await D.get(`/api/cases/${trId}`)).data.source_inspection; ok(dTr && dTr.via && dTr.via.plate === 'SZ-YC 5513' && !('last_ok_at' in dTr), 'Fahrer sieht die Ursprungskontrolle');
+  // Fahrzeug-Korrektur des Zugmaschinen-Mangels: Kontrolle wandert, Anhänger-Auftrag bleibt am Anhänger
+  const cur = (await F.get(`/api/cases/${tkId}`)).data.case;
+  const cv = await F.post(`/api/cases/${tkId}/commands`, { action: 'correct_vehicle', command_id: rk(), expected_version: cur.version, payload: { vehicle_id: SOLO }, note: 'Kennzeichen verwechselt' });
+  eq(cv.status, 200, JSON.stringify(cv.data));
+  eq(vOf(tkId).vehicle_id, SOLO, 'Zugmaschinen-Mangel umgehängt'); eq(vOf(trId).vehicle_id, TR, 'Anhänger-Mangel bleibt am Anhänger');
+  eq(db.prepare('SELECT vehicle_id FROM inspections WHERE id=?').get(ins.data.id).vehicle_id, SOLO, 'Kontrolle umgehängt');
+  // Oberfläche + Texte
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const via = si.via ? ` · <span data-srcvia>${esc(t('srci_via')"), 'Anzeige im Auftrag');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].srci_via && STRINGS[l].srci_via.includes('{v}'), 'Text srci_via ' + l);
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
