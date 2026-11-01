@@ -426,7 +426,11 @@ export async function integrationRouter(request, env, ctx, url) {
     const roundPos = [];
     for (const r of rounds.filter(Boolean)) {
       const rejPos = stmts.length;
-      stmts.push(env.DB.prepare(`WITH ${CAND} SELECT (SELECT COUNT(*) FROM c) - (SELECT COUNT(*) FROM ok) AS n`).bind(JSON.stringify(r)));
+      // Backlog 839: dazu die übernommenen Tageswerte mit mehr Stellen als der zuvor erfasste Stand (> 0) – nur Zähler für die Gegenstelle
+      // (vermutlich eine Ziffer zu viel; Datenqualität km_digits_jump), keine km-Grenze, übernommen wird wie bisher
+      stmts.push(env.DB.prepare(`WITH ${CAND} SELECT (SELECT COUNT(*) FROM c) - (SELECT COUNT(*) FROM ok) AS n,
+        (SELECT COUNT(*) FROM (SELECT b.km, (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=b.v AND o.measured_at <= b.t AND o.id <> b.id ORDER BY o.measured_at DESC LIMIT 1) AS pk FROM best b)
+          WHERE pk > 0 AND length(CAST(CAST(km AS INTEGER) AS TEXT)) > length(CAST(CAST(pk AS INTEGER) AS TEXT))) AS dj`).bind(JSON.stringify(r)));
       const odoPos = stmts.length;
       // Der Tageswert wird nur durch einen jüngeren, nicht kleineren Wert ersetzt
       stmts.push(env.DB.prepare(`INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at)
@@ -442,6 +446,8 @@ export async function integrationRouter(request, env, ctx, url) {
       for (const [rejPos, odoPos] of roundPos) {
         res.odometer_written = (res.odometer_written || 0) + ((out[odoPos] && out[odoPos].meta && out[odoPos].meta.changes) || 0);
         res.odometer_rejected = (res.odometer_rejected || 0) + ((out[rejPos] && out[rejPos].results && out[rejPos].results[0] && out[rejPos].results[0].n) || 0);
+        const dj = (out[rejPos] && out[rejPos].results && out[rejPos].results[0] && out[rejPos].results[0].dj) || 0;
+        if (dj) res.odometer_digits_suspect = (res.odometer_digits_suspect || 0) + dj; // Backlog 839: nur wenn > 0 (additiv)
       }
     }
     res.odometer_rejected = (res.odometer_rejected || 0) + kmRejectedInCall;

@@ -30093,7 +30093,7 @@ await test('Backlog 837 (Folge aus 836): Hinweis „mehr Stellen als der letzte 
   eq(a.data.odometer[0].km, 98500, 'neuester Stand zuerst');
 });
 
-await test('Backlog 838 (Blickwinkel „Integrations-API meldet km mit einer Stelle zu viel“): Datenqualität km_digits_jump bei km-Stand mit mehr Stellen als der vorherige (auch Telematik), erledigt durch Begründung oder späteren kleineren Stand; Zeitleiste km_digits mit eigener Rückfrage; Texte/Hilfe DE/UK/EN', async () => {
+await test('Backlog 838/839 (Blickwinkel „Integrations-API meldet km mit einer Stelle zu viel“): Telematik-Antwort odometer_digits_suspect; Datenqualität km_digits_jump bei km-Stand mit mehr Stellen als der vorherige (auch Telematik), erledigt durch Begründung oder späteren kleineren Stand; Zeitleiste km_digits mit eigener Rückfrage; Texte/Hilfe DE/UK/EN', async () => {
   const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon'); const db = e.DB.db;
   const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
   await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
@@ -30106,15 +30106,19 @@ await test('Backlog 838 (Blickwinkel „Integrations-API meldet km mit einer Ste
   const dq = async () => (await F.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'km_digits_jump');
   const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
   // A: normaler Verlauf ohne Stellenwechsel → kein Befund; erster Stand (ohne Vorgänger) zählt nie
-  eq((await F.post(`/api/vehicles/${A}/odometer`, { km: 100480, measured_on: day(3) })).status, 201);
-  eq((await F.post(`/api/vehicles/${A}/odometer`, { km: 100900, measured_on: day(2) })).status, 201);
+  eq((await F.post(`/api/vehicles/${A}/odometer`, { km: 100480, measured_on: day(4) })).status, 201);
+  eq((await F.post(`/api/vehicles/${A}/odometer`, { km: 100900, measured_on: day(3) })).status, 201);
   eq((await F.post(`/api/vehicles/${C}/odometer`, { km: 99000, measured_on: day(2) })).status, 201);
   eq((await dq()).length, 0, 'ohne Stellenwechsel kein Befund');
   // A: Ziffer zu viel per Telematik (Integrations-API)
   const H = { authorization: 'Bearer integration-token-xyz' };
-  const tel = await an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'WF-838', vin: 'WMA06XZZ8RP838001', gps_time: new Date(Date.now() - 86400000).toISOString(), lat: 51.5, lon: 7.4, km: 1009000 }] }, H);
+  const tel = await an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'WF-838', vin: 'WMA06XZZ8RP838001', gps_time: new Date(Date.now() - 2 * 86400000).toISOString(), lat: 51.5, lon: 7.4, km: 1009000 }] }, H);
   eq(tel.status, 200, JSON.stringify(tel.data));
   eq(db.prepare('SELECT MAX(km) AS k FROM odometer_readings WHERE vehicle_id=?').get(A).k, 1009000, 'Telematik-Stand übernommen (keine Grenze)');
+  eq(tel.data.odometer_digits_suspect, 1, 'Backlog 839: Zähler mehr Stellen in der Antwort ' + JSON.stringify(tel.data));
+  // Folgewert am nächsten Tag ohne Stellenwechsel (gegenüber dem Vortageswert) → ohne Feld
+  const tel2 = await an.req('POST', '/api/integration/v1/telematics', { provider: 'webfleet', items: [{ external_id: 'WF-838', vin: 'WMA06XZZ8RP838001', gps_time: new Date(Date.now() - 60000).toISOString(), lat: 51.5, lon: 7.4, km: 1009400 }] }, H);
+  eq(tel2.status, 200); ok(tel2.data.odometer_digits_suspect === undefined, 'ohne Stellenwechsel kein Zähler ' + JSON.stringify(tel2.data));
   let it = await dq();
   eq(it.length, 1, JSON.stringify(it)); eq(it[0].vehicle_id, A); eq(it[0].severity, 'hinweis');
   ok(it[0].detail_args && it[0].detail_args.prev_km === 100900 && it[0].detail_args.km === 1009000 && it[0].detail_args.n === 1 && /^telematik/.test(it[0].detail_args.source), 'Angaben: ' + JSON.stringify(it[0]));
