@@ -452,3 +452,5 @@ form[aria-busy="true"] button:not([type="button"]), button[aria-busy="true"], a[
 /* [CLAUDE] Backlog 427: Panne & Notfall – laut Eintrag gerade nicht erreichbare Nummern nach unten sortiert (Anruf bleibt möglich) */
 .emrow.emclosed .title b { font-weight: 600; }
 .emrow .emhours { font-variant-numeric: tabular-nums; }
+/* [CLAUDE] Backlog 808: Vertragsfeld zwischenzeitlich von anderer Person geändert */
+.ct-other { outline: 2px solid var(--mid); outline-offset: 1px; background: var(--mid-bg); }

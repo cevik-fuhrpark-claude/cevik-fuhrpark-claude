@@ -404,6 +404,7 @@ UI-Fahrerzuordnung beenden und Vertrag bearbeiten im Funkloch: ohne Antwort nach
 UI-Passwort ändern im Funkloch: ohne Antwort nach dem Zeitlimit „Keine Verbindung“, erneut speichern meldet „War bereits gespeichert“ statt „Altes Passwort falsch“ (DE/UK/EN; Backlog 805k)|ui-passwort-funkloch.py|/tmp/cfp-passwort-funkloch.log
 UI-Zeitzonen-Hinweis: Gerät auf Kyjiw/New York zeigt an Schadenzeitpunkt und Push-Ruhezeit den Unterschied zur deutschen Zeit, Gerät auf Berlin keinen Hinweis (DE/UK/EN; Backlog 806)|ui-zeitzone-hinweis.py|/tmp/cfp-zeitzone-hinweis.log
 UI-Fotos später senden (Roaming): Meldung geht sofort, Fotos bleiben auf dem Gerät, Vorgang zeigt „N Fotos folgen“, Startseite „Fotos jetzt senden“ bzw. „nicht senden“ (DE/UK/EN; Backlog 807)|ui-fotos-spaeter.py|/tmp/cfp-fotos-spaeter.log
+UI-Vertrag gleichzeitig bearbeitet: Konflikt lädt neu, eigene Änderungen bleiben im Formular, Felder der anderen Person markiert, zweites Speichern übernimmt beide (DE/UK/EN; Backlog 808)|ui-vertrag-gleichzeitig.py|/tmp/cfp-vertrag-gleichzeitig.log
 '
 N=0
 NL='

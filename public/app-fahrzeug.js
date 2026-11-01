@@ -515,7 +515,20 @@ function bindCtSection(id, reload) {
   // Rückfrage mit dem Weg „beenden + Folgevertrag“ (Backlog 188, Jahresabschluss)
   const rateRetro = (fm) => { const ri = fm.elements.monthly_rate_net; const sd = fm.elements.start_date;
     return !!(ri && sd && ri.defaultValue.trim() !== '' && ri.value.trim() !== ri.defaultValue.trim() && sd.value && sd.value < BERLIN_FMT.format(new Date()).slice(0, 7) + '-01'); };
-  $$('form[data-ctedit]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); if (rateRetro(fm) && !confirm(t('ct_rate_retro_confirm'))) return; try { const r = await api('PATCH', `/api/contracts/${fm.dataset.ctedit}`, { ...ctBody(fm), ...(fm.dataset.upd ? { expected_updated_at: fm.dataset.upd } : {}) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805j: Wiederholung → duplicate */ toast(r && r.duplicate ? t('saved_before') : '✓'); reload(); } catch (err) { toast(err.message, true); } }));
+  // Backlog 808 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig denselben Vertrag am Handy“): Konflikt → Ansicht neu laden, nur die
+  // selbst geänderten Felder zurück ins frische Formular, Felder der anderen Person markieren (vorher: „Bitte neu laden“, jeder neue Versuch
+  // scheiterte am alten Stand, Neuladen verwarf die Eingaben)
+  const ctVals = (fm, dflt) => { const o = {}; for (const el of fm.elements) { if (!el.name || el.type === 'hidden') continue; o[el.name] = el.type === 'checkbox' ? (dflt ? el.defaultChecked : el.checked) : el.tagName === 'SELECT' ? (dflt ? ([...el.options].find((x) => x.defaultSelected) || el.options[0] || {}).value || '' : el.value) : (dflt ? el.defaultValue : el.value); } return o; };
+  if (S.ctLost) { const L = S.ctLost; S.ctLost = null; const fm = $(`form[data-ctedit="${CSS.escape(L.id)}"]`); const dp = fm && fm.closest('details');
+    if (fm) { const now = ctVals(fm, true); const other = Object.keys(L.seen).filter((k) => k in now && now[k] !== L.seen[k]); const names = [];
+      for (const k of other) { const el = fm.elements.namedItem(k); if (!el) continue; el.classList.add('ct-other'); el.setAttribute('aria-describedby', 'ctlost-' + L.id); const lb = el.previousElementSibling; if (lb && lb.tagName === 'LABEL') names.push((lb.firstChild && lb.firstChild.textContent || lb.textContent).trim()); }
+      const both = []; for (const [k, v] of Object.entries(L.mine)) { const el = fm.elements.namedItem(k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; if (other.includes(k) && now[k] !== v) both.push(k); }
+      if (dp) dp.open = true;
+      fm.insertAdjacentHTML('afterbegin', `<div class="panel warn small" role="status" id="ctlost-${esc(L.id)}" data-ctlost>${esc(t('case_conflict_kept'))}${names.length ? `<br>${esc(t('ct_other_fields'))}: <b>${esc(names.join(', '))}</b>` : ''}${both.length ? `<br>⚠️ ${esc(t('ct_both_fields'))}` : ''}</div>`);
+      const hn = fm.querySelector('[data-ctlost]'); if (hn) hn.scrollIntoView({ block: 'center' }); } }
+  $$('form[data-ctedit]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); if (rateRetro(fm) && !confirm(t('ct_rate_retro_confirm'))) return; try { const r = await api('PATCH', `/api/contracts/${fm.dataset.ctedit}`, { ...ctBody(fm), ...(fm.dataset.upd ? { expected_updated_at: fm.dataset.upd } : {}) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805j: Wiederholung → duplicate */ toast(r && r.duplicate ? t('saved_before') : '✓'); reload(); } catch (err) {
+    if (err.code === 'version_conflict') { const seen = ctVals(fm, true), cur = ctVals(fm, false); const mine = {}; for (const k of Object.keys(cur)) if (cur[k] !== seen[k]) mine[k] = cur[k]; S.ctLost = { id: fm.dataset.ctedit, seen, mine }; reload(); return; }
+    toast(err.message, true); } }));
   $$('form[data-ctend]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', `/api/contracts/${fm.dataset.ctend}/end`, ctBody(fm), { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast(r && r.duplicate ? t('saved_before') : '✓'); reload(); } catch (err) { toast(err.message, true); } }));
 }
 // Backlog 289: beim Beenden von Leasing/Miete (Rückgabe) offene Vorgänge/Restarbeiten und den letzten km-Stand zeigen – die Rückgabe-km

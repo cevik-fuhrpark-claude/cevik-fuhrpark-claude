@@ -29377,6 +29377,31 @@ await test('Backlog 807 (Blickwinkel „Fahrer im Ausland, Roaming teuer – Fot
     ok(PLURALS[l].photos_held && PLURALS[l].outbox_photos_held, 'Mehrzahl ' + l);
   }
 });
+await test('Backlog 808 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig denselben Vertrag am Handy“): späteres Speichern auf altem Stand → 409 ohne stilles Überschreiben; App lädt neu und behält nur die eigenen Änderungen, Felder der anderen Person markiert', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("S.ctLost = { id: fm.dataset.ctedit, seen, mine }; reload(); return;"), 'Konflikt merkt eigene Änderungen und lädt neu');
+  ok(app.includes("el.classList.add('ct-other')"), 'Felder der anderen Person markiert');
+  ok(readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8').includes('.ct-other {'), 'Markierung gestaltet');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['ct_other_fields', 'ct_both_fields', 'case_conflict_kept']) ok(STRINGS[l][k], `${l}.${k}`);
+  const { e, U, V1 } = await freshWorld();
+  const db = e.DB.db;
+  const ct = await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', partner: 'Leasing 808', evidence: 'Vertrag 808', monthly_rate_net: '1000' }); eq(ct.status, 201, JSON.stringify(ct.data));
+  const up0 = db.prepare('SELECT updated_at FROM vehicle_contracts WHERE id=?').get(ct.data.id).updated_at;
+  const base = { kind: 'leasing', partner: 'Leasing 808', evidence: 'Vertrag 808', monthly_rate_net: '1000', note: null };
+  // Leitung B speichert zuerst eine Bemerkung
+  const b = await U.own.patch(`/api/contracts/${ct.data.id}`, { ...base, note: 'Rückgabe vorbereiten', expected_updated_at: up0 }); eq(b.status, 200, JSON.stringify(b.data));
+  // Leitung A speichert danach die Rate auf dem alten Stand (Bemerkung leer) → Konflikt, Bemerkung von B bleibt
+  const a = await U.fleet.patch(`/api/contracts/${ct.data.id}`, { ...base, monthly_rate_net: '1100', expected_updated_at: up0 }); eq(a.status, 409); eq(a.data.error, 'version_conflict');
+  let row = db.prepare('SELECT note, monthly_rate_net, updated_at FROM vehicle_contracts WHERE id=?').get(ct.data.id);
+  eq(row.note, 'Rückgabe vorbereiten'); eq(row.monthly_rate_net, 1000);
+  // A speichert erneut auf dem neuen Stand (App: frisches Formular + eigene Rate) → beide Änderungen erhalten
+  const a2 = await U.fleet.patch(`/api/contracts/${ct.data.id}`, { ...base, note: 'Rückgabe vorbereiten', monthly_rate_net: '1100', expected_updated_at: row.updated_at }); eq(a2.status, 200, JSON.stringify(a2.data));
+  ok(a2.data.changed.includes('monthly_rate_net') && !a2.data.changed.includes('note'), JSON.stringify(a2.data.changed));
+  row = db.prepare('SELECT note, monthly_rate_net FROM vehicle_contracts WHERE id=?').get(ct.data.id);
+  eq(row.note, 'Rückgabe vorbereiten'); eq(row.monthly_rate_net, 1100);
+});
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
