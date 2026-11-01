@@ -29492,6 +29492,22 @@ await test('Backlog 812 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig�
   eq((await U.fleet.get('/api/emergency/contacts')).data.contacts.find((x) => x.id === cid).phone, '0231 812813', 'Nummer der anderen bleibt');
 });
 
+await test('Backlog 813 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig – Werkstattplan“): Konflikt beim Termin setzen/Werkstattwechsel im Plan → Hinweis „Eingaben stehen noch im Formular“ statt „Bitte neu laden“, Plan lädt neu; set_planned_date auf altem Stand → 409, nichts gespeichert', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const nw = "if (err.code === 'version_conflict') { toast(t('case_conflict_kept'), true); viewPlan(); return; } toast(err.message, true); }";
+  eq(app.split(nw).length - 1, 2, 'Termin setzen und Werkstattwechsel im Plan');
+  ok(!app.includes("toast(err.message, true); if (err.code === 'version_conflict') viewPlan();"), 'alte Meldung „Bitte neu laden“ nach dem Neuladen entfernt');
+  const sh = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(sh.includes('|ui-plan-gleichzeitig.py|'), 'UI-Prüfung in pruefen.sh');
+  const { U, cmd, toRepair } = await freshWorld();
+  const id = await toRepair();
+  const v0 = (await U.fleet.get(`/api/cases/${id}`)).data.case.version;
+  eq((await cmd(U.fleet, id, 'comment', {}, 'Rückfrage der anderen Leitung')).status, 200);
+  const r = await U.fleet.post(`/api/cases/${id}/commands`, { action: 'set_planned_date', command_id: 'k813-' + Date.now(), expected_version: v0, payload: { planned_date: '2027-01-12' } });
+  eq(r.status, 409); eq(r.data.error, 'version_conflict');
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.case.planned_date || null, null, 'nichts gespeichert');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

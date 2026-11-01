@@ -1319,7 +1319,7 @@ async function viewPlan(sec) {
     b.disabled = true;
     const pn = ($('#pr-' + CSS.escape(i.id))?.value || '').trim() || null;
     try { const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'set_planned_date', command_id: cidFor(JSON.stringify([i.id, i.version, 'set_planned_date', pn, f.value])), expected_version: i.version, note: pn, payload: { planned_date: f.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; toast(x && x.duplicate ? t('saved_before') : '✓'); viewPlan(); } // Backlog 805f
-    catch (err) { b.disabled = false; toast(err.message, true); if (err.code === 'version_conflict') viewPlan(); }
+    catch (err) { b.disabled = false; /* Backlog 813: Plan lädt neu, Eingaben (Datum/Grund/Werkstatt) bleiben über render() erhalten – Hinweis statt „Bitte neu laden“ */ if (err.code === 'version_conflict') { toast(t('case_conflict_kept'), true); viewPlan(); return; } toast(err.message, true); }
   }));
   const allCases = [...all, ...r.days.flatMap((d) => d.items.filter((x) => x.type === 'case'))];
   $$('[data-pws]').forEach((b) => (b.onclick = async () => {
@@ -1332,7 +1332,7 @@ async function viewPlan(sec) {
       const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'reassign_workshop', command_id: cidFor(JSON.stringify([i.id, i.version, 'reassign_workshop', note, sel.value])), expected_version: i.version, note, payload: { workshop_site: sel.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; // Backlog 805f
       if (x && x.duplicate) { toast(t('saved_before')); viewPlan(); return; }
       toast(x && x.no_workshop_user ? t('no_ws_user_warn') : x && x.external_workshop ? t('ext_ws_hint') : '✓', !!(x && x.no_workshop_user)); viewPlan();
-    } catch (err) { b.disabled = false; toast(err.message, true); if (err.code === 'version_conflict') viewPlan(); }
+    } catch (err) { b.disabled = false; /* Backlog 813: Plan lädt neu, Eingaben (Datum/Grund/Werkstatt) bleiben über render() erhalten – Hinweis statt „Bitte neu laden“ */ if (err.code === 'version_conflict') { toast(t('case_conflict_kept'), true); viewPlan(); return; } toast(err.message, true); }
   }));
   const ps = $('#psite'); if (ps) ps.onchange = () => { S.planSite = ps.value; viewPlan(); };
   const pvs = $('#pvsite'); if (pvs) pvs.onchange = () => { S.planVsite = pvs.value; viewPlan(); };

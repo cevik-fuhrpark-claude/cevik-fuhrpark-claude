@@ -40,7 +40,9 @@ with sync_playwright() as p:
             api('POST', f'/api/cases/{cid}/commands', {'action': 'set_planned_date', 'command_id': f'pv{pid}{i}{k}', 'expected_version': ver(), 'payload': {'planned_date': d}, **({'note': 'Fahrzeug nicht erschienen'} if k == 2 else {})})
         ctx = br.new_context(viewport={'width': w, 'height': 1000}); q = ctx.new_page(); errs = []; q.on('pageerror', lambda e: errs.append(str(e)))
         q.goto(B); q.evaluate(JS, ['POST', '/api/login', {'username': 'pv.inhaber', 'password': PW}]); q.evaluate(JS, ['PATCH', '/api/me', {'language': lang}]); q.evaluate("localStorage.setItem('cfp_lang', %r)" % lang)
-        q.goto(B + '/#/plan'); q.wait_for_selector(f'a.row[href="#/cases/{cid}"]')
+        # Zeitraum 60 Tage: der verschobene Termin liegt hinter dem Fristende (bis ~4 Wochen ab heute) – beim Standard (14 Tage) je nach
+        # Kalendertag außerhalb des Plans (01.11.2026: Skript rot, Fristende 30.11.)
+        q.goto(B + '/#/plan'); q.wait_for_selector('#pdays'); q.select_option('#pdays', '60'); q.wait_for_selector(f'a.row[href="#/cases/{cid}"]')
         item = q.locator(f'a.row[href="#/cases/{cid}"]').first
         txt = item.inner_text()
         check(MOVED[lang] in txt, f'{lang}: Chip Verschiebungen: {txt[:200]!r}')
