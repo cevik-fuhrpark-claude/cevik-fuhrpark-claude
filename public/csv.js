@@ -25,6 +25,8 @@ export function dqDetailText(i, t, fmtD, mk = (k) => k, x = {}) {
   if (!a) return i.detail.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (d) => fmtD(d));
   if (i.check === 'missing_inspection' && Array.isArray(a.kinds)) return a.kinds.map(mk).join(', ');
   if (i.check === 'km_drop_unexplained' && a.day) return `${fmtD(a.day)}: ${km(a.prev_km)} → ${km(a.km)}${a.source ? ' · ' + src(a.source) : ''}${a.n > 1 ? ` · ${a.n}×` : ''}`;
+  // Backlog 833: Anhänger-km gleich dem Stand der Zugmaschine am selben Tag
+  if (i.check === 'trailer_km_equals_truck' && a.day) return `${fmtD(a.day)}: ${km(a.km)} · ${t('dq_trkm_same').replace('{p}', a.truck_plate)}${a.source ? ' · ' + src(a.source) : ''}${a.n > 1 ? ` · ${a.n}×` : ''}`;
   if (i.check === 'km_rule_no_base' && a.kind) return `${mk(a.kind)} · ${km(a.interval_km)}`;
   if ((i.check === 'km_inspection_rejected' || i.check === 'telematics_km_rejected') && a.cmp)
     return `${a.source ? a.source + ': ' : ''}${km(a.km)} (${fmtD(a.day)}) ${a.cmp === 'lt' ? '<' : '>'} ${km(a.other_km)}${a.other_day ? ` (${fmtD(a.other_day)})` : ''}`;

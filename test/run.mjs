@@ -16860,7 +16860,7 @@ await test('Backlog 115 (22.10.): Begründung zu einem km-Rücksprung nachtragen
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].odo_add_reason && STRINGS[l].odo_reason_prompt && STRINGS[l].odo_drop_unexplained, l);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("i.check === 'km_drop_unexplained' ? tlHash(esc(i.vehicle_id), 'maintenance')") && app.includes('data-odonote'), 'Datenqualität führt zur Zeitleiste mit Knopf');
+  ok(app.includes("(i.check === 'km_drop_unexplained' || i.check === 'trailer_km_equals_truck') ? tlHash(esc(i.vehicle_id), 'maintenance')") && app.includes('data-odonote'), 'Datenqualität führt zur Zeitleiste mit Knopf'); // Backlog 833: auch Anhänger-km = Zugmaschine
 });
 await test('Backlog 114 (22.10.): „Dringende Benachrichtigung nicht zugestellt“ ohne Vorgang trägt das Fahrzeug aus dem Bezug (Link zur Fahrzeugakte statt „system“)', async () => {
   const { U, e } = await freshWorld(); const F = U.fleet; const V = 'VIN:WMA15SZZ2HM722774';
@@ -29940,6 +29940,55 @@ await test('Backlog 831 (Folge aus 826/829): „Kontrolle nach Reparatur“ zeig
   for (const l of ['de', 'uk', 'en']) ok(I.STRINGS[l].mdone_kmtr, 'Text mdone_kmtr ' + l);
   const para = (l) => I.STRINGS[l].help_ws_s.split('|').find((x) => /^(Kontrolle nach Reparatur am richtigen|Перевірка після ремонту на правильному|Post-repair check on the right)/.test(x)) || '';
   ok(/Achskilometerzähler des Anhängers/.test(para('de')) && /осі причепа/.test(para('uk')) && /hub odometer/.test(para('en')), 'Werkstatt-Hilfe: Absatz Kontrolle nach Reparatur nennt den Anhänger-Hinweis (DE/UK/EN)');
+});
+
+await test('Backlog 833 (Blickwinkel „km der Zugmaschine beim Anhänger eingetragen“): Datenqualität trailer_km_equals_truck bei gleichem km-Stand von Anhänger und Zugmaschine am selben Tag; Zeitleiste markiert den Stand (km_eq_truck), Begründung löst den Hinweis; Texte/Hilfe DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon'); const db = e.DB.db;
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const x = await own.post('/api/users', { username: 'q.leitung', display_name: 'Leitung Q', role: 'fleet', environment: 'production' });
+  const F = new Client(worker, e, 'q.leitung'); await F.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\n'
+    + 'DO-RQ 8331;Dortmund;MAN;2018;WMA06XZZ8RP833001;DO-RQ 8332;Lkw\nDO-RQ 8332;Dortmund;Krone;2018;WKESDP27081833002;;ANH\n'
+    + 'DO-RQ 8333;Dortmund;MAN;2018;WMA06XZZ8RP833003;;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const TK = 'VIN:WMA06XZZ8RP833001'; const TR = 'VIN:WKESDP27081833002'; const OT = 'VIN:WMA06XZZ8RP833003';
+  const dq = async () => (await F.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'trailer_km_equals_truck');
+  eq((await F.post(`/api/vehicles/${TK}/odometer`, { km: 612000 })).status, 201);
+  eq((await F.post(`/api/vehicles/${OT}/odometer`, { km: 98000 })).status, 201);
+  eq((await F.post(`/api/vehicles/${TR}/odometer`, { km: 98000 })).status, 201);
+  eq((await dq()).length, 0, 'gleicher Stand eines nicht gekoppelten Lkw zählt nicht');
+  // gleicher Stand der Zugmaschine, aber an einem anderen Tag (vor 3 Tagen) → kein Befund
+  db.prepare("INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,created_at) VALUES ('t833a',?,98000,?,'manuell',?)").run(TK, new Date(Date.now() - 3 * 86400000).toISOString(), new Date().toISOString());
+  eq((await dq()).length, 0, 'anderer Tag zählt nicht');
+  // heute: Stand der Zugmaschine am Anhänger eingetragen
+  eq((await F.post(`/api/vehicles/${TR}/odometer`, { km: 612000 })).status, 201);
+  let it = await dq();
+  eq(it.length, 1, JSON.stringify(it)); eq(it[0].vehicle_id, TR); eq(it[0].severity, 'hinweis');
+  ok(it[0].detail_args && it[0].detail_args.km === 612000 && it[0].detail_args.truck_plate === 'DO-RQ 8331' && it[0].detail_args.n === 1 && it[0].detail_args.day, 'Angaben: ' + JSON.stringify(it[0]));
+  ok(/612000 km = DO-RQ 8331/.test(it[0].detail), 'Detail deutsch: ' + it[0].detail);
+  // Zugmaschine bekommt keinen Befund; Anzeige in der Sprache
+  const { dqDetailText } = await import('../public/csv.js'); const { STRINGS } = await import('../public/i18n.js');
+  ok(dqDetailText(it[0], (k) => STRINGS.en[k], (d) => d).includes('same as tractor unit DO-RQ 8331'), 'Anzeige EN');
+  // Zeitleiste des Anhängers: Stand markiert, Lkw-Zeitleiste nicht
+  const tl = (await F.get(`/api/vehicles/${TR}/timeline?types=odometer`)).data.items;
+  const hit = tl.find((i) => i.km === 612000);
+  ok(hit && hit.km_eq_truck === 'DO-RQ 8331' && hit.odometer_id, 'Zeitleiste: ' + JSON.stringify(tl));
+  ok(!tl.find((i) => i.km === 98000).km_eq_truck, 'anderer Stand nicht markiert');
+  ok(!(await F.get(`/api/vehicles/${TK}/timeline?types=odometer`)).data.items.some((i) => i.km_eq_truck), 'Zugmaschine nicht markiert');
+  // Begründung nachtragen → Hinweis erledigt
+  eq((await F.post(`/api/odometer/${hit.odometer_id}/note`, { note: 'Achszähler zeigt zufällig denselben Stand' })).status, 200);
+  eq((await dq()).length, 0, 'mit Begründung kein Befund');
+  ok(!(await F.get(`/api/vehicles/${TR}/timeline?types=odometer`)).data.items.some((i) => i.km_eq_truck), 'Zeitleiste ohne Markierung');
+  // Oberfläche + Texte
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-odoeqtruck') && app.includes("t(b.dataset.odoeq ? 'odo_eq_prompt' : 'odo_reason_prompt')") && app.includes("(i.check === 'km_drop_unexplained' || i.check === 'trailer_km_equals_truck') ? tlHash"), 'Zeitleiste/Datenqualität');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['dq_trailer_km_equals_truck', 'dq_trkm_same', 'odo_eq_truck', 'odo_eq_prompt']) ok(STRINGS[l][k], `Text ${k} ${l}`);
+    ok(STRINGS[l].dq_trkm_same.includes('{p}') && STRINGS[l].odo_eq_truck.includes('{p}'), 'Platzhalter ' + l);
+    ok(/Achskilometerzähler|лічильник кілометрів на осі|hub odometer/.test(STRINGS[l].help_dates_s.split('|')[6]), 'Hilfe-Absatz ' + l);
+  }
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

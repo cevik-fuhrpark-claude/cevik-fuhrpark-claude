@@ -403,7 +403,19 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
   }
   for (const i of d.inspections) add('inspection', i.created_at, { inspection_kind: i.kind, result: i.result, km: i.odometer_km, case_id: i.case_id, ...(i.received_at ? { received_at: i.received_at } : {}), by: i.performed_by_name, ...(i.performed_by_name_hidden ? { by_hidden: true } : {}) });
   // Kennung und Rücksprung-Kennzeichen: „Begründung nachtragen“ an Rücksprüngen ohne Begründung (Inhaber/Leitung, 22.10.2026)
-  for (const o of d.odometer) add('odometer', o.measured_at, { km: o.km, source: o.source, note: o.note, ...(isManager(user) ? { odometer_id: o.id, km_drop: !!o.km_drop } : {}) });
+  // Backlog 833: Anhänger-Stand ohne Begründung, der am selben Berliner Tag genau einem Stand der gekoppelten Zugmaschine entspricht
+  // (Datenqualität trailer_km_equals_truck) – Kennzeichen der Zugmaschine; „Begründung nachtragen“ wie beim Rücksprung. Eine Abfrage, nur Anhänger mit Gespann
+  const eqTruck = new Map();
+  if (isManager(user) && d.vehicle.kind === 'anhaenger' && d.odometer.some((o) => !(o.note && String(o.note).trim()) && o.km > 0) && (!want.size || want.has('odometer'))) {
+    // Zugmaschine laut Stammliste (die Akte ermittelt die Kopplung in der Zeitleiste nicht); ruhende nur ohne bewertete, wie in der Akte
+    const own = normPlate(d.vehicle.plate);
+    const tr = (await env.DB.prepare("SELECT id, plate, trailer_plate, eval_excluded FROM vehicles WHERE active=1 AND kind='lkw' AND trailer_plate IS NOT NULL").all()).results.filter((x) => own && normPlate(x.trailer_plate) === own);
+    const tp = new Map((tr.some((x) => !x.eval_excluded) ? tr.filter((x) => !x.eval_excluded) : tr).map((c) => [c.id, c.plate]));
+    if (tp.size) for (const r of (await env.DB.prepare(`SELECT o.id, (SELECT z.vehicle_id FROM odometer_readings z WHERE z.vehicle_id IN (SELECT value FROM json_each(?2)) AND z.km=o.km
+        AND ${berlinDaySql('z.measured_at')}=${berlinDaySql('o.measured_at')} LIMIT 1) AS tv FROM odometer_readings o WHERE o.id IN (SELECT value FROM json_each(?1)) AND o.km > 0 AND (o.note IS NULL OR trim(o.note)='')`)
+      .bind(JSON.stringify(d.odometer.map((o) => o.id)), JSON.stringify([...tp.keys()])).all()).results) if (r.tv) eqTruck.set(r.id, tp.get(r.tv));
+  }
+  for (const o of d.odometer) add('odometer', o.measured_at, { km: o.km, source: o.source, note: o.note, ...(isManager(user) ? { odometer_id: o.id, km_drop: !!o.km_drop, ...(eqTruck.has(o.id) ? { km_eq_truck: eqTruck.get(o.id) } : {}) } : {}) });
   for (const r of d.drivers) { add('driver_from', r.valid_from, { by: r.display_name, evidence: r.evidence }); add('driver_to', r.valid_to, { by: r.display_name }); }
   for (const f of d.documents) add('document', f.created_at, { doc_kind: f.doc_kind, text: f.filename, file_id: f.id, valid_until: f.doc_valid_until });
   for (const m of d.maintenance_history) add('maintenance', m.done_date, { maintenance_kind: m.kind, km: m.done_km, evidence: m.evidence, by: m.recorded_by_name, result: m.result || null });

@@ -423,6 +423,7 @@ UI-Abfahrtskontrolle Anhänger: Hinweis am km-Feld „nur Achskilometerzähler d
 UI-Reifen erfassen am Anhänger: Hinweis Achskilometerzähler, letzter km-Stand, Warnung bei kleinerem Stand (DE/UK/EN; Backlog 828)|ui-reifen-anhaenger-km.py|/tmp/cfp-reifen-anhaenger-km.log
 UI-Prüftermin erledigt am Anhänger: Hinweis Achskilometerzähler, letzter km-Stand, Differenz/Hinweis bei kleinerem Stand (DE/UK/EN; Backlog 829)|ui-wartung-anhaenger-km.py|/tmp/cfp-wartung-anhaenger-km.log
 UI-Kontrolle nach Reparatur am Anhänger: Hinweis Achskilometerzähler am km-Feld, beim Lkw nicht (DE/UK/EN; Backlog 831)|ui-kontrolle-anhaenger-km.py|/tmp/cfp-kontrolle-anhaenger-km.log
+UI-Anhänger-km gleich Zugmaschine: Datenqualität, Zeitleisten-Markierung, Begründung nachtragen (DE/UK/EN; Backlog 833)|ui-anhaenger-km-zugmaschine.py|/tmp/cfp-anhaenger-km-zugmaschine.log
 '
 N=0
 NL='

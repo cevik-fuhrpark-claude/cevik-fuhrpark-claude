@@ -74,6 +74,9 @@ export const CHECKS = {
   telematics_km_rejected: 'hinweis',
   // Telematik-Gerät liefert nach dem Zeitpunkt „außer Betrieb genommen“ (Protokoll) weiter Daten – verkauft/abgemeldet? Zuordnung bzw. Gerät prüfen
   telematics_vehicle_inactive: 'hinweis',
+  // Backlog 833 (Blickwinkel „km der Zugmaschine beim Anhänger eingetragen“): km-Stand eines fest gekoppelten Anhängers ist am selben
+  // Berliner Tag genau gleich einem km-Stand seiner Zugmaschine (ohne Begründung) – vermutlich vom Tacho der Zugmaschine abgelesen
+  trailer_km_equals_truck: 'hinweis',
 };
 
 // FIN-Paare, die sich nur an einer Stelle unterscheiden oder zwei benachbarte Zeichen vertauscht haben (typische Tippfehler).
@@ -267,7 +270,7 @@ export async function dataQuality(env, user, envName, query = {}) {
       // Backlog 610: HU/SP „Frist ungeklärt“ ohne Datum bei belegter HU steht wie in der Prüftermin-Übersicht mit Grund unter „Frist ungeklärt“ (keine Lücke)
       for (const k of ['HU', 'SP']) { const y = k === 'HU' ? h.hu : h.sp; if (y && !y.due && y.status === 'ungeklaert' && h.hu.last_done && (y.notes || []).length) hasRule.add(`${vid}|${k}`); } }
   }
-  const pulledBy = new Map();
+  const pulledBy = new Map(); const trkPairs = [];
   const siteLabel = siteLabels(vs);
   for (const v of vs) {
     if (!v.site) add('missing_site', v);
@@ -286,6 +289,7 @@ export async function dataQuality(env, user, envName, query = {}) {
         else if (!tAny) add('trailer_unknown', v, v.trailer_plate);
         else if (t) {
           pulledBy.set(t.id, [...(pulledBy.get(t.id) || []), v.plate]);
+          trkPairs.push({ t: t.id, k: v.id, p: v.plate });
           if (v.site && t.site && siteKey(v.site) !== siteKey(t.site)) add('coupled_site_mismatch', v, `${v.site} · ${t.plate}: ${t.site}`);
         }
       }
@@ -305,6 +309,18 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (!trucks.length && !pulledByResting.has(v.id)) add('trailer_without_truck', v);
   }
   const vById = new Map(vs.map((v) => [v.id, v]));
+  // Backlog 833: km-Stand des Anhängers = km-Stand der Zugmaschine am selben Berliner Tag (beide > 0, Anhänger-Stand ohne Begründung).
+  // Kein Schwellenwert – nur exakte Gleichheit; neuester Fall je Anhänger mit Anzahl. Eine Abfrage, nur wenn Gespanne vorhanden
+  // (Index idx_odometer_vehicle_km: Suche je Anhänger-Stand über Fahrzeug + km der Zugmaschine)
+  if (trkPairs.length) {
+    const tk = (await env.DB.prepare(`WITH p AS (SELECT json_extract(value,'$.t') AS tr, json_extract(value,'$.k') AS tk, json_extract(value,'$.p') AS tp FROM json_each(?1)),
+      m AS (SELECT p.tr, p.tp, o.km, o.measured_at, o.source, ROW_NUMBER() OVER (PARTITION BY p.tr ORDER BY o.measured_at DESC) AS rn, COUNT(*) OVER (PARTITION BY p.tr) AS n
+        FROM p JOIN odometer_readings o ON o.vehicle_id=p.tr AND o.km > 0 AND (o.note IS NULL OR trim(o.note)='')
+        WHERE EXISTS (SELECT 1 FROM odometer_readings z WHERE z.vehicle_id=p.tk AND z.km=o.km AND ${berlinDaySql('z.measured_at')}=${berlinDaySql('o.measured_at')}))
+      SELECT tr, tp, km, measured_at, source, n FROM m WHERE rn=1`).bind(JSON.stringify(trkPairs)).all()).results;
+    for (const r of tk) { const v = vById.get(r.tr); if (v) addA('trailer_km_equals_truck', v, `${berlinDate(r.measured_at)}: ${r.km} km = ${r.tp} · ${r.source}${r.n > 1 ? ` · ${r.n}×` : ''}`,
+      { day: berlinDate(r.measured_at), km: r.km, truck_plate: r.tp, source: r.source, n: r.n }); }
+  }
   for (const k of insKm.results) { const v = vById.get(k.vehicle_id); if (v) { const lt = k.prev_km !== null && k.odometer_km < k.prev_km; addA('km_inspection_rejected', v, lt ? `${k.odometer_km} km (${berlinDate(k.created_at)}) < ${k.prev_km} km` : `${k.odometer_km} km (${berlinDate(k.created_at)}) > ${k.next_km} km`,
     { km: k.odometer_km, day: berlinDate(k.created_at), other_km: lt ? k.prev_km : k.next_km, cmp: lt ? 'lt' : 'gt' }); } }
   for (const a of assigns.results) if (!a.active) items.push({ check: 'assignment_inactive_user', severity: CHECKS.assignment_inactive_user, vehicle_id: a.vehicle_id, plate: a.plate, detail: a.display_name });
