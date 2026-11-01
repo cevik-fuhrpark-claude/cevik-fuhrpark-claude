@@ -428,6 +428,7 @@ UI-Arbeitszeit: Hinweis letzter Arbeitstag ohne Eintrag, Knopf setzt das Datum, 
 UI-Abfahrtskontrolle km-Tippfehler: letzter Stand, Differenz, Hinweise kleiner/mehr Stellen, auch Fahrer (DE/UK/EN; Backlog 836)|ui-abfahrt-km-tippfehler.py|/tmp/cfp-abfahrt-km-tippfehler.log
 UI-Fahrzeugakte km erfassen: letzter Stand, Differenz, Hinweise kleiner/mehr Stellen, früheres Datum ohne Hinweis (DE/UK/EN; Backlog 837)|ui-akte-km-tippfehler.py|/tmp/cfp-akte-km-tippfehler.log
 UI-Zeitleiste km mit mehr Stellen: Datenqualität verlinkt, Hinweis mit vorherigem Stand, Begründung nachtragen löst ihn (DE/UK/EN; Backlog 838)|ui-zeitleiste-km-stellen.py|/tmp/cfp-zeitleiste-km-stellen.log
+UI-Verträge km mit mehr Stellen: Hinweis „Ziffern vor der Meldung prüfen“ nur beim betroffenen Vertrag (DE/UK/EN; Backlog 840)|ui-vertrag-km-stellen.py|/tmp/cfp-vertrag-km-stellen.log
 '
 N=0
 NL='

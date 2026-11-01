@@ -30157,6 +30157,41 @@ await test('Backlog 838/839 (Blickwinkel „Integrations-API meldet km mit einer
   }
 });
 
+await test('Backlog 840 (Blickwinkel „Monatsmeldung an den Leasinggeber mit einer Ziffer zu viel“): Vertragsübersicht/CSV kennzeichnen die letzte Ablesung mit mehr Stellen als die vorherige (digits_prev, auch zum Stichtag); Begründung bzw. neuer Stand löst es; Text DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon');
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const x = await own.post('/api/users', { username: 'q.leitung', display_name: 'Leitung Q', role: 'fleet', environment: 'production' });
+  const F = new Client(worker, e, 'q.leitung'); await F.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Fahrzeugart\nDO-RQ 8401;Dortmund;MAN;2018;WMA06XZZ8RP840001;Lkw\nDO-RQ 8402;Dortmund;MAN;2018;WMA06XZZ8RP840002;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const A = 'VIN:WMA06XZZ8RP840001'; const B = 'VIN:WMA06XZZ8RP840002';
+  const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  for (const v of [A, B]) eq((await F.post(`/api/vehicles/${v}/contracts`, { kind: 'leasing', partner: 'Muster-Leasing', evidence: 'Vertrag 840', start_date: day(400) })).status, 201, 'Vertrag');
+  eq((await F.post(`/api/vehicles/${A}/odometer`, { km: 100480, measured_on: day(10) })).status, 201);
+  eq((await F.post(`/api/vehicles/${A}/odometer`, { km: 1004900, measured_on: day(3) })).status, 201);
+  eq((await F.post(`/api/vehicles/${B}/odometer`, { km: 200480, measured_on: day(10) })).status, 201);
+  eq((await F.post(`/api/vehicles/${B}/odometer`, { km: 204900, measured_on: day(3) })).status, 201);
+  const ov = async (q = '') => (await F.get('/api/contracts?filter=alle' + q)).data.contracts;
+  let l = await ov();
+  eq(l.find((c) => c.vehicle_id === A).reading.digits_prev, 100480, 'A gekennzeichnet');
+  ok(!('digits_prev' in l.find((c) => c.vehicle_id === B).reading), 'B ohne Kennzeichen');
+  // Stichtag vor der Ziffer zu viel → kein Hinweis; danach → Hinweis
+  ok(!('digits_prev' in (await ov('&as_of=' + day(5))).find((c) => c.vehicle_id === A).reading), 'Stichtag davor ohne Hinweis');
+  eq((await ov('&as_of=' + day(2))).find((c) => c.vehicle_id === A).reading.digits_prev, 100480, 'Stichtag danach mit Hinweis');
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await F.get('/api/contracts?format=csv&filter=alle')).data);
+  const rowA = text.split('\r\n').find((r) => r.startsWith('DO-RQ 8401')); const rowB = text.split('\r\n').find((r) => r.startsWith('DO-RQ 8402'));
+  ok(rowA.includes('Ziffern prüfen (vorher 100480 km)') && !rowB.includes('Ziffern prüfen'), 'CSV: ' + rowA);
+  // richtiger Stand mit Begründung → letzte Ablesung kleiner, kein Ziffern-Hinweis mehr
+  eq((await F.post(`/api/vehicles/${A}/odometer`, { km: 100900, note: 'eine Null zu viel eingetragen' })).status, 201);
+  ok(!('digits_prev' in (await ov()).find((c) => c.vehicle_id === A).reading), 'nach Berichtigung ohne Hinweis');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-ctdigits') && app.includes("t('ct_km_digits')"), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l2 of ['de', 'uk', 'en']) ok(STRINGS[l2].ct_km_digits && STRINGS[l2].ct_km_digits.includes('{prev}'), 'Text ' + l2);
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

@@ -70,8 +70,11 @@ export { parseCsv } from './util.js';
 // Kilometer-Intervall: fällig bei letzter Durchführung (km) + Intervall; nur wenn beides belegt ist.
 // Vorwarnung nur, wenn „maintenance_warn_km“ eingestellt ist (keine erfundene Schwelle) – sonst nur „überfällig“.
 // before (ISO, optional): nur Ablesungen vor diesem Zeitpunkt – Stichtag der Vertragsübersicht (Backlog 196), sonst wie bisher die letzte
-export async function latestKmByVehicle(env, { withBase = false, before = null } = {}) {
+export async function latestKmByVehicle(env, { withBase = false, before = null, withPrev = false } = {}) {
   const cut = before ? ' AND measured_at < ?1' : '';
+  // withPrev (Backlog 840): km der unmittelbar vorherigen Ablesung und Begründung der letzten – für den Hinweis „mehr Stellen als vorher“
+  const prev = withPrev ? `, o.note, (SELECT o4.km FROM odometer_readings o4 WHERE o4.vehicle_id=o.vehicle_id AND (o4.measured_at < o.measured_at OR (o4.measured_at = o.measured_at AND o4.rowid < o.rowid))
+    ORDER BY o4.measured_at DESC, o4.rowid DESC LIMIT 1) AS prev_km` : '';
   // withBase: zusätzlich die früheste Ablesung der 90 Tage vor der letzten (für die Fahrleistungs-Prognose) – gleiche Abfrage, kein Zusatzaufruf
   const base = withBase ? `, (SELECT o3.km FROM odometer_readings o3 WHERE o3.vehicle_id=o.vehicle_id AND o3.measured_at >= date(o.measured_at, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY o3.measured_at LIMIT 1) AS base_km,
     (SELECT o3.measured_at FROM odometer_readings o3 WHERE o3.vehicle_id=o.vehicle_id AND o3.measured_at >= date(o.measured_at, '-${KM_RATE_WINDOW_DAYS} days') ORDER BY o3.measured_at LIMIT 1) AS base_at` : '';
@@ -80,7 +83,7 @@ export async function latestKmByVehicle(env, { withBase = false, before = null }
   // Rücksprünge gespeichert (km_drop_prev, Migration 0071, Trigger) statt LAG() über die ganze Historie; letzte Ablesung je Fahrzeug per Index
   const rows = (await env.DB.prepare(`WITH d AS (SELECT vehicle_id, MAX(measured_at) AS drop_at, MAX(created_at) AS drop_rec FROM odometer_readings
       WHERE km_drop_prev IS NOT NULL${cut} GROUP BY vehicle_id)
-    SELECT o.vehicle_id, o.km, o.measured_at, o.source, d.drop_at, d.drop_rec${base} FROM vehicles v
+    SELECT o.vehicle_id, o.km, o.measured_at, o.source, d.drop_at, d.drop_rec${base}${prev} FROM vehicles v
     JOIN odometer_readings o ON o.rowid = (SELECT o2.rowid FROM odometer_readings o2 WHERE o2.vehicle_id = v.id${before ? ' AND o2.measured_at < ?1' : ''} ORDER BY o2.measured_at DESC, o2.rowid DESC LIMIT 1)
     LEFT JOIN d ON d.vehicle_id = o.vehicle_id`).bind(...(before ? [before] : [])).all()).results;
   return new Map(rows.map((r) => [r.vehicle_id, r]));

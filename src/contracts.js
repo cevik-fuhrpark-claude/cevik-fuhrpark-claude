@@ -320,7 +320,10 @@ export async function endKmByContract(env, list) {
 
 // Backlog 241 (Monatsmeldung an den Leasinggeber): letzte Ablesung zum Stichtag bzw. bis „Beendet am“ – unabhängig vom km-Status
 // (vorher nur bei km-Kontingent und berechenbarem Status; ohne Kontingent oder nach Tachotausch fehlte der meldbare Stand). Nie geschätzt.
-const readingOf = (x) => (x && x.km !== null && x.km !== undefined ? { km: x.km, measured_at: x.measured_at, source: x.source || null } : null);
+// Backlog 840 (Blickwinkel „Monatsmeldung an den Leasinggeber mit einer Ziffer zu viel“): letzte Ablesung ohne Begründung mit mehr Stellen als
+// die vorherige (> 0) → `digits_prev` (vorheriger Stand) – Hinweis „Ziffern prüfen“ vor der Meldung; nur wenn die Abfrage prev_km liefert
+export const kmDigitsPrev = (x) => (x && x.prev_km > 0 && !(x.note && String(x.note).trim()) && String(Math.trunc(Number(x.km))).length > String(Math.trunc(Number(x.prev_km))).length ? x.prev_km : null);
+const readingOf = (x) => (x && x.km !== null && x.km !== undefined ? { km: x.km, measured_at: x.measured_at, source: x.source || null, ...(kmDigitsPrev(x) ? { digits_prev: kmDigitsPrev(x) } : {}) } : null);
 
 // Verträge eines Fahrzeugs (Fahrzeugakte); latest = letzter km-Stand der Akte
 // Vertragsdokument: Dateiname nur, wenn das Dokument in der angezeigten Umgebung liegt (sonst file_other_env)
@@ -356,7 +359,7 @@ export async function contractOverview(env, user, query = {}, envName = null) {
     // Vertragsdokument nur aus der eigenen Umgebung (wie die Fahrzeugakte; 18.10.2026: Übersicht/CSV zeigten „verknüpft“ für ein Test-Dokument im Betrieb)
     env.DB.prepare(`SELECT c.*, v.plate, v.kind AS vehicle_kind, v.active AS vehicle_active, v.eval_excluded AS vehicle_eval_excluded, v.site AS vehicle_site, f.id AS file_ok FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id LEFT JOIN files f ON f.id=c.file_id AND f.environment=? ORDER BY v.plate, c.kind`).bind(envName).all(),
     env.DB.prepare(`SELECT key, value FROM settings WHERE key='contract_warn_days'`).all(),
-    latestKmByVehicle(env, { before }),
+    latestKmByVehicle(env, { before, withPrev: true }),
   ]);
   const settings = new Map(settingsRows.results.map((r) => [r.key, r.value]));
   const today = asOf || realToday; const w = warnDaysOf(settings);
@@ -448,7 +451,7 @@ export function contractsCsv(ov) {
       c.monthly_rate_net === null ? '' : String(c.monthly_rate_net).replace('.', ','), c.km_allowance, c.start_km, s.km && s.km.driven !== undefined ? s.km.driven : '',
       s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.vehicle_eval_excluded ? 'ja' : 'nein',
       c.reading ? c.reading.km : '', c.reading && c.reading.measured_at ? berlinDate(c.reading.measured_at) : '',
-      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : noReading(c, ov.as_of) ? 'kein km-Stand' : '', ov.as_of || ov.today, c.reading ? odoSourceDe(c.reading.source) : '',
+      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : noReading(c, ov.as_of) ? 'kein km-Stand' : '', ov.as_of || ov.today, c.reading ? odoSourceDe(c.reading.source) + (c.reading.digits_prev ? ` · Ziffern prüfen (vorher ${c.reading.digits_prev} km)` : '') : '',
       c.return_check ? c.return_check.open_cases : '', c.return_check ? c.return_check.open_items : '',
       c.successor ? `${c.successor.partner}${c.successor.contract_no ? ' (' + c.successor.contract_no + ')' : ''} ab ${c.successor.start_date.split('-').reverse().join('.')}` : ''].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
   }

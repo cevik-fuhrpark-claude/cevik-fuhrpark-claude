@@ -4372,6 +4372,8 @@ function ctLines(c, { noEvidence = false } = {}) {
   // „km bei Übernahme“ fehlt) – der Stand für die Meldung an den Leasinggeber, mit Herkunft; nie geschätzt
   // Backlog 601: auch bei Kontingent-Zeile – der km-Stand ist die Zahl, die der Leasinggeber abfragt (vorher nur in der CSV)
   if (c.reading) out.push(`<span data-ctread>${esc(t('km'))}: ${fmtKm(c.reading.km)} <span class="small muted">(${esc(t('ct_km_read'))} ${fmtD(c.reading.measured_at)}${c.reading.source ? ' · ' + esc(odoSrc(c.reading.source)) : ''})</span></span>`);
+  // Backlog 840: letzte Ablesung mit mehr Stellen als die vorherige (ohne Begründung) – vor der Meldung an den Leasinggeber prüfen
+  if (c.reading && c.reading.digits_prev) out.push(`<span class="chip mittel" style="white-space:normal" data-ctdigits>⚠️ ${esc(t('ct_km_digits').replace('{prev}', fmtKm(c.reading.digits_prev)))}</span>`);
   // Backlog 512: Leasing/Miete eines Lkw ohne Kontingent und ohne jede Ablesung (bis Stichtag) – gleiche Regel wie die CSV (`noReading`)
   if (c.no_reading) out.push(`<span class="muted" data-ctnoread>${esc(t('ct_km_noread'))}</span>`);
   if (c.monthly_rate_net !== null) out.push(`${esc(t('ct_rate'))}: ${eur(c.monthly_rate_net)}`);
