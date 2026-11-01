@@ -29417,6 +29417,25 @@ await test('Backlog 809 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig d
   const a2 = await U.fleet.patch(`/api/drivers/${dr.data.id}`, { personnel_no: 'P-809-neu', expected_updated_at: row.updated_at }); eq(a2.status, 200, JSON.stringify(a2.data));
   row = db.prepare('SELECT site, personnel_no FROM drivers WHERE id=?').get(dr.data.id); eq(row.site, 'DORTMUND'); eq(row.personnel_no, 'P-809-neu');
 });
+await test('Backlog 810 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig dasselbe Fahrzeug“): Stammdaten/Technik auf altem Stand → 409, Änderung der anderen bleibt; App lädt neu und behält eigene Änderungen; eigene schon gespeicherte Änderung → „War bereits gespeichert“', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("S.vLost = { id, form: 'evf', ...conflictMine(evf) }; viewVehicle(id); return;"), 'Stammdaten: Konflikt merkt eigene Änderungen');
+  ok(app.includes("S.vLost = { id, form: 'specf', ...conflictMine(spf) }; viewVehicle(id); return;"), 'Technik: Konflikt merkt eigene Änderungen');
+  ok(app.includes("{ toast(t('saved_before')); return false; }"), 'nur eigene, schon gespeicherte Änderung → kein Konflikthinweis');
+  const { e, U, V1 } = await freshWorld();
+  const db = e.DB.db;
+  const up0 = db.prepare('SELECT updated_at FROM vehicles WHERE id=?').get(V1).updated_at;
+  const b = await U.own.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', site: 'Dortmund-Hafen', keep_active: true, expected_updated_at: up0 }); eq(b.status, 201, JSON.stringify(b.data));
+  const a = await U.fleet.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', site: 'Dortmund', manufacturer: 'MAN', model: 'TGX', keep_active: true, expected_updated_at: up0 }); eq(a.status, 409); eq(a.data.error, 'version_conflict');
+  let row = db.prepare('SELECT site, model, updated_at FROM vehicles WHERE id=?').get(V1); eq(row.site, 'Dortmund-Hafen'); ok(row.model !== 'TGX');
+  const a2 = await U.fleet.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', site: 'Dortmund-Hafen', manufacturer: 'MAN', model: 'TGX', keep_active: true, expected_updated_at: row.updated_at }); eq(a2.status, 201, JSON.stringify(a2.data));
+  row = db.prepare('SELECT site, model, updated_at FROM vehicles WHERE id=?').get(V1); eq(row.site, 'Dortmund-Hafen'); eq(row.model, 'TGX');
+  // Technik: andere Leitung hat inzwischen Stammdaten gespeichert → Technik-Formular auf altem Stand → 409, nichts überschrieben
+  const s1 = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/spec`, { zgm_kg: '18000', spec_source: 'Fahrzeugschein 810', expected_updated_at: up0 }); eq(s1.status, 409); eq(s1.data.error, 'version_conflict');
+  const s2 = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/spec`, { zgm_kg: '18000', spec_source: 'Fahrzeugschein 810', expected_updated_at: row.updated_at }); eq(s2.status, 200, JSON.stringify(s2.data));
+  eq(db.prepare('SELECT zgm_kg FROM vehicles WHERE id=?').get(V1).zgm_kg, 18000);
+});
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');

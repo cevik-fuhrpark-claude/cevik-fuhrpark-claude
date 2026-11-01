@@ -4101,7 +4101,9 @@ async function viewVehicle(id, focusEv = null, sec = null) {
       try { const r = await api('PATCH', `/api/vehicles/${encodeURIComponent(id)}/documents/${encodeURIComponent(f.id)}`, { kind: doced.kind.value, note: doced.note.value, valid_until: doced.valid_until.value, expected: { kind: f.doc_kind || 'sonstiges', note: f.doc_note ?? null, valid_until: f.doc_valid_until ?? null } }, { timeoutMs: SEND_TIMEOUT_MS }); toast(r.unchanged ? (lostIs(doced, db) ? t('saved_before') : t('unchanged')) : '✓'); viewVehicle(id); } catch (err) { /* Backlog 805j (Funkloch) */ lostMark(doced, db, err); toast(err.message, true); }
     };
   }
-  const evf = $('#evf'); if (evf) evf.onsubmit = async (e) => { e.preventDefault(); try { await saveVehicleForm(evf, true); toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+  // Backlog 810: Konflikt bei Stammdaten/Technik (andere Leitung hat inzwischen gespeichert) → neu laden, eigene Änderungen bleiben im Formular
+  if (S.vLost && S.vLost.id === id) { const L = S.vLost; S.vLost = null; const fm = $('#' + L.form); if (fm) conflictKeep(fm, L, 'vlost-' + L.form); }
+  const evf = $('#evf'); if (evf) evf.onsubmit = async (e) => { e.preventDefault(); try { await saveVehicleForm(evf, true); toast('✓'); viewVehicle(id); } catch (err) { if (err.code === 'version_conflict') { S.vLost = { id, form: 'evf', ...conflictMine(evf) }; viewVehicle(id); return; } toast(err.message, true); } };
   // Sprung von der Startseite „Prüfergebnis fehlt“ bzw. Knopf in der Akte: Prüfhistorie und Formular „Ergebnis nachtragen“ der Durchführung öffnen
   const openResAdd = (evId, smooth) => { const rf = document.querySelector(`[data-resadd="${CSS.escape(evId)}"]`); const mh = $('#mhist'); if (rf && mh) { mh.open = true; const dt = rf.closest('details'); dt.open = true; dt.style.scrollMarginTop = '90px'; dt.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' }); const sel = rf.querySelector('select'); if (sel) sel.focus({ preventScroll: true }); } };
   if (focusEv) openResAdd(focusEv, false);
@@ -4178,7 +4180,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
     if (b) { const fm = $(`form[data-mdone="${CSS.escape(rid)}"]`); if (fm && fm.hidden) b.click(); if (fm) { fm.style.scrollMarginTop = '90px'; fm.scrollIntoView({ block: 'start' }); } }
     else { const hf = document.querySelector(`form[data-hsdone="${CSS.escape(rid)}"]`); const dt = hf && hf.closest('details'); if (dt) { dt.open = true; dt.style.scrollMarginTop = '90px'; dt.scrollIntoView({ block: 'start' }); hf.done_date.focus({ preventScroll: true }); } }
   }
-  const spf = $('#specf'); if (spf) spf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(spf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/spec`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805c */ toast(r && r.unchanged ? t('saved_before') : '✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } };
+  const spf = $('#specf'); if (spf) spf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(spf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/spec`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805c */ toast(r && r.unchanged ? t('saved_before') : '✓'); viewVehicle(id); } catch (err) { if (err.code === 'version_conflict') { S.vLost = { id, form: 'specf', ...conflictMine(spf) }; viewVehicle(id); return; } toast(err.message, true); } };
   const kf = $('#kf'); if (kf) kf.onsubmit = async (e) => {
     e.preventDefault();
     try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/odometer`, { km: kf.km.value, measured_on: kf.measured_on.value || null, note: kf.note.value || null }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 804: gleicher Stand am selben Tag = duplicate */ if (r.warning) toast(r.warning_items ? `${t('km_warn_saved')}: ${r.warning_items.map((w) => t(w.dir === 'below' ? 'km_warn_below' : 'km_warn_above').replace('{km}', fmtNum(w.km)).replace('{d}', fmtD(w.at))).join(' · ')}` : r.warning, true); viewVehicle(id); }
@@ -4241,12 +4243,15 @@ function ctLines(c, { noEvidence = false } = {}) {
 // selbst geänderten Felder ins frische Formular setzen; Felder, die die andere Person geändert hat, markieren (.ct-other), gleiches Feld → Warnung
 function formVals(fm, dflt) { const o = {}; for (const el of fm.elements) { if (!el.name || el.type === 'hidden') continue; o[el.name] = el.type === 'checkbox' ? (dflt ? el.defaultChecked : el.checked) : el.tagName === 'SELECT' ? (dflt ? ([...el.options].find((x) => x.defaultSelected) || el.options[0] || {}).value || '' : el.value) : (dflt ? el.defaultValue : el.value); } return o; }
 function conflictKeep(fm, L, hid) {
-  const dp = fm.closest('details'); const now = formVals(fm, true); const other = Object.keys(L.seen).filter((k) => k in now && now[k] !== L.seen[k]); const names = [];
+  const dp = fm.closest('details'); const now = formVals(fm, true);
+  // eigene, inzwischen gespeicherte Änderung (verlorene Antwort) bzw. andere Person setzte denselben Wert → nichts zu entscheiden
+  if (Object.keys(L.mine).every((k) => !(k in now) || now[k] === L.mine[k]) && Object.keys(L.seen).every((k) => !(k in now) || now[k] === L.seen[k] || now[k] === L.mine[k])) { toast(t('saved_before')); return false; }
+  const other = Object.keys(L.seen).filter((k) => k in now && now[k] !== L.seen[k] && now[k] !== L.mine[k]); const names = [];
   for (const k of other) { const el = fm.elements.namedItem(k); if (!el) continue; el.classList.add('ct-other'); el.setAttribute('aria-describedby', hid); const lb = el.type === 'checkbox' ? el.closest('label') : el.previousElementSibling; if (lb && lb.tagName === 'LABEL') names.push((el.type === 'checkbox' ? lb.textContent : (lb.firstChild && lb.firstChild.textContent) || lb.textContent).trim()); }
   const both = []; for (const [k, v] of Object.entries(L.mine)) { const el = fm.elements.namedItem(k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; if (other.includes(k) && now[k] !== v) both.push(k); }
   if (dp) dp.open = true;
   fm.insertAdjacentHTML('afterbegin', `<div class="panel warn small" role="status" id="${esc(hid)}" data-ctlost>${esc(t('case_conflict_kept'))}${names.length ? `<br>${esc(t('ct_other_fields'))}: <b>${esc(names.join(', '))}</b>` : ''}${both.length ? `<br>⚠️ ${esc(t('ct_both_fields'))}` : ''}</div>`);
-  const hn = fm.querySelector('[data-ctlost]'); if (hn) hn.scrollIntoView({ block: 'center' });
+  const hn = fm.querySelector('[data-ctlost]'); if (hn) hn.scrollIntoView({ block: 'center' }); return true;
 }
 const conflictMine = (fm) => { const seen = formVals(fm, true), cur = formVals(fm, false); const mine = {}; for (const k of Object.keys(cur)) if (cur[k] !== seen[k]) mine[k] = cur[k]; return { seen, mine }; };
 function ctForm(c = {}, docs = null) {

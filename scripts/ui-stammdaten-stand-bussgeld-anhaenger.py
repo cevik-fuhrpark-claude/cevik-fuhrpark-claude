@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test (21.10.2026) – „Stammdaten bearbeiten“ auf gelesenem Stand: zweites offenes Formular speichert nicht still über eine
-# zwischenzeitliche Änderung (Meldung „Inzwischen … geändert“ in der App-Sprache, Wert bleibt); Bußgeld zum Anhänger-Kennzeichen eines Lkw
+# zwischenzeitliche Änderung (Hinweis „Inzwischen … geändert“ in der App-Sprache im neu geladenen Formular, Wert bleibt; seit Backlog 810); Bußgeld zum Anhänger-Kennzeichen eines Lkw
 # nennt die Zugmaschine; nach Bereinigung des Fahrzeugstamms Hinweis „jetzt eindeutig“, „Angaben ändern“ übernimmt das Fahrzeug.
 # DE 390 px, UK 820 px, EN 1366 px. Screenshots: CFP_SHOTS=<Ordner>.
 import os
@@ -31,8 +31,10 @@ with sync_playwright() as p:
         q.locator('#evf').locator('xpath=ancestor::details[1]/summary').click()
         q.locator('#evf input[name=manufacturer]').fill('MAN TGX')
         q.locator('#evf button.btn:not(.secondary)').first.click()
-        q.wait_for_selector('.toast.err', timeout=10000)
-        check(CONF[lang] in q.locator('.toast.err').first.inner_text(), f'{lang}: Konfliktmeldung in der App-Sprache')
+        # seit Backlog 810: Akte neu geladen, Hinweis im Formular, eigene Eingabe bleibt, Standort der anderen Stelle markiert
+        q.wait_for_selector('#evf [data-ctlost]', timeout=10000)
+        check(CONF[lang] in q.locator('#evf [data-ctlost]').inner_text(), f'{lang}: Konfliktmeldung in der App-Sprache')
+        check(q.input_value('#evf input[name=manufacturer]') == 'MAN TGX' and q.input_value('#evf input[name=site]') == 'Hamburg', f'{lang}: eigene Eingabe bleibt, Standort der anderen Stelle im Formular')
         v = api('GET', f'/api/vehicles/{vid}')['d']['vehicle']
         check(v['site'] == 'Hamburg' and v.get('manufacturer') != 'MAN TGX', f'{lang}: Änderung der anderen Stelle bleibt')
         if SHOTS: q.screenshot(path=f'{SHOTS}/stand-{lang}-{w}.png')
