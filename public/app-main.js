@@ -3680,7 +3680,7 @@ function departureKmInfo(vs) {
   box.innerHTML = `<p class="small muted" id="dckmdiff" style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - last)))}</p>${kmDigitsWarn(k, last, 'id="dckmdigits"')}`;
 }
 // Backlog 837 (Folge aus 836): mehr Stellen als der letzte Stand → Hinweis „Ziffern prüfen“ in allen km-Feldern mit bekanntem letztem Stand (keine km-Grenze)
-function kmDigitsWarn(k, last, attr) { return Number.isFinite(k) && Number.isFinite(last) && last > 0 && String(Math.trunc(k)).length > String(Math.trunc(last)).length ? `<p class="panel warn small" role="alert" ${attr} style="margin:4px 0 0">⚠️ ${esc(t('dc_km_digits').replace('{km}', fmtNum(k)).replace('{prev}', fmtNum(last)))}</p>` : ''; }
+function kmDigitsWarn(k, last, attr, key = 'dc_km_digits') { return Number.isFinite(k) && Number.isFinite(last) && last > 0 && String(Math.trunc(k)).length > String(Math.trunc(last)).length ? `<p class="panel warn small" role="alert" ${attr} style="margin:4px 0 0">⚠️ ${esc(t(key).replace('{km}', fmtNum(k)).replace('{prev}', fmtNum(last)))}</p>` : ''; }
 function kmInputOk(v) { const x = String(v).replace(/[\s\u00a0]/g, ''); if (!/^\d+$/.test(x) && !/^[1-9]\d{0,2}(\.\d{3})+$/.test(x)) return false; const n = Number(x.replace(/\./g, '')); return n >= 0 && n <= 5000000; }
 
 // Papiervordruck der Abfahrtskontrolle (Notfall: Handy leer/defekt) – gleiche Prüfpunkte wie in der App

@@ -437,7 +437,9 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
   if (ci.due < 0 && ci.last < 0 && ck.due < 0 && ck.last < 0) throw bad('validation', 'Spalte „Nächster Termin“ oder „Letzte Prüfung“ erforderlich.');
 
   // km_drop: letzter km-Rücksprung je Fahrzeug (km-Grundlage einer Durchführung vor dem Tachotausch bleibt „ungeklärt“, kmBasisForDone)
-  const vehicles = (await env.DB.prepare(`SELECT v.id, v.plate, v.eval_excluded, v.created_at, ${KM_DROP_SQL('v.id')} AS km_drop FROM vehicles v WHERE v.active=1`).all()).results;
+  // last_km (Backlog 843): letzter erfasster km-Stand – Vorschau nennt „Ziffern prüfen“, wenn „km bei letzter Prüfung“ mehr Stellen hat (gleiche Abfrage)
+  const vehicles = (await env.DB.prepare(`SELECT v.id, v.plate, v.eval_excluded, v.created_at, ${KM_DROP_SQL('v.id')} AS km_drop,
+    (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=v.id ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS last_km FROM vehicles v WHERE v.active=1`).all()).results;
   const offOf = await inactiveIndex(env); // außer Betrieb genommene Fahrzeuge: eigener Grund statt „nicht im Fahrzeugstamm“ (20.10.2026)
   const byId = new Map(vehicles.map((v) => [v.id, v]));
   const byPlate = plateIndex(vehicles);
@@ -620,7 +622,10 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     // Grundlage des Termins wie unten gespeichert (für die HU/SP-Berechnung der Vorschau)
     const dsrc = !cur ? p.dueSource : (p.next && p.dueSource === 'nachweis') || keepDoc ? 'nachweis' : (p.husp || (!p.next && next !== cur.next_due_date) ? 'berechnet' : cur.due_source || null);
     if (p.husp && action !== 'unverändert') huspSim.push({ vehicle_id: p.vehicle_id, kind: p.kind, next, last, dsrc, evidence: p.evidence, row: result.rows.length });
-    result.rows.push({ line: p.line, plate: p.plate, vehicle_id: p.vehicle_id, kind: p.kind, last_done_date: last, next_due_date: next, previous_due_date: cur ? cur.next_due_date : null, next_due_km: dueKmEff, previous_due_km: cur && !p.husp ? ruleDueKm(cur) : null, last_done_km: p.husp ? null : km.last, interval_km: p.husp ? null : km.interval, matched_by: p.matchedBy, action });
+    result.rows.push({ line: p.line, plate: p.plate, vehicle_id: p.vehicle_id, kind: p.kind, last_done_date: last, next_due_date: next, previous_due_date: cur ? cur.next_due_date : null, next_due_km: dueKmEff, previous_due_km: cur && !p.husp ? ruleDueKm(cur) : null, last_done_km: p.husp ? null : km.last, interval_km: p.husp ? null : km.interval, matched_by: p.matchedBy, action,
+      // Backlog 843: km der letzten Prüfung aus der Datei mit mehr Stellen als der letzte erfasste Stand → nur Hinweis (keine km-Grenze); ein zu
+      // hoher Wert lässt die km-Fälligkeit zu spät erscheinen und lässt sich per Import nicht mehr senken („höher – nicht überschrieben“)
+      ...((() => { const lk = (byId.get(p.vehicle_id) || {}).last_km; return !p.husp && p.lastKm !== null && kmDigitsPrev({ km: p.lastKm, prev_km: lk }) ? { km_digits_latest: lk } : {}; })()) });
     if (action === 'neu') {
       result.created++;
       const ruleId = uuid();
