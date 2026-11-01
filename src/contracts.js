@@ -4,7 +4,7 @@
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso, maxFutureDate } from './util.js';
+import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso, maxFutureDate, berlinDaySql } from './util.js';
 import { audit } from './auth.js';
 import { latestKmByVehicle, kmDigitsPrev, csvCell, csvText, KM_DROP_SQL, parseKmDrop, PLATE_FORMER_SKIP, plateFormerOther, formerPlatesAll } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -39,7 +39,18 @@ export function warnDaysOf(settings) {
 }
 
 // km gegen das Kontingent (Teil von contractStatus); forecast = lineare Hochrechnung erlaubt (nicht bei beendeten Verträgen)
+// Backlog 844 (Blickwinkel „Leasingvertrag: km bei Übernahme mit einer Ziffer zu wenig“): letzte Ablesung bis Ende des Berliner Tags
+// „Beginn“ – hat sie mehr Stellen als „km bei Übernahme“ (> 0), fehlt dort vermutlich eine Ziffer (gefahrene km und Überschreitung wären zu hoch).
+// Nur Hinweis `start_digits_prev` an der km-Zeile; keine km-Grenze, nichts geändert. Spalte nur, wo die Abfrage sie liefert.
+export const START_PREV_KM_SQL = (c = 'c') => `(SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=${c}.vehicle_id AND ${c}.km_allowance IS NOT NULL AND ${c}.start_km > 0 AND ${c}.start_date IS NOT NULL
+    AND ${berlinDaySql('o.measured_at')} <= ${c}.start_date ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1)`;
+export const startDigitsPrev = (c) => (c && c.start_km > 0 && c.start_prev_km > 0 && String(Math.trunc(c.start_prev_km)).length > String(Math.trunc(c.start_km)).length ? c.start_prev_km : null);
 function kmStatus(c, latest, forecast) {
+  const k = kmStatus0(c, latest, forecast); const sp = startDigitsPrev(c);
+  if (sp && k.driven !== undefined) k.start_digits_prev = sp;
+  return k;
+}
+function kmStatus0(c, latest, forecast) {
   if (c.start_km === null || c.start_km === undefined) return { status: 'ohne_start', allowance: c.km_allowance };
   // km-Zähler nach Vertragsbeginn gesunken (Tachotausch o. Ä.): gefahrene km gegen das Kontingent nicht berechenbar – nie schätzen
   // Gilt nur, bis der Vertrag danach gespeichert wurde (km bei Übernahme geprüft) – wie `km_basis_at` bei Prüfterminen; vorher blieb ein
@@ -327,7 +338,7 @@ const readingOf = (x) => (x && x.km !== null && x.km !== undefined ? { km: x.km,
 // Verträge eines Fahrzeugs (Fahrzeugakte); latest = letzter km-Stand der Akte
 // Vertragsdokument: Dateiname nur, wenn das Dokument in der angezeigten Umgebung liegt (sonst file_other_env)
 export async function vehicleContracts(env, vehicleId, latest, settings, envName) {
-  const rows = (await env.DB.prepare(`SELECT c.*, (SELECT v.active FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_active, (SELECT v.kind FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_kind, u.display_name AS created_by_name, f.filename AS file_name, f.doc_kind AS file_doc_kind FROM vehicle_contracts c LEFT JOIN users u ON u.id=c.created_by
+  const rows = (await env.DB.prepare(`SELECT c.*, ${START_PREV_KM_SQL()} AS start_prev_km, (SELECT v.active FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_active, (SELECT v.kind FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_kind, u.display_name AS created_by_name, f.filename AS file_name, f.doc_kind AS file_doc_kind FROM vehicle_contracts c LEFT JOIN users u ON u.id=c.created_by
     LEFT JOIN files f ON f.id=c.file_id AND f.environment=?
     WHERE c.vehicle_id=? ORDER BY c.ended_on IS NOT NULL, c.ended_on DESC, c.end_date IS NULL, c.end_date`).bind(envName || '', vehicleId).all()).results;
   const today = berlinDate(); const w = warnDaysOf(settings); const endKm = await endKmByContract(env, rows);
@@ -356,7 +367,7 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   const before = asOf ? berlinDayStartIso(new Date(Date.parse(asOf + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10)) : null;
   const [rows, settingsRows, latestKm] = await Promise.all([
     // Vertragsdokument nur aus der eigenen Umgebung (wie die Fahrzeugakte; 18.10.2026: Übersicht/CSV zeigten „verknüpft“ für ein Test-Dokument im Betrieb)
-    env.DB.prepare(`SELECT c.*, v.plate, v.kind AS vehicle_kind, v.active AS vehicle_active, v.eval_excluded AS vehicle_eval_excluded, v.site AS vehicle_site, f.id AS file_ok FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id LEFT JOIN files f ON f.id=c.file_id AND f.environment=? ORDER BY v.plate, c.kind`).bind(envName).all(),
+    env.DB.prepare(`SELECT c.*, ${START_PREV_KM_SQL()} AS start_prev_km, v.plate, v.kind AS vehicle_kind, v.active AS vehicle_active, v.eval_excluded AS vehicle_eval_excluded, v.site AS vehicle_site, f.id AS file_ok FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id LEFT JOIN files f ON f.id=c.file_id AND f.environment=? ORDER BY v.plate, c.kind`).bind(envName).all(),
     env.DB.prepare(`SELECT key, value FROM settings WHERE key='contract_warn_days'`).all(),
     latestKmByVehicle(env, { before, withPrev: true }),
   ]);
@@ -450,7 +461,7 @@ export function contractsCsv(ov) {
       c.monthly_rate_net === null ? '' : String(c.monthly_rate_net).replace('.', ','), c.km_allowance, c.start_km, s.km && s.km.driven !== undefined ? s.km.driven : '',
       s.km && s.km.forecast_driven ? s.km.forecast_driven : '', ST_DE[s.overall], c.ended_on, c.end_note, c.evidence, c.note, c.file_id ? 'ja' : 'nein', c.vehicle_eval_excluded ? 'ja' : 'nein',
       c.reading ? c.reading.km : '', c.reading && c.reading.measured_at ? berlinDate(c.reading.measured_at) : '',
-      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? KM_ST_DE[s.km.status] || s.km.status : noReading(c, ov.as_of) ? 'kein km-Stand' : '', ov.as_of || ov.today, c.reading ? odoSourceDe(c.reading.source) + (c.reading.digits_prev ? ` · Ziffern prüfen (vorher ${c.reading.digits_prev} km)` : '') : '',
+      s.km && s.km.driven !== undefined ? s.km.driven - s.km.allowance : '', s.km ? (KM_ST_DE[s.km.status] || s.km.status) + (s.km.start_digits_prev ? ` · km bei Übernahme prüfen (vorher ${s.km.start_digits_prev} km)` : '') : noReading(c, ov.as_of) ? 'kein km-Stand' : '', ov.as_of || ov.today, c.reading ? odoSourceDe(c.reading.source) + (c.reading.digits_prev ? ` · Ziffern prüfen (vorher ${c.reading.digits_prev} km)` : '') : '',
       c.return_check ? c.return_check.open_cases : '', c.return_check ? c.return_check.open_items : '',
       c.successor ? `${c.successor.partner}${c.successor.contract_no ? ' (' + c.successor.contract_no + ')' : ''} ab ${c.successor.start_date.split('-').reverse().join('.')}` : ''].map((x, i) => (i === 3 ? csvText(x) : csvCell(x))).join(';'));
   }
@@ -500,7 +511,7 @@ const SUCC_NEXT = {
 };
 const succOf = (c) => { if (!c.succ) return {}; const i = c.succ.lastIndexOf('|'); return { succ: c.succ.slice(0, i), succ_from: c.succ.slice(i + 1) }; };
 export async function contractFindings(env, settings, envName = 'production') {
-  const rows = (await env.DB.prepare(`SELECT c.*, v.plate, v.active AS vehicle_active,
+  const rows = (await env.DB.prepare(`SELECT c.*, v.plate, v.active AS vehicle_active, ${START_PREV_KM_SQL()} AS start_prev_km,
       (SELECT o.km || '|' || o.measured_at FROM odometer_readings o WHERE o.vehicle_id=c.vehicle_id ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS latest_km,
       ${KM_DROP_SQL('c.vehicle_id')} AS drop_at,
       CASE WHEN c.kind IN ('leasing','miete') AND c.end_date IS NOT NULL THEN (SELECT COUNT(*) FROM cases k WHERE k.vehicle_id=c.vehicle_id AND k.environment=?1 AND k.status IN ${OPEN_CASE_ST}) END AS open_cases,
@@ -525,9 +536,9 @@ export async function contractFindings(env, settings, envName = 'production') {
       ...fm('CONTRACT_NOTICE_DUE', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, by: s.notice.by, months: c.notice_months, end: c.end_date }), next_action: 'Entscheiden: kündigen oder verlängern. Frist und Form laut Vertrag prüfen.' });
     // Schweregrad wie die Vertragsübersicht (Status „handeln“, bis 19.10.2026 hier nur „hinweis“)
     if (s.km && s.km.status === 'ueber') out.push({ ...base, code: 'CONTRACT_KM_OVER', subject: `${c.id}|km`, severity: 'handeln', requires_decision: 0,
-      ...fm('CONTRACT_KM_OVER', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, allow: c.km_allowance, driven: s.km.driven }), next_action: 'Mehrkilometer-Regelung im Vertrag prüfen; ggf. Vertrag anpassen.' });
+      ...fm('CONTRACT_KM_OVER', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, allow: c.km_allowance, driven: s.km.driven, sprev: s.km.start_digits_prev ?? null }), next_action: s.km.start_digits_prev ? 'Zuerst „km bei Übernahme“ laut Übergabeprotokoll prüfen (weniger Stellen als der km-Stand vor Vertragsbeginn) und im Vertrag korrigieren.' : 'Mehrkilometer-Regelung im Vertrag prüfen; ggf. Vertrag anpassen.' });
     else if (s.km && s.km.status === 'prognose_ueber') out.push({ ...base, code: 'CONTRACT_KM_FORECAST', subject: `${c.id}|km`, severity: 'hinweis', requires_decision: 0,
-      ...fm('CONTRACT_KM_FORECAST', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, fc: s.km.forecast_driven, allow: c.km_allowance }), next_action: 'Einsatz des Fahrzeugs bzw. Vertragsanpassung prüfen.' });
+      ...fm('CONTRACT_KM_FORECAST', { plate: c.plate, ckind: c.kind, partner: c.partner, no: c.contract_no || null, fc: s.km.forecast_driven, allow: c.km_allowance, sprev: s.km.start_digits_prev ?? null }), next_action: s.km.start_digits_prev ? 'Zuerst „km bei Übernahme“ laut Übergabeprotokoll prüfen (weniger Stellen als der km-Stand vor Vertragsbeginn) und im Vertrag korrigieren.' : 'Einsatz des Fahrzeugs bzw. Vertragsanpassung prüfen.' });
     // km-Kontingent nach Zähler-Rücksprung (Tachotausch) nicht berechenbar – analog INSPECTION_UNCLEAR; bis 19.10.2026 ohne Befund,
     // eine echte Überschreitung blieb so unbemerkt, bis jemand die Akte öffnete
     else if (s.km && s.km.status === 'zaehler') out.push({ ...base, code: 'CONTRACT_KM_UNCLEAR', subject: `${c.id}|km`, severity: 'hinweis', requires_decision: 0,

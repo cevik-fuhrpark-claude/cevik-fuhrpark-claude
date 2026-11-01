@@ -4371,6 +4371,8 @@ function ctLines(c, { noEvidence = false } = {}) {
     else if (s.km.status === 'zaehler') out.push(`${esc(t('ct_km_allow'))}: ${fmtKm(c.km_allowance)} · <span class="chip mittel" style="white-space:normal">${esc(t('ct_km_counter_drop').replace('{d}', fmtD(s.km.drop_at)))}</span>`);
     else if (s.km.status === 'unter_start') out.push(`${esc(t('ct_km_allow'))}: ${fmtKm(c.km_allowance)} · <span class="chip mittel" style="white-space:normal" data-ct-below>${esc(t('ct_km_below').replace('{km}', fmtKm(s.km.current_km)).replace('{start}', fmtKm(s.km.start_km)))}</span>`);
     else out.push(`${esc(t('ct_km_allow'))}: ${fmtKm(c.km_allowance)} · <span class="muted">${esc(t('ct_km_none'))}</span>`);
+    // Backlog 844: „km bei Übernahme“ mit weniger Stellen als der km-Stand vor Vertragsbeginn – gefahrene km/Überschreitung vermutlich zu hoch
+    if (s.km.start_digits_prev) out.push(`<span class="chip mittel" style="white-space:normal" data-ctstartdigits>⚠️ ${esc(t('ct_start_digits').replace('{prev}', fmtKm(s.km.start_digits_prev)))}</span>`);
   }
   // letzte Ablesung zum Stichtag/bis „Beendet am“ auch ohne berechenbare Kontingent-Zeile (Backlog 241: ohne Kontingent, nach Tachotausch,
   // „km bei Übernahme“ fehlt) – der Stand für die Meldung an den Leasinggeber, mit Herkunft; nie geschätzt

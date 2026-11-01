@@ -30291,6 +30291,52 @@ await test('Backlog 843 (Blickwinkel „Wartungsplan-Import: km der letzten Prü
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].imp_km_digits.includes('{km}') && STRINGS[l].imp_km_digits.includes('{prev}') && STRINGS[l].mf_km_digits.includes('{prev}'), 'Texte ' + l);
 });
 
+await test('Backlog 844 (Blickwinkel „Leasingvertrag: km bei Übernahme mit einer Ziffer zu wenig“): km-Zeile, Akte, CSV und Agentenbefund nennen start_digits_prev, wenn die Ablesung bis zum Vertragsbeginn mehr Stellen hat; Status unverändert; Korrektur löst es; Texte DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon');
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const x = await own.post('/api/users', { username: 'q.leitung', display_name: 'Leitung Q', role: 'fleet', environment: 'production' });
+  const F = new Client(worker, e, 'q.leitung'); await F.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Fahrzeugart\nDO-RQ 8441;Dortmund;MAN;2018;WMA06XZZ8RP844001;Lkw\nDO-RQ 8442;Dortmund;MAN;2018;WMA06XZZ8RP844002;Lkw\nDO-RQ 8443;Dortmund;MAN;2018;WMA06XZZ8RP844003;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const A = 'VIN:WMA06XZZ8RP844001'; const B = 'VIN:WMA06XZZ8RP844002'; const C = 'VIN:WMA06XZZ8RP844003';
+  const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  // A: km bei Übernahme 45 000 statt 450 000 (Ablesung vor Beginn 450 000) – B: richtig – C: Ablesung erst nach Beginn (kein Vergleich möglich)
+  for (const [v, k] of [[A, 450000], [B, 450000]]) eq((await F.post(`/api/vehicles/${v}/odometer`, { km: k, measured_on: day(310) })).status, 201);
+  const ct = {};
+  for (const [v, sk] of [[A, 45000], [B, 450000], [C, 45000]]) { const r = await F.post(`/api/vehicles/${v}/contracts`, { kind: 'leasing', partner: 'Muster-Leasing', evidence: 'Vertrag 844', start_date: day(300), end_date: day(-400), km_allowance: 100000, start_km: sk }); eq(r.status, 201, JSON.stringify(r.data)); ct[v] = r.data.id; }
+  for (const [v, k] of [[A, 480000], [B, 480000], [C, 152000]]) eq((await F.post(`/api/vehicles/${v}/odometer`, { km: k, measured_on: day(5) })).status, 201);
+  const ov = async () => (await F.get('/api/contracts?filter=alle')).data.contracts;
+  let l = await ov(); const ca = l.find((c) => c.vehicle_id === A); const cb = l.find((c) => c.vehicle_id === B); const cc = l.find((c) => c.vehicle_id === C);
+  eq(ca.status.km.status, 'ueber', 'Status unverändert (keine Korrektur, keine km-Grenze)'); eq(ca.status.km.start_digits_prev, 450000, 'A gekennzeichnet ' + JSON.stringify(ca.status.km));
+  ok(!('start_digits_prev' in cb.status.km) && !('start_digits_prev' in cc.status.km), 'B/C ohne Kennzeichen');
+  const akte = (await F.get(`/api/vehicles/${A}`)).data; const ak = (akte.contracts || []).find((c) => c.id === ct[A]);
+  ok(ak && ak.status.km.start_digits_prev === 450000, 'Fahrzeugakte ' + JSON.stringify(ak && ak.status.km));
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await F.get('/api/contracts?format=csv&filter=alle')).data);
+  const rowA = text.split('\r\n').find((r) => r.startsWith('DO-RQ 8441')); const rowB = text.split('\r\n').find((r) => r.startsWith('DO-RQ 8442'));
+  ok(rowA.includes('km bei Übernahme prüfen (vorher 450000 km)') && !rowB.includes('km bei Übernahme prüfen'), 'CSV: ' + rowA);
+  await own.post('/api/agent/run', {});
+  const f = async (id) => e.DB.prepare(`SELECT * FROM agent_findings WHERE subject_key=? AND finding_code='CONTRACT_KM_OVER' AND status != 'erledigt' ORDER BY rowid DESC LIMIT 1`).bind(`${id}|km`).first();
+  const fa = await f(ct[A]); const fc = await f(ct[C]);
+  ok(fa && fa.severity === 'handeln' && /km bei Übernahme prüfen: vorher 450\.000 km\./.test(fa.message) && /^Zuerst „km bei Übernahme“/.test(fa.next_action), 'Befund A ' + JSON.stringify(fa));
+  ok(fc && !/km bei Übernahme prüfen/.test(fc.message) && fc.next_action === 'Mehrkilometer-Regelung im Vertrag prüfen; ggf. Vertrag anpassen.', 'Befund C ohne Zusatz');
+  const { renderFindingMessage } = await import('../public/finding-messages.js');
+  const args = JSON.parse(fa.message_args).a; eq(args.sprev, 450000, 'Argument sprev');
+  ok(renderFindingMessage('CONTRACT_KM_OVER', args, 'en').includes('Check the handover mileage: previously 450,000 km.'), 'EN');
+  ok(renderFindingMessage('CONTRACT_KM_FORECAST', { ...args, fc: 1, allow: 1 }, 'uk').includes('Перевірте пробіг при отриманні'), 'UK Prognose');
+  ok(!renderFindingMessage('CONTRACT_KM_OVER', { ...args, sprev: null }, 'de').includes('Übernahme prüfen'), 'ohne sprev kein Zusatz');
+  const src = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(src.includes(`['${fa.next_action}', `), 'nächster Schritt übersetzt (UK/EN)');
+  // Korrektur im Vertrag → Hinweis entfällt, Kontingent im Rahmen
+  eq((await F.patch(`/api/contracts/${ct[A]}`, { start_km: 450000 })).status, 200);
+  const ca2 = (await ov()).find((c) => c.vehicle_id === A);
+  eq(ca2.status.km.status, 'ok'); ok(!('start_digits_prev' in ca2.status.km), 'nach Korrektur ohne Hinweis');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-ctstartdigits') && app.includes("t('ct_start_digits')"), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l2 of ['de', 'uk', 'en']) ok(STRINGS[l2].ct_start_digits && STRINGS[l2].ct_start_digits.includes('{prev}'), 'Text ' + l2);
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
