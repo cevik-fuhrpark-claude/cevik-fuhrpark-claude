@@ -30334,6 +30334,15 @@ await test('Backlog 844 (Blickwinkel „Leasingvertrag: km bei Übernahme mit ei
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-ctstartdigits') && app.includes("t('ct_start_digits')"), 'Oberfläche');
   ok(app.includes('data-ctskdigits') && app.includes('bindCtSection(id, () => viewVehicle(id), d.odometer || [])'), 'Backlog 845: Formular warnt beim Tippen');
+  // Backlog 846: Vertragsimport – Vorschau/Ergebnis nennen start_digits_prev je neuer Zeile; Import unverändert
+  const ci = '﻿Kennzeichen;FIN;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Kündigungsfrist (Monate);km-Kontingent;km bei Übernahme;Monatsrate;Nachweis\r\n'
+    + `DO-RQ 8441;WMA06XZZ8RP844001;Miete;Miet-AG;M-1;${day(300)};${day(-400)};;100000;45000;;Import 846\r\nDO-RQ 8442;WMA06XZZ8RP844002;Miete;Miet-AG;M-2;${day(300)};${day(-400)};;100000;450000;;Import 846\r\n`;
+  const pv = await F.req('POST', '/api/contracts/import?dry_run=1', ci, { 'content-type': 'text/csv' }); eq(pv.status, 200, JSON.stringify(pv.data));
+  eq(pv.data.rows.find((r) => r.plate === 'DO-RQ 8441').start_digits_prev, 450000, 'Vorschau A ' + JSON.stringify(pv.data.rows));
+  ok(!('start_digits_prev' in pv.data.rows.find((r) => r.plate === 'DO-RQ 8442')), 'Vorschau B ohne Hinweis');
+  const ir = await F.req('POST', '/api/contracts/import', ci, { 'content-type': 'text/csv' }); eq(ir.status, 200); eq(ir.data.counts.neu, 2, 'Import unverändert');
+  eq(ir.data.rows.find((r) => r.plate === 'DO-RQ 8441').start_digits_prev, 450000, 'Ergebnis A');
+  ok(app.includes('data-ctimpsk'), 'Backlog 846: Importvorschau zeigt den Hinweis');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l2 of ['de', 'uk', 'en']) ok(STRINGS[l2].ct_start_digits && STRINGS[l2].ct_start_digits.includes('{prev}'), 'Text ' + l2);
 });

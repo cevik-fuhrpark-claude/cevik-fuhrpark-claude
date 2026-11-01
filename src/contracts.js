@@ -693,6 +693,15 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     rows.push({ line, vehicle_id: v.id, plate: v.plate, ...f, status, ...(par ? { parallel: { partner: par.partner, contract_no: par.contract_no || null, start_date: par.start_date || null, end_date: par.end_date || null } } : {}) });
   });
   const fresh = rows.filter((r) => r.status === 'neu');
+  // Backlog 846 (Folge aus 844): neue Zeile mit km-Kontingent, deren „km bei Übernahme“ weniger Stellen hat als die letzte Ablesung bis Ende des
+  // Berliner Tags „Beginn“ → `start_digits_prev` (nur Hinweis in Vorschau/Ergebnis, Import unverändert); eine Sammelabfrage, nur wenn nötig
+  const sdw = fresh.filter((r) => r.km_allowance && r.start_km > 0 && r.start_date);
+  if (sdw.length) {
+    const pk = new Map((await env.DB.prepare(`SELECT json_extract(j.value, '$[0]') AS i, (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=json_extract(j.value, '$[1]')
+        AND ${berlinDaySql('o.measured_at')} <= json_extract(j.value, '$[2]') ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS k FROM json_each(?) j`)
+      .bind(JSON.stringify(sdw.map((r, i) => [i, r.vehicle_id, r.start_date]))).all()).results.map((x) => [x.i, x.k]));
+    sdw.forEach((r, i) => { const sp = startDigitsPrev({ start_km: r.start_km, start_prev_km: pk.get(i) }); if (sp) r.start_digits_prev = sp; });
+  }
   const result = { dry_run: dryRun, counts: { neu: fresh.length, vorhanden: rows.length - fresh.length, uebersprungen: skipped.length, ...(fresh.some((r) => r.parallel) ? { parallel: fresh.filter((r) => r.parallel).length } : {}) }, rows, skipped }; // `parallel` nur wenn > 0 (Backlog 622) // höchstens 500 Zeilen – vorher still auf 300 gekürzt (17.10.2026)
   if (dryRun || !fresh.length) return result;
   const now = nowIso();

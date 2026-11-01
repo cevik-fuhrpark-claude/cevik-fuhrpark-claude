@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (01.11.2026, Backlog 844, Blickwinkel „Leasingvertrag: km bei Übernahme mit einer Ziffer zu wenig“): Vertragsübersicht und
-# Fahrzeugakte zeigen an der km-Zeile (Backlog 845: auch das Formular „Vertrag erfassen“ beim Tippen) „km bei Übernahme hat weniger Stellen als der km-Stand vor Vertragsbeginn“ (nur beim betroffenen Vertrag); DE/UK/EN,
+# Fahrzeugakte zeigen an der km-Zeile (Backlog 845: auch das Formular „Vertrag erfassen“ beim Tippen; Backlog 846: Vertragsimport-Vorschau) „km bei Übernahme hat weniger Stellen als der km-Stand vor Vertragsbeginn“ (nur beim betroffenen Vertrag); DE/UK/EN,
 # 390/820/1366 px, ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
-import os, datetime
+import os, datetime, tempfile
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
@@ -49,6 +49,18 @@ with sync_playwright() as p:
         q.fill('#ctf input[name=start_km]', '45000'); q.fill('#ctf input[name=start_date]', d(-320))
         check(q.locator('#ctf [data-ctskdigits]').count()==0,f'{lang} {w}: Beginn vor der Ablesung → kein Hinweis')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w} Formular: ohne Querscrollen')
+        # Backlog 846: Vertragsimport-Vorschau nennt den Hinweis je Zeile (nur Vorschau, nichts angelegt)
+        tf=tempfile.NamedTemporaryFile('w',suffix='.csv',delete=False,encoding='utf-8')
+        tf.write('Kennzeichen;FIN;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Kündigungsfrist (Monate);km-Kontingent;km bei Übernahme;Monatsrate;Nachweis\n'
+                 f'VK-SK 841;WDB96340310844001;Miete;Miet-AG;M-846;{d(-300)};{d(400)};;100000;45000;;UI 846\n'); tf.close()
+        q.goto(B+'/#/contracts'); q.wait_for_selector('#ctimp', state='attached')
+        q.evaluate("() => { const d = document.querySelector('#ctimp').closest('details'); if (d) d.open = true; }")
+        q.set_input_files('#ctimp', tf.name); q.wait_for_selector('#ctimpr', timeout=15000)
+        try: q.wait_for_selector('#ctimpr [data-ctimpsk]', timeout=10000)
+        except Exception: pass
+        n=q.locator('#ctimpr [data-ctimpsk]').count(); check(n==1,f'{lang} {w}: Importvorschau nennt km vor Beginn ({n})')
+        if SHOTS and n: q.locator('#ctimpr [data-ctimpsk]').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/vertragstartkm-import-{lang}-{w}.png')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w} Import: ohne Querscrollen')
         check(not errs,f'{lang} {w}: keine Skriptfehler {errs[:2]}')
         c.close()
     br.close()
