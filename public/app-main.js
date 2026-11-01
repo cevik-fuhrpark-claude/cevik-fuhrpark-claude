@@ -3552,7 +3552,7 @@ async function viewDepartureCheck(preId) {
   const vs = await vehiclesCached();
   if (!vs.length) { render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${noVehiclesNote()}`, 'check'); return; }
   render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${helpLink('check')}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned && vs.filter((x) => x.assigned).length === 1 ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}${v.availability === 'gesperrt' ? ' – ' + esc(t('locked')) : ''}</option>`).join('')}</select><div id="known"></div>
-    ${checklistHtml(true)}${tachoPanel()}${glassPanel(true)}<label for="km">${esc(t('km'))}<span class="hint" id="kmtr" hidden>${esc(t('kmtr_hint'))}</span></label><input id="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12">
+    ${checklistHtml(true)}${tachoPanel()}${glassPanel(true)}<label for="km">${esc(t('km'))}<span class="hint" id="kmtr" hidden>${esc(t('kmtr_hint'))}</span></label><p class="small muted" id="dckmlast" hidden style="margin:0 0 4px"></p><input id="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12"><div id="dckmd" aria-live="polite"></div>
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('check_photos_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
     <div class="actions"><button class="btn block" id="sb">${esc(t('submit_inspection'))}</button></div></form><p class="small"><a href="#/check/paper">${esc(t('paper_form'))}</a> – ${esc(t('paper_hint'))}</p><p class="small" id="dcdmg">${esc(t('dc_damage_hint'))} <a id="dcdmglink" href="#/new">${esc(t('report_damage'))} ›</a></p>`, 'check');
   const form = $('#f'); bindChecklist(form);
@@ -3567,7 +3567,8 @@ async function viewDepartureCheck(preId) {
   // Zugmaschine eingetragen und landete in der Akte des Anhängers (Leasing-/Wartungs-km). Hinweis am km-Feld: nur Achskilometerzähler des Anhängers
   const kmTr = () => { const v = vs.find((x) => x.id === $('#v').value); $('#kmtr').hidden = !(v && v.kind === 'anhaenger'); };
   $('#v').addEventListener('change', kmTr);
-  dmgLink(); cplSync(); kmTr();
+  const dcKm = () => departureKmInfo(vs); $('#v').addEventListener('change', dcKm); $('#km').addEventListener('input', dcKm); // Backlog 836
+  dmgLink(); cplSync(); kmTr(); dcKm();
   // Mangel nennt Fahrtenschreiber/Fahrerkarte (z. B. „Kontrollleuchten: Tacho-Fehler“): dieselben Pflichten wie im Meldeformular (Backlog 216);
   // Listener vor bindFormDraft – wiederhergestellte Entwürfe melden input/change
   // Backlog 292: Mangel nennt einen Glasschaden (z. B. „Spiegel, Scheiben, Wischer: Steinschlag“) → Glasschaden-Hinweis wie im Meldeformular
@@ -3602,7 +3603,7 @@ async function viewDepartureCheck(preId) {
     box.innerHTML = `<p><b>${esc(t('dcsw_title').replace('{from}', dcPlate(dcFrom)).replace('{to}', dcPlate(nv)))}</b></p><p class="small">${esc(t('dcsw_hint'))}</p><div class="actions"><button type="button" class="btn" id="dcswnew">${esc(t('dcsw_new'))}</button><button type="button" class="btn secondary" id="dcswkeep">${esc(t('dcsw_keep'))}</button></div>`;
     $('#dcswnew').onclick = () => {
       $$('.checkitem', form).forEach((row) => { $$('input[type=radio]', row).forEach((r) => (r.checked = false)); const det = $('.detail', row); det.hidden = true; $$('input', det).forEach((x) => { if (x.type === 'checkbox') x.checked = false; else { x.value = ''; x.required = false; } }); $$('select', det).forEach((x) => (x.value = '')); row.classList.remove('missing'); });
-      $('#km').value = ''; $('#ph').value = ''; $('#ph').dispatchEvent(new Event('change', { bubbles: true }));
+      $('#km').value = ''; $('#ph').value = ''; $('#km').dispatchEvent(new Event('input', { bubbles: true })); $('#ph').dispatchEvent(new Event('change', { bubbles: true }));
       dcClose(); tachoCheck(); draft.save(); toast(t('dcsw_cleared'));
       const first = $('.checkitem input[type=radio]', form); if (first) first.focus();
     };
@@ -3666,6 +3667,19 @@ async function viewDepartureCheck(preId) {
   };
 }
 
+// Backlog 836 (Blickwinkel „Fahrer tippt bei der Abfahrtskontrolle eine Ziffer zu viel“): ein Tippfehler nach oben wurde still übernommen und
+// ließ danach jeden richtigen Stand als „kleiner als zuletzt“ scheitern. Letzter Stand des gewählten Fahrzeugs + Differenz beim Tippen;
+// mehr Stellen als der letzte Stand → Hinweis „Ziffern prüfen“ (keine km-Grenze, nichts gesperrt – Grenze ist offene Frage „km-Sprung nach oben“)
+function departureKmInfo(vs) {
+  const v = vs.find((x) => x.id === $('#v').value); const last = v && Number.isFinite(v.last_km) ? v.last_km : null;
+  const hint = $('#dckmlast'); const box = $('#dckmd'); if (!hint || !box) return;
+  hint.hidden = last === null; hint.textContent = last === null ? '' : t('irv_last_km').replace('{km}', fmtNum(last)).replace('{d}', fmtD(v.last_km_at));
+  const raw = $('#km').value; const k = kmInputOk(raw) && raw.trim() ? Number(raw.replace(/[\s\u00a0.]/g, '')) : null;
+  if (last === null || k === null) { box.innerHTML = ''; return; }
+  if (k < last) { box.innerHTML = `<p class="panel warn small" role="alert" id="dckmlow" style="margin:4px 0 0">⚠️ ${esc(t('dc_km_lower').replace('{prev}', fmtNum(last)).replace('{d}', fmtD(v.last_km_at)))}</p>`; return; }
+  const more = String(k).length > String(last).length && last > 0;
+  box.innerHTML = `<p class="small muted" id="dckmdiff" style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - last)))}</p>${more ? `<p class="panel warn small" role="alert" id="dckmdigits" style="margin:4px 0 0">⚠️ ${esc(t('dc_km_digits').replace('{km}', fmtNum(k)).replace('{prev}', fmtNum(last)))}</p>` : ''}`;
+}
 function kmInputOk(v) { const x = String(v).replace(/[\s\u00a0]/g, ''); if (!/^\d+$/.test(x) && !/^[1-9]\d{0,2}(\.\d{3})+$/.test(x)) return false; const n = Number(x.replace(/\./g, '')); return n >= 0 && n <= 5000000; }
 
 // Papiervordruck der Abfahrtskontrolle (Notfall: Handy leer/defekt) – gleiche Prüfpunkte wie in der App

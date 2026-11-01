@@ -133,7 +133,9 @@ export async function listVehicles(env, user, envName, query = {}) {
   for (const v of list) { if (user.role !== 'driver') delete v._lcBy; }
   if (user.role === 'driver') {
     const assigned = (await env.DB.prepare(`SELECT vehicle_id FROM driver_vehicles WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)`).bind(user.id, nowIso()).all()).results.map((r) => r.vehicle_id);
-    list = list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, manufacturer: v.manufacturer, trailer_plate: v.trailer_plate, truck_plate: v.truck_plate, assigned: assigned.includes(v.id), availability: v.availability, coupled: v.coupled && { id: v.coupled.id, plate: v.coupled.plate, kind: v.coupled.kind, availability: v.coupled.availability },
+    list = list.map((v) => ({ id: v.id, plate: v.plate, kind: v.kind, site: v.site, manufacturer: v.manufacturer, trailer_plate: v.trailer_plate, truck_plate: v.truck_plate, assigned: assigned.includes(v.id), availability: v.availability,
+      // Backlog 836 (Blickwinkel „Fahrer tippt bei der Abfahrtskontrolle eine Ziffer zu viel“): letzter km-Stand des Fahrzeugs (nur Wert + Zeitpunkt, keine Person)
+      ...(v.last_km !== null && v.last_km !== undefined ? { last_km: v.last_km, last_km_at: v.last_km_at } : {}), coupled: v.coupled && { id: v.coupled.id, plate: v.coupled.plate, kind: v.coupled.kind, availability: v.coupled.availability },
       // Backlog 508: letzte Abfahrtskontrolle nur, wenn sie von dieser Person stammt (zweites Gerät desselben Kontos) – nie Kontrollen anderer Fahrer
       ...(v._lcBy === user.id ? { last_check_at: v.last_check_at, last_check_result: v.last_check_result } : {}) })); // Fahrer: Prüfstand des Gespanns wie bisher nicht in der Liste
     list.sort((a, b) => (b.assigned - a.assigned) || plateCmp(a.plate, b.plate));

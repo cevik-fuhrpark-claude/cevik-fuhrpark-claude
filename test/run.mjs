@@ -2020,7 +2020,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('dc_km_lower dc_km_digits mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -30036,6 +30036,36 @@ await test('Backlog 835 (Blickwinkel „Mechaniker trägt am nächsten Morgen di
   const y = new Date(Date.now() - 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
   const r = await W.get('/api/work-day?date=' + y);
   eq(r.status, 200); eq(r.data.hours, 0, 'keine Stunden am Vortag');
+});
+
+await test('Backlog 836 (Blickwinkel „Fahrer tippt bei der Abfahrtskontrolle eine Ziffer zu viel“): Fahrer-Fahrzeugliste nennt den letzten km-Stand (nur Wert + Zeitpunkt), Abfahrtskontrolle zeigt Differenz bzw. Hinweise (DE/UK/EN)', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon');
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const x = await own.post('/api/users', { username: 'k.fahrer', display_name: 'Fahrer K', role: 'driver', environment: 'production' });
+  const D = new Client(worker, e, 'k.fahrer'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Fahrzeugart\nDO-KM 8361;Dortmund;MAN;2019;WMA06XZZ8RP836001;Lkw\nDO-KM 8362;Dortmund;MAN;2019;WMA06XZZ8RP836002;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const V1 = 'VIN:WMA06XZZ8RP836001';
+  let l = await D.get('/api/vehicles'); eq(l.status, 200);
+  ok(l.data.vehicles.length >= 2 && l.data.vehicles.every((v) => v.last_km === undefined), 'ohne Ablesung kein Feld');
+  const { CHECKLIST } = await import('../src/cases.js');
+  const r = await D.post('/api/inspections', { kind: 'abfahrt', vehicle_id: V1, items: CHECKLIST.map((i) => ({ key: i.key, result: 'ok' })), odometer_km: 412345, request_key: rk() });
+  eq(r.status, 201, JSON.stringify(r.data));
+  l = await D.get('/api/vehicles'); const v = l.data.vehicles.find((y) => y.id === V1);
+  eq(v.last_km, 412345, 'letzter km-Stand'); ok(typeof v.last_km_at === 'string' && v.last_km_at.length >= 10, 'Zeitpunkt');
+  for (const k of ['recorded_by', 'last_km_by', 'note', 'source']) ok(!(k in v), 'keine Person/Quelle: ' + k);
+  ok(l.data.vehicles.find((y) => y.id !== V1).last_km === undefined, 'anderes Fahrzeug ohne Stand');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('async function viewDepartureCheck(') + 12000);
+  ok(fn.includes('id="dckmlast"') && fn.includes('id="dckmd" aria-live="polite"'), 'Platz für Hinweis und Differenz');
+  ok(fn.includes("$('#v').addEventListener('change', dcKm); $('#km').addEventListener('input', dcKm);"), 'aktualisiert bei Fahrzeugwechsel und Eingabe');
+  ok(fn.includes("$('#km').value = ''; $('#ph').value = ''; $('#km').dispatchEvent(new Event('input'"), 'Leeren beim Fahrzeugwechsel (Backlog 823) leert auch den Hinweis');
+  const ki = app.slice(app.indexOf('function departureKmInfo('), app.indexOf('function kmInputOk('));
+  ok(ki.includes('String(k).length > String(last).length') && ki.includes("t('dc_km_digits')") && ki.includes("t('dc_km_lower')") && ki.includes('kmInputOk(raw)'), 'Hinweise ohne km-Grenze, gleiche Eingaberegel wie beim Senden');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const lg of ['de', 'uk', 'en']) ok(STRINGS[lg].dc_km_lower.includes('{prev}') && STRINGS[lg].dc_km_lower.includes('{d}') && STRINGS[lg].dc_km_digits.includes('{km}') && STRINGS[lg].dc_km_digits.includes('{prev}'), 'Texte ' + lg);
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
