@@ -29568,6 +29568,28 @@ await test('Backlog 815 (Blickwinkel „Werkstatt bucht Teile, Lager im anderen 
   eq((await U.fleet.get('/api/stock/' + A)).data.other_stock[0].on_hand, 3);
 });
 
+await test('Backlog 817 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig“): Dokumentangaben korrigieren auf altem Stand → 409 doc_changed, Datum der anderen bleibt; App lädt die Akte neu, wählt dasselbe Dokument und behält die eigenen Änderungen', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (err.code === 'doc_changed') { const m = conflictMine(doced); delete m.seen.file_id; delete m.mine.file_id; S.docLost = { id, file: f.id, msg: err.message, ...m }; viewVehicle(id); return; }"), 'Konflikt merkt eigene Änderungen');
+  ok(app.includes("doced.file_id.value = L.file; fill();") && app.includes("conflictKeep(doced, L, 'doclost')"), 'nach dem Neuladen: dasselbe Dokument, Eingaben zurück');
+  ok(app.includes("doced.note.defaultValue = doced.note.value = f.doc_note || '';"), 'gelesene Werte als Vorgabe');
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-dokument-korrigieren.py|'), 'UI-Prüfung eingetragen');
+  const { U, e } = await freshWorld();
+  const fl2 = await (async () => { const x = await U.own.post('/api/users', { username: 'w.fuhrpark817', display_name: 'Leitung 817', role: 'fleet', environment: 'test' }); const c = new Client(worker, e, 'w.fuhrpark817'); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; })();
+  const V = (await U.fleet.get('/api/vehicles')).data.vehicles[0].id;
+  const up = await U.fleet.req('POST', `/api/vehicles/${encodeURIComponent(V)}/documents?kind=versicherung&valid_until=2026-05-31`, new TextEncoder().encode('%PDF-1.4\n% 817\n%%EOF'), { 'content-type': 'application/pdf', 'x-filename': 'p817.pdf' });
+  eq(up.status, 201, JSON.stringify(up.data)); const D = up.data.id;
+  const seen = { kind: 'versicherung', note: null, valid_until: '2026-05-31' };
+  eq((await fl2.patch(`/api/vehicles/${encodeURIComponent(V)}/documents/${D}`, { valid_until: '2028-05-31', note: 'Police neu', expected: seen })).status, 200);
+  const a = await U.fleet.patch(`/api/vehicles/${encodeURIComponent(V)}/documents/${D}`, { kind: 'versicherung', note: '', valid_until: '2026-06-30', expected: seen });
+  eq(a.status, 409, JSON.stringify(a.data)); eq(a.data.error, 'doc_changed');
+  const doc = () => U.fleet.get(`/api/vehicles/${encodeURIComponent(V)}`).then((r) => r.data.documents.find((x) => x.id === D));
+  let d = await doc(); eq(d.doc_valid_until, '2028-05-31'); eq(d.doc_note, 'Police neu');
+  eq((await U.fleet.patch(`/api/vehicles/${encodeURIComponent(V)}/documents/${D}`, { kind: 'versicherung', note: 'Police neu', valid_until: '2026-06-30', expected: { kind: 'versicherung', note: 'Police neu', valid_until: '2028-05-31' } })).status, 200);
+  d = await doc(); eq(d.doc_valid_until, '2026-06-30'); eq(d.doc_note, 'Police neu');
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

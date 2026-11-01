@@ -4095,12 +4095,17 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   // Angaben eines Dokuments korrigieren (Art, Bemerkung, „gültig bis“) – Formular mit den gelesenen Werten, Server prüft den gelesenen Stand
   const doced = $('#docedit'); if (doced) {
     const cur = () => d.documents.find((f) => f.id === doced.file_id.value);
-    const fill = () => { const f = cur(); if (!f) return; doced.kind.value = f.doc_kind || 'sonstiges'; doced.note.value = f.doc_note || ''; doced.valid_until.value = f.doc_valid_until || ''; };
+    // Backlog 817: gelesene Werte auch als Vorgabe (defaultValue/defaultSelected) – Grundlage für den Konfliktvergleich (conflictMine/conflictKeep)
+    const fill = () => { const f = cur(); if (!f) return; const k = f.doc_kind || 'sonstiges'; for (const o of doced.kind.options) o.defaultSelected = o.value === k; doced.kind.value = k;
+      doced.note.defaultValue = doced.note.value = f.doc_note || ''; doced.valid_until.defaultValue = doced.valid_until.value = f.doc_valid_until || ''; };
     doced.file_id.onchange = fill; fill();
+    // Backlog 817 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig“): Konflikt beim Korrigieren eines Dokuments → Akte neu laden, dasselbe
+    // Dokument wählen, eigene Änderungen zurück ins Formular, Felder der anderen Person markieren (vorher Meldung „Bitte neu laden“, Eingaben gingen verloren)
+    if (S.docLost && S.docLost.id === id) { const L = S.docLost; S.docLost = null; if ([...doced.file_id.options].some((o) => o.value === L.file)) { doced.file_id.value = L.file; fill(); const dd = doced.closest('details'); if (dd) dd.open = true; conflictKeep(doced, L, 'doclost'); } else toast(L.msg, true); }
     doced.onsubmit = async (e) => {
       e.preventDefault(); const f = cur(); if (!f) return;
       const db = { file: f.id, kind: doced.kind.value, note: doced.note.value, valid_until: doced.valid_until.value };
-      try { const r = await api('PATCH', `/api/vehicles/${encodeURIComponent(id)}/documents/${encodeURIComponent(f.id)}`, { kind: doced.kind.value, note: doced.note.value, valid_until: doced.valid_until.value, expected: { kind: f.doc_kind || 'sonstiges', note: f.doc_note ?? null, valid_until: f.doc_valid_until ?? null } }, { timeoutMs: SEND_TIMEOUT_MS }); toast(r.unchanged ? (lostIs(doced, db) ? t('saved_before') : t('unchanged')) : '✓'); viewVehicle(id); } catch (err) { /* Backlog 805j (Funkloch) */ lostMark(doced, db, err); toast(err.message, true); }
+      try { const r = await api('PATCH', `/api/vehicles/${encodeURIComponent(id)}/documents/${encodeURIComponent(f.id)}`, { kind: doced.kind.value, note: doced.note.value, valid_until: doced.valid_until.value, expected: { kind: f.doc_kind || 'sonstiges', note: f.doc_note ?? null, valid_until: f.doc_valid_until ?? null } }, { timeoutMs: SEND_TIMEOUT_MS }); toast(r.unchanged ? (lostIs(doced, db) ? t('saved_before') : t('unchanged')) : '✓'); viewVehicle(id); } catch (err) { /* Backlog 805j (Funkloch) */ lostMark(doced, db, err); if (err.code === 'doc_changed') { const m = conflictMine(doced); delete m.seen.file_id; delete m.mine.file_id; S.docLost = { id, file: f.id, msg: err.message, ...m }; viewVehicle(id); return; } toast(err.message, true); }
     };
   }
   // Backlog 810: Konflikt bei Stammdaten/Technik (andere Leitung hat inzwischen gespeichert) → neu laden, eigene Änderungen bleiben im Formular

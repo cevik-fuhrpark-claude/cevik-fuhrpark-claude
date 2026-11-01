@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test: Fahrzeugakte – Dokumentangaben korrigieren (Art, Bemerkung, „gültig bis“). Formular übernimmt die Werte des
-# gewählten Dokuments, Speichern ändert nur dieses Dokument; veraltetes Formular → Konfliktmeldung statt stillem Überschreiben.
+# gewählten Dokuments, Speichern ändert nur dieses Dokument; veraltetes Formular → Akte neu geladen, eigene Eingaben bleiben, Felder der anderen Person markiert (Backlog 817).
 # DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -50,20 +50,35 @@ with sync_playwright() as p:
         check(q.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'{lang}/{w}: kein Querscrollen')
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:1]}')
         ctx.close()
-    # veraltetes Formular: zwischenzeitliche Änderung → Konfliktmeldung, gespeicherter Wert bleibt
-    api('PATCH','/api/me',{'language':'de'})
-    d3=a.evaluate(UP,[f'/api/vehicles/{vid}/documents?kind=versicherung&valid_until=2026-05-31','Konflikt'])['d']['id']
-    ctx=br.new_context(viewport={'width':390,'height':844}); q=ctx.new_page(); q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'dk.inhaber','password':PW}])
-    q.goto(B+f'/#/vehicles/{vid}'); ok=True
-    try:
-      q.wait_for_selector('#docedit',state='attached',timeout=15000)
-      api('PATCH',f'/api/vehicles/{vid}/documents/{d3}',{'valid_until':'2028-05-31'})
-      q.evaluate("() => { document.querySelector('#docedit-d').open = true; }")
-      q.select_option('#docedit [name=file_id]',d3); q.fill('#docedit [name=valid_until]','2026-06-30'); q.locator('#docedit button').first.click(); q.wait_for_selector('.toast.err',timeout=8000)
-    except Exception as ex: ok=False; print('   ',ex)
-    check(ok,'veraltetes Formular: Konfliktmeldung')
-    cur=[x for x in api('GET',f'/api/vehicles/{vid}')['d']['documents'] if x['id']==d3][0]['doc_valid_until']
-    check(cur=='2028-05-31',f'nicht überschrieben ({cur})')
-    ctx.close(); br.close()
+    # veraltetes Formular (Backlog 817): zwischenzeitliche Änderung → Akte neu geladen, dasselbe Dokument gewählt, eigene Eingaben bleiben,
+    # Feld der anderen Person markiert, Warnung bei gleichem Feld; zweites Speichern übernimmt den eigenen Wert
+    KEPT={'de':'Ihre Eingaben stehen noch im Formular','uk':'ваші дані залишилися у формі','en':'your entries are still in the form'}
+    for lang,(w,h) in zip(['de','uk','en'],[(390,844),(820,1180),(1366,900)]):
+      api('PATCH','/api/me',{'language':lang})
+      d3=a.evaluate(UP,[f'/api/vehicles/{vid}/documents?kind=versicherung&valid_until=2026-05-31',f'Konflikt {lang}'])['d']['id']
+      ctx=br.new_context(viewport={'width':w,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+      q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'dk.inhaber','password':PW}])
+      q.goto(B+f'/#/vehicles/{vid}'); ok=True; hint=''
+      try:
+        q.wait_for_selector('#docedit',state='attached',timeout=15000)
+        api('PATCH',f'/api/vehicles/{vid}/documents/{d3}',{'valid_until':'2028-05-31','note':'Police neu'})
+        q.evaluate("() => { document.querySelector('#docedit-d').open = true; }")
+        q.select_option('#docedit [name=file_id]',d3); q.fill('#docedit [name=valid_until]','2026-06-30'); q.locator('#docedit button').first.click()
+        q.wait_for_selector('#docedit [data-ctlost]',timeout=10000); hint=q.inner_text('#docedit [data-ctlost]')
+      except Exception as ex: ok=False; print('   ',ex)
+      check(ok and KEPT[lang] in hint and '⚠' in hint,f'{lang}/{w}: veraltetes Formular → Hinweis mit Warnung „gleiches Feld“ ({hint[:60]!r})')
+      check(q.input_value('#docedit [name=file_id]')==d3 and q.input_value('#docedit [name=valid_until]')=='2026-06-30' and q.input_value('#docedit [name=note]')=='Police neu',f'{lang}/{w}: dasselbe Dokument, eigenes Datum bleibt, Bemerkung der anderen Person sichtbar')
+      check(q.evaluate("document.querySelector('#docedit [name=note]').classList.contains('ct-other') && document.querySelector('#docedit [name=valid_until]').classList.contains('ct-other')"),f'{lang}/{w}: Felder der anderen Person markiert')
+      cur=[x for x in api('GET',f'/api/vehicles/{vid}')['d']['documents'] if x['id']==d3][0]['doc_valid_until']
+      check(cur=='2028-05-31',f'{lang}/{w}: nicht still überschrieben ({cur})')
+      if SHOTS: q.locator('#docedit-d').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/dok_konflikt_{lang}_{w}.png')
+      q.evaluate("()=>document.querySelectorAll('.toast').forEach(x=>x.remove())")
+      q.locator('#docedit button').first.click(); q.wait_for_timeout(1500)
+      x=[x for x in api('GET',f'/api/vehicles/{vid}')['d']['documents'] if x['id']==d3][0]
+      check(x['doc_valid_until']=='2026-06-30' and x['doc_note']=='Police neu',f'{lang}/{w}: zweites Speichern übernimmt eigenes Datum, Bemerkung der anderen bleibt ({x["doc_valid_until"]}/{x["doc_note"]})')
+      check(q.evaluate('document.documentElement.scrollWidth<=innerWidth+1'),f'{lang}/{w}: kein Querscrollen (Konflikt)')
+      check(not errs,f'{lang}/{w}: keine Skriptfehler (Konflikt) {errs[:1]}')
+      ctx.close()
+    br.close()
 print('FEHLER: '+str(len(fails)) if fails else 'Dokumentangaben korrigieren: alles grün')
 raise SystemExit(1 if fails else 0)
