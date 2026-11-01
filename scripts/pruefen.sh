@@ -435,6 +435,7 @@ UI-Wartungsplan-Import km mit mehr Stellen: „Ziffern prüfen“ in Importvorsc
 UI-Vertrag km bei Übernahme mit weniger Stellen: Hinweis in Vertragsübersicht und Fahrzeugakte (DE/UK/EN; Backlog 844)|ui-vertrag-start-km-stellen.py|/tmp/cfp-vertrag-start-km-stellen.log
 UI-Reifen Profiltiefe höher als zuletzt ohne Wechsel: Einstellung, Hinweis beim Tippen und nach dem Speichern (DE/UK/EN; Backlog 847)|ui-reifen-profil-anstieg.py|/tmp/cfp-reifen-profil-anstieg.log
 UI-Datenqualität Profiltiefe höher als die vorherige Messung: Befund, Detail übersetzt, Link Reifen (DE/UK/EN; Backlog 848)|ui-dq-profil-anstieg.py|/tmp/cfp-dq-profil-anstieg.log
+UI-Reifenwechsel mit anderer Größe als für die Achse hinterlegt: Hinweis beim Tippen und nach dem Speichern (DE/UK/EN; Backlog 849)|ui-reifen-groesse-abweichend.py|/tmp/cfp-reifen-groesse-abweichend.log
 '
 N=0
 NL='

@@ -30461,6 +30461,49 @@ await test('Backlog 848 (Folge aus 847): Datenqualität tire_tread_rise – aktu
     ok(STRINGS[l].help_tires_s.includes(STRINGS[l].dq_tire_tread_rise.split(' (')[0]), 'Hilfe nennt die Prüfung ' + l);
   }
 });
+await test('Backlog 849 (Blickwinkel „Reifendienst montiert eine andere Größe als für die Achse hinterlegt“): Reifenwechsel an Lenk-/Lift-/Anhängerachse mit anderer Größe als hinterlegt → Hinweis size_differs je Achse (Schreibweise egal, gespeichert, hinterlegte Größe bleibt); Antriebsachse weiter nur Fahrtenschreiber-Hinweis; Reserve/Messung/ohne Angabe nie; Formular/Texte DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon'); const db = e.DB.db;
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const x = await own.post('/api/users', { username: 'r.werkstatt', display_name: 'Werkstatt R', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  const W = new Client(worker, e, 'r.werkstatt'); await W.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\nDO-PT 8491;Dortmund;MAN;2019;WMA06XZZ8RP849001;DO-PT 8492;Lkw\nDO-PT 8492;Dortmund;Krone;2019;WKESD000000849002;;Anhänger';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const V = 'VIN:WMA06XZZ8RP849001'; const T = 'VIN:WKESD000000849002';
+  const post = (v, b) => W.post(`/api/vehicles/${v}/tires/events`, { request_key: rk(), ...b });
+  const diffs = (r) => (r.data.warning_items || []).filter((w) => w.code === 'size_differs');
+  // ohne hinterlegte Größe: kein Hinweis
+  let r = await post(V, { event_type: 'wechsel', position: 'VA-L', size: '315/80 R22.5' }); eq(r.status, 201); eq(diffs(r).length, 0, 'ohne Angabe');
+  for (const [v, axle, size] of [[V, 'lenkachse', '385/65 R22.5'], [V, 'antriebsachse', '315/80 R22.5'], [V, 'liftachse', '315/70 R22.5'], [T, 'anhaenger', '385/65 R22.5']]) eq((await W.post(`/api/vehicles/${v}/tires/specs`, { axle, size, verified: true })).status, 200, axle);
+  r = await post(V, { event_type: 'wechsel', position: 'VA-L', size: '385/65r22.5' }); eq(diffs(r).length, 0, 'gleiche Größe, andere Schreibweise');
+  r = await post(V, { event_type: 'wechsel', position: 'VA-L', size: '315/80 R22.5' }); eq(r.status, 201);
+  let w = diffs(r); ok(w.length === 1 && w[0].axle === 'lenkachse' && w[0].positions.join() === 'VA-L' && w[0].spec === '385/65 R22.5' && w[0].size === '315/80 R22.5', JSON.stringify(w));
+  ok(r.data.warnings.some((t) => /weicht von der hinterlegten Größe der Achse ab \(385\/65 R22\.5\)/.test(t)), 'Text');
+  eq(db.prepare("SELECT size FROM tire_events WHERE id=?").get(r.data.id).size, '315/80 R22.5', 'gespeichert');
+  eq(db.prepare("SELECT size FROM tire_specs WHERE vehicle_id=? AND axle='lenkachse'").get(V).size, '385/65 R22.5', 'hinterlegte Größe bleibt');
+  // Sammel-Erfassung über zwei Achsen: Hinweis nur für die abweichende Achse mit ihren Positionen; Antriebsachse gleich → kein Fahrtenschreiber-Hinweis
+  r = await post(V, { event_type: 'wechsel', position: 'VA-L', positions: ['VA-R', 'HA-L-aussen'], size: '315/80 R22.5' }); eq(r.status, 201, JSON.stringify(r.data));
+  w = diffs(r); ok(w.length === 1 && w[0].positions.join() === 'VA-L,VA-R', JSON.stringify(w)); ok(!r.data.warning_items.some((i) => i.code === 'tacho_check_possible'), 'Antriebsachse gleich');
+  // Antriebsachse abweichend: nur Fahrtenschreiber-Hinweis (kein doppelter Hinweis)
+  r = await post(V, { event_type: 'wechsel', position: 'HA-R-aussen', size: '295/60 R22.5' }); eq(diffs(r).length, 0, 'Antriebsachse ohne size_differs'); ok(r.data.warning_items.some((i) => i.code === 'tacho_check_possible'), 'Fahrtenschreiber');
+  // Liftachse, Anhänger
+  r = await post(V, { event_type: 'wechsel', position: 'LA-R', size: '385/55 R22.5' }); eq(diffs(r).map((i) => i.axle).join(), 'liftachse');
+  r = await post(T, { event_type: 'wechsel', position: 'AH2-L', size: '435/50 R19.5' }); eq(diffs(r).map((i) => i.axle + ':' + i.spec).join(), 'anhaenger:385/65 R22.5');
+  // Reserve (keine Achse), Messung mit Größe, Reparatur: nie
+  r = await post(V, { event_type: 'wechsel', position: 'Reserve', size: '275/70 R22.5' }); eq(diffs(r).length, 0, 'Reserve');
+  r = await post(V, { event_type: 'messung', position: 'VA-L', tread_mm: '12', size: '275/70 R22.5' }); eq(diffs(r).length, 0, 'Messung');
+  // Oberfläche + Texte
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rt = app.slice(app.indexOf('async function renderTires('), app.indexOf('\nasync function ', app.indexOf('async function renderTires(') + 10));
+  ok(rt.includes('<div id="tfsizediff" aria-live="polite"></div>') && rt.includes("tf.size.addEventListener('input', tfSize)") && rt.includes('data-tfsizediff=') && rt.includes("tfSize(); if (!s || tf.event_type.value !== 'wechsel')"), 'Hinweis beim Tippen');
+  ok(rt.includes("w.code === 'size_differs' ? t('size_differs')"), 'Hinweis nach dem Speichern');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(['{pos}', '{size}', '{spec}', '{axle}'].every((k) => STRINGS[l].size_differs.includes(k)), 'size_differs ' + l);
+    ok(/Andere Größe beim Reifenwechsel|Інший розмір під час заміни шини|Different size at a tyre change/.test(STRINGS[l].help_tires_s), 'Hilfe ' + l);
+  }
+});
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

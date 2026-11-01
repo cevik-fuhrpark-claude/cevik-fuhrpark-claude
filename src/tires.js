@@ -13,6 +13,8 @@ export const POSITIONS = ['VA-L', 'VA-R', 'LA-L', 'LA-R', 'HA-L-aussen', 'HA-L-i
 export function positionsForKind(kind) {
   return kind === 'anhaenger' ? POSITIONS.filter((p) => p.startsWith('AH') || p === 'Reserve') : POSITIONS.filter((p) => !p.startsWith('AH'));
 }
+// Achse einer Position (VA → Lenkachse, LA → Liftachse, HA → Antriebsachse, AH → Anhänger; Reserve ohne Achse) – wie posAxle in der App
+export const posAxle = (p) => (/^VA-/.test(p) ? 'lenkachse' : /^LA-/.test(p) ? 'liftachse' : /^HA-/.test(p) ? 'antriebsachse' : /^AH\d/.test(p) ? 'anhaenger' : null);
 export const TIRE_EVENTS = ['messung', 'wechsel', 'reparatur', 'sichtpruefung'];
 // Gesetzliche Mindestprofiltiefe in Deutschland (StVZO § 36) für Lkw-Reifen: 1,6 mm
 export const LEGAL_MIN_TREAD_MM = 1.6;
@@ -235,8 +237,19 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   for (const x of rise) { w.warning_items.push({ code: 'tread_rise', ...x }); w.warnings.push(`${x.position}: Profiltiefe ${x.tread_mm} mm ist höher als zuletzt (${x.prev_mm} mm) ohne erfassten Reifenwechsel – Position oder Wert prüfen; ggf. Wechsel bzw. Nachschneiden nachtragen.`); }
   // Backlog 396 (Blickwinkel „Getriebetausch – Fahrtenschreiber“): Wechsel an der Antriebsachse auf eine andere Größe als hinterlegt →
   // Hinweis, dass eine Prüfung des Fahrtenschreibers (§ 57b StVZO) nötig sein kann (reine Information, keine Frist, kein Prüftermin)
-  if (type === 'wechsel' && size && positions.some((p) => p.startsWith('HA-'))) {
-    const spec = await env.DB.prepare(`SELECT size FROM tire_specs WHERE vehicle_id=? AND axle='antriebsachse'`).bind(vehicleId).first();
+  // Backlog 849 (Blickwinkel „Reifendienst montiert eine andere Größe als für die Achse hinterlegt“): Wechsel an Lenk-, Lift- oder Anhängerachse
+  // mit anderer Größe als hinterlegt → Hinweis je Achse (falscher Reifen gegriffen, Tippfehler oder Achsangabe veraltet). Reine Information,
+  // gespeichert wird trotzdem; die hinterlegte Größe ändert sich nicht. Antriebsachse: eigener Hinweis (Fahrtenschreiber, Backlog 396). Reserve ohne Achse.
+  if (type === 'wechsel' && size) {
+    const specs = (await env.DB.prepare('SELECT axle, size FROM tire_specs WHERE vehicle_id=?').bind(vehicleId).all()).results;
+    const axles = [...new Set(positions.map(posAxle).filter(Boolean))];
+    for (const ax of axles.filter((a) => a !== 'antriebsachse' && axleFits(v.kind, a))) {
+      const sp = specs.find((x) => x.axle === ax);
+      if (sp && sizeKey(sp.size) !== sizeKey(size)) { const ps = positions.filter((p) => posAxle(p) === ax);
+        w.warning_items.push({ code: 'size_differs', axle: ax, positions: ps, spec: sp.size, size });
+        w.warnings.push(`${ps.join(', ')}: Reifengröße ${size} weicht von der hinterlegten Größe der Achse ab (${sp.size}) – Reifen bzw. Eingabe prüfen; ändert sich die Größe dauerhaft, unter „Reifengrößen“ anpassen.`); }
+    }
+    const spec = positions.some((p) => p.startsWith('HA-')) ? specs.find((x) => x.axle === 'antriebsachse') : null;
     if (spec && sizeKey(spec.size) !== sizeKey(size)) { w.warning_items.push({ code: 'tacho_check_possible', from: spec.size, to: size }); w.warnings.push('Andere Reifengröße an der Antriebsachse als hinterlegt – ggf. Prüfung des Fahrtenschreibers nach § 57b StVZO veranlassen.'); }
   }
   return { id: ids[0], ids, positions, ...w };

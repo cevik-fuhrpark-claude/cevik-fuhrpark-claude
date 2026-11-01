@@ -1183,6 +1183,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 836: Abfahrtskontrolle – letzter km-Stand, Differenz, Hinweis bei kleinerem Stand bzw. einer Stelle mehr (Tippfehler)
 // Backlog 837: Fahrzeugakte „Kilometerstand erfassen“ – kleiner als der letzte Stand → nur mit Begründung
 // Backlog 847: Profiltiefe höher als zuletzt ohne Reifenwechsel (Einstellung tire_tread_rise_mm, leer = aus)
+// Backlog 849: Reifenwechsel mit anderer Größe als für die Achse hinterlegt
 // Backlog 848: Datenqualität – aktuelle Profilmessung höher als die vorherige derselben Position ohne Wechsel
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();

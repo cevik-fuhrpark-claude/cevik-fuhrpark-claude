@@ -589,7 +589,7 @@ async function renderTires(id, el, keep = null) {
       <label>${esc(t('position'))}</label><select name="position">${(d.allowed_positions || S.meta.tire_positions).map((p) => `<option value="${esc(p)}">${esc(posL(p))}</option>`).join('')}</select>
       <details id="tfmore"><summary class="small">${esc(t('tire_more_pos'))}</summary><p class="small muted">${esc(t('tire_more_pos_hint'))}</p><div class="tfpos">${(d.allowed_positions || S.meta.tire_positions).map((p) => `<label class="check"><input type="checkbox" name="positions" value="${esc(p)}"> ${esc(posL(p))}</label>`).join('')}</div></details>
       <label>${esc(t('tread'))}</label><input name="tread_mm" inputmode="decimal"><div id="tfrise" aria-live="polite"></div><label>${esc(t('pressure'))}</label><input name="pressure_bar" inputmode="decimal">
-      <label>${esc(t('tire_sizes'))}</label><input name="size" maxlength="40" placeholder="315/70 R22.5"><p class="small" id="tfspec" hidden></p><label>${esc(t('brand'))}</label><input name="brand" maxlength="60"><label>${esc(t('dot'))}</label><input name="dot" maxlength="20" autocapitalize="characters" placeholder="DOT … 0124">
+      <label>${esc(t('tire_sizes'))}</label><input name="size" maxlength="40" placeholder="315/70 R22.5"><p class="small" id="tfspec" hidden></p><div id="tfsizediff" aria-live="polite"></div><label>${esc(t('brand'))}</label><input name="brand" maxlength="60"><label>${esc(t('dot'))}</label><input name="dot" maxlength="20" autocapitalize="characters" placeholder="DOT … 0124">
       <label>${esc(t('winter_mark'))}</label><select name="winter_mark"><option value="">${esc(t('wm_none'))}</option>${(S.meta.tire_winter_marks || []).map((w) => `<option value="${w}">${esc(t('wm_' + w))}</option>`).join('')}</select>
       <label for="tfkm">${esc(t('km'))}${d.vehicle && d.vehicle.kind === 'anhaenger' ? `<span class="hint" id="tfkmtr">${esc(t('kmtr_hint'))}</span>` : ''}${d.last_km ? `<span class="hint" id="tfkmlast">${esc(t('irv_last_km').replace('{km}', fmtNum(d.last_km.km)).replace('{d}', fmtD(d.last_km.measured_at)))}</span>` : ''}</label><input id="tfkm" name="odometer_km" inputmode="numeric"><div id="tfkmd" aria-live="polite"></div><label>${esc(t('note'))}</label><input name="note" maxlength="1000">
       <input type="hidden" name="case_id"><p class="panel small" id="tfwo" hidden></p><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}</section>
@@ -611,10 +611,19 @@ async function renderTires(id, el, keep = null) {
   const updSpec = () => {
     const sp = $('#tfspec', tf); if (!sp) return;
     const ax = posAxle(tf.position.value); const s = ax && (d.specs || []).find((x) => x.axle === ax);
-    if (!s || tf.event_type.value !== 'wechsel') { sp.hidden = true; sp.innerHTML = ''; return; }
+    tfSize(); if (!s || tf.event_type.value !== 'wechsel') { sp.hidden = true; sp.innerHTML = ''; return; }
     sp.hidden = false; sp.innerHTML = `${esc(t('tfspec_hint'))} <b>${esc(s.size)}</b>${s.verified ? '' : ` <span class="muted">(${esc(t('source_unverified'))})</span>`} <button type="button" class="btn secondary small" id="tfspecgo">${esc(t('tfspec_take'))}</button>`;
-    $('#tfspecgo', tf).onclick = () => { tf.size.value = s.size; tf.size.focus(); };
+    $('#tfspecgo', tf).onclick = () => { tf.size.value = s.size; tf.size.focus(); tfSize(); };
   };
+  // Backlog 849 (Blickwinkel „Reifendienst montiert eine andere Größe als für die Achse hinterlegt“): beim Reifenwechsel Hinweis je Achse, wenn die
+  // eingegebene Größe von der hinterlegten abweicht (Schreibweise/Leerzeichen egal); gespeichert wird trotzdem, die hinterlegte Größe bleibt
+  function tfSize() {
+    const box = $('#tfsizediff', tf); if (!box) return; const k = (x) => String(x || '').toUpperCase().replace(/\s+/g, ''); const sz = String(tf.size.value).trim();
+    const sel = [...new Set([tf.position.value, ...$$('input[name="positions"]:checked', tf).map((c) => c.value)])];
+    const axs = tf.event_type.value !== 'wechsel' || !/\d/.test(sz) ? [] : [...new Set(sel.map(posAxle).filter(Boolean))];
+    const hits = axs.map((ax) => ({ ax, s: (d.specs || []).find((x) => x.axle === ax) })).filter((h) => h.s && k(h.s.size) !== k(sz));
+    box.innerHTML = hits.map((h) => `<p class="panel warn small" role="alert" data-tfsizediff="${esc(h.ax)}" style="margin:4px 0 0">⚠️ ${esc(t('size_differs').replace('{pos}', sel.filter((p) => posAxle(p) === h.ax).map(posL).join(', ')).replace('{size}', sz).replace('{spec}', h.s.size).replace('{axle}', t('axle_' + h.ax)))}</p>`).join('');
+  }
   const applyWo = () => {
     const open = woOpenPos(d); if (!tf || !open.length) return false;
     const w = d.winter; const first = open[0]; const bad0 = w.noncompliant.includes(first);
@@ -650,6 +659,7 @@ async function renderTires(id, el, keep = null) {
     const hits = !lim || v === null || tf.event_type.value === 'wechsel' ? [] : sel.map((ps) => (d.positions || []).find((p) => p.position === ps)).filter((p) => p && p.tread_mm !== null && p.tread_mm !== undefined && Math.round((v - p.tread_mm) * 1000) >= Math.round(lim * 1000));
     box.innerHTML = hits.length ? hits.map((p) => `<p class="panel warn small" role="alert" data-tfrise="${esc(p.position)}" style="margin:4px 0 0">⚠️ ${esc(t('tread_rise').replace('{pos}', posL(p.position)).replace('{mm}', fmtNum(v)).replace('{prev}', fmtNum(p.tread_mm)).replace('{d}', fmtD(p.tread_at)))}</p>`).join('') : '';
   };
+  if (tf) { tf.size.addEventListener('input', tfSize); $$('input[name="positions"]', tf).forEach((c) => c.addEventListener('change', tfSize)); }
   if (tf) { tf.tread_mm.addEventListener('input', tfRise); tf.position.addEventListener('change', tfRise); tf.event_type.addEventListener('change', tfRise); $$('input[name="positions"]', tf).forEach((c) => c.addEventListener('change', tfRise)); }
   let woMode = false;
   if (tf) { tf.position.onchange = updSpec; tf.event_type.onchange = updSpec; updSpec(); if (keep && keep.wo) woMode = applyWo(); }
@@ -663,7 +673,7 @@ async function renderTires(id, el, keep = null) {
     // Erfassung (21.10.2026: wurden sonst als „duplicate“ verworfen und mit ✓ quittiert), nach Erfolg verworfen
     const ck = JSON.stringify(Object.entries(b).sort()); if (tf.dataset.ck !== ck) { tf.dataset.ck = ck; tf.dataset.key = uid(); }
     b.request_key = tf.dataset.key;
-    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805: request_key je Formular */ const wl = (r.warning_items && r.warning_items.length ? r.warning_items.map((w) => (['tread_below_min', 'spare_below_min'].includes(w.code) ? t(w.code).replace('{mm}', fmtNum(w.tread_mm)).replace('{min}', fmtNum(w.min_mm)) : w.code === 'tacho_check_possible' ? t('tacho_check_possible') : w.code === 'tire_km_lower' ? t('tire_km_lower').replace('{km}', fmtNum(w.km)).replace('{prev}', fmtNum(w.prev_km)) : w.code === 'tread_rise' ? t('tread_rise').replace('{pos}', posL(w.position)).replace('{mm}', fmtNum(w.tread_mm)).replace('{prev}', fmtNum(w.prev_mm)).replace('{d}', fmtD(w.prev_at)) /* Backlog 847 */ : '')).filter(Boolean) : r.warnings || []).filter(Boolean); if (wl.length) toast(wl.join(' · '), true); /* ein Fehler-Toast ersetzt den vorherigen – alle Warnungen in einem (20.10.2026) */ if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.map(posL).join(', ') : '✓');
+    try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805: request_key je Formular */ const wl = (r.warning_items && r.warning_items.length ? r.warning_items.map((w) => (['tread_below_min', 'spare_below_min'].includes(w.code) ? t(w.code).replace('{mm}', fmtNum(w.tread_mm)).replace('{min}', fmtNum(w.min_mm)) : w.code === 'tacho_check_possible' ? t('tacho_check_possible') : w.code === 'size_differs' ? t('size_differs').replace('{pos}', (w.positions || []).map(posL).join(', ')).replace('{size}', w.size).replace('{spec}', w.spec).replace('{axle}', t('axle_' + w.axle)) /* Backlog 849 */ : w.code === 'tire_km_lower' ? t('tire_km_lower').replace('{km}', fmtNum(w.km)).replace('{prev}', fmtNum(w.prev_km)) : w.code === 'tread_rise' ? t('tread_rise').replace('{pos}', posL(w.position)).replace('{mm}', fmtNum(w.tread_mm)).replace('{prev}', fmtNum(w.prev_mm)).replace('{d}', fmtD(w.prev_at)) /* Backlog 847 */ : '')).filter(Boolean) : r.warnings || []).filter(Boolean); if (wl.length) toast(wl.join(' · '), true); /* ein Fehler-Toast ersetzt den vorherigen – alle Warnungen in einem (20.10.2026) */ if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.map(posL).join(', ') : '✓');
       const ap = [...tf.position.options].map((o) => o.value); const nx = !b.positions && ap.indexOf(b.position) >= 0 ? ap[ap.indexOf(b.position) + 1] : null;
       renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode }); }
     catch (err) { toast(err.message, true); }
