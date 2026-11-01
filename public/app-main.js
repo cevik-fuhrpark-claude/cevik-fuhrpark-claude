@@ -1684,7 +1684,7 @@ async function flushOutboxRun() {
           await photosDel(item.body.request_key).catch(() => {});
         }
         done.add(item.body.request_key);
-        toast(item.path === '/api/inspections' ? `${t('check_saved')}${skippedTxt ? ' · ' + skippedTxt : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}${lockedWarn(r)}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${r.urgent_push_recipients === 0 ? ' · ⚠ ' + t('no_push_reach') : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked || r.urgent_push_recipients === 0);
+        toast(item.path === '/api/inspections' ? `${t('check_saved')}${skippedTxt ? ' · ' + skippedTxt : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${kmWarn(r)}${cplNote(r)}${lockedWarn(r)}` : `${t('report_sent')}: ${r.case_no}${failed ? ' · ' + tn('photos_failed', failed) : ''}${r.urgent_push_recipients === 0 ? ' · ⚠ ' + t('no_push_reach') : ''}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked || r.urgent_push_recipients === 0);
         // Backlog 539: später gesendete dringende Meldung, die niemand per Push erreicht – Warnung wie beim Senden mit Netz (vorher nur „gesendet“)
       }
       catch (err) {
@@ -3354,14 +3354,31 @@ function workDayWatch(c) {
 }
 
 // ---------- Kontrollen ----------
-function checklistHtml() {
+// Backlog 824: `cpl` = Abfahrtskontrolle – je Mangel Auswahl „betrifft gewähltes / gekoppeltes Fahrzeug“ (Text/Sichtbarkeit setzt cplUpdate)
+function checklistHtml(cpl = false) {
   return S.meta.checklist.map((i) => `<div class="checkitem" data-key="${esc(i.key)}"><span id="cl_${esc(i.key)}">${esc(checkLabel(i.key))}</span>
     <span class="seg" role="radiogroup" aria-labelledby="cl_${esc(i.key)}"><label><input type="radio" name="${esc(i.key)}" value="ok" required>${esc(t('ok'))}</label><label class="bad"><input type="radio" name="${esc(i.key)}" value="mangel">${esc(t('defect'))}</label><label><input type="radio" name="${esc(i.key)}" value="na">${esc(t('na'))}</label></span>
-    <div class="detail" hidden><input name="${esc(i.key)}__note" minlength="3" maxlength="1000" placeholder="${esc(t('defect_note'))}"><label class="check"><input type="checkbox" name="${esc(i.key)}__safety"> ${esc(t('safety_relevant'))}</label><p class="small muted" data-safetyhint>${esc(t('check_safety_locks'))}</p></div></div>`).join('');
+    <div class="detail" hidden><input name="${esc(i.key)}__note" minlength="3" maxlength="1000" placeholder="${esc(t('defect_note'))}"><label class="check"><input type="checkbox" name="${esc(i.key)}__safety"> ${esc(t('safety_relevant'))}</label><p class="small muted" data-safetyhint>${esc(t('check_safety_locks'))}</p>${cpl ? `<div class="cplwrap" hidden><label for="cpl_${esc(i.key)}" class="small" style="white-space:nowrap">${esc(t('cpl_which'))}</label><select id="cpl_${esc(i.key)}" name="${esc(i.key)}__on"><option value="">–</option><option value="coupled">–</option></select></div>` : ''}</div></div>`).join('');
+}
+// Auswahl „Mangel betrifft“ an das gewählte Fahrzeug anpassen: nur mit fest gekoppeltem Fahrzeug sichtbar, sonst zurück auf das gewählte
+function cplUpdate(form, sv) {
+  const c = sv && sv.coupled;
+  // anderes gekoppeltes Fahrzeug (z. B. von der Zugmaschine auf deren Anhänger umgestellt): „gekoppelt“ hieße jetzt das andere – zurücksetzen
+  const cid = c ? c.id : '';
+  if (form.dataset.cpl !== undefined && form.dataset.cpl !== cid) $$('.cplwrap select', form).forEach((x) => (x.value = ''));
+  form.dataset.cpl = cid;
+  const nm = (k, p) => `${t(k === 'anhaenger' ? 'trailer' : 'truck')} ${p}`;
+  $$('.cplwrap', form).forEach((w) => {
+    const sel = $('select', w);
+    if (!c) { w.hidden = true; sel.value = ''; return; }
+    w.hidden = false; sel.options[0].textContent = nm(sv.kind, sv.plate); sel.options[1].textContent = nm(c.kind, c.plate);
+  });
 }
 // Telematik-km nicht übernommen: kleiner als davor erfasster bzw. größer als später erfasster Stand (src/telematics.js kmRejection)
 const tmKmRej = (dir, km, at) => dir === 'above' ? t('tm_km_rejected_next').replace('{km}', fmtKm(km)).replace('{date}', at ? fmtD(at) : '–') : t('tm_km_rejected').replace('{km}', fmtKm(km));
 const kmWarn = (r) => (r.km_rejected && r.km_rejected.next_km !== undefined ? ' · ' + t('km_not_taken_next').replace('{km}', fmtNum(r.km_rejected.km)).replace('{next}', fmtNum(r.km_rejected.next_km)) : r.km_rejected && r.km_rejected.previous_km === undefined ? ' · ' + t('km_not_taken_other').replace('{km}', fmtNum(r.km_rejected.km)) : r.km_rejected ? ' · ' + t('km_not_taken').replace('{km}', fmtNum(r.km_rejected.km)).replace('{prev}', fmtNum(r.km_rejected.previous_km)) : r.km_test_only ? ' · ' + t('km_test_only') : '');
+// Backlog 824: Antwort der Abfahrtskontrolle – Mängel am gekoppelten Fahrzeug bzw. gekoppeltes Fahrzeug nicht mehr vorhanden
+const cplNote = (r) => (r && r.coupled_defects ? ' · ' + tn('cpl_reported', r.coupled_defects.n).replace('{v}', `${t(r.coupled_defects.kind === 'anhaenger' ? 'trailer' : 'truck')} ${r.coupled_defects.plate}`) : '') + (r && r.coupled_missing ? ' · ' + t('cpl_missing') : '');
 function bindChecklist(form) {
   $$('.checkitem', form).forEach((row) => {
     $$('input[type=radio]', row).forEach((r) => (r.onchange = () => { row.classList.remove('missing'); document.querySelectorAll('.toast.err').forEach((x) => x.remove()); /* jede Antwort entfernt die Meldung – sonst blieb „Noch 18 …“ nach 17 Antworten stehen (19.10.2026); beim Speichern wird neu gezählt */ /* Meldung „Noch n Prüfpunkte …“ mit veralteter Zahl lag über „Speichern“ (19.10.2026) */ const bad = r.value === 'mangel' && r.checked; $('.detail', row).hidden = !bad; $('.detail input', row).required = bad; }));
@@ -3465,7 +3482,7 @@ function bindFormDraft(page, form, vehField, preId, skip) {
 }
 function collectChecklist(form) {
   const fd = new FormData(form);
-  return S.meta.checklist.map((i) => ({ key: i.key, result: fd.get(i.key), note: fd.get(i.key + '__note') || null, safety_relevant: !!fd.get(i.key + '__safety') }));
+  return S.meta.checklist.map((i) => ({ key: i.key, result: fd.get(i.key), note: fd.get(i.key + '__note') || null, safety_relevant: !!fd.get(i.key + '__safety'), ...(fd.get(i.key) === 'mangel' && fd.get(i.key + '__on') === 'coupled' ? { on_coupled: true } : {}) }));
 }
 async function viewInspection(caseId) {
   const d = await api('GET', '/api/cases/' + caseId);
@@ -3492,15 +3509,18 @@ async function viewDepartureCheck(preId) {
   const vs = await vehiclesCached();
   if (!vs.length) { render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${noVehiclesNote()}`, 'check'); return; }
   render(`<h1>${esc(t('departure_check'))}</h1>${outboxBanner()}${helpLink('check')}<form id="f"><label for="v">${esc(t('vehicle'))}</label><select id="v" required><option value="">–</option>${vs.map((v) => `<option value="${esc(v.id)}"${v.assigned && vs.filter((x) => x.assigned).length === 1 ? ' selected' : ''}>${esc(v.plate)}${v.kind === 'anhaenger' ? ' (' + esc(t('vk_anhaenger')) + ')' : ''}${v.availability === 'gesperrt' ? ' – ' + esc(t('locked')) : ''}</option>`).join('')}</select><div id="known"></div>
-    ${checklistHtml()}${tachoPanel()}${glassPanel(true)}<label for="km">${esc(t('km'))}</label><input id="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12">
+    ${checklistHtml(true)}${tachoPanel()}${glassPanel(true)}<label for="km">${esc(t('km'))}</label><input id="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12">
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('check_photos_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
     <div class="actions"><button class="btn block" id="sb">${esc(t('submit_inspection'))}</button></div></form><p class="small"><a href="#/check/paper">${esc(t('paper_form'))}</a> – ${esc(t('paper_hint'))}</p><p class="small" id="dcdmg">${esc(t('dc_damage_hint'))} <a id="dcdmglink" href="#/new">${esc(t('report_damage'))} ›</a></p>`, 'check');
   const form = $('#f'); bindChecklist(form);
   // Backlog 646: Schaden außerhalb der Prüfpunkte (Delle, Kratzer, Plane – auch vorgefunden) → Meldung mit dem gewählten Fahrzeug
   const dmgLink = () => { const a = $('#dcdmglink'); if (a) a.href = /^VIN:[A-Z0-9]+$/.test($('#v').value) ? '#/new/' + $('#v').value : '#/new'; };
   $('#v').addEventListener('change', dmgLink);
+  // Backlog 824: Mangel am fest gekoppelten Fahrzeug (Anhänger bzw. Zugmaschine) dort als Folgeauftrag – vor bindFormDraft (Optionen für den Entwurf)
+  const cplSync = () => cplUpdate(form, vs.find((x) => x.id === $('#v').value));
+  $('#v').addEventListener('change', cplSync);
   if (preId) { if (vs.some((v) => v.id === preId)) $('#v').value = preId; else toast(t('qr_vehicle_unknown'), true); }
-  dmgLink();
+  dmgLink(); cplSync();
   // Mangel nennt Fahrtenschreiber/Fahrerkarte (z. B. „Kontrollleuchten: Tacho-Fehler“): dieselben Pflichten wie im Meldeformular (Backlog 216);
   // Listener vor bindFormDraft – wiederhergestellte Entwürfe melden input/change
   // Backlog 292: Mangel nennt einen Glasschaden (z. B. „Spiegel, Scheiben, Wischer: Steinschlag“) → Glasschaden-Hinweis wie im Meldeformular
@@ -3534,7 +3554,7 @@ async function viewDepartureCheck(preId) {
     if (!box) { box = document.createElement('div'); box.id = 'dcsw'; box.className = 'panel alert'; box.setAttribute('role', 'alert'); $('#known').insertAdjacentElement('beforebegin', box); }
     box.innerHTML = `<p><b>${esc(t('dcsw_title').replace('{from}', dcPlate(dcFrom)).replace('{to}', dcPlate(nv)))}</b></p><p class="small">${esc(t('dcsw_hint'))}</p><div class="actions"><button type="button" class="btn" id="dcswnew">${esc(t('dcsw_new'))}</button><button type="button" class="btn secondary" id="dcswkeep">${esc(t('dcsw_keep'))}</button></div>`;
     $('#dcswnew').onclick = () => {
-      $$('.checkitem', form).forEach((row) => { $$('input[type=radio]', row).forEach((r) => (r.checked = false)); const det = $('.detail', row); det.hidden = true; $$('input', det).forEach((x) => { if (x.type === 'checkbox') x.checked = false; else { x.value = ''; x.required = false; } }); row.classList.remove('missing'); });
+      $$('.checkitem', form).forEach((row) => { $$('input[type=radio]', row).forEach((r) => (r.checked = false)); const det = $('.detail', row); det.hidden = true; $$('input', det).forEach((x) => { if (x.type === 'checkbox') x.checked = false; else { x.value = ''; x.required = false; } }); $$('select', det).forEach((x) => (x.value = '')); row.classList.remove('missing'); });
       $('#km').value = ''; $('#ph').value = ''; $('#ph').dispatchEvent(new Event('change', { bubbles: true }));
       dcClose(); tachoCheck(); draft.save(); toast(t('dcsw_cleared'));
       const first = $('.checkitem input[type=radio]', form); if (first) first.focus();
@@ -3564,7 +3584,7 @@ async function viewDepartureCheck(preId) {
       if (files.length && fTarget) ({ failed, later } = await uploadPhotosSafe('/api/inspections', body, r, fTarget, files, sb, who));
       const lockedPage = sb.isConnected && (r.vehicle_locked || r.coupled_locked);
       // Ergebnisseite „gesperrt“ nennt „gespeichert“ und die Sperre selbst – Einblendung nur noch für Foto-/km-Hinweise (verdeckte sonst die Überschrift)
-      const extra = `${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}`;
+      const extra = `${files.length && !fTarget ? ' · ' + photosSkippedText(r) : ''}${failed ? ' · ' + tn('photos_failed', failed) : ''}${later ? ' · ' + tn('photos_stored', later) : ''}${kmWarn(r)}${cplNote(r)}`;
       if (!lockedPage) toast(`${t('check_saved')}${extra}${lockedWarn(r)}`, !!failed || !!r.km_rejected || !!r.vehicle_locked || !!r.coupled_locked);
       else if (extra) toast(extra.slice(3), !!failed || !!r.km_rejected);
       // Fahrzeug/Gespann gesperrt (Backlog 252, 25.10.2026): stehende rote Ergebnisseite mit Anruf-Knopf statt nur einer Einblendung,

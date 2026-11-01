@@ -19285,7 +19285,7 @@ await test('Backlog 292: Abfahrtskontrolle zeigt bei einem Mangel mit Glasschade
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   eq((app.match(/<div id="glass" class="panel"/g) || []).length, 1, 'Panel einmal definiert (glassPanel)');
   const dep = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('function kmInputOk('));
-  ok(dep.includes('${checklistHtml()}${tachoPanel()}${glassPanel(true)}'), 'Panel unter der Prüfliste, Variante Kontrolle');
+  ok(dep.includes('${checklistHtml(true)}${tachoPanel()}${glassPanel(true)}'), 'Panel unter der Prüfliste, Variante Kontrolle'); // checklistHtml(true): Backlog 824
   ok(dep.includes("$('#glass').hidden = !ms.some((i) => GLASS_HINT.test(i.note || ''));"), 'nur Mängel mit passender Beschreibung');
   const nw = app.slice(app.indexOf('async function viewNew('), app.indexOf('async function viewNew(') + 6000);
   ok(nw.includes('${glassPanel()}'), 'Meldeformular nutzt dasselbe Panel (Grundvariante)');
@@ -19303,7 +19303,7 @@ await test('Backlog 216 (Teilagent „Abfahrtskontrolle findet Fahrtenschreiber-
   ok(/\nconst TACHO_HINT = \//.test(app) && (app.match(/const TACHO_HINT = /g) || []).length === 1, 'TACHO_HINT einmal auf Modulebene');
   ok((app.match(/<div id="tacho" class="panel"/g) || []).length === 1, 'Panel einmal definiert (tachoPanel)');
   const dep = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('function kmInputOk('));
-  ok(dep.includes('${checklistHtml()}${tachoPanel()}'), 'Panel unter der Prüfliste');
+  ok(dep.includes('${checklistHtml(true)}${tachoPanel()}'), 'Panel unter der Prüfliste'); // checklistHtml(true): Backlog 824
   ok(dep.includes("const ms = collectChecklist(form).filter((i) => i.result === 'mangel');") && dep.includes("$('#tacho').hidden = !ms.some((i) => TACHO_HINT.test(i.note || ''));"), 'nur Mängel mit passender Beschreibung');
   ok(dep.indexOf("form.addEventListener('input', tachoCheck)") > 0 && dep.indexOf("form.addEventListener('input', tachoCheck)") < dep.indexOf("bindFormDraft('check'") && dep.indexOf('tachoCheck();') > dep.indexOf("bindFormDraft('check'"), 'Listener vor dem Entwurf, Prüfung danach');
   const nw = app.slice(app.indexOf('async function viewNew('), app.indexOf('async function viewNew(') + 6000);
@@ -29702,6 +29702,72 @@ await test('Backlog 823 (Blickwinkel „Fahrer wechselt mitten in der Abfahrtsko
     ok(STRINGS[l].dcsw_title.includes('{from}') && STRINGS[l].dcsw_title.includes('{to}'), 'beide Kennzeichen ' + l);
   }
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-abfahrt-fahrzeugwechsel.py|'), 'UI-Prüfung eingetragen');
+});
+
+await test('Backlog 824 (Blickwinkel „Fahrer mit Zugmaschine + Anhänger – Abfahrtskontrolle für beide“): Mangel am fest gekoppelten Fahrzeug wird dort Folgeauftrag (Sperre, Wiederholung, Rückfall ohne Kopplung); Auswahl „Mangel betrifft“ DE/UK/EN', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon'); const db = e.DB.db;
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const inv = async (b) => { const x = await own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; };
+  const D = await inv({ username: 'g.fahrer', display_name: 'Fahrer G', role: 'driver', environment: 'production' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\n'
+    + 'SZ-YC 5513;Hamburg Nord;MAN;2016;WMA15SZZ2HM722774;SZ-YC 5514;Lkw\nSZ-YC 5514;Hamburg Nord;Krone;2016;VAK656EBDG1613170;;ANH\n'
+    + 'SZ-KC 5515;Hamburg Nord;DAIMLER;2015;WDB9630051L917317;;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const TK = 'VIN:WMA15SZZ2HM722774'; const TR = 'VIN:VAK656EBDG1613170'; const SOLO = 'VIN:WDB9630051L917317';
+  const base = (await D.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const withD = (arr) => base.map((i) => arr.find((x) => x.key === i.key) || i);
+  // 1. Reifen des Anhängers bei der Kontrolle der Zugmaschine (sicherheitsrelevant) + Licht an der Zugmaschine
+  const ins = await D.post('/api/inspections', { kind: 'abfahrt', vehicle_id: TK, request_key: rk(), items: withD([
+    { key: 'reifen_zustand', result: 'mangel', note: 'Reifen hinten rechts eingerissen', safety_relevant: true, on_coupled: true },
+    { key: 'beleuchtung', result: 'mangel', note: 'Abblendlicht links aus' }]) });
+  eq(ins.status, 201, JSON.stringify(ins.data));
+  eq(ins.data.followups.length, 2);
+  const caseVeh = (id) => db.prepare('SELECT vehicle_id, check_item, safety_lock FROM cases WHERE id=?').get(id);
+  const byItem = Object.fromEntries(ins.data.followups.map((f) => { const c = caseVeh(f.id); return [c.check_item, c]; }));
+  eq(byItem.reifen_zustand.vehicle_id, TR, 'Reifen-Auftrag am Anhänger'); eq(byItem.reifen_zustand.safety_lock, 1, 'Sperre am Anhänger');
+  eq(byItem.beleuchtung.vehicle_id, TK, 'Licht-Auftrag an der Zugmaschine');
+  eq(ins.data.vehicle_locked, false, 'Zugmaschine selbst nicht gesperrt');
+  eq(JSON.stringify(ins.data.coupled_locked), JSON.stringify({ plate: 'SZ-YC 5514', kind: 'anhaenger' }), 'Antwort meldet gesperrten Anhänger');
+  eq(JSON.stringify(ins.data.coupled_defects), JSON.stringify({ plate: 'SZ-YC 5514', kind: 'anhaenger', n: 1 }));
+  const stored = JSON.parse(db.prepare('SELECT items FROM inspections WHERE id=?').get(ins.data.id).items);
+  const sr = stored.find((i) => i.key === 'reifen_zustand'); ok(sr.on_coupled && sr.vehicle_id === TR && sr.plate === 'SZ-YC 5514', 'Kontrolle vermerkt das gekoppelte Fahrzeug');
+  eq(db.prepare('SELECT vehicle_id FROM inspections WHERE id=?').get(ins.data.id).vehicle_id, TK, 'Kontrolle bleibt an der Zugmaschine');
+  // 2. Wiederholung: derselbe Mangel am Anhänger erneut → Vermerk am offenen Anhänger-Auftrag, kein neuer Vorgang
+  const n0 = db.prepare('SELECT COUNT(*) AS n FROM cases').get().n;
+  const ins2 = await D.post('/api/inspections', { kind: 'abfahrt', vehicle_id: TK, request_key: rk(), items: withD([{ key: 'reifen_zustand', result: 'mangel', note: 'Reifen weiter eingerissen', safety_relevant: true, on_coupled: true }]) });
+  eq(ins2.status, 201, JSON.stringify(ins2.data)); eq(db.prepare('SELECT COUNT(*) AS n FROM cases').get().n, n0, 'kein zweiter Vorgang');
+  ok(ins2.data.followups[0].repeat && ins2.data.followups[0].id === ins.data.followups.find((f) => caseVeh(f.id).check_item === 'reifen_zustand').id, 'erneut festgestellt am Anhänger-Auftrag');
+  // derselbe Prüfpunkt an der Zugmaschine selbst ist ein eigener Mangel (kein Vermerk am Anhänger)
+  const ins3 = await D.post('/api/inspections', { kind: 'abfahrt', vehicle_id: TK, request_key: rk(), items: withD([{ key: 'reifen_zustand', result: 'mangel', note: 'Reifen Zugmaschine abgefahren' }]) });
+  eq(ins3.status, 201); ok(!ins3.data.followups[0].repeat && caseVeh(ins3.data.followups[0].id).vehicle_id === TK, 'eigener Vorgang an der Zugmaschine');
+  // 3. umgekehrt: Kontrolle am Anhänger, Mangel an der Zugmaschine
+  const ins4 = await D.post('/api/inspections', { kind: 'abfahrt', vehicle_id: TR, request_key: rk(), items: withD([{ key: 'spiegel_scheiben_wischer', result: 'mangel', note: 'Spiegel rechts lose', on_coupled: true }]) });
+  eq(ins4.status, 201); eq(caseVeh(ins4.data.followups[0].id).vehicle_id, TK, 'Mangel an der Zugmaschine');
+  // 4. ohne gekoppeltes Fahrzeug: Mangel bleibt am gewählten Fahrzeug, Antwort meldet es
+  const ins5 = await D.post('/api/inspections', { kind: 'abfahrt', vehicle_id: SOLO, request_key: rk(), items: withD([{ key: 'beleuchtung', result: 'mangel', note: 'Rücklicht defekt', on_coupled: true }]) });
+  eq(ins5.status, 201); eq(caseVeh(ins5.data.followups[0].id).vehicle_id, SOLO); eq(ins5.data.coupled_missing, 1); eq(ins5.data.coupled_defects, undefined);
+  // „OK“ mit on_coupled wird ignoriert; ungültiger Wert → 400
+  const ins6 = await D.post('/api/inspections', { kind: 'abfahrt', vehicle_id: TK, request_key: rk(), items: base.map((i) => ({ ...i, on_coupled: true })) });
+  eq(ins6.status, 201); eq(ins6.data.coupled_defects, undefined); eq(ins6.data.followups.length, 0);
+  const bad1 = await D.post('/api/inspections', { kind: 'abfahrt', vehicle_id: TK, request_key: rk(), items: withD([{ key: 'beleuchtung', result: 'mangel', note: 'xyz', on_coupled: 'vielleicht' }]) });
+  eq(bad1.status, 400);
+  // Oberfläche: Auswahl nur in der Abfahrtskontrolle, Texte DE/UK/EN
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('function kmInputOk('));
+  ok(fn.includes('${checklistHtml(true)}') && !app.slice(app.indexOf('async function viewInspection('), app.indexOf('async function viewDepartureCheck(')).includes('checklistHtml(true)'), 'nur Abfahrtskontrolle');
+  ok(fn.indexOf("$('#v').addEventListener('change', cplSync);") < fn.indexOf("bindFormDraft('check'"), 'vor dem Entwurf gebunden');
+  ok(app.includes("fd.get(i.key + '__on') === 'coupled' ? { on_coupled: true } : {}"), 'Senden');
+  ok(fn.includes("$$('select', det).forEach((x) => (x.value = ''))"), '„Neu prüfen“ setzt die Auswahl zurück');
+  ok((app.match(/\$\{cplNote\(r\)\}/g) || []).length === 2, 'Hinweis nach Senden und aus dem Postausgang');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['cpl_which', 'cpl_missing']) ok(STRINGS[l][k], `Text ${k} ${l}`);
+    ok(Object.values(PLURALS[l].cpl_reported).every((x) => x.includes('{n}') && x.includes('{v}')), 'Pluralformen ' + l);
+    ok(STRINGS[l].help_check_s.split('|').length === STRINGS.de.help_check_s.split('|').length, 'Hilfe gleich viele Schritte ' + l);
+  }
+  const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-abfahrt-gespann.py|'), 'UI-Prüfung eingetragen');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

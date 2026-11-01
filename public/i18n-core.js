@@ -1167,6 +1167,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // [CLAUDE] Backlog 808: Vertrag gleichzeitig bearbeitet – Felder der anderen Person
 // [CLAUDE] Backlog 822: Einstellungen (nur Inhaber) – Konflikt kommt vom eigenen zweiten Gerät/Fenster, nicht von „jemand anderem“
 // [CLAUDE] Backlog 823: Fahrzeug mitten in der Abfahrtskontrolle gewechselt – Rückfrage statt still übernommener Antworten
+// [CLAUDE] Backlog 824: Abfahrtskontrolle mit fest gekoppeltem Fahrzeug – Mangel am Anhänger bzw. an der Zugmaschine dort als Folgeauftrag
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

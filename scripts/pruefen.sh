@@ -417,6 +417,7 @@ UI-Prüftermin gleichzeitig bearbeitet: Intervall/Nachweis auf altem Stand → n
 UI-Einstellungen auf zwei Geräten: Kostengrenze auf altem Stand → neu geladen, eigene Eingabe bleibt, Feld des anderen Geräts markiert (DE/UK/EN; Backlog 821)|ui-einstellungen-gleichzeitig.py|/tmp/cfp-einstellungen-gleichzeitig.log
 UI-Master-Eingang gleichzeitig: Entscheidung auf altem Stand → neu geladen, Meldung „Ansicht aktualisiert“ (DE/UK/EN; Backlog 820)|ui-master-gleichzeitig.py|/tmp/cfp-master-gleichzeitig.log
 UI-Abfahrtskontrolle Fahrzeug gewechselt: Rückfrage mit beiden Kennzeichen, Senden gesperrt, neu prüfen leert alles, übernehmen sendet für das neue Fahrzeug (DE/UK/EN; Backlog 823)|ui-abfahrt-fahrzeugwechsel.py|/tmp/cfp-abfahrt-fahrzeugwechsel.log
+UI-Abfahrtskontrolle Gespann: Auswahl „Mangel betrifft“ mit beiden Kennzeichen, Auftrag am gekoppelten Fahrzeug, Zurücksetzen beim Fahrzeugwechsel (DE/UK/EN; Backlog 824)|ui-abfahrt-gespann.py|/tmp/cfp-abfahrt-gespann.log
 '
 N=0
 NL='

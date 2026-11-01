@@ -2117,11 +2117,29 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
     const result = oneOf(it.result, ['ok', 'mangel', 'na'], 'Prüfergebnis');
     const note = str(it.note, { max: 1000 });
     if (result === 'mangel' && (!note || note.length < 3)) throw bad('validation', 'Jeder Mangel braucht eine kurze Beschreibung.');
-    byKey.set(it.key, { key: it.key, result, note, safety_relevant: flag(it.safety_relevant, 'Sicherheitsrelevant'), followup_priority: it.followup_priority && PRIORITIES.includes(it.followup_priority) ? it.followup_priority : null });
+    // Backlog 824: Mangel am fest gekoppelten Fahrzeug (z. B. Reifen des Anhängers bei der Kontrolle der Zugmaschine) – nur Abfahrtskontrolle, nur Mangel
+    const onCoupled = kind === 'abfahrt' && result === 'mangel' && flag(it.on_coupled, 'Gekoppeltes Fahrzeug');
+    byKey.set(it.key, { key: it.key, result, note, safety_relevant: flag(it.safety_relevant, 'Sicherheitsrelevant'), followup_priority: it.followup_priority && PRIORITIES.includes(it.followup_priority) ? it.followup_priority : null, ...(onCoupled ? { on_coupled: true } : {}) });
   }
   if (byKey.size !== keys.size) throw bad('incomplete', 'Bitte alle Prüfpunkte bewerten (OK / Mangel / entfällt).');
   const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : kmNum(body.odometer_km);
   const defects = [...byKey.values()].filter((i) => i.result === 'mangel');
+  // Backlog 824 (Blickwinkel „Fahrer mit Zugmaschine + Anhänger – Abfahrtskontrolle für beide“): ein Mangel am fest gekoppelten Fahrzeug
+  // landete bisher als Folgeauftrag (und ggf. Sperre) am gewählten Fahrzeug – Werkstatt am falschen Fahrzeug, Anhänger ohne Sperre/Verlauf.
+  // Jetzt Folgeauftrag am gekoppelten Fahrzeug (Kopplung laut Stammliste wie überall); gibt es keins mehr (z. B. offline erfasst, inzwischen
+  // außer Betrieb), bleibt der Mangel am gewählten Fahrzeug und die Antwort meldet `coupled_missing`.
+  let coupledTarget = null, coupledMissing = 0;
+  if (defects.some((d) => d.on_coupled)) {
+    const PK = PLATE_KEY_SQL;
+    coupledTarget = await env.DB.prepare(`SELECT o.id, o.plate, o.kind FROM vehicles o JOIN vehicles v ON v.id=? WHERE o.active=1 AND o.id<>v.id AND ${COUPLING_PREFERRED_SQL('v')} AND ${COUPLING_PREFERRED_SQL('o')} AND (
+        (v.kind='anhaenger' AND o.kind='lkw' AND ${PK('o.trailer_plate')}<>'' AND ${PK('o.trailer_plate')}=${PK('v.plate')})
+        OR (v.kind='lkw' AND o.kind='anhaenger' AND ${PK('v.trailer_plate')}<>'' AND ${PK('o.plate')}=${PK('v.trailer_plate')})) LIMIT 1`).bind(vehicleId).first() || null;
+    for (const d of defects) {
+      if (!d.on_coupled) continue;
+      if (coupledTarget) { d.vehicle_id = coupledTarget.id; d.plate = coupledTarget.plate; } else { delete d.on_coupled; coupledMissing++; }
+    }
+  }
+  const vOf = (d) => d.vehicle_id || vehicleId;
   // Vermerk vor dem Anlegen der Folgeaufträge prüfen (17.10.2026: zu langer Vermerk → 400 erst nach dem Anlegen; gesperrter Folgeauftrag ohne Kontrolle)
   const inspNote = str(body.note, { max: 2000, field: 'Bemerkung' });
   const now = nowIso();
@@ -2160,12 +2178,17 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
   if (kind === 'abfahrt' && defects.length) {
     // + offenes Original eines als Dublette abgelehnten Kontroll-Vorgangs desselben Prüfpunkts (21.10.2026: nach „Dublette“ legte jede weitere
     // Kontrolle wieder einen neuen – ggf. gesperrten – Vorgang an)
-    for (const r of (await env.DB.prepare(`SELECT * FROM (SELECT id, case_no, priority, safety_lock, status, version, check_item, reporter_id=?1 AS own, created_at FROM cases WHERE vehicle_id=?2 AND environment=?3 AND origin='kontrolle'
-      AND check_item IN (SELECT value FROM json_each(?4)) AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')
-      UNION SELECT o.id, o.case_no, o.priority, o.safety_lock, o.status, o.version, d.check_item, o.reporter_id=?1 AS own, o.created_at FROM cases d JOIN cases o ON o.id=d.duplicate_of
-      WHERE d.vehicle_id=?2 AND d.environment=?3 AND d.origin='kontrolle' AND d.status='abgelehnt' AND d.check_item IN (SELECT value FROM json_each(?4))
-      AND o.environment=?3 AND o.vehicle_id=?2 AND o.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) ORDER BY created_at DESC`).bind(user.id, vehicleId, envName, JSON.stringify(defects.map((d) => d.key))).all()).results) {
-      if (!openByItem.has(r.check_item)) openByItem.set(r.check_item, []); openByItem.get(r.check_item).push(r);
+    // Backlog 824: je Mangel am eigenen bzw. gekoppelten Fahrzeug (Paare Fahrzeug/Prüfpunkt)
+    const pairs = JSON.stringify(defects.map((d) => [vOf(d), d.key]));
+    for (const r of (await env.DB.prepare(`SELECT * FROM (SELECT c.id, c.case_no, c.priority, c.safety_lock, c.status, c.version, c.check_item, c.vehicle_id, c.reporter_id=?1 AS own, c.created_at FROM cases c
+      JOIN json_each(?4) p ON c.vehicle_id=json_extract(p.value,'$[0]') AND c.check_item=json_extract(p.value,'$[1]') WHERE c.environment=?3 AND c.origin='kontrolle'
+      AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')
+      UNION SELECT o.id, o.case_no, o.priority, o.safety_lock, o.status, o.version, d.check_item, o.vehicle_id, o.reporter_id=?1 AS own, o.created_at FROM cases d JOIN cases o ON o.id=d.duplicate_of
+      JOIN json_each(?4) p ON d.vehicle_id=json_extract(p.value,'$[0]') AND d.check_item=json_extract(p.value,'$[1]')
+      WHERE d.environment=?3 AND d.origin='kontrolle' AND d.status='abgelehnt'
+      AND o.environment=?3 AND o.vehicle_id=d.vehicle_id AND o.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) ORDER BY created_at DESC`).bind(user.id, vehicleId, envName, pairs).all()).results) {
+      const k = r.vehicle_id + '|' + r.check_item;
+      if (!openByItem.has(k)) openByItem.set(k, []); openByItem.get(k).push(r);
     }
   }
   // Kontrolle nach Reparatur (z. B. neue Pflicht-Kontrolle nach Nacharbeit): offener Folgeauftrag desselben Ursprungsvorgangs und Prüfpunkts
@@ -2173,7 +2196,8 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
   if (kind === 'nach_reparatur' && c && defects.length) {
     for (const r of (await env.DB.prepare(`SELECT id, case_no, priority, safety_lock, status, version, check_item, 0 AS own FROM cases WHERE parent_case_id=? AND environment=? AND origin='kontrolle'
       AND check_item IN (SELECT value FROM json_each(?)) AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC`).bind(c.id, envName, JSON.stringify(defects.map((d) => d.key))).all()).results) {
-      if (!openByItem.has(r.check_item)) openByItem.set(r.check_item, []); openByItem.get(r.check_item).push(r);
+      const k = vehicleId + '|' + r.check_item;
+      if (!openByItem.has(k)) openByItem.set(k, []); openByItem.get(k).push(r);
     }
   }
   const toCreate = [];
@@ -2184,7 +2208,7 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
     // Priorität nur vergleichen, wenn sie ausdrücklich gewählt oder sicherheitsrelevant ist – sonst gilt jeder offene Vorgang des Prüfpunkts
     // (21.10.2026: von der Leitung auf „niedrig“ herabgestufter Vorgang führte bei jeder Kontrolle zu einem neuen „mittel“-Vorgang)
     const cmpPrio = !!d.followup_priority || !!d.safety_relevant;
-    const open = (openByItem.get(d.key) || []).find((o) => (!cmpPrio || RANK[o.priority] >= RANK[prio]) && (!d.safety_relevant || o.safety_lock));
+    const open = (openByItem.get(vOf(d) + '|' + d.key) || []).find((o) => (!cmpPrio || RANK[o.priority] >= RANK[prio]) && (!d.safety_relevant || o.safety_lock));
     if (open) {
       repeats.push({ open, d });
       // eigener offener Vorgang: Fahrer darf dort Fotos anhängen (20.10.2026: Fotos zum erneut festgestellten eigenen Mangel wurden verworfen)
@@ -2196,7 +2220,7 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
     followups.push(null);
     if (kind === 'abfahrt') kGuard.set(d.key, { cmp: cmpPrio ? 1 : 0, rank: RANK[prio], safety: d.safety_relevant ? 1 : 0 });
     toCreate.push({
-      vehicle_id: vehicleId,
+      vehicle_id: vOf(d),
       description: `[Kontrolle ${kind === 'nach_reparatur' ? 'nach Reparatur' : 'Abfahrt'}] ${d.key}: ${d.note}`,
       priority: prio,
       driveability: d.safety_relevant ? 'nicht_fahrbereit' : 'unbekannt',
@@ -2313,7 +2337,9 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
       AND EXISTS (SELECT 1 FROM cases x WHERE x.environment=?1 AND x.vehicle_id=o.id AND x.safety_lock=1 AND x.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) LIMIT 1`).bind(envName, vehicleId).first() || null;
   }
   return { id, result: defects.length ? 'maengel' : 'ok', followups: followups.map(fuForUser), km_rejected: kmRejected, km_test_only: kmTestOnly, performed_at: performedAt, vehicle_locked: vehicleLocked,
-    coupled_locked: coupledLocked ? { plate: coupledLocked.plate, kind: coupledLocked.kind } : null };
+    coupled_locked: coupledLocked ? { plate: coupledLocked.plate, kind: coupledLocked.kind } : null,
+    ...(coupledTarget && defects.some((d) => d.on_coupled) ? { coupled_defects: { plate: coupledTarget.plate, kind: coupledTarget.kind, n: defects.filter((d) => d.on_coupled).length } } : {}),
+    ...(coupledMissing ? { coupled_missing: coupledMissing } : {}) };
 }
 
 // ---------- Dateien ----------
