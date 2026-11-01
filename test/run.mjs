@@ -3294,7 +3294,7 @@ await test('Hinweise zum Fahrzeug: anlegen/archivieren je Rolle und Umgebung, f�
   eq((await users.driver.post(`${base}/${a.data.id}/archive`)).status, 403);
   eq((await users.prodFleet.post(`${base}/${a.data.id}/archive`)).status, 404, 'andere Umgebung');
   eq((await users.ws.post(`${base}/${a.data.id}/archive`)).status, 200);
-  eq((await users.ws.post(`${base}/${a.data.id}/archive`)).status, 404, 'nicht zweimal');
+  { const a2 = await users.ws.post(`${base}/${a.data.id}/archive`); eq(a2.status, 200, 'Wiederholung (seit Backlog 805g Erfolg statt 404)'); eq(a2.data.duplicate, true, 'nicht zweimal'); }
   eq((await users.fleet.get(base)).data.notes.length, 1);
   const ar = (await users.fleet.get(base + '?archived=1')).data.notes; eq(ar.length, 1); ok(ar[0].archived_at && ar[0].archived_by_name, 'Archiv mit Zeitpunkt und Person');
   eq((await users.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VID).notes.length, 0, 'archiviert → beim Fahrer weg');
@@ -3398,7 +3398,7 @@ await test('Panne & Notfall: Rufnummern je Umgebung (alle/Standort/Fahrzeug), Fa
   // Archiv: Fahrer sieht archivierte nicht mehr, nicht zweimal archivierbar, Archivliste mit Person
   eq((await users.driver.post(`/api/emergency/contacts/${v.data.id}/archive`)).status, 403);
   eq((await users.dispatch.post(`/api/emergency/contacts/${v.data.id}/archive`)).status, 200);
-  eq((await users.dispatch.post(`/api/emergency/contacts/${v.data.id}/archive`)).status, 404, 'nicht zweimal');
+  { const a2 = await users.dispatch.post(`/api/emergency/contacts/${v.data.id}/archive`); eq(a2.status, 200, 'Wiederholung (seit Backlog 805g Erfolg statt 404)'); eq(a2.data.duplicate, true, 'nicht zweimal'); }
   eq((await users.dispatch.req('PATCH', `/api/emergency/contacts/${v.data.id}`, { phone: '0123 000' })).status, 404, 'archiviert nicht änderbar');
   eq((await users.driver.get('/api/emergency')).data.vehicles.find((x) => x.id === VID).contacts.length, 0, 'archiviert → beim Fahrer weg');
   const ar = (await users.fleet.get('/api/emergency/contacts?archived=1')).data.contacts.find((c) => c.id === v.data.id); ok(ar && ar.archived_at && ar.archived_by_name === 'Test Dispo', 'Archiv mit Zeitpunkt und Person');
@@ -29177,6 +29177,38 @@ await test('Backlog 805f (Blickwinkel „Funkloch“): Werkstattplan (Termin set
   const r2 = await U.fleet.post(`/api/cases/${id}/commands`, rb); eq(r2.status, 200); eq(r2.data.duplicate, true, 'Wechsel nie doppelt');
   eq((await U.fleet.get(`/api/cases/${id}`)).data.case.version, v + 2);
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-werkstattplan-funkloch.py|'), 'UI-Prüfung eingetragen');
+});
+
+await test('Backlog 805g (Blickwinkel „Funkloch“): Hinweis erledigen, Fahrzeughinweis/Notfall-Rufnummer archivieren, Stornos (Auslesung, Nachweis, Führerscheinkontrolle), km-Begründung und Vertrag beenden mit Zeitlimit; Wiederholung → Erfolg (duplicate) statt „nicht gefunden“/„bereits beendet“, abweichende Angaben weiter abgewiesen', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const [frag, what] of [["/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g: Wiederholung = duplicate */", 'Auslesung storniert'],
+    ["/archive`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ loadVehicleNotes", 'Hinweis archivieren'],
+    ["/end`, ctBody(fm), { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast(r && r.duplicate ? t('saved_before') : '✓');", 'Vertrag beenden'],
+    ["/license-checks/${b.dataset.lccancel}/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS });", 'Kontrolle stornieren'],
+    ["/documents/${b.dataset.dcancel}/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS });", 'Nachweis stornieren'],
+    ["/api/emergency/contacts/${b.dataset.emarch}/archive`, undefined, { timeoutMs: SEND_TIMEOUT_MS });", 'Rufnummer archivieren'],
+    ["/api/notifications/${b.dataset.ack}/ack`, undefined, { timeoutMs: SEND_TIMEOUT_MS });", 'Hinweis erledigen'],
+    ["{ note: n.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast(t(r && r.duplicate ? 'saved_before' : 'saved_ok'));", 'km-Begründung']]) ok(app.includes(frag), what);
+  const { U } = await freshWorld();
+  const V = 'VIN:WMA15SZZ2HM722774';
+  const n = await U.fleet.post(`/api/vehicles/${V}/notes`, { text: 'Hinweis 805g' }); eq(n.status, 201, JSON.stringify(n.data));
+  eq((await U.fleet.post(`/api/vehicles/${V}/notes/${n.data.id}/archive`)).status, 200);
+  const n2 = await U.fleet.post(`/api/vehicles/${V}/notes/${n.data.id}/archive`); eq(n2.status, 200, 'Wiederholung'); eq(n2.data.duplicate, true);
+  eq((await U.fleet.post(`/api/vehicles/${V}/notes/unbekannt-805g/archive`)).status, 404, 'unbekannt bleibt 404');
+  const em = await U.fleet.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo 805g', phone: '0231 805805' }); eq(em.status, 201, JSON.stringify(em.data));
+  eq((await U.fleet.post(`/api/emergency/contacts/${em.data.id}/archive`)).status, 200);
+  const em2 = await U.fleet.post(`/api/emergency/contacts/${em.data.id}/archive`); eq(em2.status, 200); eq(em2.data.duplicate, true);
+  const ct = await U.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'miete', partner: 'Miete 805g', evidence: 'MV 805g' }); eq(ct.status, 201, JSON.stringify(ct.data));
+  const eb = { ended_on: BERLIN_TODAY, end_note: 'Rückgabe 805g' };
+  eq((await U.fleet.post(`/api/contracts/${ct.data.id}/end`, eb)).status, 200);
+  const e2 = await U.fleet.post(`/api/contracts/${ct.data.id}/end`, eb); eq(e2.status, 200); eq(e2.data.duplicate, true);
+  const e3 = await U.fleet.post(`/api/contracts/${ct.data.id}/end`, { ...eb, end_note: 'anderer Grund' }); eq(e3.status, 400); eq(e3.data.error, 'contract_ended');
+  const km = await U.fleet.post(`/api/vehicles/${V}/odometer`, { km: 123456, evidence: 'Tacho 805g' }); eq(km.status, 201, JSON.stringify(km.data));
+  const rid = (await U.fleet.get(`/api/vehicles/${V}`)).data.odometer.find((o) => o.km === 123456).id;
+  eq((await U.fleet.post(`/api/odometer/${rid}/note`, { note: 'Tachotausch 805g' })).status, 200);
+  const o2 = await U.fleet.post(`/api/odometer/${rid}/note`, { note: 'Tachotausch 805g' }); eq(o2.status, 200); eq(o2.data.duplicate, true);
+  eq((await U.fleet.post(`/api/odometer/${rid}/note`, { note: 'anders' })).status, 409, 'andere Begründung');
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {

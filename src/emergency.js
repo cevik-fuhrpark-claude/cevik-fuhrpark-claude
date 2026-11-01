@@ -241,7 +241,11 @@ export async function updateContact(env, user, envName, id, body) {
 export async function archiveContact(env, user, envName, id) {
   if (!WRITE.includes(user.role)) throw forbidden();
   const r = await env.DB.prepare('UPDATE emergency_contacts SET archived_at=?, archived_by=? WHERE id=? AND environment=? AND archived_at IS NULL').bind(nowIso(), user.id, id, envName).run();
-  if (!r.meta || r.meta.changes !== 1) throw notFound('Rufnummer nicht gefunden oder archiviert.');
+  if (!r.meta || r.meta.changes !== 1) {
+    // Backlog 805g (Funkloch): Wiederholung nach verlorener Antwort – schon archiviert → Erfolg statt „nicht gefunden“
+    if (await env.DB.prepare('SELECT 1 FROM emergency_contacts WHERE id=? AND environment=? AND archived_at IS NOT NULL').bind(id, envName).first()) return { ok: true, duplicate: true };
+    throw notFound('Rufnummer nicht gefunden oder archiviert.');
+  }
   await audit(env, user.id, 'emergency.archive', id, null);
   return { ok: true };
 }

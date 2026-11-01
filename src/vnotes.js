@@ -79,7 +79,11 @@ export async function archiveNote(env, user, envName, vehicleId, noteId) {
   if (!WRITE.includes(user.role)) throw forbidden();
   const r = await env.DB.prepare('UPDATE vehicle_notes SET archived_at=?, archived_by=? WHERE id=? AND vehicle_id=? AND environment=? AND archived_at IS NULL')
     .bind(nowIso(), user.id, noteId, vehicleId, envName).run();
-  if (!r.meta || r.meta.changes !== 1) throw notFound('Hinweis nicht gefunden oder bereits archiviert.');
+  if (!r.meta || r.meta.changes !== 1) {
+    // Backlog 805g (Funkloch): Wiederholung nach verlorener Antwort – schon archiviert → Erfolg statt „nicht gefunden“
+    if (await env.DB.prepare('SELECT 1 FROM vehicle_notes WHERE id=? AND vehicle_id=? AND environment=? AND archived_at IS NOT NULL').bind(noteId, vehicleId, envName).first()) return { ok: true, duplicate: true };
+    throw notFound('Hinweis nicht gefunden oder bereits archiviert.');
+  }
   await audit(env, user.id, 'vehicle.note_archive', vehicleId, { note: noteId });
   return { ok: true };
 }

@@ -2991,7 +2991,7 @@ async function viewClaims(...a) { return (await lazyModule('verwaltung')).viewCl
 
 // Verlauf der Auslesungen (Fahrerakte, Fahrzeugakte): stornierte durchgestrichen mit Begründung; Leitung kann stornieren (18.10.2026)
 const tachoHistList = (list, canCancel) => `<ul class="small tachohist">${list.map((o) => `<li${o.cancelled_at ? ' class="muted"' : ''}>${o.cancelled_at ? '<s>' : ''}${fmtD(o.downloaded_on)} · ${esc(o.evidence)}${o.note ? ' – ' + esc(o.note === 'Import' ? t('odo_src_import') : o.note) : ''}${o.cancelled_at ? '</s>' : ''}${o.created_by_name ? ` <span class="muted">(${esc(o.created_by_name)})</span>` : ''}${o.cancelled_at ? ` <span class="chip">${esc(t('tacho_cancelled'))}</span> ${esc(o.cancel_reason || '')}` : canCancel ? ` <button type="button" class="btn secondary small" data-tcancel="${esc(o.id)}">${esc(t('tacho_cancel'))}</button>` : ''}</li>`).join('')}</ul>${canCancel && list.some((o) => !o.cancelled_at) ? `<p class="small muted noprint">${esc(t('tacho_cancel_hint'))}</p>` : ''}`;
-const bindTachoCancel = (root, reload) => $$('[data-tcancel]', root).forEach((b) => (b.onclick = async () => { const reason = prompt(t('tacho_cancel_reason')); if (!reason) return; try { await api('POST', `/api/tacho/downloads/${b.dataset.tcancel}/cancel`, { reason }); toast('✓'); reload(); } catch (err) { toast(err.message, true); } }));
+const bindTachoCancel = (root, reload) => $$('[data-tcancel]', root).forEach((b) => (b.onclick = async () => { const reason = prompt(t('tacho_cancel_reason')); if (!reason) return; try { await api('POST', `/api/tacho/downloads/${b.dataset.tcancel}/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g: Wiederholung = duplicate */ toast('✓'); reload(); } catch (err) { toast(err.message, true); } }));
 
 // Werkstatt „EXTERN“ hat einen festen deutschen Namen aus dem Schema – in der App-Sprache anzeigen (22.10.2026, Fund Druck UK/EN)
 const wsLabel = (w) => (w && w.code === 'EXTERN' ? t('ws_extern') : (w && w.name) || '') + (w && w.active === false ? ` (${t('ws_closed')})` : '');
@@ -4088,7 +4088,7 @@ async function viewInbox() {
   // Nach Quittieren/„Alle gelesen“/Filterwechsel: aufgeklappter Bereich „Push für diese Hinweise“ bleibt offen; Fehler (z. B. kein Netz) als Meldung statt stillem Abbruch
   const again = async () => { const o = np.open; await viewInbox(); const d = $('#np'); if (d && o) d.open = true; };
   const bindRows = (root) => {
-    $$('[data-ack]', root).forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/notifications/${b.dataset.ack}/ack`); await refreshUnread(); again(); } catch (err) { toast(err.message, true); } }));
+    $$('[data-ack]', root).forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/notifications/${b.dataset.ack}/ack`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g: wiederholbar */ await refreshUnread(); again(); } catch (err) { toast(err.message, true); } }));
     $$('[data-open]', root).forEach((a) => a.addEventListener('click', () => api('POST', `/api/notifications/${a.dataset.open}/opened`).then(() => refreshUnread(true)).catch(() => {}))); // Zähler gleich nachziehen (19.10.2026: blieb bis zum nächsten Öffnen stehen)
   };
   bindRows(document);

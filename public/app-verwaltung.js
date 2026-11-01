@@ -604,8 +604,8 @@ async function viewDriver(id) {
     catch (err) { if (form && dupCodes && lostDup(form, sig, err, dupCodes)) { toast(t('saved_before')); viewDriver(id); return; } if (form) lostMark(form, sig, err); toast(err.message, true); } };
   bindTachoCancel(document, () => viewDriver(id));
   // Nachweis stornieren (Tippfehler): bleibt mit Begründung im Verlauf, der neueste verbliebene gilt wieder
-  $$('[data-lccancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('lc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/license-checks/${b.dataset.lccancel}/cancel`, { reason }); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
-  $$('[data-dcancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('ddoc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/documents/${b.dataset.dcancel}/cancel`, { reason }); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
+  $$('[data-lccancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('lc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/license-checks/${b.dataset.lccancel}/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
+  $$('[data-dcancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('ddoc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/documents/${b.dataset.dcancel}/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
   const ddf = $('#ddf');
   // Klassen nur beim Führerschein (Server speichert sie sonst nicht – vorher still verworfen, 20.10.2026)
   if (ddf) { const cls = () => { $('#ddcls').hidden = ddf.kind.value !== 'fuehrerschein'; }; ddf.kind.onchange = cls; cls();
@@ -691,7 +691,7 @@ async function viewEmergencyEdit() {
     };
   }
   $$('[data-emedit]').forEach((b) => (b.onclick = async () => { S.emEdit = b.dataset.emedit; await viewEmergencyEdit(); window.scrollTo(0, 0); }));
-  $$('[data-emarch]').forEach((b) => (b.onclick = async () => { if (!confirm(t('em_archive_confirm'))) return; try { await api('POST', `/api/emergency/contacts/${b.dataset.emarch}/archive`); if (S.emEdit === b.dataset.emarch) S.emEdit = null; toast(t('em_saved')); viewEmergencyEdit(); } catch (err) { toast(err.message, true); } }));
+  $$('[data-emarch]').forEach((b) => (b.onclick = async () => { if (!confirm(t('em_archive_confirm'))) return; try { await api('POST', `/api/emergency/contacts/${b.dataset.emarch}/archive`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ if (S.emEdit === b.dataset.emarch) S.emEdit = null; toast(t('em_saved')); viewEmergencyEdit(); } catch (err) { toast(err.message, true); } }));
 }
 async function viewQrSheet(oneId) {
   if (!isMgr()) { location.hash = '#/'; return; }
@@ -1205,7 +1205,7 @@ async function viewTimeline(id, fArg) {
   // Rücksprung ohne Begründung: Begründung nachtragen (km-Wert bleibt; Datenqualität „Rücksprung ohne Begründung“ erledigt sich)
   $$('[data-odonote]').forEach((b) => (b.onclick = async () => {
     const n = prompt(t('odo_reason_prompt')); if (!n || !n.trim()) return;
-    try { await api('POST', `/api/odometer/${encodeURIComponent(b.dataset.odonote)}/note`, { note: n.trim() }); toast(t('saved_ok')); viewTimeline(id, fArg); } catch (err) { toast(err.message, true); }
+    try { const r = await api('POST', `/api/odometer/${encodeURIComponent(b.dataset.odonote)}/note`, { note: n.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast(t(r && r.duplicate ? 'saved_before' : 'saved_ok')); viewTimeline(id, fArg); } catch (err) { toast(err.message, true); }
   }));
   // Filterwechsel ersetzt nur den Verlaufseintrag (kein neuer Eintrag je Klick), Fokus bleibt auf dem gewählten Knopf
   $$('[data-tl]').forEach((b) => (b.onclick = async () => {

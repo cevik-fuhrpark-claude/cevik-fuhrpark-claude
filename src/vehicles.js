@@ -1419,6 +1419,7 @@ export async function addOdometerNote(env, user, readingId, body) {
   const note = str(body.note, { max: 300, field: 'Begründung', required: true });
   const o = await env.DB.prepare('SELECT id, vehicle_id, km, measured_at, note FROM odometer_readings WHERE id=?').bind(readingId).first();
   if (!o) throw notFound('km-Stand nicht gefunden.');
+  if (o.note && String(o.note).trim() === note) return { ok: true, duplicate: true }; // Backlog 805g: Wiederholung derselben Begründung
   if (o.note && String(o.note).trim()) throw conflict('note_exists', 'Zu diesem km-Stand ist bereits eine Begründung erfasst.');
   const r = await env.DB.prepare(`UPDATE odometer_readings SET note=? WHERE id=? AND (note IS NULL OR trim(note)='')`).bind(note, readingId).run();
   if (!r.meta || r.meta.changes !== 1) throw conflict('note_exists', 'Zu diesem km-Stand ist bereits eine Begründung erfasst.');

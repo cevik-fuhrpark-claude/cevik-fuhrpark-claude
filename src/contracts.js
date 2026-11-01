@@ -236,9 +236,11 @@ export async function updateContract(env, user, id, body, envName) {
 export async function endContract(env, user, id, body) {
   if (!isMgr(user)) throw forbidden();
   const c = await loadContract(env, id);
-  if (c.ended_on) throw bad('contract_ended', 'Vertrag ist bereits beendet.');
   const on = date(body.ended_on, 'Beendet am', { notFuture: true }) || berlinDate();
   const note = str(body.end_note, { required: true, max: 300, field: 'Grund' });
+  // Backlog 805g (Funkloch): Wiederholung nach verlorener Antwort – genau so beendet → Erfolg; sonst wie bisher „bereits beendet“
+  if (c.ended_on && c.ended_on === on && (c.end_note || null) === note) return { id, ended_on: on, duplicate: true };
+  if (c.ended_on) throw bad('contract_ended', 'Vertrag ist bereits beendet.');
   // Storno vor Beginn (Beginn noch in der Zukunft): Beenden vor dem Beginn zulässig – sonst blieb er „aktiv“ und zählte ab Beginn Raten (18.10.2026)
   if (c.start_date && on < c.start_date && c.start_date <= berlinDate()) throw bad('validation', 'Beendet am liegt vor dem Vertragsbeginn.');
   const r = await env.DB.prepare('UPDATE vehicle_contracts SET ended_on=?, end_note=?, updated_at=? WHERE id=? AND ended_on IS NULL AND updated_at=?').bind(on, note, laterIso(c.updated_at), id, c.updated_at).run();

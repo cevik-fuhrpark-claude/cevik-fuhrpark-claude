@@ -3057,7 +3057,7 @@ async function viewClaims() {
 
 // Verlauf der Auslesungen (Fahrerakte, Fahrzeugakte): stornierte durchgestrichen mit Begründung; Leitung kann stornieren (18.10.2026)
 const tachoHistList = (list, canCancel) => `<ul class="small tachohist">${list.map((o) => `<li${o.cancelled_at ? ' class="muted"' : ''}>${o.cancelled_at ? '<s>' : ''}${fmtD(o.downloaded_on)} · ${esc(o.evidence)}${o.note ? ' – ' + esc(o.note === 'Import' ? t('odo_src_import') : o.note) : ''}${o.cancelled_at ? '</s>' : ''}${o.created_by_name ? ` <span class="muted">(${esc(o.created_by_name)})</span>` : ''}${o.cancelled_at ? ` <span class="chip">${esc(t('tacho_cancelled'))}</span> ${esc(o.cancel_reason || '')}` : canCancel ? ` <button type="button" class="btn secondary small" data-tcancel="${esc(o.id)}">${esc(t('tacho_cancel'))}</button>` : ''}</li>`).join('')}</ul>${canCancel && list.some((o) => !o.cancelled_at) ? `<p class="small muted noprint">${esc(t('tacho_cancel_hint'))}</p>` : ''}`;
-const bindTachoCancel = (root, reload) => $$('[data-tcancel]', root).forEach((b) => (b.onclick = async () => { const reason = prompt(t('tacho_cancel_reason')); if (!reason) return; try { await api('POST', `/api/tacho/downloads/${b.dataset.tcancel}/cancel`, { reason }); toast('✓'); reload(); } catch (err) { toast(err.message, true); } }));
+const bindTachoCancel = (root, reload) => $$('[data-tcancel]', root).forEach((b) => (b.onclick = async () => { const reason = prompt(t('tacho_cancel_reason')); if (!reason) return; try { await api('POST', `/api/tacho/downloads/${b.dataset.tcancel}/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g: Wiederholung = duplicate */ toast('✓'); reload(); } catch (err) { toast(err.message, true); } }));
 // Lager-Buchungstexte in der Oberflächensprache (Standortcode → Name, Zahl/Datum im Sprachformat)
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
 // Werkstatt „EXTERN“ hat einen festen deutschen Namen aus dem Schema – in der App-Sprache anzeigen (22.10.2026, Fund Druck UK/EN)
@@ -3900,7 +3900,7 @@ async function loadVehicleNotes(vid, showArchive = false) {
       <label class="check"><input type="checkbox" name="for_driver"> ${esc(t('vnote_for_driver'))}</label><label for="vnv">${esc(t('vnote_valid'))}<span class="hint">${esc(t('vnote_valid_hint'))}</span></label><input type="date" id="vnv" name="valid_until" style="max-width:220px"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}
     <p class="noprint"><button type="button" class="linkbtn" id="vnar">${esc(showArchive ? t('vnote_hide_archive') : t('vnote_show_archive'))}</button></p>
     ${ar ? (ar.length ? `<ul class="vnotes small muted">${ar.map((n) => `<li><s>${esc(n.text)}</s> · ${fmtDT(n.created_at)} – ${n.archived_at ? `${esc(t('vnote_archived'))} ${fmtDT(n.archived_at)}${n.archived_by_name ? ' · ' + esc(n.archived_by_name) : ''}` : esc(t('vnote_expired').replace('{d}', fmtD(n.valid_until)))}</li>`).join('')}</ul>${arr.truncated ? `<p class="small muted" id="vnartrunc">${esc(t('vnote_arch_truncated').replace('{n}', ar.length))} <a href="${tlHash(encodeURIComponent(vid), 'note')}">${esc(t('timeline'))}</a></p>` : ''}` : `<p class="small muted">–</p>`) : ''}`;
-  $$('[data-arch]', box).forEach((b) => (b.onclick = async () => { try { await api('POST', `${base}/${b.dataset.arch}/archive`); loadVehicleNotes(vid, showArchive); } catch (err) { toast(err.message, true); } }));
+  $$('[data-arch]', box).forEach((b) => (b.onclick = async () => { try { await api('POST', `${base}/${b.dataset.arch}/archive`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ loadVehicleNotes(vid, showArchive); } catch (err) { toast(err.message, true); } }));
   $('#vnar', box).onclick = () => loadVehicleNotes(vid, !showArchive);
   if ($('#vnf', box)) $('#vnf', box).onsubmit = async (e) => { e.preventDefault(); const fd = new FormData(e.target);
     const nb = { text: fd.get('text'), for_driver: fd.get('for_driver') === 'on', valid_until: fd.get('valid_until') || null }; nb.request_key = rkFor(e.target, nb); // Backlog 804: Zeitlimit, Wiederholung ohne zweiten Hinweis
@@ -4201,7 +4201,7 @@ function bindCtSection(id, reload) {
   const rateRetro = (fm) => { const ri = fm.elements.monthly_rate_net; const sd = fm.elements.start_date;
     return !!(ri && sd && ri.defaultValue.trim() !== '' && ri.value.trim() !== ri.defaultValue.trim() && sd.value && sd.value < BERLIN_FMT.format(new Date()).slice(0, 7) + '-01'); };
   $$('form[data-ctedit]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); if (rateRetro(fm) && !confirm(t('ct_rate_retro_confirm'))) return; try { await api('PATCH', `/api/contracts/${fm.dataset.ctedit}`, { ...ctBody(fm), ...(fm.dataset.upd ? { expected_updated_at: fm.dataset.upd } : {}) }); toast('✓'); reload(); } catch (err) { toast(err.message, true); } }));
-  $$('form[data-ctend]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { await api('POST', `/api/contracts/${fm.dataset.ctend}/end`, ctBody(fm)); toast('✓'); reload(); } catch (err) { toast(err.message, true); } }));
+  $$('form[data-ctend]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', `/api/contracts/${fm.dataset.ctend}/end`, ctBody(fm), { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast(r && r.duplicate ? t('saved_before') : '✓'); reload(); } catch (err) { toast(err.message, true); } }));
 }
 // Backlog 288 (Leasingrückgabe): offene Vorgänge/Restarbeiten am Fahrzeug, wenn Leasing/Miete bald endet bzw. abgelaufen ist
 function ctRet(rc) {
@@ -5346,8 +5346,8 @@ async function viewDriver(id) {
     catch (err) { if (form && dupCodes && lostDup(form, sig, err, dupCodes)) { toast(t('saved_before')); viewDriver(id); return; } if (form) lostMark(form, sig, err); toast(err.message, true); } };
   bindTachoCancel(document, () => viewDriver(id));
   // Nachweis stornieren (Tippfehler): bleibt mit Begründung im Verlauf, der neueste verbliebene gilt wieder
-  $$('[data-lccancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('lc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/license-checks/${b.dataset.lccancel}/cancel`, { reason }); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
-  $$('[data-dcancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('ddoc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/documents/${b.dataset.dcancel}/cancel`, { reason }); toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
+  $$('[data-lccancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('lc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/license-checks/${b.dataset.lccancel}/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
+  $$('[data-dcancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('ddoc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/documents/${b.dataset.dcancel}/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
   const ddf = $('#ddf');
   // Klassen nur beim Führerschein (Server speichert sie sonst nicht – vorher still verworfen, 20.10.2026)
   if (ddf) { const cls = () => { $('#ddcls').hidden = ddf.kind.value !== 'fuehrerschein'; }; ddf.kind.onchange = cls; cls();
@@ -5619,7 +5619,7 @@ async function viewEmergencyEdit() {
     };
   }
   $$('[data-emedit]').forEach((b) => (b.onclick = async () => { S.emEdit = b.dataset.emedit; await viewEmergencyEdit(); window.scrollTo(0, 0); }));
-  $$('[data-emarch]').forEach((b) => (b.onclick = async () => { if (!confirm(t('em_archive_confirm'))) return; try { await api('POST', `/api/emergency/contacts/${b.dataset.emarch}/archive`); if (S.emEdit === b.dataset.emarch) S.emEdit = null; toast(t('em_saved')); viewEmergencyEdit(); } catch (err) { toast(err.message, true); } }));
+  $$('[data-emarch]').forEach((b) => (b.onclick = async () => { if (!confirm(t('em_archive_confirm'))) return; try { await api('POST', `/api/emergency/contacts/${b.dataset.emarch}/archive`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ if (S.emEdit === b.dataset.emarch) S.emEdit = null; toast(t('em_saved')); viewEmergencyEdit(); } catch (err) { toast(err.message, true); } }));
 }
 
 // ---------- QR-Aufkleber je Fahrzeug: Scan öffnet „Schaden melden“ mit vorausgewähltem Fahrzeug ----------
@@ -5793,7 +5793,7 @@ async function viewInbox() {
   // Nach Quittieren/„Alle gelesen“/Filterwechsel: aufgeklappter Bereich „Push für diese Hinweise“ bleibt offen; Fehler (z. B. kein Netz) als Meldung statt stillem Abbruch
   const again = async () => { const o = np.open; await viewInbox(); const d = $('#np'); if (d && o) d.open = true; };
   const bindRows = (root) => {
-    $$('[data-ack]', root).forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/notifications/${b.dataset.ack}/ack`); await refreshUnread(); again(); } catch (err) { toast(err.message, true); } }));
+    $$('[data-ack]', root).forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/notifications/${b.dataset.ack}/ack`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g: wiederholbar */ await refreshUnread(); again(); } catch (err) { toast(err.message, true); } }));
     $$('[data-open]', root).forEach((a) => a.addEventListener('click', () => api('POST', `/api/notifications/${a.dataset.open}/opened`).then(() => refreshUnread(true)).catch(() => {}))); // Zähler gleich nachziehen (19.10.2026: blieb bis zum nächsten Öffnen stehen)
   };
   bindRows(document);
@@ -6370,7 +6370,7 @@ async function viewTimeline(id, fArg) {
   // Rücksprung ohne Begründung: Begründung nachtragen (km-Wert bleibt; Datenqualität „Rücksprung ohne Begründung“ erledigt sich)
   $$('[data-odonote]').forEach((b) => (b.onclick = async () => {
     const n = prompt(t('odo_reason_prompt')); if (!n || !n.trim()) return;
-    try { await api('POST', `/api/odometer/${encodeURIComponent(b.dataset.odonote)}/note`, { note: n.trim() }); toast(t('saved_ok')); viewTimeline(id, fArg); } catch (err) { toast(err.message, true); }
+    try { const r = await api('POST', `/api/odometer/${encodeURIComponent(b.dataset.odonote)}/note`, { note: n.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast(t(r && r.duplicate ? 'saved_before' : 'saved_ok')); viewTimeline(id, fArg); } catch (err) { toast(err.message, true); }
   }));
   // Filterwechsel ersetzt nur den Verlaufseintrag (kein neuer Eintrag je Klick), Fokus bleibt auf dem gewählten Knopf
   $$('[data-tl]').forEach((b) => (b.onclick = async () => {
