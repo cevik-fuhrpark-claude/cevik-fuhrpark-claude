@@ -29323,6 +29323,25 @@ await test('Backlog 805k (Blickwinkel „Funkloch“): Passwort ändern, Zwei-Fa
   eq((await U.fleet.post('/api/login', { username: 'w.fuhrpark', password: 'Neues-Passwort-805k-Lang' })).status, 200, 'neues Passwort gilt');
 });
 
+await test('Backlog 806 (Blickwinkel „Handy steht auf ukrainischer Zeit“): Hinweis an Uhrzeit-Eingaben (Schadenzeitpunkt, Tatzeit, Push-Ruhezeit), wenn das Gerät nicht auf deutscher Zeit steht; Berliner Versatz inkl. Zeitumstellung richtig', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.match(/const berlinOffMin = [\s\S]*?\n  return [^\n]*\n/); ok(src, 'berlinOffMin');
+  const berlinOffMin = new Function(src[0] + 'return berlinOffMin;')();
+  eq(berlinOffMin(Date.parse('2026-11-01T12:00:00Z')), 60, 'Winterzeit');
+  eq(berlinOffMin(Date.parse('2026-07-01T12:00:00Z')), 120, 'Sommerzeit');
+  eq(berlinOffMin(Date.parse('2026-10-25T00:59:00Z')), 120, 'vor der Umstellung');
+  eq(berlinOffMin(Date.parse('2026-10-25T01:00:00Z')), 60, 'nach der Umstellung');
+  eq(berlinOffMin(Date.parse('2027-03-28T01:00:00Z')), 120, 'Umstellung März');
+  eq(berlinOffMin(Date.parse('2026-12-31T23:30:30Z')), 60, 'Jahreswechsel, Sekunden');
+  ok(app.includes('step="60" value="${esc(tv)}"></div></div>${tzNote()}`; };'), 'Schadenzeitpunkt');
+  ok(app.includes(`id="nf-tz" style="margin:2px 0 8px">\${esc(t('offense_at_tz'))}</p>\${tzNote()}`), 'Bußgeld erfassen');
+  ok(app.includes(`id="ufotz">\${esc(t('offense_at_tz'))}</p>\${tzNote()}`), 'Bußgeld ändern');
+  ok(app.includes("${tzNote() ? `<div style=\"grid-column:1/-1\">${tzNote()}</div>` : ''}"), 'Push-Ruhezeit');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].tz_device_diff.includes('{d}') && STRINGS[l].tz_device_diff.includes('{now}'), 'Text ' + l);
+});
+
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
