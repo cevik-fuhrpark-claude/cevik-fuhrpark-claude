@@ -2398,7 +2398,7 @@ async function viewNewMulti() {
     try {
       const k = Math.ceil(ids.length / BATCH_CHUNK); const size = Math.ceil(ids.length / k); const r = { count: 0, cases: [] };
       try {
-        for (let i = 0; i < ids.length; i += size) { const x = await api('POST', '/api/cases/batch', { ...body, vehicle_ids: ids.slice(i, i + size) }); r.count += x.count; r.cases.push(...x.cases); }
+        for (let i = 0; i < ids.length; i += size) { const x = await api('POST', '/api/cases/batch', { ...body, vehicle_ids: ids.slice(i, i + size) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h: request_key → keine Dubletten */ r.count += x.count; r.cases.push(...x.cases); }
       } catch (err) { if (r.count) err.message = `${err.offline ? t('multi_offline') : err.message} ${tfill('multi_partial', { n: r.count, m: ids.length })}`; err.offline = err.offline && !r.count; throw err; }
       if (!sb.isConnected) return;
       document.querySelectorAll('.toast.err').forEach((x) => x.remove()); // Hinweis eines früheren Versuchs (z. B. „mindestens zwei“) ist erledigt
@@ -4108,7 +4108,9 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   $$('form[data-mdef]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const r = await api('POST', `/api/maintenance/events/${fm.dataset.mdef}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓ ' + r.case_no); location.hash = '#/cases/' + r.id; } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
   $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const r = await api('POST', hsUrl(fm.dataset.mord, 'order'), { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805 */ toast('✓ ' + r.case_no); location.hash = '#/cases/' + r.id; } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
   $$('form[data-medit]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); if ('interval_months' in b && !b.interval_months.trim()) b.interval_months = null; try { const r = await api('PATCH', '/api/maintenance/' + encodeURIComponent(fm.dataset.medit), b); toast(r && r.changed && r.changed.length ? '✓' : t('medit_nochange')); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
-  $$('form[data-mend]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); if (!confirm(t('mend_confirm'))) return; try { const r = await api('POST', '/api/maintenance/' + encodeURIComponent(fm.dataset.mend) + '/end', { reason: fm.reason.value }); toast(t(r && r.deleted ? 'mend_deleted' : 'mend_ended')); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
+  $$('form[data-mend]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); if (!confirm(t('mend_confirm'))) return; try { const mb = { reason: fm.reason.value }; const r = await api('POST', '/api/maintenance/' + encodeURIComponent(fm.dataset.mend) + '/end', mb, { timeoutMs: SEND_TIMEOUT_MS }); toast(t(r && r.deleted ? 'mend_deleted' : 'mend_ended')); viewVehicle(id); }
+    // Backlog 805h (Funkloch): ohne Nachweise wird der Prüftermin gelöscht – die Wiederholung nach verlorener Antwort findet ihn nicht mehr (404)
+    catch (err) { if (lostDup(fm, mb, err, ['not_found'])) { toast(t('saved_before')); viewVehicle(id); return; } lostMark(fm, mb, err); toast(err.message, true); } }));
   $$('form[data-hsplan]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', hsUrl(fm.dataset.hsplan, 'plan'), { planned_date: fm.planned_date.value || null }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805f: Termin setzen ist wiederholbar */ if (r && r.after_due) toast(t('plan_after_due').replace('{d}', fmtD(r.planned_date)).replace('{due}', fmtD(r.after_due)), true); else toast('✓'); viewVehicle(id); } catch (err) { toast(err.message, true); } }));
   // Direktsprung „Durchführung erfassen“ (Werkstattplan): Formular des Eintrags öffnen; HU/SP stehen im aufklappbaren Bereich der Prüfung
   if (sec && sec.startsWith('done:')) {
@@ -4253,7 +4255,7 @@ function ctBatch(list) {
     const m = fm.mode.value;
     if (m === 'end' && !confirm(t('ctb_confirm_end').replace('{n}', ids.length))) return;
     try {
-      const r = await api('POST', '/api/contracts/batch', m === 'end' ? { mode: m, ids, ended_on: fm.ended_on.value || null, end_note: fm.end_note.value } : { mode: m, ids, end_date: fm.end_date.value, replace: fm.replace.checked });
+      const r = await api('POST', '/api/contracts/batch', m === 'end' ? { mode: m, ids, ended_on: fm.ended_on.value || null, end_note: fm.end_note.value } : { mode: m, ids, end_date: fm.end_date.value, replace: fm.replace.checked }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h: je Vertrag geprüft, nie doppelt */
       const skip = (r.skipped || []).map((x) => `<li>${x.plate ? esc(x.plate) + ' · ' : ''}${x.kind ? esc(t('ck_' + x.kind)) + ' · ' : ''}${x.partner ? esc(x.partner) + ': ' : ''}${esc(t('ctb_sk_' + x.code))}</li>`).join('');
       S.ctbRes = `<div class="panel ${skip ? 'warn' : 'ok'}" style="margin-top:8px" data-ctbres><b>${esc(t(m === 'end' ? 'ctb_done_end' : 'ctb_done_date').replace('{n}', r.done.length).replace('{d}', fmtD(m === 'end' ? r.ended_on : r.end_date)))}</b>${skip ? `<br><span class="small">${esc(t('ctb_skipped'))}:</span><ul class="small" style="margin:4px 0 0 18px">${skip}</ul>` : ''}</div>`;
       S.ctbOpen = true; toast('✓');
@@ -5219,7 +5221,7 @@ function wireDtb() {
     if (!ids.length) { toast(t('dtb_none'), true); return; }
     const b = { driver_ids: ids, title: fd.get('title'), issued_on: fd.get('issued_on'), evidence: fd.get('evidence') }; if (fd.get('valid_until')) b.valid_until = fd.get('valid_until');
     try {
-      const r = await api('POST', '/api/drivers/trainings', b);
+      const r = await api('POST', '/api/drivers/trainings', b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h: gleicher Eintrag je Fahrer nur einmal */
       document.querySelectorAll('.toast.err').forEach((x) => x.remove()); // Hinweis eines früheren Versuchs („Fahrer auswählen“) ist erledigt
       S.dtbRes = `<p class="panel good" data-dtbdone>✓ ${esc(tn('dtb_done', r.created))}${r.existing ? ` · ${esc(tn('dtb_existing', r.existing))}` : ''}</p><p class="small">${r.rows.map((x) => `<a href="#/drivers/${esc(x.driver_id)}">${esc(x.display_name)}</a>${x.status === 'vorhanden' ? ` <span class="muted">(${esc(t('dtb_was'))})</span>` : ''}`).join(', ')}</p>`;
       await viewDrivers(); // zeigt S.dtbRes einmal im aufgeklappten Bereich und setzt es zurück
@@ -5252,7 +5254,7 @@ function wireDlb() {
     if (!ids.length) { toast(t('dtb_none'), true); return; }
     const b = { driver_ids: ids, checked_on: fd.get('checked_on'), result: 'in_ordnung' }; if (fd.get('note')) b.note = fd.get('note');
     try {
-      const r = await api('POST', '/api/drivers/license-checks', b);
+      const r = await api('POST', '/api/drivers/license-checks', b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h */
       document.querySelectorAll('.toast.err').forEach((x) => x.remove());
       S.dlbRes = `<p class="panel good" data-dlbdone>✓ ${esc(tn('dlb_done', r.created))}${r.existing ? ` · ${esc(tn('dtb_existing', r.existing))}` : ''}</p><p class="small">${r.rows.map((x) => `<a href="#/drivers/${esc(x.driver_id)}">${esc(x.display_name)}</a>${x.status === 'vorhanden' ? ` <span class="muted">(${esc(t('dtb_was'))})</span>` : ''}`).join(', ')}</p>`;
       await viewDrivers(); // zeigt S.dlbRes einmal im aufgeklappten Bereich und setzt es zurück
@@ -6049,7 +6051,7 @@ async function viewMaintMulti() {
     if (ids.length > MC_MAX) { toast(t('mc_too_many'), true); markInvalid($('#mcpick'), t('mc_too_many')); return; }
     sb.disabled = true;
     try {
-      const r = await api('POST', '/api/maintenance/create-batch', { kind: $('#mck').value, evidence: $('#mce').value, ...($('#mck').value === 'Sonstiges' && $('#mct').value.trim() ? { title: $('#mct').value.trim() } : {}), next_due_date: $('#mcd').value || null, interval_months: $('#mci').value.trim() || null, vehicle_ids: ids });
+      const r = await api('POST', '/api/maintenance/create-batch', { /* Backlog 805h: vorhandene werden übersprungen */ kind: $('#mck').value, evidence: $('#mce').value, ...($('#mck').value === 'Sonstiges' && $('#mct').value.trim() ? { title: $('#mct').value.trim() } : {}), next_due_date: $('#mcd').value || null, interval_months: $('#mci').value.trim() || null, vehicle_ids: ids }, { timeoutMs: SEND_TIMEOUT_MS });
       if (!sb.isConnected) return;
       document.querySelectorAll('.toast.err').forEach((x) => x.remove());
       const skip = (r.skipped || []).map((x) => `<li>${x.plate ? esc(x.plate) + ' · ' : ''}${esc(t('mc_sk_' + x.code))}</li>`).join('');
@@ -6150,7 +6152,7 @@ async function viewMaint(fq) {
       const ids = boxes().filter((x) => x.checked).map((x) => x.value);
       if (!ids.length) { toast(t('mb_pick'), true); return; }
       try {
-        const r = await api('POST', '/api/maintenance/plan-batch', { planned_date: mbf.planned_date.value, ids, replace: mbf.replace.checked });
+        const r = await api('POST', '/api/maintenance/plan-batch', { planned_date: mbf.planned_date.value, ids, replace: mbf.replace.checked }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h */
         const skip = (r.skipped || []).map((x) => `<li>${x.plate ? esc(x.plate) + ' · ' : ''}${x.kind ? esc(mk(x.kind)) + ': ' : ''}${esc(t('mb_sk_' + x.code).replace('{d}', fmtD(x.planned_date)))}</li>`).join('');
         S.mbRes = `<p class="panel ${r.skipped && r.skipped.length ? 'warn' : 'ok'}" style="margin-top:8px"><b>${esc(tn('mb_done', r.planned.length).replace('{d}', fmtD(r.planned_date)))}</b>${r.unchanged ? ` · ${esc(t('mb_unchanged').replace('{n}', fmtNum(r.unchanged)))}` : ''}${r.planned.some((x) => x.after_due) ? `<br><span class="small" data-mbafterdue>⚠ ${esc(t('mb_after_due'))}: ${r.planned.filter((x) => x.after_due).map((x) => `${esc(x.plate)} · ${esc(mk(x.kind))} (${esc(t('next_due'))} ${fmtD(x.after_due)})`).join('; ')}</span>` : ''}${r.planned.some((x) => x.replaced) ? `<br><span class="small">${r.planned.filter((x) => x.replaced).map((x) => `${esc(x.plate)} · ${esc(mk(x.kind))} (${esc(t('mb_replaced').replace('{d}', fmtD(x.replaced)))})`).join('; ')}</span>` : ''}</p>${skip ? `<p class="small"><b>${esc(t('mb_skipped'))}</b></p><ul class="small">${skip}</ul>` : ''}`;
         S.mbOpen = true; S.mbDate = r.planned_date;

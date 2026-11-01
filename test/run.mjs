@@ -23215,7 +23215,7 @@ await test('Backlog 410 (Blickwinkel „Jährliche Fahrerunterweisung – viele 
   const [p1, p2] = await Promise.all([U.fleet.post('/api/drivers/trainings', { ...body, driver_ids: [E] }), U.fleet.post('/api/drivers/trainings', { ...body, driver_ids: [E] })]);
   eq(p1.data.created + p2.data.created, 1); eq((await docsOf(E)).length, 1);
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("if (!isMgr() || S.drvInactive || !list.length) return '';") && app.includes("api('POST', '/api/drivers/trainings', b)") && app.includes("S.dtbRes = ''; S.dlbRes = ''; wireDtb();") && app.includes('${dtbHtml(list)}'), 'Oberfläche');
+  ok(app.includes("if (!isMgr() || S.drvInactive || !list.length) return '';") && app.includes("api('POST', '/api/drivers/trainings', b, { timeoutMs: SEND_TIMEOUT_MS })") && app.includes("S.dtbRes = ''; S.dlbRes = ''; wireDtb();") && app.includes('${dtbHtml(list)}'), 'Oberfläche');
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['dtb_title', 'dtb_hint', 'dtb_date', 'dtb_ev_ph', 'dtb_pick', 'dtb_send', 'dtb_none', 'dtb_was', 'dtb_inactive']) ok(STRINGS[l][x], `${x} ${l}`); for (const x of ['dtb_done', 'dtb_existing', 'dtb_selected']) ok(PLURALS[l][x], `Plural ${x} ${l}`); ok(STRINGS[l].help_drivers_s.includes(STRINGS[l].dtb_title), 'Hilfe ' + l); }
 });
@@ -23243,7 +23243,7 @@ await test('Backlog 411 (Blickwinkel „Halbjährliche Führerscheinkontrolle al
   const au = (await e.DB.prepare(`SELECT detail FROM audit_log WHERE action='driver.license_check' AND target IN (?,?)`).bind(A, B).all()).results;
   eq(au.filter((x) => JSON.parse(x.detail).batch === true).length, 3);
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("const DLB_DUE = ['faellig', 'bald', 'fehlt'];") && app.includes("api('POST', '/api/drivers/license-checks', b)") && app.includes("result: 'in_ordnung' };") && app.includes('${dtbHtml(list)}${dlbHtml(list)}'), 'Oberfläche');
+  ok(app.includes("const DLB_DUE = ['faellig', 'bald', 'fehlt'];") && app.includes("api('POST', '/api/drivers/license-checks', b, { timeoutMs: SEND_TIMEOUT_MS })") && app.includes("result: 'in_ordnung' };") && app.includes('${dtbHtml(list)}${dlbHtml(list)}'), 'Oberfläche');
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['dlb_title', 'dlb_hint', 'dlb_pick', 'dlb_due', 'dlb_send']) ok(STRINGS[l][x], `${x} ${l}`); ok(PLURALS[l].dlb_done); ok(STRINGS[l].help_drivers_s.includes(STRINGS[l].dlb_title), 'Hilfe ' + l); }
 });
@@ -29209,6 +29209,25 @@ await test('Backlog 805g (Blickwinkel „Funkloch“): Hinweis erledigen, Fahrze
   eq((await U.fleet.post(`/api/odometer/${rid}/note`, { note: 'Tachotausch 805g' })).status, 200);
   const o2 = await U.fleet.post(`/api/odometer/${rid}/note`, { note: 'Tachotausch 805g' }); eq(o2.status, 200); eq(o2.data.duplicate, true);
   eq((await U.fleet.post(`/api/odometer/${rid}/note`, { note: 'anders' })).status, 409, 'andere Begründung');
+});
+
+await test('Backlog 805h (Blickwinkel „Funkloch“): Sammelaktionen (Sammelmeldung, Verträge, Prüftermine anlegen/planen, Unterweisungen, Führerscheinkontrollen) und Prüftermin beenden mit Zeitlimit; Wiederholung legt nichts doppelt an; gelöschter Prüftermin → nach verlorener Antwort „War bereits gespeichert“', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const ep of ['/api/cases/batch', '/api/contracts/batch', '/api/drivers/trainings', '/api/drivers/license-checks', '/api/maintenance/plan-batch']) {
+    const i = app.indexOf(`api('POST', '${ep}'`); ok(i > 0, ep); ok(app.slice(i, i + 400).includes('{ timeoutMs: SEND_TIMEOUT_MS }'), 'Zeitlimit ' + ep);
+  }
+  ok(app.includes("interval_months: $('#mci').value.trim() || null, vehicle_ids: ids }, { timeoutMs: SEND_TIMEOUT_MS });"), 'Prüftermine anlegen');
+  ok(app.includes("if (lostDup(fm, mb, err, ['not_found'])) { toast(t('saved_before')); viewVehicle(id); return; }"), 'Prüftermin beenden');
+  const { U } = await freshWorld();
+  const V = 'VIN:WMA15SZZ2HM722774';
+  const cb = { kind: 'UVV', evidence: 'UVV 805h', interval_months: 12, next_due_date: '2027-03-31', vehicle_ids: [V] };
+  const c1 = await U.fleet.post('/api/maintenance/create-batch', cb); eq(c1.status, 200, JSON.stringify(c1.data));
+  const c2 = await U.fleet.post('/api/maintenance/create-batch', cb); eq(c2.status, 200); eq(c2.data.skipped[0].code, 'rule_exists', 'nie doppelt');
+  eq((await U.fleet.get(`/api/vehicles/${V}`)).data.maintenance.filter((m) => m.kind === 'UVV').length, 1);
+  const d = await U.fleet.post('/api/drivers', { display_name: 'Fahrer 805h' }); eq(d.status, 201);
+  const tb = { driver_ids: [d.data.id], title: 'Ladungssicherung 805h', issued_on: BERLIN_TODAY, evidence: 'Teilnehmerliste 805h' };
+  eq((await U.fleet.post('/api/drivers/trainings', tb)).status, 201); const t2 = await U.fleet.post('/api/drivers/trainings', tb); eq(t2.status, 201); eq(t2.data.created, 0, 'Unterweisung nie doppelt'); eq(t2.data.existing, 1);
 });
 
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
