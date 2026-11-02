@@ -64,18 +64,26 @@ export async function listStock(env, user, envName, query) {
     });
     // Zum Bestellen: letzter Lieferant (jüngster Zugang mit Lieferant) und letzter Zugang – nur aus gebuchten Zugängen, eine Abfrage
     if (list.length) {
-      const last = new Map((await env.DB.prepare(`SELECT i.value AS id,
-          (SELECT m.supplier FROM stock_movements m WHERE m.item_id=i.value AND m.type='zugang' AND m.supplier IS NOT NULL AND m.supplier<>'' ORDER BY m.created_at DESC LIMIT 1) AS last_supplier,
-          (SELECT MAX(m.created_at) FROM stock_movements m WHERE m.item_id=i.value AND m.type='zugang') AS last_receipt_at
-        FROM json_each(?) i`).bind(JSON.stringify(list.map((r) => r.id))).all()).results.map((x) => [x.id, x]));
-      list = list.map((r) => ({ ...r, last_supplier: last.get(r.id)?.last_supplier || null, last_receipt_date: last.get(r.id)?.last_receipt_at ? berlinDate(last.get(r.id).last_receipt_at) : null }));
+      list = await withLastReceipt(env, list);
       // Backlog 815: derselbe Artikel in anderen Lagern vorrätig → Umlagerung statt Bestellung prüfen (nur Leitung – Werkstatt sieht nur ihr Lager)
       if (isMgr(user)) { const other = await otherStock(env, envName, list); list = list.map((r) => ({ ...r, other_stock: other.get(r.id) || [] })); }
       // je Lager nach Lieferant gruppiert (ohne Lieferant zuletzt), dann Bezeichnung
       list.sort((a, b) => a.site.localeCompare(b.site) || (a.last_supplier === null) - (b.last_supplier === null) || String(a.last_supplier || '').localeCompare(String(b.last_supplier || ''), 'de') || a.name.localeCompare(b.name, 'de'));
     }
+  } else if (query.last === '1' && list.length) {
+    // Backlog 860 (Blickwinkel „Werkstatt wechselt den Lieferanten für Bremsteile“): Wareneingang zeigt je Position den letzten Lieferanten,
+    // das Datum des letzten Zugangs (Preis = letzter bekannter Einkaufspreis des Artikels) – gleiche Abfrage wie im Bestellvorschlag, nur auf Anfrage (?last=1)
+    list = await withLastReceipt(env, list);
   }
   return list;
+}
+// letzter Lieferant (jüngster Zugang mit Lieferant) und letzter Zugang – nur aus gebuchten Zugängen, eine Abfrage
+async function withLastReceipt(env, list) {
+  const last = new Map((await env.DB.prepare(`SELECT i.value AS id,
+      (SELECT m.supplier FROM stock_movements m WHERE m.item_id=i.value AND m.type='zugang' AND m.supplier IS NOT NULL AND m.supplier<>'' ORDER BY m.created_at DESC LIMIT 1) AS last_supplier,
+      (SELECT MAX(m.created_at) FROM stock_movements m WHERE m.item_id=i.value AND m.type='zugang') AS last_receipt_at
+    FROM json_each(?) i`).bind(JSON.stringify(list.map((r) => r.id))).all()).results.map((x) => [x.id, x]));
+  return list.map((r) => ({ ...r, last_supplier: last.get(r.id)?.last_supplier || null, last_receipt_date: last.get(r.id)?.last_receipt_at ? berlinDate(last.get(r.id).last_receipt_at) : null }));
 }
 
 // Backlog 445 (Blickwinkel „Lieferung mit mehreren Positionen kommt – Wareneingang“): ein Lieferschein, mehrere Artikel eines Lagers in einem

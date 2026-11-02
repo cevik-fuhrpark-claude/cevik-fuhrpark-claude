@@ -30694,6 +30694,25 @@ await test('Backlog 859 (Blickwinkel „Inhaber prüft vor dem Verkauf eines Lkw
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].warr_active_deact.includes('{n}'), l); const k = PLURALS[l].warr_active_deact; ok(k && k.one.includes('{n}') && k.other.includes('{n}') && (l !== 'uk' || (k.few && k.many)), `${l} Mehrzahl`); }
 });
+await test('Backlog 860 (Blickwinkel „Werkstatt wechselt den Lieferanten für Bremsteile“): Lagerliste mit ?last=1 nennt je Artikel den letzten Lieferanten und Zugang (nur gebuchte Zugänge, Entnahmen zählen nicht), ohne ?last=1 unverändert; Wareneingang zeigt Lieferant/Preis/Abweichung; Text DE/UK/EN', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const mk = async (b) => { const r = await U.ws.post('/api/stock', b); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const a = await mk({ site: 'DORTMUND', name: 'Bremsbelagsatz VA', part_number: '29087', unit_price_net: '95,00' });
+  const b = await mk({ site: 'DORTMUND', name: 'Bremsscheibe', initial_qty: '2' });
+  eq((await U.ws.post('/api/stock/receipt', { site: 'DORTMUND', supplier: 'Bremsen Alt GmbH', lines: [{ item_id: a, qty: '4', unit_price_net: '95,00' }] })).status, 201);
+  db.prepare(`UPDATE stock_movements SET created_at=datetime(created_at, '-2 days') WHERE item_id=? AND supplier='Bremsen Alt GmbH'`).run(a); // eindeutige Reihenfolge
+  eq((await U.ws.post('/api/stock/receipt', { site: 'DORTMUND', supplier: 'Bremsen Neu KG', lines: [{ item_id: a, qty: '2', unit_price_net: '104,50' }] })).status, 201);
+  eq((await U.ws.post('/api/stock/receipt', { site: 'DORTMUND', lines: [{ item_id: a, qty: '1' }] })).status, 201, 'Zugang ohne Lieferant');
+  const l = (await U.ws.get('/api/stock?last=1')).data.items; const ia = l.find((i) => i.id === a); const ib = l.find((i) => i.id === b);
+  eq(ia.last_supplier, 'Bremsen Neu KG', 'jüngster Zugang mit Lieferant'); ok(/^\d{4}-\d{2}-\d{2}$/.test(ia.last_receipt_date), 'Datum des letzten Zugangs'); eq(ia.unit_price_net, 104.5, 'letzter bekannter Preis');
+  eq(ib.last_supplier, null, 'nur Anfangsbestand'); ok('last_receipt_date' in ib);
+  const plain = (await U.ws.get('/api/stock')).data.items.find((i) => i.id === a); ok(!('last_supplier' in plain), 'ohne ?last=1 unverändert');
+  eq((await U.wsMuc.get('/api/stock?last=1')).data.items.some((i) => i.id === a), false, 'Werkstatt nur eigenes Lager');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("api('GET', '/api/stock?last=1')") && app.includes('data-rclsup') && app.includes('data-rclpct'), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l2 of ['de', 'uk', 'en']) { for (const k of ['rcl_last', 'rcl_no_sup', 'rcl_none', 'rcl_price', 'rcl_other_sup']) ok(STRINGS[l2][k], `${l2} ${k}`); ok(STRINGS[l2].rcl_diff.includes('{p}'), l2); }
+});
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

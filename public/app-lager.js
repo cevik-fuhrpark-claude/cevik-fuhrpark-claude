@@ -243,7 +243,7 @@ async function viewStockJournal() {
 // in einem Schritt als Zugang buchen (ganz oder gar nicht, Wiederholung bucht nichts doppelt).
 async function viewStockReceipt() {
   if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`);
-  const items = (await api('GET', '/api/stock')).items.filter((i) => i.active);
+  const items = (await api('GET', '/api/stock?last=1')).items.filter((i) => i.active);
   const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site) : S.meta.workshops.filter((w) => items.some((i) => i.site === w.code));
   if (!items.length || !sites.length) return render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="muted" id="rcnone">${esc(t('rcpt_no_items'))}</p>`, 'more');
   let key = uid().replace(/[^\w-]/g, '');
@@ -256,6 +256,30 @@ async function viewStockReceipt() {
       <div class="actions"><button class="btn" id="rcbook">${esc(t('rcpt_book'))}</button></div></form><div id="rcres"></div>`, 'more');
   const site = () => ($('#rcsite') ? $('#rcsite').value : sites[0].code);
   const opts = () => `<option value="">–</option>${items.filter((i) => i.site === site()).map((i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`).join('')}`;
+  // Backlog 860 (Blickwinkel „Werkstatt wechselt den Lieferanten für Bremsteile“): je Position der letzte Zugang (Lieferant, Datum) und der
+  // letzte bekannte Einkaufspreis; anderer Lieferant als zuletzt bzw. abweichender Preis werden nur benannt (keine Schwelle, nichts gesperrt)
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const decNum = (x) => { // nur für den Hinweis: letztes Trennzeichen = Dezimalzeichen, außer genau eines mit drei Ziffern danach (Tausender, Sprache entscheidet)
+    const v = String(x || '').replace(/\s/g, ''); if (!/^\d[\d.,]*$/.test(v)) return null;
+    const k = Math.max(v.lastIndexOf(','), v.lastIndexOf('.')); const seps = (v.match(/[.,]/g) || []).length;
+    const dec = k >= 0 && !(seps === 1 && v.length - k - 1 === 3 && v[k] === (S.lang === 'en' ? ',' : '.'));
+    const f = Number(dec ? v.slice(0, k).replace(/[.,]/g, '') + '.' + v.slice(k + 1) : v.replace(/[.,]/g, '')); return Number.isFinite(f) ? f : null;
+  };
+  const supKey = (x) => String(x || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const rcLast = (d) => {
+    const box = $('.rclast', d); if (!box) return;
+    const it = byId.get($('select', d).value);
+    if (!it) { box.innerHTML = ''; return; }
+    const parts = [];
+    if (it.last_supplier || it.last_receipt_date) parts.push(`${esc(t('rcl_last'))}: ${it.last_supplier ? esc(it.last_supplier) : esc(t('rcl_no_sup'))}${it.last_receipt_date ? ' · ' + esc(fmtD(it.last_receipt_date)) : ''}`);
+    else parts.push(`<span class="muted">${esc(t('rcl_none'))}</span>`);
+    parts.push(`${esc(t('rcl_price'))}: ${it.unit_price_net === null || it.unit_price_net === undefined ? `<span class="muted">${esc(t('unvalued_short'))}</span>` : `${eur(it.unit_price_net)} / ${esc(unitL(it.unit))}`}`);
+    const sup = supKey($('#rcsup').value); const chips = [];
+    if (sup && it.last_supplier && supKey(it.last_supplier) !== sup) chips.push(`<span class="chip mittel" data-rclsup>${esc(t('rcl_other_sup'))}</span>`);
+    const p = decNum($('.rcp', d).value);
+    if (p !== null && it.unit_price_net && p !== Number(it.unit_price_net)) { const pc = Math.round((p / it.unit_price_net - 1) * 1000) / 10; chips.push(`<span class="chip${pc > 0 ? ' mittel' : ''}" data-rclpct>${esc(t('rcl_diff').replace('{p}', (pc > 0 ? '+' : '') + fmtNum(pc) + ' %'))}</span>`); }
+    box.innerHTML = `<span class="muted">${parts.join(' · ')}</span>${chips.length ? `<div>${chips.join(' ')}</div>` : ''}`;
+  };
   let n = 0;
   const sum = () => { const k = $$('#rclines .rcl').filter((r) => $('select', r).value).length; $('#rcsum').textContent = t('rcpt_count').replace('{n}', k); };
   const addLine = () => {
@@ -263,14 +287,16 @@ async function viewStockReceipt() {
     n += 1; const d = document.createElement('div'); d.className = 'rcl'; d.style.cssText = 'border-top:1px solid var(--rule);padding-top:8px;margin-top:8px';
     d.innerHTML = `<label for="rci${n}">${esc(t('part_name'))}</label><select id="rci${n}" class="rci">${opts()}</select>
       <div class="grid2"><div><label for="rcq${n}">${esc(t('qty'))}</label><input id="rcq${n}" class="rcq" inputmode="decimal"></div><div><label for="rcp${n}">${esc(t('price_net'))}</label><input id="rcp${n}" class="rcp" inputmode="decimal"></div></div>
+      <div class="small rclast" data-rclast style="margin:4px 0 8px"></div>
       <button type="button" class="btn secondary rcdel">${esc(t('rcpt_remove'))}</button>`;
     $('#rclines').append(d);
-    $('select', d).onchange = sum; $('.rcdel', d).onclick = () => { d.remove(); if (!$$('#rclines .rcl').length) addLine(); sum(); };
+    $('select', d).onchange = () => { sum(); rcLast(d); }; $('.rcp', d).oninput = () => rcLast(d); $('.rcdel', d).onclick = () => { d.remove(); if (!$$('#rclines .rcl').length) addLine(); sum(); };
     sum();
   };
   addLine();
   $('#rcadd').onclick = () => addLine();
-  if ($('#rcsite')) $('#rcsite').onchange = () => { $$('#rclines .rci').forEach((x) => { x.innerHTML = opts(); }); sum(); };
+  $('#rcsup').oninput = () => $$('#rclines .rcl').forEach(rcLast);
+  if ($('#rcsite')) $('#rcsite').onchange = () => { $$('#rclines .rci').forEach((x) => { x.innerHTML = opts(); }); $$('#rclines .rcl').forEach(rcLast); sum(); };
   $('#rcf').onsubmit = async (e) => {
     e.preventDefault();
     const rows = $$('#rclines .rcl').filter((r) => $('select', r).value || $('.rcq', r).value.trim());

@@ -1091,6 +1091,7 @@ Object.assign(FIELD_NAMES.en, { Sprache: 'Language' });
 // [CLAUDE] 26.10.2026 Backlog 413: Kostenbericht Schnellwahl Zeitraum (Jahresabschluss)
 Object.assign(FIELD_NAMES.uk, { 'Hinweis zum Termin': 'Примітка до терміну' });
 Object.assign(FIELD_NAMES.en, { 'Hinweis zum Termin': 'Note on the date' });
+// Backlog 860 (Blickwinkel „Werkstatt wechselt den Lieferanten für Bremsteile“): Wareneingang – letzter Zugang und Preis je Position
 // Backlog 449 (Blickwinkel „Lieferant liefert nur einen Teil der Bestellung“): Teillieferung eingegangen
 // Backlog 450: Wareneingang – wartende Aufträge dieser Werkstatt
 // Backlog 451: Buchungsformulare nennen Auftrag und Fahrzeug
