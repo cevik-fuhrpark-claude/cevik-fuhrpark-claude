@@ -31160,6 +31160,33 @@ await test('Backlog 874 (Folge aus 871): Vorgangs-CSV mit Spalte „Voraussichtl
   eq((await U.driver.get('/api/cases?format=csv')).status, 403, 'Fahrer weiterhin ohne CSV');
 });
 
+await test('Backlog 875 (Blickwinkel „Fuhrparkleitung: Werkstatt verschiebt den Fertigtermin immer wieder“): Vorgang zeigt „N-mal verschoben (erste Angabe …)“ aus dem Verlauf, gezählt seit dem letzten Werkstattwechsel; Texte/Plural/Hilfe DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const { berlinDate } = await import('../src/util.js');
+  const day = (n) => new Date(Date.parse(berlinDate() + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.match(/\nconst rdyMoves = (\(d\) => \{.+\});\n/); ok(src, 'rdyMoves in app.js');
+  const rdyMoves = new Function('return ' + src[1])();
+  // freigegeben + übernommen (Werkstattwechsel ist nur vor Reparaturbeginn möglich)
+  const a = await newCase(); eq((await cmd(U.fleet, a, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.ws, a, 'acknowledge', { planned_date: day(1) })).status, 200);
+  for (const n of [2, 4, 3, 6]) eq((await cmd(U.ws, a, 'set_ready_date', { ready_expected_on: day(n) })).status, 200, 'Datum +' + n);
+  let d = (await U.fleet.get('/api/cases/' + a)).data;
+  eq(JSON.stringify(rdyMoves(d)), JSON.stringify({ n: 2, first: day(2) }), 'zwei Verschiebungen nach hinten (2→4, 3→6), Vorziehen zählt nicht');
+  eq(rdyMoves({ events: [] }), null, 'ohne Verlauf nichts'); eq(rdyMoves(null), null);
+  eq(JSON.stringify(rdyMoves({ events: [{ action: 'set_ready_date', payload: { from: null, to: '2026-11-05' } }, { action: 'set_ready_date', payload: { from: '2026-11-05', to: null } }, { action: 'set_ready_date', payload: { from: null, to: '2026-11-09' } }] })), 'null', 'Entfernen und neu setzen ist keine Verschiebung');
+  // Werkstattwechsel: Zählung beginnt neu
+  eq((await cmd(U.fleet, a, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'Kapazität')).status, 200);
+  d = (await U.fleet.get('/api/cases/' + a)).data; eq(rdyMoves(d), null, 'nach Werkstattwechsel zurückgesetzt');
+  ok(app.includes("tn('rdy_moved', m.n)") && app.includes('data-rdymoves'), 'Anzeige im Vorgang');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].rdy_moved && STRINGS[l].rdy_first && PLURALS[l].rdy_moved && PLURALS[l].rdy_moved.other.includes('{n}'), l + ': Texte');
+    ok(STRINGS[l].help_fleet_s.split('|').some((x) => x.includes(STRINGS[l].todo_ready_overdue) && x.includes(STRINGS[l].rdy_first)), l + ': Hilfe Fuhrparkleitung');
+  }
+  ok(PLURALS.uk.rdy_moved.few && PLURALS.uk.rdy_moved.many, 'uk: few/many');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

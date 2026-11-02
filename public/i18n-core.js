@@ -1205,6 +1205,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // [CLAUDE] Backlog 868: Leerlauf-Abmeldung behält Formularentwürfe für dieselbe Person
 // [CLAUDE] Backlog 869: unterbrochene Reparaturen (Arbeitsstand) in „Heute zu tun“ und als Listenfilter
 // [CLAUDE] Backlog 872 (Folge aus 871): „voraussichtlich fertig“ überschritten in „Heute zu tun“ und als Listenfilter
+// Backlog 875: „voraussichtlich fertig“ mehrfach verschoben (Vorgang)
 // [CLAUDE] Backlog 873 (Folge aus 871): Hinweis „Voraussichtlich fertig: neues Datum“ – Art in den Push-Einstellungen
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
