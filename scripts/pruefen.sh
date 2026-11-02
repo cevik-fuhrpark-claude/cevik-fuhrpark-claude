@@ -124,6 +124,7 @@ UI-Kennzeichenverlauf: Akte und Suche nach altem Kennzeichen|ui-kennzeichenverla
 UI-Leitungswechsel: Eingang und „gesehen von“ einer ausgeschiedenen Leitung|ui-leitungswechsel.py|/tmp/cfp-leitungswechsel.log
 UI-Ausdruck aus der Testumgebung erkennbar, kompakte Druckliste|ui-druck-testumgebung.py|/tmp/cfp-druck-test.log
 UI-Leerlauf (geteiltes Tablet)|ui-leerlauf.py|/tmp/cfp-leerlauf.log
+UI-Leerlauf mit Entwurf: Abmeldung behält halb ausgefüllte Formulare für dieselbe Person, andere Person sieht nichts (DE/UK/EN; Backlog 868)|ui-leerlauf-entwurf.py|/tmp/cfp-leerlauf-entwurf.log
 UI-Prüfhinweise in der App-Sprache|ui-pruefhinweise.py|/tmp/cfp-hinweise.log
 UI-Import-Hinweise in der App-Sprache|ui-importhinweise.py|/tmp/cfp-import.log
 UI-Werkstatt Winterreifen|ui-winter-werkstatt.py|/tmp/cfp-winter.log

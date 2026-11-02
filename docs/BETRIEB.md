@@ -290,6 +290,9 @@ Mit `CFP_LONGWORD=1` läuft die **Langwort-Probe** (18.10.2026): Der Dev-Server 
 Vorwarnleiste 60 s vor Ablauf mit „Angemeldet bleiben“, ohne Bedienung Anmeldeseite und beendete Server-Sitzung; nach Abmelden sieht die
 nächste Person im selben Tab keine Suche/Sortierung der vorherigen. Teil von `scripts/pruefen.sh`. Zweiter lokaler Server neben einer laufenden
 Gesamtprüfung: `PORT=8788 node --experimental-sqlite scripts/dev-server.mjs` und `CFP_URL=http://localhost:8788`.
+Seit Backlog 868 (02.11.2026) behält die Leerlauf-Abmeldung halb ausgefüllte Formulare (Aktionsformular, Kontrolle nach Reparatur, Meldung)
+im Tab – Schlüssel enthalten die Konto-ID, gelten nur nach erneuter Anmeldung derselben Person (zurück auf die Seite) und werden bei jeder
+anderen Anmeldung gelöscht; „Abmelden“ und eine vom Server beendete Sitzung (401) löschen weiterhin alles. UI-Test: `ui-leerlauf-entwurf.py`.
 
 ## UI-Ablauftest (Kernprozess per Klick)
 `sh scripts/restart-dev.sh && python3 scripts/ui-ablauf.py [Screenshot-Ordner]` – spielt den Kernprozess in Handybreite über die Oberfläche durch:

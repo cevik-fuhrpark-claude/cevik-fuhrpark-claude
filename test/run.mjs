@@ -16624,7 +16624,7 @@ await test('Fehlersuche 21.10. (langsames Netz): Lagerbuchung mit gleichem Schl�
 
 await test('Fehlersuche 21.10. (zwei Tabs): Abmelden/andere Person in einem Tab lädt die anderen neu; Meldung/Kontrolle bei 401 oder user_mismatch im Postausgang der erfassenden Person', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("S.me = r.user; markSession(r.user.id);") && (app.match(/resetUserState\(\); markSession\(''\);/g) || []).length === 2, 'Anmeldung/Abmelden (Knopf, Leerlauf) markiert');
+  ok(app.includes("S.me = r.user; markSession(r.user.id);") && (app.match(/resetUserState\((?:kept)?\); markSession\(''\);/g) || []).length === 2, 'Anmeldung/Abmelden (Knopf, Leerlauf) markiert'); // Backlog 868: Leerlauf mit resetUserState(kept)
   ok(/window\.addEventListener\('storage', \(e\) => \{\n(?:.*\n){0,3}  if \(e\.key !== SESSION_MARK \|\| !S\.me \|\| S\.offlineStart\) return;\n  if \(\(e\.newValue \|\| ''\) !== S\.me\.id\) \{ resetUserState\(\); location\.reload\(\); \}/.test(app), 'andere Tabs reagieren');
   eq((app.match(/if \(err\.offline \|\| err\.status === 401 \|\| err\.code === 'user_mismatch' \|\| err\.code === 'env_mismatch'\)/g) || []).length, 2, 'Meldung + Kontrolle sichern bei 401/user_mismatch/env_mismatch');
   eq((app.match(/outboxAdd\('\/api\/(cases|inspections)', body, stored, who\);/g) || []).length, 2, 'mit festgehaltener Person');
@@ -18400,7 +18400,7 @@ await test('Formularentwurf (Backlog 183): Abfahrtskontrolle und Meldung sichern
     ok(src.includes(`await api('POST', '${path}', body, { timeoutMs: SEND_TIMEOUT_MS });\n      draft.clear();`), `${nm}: Entwurf nach erfolgreichem Senden gelöscht`);
     ok(src.includes(`outboxAdd('${path}', body, stored, who);\n        draft.clear();`), `${nm}: Entwurf nach Sicherung im Postausgang gelöscht`);
   }
-  ok(app.includes("try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_') && k !== 'cfp_after_login') sessionStorage.removeItem(k); } catch {}"), 'Abmelden löscht Entwürfe');
+  ok(app.includes("try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_') && !keep(k)) sessionStorage.removeItem(k); } catch {}") && app.includes("const keep = (k) => k === 'cfp_after_login' || (keepFor && "), 'Abmelden löscht Entwürfe (Backlog 868: nur Leerlauf behält die eigenen)');
   ok(app.includes("$('#fdx').onclick = () => { if (!confirm(t('form_draft_discard_confirm'))) return; d.clear(); route(); };"), 'Verwerfen als Eigenschafts-Handler mit Rückfrage');
   for (const l of ['de', 'uk', 'en']) for (const k of ['form_draft_restored', 'form_draft_photos', 'form_draft_discard_confirm', 'inventory_draft_discard']) ok(typeof STRINGS[l][k] === 'string' && STRINGS[l][k].length > 5, `${l}: ${k}`);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].form_draft_restored.includes('{d}'), `${l}: Platzhalter {d}`);
@@ -30906,6 +30906,30 @@ await test('Backlog 867 (Blickwinkel „Werkstatt-Tablet: Mechaniker wird mitten
     for (const k of ['act_set_work_state', 'wst_title', 'wst_short', 'wst_hint', 'wst_ph', 'wst_clear_hint', 'wst_cleared']) ok(S[k], `${l}: ${k}`);
     ok(S.help_ws_s.split('|').some((x) => x.includes(S.act_set_work_state)), l + ': Hilfe Werkstatt nennt den Knopf');
     if (l !== 'de') for (const m of ['Arbeitsstand ist zu lang (max. 500 Zeichen).', 'Arbeitsstand ist unverändert.']) ok(translateValidation(l, m) !== m, `${l}: ${m}`);
+  }
+});
+
+await test('Backlog 868 (Folge aus 867): Leerlauf-Abmeldung behält Formularentwürfe nur für dieselbe Person – offenes Aktionsformular wird gesichert, Rückweg nur zu Vorgang/Kontrolle/Meldung, andere Anmeldung löscht fremde Entwürfe; Texte DE/UK/EN', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = (name) => { const i = app.indexOf('function ' + name + '('); ok(i >= 0, name); return app.slice(i, app.indexOf('\n}\n', i)); };
+  const reset = fn('resetUserState');
+  ok(reset.includes("k.startsWith('cfp_fd_') && k.includes('_' + keepFor + '_')") && reset.includes('k === IDLE_KEY'), 'nur Entwürfe des eigenen Kontos bleiben');
+  const keep = fn('idleKeep');
+  ok(keep.includes('if (S.openAct && $(\'#af\') && viewDirty()) actDraftSave(S.openAct.caseId, S.openAct.action);'), 'offenes Aktionsformular mit Eingaben wird gesichert');
+  ok(keep.includes("k.includes('_' + id + '_')") && keep.includes('return null;'), 'ohne eigene Entwürfe kein Rückweg');
+  const res = fn('idleResume');
+  ok(res.includes('x.u !== userId') && res.includes("!k.includes('_' + userId + '_')"), 'andere Person: fremde Entwürfe gelöscht');
+  ok(res.includes('#\\/(cases|inspect|new|check)\\b') && res.includes("['#/', '#', ''].includes(h)") && res.includes('FORM_DRAFT_MS'), 'Rückweg nur zu Formularseiten, nur von der Startseite, nur solange der Entwurf gilt');
+  const idle = fn('checkIdle');
+  ok(idle.includes('const kept = idleKeep();') && idle.includes('resetUserState(kept)') && idle.indexOf('idleKeep()') < idle.indexOf('resetUserState(kept)'), 'Leerlauf: erst sichern, dann zurücksetzen');
+  ok(app.includes('S.me = r.user; markSession(r.user.id); lastActivity = Date.now(); h = idleResume(r.user.id, h);'), 'nach der Anmeldung geprüft');
+  ok(fn('formDraft').includes('if (!S.me) return { load: () => null, save() {}, clear() {}, restore() {} };'), 'nachlaufende Ereignisse nach der Abmeldung ohne Fehler');
+  // 401 vom Server (Sitzung abgelaufen) und „Abmelden“ löschen weiterhin alles
+  ok(/resetUserState\(\); clearOfflineData\(\); markSession\(''\);/.test(app), '401: alles gelöscht');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.idle_signed_out_kept && S.idle_resumed && S.idle_signed_out_kept !== S.idle_signed_out, l + ': Texte');
+    ok(S.help_ws_s.split('|').some((x) => x.includes(l === 'de' ? 'Halb ausgefüllte Formulare' : l === 'uk' ? 'Напівзаповнені форми' : 'Half-filled forms')), l + ': Hilfe Werkstatt');
   }
 });
 

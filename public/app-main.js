@@ -534,7 +534,7 @@ async function route() {
       try {
         // Backlog 800 (Blickwinkel „Fahrer im Funkloch – Netz angezeigt, aber keine Antwort“): ohne Zeitlimit blieb der Start bei „Lädt…“
         // stehen, obwohl ein Offline-Start mit Postausgang möglich wäre. Jetzt START_TIMEOUT_MS → wie Netzabbruch (Offline-Start).
-        const r = await api('GET', '/api/me', undefined, { timeoutMs: START_TIMEOUT_MS }); S.me = r.user; markSession(r.user.id); lastActivity = Date.now(); S.lang = r.user.language || S.lang; S.offlineStart = false;
+        const r = await api('GET', '/api/me', undefined, { timeoutMs: START_TIMEOUT_MS }); S.me = r.user; markSession(r.user.id); lastActivity = Date.now(); h = idleResume(r.user.id, h); S.lang = r.user.language || S.lang; S.offlineStart = false;
         // Backlog 225: Kontosprache für die Anmeldeseite nach Abmeldung/Neustart merken (eigenes Handy); geteilte Werkstatt-Tablets ausgenommen (Backlog 82)
         if (r.user.language && r.user.role !== 'workshop') { try { if (!localStorage.getItem('cfp_lang_pending')) localStorage.setItem('cfp_lang', r.user.language); } catch {} }
         // offline gewählte Sprache jetzt speichern (18.10.2026: ging beim nächsten Start mit Netz verloren)
@@ -677,10 +677,41 @@ function offlineSession() { try { const x = JSON.parse(localStorage.getItem(OFFL
 // Bleibt: Sprache, App-Version, Stammdaten-Meta (wird bei der nächsten Anmeldung ohnehin neu geladen; laufende Ansichten
 // lesen sie evtl. noch nach einem 401) und das Sprungziel nach der Anmeldung.
 const KEEP_STATE = ['lang', 'appVersion', 'meta'];
-function resetUserState() {
+// keepFor (Backlog 868, Leerlauf-Abmeldung): Formularentwürfe dieses Kontos (Schlüssel enthalten die Konto-ID) und der Rückweg bleiben im Tab;
+// sie gelten nur nach erneuter Anmeldung derselben Person (idleResume), jede andere Anmeldung löscht sie
+function resetUserState(keepFor = null) {
   for (const k of Object.keys(S)) if (!KEEP_STATE.includes(k)) delete S[k];
   S.me = null; S.viewEnv = null; S.unread = 0;
-  try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_') && k !== 'cfp_after_login') sessionStorage.removeItem(k); } catch {}
+  const keep = (k) => k === 'cfp_after_login' || (keepFor && (k === IDLE_KEY || (k.startsWith('cfp_fd_') && k.includes('_' + keepFor + '_'))));
+  try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_') && !keep(k)) sessionStorage.removeItem(k); } catch {}
+}
+// Backlog 868 (Blickwinkel „Werkstatt-Tablet: Mechaniker wird mitten in der Reparatur zu einem Notfall gerufen“, Folge aus 867): Leerlauf-
+// Abmeldung (Einstellung des Inhabers) löschte halb ausgefüllte Formulare – Kontrolle nach Reparatur (18 Punkte), Arbeitszeit, Meldung. Jetzt:
+// offenes Aktionsformular mit Eingaben als Entwurf sichern, Entwürfe dieses Kontos und die Seite merken; nach erneuter Anmeldung derselben
+// Person zurück auf die Seite (Entwurf wird dort wie nach einem Netzabbruch wiederhergestellt). Andere Person: alles gelöscht, nichts gezeigt.
+const IDLE_KEY = 'cfp_idle_resume';
+function idleKeep() {
+  if (!S.me) return null;
+  try {
+    if (S.openAct && $('#af') && viewDirty()) actDraftSave(S.openAct.caseId, S.openAct.action);
+    const id = S.me.id; const has = Object.keys(sessionStorage).some((k) => k.startsWith('cfp_fd_') && k.includes('_' + id + '_'));
+    if (!has) return null;
+    sessionStorage.setItem(IDLE_KEY, JSON.stringify({ u: id, page: location.hash || '#/', at: new Date().toISOString() }));
+    return id;
+  } catch { return null; }
+}
+function idleResume(userId, h) {
+  let x = null; try { x = JSON.parse(sessionStorage.getItem(IDLE_KEY) || 'null'); sessionStorage.removeItem(IDLE_KEY); } catch {}
+  if (!x || x.u !== userId) {
+    // andere Person (oder kein Rückweg): Entwürfe fremder Konten in diesem Tab entfernen
+    try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_fd_') && !k.includes('_' + userId + '_')) sessionStorage.removeItem(k); } catch {}
+    return h;
+  }
+  const page = String(x.page || '').replace(/%3A/gi, ':');
+  if (!/^#\/(cases|inspect|new|check)\b/.test(page) || !['#/', '#', ''].includes(h) || Date.now() - Date.parse(x.at) > FORM_DRAFT_MS) return h;
+  try { history.replaceState(history.state, '', location.pathname + location.search + x.page); } catch { return h; }
+  setTimeout(() => toast(t('idle_resumed')), 300);
+  return page;
 }
 // Anmeldung über Tabs hinweg (21.10.2026): Abmelden oder Anmeldung einer anderen Person in einem Tab → andere Tabs laden neu, statt
 // weiter die Ansicht (und das Menü) der vorherigen Person zu zeigen (geteiltes Tablet). Gleiche Person erneut angemeldet: kein Ereignis.
@@ -738,8 +769,9 @@ async function checkIdle() {
   if (!ms || idleBusy || left > 0) return;
   idleBusy = true;
   try { if (!S.offlineStart && navigator.onLine !== false) await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }).catch(() => {}); } catch {}
-  clearOfflineData(); resetUserState(); markSession(''); idleBusy = false;
-  location.hash = '#/login'; toast(t('idle_signed_out'));
+  const kept = idleKeep(); // Backlog 868: Entwürfe dieses Kontos für die erneute Anmeldung behalten
+  clearOfflineData(); resetUserState(kept); markSession(''); idleBusy = false;
+  location.hash = '#/login'; toast(t(kept ? 'idle_signed_out_kept' : 'idle_signed_out'));
 }
 ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => window.addEventListener(ev, noteActivity, { passive: true, capture: true }));
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkIdle(); });
@@ -3539,6 +3571,8 @@ function restoreActDraft(c, x) {
   $('#actform').scrollIntoView({ block: 'start' });
 }
 function formDraft(page, form, skip = []) {
+  // nach einer Abmeldung (Leerlauf) können Ereignisse des alten Formulars nachlaufen (change beim Entfernen) – dann ohne Entwurf (Backlog 868)
+  if (!S.me) return { load: () => null, save() {}, clear() {}, restore() {} };
   const key = `cfp_fd_${page}_${S.me.id}_${S.viewEnv && S.me.role === 'owner' ? S.viewEnv : S.me.environment}`;
   const fields = () => [...form.elements].filter((x) => (x.name || x.id) && !['file', 'button', 'submit', 'search'].includes(x.type) && !skip.includes(x.id));
   const fk = (x) => x.name || x.id;
