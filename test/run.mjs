@@ -4775,6 +4775,9 @@ await test('Vorgang + Mängelstatistik: gleicher Prüfpunkt an diesem Fahrzeug i
   eq((await users.fleet.get(`/api/cases/${other}`)).data.vehicle_info.previous_same_item.length, 0, 'anderer Prüfpunkt');
   const ds = (await users.fleet.get('/api/reports/defects')).data;
   eq(ds.items.find((i) => i.item === keys[4]).again_after_repair, 1, 'Mängelstatistik: erneut nach Reparatur');
+  { const ac = ds.items.find((i) => i.item === keys[4]).again_cases; eq(ac.map((x) => x.id).join(), second.id, 'Backlog 858: Vorgang zur Zahl'); ok(ac[0].case_no && ac[0].plate && ac[0].vehicle_id === V1, JSON.stringify(ac)); }
+  eq(JSON.stringify(ds.items.find((i) => i.item === keys[5]).again_cases), '[]', 'Backlog 858: ohne Wiederholung leer');
+  ok((await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('data-dagain'), 'Backlog 858: Oberfläche');
   eq(ds.items.find((i) => i.item === keys[5]).again_after_repair, 0);
   eq(ds.totals.again_after_repair, ds.items.reduce((x, i) => x + i.again_after_repair, 0));
   // älter als 90 Tage vor der Meldung → kein Hinweis
@@ -30649,6 +30652,28 @@ await test('Backlog 854–855 (Blickwinkel „Zweifahrerbetrieb“): Bußgeld oh
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-fcchk') && app.includes("t('fine_cand_checks')") && app.includes("t('assign_veh_others')"), 'Oberfläche');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].fine_cand_checks, l); ok(STRINGS[l].assign_veh_others.includes('{list}'), l); }
+});
+await test('Backlog 856–857 (Blickwinkel „Werkstatt-Nacharbeit“): frühere Abschlüsse/gleicher Prüfpunkt nennen Werkstatt und Fremdfirmen (max. 3, ohne Beträge); Fremdleistungs-Formular weist auf frühere Arbeit derselben Firma hin; Texte DE/UK/EN', async () => {
+  const { e, U, newCase, toRepair } = await freshWorld(); const db = e.DB.db;
+  const a = await toRepair({ description: 'Bremse zieht schief' }); const b = await toRepair({ description: 'Luftleck hinten' });
+  const old = new Date(Date.now() - 14 * 86400000).toISOString();
+  db.prepare(`UPDATE cases SET status='fahrzeug_freigegeben', closed_at=?, check_item='bremsen' WHERE id=?`).run(old, a);
+  db.prepare(`UPDATE cases SET status='fahrzeug_freigegeben', closed_at=? WHERE id=?`).run(old, b);
+  const ins = db.prepare(`INSERT INTO external_costs(id,case_id,user_id,supplier,amount_net,valuation,created_at) VALUES (?,?,?,?,?,'actual',?)`);
+  for (const [i, sup] of [['x1', 'Bremsen Müller GmbH'], ['x2', 'Bremsen Müller GmbH'], ['x3', 'Achsvermessung Nord'], ['x4', 'Abschlepp Süd'], ['x5', 'Zeta Hydraulik']]) ins.run(i, a, U.fleet.id, sup, 100, old);
+  const n = await newCase({ description: 'Bremse zieht wieder schief' }); db.prepare(`UPDATE cases SET check_item='bremsen' WHERE id=?`).run(n);
+  const vi = (await U.fleet.get(`/api/cases/${n}`)).data.vehicle_info;
+  const ps = vi.previous_same_item.find((x) => x.id === a); ok(ps, JSON.stringify(vi.previous_same_item));
+  eq(JSON.stringify(ps.ext_suppliers), JSON.stringify(['Abschlepp Süd', 'Achsvermessung Nord', 'Bremsen Müller GmbH']), '856: gleiche Firma einmal, max. 3, sortiert'); ok('workshop_site' in ps);
+  const ra = vi.recent_closed.find((x) => x.id === a), rb = vi.recent_closed.find((x) => x.id === b); ok(ra && rb, JSON.stringify(vi.recent_closed));
+  eq(ra.ext_suppliers.length, 3, 'recent_closed mit Fremdfirmen'); eq(JSON.stringify(rb.ext_suppliers), '[]', 'ohne Fremdleistung leer'); eq(ra.workshop_site, db.prepare('SELECT workshop_site FROM cases WHERE id=?').get(a).workshop_site);
+  ok(!JSON.stringify(vi.recent_closed).includes('100'), 'keine Beträge');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-viby') && app.includes('id="xsprev"') && app.includes("t('ext_prev_same')"), 'Oberfläche');
+  const m = app.match(/const extPrevSame = [^\n]+/); ok(m, 'Hilfsfunktion');
+  const eps = new Function(m[0] + '\nreturn extPrevSame;')();
+  eq(eps(vi, ' bremsen müller gmbh ').map((o) => o.id).join(), a, '857: Groß-/Kleinschreibung egal, einmal je Vorgang'); eq(eps(vi, 'Bremsen Meier').length, 0); eq(eps(vi, '').length, 0);
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].vi_done_ws.includes('{ws}') && STRINGS[l].vi_done_ext.includes('{list}') && STRINGS[l].ext_prev_same.includes('{s}'), l); }
 });
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');

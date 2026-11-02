@@ -570,9 +570,11 @@ export async function getCaseDetail(env, user, envName, caseId) {
         -- Backlog 467 (Blickwinkel „Sporadische Störung – Werkstatt findet keinen Fehler“): in den 90 Tagen vor dieser Meldung abgeschlossene Vorgänge
         -- desselben Fahrzeugs (freigegeben, ohne Reparatur beendet, Meldung abgelehnt; keine Dubletten) mit Abschlussvermerk – die zweite Meldung
         -- „Warnleuchte wieder an“ kam sonst ohne Vorgeschichte in die Werkstatt. Werkstatt nur eigener Standort (abgelehnte Meldungen ohne Werkstatt nicht)
-        (SELECT json_group_array(json_object('id', CASE WHEN ?7 IS NOT NULL AND r.status='abgelehnt' THEN NULL ELSE r.id END, 'case_no', r.case_no, 'status', r.status, 'kind', r.kind, 'description', r.description, 'closed_at', r.closed_at, 'note', r.note)) FROM
+        (SELECT json_group_array(json_object('id', CASE WHEN ?7 IS NOT NULL AND r.status='abgelehnt' THEN NULL ELSE r.id END, 'case_no', r.case_no, 'status', r.status, 'kind', r.kind, 'description', r.description, 'closed_at', r.closed_at, 'note', r.note, 'workshop_site', r.workshop_site, 'ext_suppliers', json(r.ext_suppliers))) FROM
           (SELECT x.id, x.case_no, x.status, CASE WHEN x.status='fahrzeug_freigegeben' THEN 'released' WHEN x.workshop_site IS NOT NULL THEN 'withdrawn' ELSE 'rejected' END AS kind,
-            substr(x.description, 1, 120) AS description, x.closed_at,
+            substr(x.description, 1, 120) AS description, x.closed_at, x.workshop_site,
+            -- Backlog 856 (Blickwinkel „Werkstatt-Nacharbeit“): Fremdfirmen des früheren Auftrags (ohne Beträge/Bemerkungen; max. 3) – Nacharbeit derselben Firma erkennbar
+            (SELECT json_group_array(s) FROM (SELECT DISTINCT supplier AS s FROM external_costs WHERE case_id=x.id AND trim(supplier)<>'' ORDER BY s LIMIT 3)) AS ext_suppliers,
             (SELECT substr(e.note, 1, 200) FROM case_events e WHERE e.case_id=x.id AND e.to_status=x.status AND e.note IS NOT NULL AND trim(e.note)<>'' ORDER BY e.created_at DESC LIMIT 1) AS note
            FROM cases x WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.status IN ('fahrzeug_freigegeben','abgelehnt') AND x.duplicate_of IS NULL
              AND x.closed_at IS NOT NULL AND x.closed_at <= ?6 AND x.closed_at >= ?9 AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY x.closed_at DESC LIMIT ${RECENT_CLOSED_MAX + 1}) r) AS recent_closed,
@@ -603,9 +605,10 @@ export async function getCaseDetail(env, user, envName, caseId) {
     // Gleicher Prüfpunkt an diesem Fahrzeug in den 90 Tagen vor dieser Meldung bereits repariert und freigegeben (Hinweis auf mögliche Nacharbeit)
     let prevSame = [];
     if (c.check_item) {
-      prevSame = (await env.DB.prepare(`SELECT id, case_no, closed_at, workshop_site FROM cases WHERE vehicle_id=? AND environment=? AND id<>? AND check_item=?
+      prevSame = (await env.DB.prepare(`SELECT x.id, x.case_no, x.closed_at, x.workshop_site, (SELECT json_group_array(s) FROM (SELECT DISTINCT supplier AS s FROM external_costs WHERE case_id=x.id AND trim(supplier)<>'' ORDER BY s LIMIT 3)) AS ext_suppliers FROM cases x WHERE vehicle_id=? AND environment=? AND id<>? AND check_item=?
         AND status='fahrzeug_freigegeben' AND closed_at IS NOT NULL AND closed_at <= ? AND closed_at >= ? ${wsOnly ? 'AND workshop_site=?' : ''} ORDER BY closed_at DESC LIMIT 5`)
-        .bind(...[c.vehicle_id, envName, c.id, c.check_item, c.created_at, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString(), ...(wsOnly ? [wsOnly] : [])]).all()).results;
+        .bind(...[c.vehicle_id, envName, c.id, c.check_item, c.created_at, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString(), ...(wsOnly ? [wsOnly] : [])]).all()).results
+        .map((o) => ({ ...o, ext_suppliers: o.ext_suppliers ? JSON.parse(o.ext_suppliers) : [] }));
     }
     // Backlog 467: eine Zeile mehr gelesen → recent_closed_truncated (nie still kappen)
     const recentClosed = kmn && kmn.recent_closed ? JSON.parse(kmn.recent_closed) : [];
