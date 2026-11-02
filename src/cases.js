@@ -1017,6 +1017,8 @@ export function allowedActions(user, c, access) {
   if (WORK_STATUSES.includes(c.status) && (ws || mgr)) a.push('record_work', 'add_part', 'add_open_item', 'resolve_open_item');
   // Nicht sicherheitsrelevante Restarbeiten nach der Freigabe noch erledigen (sonst blieben sie und der Agentenbefund „Restarbeiten planen“ für immer offen)
   if (c.status === 'fahrzeug_freigegeben' && (ws || mgr)) a.push('resolve_open_item');
+  // Backlog 882 (Folge aus 881): bekannte Restarbeit eines freigegebenen Vorgangs desselben Fahrzeugs im laufenden Auftrag mit erledigen
+  if (WORK_STATUSES.includes(c.status) && (ws || mgr)) a.push('resolve_released_item');
   if (WORK_STATUSES.includes(c.status) && mgr) a.push('add_external_cost');
   // Werkstattauftrag ohne Reparatur beenden (Totalschaden, Verkauf, Reparatur unwirtschaftlich – 23.10.2026): vorher blieb nur
   // Scheinreparatur mit Kontrolle und Freigabe, sonst ließ sich das Fahrzeug nie außer Betrieb nehmen
@@ -1927,6 +1929,30 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       payload = { open_item_id: oid, ...(oi.safety_relevant ? { safety_relevant: true, description: cutText(oi.description, 200) } : {}) };
       // Backlog 259: sicherheitsrelevante Restarbeit von der Werkstatt erledigt → Leitung erfährt es (nicht abschaltbar; sie gibt danach frei)
       if (oi.safety_relevant && user.role === 'workshop') notifyKind = 'open_item_safety_resolved';
+      break;
+    }
+    case 'resolve_released_item': {
+      // Backlog 882 (Folge aus 881, Blickwinkel „Fahrer meldet einen Mangel, den die Werkstatt schon als Restarbeit kennt“): offene Restarbeit
+      // eines freigegebenen Vorgangs desselben Fahrzeugs hier als mit erledigt vermerken – vorher nur über den Link im alten Vorgang.
+      // Nur was „Zum Fahrzeug“ zeigt (gleiche Umgebung, Werkstatt nur Vorgänge ihres Standorts); Vermerk „Vorgang <Nr>: …“ im alten Vorgang,
+      // Verlauf in beiden Vorgängen; gleichzeitig anderweitig erledigt → ganzer Stapel zurück (Versionskonflikt)
+      const oid = str(p.open_item_id, { required: true, max: 40, field: 'Restarbeit' });
+      const wsOnlyR = user.role === 'workshop' ? user.workshop_site : null;
+      const ri = await env.DB.prepare(`SELECT oi.id, oi.description, oi.safety_relevant, x.id AS case_id, x.case_no FROM open_items oi JOIN cases x ON x.id=oi.case_id
+        WHERE oi.id=?1 AND oi.status='offen' AND x.vehicle_id=?2 AND x.environment=?3 AND x.id<>?4 AND x.status='fahrzeug_freigegeben' AND (?5 IS NULL OR x.workshop_site=?5)`)
+        .bind(oid, c.vehicle_id, envName, c.id, wsOnlyR).first();
+      if (!ri) throw bad('validation', 'Restarbeit nicht gefunden oder bereits erledigt.');
+      requireNote('Bitte Erledigungsvermerk angeben.');
+      const resNote = cutText(`Vorgang ${c.case_no}: ${note}`, 4000);
+      extra.push(
+        env.DB.prepare(`UPDATE open_items SET status='erledigt', resolved_by=?, resolved_at=?, resolution_note=? WHERE id=? AND status='offen'`).bind(user.id, now, resNote, ri.id),
+        env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard'),
+        env.DB.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,from_version,to_version,note,payload,created_at)
+          SELECT ?,?,?,?,?,'resolve_open_item',status,status,version,version,?,?,? FROM cases WHERE id=?`).bind(uuid(), ri.case_id, envName, user.id, user.role, resNote,
+          JSON.stringify({ open_item_id: ri.id, done_in_case_id: c.id, done_in_case_no: c.case_no }), now, ri.case_id),
+        env.DB.prepare('UPDATE cases SET updated_at=? WHERE id=?').bind(now, ri.case_id),
+      );
+      payload = { open_item_id: ri.id, from_case_id: ri.case_id, from_case_no: ri.case_no, description: cutText(ri.description, 200), ...(ri.safety_relevant ? { safety_relevant: true } : {}) };
       break;
     }
     case 'add_external_cost': {

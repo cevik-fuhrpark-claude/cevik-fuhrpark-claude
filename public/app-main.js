@@ -2831,10 +2831,10 @@ async function viewCase(id) {
       ${d.duplicate_of ? `<dt>${esc(t('dup_of'))}</dt><dd>${S.me.role === 'driver' || !d.duplicate_of.id ? esc(d.duplicate_of.case_no) : `<a href="#/cases/${esc(d.duplicate_of.id)}">${esc(d.duplicate_of.case_no)}</a>`}</dd>` : ''}${d.duplicates && d.duplicates.length ? `<dt>${esc(t('duplicates'))}</dt><dd>${d.duplicates.map((x) => `<span style="white-space:nowrap" data-dupat><a href="#/cases/${esc(x.id)}">${esc(x.case_no)}</a>${x.created_at ? ` <span class="small muted">(${esc(t('reported_at_short'))} ${fmtDT(x.created_at)})</span>` : ''}</span>`).join(', ')}</dd>` : ''}
       ${!['driver'].includes(S.me.role) ? `<dt>${esc(t('vehicle_file'))}</dt><dd><a href="#/vehicles/${esc(d.vehicle.id)}">${esc(d.vehicle.plate)}</a></dd>` : ''}
       ${!['driver'].includes(S.me.role) && d.vehicle.vin ? `<dt>${esc(t('vin'))}</dt><dd translate="no" data-cvin>${esc(d.vehicle.vin)}</dd>${d.vehicle.manufacturer || d.vehicle.model ? `<dt>${esc(t('manufacturer'))}</dt><dd>${esc([d.vehicle.manufacturer, d.vehicle.model].filter(Boolean).join(' '))}</dd>` : ''}${d.vehicle.kind !== 'anhaenger' && d.vehicle.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(d.vehicle.trailer_plate)}</dd>` : ''}` : ''}
-    </dl>${vehInfo(d.vehicle_info, c)}</section>`;
+    </dl>${vehInfo(d.vehicle_info, c, A)}</section>`;
 
   // Aktionen
-  const main = A.filter((a) => !['comment', 'upload', 'inspection', 'resolve_open_item'].includes(a));
+  const main = A.filter((a) => !['comment', 'upload', 'inspection', 'resolve_open_item', 'resolve_released_item'].includes(a));
   if (main.length || A.includes('inspection')) {
     html += `<div class="actions">${A.includes('inspection') ? `<a class="btn" href="#/inspect/${esc(c.id)}">${esc(t('act_inspection'))}</a>` : ''}${main.map((a) => `<button class="btn ${['reject', 'set_safety_lock', 'withdraw_order'].includes(a) ? 'danger' : ['technical_release', 'quality_release'].includes(a) ? 'go' : ['record_work', 'add_part', 'add_open_item', 'add_external_cost', 'change_priority', 'reassign_workshop', 'correct_vehicle', 'lift_safety_lock', 'return_for_rework', 'set_planned_date', 'set_parts_eta', 'set_followup', 'set_vehicle_location', 'set_handover', 'set_occurred_at', 'set_work_state', 'set_ready_date', 'set_parts_drive'].includes(a) ? 'secondary' : ''}" data-act="${esc(a)}">${esc(t('act_' + a))}</button>`).join('')}</div><div id="actform"></div>`;
   } else html += `<div id="actform"></div>`;
@@ -2860,7 +2860,7 @@ async function viewCase(id) {
 
   // Restarbeiten
   if (d.open_items.length) {
-    html += `<h2>${esc(t('open_items'))}</h2><div class="list">${d.open_items.map((o) => `<div class="row note ${o.safety_relevant && o.status === 'offen' ? 'p-kritisch' : ''}"><span class="chip ${o.status === 'offen' ? (o.safety_relevant ? 'kritisch' : 'mittel') : 'ok'}">${esc(t('oi_' + o.status))}</span><span class="title" style="white-space:normal"${langAttr(o.description)}>${esc(o.description)}${oiFileLink(o, d)}</span>${o.status === 'offen' && (A.includes('resolve_open_item') || isMgr()) ? `<span style="display:flex;gap:6px;flex-wrap:wrap">${A.includes('resolve_open_item') ? `<button class="btn secondary" data-resolve="${esc(o.id)}">${esc(t('done'))}</button>` : ''}${isMgr() ? `<button class="btn secondary" data-oifu="${esc(o.id)}" data-safety="${o.safety_relevant ? 1 : 0}">${esc(t('oi_to_case'))}</button>` : ''}</span>` : '<span></span>'}<span class="sub" style="white-space:normal">${o.safety_relevant ? esc(t('safety_relevant')) + ' · ' : ''}${esc((pnm(o.created_by_name, o.created_by_name_hidden) || t('role_' + o.created_by_name_role)))} · ${fmtDT(o.created_at)}${o.resolution_note ? ' · ' + (/^Folgeauftrag \S{1,40}$/.test(o.resolution_note) ? esc(t('oi_followup_ref').replace('{v}', () => o.resolution_note.slice(13))) : ltxt(o.resolution_note)) : ''}</span></div>`).join('')}</div>`;
+    html += `<h2>${esc(t('open_items'))}</h2><div class="list">${d.open_items.map((o) => `<div class="row note ${o.safety_relevant && o.status === 'offen' ? 'p-kritisch' : ''}"><span class="chip ${o.status === 'offen' ? (o.safety_relevant ? 'kritisch' : 'mittel') : 'ok'}">${esc(t('oi_' + o.status))}</span><span class="title" style="white-space:normal"${langAttr(o.description)}>${esc(o.description)}${oiFileLink(o, d)}</span>${o.status === 'offen' && (A.includes('resolve_open_item') || isMgr()) ? `<span style="display:flex;gap:6px;flex-wrap:wrap">${A.includes('resolve_open_item') ? `<button class="btn secondary" data-resolve="${esc(o.id)}">${esc(t('done'))}</button>` : ''}${isMgr() ? `<button class="btn secondary" data-oifu="${esc(o.id)}" data-safety="${o.safety_relevant ? 1 : 0}">${esc(t('oi_to_case'))}</button>` : ''}</span>` : '<span></span>'}<span class="sub" style="white-space:normal">${o.safety_relevant ? esc(t('safety_relevant')) + ' · ' : ''}${esc((pnm(o.created_by_name, o.created_by_name_hidden) || t('role_' + o.created_by_name_role)))} · ${fmtDT(o.created_at)}${o.resolution_note ? ' · ' + (/^Folgeauftrag \S{1,40}$/.test(o.resolution_note) ? esc(t('oi_followup_ref').replace('{v}', () => o.resolution_note.slice(13))) : rriNote(o.resolution_note) ? esc(rriNote(o.resolution_note)) : ltxt(o.resolution_note)) : ''}</span></div>`).join('')}</div>`;
   }
   if (d.followups.length) html += `<h2>${esc(t('followups'))}</h2><div class="list">${d.followups.map((f) => `<a class="row note p-${esc(f.priority)}" href="#/cases/${esc(f.id)}"><span class="chip">${esc(f.case_no)}</span><span class="title" style="white-space:normal"${langAttr(cDesc(f.description))}>${esc(cDesc(f.description))}</span><span class="chip">${esc(t('st_' + f.status))}</span></a>`).join('')}</div>`;
   if (d.inspections.length) html += `<h2>${esc(t('inspections'))}</h2>${d.inspections.map((i) => `<details class="panel cinsp"><summary>${fmtDT(i.created_at)} · ${esc((pnm(i.performed_by_name, i.performed_by_name_hidden) || t('role_' + i.performed_by_name_role)))} · <span class="chip ${i.result === 'ok' ? 'ok' : 'kritisch'}">${i.result === 'ok' ? 'OK' : esc(t('defect'))}</span>${i.odometer_km ? ' · ' + fmtKm(i.odometer_km) : ''}</summary><table>${i.items.map((it) => `<tr><td>${esc(checkLabel(it.key))}</td><td><span class="chip ${it.result === 'mangel' ? 'kritisch' : it.result === 'ok' ? 'ok' : ''}">${esc(t(it.result === 'mangel' ? 'defect' : it.result))}</span>${it.note ? ' ' + esc(it.note) : ''}${it.followup_case_no ? (it.followup_case_id ? ` → <a href="#/cases/${esc(it.followup_case_id)}">${esc(it.followup_case_no)}</a>` : ` → ${esc(it.followup_case_no)}`) : ''}</td></tr>`).join('')}</table></details>`).join('')}`;
@@ -2945,6 +2945,8 @@ async function viewCase(id) {
     toast(t('cp_pulled'));
   }));
   $$('[data-resolve]').forEach((b) => (b.onclick = () => actionForm('resolve_open_item', c, cmd, { open_item_id: b.dataset.resolve })));
+  // Backlog 882: bekannte Restarbeit eines freigegebenen Vorgangs hier mit erledigen
+  $$('[data-relres]').forEach((b) => (b.onclick = () => actionForm('resolve_released_item', c, cmd, { open_item_id: b.dataset.relres }, d)));
   // Restarbeit → Folgeauftrag (Backlog 260): kleines Formular unter der Zeile, Dringlichkeit vorbelegt wie bei Kontroll-Mängeln
   $$('[data-oifu]').forEach((b) => (b.onclick = () => {
     const old = $('#oiff'); if (old) old.remove();
@@ -3327,12 +3329,18 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   const box = $('#actform');
   S.openAct = { caseId: c.id, action, preset };
   const f = [];
-  const needsNote = ['change_priority', 'set_safety_lock', 'lift_safety_lock', 'approve_repair', 'reassign_workshop', 'correct_vehicle', 'reject', 'withdraw_order', 'wait_parts', 'parts_partial', 'resolve_open_item', 'request_quality_check', 'return_for_rework', 'technical_release', 'approve_costs', 'quality_release'];
+  const needsNote = ['change_priority', 'set_safety_lock', 'lift_safety_lock', 'approve_repair', 'reassign_workshop', 'correct_vehicle', 'reject', 'withdraw_order', 'wait_parts', 'parts_partial', 'resolve_open_item', 'resolve_released_item', 'request_quality_check', 'return_for_rework', 'technical_release', 'approve_costs', 'quality_release'];
   const qrel = action === 'quality_release'; // Backlog 629: beide Schritte in einem Formular
   const isQc = action === 'request_quality_check' || qrel; const isRel = action === 'technical_release' || qrel;
   const wsOpts = S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${(c.workshop_site || c.suggested_workshop_site) === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('');
   const prioOpts = (sel) => ['niedrig', 'mittel', 'kritisch'].map((p) => `<option value="${p}"${p === sel ? ' selected' : ''}>${esc(t('prio_' + p))}</option>`).join('');
   switch (action) {
+    // Backlog 882: welche Restarbeit aus welchem Vorgang – Vermerk erscheint dort als „Erledigt in Vorgang …“
+    case 'resolve_released_item': {
+      const o = (((d && d.vehicle_info) || {}).released_items || []).find((x) => x.id === preset.open_item_id);
+      if (o) f.push(`<p class="small" data-rrihint><b${langAttr(o.description)}>${esc(clipTxt(o.description, 200))}</b><br><span class="muted">${esc(t('rri_hint').replace('{v}', () => o.case_no))}</span></p>`);
+      break;
+    }
     case 'change_priority': f.push(`<label>${esc(t('new_priority'))}</label><select name="priority">${prioOpts(c.priority)}</select>`); break;
     case 'approve_repair': f.push(`<label>${esc(t('workshop'))}</label><select name="workshop_site">${wsOpts}</select><label>${esc(t('urgency'))}</label><select name="priority">${prioOpts(c.priority)}</select><label>${esc(t('planned'))}</label><input type="date" name="planned_date">`); break;
     // Backlog 513/514: ohne die bisherige Werkstatt (Server lehnt „unverändert“ ab, wie im Werkstattplan) und Hinweis, dass Termin/Übernahme entfallen
@@ -4236,6 +4244,8 @@ function cvInspText(p) {
   if (p.km && Number.isFinite(Number(p.km.km))) parts.push(t(p.km.moved ? 'cv_ev_km_moved' : 'cv_ev_km_kept').replace('{km}', () => fmtNum(Number(p.km.km))));
   return parts.join(' · ');
 }
+// Backlog 882: Vermerk „Vorgang <Nr>: …“ (im späteren Auftrag mit erledigt) in der Oberflächensprache; sonst null
+function rriNote(n) { const m = String(n || '').match(/^Vorgang (\S{1,40}): ([\s\S]*)$/); return m ? t('rri_done_in').replace('{v}', () => m[1]) + ': ' + m[2] : null; }
 function evNote(e) {
   const n = String(e.note || '');
   const p = e.payload || {};
@@ -4252,6 +4262,9 @@ function evNote(e) {
     return Number.isFinite(Number(p.km)) && p.km !== null && p.km !== undefined ? t('ev_checked_locked_km').replace('{t}', when).replace('{km}', fmtNum(Number(p.km))) : t('ev_checked_locked').replace('{t}', when);
   }
   if (e.action === 'open_item_to_case' && typeof p.case_no === 'string') return t('oi_followup_ref').replace('{v}', () => p.case_no);
+  // Backlog 882: Restarbeit eines freigegebenen Vorgangs im laufenden Auftrag mit erledigt (Verlauf in beiden Vorgängen)
+  if (e.action === 'resolve_released_item' && typeof p.from_case_no === 'string') return t('rri_ev').replace('{v}', () => p.from_case_no).replace('{d}', () => String(p.description || '')) + (n ? ' · ' + n : '');
+  if (e.action === 'resolve_open_item' && typeof p.done_in_case_no === 'string') return rriNote(n) || n;
   // Kontrolle an das richtige Fahrzeug umgehängt (Backlog 255): Hinweis an Vorgängen des falschen Fahrzeugs
   if (e.action === 'inspection_moved' && p.code === 'inspection_moved' && typeof p.to === 'string') return t('ev_insp_moved').replace('{p}', () => p.to);
   if (e.action === 'repeat_finding') return n.replace(/^Erneut festgestellt \(Abfahrtskontrolle\): /, '');
@@ -4272,7 +4285,7 @@ function evNote(e) {
 // Gewährleistung an Teil/Fremdleistung: „Gewährleistung bis …“ (abgelaufen gedämpft)
 function warrChip(d) { return d ? ` <span class="chip${d >= bDate() ? ' ok' : ''}">${esc(t('warranty_until_d').replace('{d}', fmtD(d)))}</span>` : ''; }
 // Kurzinfo zum Fahrzeug im Vorgang: weitere offene Vorgänge, bald fällige Prüfungen, letzter km-Stand (nur gespeicherte Daten)
-function vehInfo(vi, c) {
+function vehInfo(vi, c, A = []) {
   const prev = (vi && vi.previous_same_item) || [];
   const vn = (vi && vi.notes) || [];
   const wr = (vi && vi.warranties) || [];
@@ -4289,7 +4302,7 @@ function vehInfo(vi, c) {
   if (vi.coupled_truncated) parts.unshift(`<dd class="small muted" data-vicoupledmore>${esc(t('vi_coupled_more'))}</dd>`);
   if (vi.inspections_due.length) parts.push(`<dt>${esc(t('vi_due').replace('{days}', nDays(vi.inspections_due_days || 30)))}${vi.inspections_due.some((m) => m.recall_ref) ? ' · ' + esc(t('vi_recalls')) : ''}</dt><dd>${vi.inspections_due.map((m) => `${esc(mkR(m))} ${m.next_due_date ? fmtD(m.next_due_date) : esc(t('vi_recall_open'))}${m.next_due_date && m.next_due_date < today ? ` <span class="chip kritisch">${esc(t('ms_ueberfaellig'))}</span>` : ''}${m.recall_ref ? ` <span class="small muted">(${esc(m.recall_ref)})</span>` : ''}`).join('<br>')}${(vi.inspections_due_total || 0) > vi.inspections_due.length ? `<br><span class="small muted" id="vidmore">+${vi.inspections_due_total - vi.inspections_due.length} · <a class="noprint" href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${esc(t('vi_due_all'))} ›</a></span>` : ''}</dd>`);
   if (rc.length) parts.push(`<dt>${esc(t('vi_recent_closed'))}</dt><dd data-virecent>${rc.map((o) => `${o.id ? `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a>` : `<b>${esc(o.case_no)}</b>`} <span class="chip">${esc(o.kind === 'released' ? t('st_fahrzeug_freigegeben') : t('vi_kind_' + o.kind))}</span> <span class="small muted">${fmtD(o.closed_at)}</span>${o.description ? `<br><span class="small">${ltxt(clipTxt(cDesc(o.description), 90))}</span>` : ''}${viBy(o)}${o.note ? `<br><span class="small muted">${esc(t('vi_close_note'))}: ${ltxt(clipTxt(o.note, 160))}</span>` : ''}`).join('<br>')}${vi.recent_closed_truncated ? `<br><span class="small muted">${esc(t('vi_recent_more'))} · <a class="noprint" href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a></span>` : ''}<div class="small muted">${esc(t('vi_recent_closed_hint'))}</div></dd>`);
-  if (ri.length) parts.unshift(`<dt>${esc(t('vi_rel_items'))}</dt><dd data-virelitems>${ri.map((o) => `<span${langAttr(o.description)}>${esc(clipTxt(o.description, 160))}</span>${o.safety_relevant ? ` <span class="chip kritisch">${esc(t('safety_relevant'))}</span>` : ''}<br><span class="small muted">${o.case_id ? `<a href="#/cases/${esc(o.case_id)}">${esc(o.case_no)}</a>` : esc(o.case_no)}${o.closed_at ? ' · ' + esc(t('st_fahrzeug_freigegeben')) + ' ' + fmtD(o.closed_at) : ''}</span>`).join('<br>')}${vi.released_items_truncated ? `<br><span class="small muted">${esc(t('vi_rel_items_more'))}${S.me.role !== 'workshop' ? ` · <a class="noprint" href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a>` : ''}</span>` : ''}<div class="small muted">${esc(t('vi_rel_items_hint'))}</div></dd>`);
+  if (ri.length) parts.unshift(`<dt>${esc(t('vi_rel_items'))}</dt><dd data-virelitems>${ri.map((o) => `<span${langAttr(o.description)}>${esc(clipTxt(o.description, 160))}</span>${o.safety_relevant ? ` <span class="chip kritisch">${esc(t('safety_relevant'))}</span>` : ''}<br><span class="small muted">${o.case_id ? `<a href="#/cases/${esc(o.case_id)}">${esc(o.case_no)}</a>` : esc(o.case_no)}${o.closed_at ? ' · ' + esc(t('st_fahrzeug_freigegeben')) + ' ' + fmtD(o.closed_at) : ''}</span>${A.includes('resolve_released_item') && o.id ? ` <button type="button" class="btn secondary noprint" data-relres="${esc(o.id)}">${esc(t('rri_btn'))}</button>` : ''}`).join('<br>')}${vi.released_items_truncated ? `<br><span class="small muted">${esc(t('vi_rel_items_more'))}${S.me.role !== 'workshop' ? ` · <a class="noprint" href="#/vehicles/${encodeURIComponent(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a>` : ''}</span>` : ''}<div class="small muted">${esc(t('vi_rel_items_hint'))}</div></dd>`);
   if (prev.length) parts.unshift(`<dt>${esc(t('vi_prev_same'))}</dt><dd>${prev.map((o) => `<a href="#/cases/${esc(o.id)}">${esc(o.case_no)}</a> · ${esc(t('st_fahrzeug_freigegeben'))} ${fmtD(o.closed_at)}${viBy(o)}`).join('<br>')}<div class="small muted">${esc(t('vi_prev_same_hint'))}</div></dd>`);
   if (wr.length) parts.unshift(`<dt>${esc(t('vi_warranty'))}</dt><dd>${wr.map((w) => `<a href="#/cases/${esc(w.case_id)}">${esc(w.case_no)}</a> · ${esc(w.item)}${w.item_kind === 'part' && w.supplier ? ` <span class="small muted">(${esc(supplierLabel(w.supplier))})</span>` : ''} · ${esc(t('warranty_until_d').replace('{d}', fmtD(w.warranty_until)))}`).join('<br>')}${vi.warranties_truncated ? `<div class="small" role="note" data-warrmore>${esc(t('warr_more').replace('{n}', vi.warranties_max))}</div>` : ''}<div class="small muted">${esc(t('vi_warranty_hint'))}</div></dd>`);
   // Backlog 414: Wartungs-/Full-Service-Verträge getrennt mit eigenem Hinweis (Leistungsumfang laut Vertrag)

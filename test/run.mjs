@@ -31486,6 +31486,69 @@ await test('Backlog 881 (Blickwinkel „Fahrer meldet einen Mangel, den die Werk
     ok(Object.keys(STRINGS[l]).filter((k) => /^help_.*_s$/.test(k)).some((k) => STRINGS[l][k].includes(STRINGS[l].vi_title) && /Restarbeit|залишков|remaining work/.test(STRINGS[l][k].split('|').find((x) => x.includes(STRINGS[l].vi_title) && /Restarbeit schon bekannt|вже відома|already known/.test(x)) || '')), l + ': Hilfe nennt es');
   }
 });
+await test('Backlog 882 (Folge aus 881): bekannte Restarbeit eines freigegebenen Vorgangs im laufenden Auftrag mit erledigen – Vermerk und Verlauf in beiden Vorgängen, nur was „Zum Fahrzeug“ zeigt, Werkstatt nur eigener Standort, Wiederholung/zweites Erledigen abgewiesen', async () => {
+  const { U, cmd, toRepair, newCase } = await freshWorld();
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const release = async (id) => {
+    eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+    eq((await cmd(U.fleet, id, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200);
+  };
+  const id1 = await toRepair();
+  eq((await cmd(U.ws, id1, 'add_open_item', { description: 'Spiegelhalter rechts lose' })).status, 200);
+  eq((await cmd(U.ws, id1, 'add_open_item', { description: 'Trittstufe links locker' })).status, 200);
+  eq((await cmd(U.ws, id1, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+  await release(id1);
+  const c1 = (await U.fleet.get(`/api/cases/${id1}`)).data.case;
+  const id2 = await newCase({ description: 'Spiegel rechts wackelt' });
+  let d2 = (await U.fleet.get(`/api/cases/${id2}`)).data;
+  ok(!d2.allowed_actions.includes('resolve_released_item'), 'gemeldet: noch nicht (erst im Werkstattauftrag)');
+  const oiId = d2.vehicle_info.released_items.find((o) => o.description === 'Spiegelhalter rechts lose').id;
+  eq((await cmd(U.fleet, id2, 'resolve_released_item', { open_item_id: oiId }, 'zu früh')).status, 403);
+  eq((await cmd(U.fleet, id2, 'approve_repair', { workshop_site: 'DORTMUND' }, 'freigegeben')).status, 200);
+  d2 = (await U.ws.get(`/api/cases/${id2}`)).data;
+  ok(d2.allowed_actions.includes('resolve_released_item'), 'Werkstatt im Auftrag');
+  ok(!(await U.viewer.get(`/api/cases/${id2}`)).data.allowed_actions.includes('resolve_released_item'), 'Lesende nicht');
+  eq((await cmd(U.ws, id2, 'resolve_released_item', { open_item_id: oiId }, '')).status, 400, 'Vermerk Pflicht');
+  eq((await cmd(U.ws, id2, 'resolve_released_item', { open_item_id: 'gibt-es-nicht' }, 'erledigt')).status, 400, 'unbekannt');
+  // eigene Restarbeit des laufenden Auftrags ist nicht „freigegeben“ → abgewiesen (dafür gibt es „Restarbeit erledigt“)
+  eq((await cmd(U.ws, id2, 'add_open_item', { description: 'eigene Restarbeit' })).status, 200);
+  const own = (await U.ws.get(`/api/cases/${id2}`)).data.open_items[0].id;
+  eq((await cmd(U.ws, id2, 'resolve_released_item', { open_item_id: own }, 'erledigt')).status, 400, 'eigene Restarbeit nicht über diesen Weg');
+  // Werkstatt München: Auftrag am selben Fahrzeug, Restarbeit von Dortmund nicht sichtbar → nicht erledigbar
+  const id3 = await newCase({ description: 'Tür klemmt', workshop_site: 'MUENCHEN' });
+  eq((await cmd(U.fleet, id3, 'approve_repair', { workshop_site: 'MUENCHEN' }, 'München')).status, 200);
+  const v3 = (await U.wsMuc.get(`/api/cases/${id3}`)).data.case.version;
+  { const r = await U.wsMuc.post(`/api/cases/${id3}/commands`, { command_id: rk(), action: 'resolve_released_item', expected_version: v3, note: 'erledigt', payload: { open_item_id: oiId } }); eq(r.status, 400, 'fremder Standort'); }
+  // erledigen
+  d2 = (await U.ws.get(`/api/cases/${id2}`)).data;
+  eq((await cmd(U.ws, id2, 'resolve_released_item', { open_item_id: oiId }, 'Halter neu verschraubt')).status, 200);
+  d2 = (await U.ws.get(`/api/cases/${id2}`)).data;
+  eq(d2.vehicle_info.released_items.length, 1, 'nur noch die andere Restarbeit'); eq(d2.vehicle_info.released_items[0].description, 'Trittstufe links locker');
+  const ev2 = d2.events.find((e) => e.action === 'resolve_released_item');
+  ok(ev2 && ev2.payload.from_case_no === c1.case_no && ev2.payload.from_case_id === id1 && ev2.payload.description === 'Spiegelhalter rechts lose' && ev2.note === 'Halter neu verschraubt', 'Verlauf im laufenden Auftrag');
+  const d1 = (await U.fleet.get(`/api/cases/${id1}`)).data;
+  const o1 = d1.open_items.find((o) => o.id === oiId);
+  eq(o1.status, 'erledigt'); eq(o1.resolution_note, `Vorgang ${d2.case.case_no}: Halter neu verschraubt`, 'Vermerk im alten Vorgang');
+  const ev1 = d1.events.find((e) => e.action === 'resolve_open_item');
+  ok(ev1 && ev1.payload.done_in_case_no === d2.case.case_no && ev1.payload.done_in_case_id === id2, 'Verlauf im alten Vorgang');
+  eq(d1.case.status, 'fahrzeug_freigegeben', 'alter Vorgang bleibt freigegeben'); eq(d1.case.version, c1.version, 'Version des alten Vorgangs unverändert (offene Seiten dort nicht ungültig)');
+  // zweites Mal → abgewiesen
+  eq((await cmd(U.ws, id2, 'resolve_released_item', { open_item_id: oiId }, 'nochmal')).status, 400, 'schon erledigt');
+  // Leitung darf es ebenso (auch nach der Übergabe an die Abschlusskontrolle nicht mehr nötig: Status in Arbeit genügt)
+  const oi2 = d2.vehicle_info.released_items[0].id;
+  eq((await cmd(U.fleet, id2, 'resolve_released_item', { open_item_id: oi2 }, 'Trittstufe festgezogen')).status, 200);
+  eq((await U.fleet.get(`/api/cases/${id2}`)).data.vehicle_info.released_items.length, 0);
+  // Oberfläche + Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-relres') && app.includes("case 'resolve_released_item':") && app.includes('function rriNote(') && app.includes("'resolve_open_item', 'resolve_released_item'].includes(a)"), 'Knopf, Formular, Vermerk übersetzt, nicht unter den Hauptknöpfen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['act_resolve_released_item', 'rri_btn', 'rri_hint', 'rri_done_in', 'rri_ev']) ok(STRINGS[l][k], l + ': ' + k);
+    ok(Object.keys(STRINGS[l]).filter((k) => /^help_.*_s$/.test(k)).some((k) => STRINGS[l][k].includes(STRINGS[l].rri_btn)), l + ': Hilfe nennt den Knopf');
+    ok(STRINGS[l].vi_rel_items_hint.includes(STRINGS[l].rri_btn), l + ': Hinweis nennt den Knopf');
+  }
+});
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

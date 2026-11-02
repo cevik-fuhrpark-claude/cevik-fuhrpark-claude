@@ -302,6 +302,7 @@ UI-Abholung nach der Reparatur: Abholvermerk Werkstatt → Freigabe → Fahrerhi
 UI-Abholhinweis ersetzt (Backlog 879): frühere Abholhinweise für Fahrer bei der nächsten Freigabe archiviert, Formular + Verlauf, DE/UK/EN 390/820/1366|ui-abholung-ersetzt.py|/tmp/cfp-abholung-ersetzt.log
 UI-Fährt bis zur Teilelieferung (Backlog 880): Leitung setzt/entfernt den Vermerk im Vorgang, Disposition sieht eigenen Abschnitt statt „Nicht einplanen“, DE/UK/EN 390/820/1366|ui-teilefahrt.py|/tmp/cfp-teilefahrt.log
 UI-Restarbeit schon bekannt (Backlog 881): „Zum Fahrzeug“ im neuen Vorgang nennt offene Restarbeiten freigegebener Vorgänge mit Link, Leitung + Werkstatt, DE/UK/EN 390/820/1366|ui-restarbeit-bekannt.py|/tmp/cfp-restarbeit-bekannt.log
+UI-Restarbeit hier mit erledigt (Backlog 882): Werkstatt erledigt im neuen Auftrag die bekannte Restarbeit eines freigegebenen Vorgangs, Vermerk im alten Vorgang übersetzt, DE/UK/EN 390/820/1366|ui-restarbeit-hier-erledigt.py|/tmp/cfp-restarbeit-hier-erledigt.log
 UI-Externe Werkstatt: Abschlusskontrolle + Freigabe in einem Schritt, Abholvermerk aus Standort, DE/UK/EN 390/820/1366|ui-extern-abschluss.py|/tmp/cfp-extern-abschluss.log
 UI-Diebstahl auf dem Rastplatz: Diebstahl-/Planen-/Auflieger-Hinweis im Meldeformular, Versicherungsliste mit Ort, DE/UK/EN 390/820/1366|ui-diebstahl-rastplatz.py|/tmp/cfp-diebstahl-rastplatz.log
 UI-Gespann im Vorgang: Zugmaschine/Auflieger mit offenem Vorgang, Polizeiangaben übernehmen, gleiche Schadennummer, DE/UK/EN 390/820/1366|ui-gespann-polizei.py|/tmp/cfp-gespann-polizei.log
