@@ -1186,6 +1186,9 @@ async function workshopBoard() {
     // Prüfung mit erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher, noch kein Auftrag: nur zur Info – die Fuhrparkleitung entscheidet
     const dw = ov.defects_without_case || [];
     if (dw.length) html += `<h2>${esc(t('ws_defects_pending'))} <span class="chip">${dw.length}</span></h2><p class="small muted">${esc(t('ws_defects_hint'))}</p><div class="list">${dw.map((x) => `<a class="row p-kritisch" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title">${esc(mk(x.kind))} · ${fmtD(x.done_date)}</span><span class="chip kritisch">${esc(t('res_' + x.result))}</span></a>`).join('')}</div>`;
+    // Backlog 885 (Folge aus 884): HU/SP/Tachograph erfasst, aber kein Prüfbericht in der Akte – die Werkstatt darf ihn hochladen (Knopf oben in der Akte)
+    const rm = ov.report_missing || [];
+    if (rm.length) html += `<h2 id="wsnr">${esc(t('todo_report_missing'))} <span class="chip">${rm.length}${(ov.lists_truncated || []).includes('report_missing') ? '+' : ''}</span></h2><p class="small muted">${esc(t('ws_nr_hint'))}</p><div class="list">${rm.map((x) => `<a class="row" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title">${esc(mk(x.kind))} · ${fmtD(x.done_date)}</span><span class="chip">${esc(t('nr_go'))} ›</span></a>`).join('')}</div>`;
   } catch {}
   // selbst erfasste Pflichtprüfungen ohne Ergebnis (≤ 180 Tage, neueste ihrer Art) – Sprung direkt zum Formular in der Fahrzeugakte
   try {

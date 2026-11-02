@@ -31614,6 +31614,29 @@ await test('Backlog 884 (Folge aus 883): „Heute zu tun“ der Leitung – Prü
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].todo_report_missing, l); ok(STRINGS[l].help_dates_s.includes(STRINGS[l].todo_report_missing), l + ': Hilfe nennt den Eintrag'); }
 });
 
+await test('Backlog 885 (Folge aus 884): Startseite der Werkstatt – „Prüfbericht fehlt“ aus der Prüftermin-Übersicht, Eintrag führt zur Akte mit Hochladen-Knopf, Hilfe DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const pdf = new TextEncoder().encode('%PDF-1.4\n% Bericht\n%%EOF');
+  eq((await U.ws.post(`/api/vehicles/${V1}/husp/HU/complete`, { done_date: bDayOff(-1), evidence: 'Rechnung (Test 885)', result: 'ohne_maengel' })).status, 200, 'Werkstatt erledigt HU');
+  let o = (await U.ws.get('/api/maintenance')).data;
+  eq(o.report_missing.length, 1, 'Werkstatt sieht den fehlenden Bericht'); eq(o.report_missing[0].vehicle_id, V1);
+  const akte = (await U.ws.get(`/api/vehicles/${V1}`)).data;
+  eq((akte.report_missing || []).length, 1, 'Akte zeigt den Hinweis mit Knopf auch der Werkstatt');
+  // Werkstatt darf den Bericht hochladen → Eintrag weg
+  eq((await U.ws.req('POST', `/api/vehicles/${V1}/documents?kind=pruefbericht&note=HU`, pdf, { 'content-type': 'application/pdf', 'x-filename': 'HU.pdf' })).status, 201, 'Werkstatt lädt hoch');
+  eq((await U.ws.get('/api/maintenance')).data.report_missing.length, 0, 'erledigt');
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const wb = app.slice(app.indexOf('async function workshopBoard()'), app.indexOf('\n}\n', app.indexOf('async function workshopBoard()')));
+  ok(wb.includes("ov.report_missing || []") && wb.includes('id="wsnr"') && wb.includes("t('ws_nr_hint')") && wb.includes("includes('report_missing')"), 'Abschnitt auf der Werkstatt-Startseite mit 200+-Zähler');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].ws_nr_hint && STRINGS[l].ws_nr_hint.includes(STRINGS[l].nr_go), l + ': Hinweis nennt den Knopf');
+    ok(STRINGS[l].help_ws_s.includes(STRINGS[l].todo_report_missing) && STRINGS[l].help_ws_s.includes(STRINGS[l].nr_go), l + ': Hilfe Werkstatt nennt Abschnitt und Knopf');
+  }
+  void e;
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
