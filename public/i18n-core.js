@@ -1207,6 +1207,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // [CLAUDE] Backlog 872 (Folge aus 871): „voraussichtlich fertig“ überschritten in „Heute zu tun“ und als Listenfilter
 // Backlog 875: „voraussichtlich fertig“ mehrfach verschoben (Vorgang)
 // [CLAUDE] Backlog 873 (Folge aus 871): Hinweis „Voraussichtlich fertig: neues Datum“ – Art in den Push-Einstellungen
+// [CLAUDE] Backlog 879 (Blickwinkel „Fahrer holt den Lkw nach Feierabend in der Werkstatt ab“): frühere Abholhinweise werden bei der Freigabe archiviert
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

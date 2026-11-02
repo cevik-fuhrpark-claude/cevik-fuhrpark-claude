@@ -23661,7 +23661,9 @@ await test('Backlog 425 (Blickwinkel „Fahrzeug kommt aus der Werkstatt zurück
   // Höchstzahl aktiver Hinweise gilt auch hier
   const c = await toQc('Schlüssel am Empfang'); eq(c.r.status, 200);
   const { NOTES_MAX_ACTIVE } = await import('../src/vnotes.js');
-  const n0 = db.prepare(`SELECT COUNT(*) AS n FROM vehicle_notes WHERE vehicle_id=?`).get(V1).n;
+  // Backlog 879: frühere Abholhinweise würden bei der Freigabe ersetzt – für die Höchstzahl hier nur gewöhnliche Hinweise
+  db.prepare(`UPDATE vehicle_notes SET archived_at='2026-01-01T00:00:00.000Z' WHERE vehicle_id=? AND source_case_id IS NOT NULL`).run(V1);
+  const n0 = db.prepare(`SELECT COUNT(*) AS n FROM vehicle_notes WHERE vehicle_id=? AND archived_at IS NULL`).get(V1).n;
   for (let i = n0; i < NOTES_MAX_ACTIVE; i++) eq((await U.fleet.post(`/api/vehicles/${V1}/notes`, { text: 'Hinweis ' + i })).status, 201);
   const r4 = await cmd(U.fleet, c.id, 'technical_release', { confirm: true, pickup_for_driver: true }, 'Kontrolle ok'); eq(r4.status, 400); ok(/Höchstens/.test(r4.data.message), r4.data.message);
   eq((await cmd(U.fleet, c.id, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200, 'ohne Fahrerhinweis weiter möglich');
@@ -31284,6 +31286,65 @@ await test('Backlog 878 (Folge aus 877): Hinweis „Fahrzeug technisch freigegeb
   ok(en.includes(' · open items: 2') && !en.includes('Restarbeiten'), en);
   const withPk = localizedBody({ kind: 'released', body: deBody.replace(' · TEST', '') + ' · Abholhinweis: Mein Fahrzeug' }, 'uk');
   ok(withPk.endsWith(' · відкриті залишкові роботи: 2 · Інформація для отримання: Мій транспорт'), withPk);
+});
+
+await test('Backlog 879 (Blickwinkel „Fahrer holt den Lkw nach Feierabend in der Werkstatt ab“): Abholhinweis für Fahrer kennt seinen Vorgang (Migration 0101); nächste Freigabe archiviert ältere Abholhinweise, Ankündigung im Formular, Verlauf; gewöhnliche Hinweise bleiben', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db;
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const toQc = async (pickup) => {
+    const id = await toRepair();
+    eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+    eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    eq((await cmd(U.ws, id, 'request_quality_check', pickup ? { pickup_note: pickup } : {}, 'fertig')).status, 200); return id;
+  };
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test' })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/notes`, { text: 'Tankdeckel klemmt', for_driver: true })).status, 201);
+  // 1. Freigabe mit Fahrerhinweis: Hinweis trägt den Vorgang
+  const a = await toQc('Schlüssel im Schlüsselkasten Werkstatt Nord, Fach 7');
+  eq((await cmd(U.fleet, a, 'technical_release', { confirm: true, pickup_for_driver: true }, 'Kontrolle ok')).status, 200);
+  const na = db.prepare(`SELECT * FROM vehicle_notes WHERE vehicle_id=? AND text LIKE '%Fach 7%'`).get(V1);
+  eq(na.source_case_id, a); ok(JSON.stringify((await U.driver.get('/api/me/vehicles')).data).includes('Fach 7'), 'Fahrer sieht ihn');
+  // 2. nächster Vorgang am selben Lkw: Formular kündigt das Ersetzen an (pickup nur für fremde Vorgänge), Freigabe ohne Fahrerhinweis archiviert trotzdem
+  const b = await toQc('Lkw auf Platz 4, Schlüssel beim Pförtner');
+  let d = (await U.fleet.get(`/api/cases/${b}`)).data;
+  const pn = d.vehicle_info.notes.filter((n) => n.pickup); eq(pn.length, 1, JSON.stringify(d.vehicle_info.notes)); ok(pn[0].text.includes('Fach 7'));
+  ok(d.vehicle_info.notes.some((n) => n.text === 'Tankdeckel klemmt' && n.pickup === false), 'gewöhnlicher Hinweis ohne Kennzeichen');
+  eq((await cmd(U.fleet, b, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200);
+  const na2 = db.prepare('SELECT archived_at, archived_by FROM vehicle_notes WHERE id=?').get(na.id); ok(na2.archived_at && na2.archived_by === U.fleet.id, JSON.stringify(na2));
+  d = (await U.fleet.get(`/api/cases/${b}`)).data; eq(d.events.find((x) => x.action === 'technical_release').payload.pickup_replaced, 1, 'Verlauf');
+  const mine = JSON.stringify((await U.driver.get('/api/me/vehicles')).data); ok(!mine.includes('Fach 7') && mine.includes('Tankdeckel klemmt'), 'alter Ablageort weg, gewöhnlicher Hinweis bleibt');
+  ok((await U.fleet.get(`/api/vehicles/${V1}/notes?archived=1`)).data.notes.some((n) => n.text.includes('Fach 7')), 'im Archiv');
+  // 3. Freigabe mit neuem Fahrerhinweis ersetzt den vorigen; Höchstzahl zählt den ersetzten nicht mit
+  const c = await toQc('Schlüssel Briefkasten Halle 2');
+  eq((await cmd(U.fleet, c, 'technical_release', { confirm: true, pickup_for_driver: true }, 'Kontrolle ok')).status, 200);
+  const nc = db.prepare(`SELECT id FROM vehicle_notes WHERE source_case_id=?`).get(c);
+  const { NOTES_MAX_ACTIVE } = await import('../src/vnotes.js');
+  const act = () => db.prepare(`SELECT COUNT(*) AS n FROM vehicle_notes WHERE vehicle_id=? AND archived_at IS NULL`).get(V1).n;
+  for (let i = act(); i < NOTES_MAX_ACTIVE; i++) eq((await U.fleet.post(`/api/vehicles/${V1}/notes`, { text: 'Hinweis ' + i })).status, 201);
+  const dd = await toQc('Schlüssel am Empfang');
+  const r = await cmd(U.fleet, dd, 'technical_release', { confirm: true, pickup_for_driver: true }, 'Kontrolle ok'); eq(r.status, 200, JSON.stringify(r.data));
+  ok(db.prepare('SELECT archived_at FROM vehicle_notes WHERE id=?').get(nc.id).archived_at, 'vorheriger ersetzt'); eq(act(), NOTES_MAX_ACTIVE, 'Höchstzahl gehalten');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM vehicle_notes WHERE vehicle_id=? AND archived_at IS NULL AND source_case_id IS NOT NULL`).get(V1).n, 1, 'genau ein aktiver Abholhinweis');
+  // gewöhnliche Hinweise voll: weiter abgewiesen
+  db.prepare(`UPDATE vehicle_notes SET archived_at='2026-01-01T00:00:00.000Z' WHERE vehicle_id=? AND source_case_id IS NOT NULL`).run(V1);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/notes`, { text: 'Hinweis voll' })).status, 201);
+  const f = await toQc('Schlüssel Tresor');
+  const r2 = await cmd(U.fleet, f, 'technical_release', { confirm: true, pickup_for_driver: true }, 'Kontrolle ok'); eq(r2.status, 400); ok(/Höchstens/.test(r2.data.message), r2.data.message);
+  // Bestand (Migration): Abholhinweis vor 0101 wird über Zeitstempel + Vorgangsnummer zugeordnet, freier Hinweis mit ähnlichem Text nicht
+  const cs = db.prepare('SELECT id, case_no, closed_at FROM cases WHERE id=?').get(a);
+  db.prepare(`INSERT INTO vehicle_notes(id,environment,vehicle_id,text,for_driver,created_by,created_at) VALUES ('alt1','test',?,?,1,?,?), ('alt2','test',?,?,1,?,'2026-01-01T00:00:00.000Z')`)
+    .run(V1, cs.case_no + ': Schlüssel alt', U.fleet.id, cs.closed_at, V1, cs.case_no + ': frei geschrieben', U.fleet.id);
+  const sql = (await import('node:fs')).readFileSync(new URL('../migrations/0101_vehicle_note_source_case.sql', import.meta.url), 'utf8').split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+  db.exec(sql.split(/;\s*(?:\n|$)/).find((x) => /^\s*UPDATE/.test(x)));
+  eq(db.prepare(`SELECT source_case_id FROM vehicle_notes WHERE id='alt1'`).get().source_case_id, a); eq(db.prepare(`SELECT source_case_id FROM vehicle_notes WHERE id='alt2'`).get().source_case_id, null);
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="pu_repl"') && app.includes('data-pureplev') && app.includes("tn('pu_ev_replaced'"), 'Formular und Verlauf');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].pu_replaced_hint.includes('{d}') && STRINGS[l].pu_ev_replaced.includes('{n}') && PLURALS[l].pu_ev_replaced.one.includes('{n}'), l);
+    ok(/Fach|archiv|архів/i.test(STRINGS[l].help_fleet_s.split('|').find((x) => x.startsWith(STRINGS[l].pu_title)) || ''), `Hilfe ${l}`);
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

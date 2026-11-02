@@ -573,8 +573,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
       AND ((next_due_date IS NOT NULL AND next_due_date <= ? AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) OR (kind='Rückruf' AND last_done_date IS NULL))`).bind(c.vehicle_id, soon).first()).n;
     // letzter km-Stand und aktive Hinweise zum Fahrzeug (ohne Verfasser) in einer Abfrage – Vorgangsdetail bleibt im Abfragebudget
     const kmn = await env.DB.prepare(`SELECT o.km, o.measured_at,
-        (SELECT json_group_array(json_object('text', n.text, 'for_driver', n.for_driver, 'created_at', n.created_at, 'valid_until', n.valid_until)) FROM
-          (SELECT text, for_driver, created_at, valid_until FROM vehicle_notes WHERE vehicle_id=?1 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?3) ORDER BY created_at DESC, rowid DESC LIMIT 20) n) AS notes,
+        (SELECT json_group_array(json_object('text', n.text, 'for_driver', n.for_driver, 'created_at', n.created_at, 'valid_until', n.valid_until, 'pickup', n.pickup)) FROM
+          (SELECT text, for_driver, created_at, valid_until, CASE WHEN source_case_id IS NOT NULL AND source_case_id<>?4 THEN 1 ELSE 0 END AS pickup FROM vehicle_notes WHERE vehicle_id=?1 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?3) ORDER BY created_at DESC, rowid DESC LIMIT 20) n) AS notes,
         (SELECT json_group_array(json_object('case_id', w.case_id, 'case_no', w.case_no, 'status', w.status, 'workshop_site', w.workshop_site, 'item', w.item, 'item_kind', w.item_kind, 'supplier', w.supplier, 'warranty_until', w.warranty_until)) FROM
           (SELECT x.id AS case_id, x.case_no, x.status, x.workshop_site, g.item, g.item_kind, g.supplier, g.warranty_until, g.created_at FROM cases x JOIN
             (SELECT case_id, name AS item, 'part' AS item_kind, supplier, warranty_until, created_at FROM parts WHERE warranty_until >= ?5
@@ -615,7 +615,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
         if (added) due.sort((a, b) => (a.next_due_date == null) - (b.next_due_date == null) || String(a.next_due_date).localeCompare(String(b.next_due_date)));
       }
     }
-    const vnotes = kmn && kmn.notes ? JSON.parse(kmn.notes).map((n) => ({ ...n, for_driver: !!n.for_driver })) : [];
+    const vnotes = kmn && kmn.notes ? JSON.parse(kmn.notes).map((n) => ({ ...n, for_driver: !!n.for_driver, pickup: !!n.pickup })) : [];
     // Laufende Gewährleistung aus früheren Vorgängen dieses Fahrzeugs (am Meldedatum noch gültig) – Hinweis: Rückgriff beim Lieferanten prüfen
     const warranties = kmn && kmn.warranties ? JSON.parse(kmn.warranties) : [];
     // eine Zeile mehr gelesen: mehr als WARR_CASE_MAX laufende Gewährleistungen → nur die mit dem frühesten Ablauf, Hinweis in der App (nie still kappen)
@@ -2005,16 +2005,26 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
           if (pickupUntil < berlinDate()) throw bad('validation', '„Gültig bis“ darf nicht in der Vergangenheit liegen.');
           if (pickupUntil > oneYearAhead(berlinDate())) throw bad('validation', 'Abholung: „Gültig bis“ liegt mehr als ein Jahr in der Zukunft.');
         }
-        const nn = await env.DB.prepare(`SELECT COUNT(*) AS n FROM vehicle_notes WHERE vehicle_id=? AND environment=? AND ${noteActiveSql()}`).bind(c.vehicle_id, envName, berlinDate()).first();
-        if (nn.n >= NOTES_MAX_ACTIVE) throw bad('validation', `Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`);
+        const nn = await env.DB.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(source_case_id IS NOT NULL AND source_case_id<>?), 0) AS repl FROM vehicle_notes WHERE vehicle_id=? AND environment=? AND ${noteActiveSql()}`).bind(c.id, c.vehicle_id, envName, berlinDate()).first();
+        // ersetzte Abholhinweise (Backlog 879, unten im selben Stapel archiviert) zählen nicht mit
+        if (nn.n - nn.repl >= NOTES_MAX_ACTIVE) throw bad('validation', `Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`);
         // Höchstzahl in derselben Anweisung wie addNote; läuft im selben Stapel wie die Freigabe (Versions-Guard rollt beides zurück)
-        extra.push(env.DB.prepare(`INSERT INTO vehicle_notes(id,environment,vehicle_id,text,for_driver,created_by,created_at,valid_until) SELECT ?1,?2,?3,?4,1,?5,?6,?7
+      }
+      // Backlog 879 (Blickwinkel „Fahrer holt den Lkw nach Feierabend in der Werkstatt ab“): noch aktive Abholhinweise früherer Freigaben
+      // dieses Fahrzeugs sind mit dieser Freigabe überholt (Fahrzeug war seitdem wieder in der Werkstatt) – archivieren, sonst sah der Fahrer
+      // zwei Ablageorte bzw. den alten. Unabhängig davon, ob diese Freigabe selbst einen Fahrerhinweis setzt. Archiv statt Löschen.
+      const oldPu = (await env.DB.prepare(`SELECT id FROM vehicle_notes WHERE vehicle_id=? AND environment=? AND source_case_id IS NOT NULL AND source_case_id<>? AND ${noteActiveSql()}`)
+        .bind(c.vehicle_id, envName, c.id, berlinDate()).all()).results;
+      if (oldPu.length) extra.push(env.DB.prepare(`UPDATE vehicle_notes SET archived_at=?, archived_by=? WHERE id IN (SELECT value FROM json_each(?)) AND archived_at IS NULL`)
+        .bind(now, user.id, JSON.stringify(oldPu.map((n) => n.id))));
+      if (pickupForDriver) {
+        extra.push(env.DB.prepare(`INSERT INTO vehicle_notes(id,environment,vehicle_id,text,for_driver,created_by,created_at,valid_until,source_case_id) SELECT ?1,?2,?3,?4,1,?5,?6,?7,?10
           WHERE (SELECT COUNT(*) FROM vehicle_notes WHERE vehicle_id=?3 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?8)) < ?9`)
-          .bind(uuid(), envName, c.vehicle_id, `${c.case_no}: ${pickup || c.pickup_note}`, user.id, now, pickupUntil, berlinDate(), NOTES_MAX_ACTIVE));
+          .bind(uuid(), envName, c.vehicle_id, `${c.case_no}: ${pickup || c.pickup_note}`, user.id, now, pickupUntil, berlinDate(), NOTES_MAX_ACTIVE, c.id));
       }
       toStatus = 'fahrzeug_freigegeben'; set.closed_at = now; set.safety_lock = 0; set.safety_lock_reason = null;
       const nonSafety = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen'`).bind(c.id).first();
-      payload = { remaining_open_items: nonSafety.n, ...(pickup && pickup !== c.pickup_note ? { pickup_note: true } : {}), ...(pickupForDriver ? { pickup_for_driver: true, pickup_valid_until: pickupUntil } : {}) };
+      payload = { remaining_open_items: nonSafety.n, ...(oldPu.length ? { pickup_replaced: oldPu.length } : {}), ...(pickup && pickup !== c.pickup_note ? { pickup_note: true } : {}), ...(pickupForDriver ? { pickup_for_driver: true, pickup_valid_until: pickupUntil } : {}) };
       notifyKind = 'released';
       break;
     }
