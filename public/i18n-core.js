@@ -1218,6 +1218,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 883: Prüfbericht fehlt (HU/SP/Tachograph erfasst, kein Fahrzeugdokument „Prüfbericht“ seit dem Prüftag)
 // Backlog 884: „Heute zu tun“ der Leitung – Prüfbericht fehlt
 // Backlog 885: Startseite der Werkstatt – Prüfbericht fehlt
+// Backlog 886: Fremdleistung – Beleg mit Kennzeichen/FIN/km abgleichen
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

@@ -31637,6 +31637,20 @@ await test('Backlog 885 (Folge aus 884): Startseite der Werkstatt – „Prüfbe
   void e;
 });
 
+await test('Backlog 886 (Blickwinkel „Fremdwerkstatt-Rechnung mit anderem Kennzeichen/FIN oder unpassendem km-Stand“): Teil/Fremdleistung nennen FIN, Fremdleistung zusätzlich letzten km-Stand und Abgleich-Hinweis; Hilfe Werkstatt DE/UK/EN', async () => {
+  const { U, toRepair, V1 } = await freshWorld();
+  const a = await toRepair();
+  eq((await U.ws.post(`/api/vehicles/${V1}/odometer`, { km: 123456 })).status, 201, 'km erfasst');
+  for (const u of [U.fleet, U.ws]) {
+    const d = (await u.get(`/api/cases/${a}`)).data;
+    eq(d.vehicle.vin, 'WMA15SZZ2HM722774', 'FIN im Vorgang'); eq(d.vehicle_info.last_km.km, 123456, 'letzter km-Stand im Vorgang');
+  }
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const bkDoc = ['add_part', 'add_external_cost'].includes(action)") && app.includes('id="bkvin"') && app.includes('<span translate="no">${esc(bkVin)}</span>') && app.includes("const bkKm = action === 'add_external_cost'") && app.includes("t('bk_doc')") && app.includes("${bkDoc}<br><span class=\"muted\">${esc(t('bk_check'))}</span>"), 'Formular');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].bk_doc && STRINGS[l].bk_doc.includes(STRINGS[l].vin), l + ': Hinweis nennt FIN'); ok(STRINGS[l].help_ws_s.includes(STRINGS[l].vin), l + ': Hilfe nennt FIN'); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
