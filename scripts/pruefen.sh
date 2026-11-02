@@ -309,6 +309,7 @@ UI-Werkstatt: Prüfbericht fehlt (Backlog 885): HU erfasst ohne Prüfbericht →
 UI-Buchung mit FIN (Backlog 886): Teil/Fremdleistung nennen FIN, Fremdleistung letzten km-Stand und Abgleich-Hinweis, Arbeitszeit nicht, DE/UK/EN 390/820/1366|ui-buchung-fin.py|/tmp/cfp-buchung-fin.log
 UI-Fremdleistung mit km laut Rechnung (Backlog 887): Feld, Hinweis eine Stelle zu viel, Warnung kleiner, Buchung trotzdem, Verlauf „nicht übernommen“, DE/UK/EN 390/820/1366|ui-fremdleistung-km.py|/tmp/cfp-fremdleistung-km.log
 UI-Freigabe nennt offene Kosten (Backlog 888): nur geschätzt/ohne Preis, voll belegt ohne Hinweis, DE/UK/EN 390/820/1366|ui-freigabe-kosten-offen.py|/tmp/cfp-freigabe-kosten-offen.log
+UI-Werkstattplan „Voraussichtlich fertig“ + Feiertagshinweis im Formular (DE/UK/EN; Backlog 890)|ui-plan-fertig-feiertag.py|/tmp/cfp-plan-fertig-feiertag.log
 UI-Externe Werkstatt: Abschlusskontrolle + Freigabe in einem Schritt, Abholvermerk aus Standort, DE/UK/EN 390/820/1366|ui-extern-abschluss.py|/tmp/cfp-extern-abschluss.log
 UI-Diebstahl auf dem Rastplatz: Diebstahl-/Planen-/Auflieger-Hinweis im Meldeformular, Versicherungsliste mit Ort, DE/UK/EN 390/820/1366|ui-diebstahl-rastplatz.py|/tmp/cfp-diebstahl-rastplatz.log
 UI-Gespann im Vorgang: Zugmaschine/Auflieger mit offenem Vorgang, Polizeiangaben übernehmen, gleiche Schadennummer, DE/UK/EN 390/820/1366|ui-gespann-polizei.py|/tmp/cfp-gespann-polizei.log

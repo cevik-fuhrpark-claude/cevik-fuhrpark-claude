@@ -174,7 +174,8 @@ const fmtDue = (iso) => { if (!iso || iso.length !== 10) return fmtD(iso); const
 const dueOffHint = (iso) => (federalHoliday(iso) ? t('due_holiday_hint') : isWeekendD(iso) ? t('due_weekend_hint') : '');
 // Eingabe der Antwortfrist: Hinweis, wenn der Tag auf ein Wochenende fällt (Frist wird nicht verschoben)
 // Werkstatttermin von Hand gewählt (Backlog 269): Hinweis bei Wochenende/bundesweitem Feiertag – nichts wird verschoben
-function offDayWatch(els) { for (const el of els) { if (!el || el.dataset.offW) continue; el.dataset.offW = '1'; const h = document.createElement('p'); h.className = 'small muted'; h.dataset.offday = ''; h.hidden = true; el.after(h); const upd = () => { const v = el.value; const x = holName(v) || (isWeekendD(v) ? t('due_weekend') : ''); h.hidden = !x; if (x) h.textContent = t('plan_offday_hint').replace('{d}', () => x); }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); } }
+// Backlog 890: optional eigener Text (Fertig-/Liefertermin sind keine Termine mit der Werkstatt)
+function offDayWatch(els, key = 'plan_offday_hint') { for (const el of els) { if (!el || el.dataset.offW) continue; el.dataset.offW = '1'; const h = document.createElement('p'); h.className = 'small muted'; h.dataset.offday = ''; h.hidden = true; el.after(h); const upd = () => { const v = el.value; const x = holName(v) || (isWeekendD(v) ? t('due_weekend') : ''); h.hidden = !x; if (x) h.textContent = t(key).replace('{d}', () => x); }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); } }
 function dueWeekendWatch() { for (const el of $$('input[name=response_due]')) { const h = document.createElement('p'); h.className = 'small muted'; h.dataset.dueWe = ''; h.textContent = t('due_weekend_hint'); el.after(h); const upd = () => { const x = dueOffHint(el.value); h.hidden = !x; if (x) h.textContent = x; }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); } }
 const dqDetail = (i) => dqDetailText(i, t, fmtD, mk, { km: (n) => fmtKm(n), src: (v) => odoSrc(v), pos: (p) => posL(p), mm: (n) => fmtMm(n), ax: (v) => t('axle_' + v) });
 const hrs = (n) => (n === null || n === undefined ? '–' : fmtNum(Math.round(n * 100) / 100, { maximumFractionDigits: 2 }));
@@ -3540,6 +3541,8 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   }; ki.addEventListener('input', upd); if (ko) ko.addEventListener('change', upd); } }
   if ($('#dupsel')) $('#dupsel').onchange = () => { const ta = $('#af textarea[name=note]'); const o = $('#dupsel').selectedOptions[0]; if (ta && !ta.value && $('#dupsel').value) ta.value = `${t('dup_of')} ${o.textContent.split(' · ')[0]}`; };
   offDayWatch($$('#af input[name=planned_date]'));
+  // Backlog 890 (Blickwinkel „Werkstatt-Betriebsruhe zwischen den Jahren“): Fertig-/Teile-Liefertermin am Wochenende/Feiertag – nur Hinweis
+  offDayWatch($$('#af input[name=ready_expected_on], #af input[name=parts_expected_date]'), 'date_offday_hint');
   if (action === 'record_work') workDayWatch(c);
   $('#af').onsubmit = (e) => {
     e.preventDefault();
@@ -4506,6 +4509,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   // im Formular, Termin der anderen Person markiert (vorher überschrieb das spätere Speichern die Absprache still). HU/SP ohne Eintrag: Formular
   // nach dem Neuladen über die Prüfart finden (der Eintrag kann inzwischen angelegt sein – Kennung wechselt)
   if (S.hsLost && S.hsLost.id === id) { const L = S.hsLost; S.hsLost = null; const fm = $(`form[data-hsplan="${CSS.escape(L.rid)}"]`) || (L.kind ? $(`form[data-hskind="${CSS.escape(L.kind)}"]`) : null); if (fm) conflictKeep(fm, L, 'hslost'); else toast(L.msg, true); }
+  offDayWatch($$('form[data-hsplan] input[name=planned_date]')); // Backlog 890
   $$('form[data-hsplan]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', hsUrl(fm.dataset.hsplan, 'plan'), { planned_date: fm.planned_date.value || null, expected_planned_date: fm.planned_date.defaultValue || null }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805f: Termin setzen ist wiederholbar */ if (r && r.after_due) toast(t('plan_after_due').replace('{d}', fmtD(r.planned_date)).replace('{due}', fmtD(r.after_due)), true); else toast(r && r.unchanged && fm.planned_date.value !== fm.planned_date.defaultValue ? t('saved_before') : '✓'); viewVehicle(id); } catch (err) { if (err.code === 'version_conflict') { S.hsLost = { id, rid: fm.dataset.hsplan, kind: fm.dataset.hskind || null, msg: err.message, ...conflictMine(fm) }; viewVehicle(id); return; } toast(err.message, true); } }));
   // Direktsprung „Durchführung erfassen“ (Werkstattplan): Formular des Eintrags öffnen; HU/SP stehen im aufklappbaren Bereich der Prüfung
   if (sec && sec.startsWith('done:')) {
@@ -4871,6 +4875,7 @@ async function renderTires(id, el, keep = null) {
       renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode }); }
     catch (err) { toast(err.message, true); }
   };
+  offDayWatch($$('#woform input[name=planned_date]', el)); // Backlog 890
   if ($('#woform', el)) $('#woform', el).onsubmit = async (e) => { e.preventDefault(); const fm = e.target; const b = Object.fromEntries(new FormData(fm)); if (!b.planned_date) delete b.planned_date; fm.querySelector('button').disabled = true;
     try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/winter-order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓ ' + r.case_no); renderTires(id, el); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } };
   $$('[data-ver]', el).forEach((b) => (b.onclick = async () => { try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/specs`, { axle: b.dataset.ver, size: b.dataset.size, verified: true }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805c: Wiederholung = unchanged */ if (r && r.tacho_check_possible) toast(t('tacho_check_possible')); renderTires(id, el); } catch (err) { toast(err.message, true); } }));
@@ -6709,6 +6714,7 @@ async function viewMaint(fq) {
   S.mbRes = ''; S.mbOpen = false; // Ergebnis des Sammeltermins nur direkt nach dem Speichern zeigen
   const mbf = $('#mbf');
   if (mbf) {
+    offDayWatch([$('#mbdate')]); // Backlog 890
     const boxes = () => $$('#mbf input[name=mbid]:not(:disabled)');
     const cnt = () => { $('#mbcount').textContent = tn('mb_selected', boxes().filter((x) => x.checked).length); };
     boxes().forEach((x) => (x.onchange = cnt)); cnt();
@@ -6976,7 +6982,7 @@ async function viewPlan(sec) {
   // Fahrzeug-Standort je Zeile, wenn nicht nach Fahrzeug-Standort gefiltert und mehrere Standorte (23.10.2026)
   const vsTag = (i) => (!r.vehicle_site && (r.vehicle_sites || []).length > 1 && i.vehicle_site_label ? `<span data-vsite>📍 ${esc(i.vehicle_site_label === 'ohne' ? t('cs_nosite') : i.vehicle_site_label)}</span>` : '');
   const row = (i) => i.type === 'case'
-    ? `<a class="row p-${esc(i.priority)}" href="#/cases/${esc(i.id)}">${plate(i.plate, { locked: i.safety_lock })}<span class="title">${esc(i.case_no)} · ${woTag(i)}${ltxt(clipTxt(cDesc(i.description), 100))}</span><span class="chip">${esc(t('st_' + i.status))}</span>${subs(vsTag(i), planVehTag(i), mgr && !site && esc(wsName(i.workshop_site)), i.planned_note && `<span data-plannote>📝 ${esc(t('plan_note_lbl'))}: ${esc(clipTxt(i.planned_note, 120))}</span>`, i.vehicle_location && `<span data-vloc>${esc(t('vl_title'))}: ${esc(clipTxt(i.vehicle_location, 80))}${vlAt(i)}</span>`, hoMissing(i).length && `<span class="chip mittel" data-hotag style="white-space:nowrap">${esc(hoMissing(i).join(', '))}</span>`, partsEta(i, '', true), i.status === 'wartet_teile' && i.parts_expected_date && i.planned_date && i.planned_date < i.parts_expected_date && `<span class="chip mittel">${esc(t('plan_before_parts'))}</span>`, i.reschedules >= 2 && `<span class="chip mittel" style="white-space:nowrap">${esc(tn('plan_moved_n', i.reschedules))}</span>`, i.after_due_date && `<span class="chip kritisch">${esc(t('wplan_mdue_late').replace('{d}', fmtD(i.planned_date)))} (${fmtD(i.after_due_date)})</span>`, other(i))}</a>`
+    ? `<a class="row p-${esc(i.priority)}" href="#/cases/${esc(i.id)}">${plate(i.plate, { locked: i.safety_lock })}<span class="title">${esc(i.case_no)} · ${woTag(i)}${ltxt(clipTxt(cDesc(i.description), 100))}</span><span class="chip">${esc(t('st_' + i.status))}</span>${subs(vsTag(i), planVehTag(i), mgr && !site && esc(wsName(i.workshop_site)), i.planned_note && `<span data-plannote>📝 ${esc(t('plan_note_lbl'))}: ${esc(clipTxt(i.planned_note, 120))}</span>`, i.vehicle_location && `<span data-vloc>${esc(t('vl_title'))}: ${esc(clipTxt(i.vehicle_location, 80))}${vlAt(i)}</span>`, hoMissing(i).length && `<span class="chip mittel" data-hotag style="white-space:nowrap">${esc(hoMissing(i).join(', '))}</span>`, partsEta(i, '', true), rdyOf(i) && `<span data-wprdy>${rdyTxt(i.ready_expected_on)}</span>`, i.status === 'wartet_teile' && i.parts_expected_date && i.planned_date && i.planned_date < i.parts_expected_date && `<span class="chip mittel">${esc(t('plan_before_parts'))}</span>`, i.reschedules >= 2 && `<span class="chip mittel" style="white-space:nowrap">${esc(tn('plan_moved_n', i.reschedules))}</span>`, i.after_due_date && `<span class="chip kritisch">${esc(t('wplan_mdue_late').replace('{d}', fmtD(i.planned_date)))} (${fmtD(i.after_due_date)})</span>`, other(i))}</a>`
     : `<a class="row" href="${doneHref(i)}" data-fromplan>${plate(i.plate)}<span class="title">${esc(t('planned_inspection'))}: ${esc(mk(i.kind))}</span>${i.next_due_date ? `<span class="chip">${esc(t('next_due'))} ${fmtD(i.next_due_date)}</span>` : ''}${subs(vsTag(i), planVehTag(i), i.after_due_date && `<span class="chip kritisch" data-afterdue>${esc(t('wplan_mdue_late').replace('{d}', fmtD(i.planned_date)))} (${fmtD(i.after_due_date)})</span>`, i.order && `🔧 ${esc(t('mo_open'))} ${esc(i.order.case_no)}`, kmTxt(i), other(i))}</a>`;
   // km-Fälligkeit als Text (Rest bzw. überschritten); ohne km-Regel leer
   function kmTxt(i) {
@@ -7395,6 +7401,7 @@ function wireWoBatch() {
   const boxes = () => $$('#wobf input[name=wobid]:not(:disabled)');
   const cnt = () => { $('#wobcount').textContent = tn('mb_selected', boxes().filter((x) => x.checked).length); };
   boxes().forEach((x) => (x.onchange = cnt)); cnt();
+  offDayWatch([$('#wobd')]); // Backlog 890
   $$('[data-wob]', fm).forEach((b) => (b.onclick = () => { boxes().forEach((x) => (x.checked = b.dataset.wob === '1')); cnt(); }));
   fm.onsubmit = async (e) => {
     e.preventDefault();

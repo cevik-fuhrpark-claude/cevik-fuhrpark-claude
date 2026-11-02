@@ -20916,7 +20916,7 @@ await test('Backlog 268: Hinweise „Kalenderzeit“ an SLA-Einstellungen und Ve
 await test('Backlog 269: Hinweis beim von Hand gewählten Werkstatttermin an Wochenende/bundesweitem Feiertag (Aktionsformulare und Werkstattplan), Texte DE/UK/EN', async () => {
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].plan_offday_hint && STRINGS[l].plan_offday_hint.includes('{d}'), `${l}.plan_offday_hint`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('function offDayWatch(els)') && app.includes("offDayWatch($$('#af input[name=planned_date]'));") && app.includes("offDayWatch($$('.planset input[type=date]'));"), 'Oberfläche');
+  ok(app.includes("function offDayWatch(els, key = 'plan_offday_hint')") && app.includes("offDayWatch($$('#af input[name=planned_date]'));") && app.includes("offDayWatch($$('.planset input[type=date]'));"), 'Oberfläche');
 });
 
 await test('Backlog 270 (Blickwinkel „Fahrer ruft die Disposition an“): Meldeformular zeigt Disposition/Leitung/Werkstatt die offenen Vorgänge des gewählten Fahrzeugs (Vorgangsliste mit vehicle_id liefert die nötigen Felder)', async () => {
@@ -31733,6 +31733,33 @@ await test('Backlog 888 (Blickwinkel „Rechnung der Fremdwerkstatt kommt erst n
     ok(STRINGS[l].rel_cost_open.includes('{x}') && STRINGS[l].rel_cost_est.includes('{n}') && STRINGS[l].rel_cost_unv.includes('{n}'), l + ': Platzhalter');
     ok(STRINGS[l].help_costlimit_s.includes(STRINGS[l].act_technical_release), l + ': Hilfe nennt die Freigabe');
   }
+});
+
+await test('Backlog 890 (Blickwinkel „Werkstatt-Betriebsruhe zwischen den Jahren“): Werkstattplan nennt „voraussichtlich fertig“ je Auftrag (App, Ausdruck, Kalenderdatei), nur solange gültig; Hinweis bei Wochenende/Feiertag auch für Fertig-/Teile-Liefertermin, Prüftermin, Sammeltermin und Winterreifen-Auftrag; Texte DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const { berlinDate } = await import('../src/util.js');
+  const day = (n) => new Date(Date.parse(berlinDate() + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const de = (iso) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
+  const id = await newCase(); eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge', { planned_date: day(5) })).status, 200);
+  const item = async (u) => { const r = await u.get('/api/workshop/plan?days=14'); eq(r.status, 200); for (const d of r.data.days) for (const i of d.items) if (i.id === id) return i; return [...r.data.in_work, ...r.data.overdue, ...r.data.unplanned].find((i) => i.id === id) || null; };
+  ok(Object.prototype.hasOwnProperty.call(await item(U.fleet), 'ready_expected_on') && (await item(U.fleet)).ready_expected_on === null, 'Feld vorhanden, ohne Angabe null');
+  eq((await cmd(U.ws, id, 'set_ready_date', { ready_expected_on: day(7) })).status, 200);
+  eq((await item(U.fleet)).ready_expected_on, day(7), 'Leitung');
+  eq((await item(U.ws)).ready_expected_on, day(7), 'eigene Werkstatt');
+  eq(await item(U.wsMuc), null, 'fremde Werkstatt sieht den Auftrag weiter nicht');
+  const ics = (await U.fleet.get('/api/workshop/plan?days=14&format=ics')).data; const icsT = typeof ics === 'string' ? ics : new TextDecoder().decode(ics);
+  ok(icsT.replace(/\r\n /g, '').includes('voraussichtlich fertig ' + de(day(7))), 'Kalenderdatei nennt das Datum');
+  // Werkstattwechsel entfernt die Angabe – auch im Plan
+  eq((await cmd(U.fleet, id, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'Kapazität')).status, 200);
+  eq((await item(U.fleet)).ready_expected_on, null, 'nach Werkstattwechsel leer');
+  const { STRINGS } = await import('../public/i18n.js'); const fs = await import('node:fs');
+  const ict = fs.readFileSync(new URL('../public/ics-texts.js', import.meta.url), 'utf8'); eq((ict.match(/plan_ready_on: '[^']*\{d\}[^']*'/g) || []).length, 3, 'Kalendertext DE/UK/EN');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].date_offday_hint && STRINGS[l].date_offday_hint.includes('{d}'), l + ': date_offday_hint'); ok(STRINGS[l].help_ws_s.includes(STRINGS[l].rdy_title), l + ': Hilfe'); }
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("rdyOf(i) && `<span data-wprdy>${rdyTxt(i.ready_expected_on)}</span>`"), 'Werkstattplan-Zeile');
+  for (const x of ["offDayWatch($$('#af input[name=ready_expected_on], #af input[name=parts_expected_date]'), 'date_offday_hint');", "offDayWatch($$('form[data-hsplan] input[name=planned_date]'));", "offDayWatch([$('#mbdate')]);", "offDayWatch([$('#wobd')]);", "offDayWatch($$('#woform input[name=planned_date]', el));", "h.textContent = t(key).replace('{d}', () => x);"]) ok(app.includes(x), 'Oberfläche: ' + x);
+  const rep = fs.readFileSync(new URL('../src/reports.js', import.meta.url), 'utf8'); ok(rep.includes('c.parts_expected_date, c.ready_expected_on, c.workshop_ack_at'), 'Abfrage');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

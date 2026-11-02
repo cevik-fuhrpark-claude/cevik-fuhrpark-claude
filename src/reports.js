@@ -877,7 +877,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const sf = site ? ' AND c.workshop_site=?' : '';
   const canPlan = ['owner', 'fleet', 'workshop'].includes(user.role);
   const [cs, mt, vs, mo] = await Promise.all([
-    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, v.eval_excluded, c.status, c.priority, c.safety_lock, c.reported_driveability, c.workshop_site, c.vehicle_location, c.vehicle_location_at, c.handover_keys, c.handover_papers, c.planned_date, c.planned_note, c.parts_expected_date, c.workshop_ack_at, c.version, substr(c.description,1,300) AS description, c.maintenance_rule_id, c.tire_order
+    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, v.eval_excluded, c.status, c.priority, c.safety_lock, c.reported_driveability, c.workshop_site, c.vehicle_location, c.vehicle_location_at, c.handover_keys, c.handover_papers, c.planned_date, c.planned_note, c.parts_expected_date, c.ready_expected_on, c.workshop_ack_at, c.version, substr(c.description,1,300) AS description, c.maintenance_rule_id, c.tire_order
       FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status IN (${PLAN_STATUSES.map(() => '?').join(',')})${sf}
       ORDER BY c.planned_date, ${PLAN_DAY_ORDER}`).bind(envName, ...PLAN_STATUSES, ...(site ? [site] : [])).all(),
     // ruhende Fahrzeuge mit eingetragenem Termin erscheinen gekennzeichnet (wie ihre Aufträge) – vorher war ihr Prüftermin unsichtbar (23.10.2026)
@@ -999,7 +999,7 @@ export function workshopPlanIcs(plan, envName, lang = 'de') {
   for (const d of plan.days) for (const i of d.items) {
     ev.push(i.type === 'case'
       ? { uid: `plan-case-${i.id}`, date: d.date, summary: I.tx('plan_case', { no: i.case_no, plate: i.plate }) + (envName === 'test' ? ` (${I.tx('test_tag')})` : ''),
-        description: I.tx('plan_status', { status: I.status(i.status) }) + (i.status === 'wartet_teile' && i.parts_expected_date ? ' · ' + I.tx('plan_parts_eta', { d: I.d(i.parts_expected_date) }) : '') + (i.tire_order === 'winter' ? ' · ' + I.label('wo_tag') : '') + (i.safety_lock ? ' · ' + I.label('locked') : '') + cpl(i) + (i.planned_note ? ' · ' + I.tx('plan_note', { n: i.planned_note }) : '') }
+        description: I.tx('plan_status', { status: I.status(i.status) }) + (i.status === 'wartet_teile' && i.parts_expected_date ? ' · ' + I.tx('plan_parts_eta', { d: I.d(i.parts_expected_date) }) : '') + (i.ready_expected_on ? ' · ' + I.tx('plan_ready_on', { d: I.d(i.ready_expected_on) }) : '') + (i.tire_order === 'winter' ? ' · ' + I.label('wo_tag') : '') + (i.safety_lock ? ' · ' + I.label('locked') : '') + cpl(i) + (i.planned_note ? ' · ' + I.tx('plan_note', { n: i.planned_note }) : '') }
       : { uid: `plan-maint-${i.id}`, date: d.date, summary: I.tx('plan_maint', { kind: I.kind(i.kind), plate: i.plate }), description: [i.next_due_date ? I.tx('plan_due_by', { d: I.d(i.next_due_date) }) : '', cpl(i).slice(3)].filter(Boolean).join(' · ') });
   }
   return icsCalendar(`${I.tx('cal_plan')}${plan.site ? ' ' + plan.site : ''}${plan.vehicle_site ? ' – ' + I.tx('plan_vsite', { site: plan.vehicle_site === 'ohne' ? I.tx('no_site') : plan.vehicle_site }) : ''}`, ev);
