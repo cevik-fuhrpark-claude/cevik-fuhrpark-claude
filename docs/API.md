@@ -112,6 +112,7 @@ Schweregrad im Feld `severity`: `fehler` = Widerspruch, `luecke` = fehlt für Au
 | `inspection_defects_no_case` | `luecke` | Prüfung mit erheblichen/gefährlichen Mängeln – kein Vorgang seit der Prüfung |
 | `reinspection_defects_again` | `luecke` | Nachprüfung nach Mängelauftrag erneut mit erheblichen Mängeln |
 | `inspection_no_result` | `hinweis` | Pflichtprüfung ohne Prüfergebnis (in der App erfasst, ≤ 180 Tage) |
+| `husp_no_report` | `hinweis` | Backlog 883: HU/SP/Tachograph in der App erfasst (≤ 180 Tage, neueste ihrer Art), aber seit dem Prüftag (Berliner Tag des Hochladens) kein Fahrzeugdokument `pruefbericht` dieser Umgebung – Bericht nachreichen. `detail_args` = `{kind, done_date}`, `event_id`. Fahrzeugakte: `report_missing[]` (`event_id`, `kind`, `done_date`; nur owner/fleet/workshop) |
 | `km_rule_no_base` | `luecke` | Wartung nach km ohne Ausgangs-km |
 | `telematics_plate_mismatch` | `fehler` | Telematik-Gerät meldet anderes Kennzeichen |
 | `telematics_km_rejected` | `hinweis` | Telematik-km-Stand passt nicht zu den erfassten Ständen (nicht übernommen): kleiner als der Stand davor (Detail „… < …“) oder – nachgereicht – größer als der nächste spätere unbegründete Stand (Detail „… > …“) |

@@ -45,7 +45,7 @@ export function dqDetailText(i, t, fmtD, mk = (k) => k, x = {}) {
   if (a.role) return `${a.name} (${t('role_' + a.role)})${a.expired ? ' – ' + t('dq_invite_expired') : ''}`;
   if (i.check === 'insurance_none_running') return `${a.partner || ''}${a.contract_no ? ` (${a.contract_no})` : ''} · ${t('dq_ins_ended').replace('{d}', a.ended ? fmtD(a.ended) : '–')}`;
   if (i.check === 'tire_size_after_tacho' && a.from) return `${a.from} → ${a.to} (${fmtD(a.changed_on)}) · ${t('dq_last_tacho').replace('{d}', fmtD(a.last_done))}`;
-  if (i.check === 'inspection_no_result' && a.done_date) return `${mk(a.kind)} ${fmtD(a.done_date)}`;
+  if ((i.check === 'inspection_no_result' || i.check === 'husp_no_report') && a.done_date) return `${mk(a.kind)} ${fmtD(a.done_date)}`;
   if (a.result) return `${mk(a.kind)} ${fmtD(a.done_date)} · ${t('res_' + a.result)}${a.case_no ? ' · ' + t('dq_defect_case').replace('{no}', a.case_no).replace('{d}', fmtD(a.first_date)) : ''}`;
   return i.detail;
 }

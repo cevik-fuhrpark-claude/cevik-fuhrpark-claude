@@ -8,7 +8,7 @@ import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX, case
 import { sha256Hex, sha256HexSync, berlinWindowStartIso, berlinDateTime, hideDriverName, dateLang, berlinDaySql, HttpError } from './util.js';
 import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt, maintKindLang } from './notify.js';
-import { REQUIRED_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop, kmCounterDropAfter, kmBasisForDone, FIXING_CASE_SQL, defectCase } from './maintenance.js';
+import { REQUIRED_KINDS, REPORT_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop, kmCounterDropAfter, kmBasisForDone, FIXING_CASE_SQL, defectCase } from './maintenance.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth, FIRST_ACK_SQL } from './reports.js';
 import { maintenanceWarnDays } from './settings.js';
@@ -258,6 +258,13 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   const newer = (a, b) => b.done_date > a.done_date || (b.done_date === a.done_date && b.created_at > a.created_at);
   const resultMissing = v.active && !v.eval_excluded ? maintenanceHistory.filter((e) => e.result === null && ['erfasst', 'erledigt'].includes(e.source) && REQUIRED_KINDS.includes(e.kind)
     && e.done_date >= sinceNr && !maintenanceHistory.some((x) => x.id !== e.id && x.kind === e.kind && newer(e, x))).map((e) => ({ event_id: e.id, kind: e.kind, done_date: e.done_date })) : [];
+  // Backlog 883 (Blickwinkel „Lkw kommt aus der Fremdwerkstatt mit Rechnung, aber ohne Prüfbericht“): HU/SP/Tachograph in der App erfasst
+  // (≤ 180 Tage, neueste ihrer Art), aber seit dem Prüftag kein Fahrzeugdokument „Prüfbericht“ – Bericht nachreichen. Gleiche Regel wie
+  // Datenqualität `husp_no_report`; nur wer Prüfberichte hochladen darf (Inhaber/Leitung/Werkstatt), ohne Zusatzabfrage. Ein Bericht deckt alle Prüfungen
+  // bis zu seinem Hochladetag ab (HU+SP am selben Tag = ein Bericht).
+  const reportMissing = v.active && !v.eval_excluded && ['owner', 'fleet', 'workshop'].includes(user.role) ? maintenanceHistory.filter((e) => ['erfasst', 'erledigt'].includes(e.source) && REPORT_KINDS.includes(e.kind)
+    && e.done_date >= sinceNr && !maintenanceHistory.some((x) => x.id !== e.id && x.kind === e.kind && newer(e, x))
+    && !documents.some((f) => f.doc_kind === 'pruefbericht' && berlinDate(f.created_at) >= e.done_date)).map((e) => ({ event_id: e.id, kind: e.kind, done_date: e.done_date })) : [];
   // Fahrleistungs-Prognose für km-Fälligkeiten (nur Planungshilfe, gleiche Regel wie die Prüftermin-Übersicht) – Abfrage nur bei km-Regeln
   // Backlog 635 (Blickwinkel „Wartung nach km“): Rest-km/Status wie Prüftermin-Übersicht und Agent (belegter km-Stand der letzten Durchführung,
   // Vorwarnung `maintenance_warn_km`, Stand-Datum) – vorher rechnete die Akte im Browser nur mit der letzten Ablesung und ohne „bald fällig“
@@ -279,7 +286,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // Sicherheitssperre aus allen Vorgängen (Werkstatt sieht nur eigene/übernommene – Kennzeichen zeigte dort sonst kein Schloss, 20.10.2026)
   const locked = allCases.some((c) => c.safety_lock && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status));
   // Kennzeichenverlauf (Backlog 256): bisherige Kennzeichen mit „bis“ (Zeitpunkt der Änderung in der App)
-  const out = { former_plates: tl ? [] : formerPlates, locked, inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, vehicle: v, telematics, cases: caseRows, inspections, ...(tl ? {} : { inspections_truncated: inspectionsTruncated }), last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, ...(tl ? {} : { maintenance_history_truncated: maintTruncated, maintenance_history_max: MAINT_HIST_MAX }), odometer, drivers, coupled, documents, hu_sp: husp };
+  const out = { former_plates: tl ? [] : formerPlates, locked, inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, report_missing: reportMissing, vehicle: v, telematics, cases: caseRows, inspections, ...(tl ? {} : { inspections_truncated: inspectionsTruncated }), last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, ...(tl ? {} : { maintenance_history_truncated: maintTruncated, maintenance_history_max: MAINT_HIST_MAX }), odometer, drivers, coupled, documents, hu_sp: husp };
   if (okCase) Object.defineProperty(out, '_okCase', { value: okCase, enumerable: false });
   if (isManager(user)) {
     if (!tl) {

@@ -14,6 +14,8 @@ const WRITE_ROLES = ['owner', 'fleet'];
 // Gesetzliche Pflichtprüfungen für schwere Lkw (StVZO § 29 HU/SP, § 57b Kontrollgerät, DGUV Vorschrift 70 UVV).
 // Dient nur der Lückenliste „kein Termin hinterlegt“ – es werden keine Termine daraus berechnet.
 export const REQUIRED_KINDS = ['HU', 'SP', 'UVV', 'Tachograph'];
+// Backlog 883: Prüfarten mit amtlichem Prüfbericht (HU/SP-Bericht, Tachograph-Prüfbescheinigung) – Hinweis „Prüfbericht fehlt“
+export const REPORT_KINDS = ['HU', 'SP', 'Tachograph'];
 export const REQUIRED_KINDS_TRAILER = ['HU', 'SP']; // Anhänger: kein Kontrollgerät; UVV nur bei eigener Ladetechnik → nicht pauschal gefordert
 const MAX_ROWS = 2000;
 
@@ -190,6 +192,17 @@ function noResultSql(recordedBy = null, limit = 200, vf = null) {
       AND NOT EXISTS (SELECT 1 FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND (x.kind NOT IN ('Rückruf','Sonstiges') OR x.rule_id=e.rule_id) AND x.id<>e.id
         AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)))
       ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [...(vf ? [vf] : []), ...REQUIRED_KINDS, berlinDate(new Date(Date.now() - 180 * 86400000).toISOString()), ...(recordedBy ? [recordedBy] : [])]];
+}
+
+// Backlog 883: HU/SP/Tachograph in der App erfasst (≤ 180 Tage, neueste ihrer Art) ohne Fahrzeugdokument „Prüfbericht“ ab dem Prüftag
+// (Berliner Tag des Hochladens) in dieser Umgebung – gleiche Regel wie `report_missing` der Fahrzeugakte
+export function noReportQuery(env, envName, limit = 200, vf = null) {
+  return env.DB.prepare(`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
+      WHERE v.active=1 AND v.eval_excluded=0 ${vf ? 'AND v.id IN (SELECT value FROM json_each(?))' : ''} AND e.source IN ('erfasst','erledigt') AND e.kind IN (${REPORT_KINDS.map(() => '?').join(',')}) AND e.done_date >= ?
+      AND NOT EXISTS (SELECT 1 FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND x.id<>e.id
+        AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)))
+      AND NOT EXISTS (SELECT 1 FROM files f WHERE f.vehicle_id=e.vehicle_id AND f.case_id IS NULL AND f.environment=? AND f.doc_kind='pruefbericht' AND ${berlinDaySql('f.created_at')} >= e.done_date)
+      ORDER BY e.done_date DESC LIMIT ${Number(limit)}`).bind(...(vf ? [vf] : []), ...REPORT_KINDS, berlinDate(new Date(Date.now() - 180 * 86400000).toISOString()), envName);
 }
 
 // Prüfungen der letzten 12 Monate (wie Fahrzeugliste/Akte, 22.10.2026) mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher, zu denen seit dem Prüfdatum kein

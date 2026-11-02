@@ -31550,6 +31550,39 @@ await test('Backlog 882 (Folge aus 881): bekannte Restarbeit eines freigegebenen
   }
 });
 
+await test('Backlog 883 (Blickwinkel „Lkw kommt aus der Fremdwerkstatt mit Rechnung, aber ohne Prüfbericht“): HU/SP/Tachograph erfasst ohne Fahrzeugdokument „Prüfbericht“ – Hinweis in Akte und Datenqualität, Rechnung genügt nicht, Bericht erledigt es, nur Upload-Rollen, > 180 Tage nicht', async () => {
+  const { U, V1 } = await freshWorld(); const V2 = 'VIN:WDB9630051L917317';
+  const pdf = (x) => new TextEncoder().encode('%PDF-1.4\n% ' + x + '\n%%EOF');
+  const H = (n) => ({ 'content-type': 'application/pdf', 'x-filename': encodeURIComponent(n) });
+  const dq = async () => (await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'husp_no_report');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/husp/HU/complete`, { done_date: bDayOff(-3), evidence: 'Rechnung MAN 4711 (Test)', result: 'ohne_maengel' })).status, 200);
+  eq((await U.fleet.post(`/api/vehicles/${V2}/husp/HU/complete`, { done_date: bDayOff(-200), evidence: 'alter Bericht (Test)' })).status, 200);
+  let a = (await U.fleet.get(`/api/vehicles/${V1}`)).data;
+  eq(a.report_missing.length, 1, 'Akte: Prüfbericht fehlt'); eq(a.report_missing[0].kind, 'HU'); eq(a.report_missing[0].done_date, bDayOff(-3));
+  eq((await U.ws.get(`/api/vehicles/${V1}`)).data.report_missing.length, 1, 'Werkstatt sieht es');
+  eq((await U.viewer.get(`/api/vehicles/${V1}`)).data.report_missing.length, 0, 'Lesezugriff: kein Hinweis');
+  eq((await U.fleet.get(`/api/vehicles/${V2}`)).data.report_missing.length, 0, '> 180 Tage: kein Hinweis');
+  let it = await dq(); eq(it.length, 1, 'Datenqualität'); eq(it[0].vehicle_id, V1); eq(it[0].severity, 'hinweis'); eq(it[0].detail_args.kind, 'HU'); ok(it[0].event_id, 'event_id');
+  // Rechnung allein genügt nicht
+  eq((await U.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=rechnung&note=HU`, pdf('Rechnung'), H('Rechnung.pdf'))).status, 201);
+  eq((await dq()).length, 1, 'Rechnung erledigt den Hinweis nicht');
+  // Bericht von der Werkstatt hochgeladen → in beiden weg
+  eq((await U.ws.req('POST', `/api/vehicles/${V1}/documents?kind=pruefbericht&note=${encodeURIComponent('HU ' + bDayOff(-3))}`, pdf('Bericht'), H('HU-Bericht.pdf'))).status, 201);
+  eq((await dq()).length, 0, 'Bericht erledigt den Hinweis'); eq((await U.fleet.get(`/api/vehicles/${V1}`)).data.report_missing.length, 0, 'Akte ebenso');
+  // UVV zählt nicht (kein amtlicher Prüfbericht verlangt)
+  const { REPORT_KINDS } = await import('../src/maintenance.js'); eq(REPORT_KINDS.join(','), 'HU,SP,Tachograph');
+  // Oberfläche + Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-nrgo') && app.includes('id="docadd-d"') && app.includes("f.kind.value = 'pruefbericht'") && app.includes('${nrHtml}'), 'Knopf/Formular');
+  const { dqDetailText } = await import('../public/csv.js');
+  eq(dqDetailText({ check: 'husp_no_report', detail: 'x', detail_args: { kind: 'HU', done_date: '2026-10-30' } }, (k) => k, (d) => d.split('-').reverse().join('.')), 'HU 30.10.2026');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['dq_husp_no_report', 'nr_go', 'nr_hint']) ok(STRINGS[l][k], l + ': ' + k);
+    ok(STRINGS[l].help_dates_s.includes(STRINGS[l].nr_go), l + ': Hilfe nennt den Knopf');
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

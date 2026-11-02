@@ -20,7 +20,7 @@ export const HITRUN_WORDS_CYR = ['втік', 'втекл', 'втеча', 'вте
 const HITRUN_CYR = [...new Set(HITRUN_WORDS_CYR.flatMap(caseVariants))];
 const hitrunSql = () => `(${HITRUN_WORDS_LAT.map(() => 'instr(lower(c.description),?)>0').join(' OR ')} OR ${HITRUN_CYR.map(() => 'instr(c.description,?)>0').join(' OR ')})`;
 import { siteKey, siteLabels, siteSelection } from './reports.js';
-import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery } from './maintenance.js';
+import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery, noReportQuery } from './maintenance.js';
 import { spRequired, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { axleFits, sizeKey } from './tires.js';
 
@@ -67,6 +67,8 @@ export const CHECKS = {
   reinspection_defects_again: 'luecke',
   // in der App erfasste Pflichtprüfung (≤ 180 Tage, neueste ihrer Art) ohne Prüfergebnis – Ergebnis in der Fahrzeugakte nachtragen
   inspection_no_result: 'hinweis',
+  // Backlog 883: HU/SP/Tachograph in der App erfasst (≤ 180 Tage, neueste ihrer Art) ohne Fahrzeugdokument „Prüfbericht“ seit dem Prüftag
+  husp_no_report: 'hinweis',
   // Wartungsregel mit Intervall km, aber ohne km-Stand der letzten Durchführung und ohne belegte km-Fälligkeit – km-Fälligkeit nicht berechenbar
   km_rule_no_base: 'luecke',
   // Telematik-Gerät (zugeordnet über FIN oder bestätigtes Mapping) meldet beim letzten Stand ein anderes Kennzeichen als das Fahrzeug
@@ -136,7 +138,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (sel0.site) vf = JSON.stringify(all.filter((v) => sel0.match(v.site)).map((v) => v.id));
   }
   const VF = vf ? 'AND i.vehicle_id IN (SELECT value FROM json_each(?))' : '';
-  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, telPlates, claimNoOcc, tireTacho, insNone, insAll, theft365, hitrunNoPol] = await Promise.all([
+  const [veh, kms, rules, assigns, invites, drv, acc, vu, insKm, vins, ctr, ldocs, acc365, defects, again, noResult, noReport, telPlates, claimNoOcc, tireTacho, insNone, insAll, theft365, hitrunNoPol] = await Promise.all([
     // aktive Fahrzeuge inkl. ruhender (nur für die Anhänger-Suche; Prüfungen laufen über die bewerteten)
     // dazu außer Betrieb genommene Anhänger (nur für „Anhänger außer Betrieb“, 23.10.2026) – gleich danach abgetrennt
     env.DB.prepare(`SELECT id, plate, kind, site, manufacturer, build_year, trailer_plate, zgm_class, zgm_kg, eval_excluded, active FROM vehicles WHERE active=1 OR kind='anhaenger'`).all(),
@@ -206,6 +208,7 @@ export async function dataQuality(env, user, envName, query = {}) {
       AND n.result IN ('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher') ${vf ? 'AND n.vehicle_id IN (SELECT value FROM json_each(?))' : ''}
       GROUP BY n.id ORDER BY n.done_date DESC LIMIT ${DQ_MAX + 1}`).bind(envName, addMonths(berlinDate(), -12), ...(vf ? [vf] : [])).all(), // Berliner Tag (20.10.2026: vorher UTC-Datum, 00–02 Uhr ein Tag mehr)    // Pflichtprüfung in der App erfasst/erledigt (≤ 180 Tage), neueste ihrer Art, ohne Prüfergebnis (Importe/Bestand bewusst ausgenommen)
     noResultQuery(env, null, DQ_MAX + 1, vf).all(),
+    noReportQuery(env, envName, DQ_MAX + 1, vf).all(),
     // letzter Telematik-Stand je Fahrzeug und Anbieter mit vom Gerät gemeldetem Kennzeichen (Vergleich in JS: Schreibweise egal)
     // dazu km des letzten Stands und der davor zuletzt erfasste km-Stand (gleiche Plausibilitätsregel wie die Einspeisung)
     // außerdem: Stände außer Betrieb genommener Fahrzeuge mit dem letzten Zeitpunkt „außer Betrieb genommen“ laut Protokoll (ohne Protokolleintrag kein Befund)
@@ -250,7 +253,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   const offTrailers = new Map(veh.results.filter((v) => !v.active).map((v) => [normPlate(v.plate), v]));
   veh.results = veh.results.filter((v) => v.active);
   const truncatedChecks = [];
-  for (const [check, res] of [['km_inspection_rejected', insKm], ['accident_no_claim', acc365], ['theft_no_claim', theft365], ['claim_hitrun_no_police', hitrunNoPol], ['inspection_defects_no_case', defects], ['reinspection_defects_again', again], ['inspection_no_result', noResult], ['claim_no_occurred', claimNoOcc], ['insurance_none_running', insNone]]) {
+  for (const [check, res] of [['km_inspection_rejected', insKm], ['accident_no_claim', acc365], ['theft_no_claim', theft365], ['claim_hitrun_no_police', hitrunNoPol], ['inspection_defects_no_case', defects], ['reinspection_defects_again', again], ['inspection_no_result', noResult], ['husp_no_report', noReport], ['claim_no_occurred', claimNoOcc], ['insurance_none_running', insNone]]) {
     if (res.results.length > DQ_MAX) { truncatedChecks.push(check); res.results = res.results.slice(0, DQ_MAX); }
   }
   const vs = veh.results.filter((v) => !v.eval_excluded);
@@ -453,6 +456,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     detail_args: { kind: d.kind, done_date: d.done_date, result: d.result, case_no: d.case_no, first_date: d.first_date } });
   for (const d of noResult.results) items.push({ check: 'inspection_no_result', severity: CHECKS.inspection_no_result, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')}`,
     detail_args: { kind: d.kind, done_date: d.done_date } }); // App formatiert das Datum je Sprache (vorher „UVV 08.10.2026“ auch in EN, 18.10.2026)
+  for (const d of noReport.results) items.push({ check: 'husp_no_report', severity: CHECKS.husp_no_report, vehicle_id: d.vehicle_id, plate: d.plate, event_id: d.id, detail: `${d.kind} ${d.done_date.split('-').reverse().join('.')}`,
+    detail_args: { kind: d.kind, done_date: d.done_date } }); // Backlog 883
   for (const r of ldocs.results) { const v = vById.get(r.vehicle_id); if (v) add('leasing_doc_no_contract', v); }
   const PROV = { webfleet: 'Webfleet', yellowfox: 'YellowFox' };
   for (const r of telPlates.results) {
