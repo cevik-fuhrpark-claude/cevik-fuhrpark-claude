@@ -398,6 +398,8 @@ const V_MORE = [
   ['Unbekannte Prüfart.', 'Невідомий вид перевірки.', 'Unknown inspection type.'],
   ['Datum „fällig bis“ ungültig.', 'Недійсна дата «до терміну».', 'Invalid “due by” date.'],
   ['Datum „Fristen bis“ ungültig.', 'Недійсна дата «Строки до».', 'Invalid “Deadlines by” date.'],
+  ['Arbeitsstand ist zu lang (max. 500 Zeichen).', 'Стан робіт задовгий (макс. 500 символів).', 'The work status is too long (max. 500 characters).'],
+  ['Arbeitsstand ist unverändert.', 'Стан робіт не змінено.', 'The work status is unchanged.'],
 ];
 for (const [de, uk, en] of V_MORE) { VALIDATION_TEXTS.uk[de] = uk; VALIDATION_TEXTS.en[de] = en; }
 Object.assign(VALIDATION_TEXTS.uk, { cv_busy: 'Інші дефекти цієї перевірки вже в роботі ({v}) – транспорт виправити не можна. Відхиліть і повідомте заново для правильного транспорту.' });
@@ -1192,6 +1194,8 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 862 (Blickwinkel „Werkstatt-Tablet: Mechaniker sucht ein Teil per Teilenummer“): Suchfeld über der Artikelauswahl (Teil buchen, Wareneingang)
 // Backlog 863 (Blickwinkel „Fahrer meldet nachts einen Schaden, Foto zu dunkel“): Hinweis bei sehr dunklen Fotos (Meldung, Abfahrtskontrolle, Vorgang)
 // Backlog 864: Hinweis bei stark verwackelten/unscharfen Fotos (nur Hinweis, Senden bleibt möglich)
+
+// [CLAUDE] Backlog 867 (Blickwinkel „Werkstatt-Tablet: Mechaniker wird mitten in der Reparatur zu einem Notfall gerufen“): Arbeitsstand für die Übergabe
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

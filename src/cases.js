@@ -244,7 +244,9 @@ export async function listCases(env, user, envName, query, meta = null) {
       (SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.to_status=c.status AND (e.from_status IS NULL OR e.from_status<>e.to_status)) AS status_since,
       (SELECT d.case_no FROM cases d WHERE d.id=c.duplicate_of) AS duplicate_of_no, ${Q_COLS_SQL},
       -- Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile – wer fasst nach?“): worauf gewartet wird, schon in der Liste
-      CASE c.status WHEN 'wartet_teile' THEN (SELECT e.note FROM case_events e WHERE e.case_id=c.id AND e.action IN ('wait_parts','parts_partial') ORDER BY e.created_at DESC LIMIT 1) END AS parts_wait_note
+      CASE c.status WHEN 'wartet_teile' THEN (SELECT e.note FROM case_events e WHERE e.case_id=c.id AND e.action IN ('wait_parts','parts_partial') ORDER BY e.created_at DESC LIMIT 1) END AS parts_wait_note,
+      -- Backlog 867: wer den Arbeitsstand zuletzt eingetragen hat (Werkstatt-Tafel/Liste)
+      CASE WHEN c.work_state_by IS NOT NULL THEN (SELECT wu.display_name FROM users wu WHERE wu.id=c.work_state_by) END AS work_state_by_name
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN users u ON u.id=c.reporter_id
     WHERE ${where.join(' AND ')}
     ORDER BY ${Object.hasOwn(CASE_SORTS, query.sort) ? CASE_SORTS[query.sort] : CASE_SORTS.priority}
@@ -343,6 +345,8 @@ function shapeOmit(user) {
     o = new Set(['request_key', 'content_hash']);
     if (!canSeeCosts(user)) o.add('cost_approved_net');
     if (user.role === 'driver') { o.add('cost_over_limit_at'); o.add('fleet_received_by'); o.add('workshop_ack_by'); } // Fahrer: keine internen Zuständigkeiten
+    // Backlog 867: Arbeitsstand ist eine Übergabe innerhalb der Werkstatt/Leitung (Fahrer sieht Status und Abholvermerk)
+    if (user.role === 'driver') { o.add('work_state_note'); o.add('work_state_at'); o.add('work_state_by'); o.add('work_state_by_name'); }
     if (user.role === 'viewer') o.add('reporter_name_note'); // freier Namensvermerk – Datensparsamkeit Lesezugriff
     if (user.role === 'driver' || user.role === 'workshop') { o.add('followup_on'); o.add('followup_note'); } // Wiedervorlage = Arbeitsmittel der Leitung
     SHAPE_OMIT.set(key, o);
@@ -428,6 +432,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
     FROM case_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.case_id=? ORDER BY e.created_at`).bind(c.id).all()).results
     .map((e) => ({ ...e, payload: e.payload ? JSON.parse(e.payload) : null }))
     .filter((e) => e.action !== 'set_followup' || !['driver', 'workshop'].includes(user.role)) // Wiedervorlage nur für Leitung/Lesende
+    .filter((e) => e.action !== 'set_work_state' || user.role !== 'driver') // Backlog 867: Arbeitsstand nur intern
     // Kosten-Ereignisse sind interne Abläufe der Leitung/Werkstatt – Fahrer sehen sie nicht (wie cost_over_limit_at; 20.10.2026)
     .filter((e) => user.role !== 'driver' || !['cost_limit_exceeded', 'cost_limit_cleared', 'approve_costs', 'add_external_cost'].includes(e.action));
   // Fahrer sehen wie im Verlauf keine Namen anderer Personen, nur deren Rolle (17.10.2026: Restarbeiten/Kontrollen zeigten Namen von Werkstatt/Leitung)
@@ -968,10 +973,10 @@ export function allowedActions(user, c, access) {
       if (mgr) a.push('reassign_workshop');
       break;
     case 'in_reparatur':
-      if (ws || mgr) a.push('wait_parts', 'inspection', 'request_quality_check', 'set_planned_date');
+      if (ws || mgr) a.push('wait_parts', 'inspection', 'request_quality_check', 'set_planned_date', 'set_work_state');
       break;
     case 'wartet_teile':
-      if (ws || mgr) a.push('resume_repair', 'parts_partial', 'set_planned_date', 'set_parts_eta');
+      if (ws || mgr) a.push('resume_repair', 'parts_partial', 'set_planned_date', 'set_parts_eta', 'set_work_state');
       break;
     case 'abschlusskontrolle':
       if (mgr) a.push('return_for_rework', 'technical_release');
@@ -1524,6 +1529,17 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       payload = { from: from.location || from.service || from.on ? from : null, to: loc || svc || on ? to : null };
       break;
     }
+    case 'set_work_state': {
+      // Backlog 867 (Blickwinkel „Werkstatt-Tablet: Mechaniker wird mitten in der Reparatur zu einem Notfall gerufen“): Arbeitsstand für die
+      // Übergabe – was erledigt ist, was fehlt, Zustand des Fahrzeugs. Text = Bemerkung (steht so im Verlauf); leer = entfernen (z. B. weitergearbeitet).
+      // Ohne Statuswechsel und ohne Push; Zeitpunkt und Person werden mitgeführt (Tafel: „Stand … · Name“).
+      const ws0 = note || null;
+      if (ws0 && ws0.length > 500) throw bad('validation', 'Arbeitsstand ist zu lang (max. 500 Zeichen).');
+      if (ws0 === (c.work_state_note || null)) throw bad('validation', 'Arbeitsstand ist unverändert.');
+      set.work_state_note = ws0; set.work_state_at = ws0 ? now : null; set.work_state_by = ws0 ? user.id : null;
+      payload = ws0 ? (c.work_state_note ? { changed: true } : {}) : { cleared: true };
+      break;
+    }
     case 'set_handover': {
       // Backlog 423 (Blickwinkel „Werkstatt bekommt den Lkw ohne Schlüssel/Fahrzeugschein“): je Gegenstand „bei der Werkstatt“/„fehlt“/
       // nicht angegeben (leer). Neu „fehlt“ → Hinweis an Leitung und Melder (hat den Schlüssel oft noch); ohne Statuswechsel.
@@ -1980,6 +1996,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const newVersion = c.version + 1;
   // abgeschlossen/abgelehnt: Wiedervorlage endet (blieb sonst in API/CSV stehen und war nicht mehr entfernbar, 17.10.2026)
   if (!OPEN_STATUSES.includes(toStatus) && (c.followup_on || c.followup_note)) { set.followup_on = null; set.followup_note = null; }
+  // Backlog 867: Arbeitsstand gilt nur in Reparatur/„wartet auf Teile“ – mit Abschlusskontrolle, Freigabe oder Beenden entfernt (bleibt im Verlauf)
+  if (c.work_state_note && !['in_reparatur', 'wartet_teile'].includes(toStatus)) { set.work_state_note = null; set.work_state_at = null; set.work_state_by = null; }
   set.status = toStatus; set.version = newVersion; set.updated_at = now;
   const cols = Object.keys(set);
   const upd = env.DB.prepare(`UPDATE cases SET ${cols.map((k) => `${k}=?`).join(', ')} WHERE id=? AND version=?`)

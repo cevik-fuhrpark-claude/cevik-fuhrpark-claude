@@ -17226,7 +17226,8 @@ await test('Rechenzeit Vorgangsliste/CSV 22.10.: Vorgangszeilen in einem Durchla
   const old = (c, user) => { const out = { ...c }; delete out.request_key; delete out.content_hash; if (!['owner', 'fleet'].includes(user.role)) delete out.cost_approved_net;
     if ('cost_over_limit_at' in out && !OPEN_STATUSES.includes(out.status)) out.cost_over_limit_at = null; if (user.role === 'driver') delete out.cost_over_limit_at;
     if (user.role === 'viewer') delete out.reporter_name_note; if (user.role === 'driver' || user.role === 'workshop') { delete out.followup_on; delete out.followup_note; }
-    if (user.role === 'driver') { delete out.fleet_received_by; delete out.workshop_ack_by; } return out; };
+    if (user.role === 'driver') { delete out.fleet_received_by; delete out.workshop_ack_by; }
+    if (user.role === 'driver') { delete out.work_state_note; delete out.work_state_at; delete out.work_state_by; } return out; }; // Backlog 867
   const { e, U, newCase } = await freshWorld(); const db = e.DB.db;
   for (const priority of ['kritisch', 'mittel', 'niedrig']) await newCase({ priority });
   db.prepare(`UPDATE cases SET cost_over_limit_at=?, followup_on='2026-11-02', followup_note='Rückruf', cost_approved_net=12.5, reporter_name_note='Herr X' WHERE rowid % 2 = 0`).run(new Date().toISOString());
@@ -24405,7 +24406,7 @@ await test('Backlog 453 (Blickwinkel „Neue Werkstatt-Aushilfe, erster Tag am T
   ok(app.includes('let html = wsFlow() + shown.map('), 'Kurzablauf oben auf der Werkstatt-Startseite');
   ok(app.includes("render(html, 'home');\n  bindWsFlow();"), 'Ausblenden gebunden');
   ok(app.includes("b.onclick = () => { try { localStorage.setItem(wsFlowKey(), '1'); } catch {}"), 'Ausblenden als Eigenschaft, Speicher abgesichert');
-  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' || xh ? ' wrap' : ''"), 'Vorab-Info bricht um');
+  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' || xh || (c.work_state_note && WST_ST.includes(c.status)) ? ' wrap' : ''"), 'Vorab-Info bricht um'); // Backlog 867: auch mit Arbeitsstand
   // die genannten Knöpfe gibt es wirklich (Server-Aktionen der Werkstatt)
   const { U, toRepair } = await freshWorld();
   const a = await toRepair(); const acts = (await U.ws.get(`/api/cases/${a}`)).data.allowed_actions;
@@ -30843,6 +30844,68 @@ await test('Backlog 866 (Blickwinkel „Neuer Mechaniker, erste Woche: welche Au
     const S = STRINGS[l];
     ok(S.ws_mine && S.filter_mine && S.ws_mine_hint && S.ws_mine !== S.filter_mine, l + ': Texte');
     const h = S.help_ws_s.split('|'); ok(h.some((x) => x.includes(S.ws_mine) && x.includes(S.filter_mine) && x.includes(S.nav_cases)), l + ': Hilfe nennt Abschnitt, Reiter und „Vorgänge“');
+  }
+});
+
+await test('Backlog 867 (Blickwinkel „Werkstatt-Tablet: Mechaniker wird mitten in der Reparatur zu einem Notfall gerufen“): Arbeitsstand für die Übergabe (Migration 0099) – nur in Reparatur/„wartet auf Teile“, mit Zeit/Person, Liste/Tafel, leer = entfernen, mit „Zur Abschlusskontrolle“ entfernt (Verlauf bleibt), nie beim Fahrer; Hilfe DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair, newCase } = await freshWorld();
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const txt = 'Rad HL abgebaut, Bremse zerlegt – Lkw nicht bewegen';
+  // vor Reparaturbeginn nicht erlaubt (Werkstatt hat noch nichts angefangen)
+  const pre = await newCase(); eq((await cmd(U.fleet, pre, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.ws, pre, 'set_work_state', {}, txt)).status, 403, 'freigegeben, nicht begonnen');
+  ok(!(await U.ws.get(`/api/cases/${pre}`)).data.allowed_actions.includes('set_work_state'), 'kein Knopf vor Beginn');
+  const id = await toRepair();
+  ok((await U.ws.get(`/api/cases/${id}`)).data.allowed_actions.includes('set_work_state'), 'Knopf in Reparatur');
+  ok([403, 404].includes((await cmd(U.wsMuc, id, 'set_work_state', {}, txt)).status), 'fremde Werkstatt');
+  eq((await cmd(U.driver, id, 'set_work_state', {}, txt)).status, 403, 'Fahrer');
+  { const r = await cmd(U.ws, id, 'set_work_state', {}, 'x'.repeat(501)); eq(r.status, 400); ok(/zu lang/.test(r.data.message), r.data.message); }
+  eq((await cmd(U.ws, id, 'set_work_state', {}, '')).status, 400, 'leer ohne bisherigen Stand = unverändert');
+  const v0 = (await U.ws.get(`/api/cases/${id}`)).data.case.status;
+  eq((await cmd(U.ws, id, 'set_work_state', {}, txt)).status, 200);
+  let d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq(d.case.work_state_note, txt); ok(d.case.work_state_at && d.case.work_state_by === U.ws.id, 'Zeit/Person'); eq(d.case.status, v0, 'kein Statuswechsel');
+  ok(d.events.some((x) => x.action === 'set_work_state' && x.note === txt && x.actor_name === 'WS DO'), 'Verlauf mit Name');
+  { const r = await cmd(U.ws, id, 'set_work_state', {}, txt); eq(r.status, 400); ok(/unverändert/.test(r.data.message)); }
+  // Liste/Tafel: Text + Name; Fahrer sieht nichts davon
+  const row = (await U.ws.get('/api/cases?status=open')).data.cases.find((x) => x.id === id);
+  eq(row.work_state_note, txt); eq(row.work_state_by_name, 'WS DO');
+  const drow = (await U.driver.get('/api/cases?status=open')).data.cases.find((x) => x.id === id);
+  ok(drow && !('work_state_note' in drow) && !('work_state_by_name' in drow) && !('work_state_by' in drow), 'Fahrer-Liste ohne Arbeitsstand');
+  const dd = (await U.driver.get(`/api/cases/${id}`)).data;
+  ok(!('work_state_note' in dd.case) && !dd.events.some((x) => x.action === 'set_work_state'), 'Fahrer-Detail ohne Arbeitsstand/Verlauf');
+  // Kollege (Leitung) übernimmt: „wartet auf Teile“ behält den Stand, Änderung durch andere Person
+  eq((await cmd(U.ws, id, 'wait_parts', {}, 'Bremsscheibe bestellt')).status, 200);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(d.case.work_state_note, txt, 'bleibt bei „wartet auf Teile“');
+  ok(d.allowed_actions.includes('set_work_state'));
+  eq((await cmd(U.fleet, id, 'set_work_state', {}, txt + ' (Scheibe da)')).status, 200);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(d.case.work_state_by, U.fleet.id); ok(d.events.filter((x) => x.action === 'set_work_state').pop().payload.changed === true);
+  // leer = entfernen
+  eq((await cmd(U.ws, id, 'resume_repair')).status, 200);
+  eq((await U.ws.post(`/api/cases/${id}/commands`, { action: 'set_work_state', command_id: rk(), expected_version: (await U.ws.get(`/api/cases/${id}`)).data.case.version, note: '' })).status, 200);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.case.work_state_note === null && d.case.work_state_at === null && d.case.work_state_by === null, 'entfernt');
+  ok(d.events.filter((x) => x.action === 'set_work_state').pop().payload.cleared === true, 'Verlauf „entfernt“');
+  // erneut setzen, dann Abschlusskontrolle: automatisch entfernt, Verlauf bleibt
+  eq((await cmd(U.ws, id, 'set_work_state', {}, 'Bremse fertig, Probefahrt fehlt')).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 2, description: 'Bremse' })).status, 200);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.case.status === 'abschlusskontrolle' && d.case.work_state_note === null && d.case.work_state_by === null, 'mit Abschlusskontrolle entfernt');
+  eq(d.events.filter((x) => x.action === 'set_work_state').length, 4, 'Verlauf bleibt vollständig');
+  ok(!d.allowed_actions.includes('set_work_state'), 'kein Knopf in der Abschlusskontrolle');
+  // Integrations-API liefert ihn nicht (Datensparsamkeit)
+  { const src = (await import('node:fs')).readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8'); ok(!src.includes('work_state'), 'nicht in der Integrations-API'); }
+  // Oberfläche + Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${workStateInfo(c, d)}${vehLocInfo(c)}') && app.includes('${partsWaitList(c)}${workStateList(c)}') && app.includes("case 'set_work_state': f.push(") && app.includes("action === 'set_work_state' ? esc(c.work_state_note || '')"), 'Vorgang, Liste, Formular vorbelegt');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l];
+    for (const k of ['act_set_work_state', 'wst_title', 'wst_short', 'wst_hint', 'wst_ph', 'wst_clear_hint', 'wst_cleared']) ok(S[k], `${l}: ${k}`);
+    ok(S.help_ws_s.split('|').some((x) => x.includes(S.act_set_work_state)), l + ': Hilfe Werkstatt nennt den Knopf');
+    if (l !== 'de') for (const m of ['Arbeitsstand ist zu lang (max. 500 Zeichen).', 'Arbeitsstand ist unverändert.']) ok(translateValidation(l, m) !== m, `${l}: ${m}`);
   }
 });
 
