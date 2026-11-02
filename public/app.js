@@ -1583,6 +1583,18 @@ function qBanner(c) {
 // anzeigen – der Fahrer las „abgelehnt“ und meldete eine wiederkehrende Störung nicht erneut (Blickwinkel „Sporadische Störung“)
 const isWithdrawn = (c) => c.status === 'abgelehnt' && !!c.workshop_site && !c.duplicate_of;
 const stTxt = (c) => (isWithdrawn(c) ? t('vi_kind_withdrawn') : t('st_' + c.status));
+// Backlog 888: Kostenstand vor der technischen Freigabe (nur wer Teile/Fremdleistungen sieht) – '' = nichts zu melden.
+// Fremdleistung „ersetzt eigene Arbeit/Teile“ → Teile zählen nicht (wie computeCosts im Server).
+function relCostOpen(d) {
+  if (!d || !Array.isArray(d.parts) || !Array.isArray(d.external_costs)) return '';
+  const ext = d.external_costs; // ohne Stunden/Fremdleistung keine Abschlusskontrolle (Server `work_missing`) – „gar nichts gebucht“ kommt hier nicht vor
+  const parts = ext.some((e) => e.covers_work_and_parts) ? [] : d.parts;
+  const noVal = (x, k) => x[k] === null || x[k] === undefined || x.valuation === 'unvalued';
+  const est = parts.filter((p) => !noVal(p, 'unit_price_net') && p.valuation === 'estimate').length + ext.filter((e) => !noVal(e, 'amount_net') && e.valuation === 'estimate').length;
+  const unv = parts.filter((p) => noVal(p, 'unit_price_net')).length + ext.filter((e) => noVal(e, 'amount_net')).length;
+  if (!est && !unv) return '';
+  return t('rel_cost_open').replace('{x}', [est ? t('rel_cost_est').replace('{n}', est) : '', unv ? t('rel_cost_unv').replace('{n}', unv) : ''].filter(Boolean).join(' · '));
+}
 // Backlog 550 (Blickwinkel „neue Fuhrparkleiterin“): Texte mit Verweis auf „Einstellungen“ – wer sie nicht öffnen kann (nur Inhaber), liest „(Einstellungen, nur Inhaber)“
 const ownerT = (k) => t(S.me && S.me.role !== 'owner' ? k + '_mgr' : k);
 function caseList(list, empty, extra) {
@@ -3471,6 +3483,9 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     if (isRel) f.push(`<label class="check"><input type="checkbox" name="pickup_for_driver" id="pu_drv"> ${esc(t('pu_for_driver'))}</label><div id="pu_until_box" hidden><label for="pu_until">${esc(t('pu_valid_until'))}<span class="hint">${esc(t('pu_valid_until_hint'))}</span></label><input type="date" id="pu_until" name="pickup_valid_until" min="${esc(bDate())}"></div>`);
   }
   if (isRel && c.cost_over_limit_at) f.push(`<p class="panel warn small" id="relcost">${esc(t('err_cost_approval_open'))}</p>`);
+  // Backlog 888 (Blickwinkel „Rechnung der Fremdwerkstatt kommt erst nach der Freigabe“): nach der Freigabe lassen sich keine Fremdleistungen und
+  // Teile mehr buchen – vorher nennen, was noch nicht belegt ist (nur Hinweis, kein Server-Stopp; Arbeitszeit ohne Satz zählt nicht: Satz folgt aus den Einstellungen)
+  if (isRel) { const rc = relCostOpen(d); if (rc) f.push(`<p class="panel warn small" id="relcostopen" role="note">${esc(rc)}</p>`); }
   // 21.10.2026: Server weist in diesen Zuständen immer ab – Hinweis vor dem Absenden (wie Kostenfreigabe)
   if (action === 'reject' && c.safety_lock) f.push(`<p class="panel warn small" id="rejlock">${esc(t('err_safety_lock_active'))}</p>`);
   if (action === 'withdraw_order') {

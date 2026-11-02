@@ -31702,6 +31702,39 @@ await test('Backlog 887 (Folge aus 886): Fremdleistung mit km-Stand laut Rechnun
   ok(i18nSrc.includes("['Datum laut Rechnung ungültig (JJJJ-MM-TT).', '") && i18nSrc.includes("['Datum laut Rechnung darf nicht in der Zukunft liegen.', '"), 'Fehlertexte übersetzt');
 });
 
+await test('Backlog 888 (Blickwinkel „Rechnung der Fremdwerkstatt kommt erst nach der Freigabe“): Freigabe-Formular nennt nur geschätzte bzw. unbewertete Teile/Fremdleistungen; nach der Freigabe keine Fremdleistung mehr; Hilfe/Texte DE/UK/EN', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const a = await toRepair();
+  // Vorgang liefert der Leitung die Positionen mit Wertart (Grundlage des Hinweises)
+  eq((await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', amount_net: '400', valuation: 'estimate' })).status, 200);
+  eq((await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Abschleppdienst Süd' })).status, 200);
+  const d = (await U.fleet.get(`/api/cases/${a}`)).data;
+  ok(Array.isArray(d.parts) && Array.isArray(d.work) && d.external_costs.length === 2, 'Teile/Arbeit/Fremdleistungen im Vorgang');
+  ok(d.external_costs.some((x) => x.valuation === 'estimate' && x.amount_net === 400) && d.external_costs.some((x) => x.amount_net === null), 'Wertart und Betrag');
+  ok(d.allowed_actions.includes('add_external_cost'), 'in Reparatur buchbar');
+  // Hilfsfunktion aus app.js mit Text-Platzhaltern auswerten
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.match(/\nfunction relCostOpen\(d\) \{[\s\S]*?\n\}\n/); ok(src, 'relCostOpen gefunden');
+  const tt = (k) => ({ rel_cost_open: 'OPEN[{x}]', rel_cost_est: 'E{n}', rel_cost_unv: 'U{n}' })[k];
+  const rel = new Function('t', `${src[0]}; return relCostOpen;`)(tt);
+  eq(rel(d), 'OPEN[E1 · U1]', 'Schätzung + ohne Betrag');
+  eq(rel({ work: [{ hours: 2 }], parts: [], external_costs: [] }), '', 'nur Arbeitszeit: kein Hinweis');
+  eq(rel({ work: [], parts: [{ unit_price_net: 10, valuation: 'actual' }], external_costs: [{ amount_net: 5, valuation: 'actual' }] }), '', 'alles belegt');
+  eq(rel({ work: [], parts: [{ unit_price_net: null, valuation: 'unvalued' }, { unit_price_net: 3, valuation: 'estimate' }], external_costs: [] }), 'OPEN[E1 · U1]', 'Teile');
+  eq(rel({ work: [], parts: [{ unit_price_net: null, valuation: 'unvalued' }], external_costs: [{ amount_net: 900, valuation: 'actual', covers_work_and_parts: 1 }] }), '', 'Fremdleistung ersetzt Teile');
+  eq(rel({ parts: undefined, external_costs: [] }), '', 'ohne Kostenrecht nichts');
+  ok(app.includes(`if (isRel) { const rc = relCostOpen(d); if (rc) f.push(\`<p class="panel warn small" id="relcostopen" role="note">`), 'im Freigabe-Formular');
+  // nach der Freigabe keine Fremdleistung mehr (Grund des Hinweises)
+  const cs = fs.readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  ok(cs.includes("if (WORK_STATUSES.includes(c.status) && mgr) a.push('add_external_cost');") && !/'fahrzeug_freigegeben'/.test(cs.match(/const WORK_STATUSES = \[[^\]]*\]/)[0]), 'Fremdleistung nur vor der Freigabe');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['rel_cost_open', 'rel_cost_est', 'rel_cost_unv']) ok(STRINGS[l][k], `${l}: ${k}`);
+    ok(STRINGS[l].rel_cost_open.includes('{x}') && STRINGS[l].rel_cost_est.includes('{n}') && STRINGS[l].rel_cost_unv.includes('{n}'), l + ': Platzhalter');
+    ok(STRINGS[l].help_costlimit_s.includes(STRINGS[l].act_technical_release), l + ': Hilfe nennt die Freigabe');
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
