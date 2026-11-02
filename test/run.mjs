@@ -20216,7 +20216,7 @@ await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes(`<a class="statlink" id="stcrit" href="\${hj('#/cases?f=critical')}">`) && app.includes(`<a class="statlink" id="stlock" href="\${hj('#/cases?f=locked')}">`) && app.includes(`id="stopen" href="\${hj('#/cases?f=open')}"`), 'Startseite verlinkt');
   ok(app.includes("f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1'"), 'Listenfilter');
-  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items', 'mine', 'paused'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
+  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items', 'mine', 'paused', 'ready_overdue'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
   const { translateValidation } = await import('../public/i18n.js');
   for (const l of ['uk', 'en']) ok(translateValidation(l, 'Priorität: niedrig, mittel oder kritisch.') !== 'Priorität: niedrig, mittel oder kritisch.', l);
 });
@@ -30960,7 +30960,7 @@ await test('Backlog 869 (Blickwinkel „Fuhrparkleitung sieht morgens, welche Re
   eq(JSON.parse(au.detail).paused, '1', 'Export-Protokoll nennt paused');
   // Oberfläche: Listenfilter, Reiter nur bei aktivem Filter, „Heute zu tun“ älteste zuerst mit Link zur Liste
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("f === 'paused' ? 'status=open&paused=1'") && app.includes("paused: 'todo_paused'") && app.includes("'open_items', 'paused'].includes(f) ||"), 'Filter + Reiter');
+  ok(app.includes("f === 'paused' ? 'status=open&paused=1'") && app.includes("paused: 'todo_paused'") && app.includes("'open_items', 'paused', 'ready_overdue'].includes(f) ||"), 'Filter + Reiter');
   ok(app.includes("['todo_paused', cs.filter((c) => c.work_state_note && WST_ST.includes(c.status)).sort(asc((c) => c.work_state_at))") && app.includes("todo_paused: '#/cases?f=paused'"), '„Heute zu tun“');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) {
@@ -31057,6 +31057,39 @@ await test('Backlog 871 (Blickwinkel „Fahrer fragt: wann ist mein Lkw fertig?�
     ok(S.help_myveh_s.split('|').some((x) => x.includes(S.rdy_title)), l + ': Hilfe Mein Fahrzeug');
     ok(S.help_ws_s.includes(S.act_request_quality_check) && S.help_dispo_s.includes(S.dispo_not_plannable), l + ': Knopfnamen stimmen');
     if (l !== 'de') for (const m of ['Fertigstellung im Format JJJJ-MM-TT.', 'Voraussichtliche Fertigstellung liegt in der Vergangenheit.', 'Voraussichtliche Fertigstellung liegt mehr als ein Jahr in der Zukunft.', 'Voraussichtliche Fertigstellung liegt vor dem Werkstatttermin.', 'Voraussichtliche Fertigstellung ist unverändert.']) ok(translateValidation(l, m) !== m, `${l}: ${m}`);
+  }
+});
+
+await test('Backlog 872 (Folge aus 871): Filter ready_overdue=1 – „voraussichtlich fertig“ vor heute (Berliner Tag), nur freigegeben/in Reparatur/„wartet auf Teile“, Werkstatt nur eigener Standort, Fahrer nie; „Heute zu tun“ am längsten überschritten zuerst; CSV-Protokoll; Texte/Hilfe DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const { berlinDate } = await import('../src/util.js');
+  const day = (n) => new Date(Date.parse(berlinDate() + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const a = await toRepair(), b = await toRepair(), c = await toRepair(), d = await toRepair();
+  for (const x of [a, b, c, d]) eq((await cmd(U.ws, x, 'set_ready_date', { ready_expected_on: day(1) })).status, 200);
+  eq((await cmd(U.ws, b, 'wait_parts', {}, 'Scheibe bestellt')).status, 200);
+  // Datum vergeht (direkt in der Datenbank – über die API sind vergangene Daten nicht eintragbar)
+  const setD = (id, v) => e.DB.db.prepare('UPDATE cases SET ready_expected_on=? WHERE id=?').run(v, id);
+  setD(a, day(-1)); setD(b, day(-3)); setD(c, day(0)); // c: heute = noch nicht überschritten; d: morgen
+  const ids = async (u, q = '/api/cases?status=open&ready_overdue=1') => (await u.get(q)).data.cases.map((x) => x.id).sort().join(',');
+  eq(await ids(U.fleet), [a, b].sort().join(','), 'Leitung: a und b (auch „wartet auf Teile“), nicht heute/morgen');
+  eq(await ids(U.ws), [a, b].sort().join(','), 'Werkstatt Dortmund');
+  eq(await ids(U.wsMuc), '', 'fremde Werkstatt: nichts');
+  eq(await ids(U.driver), '', 'Fahrer nie');
+  eq(await ids(U.fleet, '/api/cases?status=open&ready_overdue=0'), await ids(U.fleet, '/api/cases?status=open'), 'ready_overdue=0 schaltet nicht ein');
+  // stehen gebliebenes Datum außerhalb der Status zählt nicht
+  e.DB.db.prepare(`UPDATE cases SET status='abschlusskontrolle' WHERE id=?`).run(a);
+  eq(await ids(U.fleet), b, 'nur freigegeben/in Reparatur/„wartet auf Teile“');
+  // CSV-Export protokolliert den Filter
+  eq((await U.fleet.get('/api/cases?format=csv&status=open&ready_overdue=1')).status, 200);
+  const au = e.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='reports.cases.export' ORDER BY created_at DESC, rowid DESC LIMIT 1`).get();
+  eq(JSON.parse(au.detail).ready_overdue, '1', 'Export-Protokoll nennt ready_overdue');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("f === 'ready_overdue' ? 'status=open&ready_overdue=1'") && app.includes("ready_overdue: 'todo_ready_overdue'") && app.includes("'open_items', 'paused', 'ready_overdue'].includes(f) ||"), 'Filter + Reiter');
+  ok(app.includes("['todo_ready_overdue', cs.filter((c) => c.ready_expected_on && rdyOf(c) && c.ready_expected_on < today).sort(asc((c) => c.ready_expected_on))") && app.includes("todo_ready_overdue: '#/cases?f=ready_overdue'"), '„Heute zu tun“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.todo_ready_overdue, l + ': todo_ready_overdue');
+    ok(S.help_fleet_s.split('|').some((x) => x.includes(S.todo_ready_overdue) && x.includes(S.todo_today) && x.includes(S.nav_cases) && x.includes(S.rdy_title)), l + ': Hilfe Fuhrpark nennt Abschnitt, Liste und Feld');
   }
 });
 

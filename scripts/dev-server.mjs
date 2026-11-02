@@ -75,6 +75,9 @@ http.createServer(async (req, res) => {
     const sh = (col) => `${col} = CASE WHEN ${col} IS NULL THEN NULL ELSE strftime('%Y-%m-%dT%H:%M:%fZ', ${col}, '-${hrs} hours') END`;
     const a = env.DB.db.prepare(`UPDATE cases SET ${['created_at', 'fleet_received_at', 'workshop_ack_at', 'closed_at'].map(sh).join(', ')} WHERE id=?`).run(id).changes;
     const b = env.DB.db.prepare(`UPDATE case_events SET ${sh('created_at')} WHERE case_id=?`).run(id).changes;
+    // Backlog 872: „voraussichtlich fertig“ um N Tage zurück (über die API sind vergangene Daten nicht eintragbar; scripts/ui-fertig-ueberschritten.py)
+    const rd = Math.min(Math.max(Number(url.searchParams.get('ready_days')) || 0, 0), 400);
+    if (rd) env.DB.db.prepare(`UPDATE cases SET ready_expected_on = date(ready_expected_on, '-${rd} days') WHERE id=? AND ready_expected_on IS NOT NULL`).run(id);
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ cases: Number(a), events: Number(b) })); return;
   }
   // Nur lokal: Begründungen der km-Stände eines Fahrzeugs leeren – erzeugt „Rücksprung ohne Begründung“ wie aus Alt-Import (scripts/ui-km-begruendung.py)

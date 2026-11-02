@@ -162,6 +162,9 @@ export async function listCases(env, user, envName, query, meta = null) {
   // Backlog 869 (Blickwinkel „Fuhrparkleitung sieht morgens, welche Reparaturen unterbrochen wurden“): Aufträge mit eingetragenem Arbeitsstand
   // (Backlog 867) – gleiche Regel wie die Anzeige (nur in Reparatur/„wartet auf Teile“; danach wird er automatisch entfernt). Fahrer nie.
   if (on(query.paused)) where.push(user.role === 'driver' ? '0' : `c.work_state_note IS NOT NULL AND c.status IN ('in_reparatur','wartet_teile')`);
+  // Backlog 872 (Folge aus 871): „voraussichtlich fertig“ vorbei, Fahrzeug noch nicht fertig – gleiche Regel wie die Anzeige „überschritten“
+  // (Berliner Kalendertag, nur freigegeben/in Reparatur/„wartet auf Teile“). Keine Frist, nur die Angabe der Werkstatt. Fahrer nie.
+  if (on(query.ready_overdue)) { if (user.role === 'driver') where.push('0'); else { where.push(`c.ready_expected_on IS NOT NULL AND c.ready_expected_on < ? AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile')`); args.push(berlinDate()); } }
   // Backlog 463: „Rückfrage offen“ / „Antwort vom Melder eingegangen“ (gleiche Regel wie questionState; Fahrer: eigene Meldungen)
   if (query.question === 'open' || query.question === 'answered') {
     where.push(`c.status IN (${OPEN_STATUSES.map((x) => `'${x}'`).join(',')}) AND ${Q_AT_SQL} IS NOT NULL AND ` + (query.question === 'open'
