@@ -1197,6 +1197,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 
 // [CLAUDE] Backlog 867 (Blickwinkel „Werkstatt-Tablet: Mechaniker wird mitten in der Reparatur zu einem Notfall gerufen“): Arbeitsstand für die Übergabe
 // [CLAUDE] Backlog 868: Leerlauf-Abmeldung behält Formularentwürfe für dieselbe Person
+// [CLAUDE] Backlog 869: unterbrochene Reparaturen (Arbeitsstand) in „Heute zu tun“ und als Listenfilter
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

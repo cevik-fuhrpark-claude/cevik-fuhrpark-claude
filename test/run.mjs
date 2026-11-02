@@ -20216,7 +20216,7 @@ await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes(`<a class="statlink" id="stcrit" href="\${hj('#/cases?f=critical')}">`) && app.includes(`<a class="statlink" id="stlock" href="\${hj('#/cases?f=locked')}">`) && app.includes(`id="stopen" href="\${hj('#/cases?f=open')}"`), 'Startseite verlinkt');
   ok(app.includes("f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1'"), 'Listenfilter');
-  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items', 'mine'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
+  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items', 'mine', 'paused'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
   const { translateValidation } = await import('../public/i18n.js');
   for (const l of ['uk', 'en']) ok(translateValidation(l, 'Priorität: niedrig, mittel oder kritisch.') !== 'Priorität: niedrig, mittel oder kritisch.', l);
 });
@@ -30930,6 +30930,42 @@ await test('Backlog 868 (Folge aus 867): Leerlauf-Abmeldung behält Formularentw
   for (const l of ['de', 'uk', 'en']) {
     const S = STRINGS[l]; ok(S.idle_signed_out_kept && S.idle_resumed && S.idle_signed_out_kept !== S.idle_signed_out, l + ': Texte');
     ok(S.help_ws_s.split('|').some((x) => x.includes(l === 'de' ? 'Halb ausgefüllte Formulare' : l === 'uk' ? 'Напівзаповнені форми' : 'Half-filled forms')), l + ': Hilfe Werkstatt');
+  }
+});
+
+await test('Backlog 869 (Blickwinkel „Fuhrparkleitung sieht morgens, welche Reparaturen unterbrochen wurden“): Filter paused=1 – nur Aufträge mit Arbeitsstand in Reparatur/„wartet auf Teile“, Werkstatt nur eigener Standort, Fahrer nie, mit Abschlusskontrolle weg; „Heute zu tun“ älteste zuerst; CSV-Protokoll; Texte/Hilfe DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const a = await toRepair(), b = await toRepair(), c = await toRepair();
+  eq((await cmd(U.ws, a, 'set_work_state', {}, 'Rad HL ab – nicht bewegen')).status, 200);
+  eq((await cmd(U.ws, b, 'wait_parts', {}, 'Scheibe bestellt')).status, 200);
+  eq((await cmd(U.ws, b, 'set_work_state', {}, 'Bremse zerlegt')).status, 200);
+  const ids = async (u, q = '/api/cases?status=open&paused=1') => (await u.get(q)).data.cases.map((x) => x.id).sort().join(',');
+  eq(await ids(U.fleet), [a, b].sort().join(','), 'Leitung: beide unterbrochenen (auch „wartet auf Teile“), nicht c');
+  eq(await ids(U.ws), [a, b].sort().join(','), 'Werkstatt Dortmund');
+  eq(await ids(U.wsMuc), '', 'fremde Werkstatt: nichts');
+  eq(await ids(U.driver), '', 'Fahrer nie');
+  eq(await ids(U.fleet, '/api/cases?status=open&paused=0'), await ids(U.fleet, '/api/cases?status=open'), 'paused=0 schaltet nicht ein');
+  // mit „Zur Abschlusskontrolle“ entfernt → nicht mehr in der Liste
+  eq((await cmd(U.ws, a, 'record_work', { hours: 1, description: 'Rad' })).status, 200);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: a, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, a, 'request_quality_check', {}, 'fertig')).status, 200);
+  eq(await ids(U.fleet), b, 'nach Abschlusskontrolle nur noch b');
+  // auch ein (theoretisch) stehen gebliebener Text außerhalb der Arbeitsschritte zählt nicht
+  e.DB.db.prepare(`UPDATE cases SET work_state_note='alt' WHERE id=?`).run(a);
+  eq(await ids(U.fleet), b, 'nur in Reparatur/„wartet auf Teile“');
+  // CSV-Export protokolliert den Filter
+  eq((await U.fleet.get('/api/cases?format=csv&status=open&paused=1')).status, 200);
+  const au = e.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='reports.cases.export' ORDER BY created_at DESC, rowid DESC LIMIT 1`).get();
+  eq(JSON.parse(au.detail).paused, '1', 'Export-Protokoll nennt paused');
+  // Oberfläche: Listenfilter, Reiter nur bei aktivem Filter, „Heute zu tun“ älteste zuerst mit Link zur Liste
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("f === 'paused' ? 'status=open&paused=1'") && app.includes("paused: 'todo_paused'") && app.includes("'open_items', 'paused'].includes(f) ||"), 'Filter + Reiter');
+  ok(app.includes("['todo_paused', cs.filter((c) => c.work_state_note && WST_ST.includes(c.status)).sort(asc((c) => c.work_state_at))") && app.includes("todo_paused: '#/cases?f=paused'"), '„Heute zu tun“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.todo_paused, l + ': todo_paused');
+    ok(S.help_fleet_s.split('|').some((x) => x.includes(S.todo_paused) && x.includes(S.todo_today) && x.includes(S.nav_cases) && x.includes(S.act_request_quality_check)), l + ': Hilfe Fuhrpark nennt Abschnitt, Liste und Knopf');
   }
 });
 

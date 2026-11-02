@@ -159,6 +159,9 @@ export async function listCases(env, user, envName, query, meta = null) {
     if (user.role === 'driver') where.push('0');
     else { where.push('(EXISTS (SELECT 1 FROM case_events me WHERE me.case_id=c.id AND me.actor_id=?) OR EXISTS (SELECT 1 FROM work_entries mw WHERE mw.case_id=c.id AND mw.user_id=?))'); args.push(user.id, user.id); }
   }
+  // Backlog 869 (Blickwinkel „Fuhrparkleitung sieht morgens, welche Reparaturen unterbrochen wurden“): Aufträge mit eingetragenem Arbeitsstand
+  // (Backlog 867) – gleiche Regel wie die Anzeige (nur in Reparatur/„wartet auf Teile“; danach wird er automatisch entfernt). Fahrer nie.
+  if (on(query.paused)) where.push(user.role === 'driver' ? '0' : `c.work_state_note IS NOT NULL AND c.status IN ('in_reparatur','wartet_teile')`);
   // Backlog 463: „Rückfrage offen“ / „Antwort vom Melder eingegangen“ (gleiche Regel wie questionState; Fahrer: eigene Meldungen)
   if (query.question === 'open' || query.question === 'answered') {
     where.push(`c.status IN (${OPEN_STATUSES.map((x) => `'${x}'`).join(',')}) AND ${Q_AT_SQL} IS NOT NULL AND ` + (query.question === 'open'
