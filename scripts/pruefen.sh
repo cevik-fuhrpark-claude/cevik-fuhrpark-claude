@@ -432,6 +432,7 @@ UI-Unterbrochene Reparaturen: Leitung sieht Arbeitsstand in „Heute zu tun“ u
 UI-Disposition Arbeitsstand: „Nicht einplanen“ zeigt den Arbeitsstand der Werkstatt (DE/UK/EN; Backlog 870)|ui-dispo-arbeitsstand.py|/tmp/cfp-dispo-arbeitsstand.log
 UI-Voraussichtlich fertig: Werkstatt trägt das Datum ein, Fahrer sieht es auf der Startseite und im Vorgang (DE/UK/EN; Backlog 871)|ui-voraussichtlich-fertig.py|/tmp/cfp-voraussichtlich-fertig.log
 UI-Fertigtermin verschoben: Vorgang zeigt „N-mal verschoben (erste Angabe …)“ (DE/UK/EN; Backlog 875)|ui-fertig-verschoben.py|/tmp/cfp-fertig-verschoben.log
+UI-Werkstattwechsel setzt Schlüssel/Fahrzeugschein der bisherigen Werkstatt zurück (Hinweis + Verlauf, DE/UK/EN; Backlog 876)|ui-wechsel-schluessel.py|/tmp/cfp-wechsel-schluessel.log
 UI-Voraussichtlich fertig überschritten: Leitung sieht vorbei gegangene Fertigstellungen in „Heute zu tun“, Listenfilter und Vorgang (DE/UK/EN; Backlog 872)|ui-fertig-ueberschritten.py|/tmp/cfp-fertig-ueberschritten.log
 UI-Abfahrtskontrolle km-Tippfehler: letzter Stand, Differenz, Hinweise kleiner/mehr Stellen, auch Fahrer (DE/UK/EN; Backlog 836)|ui-abfahrt-km-tippfehler.py|/tmp/cfp-abfahrt-km-tippfehler.log
 UI-Fahrzeugakte km erfassen: letzter Stand, Differenz, Hinweise kleiner/mehr Stellen, früheres Datum ohne Hinweis (DE/UK/EN; Backlog 837)|ui-akte-km-tippfehler.py|/tmp/cfp-akte-km-tippfehler.log

@@ -1694,13 +1694,18 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Termin gehörte zur bisherigen Werkstatt – die neue legt ihren eigenen bei der Übernahme fest (bleibt im Verlauf)
       set.workshop_site = site; set.workshop_ack_at = null; set.workshop_ack_by = null; set.planned_date = null; set.planned_note = null;
       if (c.ready_expected_on) set.ready_expected_on = null; // Backlog 871: Angabe der bisherigen Werkstatt gilt nicht mehr
+      // Backlog 876 (Blickwinkel „Werkstatt Bayern übernimmt einen Auftrag aus Dortmund“): „Schlüssel/Fahrzeugschein bei der Werkstatt“ bzw.
+      // „fehlt“ bezog sich auf die bisherige Werkstatt – die neue sah sonst „bei der Werkstatt“, obwohl beides noch dort lag. Zurücksetzen,
+      // alter Stand bleibt im Verlauf (payload.handover_before); die neue Werkstatt trägt ihren Stand selbst ein
+      const hoBefore = c.handover_keys || c.handover_papers ? { keys: c.handover_keys || null, papers: c.handover_papers || null } : null;
+      if (hoBefore) { set.handover_keys = null; set.handover_papers = null; }
       // Backlog 263 (Teilagent „Werkstatt fällt eine Woche aus“): vom Auftrag übernommener Prüftermin (gleicher Tag) entfällt mit – sonst stand
       // das Fahrzeug im Werkstattplan weiter am alten Tag der bisherigen Werkstatt (wie set_planned_date, nur im Betrieb)
       if (c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=NULL, updated_at=? WHERE id=? AND planned_date=?').bind(now, c.maintenance_rule_id, c.planned_date));
       // Wechsel an eine Werkstatt ohne aktives Konto: Hinweis in der Antwort wie bei der Freigabe (vorher still bis zum nächsten Agentenlauf)
       noWorkshopUser = !(await env.DB.prepare(`SELECT 1 AS x FROM users WHERE environment=? AND role='workshop' AND active=1 AND password_hash IS NOT NULL AND workshop_site=? LIMIT 1`).bind(envName, site).first()); externalWs = site === 'EXTERN';
       // prev_ack_at: Übernahme der bisherigen Werkstatt (zählt in deren Auslastung weiter, Backlog 90)
-      payload = { from: c.workshop_site, to: site, ...(c.planned_date ? { planned_date_before: c.planned_date } : {}), ...(c.workshop_ack_at ? { prev_ack_at: c.workshop_ack_at } : {}) };
+      payload = { from: c.workshop_site, to: site, ...(c.planned_date ? { planned_date_before: c.planned_date } : {}), ...(c.workshop_ack_at ? { prev_ack_at: c.workshop_ack_at } : {}), ...(hoBefore ? { handover_before: hoBefore } : {}) };
       // bisherige Werkstatt: alte Hinweise zum Auftrag ausblenden (Link → 404, zurückgehaltener Push ging nach der Ruhezeit noch raus – 17.10.2026);
       // der Hinweis „an andere Werkstatt übergeben“ entsteht danach neu
       if (c.workshop_site) extra.push(env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE case_id=? AND hidden_at IS NULL

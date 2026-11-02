@@ -31187,6 +31187,30 @@ await test('Backlog 875 (Blickwinkel „Fuhrparkleitung: Werkstatt verschiebt de
   ok(PLURALS.uk.rdy_moved.few && PLURALS.uk.rdy_moved.many, 'uk: few/many');
 });
 
+await test('Backlog 876 (Blickwinkel „Werkstatt Bayern übernimmt einen Auftrag aus Dortmund“): Werkstattwechsel setzt Schlüssel/Fahrzeugschein der bisherigen Werkstatt zurück, alter Stand im Verlauf, Hinweis im Wechsel-Formular; Texte DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const a = await newCase(); eq((await cmd(U.fleet, a, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.ws, a, 'set_handover', { keys: 'da', papers: 'fehlt' })).status, 200);
+  eq((await cmd(U.fleet, a, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'Kapazität')).status, 200);
+  let d = (await U.fleet.get('/api/cases/' + a)).data;
+  eq(d.case.handover_keys, null, 'Schlüssel nicht mehr „bei der Werkstatt“'); eq(d.case.handover_papers, null, 'Schein nicht mehr „fehlt“');
+  const ev = d.events.filter((x) => x.action === 'reassign_workshop').pop();
+  eq(JSON.stringify(ev.payload.handover_before), JSON.stringify({ keys: 'da', papers: 'fehlt' }), 'alter Stand im Verlauf');
+  eq(ev.payload.from, 'DORTMUND'); eq(ev.payload.to, 'MUENCHEN');
+  // neue Werkstatt sieht keinen Stand der alten und trägt ihren eigenen ein
+  eq((await U.wsMuc.get('/api/cases/' + a)).data.case.handover_keys, null, 'neue Werkstatt');
+  eq((await cmd(U.wsMuc, a, 'set_handover', { keys: 'da' })).status, 200, 'neue Werkstatt trägt ein');
+  // ohne Angaben: kein Feld im Verlauf
+  const b = await newCase(); eq((await cmd(U.fleet, b, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.fleet, b, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'Kapazität')).status, 200);
+  ok(!('handover_before' in (await U.fleet.get('/api/cases/' + b)).data.events.filter((x) => x.action === 'reassign_workshop').pop().payload), 'ohne Angaben kein handover_before');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-rwsho') && app.includes("t('rws_drop_ho')"), 'Hinweis im Wechsel-Formular (Vorgang und Werkstattplan über rwsDrop)');
+  ok(app.includes('data-ev-horeset') && app.includes("t('ev_ho_reset')"), 'Verlaufszeile');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].rws_drop_ho.includes('{v}') && STRINGS[l].ev_ho_reset.includes('{v}'), l + ': Texte');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

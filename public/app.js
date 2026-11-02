@@ -4817,7 +4817,10 @@ async function renderTires(id, el, keep = null) {
 
 
 // Backlog 514: beim Werkstattwechsel entfallen Termin und Übernahme der bisherigen Werkstatt (Server: planned_date/workshop_ack_at = null)
-const rwsDrop = (c) => (c.planned_date ? `<p class="small muted" data-rwsdrop>${esc(t('rws_drop_plan').replace('{d}', fmtD(c.planned_date)))}</p>` : c.workshop_ack_at ? `<p class="small muted" data-rwsdrop>${esc(t('rws_drop_ack'))}</p>` : '');
+// Backlog 876: Angaben zu Schlüssel/Fahrzeugschein der bisherigen Werkstatt werden beim Wechsel zurückgesetzt – vorher ankündigen
+const hoText = (x) => `${t('ho_keys')}: ${t(x.keys ? 'ho_' + x.keys : 'ho_none')} · ${t('ho_papers')}: ${t(x.papers ? 'ho_' + x.papers : 'ho_none')}`;
+const rwsDrop = (c) => (c.planned_date ? `<p class="small muted" data-rwsdrop>${esc(t('rws_drop_plan').replace('{d}', fmtD(c.planned_date)))}</p>` : c.workshop_ack_at ? `<p class="small muted" data-rwsdrop>${esc(t('rws_drop_ack'))}</p>` : '')
+  + (c.handover_keys || c.handover_papers ? `<p class="small muted" data-rwsho>${esc(t('rws_drop_ho').replace('{v}', () => hoText({ keys: c.handover_keys, papers: c.handover_papers })))}</p>` : '');
 // Backlog 521: offener Winterauftrag mit Termin bzw. „ohne Termin“ (Winterlisten der Reifen-Flotte, Werkstatt-Startseite, Disposition)
 const woApptTxt = (o) => `🔧 ${esc(t('mo_open'))} ${esc(o.case_no)} · ${o.planned_date ? `${esc(t('planned_appt'))} ${fmtD(o.planned_date)}` : esc(t('ms_ohne_termin'))}`;
 // Backlog 862 (Blickwinkel „Werkstatt-Tablet: Mechaniker sucht ein Teil per Teilenummer“): Teilenummern ohne Leerzeichen, Bindestrich, Punkt
@@ -5864,6 +5867,8 @@ function odoSrc(s) {
 function evFromTo(e) {
   if (e.action === 'set_work_state' && e.payload && e.payload.cleared) return `<div class="small muted" data-ev-wstclear>${esc(t('wst_cleared'))}</div>`;
   const p = e.payload; if (!p || typeof p !== 'object' || !('from' in p) || !('to' in p)) return '';
+  // Backlog 876: beim Werkstattwechsel zurückgesetzte Angaben zu Schlüssel/Fahrzeugschein der bisherigen Werkstatt
+  if (e.action === 'reassign_workshop' && p.handover_before && typeof p.handover_before === 'object') return `<div class="small muted">${esc(wsName(p.from))} → ${esc(wsName(p.to))}</div><div class="small muted" data-ev-horeset>${esc(t('ev_ho_reset').replace('{v}', () => hoText(p.handover_before)))}</div>`;
   if (e.action === 'parts_partial') return ''; // eigene Zeile „Rest erwartet am“ (Backlog 449)
   const oneSide = ['set_followup', 'set_planned_date', 'set_vehicle_location', 'set_handover', 'set_occurred_at'].includes(e.action) || /^\d{4}-\d{2}-\d{2}$/.test(String(p.from || p.to || ''));
   if (!(p.from && p.to) && !oneSide) return '';
@@ -5873,7 +5878,7 @@ function evFromTo(e) {
     if (e.action === 'reassign_workshop') return wsName(x);
     if (e.action === 'set_vehicle_location' && typeof x === 'object') return [x.location, x.service, x.on ? fmtD(x.on) : null].filter(Boolean).join(' · ') || '–';
     if (e.action === 'set_occurred_at') return fmtOccurred(x);
-    if (e.action === 'set_handover' && typeof x === 'object') return `${t('ho_keys')}: ${t(x.keys ? 'ho_' + x.keys : 'ho_none')} · ${t('ho_papers')}: ${t(x.papers ? 'ho_' + x.papers : 'ho_none')}`;
+    if (e.action === 'set_handover' && typeof x === 'object') return hoText(x);
     if (/^\d{4}-\d{2}-\d{2}$/.test(String(x))) return fmtD(x);
     return String(x); };
   // Hinweis zum Termin geändert (Migration 0093): eigene Zeile; reine Hinweisänderung (gleicher Termin) ohne „Termin → Termin“
