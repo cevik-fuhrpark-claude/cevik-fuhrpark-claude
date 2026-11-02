@@ -407,7 +407,8 @@ const V_MORE = [
   ['Voraussichtliche Fertigstellung liegt in der Vergangenheit.', 'Орієнтовна дата готовності вже минула.', 'The expected ready date is in the past.'],
   ['Voraussichtliche Fertigstellung liegt mehr als ein Jahr in der Zukunft.', 'Орієнтовна дата готовності більш ніж через рік.', 'The expected ready date is more than a year in the future.'],
   ['Voraussichtliche Fertigstellung liegt vor dem Werkstatttermin.', 'Орієнтовна дата готовності раніше за термін у майстерні.', 'The expected ready date is before the workshop appointment.'],
-  ['Voraussichtliche Fertigstellung ist unverändert.', 'Орієнтовну дату готовності не змінено.', 'The expected ready date is unchanged.'],
+  ['Voraussichtliche Fertigstellung ist unverändert.', 'Орієнтовну дату готовності не змінено.', 'The expected ready date is unchanged.'],  ['Datum laut Rechnung ungültig (JJJJ-MM-TT).', 'Недійсна дата за рахунком (РРРР-ММ-ДД).', 'Invalid date per invoice (YYYY-MM-DD).'],
+  ['Datum laut Rechnung darf nicht in der Zukunft liegen.', 'Дата за рахунком не може бути в майбутньому.', 'The date per invoice must not be in the future.'],
 ];
 for (const [de, uk, en] of V_MORE) { VALIDATION_TEXTS.uk[de] = uk; VALIDATION_TEXTS.en[de] = en; }
 Object.assign(VALIDATION_TEXTS.uk, { cv_busy: 'Інші дефекти цієї перевірки вже в роботі ({v}) – транспорт виправити не можна. Відхиліть і повідомте заново для правильного транспорту.' });
@@ -1219,6 +1220,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 884: „Heute zu tun“ der Leitung – Prüfbericht fehlt
 // Backlog 885: Startseite der Werkstatt – Prüfbericht fehlt
 // Backlog 886: Fremdleistung – Beleg mit Kennzeichen/FIN/km abgleichen
+// Backlog 887: km-Stand laut Rechnung beim Buchen einer Fremdleistung
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

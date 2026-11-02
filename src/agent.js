@@ -123,7 +123,7 @@ const BASICS_SQL = `SELECT
        -- Wartung) und Abfahrtskontrollen seit Sperrbeginn – beim gesperrten Anhänger an der fest gekoppelten Zugmaschine (Anhänger ohne km-Zähler)
        'km_from', (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=mv AND o.measured_at <= ls ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1),
        'moved', json((SELECT json_object('km', o.km, 'at', o.measured_at, 'src', o.source) FROM odometer_readings o WHERE o.vehicle_id=mv AND o.measured_at > ls
-         AND o.source NOT IN ('kontrolle:nach_reparatur','manuell:workshop') AND o.source NOT LIKE 'wartung:%' ORDER BY o.km DESC, o.measured_at DESC LIMIT 1)),
+         AND o.source NOT IN ('kontrolle:nach_reparatur','manuell:workshop','fremdleistung') AND o.source NOT LIKE 'wartung:%' ORDER BY o.km DESC, o.measured_at DESC LIMIT 1)),
        'checks', json((SELECT json_object('n', COUNT(*), 'last', MAX(i.created_at)) FROM inspections i WHERE i.environment=?1 AND i.vehicle_id=mv AND i.kind='abfahrt' AND i.created_at > ls))))
      FROM (SELECT l1.*, COALESCE(json_extract(l1.tr, '$.id'), l1.vid) AS mv FROM (SELECT c.id, c.case_no, c.vehicle_id, v.plate, c.safety_lock_reason,
        COALESCE((SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.action='set_safety_lock'), c.created_at) AS ls,

@@ -1989,9 +1989,39 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       extra.push(env.DB.prepare(`INSERT INTO external_costs(id,case_id,user_id,supplier,invoice_no,amount_net,valuation,covers_work_and_parts,note,created_at,warranty_until,file_id)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(eid, c.id, user.id, supplier, str(p.invoice_no, { max: 60 }), amount, valuation, flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile') ? 1 : 0, note, now, warranty, ecFile ? ecFile.id : null));
       const covers = flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile');
+      // Backlog 887 (Folge aus 886, Blickwinkel „Fremdwerkstatt-Rechnung mit unpassendem km-Stand“): optional km-Stand laut Rechnung (mit Datum
+      // laut Rechnung, ohne = heute). Gleiche Regel wie „Kilometerstand erfassen“/Kontrolle: nicht kleiner als der Stand davor, nicht größer als
+      // ein später erfasster – sonst nicht in die Fahrzeugakte, nur im Verlauf und in der Antwort (`km_rejected`). Keine Pflichtangabe.
+      const extOdo = p.odometer_km === undefined || p.odometer_km === null || String(p.odometer_km).trim() === '' ? null : kmNum(p.odometer_km);
+      const extOn = extOdo !== null && typeof p.odometer_on === 'string' && p.odometer_on.trim() ? p.odometer_on.trim() : null;
+      let extKmRej = null, extKmTestOnly = false;
+      if (extOdo !== null) {
+        let at = now;
+        if (extOn) {
+          if (!isCalendarDate(extOn) || extOn < '2000-01-01') throw bad('validation', 'Datum laut Rechnung ungültig (JJJJ-MM-TT).');
+          if (extOn > berlinDate()) throw bad('validation', 'Datum laut Rechnung darf nicht in der Zukunft liegen.');
+          if (extOn < berlinDate()) at = `${extOn}T12:00:00.000Z`;
+        }
+        const [prev, next] = await Promise.all([
+          env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at <= ? ORDER BY measured_at DESC LIMIT 1').bind(c.vehicle_id, at).first(),
+          env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at > ? ORDER BY measured_at ASC LIMIT 1').bind(c.vehicle_id, at).first(),
+        ]);
+        if (prev && extOdo < prev.km) extKmRej = { km: extOdo, previous_km: prev.km, previous_at: prev.measured_at };
+        else if (next && extOdo > next.km) extKmRej = { km: extOdo, next_km: next.km, next_at: next.measured_at };
+        // Testumgebung mit „Stammdaten nur lesen“: km bleibt im Verlauf, nicht in der gemeinsamen Fahrzeugakte (wie bei der Kontrolle)
+        extKmTestOnly = !extKmRej && envName === 'test' && user.role !== 'owner' && await testMasterReadonly(env);
+        if (!extKmRej && !extKmTestOnly) {
+          // Plausibilität auch im Einfügen selbst (gleichzeitige Erfassung); gleicher Zeitpunkt + Quelle schon vorhanden → nichts doppelt
+          extra.push(env.DB.prepare(`INSERT OR IGNORE INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) SELECT ?1,?2,?3,?4,'fremdleistung',?5,?6
+            WHERE COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?2 AND measured_at <= ?4 ORDER BY measured_at DESC LIMIT 1), -1) <= ?3
+              AND COALESCE((SELECT km FROM odometer_readings WHERE vehicle_id=?2 AND measured_at > ?4 ORDER BY measured_at ASC LIMIT 1), 9999999999) >= ?3`)
+            .bind(uuid(), c.vehicle_id, extOdo, at, user.id, now));
+        }
+      }
       // Verlauf nennt Schalter und Rechnungsnummer: nachvollziehbar, ab wann eigene Stunden/Teile nicht mehr zählen (23.10.2026)
       const invNo = str(p.invoice_no, { max: 60 });
-      payload = { external_cost_id: eid, supplier, amount_net: amount, valuation, ...(warranty ? { warranty_until: warranty } : {}), ...(covers ? { covers_work_and_parts: true } : {}), ...(invNo ? { invoice_no: invNo } : {}), ...(invNo && dupConfirmed ? { duplicate_invoice_confirmed: true } : {}), ...(ecFile ? { file_id: ecFile.id, file_name: ecFile.filename } : {}) };
+      payload = { external_cost_id: eid, supplier, amount_net: amount, valuation, ...(warranty ? { warranty_until: warranty } : {}), ...(covers ? { covers_work_and_parts: true } : {}), ...(invNo ? { invoice_no: invNo } : {}), ...(invNo && dupConfirmed ? { duplicate_invoice_confirmed: true } : {}), ...(ecFile ? { file_id: ecFile.id, file_name: ecFile.filename } : {}),
+        ...(extOdo !== null ? { odometer_km: extOdo, ...(extOn ? { odometer_on: extOn } : {}), ...(extKmRej ? { km_rejected: extKmRej.next_km !== undefined ? { km: extOdo, next_km: extKmRej.next_km } : { km: extOdo, previous_km: extKmRej.previous_km } } : {}), ...(extKmTestOnly ? { km_test_only: true } : {}) } : {}) };
       break;
     }
     case 'approve_costs': {
@@ -2163,7 +2193,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const cost_limit_cleared = COST_ACTIONS.includes(action) && updated.cost_over_limit_at ? (await revalidateCostMarks(env, user.id, [c.id])).length > 0 : false;
   // Kostengrenze überschritten bzw. Markierung aufgehoben → Version um 1 erhöht; Antwort nennt diese (18.10.2026: sonst 409 beim nächsten Befehl)
   const version = cost_limit_exceeded || cost_limit_cleared ? newVersion + 1 : newVersion;
-  return { ok: true, version, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}), ...(noWorkshopUser && !externalWs ? { no_workshop_user: true } : {}), ...(noWorkshopUser && externalWs ? { external_workshop: true } : {}), ...(noRecipients ? { no_recipients: true } : {}) };
+  return { ok: true, version, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}), ...(noWorkshopUser && !externalWs ? { no_workshop_user: true } : {}), ...(noWorkshopUser && externalWs ? { external_workshop: true } : {}), ...(noRecipients ? { no_recipients: true } : {}),
+    // Backlog 887: km laut Rechnung nicht übernommen (Rücksprung/später kleinerer Stand) bzw. nur Testumgebung – Antwort wie bei der Kontrolle
+    ...(action === 'add_external_cost' && payload && payload.km_rejected ? { km_rejected: payload.km_rejected } : {}), ...(action === 'add_external_cost' && payload && payload.km_test_only ? { km_test_only: true } : {}) };
 }
 
 // Verlaufseintrag „Abfahrtskontrolle trotz Sicherheitssperre“ an jedem zum Zeitpunkt `performedAt` gesperrten Vorgang des Fahrzeugs (Backlog 252);

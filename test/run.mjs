@@ -2024,7 +2024,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('tread_rise dc_km_lower dc_km_digits mf_km_digits imp_km_digits odo_digits kf_km_lower mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('ev_km_greater ev_km_smaller ext_km_lower tread_rise dc_km_lower dc_km_digits mf_km_digits imp_km_digits odo_digits kf_km_lower mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -31649,6 +31649,57 @@ await test('Backlog 886 (Blickwinkel „Fremdwerkstatt-Rechnung mit anderem Kenn
   ok(app.includes("const bkDoc = ['add_part', 'add_external_cost'].includes(action)") && app.includes('id="bkvin"') && app.includes('<span translate="no">${esc(bkVin)}</span>') && app.includes("const bkKm = action === 'add_external_cost'") && app.includes("t('bk_doc')") && app.includes("${bkDoc}<br><span class=\"muted\">${esc(t('bk_check'))}</span>"), 'Formular');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].bk_doc && STRINGS[l].bk_doc.includes(STRINGS[l].vin), l + ': Hinweis nennt FIN'); ok(STRINGS[l].help_ws_s.includes(STRINGS[l].vin), l + ': Hilfe nennt FIN'); }
+});
+
+await test('Backlog 887 (Folge aus 886): Fremdleistung mit km-Stand laut Rechnung – plausibel in die Fahrzeugakte (Quelle „fremdleistung“), Rücksprung/später kleinerer Stand nur im Verlauf + Antwort, Datum laut Rechnung, Testumgebung „Stammdaten nur lesen“, Fahrer ohne Payload; UI/Hilfe/Texte DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db;
+  const a = await toRepair();
+  eq((await U.ws.post(`/api/vehicles/${V1}/odometer`, { km: 120000 })).status, 201);
+  const reads = () => db.prepare(`SELECT km, measured_at, source FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at`).all(V1);
+  const lastEv = () => db.prepare(`SELECT payload FROM case_events WHERE case_id=? AND action='add_external_cost' ORDER BY rowid DESC LIMIT 1`).get(a);
+  // ohne km wie bisher
+  let r = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', amount_net: '100' }); eq(r.status, 200);
+  ok(!('odometer_km' in JSON.parse(lastEv().payload)) && r.data.km_rejected === undefined, 'ohne km: nichts');
+  // plausibel, deutsche Schreibweise
+  r = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', invoice_no: 'R-887-1', amount_net: '250', odometer_km: '125.000' }); eq(r.status, 200, JSON.stringify(r.data));
+  ok(r.data.km_rejected === undefined, 'übernommen'); ok(reads().some((x) => x.km === 125000 && x.source === 'fremdleistung'), 'Ablesung mit Quelle fremdleistung');
+  eq(JSON.parse(lastEv().payload).odometer_km, 125000);
+  // Rücksprung → Buchung gilt, km nur im Verlauf
+  r = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', invoice_no: 'R-887-2', amount_net: '80', odometer_km: '90000' }); eq(r.status, 200);
+  eq(JSON.stringify(r.data.km_rejected), JSON.stringify({ km: 90000, previous_km: 125000 }), 'Antwort meldet Rücksprung');
+  eq(JSON.stringify(JSON.parse(lastEv().payload).km_rejected), JSON.stringify({ km: 90000, previous_km: 125000 }), 'Verlauf');
+  ok(!reads().some((x) => x.km === 90000), 'nicht in der Akte'); eq(db.prepare('SELECT COUNT(*) AS n FROM external_costs WHERE case_id=?').get(a).n, 3, 'Buchung trotzdem gespeichert');
+  // Datum laut Rechnung: Zukunft abgewiesen, ungültig abgewiesen; früherer Tag = 12:00 UTC, Vergleich mit dem späteren Stand
+  eq((await cmd(U.fleet, a, 'add_external_cost', { supplier: 'X', amount_net: '1', odometer_km: '1', odometer_on: bDayOff(1) })).status, 400, 'Zukunft');
+  eq((await cmd(U.fleet, a, 'add_external_cost', { supplier: 'X', amount_net: '1', odometer_km: '1', odometer_on: '2026-02-30' })).status, 400, 'ungültig');
+  const past = bDayOff(-5);
+  r = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', invoice_no: 'R-887-3', amount_net: '10', odometer_km: '130000', odometer_on: past }); eq(r.status, 200);
+  eq(r.data.km_rejected.next_km, 120000, 'größer als später erfasst');
+  r = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', invoice_no: 'R-887-4', amount_net: '10', odometer_km: '110000', odometer_on: past }); eq(r.status, 200);
+  ok(r.data.km_rejected === undefined && reads().some((x) => x.km === 110000 && x.measured_at === `${past}T12:00:00.000Z` && x.source === 'fremdleistung'), 'früherer Tag eingeordnet');
+  eq(JSON.parse(lastEv().payload).odometer_on, past);
+  // ungültige km → 400, nichts gebucht
+  const n0 = db.prepare('SELECT COUNT(*) AS n FROM external_costs WHERE case_id=?').get(a).n;
+  eq((await cmd(U.fleet, a, 'add_external_cost', { supplier: 'X', amount_net: '1', odometer_km: '12,5' })).status, 400, 'keine ganze Zahl');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM external_costs WHERE case_id=?').get(a).n, n0, 'nichts gebucht');
+  // Testumgebung „Stammdaten nur lesen“: nur Verlauf
+  eq((await U.own.put('/api/settings', { test_master_readonly: '1' })).status, 200);
+  r = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', invoice_no: 'R-887-5', amount_net: '10', odometer_km: '126000' }); eq(r.status, 200);
+  eq(r.data.km_test_only, true); ok(!reads().some((x) => x.km === 126000), 'nicht in der gemeinsamen Akte'); eq(JSON.parse(lastEv().payload).km_test_only, true);
+  // Fahrer sieht keine Payload der Fremdleistung
+  const dd = (await U.driver.get(`/api/cases/${a}`)).data;
+  ok(!(dd.events || []).some((x) => x.action === 'add_external_cost' && x.payload), 'Fahrer ohne Payload');
+  // Fahrzeugakte zeigt die Quelle, Vertrags-CSV-Text
+  ok((await U.fleet.get(`/api/vehicles/${V1}`)).data.odometer.some((o) => o.source === 'fremdleistung'), 'Akte');
+  const { odoSourceDe } = await import('../src/contracts.js'); eq(odoSourceDe('fremdleistung'), 'Fremdleistung (km laut Rechnung)');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('name="odometer_km"') && app.includes('name="odometer_on"') && app.includes("if (v === 'fremdleistung') return t('odo_src_ext')") && app.includes('data-ev-extkm') && app.includes("t('ext_km_lower')") && app.includes("kmDigitsWarn(k, lk.km, 'id=\"extkmdigits\"')"), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js'); const i18nSrc = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['ext_km_label', 'ext_km_hint', 'ext_km_on', 'ext_km_lower', 'ext_km_ev', 'ext_km_ev_test', 'ext_km_test_toast', 'odo_src_ext']) ok(STRINGS[l][k], `${l}: ${k}`);
+    ok(STRINGS[l].help_costlimit_s.includes(STRINGS[l].act_add_external_cost) && STRINGS[l].help_costlimit_s.includes(STRINGS[l].vin), l + ': Hilfe');
+  }
+  ok(i18nSrc.includes("['Datum laut Rechnung ungültig (JJJJ-MM-TT).', '") && i18nSrc.includes("['Datum laut Rechnung darf nicht in der Zukunft liegen.', '"), 'Fehlertexte übersetzt');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

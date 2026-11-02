@@ -440,6 +440,7 @@ export function odoSourceDe(src) {
   if (v.startsWith('telematik:')) return `Telematik (${v.slice(10)})`;
   if (v === 'import') return 'Import';
   if (v.startsWith('wartung:')) return `Prüfung/Wartung ${v.slice(8)}`;
+  if (v === 'fremdleistung') return 'Fremdleistung (km laut Rechnung)'; // Backlog 887
   return v;
 }
 const ST_DE = { handeln: 'handeln', hinweis: 'Hinweis', ok: 'in Ordnung', beendet: 'beendet' };
