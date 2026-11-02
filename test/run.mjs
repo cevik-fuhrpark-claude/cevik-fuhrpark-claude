@@ -30763,10 +30763,35 @@ await test('Backlog 863 (Blickwinkel „Fahrer meldet nachts einen Schaden, Foto
   ok(w.includes("dark.dataset.photodark = ''") && w.includes('if (my !== run || !dark.isConnected) return;') && w.includes("tn('photos_dark', d)"), 'Hinweis im Formular, ältere Prüfung verworfen');
   ok(!/disabled|preventDefault/.test(w), 'nichts gesperrt');
   ok((app.match(/photoLimitWatch\(\$\('#ph'\)\)/g) || []).length >= 2, 'Meldung und Abfahrtskontrolle');
-  ok(app.includes('else if (await photoIsDark(blob)) darkN++;') && app.includes("if (darkN) errs.push(tn('photos_dark_added', darkN));"), 'Vorgang: Hinweis nach dem Hochladen');
+  ok(app.includes('if (q.dark) darkN++;') && app.includes("if (darkN) errs.push(tn('photos_dark_added', darkN));"), 'Vorgang: Hinweis nach dem Hochladen');
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['photos_dark', 'photos_dark_added']) { ok(STRINGS[l][k] && STRINGS[l][k].includes('{n}'), l + ' ' + k); ok(PLURALS[l][k] && Object.values(PLURALS[l][k]).every((s) => s.includes('{n}')), l + ' Formen ' + k); }
   ok(PLURALS.uk.photos_dark.few && PLURALS.uk.photos_dark.many && PLURALS.uk.photos_dark_added.few, 'uk Formen');
+});
+
+await test('Backlog 864 (Blickwinkel „Fahrer meldet einen Schaden, Foto verwackelt/unscharf“): stark unscharfe Fotos lösen beim Auswählen (Meldung, Abfahrtskontrolle) bzw. nach dem Hochladen am Vorgang einen Hinweis aus – nichts gesperrt, einfarbige Bilder nicht beurteilt; Text DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const cst = app.match(/^const PHOTO_BLUR_SIDE = .*$/m); ok(cst, 'Schwellwerte');
+  const grab = (name) => { const i = app.indexOf(`const ${name} = `); ok(i >= 0, name); let j = app.indexOf('\n};\n', i); const one = app.indexOf(';\n', i); if (name === 'isBlurry') j = one; else j += 3; return app.slice(i, j + 1); };
+  const fn = new Function(`${cst[0]} ${grab('photoSharpness')} ${grab('isBlurry')} return { photoSharpness, isBlurry, PHOTO_BLUR_SIDE, PHOTO_BLUR_EDGE, PHOTO_BLUR_MIN_EDGES, PHOTO_BLUR_MIN_SD };`)();
+  ok(fn.PHOTO_BLUR_SIDE >= 128 && fn.PHOTO_BLUR_EDGE > 0 && fn.PHOTO_BLUR_MIN_EDGES > 0 && fn.PHOTO_BLUR_MIN_EDGES < 100 && fn.PHOTO_BLUR_MIN_SD > 0, 'Schwellwerte plausibel');
+  const W = 64, H = 64; const img = (f) => { const px = new Uint8ClampedArray(W * H * 4); for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) { const v = f(r, c); px.set([v, v, v, 255], (r * W + c) * 4); } return px; };
+  const q = (f) => fn.photoSharpness(img(f), W, H);
+  ok(!fn.isBlurry(q((r, c) => (c < 32 ? 50 : 200))), 'scharfe Kante');
+  ok(!fn.isBlurry(q((r, c) => (((r >> 3) + (c >> 3)) % 2 ? 40 : 210))), 'Schachbrett scharf');
+  ok(fn.isBlurry(q((r, c) => 40 + c * 2.5)), 'weicher Verlauf (stark unscharf)');
+  ok(fn.isBlurry(q((r, c) => 125 + 75 * Math.tanh((c - 32) / 12))), 'stark verwischte Kante');
+  ok(!fn.isBlurry(q(() => 128)) && !fn.isBlurry(q((r, c) => 128 + (c % 2))), 'einfarbig: nicht beurteilt');
+  ok(!fn.isBlurry(q((r, c) => (Math.abs(r - 32) <= 0 && c > 10 && c < 50 ? 60 : 90 + c * 2))), 'glatte Fläche mit Verlauf und kleinem scharfen Kratzer: nicht unscharf');
+  ok(!fn.isBlurry(null) && fn.photoSharpness(new Uint8ClampedArray(8), 2, 1) === null, 'zu kleines Bild');
+  const w = app.slice(app.indexOf('function photoLimitWatch('), app.indexOf('const PHOTO_DARK_LUMA'));
+  ok(w.includes("blur.dataset.photoblur = ''") && w.includes("tn('photos_blurry', b)") && w.includes('if (q.dark) d++; else if (q.blurry) b++;'), 'Hinweis im Formular (dunkel zählt vor unscharf)');
+  ok(!/disabled|preventDefault/.test(w), 'nichts gesperrt');
+  ok(app.includes('if (q.dark) darkN++; else if (q.blurry) blurN++;') && app.includes("if (blurN) errs.push(tn('photos_blurry_added', blurN));") && app.includes('toast(errs.join(\' · \'), errs.length > hints)'), 'Vorgang: Hinweis nach dem Hochladen, nur Hinweise → kein Fehlerton');
+  ok(!/photoIsDark\(/.test(app), 'ein Dekodieren je Foto (photoCheck)');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['photos_blurry', 'photos_blurry_added']) { ok(STRINGS[l][k] && STRINGS[l][k].includes('{n}'), l + ' ' + k); ok(PLURALS[l][k] && Object.values(PLURALS[l][k]).every((s) => s.includes('{n}')), l + ' Formen ' + k); }
+  ok(PLURALS.uk.photos_blurry.few && PLURALS.uk.photos_blurry.many && PLURALS.uk.photos_blurry_added.few, 'uk Formen');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

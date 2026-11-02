@@ -443,6 +443,7 @@ UI-Verkauf: Außer Betrieb nennt laufende Gewährleistungen (DE/UK/EN; Backlog 8
 UI-Lieferantenwechsel: Wareneingang nennt letzten Lieferanten/Preis, Hinweis anderer Lieferant und Preisabweichung (DE/UK/EN; Backlog 860)|ui-lieferantenwechsel.py|/tmp/cfp-lieferantenwechsel.log
 UI-Teilesuche: Lagerliste, Teil buchen und Wareneingang finden Teilenummern ohne Leerzeichen, Suchfeld über der Artikelauswahl (DE/UK/EN; Backlog 862)|ui-teilesuche.py|/tmp/cfp-teilesuche.log
 UI-Foto-dunkel: sehr dunkle Fotos in Melden, Abfahrtskontrolle und am Vorgang lösen einen Hinweis aus, Senden bleibt möglich (DE/UK/EN; Backlog 863)|ui-foto-dunkel.py|/tmp/cfp-foto-dunkel.log
+UI-Foto-unscharf: stark unscharfe Fotos in Melden, Abfahrtskontrolle und am Vorgang lösen einen Hinweis aus, Senden bleibt möglich (DE/UK/EN; Backlog 864)|ui-foto-unscharf.py|/tmp/cfp-foto-unscharf.log
 UI-Reifenwechsel mit anderer Größe als für die Achse hinterlegt: Hinweis beim Tippen und nach dem Speichern (DE/UK/EN; Backlog 849)|ui-reifen-groesse-abweichend.py|/tmp/cfp-reifen-groesse-abweichend.log
 '
 N=0

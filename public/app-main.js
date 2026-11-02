@@ -2913,7 +2913,7 @@ async function viewCase(id) {
     const prog = document.createElement('span'); prog.className = 'small muted'; prog.setAttribute('role', 'status'); fi.after(prog); fi.disabled = true;
     // Umgebung beim Start festhalten (Inhaber schaltet währenddessen um: Rest ging sonst an die andere Umgebung – 22.10.2026)
     const who = outboxWho(); const ox = who ? { env: who.env } : {}; const hash0 = location.hash;
-    let later = 0, darkN = 0;
+    let later = 0, darkN = 0, blurN = 0;
     for (const [i, file] of take.entries()) {
       prog.textContent = ` ${t('uploading')} ${i + 1}/${take.length}`;
       try {
@@ -2923,7 +2923,7 @@ async function viewCase(id) {
         const rej = uploadReject(blob, file.name); if (rej) { errs.push(`${file.name}: ${rej}`); continue; }
         const r = await api('POST', `/api/cases/${c.id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, ...ox, headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } });
         if (r && r.duplicate) dupes.push(file.name); // gleiche Datei schon am Vorgang – Server legt keine zweite an
-        else if (await photoIsDark(blob)) darkN++; // Backlog 863
+        else { const q = await photoCheck(blob); if (q.dark) darkN++; else if (q.blurry) blurN++; } // Backlog 863/864
       }
       catch (err) {
         // Höchstzahl inzwischen erreicht (zweites Gerät): einmal mit Zahl melden, restliche Dateien nicht einzeln versuchen
@@ -2939,7 +2939,9 @@ async function viewCase(id) {
     if (skipped.length) errs.unshift(tn('files_skipped', skipped.length).replace('{max}', PHOTO_MAX).replace('{names}', skipped.map((f) => f.name).join(', ')));
     if (dupes.length) errs.push(`${t('file_dup')}: ${dupes.join(', ')}`);
     if (darkN) errs.push(tn('photos_dark_added', darkN));
-    if (errs.length) toast(errs.join(' · '), errs.length > 1 || !darkN); else if (take.length && !later) toast('✓');
+    if (blurN) errs.push(tn('photos_blurry_added', blurN));
+    const hints = (darkN ? 1 : 0) + (blurN ? 1 : 0);
+    if (errs.length) toast(errs.join(' · '), errs.length > hints); else if (take.length && !later) toast('✓');
   };
 }
 
@@ -3105,15 +3107,19 @@ function photoLimitWatch(input) {
   // Backlog 863: Hinweis bei sehr dunklen Fotos (nur Hinweis, Senden bleibt möglich); spätere Auswahl überholt eine laufende Prüfung
   const dark = document.createElement('p'); dark.className = 'panel warn small'; dark.setAttribute('role', 'status'); dark.hidden = true; dark.dataset.photodark = '';
   note.insertAdjacentElement('afterend', dark);
+  // Backlog 864: Hinweis bei stark verwackelten/unscharfen Fotos (eigene Zeile, nur Hinweis)
+  const blur = document.createElement('p'); blur.className = 'panel warn small'; blur.setAttribute('role', 'status'); blur.hidden = true; blur.dataset.photoblur = '';
+  dark.insertAdjacentElement('afterend', blur);
   let run = 0;
   input.onchange = async () => {
     const n = (input.files || []).length;
     note.hidden = n <= PHOTO_MAX;
     note.textContent = n > PHOTO_MAX ? t('photos_over_max').replace('{n}', n).replace('{max}', PHOTO_MAX) : '';
-    const my = ++run; dark.hidden = true; dark.textContent = '';
-    let d = 0; for (const f of [...(input.files || [])].slice(0, PHOTO_MAX)) if (await photoIsDark(f)) d++;
+    const my = ++run; dark.hidden = true; dark.textContent = ''; blur.hidden = true; blur.textContent = '';
+    let d = 0, b = 0; for (const f of [...(input.files || [])].slice(0, PHOTO_MAX)) { const q = await photoCheck(f); if (q.dark) d++; else if (q.blurry) b++; }
     if (my !== run || !dark.isConnected) return;
     dark.hidden = !d; dark.textContent = d ? tn('photos_dark', d) : '';
+    blur.hidden = !b; blur.textContent = b ? tn('photos_blurry', b) : '';
   };
 }
 // Backlog 863 (Blickwinkel „Fahrer meldet nachts einen Schaden, Foto zu dunkel“): mittlere Helligkeit (Luma nach Rec. 709, 0–255) eines auf
@@ -3121,12 +3127,37 @@ function photoLimitWatch(input) {
 // keine fachliche Vorgabe; nur Hinweis). Nicht lesbare Bilder gelten nie als dunkel.
 const PHOTO_DARK_LUMA = 40;
 const lumaMean = (px) => { let s = 0, n = 0; for (let i = 0; i + 3 < px.length; i += 4) { if (px[i + 3] < 128) continue; s += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]; n++; } return n ? s / n : 255; };
-async function photoIsDark(file) {
-  if (!file || !/^image\/(jpeg|png|webp)$/.test(file.type || '')) return false;
+// Backlog 864 (Blickwinkel „Fahrer meldet einen Schaden, Foto verwackelt/unscharf“): Laplace-Filter (4er-Nachbarschaft) auf der Helligkeit eines
+// auf höchstens PHOTO_BLUR_SIDE px verkleinerten Bildes; gezählt werden deutliche Kantenpunkte (|Laplace| > PHOTO_BLUR_EDGE). Weniger als
+// PHOTO_BLUR_MIN_EDGES solcher Punkte = „stark unscharf“ – ein kleiner scharfer Kratzer auf glatter Plane reicht schon, um nicht als unscharf
+// zu gelten. Fast einfarbige Bilder (Kontrast unter PHOTO_BLUR_MIN_SD) werden nicht beurteilt. Technische Schwellwerte (an Beispielbildern mit
+// künstlicher Unschärfe abgeglichen, nur deutliches Verwackeln), keine fachliche Vorgabe; nur Hinweis.
+const PHOTO_BLUR_SIDE = 256, PHOTO_BLUR_EDGE = 16, PHOTO_BLUR_MIN_EDGES = 20, PHOTO_BLUR_MIN_SD = 8;
+const photoSharpness = (px, w, h) => {
+  if (w < 3 || h < 3) return null;
+  const y = new Float32Array(w * h); let s = 0, s2 = 0;
+  for (let i = 0; i < w * h; i++) { const v = 0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]; y[i] = v; s += v; s2 += v * v; }
+  const n = w * h, mean = s / n, sd = Math.sqrt(Math.max(0, s2 / n - mean * mean));
+  let edges = 0;
+  for (let r = 1; r < h - 1; r++) for (let c = 1; c < w - 1; c++) { const i = r * w + c; if (Math.abs(4 * y[i] - y[i - 1] - y[i + 1] - y[i - w] - y[i + w]) > PHOTO_BLUR_EDGE) edges++; }
+  return { edges, sd };
+};
+const isBlurry = (q) => !!q && q.sd >= PHOTO_BLUR_MIN_SD && q.edges < PHOTO_BLUR_MIN_EDGES;
+// Ein Dekodieren je Foto für beide Prüfungen; nicht lesbare Bilder gelten weder als dunkel noch als unscharf
+async function photoCheck(file) {
+  const none = { dark: false, blurry: false };
+  if (!file || !/^image\/(jpeg|png|webp)$/.test(file.type || '')) return none;
   try {
     const bmp = await decodeImage(file);
-    try { const cv = document.createElement('canvas'); cv.width = 32; cv.height = 32; const cx = cv.getContext('2d'); cx.drawImage(bmp.src, 0, 0, 32, 32); return lumaMean(cx.getImageData(0, 0, 32, 32).data) < PHOTO_DARK_LUMA; } finally { bmp.done(); }
-  } catch { return false; }
+    try {
+      const cv = document.createElement('canvas'); cv.width = 32; cv.height = 32; const cx = cv.getContext('2d'); cx.drawImage(bmp.src, 0, 0, 32, 32);
+      if (lumaMean(cx.getImageData(0, 0, 32, 32).data) < PHOTO_DARK_LUMA) return { dark: true, blurry: false };
+      if (!bmp.w || !bmp.h) return none;
+      const sc = Math.min(1, PHOTO_BLUR_SIDE / Math.max(bmp.w, bmp.h)); const w = Math.max(1, Math.round(bmp.w * sc)), h = Math.max(1, Math.round(bmp.h * sc));
+      const cb = document.createElement('canvas'); cb.width = w; cb.height = h; const xb = cb.getContext('2d'); xb.imageSmoothingQuality = 'high'; xb.drawImage(bmp.src, 0, 0, w, h);
+      return { dark: false, blurry: isBlurry(photoSharpness(xb.getImageData(0, 0, w, h).data, w, h)) };
+    } finally { bmp.done(); }
+  } catch { return none; }
 }
 // Backlog 603: wie der Server (src/cases.js MAX_FILE_BYTES, erlaubte Typen) – Ablehnung schon im Browser, mit Hinweis bei HEIC/HEIF
 const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], UPLOAD_MAX_BYTES = 5 * 1024 * 1024;

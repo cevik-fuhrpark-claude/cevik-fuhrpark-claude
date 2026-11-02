@@ -1191,6 +1191,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 852/853 (Blickwinkel „Rangierunfall auf dem eigenen Hof: eigener Lkw gegen eigenen Lkw“): Unfallgegner ist ein eigenes Fahrzeug
 // Backlog 862 (Blickwinkel „Werkstatt-Tablet: Mechaniker sucht ein Teil per Teilenummer“): Suchfeld über der Artikelauswahl (Teil buchen, Wareneingang)
 // Backlog 863 (Blickwinkel „Fahrer meldet nachts einen Schaden, Foto zu dunkel“): Hinweis bei sehr dunklen Fotos (Meldung, Abfahrtskontrolle, Vorgang)
+// Backlog 864: Hinweis bei stark verwackelten/unscharfen Fotos (nur Hinweis, Senden bleibt möglich)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
