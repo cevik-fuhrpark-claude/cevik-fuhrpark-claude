@@ -30969,6 +30969,21 @@ await test('Backlog 869 (Blickwinkel „Fuhrparkleitung sieht morgens, welche Re
   }
 });
 
+await test('Backlog 870 (Blickwinkel „Disposition: Lkw steht halb zerlegt in der Werkstatt“): Arbeitsstand in „Nicht einplanen“ der Disposition – auch von einem anderen offenen Vorgang desselben Fahrzeugs (mit Nummer); Hilfe DE/UK/EN', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("${dispoWst(cs, c)}${partsEta(c)}${!dispoReturnKnown(c)") && app.includes('const dispoWst = (cs, c) => { const w = [c, ...cs.filter((x) => x.vehicle_id === c.vehicle_id && x !== c)].find((x) => x.work_state_note && WST_ST.includes(x.status));'), 'Zeile „Nicht einplanen“');
+  // Verhalten wie im Browser nachgestellt: Arbeitsstand am anderen Vorgang wird mit Nummer genannt, ohne Arbeitsstand nichts
+  const src = app.slice(app.indexOf('const dispoWst = '), app.indexOf('\n', app.indexOf('const dispoWst = ')));
+  const f = new Function('WST_ST', 'esc', 't', 'ltxt', 'clipTxt', src + '; return dispoWst;')(['in_reparatur', 'wartet_teile'], (x) => String(x), (k) => k, (x) => x, (x) => x);
+  const a = { vehicle_id: 'v1', case_no: 'S-1', status: 'werkstatt_freigegeben', safety_lock: 1 }, b = { vehicle_id: 'v1', case_no: 'S-2', status: 'in_reparatur', work_state_note: 'Rad ab' }, c = { vehicle_id: 'v2', case_no: 'S-3', status: 'in_reparatur', work_state_note: 'fremd' };
+  ok(f([a, b, c], a).includes('Rad ab (S-2)'), 'anderer Vorgang mit Nummer');
+  ok(f([a, b, c], b).includes('Rad ab') && !f([a, b, c], b).includes('(S-2)'), 'eigener Vorgang ohne Nummer');
+  eq(f([a, c], a), '', 'fremdes Fahrzeug zählt nicht');
+  eq(f([{ ...b, status: 'abschlusskontrolle' }], { ...b, status: 'abschlusskontrolle' }), '', 'nur Reparatur/„wartet auf Teile“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_dispo_s.split('|').some((x) => x.includes(STRINGS[l].dispo_not_plannable) && x.includes(STRINGS[l].wst_title)), l + ': Hilfe Disposition');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

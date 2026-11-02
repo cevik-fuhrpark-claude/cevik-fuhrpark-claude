@@ -429,6 +429,7 @@ UI-Arbeitszeit: Hinweis letzter Arbeitstag ohne Eintrag, Knopf setzt das Datum, 
 UI-Meine Aufträge: Werkstatt-Startseite „Von dir bearbeitet“ und Reiter „Von mir bearbeitet“, nur eigene Aufträge (DE/UK/EN; Backlog 866)|ui-meine-auftraege.py|/tmp/cfp-meine-auftraege.log
 UI-Arbeitsstand: Werkstatt trägt bei Unterbrechung den Arbeitsstand ein – Vorgang mit Name, Startseite, vorbelegt, leeren entfernt (DE/UK/EN; Backlog 867)|ui-arbeitsstand.py|/tmp/cfp-arbeitsstand.log
 UI-Unterbrochene Reparaturen: Leitung sieht Arbeitsstand in „Heute zu tun“ und im Listenfilter (DE/UK/EN; Backlog 869)|ui-unterbrochen.py|/tmp/cfp-unterbrochen.log
+UI-Disposition Arbeitsstand: „Nicht einplanen“ zeigt den Arbeitsstand der Werkstatt (DE/UK/EN; Backlog 870)|ui-dispo-arbeitsstand.py|/tmp/cfp-dispo-arbeitsstand.log
 UI-Abfahrtskontrolle km-Tippfehler: letzter Stand, Differenz, Hinweise kleiner/mehr Stellen, auch Fahrer (DE/UK/EN; Backlog 836)|ui-abfahrt-km-tippfehler.py|/tmp/cfp-abfahrt-km-tippfehler.log
 UI-Fahrzeugakte km erfassen: letzter Stand, Differenz, Hinweise kleiner/mehr Stellen, früheres Datum ohne Hinweis (DE/UK/EN; Backlog 837)|ui-akte-km-tippfehler.py|/tmp/cfp-akte-km-tippfehler.log
 UI-Zeitleiste km mit mehr Stellen: Datenqualität verlinkt, Hinweis mit vorherigem Stand, Begründung nachtragen löst ihn (DE/UK/EN; Backlog 838)|ui-zeitleiste-km-stellen.py|/tmp/cfp-zeitleiste-km-stellen.log

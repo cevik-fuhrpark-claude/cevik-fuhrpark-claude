@@ -17,7 +17,7 @@ with sync_playwright() as p:
     if s['s']==200: api('POST','/api/invite/accept',{'token':s['d']['invite_token'],'password':PW})
     if api('POST','/api/login',{'username':'ub.inhaber','password':PW})['s']!=200:
         okl=False
-        for un in ['as.inhaber','ma.inhaber','vt.inhaber','ka.inhaber','ab.inhaber','ws.inhaber','ft.inhaber','fa.inhaber','az.inhaber']:
+        for un in ['dw.inhaber','as.inhaber','ma.inhaber','vt.inhaber','ka.inhaber','ab.inhaber','ws.inhaber','ft.inhaber','fa.inhaber','az.inhaber']:
             if api('POST','/api/login',{'username':un,'password':PW})['s']==200: okl=True; break
         check(okl,'Anmeldung Inhaber')
     me=api('GET','/api/me')['d']; envn=(me.get('user') or me).get('environment') or 'production'
