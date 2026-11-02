@@ -16,6 +16,8 @@ const WRITE_ROLES = ['owner', 'fleet'];
 export const REQUIRED_KINDS = ['HU', 'SP', 'UVV', 'Tachograph'];
 // Backlog 883: Prüfarten mit amtlichem Prüfbericht (HU/SP-Bericht, Tachograph-Prüfbescheinigung) – Hinweis „Prüfbericht fehlt“
 export const REPORT_KINDS = ['HU', 'SP', 'Tachograph'];
+// wer Prüfberichte hochladen darf und daher „Prüfbericht fehlt“ sieht (Fahrzeugakte, Übersicht, „Heute zu tun“)
+export const REPORT_ROLES = ['owner', 'fleet', 'workshop'];
 export const REQUIRED_KINDS_TRAILER = ['HU', 'SP']; // Anhänger: kein Kontrollgerät; UVV nur bei eigener Ladetechnik → nicht pauschal gefordert
 const MAX_ROWS = 2000;
 
@@ -197,12 +199,16 @@ function noResultSql(recordedBy = null, limit = 200, vf = null) {
 // Backlog 883: HU/SP/Tachograph in der App erfasst (≤ 180 Tage, neueste ihrer Art) ohne Fahrzeugdokument „Prüfbericht“ ab dem Prüftag
 // (Berliner Tag des Hochladens) in dieser Umgebung – gleiche Regel wie `report_missing` der Fahrzeugakte
 export function noReportQuery(env, envName, limit = 200, vf = null) {
-  return env.DB.prepare(`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
+  const [sql, params] = noReportSql(envName, limit, vf);
+  return env.DB.prepare(sql).bind(...params);
+}
+function noReportSql(envName, limit = 200, vf = null) {
+  return [`SELECT e.id, e.vehicle_id, v.plate, e.kind, e.done_date FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id
       WHERE v.active=1 AND v.eval_excluded=0 ${vf ? 'AND v.id IN (SELECT value FROM json_each(?))' : ''} AND e.source IN ('erfasst','erledigt') AND e.kind IN (${REPORT_KINDS.map(() => '?').join(',')}) AND e.done_date >= ?
       AND NOT EXISTS (SELECT 1 FROM maintenance_events x WHERE x.vehicle_id=e.vehicle_id AND x.kind=e.kind AND x.id<>e.id
         AND (x.done_date > e.done_date OR (x.done_date = e.done_date AND x.created_at > e.created_at)))
       AND NOT EXISTS (SELECT 1 FROM files f WHERE f.vehicle_id=e.vehicle_id AND f.case_id IS NULL AND f.environment=? AND f.doc_kind='pruefbericht' AND ${berlinDaySql('f.created_at')} >= e.done_date)
-      ORDER BY e.done_date DESC LIMIT ${Number(limit)}`).bind(...(vf ? [vf] : []), ...REPORT_KINDS, berlinDate(new Date(Date.now() - 180 * 86400000).toISOString()), envName);
+      ORDER BY e.done_date DESC LIMIT ${Number(limit)}`, [...(vf ? [vf] : []), ...REPORT_KINDS, berlinDate(new Date(Date.now() - 180 * 86400000).toISOString()), envName]];
 }
 
 // Prüfungen der letzten 12 Monate (wie Fahrzeugliste/Akte, 22.10.2026) mit Ergebnis erhebliche/gefährliche Mängel bzw. verkehrsunsicher, zu denen seit dem Prüfdatum kein
@@ -248,13 +254,15 @@ function reinspectionPendingSql(envName, limit = 200, vf = null) {
       ORDER BY c.closed_at DESC LIMIT ${Number(limit)}`, [envName, ...(vf ? [vf] : []), addMonths(berlinDate(), -12)]];
 }
 
-// Die drei Prüfungs-Listen (Prüfmängel ohne Auftrag, ausstehende Nachprüfung, Pflichtprüfung ohne Ergebnis) in EINER D1-Abfrage –
+// Die Prüfungs-Listen (Prüfmängel ohne Auftrag, ausstehende Nachprüfung, Pflichtprüfung ohne Ergebnis, Prüfbericht fehlt) in EINER D1-Abfrage –
 // Cloudflare begrenzt die Abfragen je Aufruf (Agent, Übersicht). Gleiche SQL-Bausteine wie die Einzelabfragen; je Teil ein JSON-Array.
 // Die Reihenfolge innerhalb eines Aggregats ist in SQLite nicht zugesichert – daher nach dem Lesen wie in der Einzelabfrage sortiert.
 const EVENT_LISTS = {
   defects_without_case: [defectsWithoutCaseSql, ['id', 'vehicle_id', 'rule_id', 'plate', 'kind', 'done_date', 'result', 'evidence'], (a, b) => String(b.done_date).localeCompare(String(a.done_date))],
   reinspection_pending: [reinspectionPendingSql, ['id', 'vehicle_id', 'rule_id', 'plate', 'kind', 'done_date', 'result', 'evidence', 'case_id', 'case_no', 'closed_at'], (a, b) => String(a.closed_at).localeCompare(String(b.closed_at))],
   result_missing: [(envName, limit, vf) => noResultSql(null, limit, vf), ['id', 'vehicle_id', 'plate', 'kind', 'done_date'], (a, b) => String(b.done_date).localeCompare(String(a.done_date))],
+  // Backlog 884 (Folge aus 883): HU/SP/Tachograph ohne hochgeladenen Prüfbericht – für „Heute zu tun“ (nur Inhaber/Leitung/Werkstatt)
+  report_missing: [noReportSql, ['id', 'vehicle_id', 'plate', 'kind', 'done_date'], (a, b) => String(b.done_date).localeCompare(String(a.done_date))],
 };
 // vehicleIds: nur diese Fahrzeuge (Standortfilter, vor dem LIMIT); je Liste höchstens 200, eine Zeile mehr gelesen →
 // out.truncated = Namen der gekappten Listen (vorher still gekappt, 18.10.2026)
@@ -361,8 +369,10 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
   const defects = lists ? lists.defects_without_case : undefined;
   const reinspection = lists ? lists.reinspection_pending : undefined;
   const noResult = lists ? lists.result_missing : undefined;
+  // Prüfbericht fehlt (Backlog 884): nur wer Prüfberichte hochladen darf – wie `report_missing` der Fahrzeugakte
+  const noReport = lists && user && REPORT_ROLES.includes(user.role) ? lists.report_missing : undefined;
   const count = (s) => rows.filter((r) => r.status === s).length;
-  return { today, site: siteSel, site_options: siteOptions, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps, ...(defects ? { defects_without_case: defects } : {}), ...(reinspection ? { reinspection_pending: reinspection } : {}), ...(noResult ? { result_missing: noResult } : {}), ...(lists ? { lists_truncated: lists.truncated } : {}),
+  return { today, site: siteSel, site_options: siteOptions, warn_days: warnDays, warn_km: warnKm, required_kinds: REQUIRED_KINDS, required_kinds_trailer: REQUIRED_KINDS_TRAILER, rows, gaps, ...(defects ? { defects_without_case: defects } : {}), ...(reinspection ? { reinspection_pending: reinspection } : {}), ...(noResult ? { result_missing: noResult } : {}), ...(noReport ? { report_missing: noReport } : {}), ...(lists ? { lists_truncated: noReport ? lists.truncated : lists.truncated.filter((n) => n !== 'report_missing') } : {}),
     totals: { overdue: count('ueberfaellig'), due: count('faellig'), ok: count('ok'), no_date: count('ohne_termin'), unclear: count('ungeklaert'), vehicles: vehicles.length, vehicles_with_gaps: gaps.length } };
 }
 

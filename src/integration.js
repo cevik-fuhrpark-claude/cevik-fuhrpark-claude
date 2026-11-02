@@ -234,7 +234,7 @@ export async function integrationRouter(request, env, ctx, url) {
     const inSite = ov.site ? new Set([...ov.rows, ...ov.gaps].map((x) => x.vehicle_id)) : null;
     const lists = await maintenanceEventLists(env, envParam(url), inSite);
     return json({ schema_version: '1.0', ...ov, environment: envParam(url), defects_without_case: lists.defects_without_case, reinspection_pending: lists.reinspection_pending,
-      lists_truncated: lists.truncated.filter((n) => n !== 'result_missing') });
+      lists_truncated: lists.truncated.filter((n) => n !== 'result_missing' && n !== 'report_missing') });
   }
   if (p === '/v1/maintenance/history' && m === 'GET') { const h = await maintenanceHistory(env, { role: 'owner' }, Object.fromEntries(url.searchParams), envParam(url)); return json({ schema_version: '1.0', from: h.from, to: h.to, kind: h.kind, environment: envParam(url), truncated: h.truncated, events: h.rows.map(({ recorded_by_name, result_addable, ...r }) => r) }); }
   // Datenqualität: Anzahlen je Prüfung/Schweregrad + fahrzeugbezogene Befunde – ohne Personennamen (Fahrer-, Konto- und Einladungsbefunde nur als Anzahl)

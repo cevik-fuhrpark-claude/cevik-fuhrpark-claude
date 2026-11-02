@@ -31583,6 +31583,37 @@ await test('Backlog 883 (Blickwinkel „Lkw kommt aus der Fremdwerkstatt mit Rec
   }
 });
 
+await test('Backlog 884 (Folge aus 883): „Heute zu tun“ der Leitung – Prüfbericht fehlt aus der Prüftermin-Übersicht (`report_missing`), nur owner/fleet/workshop, Standortfilter, nicht in der Integrations-API, Bericht erledigt es', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const anon = new Client(worker, e, 'anon884');
+  const pdf = new TextEncoder().encode('%PDF-1.4\n% Bericht\n%%EOF');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/husp/HU/complete`, { done_date: bDayOff(-2), evidence: 'Rechnung Fremdwerkstatt (Test)', result: 'ohne_maengel' })).status, 200);
+  const ov = async (c, q = '') => (await c.get('/api/maintenance' + q)).data;
+  let o = await ov(U.fleet);
+  eq((o.report_missing || []).length, 1, 'Leitung: Liste'); eq(o.report_missing[0].vehicle_id, V1); eq(o.report_missing[0].kind, 'HU'); eq(o.report_missing[0].done_date, bDayOff(-2)); ok(o.report_missing[0].plate && o.report_missing[0].id, 'Kennzeichen/id');
+  ok(!o.lists_truncated.includes('report_missing'), 'nicht gekappt');
+  eq((await ov(U.own)).report_missing.length, 1, 'Inhaber');
+  eq((await ov(U.ws)).report_missing.length, 1, 'Werkstatt');
+  ok(!('report_missing' in (await ov(U.viewer))), 'Lesezugriff ohne Liste');
+  // gleiche Regel wie Datenqualität
+  const dq = (await U.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'husp_no_report');
+  eq(JSON.stringify(dq.map((i) => i.event_id)), JSON.stringify(o.report_missing.map((r) => r.id)), 'gleiche Prüfungen wie Datenqualität');
+  // Standortfilter: anderer Standort → leer
+  eq((await ov(U.fleet, '?site=ohne')).report_missing.length, 0, 'Standortfilter wirkt');
+  // Integrations-API bleibt unverändert
+  e.INTEGRATION_TOKEN = 'integration-token-884';
+  const ig = await anon.req('GET', '/api/integration/v1/maintenance', undefined, { authorization: 'Bearer integration-token-884' });
+  eq(ig.status, 200); ok(!('report_missing' in ig.data), 'nicht in /v1/maintenance');
+  // Bericht hochgeladen → weg
+  eq((await U.fleet.req('POST', `/api/vehicles/${V1}/documents?kind=pruefbericht&note=HU`, pdf, { 'content-type': 'application/pdf', 'x-filename': 'HU.pdf' })).status, 201);
+  eq((await ov(U.fleet)).report_missing.length, 0, 'Bericht erledigt den Eintrag');
+  // Oberfläche + Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("['todo_report_missing', ov && ov.report_missing") && app.includes("todo_report_missing: 'report_missing'"), '„Heute zu tun“-Gruppe mit 200+-Zähler');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].todo_report_missing, l); ok(STRINGS[l].help_dates_s.includes(STRINGS[l].todo_report_missing), l + ': Hilfe nennt den Eintrag'); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

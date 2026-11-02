@@ -1216,6 +1216,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 881 (Blickwinkel „Fahrer meldet einen Mangel, den die Werkstatt schon als Restarbeit kennt“): offene Restarbeiten freigegebener Vorgänge im Vorgang
 // Backlog 882: bekannte Restarbeit eines freigegebenen Vorgangs im laufenden Auftrag mit erledigen
 // Backlog 883: Prüfbericht fehlt (HU/SP/Tachograph erfasst, kein Fahrzeugdokument „Prüfbericht“ seit dem Prüftag)
+// Backlog 884: „Heute zu tun“ der Leitung – Prüfbericht fehlt
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
