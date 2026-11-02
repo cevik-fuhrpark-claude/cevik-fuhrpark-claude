@@ -139,17 +139,64 @@ const shape = (r, today) => ({ ...r, open: OPEN_STATUS.includes(r.status), days_
   appraisal_pending: OPEN_STATUS.includes(r.status) && !!r.appraisal_on && !r.appraisal_received_on, opponent: !!(r.opponent_plate || r.opponent_insurer || r.opponent_claim_no), police: !!(r.police_station || r.police_ref || r.police_reported_on), appraisal_upcoming: !!r.appraisal_on && !r.appraisal_received_on && r.appraisal_on >= today });
 
 // Für die Vorgangsansicht (nur Leitung): Versicherungsfall + Versicherungsverträge des Fahrzeugs zur Auswahl (eine Abfrage)
-export async function claimForCase(env, caseId, vehicleId) {
+export async function claimForCase(env, caseId, vehicleId, c = null) {
+  // Backlog 852/853: zwei weitere Zweige in derselben Abfrage (Abfragebudget Vorgangsdetail ≤ 21) – 'ownveh' (Gegner-Kennzeichen = eigenes Fahrzeug)
+  // und 'named' (dieses Fahrzeug als Gegner in Versicherungsfällen anderer Fahrzeuge); Spalten werden über die vorhandenen Spaltennamen
+  // transportiert (siehe ownOpponent/namedAsOpponent), Kennzeichen vorab per SQL normalisiert, danach exakt mit normPlate geprüft.
   const rows = (await env.DB.prepare(`SELECT 'claim' AS t, ic.id, ic.contract_id, ic.insurer, ic.claim_no, ic.reported_on, ic.status, ic.deductible_net, ic.reimbursed_net, ic.reimbursed_on, ic.evidence, ic.note, ic.updated_at, ic.file_id, ic.appraiser, ic.appraisal_on, ic.appraisal_received_on, ic.appraisal_net, ic.opponent_plate, ic.opponent_insurer, ic.opponent_claim_no, ic.police_station, ic.police_ref, ic.police_reported_on, f.filename AS file_name, NULL AS partner, NULL AS contract_no, NULL AS end_date, NULL AS ended_on, NULL AS start_date
       FROM insurance_claims ic LEFT JOIN files f ON f.id=ic.file_id AND f.environment=ic.environment WHERE ic.case_id=?1
     UNION ALL SELECT 'contract', k.id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, k.partner, k.contract_no, k.end_date, k.ended_on, k.start_date
-      FROM vehicle_contracts k WHERE k.vehicle_id=?2 AND k.kind='versicherung'`).bind(caseId, vehicleId).all()).results;
+      FROM vehicle_contracts k WHERE k.vehicle_id=?2 AND k.kind='versicherung'
+    ${c ? `UNION ALL SELECT 'ownveh', v.id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        (SELECT json_group_array(json_object('id', x.id, 'case_no', x.case_no, 'status', x.status, 'created_at', x.created_at, 'occurred_at', x.occurred_at))
+          FROM (SELECT id, case_no, status, created_at, occurred_at FROM cases WHERE vehicle_id=v.id AND environment=?3 AND status<>'abgelehnt' ORDER BY created_at DESC LIMIT 20) x),
+        NULL, NULL, NULL, NULL, NULL, NULL, ic.opponent_plate, NULL, NULL, NULL, NULL, NULL, NULL, v.plate, v.active, NULL, NULL, NULL
+      FROM insurance_claims ic JOIN vehicles v ON v.id<>?2 AND ${PN('v.plate')}=${PN('ic.opponent_plate')} WHERE ic.case_id=?1 AND ic.opponent_plate IS NOT NULL
+    UNION ALL SELECT 'named', ic.case_id, NULL, NULL, k.case_no, k.occurred_at, ic.status, NULL, NULL, NULL, NULL, k.status, k.created_at, NULL, NULL, NULL, NULL, NULL, ic.opponent_plate, NULL, NULL, NULL, NULL, NULL, NULL, v.plate, vb.plate, NULL, NULL, NULL
+      FROM vehicles vb JOIN insurance_claims ic ON ic.environment=?3 AND ic.opponent_plate IS NOT NULL AND ic.vehicle_id<>vb.id AND ic.status IN ('gemeldet','in_pruefung') AND ${PN('ic.opponent_plate')}=${PN('vb.plate')}
+      JOIN cases k ON k.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id WHERE vb.id=?2` : ''}`).bind(caseId, vehicleId, ...(c ? [c.environment] : [])).all()).results;
   const claim = rows.find((r) => r.t === 'claim');
   const today = berlinDate();
+  const shaped = claim ? shape(Object.fromEntries(Object.entries(claim).filter(([k]) => !['t', 'partner', 'contract_no', 'end_date', 'ended_on', 'start_date'].includes(k))), today) : null;
+  if (shaped && c) { const ov = ownOpponent(rows.filter((r) => r.t === 'ownveh'), shaped.opponent_plate, c); if (ov) shaped.opponent_vehicle = ov; }
+  const namedIn = c ? namedAsOpponent(rows.filter((r) => r.t === 'named'), c) : [];
   return {
-    claim: claim ? shape(Object.fromEntries(Object.entries(claim).filter(([k]) => !['t', 'partner', 'contract_no', 'end_date', 'ended_on', 'start_date'].includes(k))), today) : null,
+    claim: shaped,
+    ...(namedIn.length ? { opponent_in_claims: namedIn } : {}),
     insurance_contracts: rows.filter((r) => r.t === 'contract').map((r) => ({ id: r.id, partner: r.partner, contract_no: r.contract_no, start_date: r.start_date || null, end_date: r.end_date, ended_on: r.ended_on })),
   };
+}
+
+// Kennzeichen in SQL grob normalisieren (Großschrift, ohne Leer-/Binde-/Schräg-/Punktzeichen) – nur Vorauswahl, exakt prüft normPlate
+const PN = (col) => `replace(replace(replace(replace(upper(${col}),' ',''),'-',''),'.',''),'/','')`;
+
+// Backlog 852 (Blickwinkel „Rangierunfall auf dem eigenen Hof: eigener Lkw fährt gegen einen anderen eigenen Lkw“): Gegner-Kennzeichen
+// gehört zur eigenen Flotte (gleiche Regel `normPlate`, aktuelles Kennzeichen, nicht das Fahrzeug des Vorgangs) → `opponent_vehicle`
+// {id, plate, active, cases} mit bis zu 3 nicht abgelehnten Vorgängen dieses Fahrzeugs (gleiche Umgebung) ab dem Schadentag – nur Nummer/Status,
+// damit die Leitung den Schaden am zweiten Fahrzeug als eigenen Vorgang meldet bzw. findet. Reiner Hinweis, keine Verknüpfung, keine Frist.
+// Zeilen 'ownveh': id = Fahrzeug, partner = Kennzeichen, contract_no = aktiv, note = Vorgänge (JSON)
+function ownOpponent(rows, opponentPlate, c) {
+  const key = normPlate(opponentPlate);
+  const vs = key ? rows.filter((v) => normPlate(v.partner) === key) : [];
+  if (vs.length !== 1) return null; // kein oder mehrdeutiger Treffer (doppeltes Kennzeichen meldet die Datenqualität) – kein Hinweis
+  const v = vs[0];
+  const from = occurrenceDay(c);
+  let cs = []; try { cs = JSON.parse(v.note || '[]'); } catch { cs = []; }
+  cs = cs.filter((x) => !from || (occurrenceDay(x) || '') >= from).slice(0, 3).map((x) => ({ id: x.id, case_no: x.case_no, status: x.status }));
+  return { id: v.id, plate: v.partner, active: !!v.contract_no, cases: cs };
+}
+
+// Backlog 853 (gleicher Blickwinkel, Rückverweis): Vorgang am zweiten Fahrzeug – offene Versicherungsfälle anderer Fahrzeuge (gleiche Umgebung),
+// die dieses Fahrzeug (aktuelles Kennzeichen) als Unfallgegner nennen und deren Schadentag nicht nach dem Schadentag dieses Vorgangs liegt.
+// Nur Nummer/Kennzeichen/Status des anderen Vorgangs (max. 3), keine neue Verknüpfung.
+// Zeilen 'named': id = Vorgang, claim_no = Vorgangsnummer, reported_on/updated_at = Schaden-/Meldezeit, note = Vorgangsstatus, status = Fallstatus,
+// partner = Kennzeichen des anderen Fahrzeugs, contract_no = eigenes Kennzeichen
+function namedAsOpponent(rows, c) {
+  const day = occurrenceDay(c) || '';
+  return rows.filter((r) => OPEN_STATUS.includes(r.status) && normPlate(r.opponent_plate) && normPlate(r.opponent_plate) === normPlate(r.contract_no)
+      && (occurrenceDay({ occurred_at: r.reported_on, created_at: r.updated_at }) || '') <= day)
+    .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, 3)
+    .map((r) => ({ case_id: r.id, case_no: r.claim_no, plate: r.partner, status: r.note, claim_status: r.status }));
 }
 
 // Übersicht (Mehr → Versicherungsfälle): offen/alle/Status; Kosten des Vorgangs (nur belegte Ist-Kosten) und Saldo nach Erstattung

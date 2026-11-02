@@ -1187,6 +1187,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 848: Datenqualität – aktuelle Profilmessung höher als die vorherige derselben Position ohne Wechsel
 // Backlog 850: Datenqualität – zuletzt montierte Reifengröße weicht von der hinterlegten Achsgröße ab
 // Backlog 851: Reifenakte – zuletzt montierte Größe je Position, Kennzeichnung bei Abweichung von der Achsgröße
+// Backlog 852/853 (Blickwinkel „Rangierunfall auf dem eigenen Hof: eigener Lkw gegen eigenen Lkw“): Unfallgegner ist ein eigenes Fahrzeug
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

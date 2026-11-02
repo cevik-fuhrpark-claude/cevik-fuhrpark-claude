@@ -2828,7 +2828,7 @@ async function viewCase(id) {
   // Als Dublette abgelehnt ohne eigenen Fall: kein Formular (Server lehnt ab), Hinweis auf den Ursprungsvorgang (20.10.2026)
   if (d.insurance_contracts) html += d.duplicate_of && !d.claim
     ? `<section class="panel"><h3>${esc(t('claim_title'))}</h3><p class="small muted">${esc(t('claim_dup_hint'))}${d.duplicate_of.id ? ` <a href="#/cases/${esc(d.duplicate_of.id)}">${esc(d.duplicate_of.case_no)}</a>` : ''}</p></section>`
-    : claimSection(d.claim, d.insurance_contracts, d.files || [], c.description, c, (d.vehicle_info && d.vehicle_info.coupled) || []);
+    : claimSection(d.claim, d.insurance_contracts, d.files || [], c.description, c, (d.vehicle_info && d.vehicle_info.coupled) || []).replace('</h3>', () => `</h3>${claimNamedIn(d.opponent_in_claims)}`);
   // Dauer je Status (aus dem Verlauf: gespeicherte Statuswechsel, aktueller Status bis jetzt)
   {
     const spans = []; let cur = 'gemeldet'; let since = c.created_at;
@@ -2993,8 +2993,15 @@ function claimOpponentInfo(cl) {
   if (cl.opponent_plate) rows.push(`<dt>${esc(t('co_plate'))}</dt><dd><b data-coplate>${esc(cl.opponent_plate)}</b></dd>`); // Backlog 391: ohne „D“-Länderband – Gegner oft ausländisch
   if (cl.opponent_insurer) rows.push(`<dt>${esc(t('co_insurer'))}</dt><dd>${esc(cl.opponent_insurer)}</dd>`);
   if (cl.opponent_claim_no) rows.push(`<dt>${esc(t('co_claim_no'))}</dt><dd>${esc(cl.opponent_claim_no)}</dd>`);
-  return `<h4 style="margin:.4rem 0 .2rem">${esc(t('co_title'))}</h4><dl class="kv">${rows.join('')}</dl>`;
+  // Backlog 852: Gegner-Kennzeichen ist ein eigenes Fahrzeug – Schaden dort als eigenen Vorgang melden bzw. vorhandene Vorgänge zeigen
+  const ov = cl.opponent_vehicle;
+  const own = ov ? `<p class="small" data-coown>ℹ️ ${esc(t('co_own').replace('{p}', ov.plate))} <a href="#/vehicles/${encodeURIComponent(ov.id)}" style="white-space:nowrap">${esc(t('co_own_file'))}</a>${ov.cases.length
+    ? `<br>${esc(t('co_own_cases'))} ${ov.cases.map((x) => `<a href="#/cases/${esc(x.id)}" data-coowncase style="white-space:nowrap">${esc(x.case_no)}</a> (${esc(t('st_' + x.status))})`).join(', ')}`
+    : ov.active && mayReport() ? ` · <a href="#/new/${esc(ov.id)}" data-coownnew style="white-space:nowrap">${esc(t('co_own_report'))}</a>` : ''}</p>` : '';
+  return `<h4 style="margin:.4rem 0 .2rem">${esc(t('co_title'))}</h4><dl class="kv">${rows.join('')}</dl>${own}`;
 }
+// Backlog 853: dieses Fahrzeug ist in offenen Versicherungsfällen anderer eigener Fahrzeuge als Unfallgegner genannt (Rückverweis)
+const claimNamedIn = (list) => (list && list.length ? `<p class="small" data-conamed>ℹ️ ${esc(t('co_named_in'))} ${list.map((x) => `<a href="#/cases/${esc(x.case_id)}" style="white-space:nowrap">${esc(x.case_no)}</a> (${plate(x.plate)})`).join(', ')}</p>` : '');
 // Polizeiliche Anzeige im Versicherungsfall (Teilagent „Kraftstoffdiebstahl am Rastplatz“, 24.10.2026): nur was eingetragen ist
 function claimPoliceInfo(cl) {
   if (!cl || !(cl.police_station || cl.police_ref || cl.police_reported_on)) return '';

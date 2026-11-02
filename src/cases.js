@@ -499,7 +499,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
     allowed_actions: allowedActions(user, c, access),
   };
   // Versicherungsfall (nur Inhaber/Fuhrparkleitung) samt Versicherungsverträgen des Fahrzeugs zur Auswahl
-  if (user.role === 'owner' || user.role === 'fleet') Object.assign(detail, await claimForCase(env, c.id, c.vehicle_id));
+  if (user.role === 'owner' || user.role === 'fleet') Object.assign(detail, await claimForCase(env, c.id, c.vehicle_id, c));
   // Fahrer laut Zuordnung/Abfahrtskontrolle zum Schadenzeitpunkt (Backlog 285) – nur Leitung (Fahrerdaten), nur wenn angegeben
   if (isManager(user) && c.occurred_at) detail.occurred_drivers = await driversAtOccurrence(env, envName, c);
   // Backlog 421 (Blickwinkel „Fahrer tauscht unterwegs den Lkw mit einem Kollegen“): Melder (Fahrer) war zur Meldezeit laut Zuordnung nicht diesem

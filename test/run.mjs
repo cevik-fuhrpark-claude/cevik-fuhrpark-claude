@@ -22872,7 +22872,7 @@ await test('Backlog 390–394 (Blickwinkel „Unfall in Polen mit Fremdbeteiligu
   for (const x of ['Зіткнення з польським легковиком', 'заповнили європротокол', 'В мене врізався легковик', 'Наїхав задом на машину', 'Зачепив польську машину', 'Collision with a Polish car', 'Crashed into a car', 'rear-ended at the border', 'Zusammenstoß mit Pkw', 'Pkw angefahren', 'Auf Pkw aufgefahren', 'Столкнулся с машиной']) ok(re.test(x), 'Hinweis erwartet: ' + x);
   for (const x of ['Наїхав на цвях, колесо спущене', 'Lkw ist schwer angefahren', 'App crashed beim Foto', 'Zusammenbau Spiegel', 'Зачепив бордюр', 'Не працює аварійна сигналізація']) ok(!re.test(x), 'kein Hinweis: ' + x);
   const { STRINGS } = await import('../public/i18n.js');
-  for (const [l, w] of [['de', 'Unfallbericht'], ['uk', 'протокол ДТП'], ['en', 'accident report']]) { ok(STRINGS[l].claim_file.includes(w), `${l}.claim_file`); ok(STRINGS[l].acc_steps.split('|').length === 5 && STRINGS[l].acc_steps.includes(w.replace('протокол ДТП', 'протокол ДТП')), `${l}.acc_steps`); }
+  for (const [l, w] of [['de', 'Unfallbericht'], ['uk', 'протокол ДТП'], ['en', 'accident report']]) { ok(STRINGS[l].claim_file.includes(w), `${l}.claim_file`); ok(STRINGS[l].acc_steps.split('|').length === 6 && STRINGS[l].acc_steps.includes(w.replace('протокол ДТП', 'протокол ДТП')), `${l}.acc_steps`); }
 });
 await test('Backlog 395–398 (Blickwinkel „Getriebetausch/Reifengröße – Fahrtenschreiber prüfen“): Hinweis § 57b vor Abschlusskontrolle/Freigabe (Texterkennung), Reifengröße an der Antriebsachse geändert → Hinweis (Stammdaten und Wechsel), Tachograph-Durchführung mit Nachweis-Hinweis, Kurzinfo „Prüfungen ≤ n Tage“ nach Vorwarnung', async () => {
   const { U, cmd, toRepair, V1 } = await freshWorld();
@@ -30588,6 +30588,37 @@ await test('Backlog 851 (Folge aus 850): Reifenakte nennt je Position die zuletz
     ok(STRINGS[l].tire_mounted && STRINGS[l].tire_size_diff_chip.includes('{axle}') && STRINGS[l].tire_size_diff_chip.includes('{spec}'), 'Texte ' + l);
     ok(STRINGS[l].help_tires_s.includes(STRINGS[l].tire_size_diff_chip.split(' (')[0]), 'Hilfe ' + l);
   }
+});
+await test('Backlog 852–853 (Blickwinkel „Rangierunfall auf dem eigenen Hof: eigener Lkw gegen eigenen Lkw“): Gegner-Kennzeichen eines eigenen Fahrzeugs → opponent_vehicle mit Vorgängen ab Schadentag; Rückverweis opponent_in_claims am Vorgang des zweiten Fahrzeugs; Unfall-Hinweis nennt das zweite Fahrzeug; Texte DE/UK/EN', async () => {
+  const { U, newCase } = await freshWorld();
+  const A = 'VIN:WMA15SZZ2HM722774', B = 'VIN:WDB9630051L917317';
+  const ca = await newCase({ vehicle_id: A, description: 'Rangierschaden auf dem Hof, gegen SZ-KC 5515 gefahren' });
+  const P = `/api/cases/${ca}/claim`;
+  eq((await U.fleet.put(P, { insurer: 'Eigene Vers AG', reported_on: BERLIN_TODAY, evidence: 'Schadenanzeige (Test)', opponent_plate: 'sz kc-5515' })).status, 200, 'Fall angelegt');
+  let d = (await U.fleet.get(`/api/cases/${ca}`)).data;
+  const ov = d.claim.opponent_vehicle; ok(ov, 'eigenes Fahrzeug erkannt (Schreibweise egal)');
+  eq(ov.id, B); eq(ov.plate, 'SZ-KC 5515'); eq(ov.active, true); eq(ov.cases.length, 0, 'noch kein Vorgang am zweiten Fahrzeug');
+  eq(d.opponent_in_claims, undefined, 'A selbst ist nirgends Gegner');
+  // Meldung am zweiten Fahrzeug → erscheint bei A, B zeigt den Rückverweis
+  const cb = await newCase({ vehicle_id: B, description: 'Delle Tür links, angefahren beim Rangieren' });
+  d = (await U.fleet.get(`/api/cases/${ca}`)).data; eq(d.claim.opponent_vehicle.cases.map((x) => x.id).join(), cb); eq(d.claim.opponent_vehicle.cases[0].status, 'gemeldet');
+  let db = (await U.fleet.get(`/api/cases/${cb}`)).data; eq(db.opponent_in_claims.length, 1); eq(db.opponent_in_claims[0].case_id, ca); eq(db.opponent_in_claims[0].plate, 'SZ-YC 5513');
+  // nur Leitung: Werkstatt/Fahrer sehen weder Fall noch Rückverweis
+  for (const u of [U.driver, U.ws]) { const x = (await u.get(`/api/cases/${cb}`)).data; eq(x.opponent_in_claims, undefined, 'kein Rückverweis für ' + u.name); }
+  // fremdes Kennzeichen → kein Treffer; Fall geschlossen → kein Rückverweis mehr
+  const ver = (await U.fleet.get(`/api/cases/${ca}`)).data.claim.updated_at;
+  eq((await U.fleet.put(P, { opponent_plate: 'DO-AB 123', expected_updated_at: ver })).status, 200);
+  d = (await U.fleet.get(`/api/cases/${ca}`)).data; eq(d.claim.opponent_vehicle, undefined, 'fremdes Kennzeichen');
+  db = (await U.fleet.get(`/api/cases/${cb}`)).data; eq(db.opponent_in_claims, undefined, 'Rückverweis entfällt');
+  // Vorgang des eigenen Fahrzeugs als „Gegner“ zählt nicht
+  const ver2 = (await U.fleet.get(`/api/cases/${ca}`)).data.claim.updated_at;
+  eq((await U.fleet.put(P, { opponent_plate: 'SZ-YC 5513', expected_updated_at: ver2 })).status, 200);
+  eq((await U.fleet.get(`/api/cases/${ca}`)).data.claim.opponent_vehicle, undefined, 'eigenes Kennzeichen des Vorgangs');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['co_own', 'co_own_file', 'co_own_cases', 'co_own_report', 'co_named_in']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].co_own.includes('{p}'), l + ' {p}'); }
+  ok(/Rangieren/.test(STRINGS.de.acc_steps) && /маневрування/.test(STRINGS.uk.acc_steps) && /manoeuvring/.test(STRINGS.en.acc_steps), 'Unfall-Hinweis nennt das zweite eigene Fahrzeug');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-coown') && app.includes('data-coownnew') && app.includes('data-conamed'), 'Oberfläche');
 });
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
