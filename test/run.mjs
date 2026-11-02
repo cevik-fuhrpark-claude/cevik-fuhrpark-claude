@@ -31430,6 +31430,63 @@ await test('Backlog 880 (Blickwinkel „Werkstatt wartet auf Teile, der Lkw fäh
   }
 });
 
+await test('Backlog 881 (Blickwinkel „Fahrer meldet einen Mangel, den die Werkstatt schon als Restarbeit kennt“): „Zum Fahrzeug“ im Vorgang nennt offene Restarbeiten freigegebener Vorgänge desselben Fahrzeugs – Werkstatt nur eigener Standort, Fahrer nicht, erledigte nicht, mehr als 10 mit Hinweis', async () => {
+  const { U, cmd, toRepair, newCase } = await freshWorld();
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const release = async (id) => {
+    eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+    eq((await cmd(U.fleet, id, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200);
+  };
+  const id1 = await toRepair();
+  eq((await cmd(U.ws, id1, 'add_open_item', { description: 'Spiegelhalter rechts lose – Teil bestellt' })).status, 200);
+  eq((await cmd(U.ws, id1, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+  // vor der Freigabe: nur unter „Weitere offene Vorgänge“, nicht doppelt
+  const id2 = await newCase({ description: 'Spiegel rechts wackelt bei Fahrt' });
+  eq((await U.fleet.get(`/api/cases/${id2}`)).data.vehicle_info.released_items.length, 0, 'offener Vorgang: keine Restarbeit aus Freigaben');
+  await release(id1);
+  const c1 = (await U.fleet.get(`/api/cases/${id1}`)).data.case;
+  let vi = (await U.fleet.get(`/api/cases/${id2}`)).data.vehicle_info;
+  eq(vi.released_items.length, 1, 'Leitung sieht die Restarbeit'); eq(vi.released_items_truncated, false);
+  const r = vi.released_items[0];
+  eq(r.description, 'Spiegelhalter rechts lose – Teil bestellt'); eq(r.case_id, id1); eq(r.case_no, c1.case_no); ok(r.closed_at && r.created_at && r.id, 'Datum/Kennung');
+  eq(r.safety_relevant, false); ok(!('created_by' in r) && !('created_by_name' in r), 'ohne Personen');
+  for (const [n, c] of [['Disposition/Lesen', U.viewer]]) eq((await c.get(`/api/cases/${id2}`)).data.vehicle_info.released_items.length, 1, n);
+  // der freigegebene Vorgang selbst listet seine eigene Restarbeit nicht unter „Zum Fahrzeug“
+  eq((await U.fleet.get(`/api/cases/${id1}`)).data.vehicle_info.released_items.length, 0, 'nicht im eigenen Vorgang');
+  // Fahrer: keine Kurzinfo (bekommt die Restarbeit unter „Mein Fahrzeug“, Backlog 464)
+  ok(!('vehicle_info' in (await U.driver.get(`/api/cases/${id2}`)).data), 'Fahrer ohne vehicle_info');
+  // Werkstatt Dortmund (Standort des freigegebenen Vorgangs) sieht sie am neuen Auftrag, München nicht
+  eq((await cmd(U.fleet, id2, 'approve_repair', { workshop_site: 'DORTMUND' }, 'freigegeben')).status, 200);
+  vi = (await U.ws.get(`/api/cases/${id2}`)).data.vehicle_info;
+  eq(vi.released_items.length, 1, 'Werkstatt gleicher Standort'); eq(vi.released_items[0].case_id, id1, 'Link (Werkstatt darf den Vorgang öffnen)');
+  eq((await U.ws.get(`/api/cases/${id1}`)).status, 200, 'Werkstatt öffnet den freigegebenen Vorgang');
+  const id3 = await newCase({ description: 'Tür klemmt', workshop_site: 'MUENCHEN' });
+  eq((await cmd(U.fleet, id3, 'approve_repair', { workshop_site: 'MUENCHEN' }, 'München')).status, 200);
+  eq((await U.wsMuc.get(`/api/cases/${id3}`)).data.vehicle_info.released_items.length, 0, 'andere Werkstatt sieht fremde Restarbeiten nicht');
+  eq((await U.fleet.get(`/api/cases/${id3}`)).data.vehicle_info.released_items.length, 1, 'Leitung sieht sie überall');
+  // im freigegebenen Vorgang erledigt → nicht mehr genannt
+  const oi = (await U.ws.get(`/api/cases/${id1}`)).data.open_items.find((o) => o.status === 'offen');
+  eq((await cmd(U.ws, id1, 'resolve_open_item', { open_item_id: oi.id }, `beim Aufenthalt ${c1.case_no} mit erledigt`)).status, 200);
+  eq((await U.fleet.get(`/api/cases/${id2}`)).data.vehicle_info.released_items.length, 0, 'erledigt → weg');
+  // mehr als 10 → Hinweis, nie still gekappt
+  const id4 = await toRepair();
+  for (let i = 1; i <= 11; i++) eq((await cmd(U.ws, id4, 'add_open_item', { description: `Kleinigkeit ${i}` })).status, 200);
+  eq((await cmd(U.ws, id4, 'record_work', { hours: 1, description: 'x' })).status, 200);
+  await release(id4);
+  vi = (await U.fleet.get(`/api/cases/${id2}`)).data.vehicle_info;
+  eq(vi.released_items.length, 10, 'höchstens 10'); eq(vi.released_items_truncated, true, 'Hinweis auf weitere');
+  eq(vi.released_items[0].description, 'Kleinigkeit 11', 'neueste zuerst');
+  // Abfragebudget Vorgangsdetail unverändert (Unterabfrage in der vorhandenen Fahrzeug-Abfrage)
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-virelitems') && app.includes("t('vi_rel_items_more')") && app.includes('const ri = (vi && vi.released_items) || [];'), 'Oberfläche „Zum Fahrzeug“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['vi_rel_items', 'vi_rel_items_hint', 'vi_rel_items_more']) ok(STRINGS[l][k], l + ': ' + k);
+    ok(Object.keys(STRINGS[l]).filter((k) => /^help_.*_s$/.test(k)).some((k) => STRINGS[l][k].includes(STRINGS[l].vi_title) && /Restarbeit|залишков|remaining work/.test(STRINGS[l][k].split('|').find((x) => x.includes(STRINGS[l].vi_title) && /Restarbeit schon bekannt|вже відома|already known/.test(x)) || '')), l + ': Hilfe nennt es');
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -1213,6 +1213,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // [CLAUDE] Backlog 879 (Blickwinkel „Fahrer holt den Lkw nach Feierabend in der Werkstatt ab“): frühere Abholhinweise werden bei der Freigabe archiviert
 
 // [CLAUDE] Backlog 880 (Blickwinkel „Werkstatt wartet auf Teile, der Lkw fährt so lange weiter“): Fahrzeug fährt bis zur Teilelieferung
+// Backlog 881 (Blickwinkel „Fahrer meldet einen Mangel, den die Werkstatt schon als Restarbeit kennt“): offene Restarbeiten freigegebener Vorgänge im Vorgang
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

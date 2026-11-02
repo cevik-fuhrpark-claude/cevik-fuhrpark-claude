@@ -12,6 +12,8 @@ import { huSpFor, HUSP_ONE_SQL, huSpInputFromRow } from './inspection_rules.js';
 import { noteActiveSql, NOTES_MAX_ACTIVE } from './vnotes.js';
 // Backlog 467: abgeschlossene Vorgänge desselben Fahrzeugs in den 90 Tagen vor der Meldung – Kurzinfo im Vorgang höchstens 5
 const RECENT_CLOSED_MAX = 5;
+// Backlog 881: offene Restarbeiten aus bereits freigegebenen Vorgängen desselben Fahrzeugs – Kurzinfo im Vorgang höchstens 10 (mehr → *_truncated)
+const RELEASED_ITEMS_MAX = 10;
 // Laufende Gewährleistungen: Kurzinfo im Vorgang höchstens 20, Fahrzeugakte höchstens 50 (früheste Abläufe zuerst; mehr → *_truncated)
 // Backlog 626: Vergleichsschlüssel einer Rechnungsnummer – führendes „Nr./No./N°/Nº“ weg, nur ASCII-Buchstaben und Ziffern, Großschreibung
 export const invoiceKey = (v) => String(v || '').trim().replace(/^(?:nr|no|n°|nº|num(?:ber|éro|ero)?)[.:\s]+/i, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -596,6 +598,13 @@ export async function getCaseDetail(env, user, envName, caseId) {
             (SELECT substr(e.note, 1, 200) FROM case_events e WHERE e.case_id=x.id AND e.to_status=x.status AND e.note IS NOT NULL AND trim(e.note)<>'' ORDER BY e.created_at DESC LIMIT 1) AS note
            FROM cases x WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.status IN ('fahrzeug_freigegeben','abgelehnt') AND x.duplicate_of IS NULL
              AND x.closed_at IS NOT NULL AND x.closed_at <= ?6 AND x.closed_at >= ?9 AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY x.closed_at DESC LIMIT ${RECENT_CLOSED_MAX + 1}) r) AS recent_closed,
+        -- Backlog 881 (Blickwinkel „Fahrer meldet einen Mangel, den die Werkstatt schon als Restarbeit kennt“): offene Restarbeiten freigegebener
+        -- Vorgänge desselben Fahrzeugs (sicherheitsrelevante zuerst) – Leitung erkennt die Doppelmeldung, die Werkstatt erledigt sie beim selben Aufenthalt.
+        -- Werkstatt nur Vorgänge ihres Standorts (wie recent_closed); ohne Personen
+        (SELECT json_group_array(json_object('id', ri.id, 'case_id', ri.case_id, 'case_no', ri.case_no, 'closed_at', ri.closed_at, 'description', ri.description, 'safety_relevant', ri.safety_relevant, 'created_at', ri.created_at)) FROM
+          (SELECT oi.id, x.id AS case_id, x.case_no, x.closed_at, substr(oi.description, 1, 200) AS description, oi.safety_relevant, oi.created_at
+           FROM open_items oi JOIN cases x ON x.id=oi.case_id WHERE oi.status='offen' AND x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.status='fahrzeug_freigegeben'
+             AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY oi.safety_relevant DESC, oi.created_at DESC LIMIT ${RELEASED_ITEMS_MAX + 1}) ri) AS released_items,
         ${HUSP_ONE_SQL}
       FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate(), c.id, berlinDate(c.created_at), c.created_at, wsOnly, isManager(user) ? 1 : 0, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString()).first();
     const km = kmn && kmn.km !== null && kmn.km !== undefined ? { km: kmn.km, measured_at: kmn.measured_at } : null;
@@ -631,7 +640,10 @@ export async function getCaseDetail(env, user, envName, caseId) {
     // Backlog 467: eine Zeile mehr gelesen → recent_closed_truncated (nie still kappen)
     const recentClosed = kmn && kmn.recent_closed ? JSON.parse(kmn.recent_closed) : [];
     const recentClosedTruncated = recentClosed.length > RECENT_CLOSED_MAX; if (recentClosedTruncated) recentClosed.length = RECENT_CLOSED_MAX;
-    detail.vehicle_info = { recent_closed: recentClosed, recent_closed_truncated: recentClosedTruncated, other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, inspections_due_days: dueDays, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties, warranties_truncated: warrantiesTruncated, warranties_max: WARR_CASE_MAX, coupled, coupled_truncated: coupledTruncated };
+    // Backlog 881: eine Zeile mehr gelesen → released_items_truncated (nie still kappen)
+    const releasedItems = (kmn && kmn.released_items ? JSON.parse(kmn.released_items) : []).map((o) => ({ ...o, safety_relevant: !!o.safety_relevant }));
+    const releasedItemsTruncated = releasedItems.length > RELEASED_ITEMS_MAX; if (releasedItemsTruncated) releasedItems.length = RELEASED_ITEMS_MAX;
+    detail.vehicle_info = { recent_closed: recentClosed, recent_closed_truncated: recentClosedTruncated, released_items: releasedItems, released_items_truncated: releasedItemsTruncated, other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, inspections_due_days: dueDays, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties, warranties_truncated: warrantiesTruncated, warranties_max: WARR_CASE_MAX, coupled, coupled_truncated: coupledTruncated };
     if (isManager(user)) detail.vehicle_info.lease_contracts = kmn && kmn.leases ? JSON.parse(kmn.leases) : [];
   }
   if (seesWork) {
