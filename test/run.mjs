@@ -31211,6 +31211,48 @@ await test('Backlog 876 (Blickwinkel „Werkstatt Bayern übernimmt einen Auftra
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].rws_drop_ho.includes('{v}') && STRINGS[l].ev_ho_reset.includes('{v}'), l + ': Texte');
 });
 
+await test('Backlog 877 (Blickwinkel „Disposition plant den Lkw nach der Rückkehr aus der Werkstatt wieder ein“): „Wieder einsatzbereit“ nennt offene, nicht sicherheitsrelevante Restarbeiten der Freigabe (Anzahl, DE/UK/EN); ohne Restarbeiten unverändert', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); void e;
+  const x = await U.own.post('/api/users', { username: 'w.dispo877', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
+  const D = new Client(worker, e, 'w.dispo877'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const V2 = 'VIN:WDB9630051L917317';
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const release = async (vehicle_id, rest) => {
+    const id = await toRepair({ vehicle_id });
+    eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+    for (const d of rest) eq((await cmd(U.ws, id, 'add_open_item', { description: d })).status, 200, 'Restarbeit');
+    eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+    eq((await cmd(U.fleet, id, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200, 'Freigabe');
+    return id;
+  };
+  const a = await release(V1, ['Standheizung ohne Funktion', 'Innenleuchte Fahrerseite']);
+  const b = await release(V2, []);
+  const rows = (await D.get('/api/cases?status=fahrzeug_freigegeben&sort=updated&limit=200')).data.cases;
+  eq(rows.find((r) => r.id === a)?.open_items, 2, 'Liste liefert Anzahl offener Restarbeiten an die Disposition');
+  eq(rows.find((r) => r.id === b)?.open_items, 0);
+  const open = (await D.get('/api/cases?status=open&limit=500')).data.cases;
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i0 = app.indexOf('const DISPO_BLOCK_ST'); const src = app.slice(i0, app.indexOf('\nfunction dispoCases(', i0));
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  const BERLIN_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
+  const bDate = (n = 0) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const { federalHoliday } = await import('../public/holidays.js');
+  for (const lang of ['de', 'uk', 'en']) {
+    const pr = new Intl.PluralRules(lang);
+    const tn = (k, n) => { const f = PLURALS[lang][k]; return (f[pr.select(n)] || f.other).replace('{n}', n); };
+    const fn = new Function('api', 'bDate', 'BERLIN_FMT', 'esc', 't', 'tn', 'plate', 'ltxt', 'clipTxt', 'cDesc', 'fmtDT', 'wsName', 'langAttr', 'federalHoliday', 'fmtD', src + '\nreturn dispoBack;')(
+      async (m, path) => (await D.get(path)).data, bDate, BERLIN_FMT, (v) => String(v), (k) => STRINGS[lang][k] || k, tn, (p) => `[${p}]`, (v) => v, (v) => v, (v) => v, (v) => v, (v) => v, () => '', federalHoliday, (v) => v);
+    const html = await fn(open, '');
+    eq((html.match(/data-dback/g) || []).length, 2, lang + ': beide Fahrzeuge wieder einsatzbereit');
+    eq((html.match(/data-dbitems/g) || []).length, 1, lang + ': nur die Freigabe mit Restarbeiten zeigt die Anzahl');
+    ok(html.includes(tn('rc_open_items', 2)) && html.includes(STRINGS[lang].dback_ns), lang + ': Anzahl und „nicht sicherheitsrelevant“');
+    const rowA = html.split('<a ').find((r) => r.includes('data-dbitems')); ok(rowA && rowA.includes('[SZ-YC 5513]'), lang + ': in der richtigen Zeile');
+    ok(STRINGS[lang].help_dispo_s.includes(STRINGS[lang].dispo_back), lang + ': Hilfe');
+  }
+  for (const l of ['de', 'uk', 'en']) ok(/Restarbeit|залишков|open items/.test(STRINGS[l].help_dispo_s.split('|').find((p) => p.includes(STRINGS[l].dispo_back)) || ''), l + ': Hilfe-Absatz zu „Wieder einsatzbereit“ erklärt die Restarbeiten');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

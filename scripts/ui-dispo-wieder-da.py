@@ -8,7 +8,8 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-TITLE={'de':'Wieder einsatzbereit','uk':'Знову готові до роботи','en':'Back in service'}
+# EN: „Back in service“ (heute/gestern) bzw. „Ready again (released since …)“ nach Wochenende/Feiertag (dispo_back_since)
+TITLE={'de':('Wieder einsatzbereit',),'uk':('Знову готові до роботи',),'en':('Back in service','Ready again')}
 PU={'de':'Abholung nach der Reparatur','uk':'Отримання після ремонту','en':'Pick-up after repair'}
 fails=[]
 def check(c,m):
@@ -52,7 +53,7 @@ with sync_playwright() as p:
         ctx=br.new_context(viewport={'width':wd,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':un,'password':PW}])
         q.goto(B+'/#/'); q.reload(); q.wait_for_selector('#dback',timeout=15000); q.wait_for_timeout(400)
-        check(TITLE[lang] in q.locator('#dback').inner_text(),f'{lang} {wd}px: Abschnitt')
+        check(any(x in q.locator('#dback').inner_text() for x in TITLE[lang]),f'{lang} {wd}px: Abschnitt')
         rows=q.locator('[data-dback]')
         check(rows.count()==1 and 'WB-AB 1' in rows.first.inner_text(),f'{lang} {wd}px: nur WB-AB 1 ({rows.count()})')
         check(PU[lang] in rows.first.inner_text() and 'Pförtner' in rows.first.inner_text(),f'{lang} {wd}px: Abholvermerk sichtbar')

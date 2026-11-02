@@ -272,6 +272,7 @@ UI-Werkstatt-Startseite Kurzablauf eines Auftrags (Knopf-Beschriftungen, Ausblen
 UI-Werkstatt-Startseite: Auftrag oben hervorgehoben und im Arbeitsschritt – „steht auch oben“, Gesamtzahl ohne Doppelzählung, DE/UK/EN 390/820/1366|ui-werkstatt-doppelt.py|/tmp/cfp-werkstatt-doppelt.log
 UI-Werkstatt-Tagesreihenfolge: „Heute geplant“ und Werkstattplan gesperrt → mittel → niedrig, ältere Meldung zuerst, Hinweis zum Termin, DE/UK/EN 390/820/1366|ui-werkstatt-tagesreihenfolge.py|/tmp/cfp-werkstatt-tagesreihenfolge.log
 UI-Disposition „Wieder einsatzbereit (heute/gestern freigegeben)“: nur freie Fahrzeuge, Freigabezeit, Abholvermerk, DE/UK/EN 390/820/1366|ui-dispo-wieder-da.py|/tmp/cfp-dispo-wieder-da.log
+UI-Disposition „Wieder einsatzbereit“ nennt offene Restarbeiten der Freigabe, DE/UK/EN 390/820/1366|ui-dispo-restarbeit.py|/tmp/cfp-dispo-restarbeit.log
 UI-Disposition Fristen bis zum nächsten Werktag, Art der nächsten Fälligkeit (Backlog 559/561), DE/UK/EN 390/820/1366|ui-dispo-naechster-werktag.py|/tmp/cfp-dispo-naechster-werktag.log
 UI-Foto vom Melder nachgereicht: Verlauf „Foto/Datei nachgereicht“ mit Dateiname, Hinweis an die Leitung, Foto beim Melden ohne Eintrag, DE/UK/EN 390/820/1366|ui-foto-nachgereicht.py|/tmp/cfp-foto-nachgereicht.log
 UI-Rückfrage an den Melder: Häkchen im Kommentar, Fahrer-Startseite/Vorgang, Antwort → „beantwortet“ in Vorgang, Liste und Heute zu tun, DE/UK/EN 390/820/1366|ui-rueckfrage-melder.py|/tmp/cfp-rueckfrage-melder.log
