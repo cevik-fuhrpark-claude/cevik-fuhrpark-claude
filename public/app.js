@@ -7086,7 +7086,8 @@ async function viewSearch() {
       const lq = q.toLowerCase();
       const fAll = canFines ? fineList.filter((f) => [f.plate, f.plate_in_letter].some((x) => norm(x).includes(n)) || [f.fine_no, f.reference, f.authority].some((x) => String(x || '').toLowerCase().includes(lq))) : []; const fs = fAll.slice(0, 10);
       const hq = helpNorm(q); // Lager: Umlaute/ue gleich (wie Lagerliste und Hilfe)
-      const sAll = canStock && hq ? stockList.filter((i) => stockHit(i, q)) : []; // Backlog 862: Teilenummer auch ohne Leerzeichen/Bindestrich const ss = sAll.slice(0, 10);
+      const sAll = canStock && hq ? stockList.filter((i) => stockHit(i, q)) : []; // Backlog 862: Teilenummer auch ohne Leerzeichen/Bindestrich
+      const ss = sAll.slice(0, 10);
       const more = (shown, all) => (all > shown ? `<p class="small muted" data-more>${esc(t('search_more').replace('{n}', shown).replace('{m}', all))}</p>` : '');
       // Hilfe-Abschnitte der eigenen Rolle (gleiche Suche wie auf der Hilfeseite)
       const hs = !helpLoaded(S.lang) ? [] : (helpMatches(helpSections(S.me.role).map((h) => ({ name: h, title: t(`help_${h}_t`), steps: t(`help_${h}_s`).split('|') })), q) || []).sort((a, b) => b.title_hit - a.title_hit).slice(0, 5);

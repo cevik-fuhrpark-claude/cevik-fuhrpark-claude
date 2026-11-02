@@ -30792,6 +30792,22 @@ await test('Backlog 864 (Blickwinkel „Fahrer meldet einen Schaden, Foto verwac
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['photos_blurry', 'photos_blurry_added']) { ok(STRINGS[l][k] && STRINGS[l][k].includes('{n}'), l + ' ' + k); ok(PLURALS[l][k] && Object.values(PLURALS[l][k]).every((s) => s.includes('{n}')), l + ' Formen ' + k); }
   ok(PLURALS.uk.photos_blurry.few && PLURALS.uk.photos_blurry.many && PLURALS.uk.photos_blurry_added.few, 'uk Formen');
+  for (const [l, w] of [['de', 'unscharf'], ['uk', 'розмите'], ['en', 'blurred']]) ok(STRINGS[l].help_report_s.split('|').some((x) => x.includes(w)), 'Hilfe „Melden“ nennt den Hinweis ' + l);
+});
+
+await test('Wächter (02.11.2026): kein Code hinter einem Zeilenkommentar „verschluckt“ – globale Suche brach mit „ss is not defined“ ab (Backlog 862 hatte „const ss = …“ hinter einen Kommentar gesetzt)', async () => {
+  const fs = await import('node:fs'); const bad = [];
+  const files = [...fs.readdirSync(new URL('../src/', import.meta.url)).filter((f) => f.endsWith('.js')).map((f) => '../src/' + f), '../public/app.js', '../public/sw.js', '../public/boot.js', '../public/werkstatt/app.js', '../public/help.js', '../public/csv.js'];
+  for (const f of files) {
+    const u = new URL(f, import.meta.url); if (!fs.existsSync(u)) continue;
+    fs.readFileSync(u, 'utf8').split('\n').forEach((l, i) => {
+      if (/^\s*\/\//.test(l)) return; const m = l.match(/;\s*\/\/(.*)$/); if (!m) return;
+      if (/\b(const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*[^=]/.test(m[1]) && /;\s*$/.test(m[1])) bad.push(`${f.replace('../', '')}:${i + 1}`);
+    });
+  }
+  eq(bad.join(', '), '', 'Deklaration steht im Kommentar –');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/\n\s*const ss = sAll\.slice\(0, 10\);/.test(app), 'globale Suche: Lagertreffer deklariert');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
