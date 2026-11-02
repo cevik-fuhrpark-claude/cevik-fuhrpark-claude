@@ -9,7 +9,7 @@ import { localizedAgentBody, localizedAgentTitle } from './agent.js';
 const PRIO = { de: { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' }, uk: { niedrig: 'низький', mittel: 'середній', kritisch: 'критичний' }, en: { niedrig: 'low', mittel: 'medium', kritisch: 'critical' } };
 const T = {
   de: {
-    planned_on: 'Termin', ready_on: 'fertig ca.', ready_changed: 'Voraussichtlich fertig: neues Datum', pickup_hint: 'Abholhinweis: Mein Fahrzeug', locked_by: 'gesperrt durch {c} ({p})',
+    planned_on: 'Termin', ready_on: 'fertig ca.', ready_changed: 'Voraussichtlich fertig: neues Datum', pickup_hint: 'Abholhinweis: Mein Fahrzeug', rest_open: 'offene Restarbeiten: {n}', locked_by: 'gesperrt durch {c} ({p})',
     created: 'Neue Schadensmeldung', created_urgent: 'KRITISCH: neue Meldung (ungeprüft)', received: 'Meldung ist eingegangen',
     priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', forwarded: 'Meldung an Werkstatt übergeben', rejected: 'Meldung abgelehnt', withdrawn: 'Werkstattauftrag ohne Reparatur beendet',
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
@@ -21,7 +21,7 @@ const T = {
     res_gefaehrliche_maengel: 'gefährliche Mängel', res_verkehrsunsicher: 'verkehrsunsicher', do_not_plan: 'nicht einplanen',
   },
   uk: {
-    planned_on: 'Термін', ready_on: 'готово орієнт.', ready_changed: 'Орієнтовна готовність: нова дата', pickup_hint: 'Інформація для отримання: Мій транспорт', locked_by: 'блокує {c} ({p})',
+    planned_on: 'Термін', ready_on: 'готово орієнт.', ready_changed: 'Орієнтовна готовність: нова дата', pickup_hint: 'Інформація для отримання: Мій транспорт', rest_open: 'відкриті залишкові роботи: {n}', locked_by: 'блокує {c} ({p})',
     created: 'Нове повідомлення про пошкодження', created_urgent: 'КРИТИЧНО: нове повідомлення (неперевірене)', received: 'Повідомлення отримано',
     priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', forwarded: 'Повідомлення передано до майстерні', rejected: 'Повідомлення відхилено', withdrawn: 'Замовлення майстерні завершено без ремонту',
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
@@ -33,7 +33,7 @@ const T = {
     res_gefaehrliche_maengel: 'небезпечні дефекти', res_verkehrsunsicher: 'небезпечний для руху', do_not_plan: 'не планувати',
   },
   en: {
-    planned_on: 'Workshop date', ready_on: 'ready approx.', ready_changed: 'Expected ready: new date', pickup_hint: 'Pick-up note: My vehicle', locked_by: 'locked by {c} ({p})',
+    planned_on: 'Workshop date', ready_on: 'ready approx.', ready_changed: 'Expected ready: new date', pickup_hint: 'Pick-up note: My vehicle', rest_open: 'open items: {n}', locked_by: 'locked by {c} ({p})',
     created: 'New damage report', created_urgent: 'CRITICAL: new report (unverified)', received: 'Report received',
     priority_changed: 'Priority changed', approved: 'New workshop order', forwarded: 'Report handed over to workshop', rejected: 'Report rejected', withdrawn: 'Workshop order ended without repair',
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
@@ -126,6 +126,9 @@ export function localizedBody(n, lang) {
   // Backlog 466: fester Zusatz „Abholhinweis: Mein Fahrzeug“ der Freigabe an zugeordnete Fahrer
   let pk = '';
   if (n.kind === 'released') for (const l of LANGS) { const x = ' · ' + T[l].pickup_hint; if (core.endsWith(x)) { core = core.slice(0, -x.length); pk = ' · ' + T[L].pickup_hint; break; } }
+  // Backlog 878: „ · offene Restarbeiten: N“ der Freigabe (vor dem Abholhinweis)
+  let rest = '';
+  if (n.kind === 'released') for (const l of LANGS) { const pre = ' · ' + T[l].rest_open.split('{n}')[0]; const ix = core.lastIndexOf(pre); const m = ix > 0 ? /^(\d+)$/.exec(core.slice(ix + pre.length)) : null; if (m) { core = core.slice(0, ix); rest = ' · ' + T[L].rest_open.replace('{n}', m[1]); break; } }
   // Backlog 641: „Fahrzeug bleibt gesperrt“ nennt den sperrenden Vorgang und dessen Fahrzeug (z. B. gekoppelter Anhänger)
   if (n.kind === 'still_locked') for (const l of LANGS) { const pre = ' · ' + T[l].locked_by.split('{c}')[0]; const ix = core.lastIndexOf(pre); const m = ix > 0 ? /^(\S+) \((.+)\)$/.exec(core.slice(ix + pre.length)) : null; if (m) { core = core.slice(0, ix); pk = ' · ' + T[L].locked_by.replace('{c}', m[1]).replace('{p}', m[2]); break; } }
   // „ · Termin TT.MM.JJJJ“ (nur „Neuer Werkstattauftrag“, Backlog 455) nach der Priorität
@@ -147,7 +150,7 @@ export function localizedBody(n, lang) {
   const i = core2.lastIndexOf(' · ');
   const prio = i > 0 ? core2.slice(i + 3) : null;
   if (!prio || !PRIO_KEY.has(prio)) return b;
-  return `${core2.slice(0, i + 3)}${PRIO[L][PRIO_KEY.get(prio)]}${why ? ' · ' + T[L]['why_' + why] : ''}${plan ? ` · ${T[L].planned_on} ${dateLang(plan, L)}` : ''}${rdy ? ` · ${T[L].ready_on} ${dateLang(rdy, L)}` : ''}${pk}${test}`;
+  return `${core2.slice(0, i + 3)}${PRIO[L][PRIO_KEY.get(prio)]}${why ? ' · ' + T[L]['why_' + why] : ''}${plan ? ` · ${T[L].planned_on} ${dateLang(plan, L)}` : ''}${rdy ? ` · ${T[L].ready_on} ${dateLang(rdy, L)}` : ''}${rest}${pk}${test}`;
 }
 
 // Abschaltbare Arten, die eine Rolle überhaupt bekommen kann (Empfängerregeln in caseRecipients; 19.10.2026: Fahrer sahen z. B. „Kostenfreigabe
@@ -331,10 +334,13 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     const plan = (k === 'approved' && c.status === 'werkstatt_freigegeben' && c.planned_date) || (k === 'plan_changed' && c.planned_date) ? ` · ${T[lang].planned_on} ${dateLang(c.planned_date, lang)}` : '';
     // Backlog 466: Freigabe mit Abholhinweis „für Fahrer sichtbar“ → zugeordnete Fahrer (ohne Vorgangslink) erfahren, wo er steht – fester Satz, kein Ablageort im Sperrbildschirm
     const rdy = k === 'ready_changed' && c.ready_expected_on ? ` · ${T[lang].ready_on} ${dateLang(c.ready_expected_on, lang)}` : ''; // Backlog 873
+    // Backlog 878 (Folge aus 877): Freigabe mit offenen, nicht sicherheitsrelevanten Restarbeiten nennt deren Anzahl (keine Beschreibung im Sperrbildschirm)
+    const restN = k === 'released' && ctxData.payload ? Number(ctxData.payload.remaining_open_items) || 0 : 0;
+    const rest = restN > 0 ? ' · ' + T[lang].rest_open.replace('{n}', restN) : '';
     const pk = k === 'released' && u.assigned && ctxData.payload && ctxData.payload.pickup_for_driver ? ' · ' + T[lang].pickup_hint : '';
     // Backlog 641 (Blickwinkel „Fremder Auflieger“): „Fahrzeug bleibt gesperrt“ nennt Vorgangsnummer und Kennzeichen des sperrenden Vorgangs (keine Beschreibung)
     const lb = k === 'still_locked' && ctxData.still_locked && ctxData.still_locked.case_no ? ' · ' + T[lang].locked_by.replace('{c}', ctxData.still_locked.case_no).replace('{p}', ctxData.still_locked.plate || '') : '';
-    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${k === 'created' ? urgentWhy(c, urgent, lang) : ''}${plan}${rdy}${pk}${lb}${c.environment === 'test' ? ' · TEST' : ''}`;
+    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${k === 'created' ? urgentWhy(c, urgent, lang) : ''}${plan}${rdy}${rest}${pk}${lb}${c.environment === 'test' ? ' · TEST' : ''}`;
     rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned || u.away ? null : c.id, event_key: eventKey, kind: k, urgent: urgent ? 1 : 0, title, body, created_at: now, lang });
   }
   const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at, environment: r.environment }));

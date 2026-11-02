@@ -31253,6 +31253,39 @@ await test('Backlog 877 (Blickwinkel „Disposition plant den Lkw nach der Rück
   for (const l of ['de', 'uk', 'en']) ok(/Restarbeit|залишков|open items/.test(STRINGS[l].help_dispo_s.split('|').find((p) => p.includes(STRINGS[l].dispo_back)) || ''), l + ': Hilfe-Absatz zu „Wieder einsatzbereit“ erklärt die Restarbeiten');
 });
 
+await test('Backlog 878 (Folge aus 877): Hinweis „Fahrzeug technisch freigegeben“ nennt offene Restarbeiten (Anzahl, ohne Beschreibung) in der Sprache der Person; ohne Restarbeiten unverändert', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); void e;
+  const mk = async (un, lang) => { const x = await U.own.post('/api/users', { username: un, display_name: un, role: 'dispatch', environment: 'test', language: lang }); const c = new Client(worker, e, un); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; };
+  const D = { de: await mk('d878.de', 'de'), uk: await mk('d878.uk', 'uk'), en: await mk('d878.en', 'en') };
+  const V2 = 'VIN:WDB9630051L917317';
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const release = async (vehicle_id, rest) => {
+    const id = await toRepair({ vehicle_id });
+    eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+    for (const d of rest) eq((await cmd(U.ws, id, 'add_open_item', { description: d })).status, 200, 'Restarbeit');
+    eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+    eq((await cmd(U.fleet, id, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200, 'Freigabe');
+    return (await U.fleet.get(`/api/cases/${id}`)).data.case.case_no;
+  };
+  const a = await release(V1, ['Standheizung ohne Funktion', 'Innenleuchte Fahrerseite']);
+  const b = await release(V2, []);
+  const want = { de: 'offene Restarbeiten: 2', uk: 'відкриті залишкові роботи: 2', en: 'open items: 2' };
+  for (const l of ['de', 'uk', 'en']) {
+    const ns = (await D[l].get('/api/notifications')).data.notifications.filter((n) => n.kind === 'released');
+    const na = ns.find((n) => n.body.startsWith(a)); const nb = ns.find((n) => n.body.startsWith(b));
+    ok(na && na.body.includes(' · ' + want[l]) && !na.body.includes('Standheizung'), l + ': Anzahl ohne Beschreibung ' + (na && na.body));
+    ok(nb && !/: \d+( · TEST)?$/.test(nb.body) && !nb.body.includes(want[l].split(':')[0]), l + ': ohne Restarbeiten unverändert ' + (nb && nb.body));
+  }
+  // gespeicherter Text (Sprache der Person) wird für eine andere Anzeigesprache umgesetzt
+  const { localizedBody } = await import('../src/notify.js');
+  const deBody = (await D.de.get('/api/notifications')).data.notifications.find((n) => n.kind === 'released' && n.body.startsWith(a)).body;
+  const en = localizedBody({ kind: 'released', body: deBody }, 'en');
+  ok(en.includes(' · open items: 2') && !en.includes('Restarbeiten'), en);
+  const withPk = localizedBody({ kind: 'released', body: deBody.replace(' · TEST', '') + ' · Abholhinweis: Mein Fahrzeug' }, 'uk');
+  ok(withPk.endsWith(' · відкриті залишкові роботи: 2 · Інформація для отримання: Мій транспорт'), withPk);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
