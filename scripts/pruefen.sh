@@ -300,6 +300,7 @@ UI-Fahrzeugtausch unterwegs: Hinweis „nicht dir zugeordnet“ in Kontrolle/Mel
 UI-Werkstatt ohne Schlüssel/Fahrzeugschein: „fehlt“ im Vorgang, Vorgangsliste, Werkstattplan, DE/UK/EN 390/820/1366|ui-werkstatt-schluessel.py|/tmp/cfp-werkstatt-schluessel.log
 UI-Abholung nach der Reparatur: Abholvermerk Werkstatt → Freigabe → Fahrerhinweis, Vorgang/Fahrzeugakte, DE/UK/EN 390/820/1366|ui-abholung.py|/tmp/cfp-abholung.log
 UI-Abholhinweis ersetzt (Backlog 879): frühere Abholhinweise für Fahrer bei der nächsten Freigabe archiviert, Formular + Verlauf, DE/UK/EN 390/820/1366|ui-abholung-ersetzt.py|/tmp/cfp-abholung-ersetzt.log
+UI-Fährt bis zur Teilelieferung (Backlog 880): Leitung setzt/entfernt den Vermerk im Vorgang, Disposition sieht eigenen Abschnitt statt „Nicht einplanen“, DE/UK/EN 390/820/1366|ui-teilefahrt.py|/tmp/cfp-teilefahrt.log
 UI-Externe Werkstatt: Abschlusskontrolle + Freigabe in einem Schritt, Abholvermerk aus Standort, DE/UK/EN 390/820/1366|ui-extern-abschluss.py|/tmp/cfp-extern-abschluss.log
 UI-Diebstahl auf dem Rastplatz: Diebstahl-/Planen-/Auflieger-Hinweis im Meldeformular, Versicherungsliste mit Ort, DE/UK/EN 390/820/1366|ui-diebstahl-rastplatz.py|/tmp/cfp-diebstahl-rastplatz.log
 UI-Gespann im Vorgang: Zugmaschine/Auflieger mit offenem Vorgang, Polizeiangaben übernehmen, gleiche Schadennummer, DE/UK/EN 390/820/1366|ui-gespann-polizei.py|/tmp/cfp-gespann-polizei.log

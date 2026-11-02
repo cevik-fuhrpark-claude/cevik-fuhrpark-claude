@@ -752,6 +752,7 @@ export async function masterPanel(env, environment) {
     WHERE c.environment=? AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(environment).first()).n;
   const inWorkshop = (await env.DB.prepare(`SELECT COUNT(DISTINCT c.vehicle_id) AS n FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.active=1 AND v.eval_excluded=0
     WHERE c.environment=?1 AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')
+      AND NOT (c.status='wartet_teile' AND c.parts_drive_at IS NOT NULL) -- Backlog 880: fährt bis zur Teilelieferung (wie Fahrzeugliste)
       AND NOT EXISTS (SELECT 1 FROM cases l WHERE l.vehicle_id=c.vehicle_id AND l.environment=?1 AND l.safety_lock=1 AND l.status NOT IN ('fahrzeug_freigegeben','abgelehnt'))`).bind(environment).first()).n;
   // „In Werkstatt“ ohne gesperrte (zählen unter „Gesperrt“) – wie die Startseite, jedes Fahrzeug einmal (22.10.2026: Startseite 2, Management 3)
   // je Befund eine offene Entscheidung: wiederkehrender Befund (neue Übergabe) zählte den alten, nie entschiedenen Eintrag mit (17.10.2026);

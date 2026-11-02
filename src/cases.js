@@ -350,7 +350,7 @@ function shapeOmit(user) {
   if (!o) {
     o = new Set(['request_key', 'content_hash']);
     if (!canSeeCosts(user)) o.add('cost_approved_net');
-    if (user.role === 'driver') { o.add('cost_over_limit_at'); o.add('fleet_received_by'); o.add('workshop_ack_by'); } // Fahrer: keine internen Zuständigkeiten
+    if (user.role === 'driver') { o.add('cost_over_limit_at'); o.add('fleet_received_by'); o.add('workshop_ack_by'); o.add('parts_drive_by'); } // Fahrer: keine internen Zuständigkeiten
     // Backlog 867: Arbeitsstand ist eine Übergabe innerhalb der Werkstatt/Leitung (Fahrer sieht Status und Abholvermerk)
     if (user.role === 'driver') { o.add('work_state_note'); o.add('work_state_at'); o.add('work_state_by'); o.add('work_state_by_name'); }
     if (user.role === 'viewer') o.add('reporter_name_note'); // freier Namensvermerk – Datensparsamkeit Lesezugriff
@@ -995,6 +995,8 @@ export function allowedActions(user, c, access) {
       break;
     case 'wartet_teile':
       if (ws || mgr) a.push('resume_repair', 'parts_partial', 'set_planned_date', 'set_parts_eta', 'set_ready_date', 'set_work_state');
+      // Backlog 880: Fahrzeug fährt bis zur Teilelieferung – entscheidet die Leitung (nicht bei Sperre; Entfernen jederzeit)
+      if (mgr && (!c.safety_lock || c.parts_drive_at)) a.push('set_parts_drive');
       break;
     case 'abschlusskontrolle':
       if (mgr) a.push('return_for_rework', 'technical_release');
@@ -1569,6 +1571,22 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       payload = ws0 ? (c.work_state_note ? { changed: true } : {}) : { cleared: true };
       break;
     }
+    case 'set_parts_drive': {
+      // Backlog 880 (Blickwinkel „Werkstatt wartet auf Teile, der Lkw fährt so lange weiter“): Leitung vermerkt, dass das Fahrzeug bis zur
+      // Teilelieferung wieder fahren darf – es gilt dann nicht mehr als „in Werkstatt“ (Fahrzeugliste, Disposition, Schnittstelle).
+      // Nur ohne Sicherheitssperre und ohne offene sicherheitsrelevante Restarbeiten; Bemerkung optional (z. B. „nur Nahverkehr“).
+      // Ohne Statuswechsel und ohne Push; mit jedem Statuswechsel, einer Sperre oder einer sicherheitsrelevanten Restarbeit entfernt.
+      const on = flag(p.on, 'Fährt bis zur Teilelieferung');
+      if (on === !!c.parts_drive_at) throw bad('validation', on ? 'Fahrzeug fährt laut Vorgang bereits bis zur Teilelieferung.' : 'Vermerk „fährt bis zur Teilelieferung“ ist nicht gesetzt.');
+      if (on) {
+        if (c.safety_lock) throw bad('parts_drive_locked', 'Fahrzeug ist gesperrt – es darf nicht bis zur Teilelieferung fahren.');
+        const safetyOpenD = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
+        if (safetyOpenD.n > 0) throw bad('safety_items_open', 'Es gibt offene sicherheitsrelevante Restarbeiten.');
+      }
+      set.parts_drive_at = on ? now : null; set.parts_drive_by = on ? user.id : null;
+      payload = on ? { on: true } : { cleared: true };
+      break;
+    }
     case 'set_handover': {
       // Backlog 423 (Blickwinkel „Werkstatt bekommt den Lkw ohne Schlüssel/Fahrzeugschein“): je Gegenstand „bei der Werkstatt“/„fehlt“/
       // nicht angegeben (leer). Neu „fehlt“ → Hinweis an Leitung und Melder (hat den Schlüssel oft noch); ohne Statuswechsel.
@@ -2043,6 +2061,11 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   if (!OPEN_STATUSES.includes(toStatus) && (c.followup_on || c.followup_note)) { set.followup_on = null; set.followup_note = null; }
   // Backlog 867: Arbeitsstand gilt nur in Reparatur/„wartet auf Teile“ – mit Abschlusskontrolle, Freigabe oder Beenden entfernt (bleibt im Verlauf)
   if (c.work_state_note && !['in_reparatur', 'wartet_teile'].includes(toStatus)) { set.work_state_note = null; set.work_state_at = null; set.work_state_by = null; }
+  // Backlog 880: „fährt bis zur Teilelieferung“ endet mit jedem Statuswechsel (Teile da, Beenden …), einer Sperre bzw. einer sicherheitsrelevanten
+  // Restarbeit – das Fahrzeug gilt dann wieder als in der Werkstatt bzw. gesperrt (Verlauf: `parts_drive_ended`)
+  if (c.parts_drive_at && action !== 'set_parts_drive' && (toStatus !== 'wartet_teile' || set.safety_lock === 1 || (action === 'add_open_item' && payload && payload.safety_relevant))) {
+    set.parts_drive_at = null; set.parts_drive_by = null; payload = { ...(payload || {}), parts_drive_ended: true };
+  }
   // Backlog 871: voraussichtlich fertig gilt nur bis zur Abschlusskontrolle (bleibt im Verlauf)
   if (c.ready_expected_on && !READY_STATUSES.includes(toStatus)) set.ready_expected_on = null;
   set.status = toStatus; set.version = newVersion; set.updated_at = now;

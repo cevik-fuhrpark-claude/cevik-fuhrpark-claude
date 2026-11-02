@@ -400,6 +400,9 @@ const V_MORE = [
   ['Datum „Fristen bis“ ungültig.', 'Недійсна дата «Строки до».', 'Invalid “Deadlines by” date.'],
   ['Arbeitsstand ist zu lang (max. 500 Zeichen).', 'Стан робіт задовгий (макс. 500 символів).', 'The work status is too long (max. 500 characters).'],
   ['Arbeitsstand ist unverändert.', 'Стан робіт не змінено.', 'The work status is unchanged.'],
+  ['Fahrzeug fährt laut Vorgang bereits bis zur Teilelieferung.', 'За заявкою транспорт уже їздить до постачання запчастин.', 'According to the case, the vehicle already drives until the parts arrive.'],
+  ['Vermerk „fährt bis zur Teilelieferung“ ist nicht gesetzt.', 'Позначку «їздить до постачання запчастин» не встановлено.', 'The note “drives until the parts arrive” is not set.'],
+  ['Fahrzeug ist gesperrt – es darf nicht bis zur Teilelieferung fahren.', 'Транспорт заблоковано – він не може їздити до постачання запчастин.', 'The vehicle is locked – it must not drive until the parts arrive.'],
   ['Fertigstellung im Format JJJJ-MM-TT.', 'Дата готовності у форматі РРРР-ММ-ДД.', 'Ready date in the format YYYY-MM-DD.'],
   ['Voraussichtliche Fertigstellung liegt in der Vergangenheit.', 'Орієнтовна дата готовності вже минула.', 'The expected ready date is in the past.'],
   ['Voraussichtliche Fertigstellung liegt mehr als ein Jahr in der Zukunft.', 'Орієнтовна дата готовності більш ніж через рік.', 'The expected ready date is more than a year in the future.'],
@@ -1208,6 +1211,8 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 875: „voraussichtlich fertig“ mehrfach verschoben (Vorgang)
 // [CLAUDE] Backlog 873 (Folge aus 871): Hinweis „Voraussichtlich fertig: neues Datum“ – Art in den Push-Einstellungen
 // [CLAUDE] Backlog 879 (Blickwinkel „Fahrer holt den Lkw nach Feierabend in der Werkstatt ab“): frühere Abholhinweise werden bei der Freigabe archiviert
+
+// [CLAUDE] Backlog 880 (Blickwinkel „Werkstatt wartet auf Teile, der Lkw fährt so lange weiter“): Fahrzeug fährt bis zur Teilelieferung
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

@@ -38,7 +38,8 @@ export async function listVehicles(env, user, envName, query = {}) {
   const rows = (await env.DB.prepare(`SELECT v.*,
       (SELECT COUNT(*) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS open_cases,
       (SELECT MAX(c.safety_lock) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS locked,
-      (SELECT COUNT(*) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')) AS in_workshop,
+      (SELECT COUNT(*) FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')
+        AND NOT (c.status='wartet_teile' AND c.parts_drive_at IS NOT NULL AND c.safety_lock=0)) AS in_workshop, -- Backlog 880: fährt bis zur Teilelieferung
       (SELECT km FROM odometer_readings o WHERE o.vehicle_id=v.id ORDER BY measured_at DESC LIMIT 1) AS last_km,
       (SELECT MAX(measured_at) FROM odometer_readings o WHERE o.vehicle_id=v.id) AS last_km_at,
       -- Backlog 561: Datum + Art der frühesten Fälligkeit (bei gleichem Datum alphabetisch erste Art; HU/SP siehe unten)
@@ -848,7 +849,7 @@ export async function myVehicles(env, user, envName) {
     env.DB.prepare(`SELECT vehicle_id, MAX(safety_lock) AS locked, COUNT(*) AS open FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') GROUP BY vehicle_id`).bind(envName, ids).all(),
     // alle offenen Vorgänge der eigenen Fahrzeuge (ohne Namen der Meldenden): Fahrer sieht bekannte Mängel und meldet sie nicht doppelt
-    env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, substr(description,1,300) AS description, created_at, check_item, safety_lock, planned_date, planned_note, parts_expected_date, ready_expected_on, vehicle_location, tow_service, towed_on, vehicle_location_at, workshop_site, reported_driveability, reporter_id=? AS mine
+    env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, substr(description,1,300) AS description, created_at, check_item, safety_lock, planned_date, planned_note, parts_expected_date, ready_expected_on, vehicle_location, tow_service, towed_on, vehicle_location_at, workshop_site, reported_driveability, parts_drive_at, reporter_id=? AS mine
       FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC LIMIT 200`).bind(user.id, envName, ids).all(),
     env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, planned_date, due_km, interval_km, last_done_km, last_done_date, km_basis_at, updated_at FROM maintenance_rules WHERE vehicle_id IN (SELECT value FROM json_each(?))
@@ -916,7 +917,9 @@ export async function myVehicles(env, user, envName) {
         workshop_site: c.status !== 'gemeldet' && c.workshop_site ? c.workshop_site : null,
         driveability: ['eingeschraenkt', 'nicht_fahrbereit'].includes(c.reported_driveability) ? c.reported_driveability : null,
         // Teile-Liefertermin laut Werkstatt (nur ab heute – ein überschrittener Termin ist Sache der Werkstatt/Leitung)
-        parts_expected_date: c.status === 'wartet_teile' && c.parts_expected_date >= today ? c.parts_expected_date : null }));
+        parts_expected_date: c.status === 'wartet_teile' && c.parts_expected_date >= today ? c.parts_expected_date : null,
+        // Backlog 880: Leitung hat vermerkt, dass das Fahrzeug bis zur Teilelieferung fahren darf (nur ja/nein, ohne Person)
+        parts_drive: c.status === 'wartet_teile' && !!c.parts_drive_at && !c.safety_lock }));
   // Fahrtenschreiber-Prüfung (§ 57b StVZO) beim Lkw ohne Frist: wie HU/SP „fehlend = ungeklärt“ statt still weglassen (Backlog 436,
   // Blickwinkel „Kalibrierung läuft ab“ – bei der Straßenkontrolle wird das Einbauschild geprüft). Nicht bei Anhängern und ruhenden Fahrzeugen
   // (gleiche Pflichtliste wie Lückenliste/Datenqualität); eine Frist wird nicht angenommen.
@@ -934,7 +937,7 @@ export async function myVehicles(env, user, envName) {
     vehicles: vs.map((v) => ({
       // Backlog 403: ruhend → Hinweis an den Fahrer
       ...v, eval_excluded: !!v.eval_excluded, locked: !!(lockMap.get(v.id) || {}).locked, open_cases_total: (lockMap.get(v.id) || {}).open || 0,
-      my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id && c.mine).map(({ mine: _m, check_item: _c, safety_lock: _s, planned_date: _p, planned_note: _n, parts_expected_date: _e, vehicle_location: _l, tow_service: _t, towed_on: _o, vehicle_location_at: _a, workshop_site: _w, reported_driveability: _d, ...c }) => c),
+      my_open_cases: mine.results.filter((c) => c.vehicle_id === v.id && c.mine).map(({ mine: _m, check_item: _c, safety_lock: _s, planned_date: _p, planned_note: _n, parts_expected_date: _e, vehicle_location: _l, tow_service: _t, towed_on: _o, vehicle_location_at: _a, workshop_site: _w, reported_driveability: _d, parts_drive_at: _pd, ...c }) => c),
       // alle offenen (vorher still 10 – ältere sicherheitsrelevante verdrängt, 20.10.2026); gesperrte/kritische zuerst
       known_defects: defects(v.id), open_items_after_release: relOf(v.id),
       next_inspections: nextInsp(v.id), inspections_unclear: unclearBy.get(v.id) || [],

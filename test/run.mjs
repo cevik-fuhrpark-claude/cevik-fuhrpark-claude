@@ -17230,7 +17230,7 @@ await test('Rechenzeit Vorgangsliste/CSV 22.10.: Vorgangszeilen in einem Durchla
   const old = (c, user) => { const out = { ...c }; delete out.request_key; delete out.content_hash; if (!['owner', 'fleet'].includes(user.role)) delete out.cost_approved_net;
     if ('cost_over_limit_at' in out && !OPEN_STATUSES.includes(out.status)) out.cost_over_limit_at = null; if (user.role === 'driver') delete out.cost_over_limit_at;
     if (user.role === 'viewer') delete out.reporter_name_note; if (user.role === 'driver' || user.role === 'workshop') { delete out.followup_on; delete out.followup_note; }
-    if (user.role === 'driver') { delete out.fleet_received_by; delete out.workshop_ack_by; }
+    if (user.role === 'driver') { delete out.fleet_received_by; delete out.workshop_ack_by; delete out.parts_drive_by; } // Backlog 880
     if (user.role === 'driver') { delete out.work_state_note; delete out.work_state_at; delete out.work_state_by; } return out; }; // Backlog 867
   const { e, U, newCase } = await freshWorld(); const db = e.DB.db;
   for (const priority of ['kritisch', 'mittel', 'niedrig']) await newCase({ priority });
@@ -30674,7 +30674,8 @@ await test('Backlog 856–857 (Blickwinkel „Werkstatt-Nacharbeit“): frühere
   eq(JSON.stringify(ps.ext_suppliers), JSON.stringify(['Abschlepp Süd', 'Achsvermessung Nord', 'Bremsen Müller GmbH']), '856: gleiche Firma einmal, max. 3, sortiert'); ok('workshop_site' in ps);
   const ra = vi.recent_closed.find((x) => x.id === a), rb = vi.recent_closed.find((x) => x.id === b); ok(ra && rb, JSON.stringify(vi.recent_closed));
   eq(ra.ext_suppliers.length, 3, 'recent_closed mit Fremdfirmen'); eq(JSON.stringify(rb.ext_suppliers), '[]', 'ohne Fremdleistung leer'); eq(ra.workshop_site, db.prepare('SELECT workshop_site FROM cases WHERE id=?').get(a).workshop_site);
-  ok(!JSON.stringify(vi.recent_closed).includes('100'), 'keine Beträge');
+  // ohne Kennungen/Zeitstempel prüfen – eine UUID bzw. Uhrzeit mit „100“ machte den Test zufällig rot (02.11.2026)
+  ok(!JSON.stringify(vi.recent_closed.map(({ id: _i, closed_at: _c, case_no: _n, ...r }) => r)).includes('100'), 'keine Beträge');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-viby') && app.includes('id="xsprev"') && app.includes("t('ext_prev_same')"), 'Oberfläche');
   const m = app.match(/const extPrevSame = [^\n]+/); ok(m, 'Hilfsfunktion');
@@ -31344,6 +31345,88 @@ await test('Backlog 879 (Blickwinkel „Fahrer holt den Lkw nach Feierabend in d
   for (const l of ['de', 'uk', 'en']) {
     ok(STRINGS[l].pu_replaced_hint.includes('{d}') && STRINGS[l].pu_ev_replaced.includes('{n}') && PLURALS[l].pu_ev_replaced.one.includes('{n}'), l);
     ok(/Fach|archiv|архів/i.test(STRINGS[l].help_fleet_s.split('|').find((x) => x.startsWith(STRINGS[l].pu_title)) || ''), `Hilfe ${l}`);
+  }
+});
+
+await test('Backlog 880 (Blickwinkel „Werkstatt wartet auf Teile, der Lkw fährt so lange weiter“): Leitung vermerkt „fährt bis zur Teilelieferung“ (Migration 0102) – nicht mehr „in Werkstatt“, Disposition/Fahrer sehen es, endet mit Statuswechsel/Sperre/sicherheitsrelevanter Restarbeit', async () => {
+  const { U, cmd, toRepair, V1 } = await freshWorld();
+  const av = async () => (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === V1);
+  const id = await toRepair();
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '1' }, 'zu früh')).status, 403, 'nur bei „wartet auf Teile“');
+  eq((await cmd(U.ws, id, 'wait_parts', { parts_expected_date: (() => { const d = new Date(Date.now() + 5 * 86400000); return d.toISOString().slice(0, 10); })() }, 'Luftbalg bestellt')).status, 200);
+  let d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.allowed_actions.includes('set_parts_drive'), 'Knopf für die Leitung');
+  ok(!(await U.ws.get(`/api/cases/${id}`)).data.allowed_actions.includes('set_parts_drive'), 'Werkstatt entscheidet nicht');
+  eq((await cmd(U.ws, id, 'set_parts_drive', { on: '1' })).status, 403, 'Werkstatt');
+  eq((await cmd(U.driver, id, 'set_parts_drive', { on: '1' })).status, 403, 'Fahrer');
+  eq((await av()).availability, 'werkstatt', 'vorher in Werkstatt');
+  { const r = await cmd(U.fleet, id, 'set_parts_drive', { on: '0' }); eq(r.status, 400); ok(/nicht gesetzt/.test(r.data.message), r.data.message); }
+  { const r = await cmd(U.fleet, id, 'set_parts_drive', { on: 'vielleicht' }); eq(r.status, 400); }
+  // sicherheitsrelevante Restarbeit offen → abgelehnt
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Bremsleitung scheuert', safety_relevant: true })).status, 200);
+  { const r = await cmd(U.fleet, id, 'set_parts_drive', { on: '1' }); eq(r.status, 400); eq(r.data.error, 'safety_items_open'); }
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  const oi = d.open_items.find((o) => o.safety_relevant && o.status === 'offen');
+  eq((await cmd(U.ws, id, 'resolve_open_item', { open_item_id: oi.id }, 'Leitung getauscht')).status, 200);
+  // setzen
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '1' }, 'nur Nahverkehr')).status, 200);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.case.parts_drive_at && d.case.parts_drive_by === U.fleet.id, 'Zeit/Person'); eq(d.case.status, 'wartet_teile', 'kein Statuswechsel');
+  ok(d.events.some((x) => x.action === 'set_parts_drive' && x.payload.on === true && x.note === 'nur Nahverkehr'), 'Verlauf');
+  { const r = await cmd(U.fleet, id, 'set_parts_drive', { on: '1' }); eq(r.status, 400); ok(/bereits/.test(r.data.message)); }
+  eq((await av()).availability, 'meldung_offen', 'nicht mehr „in Werkstatt“');
+  eq((await av()).in_workshop, 0);
+  // Liste (Disposition) mit Zeitpunkt; Fahrer ohne Person, mit Kennzeichen am bekannten Mangel
+  const row = (await U.viewer.get('/api/cases?status=open&limit=500')).data.cases.find((x) => x.id === id);
+  ok(row && row.parts_drive_at, 'Liste (Lesende/Disposition)');
+  const drow = (await U.driver.get('/api/cases?status=open')).data.cases.find((x) => x.id === id);
+  ok(drow && drow.parts_drive_at && !('parts_drive_by' in drow), 'Fahrer-Liste ohne Person');
+  await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test 880' });
+  const mv = (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1);
+  const kd = mv.known_defects.find((k) => k.case_no === d.case.case_no);
+  eq(kd.parts_drive, true, 'Fahrer sieht „fährt bis zur Teilelieferung“');
+  ok(!mv.my_open_cases.some((c) => 'parts_drive_at' in c), 'eigene Meldungen ohne Rohfeld');
+  // Teillieferung lässt den Vermerk stehen, „Reparatur fortsetzen“ beendet ihn
+  eq((await cmd(U.ws, id, 'parts_partial', {}, 'Rest kommt Freitag')).status, 200);
+  ok((await U.fleet.get(`/api/cases/${id}`)).data.case.parts_drive_at, 'Teillieferung ändert nichts');
+  eq((await cmd(U.ws, id, 'resume_repair')).status, 200);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.case.parts_drive_at === null && d.case.parts_drive_by === null, 'beendet');
+  ok(d.events.find((x) => x.action === 'resume_repair').payload.parts_drive_ended === true, 'Verlauf „beendet“');
+  eq((await av()).availability, 'werkstatt', 'wieder in Werkstatt');
+  ok(!d.allowed_actions.includes('set_parts_drive'), 'in Reparatur kein Knopf');
+  // erneut warten, setzen, dann Sperre → beendet; bei Sperre kein Knopf
+  eq((await cmd(U.ws, id, 'wait_parts', {}, 'Nachbestellung')).status, 200);
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '1' })).status, 200);
+  eq((await cmd(U.fleet, id, 'set_safety_lock', {}, 'Luftbalg geplatzt')).status, 200);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.case.parts_drive_at === null && d.events.filter((x) => x.action === 'set_safety_lock').pop().payload.parts_drive_ended === true, 'Sperre beendet');
+  ok(!d.allowed_actions.includes('set_parts_drive'), 'gesperrt: kein Knopf');
+  { const r = await cmd(U.fleet, id, 'set_parts_drive', { on: '1' }); eq(r.status, 403); }
+  eq((await av()).availability, 'gesperrt');
+  eq((await cmd(U.fleet, id, 'lift_safety_lock', { confirm: true }, 'Luftbalg provisorisch abgedichtet, geprüft')).status, 200);
+  // sicherheitsrelevante Restarbeit beendet ihn; von Hand entfernen
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '1' })).status, 200);
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Reifen eingerissen', safety_relevant: true })).status, 200);
+  ok((await U.fleet.get(`/api/cases/${id}`)).data.case.parts_drive_at === null, 'sicherheitsrelevante Restarbeit beendet');
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq((await cmd(U.ws, id, 'resolve_open_item', { open_item_id: d.open_items.find((o) => o.status === 'offen' && o.safety_relevant).id }, 'getauscht')).status, 200);
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Sitzbezug eingerissen', safety_relevant: false })).status, 200);
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '1' })).status, 200);
+  ok((await U.fleet.get(`/api/cases/${id}`)).data.case.parts_drive_at, 'nicht sicherheitsrelevante Restarbeit ändert nichts');
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '0' })).status, 200);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.case.parts_drive_at === null && d.events.filter((x) => x.action === 'set_parts_drive').pop().payload.cleared === true, 'von Hand entfernt');
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const rank = (c) => (c.safety_lock ? 3 : c.status === 'wartet_teile' && c.parts_drive_at ? 0 :") && app.includes('id="dpdrive"') && app.includes('+ pdHtml + upHtml'), 'Disposition: eigener Abschnitt statt „Nicht einplanen“');
+  ok(app.includes('${pdrList(c)}') && app.includes('${pdrInfo(c, d)}') && app.includes('data-kdpdr') && app.includes("case 'set_parts_drive':"), 'Liste, Vorgang, Fahrer, Formular');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l];
+    for (const k of ['act_set_parts_drive', 'pdr_title', 'pdr_short', 'pdr_yes', 'pdr_back_hint', 'pdr_on_hint', 'pdr_off_hint', 'pdr_ev_on', 'pdr_ev_off', 'pdr_ev_ended', 'dispo_pdrive', 'dispo_pdrive_hint']) ok(S[k], l + ': ' + k);
+    ok(S.help_fleet_s.split('|').some((x) => x.includes(S.act_set_parts_drive)), l + ': Hilfe Fuhrparkleitung nennt den Knopf');
+    ok(S.help_dispo_s.split('|').some((x) => x.includes(S.dispo_pdrive)), l + ': Hilfe Disposition nennt den Abschnitt');
   }
 });
 
