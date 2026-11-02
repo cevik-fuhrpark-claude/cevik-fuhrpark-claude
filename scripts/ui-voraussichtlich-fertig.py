@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (02.11.2026, Backlog 871, Blickwinkel „Fahrer fragt: wann ist mein Lkw fertig?“):
 # Werkstatt trägt im Vorgang „Voraussichtlich fertig“ über das Formular ein → Vorgang zeigt das Datum; der Fahrer sieht es im Vorgang
-# und in seiner Meldungsliste auf der Startseite. DE/UK/EN bei 390/820/1366 px, ohne Querscrollen/Skriptfehler.
+# und in seiner Meldungsliste auf der Startseite sowie den Hinweis „Voraussichtlich fertig: neues Datum“ (Backlog 873). DE/UK/EN bei 390/820/1366 px, ohne Querscrollen/Skriptfehler.
 import os, datetime
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -72,6 +72,13 @@ with sync_playwright() as p:
         check(dd[2] in q.locator('#rdy').inner_text(),f'{lang}/{w}: Fahrer sieht Datum im Vorgang')
         check(q.locator('button[data-act="set_ready_date"]').count()==0,f'{lang}/{w}: Fahrer ohne Knopf')
         if SHOTS: q.locator('#rdy').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/fertig-fahrer-vorgang-{lang}-{w}.png')
+        # Backlog 873: Hinweis „Voraussichtlich fertig: neues Datum“ im Posteingang des Fahrers (Sprache des Kontos)
+        P=q.evaluate("async (l) => { const m = await import('/i18n.js'); return m.STRINGS[l].pk_ready_changed; }", lang)
+        q.goto(B+'/#/inbox'); q.wait_for_selector('#nfil, .list, main',timeout=15000)
+        q.wait_for_function("(p) => document.body.innerText.includes(p)", arg=P, timeout=15000)
+        check(P in q.inner_text('body') and dd[2] in q.inner_text('body'),f'{lang}/{w}: Posteingang „{P}“ mit Datum')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: Posteingang ohne Querscrollen')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/fertig-fahrer-hinweis-{lang}-{w}.png')
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:2]}')
         ctx.close()
     br.close()

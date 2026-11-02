@@ -1555,6 +1555,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (d && c.status === 'werkstatt_freigegeben' && c.planned_date && d < c.planned_date) throw bad('validation', 'Voraussichtliche Fertigstellung liegt vor dem Werkstatttermin.');
       if (d === (c.ready_expected_on || null)) throw bad('validation', 'Voraussichtliche Fertigstellung ist unverändert.');
       set.ready_expected_on = d; payload = { from: c.ready_expected_on || null, to: d };
+      if (d) notifyKind = 'ready_changed'; // Backlog 873: neues/geändertes Datum melden (Entfernen still – nichts Neues zu planen)
       break;
     }
     case 'set_work_state': {

@@ -31093,6 +31093,40 @@ await test('Backlog 872 (Folge aus 871): Filter ready_overdue=1 – „voraussic
   }
 });
 
+await test('Backlog 873 (Folge aus 871): „Voraussichtlich fertig: neues Datum“ – Hinweis an Disposition, Melder (mit Link), zugeordnete Fahrer (ohne Link) und die andere Seite; nicht dringend, mit Datum (DE/UK/EN, Sprachwechsel); Entfernen still; abschaltbar', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'r.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test', language: 'uk' });
+  const D = new Client(worker, e, 'r.dispo'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const mk = async (un) => { const y = await U.own.post('/api/users', { username: un, display_name: un, role: 'driver', environment: 'test' }); const c = new Client(worker, e, un); await c.post('/api/invite/accept', { token: y.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; };
+  const d2 = await mk('r.fahrer2'); const d3 = await mk('r.fahrer3');
+  const uid2 = (await d2.get('/api/me')).data.user.id;
+  ok([200, 201].includes((await U.fleet.post('/api/vehicles/VIN:WMA15SZZ2HM722774/drivers', { user_id: uid2, evidence: 'Dienstplan' })).status), 'Zuordnung');
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const dmy = (d) => d.split('-').reverse().join('.');
+  const id = await toRepair(); // Melder: U.driver
+  const rc = async (c) => (await c.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'ready_changed');
+  eq((await cmd(U.ws, id, 'set_ready_date', { ready_expected_on: day(3) })).status, 200);
+  let d = await rc(D); eq(d.length, 1, 'Disposition informiert');
+  ok(d[0].title === 'Орієнтовна готовність: нова дата' && d[0].body.includes(dmy(day(3))) && !d[0].urgent, 'Titel UK, Datum, nicht dringend: ' + JSON.stringify(d[0]));
+  const r = await rc(U.driver); eq(r.length, 1, 'Melder'); eq(r[0].case_id, id, 'Melder mit Link');
+  const a = await rc(d2); eq(a.length, 1, 'zugeordneter Fahrer'); eq(a[0].case_id, null, 'ohne Link auf fremden Vorgang');
+  eq((await rc(d3)).length, 0, 'anderer Fahrer nicht');
+  eq((await rc(U.fleet)).length, 1, 'Leitung (Werkstatt hat eingetragen)'); eq((await rc(U.ws)).length, 0, 'Werkstatt selbst nicht');
+  // Leitung ändert → Werkstatt informiert; Entfernen → kein Hinweis
+  eq((await cmd(U.fleet, id, 'set_ready_date', { ready_expected_on: day(5) })).status, 200);
+  eq((await rc(U.ws)).length, 1, 'Werkstatt (Leitung hat geändert)'); eq((await rc(D)).length, 2, 'Disposition zweimal'); eq((await rc(U.fleet)).length, 1, 'Leitung nicht für eigene Änderung');
+  eq((await cmd(U.fleet, id, 'set_ready_date', { ready_expected_on: '' })).status, 200);
+  eq((await rc(D)).length, 2, 'Entfernen: kein Hinweis');
+  // Text je Sprache umgeschrieben; Push-Einstellungen
+  const { localizedBody, localizedTitle } = await import('../src/notify.js');
+  const w = (await rc(U.ws))[0];
+  ok(localizedTitle(w, 'en') === 'Expected ready: new date' && localizedBody(w, 'en').includes('ready approx. ' + new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC' }).format(new Date(day(5) + 'T12:00:00Z'))) && localizedBody(w, 'de').includes('fertig ca. ' + dmy(day(5))), 'Sprachwechsel: ' + localizedBody(w, 'en'));
+  for (const c of [D, U.driver, d2, U.ws]) ok((await c.get('/api/me/notify-prefs')).data.kinds.includes('ready_changed'), 'abschaltbar');
+  ok(!(await U.viewer.get('/api/me/notify-prefs')).data.kinds.includes('ready_changed'), 'Lesezugriff ohne');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].pk_ready_changed === localizedTitle({ kind: 'ready_changed', title: 'Voraussichtlich fertig: neues Datum' }, l), l + ': Push-Art = Titel');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
