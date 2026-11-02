@@ -441,6 +441,7 @@ UI-Zweifahrerbetrieb: Bußgeld ohne Zuordnung mit zwei Kontrollen vor der Tatzei
 UI-Werkstatt-Nacharbeit: frühere Aufträge mit Werkstatt/Fremdfirma, Hinweis gleiche Firma im Formular Fremdleistung (DE/UK/EN; Backlog 856/857)|ui-nacharbeit.py|/tmp/cfp-nacharbeit.log
 UI-Verkauf: Außer Betrieb nennt laufende Gewährleistungen (DE/UK/EN; Backlog 859)|ui-verkauf-gewaehrleistung.py|/tmp/cfp-verkauf-gewaehrleistung.log
 UI-Lieferantenwechsel: Wareneingang nennt letzten Lieferanten/Preis, Hinweis anderer Lieferant und Preisabweichung (DE/UK/EN; Backlog 860)|ui-lieferantenwechsel.py|/tmp/cfp-lieferantenwechsel.log
+UI-Teilesuche: Lagerliste, Teil buchen und Wareneingang finden Teilenummern ohne Leerzeichen, Suchfeld über der Artikelauswahl (DE/UK/EN; Backlog 862)|ui-teilesuche.py|/tmp/cfp-teilesuche.log
 UI-Reifenwechsel mit anderer Größe als für die Achse hinterlegt: Hinweis beim Tippen und nach dem Speichern (DE/UK/EN; Backlog 849)|ui-reifen-groesse-abweichend.py|/tmp/cfp-reifen-groesse-abweichend.log
 '
 N=0

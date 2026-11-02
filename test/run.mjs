@@ -6703,7 +6703,7 @@ await test('Hilfe: Suche (alle Wörter, ü/ue/ß gleich, DE/UK/EN), Inhaltsverze
   ok(app.includes("res.length === 1 ? t('help_hits1')"), 'Trefferzeile: Einzahl bei genau einem Abschnitt');
   // Lagerliste und globale Suche (Lager): gleiche Normalisierung – „bremsbelaege“/„BREMSBELAGE“ finden „Bremsbeläge“
   ok(app.includes("data-s=\"${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}\"") && app.includes("const q = helpNorm($('#q').value); const f = $('#sf').value;"), 'Lagerliste: helpNorm auf beiden Seiten');
-  ok(searchSrc.includes('helpNorm(x).includes(hq)'), 'Globale Suche Lager: helpNorm');
+  ok(searchSrc.includes('stockList.filter((i) => stockHit(i, q))') && app.includes('[i.name, i.part_number, i.location].some((x) => helpNorm(x).includes(h))'), 'Globale Suche Lager: helpNorm (seit Backlog 862 über stockHit)');
   for (const q of ['bremsbelaege', 'BREMSBELAGE', 'Bremsbeläge vorne', 'brems']) ok(helpNorm('Bremsbeläge vorne A 000 420').includes(helpNorm(q)), 'Lager: ' + q);
   ok(/'\/help\.js'/.test(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8')), 'help.js im Offline-Cache');
 });
@@ -25323,7 +25323,7 @@ await test('Backlog 510–516 (Blickwinkel „Monatsende: km-Meldung an den Leas
   ok(app.includes("S.ctAsOf = v && v <= bDate() ? v : '';"), '511: Oberfläche');
   ok(app.includes('if (c.no_reading) out.push(`<span class="muted" data-ctnoread>') && c.no_reading === true, '512: Zeile in der Liste (seit 601 aus no_reading, gleiche Regel wie CSV)');
   ok(app.includes("S.meta.workshops.filter((w) => w.code !== c.workshop_site)") && app.includes('${rwsDrop(c)}') && app.includes('${rwsDrop(i)}'), '513/514');
-  ok(app.includes("`<label>${esc(t('from_stock'))}: ${esc(wsName(c.workshop_site))}</label>") && app.includes("t('stock_none_ws')"), '515');
+  ok(app.includes("`<label for=\"stocksi\">${esc(t('from_stock'))}: ${esc(wsName(c.workshop_site))}</label>") && app.includes("t('stock_none_ws')"), '515');
   const src = fs.readFileSync(new URL('../src/contracts.js', import.meta.url), 'utf8'); ok(src.includes('ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS latest_km'), '516: Agent gleiche Reihenfolge');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['ct_km_noread', 'rws_choose', 'rws_drop_plan', 'rws_drop_ack', 'stock_none_ws']) ok(STRINGS[l][k], `${l}.${k}`);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].rws_drop_plan.includes('{d}') && STRINGS[l].stock_none_ws.includes('{ws}'), l);
@@ -30713,6 +30713,25 @@ await test('Backlog 860 (Blickwinkel „Werkstatt wechselt den Lieferanten für 
   ok(app.includes('list="rcsupl"') && app.includes('const supList = () =>'), 'Backlog 861: Lieferanten-Vorschläge im Wareneingang');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l2 of ['de', 'uk', 'en']) { for (const k of ['rcl_last', 'rcl_no_sup', 'rcl_none', 'rcl_price', 'rcl_other_sup']) ok(STRINGS[l2][k], `${l2} ${k}`); ok(STRINGS[l2].rcl_diff.includes('{p}'), l2); }
+});
+await test('Backlog 862 (Blickwinkel „Werkstatt-Tablet: Mechaniker sucht ein Teil per Teilenummer“): Lagersuche findet Teilenummern ohne Leerzeichen/Bindestrich/Punkt/Schrägstrich (wie pnKey der Teile-Verwendung); Suchfeld über der Artikelauswahl bei Teil buchen und Wareneingang; Text DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { helpNorm } = await import('../public/help.js'); const { pnKey } = await import('../src/partsusage.js');
+  const grab = (name) => { const m = app.match(new RegExp(`^const ${name} = .*$`, 'm')); ok(m, name); return m[0].replace(/^const \w+ = /, '').replace(/;$/, ''); };
+  const pnCompact = new Function(`return ${grab('pnCompact')}`)();
+  const stockHit = new Function('helpNorm', 'pnCompact', `return ${grab('stockHit')}`)(helpNorm, pnCompact);
+  const it = { name: 'Bremsbeläge Vorderachse', part_number: 'A 000-420.12/20', location: 'Regal B3' };
+  for (const q of ['A0004201220', 'a 000 420 12 20', '000-420-12', '4201220', 'bremsbelaege', 'Regal b3', '']) ok(stockHit(it, q), `Treffer „${q}“`);
+  for (const q of ['A0004201221', '99', 'Bremsscheibe']) ok(!stockHit(it, q), `kein Treffer „${q}“`);
+  ok(!stockHit({ name: 'Filter', part_number: null, location: null }, '1220'), 'ohne Teilenummer');
+  for (const x of ['A 000-420.12/20', 'wht 005.432', 'E-12 34']) eq(pnCompact(x), pnKey(x).toLowerCase(), 'gleiche Regel wie Server: ' + x);
+  ok(app.includes('data-pk="${esc(pnCompact(i.part_number))}"') && app.includes('r.pk.includes(qc)'), 'Lagerliste');
+  ok(app.includes('stockList.filter((i) => stockHit(i, q))'), 'globale Suche');
+  ok(/stockQHtml\('stockq'\)/.test(app) && app.includes("stockPick(sq, sel,"), 'Teil buchen');
+  ok(app.includes("stockQHtml('rcq' + n + 's')") && app.includes("stockPick($('.stockq', d), $('select', d), siteItems"), 'Wareneingang');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].stock_q_ph && STRINGS[l].stock_q_none, l); ok(PLURALS[l].stock_q_hits && PLURALS[l].stock_q_hits.one.includes('{n}'), l); }
+  ok(PLURALS.uk.stock_q_hits.few && PLURALS.uk.stock_q_hits.many, 'uk Formen');
 });
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');

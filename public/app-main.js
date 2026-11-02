@@ -3877,6 +3877,26 @@ const tireAge = (m) => (m === null || m === undefined ? '' : m >= 12 ? t('tire_a
 const rwsDrop = (c) => (c.planned_date ? `<p class="small muted" data-rwsdrop>${esc(t('rws_drop_plan').replace('{d}', fmtD(c.planned_date)))}</p>` : c.workshop_ack_at ? `<p class="small muted" data-rwsdrop>${esc(t('rws_drop_ack'))}</p>` : '');
 // Backlog 521: offener Winterauftrag mit Termin bzw. „ohne Termin“ (Winterlisten der Reifen-Flotte, Werkstatt-Startseite, Disposition)
 const woApptTxt = (o) => `🔧 ${esc(t('mo_open'))} ${esc(o.case_no)} · ${o.planned_date ? `${esc(t('planned_appt'))} ${fmtD(o.planned_date)}` : esc(t('ms_ohne_termin'))}`;
+// Backlog 862 (Blickwinkel „Werkstatt-Tablet: Mechaniker sucht ein Teil per Teilenummer“): Teilenummern ohne Leerzeichen, Bindestrich, Punkt
+// und Schrägstrich vergleichen (wie pnKey in src/partsusage.js) – „A0004201220“ findet „A 000 420 12 20“; Name/Lagerort wie bisher (helpNorm)
+const pnCompact = (x) => String(x || '').toLowerCase().replace(/[\s\-./]/g, '');
+const stockHit = (i, q) => { const h = helpNorm(q); if (!h) return true; if ([i.name, i.part_number, i.location].some((x) => helpNorm(x).includes(h))) return true; const c = pnCompact(q); return c.length >= 3 && pnCompact(i.part_number).includes(c); };
+const stockOpt = (i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`;
+const STOCK_Q_MIN = 8; // ab so vielen Artikeln steht über der Artikelauswahl ein Suchfeld (lange Auswahllisten am Tablet)
+const stockQHtml = (id) => `<input type="search" id="${id}" class="stockq" data-stockq placeholder="${esc(t('stock_q_ph'))}" aria-label="${esc(t('stock_q_ph'))}" autocomplete="off" enterkeyhint="search" style="margin-bottom:4px"><p class="small muted" data-stockqn role="status" aria-live="polite" hidden></p>`;
+// Suchfeld filtert die Auswahl (Optionen neu aufbauen – option.hidden wirkt in iOS Safari nicht); die gewählte Position bleibt immer erhalten,
+// genau ein Treffer wird bei leerer Auswahl vorgewählt (onchange wie bei Handauswahl)
+function stockPick(inp, sel, list, first) {
+  const info = inp.nextElementSibling;
+  inp.oninput = () => {
+    const cur = sel.value; const all = list(); const q = inp.value.trim(); const hits = all.filter((i) => i.id === cur || stockHit(i, q));
+    sel.innerHTML = first + hits.map(stockOpt).join('');
+    const n = hits.filter((i) => i.id !== cur || stockHit(i, q)).length;
+    if (cur && hits.some((i) => i.id === cur)) sel.value = cur; else if (!cur && q && n === 1) sel.value = hits[0].id; else sel.value = '';
+    if (info) { info.hidden = !q; info.textContent = n ? tn('stock_q_hits', n) : t('stock_q_none'); }
+    if (sel.value !== cur && sel.onchange) sel.onchange();
+  };
+}
 async function loadStockSelect(c) {
   const el = $('#stocksel'); if (!el) return;
   let items = [];
@@ -3885,7 +3905,8 @@ async function loadStockSelect(c) {
   // Backlog 515 (Blickwinkel „Werkstatt Bayern vertritt Dortmund“): angeboten wird nur das Lager der zuständigen Werkstatt – Name nennen; geführtes
   // Lager ohne Bestand → kurzer Hinweis statt still fehlender Auswahl
   if (!items.length) { if (siteItems.length && c.workshop_site) el.innerHTML = `<p class="small muted" data-stocknone>${esc(t('stock_none_ws').replace('{ws}', wsName(c.workshop_site)))}</p>`; return; }
-  el.innerHTML = `<label>${esc(t('from_stock'))}: ${esc(wsName(c.workshop_site))}</label><select name="stock_item_id"><option value="">${esc(t('without_stock'))}</option>${items.map((i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`).join('')}</select><p class="small muted" id="stockpricehint" hidden>${esc(t('stock_out_price_hint'))}</p>`;
+  const first = `<option value="">${esc(t('without_stock'))}</option>`;
+  el.innerHTML = `<label for="stocksi">${esc(t('from_stock'))}: ${esc(wsName(c.workshop_site))}</label>${items.length >= STOCK_Q_MIN ? stockQHtml('stockq') : ''}<select name="stock_item_id" id="stocksi">${first}${items.map(stockOpt).join('')}</select><p class="small muted" id="stockpricehint" hidden>${esc(t('stock_out_price_hint'))}</p>`;
   const sel = $('select', el); el._items = items;
   sel.onchange = () => {
     const fp = $('#freepart'); fp.querySelector('[name=name]').required = !sel.value; $$('[name=name],[name=part_number],[name=supplier]', fp).forEach((x) => { x.disabled = !!sel.value; });
@@ -3910,6 +3931,7 @@ async function loadStockSelect(c) {
     h.textContent = t('stock_qty_over').replace('{q}', fmtNum(it.on_hand)).replace('{u}', unitL(it.unit)).replace(/\.\.(?=\s|$)/g, '.');
   };
   if (qf) qf.addEventListener('input', qtyCheck);
+  const sq = $('#stockq', el); if (sq) stockPick(sq, sel, () => items.filter((i) => i.on_hand > 0), first); // leer gebuchte Artikel (Backlog 232) fallen beim Filtern weg
 }
 
 // Zwei Aufträge greifen auf denselben Lagerartikel (Backlog 232): die Auswahl zeigte nach der Abweisung weiter den Bestand vom Öffnen
@@ -3924,7 +3946,7 @@ function stockShortfall(itemId, data) {
   h.textContent = t('stock_short_inline').replace('{q}', q).replace('{u}', u).replace(/\.\.(?=\s|$)/g, '.'); // „шт..“ (Einheit mit Punkt am Satzende)
   const it = (el._items || []).find((i) => i.id === itemId);
   if (data.available <= 0) {
-    o.disabled = true;
+    o.disabled = true; if (it) it.on_hand = 0;
     if (sel.value === itemId) {
       sel.value = ''; sel.onchange();
       const fp = $('#freepart');
@@ -4527,7 +4549,7 @@ async function viewSearch() {
       const lq = q.toLowerCase();
       const fAll = canFines ? fineList.filter((f) => [f.plate, f.plate_in_letter].some((x) => norm(x).includes(n)) || [f.fine_no, f.reference, f.authority].some((x) => String(x || '').toLowerCase().includes(lq))) : []; const fs = fAll.slice(0, 10);
       const hq = helpNorm(q); // Lager: Umlaute/ue gleich (wie Lagerliste und Hilfe)
-      const sAll = canStock ? stockList.filter((i) => [i.name, i.part_number, i.location].some((x) => helpNorm(x).includes(hq))) : []; const ss = sAll.slice(0, 10);
+      const sAll = canStock && hq ? stockList.filter((i) => stockHit(i, q)) : []; // Backlog 862: Teilenummer auch ohne Leerzeichen/Bindestrich const ss = sAll.slice(0, 10);
       const more = (shown, all) => (all > shown ? `<p class="small muted" data-more>${esc(t('search_more').replace('{n}', shown).replace('{m}', all))}</p>` : '');
       // Hilfe-Abschnitte der eigenen Rolle (gleiche Suche wie auf der Hilfeseite)
       const hs = !helpLoaded(S.lang) ? [] : (helpMatches(helpSections(S.me.role).map((h) => ({ name: h, title: t(`help_${h}_t`), steps: t(`help_${h}_s`).split('|') })), q) || []).sort((a, b) => b.title_hit - a.title_hit).slice(0, 5);
@@ -4877,4 +4899,4 @@ function lazyModule(g) {
   return LAZY_MODULES[g];
 }
 
-export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, MORE_MAX, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, STATES, TM_PROV, TST, VEH_SORTS, afLink, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindTachoCancel, cDesc, caseList, checkLabel, claimChip, clipTxt, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, decIn, defectItemsCsv, defectVehiclesCsv, download, downloadChecked, dqDetail, dur, emHoursText, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, helpLink, helpNorm, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isUnusedUser, isWeekendD, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmUnclearDateDue, langAttr, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mayReport, mk, mkR, nDays, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, partsWaitDays, planVehTag, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, qrSvg, rc2, readCsvFile, reasonText, render, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, sortPref, sortUsers, stackTables, stockNoteText, supplierLabel, t, tachoHistList, telAbroad, telHref, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, tzNote, uiLoc, uid, unitL, usersCsv, vehiclesCached, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };
+export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, MORE_MAX, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, STATES, STOCK_Q_MIN, TM_PROV, TST, VEH_SORTS, afLink, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindTachoCancel, cDesc, caseList, checkLabel, claimChip, clipTxt, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, decIn, defectItemsCsv, defectVehiclesCsv, download, downloadChecked, dqDetail, dur, emHoursText, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, helpLink, helpNorm, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isUnusedUser, isWeekendD, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmUnclearDateDue, langAttr, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mayReport, mk, mkR, nDays, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, partsWaitDays, planVehTag, plate, plateCmp, pnCompact, pnm, posL, prepareUpload, printHead, printStamp, provL, qrSvg, rc2, readCsvFile, reasonText, render, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, sortPref, sortUsers, stackTables, stockNoteText, stockOpt, stockPick, stockQHtml, supplierLabel, t, tachoHistList, telAbroad, telHref, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, tzNote, uiLoc, uid, unitL, usersCsv, vehiclesCached, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };

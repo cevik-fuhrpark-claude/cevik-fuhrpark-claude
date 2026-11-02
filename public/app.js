@@ -4694,6 +4694,26 @@ async function renderTires(id, el, keep = null) {
 const rwsDrop = (c) => (c.planned_date ? `<p class="small muted" data-rwsdrop>${esc(t('rws_drop_plan').replace('{d}', fmtD(c.planned_date)))}</p>` : c.workshop_ack_at ? `<p class="small muted" data-rwsdrop>${esc(t('rws_drop_ack'))}</p>` : '');
 // Backlog 521: offener Winterauftrag mit Termin bzw. „ohne Termin“ (Winterlisten der Reifen-Flotte, Werkstatt-Startseite, Disposition)
 const woApptTxt = (o) => `🔧 ${esc(t('mo_open'))} ${esc(o.case_no)} · ${o.planned_date ? `${esc(t('planned_appt'))} ${fmtD(o.planned_date)}` : esc(t('ms_ohne_termin'))}`;
+// Backlog 862 (Blickwinkel „Werkstatt-Tablet: Mechaniker sucht ein Teil per Teilenummer“): Teilenummern ohne Leerzeichen, Bindestrich, Punkt
+// und Schrägstrich vergleichen (wie pnKey in src/partsusage.js) – „A0004201220“ findet „A 000 420 12 20“; Name/Lagerort wie bisher (helpNorm)
+const pnCompact = (x) => String(x || '').toLowerCase().replace(/[\s\-./]/g, '');
+const stockHit = (i, q) => { const h = helpNorm(q); if (!h) return true; if ([i.name, i.part_number, i.location].some((x) => helpNorm(x).includes(h))) return true; const c = pnCompact(q); return c.length >= 3 && pnCompact(i.part_number).includes(c); };
+const stockOpt = (i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`;
+const STOCK_Q_MIN = 8; // ab so vielen Artikeln steht über der Artikelauswahl ein Suchfeld (lange Auswahllisten am Tablet)
+const stockQHtml = (id) => `<input type="search" id="${id}" class="stockq" data-stockq placeholder="${esc(t('stock_q_ph'))}" aria-label="${esc(t('stock_q_ph'))}" autocomplete="off" enterkeyhint="search" style="margin-bottom:4px"><p class="small muted" data-stockqn role="status" aria-live="polite" hidden></p>`;
+// Suchfeld filtert die Auswahl (Optionen neu aufbauen – option.hidden wirkt in iOS Safari nicht); die gewählte Position bleibt immer erhalten,
+// genau ein Treffer wird bei leerer Auswahl vorgewählt (onchange wie bei Handauswahl)
+function stockPick(inp, sel, list, first) {
+  const info = inp.nextElementSibling;
+  inp.oninput = () => {
+    const cur = sel.value; const all = list(); const q = inp.value.trim(); const hits = all.filter((i) => i.id === cur || stockHit(i, q));
+    sel.innerHTML = first + hits.map(stockOpt).join('');
+    const n = hits.filter((i) => i.id !== cur || stockHit(i, q)).length;
+    if (cur && hits.some((i) => i.id === cur)) sel.value = cur; else if (!cur && q && n === 1) sel.value = hits[0].id; else sel.value = '';
+    if (info) { info.hidden = !q; info.textContent = n ? tn('stock_q_hits', n) : t('stock_q_none'); }
+    if (sel.value !== cur && sel.onchange) sel.onchange();
+  };
+}
 async function loadStockSelect(c) {
   const el = $('#stocksel'); if (!el) return;
   let items = [];
@@ -4702,7 +4722,8 @@ async function loadStockSelect(c) {
   // Backlog 515 (Blickwinkel „Werkstatt Bayern vertritt Dortmund“): angeboten wird nur das Lager der zuständigen Werkstatt – Name nennen; geführtes
   // Lager ohne Bestand → kurzer Hinweis statt still fehlender Auswahl
   if (!items.length) { if (siteItems.length && c.workshop_site) el.innerHTML = `<p class="small muted" data-stocknone>${esc(t('stock_none_ws').replace('{ws}', wsName(c.workshop_site)))}</p>`; return; }
-  el.innerHTML = `<label>${esc(t('from_stock'))}: ${esc(wsName(c.workshop_site))}</label><select name="stock_item_id"><option value="">${esc(t('without_stock'))}</option>${items.map((i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`).join('')}</select><p class="small muted" id="stockpricehint" hidden>${esc(t('stock_out_price_hint'))}</p>`;
+  const first = `<option value="">${esc(t('without_stock'))}</option>`;
+  el.innerHTML = `<label for="stocksi">${esc(t('from_stock'))}: ${esc(wsName(c.workshop_site))}</label>${items.length >= STOCK_Q_MIN ? stockQHtml('stockq') : ''}<select name="stock_item_id" id="stocksi">${first}${items.map(stockOpt).join('')}</select><p class="small muted" id="stockpricehint" hidden>${esc(t('stock_out_price_hint'))}</p>`;
   const sel = $('select', el); el._items = items;
   sel.onchange = () => {
     const fp = $('#freepart'); fp.querySelector('[name=name]').required = !sel.value; $$('[name=name],[name=part_number],[name=supplier]', fp).forEach((x) => { x.disabled = !!sel.value; });
@@ -4727,6 +4748,7 @@ async function loadStockSelect(c) {
     h.textContent = t('stock_qty_over').replace('{q}', fmtNum(it.on_hand)).replace('{u}', unitL(it.unit)).replace(/\.\.(?=\s|$)/g, '.');
   };
   if (qf) qf.addEventListener('input', qtyCheck);
+  const sq = $('#stockq', el); if (sq) stockPick(sq, sel, () => items.filter((i) => i.on_hand > 0), first); // leer gebuchte Artikel (Backlog 232) fallen beim Filtern weg
 }
 
 // Zwei Aufträge greifen auf denselben Lagerartikel (Backlog 232): die Auswahl zeigte nach der Abweisung weiter den Bestand vom Öffnen
@@ -4741,7 +4763,7 @@ function stockShortfall(itemId, data) {
   h.textContent = t('stock_short_inline').replace('{q}', q).replace('{u}', u).replace(/\.\.(?=\s|$)/g, '.'); // „шт..“ (Einheit mit Punkt am Satzende)
   const it = (el._items || []).find((i) => i.id === itemId);
   if (data.available <= 0) {
-    o.disabled = true;
+    o.disabled = true; if (it) it.on_hand = 0;
     if (sel.value === itemId) {
       sel.value = ''; sel.onchange();
       const fp = $('#freepart');
@@ -4789,18 +4811,18 @@ async function viewStock() {
     <div class="noprint"><input id="q" placeholder="${esc(t('part_name'))} / ${esc(t('part_number'))}" aria-label="${esc(t('part_name'))} / ${esc(t('part_number'))}" style="margin-bottom:8px">
     <label for="sf">${esc(t('stock_filter'))}</label><select id="sf"><option value="">${esc(t('all'))}</option><option value="min">${esc(t('below_min'))}</option><option value="180">${esc(t('stock_idle').replace('{d}', 180))}</option><option value="365">${esc(t('stock_idle').replace('{d}', 365))}</option><option value="c365">${esc(t('count_age_n').replace('{n}', 365))}</option></select></div>
     <p class="small muted" id="sfsum" hidden></p>
-    <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}" data-id="${esc(i.id)}">${S.me.role === 'workshop' ? '<span></span>' : `<span class="chip">${esc(wsName(i.site))}</span>`}<span class="title" style="white-space:normal">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + fmtNum(i.min_qty) + ')', i.unit_price_net !== null && eur3(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || noneP()}</div>`, 'more');
+    <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}" data-pk="${esc(pnCompact(i.part_number))}" data-id="${esc(i.id)}">${S.me.role === 'workshop' ? '<span></span>' : `<span class="chip">${esc(wsName(i.site))}</span>`}<span class="title" style="white-space:normal">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + fmtNum(i.min_qty) + ')', i.unit_price_net !== null && eur3(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || noneP()}</div>`, 'more');
   // Filter: unter Mindestbestand bzw. „ohne Entnahme seit N Tagen“ (nur Artikel mit Bestand; nie entnommen zählt mit) bzw. „nicht gezählt seit 365 Tagen“ – nur Anzeige
   const byId = new Map(items.map((i) => [i.id, i]));
   // Zeilen einmal vorab lesen (Suchtext, Artikel) und „hidden“ nur bei Änderung setzen; Suche ab 300 Artikeln entprellt (22.10.2026:
   // vorher je Taste alle Zeilen aus dem DOM gelesen und neu gesetzt – 500 Artikel am Handy ≈ 40 ms je Taste)
-  const slRows = $$('#sl a').map((a) => ({ a, s: a.dataset.s, i: byId.get(a.dataset.id) }));
+  const slRows = $$('#sl a').map((a) => ({ a, s: a.dataset.s, pk: a.dataset.pk, i: byId.get(a.dataset.id) }));
   const applyStock = () => {
-    const q = helpNorm($('#q').value); const f = $('#sf').value; // Umlaute/ue gleich: „bremsbelaege“ findet „Bremsbeläge“
+    const q = helpNorm($('#q').value); const f = $('#sf').value; const qc = pnCompact($('#q').value); const qcOk = qc.length >= 3; // Backlog 862: Teilenummer ohne Trennzeichen // Umlaute/ue gleich: „bremsbelaege“ findet „Bremsbeläge“
     const cut = /^\d+$/.test(f) ? bDate(-Number(f)) : null;
     const hit = (i) => (!f || (f === 'min' ? i.below_min : f === 'c365' ? !i.last_counted_date || i.last_counted_date <= bDate(-365) : i.on_hand > 0 && (!i.last_out_date || i.last_out_date < cut)));
     const shown = [];
-    for (const r of slRows) { const h = !!((q && !r.s.includes(q)) || !hit(r.i)); if (r.a.hidden !== h) r.a.hidden = h; if (!h) shown.push(r.i); }
+    for (const r of slRows) { const h = !!((q && !r.s.includes(q) && !(qcOk && r.pk.includes(qc))) || !hit(r.i)); if (r.a.hidden !== h) r.a.hidden = h; if (!h) shown.push(r.i); }
     // Summe der angezeigten Artikel: Bestand × hinterlegter Artikelpreis (netto); Artikel mit Bestand ohne Preis = unbewertet (nie 0 €), ohne bewertbaren Artikel „–“
     const sum = $('#sfsum'); sum.hidden = !shown.length;
     const stocked = shown.filter((i) => i.on_hand > 0); const priced = stocked.filter((i) => i.unit_price_net !== null);
@@ -5021,7 +5043,10 @@ async function viewStockReceipt() {
       <p class="small" id="rcsum" role="status" aria-live="polite"></p>
       <div class="actions"><button class="btn" id="rcbook">${esc(t('rcpt_book'))}</button></div></form><div id="rcres"></div>`, 'more');
   const site = () => ($('#rcsite') ? $('#rcsite').value : sites[0].code);
-  const opts = () => `<option value="">–</option>${items.filter((i) => i.site === site()).map((i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`).join('')}`;
+  const siteItems = () => items.filter((i) => i.site === site());
+  const opts = () => `<option value="">–</option>${siteItems().map(stockOpt).join('')}`;
+  // Backlog 862: Suchfeld je Position erst ab STOCK_Q_MIN Artikeln des gewählten Lagers (Lagerwechsel: Suche leeren)
+  const rcQVis = (d) => { const q = $('.stockq', d); q.value = ''; q.hidden = siteItems().length < STOCK_Q_MIN; q.nextElementSibling.hidden = true; };
   // Backlog 860 (Blickwinkel „Werkstatt wechselt den Lieferanten für Bremsteile“): je Position der letzte Zugang (Lieferant, Datum) und der
   // letzte bekannte Einkaufspreis; anderer Lieferant als zuletzt bzw. abweichender Preis werden nur benannt (keine Schwelle, nichts gesperrt)
   const byId = new Map(items.map((i) => [i.id, i]));
@@ -5051,11 +5076,12 @@ async function viewStockReceipt() {
   const addLine = () => {
     if ($$('#rclines .rcl').length >= 50) { toast(t('rcpt_max'), true); return; }
     n += 1; const d = document.createElement('div'); d.className = 'rcl'; d.style.cssText = 'border-top:1px solid var(--rule);padding-top:8px;margin-top:8px';
-    d.innerHTML = `<label for="rci${n}">${esc(t('part_name'))}</label><select id="rci${n}" class="rci">${opts()}</select>
+    d.innerHTML = `<label for="rci${n}">${esc(t('part_name'))}</label>${stockQHtml('rcq' + n + 's')}<select id="rci${n}" class="rci">${opts()}</select>
       <div class="grid2"><div><label for="rcq${n}">${esc(t('qty'))}</label><input id="rcq${n}" class="rcq" inputmode="decimal"></div><div><label for="rcp${n}">${esc(t('price_net'))}</label><input id="rcp${n}" class="rcp" inputmode="decimal"></div></div>
       <div class="small rclast" data-rclast style="margin:4px 0 8px"></div>
       <button type="button" class="btn secondary rcdel">${esc(t('rcpt_remove'))}</button>`;
     $('#rclines').append(d);
+    stockPick($('.stockq', d), $('select', d), siteItems, '<option value="">–</option>'); rcQVis(d);
     $('select', d).onchange = () => { sum(); rcLast(d); }; $('.rcp', d).oninput = () => rcLast(d); $('.rcdel', d).onclick = () => { d.remove(); if (!$$('#rclines .rcl').length) addLine(); sum(); };
     sum();
   };
@@ -5067,7 +5093,7 @@ async function viewStockReceipt() {
   addLine();
   $('#rcadd').onclick = () => addLine();
   $('#rcsup').oninput = () => $$('#rclines .rcl').forEach(rcLast);
-  if ($('#rcsite')) $('#rcsite').onchange = () => { $$('#rclines .rci').forEach((x) => { x.innerHTML = opts(); }); $$('#rclines .rcl').forEach(rcLast); supList(); sum(); };
+  if ($('#rcsite')) $('#rcsite').onchange = () => { $$('#rclines .rci').forEach((x) => { x.innerHTML = opts(); }); $$('#rclines .rcl').forEach(rcQVis); $$('#rclines .rcl').forEach(rcLast); supList(); sum(); };
   $('#rcf').onsubmit = async (e) => {
     e.preventDefault();
     const rows = $$('#rclines .rcl').filter((r) => $('select', r).value || $('.rcq', r).value.trim());
@@ -7007,7 +7033,7 @@ async function viewSearch() {
       const lq = q.toLowerCase();
       const fAll = canFines ? fineList.filter((f) => [f.plate, f.plate_in_letter].some((x) => norm(x).includes(n)) || [f.fine_no, f.reference, f.authority].some((x) => String(x || '').toLowerCase().includes(lq))) : []; const fs = fAll.slice(0, 10);
       const hq = helpNorm(q); // Lager: Umlaute/ue gleich (wie Lagerliste und Hilfe)
-      const sAll = canStock ? stockList.filter((i) => [i.name, i.part_number, i.location].some((x) => helpNorm(x).includes(hq))) : []; const ss = sAll.slice(0, 10);
+      const sAll = canStock && hq ? stockList.filter((i) => stockHit(i, q)) : []; // Backlog 862: Teilenummer auch ohne Leerzeichen/Bindestrich const ss = sAll.slice(0, 10);
       const more = (shown, all) => (all > shown ? `<p class="small muted" data-more>${esc(t('search_more').replace('{n}', shown).replace('{m}', all))}</p>` : '');
       // Hilfe-Abschnitte der eigenen Rolle (gleiche Suche wie auf der Hilfeseite)
       const hs = !helpLoaded(S.lang) ? [] : (helpMatches(helpSections(S.me.role).map((h) => ({ name: h, title: t(`help_${h}_t`), steps: t(`help_${h}_s`).split('|') })), q) || []).sort((a, b) => b.title_hit - a.title_hit).slice(0, 5);

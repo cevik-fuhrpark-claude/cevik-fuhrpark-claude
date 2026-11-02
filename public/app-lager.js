@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, partsEta, partsWaitDays, plate, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockNoteText, t, tn, toast, uid, unitL, wsLabel, wsName } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, STOCK_Q_MIN, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockNoteText, stockOpt, stockPick, stockQHtml, t, tn, toast, uid, unitL, wsLabel, wsName } from './app-main.js';
 
 // Lager-Buchungstexte in der Oberflächensprache (Standortcode → Name, Zahl/Datum im Sprachformat)
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
@@ -28,18 +28,18 @@ async function viewStock() {
     <div class="noprint"><input id="q" placeholder="${esc(t('part_name'))} / ${esc(t('part_number'))}" aria-label="${esc(t('part_name'))} / ${esc(t('part_number'))}" style="margin-bottom:8px">
     <label for="sf">${esc(t('stock_filter'))}</label><select id="sf"><option value="">${esc(t('all'))}</option><option value="min">${esc(t('below_min'))}</option><option value="180">${esc(t('stock_idle').replace('{d}', 180))}</option><option value="365">${esc(t('stock_idle').replace('{d}', 365))}</option><option value="c365">${esc(t('count_age_n').replace('{n}', 365))}</option></select></div>
     <p class="small muted" id="sfsum" hidden></p>
-    <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}" data-id="${esc(i.id)}">${S.me.role === 'workshop' ? '<span></span>' : `<span class="chip">${esc(wsName(i.site))}</span>`}<span class="title" style="white-space:normal">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + fmtNum(i.min_qty) + ')', i.unit_price_net !== null && eur3(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || noneP()}</div>`, 'more');
+    <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}" data-pk="${esc(pnCompact(i.part_number))}" data-id="${esc(i.id)}">${S.me.role === 'workshop' ? '<span></span>' : `<span class="chip">${esc(wsName(i.site))}</span>`}<span class="title" style="white-space:normal">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + fmtNum(i.min_qty) + ')', i.unit_price_net !== null && eur3(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || noneP()}</div>`, 'more');
   // Filter: unter Mindestbestand bzw. „ohne Entnahme seit N Tagen“ (nur Artikel mit Bestand; nie entnommen zählt mit) bzw. „nicht gezählt seit 365 Tagen“ – nur Anzeige
   const byId = new Map(items.map((i) => [i.id, i]));
   // Zeilen einmal vorab lesen (Suchtext, Artikel) und „hidden“ nur bei Änderung setzen; Suche ab 300 Artikeln entprellt (22.10.2026:
   // vorher je Taste alle Zeilen aus dem DOM gelesen und neu gesetzt – 500 Artikel am Handy ≈ 40 ms je Taste)
-  const slRows = $$('#sl a').map((a) => ({ a, s: a.dataset.s, i: byId.get(a.dataset.id) }));
+  const slRows = $$('#sl a').map((a) => ({ a, s: a.dataset.s, pk: a.dataset.pk, i: byId.get(a.dataset.id) }));
   const applyStock = () => {
-    const q = helpNorm($('#q').value); const f = $('#sf').value; // Umlaute/ue gleich: „bremsbelaege“ findet „Bremsbeläge“
+    const q = helpNorm($('#q').value); const f = $('#sf').value; const qc = pnCompact($('#q').value); const qcOk = qc.length >= 3; // Backlog 862: Teilenummer ohne Trennzeichen // Umlaute/ue gleich: „bremsbelaege“ findet „Bremsbeläge“
     const cut = /^\d+$/.test(f) ? bDate(-Number(f)) : null;
     const hit = (i) => (!f || (f === 'min' ? i.below_min : f === 'c365' ? !i.last_counted_date || i.last_counted_date <= bDate(-365) : i.on_hand > 0 && (!i.last_out_date || i.last_out_date < cut)));
     const shown = [];
-    for (const r of slRows) { const h = !!((q && !r.s.includes(q)) || !hit(r.i)); if (r.a.hidden !== h) r.a.hidden = h; if (!h) shown.push(r.i); }
+    for (const r of slRows) { const h = !!((q && !r.s.includes(q) && !(qcOk && r.pk.includes(qc))) || !hit(r.i)); if (r.a.hidden !== h) r.a.hidden = h; if (!h) shown.push(r.i); }
     // Summe der angezeigten Artikel: Bestand × hinterlegter Artikelpreis (netto); Artikel mit Bestand ohne Preis = unbewertet (nie 0 €), ohne bewertbaren Artikel „–“
     const sum = $('#sfsum'); sum.hidden = !shown.length;
     const stocked = shown.filter((i) => i.on_hand > 0); const priced = stocked.filter((i) => i.unit_price_net !== null);
@@ -255,7 +255,10 @@ async function viewStockReceipt() {
       <p class="small" id="rcsum" role="status" aria-live="polite"></p>
       <div class="actions"><button class="btn" id="rcbook">${esc(t('rcpt_book'))}</button></div></form><div id="rcres"></div>`, 'more');
   const site = () => ($('#rcsite') ? $('#rcsite').value : sites[0].code);
-  const opts = () => `<option value="">–</option>${items.filter((i) => i.site === site()).map((i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`).join('')}`;
+  const siteItems = () => items.filter((i) => i.site === site());
+  const opts = () => `<option value="">–</option>${siteItems().map(stockOpt).join('')}`;
+  // Backlog 862: Suchfeld je Position erst ab STOCK_Q_MIN Artikeln des gewählten Lagers (Lagerwechsel: Suche leeren)
+  const rcQVis = (d) => { const q = $('.stockq', d); q.value = ''; q.hidden = siteItems().length < STOCK_Q_MIN; q.nextElementSibling.hidden = true; };
   // Backlog 860 (Blickwinkel „Werkstatt wechselt den Lieferanten für Bremsteile“): je Position der letzte Zugang (Lieferant, Datum) und der
   // letzte bekannte Einkaufspreis; anderer Lieferant als zuletzt bzw. abweichender Preis werden nur benannt (keine Schwelle, nichts gesperrt)
   const byId = new Map(items.map((i) => [i.id, i]));
@@ -285,11 +288,12 @@ async function viewStockReceipt() {
   const addLine = () => {
     if ($$('#rclines .rcl').length >= 50) { toast(t('rcpt_max'), true); return; }
     n += 1; const d = document.createElement('div'); d.className = 'rcl'; d.style.cssText = 'border-top:1px solid var(--rule);padding-top:8px;margin-top:8px';
-    d.innerHTML = `<label for="rci${n}">${esc(t('part_name'))}</label><select id="rci${n}" class="rci">${opts()}</select>
+    d.innerHTML = `<label for="rci${n}">${esc(t('part_name'))}</label>${stockQHtml('rcq' + n + 's')}<select id="rci${n}" class="rci">${opts()}</select>
       <div class="grid2"><div><label for="rcq${n}">${esc(t('qty'))}</label><input id="rcq${n}" class="rcq" inputmode="decimal"></div><div><label for="rcp${n}">${esc(t('price_net'))}</label><input id="rcp${n}" class="rcp" inputmode="decimal"></div></div>
       <div class="small rclast" data-rclast style="margin:4px 0 8px"></div>
       <button type="button" class="btn secondary rcdel">${esc(t('rcpt_remove'))}</button>`;
     $('#rclines').append(d);
+    stockPick($('.stockq', d), $('select', d), siteItems, '<option value="">–</option>'); rcQVis(d);
     $('select', d).onchange = () => { sum(); rcLast(d); }; $('.rcp', d).oninput = () => rcLast(d); $('.rcdel', d).onclick = () => { d.remove(); if (!$$('#rclines .rcl').length) addLine(); sum(); };
     sum();
   };
@@ -301,7 +305,7 @@ async function viewStockReceipt() {
   addLine();
   $('#rcadd').onclick = () => addLine();
   $('#rcsup').oninput = () => $$('#rclines .rcl').forEach(rcLast);
-  if ($('#rcsite')) $('#rcsite').onchange = () => { $$('#rclines .rci').forEach((x) => { x.innerHTML = opts(); }); $$('#rclines .rcl').forEach(rcLast); supList(); sum(); };
+  if ($('#rcsite')) $('#rcsite').onchange = () => { $$('#rclines .rci').forEach((x) => { x.innerHTML = opts(); }); $$('#rclines .rcl').forEach(rcQVis); $$('#rclines .rcl').forEach(rcLast); supList(); sum(); };
   $('#rcf').onsubmit = async (e) => {
     e.preventDefault();
     const rows = $$('#rclines .rcl').filter((r) => $('select', r).value || $('.rcq', r).value.trim());
