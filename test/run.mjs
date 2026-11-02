@@ -30621,6 +30621,35 @@ await test('Backlog 852–853 (Blickwinkel „Rangierunfall auf dem eigenen Hof:
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-coown') && app.includes('data-coownnew') && app.includes('data-conamed'), 'Oberfläche');
 });
+await test('Backlog 854–855 (Blickwinkel „Zweifahrerbetrieb“): Bußgeld ohne Zuordnung, aber zwei Fahrer mit Abfahrtskontrolle vor der Tatzeit → checks_ambiguous; Zuordnung eines zweiten Fahrers meldet die weiterhin zugeordneten (vehicle_other_drivers); Texte DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const t0 = new Date(Date.now() - 4 * 86400000); t0.setUTCHours(6, 0, 0, 0); const off = new Date(t0.getTime() + 3 * 3600000);
+  const v = await U.own.post('/api/users', { username: 'team.854', display_name: 'Beifahrer 854', role: 'driver', environment: 'test' }); const bid = v.data.id || (v.data.user && v.data.user.id); ok(bid, JSON.stringify(v.data));
+  const f = await U.fleet.post('/api/fines', { kind: 'anhoerung', offense_type: 'geschwindigkeit', offense_at: off.toISOString(), plate_in_letter: 'SZ-YC 5513', authority: 'Stadt S', reference: 'AZ-854' }); eq(f.status, 201, JSON.stringify(f.data));
+  db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,items,result,created_at) VALUES ('i-854a','test',?,'abfahrt','v1',?,'[]','ok',?)`).run(V1, U.driver.id, t0.toISOString());
+  let d = (await U.fleet.get('/api/fines/' + f.data.id)).data; eq(d.checks_ambiguous, undefined, 'eine Kontrolle → eindeutig');
+  // zweite Kontrolle nach der Tat zählt nicht
+  db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,items,result,created_at) VALUES ('i-854b','test',?,'abfahrt','v1',?,'[]','ok',?)`).run(V1, bid, new Date(off.getTime() + 3600000).toISOString());
+  d = (await U.fleet.get('/api/fines/' + f.data.id)).data; eq(d.checks_ambiguous, undefined, 'Kontrolle nach der Tat');
+  // Fahrerwechsel vor der Tat: Beifahrer kontrolliert um 07:30 UTC
+  db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,items,result,created_at) VALUES ('i-854c','test',?,'abfahrt','v1',?,'[]','ok',?)`).run(V1, bid, new Date(t0.getTime() + 5400000).toISOString());
+  d = (await U.fleet.get('/api/fines/' + f.data.id)).data; eq(d.checks_ambiguous, true, '854'); eq(d.candidates_differ, undefined); eq(d.assignments_ambiguous, undefined);
+  eq((await U.viewer.get('/api/fines/' + f.data.id)).data.checks_ambiguous, undefined, 'Lesezugriff ohne Hinweis');
+  // mit Zuordnung greift der bisherige Hinweis statt checks_ambiguous
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES ('dv-854',?,?,?,?,?,'test')`).run(U.driver.id, V1, new Date(t0.getTime() - 86400000).toISOString(), U.fleet.id, new Date().toISOString());
+  d = (await U.fleet.get('/api/fines/' + f.data.id)).data; eq(d.checks_ambiguous, undefined, 'Zuordnung vorhanden'); eq(d.candidates_differ, true);
+  // 855: zweiten Fahrer zuordnen → Stammfahrer bleibt zugeordnet und wird genannt
+  const V2 = db.prepare(`SELECT id FROM vehicles WHERE id<>? AND active=1 AND kind='lkw' LIMIT 1`).get(V1).id;
+  db.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,created_by,created_at,environment) VALUES ('dv-854p',?,?,?,?,?,'production')`).run(U.driver.id, V2, new Date(t0.getTime() - 86400000).toISOString(), U.fleet.id, new Date().toISOString());
+  let r = await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: bid }); eq(r.status < 300, true, JSON.stringify(r.data));
+  eq(JSON.stringify(r.data.vehicle_other_drivers), JSON.stringify([U.driver.display_name || db.prepare('SELECT display_name FROM users WHERE id=?').get(U.driver.id).display_name]), '855');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM driver_vehicles WHERE vehicle_id=? AND valid_to IS NULL`).get(V1).n, 2, 'keine Verdrängung');
+  r = await U.fleet.post(`/api/vehicles/${V2}/drivers`, { user_id: bid }); eq(r.status < 300, true, JSON.stringify(r.data));
+  eq(r.data.vehicle_other_drivers, undefined, 'Zuordnung der anderen Umgebung zählt nicht'); ok(r.data.other_open.length === 1, 'eigene andere Fahrzeuge weiter in other_open');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-fcchk') && app.includes("t('fine_cand_checks')") && app.includes("t('assign_veh_others')"), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].fine_cand_checks, l); ok(STRINGS[l].assign_veh_others.includes('{list}'), l); }
+});
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');

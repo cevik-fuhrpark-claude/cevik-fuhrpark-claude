@@ -202,6 +202,9 @@ export async function fineDetail(env, user, envName, id) {
       if (za.size && ch.size && (za.size !== ch.size || [...za].some((u) => !ch.has(u)))) out.candidates_differ = true;
       // Backlog 554: mehrere Fahrer zur Tatzeit zugeordnet (Springer neben Stammfahrer) – die Zuordnung allein belegt nicht, wer fuhr
       if (za.size >= 2) out.assignments_ambiguous = true;
+      // Backlog 854 (Blickwinkel „Zweifahrerbetrieb“): niemand zur Tatzeit zugeordnet, aber mehrere Fahrer mit Abfahrtskontrolle vor der Tatzeit
+      // (Fahrerwechsel unterwegs) – die Kontrolle allein belegt nicht, wer zur Tatzeit fuhr
+      if (!za.size && ch.size >= 2) out.checks_ambiguous = true;
     }
     // Zustellstand der Fahrerinformation (Backlog 375, Blickwinkel „Zeugenfragebogen, Frist 1 Woche, Fahrer im Urlaub“): ob der Push
     // das Gerät erreicht hat – nicht, ob/wann er geöffnet wurde (keine Verhaltenskontrolle); die Quittung zeigt die Kenntnisnahme

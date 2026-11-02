@@ -437,6 +437,7 @@ UI-Reifen Profiltiefe höher als zuletzt ohne Wechsel: Einstellung, Hinweis beim
 UI-Datenqualität Profiltiefe höher als die vorherige Messung: Befund, Detail übersetzt, Link Reifen (DE/UK/EN; Backlog 848)|ui-dq-profil-anstieg.py|/tmp/cfp-dq-profil-anstieg.log
 UI-Datenqualität montierte Reifengröße weicht von der hinterlegten ab: Befund, Detail übersetzt, Link Reifen, Reifenakte montierte Größe (DE/UK/EN; Backlog 850/851)|ui-dq-reifen-groesse.py|/tmp/cfp-dq-reifen-groesse.log
 UI-Rangierunfall eigener Lkw gegen eigenen Lkw: Hinweis eigenes Fahrzeug im Versicherungsfall, Rückverweis, Unfall-Hinweis (DE/UK/EN; Backlog 852/853)|ui-rangier-eigenes-fahrzeug.py|/tmp/cfp-rangier-eigenes-fahrzeug.log
+UI-Zweifahrerbetrieb: Bußgeld ohne Zuordnung mit zwei Kontrollen vor der Tatzeit, Hinweis weiterhin zugeordneter Fahrer (DE/UK/EN; Backlog 854/855)|ui-zweifahrer.py|/tmp/cfp-zweifahrer.log
 UI-Reifenwechsel mit anderer Größe als für die Achse hinterlegt: Hinweis beim Tippen und nach dem Speichern (DE/UK/EN; Backlog 849)|ui-reifen-groesse-abweichend.py|/tmp/cfp-reifen-groesse-abweichend.log
 '
 N=0

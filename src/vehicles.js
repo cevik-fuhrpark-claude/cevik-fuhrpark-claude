@@ -770,8 +770,13 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   if (!v) throw notFound();
   if (!v.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
   const now = nowIso();
-  const open = (await env.DB.prepare(`SELECT d.id, d.vehicle_id, v.plate FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE d.user_id=? AND (d.valid_to IS NULL OR d.valid_to > ?)`)
-    .bind(driver.id, now).all()).results;
+  // Backlog 855 (Blickwinkel „Zweifahrerbetrieb“): in derselben Abfrage die anderen offenen Zuordnungen dieses Fahrzeugs (andere Fahrer) –
+  // die neue Zuordnung verdrängt sie nicht; Hinweis für die Leitung, falls eine Ablösung gemeint war (nur Information, keine Automatik)
+  const rowsOpen = (await env.DB.prepare(`SELECT d.id, d.vehicle_id, v.plate, NULL AS other_name FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE d.user_id=?1 AND (d.valid_to IS NULL OR d.valid_to > ?2)
+    UNION ALL SELECT d.id, d.vehicle_id, NULL, u.display_name FROM driver_vehicles d JOIN users u ON u.id=d.user_id WHERE d.vehicle_id=?3 AND d.user_id<>?1 AND d.environment=?4 AND (d.valid_to IS NULL OR d.valid_to > ?2)`)
+    .bind(driver.id, now, vehicleId, envName).all()).results;
+  const open = rowsOpen.filter((o) => o.other_name == null);
+  const vehicleOthers = [...new Set(rowsOpen.filter((o) => o.other_name != null).map((o) => o.other_name))].sort((a, b) => a.localeCompare(b, 'de'));
   if (open.some((o) => o.vehicle_id === vehicleId)) throw conflict('already_assigned', `${driver.display_name} ist diesem Fahrzeug bereits zugeordnet.`);
   // Fahrzeugwechsel: bisherige offene Zuordnungen des Fahrers beenden, wenn ausdrücklich gewünscht
   const endPrev = body.end_previous === 'on' || flag(body.end_previous, 'Bisherige Zuordnung beenden');
@@ -803,7 +808,7 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   const bans = (await env.DB.prepare(`SELECT fine_no, driving_ban_months AS months FROM fines WHERE environment=? AND driver_id=? AND driving_ban_months IS NOT NULL
     AND status NOT IN ('eingestellt','erledigt') ORDER BY offense_at DESC`).bind(envName, driver.id).all()).results;
   return { id, ended_previous: endPrev ? open.map((o) => o.plate) : [], other_open: endPrev ? [] : open.map((o) => o.plate), ...(driver.rec_active === 0 ? { driver_record_left: true } : {}),
-    ...(bans.length ? { driving_ban_fines: bans } : {}) };
+    ...(bans.length ? { driving_ban_fines: bans } : {}), ...(vehicleOthers.length ? { vehicle_other_drivers: vehicleOthers } : {}) };
 }
 
 export async function endAssignment(env, user, envName, assignmentId) {
