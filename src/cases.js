@@ -939,6 +939,18 @@ export function partsDate(v) {
   return d;
 }
 
+// Backlog 871: voraussichtlich fertig – gültiges Datum, nicht in der Vergangenheit (Berliner Kalender), höchstens 1 Jahr voraus
+export function readyDate(v) {
+  const d = String(v);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Fertigstellung im Format JJJJ-MM-TT.');
+  const today = berlinDate();
+  if (d < today) throw bad('ready_past', 'Voraussichtliche Fertigstellung liegt in der Vergangenheit.');
+  if (d > oneYearAhead(today)) throw bad('validation', 'Voraussichtliche Fertigstellung liegt mehr als ein Jahr in der Zukunft.');
+  return d;
+}
+// Status, in denen „voraussichtlich fertig“ gilt (sonst entfernt bzw. nicht angezeigt)
+export const READY_STATUSES = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'];
+
 export function allowedActions(user, c, access) {
   const a = [];
   if (!access || access === 'read' || access === 'preview') {
@@ -972,14 +984,14 @@ export function allowedActions(user, c, access) {
       break;
     case 'werkstatt_freigegeben':
       if (ws || mgr) { if (!c.workshop_ack_at) a.push('acknowledge'); a.push('start_repair'); }
-      if ((ws || mgr) && c.workshop_ack_at) a.push('set_planned_date');
+      if ((ws || mgr) && c.workshop_ack_at) a.push('set_planned_date', 'set_ready_date');
       if (mgr) a.push('reassign_workshop');
       break;
     case 'in_reparatur':
-      if (ws || mgr) a.push('wait_parts', 'inspection', 'request_quality_check', 'set_planned_date', 'set_work_state');
+      if (ws || mgr) a.push('wait_parts', 'inspection', 'request_quality_check', 'set_planned_date', 'set_ready_date', 'set_work_state');
       break;
     case 'wartet_teile':
-      if (ws || mgr) a.push('resume_repair', 'parts_partial', 'set_planned_date', 'set_parts_eta', 'set_work_state');
+      if (ws || mgr) a.push('resume_repair', 'parts_partial', 'set_planned_date', 'set_parts_eta', 'set_ready_date', 'set_work_state');
       break;
     case 'abschlusskontrolle':
       if (mgr) a.push('return_for_rework', 'technical_release');
@@ -1532,6 +1544,16 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       payload = { from: from.location || from.service || from.on ? from : null, to: loc || svc || on ? to : null };
       break;
     }
+    case 'set_ready_date': {
+      // Backlog 871 (Blickwinkel „Fahrer fragt: wann ist mein Lkw fertig?“): voraussichtliche Fertigstellung laut Werkstatt/Leitung – der
+      // Werkstatttermin ist der Beginn, nicht das Ende. Leer = entfernen; ohne Statuswechsel und ohne Push. Fahrer und Disposition sehen das Datum.
+      const raw = p.ready_expected_on === undefined || p.ready_expected_on === null ? '' : String(p.ready_expected_on).trim();
+      const d = raw ? readyDate(raw) : null;
+      if (d && c.status === 'werkstatt_freigegeben' && c.planned_date && d < c.planned_date) throw bad('validation', 'Voraussichtliche Fertigstellung liegt vor dem Werkstatttermin.');
+      if (d === (c.ready_expected_on || null)) throw bad('validation', 'Voraussichtliche Fertigstellung ist unverändert.');
+      set.ready_expected_on = d; payload = { from: c.ready_expected_on || null, to: d };
+      break;
+    }
     case 'set_work_state': {
       // Backlog 867 (Blickwinkel „Werkstatt-Tablet: Mechaniker wird mitten in der Reparatur zu einem Notfall gerufen“): Arbeitsstand für die
       // Übergabe – was erledigt ist, was fehlt, Zustand des Fahrzeugs. Text = Bemerkung (steht so im Verlauf); leer = entfernen (z. B. weitergearbeitet).
@@ -1667,6 +1689,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (site === c.workshop_site) throw bad('validation', 'Werkstatt ist unverändert.');
       // Termin gehörte zur bisherigen Werkstatt – die neue legt ihren eigenen bei der Übernahme fest (bleibt im Verlauf)
       set.workshop_site = site; set.workshop_ack_at = null; set.workshop_ack_by = null; set.planned_date = null; set.planned_note = null;
+      if (c.ready_expected_on) set.ready_expected_on = null; // Backlog 871: Angabe der bisherigen Werkstatt gilt nicht mehr
       // Backlog 263 (Teilagent „Werkstatt fällt eine Woche aus“): vom Auftrag übernommener Prüftermin (gleicher Tag) entfällt mit – sonst stand
       // das Fahrzeug im Werkstattplan weiter am alten Tag der bisherigen Werkstatt (wie set_planned_date, nur im Betrieb)
       if (c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=NULL, updated_at=? WHERE id=? AND planned_date=?').bind(now, c.maintenance_rule_id, c.planned_date));
@@ -2001,6 +2024,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   if (!OPEN_STATUSES.includes(toStatus) && (c.followup_on || c.followup_note)) { set.followup_on = null; set.followup_note = null; }
   // Backlog 867: Arbeitsstand gilt nur in Reparatur/„wartet auf Teile“ – mit Abschlusskontrolle, Freigabe oder Beenden entfernt (bleibt im Verlauf)
   if (c.work_state_note && !['in_reparatur', 'wartet_teile'].includes(toStatus)) { set.work_state_note = null; set.work_state_at = null; set.work_state_by = null; }
+  // Backlog 871: voraussichtlich fertig gilt nur bis zur Abschlusskontrolle (bleibt im Verlauf)
+  if (c.ready_expected_on && !READY_STATUSES.includes(toStatus)) set.ready_expected_on = null;
   set.status = toStatus; set.version = newVersion; set.updated_at = now;
   const cols = Object.keys(set);
   const upd = env.DB.prepare(`UPDATE cases SET ${cols.map((k) => `${k}=?`).join(', ')} WHERE id=? AND version=?`)

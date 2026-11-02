@@ -848,7 +848,7 @@ export async function myVehicles(env, user, envName) {
     env.DB.prepare(`SELECT vehicle_id, MAX(safety_lock) AS locked, COUNT(*) AS open FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') GROUP BY vehicle_id`).bind(envName, ids).all(),
     // alle offenen Vorgänge der eigenen Fahrzeuge (ohne Namen der Meldenden): Fahrer sieht bekannte Mängel und meldet sie nicht doppelt
-    env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, substr(description,1,300) AS description, created_at, check_item, safety_lock, planned_date, planned_note, parts_expected_date, vehicle_location, tow_service, towed_on, vehicle_location_at, workshop_site, reported_driveability, reporter_id=? AS mine
+    env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, substr(description,1,300) AS description, created_at, check_item, safety_lock, planned_date, planned_note, parts_expected_date, ready_expected_on, vehicle_location, tow_service, towed_on, vehicle_location_at, workshop_site, reported_driveability, reporter_id=? AS mine
       FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC LIMIT 200`).bind(user.id, envName, ids).all(),
     env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, planned_date, due_km, interval_km, last_done_km, last_done_date, km_basis_at, updated_at FROM maintenance_rules WHERE vehicle_id IN (SELECT value FROM json_each(?))
@@ -906,6 +906,8 @@ export async function myVehicles(env, user, envName) {
   // offene Vorgänge (bekannte Mängel) und Prüftermine je Fahrzeug – für eigene und den gekoppelten Anhänger/die Zugmaschine (Backlog 202)
   const defects = (vid) => mine.results.filter((c) => c.vehicle_id === vid).sort((a, b) => (b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PRIO_RANK[a.priority] ?? 3) - (PRIO_RANK[b.priority] ?? 3) || String(b.created_at).localeCompare(String(a.created_at))).map((c) => ({ id: c.mine ? c.id : null, case_no: c.case_no, status: c.status, priority: c.priority,
         description: c.description, created_at: c.created_at, check_item: c.check_item, safety_lock: !!c.safety_lock, mine: !!c.mine,
+        // Backlog 871: voraussichtlich fertig laut Werkstatt (nur solange freigegeben/in Reparatur/wartet auf Teile)
+        ready_expected_on: ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status) ? c.ready_expected_on || null : null,
         // Backlog 465: wo das Fahrzeug laut Vorgang steht bzw. wer es abgeschleppt hat (wie Disposition; nur Angaben aus dem Vorgang, mit Stand)
         vehicle_location: c.vehicle_location || null, tow_service: c.tow_service || null, towed_on: c.tow_service ? c.towed_on || null : null, vehicle_location_at: c.vehicle_location || c.tow_service ? c.vehicle_location_at || null : null,
         planned_date: WS.includes(c.status) && c.planned_date >= today ? c.planned_date : null,

@@ -400,6 +400,11 @@ const V_MORE = [
   ['Datum „Fristen bis“ ungültig.', 'Недійсна дата «Строки до».', 'Invalid “Deadlines by” date.'],
   ['Arbeitsstand ist zu lang (max. 500 Zeichen).', 'Стан робіт задовгий (макс. 500 символів).', 'The work status is too long (max. 500 characters).'],
   ['Arbeitsstand ist unverändert.', 'Стан робіт не змінено.', 'The work status is unchanged.'],
+  ['Fertigstellung im Format JJJJ-MM-TT.', 'Дата готовності у форматі РРРР-ММ-ДД.', 'Ready date in the format YYYY-MM-DD.'],
+  ['Voraussichtliche Fertigstellung liegt in der Vergangenheit.', 'Орієнтовна дата готовності вже минула.', 'The expected ready date is in the past.'],
+  ['Voraussichtliche Fertigstellung liegt mehr als ein Jahr in der Zukunft.', 'Орієнтовна дата готовності більш ніж через рік.', 'The expected ready date is more than a year in the future.'],
+  ['Voraussichtliche Fertigstellung liegt vor dem Werkstatttermin.', 'Орієнтовна дата готовності раніше за термін у майстерні.', 'The expected ready date is before the workshop appointment.'],
+  ['Voraussichtliche Fertigstellung ist unverändert.', 'Орієнтовну дату готовності не змінено.', 'The expected ready date is unchanged.'],
 ];
 for (const [de, uk, en] of V_MORE) { VALIDATION_TEXTS.uk[de] = uk; VALIDATION_TEXTS.en[de] = en; }
 Object.assign(VALIDATION_TEXTS.uk, { cv_busy: 'Інші дефекти цієї перевірки вже в роботі ({v}) – транспорт виправити не можна. Відхиліть і повідомте заново для правильного транспорту.' });
@@ -1196,6 +1201,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 864: Hinweis bei stark verwackelten/unscharfen Fotos (nur Hinweis, Senden bleibt möglich)
 
 // [CLAUDE] Backlog 867 (Blickwinkel „Werkstatt-Tablet: Mechaniker wird mitten in der Reparatur zu einem Notfall gerufen“): Arbeitsstand für die Übergabe
+// [CLAUDE] Backlog 871 (Blickwinkel „Fahrer fragt: wann ist mein Lkw fertig?“): voraussichtliche Fertigstellung laut Werkstatt
 // [CLAUDE] Backlog 868: Leerlauf-Abmeldung behält Formularentwürfe für dieselbe Person
 // [CLAUDE] Backlog 869: unterbrochene Reparaturen (Arbeitsstand) in „Heute zu tun“ und als Listenfilter
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar

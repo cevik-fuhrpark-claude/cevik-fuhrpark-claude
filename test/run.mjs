@@ -24406,7 +24406,7 @@ await test('Backlog 453 (Blickwinkel „Neue Werkstatt-Aushilfe, erster Tag am T
   ok(app.includes('let html = wsFlow() + shown.map('), 'Kurzablauf oben auf der Werkstatt-Startseite');
   ok(app.includes("render(html, 'home');\n  bindWsFlow();"), 'Ausblenden gebunden');
   ok(app.includes("b.onclick = () => { try { localStorage.setItem(wsFlowKey(), '1'); } catch {}"), 'Ausblenden als Eigenschaft, Speicher abgesichert');
-  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' || xh || (c.work_state_note && WST_ST.includes(c.status)) ? ' wrap' : ''"), 'Vorab-Info bricht um'); // Backlog 867: auch mit Arbeitsstand
+  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' || xh || rdyOf(c) || (c.work_state_note && WST_ST.includes(c.status)) ? ' wrap' : ''"), 'Vorab-Info bricht um'); // Backlog 867/871: auch mit Arbeitsstand bzw. „voraussichtlich fertig“
   // die genannten Knöpfe gibt es wirklich (Server-Aktionen der Werkstatt)
   const { U, toRepair } = await freshWorld();
   const a = await toRepair(); const acts = (await U.ws.get(`/api/cases/${a}`)).data.allowed_actions;
@@ -30971,7 +30971,7 @@ await test('Backlog 869 (Blickwinkel „Fuhrparkleitung sieht morgens, welche Re
 
 await test('Backlog 870 (Blickwinkel „Disposition: Lkw steht halb zerlegt in der Werkstatt“): Arbeitsstand in „Nicht einplanen“ der Disposition – auch von einem anderen offenen Vorgang desselben Fahrzeugs (mit Nummer); Hilfe DE/UK/EN', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("${dispoWst(cs, c)}${partsEta(c)}${!dispoReturnKnown(c)") && app.includes('const dispoWst = (cs, c) => { const w = [c, ...cs.filter((x) => x.vehicle_id === c.vehicle_id && x !== c)].find((x) => x.work_state_note && WST_ST.includes(x.status));'), 'Zeile „Nicht einplanen“');
+  ok(app.includes("${dispoWst(cs, c)}${partsEta(c)}${c.ready_expected_on && rdyOf(c) ? ` · <span data-dprdy>${rdyTxt(c.ready_expected_on)}</span>` : ''}${!dispoReturnKnown(c)") && app.includes('const dispoWst = (cs, c) => { const w = [c, ...cs.filter((x) => x.vehicle_id === c.vehicle_id && x !== c)].find((x) => x.work_state_note && WST_ST.includes(x.status));'), 'Zeile „Nicht einplanen“');
   // Verhalten wie im Browser nachgestellt: Arbeitsstand am anderen Vorgang wird mit Nummer genannt, ohne Arbeitsstand nichts
   const src = app.slice(app.indexOf('const dispoWst = '), app.indexOf('\n', app.indexOf('const dispoWst = ')));
   const f = new Function('WST_ST', 'esc', 't', 'ltxt', 'clipTxt', src + '; return dispoWst;')(['in_reparatur', 'wartet_teile'], (x) => String(x), (k) => k, (x) => x, (x) => x);
@@ -30982,6 +30982,82 @@ await test('Backlog 870 (Blickwinkel „Disposition: Lkw steht halb zerlegt in d
   eq(f([{ ...b, status: 'abschlusskontrolle' }], { ...b, status: 'abschlusskontrolle' }), '', 'nur Reparatur/„wartet auf Teile“');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_dispo_s.split('|').some((x) => x.includes(STRINGS[l].dispo_not_plannable) && x.includes(STRINGS[l].wst_title)), l + ': Hilfe Disposition');
+});
+
+await test('Backlog 871 (Blickwinkel „Fahrer fragt: wann ist mein Lkw fertig?“): voraussichtlich fertig laut Werkstatt (Migration 0100) – freigegeben (nach Übernahme)/in Reparatur/„wartet auf Teile“, nicht in der Vergangenheit, nicht vor dem Termin, leer = entfernen, Fahrer sieht es (Vorgang, Liste, Mein Fahrzeug), entfernt mit Abschlusskontrolle/Werkstattwechsel; Disposition „Rückkehr“; Hilfe DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair, newCase } = await freshWorld();
+  const { berlinDate } = await import('../src/util.js');
+  const day = (n) => new Date(Date.parse(berlinDate() + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  // freigegeben: erst nach Übernahme (wie Termin), nicht vor dem Werkstatttermin
+  const pre = await newCase(); eq((await cmd(U.fleet, pre, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  ok(!(await U.ws.get(`/api/cases/${pre}`)).data.allowed_actions.includes('set_ready_date'), 'vor Übernahme kein Knopf');
+  eq((await cmd(U.ws, pre, 'acknowledge', { planned_date: day(5) })).status, 200);
+  ok((await U.ws.get(`/api/cases/${pre}`)).data.allowed_actions.includes('set_ready_date'), 'nach Übernahme');
+  { const r = await cmd(U.ws, pre, 'set_ready_date', { ready_expected_on: day(3) }); eq(r.status, 400); ok(/vor dem Werkstatttermin/.test(r.data.message), r.data.message); }
+  eq((await cmd(U.ws, pre, 'set_ready_date', { ready_expected_on: day(7) })).status, 200);
+  // Werkstattwechsel: Angabe der bisherigen Werkstatt entfällt (Verlauf bleibt)
+  eq((await cmd(U.fleet, pre, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'Kapazität')).status, 200);
+  eq((await U.fleet.get(`/api/cases/${pre}`)).data.case.ready_expected_on, null, 'mit Werkstattwechsel entfernt');
+  const id = await toRepair();
+  ok((await U.ws.get(`/api/cases/${id}`)).data.allowed_actions.includes('set_ready_date'), 'Knopf in Reparatur');
+  ok([403, 404].includes((await cmd(U.wsMuc, id, 'set_ready_date', { ready_expected_on: day(2) })).status), 'fremde Werkstatt');
+  eq((await cmd(U.driver, id, 'set_ready_date', { ready_expected_on: day(2) })).status, 403, 'Fahrer');
+  { const r = await cmd(U.ws, id, 'set_ready_date', { ready_expected_on: day(-1) }); eq(r.status, 400); ok(/Vergangenheit/.test(r.data.message), r.data.message); }
+  { const r = await cmd(U.ws, id, 'set_ready_date', { ready_expected_on: day(400) }); eq(r.status, 400); ok(/mehr als ein Jahr/.test(r.data.message)); }
+  { const r = await cmd(U.ws, id, 'set_ready_date', { ready_expected_on: '2026-02-30' }); eq(r.status, 400); ok(/Format/.test(r.data.message)); }
+  eq((await cmd(U.ws, id, 'set_ready_date', { ready_expected_on: '' })).status, 400, 'leer ohne Angabe = unverändert');
+  const st0 = (await U.ws.get(`/api/cases/${id}`)).data.case.status;
+  eq((await cmd(U.ws, id, 'set_ready_date', { ready_expected_on: day(0) })).status, 200, 'heute erlaubt');
+  eq((await cmd(U.ws, id, 'set_ready_date', { ready_expected_on: day(2) })).status, 200);
+  let d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq(d.case.ready_expected_on, day(2)); eq(d.case.status, st0, 'kein Statuswechsel');
+  const ev = d.events.filter((x) => x.action === 'set_ready_date').pop(); eq(ev.payload.from, day(0)); eq(ev.payload.to, day(2));
+  { const r = await cmd(U.ws, id, 'set_ready_date', { ready_expected_on: day(2) }); eq(r.status, 400); ok(/unverändert/.test(r.data.message)); }
+  // Fahrer (Melder) sieht das Datum im Vorgang, in der Liste, im Verlauf und unter „Mein Fahrzeug“ (bekannte Mängel)
+  const dd = (await U.driver.get(`/api/cases/${id}`)).data; eq(dd.case.ready_expected_on, day(2)); ok(dd.events.some((x) => x.action === 'set_ready_date'), 'Verlauf beim Fahrer');
+  eq((await U.driver.get('/api/cases?status=open')).data.cases.find((x) => x.id === id).ready_expected_on, day(2), 'Liste Fahrer');
+  eq((await U.viewer.get('/api/cases?status=open')).data.cases.find((x) => x.id === id).ready_expected_on, day(2), 'Liste Lesezugriff');
+  const vid = dd.case.vehicle_id; ok([200, 201].includes((await U.fleet.post(`/api/vehicles/${vid}/drivers`, { user_id: U.driver.id })).status), 'Fahrer zugeordnet');
+  const mv = (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === vid);
+  ok(mv && mv.known_defects.some((k) => k.case_no === dd.case.case_no && k.ready_expected_on === day(2)), 'Mein Fahrzeug: bekannte Mängel mit Datum');
+  // wartet auf Teile: bleibt; leer = entfernen
+  eq((await cmd(U.ws, id, 'wait_parts', {}, 'Lager bestellt')).status, 200);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(d.case.ready_expected_on, day(2), 'bleibt bei „wartet auf Teile“'); ok(d.allowed_actions.includes('set_ready_date'));
+  eq((await cmd(U.fleet, id, 'set_ready_date', { ready_expected_on: '' })).status, 200, 'Leitung entfernt');
+  d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(d.case.ready_expected_on, null); eq(d.events.filter((x) => x.action === 'set_ready_date').pop().payload.to, null);
+  // erneut setzen, dann Abschlusskontrolle: automatisch entfernt
+  eq((await cmd(U.ws, id, 'resume_repair')).status, 200);
+  eq((await cmd(U.ws, id, 'set_ready_date', { ready_expected_on: day(1) })).status, 200);
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Bremse' })).status, 200);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.case.status === 'abschlusskontrolle' && d.case.ready_expected_on === null, 'mit Abschlusskontrolle entfernt');
+  ok(!d.allowed_actions.includes('set_ready_date'), 'kein Knopf in der Abschlusskontrolle');
+  // nicht in der Integrations-API (Datensparsamkeit; dort ohne Bedarf)
+  { const src = (await import('node:fs')).readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8'); ok(!src.includes('ready_expected_on'), 'nicht in der Integrations-API'); }
+  // Oberfläche: Disposition „Rückkehr“ gilt als bekannt, wenn das Datum nach heute liegt
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const grab = (k) => app.slice(app.indexOf(k), app.indexOf('\n', app.indexOf(k)));
+  const rk0 = app.slice(app.indexOf('const dispoReturnKnown = '), app.indexOf('\n};', app.indexOf('const dispoReturnKnown = ')) + 3);
+  const today = berlinDate();
+  const drk = new Function('bDate', grab('const RDY_ST = ') + ';' + grab('const rdyOf = ') + ';' + rk0 + '; return dispoReturnKnown;')(() => today);
+  eq(drk({ status: 'in_reparatur' }), false, 'ohne Datum ungeklärt');
+  eq(drk({ status: 'in_reparatur', ready_expected_on: day(2) }), true, 'Datum nach heute');
+  eq(drk({ status: 'in_reparatur', ready_expected_on: today }), false, 'heute: noch nicht sicher');
+  eq(drk({ status: 'wartet_teile', ready_expected_on: day(-1) }), false, 'überschritten');
+  ok(app.includes("${workStateList(c)}${c.ready_expected_on && rdyOf(c) ? ` · <span data-rdyl>") && app.includes('<dd id="rdy">') && app.includes("case 'set_ready_date': {") && app.includes('<span data-kdrdy>'), 'Vorgang, Liste, Formular, Mein Fahrzeug');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l];
+    for (const k of ['act_set_ready_date', 'hev_set_ready_date', 'rdy_title', 'rdy_passed', 'rdy_by_ws', 'rdy_hint']) ok(S[k], `${l}: ${k}`);
+    ok(S.help_ws_s.split('|').some((x) => x.includes(S.act_set_ready_date)), l + ': Hilfe Werkstatt');
+    ok(S.help_dispo_s.split('|').some((x) => x.includes(S.rdy_title) && x.includes(S.dispo_return_unknown) && x.includes(S.rdy_passed)), l + ': Hilfe Disposition');
+    ok(S.help_myveh_s.split('|').some((x) => x.includes(S.rdy_title)), l + ': Hilfe Mein Fahrzeug');
+    ok(S.help_ws_s.includes(S.act_request_quality_check) && S.help_dispo_s.includes(S.dispo_not_plannable), l + ': Knopfnamen stimmen');
+    if (l !== 'de') for (const m of ['Fertigstellung im Format JJJJ-MM-TT.', 'Voraussichtliche Fertigstellung liegt in der Vergangenheit.', 'Voraussichtliche Fertigstellung liegt mehr als ein Jahr in der Zukunft.', 'Voraussichtliche Fertigstellung liegt vor dem Werkstatttermin.', 'Voraussichtliche Fertigstellung ist unverändert.']) ok(translateValidation(l, m) !== m, `${l}: ${m}`);
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
