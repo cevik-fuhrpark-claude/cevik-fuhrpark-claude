@@ -425,6 +425,7 @@ UI-Prüftermin erledigt am Anhänger: Hinweis Achskilometerzähler, letzter km-S
 UI-Kontrolle nach Reparatur am Anhänger: Hinweis Achskilometerzähler am km-Feld, beim Lkw nicht (DE/UK/EN; Backlog 831)|ui-kontrolle-anhaenger-km.py|/tmp/cfp-kontrolle-anhaenger-km.log
 UI-Anhänger-km gleich Zugmaschine: Datenqualität, Zeitleisten-Markierung, Begründung nachtragen (DE/UK/EN; Backlog 833)|ui-anhaenger-km-zugmaschine.py|/tmp/cfp-anhaenger-km-zugmaschine.log
 UI-Arbeitszeit: Hinweis letzter Arbeitstag ohne Eintrag, Knopf setzt das Datum, nur Werkstatt (DE/UK/EN; Backlog 835)|ui-arbeitszeit-vortag.py|/tmp/cfp-arbeitszeit-vortag.log
+UI-Meine Aufträge: Werkstatt-Startseite „Von dir bearbeitet“ und Reiter „Von mir bearbeitet“, nur eigene Aufträge (DE/UK/EN; Backlog 866)|ui-meine-auftraege.py|/tmp/cfp-meine-auftraege.log
 UI-Abfahrtskontrolle km-Tippfehler: letzter Stand, Differenz, Hinweise kleiner/mehr Stellen, auch Fahrer (DE/UK/EN; Backlog 836)|ui-abfahrt-km-tippfehler.py|/tmp/cfp-abfahrt-km-tippfehler.log
 UI-Fahrzeugakte km erfassen: letzter Stand, Differenz, Hinweise kleiner/mehr Stellen, früheres Datum ohne Hinweis (DE/UK/EN; Backlog 837)|ui-akte-km-tippfehler.py|/tmp/cfp-akte-km-tippfehler.log
 UI-Zeitleiste km mit mehr Stellen: Datenqualität verlinkt, Hinweis mit vorherigem Stand, Begründung nachtragen löst ihn (DE/UK/EN; Backlog 838)|ui-zeitleiste-km-stellen.py|/tmp/cfp-zeitleiste-km-stellen.log

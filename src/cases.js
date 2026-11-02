@@ -152,6 +152,13 @@ export async function listCases(env, user, envName, query, meta = null) {
   // Backlog 487 (Blickwinkel „Werkstatt-Wochenabschluss am Freitag“): Vorgänge mit offenen Restarbeiten – nach der technischen Freigabe standen sie
   // in keiner Liste der Werkstatt (nur Agentenbefund an die Leitung). Mit `status=fahrzeug_freigegeben` die freigegebenen; Fahrer nie.
   if (on(query.open_items)) where.push(user.role === 'driver' ? '0' : `EXISTS (SELECT 1 FROM open_items oi WHERE oi.case_id=c.id AND oi.status='offen')`);
+  // Backlog 866 (Blickwinkel „Neuer Mechaniker, erste Woche: welche Aufträge sind meine?“): Vorgänge, an denen dieses Konto etwas erfasst hat
+  // (Protokolleintrag, z. B. übernommen/begonnen/Teil/Kommentar, oder Arbeitszeit) – die Tafel zeigte nur Arbeitsschritte aller Aufträge.
+  // Fahrer nie (sie sehen ohnehin nur eigene Meldungen); nur eigenes Konto, keine Auswertung anderer Personen.
+  if (on(query.mine)) {
+    if (user.role === 'driver') where.push('0');
+    else { where.push('(EXISTS (SELECT 1 FROM case_events me WHERE me.case_id=c.id AND me.actor_id=?) OR EXISTS (SELECT 1 FROM work_entries mw WHERE mw.case_id=c.id AND mw.user_id=?))'); args.push(user.id, user.id); }
+  }
   // Backlog 463: „Rückfrage offen“ / „Antwort vom Melder eingegangen“ (gleiche Regel wie questionState; Fahrer: eigene Meldungen)
   if (query.question === 'open' || query.question === 'answered') {
     where.push(`c.status IN (${OPEN_STATUSES.map((x) => `'${x}'`).join(',')}) AND ${Q_AT_SQL} IS NOT NULL AND ` + (query.question === 'open'

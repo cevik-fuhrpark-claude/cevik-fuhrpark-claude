@@ -1096,6 +1096,7 @@ async function workshopBoard() {
   // Backlog 600: alle Abfragen der Tafel gleichzeitig starten (vorher fünf nacheinander); Ergebnisse in derselben Reihenfolge eingebaut
   const pOpen = api('GET', '/api/cases?status=open&limit=500'), pOv = early(api('GET', '/api/maintenance')), pNr = early(api('GET', '/api/me/inspections-without-result'));
   const pRi = early(api('GET', '/api/cases?' + caseFilterQ('open_items') + '&limit=200')), pWin = early(wsWinter(vsDef('tireSite')));
+  const pMine = early(api('GET', '/api/cases?' + caseFilterQ('mine') + '&limit=500'));
   const open = (await pOpen).cases.filter((c) => c.access !== 'read');
   const lanes = [
     ['ws_to_ack', open.filter((c) => c.status === 'werkstatt_freigegeben' && !c.workshop_ack_at)],
@@ -1125,6 +1126,13 @@ async function workshopBoard() {
   // wie die verlinkte Liste (repeat_days=3) inkl. Vorab-Info („gemeldet“ mit Vorschlag dieser Werkstatt) – vorher zählte die Startseite n, die Liste n+1 (20.10.2026)
   const rep = open.filter((c) => recentRepeat(c));
   if (rep.length) lanes.unshift(['ws_repeat', rep]);
+  // Backlog 866 (Blickwinkel „Neuer Mechaniker, erste Woche: welche Aufträge sind meine?“): Aufträge in Arbeit, an denen dieses Konto etwas
+  // erfasst hat, direkt vor den Arbeitsschritten. Nur wenn auch andere an Aufträgen arbeiten – an einem gemeinsamen Werkstattkonto wäre es
+  // sonst dieselbe Liste noch einmal. Fällt die Abfrage aus, bleibt die Tafel wie bisher.
+  let mineIds = null; try { mineIds = new Set((await pMine).cases.map((c) => c.id)); } catch {}
+  const WORKING = (c) => ['in_reparatur', 'wartet_teile', 'abschlusskontrolle'].includes(c.status) || (c.status === 'werkstatt_freigegeben' && c.workshop_ack_at);
+  const mineL = mineIds ? open.filter((c) => WORKING(c) && mineIds.has(c.id)) : [];
+  if (mineL.length && mineL.length < open.filter(WORKING).length) { const i = lanes.findIndex(([k]) => k === 'ws_to_ack'); lanes.splice(i, 0, ['ws_mine', mineL]); }
   // Backlog 454 (Blickwinkel „derselbe Auftrag steht in ‚Heute geplant‘ und ‚Neu – bitte übernehmen‘“): hervorgehobene Abschnitte oben bleiben,
   // im Arbeitsschritt unten trägt der Auftrag „steht auch oben: …“ und ein Satz nennt die Gesamtzahl – sonst wirkte ein Auftrag wie zwei
   const STEP_KEYS = ['ws_to_ack', 'ws_to_start', 'st_in_reparatur', 'st_wartet_teile', 'st_abschlusskontrolle', 'ws_preview'];
@@ -1135,7 +1143,7 @@ async function workshopBoard() {
   const alsoAbove = (c) => (above.has(c.id) ? `<b data-alsoabove>↑ ${esc(t('ws_also_above'))}: ${esc(above.get(c.id).join(' · '))}</b> · ` : '');
   let noteDone = false;
   const dupNote = (k) => { if (noteDone || !above.size || !STEP_KEYS.includes(k)) return ''; noteDone = true; return `<p class="small muted" id="wsdupnote">${esc(tn('ws_dup_note', total))}</p>`; };
-  let html = wsFlow() + shown.map(([k, l]) => `${dupNote(k)}<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${k === 'ws_planned_today' && l.length > 1 ? `<p class="small muted" id="wsdayorder">${esc(t('day_order_hint'))}</p>` : ''}${caseList(l, '', STEP_KEYS.includes(k) ? alsoAbove : null)}${k === 'ws_repeat' ? `<p class="small"><a href="${esc(hj('#/cases?f=repeat'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
+  let html = wsFlow() + shown.map(([k, l]) => `${dupNote(k)}<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${k === 'ws_planned_today' && l.length > 1 ? `<p class="small muted" id="wsdayorder">${esc(t('day_order_hint'))}</p>` : ''}${k === 'ws_mine' ? `<p class="small muted" id="wsminehint">${esc(t('ws_mine_hint'))} <a href="${esc(hj('#/cases?f=mine'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}${caseList(l, '', STEP_KEYS.includes(k) ? alsoAbove : null)}${k === 'ws_repeat' ? `<p class="small"><a href="${esc(hj('#/cases?f=repeat'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
   try {
     const ov = await pOv;
     // ≤ 14 Tage nach Datum oder nach km fällig/überschritten (Warnschwelle aus den Einstellungen) – gleiche Status wie die Prüftermin-Übersicht
@@ -1537,15 +1545,15 @@ function caseList(list, empty, extra) {
 
 // Filter der Vorgangsliste: offen/abgeschlossen/alle bzw. „Mangel erneut festgestellt“ (offen, letzte 3 Tage)
 // „kritisch“/„gesperrt“: Sprung aus den Zählern der Startseite (Backlog 238, Blickwinkel „Inhaber nach dem Urlaub“) – gleiche Regel wie der Zähler
-const caseFilterQ = (f) => (f === 'q_open' ? 'status=open&question=open' : f === 'q_answered' ? 'status=open&question=answered' : f === 'unreceived' ? 'status=open&unreceived=1' : f === 'limited' ? 'status=open&limited=1' : f === 'open_items' ? 'status=fahrzeug_freigegeben&open_items=1' : f === 'cost_approval' ? 'status=open&cost_approval=1' : f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1' : f === 'repeat' ? 'status=open&repeat_days=3' : f === 'warranty' ? 'status=open&warranty=1' : f === 'stale' ? 'status=open&stale=1' : f === 'followup' ? 'status=open&followup=1' : `status=${f === 'all' ? '' : f}`);
-const CF_LABEL = { unreceived: 'todo_receive', limited: 'dispo_limited_new', open_items: 'filter_open_items', repeat: 'filter_repeat', warranty: 'filter_warranty', stale: 'filter_stale', followup: 'filter_followup', critical: 'prio_kritisch', locked: 'locked_cases', cost_approval: 'todo_cost_approval', q_open: 'q_open', q_answered: 'q_answered' };
+const caseFilterQ = (f) => (f === 'q_open' ? 'status=open&question=open' : f === 'q_answered' ? 'status=open&question=answered' : f === 'unreceived' ? 'status=open&unreceived=1' : f === 'limited' ? 'status=open&limited=1' : f === 'open_items' ? 'status=fahrzeug_freigegeben&open_items=1' : f === 'mine' ? 'status=open&mine=1' : f === 'cost_approval' ? 'status=open&cost_approval=1' : f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1' : f === 'repeat' ? 'status=open&repeat_days=3' : f === 'warranty' ? 'status=open&warranty=1' : f === 'stale' ? 'status=open&stale=1' : f === 'followup' ? 'status=open&followup=1' : `status=${f === 'all' ? '' : f}`);
+const CF_LABEL = { unreceived: 'todo_receive', limited: 'dispo_limited_new', open_items: 'filter_open_items', repeat: 'filter_repeat', warranty: 'filter_warranty', stale: 'filter_stale', followup: 'filter_followup', critical: 'prio_kritisch', locked: 'locked_cases', cost_approval: 'todo_cost_approval', q_open: 'q_open', q_answered: 'q_answered', mine: 'filter_mine' };
 async function viewCases() {
   const hf = new URLSearchParams(location.hash.split('?')[1] || '').get('f');
   if (hf) try { sessionStorage.setItem('cfp_cf', hf); } catch {}
   // Sprung aus einem Zähler (#/cases?f=…): früherer Suchbegriff gilt nicht (Zahl und Liste passten sonst nicht, 22.10.2026)
   if (hf) S.caseQ = '';
   let f = hf || sessionStorage.getItem('cfp_cf') || 'open';
-  if (!['open', 'closed', 'all', 'repeat', 'warranty', 'stale', 'followup', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items', 'q_open', 'q_answered'].includes(f) || (['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items'].includes(f) && S.me.role === 'driver') || (f === 'followup' && ['driver', 'workshop'].includes(S.me.role))) f = 'open';
+  if (!['open', 'closed', 'all', 'repeat', 'warranty', 'stale', 'followup', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items', 'q_open', 'q_answered', 'mine'].includes(f) || (['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items', 'mine'].includes(f) && S.me.role === 'driver') || (f === 'followup' && ['driver', 'workshop'].includes(S.me.role))) f = 'open';
   const q = S.caseQ || '';
   const vq = () => (vsDef('caseVsite') && S.me.role !== 'driver' ? '&vsite=' + encodeURIComponent(vsDef('caseVsite')) : '') + (S.caseWs && wsFilterOk() ? '&ws=' + encodeURIComponent(S.caseWs) : '');
   const lq = () => (S.caseLimit ? '&limit=' + S.caseLimit : '') + sq();
@@ -1565,7 +1573,7 @@ async function viewCases() {
   const wsel = wsFilterOk() && wsAll().length > 1 ? `<div class="noprint" style="margin-bottom:12px"><label for="cws">${esc(t('workshop'))}</label><select id="cws"><option value="">${esc(t('filter_all'))}</option>${wsAll().map((w) => `<option value="${esc(w.code)}"${S.caseWs === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>` : '';
   render(`<h1>${esc(t('nav_cases'))}</h1>
     <input id="cq" class="noprint" type="search" value="${esc(q)}" placeholder="${esc(t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search'))}" aria-label="${esc(t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search'))}" style="margin-bottom:12px" autocomplete="off">${vsel}${wsel}
-    <div class="seg-tabs noprint">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? [] : ['followup']), ...(['critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items'].includes(f) ? [f] : [])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}"${k === f ? ' aria-current="true"' : ''}>${esc(t(k === 'unreceived' && !isMgr() ? 'dispo_unreceived' : CF_LABEL[k] || k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', nDays(res.stale_days)) : ownerT('filter_stale_off'))}</p>` : ''}
+    <div class="seg-tabs noprint">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? ['mine'] : ['followup']), ...(['critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items'].includes(f) || (f === 'mine' && S.me.role !== 'workshop') ? [f] : [])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}"${k === f ? ' aria-current="true"' : ''}>${esc(t(k === 'unreceived' && !isMgr() ? 'dispo_unreceived' : CF_LABEL[k] || k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', nDays(res.stale_days)) : ownerT('filter_stale_off'))}</p>` : ''}
     ${f !== 'followup' ? `<select id="csort" class="noprint" aria-label="${esc(t('sort_by'))}" style="max-width:420px;margin-bottom:12px">${CASE_SORTS.map((k) => `<option value="${k}"${(S.caseSort || 'priority') === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('csort_' + k))}</option>`).join('')}</select>` : ''}
     <div id="cl">${cPrint(list, q)}${caseList(list)}${trunc(res)}</div>
     <div class="actions">${S.me.role !== 'driver' ? `<button type="button" class="btn secondary" id="ccsv">${esc(t('export_csv'))}</button>${f === 'followup' ? `<button type="button" class="btn secondary" id="cics">${esc(t('followup_ics'))}</button>` : ''}` : ''}<button type="button" class="btn secondary" id="cprl">${esc(t('print'))}</button></div>`, 'cases');

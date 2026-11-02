@@ -20215,7 +20215,7 @@ await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes(`<a class="statlink" id="stcrit" href="\${hj('#/cases?f=critical')}">`) && app.includes(`<a class="statlink" id="stlock" href="\${hj('#/cases?f=locked')}">`) && app.includes(`id="stopen" href="\${hj('#/cases?f=open')}"`), 'Startseite verlinkt');
   ok(app.includes("f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1'"), 'Listenfilter');
-  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
+  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items', 'mine'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
   const { translateValidation } = await import('../public/i18n.js');
   for (const l of ['uk', 'en']) ok(translateValidation(l, 'Priorität: niedrig, mittel oder kritisch.') !== 'Priorität: niedrig, mittel oder kritisch.', l);
 });
@@ -30808,6 +30808,42 @@ await test('Wächter (02.11.2026): kein Code hinter einem Zeilenkommentar „ver
   eq(bad.join(', '), '', 'Deklaration steht im Kommentar –');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/\n\s*const ss = sAll\.slice\(0, 10\);/.test(app), 'globale Suche: Lagertreffer deklariert');
+});
+
+await test('Backlog 866 (Blickwinkel „Neuer Mechaniker, erste Woche: welche Aufträge sind meine?“): Filter mine=1 – Vorgänge, an denen dieses Konto etwas erfasst hat (Protokoll oder Arbeitszeit), nur eigenes Konto, Fahrer nie; Tafel-Abschnitt „Von dir bearbeitet“ nur, wenn auch andere arbeiten; Reiter, Hilfe DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair, newCase } = await freshWorld();
+  const own = U.own; const inv = async (b) => { const x = await own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; };
+  const ws2 = await inv({ username: 'w.werkstatt2', display_name: 'WS DO 2', role: 'workshop', environment: 'test', workshop_site: 'DORTMUND' });
+  const a = await toRepair(); // U.ws hat begonnen
+  const b = await newCase(); eq((await cmd(U.fleet, b, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(ws2, b, 'start_repair')).status, 200, 'Kollege beginnt b');
+  const c = await newCase(); eq((await cmd(U.fleet, c, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(ws2, c, 'start_repair')).status, 200);
+  eq((await cmd(U.ws, c, 'record_work', { hours: 1, description: 'mitgeholfen' })).status, 200, 'nur Arbeitszeit am Auftrag des Kollegen');
+  const ids = async (cl, q = '/api/cases?status=open&mine=1') => { const r = await cl.get(q); eq(r.status, 200, q); return r.data.cases.map((x) => x.id).sort().join(','); };
+  eq(await ids(U.ws), [a, c].sort().join(','), 'U.ws: begonnen + Arbeitszeit');
+  eq(await ids(ws2), [b, c].sort().join(','), 'Kollege: seine zwei');
+  eq(await ids(U.wsMuc), '', 'fremde Werkstatt: nichts');
+  eq(await ids(U.driver), '', 'Fahrer nie (auch nicht eigene Meldungen über diesen Filter)');
+  eq(await ids(U.fleet), [a, b, c].sort().join(','), 'Leitung: hat alle freigegeben');
+  eq(await ids(U.ws, '/api/cases?status=open&mine=0'), (await ids(U.ws, '/api/cases?status=open')), 'mine=0 schaltet nicht ein');
+  // CSV-Export protokolliert den Filter
+  eq((await U.ws.get('/api/cases?format=csv&status=open&mine=1')).status, 200);
+  const au = e.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='reports.cases.export' ORDER BY created_at DESC, rowid DESC LIMIT 1`).get();
+  eq(JSON.parse(au.detail).mine, '1', 'Export-Protokoll nennt mine');
+  // Oberfläche
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("f === 'mine' ? 'status=open&mine=1'") && app.includes("mine: 'filter_mine'") && app.includes("S.me.role === 'workshop' ? ['mine'] : ['followup']"), 'Filter + Reiter für die Werkstatt');
+  const i0 = app.indexOf('async function workshopBoard('); const board = app.slice(i0, app.indexOf('\n}\n', i0));
+  ok(board.indexOf("const pMine = early(api('GET', '/api/cases?' + caseFilterQ('mine') + '&limit=500'));") >= 0 && board.indexOf('const pMine') < board.indexOf('await '), 'Tafel fragt früh und parallel');
+  ok(board.includes("mineL.length < open.filter(WORKING).length") && board.includes("lanes.splice(i, 0, ['ws_mine', mineL])"), 'nur wenn auch andere arbeiten, vor den Arbeitsschritten');
+  ok(!board.includes("'ws_mine', 'ws_to_ack'") && board.includes("const STEP_KEYS = ['ws_to_ack'"), 'kein Arbeitsschritt → Einträge unten tragen „steht auch oben“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l];
+    ok(S.ws_mine && S.filter_mine && S.ws_mine_hint && S.ws_mine !== S.filter_mine, l + ': Texte');
+    const h = S.help_ws_s.split('|'); ok(h.some((x) => x.includes(S.ws_mine) && x.includes(S.filter_mine) && x.includes(S.nav_cases)), l + ': Hilfe nennt Abschnitt, Reiter und „Vorgänge“');
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
