@@ -2944,7 +2944,7 @@ async function viewCase(id) {
     const prog = document.createElement('span'); prog.className = 'small muted'; prog.setAttribute('role', 'status'); fi.after(prog); fi.disabled = true;
     // Umgebung beim Start festhalten (Inhaber schaltet währenddessen um: Rest ging sonst an die andere Umgebung – 22.10.2026)
     const who = outboxWho(); const ox = who ? { env: who.env } : {}; const hash0 = location.hash;
-    let later = 0;
+    let later = 0, darkN = 0;
     for (const [i, file] of take.entries()) {
       prog.textContent = ` ${t('uploading')} ${i + 1}/${take.length}`;
       try {
@@ -2954,6 +2954,7 @@ async function viewCase(id) {
         const rej = uploadReject(blob, file.name); if (rej) { errs.push(`${file.name}: ${rej}`); continue; }
         const r = await api('POST', `/api/cases/${c.id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, ...ox, headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } });
         if (r && r.duplicate) dupes.push(file.name); // gleiche Datei schon am Vorgang – Server legt keine zweite an
+        else if (await photoIsDark(blob)) darkN++; // Backlog 863
       }
       catch (err) {
         // Höchstzahl inzwischen erreicht (zweites Gerät): einmal mit Zahl melden, restliche Dateien nicht einzeln versuchen
@@ -2968,7 +2969,8 @@ async function viewCase(id) {
     if (location.hash === hash0 && (!who || (outboxWho() || {}).env === who.env)) await viewCase(c.id).catch(() => {});
     if (skipped.length) errs.unshift(tn('files_skipped', skipped.length).replace('{max}', PHOTO_MAX).replace('{names}', skipped.map((f) => f.name).join(', ')));
     if (dupes.length) errs.push(`${t('file_dup')}: ${dupes.join(', ')}`);
-    if (errs.length) toast(errs.join(' · '), true); else if (take.length && !later) toast('✓');
+    if (darkN) errs.push(tn('photos_dark_added', darkN));
+    if (errs.length) toast(errs.join(' · '), errs.length > 1 || !darkN); else if (take.length && !later) toast('✓');
   };
 }
 
@@ -3167,11 +3169,31 @@ function photoLimitWatch(input) {
   if (!input) return;
   const note = document.createElement('p'); note.className = 'panel warn small'; note.setAttribute('role', 'status'); note.hidden = true; note.dataset.photomax = '';
   input.insertAdjacentElement('afterend', note);
-  input.onchange = () => {
+  // Backlog 863: Hinweis bei sehr dunklen Fotos (nur Hinweis, Senden bleibt möglich); spätere Auswahl überholt eine laufende Prüfung
+  const dark = document.createElement('p'); dark.className = 'panel warn small'; dark.setAttribute('role', 'status'); dark.hidden = true; dark.dataset.photodark = '';
+  note.insertAdjacentElement('afterend', dark);
+  let run = 0;
+  input.onchange = async () => {
     const n = (input.files || []).length;
     note.hidden = n <= PHOTO_MAX;
     note.textContent = n > PHOTO_MAX ? t('photos_over_max').replace('{n}', n).replace('{max}', PHOTO_MAX) : '';
+    const my = ++run; dark.hidden = true; dark.textContent = '';
+    let d = 0; for (const f of [...(input.files || [])].slice(0, PHOTO_MAX)) if (await photoIsDark(f)) d++;
+    if (my !== run || !dark.isConnected) return;
+    dark.hidden = !d; dark.textContent = d ? tn('photos_dark', d) : '';
   };
+}
+// Backlog 863 (Blickwinkel „Fahrer meldet nachts einen Schaden, Foto zu dunkel“): mittlere Helligkeit (Luma nach Rec. 709, 0–255) eines auf
+// 32×32 verkleinerten Bildes; durchsichtige Pixel zählen nicht. Unter PHOTO_DARK_LUMA gilt das Foto als „sehr dunkel“ (technischer Schwellwert,
+// keine fachliche Vorgabe; nur Hinweis). Nicht lesbare Bilder gelten nie als dunkel.
+const PHOTO_DARK_LUMA = 40;
+const lumaMean = (px) => { let s = 0, n = 0; for (let i = 0; i + 3 < px.length; i += 4) { if (px[i + 3] < 128) continue; s += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]; n++; } return n ? s / n : 255; };
+async function photoIsDark(file) {
+  if (!file || !/^image\/(jpeg|png|webp)$/.test(file.type || '')) return false;
+  try {
+    const bmp = await decodeImage(file);
+    try { const cv = document.createElement('canvas'); cv.width = 32; cv.height = 32; const cx = cv.getContext('2d'); cx.drawImage(bmp.src, 0, 0, 32, 32); return lumaMean(cx.getImageData(0, 0, 32, 32).data) < PHOTO_DARK_LUMA; } finally { bmp.done(); }
+  } catch { return false; }
 }
 // Backlog 603: wie der Server (src/cases.js MAX_FILE_BYTES, erlaubte Typen) – Ablehnung schon im Browser, mit Hinweis bei HEIC/HEIF
 const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], UPLOAD_MAX_BYTES = 5 * 1024 * 1024;

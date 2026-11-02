@@ -30747,6 +30747,28 @@ await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit
   ok(r < 0.65, `Start-Modul < 65 % von app.js (${(r * 100).toFixed(2)} %) – Reserve für weitere Ergänzungen`);
 });
 
+await test('Backlog 863 (Blickwinkel „Fahrer meldet nachts einen Schaden, Foto zu dunkel“): sehr dunkle Fotos lösen beim Auswählen (Meldung, Abfahrtskontrolle) bzw. nach dem Hochladen am Vorgang einen Hinweis aus – nichts gesperrt; Text DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const lumaMean = .*$/m); ok(m, 'lumaMean');
+  const lumaMean = new Function(`return ${m[0].replace(/^const lumaMean = /, '').replace(/;$/, '')}`)();
+  const img = (r, g, b, a = 255, n = 16) => { const px = new Uint8ClampedArray(n * 4); for (let i = 0; i < n; i++) px.set([r, g, b, a], i * 4); return px; };
+  const lim = Number((app.match(/^const PHOTO_DARK_LUMA = (\d+);$/m) || [])[1]);
+  ok(lim > 0 && lim < 128, 'Schwellwert ' + lim);
+  ok(lumaMean(img(0, 0, 0)) < lim && lumaMean(img(20, 25, 30)) < lim, 'Nachtfoto dunkel');
+  ok(lumaMean(img(128, 128, 128)) >= lim && lumaMean(img(255, 255, 255)) >= lim, 'Tageslicht nicht dunkel');
+  ok(lumaMean(img(0, 0, 0, 0)) >= lim, 'durchsichtige Pixel zählen nicht');
+  ok(Math.abs(lumaMean(img(255, 0, 0)) - 0.2126 * 255) < 0.01 && Math.abs(lumaMean(img(0, 255, 0)) - 0.7152 * 255) < 0.01, 'Gewichtung Rec. 709');
+  const mix = new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255]); ok(Math.abs(lumaMean(mix) - 127.5) < 0.01, 'Mittelwert');
+  const w = app.slice(app.indexOf('function photoLimitWatch('), app.indexOf('const PHOTO_DARK_LUMA'));
+  ok(w.includes("dark.dataset.photodark = ''") && w.includes('if (my !== run || !dark.isConnected) return;') && w.includes("tn('photos_dark', d)"), 'Hinweis im Formular, ältere Prüfung verworfen');
+  ok(!/disabled|preventDefault/.test(w), 'nichts gesperrt');
+  ok((app.match(/photoLimitWatch\(\$\('#ph'\)\)/g) || []).length >= 2, 'Meldung und Abfahrtskontrolle');
+  ok(app.includes('else if (await photoIsDark(blob)) darkN++;') && app.includes("if (darkN) errs.push(tn('photos_dark_added', darkN));"), 'Vorgang: Hinweis nach dem Hochladen');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['photos_dark', 'photos_dark_added']) { ok(STRINGS[l][k] && STRINGS[l][k].includes('{n}'), l + ' ' + k); ok(PLURALS[l][k] && Object.values(PLURALS[l][k]).every((s) => s.includes('{n}')), l + ' Formen ' + k); }
+  ok(PLURALS.uk.photos_dark.few && PLURALS.uk.photos_dark.many && PLURALS.uk.photos_dark_added.few, 'uk Formen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
