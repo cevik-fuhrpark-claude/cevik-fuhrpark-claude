@@ -29,6 +29,7 @@ with sync_playwright() as p:
         q.goto(B+'/#/stock/receipt'); q.wait_for_selector('#rclines .rci',timeout=15000)
         if q.query_selector('#rcsite'): q.select_option('#rcsite',site)
         q.select_option('#rclines .rci',iid)
+        check(q.evaluate("()=>[...document.querySelectorAll('#rcsupl option')].map(o=>o.value).includes('Bremsen Alt GmbH')"),f'{lang} {w}px: bisheriger Lieferant als Vorschlag (Backlog 861)')
         tx=q.inner_text('#rclines [data-rclast]')
         check('Bremsen Alt GmbH' in tx and '95' in tx,f'{lang} {w}px: letzter Lieferant und Preis ({tx[:90]})')
         q.fill('#rcsup','Bremsen Neu KG'); q.fill('#rclines .rcp','104,50' if lang!='en' else '104.50')

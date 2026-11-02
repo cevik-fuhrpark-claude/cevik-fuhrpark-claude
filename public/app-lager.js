@@ -249,7 +249,7 @@ async function viewStockReceipt() {
   let key = uid().replace(/[^\w-]/g, '');
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="print-only small">${printStamp()} · CEVIK ${esc(t('app'))} [CLAUDE]</p><p class="small muted">${esc(t('rcpt_hint'))}</p>
     <form id="rcf" class="panel" novalidate>${sites.length > 1 ? `<label for="rcsite">${esc(t('workshop'))}</label><select id="rcsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
-      <label for="rcsup">${esc(t('supplier'))}</label><input id="rcsup" maxlength="120"><label for="rcdoc">${esc(t('doc_ref'))}</label><input id="rcdoc" maxlength="200"><label for="rcnote">${esc(t('note'))}</label><input id="rcnote" maxlength="500">
+      <label for="rcsup">${esc(t('supplier'))}</label><input id="rcsup" maxlength="120" list="rcsupl" autocomplete="off"><datalist id="rcsupl"></datalist><label for="rcdoc">${esc(t('doc_ref'))}</label><input id="rcdoc" maxlength="200"><label for="rcnote">${esc(t('note'))}</label><input id="rcnote" maxlength="500">
       <h3 style="margin-top:16px">${esc(t('rcpt_lines'))}</h3><div id="rclines"></div>
       <div class="actions"><button type="button" class="btn secondary" id="rcadd">${esc(t('rcpt_add'))}</button></div>
       <p class="small" id="rcsum" role="status" aria-live="polite"></p>
@@ -293,10 +293,15 @@ async function viewStockReceipt() {
     $('select', d).onchange = () => { sum(); rcLast(d); }; $('.rcp', d).oninput = () => rcLast(d); $('.rcdel', d).onclick = () => { d.remove(); if (!$$('#rclines .rcl').length) addLine(); sum(); };
     sum();
   };
+  // Backlog 861 (gleicher Blickwinkel): bisherige Lieferanten dieses Lagers als Vorschlag – eine Schreibweise je Lieferant hält den
+  // Bestellvorschlag (gruppiert nach letztem Lieferanten) zusammen; freie Eingabe bleibt möglich
+  const supList = () => { const seen = new Map(); items.filter((i) => i.site === site() && i.last_supplier).forEach((i) => { const k = supKey(i.last_supplier); if (!seen.has(k)) seen.set(k, i.last_supplier); });
+    $('#rcsupl').innerHTML = [...seen.values()].sort((x, y) => x.localeCompare(y, 'de')).map((v) => `<option value="${esc(v)}">`).join(''); };
+  supList();
   addLine();
   $('#rcadd').onclick = () => addLine();
   $('#rcsup').oninput = () => $$('#rclines .rcl').forEach(rcLast);
-  if ($('#rcsite')) $('#rcsite').onchange = () => { $$('#rclines .rci').forEach((x) => { x.innerHTML = opts(); }); $$('#rclines .rcl').forEach(rcLast); sum(); };
+  if ($('#rcsite')) $('#rcsite').onchange = () => { $$('#rclines .rci').forEach((x) => { x.innerHTML = opts(); }); $$('#rclines .rcl').forEach(rcLast); supList(); sum(); };
   $('#rcf').onsubmit = async (e) => {
     e.preventDefault();
     const rows = $$('#rclines .rcl').filter((r) => $('select', r).value || $('.rcq', r).value.trim());

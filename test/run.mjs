@@ -30694,7 +30694,7 @@ await test('Backlog 859 (Blickwinkel „Inhaber prüft vor dem Verkauf eines Lkw
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].warr_active_deact.includes('{n}'), l); const k = PLURALS[l].warr_active_deact; ok(k && k.one.includes('{n}') && k.other.includes('{n}') && (l !== 'uk' || (k.few && k.many)), `${l} Mehrzahl`); }
 });
-await test('Backlog 860 (Blickwinkel „Werkstatt wechselt den Lieferanten für Bremsteile“): Lagerliste mit ?last=1 nennt je Artikel den letzten Lieferanten und Zugang (nur gebuchte Zugänge, Entnahmen zählen nicht), ohne ?last=1 unverändert; Wareneingang zeigt Lieferant/Preis/Abweichung; Text DE/UK/EN', async () => {
+await test('Backlog 860 (Blickwinkel „Werkstatt wechselt den Lieferanten für Bremsteile“): Lagerliste mit ?last=1 nennt je Artikel den letzten Lieferanten und Zugang (nur gebuchte Zugänge, Entnahmen zählen nicht), ohne ?last=1 unverändert; Wareneingang zeigt Lieferant/Preis/Abweichung und schlägt bisherige Lieferanten vor (861); Text DE/UK/EN', async () => {
   const { e, U } = await freshWorld(); const db = e.DB.db;
   const mk = async (b) => { const r = await U.ws.post('/api/stock', b); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
   const a = await mk({ site: 'DORTMUND', name: 'Bremsbelagsatz VA', part_number: '29087', unit_price_net: '95,00' });
@@ -30710,6 +30710,7 @@ await test('Backlog 860 (Blickwinkel „Werkstatt wechselt den Lieferanten für 
   eq((await U.wsMuc.get('/api/stock?last=1')).data.items.some((i) => i.id === a), false, 'Werkstatt nur eigenes Lager');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("api('GET', '/api/stock?last=1')") && app.includes('data-rclsup') && app.includes('data-rclpct'), 'Oberfläche');
+  ok(app.includes('list="rcsupl"') && app.includes('const supList = () =>'), 'Backlog 861: Lieferanten-Vorschläge im Wareneingang');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l2 of ['de', 'uk', 'en']) { for (const k of ['rcl_last', 'rcl_no_sup', 'rcl_none', 'rcl_price', 'rcl_other_sup']) ok(STRINGS[l2][k], `${l2} ${k}`); ok(STRINGS[l2].rcl_diff.includes('{p}'), l2); }
 });
