@@ -30675,6 +30675,25 @@ await test('Backlog 856–857 (Blickwinkel „Werkstatt-Nacharbeit“): frühere
   eq(eps(vi, ' bremsen müller gmbh ').map((o) => o.id).join(), a, '857: Groß-/Kleinschreibung egal, einmal je Vorgang'); eq(eps(vi, 'Bremsen Meier').length, 0); eq(eps(vi, '').length, 0);
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].vi_done_ws.includes('{ws}') && STRINGS[l].vi_done_ext.includes('{list}') && STRINGS[l].ext_prev_same.includes('{s}'), l); }
 });
+await test('Backlog 859 (Blickwinkel „Inhaber prüft vor dem Verkauf eines Lkw die laufenden Gewährleistungen“): Außer Betrieb nehmen zählt laufende Gewährleistungen (Teile/Fremdleistungen ab heute, diese Umgebung) – abgelaufene nicht, nichts wird geändert; Wieder-in-Betrieb ohne Angabe; Text DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'add_part', { name: 'Lichtmaschine', quantity: 1, supplier: 'Teilehandel Nord', warranty_until: day(400) })).status, 200);
+  eq((await cmd(U.ws, id, 'add_part', { name: 'Keilriemen', quantity: 1 })).status, 200, 'ohne Gewährleistung');
+  eq((await cmd(U.fleet, id, 'add_external_cost', { supplier: 'Elektrik Müller', amount_net: 120, warranty_until: day(-2) })).status, 200, 'abgelaufen');
+  eq((await cmd(U.fleet, id, 'add_external_cost', { supplier: 'Bosch-Dienst', amount_net: 80, warranty_until: day(200) })).status, 200);
+  db.prepare(`UPDATE cases SET status='fahrzeug_freigegeben', safety_lock=0 WHERE id=?`).run(id); // Abschluss abgekürzt
+  const before = db.prepare('SELECT COUNT(*) AS n FROM parts WHERE warranty_until IS NOT NULL').get().n;
+  const r = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/active`, { active: false, reason: 'Verkauft' }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(r.data.active_warranties, 2, 'Teil + Fremdleistung, abgelaufene nicht');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM parts WHERE warranty_until IS NOT NULL').get().n, before, 'nichts geändert');
+  const r2 = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/active`, { active: true }); eq(r2.status, 200); eq(r2.data.active_warranties, undefined, 'beim Wieder-in-Betrieb nicht');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("r.active_warranties ? tn('warr_active_deact', r.active_warranties) : ''"), 'Oberfläche');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].warr_active_deact.includes('{n}'), l); const k = PLURALS[l].warr_active_deact; ok(k && k.one.includes('{n}') && k.other.includes('{n}') && (l !== 'uk' || (k.few && k.many)), `${l} Mehrzahl`); }
+});
 await test('Backlog 796: Reserve für das Start-Modul – Fahrzeugliste wird mit der Fahrzeugakte nachgeladen (Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben), Start-Modul < 65 % von app.js', async () => {
   const fs = await import('node:fs');
   const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
