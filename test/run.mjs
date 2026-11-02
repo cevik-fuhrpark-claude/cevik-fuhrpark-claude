@@ -3,7 +3,11 @@ import worker from '../src/worker.js';
 import { makeEnv, makeCtx, Client, QSTAT, HSTAT } from './harness.mjs';
 import { encryptPayload } from '../src/push.js';
 import { dotDate, ageMonths } from '../src/tires.js';
-import { b64urlEncode, b64urlDecode, concatBytes, dateLang, berlinDateTimeLang } from '../src/util.js';
+import { b64urlEncode, b64urlDecode, concatBytes, dateLang, berlinDateTimeLang, parseCsv } from '../src/util.js';
+// Backlog 874: Vorgangs-CSV über Spaltennamen prüfen statt über die Position vom Zeilenende (neue Spalten werden hinten angehängt)
+function csvTable(txt) { const rows = parseCsv(txt); const head = rows[0] || []; return { head, rows: rows.slice(1).map((r) => Object.fromEntries(head.map((n, i) => [n, r[i] ?? '']))) }; }
+const CASE_CSV_TAIL = ['Dublette von', 'Wiedervorlage', 'Schadenzeitpunkt laut Meldung', 'Teile erwartet am', 'Wartet auf (Vermerk)', 'Ort laut Meldung', 'Standort des Fahrzeugs', 'Abschleppdienst', 'Abgeschleppt am'];
+const emptyCols = (r, names) => names.every((n) => r[n] === '');
 import { nt } from '../src/notify.js';
 import { criticalBody, reminderBody } from '../src/agent.js';
 
@@ -4987,7 +4991,7 @@ await test('Dublette: Meldung als Dublette eines Vorgangs desselben Fahrzeugs sc
   ok(kcsv[0].endsWith(';davon Dubletten;davon interne Aufträge;davon ohne Reparatur beendet'), 'CSV-Spalte am Ende');
   eq(Number(kcsv.find((l) => l.startsWith('Alle;')).split(';').at(-3)), pick(k1, 'alle').duplicates, 'CSV = JSON');
   const lcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?status=all&format=csv&q=Spiegel')).data);
-  ok(lcsv.split('\r\n').filter((l) => l.endsWith(';' + o.case.case_no + ';;;;;;;;')).length === 2, 'CSV-Spalte „Dublette von“'); // Backlog 627: vier Spalten angehängt
+  ok(csvTable(lcsv).rows.filter((r) => r['Dublette von'] === o.case.case_no && emptyCols(r, CASE_CSV_TAIL.slice(1))).length === 2, 'CSV-Spalte „Dublette von“'); // Backlog 874: über Spaltennamen
   eq((await users.fleet.get('/api/cases?status=closed')).data.cases.find((x) => x.id === dup).duplicate_of_no, o.case.case_no, 'Liste liefert Nummer');
   // Folgeauftrag und Dublette im selben Vorgang werden getrennt (eine Abfrage)
   ok(QSTAT.perRequest.filter((w) => w.method === 'GET' && w.path === '/api/cases/:id').every((w) => w.n <= 21), 'Vorgangsdetail ≤ 21 Abfragen');
@@ -5250,7 +5254,7 @@ await test('Werkstattplan: Termine je Tag, überfällig geplant, ohne Termin; Te
   p = (await users.fleet.get('/api/workshop/plan')).data;
   ok(p.overdue.some((i) => i.id === cid), 'überfällig geplant');
   const csvT = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Werkstattplan-Test')).data);
-  ok(csvT.split('\r\n')[0].includes(';Werkstatttermin;Versicherungsfall') && csvT.includes(';' + day(-1).split('-').reverse().join('.') + ';;;;;Meldung;;;;;;;;;\r\n'), 'CSV-Spalte Werkstatttermin (Leitung: danach Versicherungsfall-Spalten)');
+  ok(csvT.split('\r\n')[0].includes(';Werkstatttermin;Versicherungsfall') && csvTable(csvT).rows.some((r) => r.Werkstatttermin === day(-1).split('-').reverse().join('.') && emptyCols(r, ['Versicherungsfall', 'Versicherer', 'Schadennummer', 'Kostenfreigabe ausstehend', ...CASE_CSV_TAIL]) && r.Herkunft === 'Meldung'), 'CSV-Spalte Werkstatttermin (Leitung: danach Versicherungsfall-Spalten)');
   eq((await cmd(users.ws, 'set_planned_date', { planned_date: '' })).status, 200);
   p = (await users.dispatch.get('/api/workshop/plan')).data;
   ok(p.unplanned.some((i) => i.id === cid), 'ohne Termin');
@@ -5676,10 +5680,10 @@ await test('Versicherungsfall je Vorgang: nur laut Nachweis, Vertrag desselben F
   eq((await users.prodFleet.get(`/api/vehicles/${V}/timeline?types=claim`)).data.items.length, 0, 'Betrieb sieht Testfall nicht');
   // Vorgänge-CSV: Versicherungsfall-Spalten nur für die Leitung
   const vcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=VT-IC')).data);
-  ok(vcsv.split('\r\n')[0].endsWith(';Versicherungsfall;Versicherer;Schadennummer;Kostenfreigabe ausstehend;Herkunft;Dublette von;Wiedervorlage;Schadenzeitpunkt laut Meldung;Teile erwartet am;Wartet auf (Vermerk);Ort laut Meldung;Standort des Fahrzeugs;Abschleppdienst;Abgeschleppt am') && vcsv.includes(';reguliert;Muster-Versicherung AG;S-2026-77'), 'CSV mit Versicherungsfall');
+  ok(vcsv.split('\r\n')[0].includes(';Versicherungsfall;Versicherer;Schadennummer;Kostenfreigabe ausstehend;Herkunft;Dublette von;Wiedervorlage;Schadenzeitpunkt laut Meldung;Teile erwartet am;Wartet auf (Vermerk);Ort laut Meldung;Standort des Fahrzeugs;Abschleppdienst;Abgeschleppt am') && vcsv.includes(';reguliert;Muster-Versicherung AG;S-2026-77'), 'CSV mit Versicherungsfall');
   const vcsvV = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.dispatch.get('/api/cases?format=csv&q=VT-IC')).data);
   ok(!vcsvV.includes('Versicherer'), 'Disposition ohne Versicherungsspalten');
-  ok(!vcsvV.includes('Kostenfreigabe') && vcsvV.split('\r\n')[0].endsWith(';Werkstatttermin;Herkunft;Dublette von;Wiedervorlage;Schadenzeitpunkt laut Meldung;Teile erwartet am;Wartet auf (Vermerk);Ort laut Meldung;Standort des Fahrzeugs;Abschleppdienst;Abgeschleppt am'), 'Disposition ohne Kostenspalte, mit Herkunft');
+  ok(!vcsvV.includes('Kostenfreigabe') && vcsvV.split('\r\n')[0].includes(';Werkstatttermin;Herkunft;Dublette von;Wiedervorlage;Schadenzeitpunkt laut Meldung;Teile erwartet am;Wartet auf (Vermerk);Ort laut Meldung;Standort des Fahrzeugs;Abschleppdienst;Abgeschleppt am'), 'Disposition ohne Kostenspalte, mit Herkunft');
   // Fahrzeugakte: Zusammenfassung Versicherungsfälle (nur Leitung)
   const akte = (await users.fleet.get(`/api/vehicles/${V}`)).data;
   eq(akte.claims_summary.total, 1); eq(akte.claims_summary.open, 0); eq(akte.claims_summary.reimbursed_net, 2000);
@@ -6003,7 +6007,7 @@ await test('Kosten-Freigabegrenze: aus ohne Einstellung; Überschreiten markiert
   eq((await owner.put('/api/settings', { repair_cost_limit_net: '' })).status, 200);
   ok(!(await cmd(users.ws, 'add_part', { name: 'Fett', quantity: 1, unit_price_net: 5 })).data.cost_limit_exceeded, 'Grenze aus');
   const kcsv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get('/api/cases?format=csv&q=Kostengrenze-Test')).data);
-  ok(kcsv.split('\r\n')[1].endsWith(';;Meldung;;;;;;;;;'), 'CSV: Grenze entfernt → Kostenfreigabe nicht mehr ausstehend (seit 19.10.2026 aufgehoben)');
+  ok(((r) => r && r['Kostenfreigabe ausstehend'] === '' && r.Herkunft === 'Meldung' && emptyCols(r, CASE_CSV_TAIL))(csvTable(kcsv).rows[0]), 'CSV: Grenze entfernt → Kostenfreigabe nicht mehr ausstehend (seit 19.10.2026 aufgehoben)');
   // seit 19.10.2026: Grenze entfernt → Markierung aufgehoben; für die folgenden Prüfungen Grenze wieder setzen und erneut überschreiten
   eq((await owner.put('/api/settings', { repair_cost_limit_net: '1000' })).status, 200);
   eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Getriebedienst', amount_net: 900, valuation: 'estimate' }, 'Angebot 2')).data.cost_limit_exceeded, true);
@@ -21100,7 +21104,7 @@ await test('Backlog 285 (Blickwinkel „Schaden wird erst Tage später gemeldet�
   // CSV
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/cases?status=all&format=csv')).data);
   ok(csv.split('\r\n')[0].includes(';Schadenzeitpunkt laut Meldung;Teile erwartet am;Wartet auf (Vermerk)'), 'CSV-Kopf');
-  const hm = (await import('../src/util.js')).berlinDateTime(berlinLocalToIso(`${day(-6)}T14:30`)); ok(csv.includes(';' + hm + ';;;;;;\r\n') && (csv.includes(';' + day(-3) + ';;;;;;\r\n') || csv.includes(';' + day(-3).split('-').reverse().join('.') + ';;;;;;\r\n')), 'CSV-Werte'); // Backlog 627: vier leere Spalten (Ort/Standort/Abschleppung) angehängt
+  const hm = (await import('../src/util.js')).berlinDateTime(berlinLocalToIso(`${day(-6)}T14:30`)); { const T = csvTable(csv).rows; const tail = CASE_CSV_TAIL.slice(3); ok(T.some((r) => r['Schadenzeitpunkt laut Meldung'] === hm && emptyCols(r, tail)) && T.some((r) => [day(-3), day(-3).split('-').reverse().join('.')].includes(r['Schadenzeitpunkt laut Meldung']) && emptyCols(r, tail)), 'CSV-Werte'); } // Backlog 874: über Spaltennamen
   // Oberfläche und Texte
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('${occurredFields(null)}') && app.includes("...(occ ? { occurred_at: occ } : {})") && app.includes('data-occurred>') && app.includes("case 'set_occurred_at':"), 'Meldeformular, Anzeige, Formular');
@@ -26760,8 +26764,8 @@ await test('Backlog 626–628 (Blickwinkel „Panne in Frankreich, externe Werks
   // 627: CSV
   eq((await cmd(U.fleet, id2, 'set_vehicle_location', { vehicle_location: 'Garage Dupont, Beaune (FR)', tow_service: 'Dépannage Bourgogne', towed_on: bDayOff(-1) })).status, 200);
   const csv = new TextDecoder().decode((await U.fleet.get('/api/cases?format=csv&status=alle')).data).replace(/^\uFEFF/, '').trim().split('\r\n');
-  ok(csv[0].endsWith(';Ort laut Meldung;Standort des Fahrzeugs;Abschleppdienst;Abgeschleppt am'), csv[0].slice(-100));
-  const row = csv.find((l) => l.includes('Dépannage Bourgogne')); ok(row && row.endsWith(`;Garage Dupont, Beaune (FR);Dépannage Bourgogne;${bDayOff(-1).split('-').reverse().join('.')}`) || (row && row.includes('"Garage Dupont, Beaune (FR)"')), 'Zeile ' + row);
+  ok(csv[0].includes(';Ort laut Meldung;Standort des Fahrzeugs;Abschleppdienst;Abgeschleppt am'), csv[0].slice(-100));
+  const row = csv.find((l) => l.includes('Dépannage Bourgogne')); { const r = csvTable(csv.join('\r\n')).rows.find((x) => x.Abschleppdienst === 'Dépannage Bourgogne'); ok(r && r['Standort des Fahrzeugs'] === 'Garage Dupont, Beaune (FR)' && r['Abgeschleppt am'] === bDayOff(-1).split('-').reverse().join('.'), 'Zeile ' + row); }
   // 628
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const re = new RegExp(app.match(/\nconst TACHO_WORK = \/(.+)\/i;/)[1], 'i');
@@ -31125,6 +31129,35 @@ await test('Backlog 873 (Folge aus 871): „Voraussichtlich fertig: neues Datum�
   ok(!(await U.viewer.get('/api/me/notify-prefs')).data.kinds.includes('ready_changed'), 'Lesezugriff ohne');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].pk_ready_changed === localizedTitle({ kind: 'ready_changed', title: 'Voraussichtlich fertig: neues Datum' }, l), l + ': Push-Art = Titel');
+});
+
+await test('Backlog 874 (Folge aus 871): Vorgangs-CSV mit Spalte „Voraussichtlich fertig“ (TT.MM.JJJJ) am Ende – nur freigegeben/in Reparatur/„wartet auf Teile“, für Leitung, Lesezugriff und Werkstatt; Prüfungen der CSV über Spaltennamen', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const { berlinDate } = await import('../src/util.js');
+  const day = (n) => new Date(Date.parse(berlinDate() + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const dot = (iso) => iso.split('-').reverse().join('.');
+  const a = await toRepair(), b = await toRepair(), c = await toRepair(), d = await toRepair();
+  eq((await cmd(U.ws, a, 'set_ready_date', { ready_expected_on: day(2) })).status, 200);
+  eq((await cmd(U.ws, b, 'set_ready_date', { ready_expected_on: day(5) })).status, 200);
+  eq((await cmd(U.ws, b, 'wait_parts', {}, 'Scheibe bestellt')).status, 200);
+  // stehen gebliebenes Datum außerhalb der Status (direkt in der Datenbank) erscheint nicht
+  e.DB.db.prepare(`UPDATE cases SET status='abschlusskontrolle', ready_expected_on=? WHERE id=?`).run(day(1), c);
+  const no = (id) => e.DB.db.prepare('SELECT case_no FROM cases WHERE id=?').get(id).case_no;
+  for (const [role, u] of [['fleet', U.fleet], ['viewer', U.viewer], ['workshop', U.ws]]) {
+    const r = await u.get('/api/cases?format=csv&status='); eq(r.status, 200);
+    const txt = new TextDecoder().decode(r.data); const T = csvTable(txt);
+    eq(T.head.at(-1), 'Voraussichtlich fertig', role + ': letzte Spalte');
+    ok(T.rows.length && parseCsv(txt).slice(1).every((x) => x.length === T.head.length), role + ': gleiche Spaltenzahl je Zeile');
+    const v = (id) => (T.rows.find((x) => x.Vorgang === no(id)) || {})['Voraussichtlich fertig'];
+    eq(v(a), dot(day(2)), role + ': in Reparatur');
+    eq(v(b), dot(day(5)), role + ': wartet auf Teile');
+    eq(v(c), '', role + ': Abschlusskontrolle ohne Datum');
+    eq(v(d), '', role + ': ohne Angabe leer');
+  }
+  // Leitung: Spalte steht hinter den Versicherungs-/Abschleppspalten (Anhängen ändert keine bestehende Position)
+  const H = csvTable(new TextDecoder().decode((await U.fleet.get('/api/cases?format=csv&status=')).data)).head;
+  ok(H.indexOf('Abgeschleppt am') === H.length - 2 && H.indexOf('Kostenfreigabe ausstehend') > 0, 'Reihenfolge');
+  eq((await U.driver.get('/api/cases?format=csv')).status, 403, 'Fahrer weiterhin ohne CSV');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
