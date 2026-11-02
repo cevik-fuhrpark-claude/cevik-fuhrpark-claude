@@ -30616,6 +30616,7 @@ await test('Backlog 852–853 (Blickwinkel „Rangierunfall auf dem eigenen Hof:
   eq((await U.fleet.get(`/api/cases/${ca}`)).data.claim.opponent_vehicle, undefined, 'eigenes Kennzeichen des Vorgangs');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const k of ['co_own', 'co_own_file', 'co_own_cases', 'co_own_report', 'co_named_in']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].co_own.includes('{p}'), l + ' {p}'); }
+  ok(/Rangierunfall mit einem eigenen Fahrzeug/.test(STRINGS.de.help_claims_s) && /маневрування з власним транспортом/.test(STRINGS.uk.help_claims_s) && /Manoeuvring accident with one of our own vehicles/.test(STRINGS.en.help_claims_s), 'Hilfe Versicherungsfälle DE/UK/EN');
   ok(/Rangieren/.test(STRINGS.de.acc_steps) && /маневрування/.test(STRINGS.uk.acc_steps) && /manoeuvring/.test(STRINGS.en.acc_steps), 'Unfall-Hinweis nennt das zweite eigene Fahrzeug');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-coown') && app.includes('data-coownnew') && app.includes('data-conamed'), 'Oberfläche');
