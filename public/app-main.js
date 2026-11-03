@@ -3583,8 +3583,11 @@ function workDayWatch(c) {
   const pv = $('#wdprev');
   if (pv && S.me && S.me.role === 'workshop') {
     let pd = bDate(-1); for (let i = 0; i < 7 && (isWeekendD(pd) || holName(pd)); i++) pd = bDate(-2 - i);
+    // 03.11.2026: kommt die Antwort erst, nachdem schon getippt wurde (langsames Netz in der Halle), keinen Knopf mehr einschieben –
+    // er verschob „Speichern“ nach unten, ein Tipp darauf setzte dann still das Datum auf den Vortag statt zu speichern
+    let typed = false; if (inp.form) inp.form.addEventListener('input', () => { typed = true; }, { once: true });
     if (pd >= (inp.min || '')) api('GET', '/api/work-day?date=' + encodeURIComponent(pd)).then((r) => {
-      if (!document.body.contains(pv) || r.hours) return;
+      if (!document.body.contains(pv) || r.hours || typed) return;
       pv.innerHTML = `${esc(t('wd_prev_none').replace('{d}', fmtDue(pd)))} <button type="button" class="btn secondary" data-wdprevgo style="white-space:nowrap">${esc(t('wd_prev_go').replace('{d}', fmtD(pd)))}</button>`;
       pv.hidden = false;
       const b = pv.querySelector('[data-wdprevgo]');

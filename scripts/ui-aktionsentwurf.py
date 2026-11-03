@@ -43,13 +43,13 @@ with sync_playwright() as p:
             if q.locator('[data-act=record_work]').count(): break
             act = 'acknowledge' if q.locator('[data-act=acknowledge]').count() else 'start_repair'
             q.click(f'[data-act={act}]'); q.wait_for_timeout(300)
-            if q.locator('#af button.btn').count(): q.click('#af button.btn')
+            if q.locator('#af button.btn:not([data-wdprevgo])').count(): q.click('#af button.btn:not([data-wdprevgo])')
             q.wait_for_timeout(800)
         # (1) Arbeitszeit, Antwort verloren
         q.click('[data-act=record_work]'); q.wait_for_selector('#af')
         q.fill('#af [name=hours]', '2,25'); q.fill('#af [name=description]', 'Bremssattel gängig gemacht'); q.fill('#af [name=note]', 'Halle 1')
         q.route('**/commands', lost_response)
-        q.click('#af button.btn'); q.wait_for_timeout(1500)
+        q.click('#af button.btn:not([data-wdprevgo])'); q.wait_for_timeout(1500)
         toasts = q.evaluate("[...document.querySelectorAll('.toast')].map(t => t.innerText).join(' | ')")
         check(SAVED[lang] in toasts, f'{lang}/{w}: Meldung „Eingaben gesichert“ ({toasts})')
         q.unroute('**/commands')
@@ -63,7 +63,7 @@ with sync_playwright() as p:
         check(st == {'h': '2,25', 'd': 'Bremssattel gängig gemacht', 'n': 'Halle 1', 'box': True}, f'{lang}/{w}: Arbeitszeit-Formular wiederhergestellt ({st})')
         check(q.evaluate('document.documentElement.scrollWidth<=innerWidth+1'), f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/ae_work_{lang}_{w}.png')
-        q.click('#af button.btn'); q.wait_for_timeout(1500)
+        q.click('#af button.btn:not([data-wdprevgo])'); q.wait_for_timeout(1500)
         check(len(api('GET', f'/api/cases/{cid}')['d']['work']) == 1, f'{lang}/{w}: erneutes Speichern bucht nicht doppelt')
         q.reload(); q.wait_for_selector('[data-act]', timeout=15000); q.wait_for_timeout(300)
         check(q.locator('#af').count() == 0, f'{lang}/{w}: Entwurf nach Erfolg gelöscht')
@@ -71,7 +71,7 @@ with sync_playwright() as p:
         q.click('[data-act=add_part]'); q.wait_for_selector('#af [name=name]')
         q.fill('#af [name=name]', 'Bremsscheibe vorne'); q.fill('#af [name=quantity]', '2')
         q.route('**/commands', lambda r: r.abort('internetdisconnected'))
-        q.click('#af button.btn'); q.wait_for_timeout(1200); q.unroute('**/commands')
+        q.click('#af button.btn:not([data-wdprevgo])'); q.wait_for_timeout(1200); q.unroute('**/commands')
         q.reload(); q.wait_for_selector('#af [name=name]', timeout=15000); q.wait_for_timeout(500)
         check(q.input_value('#af [name=name]') == 'Bremsscheibe vorne' and q.input_value('#af [name=quantity]') == '2' and q.locator('#adraft').count() == 1, f'{lang}/{w}: Teil nach Neuladen wiederhergestellt')
         if SHOTS: q.screenshot(path=f'{SHOTS}/ae_part_{lang}_{w}.png')

@@ -400,7 +400,7 @@ export function standTag(iso = new Date().toISOString()) {
   return d ? `stand-${d.slice(6, 10)}-${d.slice(3, 5)}-${d.slice(0, 2)}-${d.slice(11, 13)}${d.slice(14, 16)}` : 'stand';
 }
 export const COST_ITEMS_MAX = 20000;
-export async function costItems(env, user, envName, query = {}) {
+export async function costItems(env, user, envName, query = {}, { all = false } = {}) {
   if (user && !READ_ROLES.includes(user.role)) throw forbidden();
   const { from, to } = monthRange(query);
   // Fahrzeugfilter wie im Kostenbericht (24.10.2026, Blickwinkel Buchhaltung: vorher still ignoriert → Positionen aller Fahrzeuge)
@@ -460,8 +460,53 @@ export async function costItems(env, user, envName, query = {}) {
       unit_price_net: null, amount_net: unv ? null : r2(e.amount_net), valuation: unv ? 'unvalued' : e.valuation, counted: true, has_file: !!e.file_id, file_name: e.file_id ? (e.file_name || null) : null });
   }
   items.sort((a, b) => a.date.localeCompare(b.date) || String(a.plate).localeCompare(String(b.plate)) || String(a.case_no).localeCompare(String(b.case_no)) || a.type.localeCompare(b.type));
-  const truncated = items.length > COST_ITEMS_MAX;
+  const truncated = !all && items.length > COST_ITEMS_MAX;
   return { from, to, site: sel.site, vehicle_id: vehicleFilter, items: truncated ? items.slice(0, COST_ITEMS_MAX) : items, truncated };
+}
+
+// Backlog 904 (Blickwinkel „Inhaber bereitet das Jahresgespräch mit der Fremdwerkstatt/dem Teilelieferanten vor“):
+// Kosten je Firma = Fremdleistungen (Firma laut Erfassung) und Teile (Lieferant) aus denselben Einzelpositionen wie die CSV.
+// Firmen gleichen Namens werden ohne Rücksicht auf Groß-/Kleinschreibung und Leerzeichen zusammengefasst (angezeigt: häufigste Schreibweise).
+// Summen wie im Kostenbericht: Ist nur bewertete, gezählte Positionen; Teile eines Vorgangs mit Fremdleistung „ersetzt eigene Arbeit/Teile“
+// zählen nicht (Anzahl `not_counted`). Fehlender Preis = unbewertet (nie 0 €). Teile ohne Lieferant: eigene Zeile `supplier: null`.
+// Eigene Arbeitszeit gehört keiner Firma und fehlt hier. Keine Personen, keine Bewertung der Firma.
+export const supplierKey = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('de');
+export async function costSuppliers(env, user, envName, query = {}) {
+  const rep = await costItems(env, user, envName, query, { all: true });
+  const by = new Map();
+  for (const i of rep.items) {
+    if (i.type === 'arbeitszeit') continue;
+    const k = supplierKey(i.supplier);
+    const x = by.get(k) || { key: k, names: new Map(), external: 0, parts: 0, cases: new Set(), vehicles: new Set(), invoices: new Set(), actual: 0, valued: 0, estimate: 0, unvalued: 0, not_counted: 0, ext_without_file: 0, first: i.date, last: i.date };
+    if (k) { const nm = String(i.supplier).replace(/\s+/g, ' ').trim(); x.names.set(nm, (x.names.get(nm) || 0) + 1); }
+    if (i.type === 'fremdleistung') { x.external++; if (!i.has_file) x.ext_without_file++; } else x.parts++;
+    x.cases.add(i.case_no); x.vehicles.add(i.vehicle_id); if (i.document) x.invoices.add(String(i.document).trim().toLowerCase());
+    if (!i.counted) x.not_counted++;
+    else if (i.valuation === 'unvalued' || i.amount_net === null) x.unvalued++;
+    else if (i.valuation === 'estimate') x.estimate += i.amount_net;
+    else { x.actual += i.amount_net; x.valued++; }
+    if (i.date < x.first) x.first = i.date; if (i.date > x.last) x.last = i.date;
+    by.set(k, x);
+  }
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const suppliers = [...by.values()].map((x) => ({
+    supplier: x.key ? [...x.names.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'))[0][0] : null,
+    spellings: x.key ? x.names.size : 0, external_items: x.external, part_items: x.parts, cases: x.cases.size, vehicles: x.vehicles.size, documents: x.invoices.size,
+    actual_net: r2(x.actual), valued_items: x.valued, estimate_net: r2(x.estimate), unvalued_items: x.unvalued, not_counted_items: x.not_counted, external_without_file: x.ext_without_file,
+    first_date: x.first, last_date: x.last }))
+    .sort((a, b) => (a.supplier === null) - (b.supplier === null) || b.actual_net - a.actual_net || b.external_items + b.part_items - a.external_items - a.part_items || String(a.supplier).localeCompare(String(b.supplier), 'de'));
+  const sum = (f) => r2(suppliers.filter((s) => s.supplier !== null).reduce((a, s) => a + s[f], 0));
+  return { from: rep.from, to: rep.to, site: rep.site, vehicle_id: rep.vehicle_id, suppliers,
+    totals: { suppliers: suppliers.filter((s) => s.supplier !== null).length, actual_net: sum('actual_net'), estimate_net: sum('estimate_net'), unvalued_items: suppliers.reduce((a, s) => a + s.unvalued_items, 0) },
+    generated_at: new Date().toISOString() };
+}
+export function costSuppliersCsv(rep) {
+  const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
+  const d = (x) => (x ? x.split('-').reverse().join('.') : '');
+  const lines = [['Firma', 'Fremdleistungen', 'Teile-Positionen', 'Vorgänge', 'Fahrzeuge', 'Rechnungen/Belege', 'Ist netto €', 'Schätzung netto €', 'unbewertet', 'nicht gezählt (ersetzt durch Fremdleistung)', 'Fremdleistungen ohne Beleg-Datei', 'erste Position', 'letzte Position'].join(';')];
+  for (const s of rep.suppliers) lines.push([s.supplier === null ? 'ohne Angabe (Teile ohne Lieferant)' : csvCell(s.supplier), s.external_items, s.part_items, s.cases, s.vehicles, s.documents,
+    num(s.actual_net), num(s.estimate_net), s.unvalued_items, s.not_counted_items, s.external_without_file, d(s.first_date), d(s.last_date)].join(';'));
+  return '\uFEFF' + lines.join('\r\n') + '\r\n';
 }
 
 export function costItemsCsv(rep) {

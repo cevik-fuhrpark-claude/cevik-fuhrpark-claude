@@ -4088,7 +4088,7 @@ await test('Nur unbewertete Positionen: „Belegt“ zeigt „–“ statt 0 €
     eq((await users.fleet.get(`/api/vehicles/${VID}`)).data.costs.valued_items, 0, 'Fahrzeugakte');
     const app = await (await import('node:fs/promises')).readFile(new URL('../public/app.js', import.meta.url), 'utf8');
     ok(/const eurIst = \(o\) => \(o && o\.valued_items === 0 && o\.unvalued_items > 0 \? '–' : eur\(o\.actual_net\)\)/.test(app), 'Oberfläche: „–“-Regel');
-    eq((app.match(/eurIst\(/g) || []).length, 6, 'Vorgang, Fahrzeugakte, Summe, Standort, Fahrzeug, Monat');
+    eq((app.match(/eurIst\(/g) || []).length, 7, 'Vorgang, Fahrzeugakte, Summe, Standort, Fahrzeug, Monat, Firma (Backlog 904)');
     const i18n = await (await import('node:fs/promises')).readFile(new URL('../public/i18n.js', import.meta.url), 'utf8');
     for (const w of ['steht bei „Belegt“ „–“ statt 0 €', 'стоїть «–» замість 0 €', '“Documented” shows “–” instead of €0']) ok(i18n.includes(w), 'Hilfe: ' + w);
   } finally {
@@ -7078,7 +7078,7 @@ const csvExportUrls = () => {
   return {
     'fuhrpark-fahrzeuge': '/api/vehicles?format=csv', 'fuhrpark-vertraege': '/api/contracts?format=csv', 'fuhrpark-prueftermine': '/api/maintenance?format=csv',
     'fuhrpark-durchgefuehrte-pruefungen': `/api/maintenance/history?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`, 'fuhrpark-reifen': '/api/tires/fleet?format=csv',
-    'fuhrpark-protokoll': `/api/admin/audit?format=csv&from=${BERLIN_TODAY}&to=${BERLIN_TODAY}`, 'fuhrpark-kosten': `/api/reports/costs?format=csv&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kostenpositionen': `/api/reports/costs?part=items&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kosten-je-fahrzeug': `/api/reports/costs?format=csv&part=vehicles&from=${y}-01&to=${COST_TO}`,
+    'fuhrpark-protokoll': `/api/admin/audit?format=csv&from=${BERLIN_TODAY}&to=${BERLIN_TODAY}`, 'fuhrpark-kosten': `/api/reports/costs?format=csv&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kostenpositionen': `/api/reports/costs?part=items&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kosten-je-firma': `/api/reports/costs?part=suppliers&format=csv&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kosten-je-fahrzeug': `/api/reports/costs?format=csv&part=vehicles&from=${y}-01&to=${COST_TO}`,
     'werkstatt-auslastung': '/api/reports/workshop-load?weeks=4&format=csv', 'fuhrpark-kennzahlen': `/api/reports/kpi?format=csv&from=${y}-01&to=${COST_TO}`,
     'fuhrpark-kennzahlen-prio': `/api/reports/kpi?format=csv&part=priority&from=${y}-01&to=${COST_TO}`,
     'fuhrpark-bestellvorschlag': '/api/stock?reorder=1&format=csv', 'fuhrpark-lager': '/api/stock?format=csv', 'fuhrpark-lagerjournal': `/api/stock/journal?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`,
@@ -20034,7 +20034,7 @@ await test('Backlog 237 (Blickwinkel „Monatsende – Kosten an die Buchhaltung
   eq(standTag('2026-01-15T07:05:00Z'), 'stand-2026-01-15-0805', 'Winterzeit');
   // Oberfläche: Dateinamen der beiden Knöpfe mit Abrufzeitpunkt, Hinweis in drei Sprachen
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  eq((app.match(/fnPart\(rep\.site\) : ''\}_\$\{standTag\(\)\}\.csv`/g) || []).length, 3, 'alle drei Kosten-CSVs (Backlog 616: je Fahrzeug)');
+  eq((app.match(/fnPart\(rep\.site\) : ''\}_\$\{standTag\(\)\}\.csv`/g) || []).length, 4, 'alle vier Kosten-CSVs (Backlog 616: je Fahrzeug, Backlog 904: je Firma)');
   ok(app.includes('function standTag() { const x = BERLIN_DT_FMT.format(new Date(nowMs()))'), 'Serverzeit, Berlin');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cost_items_csv_hint.includes('(stand'), l + ': Hinweis Stand');
@@ -30032,9 +30032,11 @@ await test('Backlog 835 (Blickwinkel „Mechaniker trägt am nächsten Morgen di
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('<p class="small" id="wdprev" data-wdprev hidden></p>'), 'Platz für den Hinweis im Formular Arbeitszeit');
+  // Backlog 905 (03.11.2026): späte Antwort nach dem ersten Tippen schiebt keinen Knopf mehr über „Speichern“
+  ok(app.includes("inp.form.addEventListener('input', () => { typed = true; }, { once: true })") && app.includes('if (!document.body.contains(pv) || r.hours || typed) return;'), 'Backlog 905: kein Hinweis-Knopf nach Eingabebeginn');
   const fn = app.slice(app.indexOf('function workDayWatch('), app.indexOf('function workDayWatch(') + 6000);
   ok(/S\.me\.role === 'workshop'/.test(fn) && fn.includes('isWeekendD(pd) || holName(pd)'), 'nur Werkstatt; Wochenende/Feiertage werden übersprungen');
-  ok(fn.includes("pd >= (inp.min || '')") && fn.includes('r.hours) return'), 'nur innerhalb des zulässigen Datums und nur ohne erfasste Stunden');
+  ok(fn.includes("pd >= (inp.min || '')") && fn.includes('r.hours || typed) return'), 'nur innerhalb des zulässigen Datums und nur ohne erfasste Stunden');
   ok(fn.includes('b.onclick = ') && fn.includes('inp.value = pd'), 'Knopf setzt nur das Datum (Handler als Eigenschaft)');
   const I = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(I.STRINGS[l].wd_prev_none.includes('{d}') && I.STRINGS[l].wd_prev_go.includes('{d}'), 'Texte ' + l);
@@ -32023,6 +32025,64 @@ await test('Backlog 903 (Gutachter-Besichtigung, Lkw in der Werkstatt): Werkstat
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const k of ['apw_title', 'apw_short', 'apw_hint_ws', 'apw_hint_mgr', 'apw_hint_dispo']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_claims_s.includes(STRINGS[l].apw_title), `${l}: Hilfe`); }
   ok((await import('node:fs')).readFileSync(new URL('../scripts/ui-gutachter-werkstatt.py', import.meta.url), 'utf8').includes('Backlog 903'), 'UI-Prüfung');
+});
+await test('Backlog 904 (Jahresgespräch mit Fremdwerkstatt/Lieferant): Kosten je Firma aus den Einzelpositionen – Schreibweisen zusammengefasst, Ist/Schätzung/unbewertet getrennt, ersetzte Teile nicht gezählt, eigene Arbeitszeit ausgenommen; CSV, Rechte, Texte DE/UK/EN', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'FK-T 904', vin: 'WDB96340390400904', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340390400904';
+  const mk = async (text) => (await users.fleet.post('/api/cases', { vehicle_id: V, description: text, priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const cmdOn = (cid) => async (u, action, payload = {}, note = null) => { const c = (await u.get(`/api/cases/${cid}`)).data.case; return u.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload }); };
+  const c1 = await mk('Seitenwand eingedrückt (Test 904)'); let cmd = cmdOn(c1);
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Test 904')).status, 200);
+  eq((await cmd(users.ws, 'acknowledge')).status, 200); eq((await cmd(users.ws, 'start_repair')).status, 200);
+  eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Karosserie Kunz', amount_net: 500, invoice_no: 'RE-904-1' })).status, 200);
+  eq((await cmd(users.fleet, 'add_external_cost', { supplier: ' karosserie  KUNZ ', amount_net: 200, valuation: 'estimate', invoice_no: 'RE-904-2' })).status, 200);
+  eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Karosserie Kunz', amount_net: null })).status, 200);
+  eq((await cmd(users.ws, 'add_part', { name: 'Bremsscheibe', quantity: 2, unit_price_net: 80, supplier: 'Teilehandel Ost' })).status, 200);
+  eq((await cmd(users.ws, 'add_part', { name: 'Schraube M8', quantity: 4 })).status, 200);
+  eq((await cmd(users.ws, 'record_work', { hours: 1, description: 'Seitenwand gerichtet' })).status, 200);
+  const c2 = await mk('Filter tauschen (Test 904)'); cmd = cmdOn(c2);
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Test 904')).status, 200);
+  eq((await cmd(users.ws, 'acknowledge')).status, 200); eq((await cmd(users.ws, 'start_repair')).status, 200);
+  eq((await cmd(users.ws, 'add_part', { name: 'Ölfilter', quantity: 1, unit_price_net: 10, supplier: 'TEILEHANDEL OST' })).status, 200);
+  eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Komplettfirma', amount_net: 300, covers_work_and_parts: true, invoice_no: 'KF-904' })).status, 200);
+  const q = `from=${BERLIN_YM}&to=${BERLIN_YM}&vehicle_id=${encodeURIComponent(V)}`;
+  const r = await users.fleet.get(`/api/reports/costs?${q}&part=suppliers`);
+  eq(r.status, 200);
+  const S = r.data.suppliers; const by = (n) => S.find((x) => x.supplier === n);
+  eq(S.map((x) => x.supplier).join('|'), 'Karosserie Kunz|Komplettfirma|Teilehandel Ost|', 'Reihenfolge nach Ist, „ohne Angabe“ zuletzt');
+  const k = by('Karosserie Kunz');
+  eq(JSON.stringify([k.external_items, k.part_items, k.cases, k.vehicles, k.documents, k.actual_net, k.estimate_net, k.unvalued_items, k.spellings, k.external_without_file, k.valued_items]), '[3,0,1,1,2,500,200,1,2,3,1]', 'Kunz: ' + JSON.stringify(k));
+  const t = by('Teilehandel Ost');
+  eq(JSON.stringify([t.part_items, t.cases, t.actual_net, t.not_counted_items, t.spellings]), '[2,2,160,1,2]', 'Teilehandel: ersetzter Ölfilter nicht gezählt ' + JSON.stringify(t));
+  eq(by('Komplettfirma').actual_net, 300);
+  const none = S[S.length - 1]; eq(JSON.stringify([none.supplier, none.part_items, none.unvalued_items, none.actual_net, none.spellings]), '[null,1,1,0,0]', 'Teile ohne Lieferant');
+  eq(JSON.stringify(r.data.totals), JSON.stringify({ suppliers: 3, actual_net: 960, estimate_net: 200, unvalued_items: 2 }), 'Summen');
+  ok(!JSON.stringify(r.data).includes('Seitenwand gerichtet'), 'eigene Arbeitszeit nicht enthalten');
+  // gleiche Regeln wie die Einzelpositionen: Summe Ist der Firmen = gezählte, belegte Teile/Fremdleistungen
+  const { costItems, costSuppliersCsv } = await import('../src/reports.js');
+  const fenv = (await users.fleet.get('/api/me')).data.user.environment;
+  const it = (await costItems(env, { id: 'x', role: 'fleet' }, fenv, { from: BERLIN_YM, to: BERLIN_YM, vehicle_id: V })).items.filter((i) => i.type !== 'arbeitszeit' && i.counted && i.valuation === 'actual');
+  eq(Math.round(it.reduce((a, i) => a + i.amount_net, 0) * 100) / 100, r.data.totals.actual_net, 'Abgleich mit den Einzelpositionen');
+  // CSV
+  const c = await users.fleet.get(`/api/reports/costs?${q}&part=suppliers&format=csv`);
+  eq(c.status, 200); ok(/filename="fuhrpark-kosten-je-firma_[a-z]+_\d{4}-\d{2}_\d{4}-\d{2}_/.test(c.headers.get('content-disposition') || ''), 'Dateiname');
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(c.data);
+  ok(text.startsWith('﻿Firma;Fremdleistungen;Teile-Positionen;Vorgänge;Fahrzeuge;'), 'Kopfzeile'); eq(text.trim().split('\r\n').length, S.length + 1, 'eine Zeile je Firma');
+  ok(text.includes('\r\nKarosserie Kunz;3;0;1;1;2;500;200;1;0;3;') && text.includes('\r\nohne Angabe (Teile ohne Lieferant);0;1;'), 'Zeilen: ' + text.split('\r\n')[1]);
+  ok(costSuppliersCsv({ suppliers: [{ ...k, supplier: '=Evil', actual_net: 12.5 }] }).includes("\r\n'=Evil;3;0;1;1;2;12,5;"), 'Formelschutz/Dezimalkomma');
+  // Rechte und Grenzen wie die Einzelpositionen
+  eq((await users.driver.get(`/api/reports/costs?${q}&part=suppliers`)).status, 403); eq((await users.ws.get(`/api/reports/costs?${q}&part=suppliers`)).status, 403);
+  eq((await users.fleet.get('/api/reports/costs?from=2020-01&to=2026-12&part=suppliers')).status, 400, '36 Monate');
+  // Oberfläche, Texte, Hilfe
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const m of ['id="costsup"', '&part=suppliers`', '&part=suppliers&format=csv`', 'data-csup=', 'data-csupnofile']) ok(app.includes(m), m);
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const kk of ['csu_title', 'csu_rule', 'csu_none', 'csu_total', 'csu_empty', 'csu_nofile_hint', 'csu_spell_hint', 'csu_count', 'csu_nofile', 'csu_spell', 'csu_ext', 'csu_parts', 'csu_cases', 'csu_vehicles', 'csu_docs', 'csu_notcounted']) ok(STRINGS[l][kk], `${l}.${kk}`);
+    for (const kk of ['csu_count', 'csu_ext', 'csu_cases']) ok(PLURALS[l][kk], `${l} Mehrzahl ${kk}`);
+    ok(STRINGS[l].help_costs_s.includes(STRINGS[l].csu_title), `${l}: Hilfe`);
+  }
+  ok((await import('node:fs')).readFileSync(new URL('../scripts/ui-kosten-firma.py', import.meta.url), 'utf8').includes('Backlog 904'), 'UI-Prüfung');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

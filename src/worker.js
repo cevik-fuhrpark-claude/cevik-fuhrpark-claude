@@ -471,6 +471,13 @@ async function handleApi(request, env, ctx, url) {
   }
 
   // Kostenbericht: Einzelpositionen (Jahresabschluss, 23.10.2026) – nur als CSV
+  // Backlog 904: Kosten je Firma (Fremdleistungen + Teile-Lieferanten) – JSON für die Ansicht, CSV mit format=csv
+  if (path === '/api/reports/costs' && m === 'GET' && url.searchParams.get('part') === 'suppliers') {
+    const rep = await reports.costSuppliers(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') !== 'csv') return json(rep);
+    await auth.audit(env, user.id, 'reports.costs.suppliers_export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site, ...(rep.vehicle_id ? { vehicle_id: rep.vehicle_id } : {}), suppliers: rep.suppliers.length });
+    return new Response(reports.costSuppliersCsv(rep), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kosten-je-firma_${envName}_${rep.from}_${rep.to}_${reports.standTag()}.csv"` } });
+  }
   if (path === '/api/reports/costs' && m === 'GET' && url.searchParams.get('part') === 'items') {
     const rep = await reports.costItems(env, user, envName, Object.fromEntries(url.searchParams));
     await auth.audit(env, user.id, 'reports.costs.items_export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site, ...(rep.vehicle_id ? { vehicle_id: rep.vehicle_id } : {}), items: rep.items.length });

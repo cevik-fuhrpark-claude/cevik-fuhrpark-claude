@@ -34,7 +34,7 @@ with sync_playwright() as p:
         q.click('[data-act=record_work]'); q.wait_for_selector('#af')
         q.fill('#af [name=hours]', '1,5'); q.fill('#af [name=description]', 'Bremsbeläge gewechselt')
         q.route('**/commands', lambda r: r.abort('failed'))
-        q.click('#af button.btn'); q.wait_for_timeout(1200); q.unroute('**/commands')
+        q.click('#af button.btn:not([data-wdprevgo])'); q.wait_for_timeout(1200); q.unroute('**/commands')
         check(q.evaluate("Object.keys(sessionStorage).some(k => k.startsWith('cfp_fd_act_'))"), f'{lang}/{w}: Entwurf nach Funkloch gesichert')
         # Mitteilung der Person (wie eine Push-Nachricht) anzeigen
         sw = q.evaluate("async () => { try { const r = await Promise.race([navigator.serviceWorker.ready, new Promise((_, j) => setTimeout(() => j('t'), 5000))]); await r.showNotification('S-2026-0001 · AE-WS 1', { tag: 'ae' }); return (await r.getNotifications()).length; } catch (e) { return -1; } }")

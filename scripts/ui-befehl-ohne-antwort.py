@@ -43,7 +43,7 @@ with sync_playwright() as p:
             if not held: held.append((route, route.fetch())); return  # Server bucht, Antwort bleibt aus (Anfrage hängt)
             route.continue_()
         q.route('**/commands', h)
-        q.click('#af button.btn')
+        q.click('#af button.btn:not([data-wdprevgo])')
         tt = ''
         for _ in range(24):
             q.wait_for_timeout(250)
@@ -52,11 +52,11 @@ with sync_playwright() as p:
         check(KEPT[lang] in tt, f'{lang}/{w}: nach dem Zeitlimit „nicht gespeichert“ ({tt[:80]!r})')
         check(bool(held) and held[0][1].status == 200, f'{lang}/{w}: erste Anfrage kam am Server an')
         check(q.locator('#af').count() == 1 and q.input_value('#af [name=hours]') in ('1,5', '1.5'), f'{lang}/{w}: Formular mit Eingaben bleibt offen')
-        btn_ok = q.evaluate("(() => { const b = document.querySelector('#af button.btn'); return !!b && !b.disabled; })()")
+        btn_ok = q.evaluate("(() => { const b = document.querySelector('#af button.btn:not([data-wdprevgo])'); return !!b && !b.disabled; })()")
         check(btn_ok, f'{lang}/{w}: Knopf wieder bedienbar')
         if SHOTS: q.screenshot(path=f'{SHOTS}/befehl_ohne_antwort_{lang}_{w}.png')
         q.evaluate("document.querySelectorAll('.toast').forEach(e => e.remove())")
-        q.click('#af button.btn'); q.wait_for_timeout(1500)
+        q.click('#af button.btn:not([data-wdprevgo])'); q.wait_for_timeout(1500)
         n = len(api('GET', f'/api/cases/{cid}')['d']['work'])
         check(n == 1, f'{lang}/{w}: erneutes Speichern bucht nicht doppelt ({n} Einträge)')
         check(q.locator('#af').count() == 0, f'{lang}/{w}: Formular nach Erfolg geschlossen')

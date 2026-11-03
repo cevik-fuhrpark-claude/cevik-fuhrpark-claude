@@ -831,6 +831,7 @@ const AUDIT_ACTIONS = {
   'reports.cases.export': ['Vorgänge exportiert', 'Заявки експортовано', 'Cases exported'],
   'reports.costs.export': ['Kostenbericht exportiert', 'Звіт про витрати експортовано', 'Cost report exported'],
   'reports.costs.items_export': ['Kosten-Einzelpositionen exportiert', 'Окремі позиції витрат експортовано', 'Cost line items exported'],
+  'reports.costs.suppliers_export': ['Kosten je Firma exportiert', 'Витрати за фірмами експортовано', 'Costs per company exported'],
   'reports.drivers.export': ['Fahrerliste exportiert', 'Список водіїв експортовано', 'Driver list exported'],
   'reports.fines.export': ['Bußgelder exportiert', 'Штрафи експортовано', 'Fines exported'],
   'reports.kpi.export': ['Kennzahlen exportiert', 'Показники експортовано', 'KPIs exported'],
@@ -1223,6 +1224,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 887: km-Stand laut Rechnung beim Buchen einer Fremdleistung
 // Backlog 900: Bußgeld/Mautnachforderung aus dem Ausland – Kennzeichen im Schreiben mit Länderkennung (D/DE/DEU)
 // Backlog 903: geplante Gutachter-Besichtigung am Vorgang (Werkstatt/Disposition sehen nur das Datum)
+// Backlog 904: Kosten je Firma (Fremdleistungen und Teile-Lieferanten) im Kostenbericht
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
