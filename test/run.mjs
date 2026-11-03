@@ -32598,6 +32598,18 @@ await test('Backlog 956 (Sonde Luftverlust in Fahrerworten): „Reifen zischt/is
   for (const x of ['пробито колесо', 'пробита шина']) ok(f.test(recurFix(x)), 'Reifenpanne-Hinweis erwartet: ' + x);
 });
 
+await test('Backlog 957 (Blickwinkel „zwei Schäden in einer Meldung“): DE Verbzweitstellung nach Adverb („außerdem verliert der Reifen Luft“, „zusätzlich klemmt die Tür“, „außerdem quietscht die Bremse“, „außerdem geht das Rücklicht nicht“, „außerdem zieht die Lenkung nach links“) zeigt denselben Hinweis wie die Normalstellung; Reparaturvermerk bleibt wirksam', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const H = (k) => new RegExp(app.match(new RegExp('^const ' + k + '_HINT = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const cases = [['TYRE', 'Spiegel abgebrochen, außerdem verliert der Reifen Luft'], ['TYRE', 'seit gestern verliert der linke Reifen hinten Luft'], ['TYRE', 'seit heute zischt der Reifen'], ['DOOR', 'Licht kaputt, zusätzlich klemmt die Tür'], ['BRAKE', 'Tür klemmt, außerdem quietscht die Bremse'], ['LIGHTS', 'Spiegel ab, außerdem geht das Rücklicht nicht'], ['STEER', 'außerdem zieht die Lenkung nach links'], ['MIRROR', 'Reifen gewechselt, aber Spiegel ist abgebrochen']];
+  for (const [k, x] of cases) ok(H(k).test(recurFix(x)), k + '-Hinweis erwartet: ' + x);
+  ok(recurFix('Außerdem verliert der Reifen Luft').includes('⁘der Reifen verliert Luft'), 'Normalstellung angehängt');
+  ok(!recurFix('seit gestern verliert der linke Reifen hinten Luft').includes('⁘der linke Reifen hinten'), 'Ortsangabe gehört nicht zum Gegenstand');
+  for (const [k, x] of [['MIRROR', 'außerdem ist der Spiegel repariert'], ['BRAKE', 'jetzt geht die Bremse wieder'], ['TYRE', 'außerdem wurde der Reifen gewechselt'], ['LIGHTS', 'seit gestern funktioniert der Blinker wieder']]) ok(!H(k).test(recurFix(x)), 'kein ' + k + '-Hinweis: ' + x);
+  for (const x of ['ДТП, грижа на шині', 'mirror broken and tyre losing air']) eq(recurFix(x).includes('⁘'), false, 'UK/EN unverändert: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
