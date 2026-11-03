@@ -31883,6 +31883,25 @@ await test('Backlog 897 (Blickwinkel „Werte per Kopieren/Einfügen aus Rechnun
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-einfuegen-zahlen.py|'), 'UI-Prüfung in pruefen.sh');
 });
 
+await test('Backlog 898 (Folge aus 896, Browser-Übersetzung): Vertrags-, Schaden-, Personal-, Bußgeldnummer, Aktenzeichen und Dubletten-Verweis mit translate="no"', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('const noTr = (s) => `<span translate="no">${esc(s)}</span>`;'), 'Baustein noTr');
+  // keine dieser Nummern mehr als reines esc() im HTML-Text – außer in <option> (dort ist kein <span> erlaubt)
+  const re = /esc\(([a-zA-Z_.]+\.(contract_no|claim_no|opponent_claim_no|personnel_no|fine_no|recall_ref))\)/g; const left = [];
+  for (const m of app.matchAll(re)) { const pre = app.slice(Math.max(0, m.index - 400), m.index); if (!(pre.lastIndexOf('<option') > pre.lastIndexOf('</option>'))) left.push(m[1]); }
+  eq(left.join(','), '', 'Nummern ohne translate="no"');
+  ok((app.match(/noTr\([a-zA-Z_.]+\.(contract_no|claim_no|opponent_claim_no|personnel_no|fine_no|recall_ref|reference|case_no)\)/g) || []).length >= 25, 'Nummern markiert');
+  ok(app.includes(`<dd translate="no">\${esc(f.reference || '–')}</dd>`) && app.includes("' · ' + noTr(f.reference)"), 'Aktenzeichen des Bußgeldschreibens');
+  ok(app.includes('<a href="#/cases/${esc(d.duplicate_of.id)}" translate="no">') && app.includes('noTr(d.duplicate_of.case_no)'), 'Dubletten-Verweis');
+  ok(app.includes(`<dd translate="no">\${esc(d.personnel_no || '–')}</dd>`), 'Personalnummer in der Fahrerakte');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(!('noTr' in STRINGS.de), 'kein Textschlüssel gleichen Namens');
+  const ui = fs.readFileSync(new URL('../scripts/ui-browser-uebersetzung-nummern.py', import.meta.url), 'utf8');
+  for (const x of ['__mtIgnoreNo', 'Gegenprobe', 'opponent_claim_no', 'personnel_no', 'contract_no', '(390,844),(1366,900)']) ok(ui.includes(x), 'UI-Prüfung enthält ' + x);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-browser-uebersetzung-nummern.py|'), 'UI-Prüfung in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
