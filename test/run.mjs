@@ -32635,6 +32635,18 @@ await test('Backlog 960 (Sonde 959, Grundform): „tyre loses air“, „door st
   for (const [k, x] of [['TYRE', 'tyre doesn\'t lose air'], ['TYRE', 'tyre no longer loses air'], ['DOOR', 'door doesn\'t stick anymore'], ['DOOR', 'двері не заїдають'], ['DOOR', 'дверь больше не заедает'], ['DOOR', 'door sticker is torn'], ['REEFER', 'reefer no longer cuts out'], ['REEFER', 'холодильник не вимикається'], ['REEFER', 'рефрижератор больше не отключается'], ['REEFER', 'холодильник в кабіні вимикається'], ['REEFER', 'холодильник в кабине отключается'], ['REEFER', 'cab fridge cuts out'], ['LIGHTS', 'indicator no longer flickers'], ['TARP', 'tarp no longer flaps'], ['ENGINE', 'engine no longer pulls to the left'], ['STEER', 'steering no longer pulls to the left']]) ok(!H(k).test(R(x)), 'kein ' + k + '-Hinweis: ' + x);
 });
 
+await test('Backlog 961 (Sonde 960): „gearbox/gear lever sticks“, „gear stick is loose“, „Schalthebel wackelt“, „важіль КПП заїдає“, „рычаг КПП заедает“ → Getriebe; „cab fridge cuts out“, „Kühlschrank geht ständig aus“, „холодильник в кабіні вимикається“ → Kabine (nicht Kühlgerät); verneint/erledigt, „gear stick“ als Name, „landing gear sticks“, „fridge unit cuts out“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const H = (k) => new RegExp(app.match(new RegExp('^const ' + k + '_HINT = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const cab = new RegExp(app.match(/^const CABKIT_HINT = \/(.+)\/i;$/m)[1], 'gi'); const R = (x) => recurFix(x).replace(cab, ' ');
+  for (const x of ['gearbox sticks', 'gear lever sticks', 'the gear lever is sticking', 'gearbox keeps sticking in 3rd', 'gears stick', 'the gear shift sticks', 'gear stick is loose', 'Schalthebel ist locker', 'Schalthebel wackelt', 'важіль КПП заїдає', 'рычаг КПП заедает', 'коробка передач заїдає', 'коробка заедает']) ok(H('GEAR').test(recurFix(x)), 'Getriebe-Hinweis fehlt: ' + x);
+  for (const x of ['gear stick', 'the gear stick is fine', 'gearbox doesn\'t stick anymore', 'gearbox no longer sticks', 'gear lever sticks, fixed now', 'коробка більше не заїдає', 'landing gear sticks', 'door sticker is torn']) ok(!H('GEAR').test(recurFix(x)), 'kein Getriebe-Hinweis erwartet: ' + x);
+  for (const x of ['cab fridge cuts out', 'fridge in the cab keeps cutting out', 'fridge cuts out', 'холодильник в кабіні вимикається', 'холодильник в кабине отключается', 'холодильник у кабіні постійно вимикається', 'холодильник в кабіні вимкнувся', 'Kühlschrank geht ständig aus', 'Kühlschrank schaltet sich ab', 'Kühlschrank im Fahrerhaus fällt immer wieder aus']) { ok(H('CABKIT').test(recurFix(x)), 'Kabinen-Hinweis fehlt: ' + x); ok(!H('REEFER').test(R(x)), 'kein Kühlgeräte-Hinweis erwartet: ' + x); }
+  for (const x of ['cab fridge doesn\'t cut out anymore', 'fridge no longer cuts out', 'холодильник в кабіні більше не вимикається', 'Kühlschrank geht ständig aus, repariert', 'fridge unit cuts out', 'reefer cuts out', 'холодильник вимикається']) ok(!H('CABKIT').test(recurFix(x)), 'kein Kabinen-Hinweis erwartet: ' + x);
+  for (const x of ['fridge unit cuts out', 'reefer cuts out', 'холодильник вимикається']) ok(H('REEFER').test(R(x)), 'Kühlgeräte-Hinweis fehlt: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
