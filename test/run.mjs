@@ -26439,7 +26439,7 @@ await test('Backlog 609 (Blickwinkel „Auftrag ohne Reparatur beendet – was s
   ok((await U.driver.get('/api/notifications')).data.notifications.some((x) => x.case_id === id && x.kind === 'withdrawn'), 'Melder mit Link');
   ok((await U.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.cases.some((c) => c.id === id), 'Leitung sieht ihn in der Akte');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("${o.id ? `<a href=\"#/cases/${esc(o.id)}\">${esc(o.case_no)}</a>` : `<b>${esc(o.case_no)}</b>`}"), 'Kurzinfo ohne Link bei fehlender Kennung');
+  ok(app.includes("${o.id ? `<a href=\"#/cases/${esc(o.id)}\" translate=\"no\">${esc(o.case_no)}</a>` : `<b>${esc(o.case_no)}</b>`}"), 'Kurzinfo ohne Link bei fehlender Kennung');
 });
 
 await test('Backlog 610 (Blickwinkel „Jahresplanung 2027“): SP „Frist ungeklärt“ ohne Datum (Erstzulassung fehlt) als Zeile mit Grund in Reiter, Zähler und CSV statt stummer Lücke; ohne HU bleibt die Lücke', async () => {
@@ -31837,6 +31837,27 @@ await test('Backlog 895: Druck ohne Hintergrundgrafiken (Schwarz-Weiß-Laser) �
   // Nebenbefund Rauchtest: km-Feld der Fahrzeugakte war bei vorhandenem km-Stand (Absatz „zuletzt …“ zwischen Beschriftung und Feld) ohne Namen
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('<form id="kf"><label for="kfkm">') && app.includes('<input id="kfkm" name="km"'), 'km-Feld der Akte mit for/id beschriftet');
+});
+
+await test('Backlog 896 (Blickwinkel „Fahrer lässt die App vom Browser übersetzen“): Kennzeichen, Vorgangsnummern, FIN mit translate="no"; Hinweis unter der Sprachwahl; Uhrzeit-Hinweis ohne textContent-Vergleich', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pf = app.slice(app.indexOf('function plate(p, opts = {}) {'), app.indexOf('\n}', app.indexOf('function plate(p, opts = {}) {')));
+  ok(pf.includes('translate="no"'), 'Kennzeichen-Baustein translate="no"');
+  ok(!/(?<!translate="no)">\$\{esc\([a-zA-Z.]*case_no\)\}<\/a>/.test(app), 'jeder Vorgangslink mit Nummer als Text trägt translate="no"');
+  ok((app.match(/translate="no">\$\{esc\([a-zA-Z.]*case_no\)\}<\/a>/g) || []).length >= 25, 'Vorgangslinks markiert');
+  ok(app.includes('<span translate="no">${esc(c.case_no)}</span></h1>') && app.includes('<b translate="no">${esc(d.case.case_no)}</b>'), 'Überschrift/Rückmeldung des Vorgangs');
+  ok(app.includes('<dd translate="no">${esc(v.vin)}</dd>') && app.includes('<dd translate="no">${esc(cl.police_ref)}</dd>'), 'FIN der Akte und Aktenzeichen');
+  ok(!/<dd>\$\{esc\([a-zA-Z.]*vin\)\}<\/dd>/.test(app), 'keine FIN ohne translate="no"');
+  const ls = app.slice(app.indexOf('function langSelect() {'), app.indexOf('\n}', app.indexOf('function langSelect() {')));
+  ok(ls.includes('id="langmt"') && ls.includes("t('lang_browser_hint')"), 'Hinweis unter der Sprachwahl');
+  const cw = app.slice(app.indexOf('function clockWarn() {'), app.indexOf('\n}', app.indexOf('function clockWarn() {')));
+  ok(cw.includes('el.dataset.txt !== txt') && !cw.includes('el.textContent !== txt'), 'Uhrzeit-Hinweis vergleicht nicht den (ggf. übersetzten) Text');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].lang_browser_hint && /Chrome/.test(STRINGS[l].lang_browser_hint) && /Safari/.test(STRINGS[l].lang_browser_hint), 'Hinweistext ' + l);
+  const ui = fs.readFileSync(new URL('../scripts/ui-browser-uebersetzung.py', import.meta.url), 'utf8');
+  for (const x of ['__mtIgnoreNo', 'Gegenprobe', 'requestSubmit', "'#/cases/'+cid", '(390,844),(1366,900)']) ok(ui.includes(x), 'UI-Prüfung enthält ' + x);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-browser-uebersetzung.py|'), 'UI-Prüfung in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
