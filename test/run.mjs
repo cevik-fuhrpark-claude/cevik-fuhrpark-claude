@@ -32507,6 +32507,19 @@ await test('Backlog 949 (Teil hängt): „Unterfahrschutz hängt“, „Spritzsc
   for (const x of ['Stoßstange hängt fest', 'Kotflügel hängt nicht', 'Teile hängen beim Zoll', 'der Auspuff hängt links']) ok(!r.test(recurFix(x)), 'kein Hinweis: ' + x);
 });
 
+await test('Backlog 950 (Sonde Auflieger/Gespann in Fahrerworten): „Auflieger/Lkw steht schief“, „Auflieger steht hinten tief“ → Federungs-Hinweis (nicht „steht schief auf dem Parkplatz/am Hang“, „Bild steht schief“); „Kurbel abgebrochen“, „Stützkurbel abgebrochen“, „kann (den Auflieger) nicht abkuppeln/absatteln“, „Anhänger geht nicht ab“ → Kupplungs-Hinweis (nicht „Fensterkurbel abgebrochen“, „Kurbel ok“); „Lichtkabel (zum Auflieger) kaputt“, „Elektrokabel Auflieger gerissen“ → Elektrik-Hinweis (nicht „Lichtkabel repariert“)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [su, co, el] = ['SUSP_HINT', 'COUPLING_HINT', 'ELEC_HINT'].map(g);
+  for (const x of ['Auflieger steht schief', 'Lkw steht schief', 'Auflieger steht hinten tief']) ok(su.test(recurFix(x)), 'Federungs-Hinweis erwartet: ' + x);
+  for (const x of ['Lkw steht schief auf dem Parkplatz', 'Lkw steht am Hang schief', 'Bild steht schief', 'Lkw steht']) ok(!su.test(recurFix(x)), 'kein Federungs-Hinweis: ' + x);
+  for (const x of ['Kurbel abgebrochen', 'Stützkurbel abgebrochen', 'kann nicht abkuppeln', 'ich kann den Auflieger nicht abkuppeln', 'kann nicht absatteln', 'Anhänger geht nicht ab', 'Auflieger geht nicht los']) ok(co.test(recurFix(x)), 'Kupplungs-Hinweis erwartet: ' + x);
+  for (const x of ['Fensterkurbel abgebrochen', 'Kurbel ok', 'Lieferung geht nicht ab']) ok(!co.test(recurFix(x)), 'kein Kupplungs-Hinweis: ' + x);
+  for (const x of ['Lichtkabel zum Auflieger kaputt', 'Lichtkabel kaputt', 'Elektrokabel Auflieger gerissen']) ok(el.test(recurFix(x)), 'Elektrik-Hinweis erwartet: ' + x);
+  ok(!el.test(recurFix('Lichtkabel repariert')), 'kein Elektrik-Hinweis: Lichtkabel repariert');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
