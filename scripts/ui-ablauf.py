@@ -82,7 +82,8 @@ def act(pg, action, fill=None, check=None):
             el.fill(val)
     for name in (check or []):
         pg.locator(f'#af [name="{name}"]').check()
-    pg.locator('#af button.btn').first.click()
+    # Hinweis-Knopf „letzter Arbeitstag“ (Backlog 835) steht im Formular vor „Speichern“ – nicht treffen (03.11.2026)
+    pg.locator('#af button.btn:not([data-wdprevgo])').first.click()
     pg.wait_for_timeout(700)
     err = pg.locator('.toast.err')
     if err.count():
@@ -155,6 +156,8 @@ with sync_playwright() as p:
     act(wsp, 'start_repair')
     act(wsp, 'record_work', {'hours': '0,5', 'description': 'Spiegelhalter nachgezogen'})
     check_view(wsp, 'workshop', 'Vorgang Werkstatt (Tablet)')
+    if not (api('GET', f'/api/cases/{cid}')['d'].get('work') or []):
+        fail('Arbeitszeit 0,5 h wurde nicht gespeichert')
     if status(api, cid) != 'in_reparatur':
         fail(f'nach Reparaturbeginn Status {status(api, cid)}')
     steps.append('Werkstatt (Tablet 820 px) übernimmt, beginnt Reparatur, erfasst 0,5 h')
@@ -181,7 +184,7 @@ with sync_playwright() as p:
     wsp.wait_for_selector('#af [name="stock_item_id"]', timeout=5000)
     wsp.locator('#af [name="stock_item_id"]').select_option(item['id'])
     wsp.fill('#af [name="quantity"]', '2')
-    wsp.locator('#af button.btn').first.click()
+    wsp.locator('#af button.btn:not([data-wdprevgo])').first.click()
     wsp.wait_for_timeout(700)
     if wsp.locator('.toast.err').count():
         fail('Teil aus Lager: ' + wsp.locator('.toast.err').first.text_content())
