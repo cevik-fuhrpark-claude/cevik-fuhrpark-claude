@@ -32344,6 +32344,28 @@ await test('Backlog 931 (verneinte Symptome UK/RU/EN): „гальма не ск
   for (const [x, n] of [['гальма скриплять', 'BRAKE_HINT'], ['двигун димить', 'FIRE_HINT'], ['масло тече', 'LEAK_HINT'], ['brakes squeaking', 'BRAKE_HINT'], ['не працює гальмо', 'BRAKE_HINT'], ['двигун не заводиться', 'NOSTART_HINT']]) ok(hit(x).includes(n), n + ' erwartet: ' + x);
 });
 
+await test('Backlog 932 (Gebäude statt Lkw): „Tür vom Büro geht nicht zu“, „im Büro ist das Licht kaputt“, „Licht in der Halle geht nicht“, „Heizung im Büro geht nicht“, „office door won\'t close“, „двері в офісі не зачиняються“ zeigen keine Lkw-Hinweise; „Fahrertür klemmt“, „In der Halle ging die Tür nicht zu“, „Licht im Fahrerhaus“ und Zusammenstoß mit dem Tor („Tor vom Hof gerammt“) weiter mit Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const recurFix = (s) => noFunc(noPlace(String(s || ''))"), 'recurFix blendet Gebäude-Teilsätze aus');
+  ok(app.indexOf('const PLACE_SPAN') > app.indexOf('const FIX_WORD') && app.indexOf('const noPlace') < app.indexOf('const recurFix'), 'Reihenfolge');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const all = [...app.matchAll(/^const ([A-Z_]+_HINT) = \/(.+)\/i;/mg)].map((m) => [m[1], new RegExp(m[2], 'i')]);
+  const hit = (x) => all.filter(([, r]) => r.test(recurFix(x))).map(([n]) => n);
+  for (const x of ['Tür vom Büro geht nicht zu', 'Die Tür im Büro klemmt', 'Tür zur Halle klemmt', 'Tür der Werkstatt schließt nicht', 'Licht in der Halle geht nicht', 'Licht im Büro kaputt', 'im Büro ist das Licht kaputt', 'Fenster im Büro geht nicht zu', 'Heizung im Büro geht nicht', 'Tür vom Büro geht nicht zu, Lkw ok', 'office door won\'t close', 'warehouse door stuck', 'light in the warehouse not working', 'in the office the heating is broken', 'двері в офісі не зачиняються', 'двері складу заклинило', 'у офісі не працює світло']) eq(hit(x).join(','), '', 'kein Hinweis: ' + x);
+  for (const [x, n] of [['Tür klemmt', 'DOOR_HINT'], ['Fahrertür geht nicht zu', 'DOOR_HINT'], ['Tür vom Büro geht nicht zu, Fahrertür klemmt', 'DOOR_HINT'], ['In der Halle ging die Tür nicht zu', 'DOOR_HINT'], ['Tür im Lkw klemmt', 'DOOR_HINT'], ['Tür beim Kunden ging nicht zu', 'DOOR_HINT'], ['Licht im Fahrerhaus geht nicht', 'LIGHTS_HINT'], ['Licht in der Kabine geht nicht', 'LIGHTS_HINT'], ['двері кабіни не зачиняються', 'DOOR_HINT'], ['door won\'t close', 'DOOR_HINT'], ['Tor an der Einfahrt touchiert', 'FIXOBJ_HINT'], ['Beim Rückwärtsfahren Tor vom Hof gerammt', 'FIXOBJ_HINT'], ['Tor der Halle beim Rangieren beschädigt', 'ACC_HINT']]) ok(hit(x).includes(n), n + ' erwartet: ' + x);
+});
+
+await test('Backlog 933 (Reserve Start-Modul): Einladung annehmen und Ersteinrichtung (#/invite, #/setup) liegen im nachgeladenen Modul app-konto.js (Platzhalter im Start-Modul, in der App-Hülle des Service Workers und in der Lookbehind-Prüfung)', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const { GROUPS } = await import('../scripts/build-app.mjs');
+  eq(JSON.stringify(GROUPS.konto), JSON.stringify(['viewInvite', 'viewSetup']), 'Gruppe konto');
+  const main = rd('app-main.js'), konto = rd('app-konto.js');
+  ok(/^async function viewInvite\(token\) \{/m.test(konto) && /^async function viewSetup\(/m.test(konto), 'Ansichten in app-konto.js');
+  ok(main.includes("async function viewInvite(...a) { return (await lazyModule('konto')).viewInvite(...a); }") && main.includes("async function viewSetup(...a) { return (await lazyModule('konto')).viewSetup(...a); }"), 'Platzhalter im Start-Modul');
+  ok(rd('sw.js').includes("'/app-konto.js'"), 'App-Hülle (offline)');
+  ok(fs.readFileSync(new URL('../scripts/ui-ohne-lookbehind.py', import.meta.url), 'utf8').includes("'app-konto.js'"), 'Lookbehind-Prüfung');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

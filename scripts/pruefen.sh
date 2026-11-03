@@ -237,6 +237,7 @@ UI-Hinweis Spiegel abgefahren im Meldeformular und Hilfe|ui-spiegel.py|/tmp/cfp-
 UI-Hinweis Auflieger lässt sich nicht kuppeln/hat sich gelöst im Meldeformular und Hilfe|ui-kupplung.py|/tmp/cfp-kupplung.log
 UI-Hinweis Beleuchtung am Lkw/Auflieger ausgefallen im Meldeformular und Hilfe|ui-licht.py|/tmp/cfp-licht.log
 UI-Hinweis Tür/Hecktür/Ladebordwand schließt nicht im Meldeformular und Hilfe|ui-tuer.py|/tmp/cfp-tuer.log
+UI-Gebäude statt Lkw (Büro-/Hallentür, Licht im Büro) ohne Lkw-Hinweise im Meldeformular|ui-gebaeude-tuer.py|/tmp/cfp-gebaeude-tuer.log
 UI-Hinweis Lkw festgefahren/kommt bei Glätte nicht weiter im Meldeformular und Hilfe|ui-festgefahren.py|/tmp/cfp-festgefahren.log
 UI-Hinweis Heizung/Gebläse/Scheibenwischer ausgefallen, Scheibe beschlagen/vereist im Meldeformular und Hilfe|ui-sicht.py|/tmp/cfp-sicht.log
 UI-Hinweis Teil hängt herunter/schleift/unterwegs verloren im Meldeformular und Hilfe|ui-teil-lose.py|/tmp/cfp-teil-lose.log

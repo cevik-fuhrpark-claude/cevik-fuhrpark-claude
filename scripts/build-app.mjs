@@ -21,6 +21,7 @@ export const GROUPS = {
     'viewNewMulti', // Backlog 594: Mehrfach-Meldung nur Inhaber/Fuhrparkleitung
     'viewDriverGuide'], // Backlog 928: Fahrer-Aushang (Druckblatt wie viewQrSheet) – Reserve im Start-Modul
   fahrzeug: ['viewVehicle', 'viewVehicles', 'viewCheckPaper'], // Backlog 928: leeres Prüfformular zum Ausdrucken (selten, kleinere Gruppe als Verwaltung); Backlog 796: Fahrzeugliste dazu (öffnet die Akte, gleiche Nutzer); Backlog 594: Fahrzeugakte (inkl. Reifen, Verträge, Prüftermine) – größte Einzelansicht, ≈ 26 KB gzip
+  konto: ['viewInvite', 'viewSetup'], // Backlog 933: Einladung annehmen / Ersteinrichtung – je Person einmal, Reserve im Start-Modul
   lager: ['viewStock', 'viewStockCount', 'viewReorder', 'viewStockAsOf', 'viewStockJournal', 'viewStockReceipt', 'viewPartsUsage', 'viewStockItem'],
 };
 

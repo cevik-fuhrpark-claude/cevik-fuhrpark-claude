@@ -36,7 +36,7 @@ with sync_playwright() as p:
     un=f'lb.fahrer{sfx}'; r=api('POST','/api/users',{'username':un,'display_name':'LB Fahrer','role':'driver','environment':envn,'language':'de'})
     c2=br.new_context(); q2=c2.new_page(); q2.goto(B); q2.evaluate(JS,['POST','/api/invite/accept',{'token':r['d']['invite_token'],'password':PW},None]); c2.close()
     # ausgelieferte Module: kein Regex-Literal mit Lookbehind (wäre in Safari < 16.4 ein Syntaxfehler des ganzen Moduls)
-    for f in ['app-main.js','app-verwaltung.js','app-lager.js','app-fahrzeug.js','i18n-core.js','i18n-de.js','i18n-uk.js','i18n-en.js','boot.js','sw.js','werkstatt/app.js']:
+    for f in ['app-main.js','app-verwaltung.js','app-lager.js','app-fahrzeug.js','app-konto.js','i18n-core.js','i18n-de.js','i18n-uk.js','i18n-en.js','boot.js','sw.js','werkstatt/app.js']:
         txt=a.evaluate("async (u) => (await fetch(u)).text()", '/'+f)
         bad=[m.start() for m in re.finditer(r'\(\?<[=!]', txt) if 'String.raw`' not in txt[max(0,txt.rfind('\n',0,m.start())):m.start()] and "new RegExp('(?<=a)b')" not in txt[m.start()-20:m.start()+20] and 'startsWith(' not in txt[m.start()-20:m.start()]]
         check(not bad,f'/{f}: kein Lookbehind-Literal ({len(bad)})')
