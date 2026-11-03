@@ -32346,7 +32346,7 @@ await test('Backlog 931 (verneinte Symptome UK/RU/EN): „гальма не ск
 
 await test('Backlog 932 (Gebäude statt Lkw): „Tür vom Büro geht nicht zu“, „im Büro ist das Licht kaputt“, „Licht in der Halle geht nicht“, „Heizung im Büro geht nicht“, „office door won\'t close“, „двері в офісі не зачиняються“ zeigen keine Lkw-Hinweise; „Fahrertür klemmt“, „In der Halle ging die Tür nicht zu“, „Licht im Fahrerhaus“ und Zusammenstoß mit dem Tor („Tor vom Hof gerammt“) weiter mit Hinweis', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("const recurFix = (s) => noFunc(noPlace(String(s || ''))"), 'recurFix blendet Gebäude-Teilsätze aus');
+  ok(app.includes("const recurFix = (s) => noFunc(noPlace(String(s || '')"), 'recurFix blendet Gebäude-Teilsätze aus');
   ok(app.indexOf('const PLACE_SPAN') > app.indexOf('const FIX_WORD') && app.indexOf('const noPlace') < app.indexOf('const recurFix'), 'Reihenfolge');
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
   const all = [...app.matchAll(/^const ([A-Z_]+_HINT) = \/(.+)\/i;/mg)].map((m) => [m[1], new RegExp(m[2], 'i')]);
@@ -32669,6 +32669,17 @@ await test('Backlog 963 (Sonde Wasser im Fahrerhaus, Motor heiß, beschlagene Fe
   ok(H('REEFER').test(recurFix('температура в рефрижераторі росте')), 'Kühlgeräte-Hinweis fehlt');
   for (const x of ['вікно запотіває', 'окно запотевает', 'вікна пітніють', 'windows steam up', 'windows keep fogging up']) ok(H('VISIB').test(recurFix(x)), 'Sicht-Hinweis fehlt: ' + x);
   for (const x of ['вікна більше не запотівають', 'Akku leer']) ok(!H('VISIB').test(recurFix(x)), 'kein Sicht-Hinweis erwartet: ' + x);
+});
+
+await test('Backlog 964 (Sonde russ. „ё“ und Keilriemen): Meldungstext wird vor den Hinweisen von „ё“ auf „е“ angeglichen, Muster enthalten außerhalb von Zeichenklassen kein „ё“ mehr – „руль бьёт“, „колёса спускают“, „замёрзли тормоза“ zeigen dieselben Hinweise wie mit „е“; „ремень (генератора) свистит“, „ремінь свистить“, „fan belt squeals“, „alternator belt snapped“ → Motor (nicht Sicherheitsgurt, Spanngurt, verneint)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const H = (k) => new RegExp(app.match(new RegExp('^const ' + k + '_HINT = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const m of app.matchAll(/^const (\w+) = \/(.+)\/[a-z]*;$/gm)) ok(!/[ёЁ]/.test(m[2].replace(/\\./g, '').replace(/\[[^\]]*\]/g, '')), 'Muster mit „ё“ außerhalb einer Zeichenklasse (nach recurFix nie im Text): ' + m[1]);
+  ok(!/ё/.test(recurFix('Ещё всё течёт')), 'recurFix gleicht ё an');
+  for (const [k, x] of [['STEER', 'руль бьёт на скорости'], ['TYRE', 'колёса спускают'], ['BRAKE', 'замёрзли тормоза'], ['BRAKE', 'замерзли тормоза'], ['BRAKE', 'примерзли гальма'], ['VIBR', 'трясёт на скорости'], ['LEAK', 'масло течёт из двигателя'], ['WINDOW', 'стеклоподъёмник не работает'], ['ENGINE', 'ремень свистит ещё сильнее'], ['ENGINE', 'ремень генератора свистит'], ['ENGINE', 'ремінь свистить'], ['ENGINE', 'belt squealing'], ['ENGINE', 'fan belt squeals'], ['ENGINE', 'alternator belt snapped']]) ok(H(k).test(recurFix(x)), k + '-Hinweis fehlt: ' + x);
+  for (const x of ['ремень безопасности скрипит', 'стяжной ремень порвался', 'seat belt squeaks', 'load belt squeaks', 'belt no longer squeals', 'ремень больше не свистит', 'ratchet strap broke']) ok(!H('ENGINE').test(recurFix(x)), 'kein Motor-Hinweis erwartet: ' + x);
+  for (const x of ['замерзли окна', 'тормоза больше не замерзают']) ok(!H('BRAKE').test(recurFix(x)), 'kein Brems-Hinweis erwartet: ' + x);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
