@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, BERLIN_DT_FMT, CT_KINDS, DEFECT_RESULTS, MORE_MAX, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, STATES, TM_PROV, TST, afLink, agentFindingsCsv, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindTachoCancel, cDesc, checkLabel, claimChip, clipTxt, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, decIn, defectItemsCsv, defectVehiclesCsv, download, downloadChecked, dqDetail, dur, emHoursText, envFn, esc, eur, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtKm, fmtMm, fmtMonth, fmtNum, helpLink, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isUnusedUser, isWeekendD, kmDigHtml, kmFcHtml, kmUnclearDateDue, langAttr, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mk, mkR, nDays, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, planVehTag, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, qrSvg, rdyOf, rdyTxt, readCsvFile, reasonText, render, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, sortPref, sortUsers, stackTables, t, tachoHistList, telAbroad, telHref, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, tzNote, uiLoc, uid, usersCsv, vehiclesCached, vlAt, vsDef, woApptTxt, woTag, wsAll, wsLabel, wsName, wsOptions } from './app-main.js';
+import { $, $$, BERLIN_DT_FMT, CT_KINDS, DEFECT_RESULTS, MORE_MAX, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, STATES, STRINGS, TM_PROV, TST, afLink, agentFindingsCsv, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindTachoCancel, cDesc, checkLabel, claimChip, clipTxt, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, eur, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtKm, fmtMm, fmtMonth, fmtNum, helpLink, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isUnusedUser, isWeekendD, kmDigHtml, kmFcHtml, kmUnclearDateDue, langAttr, langLoaded, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mk, mkR, nDays, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, planVehTag, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, qrSvg, rdyOf, rdyTxt, readCsvFile, reasonText, render, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, sortPref, sortUsers, stackTables, t, tachoHistList, telAbroad, telHref, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, tzNote, uiLoc, uid, usersCsv, vehiclesCached, vlAt, vsDef, woApptTxt, woTag, wsAll, wsLabel, wsName, wsOptions } from './app-main.js';
 
 // Backlog 804 (Funkloch): Antwort verloren (Zeitlimit/Netz) – meldet der Server beim erneuten Senden derselben Eingaben „gibt es bereits“,
 // war der erste Versuch gespeichert (nur für Endpunkte mit eindeutiger Dublettenprüfung: Vertrag, Führerscheinkontrolle, Auslesung, Fahrerzuordnung)
@@ -730,6 +730,33 @@ async function viewQrSheet(oneId) {
     <div class="qrsheet">${list.map(card).join('') || noneP()}</div>`, 'more');
   $$('[data-qk]').forEach((b) => (b.onclick = () => { S.qrKind = b.dataset.qk; viewQrSheet(); }));
   $('#qprt').onclick = () => window.print();
+}
+// {key} = App-Text in der Sprache des Aushangs (fett), {=key} = ohne Hervorhebung. Keine Namen, keine Telefonnummern (Linien zum Ausfüllen).
+const GUIDE_SECTIONS = ['access', 'install', 'report', 'check', 'crit', 'offline', 'status'];
+function guideFill(lang, s) {
+  const get = (k) => (STRINGS[lang] && STRINGS[lang][k]) || STRINGS.de[k] || k;
+  return String(s).split(/(\{=?\w+\})/).map((p) => { const m = p.match(/^\{(=?)(\w+)\}$/); return m ? (m[1] ? esc(get(m[2])) : `<b>${esc(get(m[2]))}</b>`) : esc(p); }).join('');
+}
+async function viewDriverGuide(l) {
+  const g = ['de', 'uk', 'en'].includes(l) ? l : S.guideLang || S.lang || 'de';
+  if (!langLoaded(g)) { ensureLang(g).then((ok) => viewDriverGuide(ok ? g : S.lang)); return; } // Aushang in anderer Sprache: Paket nachladen (Backlog 588; ohne Netz/Cache: Oberflächensprache)
+  S.guideLang = g;
+  const gt = (k) => (STRINGS[g] && STRINGS[g][k]) || STRINGS.de[k] || k;
+  const addr = `${location.origin}/`;
+  const field = (k) => `<div class="paper-field"><span>${esc(gt(k))}</span><i></i></div>`;
+  const sec = (k, i) => {
+    const parts = gt('g_' + k).split('|');
+    const body = parts.length > 1 ? `<ol>${parts.map((x) => `<li>${guideFill(g, x)}</li>`).join('')}</ol>` : `<p>${guideFill(g, parts[0])}</p>`;
+    return `<section class="guide-sec${k === 'crit' ? ' alert' : ''}"><h2>${i + 1}. ${esc(gt('g_' + k + '_t'))}</h2>${body}${k === 'crit' ? `<div class="paper-head">${field('g_phone_dispo')}${field('g_phone_fleet')}</div>` : ''}</section>`;
+  };
+  render(`<div class="noprint">${isMgr() ? `<p><a class="backlink" href="#/more">‹ ${esc(t('back'))}</a></p>` : ''}<h1 data-title="${esc(t('guide'))} – ${esc({ de: 'Deutsch', uk: 'Українська', en: 'English' }[g] || g)}">${esc(t('guide'))}</h1><p class="small muted">${esc(t('guide_hint'))}</p>
+    <p class="small" id="glabel">${esc(t('guide_lang'))}</p><div class="actions" role="group" aria-labelledby="glabel" style="flex-wrap:wrap">${[['de', 'Deutsch', '#/guide?l=de'], ['uk', 'Українська', '#/guide?l=uk'], ['en', 'English', '#/guide?l=en']].map(([k, n, href]) => `<a class="btn ${k === g ? '' : 'secondary'}" href="${href}" lang="${k}"${k === g ? ' aria-current="true"' : ''}>${n}</a>`).join('')}</div>
+    <div class="actions"><button type="button" class="btn" id="gprt">${esc(t('print'))}</button></div></div>
+    <article class="guide" lang="${g}"><h1>${esc(gt('g_title'))}</h1>
+    <div class="guide-top"><div class="qr">${(() => { try { return qrSvg(addr, { label: gt('g_addr') }); } catch { return ''; } })()}</div><div><p class="small"><b>${esc(gt('g_addr'))}</b></p><p class="guide-addr">${esc(addr)}</p></div></div>
+    ${GUIDE_SECTIONS.map(sec).join('')}
+    <p class="small muted">${esc(gt('g_printed'))}: ${esc(new Intl.DateTimeFormat(locOf(g), dateOpts('UTC')).format(new Date(bDate() + 'T12:00:00Z')))} · CEVIK ${esc(gt("app"))} [CLAUDE]</p></article>`, 'more');
+  $('#gprt').onclick = () => window.print();
 }
 // Verlauf der Auslesungen für einen Zeitraum mit Fristüberschreitungen (Backlog 245, Betriebsprüfung) – Ansicht, CSV, Ausdruck
 async function viewTachoHistory() {
@@ -1800,4 +1827,4 @@ async function viewSettings(sec) {
   };
 }
 
-export { viewAudit, viewClaims, viewContracts, viewCosts, viewDefects, viewDriver, viewDriverRecords, viewDrivers, viewEmergencyEdit, viewFine, viewFines, viewFleetTires, viewKpi, viewMaint, viewMaintMulti, viewMaster, viewNewMulti, viewPlan, viewQrSheet, viewQuality, viewReadiness, viewSettings, viewTacho, viewTachoHistory, viewTelematics, viewTimeline, viewUsage, viewUsers, viewWsLoad };
+export { viewAudit, viewClaims, viewContracts, viewCosts, viewDefects, viewDriver, viewDriverGuide, viewDriverRecords, viewDrivers, viewEmergencyEdit, viewFine, viewFines, viewFleetTires, viewKpi, viewMaint, viewMaintMulti, viewMaster, viewNewMulti, viewPlan, viewQrSheet, viewQuality, viewReadiness, viewSettings, viewTacho, viewTachoHistory, viewTelematics, viewTimeline, viewUsage, viewUsers, viewWsLoad };

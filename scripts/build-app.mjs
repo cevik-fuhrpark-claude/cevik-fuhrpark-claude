@@ -18,8 +18,9 @@ export const GROUPS = {
   verwaltung: ['viewSettings', 'viewUsers', 'viewAudit', 'viewKpi', 'viewCosts', 'viewQuality', 'viewMaster', 'viewClaims', 'viewContracts',
     'viewEmergencyEdit', 'viewFines', 'viewFine', 'viewTacho', 'viewTachoHistory', 'viewDriverRecords', 'viewDrivers', 'viewDriver', 'viewUsage',
     'viewReadiness', 'viewWsLoad', 'viewTelematics', 'viewQrSheet', 'viewDefects', 'viewFleetTires', 'viewPlan', 'viewMaint', 'viewMaintMulti', 'viewTimeline',
-    'viewNewMulti'], // Backlog 594: Mehrfach-Meldung nur Inhaber/Fuhrparkleitung
-  fahrzeug: ['viewVehicle', 'viewVehicles'], // Backlog 796: Fahrzeugliste dazu (öffnet die Akte, gleiche Nutzer); Backlog 594: Fahrzeugakte (inkl. Reifen, Verträge, Prüftermine) – größte Einzelansicht, ≈ 26 KB gzip
+    'viewNewMulti', // Backlog 594: Mehrfach-Meldung nur Inhaber/Fuhrparkleitung
+    'viewDriverGuide'], // Backlog 928: Fahrer-Aushang (Druckblatt wie viewQrSheet) – Reserve im Start-Modul
+  fahrzeug: ['viewVehicle', 'viewVehicles', 'viewCheckPaper'], // Backlog 928: leeres Prüfformular zum Ausdrucken (selten, kleinere Gruppe als Verwaltung); Backlog 796: Fahrzeugliste dazu (öffnet die Akte, gleiche Nutzer); Backlog 594: Fahrzeugakte (inkl. Reifen, Verträge, Prüftermine) – größte Einzelansicht, ≈ 26 KB gzip
   lager: ['viewStock', 'viewStockCount', 'viewReorder', 'viewStockAsOf', 'viewStockJournal', 'viewStockReceipt', 'viewPartsUsage', 'viewStockItem'],
 };
 

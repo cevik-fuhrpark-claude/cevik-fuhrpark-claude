@@ -32281,6 +32281,44 @@ await test('Backlog 924 (Befund als „kein …“): „keine/kaum Bremswirkung�
   for (const [n, x] of [['LIGHTS_HINT', 'kein Licht nötig'], ['LIGHTS_HINT', 'kein Bremslicht, Birne getauscht'], ['LIGHTS_HINT', 'keine Lichtprobleme'], ['BRAKE_HINT', 'keine Bremsprobleme']]) ok(!g(n).test(recurFix(x)), 'kein ' + n + ': ' + x);
 });
 
+await test('Backlog 925 (verneinte Ereignisse): „kein Unfall“, „kein Diebstahl“, „nichts gestohlen“, „kein Feuer/Rauch“, „kein Marder“, „kein Ölverlust“, „no accident“, „nothing stolen“, „без ДТП“, „нічого не вкрали“ zeigen keinen Unfall-/Diebstahl-/Brand-/Marder-/Leck-Hinweis; „Unfall“, „Diesel gestohlen“, Brand mit „kein Rauch mehr“ und „keine Unfallmeldung gemacht“ weiter mit Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const all = [...app.matchAll(/^const ([A-Z_]+_HINT) = \/(.+)\/i;/mg)].map((m) => [m[1], new RegExp(m[2], 'i')]);
+  const hit = (x) => all.filter(([, r]) => r.test(recurFix(x))).map(([n]) => n);
+  for (const x of ['kein Unfall', 'kein Diebstahl', 'nichts gestohlen', 'kein Feuer', 'kein Rauch', 'kein Wildunfall', 'kein Marder', 'kein Ölverlust', 'kein Kühlwasserverlust', 'no accident', 'nothing stolen', 'без ДТП', 'нічого не вкрали']) eq(hit(x).join(','), '', 'kein Hinweis: ' + x);
+  eq(hit('kein Unfall, nur Steinschlag').join(','), 'GLASS_HINT', 'nur Glas');
+  for (const [x, n] of [['Unfall', 'ACC_HINT'], ['Diesel gestohlen', 'THEFT_HINT'], ['Rauch aus dem Motorraum, Feuer gelöscht, kein Rauch mehr', 'FIRE_HINT'], ['keine Unfallmeldung gemacht, Spiegel ab', 'ACC_HINT']]) ok(hit(x).includes(n), n + ' erwartet: ' + x);
+});
+
+await test('Backlog 926 (verneinte Symptome): „Scheibe nicht gesprungen“, „kein Steinschlag“, „Spiegel nicht abgefahren“, „Ladung nicht verrutscht“, „keine Ladung verloren“, „Kupplung rutscht nicht“, „Bremse quietscht nicht (mehr)“, „Motor raucht nicht“ zeigen keinen Hinweis; „Gang rutscht nicht rein“, „Tür nicht zu“ und die bejahten Symptome weiter mit Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const all = [...app.matchAll(/^const ([A-Z_]+_HINT) = \/(.+)\/i;/mg)].map((m) => [m[1], new RegExp(m[2], 'i')]);
+  const hit = (x) => all.filter(([, r]) => r.test(recurFix(x))).map(([n]) => n);
+  for (const x of ['Scheibe nicht gesprungen', 'kein Steinschlag', 'Spiegel nicht abgefahren', 'Ladung nicht verrutscht', 'keine Ladung verloren', 'Kupplung rutscht nicht', 'Bremse quietscht nicht', 'Bremse quietscht nicht mehr', 'Motor raucht nicht']) eq(hit(x).join(','), '', 'kein Hinweis: ' + x);
+  for (const [x, n] of [['Gang rutscht nicht rein', 'GEAR_HINT'], ['Tür nicht zu', 'DOOR_HINT'], ['Bremse quietscht', 'BRAKE_HINT'], ['Motor raucht', 'FIRE_HINT'], ['Kupplung rutscht', 'GEAR_HINT'], ['Steinschlag in der Scheibe', 'GLASS_HINT'], ['Bremse quietscht nicht mehr, aber zieht nach links', 'BRAKE_HINT']]) ok(hit(x).includes(n), n + ' erwartet: ' + x);
+});
+
+await test('Backlog 927 (Sonde abgefahrene Reifen in Fahrerworten): „Profil nur noch 2 mm“, „Profiltiefe unter 1,6 mm“, „Reifen nur noch 1,5 mm“, „Reifen bis auf die Karkasse“, „Reifen ist durch/glatt“, „tread down to 2mm“, „tread worn down“, „протектор стерся“ → Reifen-Hinweis (ohne eigene Grenzwerte: nur bei „nur noch/unter/bis auf“); Messwert ohne Wertung, „durch den TÜV“, Glätte und Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const ty = new RegExp(app.match(/^const TYRE_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Profil nur noch 2 mm', 'Profiltiefe unter 1,6 mm', 'Reifen nur noch 1,5 mm', 'Reifen runter bis auf die Karkasse', 'Reifen ist durch', 'Reifen sind komplett glatt', 'tread down to 2mm', 'tread worn down', 'протектор стерся']) ok(ty.test(recurFix(x)), 'Reifen-Hinweis erwartet: ' + x);
+  for (const x of ['Profil 8 mm, alles gut', 'Profiltiefe 5 mm gemessen', 'Reifen ist durch, getauscht', 'Reifen ist durch den TÜV', 'Straße ist glatt, Reifen ok']) ok(!ty.test(recurFix(x)), 'kein Reifen-Hinweis: ' + x);
+});
+
+await test('Backlog 928 (Reserve Start-Modul): Druckblätter „Abfahrtskontrolle – Papiervordruck“ (#/check/paper → app-fahrzeug.js) und Fahrer-Aushang (#/guide → app-verwaltung.js) werden nachgeladen; Platzhalter im Start-Modul, Ansichten async', async () => {
+  const fs = await import('node:fs');
+  const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const B = await import('../scripts/build-app.mjs');
+  ok(B.GROUPS.fahrzeug.includes('viewCheckPaper') && B.GROUPS.verwaltung.includes('viewDriverGuide'), 'GROUPS');
+  const app = rd('app.js'), main = rd('app-main.js');
+  ok(/^async function viewCheckPaper\(\) \{/m.test(app) && /^async function viewDriverGuide\(l\) \{/m.test(app), 'async in app.js');
+  ok(/^async function viewCheckPaper\(\) \{/m.test(rd('app-fahrzeug.js')) && /^async function viewDriverGuide\(l\) \{/m.test(rd('app-verwaltung.js')), 'in den Gruppen-Dateien');
+  ok(main.includes("async function viewCheckPaper(...a) { return (await lazyModule('fahrzeug')).viewCheckPaper(...a); }") && main.includes("async function viewDriverGuide(...a) { return (await lazyModule('verwaltung')).viewDriverGuide(...a); }"), 'Platzhalter im Start-Modul');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -3,6 +3,19 @@ import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, PHOTO_TIMEOU
 
 // Durchführung älter als die gespeicherte letzte: nur im Verlauf gespeichert, Fälligkeit unverändert – ausdrücklich sagen (17.10.2026)
 const doneToast = (r) => toast(r && r.older_than_last ? '✓ ' + t('mt_older_saved').replace('{d}', fmtD(r.last_done_date)) : '✓');
+// Papiervordruck der Abfahrtskontrolle (Notfall: Handy leer/defekt) – gleiche Prüfpunkte wie in der App
+async function viewCheckPaper() {
+  const line = (l) => `<div class="paper-field"><span>${esc(l)}</span><i></i></div>`;
+  render(`<p class="noprint"><a class="backlink" href="#/check">‹ ${esc(t('back'))}</a></p><h1>${esc(t('departure_check'))} – ${esc(t('paper_form'))}</h1>
+    <p class="small noprint">${esc(t('paper_hint'))}</p><div class="actions noprint"><button type="button" class="btn" id="pprt">${esc(t('print'))}</button></div>
+    <div class="paper-head">${[t('plate_label'), t('date'), t('km'), t('driver_name')].map(line).join('')}</div>
+    <div class="scroll"><table class="paper"><thead><tr><th>${esc(t('check_item'))}</th><th style="white-space:nowrap">${esc(t('ok'))}</th><th style="white-space:nowrap">${esc(t('defect'))}</th><th style="white-space:nowrap">${esc(t('na'))}</th><th>${esc(t('defect_note'))}</th></tr></thead>
+    <tbody>${S.meta.checklist.map((i) => `<tr><td>${esc(checkLabel(i.key))}</td><td class="box">☐</td><td class="box">☐</td><td class="box">☐</td><td></td></tr>`).join('')}</tbody></table></div>
+    <p class="small">☐ ${esc(t('safety_relevant'))} – ${esc(t('outbox_call'))}</p>
+    <div class="paper-head">${line(t('signature'))}</div>
+    <p class="small muted">${esc(t('paper_footer'))} · CEVIK ${esc(t('app'))} [CLAUDE]</p>`, 'check');
+  $('#pprt').onclick = () => window.print();
+}
 function vehicleForm(v = {}) {
   const f = (name, label, val, extra = '') => `<label>${esc(label)}</label><input name="${name}" value="${esc(val ?? '')}" ${extra}>`;
   return `${v.trailer_vin ? `<input type="hidden" name="trailer_vin" value="${esc(v.trailer_vin)}">` : ''}${v.vin ? `<input type="hidden" name="vin" value="${esc(v.vin)}">` : f('vin', t('vin'), '', 'required minlength="17" maxlength="25" autocapitalize="characters" aria-describedby="vinhint"') + `<p class="small muted" id="vinhint">${esc(t('vin_hint_new'))}</p>`}
@@ -691,4 +704,4 @@ async function renderTires(id, el, keep = null) {
 }
 const VEH_DOCS_MAX = 30;
 
-export { viewVehicle, viewVehicles };
+export { viewCheckPaper, viewVehicle, viewVehicles };
