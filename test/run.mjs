@@ -31902,6 +31902,28 @@ await test('Backlog 898 (Folge aus 896, Browser-Übersetzung): Vertrags-, Schade
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-browser-uebersetzung-nummern.py|'), 'UI-Prüfung in pruefen.sh');
 });
 
+await test('Backlog 899 (Blickwinkel „Leasinggesellschaft/Versicherer ruft an und nennt nur die Vertrags- bzw. Schadennummer“): globale Suche findet Verträge und Versicherungsfälle (nur Inhaber/Leitung)', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const vs = app.slice(app.indexOf('async function viewSearch() {'), app.indexOf('\n}', app.indexOf('async function viewSearch() {')));
+  ok(vs.includes("if (isMgr() && !ctList) ctList = (await api('GET', '/api/contracts?filter=alle')).contracts;"), 'Verträge nur für Inhaber/Leitung geladen');
+  ok(vs.includes("isMgr() ? await api('GET', '/api/claims?filter=alle&q=' + encodeURIComponent(q.slice(0, 60))) : null"), 'Versicherungsfälle über die Server-Suche, nur Inhaber/Leitung');
+  ok(vs.includes('id="gcontracts"') && vs.includes('id="gclaims"') && vs.includes('kAll.length + clAll.length'), 'Bereiche und Trefferansage');
+  // Vertragsnummer: Leerzeichen/Bindestrich/Punkt/Schrägstrich egal (gleiche Normalisierung wie in der App)
+  const { searchKey } = { searchKey: (x) => String(x || '').toLowerCase() };
+  const nk = (x) => searchKey(x).replace(/[\s\-./]/g, '');
+  ok(nk('LV-2098-77A').includes(nk('lv 2098 77a')) && nk('SN/12.34').includes(nk('sn 1234')), 'Normalisierung');
+  // Server: Rollen und Suchfelder der Versicherungsliste
+  const r1 = await owner.get('/api/claims?filter=alle&q=xx-unbekannt'); eq(r1.status, 200); eq(r1.data.claims.length, 0);
+  eq((await users.ws.get('/api/claims?filter=alle&q=1')).status, 403, 'Werkstatt keine Versicherungsfälle');
+  eq((await users.ws.get('/api/contracts?filter=alle')).status, 403, 'Werkstatt keine Verträge');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(/Vertragsnummer/.test(STRINGS.de.search_hint) && /номер договору/.test(STRINGS.uk.search_hint) && /contract number/.test(STRINGS.en.search_hint), 'Suchhinweis DE/UK/EN');
+  const ui = fs.readFileSync(new URL('../scripts/ui-suche-vertrag-schaden.py', import.meta.url), 'utf8');
+  for (const x of ['#gcontracts', '#gclaims', 'Werkstatt: keine', "('en',(1366,900))"]) ok(ui.includes(x), 'UI-Prüfung enthält ' + x);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-suche-vertrag-schaden.py|'), 'UI-Prüfung in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
