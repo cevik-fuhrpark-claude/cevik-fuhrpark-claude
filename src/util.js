@@ -608,6 +608,9 @@ export const plateNoCountry = (p) => {
   const t = s.replace(/^\(?(?:D|DE|DEU)\)?[\s\-–:/.]+(?=\S)/i, '').replace(/(\S)[\s\-–/,]+\(?(?:D|DE|DEU)\)?$/i, '$1').replace(/(\S)\((?:D|DE|DEU)\)$/i, '$1').trim();
   return t !== s && normPlate(t).length >= 4 ? t : null;
 };
+// gleiches Kennzeichen, auch wenn eine Seite die Länderkennung trägt (Telematik-Gerät meldet „D SZ-YC 5501“; Backlog 901)
+export const samePlate = (a, b) => { const ka = normPlate(a); const kb = normPlate(b); if (!ka || !kb) return ka === kb; if (ka === kb) return true;
+  const na = plateNoCountry(a); const nb = plateNoCountry(b); return (!!na && normPlate(na) === kb) || (!!nb && normPlate(nb) === ka); };
 // Treffer zuerst wie geschrieben, sonst ohne Länderkennung (country: true)
 export const plateHits = (list, plate, keyOf) => {
   const k = normPlate(plate); if (!k) return { hits: [], country: false };

@@ -1,6 +1,6 @@
 // [CLAUDE] Telematik-Prüffälle: Geräte ohne sichere Zuordnung (keine FIN, kein bestätigtes Mapping) und bestätigte Zuordnungen.
 // Zuordnung nur durch Inhaber/Fuhrparkleitung mit Nachweis – nie automatisch über das Kennzeichen.
-import { bad, forbidden, notFound, conflict, str, oneOf, nowIso, normPlate, berlinDateTime, berlinDate } from './util.js';
+import { bad, forbidden, notFound, conflict, str, oneOf, nowIso, normPlate, samePlate, berlinDateTime, berlinDate } from './util.js';
 import { audit } from './auth.js';
 import { siteSelection } from './reports.js';
 
@@ -51,7 +51,7 @@ export async function telematicsOverview(env, user, query = {}) {
   const byP = new Map(perProvider.results.map((r) => [r.provider, r]));
   const by_provider = PROVIDERS.map((provider) => { const r = byP.get(provider) || {};
     return { provider, devices: r.devices || 0, vehicles: r.vehicles || 0, last_received: r.last_received || null, last_gps_time: r.last_gps_time || null, inactive_vehicle_reports: r.inactive_vehicle_reports || 0 }; });
-  const plate_mismatches = reported.results.filter((r) => r.source_plate && normPlate(r.source_plate) !== normPlate(r.plate))
+  const plate_mismatches = reported.results.filter((r) => r.source_plate && !samePlate(r.source_plate, r.plate))
     .map(({ vehicle_id, plate, provider, external_id, match_basis, source_plate, received_at }) => ({ vehicle_id, plate, provider, external_id, match_basis, source_plate, received_at }));
   // km-Stand des Geräts kleiner als der erfasste – nicht übernommen (nur Hinweis, keine Korrektur, kein Grenzwert)
   const km_rejected = reported.results.map((r) => kmRejection(r)).filter(Boolean);

@@ -40,6 +40,8 @@ with sync_playwright() as p:
         check(q.locator('#fvu').count()==0,f'{lang}/{w}: Fahrzeug zugeordnet (kein „unbekannt“)')
         check(q.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/ba-{lang}-{w}.png',full_page=True)
+        q.goto(B+'/#/search'); q.wait_for_selector('#gq'); q.fill('#gq','D '+pl); q.wait_for_timeout(1300)
+        check(pl in q.inner_text('#gr') and q.locator('#gr a[href^="#/vehicles/"]').count()>=1,f'{lang}/{w}: Suche „D {pl}“ findet das Fahrzeug (Backlog 902)')
         check(not errs,f'{lang}/{w}: ohne Skriptfehler {errs[:2]}'); ctx.close()
     # Gegenprobe: ohne Trennzeichen keine Vermutung
     r=api('POST','/api/fines',{'kind':'anhoerung','authority':'ANTAI Rennes','reference':f'FR-{sfx}-x','offense_type':'geschwindigkeit','offense_at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(time.time()-86400)),'plate_in_letter':'D'+pl.replace('-','').replace(' ','')})

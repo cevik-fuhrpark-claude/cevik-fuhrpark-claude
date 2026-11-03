@@ -7335,6 +7335,8 @@ await test('Telematik: Kennzeichen-Vorschlag unabhängig von Schreibweise/Umlaut
   let vt = await vtel(); eq(vt.reported_plate, 'SZ-YC 5531', 'Fahrzeugakte: Hinweis abweichendes Kennzeichen'); eq(vt.external_id, 'TL-VIN'); ok(!('source_plate' in vt), 'Rohwert nicht doppelt');
   eq((await owner.get('/api/vehicles/VIN:WDB96340310999101')).data.vehicle.plate, 'TÜ-TL 7', 'Stamm unverändert');
   await send('tü tl 7'); eq((await mism()).length, 0, 'gleiches Kennzeichen anders geschrieben: kein Befund');
+  await send('D TÜ-TL 7'); eq((await mism()).length, 0, 'Länderkennung (Backlog 901): kein Befund'); eq((await tmm()).length, 0); eq((await vtel()).reported_plate, null);
+  await send('tü tl 7');
   eq((await tmm()).length, 0, 'Übersicht: Schreibweise egal');
   eq((await vtel()).reported_plate, null, 'Fahrzeugakte: Schreibweise egal');
   await send('SZ-YC 5531'); await send(undefined); eq((await mism()).length, 0, 'ohne Kennzeichen: kein Befund (letzter Stand zählt)');
@@ -20586,7 +20588,7 @@ await test('Backlog 256 (Blickwinkel „Lkw wird umgekennzeichnet“): Kennzeich
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['former_plates', 'former_plate_until', 'former_plate_hit']) ok(STRINGS[l][k], `${l}.${k}`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('data-formerplates') && app.includes('(v.former_plates || []).some((x) => norm(x).includes(n))') && app.includes('data-formerhit'), 'Oberfläche');
+  ok(app.includes('data-formerplates') && app.includes('(v.former_plates || []).some((x) => norm(x).includes(k))') && app.includes('data-formerhit'), 'Oberfläche');
 });
 
 await test('Backlog 257b: Bußgeld mit früherem Kennzeichen (Umkennzeichnung) – Fahrzeug, das das Kennzeichen zur Tatzeit trug, wird zugeordnet; nach dem Wechsel bzw. bei zwei Trägern nicht; Agent bietet „Angaben ändern“ an; Hinweis in der Oberfläche', async () => {
@@ -31953,6 +31955,24 @@ await test('Backlog 900 (Blickwinkel „Bußgeld/Mautnachforderung aus dem Ausla
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].fine_plate_country.includes('{old}') && STRINGS[l].fine_plate_country.includes('{plate}') && STRINGS[l].fine_plate_hint, 'Texte ' + l);
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-bussgeld-ausland.py|'), 'UI-Prüfung in pruefen.sh');
+});
+await test('Backlog 901 (Blickwinkel „Bußgeld/Mautnachforderung aus dem Ausland“, Folge): Telematik-Gerät meldet das Kennzeichen mit Länderkennung – keine Abweichung', async () => {
+  const { samePlate } = await import('../src/util.js');
+  ok(samePlate('D SZ-YC 5513', 'SZ-YC 5513') && samePlate('SZ-YC 5513', 'SZYC5513 (D)') && samePlate('sz yc 5513', 'SZ-YC 5513'), 'gleich');
+  ok(!samePlate('D SZ-YC 5513', 'SZ-YC 5514') && !samePlate('DSZYC5513', 'SZ-YC 5513') && !samePlate('Ж 1', 'SZ-YC 5513'), 'verschieden');
+  const src = (f) => (async () => (await import('node:fs')).readFileSync(new URL('../src/' + f, import.meta.url), 'utf8'))();
+  ok((await src('telematics.js')).includes('!samePlate(r.source_plate, r.plate)') && (await src('quality.js')).includes('!samePlate(r.source_plate, v.plate)') && (await src('vehicles.js')).includes('!samePlate(source_plate, v.plate)'), 'alle drei Stellen');
+});
+await test('Backlog 902 (Folge aus 900): globale Suche findet das Fahrzeug auch mit Länderkennung im Suchbegriff („D SZ-YC 5513“)', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const def = app.slice(app.indexOf('const plateNoCountry = '), app.indexOf('\n', app.indexOf('const plateNoCountry = ')));
+  const searchKey = (x) => String(x || '').toLowerCase().replace(/[\s\-./_]/g, '');
+  const fn = new Function('searchKey', def.replace('const plateNoCountry = ', 'return '))(searchKey);
+  const { plateNoCountry } = await import('../src/util.js');
+  for (const x of ['D SZ-YC 5513', 'DE-SZYC5513', 'SZ YC 5513 / DEU', 'SZYC5513 (D)', '(D) SZ-YC 5513', 'SZ-YC 5513', 'DSZYC5513', 'D-X 1', 'de sz-yc 5513']) eq(fn(x), plateNoCountry(x), 'App = Server: ' + x);
+  ok(app.includes('if (!vAll.length && ncq) vAll = vHit(norm(ncq));'), 'nur ohne direkten Treffer');
+  ok(fs.readFileSync(new URL('../scripts/ui-bussgeld-ausland.py', import.meta.url), 'utf8').includes('Backlog 902'), 'UI-Prüfung');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

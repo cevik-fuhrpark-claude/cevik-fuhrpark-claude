@@ -1,6 +1,6 @@
 // [CLAUDE] Datenqualität (Einführungsphase): prüft Stammdaten und Zuordnungen auf Lücken und Widersprüche.
 // Nur Befunde aus gespeicherten Daten – es wird nichts geändert und nichts ergänzt.
-import { forbidden, nowIso, addMonths, berlinDate, berlinWindowStartIso, berlinDateTime, berlinDaySql, normPlate, caseVariants, intParam } from './util.js';
+import { forbidden, nowIso, addMonths, berlinDate, berlinWindowStartIso, berlinDateTime, berlinDaySql, normPlate, samePlate, caseVariants, intParam } from './util.js';
 
 // Unfall-Wortstämme auf Ukrainisch: lower() wirkt in SQLite/D1 nur auf A–Z – daher alle Schreibweisen (klein, GROSS, Anfang groß)
 // einzeln suchen („АВАРІЯ“, „Дтп“ wurden vorher nicht erkannt). Deutsch/Englisch genügt lower().
@@ -464,7 +464,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (!r.v_active && r.deact_at && r.gps_time && r.gps_time > r.deact_at) addA('telematics_vehicle_inactive', { id: r.vehicle_id, plate: r.v_plate }, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${berlinDateTime(r.gps_time)} · außer Betrieb seit ${berlinDate(r.deact_at).split('-').reverse().join('.')}`.replace(/\s+:/, ':'),
       { source: `${PROV[r.provider] || r.provider} ${r.external_id || ''}`.trim(), day: berlinDate(r.gps_time), time: berlinDateTime(r.gps_time).slice(-5), since: berlinDate(r.deact_at) });
     const v = vById.get(r.vehicle_id); if (!v) continue;
-    if (r.source_plate && normPlate(r.source_plate) !== normPlate(v.plate)) add('telematics_plate_mismatch', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''} → ${r.source_plate}`);
+    if (r.source_plate && !samePlate(r.source_plate, v.plate)) add('telematics_plate_mismatch', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''} → ${r.source_plate}`);
     if (r.km !== null && r.prev_km !== null && Math.round(r.km) < r.prev_km) addA('telematics_km_rejected', v, `${PROV[r.provider] || r.provider} ${r.external_id || ''}: ${Math.round(r.km)} km (${berlinDate(r.km_time || r.gps_time)}) < ${r.prev_km} km (${berlinDate(r.prev_at)})`,
       { source: `${PROV[r.provider] || r.provider} ${r.external_id || ''}`.trim(), km: Math.round(r.km), day: berlinDate(r.km_time || r.gps_time), other_km: r.prev_km, other_day: berlinDate(r.prev_at), cmp: 'lt' });
     else if (r.km !== null && (r.km_time || r.gps_time) && r.next_json) {

@@ -345,6 +345,8 @@ const plateCmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'de', 
 // wie der Server (normPlate) – vorher fanden Fahrzeugliste, Fahrzeugauswahl und globale Suche nichts (22.10.2026). Beide Seiten gleich umgesetzt.
 const SK_CYR = { 'а': 'a', 'в': 'b', 'е': 'e', 'к': 'k', 'м': 'm', 'н': 'h', 'о': 'o', 'р': 'p', 'с': 'c', 'т': 't', 'у': 'y', 'х': 'x', 'і': 'i' };
 const searchKey = (x) => String(x || '').normalize('NFC').toLowerCase().replace(/[\s\-./_\u2010-\u2014\u202a-\u202e\u2066-\u2069]/g, '').replace(/[авекмнорстухі]/g, (c) => SK_CYR[c]);
+// Kennzeichen mit Länderkennung aus ausländischen Schreiben („D SZ-YC 5501“, „SZYC5501 (D)“) – gleiche Regel wie plateNoCountry im Server (Backlog 902)
+const plateNoCountry = (p) => { const x = String(p || '').trim(); const y = x.replace(/^\(?(?:D|DE|DEU)\)?[\s\-–:/.]+(?=\S)/i, '').replace(/(\S)[\s\-–/,]+\(?(?:D|DE|DEU)\)?$/i, '$1').replace(/(\S)\((?:D|DE|DEU)\)$/i, '$1').trim(); return y !== x && searchKey(y).length >= 4 ? y : null; };
 function markInvalid(el, msg, after = el) {
   if (!el) return;
   const id = 'err_' + String(el.id || el.getAttribute('aria-labelledby') || el.getAttribute('name') || 'feld').replace(/[^\w-]/g, '_');
@@ -7259,7 +7261,8 @@ async function viewSearch() {
       }
       const n = norm(q);
       // Treffer je Bereich höchstens 10 (Vorgänge 20) – Gesamtzahl und Hinweis „Suche genauer eingeben“ statt stillem Abschneiden
-      const vAll = vehicles.filter((v) => [v.plate, v.vin, v.trailer_plate, v.truck_plate, v.manufacturer, v.model].some((x) => norm(x).includes(n)) || (v.former_plates || []).some((x) => norm(x).includes(n))); const vs = vAll.slice(0, 10); // früheres Kennzeichen (Backlog 256)
+      const vHit = (k) => vehicles.filter((v) => [v.plate, v.vin, v.trailer_plate, v.truck_plate, v.manufacturer, v.model].some((x) => norm(x).includes(k)) || (v.former_plates || []).some((x) => norm(x).includes(k))); // früheres Kennzeichen (Backlog 256)
+      const ncq = plateNoCountry(q); let vAll = vHit(n); if (!vAll.length && ncq) vAll = vHit(norm(ncq)); const vs = vAll.slice(0, 10); // Länderkennung aus ausländischem Schreiben (Backlog 902)
       const cr = await api('GET', '/api/cases?status=&limit=20&q=' + encodeURIComponent(q)); const cs = cr.cases;
       // Suche nur in den 500 jüngsten Schreiben – Hinweis statt stillem Abschneiden (20.10.2026)
       if (canFines && !fineList) { const fr = await api('GET', '/api/fines'); fineList = fr.fines; fineTrunc = !!fr.truncated; }

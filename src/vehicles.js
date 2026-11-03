@@ -1,7 +1,7 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { caseDescText } from '../public/check-labels.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, requestKey, str, num, oneOf, flag, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, intParam, kmNum, maxFutureDate, DUE_FAR_MSG, plateCmp, cutText } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, requestKey, str, num, oneOf, flag, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, samePlate, intParam, kmNum, maxFutureDate, DUE_FAR_MSG, plateCmp, cutText } from './util.js';
 import { audit, auditStmt } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX, caseAccess } from './cases.js';
@@ -246,7 +246,7 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
       // km kleiner als der zuvor erfasste Stand (gleiche Regel wie telematics_km_rejected) → km_rejected_below = erfasster Stand
       // oder größer als ein später erfasster Stand ohne Begründung → km_rejected_above = { km, at } (seit 18.10.2026, wie Datenqualität)
       .map(({ source_plate, prev_km, next_json, km_time, ...x }) => { const rej = kmRejection({ ...x, km_time, prev_km, next_json });
-        return { ...x, reported_plate: source_plate && normPlate(source_plate) !== normPlate(v.plate) ? source_plate : null,
+        return { ...x, reported_plate: source_plate && !samePlate(source_plate, v.plate) ? source_plate : null,
           km_rejected_below: rej && rej.direction === 'below' ? rej.recorded_km : null,
           km_rejected_above: rej && rej.direction === 'above' ? { km: rej.recorded_km, at: rej.recorded_at } : null }; })
     : [];
