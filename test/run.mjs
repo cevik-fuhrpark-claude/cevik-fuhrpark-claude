@@ -32618,6 +32618,14 @@ await test('Backlog 958 (Fund aus 957): „Tür klemmt nicht mehr“, „Getrieb
   for (const [k, x] of [['DOOR', 'Tür schließt nicht mehr'], ['LIGHTS', 'Licht geht nicht mehr'], ['DOOR', 'Tür klemmt nicht mehr richtig zu'], ['TYRE', 'Tür klemmt nicht mehr, aber Reifen verliert Luft'], ['REEFER', 'Kühlung fällt dauernd aus'], ['DOOR', 'Spiegel ab, außerdem klemmt die Tür']]) ok(H(k).test(recurFix(x)), k + '-Hinweis erwartet: ' + x);
 });
 
+await test('Backlog 959 (Fund aus 958): Erledigt-Vermerk „nicht mehr“ in EN/UK/RU („brakes no longer squeak“, „door doesn’t stick anymore“, „гальма більше не скриплять“, „тормоза перестали скрипеть“) und Ziehen zur Seite („Lenkung zieht nicht mehr nach links“, „steering no longer pulls to the left“, „руль больше не тянет влево“) zeigt keinen Hinweis; Leistungsverlust und „works/працює“ bleiben Störungen', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const H = (k) => new RegExp(app.match(new RegExp('^const ' + k + '_HINT = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const [k, x] of [['BRAKE', 'brakes no longer squeak'], ['BRAKE', 'brakes don’t squeak anymore'], ['BRAKE', 'brakes have stopped squealing'], ['BRAKE', 'гальма більше не скриплять'], ['BRAKE', 'тормоза больше не скрипят'], ['BRAKE', 'гальма перестали скрипіти'], ['BRAKE', 'тормоза перестали скрипеть'], ['VISIB', 'wiper doesn\'t smear anymore'], ['TYRE', 'tyre is not losing air anymore'], ['STEER', 'Lenkung zieht nicht mehr'], ['STEER', 'Lenkung zieht nicht mehr nach links'], ['STEER', 'steering no longer pulls to the left'], ['STEER', 'кермо більше не тягне вліво'], ['STEER', 'руль больше не тянет влево'], ['ENGINE', 'Lenkung zieht nicht mehr']]) ok(!H(k).test(recurFix(x)), 'kein ' + k + '-Hinweis: ' + x);
+  for (const [k, x] of [['BRAKE', 'brakes squeak'], ['BRAKE', 'brakes stopped working'], ['BRAKE', 'тормоза скрипят'], ['STEER', 'steering pulls to the left'], ['STEER', 'руль тянет влево'], ['ENGINE', 'Lkw zieht nicht mehr'], ['ENGINE', 'двигун більше не тягне'], ['ENGINE', 'мотор больше не тянет'], ['LIGHTS', 'лампа більше не працює'], ['DOOR', 'двері більше не зачиняються'], ['TYRE', 'brakes no longer squeak but tyre is losing air'], ['TYRE', 'гальма більше не скриплять, але колесо спускає']]) ok(H(k).test(recurFix(x)), k + '-Hinweis erwartet: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
