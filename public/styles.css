@@ -454,3 +454,25 @@ form[aria-busy="true"] button:not([type="button"]), button[aria-busy="true"], a[
 .emrow .emhours { font-variant-numeric: tabular-nums; }
 /* [CLAUDE] Backlog 808: Vertragsfeld zwischenzeitlich von anderer Person geändert */
 .ct-other { outline: 2px solid var(--mid); outline-offset: 1px; background: var(--mid-bg); }
+/* [CLAUDE] Backlog 893 (Blickwinkel „Fuhrparkleitung am Büro-PC mit Windows-Kontrastdesign“): Im Kontrastmodus (forced-colors) ersetzt der
+   Browser alle Farben durch Systemfarben, Hintergründe und Schatten entfallen. Vorher sahen OK/Mangel/entfällt der Abfahrtskontrolle, die
+   Fahrzeugwahl, Filter-Reiter und die Navigationsleiste gewählt und nicht gewählt gleich aus, Hauptknöpfe standen als bloßer Text da und der
+   Flottenbalken war leer. Systemfarben (Highlight, ButtonText, CanvasText) bleiben im Kontrastmodus erhalten. Prüfung: scripts/ui-kontrastmodus.py */
+@media (forced-colors: active) {
+  .btn { border: 2px solid ButtonText; }
+  .btn:disabled { border-color: GrayText; color: GrayText; }
+  /* forced-color-adjust: none – sonst legt Chromium eine Canvas-Fläche hinter den Text und HighlightText ist darauf unsichtbar */
+  .seg label:has(input:checked), .seg label.bad:has(input:checked), .seg-tabs a.on { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
+  .vehpick label { position: relative; }
+  .vehpick label:has(input:checked) { border: 3px solid Highlight; padding: 9px; }
+  .vehpick label:has(input:checked)::after { content: '✓'; position: absolute; bottom: 8px; right: 10px; font-weight: 700; color: Highlight; }
+  .choice:has(input:checked), .choice.c-kritisch:has(input:checked) { border-color: Highlight; }
+  .tabbar a.active::before { background: Highlight; }
+  .tabbar a.active { text-decoration: underline; text-underline-offset: 4px; }
+  .tabbar a.report span.dot { border: 2px solid ButtonText; }
+  .checkitem.missing { border-left: 4px solid CanvasText; }
+  .chip { border-color: CanvasText; }
+  /* Kennzeichen und Flottenbalken sind Abbildungen: eigene Farben behalten (Kennzeichen schwarz auf weiß, gesperrt mit rotem Rahmen) */
+  .plate, .fleetbar, .legend i { forced-color-adjust: none; }
+  .fleetbar { outline: 1px solid CanvasText; }
+}

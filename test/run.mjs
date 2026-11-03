@@ -31781,6 +31781,23 @@ await test('Backlog 892 (Blickwinkel „Fahrer mit Sehschwäche nutzt den Bildsc
   for (const x of ['Accessibility.getFullAXTree', 'doppelte ID', 'verweist auf fehlende ID', 'sichtbare h1', 'Sprachname ohne lang']) ok(ui.includes(x), 'UI-Prüfung enthält ' + x);
 });
 
+await test('Backlog 893 (Blickwinkel „Fuhrparkleitung am Büro-PC mit Windows-Kontrastdesign“): im Kontrastmodus (forced-colors) bleiben Auswahl, aktuelle Reiter, Knopfrahmen, fehlender Prüfpunkt und Flottenbalken erkennbar; UI-Prüfung eingetragen', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const i = css.indexOf('@media (forced-colors: active) {'); ok(i > 0, 'forced-colors-Block vorhanden');
+  // Block bis zur schließenden Klammer auf Zeilenanfang
+  const blk = css.slice(i, css.indexOf('\n}', i));
+  for (const x of ['.btn { border: 2px solid ButtonText; }', '.seg label:has(input:checked)', '.seg-tabs a.on', '.vehpick label:has(input:checked) { border: 3px solid Highlight;', ".vehpick label:has(input:checked)::after { content: '✓';", '.choice.c-kritisch:has(input:checked)', '.tabbar a.active::before { background: Highlight; }', '.checkitem.missing { border-left: 4px solid CanvasText; }', '.plate, .fleetbar, .legend i { forced-color-adjust: none; }']) ok(blk.includes(x), 'Kontrastmodus: ' + x);
+  // HighlightText auf Highlight nur mit forced-color-adjust: none (sonst Canvas-Hinterlegung hinter dem Text → unsichtbar)
+  for (const m of blk.matchAll(/([^{}]+)\{([^}]*HighlightText[^}]*)\}/g)) ok(/forced-color-adjust:\s*none/.test(m[2]), 'HighlightText ohne forced-color-adjust: none bei ' + m[1].trim());
+  // nur Systemfarben im Block (eigene Farben würden im Kontrastmodus ersetzt bzw. passen nicht zum Design des Nutzers)
+  ok(!/#[0-9a-f]{3,8}\b|var\(--/i.test(blk), 'nur Systemfarben im Kontrastmodus-Block');
+  const pr = fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8');
+  ok(pr.includes('|ui-kontrastmodus.py|'), 'UI-Prüfung Kontrastmodus in pruefen.sh');
+  const ui = fs.readFileSync(new URL('../scripts/ui-kontrastmodus.py', import.meta.url), 'utf8');
+  for (const x of ["forced_colors='active'", 'Auswahl nicht erkennbar', 'Knopf ohne Rahmen', 'Canvas-Hinterlegung', 'fehlender Prüfpunkt', 'Flottenbalken']) ok(ui.includes(x), 'UI-Prüfung enthält ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
