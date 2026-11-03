@@ -109,6 +109,13 @@ with sync_playwright() as p:
                 for rt in routes:
                     q.goto(B+'/'+rt); q.reload(); q.wait_for_timeout(1100)
                     found=unnamed(q,cdp)+[f'DOM: {x}' for x in q.evaluate(DOMCHK)]
+                    # Meldeformular: Beschreibung mit mehreren Gefahren → Hinweis-Kästen (Rauch, Reifen, Öl) mit Knöpfen/Links prüfen
+                    if rt=='#/new' and q.locator('textarea#d').count():
+                        q.fill('textarea#d',{'de':'Reifen geplatzt, Rauch aus dem Motorraum, Öl läuft aus','uk':'Колесо лопнуло, дим з моторного відсіку, тече олива','en':'Tyre burst, smoke from the engine bay, oil leaking'}[lang])
+                        q.wait_for_timeout(900)
+                        found+=[f'[Hinweise] {x}' for x in unnamed(q,cdp)+[f'DOM: {y}' for y in q.evaluate(DOMCHK)]]
+                        if SHOTS and lang=='de': q.screenshot(path=f"{SHOTS}/namen-{role}-{w}-new-hinweise.png",full_page=True)
+                        q.fill('textarea#d','')
                     # Vorgangsseite: jedes Aktionsformular öffnen (Knöpfe mit data-act) und prüfen
                     if rt.startswith('#/cases/') and lang=='de':
                         acts=q.evaluate("()=>[...document.querySelectorAll('button[data-act]')].filter(b=>b.offsetParent).map(b=>b.dataset.act)")
