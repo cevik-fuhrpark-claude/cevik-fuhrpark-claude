@@ -32565,6 +32565,22 @@ await test('Backlog 953 (langsames Netz): ausgelagerte Hilfsfunktionen, die in d
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-modul-langsam.py'), 'UI-Skript in pruefen.sh');
 });
 
+await test('Backlog 954 (Sonde Fahrerworte, Warnleuchten/Batterie/Temperatur): „Ölwarnung leuchtet“, „Ölkanne leuchtet“, „Batteriewarnung“, „battery warning“ → Warnleuchte (nicht „keine Ölwarnung“, „Ölwarnung ist weg“, „Ölkanne fehlt“, „no battery warning“); „Batterie (ist) schwach“, „weak battery“, „battery is weak“, „слабкий акумулятор“, „аккумулятор слабый“ → springt nicht an (nicht „Batterie (ist) nicht schwach/leer“, „battery isn\'t weak“); „temperature gauge in the red“ → Motor (nicht am Kühlaggregat)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const cases = {
+    WARNLIGHT_HINT: [['Ölwarnung leuchtet', 'Oelwarnung seit heute', 'Ölkanne leuchtet', 'Ölkanne ging an', 'Batteriewarnung', 'Ladewarnung im Display', 'battery warning', 'Öldruckwarnung'], ['keine Ölwarnung', 'Ölwarnung ist weg', 'Ölkanne fehlt im Fahrerhaus', 'no battery warning', 'Batterie schwach']],
+    NOSTART_HINT: [['Batterie schwach', 'Batterie ist schwach', 'Starterbatterie sehr schwach', 'weak battery', 'battery is weak', 'слабкий акумулятор', 'акумулятор слабий', 'аккумулятор слабый', 'слабый аккумулятор', 'Batterie leer', 'battery is flat'], ['Batterie ist nicht schwach', 'Batterie nicht leer', 'battery is not weak', "battery isn't weak", 'Batterie ist neu', 'Batteriewarnung']],
+    ENGINE_HINT: [['temperature gauge in the red', 'temp gauge is rising', 'coolant temperature needle too high', 'Motor überhitzt'], ['temperature gauge on the reefer in the red', 'temperature gauge ok', 'Temperaturanzeige am Kühlaggregat rot']],
+  };
+  for (const [n, [yes, no]] of Object.entries(cases)) {
+    const r = g(n);
+    for (const x of yes) ok(r.test(recurFix(x)), n + ' erwartet: ' + x);
+    for (const x of no) ok(!r.test(recurFix(x)), 'kein ' + n + ': ' + x);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
