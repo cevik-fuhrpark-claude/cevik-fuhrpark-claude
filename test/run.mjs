@@ -32261,6 +32261,26 @@ await test('Backlog 922 (Flurförderzeuge und Kleingeräte sind nicht der Lkw): 
   ok(!cl.test('Schlüssel Batterie leer, getauscht') && !cl.test('Schlüssel steckt und Batterie leer'), 'kein Abschließen-Hinweis bei Reparaturvermerk bzw. Lkw-Batterie');
 });
 
+await test('Backlog 923 (verneinte Befunde): „Reifen nicht platt“, „Bremse nicht defekt“, „kein Reifenschaden“, „keine Warnleuchte“, „no damage“, „tyre not flat“, „шина не пошкоджена“, „без пошкоджень“ zeigen keinen Hinweis; „Licht geht, Hupe geht nicht“ nur den Hupen-Hinweis; „Reifen noch nicht platt, verliert aber Luft“ und echte Befunde weiter mit Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const all = [...app.matchAll(/^const ([A-Z_]+_HINT) = \/(.+)\/i;/mg)].map((m) => [m[1], new RegExp(m[2], 'i')]);
+  const hit = (x) => all.filter(([, r]) => r.test(recurFix(x))).map(([n]) => n);
+  for (const x of ['Reifen nicht platt', 'Bremse nicht defekt', 'Reifen ist nicht kaput', 'Kein Reifenschaden', 'keine Warnleuchte', 'keine Bremsprobleme', 'no damage to the tyre', 'tyre not flat', 'шина не пошкоджена', 'без пошкоджень']) eq(hit(x).join(','), '', 'kein Hinweis: ' + x);
+  eq(hit('Licht geht, Hupe geht nicht').join(','), 'DASH_HINT', 'nur Hupe');
+  eq(hit('Licht ok, Blinker geht nicht').join(','), 'LIGHTS_HINT', 'Blinker weiter');
+  for (const [x, n] of [['Reifen noch nicht platt, verliert aber Luft', 'TYRE_HINT'], ['Bremse geht nicht', 'BRAKE_HINT'], ['Reifen platt', 'FLAT_HINT'], ['Warnleuchte leuchtet', 'WARNLIGHT_HINT'], ['Rücklicht links, geht nicht', 'LIGHTS_HINT'], ['Spiegel nicht kaputt, nur verstellt', 'MIRROR_HINT']]) ok(hit(x).includes(n), n + ' erwartet: ' + x);
+});
+
+await test('Backlog 924 (Befund als „kein …“): „keine/kaum Bremswirkung“, „kein Druck auf der Bremse“, „keine Luft im Kessel“ → Bremsen-Hinweis; „kein Licht hinten“, „kein Blinker links“, „kein Bremslicht“ → Beleuchtung; „keine Luft im Reifen“ → Reifenpanne; „keine Servo(lenkung) mehr“ → Lenkung; „kein Licht nötig“, Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const cases = { BRAKE_HINT: ['keine Bremswirkung', 'kaum Bremswirkung', 'kein Druck auf der Bremse', 'keine Luft im Kessel'], LIGHTS_HINT: ['kein Licht hinten', 'kein Licht am Auflieger', 'kein Blinker links', 'kein Bremslicht'], FLAT_HINT: ['keine Luft im Reifen', 'keine Luft im linken Reifen'], STEER_HINT: ['keine Servo', 'keine Servolenkung mehr'] };
+  for (const [n, xs] of Object.entries(cases)) { const r = g(n); for (const x of xs) ok(r.test(recurFix(x)), n + ' erwartet: ' + x); }
+  for (const [n, x] of [['LIGHTS_HINT', 'kein Licht nötig'], ['LIGHTS_HINT', 'kein Bremslicht, Birne getauscht'], ['LIGHTS_HINT', 'keine Lichtprobleme'], ['BRAKE_HINT', 'keine Bremsprobleme']]) ok(!g(n).test(recurFix(x)), 'kein ' + n + ': ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
