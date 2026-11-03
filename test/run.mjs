@@ -32393,6 +32393,33 @@ await test('Backlog 936 (Tor/Schranke fällt auf den Lkw): „Rolltor ist auf de
   for (const x of ['Tor ist zu, Lkw steht draußen', 'Tor gegen den Wind gesichert', 'Tor vom Hof geht nicht auf', 'Schranke an der Einfahrt geht nicht hoch']) ok(!r.test(recurFix(x)), 'kein Hinweis: ' + x);
 });
 
+await test('Backlog 937 (Gebäudetür/Rolltor angefahren): „Hallentor/Lagertor angefahren“, „Bürotür mit dem Spiegel touchiert“, „Lagertür eingedrückt“, „I hit the warehouse door with the trailer“, „office door hit by the trailer“, „the gate was hit by the trailer“ → Hinweis „fremde Sache beschädigt“; „Tür gestreift“, „Fahrertür beschädigt“, „Rolltor beschädigt“ (Lkw-Aufbau, vgl. 735) und „Tor ist zu“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const FIXOBJ_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Lagertor angefahren', 'Bürotür mit dem Spiegel touchiert', 'Lagertür eingedrückt', 'Hallentor angefahren', 'I hit the warehouse door with the trailer', 'office door hit by the trailer', 'the gate was hit by the trailer']) ok(r.test(recurFix(x)), 'Hinweis erwartet: ' + x);
+  for (const x of ['Tür gestreift', 'Fahrertür beschädigt', 'Tor ist zu', 'Rolltor beschädigt', 'Rolltor angefahren', 'Rolltor mit dem Auflieger erwischt', 'reversed into the roller shutter', 'Rolltor ist auf den Auflieger runtergekommen', 'door hit by a forklift']) ok(!r.test(recurFix(x)), 'kein Hinweis: ' + x);
+});
+
+await test('Backlog 938 (Bremse in Fahrerworten): „Bremse geht schwer“, „Bremspedal geht schwer“, „Bremse ist schwergängig“, „Bremse hängt“, „Bremse fühlt sich komisch an“, „Bremsweg ist länger geworden“, „brake is sticking“, „brakes grabbing“, „гальма заїдають“, „тормоза заедают“, „гальмівний шлях довший“ → Bremsen-Hinweis; „Bremse hängt nicht (mehr)“, „Bremse hängt, eingestellt“, „Feststellbremse hängt“, „Bremse schwer zu erreichen“, „brake is not sticking“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const BRAKE_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Bremse geht schwer', 'Bremspedal geht schwer', 'Bremse ist schwergängig', 'Bremsen schwergängig seit gestern', 'Bremse hängt', 'Bremse fühlt sich komisch an', 'Bremsweg ist länger geworden', 'längerer Bremsweg', 'brake is sticking', 'brakes grabbing', 'brakes feel weird', 'longer stopping distance', 'гальма заїдають', 'тормоза заедают', 'гальмівний шлях довший']) ok(r.test(recurFix(x)), 'Bremsen-Hinweis erwartet: ' + x);
+  for (const x of ['Bremse hängt nicht', 'Bremse hängt nicht mehr', 'Bremse hängt, eingestellt', 'Feststellbremse hängt', 'Bremse schwer zu erreichen', 'brake is not sticking']) ok(!r.test(recurFix(x)), 'kein Bremsen-Hinweis: ' + x);
+});
+
+await test('Backlog 939 (Reserve Start-Modul): Versicherungsfall im Vorgang (claimSection, nur Inhaber/Fuhrparkleitung) liegt im nachgeladenen Modul app-schaden.js; async, Aufruf in viewCase mit await; App-Hülle und Lookbehind-Prüfung kennen die Datei; Start-Modul mit Reserve unter 64,5 %', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const { GROUPS } = await import('../scripts/build-app.mjs');
+  eq(JSON.stringify(GROUPS.schaden), JSON.stringify(['claimSection']), 'Gruppe schaden');
+  const app = rd('app.js'), main = rd('app-main.js'), sch = rd('app-schaden.js');
+  ok(app.includes(': (await claimSection(d.claim, d.insurance_contracts, ') && /^async function claimSection\(/m.test(app), 'async + await im Vorgang');
+  ok(/^async function claimSection\(/m.test(sch) && main.includes("async function claimSection(...a) { return (await lazyModule('schaden')).claimSection(...a); }"), 'Modul + Platzhalter');
+  ok(rd('sw.js').includes("'/app-schaden.js'") && fs.readFileSync(new URL('../scripts/ui-ohne-lookbehind.py', import.meta.url), 'utf8').includes("'app-schaden.js'"), 'App-Hülle + Lookbehind-Prüfung');
+  ok(main.length / app.length < 0.645, 'Start-Modul ' + (main.length / app.length * 100).toFixed(2) + ' %');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
