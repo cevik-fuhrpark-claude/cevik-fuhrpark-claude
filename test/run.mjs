@@ -32610,6 +32610,14 @@ await test('Backlog 957 (Blickwinkel „zwei Schäden in einer Meldung“): DE V
   for (const x of ['ДТП, грижа на шині', 'mirror broken and tyre losing air']) eq(recurFix(x).includes('⁘'), false, 'UK/EN unverändert: ' + x);
 });
 
+await test('Backlog 958 (Fund aus 957): „Tür klemmt nicht mehr“, „Getriebe hakt nicht mehr“, „Kühlung fällt nicht mehr aus“, „Reifen verliert keine Luft mehr“, „außerdem klemmt die Tür nicht mehr“ sind Erledigt-Vermerke (kein Hinweis); „Tür schließt nicht mehr“, „Licht geht nicht mehr“, „klemmt nicht mehr richtig zu“ bleiben Störungen', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const H = (k) => new RegExp(app.match(new RegExp('^const ' + k + '_HINT = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const [k, x] of [['DOOR', 'Tür klemmt nicht mehr'], ['DOOR', 'außerdem klemmt die Tür nicht mehr'], ['GEAR', 'Getriebe hakt nicht mehr'], ['REEFER', 'Kühlung fällt nicht mehr aus'], ['TYRE', 'Reifen verliert keine Luft mehr'], ['FLAT', 'Reifen verliert keine Luft mehr'], ['VISIB', 'Scheibenwischer schmiert nicht mehr'], ['TARP', 'Plane flattert jetzt nicht mehr'], ['LIGHTS', 'Blinker flackert nicht mehr']]) ok(!H(k).test(recurFix(x)), 'kein ' + k + '-Hinweis: ' + x);
+  for (const [k, x] of [['DOOR', 'Tür schließt nicht mehr'], ['LIGHTS', 'Licht geht nicht mehr'], ['DOOR', 'Tür klemmt nicht mehr richtig zu'], ['TYRE', 'Tür klemmt nicht mehr, aber Reifen verliert Luft'], ['REEFER', 'Kühlung fällt dauernd aus'], ['DOOR', 'Spiegel ab, außerdem klemmt die Tür']]) ok(H(k).test(recurFix(x)), k + '-Hinweis erwartet: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
