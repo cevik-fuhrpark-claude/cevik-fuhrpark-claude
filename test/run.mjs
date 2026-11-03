@@ -32409,7 +32409,7 @@ await test('Backlog 938 (Bremse in Fahrerworten): „Bremse geht schwer“, „B
   for (const x of ['Bremse hängt nicht', 'Bremse hängt nicht mehr', 'Bremse hängt, eingestellt', 'Feststellbremse hängt', 'Bremse schwer zu erreichen', 'brake is not sticking']) ok(!r.test(recurFix(x)), 'kein Bremsen-Hinweis: ' + x);
 });
 
-await test('Backlog 939 (Reserve Start-Modul): Versicherungsfall im Vorgang (claimSection, nur Inhaber/Fuhrparkleitung) liegt im nachgeladenen Modul app-schaden.js; async, Aufruf in viewCase mit await; App-Hülle und Lookbehind-Prüfung kennen die Datei; Start-Modul mit Reserve unter 64,5 %', async () => {
+await test('Backlog 939 (Reserve Start-Modul): Versicherungsfall im Vorgang (claimSection, nur Inhaber/Fuhrparkleitung) liegt im nachgeladenen Modul app-schaden.js; async, Aufruf in viewCase mit await; App-Hülle und Lookbehind-Prüfung kennen die Datei (Grenze für das Start-Modul prüft Test „Backlog 796“)', async () => {
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const { GROUPS } = await import('../scripts/build-app.mjs');
   eq(JSON.stringify(GROUPS.schaden), JSON.stringify(['claimSection']), 'Gruppe schaden');
@@ -32417,7 +32417,6 @@ await test('Backlog 939 (Reserve Start-Modul): Versicherungsfall im Vorgang (cla
   ok(app.includes(': (await claimSection(d.claim, d.insurance_contracts, ') && /^async function claimSection\(/m.test(app), 'async + await im Vorgang');
   ok(/^async function claimSection\(/m.test(sch) && main.includes("async function claimSection(...a) { return (await lazyModule('schaden')).claimSection(...a); }"), 'Modul + Platzhalter');
   ok(rd('sw.js').includes("'/app-schaden.js'") && fs.readFileSync(new URL('../scripts/ui-ohne-lookbehind.py', import.meta.url), 'utf8').includes("'app-schaden.js'"), 'App-Hülle + Lookbehind-Prüfung');
-  ok(main.length / app.length < 0.645, 'Start-Modul ' + (main.length / app.length * 100).toFixed(2) + ' %');
 });
 
 await test('Backlog 940 (Kupplung kommt spät): „Kupplung kommt spät“, „Kupplung kommt erst ganz oben“, „clutch bites very high“, „clutch pedal stays down“, „зчеплення бере пізно“, „сцепление хватает высоко“ → Getriebe/Kupplung-Hinweis; „Kupplung kommt nicht spät“, „Kupplung nachgestellt, kommt spät“ nicht', async () => {
@@ -32442,6 +32441,41 @@ await test('Backlog 942 (Beleuchtung in Fahrerworten): „Birne durch“, „Lam
   const r = new RegExp(app.match(/^const LIGHTS_HINT = \/(.+)\/i;/m)[1], 'i');
   for (const x of ['Birne durch', 'Lampe hinten links durch', 'Birne vom Rücklicht ist durch', 'Rücklicht links durchgebrannt', 'Scheinwerfer beschlagen', 'Wasser im Scheinwerfer']) ok(r.test(recurFix(x)), 'Hinweis erwartet: ' + x);
   for (const x of ['Birne durch, getauscht', 'Lampe durch das Fenster gesehen', 'Lampe im Büro durch', 'ich bin durch, Lampe ok']) ok(!r.test(recurFix(x)), 'kein Hinweis: ' + x);
+});
+
+await test('Backlog 943 (Aufbau in Fahrerworten): „Runge abgebrochen/kaputt“, „Einstecklatte gebrochen“, „Loch im Boden“ → Ladeboden/Runge-Hinweis; „Zurrschiene lose/abgerissen“ → Ladungssicherungsmittel; „Koffer/Aufbau/Dach vom Auflieger undicht“, „es regnet in den Auflieger rein“, „Dachspriegel gebrochen“, „Planenspanner gerissen“, „Zollseil gerissen“, „curtain won\'t close“, „roof leaking in the trailer“, „water coming into the trailer“ → Planen-Hinweis; Vermerk „abgedichtet“, „Runge nicht kaputt“, „Zollseil ok“; fehlende Runge/Planenspanner bleiben wie Backlog 305/741 ohne diese Hinweise, „der Kaffee tropft“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [fl, la, ta] = ['FLOOR_HINT', 'LASHGEAR_HINT', 'TARP_HINT'].map(g);
+  for (const x of ['Runge kaputt', 'Runge abgebrochen', 'Einstecklatte gebrochen', 'Loch im Boden']) ok(fl.test(recurFix(x)), 'Ladeboden-Hinweis erwartet: ' + x);
+  for (const x of ['Zurrschiene lose', 'Zurrschiene abgerissen']) ok(la.test(recurFix(x)), 'Ladungssicherungs-Hinweis erwartet: ' + x);
+  for (const x of ['Koffer undicht', 'Aufbau undicht', 'Dach vom Auflieger undicht', 'es regnet in den Auflieger rein', 'Dachspriegel gebrochen', 'Planenspanner gerissen', 'Zollseil gerissen', 'curtain won\'t close', 'roof leaking in the trailer', 'water coming into the trailer']) ok(ta.test(recurFix(x)), 'Planen-Hinweis erwartet: ' + x);
+  for (const x of ['Koffer undicht, abgedichtet', 'Runge nicht kaputt', 'Zollseil ok', 'der Kaffee tropft']) ok(![fl, la, ta].some((r) => r.test(recurFix(x))), 'kein Hinweis: ' + x);
+});
+
+await test('Backlog 944 (Scheibe mit Stern/Sprung): „Scheibe hat (ein) Sternchen/einen Stern/einen Sprung“, „Stern in der Scheibe“, „Sprung in der vorderen Scheibe“ → Glas-Hinweis; „Riss in der Bremsscheibe“, „Bremsscheibe hat einen Sprung“ nicht (Bremse)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const GLASS_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Scheibe hat Sternchen', 'Scheibe hat ein Sternchen', 'Scheibe hat einen Stern', 'Scheibe hat einen Sprung', 'Stern in der Scheibe', 'Sprung in der vorderen Scheibe']) ok(r.test(recurFix(x)), 'Glas-Hinweis erwartet: ' + x);
+  for (const x of ['Riss in der Bremsscheibe', 'Bremsscheibe hat einen Sprung']) ok(!r.test(recurFix(x)), 'kein Glas-Hinweis: ' + x);
+});
+
+await test('Backlog 945 (Bremsscheiben/-beläge in Fahrerworten): „Riss in der Bremsscheibe“, „Bremsscheibe blau“, „Bremsscheiben verschlissen“, „Beläge sind durch“, „тріщина гальмівного диска“, „тормозные колодки стерлись“ → Bremsen-Hinweis; „Bremsbeläge sind durch, gewechselt“, „Beläge durch die Werkstatt geprüft“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const BRAKE_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Riss in der Bremsscheibe', 'Bremsscheibe blau', 'Bremsscheiben verschlissen', 'Beläge sind durch', 'Bremsbeläge hinten fast durch', 'тріщина гальмівного диска', 'тормозные колодки стерлись']) ok(r.test(recurFix(x)), 'Bremsen-Hinweis erwartet: ' + x);
+  for (const x of ['Bremsbeläge sind durch, gewechselt', 'Beläge durch die Werkstatt geprüft', 'Bremsscheiben nicht verschlissen']) ok(!r.test(recurFix(x)), 'kein Bremsen-Hinweis: ' + x);
+});
+
+await test('Backlog 946 (Reifenschaden in Fahrerworten): „Reifenventil abgerissen“, „Ventil am Vorderreifen abgerissen“, „Karkasse sichtbar“, „Stahl schaut raus am Reifen“, „Reifen porös“, „Reifen sind alt und rissig“, „Reifenwarnung im Display“, „bulge on the tyre“, „wire showing on the tyre“, „корд видно“ → Reifen-Hinweis; „Reifen nicht porös“, „Reifen porös, getauscht“, „Draht kommt raus am Zaun“, „Gewebe der Plane schaut raus“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const TYRE_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Reifenventil abgerissen', 'Ventil am Vorderreifen abgerissen', 'Karkasse sichtbar', 'Stahl schaut raus am Reifen', 'Draht kommt raus am Reifen', 'Reifen porös', 'Reifen sind alt und rissig', 'Reifenwarnung im Display', 'bulge on the tyre', 'wire showing on the tyre', 'корд видно']) ok(r.test(recurFix(x)), 'Reifen-Hinweis erwartet: ' + x);
+  for (const x of ['Reifen nicht porös', 'Reifen porös, getauscht', 'Draht kommt raus am Zaun', 'Gewebe der Plane schaut raus']) ok(!r.test(recurFix(x)), 'kein Reifen-Hinweis: ' + x);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
