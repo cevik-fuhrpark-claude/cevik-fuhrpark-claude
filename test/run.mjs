@@ -21288,7 +21288,7 @@ await test('Backlog 296 (Blickwinkel „Reifenpanne auf der Autobahn“): Meldef
     ok(STRINGS[l].flat_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="flat" class="panel" hidden role="status">`), 'Panel #flat');
-  ok(app.includes("$('#flat').hidden = !FLAT_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#flat').hidden = !FLAT_HINT.test(noAux(dv));"), 'Hinweis abhängig von der Beschreibung');
   ok(app.includes("'lost', 'fuel', 'flat', "), 'Hilfe-Abschnitt flat nach fuel');
 });
 
@@ -21989,7 +21989,7 @@ await test('Backlog 330 (Blickwinkel „Rad wackelt, Radmuttern locker oder Radl
     ok(L.wheel_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="wheel" class="panel" hidden role="status">`), 'Panel #wheel');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#wheel').hidden = !WHEEL_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#wheel').hidden = !WHEEL_HINT.test(noAux(dv));"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('wheel') && order.indexOf('fire') < order.indexOf('wheel') && order.indexOf('acc') < order.indexOf('wheel') && order.indexOf('flat') < order.indexOf('wheel') && order.indexOf('wheel') < order.indexOf('brake') && order.indexOf('wheel') < order.indexOf('loose'), 'Gruppierung: Brand/Unfall/Reifenpanne vor Rad vor Bremse/lose Teile');
   ok(helpAfter(app, 'wheel', 'safetykit'), 'Hilfe-Abschnitt wheel nach safetykit');
@@ -22221,7 +22221,7 @@ await test('Backlog 345 (Blickwinkel „Reifen beschädigt, verliert Luft oder i
     for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
   }
   ok(app.includes(`<div id="tyre" class="panel" hidden role="status">`), 'Panel #tyre');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#tyre').hidden = !TYRE_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#tyre').hidden = !TYRE_HINT.test(noAux(dv));"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('tyre') && order.indexOf('flat') < order.indexOf('tyre') && order.indexOf('tyre') < order.indexOf('wheel') && order.indexOf('tyre') < order.indexOf('brake'), 'Gruppierung: Reifenpanne vor Reifenschaden vor Rad/Bremse');
   ok(helpAfter(app, 'tyre', 'underrun'), 'Hilfe-Abschnitt tyre nach underrun');
@@ -32217,7 +32217,7 @@ await test('Backlog 919 (Motor/Batterie/Tank des Kühlaggregats ist nicht der Lk
   const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
   const m = app.match(/^const AUX_UNIT = \/(.+)\/gi;/m); ok(m, 'AUX_UNIT fehlt');
   const aux = new RegExp(m[1], 'gi'); const noAux = (x) => String(x || '').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));
-  ok(app.includes("const noAux = (s) => String(s || '').replace(AUX_UNIT, (m) => m.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));"), 'noAux wie im Test');
+  ok(app.includes(".replace(AUX_UNIT, (m) => m.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));"), 'noAux wie im Test');
   for (const x of ["$('#engine').hidden = !ENGINE_HINT.test(noAux(dv));", "$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx));", "$('#dryfuel').hidden = !DRYFUEL_HINT.test(noAux(dv));", "$('#batt').hidden = !BATT_HINT.test(noAux(dfx));"]) ok(app.includes(x), 'im Formular: ' + x);
   const lkw = ['ENGINE_HINT', 'NOSTART_HINT', 'DRYFUEL_HINT', 'BATT_HINT'].map(g), rf = g('REEFER_HINT');
   for (const x of ['Kühlaggregat Motor geht aus', 'Kühlaggregat Batterie leer', 'Aggregat hat keinen Diesel mehr', 'Aggregattank leer', 'Tank vom Kühlaggregat leer', 'Batterie vom Kühlaggregat leer', 'Standheizung Batterie leer']) ok(!lkw.some((r) => r.test(noAux(x))), 'kein Lkw-Hinweis: ' + x);
@@ -32225,6 +32225,40 @@ await test('Backlog 919 (Motor/Batterie/Tank des Kühlaggregats ist nicht der Lk
   ok(!rf.test('Kühlaggregat Tank leer, getankt und gewechselt'), 'Reparaturvermerk ohne Kühlgerät-Hinweis');
   ok(lkw[0].test(noAux('Motor geht aus')) && lkw[0].test(noAux('Kühlaggregat kaputt. Motor geht aus')) && lkw[0].test(noAux('Motor geht aus, Kühlaggregat ok')), 'Lkw-Motor weiter erkannt');
   ok(lkw[1].test(noAux('Lkw Batterie leer')) && lkw[2].test(noAux('Tank leer')), 'Lkw-Batterie/-Tank weiter erkannt');
+});
+
+await test('Backlog 920 (Sonde englische Fahrerwendungen): „indicator bulb gone“, „side marker out“ → Beleuchtung; „wipers packed in“ → Sicht; „aircon packed up“, „heater has given up“ → Klima/Standheizung; „jumping out of gear“ → Getriebe; „kerbed the tyre“, „hit a kerb“ → Reifen; „curtain buckle broken“ → Plane; Reparaturvermerke („replaced“, „sorted“) nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const cases = { LIGHTS_HINT: ['indicator bulb gone', 'side marker out', 'nearside indicator has gone'], VISIB_HINT: ['wipers packed in', 'washers not squirting'], CLIMATE_HINT: ['aircon packed up', 'heater has given up'], GEAR_HINT: ['gearbox jumping out of gear', 'keeps popping out of 3rd'], TYRE_HINT: ['kerbed the tyre', 'kerbed the front wheel', 'hit a kerb'], TARP_HINT: ['curtain buckle broken', 'curtain straps snapped'] };
+  for (const [n, xs] of Object.entries(cases)) { const r = g(n); for (const x of xs) ok(r.test(x), n + ' erwartet: ' + x); }
+  for (const [n, x] of [['LIGHTS_HINT', 'indicator bulb gone, replaced'], ['VISIB_HINT', 'wipers packed in, sorted'], ['CLIMATE_HINT', 'aircon packed up, fixed'], ['TYRE_HINT', 'kerbed the tyre, replaced'], ['TARP_HINT', 'curtain buckle broken, replaced'], ['LIGHTS_HINT', 'the driver is out']]) ok(!g(n).test(x), 'kein ' + n + ': ' + x);
+});
+
+await test('Backlog 921 (Sonde ukrainische/russische Fahrerwendungen): „коробка вибиває передачу“, „передача вилітає“, „выбивает передачу“ → Getriebe-Hinweis; „зачепив бордюр“, „наїхав на бордюр колесом“, „заехал на бордюр“ → Reifen-Hinweis; Reparaturvermerk und „вибиває пробки“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const ge = g('GEAR_HINT'), ty = g('TYRE_HINT');
+  for (const x of ['коробка вибиває передачу', 'вибиває третю передачу', 'передача вилітає', 'выбивает передачу']) ok(ge.test(x), 'Getriebe-Hinweis erwartet: ' + x);
+  ok(!ge.test('вибиває пробки'), 'kein Getriebe-Hinweis: вибиває пробки');
+  for (const x of ['зачепив бордюр', 'наїхав на бордюр колесом', 'заехал на бордюр']) ok(ty.test(x), 'Reifen-Hinweis erwartet: ' + x);
+  ok(!ty.test('зачепив бордюр, шину замінили'), 'Reparaturvermerk ohne Reifen-Hinweis');
+});
+
+await test('Backlog 922 (Flurförderzeuge und Kleingeräte sind nicht der Lkw): „Hubwagen Reifen platt“, „Ameise/Mitnahmestapler Batterie leer“, „Stapler springt nicht an“, „Taschenlampe/Funkgerät Batterie leer“ zeigen keine Lkw-Hinweise (Reifenpanne, Startprobleme, Motor); „Funkschlüssel Batterie leer“ → Abschließen-Hinweis; Lkw-Teilsatz nach Komma und „Schlüssel steckt und Batterie leer“ weiter mit Starthinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const eqm = app.match(/^const EQUIP_SPAN = \/(.+)\/gi;/m), axm = app.match(/^const AUX_UNIT = \/(.+)\/gi;/m); ok(eqm && axm, 'EQUIP_SPAN/AUX_UNIT fehlen');
+  ok(app.includes("const noAux = (s) => String(s || '').replace(EQUIP_SPAN, ' ◇ ').replace(AUX_UNIT, "), 'noAux wie im Test');
+  const eq = new RegExp(eqm[1], 'gi'), aux = new RegExp(axm[1], 'gi');
+  const noAux = (x) => String(x || '').replace(eq, ' ◇ ').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));
+  for (const x of ["$('#flat').hidden = !FLAT_HINT.test(noAux(dv));", "$('#wheel').hidden = !WHEEL_HINT.test(noAux(dv));", "$('#tyre').hidden = !TYRE_HINT.test(noAux(dv));"]) ok(app.includes(x), 'im Formular: ' + x);
+  const lkw = ['ENGINE_HINT', 'NOSTART_HINT', 'DRYFUEL_HINT', 'BATT_HINT', 'FLAT_HINT', 'TYRE_HINT', 'WHEEL_HINT'].map(g);
+  for (const x of ['Hubwagen Reifen platt', 'Ameise Batterie leer', 'Mitnahmestapler Batterie leer', 'Stapler springt nicht an', 'Mitnahmestapler Motor geht aus', 'Stapler Reifen kaputt', 'Sackkarre Reifen platt', 'Taschenlampe Batterie leer', 'Funkgerät Batterie leer', 'Schlüssel Batterie leer', 'Batterie vom Schlüssel leer', 'Fernbedienung Batterie leer']) ok(!lkw.some((r) => r.test(noAux(x))), 'kein Lkw-Hinweis: ' + x);
+  ok(lkw[1].test(noAux('Stapler kaputt, Lkw springt nicht an')) && lkw[1].test(noAux('Schlüssel steckt und Batterie leer')) && lkw[1].test(noAux('Lkw Batterie leer')), 'Lkw-Start weiter erkannt');
+  ok(lkw[4].test(noAux('Reifen platt')), 'Lkw-Reifenpanne weiter erkannt');
+  const cl = g('CABLOCK_HINT'); for (const x of ['Schlüssel Batterie leer', 'Funkschlüssel Batterie leer', 'Batterie vom Schlüssel leer']) ok(cl.test(x), 'Abschließen-Hinweis erwartet: ' + x);
+  ok(!cl.test('Schlüssel Batterie leer, getauscht') && !cl.test('Schlüssel steckt und Batterie leer'), 'kein Abschließen-Hinweis bei Reparaturvermerk bzw. Lkw-Batterie');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
