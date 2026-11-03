@@ -32520,6 +32520,24 @@ await test('Backlog 950 (Sonde Auflieger/Gespann in Fahrerworten): „Auflieger/
   ok(!el.test(recurFix('Lichtkabel repariert')), 'kein Elektrik-Hinweis: Lichtkabel repariert');
 });
 
+await test('Backlog 951 (Sonde Fahrerworte, offen aus 950): „Lkw steht seit gestern schief“, „Auflieger steht seit dem Wochenende hinten tief“ → Federung (nicht „seit gestern am Hang schief“); „рефрижератор не холодить“, „реф не морозит“, „Ware zu warm im Auflieger“, „Temperaturalarm“ → Kühlung (nicht „Ware ist nicht zu warm“, „Temperaturalarm quittiert“); „Ladebordwand hängt“ → Ladebordwand (nicht „hängt nicht“); „Tank läuft aus“ → Leck (nicht „Tankstelle“, „Tank läuft über“); „Lkw zieht nicht“, „keine Kraft am Berg“, „Pfeifen vom Turbo“, „truck won\'t pull“ → Motor (nicht „kein Pfeifen vom Turbo“, „truck won\'t pull over“)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const cases = {
+    SUSP_HINT: [['Lkw steht seit gestern schief', 'Auflieger steht seit heute morgen schief', 'Lkw steht heute schief', 'Auflieger steht seit dem Wochenende hinten tief'], ['Lkw steht seit gestern am Hang schief', 'Lkw steht seit gestern auf dem Parkplatz', 'Lkw steht heute in Dortmund', 'Lkw steht seit gestern schief, Luftfederung repariert']],
+    REEFER_HINT: [['рефрижератор не холодить', 'реф не морозит', 'Ware zu warm im Auflieger', 'Kühlauflieger hat Temperaturalarm'], ['Ware ist nicht zu warm', 'Ladung zu schwer', 'Temperaturalarm quittiert', 'рефрижератор холодить нормально']],
+    DOOR_HINT: [['Ladebordwand hängt', 'Ladebordwand hängt.', 'Ladebordwand hängt fest'], ['Ladebordwand hängt nicht', 'Ladebordwand hängt, repariert']],
+    LEAK_HINT: [['Tank läuft aus', 'Dieseltank läuft aus', 'AdBlue-Tank ist ausgelaufen'], ['Tankstelle läuft aus dem Ruder', 'Tank läuft über', 'Tank voll']],
+    ENGINE_HINT: [['Lkw zieht nicht', 'Lkw zieht nicht am Berg', 'keine Kraft am Berg', 'Pfeifen vom Turbo', 'whistling from the turbo', 'свист турбіни', "truck won't pull", 'no power uphill'], ['kein Pfeifen vom Turbo', 'no noise from the turbo', 'der Auftrag zieht nicht', "truck won't pull over"]],
+  };
+  for (const [n, [yes, no]] of Object.entries(cases)) {
+    const r = g(n);
+    for (const x of yes) ok(r.test(recurFix(x)), n + ' erwartet: ' + x);
+    for (const x of no) ok(!r.test(recurFix(x)), 'kein ' + n + ': ' + x);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
