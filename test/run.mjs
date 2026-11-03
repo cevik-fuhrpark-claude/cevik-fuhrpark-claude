@@ -32647,6 +32647,16 @@ await test('Backlog 961 (Sonde 960): „gearbox/gear lever sticks“, „gear st
   for (const x of ['fridge unit cuts out', 'reefer cuts out', 'холодильник вимикається']) ok(H('REEFER').test(R(x)), 'Kühlgeräte-Hinweis fehlt: ' + x);
 });
 
+await test('Backlog 962 (Sonde Reifendruck unterwegs): „горить/світиться датчик тиску шин“, „датчик давления шин горит/мигает“ (= Warnleuchte an) → Reifen-Hinweis wie „TPMS Warnung“; „датчик тиску/давления масла горить/горит“ → Warnleuchte; defekter Sensor ohne Warnung (Backlog 323/710), erledigt/in Ordnung und Drucksensor der Bremse nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const H = (k) => new RegExp(app.match(new RegExp('^const ' + k + '_HINT = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['горить датчик тиску шин', 'загорівся датчик тиску шин', 'датчик давления шин горит', 'датчик тиску в шинах світиться', 'индикатор давления в шинах мигает']) ok(H('TYRE').test(recurFix(x)), 'Reifen-Hinweis fehlt: ' + x);
+  for (const x of ['датчик тиску шин більше не горить', 'датчик тиску в шинах не працює', 'Reifendrucksensor defekt', 'RDKS Fehler behoben', 'Reifendruck ok', 'tyre pressure fine', 'тиск у шинах в нормі', 'Drucksensor Bremse defekt', 'датчик тиску масла горить']) ok(!H('TYRE').test(recurFix(x)), 'kein Reifen-Hinweis erwartet: ' + x);
+  for (const x of ['датчик тиску масла горить', 'датчик давления масла горит', 'горить датчик тиску шин']) ok(H('WARNLIGHT').test(recurFix(x)), 'Warnleuchten-Hinweis fehlt: ' + x);
+  for (const x of ['датчик тиску масла більше не горить', 'датчик дощу', 'датчик паркування не працює']) ok(!H('WARNLIGHT').test(recurFix(x)), 'kein Warnleuchten-Hinweis erwartet: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
