@@ -4857,66 +4857,10 @@ function viewMore(open) {
     e.target.reset(); const dd = e.target.closest('details'); if (dd) dd.open = false; toast(r && r.duplicate ? t('saved_before') : '✓ ' + t('pw_changed_others')); } catch (err) { toast(err.message, true); } };
 }
 
-// Mein Konto → Zwei-Faktor-Anmeldung: Status, Einrichten (QR + Schlüssel), Ersatzcodes einmalig, neue Ersatzcodes, Ausschalten
-const rcBlock = (codes, extra = '') => `<div class="panel good" id="rcbox"><h3>${esc(t('tf_rc_title'))}</h3><p class="small">${esc(t('tf_rc_hint'))}${extra ? ' ' + esc(extra) : ''}</p>
-  <ul class="rclist" style="font-family:monospace;font-size:1.1em;columns:2;list-style:none;padding:0">${codes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
-  <div class="actions noprint"><button type="button" class="btn secondary" id="rccp">${esc(t('copy'))}</button></div></div>`;
-function wireRc(codes) {
-  const cp = $('#rccp'); if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(codes.join('\n')); toast(t('copied')); } catch { toast(codes.join(' ')); } };
-}
-// Chip „2FA“ in der Überschrift folgt dem Zustand (vorher erst nach erneutem Öffnen von „Mehr“, 19.10.2026)
-function tfChip() { const c = $('#tfchip'); if (c) c.hidden = !S.me.totp_enabled; }
-async function loadTotp() {
-  const box = $('#tfabox'); if (!box) return;
-  const st = await api('GET', '/api/me/totp');
-  S.me.totp_enabled = st.enabled; tfChip();
-  if (!box.isConnected) return; // Ansicht inzwischen gewechselt
-  if (!st.enabled) {
-    box.innerHTML = `<p class="small">${esc(t('tf_intro'))}</p><p><span class="chip">${esc(t('tf_off'))}</span></p>
-      <form id="tfs"><label for="tfpw">${esc(t('tf_pw'))}</label><input id="tfpw" type="password" autocomplete="current-password" required><div class="actions"><button class="btn secondary">${esc(t('tf_start'))}</button></div></form><div id="tfstep"></div>`;
-    $('#tfs').onsubmit = async (e) => {
-      e.preventDefault();
-      try {
-        const r = await api('POST', '/api/me/totp/setup', { password: $('#tfpw').value }, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 805k: Wiederholung erzeugt nur einen neuen, noch nicht genutzten Schlüssel
-        $('#tfpw').value = ''; $('#tfs').hidden = true;
-        const key = r.secret.replace(/(.{4})/g, '$1 ').trim();
-        $('#tfstep').innerHTML = `<p class="small">${esc(t('tf_scan'))}</p><div class="qr">${(() => { try { return qrSvg(r.uri, { label: t('tf_title') }); } catch { return ''; } })()}</div>
-          <p class="small">${esc(t('tf_key'))}: <code style="word-break:break-all">${esc(key)}</code></p>
-          <form id="tfe"><label for="tfc">${esc(t('tf_code'))}</label><input id="tfc" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required><div class="actions"><button class="btn">${esc(t('tf_enable'))}</button><button type="button" class="btn secondary" id="tfx">${esc(t('tf_cancel'))}</button></div></form>`;
-        $('#tfx').onclick = () => loadTotp();
-        $('#tfe').onsubmit = async (ev) => {
-          ev.preventDefault();
-          try {
-            const x = await api('POST', '/api/me/totp/enable', { code: $('#tfc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS });
-            S.me.totp_enabled = true; tfChip();
-            box.innerHTML = rcBlock(x.recovery_codes, t('tf_others_ended')) + `<div class="actions"><button type="button" class="btn" id="tfdone">OK</button></div>`;
-            wireRc(x.recovery_codes);
-            $('#tfdone').onclick = () => loadTotp();
-          } catch (err) {
-            // Backlog 805k (Funkloch): eingeschaltet, aber die Antwort mit den Ersatzcodes ging verloren → Hinweis, neue Ersatzcodes zu erzeugen
-            if (lostDup(ev.target, {}, err, ['totp_already'])) { S.me.totp_enabled = true; tfChip(); toast(t('tf_saved_before_rc'), true); loadTotp(); return; }
-            lostMark(ev.target, {}, err); toast(err.message, true);
-          }
-        };
-      } catch (err) { toast(err.message, true); }
-    };
-    return;
-  }
-  box.innerHTML = `<p><span class="chip ok">${esc(t('tf_on').replace('{d}', fmtDT(st.enabled_at)))}</span> <span class="small ${st.recovery_left <= 2 ? '' : 'muted'}">${esc(t('tf_rc_left').replace('{n}', st.recovery_left))}</span></p>
-    <details><summary>${esc(t('tf_rc_new'))}</summary><form id="tfr"><p class="small muted">${esc(t('tf_rc_new_hint'))}</p><label for="tfrc">${esc(t('tf_code'))}</label><input id="tfrc" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required><div class="actions"><button class="btn secondary">${esc(t('tf_rc_new'))}</button></div></form></details>
-    <details><summary>${esc(t('tf_disable'))}</summary><form id="tfd"><label for="tfdpw">${esc(t('tf_pw'))}</label><input id="tfdpw" type="password" autocomplete="current-password" required><label for="tfdc">${esc(t('tf_code_or_rc'))}</label><input id="tfdc" autocomplete="one-time-code" autocapitalize="none" maxlength="14" required><div class="actions"><button class="btn danger">${esc(t('tf_disable'))}</button></div></form></details>
-    <div id="tfout"></div>`;
-  $('#tfr').onsubmit = async (e) => {
-    e.preventDefault();
-    try { const x = await api('POST', '/api/me/totp/recovery-codes', { code: $('#tfrc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); $('#tfout').innerHTML = rcBlock(x.recovery_codes); wireRc(x.recovery_codes); $('#tfrc').value = ''; }
-    catch (err) { toast(err.message, true); }
-  };
-  $('#tfd').onsubmit = async (e) => {
-    e.preventDefault();
-    const tfd = e.target; try { await api('POST', '/api/me/totp/disable', { password: $('#tfdpw').value, code: $('#tfdc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); S.me.totp_enabled = false; tfChip(); toast('✓'); loadTotp(); }
-    catch (err) { /* Backlog 805k (Funkloch): Wiederholung → totp_off */ if (lostDup(tfd, {}, err, ['totp_off'])) { S.me.totp_enabled = false; tfChip(); toast(t('saved_before')); loadTotp(); return; } lostMark(tfd, {}, err); toast(err.message, true); }
-  };
-}
+
+
+
+async function loadTotp(...a) { return (await lazyModule('konto')).loadTotp(...a); }
 
 
 

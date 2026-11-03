@@ -22,7 +22,7 @@ export const GROUPS = {
     'viewDriverGuide'], // Backlog 928: Fahrer-Aushang (Druckblatt wie viewQrSheet) – Reserve im Start-Modul
   fahrzeug: ['viewVehicle', 'viewVehicles', 'viewCheckPaper'], // Backlog 928: leeres Prüfformular zum Ausdrucken (selten, kleinere Gruppe als Verwaltung); Backlog 796: Fahrzeugliste dazu (öffnet die Akte, gleiche Nutzer); Backlog 594: Fahrzeugakte (inkl. Reifen, Verträge, Prüftermine) – größte Einzelansicht, ≈ 26 KB gzip
   schaden: ['claimSection'], // Backlog 939: Versicherungsfall im Vorgang (nur Inhaber/Fuhrparkleitung, async, Aufruf in viewCase mit await) – Reserve im Start-Modul
-  konto: ['viewInvite', 'viewSetup'], // Backlog 933: Einladung annehmen / Ersteinrichtung – je Person einmal, Reserve im Start-Modul
+  konto: ['viewInvite', 'viewSetup', 'loadTotp'], // Backlog 933: Einladung annehmen / Ersteinrichtung – je Person einmal, Reserve im Start-Modul; Backlog 952: Zwei-Faktor-Einrichtung (loadTotp, async, nur beim Aufklappen in „Mehr“)
   lager: ['viewStock', 'viewStockCount', 'viewReorder', 'viewStockAsOf', 'viewStockJournal', 'viewStockReceipt', 'viewPartsUsage', 'viewStockItem'],
 };
 

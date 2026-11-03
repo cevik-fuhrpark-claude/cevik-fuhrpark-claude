@@ -32358,7 +32358,7 @@ await test('Backlog 932 (Gebäude statt Lkw): „Tür vom Büro geht nicht zu“
 await test('Backlog 933 (Reserve Start-Modul): Einladung annehmen und Ersteinrichtung (#/invite, #/setup) liegen im nachgeladenen Modul app-konto.js (Platzhalter im Start-Modul, in der App-Hülle des Service Workers und in der Lookbehind-Prüfung)', async () => {
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const { GROUPS } = await import('../scripts/build-app.mjs');
-  eq(JSON.stringify(GROUPS.konto), JSON.stringify(['viewInvite', 'viewSetup']), 'Gruppe konto');
+  eq(JSON.stringify(GROUPS.konto.slice(0, 2)), JSON.stringify(['viewInvite', 'viewSetup']), 'Gruppe konto');
   const main = rd('app-main.js'), konto = rd('app-konto.js');
   ok(/^async function viewInvite\(token\) \{/m.test(konto) && /^async function viewSetup\(/m.test(konto), 'Ansichten in app-konto.js');
   ok(main.includes("async function viewInvite(...a) { return (await lazyModule('konto')).viewInvite(...a); }") && main.includes("async function viewSetup(...a) { return (await lazyModule('konto')).viewSetup(...a); }"), 'Platzhalter im Start-Modul');
@@ -32536,6 +32536,16 @@ await test('Backlog 951 (Sonde Fahrerworte, offen aus 950): „Lkw steht seit ge
     for (const x of yes) ok(r.test(recurFix(x)), n + ' erwartet: ' + x);
     for (const x of no) ok(!r.test(recurFix(x)), 'kein ' + n + ': ' + x);
   }
+});
+
+await test('Backlog 952 (Reserve Start-Modul): Zwei-Faktor-Einrichtung in „Mehr“ (loadTotp) liegt im nachgeladenen Modul app-konto.js – Platzhalter im Start-Modul, Aufruf erst beim Aufklappen (async, mit .catch)', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const { GROUPS } = await import('../scripts/build-app.mjs');
+  ok(GROUPS.konto.includes('loadTotp'), 'loadTotp in Gruppe konto');
+  const main = rd('app-main.js'), konto = rd('app-konto.js');
+  ok(/^async function loadTotp\(\) \{/m.test(konto), 'loadTotp in app-konto.js');
+  ok(main.includes("async function loadTotp(...a) { return (await lazyModule('konto')).loadTotp(...a); }"), 'Platzhalter im Start-Modul');
+  ok(main.includes('if (tfa.open) loadTotp().catch('), 'Aufruf beim Aufklappen mit Fehlerbehandlung');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
