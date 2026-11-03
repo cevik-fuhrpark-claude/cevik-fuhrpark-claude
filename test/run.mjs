@@ -32163,6 +32163,31 @@ await test('Backlog 914 (Sonde Auflieger ankuppeln in Fahrerworten): „Kupplung
   ok(!e.test('ABS-Kabel repariert'), 'Reparaturvermerk ohne Elektrik-Hinweis');
 });
 
+await test('Backlog 915 (Sonde Tür/Spiegel/Fahrerhaus in Fahrerworten): „Tür geht schwer zu“ → Tür-Hinweis (Türgriff bleibt ohne Hinweis, vgl. Backlog 323); „Spiegel klappt nicht mehr aus“, „Spiegelglas raus“ → Spiegel-Hinweis; „Zentralverriegelung spinnt“, „Türschloss hakt“, „Lkw geht nicht auf“ → Abschließen-Hinweis; „Fahrertür undicht“ → Wasser-im-Fahrerhaus-Hinweis; Reparaturvermerke und Ähnliches nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const d = pat('DOOR_HINT'), m = pat('MIRROR_HINT'), l = pat('CABLOCK_HINT'), w = pat('CABLEAK_HINT');
+  for (const x of ['Tür geht schwer zu', 'Fahrertür geht nur noch schwer auf', 'Beifahrertür lässt sich nur schwer schließen']) ok(d.test(x), 'Tür-Hinweis erwartet: ' + x);
+  for (const x of ['Türgriff abgebrochen', 'Türgriff ist ab', 'Tür geht schwer zu, geschmiert und repariert', 'Tür schwer beschädigt']) ok(!d.test(x), 'kein Tür-Hinweis: ' + x);
+  for (const x of ['Spiegel klappt nicht mehr aus', 'Rückspiegel fährt nicht aus', 'Spiegelglas raus', 'Spiegelglas ist rausgefallen', "mirror won't fold out", 'дзеркало не складається']) ok(m.test(x), 'Spiegel-Hinweis erwartet: ' + x);
+  for (const x of ['Spiegel klappt ein, nach Waschanlage', 'Spiegelglas raus und ersetzt']) ok(!m.test(x), 'kein Spiegel-Hinweis: ' + x);
+  for (const x of ['Zentralverriegelung spinnt', 'Zentralverriegelung macht was sie will', 'Türschloss hakt', 'Lkw geht nicht auf', 'krieg den Lkw nicht auf', 'central locking playing up']) ok(l.test(x), 'Abschließen-Hinweis erwartet: ' + x);
+  for (const x of ['Lkw geht nicht an', 'Lkw geht nicht aus', 'Lkw geht nicht gut auf der Autobahn', 'Zentralverriegelung spinnt, behoben', 'Türschloss hakt, repariert']) ok(!l.test(x), 'kein Abschließen-Hinweis: ' + x);
+  for (const x of ['Fahrertür undicht', 'Beifahrertür ist bei Regen undicht', 'Fahrertür zieht Wasser', 'Dichtung an der Fahrertür löst sich']) ok(w.test(x), 'Wasser-Hinweis erwartet: ' + x);
+  for (const x of ['Hecktür undicht', 'Fahrertür undicht, Dichtung erneuert']) ok(!w.test(x), 'kein Wasser-Hinweis: ' + x);
+});
+
+await test('Backlog 916 (Startprobleme nur am Fahrzeug): „Standheizung/Klimaanlage springt nicht an“, „Kühlaggregat springt nicht an“, „Fridge unit won\'t start“ zeigen nicht mehr den Hinweis „Lkw springt nicht an“, sondern Standheizung-/Kühl-Hinweis; „springt schlecht an“, „lässt sich nicht starten“, „parking heater does not start“ → Standheizung-Hinweis; Lkw/Motor weiter Starthinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const ns = pat('NOSTART_HINT'), cl = pat('CLIMATE_HINT'), rf = pat('REEFER_HINT');
+  for (const x of ['Standheizung springt nicht an', 'Klimaanlage springt nicht an', 'Kühlaggregat springt nicht an', 'Standheizung springt schlecht an', 'Standheizung lässt sich nicht starten', "Fridge unit won't start", 'Aggregat springt nicht an']) ok(!ns.test(x), 'kein Starthinweis: ' + x);
+  for (const x of ['Lkw springt nicht an', 'springt nicht an', 'Motor springt nicht an, Standheizung ok', 'Lkw springt schlecht an', 'Lkw lässt sich nicht starten', "truck won't start", "it won't start", 'engine will not start']) ok(ns.test(x), 'Starthinweis erwartet: ' + x);
+  for (const x of ['Standheizung springt nicht an', 'Klimaanlage springt nicht an', 'Standheizung springt schlecht an', 'Standheizung lässt sich nicht starten', 'Klima lässt sich nicht einschalten', 'parking heater does not start', 'night heater will not start']) ok(cl.test(x), 'Standheizung-/Klima-Hinweis erwartet: ' + x);
+  ok(!cl.test('parking heater does not start, fixed'), 'Reparaturvermerk ohne Hinweis');
+  for (const x of ['Kühlaggregat springt nicht an', "Fridge unit won't start"]) ok(rf.test(x), 'Kühl-Hinweis erwartet: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
