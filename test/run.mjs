@@ -31925,6 +31925,35 @@ await test('Backlog 899 (Blickwinkel „Leasinggesellschaft/Versicherer ruft an 
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-suche-vertrag-schaden.py|'), 'UI-Prüfung in pruefen.sh');
 });
 
+await test('Backlog 900 (Blickwinkel „Bußgeld/Mautnachforderung aus dem Ausland“): Kennzeichen mit Länderkennung (D/DE/DEU) wird dem Fahrzeug zugeordnet', async () => {
+  const { plateNoCountry, pickVehicleByPlate } = await import('../src/util.js');
+  eq(plateNoCountry('D SZ-YC 5513'), 'SZ-YC 5513'); eq(plateNoCountry('DE-SZYC5513'), 'SZYC5513'); eq(plateNoCountry('SZ YC 5513 / DEU'), 'SZ YC 5513');
+  eq(plateNoCountry('SZYC5513 (D)'), 'SZYC5513'); eq(plateNoCountry('(D) SZ-YC 5513'), 'SZ-YC 5513'); eq(plateNoCountry('SZ-YC 5513'), null); eq(plateNoCountry('DSZYC5513'), null, 'ohne Trennzeichen unverändert');
+  eq(plateNoCountry('D-X 1'), null, 'Rest zu kurz');
+  const vs = [{ id: 'a', plate: 'D-AB 123', active: 1 }, { id: 'b', plate: 'AB-123', active: 1 }, { id: 'c', plate: 'SZ-YC 5513', active: 1 }];
+  eq(pickVehicleByPlate(vs, 'D-AB 123').vehicle.id, 'a', 'Düsseldorf: direkter Treffer geht vor'); ok(!pickVehicleByPlate(vs, 'D-AB 123').country);
+  const p2 = pickVehicleByPlate(vs, 'D SZ-YC 5513'); eq(p2.vehicle.id, 'c'); eq(p2.country, true);
+  eq(pickVehicleByPlate(vs, 'DE ZZ-QQ 9999').vehicle, null, 'unbekannt bleibt unbekannt');
+  const base = { kind: 'anhoerung', authority: 'ANTAI Rennes', offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 86400000).toISOString(), location: 'A6, France' };
+  const r = await users.fleet.post('/api/fines', { ...base, reference: 'FR-900-1', plate_in_letter: 'D SZ-YC 5513' });
+  eq(r.status, 201); eq(r.data.vehicle_matched, true); eq(r.data.plate_country, true);
+  const d = await users.fleet.get(`/api/fines/${r.data.id}`); eq(d.data.plate_country, true); eq(d.data.fine.plate_in_letter, 'D SZ-YC 5513');
+  ok(d.data.fine.vehicle_id, 'Fahrzeug zugeordnet');
+  const r2 = await users.fleet.post('/api/fines', { ...base, reference: 'FR-900-2', plate_in_letter: 'SZYC5513 (D)' }); eq(r2.data.vehicle_matched, true);
+  const r3 = await users.fleet.post('/api/fines', { ...base, reference: 'FR-900-3', plate_in_letter: 'DSZYC5513' }); eq(r3.data.vehicle_matched, false, 'ohne Trennzeichen keine Vermutung');
+  const d3 = await users.fleet.get(`/api/fines/${r3.data.id}`); ok(!d3.data.plate_country);
+  // Korrektur des Kennzeichens im Schreiben über „Ändern“
+  const u = await users.fleet.post(`/api/fines/${r3.data.id}/commands`, { action: 'update', payload: { plate_in_letter: 'DE SZ YC 5513' }, expected_version: d3.data.fine.version });
+  eq(u.status, 200); eq(u.data.vehicle_matched, true); eq(u.data.plate_country, true);
+  // Betrag in Fremdwährung wird nicht als Euro übernommen
+  eq((await users.fleet.post('/api/fines', { ...base, reference: 'PL-900-4', plate_in_letter: 'D SZ-YC 5513', amount_eur: '500 PLN' })).status, 400, 'Fremdwährung abgewiesen');
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('d.plate_country ? `<p class="panel small" id="fcountry">') && app.includes('id="fplh"'), 'Hinweis in Formular und Detail');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].fine_plate_country.includes('{old}') && STRINGS[l].fine_plate_country.includes('{plate}') && STRINGS[l].fine_plate_hint, 'Texte ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-bussgeld-ausland.py|'), 'UI-Prüfung in pruefen.sh');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -2,7 +2,7 @@
 import { icsLang } from '../public/ics-texts.js';
 import { federalHoliday } from '../public/holidays.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, normPlate, PLATE_KEY_SQL, quoteCell, pointDec } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, plateHits, plateNoCountry, normPlate, PLATE_KEY_SQL, quoteCell, pointDec } from './util.js';
 import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
 
@@ -29,16 +29,16 @@ const maxDueDay = () => String(Number(berlinDate().slice(0, 4)) + 20) + berlinDa
 
 // Lkw (aktiv, nicht ruhend), an dem das Kennzeichen als Anhänger-Kennzeichen laut Stammliste steht – genau einer, sonst null (21.10.2026)
 function trailerOf(vehicles, plate) {
-  const k = normPlate(plate); if (!k) return null;
-  const hits = vehicles.filter((v) => v.trailer_plate && normPlate(v.trailer_plate) === k && v.active && !v.eval_excluded);
+  if (!normPlate(plate)) return null;
+  const hits = plateHits(vehicles.filter((v) => v.trailer_plate && v.active && !v.eval_excluded), plate, (v) => normPlate(v.trailer_plate)).hits; // Länderkennung (Backlog 900)
   return hits.length === 1 ? hits[0] : null;
 }
 
 // Kennzeichen laut Schreiben ist ein früheres Kennzeichen (Umkennzeichnung, Backlog 257b, Migration 0082): genau ein Fahrzeug trug es bis nach
 // der Tatzeit (Zeitpunkt der Änderung in der App) und heute trägt es keines → dieses Fahrzeug; sonst null (manuelle Klärung wie bisher)
 function formerPick(list, plate, offenseAt) {
-  const k = normPlate(plate); if (!k || !offenseAt) return null;
-  const rows = list.filter((r) => r.valid_until > offenseAt && normPlate(r.plate) === k);
+  if (!normPlate(plate) || !offenseAt) return null;
+  const rows = plateHits(list.filter((r) => r.valid_until > offenseAt), plate, (r) => normPlate(r.plate)).hits; // Länderkennung (Backlog 900)
   const ids = [...new Set(rows.map((r) => r.vehicle_id))];
   return ids.length === 1 ? { vehicle_id: ids[0], until: rows.filter((r) => r.vehicle_id === ids[0]).map((r) => r.valid_until).sort()[0] } : null;
 }
@@ -168,7 +168,9 @@ export async function fineDetail(env, user, envName, id) {
   const events = (await env.DB.prepare(`SELECT e.*, u.display_name AS actor_name FROM fine_events e LEFT JOIN users u ON u.id=e.actor_id WHERE fine_id=? ORDER BY created_at`).bind(id).all()).results;
   const files = (await env.DB.prepare('SELECT id, filename, content_type, size, created_at FROM files WHERE fine_id=? ORDER BY created_at').bind(id).all()).results;
   const driver = f.driver_id ? await env.DB.prepare('SELECT display_name, active, role, environment FROM users WHERE id=?').bind(f.driver_id).first() : null;
-  const out = { fine: shape(f, user), files, driver_name: user.role === 'viewer' ? null : driver?.display_name || f.driver_name_note || null };
+  // Kennzeichen laut Schreiben mit Länderkennung („D SZ-YC 5501“, Backlog 900): Hinweis statt „früheres Kennzeichen“
+  const ncp = f.vehicle_id && f.plate && normPlate(f.plate) !== normPlate(f.plate_in_letter) ? plateNoCountry(f.plate_in_letter) : null;
+  const out = { fine: shape(f, user), files, ...(ncp && normPlate(ncp) === normPlate(f.plate) ? { plate_country: true } : {}), driver_name: user.role === 'viewer' ? null : driver?.display_name || f.driver_name_note || null };
   // „Fahrer informiert“, Quittung offen, Konto inzwischen deaktiviert bzw. Rolle/Umgebung gewechselt: die Quittung kann nicht mehr kommen
   // (Fahrer sieht das Schreiben nicht mehr) – Hinweis für die Leitung statt stillem Warten (22.10.2026, Teilagent Rollenwechsel)
   // 23.10.2026 (Teilagent Fahrerwechsel): auch schon bei „Fahrer ermittelt“ – ausgeschiedener Fahrer war zur Tatzeit richtig, „Fahrer informieren“
@@ -341,7 +343,7 @@ export async function createFine(env, user, envName, body) {
     throw e;
   }
   if (!(res[0] && res[0].meta && res[0].meta.changes)) { await giveBackNo(); const w = await byKey(); if (w) return w; await dupCheck(); throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.'); }
-  return { id, fine_no: fineNo, vehicle_matched: !!veh, ...(pick.ambiguous ? { vehicle_ambiguous: true } : {}) };
+  return { id, fine_no: fineNo, vehicle_matched: !!veh, ...(pick.ambiguous ? { vehicle_ambiguous: true } : {}), ...(pick.country ? { plate_country: true } : {}) };
 }
 
 export async function fineCommand(env, ctx, user, envName, id, body) {
@@ -351,7 +353,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
   const note = str(body.note, { max: 2000, field: 'Bemerkung' });
   const now = nowIso();
   const set = {};
-  let payload = {}; let plateAmbiguous = false;
+  let payload = {}; let plateAmbiguous = false; let plateCountry = false;
   if (action === 'driver_ack') {
     if (user.role !== 'driver' || f.driver_id !== user.id) throw forbidden();
     if (f.driver_ack_at) return { ok: true, version: f.version, duplicate: true };
@@ -475,7 +477,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
             const pk = pickVehicleByPlate((await env.DB.prepare('SELECT id, plate, active, eval_excluded FROM vehicles').all()).results, np);
             const fo = !pk.vehicle && !pk.ambiguous ? await formerPlateVehicle(env, np, set.offense_at || f.offense_at) : null; // Backlog 257b
             set.plate_in_letter = np; set.vehicle_id = pk.vehicle ? pk.vehicle.id : fo ? fo.vehicle_id : null;
-            if (pk.ambiguous) plateAmbiguous = true;
+            if (pk.ambiguous) plateAmbiguous = true; if (pk.country) plateCountry = true;
           }
         }
         // nichts geändert: keine neue Version, kein Verlaufseintrag (ein offenes Formular bekam sonst unnötig 409, 18.10.2026)
@@ -531,7 +533,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
     const du = await env.DB.prepare('SELECT language FROM users WHERE id=?').bind(f.driver_id).first();
     await notifyUsers(env, ctx, envName, [f.driver_id], { kind: 'fine', title: nt(du && du.language, 'fine'), body: `${f.fine_no}${envName === 'test' ? ' · TEST' : ''}`, eventKey: `fine:${id}:inform:${f.version}`, urgent: false, langOf: new Map([[f.driver_id, du && du.language]]), ref: `fine:${id}` });
   }
-  return { ok: true, version: f.version + 1, ...(set.plate_in_letter !== undefined || set.vehicle_id !== undefined ? { vehicle_matched: !!set.vehicle_id, ...(plateAmbiguous ? { vehicle_ambiguous: true } : {}) } : {}) };
+  return { ok: true, version: f.version + 1, ...(set.plate_in_letter !== undefined || set.vehicle_id !== undefined ? { vehicle_matched: !!set.vehicle_id, ...(plateAmbiguous ? { vehicle_ambiguous: true } : {}), ...(plateCountry && set.vehicle_id ? { plate_country: true } : {}) } : {}) };
 }
 
 export const MAX_FINE_FILES = 20;

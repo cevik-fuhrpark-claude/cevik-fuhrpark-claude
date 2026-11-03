@@ -599,13 +599,30 @@ export const normPlate = (p) => {
 // Mehrere Treffer in derselben Stufe = mehrdeutig → kein Fahrzeug (lieber manuell klären als falscher Fahrer/falsche Position).
 // Kennzeichen-Reihenfolge: deutsch (Ö nicht hinter Z) und Ziffern als Zahl („SZ-YC 9“ < „SZ-YC 10“ < „SZ-YC 5501“; 21.10.2026)
 export const plateCmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'de', { numeric: true });
+// Länderkennung im Kennzeichen (Backlog 900, Blickwinkel „Bußgeld/Mautnachforderung aus dem Ausland“): ausländische Behörden schreiben das
+// deutsche Kennzeichen oft mit Nationalitätszeichen – „D SZ-YC 5501“, „DE-SZYC5501“, „SZYC5501 (D)“, „SZ YC 5501 / DEU“. Liefert das
+// Kennzeichen ohne dieses Zeichen oder null. Nur mit Trennzeichen (Leerzeichen, -, /, :, Klammer) – „DSZYC5501“ bleibt unverändert, und
+// der Ersatz wird nur benutzt, wenn das Kennzeichen wie geschrieben zu keinem Fahrzeug passt (Düsseldorf „D-AB 123“ trifft zuerst direkt).
+export const plateNoCountry = (p) => {
+  const s = String(p || '').trim();
+  const t = s.replace(/^\(?(?:D|DE|DEU)\)?[\s\-–:/.]+(?=\S)/i, '').replace(/(\S)[\s\-–/,]+\(?(?:D|DE|DEU)\)?$/i, '$1').replace(/(\S)\((?:D|DE|DEU)\)$/i, '$1').trim();
+  return t !== s && normPlate(t).length >= 4 ? t : null;
+};
+// Treffer zuerst wie geschrieben, sonst ohne Länderkennung (country: true)
+export const plateHits = (list, plate, keyOf) => {
+  const k = normPlate(plate); if (!k) return { hits: [], country: false };
+  const a = list.filter((v) => keyOf(v) === k); if (a.length) return { hits: a, country: false };
+  const nc = plateNoCountry(plate); const k2 = nc ? normPlate(nc) : '';
+  return k2 ? { hits: list.filter((v) => keyOf(v) === k2), country: true } : { hits: [], country: false };
+};
 export function pickVehicleByPlate(vehicles, plate) {
   const k = normPlate(plate); if (!k) return { vehicle: null, ambiguous: false };
-  const hits = vehicles.filter((v) => normPlate(v.plate) === k);
+  const ph = plateHits(vehicles, plate, (v) => normPlate(v.plate)); const hits = ph.hits;
+  if (!hits.length) return { vehicle: null, ambiguous: false };
   const tier = (v) => (v.active === 0 || v.active === false ? 2 : v.eval_excluded ? 1 : 0);
   const best = Math.min(...hits.map(tier));
   const top = hits.filter((v) => tier(v) === best);
-  return top.length === 1 ? { vehicle: top[0], ambiguous: false } : { vehicle: null, ambiguous: top.length > 1 };
+  return top.length === 1 ? { vehicle: top[0], ambiguous: false, ...(ph.country ? { country: true } : {}) } : { vehicle: null, ambiguous: top.length > 1 };
 }
 
 // LIKE in SQLite/D1 ignoriert Groß-/Kleinschreibung nur für A–Z („гальма“ ≠ „Гальма“, „öl“ ≠ „Öl“). Für Suchen daher
