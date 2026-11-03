@@ -32491,6 +32491,22 @@ await test('Backlog 947 (Sonde Einzahl/Verneinung): „Runge fehlt“, „eine R
   ok(st.test(recurFix('Lenkung geht schwer')) && ge.test(recurFix('Schaltung geht schwer')), 'Lenkung/Schaltung schwer mit Hinweis');
 });
 
+await test('Backlog 948 (Scheibenwischer in Fahrerworten): „Scheibenwischer quietscht“, „Wischer rattert“, „Wischer machen/hinterlassen Streifen“, „wipers squeak“, „wipers are streaking“, „wiper blades smear“, „двірники скриплять“, „дворники мажут“ → Sicht-Hinweis; „Wischer quietscht nicht“, „wipers not squeaking“, „двірники не скриплять“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const VISIB_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Scheibenwischer quietscht', 'Wischer rattert', 'Wischerblätter quietschen', 'Wischer machen Streifen', 'Wischer hinterlässt Streifen', 'wipers squeak', 'wipers are streaking', 'wiper blades smear', 'двірники скриплять', 'дворники скрипят', 'дворники мажут']) ok(r.test(recurFix(x)), 'Sicht-Hinweis erwartet: ' + x);
+  for (const x of ['Wischer quietscht nicht', 'wipers not squeaking', 'двірники не скриплять', 'Tür quietscht', 'Bremse quietscht']) ok(!r.test(recurFix(x)), 'kein Sicht-Hinweis: ' + x);
+});
+
+await test('Backlog 949 (Teil hängt): „Unterfahrschutz hängt“, „Spritzschutz hängt“, „Stoßstange hängt.“, „Kotflügel hängt, Foto anbei“ → Hinweis „Teil lose/verloren“ wie „hängt runter“; „Stoßstange hängt fest“, „Kotflügel hängt nicht“, „Teile hängen beim Zoll“, „der Auspuff hängt links“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const LOOSE_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Unterfahrschutz hängt', 'Spritzschutz hängt', 'Stoßstange hängt.', 'Kotflügel hängt, Foto anbei', 'Unterfahrschutz hängt runter']) ok(r.test(recurFix(x)), 'Hinweis erwartet: ' + x);
+  for (const x of ['Stoßstange hängt fest', 'Kotflügel hängt nicht', 'Teile hängen beim Zoll', 'der Auspuff hängt links']) ok(!r.test(recurFix(x)), 'kein Hinweis: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
