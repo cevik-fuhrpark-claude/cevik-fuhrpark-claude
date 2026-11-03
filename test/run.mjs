@@ -32657,6 +32657,20 @@ await test('Backlog 962 (Sonde Reifendruck unterwegs): „горить/світ�
   for (const x of ['датчик тиску масла більше не горить', 'датчик дощу', 'датчик паркування не працює']) ok(!H('WARNLIGHT').test(recurFix(x)), 'kein Warnleuchten-Hinweis erwartet: ' + x);
 });
 
+await test('Backlog 963 (Sonde Wasser im Fahrerhaus, Motor heiß, beschlagene Fenster): „Wasser läuft/kommt/tropft rein (bei Regen)“, „в кабіну капає вода“, „в кабину течёт вода“, „в кабине мокро“, „rain coming in through the roof hatch“, „roof leaking in the cab“ → Kabine undicht (nicht bei Laderaum/Koffer/Plane/Ladung); „engine running hot“, „температура двигуна росте“ → Motor (nicht Kühlgerät); „вікно запотіває“, „windows steam up“ → Sicht; verneint/erledigt nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const H = (k) => new RegExp(app.match(new RegExp('^const ' + k + '_HINT = \\/(.+)\\/i;', 'm'))[1], 'i');
+  for (const x of ['Wasser läuft rein bei Regen', 'Bei Regen kommt Wasser rein', 'beim Regen läuft immer Wasser rein', 'Dach undicht, es tropft rein', 'Wasser tropft von oben rein', 'water coming in when it rains', 'rain coming in through the roof hatch', 'roof leaking in the cab', 'cab roof is leaking', 'в кабину течёт вода', 'кабина течёт', 'в кабіну капає вода', 'в кабине мокро', 'в кабіні мокро']) ok(H('CABLEAK').test(recurFix(x)), 'Kabinen-Hinweis fehlt: ' + x);
+  for (const x of ['Koffer undicht, Wasser läuft rein', 'Plane kaputt, bei Regen kommt Wasser rein', 'bei Regen kommt Wasser rein, Plane gerissen', 'Wasser läuft in den Laderaum rein', 'Wasser kommt rein, Ladung nass', 'water gets in when it rains into the trailer', 'у кузові мокро', 'Wasser läuft nicht mehr rein', 'bei Regen kommt kein Wasser mehr rein', 'Wasser kommt rein – Dichtung getauscht, behoben', 'roof hatch no longer leaking', 'в кабіні більше не тече', 'roof leaks']) ok(!H('CABLEAK').test(recurFix(x)), 'kein Kabinen-Hinweis erwartet: ' + x);
+  for (const x of ['Plane kaputt, bei Regen kommt Wasser rein', 'Wasser läuft in den Laderaum rein']) ok(H('TARP').test(recurFix(x)), 'Planen-Hinweis fehlt: ' + x);
+  for (const x of ['engine running hot', 'engine is running hot', 'engine temperature rising', 'температура двигуна росте', 'температура мотора растёт', 'температура двигателя поднимается']) ok(H('ENGINE').test(recurFix(x)), 'Motor-Hinweis fehlt: ' + x);
+  for (const x of ['reefer engine running hot', 'температура в рефрижераторі росте', 'температура двигуна більше не росте', 'temperature rising']) ok(!H('ENGINE').test(recurFix(x)), 'kein Motor-Hinweis erwartet: ' + x);
+  ok(H('REEFER').test(recurFix('температура в рефрижераторі росте')), 'Kühlgeräte-Hinweis fehlt');
+  for (const x of ['вікно запотіває', 'окно запотевает', 'вікна пітніють', 'windows steam up', 'windows keep fogging up']) ok(H('VISIB').test(recurFix(x)), 'Sicht-Hinweis fehlt: ' + x);
+  for (const x of ['вікна більше не запотівають', 'Akku leer']) ok(!H('VISIB').test(recurFix(x)), 'kein Sicht-Hinweis erwartet: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
