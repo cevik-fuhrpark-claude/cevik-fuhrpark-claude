@@ -32084,6 +32084,85 @@ await test('Backlog 904 (Jahresgespräch mit Fremdwerkstatt/Lieferant): Kosten j
   }
   ok((await import('node:fs')).readFileSync(new URL('../scripts/ui-kosten-firma.py', import.meta.url), 'utf8').includes('Backlog 904'), 'UI-Prüfung');
 });
+await test('Backlog 907 (Blickwinkel „Lkw bei einer Kontrolle stillgelegt – Fahrer schreibt es in eigenen Worten“): Kontroll-Hinweis auch bei „wir wurden kontrolliert/rausgewunken“, Kontrolle auf der Autobahn/am Rastplatz, Zoll (nicht das Zoll-Maß), Plakette entfernt, EN flagged/grounded/out of service/failed inspection; Werkstatt-/Abfahrtskontrolle und „baggage“ lösen nichts aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const ROADCHK_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Wir wurden kontrolliert, Licht bemängelt', 'Wurden wir auf der A9 kontrolliert und Reifen bemängelt', 'Ich wurde angehalten, Weiterfahrt untersagt', 'Wurden rausgewunken, Weiterfahrt erst nach Reparatur', 'Kontrolle auf der A3, Bremsen bemängelt', 'Kontrolle am Rastplatz: Verwarnung wegen Licht', 'Zoll hat uns rausgezogen, Reifen bemängelt', 'Zollbeamte haben die Plane beanstandet', 'Polizei hat die Plakette entfernt', 'Lkw von der Polizei stillgelegt', 'pulled over by police, tyres flagged', 'stopped at roadside check, brakes failed inspection', 'vehicle grounded by police', 'DVSA put the truck out of service', 'truck impounded by the police'])
+    ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Abfahrtskontrolle: Licht bemängelt', 'Kontrolle nach Reparatur: Bremse bemängelt', 'Reifen wurde kontrolliert, Profil bemängelt', 'Reifen wurden kontrolliert, Profil bemängelt', '22,5 Zoll Reifen bemängelt', 'Reifen 22.5 zoll bemängelt', 'Zollstock fehlt, Fach bemängelt', 'Lkw stillgelegt wegen Verkauf', 'Bremsen bei UVV bemängelt', 'Baggage door broken, fined', 'police came, nobody hurt, engine failed', 'police stopped me, no defects', 'Unfall, Polizei hat Anzeige aufgenommen'])
+    ok(!re.test(x), 'kein Hinweis: ' + x);
+});
+
+await test('Backlog 908 (Sonde Beleuchtung und Bremspedal in Fahrerworten): „Bremspedal geht ganz/tief durch“ → Bremsen-Hinweis; „Rücklicht am Auflieger aus“, „Blinker rechts vorne aus.“, „Scheinwerfer falsch eingestellt/blendet“, „headlights misaligned“ zeigen den Beleuchtungs-Hinweis; Reparaturvermerk, „Warnblinker aus“, „Licht aus und Motor aus“, „Scheinwerfer aus Versehen angelassen“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const LIGHTS_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Rücklicht am Auflieger aus', 'Rücklicht links ist aus', 'Blinker rechts vorne aus.', 'Bremsleuchte hinten links aus', 'Scheinwerfer falsch eingestellt', 'Scheinwerfer blendet Gegenverkehr', 'Abblendlicht zu hoch eingestellt', 'headlight aimed too high', 'headlights misaligned'])
+    ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Bremslicht aus, getauscht', 'Bremslicht war aus, Birne gewechselt', 'Scheinwerfer verstellt, neu eingestellt und repariert', 'Licht aus und Motor aus', 'Warnblinker aus', 'Blinker aus machen vergessen', 'Scheinwerfer aus Versehen angelassen, Batterie leer', 'Licht ist aus gegangen'])
+    ok(!re.test(x), 'kein Hinweis: ' + x);
+  const br = new RegExp(app.match(/^const BRAKE_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Bremspedal geht ganz durch', 'Bremse geht tief durch', 'Bremspedal geht fast bis zum Boden', 'Bremspedal geht durch bis zum Boden']) ok(br.test(x), 'Bremsen-Hinweis erwartet: ' + x);
+});
+
+await test('Backlog 909 (Sonde „Lkw springt nicht an“ in Fahrerworten): „orgelt nur“, „will nicht anspringen“, „geht beim Starten sofort wieder aus“, „Motor kommt nicht“, „keinen Mucks“, „Schlüssel … passiert nichts“, „Zündung an, aber es tut sich nichts“, „cranks but won’t fire“, „не запускається двигун“ → Startprobleme-Hinweis; Reparaturvermerk, „Motor kommt nicht auf Drehzahl“, „Schlüssel verloren, sonst passiert nichts“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const NOSTART_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Lkw orgelt nur', 'Lkw will nicht anspringen', 'Motor geht beim Starten sofort wieder aus', 'Zündung geht, aber Motor kommt nicht', 'Lkw macht keinen Mucks', 'Beim Drehen des Schlüssels passiert nichts', 'Zündung an, aber es tut sich nichts', "engine cranks but won't fire", 'не запускається двигун'])
+    ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Lkw orgelt, Batterie getauscht, springt wieder an', 'Motor kommt nicht auf Drehzahl', 'Schlüssel verloren, sonst passiert nichts', 'Schlüssel abgebrochen', 'Kunde will nicht warten', 'Orgelpfeife im Laderaum'])
+    ok(!re.test(x), 'kein Hinweis: ' + x);
+  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test(dfx);"), 'Hinweis weiter abhängig von der Beschreibung');
+});
+
+await test('Backlog 910 (Sonde Reifenpanne in Umgangssprache): „hab nen/’n Platten“, „Platten am Auflieger/hinten rechts“, „Reifen hat Platten“, „Reifen schlaff“ → Reifenpannen-Hinweis; Holz-/Bodenplatten und „Platten auf der Ladefläche“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const FLAT_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['hab nen Platten', 'hab ’n Platten', "hab 'n Platten", 'hat n Platten', 'Ich habe einen Platten', 'Platten am Auflieger', 'Platten hinten rechts', 'Reifen hat Platten', 'Reifen schlaff'])
+    ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Holzplatten verrutscht', 'Bodenplatten lose', 'Platten auf der Ladefläche verrutscht', 'Spanplatten geladen'])
+    ok(!re.test(x), 'kein Hinweis: ' + x);
+});
+
+await test('Backlog 911 (Sonde Motor in Fahrerworten): „kommt den Berg nicht hoch“, „kommt die Steigung kaum noch rauf“, „kriecht am Berg“, „raucht blau aus dem Auspuff“ → Motor-Hinweis; bei Schnee/Glatteis/durchdrehenden Rädern bleibt es beim Festgefahren-Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const re = pat('ENGINE_HINT');
+  for (const x of ['Lkw kommt den Berg nicht hoch', 'Lkw kommt die Steigung kaum noch rauf', 'Lkw kriecht am Berg', 'Lkw raucht blau aus dem Auspuff'])
+    ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Bei Schnee kommt der Lkw den Berg nicht hoch', 'Lkw kommt den Berg nicht hoch, Glatteis', 'Lkw kommt den Berg nicht hoch, Räder drehen durch', 'Fahrer kommt morgen nicht'])
+    ok(!re.test(x), 'kein Motor-Hinweis: ' + x);
+  ok(pat('STUCK_HINT').test('Bei Schnee kommt der Lkw den Berg nicht hoch'), 'Schnee bleibt beim Festgefahren-Hinweis');
+  ok(!pat('FIRE_HINT').test('Lkw raucht blau aus dem Auspuff'), 'Auspuffrauch kein Brand-Hinweis');
+});
+
+await test('Backlog 912 (Sonde Leck in Werkstatt-/Fahrersprache): „Kühlwasser läuft raus“, „Diesel kommt unten raus“, „Lkw sifft Öl“, „Getriebe schwitzt Öl“, „Motor sifft“, „Hinterachse suppt“ → Leck-Hinweis; schwitzender Fahrer nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const LEAK_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Kühlwasser läuft raus', 'Diesel kommt unten raus', 'Lkw sifft Öl', 'Getriebe schwitzt Öl', 'Motor sifft', 'Hinterachse suppt'])
+    ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Fahrer schwitzt, Klima kaputt', 'Ich schwitze in der Kabine', 'Öl ist raus aus der Rechnung', 'Ölwechsel gemacht'])
+    ok(!re.test(x), 'kein Hinweis: ' + x);
+});
+
+await test('Backlog 913 (Sonde Lenkung in Fahrerworten): „Lkw läuft nicht geradeaus“, „Lenkung knackt beim Einlenken“, „Servo ausgefallen“, „Servolenkung geht nicht“, „power steering failed“ → Lenkungs-Hinweis; „läuft nicht gerade gut“, Reparatur/Vermessung, Servoöl-Leck nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = new RegExp(app.match(/^const STEER_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Lkw läuft nicht geradeaus', 'Lkw fährt nicht gerade, zieht', 'Lenkung knackt beim Einlenken', 'Servo ausgefallen', 'Servolenkung geht nicht', 'power steering failed'])
+    ok(re.test(x), 'Hinweis erwartet: ' + x);
+  for (const x of ['Lkw läuft nicht gerade gut', 'Lkw läuft nicht gerade, vermessen', 'Lkw läuft nicht mehr, Batterie', 'Servoöl tropft', 'Servo ausgefallen, Pumpe getauscht'])
+    ok(!re.test(x), 'kein Hinweis: ' + x);
+});
+
+await test('Backlog 914 (Sonde Auflieger ankuppeln in Fahrerworten): „Kupplung vom Auflieger geht nicht auf“, „Auflieger rastet nicht ein“ → Sattelkupplungs-Hinweis; „ABS-Kabel zum Auflieger abgerissen“, „EBS Kabel durchgescheuert“ → Elektrik-Hinweis; Getriebekupplung, Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const c = pat('COUPLING_HINT'), e = pat('ELEC_HINT');
+  for (const x of ['Kupplung vom Auflieger geht nicht auf', 'Kupplung am Anhänger klemmt', 'Auflieger rastet nicht ein']) ok(c.test(x), 'Kupplungs-Hinweis erwartet: ' + x);
+  for (const x of ['Auflieger rastet nicht richtig ein, repariert', 'Kupplung rutscht', 'Kupplungspedal hängt', 'Ladung rastet nicht ein']) ok(!c.test(x), 'kein Kupplungs-Hinweis: ' + x);
+  for (const x of ['ABS-Kabel zum Auflieger abgerissen', 'EBS Kabel durchgescheuert']) ok(e.test(x), 'Elektrik-Hinweis erwartet: ' + x);
+  ok(!e.test('ABS-Kabel repariert'), 'Reparaturvermerk ohne Elektrik-Hinweis');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
