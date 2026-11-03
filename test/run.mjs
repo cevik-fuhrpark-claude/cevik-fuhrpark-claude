@@ -32478,6 +32478,19 @@ await test('Backlog 946 (Reifenschaden in Fahrerworten): „Reifenventil abgeris
   for (const x of ['Reifen nicht porös', 'Reifen porös, getauscht', 'Draht kommt raus am Zaun', 'Gewebe der Plane schaut raus']) ok(!r.test(recurFix(x)), 'kein Reifen-Hinweis: ' + x);
 });
 
+await test('Backlog 947 (Sonde Einzahl/Verneinung): „Runge fehlt“, „eine Runge fehlt“, „Steckrunge fehlt“, „keine Runge an Bord“ → Ladungssicherungs-Hinweis wie „Rungen fehlen“; „Bremse geht nicht (mehr) schwer“, „Lenkung geht nicht schwer“, „Schaltung geht nicht schwer“, „Bremsweg ist nicht länger geworden“, „brake pedal is not stiff“, „stopping distance hasn\'t got longer“ ohne Hinweis; „Bremse geht nicht“, „Bremse funktioniert nicht länger“, „Bremse geht schwer“, „Lenkung geht schwer“, „Bremsweg ist länger geworden“ weiterhin mit Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [la, br, st, ge] = ['LASHGEAR_HINT', 'BRAKE_HINT', 'STEER_HINT', 'GEAR_HINT'].map(g);
+  for (const x of ['Runge fehlt', 'eine Runge fehlt', 'Steckrunge fehlt', 'keine Runge an Bord', 'Rungen fehlen']) ok(la.test(recurFix(x)), 'Ladungssicherungs-Hinweis erwartet: ' + x);
+  for (const x of ['Runge ist wieder da', 'Runge nicht kaputt']) ok(!la.test(recurFix(x)), 'kein Ladungssicherungs-Hinweis: ' + x);
+  for (const x of ['Bremse geht nicht schwer', 'Bremse geht nicht mehr schwer', 'Bremse ist nicht schwergängig', 'Bremsweg nicht länger', 'Bremsweg ist nicht länger geworden', 'brake pedal is not stiff', 'stopping distance hasn\'t got longer']) ok(!br.test(recurFix(x)), 'kein Bremsen-Hinweis: ' + x);
+  ok(!st.test(recurFix('Lenkung geht nicht schwer')) && !ge.test(recurFix('Schaltung geht nicht schwer')), 'Lenkung/Schaltung verneint ohne Hinweis');
+  for (const x of ['Bremse geht nicht', 'Bremse funktioniert nicht länger', 'Bremse geht schwer', 'Bremsweg ist länger geworden', 'Bremse geht nicht schwer, aber quietscht']) ok(br.test(recurFix(x)), 'Bremsen-Hinweis erwartet: ' + x);
+  ok(st.test(recurFix('Lenkung geht schwer')) && ge.test(recurFix('Schaltung geht schwer')), 'Lenkung/Schaltung schwer mit Hinweis');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
