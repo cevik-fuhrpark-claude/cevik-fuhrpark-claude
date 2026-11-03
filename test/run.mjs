@@ -32420,6 +32420,30 @@ await test('Backlog 939 (Reserve Start-Modul): Versicherungsfall im Vorgang (cla
   ok(main.length / app.length < 0.645, 'Start-Modul ' + (main.length / app.length * 100).toFixed(2) + ' %');
 });
 
+await test('Backlog 940 (Kupplung kommt spät): „Kupplung kommt spät“, „Kupplung kommt erst ganz oben“, „clutch bites very high“, „clutch pedal stays down“, „зчеплення бере пізно“, „сцепление хватает высоко“ → Getriebe/Kupplung-Hinweis; „Kupplung kommt nicht spät“, „Kupplung nachgestellt, kommt spät“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const GEAR_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Kupplung kommt spät', 'Kupplung kommt erst ganz oben', 'Kupplung packt sehr spät', 'clutch bites very high', 'clutch pedal stays down', 'зчеплення бере пізно', 'сцепление хватает высоко']) ok(r.test(recurFix(x)), 'Hinweis erwartet: ' + x);
+  for (const x of ['Kupplung kommt nicht spät', 'Kupplung nachgestellt, kommt spät', 'Kupplung kommt morgen', 'clutch adjusted, bites high']) ok(!r.test(recurFix(x)), 'kein Hinweis: ' + x);
+});
+
+await test('Backlog 941 (Lenkrad in Fahrerworten): „Lenkrad lässt sich nicht verstellen“, „Lenkrad rastet nicht ein“, „Lenksäule wackelt“, „Lenkradverstellung kaputt“, „Lenkrad dreht sich nicht (zurück)“, „Lenkrad lässt sich kaum drehen“, „steering wheel won\'t turn“, „steering wheel adjustment broken“, „кермо не крутиться“, „руль не крутится“, „кермо не регулюється“ → Lenkungs-Hinweis; „Lenkrad lässt sich verstellen“, „Lenkrad rastet ein“, „Lenkrad eingestellt, rastet nicht ein“, „steering wheel adjusted“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const STEER_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Lenkrad lässt sich nicht verstellen', 'Lenkrad rastet nicht ein', 'Lenksäule wackelt', 'Lenkradverstellung kaputt', 'Lenkrad dreht sich nicht', 'Lenkrad dreht sich nicht mehr zurück', 'Lenkrad lässt sich kaum drehen', 'steering wheel won\'t turn', 'steering wheel adjustment broken', 'steering column won\'t lock', 'кермо не крутиться', 'руль не крутится', 'кермо не регулюється']) ok(r.test(recurFix(x)), 'Hinweis erwartet: ' + x);
+  for (const x of ['Lenkrad lässt sich verstellen', 'Lenkrad rastet ein', 'Lenkrad eingestellt, rastet nicht ein', 'steering wheel adjusted', 'Lenkrad dreht sich']) ok(!r.test(recurFix(x)), 'kein Hinweis: ' + x);
+});
+
+await test('Backlog 942 (Beleuchtung in Fahrerworten): „Birne durch“, „Lampe hinten links durch“, „Birne vom Rücklicht ist durch“, „Rücklicht links durchgebrannt“, „Scheinwerfer beschlagen“, „Wasser im Scheinwerfer“ → Beleuchtungs-Hinweis; „Birne durch, getauscht“, „Lampe durch das Fenster gesehen“, „Lampe im Büro durch“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const LIGHTS_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Birne durch', 'Lampe hinten links durch', 'Birne vom Rücklicht ist durch', 'Rücklicht links durchgebrannt', 'Scheinwerfer beschlagen', 'Wasser im Scheinwerfer']) ok(r.test(recurFix(x)), 'Hinweis erwartet: ' + x);
+  for (const x of ['Birne durch, getauscht', 'Lampe durch das Fenster gesehen', 'Lampe im Büro durch', 'ich bin durch, Lampe ok']) ok(!r.test(recurFix(x)), 'kein Hinweis: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
