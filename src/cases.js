@@ -32,6 +32,12 @@ const Q_REPLY_SQL = `MAX(COALESCE((SELECT MAX(e.created_at) FROM case_events e W
   COALESCE((SELECT MAX(f.created_at) FROM files f WHERE f.case_id=c.id AND f.uploaded_by=c.reporter_id),''))`;
 const Q_LEAD_SQL = `(SELECT MAX(e.created_at) FROM case_events e WHERE e.case_id=c.id AND e.actor_role IN ('fleet','owner'))`;
 const Q_COLS_SQL = `${Q_AT_SQL} AS q_at, ${Q_REPLY_SQL} AS q_reply, ${Q_LEAD_SQL} AS q_lead`;
+// Backlog 903 (Blickwinkel „Versicherer schickt einen Gutachter – Lkw steht schon in der Werkstatt“): geplante Besichtigung des Versicherungsfalls
+// (offen, Gutachten noch nicht eingegangen, Besichtigung heute oder später) an offenen Vorgängen. Nur das Datum – Werkstatt/Disposition sehen den
+// Versicherungsfall selbst weiterhin nicht (Datensparsamkeit). Datum als geprüftes Literal (Spalte steht vor den WHERE-Parametern).
+const APPR_WAIT_SQL = (today) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new Error('date');
+  return `CASE WHEN c.status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') THEN (SELECT ic.appraisal_on FROM insurance_claims ic
+    WHERE ic.case_id=c.id AND ic.status IN ('gemeldet','in_pruefung') AND ic.appraisal_received_on IS NULL AND ic.appraisal_on >= '${today}') END AS appraisal_wait_on`; };
 export function questionState(r) {
   if (!r.q_at || !OPEN_STATUSES.includes(r.status)) return null;
   if (!r.q_reply || r.q_reply <= r.q_at) return 'open';
@@ -254,7 +260,8 @@ export async function listCases(env, user, envName, query, meta = null) {
       -- Backlog 446 (Blickwinkel „Auftrag wartet seit 3 Wochen auf Teile – wer fasst nach?“): worauf gewartet wird, schon in der Liste
       CASE c.status WHEN 'wartet_teile' THEN (SELECT e.note FROM case_events e WHERE e.case_id=c.id AND e.action IN ('wait_parts','parts_partial') ORDER BY e.created_at DESC LIMIT 1) END AS parts_wait_note,
       -- Backlog 867: wer den Arbeitsstand zuletzt eingetragen hat (Werkstatt-Tafel/Liste)
-      CASE WHEN c.work_state_by IS NOT NULL THEN (SELECT wu.display_name FROM users wu WHERE wu.id=c.work_state_by) END AS work_state_by_name
+      CASE WHEN c.work_state_by IS NOT NULL THEN (SELECT wu.display_name FROM users wu WHERE wu.id=c.work_state_by) END AS work_state_by_name,
+      ${APPR_WAIT_SQL(berlinDate())}
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN users u ON u.id=c.reporter_id
     WHERE ${where.join(' AND ')}
     ORDER BY ${Object.hasOwn(CASE_SORTS, query.sort) ? CASE_SORTS[query.sort] : CASE_SORTS.priority}
@@ -355,6 +362,7 @@ function shapeOmit(user) {
     if (user.role === 'driver') { o.add('cost_over_limit_at'); o.add('fleet_received_by'); o.add('workshop_ack_by'); o.add('parts_drive_by'); } // Fahrer: keine internen Zuständigkeiten
     // Backlog 867: Arbeitsstand ist eine Übergabe innerhalb der Werkstatt/Leitung (Fahrer sieht Status und Abholvermerk)
     if (user.role === 'driver') { o.add('work_state_note'); o.add('work_state_at'); o.add('work_state_by'); o.add('work_state_by_name'); }
+    if (user.role === 'driver' || user.role === 'viewer') o.add('appraisal_wait_on'); // Backlog 903: nur Leitung, Werkstatt, Disposition
     if (user.role === 'viewer') o.add('reporter_name_note'); // freier Namensvermerk – Datensparsamkeit Lesezugriff
     if (user.role === 'driver' || user.role === 'workshop') { o.add('followup_on'); o.add('followup_note'); } // Wiedervorlage = Arbeitsmittel der Leitung
     SHAPE_OMIT.set(key, o);
@@ -423,11 +431,11 @@ export async function getCaseDetail(env, user, envName, caseId) {
           AND EXISTS (SELECT 1 FROM json_each(p.items) j WHERE json_extract(j.value,'$.key')=?3 AND json_extract(j.value,'$.result')='ok') ORDER BY p.created_at DESC LIMIT 1)` : 'NULL'})
       FROM inspections s WHERE s.environment=?2 AND ${srcVeh} AND s.kind='abfahrt' AND s.case_id IS NULL AND EXISTS (SELECT 1 FROM json_each(s.items) j
         WHERE json_extract(j.value,'$.followup_case_id')=c.id AND json_extract(j.value,'$.repeat') IS NULL) ORDER BY s.created_at ASC LIMIT 1) AS src_insp` : '';
-  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}${srcSql} FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
+  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}, ${APPR_WAIT_SQL(berlinDate())}${srcSql} FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
     .bind(c0.id, ...(fromInsp ? [envName, ...(mgrUser ? [c0.check_item] : [])] : [])).first();
-  const c = { ...c0, q_at: vq ? vq.q_at : null, q_reply: vq ? vq.q_reply : null, q_lead: vq ? vq.q_lead : null };
+  const c = { ...c0, q_at: vq ? vq.q_at : null, q_reply: vq ? vq.q_reply : null, q_lead: vq ? vq.q_lead : null, appraisal_wait_on: vq ? vq.appraisal_wait_on : null };
   const srcInsp = vq && vq.src_insp ? JSON.parse(vq.src_insp) : null;
-  const vehicle = vq ? (({ q_at, q_reply, q_lead, src_insp, ...v }) => v)(vq) : null;
+  const vehicle = vq ? (({ q_at, q_reply, q_lead, src_insp, appraisal_wait_on, ...v }) => v)(vq) : null;
   // reach: 0 = deaktiviert, 1 = erreichbar, 2 = aktiv, aber nicht benachrichtigbar (ohne Passwort/andere Umgebung; Regel wie candidateUsers.reporter_ok)
   // + Zuordnung des Melders zur Meldezeit (Backlog 421, nur Leitung) in derselben Abfrage (Abfragebudget Vorgangsdetail ≤ 20)
   const reporter = await env.DB.prepare(`SELECT display_name, CASE WHEN role='driver' OR was_driver=1 THEN 'driver' ELSE role END AS role,

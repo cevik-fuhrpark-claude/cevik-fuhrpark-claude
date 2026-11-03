@@ -1222,6 +1222,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 886: Fremdleistung – Beleg mit Kennzeichen/FIN/km abgleichen
 // Backlog 887: km-Stand laut Rechnung beim Buchen einer Fremdleistung
 // Backlog 900: Bußgeld/Mautnachforderung aus dem Ausland – Kennzeichen im Schreiben mit Länderkennung (D/DE/DEU)
+// Backlog 903: geplante Gutachter-Besichtigung am Vorgang (Werkstatt/Disposition sehen nur das Datum)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

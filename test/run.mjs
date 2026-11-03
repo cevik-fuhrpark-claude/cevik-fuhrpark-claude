@@ -24375,7 +24375,7 @@ await test('Backlog 451 (Blickwinkel „Mechaniker bucht Arbeitszeit auf den fal
   ok(d.case.case_no && d.vehicle.plate, 'Auftragsnummer/Kennzeichen im Vorgang');
   ok(!d.allowed_actions.some((x) => /storno|cancel_|edit_work|edit_part/.test(x)), 'keine Änderungsaktion – Hinweis bleibt wahr');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("const bkFor = ['record_work', 'add_part', 'add_external_cost'].includes(action)") && app.includes('<h3>${esc(t(\'act_\' + action))}</h3>${bkFor}'), 'Formular');
+  ok(app.includes("const bkFor = ['record_work', 'add_part', 'add_external_cost'].includes(action)") && app.includes('<h3>${esc(t(\'act_\' + action))}</h3>${apwF}${bkFor}'), 'Formular'); // Backlog 903: Gutachter-Hinweis davor
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].bk_for && STRINGS[l].bk_check, l); ok(STRINGS[l].help_ws_s.includes(STRINGS[l].bk_for), l + ': Hilfe'); }
 });
@@ -24414,7 +24414,7 @@ await test('Backlog 453 (Blickwinkel „Neue Werkstatt-Aushilfe, erster Tag am T
   ok(app.includes('let html = wsFlow() + shown.map('), 'Kurzablauf oben auf der Werkstatt-Startseite');
   ok(app.includes("render(html, 'home');\n  bindWsFlow();"), 'Ausblenden gebunden');
   ok(app.includes("b.onclick = () => { try { localStorage.setItem(wsFlowKey(), '1'); } catch {}"), 'Ausblenden als Eigenschaft, Speicher abgesichert');
-  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' || xh || rdyOf(c) || (c.work_state_note && WST_ST.includes(c.status)) ? ' wrap' : ''"), 'Vorab-Info bricht um'); // Backlog 867/871: auch mit Arbeitsstand bzw. „voraussichtlich fertig“
+  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' || c.appraisal_wait_on || xh || rdyOf(c) || (c.work_state_note && WST_ST.includes(c.status)) ? ' wrap' : ''"), 'Vorab-Info bricht um'); // Backlog 867/871: auch mit Arbeitsstand bzw. „voraussichtlich fertig“
   // die genannten Knöpfe gibt es wirklich (Server-Aktionen der Werkstatt)
   const { U, toRepair } = await freshWorld();
   const a = await toRepair(); const acts = (await U.ws.get(`/api/cases/${a}`)).data.allowed_actions;
@@ -31973,6 +31973,56 @@ await test('Backlog 902 (Folge aus 900): globale Suche findet das Fahrzeug auch 
   for (const x of ['D SZ-YC 5513', 'DE-SZYC5513', 'SZ YC 5513 / DEU', 'SZYC5513 (D)', '(D) SZ-YC 5513', 'SZ-YC 5513', 'DSZYC5513', 'D-X 1', 'de sz-yc 5513']) eq(fn(x), plateNoCountry(x), 'App = Server: ' + x);
   ok(app.includes('if (!vAll.length && ncq) vAll = vHit(norm(ncq));'), 'nur ohne direkten Treffer');
   ok(fs.readFileSync(new URL('../scripts/ui-bussgeld-ausland.py', import.meta.url), 'utf8').includes('Backlog 902'), 'UI-Prüfung');
+});
+await test('Backlog 903 (Gutachter-Besichtigung, Lkw in der Werkstatt): Werkstatt/Disposition sehen nur das Datum der geplanten Besichtigung (Detail + Liste), nicht Fahrer/Lesende; entfällt mit Gutachten-Eingang, vergangenem Termin, reguliertem Fall; Texte DE/UK/EN', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'GW-T 903', vin: 'WDB96340390300903', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340390300903';
+  const cid = (await users.fleet.post('/api/cases', { vehicle_id: V, description: 'Unfall: Seitenschaden rechts (Test 903)', priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const cmd = async (u, action, payload = {}, note = null) => { const c = (await u.get(`/api/cases/${cid}`)).data.case; return u.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload }); };
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Seitenschaden')).status, 200);
+  eq((await users.ws.get(`/api/cases/${cid}`)).data.case.appraisal_wait_on, null, 'ohne Versicherungsfall nichts');
+  const P = `/api/cases/${cid}/claim`;
+  eq((await users.fleet.put(P, { insurer: 'Test-Versicherung 903', reported_on: bDayOff(-1), evidence: 'Schadenmeldung (Test)', appraiser: 'Büro Test', appraisal_on: bDayOff(2), expected_updated_at: null })).status, 200);
+  const wd = (await users.ws.get(`/api/cases/${cid}`)).data;
+  eq(wd.case.appraisal_wait_on, bDayOff(2), 'Werkstatt sieht das Datum'); ok(!('claim' in wd), 'aber keinen Versicherungsfall');
+  ok(!JSON.stringify(wd).includes('Büro Test') && !JSON.stringify(wd).includes('Test-Versicherung 903'), 'weder Gutachter noch Versicherer');
+  ok(!('appraisal_wait_on' in wd.vehicle), 'nicht im Fahrzeug');
+  eq((await users.dispatch.get(`/api/cases/${cid}`)).data.case.appraisal_wait_on, bDayOff(2), 'Disposition');
+  eq((await users.fleet.get(`/api/cases/${cid}`)).data.case.appraisal_wait_on, bDayOff(2), 'Leitung');
+  const row = (await users.ws.get('/api/cases?status=open&limit=500')).data.cases.find((c) => c.id === cid);
+  ok(row && row.appraisal_wait_on === bDayOff(2), 'Werkstatt-Liste');
+  const viewer = await invite(owner, { username: 'test.lesen.903', display_name: 'Test Lesezugriff 903', role: 'viewer', environment: 'test' });
+  ok(!('appraisal_wait_on' in (await viewer.get(`/api/cases/${cid}`)).data.case), 'Lesezugriff nicht');
+  ok(!(await viewer.get('/api/cases?status=open&limit=500')).data.cases.some((c) => 'appraisal_wait_on' in c), 'Lesezugriff-Liste nicht');
+  const dcid = (await users.driver.post('/api/cases', { vehicle_id: V, description: 'Spiegel locker (Test 903)', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  let d = (await users.fleet.get(`/api/cases/${dcid}`)).data;
+  eq((await users.fleet.put(`/api/cases/${dcid}/claim`, { insurer: 'Test-Versicherung 903', reported_on: bDayOff(0), evidence: 'Test', appraisal_on: bDayOff(1), expected_updated_at: null })).status, 200);
+  ok(!('appraisal_wait_on' in (await users.driver.get(`/api/cases/${dcid}`)).data.case), 'Fahrer (Melder) nicht');
+  ok(!(await users.driver.get('/api/cases?status=open&limit=500')).data.cases.some((c) => 'appraisal_wait_on' in c), 'Fahrer-Liste nicht');
+  // heute = noch anstehend; vergangen ohne Gutachten = entfällt; Gutachten eingegangen = entfällt; regulierter Fall = entfällt
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim;
+  eq((await users.fleet.put(P, { appraisal_on: bDayOff(0), expected_updated_at: d.updated_at })).status, 200);
+  eq((await users.ws.get(`/api/cases/${cid}`)).data.case.appraisal_wait_on, bDayOff(0), 'heute');
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim;
+  eq((await users.fleet.put(P, { appraisal_on: bDayOff(-1), expected_updated_at: d.updated_at })).status, 200);
+  eq((await users.ws.get(`/api/cases/${cid}`)).data.case.appraisal_wait_on, null, 'Termin vorbei');
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim;
+  eq((await users.fleet.put(P, { appraisal_on: bDayOff(3), expected_updated_at: d.updated_at })).status, 200);
+  eq((await users.ws.get(`/api/cases/${cid}`)).data.case.appraisal_wait_on, bDayOff(3));
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim;
+  eq((await users.fleet.put(P, { status: 'reguliert', expected_updated_at: d.updated_at })).status, 200);
+  eq((await users.ws.get(`/api/cases/${cid}`)).data.case.appraisal_wait_on, null, 'regulierter Fall');
+  d = (await users.fleet.get(`/api/cases/${cid}`)).data.claim;
+  eq((await users.fleet.put(P, { status: 'in_pruefung', expected_updated_at: d.updated_at })).status, 200);
+  eq((await users.ws.get(`/api/cases/${cid}`)).data.case.appraisal_wait_on, bDayOff(3), 'wieder offen');
+  // abgelehnter Vorgang: nichts
+  eq((await cmd(users.fleet, 'withdraw_order', {}, 'Test 903: Totalschaden')).status, 200);
+  eq((await users.fleet.get(`/api/cases/${cid}`)).data.case.appraisal_wait_on, null, 'abgeschlossener Vorgang');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const m of ['data-apwcase', 'data-apwform', 'data-apwlist', '${apwBox(c)}']) ok(app.includes(m), m);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['apw_title', 'apw_short', 'apw_hint_ws', 'apw_hint_mgr', 'apw_hint_dispo']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_claims_s.includes(STRINGS[l].apw_title), `${l}: Hilfe`); }
+  ok((await import('node:fs')).readFileSync(new URL('../scripts/ui-gutachter-werkstatt.py', import.meta.url), 'utf8').includes('Backlog 903'), 'UI-Prüfung');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
