@@ -588,7 +588,7 @@ function loginView(msg){
   const val = entry.step === "id" ? entry.id : entry.code;
   const len = entry.step === "id" ? 2 : 4;
   const boxes = Array.from({length: len}, (_, i) => `<span class="${i === val.length ? "on" : ""}">${entry.step === "code" ? (val[i] ? "•" : "") : (val[i] || "")}</span>`).join("");
-  const sprache = entry.step === "id" ? `<div class="langpick" role="group" aria-label="${esc(t("chooseLang"))}"><span class="step">${esc(t("chooseLang"))}</span><div class="langrow">${LANGS.map(l => `<button type="button" data-lang="${l.code}" aria-pressed="${l.code === lang}"><b>${l.short}</b><span>${esc(l.name)}</span></button>`).join("")}</div><span class="fine">${esc(t("langNote"))}</span></div>` : "";
+  const sprache = entry.step === "id" ? `<div class="langpick" role="group" aria-label="${esc(t("chooseLang"))}"><span class="step">${esc(t("chooseLang"))}</span><div class="langrow">${LANGS.map(l => `<button type="button" data-lang="${l.code}" aria-pressed="${l.code === lang}"><b>${l.short}</b><span lang="${l.code}">${esc(l.name)}</span></button>`).join("")}</div><span class="fine">${esc(t("langNote"))}</span></div>` : "";
   const demo = STAFF.map(s => { const g = getLang(s.id); return `<b>${s.id} / ${s.code}</b> ${esc(s.name.split(" ")[0])} · ${g ? esc(t("langStart")) + " " + LANGS.find(l => l.code === g).short : "—"}`; }).join("<br>");
   $("#view").innerHTML = `<section class="login" aria-live="polite">
     ${sprache}
@@ -916,7 +916,7 @@ function fbEntwurf(){
 function kleinZu(){ const ent = user && fbEntwurf(); document.querySelectorAll("[data-close2].overlay").forEach(x => x.remove()); if (ent) toast(t("draftKept")); }
 
 function spracheDialog(){
-  klein(t("chooseLang"), `<div class="langrow big">${LANGS.map(l => `<button type="button" data-lang="${l.code}" aria-pressed="${l.code === lang}"><b>${l.short}</b><span>${esc(l.name)}</span></button>`).join("")}</div><p class="fine">${esc(t("langNote"))}</p>`, "");
+  klein(t("chooseLang"), `<div class="langrow big">${LANGS.map(l => `<button type="button" data-lang="${l.code}" aria-pressed="${l.code === lang}"><b>${l.short}</b><span lang="${l.code}">${esc(l.name)}</span></button>`).join("")}</div><p class="fine">${esc(t("langNote"))}</p>`, "");
 }
 function waehleSprache(code){
   lang = code;

@@ -31762,6 +31762,25 @@ await test('Backlog 890 (Blickwinkel „Werkstatt-Betriebsruhe zwischen den Jahr
   const rep = fs.readFileSync(new URL('../src/reports.js', import.meta.url), 'utf8'); ok(rep.includes('c.parts_expected_date, c.ready_expected_on, c.workshop_ack_at'), 'Abfrage');
 });
 
+await test('Backlog 892 (Blickwinkel „Fahrer mit Sehschwäche nutzt den Bildschirmleser“): Sprachnamen (Deutsch/Українська/English/…) in Auswahlfeldern und Knöpfen tragen ein eigenes lang (WCAG 3.1.2); UI-Prüfung der zugänglichen Namen ist eingetragen', async () => {
+  const fs = await import('node:fs');
+  const NAMES = ['Deutsch', 'Українська', 'English', 'Русский', 'Română'];
+  for (const f of ['../public/app.js', '../public/werkstatt/app.js']) {
+    const src = fs.readFileSync(new URL(f, import.meta.url), 'utf8');
+    // jedes Element, dessen Text genau ein Sprachname ist, braucht lang (sonst liest TalkBack/VoiceOver „Українська“ mit deutscher Aussprache)
+    let n = 0;
+    for (const m of src.matchAll(/<(option|a|span|button)\b([^>]*)>(Deutsch|Українська|English|Русский|Română)</g)) { n++; ok(/\blang="/.test(m[2]), `${f}: <${m[1]}${m[2]}>${m[3]} ohne lang`); }
+    // Sprachnamen aus Listen (${esc(l.name)} bzw. ${n}) ebenfalls mit lang
+    for (const m of src.matchAll(/<(option|a|span|button)\b([^>]*)>\$\{(?:esc\()?(?:l\.name|n)\)?\}</g)) { const ctx = src.slice(Math.max(0, m.index - 400), m.index); if (!/LANGS\.map|'Українська'/.test(ctx)) continue; n++; ok(/\blang="/.test(m[2]), `${f}: <${m[1]}${m[2]}> (Sprachname aus Liste) ohne lang`); }
+    ok(n >= 2, `${f}: Sprachnamen gefunden (${n})`);
+    ok(NAMES.some((x) => src.includes(x)), f);
+  }
+  const pr = fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8');
+  ok(pr.includes('|ui-zugaengliche-namen.py|'), 'UI-Prüfung zugängliche Namen in pruefen.sh');
+  const ui = fs.readFileSync(new URL('../scripts/ui-zugaengliche-namen.py', import.meta.url), 'utf8');
+  for (const x of ['Accessibility.getFullAXTree', 'doppelte ID', 'verweist auf fehlende ID', 'sichtbare h1', 'Sprachname ohne lang']) ok(ui.includes(x), 'UI-Prüfung enthält ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
