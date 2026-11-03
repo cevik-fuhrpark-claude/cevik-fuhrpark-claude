@@ -31798,6 +31798,21 @@ await test('Backlog 893 (Blickwinkel „Fuhrparkleitung am Büro-PC mit Windows-
   for (const x of ["forced_colors='active'", 'Auswahl nicht erkennbar', 'Knopf ohne Rahmen', 'Canvas-Hinterlegung', 'fehlender Prüfpunkt', 'Flottenbalken']) ok(ui.includes(x), 'UI-Prüfung enthält ' + x);
 });
 
+await test('Backlog 894 (Folge aus 893): Werkstatt-Panel im Kontrastmodus – gewählte Sprache/Reiter/Stufe/Auswahl mit Highlight, aktive Ziffernstelle; Dev-Server liefert /werkstatt/ statt abzustürzen', async () => {
+  const fs = await import('node:fs');
+  const html = fs.readFileSync(new URL('../public/werkstatt/index.html', import.meta.url), 'utf8');
+  const i = html.indexOf('@media (forced-colors: active){'); ok(i > 0, 'forced-colors-Block im Panel');
+  const blk = html.slice(i, html.indexOf('\n}', i));
+  for (const x of ['.langrow button[aria-pressed="true"]', '.stages button[aria-pressed="true"]', '.seg button[aria-pressed="true"]', '.nav .tabbtn[aria-pressed="true"]{forced-color-adjust:none;background:Highlight;color:HighlightText', '.nav .tabbtn.quiet[aria-pressed="true"]{color:HighlightText}', '.tab[aria-selected="true"]{border-bottom-color:Highlight', '.pinbox span.on{border-color:Highlight']) ok(blk.includes(x), 'Panel-Kontrastmodus: ' + x);
+  ok(!/#[0-9a-f]{3,8}\b|var\(--/i.test(blk), 'nur Systemfarben');
+  // jeder Selektor mit aria-pressed im Panel-CSS, der eine Auswahl nur über Farbe/Fläche/Schatten zeigt, ist im Block abgedeckt
+  for (const m of html.matchAll(/\.([a-z]+) button\[aria-pressed="true"\]\{/g)) ok(blk.includes('.' + m[1] + ' button[aria-pressed="true"]'), 'abgedeckt: .' + m[1]);
+  const dev = fs.readFileSync(new URL('../scripts/dev-server.mjs', import.meta.url), 'utf8');
+  ok(dev.includes("statSync(p).isDirectory()") && dev.includes("p = join(p, 'index.html')") && dev.includes('writeHead(308'), 'Dev-Server: Verzeichnis → index.html, ohne Schrägstrich 308');
+  const ui = fs.readFileSync(new URL('../scripts/ui-kontrastmodus.py', import.meta.url), 'utf8');
+  for (const x of ["/werkstatt/", 'PANEL = r', 'aktive Ziffernstelle', 'CFP_NUR_PANEL', 'ownBg']) ok(ui.includes(x), 'UI-Prüfung enthält ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

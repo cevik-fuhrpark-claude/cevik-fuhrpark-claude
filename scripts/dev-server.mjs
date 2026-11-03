@@ -1,6 +1,6 @@
 // Lokaler Entwicklungsserver: statische Dateien + Worker-API mit SQLite-Nachbildung (nur zum Testen)
 import http from 'node:http';
-import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, statSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { extname, join } from 'node:path';
 import worker from '../src/worker.js';
@@ -100,6 +100,11 @@ http.createServer(async (req, res) => {
     res.writeHead(r.status, h); res.end(Buffer.from(await r.arrayBuffer())); return;
   }
   let p = join(root, url.pathname === '/' ? 'index.html' : url.pathname);
+  // Verzeichnis (z. B. /werkstatt/) → dessen index.html wie bei Cloudflare-Assets; vorher stürzte der Server mit EISDIR ab (03.11.2026)
+  if (existsSync(p) && statSync(p).isDirectory()) {
+    if (!url.pathname.endsWith('/')) { res.writeHead(308, { location: url.pathname + '/' + url.search }); res.end(); return; } // relative Pfade (src="app.js") brauchen den Schrägstrich
+    p = join(p, 'index.html');
+  }
   if (!existsSync(p) || url.pathname === '/_headers') p = join(root, 'index.html');
   // CFP_GZIP=1: Textdateien komprimiert ausliefern wie Cloudflare (für scripts/startzeit.py, Backlog 588); sonst unverändert
   const ct = types[extname(p)] || 'application/octet-stream';
