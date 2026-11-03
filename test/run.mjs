@@ -31860,6 +31860,29 @@ await test('Backlog 896 (Blickwinkel „Fahrer lässt die App vom Browser übers
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-browser-uebersetzung.py|'), 'UI-Prüfung in pruefen.sh');
 });
 
+await test('Backlog 897 (Blickwinkel „Werte per Kopieren/Einfügen aus Rechnung, Nachricht oder App-Anzeige“): Einheit €/EUR/km/км und geschützte Leerzeichen beim Einfügen und am Server', async () => {
+  const { num, kmNum } = await import('../src/util.js');
+  eq(num('1.234,56 €', { cents: true }), 1234.56); eq(num('EUR 99,90', { cents: true }), 99.9); eq(num('€ 12', { cents: true }), 12); eq(num('12,5 EUR', { money: true }), 12.5);
+  eq(kmNum('123.456 km'), 123456); eq(kmNum('123 456 км'), 123456); eq(kmNum('98.000 km.'), 98000);
+  let e = null; try { num('12 km', { cents: true }); } catch (x) { e = x; } ok(e && /ungültige Zahl/.test(e.message), 'km bei Geldbetrag nicht still entfernt');
+  e = null; try { kmNum('120 €'); } catch (x) { e = x; } ok(e, '€ bei km-Stand abgewiesen');
+  e = null; try { num('5 €'); } catch (x) { e = x; } ok(e, 'ohne money/cents bleibt € unzulässig (z. B. Menge)');
+  e = null; try { num('2.000 €', { money: true }); } catch (x) { e = x; } ok(e && /mehrdeutig/.test(e.message), 'Mehrdeutigkeit bleibt trotz Einheit');
+  // Ende-zu-Ende: km-Stand mit Einheit
+  eq((await owner.post('/api/vehicles', { plate: 'VT-PST 1', vin: 'WDB96340310558970', site: 'Dortmund' })).status, 201);
+  const r = await users.fleet.post('/api/vehicles/VIN:WDB96340310558970/odometer', { km: '123.456 km' }); eq(r.status, 201, JSON.stringify(r.data));
+  eq((await users.fleet.get('/api/vehicles/VIN:WDB96340310558970')).data.odometer[0].km, 123456);
+  // Oberfläche: Einfüge-Normalisierung (gleicher Ausdruck wie in app.js)
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('const pasteNum = (raw) => {'); ok(a > 0, 'pasteNum vorhanden');
+  const pasteNum = new Function(app.slice(a, app.indexOf('\n};', a) + 3) + '; return pasteNum;')();
+  eq(pasteNum('1.234,56 €'), '1.234,56'); eq(pasteNum('123 456 км'), '123456'); eq(pasteNum(' EUR 99,90 '), '99,90'); eq(pasteNum('123.456 km'), '123.456'); eq(pasteNum('1 234,5'), '1234,5');
+  eq(pasteNum('SZ-YC 5501'), null); eq(pasteNum('ca. 120000'), null); eq(pasteNum(''), null);
+  ok(app.includes("document.addEventListener('paste'") && app.includes("/^(numeric|decimal)$/.test(el.getAttribute('inputmode')") && app.includes("el.dispatchEvent(new Event('input', { bubbles: true }))"), 'Einfügen nur in Zahlenfeldern, löst input aus');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-einfuegen-zahlen.py|'), 'UI-Prüfung in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

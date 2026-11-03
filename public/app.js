@@ -605,6 +605,23 @@ document.addEventListener('submit', (e) => {
   let p; try { p = h.call(form, e); } catch (err) { p = Promise.reject(err); }
   Promise.resolve(p).catch((err) => { if (!onUnhandledApiError(err)) throw err; }).finally(() => { form.cfpBusy = false; form.removeAttribute('aria-busy'); });
 }, true);
+// Zahlen einfügen (Backlog 897): Werte aus Rechnung/PDF, Nachricht oder der App-Anzeige kommen mit Einheit und geschützten
+// Leerzeichen („1.234,56 €“, „EUR 99,90“, „123.456 km“, UK-Anzeige „123 456 км“ mit U+00A0) – das Muster der km-Felder wies sie
+// ab („Format stimmt nicht“). Beim Einfügen in Zahlenfelder (inputmode numeric/decimal) Einheit und Leerzeichen entfernen; sonst
+// unverändert einfügen. Keine Umdeutung von Punkt/Komma – das bewertet weiterhin der Server.
+const pasteNum = (raw) => {
+  let s = String(raw || '').trim(); if (!s || s.length > 40) return null;
+  s = s.replace(/^(€|eur)\s*/i, '').replace(/\s*(€|eur|km|км)\.?$/i, '').replace(/[\s    ']/g, '');
+  return /^-?\d[\d.,]*$/.test(s) ? s : null;
+};
+document.addEventListener('paste', (e) => {
+  const el = e.target; if (!el || el.tagName !== 'INPUT' || !/^(numeric|decimal)$/.test(el.getAttribute('inputmode') || '') || el.readOnly || el.disabled) return;
+  const raw = e.clipboardData ? e.clipboardData.getData('text') : ''; const v = pasteNum(raw);
+  if (v === null || v === String(raw).trim()) return;
+  e.preventDefault();
+  try { el.setRangeText(v, el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length, 'end'); } catch { el.value = v; }
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+});
 // Dasselbe für Knöpfe/Links mit asynchronem Klick-Handler (`el.onclick = async …`, z. B. Quittieren, Ausbuchen, Entscheidung,
 // Bestandsbuchung): Vor dem ersten Klick wird der Handler umhüllt; liefert er ein Promise, sind weitere Klicks bis zum Ende wirkungslos.
 // Synchrone Handler (Navigation, Aufklappen) bleiben unverändert.

@@ -126,7 +126,7 @@ export async function receipt(env, user, envName, body) {
     if (!it.active) throw bad('validation', `Position ${idx + 1}: Artikel ist deaktiviert.`);
     const qty = r3(num(l.qty, { min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
     if (!(qty > 0)) throw bad('validation', `Position ${idx + 1}: Menge muss größer 0 sein.`);
-    const price = num(l.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+    const price = num(l.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
     stmts.push(env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
       VALUES (?,?,?,'zugang',?,NULL,?,?,?,?,?,?,?)`).bind(uuid(), envName, it.id, qty, price, supplier, docRef, note, user.id, now, rk ? `${rk}-${idx + 1}` : null));
     if (price !== null) {
@@ -205,7 +205,7 @@ export async function createItem(env, user, envName, body) {
     await env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at,item_key)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, str(body.part_number, { max: 80, field: 'Teilenummer' }), str(body.name, { required: true, max: 200, field: 'Bezeichnung' }),
       stdUnit(str(body.unit, { max: 20, field: 'Einheit' })), r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) })), str(body.location, { max: 80, field: 'Ort' }),
-      num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }), user.id, now, now,
+      num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }), user.id, now, now,
       itemKey(str(body.name, { required: true, max: 200, field: 'Bezeichnung' }), str(body.part_number, { max: 80, field: 'Teilenummer' }))).run();
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
@@ -225,7 +225,7 @@ export async function updateItem(env, user, envName, id, body) {
     part_number: body.part_number !== undefined ? str(body.part_number, { max: 80, field: 'Teilenummer' }) : it.part_number,
     min_qty: body.min_qty !== undefined ? r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) })) : it.min_qty,
     location: body.location !== undefined ? str(body.location, { max: 80, field: 'Ort' }) : it.location,
-    unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }) : it.unit_price_net,
+    unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }) : it.unit_price_net,
     active: body.active === undefined ? it.active : (flag(body.active, 'Aktiv', !!it.active) ? 1 : 0),
   };
   // Nur tatsächliche Änderungen speichern und protokollieren (Stammdaten-Pflege in der Artikelakte, 15.10.2026)
@@ -280,7 +280,7 @@ export async function addMovement(env, user, envName, id, body) {
   if (type === 'korrektur' && !str(body.note, { max: 500, field: 'Bemerkung' })) throw bad('validation', 'Korrektur braucht einen Grund.');
   if (type === 'entnahme') qty = -qty;
   if (qty < 0 && (await onHand(env, id)) + qty < 0) { const av = await onHand(env, id); throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
-  const entered = num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+  const entered = num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
   // Entnahme und Korrektur: Wert = hinterlegter Artikelpreis (wie Entnahme aus dem Vorgang und Umlagerung); nur ohne Artikelpreis der eingegebene
   // (23.10.2026: Korrekturen – Rückgabe, Retoure, Mengenfehler – standen „unbewertet“ im Journal, Summe passte nicht zum Lagerwert)
   const price = type !== 'zugang' && it.unit_price_net !== null ? it.unit_price_net : entered;

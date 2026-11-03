@@ -213,14 +213,18 @@ export function kmNum(v, { min = 0, max = 5000000, field = 'Kilometerstand' } = 
   if (!Number.isInteger(n)) throw bad('validation', `${field}: ganze Zahl.`);
   return n;
 }
-export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, decimalComma = false, decimalPoint = false } = {}) {
+export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, money = false, decimalComma = false, decimalPoint = false } = {}) {
   if ((v === null || v === undefined || v === '') && nullable) return null;
   let n;
   if (typeof v === 'number') n = v;
   else {
     // nur Text oder Zahl (17.10.2026: Liste ['7'] galt als 7, true als 1); leer ohne nullable → 400 statt still 0
     if (typeof v !== 'string') throw bad('validation', `${field}: ungültige Zahl.`);
-    let t = v.trim().replace(/[\s\u00a0]/g, '');
+    let t = v.trim();
+    // Einheit aus kopierten Werten (Rechnung/PDF/Nachricht/App-Anzeige, Backlog 897): Geldbetrag „1.234,56 €“/„EUR 99“, km-Stand „123.456 km“/„123 456 км“
+    if (cents || money) t = t.replace(/^(€|eur)\s*/i, '').replace(/\s*(€|eur)$/i, '');
+    if (grouped) t = t.replace(/\s*(km|км)\.?$/i, '');
+    t = t.replace(/[\s\u00a0]/g, '');
     if (t === '') { if (nullable) return null; throw bad('validation', `${field}: ungültige Zahl.`); }
     if (/^-?\d{1,3}(\.\d{3})+,\d+$/.test(t)) t = t.replace(/\./g, '');
     // englisches Format mit Tausenderkomma und Dezimalpunkt („1,234.50“) ist eindeutig (19.10.2026: in der EN-Oberfläche abgewiesen)
