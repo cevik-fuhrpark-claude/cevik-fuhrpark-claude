@@ -31,7 +31,14 @@ def throttle(q, kbps=400, lat=800):
     cdp.send('Network.emulateNetworkConditions',{'offline':False,'latency':lat,'downloadThroughput':kbps*125,'uploadThroughput':kbps*125})
 with sync_playwright() as p:
     br=p.chromium.launch(); a=br.new_page(); a.goto(B)
-    api=lambda m,path,b=None: a.evaluate(JS,[m,path,b])
+    def api(m,path,b=None):
+        # 03.11.2026: Hilfs-Abruf der Testseite scheiterte sporadisch mit „Failed to fetch“, während die Prüfseite q eine absichtlich
+        # hängende Anfrage abbrach (unroute_all + reload) – kurz wiederholen; das geprüfte Verhalten der App bleibt unverändert
+        for k in range(3):
+            try: return a.evaluate(JS,[m,path,b])
+            except Exception as e:
+                if 'Failed to fetch' not in str(e) or k==2: raise
+                a.wait_for_timeout(700)
     s=api('POST','/api/setup',{'setup_code':'test-setup-code-123','username':'nz.inhaber','display_name':'NZ Inhaber'})
     if s['s']==200: api('POST','/api/invite/accept',{'token':s['d']['invite_token'],'password':PW})
     check(api('POST','/api/login',{'username':'nz.inhaber','password':PW})['s']==200,'Inhaber angemeldet')

@@ -32319,6 +32319,31 @@ await test('Backlog 928 (Reserve Start-Modul): Druckblätter „Abfahrtskontroll
   ok(main.includes("async function viewCheckPaper(...a) { return (await lazyModule('fahrzeug')).viewCheckPaper(...a); }") && main.includes("async function viewDriverGuide(...a) { return (await lazyModule('verwaltung')).viewDriverGuide(...a); }"), 'Platzhalter im Start-Modul');
 });
 
+await test('Backlog 929 (fremder Unfall als Verspätungsgrund): „Stau/Vollsperrung/Verspätung wegen Unfall“, „wegen Unfall Stau“, „stuck in traffic due to an accident“, „затор через ДТП“ zeigen keinen Unfall-Hinweis; „Unfall auf der A3“, „Unfall im Stau“, „Stau, dann Unfall gebaut“ weiter', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const acc = new RegExp(app.match(/^const ACC_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Stau wegen Unfall, 2 Stunden Verspätung', 'Vollsperrung wegen Unfall', 'wegen Unfall Stau auf der A3', 'stuck in traffic due to an accident', 'затор через ДТП', 'Verspätung wegen Unfall, Spiegel ab']) ok(!acc.test(recurFix(x)), 'kein Unfall-Hinweis: ' + x);
+  for (const x of ['Unfall auf der A3, Umleitung', 'Unfall im Stau, Auffahrunfall', 'Stau, dann Unfall gebaut']) ok(acc.test(recurFix(x)), 'Unfall-Hinweis erwartet: ' + x);
+});
+
+await test('Backlog 930 (Sonde Zusammenstoß in Fahrerworten): „im Stau aufgefahren“, „bin aufgefahren“, „mir ist einer reingefahren“, „hinten drauf gefahren“, „Auto gestreift“, „zusammengestoßen“, „hit me from behind“, „reversed into my trailer“, „в мене врізались“ → Unfall-Hinweis; „auf die Autobahn aufgefahren“, „in die Halle reingefahren“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const acc = new RegExp(app.match(/^const ACC_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Im Stau aufgefahren', 'bin aufgefahren', 'jemand ist mir hinten drauf gefahren', 'mir ist einer reingefahren', 'PKW ist mir reingefahren', 'Auto gestreift', 'zusammengestoßen', 'someone hit me from behind', 'a van reversed into my trailer', 'в мене врізались']) ok(acc.test(recurFix(x)), 'Unfall-Hinweis erwartet: ' + x);
+  for (const x of ['bin auf die Autobahn aufgefahren', 'in die Halle reingefahren', 'Lkw ist aufgefahren auf die Fähre']) ok(!acc.test(recurFix(x)), 'kein Unfall-Hinweis: ' + x);
+});
+
+await test('Backlog 931 (verneinte Symptome UK/RU/EN): „гальма не скриплять“, „двигун не димить“, „масло не тече“, „brakes not squeaking“ zeigen keinen Hinweis; bejahte Symptome und „не працює“, „не заводиться“ weiter mit Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const all = [...app.matchAll(/^const ([A-Z_]+_HINT) = \/(.+)\/i;/mg)].map((m) => [m[1], new RegExp(m[2], 'i')]);
+  const hit = (x) => all.filter(([, r]) => r.test(recurFix(x))).map(([n]) => n);
+  for (const x of ['гальма не скриплять', 'двигун не димить', 'масло не тече', 'brakes not squeaking', 'engine is not smoking anymore']) eq(hit(x).join(','), '', 'kein Hinweis: ' + x);
+  for (const [x, n] of [['гальма скриплять', 'BRAKE_HINT'], ['двигун димить', 'FIRE_HINT'], ['масло тече', 'LEAK_HINT'], ['brakes squeaking', 'BRAKE_HINT'], ['не працює гальмо', 'BRAKE_HINT'], ['двигун не заводиться', 'NOSTART_HINT']]) ok(hit(x).includes(n), n + ' erwartet: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
