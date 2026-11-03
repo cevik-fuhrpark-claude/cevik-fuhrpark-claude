@@ -31908,6 +31908,7 @@ await test('Backlog 899 (Blickwinkel „Leasinggesellschaft/Versicherer ruft an 
   const vs = app.slice(app.indexOf('async function viewSearch() {'), app.indexOf('\n}', app.indexOf('async function viewSearch() {')));
   ok(vs.includes("if (isMgr() && !ctList) ctList = (await api('GET', '/api/contracts?filter=alle')).contracts;"), 'Verträge nur für Inhaber/Leitung geladen');
   ok(vs.includes("isMgr() ? await api('GET', '/api/claims?filter=alle&q=' + encodeURIComponent(q.slice(0, 60))) : null"), 'Versicherungsfälle über die Server-Suche, nur Inhaber/Leitung');
+  ok(app.includes("${esc(t('ck_' + c.kind))} · ${esc(c.partner)}${c.contract_no ? ' · ' + noTr(c.contract_no) : ''}</span>${ctChip(c.status)}"), 'Vertragsübersicht zeigt die Vertragsnummer');
   ok(vs.includes('id="gcontracts"') && vs.includes('id="gclaims"') && vs.includes('kAll.length + clAll.length'), 'Bereiche und Trefferansage');
   // Vertragsnummer: Leerzeichen/Bindestrich/Punkt/Schrägstrich egal (gleiche Normalisierung wie in der App)
   const { searchKey } = { searchKey: (x) => String(x || '').toLowerCase() };
