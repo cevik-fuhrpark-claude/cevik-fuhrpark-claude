@@ -21326,7 +21326,7 @@ await test('Backlog 298 (Blickwinkel „Lkw springt morgens bei Kälte nicht an�
     ok(STRINGS[l].nostart_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="nostart" class="panel" hidden role="status">`), 'Panel #nostart');
-  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test(dfx);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx));"), 'Hinweis abhängig von der Beschreibung');
   ok(app.includes("'flat', 'roadchk', 'nostart', "), 'Hilfe-Abschnitt nostart nach roadchk');
 });
 
@@ -21731,7 +21731,7 @@ await test('Backlog 317 (Blickwinkel „Motor im Notlauf, verliert Leistung oder
     ok(L.engine_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="engine" class="panel" hidden role="status">`), 'Panel #engine');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#engine').hidden = !ENGINE_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv));"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('engine') && order.indexOf('fire') < order.indexOf('engine') && order.indexOf('steer') < order.indexOf('engine') && order.indexOf('warnlight') < order.indexOf('engine') && order.indexOf('engine') < order.indexOf('adas') && order.indexOf('engine') < order.indexOf('nostart'), 'Gruppierung: Brand/Lenkung/Warnleuchte vor Motor vor Assistent/Startproblem');
   ok(helpAfter(app, 'engine', 'steer'), 'Hilfe-Abschnitt engine nach steer');
@@ -27410,7 +27410,7 @@ await test('Backlog 720–722 (Blickwinkel „Batterie ausgelaufen, gast oder au
     ok(S.help_batt_t && S.help_batt_s.includes(S.batt_hint_steps) && S.help_batt_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="batt" class="panel" hidden role="status">'), 'Panel #batt');
-  ok(app.includes("$('#batt').hidden = !BATT_HINT.test(dfx);") && app.indexOf("$('#batt').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#batt').hidden = !BATT_HINT.test(noAux(dfx));") && app.indexOf("$('#batt').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'elec', 'batt', 'engine'"), 'Reihenfolge nach Elektrik, vor Motor');
   ok(helpAfter(app, 'batt', 'elec'), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -27539,7 +27539,7 @@ await test('Backlog 747 (Blickwinkel „Kraftstoff ausgegangen, Tank leergefahre
     ok(S.help_dryfuel_t && S.help_dryfuel_s.includes(S.dryfuel_hint_steps) && S.help_dryfuel_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="dryfuel" class="panel" hidden role="status">'), 'Panel #dryfuel');
-  ok(app.includes("$('#dryfuel').hidden = !DRYFUEL_HINT.test(dv);") && app.indexOf("$('#dryfuel').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#dryfuel').hidden = !DRYFUEL_HINT.test(noAux(dv));") && app.indexOf("$('#dryfuel').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'fuel', 'fuelcap', 'dryfuel', 'nostart'"), 'Reihenfolge nach Tankdeckel, vor Startproblemen');
   ok(helpAfter(app, 'dryfuel', 'gelfuel'), 'Hilfe-Abschnitt nach Diesel versulzt');
 });
@@ -27586,7 +27586,7 @@ await test('Backlog 782 (Sonde Reparaturvermerk UK/RU in Hinweisen ohne noFixed)
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
   const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", app.indexOf('const noFixed')) + 12;
   const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
-  for (const [n, h] of [['PEDAL_HINT', 'dv'], ['CONTOUR_HINT', 'dv'], ['FLOOR_HINT', 'dv'], ['GREASE_HINT', 'dv'], ['SPARE_HINT', 'dv'], ['BATT_HINT', 'dfx']]) ok(app.includes('.hidden = !' + n + '.test(' + h + ');'), n + ' prüft ' + h);
+  for (const [n, h] of [['PEDAL_HINT', 'dv'], ['CONTOUR_HINT', 'dv'], ['FLOOR_HINT', 'dv'], ['GREASE_HINT', 'dv'], ['SPARE_HINT', 'dv'], ['BATT_HINT', 'noAux(dfx)']]) ok(app.includes('.hidden = !' + n + '.test(' + h + ');'), n + ' prüft ' + h);
   const T = {
     PEDAL_HINT: [['педаль газу заїдає', 'педаль газа заедает', 'килимок під педаллю', 'коврик под педалью', 'педаль газу знову заїдає, хоча замінили', 'Gaspedal klemmt'],
       ['педаль газу заїдає, замінили', 'педаль газа заедает, отремонтировали', 'педаль газу залипає, полагодили', 'килимок під педаллю, прибрали', 'коврик под педалью, убрали', 'Gaspedal klemmt, repariert', 'Gaspedal klemmt, замінили']],
@@ -27903,7 +27903,7 @@ await test('Backlog 764 (Folge aus 761/763, Sonde Reparaturvermerke): ältere Hi
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
   ok(hl.includes("const dv = recurFix($('#d').value);") && hl.includes("$('#trlr').hidden = !trailerHint(); const dfx = noFixed(dv);"), 'Meldeformular: dfx = noFixed(recurFix(Text))');
   const SET = ['WARNLIGHT', 'PFILTER', 'NOSTART', 'DASH', 'TELEM', 'SEAT', 'WINDOW', 'CABKIT', 'CABLEAK', 'CABLOCK', 'FUELCAP', 'ELEC', 'BATT', 'MIRROR', 'GEAR', 'EXHAUST', 'TOLL', 'DOOR', 'VISIB', 'STEP'];
-  for (const n of SET) ok(hl.includes('!' + n + '_HINT.test(dfx)'), n + ' über dfx');
+  for (const n of SET) ok(hl.includes('!' + n + '_HINT.test(dfx)') || hl.includes('!' + n + '_HINT.test(noAux(dfx))'), n + ' über dfx'); // noAux: Backlog 919
   for (const n of ['BRAKE', 'PARKBRAKE', 'STEER', 'SUSP', 'TYRE', 'FLAT', 'WHEEL', 'COUPLING', 'FIRE', 'LEAK', 'ENGINE', 'TACHO', 'ACC', 'THEFT', 'GLASS', 'FUEL']) ok(!hl.includes('!' + n + '_HINT.test(dfx'), n + ' bewusst nicht über dfx');
   const t = (x) => noFixed(recurFix(x));
   const T = {
@@ -32111,7 +32111,7 @@ await test('Backlog 909 (Sonde „Lkw springt nicht an“ in Fahrerworten): „o
     ok(re.test(x), 'Hinweis erwartet: ' + x);
   for (const x of ['Lkw orgelt, Batterie getauscht, springt wieder an', 'Motor kommt nicht auf Drehzahl', 'Schlüssel verloren, sonst passiert nichts', 'Schlüssel abgebrochen', 'Kunde will nicht warten', 'Orgelpfeife im Laderaum'])
     ok(!re.test(x), 'kein Hinweis: ' + x);
-  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test(dfx);"), 'Hinweis weiter abhängig von der Beschreibung');
+  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx));"), 'Hinweis weiter abhängig von der Beschreibung');
 });
 
 await test('Backlog 910 (Sonde Reifenpanne in Umgangssprache): „hab nen/’n Platten“, „Platten am Auflieger/hinten rechts“, „Reifen hat Platten“, „Reifen schlaff“ → Reifenpannen-Hinweis; Holz-/Bodenplatten und „Platten auf der Ladefläche“ nicht', async () => {
@@ -32186,6 +32186,45 @@ await test('Backlog 916 (Startprobleme nur am Fahrzeug): „Standheizung/Klimaan
   for (const x of ['Standheizung springt nicht an', 'Klimaanlage springt nicht an', 'Standheizung springt schlecht an', 'Standheizung lässt sich nicht starten', 'Klima lässt sich nicht einschalten', 'parking heater does not start', 'night heater will not start']) ok(cl.test(x), 'Standheizung-/Klima-Hinweis erwartet: ' + x);
   ok(!cl.test('parking heater does not start, fixed'), 'Reparaturvermerk ohne Hinweis');
   for (const x of ['Kühlaggregat springt nicht an', "Fridge unit won't start"]) ok(rf.test(x), 'Kühl-Hinweis erwartet: ' + x);
+});
+
+await test('Backlog 917 (Sonde Reifen/Druckluft/Hydraulik in Fahrerworten): „Profil runter“, „kaum noch Profil“, „Reifen hat ein Ei“ → Reifen-Hinweis; „Reifen eiert“ → Rad-Hinweis; „Lkw eiert“ → Vibrations-Hinweis; „es zischt hinten“, „Luft entweicht“ → Bremsen-/Druckluft-Hinweis; „Hydraulik(zylinder/-schlauch) sifft“ → Leck-Hinweis; Nutzerprofil, „eiert rum“, Reparaturvermerke nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const ty = pat('TYRE_HINT'), wh = pat('WHEEL_HINT'), vi = pat('VIBR_HINT'), br = pat('BRAKE_HINT'), lk = pat('LEAK_HINT');
+  for (const x of ['Profil runter', 'Reifenprofil runter', 'kaum noch Profil', 'Profil fast weg', 'Profil am Ende', 'wenig Profil hinten', 'Reifen ohne Profil', 'Reifen hat ein Ei', 'Reifen hat n Ei']) ok(ty.test(x), 'Reifen-Hinweis erwartet: ' + x);
+  for (const x of ['Nutzerprofil weg', 'Profilleiste ab', 'Ei im Kühlschrank', 'Profil ist weg, neue Reifen getauscht']) ok(!ty.test(x), 'kein Reifen-Hinweis: ' + x);
+  ok(wh.test('Reifen eiert'), 'Rad-Hinweis bei „Reifen eiert“');
+  for (const x of ['Lkw eiert', 'Lkw eiert bei 80']) ok(vi.test(x), 'Vibrations-Hinweis erwartet: ' + x);
+  ok(!vi.test('der Lkw eiert hier rum'), 'kein Vibrations-Hinweis bei „eiert rum“');
+  for (const x of ['es zischt hinten', 'Bremse zischt die ganze Zeit', 'Luft entweicht']) ok(br.test(x), 'Bremsen-Hinweis erwartet: ' + x);
+  ok(!br.test('Ladung zischt'), 'kein Bremsen-Hinweis: Ladung zischt');
+  for (const x of ['Ladebordwand Hydraulik sifft', 'Hydraulikzylinder suppt', 'Hydraulikschlauch sifft']) ok(lk.test(x), 'Leck-Hinweis erwartet: ' + x);
+});
+
+await test('Backlog 918 (Sonde Ladebordwand/Kühlgerät in Fahrerworten): „Ladebordwand spinnt/macht nix/bleibt hängen/fährt nicht“, „LBW geht nicht (mehr runter)“, „LBW defekt“ → Tür-/Ladebordwand-Hinweis; „Kühlung spinnt“, „Kühlaggregat piept“, „Aggregat zeigt Alarm“, „Thermoking spinnt“ → Kühlgerät-Hinweis; Reparaturvermerke, „Klima-/Motoraggregat“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const d = pat('DOOR_HINT'), r = pat('REEFER_HINT');
+  for (const x of ['Ladebordwand spinnt', 'Ladebordwand macht nix', 'Ladebordwand bleibt hängen', 'Ladebordwand fährt nicht', 'Ladebordwand fährt nicht ganz hoch', 'LBW geht nicht', 'LBW defekt', 'LBW geht nicht mehr runter']) ok(d.test(x), 'Ladebordwand-Hinweis erwartet: ' + x);
+  for (const x of ['Ladebordwand spinnt, repariert', 'LBW-Schulung morgen']) ok(!d.test(x), 'kein Ladebordwand-Hinweis: ' + x);
+  for (const x of ['Kühlung spinnt', 'Kühlaggregat piept', 'Aggregat zeigt Alarm', 'Thermoking spinnt', 'Thermo King zickt']) ok(r.test(x), 'Kühlgerät-Hinweis erwartet: ' + x);
+  for (const x of ['Thermoking spinnt, repariert', 'Aggregat piept, getauscht', 'Klimaaggregat spinnt', 'Motoraggregat zeigt Fehler']) ok(!r.test(x), 'kein Kühlgerät-Hinweis: ' + x);
+});
+
+await test('Backlog 919 (Motor/Batterie/Tank des Kühlaggregats ist nicht der Lkw): „Kühlaggregat Motor geht aus“, „Kühlaggregat Batterie leer“, „Aggregat hat keinen Diesel mehr“, „Tank vom Kühlaggregat leer“ zeigen keine Lkw-Motor-/Start-/Tank-Hinweise mehr, sondern den Kühlgerät-Hinweis; Lkw-Motor/Batterie/Tank und Sätze mit Punkt dazwischen unverändert', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const m = app.match(/^const AUX_UNIT = \/(.+)\/gi;/m); ok(m, 'AUX_UNIT fehlt');
+  const aux = new RegExp(m[1], 'gi'); const noAux = (x) => String(x || '').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));
+  ok(app.includes("const noAux = (s) => String(s || '').replace(AUX_UNIT, (m) => m.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));"), 'noAux wie im Test');
+  for (const x of ["$('#engine').hidden = !ENGINE_HINT.test(noAux(dv));", "$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx));", "$('#dryfuel').hidden = !DRYFUEL_HINT.test(noAux(dv));", "$('#batt').hidden = !BATT_HINT.test(noAux(dfx));"]) ok(app.includes(x), 'im Formular: ' + x);
+  const lkw = ['ENGINE_HINT', 'NOSTART_HINT', 'DRYFUEL_HINT', 'BATT_HINT'].map(g), rf = g('REEFER_HINT');
+  for (const x of ['Kühlaggregat Motor geht aus', 'Kühlaggregat Batterie leer', 'Aggregat hat keinen Diesel mehr', 'Aggregattank leer', 'Tank vom Kühlaggregat leer', 'Batterie vom Kühlaggregat leer', 'Standheizung Batterie leer']) ok(!lkw.some((r) => r.test(noAux(x))), 'kein Lkw-Hinweis: ' + x);
+  for (const x of ['Kühlaggregat Batterie leer', 'Aggregat hat keinen Diesel mehr', 'Aggregattank leer', 'Tank vom Kühlaggregat leer', 'Kühlaggregat Motor geht aus']) ok(rf.test(x), 'Kühlgerät-Hinweis erwartet: ' + x);
+  ok(!rf.test('Kühlaggregat Tank leer, getankt und gewechselt'), 'Reparaturvermerk ohne Kühlgerät-Hinweis');
+  ok(lkw[0].test(noAux('Motor geht aus')) && lkw[0].test(noAux('Kühlaggregat kaputt. Motor geht aus')) && lkw[0].test(noAux('Motor geht aus, Kühlaggregat ok')), 'Lkw-Motor weiter erkannt');
+  ok(lkw[1].test(noAux('Lkw Batterie leer')) && lkw[2].test(noAux('Tank leer')), 'Lkw-Batterie/-Tank weiter erkannt');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
