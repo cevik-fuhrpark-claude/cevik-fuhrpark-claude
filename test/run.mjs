@@ -26052,7 +26052,7 @@ await test('Backlog 593–595: App-Module – app-main.js lädt beim Start, Verw
     ok(/^import \{[^}]*\} from '\.\/app-main\.js';$/m.test(mod), g + ': importiert aus app-main.js');
     for (const n of names) {
       ok(new RegExp(`^(?:async )?function ${n}\\(`, 'm').test(mod), `${n} in app-${g}.js`);
-      if (stubs.has(n)) ok(main.includes(`async function ${n}(...a) { return (await lazyModule('${g}')).${n}(...a); }`), `${n}: Platzhalter in app-main.js`);
+      if (stubs.has(n)) ok(main.includes(`async function ${n}(...a) { return (await lazyModule('${g}'${B.INPLACE.has(n) ? ', 1' : ''})).${n}(...a); }`), `${n}: Platzhalter in app-main.js`); // Backlog 953: INPLACE still
     }
     ok(!main.includes(`from './app-${g}.js'`), g + ': nicht statisch importiert');
   }
@@ -32544,8 +32544,25 @@ await test('Backlog 952 (Reserve Start-Modul): Zwei-Faktor-Einrichtung in „Meh
   ok(GROUPS.konto.includes('loadTotp'), 'loadTotp in Gruppe konto');
   const main = rd('app-main.js'), konto = rd('app-konto.js');
   ok(/^async function loadTotp\(\) \{/m.test(konto), 'loadTotp in app-konto.js');
-  ok(main.includes("async function loadTotp(...a) { return (await lazyModule('konto')).loadTotp(...a); }"), 'Platzhalter im Start-Modul');
+  ok(main.includes("async function loadTotp(...a) { return (await lazyModule('konto', 1)).loadTotp(...a); }"), 'Platzhalter im Start-Modul (Backlog 953: still laden)');
   ok(main.includes('if (tfa.open) loadTotp().catch('), 'Aufruf beim Aufklappen mit Fehlerbehandlung');
+});
+
+await test('Backlog 953 (langsames Netz): ausgelagerte Hilfsfunktionen, die in die bestehende Seite schreiben (loadTotp), laden ihr Modul still – kein seitenfüllendes „Lädt…“; jede Nicht-Ansicht ist eingeordnet (INPLACE/BEFORE_RENDER)', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const { INPLACE, BEFORE_RENDER, splitApp } = await import('../scripts/build-app.mjs');
+  const { stubs } = splitApp(rd('app.js'));
+  const other = [...stubs.keys()].filter((n) => !/^view[A-Z]/.test(n));
+  ok(other.length >= 2, 'Nicht-Ansichten unter den Platzhaltern gefunden');
+  for (const n of other) ok(INPLACE.has(n) !== BEFORE_RENDER.has(n), `${n}: genau einer der Listen INPLACE/BEFORE_RENDER (scripts/build-app.mjs) zuordnen`);
+  const main = rd('app-main.js');
+  for (const [n, g] of stubs) {
+    const quiet = INPLACE.has(n);
+    ok(main.includes(`async function ${n}(...a) { return (await lazyModule('${g}'${quiet ? ', 1' : ''})).${n}(...a); }`), `${n}: Platzhalter ${quiet ? 'still' : 'mit Ladehinweis'}`);
+  }
+  ok(main.includes('function lazyModule(g, quiet) {') && main.includes('if (!LAZY_READY[g] && !quiet) {'), 'lazyModule überspringt den Ladehinweis bei quiet');
+  ok(/^async function loadTotp\(\) \{\n  const box = \$\('#tfabox'\)/m.test(rd('app-konto.js')) || rd('app-konto.js').includes("$('#tfabox')"), 'loadTotp schreibt in #tfabox der bestehenden Seite');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-modul-langsam.py'), 'UI-Skript in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

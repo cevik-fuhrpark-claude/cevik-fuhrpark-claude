@@ -4860,7 +4860,7 @@ function viewMore(open) {
 
 
 
-async function loadTotp(...a) { return (await lazyModule('konto')).loadTotp(...a); }
+async function loadTotp(...a) { return (await lazyModule('konto', 1)).loadTotp(...a); }
 
 
 
@@ -4954,9 +4954,10 @@ route();
 // Erneuter Versuch nach einem Fehler mit „?r=N“: der Browser merkt sich ein fehlgeschlagenes import() je Adresse und lieferte sonst
 // bis zum Neuladen immer wieder denselben Fehler (UI-Test 29.10.2026); die App-Hülle im Service Worker findet die Datei trotzdem (ignoreSearch).
 const LAZY_MODULES = {}, LAZY_READY = {}, LAZY_TRY = {}, LAZY_HINT_MS = 300;
-function lazyModule(g) {
+// Backlog 953: quiet = Aufruf schreibt in die bestehende Seite (INPLACE in scripts/build-app.mjs) – kein seitenfüllender Ladehinweis.
+function lazyModule(g, quiet) {
   if (!LAZY_MODULES[g]) LAZY_MODULES[g] = import(`./app-${g}.js${LAZY_TRY[g] ? `?r=${LAZY_TRY[g]}` : ''}`).then((m) => { LAZY_READY[g] = true; return m; }).catch((e) => { delete LAZY_MODULES[g]; LAZY_TRY[g] = (LAZY_TRY[g] || 0) + 1; console.error(e); throw new Error(t('lazy_load_failed')); });
-  if (!LAZY_READY[g]) { const gen = S.routeGen, h = location.hash, p = LAZY_MODULES[g]; setTimeout(() => { if (!LAZY_READY[g] && LAZY_MODULES[g] === p && S.routeGen === gen && location.hash === h) render(`<p class="muted">${esc(t('loading'))}</p>`); }, LAZY_HINT_MS); }
+  if (!LAZY_READY[g] && !quiet) { const gen = S.routeGen, h = location.hash, p = LAZY_MODULES[g]; setTimeout(() => { if (!LAZY_READY[g] && LAZY_MODULES[g] === p && S.routeGen === gen && location.hash === h) render(`<p class="muted">${esc(t('loading'))}</p>`); }, LAZY_HINT_MS); }
   return LAZY_MODULES[g];
 }
 

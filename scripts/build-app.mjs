@@ -26,6 +26,14 @@ export const GROUPS = {
   lager: ['viewStock', 'viewStockCount', 'viewReorder', 'viewStockAsOf', 'viewStockJournal', 'viewStockReceipt', 'viewPartsUsage', 'viewStockItem'],
 };
 
+// Backlog 953 (Funkloch/langsames Netz): ausgelagerte Hilfsfunktionen, die in eine bereits aufgebaute Seite schreiben (z. B. beim
+// Aufklappen eines Bereichs). Ihr Platzhalter lädt das Modul „still“ – ohne den Ladehinweis aus Backlog 595, der nach 300 ms die ganze
+// Seite durch „Lädt…“ ersetzt (sonst blieb „Mehr“ leer, weil das Ziel #tfabox fehlte). Ansichten und Funktionen, die vor dem Neuaufbau
+// der Seite laufen (claimSection in viewCase), behalten den Hinweis. Test „Backlog 953“ verlangt, dass jede neue Nicht-Ansicht hier
+// oder in BEFORE_RENDER eingeordnet wird.
+export const INPLACE = new Set(['loadTotp']);
+export const BEFORE_RENDER = new Set(['claimSection']);
+
 const KW_BEFORE_REGEX = new Set(['return', 'typeof', 'case', 'in', 'of', 'delete', 'void', 'throw', 'new', 'else', 'do', 'instanceof', 'yield', 'await']);
 const isId = (c) => /[\w$]/.test(c || '');
 
@@ -191,7 +199,7 @@ export function splitApp(src) {
     main += src.slice(last, s);
     const g = owner.get(d);
     (modParts[g] ||= []).push(src.slice(s, e));
-    if (stubs.has(d.names[0])) main += `async function ${d.names[0]}(...a) { return (await lazyModule('${g}')).${d.names[0]}(...a); }`;
+    if (stubs.has(d.names[0])) main += `async function ${d.names[0]}(...a) { return (await lazyModule('${g}'${INPLACE.has(d.names[0]) ? ', 1' : ''})).${d.names[0]}(...a); }`;
     last = e;
   }
   main += src.slice(last);
@@ -202,9 +210,10 @@ export function splitApp(src) {
 // Erneuter Versuch nach einem Fehler mit „?r=N“: der Browser merkt sich ein fehlgeschlagenes import() je Adresse und lieferte sonst
 // bis zum Neuladen immer wieder denselben Fehler (UI-Test 29.10.2026); die App-Hülle im Service Worker findet die Datei trotzdem (ignoreSearch).
 const LAZY_MODULES = {}, LAZY_READY = {}, LAZY_TRY = {}, LAZY_HINT_MS = 300;
-function lazyModule(g) {
+// Backlog 953: quiet = Aufruf schreibt in die bestehende Seite (INPLACE in scripts/build-app.mjs) – kein seitenfüllender Ladehinweis.
+function lazyModule(g, quiet) {
   if (!LAZY_MODULES[g]) LAZY_MODULES[g] = import(\`./app-\${g}.js\${LAZY_TRY[g] ? \`?r=\${LAZY_TRY[g]}\` : ''}\`).then((m) => { LAZY_READY[g] = true; return m; }).catch((e) => { delete LAZY_MODULES[g]; LAZY_TRY[g] = (LAZY_TRY[g] || 0) + 1; console.error(e); throw new Error(t('lazy_load_failed')); });
-  if (!LAZY_READY[g]) { const gen = S.routeGen, h = location.hash, p = LAZY_MODULES[g]; setTimeout(() => { if (!LAZY_READY[g] && LAZY_MODULES[g] === p && S.routeGen === gen && location.hash === h) render(\`<p class="muted">\${esc(t('loading'))}</p>\`); }, LAZY_HINT_MS); }
+  if (!LAZY_READY[g] && !quiet) { const gen = S.routeGen, h = location.hash, p = LAZY_MODULES[g]; setTimeout(() => { if (!LAZY_READY[g] && LAZY_MODULES[g] === p && S.routeGen === gen && location.hash === h) render(\`<p class="muted">\${esc(t('loading'))}</p>\`); }, LAZY_HINT_MS); }
   return LAZY_MODULES[g];
 }
 `;
