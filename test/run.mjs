@@ -32589,6 +32589,15 @@ await test('Backlog 955 (Sonde Reifendruck in Fahrerworten): „low tyre pressur
   for (const x of ['давление в шинах в норме', 'тиск у шинах нормальний', 'no low tyre pressure', 'low pressure in the hose']) ok(!r.test(recurFix(x)), 'kein Reifen-Hinweis: ' + x);
 });
 
+await test('Backlog 956 (Sonde Luftverlust in Fahrerworten): „Reifen zischt/ist weich“, „Reifen muss ständig nachgepumpt werden“, „muss jeden Morgen Luft nachfüllen“, „tyre is soft/hissing“, „keeps needing air“, „спускає колесо“, „колесо шипить“ → Reifen-Hinweis; „пробито колесо“ → Reifenpanne (nicht verneint/repariert, nicht Sitz/Bremse)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const TYRE_HINT = \/(.+)\/i;/m)[1], 'i'); const f = new RegExp(app.match(/^const FLAT_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Reifen zischt', 'Reifen ist weich', 'Reifen hinten links ist etwas weich', 'Zwillingsreifen zischt', 'Reifen muss ständig nachgepumpt werden', 'Reifen muss täglich aufgepumpt werden', 'muss ständig Luft nachfüllen hinten rechts', 'muss jeden Morgen Luft nachfüllen', 'tyre is soft', 'the trailer tyre feels a bit soft', 'tyre keeps needing air', 'I have to keep pumping up the rear tyre', 'tyre is hissing', 'hissing noise from the front tyre', 'повільно спускає колесо', 'спускает колесо', 'колесо шипить', 'шина шипит']) ok(r.test(recurFix(x)), 'Reifen-Hinweis erwartet: ' + x);
+  for (const x of ['Reifen ist nicht weich', 'Reifen zischt nicht mehr', 'Reifen aufgepumpt, jetzt ok', 'Reifen sind neu, muss nicht aufgepumpt werden', 'muss nicht ständig Luft nachfüllen', 'muss keine Luft nachfüllen', 'tyre was soft, fixed now', 'Sitz ist weich', 'Bremse zischt']) ok(!r.test(recurFix(x)), 'kein Reifen-Hinweis: ' + x);
+  for (const x of ['пробито колесо', 'пробита шина']) ok(f.test(recurFix(x)), 'Reifenpanne-Hinweis erwartet: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
