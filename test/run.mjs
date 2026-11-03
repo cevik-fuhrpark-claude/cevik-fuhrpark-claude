@@ -32581,6 +32581,14 @@ await test('Backlog 954 (Sonde Fahrerworte, Warnleuchten/Batterie/Temperatur): �
   }
 });
 
+await test('Backlog 955 (Sonde Reifendruck in Fahrerworten): „low tyre pressure“, „тиск у шині низький“, „низький тиск в колесі“, „давление в шине низкое/упало“ → Reifen-Hinweis (nicht „давление в шинах в норме“, „тиск у шинах нормальний“, „no low tyre pressure“)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const TYRE_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['low tyre pressure', 'low tire pressure on the trailer', 'тиск у шині низький', 'низький тиск в колесі', 'давление в шине низкое', 'давление в шине упало', 'низкое давление в колесе', 'tyre pressure low', 'Reifendruck zu niedrig']) ok(r.test(recurFix(x)), 'Reifen-Hinweis erwartet: ' + x);
+  for (const x of ['давление в шинах в норме', 'тиск у шинах нормальний', 'no low tyre pressure', 'low pressure in the hose']) ok(!r.test(recurFix(x)), 'kein Reifen-Hinweis: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
