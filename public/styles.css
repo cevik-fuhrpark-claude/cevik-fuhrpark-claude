@@ -476,3 +476,20 @@ form[aria-busy="true"] button:not([type="button"]), button[aria-busy="true"], a[
   .plate, .fleetbar, .legend i { forced-color-adjust: none; }
   .fleetbar { outline: 1px solid CanvasText; }
 }
+/* [CLAUDE] Ausdruck auf dem Schwarz-Weiß-Laser ohne „Hintergrundgrafiken“ (Backlog 895, 03.11.2026): Browser drucken Hintergründe
+   standardmäßig nicht – farbige Chips (Kritisch, Gesperrt, überfällig, Widerspruch) standen dann ohne Rahmen als blasser Text da,
+   neutrale Chips dagegen mit Rahmen, und der Flottenbalken war leer. Bedeutung im Druck über Rahmen statt Farbe:
+   kritisch/gesperrt 2 px schwarz fett, mittel gestrichelt, in Ordnung/freigegeben dünn; Abbildungen (Flottenbalken, Legende, EU-Feld) mit Farbe. */
+@media print {
+  .chip.kritisch, .chip.gesperrt { border: 2px solid #000 !important; color: #000 !important; font-weight: 700; }
+  .chip.mittel { border: 1px dashed #000 !important; color: #000 !important; }
+  .chip.ok, .chip.fahrzeug_freigegeben { border: 1px solid #777 !important; color: #000 !important; }
+  .row.p-kritisch { border-left: 5px solid #000; }
+  .row.p-mittel { border-left: 3px dashed #000; }
+  .fleetbar, .fleetbar span, .legend i, .plate .eu { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .fleetbar, .legend i { outline: 1px solid #000; }
+  /* Link-Knöpfe („Schaden melden“, „Zur Übersicht“) sind im Druck wie <button> ohne Nutzen; ohne Fläche wäre weiße Schrift unsichtbar.
+     Rufnummern (tel:, z. B. „112“ und Panne & Notfall) bleiben – schwarz mit Rahmen. */
+  a.btn:not([href^="tel:"]) { display: none !important; }
+  a.btn[href^="tel:"] { background: none !important; color: #000 !important; border: 1.5px solid #000 !important; min-height: 0; padding: 2px 8px; }
+}

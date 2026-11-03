@@ -29937,7 +29937,7 @@ await test('Backlog 829 (Blickwinkel „Werkstatt trägt Wartung am Anhänger mi
 await test('Backlog 830 (Folge aus 829): „Kilometerstand erfassen“ in der Fahrzeugakte zeigt beim Anhänger den Hinweis „nur Achskilometerzähler des Anhängers“', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("<form id=\"kf\"><label>${esc(t('km'))}${v.kind === 'anhaenger' ? `<span class=\"hint\" id=\"kfkmtr\">${esc(t('mdone_kmtr'))}</span>` : ''}</label>"), 'Hinweis am km-Feld');
+  ok(app.includes("<form id=\"kf\"><label for=\"kfkm\">${esc(t('km'))}${v.kind === 'anhaenger' ? `<span class=\"hint\" id=\"kfkmtr\">${esc(t('mdone_kmtr'))}</span>` : ''}</label>"), 'Hinweis am km-Feld');
 });
 
 await test('Backlog 831 (Folge aus 826/829): „Kontrolle nach Reparatur“ zeigt beim Anhänger am km-Feld den Hinweis „nur Achskilometerzähler des Anhängers“', async () => {
@@ -31811,6 +31811,32 @@ await test('Backlog 894 (Folge aus 893): Werkstatt-Panel im Kontrastmodus – ge
   ok(dev.includes("statSync(p).isDirectory()") && dev.includes("p = join(p, 'index.html')") && dev.includes('writeHead(308'), 'Dev-Server: Verzeichnis → index.html, ohne Schrägstrich 308');
   const ui = fs.readFileSync(new URL('../scripts/ui-kontrastmodus.py', import.meta.url), 'utf8');
   for (const x of ["/werkstatt/", 'PANEL = r', 'aktive Ziffernstelle', 'CFP_NUR_PANEL', 'ownBg']) ok(ui.includes(x), 'UI-Prüfung enthält ' + x);
+});
+
+await test('Backlog 895: Druck ohne Hintergrundgrafiken (Schwarz-Weiß-Laser) – farbige Chips gerahmt, kritisch kräftiger, Flottenbalken in Farbe, Link-Knöpfe ausgeblendet', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const i = css.indexOf('Backlog 895'); ok(i > 0, 'Kommentar Backlog 895');
+  const j = css.indexOf('@media print {', i); ok(j > i, 'Druckblock nach dem Kommentar');
+  const blk = css.slice(j, css.indexOf('\n}', j));
+  ok(/\.chip\.kritisch, \.chip\.gesperrt \{ border: 2px solid #000 !important; color: #000 !important; font-weight: 700; \}/.test(blk), 'kritisch/gesperrt: 2 px schwarz, fett');
+  ok(blk.includes('.chip.mittel { border: 1px dashed #000'), 'mittel gestrichelt');
+  ok(blk.includes('.row.p-kritisch { border-left: 5px solid #000; }'), 'kritische Zeile mit kräftigem Rand');
+  ok(blk.includes('print-color-adjust: exact') && blk.includes('-webkit-print-color-adjust: exact') && blk.includes('.fleetbar span'), 'Flottenbalken in Farbe');
+  ok(blk.includes('a.btn:not([href^="tel:"]) { display: none !important; }'), 'Link-Knöpfe im Druck ausgeblendet');
+  ok(blk.includes('a.btn[href^="tel:"] { background: none !important; color: #000 !important; border: 1.5px solid #000'), 'Rufnummern bleiben im Druck, schwarz gerahmt');
+  // jede Chip-Klasse, die am Bildschirm eine eigene Fläche mit transparentem Rahmen hat, ist im Druck gerahmt (außer TEST, eigener Druckblock)
+  const colored = new Set();
+  for (const m of css.slice(0, i).matchAll(/((?:\.chip\.[a-z_]+(?:, )?)+) \{[^}]*background:[^}]*border-color: transparent/g)) for (const c of m[1].matchAll(/\.chip\.([a-z_]+)/g)) colored.add(c[1]);
+  ok(colored.size >= 5, 'farbige Chip-Klassen gefunden: ' + [...colored]);
+  for (const c of colored) if (c !== 'test') ok(blk.includes('.chip.' + c), 'im Druck gerahmt: .chip.' + c);
+  ok(/\.testband, \.chip\.test \{ background: none !important; color: #000 !important; border: 2px solid #000/.test(css), 'TEST-Chip weiter eigener Druckblock');
+  const ui = fs.readFileSync(new URL('../scripts/ui-druck-schwarzweiss.py', import.meta.url), 'utf8');
+  for (const x of ['DETECT', 'STRIP', 'Gegenprobe', "emulate_media(media='print')", 'Bildschirm unverändert', "('uk', 820, 1180)"]) ok(ui.includes(x), 'UI-Prüfung enthält ' + x);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-druck-schwarzweiss.py|'), 'UI-Prüfung in pruefen.sh');
+  // Nebenbefund Rauchtest: km-Feld der Fahrzeugakte war bei vorhandenem km-Stand (Absatz „zuletzt …“ zwischen Beschriftung und Feld) ohne Namen
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<form id="kf"><label for="kfkm">') && app.includes('<input id="kfkm" name="km"'), 'km-Feld der Akte mit for/id beschriftet');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
