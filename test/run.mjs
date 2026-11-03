@@ -32366,6 +32366,33 @@ await test('Backlog 933 (Reserve Start-Modul): Einladung annehmen und Ersteinric
   ok(fs.readFileSync(new URL('../scripts/ui-ohne-lookbehind.py', import.meta.url), 'utf8').includes("'app-konto.js'"), 'Lookbehind-Prüfung');
 });
 
+await test('Backlog 934 (eigenes Auto streikt): „Mein Privatauto springt nicht an, komme später“, „Privat-Pkw Batterie leer“, „mein eigenes Auto springt nicht an“, „Fahrrad Reifen platt“, „my own car has a flat tyre“, „моя особиста машина не заводиться“, „велосипед зламався“ zeigen keine Lkw-Hinweise; „Lkw springt nicht an“, „Reifen platt“, „Rad locker“ und „mein Auto hat einen Platten“ (Fahrer nennen so auch den Lkw) weiter mit Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes(".replace(PLACE_SPAN, ' ◇ ').replace(OWNCAR_SPAN, ' ◇ ')"), 'noPlace blendet auch private Fahrzeuge aus');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const all = [...app.matchAll(/^const ([A-Z_]+_HINT) = \/(.+)\/i;/mg)].map((m) => [m[1], new RegExp(m[2], 'i')]);
+  const hit = (x) => all.filter(([, r]) => r.test(recurFix(x))).map(([n]) => n);
+  for (const x of ['Mein Privatauto springt nicht an, komme später', 'Privat-Pkw Batterie leer, bin spät dran', 'Mein eigenes Auto springt nicht an', 'Fahrrad Reifen platt', 'my own car has a flat tyre', 'my bike has a flat', 'моя особиста машина не заводиться', 'велосипед зламався, запізнюсь']) eq(hit(x).join(','), '', 'kein Hinweis: ' + x);
+  for (const [x, n] of [['Lkw springt nicht an', 'NOSTART_HINT'], ['Reifen platt', 'FLAT_HINT'], ['Rad locker', 'WHEEL_HINT'], ['Mein Auto hat einen Platten, komme später', 'FLAT_HINT'], ['Privatauto kaputt, Lkw springt auch nicht an', 'NOSTART_HINT'], ['Fahrrad kaputt. Reifen platt am Auflieger', 'FLAT_HINT']]) ok(hit(x).includes(n), n + ' erwartet: ' + x);
+});
+
+await test('Backlog 935 (Rad ab): „Rad ab am Auflieger“, „Rad ist ab“, „Rad hinten links ab“, „Rad weg“, „колесо відвалилось“, „відлетіло колесо“, „колесо розхиталось“, „колесо отлетело“ → Rad-Hinweis; „Rad gewechselt, ab morgen fahrbereit“, „Rad ab Lager bestellt“, „Rad ab Werk“, „Rad ab und zu laut“, „Ersatzrad ab“, „Rad weg vom Bordstein drehen“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const w = new RegExp(app.match(/^const WHEEL_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Rad ab am Auflieger', 'Rad ist ab', 'Rad hinten links ab', 'Rad ab!', 'Rad weg', 'колесо відвалилось', 'відлетіло колесо', 'колесо розхиталось', 'колесо отлетело']) ok(w.test(recurFix(x)), 'Rad-Hinweis erwartet: ' + x);
+  for (const x of ['Rad gewechselt, ab morgen wieder fahrbereit', 'Rad ab Lager bestellt', 'Rad wurde ab montiert', 'Rad ab Werk', 'Rad links ab sofort tauschen', 'Rad ab und zu laut', 'Ersatzrad ab', 'Rad abgefahren', 'Rad weg vom Bordstein drehen']) ok(!w.test(recurFix(x)), 'kein Rad-Hinweis: ' + x);
+});
+
+await test('Backlog 936 (Tor/Schranke fällt auf den Lkw): „Rolltor ist auf den Auflieger runtergekommen“, „Schranke ist auf den Lkw runtergegangen“, „Tor von der Werkstatt gegen den Lkw gefallen“, „the roller shutter came down on the trailer“, „ворота впали на причіп“, „шлагбаум опустився на кабіну“ → Hinweis „Schaden beim Kunden (Rampe, Stapler)“; „Tor ist zu, Lkw steht draußen“, „Tor gegen den Wind gesichert“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const r = new RegExp(app.match(/^const CUSTDMG_HINT = \/(.+)\/i;/m)[1], 'i');
+  ok(app.includes("$('#custdmg').hidden = !CUSTDMG_HINT.test(dv);"), 'im Meldeformular');
+  for (const x of ['Rolltor ist auf den Auflieger runtergekommen', 'Rolltor beim Kunden ist auf den Auflieger runtergekommen', 'Schranke ist auf den Lkw runtergegangen', 'Schranke ist gegen das Fahrerhaus geknallt', 'Tor von der Werkstatt gegen den Lkw gefallen', 'the roller shutter came down on the trailer', 'the barrier fell onto the cab', 'ворота впали на причіп', 'шлагбаум опустився на кабіну']) ok(r.test(recurFix(x)), 'Hinweis erwartet: ' + x);
+  for (const x of ['Tor ist zu, Lkw steht draußen', 'Tor gegen den Wind gesichert', 'Tor vom Hof geht nicht auf', 'Schranke an der Einfahrt geht nicht hoch']) ok(!r.test(recurFix(x)), 'kein Hinweis: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

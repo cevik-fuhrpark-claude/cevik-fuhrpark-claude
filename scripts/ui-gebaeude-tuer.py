@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (03.11.2026, Backlog 932, Blickwinkel „Gebäude statt Lkw“): „Tür vom Büro geht nicht zu“, „Licht im Büro kaputt“,
 # „Office door won't close“, „Двері в офісі не зачиняються“ zeigen im Meldeformular keine Lkw-Hinweise (Tür, Licht, Fenster, Sicht, Klima, Elektrik);
-# kommt eine Lkw-Tür dazu, erscheint der Tür-Hinweis. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# kommt eine Lkw-Tür dazu, erscheint der Tür-Hinweis. Backlog 934/935: eigenes Auto ohne Lkw-Hinweise, „Rad ab am Auflieger“ mit Rad-Hinweis. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -17,7 +17,9 @@ def check(c,m):
     if not c: fails.append(m)
 BLD={'de':'Tür vom Büro geht nicht zu, im Büro ist das Licht kaputt','uk':'Двері в офісі не зачиняються, у офісі не працює світло','en':"Office door won't close, light in the warehouse not working"}
 MIX={'de':'Tür vom Büro geht nicht zu, Fahrertür klemmt','uk':'Двері в офісі не зачиняються, двері кабіни не зачиняються','en':"Office door won't close, cab door stuck"}
-HINTS=['#door','#lights','#window','#visib','#climate','#elec']
+HINTS=['#door','#lights','#window','#visib','#climate','#elec','#nostart','#flat','#batt','#tyre','#wheel']
+CAR={'de':'Mein Privatauto springt nicht an, komme später','uk':'Моя особиста машина не заводиться, запізнюсь','en':'My own car has a flat tyre, will be late'}
+RAD={'de':'Rad ab am Auflieger','uk':'Колесо відвалилось на причепі','en':'Lost a wheel on the trailer'}
 with sync_playwright() as p:
     br=p.chromium.launch(); a=br.new_page(); a.goto(B)
     api=lambda m,pa,b=None,ct=None: a.evaluate(JS,[m,pa,b,ct])
@@ -36,6 +38,11 @@ with sync_playwright() as p:
         q.fill('#d',BLD[lang]); q.wait_for_timeout(150)
         shown=[h for h in HINTS if vis(h)]
         check(not shown and not vis('#hintsum'),f'{lang}/{w}: Gebäude („{BLD[lang]}“) → keine Lkw-Hinweise {shown}')
+        q.fill('#d',CAR[lang]); q.wait_for_timeout(150)
+        shown=[h for h in HINTS if vis(h)]
+        check(not shown,f'{lang}/{w}: eigenes Auto („{CAR[lang]}“) → keine Lkw-Hinweise {shown} (Backlog 934)')
+        q.fill('#d',RAD[lang]); q.wait_for_timeout(150)
+        check(vis('#wheel'),f'{lang}/{w}: „{RAD[lang]}“ → Rad-Hinweis (Backlog 935)')
         q.fill('#d',MIX[lang]); q.wait_for_timeout(150)
         check(vis('#door'),f'{lang}/{w}: zusätzlich Lkw-Tür → Tür-Hinweis')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
