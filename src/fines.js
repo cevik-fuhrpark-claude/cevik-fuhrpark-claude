@@ -16,7 +16,11 @@ export const fineRef = (v) => { const s = str(v, { max: 80, field: 'Aktenzeichen
 const fineAuthority = (v) => str(v, { required: true, max: 200, field: 'Behörde' }).replace(/\s+/g, ' ');
 const REF_KEY_SQL = (x) => [' ', '.', '-', '/'].reduce((a, ch) => `REPLACE(${a},'${ch}','')`, `UPPER(COALESCE(${x},''))`);
 export const fineRefKey = (x) => String(x || '').toUpperCase().replace(/[ ./-]/g, '');
-const SAME_FINE_SQL = (ref, auth) => `${REF_KEY_SQL('reference')}=${REF_KEY_SQL(ref)} AND lower(authority)=lower(${auth})`;
+// Backlog 994: SQLite/D1 `lower()` faltet nur ASCII – „STADT MÜNCHEN“ (Briefkopf in Großschrift) blieb ≠ „Stadt München“,
+// „STRASSENVERKEHRSBEHÖRDE“ ≠ „Straßenverkehrsbehörde“, „Stadt Dortmund – Ordnungsamt“ (Gedankenstrich aus Word/PDF) ≠ „… - Ordnungsamt“.
+// Behördenschlüssel: lower() + Ä/Ö/Ü → ä/ö/ü, ß/ẞ → ss, Gedanken-/Geviertstrich → Bindestrich. Gespeichert wird weiter wie eingegeben.
+const AUTH_KEY_SQL = (x) => [['Ä', 'ä'], ['Ö', 'ö'], ['Ü', 'ü'], ['ẞ', 'ss'], ['ß', 'ss'], ['–', '-'], ['—', '-']].reduce((a, [f, t]) => `REPLACE(${a},'${f}','${t}')`, `lower(COALESCE(${x},''))`);
+const SAME_FINE_SQL = (ref, auth) => `${REF_KEY_SQL('reference')}=${REF_KEY_SQL(ref)} AND ${AUTH_KEY_SQL('authority')}=${AUTH_KEY_SQL(auth)}`;
 
 export const FINE_KINDS = ['anhoerung', 'zeugenfragebogen', 'bussgeldbescheid', 'verwarnung', 'maut', 'sonstiges'];
 export const OFFENSES = ['geschwindigkeit', 'abstand', 'parken', 'rotlicht', 'lenk_ruhezeit', 'ladung', 'maut', 'handy', 'sonstiges'];

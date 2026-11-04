@@ -33431,6 +33431,26 @@ await test('Backlog 993 (Blickwinkel „Zweites Schreiben derselben Bußgeldstel
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].fine_dup_open && STRINGS[l].fine_dup_open.length > 20, l);
   ok(STRINGS.de.help_fines_s.includes('anders geschrieben') && STRINGS.en.help_fines_s.includes('written differently') && STRINGS.uk.help_fines_s.includes('написаний інакше'), 'Hilfe DE/UK/EN');
 });
+await test('Backlog 994 (Blickwinkel „Bescheid mit Briefkopf in Großschrift – STADT MÜNCHEN, STRASSENVERKEHRSBEHÖRDE – zur schon erfassten Anhörung“): Behörde mit Umlauten in Großschrift, „SS“ statt „ß“ und Gedankenstrich statt Bindestrich gilt als dieselbe – Anlegen, Ändern, gleichzeitig; andere Behörde bleibt getrennt; gespeichert wie eingegeben; Hilfe DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const body = (reference, authority, kind = 'anhoerung') => ({ kind, authority, reference, offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 86400000).toISOString(), location: 'A9', plate_in_letter: 'XX 994', response_due: BERLIN_TODAY });
+  const a = await U.fleet.post('/api/fines', body('994.1', 'Landeshauptstadt München – Straßenverkehrsbehörde Bußgeldstelle')); eq(a.status, 201, JSON.stringify(a.data));
+  for (const auth of ['LANDESHAUPTSTADT MÜNCHEN - STRASSENVERKEHRSBEHÖRDE BUSSGELDSTELLE', 'Landeshauptstadt München — Strassenverkehrsbehörde Bussgeldstelle', 'LANDESHAUPTSTADT MÜNCHEN – STRAẞENVERKEHRSBEHÖRDE BUẞGELDSTELLE']) {
+    const d = await U.fleet.post('/api/fines', body('Az.: 994 1', auth, 'bussgeldbescheid')); eq(d.status, 409, auth); eq(d.data.error, 'duplicate_fine'); eq(d.data.id, a.data.id);
+  }
+  eq((await U.fleet.get(`/api/fines/${a.data.id}`)).data.fine.authority, 'Landeshauptstadt München – Straßenverkehrsbehörde Bußgeldstelle', 'gespeichert wie eingegeben');
+  eq((await U.fleet.post('/api/fines', body('994.1', 'Landeshauptstadt München Kreisverwaltungsreferat'))).status, 201, 'andere Behörde bleibt getrennt');
+  eq((await U.fleet.post('/api/fines', body('994.1', 'Stadt Münster – Bußgeldstelle'))).status, 201, 'Münster ≠ München');
+  // Ändern auf vorhandene Kombination in Großschrift → 409; eigene Schreibweise ändern → erlaubt
+  const b = await U.fleet.post('/api/fines', body('994.2', 'Kreis Unna')); eq(b.status, 201);
+  const u1 = await U.fleet.post(`/api/fines/${b.data.id}/commands`, { action: 'update', payload: { reference: '994.1', authority: 'LANDESHAUPTSTADT MÜNCHEN – STRASSENVERKEHRSBEHÖRDE BUSSGELDSTELLE' } }); eq(u1.status, 409); eq(u1.data.error, 'duplicate_fine');
+  const u2 = await U.fleet.post(`/api/fines/${a.data.id}/commands`, { action: 'update', payload: { authority: 'LANDESHAUPTSTADT MÜNCHEN – STRASSENVERKEHRSBEHÖRDE BUSSGELDSTELLE' } }); eq(u2.status, 200, JSON.stringify(u2.data));
+  // gleichzeitig, verschieden geschrieben → nur einer
+  const [p1, p2] = await Promise.all([U.fleet.post('/api/fines', body('994-9', 'Stadt Düsseldorf Ordnungsamt')), U.fleet.post('/api/fines', body('9949', 'STADT DÜSSELDORF ORDNUNGSAMT'))]);
+  eq([p1.status, p2.status].sort().join(), '201,409');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_fines_s.includes('STADT MÜNCHEN') && STRINGS.en.help_fines_s.includes('STADT MÜNCHEN') && STRINGS.uk.help_fines_s.includes('STADT MÜNCHEN'), 'Hilfe DE/UK/EN');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
