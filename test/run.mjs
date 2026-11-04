@@ -32740,6 +32740,20 @@ await test('Backlog 968 (Reserve Start-Modul): Startseite der Disposition (dispo
   ok(pct <= 63.5, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 63,5 %)');
 });
 
+await test('Backlog 967 (Fund aus 966): „Reifen ist abgefahren/blank, getauscht“ ist Reparaturvermerk wie „Reifen ist durch, getauscht“; „Reifen ist durch den Nagel platt“ → Pannen-Hinweis; „Kupplung am Auflieger defekt“ → Sattelkupplungs-Hinweis (nicht Getriebe/Kupplung)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => new RegExp(app.match(new RegExp(`^const ${n} = \\/(.+)\\/i;`, 'm'))[1], 'i');
+  const ty = rx('TYRE_HINT'), fl = rx('FLAT_HINT'), cp = rx('COUPLING_HINT'), gr = rx('GEAR_HINT');
+  for (const x of ['Reifen ist abgefahren, getauscht', 'Reifen blank, wurde ersetzt', 'Reifen hat Riss, gewechselt', 'Reifen ist durch, getauscht']) ok(!ty.test(recurFix(x)), 'Reparaturvermerk, kein Reifen-Hinweis: ' + x);
+  for (const x of ['Reifen ist abgefahren', 'Reifen ist abgefahren, muss getauscht werden', 'Reifen hat Nagel, Rad soll gewechselt werden', 'Reifen ist durch']) ok(ty.test(recurFix(x)), 'Reifen-Hinweis erwartet: ' + x);
+  for (const x of ['Reifen ist durch den Nagel platt', 'Reifen ist durch einen Nagel platt', 'reifen hinten links wegen schraube platt', 'Reifen ist platt']) ok(fl.test(recurFix(x)), 'Pannen-Hinweis erwartet: ' + x);
+  for (const x of ['Reifen ist durch', 'Straße ist durch Regen platt']) ok(!fl.test(recurFix(x)), 'kein Pannen-Hinweis: ' + x);
+  for (const x of ['kupplung am auflieger defekt', 'Kupplung vom Anhänger kaputt', 'Kupplung am Trailer ausgeschlagen']) { ok(cp.test(recurFix(x)), 'Kupplungs-(Sattel-)Hinweis erwartet: ' + x); ok(!gr.test(recurFix(x)), 'kein Getriebe-Hinweis: ' + x); }
+  ok(!cp.test(recurFix('kupplung am auflieger defekt, repariert')), 'Reparaturvermerk Sattelkupplung');
+  ok(gr.test(recurFix('kupplung defekt')) && !cp.test(recurFix('kupplung defekt')), 'Kupplung ohne Auflieger bleibt Getriebe/Kupplung');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
