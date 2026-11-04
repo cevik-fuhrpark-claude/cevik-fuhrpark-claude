@@ -9,7 +9,7 @@ import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday, STATES } from './holidays.js';
 import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, kmIn, unitIn, tireSizeSame, tireSizeFmt } from './hours.js';
-import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen, tzDiff, nextOpenLocal, holidayGaps } from './emhours.js';
+import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen, tzDiff, nextOpenLocal, holidayGaps, phoneIn } from './emhours.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
 // Backlog 381: alle bevorzugten Sprachen des Geräts in Reihenfolge prüfen (z. B. ru-RU, uk-UA → uk; vorher nur die erste → Deutsch)
@@ -6648,7 +6648,7 @@ async function viewEmergencyEdit() {
   const form = showArch ? '' : emFull ? `<p class="panel small" id="emfull" role="note">${esc(t('em_full').replace('{m}', d.max_active))}</p>` : `<section class="panel"><h2 style="margin-top:0">${esc(t(edit ? 'em_edit' : 'em_add'))}</h2><form id="emf">${edit ? `<input type="hidden" name="expected_updated_at" value="${esc(edit.updated_at || '')}">` : ''}
     <label>${esc(t('em_kind'))}</label><select name="kind">${d.kinds.map((k) => opt(k, e.kind, t('em_kind_' + k))).join('')}</select>
     <label>${esc(t('em_label'))}</label><input name="label" maxlength="60" required value="${esc(e.label || '')}">
-    <label>${esc(t('em_phone'))}</label><input name="phone" type="tel" inputmode="tel" maxlength="30" required value="${esc(e.phone || '')}"><p class="small muted" id="emnat" role="status" hidden></p>
+    <label>${esc(t('em_phone'))}</label><input name="phone" type="tel" inputmode="tel" maxlength="80" required value="${esc(e.phone || '')}"><p class="small muted" id="emnat" role="status" hidden></p>
     <label>${esc(t('em_note'))}</label><input name="note" maxlength="200" value="${esc(e.note || '')}">
     <fieldset id="emhrs" class="panel" style="margin:.6rem 0"><legend>${esc(t('em_hours'))}</legend><p class="small muted" style="margin-top:0">${esc(t('em_hours_hint'))}</p>
       <div class="chips" role="group" aria-label="${esc(t('em_hours_days'))}">${[1, 2, 3, 4, 5, 6, 7].map((d) => `<label class="check" style="white-space:nowrap;display:inline-flex;margin-right:10px"><input type="checkbox" data-emwd="${d}" data-cv="emwd${d}" data-cvl="${esc(t('em_hours_days') + ': ' + t('em_wd_' + d))}"${e.hours && e.hours.days.includes(String(d)) ? ' checked' : ''}> ${esc(t('em_wd_' + d))}</label>`).join('')}</div>
@@ -6668,8 +6668,10 @@ async function viewEmergencyEdit() {
   $$('[data-emtab]').forEach((b) => (b.onclick = () => { S.emArch = b.dataset.emtab === '1'; S.emEdit = null; viewEmergencyEdit(); }));
   const f = $('#emf');
   if (f) {
-    const natHint = () => { const a = telAbroad(f.elements.phone.value); $('#emnat').hidden = !a; $('#emnat').textContent = a ? t('em_phone_national').replace('{p}', a.label) : ''; };
+    const natHint = () => { const a = telAbroad(phoneIn(f.elements.phone.value)); $('#emnat').hidden = !a; $('#emnat').textContent = a ? t('em_phone_national').replace('{p}', a.label) : ''; };
     f.elements.phone.addEventListener('input', natHint); natHint();
+    // Backlog 992: aus Signatur/Website eingefügte Nummer („Tel.: …“, „tel:+49…“, Gedankenstrich) beim Verlassen bereinigen (gleiche Regel wie Server)
+    f.elements.phone.addEventListener('change', () => { const el = f.elements.phone; const v = phoneIn(el.value); if (v && v !== el.value) { el.value = v; natHint(); } });
     $('#emnohol').onchange = () => { $('#emstate').disabled = !$('#emnohol').checked; };
     $('#emscope').onchange = () => { const sc = $('#emscope').value; $('#emsite').hidden = sc !== 'site'; $('#emveh').hidden = sc !== 'vehicle'; };
     const cc = $('#emcancel'); if (cc) cc.onclick = () => { S.emEdit = null; viewEmergencyEdit(); };

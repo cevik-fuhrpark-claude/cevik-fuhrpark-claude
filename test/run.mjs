@@ -33381,6 +33381,27 @@ await test('Backlog 991 (Blickwinkel „Wareneingang vom Lieferschein: Position 
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].rcn_hint.includes('{ws}'), l + ': Lager im Hinweis');
   ok(STRINGS.de.help_stock_s.includes('Artikel fehlt im Lager – neu anlegen') && STRINGS.en.help_stock_s.includes('Item missing in stock – create it') && STRINGS.uk.help_stock_s.includes('Артикула немає на складі – створити новий'), 'Hilfe DE/UK/EN');
 });
+await test('Backlog 992 (Blickwinkel „Leitung überträgt die Rufnummer aus E-Mail-Signatur, Website oder Visitenkarte des Pannendienstes“): Bezeichnung vorne („Tel.:“, „Telefon“, „Hotline“, „tel:“, „тел.“), Gedankenstrich, unsichtbare Zeichen und Satzpunkt werden bereinigt; Fax und Text hinter der Nummer weiter abgewiesen; Dublette erkannt; Feld am Handy nicht mehr bei 30 Zeichen abgeschnitten; Hilfe DE/UK/EN', async () => {
+  const { phoneIn } = await import('../public/emhours.js');
+  eq(phoneIn('Tel.: +49 (0) 231 / 123 45 67'), '+49 (0) 231 / 123 45 67'); eq(phoneIn('Tel.-Nr.: 0231/123456'), '0231/123456'); eq(phoneIn('tel:+49231123456'), '+49231123456');
+  eq(phoneIn('Hotline: 0800 111 222.'), '0800 111 222', 'Satzpunkt'); eq(phoneIn('0231 – 123456'), '0231 - 123456', 'Gedankenstrich'); eq(phoneIn('\u200e+49 231 123456\u200e'), '+49 231 123456', 'Richtungszeichen');
+  eq(phoneIn('тел.: +380 44 123 4567'), '+380 44 123 4567'); eq(phoneIn('Phone: +44 20 1234 5678'), '+44 20 1234 5678'); eq(phoneIn('Mobil 0171 1234567'), '0171 1234567');
+  eq(phoneIn('Fax: 0231 1234'), 'Fax: 0231 1234', 'Fax nie übernommen'); eq(phoneIn('Telefax 0231 1234'), 'Telefax 0231 1234'); eq(phoneIn('0231 123 (24 h)'), '0231 123 (24 h)', 'Text dahinter bleibt'); eq(phoneIn('+49 (0)123 456-78'), '+49 (0)123 456-78', 'unverändert');
+  const { U } = await freshWorld();
+  const r = await U.fleet.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst 992', phone: 'Service-Hotline: +49 (0) 800 / 111 22 – 33.' });
+  eq(r.status, 201, JSON.stringify(r.data));
+  const list = (await U.fleet.get('/api/emergency/contacts')).data.contacts; eq(list.find((c) => c.id === r.data.id).phone, '+49 (0) 800 / 111 22 - 33', 'bereinigt gespeichert');
+  const dup = await U.fleet.post('/api/emergency/contacts', { kind: 'panne', label: 'Pannendienst 992 b', phone: 'tel:+4980011122-33' }); eq(dup.status, 409, 'dieselbe Nummer erkannt'); eq(dup.data.error, 'duplicate_contact');
+  for (const phone of ['Fax: 0231 1234', '0231 123 (24 h)', 'Tel.: ']) { const b = await U.fleet.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo 992', phone }); eq(b.status, 400, phone); }
+  const long = await U.fleet.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo 992', phone: 'Telefon: 0231 123 456 789 012 345 678 9' }); eq(long.status, 400, 'nach Bereinigung über 30 Zeichen');
+  const p = await U.fleet.req('PATCH', `/api/emergency/contacts/${r.data.id}`, { phone: 'Telefon 0800 111 2233' }); eq(p.status, 200); eq(p.data.changed.join(), 'phone');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<input name="phone" type="tel" inputmode="tel" maxlength="80"'), 'Feld schneidet Eingefügtes nicht bei 30 Zeichen ab');
+  ok(app.includes("f.elements.phone.addEventListener('change', () => { const el = f.elements.phone; const v = phoneIn(el.value);") && app.includes('telAbroad(phoneIn(f.elements.phone.value))'), 'Feld beim Verlassen bereinigt, Auslandshinweis mit bereinigter Nummer');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_accident_s.includes('E-Mail-Signatur') && STRINGS.uk.help_accident_s.includes('підпису листа') && STRINGS.en.help_accident_s.includes('e-mail signature'), 'Hilfe DE/UK/EN');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

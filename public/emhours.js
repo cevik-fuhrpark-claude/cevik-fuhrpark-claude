@@ -5,6 +5,17 @@
 // (z. B. Fr 18:00 – Sa 06:00 gehört zum Freitag). Gemeinsam von Server (Prüfung) und Oberfläche (Anzeige) genutzt.
 import { holidayIn, federalHoliday, stateHoliday } from './holidays.js';
 
+// Backlog 992 (Blickwinkel „Leitung überträgt die Rufnummer aus E-Mail-Signatur, Website oder Visitenkarte des Pannendienstes“):
+// eingefügt kamen „Tel.: +49 231 123456“, „Telefon 0231 123456“, „Hotline: 0800 …“, „tel:+49231…“ (Link einer Website), „0231 – 123456“
+// (Gedankenstrich), unsichtbare Richtungs-/Nullbreitezeichen und ein Satzpunkt am Ende → „nur Ziffern …“ bzw. am Handy bei 30 Zeichen
+// abgeschnitten. Entfernt wird nur eine Bezeichnung vorne (nie „Fax“), vereinheitlicht werden Striche und Leerraum; Text hinter der
+// Nummer („(24 h)“) bleibt abgewiesen – nie geraten. Server (`normPhone` in src/emergency.js) und Oberfläche (Feld beim Verlassen).
+const PHONE_LABEL_RX = /^(?:tel(?:efon)?(?:[-\s.]*(?:nr|nummer))?|rufnummer|fon|phone(?:\s+(?:no|number))?|ph|mob(?:il|ile|ilfunk)?|handy|hotline|notruf(?:nummer)?|service(?:nummer|[-\s]?hotline)?|т(?:ел(?:ефон)?)?|моб(?:ільний|ильный)?|номер(?:\s+телефон[уа])?|гаряча\s+лінія|горячая\s+линия)\.?\s*(?:[:=]\s*)?(?=[+(\d])/i;
+export function phoneIn(raw) {
+  return String(raw ?? '').replace(/[\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g, '').replace(/[\s\u00a0\u202f]+/g, ' ').trim()
+    .replace(PHONE_LABEL_RX, '').replace(/[\u2010-\u2015\u2212]/g, '-').replace(/\s*[.,;]$/, '').trim();
+}
+
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const isHm = (s) => typeof s === 'string' && HM.test(s);
 

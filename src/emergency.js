@@ -3,7 +3,7 @@
 // Je Umgebung getrennt (Test/Betrieb). Archiv statt Löschen. Lesen: alle angemeldeten Rollen (Fahrer brauchen die Nummern unterwegs);
 // gepflegt von Inhaber, Fuhrparkleitung und Disposition.
 import { nowIso, uuid, bad, forbidden, notFound, str, normPlate, conflict, laterIso, flag } from './util.js';
-import { normDays, isHm, MORE_MAX } from '../public/emhours.js';
+import { normDays, isHm, MORE_MAX, phoneIn } from '../public/emhours.js';
 import { STATES } from '../public/holidays.js';
 import { AXLES, axleFits } from './tires.js';
 import { audit } from './auth.js';
@@ -18,7 +18,8 @@ const sortContacts = (a, b) => KIND_ORDER(a.kind) - KIND_ORDER(b.kind) || a.labe
 
 // Rufnummer: Ziffern mit üblichen Trennzeichen, optional führendes +; 3–20 Ziffern. Gespeichert wie eingegeben (Leerzeichen zusammengefasst).
 export function normPhone(v) {
-  const s = str(v, { required: true, max: 30, field: 'Telefonnummer' }).replace(/\s+/g, ' ');
+  // Backlog 992: aus Signatur/Website/Visitenkarte eingefügt („Tel.: …“, „tel:+49…“, Gedankenstrich) – erst bereinigen, dann 30 Zeichen
+  const s = str(phoneIn(str(v, { required: true, max: 80, field: 'Telefonnummer' })), { required: true, max: 30, field: 'Telefonnummer' });
   const digits = s.replace(/\D/g, '').length;
   if (!/^\+?[0-9(][0-9 ()/.-]*[0-9]$/.test(s) || digits < 3 || digits > 20) throw bad('validation', 'Telefonnummer: nur Ziffern, Leerzeichen, + ( ) / - (3 bis 20 Ziffern).');
   return s;
