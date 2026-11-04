@@ -32943,6 +32943,7 @@ await test('Backlog 983 (Blickwinkel „Werkstatt-Tablet: Mechaniker diktiert Te
   ok(app.includes('data-pqconv') && app.includes('data-pqname') && app.includes('data-pqtake') && app.includes("!['', '1'].includes(inp.value.trim()) ? null : qtyIn(nm.value)"), 'Knopf nur bei unveränderter Menge');
   ok(app.includes("if (action === 'add_part') partQtyWatch();") && app.includes('const pw = parseQty(raw); const q = pw ? pw.n'), 'Bestandshinweis versteht Zahlwörter');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(/\{d\}/.test(STRINGS[l].pq_take) && /\{q\}/.test(STRINGS[l].pq_take), `${l}.pq_take`);
+  for (const [l, w] of [['de', '„vier Liter“'], ['uk', '«чотири літри»'], ['en', '“four litres”']]) ok(STRINGS[l].help_stock_s.split('|').some((x) => x.includes(w) && x.includes('1½ l')), `Hilfe Lager ${l}`);
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-teile-diktat.py'), 'UI-Prüfung eingetragen');
 });
 await test('Backlog 974 (Blickwinkel „Werkstatt bucht Teilemengen vom Lieferschein“): Menge mit passender Einheit („2 Stk.“, „5 l“, „2x“, „3 шт“) im Lager, Wareneingang, Inventur und am Auftrag; fremde Einheit mit eigener Meldung (DE/UK/EN), keine Umrechnung', async () => {
