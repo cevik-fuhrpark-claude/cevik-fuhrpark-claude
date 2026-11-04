@@ -469,6 +469,10 @@ Object.assign(VALIDATION_TEXTS.uk, { gross_amount: '{f}: «{v}» – це сум
 Object.assign(VALIDATION_TEXTS.en, { gross_amount: '{f}: “{v}” is a gross amount – please enter the net amount (excluding VAT).' });
 Object.assign(VALIDATION_TEXTS.uk, { int_sep: '{f}: «{v}» – вводьте без розділювача тисяч (напр. {x}).' });
 Object.assign(VALIDATION_TEXTS.en, { int_sep: '{f}: “{v}” – please enter without thousands separator (e.g. {x}).' });
+// Backlog 973: Arbeitszeit „1:75“ (Server-Meldung „<Feld>: „<Wert>“ – Minuten nur 0 bis 59 …“)
+Object.assign(VALIDATION_TEXTS.uk, { hm_min: '{f}: «{v}» – хвилини лише від 0 до 59 (напр. 1:30 = 1,5 години).' });
+Object.assign(VALIDATION_TEXTS.en, { hm_min: '{f}: “{v}” – minutes only 0 to 59 (e.g. 1:30 = 1.5 hours).' });
+// Backlog 973: Umrechnung unter dem Stundenfeld („= 1 Std. 30 Min.“) und Beispiel im Feld
 export function translateValidation(lang, msg) {
   const T = VALIDATION_TEXTS[lang]; if (!T || typeof msg !== 'string') return null;
   if (Object.hasOwn(T, msg) && msg.endsWith('.') && msg.includes(' ')) return T[msg];
@@ -485,6 +489,7 @@ export function translateValidation(lang, msg) {
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): mindestens (-?[\d.e+]+)\.$/))) return T.num_min.replace('{f}', f(m[1])).replace('{a}', fmtLimit(lang, m[2]));
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): „(.{0,40})“ – bitte ohne Tausendertrennzeichen eingeben \(z\. B\. (-?\d{1,12})\)\.$/)) && T.int_sep) return T.int_sep.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]).replace('{x}', () => m[3]);
   if ((m = msg.match(/^(.{1,60}): „(.{0,40})“ ist ein Bruttobetrag – bitte den Nettobetrag \(ohne MwSt\.\) eingeben\.$/)) && T.gross_amount) return T.gross_amount.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]);
+  if ((m = msg.match(/^(.{1,60}): „(.{0,40})“ – Minuten nur 0 bis 59 \(z\. B\. 1:30 = 1,5 Stunden\)\.$/)) && T.hm_min) return T.hm_min.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]);
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): „(.{0,40})“ ist mehrdeutig/))) return T.ambiguous.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]);
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): (?:gültiges )?Datum im Format JJJJ-MM-TT\.$/))) return T.date_fmt.replace('{f}', f(m[1]));
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): Datum außerhalb des zulässigen Bereichs\.$/))) return T.date_range.replace('{f}', f(m[1]));

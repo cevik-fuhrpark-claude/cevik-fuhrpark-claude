@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase, day as pastDay } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, hoursNum, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile, fineVehiclesSql, gespannVehiclesSql } from './fines.js';
@@ -1857,7 +1857,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       notifyKind = 'resumed';
       break;
     case 'record_work': {
-      const hours = num(p.hours, { min: 0.05, max: 24, field: 'Stunden', decimalPoint: pointDec(user), decimalComma: commaDec(user) });
+      const hours = hoursNum(p.hours, { min: 0.05, max: 24, field: 'Stunden', decimalPoint: pointDec(user), decimalComma: commaDec(user) });
       const desc = str(p.description, { required: true, max: 2000, field: 'Tätigkeit' });
       const date = str(p.work_date, { max: 10 }) || berlinDate();
       if (!isCalendarDate(date)) throw bad('validation', 'Datum ungültig.');

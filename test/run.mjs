@@ -2024,7 +2024,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('ev_km_greater ev_km_smaller ext_km_lower tread_rise dc_km_lower dc_km_digits mf_km_digits imp_km_digits odo_digits kf_km_lower mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('wh_m wh_hm ev_km_greater ev_km_smaller ext_km_lower tread_rise dc_km_lower dc_km_digits mf_km_digits imp_km_digits odo_digits kf_km_lower mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -23429,7 +23429,7 @@ await test('Backlog 419 (Blickwinkel „Mechaniker bucht Arbeitszeit für zwei A
     if (k !== 'wd_this' && k !== 'wd_same_case') ok(/\{[dh]\}/.test(STRINGS[l][k]), `${k} mit Platzhalter ${l}`);
   }
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("if (action === 'record_work') workDayWatch(c);") && app.includes("api('GET', '/api/work-day?date='") && app.includes('data-wdsame'), 'Formular lädt die Tagessumme');
+  ok(/if \(action === 'record_work'\) (\{ )?workDayWatch\(c\);/.test(app) && app.includes("api('GET', '/api/work-day?date='") && app.includes('data-wdsame'), 'Formular lädt die Tagessumme');
 });
 
 await test('Backlog 420 (Folge aus 419, geteiltes Werkstatt-Tablet): Einstellung „höchstens Stunden je Konto und Tag“ (leer = 24, 1–96 ganzzahlig) wirkt auf Vorprüfung, Stapel-Guard, Tagesanzeige und Meldungstext (DE/UK/EN)', async () => {
@@ -32830,6 +32830,40 @@ await test('Backlog 972 (Blickwinkel „Monatsende: Kilometerstände für die Le
   eq(pasteNum('km 12'), null, 'Preisfeld: Bezeichnung nicht entfernt'); eq(pasteNum('1.234,56 €'), '1.234,56', 'wie bisher');
   ok(app.includes("pasteNum(raw, el.getAttribute('inputmode') === 'numeric')"), 'Einfügen übergibt numeric');
   ok(fs.readFileSync(new URL('../scripts/ui-einfuegen-zahlen.py', import.meta.url), 'utf8').includes('km-Stand: 123.456'), 'UI-Prüfung erweitert');
+});
+
+await test('Backlog 973 (Blickwinkel „Mechaniker erfasst Arbeitszeit in Stunden und Minuten“): „1:30“, „1 h 30“, „1 Std. 30 Min.“, „90 min“, „1,5 h“, „2 год 15 хв“ am Server; Minuten > 59 mit eigener Meldung (DE/UK/EN); Umrechnung unter dem Feld', async () => {
+  const { hoursNum } = await import('../src/util.js');
+  const o = { min: 0.05, max: 24, field: 'Stunden', decimalComma: true };
+  for (const [v, x] of [['1:30', 1.5], ['0:45', 0.75], ['2:00 h', 2], ['1 h 30', 1.5], ['1h30', 1.5], ['1h 30m', 1.5], ['1 Std. 30 Min.', 1.5], ['1 Stunde und 15 Minuten', 1.25], ['1 hr 30 min', 1.5],
+    ['90 min', 1.5], ['90 Min.', 1.5], ['45 mins', 0.75], ['30 Minuten', 0.5], ['1,5 h', 1.5], ['1,5 Std.', 1.5], ['2 Stunden', 2], ['1.5 hrs', 1.5], ['3 hours', 3],
+    ['2 год 15 хв', 2.25], ['2 години', 2], ['40 хв', 40 / 60], ['1 час 30 мин', 1.5], ['1,5', 1.5], ['0,75', 0.75], [2, 2], ['1:20', 1 + 20 / 60]]) ok(Math.abs(hoursNum(v, o) - x) < 1e-9, `${v} → ${x} (ist ${hoursNum(v, o)})`);
+  for (const [v, msg] of [['1:75', /Minuten nur 0 bis 59/], ['1 h 60', /Minuten nur 0 bis 59/], ['25:00', /zulässig von 0.05 bis 24/], ['2 min', /zulässig von 0.05 bis 24/], ['1500 min', /zulässig/], ['h', /ungültige Zahl/], ['1:5', /ungültige Zahl/], ['eineinhalb', /ungültige Zahl/], ['1 km', /ungültige Zahl/]]) {
+    let e = null; try { hoursNum(v, o); } catch (x) { e = x; } ok(e && msg.test(e.message), `abgewiesen: ${v} (${e && e.message})`);
+  }
+  // Ende-zu-Ende: Buchung, Summe, Tagesgrenze mit umgerechneten Minuten
+  const { U, cmd, toRepair } = await freshWorld();
+  const id = await toRepair();
+  let r = await cmd(U.ws, id, 'record_work', { hours: '1:30', description: 'Rückleuchte getauscht' }); eq(r.status, 200, JSON.stringify(r.data));
+  r = await cmd(U.ws, id, 'record_work', { hours: '45 min', description: 'Probefahrt' }); eq(r.status, 200, JSON.stringify(r.data));
+  const d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  const hs = d.work.map((w) => w.hours).sort(); eq(JSON.stringify(hs), JSON.stringify([0.75, 1.5]), 'gespeicherte Stunden');
+  r = await cmd(U.ws, id, 'record_work', { hours: '1:75', description: 'x' }); eq(r.status, 400); ok(/Minuten nur 0 bis 59/.test(r.data.message), r.data.message);
+  r = await cmd(U.ws, id, 'record_work', { hours: '22:00', description: 'zu viel' }); eq(r.status, 400, 'Tagesgrenze 24 h: 2,25 + 22 > 24'); 
+  // Übersetzung der neuen Meldung
+  const { translateValidation } = await import('../public/i18n.js');
+  const m = 'Stunden: „1:75“ – Minuten nur 0 bis 59 (z. B. 1:30 = 1,5 Stunden).'; eq(r.status, 400);
+  eq(translateValidation('en', m), 'Hours: “1:75” – minutes only 0 to 59 (e.g. 1:30 = 1.5 hours).'); eq(translateValidation('uk', m), 'Години: «1:75» – хвилини лише від 0 до 59 (напр. 1:30 = 1,5 години).');
+  // Oberfläche: Beispiel im Feld, Umrechnung (gleicher Ausdruck wie in app.js)
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('placeholder="${esc(t(\'wh_ph\'))}" aria-describedby="whconv"'), 'Beispiel im Stundenfeld');
+  const a = app.indexOf("const H_U = "); const b = app.indexOf('\nfunction hoursWatch()', a); ok(a > 0 && b > a, 'hoursOf vorhanden');
+  const { STRINGS } = await import('../public/i18n.js');
+  const fn = new Function('t', app.slice(a, b) + '; return { hoursOf, hoursText };')((k) => STRINGS.de[k]);
+  for (const [v, x] of [['1:30', '= 1 Std. 30 Min.'], ['1,30', '= 1 Std. 18 Min.'], ['1,5', '= 1 Std. 30 Min.'], ['90 min', '= 1 Std. 30 Min.'], ['2', '= 2 Std.'], ['0,25', '= 15 Min.'], ['2 год 15 хв', '= 2 Std. 15 Min.']]) eq(fn.hoursText(fn.hoursOf(v)), x, v);
+  eq(fn.hoursOf('1:75'), null); eq(fn.hoursOf('abc'), null); eq(fn.hoursOf(''), null);
+  for (const l of ['de', 'uk', 'en']) for (const k of ['wh_ph', 'wh_hm', 'wh_h', 'wh_m']) ok(STRINGS[l][k], `${l}.${k}`);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-arbeitszeit-minuten.py'), 'UI-Prüfung eingetragen');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
