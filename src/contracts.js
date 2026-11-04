@@ -146,7 +146,7 @@ const foldDe = (x) => lcDe(x).replace(/ß/g, 'ss');
 export const noKey = (x) => NO_SEP.reduce((a, ch) => a.split(ch).join(''), foldDe(x).replace(/\s+/g, ''));
 export const partnerKey = (x) => DASHES.reduce((a, ch) => a.split(ch).join('-'), foldDe(x)).replace(/\s+/g, ' ');
 const FOLD_SQL = (x) => [['Ä', 'ä'], ['Ö', 'ö'], ['Ü', 'ü'], ['ẞ', 'ss'], ['ß', 'ss']].reduce((a, [f, t]) => `REPLACE(${a},'${f}','${t}')`, `LOWER(TRIM(COALESCE(${x},'')))`);
-const NO_KEY_SQL = (x) => NO_SEP.reduce((a, ch) => `REPLACE(${a},'${ch}','')`, FOLD_SQL(x));
+export const NO_KEY_SQL = (x) => NO_SEP.reduce((a, ch) => `REPLACE(${a},'${ch}','')`, FOLD_SQL(x));
 const PARTNER_KEY_SQL = (x) => DASHES.reduce((a, ch) => `REPLACE(${a},'${ch}','-')`, FOLD_SQL(x));
 // Bezeichnung vor der Nummer, wie sie aus Schreiben/PDF mitkopiert wird („Vertragsnr.: …“, „Versicherungsschein-Nr. …“, „Nr. …“) – nie gespeichert
 const NO_LABEL = /^(?:(?:(?:leasing|miet|finanzierungs|wartungs|service|kredit|versicherungs)?vertrags?|versicherungs(?:schein)?|polic(?:e|en)|contract|policy|agreement)[\s-]*(?:nr\.?|nummer|no\.?|number)|nr\.|no\.|№)\s*[:#]?\s*(?=\S)/iu;

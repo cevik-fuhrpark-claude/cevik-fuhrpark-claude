@@ -6,6 +6,15 @@ import { occurredCsv, nowIso, laterIso, conflict, uuid, bad, forbidden, notFound
 import { audit } from './auth.js';
 import { csvCell, csvText } from './maintenance.js';
 import { siteSelection } from './reports.js';
+import { noKey, NO_KEY_SQL } from './contracts.js';
+
+// Backlog 998 (Blickwinkel „Versicherer schreibt zum selben Schaden erneut, eine Kollegin legt den Fall am zweiten Vorgang an“):
+// Bezeichnung vor der Schadennummer, wie sie aus Schreiben/PDF mitkopiert wird („Schadennummer:“, „Ihre Schaden-Nr.“, „Claim No.“, „Nr.“) – nie gespeichert;
+// nur neu eingegebene Werte (unverändert mitgeschickte Altwerte gelten nicht als Änderung). „NR-2024-1“ bleibt (Punkt nötig).
+const CLAIM_LABEL = /^(?:(?:(?:ihre|unsere|your|our)\s+)?(?:schaden(?:fall)?|leistungsfall|claim)[\s-]*(?:nr\.?|nummer|no\.?|number)|nr\.|no\.|№)\s*[:#]?\s*(?=\S)/iu;
+export const claimNoIn = (x) => { if (x === undefined || x === null) return x; const s = String(x).replace(/\s+/g, ' ').trim(); return s.replace(CLAIM_LABEL, '').trim(); };
+// Vergleich wie die Vertragsnummer (Backlog 996): ohne Leerzeichen/Punkte/Striche, Groß-/Kleinschreibung und ß/ss egal; erst ab 5 Zeichen (kurze Nummern zu mehrdeutig)
+const CLAIM_KEY_MIN = 5;
 
 // Backlog 393: Gegner-Kennzeichen ohne einen einzigen Buchstaben/Ziffer („???“, „-“) abweisen – Format sonst frei (ausländische Kennzeichen)
 const plateText = (v) => { if (v && !/[\p{L}\p{N}]/u.test(v)) throw bad('validation', 'Kennzeichen Unfallgegner: bitte Buchstaben/Ziffern laut Unfallbericht angeben oder leer lassen.'); return v; };
@@ -31,10 +40,11 @@ export function day(v, field, required = false, future = false) {
 function readBody(body, existing = {}, user = null) {
   const dc = user ? commaDec(user) : undefined; const dp = pointDec(user); // Dezimalkomma je Sprache der Person (19.10.2026: „150,555“ in DE hieß „mehrdeutig“ statt „höchstens 2 Nachkommastellen“)
   const pick = (k) => (body[k] !== undefined ? body[k] : existing[k]);
+  const fresh = (k) => { const x = pick(k); return x == null || x === existing[k] ? x : claimNoIn(x); }; // Backlog 998
   const f = {
     insurer: str(pick('insurer'), { max: 120, field: 'Versicherer' }),
     contract_id: str(pick('contract_id'), { max: 40, field: 'Versicherungsvertrag' }),
-    claim_no: str(pick('claim_no'), { max: 60, field: 'Schadennummer' }),
+    claim_no: str(fresh('claim_no'), { max: 60, field: 'Schadennummer' }),
     reported_on: day(pick('reported_on'), 'Gemeldet am', true),
     // leerer/fehlender Status behält den gespeicherten (18.10.2026: setzte einen regulierten Fall still auf „gemeldet“ zurück)
     status: oneOf(body.status !== undefined && body.status !== null && body.status !== '' ? body.status : (existing.status || 'gemeldet'), CLAIM_STATUS, 'Status'),
@@ -52,7 +62,7 @@ function readBody(body, existing = {}, user = null) {
     // Kein Namens-/Adressfeld (Datenschutz-Frage offen) – wer Namen braucht, trägt sie wie bisher unter „Bemerkung“ ein.
     opponent_plate: plateText(str(pick('opponent_plate'), { max: 20, field: 'Kennzeichen Unfallgegner' })),
     opponent_insurer: str(pick('opponent_insurer'), { max: 120, field: 'Versicherer Unfallgegner' }),
-    opponent_claim_no: str(pick('opponent_claim_no'), { max: 60, field: 'Schadennummer Unfallgegner' }),
+    opponent_claim_no: str(fresh('opponent_claim_no'), { max: 60, field: 'Schadennummer Unfallgegner' }),
     // Polizeiliche Anzeige (Teilagent „Kraftstoffdiebstahl am Rastplatz“, 24.10.2026): optional, nur laut Anzeigebestätigung bzw. Angabe des Fahrers
     police_station: str(pick('police_station'), { max: 120, field: 'Polizeidienststelle' }),
     police_ref: str(pick('police_ref'), { max: 60, field: 'Polizeiliches Aktenzeichen' }),
@@ -154,12 +164,26 @@ export async function claimForCase(env, caseId, vehicleId, c = null) {
       FROM insurance_claims ic JOIN vehicles v ON v.id<>?2 AND ${PN('v.plate')}=${PN('ic.opponent_plate')} WHERE ic.case_id=?1 AND ic.opponent_plate IS NOT NULL
     UNION ALL SELECT 'named', ic.case_id, NULL, NULL, k.case_no, k.occurred_at, ic.status, NULL, NULL, NULL, NULL, k.status, k.created_at, NULL, NULL, NULL, NULL, NULL, ic.opponent_plate, NULL, NULL, NULL, NULL, NULL, NULL, v.plate, vb.plate, NULL, NULL, NULL
       FROM vehicles vb JOIN insurance_claims ic ON ic.environment=?3 AND ic.opponent_plate IS NOT NULL AND ic.vehicle_id<>vb.id AND ic.status IN ('gemeldet','in_pruefung') AND ${PN('ic.opponent_plate')}=${PN('vb.plate')}
-      JOIN cases k ON k.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id WHERE vb.id=?2` : ''}`).bind(caseId, vehicleId, ...(c ? [c.environment] : [])).all()).results;
+      JOIN cases k ON k.id=ic.case_id JOIN vehicles v ON v.id=ic.vehicle_id WHERE vb.id=?2
+    UNION ALL SELECT * FROM (SELECT 'sameno', o.case_id, NULL, o.insurer, k.case_no, o.reported_on, o.status, NULL, NULL, NULL, NULL, k.status, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, v.plate, o.claim_no, NULL, NULL, NULL
+      FROM insurance_claims me JOIN insurance_claims o ON o.environment=me.environment AND o.case_id<>me.case_id AND COALESCE(o.claim_no,'')<>''
+        AND ${NO_KEY_SQL('o.claim_no')}=${NO_KEY_SQL('me.claim_no')}
+      JOIN cases k ON k.id=o.case_id AND k.duplicate_of IS NULL JOIN vehicles v ON v.id=o.vehicle_id
+      WHERE me.case_id=?1 AND length(${NO_KEY_SQL('me.claim_no')})>=${CLAIM_KEY_MIN} ORDER BY o.reported_on DESC LIMIT 5)` : ''}`).bind(caseId, vehicleId, ...(c ? [c.environment] : [])).all()).results;
   const claim = rows.find((r) => r.t === 'claim');
   const today = berlinDate();
   const shaped = claim ? shape(Object.fromEntries(Object.entries(claim).filter(([k]) => !['t', 'partner', 'contract_no', 'end_date', 'ended_on', 'start_date'].includes(k))), today) : null;
   if (shaped && c) { const ov = ownOpponent(rows.filter((r) => r.t === 'ownveh'), shaped.opponent_plate, c); if (ov) shaped.opponent_vehicle = ov; }
   const namedIn = c ? namedAsOpponent(rows.filter((r) => r.t === 'named'), c) : [];
+  // Backlog 998: dieselbe Schadennummer (Schreibweise egal, `noKey`) steht schon an einem anderen Versicherungsfall dieser Umgebung –
+  // vermutlich derselbe Schaden doppelt erfasst (Gespann: Zugmaschine/Anhänger dürfen dieselbe Nummer haben; die App blendet sie dort aus).
+  // Nur Hinweis, keine Sperre, keine Verknüpfung. Zeilen 'sameno': id = Vorgang, claim_no = Vorgangsnummer, note = Vorgangsstatus, partner = Kennzeichen, contract_no = Schadennummer
+  if (shaped) {
+    const k = noKey(shaped.claim_no);
+    const same = k.length >= CLAIM_KEY_MIN ? rows.filter((r) => r.t === 'sameno' && noKey(r.contract_no) === k)
+      .map((r) => ({ case_id: r.id, case_no: r.claim_no, plate: r.partner, insurer: r.insurer, claim_no: r.contract_no, claim_status: r.status, status: r.note })) : [];
+    if (same.length) shaped.same_claim_no = same;
+  }
   return {
     claim: shaped,
     ...(namedIn.length ? { opponent_in_claims: namedIn } : {}),
@@ -271,7 +295,10 @@ export async function claimOverview(env, user, envName, query = {}) {
     const low = fold(q);
     const pk = normPlate(q);
     const plateHit = (x) => { if (!pk) return false; const n = normPlate(x); return !!n && (n.includes(pk) || (n.length >= 5 && pk.endsWith(n))); };
+    // Backlog 998: Nummern ohne Leerzeichen/Punkte/Striche verglichen („KS 2024/123 456“ = „ks2024123456“), ab 4 Zeichen
+    const nk = noKey(q); const noHit = (x) => nk.length >= 4 && noKey(x).includes(nk);
     list = list.filter((c) => [c.case_no, c.insurer, c.claim_no, c.opponent_insurer, c.opponent_claim_no, c.appraiser, c.police_station, c.police_ref].some((x) => x && fold(x).includes(low))
+      || [c.case_no, c.claim_no, c.opponent_claim_no, c.police_ref].some((x) => x && noHit(x))
       || [c.plate, c.opponent_plate, ...(c.fp_search ? String(c.fp_search).split('|') : [])].some((x) => x && (fold(x).includes(low) || plateHit(x))));
   }
   for (const c of list) delete c.fp_search;

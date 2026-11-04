@@ -33523,6 +33523,43 @@ await test('Backlog 997 (Folge aus 996): Vertragsübersicht fasst Vertragspartne
   const { STRINGS } = await import('../public/i18n.js');
   ok(STRINGS.de.help_contracts_s.includes('Auswahl „Vertragspartner“ in der Vertragsübersicht fasst') && STRINGS.uk.help_contracts_s.includes('Вибір «Контрагент»') && STRINGS.en.help_contracts_s.includes('The “Contract partner” selection'), 'Hilfe DE/UK/EN');
 });
+await test('Backlog 998 (Blickwinkel „Versicherer schreibt zum selben Schaden erneut, Kollegin legt den Fall am zweiten Vorgang an“): gleiche Schadennummer (Schreibweise egal) an einem anderen Vorgang → Hinweis mit Link, Gespann nur Infohinweis; Bezeichnung „Schadennummer:“ nicht gespeichert; Suche ohne Trennzeichen; Hilfe DE/UK/EN', async () => {
+  const { U, newCase } = await freshWorld();
+  eq((await U.own.post('/api/vehicles', { plate: 'GS-AH 998', vin: 'WDB96340310998001', kind: 'anhaenger', site: 'Dortmund' })).status, 201);
+  eq((await U.own.post('/api/vehicles', { plate: 'GS-LK 998', vin: 'WDB96340310998002', kind: 'lkw', site: 'Dortmund', trailer_plate: 'GS-AH 998' })).status, 201);
+  const a = await newCase({ description: 'Seitenschaden links, Unfallgegner beim Spurwechsel' }, U.fleet);
+  const b = await newCase({ description: 'Seitenschaden links nach Spurwechsel (zweite Meldung)' }, U.fleet);
+  const tr = await newCase({ vehicle_id: 'VIN:WDB96340310998002', description: 'Plane eingerissen' }, U.fleet);
+  const ah = await newCase({ vehicle_id: 'VIN:WDB96340310998001', description: 'Plane eingerissen' }, U.fleet);
+  const base = { reported_on: bDayOff(0), evidence: 'Schreiben des Versicherers' };
+  let r = await U.fleet.put(`/api/cases/${a}/claim`, { ...base, insurer: 'Straßen-Versicherung AG', claim_no: 'Schadennummer: KS 2024/123 456' }); eq(r.status, 200, JSON.stringify(r.data));
+  let d = (await U.fleet.get(`/api/cases/${a}`)).data; eq(d.claim.claim_no, 'KS 2024/123 456', 'Bezeichnung nicht gespeichert'); ok(!d.claim.same_claim_no, 'noch keine zweite');
+  r = await U.fleet.put(`/api/cases/${b}/claim`, { ...base, insurer: 'STRASSEN-VERSICHERUNG AG', claim_no: 'Ihre Schaden-Nr. ks2024-123.456', opponent_insurer: 'Gegner AG', opponent_claim_no: 'Claim No. 77-88' }); eq(r.status, 200, JSON.stringify(r.data));
+  d = (await U.fleet.get(`/api/cases/${b}`)).data; eq(d.claim.claim_no, 'ks2024-123.456'); eq(d.claim.opponent_claim_no, '77-88', 'Bezeichnung Gegenseite nicht gespeichert');
+  eq((d.claim.same_claim_no || []).map((x) => x.case_id).join(), a, 'gleiche Nummer anders geschrieben'); eq(d.claim.same_claim_no[0].insurer, 'Straßen-Versicherung AG');
+  eq(((await U.fleet.get(`/api/cases/${a}`)).data.claim.same_claim_no || []).map((x) => x.case_id).join(), b, 'Rückverweis');
+  // Altwert unverändert mitgeschickt → keine Bereinigung (nur neu eingegebene Werte); „NR-2024-1“ bleibt
+  r = await U.fleet.put(`/api/cases/${tr}/claim`, { ...base, insurer: 'Teilkasko AG', claim_no: 'NR-2024-1' }); eq(r.status, 200); eq((await U.fleet.get(`/api/cases/${tr}`)).data.claim.claim_no, 'NR-2024-1');
+  // Gespann: gleiche Nummer an Zugmaschine/Anhänger wird geliefert, Oberfläche blendet sie als Dublette aus
+  r = await U.fleet.put(`/api/cases/${tr}/claim`, { insurer: 'Teilkasko AG', claim_no: 'TK 55 66 77', reported_on: bDayOff(0), evidence: 'x' }); eq(r.status, 200, JSON.stringify(r.data));
+  r = await U.fleet.put(`/api/cases/${ah}/claim`, { insurer: 'Teilkasko AG', claim_no: 'tk556677', reported_on: bDayOff(0), evidence: 'x' }); eq(r.status, 200);
+  d = (await U.fleet.get(`/api/cases/${ah}`)).data; eq(d.claim.same_claim_no[0].plate, 'GS-LK 998'); eq(d.vehicle_info.coupled[0].plate, 'GS-LK 998');
+  // kurze Nummern (< 5 Zeichen) kein Hinweis
+  const c1 = await newCase({ description: 'Glasbruch' }, U.fleet); const c2 = await newCase({ description: 'Glasbruch 2' }, U.fleet);
+  for (const id of [c1, c2]) eq((await U.fleet.put(`/api/cases/${id}/claim`, { ...base, insurer: 'X', claim_no: '12-3' })).status, 200);
+  ok(!(await U.fleet.get(`/api/cases/${c2}`)).data.claim.same_claim_no, 'kurze Nummer');
+  // Werkstatt sieht nichts davon
+  ok(!JSON.stringify((await U.ws.get(`/api/cases/${a}`)).data).includes('same_claim_no'), 'Werkstatt ohne');
+  // Suche ohne Trennzeichen
+  for (const q of ['ks2024123456', 'KS-2024-123456', '7788']) { const s2 = (await U.fleet.get('/api/claims?filter=alle&q=' + encodeURIComponent(q))).data; ok(s2.claims.some((x) => x.case_id === b), 'Suche ' + q); }
+  // Abfragebudget Vorgangsdetail unverändert (eine Abfrage)
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-claimsamenodup') && app.includes("t('claim_same_no_dup')") && app.includes('!cpPlates.includes(x.plate)'), 'Oberfläche: Warnhinweis, Gespann ausgenommen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].claim_same_no_dup && STRINGS[l].claim_same_no_dup.includes('{p}'), l);
+  ok(STRINGS.de.help_claims_s.includes('Gleiche Schadennummer:') && STRINGS.uk.help_claims_s.includes('Однаковий номер збитку:') && STRINGS.en.help_claims_s.includes('Same claim number:'), 'Hilfe DE/UK/EN');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
