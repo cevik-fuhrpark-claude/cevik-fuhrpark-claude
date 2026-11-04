@@ -32927,6 +32927,31 @@ await test('Backlog 976 (Blickwinkel „Leitung trägt die nächste HU vom Prüf
   for (const l of ['de', 'uk', 'en']) ok(/11\/2027/.test(STRINGS[l].pd_month || ''), `${l}.pd_month`);
 });
 
+await test('Backlog 977 (Blickwinkel „Fahrer meldet den Schaden erst am nächsten Morgen: ‚gestern Abend‘“): Schadenzeitpunkt mit Schnellwahl Heute/Gestern/Vorgestern; Beschreibung mit „gestern“/„vorgestern“ (DE/UK/RU/EN) → Vorschlag mit Knopf, nie automatisch, keine geratene Uhrzeit (DE/UK/EN)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('const occDescWord = (txt) => {'); const b = app.indexOf('\n};', a) + 3;
+  const w = new Function(app.slice(a, b) + '; return occDescWord;')();
+  const j = (x) => JSON.stringify(w(x));
+  eq(j('Spiegel gestern Abend beim Rangieren abgefahren'), JSON.stringify({ n: 1, w: 'gestern' }));
+  eq(j('Seit vorgestern leuchtet die Motorleuchte'), JSON.stringify({ n: 2, w: 'vorgestern' }));
+  eq(j('Hit a pole yesterday evening'), JSON.stringify({ n: 1, w: 'yesterday' }));
+  eq(j('Noticed it the day before yesterday'), JSON.stringify({ n: 2, w: 'day before yesterday' }));
+  eq(j('Вчора ввечері пошкодив дзеркало'), JSON.stringify({ n: 1, w: 'вчора' }));
+  eq(j('позавчера стук в подвеске'), JSON.stringify({ n: 2, w: 'позавчера' }));
+  for (const x of ['Gestern? Nein, vorgestern war es', 'Reifen platt', 'Gesternte Plane', '', null]) eq(w(x), null, String(x));
+  // Schnellwahl im Formular, Hinweis nur bei leerem Tag, Uhrzeit wird nicht gesetzt
+  const of = app.slice(app.indexOf('const occurredFields'), app.indexOf('`; };', app.indexOf('const occurredFields')));
+  ok(of.includes('data-occd') && of.includes('[0, 1, 2]') && of.includes('data-occdesc'), 'Schnellwahl + Hinweis im Feld');
+  const set = app.slice(app.indexOf('const occSet ='), app.indexOf('\n', app.indexOf('const occSet =')));
+  ok(set.includes("'#occd'") && !set.includes('occt'), 'nur der Tag wird gesetzt');
+  ok(app.includes('const m = el.value ? null : occDescWord(d.value)'), 'Vorschlag nur ohne eingetragenen Tag');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['occ_q_label', 'occ_q_0', 'occ_q_1', 'occ_q_2', 'occ_desc_take']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].occ_desc_hint.includes('{w}') && STRINGS[l].occ_desc_hint.includes('{d}'), `${l}.occ_desc_hint`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

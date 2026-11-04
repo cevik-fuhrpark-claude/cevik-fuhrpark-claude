@@ -189,7 +189,7 @@ const tzDiffText = (d) => { const a = Math.abs(d); return `${d > 0 ? '+' : '−'
 const tzNote = () => { const d = tzDiffMin(); return d ? `<p class="small alert" data-tzdiff role="note" style="margin:2px 0 8px">${esc(t('tz_device_diff').replace('{d}', tzDiffText(d)).replace('{now}', fmtHM(new Date(nowMs()).toISOString())))}</p>` : ''; };
 // Eingabe Tag + optionale Uhrzeit (deutsche Zeit wie die Tatzeit bei Bußgeldern); cur = gespeicherter Wert
 const occurredFields = (cur, named = false) => { const dt = cur && cur.length > 10 ? berlinLocalDT(cur) : ''; const dv = cur ? (dt ? dt.slice(0, 10) : cur) : ''; const tv = dt ? dt.slice(11, 16) : '';
-  return `<div class="grid2" data-occ><div><label for="occd">${esc(t('occ_date'))}<span class="hint">${esc(t('occ_date_hint'))}</span></label><input type="date" id="occd"${named ? ' name="occ_date"' : ''} max="${bDate()}" value="${esc(dv)}"></div><div><label for="occt">${esc(t('occ_time'))}<span class="hint">${esc(t('occ_time_hint'))}</span></label><input type="time" id="occt"${named ? ' name="occ_time"' : ''} step="60" value="${esc(tv)}"></div></div>${tzNote()}`; };
+  return `<div class="grid2" data-occ><div><label for="occd">${esc(t('occ_date'))}<span class="hint">${esc(t('occ_date_hint'))}</span></label><input type="date" id="occd"${named ? ' name="occ_date"' : ''} max="${bDate()}" value="${esc(dv)}"><div class="occq noprint" data-occq role="group" aria-label="${esc(t('occ_q_label'))}">${[0, 1, 2].map((n) => `<button type="button" class="btn secondary small" data-occd="${n}" title="${esc(fmtD(bDate(-n)))}">${esc(t('occ_q_' + n))}</button>`).join('')}</div><p class="small noprint" data-occdesc hidden></p></div><div><label for="occt">${esc(t('occ_time'))}<span class="hint">${esc(t('occ_time_hint'))}</span></label><input type="time" id="occt"${named ? ' name="occ_time"' : ''} step="60" value="${esc(tv)}"></div></div>${tzNote()}`; };
 // Wert für den Server: '' (leer), Tag oder Tag + Uhrzeit; Uhrzeit ohne Tag → undefined (Formularfehler)
 const occurredValue = (dv, tv) => (!dv ? (tv ? undefined : '') : tv ? `${dv}T${tv}` : dv);
 // Antwortfrist mit Wochentag; Samstag/Sonntag markiert (Frist bleibt der Tag laut Schreiben – nur Hinweis, dass davor kein Arbeitstag folgt)
@@ -706,6 +706,31 @@ document.addEventListener('paste', (e) => {
   el.value = r.d; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
   if (!el.checkValidity()) el.reportValidity();
 });
+// Backlog 977: Schadenzeitpunkt – Schnellwahl Heute/Gestern/Vorgestern (Fahrer am Handy, Kalender ist mühsam) und Hinweis,
+// wenn die Beschreibung „gestern“/„vorgestern“ nennt (nur Vorschlag mit Knopf, nie automatisch; Uhrzeit wird nie geraten)
+const occDescWord = (txt) => {
+  let s = ' ' + String(txt || '').toLowerCase().split(/[^\p{L}]+/u).filter(Boolean).join(' ') + ' ';
+  const two = [' vorgestern ', ' day before yesterday ', ' позавчора ', ' позавчера '].find((w) => s.includes(w));
+  if (two) s = s.split(two).join(' ');
+  const one = [' gestern ', ' yesterday ', ' вчора ', ' вчера '].find((w) => s.includes(w));
+  if (two && one) return null; // beides genannt → kein Vorschlag
+  return two ? { n: 2, w: two.trim() } : one ? { n: 1, w: one.trim() } : null;
+};
+const occSet = (box, n) => { const el = box && $('#occd', box); if (!el) return; el.value = bDate(-n); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+const occDescUpd = (form) => {
+  const box = form && $('[data-occ]', form); const h = form && $('[data-occdesc]', form); const d = form && $('#d', form); const el = box && $('#occd', box);
+  if (!h || !d || !el) return;
+  const m = el.value ? null : occDescWord(d.value);
+  h.hidden = !m; if (!m) { h.textContent = ''; return; }
+  h.innerHTML = `ℹ️ ${esc(tfill('occ_desc_hint', { w: m.w, d: fmtD(bDate(-m.n)) }))} <button type="button" class="btn secondary small" data-occd="${m.n}">${esc(t('occ_desc_take'))}</button>`;
+};
+const occQuickClick = (e) => {
+  const b = e.target && e.target.closest ? e.target.closest('[data-occd]') : null; if (!b) return;
+  e.preventDefault(); const form = b.closest('form'); const box = form ? $('[data-occ]', form) : b.closest('[data-occ]');
+  occSet(box, Number(b.dataset.occd)); if (form) occDescUpd(form);
+};
+document.addEventListener('click', occQuickClick);
+document.addEventListener('input', (e) => { const el = e.target; if (!el || !(el.id === 'd' || el.id === 'occd')) return; const form = el.closest('form'); if (form && $('[data-occ]', form)) occDescUpd(form); });
 // Dasselbe für Knöpfe/Links mit asynchronem Klick-Handler (`el.onclick = async …`, z. B. Quittieren, Ausbuchen, Entscheidung,
 // Bestandsbuchung): Vor dem ersten Klick wird der Handler umhüllt; liefert er ein Promise, sind weitere Klicks bis zum Ende wirkungslos.
 // Synchrone Handler (Navigation, Aufklappen) bleiben unverändert.
@@ -2435,7 +2460,7 @@ function occDrivers(o) {
   return `<dt>${esc(t('occ_drivers'))}</dt><dd data-occdrivers>${o.drivers.length ? `<ul class="small" style="margin:0;padding-left:18px">${o.drivers.map(row).join('')}</ul>` : `<span class="muted">${esc(t('occ_drv_none'))}</span>`}<p class="small muted" style="margin:2px 0 0">${esc(t(o.day_only ? 'occ_drv_hint_day' : 'occ_drv_hint'))}${o.truncated ? ' ' + esc(t('occ_drv_more')) : ''}</p></dd>`;
 }
  
-
+const tfill = (k, o) => Object.entries(o).reduce((a, [x, y]) => a.split(`{${x}}`).join(String(y)), t(k));
 async function viewNewMulti(...a) { return (await lazyModule('verwaltung')).viewNewMulti(...a); }
 async function viewNew(preId) {
   if (!mayReport()) { render(`<h1>${esc(t('report_damage'))}</h1><p class="muted">${esc(t('no_permission_view'))}</p>`, 'new'); return; }
@@ -4868,4 +4893,4 @@ function lazyModule(g, quiet) {
   return LAZY_MODULES[g];
 }
 
-export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, CT_KINDS, DEFECT_RESULTS, FUEL_HINT, GLASS_HINT, HITRUN_HINT, MARTEN_HINT, MORE_MAX, NUMPLATE_HINT, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, ROOFICE_HINT, S, SEND_TIMEOUT_MS, STATES, STOCK_Q_MIN, STORM_HINT, STOW_HINT, STRINGS, THEFT_HINT, TM_PROV, TOW_HINT, TST, VANDAL_HINT, VEH_SORTS, WILD_HINT, WST_ST, afLink, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindLang, bindPwShow, bindTachoCancel, cDesc, caseList, checkLabel, claimChip, clipTxt, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, deviceId, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, helpLink, helpNorm, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isUnusedUser, isWeekendD, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmUnclearDateDue, langAttr, langLoaded, langSelect, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mayReport, mk, mkR, nDays, noSticker, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, partsWaitDays, planVehTag, plate, plateCmp, pnCompact, pnm, posL, prepareUpload, printHead, printStamp, provL, pwField, qrSvg, rc2, rdyOf, rdyTxt, readCsvFile, reasonText, recentRepeat, recurFix, render, resetUserState, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, sortPref, sortUsers, stackTables, stockNoteText, stockOpt, stockPick, stockQHtml, supplierLabel, t, tachoHistList, telAbroad, telHref, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateLockReason, translateNextAction, tzNote, uiLoc, uid, unitL, usersCsv, vehiclesCached, viewLoginCode, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };
+export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, CT_KINDS, DEFECT_RESULTS, FUEL_HINT, GLASS_HINT, HITRUN_HINT, MARTEN_HINT, MORE_MAX, NUMPLATE_HINT, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, ROOFICE_HINT, S, SEND_TIMEOUT_MS, STATES, STOCK_Q_MIN, STORM_HINT, STOW_HINT, STRINGS, THEFT_HINT, TM_PROV, TOW_HINT, TST, VANDAL_HINT, VEH_SORTS, WILD_HINT, WST_ST, afLink, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindLang, bindPwShow, bindTachoCancel, cDesc, caseList, checkLabel, claimChip, clipTxt, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, deviceId, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, helpLink, helpNorm, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isUnusedUser, isWeekendD, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmUnclearDateDue, langAttr, langLoaded, langSelect, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mayReport, mk, mkR, nDays, noSticker, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, partsWaitDays, planVehTag, plate, plateCmp, pnCompact, pnm, posL, prepareUpload, printHead, printStamp, provL, pwField, qrSvg, rc2, rdyOf, rdyTxt, readCsvFile, reasonText, recentRepeat, recurFix, render, resetUserState, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, sortPref, sortUsers, stackTables, stockNoteText, stockOpt, stockPick, stockQHtml, supplierLabel, t, tachoHistList, telAbroad, telHref, tfill, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateLockReason, translateNextAction, tzNote, uiLoc, uid, unitL, usersCsv, vehiclesCached, viewLoginCode, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };

@@ -303,6 +303,9 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 
 .specrow { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); align-items: center; }
 .btn.small { min-height: 36px; padding: 6px 12px; font-size: 0.875rem; }
+.occq { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.occq .btn { white-space: nowrap; }
+[data-occdesc] { margin-top: 6px; }
 .topbar .brand { white-space: nowrap; min-width: 0; overflow: hidden; } /* große Schrift: Name gekürzt, Glocke/Suche bleiben sichtbar */
 .topbar .brand .bn { min-width: 0; overflow: hidden; text-overflow: ellipsis; } /* gekürzter App-Name endet mit „…“ statt abgeschnittenem Buchstaben (vorher „CEVII“, EN, 24.10.2026) */
 .topbar select { width: auto; min-width: 6.5rem; flex: 0 1 auto; }
