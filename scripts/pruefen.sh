@@ -362,6 +362,7 @@ UI-Lager: Menge mit Einheit vom Lieferschein („3 Stk.“) gebucht, fremde Einh
 UI-Datum einfügen: „Ausgelesen am 03.11.2026“, „03 листопада 2026“, „03/11/2026“ ins Datumsfeld übernommen und gespeichert; kein/mehrere/ungültiges Datum mit Meldung, DE/UK/EN 390/820/1366|ui-datum-einfuegen.py|/tmp/cfp-datum-einfuegen.log
 UI-Schadenzeitpunkt Schnellwahl: Heute/Gestern/Vorgestern setzt nur den Tag, Vorschlag aus „gestern“/„вчора“/„yesterday“ in der Beschreibung, Aktion Schadenzeitpunkt, DE/UK/EN 390/820/1366|ui-schadenzeitpunkt-schnellwahl.py|/tmp/cfp-occ-schnellwahl.log
 UI-Uhrzeit einfügen: Tatzeit „03.11.2026, 14:32 Uhr“/„о 14:32“/„2:32 PM“ übernommen und gespeichert, nur Datum/mehrere/ungültige Uhrzeit mit Meldung, Schadenzeitpunkt Tag+Uhrzeit, DE/UK/EN 390/820/1366|ui-uhrzeit-einfuegen.py|/tmp/cfp-uhrzeit-einfuegen.log
+UI-Disposition Gespann ohne Meldungen: Knopf zählt nur Lkw+Anhänger ohne Meldung/überfällige Prüfung, Direktsprung, Hinweis, DE/UK/EN 390/820/1366 (Backlog 979)|ui-gespann-frei.py|/tmp/cfp-gespann-frei.log
 UI-Sammeltermin (Prüftermine): mehrere UVV an einem Tag, Absprache nicht still ersetzt, Rollen|ui-sammeltermin.py|/tmp/cfp-sammeltermin.log
 UI-Heute zu tun nach dem Urlaub: Kostenfreigaben älteste zuerst, „+N“ führt zur gefilterten Vorgangsliste|ui-heute-zu-tun-urlaub.py|/tmp/cfp-heute-zu-tun-urlaub.log
 UI-Bußgeld ändern (Frist), deaktivierter Kandidat, Umgebung|ui-bussgeld-aendern.py|/tmp/cfp-bussgeld-aendern.log

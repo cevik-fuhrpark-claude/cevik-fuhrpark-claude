@@ -32976,6 +32976,34 @@ await test('Backlog 978 (Blickwinkel „Leitung überträgt die Tatzeit aus dem 
   for (const l of ['de', 'uk', 'en']) for (const k of ['pt_none', 'pt_many', 'pt_invalid', 'pdt_notime', 'pdt_nodate']) ok(STRINGS[l][k] && STRINGS[l][k].length > 20, `${l}.${k}`);
 });
 
+await test('Backlog 979 (Blickwinkel „Disposition sucht morgens einen Lkw mit Anhänger“): Filter „Gespann ohne Meldungen“ – Lkw und gekoppelter Anhänger ohne offene Meldung, nicht ruhend, ohne überfällige/nicht bestandene Prüfung oder offene Nachprüfung; Direktsprung, Druckkopf, Hinweis (DE/UK/EN)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const line = (k) => app.slice(app.indexOf(k), app.indexOf('\n', app.indexOf(k)));
+  const src = [line('const mOver = (v) =>').replace(/\/\/.*$/, ''), line('const okSide = (x) =>'), line('const comboClear = (v) =>')].join('\n');
+  const cc = new Function('bDate', src + '; return comboClear;')(() => '2026-11-04');
+  const ok1 = { kind: 'lkw', availability: 'einsatzbereit_lt_system', next_due: '2026-12-01', km_remaining: 5000 };
+  const tr = { kind: 'anhaenger', availability: 'einsatzbereit_lt_system', next_due: null, km_remaining: null };
+  eq(cc({ ...ok1, coupled: tr }), true, 'beide frei');
+  eq(cc({ ...ok1, coupled: null }), false, 'Solo-Lkw zählt nicht als Gespann');
+  eq(cc({ ...tr, coupled: { ...ok1 } }), false, 'nur die Lkw-Zeile zählt (kein Doppel)');
+  for (const [lbl, v] of [
+    ['Anhänger Meldung offen', { ...ok1, coupled: { ...tr, availability: 'meldung_offen' } }],
+    ['Anhänger in Werkstatt', { ...ok1, coupled: { ...tr, availability: 'werkstatt' } }],
+    ['Anhänger HU überfällig', { ...ok1, coupled: { ...tr, next_due: '2026-11-03' } }],
+    ['Anhänger ruhend', { ...ok1, coupled: { ...tr, eval_excluded: 1 } }],
+    ['Anhänger HU nicht bestanden', { ...ok1, coupled: { ...tr, failed_inspection: { kind: 'HU' } } }],
+    ['Lkw Nachprüfung offen', { ...ok1, reinspection_open: { kind: 'SP' }, coupled: tr }],
+    ['Lkw km-Fälligkeit überschritten', { ...ok1, km_remaining: -1, coupled: tr }],
+    ['Lkw gesperrt', { ...ok1, availability: 'gesperrt', coupled: tr }]]) eq(cc(v), false, lbl);
+  eq(cc({ ...ok1, next_due: '2026-11-04', coupled: tr }), true, 'heute fällig ist noch nicht überfällig (wie „Prüfung/Wartung überfällig“)');
+  ok(line('const VEH_AV_LINK').includes("'combo_clear'"), 'Direktsprung #/vehicles?f=combo_clear');
+  ok(app.includes("...(nCC || av === 'combo_clear' ? [['combo_clear', t('av_combo_clear'), nCC]] : [])"), 'Knopf nur mit Treffern oder gewählt');
+  ok(app.includes("av === 'combo_clear' ? comboClear(v) : av === 'dormant'") && app.includes("av === 'combo_clear' ? t('av_combo_clear') : av === 'dormant'"), 'Liste und Druckkopf');
+  ok(app.includes('data-combohint'), 'Hinweis „ersetzt keine Abfahrtskontrolle“ bei gewähltem Filter');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].av_combo_clear, `${l}.av_combo_clear`); ok(STRINGS[l].av_combo_clear_t && STRINGS[l].av_combo_clear_t.length > 40, `${l}.av_combo_clear_t`); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
