@@ -4,7 +4,7 @@
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso, maxFutureDate, berlinDaySql } from './util.js';
+import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, normalizeVin, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso, maxFutureDate, berlinDaySql } from './util.js';
 import { audit } from './auth.js';
 import { latestKmByVehicle, kmDigitsPrev, csvCell, csvText, KM_DROP_SQL, parseKmDrop, PLATE_FORMER_SKIP, plateFormerOther, formerPlatesAll } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -560,7 +560,7 @@ export async function contractFindings(env, settings, envName = 'production') {
 // bzw. ohne Nummer gleicher Partner und Beginn) bleiben unverändert – der Import überschreibt nie.
 const MAX_IMPORT = 500;
 const flagLike = (v) => v === true || v === 1 || v === '1' || v === 'true';
-const normVin = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const normVin = normalizeVin; // Backlog 980: gleiche Regel wie Fahrzeugstamm („FIN: …“, „VIN:…“-Schlüssel)
 const KIND_ALIASES = { leasing: 'leasing', leasingvertrag: 'leasing', miete: 'miete', mietvertrag: 'miete', vermietung: 'miete', rental: 'miete', finanzierung: 'finanzierung', kredit: 'finanzierung', darlehen: 'finanzierung',
   versicherung: 'versicherung', 'kfz-versicherung': 'versicherung', haftpflicht: 'versicherung', vollkasko: 'versicherung', teilkasko: 'versicherung', wartung: 'wartung', wartungsvertrag: 'wartung', service: 'wartung', 'full-service': 'wartung', sonstiges: 'sonstiges', sonstige: 'sonstiges', vertrag: 'sonstiges' };
 export function contractKindOf(raw) { return KIND_ALIASES[String(raw || '').trim().toLowerCase()] || null; }

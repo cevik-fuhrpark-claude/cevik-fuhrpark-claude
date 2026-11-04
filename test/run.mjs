@@ -33018,6 +33018,8 @@ await test('Backlog 980 (Blickwinkel „Leitung überträgt die FIN aus Zulassun
   eq(r.status, 201, 'mit Bezeichnung angelegt');
   const g = await users.fleet.get('/api/vehicles/' + encodeURIComponent('VIN:WDB9634031L980980')); eq(g.status, 200); eq(g.data.vehicle.vin, 'WDB9634031L980980');
   eq((await users.fleet.post('/api/vehicles', { vin: 'FIN: WDB963403IL98098O', plate: 'TT-FIN 981' })).status, 400, 'O/I weiterhin abgewiesen');
+  const ci = await users.fleet.req('POST', '/api/contracts/import?dry_run=1', 'FIN;Vertragsart;Vertragspartner;Beginn;Nachweis\r\nFIN: WDB9634031L980980;Leasing;Test-Leasing 980;2026-01-01;Vertrag Test 980\r\n', { 'content-type': 'text/csv' });
+  eq(ci.status, 200, JSON.stringify(ci.data).slice(0, 200)); eq(ci.data.counts.uebersprungen, 0, 'Vertragsimport: Zelle „FIN: …“ findet das Fahrzeug ' + JSON.stringify(ci.data).slice(0, 300));
   // Client: gleiche Regel wie der Server
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const a = app.indexOf('const VIN_LBL = '); ok(a > 0, 'VIN_LBL vorhanden'); const b = app.indexOf('\n};', app.indexOf('const vinOf = (raw) => {')) + 3;
