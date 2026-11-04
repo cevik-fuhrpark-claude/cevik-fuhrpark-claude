@@ -100,10 +100,12 @@ export function contractStatus(c, latest, today, warnDays, endLatest, noForecast
 
 function readBody(body, existing = {}, user = null) {
   const pick = (k) => (body[k] !== undefined ? body[k] : existing[k]);
+  // Backlog 996: nur neu eingegebene Werte bereinigen – unverändert mitgeschickte gespeicherte Werte gelten nicht als Änderung
+  const fresh = (k, fn) => { const x = pick(k); return x == null || x === existing[k] ? x : fn(x); };
   const f = {
     kind: oneOf(pick('kind'), CONTRACT_KINDS, 'Vertragsart'),
-    partner: str(pick('partner'), { required: true, max: 120, field: 'Vertragspartner' }),
-    contract_no: str(pick('contract_no'), { max: 60, field: 'Vertragsnummer' }),
+    partner: str(fresh('partner', (x) => String(x).replace(/\s+/g, ' ')), { required: true, max: 120, field: 'Vertragspartner' }), // Backlog 996: Leerraum vereinheitlicht
+    contract_no: str(fresh('contract_no', contractNoIn), { max: 60, field: 'Vertragsnummer' }), // Backlog 996: „Vertragsnr.:“ usw. entfernt
     start_date: date(pick('start_date'), 'Vertragsbeginn'),
     end_date: date(pick('end_date'), 'Vertragsende'),
     notice_months: intOrNull(pick('notice_months'), 'Kündigungsfrist (Monate)', 60),
@@ -134,10 +136,25 @@ async function checkFile(env, vehicleId, envName, raw) {
 // (Folgevertrag/-police mit gleicher Nummer und neuem Beginn ist möglich; 18.10.2026 vorher dauerhaft 409).
 const lcDe = (x) => String(x || '').trim().toLocaleLowerCase('de');
 // SQL-Vergleiche der Dublettenregel: LOWER kennt nur A–Z, deshalb Ä/Ö/Ü vorher ersetzt (21.10.2026: „ÜL-1“/„ül-1“ gleichzeitig → zwei Verträge)
+// Backlog 996 (Blickwinkel „Leasinggeber schickt die Vertragsbestätigung erneut, eine Kollegin erfasst sie ein zweites Mal“): Vertragsnummer
+// ohne Leerzeichen, Punkte, Binde-/Schräg-/Unterstriche und Gedankenstriche verglichen („LV 2024/0815-3“ = „lv2024.0815.3“), ß = ss, Partner
+// ohne Unterschied bei ß/ss, Gedankenstrich/Bindestrich und mehrfachem Leerraum – vorher zweiter Vertrag, Monatsrate doppelt im Kostenbericht.
+// Gleiche Regel in JS (`noKey`/`partnerKey`) und SQL (`NO_KEY_SQL`/`PARTNER_KEY_SQL`, Einfüge-Guards bei Anlegen/Ändern/Import).
+const NO_SEP = [' ', '\u00a0', '.', '-', '/', '_', '\u2010', '\u2011', '\u2012', '\u2013', '\u2014', '\u2015'];
+const DASHES = ['\u2010', '\u2011', '\u2012', '\u2013', '\u2014', '\u2015'];
+const foldDe = (x) => lcDe(x).replace(/ß/g, 'ss');
+export const noKey = (x) => NO_SEP.reduce((a, ch) => a.split(ch).join(''), foldDe(x).replace(/\s+/g, ''));
+export const partnerKey = (x) => DASHES.reduce((a, ch) => a.split(ch).join('-'), foldDe(x)).replace(/\s+/g, ' ');
+const FOLD_SQL = (x) => [['Ä', 'ä'], ['Ö', 'ö'], ['Ü', 'ü'], ['ẞ', 'ss'], ['ß', 'ss']].reduce((a, [f, t]) => `REPLACE(${a},'${f}','${t}')`, `LOWER(TRIM(COALESCE(${x},'')))`);
+const NO_KEY_SQL = (x) => NO_SEP.reduce((a, ch) => `REPLACE(${a},'${ch}','')`, FOLD_SQL(x));
+const PARTNER_KEY_SQL = (x) => DASHES.reduce((a, ch) => `REPLACE(${a},'${ch}','-')`, FOLD_SQL(x));
+// Bezeichnung vor der Nummer, wie sie aus Schreiben/PDF mitkopiert wird („Vertragsnr.: …“, „Versicherungsschein-Nr. …“, „Nr. …“) – nie gespeichert
+const NO_LABEL = /^(?:(?:(?:leasing|miet|finanzierungs|wartungs|service|kredit|versicherungs)?vertrags?|versicherungs(?:schein)?|polic(?:e|en)|contract|policy|agreement)[\s-]*(?:nr\.?|nummer|no\.?|number)|nr\.|no\.|№)\s*[:#]?\s*(?=\S)/iu;
+export const contractNoIn = (x) => { const s = String(x ?? '').replace(/\s+/g, ' ').trim(); return s.replace(NO_LABEL, '').trim(); };
 export function sameContract(c, f) {
   if (c.kind !== f.kind) return false;
-  if (lcDe(f.contract_no)) return lcDe(c.contract_no) === lcDe(f.contract_no) && (!c.ended_on || (c.start_date || '') === (f.start_date || ''));
-  return !lcDe(c.contract_no) && lcDe(c.partner) === lcDe(f.partner) && (c.start_date || '') === (f.start_date || '');
+  if (noKey(f.contract_no)) return noKey(c.contract_no) === noKey(f.contract_no) && (!c.ended_on || (c.start_date || '') === (f.start_date || ''));
+  return !noKey(c.contract_no) && partnerKey(c.partner) === partnerKey(f.partner) && (c.start_date || '') === (f.start_date || '');
 }
 // km-Grundlage eines neu angelegten/importierten bzw. im Beginn geänderten Vertrags: liegt der Beginn am oder vor dem Tag des letzten km-Rücksprungs
 // (Tachotausch), gehört „km bei Übernahme“ vermutlich zum alten Zähler → Grundlage = Beginn, Kontingent bleibt „nicht berechenbar“, bis
@@ -165,8 +182,8 @@ export async function createContract(env, user, vehicleId, body, envName) {
   const r = await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,file_id,created_by,created_at,updated_at,km_basis_at)
     SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?16,?17
     WHERE NOT EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=?2 AND c.kind=?3 AND (CASE WHEN COALESCE(?5,'')<>''
-      THEN LOWER(REPLACE(REPLACE(REPLACE(COALESCE(c.contract_no,''),'Ä','ä'),'Ö','ö'),'Ü','ü'))=LOWER(REPLACE(REPLACE(REPLACE(?5,'Ä','ä'),'Ö','ö'),'Ü','ü')) AND (c.ended_on IS NULL OR COALESCE(c.start_date,'')=COALESCE(?6,''))
-      ELSE COALESCE(c.contract_no,'')='' AND LOWER(REPLACE(REPLACE(REPLACE(COALESCE(c.partner,''),'Ä','ä'),'Ö','ö'),'Ü','ü'))=LOWER(REPLACE(REPLACE(REPLACE(COALESCE(?4,''),'Ä','ä'),'Ö','ö'),'Ü','ü')) AND COALESCE(c.start_date,'')=COALESCE(?6,'') END))`)
+      THEN ${NO_KEY_SQL('c.contract_no')}=${NO_KEY_SQL('?5')} AND (c.ended_on IS NULL OR COALESCE(c.start_date,'')=COALESCE(?6,''))
+      ELSE COALESCE(c.contract_no,'')='' AND ${PARTNER_KEY_SQL('c.partner')}=${PARTNER_KEY_SQL('?4')} AND COALESCE(c.start_date,'')=COALESCE(?6,'') END))`)
     .bind(id, v.id, f.kind, f.partner, f.contract_no, f.start_date, f.end_date, f.notice_months, f.km_allowance, f.start_km, f.monthly_rate_net, f.evidence, f.note, fileId, user.id, now,
       f.km_allowance ? contractKmBasis(await dropOf(env, v.id), f.start_date, now) : now).run();
   if (!r.meta || !r.meta.changes) throw conflict('duplicate_contract', 'Diesen Vertrag gibt es für das Fahrzeug bereits (gleiche Art und Vertragsnummer bzw. Partner und Beginn).');
@@ -211,8 +228,8 @@ export async function updateContract(env, user, id, body, envName) {
   // dieselbe Dublettenregel wie beim Anlegen (Ändern der Vertragsnummer erzeugte vorher die Dublette, Raten doppelt) und kein Wechsel weg von
   // „Versicherung“, solange ein Versicherungsfall auf den Vertrag verweist (der Fall war danach nicht mehr speicherbar) – 17.10.2026
   const DUP = `EXISTS (SELECT 1 FROM vehicle_contracts d WHERE d.vehicle_id=?16 AND d.id<>?14 AND d.kind=?1 AND (CASE WHEN COALESCE(?3,'')<>''
-      THEN LOWER(REPLACE(REPLACE(REPLACE(COALESCE(d.contract_no,''),'Ä','ä'),'Ö','ö'),'Ü','ü'))=LOWER(REPLACE(REPLACE(REPLACE(?3,'Ä','ä'),'Ö','ö'),'Ü','ü')) AND (d.ended_on IS NULL OR COALESCE(d.start_date,'')=COALESCE(?4,''))
-      ELSE COALESCE(d.contract_no,'')='' AND LOWER(REPLACE(REPLACE(REPLACE(COALESCE(d.partner,''),'Ä','ä'),'Ö','ö'),'Ü','ü'))=LOWER(REPLACE(REPLACE(REPLACE(COALESCE(?2,''),'Ä','ä'),'Ö','ö'),'Ü','ü')) AND COALESCE(d.start_date,'')=COALESCE(?4,'') END))`;
+      THEN ${NO_KEY_SQL('d.contract_no')}=${NO_KEY_SQL('?3')} AND (d.ended_on IS NULL OR COALESCE(d.start_date,'')=COALESCE(?4,''))
+      ELSE COALESCE(d.contract_no,'')='' AND ${PARTNER_KEY_SQL('d.partner')}=${PARTNER_KEY_SQL('?2')} AND COALESCE(d.start_date,'')=COALESCE(?4,'') END))`;
   const CLAIM = `(?1<>'versicherung' AND EXISTS (SELECT 1 FROM insurance_claims ic WHERE ic.contract_id=?14))`;
   const r = await env.DB.prepare(`UPDATE vehicle_contracts SET kind=?1,partner=?2,contract_no=?3,start_date=?4,end_date=?5,notice_months=?6,km_allowance=?7,start_km=?8,monthly_rate_net=?9,evidence=?10,note=?11,file_id=?12,updated_at=?13,
       km_basis_at=COALESCE(?17, km_basis_at)
@@ -639,7 +656,7 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   // Kennzeichen doppelt (ruhendes/außer Betrieb genommenes Doppel): das bewertete aktive Fahrzeug wie bei den anderen Importen (17.10.2026)
   const byPlate = { get: (raw) => { const r = pickVehicleByPlate(vehicles, raw); return r.vehicle || (r.ambiguous ? 'mehrdeutig' : undefined); } };
   // mit Nummer auch der Beginn: Folgevertrag mit gleicher Nummer (nach Beenden erlaubt, `sameContract`) galt beim Rückimport sonst als „doppelt in der Datei“ (18.10.2026)
-  const keyOf = (vid, kind, no, partner, start) => (no ? `${vid}|${kind}|#${lcDe(no)}|${start || ''}` : `${vid}|${kind}|${lcDe(partner)}|${start || ''}`);
+  const keyOf = (vid, kind, no, partner, start) => (noKey(no) ? `${vid}|${kind}|#${noKey(no)}|${start || ''}` : `${vid}|${kind}|${partnerKey(partner)}|${start || ''}`); // Backlog 996
   // Formelschutz des eigenen CSV-Exports („'-“, „'+Assekuranz“) zurücknehmen – Re-Import ergab sonst Dubletten (18.10.2026)
   const get = (cells, i) => (i >= 0 ? String(cells[i] || '').trim().replace(/^'(?=[=+\-@\t\r])/, '') : '');
   const rows = []; const skipped = []; const seen = new Set();
@@ -714,8 +731,8 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   const r = await env.DB.prepare(`INSERT INTO vehicle_contracts(id,vehicle_id,kind,partner,contract_no,start_date,end_date,notice_months,km_allowance,start_km,monthly_rate_net,evidence,note,created_by,created_at,updated_at,km_basis_at)
     SELECT ${J('id')}, ${J('v')}, ${J('kind')}, ${J('partner')}, ${J('no')}, ${J('sd')}, ${J('ed')}, ${J('nm')}, ${J('ka')}, ${J('sk')}, ${J('rate')}, ${J('ev')}, ${J('note')}, ?1, ?2, ?2, ${J('kb')} FROM json_each(?3)
     WHERE NOT EXISTS (SELECT 1 FROM vehicle_contracts c WHERE c.vehicle_id=${J('v')} AND c.kind=${J('kind')} AND (CASE WHEN COALESCE(${J('no')},'')<>''
-      THEN LOWER(REPLACE(REPLACE(REPLACE(COALESCE(c.contract_no,''),'Ä','ä'),'Ö','ö'),'Ü','ü'))=LOWER(REPLACE(REPLACE(REPLACE(${J('no')},'Ä','ä'),'Ö','ö'),'Ü','ü')) AND (c.ended_on IS NULL OR COALESCE(c.start_date,'')=COALESCE(${J('sd')},''))
-      ELSE COALESCE(c.contract_no,'')='' AND LOWER(REPLACE(REPLACE(REPLACE(COALESCE(c.partner,''),'Ä','ä'),'Ö','ö'),'Ü','ü'))=LOWER(REPLACE(REPLACE(REPLACE(COALESCE(${J('partner')},''),'Ä','ä'),'Ö','ö'),'Ü','ü')) AND COALESCE(c.start_date,'')=COALESCE(${J('sd')},'') END))`)
+      THEN ${NO_KEY_SQL('c.contract_no')}=${NO_KEY_SQL(J('no'))} AND (c.ended_on IS NULL OR COALESCE(c.start_date,'')=COALESCE(${J('sd')},''))
+      ELSE COALESCE(c.contract_no,'')='' AND ${PARTNER_KEY_SQL('c.partner')}=${PARTNER_KEY_SQL(J('partner'))} AND COALESCE(c.start_date,'')=COALESCE(${J('sd')},'') END))`)
     .bind(user.id, now, JSON.stringify(items)).run();
   const inserted = r.meta && typeof r.meta.changes === 'number' ? r.meta.changes : fresh.length;
   if (inserted < fresh.length) {

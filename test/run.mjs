@@ -33463,6 +33463,49 @@ await test('Backlog 995 (Blickwinkel „Kollegin mit ukrainischer/englischer Tas
   const { STRINGS } = await import('../public/i18n.js');
   ok(STRINGS.de.help_fines_s.includes('„Munchen“') && STRINGS.en.help_fines_s.includes('“Munchen”') && STRINGS.uk.help_fines_s.includes('«Munchen»'), 'Hilfe DE/UK/EN');
 });
+await test('Backlog 996 (Blickwinkel „Leasinggeber schickt die Vertragsbestätigung erneut, Kollegin erfasst sie ein zweites Mal“): Vertragsdublette erkennt Vertragsnummer ohne Leerzeichen/Punkte/Striche und Partner mit ß/ss, Großschrift, Gedankenstrich, Leerraum (Anlegen, Ändern, gleichzeitig, Import); Bezeichnung „Vertragsnr.:“ wird nicht gespeichert; Hilfe DE/UK/EN', async () => {
+  const { contractNoIn, noKey, partnerKey } = await import('../src/contracts.js');
+  eq(contractNoIn('Vertragsnr.: LV-2024/0815'), 'LV-2024/0815'); eq(contractNoIn('Versicherungsschein-Nr. 123 456'), '123 456'); eq(contractNoIn('Leasingvertrag Nr. 55'), '55');
+  eq(contractNoIn('NR-2024-1'), 'NR-2024-1', 'Nummer, die mit NR beginnt, bleibt'); eq(contractNoIn('Vertragsnummer'), 'Vertragsnummer', 'ohne Nummer dahinter nichts entfernt');
+  eq(noKey('LV 2024/0815-3'), noKey('lv2024.0815.3')); eq(noKey('LV–2024–0815–3'), noKey('LV-2024-0815-3')); ok(noKey('LV 2024/0815-3') !== noKey('LV 2024/0815-4'), 'andere Nummer');
+  eq(partnerKey('Straßen–Leasing  GmbH'), partnerKey('STRASSEN-LEASING GMBH')); ok(partnerKey('Müller Leasing') !== partnerKey('Müllers Leasing'));
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const { e, U, V1 } = await freshWorld(); const F = U.fleet; const db = e.DB.db;
+  const base = { kind: 'leasing', partner: 'Straßen-Leasing  GmbH', start_date: day(-100), end_date: day(900), evidence: 'Vertragsbestätigung', monthly_rate_net: 850 };
+  const a = await F.post(`/api/vehicles/${V1}/contracts`, { ...base, contract_no: 'Vertragsnr.: LV 2024/0815-3' }); eq(a.status, 201, JSON.stringify(a.data));
+  const ra = db.prepare('SELECT contract_no, partner FROM vehicle_contracts WHERE id=?').get(a.data.id); eq(ra.contract_no, 'LV 2024/0815-3', 'Bezeichnung nicht gespeichert'); eq(ra.partner, 'Straßen-Leasing GmbH', 'Leerraum vereinheitlicht');
+  for (const no of ['lv2024.0815.3', 'LV–2024–0815–3', 'LV-2024-0815-3', 'Nr. LV 2024 0815 3']) {
+    const r = await F.post(`/api/vehicles/${V1}/contracts`, { ...base, contract_no: no }); eq(r.status, 409, no); eq(r.data.error, 'duplicate_contract', no);
+  }
+  const b = await F.post(`/api/vehicles/${V1}/contracts`, { ...base, contract_no: 'LV 2024/0815-4' }); eq(b.status, 201, 'andere Nummer bleibt eigener Vertrag');
+  const ch = await F.patch(`/api/contracts/${b.data.id}`, { contract_no: 'LV20240815/3' }); eq(ch.status, 409, 'Ändern auf dieselbe Nummer'); eq(ch.data.error, 'duplicate_contract');
+  // ohne Nummer: Partner + Beginn, ß/ss, Großschrift, Gedankenstrich, Leerraum
+  const m = { kind: 'miete', start_date: day(-30), end_date: day(300), evidence: 'Mietvertrag' };
+  eq((await F.post(`/api/vehicles/${V1}/contracts`, { ...m, partner: 'Großmann – Vermietung' })).status, 201);
+  for (const p of ['GROSSMANN - VERMIETUNG', 'grossmann  —  vermietung', 'Großmann - Vermietung']) eq((await F.post(`/api/vehicles/${V1}/contracts`, { ...m, partner: p })).status, 409, p);
+  eq((await F.post(`/api/vehicles/${V1}/contracts`, { ...m, partner: 'Grossmann Vermietung Süd' })).status, 201, 'anderer Partner');
+  // gleichzeitig mit unterschiedlicher Schreibweise: nur einer (SQL-Guard)
+  const w = { kind: 'wartung', partner: 'Service AG', start_date: day(-5), end_date: day(700), evidence: 'Wartungsvertrag' };
+  const par = await Promise.all([F.post(`/api/vehicles/${V1}/contracts`, { ...w, contract_no: 'WV 77/1' }), F.post(`/api/vehicles/${V1}/contracts`, { ...w, contract_no: 'wv-77-1' })]);
+  eq(par.map((r) => r.status).sort().join(), '201,409', 'gleichzeitig'); eq(db.prepare("SELECT COUNT(*) n FROM vehicle_contracts WHERE kind='wartung' AND vehicle_id=?").get(V1).n, 1);
+  // unverändert mitgeschickter gespeicherter Wert gilt nicht als Änderung (alte Daten mit Bezeichnung)
+  db.prepare("UPDATE vehicle_contracts SET contract_no='Nr. 9' WHERE id=?").run(b.data.id);
+  const cur = db.prepare('SELECT * FROM vehicle_contracts WHERE id=?').get(b.data.id);
+  const u = await F.patch(`/api/contracts/${b.data.id}`, { contract_no: 'Nr. 9', partner: cur.partner, note: 'Rate laut Schreiben' }); eq(u.status, 200, JSON.stringify(u.data));
+  eq(JSON.stringify(u.data.changed), JSON.stringify(['note']), 'nur Notiz geändert'); eq(db.prepare('SELECT contract_no FROM vehicle_contracts WHERE id=?').get(b.data.id).contract_no, 'Nr. 9');
+  // Import: andere Schreibweise = vorhanden, zweimal in der Datei = doppelt
+  const pl = db.prepare('SELECT plate FROM vehicles WHERE id=?').get(V1).plate;
+  const csv = 'Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Nachweis\r\n'
+    + `${pl};Leasing;STRASSEN-LEASING GMBH;LV.2024.0815.3;;;Bestätigung\r\n`
+    + `${pl};Versicherung;Assekuranz;Versicherungsschein-Nr.: 55 66/7;;;Police\r\n`
+    + `${pl};Versicherung;Assekuranz;55-66-7;;;Police\r\n`;
+  const ir = await F.req('POST', '/api/contracts/import?dry_run=1', csv, { 'content-type': 'text/csv' }); eq(ir.status, 200, JSON.stringify(ir.data));
+  eq(JSON.stringify(ir.data.counts), JSON.stringify({ neu: 1, vorhanden: 1, uebersprungen: 1 }), JSON.stringify(ir.data));
+  eq(ir.data.rows.find((r) => r.kind === 'versicherung').contract_no, '55 66/7', 'Bezeichnung beim Import entfernt'); eq(ir.data.skipped[0].reason, 'doppelt in der Datei');
+  const fsx = await import('node:fs'); ok(fsx.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('<input name="contract_no" maxlength="90"'), 'Feld nimmt mitkopierte Bezeichnung auf');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_contracts_s.includes('„lv2024.0815.3“') && STRINGS.uk.help_contracts_s.includes('«lv2024.0815.3»') && STRINGS.en.help_contracts_s.includes('“lv2024.0815.3”'), 'Hilfe DE/UK/EN');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
