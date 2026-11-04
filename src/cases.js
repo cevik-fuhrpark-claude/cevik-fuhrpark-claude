@@ -1884,7 +1884,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       let stockItem = null;
       // Preis aus dem Lager: hinterlegter Artikelpreis gilt für Teil und Lagerbuchung; nur ohne Artikelpreis der eingegebene – für beide
       // (18.10.2026: Eingabe landete nur im Teil, Journal blieb „unbewertet“ bzw. beim Artikelpreis; Regel wie die Entnahme im Lager)
-      const inPrice = num(p.unit_price_net === '' ? null : p.unit_price_net, { min: 0, max: 1000000, field: 'Preis', nullable: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+      const inPrice = num(p.unit_price_net === '' ? null : p.unit_price_net, { min: 0, max: 1000000, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
       if (p.stock_item_id) {
         const w = await prepareCaseWithdrawal(env, user, envName, c, str(p.stock_item_id, { max: 40 }), qty, pid, inPrice, now);
         stockItem = w.item;
@@ -1965,7 +1965,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     }
     case 'add_external_cost': {
       const supplier = str(p.supplier, { required: true, max: 120, field: 'Lieferant' });
-      const amount = num(p.amount_net, { min: 0, max: 10000000, field: 'Betrag', nullable: true, cents: true, decimalPoint: pointDec(user), decimalComma: commaDec(user) });
+      const amount = num(p.amount_net, { min: 0, max: 10000000, field: 'Betrag', nullable: true, net: true, cents: true, decimalPoint: pointDec(user), decimalComma: commaDec(user) });
       const valuation = amount === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const eid = uuid();
       const warranty = warrantyDate(p.warranty_until);

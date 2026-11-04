@@ -213,7 +213,7 @@ export function kmNum(v, { min = 0, max = 5000000, field = 'Kilometerstand' } = 
   if (!Number.isInteger(n)) throw bad('validation', `${field}: ganze Zahl.`);
   return n;
 }
-export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, money = false, decimalComma = false, decimalPoint = false } = {}) {
+export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, money = false, net = false, decimalComma = false, decimalPoint = false } = {}) {
   if ((v === null || v === undefined || v === '') && nullable) return null;
   let n;
   if (typeof v === 'number') n = v;
@@ -222,10 +222,19 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
     if (typeof v !== 'string') throw bad('validation', `${field}: ungültige Zahl.`);
     let t = v.trim();
     // Einheit aus kopierten Werten (Rechnung/PDF/Nachricht/App-Anzeige, Backlog 897): Geldbetrag „1.234,56 €“/„EUR 99“, km-Stand „123.456 km“/„123 456 км“
+    // Backlog 971 (Blickwinkel „Leitung erfasst die Rechnung einer Fremdwerkstatt am Handy“): Nettofelder (`net`) nehmen „netto“/„net“/„нетто“ bzw. „zzgl./ohne MwSt.“, „excl./plus VAT“, „без ПДВ“
+    // vor oder hinter dem Betrag an; ein ausdrücklich als „brutto“/„gross“/„inkl. MwSt.“ bezeichneter Betrag wird mit eigener Meldung abgewiesen
+    // (keine Umrechnung – kein Steuersatz wird angenommen).
+    if (net && (cents || money)) {
+      if (/^(brutto|gross|брутто)(?=[\s\d€:]|$)|(^|[\s\d.,€\-–])(brutto|gross|брутто|inkl\.?\s*mwst\.?|incl\.?\s*vat|з\s*пдв)\.?$/i.test(t)) throw bad('validation', `${field}: „${t.slice(0, 40)}“ ist ein Bruttobetrag – bitte den Nettobetrag (ohne MwSt.) eingeben.`);
+      t = t.replace(/^(netto|net|нетто)\s*:?\s*/i, '').replace(/\s*(netto|net|нетто|(zzgl\.?|ohne|plus|excl\.?|\+)\s*(mwst|ust|vat)|без\s*пдв)\.?$/i, '');
+    }
     if (cents || money) t = t.replace(/^(€|eur)\s*/i, '').replace(/\s*(€|eur)$/i, '');
     if (grouped) t = t.replace(/\s*(km|км)\.?$/i, '');
     t = t.replace(/[\s\u00a0]/g, '');
     if (t === '') { if (nullable) return null; throw bad('validation', `${field}: ungültige Zahl.`); }
+    // Backlog 971: Strich-Schreibweise für volle Euro aus Rechnungen/Angeboten („1.240,-“, „1240,–“, „1.240,--“, schweizerisch „1240.-“)
+    if (cents || money) t = t.replace(/^(-?\d[\d.]*),(--?|–|—)$/, '$1,00').replace(/^(-?\d+)\.(--?|–|—)$/, '$1.00');
     if (/^-?\d{1,3}(\.\d{3})+,\d+$/.test(t)) t = t.replace(/\./g, '');
     // englisches Format mit Tausenderkomma und Dezimalpunkt („1,234.50“) ist eindeutig (19.10.2026: in der EN-Oberfläche abgewiesen)
     else if (/^-?\d{1,3}(,\d{3})+\.\d+$/.test(t)) t = t.replace(/,/g, '');

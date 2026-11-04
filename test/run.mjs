@@ -32778,6 +32778,39 @@ await test('Backlog 970 (Telegrammstil UK/RU/EN, Folge aus 969): „ПРОБИЛ
   for (const [k, x] of [['WARN', 'oil warning is gone'], ['WARN', 'no oil warning'], ['FIX', 'здав назад на парковку']]) ok(!H[k].test(recurFix(x)), 'kein ' + k + '-Hinweis: ' + x);
 });
 
+await test('Backlog 971 (Blickwinkel „Leitung erfasst die Rechnung einer Fremdwerkstatt am Handy“): Nettobeträge „1.240,-“/„1240,–“/„… netto“/„zzgl. MwSt.“ verstanden; „brutto“/„inkl. MwSt.“/„gross“ mit eigener Meldung (DE/UK/EN) abgewiesen; Felder ohne Netto (Bußgeld) unverändert', async () => {
+  const { num } = await import('../src/util.js');
+  const N = (v) => num(v, { min: 0, max: 1e7, nullable: true, cents: true, net: true, field: 'Betrag' });
+  for (const [v, x] of [['1.240,-', 1240], ['1240,-', 1240], ['1.240,– €', 1240], ['1.240,-- EUR', 1240], ['1240.-', 1240], ['12.400,-', 12400], ['1.240,00 netto', 1240], ['netto 1.240,00 €', 1240],
+    ['1.240,00 € netto', 1240], ['Netto: 99,50', 99.5], ['99,5 нетто', 99.5], ['1.240,00 € zzgl. MwSt.', 1240], ['1240 excl. VAT', 1240], ['1240,- без ПДВ', 1240], ['1.234,56', 1234.56]]) eq(N(v), x, v);
+  for (const v of ['1.240,00 brutto', 'brutto 1.240', 'Brutto: 1.240,00', '1.475,60 € inkl. MwSt.', '1,475.60 incl. VAT', '1 475,60 брутто', '1240 gross']) {
+    let e = null; try { N(v); } catch (x) { e = x; } ok(e && /ist ein Bruttobetrag – bitte den Nettobetrag \(ohne MwSt\.\) eingeben\.$/.test(e.message), 'brutto abgewiesen: ' + v + ' ' + (e && e.message));
+  }
+  for (const v of ['12,-,-', '1,-5', '2.000,']) { let e = null; try { N(v); } catch (x) { e = x; } ok(e, 'ungültig: ' + v); }
+  // ohne net: „netto“/„brutto“ bleiben unbekannter Text (z. B. Bußgeld), Strich-Schreibweise gilt für alle Geldbeträge
+  let e = null; try { num('99 brutto', { cents: true, field: 'Betrag' }); } catch (x) { e = x; } ok(e && /ungültige Zahl/.test(e.message), 'Bußgeld: brutto unbekannt');
+  eq(num('35,-', { cents: true }), 35, 'Bußgeld 35,-');
+  // Server: alle Nettofelder mit net: true
+  const fs = await import('node:fs'); const src = (f) => fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8');
+  for (const [f, fld] of [['cases.js', 'Betrag'], ['cases.js', 'Preis'], ['claims.js', 'Selbstbeteiligung'], ['claims.js', 'Erstattung'], ['claims.js', 'Schadenhöhe laut Gutachten'], ['contracts.js', 'Monatsrate'], ['stock.js', 'Preis']])
+    ok(src(f).includes(`field: '${fld}', nullable: true, net: true`), `${f}: ${fld} mit net`);
+  ok(!/field: 'Betrag', nullable: true, net: true/.test(src('fines.js')), 'Bußgeld ohne net');
+  // Ende-zu-Ende: Fremdleistung
+  const { e: E, U, cmd, toRepair } = await freshWorld(); const db = E.DB.db; const a = await toRepair();
+  let r = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', invoice_no: 'R-971-1', amount_net: '1.240,- €' }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(db.prepare(`SELECT amount_net FROM external_costs WHERE case_id=? AND invoice_no='R-971-1'`).get(a).amount_net, 1240);
+  r = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', invoice_no: 'R-971-2', amount_net: '1.475,60 € inkl. MwSt.' }); eq(r.status, 400);
+  ok(/Bruttobetrag/.test(r.data.message || r.data.error || JSON.stringify(r.data)), 'Meldung nennt Bruttobetrag');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM external_costs WHERE case_id=? AND invoice_no='R-971-2'`).get(a).n, 0, 'nichts gebucht');
+  // Übersetzung
+  const { translateValidation, STRINGS } = await import('../public/i18n.js');
+  const msg = 'Betrag: „1.475,60 € inkl. MwSt.“ ist ein Bruttobetrag – bitte den Nettobetrag (ohne MwSt.) eingeben.';
+  eq(translateValidation('en', msg), 'Amount: “1.475,60 € inkl. MwSt.” is a gross amount – please enter the net amount (excluding VAT).');
+  ok(/^Сума: «1\.475,60 € inkl\. MwSt\.» – це сума брутто/.test(translateValidation('uk', msg) || ''), 'UK');
+  for (const l of ['de', 'uk', 'en']) ok(/1\.240,- €/.test(STRINGS[l].help_costlimit_s), 'Hilfe ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-fremdrechnung-netto.py|'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

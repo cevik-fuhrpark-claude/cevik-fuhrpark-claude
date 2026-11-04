@@ -109,7 +109,7 @@ function readBody(body, existing = {}, user = null) {
     notice_months: intOrNull(pick('notice_months'), 'Kündigungsfrist (Monate)', 60),
     km_allowance: intOrNull(pick('km_allowance'), 'km-Kontingent', 5000000),
     start_km: intOrNull(pick('start_km'), 'km bei Übernahme', 9999999),
-    monthly_rate_net: num(pick('monthly_rate_net'), { min: 0, max: 1000000, field: 'Monatsrate', nullable: true, cents: true, ...(user ? { decimalComma: commaDec(user), decimalPoint: pointDec(user) } : {}) }),
+    monthly_rate_net: num(pick('monthly_rate_net'), { min: 0, max: 1000000, field: 'Monatsrate', nullable: true, net: true, cents: true, ...(user ? { decimalComma: commaDec(user), decimalPoint: pointDec(user) } : {}) }),
     evidence: str(pick('evidence'), { required: true, max: 300, field: 'Nachweis' }),
     note: str(pick('note'), { max: 1000, field: 'Bemerkung' }),
   };

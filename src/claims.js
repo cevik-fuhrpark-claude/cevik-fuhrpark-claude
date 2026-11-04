@@ -38,8 +38,8 @@ function readBody(body, existing = {}, user = null) {
     reported_on: day(pick('reported_on'), 'Gemeldet am', true),
     // leerer/fehlender Status behält den gespeicherten (18.10.2026: setzte einen regulierten Fall still auf „gemeldet“ zurück)
     status: oneOf(body.status !== undefined && body.status !== null && body.status !== '' ? body.status : (existing.status || 'gemeldet'), CLAIM_STATUS, 'Status'),
-    deductible_net: num(pick('deductible_net'), { min: 0, max: 1000000, field: 'Selbstbeteiligung', nullable: true, cents: true, decimalComma: dc, decimalPoint: dp }),
-    reimbursed_net: num(pick('reimbursed_net'), { min: 0, max: 10000000, field: 'Erstattung', nullable: true, cents: true, decimalComma: dc, decimalPoint: dp }),
+    deductible_net: num(pick('deductible_net'), { min: 0, max: 1000000, field: 'Selbstbeteiligung', nullable: true, net: true, cents: true, decimalComma: dc, decimalPoint: dp }),
+    reimbursed_net: num(pick('reimbursed_net'), { min: 0, max: 10000000, field: 'Erstattung', nullable: true, net: true, cents: true, decimalComma: dc, decimalPoint: dp }),
     reimbursed_on: day(pick('reimbursed_on'), 'Erstattet am'),
     evidence: str(pick('evidence'), { required: true, max: 300, field: 'Nachweis' }),
     note: str(pick('note'), { max: 1000, field: 'Bemerkung' }),
@@ -47,7 +47,7 @@ function readBody(body, existing = {}, user = null) {
     appraiser: str(pick('appraiser'), { max: 120, field: 'Gutachter' }),
     appraisal_on: day(pick('appraisal_on'), 'Besichtigung am', false, true),
     appraisal_received_on: day(pick('appraisal_received_on'), 'Gutachten eingegangen am'),
-    appraisal_net: num(pick('appraisal_net'), { min: 0, max: 10000000, field: 'Schadenhöhe laut Gutachten', nullable: true, cents: true, decimalComma: dc, decimalPoint: dp }),
+    appraisal_net: num(pick('appraisal_net'), { min: 0, max: 10000000, field: 'Schadenhöhe laut Gutachten', nullable: true, net: true, cents: true, decimalComma: dc, decimalPoint: dp }),
     // Unfallgegner (Teilagent „Unfall mit fremdem Fahrzeug“, 24.10.2026): alles optional und nur laut Unfallbericht/Schreiben.
     // Kein Namens-/Adressfeld (Datenschutz-Frage offen) – wer Namen braucht, trägt sie wie bisher unter „Bemerkung“ ein.
     opponent_plate: plateText(str(pick('opponent_plate'), { max: 20, field: 'Kennzeichen Unfallgegner' })),
