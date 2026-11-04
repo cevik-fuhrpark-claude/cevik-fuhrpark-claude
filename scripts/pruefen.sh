@@ -359,6 +359,7 @@ UI-Doppelte Rechnung (Fremdleistung): Fundstelle, Häkchen „Trotzdem buchen“
 UI-Fremdrechnung am Handy: „1.240,- €“ gebucht, „inkl. MwSt.“ als Bruttobetrag in der App-Sprache abgewiesen, DE/UK/EN 390/820/1366|ui-fremdrechnung-netto.py|/tmp/cfp-fremdrechnung-netto.log
 UI-Arbeitszeit in Minuten: Beispiel und Umrechnung unter dem Stundenfeld, „0:30“ gebucht, „1:75“ in der App-Sprache abgewiesen, DE/UK/EN 390/820/1366|ui-arbeitszeit-minuten.py|/tmp/cfp-arbeitszeit-minuten.log
 UI-Lager: Menge mit Einheit vom Lieferschein („3 Stk.“) gebucht, fremde Einheit („5 l“) in der App-Sprache abgewiesen, DE/UK/EN 390/820/1366|ui-lager-einheit.py|/tmp/cfp-lager-einheit.log
+UI-Datum einfügen: „Ausgelesen am 03.11.2026“, „03 листопада 2026“, „03/11/2026“ ins Datumsfeld übernommen und gespeichert; kein/mehrere/ungültiges Datum mit Meldung, DE/UK/EN 390/820/1366|ui-datum-einfuegen.py|/tmp/cfp-datum-einfuegen.log
 UI-Sammeltermin (Prüftermine): mehrere UVV an einem Tag, Absprache nicht still ersetzt, Rollen|ui-sammeltermin.py|/tmp/cfp-sammeltermin.log
 UI-Heute zu tun nach dem Urlaub: Kostenfreigaben älteste zuerst, „+N“ führt zur gefilterten Vorgangsliste|ui-heute-zu-tun-urlaub.py|/tmp/cfp-heute-zu-tun-urlaub.log
 UI-Bußgeld ändern (Frist), deaktivierter Kandidat, Umgebung|ui-bussgeld-aendern.py|/tmp/cfp-bussgeld-aendern.log

@@ -476,6 +476,7 @@ Object.assign(VALIDATION_TEXTS.en, { hm_min: '{f}: “{v}” – minutes only 0 
 Object.assign(VALIDATION_TEXTS.uk, { unit_mismatch: '{f}: «{v}» – одиниця не відповідає артикулу ({u}).' });
 Object.assign(VALIDATION_TEXTS.en, { unit_mismatch: '{f}: “{v}” – unit does not match the item ({u}).' });
 // Backlog 973: Umrechnung unter dem Stundenfeld („= 1 Std. 30 Min.“) und Beispiel im Feld
+// Backlog 975: Datum einfügen (Datumsfelder)
 export function translateValidation(lang, msg) {
   const T = VALIDATION_TEXTS[lang]; if (!T || typeof msg !== 'string') return null;
   if (Object.hasOwn(T, msg) && msg.endsWith('.') && msg.includes(' ')) return T[msg];

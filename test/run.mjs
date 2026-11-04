@@ -32899,6 +32899,22 @@ await test('Backlog 974 (Blickwinkel „Werkstatt bucht Teilemengen vom Liefersc
   eq(translateValidation('en', m), 'Quantity: “5 l” – unit does not match the item (pcs).'); eq(translateValidation('uk', m), 'Кількість: «5 l» – одиниця не відповідає артикулу (шт).');
   eq(translateValidation('en', 'Zählmenge Motoröl 10W-40: „2 Stk“ – Einheit passt nicht zum Artikel (Liter).').endsWith('unit does not match the item (Liter).'), true);
 });
+await test('Backlog 975 (Blickwinkel „Leitung überträgt ein Datum aus Rechnung, E-Mail oder Bescheid per Kopieren/Einfügen“): Datumsfelder übernehmen „04.11.2026“, „Rechnungsdatum: 04.11.2026“, „4. November 2026“, „04/11/2026“, „04 листопада 2026“; kein/mehrere/ungültiges Datum mit eigener Meldung (DE/UK/EN)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('const PD_MON'); ok(a > 0, 'PD_MON vorhanden'); const b = app.indexOf('\n};', app.indexOf('const pasteDate = (raw, year, toBerlin) => {')) + 3;
+  const pasteDate = new Function(app.slice(a, b) + '; return pasteDate;')();
+  const F = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }); const tb = (z) => F.format(new Date(z));
+  const d = (x) => { const r = pasteDate(x, 2026, tb); return r && r.d; }; const e = (x) => { const r = pasteDate(x, 2026, tb); return r && r.e; };
+  for (const [x, want] of [['04.11.2026', '2026-11-04'], ['4.11.26', '2026-11-04'], ['4. 11. 2026', '2026-11-04'], ['Rechnungsdatum: 04.11.2026', '2026-11-04'], ['04.11.2026 14:30 Uhr', '2026-11-04'],
+    ['4. November 2026', '2026-11-04'], ['4 Nov. 2026', '2026-11-04'], ['November 4, 2026', '2026-11-04'], ['3rd March 2026', '2026-03-03'], ['04/11/2026', '2026-11-04'], ['11/24/2026', '2026-11-24'],
+    ['04 листопада 2026', '2026-11-04'], ['4 травня 2026', '2026-05-04'], ['12 мая 2025', '2025-05-12'], ['4 ноября 2026 г.', '2026-11-04'], ['2026-11-04', '2026-11-04'],
+    ['2026-11-03T23:30:00Z', '2026-11-04'], ['01.05.98', '1998-05-01'], ['vom 03.11.2026 bis 03.11.2026', '2026-11-03'], ['Datum: 4.11.2026, Rechnung Nr. 2026-0042', '2026-11-04']]) eq(d(x), want, x);
+  eq(e('hallo'), 'none'); eq(e('1.234,56 €'), 'none'); eq(e('Augsburg 12 2026'), 'none', 'kein Monat'); eq(e('4.11.'), 'none', 'ohne Jahr kein Raten');
+  eq(e('04.11.2026 – 06.11.2026'), 'many'); eq(e('31.02.2026'), 'invalid'); eq(e('2026-13-01'), 'invalid'); eq(pasteDate('', 2026, tb), null);
+  ok(/el\.type !== 'date'/.test(app) && app.includes("toast(t(r.e === 'many' ? 'pd_many'"), 'Einfügen in Datumsfelder mit Meldung');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['pd_none', 'pd_many', 'pd_invalid']) ok(STRINGS[l][k] && STRINGS[l][k].length > 20, `${l}.${k}`);
+});
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

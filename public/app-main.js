@@ -656,6 +656,56 @@ document.addEventListener('paste', (e) => {
   try { el.setRangeText(v, el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length, 'end'); } catch { el.value = v; }
   el.dispatchEvent(new Event('input', { bubbles: true }));
 });
+// Datum einfügen (Backlog 975, Blickwinkel „Leitung überträgt ein Datum aus Rechnung, E-Mail oder Bescheid per Kopieren/Einfügen“):
+// Datumsfelder (input type=date) nehmen am PC Eingefügtes nicht an – „04.11.2026“, „Rechnungsdatum: 04.11.2026“, „4. November 2026“,
+// „04/11/2026“ (EN-Anzeige der App), „04 листопада 2026“ wurden still verworfen. Genau ein Datum im Text → übernehmen;
+// keins, mehrere verschiedene oder ein ungültiger Kalendertag (31.02.) → eigene Meldung, nichts eingetragen. Schrägstrich wie die
+// App-Anzeige Tag/Monat/Jahr; nur wenn die zweite Zahl > 12 ist, eindeutig Monat/Tag/Jahr (US). Zweistellige Jahre: 20xx, wenn
+// höchstens 20 Jahre in der Zukunft, sonst 19xx (Erstzulassung „01.05.98“). Zeitstempel mit Zone („…T23:30:00Z“) → Berliner Tag.
+const PD_MON = { jan: 1, jän: 1, feb: 2, mär: 3, mar: 3, mrz: 3, apr: 4, mai: 5, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, okt: 10, oct: 10, nov: 11, dez: 12, dec: 12,
+  січ: 1, лют: 2, бер: 3, кві: 4, тра: 5, чер: 6, лип: 7, сер: 8, вер: 9, жов: 10, лис: 11, гру: 12,
+  янв: 1, фев: 2, мая: 5, май: 5, июн: 6, июл: 7, авг: 8, сен: 9, окт: 10, ноя: 11, дек: 12, апр: 4 };
+const PD_FULL = ['januar', 'january', 'jänner', 'februar', 'february', 'märz', 'march', 'april', 'juni', 'june', 'juli', 'july', 'august', 'sept', 'september', 'oktober', 'october', 'november', 'dezember', 'december'];
+const pasteDate = (raw, year, toBerlin) => {
+  let s = String(raw || '').replace(/[   ]/g, ' ').trim().toLowerCase(); if (!s || s.length > 120) return null;
+  const found = []; const cut = (m) => { s = s.slice(0, m.index) + ' '.repeat(m[0].length) + s.slice(m.index + m[0].length); };
+  const yr = (y) => { if (y.length === 4) return Number(y); const n = 2000 + Number(y); return n <= year + 20 ? n : n - 100; };
+  const mon = (w) => { const k = w.replace(/\.$/, ''); if (k.length < 3 || k.length > 12) return 0;
+    if (/^[a-zäöü]+$/.test(k) && k.length > 3 && !PD_FULL.includes(k)) return 0; // „Augsburg“, „Mail“ sind keine Monate
+    return PD_MON[k.slice(0, 3)] || 0; };
+  let m;
+  const iso = /(^|[^\d])(\d{4})-(\d{2})-(\d{2})(t\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(z|[+-]\d{2}:?\d{2}))?(?!\d)/;
+  while ((m = iso.exec(s))) {
+    if (m[5] && toBerlin) { const b = toBerlin(m[0].slice(m[1].length).toUpperCase()); if (b) { const [y, mo, d] = b.split('-'); found.push([Number(y), Number(mo), Number(d)]); cut(m); continue; } }
+    found.push([Number(m[2]), Number(m[3]), Number(m[4])]); cut(m);
+  }
+  const numRx = /(^|[^\d])(\d{1,2})\s*([./-])\s*(\d{1,2})\s*\3\s*(\d{4}|\d{2})(?!\d)/;
+  while ((m = numRx.exec(s))) {
+    let d = Number(m[2]); let mo = Number(m[4]); if (m[3] === '/' && mo > 12 && d <= 12) [d, mo] = [mo, d];
+    found.push([yr(m[5]), mo, d]); cut(m);
+  }
+  const nameRx = /(^|[^\d])(\d{1,2})(?:st|nd|rd|th)?\.?\s*(?:de\s+)?([a-zäöüа-яёіїєґ]{3,12}\.?),?\s*(\d{4})(?!\d)/;
+  while ((m = nameRx.exec(s))) { const mo = mon(m[3]); if (!mo) { cut(m); continue; } found.push([Number(m[4]), mo, Number(m[2])]); cut(m); }
+  const enRx = /(^|[^a-z])([a-z]{3,9}\.?)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})(?!\d)/;
+  while ((m = enRx.exec(s))) { const mo = mon(m[2]); if (!mo) { cut(m); continue; } found.push([Number(m[4]), mo, Number(m[3])]); cut(m); }
+  if (!found.length) return { e: 'none' };
+  const fmt = ([y, mo, d]) => `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const uniq = [...new Set(found.map(fmt))];
+  if (uniq.length > 1) return { e: 'many' };
+  const [y, mo, d] = found[0]; const x = new Date(Date.UTC(y, mo - 1, d));
+  if (mo < 1 || mo > 12 || d < 1 || y < 1900 || x.getUTCMonth() !== mo - 1 || x.getUTCDate() !== d) return { e: 'invalid', x: uniq[0] };
+  return { d: uniq[0] };
+};
+document.addEventListener('paste', (e) => {
+  const el = e.target; if (!el || el.tagName !== 'INPUT' || el.type !== 'date' || el.readOnly || el.disabled) return;
+  const raw = e.clipboardData ? e.clipboardData.getData('text') : ''; if (!String(raw).trim()) return;
+  const r = pasteDate(raw, Number(bDate().slice(0, 4)), (z) => { const ms = Date.parse(z); return Number.isFinite(ms) ? BERLIN_FMT.format(new Date(ms)) : null; });
+  if (!r) return;
+  e.preventDefault();
+  if (!r.d) { toast(t(r.e === 'many' ? 'pd_many' : r.e === 'invalid' ? 'pd_invalid' : 'pd_none'), true); return; }
+  el.value = r.d; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
+  if (!el.checkValidity()) el.reportValidity();
+});
 // Dasselbe für Knöpfe/Links mit asynchronem Klick-Handler (`el.onclick = async …`, z. B. Quittieren, Ausbuchen, Entscheidung,
 // Bestandsbuchung): Vor dem ersten Klick wird der Handler umhüllt; liefert er ein Promise, sind weitere Klicks bis zum Ende wirkungslos.
 // Synchrone Handler (Navigation, Aufklappen) bleiben unverändert.
