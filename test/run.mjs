@@ -32754,6 +32754,20 @@ await test('Backlog 967 (Fund aus 966): „Reifen ist abgefahren/blank, getausch
   ok(gr.test(recurFix('kupplung defekt')) && !cp.test(recurFix('kupplung defekt')), 'Kupplung ohne Auflieger bleibt Getriebe/Kupplung');
 });
 
+await test('Backlog 969 (Blickwinkel „Fahrer schreibt hastig im Telegrammstil – GROSSBUCHSTABEN, Abkürzungen, Emojis“): „BREMSEN ZIEHEN NACH LINKS“, „Öl-Warnung“, „Batterie-Warnung“, „Diesel/Öl verliert“, „bin rückwärts gegen Poller 🤦“ → Bremse/Warnleuchte/Leck/Anprall; „Öl verliert nicht mehr“, „Diesel verliert er nicht“, „Öl-Warnung ist weg“, „ich bin gegen Poller als Lösung“ ohne Hinweis; UI-Skript in pruefen.sh', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => new RegExp(app.match(new RegExp(`^const ${n} = \\/(.+)\\/i;`, 'm'))[1], 'i');
+  const H = { BRAKE: rx('BRAKE_HINT'), WARN: rx('WARNLIGHT_HINT'), LEAK: rx('LEAK_HINT'), FIX: rx('FIXOBJ_HINT') };
+  const yes = [['BRAKE', 'BREMSEN ZIEHEN NACH LINKS'], ['BRAKE', 'bremsen ziehen nach rechts'], ['WARN', 'Öl-Warnung'], ['WARN', 'BATTERIE-WARNUNG'], ['WARN', 'ölwarnung'],
+    ['LEAK', 'Diesel verliert'], ['LEAK', 'Öl verliert 💧'], ['LEAK', 'Hydrauliköl verliert'], ['LEAK', 'Lkw verliert Diesel'],
+    ['FIX', 'bin rückwärts gegen Poller 🤦'], ['FIX', 'bin gegen Poller.'], ['FIX', 'bin beim Rangieren gegen die Schranke'], ['FIX', 'bin gegen einen Poller gefahren']];
+  for (const [k, x] of yes) ok(H[k].test(recurFix(x)), k + '-Hinweis erwartet: ' + x);
+  const no = [['LEAK', 'Öl verliert nicht mehr'], ['LEAK', 'Diesel verliert er nicht'], ['LEAK', 'Öl verliert, abgedichtet'], ['WARN', 'Öl-Warnung ist weg'], ['FIX', 'ich bin gegen Poller als Lösung'], ['BRAKE', 'Reifen ziehen Wasser']];
+  for (const [k, x] of no) ok(!H[k].test(recurFix(x)), 'kein ' + k + '-Hinweis: ' + x);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-telegrammstil.py|'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

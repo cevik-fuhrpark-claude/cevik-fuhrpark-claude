@@ -246,6 +246,7 @@ UI-Hinweis Assistenzsystem gestört/Lkw bremst grundlos im Meldeformular und Hil
 UI-Hinweis Lenkung schwergängig/Spiel/Lkw zieht zur Seite im Meldeformular und Hilfe|ui-lenkung.py|/tmp/cfp-lenkung.log
 UI-Hinweise bei diktierten Sätzen ohne Satzzeichen (Vermerk zu anderem Bauteil)|ui-diktat-satzgrenze.py|/tmp/cfp-diktat-satzgrenze.log
 UI-Hinweise bei Mundart/Umgangssprache (bairisch, Ruhrpott, britisch)|ui-mundart.py|/tmp/cfp-mundart.log
+UI-Hinweise im Telegrammstil (GROSSBUCHSTABEN, Abkürzungen, Emojis)|ui-telegrammstil.py|/tmp/cfp-telegrammstil.log
 UI-Hinweis Motor im Notlauf/Leistungsverlust/Überhitzung im Meldeformular und Hilfe|ui-motor.py|/tmp/cfp-motor.log
 UI-Hinweis Luftfederung defekt/Lkw oder Auflieger hängt schief im Meldeformular und Hilfe|ui-federung.py|/tmp/cfp-federung.log
 UI-Hinweis Getriebe schaltet nicht/Gang geht nicht rein/Kupplung rutscht im Meldeformular und Hilfe|ui-getriebe.py|/tmp/cfp-getriebe.log
