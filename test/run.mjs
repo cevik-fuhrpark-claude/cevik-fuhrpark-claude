@@ -33334,6 +33334,22 @@ await test('Backlog 989 (Blickwinkel „Werkstatt bucht vom Lieferschein: Teilen
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].stock_pn_dup && STRINGS[l].stock_pn_spelled.includes('{pn}'), l + ': Texte'); ok(STRINGS[l].help_stock_s.includes('A 000 420 12 20') && STRINGS[l].help_stock_s.split('A0004201220').length > 2, l + ': Hilfe'); }
 });
+await test('Backlog 990 (Blickwinkel „Mechaniker tippt die Teilenummer vom Karton ab, statt den Artikel aus dem Lager zu wählen“): „Teil erfassen“ weist bei frei eingetippter Teilenummer eines vorrätigen Artikels (gleiche Regel wie Suche, nur Bestand > 0, nur ohne Lagerauswahl) auf „aus dem Lager entnehmen“ hin, Knopf wählt den Artikel auch bei gefilterter Lagersuche; Hilfe DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('async function loadStockSelect('); const body = app.slice(a, app.indexOf('\n}\n', a));
+  ok(body.includes("items.filter((i) => i.on_hand > 0 && pnCompact(i.part_number) === c)") && body.includes('!sel.value && !fpn.disabled && c.length >= 3'), 'nur vorrätige Artikel des Auftragslagers, nur ohne Auswahl, ab 3 Zeichen');
+  ok(body.includes("fpn.addEventListener('input', pnCheck)") && body.includes("sel.value = b.dataset.pnpick; sel.onchange();"), 'beim Tippen; Knopf wählt wie Handauswahl (Preis/Freitext gesperrt)');
+  ok(body.includes("sq.value = ''; sq.dispatchEvent(new Event('input', { bubbles: true }))"), 'gefilterte Lagersuche wird zurückgesetzt, damit der Artikel wählbar ist');
+  // Regel an Beispieldaten (dieselbe pnCompact-Zeile wie die Lagerliste)
+  const line = (k) => app.slice(app.indexOf(k), app.indexOf('\n', app.indexOf(k)));
+  const pnCompact = new Function(line('const pnCompact = (x) =>') + '; return pnCompact;')();
+  const items = [{ id: 'a', part_number: 'A 000 420 12 20', on_hand: 4 }, { id: 'b', part_number: 'A0004201220', on_hand: 0 }, { id: 'c', part_number: 'A-000-420-12-21', on_hand: 1 }];
+  const hits = (v) => { const c = pnCompact(v); return c.length >= 3 ? items.filter((i) => i.on_hand > 0 && pnCompact(i.part_number) === c).map((i) => i.id).join(',') : ''; };
+  eq(hits('A0004201220'), 'a', 'anders geschrieben, leerer Artikel nicht'); eq(hits('a.000.420.12.21'), 'c'); eq(hits('A00'), '', 'keine Teiltreffer'); eq(hits('12'), '');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].stock_pn_instock && STRINGS[l].stock_pn_instock.length > 30, l + ': Text'); }
+  ok(STRINGS.de.help_stock_s.includes('aus dem Lager entnehmen') && STRINGS.en.help_stock_s.includes('take it from stock') && STRINGS.uk.help_stock_s.includes('взяти її зі складу'), 'Hilfe DE/UK/EN');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

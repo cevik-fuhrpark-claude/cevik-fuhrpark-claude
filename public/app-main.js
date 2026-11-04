@@ -4137,6 +4137,23 @@ async function loadStockSelect(c) {
   };
   if (qf) qf.addEventListener('input', qtyCheck);
   const sq = $('#stockq', el); if (sq) stockPick(sq, sel, () => items.filter((i) => i.on_hand > 0), first); // leer gebuchte Artikel (Backlog 232) fallen beim Filtern weg
+  // Backlog 990 (Blickwinkel „Mechaniker tippt die Teilenummer vom Karton ab, statt den Artikel aus dem Lager zu wählen“): frei erfasste
+  // Teilenummer eines vorrätigen Artikels (auch anders geschrieben, „A 000 420 12 20“) → Hinweis mit Knopf „aus dem Lager entnehmen“;
+  // sonst bleibt der Lagerbestand stehen, obwohl das Teil verbaut ist (Buchbestand ≠ Regal, Bestellvorschlag zu spät)
+  const fpn = $('#freepart [name=part_number]');
+  if (fpn) {
+    const box = document.createElement('p'); box.className = 'small panel'; box.id = 'pninstock'; box.setAttribute('role', 'status'); box.hidden = true; fpn.after(box);
+    const pnCheck = () => {
+      const c = pnCompact(fpn.value); const hits = !sel.value && !fpn.disabled && c.length >= 3 ? items.filter((i) => i.on_hand > 0 && pnCompact(i.part_number) === c) : [];
+      box.hidden = !hits.length; if (!hits.length) { box.textContent = ''; return; }
+      box.innerHTML = `📦 ${esc(t('stock_pn_instock'))}<br>${hits.slice(0, 3).map((i) => `<button type="button" class="btn secondary small" data-pnpick="${esc(i.id)}" style="margin-top:4px">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</button>`).join(' ')}${hits.length > 3 ? ` +${hits.length - 3}` : ''}`;
+      box.querySelectorAll('[data-pnpick]').forEach((b) => { b.onclick = () => {
+        if (sq && ![...sel.options].some((o) => o.value === b.dataset.pnpick)) { sq.value = ''; sq.dispatchEvent(new Event('input', { bubbles: true })); }
+        sel.value = b.dataset.pnpick; sel.onchange(); box.hidden = true; box.textContent = ''; sel.focus();
+      }; });
+    };
+    fpn.addEventListener('input', pnCheck); sel.addEventListener('change', pnCheck); pnCheck();
+  }
 }
 
 // Zwei Aufträge greifen auf denselben Lagerartikel (Backlog 232): die Auswahl zeigte nach der Abweisung weiter den Bestand vom Öffnen
