@@ -6,6 +6,7 @@ import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile, fineVehiclesSql, gespannVehiclesSql } from './fines.js';
 import { siteSelection } from './reports.js';
+import { noKey, NO_KEY_SQL } from './contracts.js';
 import { SETTING_DEFAULTS } from './settings.js';
 import { winterMarks, winterStatus } from './tires.js';
 import { huSpFor, HUSP_ONE_SQL, huSpInputFromRow } from './inspection_rules.js';
@@ -229,11 +230,16 @@ export async function listCases(env, user, envName, query, meta = null) {
     // (klein/GROSS) reichen, weil lower() in SQLite nur A–Z angleicht – wenige gebundene Werte (D1-Grenze 100)
     const cv = [...new Set([q.toLocaleLowerCase('de'), q.toLocaleUpperCase('de')])];
     const inCols = (cols) => `(${cv.flatMap(() => cols.map((col) => `instr(lower(${col}), lower(?)) > 0`)).join(' OR ')})`;
+    // Backlog 999 (Blickwinkel „Rechnung/Lieferschein kommt per Post, Nummer anders geschrieben“, Folge aus 439/998): Vorgangsnummer,
+    // Rechnungsnummer der Fremdleistung, Teilenummer und Beleg der Teile auch ohne Leerzeichen/Punkte/Binde-/Schräg-/Unterstriche
+    // („A 000 420 12 20“ = „A0004201220“, „RE-2026/0815“ = „re 2026 0815“, „S20260001“ = „S-2026-0001“) – nur bei Suchtext mit Ziffer, ab 4 Zeichen
+    const nk = /\d/.test(q) ? noKey(q) : ''; const nkOn = nk.length >= 4;
+    const nkCols = (cols) => (nkOn ? cols.map((col) => ` OR instr(${NO_KEY_SQL(col)}, ?) > 0`).join('') : '');
     const costSql = canSeeCosts(user) ? `
-      OR EXISTS (SELECT 1 FROM external_costs ec WHERE ec.case_id=c.id AND ${inCols(['ec.invoice_no', 'ec.supplier'])})` : '';
+      OR EXISTS (SELECT 1 FROM external_costs ec WHERE ec.case_id=c.id AND (${inCols(['ec.invoice_no', 'ec.supplier'])}${nkCols(['ec.invoice_no'])}))` : '';
     const partWs = user.role === 'workshop' && user.workshop_site;
     const partSql = canSeeCosts(user) || partWs ? `
-      OR EXISTS (SELECT 1 FROM parts pt WHERE pt.case_id=c.id${partWs ? ' AND c.workshop_site=?' : ''} AND ${inCols(['pt.part_number', 'pt.document_ref', 'pt.supplier'])})` : '';
+      OR EXISTS (SELECT 1 FROM parts pt WHERE pt.case_id=c.id${partWs ? ' AND c.workshop_site=?' : ''} AND (${inCols(['pt.part_number', 'pt.document_ref', 'pt.supplier'])}${nkCols(['pt.part_number', 'pt.document_ref'])}))` : '';
     // Backlog 448 (Folge aus 446, Lieferant ruft an / Leitung fasst beim Lieferanten nach): wartende Aufträge auch über den Vermerk
     // „worauf gewartet wird“ (letztes wait_parts, z. B. „bestellt bei Teile Nord“) – gleiche Angabe wie parts_wait_note der Liste
     const waitSql = `
@@ -241,11 +247,11 @@ export async function listCases(env, user, envName, query, meta = null) {
     // Backlog 537 (Blickwinkel „Reifenplatzer nachts auf der Autobahn“): auch Ort laut Meldung und eingetragener Standort („A2“, „Rastplatz“)
     const locSql = `
       OR ${inCols(['c.location_note', 'c.vehicle_location'])}`;
-    const searchArgs = [...(costSql ? cv.flatMap((x) => [x, x]) : []), ...(partSql ? [...(partWs ? [user.workshop_site] : []), ...cv.flatMap((x) => [x, x, x])] : []), ...cv, ...cv.flatMap((x) => [x, x])];
+    const searchArgs = [...(costSql ? [...cv.flatMap((x) => [x, x]), ...(nkOn ? [nk] : [])] : []), ...(partSql ? [...(partWs ? [user.workshop_site] : []), ...cv.flatMap((x) => [x, x, x]), ...(nkOn ? [nk, nk] : [])] : []), ...cv, ...cv.flatMap((x) => [x, x])];
     // früheres Kennzeichen des Fahrzeugs (Backlog 256): Rechnung/Gutachten nennt nach einer Umkennzeichnung oft noch das alte
-    where.push(`((${wordSql.join(' AND ')}) OR instr(lower(c.case_no), lower(?)) > 0 OR instr(${PLATE_KEY_SQL('v.plate')}, ?) > 0
+    where.push(`((${wordSql.join(' AND ')}) OR instr(lower(c.case_no), lower(?)) > 0${nkCols(['c.case_no'])} OR instr(${PLATE_KEY_SQL('v.plate')}, ?) > 0
       OR EXISTS (SELECT 1 FROM vehicle_plates vp WHERE vp.vehicle_id=c.vehicle_id AND instr(${PLATE_KEY_SQL('vp.plate')}, ?) > 0)${costSql}${partSql}${waitSql}${locSql})`);
-    args.push(...wordArgs, q, plateKey.length >= 2 ? plateKey : '\u0000', plateKey.length >= 2 ? plateKey : '\u0000', ...searchArgs);
+    args.push(...wordArgs, q, ...(nkOn ? [nk] : []), plateKey.length >= 2 ? plateKey : '\u0000', plateKey.length >= 2 ? plateKey : '\u0000', ...searchArgs);
   }
   const limit = intParam(query.limit, 200, 1, query.__export ? 5000 : 500);
   const rows = (await env.DB.prepare(`${withSql}

@@ -33560,6 +33560,27 @@ await test('Backlog 998 (Blickwinkel „Versicherer schreibt zum selben Schaden 
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].claim_same_no_dup && STRINGS[l].claim_same_no_dup.includes('{p}'), l);
   ok(STRINGS.de.help_claims_s.includes('Gleiche Schadennummer:') && STRINGS.uk.help_claims_s.includes('Однаковий номер збитку:') && STRINGS.en.help_claims_s.includes('Same claim number:'), 'Hilfe DE/UK/EN');
 });
+await test('Backlog 999 (Blickwinkel „Rechnung/Lieferschein kommt per Post, Nummer anders geschrieben“, Folge aus 439/998): Vorgangssuche findet Vorgangsnummer, Rechnungsnummer, Teilenummer und Beleg auch ohne Leerzeichen/Punkte/Striche; Rechte wie 439; Hilfe DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const id = await newCase({ description: 'Bremse quietscht' }); const other = await newCase({ description: 'Spiegel lose' });
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Bremse')).status, 200);
+  eq((await cmd(U.fleet, id, 'add_external_cost', { supplier: 'Bremsendienst GmbH', invoice_no: 'RE-2026/0815', amount_net: '180,00', valuation: 'estimate' })).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200); eq((await cmd(U.ws, id, 'start_repair')).status, 200);
+  eq((await cmd(U.ws, id, 'add_part', { name: 'Bremsbelag', part_number: 'A 000 420 12 20', quantity: 1, supplier: 'Teile Nord KG', document_ref: 'LS 99.123-4' })).status, 200);
+  const hits = async (u, q) => { const r = await u.get('/api/cases?status=&q=' + encodeURIComponent(q)); eq(r.status, 200, q); return r.data.cases.map((c) => c.id); };
+  for (const q of ['re 2026 0815', 're20260815', 'RE–2026–0815']) { const h = await hits(U.fleet, q); ok(h.includes(id) && !h.includes(other), 'Leitung Rechnung: ' + q); }
+  for (const q of ['A0004201220', 'a000-420-1220', 'LS99123-4', 'ls991234']) { ok((await hits(U.fleet, q)).includes(id), 'Leitung Teil: ' + q); ok((await hits(U.ws, q)).includes(id), 'Werkstatt Teil: ' + q); }
+  for (const u of [U.ws, U.viewer, U.driver]) ok(!(await hits(u, 're20260815')).includes(id), 'ohne Kostenrecht kein Treffer über die Rechnung');
+  for (const u of [U.wsMuc, U.viewer, U.driver]) ok(!(await hits(u, 'A0004201220')).includes(id), 'andere Werkstatt/Lesen/Fahrer: kein Treffer über das Teil');
+  const cno = (await U.fleet.get(`/api/cases/${id}`)).data.case.case_no; const plain = cno.replace(/[^0-9A-Za-z]/g, '');
+  ok(plain !== cno, 'Vorgangsnummer hat Trennzeichen'); const h = await hits(U.fleet, plain); ok(h.includes(id) && !h.includes(other), 'Vorgangsnummer ohne Striche: ' + plain);
+  ok((await hits(U.driver, plain)).includes(id), 'Fahrer findet eigenen Vorgang über Nummer ohne Striche');
+  // ohne Ziffer keine Trennzeichen-Suche (Beschreibung bleibt wie bisher); viele Wörter weiter unter der D1-Grenze
+  ok(!(await hits(U.fleet, 'brems-dienst')).includes(other), 'ohne Ziffer');
+  eq((await U.fleet.get('/api/cases?status=&q=' + encodeURIComponent('a 1 b 2 c 3 d 4 e 5'))).status, 200);
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_costs_s.includes('„A0004201220“') && STRINGS.uk.help_costs_s.includes('«A0004201220»') && STRINGS.en.help_costs_s.includes('“A0004201220”'), 'Hilfe DE/UK/EN');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
