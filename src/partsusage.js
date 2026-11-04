@@ -1,11 +1,12 @@
 // [CLAUDE] Backlog 441 (Blickwinkel „Rückruf eines Teilelieferanten: an welchen Lkw ist Teil X verbaut?“):
 // Teile-Verwendung über alle Vorgänge – je Einbau (Teil im Vorgang) Fahrzeug, Datum, Menge, Lieferant, Beleg, Gewährleistung.
-// Suche über Teilenummer (Leerzeichen, Bindestriche, Punkte, Schrägstriche egal), Bezeichnung, Lieferant und Beleg.
+// Suche über Teilenummer und Beleg (Leerzeichen, Binde-/Schräg-/Unterstriche, Gedankenstriche, Punkte egal), Bezeichnung und Lieferant.
 // Inhaber/Fuhrparkleitung: alle Vorgänge der Umgebung; Werkstatt: nur Aufträge des eigenen Standorts; sonst 403.
 // Keine Preise und keine Personen (Datensparsamkeit) – die Liste dient dem Auffinden der Fahrzeuge, nicht der Kostenauswertung.
 // Die App weiß nur, wo ein Teil laut Vorgang eingebaut wurde – nicht, ob es inzwischen wieder ausgebaut ist (Hinweis in der Oberfläche).
 import { bad, forbidden, str, isCalendarDate, berlinDate, berlinDayStartIso, caseVariants, plateCmp, quoteCell } from './util.js';
 import { CASE_STATUS_DE } from './cases.js';
+import { noKey, NO_KEY_SQL } from './contracts.js';
 
 export const PARTS_USAGE_MAX = 2000;
 const PN_STRIP = [' ', '-', '.', '/'];
@@ -25,8 +26,13 @@ export async function partsUsage(env, user, envName, query = {}) {
   const vs = caseVariants(q);
   const textSql = vs.flatMap(() => ['p.name', 'p.supplier', 'p.document_ref'].map((c) => `instr(lower(COALESCE(${c},'')), lower(?)) > 0`)).join(' OR ');
   // Backlog 471 (Blickwinkel „Teilespender“): Lieferant zusätzlich ohne Leerzeichen/Bindestriche – „Ausbau aus DO-SP 9“ findet man auch mit „DOSP9“
-  const where = ['c.environment=?', `((? <> '' AND (instr(${pnKeySql('p.part_number')}, ?) > 0 OR instr(${pnKeySql('p.supplier')}, ?) > 0)) OR ${textSql})`];
-  const args = [envName, key, key, key, ...vs.flatMap((v) => [v, v, v])];
+  // Backlog 1000 (Folge aus 999, Blickwinkel „Rückrufschreiben/Lieferschein per Post, Nummer anders geschrieben“): Beleg und Teilenummer
+  // zusätzlich ohne Leerzeichen/Punkte/Binde-/Schräg-/Unterstriche/Gedankenstriche, ß = ss (`noKey` wie Vorgangssuche) – „re 2026 0815“
+  // fand den Beleg „RE-2026/0815“ nicht, „A000_420–12–20“ nicht die Teilenummer. Nur bei Suchtext mit Ziffer, ab 4 Zeichen; 2 gebundene Werte mehr
+  const nk = /\d/.test(q) ? noKey(q) : ''; const nkOn = nk.length >= 4;
+  const nkSql = (cols) => (nkOn ? cols.map((col) => ` OR instr(${NO_KEY_SQL(col)}, ?) > 0`).join('') : '');
+  const where = ['c.environment=?', `((? <> '' AND (instr(${pnKeySql('p.part_number')}, ?) > 0 OR instr(${pnKeySql('p.supplier')}, ?) > 0)) OR ${textSql}${nkSql(['p.part_number', 'p.document_ref'])})`];
+  const args = [envName, key, key, key, ...vs.flatMap((v) => [v, v, v]), ...(nkOn ? [nk, nk] : [])];
   if (ws) { where.push('c.workshop_site=?'); args.push(user.workshop_site); }
   if (from) { where.push('p.created_at >= ?'); args.push(berlinDayStartIso(from)); }
   if (to) { where.push('p.created_at < ?'); args.push(berlinDayStartIso(new Date(Date.parse(to) + 86400000).toISOString().slice(0, 10))); }
@@ -51,8 +57,8 @@ export async function partsUsage(env, user, envName, query = {}) {
   const sv = caseVariants(q);
   const stock = (await env.DB.prepare(`SELECT * FROM (SELECT i.id, i.site, i.name, i.part_number, i.unit, i.location, i.active, ROUND(COALESCE((SELECT SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id),0),3) AS on_hand
     FROM stock_items i WHERE i.environment=?${ws ? ' AND i.site=?' : ''}
-      AND ((? <> '' AND instr(${pnKeySql('i.part_number')}, ?) > 0) OR ${sv.map(() => "instr(lower(i.name), lower(?)) > 0").join(' OR ')})
-    ) WHERE on_hand > 0 ORDER BY site, name LIMIT 201`).bind(envName, ...(ws ? [user.workshop_site] : []), key, key, ...sv).all()).results
+      AND ((? <> '' AND instr(${pnKeySql('i.part_number')}, ?) > 0) OR ${sv.map(() => "instr(lower(i.name), lower(?)) > 0").join(' OR ')}${nkSql(['i.part_number'])})
+    ) WHERE on_hand > 0 ORDER BY site, name LIMIT 201`).bind(envName, ...(ws ? [user.workshop_site] : []), key, key, ...sv, ...(nkOn ? [nk] : [])).all()).results
     .map((i) => ({ ...i, active: i.active !== 0 }));
   return { q, from: from || null, to: to || null, environment: envName, workshop_site: ws ? user.workshop_site : null, truncated, max: PARTS_USAGE_MAX, items, vehicles: [...byV.values()], stock: stock.slice(0, 200), stock_truncated: stock.length > 200 };
 }

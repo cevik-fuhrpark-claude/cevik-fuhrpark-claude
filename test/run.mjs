@@ -33581,6 +33581,28 @@ await test('Backlog 999 (Blickwinkel „Rechnung/Lieferschein kommt per Post, Nu
   const { STRINGS } = await import('../public/i18n.js');
   ok(STRINGS.de.help_costs_s.includes('„A0004201220“') && STRINGS.uk.help_costs_s.includes('«A0004201220»') && STRINGS.en.help_costs_s.includes('“A0004201220”'), 'Hilfe DE/UK/EN');
 });
+await test('Backlog 1000 (Folge aus 999, Blickwinkel „Rückrufschreiben/Lieferschein per Post, Nummer anders geschrieben“): Teile-Verwendung findet Beleg und Teilenummer auch ohne Leerzeichen/Punkte/Unter-/Gedankenstriche (Einbauten und Lagerartikel), Rechte unverändert; Hinweis DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const id = await newCase({ description: 'Bremse quietscht' });
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Bremse')).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200); eq((await cmd(U.ws, id, 'start_repair')).status, 200);
+  eq((await cmd(U.ws, id, 'add_part', { name: 'Bremsbelag', part_number: 'A 000 420 12 20', quantity: 1, supplier: 'Teile Nord KG', document_ref: 'RE-2026/0815' })).status, 200);
+  eq((await U.fleet.post('/api/stock', { site: 'DORTMUND', name: 'Bremsbelag vorn', part_number: 'A000-420.12/20', initial_qty: '2' })).status, 201);
+  const get = (u, q) => u.get('/api/parts/usage?q=' + encodeURIComponent(q));
+  for (const q of ['re 2026 0815', 're20260815', 'RE–2026–0815', 'RE_2026_0815']) { const r = await get(U.fleet, q); eq(r.status, 200, q); eq(r.data.items.map((i) => i.case_id).join(), id, 'Beleg: ' + q); }
+  for (const q of ['A000_420–12–20', 'a 000–420 12 20']) {
+    const r = (await get(U.fleet, q)).data; eq(r.items.length, 1, 'Teilenummer: ' + q); eq(r.stock.length, 1, 'Lagerartikel: ' + q);
+    eq((await get(U.ws, q)).data.items.length, 1, 'Werkstatt Dortmund: ' + q); eq((await get(U.wsMuc, q)).data.items.length, 0, 'andere Werkstatt: ' + q);
+  }
+  for (const u of [U.viewer, U.driver]) eq((await get(u, 're20260815')).status, 403);
+  // ohne Ziffer bzw. kürzer als 4 Zeichen keine Trennzeichen-Suche; bisherige Suche unverändert
+  eq((await get(U.fleet, 'teile_nord')).data.items.length, 0, 'ohne Ziffer'); eq((await get(U.fleet, 'teile nord')).data.items.length, 1, 'Lieferant wie bisher');
+  eq((await get(U.fleet, 're-2026/0815')).data.items.length, 1, 'Beleg wie geschrieben');
+  const csv = await U.fleet.get('/api/parts/usage?format=csv&q=' + encodeURIComponent('re 2026 0815')); eq(csv.status, 200);
+  ok((typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data)).includes('RE-2026/0815'), 'CSV');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.ptu_hint.includes('„re 2026 0815“') && STRINGS.uk.ptu_hint.includes('«re 2026 0815»') && STRINGS.en.ptu_hint.includes('“re 2026 0815”'), 'Hinweis DE/UK/EN');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
