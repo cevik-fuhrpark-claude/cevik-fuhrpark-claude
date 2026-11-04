@@ -206,10 +206,10 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const allowed = positionsForKind(v.kind);
   const wrong = positions.filter((p) => !allowed.includes(p));
   if (wrong.length) throw bad('validation', v.kind === 'anhaenger' ? 'Position passt nicht zum Anhänger (nur AH-Achsen oder Reserve).' : 'Position passt nicht zum Lkw (Anhängerachsen AH beim Anhänger erfassen).');
-  const tread0 = num(body.tread_mm, { min: 0, max: 30, field: 'Profiltiefe', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+  const tread0 = num(body.tread_mm, { min: 0, max: 30, field: 'Profiltiefe', unit: 'mm', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
   // auf 3 Nachkommastellen wie die Anzeige – sonst „1,6 mm liegt unter dem Minimum von 1,6 mm“ bei 1,5996 (18.10.2026)
   const tread = tread0 === null ? null : Math.round(tread0 * 1000) / 1000;
-  const pressure = num(body.pressure_bar, { min: 0, max: 15, field: 'Luftdruck', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+  const pressure = num(body.pressure_bar, { min: 0, max: 15, field: 'Luftdruck', unit: 'bar', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
   if (type === 'messung' && tread === null && pressure === null) throw bad('validation', 'Messung braucht Profiltiefe oder Luftdruck.');
   const size = str(body.size, { max: 40, field: 'Reifengröße' });
   if (type === 'wechsel' && !size) throw bad('validation', 'Beim Reifenwechsel ist die Reifengröße Pflicht.');

@@ -33003,6 +33003,30 @@ await test('Backlog 985 (gleicher Blickwinkel, km-Stand diktiert): „123.456 Ki
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-km-diktat.py|'), 'UI-Skript in pruefen.sh');
 });
 
+await test('Backlog 986 (Blickwinkel „Werkstatt misst die Reifen und diktiert/tippt mit Einheit“): Profiltiefe „6,5 mm“/„Profil 6,5 Millimeter“/„6,5 мм“ und Luftdruck „8,5 bar“/„тиск 9 бар“ am Server und beim Verlassen der Felder; fremde Einheiten (psi, kPa, mm im Druckfeld) und Zahlwörter weiter abgewiesen', async () => {
+  const { num } = await import('../src/util.js'); const { unitIn } = await import('../public/hours.js');
+  const o = { min: 0, max: 30, field: 'Profiltiefe', unit: 'mm', decimalComma: true, decimalPoint: true };
+  for (const [v, x] of [['6,5 mm', 6.5], ['6.5mm', 6.5], ['6,5 Millimeter', 6.5], ['Profil 6,5', 6.5], ['Profiltiefe: 6,5 mm', 6.5], ['Restprofil 3 mm', 3], ['6,5 мм', 6.5], ['глибина протектора 7 мм', 7], ['7 миллиметров', 7], ['tread depth 6.5 millimetres', 6.5], ['6,5', 6.5]]) eq(num(v, o), x, v);
+  const b = { min: 0, max: 15, field: 'Luftdruck', unit: 'bar', decimalComma: true, decimalPoint: true };
+  for (const [v, x] of [['8,5 bar', 8.5], ['Luftdruck 8,5 bar', 8.5], ['Reifendruck: 9 bar', 9], ['8,5 бар', 8.5], ['тиск 9 бар', 9], ['давление 9 бар', 9], ['tyre pressure 8.5 bar', 8.5]]) eq(num(v, b), x, v);
+  for (const [v, opt] of [['120 psi', b], ['850 kPa', b], ['8,5 mm', b], ['6,5 bar', o], ['sechs Millimeter', o], ['Profil', o], ['6,5 cm', o], ['ca. 6 mm', o]]) { let e = null; try { num(v, opt); } catch (x) { e = x; } ok(e, 'abgewiesen: ' + v); }
+  let e = null; try { num('6,5 mm', { min: 0, max: 30, field: 'x', decimalComma: true }); } catch (x) { e = x; } ok(e, 'Einheit nur mit unit');
+  eq(unitIn('6,5 mm', 'mm'), '6,5'); eq(unitIn('Luftdruck 8,5 bar', 'bar'), '8,5'); eq(unitIn('6,5', 'mm'), null, 'unverändert'); eq(unitIn('8,5 mm', 'bar'), null); eq(unitIn('6,5 mm', 'x'), null);
+  // Ende-zu-Ende: Reifenmessung mit Einheit
+  const { U, V1 } = await freshWorld();
+  const r = await U.fleet.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 'Profil 6,5 Millimeter', pressure_bar: '8,5 bar' }); eq(r.status, 201, JSON.stringify(r.data));
+  const ev = (await U.fleet.get(`/api/vehicles/${V1}/tires`)).data.history.find((h) => h.position === 'VA-L'); eq(ev.tread_mm, 6.5); eq(ev.pressure_bar, 8.5);
+  const r2 = await U.fleet.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-R', pressure_bar: '120 psi' }); eq(r2.status, 400, 'psi wird nicht umgerechnet');
+  // Oberfläche
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/import \{[^}]*unitIn[^}]*\} from '\.\/hours\.js'/.test(app), 'app.js importiert unitIn');
+  ok(/const UNIT_FIELD = \{ tread_mm: 'mm', pressure_bar: 'bar' \};/.test(app), 'UNIT_FIELD');
+  ok(/unitIn\(raw0, 'mm'\)/.test(app), 'Hinweis „mehr Profil als zuletzt“ versteht „6,5 mm“');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(/6,5 mm/.test(STRINGS.de.help_tires_s) && /8,5 бар/.test(STRINGS.uk.help_tires_s) && /8\.5 bar/.test(STRINGS.en.help_tires_s), 'Hilfe DE/UK/EN');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-reifen-diktat.py|'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Backlog 974 (Blickwinkel „Werkstatt bucht Teilemengen vom Lieferschein“): Menge mit passender Einheit („2 Stk.“, „5 l“, „2x“, „3 шт“) im Lager, Wareneingang, Inventur und am Auftrag; fremde Einheit mit eigener Meldung (DE/UK/EN), keine Umrechnung', async () => {
   const { qtyNum } = await import('../src/util.js');
   const o = { min: 0, max: 1e6, decimalComma: true };

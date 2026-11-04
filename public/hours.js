@@ -214,3 +214,20 @@ export function kmIn(raw) {
   const t = s.replace(KM_LABEL_RX, '').replace(KM_UNIT_RX, '$1').trim();
   return t !== s && /^\d[\d .,'’]*$/.test(t) ? t : null;
 }
+
+// Backlog 986 (Blickwinkel „Werkstatt misst die Reifen am Lkw und diktiert/tippt mit Einheit“): Profiltiefe und Luftdruck kamen am Tablet/Handy
+// mit Einheit („6,5 mm“, „6,5 Millimeter“, „Profil 6,5“, „8,5 bar“, „Luftdruck 8,5 bar“, „6,5 мм“, „8,5 бар“) und wurden mit „ungültige Zahl“ abgewiesen.
+// Nur die passende Einheit bzw. Bezeichnung wird entfernt (keine Umrechnung: „120 psi“, „0,85 MPa“, „8,5 mm“ im Druckfeld bleiben abgewiesen);
+// Zahlwörter werden nie geraten. Server (`num(…, { unit })` in src/util.js) und Oberfläche (Feld wird beim Verlassen umgeschrieben) gemeinsam.
+export const UNIT_RX = {
+  mm: { label: /^(reifen)?(profil(tiefe)?|restprofil|tread(\s+depth)?|(глибина\s+)?протектор(а)?|(глубина\s+)?протектор(а)?)\s*[:.=]?\s*(?=\d)/i,
+    unit: /(\d)\s*(?:mm|мм|millimet(?:er|re)s?n?|міліметр(?:ів|и|а)?|миллиметр(?:ов|а|ы)?)\.?$/i },
+  bar: { label: /^((reifen|luft)?druck|reifenluftdruck|(tyre\s+|tire\s+|air\s+)?pressure|тиск(\s+у\s+шинах)?|давление(\s+в\s+шинах)?)\s*[:.=]?\s*(?=\d)/i,
+    unit: /(\d)\s*(?:bar|бар(?:и|а|ів|ов)?)\.?$/i },
+};
+export function unitIn(raw, kind) {
+  const u = UNIT_RX[kind]; if (!u) return null;
+  const s = String(raw ?? '').replace(/[\s  ]+/g, ' ').trim(); if (!s || s.length > 40) return null;
+  const t = s.replace(u.label, '').replace(u.unit, '$1').trim();
+  return t !== s && /^\d{1,3}(?:[.,]\d{1,3})?$/.test(t) ? t : null;
+}

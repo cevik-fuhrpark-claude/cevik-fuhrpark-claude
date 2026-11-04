@@ -8,7 +8,7 @@ import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentF
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday, STATES } from './holidays.js';
-import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, kmIn } from './hours.js';
+import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, kmIn, unitIn } from './hours.js';
 import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen, tzDiff, nextOpenLocal, holidayGaps } from './emhours.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
@@ -653,6 +653,15 @@ document.addEventListener('change', (e) => {
   const el = e.target; if (!el || el.tagName !== 'INPUT' || el.readOnly || el.disabled || el.getAttribute('inputmode') !== 'numeric') return;
   if (!(KM_FIELD.test(el.name || '') || /^(km|kfkm|extkmv|tfkm)$/.test(el.id || ''))) return;
   const v = kmIn(el.value); if (v === null || v === el.value) return;
+  el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));
+}, true);
+// Backlog 986: Profiltiefe/Luftdruck mit Einheit bzw. Bezeichnung („6,5 mm“, „Profil 6,5 Millimeter“, „8,5 bar“, „тиск 9 бар“) – beim Verlassen
+// des Felds nur Einheit/Bezeichnung entfernen (Ziffern unverändert, keine Umrechnung; der Server liest dieselben Formen über `unitIn`).
+const UNIT_FIELD = { tread_mm: 'mm', pressure_bar: 'bar' };
+document.addEventListener('change', (e) => {
+  const el = e.target; if (!el || el.tagName !== 'INPUT' || el.readOnly || el.disabled) return;
+  const k = UNIT_FIELD[el.name || '']; if (!k) return;
+  const v = unitIn(el.value, k); if (v === null || v === el.value) return;
   el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));
 }, true);
 // Datum einfügen (Backlog 975, Blickwinkel „Leitung überträgt ein Datum aus Rechnung, E-Mail oder Bescheid per Kopieren/Einfügen“):
@@ -5233,7 +5242,7 @@ async function renderTires(id, el, keep = null) {
   if (tf) { tf.odometer_km.addEventListener('input', tfKm); tfKm(); }
   // Backlog 847: mehr Profil als die letzte Messung derselben Position ohne erfassten Wechsel (Einstellung tire_tread_rise_mm, leer = aus) – Hinweis beim Tippen
   const tfRise = () => {
-    const box = $('#tfrise', tf); if (!box) return; const lim = d.tread_rise_mm; const raw = String(tf.tread_mm.value).trim();
+    const box = $('#tfrise', tf); if (!box) return; const lim = d.tread_rise_mm; const raw0 = String(tf.tread_mm.value).trim(); const raw = unitIn(raw0, 'mm') ?? raw0; // Backlog 986: „6,5 mm“
     const v = /^\d{1,2}([.,]\d{1,3})?$/.test(raw) ? Number(raw.replace(',', '.')) : null;
     const sel = [...new Set([tf.position.value, ...$$('input[name="positions"]:checked', tf).map((c) => c.value)])];
     const hits = !lim || v === null || tf.event_type.value === 'wechsel' ? [] : sel.map((ps) => (d.positions || []).find((p) => p.position === ps)).filter((p) => p && p.tread_mm !== null && p.tread_mm !== undefined && Math.round((v - p.tread_mm) * 1000) >= Math.round(lim * 1000));

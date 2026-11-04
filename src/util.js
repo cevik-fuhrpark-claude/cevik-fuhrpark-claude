@@ -1,5 +1,5 @@
 // [CLAUDE] Hilfsfunktionen ohne externe Abhängigkeiten (Cloudflare Workers / WebCrypto)
-import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty, moneyIn, KM_UNIT_RX } from '../public/hours.js';
+import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty, moneyIn, KM_UNIT_RX, unitIn } from '../public/hours.js';
 
 export const nowIso = () => new Date().toISOString();
 // Zeitstempel für Änderungen mit Vergleich auf den gelesenen Stand (updated_at): immer später als der alte Wert, auch bei gleicher Millisekunde
@@ -277,7 +277,7 @@ export function qtyNum(v, unit, opts = {}) {
   }
   return num(v, { ...opts, field });
 }
-export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, money = false, net = false, decimalComma = false, decimalPoint = false } = {}) {
+export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, money = false, net = false, unit = null, decimalComma = false, decimalPoint = false } = {}) {
   if ((v === null || v === undefined || v === '') && nullable) return null;
   let n;
   if (typeof v === 'number') n = v;
@@ -295,6 +295,8 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
     }
     // Backlog 984: ausgeschriebene Währung aus Diktat/Nachricht („120,50 Euro“, „120 Euro 50“, „50 Cent“, „120 євро“) über `moneyIn` (public/hours.js)
     if (cents || money) { const w = moneyIn(t); if (w !== null) t = w; }
+    // Backlog 986: Profiltiefe/Luftdruck mit Einheit bzw. Bezeichnung („6,5 mm“, „Profil 6,5“, „8,5 bar“, „8,5 бар“) über `unitIn` (public/hours.js), keine Umrechnung
+    if (unit) { const w = unitIn(t, unit); if (w !== null) t = w; }
     if (cents || money) t = t.replace(/^(€|eur)\s*/i, '').replace(/\s*(€|eur)$/i, '');
     if (grouped) t = t.replace(/\s*(km|км)\.?$/i, '');
     t = t.replace(/[\s\u00a0]/g, '');
