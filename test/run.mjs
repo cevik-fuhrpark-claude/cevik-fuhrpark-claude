@@ -32691,6 +32691,10 @@ await test('Backlog 965 (Blickwinkel „Fahrer diktiert per Sprachnachricht – 
   for (const [k, x] of [['STEER', 'lenkung zieht nach rechts und das lenkrad wurde getauscht'], ['STEER', 'steering pulls right and the steering rack was replaced'], ['TYRE', 'колесо спускає а колесо вже замінили'], ['STEER', 'lenkung zieht nach rechts wurde aber schon repariert'], ['TARP', 'hole in the tarp again, although it was fixed last week']]) ok(k === 'TARP' ? H(k).test(recurFix(x)) : !H(k).test(recurFix(x)), (k === 'TARP' ? 'Hinweis erwartet (wiederkehrend): ' : 'kein Hinweis erwartet (gleiches Bauteil/Vermerk): ') + x);
   eq(recurFix('lenkung zieht nach rechts das radio wurde gewechselt').includes('rechts. das radio'), true, 'Satzgrenze vor dem fremden Bauteil');
   for (const x of ['die bremse quietscht und der mechaniker hat sie repariert', 'reifen verliert luft, der wurde aber getauscht', 'bremse zieht nach links und die bremsen wurden gestern repariert']) ok(!/\.\s/.test(recurFix(x).replace(/\s+$/, '')), 'keine Satzgrenze: ' + x);
+  // Geräte-/Ausstattungshinweise über noFixed (Backlog 764): Vermerk zu anderem Bauteil blendet nicht mehr aus, gleiches Bauteil weiter
+  const noFixed = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf('\n', app.indexOf('const noFixed'))) + '; return noFixed;')();
+  for (const [k, x] of [['TELEM', 'navi geht nicht der spiegel wurde getauscht'], ['WINDOW', 'fensterheber geht nicht und der spiegel wurde getauscht'], ['WINDOW', 'power window not working and the mirror was replaced'], ['WINDOW', 'склопідйомник не працює а дзеркало замінили'], ['WINDOW', 'стеклоподъемник не работает а зеркало заменили']]) ok(H(k).test(noFixed(recurFix(x))), k + ' erwartet (noFixed): ' + x);
+  ok(!H('WINDOW').test(noFixed(recurFix('fensterheber geht nicht und der fensterheber wurde schon getauscht'))), 'gleiches Gerät repariert → kein Hinweis');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
