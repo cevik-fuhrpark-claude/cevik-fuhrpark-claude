@@ -32911,7 +32911,7 @@ await test('Backlog 975 (Blickwinkel „Leitung überträgt ein Datum aus Rechnu
     ['2026-11-03T23:30:00Z', '2026-11-04'], ['01.05.98', '1998-05-01'], ['vom 03.11.2026 bis 03.11.2026', '2026-11-03'], ['Datum: 4.11.2026, Rechnung Nr. 2026-0042', '2026-11-04']]) eq(d(x), want, x);
   eq(e('hallo'), 'none'); eq(e('1.234,56 €'), 'none'); eq(e('Augsburg 12 2026'), 'none', 'kein Monat'); eq(e('4.11.'), 'none', 'ohne Jahr kein Raten');
   eq(e('04.11.2026 – 06.11.2026'), 'many'); eq(e('31.02.2026'), 'invalid'); eq(e('2026-13-01'), 'invalid'); eq(pasteDate('', 2026, tb), null);
-  ok(/el\.type !== 'date'/.test(app) && app.includes("toast(t(r.e === 'many' ? 'pd_many'"), 'Einfügen in Datumsfelder mit Meldung');
+  ok(app.includes("['date', 'time', 'datetime-local'].includes(el.type)") && app.includes("const pdErr = (e) => t(e === 'many' ? 'pd_many'") && app.includes('toast(pdErr(r.e), true)'), 'Einfügen in Datumsfelder mit Meldung (seit Backlog 978 gemeinsamer Handler)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['pd_none', 'pd_many', 'pd_invalid']) ok(STRINGS[l][k] && STRINGS[l][k].length > 20, `${l}.${k}`);
 });
@@ -32922,7 +32922,7 @@ await test('Backlog 976 (Blickwinkel „Leitung trägt die nächste HU vom Prüf
   for (const x of ['11/2027', 'nächste HU: 11/2027', 'HU 11.2027', '03-2028']) eq(JSON.stringify(pasteDate(x, 2026)), JSON.stringify({ e: 'month' }), x);
   for (const x of ['13/2027', '4.11.', 'Rechnung Nr. 4711', '1.234,56 €']) eq(pasteDate(x, 2026).e, 'none', x);
   eq(pasteDate('Prüfung 04.11.2026, nächste HU 11/2027', 2026).d, '2026-11-04', 'volles Datum hat Vorrang');
-  ok(app.includes("r.e === 'month' ? 'pd_month'"), 'Meldung pd_month');
+  ok(app.includes("e === 'month' ? 'pd_month'"), 'Meldung pd_month');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(/11\/2027/.test(STRINGS[l].pd_month || ''), `${l}.pd_month`);
 });
@@ -32950,6 +32950,30 @@ await test('Backlog 977 (Blickwinkel „Fahrer meldet den Schaden erst am nächs
     for (const k of ['occ_q_label', 'occ_q_0', 'occ_q_1', 'occ_q_2', 'occ_desc_take']) ok(STRINGS[l][k], `${l}.${k}`);
     ok(STRINGS[l].occ_desc_hint.includes('{w}') && STRINGS[l].occ_desc_hint.includes('{d}'), `${l}.occ_desc_hint`);
   }
+});
+
+await test('Backlog 978 (Blickwinkel „Leitung überträgt die Tatzeit aus dem Bußgeldbescheid, Fahrer die Uhrzeit aus einer Nachricht“): Uhrzeit-, Datum+Uhrzeit-Felder übernehmen eingefügtes „14:32 Uhr“, „14.32 Uhr“, „2:32 PM“, „04.11.2026, 14:32 Uhr“; fehlende/mehrere/ungültige Uhrzeit mit eigener Meldung, nie geraten (DE/UK/EN)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('const pasteTime = (raw) => {'); ok(a > 0, 'pasteTime vorhanden'); const b = app.indexOf('\n};', a) + 3;
+  const pt = new Function(app.slice(a, b) + '; return pasteTime;')();
+  const T = (x) => { const r = pt(x); return r && (r.t || 'E:' + r.e); };
+  for (const [x, want] of [['14:32', '14:32'], ['14:32 Uhr', '14:32'], ['14.32 Uhr', '14:32'], ['14 Uhr', '14:00'], ['um 7 Uhr', '07:00'], ['14h30', '14:30'], ['2:32 PM', '14:32'], ['2 pm', '14:00'],
+    ['12 am', '00:00'], ['12:15 a.m.', '00:15'], ['14.32', '14:32'], ['Tatzeit: 04.11.2026, 14:32 Uhr', '14:32'], ['04.11.2026 14:32:10', '14:32'], ['2026-11-04T14:32', '14:32'], ['о 14:32', '14:32'],
+    ['0:00', '00:00'], ['14:32, 14:32 Uhr', '14:32'],
+    ['25:10', 'E:invalid'], ['24:00', 'E:invalid'], ['13 pm', 'E:invalid'], ['14:32 und 15:10', 'E:many'], ['abends', 'E:none'], ['1.234,56', 'E:none'], ['+01:00', 'E:none'], ['4.11.2026', 'E:none']]) eq(T(x), want, x);
+  eq(pt('').e, 'none', 'leer');
+  // Zeitstempel mit Zone → Berliner Ortszeit (Winter/Sommer), Tag kann wechseln
+  const z = app.slice(app.indexOf('const pasteZoned'), app.indexOf('\n', app.indexOf('const pasteZoned')));
+  const F = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const bl = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : F.format(d).replace(' ', 'T'); };
+  const pz = new Function(z + '; return pasteZoned;')();
+  eq(pz('2026-11-03T23:30:00Z', bl), '2026-11-04 00:30'); eq(pz('2026-07-01T12:00:00.000Z', bl), '2026-07-01 14:00'); eq(pz('am 2026-11-04T13:32:00+01:00', bl), 'am 2026-11-04 13:32'); eq(pz('04.11.2026 14:32', bl), '04.11.2026 14:32');
+  // Handler: Uhrzeit-, Datum- und Datum+Uhrzeit-Felder; Tatzeit nur mit Tag UND Uhrzeit; Schadenzeitpunkt füllt das Uhrzeitfeld mit
+  ok(app.includes("['date', 'time', 'datetime-local'].includes(el.type)"), 'Handler für alle drei Feldarten');
+  ok(app.includes("toast(tr.e === 'none' ? t('pdt_notime') : ptErr(tr.e), true); return;") && app.includes("t('pdt_nodate')"), 'Tatzeit ohne Uhrzeit/Datum → Meldung, nichts eingetragen');
+  ok(app.includes("el.closest('[data-occ]').querySelector('input[type=time]')"), 'Schadenzeitpunkt: Uhrzeit mit übernommen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['pt_none', 'pt_many', 'pt_invalid', 'pdt_notime', 'pdt_nodate']) ok(STRINGS[l][k] && STRINGS[l][k].length > 20, `${l}.${k}`);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -669,14 +669,58 @@ const pasteDate = (raw, year, toBerlin) => {
   if (mo < 1 || mo > 12 || d < 1 || y < 1900 || x.getUTCMonth() !== mo - 1 || x.getUTCDate() !== d) return { e: 'invalid', x: uniq[0] };
   return { d: uniq[0] };
 };
+// Backlog 978 (Blickwinkel „Leitung überträgt die Tatzeit aus dem Bußgeldbescheid bzw. der Fahrer die Uhrzeit aus einer Nachricht“):
+// Uhrzeit aus eingefügtem Text – „14:32“, „14:32 Uhr“, „14.32 Uhr“, „14 Uhr“, „14h30“, „2:32 PM“, „12 am“, nur „14.32“ als ganzer Text.
+// Sekunden werden abgeschnitten (Felder minutengenau). Zonen-Versatz („+01:00“) ist keine Uhrzeit. Keine, mehrere verschiedene oder
+// ungültige Uhrzeit (25:10, 13 pm) → Fehlerart; nie geraten (z. B. „abends“).
+const pasteTime = (raw) => {
+  let s = ' ' + String(raw || '').replace(/[   ]/g, ' ').trim().toLowerCase() + ' '; if (s.length > 122) return null;
+  const found = []; let bad = false; const cut = (m) => { s = s.slice(0, m.index) + ' '.repeat(m[0].length) + s.slice(m.index + m[0].length); };
+  const put = (h, mi, ap) => { if (ap) { if (h < 1 || h > 12) { bad = true; return; } h = (h % 12) + (ap[0] === 'p' ? 12 : 0); } if (h > 23 || mi > 59) { bad = true; return; } found.push(`${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}`); };
+  const AP = '\\s*(a\\.?\\s?m\\.?|p\\.?\\s?m\\.?)(?![a-z])';
+  const rxs = [
+    [new RegExp(`(^|[^\\d:+\\-])(\\d{1,2})[:.](\\d{2})(?::\\d{2}(?:\\.\\d+)?)?${AP}`), (m) => put(Number(m[2]), Number(m[3]), m[4])],
+    [new RegExp(`(^|[^\\d:.+\\-])(\\d{1,2})${AP}`), (m) => put(Number(m[2]), 0, m[3])],
+    [/(^|[^\d:+\-])(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?![\d:])/, (m) => put(Number(m[2]), Number(m[3]))],
+    [/(^|[^\d:.])(\d{1,2})\.(\d{2})\s*(?:uhr|h)(?![a-z])/, (m) => put(Number(m[2]), Number(m[3]))],
+    [/(^|[^\d:.])(\d{1,2})\s*(?:uhr|h)\s*(\d{2})?(?![\d.a-z])/, (m) => put(Number(m[2]), m[3] ? Number(m[3]) : 0)],
+  ];
+  for (const [rx, f] of rxs) { let m; while ((m = rx.exec(s))) { f(m); cut(m); } }
+  if (!found.length && !bad) { const m = s.trim().match(/^(\d{1,2})\.(\d{2})$/); if (m) put(Number(m[1]), Number(m[2])); }
+  const uniq = [...new Set(found)];
+  if (uniq.length > 1) return { e: 'many' };
+  if (bad) return { e: 'invalid' };
+  return uniq.length ? { t: uniq[0] } : { e: 'none' };
+};
+// Zeitstempel mit Zone („2026-11-04T13:32:00Z“, „…+01:00“) → Berliner Ortszeit „JJJJ-MM-TT HH:MM“, damit Tag und Uhrzeit zusammenpassen
+const pasteZoned = (raw, toBerlinDT) => String(raw || '').replace(/(\d{4})-(\d{2})-(\d{2})[tT ](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(z|[+-]\d{2}:?\d{2})(?![\d])/gi, (z) => { const b = toBerlinDT(z.toUpperCase().replace(' ', 'T')); return b ? b.replace('T', ' ') : z; });
+const pdErr = (e) => t(e === 'many' ? 'pd_many' : e === 'invalid' ? 'pd_invalid' : e === 'month' ? 'pd_month' : 'pd_none');
+const ptErr = (e) => t(e === 'many' ? 'pt_many' : e === 'invalid' ? 'pt_invalid' : 'pt_none');
+const pasteSet = (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
 document.addEventListener('paste', (e) => {
-  const el = e.target; if (!el || el.tagName !== 'INPUT' || el.type !== 'date' || el.readOnly || el.disabled) return;
-  const raw = e.clipboardData ? e.clipboardData.getData('text') : ''; if (!String(raw).trim()) return;
-  const r = pasteDate(raw, Number(bDate().slice(0, 4)), (z) => { const ms = Date.parse(z); return Number.isFinite(ms) ? BERLIN_FMT.format(new Date(ms)) : null; });
+  const el = e.target; if (!el || el.tagName !== 'INPUT' || !['date', 'time', 'datetime-local'].includes(el.type) || el.readOnly || el.disabled) return;
+  const raw0 = e.clipboardData ? e.clipboardData.getData('text') : ''; if (!String(raw0).trim()) return;
+  const raw = pasteZoned(raw0, berlinLocalDT);
+  if (el.type === 'time') {
+    const r = pasteTime(raw); if (!r) return;
+    e.preventDefault(); if (!r.t) { toast(ptErr(r.e), true); return; }
+    pasteSet(el, r.t); if (!el.checkValidity()) el.reportValidity(); return;
+  }
+  const r = pasteDate(raw, Number(bDate().slice(0, 4)));
   if (!r) return;
   e.preventDefault();
-  if (!r.d) { toast(t(r.e === 'many' ? 'pd_many' : r.e === 'invalid' ? 'pd_invalid' : r.e === 'month' ? 'pd_month' : 'pd_none'), true); return; }
-  el.value = r.d; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
+  if (el.type === 'datetime-local') {
+    // Tatzeit: Tag und Uhrzeit gehören zusammen – fehlt eins, nichts eintragen (keine geratene Uhrzeit, kein „heute“)
+    const tr = pasteTime(raw.replace(/(^|[^\d])\d{4}-\d{2}-\d{2}(?=t|\s|$)/gi, '$1 ').replace(/(^|[^\d])\d{1,2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{2,4}(?!\d)/g, '$1 ')) || { e: 'none' };
+    if (!r.d) { toast(r.e === 'none' && tr.t ? t('pdt_nodate') : pdErr(r.e), true); return; }
+    if (!tr.t) { toast(tr.e === 'none' ? t('pdt_notime') : ptErr(tr.e), true); return; }
+    pasteSet(el, `${r.d}T${tr.t}`); if (!el.checkValidity()) el.reportValidity(); return;
+  }
+  if (!r.d) { toast(pdErr(r.e), true); return; }
+  pasteSet(el, r.d);
+  // Schadenzeitpunkt (Tag + Uhrzeit nebeneinander): steht im Text genau eine Uhrzeit, auch das Uhrzeitfeld füllen (sonst unverändert)
+  const tf = el.closest('[data-occ]') && el.closest('[data-occ]').querySelector('input[type=time]');
+  if (tf && !tf.disabled) { const tr = pasteTime(raw.replace(/(^|[^\d])\d{4}-\d{2}-\d{2}(?=t|\s|$)/gi, '$1 ').replace(/(^|[^\d])\d{1,2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{2,4}(?!\d)/g, '$1 ')); if (tr && tr.t) pasteSet(tf, tr.t); }
   if (!el.checkValidity()) el.reportValidity();
 });
 // Backlog 977: Schadenzeitpunkt – Schnellwahl Heute/Gestern/Vorgestern (Fahrer am Handy, Kalender ist mühsam) und Hinweis,
