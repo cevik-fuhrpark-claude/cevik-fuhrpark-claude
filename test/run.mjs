@@ -33049,6 +33049,52 @@ await test('Backlog 987 (Blickwinkel „Leitung überträgt Wartungsintervalle a
   ok(/alle 12 Monate/.test(STRINGS.de.help_dates_s) && /кожні 12 місяців/.test(STRINGS.uk.help_dates_s) && /every 12 months/.test(STRINGS.en.help_dates_s), 'Hilfe DE/UK/EN');
 });
 
+await test('Backlog 988 (Blickwinkel „Reifendienst-Rechnung und Diktat: Reifengröße in anderer Schreibweise“): „315/70 R22,5“, „315 70 R 22,5“, „315/70 Р22,5“, „315/70R22.5 154/150L“ = hinterlegte Größe – kein Hinweis size_differs/Fahrtenschreiber, kein Befund Datenqualität, Achsgröße unverändert statt Konflikt; Index nur bei beiden verglichen; Feld wird beim Verlassen umgeschrieben; Hilfe DE/UK/EN', async () => {
+  const { tireSizeKey, tireSizeSame, tireSizeFmt } = await import('../public/hours.js');
+  for (const x of ['315/70 R22,5', '315 70 R 22,5', '315/70R22.5 154/150L', '315/70 Р22,5', '315/70 r22.5', '315-70 R22.5', ' 315/70  R 22.5 ']) { eq(tireSizeKey(x), '315/70R22.5', x); ok(tireSizeSame(x, '315/70 R22.5'), x); }
+  ok(!tireSizeSame('315/70 R22.5', '315/80 R22.5') && !tireSizeSame('315/70 R22.5', '315/70 R19.5') && !tireSizeSame('385/65 R22.5', '385/55 R22.5'), 'andere Größe');
+  ok(!tireSizeSame('315/70 R22.5 152/148L', '315/70R22,5 154/150L') && tireSizeSame('315/70 R22.5 154/150 L', '315/70R22,5 154/150L'), 'Index nur bei beiden');
+  ok(tireSizeSame('13 R22.5', '13r22,5') && !tireSizeSame('13 R22.5', '12 R22.5'), 'unbekannte Schreibweise wie bisher');
+  eq(tireSizeFmt('315 70 R 22,5'), '315/70 R22.5'); eq(tireSizeFmt('315/70r22,5 154/150 l'), '315/70 R22.5 154/150L'); eq(tireSizeFmt('315/70 Р22,5'), '315/70 R22.5');
+  eq(tireSizeFmt('315/70 R22.5 M+S'), null, 'Zusatz bleibt'); eq(tireSizeFmt('13 R22.5'), null); eq(tireSizeFmt('Michelin'), null);
+  // Ende-zu-Ende
+  const e = makeEnv(); const own = new Client(worker, e, 'owner'); const an = new Client(worker, e, 'anon');
+  const r0 = await an.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'yilmaz', display_name: 'Yilmaz Cevik' });
+  await own.post('/api/invite/accept', { token: r0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const inv = async (b) => { const x = await own.post('/api/users', b); const c = new Client(worker, e, b.username); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; };
+  const W = await inv({ username: 'q.werkstatt', display_name: 'Werkstatt Q', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  const F = await inv({ username: 'q.fuhrpark', display_name: 'Fuhrpark Q', role: 'fleet', environment: 'production' });
+  const csv = 'Kennzeichen;Standort;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\nDO-PT 9881;Dortmund;MAN;2019;WMA06XZZ8RP988001;;Lkw';
+  eq((await own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200, 'Import');
+  const V = 'VIN:WMA06XZZ8RP988001';
+  const post = (b) => W.post(`/api/vehicles/${V}/tires/events`, { request_key: rk(), ...b });
+  const codes = (r) => (r.data.warning_items || []).map((w) => w.code);
+  for (const axle of ['lenkachse', 'antriebsachse']) eq((await W.post(`/api/vehicles/${V}/tires/specs`, { axle, size: '315/70 R22.5', verified: true })).status, 200, axle);
+  for (const [pos, size] of [['VA-L', '315/70 R22,5'], ['VA-R', '315 70 R 22,5 154/150 L'], ['VA-L', '315/70 Р22,5'], ['HA-L-aussen', '315/70R22,5 154/150L'], ['HA-R-aussen', '315 70 R 22.5']]) {
+    const r = await post({ event_type: 'wechsel', position: pos, size }); eq(r.status, 201, JSON.stringify(r.data));
+    ok(!codes(r).includes('size_differs') && !codes(r).includes('tacho_check_possible'), `${pos} ${size}: ${JSON.stringify(r.data.warning_items)}`);
+  }
+  const dq = async () => (await F.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'tire_size_differs');
+  eq((await dq()).length, 0, 'Datenqualität: gleiche Größe');
+  // echte Abweichung weiter erkannt
+  let r = await post({ event_type: 'wechsel', position: 'VA-L', size: '315/80 R22,5' }); ok(codes(r).includes('size_differs'), 'andere Größe');
+  r = await post({ event_type: 'wechsel', position: 'HA-L-aussen', size: '295/60 R22,5' }); ok(codes(r).includes('tacho_check_possible'), 'Antriebsachse andere Größe');
+  eq((await dq()).length, 1, 'Datenqualität: echte Abweichung');
+  // geprüfte Achsgröße: andere Schreibweise ohne Prüfung → unverändert statt Konflikt; echte Änderung ohne Prüfung weiter abgewiesen
+  r = await F.post(`/api/vehicles/${V}/tires/specs`, { axle: 'lenkachse', size: '315/70 R22,5', verified: false }); eq(r.status, 200, JSON.stringify(r.data)); ok(r.data.unchanged, 'unverändert');
+  eq((await F.post(`/api/vehicles/${V}/tires/specs`, { axle: 'lenkachse', size: '315/80 R22.5', verified: false })).status, 409, 'echte Änderung');
+  r = await W.post(`/api/vehicles/${V}/tires/specs`, { axle: 'antriebsachse', size: '315 70 R 22,5', verified: true }); eq(r.status, 200); ok(!r.data.tacho_check_possible, 'kein Fahrtenschreiber-Hinweis bei gleicher Größe');
+  // Oberfläche + Hilfe
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/import \{[^}]*tireSizeSame, tireSizeFmt[^}]*\} from '\.\/hours\.js'/.test(app), 'app.js importiert');
+  ok(app.includes('!tireSizeSame(h.s.size, sz)') && !app.includes("const k = (x) => String(x || '').toUpperCase().replace(/\\s+/g, '');"), 'Hinweis beim Tippen mit tireSizeSame');
+  ok(app.includes('placeholder="315/70 R22.5" data-tiresize>') && app.includes("!el.hasAttribute('data-tiresize')") && app.includes('tireSizeFmt(el.value)'), 'Feld wird beim Verlassen umgeschrieben');
+  const tires = fs.readFileSync(new URL('../src/tires.js', import.meta.url), 'utf8'); ok(!/sizeKey\([^)]*\) !== sizeKey/.test(tires) && !/prev\.size [!=]== size/.test(tires), 'Server vergleicht überall mit sizeSame');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(/315 70 R 22,5/.test(STRINGS.de.help_tires_s) && /Р22,5/.test(STRINGS.uk.help_tires_s) && /154\/150L/.test(STRINGS.en.help_tires_s), 'Hilfe DE/UK/EN');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-reifengroesse-schreibweise.py|'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Backlog 974 (Blickwinkel „Werkstatt bucht Teilemengen vom Lieferschein“): Menge mit passender Einheit („2 Stk.“, „5 l“, „2x“, „3 шт“) im Lager, Wareneingang, Inventur und am Auftrag; fremde Einheit mit eigener Meldung (DE/UK/EN), keine Umrechnung', async () => {
   const { qtyNum } = await import('../src/util.js');
   const o = { min: 0, max: 1e6, decimalComma: true };

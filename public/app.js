@@ -8,7 +8,7 @@ import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentF
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday, STATES } from './holidays.js';
-import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, kmIn, unitIn } from './hours.js';
+import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, kmIn, unitIn, tireSizeSame, tireSizeFmt } from './hours.js';
 import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen, tzDiff, nextOpenLocal, holidayGaps } from './emhours.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
@@ -662,6 +662,13 @@ document.addEventListener('change', (e) => {
   const el = e.target; if (!el || el.tagName !== 'INPUT' || el.readOnly || el.disabled) return;
   const k = UNIT_FIELD[el.name || ''] || (el.id === 'mci' ? 'months' : null); if (!k) return;
   const v = unitIn(el.value, k); if (v === null || v === el.value) return;
+  el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));
+}, true);
+// Backlog 988: Reifengröße aus Rechnung/Diktat („315 70 R 22,5“, „315/70r22,5 154/150 l“, „315/70 Р22,5“) beim Verlassen in die Schreibweise
+// der App („315/70 R22.5 154/150L“) – nur wenn eindeutig erkennbar (sonst unverändert, z. B. mit „M+S“ oder Marke); Vergleich mit `tireSizeSame`.
+document.addEventListener('change', (e) => {
+  const el = e.target; if (!el || el.tagName !== 'INPUT' || el.readOnly || el.disabled || !el.hasAttribute('data-tiresize')) return;
+  const v = tireSizeFmt(el.value); if (v === null || v === el.value) return;
   el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));
 }, true);
 // Datum einfügen (Backlog 975, Blickwinkel „Leitung überträgt ein Datum aus Rechnung, E-Mail oder Bescheid per Kopieren/Einfügen“):
@@ -5178,7 +5185,7 @@ async function renderTires(id, el, keep = null) {
       <label>${esc(t('position'))}</label><select name="position">${(d.allowed_positions || S.meta.tire_positions).map((p) => `<option value="${esc(p)}">${esc(posL(p))}</option>`).join('')}</select>
       <details id="tfmore"><summary class="small">${esc(t('tire_more_pos'))}</summary><p class="small muted">${esc(t('tire_more_pos_hint'))}</p><div class="tfpos">${(d.allowed_positions || S.meta.tire_positions).map((p) => `<label class="check"><input type="checkbox" name="positions" value="${esc(p)}"> ${esc(posL(p))}</label>`).join('')}</div></details>
       <label>${esc(t('tread'))}</label><input name="tread_mm" inputmode="decimal"><div id="tfrise" aria-live="polite"></div><label>${esc(t('pressure'))}</label><input name="pressure_bar" inputmode="decimal">
-      <label>${esc(t('tire_sizes'))}</label><input name="size" maxlength="40" placeholder="315/70 R22.5"><p class="small" id="tfspec" hidden></p><div id="tfsizediff" aria-live="polite"></div><label>${esc(t('brand'))}</label><input name="brand" maxlength="60"><label>${esc(t('dot'))}</label><input name="dot" maxlength="20" autocapitalize="characters" placeholder="DOT … 0124">
+      <label>${esc(t('tire_sizes'))}</label><input name="size" maxlength="40" placeholder="315/70 R22.5" data-tiresize><p class="small" id="tfspec" hidden></p><div id="tfsizediff" aria-live="polite"></div><label>${esc(t('brand'))}</label><input name="brand" maxlength="60"><label>${esc(t('dot'))}</label><input name="dot" maxlength="20" autocapitalize="characters" placeholder="DOT … 0124">
       <label>${esc(t('winter_mark'))}</label><select name="winter_mark"><option value="">${esc(t('wm_none'))}</option>${(S.meta.tire_winter_marks || []).map((w) => `<option value="${w}">${esc(t('wm_' + w))}</option>`).join('')}</select>
       <label for="tfkm">${esc(t('km'))}${d.vehicle && d.vehicle.kind === 'anhaenger' ? `<span class="hint" id="tfkmtr">${esc(t('kmtr_hint'))}</span>` : ''}${d.last_km ? `<span class="hint" id="tfkmlast">${esc(t('irv_last_km').replace('{km}', fmtNum(d.last_km.km)).replace('{d}', fmtD(d.last_km.measured_at)))}</span>` : ''}</label><input id="tfkm" name="odometer_km" inputmode="numeric"><div id="tfkmd" aria-live="polite"></div><label>${esc(t('note'))}</label><input name="note" maxlength="1000">
       <input type="hidden" name="case_id"><p class="panel small" id="tfwo" hidden></p><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}</section>
@@ -5207,10 +5214,10 @@ async function renderTires(id, el, keep = null) {
   // Backlog 849 (Blickwinkel „Reifendienst montiert eine andere Größe als für die Achse hinterlegt“): beim Reifenwechsel Hinweis je Achse, wenn die
   // eingegebene Größe von der hinterlegten abweicht (Schreibweise/Leerzeichen egal); gespeichert wird trotzdem, die hinterlegte Größe bleibt
   function tfSize() {
-    const box = $('#tfsizediff', tf); if (!box) return; const k = (x) => String(x || '').toUpperCase().replace(/\s+/g, ''); const sz = String(tf.size.value).trim();
+    const box = $('#tfsizediff', tf); if (!box) return; const sz = String(tf.size.value).trim(); // Backlog 988: Schreibweise egal (tireSizeSame)
     const sel = [...new Set([tf.position.value, ...$$('input[name="positions"]:checked', tf).map((c) => c.value)])];
     const axs = tf.event_type.value !== 'wechsel' || !/\d/.test(sz) ? [] : [...new Set(sel.map(posAxle).filter(Boolean))];
-    const hits = axs.map((ax) => ({ ax, s: (d.specs || []).find((x) => x.axle === ax) })).filter((h) => h.s && k(h.s.size) !== k(sz));
+    const hits = axs.map((ax) => ({ ax, s: (d.specs || []).find((x) => x.axle === ax) })).filter((h) => h.s && !tireSizeSame(h.s.size, sz));
     box.innerHTML = hits.map((h) => `<p class="panel warn small" role="alert" data-tfsizediff="${esc(h.ax)}" style="margin:4px 0 0">⚠️ ${esc(t('size_differs').replace('{pos}', sel.filter((p) => posAxle(p) === h.ax).map(posL).join(', ')).replace('{size}', sz).replace('{spec}', h.s.size).replace('{axle}', t('axle_' + h.ax)))}</p>`).join('');
   }
   const applyWo = () => {

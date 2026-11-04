@@ -236,3 +236,32 @@ export function unitIn(raw, kind) {
   const t = s.replace(u.label, '').replace(u.unit, '$1').trim();
   return t !== s && (u.out || /^\d{1,3}(?:[.,]\d{1,3})?$/).test(t) ? t : null;
 }
+
+// Backlog 988 (Blickwinkel „Reifendienst-Rechnung und Diktat: Reifengröße in anderer Schreibweise“): Rechnungen, Diktat und das Tablet schreiben
+// dieselbe Größe verschieden – „315/70 R22,5“ (Dezimalkomma), „315 70 R 22,5“ (Diktat ohne Schrägstrich), „315/70R22.5 154/150L“ (mit Last-/
+// Geschwindigkeitsindex), „315/70 Р22,5“ (kyrillisches Р am UK-Tablet). Der Vergleich kannte nur Groß-/Kleinschreibung und Leerzeichen →
+// falscher Hinweis „andere Größe als hinterlegt“, falscher Fahrtenschreiber-Hinweis (§ 57b), Datenqualität und Winterreifen-Bedarf getrennt.
+// Kern = Breite/Querschnitt R Felge; Last-/Geschwindigkeitsindex zählt nur, wenn beide Angaben einen haben (dann muss er gleich sein).
+// Nicht erkennbare Schreibweisen wie bisher (nur Leerzeichen/Groß-/Kleinschreibung/Dezimalkomma egal) – nie geraten.
+const TS_RX = /^(\d{3})\s*[/\-\s]\s*(\d{2})\s*(Z?R)\s*(\d{2}(?:\.\d)?)(?:\s+(.*))?$/;
+function tireSizeParts(x) {
+  const s = String(x ?? '').replace(/[\s  ]+/g, ' ').trim().toUpperCase().replace(/Р/g, 'R').replace(/(\d),(\d)/g, '$1.$2').replace(/(\d)\s*(Z?R)(?=\s*\d)/, '$1 $2');
+  const m = s.match(TS_RX);
+  if (!m) return { core: s.replace(/\s+/g, ''), rest: '', parsed: false };
+  return { core: `${m[1]}/${m[2]}${m[3]}${m[4]}`, rest: String(m[5] || '').replace(/\s+/g, ''), parsed: true, w: m[1], h: m[2], r: m[3], d: m[4], restRaw: String(m[5] || '').trim() };
+}
+// Gruppierungsschlüssel (Kern ohne Last-/Geschwindigkeitsindex), z. B. Winterreifen-Bedarf je Größe
+export const tireSizeKey = (x) => tireSizeParts(x).core;
+// Gleiche Größe? Kern gleich und Index nicht widersprüchlich (nur einer angegeben = gleich)
+export function tireSizeSame(a, b) {
+  const p = tireSizeParts(a); const q = tireSizeParts(b);
+  if (p.core !== q.core) return false;
+  return !(p.rest && q.rest && p.rest !== q.rest);
+}
+// Schreibweise der App („315/70 R22.5 154/150L“) für das Feld beim Verlassen; nicht erkennbar → null
+export function tireSizeFmt(x) {
+  const p = tireSizeParts(x); if (!p.parsed) return null;
+  const rest = p.restRaw.replace(/\s+(?=[A-Z]$)/, '');
+  if (rest && !/^\d{2,3}(?:\/\d{2,3})?[A-Z]$/.test(rest)) return null; // Zusätze wie „M+S“, Marke: Feld unverändert lassen
+  return `${p.w}/${p.h} ${p.r}${p.d}${rest ? ` ${rest}` : ''}`;
+}

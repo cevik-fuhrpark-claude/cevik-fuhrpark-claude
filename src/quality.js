@@ -22,7 +22,7 @@ const hitrunSql = () => `(${HITRUN_WORDS_LAT.map(() => 'instr(lower(c.descriptio
 import { siteKey, siteLabels, siteSelection } from './reports.js';
 import { REQUIRED_KINDS, REQUIRED_KINDS_TRAILER, defectsWithoutCaseQuery, noResultQuery, noReportQuery } from './maintenance.js';
 import { spRequired, loadHuSpInputs, huSpFor } from './inspection_rules.js';
-import { axleFits, sizeKey } from './tires.js';
+import { axleFits, sizeSame } from './tires.js';
 
 // Schweregrad: fehler = widersprüchlich, luecke = fehlt für Auswertungen, hinweis = sollte gepflegt werden
 export const CHECKS = {
@@ -362,7 +362,7 @@ export async function dataQuality(env, user, envName, query = {}) {
   for (const r of tr) { const v = vById.get(r.vehicle_id); if (v) addA('tire_tread_rise', v, `${berlinDate(r.created_at)}: ${r.position} ${r.prev_mm} → ${r.tread_mm} mm (vorher ${berlinDate(r.prev_at)})${r.n > 1 ? ` · ${r.n} Positionen` : ''}`,
     { day: berlinDate(r.created_at), position: r.position, prev_mm: r.prev_mm, tread_mm: r.tread_mm, prev_day: berlinDate(r.prev_at), n: r.n }); }
   // Backlog 850: eine Abfrage (Fensterfunktion je Fahrzeug/Position über die Wechsel, Index idx_tire_events_vehicle) mit der hinterlegten Achsgröße;
-  // Vergleich der Schreibweise wie bei der Erfassung (`sizeKey`). Achse passt zur Fahrzeugart (`axleFits`). Neuester Fall je Fahrzeug, n = Positionen
+  // Vergleich der Schreibweise wie bei der Erfassung (`sizeSame`, Backlog 988: Dezimalkomma/Diktat/Lastindex egal). Achse passt zur Fahrzeugart (`axleFits`). Neuester Fall je Fahrzeug, n = Positionen
   const sd = (await env.DB.prepare(`WITH e AS (SELECT vehicle_id, position, size, note, created_at, ROW_NUMBER() OVER (PARTITION BY vehicle_id, position ORDER BY created_at DESC, rowid DESC) AS rn
         FROM tire_events WHERE environment=? AND event_type='wechsel' AND position<>'Reserve'),
       l AS (SELECT vehicle_id, position, size, created_at, CASE WHEN substr(position,1,3)='VA-' THEN 'lenkachse' WHEN substr(position,1,3)='LA-' THEN 'liftachse'
@@ -371,7 +371,7 @@ export async function dataQuality(env, user, envName, query = {}) {
     SELECT l.vehicle_id, l.position, l.axle, l.size, l.created_at, s.size AS spec, s.verified FROM l JOIN tire_specs s ON s.vehicle_id=l.vehicle_id AND s.axle=l.axle
     ORDER BY l.created_at DESC`).bind(envName).all()).results;
   const sdBy = new Map();
-  for (const r of sd) { const v = vById.get(r.vehicle_id); if (!v || !axleFits(v.kind, r.axle) || sizeKey(r.size) === sizeKey(r.spec)) continue;
+  for (const r of sd) { const v = vById.get(r.vehicle_id); if (!v || !axleFits(v.kind, r.axle) || sizeSame(r.size, r.spec)) continue;
     const g = sdBy.get(v.id); if (g) g.n++; else sdBy.set(v.id, { v, r, n: 1 }); }
   for (const { v, r, n } of sdBy.values()) addA('tire_size_differs', v, `${berlinDate(r.created_at)}: ${r.position} ${r.size} ≠ ${r.axle} ${r.spec}${r.verified ? '' : ' (ungeprüft)'}${n > 1 ? ` · ${n} Positionen` : ''}`,
     { day: berlinDate(r.created_at), position: r.position, axle: r.axle, size: r.size, spec: r.spec, verified: !!r.verified, n });

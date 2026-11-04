@@ -1,6 +1,7 @@
 // [CLAUDE] Reifenmanagement: Größen je Achse (mit Prüfstatus), Messungen/Wechsel je Position, Grenzwerte
 import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, normalizeVin, parseCsv, hideDriverName, berlinDate, intParam, berlinWindowStartIso , commaDec, pointDec, kmNum } from './util.js';
 import { audit } from './auth.js';
+import { tireSizeKey, tireSizeSame } from '../public/hours.js';
 import { siteSelection } from './reports.js';
 import { caseAccess } from './cases.js';
 
@@ -179,7 +180,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
   const allowed = positionsForKind(v.kind);
   // Backlog 851: montierte Größe weicht von der hinterlegten Achsgröße ab (wie Datenqualität tire_size_differs; Schreibweise egal, Reserve ohne Achse)
   const sizeDiff = (position, size) => { const sp = size ? specs.find((x) => x.axle === posAxle(position)) : null;
-    return sp && sizeKey(sp.size) !== sizeKey(size) ? { size_differs: true, spec_size: sp.size, spec_axle: sp.axle, spec_verified: !!sp.verified } : {}; };
+    return sp && !sizeSame(sp.size, size) ? { size_differs: true, spec_size: sp.size, spec_axle: sp.axle, spec_verified: !!sp.verified } : {}; };
   const positions = Object.entries(latest).filter(([position]) => allowed.includes(position)).map(([position, x]) => ({
     position, winter_mark: wm.marks[position] ?? null, ...dotAge(dots[position], today, ageYears), last_event: x.event.event_type, last_event_at: x.event.created_at, tread_mm: x.tread_mm ?? null, tread_at: x.tread_at || null,
     status: treadStatus(position, x.tread_mm, warn), size: x.size ?? null, ...sizeDiff(position, x.size),
@@ -249,12 +250,12 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
     const axles = [...new Set(positions.map(posAxle).filter(Boolean))];
     for (const ax of axles.filter((a) => a !== 'antriebsachse' && axleFits(v.kind, a))) {
       const sp = specs.find((x) => x.axle === ax);
-      if (sp && sizeKey(sp.size) !== sizeKey(size)) { const ps = positions.filter((p) => posAxle(p) === ax);
+      if (sp && !sizeSame(sp.size, size)) { const ps = positions.filter((p) => posAxle(p) === ax);
         w.warning_items.push({ code: 'size_differs', axle: ax, positions: ps, spec: sp.size, size });
         w.warnings.push(`${ps.join(', ')}: Reifengröße ${size} weicht von der hinterlegten Größe der Achse ab (${sp.size}) – Reifen bzw. Eingabe prüfen; ändert sich die Größe dauerhaft, unter „Reifengrößen“ anpassen.`); }
     }
     const spec = positions.some((p) => p.startsWith('HA-')) ? specs.find((x) => x.axle === 'antriebsachse') : null;
-    if (spec && sizeKey(spec.size) !== sizeKey(size)) { w.warning_items.push({ code: 'tacho_check_possible', from: spec.size, to: size }); w.warnings.push('Andere Reifengröße an der Antriebsachse als hinterlegt – ggf. Prüfung des Fahrtenschreibers nach § 57b StVZO veranlassen.'); }
+    if (spec && !sizeSame(spec.size, size)) { w.warning_items.push({ code: 'tacho_check_possible', from: spec.size, to: size }); w.warnings.push('Andere Reifengröße an der Antriebsachse als hinterlegt – ggf. Prüfung des Fahrtenschreibers nach § 57b StVZO veranlassen.'); }
   }
   return { id: ids[0], ids, positions, ...w };
 }
@@ -286,7 +287,9 @@ async function treadRise(env, envName, vehicleId, type, tread, positions) {
     .map((r) => ({ position: r.position, tread_mm: tread, prev_mm: r.tread_mm, prev_at: r.created_at, rise_mm: lim }));
 }
 const lastKmOf = (env, vehicleId) => env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? ORDER BY measured_at DESC, created_at DESC LIMIT 1').bind(vehicleId).first();
-export const sizeKey = (x) => String(x || '').toUpperCase().replace(/\s+/g, '');
+// Backlog 988: Schreibweise egal („315/70 R22,5“ = „315 70 R 22.5“ = „315/70R22.5 154/150L“), gemeinsam mit der Oberfläche (public/hours.js)
+export const sizeKey = tireSizeKey;
+export const sizeSame = tireSizeSame;
 // Warnungen zur Profiltiefe – auch bei der Wiederholung mit gleichem request_key aus den gespeicherten Einträgen (21.10.2026: Antwort ging verloren,
 // erneutes Senden zeigte nur „✓“ ohne „unter Minimum“)
 function warnOf(tread, positions) {
@@ -316,8 +319,8 @@ export async function setTireSpec(env, user, vehicleId, body) {
   const now = nowIso();
   // Ein am Fahrzeug geprüfter Wert wird nur durch eine neue Prüfung ersetzt (wie beim Import); jede Änderung im Protokoll (17.10.2026)
   const prev = await env.DB.prepare('SELECT size, verified FROM tire_specs WHERE vehicle_id=? AND axle=?').bind(vehicleId, axle).first();
-  if (prev && prev.verified && !verified && prev.size !== size) throw conflict('spec_verified', 'Die Reifengröße dieser Achse ist am Fahrzeug geprüft – nur mit neuer Prüfung am Fahrzeug änderbar.');
-  if (prev && prev.size === size && (!verified || prev.verified)) return { ok: true, unchanged: true };
+  if (prev && prev.verified && !verified && !sizeSame(prev.size, size)) throw conflict('spec_verified', 'Die Reifengröße dieser Achse ist am Fahrzeug geprüft – nur mit neuer Prüfung am Fahrzeug änderbar.');
+  if (prev && sizeSame(prev.size, size) && (!verified || prev.verified)) return { ok: true, unchanged: true };
   const r = await env.DB.prepare(`INSERT INTO tire_specs(vehicle_id,axle,size,source,verified,verified_by,verified_at,updated_at) VALUES (?,?,?,?,?,?,?,?)
     ON CONFLICT(vehicle_id,axle) DO UPDATE SET size=excluded.size, source=excluded.source, verified=excluded.verified, verified_by=excluded.verified_by, verified_at=excluded.verified_at, updated_at=excluded.updated_at
     WHERE excluded.verified=1 OR tire_specs.verified=0`)
@@ -326,7 +329,7 @@ export async function setTireSpec(env, user, vehicleId, body) {
   if (!r.meta || r.meta.changes !== 1) throw conflict('spec_verified', 'Die Reifengröße dieser Achse ist am Fahrzeug geprüft – nur mit neuer Prüfung am Fahrzeug änderbar.');
   await audit(env, user.id, 'tires.spec', vehicleId, { axle, from: prev ? prev.size : null, to: size, verified: !!verified });
   // Backlog 396: andere Größe an der Antriebsachse eines Lkw → Hinweis Fahrtenschreiber-Prüfung (§ 57b StVZO), nur Information
-  return { ok: true, ...(axle === 'antriebsachse' && prev && sizeKey(prev.size) !== sizeKey(size) ? { tacho_check_possible: true } : {}) };
+  return { ok: true, ...(axle === 'antriebsachse' && prev && !sizeSame(prev.size, size) ? { tacho_check_possible: true } : {}) };
 }
 
 // Import Quelldatei (CSV: Quelle;Kennzeichen;FIN;Reifen Lenkachse;Reifen Liftachse;Reifen Antriebsachse;Reifen Anhänger)
@@ -378,7 +381,7 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
   // Vorschau: neu / geändert / unverändert gegenüber vorhandenen (ungeprüften) Größen
   const current = new Map((await env.DB.prepare('SELECT vehicle_id, axle, size FROM tire_specs').all()).results.map((r) => [`${r.vehicle_id}|${r.axle}`, r.size]));
   res.counts = { neu: 0, geaendert: 0, unveraendert: 0 };
-  for (const r of list) { const cur = current.get(`${r.v}|${r.a}`); if (cur === undefined) res.counts.neu++; else if (cur !== r.s) res.counts.geaendert++; else res.counts.unveraendert++; }
+  for (const r of list) { const cur = current.get(`${r.v}|${r.a}`); if (cur === undefined) res.counts.neu++; else if (!sizeSame(cur, r.s)) res.counts.geaendert++; else res.counts.unveraendert++; }
   if (dryRun) { res.imported = 0; return res; }
   const stmts = [];
   for (let i = 0; i < list.length; i += 400) {
