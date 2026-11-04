@@ -657,10 +657,10 @@ document.addEventListener('change', (e) => {
 }, true);
 // Backlog 986: Profiltiefe/Luftdruck mit Einheit bzw. Bezeichnung („6,5 mm“, „Profil 6,5 Millimeter“, „8,5 bar“, „тиск 9 бар“) – beim Verlassen
 // des Felds nur Einheit/Bezeichnung entfernen (Ziffern unverändert, keine Umrechnung; der Server liest dieselben Formen über `unitIn`).
-const UNIT_FIELD = { tread_mm: 'mm', pressure_bar: 'bar' };
+const UNIT_FIELD = { tread_mm: 'mm', pressure_bar: 'bar', interval_months: 'months', interval_km: 'km' }; // Backlog 987: Wartungsintervalle („alle 12 Monate“, „100.000 km“)
 document.addEventListener('change', (e) => {
   const el = e.target; if (!el || el.tagName !== 'INPUT' || el.readOnly || el.disabled) return;
-  const k = UNIT_FIELD[el.name || '']; if (!k) return;
+  const k = UNIT_FIELD[el.name || ''] || (el.id === 'mci' ? 'months' : null); if (!k) return;
   const v = unitIn(el.value, k); if (v === null || v === el.value) return;
   el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));
 }, true);
@@ -4592,7 +4592,7 @@ const DEFECT_RESULTS = ['erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsu
 // Backlog 579: Prüftermin bearbeiten (Titel bei „Sonstiges“, Intervall, Bezeichnung) bzw. beenden/entfernen – nur Leitung, nicht HU/SP
 function maintEditHtml(m) {
   const rc = m.kind === 'Rückruf';
-  return `<details class="noprint" data-meditbox><summary>${esc(t('medit_title'))}</summary><form data-medit="${esc(m.id)}">${m.kind === 'Sonstiges' ? `<label>${esc(t('rule_title'))}</label><input name="title" maxlength="80" value="${esc(m.title || '')}" placeholder="${esc(t('rule_title_ph'))}">` : ''}${rc ? '' : `<label>${esc(t('interval_months'))}</label><input name="interval_months" inputmode="numeric" maxlength="3" value="${esc(m.interval_months ?? '')}" style="max-width:9em">`}<label>${esc(t('evidence'))}</label><input name="evidence" maxlength="300" required value="${esc(m.evidence || '')}"><p class="small muted">${esc(t('medit_hint'))}</p><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form>
+  return `<details class="noprint" data-meditbox><summary>${esc(t('medit_title'))}</summary><form data-medit="${esc(m.id)}">${m.kind === 'Sonstiges' ? `<label>${esc(t('rule_title'))}</label><input name="title" maxlength="80" value="${esc(m.title || '')}" placeholder="${esc(t('rule_title_ph'))}">` : ''}${rc ? '' : `<label>${esc(t('interval_months'))}</label><input name="interval_months" inputmode="numeric" maxlength="20" value="${esc(m.interval_months ?? '')}" style="max-width:9em">`}<label>${esc(t('evidence'))}</label><input name="evidence" maxlength="300" required value="${esc(m.evidence || '')}"><p class="small muted">${esc(t('medit_hint'))}</p><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form>
   <form data-mend="${esc(m.id)}"><label>${esc(t('mend_reason'))}</label><input name="reason" maxlength="300" required placeholder="${esc(t('mend_reason_ph'))}"><p class="small muted">${esc(t('mend_hint'))}</p><div class="actions"><button class="btn danger">${esc(t('mend_btn'))}</button></div></form></details>`;
 }
 // Durchführung einer Prüfregel (nicht HU/SP) erfassen; bei km-Intervall ist der km-Stand Pflicht (wie serverseitig)
@@ -7004,7 +7004,7 @@ async function viewMaintMulti() {
     <label for="mck">${esc(t('mc_kind'))}</label><select id="mck">${kinds.map((k) => `<option value="${esc(k)}"${k === 'Sonstiges' ? ' selected' : ''}>${esc(mk(k))}</option>`).join('')}</select>
     <div data-mctitle><label for="mct">${esc(t('rule_title'))}</label><input id="mct" maxlength="80" placeholder="${esc(t('rule_title_ph'))}"><p class="small muted">${esc(t('rule_title_hint'))}</p></div>
     <label for="mce">${esc(t('mc_evidence'))}<span class="hint">${esc(t('mc_evidence_hint'))}</span></label><input id="mce" maxlength="300" required>
-    <div style="display:flex;gap:12px;flex-wrap:wrap"><div><label for="mcd">${esc(t('mc_due'))}</label><input type="date" id="mcd"></div><div><label for="mci">${esc(t('mc_interval'))}</label><input id="mci" inputmode="numeric" maxlength="3" style="max-width:9em"></div></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap"><div><label for="mcd">${esc(t('mc_due'))}</label><input type="date" id="mcd"></div><div><label for="mci">${esc(t('mc_interval'))}</label><input id="mci" inputmode="numeric" maxlength="20" style="max-width:9em"></div></div>
     <p class="small muted">${esc(t('mc_due_hint'))}</p>
     <label for="vq">${esc(t('mc_choose'))}</label><input id="vq" placeholder="SZ-…" autocomplete="off" style="margin-bottom:8px">
     <div class="actions" style="margin:0 0 8px"><button type="button" class="btn secondary" id="mcall">${esc(t('mc_all'))}</button><button type="button" class="btn secondary" id="mcnone">${esc(t('mc_none'))}</button></div>

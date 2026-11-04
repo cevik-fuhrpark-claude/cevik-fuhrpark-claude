@@ -33020,11 +33020,33 @@ await test('Backlog 986 (Blickwinkel „Werkstatt misst die Reifen und diktiert/
   // Oberfläche
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/import \{[^}]*unitIn[^}]*\} from '\.\/hours\.js'/.test(app), 'app.js importiert unitIn');
-  ok(/const UNIT_FIELD = \{ tread_mm: 'mm', pressure_bar: 'bar' \};/.test(app), 'UNIT_FIELD');
+  ok(/const UNIT_FIELD = \{ tread_mm: 'mm', pressure_bar: 'bar'[ ,]/.test(app), 'UNIT_FIELD');
   ok(/unitIn\(raw0, 'mm'\)/.test(app), 'Hinweis „mehr Profil als zuletzt“ versteht „6,5 mm“');
   const { STRINGS } = await import('../public/i18n.js');
   ok(/6,5 mm/.test(STRINGS.de.help_tires_s) && /8,5 бар/.test(STRINGS.uk.help_tires_s) && /8\.5 bar/.test(STRINGS.en.help_tires_s), 'Hilfe DE/UK/EN');
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-reifen-diktat.py|'), 'UI-Skript in pruefen.sh');
+});
+
+await test('Backlog 987 (Blickwinkel „Leitung überträgt Wartungsintervalle aus dem Serviceheft“): „alle 12 Monate“, „12 Mon.“, „12 місяців“, „alle 100.000 km“, „100 000 кілометрів“ in Prüftermin anlegen/ändern/Sammelanlage am Server und beim Verlassen der Felder (maxlength 3 → 20); Wochen/Jahre/Brüche/Zahlwörter weiter abgewiesen', async () => {
+  const { num } = await import('../src/util.js'); const { unitIn } = await import('../public/hours.js');
+  const mo = { min: 1, max: 120, field: 'Intervall Monate', unit: 'months' }; const km = { min: 100, max: 1000000, field: 'Intervall km', unit: 'km', grouped: true };
+  for (const [v, x] of [['12 Monate', 12], ['alle 12 Monate', 12], ['12 Mon.', 12], ['every 12 months', 12], ['6 mths', 6], ['12 місяців', 12], ['кожні 6 міс.', 6], ['12 месяцев', 12], ['24', 24]]) eq(num(v, mo), x, v);
+  for (const [v, x] of [['alle 100.000 km', 100000], ['100.000 Kilometer', 100000], ['100 000 кілометрів', 100000], ['every 100000 kilometres', 100000], ['100000', 100000]]) eq(num(v, km), x, v);
+  for (const [v, opt] of [['12 Wochen', mo], ['1 Jahr', mo], ['zwölf Monate', mo], ['1,5 Monate', mo], ['12 Monate', km], ['100.000 Meilen', km]]) { let e = null; try { num(v, opt); } catch (x) { e = x; } ok(e, 'abgewiesen: ' + v); }
+  eq(unitIn('alle 12 Monate', 'months'), '12'); eq(unitIn('alle 100.000 km', 'km'), '100.000'); eq(unitIn('12', 'months'), null); eq(unitIn('1,5 Monate', 'months'), null);
+  // Ende-zu-Ende: Prüftermin mit Intervall aus dem Serviceheft, danach ändern
+  const { U, V1 } = await freshWorld();
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Sonstiges', title: 'Ölwechsel', evidence: 'Serviceheft S. 4', interval_months: 'alle 12 Monate', interval_km: 'alle 100.000 km', next_due_date: '2027-03-31' });
+  eq(r.status, 201, JSON.stringify(r.data));
+  const m = (await U.fleet.get(`/api/vehicles/${V1}`)).data.maintenance.find((x) => x.id === r.data.id); eq(m.interval_months, 12); eq(m.interval_km, 100000);
+  const p = await U.fleet.patch(`/api/maintenance/${r.data.id}`, { interval_months: '6 Monate' }); ok(p.status === 200, JSON.stringify(p.data));
+  eq((await U.fleet.get(`/api/vehicles/${V1}`)).data.maintenance.find((x) => x.id === r.data.id).interval_months, 6);
+  // Oberfläche
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/interval_months: 'months', interval_km: 'km'/.test(app) && /el\.id === 'mci' \? 'months'/.test(app), 'UNIT_FIELD Intervalle');
+  ok(!/name="interval_months"[^>]*maxlength="3"/.test(app) && !/id="mci"[^>]*maxlength="3"/.test(app), 'maxlength lässt „alle 12 Monate“ zu');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(/alle 12 Monate/.test(STRINGS.de.help_dates_s) && /кожні 12 місяців/.test(STRINGS.uk.help_dates_s) && /every 12 months/.test(STRINGS.en.help_dates_s), 'Hilfe DE/UK/EN');
 });
 
 await test('Backlog 974 (Blickwinkel „Werkstatt bucht Teilemengen vom Lieferschein“): Menge mit passender Einheit („2 Stk.“, „5 l“, „2x“, „3 шт“) im Lager, Wareneingang, Inventur und am Auftrag; fremde Einheit mit eigener Meldung (DE/UK/EN), keine Umrechnung', async () => {

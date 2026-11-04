@@ -224,10 +224,15 @@ export const UNIT_RX = {
     unit: /(\d)\s*(?:mm|мм|millimet(?:er|re)s?n?|міліметр(?:ів|и|а)?|миллиметр(?:ов|а|ы)?)\.?$/i },
   bar: { label: /^((reifen|luft)?druck|reifenluftdruck|(tyre\s+|tire\s+|air\s+)?pressure|тиск(\s+у\s+шинах)?|давление(\s+в\s+шинах)?)\s*[:.=]?\s*(?=\d)/i,
     unit: /(\d)\s*(?:bar|бар(?:и|а|ів|ов)?)\.?$/i },
+  // Backlog 987 (Blickwinkel „Leitung überträgt Wartungsintervalle aus dem Serviceheft“): „alle 12 Monate“, „12 months“, „12 місяців“,
+  // „alle 100.000 km“, „100 000 кілометрів“ – nur in den Intervallfeldern (km-Stand hat `kmIn`, Gewicht bleibt ohne Einheit).
+  months: { label: /^(alle|every|кожні|каждые)\s+(?=\d)/i,
+    unit: /(\d)\s*(?:monate?n?|mon|mo|mths?|months?|міс(?:яців|яці|яць)?|мес(?:яцев|яца|яц)?)\.?$/i, out: /^\d{1,3}$/ },
+  km: { label: /^(alle|every|кожні|каждые)\s+(?=\d)/i, unit: KM_UNIT_RX, out: /^\d[\d .,'’]*$/ },
 };
 export function unitIn(raw, kind) {
   const u = UNIT_RX[kind]; if (!u) return null;
   const s = String(raw ?? '').replace(/[\s  ]+/g, ' ').trim(); if (!s || s.length > 40) return null;
   const t = s.replace(u.label, '').replace(u.unit, '$1').trim();
-  return t !== s && /^\d{1,3}(?:[.,]\d{1,3})?$/.test(t) ? t : null;
+  return t !== s && (u.out || /^\d{1,3}(?:[.,]\d{1,3})?$/).test(t) ? t : null;
 }

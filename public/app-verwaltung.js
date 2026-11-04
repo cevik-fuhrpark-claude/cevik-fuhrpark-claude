@@ -919,7 +919,7 @@ async function viewMaintMulti() {
     <label for="mck">${esc(t('mc_kind'))}</label><select id="mck">${kinds.map((k) => `<option value="${esc(k)}"${k === 'Sonstiges' ? ' selected' : ''}>${esc(mk(k))}</option>`).join('')}</select>
     <div data-mctitle><label for="mct">${esc(t('rule_title'))}</label><input id="mct" maxlength="80" placeholder="${esc(t('rule_title_ph'))}"><p class="small muted">${esc(t('rule_title_hint'))}</p></div>
     <label for="mce">${esc(t('mc_evidence'))}<span class="hint">${esc(t('mc_evidence_hint'))}</span></label><input id="mce" maxlength="300" required>
-    <div style="display:flex;gap:12px;flex-wrap:wrap"><div><label for="mcd">${esc(t('mc_due'))}</label><input type="date" id="mcd"></div><div><label for="mci">${esc(t('mc_interval'))}</label><input id="mci" inputmode="numeric" maxlength="3" style="max-width:9em"></div></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap"><div><label for="mcd">${esc(t('mc_due'))}</label><input type="date" id="mcd"></div><div><label for="mci">${esc(t('mc_interval'))}</label><input id="mci" inputmode="numeric" maxlength="20" style="max-width:9em"></div></div>
     <p class="small muted">${esc(t('mc_due_hint'))}</p>
     <label for="vq">${esc(t('mc_choose'))}</label><input id="vq" placeholder="SZ-…" autocomplete="off" style="margin-bottom:8px">
     <div class="actions" style="margin:0 0 8px"><button type="button" class="btn secondary" id="mcall">${esc(t('mc_all'))}</button><button type="button" class="btn secondary" id="mcnone">${esc(t('mc_none'))}</button></div>

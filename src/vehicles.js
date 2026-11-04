@@ -1008,8 +1008,8 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   };
   { const d = await byKey(); if (d) return d; }
   // ganze Zahlen (19.10.2026: „1,5“ Monate wurde still zu 2 – Frist verschoben; der Import weist das schon ab)
-  const months = body.interval_months ? num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate' }) : null;
-  const km = body.interval_km ? num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', grouped: true }) : null;
+  const months = body.interval_months ? num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate', unit: 'months' }) : null;
+  const km = body.interval_km ? num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', unit: 'km', grouped: true }) : null;
   if ((months !== null && !Number.isInteger(months)) || (km !== null && !Number.isInteger(km))) throw bad('validation', 'Intervall als ganze Zahl angeben.');
   const lastDate = str(body.last_done_date, { max: 10, field: 'Letzte Prüfung' });
   const lastKm = body.last_done_km != null && String(body.last_done_km).trim() !== '' ? kmNum(body.last_done_km, { field: 'km' }) : null;
@@ -1114,7 +1114,7 @@ export async function editMaintenanceRule(env, user, ruleId, body) {
   if ('evidence' in body) ch.evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
   if ('interval_months' in body) {
     if (ONE_TIME_KINDS.includes(r.kind) && body.interval_months) throw bad('validation', 'Rückruf ist eine einmalige Aktion – kein Intervall angeben.');
-    const mo = body.interval_months === null || String(body.interval_months).trim() === '' ? null : num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate' });
+    const mo = body.interval_months === null || String(body.interval_months).trim() === '' ? null : num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate', unit: 'months' });
     if (mo !== null && !Number.isInteger(mo)) throw bad('validation', 'Intervall als ganze Zahl angeben.');
     ch.interval_months = mo;
     // berechnete Fälligkeit neu (Nachweis-Fälligkeit bleibt); ohne Intervall bleibt die bisherige Fälligkeit stehen
@@ -1209,8 +1209,8 @@ export async function addMaintenanceRuleBatch(env, user, body) {
   if (kind === 'HU' || kind === 'SP' || ONE_TIME_KINDS.includes(kind)) throw bad('validation', 'HU/SP und Rückrufe bitte je Fahrzeug bzw. über „Rückrufe importieren“ anlegen.');
   const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
   const title = ruleTitle(kind, body.title);
-  const months = body.interval_months ? num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate' }) : null;
-  const km = body.interval_km ? num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', grouped: true }) : null;
+  const months = body.interval_months ? num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate', unit: 'months' }) : null;
+  const km = body.interval_km ? num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', unit: 'km', grouped: true }) : null;
   if ((months !== null && !Number.isInteger(months)) || (km !== null && !Number.isInteger(km))) throw bad('validation', 'Intervall als ganze Zahl angeben.');
   const nextDue = str(body.next_due_date, { max: 10, field: 'Nächster Termin' });
   if (nextDue && !isCalendarDate(nextDue)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');

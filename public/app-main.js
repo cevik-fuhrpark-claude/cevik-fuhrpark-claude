@@ -684,10 +684,10 @@ document.addEventListener('change', (e) => {
 }, true);
 // Backlog 986: Profiltiefe/Luftdruck mit Einheit bzw. Bezeichnung („6,5 mm“, „Profil 6,5 Millimeter“, „8,5 bar“, „тиск 9 бар“) – beim Verlassen
 // des Felds nur Einheit/Bezeichnung entfernen (Ziffern unverändert, keine Umrechnung; der Server liest dieselben Formen über `unitIn`).
-const UNIT_FIELD = { tread_mm: 'mm', pressure_bar: 'bar' };
+const UNIT_FIELD = { tread_mm: 'mm', pressure_bar: 'bar', interval_months: 'months', interval_km: 'km' }; // Backlog 987: Wartungsintervalle („alle 12 Monate“, „100.000 km“)
 document.addEventListener('change', (e) => {
   const el = e.target; if (!el || el.tagName !== 'INPUT' || el.readOnly || el.disabled) return;
-  const k = UNIT_FIELD[el.name || '']; if (!k) return;
+  const k = UNIT_FIELD[el.name || ''] || (el.id === 'mci' ? 'months' : null); if (!k) return;
   const v = unitIn(el.value, k); if (v === null || v === el.value) return;
   el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));
 }, true);

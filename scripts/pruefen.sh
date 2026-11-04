@@ -363,6 +363,7 @@ UI-Teile diktiert: Zahlwörter im Mengenfeld, Menge aus dem Teilenamen per Knopf
 UI-Betrag diktiert: „240 Euro 50“/„50 Cent“ beim Verlassen des Betragsfelds in Ziffern, gebucht als 240,50, DE/UK/EN 390/820/1366|ui-betrag-diktat.py|/tmp/cfp-betrag-diktat.log
 UI-km diktiert: „123.456 Kilometer“/„123 456 кілометрів“ in Abfahrtskontrolle (Feld gültig) und Fahrzeugakte (gespeichert), DE/UK/EN 390/820/1366|ui-km-diktat.py|/tmp/cfp-km-diktat.log
 UI-Reifen diktiert: „Profil 6,5 Millimeter“/„6,5 мм“ und „8,5 bar“/„тиск 9 бар“ in der Fahrzeugakte (Feld umgeschrieben, gespeichert), DE/UK/EN 390/820/1366|ui-reifen-diktat.py|/tmp/cfp-reifen-diktat.log
+UI-Intervall diktiert: „alle 12 Monate“/„12 місяців“ und „alle 100.000 km“ im Prüftermin der Fahrzeugakte (umgeschrieben, gespeichert, maxlength), DE/UK/EN 390/820/1366|ui-intervall-diktat.py|/tmp/cfp-intervall-diktat.log
 UI-Lager: Menge mit Einheit vom Lieferschein („3 Stk.“) gebucht, fremde Einheit („5 l“) in der App-Sprache abgewiesen, DE/UK/EN 390/820/1366|ui-lager-einheit.py|/tmp/cfp-lager-einheit.log
 UI-Datum einfügen: „Ausgelesen am 03.11.2026“, „03 листопада 2026“, „03/11/2026“ ins Datumsfeld übernommen und gespeichert; kein/mehrere/ungültiges Datum mit Meldung, DE/UK/EN 390/820/1366|ui-datum-einfuegen.py|/tmp/cfp-datum-einfuegen.log
 UI-Schadenzeitpunkt Schnellwahl: Heute/Gestern/Vorgestern setzt nur den Tag, Vorschlag aus „gestern“/„вчора“/„yesterday“ in der Beschreibung, Aktion Schadenzeitpunkt, DE/UK/EN 390/820/1366|ui-schadenzeitpunkt-schnellwahl.py|/tmp/cfp-occ-schnellwahl.log
