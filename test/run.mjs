@@ -31879,7 +31879,7 @@ await test('Backlog 897 (Blickwinkel „Werte per Kopieren/Einfügen aus Rechnun
   // Oberfläche: Einfüge-Normalisierung (gleicher Ausdruck wie in app.js)
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const a = app.indexOf('const pasteNum = (raw) => {'); ok(a > 0, 'pasteNum vorhanden');
+  const a = app.indexOf('const pasteNum = (raw, numeric = false) => {'); ok(a > 0, 'pasteNum vorhanden (Backlog 972: mit numeric)');
   const pasteNum = new Function(app.slice(a, app.indexOf('\n};', a) + 3) + '; return pasteNum;')();
   eq(pasteNum('1.234,56 €'), '1.234,56'); eq(pasteNum('123 456 км'), '123456'); eq(pasteNum(' EUR 99,90 '), '99,90'); eq(pasteNum('123.456 km'), '123.456'); eq(pasteNum('1 234,5'), '1234,5');
   eq(pasteNum('SZ-YC 5501'), null); eq(pasteNum('ca. 120000'), null); eq(pasteNum(''), null);
@@ -32809,6 +32809,27 @@ await test('Backlog 971 (Blickwinkel „Leitung erfasst die Rechnung einer Fremd
   ok(/^Сума: «1\.475,60 € inkl\. MwSt\.» – це сума брутто/.test(translateValidation('uk', msg) || ''), 'UK');
   for (const l of ['de', 'uk', 'en']) ok(/1\.240,- €/.test(STRINGS[l].help_costlimit_s), 'Hilfe ' + l);
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-fremdrechnung-netto.py|'), 'UI-Skript in pruefen.sh');
+});
+
+await test('Backlog 972 (Blickwinkel „Monatsende: Kilometerstände für die Leasingmeldung“): km-Stand mit Bezeichnung vorne („km-Stand: 123.456“, „Пробіг: 123 456 км“, „Odometer reading 123456“) und Hochkomma-Tausender am Server und beim Einfügen; Gewicht/Preis unverändert', async () => {
+  const { kmNum, num } = await import('../src/util.js');
+  for (const [v, x] of [['KM 123456', 123456], ['km: 123.456', 123456], ['km-Stand: 123.456', 123456], ['Km Stand 123456', 123456], ['Kilometerstand 123456', 123456], ['Tacho 123.456 km', 123456], ['Tachostand: 98.000 km.', 98000],
+    ['Пробіг: 123 456 км', 123456], ['пробег 123456', 123456], ['Odometer reading: 123456', 123456], ['mileage 99000', 99000], ["123'456", 123456], ['123’456', 123456], ['123.456 km', 123456]]) eq(kmNum(v), x, v);
+  for (const v of ['km', 'km abc', '12 km 5', 'Mileage 123,456', 'ca. 120000', "12'34"]) { let e = null; try { kmNum(v); } catch (x) { e = x; } ok(e, 'abgewiesen: ' + v); }
+  let e = null; try { num('km 7500', { grouped: true, field: 'zGM' }); } catch (x) { e = x; } ok(e, 'Bezeichnung nur im km-Stand, nicht bei anderen ganzen Zahlen');
+  e = null; try { num("1'240", { cents: true }); } catch (x) { e = x; } ok(e, 'Hochkomma nicht bei Geldbeträgen');
+  // Ende-zu-Ende: km-Ablesung
+  const { U, V1 } = await freshWorld();
+  const r = await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: 'km-Stand: 123.456' }); eq(r.status, 201, JSON.stringify(r.data));
+  eq((await U.fleet.get(`/api/vehicles/${V1}`)).data.odometer[0].km, 123456);
+  // Einfügen (gleicher Ausdruck wie in app.js)
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('const pasteNum = (raw, numeric = false) => {'); ok(a > 0, 'pasteNum mit numeric');
+  const pasteNum = new Function(app.slice(a, app.indexOf('\n};', a) + 3) + '; return pasteNum;')();
+  eq(pasteNum('km-Stand: 123.456', true), '123.456'); eq(pasteNum('Пробіг: 123 456 км', true), '123456'); eq(pasteNum("Tacho 123'456", true), '123456'); eq(pasteNum('123’456', true), '123456');
+  eq(pasteNum('km 12'), null, 'Preisfeld: Bezeichnung nicht entfernt'); eq(pasteNum('1.234,56 €'), '1.234,56', 'wie bisher');
+  ok(app.includes("pasteNum(raw, el.getAttribute('inputmode') === 'numeric')"), 'Einfügen übergibt numeric');
+  ok(fs.readFileSync(new URL('../scripts/ui-einfuegen-zahlen.py', import.meta.url), 'utf8').includes('km-Stand: 123.456'), 'UI-Prüfung erweitert');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

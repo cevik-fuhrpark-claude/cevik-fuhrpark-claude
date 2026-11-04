@@ -641,14 +641,16 @@ document.addEventListener('submit', (e) => {
 // Leerzeichen („1.234,56 €“, „EUR 99,90“, „123.456 km“, UK-Anzeige „123 456 км“ mit U+00A0) – das Muster der km-Felder wies sie
 // ab („Format stimmt nicht“). Beim Einfügen in Zahlenfelder (inputmode numeric/decimal) Einheit und Leerzeichen entfernen; sonst
 // unverändert einfügen. Keine Umdeutung von Punkt/Komma – das bewertet weiterhin der Server.
-const pasteNum = (raw) => {
+// Backlog 972: in ganzzahligen Feldern (inputmode numeric, z. B. km-Stand) auch die Bezeichnung vorne („km-Stand: 123.456“, „Пробіг 123 456“).
+const pasteNum = (raw, numeric = false) => {
   let s = String(raw || '').trim(); if (!s || s.length > 40) return null;
-  s = s.replace(/^(€|eur)\s*/i, '').replace(/\s*(€|eur|km|км)\.?$/i, '').replace(/[\s    ']/g, '');
+  if (numeric) s = s.replace(/^(km[-\s]?stand|kilometerstand|kilometer|tachostand|tacho|km|км|пробіг|пробег|odometer(?:\s+reading)?|mileage)\s*[:.=]?\s*(?=\d)/i, '');
+  s = s.replace(/^(€|eur)\s*/i, '').replace(/\s*(€|eur|km|км)\.?$/i, '').replace(/[\s    '’]/g, '');
   return /^-?\d[\d.,]*$/.test(s) ? s : null;
 };
 document.addEventListener('paste', (e) => {
   const el = e.target; if (!el || el.tagName !== 'INPUT' || !/^(numeric|decimal)$/.test(el.getAttribute('inputmode') || '') || el.readOnly || el.disabled) return;
-  const raw = e.clipboardData ? e.clipboardData.getData('text') : ''; const v = pasteNum(raw);
+  const raw = e.clipboardData ? e.clipboardData.getData('text') : ''; const v = pasteNum(raw, el.getAttribute('inputmode') === 'numeric');
   if (v === null || v === String(raw).trim()) return;
   e.preventDefault();
   try { el.setRangeText(v, el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length, 'end'); } catch { el.value = v; }

@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Prüfung (03.11.2026, Backlog 897, Blickwinkel „Werte per Kopieren/Einfügen aus Rechnung, Nachricht oder App-Anzeige“):
 # Kopierte Zahlen tragen oft eine Einheit und geschützte Leerzeichen („1.234,56 €“, „123.456 km“; die UK-Anzeige der App schreibt
 # „123 456 км“ mit U+00A0). Geprüft:
+#  (Backlog 972: km-Felder auch mit Bezeichnung vorne, z. B. „km-Stand: 123.456“, „Пробіг: 123 456 км“.)
 #  1. Einfügen in das km-Feld der Fahrzeugakte (DE/UK/EN, 390/820/1366 px): Einheit/Leerzeichen entfernt, Speichern übernimmt den Stand.
 #  2. Einfügen in ein Preisfeld (Lagerartikel, inputmode=decimal): „1.234,56 €“ → „1.234,56“.
 #  3. Nicht-Zahlen (Kennzeichen) und Textfelder bleiben unverändert (Einfügen nicht abgefangen).
@@ -57,5 +58,11 @@ with sync_playwright() as p:
     r=q.evaluate(PASTE,['#tdec','EUR 99,90']); check(r['value']=='99,90','Preisfeld: „EUR 99,90“ → „99,90“')
     r=q.evaluate(PASTE,['#ttxt','1.234,56 €']); check(not r['prevented'],'Textfeld: Einfügen unverändert')
     r=q.evaluate(PASTE,['#tdec','12,50']); check(not r['prevented'],'Preisfeld: reine Zahl ohne Änderung nicht abgefangen')
+    # Backlog 972: Bezeichnung vorne nur in ganzzahligen Feldern (km-Stand), nicht im Preisfeld
+    q.evaluate("""() => { const f = document.createElement('div'); f.innerHTML = '<input id="tnum" inputmode="numeric">'; document.body.appendChild(f); }""")
+    for txt,exp in [('km-Stand: 123.456','123.456'),('Kilometerstand 123456 km','123456'),('Пробіг: 123 456 км','123456'),("Tacho 123'456",'123456')]:
+        q.evaluate("() => { document.querySelector('#tnum').value = ''; }")
+        r=q.evaluate(PASTE,['#tnum',txt]); check(r['prevented'] and r['value']==exp,f'km-Feld: „{txt}“ → „{r["value"]}“ (erwartet {exp})')
+    r=q.evaluate(PASTE,['#tdec','km 12']); check(not r['prevented'],'Preisfeld: „km 12“ nicht umgedeutet')
     ctx.close(); br.close()
 print('\nUI-Einfügen Zahlen:', 'OK' if not fails else f'{len(fails)} Fehler'); raise SystemExit(1 if fails else 0)

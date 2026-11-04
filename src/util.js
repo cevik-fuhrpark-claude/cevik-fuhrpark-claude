@@ -208,7 +208,12 @@ export const pointDec = (user) => numLang(user) === 'en';
 // Obergrenze „heute + n Jahre“ (Berliner Tag) für Fälligkeiten/Vertragsdaten – Jahres-Tippfehler 2062 statt 2026 (21.10.2026)
 export const maxFutureDate = (years = 20) => { const t = berlinDate(); return String(Number(t.slice(0, 4)) + years) + t.slice(4); };
 export const DUE_FAR_MSG = 'Fälligkeit liegt mehr als 20 Jahre in der Zukunft – bitte Jahr prüfen.';
+// Backlog 972 (Blickwinkel „Monatsende: Kilometerstände für die Leasingmeldung“): kopierte Werte aus Rechnung/Werkstattbericht/Telematik
+// beginnen oft mit der Bezeichnung („km-Stand: 123.456“, „Kilometerstand 123456“, „Tacho 123.456“, „Пробіг: 123 456“, „Odometer 123,456“ bleibt
+// mehrdeutig) – Bezeichnung vorne entfernen; nur km-Felder (nicht Gewicht/Intervall).
+export const KM_LABEL = /^(km[-\s]?stand|kilometerstand|kilometer|tachostand|tacho|km|км|пробіг|пробег|odometer(?:\s+reading)?|mileage)\s*[:.=]?\s*(?=\d)/i;
 export function kmNum(v, { min = 0, max = 5000000, field = 'Kilometerstand' } = {}) {
+  if (typeof v === 'string') v = v.trim().replace(KM_LABEL, '');
   const n = num(v, { min, max, field, grouped: true });
   if (!Number.isInteger(n)) throw bad('validation', `${field}: ganze Zahl.`);
   return n;
@@ -239,6 +244,7 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
     // englisches Format mit Tausenderkomma und Dezimalpunkt („1,234.50“) ist eindeutig (19.10.2026: in der EN-Oberfläche abgewiesen)
     else if (/^-?\d{1,3}(,\d{3})+\.\d+$/.test(t)) t = t.replace(/,/g, '');
     else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t) && grouped) t = t.replace(/\./g, ''); // ganze Zahlen (km): „120.000“ = 120000
+    else if (grouped && /^-?[1-9]\d{0,2}(['’]\d{3})+$/.test(t)) t = t.replace(/['’]/g, ''); // Backlog 972: Hochkomma als Tausendertrenner („123'456“, Tacho-/Schweizer Schreibweise)
     else if (!decimalPoint && /^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t)) throw bad('validation', `${field}: „${t}“ ist mehrdeutig – bitte ohne Tausenderpunkt (z. B. 2000) bzw. mit Komma für Nachkommastellen (z. B. 2,5) eingeben.`);
     // englisches Tausenderkomma „15,000“/„1,000“ ebenso mehrdeutig (18.10.2026: wurde still als 15 bzw. 1 € gespeichert, km „120,500“ als 121)
     // ganze Zahlen (km): Tausenderkomma ohne Nachkommastellen-Hinweis melden (19.10.2026: „158,500“ km nannte „Punkt für Nachkommastellen“)
