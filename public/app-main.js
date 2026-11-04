@@ -688,7 +688,7 @@ const pasteDate = (raw, year, toBerlin) => {
   while ((m = nameRx.exec(s))) { const mo = mon(m[3]); if (!mo) { cut(m); continue; } found.push([Number(m[4]), mo, Number(m[2])]); cut(m); }
   const enRx = /(^|[^a-z])([a-z]{3,9}\.?)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})(?!\d)/;
   while ((m = enRx.exec(s))) { const mo = mon(m[2]); if (!mo) { cut(m); continue; } found.push([Number(m[4]), mo, Number(m[3])]); cut(m); }
-  if (!found.length) return { e: 'none' };
+  if (!found.length) return { e: /(^|[^\d.\/])(0?[1-9]|1[0-2])\s*[./-]\s*(\d{4})(?!\d)/.test(s) ? 'month' : 'none' }; // Backlog 976: nur Monat/Jahr (HU-Plakette „11/2027“) – Tag nicht raten
   const fmt = ([y, mo, d]) => `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   const uniq = [...new Set(found.map(fmt))];
   if (uniq.length > 1) return { e: 'many' };
@@ -702,7 +702,7 @@ document.addEventListener('paste', (e) => {
   const r = pasteDate(raw, Number(bDate().slice(0, 4)), (z) => { const ms = Date.parse(z); return Number.isFinite(ms) ? BERLIN_FMT.format(new Date(ms)) : null; });
   if (!r) return;
   e.preventDefault();
-  if (!r.d) { toast(t(r.e === 'many' ? 'pd_many' : r.e === 'invalid' ? 'pd_invalid' : 'pd_none'), true); return; }
+  if (!r.d) { toast(t(r.e === 'many' ? 'pd_many' : r.e === 'invalid' ? 'pd_invalid' : r.e === 'month' ? 'pd_month' : 'pd_none'), true); return; }
   el.value = r.d; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
   if (!el.checkValidity()) el.reportValidity();
 });

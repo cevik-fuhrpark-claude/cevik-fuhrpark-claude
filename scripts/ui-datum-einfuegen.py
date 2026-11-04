@@ -3,6 +3,7 @@
 #  1. Fahrzeugakte → Massenspeicher-Auslesung: „Ausgelesen am 03.11.2026“ / „03 листопада 2026“ / „03/11/2026“ eingefügt → Feld zeigt
 #     2026-11-03, Speichern legt die Auslesung mit diesem Datum an.
 #  2. Text ohne Datum, mit zwei Daten, „31.02.2026“ → Meldung in der App-Sprache, Feld unverändert.
+#     Backlog 976: nur Monat/Jahr („nächste HU: 11/2027“) → eigene Meldung, kein geratener Tag.
 #  3. Textfelder bleiben unberührt (Einfügen nicht abgefangen).
 # Braucht den Dev-Server. Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
@@ -31,10 +32,10 @@ with sync_playwright() as p:
     csv='Kennzeichen;Standort;Hersteller;Baujahr;FIN;Fahrzeugart\n'+'\n'.join(f'{pl};Dortmund;MAN;2016;{v};Lkw' for pl,v in zip(plates,vins))
     check(api('POST','/api/vehicles/import',csv,'text/csv')['s']==200,'Fahrzeuge importiert')
     vs=api('GET','/api/vehicles')['d']; vl=vs.get('vehicles') if isinstance(vs,dict) else vs; ids={v['vin']:v['id'] for v in vl if v.get('vin') in vins}
-    CASES=[('de',390,844,'Ausgelesen am 03.11.2026','Kein Datum','mehrere','gibt es im Kalender nicht'),
-           ('uk',820,1180,'03 листопада 2026','не знайдено','кілька','немає в календарі'),
-           ('en',1366,900,'03/11/2026','No date','several','does not exist')]
-    for i,(lang,w,h,txt,m_none,m_many,m_inv) in enumerate(CASES):
+    CASES=[('de',390,844,'Ausgelesen am 03.11.2026','Kein Datum','mehrere','gibt es im Kalender nicht','Nur Monat und Jahr'),
+           ('uk',820,1180,'03 листопада 2026','не знайдено','кілька','немає в календарі','лише місяць і рік'),
+           ('en',1366,900,'03/11/2026','No date','several','does not exist','Only month and year')]
+    for i,(lang,w,h,txt,m_none,m_many,m_inv,m_mon) in enumerate(CASES):
         ctx=br.new_context(viewport={'width':w,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':own,'password':PW},None]); q.evaluate(JS,['PATCH','/api/me',{'language':lang},None])
         vid=ids[vins[i]]; q.goto(B+'/#/vehicles/'+vid); q.wait_for_selector('#tvf',state='attached',timeout=15000); q.wait_for_timeout(600)
@@ -42,7 +43,7 @@ with sync_playwright() as p:
         sel="#tvf input[name=downloaded_on]"
         r=q.evaluate(PASTE,[sel,txt]); check(r['prevented'] and r['value']=='2026-11-03',f'{lang} {w}px: „{txt}“ → {r["value"]}')
         # Fehlerfälle: Feld bleibt, Meldung in der App-Sprache
-        for bad,msg in [('Rechnung Nr. 4711',m_none),('03.11.2026 – 05.11.2026',m_many),('31.02.2026',m_inv)]:
+        for bad,msg in [('Rechnung Nr. 4711',m_none),('03.11.2026 – 05.11.2026',m_many),('31.02.2026',m_inv),('nächste HU: 11/2027',m_mon)]:
             q.evaluate("() => document.querySelectorAll('.toast').forEach((x) => x.remove())")
             r=q.evaluate(PASTE,[sel,bad]); q.wait_for_timeout(150); tt=q.evaluate(TOAST)
             check(r['prevented'] and r['value']=='2026-11-03' and msg.lower() in tt.lower(),f'{lang}: „{bad}“ → Feld unverändert, Meldung „{tt[:70]}“')

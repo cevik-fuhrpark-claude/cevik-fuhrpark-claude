@@ -32915,6 +32915,17 @@ await test('Backlog 975 (Blickwinkel „Leitung überträgt ein Datum aus Rechnu
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['pd_none', 'pd_many', 'pd_invalid']) ok(STRINGS[l][k] && STRINGS[l][k].length > 20, `${l}.${k}`);
 });
+await test('Backlog 976 (Blickwinkel „Leitung trägt die nächste HU vom Prüfbericht/von der Plakette ein“): eingefügtes „11/2027“, „HU 11.2027“ nur Monat/Jahr → eigene Meldung (Tag im Kalender wählen, Frist bis Monatsende), kein geratener Tag (DE/UK/EN)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('const PD_MON'); const b = app.indexOf('\n};', app.indexOf('const pasteDate = (raw, year, toBerlin) => {')) + 3;
+  const pasteDate = new Function(app.slice(a, b) + '; return pasteDate;')();
+  for (const x of ['11/2027', 'nächste HU: 11/2027', 'HU 11.2027', '03-2028']) eq(JSON.stringify(pasteDate(x, 2026)), JSON.stringify({ e: 'month' }), x);
+  for (const x of ['13/2027', '4.11.', 'Rechnung Nr. 4711', '1.234,56 €']) eq(pasteDate(x, 2026).e, 'none', x);
+  eq(pasteDate('Prüfung 04.11.2026, nächste HU 11/2027', 2026).d, '2026-11-04', 'volles Datum hat Vorrang');
+  ok(app.includes("r.e === 'month' ? 'pd_month'"), 'Meldung pd_month');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(/11\/2027/.test(STRINGS[l].pd_month || ''), `${l}.pd_month`);
+});
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
