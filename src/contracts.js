@@ -395,11 +395,14 @@ export async function contractOverview(env, user, query = {}, envName = null) {
   // Vertragsart ebenfalls vor den Zählern (vorher „Handlungsbedarf (2)“ bei leerer Liste der gewählten Art, 17.10.2026)
   const pre0 = rows.results.filter((c) => (!sel.site || sel.match(c.vehicle_site)) && (!kind || c.kind === kind));
   // Backlog 625 (Blickwinkel „Versichererwechsel“): Vertragspartner (Schreibweise egal) – Auswahl aus den Partnern der Ansicht (Standort/Art), vor den Zählern
-  const pMap = new Map(); for (const c of pre0) { const k = lcDe(c.partner); if (!k) continue; const x = pMap.get(k) || { partner: String(c.partner).trim(), n: 0 }; x.n++; if (x.partner === x.partner.toLocaleLowerCase('de') && String(c.partner).trim() !== String(c.partner).trim().toLocaleLowerCase('de')) x.partner = String(c.partner).trim(); pMap.set(k, x); } // Anzeige: Schreibweise mit Großbuchstaben bevorzugt
+  // Backlog 997: Schreibweisen über `partnerKey` zusammengefasst (ß/ss, Großschrift, Gedanken-/Bindestrich, Leerraum wie die Vertragsdublette 996); Anzeige: gemischte
+  // Schreibweise vor Großschrift vor Kleinschrift („Straßen-Leasing GmbH“ statt „STRASSEN-LEASING GMBH“)
+  const caseRank = (x) => (x === x.toLocaleLowerCase('de') ? 0 : x === x.toLocaleUpperCase('de') ? 1 : 2);
+  const pMap = new Map(); for (const c of pre0) { const k = partnerKey(c.partner); if (!k) continue; const sp = String(c.partner).trim().replace(/\s+/g, ' '); const x = pMap.get(k) || { partner: sp, n: 0 }; x.n++; if (caseRank(sp) > caseRank(x.partner)) x.partner = sp; pMap.set(k, x); }
   const partnerOptions = [...pMap.values()].sort((a, b) => a.partner.localeCompare(b.partner, 'de'));
   const partnerQ = query.partner ? str(query.partner, { max: 120, field: 'Vertragspartner' }) : '';
-  const partner = partnerQ && pMap.has(lcDe(partnerQ)) ? pMap.get(lcDe(partnerQ)).partner : partnerQ || null;
-  const pre = partner ? pre0.filter((c) => lcDe(c.partner) === lcDe(partner)) : pre0;
+  const partner = partnerQ && pMap.has(partnerKey(partnerQ)) ? pMap.get(partnerKey(partnerQ)).partner : partnerQ || null;
+  const pre = partner ? pre0.filter((c) => partnerKey(c.partner) === partnerKey(partner)) : pre0;
   // Backlog 625: Folgevertrag gleicher Art am selben Fahrzeug (Beginn nach dem eigenen Beginn, spätestens am Tag nach dem Ende) – aus allen Verträgen
   const next1 = (d) => new Date(Date.parse(d + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
   const succOfC = (c) => { const e = c.ended_on || c.end_date; if (!e) return null;

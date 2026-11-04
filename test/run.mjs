@@ -33506,6 +33506,23 @@ await test('Backlog 996 (Blickwinkel „Leasinggeber schickt die Vertragsbestät
   const { STRINGS } = await import('../public/i18n.js');
   ok(STRINGS.de.help_contracts_s.includes('„lv2024.0815.3“') && STRINGS.uk.help_contracts_s.includes('«lv2024.0815.3»') && STRINGS.en.help_contracts_s.includes('“lv2024.0815.3”'), 'Hilfe DE/UK/EN');
 });
+await test('Backlog 997 (Folge aus 996): Vertragsübersicht fasst Vertragspartner mit ß/ss, Großschrift, Gedankenstrich und Leerraum zu einer Auswahl zusammen, Filter findet alle Schreibweisen, Anzeige in gemischter Schreibweise; Hilfe DE/UK/EN', async () => {
+  const { U, V1 } = await freshWorld(); const V2 = 'VIN:WDB9630051L917317';
+  const mk = async (v, b) => { const r = await U.fleet.post(`/api/vehicles/${v}/contracts`, { kind: 'versicherung', evidence: 'Police (Test)', start_date: '2025-01-01', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  await mk(V1, { partner: 'STRASSEN-VERSICHERUNG AG', contract_no: 'S-1' });
+  await mk(V2, { partner: 'Straßen–Versicherung  AG', contract_no: 'S-2' });
+  await mk(V1, { partner: 'straßen-versicherung ag', contract_no: 'S-3' });
+  await mk(V2, { partner: 'Straßburger Versicherung', contract_no: 'X-1' });
+  const all = (await U.fleet.get('/api/contracts?filter=alle&kind=versicherung')).data;
+  eq(all.partner_options.length, 2, JSON.stringify(all.partner_options));
+  const o = all.partner_options.find((x) => x.n === 3); ok(o, 'drei Schreibweisen = ein Partner'); eq(o.partner, 'Straßen–Versicherung AG', 'gemischte Schreibweise angezeigt');
+  for (const q of ['strassen-versicherung ag', 'STRASSEN–VERSICHERUNG  AG', o.partner]) {
+    const r = (await U.fleet.get('/api/contracts?filter=alle&kind=versicherung&partner=' + encodeURIComponent(q))).data;
+    eq(r.contracts.length, 3, q); eq(r.counts.alle, 3, 'Zähler ' + q); eq(r.partner, o.partner, q);
+  }
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_contracts_s.includes('Auswahl „Vertragspartner“ in der Vertragsübersicht fasst') && STRINGS.uk.help_contracts_s.includes('Вибір «Контрагент»') && STRINGS.en.help_contracts_s.includes('The “Contract partner” selection'), 'Hilfe DE/UK/EN');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
