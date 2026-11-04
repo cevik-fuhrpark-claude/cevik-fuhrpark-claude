@@ -33050,6 +33050,8 @@ await test('Backlog 981 (Folge aus 979, Blickwinkel „Disposition plant morgens
   ok(body.includes("v.kind === 'lkw' && v.coupled && v.coupled.kind === 'anhaenger' && !v.eval_excluded && inSite(v)") && body.includes('if (ccAll.length)'), 'nur mit Lkw-Gespannen am Standort, 0 wird angezeigt');
   ok(body.includes("dispoPrintLine('combo', t('av_combo_clear'), ccL.map((v) => `${v.plate} + ${v.coupled.plate}`))"), 'Ausdruck mit Lkw + Anhänger');
   ok(body.indexOf('id="dcombo"') < body.indexOf('dispoWinter(hs)'), 'vor Winter-/Druckbereich');
+  ok(body.includes('const moL = dvs.filter((v) => inSite(v) && vOverdue(v));'), '„Prüfung/Wartung überfällig“ auf der Startseite mit derselben Regel wie die Fahrzeugliste');
+  { const { STRINGS: S0 } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(S0[l].help_dispo_s.split('|').some((x) => x.includes(S0[l].av_combo_clear)), `${l}: Hilfe der Disposition erklärt „${S0[l].av_combo_clear}“`); }
   // Regel an Beispieldaten: Zähler nur für Lkw mit freiem Anhänger, Standortfilter wie die Tafel
   const line = (k) => app.slice(app.indexOf(k), app.indexOf('\n', app.indexOf(k)));
   const ccv = new Function('bDate', [line('const vOverdue = (v) =>'), line('const comboSideOk = (x) =>'), line('const comboClearV = (v) =>')].join('\n') + '; return comboClearV;')(() => '2026-11-04');

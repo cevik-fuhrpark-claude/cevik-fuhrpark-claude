@@ -1479,7 +1479,8 @@ async function dispoHome(cases) {
   const wn = dvs.filter((v) => v.notes_active > 0 && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs))).length;
   if (wn) html += `<p class="noprint"><a href="${hj('#/vehicles?f=with_notes')}" id="dnotes">${esc(t('vnotes_with_veh'))} (${wn})</a></p>`;
   // Prüfung/Wartung überfällig (gleiche Regel wie der Filter der Fahrzeugliste, ohne ruhende) – vorher nur in der Liste sichtbar (23.10.2026)
-  const moL = dvs.filter((v) => !v.eval_excluded && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs)) && ((v.next_due && v.next_due < bDate()) || (v.km_remaining !== null && v.km_remaining !== undefined && v.km_remaining < 0))); const mo = moL.length;
+  const inSite = (v) => !hs || nk(v.site) === nk(hs === 'ohne' ? null : hs);
+  const moL = dvs.filter((v) => inSite(v) && vOverdue(v)); const mo = moL.length; // seit Backlog 981 dieselbe Regel (vOverdue) wie die Fahrzeugliste
   if (mo) html += `<p class="noprint"><a class="panel alert" style="display:block;text-decoration:none" href="${hj('#/vehicles?f=maint_overdue')}" id="dmover"><b>${esc(t('av_maint_overdue'))} (${mo})</b></a></p>${dispoPrintLine('mover', t('av_maint_overdue'), moL.map((v) => v.plate + (v.next_due && v.next_due < bDate() ? ` (${v.next_due_kind ? mk(v.next_due_kind) + ' ' : ''}${fmtD(v.next_due)})` : '')), true)}`;
   html += dispoDueSoon(dvs, (v) => !hs || nk(v.site) === nk(hs === 'ohne' ? null : hs), dmo && Array.isArray(dmo.rows) ? dmo.rows : null);
   // Gespann gesperrt (gekoppeltes Fahrzeug gesperrt, eigenes nicht; ohne ruhende) – gleiche Regel wie der Filter der Fahrzeugliste (Backlog 209,
@@ -1488,7 +1489,6 @@ async function dispoHome(cases) {
   if (cl) html += `<p class="noprint"><a class="panel alert" style="display:block;text-decoration:none" href="${hj('#/vehicles?f=coupled_locked')}" id="dcoupled"><b>${esc(t('av_coupled_locked'))} (${cl})</b></a></p>${dispoPrintLine('coupled', t('av_coupled_locked'), clL.map((v) => `${v.plate} (🔗 ${t('vk_' + v.coupled.kind)} ${v.coupled.plate})`), true)}`;
   // Backlog 981 (Folge aus 979, Blickwinkel „Disposition plant morgens die Touren“): Zähler „Gespann ohne Meldungen“ – gleiche Regel und gleicher
   // Standort wie die Fahrzeugliste; sichtbar, sobald am Standort ein Lkw mit gekoppeltem Anhänger steht (auch 0 = kein freies Gespann ist eine Aussage)
-  const inSite = (v) => !hs || nk(v.site) === nk(hs === 'ohne' ? null : hs);
   const ccAll = dvs.filter((v) => v.kind === 'lkw' && v.coupled && v.coupled.kind === 'anhaenger' && !v.eval_excluded && inSite(v));
   const ccL = ccAll.filter(comboClearV);
   if (ccAll.length) html += `<p class="noprint"><a href="${hj('#/vehicles?f=combo_clear')}" id="dcombo" data-n="${ccL.length}" title="${esc(t('av_combo_clear_t'))}">${esc(t('av_combo_clear'))} (${ccL.length})</a></p>${dispoPrintLine('combo', t('av_combo_clear'), ccL.map((v) => `${v.plate} + ${v.coupled.plate}`))}`;
