@@ -9,7 +9,7 @@ import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentF
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday, STATES } from './holidays.js';
-import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon } from './hours.js';
+import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn } from './hours.js';
 import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen, tzDiff, nextOpenLocal, holidayGaps } from './emhours.js';
 
 // [CLAUDE] Backlog 794: Lookbehind-Ausdrücke auch in Safari/iOS < 16.4 (eingesetzt von scripts/build-app.mjs, Erklärung dort)
@@ -663,6 +663,16 @@ document.addEventListener('paste', (e) => {
   try { el.setRangeText(v, el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length, 'end'); } catch { el.value = v; }
   el.dispatchEvent(new Event('input', { bubbles: true }));
 });
+// Backlog 984: Beträge mit ausgeschriebener Währung aus Diktat/Nachricht („120 Euro 50“, „120,50 Euro“, „50 Cent“, „120 євро“) werden beim Verlassen
+// eines Betragsfelds in Ziffern umgeschrieben (sichtbar vor dem Speichern; der Server liest dieselben Formen über `moneyIn`). Nur Betragsfelder.
+const MONEY_FIELD = /^(amount_eur|amount_net|appraisal_net|deductible_net|reimbursed_net|monthly_rate_net|unit_price_net)$/;
+document.addEventListener('change', (e) => {
+  const el = e.target; if (!el || el.tagName !== 'INPUT' || el.readOnly || el.disabled) return;
+  if (!(MONEY_FIELD.test(el.name || '') || el.id === 'ie_price' || /^rcp\d+$/.test(el.id || ''))) return;
+  const w = moneyIn(el.value); if (w === null) return;
+  const v = /^\d+\.\d{2}$/.test(w) ? decIn(w) : w; if (v === el.value) return;
+  el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));
+}, true);
 // Datum einfügen (Backlog 975, Blickwinkel „Leitung überträgt ein Datum aus Rechnung, E-Mail oder Bescheid per Kopieren/Einfügen“):
 // Datumsfelder (input type=date) nehmen am PC Eingefügtes nicht an – „04.11.2026“, „Rechnungsdatum: 04.11.2026“, „4. November 2026“,
 // „04/11/2026“ (EN-Anzeige der App), „04 листопада 2026“ wurden still verworfen. Genau ein Datum im Text → übernehmen;

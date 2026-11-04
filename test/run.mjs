@@ -32946,6 +32946,39 @@ await test('Backlog 983 (Blickwinkel „Werkstatt-Tablet: Mechaniker diktiert Te
   for (const [l, w] of [['de', '„vier Liter“'], ['uk', '«чотири літри»'], ['en', '“four litres”']]) ok(STRINGS[l].help_stock_s.split('|').some((x) => x.includes(w) && x.includes('1½ l')), `Hilfe Lager ${l}`);
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-teile-diktat.py'), 'UI-Prüfung eingetragen');
 });
+await test('Backlog 984 (Blickwinkel „Leitung/Werkstatt diktiert Beträge am PC/Tablet“): ausgeschriebene Währung „120,50 Euro“, „120 Euro 50“, „120 Euro und 50 Cent“, „50 Cent“, „120 євро“ in allen Betragsfeldern (Server + Umschreiben beim Verlassen des Felds); netto/brutto-Regeln und Mehrdeutigkeit bleiben', async () => {
+  const { num } = await import('../src/util.js'); const { moneyIn } = await import('../public/hours.js');
+  const N = (v) => num(v, { min: 0, max: 1e7, nullable: true, cents: true, net: true, field: 'Betrag', decimalComma: true });
+  for (const [v, x] of [['120,50 Euro', 120.5], ['120 Euro 50', 120.5], ['120 Euro und 50 Cent', 120.5], ['120 Euro, 5', 120.05], ['120 € 50', 120.5], ['1.240 Euro 50', 1240.5], ['50 Cent', 0.5], ['5 ct', 0.05],
+    ['Euro 99,90', 99.9], ['120 euros', 120], ['120 Euro.', 120], ['120 євро', 120], ['120 евро 50 центов', 120.5], ['120 євро 5 центів', 120.05], ['1240,- Euro', 1240], ['120,50 Euro netto', 120.5], ['netto 120 Euro', 120],
+    ['120,50 Euro zzgl. MwSt.', 120.5], ['120,50 €', 120.5], ['EUR 99', 99]]) eq(N(v), x, v);
+  // brutto bleibt abgewiesen, Tausenderpunkt ohne Cent mehrdeutig wie bei „1.240 €“, drei Cent-Ziffern/Zahlwörter werden nie geraten
+  for (const [v, rx] of [['120 Euro brutto', /Bruttobetrag/], ['1.240 Euro', /mehrdeutig/], ['120 Euro 500', /ungültige Zahl/], ['hundertzwanzig Euro', /ungültige Zahl/], ['Euro', /ungültige Zahl/], ['120 Cent', /ungültige Zahl/], ['ca. 120 Euro', /ungültige Zahl/]]) {
+    let e = null; try { N(v); } catch (x) { e = x; } ok(e && rx.test(e.message), v + ' → ' + (e && e.message));
+  }
+  eq(num('35 Euro', { cents: true, field: 'Betrag' }), 35, 'Bußgeld (cents ohne net)'); eq(num('35 Euro 50', { cents: true }), 35.5);
+  let e = null; try { num('5 Euro', { min: 0, max: 99, field: 'Menge' }); } catch (x) { e = x; } ok(e, 'Währung nur in Betragsfeldern');
+  eq(moneyIn('120,50'), null, 'ohne Währung unverändert'); eq(moneyIn('120,50 €'), null, '€ wie bisher im Server'); eq(moneyIn('120 Euro 50'), '120.50');
+  // Ende-zu-Ende: Fremdleistung, Lagerpreis, Versicherungsfall-Betrag
+  const { e: E, U, cmd, toRepair } = await freshWorld(); const db = E.DB.db; const a = await toRepair();
+  let r = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', invoice_no: 'R-984-1', amount_net: '240 Euro und 50 Cent' }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(db.prepare(`SELECT amount_net FROM external_costs WHERE case_id=? AND invoice_no='R-984-1'`).get(a).amount_net, 240.5);
+  r = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', invoice_no: 'R-984-2', amount_net: '240 Euro 500' }); eq(r.status, 400, 'drei Cent-Ziffern abgewiesen');
+  // Oberfläche: Umschreiben nur in Betragsfeldern, Dezimalzeichen der Sprache
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/import \{[^}]*moneyIn[^}]*\} from '\.\/hours\.js'/.test(app), 'app.js importiert moneyIn');
+  const i = app.indexOf('const MONEY_FIELD = '); ok(i > 0, 'MONEY_FIELD');
+  const MF = new Function(app.slice(i, app.indexOf('\n', i)) + '; return MONEY_FIELD;')();
+  for (const n of ['amount_eur', 'amount_net', 'appraisal_net', 'deductible_net', 'reimbursed_net', 'monthly_rate_net', 'unit_price_net']) ok(MF.test(n), n);
+  for (const n of ['qty', 'hours', 'min_qty', 'km', 'quantity']) ok(!MF.test(n), 'kein Betragsfeld: ' + n);
+  // jedes Betragsfeld der Oberfläche (inputmode decimal + Nettofeld) ist abgedeckt
+  for (const m of app.matchAll(/<input[^>]*inputmode="decimal"[^>]*>/g)) { const nm = (m[0].match(/name="([a-z_]+)"/) || [])[1]; if (nm && /(_net|amount|price|rate)/.test(nm)) ok(MF.test(nm), 'abgedeckt: ' + nm); }
+  ok(app.includes("el.id === 'ie_price'") && app.includes('/^rcp\\d+$/'), 'Artikelpreis/Wareneingang-Preis');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(/120 Euro 50/.test(STRINGS.de.help_costlimit_s) && /120 євро 50/.test(STRINGS.uk.help_costlimit_s) && /120 euros 50/.test(STRINGS.en.help_costlimit_s), 'Hilfe DE/UK/EN');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-betrag-diktat.py|'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Backlog 974 (Blickwinkel „Werkstatt bucht Teilemengen vom Lieferschein“): Menge mit passender Einheit („2 Stk.“, „5 l“, „2x“, „3 шт“) im Lager, Wareneingang, Inventur und am Auftrag; fremde Einheit mit eigener Meldung (DE/UK/EN), keine Umrechnung', async () => {
   const { qtyNum } = await import('../src/util.js');
   const o = { min: 0, max: 1e6, decimalComma: true };

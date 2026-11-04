@@ -1,5 +1,5 @@
 // [CLAUDE] Hilfsfunktionen ohne externe Abhängigkeiten (Cloudflare Workers / WebCrypto)
-import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty } from '../public/hours.js';
+import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty, moneyIn } from '../public/hours.js';
 
 export const nowIso = () => new Date().toISOString();
 // Zeitstempel für Änderungen mit Vergleich auf den gelesenen Stand (updated_at): immer später als der alte Wert, auch bei gleicher Millisekunde
@@ -292,6 +292,8 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
       if (/^(brutto|gross|брутто)(?=[\s\d€:]|$)|(^|[\s\d.,€\-–])(brutto|gross|брутто|inkl\.?\s*mwst\.?|incl\.?\s*vat|з\s*пдв)\.?$/i.test(t)) throw bad('validation', `${field}: „${t.slice(0, 40)}“ ist ein Bruttobetrag – bitte den Nettobetrag (ohne MwSt.) eingeben.`);
       t = t.replace(/^(netto|net|нетто)\s*:?\s*/i, '').replace(/\s*(netto|net|нетто|(zzgl\.?|ohne|plus|excl\.?|\+)\s*(mwst|ust|vat)|без\s*пдв)\.?$/i, '');
     }
+    // Backlog 984: ausgeschriebene Währung aus Diktat/Nachricht („120,50 Euro“, „120 Euro 50“, „50 Cent“, „120 євро“) über `moneyIn` (public/hours.js)
+    if (cents || money) { const w = moneyIn(t); if (w !== null) t = w; }
     if (cents || money) t = t.replace(/^(€|eur)\s*/i, '').replace(/\s*(€|eur)$/i, '');
     if (grouped) t = t.replace(/\s*(km|км)\.?$/i, '');
     t = t.replace(/[\s\u00a0]/g, '');

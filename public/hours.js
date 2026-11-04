@@ -183,3 +183,23 @@ export function qtyIn(text) {
   }
   return null;
 }
+
+// Backlog 984 (Blickwinkel „Leitung/Werkstatt diktiert Beträge am PC/Tablet“): Diktat (Windows Win+H, Gboard, Siri) und kopierte Nachrichten
+// schreiben Beträge mit ausgeschriebener Währung – „120,50 Euro“, „120 Euro 50“, „120 Euro und 50 Cent“, „50 Cent“, „120 euros“, „120 євро“,
+// „120 евро 50 центов“ – vorher „ungültige Zahl“ (nur „€“/„EUR“ wurden erkannt). Gemeinsam für Server (`num` mit money/cents in src/util.js)
+// und Oberfläche (Betragsfeld wird beim Verlassen in Ziffern umgeschrieben). Keine Zahlwörter („hundertzwanzig“): Diktat liefert Ziffern;
+// Euro + Cent nur mit 1–2 Cent-Ziffern. Ergebnis: Text ohne Währung (Dezimalregeln beim Aufrufer), bei Euro + Cent „120.05“; sonst null.
+const EUR_W = '(?:€|eur|euro|euros|євро|евро)';
+const CENT_W = '(?:cent|cents|ct|центів|центи|цент|центов|цента)';
+const EC_RX = new RegExp(`^(?:${EUR_W}\\s*)?(\\d{1,3}(?:\\.\\d{3})+|\\d{1,8})\\s*${EUR_W}\\.?\\s*(?:,|und|and|і|й|та|и)?\\s*(\\d{1,2})\\s*(?:${CENT_W}\\.?)?$`, 'i');
+const C_RX = new RegExp(`^(\\d{1,2})\\s*${CENT_W}\\.?$`, 'i');
+const PRE_RX = new RegExp(`^${EUR_W}\\s*(?=[\\d.,])`, 'i');
+const POST_RX = new RegExp(`([\\d.,\\-–—])\\s*${EUR_W}\\.?$`, 'i');
+export function moneyIn(raw) {
+  const s = String(raw ?? '').replace(/[\s  ]+/g, ' ').trim(); if (!s || s.length > 40) return null;
+  let m;
+  if ((m = s.match(EC_RX))) return `${m[1].replace(/\./g, '')}.${m[2].padStart(2, '0')}`;
+  if ((m = s.match(C_RX))) return `0.${m[1].padStart(2, '0')}`;
+  if (!/^(?:€|eur)\s*\d|\d\s*(?:€|eur)\.?$/i.test(s) && (PRE_RX.test(s) || POST_RX.test(s))) return s.replace(PRE_RX, '').replace(POST_RX, '$1').trim();
+  return null;
+}
