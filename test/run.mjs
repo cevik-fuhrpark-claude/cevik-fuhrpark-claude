@@ -32838,7 +32838,7 @@ await test('Backlog 973 (Blickwinkel „Mechaniker erfasst Arbeitszeit in Stunde
   for (const [v, x] of [['1:30', 1.5], ['0:45', 0.75], ['2:00 h', 2], ['1 h 30', 1.5], ['1h30', 1.5], ['1h 30m', 1.5], ['1 Std. 30 Min.', 1.5], ['1 Stunde und 15 Minuten', 1.25], ['1 hr 30 min', 1.5],
     ['90 min', 1.5], ['90 Min.', 1.5], ['45 mins', 0.75], ['30 Minuten', 0.5], ['1,5 h', 1.5], ['1,5 Std.', 1.5], ['2 Stunden', 2], ['1.5 hrs', 1.5], ['3 hours', 3],
     ['2 год 15 хв', 2.25], ['2 години', 2], ['40 хв', 40 / 60], ['1 час 30 мин', 1.5], ['1,5', 1.5], ['0,75', 0.75], [2, 2], ['1:20', 1 + 20 / 60]]) ok(Math.abs(hoursNum(v, o) - x) < 1e-9, `${v} → ${x} (ist ${hoursNum(v, o)})`);
-  for (const [v, msg] of [['1:75', /Minuten nur 0 bis 59/], ['1 h 60', /Minuten nur 0 bis 59/], ['25:00', /zulässig von 0.05 bis 24/], ['2 min', /zulässig von 0.05 bis 24/], ['1500 min', /zulässig/], ['h', /ungültige Zahl/], ['1:5', /ungültige Zahl/], ['eineinhalb', /ungültige Zahl/], ['1 km', /ungültige Zahl/]]) {
+  for (const [v, msg] of [['1:75', /Minuten nur 0 bis 59/], ['1 h 60', /Minuten nur 0 bis 59/], ['25:00', /zulässig von 0.05 bis 24/], ['2 min', /zulässig von 0.05 bis 24/], ['1500 min', /zulässig/], ['h', /ungültige Zahl/], ['1:5', /ungültige Zahl/], ['1 km', /ungültige Zahl/]]) {
     let e = null; try { hoursNum(v, o); } catch (x) { e = x; } ok(e && msg.test(e.message), `abgewiesen: ${v} (${e && e.message})`);
   }
   // Ende-zu-Ende: Buchung, Summe, Tagesgrenze mit umgerechneten Minuten
@@ -32857,13 +32857,49 @@ await test('Backlog 973 (Blickwinkel „Mechaniker erfasst Arbeitszeit in Stunde
   // Oberfläche: Beispiel im Feld, Umrechnung (gleicher Ausdruck wie in app.js)
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('placeholder="${esc(t(\'wh_ph\'))}" aria-describedby="whconv"'), 'Beispiel im Stundenfeld');
-  const a = app.indexOf("const H_U = "); const b = app.indexOf('\nfunction hoursWatch()', a); ok(a > 0 && b > a, 'hoursOf vorhanden');
-  const { STRINGS } = await import('../public/i18n.js');
-  const fn = new Function('t', app.slice(a, b) + '; return { hoursOf, hoursText };')((k) => STRINGS.de[k]);
+  const a = app.indexOf("const hoursOf = "); const b = app.indexOf('\nfunction hoursWatch()', a); ok(a > 0 && b > a, 'hoursOf vorhanden');
+  const { STRINGS } = await import('../public/i18n.js'); const HM = await import('../public/hours.js');
+  const fn = new Function('t', 'parseHours', 'H_U', app.slice(a, b) + '; return { hoursOf, hoursText };')((k) => STRINGS.de[k], HM.parseHours, HM.H_UNIT);
   for (const [v, x] of [['1:30', '= 1 Std. 30 Min.'], ['1,30', '= 1 Std. 18 Min.'], ['1,5', '= 1 Std. 30 Min.'], ['90 min', '= 1 Std. 30 Min.'], ['2', '= 2 Std.'], ['0,25', '= 15 Min.'], ['2 год 15 хв', '= 2 Std. 15 Min.']]) eq(fn.hoursText(fn.hoursOf(v)), x, v);
   eq(fn.hoursOf('1:75'), null); eq(fn.hoursOf('abc'), null); eq(fn.hoursOf(''), null);
   for (const l of ['de', 'uk', 'en']) for (const k of ['wh_ph', 'wh_hm', 'wh_h', 'wh_m']) ok(STRINGS[l][k], `${l}.${k}`);
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-arbeitszeit-minuten.py'), 'UI-Prüfung eingetragen');
+});
+
+await test('Backlog 982 (Blickwinkel „Werkstatt-Tablet: Mechaniker diktiert den Arbeitsbericht“): Zahlwörter/Brüche („zweieinhalb Stunden“, „half an hour“, „півтори години“, „полтора часа“, „1½ h“) als Arbeitszeit; Dauer im Tätigkeitstext wird per Knopf übernommen (DE/UK/EN)', async () => {
+  const { hoursNum } = await import('../src/util.js'); const { parseHours, durationIn } = await import('../public/hours.js');
+  const o = { min: 0.05, max: 24, field: 'Stunden', decimalComma: true };
+  for (const [v, x] of [['zweieinhalb Stunden', 2.5], ['eine halbe Stunde', 0.5], ['halbe Stunde.', 0.5], ['anderthalb Stunden', 1.5], ['eineinhalb Stunden', 1.5], ['eine Stunde und zehn Minuten', 1 + 10 / 60],
+    ['zwei Stunden dreißig Minuten', 2.5], ['Eine Stunde', 1], ['Stunde', 1], ['dreiviertel Stunde', 0.75], ['Viertelstunde', 0.25], ['zwei und eine halbe Stunde', 2.5], ['fünfundvierzig Minuten', 0.75],
+    ['half an hour', 0.5], ['a half hour', 0.5], ['an hour', 1], ['one hour thirty minutes', 1.5], ['two and a half hours', 2.5], ['an hour and a half', 1.5], ['twenty-five minutes', 25 / 60],
+    ['a quarter of an hour', 0.25], ['three quarters of an hour', 0.75], ['півтори години', 1.5], ['пів години', 0.5], ['півгодини', 0.5], ['дві з половиною години', 2.5], ['одна година', 1],
+    ['дві години тридцять хвилин', 2.5], ['сорок п’ять хвилин', 0.75], ['полчаса', 0.5], ['полтора часа', 1.5], ['два с половиной часа', 2.5], ['1½ h', 1.5], ['1 1/2 Stunden', 1.5], ['½ Std', 0.5],
+    // bisherige Schreibweisen unverändert (Backlog 973)
+    ['1:30', 1.5], ['1 h 30', 1.5], ['90 min', 1.5], ['2 Stunden', 2], ['1,5 h', 1.5], ['1,5', 1.5]]) ok(Math.abs(hoursNum(v, o) - x) < 1e-9, `${v} → ${x} (ist ${hoursNum(v, o)})`);
+  for (const [v, rx] of [['zwei Stunden siebzig Minuten', /ungültige Zahl/], ['zwanzig Stunden und eine halbe Stunde', /ungültige Zahl/], ['ca. zwei Stunden', /ungültige Zahl/], ['Stunden', /ungültige Zahl/], ['drei Bremsbeläge', /ungültige Zahl/], ['1:75', /Minuten nur 0 bis 59/], ['zwei Stunden 75', /Minuten nur 0 bis 59/]]) {
+    let e = null; try { hoursNum(v, o); } catch (x) { e = x; } ok(e && rx.test(e.message), `abgewiesen: ${v} (${e && e.message})`);
+  }
+  eq(parseHours('abc'), null); eq(parseHours('2 Stunden'), null, 'Ziffer + Einheit bleibt bei den Dezimalregeln des Aufrufers');
+  // Dauer im Tätigkeitstext: nur mit Einheit/fester Wendung, am Anfang oder Ende, Rest bleibt
+  for (const [v, h, rest, part] of [['Bremsbeläge vorne getauscht, zweieinhalb Stunden.', 2.5, 'Bremsbeläge vorne getauscht', 'zweieinhalb Stunden'], ['Zwei Stunden Ölwechsel und Filter', 2, 'Ölwechsel und Filter', 'Zwei Stunden'],
+    ['Reifen getauscht 2 h', 2, 'Reifen getauscht', '2 h'], ['Achse vermessen 1,5 Std.', 1.5, 'Achse vermessen', '1,5 Std'], ['Замінили колодки, півтори години', 1.5, 'Замінили колодки', 'півтори години'],
+    ['Brake pads replaced – an hour and a half', 1.5, 'Brake pads replaced', 'an hour and a half']]) {
+    const d = durationIn(v); ok(d, v); eq(d.hours, h, v); eq(d.rest, rest, v); eq(d.part, part, v);
+  }
+  for (const v of ['Rad 2 montiert', '2 Bremsbeläge', 'Probefahrt 10 km', 'Ventil eins', 'zwei Stunden', 'Spiegel links', '']) eq(durationIn(v), null, `keine Dauer: ${v}`);
+  // Ende-zu-Ende: diktierte Angaben buchen
+  const { U, cmd, toRepair } = await freshWorld();
+  const id = await toRepair();
+  let r = await cmd(U.ws, id, 'record_work', { hours: 'zweieinhalb Stunden', description: 'Bremsbeläge vorne getauscht' }); eq(r.status, 200, JSON.stringify(r.data));
+  r = await cmd(U.ws, id, 'record_work', { hours: 'півгодини', description: 'Пробна поїздка' }); eq(r.status, 200, JSON.stringify(r.data));
+  const d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(JSON.stringify(d.work.map((w) => w.hours).sort()), JSON.stringify([0.5, 2.5]), 'gespeicherte Stunden');
+  // Oberfläche: Knopf unter der Tätigkeit, Texte DE/UK/EN, Modul im Service Worker
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("import { parseHours, durationIn, H_UNIT as H_U } from './hours.js';"), 'gemeinsames Modul');
+  ok(app.includes('data-whdesc') && app.includes('data-whtake') && app.includes("inp.value.trim() ? null : durationIn(desc.value)"), 'Knopf nur bei leerem Stundenfeld');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(/\{d\}/.test(STRINGS[l].wh_take) && /\{h\}/.test(STRINGS[l].wh_take), `${l}.wh_take`);
+  ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/hours.js'"), 'Service Worker (ohne Netz)');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-arbeitszeit-diktat.py'), 'UI-Prüfung eingetragen');
 });
 
 await test('Backlog 974 (Blickwinkel „Werkstatt bucht Teilemengen vom Lieferschein“): Menge mit passender Einheit („2 Stk.“, „5 l“, „2x“, „3 шт“) im Lager, Wareneingang, Inventur und am Auftrag; fremde Einheit mit eigener Meldung (DE/UK/EN), keine Umrechnung', async () => {

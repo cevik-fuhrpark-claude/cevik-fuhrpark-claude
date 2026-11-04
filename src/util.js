@@ -1,4 +1,5 @@
 // [CLAUDE] Hilfsfunktionen ohne externe Abhängigkeiten (Cloudflare Workers / WebCrypto)
+import { parseHours, H_UNIT } from '../public/hours.js';
 
 export const nowIso = () => new Date().toISOString();
 // Zeitstempel für Änderungen mit Vergleich auf den gelesenen Stand (updated_at): immer später als der alte Wert, auch bei gleicher Millisekunde
@@ -229,21 +230,15 @@ export function kmNum(v, { min = 0, max = 5000000, field = 'Kilometerstand' } = 
 // Nachricht oder vom PC als „1:30“, „1 h 30“, „1 Std. 30 Min.“, „90 min“, „1,5 h“, „2 год 15 хв“, „45 mins“ – vorher „ungültige Zahl“.
 // Minuten werden exakt in Stunden umgerechnet (1:20 = 1,333… Std.); bei Stunden + Minuten sind nur 0–59 Minuten zulässig.
 // „1,30“/„1.30“ bleibt eine Dezimalzahl (1,3 Std.) – die Oberfläche zeigt dazu „= 1 Std. 18 Min.“.
-const H_UNIT = '(?:h|std|stdn|stunden?|hrs?|hours?|год(?:ин[аи]?)?|час(?:а|ов)?)';
-const M_UNIT = '(?:m|min|mins|minuten?|minutes?|хв(?:илин[аи]?)?|мин(?:ут[аы]?)?)';
-const HM_RX = new RegExp(`^(\\d{1,2})\\s*${H_UNIT}\\.?\\s*(?:(?:und|and|і|и)\\s+)?(\\d{1,2})\\s*(?:${M_UNIT}\\.?)?$`, 'i');
-const MIN_RX = new RegExp(`^(\\d{1,4})\\s*${M_UNIT}\\.?$`, 'i');
-const HUNIT_RX = new RegExp(`(?<=\\d)\\s*${H_UNIT}\\.?$`, 'i');
+// Backlog 982: Muster und Zahlwörter („zweieinhalb Stunden“, „half an hour“, „півтори години“) gemeinsam mit der Oberfläche in public/hours.js.
+const HUNIT_RX = new RegExp(`(\\d)\\s*${H_UNIT}\\.?$`, 'i');
 export function hoursNum(v, opts = {}) {
   const field = opts.field || 'Stunden';
   if (typeof v === 'string') {
-    const t = v.trim().replace(/[\s ]+/g, ' ');
-    let m;
-    const hm = (h, mi) => { if (mi > 59) throw bad('validation', `${field}: „${t.slice(0, 40)}“ – Minuten nur 0 bis 59 (z. B. 1:30 = 1,5 Stunden).`); return h + mi / 60; };
-    if ((m = t.match(new RegExp(`^(\\d{1,2}):(\\d{2})(?:\\s*${H_UNIT}\\.?)?$`, 'i')))) v = hm(Number(m[1]), Number(m[2]));
-    else if ((m = t.match(HM_RX))) v = hm(Number(m[1]), Number(m[2]));
-    else if ((m = t.match(MIN_RX))) v = Number(m[1]) / 60;
-    else v = t.replace(HUNIT_RX, '');
+    const t = v.trim().replace(/[\s\u00a0]+/g, ' ');
+    const h = parseHours(t);
+    if (h && h.minutesOver) throw bad('validation', `${field}: „${t.slice(0, 40)}“ – Minuten nur 0 bis 59 (z. B. 1:30 = 1,5 Stunden).`);
+    v = typeof h === 'number' ? h : t.replace(HUNIT_RX, '$1');
   }
   return num(v, { ...opts, field });
 }

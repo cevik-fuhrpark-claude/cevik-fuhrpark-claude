@@ -9,6 +9,7 @@ import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentF
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday, STATES } from './holidays.js';
+import { parseHours, durationIn, H_UNIT as H_U } from './hours.js';
 import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen, tzDiff, nextOpenLocal, holidayGaps } from './emhours.js';
 
 // [CLAUDE] Backlog 794: Lookbehind-Ausdrücke auch in Safari/iOS < 16.4 (eingesetzt von scripts/build-app.mjs, Erklärung dort)
@@ -3313,7 +3314,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     case 'set_ready_date': { const mn = c.status === 'werkstatt_freigegeben' && c.planned_date && c.planned_date > bDate() ? c.planned_date : bDate(); const cur = c.ready_expected_on || '';
       f.push(`<p class="small muted" id="rdyhint">${esc(t('rdy_hint'))}</p><label for="rdyd">${esc(t('rdy_title'))}<span class="hint">${esc(t('planned_clear_hint'))}</span></label><input type="date" id="rdyd" name="ready_expected_on" min="${esc(cur && cur < mn ? cur : mn)}" value="${esc(cur)}">`); break; }
     case 'set_planned_date': f.push(`<label>${esc(t('planned'))}<span class="hint">${esc(t('planned_clear_hint'))}</span></label><input type="date" name="planned_date" value="${esc(c.planned_date || '')}"><label for="plnote">${esc(t('plan_note_lbl'))}<span class="hint">${esc(t('plan_note_hint'))}</span></label><input id="plnote" name="planned_note" maxlength="200" autocomplete="off" value="${esc(c.planned_note || '')}">`); break;
-    case 'record_work': f.push(`<label for="whours">${esc(t('hours'))}</label><input id="whours" name="hours" inputmode="decimal" required placeholder="${esc(t('wh_ph'))}" aria-describedby="whconv"><p class="small muted" id="whconv" data-whconv aria-live="polite" hidden></p><label>${esc(t('activity'))}</label><input name="description" required list="worksugg" autocomplete="off"><datalist id="worksugg"></datalist><label>${esc(t('date'))}</label><input type="date" name="work_date" value="${bDate()}" max="${bDate()}" min="${workDateMin(c.created_at)}"><p class="small" id="wdprev" data-wdprev hidden></p><p class="small muted" id="workday" data-workday aria-live="polite"></p><details id="wdweek" class="small"><summary>${esc(t('wd_week'))}</summary><div id="wdweekb"></div></details>`); break;
+    case 'record_work': f.push(`<label for="whours">${esc(t('hours'))}</label><input id="whours" name="hours" inputmode="decimal" required placeholder="${esc(t('wh_ph'))}" aria-describedby="whconv"><p class="small muted" id="whconv" data-whconv aria-live="polite" hidden></p><label>${esc(t('activity'))}</label><input name="description" required list="worksugg" autocomplete="off"><datalist id="worksugg"></datalist><p class="small" id="whdesc" data-whdesc aria-live="polite" style="margin-top:6px" hidden></p><label>${esc(t('date'))}</label><input type="date" name="work_date" value="${bDate()}" max="${bDate()}" min="${workDateMin(c.created_at)}"><p class="small" id="wdprev" data-wdprev hidden></p><p class="small muted" id="workday" data-workday aria-live="polite"></p><details id="wdweek" class="small"><summary>${esc(t('wd_week'))}</summary><div id="wdweekb"></div></details>`); break;
     case 'add_part': f.push(`<div id="stocksel"></div><div id="freepart">`); f.push(`<label>${esc(t('part_name'))}</label><input name="name" required list="partsugg" autocomplete="off"><datalist id="partsugg"></datalist><label>${esc(t('part_number'))}</label><input name="part_number"><label>${esc(t('qty'))}</label><input name="quantity" inputmode="decimal" value="1"><label>${esc(t('price_net'))}</label><input name="unit_price_net" inputmode="decimal"><label class="check"><input type="checkbox" name="estimate"> ${esc(t('estimate'))}</label><label>${esc(t('supplier'))}<span class="hint" data-psuphint>${esc(t('part_supplier_hint'))}</span></label><input name="supplier" maxlength="120"></div><label>${esc(t('warranty_until'))}<span class="hint">${esc(t('warranty_hint'))}</span></label><input type="date" name="warranty_until" style="max-width:220px">${partFileSelect(d)}`); break;
     case 'add_open_item': f.push(`<label>${esc(t('open_items'))}</label><input name="description" required><label class="check"><input type="checkbox" name="safety_relevant"> ${esc(t('safety_relevant'))}</label>${oiFileSelect(d)}`); break;
     case 'add_external_cost': f.push(`<label>${esc(t('supplier'))}</label><input name="supplier" required><p class="panel small" id="xsprev" role="note" hidden></p><label>${esc(t('invoice_no'))}</label><input name="invoice_no"><label>${esc(t('amount_net'))}<span class="hint">${esc(t('ext_amount_hint'))}</span></label><input name="amount_net" inputmode="decimal"><label class="check"><input type="checkbox" name="estimate"> ${esc(t('estimate'))}</label><label class="check"><input type="checkbox" name="covers_work_and_parts"> ${esc(t('covers_all'))}</label><label>${esc(t('warranty_until'))}<span class="hint">${esc(t('warranty_hint'))}</span></label><input type="date" name="warranty_until" style="max-width:220px"><div id="extkm"><label for="extkmv">${esc(t('ext_km_label'))}<span class="hint">${esc(t('ext_km_hint'))}</span></label><input id="extkmv" name="odometer_km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12" style="max-width:220px"><div id="extkmd" aria-live="polite"></div><label for="extkmo">${esc(t('ext_km_on'))}</label><input type="date" id="extkmo" name="odometer_on" max="${bDate()}" style="max-width:220px"></div>${extFileSelect(d)}`); break;
@@ -3447,12 +3448,10 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
 // Backlog 973 (Blickwinkel „Mechaniker erfasst Arbeitszeit in Stunden und Minuten“): Der Server versteht „1:30“, „1 h 30“, „90 min“, „1,5 h“.
 // Unter dem Feld steht die Umrechnung in Stunden und Minuten – wer „1,30“ für eineinhalb Stunden tippt, sieht „= 1 Std. 18 Min.“.
 // Nur Anzeige: gesendet wird der getippte Text, der Server bewertet ihn (gleiche Muster wie `hoursNum` in src/util.js).
-const H_U = '(?:h|std|stdn|stunden?|hrs?|hours?|год(?:ин[аи]?)?|час(?:а|ов)?)';
-const M_U = '(?:m|min|mins|minuten?|minutes?|хв(?:илин[аи]?)?|мин(?:ут[аы]?)?)';
+// Backlog 982: Zahlwörter/Brüche aus Diktat („zweieinhalb Stunden“, „half an hour“, „півтори години“) über `parseHours` (public/hours.js, auch am Server).
 const hoursOf = (raw) => {
-  const s = String(raw || '').trim().replace(/[\s\u00a0]+/g, ' '); if (!s || s.length > 40) return null; let m;
-  if ((m = s.match(new RegExp(`^(\\d{1,2}):(\\d{2})(?:\\s*${H_U}\\.?)?$`, 'i'))) || (m = s.match(new RegExp(`^(\\d{1,2})\\s*${H_U}\\.?\\s*(?:(?:und|and|і|и)\\s+)?(\\d{1,2})\\s*(?:${M_U}\\.?)?$`, 'i')))) return Number(m[2]) > 59 ? null : Number(m[1]) * 60 + Number(m[2]);
-  if ((m = s.match(new RegExp(`^(\\d{1,4})\\s*${M_U}\\.?$`, 'i')))) return Number(m[1]);
+  const s = String(raw || '').trim().replace(/[\s\u00a0]+/g, ' '); if (!s || s.length > 60) return null;
+  const p = parseHours(s); if (p && p.minutesOver) return null; if (typeof p === 'number') return Math.round(p * 60);
   const d = s.replace(new RegExp(`(\\d)\\s*${H_U}\\.?$`, 'i'), '$1');
   return /^\d{1,2}([.,]\d+)?$/.test(d) ? Math.round(Number(d.replace(',', '.')) * 60) : null;
 };
@@ -3461,6 +3460,22 @@ function hoursWatch() {
   const inp = $('#whours'); const out = $('#whconv'); if (!inp || !out) return;
   const show = () => { const min = hoursOf(inp.value); const ok = min !== null && min > 0 && min <= 1440; out.textContent = ok ? hoursText(min) : ''; out.hidden = !ok; };
   inp.addEventListener('input', show); show();
+  // Backlog 982 (Blickwinkel „Werkstatt-Tablet: Mechaniker diktiert den Arbeitsbericht“): Steht die Dauer im diktierten Tätigkeitstext
+  // („Bremsbeläge vorne getauscht, zweieinhalb Stunden“) und ist das Stundenfeld leer, bietet ein Knopf an, sie zu übernehmen:
+  // Stundenfeld = erkannter Text (der Server bewertet ihn), Tätigkeit ohne die Dauer. Nichts geschieht ohne Tippen.
+  const desc = $('#af input[name=description]'); const box = $('#whdesc'); if (!desc || !box) return;
+  const offer = () => {
+    const d = inp.value.trim() ? null : durationIn(desc.value);
+    if (!d) { box.hidden = true; box.textContent = ''; return; }
+    box.innerHTML = `<button type="button" class="btn secondary small" data-whtake>⏱ ${esc(t('wh_take').replace('{d}', d.part).replace('{h}', hoursText(Math.round(d.hours * 60)).replace(/^=\s*/, '')))}</button>`;
+    box.hidden = false;
+    box.querySelector('[data-whtake]').onclick = () => {
+      inp.value = d.part; desc.value = d.rest; box.hidden = true; box.textContent = '';
+      inp.dispatchEvent(new Event('input', { bubbles: true })); desc.dispatchEvent(new Event('input', { bubbles: true }));
+      desc.focus();
+    };
+  };
+  desc.addEventListener('input', offer); inp.addEventListener('input', offer); offer();
 }
 
 // Eigene Arbeitszeit am gewählten Tag über alle Aufträge (Backlog 419): Mechaniker mit zwei Aufträgen am selben Tag sieht, was schon gebucht ist,

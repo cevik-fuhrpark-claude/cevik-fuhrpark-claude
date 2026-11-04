@@ -1541,9 +1541,9 @@ Object.assign(VALIDATION_TEXTS.en, { hm_min: '{f}: “{v}” – minutes only 0 
 Object.assign(VALIDATION_TEXTS.uk, { unit_mismatch: '{f}: «{v}» – одиниця не відповідає артикулу ({u}).' });
 Object.assign(VALIDATION_TEXTS.en, { unit_mismatch: '{f}: “{v}” – unit does not match the item ({u}).' });
 // Backlog 973: Umrechnung unter dem Stundenfeld („= 1 Std. 30 Min.“) und Beispiel im Feld
-Object.assign(STRINGS.de, { wh_ph: 'z. B. 1,5 oder 1:30', wh_hm: '= {h} Std. {m} Min.', wh_h: '= {h} Std.', wh_m: '= {m} Min.' });
-Object.assign(STRINGS.uk, { wh_ph: 'напр. 1,5 або 1:30', wh_hm: '= {h} год {m} хв', wh_h: '= {h} год', wh_m: '= {m} хв' });
-Object.assign(STRINGS.en, { wh_ph: 'e.g. 1.5 or 1:30', wh_hm: '= {h} h {m} min', wh_h: '= {h} h', wh_m: '= {m} min' });
+Object.assign(STRINGS.de, { wh_ph: 'z. B. 1,5 oder 1:30', wh_hm: '= {h} Std. {m} Min.', wh_h: '= {h} Std.', wh_m: '= {m} Min.', wh_take: '„{d}“ als Arbeitszeit übernehmen ({h})' });
+Object.assign(STRINGS.uk, { wh_ph: 'напр. 1,5 або 1:30', wh_hm: '= {h} год {m} хв', wh_h: '= {h} год', wh_m: '= {m} хв', wh_take: 'Перенести «{d}» у робочий час ({h})' });
+Object.assign(STRINGS.en, { wh_ph: 'e.g. 1.5 or 1:30', wh_hm: '= {h} h {m} min', wh_h: '= {h} h', wh_m: '= {m} min', wh_take: 'Use “{d}” as working time ({h})' });
 // Backlog 975: Datum einfügen (Datumsfelder)
 Object.assign(STRINGS.de, { pd_month: 'Nur Monat und Jahr erkannt (z. B. 11/2027) – bitte den Tag im Kalender wählen. Bei HU/SP gilt die Frist bis zum Monatsende.', pd_none: 'Im eingefügten Text wurde kein Datum mit Tag, Monat und Jahr erkannt (z. B. 04.11.2026). Bitte das Datum eingeben oder im Kalender wählen.', pd_many: 'Der eingefügte Text enthält mehrere verschiedene Daten – bitte nur das gewünschte Datum kopieren oder im Kalender wählen.', pd_invalid: 'Das eingefügte Datum gibt es im Kalender nicht (z. B. 31.02.) – bitte prüfen.' });
 Object.assign(STRINGS.uk, { pd_month: 'Розпізнано лише місяць і рік (напр. 11/2027) – виберіть день у календарі. Для HU/SP строк діє до кінця місяця.', pd_none: 'У вставленому тексті не знайдено дати з днем, місяцем і роком (напр. 04.11.2026). Введіть дату або виберіть її в календарі.', pd_many: 'Вставлений текст містить кілька різних дат – скопіюйте лише потрібну дату або виберіть її в календарі.', pd_invalid: 'Вставленої дати немає в календарі (напр. 31.02.) – перевірте, будь ласка.' });
