@@ -1275,41 +1275,8 @@ async function viewHome() {
     if (S.me.role === 'workshop') html += await boardP;
     else {
       if (isMgr()) html += await boardP;
-      if (S.me.role === 'dispatch') {
-        // Standard-Standort aus „Mein Konto“: Tafel nur für diesen Standort – sichtbar vermerkt und jederzeit auf „alle“ umschaltbar
-        const hs = S.me.home_site && !S.dispoAll ? S.me.home_site : '';
-        const hq = hs ? encodeURIComponent(hs) : '';
-        const [dcs, dmo, dvs] = await Promise.all([cases === null ? [] : api('GET', '/api/cases?status=open&limit=500' + (hq ? '&vsite=' + hq : '')).then((r) => r.cases).catch(() => []), cases === null ? null : api('GET', '/api/maintenance' + (hq ? '?site=' + hq : '')).catch(() => null),
-          cases === null ? [] : api('GET', '/api/vehicles').then((r) => r.vehicles).catch(() => [])]);
-        html += dispoBoard(dcs, dmo && dmo.defects_without_case ? dmo.defects_without_case : [], new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])), new Set(dvs.filter((v) => v.eval_excluded).map((v) => v.id)));
-        if (cases !== null) html += await dispoBack(dcs, hq);
-        // Neue Meldungen, deren Eingang die Leitung noch nicht bestätigt hat (gleiche Regel wie Filter `unreceived`; Standort wie die Tafel) –
-        // vorher sah die Disposition „was ist neu?“ nur über die nach Dringlichkeit sortierte Liste (Blickwinkel „Disposition, erster Tag“, 26.10.2026)
-        const nu = dcs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).length;
-        if (nu) html += `<p class="noprint"><a href="${hj('#/cases?f=unreceived')}" id="dunrec" data-site="${esc(hs)}"><b>${esc(t('dispo_unreceived'))} (${nu})</b></a></p>`;
-        // Backlog 474: eingeschränkt fahrbereit gemeldet, noch ohne Werkstattauftrag und ohne Sperre (gleiche Regel wie Filter `limited`) –
-        // stand vorher in keinem Abschnitt der Tafel; nur Hinweis, ob das Fahrzeug eingeplant wird, entscheidet die Disposition
-        const nlL = dcs.filter((c) => c.status === 'gemeldet' && !c.safety_lock && c.reported_driveability === 'eingeschraenkt'); const nl = nlL.length;
-        if (nl) html += `<p class="noprint"><a href="${hj('#/cases?f=limited')}" id="dlimited"><b>${esc(t('dispo_limited_new'))} (${nl})</b></a></p>${dispoPrintLine('limited', t('dispo_limited_new'), nlL.map((c) => c.plate))}`;
-        // Fahrzeuge mit aktiven Hinweisen (z. B. „Ladebordwand nur manuell“) – Link auf die gefilterte Fahrzeugliste; Standortregel wie oben
-        // Backlog 475: gleiche Standortregel wie Server/Fahrzeugliste (siteKeyUi: NFC, Leerraum vereinheitlicht) – vorher zählte z. B. „Nürnberg  Süd“
-        // (doppeltes Leerzeichen) hier nicht mit, die verlinkte Liste zeigte es aber
-        const nk = siteKeyUi;
-        const wn = dvs.filter((v) => v.notes_active > 0 && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs))).length;
-        if (wn) html += `<p class="noprint"><a href="${hj('#/vehicles?f=with_notes')}" id="dnotes">${esc(t('vnotes_with_veh'))} (${wn})</a></p>`;
-        // Prüfung/Wartung überfällig (gleiche Regel wie der Filter der Fahrzeugliste, ohne ruhende) – vorher nur in der Liste sichtbar (23.10.2026)
-        const moL = dvs.filter((v) => !v.eval_excluded && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs)) && ((v.next_due && v.next_due < bDate()) || (v.km_remaining !== null && v.km_remaining !== undefined && v.km_remaining < 0))); const mo = moL.length;
-        if (mo) html += `<p class="noprint"><a class="panel alert" style="display:block;text-decoration:none" href="${hj('#/vehicles?f=maint_overdue')}" id="dmover"><b>${esc(t('av_maint_overdue'))} (${mo})</b></a></p>${dispoPrintLine('mover', t('av_maint_overdue'), moL.map((v) => v.plate + (v.next_due && v.next_due < bDate() ? ` (${v.next_due_kind ? mk(v.next_due_kind) + ' ' : ''}${fmtD(v.next_due)})` : '')), true)}`;
-        html += dispoDueSoon(dvs, (v) => !hs || nk(v.site) === nk(hs === 'ohne' ? null : hs), dmo && Array.isArray(dmo.rows) ? dmo.rows : null);
-        // Gespann gesperrt (gekoppeltes Fahrzeug gesperrt, eigenes nicht; ohne ruhende) – gleiche Regel wie der Filter der Fahrzeugliste (Backlog 209,
-        // Teilagent „Panne – Ersatzfahrzeug“: Lkw mit gesperrtem Anhänger zählte grün und war nur über den Anhänger erkennbar)
-        const clL = dvs.filter((v) => !v.eval_excluded && v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt' && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs))); const cl = clL.length;
-        if (cl) html += `<p class="noprint"><a class="panel alert" style="display:block;text-decoration:none" href="${hj('#/vehicles?f=coupled_locked')}" id="dcoupled"><b>${esc(t('av_coupled_locked'))} (${cl})</b></a></p>${dispoPrintLine('coupled', t('av_coupled_locked'), clL.map((v) => `${v.plate} (🔗 ${t('vk_' + v.coupled.kind)} ${v.coupled.plate})`), true)}`;
-        if (cases !== null) html += await dispoWinter(hs);
-        html += `<p class="noprint"><button type="button" class="btn secondary" id="dprint">${esc(t('print'))}</button></p>`;
-        html += helpLink('dispo');
-      }
-      if (S.me.role === 'dispatch' && cases !== null) html += await dispoPlanned(S.me.home_site && !S.dispoAll ? S.me.home_site : '');
+      // Backlog 968: Tafel der Disposition in eigener Gruppe „dispo“ (nur für diese Rolle geladen) – Reserve im Start-Modul
+      if (S.me.role === 'dispatch') html += await dispoHome(cases);
       // Disposition mit Standard-Standort: offene Vorgänge ebenfalls nur dieses Standorts (gleiche Regel wie Server: getrimmt, ohne Groß-/Kleinschreibung)
       const dk = siteKeyUi;
       const shown = S.me.role === 'dispatch' && S.me.home_site && !S.dispoAll && cases ? cases.filter((c) => dk(c.vehicle_site) === dk(S.me.home_site === 'ohne' ? null : S.me.home_site)) : cases;
@@ -1325,6 +1292,45 @@ async function viewHome() {
   const dunr = $('#dunrec'); if (dunr) dunr.onclick = () => { S.caseVsite = dunr.dataset.site; };
   const dtg = $('#dsitetoggle'); if (dtg) dtg.onclick = (e) => { e.preventDefault(); S.dispoAll = !S.dispoAll; route(); };
   const dpr = $('#dprint'); if (dpr) dpr.onclick = () => window.print();
+}
+// Backlog 968: Startseite der Disposition (Tafel, Hinweise, Ausdruck, eingeplante Werkstatttermine) – ausgelagert in die Gruppe „dispo“
+// (async, Aufruf in viewHome vor dem Seitenaufbau). cases === null: Fahrer-/Offline-Fall (keine Nachabfragen).
+async function dispoHome(cases) {
+  let html = '';
+  // Standard-Standort aus „Mein Konto“: Tafel nur für diesen Standort – sichtbar vermerkt und jederzeit auf „alle“ umschaltbar
+  const hs = S.me.home_site && !S.dispoAll ? S.me.home_site : '';
+  const hq = hs ? encodeURIComponent(hs) : '';
+  const [dcs, dmo, dvs] = await Promise.all([cases === null ? [] : api('GET', '/api/cases?status=open&limit=500' + (hq ? '&vsite=' + hq : '')).then((r) => r.cases).catch(() => []), cases === null ? null : api('GET', '/api/maintenance' + (hq ? '?site=' + hq : '')).catch(() => null),
+    cases === null ? [] : api('GET', '/api/vehicles').then((r) => r.vehicles).catch(() => [])]);
+  html += dispoBoard(dcs, dmo && dmo.defects_without_case ? dmo.defects_without_case : [], new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])), new Set(dvs.filter((v) => v.eval_excluded).map((v) => v.id)));
+  if (cases !== null) html += await dispoBack(dcs, hq);
+  // Neue Meldungen, deren Eingang die Leitung noch nicht bestätigt hat (gleiche Regel wie Filter `unreceived`; Standort wie die Tafel) –
+  // vorher sah die Disposition „was ist neu?“ nur über die nach Dringlichkeit sortierte Liste (Blickwinkel „Disposition, erster Tag“, 26.10.2026)
+  const nu = dcs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).length;
+  if (nu) html += `<p class="noprint"><a href="${hj('#/cases?f=unreceived')}" id="dunrec" data-site="${esc(hs)}"><b>${esc(t('dispo_unreceived'))} (${nu})</b></a></p>`;
+  // Backlog 474: eingeschränkt fahrbereit gemeldet, noch ohne Werkstattauftrag und ohne Sperre (gleiche Regel wie Filter `limited`) –
+  // stand vorher in keinem Abschnitt der Tafel; nur Hinweis, ob das Fahrzeug eingeplant wird, entscheidet die Disposition
+  const nlL = dcs.filter((c) => c.status === 'gemeldet' && !c.safety_lock && c.reported_driveability === 'eingeschraenkt'); const nl = nlL.length;
+  if (nl) html += `<p class="noprint"><a href="${hj('#/cases?f=limited')}" id="dlimited"><b>${esc(t('dispo_limited_new'))} (${nl})</b></a></p>${dispoPrintLine('limited', t('dispo_limited_new'), nlL.map((c) => c.plate))}`;
+  // Fahrzeuge mit aktiven Hinweisen (z. B. „Ladebordwand nur manuell“) – Link auf die gefilterte Fahrzeugliste; Standortregel wie oben
+  // Backlog 475: gleiche Standortregel wie Server/Fahrzeugliste (siteKeyUi: NFC, Leerraum vereinheitlicht) – vorher zählte z. B. „Nürnberg  Süd“
+  // (doppeltes Leerzeichen) hier nicht mit, die verlinkte Liste zeigte es aber
+  const nk = siteKeyUi;
+  const wn = dvs.filter((v) => v.notes_active > 0 && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs))).length;
+  if (wn) html += `<p class="noprint"><a href="${hj('#/vehicles?f=with_notes')}" id="dnotes">${esc(t('vnotes_with_veh'))} (${wn})</a></p>`;
+  // Prüfung/Wartung überfällig (gleiche Regel wie der Filter der Fahrzeugliste, ohne ruhende) – vorher nur in der Liste sichtbar (23.10.2026)
+  const moL = dvs.filter((v) => !v.eval_excluded && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs)) && ((v.next_due && v.next_due < bDate()) || (v.km_remaining !== null && v.km_remaining !== undefined && v.km_remaining < 0))); const mo = moL.length;
+  if (mo) html += `<p class="noprint"><a class="panel alert" style="display:block;text-decoration:none" href="${hj('#/vehicles?f=maint_overdue')}" id="dmover"><b>${esc(t('av_maint_overdue'))} (${mo})</b></a></p>${dispoPrintLine('mover', t('av_maint_overdue'), moL.map((v) => v.plate + (v.next_due && v.next_due < bDate() ? ` (${v.next_due_kind ? mk(v.next_due_kind) + ' ' : ''}${fmtD(v.next_due)})` : '')), true)}`;
+  html += dispoDueSoon(dvs, (v) => !hs || nk(v.site) === nk(hs === 'ohne' ? null : hs), dmo && Array.isArray(dmo.rows) ? dmo.rows : null);
+  // Gespann gesperrt (gekoppeltes Fahrzeug gesperrt, eigenes nicht; ohne ruhende) – gleiche Regel wie der Filter der Fahrzeugliste (Backlog 209,
+  // Teilagent „Panne – Ersatzfahrzeug“: Lkw mit gesperrtem Anhänger zählte grün und war nur über den Anhänger erkennbar)
+  const clL = dvs.filter((v) => !v.eval_excluded && v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt' && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs))); const cl = clL.length;
+  if (cl) html += `<p class="noprint"><a class="panel alert" style="display:block;text-decoration:none" href="${hj('#/vehicles?f=coupled_locked')}" id="dcoupled"><b>${esc(t('av_coupled_locked'))} (${cl})</b></a></p>${dispoPrintLine('coupled', t('av_coupled_locked'), clL.map((v) => `${v.plate} (🔗 ${t('vk_' + v.coupled.kind)} ${v.coupled.plate})`), true)}`;
+  if (cases !== null) html += await dispoWinter(hs);
+  html += `<p class="noprint"><button type="button" class="btn secondary" id="dprint">${esc(t('print'))}</button></p>`;
+  html += helpLink('dispo');
+  if (cases !== null) html += await dispoPlanned(S.me.home_site && !S.dispoAll ? S.me.home_site : '');
+  return html;
 }
 // Backlog 560: Warnhinweise der Dispo-Tafel im Ausdruck mit Kennzeichen (am Bildschirm nur Zähler mit Link auf die Liste)
 function dispoPrintLine(key, label, items, alert = false) {

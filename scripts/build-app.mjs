@@ -23,6 +23,8 @@ export const GROUPS = {
   fahrzeug: ['viewVehicle', 'viewVehicles', 'viewCheckPaper'], // Backlog 928: leeres Prüfformular zum Ausdrucken (selten, kleinere Gruppe als Verwaltung); Backlog 796: Fahrzeugliste dazu (öffnet die Akte, gleiche Nutzer); Backlog 594: Fahrzeugakte (inkl. Reifen, Verträge, Prüftermine) – größte Einzelansicht, ≈ 26 KB gzip
   schaden: ['claimSection'], // Backlog 939: Versicherungsfall im Vorgang (nur Inhaber/Fuhrparkleitung, async, Aufruf in viewCase mit await) – Reserve im Start-Modul
   konto: ['viewInvite', 'viewSetup', 'loadTotp'], // Backlog 933: Einladung annehmen / Ersteinrichtung – je Person einmal, Reserve im Start-Modul; Backlog 952: Zwei-Faktor-Einrichtung (loadTotp, async, nur beim Aufklappen in „Mehr“)
+  dispo: ['dispoHome'], // Backlog 968: Startseite der Disposition (Tafel, Hinweise, Ausdruck) – nur Rolle Disposition, async, Aufruf in viewHome vor dem Seitenaufbau
+  leitung: ['fleetTodo'], // Backlog 968: Aufgabenliste der Inhaber/Fuhrparkleitung auf der Startseite – nur diese Rollen, async (early() in viewHome vor dem Seitenaufbau)
   lager: ['viewStock', 'viewStockCount', 'viewReorder', 'viewStockAsOf', 'viewStockJournal', 'viewStockReceipt', 'viewPartsUsage', 'viewStockItem'],
 };
 
@@ -32,7 +34,7 @@ export const GROUPS = {
 // der Seite laufen (claimSection in viewCase), behalten den Hinweis. Test „Backlog 953“ verlangt, dass jede neue Nicht-Ansicht hier
 // oder in BEFORE_RENDER eingeordnet wird.
 export const INPLACE = new Set(['loadTotp']);
-export const BEFORE_RENDER = new Set(['claimSection']);
+export const BEFORE_RENDER = new Set(['claimSection', 'dispoHome', 'fleetTodo']);
 
 const KW_BEFORE_REGEX = new Set(['return', 'typeof', 'case', 'in', 'of', 'delete', 'void', 'throw', 'new', 'else', 'do', 'instanceof', 'yield', 'await']);
 const isId = (c) => /[\w$]/.test(c || '');

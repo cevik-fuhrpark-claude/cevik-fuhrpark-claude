@@ -1068,16 +1068,7 @@ async function viewSetup(...a) { return (await lazyModule('konto')).viewSetup(..
 async function viewInvite(...a) { return (await lazyModule('konto')).viewInvite(...a); }
 
 // ---------- Übersicht ----------
-// Teile-Liefertermin laut Werkstatt (nur bei „wartet auf Teile“); überschritten = markiert
-// „Rückkehr: ungeklärt“ (Disposition): der Werkstatttermin ist der Beginn, nicht die Fertigstellung – ein Datum zählt nur, solange es noch
-// bevorsteht; in Reparatur bzw. Termin/Liefertermin heute oder vorbei → ungeklärt (Blickwinkel „Disposition, erster Tag“, 26.10.2026)
-const dispoReturnKnown = (c) => {
-  if (c.status === 'abschlusskontrolle') return true;
-  if (c.ready_expected_on && rdyOf(c) && c.ready_expected_on > bDate()) return true; // Backlog 871: Werkstatt nennt die Fertigstellung
-  if (c.status === 'in_reparatur') return false;
-  const d = c.status === 'wartet_teile' ? c.parts_expected_date : c.planned_date;
-  return !!d && d > bDate();
-};
+
 // Backlog 378: worauf gewartet wird, Verschiebungen des Liefertermins (z. B. Teile falsch geliefert) und letzter Vermerk dazu – vorher nur im Verlauf
 // Backlog 449: Teillieferung(en) – Anzahl, wann/wer zuletzt und der ursprüngliche Vermerk (der aktuelle steht unter „Wartet noch auf“)
 const partsPartialRow = (pw) => (pw.partial_count ? `<dt>${esc(t('pp_label'))}</dt><dd id="pwpartial"><span class="chip mittel">${esc(t('pp_count').replace('{n}', pw.partial_count))}</span> <span class="small">${esc(t('pp_last'))} ${fmtDT(pw.last_partial_at)}${pw.last_partial_by ? ' · ' + esc(pw.last_partial_by) : ''}</span>${pw.original_note ? `<br><span class="small muted">${esc(t('pp_orig'))}: ${esc(pw.original_note)}</span>` : ''}</dd>` : '');
@@ -1270,41 +1261,8 @@ async function viewHome() {
     if (S.me.role === 'workshop') html += await boardP;
     else {
       if (isMgr()) html += await boardP;
-      if (S.me.role === 'dispatch') {
-        // Standard-Standort aus „Mein Konto“: Tafel nur für diesen Standort – sichtbar vermerkt und jederzeit auf „alle“ umschaltbar
-        const hs = S.me.home_site && !S.dispoAll ? S.me.home_site : '';
-        const hq = hs ? encodeURIComponent(hs) : '';
-        const [dcs, dmo, dvs] = await Promise.all([cases === null ? [] : api('GET', '/api/cases?status=open&limit=500' + (hq ? '&vsite=' + hq : '')).then((r) => r.cases).catch(() => []), cases === null ? null : api('GET', '/api/maintenance' + (hq ? '?site=' + hq : '')).catch(() => null),
-          cases === null ? [] : api('GET', '/api/vehicles').then((r) => r.vehicles).catch(() => [])]);
-        html += dispoBoard(dcs, dmo && dmo.defects_without_case ? dmo.defects_without_case : [], new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])), new Set(dvs.filter((v) => v.eval_excluded).map((v) => v.id)));
-        if (cases !== null) html += await dispoBack(dcs, hq);
-        // Neue Meldungen, deren Eingang die Leitung noch nicht bestätigt hat (gleiche Regel wie Filter `unreceived`; Standort wie die Tafel) –
-        // vorher sah die Disposition „was ist neu?“ nur über die nach Dringlichkeit sortierte Liste (Blickwinkel „Disposition, erster Tag“, 26.10.2026)
-        const nu = dcs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).length;
-        if (nu) html += `<p class="noprint"><a href="${hj('#/cases?f=unreceived')}" id="dunrec" data-site="${esc(hs)}"><b>${esc(t('dispo_unreceived'))} (${nu})</b></a></p>`;
-        // Backlog 474: eingeschränkt fahrbereit gemeldet, noch ohne Werkstattauftrag und ohne Sperre (gleiche Regel wie Filter `limited`) –
-        // stand vorher in keinem Abschnitt der Tafel; nur Hinweis, ob das Fahrzeug eingeplant wird, entscheidet die Disposition
-        const nlL = dcs.filter((c) => c.status === 'gemeldet' && !c.safety_lock && c.reported_driveability === 'eingeschraenkt'); const nl = nlL.length;
-        if (nl) html += `<p class="noprint"><a href="${hj('#/cases?f=limited')}" id="dlimited"><b>${esc(t('dispo_limited_new'))} (${nl})</b></a></p>${dispoPrintLine('limited', t('dispo_limited_new'), nlL.map((c) => c.plate))}`;
-        // Fahrzeuge mit aktiven Hinweisen (z. B. „Ladebordwand nur manuell“) – Link auf die gefilterte Fahrzeugliste; Standortregel wie oben
-        // Backlog 475: gleiche Standortregel wie Server/Fahrzeugliste (siteKeyUi: NFC, Leerraum vereinheitlicht) – vorher zählte z. B. „Nürnberg  Süd“
-        // (doppeltes Leerzeichen) hier nicht mit, die verlinkte Liste zeigte es aber
-        const nk = siteKeyUi;
-        const wn = dvs.filter((v) => v.notes_active > 0 && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs))).length;
-        if (wn) html += `<p class="noprint"><a href="${hj('#/vehicles?f=with_notes')}" id="dnotes">${esc(t('vnotes_with_veh'))} (${wn})</a></p>`;
-        // Prüfung/Wartung überfällig (gleiche Regel wie der Filter der Fahrzeugliste, ohne ruhende) – vorher nur in der Liste sichtbar (23.10.2026)
-        const moL = dvs.filter((v) => !v.eval_excluded && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs)) && ((v.next_due && v.next_due < bDate()) || (v.km_remaining !== null && v.km_remaining !== undefined && v.km_remaining < 0))); const mo = moL.length;
-        if (mo) html += `<p class="noprint"><a class="panel alert" style="display:block;text-decoration:none" href="${hj('#/vehicles?f=maint_overdue')}" id="dmover"><b>${esc(t('av_maint_overdue'))} (${mo})</b></a></p>${dispoPrintLine('mover', t('av_maint_overdue'), moL.map((v) => v.plate + (v.next_due && v.next_due < bDate() ? ` (${v.next_due_kind ? mk(v.next_due_kind) + ' ' : ''}${fmtD(v.next_due)})` : '')), true)}`;
-        html += dispoDueSoon(dvs, (v) => !hs || nk(v.site) === nk(hs === 'ohne' ? null : hs), dmo && Array.isArray(dmo.rows) ? dmo.rows : null);
-        // Gespann gesperrt (gekoppeltes Fahrzeug gesperrt, eigenes nicht; ohne ruhende) – gleiche Regel wie der Filter der Fahrzeugliste (Backlog 209,
-        // Teilagent „Panne – Ersatzfahrzeug“: Lkw mit gesperrtem Anhänger zählte grün und war nur über den Anhänger erkennbar)
-        const clL = dvs.filter((v) => !v.eval_excluded && v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt' && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs))); const cl = clL.length;
-        if (cl) html += `<p class="noprint"><a class="panel alert" style="display:block;text-decoration:none" href="${hj('#/vehicles?f=coupled_locked')}" id="dcoupled"><b>${esc(t('av_coupled_locked'))} (${cl})</b></a></p>${dispoPrintLine('coupled', t('av_coupled_locked'), clL.map((v) => `${v.plate} (🔗 ${t('vk_' + v.coupled.kind)} ${v.coupled.plate})`), true)}`;
-        if (cases !== null) html += await dispoWinter(hs);
-        html += `<p class="noprint"><button type="button" class="btn secondary" id="dprint">${esc(t('print'))}</button></p>`;
-        html += helpLink('dispo');
-      }
-      if (S.me.role === 'dispatch' && cases !== null) html += await dispoPlanned(S.me.home_site && !S.dispoAll ? S.me.home_site : '');
+      // Backlog 968: Tafel der Disposition in eigener Gruppe „dispo“ (nur für diese Rolle geladen) – Reserve im Start-Modul
+      if (S.me.role === 'dispatch') html += await dispoHome(cases);
       // Disposition mit Standard-Standort: offene Vorgänge ebenfalls nur dieses Standorts (gleiche Regel wie Server: getrimmt, ohne Groß-/Kleinschreibung)
       const dk = siteKeyUi;
       const shown = S.me.role === 'dispatch' && S.me.home_site && !S.dispoAll && cases ? cases.filter((c) => dk(c.vehicle_site) === dk(S.me.home_site === 'ohne' ? null : S.me.home_site)) : cases;
@@ -1321,104 +1279,21 @@ async function viewHome() {
   const dtg = $('#dsitetoggle'); if (dtg) dtg.onclick = (e) => { e.preventDefault(); S.dispoAll = !S.dispoAll; route(); };
   const dpr = $('#dprint'); if (dpr) dpr.onclick = () => window.print();
 }
-// Backlog 560: Warnhinweise der Dispo-Tafel im Ausdruck mit Kennzeichen (am Bildschirm nur Zähler mit Link auf die Liste)
-function dispoPrintLine(key, label, items, alert = false) {
-  if (!items.length) return '';
-  const sorted = [...items].sort(plateCmp);
-  return `<div class="print-only panel small${alert ? ' alert' : ''}" data-dprint="${esc(key)}"><b>${esc(label)} (${items.length})</b>: ${sorted.map(esc).join(', ')}</div>`;
-}
+async function dispoHome(...a) { return (await lazyModule('dispo')).dispoHome(...a); }
 
-// Disposition: nicht einplanbare Fahrzeuge (gesperrt / in Werkstatt / wartet auf Teile) mit Status und „seit“ – nur gespeicherte Angaben
-// Prüfung mit gefährlichen Mängeln bzw. verkehrsunsicher, zu der noch kein Vorgang existiert (sonst greift die Sperre/der Auftrag oben)
-const DISPO_DEFECTS = ['gefaehrliche_maengel', 'verkehrsunsicher'];
-function dispoBoard(cs, defects = [], coupled = new Map(), dormant = new Set()) {
-  const insp = defects.filter((x) => DISPO_DEFECTS.includes(x.result)).sort((a, b) => (a.result === 'verkehrsunsicher' ? -1 : 0) - (b.result === 'verkehrsunsicher' ? -1 : 0) || plateCmp(a.plate, b.plate));
-  const inspHtml = insp.length ? `<h2>${esc(t('dispo_insp_defects'))}</h2><div class="list">${insp.map((x) => `<a class="row p-kritisch" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate)}<span class="title" style="white-space:normal">${esc(t('res_' + x.result))}${x.result === 'verkehrsunsicher' ? ' – ' + esc(t('do_not_drive')) : ''}</span><span class="chip kritisch">${esc(mk(x.kind))} ${fmtD(x.done_date)}</span><span class="sub wrap" data-inspsub>${esc(t('dispo_insp_hint'))}${coupled.has(x.vehicle_id) ? ` · <b data-inspcoupled>${esc(t(coupled.get(x.vehicle_id).kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(coupled.get(x.vehicle_id).plate)}</b>` : ''}</span></a>`).join('')}</div>` : '';
-  return inspHtml + dispoCases(cs, !!insp.length, coupled, dormant);
-}
-// Backlog 458 (Blickwinkel „Disposition fragt am Nachmittag: welcher Lkw ist morgen früh wieder da?“): Fahrzeuge, deren Vorgang heute oder gestern
-// technisch freigegeben wurde und die kein anderer offener Vorgang blockiert – mit Freigabezeit, Werkstatt und „Abholung nach der Reparatur“.
-// Vorher verschwand ein Fahrzeug nach der Freigabe still aus „Nicht einplanen“ (nur ein Push), wo es abzuholen ist, stand nur im Vorgang.
-const DISPO_BLOCK_ST = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'];
-const DISPO_BACK_LIMIT = 200;
-function lastWorkdayBefore(iso) {
-  // reine Kalenderrechnung (UTC-Mittag als Anker, Jahr/Monat/Tag ohne toISOString – Wächter für Berliner Kalendertage)
-  const ymd = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-  let d = new Date(Date.parse(iso + 'T12:00:00Z'));
-  for (let i = 0; i < 10; i++) { d = new Date(d.getTime() - 86400000); const wd = d.getUTCDay(); if (wd !== 0 && wd !== 6 && !federalHoliday(ymd(d))) return ymd(d); }
-  return ymd(new Date(Date.parse(iso + 'T12:00:00Z') - 86400000));
-}
-// Backlog 559: nächster Werktag nach `iso` (Sa/So und bundesweite Feiertage übersprungen) – wie lastWorkdayBefore
-function nextWorkdayAfter(iso) {
-  const ymd = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-  let d = new Date(Date.parse(iso + 'T12:00:00Z'));
-  for (let i = 0; i < 10; i++) { d = new Date(d.getTime() + 86400000); const wd = d.getUTCDay(); if (wd !== 0 && wd !== 6 && !federalHoliday(ymd(d))) return ymd(d); }
-  return ymd(new Date(Date.parse(iso + 'T12:00:00Z') + 86400000));
-}
-// Backlog 559 (Blickwinkel „Disposition Freitag → Montag“): Prüf-/Wartungsfristen von heute bis zum nächsten Werktag (Wochenende/Feiertage
-// dazwischen eingeschlossen) als eigene Gruppe – Anhänger mit Zugmaschine; Überfälliges steht weiter in „Prüfung/Wartung überfällig“
-function dispoDueSoon(dvs, inSite, mrows = null) {
-  const today = bDate(); const nwd = nextWorkdayAfter(today);
-  const byV = new Map(dvs.map((v) => [v.id, v])); const g = new Map();
-  // Backlog 564: alle Fristen des Zeitraums je Fahrzeug aus der Prüfterminliste (auch neben einer schon überfälligen Frist); ohne Liste nur `next_due`
-  const put = (v, kind, due) => { if (!v || v.eval_excluded || !inSite(v) || !due || due < today || due > nwd) return; const x = g.get(v.id) || { v, d: [] }; x.d.push({ kind, due }); g.set(v.id, x); };
-  if (Array.isArray(mrows)) for (const r of mrows) { if (!['erledigt', 'nicht_pflichtig'].includes(r.status)) put(byV.get(r.vehicle_id), r.kind, r.next_due_date); }
-  else for (const v of dvs) put(v, v.next_due_kind, v.next_due);
-  const list = [...g.values()].map((x) => ({ ...x, d: x.d.sort((a, b) => a.due.localeCompare(b.due) || String(a.kind).localeCompare(String(b.kind))) }))
-    .sort((a, b) => a.d[0].due.localeCompare(b.d[0].due) || plateCmp(a.v.plate, b.v.plate));
-  if (!list.length) return '';
-  const dueTxt = (d) => (d === today ? t('today') : fmtDue(d));
-  return `<h2 id="dduesoon">${esc(t('dispo_due_soon').replace('{d}', fmtDue(nwd)))} <span class="chip mittel">${list.length}</span></h2><p class="small muted">${esc(t('dispo_due_soon_hint'))}</p><div class="list">${list.map(({ v, d }) => `<a class="row p-mittel" href="#/vehicles/${encodeURIComponent(v.id)}" data-dduesoon>${plate(v.plate)}<span class="title" style="white-space:normal">${d.length > 1 ? d.map((x) => `${esc(x.kind ? mk(x.kind) : t('next_due'))} (${esc(dueTxt(x.due))})`).join(' · ') : esc(d[0].kind ? mk(d[0].kind) : t('next_due'))}</span><span class="chip mittel" style="white-space:nowrap">${esc(dueTxt(d[0].due))}</span>${v.coupled ? `<span class="sub wrap" data-dduecoupled>🔗 ${esc(t('vk_' + v.coupled.kind))} ${esc(v.coupled.plate)}</span>` : ''}</a>`).join('')}</div>`;
-}
-// Backlog 877 (Blickwinkel „Disposition plant den Lkw nach der Rückkehr aus der Werkstatt wieder ein“): mit offenen (nicht sicherheitsrelevanten)
-// Restarbeiten freigegeben → Anzahl in der Zeile (Liste liefert `open_items`); vorher sah die Disposition nur „frei seit“
-async function dispoBack(open, hq = '') {
-  let rows;
-  try { rows = (await api('GET', `/api/cases?status=fahrzeug_freigegeben&sort=updated&limit=${DISPO_BACK_LIMIT}${hq ? '&vsite=' + hq : ''}`)).cases; } catch { return ''; }
-  // Backlog 556 (Blickwinkel „Disposition plant am Freitag den Montag“): seit dem letzten Werktag vor heute (Sa/So und bundesweite Feiertage
-  // übersprungen) – vorher „gestern“: am Sonntag/Montag fehlten die Freitags-Freigaben samt Abholvermerk
-  const from = lastWorkdayBefore(bDate());
-  const blocked = new Set(open.filter((c) => c.safety_lock || DISPO_BLOCK_ST.includes(c.status)).map((c) => c.vehicle_id));
-  const byV = new Map();
-  for (const c of rows) {
-    if (!c.closed_at || BERLIN_FMT.format(new Date(c.closed_at)) < from || blocked.has(c.vehicle_id)) continue;
-    const cur = byV.get(c.vehicle_id); if (!cur || c.closed_at > cur.closed_at) byV.set(c.vehicle_id, c);
-  }
-  // updated_at ≥ closed_at: mit voller Seite und letzter Zeile noch im Zeitraum könnten ältere Änderungen fehlen – dann „+“ statt still kürzen
-  const more = rows.length >= DISPO_BACK_LIMIT && rows.length && BERLIN_FMT.format(new Date(rows[rows.length - 1].updated_at)) >= from;
-  const list = [...byV.values()].sort((a, b) => String(b.closed_at).localeCompare(String(a.closed_at)));
-  if (!list.length) return '';
-  return `<h2 id="dback">${esc(from === bDate(-1) ? t('dispo_back') : t('dispo_back_since').replace('{d}', fmtD(from)))} <span class="chip ok">${list.length}${more ? '+' : ''}</span></h2><p class="small muted">${esc(t('dispo_back_hint'))}</p><div class="list">${list.map((c) => `<a class="row p-niedrig" href="#/cases/${esc(c.id)}" data-dback>${plate(c.plate)}<span class="title" style="white-space:normal">${ltxt(clipTxt(cDesc(c.description), 80))}</span><span class="chip ok" style="white-space:nowrap">${esc(t('dispo_back_at'))} ${fmtDT(c.closed_at)}</span><span class="sub wrap">${esc(c.case_no)}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${c.open_items > 0 ? ` · <b data-dbitems style="white-space:nowrap">${esc(tn('rc_open_items', c.open_items))}</b> (${esc(t('dback_ns'))})` : ''}${c.pickup_note ? ` · <b data-dbpickup>${esc(t('pu_title'))}:</b> <span${langAttr(c.pickup_note)}>${esc(clipTxt(c.pickup_note, 120))}</span>` : ''}</span></a>`).join('')}</div>`;
-}
-// Backlog 459 (Blickwinkel „Lkw hat nächste Woche einen Werkstatttermin – darf die Disposition ihn bis dahin einplanen?“): ein erteilter
-// Werkstattauftrag mit Termin nach heute, noch nicht begonnen, ohne Sperre, ohne eingetragenen Standort/Abschleppung und nicht „nicht
-// fahrbereit“ gemeldet, blockiert das Fahrzeug bis zum Vortag nicht. Vorher stand es ab der Freigabe in „Nicht einplanen“ (Disposition
-// suchte unnötig Ersatz). Fahrzeugleiste/`availability` bleiben unverändert („In Werkstatt“, offene Frage an den Auftraggeber).
-function dispoUpcoming(c, today) {
-  return c.status === 'werkstatt_freigegeben' && !c.safety_lock && !!c.planned_date && c.planned_date > today && !c.vehicle_location && !c.tow_service && c.reported_driveability !== 'nicht_fahrbereit';
-}
-function dispoDayBefore(d) { const [y, m, dd] = String(d).split('-').map(Number); const x = new Date(Date.UTC(y, m - 1, dd - 1)); return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; }
-// Backlog 870 (Blickwinkel „Disposition: Lkw steht halb zerlegt in der Werkstatt“): Arbeitsstand (Backlog 867) auch in „Nicht einplanen“ –
-// die Zeile zeigt nur den ranghöchsten Vorgang, der Arbeitsstand kann an einem anderen offenen Vorgang desselben Fahrzeugs stehen
-const dispoWst = (cs, c) => { const w = [c, ...cs.filter((x) => x.vehicle_id === c.vehicle_id && x !== c)].find((x) => x.work_state_note && WST_ST.includes(x.status)); return w ? ` · <span data-dwst>⏸ <b>${esc(t('wst_short'))}</b>: ${ltxt(clipTxt(w.work_state_note, 80))}${w !== c ? ` (${esc(w.case_no)})` : ''}</span>` : ''; };
-function dispoCases(cs, hasOther = false, coupled = new Map(), dormant = new Set()) {
-  const byV = new Map(); const upc = new Map(); const today0 = bDate();
-  const rank = (c) => (c.safety_lock ? 3 : c.status === 'wartet_teile' && c.parts_drive_at ? 0 : c.status === 'wartet_teile' ? 2 : dispoUpcoming(c, today0) ? 0 : ['werkstatt_freigegeben', 'in_reparatur', 'abschlusskontrolle'].includes(c.status) ? 1 : 0);
-  for (const c of cs) if (dispoUpcoming(c, today0)) { const u = upc.get(c.vehicle_id); if (!u || c.planned_date < u.planned_date) upc.set(c.vehicle_id, c); }
-  // gleicher Rang: der früher begonnene Vorgang (Fahrzeug ist seit der ältesten Sperre nicht einplanbar – vorher zeigte „seit“ die jüngste, 21.10.2026)
-  const since = (r, c) => String(r === 3 ? c.lock_since || c.created_at : c.status_since || c.updated_at || '');
-  for (const c of cs) { const r = rank(c); if (!r) continue; const cur = byV.get(c.vehicle_id); if (!cur || r > cur.r || (r === cur.r && since(r, c) < since(cur.r, cur.c))) byV.set(c.vehicle_id, { r, c }); }
-  const list = [...byV.values()].sort((a, b) => b.r - a.r || plateCmp(a.c.plate, b.c.plate));
-  const up = [...upc.values()].filter((c) => !byV.has(c.vehicle_id)).sort((a, b) => String(a.planned_date).localeCompare(String(b.planned_date)) || plateCmp(a.plate, b.plate));
-  const upHtml = up.length ? `<h2 id="dupc">${esc(t('dispo_upcoming'))} <span class="chip">${up.length}</span></h2><p class="small muted">${esc(t('dispo_upcoming_hint').replace('{w}', t('av_werkstatt')))}</p><div class="list">${up.map((c) => `<a class="row p-niedrig" href="#/cases/${esc(c.id)}" data-dupc>${plate(c.plate)}<span class="title" style="white-space:normal">${esc(t('dispo_upcoming_on').replace('{d}', fmtDue(c.planned_date)))}</span><span class="chip ok" style="white-space:nowrap" data-dupcuntil>${esc(t('dispo_upcoming_until').replace('{d}', fmtD(dispoDayBefore(c.planned_date))))}</span>${dormant.has(c.vehicle_id) ? ` <span class="chip" data-dormant>${esc(t('eval_excluded'))}</span>` : ''}<span class="sub wrap">${esc(c.case_no)}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${coupled.has(c.vehicle_id) ? ` · <b>${esc(t(coupled.get(c.vehicle_id).kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(coupled.get(c.vehicle_id).plate)}</b>` : ''}${c.reported_driveability === 'eingeschraenkt' ? ` · <b data-dupclim>${esc(t('dispo_upcoming_limited'))}</b>` : ''}${c.planned_note ? ` · <span data-plannote>${esc(clipTxt(c.planned_note, 80))}</span>` : ''} · ${ltxt(clipTxt(cDesc(c.description), 80))}</span></a>`).join('')}</div>` : '';
-  // Backlog 880: Fahrzeuge, die laut Leitung bis zur Teilelieferung fahren (kein anderer Vorgang blockiert) – einplanbar, aber mit Rückkehr zur Werkstatt
-  const pd = new Map(); for (const c of cs) if (c.status === 'wartet_teile' && c.parts_drive_at && !c.safety_lock && !byV.has(c.vehicle_id)) { const x = pd.get(c.vehicle_id); if (!x || String(c.parts_expected_date || '9') < String(x.parts_expected_date || '9')) pd.set(c.vehicle_id, c); }
-  const pdL = [...pd.values()].sort((a, b) => String(a.parts_expected_date || '9').localeCompare(String(b.parts_expected_date || '9')) || plateCmp(a.plate, b.plate));
-  const pdHtml = pdL.length ? `<h2 id="dpdrive">${esc(t('dispo_pdrive'))} <span class="chip">${pdL.length}</span></h2><p class="small muted">${esc(t('dispo_pdrive_hint'))}</p><div class="list">${pdL.map((c) => `<a class="row p-niedrig" href="#/cases/${esc(c.id)}" data-dpdr>${plate(c.plate)}<span class="title" style="white-space:normal">🚚 ${esc(t('pdr_short'))}</span><span class="sub wrap" data-dpdreta>${c.parts_expected_date ? `<b>${esc(t('parts_eta'))} ${fmtD(c.parts_expected_date)}</b>` : esc(t('parts_eta_none'))}${c.workshop_site ? ` · ${esc(wsName(c.workshop_site))}` : ''}</span></a>`).join('')}</div>` : '';
-  if (!list.length) return (hasOther ? '' : `<section class="panel good"><b>${esc(t('dispo_all_ok'))}</b></section>`) + pdHtml + upHtml;
-  // Unterzeile umbrechen (24.10.2026, Blickwinkel „Disposition plant die Woche“: am Tablet fielen „Teile erwartet am …“/„Rückkehr: ungeklärt“ ins „…“)
-  return `<h2>${esc(t('dispo_not_plannable'))}</h2><div class="list">${list.map(({ r, c }) => `<a class="row ${r === 3 ? 'p-kritisch' : 'p-mittel'}" href="#/cases/${esc(c.id)}">${plate(c.plate, { locked: c.safety_lock })}<span class="title" style="white-space:normal">${esc(r === 3 ? t('locked') + ' – ' + t('do_not_drive') : t('st_' + c.status))}</span><span class="chip ${r === 3 ? 'kritisch' : 'mittel'}">${esc(t('since'))} ${fmtDT(r === 3 ? c.lock_since || c.created_at : c.status_since || c.updated_at)}</span>${dormant.has(c.vehicle_id) ? ` <span class="chip" data-dormant>${esc(t('eval_excluded'))}</span>` : ''}<span class="sub wrap" data-dnpsub>${esc(c.case_no)}${r === 3 && c.safety_lock_reason ? ` · <span data-lockreason>${esc(translateLockReason(S.lang, c.safety_lock_reason))}</span>` : ''}${coupled.has(c.vehicle_id) ? ` · <b>${esc(t(coupled.get(c.vehicle_id).kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(coupled.get(c.vehicle_id).plate)}</b>` : ''}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${r !== 3 && c.reported_driveability === 'eingeschraenkt' ? ` · <b data-dupclim>${esc(t('dispo_upcoming_limited'))}</b>` : ''}${hoMissing(c).length ? ` · <b data-hodispo>${esc(hoMissing(c).join(', '))}</b>` : ''}${c.tow_service || c.vehicle_location ? ` · <span data-vloc>${c.tow_service ? `<b>${esc(t('vl_towed_chip'))}</b>` : ''}${c.tow_service && c.vehicle_location ? ': ' : ''}${esc(c.vehicle_location || '')}${vlAt(c)}</span>` : ''}${c.planned_date && c.status !== 'abschlusskontrolle' ? ' · ' + esc(t('planned_ws_short')) + ' ' + fmtD(c.planned_date) + (c.planned_note ? ` <span data-plannote>(${esc(clipTxt(c.planned_note, 80))})</span>` : '') : ''}${dispoWst(cs, c)}${partsEta(c)}${c.ready_expected_on && rdyOf(c) ? ` · <span data-dprdy>${rdyTxt(c.ready_expected_on)}</span>` : ''}${!dispoReturnKnown(c) ? ` · <b data-retunk>${esc(t('dispo_return_unknown'))}</b>` : ''}</span></a>`).join('')}</div>` + pdHtml + upHtml;
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // Werkstatt-Startseite: Winterreifen-Arbeitsvorrat (gleiche Daten wie Disposition, Standort wie Reifen – Flotte); Sprung in die passenden Reiter
 async function wsWinter(vsite = '') {
@@ -1430,14 +1305,7 @@ async function wsWinter(vsite = '') {
   return `<section id="wswinter"><h2>${esc(t('ws_winter'))}${r.totals.nicht_erfuellt ? ` <span class="chip">${r.totals.nicht_erfuellt}</span>` : ''}</h2><p class="small muted">${esc(t('ws_winter_hint'))}</p>${rows ? `<div class="list">${rows}</div><p class="small noprint"><a href="${wl('#/tires?f=winter_bad')}" id="wswbad">${esc(t('ws_winter_show'))} ›</a></p>` : ''}${r.noncompliant.some((x) => x.closed_order) ? `<p class="small noprint"><a href="${wl('#/tires?f=winter_closed')}" id="wswclosed">${esc(t('tires_winter_closed'))} ›</a></p>` : ''}${r.totals.unbekannt ? `<p class="small noprint"><a href="${wl('#/tires?f=winter_unknown')}" id="wswunk">${esc(t('ws_winter_unknown').replace('{n}', r.totals.unbekannt))} ›</a></p>` : ''}</section>`;
 }
 
-// Disposition: Lkw ohne ausreichende Winterkennzeichnung (laut Erfasstem) – nur Information, keine Sperre (situative Pflicht bei Glätte)
-async function dispoWinter(vsite = '') {
-  const r = await api('GET', '/api/tires/winter' + (vsite ? '?site=' + encodeURIComponent(vsite) : '')).catch(() => null);
-  if (!r || (!r.totals.nicht_erfuellt && !r.totals.unbekannt)) return '';
-  const rows = r.noncompliant.map((x) => `<a class="row p-mittel" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}?sec=tires">${plate(x.plate)}<span class="title" style="white-space:normal">${esc(t('winter_bad').replace('{p}', x.noncompliant.map(posL).join(', ')))}</span><span class="chip mittel">${esc(t('ws_nicht_erfuellt'))}</span>${x.missing.length || x.open_order || x.closed_order ? `<span class="sub wrap">${[x.missing.length && esc(t('winter_missing').replace('{p}', x.missing.map(posL).join(', '))), x.open_order && woApptTxt(x.open_order), x.closed_order && `⚠ ${esc(t('wo_closed_short').replace('{no}', x.closed_order.case_no))}`].filter(Boolean).join(' · ')}</span>` : ''}</a>`).join('');
-  // nur unvollständig erfasst (keine Lkw „nicht erfüllt“): neutrale Überschrift statt „nicht wintertauglich“ (23.10.2026)
-  return `<section id="dwinter"><h2>${esc(t(r.totals.nicht_erfuellt ? 'dispo_winter' : 'dispo_winter_incomplete'))}</h2>${rows ? `<div class="list">${rows}</div>` : ''}${r.totals.unbekannt ? `<p class="small">${esc(t('dispo_winter_unknown').replace('{n}', r.totals.unbekannt))}</p>` : ''}<p class="small muted">${esc(t('dispo_winter_hint'))}</p></section>`;
-}
+
 
 // Kennzeichnung „Winterreifen“ für Aufträge aus der Fahrzeugakte → Reifen (Beschreibung ist deutsch, das Etikett übersetzt)
 function woTag(i) { return i.tire_order === 'winter' ? `<span class="chip mittel wotag">❄ ${esc(t('wo_tag'))}</span> ` : ''; }
@@ -1445,100 +1313,14 @@ function woTag(i) { return i.tire_order === 'winter' ? `<span class="chip mittel
 // Unterzeile: Auftrag/Werkstatt und weitere geplante Tage desselben Fahrzeugs (Fahrzeug fällt dann mehrfach aus – Hinweis zum Zusammenlegen)
 // Gespann (laut Stammliste) und „ruhend“ je Termin: Zugmaschine fällt mit dem Anhänger aus bzw. ruhendes Fahrzeug nicht einplanen (23.10.2026)
 const planVehTag = (i) => [i.coupled ? `<span data-pcoupled>🔗 ${esc(t('vk_' + i.coupled.kind))} ${esc(i.coupled.plate)}</span>` : '', i.eval_excluded ? `<span class="chip" data-pdormant>${esc(t('eval_excluded'))}</span>` : ''].filter(Boolean).join(' ');
-function dispoSub(i) {
-  const parts = i.type === 'case' ? [esc(i.case_no), esc(wsName(i.workshop_site))] : [];
-  // Hinweis zum Termin (Migration 0093): „nur vormittags“ o. ä. – die Disposition sieht, ob das Fahrzeug den ganzen Tag fehlt
-  // Backlog 473: „laut Meldung eingeschränkt fahrbereit“ auch im Terminplan (Überführungsfahrt am Termintag; vorher nur bis zum Vortag sichtbar)
-  if (i.type === 'case' && i.reported_driveability === 'eingeschraenkt' && !i.safety_lock) parts.push(`<b data-dupclim>${esc(t('dispo_upcoming_limited'))}</b>`);
-  if (i.type === 'case' && i.planned_note) parts.push(`<b data-plannote>📝 ${esc(clipTxt(i.planned_note, 120))}</b>`);
-  if (planVehTag(i)) parts.push(planVehTag(i));
-  if (i.other_dates && i.other_dates.length) parts.push(`<b>${esc(t('plan_other_dates'))}: ${i.other_dates.map(fmtD).join(', ')}</b>`);
-  // Backlog 477: umbrechen statt „…“ (Hinweis zum Termin, „eingeschränkt fahrbereit“ entscheiden, ob der Lkw heute ganz ausfällt)
-  return parts.length ? `<span class="sub wrap">${parts.join(' · ')}</span>` : '';
-}
 
-// Disposition: geplante Werkstatt- und Prüftermine der nächsten 7 Tage (aus dem Werkstattplan, nur gespeicherte Termine)
-async function dispoPlanned(vsite = '') {
-  const r = await api('GET', '/api/workshop/plan?days=7' + (vsite ? '&vsite=' + encodeURIComponent(vsite) : '')).catch(() => null);
-  if (!r || !r.days.length) return '';
-  const rows = r.days.flatMap((d) => d.items.map((i) => `<a class="row ${i.type === 'case' ? 'p-' + esc(i.priority) : ''}" href="${i.type === 'case' ? '#/cases/' + esc(i.id) : '#/vehicles/' + encodeURIComponent(i.vehicle_id)}">${plate(i.plate, { locked: !!i.safety_lock })}<span class="title" style="white-space:normal">${i.type === 'case' ? woTag(i) + esc(t('planned_ws_short')) + ' · ' + esc(t('st_' + i.status)) : esc(t('planned_inspection')) + ': ' + esc(mk(i.kind))}</span><span class="chip${d.date === r.today ? ' ok' : ''}" style="white-space:nowrap">${d.date === r.today ? esc(t('today')) : esc(fmtDue(d.date))}${d.date !== r.today && d.date === nextWorkdayAfter(r.today) ? ` <b data-pnwd style="white-space:normal">· ${esc(t('next_workday'))}</b>` : ''}</span>${dispoSub(i)}</a>`));
-  return `<h2>${esc(t('dispo_planned'))}</h2><p class="small muted">${esc(t('dispo_planned_hint'))}</p><div class="list">${rows.join('')}</div><p><a href="${hj('#/plan')}">${esc(t('wplan'))}</a></p>`;
-}
 
-// Fuhrparkleitung: „Heute zu tun“ – nur aus gespeicherten Daten, mit direkten Links
-async function fleetTodo() {
-  // Teilausfall (Funkloch, Zeitüberschreitung) zählen: vorher still „leer“ → grünes „Nichts Dringendes offen“ trotz offener Kostenfreigaben (23.10.2026)
-  let failed = 0; const soft = (d) => () => { failed++; return d; };
-  const [cs, ov, fs, tc, dr, ct, cl, wi, af] = await Promise.all([
-    api('GET', '/api/cases?status=open&limit=500').then((r) => r.cases).catch(soft([])),
-    api('GET', '/api/maintenance').catch(soft(null)),
-    api('GET', '/api/fines?status=open').then((r) => Object.assign(r.fines, { warn_days: r.warn_days })).catch(soft([])),
-    isMgr() ? api('GET', '/api/tacho').catch(soft(null)) : null,
-    isMgr() ? api('GET', '/api/drivers').then((r) => r.drivers).catch(soft([])) : [],
-    isMgr() ? api('GET', '/api/contracts?filter=aktiv').then((r) => r.contracts).catch(soft([])) : [],
-    isMgr() ? api('GET', '/api/claims?filter=nachfassen').then((r) => r.claims).catch(soft([])) : [],
-    // Lkw ohne Alpine-Symbol laut Erfassung – Entscheidung zur Umrüstung liegt bei der Fuhrparkleitung (nur Information, keine Sperre)
-    isMgr() ? api('GET', '/api/tires/winter').then((r) => r.noncompliant).catch(soft([])) : [],
-    // Fahrzeuge mit kritischen offenen Agentenbefunden (Felder nur für Inhaber/Fuhrparkleitung, Umgebung der Person)
-    isMgr() ? api('GET', '/api/vehicles').then((r) => r.vehicles.filter((v) => v.agent_findings_critical > 0)).catch(soft([])) : [],
-  ]);
-  af.sort((a, b) => b.agent_findings_critical - a.agent_findings_critical || b.agent_findings_open - a.agent_findings_open || plateCmp(a.plate, b.plate));
-  const today = bDate();
-  const in7 = bDate(7);
-  // Wartende zuerst (Backlog 239, Blickwinkel „Inhaber nach dem Urlaub“): die Liste kommt nach Dringlichkeit und *neueste* zuerst –
-  // bei mehr als 8 Einträgen fielen gerade die am längsten wartenden Kostenfreigaben/Meldungen ins „+N“
-  const asc = (f) => (a, b) => String(f(a) || '9').localeCompare(String(f(b) || '9'));
-  const PR = { kritisch: 0, mittel: 1, niedrig: 2 };
-  const groups = [
-    // gesperrte zuerst (wie die Vorgangsliste, Backlog 193/278 – gesperrte Meldung mit „niedrig“ stand sonst hinten), Zeile nennt die Sperre
-    ['todo_receive', cs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).sort((a, b) => (b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PR[a.priority] ?? 3) - (PR[b.priority] ?? 3) || asc((c) => c.created_at)(a, b)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}${c.safety_lock ? ' · ' + t('locked') : ''}`, 'kritisch'],
-    // Backlog 463: Antwort des Melders auf eine Rückfrage eingegangen, älteste Rückfrage zuerst
-    ['todo_q_answered', cs.filter((c) => c.q_state === 'answered').sort(asc((c) => c.q_at)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${t('q_asked_at')} ${fmtD(c.q_at)}`, 'mittel'],
-    // Backlog 522 (Blickwinkel „Leitung im Urlaub, Inhaber vertritt“): Werkstatt meldet fehlenden Schlüssel/Fahrzeugschein – Leitung klärt (vorher nur Push/Vorgang)
-    ['todo_handover', cs.filter((c) => hoMissing(c).length).sort(asc((c) => c.status_since || c.updated_at)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${hoMissing(c).join(', ')}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''}`, 'mittel'],
-    ['todo_vfind_crit', af, (v) => `#/vehicles/${encodeURIComponent(v.id)}`, (v) => `${v.plate} · ${t('vfind_crit').replace('{n}', v.agent_findings_critical)} · ${t('vfind_n').replace('{n}', v.agent_findings_open)}`, 'kritisch'],
-    ['todo_followup', cs.filter((c) => c.followup_on && c.followup_on <= today).sort(asc((c) => c.followup_on)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${fmtD(c.followup_on)}${c.followup_note ? ' · ' + c.followup_note : ''}`, 'mittel'],
-    ['todo_repeat', cs.filter(recentRepeat), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${fmtD(c.last_repeat_at)}`, 'mittel'],
-    ['todo_cost_approval', cs.filter((c) => c.cost_over_limit_at).sort(asc((c) => c.cost_over_limit_at)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''} · ${fmtD(c.cost_over_limit_at)}`, 'mittel'],
-    ['todo_qc', cs.filter((c) => c.status === 'abschlusskontrolle').sort(asc((c) => c.status_since || c.updated_at)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, 'mittel'],
-    ['todo_plan_passed', cs.filter((c) => c.status === 'werkstatt_freigegeben' && c.planned_date && c.planned_date < today).sort(asc((c) => c.planned_date)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${fmtD(c.planned_date)}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''}`, 'mittel'],
-    ['todo_parts_passed', cs.filter((c) => c.status === 'wartet_teile' && c.parts_expected_date && c.parts_expected_date < today).sort(asc((c) => c.parts_expected_date)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${t('parts_eta')} ${fmtD(c.parts_expected_date)}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''}`, 'mittel'],
-    ['todo_parts', cs.filter((c) => c.status === 'wartet_teile' && !(c.parts_expected_date && c.parts_expected_date < today)).sort(asc((c) => c.status_since || c.updated_at)), (c) => `#/cases/${c.id}`, (c) => { const d = partsWaitDays(c); return `${c.case_no} · ${c.plate}${c.parts_expected_date ? ' · ' + t('parts_eta') + ' ' + fmtD(c.parts_expected_date) : ' · ' + t('parts_eta_none')}${d ? ' · ' + t('parts_wait_days').replace('{d}', nDays(d)) : ''}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''}`; }, ''], // Backlog 447: Wartezeit, fehlender Termin und Werkstatt – wen die Leitung anruft
-    // Backlog 872 (Folge aus 871): „voraussichtlich fertig“ laut Werkstatt vorbei, Fahrzeug noch nicht fertig – am längsten überschritten zuerst
-    ['todo_ready_overdue', cs.filter((c) => c.ready_expected_on && rdyOf(c) && c.ready_expected_on < today).sort(asc((c) => c.ready_expected_on)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${t('rdy_title')} ${fmtD(c.ready_expected_on)} · ${t('st_' + c.status)}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''}`, ''],
-    // Backlog 869 (Blickwinkel „Fuhrparkleitung sieht morgens, welche Reparaturen unterbrochen wurden“): Arbeitsstand eingetragen (Backlog 867),
-    // am längsten unterbrochene zuerst – Information, wo ein Lkw halb zerlegt steht und wer zuletzt daran war
-    ['todo_paused', cs.filter((c) => c.work_state_note && WST_ST.includes(c.status)).sort(asc((c) => c.work_state_at)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ⏸ ${fmtDT(c.work_state_at)}${c.work_state_by_name ? ' · ' + c.work_state_by_name : ''}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''} · ${clipTxt(c.work_state_note, 80)}`, ''],
-    ['todo_defects_no_case', ov && ov.defects_without_case ? ov.defects_without_case : [], (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}`, (x) => `${x.plate} · ${mk(x.kind)} ${fmtD(x.done_date)} · ${t('res_' + x.result)}`, 'kritisch'],
-    ['todo_reinspection', ov && ov.reinspection_pending ? ov.reinspection_pending : [], (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}`, (x) => `${x.plate} · ${mk(x.kind)} ${fmtD(x.done_date)} · ${t('res_' + x.result)} · ${x.case_no} ${t('released_short')} ${fmtD(x.closed_at)}`, 'mittel'],
-    ['todo_result_missing', ov && ov.result_missing ? ov.result_missing : [], (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}?ev=${encodeURIComponent(x.id)}`, (x) => `${x.plate} · ${mk(x.kind)} ${fmtD(x.done_date)}`, ''],
-    // Backlog 884 (Folge aus 883): HU/SP/Tachograph erfasst, Prüfbericht nicht hochgeladen – Akte zeigt oben „Prüfbericht fehlt“ mit Knopf zum Hochladen
-    ['todo_report_missing', ov && ov.report_missing ? ov.report_missing : [], (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}`, (x) => `${x.plate} · ${mk(x.kind)} ${fmtD(x.done_date)}`, ''],
-    ['todo_maint_unrecorded', ov ? ov.rows.filter((r) => r.unrecorded_order) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${mk(r.kind)} · ${r.unrecorded_order.case_no} ${t('released_short')} ${fmtD(r.unrecorded_order.closed_at)}`, 'mittel'],
-    ['todo_inspections', ov ? ov.rows.filter((r) => r.status === 'ueberfaellig' || (r.next_due_date && r.next_due_date <= in7 && r.date_status !== 'erledigt')) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${mkR(r)} · ${r.km_status === 'ueberfaellig' ? `${t('due_at_km')} ${fmtKm(r.next_due_km)} (${t('km_over')} ${fmtKm(-r.km_remaining)})` : r.next_due_date ? fmtD(r.next_due_date) : (r.next_due_km ? fmtKm(r.next_due_km) : '')} · ${r.planned_date && r.planned_date >= today ? t('planned') + ' ' + fmtD(r.planned_date) : t('no_planned_date')}`, 'mittel'],
-    ['todo_tacho', tc ? [...tc.drivers.map((x) => ({ ...x, label: x.display_name, href: '#/drivers/' + x.id })), ...tc.vehicles.map((x) => ({ ...x, label: x.plate, href: '#/vehicles/' + encodeURIComponent(x.id) }))].filter((x) => x.status === 'ueberfaellig' || x.status === 'bald')
-      // Fahrer und Fahrzeuge gemeinsam nach Dringlichkeit, dann Frist – ein überfälliger Massenspeicher stand sonst hinter acht „bald fälligen“ Fahrerkarten im „+N“ (23.10.2026)
-      .sort((a, b) => (a.status === 'ueberfaellig' ? 0 : 1) - (b.status === 'ueberfaellig' ? 0 : 1) || String(a.due || '9').localeCompare(String(b.due || '9'))) : [], (x) => x.href, (x) => `${x.label} · ${fmtD(x.due)}${x.status === 'ueberfaellig' ? ' !' : ''}`, 'mittel'],
-    ['todo_driver_docs', dr.filter((d) => (d.status.overall_docs || d.status.overall) === 'kritisch'), /* Auslesung steht unter todo_tacho */ (d) => `#/drivers/${d.id}`, (d) => `${d.display_name} · ${[...d.status.items.filter((i) => i.status === 'abgelaufen').map((i) => t('dk2_' + i.kind) + (i.title ? ' ' + i.title : '')), d.status.check.status === 'mangel' ? t('license_check') : ''].filter(Boolean).join(', ')}`, 'kritisch'],
-    ['todo_contracts', ct.filter((c) => (c.status.end && (c.status.end.status === 'abgelaufen' || c.end_date <= in7)) || (c.status.notice && c.status.notice.by >= today && c.status.notice.by <= in7)), (c) => `#/vehicles/${encodeURIComponent(c.vehicle_id)}`,
-      (c) => `${c.plate} · ${t('ck_' + c.kind)} · ${c.status.notice && c.status.notice.by >= today && c.status.notice.by <= in7 ? t('ct_notice_by') + ' ' + fmtD(c.status.notice.by) : t('ct_end') + ' ' + fmtD(c.end_date)}${c.end_date < today ? ' !' : ''}`, 'mittel'],
-    ['todo_claims', cl, (c) => `#/cases/${c.case_id}`, (c) => `${c.case_no} · ${c.plate} · ${c.insurer} · ${tn('claim_days_open', c.days_open)}`, ''],
-    ['todo_winter', wi, (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}?sec=tires`, (x) => `${x.plate} · ${t('winter_bad').replace('{p}', x.noncompliant.map(posL).join(', '))}${x.open_order ? ` · 🔧 ${t('mo_open')} ${x.open_order.case_no}` : ''}${x.closed_order ? ` · ⚠ ${t('wo_closed_short').replace('{no}', x.closed_order.case_no)}` : ''}`, ''],
-    ['todo_fines', fs.filter((f) => f.response_due && f.response_due <= (Number.isInteger(fs.warn_days) ? bDate(fs.warn_days) : in7) && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status)), (f) => `#/fines/${f.id}`, (f) => `${f.fine_no} · ${f.plate || f.plate_in_letter} · ${fmtDue(f.response_due)}${f.response_due < today ? ' !' : ''}`, 'mittel'],
-  ].filter(([, list]) => list.length);
-  const failNote = failed ? `<section class="panel alert" role="alert" data-todofail><b>${esc(t('todo_partial_fail'))}</b> <button type="button" class="btn secondary" id="todoretry">${esc(t('retry'))}</button></section>` : '';
-  if (failed && !groups.length) return failNote;
-  // Erstnutzung/Lücken (22.10.2026): „Nichts Dringendes offen“ stand grün auch ohne Fahrzeuge bzw. mit Pflichtprüfungen ohne Termin
-  if (!groups.length && ov && ov.totals && ov.totals.vehicles === 0) return `<section class="panel" role="note" data-novehicles><b>${esc(t('todo_none'))}</b><p class="small">${esc(t('todo_no_vehicles'))} <a href="#/vehicles">${esc(t('nav_vehicles'))} ›</a></p></section>`;
-  if (!groups.length && ov && ov.gaps && ov.gaps.length) return `<section class="panel" role="note" data-todogaps><b>${esc(t('todo_none'))}</b><p class="small">${esc(tn('todo_gaps_hint', ov.gaps.length))} <a href="#/maintenance?f=gaps">${esc(t('maintenance'))} ›</a></p></section>`;
-  if (!groups.length) return `<section class="panel good"><b>${esc(t('todo_none'))}</b></section>`;
-  return `${failNote}<h2>${esc(t('todo_today'))}</h2>${groups.map(([k, list, href, label, cls]) => `<details class="panel"${cls === 'kritisch' ? ' open' : ''}><summary><b>${esc(t(k))}</b> <span class="chip ${cls}">${list.length}${(ov && ov.lists_truncated || []).includes(TODO_TRUNC[k]) ? '+' : ''}</span></summary><div class="list" style="margin-top:8px">${list.slice(0, 8).map((x) => `<a class="row" href="${href(x)}"><span class="title" style="white-space:normal">${esc(label(x))}</span></a>`).join('')}</div>${list.length > 8 ? `<p class="small muted" data-todomore="${k}">+${list.length - 8}${TODO_LIST[k] ? ` · <a href="${hj(TODO_LIST[k])}">${esc(t('show_in_list'))} ›</a>` : ''}</p>` : ''}${k === 'todo_vfind_crit' ? `<p class="small"><a href="${hj('#/vehicles?f=with_findings_crit')}" id="todovfind">${esc(t('show_in_vlist'))} ›</a> · <a href="#/master">${esc(t('nav_master'))} ›</a></p>` : ''}${k === 'todo_repeat' ? `<p class="small"><a href="${hj('#/cases?f=repeat')}">${esc(t('show_in_list'))} ›</a></p>` : ''}${k === 'todo_tacho' ? `<p class="small"><a href="${hj('#/tacho')}" id="todotacho">${esc(t('tacho'))} ›</a></p>` : ''}${k === 'todo_plan_passed' ? `<p class="small"><a href="${hj('#/plan')}">${esc(t('wplan'))} ›</a></p>` : ''}${k === 'todo_inspections' ? `<p class="small"><a href="${hj('#/plan?s=mdue')}">${esc(t('wplan'))}: ${esc(t('wplan_mdue'))} ›</a></p>` : ''}${k === 'todo_winter' ? `<p class="small"><a href="${hj('#/tires?f=winter_bad')}" id="todowinter">${esc(t('ws_winter_show'))} ›</a></p>${list.some((x) => x.closed_order) ? `<p class="small"><a href="${hj('#/tires?f=winter_closed')}" id="todowclosed">${esc(t('tires_winter_closed'))} ›</a></p>` : ''}` : ''}${k === 'todo_result_missing' ? `<p class="small"><a href="${hj('#/quality?f=inspection_no_result')}">${esc(t('show_in_dq'))} ›</a></p>` : ''}</details>`).join('')}`;
-}
 
-// „+N“ in „Heute zu tun“ verlinkt die vollständige, gleich gefilterte Vorgangsliste (Backlog 239)
-const TODO_LIST = { todo_receive: '#/cases?f=unreceived', todo_followup: '#/cases?f=followup', todo_cost_approval: '#/cases?f=cost_approval', todo_q_answered: '#/cases?f=q_answered', todo_paused: '#/cases?f=paused', todo_ready_overdue: '#/cases?f=ready_overdue' }; // todo_repeat hat bereits einen eigenen Link
-// Listen der Prüftermin-Übersicht, die der Server bei 200 kappt (`lists_truncated`) → Zähler „200+“
-const TODO_TRUNC = { todo_defects_no_case: 'defects_without_case', todo_reinspection: 'reinspection_pending', todo_result_missing: 'result_missing', todo_report_missing: 'report_missing' };
+
+async function fleetTodo(...a) { return (await lazyModule('leitung')).fleetTodo(...a); }
+
+ // todo_repeat hat bereits einen eigenen Link
+
 // wie der Listenfilter repeat_days=3 (Server: ab Berliner Mitternacht vor zwei Tagen) – 20.10.2026: vorher 72 h ab jetzt, Startseite zählte Vorgänge, die die verlinkte Liste nicht zeigt
 const recentRepeat = (c) => !!c.last_repeat_at && BERLIN_FMT.format(new Date(c.last_repeat_at)) >= bDate(-2);
 // Standort des Fahrzeugs / Abschleppung (Migration 0079, Teilagent „Fahrzeug wird abgeschleppt“): wo es jetzt steht und wer es
@@ -5015,4 +4797,4 @@ function lazyModule(g, quiet) {
   return LAZY_MODULES[g];
 }
 
-export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, CT_KINDS, DEFECT_RESULTS, FUEL_HINT, GLASS_HINT, HITRUN_HINT, MARTEN_HINT, MORE_MAX, NUMPLATE_HINT, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, ROOFICE_HINT, S, SEND_TIMEOUT_MS, STATES, STOCK_Q_MIN, STORM_HINT, STOW_HINT, STRINGS, THEFT_HINT, TM_PROV, TOW_HINT, TST, VANDAL_HINT, VEH_SORTS, WILD_HINT, afLink, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindLang, bindPwShow, bindTachoCancel, cDesc, caseList, checkLabel, claimChip, clipTxt, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, deviceId, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, helpLink, helpNorm, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isUnusedUser, isWeekendD, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmUnclearDateDue, langAttr, langLoaded, langSelect, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mayReport, mk, mkR, nDays, noSticker, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, partsWaitDays, planVehTag, plate, plateCmp, pnCompact, pnm, posL, prepareUpload, printHead, printStamp, provL, pwField, qrSvg, rc2, rdyOf, rdyTxt, readCsvFile, reasonText, recurFix, render, resetUserState, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, sortPref, sortUsers, stackTables, stockNoteText, stockOpt, stockPick, stockQHtml, supplierLabel, t, tachoHistList, telAbroad, telHref, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, tzNote, uiLoc, uid, unitL, usersCsv, vehiclesCached, viewLoginCode, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };
+export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, CT_KINDS, DEFECT_RESULTS, FUEL_HINT, GLASS_HINT, HITRUN_HINT, MARTEN_HINT, MORE_MAX, NUMPLATE_HINT, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, ROOFICE_HINT, S, SEND_TIMEOUT_MS, STATES, STOCK_Q_MIN, STORM_HINT, STOW_HINT, STRINGS, THEFT_HINT, TM_PROV, TOW_HINT, TST, VANDAL_HINT, VEH_SORTS, WILD_HINT, WST_ST, afLink, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindLang, bindPwShow, bindTachoCancel, cDesc, caseList, checkLabel, claimChip, clipTxt, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, deviceId, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, helpLink, helpNorm, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isUnusedUser, isWeekendD, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmUnclearDateDue, langAttr, langLoaded, langSelect, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mayReport, mk, mkR, nDays, noSticker, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, partsWaitDays, planVehTag, plate, plateCmp, pnCompact, pnm, posL, prepareUpload, printHead, printStamp, provL, pwField, qrSvg, rc2, rdyOf, rdyTxt, readCsvFile, reasonText, recentRepeat, recurFix, render, resetUserState, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, sortPref, sortUsers, stackTables, stockNoteText, stockOpt, stockPick, stockQHtml, supplierLabel, t, tachoHistList, telAbroad, telHref, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateLockReason, translateNextAction, tzNote, uiLoc, uid, unitL, usersCsv, vehiclesCached, viewLoginCode, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };

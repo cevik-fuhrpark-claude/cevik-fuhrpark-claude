@@ -25030,7 +25030,7 @@ await test('Backlog 474 (Blickwinkel „Überführungsfahrt“, Teilagent-Fund 3
 await test('Backlog 475–477 (Blickwinkel „Disposition Bayern morgens: welche Lkw des eigenen Standorts sind einsatzbereit?“): Zähler der Tafel mit Standortregel wie Server/Liste (siteKeyUi); Prüfmangel ohne Vorgang nennt den gekoppelten Lkw/Anhänger; Unterzeilen Terminplan/Winterreifen umbrechen', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   // 475: eine Regel für Startseite, Fahrzeugliste und Server
-  ok(app.includes('        const nk = siteKeyUi;') && !app.includes("String(x).trim().toLocaleLowerCase('de') : 'ohne');\n        const wn"), 'Tafel nutzt siteKeyUi');
+  ok(app.includes('\n  const nk = siteKeyUi;') && !app.includes("String(x).trim().toLocaleLowerCase('de') : 'ohne');\n  const wn"), 'Tafel nutzt siteKeyUi'); // Backlog 968: Tafel steht jetzt in dispoHome (Einrückung 2)
   const k0 = app.indexOf('const siteKeyUi = '); const siteKeyUi = new Function(app.slice(k0, app.indexOf('\n', k0)) + '\nreturn siteKeyUi;')();
   const { siteKey } = await import('../src/reports.js').catch(() => ({}));
   for (const [a, b] of [['Nürnberg  Süd', 'nürnberg süd'], [' Nürnberg Süd ', 'NÜRNBERG SÜD'], ['', null]]) {
@@ -32716,6 +32716,28 @@ await test('Backlog 966 (Blickwinkel „Fahrer schreibt Mundart – bairisch/Ruh
     for (const k of ['BRAKE', 'FLAT', 'TYRE', 'GEAR', 'ACC', 'LOOSE', 'ENGINE', 'NOSTART', 'MIRROR']) ok(!H(k).test(recurFix(x)), 'kein ' + k + ': ' + x);
   eq(recurFix('der fahrer ist hin und her gefahren').includes('kaputt'), false, '„hin und her“ wird nicht zu „kaputt“');
   eq(recurFix('this is a test'), 'this is a test', 'englisches „is“ bleibt');
+});
+
+await test('Backlog 968 (Reserve Start-Modul): Startseite der Disposition (dispoHome) und Aufgabenliste der Leitung (fleetTodo) liegen in nachgeladenen Modulen app-dispo.js/app-leitung.js; async, vor dem Seitenaufbau aufgerufen; App-Hülle und Lookbehind-Prüfung kennen die Dateien; Start-Modul ≤ 63,5 %', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const { GROUPS, BEFORE_RENDER, INPLACE } = await import('../scripts/build-app.mjs');
+  eq(JSON.stringify(GROUPS.dispo), JSON.stringify(['dispoHome']), 'Gruppe dispo');
+  eq(JSON.stringify(GROUPS.leitung), JSON.stringify(['fleetTodo']), 'Gruppe leitung');
+  ok(BEFORE_RENDER.has('dispoHome') && BEFORE_RENDER.has('fleetTodo') && !INPLACE.has('dispoHome') && !INPLACE.has('fleetTodo'), 'vor dem Seitenaufbau (mit Ladehinweis)');
+  const app = rd('app.js'), main = rd('app-main.js'), dis = rd('app-dispo.js'), lei = rd('app-leitung.js');
+  const home = app.slice(app.indexOf('async function viewHome()'), app.indexOf('\n}\n', app.indexOf('async function viewHome()')));
+  ok(home.includes("if (S.me.role === 'dispatch') html += await dispoHome(cases);") && home.indexOf('dispoHome(') < home.indexOf("render(html, 'home')"), 'viewHome ruft dispoHome mit await vor render');
+  ok(/^async function dispoHome\(cases\) \{/m.test(app), 'dispoHome async in app.js');
+  ok(main.includes("async function dispoHome(...a) { return (await lazyModule('dispo')).dispoHome(...a); }") && main.includes("async function fleetTodo(...a) { return (await lazyModule('leitung')).fleetTodo(...a); }"), 'Platzhalter im Start-Modul');
+  ok(/^async function dispoHome\(/m.test(dis) && /^function dispoCases\(/m.test(dis) && /^async function dispoBack\(/m.test(dis) && /^async function dispoPlanned\(/m.test(dis), 'Dispo-Tafel samt Hilfsfunktionen im Modul');
+  ok(!/^(async )?function (dispoCases|dispoBack|dispoBoard|dispoDueSoon|dispoWinter|dispoPlanned|dispoPrintLine)\(/m.test(main), 'Hilfsfunktionen nicht mehr im Start-Modul');
+  ok(/^async function fleetTodo\(/m.test(lei) && !/^async function fleetTodo\(\) \{/m.test(main), 'fleetTodo im Modul leitung');
+  for (const f of ['app-dispo.js', 'app-leitung.js']) {
+    ok(rd('sw.js').includes(`'/${f}'`), 'App-Hülle: ' + f);
+    ok(fs.readFileSync(new URL('../scripts/ui-ohne-lookbehind.py', import.meta.url), 'utf8').includes(`'${f}'`), 'Lookbehind-Prüfung: ' + f);
+  }
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100;
+  ok(pct <= 63.5, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 63,5 %)');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
