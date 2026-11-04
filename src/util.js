@@ -1,5 +1,5 @@
 // [CLAUDE] Hilfsfunktionen ohne externe Abhängigkeiten (Cloudflare Workers / WebCrypto)
-import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty, moneyIn } from '../public/hours.js';
+import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty, moneyIn, KM_UNIT_RX } from '../public/hours.js';
 
 export const nowIso = () => new Date().toISOString();
 // Zeitstempel für Änderungen mit Vergleich auf den gelesenen Stand (updated_at): immer später als der alte Wert, auch bei gleicher Millisekunde
@@ -221,7 +221,8 @@ export const DUE_FAR_MSG = 'Fälligkeit liegt mehr als 20 Jahre in der Zukunft �
 // mehrdeutig) – Bezeichnung vorne entfernen; nur km-Felder (nicht Gewicht/Intervall).
 export const KM_LABEL = /^(km[-\s]?stand|kilometerstand|kilometer|tachostand|tacho|km|км|пробіг|пробег|odometer(?:\s+reading)?|mileage)\s*[:.=]?\s*(?=\d)/i;
 export function kmNum(v, { min = 0, max = 5000000, field = 'Kilometerstand' } = {}) {
-  if (typeof v === 'string') v = v.trim().replace(KM_LABEL, '');
+  // Backlog 985: ausgeschriebene Einheit aus Diktat („123.456 Kilometer“, „123 456 кілометрів“) über KM_UNIT_RX (public/hours.js)
+  if (typeof v === 'string') v = v.trim().replace(/[\s\u00a0\u202f]+/g, ' ').replace(KM_LABEL, '').replace(KM_UNIT_RX, '$1');
   const n = num(v, { min, max, field, grouped: true });
   if (!Number.isInteger(n)) throw bad('validation', `${field}: ganze Zahl.`);
   return n;

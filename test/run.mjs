@@ -32979,6 +32979,30 @@ await test('Backlog 984 (Blickwinkel „Leitung/Werkstatt diktiert Beträge am P
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-betrag-diktat.py|'), 'UI-Skript in pruefen.sh');
 });
 
+await test('Backlog 985 (gleicher Blickwinkel, km-Stand diktiert): „123.456 Kilometer“, „Kilometerstand 123 456 Kilometer“, „123 456 кілометрів“, „123456 километров“, „123456 kilometres“ am Server und beim Verlassen der km-Felder (Muster „Format stimmt nicht“ entfällt); Mehrdeutiges und Gewicht unverändert', async () => {
+  const { kmNum, num } = await import('../src/util.js'); const { kmIn } = await import('../public/hours.js');
+  for (const [v, x] of [['123.456 Kilometer', 123456], ['123456 Kilometer', 123456], ['123456 Kilometern', 123456], ['Kilometerstand 123.456 Kilometer', 123456], ['123 456 кілометрів', 123456], ['123 456 кілометри', 123456],
+    ['123456 километров', 123456], ['123456 kilometres', 123456], ['123456 kilometers.', 123456], ['123.456 km', 123456], ['Пробіг 98 000 кілометрів', 98000]]) eq(kmNum(v), x, v);
+  for (const v of ['123,456 kilometres', '12 Kilometer 5', 'Kilometer', 'ca. 120000 Kilometer', 'zwölf Kilometer']) { let e = null; try { kmNum(v); } catch (x) { e = x; } ok(e, 'abgewiesen: ' + v); }
+  let e = null; try { num('7500 Kilometer', { grouped: true, field: 'zGM' }); } catch (x) { e = x; } ok(e, 'Einheit nur im km-Stand');
+  eq(kmIn('123.456 Kilometer'), '123.456'); eq(kmIn('Kilometerstand 123 456'), '123 456'); eq(kmIn('123 456 кілометрів'), '123 456'); eq(kmIn('123456'), null, 'unverändert'); eq(kmIn('12 Kilometer 5'), null);
+  // Ende-zu-Ende: Abfahrtskontrolle und km-Ablesung
+  const { U, V1 } = await freshWorld();
+  const r = await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: '123.456 Kilometer' }); eq(r.status, 201, JSON.stringify(r.data));
+  eq((await U.fleet.get(`/api/vehicles/${V1}`)).data.odometer[0].km, 123456);
+  // Oberfläche
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/import \{[^}]*kmIn[^}]*\} from '\.\/hours\.js'/.test(app), 'app.js importiert kmIn');
+  const i = app.indexOf('const KM_FIELD = '); ok(i > 0, 'KM_FIELD'); const KF = new Function(app.slice(i, app.indexOf('\n', i)) + '; return KM_FIELD;')();
+  for (const n of ['km', 'odometer_km', 'done_km', 'due_km', 'last_done_km', 'next_due_km']) ok(KF.test(n), n);
+  for (const n of ['interval_km', 'km_allowance', 'start_km', 'zgm_kg']) ok(!KF.test(n), 'kein km-Stand-Feld: ' + n);
+  // jedes km-Feld mit Muster ist abgedeckt
+  for (const m of app.matchAll(/<input[^>]*pattern=" \*\[0-9\]\[0-9 \.\]\*"[^>]*>/g)) { const nm = (m[0].match(/name="([a-z_]+)"/) || [])[1]; const id = (m[0].match(/id="([a-z]+)"/) || [])[1]; ok(KF.test(nm || '') || /^(km|kfkm|extkmv|tfkm)$/.test(id || ''), 'abgedeckt: ' + (nm || id)); const ml = Number((m[0].match(/maxlength="(\d+)"/) || [])[1] || 999); ok(ml >= 30, 'maxlength lässt „123.456 Kilometer“ zu: ' + (nm || id) + ' ' + ml); }
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(/123\.456 Kilometer/.test(STRINGS.de.help_check_s) && /кілометрів/.test(STRINGS.uk.help_check_s) && /kilometres/.test(STRINGS.en.help_check_s), 'Hilfe DE/UK/EN');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-km-diktat.py|'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Backlog 974 (Blickwinkel „Werkstatt bucht Teilemengen vom Lieferschein“): Menge mit passender Einheit („2 Stk.“, „5 l“, „2x“, „3 шт“) im Lager, Wareneingang, Inventur und am Auftrag; fremde Einheit mit eigener Meldung (DE/UK/EN), keine Umrechnung', async () => {
   const { qtyNum } = await import('../src/util.js');
   const o = { min: 0, max: 1e6, decimalComma: true };

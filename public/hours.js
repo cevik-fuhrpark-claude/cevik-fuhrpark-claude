@@ -203,3 +203,14 @@ export function moneyIn(raw) {
   if (!/^(?:€|eur)\s*\d|\d\s*(?:€|eur)\.?$/i.test(s) && (PRE_RX.test(s) || POST_RX.test(s))) return s.replace(PRE_RX, '').replace(POST_RX, '$1').trim();
   return null;
 }
+
+// Backlog 985 (gleicher Blickwinkel, km-Stand): Diktat schreibt die Einheit aus – „123.456 Kilometer“, „123 456 кілометрів“, „123456 километров“,
+// „123456 kilometres“ – vorher „ungültige Zahl“ bzw. am Handy „Format stimmt nicht“ (Muster der km-Felder). Bezeichnung vorne wie Backlog 972.
+// Server (`kmNum` in src/util.js) und Oberfläche (km-Feld wird beim Verlassen umgeschrieben) gemeinsam; Mehrdeutiges („123,456“) bleibt beim Server.
+export const KM_LABEL_RX = /^(km[-\s]?stand|kilometerstand|kilometer|tachostand|tacho|km|км|пробіг|пробег|odometer(?:\s+reading)?|mileage)\s*[:.=]?\s*(?=\d)/i;
+export const KM_UNIT_RX = /(\d)\s*(?:km|км|kilometern?|kilometres?|kilometers?|кілометр(?:ів|и|а)?|километр(?:ов|а|ы)?)\.?$/i;
+export function kmIn(raw) {
+  const s = String(raw ?? '').replace(/[\s  ]+/g, ' ').trim(); if (!s || s.length > 40) return null;
+  const t = s.replace(KM_LABEL_RX, '').replace(KM_UNIT_RX, '$1').trim();
+  return t !== s && /^\d[\d .,'’]*$/.test(t) ? t : null;
+}
