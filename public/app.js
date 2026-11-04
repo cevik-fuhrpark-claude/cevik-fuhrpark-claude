@@ -5998,7 +5998,7 @@ async function viewFines() {
   const fnd = $('#fnodue'); if (fnd) fnd.onchange = () => { S.fineNoDue = fnd.checked; viewFines(); };
   dueWeekendWatch();
   const nf = $('#nf');
-  if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; if (b.amount_eur) b.amount_eur = b.amount_eur.trim(); b.request_key = nf.dataset.rk || (nf.dataset.rk = uid()); try { const r = await api('POST', '/api/fines', b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 803 */ if (r.duplicate) toast(t('fine_dup_existing').replace('{no}', r.fine_no), true); else if (!r.vehicle_matched) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); location.hash = '#/fines/' + r.id; } catch (err) { toast(err.message, true); } };
+  if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; if (b.amount_eur) b.amount_eur = b.amount_eur.trim(); b.request_key = nf.dataset.rk || (nf.dataset.rk = uid()); try { const r = await api('POST', '/api/fines', b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 803 */ if (r.duplicate) toast(t('fine_dup_existing').replace('{no}', r.fine_no), true); else if (!r.vehicle_matched) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); location.hash = '#/fines/' + r.id; } catch (err) { toast(err.message, true); /* Backlog 993: Aktenzeichen derselben Behörde (auch anders geschrieben) schon erfasst → Verweis, Eingaben bleiben */ if (err.code === 'duplicate_fine' && err.data && err.data.id) { let h = $('#nfdup'); if (!h) { h = document.createElement('p'); h.id = 'nfdup'; h.className = 'panel warn small'; h.setAttribute('role', 'alert'); nf.prepend(h); } h.innerHTML = `${esc(err.message)} <a href="#/fines/${esc(err.data.id)}">${esc(t('fine_dup_open'))}</a>`; h.scrollIntoView({ block: 'center' }); } } };
 }
 
 // Verlauf: Zielstatus bzw. geänderte Angaben aus payload (19.10.2026: nur „Status setzen“/„Angaben geändert“ ohne Inhalt)
@@ -7753,7 +7753,7 @@ async function viewSearch() {
       await loadHelp(S.lang).catch(() => {}); // Hilfe-Schritte (Backlog 597); fehlt das Paket (offline ohne Cache), ohne Hilfe-Treffer
       if (my !== seq) return;
       const lq = q.toLowerCase();
-      const fAll = canFines ? fineList.filter((f) => [f.plate, f.plate_in_letter].some((x) => norm(x).includes(n)) || [f.fine_no, f.reference, f.authority].some((x) => String(x || '').toLowerCase().includes(lq))) : []; const fs = fAll.slice(0, 10);
+      const refQ = q.toUpperCase().replace(/[ ./-]/g, '').replace(/^(AZ|AKTENZEICHEN):?/, ''); const fAll = canFines ? fineList.filter((f) => [f.plate, f.plate_in_letter].some((x) => norm(x).includes(n)) || [f.fine_no, f.reference, f.authority].some((x) => String(x || '').toLowerCase().includes(lq)) || (refQ.length >= 4 && String(f.reference || '').toUpperCase().replace(/[ ./-]/g, '').includes(refQ))) : []; /* Backlog 993: Aktenzeichen ohne Leerzeichen/Punkte/Striche */ const fs = fAll.slice(0, 10);
       const hq = helpNorm(q); // Lager: Umlaute/ue gleich (wie Lagerliste und Hilfe)
       const sAll = canStock && hq ? stockList.filter((i) => stockHit(i, q)) : []; // Backlog 862: Teilenummer auch ohne Leerzeichen/Bindestrich
       const ss = sAll.slice(0, 10);

@@ -33402,6 +33402,35 @@ await test('Backlog 992 (Blickwinkel „Leitung überträgt die Rufnummer aus E-
   ok(STRINGS.de.help_accident_s.includes('E-Mail-Signatur') && STRINGS.uk.help_accident_s.includes('підпису листа') && STRINGS.en.help_accident_s.includes('e-mail signature'), 'Hilfe DE/UK/EN');
 });
 
+await test('Backlog 993 (Blickwinkel „Zweites Schreiben derselben Bußgeldstelle – Anhörung, dann Bescheid – erfasst eine Kollegin“): Aktenzeichen in anderer Schreibweise („Az.: 123.45.678901.2“ = „123 45 678901 2“) und Behörde mit anderer Groß-/Kleinschreibung bzw. Leerraum gelten als Dublette – beim Anlegen, Ändern und gleichzeitig; Bezeichnung „Az.:“ wird nicht gespeichert; Kassenzeichen/andere Behörde bleiben getrennt; Formular verweist auf den vorhandenen Vorgang; Suche ohne Trennzeichen', async () => {
+  const { U } = await freshWorld();
+  const body = (reference, authority = 'Stadt Dortmund Bußgeldstelle', kind = 'anhoerung') => ({ kind, authority, reference, offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 86400000).toISOString(), location: 'B1', plate_in_letter: 'XX 993', response_due: BERLIN_TODAY });
+  const a = await U.fleet.post('/api/fines', body('Az.: 123.45.678901.2')); eq(a.status, 201, JSON.stringify(a.data));
+  eq((await U.fleet.get(`/api/fines/${a.data.id}`)).data.fine.reference, '123.45.678901.2', 'Bezeichnung „Az.:“ nicht gespeichert');
+  for (const [ref, auth] of [['123 45 678901 2', 'stadt dortmund  bußgeldstelle '], ['123-45-678901-2', 'Stadt Dortmund Bußgeldstelle'], ['Aktenzeichen: 123/45/678901/2', 'STADT DORTMUND BUßGELDSTELLE']]) {
+    const d = await U.fleet.post('/api/fines', body(ref, auth, 'bussgeldbescheid')); eq(d.status, 409, ref + ' / ' + auth); eq(d.data.error, 'duplicate_fine'); eq(d.data.id, a.data.id, 'verweist auf vorhandenen Vorgang');
+  }
+  eq((await U.fleet.post('/api/fines', body('123.45.678901.3'))).status, 201, 'andere Nummer');
+  eq((await U.fleet.post('/api/fines', body('123.45.678901.2', 'Kreis Unna'))).status, 201, 'andere Behörde');
+  const k = await U.fleet.post('/api/fines', body('Kassenzeichen 123.45.678901.2')); eq(k.status, 201, 'Kassenzeichen ist ein anderer Wert');
+  eq((await U.fleet.get(`/api/fines/${k.data.id}`)).data.fine.reference, 'Kassenzeichen 123.45.678901.2', 'nicht als Bezeichnung entfernt');
+  const az = await U.fleet.post('/api/fines', body('Azubi 12')); eq(az.status, 201); eq((await U.fleet.get(`/api/fines/${az.data.id}`)).data.fine.reference, 'Azubi 12', 'kein Wortanfang abgeschnitten');
+  // Ändern: auf eine anders geschriebene vorhandene Nummer → 409; nur Schreibweise des eigenen Aktenzeichens → erlaubt
+  const b = await U.fleet.post('/api/fines', body('77/2026')); eq(b.status, 201);
+  const u1 = await U.fleet.post(`/api/fines/${b.data.id}/commands`, { action: 'update', payload: { reference: 'Az 123 45 678901 2' } }); eq(u1.status, 409); eq(u1.data.error, 'duplicate_fine');
+  const u2 = await U.fleet.post(`/api/fines/${b.data.id}/commands`, { action: 'update', payload: { reference: 'Az.: 77 / 2026' } }); eq(u2.status, 200, JSON.stringify(u2.data));
+  eq((await U.fleet.get(`/api/fines/${b.data.id}`)).data.fine.reference, '77 / 2026');
+  const u3 = await U.fleet.post(`/api/fines/${a.data.id}/commands`, { action: 'update', payload: { authority: 'Kreis  Unna' } }); eq(u3.status, 409, 'Behördenwechsel auf vorhandene Kombination');
+  // gleichzeitig angelegt, verschieden geschrieben → nur einer
+  const [p1, p2] = await Promise.all([U.fleet.post('/api/fines', body('A 993-77')), U.fleet.post('/api/fines', body('a993.77', 'stadt dortmund bußgeldstelle'))]);
+  eq([p1.status, p2.status].sort().join(), '201,409');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (err.code === 'duplicate_fine' && err.data && err.data.id) { let h = $('#nfdup');") && app.includes("t('fine_dup_open')"), 'Formular: Verweis auf vorhandenen Vorgang, Eingaben bleiben');
+  ok(app.includes("String(f.reference || '').toUpperCase().replace(/[ ./-]/g, '').includes(refQ)"), 'Suche ohne Trennzeichen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].fine_dup_open && STRINGS[l].fine_dup_open.length > 20, l);
+  ok(STRINGS.de.help_fines_s.includes('anders geschrieben') && STRINGS.en.help_fines_s.includes('written differently') && STRINGS.uk.help_fines_s.includes('написаний інакше'), 'Hilfe DE/UK/EN');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

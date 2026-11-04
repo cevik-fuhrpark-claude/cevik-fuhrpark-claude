@@ -6,6 +6,18 @@ import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha2
 import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
 
+// Backlog 993 (Blickwinkel „Zweites Schreiben derselben Bußgeldstelle – Anhörung, dann Bescheid – erfasst eine Kollegin“): die Dublettenprüfung
+// verglich Aktenzeichen und Behörde Zeichen für Zeichen – „Az.: 123.45.678901.2“, „123 45 678901 2“, „123-45-678901-2“ bzw. „Stadt Dortmund“
+// und „stadt dortmund “ ergaben einen zweiten Vorgang (Frist doppelt, Fahrer doppelt informiert). Jetzt: Bezeichnung vorne („Az.:“,
+// „Aktenzeichen:“, „Geschäftszeichen“) wird beim Speichern entfernt, Leerraum vereinheitlicht; verglichen wird ohne Groß-/Kleinschreibung,
+// Leerzeichen, Punkte, Binde- und Schrägstriche (Behörde: Leerraum und Groß-/Kleinschreibung). Kassenzeichen bleibt unangetastet (anderer Wert).
+const REF_LABEL_RX = /^(?:az|aktenzeichen|gesch(?:ä|ae)ftszeichen|unser\s+zeichen)(?:\.?[-\s]*nr)?(?:[.:]|\s)+(?=\S)/i;
+export const fineRef = (v) => { const s = str(v, { max: 80, field: 'Aktenzeichen' }); if (!s) return null; const w = s.replace(/\s+/g, ' '); const t = w.replace(REF_LABEL_RX, '').trim(); return /[\p{L}\p{N}]/u.test(t) ? t : w; };
+const fineAuthority = (v) => str(v, { required: true, max: 200, field: 'Behörde' }).replace(/\s+/g, ' ');
+const REF_KEY_SQL = (x) => [' ', '.', '-', '/'].reduce((a, ch) => `REPLACE(${a},'${ch}','')`, `UPPER(COALESCE(${x},''))`);
+export const fineRefKey = (x) => String(x || '').toUpperCase().replace(/[ ./-]/g, '');
+const SAME_FINE_SQL = (ref, auth) => `${REF_KEY_SQL('reference')}=${REF_KEY_SQL(ref)} AND lower(authority)=lower(${auth})`;
+
 export const FINE_KINDS = ['anhoerung', 'zeugenfragebogen', 'bussgeldbescheid', 'verwarnung', 'maut', 'sonstiges'];
 export const OFFENSES = ['geschwindigkeit', 'abstand', 'parken', 'rotlicht', 'lenk_ruhezeit', 'ladung', 'maut', 'handy', 'sonstiges'];
 export const FINE_STATUSES = ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert', 'beantwortet', 'bezahlt', 'eingestellt', 'erledigt'];
@@ -284,8 +296,8 @@ export async function createFine(env, user, envName, body) {
   // kein Fahrzeug trägt das Kennzeichen (mehr): zur Tatzeit eindeutig früheres Kennzeichen eines Fahrzeugs (Backlog 257b) → dieses Fahrzeug
   const former = !pick.vehicle && !pick.ambiguous ? await formerPlateVehicle(env, plate, offenseAt) : null;
   const veh = pick.vehicle || (former ? { id: former.vehicle_id } : null);
-  const reference = str(body.reference, { max: 80, field: 'Aktenzeichen' });
-  const authority = str(body.authority, { required: true, max: 200, field: 'Behörde' });
+  const reference = fineRef(body.reference);
+  const authority = fineAuthority(body.authority);
   // Idempotenzschlüssel je Formular: Doppelklick/Netzwiederholung ergibt denselben Vorgang statt eines zweiten (18.10.2026) –
   // wichtig bei Schreiben ohne Aktenzeichen, die keine Dublettenprüfung haben. Geprüft vor allem anderen (auch vor der Aktenzeichen-Dublette
   // und vor dem Hochzählen der Nummer), damit die Wiederholung einer erfolgreichen Anlage nicht als „Aktenzeichen bereits erfasst“ scheitert.
@@ -306,7 +318,7 @@ export async function createFine(env, user, envName, body) {
   if (again) return again;
   const dupCheck = async () => {
     if (!reference) return;
-    const dup = await env.DB.prepare('SELECT id, fine_no FROM fines WHERE environment=? AND reference=? AND authority=?').bind(envName, reference, authority).first();
+    const dup = await env.DB.prepare(`SELECT id, fine_no FROM fines WHERE environment=? AND ${SAME_FINE_SQL('?', '?')}`).bind(envName, reference, authority).first();
     if (dup) throw conflict('duplicate_fine', `Aktenzeichen bereits erfasst (${dup.fine_no}).`, { id: dup.id });
   };
   await dupCheck();
@@ -331,7 +343,7 @@ export async function createFine(env, user, envName, body) {
   try { res = await env.DB.batch([
     env.DB.prepare(`INSERT INTO fines(id,fine_no,environment,kind,authority,reference,offense_type,offense_at,location,plate_in_letter,vehicle_id,amount_eur,response_due,status,note,created_by,created_at,updated_at,request_key,driving_ban_months)
       SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'eingegangen',?14,?15,?16,?17,?18,?19
-      WHERE ?6 IS NULL OR NOT EXISTS (SELECT 1 FROM fines WHERE environment=?3 AND reference=?6 AND authority=?5)`).bind(id, fineNo, envName, kind, authority, reference, offense, new Date(offenseAt).toISOString(),
+      WHERE ?6 IS NULL OR NOT EXISTS (SELECT 1 FROM fines WHERE environment=?3 AND ${SAME_FINE_SQL('?6', '?5')})`).bind(id, fineNo, envName, kind, authority, reference, offense, new Date(offenseAt).toISOString(),
       location, plate, veh ? veh.id : null, amount, due,
       fnote, user.id, now, now, rkey, ban),
     env.DB.prepare('INSERT INTO fine_events(id,fine_id,actor_id,action,note,payload,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM fines WHERE id=?)').bind(uuid(), id, user.id, 'create', null, JSON.stringify(pick.ambiguous ? { vehicle_matched: false, vehicle_ambiguous: true } : { vehicle_matched: !!veh }), now, id),
@@ -457,14 +469,14 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
           const due = set.response_due !== undefined ? set.response_due : f.response_due; const oa = set.offense_at || f.offense_at;
           if (('response_due' in set || 'offense_at' in set) && due && due < berlinDate(oa)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.');
         }
-        if (p.reference !== undefined) set.reference = str(p.reference, { max: 80 });
+        if (p.reference !== undefined) set.reference = fineRef(p.reference);
         if (p.driving_ban_months !== undefined) set.driving_ban_months = parseBan(p.driving_ban_months); // Backlog 364
         // Behörde korrigierbar (19.10.2026, Backlog 91) – Pflichtfeld wie beim Anlegen
-        if (p.authority !== undefined) set.authority = str(p.authority, { required: true, max: 200, field: 'Behörde' });
+        if (p.authority !== undefined) set.authority = fineAuthority(p.authority);
         {
           // gleiche Dublettenregel wie beim Anlegen (Umgebung + Behörde + Aktenzeichen) – vorher über „Ändern“ umgehbar; auch bei geänderter Behörde
           const ref = set.reference !== undefined ? set.reference : f.reference; const auth = set.authority !== undefined ? set.authority : f.authority;
-          const dup = ref && (ref !== f.reference || auth !== f.authority) ? await env.DB.prepare('SELECT id, fine_no FROM fines WHERE environment=? AND reference=? AND authority=? AND id<>?').bind(envName, ref, auth, id).first() : null;
+          const dup = ref && (ref !== f.reference || auth !== f.authority) ? await env.DB.prepare(`SELECT id, fine_no FROM fines WHERE environment=? AND ${SAME_FINE_SQL('?', '?')} AND id<>?`).bind(envName, ref, auth, id).first() : null;
           if (dup) throw conflict('duplicate_fine', `Aktenzeichen bereits erfasst (${dup.fine_no}).`, { id: dup.id });
         }
         // Kennzeichen laut Schreiben korrigierbar (Tippfehler/mehrdeutig blieb sonst dauerhaft ohne Fahrzeug, Kandidaten und Standort) –
@@ -501,7 +513,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
     // geändertes Aktenzeichen: Dublettenprüfung im selben Stapel (zwei gleichzeitige Änderungen auf „Z9“ ergaben sonst zwei Vorgänge)
     const gRef = set.reference !== undefined ? set.reference : f.reference; const gAuth = set.authority !== undefined ? set.authority : f.authority;
     const refGuard = gRef && (gRef !== f.reference || gAuth !== f.authority)
-      ? [env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN EXISTS (SELECT 1 FROM fines WHERE environment=? AND reference=? AND authority=? AND id<>?) THEN 0 ELSE 1 END').bind(envName, gRef, gAuth, id), env.DB.prepare('DELETE FROM cmd_guard')]
+      ? [env.DB.prepare(`INSERT INTO cmd_guard(ok) SELECT CASE WHEN EXISTS (SELECT 1 FROM fines WHERE environment=? AND ${SAME_FINE_SQL('?', '?')} AND id<>?) THEN 0 ELSE 1 END`).bind(envName, gRef, gAuth, id), env.DB.prepare('DELETE FROM cmd_guard')]
       : [];
     await env.DB.batch([
       ...refGuard,
@@ -521,7 +533,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         if (cur && cur.driver_ack_at && cur.driver_id === user.id) return { ok: true, version: cur.version, duplicate: true };
       }
       const dR = set.reference !== undefined ? set.reference : f.reference; const dA = set.authority !== undefined ? set.authority : f.authority;
-      const dup = dR && (dR !== f.reference || dA !== f.authority) ? await env.DB.prepare('SELECT id, fine_no FROM fines WHERE environment=? AND reference=? AND authority=? AND id<>?').bind(envName, dR, dA, id).first() : null;
+      const dup = dR && (dR !== f.reference || dA !== f.authority) ? await env.DB.prepare(`SELECT id, fine_no FROM fines WHERE environment=? AND ${SAME_FINE_SQL('?', '?')} AND id<>?`).bind(envName, dR, dA, id).first() : null;
       if (dup) throw conflict('duplicate_fine', `Aktenzeichen bereits erfasst (${dup.fine_no}).`, { id: dup.id });
       throw conflict('version_conflict', 'Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');
     }
