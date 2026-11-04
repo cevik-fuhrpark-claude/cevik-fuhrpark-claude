@@ -32697,6 +32697,27 @@ await test('Backlog 965 (Blickwinkel „Fahrer diktiert per Sprachnachricht – 
   ok(!H('WINDOW').test(noFixed(recurFix('fensterheber geht nicht und der fensterheber wurde schon getauscht'))), 'gleiches Gerät repariert → kein Hinweis');
 });
 
+await test('Backlog 966 (Blickwinkel „Fahrer schreibt Mundart – bairisch/Ruhrpott“): „de bremsn ziagt noch links“, „bremsn san hi“, „da reifn is platt“, „hob an plattn“, „da spiagl is ab“, „der karrn springt ned o“, „karre springt nich an“, „scheibn hat an sprung“, „wischa geht ned“, „klima is hin“, „kupplung is durch“, „reifen is runter“, „auspuff is ab“, „luft is raus aus dem reifen“, „hänger hängt schief“ → passende Hinweise; Unfall umgangssprachlich („bin wo gegengefahren“, „angeeckt“, „ne delle reingefahren“, „anderen lkw touchiert“, „an einem auto hängen geblieben“, „blechschaden“); „Kupplung kaputt/defekt“ → Getriebe/Kupplung (nicht bei Auflieger/Sattel); britisch „brakes are shot“, „clutch is knackered“, „clutch has gone“; „hin und her“, „durch die HU“, „ab sofort“, „bin in die Halle reingefahren“, „driver has gone home“ ohne Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const H = (k) => new RegExp(app.match(new RegExp('^const ' + k + '_HINT = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(app.indexOf('const DIALECT') < app.indexOf('const COLLOQ') && /^const COLLOQ = \[\n {2}\/\/ Backlog 966/m.test(app), 'Mundartregeln stehen am Anfang von COLLOQ');
+  const yes = [['BRAKE', 'de bremsn ziagt noch links'], ['BRAKE', 'bremsn san hi'], ['BRAKE', 'bremse is hin'], ['FLAT', 'da reifn is platt'], ['FLAT', 'hob an plattn'], ['FLAT', 'luft is raus aus dem reifen'],
+    ['MIRROR', 'da spiagl is ab'], ['NOSTART', 'der karrn springt ned o'], ['NOSTART', 'karre springt nich an'], ['GLASS', 'scheibn hat an sprung'], ['VISIB', 'wischa geht ned'],
+    ['CLIMATE', 'klima is hin'], ['ENGINE', 'da motor ziagt ned'], ['ENGINE', 'turbo is durch'], ['LIGHTS', 'bremslicht is hi'], ['STEER', 'lenkung hod spiel'], ['TYRE', 'reifen is runter'], ['TYRE', 'profil is runter'],
+    ['LOOSE', 'auspuff is ab'], ['SUSP', 'der hänger hängt schief'], ['GEAR', 'kupplung is durch'], ['GEAR', 'kupplung is hin'], ['GEAR', 'kupplung defekt'], ['GEAR', 'die kupplung ist kaputt'], ['GEAR', 'kupplung geht nicht'],
+    ['ACC', 'bin wo gegengefahren'], ['ACC', 'bin dagegengefahren'], ['ACC', 'beim rangieren angeeckt'], ['ACC', 'hab ne delle reingefahren'], ['ACC', 'anderen lkw touchiert'], ['ACC', 'bin an einem auto hängen geblieben'], ['ACC', 'blechschaden'], ['ACC', 'hab was angefahren'],
+    ['BRAKE', 'brakes are shot'], ['BRAKE', 'brakes are knackered'], ['GEAR', 'clutch is knackered'], ['GEAR', 'clutch has gone'], ['MIRROR', 'the wing mirror is knackered'], ['NOSTART', 'starter motor is knackered'], ['VISIB', "heater's knackered"]];
+  for (const [k, x] of yes) ok(H(k).test(recurFix(x)), k + ': ' + x + ' → ' + recurFix(x));
+  const no = [['GEAR', 'kupplung am auflieger defekt'], ['GEAR', 'auflieger kupplung kaputt'], ['GEAR', 'sattelkupplung defekt'], ['GEAR', 'kupplung is durch, getauscht'], ['GEAR', 'kupplung ist nicht kaputt'], ['TYRE', 'reifen is runter, getauscht'],
+    ['TYRE', 'reifen sind runter vom lkw gefallen'], ['LOOSE', 'auspuff ist ab sofort getauscht'], ['ACC', 'bin nicht angeeckt'], ['ACC', 'kein blechschaden'], ['ACC', 'bin in die halle reingefahren'], ['ACC', 'lkw ist angefahren']];
+  for (const [k, x] of no) ok(!H(k).test(recurFix(x)), 'kein ' + k + ': ' + x);
+  for (const x of ['der fahrer ist hin und her gefahren', 'ich bin hin zum kunden', 'ist durch die hu gekommen', 'das ist ab montag', 'hi, ist der lkw fertig', 'kleiderhänger kaputt', 'the driver has gone home', 'the shot of the damage is attached', 'photo shot from the cab', 'this is a test'])
+    for (const k of ['BRAKE', 'FLAT', 'TYRE', 'GEAR', 'ACC', 'LOOSE', 'ENGINE', 'NOSTART', 'MIRROR']) ok(!H(k).test(recurFix(x)), 'kein ' + k + ': ' + x);
+  eq(recurFix('der fahrer ist hin und her gefahren').includes('kaputt'), false, '„hin und her“ wird nicht zu „kaputt“');
+  eq(recurFix('this is a test'), 'this is a test', 'englisches „is“ bleibt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
