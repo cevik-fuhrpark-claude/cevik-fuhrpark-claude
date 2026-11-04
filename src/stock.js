@@ -182,11 +182,18 @@ export async function itemDetail(env, user, envName, id) {
 // Gleiche Bezeichnung + Teilenummer ohne Rücksicht auf Groß-/Kleinschreibung und Leerzeichen (der eindeutige Index unterscheidet
 // „Bremsbelag/A-1“ und „bremsbelag/a-1“ – Bestand verteilte sich auf zwei Artikel, 19.10.2026). Auch deaktivierte zählen (wie der Index).
 // Trenner U+001F (nicht NUL: wird seit Migration 0067 gespeichert, JSON-Sammelabfragen der Sicherung kürzten Texte an NUL)
-const itemKey = (name, pn) => `${String(pn || '').trim().toLocaleLowerCase('de')}\u001f${String(name || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('de')}`;
+// Backlog 989 (Blickwinkel „Werkstatt bucht vom Lieferschein“): Teilenummer ohne Leerzeichen, Bindestrich, Punkt und Schrägstrich
+// (wie pnKey in src/partsusage.js; nicht importiert – Kreis über cases.js) – „A 000 420 12 20“ vom Lieferschein ist derselbe Artikel
+// wie „A0004201220“ (vorher zweiter Artikel beim Anlegen/Import/Umlagern, Bestand verteilt). Gespeicherte item_key älterer Zeilen
+// behalten die alte Form; maßgeblich ist der Vergleich in JS (der eindeutige Index ist nur die Rückfallebene).
+const pnNorm = (pn) => String(pn || '').toLocaleLowerCase('de').replace(/[\s\-./]/g, '');
+const itemKey = (name, pn) => `${pnNorm(pn)}\u001f${String(name || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('de')}`;
 async function assertNoTwin(env, envName, site, name, pn, exceptId = null) {
   const k = itemKey(name, pn);
   const rows = (await env.DB.prepare('SELECT id, name, part_number FROM stock_items WHERE environment=? AND site=?').bind(envName, site).all()).results;
-  if (rows.some((r) => r.id !== exceptId && itemKey(r.name, r.part_number) === k)) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
+  const twin = rows.find((r) => r.id !== exceptId && itemKey(r.name, r.part_number) === k);
+  // vorhandenen Artikel mitliefern (Oberfläche verlinkt ihn: „Zugang dort buchen“)
+  if (twin) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.', { item_id: twin.id, name: twin.name, part_number: twin.part_number || null });
 }
 export async function createItem(env, user, envName, body) {
   const site = siteScope(user, body.site);
@@ -366,7 +373,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   const cands = (await env.DB.prepare('SELECT * FROM stock_items WHERE environment=? AND site=?').bind(envName, toSite).all()).results;
   const k = itemKey(it.name, it.part_number);
   let target = cands.find((c) => itemKey(c.name, c.part_number) === k) || null;
-  if (!target && it.part_number) { const pk = String(it.part_number).trim().toLocaleLowerCase('de'); const pn = cands.filter((c) => c.active && String(c.part_number || '').trim().toLocaleLowerCase('de') === pk); if (pn.length === 1) target = pn[0]; }
+  if (!target && pnNorm(it.part_number)) { const pk = pnNorm(it.part_number); const pn = cands.filter((c) => c.active && pnNorm(c.part_number) === pk); if (pn.length === 1) target = pn[0]; }
   const now = nowIso(); const tid = uuid(); const stmts = []; let created = false;
   if (!target) {
     target = { id: uuid(), site: toSite, unit: it.unit, unit_price_net: it.unit_price_net, active: 1 }; created = true;
@@ -728,6 +735,8 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
     const row = { line, name, part_number: pn, unit, min_qty: min, location: loc, unit_price_net: price, initial_qty: qty };
     if (cur) {
       result.unchanged++; row.action = 'unverändert'; row.item_id = cur.id;
+      // Backlog 989: Teilenummer im Lager anders geschrieben („A0004201220“ statt „A 000 420 12 20“) – Schreibweise des Artikels nennen
+      if (pn && cur.part_number && pn !== cur.part_number) row.existing_part_number = cur.part_number;
       const diff = (min !== null && min !== cur.min_qty) || (price !== null && price !== cur.unit_price_net) || (loc && loc !== cur.location) || (get(cells, ci.unit) && unit !== cur.unit) || qty !== null;
       if (diff) row.note = 'Artikel vorhanden – Angaben/Bestand aus der Datei nicht übernommen; in der Artikelakte prüfen bzw. Zugang/Inventur buchen';
       if (!cur.active) row.inactive = true;

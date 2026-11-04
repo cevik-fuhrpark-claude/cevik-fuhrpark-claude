@@ -1240,6 +1240,8 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 903: geplante Gutachter-Besichtigung am Vorgang (Werkstatt/Disposition sehen nur das Datum)
 // Backlog 904: Kosten je Firma (Fremdleistungen und Teile-Lieferanten) im Kostenbericht
 // [CLAUDE] Backlog 980 (Blickwinkel „Leitung überträgt die FIN aus Zulassungsbescheinigung, Rechnung oder E-Mail“)
+
+// [CLAUDE] Backlog 989 (Blickwinkel „Werkstatt bucht vom Lieferschein: Teilenummer in anderer Schreibweise“)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

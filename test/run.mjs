@@ -16077,7 +16077,7 @@ await test('Fehlersuche 21.10. (Lager/Prüftermine): Artikeländerung mit gelese
     const [a, b] = await Promise.all([pA, pB]); e.DB.prepare = op;
     eq([a.status, b.status].sort().join(','), '201,409', JSON.stringify([a.data, b.data]));
     eq(db.prepare(`SELECT COUNT(*) n FROM stock_items WHERE environment='test' AND site='DORTMUND' AND lower(part_number)='of-1'`).get().n, 1);
-    eq(db.prepare(`SELECT item_key k FROM stock_items WHERE part_number IN ('OF-1','of-1')`).get().k, 'of-1\u001fölfilter', 'Schlüssel mit Umlaut klein');
+    eq(db.prepare(`SELECT item_key k FROM stock_items WHERE part_number IN ('OF-1','of-1')`).get().k, 'of1\u001fölfilter', 'Schlüssel mit Umlaut klein (Teilenummer ohne Trenner seit Backlog 989)');
     // Umbenennen auf eine Schreibvariante eines anderen Artikels: 409 wie bisher
     const id2 = (await F.post('/api/stock', { site: 'DORTMUND', name: 'Luftfilter', part_number: 'LF-1' })).data.id;
     eq((await F.patch('/api/stock/' + id2, { name: 'ÖLFILTER', part_number: 'Of-1' })).status, 409);
@@ -33293,6 +33293,47 @@ await test('Backlog 981 (Folge aus 979, Blickwinkel „Disposition plant morgens
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].av_combo_clear && STRINGS[l].av_combo_clear_t, `${l}: Texte vorhanden`);
 });
 
+await test('Backlog 989 (Blickwinkel „Werkstatt bucht vom Lieferschein: Teilenummer in anderer Schreibweise“): „A 000 420 12 20“ = „A0004201220“ beim Anlegen (409 mit vorhandenem Artikel), Ändern, Import (unverändert + Schreibweise im Lager, doppelt in der Datei), Umlagerung (gleicher Zielartikel) und „in anderem Lager vorrätig“; andere Bezeichnung/Nummer weiter eigener Artikel; Hinweis beim Tippen; Hilfe DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const H = { 'content-type': 'text/csv' };
+  const a = await U.ws.post('/api/stock', { name: 'Bremsscheibe', part_number: 'A0004201220', unit: 'Stk', initial_qty: 4, unit_price_net: 80 }); eq(a.status, 201, JSON.stringify(a.data));
+  for (const pn of ['A 000 420 12 20', 'a000-420-12-20', 'A.000.420.12.20', 'A000 420/12 20']) {
+    const r = await U.ws.post('/api/stock', { name: 'Bremsscheibe', part_number: pn }); eq(r.status, 409, pn); eq(r.data.error, 'duplicate_item', pn);
+    eq(r.data.item_id, a.data.id, pn + ': vorhandener Artikel mitgeliefert'); eq(r.data.part_number, 'A0004201220'); eq(r.data.name, 'Bremsscheibe');
+  }
+  eq((await U.ws.post('/api/stock', { name: 'Bremsbelag', part_number: 'A 000 420 12 20' })).status, 201, 'andere Bezeichnung = eigener Artikel');
+  eq((await U.ws.post('/api/stock', { name: 'Bremsscheibe', part_number: 'A 000 420 12 21' })).status, 201, 'andere Nummer = eigener Artikel');
+  eq((await U.wsMuc.post('/api/stock', { name: 'Bremsscheibe', part_number: 'A 000 420 12 20' })).status, 201, 'anderes Lager erlaubt');
+  // Ändern auf eine andere Schreibweise eines vorhandenen Artikels → Konflikt
+  const c = (await U.ws.post('/api/stock', { name: 'Bremsscheibe', part_number: 'X-1' })).data.id;
+  const ch = await U.ws.patch(`/api/stock/${c}`, { part_number: 'A 0004 2012 20' }); eq(ch.status, 409); eq(ch.data.error, 'duplicate_item'); eq(ch.data.item_id, a.data.id);
+  // Import: gleiche Nummer anders geschrieben = unverändert, Schreibweise im Lager genannt; innerhalb der Datei doppelt
+  const imp = await U.fleet.req('POST', '/api/stock/import?dry_run=1&site=DORTMUND', 'Bezeichnung;Teilenummer;Bestand\nBremsscheibe;A 000 420 12 20;2\nBremsscheibe;A000-420-1220;1\nBremsscheibe;A0004201220;1\nÖlfilter;A 000 180 26 09;3', H);
+  eq(imp.status, 200, JSON.stringify(imp.data)); eq(imp.data.created, 1, 'nur Ölfilter neu'); eq(imp.data.unchanged, 1);
+  const r1 = imp.data.rows.find((x) => x.line === 2); eq(r1.action, 'unverändert'); eq(r1.item_id, a.data.id); eq(r1.existing_part_number, 'A0004201220', 'Schreibweise im Lager');
+  ok(imp.data.skipped.some((x) => x.line === 3 && x.reason === 'doppelt in der Datei') && imp.data.skipped.some((x) => x.line === 4), 'andere Schreibweise in der Datei = doppelt');
+  const same = await U.fleet.req('POST', '/api/stock/import?dry_run=1&site=DORTMUND', 'Bezeichnung;Teilenummer\nBremsscheibe;A0004201220', H);
+  eq(same.data.rows[0].existing_part_number, undefined, 'gleiche Schreibweise: kein Hinweis');
+  // Umlagerung: Ziellager führt den Artikel in anderer Schreibweise → derselbe Zielartikel (auch über die Nummer allein)
+  const muc = (await U.wsMuc.get('/api/stock')).data.items.find((i) => i.name === 'Bremsscheibe' && i.site === 'MUENCHEN');
+  const tr = await U.ws.post(`/api/stock/${a.data.id}/transfer`, { to_site: 'MUENCHEN', qty: 1 }); eq(tr.status, 201, JSON.stringify(tr.data));
+  eq(tr.data.target_item_id, muc.id, 'kein zweiter Artikel im Ziellager'); eq(tr.data.target_created, false);
+  const oil = (await U.ws.post('/api/stock', { name: 'Ölfilter Motor', part_number: 'A0001802609', initial_qty: 2 })).data.id;
+  const mo = (await U.wsMuc.post('/api/stock', { name: 'Filter Öl', part_number: 'A 000 180 26 09' })).data.id;
+  const tr2 = await U.ws.post(`/api/stock/${oil}/transfer`, { to_site: 'MUENCHEN', qty: 1 }); eq(tr2.data.target_item_id, mo, 'eindeutige Teilenummer anders geschrieben, andere Bezeichnung');
+  // „In anderem Lager vorrätig“ (Bestellvorschlag) mit gleicher Regel
+  const { otherStock } = await import('../src/stock.js');
+  { const m = await otherStock(U.ws.env, 'test', [{ id: 'x', site: 'DORTMUND', name: 'Bremsscheibe', part_number: 'A-000-420-12-20' }]); ok((m.get('x') || []).some((o) => o.site === 'MUENCHEN' && o.item_id === muc.id), 'anderes Lager mit anderer Schreibweise'); }
+  // Oberfläche: Hinweis beim Tippen und nach 409, Importvorschau
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("items.filter((i) => i.site === site && pnCompact(i.part_number) === c)") && app.includes('nfm.part_number.oninput = pnDupCheck;'), 'Hinweis beim Tippen, gleiches Lager, gleiche Regel wie die Suche');
+  ok(app.includes("if (err.code === 'duplicate_item' && err.data && err.data.item_id)") && app.includes('data-pndupitem'), 'Link auf den vorhandenen Artikel nach 409');
+  ok(app.includes("t('stock_pn_spelled').replace('{pn}', () => x.existing_part_number)"), 'Importvorschau nennt die Schreibweise');
+  const src = fs.readFileSync(new URL('../src/stock.js', import.meta.url), 'utf8');
+  ok(src.includes("const pnNorm = (pn) => String(pn || '').toLocaleLowerCase('de').replace(/[\\s\\-./]/g, '');"), 'gleiche Trenner wie pnKey/pnCompact');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].stock_pn_dup && STRINGS[l].stock_pn_spelled.includes('{pn}'), l + ': Texte'); ok(STRINGS[l].help_stock_s.includes('A 000 420 12 20') && STRINGS[l].help_stock_s.split('A0004201220').length > 2, l + ': Hilfe'); }
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
