@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (04.11.2026, Backlog 969, Blickwinkel „Fahrer schreibt hastig im Telegrammstil – GROSSBUCHSTABEN, Abkürzungen, Emojis“):
 # „BREMSEN ZIEHEN NACH LINKS“, „Öl-Warnung“, „Diesel verliert“, „bin rückwärts gegen Poller 🤦“ zeigen die passenden Hinweise;
-# „Öl verliert nicht mehr“ keinen Leck-Hinweis. Außerdem „Reifen ist durch den Nagel platt“ und „Kupplung am Auflieger defekt“ (Backlog 967).
+# „Öl verliert nicht mehr“ keinen Leck-Hinweis; Backlog 970: „ПРОБИЛО КОЛЕСО“, „в'їхав у стовпчик“, „здав назад у ворота“, „OIL WARNING“. Außerdem „Reifen ist durch den Nagel platt“ und „Kupplung am Auflieger defekt“ (Backlog 967).
 # DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
@@ -9,8 +9,8 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 YES={'de':[('#brake','BREMSEN ZIEHEN NACH LINKS'),('#warnlight','Öl-Warnung'),('#leak','Diesel verliert'),('#fixobj','bin rückwärts gegen Poller 🤦'),('#flat','Reifen ist durch den Nagel platt'),('#coupling','Kupplung am Auflieger defekt')],
-     'uk':[('#leak','Öl verliert 💧'),('#fixobj','bin gegen Poller.')],
-     'en':[('#brake','bremsen ziehen nach links!!'),('#warnlight','BATTERIE-WARNUNG')]}
+     'uk':[('#leak','Öl verliert 💧'),('#fixobj','bin gegen Poller.'),('#flat','ПРОБИЛО КОЛЕСО'),('#fixobj',"в'їхав у стовпчик"),('#fixobj','здав назад у ворота')],
+     'en':[('#brake','bremsen ziehen nach links!!'),('#warnlight','BATTERIE-WARNUNG'),('#warnlight','OIL WARNING')]}
 NO={'de':('#leak','Öl verliert nicht mehr'),'uk':('#gear','kupplung am auflieger defekt'),'en':('#leak','Diesel verliert er nicht')}
 fails=[]
 def check(c,m):

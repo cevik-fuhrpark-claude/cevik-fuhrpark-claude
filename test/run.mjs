@@ -32768,6 +32768,16 @@ await test('Backlog 969 (Blickwinkel „Fahrer schreibt hastig im Telegrammstil 
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-telegrammstil.py|'), 'UI-Skript in pruefen.sh');
 });
 
+await test('Backlog 970 (Telegrammstil UK/RU/EN, Folge aus 969): „ПРОБИЛО КОЛЕСО“/„прокололо колесо“ → Panne; „в\'їхав/в\'їхала у стовпчик/шлагбаум“, „здав/сдал назад в стовп“, „задом у ворота“ → Anprall; „OIL WARNING“ → Warnleuchte; „oil warning is gone“, „no oil warning“, „здав назад на парковку“ ohne Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => new RegExp(app.match(new RegExp(`^const ${n} = \\/(.+)\\/i;`, 'm'))[1], 'i');
+  const H = { FLAT: rx('FLAT_HINT'), WARN: rx('WARNLIGHT_HINT'), FIX: rx('FIXOBJ_HINT') };
+  for (const [k, x] of [['FLAT', 'ПРОБИЛО КОЛЕСО'], ['FLAT', 'пробило колесо'], ['FLAT', 'прокололо колесо'], ['FIX', "в'їхав у стовпчик"], ['FIX', 'в’їхала у шлагбаум'], ['FIX', 'здав назад в стовп'], ['FIX', 'сдал назад в столб'], ['FIX', 'задом у ворота'], ['FIX', 'въехал в столб'], ['WARN', 'OIL WARNING'], ['WARN', 'battery warning']])
+    ok(H[k].test(recurFix(x)), k + '-Hinweis erwartet: ' + x);
+  for (const [k, x] of [['WARN', 'oil warning is gone'], ['WARN', 'no oil warning'], ['FIX', 'здав назад на парковку']]) ok(!H[k].test(recurFix(x)), 'kein ' + k + '-Hinweis: ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
