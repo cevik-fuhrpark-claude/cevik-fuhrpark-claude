@@ -723,6 +723,39 @@ document.addEventListener('paste', (e) => {
   if (tf && !tf.disabled) { const tr = pasteTime(raw.replace(/(^|[^\d])\d{4}-\d{2}-\d{2}(?=t|\s|$)/gi, '$1 ').replace(/(^|[^\d])\d{1,2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{2,4}(?!\d)/g, '$1 ')); if (tr && tr.t) pasteSet(tf, tr.t); }
   if (!el.checkValidity()) el.reportValidity();
 });
+// Backlog 980 (Blickwinkel „Leitung überträgt die FIN aus Zulassungsbescheinigung, Rechnung oder E-Mail“): Eingefügtes
+// „FIN: WDB…“, „Fahrgestellnummer WDB…“, „WDB 963 403 1L 123456“ oder eine Rechnungszeile mit Kennzeichen/km wurde abgeschnitten
+// (maxlength 25) bzw. vom Server abgewiesen („FINWDB…“ = 20 Zeichen). Bezeichnung entfernen (gleiche Regel wie `normalizeVin` im
+// Server), genau eine 17-stellige FIN übernehmen; mehrere verschiedene → Meldung, nichts eingetragen. I/O/Q werden nie ersetzt
+// (nur Hinweis „meist 1 bzw. 0“) – die FIN bleibt so, wie sie im Beleg steht.
+const VIN_LBL = /^\s*(?:(?:fin|vin)(?:[-\s.]*(?:nr|nummer|code|no|number|код))?|fahrgestell(?:[-\s.]*(?:nummer|nr))?|fahrzeug[-\s.]*ident(?:ifizierungs|ifikations)?[-\s.]*(?:nummer|nr)|vehicle\s+identification\s+(?:number|no)|chassis(?:[-\s.]*(?:no|number|nr|nummer))?|ідентифікаційний\s+номер(?:\s+транспортного\s+засобу)?|номер\s+(?:шасі|кузова))\.?\s*(?:\(\s*e\s*\)\s*)?[:#=]\s*|^\s*(?:fahrgestell(?:[-\s.]*(?:nummer|nr))?|fahrzeug[-\s.]*ident(?:ifizierungs|ifikations)?[-\s.]*(?:nummer|nr)|vehicle\s+identification\s+(?:number|no)|vin[-\s]?код|ідентифікаційний\s+номер(?:\s+транспортного\s+засобу)?)\.?\s*(?:\(\s*e\s*\)\s*)?/i;
+const vinKey = (x) => { let c = String(x || '').normalize('NFKC').replace(/^\s*VIN:/i, '').replace(VIN_LBL, '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (c.length === 20 && /^(FIN|VIN)/.test(c)) c = c.slice(3); return c; };
+const vinOf = (raw) => {
+  const s = String(raw || '').normalize('NFKC').replace(/[   ]/g, ' ').trim(); if (!s || s.length > 300) return null;
+  const all = vinKey(s); if (all.length === 17) return { v: all };
+  const ok = (k) => k.length === 17 && /\d/.test(k) && /[A-Z]/.test(k); const found = new Set();
+  for (const line of s.split(/[\r\n;,|\t]+/)) {
+    const c = vinKey(line); if (ok(c)) { found.add(c); continue; }
+    for (const w of line.split(/\s+/)) { const k = vinKey(w); if (ok(k)) found.add(k); }
+  }
+  if (found.size > 1) return { e: 'many' };
+  return found.size ? { v: [...found][0] } : { e: 'none', c: all };
+};
+const vinCheck = (el) => {
+  const box = el.form && el.form.querySelector('#vinchk'); if (!box) return;
+  const c = vinKey(el.value); const msg = !c ? '' : /[IOQ]/.test(c) ? t('vin_ioq') : c.length !== 17 ? t('vin_len').replace('{n}', c.length) : '';
+  box.textContent = msg; box.hidden = !msg; const w = /[IOQ]/.test(c); box.classList.toggle('panel', w); box.classList.toggle('warn', w); box.classList.toggle('muted', !w);
+};
+document.addEventListener('paste', (e) => {
+  const el = e.target; if (!el || el.tagName !== 'INPUT' || el.name !== 'vin' || el.type === 'hidden' || el.readOnly || el.disabled) return;
+  const raw = e.clipboardData ? e.clipboardData.getData('text') : ''; const r = vinOf(raw); if (!r) return;
+  if (r.v && r.v === String(raw).trim()) return; // schon sauber – normal einfügen
+  e.preventDefault();
+  if (r.e === 'many') { toast(t('pv_many'), true); return; }
+  if (r.e === 'none') { if (!r.c || r.c.length > 25) { toast(t('pv_none'), true); return; } pasteSet(el, r.c); vinCheck(el); return; }
+  pasteSet(el, r.v); vinCheck(el);
+});
+document.addEventListener('input', (e) => { const el = e.target; if (el && el.tagName === 'INPUT' && el.name === 'vin' && el.type !== 'hidden') vinCheck(el); });
 // Backlog 977: Schadenzeitpunkt – Schnellwahl Heute/Gestern/Vorgestern (Fahrer am Handy, Kalender ist mühsam) und Hinweis,
 // wenn die Beschreibung „gestern“/„vorgestern“ nennt (nur Vorschlag mit Knopf, nie automatisch; Uhrzeit wird nie geraten)
 const occDescWord = (txt) => {
@@ -4240,7 +4273,7 @@ const mayCheck = () => ['driver', 'fleet', 'owner', 'workshop'].includes(S.me &&
 const mayReport = () => !!(S.me && S.me.role !== 'viewer');
 function vehicleForm(v = {}) {
   const f = (name, label, val, extra = '') => `<label>${esc(label)}</label><input name="${name}" value="${esc(val ?? '')}" ${extra}>`;
-  return `${v.trailer_vin ? `<input type="hidden" name="trailer_vin" value="${esc(v.trailer_vin)}">` : ''}${v.vin ? `<input type="hidden" name="vin" value="${esc(v.vin)}">` : f('vin', t('vin'), '', 'required minlength="17" maxlength="25" autocapitalize="characters" aria-describedby="vinhint"') + `<p class="small muted" id="vinhint">${esc(t('vin_hint_new'))}</p>`}
+  return `${v.trailer_vin ? `<input type="hidden" name="trailer_vin" value="${esc(v.trailer_vin)}">` : ''}${v.vin ? `<input type="hidden" name="vin" value="${esc(v.vin)}">` : f('vin', t('vin'), '', 'required minlength="17" maxlength="25" autocapitalize="characters" aria-describedby="vinhint"') + `<p class="small muted" id="vinhint">${esc(t('vin_hint_new'))}</p><p class="small" id="vinchk" role="status" aria-live="polite" hidden></p>`}
     ${f('plate', t('plate_label'), v.plate, 'required maxlength="20" autocapitalize="characters"')}
     <label>${esc(t('vehicle_kind'))}</label><select name="kind">${['lkw', 'anhaenger'].map((k) => `<option value="${k}"${(v.kind || 'lkw') === k ? ' selected' : ''}>${esc(t('vk_' + k))}</option>`).join('')}</select>
     ${f('site', t('site'), v.site, 'maxlength="60"')}${f('manufacturer', t('manufacturer'), v.manufacturer, 'maxlength="60"')}${f('model', t('model_label'), v.model, 'maxlength="60"')}${f('build_year', t('year'), v.build_year, 'inputmode="numeric" maxlength="4"')}
@@ -7531,7 +7564,7 @@ async function viewSearch() {
       const n = norm(q);
       // Treffer je Bereich höchstens 10 (Vorgänge 20) – Gesamtzahl und Hinweis „Suche genauer eingeben“ statt stillem Abschneiden
       const vHit = (k) => vehicles.filter((v) => [v.plate, v.vin, v.trailer_plate, v.truck_plate, v.manufacturer, v.model].some((x) => norm(x).includes(k)) || (v.former_plates || []).some((x) => norm(x).includes(k))); // früheres Kennzeichen (Backlog 256)
-      const ncq = plateNoCountry(q); let vAll = vHit(n); if (!vAll.length && ncq) vAll = vHit(norm(ncq)); const vs = vAll.slice(0, 10); // Länderkennung aus ausländischem Schreiben (Backlog 902)
+      const ncq = plateNoCountry(q); let vAll = vHit(n); if (!vAll.length && ncq) vAll = vHit(norm(ncq)); if (!vAll.length) { const fv = vinOf(q); if (fv && fv.v) vAll = vHit(norm(fv.v)); } /* eingefügte „FIN: …“ (Backlog 980) */ const vs = vAll.slice(0, 10); // Länderkennung aus ausländischem Schreiben (Backlog 902)
       const cr = await api('GET', '/api/cases?status=&limit=20&q=' + encodeURIComponent(q)); const cs = cr.cases;
       // Suche nur in den 500 jüngsten Schreiben – Hinweis statt stillem Abschneiden (20.10.2026)
       if (canFines && !fineList) { const fr = await api('GET', '/api/fines'); fineList = fr.fines; fineTrunc = !!fr.truncated; }

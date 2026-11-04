@@ -148,8 +148,15 @@ export function timingSafeEqual(a, b) {
 
 export function normalizeVin(v) {
   // „VIN:…“ = Fahrzeugschlüssel der App (z. B. Spalte „FIN-Schlüssel“ im Prüftermin-Export) – Präfix gehört nicht zur FIN
-  return String(v || '').replace(/^\s*VIN:/i, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  // Backlog 980 (Blickwinkel „Leitung überträgt die FIN aus Zulassungsbescheinigung, Rechnung oder E-Mail“): Bezeichnung vorne
+  // („FIN: …“, „Fahrgestellnummer …“, „Fahrzeug-Ident.-Nr. (E) …“, „VIN-код …“) gehört nicht zur FIN – vorher wurde z. B. „FINWDB…“
+  // (20 Zeichen) abgewiesen. Gleiche Regel im Client (`vinOf` in public/app.js).
+  let s = String(v || '').normalize('NFKC').replace(/^\s*VIN:/i, '').replace(VIN_LABEL, '');
+  s = s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (s.length === 20 && /^(FIN|VIN)/.test(s)) s = s.slice(3); // „FIN WDB…“ ohne Doppelpunkt
+  return s;
 }
+export const VIN_LABEL = /^\s*(?:(?:fin|vin)(?:[-\s.]*(?:nr|nummer|code|no|number|код))?|fahrgestell(?:[-\s.]*(?:nummer|nr))?|fahrzeug[-\s.]*ident(?:ifizierungs|ifikations)?[-\s.]*(?:nummer|nr)|vehicle\s+identification\s+(?:number|no)|chassis(?:[-\s.]*(?:no|number|nr|nummer))?|ідентифікаційний\s+номер(?:\s+транспортного\s+засобу)?|номер\s+(?:шасі|кузова))\.?\s*(?:\(\s*e\s*\)\s*)?[:#=]\s*|^\s*(?:fahrgestell(?:[-\s.]*(?:nummer|nr))?|fahrzeug[-\s.]*ident(?:ifizierungs|ifikations)?[-\s.]*(?:nummer|nr)|vehicle\s+identification\s+(?:number|no)|vin[-\s]?код|ідентифікаційний\s+номер(?:\s+транспортного\s+засобу)?)\.?\s*(?:\(\s*e\s*\)\s*)?/i;
 
 export function isValidVin(v) {
   return /^[A-HJ-NPR-Z0-9]{17}$/.test(v);

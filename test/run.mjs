@@ -2024,7 +2024,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('wh_m wh_hm ev_km_greater ev_km_smaller ext_km_lower tread_rise dc_km_lower dc_km_digits mf_km_digits imp_km_digits odo_digits kf_km_lower mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('vin_len wh_m wh_hm ev_km_greater ev_km_smaller ext_km_lower tread_rise dc_km_lower dc_km_digits mf_km_digits imp_km_digits odo_digits kf_km_lower mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -33004,6 +33004,41 @@ await test('Backlog 979 (Blickwinkel „Disposition sucht morgens einen Lkw mit 
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].av_combo_clear, `${l}.av_combo_clear`); ok(STRINGS[l].av_combo_clear_t && STRINGS[l].av_combo_clear_t.length > 40, `${l}.av_combo_clear_t`); }
 });
 
+await test('Backlog 980 (Blickwinkel „Leitung überträgt die FIN aus Zulassungsbescheinigung, Rechnung oder E-Mail“): Bezeichnung vorne („FIN: …“, „Fahrgestellnummer …“, „Fahrzeug-Ident.-Nr. (E) …“, „VIN-код …“) und Leerzeichen entfernt (Server + Einfügen), genau eine FIN aus einer Rechnungszeile, mehrere → Meldung; I/O/Q nie ersetzt, nur Hinweis; Suche findet eingefügte „FIN: …“ (DE/UK/EN)', async () => {
+  const { normalizeVin, isValidVin } = await import('../src/util.js');
+  const V = 'WDB9634031L123456';
+  for (const x of ['FIN: WDB9634031L123456', 'FIN WDB9634031L123456', 'fin: wdb 963 403 1L 123456', 'Fahrgestellnummer: WDB9634031L123456', 'Fahrgestellnummer WDB9634031L123456', 'Fahrgestell-Nr. WDB9634031L123456',
+    'Fahrzeug-Ident.-Nr. (E): WDB9634031L123456', 'Fahrzeug-Identifizierungsnummer WDB9634031L123456', 'FIN-Nr.: WDB-9634031-L-123456', 'VIN: WDB9634031L123456', 'VIN-код: WDB9634031L123456', 'VIN-код WDB9634031L123456',
+    'Vehicle identification number: WDB9634031L123456', 'Chassis No.: WDB9634031L123456', 'Ідентифікаційний номер: WDB9634031L123456', 'VIN:WDB9634031L123456', ' WDB9634031L123456 ', 'ＷＤＢ9634031L123456']) eq(normalizeVin(x), V, x);
+  eq(normalizeVin('WDB9634031L123456'), V, 'ohne Bezeichnung unverändert');
+  eq(normalizeVin('FINWDB9634031L12'), 'FINWDB9634031L12', 'kurze Eingabe mit FIN vorne nicht beschnitten (nur genau 20 Zeichen)');
+  eq(isValidVin(normalizeVin('FIN: WDB963403IL123456')), false, 'I bleibt I – nie ersetzt');
+  // API: Fahrzeug mit eingefügter Bezeichnung anlegen
+  const r = await users.fleet.post('/api/vehicles', { vin: 'Fahrgestellnummer: WDB 9634 031L 980980', plate: 'TT-FIN 980', site: 'Dortmund' });
+  eq(r.status, 201, 'mit Bezeichnung angelegt');
+  const g = await users.fleet.get('/api/vehicles/' + encodeURIComponent('VIN:WDB9634031L980980')); eq(g.status, 200); eq(g.data.vehicle.vin, 'WDB9634031L980980');
+  eq((await users.fleet.post('/api/vehicles', { vin: 'FIN: WDB963403IL98098O', plate: 'TT-FIN 981' })).status, 400, 'O/I weiterhin abgewiesen');
+  // Client: gleiche Regel wie der Server
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('const VIN_LBL = '); ok(a > 0, 'VIN_LBL vorhanden'); const b = app.indexOf('\n};', app.indexOf('const vinOf = (raw) => {')) + 3;
+  const { vinOf, vinKey } = new Function(app.slice(a, b) + '; return { vinOf, vinKey };')();
+  const util = fs.readFileSync(new URL('../src/util.js', import.meta.url), 'utf8');
+  eq(app.slice(a, app.indexOf('\n', a)).replace('const VIN_LBL = ', '').replace(/;$/, ''), util.slice(util.indexOf('export const VIN_LABEL = ') + 25, util.indexOf('\n', util.indexOf('export const VIN_LABEL = '))).replace(/;$/, ''), 'Bezeichnungsmuster in Client und Server gleich');
+  const P = (x) => { const r = vinOf(x); return r && (r.v || 'E:' + r.e); };
+  for (const [x, want] of [['FIN: WDB9634031L123456', V], ['WDB 963 403 1L 123456', V], ['Fahrzeug-Ident.-Nr. (E) WDB9634031L123456', V],
+    ['Rechnung 4711 – Kennzeichen SZ-YC 5501, FIN WDB9634031L123456, km-Stand 412.345', V], ['Kennzeichen: SZ-YC 5501\nFIN: WDB9634031L123456\nErstzulassung: 01.05.2019', V],
+    ['FIN WDB9634031L123456 / Anhänger WDB9634031L654321', 'E:many'], ['Zugmaschine WDB9634031L123456\nAnhänger WDB9634031L654321', 'E:many'], ['WDB9634031L123456 und nochmals WDB9634031L123456', V],
+    ['Rechnungsnummer 2026-11-04 Betrag 1.234,56 €', 'E:none'], ['WDB963', 'E:none']]) eq(P(x), want, x);
+  eq(vinOf('WDB963').c, 'WDB963', 'Teilstück wird übernommen (Zähler zeigt 6 von 17)'); eq(vinOf(''), null);
+  eq(vinOf('FIN: WDB963403IL123456').v, 'WDB963403IL123456', 'I bleibt I (Hinweis statt Ersetzen)');
+  eq(vinKey('FIN: wdb9634031l123456'), V);
+  ok(app.includes("if (r.e === 'many') { toast(t('pv_many'), true); return; }") && app.includes("el.name !== 'vin'"), 'Handler nur für das FIN-Feld, mehrere → Meldung');
+  ok(app.includes('id="vinchk" role="status" aria-live="polite" hidden') && app.includes("/[IOQ]/.test(c) ? t('vin_ioq')"), 'Zähler/Hinweis I/O/Q im Formular');
+  ok(app.includes('if (!vAll.length) { const fv = vinOf(q); if (fv && fv.v) vAll = vHit(norm(fv.v)); }'), 'Suche: eingefügte „FIN: …“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['pv_many', 'pv_none', 'vin_len', 'vin_ioq']) ok(STRINGS[l][k] && STRINGS[l][k].length > 15, `${l}.${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].vin_len.includes('{n}') && STRINGS[l].vin_len.includes('17'), `${l}.vin_len`);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
