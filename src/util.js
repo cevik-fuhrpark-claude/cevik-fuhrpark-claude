@@ -1,5 +1,5 @@
 // [CLAUDE] Hilfsfunktionen ohne externe Abhängigkeiten (Cloudflare Workers / WebCrypto)
-import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty, moneyIn, KM_UNIT_RX, unitIn } from '../public/hours.js';
+import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty, moneyIn, moneyForeign, KM_UNIT_RX, unitIn } from '../public/hours.js';
 
 export const nowIso = () => new Date().toISOString();
 // Zeitstempel für Änderungen mit Vergleich auf den gelesenen Stand (updated_at): immer später als der alte Wert, auch bei gleicher Millisekunde
@@ -295,6 +295,8 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
     }
     // Backlog 984: ausgeschriebene Währung aus Diktat/Nachricht („120,50 Euro“, „120 Euro 50“, „50 Cent“, „120 євро“) über `moneyIn` (public/hours.js)
     if (cents || money) { const w = moneyIn(t); if (w !== null) t = w; }
+    // Backlog 1001: Betrag in fremder Währung („1.250 zł“, „PLN 1250“, „4.800 Kč“) mit eigener Meldung statt „ungültige Zahl“ – nie umrechnen
+    if (cents || money) { const fx = moneyForeign(t); if (fx) throw bad('validation', `${field}: „${t.slice(0, 40)}“ ist ein Betrag in ${fx} – bitte den Euro-Betrag laut Beleg bzw. Abrechnung eingeben (die App rechnet nicht um).`); }
     // Backlog 986: Profiltiefe/Luftdruck mit Einheit bzw. Bezeichnung („6,5 mm“, „Profil 6,5“, „8,5 bar“, „8,5 бар“) über `unitIn` (public/hours.js), keine Umrechnung
     if (unit) { const w = unitIn(t, unit); if (w !== null) t = w; }
     if (cents || money) t = t.replace(/^(€|eur)\s*/i, '').replace(/\s*(€|eur)$/i, '');

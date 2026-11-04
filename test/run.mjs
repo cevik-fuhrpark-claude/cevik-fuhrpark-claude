@@ -33603,6 +33603,47 @@ await test('Backlog 1000 (Folge aus 999, Blickwinkel „Rückrufschreiben/Liefer
   const { STRINGS } = await import('../public/i18n.js');
   ok(STRINGS.de.ptu_hint.includes('„re 2026 0815“') && STRINGS.uk.ptu_hint.includes('«re 2026 0815»') && STRINGS.en.ptu_hint.includes('“re 2026 0815”'), 'Hinweis DE/UK/EN');
 });
+await test('Backlog 1001 (Blickwinkel „Lkw-Panne in Polen/Tschechien – Fremdwerkstatt rechnet in Landeswährung“): Betrag in fremder Währung („1.250 zł“, „PLN 1250“, „4.800 Kč“, „CHF 380“, „2 500 грн“) mit eigener Meldung DE/UK/EN statt „ungültige Zahl“, nie umgerechnet, nichts gebucht; Euro-Schreibweisen unverändert; Hinweis am Feld', async () => {
+  const { num } = await import('../src/util.js'); const { moneyForeign } = await import('../public/hours.js');
+  const N = (v) => num(v, { min: 0, max: 1e7, nullable: true, cents: true, net: true, field: 'Betrag', decimalComma: true });
+  for (const [v, c] of [['1.250 zł', 'PLN'], ['1250 zl', 'PLN'], ['PLN 1250', 'PLN'], ['1.250,00 złotych', 'PLN'], ['4.800 Kč', 'CZK'], ['CZK 4800', 'CZK'], ['CHF 380', 'CHF'], ['380 Fr.', 'CHF'],
+    ['12.000 Ft', 'HUF'], ['950 lei', 'RON'], ['£ 95', 'GBP'], ['95 GBP', 'GBP'], ['$120', 'USD'], ['120 USD', 'USD'], ['2 500 грн', 'UAH'], ['2500 ₴', 'UAH'], ['1.240,- zł', 'PLN'], ['3.500 kr', 'DKK/SEK/NOK'], ['400 лв', 'BGN']]) {
+    eq(moneyForeign(v), c, v);
+    let e = null; try { N(v); } catch (x) { e = x; }
+    ok(e && e.message === `Betrag: „${v}“ ist ein Betrag in ${c} – bitte den Euro-Betrag laut Beleg bzw. Abrechnung eingeben (die App rechnet nicht um).`, v + ' → ' + (e && e.message));
+  }
+  // netto-Zusatz wird wie bisher entfernt, die Währung trotzdem erkannt; brutto bleibt die Brutto-Meldung
+  let e = null; try { N('1.250,00 zł netto'); } catch (x) { e = x; } ok(e && /ist ein Betrag in PLN/.test(e.message), 'netto + zł');
+  e = null; try { N('1.250 zł brutto'); } catch (x) { e = x; } ok(e && /Bruttobetrag/.test(e.message), 'brutto zuerst');
+  // Euro und reine Zahlen unverändert, Text ohne Zahl bzw. mit Zusatz nicht als Währung gedeutet
+  for (const [v, x] of [['1.250,00 €', 1250], ['EUR 99', 99], ['120 Euro 50', 120.5], ['1240,-', 1240], ['99,90', 99.9]]) { eq(moneyForeign(v), null, v); eq(N(v), x, v); }
+  for (const v of ['zł', 'PLN', 'ca. 1250 zł', '1250 zł + 23 % VAT', 'Fr. Müller', '12 Stk']) eq(moneyForeign(v), null, 'keine Währung: ' + v);
+  e = null; try { num('5 zł', { min: 0, max: 99, field: 'Menge' }); } catch (x) { e = x; } ok(e && /ungültige Zahl/.test(e.message), 'nur Betragsfelder');
+  // Ende-zu-Ende: Fremdleistung, Lagerpreis, Bußgeld – abgewiesen, nichts gespeichert
+  const { e: E, U, cmd, toRepair, V1 } = await freshWorld(); const db = E.DB.db; const a = await toRepair();
+  let r = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Serwis Truck Poznań', invoice_no: 'FV-1001', amount_net: '1.250,00 zł' }); eq(r.status, 400);
+  ok(/ist ein Betrag in PLN/.test(r.data.message || r.data.error || JSON.stringify(r.data)), 'Meldung nennt PLN');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM external_costs WHERE case_id=? AND invoice_no='FV-1001'`).get(a).n, 0, 'nichts gebucht');
+  r = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Serwis Truck Poznań', invoice_no: 'FV-1001', amount_net: '291,40 €' }, 'Original 1.250,00 PLN'); eq(r.status, 200, JSON.stringify(r.data));
+  eq(db.prepare(`SELECT amount_net FROM external_costs WHERE case_id=? AND invoice_no='FV-1001'`).get(a).amount_net, 291.4, 'Euro-Betrag gebucht');
+  r = await U.fleet.post('/api/stock', { site: 'DORTMUND', name: 'Filter 1001', unit_price_net: '120 Kč' }); eq(r.status, 400, 'Lagerpreis CZK');
+  r = await U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Policja Słubice', reference: 'AZ-1001', offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 864e5).toISOString(), plate_in_letter: 'SZ YC 5513', amount_eur: 'PLN 500' });
+  eq(r.status, 400, 'Bußgeld PLN'); ok(/ist ein Betrag in PLN/.test(JSON.stringify(r.data)), 'Bußgeld-Meldung ' + JSON.stringify(r.data));
+  void V1;
+  // Übersetzung der Server-Meldung
+  const { translateValidation, STRINGS } = await import('../public/i18n.js');
+  const msg = 'Betrag: „1.250 zł“ ist ein Betrag in PLN – bitte den Euro-Betrag laut Beleg bzw. Abrechnung eingeben (die App rechnet nicht um).';
+  eq(translateValidation('en', msg), 'Amount: “1.250 zł” is an amount in PLN – please enter the euro amount from the document or statement (the app does not convert currencies).');
+  ok(/^Сума: «1\.250 zł» – це сума у PLN/.test(translateValidation('uk', msg) || ''), 'UK: ' + translateValidation('uk', msg));
+  eq(translateValidation('en', msg.replace('PLN', 'DKK/SEK/NOK').replace('zł', 'kr')).includes('DKK/SEK/NOK'), true, 'Code mit Schrägstrich');
+  // Oberfläche: Hinweis am Betragsfeld, Texte und Hilfe DE/UK/EN
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].money_fx.includes('{c}'), 'money_fx ' + l); ok(STRINGS[l].help_costlimit_s.includes('4.800 Kč'), 'Hilfe ' + l); }
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/import \{[^}]*moneyForeign[^}]*\} from '\.\/hours\.js'/.test(app), 'app.js importiert moneyForeign');
+  ok(app.includes("const fx = moneyForeign(el.value); if (fx) { el.setCustomValidity(t('money_fx')") && app.includes('delete el.dataset.cfpFx; el.setCustomValidity(\'\');'), 'Feldhinweis gesetzt und bei Eingabe aufgehoben');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-fremdwaehrung.py|'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

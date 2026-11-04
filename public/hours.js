@@ -204,6 +204,32 @@ export function moneyIn(raw) {
   return null;
 }
 
+// Backlog 1001 (Blickwinkel „Lkw-Panne in Polen/Tschechien – Fremdwerkstatt rechnet in Landeswährung“): „1.250 zł“, „PLN 1250“, „4.800 Kč“,
+// „CHF 380“, „£ 95“, „2 500 грн“ wurden nur als „ungültige Zahl“ abgewiesen – unklar, warum. Erkannt wird ein Betrag mit fremder Währung vorn oder
+// hinten (nur Ziffern/Trenner dazwischen); Ergebnis ist der ISO-Code für eine eigene Meldung. Es wird nie umgerechnet (kein Kurs wird angenommen):
+// der Euro-Betrag steht auf der Rechnung, der Kreditkarten-/Kontoabrechnung bzw. im Bescheid. Ohne Lookbehind (ältere iOS, Backlog 794).
+const FX_W = [
+  ['PLN', 'zł|zl|pln|złotych|złote|złoty|zlotych|zloty|zlotys|злотих|злотий|злотых'],
+  ['CZK', 'kč|kc|czk|korun|koruna|koruny|крон'],
+  ['CHF', 'chf|sfr|fr'],
+  ['HUF', 'ft|huf|forint|forints|форинтів'],
+  ['RON', 'lei|ron|leu'],
+  ['BGN', 'лв|bgn|leva|lev'],
+  ['DKK/SEK/NOK', 'dkk|sek|nok|kr'],
+  ['GBP', '£|gbp|pounds?'],
+  ['USD', '\\$|usd|us\\$|dollars?|доларів|долларов'],
+  ['UAH', 'грн|₴|uah|гривень|гривні|гривня|гривен|hryvnias?'],
+  ['RUB', '₽|руб|rub|рублів|рублей'],
+  ['TRY', '₺|tl|try'],
+];
+const FX_NUM = '\\d[\\d.,\'’ \\-–—]*';
+const FX_RX = FX_W.map(([code, w]) => [code, new RegExp(`^(?:${w})\\.?\\s*${FX_NUM}$|^${FX_NUM}\\s*(?:${w})\\.?$`, 'i')]);
+export function moneyForeign(raw) {
+  const s = String(raw ?? '').replace(/[\s  ]+/g, ' ').trim(); if (!s || s.length > 40 || !/\d/.test(s)) return null;
+  for (const [code, rx] of FX_RX) if (rx.test(s)) return code;
+  return null;
+}
+
 // Backlog 985 (gleicher Blickwinkel, km-Stand): Diktat schreibt die Einheit aus – „123.456 Kilometer“, „123 456 кілометрів“, „123456 километров“,
 // „123456 kilometres“ – vorher „ungültige Zahl“ bzw. am Handy „Format stimmt nicht“ (Muster der km-Felder). Bezeichnung vorne wie Backlog 972.
 // Server (`kmNum` in src/util.js) und Oberfläche (km-Feld wird beim Verlassen umgeschrieben) gemeinsam; Mehrdeutiges („123,456“) bleibt beim Server.

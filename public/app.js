@@ -8,7 +8,7 @@ import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentF
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday, STATES } from './holidays.js';
-import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, kmIn, unitIn, tireSizeSame, tireSizeFmt } from './hours.js';
+import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, moneyForeign, kmIn, unitIn, tireSizeSame, tireSizeFmt } from './hours.js';
 import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen, tzDiff, nextOpenLocal, holidayGaps, phoneIn } from './emhours.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
@@ -642,10 +642,13 @@ const MONEY_FIELD = /^(amount_eur|amount_net|appraisal_net|deductible_net|reimbu
 document.addEventListener('change', (e) => {
   const el = e.target; if (!el || el.tagName !== 'INPUT' || el.readOnly || el.disabled) return;
   if (!(MONEY_FIELD.test(el.name || '') || el.id === 'ie_price' || /^rcp\d+$/.test(el.id || ''))) return;
+  // Backlog 1001: fremde Währung („1.250 zł“, „PLN 1250“) gleich am Feld melden (der Server weist sie ebenso ab) – nie umrechnen
+  const fx = moneyForeign(el.value); if (fx) { el.setCustomValidity(t('money_fx').replace('{c}', () => fx)); el.dataset.cfpFx = '1'; el.reportValidity(); return; }
   const w = moneyIn(el.value); if (w === null) return;
   const v = /^\d+\.\d{2}$/.test(w) ? decIn(w) : w; if (v === el.value) return;
   el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));
 }, true);
+document.addEventListener('input', (e) => { const el = e.target; if (el && el.dataset && el.dataset.cfpFx) { delete el.dataset.cfpFx; el.setCustomValidity(''); } }, true);
 // Backlog 985: km-Stand diktiert mit ausgeschriebener Einheit/Bezeichnung („123.456 Kilometer“, „Kilometerstand 123 456“, „123 456 кілометрів“) –
 // das Muster der km-Felder meldete sonst „Format stimmt nicht“, maxlength 12 schnitt „123.456 Kilometer“ ab (jetzt 40). Beim Verlassen eines km-Felds nur Einheit/Bezeichnung entfernen (Ziffern unverändert).
 const KM_FIELD = /^(km|odometer_km|done_km|due_km|last_done_km|next_due_km)$/;
