@@ -32346,7 +32346,7 @@ await test('Backlog 931 (verneinte Symptome UK/RU/EN): „гальма не ск
 
 await test('Backlog 932 (Gebäude statt Lkw): „Tür vom Büro geht nicht zu“, „im Büro ist das Licht kaputt“, „Licht in der Halle geht nicht“, „Heizung im Büro geht nicht“, „office door won\'t close“, „двері в офісі не зачиняються“ zeigen keine Lkw-Hinweise; „Fahrertür klemmt“, „In der Halle ging die Tür nicht zu“, „Licht im Fahrerhaus“ und Zusammenstoß mit dem Tor („Tor vom Hof gerammt“) weiter mit Hinweis', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("const recurFix = (s) => noFunc(noPlace(String(s || '')"), 'recurFix blendet Gebäude-Teilsätze aus');
+  ok(app.includes("const recurFix = (s) => noFunc(noPlace(clauseCut(String(s || '')"), 'recurFix blendet Gebäude-Teilsätze aus (Backlog 965: nach clauseCut)');
   ok(app.indexOf('const PLACE_SPAN') > app.indexOf('const FIX_WORD') && app.indexOf('const noPlace') < app.indexOf('const recurFix'), 'Reihenfolge');
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
   const all = [...app.matchAll(/^const ([A-Z_]+_HINT) = \/(.+)\/i;/mg)].map((m) => [m[1], new RegExp(m[2], 'i')]);
@@ -32680,6 +32680,17 @@ await test('Backlog 964 (Sonde russ. „ё“ und Keilriemen): Meldungstext wird
   for (const [k, x] of [['STEER', 'руль бьёт на скорости'], ['TYRE', 'колёса спускают'], ['BRAKE', 'замёрзли тормоза'], ['BRAKE', 'замерзли тормоза'], ['BRAKE', 'примерзли гальма'], ['VIBR', 'трясёт на скорости'], ['LEAK', 'масло течёт из двигателя'], ['WINDOW', 'стеклоподъёмник не работает'], ['ENGINE', 'ремень свистит ещё сильнее'], ['ENGINE', 'ремень генератора свистит'], ['ENGINE', 'ремінь свистить'], ['ENGINE', 'belt squealing'], ['ENGINE', 'fan belt squeals'], ['ENGINE', 'alternator belt snapped']]) ok(H(k).test(recurFix(x)), k + '-Hinweis fehlt: ' + x);
   for (const x of ['ремень безопасности скрипит', 'стяжной ремень порвался', 'seat belt squeaks', 'load belt squeaks', 'belt no longer squeals', 'ремень больше не свистит', 'ratchet strap broke']) ok(!H('ENGINE').test(recurFix(x)), 'kein Motor-Hinweis erwartet: ' + x);
   for (const x of ['замерзли окна', 'тормоза больше не замерзают']) ok(!H('BRAKE').test(recurFix(x)), 'kein Brems-Hinweis erwartet: ' + x);
+});
+
+await test('Backlog 965 (Blickwinkel „Fahrer diktiert per Sprachnachricht – ohne Satzzeichen“): Reparaturvermerk zu einem anderen Bauteil im selben Satz („lenkung zieht nach rechts das radio wurde gewechselt“, „колесо спускає а двірники замінили“, „steering pulls to the right and the radio was replaced“) blendet Lenkung/Reifen/Bremse nicht mehr aus; gleiches Bauteil, Mechaniker/Fürwort, Komma oder Gegensatz weiter als Vermerk; russ. „тормоза тянут влево“ → Bremse', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const H = (k) => new RegExp(app.match(new RegExp('^const ' + k + '_HINT = \\/(.+)\\/i;', 'm'))[1], 'i');
+  ok(app.indexOf('const clauseCut') < app.indexOf('const recurFix') && app.includes('noPlace(clauseCut('), 'clauseCut vor recurFix');
+  for (const [k, x] of [['STEER', 'also ich wollte sagen die lenkung zieht nach rechts das radio wurde gewechselt'], ['STEER', 'lenkung zieht nach rechts und das radio wurde gewechselt'], ['STEER', 'the steering pulls to the right and the radio was replaced'], ['TYRE', 'колесо спускає а двірники замінили'], ['BRAKE', 'тормоза тянут влево а зеркало заменили на прошлой неделе'], ['BRAKE', 'тормоза тянут влево'], ['BRAKE', 'hallo also die bremse zieht nach links und der spiegel wurde letzte woche getauscht'], ['TYRE', 'tyre losing air on the rear and the wiper was fixed yesterday']]) ok(H(k).test(recurFix(x)), k + ' erwartet: ' + x);
+  for (const [k, x] of [['STEER', 'lenkung zieht nach rechts und das lenkrad wurde getauscht'], ['STEER', 'steering pulls right and the steering rack was replaced'], ['TYRE', 'колесо спускає а колесо вже замінили'], ['STEER', 'lenkung zieht nach rechts wurde aber schon repariert'], ['TARP', 'hole in the tarp again, although it was fixed last week']]) ok(k === 'TARP' ? H(k).test(recurFix(x)) : !H(k).test(recurFix(x)), (k === 'TARP' ? 'Hinweis erwartet (wiederkehrend): ' : 'kein Hinweis erwartet (gleiches Bauteil/Vermerk): ') + x);
+  eq(recurFix('lenkung zieht nach rechts das radio wurde gewechselt').includes('rechts. das radio'), true, 'Satzgrenze vor dem fremden Bauteil');
+  for (const x of ['die bremse quietscht und der mechaniker hat sie repariert', 'reifen verliert luft, der wurde aber getauscht', 'bremse zieht nach links und die bremsen wurden gestern repariert']) ok(!/\.\s/.test(recurFix(x).replace(/\s+$/, '')), 'keine Satzgrenze: ' + x);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
