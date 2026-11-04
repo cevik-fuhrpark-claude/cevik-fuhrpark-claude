@@ -33451,6 +33451,18 @@ await test('Backlog 994 (Blickwinkel „Bescheid mit Briefkopf in Großschrift �
   const { STRINGS } = await import('../public/i18n.js');
   ok(STRINGS.de.help_fines_s.includes('STADT MÜNCHEN') && STRINGS.en.help_fines_s.includes('STADT MÜNCHEN') && STRINGS.uk.help_fines_s.includes('STADT MÜNCHEN'), 'Hilfe DE/UK/EN');
 });
+await test('Backlog 995 (Blickwinkel „Kollegin mit ukrainischer/englischer Tastatur sucht „Munchen“, „Dusseldorf“, „Strasse“): globale Suche findet Behörde des Bußgelds und Vertragspartner auch ohne Umlaute (ü = ue = u, ß = ss, wie Lager/Hilfe); Hilfe DE/UK/EN', async () => {
+  const { helpNorm } = await import('../public/help.js');
+  for (const [hay, q] of [['Landeshauptstadt München – Straßenverkehrsbehörde', 'munchen'], ['Landeshauptstadt München', 'Muenchen'], ['Straßenverkehrsbehörde', 'strasse'], ['Stadt Düsseldorf', 'dusseldorf'], ['Zentrale Bußgeldstelle', 'bussgeld']]) ok(helpNorm(hay).includes(helpNorm(q)), hay + ' / ' + q);
+  ok(!helpNorm('Stadt Münster').includes(helpNorm('munchen')), 'Münster ≠ München');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i = app.indexOf('async function viewSearch'); const body = app.slice(i, app.indexOf('\nasync function ', i + 10));
+  ok(body.includes('(hq.length >= 3 && helpNorm(f.authority).includes(hq))'), 'Bußgeld-Behörde mit helpNorm');
+  ok(body.includes('(hq.length >= 3 && helpNorm(c.partner).includes(hq))'), 'Vertragspartner mit helpNorm');
+  ok(body.indexOf('const hq = helpNorm(q)') < body.indexOf('helpNorm(f.authority)'), 'hq vor der Verwendung deklariert');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_fines_s.includes('„Munchen“') && STRINGS.en.help_fines_s.includes('“Munchen”') && STRINGS.uk.help_fines_s.includes('«Munchen»'), 'Hilfe DE/UK/EN');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

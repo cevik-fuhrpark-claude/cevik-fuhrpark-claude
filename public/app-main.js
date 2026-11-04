@@ -4769,13 +4769,14 @@ async function viewSearch() {
       const clr = isMgr() ? await api('GET', '/api/claims?filter=alle&q=' + encodeURIComponent(q.slice(0, 60))) : null;
       await loadHelp(S.lang).catch(() => {}); // Hilfe-Schritte (Backlog 597); fehlt das Paket (offline ohne Cache), ohne Hilfe-Treffer
       if (my !== seq) return;
-      const lq = q.toLowerCase();
-      const refQ = q.toUpperCase().replace(/[ ./-]/g, '').replace(/^(AZ|AKTENZEICHEN):?/, ''); const fAll = canFines ? fineList.filter((f) => [f.plate, f.plate_in_letter].some((x) => norm(x).includes(n)) || [f.fine_no, f.reference, f.authority].some((x) => String(x || '').toLowerCase().includes(lq)) || (refQ.length >= 4 && String(f.reference || '').toUpperCase().replace(/[ ./-]/g, '').includes(refQ))) : []; /* Backlog 993: Aktenzeichen ohne Leerzeichen/Punkte/Striche */ const fs = fAll.slice(0, 10);
-      const hq = helpNorm(q); // Lager: Umlaute/ue gleich (wie Lagerliste und Hilfe)
+      const lq = q.toLowerCase(); const hq = helpNorm(q); // Lager, Behörde, Vertragspartner: Umlaute/ue/ss gleich (Backlog 995)
+      const refQ = q.toUpperCase().replace(/[ ./-]/g, '').replace(/^(AZ|AKTENZEICHEN):?/, ''); const fAll = canFines ? fineList.filter((f) => [f.plate, f.plate_in_letter].some((x) => norm(x).includes(n)) || [f.fine_no, f.reference, f.authority].some((x) => String(x || '').toLowerCase().includes(lq)) || (hq.length >= 3 && helpNorm(f.authority).includes(hq)) || (refQ.length >= 4 && String(f.reference || '').toUpperCase().replace(/[ ./-]/g, '').includes(refQ))) : []; /* Backlog 993: Aktenzeichen ohne Leerzeichen/Punkte/Striche */ const fs = fAll.slice(0, 10);
+      // Backlog 995 (Blickwinkel „Kollegin mit ukrainischer/englischer Tastatur sucht „Munchen“, „Dusseldorf“, „Strasse“): Behörde des
+      // Bußgelds und Vertragspartner wie Lager und Hilfe mit `helpNorm` (ü = ue = u, ß = ss) – vorher fand nur die genaue Schreibweise mit Umlaut.
       const sAll = canStock && hq ? stockList.filter((i) => stockHit(i, q)) : []; // Backlog 862: Teilenummer auch ohne Leerzeichen/Bindestrich
       const ss = sAll.slice(0, 10);
       const nk = (x) => norm(x).replace(/[\s\-./]/g, ''); const nq = nk(q);
-      const kAll = ctList && nq ? ctList.filter((c) => (c.contract_no && nk(c.contract_no).includes(nq)) || norm(c.partner).includes(n)) : []; const ks = kAll.slice(0, 10);
+      const kAll = ctList && nq ? ctList.filter((c) => (c.contract_no && nk(c.contract_no).includes(nq)) || norm(c.partner).includes(n) || (hq.length >= 3 && helpNorm(c.partner).includes(hq))) : []; const ks = kAll.slice(0, 10);
       const clAll = clr ? clr.claims : []; const cls = clAll.slice(0, 10);
       const more = (shown, all) => (all > shown ? `<p class="small muted" data-more>${esc(t('search_more').replace('{n}', shown).replace('{m}', all))}</p>` : '');
       // Hilfe-Abschnitte der eigenen Rolle (gleiche Suche wie auf der Hilfeseite)
