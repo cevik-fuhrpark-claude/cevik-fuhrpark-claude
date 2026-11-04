@@ -1,5 +1,5 @@
 // [CLAUDE] Ersatzteillager: Bestand je Werkstatt, Zugang/Entnahme/Korrektur, Entnahme direkt aus dem Vorgang
-import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso, berlinWindowStartIso, roundCents, quoteCell , commaDec, pointDec, parseCsv } from './util.js';
+import { HttpError, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, qtyNum, oneOf, flag, berlinDate, berlinDateTime, isCalendarDate, berlinDayStartIso, berlinWindowStartIso, roundCents, quoteCell , commaDec, pointDec, parseCsv } from './util.js';
 import { audit, auditStmt } from './auth.js';
 import { stockNoteText } from '../public/check-labels.js';
 
@@ -124,7 +124,7 @@ export async function receipt(env, user, envName, body) {
     const it = items.get(ids[idx]);
     if (!it) throw bad('validation', `Position ${idx + 1}: ${NOT_IN_SITE}`);
     if (!it.active) throw bad('validation', `Position ${idx + 1}: Artikel ist deaktiviert.`);
-    const qty = r3(num(l.qty, { min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
+    const qty = r3(qtyNum(l.qty, it.unit, { min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
     if (!(qty > 0)) throw bad('validation', `Position ${idx + 1}: Menge muss größer 0 sein.`);
     const price = num(l.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
     stmts.push(env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
@@ -265,7 +265,7 @@ export async function addMovement(env, user, envName, id, body) {
   // er zählte sonst im Stichtagsbestand weiter, ließ sich aber weder zählen noch korrigieren
   const type = oneOf(body.type, ['zugang', 'entnahme', 'korrektur'], 'Buchungsart');
   // Mengen auf 3 Nachkommastellen wie Anzeige/Umlagerung/Inventur (0,9996 ergab sonst Anzeige 1 und später unbemerkt negativen Bestand)
-  let qty = r3(num(body.qty, { min: -1e6, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
+  let qty = r3(qtyNum(body.qty, it.unit, { min: -1e6, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
   const rkey = requestKey(body);
   const dup = rkey ? await env.DB.prepare('SELECT item_id, transfer_id, type, qty FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
   // Wiederholung nur, wenn derselbe Schlüssel an diesem Artikel als Buchung (keine Umlagerung) benutzt wurde – sonst 409 (18.10.2026: meldete still „duplicate“);
@@ -323,7 +323,7 @@ export async function setOrder(env, user, envName, id, body, expected = null) {
     return { ok: true };
   }
   if (!it.active) throw bad('validation', 'Artikel ist deaktiviert.');
-  const qty = r3(num(body.qty, { min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
+  const qty = r3(qtyNum(body.qty, it.unit, { min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
   if (qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
   const today = berlinDate();
   const on = body.ordered_on ? String(body.ordered_on) : today;
@@ -350,7 +350,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   const toSite = str(body.to_site, { required: true, max: 20, field: 'Ziellager' });
   if (toSite === it.site) throw bad('validation', 'Ziellager ist das eigene Lager.');
   if (!(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(toSite).first())) throw bad('validation', 'Unbekannte Werkstatt.');
-  const qty = r3(num(body.qty, { min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
+  const qty = r3(qtyNum(body.qty, it.unit, { min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
   if (qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
   const rkey = requestKey(body);
   const prevT = rkey ? await env.DB.prepare('SELECT transfer_id, item_id FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
@@ -458,7 +458,7 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
     if (seen.has(it.id)) throw bad('validation', `Artikel doppelt gezählt: ${it.name}`);
     seen.add(it.id);
     if (c.counted === '' || c.counted === null || c.counted === undefined) continue; // nicht gezählt = keine Buchung
-    const counted = Math.round(num(c.counted, { min: 0, max: 1e6, field: `Zählmenge ${it.name}`, decimalComma: commaDec(user), decimalPoint: pointDec(user) }) * 1000) / 1000;
+    const counted = Math.round(qtyNum(c.counted, it.unit, { min: 0, max: 1e6, field: `Zählmenge ${it.name}`, decimalComma: commaDec(user), decimalPoint: pointDec(user) }) * 1000) / 1000;
     countedList.push({ id: it.id, counted });
     const delta = Math.round((counted - it.on_hand) * 1000) / 1000;
     if (delta !== 0) diffs.push({ item_id: it.id, name: it.name, part_number: it.part_number, unit: it.unit, book: it.on_hand, counted, delta });

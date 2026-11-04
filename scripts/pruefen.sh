@@ -358,6 +358,7 @@ UI-Lager zwei Aufträge (Werkstatt): Abweisung am letzten Lagerteil aktualisiert
 UI-Doppelte Rechnung (Fremdleistung): Fundstelle, Häkchen „Trotzdem buchen“, neue Nummer entfernt den Hinweis|ui-doppelte-rechnung.py|/tmp/cfp-doppelte-rechnung.log
 UI-Fremdrechnung am Handy: „1.240,- €“ gebucht, „inkl. MwSt.“ als Bruttobetrag in der App-Sprache abgewiesen, DE/UK/EN 390/820/1366|ui-fremdrechnung-netto.py|/tmp/cfp-fremdrechnung-netto.log
 UI-Arbeitszeit in Minuten: Beispiel und Umrechnung unter dem Stundenfeld, „0:30“ gebucht, „1:75“ in der App-Sprache abgewiesen, DE/UK/EN 390/820/1366|ui-arbeitszeit-minuten.py|/tmp/cfp-arbeitszeit-minuten.log
+UI-Lager: Menge mit Einheit vom Lieferschein („3 Stk.“) gebucht, fremde Einheit („5 l“) in der App-Sprache abgewiesen, DE/UK/EN 390/820/1366|ui-lager-einheit.py|/tmp/cfp-lager-einheit.log
 UI-Sammeltermin (Prüftermine): mehrere UVV an einem Tag, Absprache nicht still ersetzt, Rollen|ui-sammeltermin.py|/tmp/cfp-sammeltermin.log
 UI-Heute zu tun nach dem Urlaub: Kostenfreigaben älteste zuerst, „+N“ führt zur gefilterten Vorgangsliste|ui-heute-zu-tun-urlaub.py|/tmp/cfp-heute-zu-tun-urlaub.log
 UI-Bußgeld ändern (Frist), deaktivierter Kandidat, Umgebung|ui-bussgeld-aendern.py|/tmp/cfp-bussgeld-aendern.log

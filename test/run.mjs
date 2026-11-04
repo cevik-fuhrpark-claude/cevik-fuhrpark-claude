@@ -32866,6 +32866,40 @@ await test('Backlog 973 (Blickwinkel „Mechaniker erfasst Arbeitszeit in Stunde
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-arbeitszeit-minuten.py'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 974 (Blickwinkel „Werkstatt bucht Teilemengen vom Lieferschein“): Menge mit passender Einheit („2 Stk.“, „5 l“, „2x“, „3 шт“) im Lager, Wareneingang, Inventur und am Auftrag; fremde Einheit mit eigener Meldung (DE/UK/EN), keine Umrechnung', async () => {
+  const { qtyNum } = await import('../src/util.js');
+  const o = { min: 0, max: 1e6, decimalComma: true };
+  for (const [v, u, x] of [['2 Stk.', 'Stk', 2], ['2 Stück', 'Stk', 2], ['2x', 'Stk', 2], ['2 x', 'Stk', 2], ['x3', 'Stk', 3], ['4 pcs', 'Stk', 4], ['3 шт', 'Stk', 3], ['3 шт.', 'Stk', 3],
+    ['5 l', 'Liter', 5], ['12,5 Liter', 'l', 12.5], ['20 л', 'Liter', 20], ['2,5 m', 'Meter', 2.5], ['1 Satz', 'Satz', 1], ['2 Kanister', 'Kanister', 2], ['2 kanister.', 'Kanister', 2], ['7', 'Liter', 7], [3, 'Stk', 3], ['-2 Stk', 'Stk', -2]])
+    eq(qtyNum(v, u, { ...o, min: -10 }), x, `${v} (${u})`);
+  for (const [v, u, rx] of [['5 l', 'Stk', /Einheit passt nicht zum Artikel \(Stk\)/], ['2 Stk', 'Liter', /Einheit passt nicht zum Artikel \(Liter\)/], ['3 m', 'kg', /passt nicht/], ['x3', 'Liter', /ungültige Zahl/], ['2 Dosen', 'Stk', /ungültige Zahl/], ['Stk', 'Stk', /ungültige Zahl/]]) {
+    let e = null; try { qtyNum(v, u, o); } catch (x) { e = x; } ok(e && rx.test(e.message), `abgewiesen: ${v} (${u}) – ${e && e.message}`);
+  }
+  const { U, cmd, toRepair } = await freshWorld();
+  const mk = async (b) => { const r = await U.ws.post('/api/stock', { site: 'DORTMUND', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const oil = await mk({ name: 'Motoröl 10W-40', unit: 'Liter', unit_price_net: '6,00' }); const filt = await mk({ name: 'Ölfilter', unit_price_net: '8,00' });
+  let r = await U.ws.post(`/api/stock/${oil}/movements`, { type: 'zugang', qty: '20 l', supplier: 'Teile Nord KG', document_ref: 'LS-974' }); eq(r.status, 201, JSON.stringify(r.data));
+  r = await U.ws.post('/api/stock/receipt', { site: 'DORTMUND', supplier: 'Teile Nord KG', document_ref: 'LS-974-2', request_key: rk(), lines: [{ item_id: filt, qty: '4 Stk.' }, { item_id: oil, qty: '5 Liter' }] }); eq(r.status, 201, JSON.stringify(r.data));
+  eq((await U.ws.get(`/api/stock/${oil}`)).data.item.on_hand, 25); eq((await U.ws.get(`/api/stock/${filt}`)).data.item.on_hand, 4);
+  r = await U.ws.post(`/api/stock/${filt}/movements`, { type: 'zugang', qty: '5 l' }); eq(r.status, 400); ok(/Einheit passt nicht zum Artikel \(Stk\)/.test(r.data.message), r.data.message);
+  r = await U.ws.post('/api/stock/receipt', { site: 'DORTMUND', request_key: rk(), lines: [{ item_id: filt, qty: '2 Liter' }] }); eq(r.status, 400, 'Wareneingang ganz oder gar nicht');
+  eq((await U.ws.get(`/api/stock/${filt}`)).data.item.on_hand, 4, 'nichts gebucht');
+  // Am Auftrag: Lagerartikel in Litern, freies Teil in Stk
+  const id = await toRepair();
+  r = await cmd(U.ws, id, 'add_part', { stock_item_id: oil, quantity: '7,5 l' }); eq(r.status, 200, JSON.stringify(r.data));
+  r = await cmd(U.ws, id, 'add_part', { name: 'Glühlampe 24 V', quantity: '2 Stk.', unit_price_net: '' }); eq(r.status, 200, JSON.stringify(r.data));
+  r = await cmd(U.ws, id, 'add_part', { stock_item_id: filt, quantity: '1 l' }); eq(r.status, 400); ok(/passt nicht/.test(r.data.message), r.data.message);
+  const parts = (await U.fleet.get(`/api/cases/${id}`)).data.parts; eq(JSON.stringify(parts.map((x) => x.quantity).sort()), JSON.stringify([2, 7.5]));
+  eq((await U.ws.get(`/api/stock/${oil}`)).data.item.on_hand, 17.5);
+  // Inventur
+  r = await U.ws.post('/api/stock/inventory', { site: 'DORTMUND', counts: [{ item_id: oil, counted: '17,5 Liter' }, { item_id: filt, counted: '4 Stk' }] }); eq(r.status, 200, JSON.stringify(r.data));
+  // Übersetzung
+  const { translateValidation } = await import('../public/i18n.js');
+  const m = 'Menge: „5 l“ – Einheit passt nicht zum Artikel (Stk).';
+  eq(translateValidation('en', m), 'Quantity: “5 l” – unit does not match the item (pcs).'); eq(translateValidation('uk', m), 'Кількість: «5 l» – одиниця не відповідає артикулу (шт).');
+  eq(translateValidation('en', 'Zählmenge Motoröl 10W-40: „2 Stk“ – Einheit passt nicht zum Artikel (Liter).').endsWith('unit does not match the item (Liter).'), true);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

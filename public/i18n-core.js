@@ -472,6 +472,9 @@ Object.assign(VALIDATION_TEXTS.en, { int_sep: '{f}: “{v}” – please enter w
 // Backlog 973: Arbeitszeit „1:75“ (Server-Meldung „<Feld>: „<Wert>“ – Minuten nur 0 bis 59 …“)
 Object.assign(VALIDATION_TEXTS.uk, { hm_min: '{f}: «{v}» – хвилини лише від 0 до 59 (напр. 1:30 = 1,5 години).' });
 Object.assign(VALIDATION_TEXTS.en, { hm_min: '{f}: “{v}” – minutes only 0 to 59 (e.g. 1:30 = 1.5 hours).' });
+// Backlog 974: Menge mit fremder Einheit (Server-Meldung „<Feld>: „<Wert>“ – Einheit passt nicht zum Artikel (<Einheit>).“)
+Object.assign(VALIDATION_TEXTS.uk, { unit_mismatch: '{f}: «{v}» – одиниця не відповідає артикулу ({u}).' });
+Object.assign(VALIDATION_TEXTS.en, { unit_mismatch: '{f}: “{v}” – unit does not match the item ({u}).' });
 // Backlog 973: Umrechnung unter dem Stundenfeld („= 1 Std. 30 Min.“) und Beispiel im Feld
 export function translateValidation(lang, msg) {
   const T = VALIDATION_TEXTS[lang]; if (!T || typeof msg !== 'string') return null;
@@ -489,6 +492,7 @@ export function translateValidation(lang, msg) {
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): mindestens (-?[\d.e+]+)\.$/))) return T.num_min.replace('{f}', f(m[1])).replace('{a}', fmtLimit(lang, m[2]));
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): „(.{0,40})“ – bitte ohne Tausendertrennzeichen eingeben \(z\. B\. (-?\d{1,12})\)\.$/)) && T.int_sep) return T.int_sep.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]).replace('{x}', () => m[3]);
   if ((m = msg.match(/^(.{1,60}): „(.{0,40})“ ist ein Bruttobetrag – bitte den Nettobetrag \(ohne MwSt\.\) eingeben\.$/)) && T.gross_amount) return T.gross_amount.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]);
+  if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): „(.{0,40})“ – Einheit passt nicht zum Artikel \((.{1,20})\)\.$/)) && T.unit_mismatch) return T.unit_mismatch.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]).replace('{u}', () => (m[3] === 'Stk' && lang === 'uk' ? 'шт' : m[3] === 'Stk' && lang === 'en' ? 'pcs' : m[3]));
   if ((m = msg.match(/^(.{1,60}): „(.{0,40})“ – Minuten nur 0 bis 59 \(z\. B\. 1:30 = 1,5 Stunden\)\.$/)) && T.hm_min) return T.hm_min.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]);
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): „(.{0,40})“ ist mehrdeutig/))) return T.ambiguous.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]);
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): (?:gültiges )?Datum im Format JJJJ-MM-TT\.$/))) return T.date_fmt.replace('{f}', f(m[1]));

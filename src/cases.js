@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase, day as pastDay } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, hoursNum, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, hoursNum, qtyNum, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile, fineVehiclesSql, gespannVehiclesSql } from './fines.js';
@@ -1879,7 +1879,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'add_part': {
-      const qty = Math.round(num(p.quantity ?? 1, { min: 0.001, max: 100000, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }) * 1000) / 1000; // 3 Nachkommastellen wie das Lager
+      // Backlog 974: Einheit aus dem Lieferschein („2 Stk.“, „5 l“) nur passend zum Artikel (Lagerartikel: seine Einheit, sonst Stk)
+      const qUnit = p.stock_item_id && typeof p.quantity === 'string' && /[^\d\s.,'’-]/.test(p.quantity) ? ((await env.DB.prepare('SELECT unit FROM stock_items WHERE id=? AND environment=?').bind(String(p.stock_item_id).slice(0, 40), envName).first()) || {}).unit : (typeof p.unit === 'string' && p.unit.trim()) || 'Stk';
+      const qty = Math.round(qtyNum(p.quantity ?? 1, qUnit, { min: 0.001, max: 100000, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }) * 1000) / 1000; // 3 Nachkommastellen wie das Lager
       const pid = uuid();
       let stockItem = null;
       // Preis aus dem Lager: hinterlegter Artikelpreis gilt für Teil und Lagerbuchung; nur ohne Artikelpreis der eingegebene – für beide
