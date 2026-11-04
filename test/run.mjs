@@ -32895,13 +32895,56 @@ await test('Backlog 982 (Blickwinkel „Werkstatt-Tablet: Mechaniker diktiert de
   const d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(JSON.stringify(d.work.map((w) => w.hours).sort()), JSON.stringify([0.5, 2.5]), 'gespeicherte Stunden');
   // Oberfläche: Knopf unter der Tätigkeit, Texte DE/UK/EN, Modul im Service Worker
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("import { parseHours, durationIn, H_UNIT as H_U } from './hours.js';"), 'gemeinsames Modul');
+  ok(/import \{ parseHours, durationIn, H_UNIT as H_U[^}]*\} from '\.\/hours\.js';/.test(app), 'gemeinsames Modul');
   ok(app.includes('data-whdesc') && app.includes('data-whtake') && app.includes("inp.value.trim() ? null : durationIn(desc.value)"), 'Knopf nur bei leerem Stundenfeld');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(/\{d\}/.test(STRINGS[l].wh_take) && /\{h\}/.test(STRINGS[l].wh_take), `${l}.wh_take`);
   ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/hours.js'"), 'Service Worker (ohne Netz)');
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-arbeitszeit-diktat.py'), 'UI-Prüfung eingetragen');
 });
 
+await test('Backlog 983 (Blickwinkel „Werkstatt-Tablet: Mechaniker diktiert Teile und Mengen“): Menge als Zahlwort/Bruch („zwei“, „vier Liter“, „anderthalb Liter“, „дві штуки“, „half a litre“), freies Teil übernimmt die Einheit aus der Menge, Menge im Teilenamen per Knopf (DE/UK/EN); „ein paar“ wird nie geraten', async () => {
+  const { qtyNum, qtyUnitOf } = await import('../src/util.js'); const { parseQty, qtyIn, parseHours } = await import('../public/hours.js');
+  const o = { min: 0.001, max: 1e5, decimalComma: true };
+  for (const [v, u, x] of [['zwei', 'Stk', 2], ['Zwei Stück', 'Stk', 2], ['zwölf', 'Stk', 12], ['fünfundzwanzig', 'Stk', 25], ['vier Liter', 'Liter', 4], ['anderthalb Liter', 'l', 1.5], ['zweieinhalb Liter', 'l', 2.5],
+    ['ein halber Liter', 'l', 0.5], ['zwei und ein halber Liter', 'l', 2.5], ['einen Satz', 'Satz', 1], ['half a litre', 'Liter', 0.5], ['two and a half litres', 'l', 2.5], ['twenty five pcs', 'Stk', 25], ['four', 'Stk', 4],
+    ['дві штуки', 'Stk', 2], ['пів літра', 'l', 0.5], ['півтора літри', 'l', 1.5], ['три з половиною літри', 'l', 3.5], ['две штуки', 'Stk', 2], ['полтора литра', 'l', 1.5], ['1½ l', 'l', 1.5], ['1 1/2 Liter', 'l', 1.5], ['½', 'l', 0.5],
+    // bisherige Schreibweisen unverändert (Backlog 974)
+    ['2 Stk.', 'Stk', 2], ['5 l', 'Liter', 5], ['12,5 Liter', 'l', 12.5], ['x3', 'Stk', 3], ['7', 'Liter', 7]]) eq(qtyNum(v, u, o), x, `${v} (${u})`);
+  for (const [v, u, rx] of [['vier Liter', 'Stk', /Einheit passt nicht zum Artikel \(Stk\)/], ['zwei Stück', 'Liter', /passt nicht/], ['ein paar', 'Stk', /ungültige Zahl/], ['ein Paar Schrauben', 'Stk', /ungültige Zahl/], ['zwei Dosen', 'Stk', /ungültige Zahl/], ['ca. zwei', 'Stk', /ungültige Zahl/], ['zwei Bremsscheiben vorne', 'Stk', /ungültige Zahl/]]) {
+    let e = null; try { qtyNum(v, u, o); } catch (x) { e = x; } ok(e && rx.test(e.message), `abgewiesen: ${v} (${u}) – ${e && e.message}`);
+  }
+  for (const [v, x] of [['5 l', 'l'], ['vier Liter', 'l'], ['2 Stück', 'Stk'], ['2x', 'Stk'], ['x2', 'Stk'], ['3 шт', 'Stk'], ['2,5 m', 'm'], ['1 Satz', 'Satz'], ['zwei', null], ['2', null], ['2 Dosen', null], [3, null]]) eq(qtyUnitOf(v), x, `Einheit aus ${v}`);
+  eq(parseQty('2'), null, 'Ziffern bleiben bei den Dezimalregeln des Aufrufers'); eq(parseQty('ein paar'), null);
+  eq(parseHours('zweieinhalb Stunden'), 2.5, 'Arbeitszeit unverändert');
+  // Menge im diktierten Teilenamen: Anfang (Zahlwort/Ziffer vor einem Wort) oder Ende (mit Einheit bzw. x2)
+  for (const [v, n, unit, part, rest] of [['zwei Bremsscheiben vorne', 2, null, 'zwei', 'Bremsscheiben vorne'], ['4 Liter Motoröl 10W-40', 4, 'Liter', '4 Liter', 'Motoröl 10W-40'], ['Bremsbelag-Satz, 2 Stück', 2, 'Stück', '2 Stück', 'Bremsbelag-Satz'],
+    ['Ölfilter x2', 2, null, 'x2', 'Ölfilter'], ['2x Wischerblatt', 2, null, '2x', 'Wischerblatt'], ['Motoröl 10W-40, 5 l', 5, 'l', '5 l', 'Motoröl 10W-40'], ['drei Liter Kühlmittel', 3, 'Liter', 'drei Liter', 'Kühlmittel'],
+    ['2 litres of coolant', 2, 'litres', '2 litres', 'coolant'], ['дві гальмівні колодки', 2, null, 'дві', 'гальмівні колодки'], ['Bremsscheibe vorne, zwei Stück', 2, 'Stück', 'zwei Stück', 'Bremsscheibe vorne']]) {
+    const q = qtyIn(v); ok(q, v); eq(JSON.stringify([q.n, q.unit, q.part, q.rest]), JSON.stringify([n, unit, part, rest]), v);
+  }
+  for (const v of ['24 V Glühlampe', '10 mm Schraube', 'Glühlampe 24 V', 'H7 Lampe', 'Luftfilter', 'ein paar Schrauben M8', 'Bremsscheibe 2', '']) eq(qtyIn(v), null, `keine Menge: ${v}`);
+  // Ende-zu-Ende: freies Teil „vier Liter“ → Menge 4, Einheit l; Lagerartikel in Litern mit Zahlwort; Lagerartikel in Stk lehnt Liter ab
+  const { U, cmd, toRepair } = await freshWorld();
+  const oil = (await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Motoröl 10W-40', unit: 'Liter', unit_price_net: '6,00' })).data.id;
+  eq((await U.ws.post(`/api/stock/${oil}/movements`, { type: 'zugang', qty: 'zwanzig Liter' })).status, 201, 'Zugang mit Zahlwort');
+  const id = await toRepair();
+  let r = await cmd(U.ws, id, 'add_part', { name: 'Kühlmittel', quantity: 'vier Liter', unit_price_net: '' }); eq(r.status, 200, JSON.stringify(r.data));
+  r = await cmd(U.ws, id, 'add_part', { name: 'Bremsscheibe vorne', quantity: 'zwei Stück', unit_price_net: '' }); eq(r.status, 200, JSON.stringify(r.data));
+  r = await cmd(U.ws, id, 'add_part', { name: 'Glühlampe 24 V', quantity: '2', unit_price_net: '' }); eq(r.status, 200, JSON.stringify(r.data));
+  r = await cmd(U.ws, id, 'add_part', { name: 'Schlauch', quantity: '2,5 m', unit: 'Stk', unit_price_net: '' }); eq(r.status, 400, 'ausdrückliche Einheit gilt weiter');
+  r = await cmd(U.ws, id, 'add_part', { stock_item_id: oil, quantity: 'anderthalb Liter' }); eq(r.status, 200, JSON.stringify(r.data));
+  r = await cmd(U.ws, id, 'add_part', { name: 'Schrauben M8', quantity: 'ein paar', unit_price_net: '' }); eq(r.status, 400, 'unbestimmte Menge');
+  const parts = (await U.fleet.get(`/api/cases/${id}`)).data.parts.map((x) => `${x.name}|${x.quantity}|${x.unit}`).sort();
+  eq(JSON.stringify(parts), JSON.stringify(['Bremsscheibe vorne|2|Stk', 'Glühlampe 24 V|2|Stk', 'Kühlmittel|4|l', 'Motoröl 10W-40|1.5|Liter']));
+  eq((await U.ws.get(`/api/stock/${oil}`)).data.item.on_hand, 18.5);
+  // Oberfläche: Umrechnung unter der Menge, Knopf unter dem Namen nur bei unveränderter Menge, Texte DE/UK/EN
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/import \{[^}]*parseQty, qtyIn, unitCanon[^}]*\} from '\.\/hours\.js';/.test(app), 'gemeinsames Modul');
+  ok(app.includes('data-pqconv') && app.includes('data-pqname') && app.includes('data-pqtake') && app.includes("!['', '1'].includes(inp.value.trim()) ? null : qtyIn(nm.value)"), 'Knopf nur bei unveränderter Menge');
+  ok(app.includes("if (action === 'add_part') partQtyWatch();") && app.includes('const pw = parseQty(raw); const q = pw ? pw.n'), 'Bestandshinweis versteht Zahlwörter');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(/\{d\}/.test(STRINGS[l].pq_take) && /\{q\}/.test(STRINGS[l].pq_take), `${l}.pq_take`);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-teile-diktat.py'), 'UI-Prüfung eingetragen');
+});
 await test('Backlog 974 (Blickwinkel „Werkstatt bucht Teilemengen vom Lieferschein“): Menge mit passender Einheit („2 Stk.“, „5 l“, „2x“, „3 шт“) im Lager, Wareneingang, Inventur und am Auftrag; fremde Einheit mit eigener Meldung (DE/UK/EN), keine Umrechnung', async () => {
   const { qtyNum } = await import('../src/util.js');
   const o = { min: 0, max: 1e6, decimalComma: true };

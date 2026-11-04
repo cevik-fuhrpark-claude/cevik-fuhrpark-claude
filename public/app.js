@@ -8,7 +8,7 @@ import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentF
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday, STATES } from './holidays.js';
-import { parseHours, durationIn, H_UNIT as H_U } from './hours.js';
+import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon } from './hours.js';
 import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen, tzDiff, nextOpenLocal, holidayGaps } from './emhours.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
@@ -3750,7 +3750,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
       f.push(`<p class="small muted" id="rdyhint">${esc(t('rdy_hint'))}</p><label for="rdyd">${esc(t('rdy_title'))}<span class="hint">${esc(t('planned_clear_hint'))}</span></label><input type="date" id="rdyd" name="ready_expected_on" min="${esc(cur && cur < mn ? cur : mn)}" value="${esc(cur)}">`); break; }
     case 'set_planned_date': f.push(`<label>${esc(t('planned'))}<span class="hint">${esc(t('planned_clear_hint'))}</span></label><input type="date" name="planned_date" value="${esc(c.planned_date || '')}"><label for="plnote">${esc(t('plan_note_lbl'))}<span class="hint">${esc(t('plan_note_hint'))}</span></label><input id="plnote" name="planned_note" maxlength="200" autocomplete="off" value="${esc(c.planned_note || '')}">`); break;
     case 'record_work': f.push(`<label for="whours">${esc(t('hours'))}</label><input id="whours" name="hours" inputmode="decimal" required placeholder="${esc(t('wh_ph'))}" aria-describedby="whconv"><p class="small muted" id="whconv" data-whconv aria-live="polite" hidden></p><label>${esc(t('activity'))}</label><input name="description" required list="worksugg" autocomplete="off"><datalist id="worksugg"></datalist><p class="small" id="whdesc" data-whdesc aria-live="polite" style="margin-top:6px" hidden></p><label>${esc(t('date'))}</label><input type="date" name="work_date" value="${bDate()}" max="${bDate()}" min="${workDateMin(c.created_at)}"><p class="small" id="wdprev" data-wdprev hidden></p><p class="small muted" id="workday" data-workday aria-live="polite"></p><details id="wdweek" class="small"><summary>${esc(t('wd_week'))}</summary><div id="wdweekb"></div></details>`); break;
-    case 'add_part': f.push(`<div id="stocksel"></div><div id="freepart">`); f.push(`<label>${esc(t('part_name'))}</label><input name="name" required list="partsugg" autocomplete="off"><datalist id="partsugg"></datalist><label>${esc(t('part_number'))}</label><input name="part_number"><label>${esc(t('qty'))}</label><input name="quantity" inputmode="decimal" value="1"><label>${esc(t('price_net'))}</label><input name="unit_price_net" inputmode="decimal"><label class="check"><input type="checkbox" name="estimate"> ${esc(t('estimate'))}</label><label>${esc(t('supplier'))}<span class="hint" data-psuphint>${esc(t('part_supplier_hint'))}</span></label><input name="supplier" maxlength="120"></div><label>${esc(t('warranty_until'))}<span class="hint">${esc(t('warranty_hint'))}</span></label><input type="date" name="warranty_until" style="max-width:220px">${partFileSelect(d)}`); break;
+    case 'add_part': f.push(`<div id="stocksel"></div><div id="freepart">`); f.push(`<label>${esc(t('part_name'))}</label><input name="name" required list="partsugg" autocomplete="off"><datalist id="partsugg"></datalist><p class="small" id="pqname" data-pqname aria-live="polite" style="margin-top:6px" hidden></p><label>${esc(t('part_number'))}</label><input name="part_number"><label for="pqty">${esc(t('qty'))}</label><input id="pqty" name="quantity" inputmode="decimal" value="1" aria-describedby="pqconv"><p class="small muted" id="pqconv" data-pqconv aria-live="polite" hidden></p><label>${esc(t('price_net'))}</label><input name="unit_price_net" inputmode="decimal"><label class="check"><input type="checkbox" name="estimate"> ${esc(t('estimate'))}</label><label>${esc(t('supplier'))}<span class="hint" data-psuphint>${esc(t('part_supplier_hint'))}</span></label><input name="supplier" maxlength="120"></div><label>${esc(t('warranty_until'))}<span class="hint">${esc(t('warranty_hint'))}</span></label><input type="date" name="warranty_until" style="max-width:220px">${partFileSelect(d)}`); break;
     case 'add_open_item': f.push(`<label>${esc(t('open_items'))}</label><input name="description" required><label class="check"><input type="checkbox" name="safety_relevant"> ${esc(t('safety_relevant'))}</label>${oiFileSelect(d)}`); break;
     case 'add_external_cost': f.push(`<label>${esc(t('supplier'))}</label><input name="supplier" required><p class="panel small" id="xsprev" role="note" hidden></p><label>${esc(t('invoice_no'))}</label><input name="invoice_no"><label>${esc(t('amount_net'))}<span class="hint">${esc(t('ext_amount_hint'))}</span></label><input name="amount_net" inputmode="decimal"><label class="check"><input type="checkbox" name="estimate"> ${esc(t('estimate'))}</label><label class="check"><input type="checkbox" name="covers_work_and_parts"> ${esc(t('covers_all'))}</label><label>${esc(t('warranty_until'))}<span class="hint">${esc(t('warranty_hint'))}</span></label><input type="date" name="warranty_until" style="max-width:220px"><div id="extkm"><label for="extkmv">${esc(t('ext_km_label'))}<span class="hint">${esc(t('ext_km_hint'))}</span></label><input id="extkmv" name="odometer_km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="12" style="max-width:220px"><div id="extkmd" aria-live="polite"></div><label for="extkmo">${esc(t('ext_km_on'))}</label><input type="date" id="extkmo" name="odometer_on" max="${bDate()}" style="max-width:220px"></div>${extFileSelect(d)}`); break;
   }
@@ -3840,6 +3840,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   // Backlog 890 (Blickwinkel „Werkstatt-Betriebsruhe zwischen den Jahren“): Fertig-/Teile-Liefertermin am Wochenende/Feiertag – nur Hinweis
   offDayWatch($$('#af input[name=ready_expected_on], #af input[name=parts_expected_date]'), 'date_offday_hint');
   if (action === 'record_work') { workDayWatch(c); hoursWatch(); }
+  if (action === 'add_part') partQtyWatch();
   $('#af').onsubmit = (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -3911,6 +3912,35 @@ function hoursWatch() {
     };
   };
   desc.addEventListener('input', offer); inp.addEventListener('input', offer); offer();
+}
+
+// Backlog 983 (Blickwinkel „Werkstatt-Tablet: Mechaniker diktiert Teile und Mengen“): Menge als Zahlwort/Bruch („zwei“, „vier Liter“,
+// „anderthalb Liter“, „дві штуки“) – unter dem Feld steht, was der Server daraus liest („= 2“, „= 4 l“). Steht die Menge im diktierten
+// Teilenamen („zwei Bremsscheiben vorne“, „Motoröl 10W-40, 5 l“) und ist das Mengenfeld unverändert (1), bietet ein Knopf an, sie zu
+// übernehmen: Mengenfeld = erkannter Text (der Server bewertet ihn), Name ohne die Menge. Nichts geschieht ohne Tippen.
+const qtyLabel = (n, unit) => `= ${fmtNum(n)}${unit ? ' ' + unitL(unitCanon(unit) || unit) : ''}`;
+function partQtyWatch() {
+  const inp = $('#pqty'); const out = $('#pqconv'); if (!inp || !out) return;
+  // Ziffer + bekannte Einheit („2 litres“, „5 l“): Zahl wie getippt (Dezimalzeichen je Sprache bewertet der Server), Einheit in App-Schreibweise
+  const show = () => {
+    const v = inp.value.trim(); const w = parseQty(v); const m = w ? null : v.match(/^(\d{1,6}(?:[.,]\d{1,3})?)\s*([^\s\d]{1,12}?)\.?$/);
+    const txt = w && w.n > 0 && (w.unit === null || unitCanon(w.unit)) ? qtyLabel(w.n, w.unit) : m && unitCanon(m[2]) && !/^[x×]$/i.test(m[2]) ? `= ${m[1]} ${unitL(unitCanon(m[2]))}` : '';
+    out.textContent = txt; out.hidden = !txt;
+  };
+  inp.addEventListener('input', show); show();
+  const nm = $('#af input[name=name]'); const box = $('#pqname'); if (!nm || !box) return;
+  const offer = () => {
+    const q = nm.disabled || !['', '1'].includes(inp.value.trim()) ? null : qtyIn(nm.value);
+    if (!q || !(q.n > 0) || (q.n === 1 && !q.unit)) { box.hidden = true; box.textContent = ''; return; }
+    box.innerHTML = `<button type="button" class="btn secondary small" data-pqtake>🔢 ${esc(t('pq_take').replace('{d}', q.part).replace('{q}', qtyLabel(q.n, q.unit).replace(/^=\s*/, '')))}</button>`;
+    box.hidden = false;
+    box.querySelector('[data-pqtake]').onclick = () => {
+      inp.value = q.part; nm.value = q.rest; box.hidden = true; box.textContent = '';
+      inp.dispatchEvent(new Event('input', { bubbles: true })); nm.dispatchEvent(new Event('input', { bubbles: true }));
+      nm.focus();
+    };
+  };
+  nm.addEventListener('input', offer); inp.addEventListener('input', offer); offer();
 }
 
 // Eigene Arbeitszeit am gewählten Tag über alle Aufträge (Backlog 419): Mechaniker mit zwei Aufträgen am selben Tag sieht, was schon gebucht ist,
@@ -5270,7 +5300,7 @@ async function loadStockSelect(c) {
   const qf = el.closest('form') && el.closest('form').querySelector('[name=quantity]');
   const qtyCheck = () => {
     let h = $('#stockqty'); const it = items.find((i) => i.id === sel.value);
-    const raw = qf ? String(qf.value).trim() : ''; const q = Number(raw.replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.'));
+    const raw = qf ? String(qf.value).trim() : ''; const pw = parseQty(raw); const q = pw ? pw.n : Number(raw.replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.')); // Backlog 983: „zwei“
     const over = !!it && raw !== '' && Number.isFinite(q) && q > it.on_hand + 1e-9;
     if (!over) { if (h) h.remove(); return; }
     if (!h) { h = document.createElement('p'); h.id = 'stockqty'; h.className = 'small panel warn'; h.setAttribute('role', 'status'); qf.after(h); }

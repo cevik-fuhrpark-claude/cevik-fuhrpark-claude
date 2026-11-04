@@ -1,5 +1,5 @@
 // [CLAUDE] Hilfsfunktionen ohne externe Abhängigkeiten (Cloudflare Workers / WebCrypto)
-import { parseHours, H_UNIT } from '../public/hours.js';
+import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty } from '../public/hours.js';
 
 export const nowIso = () => new Date().toISOString();
 // Zeitstempel für Änderungen mit Vergleich auf den gelesenen Stand (updated_at): immer später als der alte Wert, auch bei gleicher Millisekunde
@@ -245,22 +245,28 @@ export function hoursNum(v, opts = {}) {
 // Backlog 974 (Blickwinkel „Werkstatt bucht Teilemengen vom Lieferschein“): Mengen kommen mit Einheit („2 Stk.“, „5 l“, „2x“, „12,5 Liter“,
 // „3 шт“) – vorher „ungültige Zahl“. Die Einheit wird nur entfernt, wenn sie zur Einheit des Artikels passt (gleiche Gruppe oder gleicher Text);
 // eine bekannte andere Einheit („5 l“ bei einem Artikel in Stk) wird mit eigener Meldung abgewiesen – keine Umrechnung.
-const UNIT_GROUPS = [
-  ['stk', 'stck', 'st', 'stück', 'pcs', 'pc', 'piece', 'pieces', 'x', '×', 'шт', 'штук', 'штука', 'штуки'],
-  ['l', 'ltr', 'liter', 'litre', 'litres', 'liters', 'л', 'літр', 'літри', 'літрів', 'литр', 'литра', 'литров'],
-  ['m', 'mtr', 'meter', 'metre', 'metres', 'meters', 'м', 'метр', 'метри', 'метрів', 'метра', 'метров'],
-  ['kg', 'kilo', 'kilogramm', 'кг'],
-  ['satz', 'sätze', 'set', 'sets', 'kit', 'комплект', 'компл'],
-  ['paar', 'pair', 'pairs', 'пара', 'пари'],
-];
-const unitKey = (u) => String(u || '').trim().toLowerCase().replace(/\.$/, '');
-const unitGroup = (u) => { const k = unitKey(u); return UNIT_GROUPS.find((g) => g.includes(k)) || null; };
+// Backlog 983: Einheiten-Gruppen und Zahlwörter („zwei Stück“, „anderthalb Liter“, „дві штуки“) gemeinsam mit der Oberfläche in public/hours.js.
+// Backlog 983: Einheit eines freien Teils aus der Menge („5 l“, „vier Liter“, „2 Stück“) in App-Schreibweise; keine bekannte Einheit → null
+export function qtyUnitOf(v) {
+  if (typeof v !== 'string') return null;
+  const t = v.trim().replace(/[\s\u00a0]+/g, ' '); const w = parseQty(t); if (w) return w.unit ? unitCanon(w.unit) : null;
+  let m; if (/^[x×]\s*\d/i.test(t)) return 'Stk';
+  return (m = t.match(/^(.*?\d)\s*([A-Za-zÄÖÜäöüßА-Яа-яІіЇїЄєҐґ×]{1,12})\.?$/)) ? unitCanon(m[2]) : null;
+}
 export function qtyNum(v, unit, opts = {}) {
   const field = opts.field || 'Menge';
   if (typeof v === 'string') {
     const t = v.trim();
     let m;
     const own = unitGroup(unit || 'Stk') || [unitKey(unit)];
+    const w = parseQty(t);
+    if (w) {
+      if (w.unit !== null && !own.includes(unitKey(w.unit))) {
+        if (unitGroup(w.unit)) throw bad('validation', `${field}: „${t.slice(0, 40)}“ – Einheit passt nicht zum Artikel (${String(unit || 'Stk').slice(0, 20)}).`);
+        throw bad('validation', `${field}: ungültige Zahl.`);
+      }
+      return num(w.n, { ...opts, field });
+    }
     if ((m = t.match(/^[x×]\s*(\d[\d.,]*)$/i)) && own.includes('x')) v = m[1];
     else if ((m = t.match(/^(.*?\d)\s*([A-Za-zÄÖÜäöüßА-Яа-яІіЇїЄєҐґ×]{1,12})\.?$/))) {
       const k = unitKey(m[2]);

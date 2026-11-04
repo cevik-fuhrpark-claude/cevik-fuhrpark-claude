@@ -359,6 +359,7 @@ UI-Doppelte Rechnung (Fremdleistung): Fundstelle, Häkchen „Trotzdem buchen“
 UI-Fremdrechnung am Handy: „1.240,- €“ gebucht, „inkl. MwSt.“ als Bruttobetrag in der App-Sprache abgewiesen, DE/UK/EN 390/820/1366|ui-fremdrechnung-netto.py|/tmp/cfp-fremdrechnung-netto.log
 UI-Arbeitszeit in Minuten: Beispiel und Umrechnung unter dem Stundenfeld, „0:30“ gebucht, „1:75“ in der App-Sprache abgewiesen, DE/UK/EN 390/820/1366|ui-arbeitszeit-minuten.py|/tmp/cfp-arbeitszeit-minuten.log
 UI-Arbeitszeit diktiert: Zahlwörter im Stundenfeld, Dauer aus dem Tätigkeitstext per Knopf übernommen, DE/UK/EN 390/820/1366|ui-arbeitszeit-diktat.py|/tmp/cfp-arbeitszeit-diktat.log
+UI-Teile diktiert: Zahlwörter im Mengenfeld, Menge aus dem Teilenamen per Knopf übernommen, Einheit beim freien Teil, DE/UK/EN 390/820/1366|ui-teile-diktat.py|/tmp/cfp-teile-diktat.log
 UI-Lager: Menge mit Einheit vom Lieferschein („3 Stk.“) gebucht, fremde Einheit („5 l“) in der App-Sprache abgewiesen, DE/UK/EN 390/820/1366|ui-lager-einheit.py|/tmp/cfp-lager-einheit.log
 UI-Datum einfügen: „Ausgelesen am 03.11.2026“, „03 листопада 2026“, „03/11/2026“ ins Datumsfeld übernommen und gespeichert; kein/mehrere/ungültiges Datum mit Meldung, DE/UK/EN 390/820/1366|ui-datum-einfuegen.py|/tmp/cfp-datum-einfuegen.log
 UI-Schadenzeitpunkt Schnellwahl: Heute/Gestern/Vorgestern setzt nur den Tag, Vorschlag aus „gestern“/„вчора“/„yesterday“ in der Beschreibung, Aktion Schadenzeitpunkt, DE/UK/EN 390/820/1366|ui-schadenzeitpunkt-schnellwahl.py|/tmp/cfp-occ-schnellwahl.log

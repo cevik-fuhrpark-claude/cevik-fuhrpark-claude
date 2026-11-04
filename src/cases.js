@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase, day as pastDay } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, hoursNum, qtyNum, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, hoursNum, qtyNum, qtyUnitOf, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile, fineVehiclesSql, gespannVehiclesSql } from './fines.js';
@@ -1880,7 +1880,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     }
     case 'add_part': {
       // Backlog 974: Einheit aus dem Lieferschein („2 Stk.“, „5 l“) nur passend zum Artikel (Lagerartikel: seine Einheit, sonst Stk)
-      const qUnit = p.stock_item_id && typeof p.quantity === 'string' && /[^\d\s.,'’-]/.test(p.quantity) ? ((await env.DB.prepare('SELECT unit FROM stock_items WHERE id=? AND environment=?').bind(String(p.stock_item_id).slice(0, 40), envName).first()) || {}).unit : (typeof p.unit === 'string' && p.unit.trim()) || 'Stk';
+      // Backlog 983: freies Teil ohne Einheitenfeld übernimmt die Einheit aus der Menge („5 l“, „vier Liter“ → l; „2 Stück“ → Stk) – nur bekannte Einheiten, keine Umrechnung
+      const freeUnit = (typeof p.unit === 'string' && p.unit.trim()) || qtyUnitOf(p.quantity) || 'Stk';
+      const qUnit = p.stock_item_id && typeof p.quantity === 'string' && /[^\d\s.,'’-]/.test(p.quantity) ? ((await env.DB.prepare('SELECT unit FROM stock_items WHERE id=? AND environment=?').bind(String(p.stock_item_id).slice(0, 40), envName).first()) || {}).unit : freeUnit;
       const qty = Math.round(qtyNum(p.quantity ?? 1, qUnit, { min: 0.001, max: 100000, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }) * 1000) / 1000; // 3 Nachkommastellen wie das Lager
       const pid = uuid();
       let stockItem = null;
@@ -1907,7 +1909,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       }
       extra.push(env.DB.prepare(`INSERT INTO parts(id,case_id,user_id,name,part_number,quantity,unit,unit_price_net,valuation,supplier,document_ref,stock_item_id,created_at,warranty_until,file_id)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(pid, c.id, user.id, name, stockItem ? stockItem.part_number : str(p.part_number, { max: 80 }), qty,
-        stockItem ? stockItem.unit : (str(p.unit, { max: 20 }) || 'Stk'), price, valuation, stockItem ? `Lager ${stockItem.site}` : str(p.supplier, { max: 120 }),
+        stockItem ? stockItem.unit : str(freeUnit, { max: 20 }), price, valuation, stockItem ? `Lager ${stockItem.site}` : str(p.supplier, { max: 120 }),
         str(p.document_ref, { max: 200 }), stockItem ? stockItem.id : null, now, warranty, ptFile ? ptFile.id : null));
       payload = { part_id: pid, name, quantity: qty, unit_price_net: price, valuation, stock_item_id: stockItem ? stockItem.id : null, ...(warranty ? { warranty_until: warranty } : {}), ...(ptFile ? { file_id: ptFile.id, file_name: ptFile.filename } : {}) };
       break;
