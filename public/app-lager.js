@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, STOCK_Q_MIN, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockNoteText, stockOpt, stockPick, stockQHtml, t, tn, toast, uid, unitL, wsLabel, wsName } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, STOCK_Q_MIN, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, stockOpt, stockPick, stockQHtml, t, tn, toast, uid, unitL, wsLabel, wsName } from './app-main.js';
 
 // Lager-Buchungstexte in der Oberflächensprache (Standortcode → Name, Zahl/Datum im Sprachformat)
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
@@ -250,8 +250,11 @@ async function viewStockJournal() {
 async function viewStockReceipt() {
   if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`);
   const items = (await api('GET', '/api/stock?last=1')).items.filter((i) => i.active);
-  const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site) : S.meta.workshops.filter((w) => items.some((i) => i.site === w.code));
-  if (!items.length || !sites.length) return render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="muted" id="rcnone">${esc(t('rcpt_no_items'))}</p>`, 'more');
+  // Backlog 991: Positionen ohne Lagerartikel können hier angelegt werden – Leitung sieht daher alle Lager (zuerst die mit Artikeln),
+  // auch ein noch leeres Lager kann seine erste Lieferung erfassen
+  const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site)
+    : [...S.meta.workshops.filter((w) => items.some((i) => i.site === w.code)), ...S.meta.workshops.filter((w) => !items.some((i) => i.site === w.code))];
+  if (!sites.length) return render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="muted" id="rcnone">${esc(t('rcpt_no_items'))}</p>`, 'more');
   let key = uid().replace(/[^\w-]/g, '');
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="print-only small">${printStamp()} · CEVIK ${esc(t('app'))} [CLAUDE]</p><p class="small muted">${esc(t('rcpt_hint'))}</p>
     <form id="rcf" class="panel" novalidate>${sites.length > 1 ? `<label for="rcsite">${esc(t('workshop'))}</label><select id="rcsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
@@ -289,18 +292,78 @@ async function viewStockReceipt() {
     if (p !== null && it.unit_price_net && p !== Number(it.unit_price_net)) { const pc = Math.round((p / it.unit_price_net - 1) * 1000) / 10; chips.push(`<span class="chip${pc > 0 ? ' mittel' : ''}" data-rclpct>${esc(t('rcl_diff').replace('{p}', (pc > 0 ? '+' : '') + fmtNum(pc) + ' %'))}</span>`); }
     box.innerHTML = `<span class="muted">${parts.join(' · ')}</span>${chips.length ? `<div>${chips.join(' ')}</div>` : ''}`;
   };
+  // Backlog 991 (Blickwinkel „Wareneingang vom Lieferschein: Position mit Teilenummer, die es im Lager nicht gibt“): bisher musste man den
+  // Wareneingang verlassen (Eingaben weg), den Artikel unter „Neuer Artikel“ anlegen und neu beginnen. Jetzt je Position „Artikel fehlt –
+  // neu anlegen“: Bezeichnung, Teilenummer (aus der Suche vorbelegt), Einheit, Lagerort; angelegt wird ohne Bestand (Menge/Preis bucht der
+  // Wareneingang). Gleiche Teilenummer (auch anders geschrieben) im Lager → Verweis „diesen nehmen“ statt zweitem Artikel; 409 wählt den
+  // vorhandenen Artikel (auch nach Funkloch-Wiederholung). Keine neuen Rechte: POST /api/stock wie bisher (Werkstatt nur eigenes Lager).
+  const rcAddItem = (it) => {
+    if (!byId.has(it.id)) { items.push(it); byId.set(it.id, it); }
+    $$('#rclines .rcl').forEach((r) => { const sel = $('select', r); const cur = sel.value; const q = $('.stockq', r);
+      if (q.value.trim()) q.oninput(); else { sel.innerHTML = opts(); sel.value = cur; }
+      if (q.hidden && siteItems().length >= STOCK_Q_MIN) q.hidden = false; });
+  };
+  const rcPick = (d, id, created) => {
+    const sel = $('select', d); const q = $('.stockq', d); q.value = ''; q.nextElementSibling.hidden = true; sel.innerHTML = opts(); sel.value = id; sel.onchange();
+    const it = byId.get(id); const ok = $('[data-rcnok]', d);
+    ok.hidden = false; ok.innerHTML = `${created ? '✓ ' + esc(t('rcn_done')) : esc(t('rcn_taken'))}: <a href="#/stock/${esc(id)}">${esc(it ? it.name : '')}${it && it.part_number ? ' · ' + esc(it.part_number) : ''}</a>`;
+    const f = $('[data-rcnf]', d); f.hidden = true; f.innerHTML = ''; $('.rcnew', d).setAttribute('aria-expanded', 'false'); $('.rcnew', d).style.fontWeight = ''; $('.rcnew', d).removeAttribute('data-rcnhot');
+    $('.rcq', d).focus();
+  };
+  const rcNew = (d) => {
+    const f = $('[data-rcnf]', d); const btn = $('.rcnew', d);
+    if (!f.hidden) { f.hidden = true; f.innerHTML = ''; btn.setAttribute('aria-expanded', 'false'); return; }
+    const q = $('.stockq', d).value.trim(); const asPn = /\d/.test(q) && !/\p{L}{4,}/u.test(q);
+    const id = 'rcn' + Math.random().toString(36).slice(2, 8);
+    f.innerHTML = `<div class="panel" style="margin:4px 0 8px"><p class="small muted">${esc(t('rcn_hint').replace('{ws}', wsName(site())))}</p>
+      <label for="${id}n">${esc(t('part_name'))} *</label><input id="${id}n" data-rcnname maxlength="200" autocomplete="off" value="${asPn ? '' : esc(q)}">
+      <label for="${id}p">${esc(t('part_number'))}</label><input id="${id}p" data-rcnpn maxlength="80" autocomplete="off" value="${asPn ? esc(q) : ''}"><div class="small" data-rcndup role="status" aria-live="polite" hidden></div>
+      <div class="grid2"><div><label for="${id}u">${esc(t('unit'))}</label><input id="${id}u" data-rcnunit maxlength="20" value="${esc(unitL('Stk'))}"></div><div><label for="${id}l">${esc(t('storage'))}</label><input id="${id}l" data-rcnloc maxlength="80"></div></div>
+      <div class="actions"><button type="button" class="btn" data-rcnsave>${esc(t('rcn_save'))}</button><button type="button" class="btn secondary" data-rcncancel>${esc(t('cancel'))}</button></div></div>`;
+    f.hidden = false; btn.setAttribute('aria-expanded', 'true');
+    const nm = $('[data-rcnname]', f); const pn = $('[data-rcnpn]', f); const dup = $('[data-rcndup]', f);
+    // gleiche Teilenummer (Regel wie Suche/Lager-Schlüssel) in diesem Lager → vorhandenen Artikel anbieten
+    const dupCheck = () => { const c = pnCompact(pn.value); const tw = c.length >= 3 ? siteItems().filter((i) => pnCompact(i.part_number) === c) : [];
+      dup.hidden = !tw.length; dup.innerHTML = tw.length ? `⚠ ${esc(t('rcn_dup'))} ${tw.slice(0, 3).map((i) => `<button type="button" class="linkbtn" data-rcnuse="${esc(i.id)}">${esc(i.name)} · ${esc(i.part_number)} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</button>`).join(' ')}${tw.length > 3 ? ` +${tw.length - 3}` : ''}` : '';
+      $$('[data-rcnuse]', dup).forEach((b) => { b.onclick = () => rcPick(d, b.dataset.rcnuse, false); }); };
+    pn.oninput = dupCheck; dupCheck();
+    // Enter in den Feldern legt den Artikel an (nicht den ganzen Wareneingang buchen)
+    f.onkeydown = (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); $('[data-rcnsave]', f).click(); } };
+    $('[data-rcncancel]', f).onclick = () => { f.hidden = true; f.innerHTML = ''; btn.setAttribute('aria-expanded', 'false'); btn.focus(); };
+    $('[data-rcnsave]', f).onclick = async () => {
+      if (!nm.value.trim()) { toast(t('rcn_need_name'), true); markInvalid(nm, t('rcn_need_name')); nm.focus(); return; }
+      const body = { site: site(), name: nm.value.trim(), part_number: pn.value.trim() || undefined, unit: $('[data-rcnunit]', f).value.trim() || undefined, location: $('[data-rcnloc]', f).value.trim() || undefined };
+      try {
+        const r = await api('POST', '/api/stock', body, { timeoutMs: SEND_TIMEOUT_MS });
+        rcAddItem({ id: r.id, site: body.site, name: body.name, part_number: body.part_number || null, unit: body.unit || 'Stk', location: body.location || null, on_hand: 0, min_qty: null, unit_price_net: null, active: 1, last_supplier: null, last_receipt_date: null });
+        rcPick(d, r.id, true);
+      } catch (err) {
+        // vorhandener Artikel (gleiche Bezeichnung + Teilenummer, auch nach Wiederholung im Funkloch) → diesen wählen statt Fehler
+        if (err.code === 'duplicate_item' && err.data && err.data.item_id) {
+          if (!byId.has(err.data.item_id)) { try { const x = (await api('GET', `/api/stock/${encodeURIComponent(err.data.item_id)}`)).item; if (x.active) rcAddItem({ ...x, last_supplier: null, last_receipt_date: null }); else { toast(t('rcn_inactive'), true); return; } } catch (e2) { toast(e2.message, true); return; } }
+          rcPick(d, err.data.item_id, false); return;
+        }
+        toast(err.message, true);
+      }
+    };
+    (asPn || !q ? nm : pn).focus();
+  };
   let n = 0;
   const sum = () => { const k = $$('#rclines .rcl').filter((r) => $('select', r).value).length; $('#rcsum').textContent = t('rcpt_count').replace('{n}', k); };
   const addLine = () => {
     if ($$('#rclines .rcl').length >= 50) { toast(t('rcpt_max'), true); return; }
     n += 1; const d = document.createElement('div'); d.className = 'rcl'; d.style.cssText = 'border-top:1px solid var(--rule);padding-top:8px;margin-top:8px';
     d.innerHTML = `<label for="rci${n}">${esc(t('part_name'))}</label>${stockQHtml('rcq' + n + 's')}<select id="rci${n}" class="rci">${opts()}</select>
+      <button type="button" class="linkbtn small rcnew" data-rcnew aria-expanded="false">+ ${esc(t('rcn_open'))}</button><div class="rcnf" data-rcnf hidden></div><p class="small" data-rcnok role="status" aria-live="polite" hidden></p>
       <div class="grid2"><div><label for="rcq${n}">${esc(t('qty'))}</label><input id="rcq${n}" class="rcq" inputmode="decimal"></div><div><label for="rcp${n}">${esc(t('price_net'))}</label><input id="rcp${n}" class="rcp" inputmode="decimal"></div></div>
       <div class="small rclast" data-rclast style="margin:4px 0 8px"></div>
       <button type="button" class="btn secondary rcdel">${esc(t('rcpt_remove'))}</button>`;
     $('#rclines').append(d);
     stockPick($('.stockq', d), $('select', d), siteItems, '<option value="">–</option>'); rcQVis(d);
-    $('select', d).onchange = () => { sum(); rcLast(d); }; $('.rcp', d).oninput = () => rcLast(d); $('.rcdel', d).onclick = () => { d.remove(); if (!$$('#rclines .rcl').length) addLine(); sum(); };
+    $('select', d).onchange = () => { sum(); rcLast(d); if (!$('select', d).value) $('[data-rcnok]', d).hidden = true; }; $('.rcp', d).oninput = () => rcLast(d); $('.rcnew', d).onclick = () => rcNew(d);
+    // Suche ohne Treffer → „neu anlegen“ hervorheben (Lieferschein-Position gibt es im Lager nicht)
+    const qi = $('.stockq', d); const qin = qi.oninput; qi.oninput = () => { qin(); const none = !!qi.value.trim() && !$('select', d).value && !siteItems().some((i) => stockHit(i, qi.value.trim())); $('.rcnew', d).style.fontWeight = none ? '700' : ''; if (none) $('.rcnew', d).setAttribute('data-rcnhot', ''); else $('.rcnew', d).removeAttribute('data-rcnhot'); };
+    $('.rcdel', d).onclick = () => { d.remove(); if (!$$('#rclines .rcl').length) addLine(); sum(); };
     sum();
   };
   // Backlog 861 (gleicher Blickwinkel): bisherige Lieferanten dieses Lagers als Vorschlag – eine Schreibweise je Lieferant hält den
@@ -311,7 +374,7 @@ async function viewStockReceipt() {
   addLine();
   $('#rcadd').onclick = () => addLine();
   $('#rcsup').oninput = () => $$('#rclines .rcl').forEach(rcLast);
-  if ($('#rcsite')) $('#rcsite').onchange = () => { $$('#rclines .rci').forEach((x) => { x.innerHTML = opts(); }); $$('#rclines .rcl').forEach(rcQVis); $$('#rclines .rcl').forEach(rcLast); supList(); sum(); };
+  if ($('#rcsite')) $('#rcsite').onchange = () => { $$('#rclines [data-rcnf]').forEach((f) => { f.hidden = true; f.innerHTML = ''; }); $$('#rclines [data-rcnok]').forEach((x) => { x.hidden = true; }); $$('#rclines .rci').forEach((x) => { x.innerHTML = opts(); }); $$('#rclines .rcl').forEach(rcQVis); $$('#rclines .rcl').forEach(rcLast); supList(); sum(); };
   $('#rcf').onsubmit = async (e) => {
     e.preventDefault();
     const rows = $$('#rclines .rcl').filter((r) => $('select', r).value || $('.rcq', r).value.trim());

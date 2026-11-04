@@ -33350,6 +33350,37 @@ await test('Backlog 990 (Blickwinkel „Mechaniker tippt die Teilenummer vom Kar
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].stock_pn_instock && STRINGS[l].stock_pn_instock.length > 30, l + ': Text'); }
   ok(STRINGS.de.help_stock_s.includes('aus dem Lager entnehmen') && STRINGS.en.help_stock_s.includes('take it from stock') && STRINGS.uk.help_stock_s.includes('взяти її зі складу'), 'Hilfe DE/UK/EN');
 });
+await test('Backlog 991 (Blickwinkel „Wareneingang vom Lieferschein: Position mit Teilenummer, die es im Lager nicht gibt“): Artikel je Position im Wareneingang anlegen – ohne Bestand angelegt, Wareneingang bucht Menge/Preis; vorhandene (anders geschriebene) Nummer bzw. 409 wählt den vorhandenen Artikel; Werkstatt nur eigenes Lager; Leitung sieht auch leere Lager; Hilfe DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  // Ablauf wie die Oberfläche: Anlegen ohne Anfangsbestand, dann Wareneingang mit allen Positionen
+  const a = await U.ws.post('/api/stock', { name: 'Ölfilter', part_number: 'W 11 102', initial_qty: 2, unit_price_net: 9 }); eq(a.status, 201);
+  const site = (await U.ws.get(`/api/stock/${a.data.id}`)).data.item.site;
+  const nw = await U.ws.post('/api/stock', { site, name: 'Spannrolle', part_number: 'X 77 001', unit: 'Stk', location: 'R3' }); eq(nw.status, 201, JSON.stringify(nw.data));
+  const d0 = (await U.ws.get(`/api/stock/${nw.data.id}`)).data; eq(d0.item.on_hand, 0, 'ohne Bestand angelegt'); eq(d0.movements.length, 0, 'keine Buchung beim Anlegen'); eq(d0.item.unit_price_net, null, 'kein Preis erfunden');
+  const rc = await U.ws.post('/api/stock/receipt', { site, supplier: 'Teile Süd', document_ref: 'LS-991', request_key: 'k991a', lines: [{ item_id: a.data.id, qty: '3' }, { item_id: nw.data.id, qty: '2', unit_price_net: '12,40' }] });
+  eq(rc.status, 201, JSON.stringify(rc.data)); eq(rc.data.lines, 2);
+  const d1 = (await U.ws.get(`/api/stock/${nw.data.id}`)).data; eq(d1.item.on_hand, 2); eq(d1.item.unit_price_net, 12.4); eq(d1.movements[0].document_ref, 'LS-991'); eq(d1.movements[0].supplier, 'Teile Süd');
+  // erneutes Anlegen (z. B. Wiederholung im Funkloch, andere Schreibweise) → 409 mit vorhandenem Artikel, den die Oberfläche wählt
+  const dup = await U.ws.post('/api/stock', { site, name: 'spannrolle', part_number: 'X-77-001' }); eq(dup.status, 409); eq(dup.data.item_id, nw.data.id);
+  eq((await U.ws.post('/api/stock', { site: 'MUENCHEN', name: 'Fremd', part_number: 'Q1' })).status, 403, 'Werkstatt nur eigenes Lager');
+  // Oberfläche (Quelltext): Knopf je Position, Teilenummer aus der Suche, Enter legt nur den Artikel an, 409 → vorhandener Artikel
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const s0 = app.indexOf('async function viewStockReceipt('); const body = app.slice(s0, app.indexOf('\n}\n', s0));
+  ok(body.includes('data-rcnew') && body.includes("$('.rcnew', d).onclick = () => rcNew(d)"), 'Knopf je Position');
+  ok(body.includes("e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault();"), 'Enter bucht nicht den Wareneingang');
+  ok(body.includes("err.code === 'duplicate_item' && err.data && err.data.item_id") && body.includes('rcPick(d, err.data.item_id, false)'), '409 wählt vorhandenen Artikel');
+  ok(body.includes('pnCompact(i.part_number) === c'), 'anders geschriebene Teilenummer (Regel wie Suche) angeboten');
+  ok(body.includes('if (!sites.length) return render(') && !body.includes('if (!items.length || !sites.length)'), 'leeres Lager kann erste Lieferung erfassen');
+  ok(!/initial_qty/.test(body.slice(body.indexOf('const rcNew'), body.indexOf('let n = 0;'))), 'kein Anfangsbestand – Menge nur über den Wareneingang');
+  // Vorbelegung: Ziffern ohne längeres Wort = Teilenummer, sonst Bezeichnung
+  const asPn = (q) => /\d/.test(q) && !/\p{L}{4,}/u.test(q);
+  ok(body.includes('const asPn = /\\d/.test(q) && !/\\p{L}{4,}/u.test(q);'), 'Regel Vorbelegung');
+  eq([asPn('A 000 420 12 20'), asPn('X-77-001'), asPn('Spannrolle 32'), asPn('Ölfilter'), asPn('W 11 102')].join(), 'true,true,false,false,true');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['rcn_open', 'rcn_hint', 'rcn_save', 'rcn_done', 'rcn_taken', 'rcn_dup', 'rcn_need_name', 'rcn_inactive']) ok(STRINGS[l][k], `${l} ${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].rcn_hint.includes('{ws}'), l + ': Lager im Hinweis');
+  ok(STRINGS.de.help_stock_s.includes('Artikel fehlt im Lager – neu anlegen') && STRINGS.en.help_stock_s.includes('Item missing in stock – create it') && STRINGS.uk.help_stock_s.includes('Артикула немає на складі – створити новий'), 'Hilfe DE/UK/EN');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

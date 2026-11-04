@@ -1242,6 +1242,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // [CLAUDE] Backlog 980 (Blickwinkel „Leitung überträgt die FIN aus Zulassungsbescheinigung, Rechnung oder E-Mail“)
 
 // [CLAUDE] Backlog 989 (Blickwinkel „Werkstatt bucht vom Lieferschein: Teilenummer in anderer Schreibweise“)
+// Backlog 991 (Blickwinkel „Wareneingang vom Lieferschein: Position mit Teilenummer, die es im Lager nicht gibt“)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
