@@ -15260,7 +15260,7 @@ await test('Fehlersuche 20.10. (16): Führerscheinkontrolle am selben Tag korrig
   const d0 = (await U.fleet.get('/api/dashboard')).data.vehicles;
   db.prepare("UPDATE vehicles SET eval_excluded=1 WHERE id='VIN:WDB9630051L917317'").run();
   const d1 = (await U.fleet.get('/api/dashboard')).data.vehicles; eq(d1.total, d0.total - 1); eq(d1.ruhend, 1);
-  ok(app.includes('const mOver = (v) => !v.eval_excluded &&') && app.includes('id="fbdormant"'), 'App');
+  ok(app.includes('const vOverdue = (v) => !v.eval_excluded &&') && app.includes('const mOver = vOverdue;') && app.includes('id="fbdormant"'), 'App'); // seit Backlog 981 gemeinsame Regel
   // 7. Werkstatt bucht vor „Übernehmen“: gilt als übernommen
   const id = await newCase({}, U.fleet);
   eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
@@ -32979,8 +32979,9 @@ await test('Backlog 978 (Blickwinkel „Leitung überträgt die Tatzeit aus dem 
 await test('Backlog 979 (Blickwinkel „Disposition sucht morgens einen Lkw mit Anhänger“): Filter „Gespann ohne Meldungen“ – Lkw und gekoppelter Anhänger ohne offene Meldung, nicht ruhend, ohne überfällige/nicht bestandene Prüfung oder offene Nachprüfung; Direktsprung, Druckkopf, Hinweis (DE/UK/EN)', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const line = (k) => app.slice(app.indexOf(k), app.indexOf('\n', app.indexOf(k)));
-  const src = [line('const mOver = (v) =>').replace(/\/\/.*$/, ''), line('const okSide = (x) =>'), line('const comboClear = (v) =>')].join('\n');
-  const cc = new Function('bDate', src + '; return comboClear;')(() => '2026-11-04');
+  const src = [line('const vOverdue = (v) =>'), line('const comboSideOk = (x) =>'), line('const comboClearV = (v) =>')].join('\n');
+  const cc = new Function('bDate', src + '; return comboClearV;')(() => '2026-11-04');
+  ok(app.includes('const comboClear = comboClearV;') && app.includes('const mOver = vOverdue;'), 'Fahrzeugliste nutzt die gemeinsame Regel (Backlog 981)');
   const ok1 = { kind: 'lkw', availability: 'einsatzbereit_lt_system', next_due: '2026-12-01', km_remaining: 5000 };
   const tr = { kind: 'anhaenger', availability: 'einsatzbereit_lt_system', next_due: null, km_remaining: null };
   eq(cc({ ...ok1, coupled: tr }), true, 'beide frei');
@@ -33041,6 +33042,26 @@ await test('Backlog 980 (Blickwinkel „Leitung überträgt die FIN aus Zulassun
   for (const l of ['de', 'uk', 'en']) for (const k of ['pv_many', 'pv_none', 'vin_len', 'vin_ioq']) ok(STRINGS[l][k] && STRINGS[l][k].length > 15, `${l}.${k}`);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].vin_len.includes('{n}') && STRINGS[l].vin_len.includes('17'), `${l}.vin_len`);
 });
+await test('Backlog 981 (Folge aus 979, Blickwinkel „Disposition plant morgens die Touren“): Dispo-Startseite zählt „Gespann ohne Meldungen“ mit derselben Regel und demselben Standort wie die Fahrzeugliste, Link auf den Filter, Kennzeichen im Ausdruck', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('async function dispoHome('); const b = app.indexOf('\n}\n', a); const body = app.slice(a, b);
+  ok(body.includes('ccAll.filter(comboClearV)'), 'gleiche Regel wie die Fahrzeugliste (comboClearV)');
+  ok(body.includes("hj('#/vehicles?f=combo_clear')") && body.includes('id="dcombo"'), 'Link auf den Filter der Fahrzeugliste');
+  ok(body.includes("v.kind === 'lkw' && v.coupled && v.coupled.kind === 'anhaenger' && !v.eval_excluded && inSite(v)") && body.includes('if (ccAll.length)'), 'nur mit Lkw-Gespannen am Standort, 0 wird angezeigt');
+  ok(body.includes("dispoPrintLine('combo', t('av_combo_clear'), ccL.map((v) => `${v.plate} + ${v.coupled.plate}`))"), 'Ausdruck mit Lkw + Anhänger');
+  ok(body.indexOf('id="dcombo"') < body.indexOf('dispoWinter(hs)'), 'vor Winter-/Druckbereich');
+  // Regel an Beispieldaten: Zähler nur für Lkw mit freiem Anhänger, Standortfilter wie die Tafel
+  const line = (k) => app.slice(app.indexOf(k), app.indexOf('\n', app.indexOf(k)));
+  const ccv = new Function('bDate', [line('const vOverdue = (v) =>'), line('const comboSideOk = (x) =>'), line('const comboClearV = (v) =>')].join('\n') + '; return comboClearV;')(() => '2026-11-04');
+  const T = (plate, site, extra = {}) => ({ kind: 'lkw', plate, site, availability: 'einsatzbereit_lt_system', coupled: { kind: 'anhaenger', plate: plate + 'A', availability: 'einsatzbereit_lt_system', ...extra } });
+  const vs = [T('SZ-1', 'Dortmund'), T('SZ-2', 'Dortmund', { availability: 'meldung_offen' }), T('SZ-3', 'Nürnberg'), { kind: 'lkw', plate: 'SZ-4', site: 'Dortmund', availability: 'einsatzbereit_lt_system', coupled: null }];
+  const sk = (x) => (x ? String(x).toLowerCase() : 'ohne');
+  eq(vs.filter((v) => sk(v.site) === 'dortmund' && ccv(v)).map((v) => v.plate).join(','), 'SZ-1', 'Dortmund: ein freies Gespann');
+  eq(vs.filter(ccv).length, 2, 'alle Standorte');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].av_combo_clear && STRINGS[l].av_combo_clear_t, `${l}: Texte vorhanden`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

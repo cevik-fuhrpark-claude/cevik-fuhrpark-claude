@@ -340,6 +340,12 @@ function toast(msg, err = false) {
 // sichtbaren Hinweis unter dem Feld/der Gruppe – der Toast verschwindet wieder, der Hinweis bleibt bis zur nächsten Eingabe
 // Kennzeichen: deutsche Reihenfolge mit Ziffern als Zahl („SZ-YC 9“ < „SZ-YC 10“), wie der Server (plateCmp, 21.10.2026)
 const plateCmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'de', { numeric: true });
+// Prüfung/Wartung überfällig: frühester Termin vor heute oder km-Fälligkeit überschritten (gespeicherte Werte, nur Anzeige; ruhende nicht)
+const vOverdue = (v) => !v.eval_excluded && ((v.next_due && v.next_due < bDate()) || (v.km_remaining !== null && v.km_remaining !== undefined && v.km_remaining < 0));
+// Backlog 979/981 („Gespann ohne Meldungen“, Fahrzeugliste und Dispo-Startseite): Lkw und gekoppelter Anhänger beide ohne offene Meldung, nicht ruhend,
+// ohne überfällige Prüfung/Wartung, ohne nicht bestandene HU/SP und ohne offene Nachprüfung – nur Anzeige gespeicherter Werte, keine Freigabe
+const comboSideOk = (x) => !!x && !x.eval_excluded && x.availability === 'einsatzbereit_lt_system' && !x.failed_inspection && !x.reinspection_open && !vOverdue(x);
+const comboClearV = (v) => v.kind === 'lkw' && !!v.coupled && v.coupled.kind === 'anhaenger' && comboSideOk(v) && comboSideOk(v.coupled);
 // Suchschlüssel: Trennzeichen wie bei Kennzeichen-Zuordnungen weglassen (Leerzeichen, Bindestrich, Punkt, Schrägstrich, Unterstrich, Gedankenstriche)
 // NFC (zerlegte Umlaute) und kyrillische Buchstaben, die wie lateinische aussehen (ukrainische Tastatur: „SZ-YС 5513“ mit С kyrillisch),
 // wie der Server (normPlate) – vorher fanden Fahrzeugliste, Fahrzeugauswahl und globale Suche nichts (22.10.2026). Beide Seiten gleich umgesetzt.
@@ -1480,6 +1486,12 @@ async function dispoHome(cases) {
   // Teilagent „Panne – Ersatzfahrzeug“: Lkw mit gesperrtem Anhänger zählte grün und war nur über den Anhänger erkennbar)
   const clL = dvs.filter((v) => !v.eval_excluded && v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt' && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs))); const cl = clL.length;
   if (cl) html += `<p class="noprint"><a class="panel alert" style="display:block;text-decoration:none" href="${hj('#/vehicles?f=coupled_locked')}" id="dcoupled"><b>${esc(t('av_coupled_locked'))} (${cl})</b></a></p>${dispoPrintLine('coupled', t('av_coupled_locked'), clL.map((v) => `${v.plate} (🔗 ${t('vk_' + v.coupled.kind)} ${v.coupled.plate})`), true)}`;
+  // Backlog 981 (Folge aus 979, Blickwinkel „Disposition plant morgens die Touren“): Zähler „Gespann ohne Meldungen“ – gleiche Regel und gleicher
+  // Standort wie die Fahrzeugliste; sichtbar, sobald am Standort ein Lkw mit gekoppeltem Anhänger steht (auch 0 = kein freies Gespann ist eine Aussage)
+  const inSite = (v) => !hs || nk(v.site) === nk(hs === 'ohne' ? null : hs);
+  const ccAll = dvs.filter((v) => v.kind === 'lkw' && v.coupled && v.coupled.kind === 'anhaenger' && !v.eval_excluded && inSite(v));
+  const ccL = ccAll.filter(comboClearV);
+  if (ccAll.length) html += `<p class="noprint"><a href="${hj('#/vehicles?f=combo_clear')}" id="dcombo" data-n="${ccL.length}" title="${esc(t('av_combo_clear_t'))}">${esc(t('av_combo_clear'))} (${ccL.length})</a></p>${dispoPrintLine('combo', t('av_combo_clear'), ccL.map((v) => `${v.plate} + ${v.coupled.plate}`))}`;
   if (cases !== null) html += await dispoWinter(hs);
   html += `<p class="noprint"><button type="button" class="btn secondary" id="dprint">${esc(t('print'))}</button></p>`;
   html += helpLink('dispo');
@@ -4333,12 +4345,9 @@ async function viewVehicles() {
   const nCL = base.filter(cLocked).length;
   const nN = base.filter((v) => v.notes_active > 0).length; // aktive Hinweise zum Fahrzeug (nicht für Fahrer)
   // Prüfung/Wartung überfällig: frühester Termin vor heute oder km-Fälligkeit überschritten (gespeicherte Werte, nur Anzeige)
-  const mOver = (v) => !v.eval_excluded && ((v.next_due && v.next_due < bDate()) || (v.km_remaining !== null && v.km_remaining !== undefined && v.km_remaining < 0)); // ruhende nicht (wie Übersicht/Agent, Entscheidung 10.10.2026)
+  const mOver = vOverdue; // ruhende nicht (wie Übersicht/Agent, Entscheidung 10.10.2026); Regel seit Backlog 981 gemeinsam mit der Dispo-Startseite
   const nMO = base.filter(mOver).length;
-  // Backlog 979 (Blickwinkel „Disposition sucht morgens einen Lkw mit Anhänger“): Lkw und gekoppelter Anhänger beide ohne offene Meldung, nicht ruhend,
-  // ohne überfällige Prüfung/Wartung, ohne nicht bestandene HU/SP und ohne offene Nachprüfung – nur Anzeige gespeicherter Werte, keine Freigabe
-  const okSide = (x) => x && !x.eval_excluded && x.availability === 'einsatzbereit_lt_system' && !x.failed_inspection && !x.reinspection_open && !mOver(x);
-  const comboClear = (v) => v.kind === 'lkw' && !!v.coupled && v.coupled.kind === 'anhaenger' && okSide(v) && okSide(v.coupled);
+  const comboClear = comboClearV; // Backlog 979, Regel seit Backlog 981 gemeinsam mit der Dispo-Startseite
   const nCC = base.filter(comboClear).length;
   const nRC = base.filter((v) => v.open_recalls > 0).length; // offene Herstellerrückrufe (noch nicht durchgeführt)
   const nAF = base.filter((v) => v.agent_findings_open > 0).length; const nAFC = base.filter((v) => v.agent_findings_critical > 0).length; // offene Agentenbefunde (nur Inhaber/Fuhrparkleitung bekommen das Feld)

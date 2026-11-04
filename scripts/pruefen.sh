@@ -364,6 +364,7 @@ UI-Schadenzeitpunkt Schnellwahl: Heute/Gestern/Vorgestern setzt nur den Tag, Vor
 UI-Uhrzeit einfügen: Tatzeit „03.11.2026, 14:32 Uhr“/„о 14:32“/„2:32 PM“ übernommen und gespeichert, nur Datum/mehrere/ungültige Uhrzeit mit Meldung, Schadenzeitpunkt Tag+Uhrzeit, DE/UK/EN 390/820/1366|ui-uhrzeit-einfuegen.py|/tmp/cfp-uhrzeit-einfuegen.log
 UI-FIN einfügen: „Fahrgestellnummer: …“, „VIN-код: …“, Rechnungszeile mit FIN ins FIN-Feld übernommen und gespeichert; zwei FIN mit Meldung, Zähler „von 17“, I/O-Hinweis, Suche „FIN: …“, DE/UK/EN 390/820/1366|ui-fin-einfuegen.py|/tmp/cfp-fin-einfuegen.log
 UI-Disposition Gespann ohne Meldungen: Knopf zählt nur Lkw+Anhänger ohne Meldung/überfällige Prüfung, Direktsprung, Hinweis, DE/UK/EN 390/820/1366 (Backlog 979)|ui-gespann-frei.py|/tmp/cfp-gespann-frei.log
+UI-Dispo-Startseite Gespann ohne Meldungen: Zähler mit gleicher Regel wie die Fahrzeugliste, Link auf den Filter, Ausdruck mit Kennzeichen, DE/UK/EN 390/820/1366 (Backlog 981)|ui-dispo-gespann.py|/tmp/cfp-dispo-gespann.log
 UI-Sammeltermin (Prüftermine): mehrere UVV an einem Tag, Absprache nicht still ersetzt, Rollen|ui-sammeltermin.py|/tmp/cfp-sammeltermin.log
 UI-Heute zu tun nach dem Urlaub: Kostenfreigaben älteste zuerst, „+N“ führt zur gefilterten Vorgangsliste|ui-heute-zu-tun-urlaub.py|/tmp/cfp-heute-zu-tun-urlaub.log
 UI-Bußgeld ändern (Frist), deaktivierter Kandidat, Umgebung|ui-bussgeld-aendern.py|/tmp/cfp-bussgeld-aendern.log

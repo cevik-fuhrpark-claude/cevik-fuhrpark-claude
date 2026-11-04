@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, TST, VEH_SORTS, afLink, announceHits, api, bDate, bindTachoCancel, caseList, checkLabel, conflictKeep, conflictMine, ctChip, ctLines, ctRet, decIn, download, dqDetail, dur, envFn, esc, eur, eurIst, fMsg, fcLabel, fileUrl, fmtD, fmtDT, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hj, hoMissing, huNote, isMgr, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, langAttr, lostDup, lostIs, lostMark, mEv, mY, maintOrderHtml, mayReport, mk, mkR, noTr, noneP, offDayWatch, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, render, rkFor, searchKey, siteKeyUi, sortPref, stackTables, supplierLabel, t, tachoHistList, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, uid, vlAt, vsDef, warrChip, wsForSite, wsOptions } from './app-main.js';
+import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, TST, VEH_SORTS, afLink, announceHits, api, bDate, bindTachoCancel, caseList, checkLabel, comboClearV, conflictKeep, conflictMine, ctChip, ctLines, ctRet, decIn, download, dqDetail, dur, envFn, esc, eur, eurIst, fMsg, fcLabel, fileUrl, fmtD, fmtDT, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hj, hoMissing, huNote, isMgr, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, langAttr, lostDup, lostIs, lostMark, mEv, mY, maintOrderHtml, mayReport, mk, mkR, noTr, noneP, offDayWatch, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, render, rkFor, searchKey, siteKeyUi, sortPref, stackTables, supplierLabel, t, tachoHistList, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, uid, vOverdue, vlAt, vsDef, warrChip, wsForSite, wsOptions } from './app-main.js';
 
 // Durchführung älter als die gespeicherte letzte: nur im Verlauf gespeichert, Fälligkeit unverändert – ausdrücklich sagen (17.10.2026)
 const doneToast = (r) => toast(r && r.older_than_last ? '✓ ' + t('mt_older_saved').replace('{d}', fmtD(r.last_done_date)) : '✓');
@@ -74,12 +74,9 @@ async function viewVehicles() {
   const nCL = base.filter(cLocked).length;
   const nN = base.filter((v) => v.notes_active > 0).length; // aktive Hinweise zum Fahrzeug (nicht für Fahrer)
   // Prüfung/Wartung überfällig: frühester Termin vor heute oder km-Fälligkeit überschritten (gespeicherte Werte, nur Anzeige)
-  const mOver = (v) => !v.eval_excluded && ((v.next_due && v.next_due < bDate()) || (v.km_remaining !== null && v.km_remaining !== undefined && v.km_remaining < 0)); // ruhende nicht (wie Übersicht/Agent, Entscheidung 10.10.2026)
+  const mOver = vOverdue; // ruhende nicht (wie Übersicht/Agent, Entscheidung 10.10.2026); Regel seit Backlog 981 gemeinsam mit der Dispo-Startseite
   const nMO = base.filter(mOver).length;
-  // Backlog 979 (Blickwinkel „Disposition sucht morgens einen Lkw mit Anhänger“): Lkw und gekoppelter Anhänger beide ohne offene Meldung, nicht ruhend,
-  // ohne überfällige Prüfung/Wartung, ohne nicht bestandene HU/SP und ohne offene Nachprüfung – nur Anzeige gespeicherter Werte, keine Freigabe
-  const okSide = (x) => x && !x.eval_excluded && x.availability === 'einsatzbereit_lt_system' && !x.failed_inspection && !x.reinspection_open && !mOver(x);
-  const comboClear = (v) => v.kind === 'lkw' && !!v.coupled && v.coupled.kind === 'anhaenger' && okSide(v) && okSide(v.coupled);
+  const comboClear = comboClearV; // Backlog 979, Regel seit Backlog 981 gemeinsam mit der Dispo-Startseite
   const nCC = base.filter(comboClear).length;
   const nRC = base.filter((v) => v.open_recalls > 0).length; // offene Herstellerrückrufe (noch nicht durchgeführt)
   const nAF = base.filter((v) => v.agent_findings_open > 0).length; const nAFC = base.filter((v) => v.agent_findings_critical > 0).length; // offene Agentenbefunde (nur Inhaber/Fuhrparkleitung bekommen das Feld)

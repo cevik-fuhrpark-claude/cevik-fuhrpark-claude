@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { BERLIN_FMT, S, WST_ST, api, bDate, cDesc, clipTxt, esc, federalHoliday, fmtD, fmtDT, fmtDue, helpLink, hj, hoMissing, langAttr, ltxt, mk, partsEta, planVehTag, plate, plateCmp, posL, rdyOf, rdyTxt, siteKeyUi, t, tn, translateLockReason, vlAt, woApptTxt, woTag, wsName } from './app-main.js';
+import { BERLIN_FMT, S, WST_ST, api, bDate, cDesc, clipTxt, comboClearV, esc, federalHoliday, fmtD, fmtDT, fmtDue, helpLink, hj, hoMissing, langAttr, ltxt, mk, partsEta, planVehTag, plate, plateCmp, posL, rdyOf, rdyTxt, siteKeyUi, t, tn, translateLockReason, vlAt, woApptTxt, woTag, wsName } from './app-main.js';
 
 // Teile-Liefertermin laut Werkstatt (nur bei „wartet auf Teile“); überschritten = markiert
 // „Rückkehr: ungeklärt“ (Disposition): der Werkstatttermin ist der Beginn, nicht die Fertigstellung – ein Datum zählt nur, solange es noch
@@ -44,6 +44,12 @@ async function dispoHome(cases) {
   // Teilagent „Panne – Ersatzfahrzeug“: Lkw mit gesperrtem Anhänger zählte grün und war nur über den Anhänger erkennbar)
   const clL = dvs.filter((v) => !v.eval_excluded && v.availability !== 'gesperrt' && v.coupled && v.coupled.availability === 'gesperrt' && (!hs || nk(v.site) === nk(hs === 'ohne' ? null : hs))); const cl = clL.length;
   if (cl) html += `<p class="noprint"><a class="panel alert" style="display:block;text-decoration:none" href="${hj('#/vehicles?f=coupled_locked')}" id="dcoupled"><b>${esc(t('av_coupled_locked'))} (${cl})</b></a></p>${dispoPrintLine('coupled', t('av_coupled_locked'), clL.map((v) => `${v.plate} (🔗 ${t('vk_' + v.coupled.kind)} ${v.coupled.plate})`), true)}`;
+  // Backlog 981 (Folge aus 979, Blickwinkel „Disposition plant morgens die Touren“): Zähler „Gespann ohne Meldungen“ – gleiche Regel und gleicher
+  // Standort wie die Fahrzeugliste; sichtbar, sobald am Standort ein Lkw mit gekoppeltem Anhänger steht (auch 0 = kein freies Gespann ist eine Aussage)
+  const inSite = (v) => !hs || nk(v.site) === nk(hs === 'ohne' ? null : hs);
+  const ccAll = dvs.filter((v) => v.kind === 'lkw' && v.coupled && v.coupled.kind === 'anhaenger' && !v.eval_excluded && inSite(v));
+  const ccL = ccAll.filter(comboClearV);
+  if (ccAll.length) html += `<p class="noprint"><a href="${hj('#/vehicles?f=combo_clear')}" id="dcombo" data-n="${ccL.length}" title="${esc(t('av_combo_clear_t'))}">${esc(t('av_combo_clear'))} (${ccL.length})</a></p>${dispoPrintLine('combo', t('av_combo_clear'), ccL.map((v) => `${v.plate} + ${v.coupled.plate}`))}`;
   if (cases !== null) html += await dispoWinter(hs);
   html += `<p class="noprint"><button type="button" class="btn secondary" id="dprint">${esc(t('print'))}</button></p>`;
   html += helpLink('dispo');
