@@ -25212,7 +25212,7 @@ await test('Backlog 489–494 (Blickwinkel „Kennzeichen in verschiedenen Schre
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("(v.model || '') + ' ' + (v.former_plates || []).join(' ')).toLowerCase())"), '489: Fahrzeugliste mit früheren Kennzeichen');
   ok(app.includes("const q = $('#afq') ? searchKey((S.afQ || '').trim()) : '';") && app.includes('afText.set(r, searchKey(r.textContent))'), '490: Befundsuche normalisiert');
-  ok(app.includes("if (/^#\\/(new|check|v)\\/VIN:[A-Z0-9]+$/.test(h0)) { try { sessionStorage.setItem('cfp_after_login', h0); } catch {} } location.hash = '#/login';"), '492: Scan-Ziel bei Sitzungsablauf');
+  ok(app.includes("if (/^#\\/(new|check|v)\\/VIN:[A-Z0-9]+$/.test(h0) || (fromPush && AFTER_LOGIN_RX.test(h0))) { try { sessionStorage.setItem('cfp_after_login', h0); } catch {} } location.hash = '#/login';"), '492: Scan-Ziel bei Sitzungsablauf (seit 1017 auch eben getippte Benachrichtigung, sonst keine Vorgänge)');
   const i0 = app.indexOf('async function viewScan('); const vsrc = app.slice(i0, app.indexOf('\n}\n', i0));
   ok(vsrc.includes("catch (e) { if (e && e.status === 401) return; }") && vsrc.includes("await api('GET', '/api/vehicles/' + encodeURIComponent(id)); location.hash = '#/vehicles/' + id;") && vsrc.includes("location.hash = mayReport() ? '#/new' : '#/'"), '493: Scan außer Betrieb');
   ok(vsrc.includes("['werkstatt', 'meldung_offen'].includes(v.availability)") && vsrc.includes("t('av_' + v.availability)"), '494: Scan zeigt offene Meldung/Werkstatt');
@@ -33993,6 +33993,30 @@ await test('Backlog 1016 (Blickwinkel „Neue Fuhrparkleitung übernimmt am erst
   const { U } = await freshWorld();
   const r = await U.fleet.post('/api/vehicles/import', { csv: 'FIN;Kennzeichen\nWDB12345678901234;SZ-XX 1' });
   eq(r.status, 403, 'Fuhrparkleitung darf Stammdaten nicht importieren');
+});
+
+await test('Backlog 1017 (Blickwinkel „Push-Benachrichtigung tippen, nachdem die Anmeldung am Server abgelaufen ist“): Ziel der eben getippten Benachrichtigung (Vorgang/Bußgeld/Fahrzeug) wird nach 401 bei laufender App für die Anmeldung gemerkt; ohne Benachrichtigung weiterhin nur QR-Ziele (Backlog 492)', async () => {
+  const fsx = await import('node:fs'); const src = fsx.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = src.match(/const AFTER_LOGIN_RX = (\/.+\/);\n/); ok(m, 'AFTER_LOGIN_RX vorhanden');
+  const rx = eval(m[1]);
+  for (const h of ['#/cases/0f2c-ab_1', '#/fines/abc-1', '#/vehicles/VIN:WDB123', '#/vehicles/VIN%3AWDB123', '#/push', '#/more?o=sess', '#/v/VIN:WDB1', '#/new/VIN:WDB1', '#/check/VIN:WDB1']) ok(rx.test(h), `Sprungziel ${h}`);
+  for (const h of ['#/', '#/settings', '#/cases', '#/users', '#/cases/x/../users', '#/cases/a?b']) ok(!rx.test(h), `kein Sprungziel ${h}`);
+  // App-Start und 401-Weg nutzen dieselbe Liste; keine zweite Kopie des Musters
+  eq((src.match(/cases\\\/\[\\w-\]\+\|fines/g) || []).length, 1, 'Muster nur einmal');
+  ok(src.includes('if (!st.needs_setup && AFTER_LOGIN_RX.test(h))'), 'App-Start nutzt AFTER_LOGIN_RX');
+  // 401-Weg: Herkunft vor resetUserState bestimmen (S wird dort geleert), nur frische Push-Navigation auf genau diese Seite
+  const l = src.split('\n').find((x) => x.includes("res.status === 401 && !path.startsWith('/api/login')"));
+  ok(l && l.indexOf('const fromPush = pushNavFresh(h0)') > 0 && l.indexOf('const fromPush') < l.indexOf('resetUserState()'), 'fromPush vor resetUserState');
+  ok(l.includes('(fromPush && AFTER_LOGIN_RX.test(h0))') && l.includes('/^#\\/(new|check|v)\\/VIN:[A-Z0-9]+$/.test(h0)'), 'QR-Ziele immer, sonst nur nach Benachrichtigung');
+  ok(/S\.pushNav = \{ hash: e\.data\.hash, at: Date\.now\(\) \}/.test(src), 'Service-Worker-Nachricht merkt das Ziel');
+  ok(/function pushNavFresh\(h\) \{[^\n]*Date\.now\(\) - p\.at < PUSH_NAV_MS/.test(src) && /const PUSH_NAV_MS = 2 \* 60 \* 1000;/.test(src), 'nur frisch (2 Min.)');
+  // erzeugtes Start-Modul enthält die Änderung (Build aktuell)
+  const main = fsx.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  ok(main.includes('const fromPush = pushNavFresh(h0)') && main.includes('S.pushNav = { hash: e.data.hash'), 'app-main.js aktuell');
+  // Service Worker liefert für Vorgang/Fahrzeug/Bußgeld genau diese Formen
+  const sw = fsx.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  ok(sw.includes("`#/cases/${encodeURIComponent(d.case_id)}`") && sw.includes("'#/more?o=sess' : '#/push'"), 'sw.js-Ziele passen zum Muster');
+  ok(fsx.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-push-nach-ablauf.py|'), 'UI-Skript in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

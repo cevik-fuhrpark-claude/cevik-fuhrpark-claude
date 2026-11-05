@@ -282,11 +282,15 @@ async function api(method, path, body, extra = {}) {
     if (!S.authLostShown) { S.authLostShown = true; toast(t('session_lost_dirty'), true); }
     const e = new Error(t('err_unauthenticated')); e.status = 401; throw e;
   }
+  // Backlog 1017 (Blickwinkel „Push-Benachrichtigung tippen, nachdem die Anmeldung am Server abgelaufen ist“): App lief noch mit Konto im
+  // Hintergrund (Handy drosselt Zeitgeber, Sitzung woanders beendet), Tippen auf die Benachrichtigung → Vorgang/Bußgeld/Fahrzeug → 401 →
+  // nach der Anmeldung landete die Person auf der Startseite statt am Ziel der Benachrichtigung. Jetzt wird das Ziel gemerkt – nur wenn es
+  // eben (PUSH_NAV_MS) per Benachrichtigung geöffnet wurde; eine sonst offene Vorgangsseite der vorherigen Person bleibt wie seit Backlog 492 außen vor.
   // Sitzung am Server beendet (z. B. „alle anderen Anmeldungen beenden“, Ablauf): Offline-Daten der Person wie beim Abmelden entfernen
   // (22.10.2026: Fahrzeug-/Notfall-Zwischenspeicher blieben auf dem geteilten Tablet stehen)
   // Backlog 492 (Blickwinkel „QR-Aufkleber auf dem Hof scannen“): Sitzung bei offener App abgelaufen – das gescannte Fahrzeug (nur QR-Ziele, keine
   // Vorgänge der vorherigen Person auf geteilten Tablets) nach der Anmeldung wieder öffnen wie beim App-Start
-  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { const h0 = (location.hash || '').replace(/%3A/gi, ':'); resetUserState(); clearOfflineData(); markSession(''); if (/^#\/(new|check|v)\/VIN:[A-Z0-9]+$/.test(h0)) { try { sessionStorage.setItem('cfp_after_login', h0); } catch {} } location.hash = '#/login'; const e = new Error(t('err_unauthenticated')); e.status = 401; throw e; }
+  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { const h0 = (location.hash || '').replace(/%3A/gi, ':'); const fromPush = pushNavFresh(h0); resetUserState(); clearOfflineData(); markSession(''); if (/^#\/(new|check|v)\/VIN:[A-Z0-9]+$/.test(h0) || (fromPush && AFTER_LOGIN_RX.test(h0))) { try { sessionStorage.setItem('cfp_after_login', h0); } catch {} } location.hash = '#/login'; const e = new Error(t('err_unauthenticated')); e.status = 401; throw e; }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json() : await res.blob();
   // Exporte mit Zeilengrenze melden die Begrenzung per Header (z. B. Vorgangs-CSV)
@@ -533,6 +537,10 @@ function applySiteJump(h) {
 }
 const routeArg = (x) => { if (x === undefined) return undefined; try { return decodeURIComponent(x); } catch { return x; } };
 
+// Sprungziele, die nach der Anmeldung wieder geöffnet werden (App-Start ohne Sitzung bzw. eben getippte Push-Benachrichtigung; Backlog 1017)
+const AFTER_LOGIN_RX = /^#\/((new|check|v)\/VIN:[A-Z0-9]+|cases\/[\w-]+|fines\/[\w-]+|vehicles\/(VIN|VIN%3A)[:A-Z0-9]+|more\?o=sess|push)$/;
+const PUSH_NAV_MS = 2 * 60 * 1000;
+function pushNavFresh(h) { const p = S.pushNav; return !!p && String(p.hash || '').replace(/%3A/gi, ':') === h && Date.now() - p.at < PUSH_NAV_MS; }
 async function route() {
   // Links mit encodeURIComponent(Fahrzeug-ID) enthalten „VIN%3A…“ – vor dem Abgleich mit den Routen auf „VIN:“ zurückführen
   let h = (location.hash || '#/').replace(/%3A/gi, ':');
@@ -560,7 +568,7 @@ async function route() {
       catch (err) {
         // Funkloch beim App-Start: mit zuletzt gespeichertem Konto weiterarbeiten (Meldungen gehen in den Offline-Ausgang)
         const cached = err.offline ? offlineSession() : null;
-        if (!cached) { const st = await api('GET', '/api/setup/status', undefined, { timeoutMs: START_TIMEOUT_MS }).catch(() => ({})); if (!st.needs_setup && /^#\/((new|check|v)\/VIN:[A-Z0-9]+|cases\/[\w-]+|fines\/[\w-]+|vehicles\/(VIN|VIN%3A)[:A-Z0-9]+|more\?o=sess|push)$/.test(h)) { try { sessionStorage.setItem('cfp_after_login', h); } catch {} } location.hash = st.needs_setup ? '#/setup' : '#/login'; return; }
+        if (!cached) { const st = await api('GET', '/api/setup/status', undefined, { timeoutMs: START_TIMEOUT_MS }).catch(() => ({})); if (!st.needs_setup && AFTER_LOGIN_RX.test(h)) { try { sessionStorage.setItem('cfp_after_login', h); } catch {} } location.hash = st.needs_setup ? '#/setup' : '#/login'; return; }
         S.me = cached.me; S.meta = cached.meta; S.lang = S.me.language || S.lang; S.offlineStart = true;
       }
       await ensureLang(S.lang); // Kontosprache (Backlog 588)
@@ -5087,6 +5095,7 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
   // Push-Klick auf die schon offene Ansicht: neu aufbauen (gleicher Hash löst kein hashchange aus; 18.10.2026), Eingaben bleiben unangetastet
   navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'navigate') {
+    if (typeof e.data.hash === 'string') S.pushNav = { hash: e.data.hash, at: Date.now() }; // Backlog 1017: Ziel nach erneuter Anmeldung
     // abgemeldet (Leerlauf) bei offenem Fenster: Umgebung für die Anmeldung in der Adresse merken – wie beim Kaltstart „?env=“ (23.10.2026: Test-Vorgang → „nicht gefunden“)
     if (!S.me && ['test', 'production'].includes(e.data.env)) history.replaceState(history.state, '', location.pathname + '?env=' + e.data.env + location.hash);
     if (pushEnv(e.data.env)) { if (location.hash === e.data.hash) route(); else location.hash = e.data.hash; return; } if (location.hash === e.data.hash) { if (!viewDirty()) route(); } else location.hash = e.data.hash; } if (e.data && e.data.type === 'push') refreshUnread(true).then(inboxPush); });
