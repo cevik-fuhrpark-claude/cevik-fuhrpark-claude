@@ -26,7 +26,7 @@ with sync_playwright() as p:
     R=os.getpid()%100000
     for i,lang in enumerate(['de','uk','en']):
       for j,(w,h) in enumerate([(390,844),(820,1180),(1366,900)]):
-        vin=f'WDB96340310{R:05d}{i}{j}'[:17]; vid='VIN:'+vin
+        vin=f'WDB96340310{R%10000:04d}{i}{j}'; vid='VIN:'+vin
         r=api('POST','/api/vehicles',{'plate':f'TZ-V{R%1000} {i}{j}6','vin':vin,'site':'Dortmund'}); check(r['s'] in (200,201),f'Fahrzeug {r["s"]}')
         ctx=br.new_context(viewport={'width':w,'height':h},service_workers='block'); m=ctx.new_page(); errs=[]; m.on('pageerror',lambda e: errs.append(str(e)))
         m.goto(B); m.context.add_cookies(a.context.cookies()); m.evaluate(JS,['PATCH','/api/me',{'language':lang}])
