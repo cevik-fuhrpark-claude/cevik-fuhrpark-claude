@@ -4033,11 +4033,11 @@ await test('Kosten je km wie „Fahrleistung je Monat“: exakte Berliner Monats
     // Summe der Monate = Zeitraum (wie Fahrzeugakte)
     eq([...pm.months.values()].reduce((s, x) => s + x, 0), v.km);
     let csv = dec(await users.fleet.get(q('&format=csv'))).split('\r\n');
-    ok(csv[0].endsWith(';Gefahrene km (Monat);Fahrzeugstatus'), 'CSV-Spalte'); ok(csv[1].startsWith('TZ-KM 1;') && csv[1].endsWith(';1000;aktiv'), 'CSV April 1000 km');
+    ok(csv[0].endsWith(';Gefahrene km (Monat);Fahrzeugstatus;Nachträglich erfasste Arbeitszeit-Positionen'), 'CSV-Spalte'); ok(csv[1].startsWith('TZ-KM 1;') && csv[1].endsWith(';1000;aktiv;0'), 'CSV April 1000 km');
     add('tzkm-6', 2900, '2026-04-25T10:00:00.000Z'); // Rückgang im April
     r = await get(); v = r.vehicles.find((x) => x.vehicle_id === VID);
     eq(v.km, null, 'Rückgang → kein Wert'); eq(v.km_status, 'decrease'); eq(v.cost_per_km, null); eq(r.rows[0].km, null, 'April ohne Wert');
-    csv = dec(await users.fleet.get(q('&format=csv'))).split('\r\n'); ok(csv[1].endsWith('ja;;aktiv') || csv[1].endsWith('nein;;aktiv'), 'CSV leer statt 0');
+    csv = dec(await users.fleet.get(q('&format=csv'))).split('\r\n'); ok(csv[1].endsWith('ja;;aktiv;0') || csv[1].endsWith('nein;;aktiv;0'), 'CSV leer statt 0');
     const pm2 = await periodMileageOf(VID); eq(pm2.months.get('2026-03'), 200, 'März bleibt');
     // Rückgang gegenüber dem Vorwert vor dem Zeitraum
     db.prepare(`DELETE FROM odometer_readings WHERE id='tzkm-6'`).run(); db.prepare(`UPDATE odometer_readings SET km=2100 WHERE id='tzkm-0'`).run();
@@ -18016,7 +18016,7 @@ await test('Reifenwechsel-Saison / Jahresabschluss Kosten (Teilagenten 23.10.): 
   const inj = costItemsCsv({ items: [{ date: '2026-12-31', month: '2026-12', case_no: 'V-1', plate: '=X', site: 'A;B', vehicle_active: false, type: 'fremdleistung', description: null, supplier: '@Werkstatt', document: 'RE 1', quantity: null, unit: null, unit_price_net: null, amount_net: 900.5, valuation: 'actual', counted: true }], truncated: false });
   ok(inj.includes("31.12.2026;2026-12;V-1;'=X;\"A;B\";außer Betrieb;Fremdleistung;;'@Werkstatt;RE 1;;;;900,5;belegt;ja"), 'CSV-Zeile: ' + inj.split('\r\n')[1]);
   ok(r.rows.every((x) => typeof x.vehicle_active === 'boolean'), 'Bericht: Fahrzeugstatus je Zeile');
-  ok(costReportCsv({ rows: [{ ...r.rows[0], vehicle_active: false }] }).split('\r\n')[1].endsWith(';außer Betrieb'), 'Bericht-CSV: Status');
+  ok(costReportCsv({ rows: [{ ...r.rows[0], vehicle_active: false }] }).split('\r\n')[1].endsWith(';außer Betrieb;0'), 'Bericht-CSV: Status');
   ok(costReportCsv({ rows: [] }).includes(';Fahrzeugstatus'), 'Kopfzeile Status');
   // Texte und Oberfläche
   const { STRINGS } = await import('../public/i18n.js');
@@ -18597,6 +18597,11 @@ await test('Nachträglich erfasste Arbeitszeit (Backlog 189): Kostenbericht zäh
   const row = rep.rows.find((r) => r.vehicle_id === V && r.month === pm);
   eq(row.late_items, 1, 'eine nachträgliche Position'); eq(row.hours, 3.33);
   ok(/nach Ende des Monats/.test(rep.definitions.late_items), 'Definition');
+  { // Backlog 1046: Monats-CSV mit letzter Spalte „Nachträglich erfasste Arbeitszeit-Positionen“
+    const ct = csvTable(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.req('GET', `/api/reports/costs?format=csv&from=${pm}&to=${pm}&vehicle_id=${encodeURIComponent(V)}`)).data));
+    eq(ct.head[ct.head.length - 1], 'Nachträglich erfasste Arbeitszeit-Positionen', 'CSV letzte Spalte:');
+    eq(ct.rows.find((x) => x.Monat === pm)['Nachträglich erfasste Arbeitszeit-Positionen'], '1', 'CSV-Wert:');
+  }
   const envF = (await users.fleet.get('/api/me')).data.active_environment;
   const it = (await reports.costItems(env, null, envF, { from: pm, to: pm })).items.filter((i) => i.case_no === row.case_no || i.plate === 'NE-AZ 189').filter((i) => i.type === 'arbeitszeit');
   eq(it.length, 2, 'zwei Zeilen: rechtzeitig + nachträglich'); eq(it.filter((i) => i.late).length, 1);
@@ -26548,8 +26553,8 @@ await test('Backlog 616 (Blickwinkel „Jahreskosten für den Steuerberater“):
   eq(col(v, 'Kosten je km netto (belegt)'), '0,035'); eq(col(v, 'km-Zeitraum unvollständig'), 'ja', 'Mai-Kosten nach letzter Ablesung 31.03.'); eq(col(v, 'km-Ablesung bis'), '31.03.2026'); eq(col(v, 'Fahrzeugstatus'), 'aktiv');
   const sumSite = c.filter((r) => r[0] === 'Summe Standort'); const sumAll = c.find((r) => r[0] === 'Summe gesamt');
   ok(sumSite.length >= 1 && sumAll && col(sumAll, 'Summe belegt netto') === '350' && col(sumAll, 'Stunden') === '3,5' && col(sumAll, 'Gefahrene km') === '', 'Summenzeilen ' + JSON.stringify(sumAll));
-  // Monats-CSV unverändert (17 Spalten)
-  const m = await rows(''); eq(m[0].length, 17, 'Monats-CSV'); eq(m.filter((r) => r[1] === V1).length, 2, 'zwei Monate');
+  // Monats-CSV: 17 Spalten, seit Backlog 1046 18
+  const m = await rows(''); eq(m[0].length, 18, 'Monats-CSV (seit Backlog 1046 + „Nachträglich erfasste Arbeitszeit-Positionen“)'); eq(m.filter((r) => r[1] === V1).length, 2, 'zwei Monate');
   // außer Betrieb seit (Protokoll)
   // offener Vorgang verhindert die Außerbetriebnahme über die API – Zustand wie nach „außer Betrieb nehmen“ direkt setzen
   db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(V1); db.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES ('b616-a',NULL,'vehicle.deactivate',?,'{}','2026-08-20T08:00:00Z')`).run(V1);

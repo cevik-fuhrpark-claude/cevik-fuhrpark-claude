@@ -343,13 +343,14 @@ export function costReportCsv(rep) {
   const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const cell = csvCell; // gemeinsame Regel: Formelschutz, Anführungszeichen auch bei CR
   const head = ['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Monat', 'Neue Vorgänge', 'Stunden', 'Arbeitszeit netto', 'Teile netto', 'Teile geschätzt netto',
-    'Fremdleistung netto', 'Fremdleistung geschätzt netto', 'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet', 'Gefahrene km (Monat)', 'Fahrzeugstatus'];
+    'Fremdleistung netto', 'Fremdleistung geschätzt netto', 'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet', 'Gefahrene km (Monat)', 'Fahrzeugstatus', 'Nachträglich erfasste Arbeitszeit-Positionen'];
+  // Backlog 1046: neue Spalten ans Ende (Backlog 874) – „nachträglich erfasst“ wie der Hinweis in der App (definitions.late_items)
   const lines = [head.join(';')];
   for (const r of rep.rows) {
     // unbewertet nie als 0: ohne belegte Position bleibt „Summe belegt“ leer (wie „–“ in der App), ebenso Teile/Fremdleistung nur unbewertet
     const ist = r.valued_items === 0 && r.unvalued_items > 0 ? '' : num(r.actual_net);
     lines.push([cell(r.plate), cell(r.vehicle_id), cell(r.site), r.month, r.cases_opened, num(r.hours), num(r.work_net), r.parts_unvalued_only ? '' : num(r.parts_actual_net), num(r.parts_estimate_net),
-      r.external_unvalued_only ? '' : num(r.external_actual_net), num(r.external_estimate_net), ist, num(r.estimate_net), r.unvalued_items, r.complete ? 'ja' : 'nein', num(r.km), r.vehicle_active === false ? 'außer Betrieb' : 'aktiv'].join(';'));
+      r.external_unvalued_only ? '' : num(r.external_actual_net), num(r.external_estimate_net), ist, num(r.estimate_net), r.unvalued_items, r.complete ? 'ja' : 'nein', num(r.km), r.vehicle_active === false ? 'außer Betrieb' : 'aktiv', r.late_items || 0].join(';'));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
