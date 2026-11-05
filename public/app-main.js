@@ -1528,8 +1528,6 @@ async function viewHome() {
   bindWsFlow();
   pushNudge().catch(() => {});
   const trb = $('#todoretry'); if (trb) trb.onclick = async () => { await viewHome(); };
-  // Backlog 1041: „Heute zu tun“ zählt alle Standorte – die verlinkte Liste ebenso (sonst fehlten mit Standard-Standort z. B. die Vorgänge der vertretenen Kollegin)
-  $$('[data-todolist]').forEach((a) => { a.onclick = () => { S.caseVsite = ''; }; });
   // Liste mit demselben Standort wie die gezählte Tafel (Standard-Standort bzw. „alle“)
   const dunr = $('#dunrec'); if (dunr) dunr.onclick = () => { S.caseVsite = dunr.dataset.site; };
   const dtg = $('#dsitetoggle'); if (dtg) dtg.onclick = (e) => { e.preventDefault(); S.dispoAll = !S.dispoAll; route(); };

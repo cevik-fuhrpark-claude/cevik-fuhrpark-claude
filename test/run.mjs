@@ -20251,7 +20251,7 @@ await test('Backlog 239 („Heute zu tun“ nach dem Urlaub): Gruppen älteste z
   ok(app.includes("['todo_cost_approval', cs.filter((c) => c.cost_over_limit_at).sort(asc((c) => c.cost_over_limit_at)),"), 'Kostenfreigabe älteste zuerst');
   ok(app.includes("cs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).sort((a, b) => (b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PR[a.priority] ?? 3) - (PR[b.priority] ?? 3) || asc((c) => c.created_at)(a, b))"), 'Meldungen: gesperrt (Backlog 278), Dringlichkeit, dann älteste');
   ok(app.includes("cs.filter((c) => c.followup_on && c.followup_on <= today).sort(asc((c) => c.followup_on))"), 'Wiedervorlage nach Datum');
-  ok(app.includes("TODO_LIST[k] ? ` · <a href=\"${hj(TODO_LIST[k])}\" data-todolist>${esc(t('show_in_list'))} ›</a>` : ''") && app.includes("todo_cost_approval: '#/cases?f=cost_approval'"), '„+N“ mit Link');
+  ok(app.includes("TODO_LIST[k] ? ` · <a href=\"${hj(TODO_LIST[k])}\">${esc(t('show_in_list'))} ›</a>` : ''") && app.includes("todo_cost_approval: '#/cases?f=cost_approval'"), '„+N“ mit Link');
   ok(app.includes("f === 'cost_approval' ? 'status=open&cost_approval=1'"), 'Listenfilter');
 });
 
@@ -34622,7 +34622,7 @@ await test('Backlog 1040 (Blickwinkel „Werkstatt-Tablet (UK) meldet Teilliefer
   ok(STRINGS.de.dlv_file_full, 'de');
 });
 
-await test('Backlog 1041 (Blickwinkel „Leitung vertritt die erkrankte Kollegin“): Filter received_open „Eingang bestätigt – Bewertung offen“, Gruppe in „Heute zu tun“, „In der Vorgangsliste anzeigen“ setzt den Standortfilter zurück; DE/UK/EN', async () => {
+await test('Backlog 1041 (Blickwinkel „Leitung vertritt die erkrankte Kollegin“): Filter received_open „Eingang bestätigt – Bewertung offen“, Gruppe in „Heute zu tun“ mit Link auf die Liste (alle Standorte wie der Zähler); DE/UK/EN', async () => {
   const { U, cmd, newCase } = await freshWorld();
   const a = await newCase({ description: 'Plane gerissen', priority: 'niedrig' });
   const b = await newCase({ description: 'Spiegel ab', priority: 'mittel' });
@@ -34645,7 +34645,7 @@ await test('Backlog 1041 (Blickwinkel „Leitung vertritt die erkrankte Kollegin
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("todo_untriaged: '#/cases?f=received_open'") && app.includes("f === 'received_open' ? 'status=open&received_open=1'") && app.includes("received_open: 'todo_untriaged'"), 'Link/Filter/Bezeichnung');
   ok(/\['todo_untriaged', cs\.filter\(\(c\) => c\.status === 'gemeldet' && c\.fleet_received_at\)/.test(app), 'Gruppe in „Heute zu tun“');
-  ok(app.includes('data-todolist>') && /\$\$\('\[data-todolist\]'\)\.forEach\(\(a\) => \{ a\.onclick = \(\) => \{ S\.caseVsite = ''; \}; \}\)/.test(app), 'Link setzt Standortfilter zurück');
+  ok(app.includes("todo_untriaged: '#/cases?f=received_open'") && app.includes('href="${hj(TODO_LIST[k])}"'), 'Link trägt den Standort des Zählers (hj → vs=*, Backlog 102)');
   ok((app.match(/'unreceived', 'received_open'/g) || []).length >= 3, 'Filter in den erlaubten Listen');
   const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); ok(w.includes("'unreceived', 'received_open'"), 'CSV-Protokoll nennt den Filter');
   const { STRINGS } = await import('../public/i18n.js');

@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (05.11.2026, Backlog 1041, Blickwinkel „Leitung vertritt die erkrankte Kollegin“): 10 Meldungen eines anderen Standorts (Bayern)
 # mit bestätigtem Eingang, aber ohne Bewertung, stehen unter „Heute zu tun → Eingang bestätigt – Bewertung offen“ (älteste zuerst); „+2 · In der
-# Vorgangsliste anzeigen“ zeigt alle 10, obwohl die Vertretung den Standard-Standort Dortmund hat (Standortfilter zurückgesetzt). Eine nicht
+# Vorgangsliste anzeigen“ zeigt alle 10, obwohl die Vertretung den Standard-Standort Dortmund hat (Sprung mit vs=*, Backlog 102). Eine nicht
 # bestätigte Meldung steht nur unter „Meldungen bestätigen“. DE 390 px, UK 820 px, EN 1366 px; kein Querscrollen, keine Skriptfehler.
 # Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
@@ -49,7 +49,7 @@ with sync_playwright() as p:
         check(rec.count()==1, f'{lang} Gruppe „Meldungen bestätigen“ vorhanden')
         if S: det.screenshot(path=f'{S}/bewertung-offen-{lang}-{w}.png')
         det.locator('[data-todomore] a').click(); q.wait_for_selector('#cl',timeout=15000); q.wait_for_timeout(800)
-        n=q.locator('#cl .list a.row').count(); check(n==10, f'{lang} Liste {n} (Standortfilter zurückgesetzt)')
+        n=q.locator('#cl .list a.row').count(); check(n==10, f'{lang} Liste {n} (alle Standorte)')
         check(q.locator('.seg-tabs a.on[data-f="received_open"]').count()==1, f'{lang} Reiter „Bewertung offen“ aktiv')
         if S: q.screenshot(path=f'{S}/bewertung-offen-liste-{lang}-{w}.png')
         check(q.evaluate('document.documentElement.scrollWidth')<=w, f'{lang} ohne Querscrollen'); check(not errs, f'{lang} keine Fehler {errs}')
