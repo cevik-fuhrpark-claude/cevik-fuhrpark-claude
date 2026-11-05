@@ -483,8 +483,9 @@ async function handleApi(request, env, ctx, url) {
   }
   if (path === '/api/reports/costs' && m === 'GET' && url.searchParams.get('part') === 'items') {
     const rep = await reports.costItems(env, user, envName, Object.fromEntries(url.searchParams));
-    await auth.audit(env, user.id, 'reports.costs.items_export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site, ...(rep.vehicle_id ? { vehicle_id: rep.vehicle_id } : {}), items: rep.items.length });
-    return new Response(reports.costItemsCsv(rep), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kostenpositionen_${envName}_${rep.from}_${rep.to}_${reports.standTag()}.csv"` } });
+    await auth.audit(env, user.id, 'reports.costs.items_export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site, ...(rep.vehicle_id ? { vehicle_id: rep.vehicle_id } : {}), items: rep.items.length, ...(rep.truncated ? { truncated: true } : {}) });
+    // Backlog 1045 (Blickwinkel „Jahresabschluss für den Steuerberater“): Kürzung wie andere Exporte im Header melden (App zeigt Hinweis)
+    return new Response(reports.costItemsCsv(rep), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', ...(rep.truncated ? { 'x-cfp-truncated': String(reports.COST_ITEMS_MAX) } : {}), 'content-disposition': `attachment; filename="fuhrpark-kostenpositionen_${envName}_${rep.from}_${rep.to}_${reports.standTag()}.csv"` } });
   }
   // Kostenbericht je Fahrzeug/Monat
   if (path === '/api/reports/costs' && m === 'GET') {

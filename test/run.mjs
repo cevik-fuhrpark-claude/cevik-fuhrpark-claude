@@ -34704,6 +34704,30 @@ await test('Backlog 1044 (Folge aus 1042): Bericht „Kostenfreigaben“ nennt o
   for (const l of ['uk', 'en']) ok(STRINGS.de.kpi_ca_none_period && STRINGS[l].kpi_ca_none_period && STRINGS[l].kpi_ca_none_period !== STRINGS.de.kpi_ca_none_period, l);
 });
 
+await test('Backlog 1045 (Blickwinkel „Jahresabschluss für den Steuerberater“): gekürzte Einzelpositionen-CSV per Header x-cfp-truncated und im Protokoll, App-Hinweis; Hinweistexte nennen Zuordnung nach Datum/Standort (DE/UK/EN)', async () => {
+  const { e, U, toRepair } = await freshWorld();
+  const id = await toRepair();
+  const ym = BERLIN_TODAY.slice(0, 7); const q = `from=${ym}&to=${ym}&part=items`;
+  let r = await U.fleet.req('GET', `/api/reports/costs?${q}`);
+  eq(r.status, 200); eq(r.headers.get('x-cfp-truncated'), null, 'unter der Grenze: kein Header');
+  const db = e.DB.db; const uid = db.prepare('SELECT id FROM users LIMIT 1').get().id; const now = new Date().toISOString();
+  db.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < 20001)
+    INSERT INTO parts (id, case_id, user_id, name, quantity, unit, unit_price_net, valuation, created_at) SELECT 'tp-' || i, ?, ?, 'Schraube', 1, 'Stk', 1, 'actual', ? FROM n`).run(id, uid, now);
+  r = await U.fleet.req('GET', `/api/reports/costs?${q}`); eq(r.status, 200);
+  eq(r.headers.get('x-cfp-truncated'), '20000', 'Header:');
+  const txt = new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data); ok(txt.includes('Gekürzt: nur die ersten 20000 Positionen'), 'Zeile am Dateiende bleibt');
+  const au = db.prepare(`SELECT detail FROM audit_log WHERE action='reports.costs.items_export' ORDER BY created_at DESC LIMIT 1`).get();
+  ok(au && JSON.parse(au.detail).truncated === true, 'Protokoll: truncated');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (blob.cfpTruncated) toast(t('cost_items_truncated').replace('{n}', blob.cfpTruncated), true); /* Backlog 1045 */"), 'App: Hinweis bei Kürzung');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].cost_items_truncated && STRINGS[l].cost_items_truncated.includes('{n}'), l + ': Kürzungshinweis');
+    ok(/Rechnungsdatum|дат\S* рахунку|invoice date/.test(STRINGS[l].cost_items_csv_hint) && /Rechnungsdatum|дат\S* рахунку|invoice date/.test(STRINGS[l].cost_vehicles_csv_hint), l + ': Zuordnung nach Datum genannt');
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
