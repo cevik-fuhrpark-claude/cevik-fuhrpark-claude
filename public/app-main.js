@@ -9,7 +9,7 @@ import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentF
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday, STATES } from './holidays.js';
-import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, moneyForeign, kmIn, unitIn, tireSizeSame, tireSizeFmt } from './hours.js';
+import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, moneyForeign, kmIn, kmForeignUnit, unitIn, tireSizeSame, tireSizeFmt } from './hours.js';
 import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen, tzDiff, nextOpenLocal, holidayGaps, phoneIn } from './emhours.js';
 
 // [CLAUDE] Backlog 794: Lookbehind-Ausdrücke auch in Safari/iOS < 16.4 (eingesetzt von scripts/build-app.mjs, Erklärung dort)
@@ -701,6 +701,8 @@ const KM_FIELD = /^(km|odometer_km|done_km|due_km|last_done_km|next_due_km)$/;
 document.addEventListener('change', (e) => {
   const el = e.target; if (!el || el.tagName !== 'INPUT' || el.readOnly || el.disabled || el.getAttribute('inputmode') !== 'numeric') return;
   if (!(KM_FIELD.test(el.name || '') || /^(km|kfkm|extkmv|tfkm)$/.test(el.id || ''))) return;
+  // Backlog 1003: Meilen bzw. Betriebsstunden gleich am Feld erklären (der Server weist sie ebenso ab) – nie umrechnen; Aufheben bei Eingabe wie Backlog 1001
+  const fu = kmForeignUnit(el.value); if (fu) { el.setCustomValidity(t(fu === 'mi' ? 'km_mi' : 'km_hrs')); el.dataset.cfpFx = '1'; el.reportValidity(); return; }
   const v = kmIn(el.value); if (v === null || v === el.value) return;
   el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));
 }, true);
@@ -3657,8 +3659,10 @@ function bindChecklist(form) {
       if (shown) return;
       shown = true; setTimeout(() => (shown = false), 0);
       e.target.scrollIntoView({ block: 'center' }); e.target.focus({ preventScroll: true });
-      toast(t(e.target.id === 'km' ? 'km_invalid' : 'defect_note_missing'), true);
-      markInvalid(e.target, t(e.target.id === 'km' ? 'km_invalid' : 'defect_note_missing'));
+      // Backlog 1003: Meilen/Betriebsstunden – die Erklärung vom Feld (`cfpFx`) statt „nur als ganze Zahl“
+      const im = e.target.id === 'km' ? (e.target.dataset.cfpFx && e.target.validationMessage ? e.target.validationMessage : t('km_invalid')) : t('defect_note_missing');
+      toast(im, true);
+      markInvalid(e.target, im);
       return;
     }
     if (!row || e.target.type !== 'radio') return;

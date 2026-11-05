@@ -1,5 +1,5 @@
 // [CLAUDE] Hilfsfunktionen ohne externe Abhängigkeiten (Cloudflare Workers / WebCrypto)
-import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty, moneyIn, moneyForeign, KM_UNIT_RX, unitIn } from '../public/hours.js';
+import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty, moneyIn, moneyForeign, KM_UNIT_RX, unitIn, kmForeignUnit } from '../public/hours.js';
 
 export const nowIso = () => new Date().toISOString();
 // Zeitstempel für Änderungen mit Vergleich auf den gelesenen Stand (updated_at): immer später als der alte Wert, auch bei gleicher Millisekunde
@@ -222,7 +222,13 @@ export const DUE_FAR_MSG = 'Fälligkeit liegt mehr als 20 Jahre in der Zukunft �
 export const KM_LABEL = /^(km[-\s]?stand|kilometerstand|kilometer|tachostand|tacho|km|км|пробіг|пробег|odometer(?:\s+reading)?|mileage)\s*[:.=]?\s*(?=\d)/i;
 export function kmNum(v, { min = 0, max = 5000000, field = 'Kilometerstand' } = {}) {
   // Backlog 985: ausgeschriebene Einheit aus Diktat („123.456 Kilometer“, „123 456 кілометрів“) über KM_UNIT_RX (public/hours.js)
-  if (typeof v === 'string') v = v.trim().replace(/[\s\u00a0\u202f]+/g, ' ').replace(KM_LABEL, '').replace(KM_UNIT_RX, '$1');
+  if (typeof v === 'string') {
+    // Backlog 1003: Meilen bzw. Betriebsstunden (Mietauflieger, Kühlaggregat) mit eigener Meldung – nie umgerechnet
+    const fu = kmForeignUnit(v); const sv = v.trim().replace(/[\s\u00a0\u202f]+/g, ' ').slice(0, 40);
+    if (fu === 'mi') throw bad('validation', `${field}: „${sv}“ ist ein Meilenstand – bitte den Kilometerstand in km eingeben (die App rechnet nicht um).`);
+    if (fu === 'h') throw bad('validation', `${field}: „${sv}“ sind Betriebsstunden – hier nur den Kilometerstand in km eintragen (Betriebsstunden gern in die Bemerkung).`);
+    v = v.trim().replace(/[\s\u00a0\u202f]+/g, ' ').replace(KM_LABEL, '').replace(KM_UNIT_RX, '$1');
+  }
   const n = num(v, { min, max, field, grouped: true });
   if (!Number.isInteger(n)) throw bad('validation', `${field}: ganze Zahl.`);
   return n;

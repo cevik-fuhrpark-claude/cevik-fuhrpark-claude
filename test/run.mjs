@@ -33665,6 +33665,43 @@ await test('Backlog 1002 (Blickwinkel „Fuhrparkleitung am PC, Telefon am Ohr �
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-suche-taste.py|'), 'UI-Skript in pruefen.sh');
 });
 
+await test('Backlog 1003 (Blickwinkel „Mietauflieger/Kühlaggregat: Zähler zeigt Meilen bzw. Betriebsstunden“): „152.000 mi“, „98 000 Meilen“, „98 000 миль“ bzw. „1.234 h“, „Betriebsstunden 1234“, „1234 мотогодин“ im km-Feld mit eigener Meldung DE/UK/EN statt „ungültige Zahl“, nie umgerechnet, nichts gespeichert; km-Schreibweisen unverändert; Hinweis am Feld', async () => {
+  const { kmNum } = await import('../src/util.js'); const { kmForeignUnit } = await import('../public/hours.js');
+  for (const [v, u] of [['152.000 mi', 'mi'], ['152000mi', 'mi'], ['98 000 Meilen', 'mi'], ['120000 miles', 'mi'], ['98 000 миль', 'mi'], ['Meilenstand: 152000', 'mi'], ['km-Stand 152.000 mi', 'mi'], ['Tacho 98.000 Meilen', 'mi'],
+    ['1.234 h', 'h'], ['1234h', 'h'], ['1234 Std.', 'h'], ['Betriebsstunden 1234', 'h'], ['Betriebsstunden: 1.234 h', 'h'], ['1234 мотогодин', 'h'], ['1234 hours', 'h'], ['Engine hours 1,234', 'h'], ['1234 год', 'h']]) {
+    eq(kmForeignUnit(v), u, v);
+    let e = null; try { kmNum(v); } catch (x) { e = x; }
+    const want = u === 'mi' ? `Kilometerstand: „${v}“ ist ein Meilenstand – bitte den Kilometerstand in km eingeben (die App rechnet nicht um).` : `Kilometerstand: „${v}“ sind Betriebsstunden – hier nur den Kilometerstand in km eintragen (Betriebsstunden gern in die Bemerkung).`;
+    ok(e && e.message === want, v + ' → ' + (e && e.message));
+  }
+  // km-Schreibweisen, Bezeichnungen und Fehlformen unverändert; nichts wird als Meile/Stunde gedeutet
+  for (const [v, x] of [['123.456 km', 123456], ['123456', 123456], ['123.456 Kilometer', 123456], ['mileage 123456', 123456], ['Kilometerstand 123 456', 123456]]) { eq(kmForeignUnit(v), null, v); eq(kmNum(v), x, v); }
+  for (const v of ['ca. 1234 h', '1234 min', '12 Kilometer 5', 'h', 'Meilen', 'mi 5 km', '1234 mh']) { eq(kmForeignUnit(v), null, 'keine Einheit erkannt: ' + v); let e = null; try { kmNum(v); } catch (x) { e = x; } ok(e && !/Meilenstand|Betriebsstunden/.test(e.message), 'wie bisher abgewiesen: ' + v); }
+  eq(kmNum(123456), 123456, 'Zahl unverändert');
+  // Ende-zu-Ende: km-Ablesung und Abfahrtskontrolle – abgewiesen, nichts gespeichert
+  const { U, V1 } = await freshWorld();
+  let r = await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: '152.000 mi' }); eq(r.status, 400); ok(/ist ein Meilenstand/.test(JSON.stringify(r.data)), 'Meldung Meilen ' + JSON.stringify(r.data));
+  r = await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: '1.234 h' }); eq(r.status, 400); ok(/sind Betriebsstunden/.test(JSON.stringify(r.data)), 'Meldung Betriebsstunden');
+  eq(((await U.fleet.get(`/api/vehicles/${V1}`)).data.odometer || []).length, 0, 'nichts gespeichert');
+  r = await U.fleet.post(`/api/vehicles/${V1}/odometer`, { km: '152.000 km' }); eq(r.status, 201, JSON.stringify(r.data));
+  eq((await U.fleet.get(`/api/vehicles/${V1}`)).data.odometer[0].km, 152000, 'km-Stand gespeichert');
+  // Übersetzung der Server-Meldungen
+  const { translateValidation, STRINGS } = await import('../public/i18n.js');
+  const mi = 'Kilometerstand: „152.000 mi“ ist ein Meilenstand – bitte den Kilometerstand in km eingeben (die App rechnet nicht um).';
+  const hr = 'Kilometerstand: „1.234 h“ sind Betriebsstunden – hier nur den Kilometerstand in km eintragen (Betriebsstunden gern in die Bemerkung).';
+  ok(/“152\.000 mi” is a reading in miles/.test(translateValidation('en', mi) || ''), 'EN Meilen: ' + translateValidation('en', mi));
+  ok(/«1\.234 h» – це мотогодини/.test(translateValidation('uk', hr) || ''), 'UK Stunden: ' + translateValidation('uk', hr));
+  ok(/operating hours/.test(translateValidation('en', hr) || '') && /милях/.test(translateValidation('uk', mi) || ''), 'EN/UK beide Formen');
+  // Oberfläche: Hinweis am km-Feld, Abfahrtskontrolle übernimmt die Erklärung, Texte und Hilfe DE/UK/EN
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].km_mi && STRINGS[l].km_hrs, 'km_mi/km_hrs ' + l); }
+  ok(/152\.000 mi/.test(STRINGS.de.help_check_s) && /152 000 миль/.test(STRINGS.uk.help_check_s) && /152,000 miles/.test(STRINGS.en.help_check_s), 'Hilfe DE/UK/EN');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/import \{[^}]*kmForeignUnit[^}]*\} from '\.\/hours\.js'/.test(app), 'app.js importiert kmForeignUnit');
+  ok(app.includes("const fu = kmForeignUnit(el.value); if (fu) { el.setCustomValidity(t(fu === 'mi' ? 'km_mi' : 'km_hrs')); el.dataset.cfpFx = '1';"), 'Feldhinweis am km-Feld');
+  ok(app.includes('e.target.dataset.cfpFx && e.target.validationMessage ? e.target.validationMessage'), 'Abfahrtskontrolle zeigt die Erklärung statt „nur als ganze Zahl“');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-km-meilen.py|'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

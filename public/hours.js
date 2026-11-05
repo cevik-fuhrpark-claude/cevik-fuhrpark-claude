@@ -241,6 +241,23 @@ export function kmIn(raw) {
   return t !== s && /^\d[\d .,'’]*$/.test(t) ? t : null;
 }
 
+// Backlog 1003 (Blickwinkel „Mietauflieger/Kühlaggregat: Zähler zeigt Meilen bzw. Betriebsstunden“): „152.000 mi“, „98 000 Meilen“, „120000 miles“,
+// „98 000 миль“ bzw. „1.234 h“, „Betriebsstunden 1234“, „1234 Std.“, „1234 мотогодин“ im km-Feld wurden nur als „ungültige Zahl“ bzw. am Handy
+// „Format stimmt nicht“ abgewiesen – ohne Grund. Erkannt wird nur Zahl + Einheit (bzw. Bezeichnung + Zahl); es wird nie umgerechnet
+// (1 Meile ≠ geschätzter km-Stand, Betriebsstunden sind kein km-Stand). Ergebnis 'mi' bzw. 'h' für eine eigene Meldung; sonst null.
+const KMU_NUM = '\\d[\\d.,\'’ ]*';
+const MI_W = 'mi|mls|miles?|meilen?|миль|милі|миля|милі';
+const HR_W = 'h|hrs?|hours?|std|stdn|stunden|betriebsstunden|motorstunden|bh|год|години|годин|мотогодин(?:и|а)?|моточас(?:ов|а|ы)?|часов|часа|ч';
+const HR_L = 'betriebsstunden(?:stand)?|motorstunden|stundenzähler(?:stand)?|stundenzaehler|engine\\s+hours|operating\\s+hours|hour\\s*meter|мотогодини|мотогодин|моточасы|моточасов';
+const MI_RX = new RegExp(`^(?:meilen(?:stand)?|miles)\\s*[:.=]?\\s*${KMU_NUM}(?:\\s*(?:${MI_W})\\.?)?$|^(?:(?:km[-\\s]?stand|kilometerstand|tacho(?:stand)?|odometer|mileage|пробіг|пробег)\\s*[:.=]?\\s*)?${KMU_NUM}\\s*(?:${MI_W})\\.?$`, 'i');
+const HR_RX = new RegExp(`^(?:${HR_L})\\s*[:.=]?\\s*${KMU_NUM}(?:\\s*(?:${HR_W})\\.?)?$|^${KMU_NUM}\\s*(?:${HR_W})\\.?$`, 'i');
+export function kmForeignUnit(raw) {
+  const s = String(raw ?? '').replace(/[\s  ]+/g, ' ').trim(); if (!s || s.length > 40 || !/\d/.test(s)) return null;
+  if (MI_RX.test(s)) return 'mi';
+  if (HR_RX.test(s)) return 'h';
+  return null;
+}
+
 // Backlog 986 (Blickwinkel „Werkstatt misst die Reifen am Lkw und diktiert/tippt mit Einheit“): Profiltiefe und Luftdruck kamen am Tablet/Handy
 // mit Einheit („6,5 mm“, „6,5 Millimeter“, „Profil 6,5“, „8,5 bar“, „Luftdruck 8,5 bar“, „6,5 мм“, „8,5 бар“) und wurden mit „ungültige Zahl“ abgewiesen.
 // Nur die passende Einheit bzw. Bezeichnung wird entfernt (keine Umrechnung: „120 psi“, „0,85 MPa“, „8,5 mm“ im Druckfeld bleiben abgewiesen);
