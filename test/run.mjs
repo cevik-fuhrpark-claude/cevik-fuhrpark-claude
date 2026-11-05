@@ -29438,6 +29438,8 @@ await test('Backlog 810 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig d
   ok(app.includes("{ toast(t('saved_before')); return false; }"), 'nur eigene, schon gespeicherte Änderung → kein Konflikthinweis');
   const { e, U, V1 } = await freshWorld();
   const db = e.DB.db;
+  // Stand des Imports in die Vergangenheit: Import und erste Änderung fielen unter Last in dieselbe Millisekunde (gleicher Stand → kein 409, 05.11.2026)
+  db.prepare(`UPDATE vehicles SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', updated_at, '-1 minutes') WHERE id=?`).run(V1);
   const up0 = db.prepare('SELECT updated_at FROM vehicles WHERE id=?').get(V1).updated_at;
   const b = await U.own.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', site: 'Dortmund-Hafen', keep_active: true, expected_updated_at: up0 }); eq(b.status, 201, JSON.stringify(b.data));
   const a = await U.fleet.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', site: 'Dortmund', manufacturer: 'MAN', model: 'TGX', keep_active: true, expected_updated_at: up0 }); eq(a.status, 409); eq(a.data.error, 'version_conflict');
