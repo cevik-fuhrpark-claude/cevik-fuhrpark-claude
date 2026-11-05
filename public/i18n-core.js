@@ -1285,6 +1285,7 @@ Object.assign(VALIDATION_TEXTS.uk, { zgm_tonnes: 'Дозволена повна 
 Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg): “{v}” is given in tonnes – please enter the weight in kg as stated in the registration certificate (F.2) (the app does not convert).' });
 // 05.11.2026 (Backlog 1018, Blickwinkel „Vorgangs-Link per Messenger weitergeleitet“): Fehlerseite bei Vorgang/Bußgeld aus der anderen Umgebung bzw. ohne Zugriff
 // Backlog 1020: Aufnahmezeit laut Kamera an Fotos des Vorgangs
+// Backlog 1021: Foto laut Kamera älter als Schadenzeitpunkt bzw. heute (nur Hinweis)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

@@ -8770,7 +8770,7 @@ await test('Fotos: mehr als 10 gewählt → sichtbarer Hinweis (Schadensmeldung,
   const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
   const srv = fs.readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
   eq(Number((app.match(/const PHOTO_MAX = (\d+);/) || [])[1]), Number((srv.match(/const MAX_FILES = (\d+);/) || [])[1]), 'Grenze App = Server');
-  eq((app.match(/photoLimitWatch\(\$\('#ph'\)\)/g) || []).length, 2, 'beide Fotofelder überwacht');
+  eq((app.match(/photoLimitWatch\(\$\('#ph'\)[,)]/g) || []).length, 2, 'beide Fotofelder überwacht');
   ok(!app.includes("files || [])].slice(0, 10)"), 'keine feste 10 mehr');
   eq((i18n.match(/photos_over_max: '/g) || []).length, 3, 'Hinweis DE/UK/EN');
 });
@@ -30775,7 +30775,7 @@ await test('Backlog 863 (Blickwinkel „Fahrer meldet nachts einen Schaden, Foto
   const w = app.slice(app.indexOf('function photoLimitWatch('), app.indexOf('const PHOTO_DARK_LUMA'));
   ok(w.includes("dark.dataset.photodark = ''") && w.includes('if (my !== run || !dark.isConnected) return;') && w.includes("tn('photos_dark', d)"), 'Hinweis im Formular, ältere Prüfung verworfen');
   ok(!/disabled|preventDefault/.test(w), 'nichts gesperrt');
-  ok((app.match(/photoLimitWatch\(\$\('#ph'\)\)/g) || []).length >= 2, 'Meldung und Abfahrtskontrolle');
+  ok((app.match(/photoLimitWatch\(\$\('#ph'\)[,)]/g) || []).length >= 2, 'Meldung und Abfahrtskontrolle');
   ok(app.includes('if (q.dark) darkN++;') && app.includes("if (darkN) errs.push(tn('photos_dark_added', darkN));"), 'Vorgang: Hinweis nach dem Hochladen');
   const { STRINGS, PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['photos_dark', 'photos_dark_added']) { ok(STRINGS[l][k] && STRINGS[l][k].includes('{n}'), l + ' ' + k); ok(PLURALS[l][k] && Object.values(PLURALS[l][k]).every((s) => s.includes('{n}')), l + ' Formen ' + k); }
@@ -34139,6 +34139,25 @@ await test('Backlog 1020 (Blickwinkel „Fahrer schickt ein Foto aus der Galerie
   for (const l of ['de', 'uk', 'en']) for (const k of ['taken_at', 'taken_before_occ']) ok(STRINGS[l][k] && (l === 'de' || STRINGS[l][k] !== STRINGS.de[k]), `${l}: ${k}`);
 });
 
+await test('Backlog 1021 (Folge aus 1020): Foto laut Kamera älter als Schadenzeitpunkt bzw. heute → Hinweis im Meldeformular und bei der Abfahrtskontrolle (nichts vorbelegt); DE/UK/EN', async () => {
+  const fsx = await import('node:fs'); const src = fsx.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = src.indexOf('const photoOldDay = '); const e = src.indexOf('\n', a); ok(a > 0, 'photoOldDay vorhanden');
+  const photoOldDay = eval('(' + src.slice(a + 'const photoOldDay = '.length, e).replace(/;$/, '') + ')');
+  eq(photoOldDay(['2026-10-01T10:00', '2026-09-20T08:00', null], '2026-11-05'), '2026-09-20', 'ältestes Foto vor dem Bezugstag');
+  eq(photoOldDay(['2026-11-05T07:00'], '2026-11-05'), null, 'gleicher Tag kein Hinweis');
+  eq(photoOldDay(['2026-11-06T07:00'], '2026-11-05'), null, 'späterer Tag kein Hinweis');
+  eq(photoOldDay([null, undefined, '', 'Unsinn'], '2026-11-05'), null, 'ohne Aufnahmezeit kein Hinweis');
+  eq(photoOldDay(['2026-11-01T07:00'], ''), null, 'ohne Bezugstag kein Hinweis');
+  eq(photoOldDay([], '2026-11-05'), null, 'keine Fotos');
+  // Oberfläche: Meldeformular vergleicht mit Schadenzeitpunkt (sonst heute), Abfahrtskontrolle mit heute; Datum ändern prüft neu
+  ok(src.includes("photoLimitWatch($('#ph'), () => { const d = $('#occd').value; return d ? { day: d, k: 'photo_old_occ' } : { day: bDate(), k: 'photo_old_new' }; });"), 'Meldeformular');
+  ok(src.includes("$('#occd').addEventListener('change', () => $('#ph')._photoOld());"), 'Neuprüfung bei geändertem Schadenzeitpunkt');
+  ok(src.includes("photoLimitWatch($('#ph'), () => ({ day: bDate(), k: 'photo_old_check' }));"), 'Abfahrtskontrolle');
+  ok(!/\$\('#occd'\)\.value = [^;]*taken/.test(src), 'Schadenzeitpunkt wird nie aus dem Foto vorbelegt');
+  const main = fsx.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); ok(main.includes('const photoOldDay = ') && main.includes('dataset.photoold'), 'app-main.js aktuell');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['photo_old_new', 'photo_old_occ', 'photo_old_check']) ok(STRINGS[l][k] && STRINGS[l][k].includes('{d}') && (l === 'de' || STRINGS[l][k] !== STRINGS.de[k]), `${l}: ${k}`);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

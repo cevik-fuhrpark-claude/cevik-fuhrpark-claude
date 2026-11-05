@@ -3076,7 +3076,8 @@ async function viewNew(preId) {
   $('#d').addEventListener('input', hints); $('#d').addEventListener('change', hints);
   $$('input[name=drv]').forEach((x) => x.addEventListener('change', fuelDrv));
   $$('input[name=veh]').forEach((x) => x.addEventListener('change', hints)); // Backlog 634: Hinweis hängt auch vom gewählten Fahrzeug ab
-  photoLimitWatch($('#ph'));
+  photoLimitWatch($('#ph'), () => { const d = $('#occd').value; return d ? { day: d, k: 'photo_old_occ' } : { day: bDate(), k: 'photo_old_new' }; });
+  $('#occd').addEventListener('input', () => $('#ph')._photoOld()); $('#occd').addEventListener('change', () => $('#ph')._photoOld());
   // Backlog 807: Auswahl „Fotos später senden“ nur mit gewählten Fotos zeigen (nicht im Entwurf gemerkt – Fotos werden nicht wiederhergestellt)
   $('#ph').addEventListener('change', () => { const w = $('#phlater_w'); if (w) w.hidden = !($('#ph').files || []).length; if (w && w.hidden) $('#phlater').checked = false; });
   const draft = bindFormDraft('new', $('#f'), 'veh', preId, ['vq', 'phlater']);
@@ -3656,7 +3657,9 @@ const ltxt = (s) => { const a = langAttr(s); return a ? `<span${a}>${esc(s)}</sp
 // Bilder vor dem Hochladen verkleinern (max. 1600 px, JPEG) – spart Datenvolumen unterwegs
 // Mehr als 10 Fotos gewählt: nur die ersten 10 werden angehängt (Server-Grenze je Vorgang) – sofort sichtbar sagen statt still weglassen
 const PHOTO_MAX = 10;
-function photoLimitWatch(input) {
+// Backlog 1021 (Folge aus 1020): ältester Aufnahmetag laut Kamera, der vor dem Bezugstag liegt (sonst null); reine Funktion, nur Hinweis
+const photoOldDay = (taken, ref) => { let o = null; for (const x of taken || []) { const d = x ? String(x).slice(0, 10) : ''; if (/^\d{4}-\d{2}-\d{2}$/.test(d) && ref && d < ref && (!o || d < o)) o = d; } return o; };
+function photoLimitWatch(input, oldRef) {
   if (!input) return;
   const note = document.createElement('p'); note.className = 'panel warn small'; note.setAttribute('role', 'status'); note.hidden = true; note.dataset.photomax = '';
   input.insertAdjacentElement('afterend', note);
@@ -3666,12 +3669,19 @@ function photoLimitWatch(input) {
   // Backlog 864: Hinweis bei stark verwackelten/unscharfen Fotos (eigene Zeile, nur Hinweis)
   const blur = document.createElement('p'); blur.className = 'panel warn small'; blur.setAttribute('role', 'status'); blur.hidden = true; blur.dataset.photoblur = '';
   dark.insertAdjacentElement('afterend', blur);
+  // Backlog 1021: Foto laut Kamera älter als Schadenzeitpunkt/heute → Hinweis (nichts vorbelegen); oldRef() liefert { day, k } oder null
+  const old = document.createElement('p'); old.className = 'panel warn small'; old.setAttribute('role', 'status'); old.hidden = true; old.dataset.photoold = '';
+  blur.insertAdjacentElement('afterend', old);
+  let taken = [];
+  const oldUpd = () => { const r = oldRef ? oldRef() : null; const d = r ? photoOldDay(taken, r.day) : null; old.hidden = !d; old.textContent = d ? t(r.k).replace('{d}', fmtD(d)) : ''; };
+  input._photoOld = oldUpd;
   let run = 0;
   input.onchange = async () => {
     const n = (input.files || []).length;
     note.hidden = n <= PHOTO_MAX;
     note.textContent = n > PHOTO_MAX ? t('photos_over_max').replace('{n}', n).replace('{max}', PHOTO_MAX) : '';
-    const my = ++run; dark.hidden = true; dark.textContent = ''; blur.hidden = true; blur.textContent = '';
+    const my = ++run; dark.hidden = true; dark.textContent = ''; blur.hidden = true; blur.textContent = ''; taken = []; oldUpd();
+    if (oldRef) { const tk = []; for (const f of [...(input.files || [])].slice(0, PHOTO_MAX)) tk.push(await photoTakenAt(f)); if (my !== run || !old.isConnected) return; taken = tk; oldUpd(); }
     let d = 0, b = 0; for (const f of [...(input.files || [])].slice(0, PHOTO_MAX)) { const q = await photoCheck(f); if (q.dark) d++; else if (q.blurry) b++; }
     if (my !== run || !dark.isConnected) return;
     dark.hidden = !d; dark.textContent = d ? tn('photos_dark', d) : '';
@@ -4336,7 +4346,7 @@ async function viewDepartureCheck(preId) {
   showKnown();
   $('#v').addEventListener('change', showKnown);
   if (S.me.role === 'driver') api('GET', '/api/me/vehicles').then((r) => { known = r.vehicles; showKnown(); }).catch(() => { known = myVehCached(); showKnown(); });
-  photoLimitWatch($('#ph'));
+  photoLimitWatch($('#ph'), () => ({ day: bDate(), k: 'photo_old_check' }));
   const draft = bindFormDraft('check', form, 'v', preId);
   tachoCheck();
   // Backlog 823 (Blickwinkel „Fahrer wechselt mitten in der Abfahrtskontrolle das Fahrzeug“): Antworten, km-Stand und Fotos blieben beim
