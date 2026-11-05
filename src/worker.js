@@ -355,6 +355,7 @@ async function handleApi(request, env, ctx, url) {
       if (dueBy !== null && (!/^\d{4}-\d{2}-\d{2}$/.test(dueBy) || Number.isNaN(Date.parse(dueBy + 'T00:00:00Z')))) throw new HttpError(400, 'validation', 'Datum „fällig bis“ ungültig.');
       if (filter) ov.rows = maint.maintFilterRows(ov, filter, dueBy);
       await auth.audit(env, user.id, 'maintenance.export_ics', null, { rows: ov.rows.length, site: ov.site, ...(filter ? { filter } : {}), ...(dueBy ? { due_by: dueBy } : {}), ...(kind ? { kind } : {}) });
+      ov.export = { filter, due_by: dueBy, kind }; // Backlog 1029: Auswahl im Kalendernamen
       return new Response(maint.maintenanceIcs(ov, undefined, user.language), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-prueftermine_${ov.today}.ics"` } });
     }
     if (fmt === 'csv') {

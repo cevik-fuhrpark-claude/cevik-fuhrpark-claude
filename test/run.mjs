@@ -34376,6 +34376,33 @@ await test('Backlog 1027 (Blickwinkel „Leitung importiert die Kalenderdatei je
   ok(STRINGS.de.help_exports_s.includes('eigenen Kalender importieren') && STRINGS.uk.help_exports_s.includes('в окремий календар') && STRINGS.en.help_exports_s.includes('into its own calendar'), 'Hilfe erklärt Neuimport DE/UK/EN');
 });
 
+await test('Backlog 1029 (Blickwinkel „Teil-Export der Prüftermine/Verträge als Kalender“): Prüfart, Reiter, „fällig bis“, Vertragsart, Partner und Handlungsbedarf im Kalendernamen; vollständiger Export ohne Zusatz; DE/UK/EN', async () => {
+  const { maintenanceIcs } = await import('../src/maintenance.js'); const { contractsIcs } = await import('../src/contracts.js');
+  const nm = (x) => /X-WR-CALNAME:([^\r\n]*)/.exec(x.replace(/\r\n[ \t]/g, ''))[1]; // Zeilen nach RFC 5545 gefaltet
+  const ov = (exp, site = null) => ({ rows: [], warn_days: 30, today: '2026-11-05', site, export: exp });
+  eq(nm(maintenanceIcs(ov(null))), 'Fuhrpark Prüftermine', 'ohne Auswahl unverändert');
+  eq(nm(maintenanceIcs(ov({ filter: 'all', due_by: null, kind: null }))), 'Fuhrpark Prüftermine', 'Reiter „Alle“ ohne Zusatz');
+  eq(nm(maintenanceIcs(ov({ filter: 'due', due_by: null, kind: null }))), 'Fuhrpark Prüftermine · überfällig + bald fällig');
+  eq(nm(maintenanceIcs(ov({ filter: 'due', due_by: '2026-12-31', kind: 'HU' }, 'Dortmund'))), 'Fuhrpark Prüftermine – Dortmund · HU · überfällig + Fällig bis 31.12.2026');
+  eq(nm(maintenanceIcs(ov({ filter: 'noplan', due_by: '2026-12-31', kind: 'Tachograph' }), undefined, 'en')), 'Fleet inspection dates · Tachograph · Due\\, not scheduled (Due by 31/12/2026)', 'EN, Komma nach RFC 5545 maskiert');
+  ok(/^Автопарк: терміни перевірок · Шини · прострочено$/.test(nm(maintenanceIcs(ov({ filter: 'ueberfaellig', kind: 'Reifen' }), undefined, 'uk'))), 'UK: ' + nm(maintenanceIcs(ov({ filter: 'ueberfaellig', kind: 'Reifen' }), undefined, 'uk')));
+  for (const f of ['ungeklaert', 'km', 'fc30', 'gaps']) ok(nm(maintenanceIcs(ov({ filter: f }))).startsWith('Fuhrpark Prüftermine · '), 'Reiter ' + f);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(nm(maintenanceIcs(ov({ filter: 'km' }), undefined, l)).endsWith(STRINGS[l].km_due_tab), 'Bezeichnung wie in der App ' + l);
+  const cov = (x) => ({ today: '2026-11-05', warn_days: 30, filter: 'aktiv', kind: null, site: null, partner: null, ends_by: null, contracts: [], ...x });
+  eq(nm(contractsIcs(cov({}))), 'Fuhrpark Verträge', 'Verträge ohne Auswahl unverändert');
+  eq(nm(contractsIcs(cov({ kind: 'leasing', partner: 'Muster Leasing GmbH', ends_by: '2027-03-31', site: 'Dortmund' }))), 'Fuhrpark Verträge – Dortmund · Leasing · Muster Leasing GmbH · Ende/Kündigung bis 31.03.2027');
+  eq(nm(contractsIcs(cov({ filter: 'aktion', kind: 'versicherung' }), 'en')), 'Fleet contracts · Insurance · Action needed');
+  // über die API: Auswahl kommt im Kalender an
+  const r = new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=ics&filter=ueberfaellig&kind=HU')).data);
+  ok(/X-WR-CALNAME:[^\r\n]* · HU · überfällig/.test(r.replace(/\r\n[ \t]/g, '')), 'API: Prüfart und Reiter im Kalendernamen');
+  const full = new TextDecoder().decode((await users.fleet.get('/api/maintenance?format=ics')).data);
+  ok(!/X-WR-CALNAME:[^\r\n]* · /.test(full.replace(/\r\n[ \t]/g, '')), 'API ohne Auswahl ohne Zusatz');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/fuhrpark-vertraege_\$\{r\.today\}\$\{r\.ends_by[^`]*\$\{k \? '_' \+ k[^`]*r\.partner/.test(app), 'Vertrags-Kalender: Auswahl im Dateinamen');
+  ok(STRINGS.de.help_exports_s.includes('Teil-Datei') && STRINGS.uk.help_exports_s.includes('частковий файл') && STRINGS.en.help_exports_s.includes('partial file'), 'Hilfe DE/UK/EN');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

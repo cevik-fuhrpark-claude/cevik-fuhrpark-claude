@@ -510,7 +510,10 @@ export function contractsIcs(ov, lang = 'de') {
     if (c.end_date && c.end_date >= ov.today) ev.push({ uid: `contract-${c.id}-end`, date: c.end_date, summary: I.tx('c_end', { label }),
       description: I.tx('c_end_desc'), alarmDays: ov.warn_days });
   }
-  return icsCalendar(`${I.tx('cal_contracts')}${ov.site ? ' – ' + (ov.site === 'ohne' ? I.tx('no_site') : ov.site) : ''}`, ev.sort((a, b) => a.date.localeCompare(b.date)));
+  // Backlog 1029: Auswahl (Vertragsart, Partner, „Ende/Kündigung bis“, Handlungsbedarf) im Kalendernamen – Teil-Export sonst nicht vom vollständigen zu unterscheiden
+  const sel = [ov.kind ? I.label('ck_' + ov.kind, KIND_DE[ov.kind]) : null, ov.partner ? String(ov.partner).slice(0, 60) : null, ov.filter === 'aktion' ? I.label('cf_aktion') : null,
+    ov.ends_by ? `${I.label('ct_endsby')} ${I.d(ov.ends_by)}` : null].filter(Boolean);
+  return icsCalendar(`${I.tx('cal_contracts')}${ov.site ? ' – ' + (ov.site === 'ohne' ? I.tx('no_site') : ov.site) : ''}${sel.length ? ' · ' + sel.join(' · ') : ''}`, ev.sort((a, b) => a.date.localeCompare(b.date)));
 }
 
 // Für den Fuhrparkagenten (genau eine Abfrage inkl. letztem km-Stand – Abfragebudget je Lauf): Befunde je Vertrag

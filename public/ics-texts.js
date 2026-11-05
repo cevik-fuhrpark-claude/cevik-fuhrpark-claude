@@ -13,6 +13,8 @@ export const ICS_LABELS = {
     ck_leasing: 'Leasing', ck_miete: 'Miete', ck_finanzierung: 'Finanzierung', ck_versicherung: 'Versicherung', ck_wartung: 'Wartungsvertrag', ck_sonstiges: 'Sonstiger Vertrag',
     fk_anhoerung: 'Anhörung', fk_zeugenfragebogen: 'Zeugenfragebogen', fk_bussgeldbescheid: 'Bußgeldbescheid', fk_verwarnung: 'Verwarnung', fk_maut: 'Mautnacherhebung', fk_sonstiges: 'Sonstiges',
     wo_tag: 'Winterreifen', locked: 'Gesperrt',
+    // Backlog 1029: Auswahl im Kalendernamen (Teil-Export) – gleiche Bezeichnungen wie die Reiter/Filter der App
+    ms_ueberfaellig: 'überfällig', ms_faellig: 'bald fällig', mdueby_tab: 'Fällig bis {d}', due_no_plan: 'Fällig, nicht eingeplant', ms_ungeklaert: 'Frist ungeklärt', km_due_tab: 'Nach km fällig', fc30_tab: 'Prognose ≤ 30 Tage', gaps: 'Pflichtprüfungen ohne Termin', mdueby_label: 'Fällig bis', ct_endsby: 'Ende/Kündigung bis', cf_aktion: 'Handlungsbedarf', cf_beendet: 'Beendet', cf_alle: 'Alle',
   },
   uk: {
     mk_tacho: 'Тахограф', mk_oil: 'Заміна оливи', mk_service: 'Техобслуговування', mk_brakes: 'Гальма', mk_tires: 'Шини', mk_hydraulics: 'Гідравліка/надбудова', mk_extinguisher: 'Вогнегасник', mk_firstaid: 'Аптечка', mk_loadsec: 'Кріплення вантажу', mk_taillift: 'Гідроборт', mk_crane: 'Кран-маніпулятор', mk_reefer: 'Холодильна установка (ТО)', mk_atp: 'Свідоцтво ATP', mk_templog: 'Термописач', mk_recall: 'Відкликання (виробник)', mk_other: 'Інше',
@@ -20,6 +22,8 @@ export const ICS_LABELS = {
     ck_leasing: 'Лізинг', ck_miete: 'Оренда', ck_finanzierung: 'Фінансування', ck_versicherung: 'Страхування', ck_wartung: 'Договір обслуговування', ck_sonstiges: 'Інший договір',
     fk_anhoerung: 'Запит на пояснення', fk_zeugenfragebogen: 'Анкета свідка', fk_bussgeldbescheid: 'Постанова про штраф', fk_verwarnung: 'Попередження', fk_maut: 'Донарахування мита', fk_sonstiges: 'Інше',
     wo_tag: 'Зимові шини', locked: 'Заблоковано',
+    // Backlog 1029: Auswahl im Kalendernamen (Teil-Export) – gleiche Bezeichnungen wie die Reiter/Filter der App
+    ms_ueberfaellig: 'прострочено', ms_faellig: 'скоро', mdueby_tab: 'Термін до {d}', due_no_plan: 'Строк настав, не заплановано', ms_ungeklaert: 'строк не з’ясовано', km_due_tab: 'Строк за пробігом', fc30_tab: 'Прогноз ≤ 30 днів', gaps: 'Обов’язкові перевірки без дати', mdueby_label: 'Термін до', ct_endsby: 'Кінець/розірвання до', cf_aktion: 'Потрібні дії', cf_beendet: 'Завершені', cf_alle: 'Усі',
   },
   en: {
     mk_tacho: 'Tachograph', mk_oil: 'Oil change', mk_service: 'Service', mk_brakes: 'Brakes', mk_tires: 'Tyres', mk_hydraulics: 'Hydraulics/body', mk_extinguisher: 'Fire extinguisher', mk_firstaid: 'First-aid kit', mk_loadsec: 'Load securing', mk_taillift: 'Tail lift', mk_crane: 'Loader crane', mk_reefer: 'Reefer unit (service)', mk_atp: 'ATP certificate', mk_templog: 'Temperature recorder', mk_recall: 'Recall (manufacturer)', mk_other: 'Other',
@@ -27,6 +31,8 @@ export const ICS_LABELS = {
     ck_leasing: 'Leasing', ck_miete: 'Rental', ck_finanzierung: 'Financing', ck_versicherung: 'Insurance', ck_wartung: 'Maintenance contract', ck_sonstiges: 'Other contract',
     fk_anhoerung: 'Hearing notice', fk_zeugenfragebogen: 'Witness questionnaire', fk_bussgeldbescheid: 'Penalty notice', fk_verwarnung: 'Warning', fk_maut: 'Toll back-charge', fk_sonstiges: 'Other',
     wo_tag: 'Winter tyres', locked: 'Locked',
+    // Backlog 1029: Auswahl im Kalendernamen (Teil-Export) – gleiche Bezeichnungen wie die Reiter/Filter der App
+    ms_ueberfaellig: 'overdue', ms_faellig: 'due soon', mdueby_tab: 'Due by {d}', due_no_plan: 'Due, not scheduled', ms_ungeklaert: 'deadline unclear', km_due_tab: 'Due by mileage', fc30_tab: 'Forecast ≤ 30 days', gaps: 'Mandatory inspections without date', mdueby_label: 'Due by', ct_endsby: 'End/notice by', cf_aktion: 'Action needed', cf_beendet: 'Ended', cf_alle: 'All',
   },
 };
 

@@ -889,7 +889,21 @@ export function maintenanceIcs(ov, stamp = new Date().toISOString(), lang = 'de'
   for (const r of ov.rows) if (r.planned_date && r.planned_date >= today) events.push({ uid: `${uidOf(r)}-plan`, date: r.planned_date, summary: I.tx('maint_plan', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
     description: I.tx('maint_plan_desc') + (r.next_due_date ? ' · ' + I.tx('maint_plan_due', { d: I.d(r.next_due_date) }) : '') });
   // gewählter Standort im Kalendernamen (wie Verträge/Werkstattplan) – sonst zwei gleichnamige Kalender beim Import (20.10.2026)
-  return icsCalendar(`${I.tx('cal_maint')}${ov.site ? ' – ' + (ov.site === 'ohne' ? I.tx('no_site') : ov.site) : ''}`, events, stamp);
+  return icsCalendar(`${I.tx('cal_maint')}${ov.site ? ' – ' + (ov.site === 'ohne' ? I.tx('no_site') : ov.site) : ''}${maintIcsSel(I, ov.export)}`, events, stamp);
+}
+
+// Backlog 1029 (Blickwinkel „Teil-Export der Prüftermine“): Prüfart, Reiter und „fällig bis“ im Kalendernamen – eine Datei mit nur „HU“ oder
+// „überfällig“ hieß sonst wie der vollständige Kalender und wirkte beim Import in einen eigenen Kalender vollständig. Bezeichnungen wie in der App.
+const MAINT_SEL_LABEL = { due: null, noplan: 'due_no_plan', ueberfaellig: 'ms_ueberfaellig', ungeklaert: 'ms_ungeklaert', km: 'km_due_tab', fc30: 'fc30_tab', gaps: 'gaps' };
+export function maintIcsSel(I, sel) {
+  if (!sel) return '';
+  const parts = [];
+  if (sel.kind) parts.push(I.kind(sel.kind));
+  const f = sel.filter;
+  const d = sel.due_by ? I.d(sel.due_by) : null;
+  if (f === 'due') parts.push(`${I.label('ms_ueberfaellig')} + ${d ? I.label('mdueby_tab').replace('{d}', d) : I.label('ms_faellig')}`);
+  else if (f && MAINT_SEL_LABEL[f]) parts.push(I.label(MAINT_SEL_LABEL[f]) + (f === 'noplan' && d ? ` (${I.label('mdueby_label')} ${d})` : ''));
+  return parts.length ? ' · ' + parts.join(' · ') : '';
 }
 
 // [CLAUDE] Durchgeführte Prüfungen/Wartungen über die ganze Flotte (Nachweis z. B. für Prüfungen durch Behörden/Versicherer):
