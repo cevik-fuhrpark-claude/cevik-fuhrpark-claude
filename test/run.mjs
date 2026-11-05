@@ -20223,7 +20223,7 @@ await test('Backlog 238 (Blickwinkel „Inhaber nach dem Urlaub“): Zähler „
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes(`<a class="statlink" id="stcrit" href="\${hj('#/cases?f=critical')}">`) && app.includes(`<a class="statlink" id="stlock" href="\${hj('#/cases?f=locked')}">`) && app.includes(`id="stopen" href="\${hj('#/cases?f=open')}"`), 'Startseite verlinkt');
   ok(app.includes("f === 'critical' ? 'status=open&priority=kritisch' : f === 'locked' ? 'status=open&locked=1'"), 'Listenfilter');
-  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'limited', 'open_items', 'mine', 'paused', 'ready_overdue'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
+  ok(app.includes("(['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'received_open', 'limited', 'open_items', 'mine', 'paused', 'ready_overdue'].includes(f) && S.me.role === 'driver')"), 'Fahrer: kein Filter');
   const { translateValidation } = await import('../public/i18n.js');
   for (const l of ['uk', 'en']) ok(translateValidation(l, 'Priorität: niedrig, mittel oder kritisch.') !== 'Priorität: niedrig, mittel oder kritisch.', l);
 });
@@ -20251,7 +20251,7 @@ await test('Backlog 239 („Heute zu tun“ nach dem Urlaub): Gruppen älteste z
   ok(app.includes("['todo_cost_approval', cs.filter((c) => c.cost_over_limit_at).sort(asc((c) => c.cost_over_limit_at)),"), 'Kostenfreigabe älteste zuerst');
   ok(app.includes("cs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).sort((a, b) => (b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PR[a.priority] ?? 3) - (PR[b.priority] ?? 3) || asc((c) => c.created_at)(a, b))"), 'Meldungen: gesperrt (Backlog 278), Dringlichkeit, dann älteste');
   ok(app.includes("cs.filter((c) => c.followup_on && c.followup_on <= today).sort(asc((c) => c.followup_on))"), 'Wiedervorlage nach Datum');
-  ok(app.includes("TODO_LIST[k] ? ` · <a href=\"${hj(TODO_LIST[k])}\">${esc(t('show_in_list'))} ›</a>` : ''") && app.includes("todo_cost_approval: '#/cases?f=cost_approval'"), '„+N“ mit Link');
+  ok(app.includes("TODO_LIST[k] ? ` · <a href=\"${hj(TODO_LIST[k])}\" data-todolist>${esc(t('show_in_list'))} ›</a>` : ''") && app.includes("todo_cost_approval: '#/cases?f=cost_approval'"), '„+N“ mit Link');
   ok(app.includes("f === 'cost_approval' ? 'status=open&cost_approval=1'"), 'Listenfilter');
 });
 
@@ -34620,6 +34620,37 @@ await test('Backlog 1040 (Blickwinkel „Werkstatt-Tablet (UK) meldet Teilliefer
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['uk', 'en']) for (const k of ['dlv_file_full']) ok(STRINGS[l][k] && STRINGS[l][k] !== STRINGS.de[k], l + ': ' + k);
   ok(STRINGS.de.dlv_file_full, 'de');
+});
+
+await test('Backlog 1041 (Blickwinkel „Leitung vertritt die erkrankte Kollegin“): Filter received_open „Eingang bestätigt – Bewertung offen“, Gruppe in „Heute zu tun“, „In der Vorgangsliste anzeigen“ setzt den Standortfilter zurück; DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const a = await newCase({ description: 'Plane gerissen', priority: 'niedrig' });
+  const b = await newCase({ description: 'Spiegel ab', priority: 'mittel' });
+  const c = await newCase({ description: 'Licht defekt', priority: 'mittel' });
+  const d = await newCase({ description: 'Tür klemmt', priority: 'niedrig' });
+  for (const x of [b, c, d]) eq((await cmd(U.fleet, x, 'receive')).status, 200);
+  eq((await cmd(U.fleet, c, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.fleet, d, 'reject', {}, 'Testdaten')).status, 200);
+  { // Owner sieht standardmäßig die Betriebsumgebung – hier Leitung (Testumgebung)
+    const ids = (await U.fleet.get('/api/cases?status=open&received_open=1')).data.cases.map((x) => x.id);
+    ok(ids.includes(b) && !ids.includes(a) && !ids.includes(c) && !ids.includes(d), 'nur bestätigt + noch gemeldet: ' + JSON.stringify(ids));
+  }
+  // ohne Filter alle offenen, unreceived und received_open zusammen = alle „gemeldet“
+  const un = (await U.fleet.get('/api/cases?status=open&unreceived=1')).data.cases.map((x) => x.id);
+  ok(un.includes(a) && !un.includes(b), 'unreceived unverändert');
+  eq((await U.driver.get('/api/cases?status=open&received_open=1')).data.cases.length, 0, 'Fahrer: leer');
+  const csv = await U.fleet.req('GET', '/api/cases?status=open&received_open=1&format=csv'); eq(csv.status, 200);
+  const txt = new TextDecoder('utf-8').decode(csv.data); ok(txt.includes('Spiegel ab') && !txt.includes('Plane gerissen'), 'CSV mit Filter');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("todo_untriaged: '#/cases?f=received_open'") && app.includes("f === 'received_open' ? 'status=open&received_open=1'") && app.includes("received_open: 'todo_untriaged'"), 'Link/Filter/Bezeichnung');
+  ok(/\['todo_untriaged', cs\.filter\(\(c\) => c\.status === 'gemeldet' && c\.fleet_received_at\)/.test(app), 'Gruppe in „Heute zu tun“');
+  ok(app.includes('data-todolist>') && /\$\$\('\[data-todolist\]'\)\.forEach\(\(a\) => \{ a\.onclick = \(\) => \{ S\.caseVsite = ''; \}; \}\)/.test(app), 'Link setzt Standortfilter zurück');
+  ok((app.match(/'unreceived', 'received_open'/g) || []).length >= 3, 'Filter in den erlaubten Listen');
+  const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); ok(w.includes("'unreceived', 'received_open'"), 'CSV-Protokoll nennt den Filter');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['uk', 'en']) ok(STRINGS[l].todo_untriaged && STRINGS[l].todo_untriaged !== STRINGS.de.todo_untriaged, l);
+  ok(STRINGS.de.todo_untriaged === 'Eingang bestätigt – Bewertung offen', 'de');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
