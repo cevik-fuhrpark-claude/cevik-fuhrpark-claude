@@ -397,7 +397,7 @@ function frame(content, active) {
     <div class="brand">CEVIK <span class="bn">${esc(t('app'))}</span> <small>[CLAUDE]</small></div>
     <div class="spacer"></div>
     ${S.me.role === 'owner' ? `<select id="envsel" aria-label="${esc(t('env_switch'))}"><option value="production"${env === 'production' ? ' selected' : ''}>${esc(t('env_prod'))}</option><option value="test"${env === 'test' ? ' selected' : ''}>${esc(t('env_testname'))}</option></select>` : ''}
-    ${S.me.role !== 'driver' ? `<a href="#/search" class="tbicon" aria-label="${esc(t('search_title'))}" style="color:#fff">${ICON.search}</a>` : ''}
+    ${S.me.role !== 'driver' ? `<a href="#/search" class="tbicon" aria-label="${esc(t('search_title'))}" aria-keyshortcuts="/" title="${esc(t('search_title'))} (/)" style="color:#fff">${ICON.search}</a>` : ''}
     <a href="#/inbox" class="tbicon" aria-label="${esc(bellLabel())}" style="position:relative;color:#fff">${ICON.bell}${S.unread ? `<span class="badge" aria-hidden="true" style="position:absolute;top:2px;right:0">${S.unread}</span>` : ''}</a>
   </header>
   ${env === 'test' ? `<div class="testband">${esc(t('env_test'))}</div>` : ''}
@@ -596,6 +596,25 @@ document.addEventListener('keydown', (e) => {
   if (e.target.closest('#af')) { const c = document.getElementById('ac'); if (c) { e.preventDefault(); c.click(); } return; }
   const fm = e.target.closest('form[data-mdone]');
   if (fm) { e.preventDefault(); fm.hidden = true; const b = document.querySelector(`button[data-done="${CSS.escape(fm.dataset.mdone)}"]`); if (b) { b.setAttribute('aria-expanded', 'false'); b.focus(); } }
+});
+// Backlog 1002 (Blickwinkel „Fuhrparkleitung am PC, Telefon am Ohr – Kennzeichen schnell nachschlagen“): Taste „/“ öffnet von jeder Seite
+// die globale Suche (bzw. setzt den Cursor ins Suchfeld der Suche/Hilfe) – nicht in Eingabefeldern, nicht mit Strg/Alt/Cmd, nicht für Fahrer
+// (keine globale Suche; in der Hilfe springt „/“ auch für Fahrer ins Hilfe-Suchfeld).
+function slashTarget(key, mods, editable, role, hash) {
+  if (key !== '/' || mods || editable) return null;
+  const h = String(hash || '');
+  if (h.startsWith('#/help')) return 'hq';
+  if (!role || role === 'driver') return null;
+  return h.startsWith('#/search') ? 'gq' : 'nav';
+}
+document.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented || e.isComposing) return;
+  const el = e.target; const editable = !!(el && (el.isContentEditable || (el.closest && el.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]'))));
+  const tg = slashTarget(e.key, e.ctrlKey || e.metaKey || e.altKey, editable, S.me && S.me.role, location.hash);
+  if (!tg) return;
+  if (tg === 'nav') { e.preventDefault(); location.hash = '#/search'; return; }
+  const inp = document.getElementById(tg); if (!inp) return;
+  e.preventDefault(); inp.focus(); try { inp.select(); } catch { /* ältere Browser */ }
 });
 // Neuaufbau derselben Seite nach einer Aktion: merken, welcher Bereich die Aktion ausgelöst hat (Formular bzw. Abschnitt des Knopfs) –
 // dessen Felder wurden gerade gesendet und werden danach nicht wiederhergestellt (siehe keepCapture). Aufruf aus den Sperren unten.
@@ -7739,7 +7758,7 @@ async function viewSearch() {
   const norm = searchKey;
   const run = async () => {
     const q = $('#gq').value.trim(); S.lastSearch = q; const my = ++seq; const box = $('#gr');
-    if (q.length < 2) { box.innerHTML = `<p class="muted small">${esc(t('search_hint'))}</p>`; return; }
+    if (q.length < 2) { box.innerHTML = `<p class="muted small">${esc(t('search_hint'))}</p>${matchMedia('(hover: hover) and (pointer: fine)').matches ? `<p class="muted small" data-kbd>${esc(t('search_kbd'))}</p>` : ''}`; return; }
     try {
       // Inhaber/Leitung: auch außer Betrieb genommene Fahrzeuge (Weg zur Akte, z. B. verkauft) – Vorgänge dazu fand die Suche schon (19.10.2026)
       if (!vehicles) {

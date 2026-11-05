@@ -33644,6 +33644,27 @@ await test('Backlog 1001 (Blickwinkel „Lkw-Panne in Polen/Tschechien – Fremd
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-fremdwaehrung.py|'), 'UI-Skript in pruefen.sh');
 });
 
+await test('Backlog 1002 (Blickwinkel „Fuhrparkleitung am PC, Telefon am Ohr – Kennzeichen schnell nachschlagen“): Taste „/“ öffnet die globale Suche bzw. setzt den Cursor ins Suchfeld (Suche/Hilfe); nicht in Eingabefeldern, nicht mit Strg/Alt/Cmd, nicht für Fahrer außerhalb der Hilfe; Hinweis DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/\nfunction slashTarget\([^)]*\) \{[\s\S]*?\n\}\n/); ok(m, 'slashTarget in app.js');
+  const slashTarget = new Function(`${m[0]}; return slashTarget;`)();
+  eq(slashTarget('/', false, false, 'fleet', '#/vehicles'), 'nav', 'Leitung von einer Liste → Suche');
+  eq(slashTarget('/', false, false, 'workshop', '#/'), 'nav', 'Werkstatt → Suche');
+  eq(slashTarget('/', false, false, 'viewer', '#/search'), 'gq', 'auf der Suche → Suchfeld');
+  eq(slashTarget('/', false, false, 'driver', '#/'), null, 'Fahrer: keine globale Suche');
+  eq(slashTarget('/', false, false, 'driver', '#/help'), 'hq', 'Fahrer in der Hilfe → Hilfe-Suchfeld');
+  eq(slashTarget('/', false, false, 'owner', '#/help/x'), 'hq', 'Hilfe → Hilfe-Suchfeld');
+  eq(slashTarget('/', false, true, 'owner', '#/cases'), null, 'im Eingabefeld wird „/“ getippt (Datum, Aktenzeichen)');
+  eq(slashTarget('/', true, false, 'owner', '#/cases'), null, 'mit Strg/Alt/Cmd nicht');
+  eq(slashTarget('7', false, false, 'owner', '#/cases'), null, 'andere Taste');
+  eq(slashTarget('/', false, false, undefined, '#/'), null, 'nicht angemeldet');
+  ok(app.includes("e.isComposing") && app.includes("closest('input, textarea, select"), 'Eingabefelder/IME ausgenommen');
+  ok(app.includes('aria-keyshortcuts="/"'), 'Suchsymbol nennt das Tastenkürzel');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(/\//.test(STRINGS[l].search_kbd || ''), 'search_kbd ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-suche-taste.py|'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -358,6 +358,7 @@ UI-Lager zwei Aufträge (Werkstatt): Abweisung am letzten Lagerteil aktualisiert
 UI-Doppelte Rechnung (Fremdleistung): Fundstelle, Häkchen „Trotzdem buchen“, neue Nummer entfernt den Hinweis|ui-doppelte-rechnung.py|/tmp/cfp-doppelte-rechnung.log
 UI-Fremdrechnung am Handy: „1.240,- €“ gebucht, „inkl. MwSt.“ als Bruttobetrag in der App-Sprache abgewiesen, DE/UK/EN 390/820/1366|ui-fremdrechnung-netto.py|/tmp/cfp-fremdrechnung-netto.log
 UI-Fremdwährung (Fremdwerkstatt im Ausland): „1.250,00 zł“ am Feld in der App-Sprache gemeldet, nicht gebucht, Euro-Betrag gebucht, DE/UK/EN 390/820/1366|ui-fremdwaehrung.py|/tmp/cfp-fremdwaehrung.log
+UI-Suche per Taste „/“: von der Fahrzeugliste in die Suche, in der Hilfe ins Hilfe-Suchfeld, PC-Tipp nur mit Maus, DE/UK/EN 390/820/1366|ui-suche-taste.py|/tmp/cfp-suche-taste.log
 UI-Arbeitszeit in Minuten: Beispiel und Umrechnung unter dem Stundenfeld, „0:30“ gebucht, „1:75“ in der App-Sprache abgewiesen, DE/UK/EN 390/820/1366|ui-arbeitszeit-minuten.py|/tmp/cfp-arbeitszeit-minuten.log
 UI-Arbeitszeit diktiert: Zahlwörter im Stundenfeld, Dauer aus dem Tätigkeitstext per Knopf übernommen, DE/UK/EN 390/820/1366|ui-arbeitszeit-diktat.py|/tmp/cfp-arbeitszeit-diktat.log
 UI-Teile diktiert: Zahlwörter im Mengenfeld, Menge aus dem Teilenamen per Knopf übernommen, Einheit beim freien Teil, DE/UK/EN 390/820/1366|ui-teile-diktat.py|/tmp/cfp-teile-diktat.log

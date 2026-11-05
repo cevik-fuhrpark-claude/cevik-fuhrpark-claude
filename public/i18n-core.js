@@ -1247,6 +1247,8 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 
 // [CLAUDE] Backlog 989 (Blickwinkel „Werkstatt bucht vom Lieferschein: Teilenummer in anderer Schreibweise“)
 // Backlog 991 (Blickwinkel „Wareneingang vom Lieferschein: Position mit Teilenummer, die es im Lager nicht gibt“)
+
+// Backlog 1002: Taste „/“ öffnet die Suche (Hinweis nur an Geräten mit Maus/Touchpad)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
