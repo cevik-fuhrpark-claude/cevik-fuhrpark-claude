@@ -33790,6 +33790,22 @@ await test('Backlog 1006 (Blickwinkel „Leitung importiert Verträge/Prüftermi
   ok(/two-digit year/.test(translateImportReason('en', YY('05.11.26'))) && /ambiguous/.test(translateImportReason('en', AMB('1/2/2026'))) && /Excel date serial/.test(translateImportReason('en', SER('46331'))), 'EN-Texte');
 });
 
+await test('Backlog 1007 (Folge aus 1006, gleiche Liste aus dem Ausland bzw. vom Leasinggeber): Kennzeichen mit Länderkennung („D SZ-YC 5513“, „SZ-YC 5513 (D)“) wird in Prüftermin-, Rückruf- und Auslesungen-Import wie im Vertragsimport erkannt; Düsseldorf („D-AB 123“) trifft zuerst wie geschrieben', async () => {
+  const { plateKeyIn, normPlate } = await import('../src/util.js');
+  const m = new Map([[normPlate('SZ-YC 5513'), 1], [normPlate('D-AB 123'), 2], [normPlate('AB 123'), 3]]);
+  eq(plateKeyIn(m, 'D SZ-YC 5513'), normPlate('SZ-YC 5513')); eq(plateKeyIn(m, 'SZ-YC 5513 (D)'), normPlate('SZ-YC 5513')); eq(plateKeyIn(m, 'DE-SZYC5513'), normPlate('SZ-YC 5513'));
+  eq(plateKeyIn(m, 'D-AB 123'), normPlate('D-AB 123'), 'Düsseldorf wie geschrieben'); eq(plateKeyIn(m, 'XX 1'), normPlate('XX 1')); eq(plateKeyIn([new Map(), m], 'D SZ-YC 5513'), normPlate('SZ-YC 5513'));
+  const { U } = await freshWorld();
+  const post = (path, csv) => U.fleet.req('POST', path + '?dry_run=1', csv, { 'content-type': 'text/csv' });
+  for (const pl of ['D SZ-YC 5513', 'SZ-YC 5513 (D)', 'DEU SZ-YC 5513']) {
+    let r = await post('/api/maintenance/import', `Kennzeichen;Art;Nächster Termin;Nachweis\n${pl};UVV;2027-01-01;Beleg\n`); eq(r.data.created, 1, pl + ' Prüftermine ' + JSON.stringify(r.data.skipped));
+    r = await post('/api/maintenance/recalls/import', `Kennzeichen;Referenz;Fällig\n${pl};R-1007;\n`); eq(r.status, 200); eq(r.data.skipped.length, 0, pl + ' Rückrufe ' + JSON.stringify(r.data.skipped));
+    r = await post('/api/tacho/import', `Art;Kennzeichen;Datum;Datei\nMassenspeicher;${pl};2026-11-01;M.ddd\n`); eq(r.data.counts.neu, 1, pl + ' Auslesungen ' + JSON.stringify(r.data.skipped));
+    r = await post('/api/contracts/import', `Kennzeichen;Vertragsart;Vertragspartner;Nachweis\n${pl};Leasing;L;V\n`); eq(r.data.rows.length, 1, pl + ' Verträge');
+  }
+  const r = await post('/api/maintenance/import', 'Kennzeichen;Art;Nächster Termin;Nachweis\nD XX-NIE 1;UVV;2027-01-01;Beleg\n'); eq(r.data.skipped[0].reason, 'Kennzeichen nicht im Fahrzeugstamm');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

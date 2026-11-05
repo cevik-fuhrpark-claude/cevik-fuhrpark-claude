@@ -6,7 +6,7 @@
 // daher „spätestens fällig“ = letzte erfasste Auslesung + 28 bzw. + 90 Tage. Ohne erfasste Auslesung wird KEINE Frist
 // berechnet (Status „keine Auslesung erfasst“). Sichtbarkeit: Inhaber/Fuhrparkleitung; Fahrer nur eigene Fahrerkarte.
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin, isCalendarDate, importDay, normPlate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin, isCalendarDate, importDay, normPlate, plateKeyIn } from './util.js';
 import { siteSelection, siteKey } from './reports.js';
 import { audit } from './auth.js';
 import { PLATE_PASSED_ON_SKIP, platePassedOn, PLATE_FORMER_SKIP, plateFormerOther, formerPlatesAll } from './maintenance.js';
@@ -376,7 +376,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
       label = target.display_name;
     } else {
       const vin = get(cells, ci.vin) ? normalizeVin(get(cells, ci.vin)) : '';
-      const pk = normPlate(get(cells, ci.plate));
+      const pk = plateKeyIn([byPlate, byPlateOff], get(cells, ci.plate)); // Backlog 1007: auch mit Länderkennung
       target = vin ? byVin.get(vin) : pk ? (byPlate.get(pk) || byPlateOff.get(pk)) : undefined;
       if (target === 'mehrdeutig') return skip(`Kennzeichen nicht eindeutig: ${get(cells, ci.plate)}`);
       if (!vin && target && target.active && platePassedOn(offPlates, target, day)) return skip(PLATE_PASSED_ON_SKIP);

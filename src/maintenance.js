@@ -1,7 +1,7 @@
 // [CLAUDE] Prüftermine (HU/SP/UVV/Tachograph …) für den ganzen Fuhrpark: Übersicht, Lückenliste, CSV-Export und belegter CSV-Import.
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
 import { icsLang } from '../public/ics-texts.js';
-import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, importDay, num, normPlate, quoteCell, maxFutureDate, DUE_FAR_MSG, cutText } from './util.js';
+import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, importDay, num, normPlate, plateKeyIn, quoteCell, maxFutureDate, DUE_FAR_MSG, cutText } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor, dueMonthEnd } from './inspection_rules.js';
 import { MAINT_KINDS, ONE_TIME_KINDS, MULTI_RULE_KINDS, maintEventStmt, HUSP_RULE_EVIDENCE } from './vehicles.js';
@@ -488,8 +488,8 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
       if (!v) return skip(offOf.vins.has(vinRaw) ? INACTIVE_SKIP : 'FIN nicht im Fahrzeugstamm');
       matchedBy = 'FIN';
     } else {
-      const hit = byPlate.get(normPlate(plateRaw));
-      if (!plateRaw || !hit) return skip(plateRaw && offOf.plates.has(normPlate(plateRaw)) ? INACTIVE_SKIP : 'Kennzeichen nicht im Fahrzeugstamm');
+      const hit = byPlate.get(plateKeyIn(byPlate, plateRaw)); // Backlog 1007: auch mit Länderkennung („D SZ-YC 5513“)
+      if (!plateRaw || !hit) return skip(plateRaw && offOf.plates.has(plateKeyIn(offOf.plates, plateRaw)) ? INACTIVE_SKIP : 'Kennzeichen nicht im Fahrzeugstamm');
       if (hit === 'mehrdeutig') return skip('Kennzeichen mehrdeutig – FIN angeben');
       v = hit; matchedBy = 'Kennzeichen';
     }
@@ -806,8 +806,8 @@ export async function importRecallsCsv(env, user, text, { dryRun = false } = {})
       if (!v) return skip(offOf.vins.has(vinRaw) ? INACTIVE_SKIP : 'FIN nicht im Fahrzeugstamm');
       matchedBy = 'FIN';
     } else {
-      const hit = byPlate.get(normPlate(plateRaw));
-      if (!plateRaw || !hit) return skip(plateRaw && offOf.plates.has(normPlate(plateRaw)) ? INACTIVE_SKIP : 'Kennzeichen nicht im Fahrzeugstamm');
+      const hit = byPlate.get(plateKeyIn(byPlate, plateRaw)); // Backlog 1007: auch mit Länderkennung („D SZ-YC 5513“)
+      if (!plateRaw || !hit) return skip(plateRaw && offOf.plates.has(plateKeyIn(offOf.plates, plateRaw)) ? INACTIVE_SKIP : 'Kennzeichen nicht im Fahrzeugstamm');
       if (hit === 'mehrdeutig') return skip('Kennzeichen mehrdeutig – FIN angeben');
       v = hit; matchedBy = 'Kennzeichen';
     }

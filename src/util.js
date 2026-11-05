@@ -734,6 +734,14 @@ export const plateHits = (list, plate, keyOf) => {
   const nc = plateNoCountry(plate); const k2 = nc ? normPlate(nc) : '';
   return k2 ? { hits: list.filter((v) => keyOf(v) === k2), country: true } : { hits: [], country: false };
 };
+// Backlog 1007: Schlüssel eines Kennzeichens für Index-Maps der Importe – wie geschrieben, sonst ohne Länderkennung („D SZ-YC 5513“),
+// gleiche Regel wie pickVehicleByPlate (Vertragsimport); `maps`: eine oder mehrere Maps mit normPlate-Schlüsseln
+export const plateKeyIn = (maps, plate) => {
+  const ms = Array.isArray(maps) ? maps : [maps]; const k = normPlate(plate);
+  if (!k || ms.some((m) => m.has(k))) return k;
+  const nc = plateNoCountry(plate); const k2 = nc ? normPlate(nc) : '';
+  return k2 && ms.some((m) => m.has(k2)) ? k2 : k;
+};
 export function pickVehicleByPlate(vehicles, plate) {
   const k = normPlate(plate); if (!k) return { vehicle: null, ambiguous: false };
   const ph = plateHits(vehicles, plate, (v) => normPlate(v.plate)); const hits = ph.hits;
