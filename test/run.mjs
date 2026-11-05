@@ -543,7 +543,7 @@ await test('Prüftermin-Übersicht: Fälligkeiten, Lückenliste HU/SP/UVV/Tacho,
   const ics = await users.fleet.get('/api/maintenance?format=ics');
   eq(ics.status, 200); ok((ics.headers.get('content-type') || '').startsWith('text/calendar'));
   const cal = new TextDecoder().decode(ics.data);
-  ok(cal.startsWith('BEGIN:VCALENDAR\r\n') && cal.includes('DTSTART;VALUE=DATE:' + HU_DUE.replace(/-/g, '')) && cal.includes('SUMMARY:HU fällig – SZ-YC 5513') && cal.includes('TRIGGER:-P30D'), 'Kalender mit HU-Termin und Erinnerung');
+  ok(cal.startsWith('BEGIN:VCALENDAR\r\n') && cal.includes('DTSTART;VALUE=DATE:' + HU_DUE.replace(/-/g, '')) && cal.includes('SUMMARY:HU fällig – SZ-YC 5513') && cal.includes('TRIGGER:-P30D') === (new Date(Date.parse(HU_DUE + 'T00:00:00Z') - 30 * 86400000).toISOString().slice(0, 10) >= BERLIN_TODAY), 'Kalender mit HU-Termin; Erinnerung nur, wenn ihr Tag nicht vorbei ist (Backlog 1027)');
   ok(cal.split('\r\n').every((l) => new TextEncoder().encode(l).length <= 75), 'Zeilen auf 75 Oktette gefaltet');
   const H = { authorization: 'Bearer integration-token-xyz' };
   const api = await anon.req('GET', '/api/integration/v1/maintenance', undefined, H);
@@ -5501,7 +5501,7 @@ await test('Fahrzeugverträge: nur laut Vertrag, Kündigungstag, km-Kontingent m
   ok(ics.includes(`UID:contract-${c1.data.id}-end@`) && ics.includes(`UID:contract-${c2}-end@`), 'Vertragsenden');
   ok(!ics.includes(`contract-${c3}-`), 'beendeter Vertrag fehlt');
   // Zeitstempel (DTSTAMP/UID) ausgenommen: um 12:34 Uhr enthielt DTSTAMP „1234“ (Test schlug uhrzeitabhängig fehl)
-  const icsBody = ics.split('\r\n').filter((l) => !/^(DTSTAMP|UID):/.test(l)).join('\n');
+  const icsBody = ics.split('\r\n').filter((l) => !/^(DTSTAMP|UID|SEQUENCE):/.test(l)).join('\n');
   ok(!icsBody.includes('L-4711') && !icsBody.includes('1234'), 'ohne Vertragsnummer und Rate');
   ok(ics.includes('TRIGGER:-P60D'), 'Erinnerung = Vorwarnung');
   eq((await users.ws.get('/api/contracts?format=ics')).status, 403);
@@ -20268,7 +20268,7 @@ await test('Backlog 240 (Blickwinkel „Disposition plant die Woche“): Kalende
   ok(de.includes('DESCRIPTION:Status: Wartet auf Teile · Teile erwartet am 27.10.2026 · gekoppelt mit Lkw X-ZM 1'), de);
   ok(/DESCRIPTION:Status: In Reparatur · [^\r\n]* · gekoppelt mit Anhänger X-AH 2/.test(de) && !/In Reparatur · Teile erwartet/.test(de), 'Liefertermin nur bei „Wartet auf Teile“');
   ok(de.includes('DESCRIPTION:fällig bis 31.10.2026 · gekoppelt mit Lkw X-ZM 3'), 'Prüftermin mit Gespann');
-  ok(!/UID:plan-maint-m2[\s\S]*?DESCRIPTION:[^\r\n]*gekoppelt/.test(de.split('BEGIN:VEVENT').find((e) => e.includes('plan-maint-m2')) || ''), 'ohne Kopplung nichts');
+  ok(!/UID:m2-plan[\s\S]*?DESCRIPTION:[^\r\n]*gekoppelt/.test(de.split('BEGIN:VEVENT').find((e) => e.includes('UID:m2-plan')) || 'gekoppelt'), 'ohne Kopplung nichts');
   const uk = unfold(workshopPlanIcs(plan, 'production', 'uk')); const en = unfold(workshopPlanIcs(plan, 'production', 'en'));
   ok(uk.includes('зчеплено з вантажівкою X-ZM 1') && uk.includes('Запчастини очікуються'), 'UK');
   ok(en.includes('coupled with truck X-ZM 1') && en.includes('coupled with trailer X-AH 2') && en.includes('Parts expected'), 'EN');
@@ -34346,6 +34346,34 @@ await test('Backlog 1026 (Blickwinkel „Schichtübergabe in der Werkstatt“): 
     for (const k of ['wst_later', 'wst_later_hint', 'ws_ack_by']) ok(STRINGS[L][k], `${L}.${k}`);
     ok(PLURALS[L].wst_later && PLURALS[L].wst_later.one.includes('{n}'), 'Pluralformen ' + L);
   }
+});
+
+await test('Backlog 1027 (Blickwinkel „Leitung importiert die Kalenderdatei jede Woche neu“): SEQUENCE aus dem Exportzeitpunkt, keine Erinnerungen in der Vergangenheit, gleiche UID für geplante Prüftermine in Prüftermin- und Werkstattplan-Kalender, Testumgebung im Kalendernamen; Hilfe DE/UK/EN', async () => {
+  const { icsCalendar } = await import('../src/util.js'); const { workshopPlanIcs } = await import('../src/reports.js'); const { maintenanceIcs } = await import('../src/maintenance.js');
+  const evs = (x) => x.replace(/\r\n[ \t]/g, '').split('BEGIN:VEVENT').slice(1);
+  const ev = [{ uid: 'a', date: '2026-11-20', summary: 'A', alarmDays: 30 }, { uid: 'b', date: '2026-12-20', summary: 'B', alarmDays: 30 },
+    { uid: 'c', date: '2026-09-01', summary: 'C', alarmDays: 0 }, { uid: 'd', date: '2026-11-05', summary: 'D', alarmDays: 0 }, { uid: 'e', date: '2026-12-05', summary: 'E', alarmDays: 30 }];
+  const c1 = evs(icsCalendar('K', ev, '2026-11-05T15:00:00Z'));
+  ok(!c1[0].includes('VALARM'), 'Vorwarnung liegt vor dem Exporttag (21.10.) → keine Erinnerung');
+  ok(c1[1].includes('TRIGGER:-P30D'), 'Erinnerung in der Zukunft bleibt');
+  ok(!c1[2].includes('VALARM'), 'überfälliger Termin ohne Erinnerung');
+  ok(c1[3].includes('TRIGGER:-P0D') && c1[4].includes('TRIGGER:-P30D'), 'Erinnerung am Exporttag (Berlin) bleibt');
+  // Berliner Tag: 23:30 UTC am 04.11. = 05.11. in Berlin
+  ok(evs(icsCalendar('K', [{ uid: 'x', date: '2026-11-04', summary: 'X', alarmDays: 0 }], '2026-11-04T23:30:00Z'))[0].includes('VALARM') === false, 'Exporttag nach Berliner Zeit');
+  const seq = (x) => Number(/SEQUENCE:(\d+)/.exec(x)[1]);
+  const s1 = seq(icsCalendar('K', ev, '2026-11-05T15:00:00Z')); const s2 = seq(icsCalendar('K', ev, '2026-11-12T15:00:00Z'));
+  ok(s1 > 0 && s2 > s1 && s2 < 2 ** 31, `spätere Datei hat höhere SEQUENCE (${s1} < ${s2})`);
+  ok(evs(icsCalendar('K', ev, '2026-11-05T15:00:00Z')).every((e) => e.includes(`SEQUENCE:${s1}`)), 'SEQUENCE an jedem Termin');
+  // gleicher geplanter Prüftermin in beiden Kalendern mit gleicher UID
+  const plan = { site: null, vehicle_site: null, days: [{ date: '2099-03-02', items: [{ type: 'maintenance', id: 'r1', vehicle_id: 'v1', kind: 'UVV', plate: 'X-1', next_due_date: null },
+    { type: 'maintenance', id: 'r2', vehicle_id: 'v2', kind: 'HU', plate: 'X-2', next_due_date: null }] }] };
+  const pl = workshopPlanIcs(plan, 'production', 'de');
+  ok(pl.includes('UID:r1-plan@') && pl.includes('UID:husp-v2-HU-plan@') && !pl.includes('plan-maint-'), 'Werkstattplan nutzt die UID der Prüftermine');
+  const mi = maintenanceIcs({ rows: [{ id: 'r1', vehicle_id: 'v1', kind: 'UVV', plate: 'X-1', planned_date: '2099-03-02' }, { id: 'r2', vehicle_id: 'v2', kind: 'HU', plate: 'X-2', planned_date: '2099-03-02' }], warn_days: 30, today: '2026-11-05' }, '2026-11-05T10:00:00Z', 'de');
+  ok(mi.includes('UID:r1-plan@') && mi.includes('UID:husp-v2-HU-plan@'), 'Prüftermin-Kalender gleiche UID');
+  ok(/X-WR-CALNAME:[^\r\n]*\(Test\)/.test(workshopPlanIcs(plan, 'test', 'de')) && !/X-WR-CALNAME:[^\r\n]*\(Test\)/.test(pl), 'Testumgebung im Kalendernamen des Werkstattplans');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_exports_s.includes('eigenen Kalender importieren') && STRINGS.uk.help_exports_s.includes('в окремий календар') && STRINGS.en.help_exports_s.includes('into its own calendar'), 'Hilfe erklärt Neuimport DE/UK/EN');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

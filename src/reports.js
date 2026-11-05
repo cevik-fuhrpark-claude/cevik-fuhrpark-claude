@@ -2,7 +2,7 @@
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
 import { icsLang } from '../public/ics-texts.js';
-import { bad, forbidden, normPlate, berlinWindowStartIso, berlinDate, berlinDateTime, berlinDayStartIso, addMonths, icsCalendar, intParam, rateOf, roundCents, roundMilli, ratePeriods, ratePeriodIndex, rateAtIndex } from './util.js';
+import { bad, forbidden, normPlate, berlinWindowStartIso, berlinDate, berlinDateTime, berlinDayStartIso, addMonths, icsCalendar, maintIcsUid, intParam, rateOf, roundCents, roundMilli, ratePeriods, ratePeriodIndex, rateAtIndex } from './util.js';
 import { maintenanceOverview, csvCell } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
@@ -1045,8 +1045,9 @@ export function workshopPlanIcs(plan, envName, lang = 'de') {
     ev.push(i.type === 'case'
       ? { uid: `plan-case-${i.id}`, date: d.date, summary: I.tx('plan_case', { no: i.case_no, plate: i.plate }) + (envName === 'test' ? ` (${I.tx('test_tag')})` : ''),
         description: I.tx('plan_status', { status: I.status(i.status) }) + (i.status === 'wartet_teile' && i.parts_expected_date ? ' · ' + I.tx('plan_parts_eta', { d: I.d(i.parts_expected_date) }) : '') + (i.ready_expected_on ? ' · ' + I.tx('plan_ready_on', { d: I.d(i.ready_expected_on) }) : '') + (i.tire_order === 'winter' ? ' · ' + I.label('wo_tag') : '') + (i.safety_lock ? ' · ' + I.label('locked') : '') + cpl(i) + (i.planned_note ? ' · ' + I.tx('plan_note', { n: i.planned_note }) : '') }
-      : { uid: `plan-maint-${i.id}`, date: d.date, summary: I.tx('plan_maint', { kind: I.kind(i.kind), plate: i.plate }), description: [i.next_due_date ? I.tx('plan_due_by', { d: I.d(i.next_due_date) }) : '', cpl(i).slice(3)].filter(Boolean).join(' · ') });
+      : { uid: `${maintIcsUid(i)}-plan`, date: d.date, summary: I.tx('plan_maint', { kind: I.kind(i.kind), plate: i.plate }), description: [i.next_due_date ? I.tx('plan_due_by', { d: I.d(i.next_due_date) }) : '', cpl(i).slice(3)].filter(Boolean).join(' · ') });
   }
-  return icsCalendar(`${I.tx('cal_plan')}${plan.site ? ' ' + plan.site : ''}${plan.vehicle_site ? ' – ' + I.tx('plan_vsite', { site: plan.vehicle_site === 'ohne' ? I.tx('no_site') : plan.vehicle_site }) : ''}`, ev);
+  // Testumgebung auch im Kalendernamen (wie Bußgelder/Wiedervorlagen; Backlog 1027 – vorher nur an den Aufträgen, nicht an Prüfterminen)
+  return icsCalendar(`${I.tx('cal_plan')}${plan.site ? ' ' + plan.site : ''}${plan.vehicle_site ? ' – ' + I.tx('plan_vsite', { site: plan.vehicle_site === 'ohne' ? I.tx('no_site') : plan.vehicle_site }) : ''}${envName === 'test' ? ` (${I.tx('test_env')})` : ''}`, ev);
 }
 

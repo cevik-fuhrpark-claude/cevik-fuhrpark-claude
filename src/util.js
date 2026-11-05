@@ -650,6 +650,9 @@ export function icsEscape(x) {
   // Zeilenumbrüche aller Arten (auch einzelnes CR) → \\n; übrige Steuerzeichen sind in iCalendar-Text unzulässig (RFC 5545 3.3.11) → entfernt
   return String(x ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r\n|\r|\n/g, '\\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '');
 }
+// Prüftermin-UID im Kalender: HU/SP fachlich je Fahrzeug und Prüfart, sonst Regel-ID; geplanter Werkstatttermin mit Zusatz „-plan“ –
+// gleich in Prüftermin- und Werkstattplan-Kalender (Backlog 1027: vorher „plan-maint-<id>“ bzw. „<id>-plan“ → derselbe Termin doppelt)
+export const maintIcsUid = (r) => (r.kind === 'HU' || r.kind === 'SP' ? `husp-${r.vehicle_id}-${r.kind}` : r.id);
 export function icsCalendar(name, events, stamp = new Date().toISOString()) {
   // Byte-Länge je Zeichen ohne TextEncoder (der je Zeichen aufgerufen ≈ 50× langsamer war: 900 Termine ≈ 600 ms CPU)
   const fold = (line) => {
@@ -671,11 +674,17 @@ export function icsCalendar(name, events, stamp = new Date().toISOString()) {
   const d8 = (d) => d.replace(/-/g, '');
   const next = (d) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
   const ts = stamp.replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  // Backlog 1027 (Blickwinkel „Leitung importiert die Kalenderdatei jede Woche neu“): SEQUENCE = Minuten seit 01.01.2026 zum Exportzeitpunkt –
+  // jede neuere Datei hat die höhere Revision, Kalender (Google/Outlook/iPhone) übernehmen verschobene Termine derselben UID statt sie zu ignorieren
+  const seq = Math.max(0, Math.floor((Date.parse(stamp) - Date.parse('2026-01-01T00:00:00Z')) / 60000)) || 0;
+  // Erinnerung nur, wenn ihr Tag nicht vor dem Exporttag (Berlin) liegt – sonst meldete der Kalender nach jedem Import Dutzende „überfällige“ Erinnerungen
+  const today = berlinDate(stamp);
+  const alarmOn = (e) => { const x = new Date(e.date + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() - Number(e.alarmDays)); return x.toISOString().slice(0, 10); };
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Cevik Mobility//CLAUDE Fuhrpark//DE', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', `X-WR-CALNAME:${icsEscape(name)}`];
   for (const e of events) {
-    lines.push('BEGIN:VEVENT', `UID:${e.uid}@cevik-fuhrpark-claude`, `DTSTAMP:${ts}`, `DTSTART;VALUE=DATE:${d8(e.date)}`, `DTEND;VALUE=DATE:${d8(next(e.date))}`,
+    lines.push('BEGIN:VEVENT', `UID:${e.uid}@cevik-fuhrpark-claude`, `DTSTAMP:${ts}`, `SEQUENCE:${seq}`, `DTSTART;VALUE=DATE:${d8(e.date)}`, `DTEND;VALUE=DATE:${d8(next(e.date))}`,
       `SUMMARY:${icsEscape(e.summary)}`, `DESCRIPTION:${icsEscape(e.description || '')}`, 'TRANSP:TRANSPARENT');
-    if (e.alarmDays !== null && e.alarmDays !== undefined) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape(e.alarm || e.summary)}`, `TRIGGER:-P${e.alarmDays}D`, 'END:VALARM');
+    if (e.alarmDays !== null && e.alarmDays !== undefined && alarmOn(e) >= today) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape(e.alarm || e.summary)}`, `TRIGGER:-P${e.alarmDays}D`, 'END:VALARM');
     lines.push('END:VEVENT');
   }
   // Ohne Termine (z. B. Standortfilter ohne Treffer) braucht der Kalender laut RFC 5545 §3.6 trotzdem eine Komponente – feste Zeitzone
