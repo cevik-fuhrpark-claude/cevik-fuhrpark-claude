@@ -56,6 +56,7 @@ export { CHECK_LABELS } from './check-labels.js';
 // [CLAUDE] Panne & Notfall (Rufnummern für unterwegs; fest nur Notruf 112)
 // [CLAUDE] Backlog 431: Bundesland für landesweite Feiertage (Erreichbarkeit einer Rufnummer)
 // [CLAUDE] Hilfe: Kennzahlen Instandhaltung lesen (Inhaber/Fuhrparkleitung)
+// Backlog 1042 (Blickwinkel „Inhaber prüft am Monatsende offene Kostenfreigaben“): feste Sortierung nach Wartezeit, Link aus dem Bericht
 // Backlog 618: HU/SP mit erheblichen/gefährlichen Mängeln ohne spätere bestandene Prüfung (Fahrzeugliste, Gespann)
 // Backlog 620: HU-Formular – SP am selben Tag, Prüfbericht als Datei
 // Backlog 621: Versicherungsfall – Vertrag am Schadentag

@@ -34654,6 +34654,34 @@ await test('Backlog 1041 (Blickwinkel „Leitung vertritt die erkrankte Kollegin
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_fleet_recv.includes(STRINGS[l].todo_untriaged) && STRINGS[l].ue_fleet_recv.includes(STRINGS[l].todo_today), l + ': Deaktivierungshinweis nennt die Gruppe');
 });
 
+await test('Backlog 1042 (Blickwinkel „Inhaber prüft am Monatsende offene Kostenfreigaben“): Liste/CSV nach Wartezeit, „seit“ in Liste und CSV, Link aus „Heute zu tun“ auch bei wenigen Einträgen und aus dem Bericht; DE/UK/EN', async () => {
+  const { e, U, newCase } = await freshWorld();
+  const a = await newCase({ description: 'Kupplung rutscht', priority: 'niedrig' });
+  const b = await newCase({ description: 'Bremse quietscht', priority: 'mittel' });
+  const c = await newCase({ description: 'Spiegel lose', priority: 'mittel' });
+  // a wartet am längsten (älteste Markierung), b kürzer; c ohne Kostenfreigabe
+  await e.DB.prepare('UPDATE cases SET cost_over_limit_at=? WHERE id=?').bind('2026-10-01T10:00:00.000Z', a).run();
+  await e.DB.prepare('UPDATE cases SET cost_over_limit_at=? WHERE id=?').bind('2026-10-20T10:00:00.000Z', b).run();
+  const ids = (q) => U.fleet.get('/api/cases?status=open&cost_approval=1' + q).then((r) => r.data.cases.map((x) => x.id));
+  eq(JSON.stringify(await ids('')), JSON.stringify([a, b]), 'ohne Sortierung: am längsten wartende zuerst:');
+  eq(JSON.stringify(await ids('&sort=priority')), JSON.stringify([b, a]), 'gewählte Sortierung bleibt möglich:');
+  ok(!(await ids('')).includes(c), 'ohne Markierung nicht in der Liste');
+  eq((await U.driver.get('/api/cases?status=open&cost_approval=1')).data.cases.length, 0, 'Fahrer: leer');
+  const csv = await U.fleet.req('GET', '/api/cases?status=open&cost_approval=1&format=csv'); eq(csv.status, 200);
+  const tab = csvTable(new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data));
+  eq(JSON.stringify(tab.rows.map((r) => r['Kostenfreigabe ausstehend'])), JSON.stringify(['01.10.2026', '20.10.2026']), 'CSV: Datum der Markierung, älteste zuerst:');
+  const all = csvTable(new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.req('GET', '/api/cases?status=open&format=csv')).data));
+  ok(all.rows.some((r) => r['Kostenfreigabe ausstehend'] === '') && all.rows.filter((r) => r['Kostenfreigabe ausstehend']).length === 2, 'CSV ohne Filter: leer ohne Markierung');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("f !== 'followup' && f !== 'cost_approval' ? '&sort=' + S.caseSort") && app.includes('id="casort"'), 'Liste: keine Sortierauswahl, Hinweis auf feste Sortierung');
+  ok(app.includes("k === 'todo_cost_approval' && list.length <= 8 ? `<p class=\"small\"><a href=\"${hj(TODO_LIST[k])}\" id=\"todocalist\""), 'Heute zu tun: Link auch bei bis zu 8 Einträgen (Standort wie Zähler über hj)');
+  ok(app.includes("href=\"${hj('#/cases?f=cost_approval')}\" id=\"kpicalist\""), 'Bericht: Link zur Liste');
+  ok(app.includes("${esc(t('cost_approval_pending'))} ${esc(t('since'))} ${fmtD(c.cost_over_limit_at)}"), 'Listenchip mit „seit“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const k of ['ca_sort_wait', 'kpi_ca_all_open']) for (const l of ['uk', 'en']) ok(STRINGS.de[k] && STRINGS[l][k] && STRINGS[l][k] !== STRINGS.de[k], `${k} ${l}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

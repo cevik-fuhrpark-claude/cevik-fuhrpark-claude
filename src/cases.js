@@ -102,6 +102,9 @@ const CASE_SORTS = {
   oldest: 'c.created_at ASC, c.id',
   updated: 'c.updated_at DESC, c.id',
 };
+// Backlog 1042 (Blickwinkel „Inhaber prüft am Monatsende offene Kostenfreigaben“): Filter „Kostenfreigabe ausstehend“ ohne gewählte
+// Sortierung = am längsten wartende zuerst (wie „Heute zu tun“), auch in CSV und Druck
+const COST_WAIT_SORT = 'c.cost_over_limit_at ASC, c.id';
 // meta (optional): erhält site/site_options für den Filter „Fahrzeug-Standort“ (vsite) – nicht für Fahrer
 export async function listCases(env, user, envName, query, meta = null) {
   // query.__counts: nur Begrenzung melden (meta.truncated), ohne Standort-/Nachfass-Angaben (spart zwei Abfragen, z. B. Startseite)
@@ -275,7 +278,7 @@ export async function listCases(env, user, envName, query, meta = null) {
       ${APPR_WAIT_SQL(berlinDate())}
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN users u ON u.id=c.reporter_id
     WHERE ${where.join(' AND ')}
-    ORDER BY ${Object.hasOwn(CASE_SORTS, query.sort) ? CASE_SORTS[query.sort] : CASE_SORTS.priority}
+    ORDER BY ${Object.hasOwn(CASE_SORTS, query.sort) ? CASE_SORTS[query.sort] : on(query.cost_approval) && user.role !== 'driver' ? COST_WAIT_SORT : CASE_SORTS.priority}
     LIMIT ?`).bind(...args, limit + 1).all()).results;
   // eine Zeile mehr gelesen: zeigt an, dass die Liste begrenzt ist (Oberfläche: „weitere laden“ bzw. Suche/CSV)
   if (rows.length > limit) { rows.length = limit; if (meta) meta.truncated = true; }
@@ -356,7 +359,7 @@ export function casesCsv(rows, csvCell, fmt, claims = null, workshopNames = null
     lines.push([csvCell(c.case_no), csvCell(c.plate), csvCell(c.vehicle_site), PRIO_DE[c.priority] || c.priority, CASE_STATUS_DE[c.status] || csvCell(c.status), c.safety_lock ? 'ja' : 'nein',
       DRV_DE[c.reported_driveability] || csvCell(c.reported_driveability), csvCell((workshopNames && workshopNames.get(c.workshop_site)) || c.workshop_site), csvCell(caseDescText(c.description, 'de')), fmt(c.created_at), csvCell(c.reporter_name_hidden ? 'Fahrer/in (Name ausgeblendet)' : c.reporter_name), fmt(c.fleet_received_at), fmt(c.workshop_ack_at), fmt(c.closed_at),
       c.open_items ?? '', c.file_count ?? '', c.planned_date ? c.planned_date.split('-').reverse().join('.') : '',
-      ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), quoteCell(csvCell(k ? k.claim_no : '')), c.cost_over_limit_at && OPEN_STATUSES.includes(c.status) ? 'ja' : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no), c.followup_on ? csvCell(c.followup_on.split('-').reverse().join('.') + (c.followup_note ? ' – ' + c.followup_note : '')) : '', csvCell(occurredCsv(c.occurred_at)), c.status === 'wartet_teile' && c.parts_expected_date ? c.parts_expected_date.split('-').reverse().join('.') : '', c.status === 'wartet_teile' ? csvCell(c.parts_wait_note) : '', csvCell(c.location_note), csvCell(c.vehicle_location), csvCell(c.tow_service), c.towed_on ? c.towed_on.split('-').reverse().join('.') : '', c.ready_expected_on && READY_STATUSES.includes(c.status) ? c.ready_expected_on.split('-').reverse().join('.') : ''].join(';'));
+      ...(claims ? [k ? CLAIM_DE[k.status] : '', csvCell(k ? k.insurer : ''), quoteCell(csvCell(k ? k.claim_no : '')), c.cost_over_limit_at && OPEN_STATUSES.includes(c.status) ? berlinDate(c.cost_over_limit_at).split('-').reverse().join('.') : ''] : []), ORIGIN_DE[c.origin] || csvCell(c.origin), csvCell(c.duplicate_of_no), c.followup_on ? csvCell(c.followup_on.split('-').reverse().join('.') + (c.followup_note ? ' – ' + c.followup_note : '')) : '', csvCell(occurredCsv(c.occurred_at)), c.status === 'wartet_teile' && c.parts_expected_date ? c.parts_expected_date.split('-').reverse().join('.') : '', c.status === 'wartet_teile' ? csvCell(c.parts_wait_note) : '', csvCell(c.location_note), csvCell(c.vehicle_location), csvCell(c.tow_service), c.towed_on ? c.towed_on.split('-').reverse().join('.') : '', c.ready_expected_on && READY_STATUSES.includes(c.status) ? c.ready_expected_on.split('-').reverse().join('.') : ''].join(';'));
   }
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
