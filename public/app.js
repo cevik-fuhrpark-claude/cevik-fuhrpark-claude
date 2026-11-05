@@ -8235,7 +8235,7 @@ async function loadTotp() {
         ev.preventDefault();
         try {
           await api('POST', '/api/me/totp/move/finish', { code: $('#tfmn').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS });
-          box.innerHTML = `<div class="panel ok small" role="status" id="tfmok">${esc(t('tf_move_done'))}</div><div class="actions"><button type="button" class="btn" id="tfdone">OK</button></div>`;
+          box.innerHTML = `<div class="panel ok small" role="status" id="tfmok">${esc(t('tf_move_done'))} <a href="#/more?o=sess" id="tfmkd">${esc(t('kd_title'))} ›</a></div><div class="actions"><button type="button" class="btn" id="tfdone">OK</button></div>`; // altes Handy dort „Vergessen“
           $('#tfdone').onclick = () => loadTotp();
         } catch (err) {
           // Funkloch: übertragen, aber die Antwort ging verloren → Wiederholung meldet totp_no_move

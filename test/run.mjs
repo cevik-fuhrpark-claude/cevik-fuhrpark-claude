@@ -34209,6 +34209,7 @@ await test('Backlog 1022 (Blickwinkel „Inhaber wechselt das Handy“): Zwei-Fa
   // Oberfläche und Texte
   const fsx = await import('node:fs'); const src = fsx.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(src.includes("api('POST', '/api/me/totp/move', {") && src.includes("api('POST', '/api/me/totp/move/finish', {"), 'Oberfläche nutzt beide Schritte');
+  ok(src.includes('<a href="#/more?o=sess" id="tfmkd">'), 'nach dem Übertragen Verweis auf die bekannten Geräte (altes Handy vergessen)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) {
     for (const k of ['tf_move', 'tf_move_hint', 'tf_move_scan', 'tf_move_finish', 'tf_move_done', 'tf_move_rc_used']) ok(STRINGS[l][k] && (l === 'de' || STRINGS[l][k] !== STRINGS.de[k]), `${l}: ${k}`);
