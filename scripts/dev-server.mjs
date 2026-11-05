@@ -78,6 +78,9 @@ http.createServer(async (req, res) => {
     // Backlog 872: „voraussichtlich fertig“ um N Tage zurück (über die API sind vergangene Daten nicht eintragbar; scripts/ui-fertig-ueberschritten.py)
     const rd = Math.min(Math.max(Number(url.searchParams.get('ready_days')) || 0, 0), 400);
     if (rd) env.DB.db.prepare(`UPDATE cases SET ready_expected_on = date(ready_expected_on, '-${rd} days') WHERE id=? AND ready_expected_on IS NOT NULL`).run(id);
+    // Backlog 1035: Teile-Liefertermin um N Tage zurück (vergangene Liefertermine sind über die API nicht eintragbar; scripts/ui-teilefahrt-ueberfaellig.py)
+    const pdays = Math.min(Math.max(Number(url.searchParams.get('parts_days')) || 0, 0), 400);
+    if (pdays) env.DB.db.prepare(`UPDATE cases SET parts_expected_date = date(parts_expected_date, '-${pdays} days') WHERE id=? AND parts_expected_date IS NOT NULL`).run(id);
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ cases: Number(a), events: Number(b) })); return;
   }
   // Nur lokal: Begründungen der km-Stände eines Fahrzeugs leeren – erzeugt „Rücksprung ohne Begründung“ wie aus Alt-Import (scripts/ui-km-begruendung.py)

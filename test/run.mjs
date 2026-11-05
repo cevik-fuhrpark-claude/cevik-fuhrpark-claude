@@ -34482,6 +34482,35 @@ await test('Backlog 1032–1034 (Blickwinkel „Werkstatt bekommt die Teile und 
   for (const l of ['de', 'uk', 'en']) for (const k of ['dlv_file', 'dlv_file_none', 'rr_pdr', 'rr_ws_clear', 'rr_ws_cleared']) ok(STRINGS[l][k] && STRINGS[l][k] !== STRINGS.de[k] || l === 'de', l + ': ' + k);
 });
 
+await test('Backlog 1035 (Blickwinkel „Disposition plant einen Lkw, dessen Teillieferung überfällig ist“): Abschnitt „Fährt bis zur Teilelieferung“ kennzeichnet überschrittenen/heutigen Liefertermin mit Warnhinweis und Zähler; Daten kommen bei der Disposition an; DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'w.dispo35', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
+  const disp = new Client(worker, e, 'w.dispo35'); await disp.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const id = await toRepair();
+  const fut = new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + 3 * 864e5).toISOString().slice(0, 10);
+  eq((await cmd(U.ws, id, 'wait_parts', { parts_expected_date: fut }, 'Luftbalg bestellt')).status, 200);
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: true }, 'nur Nahverkehr')).status, 200);
+  // Liefertermin vergeht (über die API nicht eintragbar – direkt in der Datenbank wie scripts/dev-server.mjs `parts_days`)
+  e.DB.db.prepare(`UPDATE cases SET parts_expected_date = date(parts_expected_date, '-5 days') WHERE id=?`).run(id);
+  const c = (await disp.get('/api/cases?status=open&limit=500')).data.cases.find((y) => y.id === id);
+  ok(c, 'Disposition sieht den Vorgang');
+  eq(c.status, 'wartet_teile'); ok(c.parts_drive_at, 'Vermerk kommt an'); ok(c.parts_expected_date < BERLIN_TODAY, 'überschrittener Liefertermin kommt an');
+  eq(c.safety_lock ? 1 : 0, 0);
+  // Vermerk bleibt trotz überschrittenem Termin bestehen (keine eigene Frist im System – nur Kennzeichnung)
+  ok((await U.fleet.get(`/api/cases/${id}`)).data.case.parts_drive_at, 'Vermerk bleibt');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const pdLate = pdL.filter((c) => c.parts_expected_date && c.parts_expected_date <= today0).length;"), 'Zähler: heute oder vorbei');
+  ok(app.includes("data-dpdreta>${c.parts_expected_date ? partsEta(c, '') :"), 'Zeile nutzt partsEta (Kennzeichnung „Termin überschritten“ wie „Nicht einplanen“)');
+  ok(app.includes("t(c.parts_expected_date < today0 ? 'dispo_pdrive_late' : 'dispo_pdrive_due')") && app.includes('data-dpdrtoday') && app.includes('data-dpdrlaten'), 'Warnhinweis/heute/Zähler');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['dispo_pdrive_today', 'dispo_pdrive_n', 'dispo_pdrive_late', 'dispo_pdrive_due']) ok(STRINGS[l][k], `${k} ${l}`);
+    ok(STRINGS[l].dispo_pdrive_n.includes('{n}'), 'Platzhalter ' + l);
+  }
+  const dev = fs.readFileSync(new URL('../scripts/dev-server.mjs', import.meta.url), 'utf8');
+  ok(dev.includes("url.searchParams.get('parts_days')"), 'Dev-Server: Liefertermin zurückdatieren');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
