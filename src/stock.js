@@ -713,7 +713,6 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
   const seen = new Map(); const newItems = []; const newStock = []; const now = nowIso(); const dec = commaDec(user);
   const get = (cells, i) => (i >= 0 ? String(cells[i] ?? '').trim() : '');
   const pdec = pointDec(user);
-  const numOf = (v, field, max) => (v === '' ? null : r3(num(v, { min: 0, max, field, decimalComma: dec, decimalPoint: pdec })));
   table.slice(1).forEach((cells, idx) => {
     const line = cells.line || idx + 2;
     if (cells.every((c) => !String(c ?? '').trim())) return;
@@ -722,7 +721,11 @@ export async function importStockCsv(env, user, envName, text, { dryRun = false,
     if (!name) return skip('Bezeichnung fehlt');
     if (name.length > 200 || (pn && pn.length > 80)) return skip('Bezeichnung/Teilenummer zu lang');
     let min; let price; let qty;
-    try { min = numOf(get(cells, ci.min), 'Mindestbestand', 1e6); price = get(cells, ci.price) === '' ? null : num(get(cells, ci.price).replace(/\s*€$/, ''), { min: 0, max: 1e7, field: 'Preis', decimalComma: dec, decimalPoint: pdec }); qty = numOf(get(cells, ci.qty), 'Anfangsbestand', 1e6); }
+    // Backlog 1009: gleiche Regeln wie das Artikel-Formular – Menge mit Einheit („5 Stück“, „20 l“; fremde Einheit mit eigener Meldung),
+    // Preis mit Euro-Zeichen vorn/hinten bzw. „EUR … netto“, fremde Währung und Bruttoangabe mit eigener Meldung (nie umgerechnet)
+    const qUnit = get(cells, ci.unit) || null;
+    const qtyOf = (v, field) => (v === '' ? null : r3(qtyNum(v, qUnit, { min: 0, max: 1e6, field, decimalComma: dec, decimalPoint: pdec })));
+    try { min = qtyOf(get(cells, ci.min), 'Mindestbestand'); price = get(cells, ci.price) === '' ? null : num(get(cells, ci.price), { min: 0, max: 1e7, field: 'Preis', net: true, money: true, decimalComma: dec, decimalPoint: pdec }); qty = qtyOf(get(cells, ci.qty), 'Anfangsbestand'); }
     catch (e) { if (e instanceof HttpError) return skip(e.message); throw e; }
     // zu lang = Zeile übersprungen wie im Formular (20.10.2026: vorher still gekürzt)
     if (get(cells, ci.unit).length > 20) return skip('Einheit zu lang (max. 20 Zeichen)');

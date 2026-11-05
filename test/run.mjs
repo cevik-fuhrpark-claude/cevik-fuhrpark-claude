@@ -33826,6 +33826,27 @@ await test('Backlog 1008 (Blickwinkel „UVV-/Wartungsliste aus Excel mit Einhei
   ok(IMPORT_REASONS_TPL.some((re) => re.test(m)), 'übersetzbar'); ok(/given in years/.test(translateImportReason('en', m)) && /у місяцях/.test(translateImportReason('uk', m)), 'EN/UK');
 });
 
+await test('Backlog 1009 (Blickwinkel „Werkstatt übernimmt die Teileliste des Händlers als Lager-Anfangsbestand“): Lagerimport liest Menge mit Einheit („5 Stück“, „20 l“) und Preis mit Euro-Zeichen/„EUR … netto“ wie das Artikelformular; fremde Währung, Bruttopreis und fremde Einheit mit eigenem Grund statt „ungültige Zahl“', async () => {
+  const { U } = await freshWorld();
+  const post = (csv) => U.own.req('POST', '/api/stock/import?dry_run=1&site=DORTMUND', csv, { 'content-type': 'text/csv' });
+  const H = 'Bezeichnung;Teilenummer;Einheit;Bestand;Preis netto;Mindestbestand\n';
+  for (const [u, b, p, m, xb, xp, xm] of [['Stück', '5 Stück', '12,50 €', '2 Stk.', 5, 12.5, 2], ['Stück', '5 Stk', 'EUR 12,50', '2', 5, 12.5, 2], ['l', '20 l', '12,50 EUR netto', '5 Liter', 20, 12.5, 5], ['Stück', '5', '€ 1.099,90', '2', 5, 1099.9, 2], ['Stück', '5', '12,50', '2', 5, 12.5, 2]]) {
+    const r = await post(`${H}Bremsscheibe;BS-1;${u};${b};${p};${m}\n`);
+    eq(r.status, 200); eq(r.data.skipped.length, 0, JSON.stringify([b, p, m, r.data.skipped]));
+    eq([r.data.rows[0].initial_qty, r.data.rows[0].unit_price_net, r.data.rows[0].min_qty].join('/'), [xb, xp, xm].join('/'), b + ' ' + p);
+  }
+  const reason = async (b, p, u = 'Stück') => { const r = await post(`${H}Bremsscheibe;BS-1;${u};${b};${p};2\n`); eq(r.data.rows.length, 0, b + p); return r.data.skipped[0].reason; };
+  ok(/Betrag in PLN/.test(await reason('5', '12,50 zł')), 'Fremdwährung');
+  ok(/brutto/i.test(await reason('5', '14,88 brutto')) && !/ungültige Zahl/.test(await reason('5', '14,88 brutto')), 'Brutto: ' + await reason('5', '14,88 brutto'));
+  eq(await reason('20 l', '12,50'), 'Anfangsbestand: „20 l“ – Einheit passt nicht zum Artikel (Stück).');
+  eq(await reason('viele', '12,50'), 'Anfangsbestand: ungültige Zahl.', 'Text wie bisher');
+  const { IMPORT_REASONS_TPL, translateImportReason } = await import('../public/i18n.js');
+  for (const x of [await reason('5', '12,50 zł'), await reason('20 l', '12,50')]) ok(translateImportReason('en', x) !== x || IMPORT_REASONS_TPL.some((re) => re.test(x)), 'übersetzbar: ' + x + ' → ' + translateImportReason('en', x));
+  // Übernahme schreibt Bestand und Preis wie die Vorschau
+  const real = await U.own.req('POST', '/api/stock/import?site=DORTMUND', `${H}Ölfilter;OF-1009;Stück;4 Stück;€ 9,90;1 Stk.\n`, { 'content-type': 'text/csv' });
+  eq(real.status, 200, JSON.stringify(real.data)); eq(real.data.created, 1);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
