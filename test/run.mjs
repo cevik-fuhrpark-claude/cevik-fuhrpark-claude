@@ -34019,6 +34019,39 @@ await test('Backlog 1017 (Blickwinkel „Push-Benachrichtigung tippen, nachdem d
   ok(fsx.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-push-nach-ablauf.py|'), 'UI-Skript in pruefen.sh');
 });
 
+await test('Backlog 1018 (Blickwinkel „Vorgangs-Link per Messenger weitergeleitet“): Inhaber erfährt bei 404 die andere Umgebung (Vorgang/Bußgeld) und kann umschalten; andere Rollen ohne Existenz-Offenlegung; DE/UK/EN', async () => {
+  const { U, newCase } = await freshWorld();
+  const id = await newCase(); // Testumgebung (Fahrer im Test)
+  // Inhaber in der Betriebsansicht: 404 mit other_environment
+  U.own.envHeader = 'production';
+  const r = await U.own.get(`/api/cases/${id}`); eq(r.status, 404); eq(r.data.other_environment, 'test', 'Inhaber: andere Umgebung genannt');
+  U.own.envHeader = 'test';
+  eq((await U.own.get(`/api/cases/${id}`)).status, 200, 'nach dem Umschalten sichtbar');
+  // unbekannte ID: kein Zusatz
+  const r0 = await U.own.get('/api/cases/gibt-es-nicht'); eq(r0.status, 404); eq(r0.data.other_environment, undefined, 'unbekannt ohne Zusatz');
+  U.own.envHeader = null;
+  // andere Rollen: kein Zusatz, auch nicht für fremde Werkstatt / Lesezugriff
+  for (const k of ['wsMuc']) { const x = await U[k].get(`/api/cases/${id}`); eq(x.status, 404); eq(x.data.other_environment, undefined, `${k} ohne Zusatz`); }
+  // Bußgeld (Leitung im Test) → Inhaber in Betriebsansicht
+  const f = await U.fleet.post('/api/fines', { kind: 'bussgeldbescheid', authority: 'Bußgeldstelle', reference: 'AZ-1018', offense_type: 'parken', offense_at: new Date(Date.now() - 86400000).toISOString(), plate_in_letter: 'SZ YC 5513', amount_eur: 30, response_due: '2040-03-15' });
+  ok(f.status === 200 || f.status === 201, 'Bußgeld angelegt ' + f.status);
+  const fid = f.data.id || (f.data.fine && f.data.fine.id);
+  U.own.envHeader = 'production';
+  const rf = await U.own.get(`/api/fines/${fid}`); eq(rf.status, 404); eq(rf.data.other_environment, 'test', 'Bußgeld: andere Umgebung genannt');
+  U.own.envHeader = null;
+  // Oberfläche: Fehlerseite mit Umschaltknopf nur bei other_environment und Inhaber, Hinweis bei zugeschicktem Link
+  const fsx = await import('node:fs'); const src = fsx.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(src.includes("S.me.role === 'owner' && ['test', 'production'].includes(e.data.other_environment)"), 'nur Inhaber');
+  ok(src.includes("if (re) re.onclick = () => { if (pushEnv(oev)) route(); };"), 'Umschalten über pushEnv');
+  ok(/const lnk = !oev && e && e\.status === 404 && \/\^#\\\/\(cases\|fines\)/.test(src), 'Hinweis nur für Vorgang/Bußgeld');
+  const main = fsx.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); ok(main.includes('link_no_access_hint'), 'app-main.js aktuell');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['link_other_env', 'link_switch_env', 'link_no_access_hint']) ok(STRINGS[l][k] && (l === 'de' || STRINGS[l][k] !== STRINGS.de[k]), `${l}: ${k}`);
+    ok(STRINGS[l].link_other_env.includes('{env}') && STRINGS[l].link_other_env.includes('{cur}') && STRINGS[l].link_switch_env.includes('{env}'), `${l}: Platzhalter`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

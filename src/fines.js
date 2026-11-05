@@ -2,7 +2,7 @@
 import { icsLang } from '../public/ics-texts.js';
 import { federalHoliday } from '../public/holidays.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, plateHits, plateNoCountry, normPlate, PLATE_KEY_SQL, quoteCell, pointDec } from './util.js';
+import { otherEnvNotFound, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, plateHits, plateNoCountry, normPlate, PLATE_KEY_SQL, quoteCell, pointDec } from './util.js';
 import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
 
@@ -98,7 +98,7 @@ export async function listFinesSel(env, user, envName, query = {}, max = 500) {
 
 async function loadFine(env, user, envName, id) {
   const f = await env.DB.prepare(`SELECT f.*, v.plate FROM fines f LEFT JOIN vehicles v ON v.id=f.vehicle_id WHERE f.id=? AND f.environment=?`).bind(id, envName).first();
-  if (!f) throw notFound('Vorgang nicht gefunden.');
+  if (!f) throw await otherEnvNotFound(env, user, envName, 'fines', id); // Backlog 1018
   if (isMgr(user) || user.role === 'viewer') return f;
   if (user.role === 'driver' && f.driver_id === user.id && f.driver_informed_at) return f;
   throw notFound('Vorgang nicht gefunden.');

@@ -609,8 +609,14 @@ async function route() {
     if (gen !== S.routeGen) return; // Fehler einer überholten Seite nicht über die aktuelle legen
     // Überschrift + Ansage für Bildschirmleser, Fokus auf die Überschrift; bei fehlender Berechtigung/unbekanntem Eintrag „Zur Übersicht“ statt „Erneut versuchen“ (22.10.2026)
     const gone = e && (e.status === 403 || e.status === 404);
-    render(`<h1 tabindex="-1" id="errh">${esc(t('page_unavailable'))}</h1><div class="panel alert" role="alert"><p>${esc(e.message)}</p>${gone ? `<a class="btn" href="#/" id="rlhome">${esc(t('to_overview'))}</a>` : `<button class="btn" id="rl">${esc(t('retry'))}</button>`}</div>`);
+    // Backlog 1018 (Blickwinkel „Vorgangs-Link per Messenger weitergeleitet“): Inhaber in der anderen Umgebung → „Ansicht wechseln und öffnen“;
+    // sonst bei Vorgang/Bußgeld ein Hinweis, warum ein zugeschickter Link nicht aufgeht (ohne zu verraten, ob es den Eintrag gibt)
+    const oev = e && e.status === 404 && e.data && S.me && S.me.role === 'owner' && ['test', 'production'].includes(e.data.other_environment) ? e.data.other_environment : '';
+    const lnk = !oev && e && e.status === 404 && /^#\/(cases|fines)\/[\w-]+$/.test(h);
+    const envNm = (x) => t(x === 'test' ? 'env_testname' : 'env_prod');
+    render(`<h1 tabindex="-1" id="errh">${esc(t('page_unavailable'))}</h1><div class="panel alert" role="alert"><p>${esc(e.message)}</p>${oev ? `<p>${esc(t('link_other_env').replace('{env}', envNm(oev)).replace('{cur}', envNm(oev === 'test' ? 'production' : 'test')))}</p>` : ''}${lnk ? `<p class="small">${esc(t('link_no_access_hint'))}</p>` : ''}${oev ? `<div class="actions"><button type="button" class="btn" id="rlenv">${esc(t('link_switch_env').replace('{env}', envNm(oev)))}</button><a class="btn secondary" href="#/" id="rlhome">${esc(t('to_overview'))}</a></div>` : gone ? `<a class="btn" href="#/" id="rlhome">${esc(t('to_overview'))}</a>` : `<button class="btn" id="rl">${esc(t('retry'))}</button>`}</div>`);
     const rl = document.getElementById('rl'); if (rl) rl.onclick = () => location.reload();
+    const re = document.getElementById('rlenv'); if (re) re.onclick = () => { if (pushEnv(oev)) route(); };
     const eh = document.getElementById('errh'); if (eh) eh.focus({ preventScroll: true });
   }
 }

@@ -22,6 +22,18 @@ export const bad = (code, message, extra) => new HttpError(400, code, message, e
 // extra.denied: maschinenlesbarer Grund (App übersetzt danach statt nur „Keine Berechtigung“) – 21.10.2026
 export const forbidden = (message = 'Keine Berechtigung für diese Aktion.', extra) => new HttpError(403, 'forbidden', message, extra);
 export const notFound = (message = 'Nicht gefunden.') => new HttpError(404, 'not_found', message);
+// Backlog 1018 (Blickwinkel „Vorgangs-Link per Messenger weitergeleitet“): Inhaber hat die Ansicht auf Test, der Link zeigt auf einen Betriebs-
+// vorgang (oder umgekehrt) → bisher nur „Vorgang nicht gefunden“. Nur der Inhaber sieht beide Umgebungen, daher nennt die Antwort nur ihm die
+// andere Umgebung (`other_environment`), die App bietet „Ansicht wechseln und öffnen“ an. Andere Rollen: unverändert (keine Existenz-Offenlegung).
+// Eine Zusatzabfrage nur im Fehlerfall.
+export async function otherEnvNotFound(env, user, envName, table, id) {
+  const err = notFound('Vorgang nicht gefunden.');
+  if (!user || user.role !== 'owner' || !['cases', 'fines'].includes(table)) return err;
+  const o = await env.DB.prepare(`SELECT environment FROM ${table} WHERE id=?`).bind(id).first();
+  if (o && o.environment !== envName && ['test', 'production'].includes(o.environment)) err.extra = { other_environment: o.environment };
+  return err;
+}
+
 export const conflict = (code, message, extra) => new HttpError(409, code, message, extra);
 // Backlog 804 (Funkloch): optionaler Anfrageschlüssel je Formular (wie Bußgeld/Hinweis) – ≤ 80 Zeichen [A-Za-z0-9_.-], leer = keiner
 export const requestKey = (rk) => {

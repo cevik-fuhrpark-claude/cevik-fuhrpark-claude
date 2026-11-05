@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase, day as pastDay } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, hoursNum, qtyNum, qtyUnitOf, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork } from './util.js';
+import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, hoursNum, qtyNum, qtyUnitOf, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork, otherEnvNotFound } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile, fineVehiclesSql, gespannVehiclesSql } from './fines.js';
@@ -56,7 +56,7 @@ const canSeeCosts = (u) => isManager(u);
 
 export async function loadCase(env, user, envName, caseId) {
   const c = await env.DB.prepare('SELECT * FROM cases WHERE id=? AND environment=?').bind(caseId, envName).first();
-  if (!c) throw notFound('Vorgang nicht gefunden.');
+  if (!c) throw await otherEnvNotFound(env, user, envName, 'cases', caseId);
   const access = caseAccess(user, c);
   if (!access) throw notFound('Vorgang nicht gefunden.'); // keine Existenz-Offenlegung
   return { c, access };
