@@ -34575,6 +34575,26 @@ await test('Backlog 1038 (Blickwinkel „Lieferant nennt neuen Liefertermin, der
   eq(app.split('id="etapdr"').length - 1, 2, 'Hinweis in „Liefertermin ändern“ und „Teillieferung eingegangen“');
 });
 
+await test('Backlog 1039 (Folge aus 1032): „Reparatur fortgesetzt“ mit Zusatz „Fahrt bis zur Teilelieferung beendet“ wird beim Sprachwechsel vollständig übersetzt (Priorität und Zusatz, auch mit TEST)', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'w.dispo39', display_name: 'Dispo', role: 'dispatch', environment: 'test', language: 'uk' });
+  const D = new Client(worker, e, 'w.dispo39'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const id = await toRepair();
+  const fut = new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + 3 * 864e5).toISOString().slice(0, 10);
+  eq((await cmd(U.ws, id, 'wait_parts', { parts_expected_date: fut }, 'Luftbalg bestellt')).status, 200);
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: true }, 'nur Nahverkehr')).status, 200);
+  eq((await cmd(U.ws, id, 'resume_repair', {})).status, 200);
+  const n = (await D.get('/api/notifications')).data.notifications.find((y) => y.kind === 'resumed');
+  ok(n && n.body.includes('Рух до постачання запчастин завершено'), 'UK-Zusatz gespeichert: ' + JSON.stringify(n));
+  const { localizedBody } = await import('../src/notify.js');
+  const de = localizedBody(n, 'de'); const en = localizedBody(n, 'en');
+  ok(de.includes('Fahrt bis zur Teilelieferung beendet – Fahrzeug in die Werkstatt') && !de.includes('Рух') && /· (niedrig|mittel|kritisch) · Fahrt/.test(de), 'DE: ' + de);
+  ok(en.includes('Driving until parts delivery ended') && /· (low|medium|critical) · Driving/.test(en), 'EN: ' + en);
+  eq(localizedBody(n, 'uk'), n.body, 'gleiche Sprache unverändert');
+  ok(n.body.endsWith(' · TEST') && de.endsWith('Fahrzeug in die Werkstatt · TEST'), 'Testumgebung: TEST bleibt am Ende: ' + de);
+  const t2 = { ...n, body: n.body.slice(0, -' · TEST'.length) }; ok(localizedBody(t2, 'de').endsWith('Fahrzeug in die Werkstatt'), 'ohne TEST: ' + localizedBody(t2, 'de'));
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

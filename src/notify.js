@@ -124,6 +124,9 @@ export function localizedBody(n, lang) {
   const test = b.endsWith(' · TEST') ? ' · TEST' : '';
   let core = test ? b.slice(0, -test.length) : b;
   // Backlog 466: fester Zusatz „Abholhinweis: Mein Fahrzeug“ der Freigabe an zugeordnete Fahrer
+  // Backlog 1039: fester Zusatz „Fahrt bis zur Teilelieferung beendet – …“ von „Reparatur fortgesetzt“ (Backlog 1032) – blieb beim Sprachwechsel stehen
+  let pde = '';
+  if (n.kind === 'resumed') for (const l of LANGS) { const x = ' · ' + T[l].pdr_ended; if (core.endsWith(x)) { core = core.slice(0, -x.length); pde = ' · ' + T[L].pdr_ended; break; } }
   let pk = '';
   if (n.kind === 'released') for (const l of LANGS) { const x = ' · ' + T[l].pickup_hint; if (core.endsWith(x)) { core = core.slice(0, -x.length); pk = ' · ' + T[L].pickup_hint; break; } }
   // Backlog 878: „ · offene Restarbeiten: N“ der Freigabe (vor dem Abholhinweis)
@@ -157,7 +160,7 @@ export function localizedBody(n, lang) {
   const i = core2.lastIndexOf(' · ');
   const prio = i > 0 ? core2.slice(i + 3) : null;
   if (!prio || !PRIO_KEY.has(prio)) return b;
-  return `${core2.slice(0, i + 3)}${PRIO[L][PRIO_KEY.get(prio)]}${why ? ' · ' + T[L]['why_' + why] : ''}${plan ? ` · ${T[L].planned_on} ${dateLang(plan, L)}` : ''}${rdy ? ` · ${T[L].ready_on} ${dateLang(rdy, L)}` : ''}${eta || ''}${rest}${pk}${test}`;
+  return `${core2.slice(0, i + 3)}${PRIO[L][PRIO_KEY.get(prio)]}${why ? ' · ' + T[L]['why_' + why] : ''}${plan ? ` · ${T[L].planned_on} ${dateLang(plan, L)}` : ''}${rdy ? ` · ${T[L].ready_on} ${dateLang(rdy, L)}` : ''}${eta || ''}${rest}${pk}${pde}${test}`;
 }
 
 // Abschaltbare Arten, die eine Rolle überhaupt bekommen kann (Empfängerregeln in caseRecipients; 19.10.2026: Fahrer sahen z. B. „Kostenfreigabe
