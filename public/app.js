@@ -8,7 +8,7 @@ import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentF
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday, STATES } from './holidays.js';
-import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, moneyForeign, kmIn, kmForeignUnit, ratePeriod, unitIn, tireSizeSame, tireSizeFmt } from './hours.js';
+import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, moneyForeign, kmIn, kmForeignUnit, ratePeriod, unitIn, massTonnes, tireSizeSame, tireSizeFmt } from './hours.js';
 import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen, tzDiff, nextOpenLocal, holidayGaps, phoneIn } from './emhours.js';
 
 // Sprache: gespeicherte Wahl, sonst Gerätesprache (Ukrainisch/Englisch), sonst Deutsch
@@ -684,10 +684,12 @@ document.addEventListener('change', (e) => {
 }, true);
 // Backlog 986: Profiltiefe/Luftdruck mit Einheit bzw. Bezeichnung („6,5 mm“, „Profil 6,5 Millimeter“, „8,5 bar“, „тиск 9 бар“) – beim Verlassen
 // des Felds nur Einheit/Bezeichnung entfernen (Ziffern unverändert, keine Umrechnung; der Server liest dieselben Formen über `unitIn`).
-const UNIT_FIELD = { tread_mm: 'mm', pressure_bar: 'bar', interval_months: 'months', interval_km: 'km' }; // Backlog 987: Wartungsintervalle („alle 12 Monate“, „100.000 km“)
+const UNIT_FIELD = { tread_mm: 'mm', pressure_bar: 'bar', interval_months: 'months', interval_km: 'km', zgm_kg: 'kg' }; // Backlog 987: Wartungsintervalle („alle 12 Monate“, „100.000 km“)
 document.addEventListener('change', (e) => {
   const el = e.target; if (!el || el.tagName !== 'INPUT' || el.readOnly || el.disabled) return;
   const k = UNIT_FIELD[el.name || ''] || (el.id === 'mci' ? 'months' : null); if (!k) return;
+  // Backlog 1014: Gesamtmasse in Tonnen („18 t“) gleich am Feld erklären (der Server weist sie ebenso ab) – nie umrechnen
+  if (k === 'kg' && massTonnes(el.value)) { el.setCustomValidity(t('zgm_t_hint')); el.dataset.cfpFx = '1'; el.reportValidity(); return; }
   const v = unitIn(el.value, k); if (v === null || v === el.value) return;
   el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));
 }, true);

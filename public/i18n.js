@@ -1604,6 +1604,8 @@ export function translateValidation(lang, msg) {
   if ((m = msg.match(/^(.{1,60}): „(.{0,40})“ ist ein (Jahresbetrag|Halbjahresbetrag|Quartalsbetrag) – bitte die Monatsrate laut Vertrag eingeben \(die App rechnet nicht um; Zahlweise gern in die Bemerkung\)\.$/)) && T.rate_period) return T.rate_period.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]).replace('{p}', () => T[{ Jahresbetrag: 'rp_year', Halbjahresbetrag: 'rp_half', Quartalsbetrag: 'rp_quarter' }[m[3]]]);
   // Backlog 1013: Jahres-Laufleistung im Feld „km-Kontingent“ (Formular und Vertragsimport)
   if ((m = msg.match(/^km-Kontingent: „(.{0,40})“ ist eine Laufleistung pro Jahr – bitte das Gesamtkontingent laut Vertrag \(ganze Laufzeit\) eingeben \(die App rechnet nicht um\)\.$/)) && T.km_allow_annual) return T.km_allow_annual.replace('{v}', () => m[1]);
+  // Backlog 1014: Gesamtmasse in Tonnen statt kg (Fahrzeugakte → HU / SP → Prüfrelevante Daten)
+  if ((m = msg.match(/^zulässige Gesamtmasse \(kg\): „(.{0,40})“ ist in Tonnen angegeben – bitte die Masse in kg laut Fahrzeugschein \(F\.2\) eingeben \(die App rechnet nicht um\)\.$/)) && T.zgm_tonnes) return T.zgm_tonnes.replace('{v}', () => m[1]);
   if ((m = msg.match(/^Spalte „(.{1,80})“ enthält einen Jahres-, Halbjahres- bzw\. Quartalsbetrag – bitte die Monatsrate netto als Spalte „Monatsrate netto“ angeben \(Beträge werden nicht umgerechnet\)\.$/)) && T.ct_period_col) return T.ct_period_col.replace('{x}', () => m[1]);
   if ((m = msg.match(/^(.{1,60}): „(.{0,40})“ ist ein Bruttobetrag – bitte den Nettobetrag \(ohne MwSt\.\) eingeben\.$/)) && T.gross_amount) return T.gross_amount.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]);
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): „(.{0,40})“ – Einheit passt nicht zum Artikel \((.{1,20})\)\.$/)) && T.unit_mismatch) return T.unit_mismatch.replace('{f}', () => f(m[1])).replace('{v}', () => m[2]).replace('{u}', () => (m[3] === 'Stk' && lang === 'uk' ? 'шт' : m[3] === 'Stk' && lang === 'en' ? 'pcs' : m[3]));
@@ -3748,3 +3750,9 @@ Object.assign(STRINGS.en, { rcn_open: 'Item missing in stock – create it', rcn
 Object.assign(STRINGS.de, { search_kbd: 'Tipp am PC: Die Taste / öffnet die Suche von jeder Seite aus.' });
 Object.assign(STRINGS.uk, { search_kbd: 'Порада для ПК: клавіша / відкриває пошук з будь-якої сторінки.' });
 Object.assign(STRINGS.en, { search_kbd: 'Tip on a computer: press / on any page to open search.' });
+// Backlog 1014: zulässige Gesamtmasse in Tonnen („18 t“) – Server-Meldung und Hinweis am Feld, nie umgerechnet
+Object.assign(VALIDATION_TEXTS.uk, { zgm_tonnes: 'Дозволена повна маса (кг): «{v}» вказано в тоннах – введіть масу в кг згідно зі свідоцтвом про реєстрацію (F.2) (застосунок не перераховує).' });
+Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg): “{v}” is given in tonnes – please enter the weight in kg as stated in the registration certificate (F.2) (the app does not convert).' });
+Object.assign(STRINGS.de, { zgm_t_hint: 'Das ist eine Angabe in Tonnen – bitte die zulässige Gesamtmasse in kg laut Fahrzeugschein (F.2) eintragen, z. B. 18000 (die App rechnet nicht um).' });
+Object.assign(STRINGS.uk, { zgm_t_hint: 'Це значення в тоннах – введіть дозволену повну масу в кг згідно зі свідоцтвом про реєстрацію (F.2), напр. 18000 (застосунок не перераховує).' });
+Object.assign(STRINGS.en, { zgm_t_hint: 'That is a value in tonnes – please enter the permissible gross weight in kg as stated in the registration certificate (F.2), e.g. 18000 (the app does not convert).' });

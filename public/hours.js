@@ -308,7 +308,17 @@ export const UNIT_RX = {
   months: { label: /^(alle|every|кожні|каждые)\s+(?=\d)/i,
     unit: /(\d)\s*(?:monate?n?|mon|mo|mths?|months?|міс(?:яців|яці|яць)?|мес(?:яцев|яца|яц)?)\.?$/i, out: /^\d{1,3}$/ },
   km: { label: /^(alle|every|кожні|каждые)\s+(?=\d)/i, unit: KM_UNIT_RX, out: /^\d[\d .,'’]*$/ },
+  // Backlog 1014 (Blickwinkel „Leitung überträgt den Fahrzeugschein in die Akte“): zulässige Gesamtmasse wie in F.2 bzw. aus Datenblatt/Nachricht
+  // („18.000 kg“, „F.2: 18000“, „zul. Gesamtmasse 18 000 kg“, „18000 кг“) – nur Einheit/Bezeichnung entfernen; Tonnen siehe `massTonnes`.
+  kg: { label: /^(f\.?\s?2|zgm|zul(?:ässige|aessige|\.)?\s*gesamtmasse|gesamtmasse|gvw|gross\s+(?:vehicle\s+)?weight|(?:дозволена\s+)?повна\s+маса|(?:разрешённая\s+)?полная\s+масса)\s*[:.=]?\s*(?=\d)/i,
+    unit: /(\d)\s*(?:kg|кг|kilogramm|kilograms?|kilos?|кілограм(?:ів|и)?|килограмм(?:ов|а)?)\.?$/i, out: /^\d[\d .,'’]*$/ },
 };
+// Backlog 1014: Gesamtmasse in Tonnen („18 t“, „7,49 t“, „18 Tonnen“, „F.2: 18 t“, „18 т“) – eigene Meldung statt „ungültige Zahl“, nie umgerechnet
+const TONNE_RX = /^(?:(?:f\.?\s?2|zgm|zul(?:ässige|aessige|\.)?\s*gesamtmasse|gesamtmasse|gvw)\s*[:.=]?\s*)?\d[\d.,'’ ]*\s*(?:t|to|tonnen?|tonnes?|tons?|т|тон(?:н(?:и|а)?|а|и)?)\.?$/i;
+export function massTonnes(raw) {
+  const s = String(raw ?? '').replace(/[\s  ]+/g, ' ').trim();
+  return !!s && s.length <= 40 && TONNE_RX.test(s);
+}
 export function unitIn(raw, kind) {
   const u = UNIT_RX[kind]; if (!u) return null;
   const s = String(raw ?? '').replace(/[\s  ]+/g, ' ').trim(); if (!s || s.length > 40) return null;

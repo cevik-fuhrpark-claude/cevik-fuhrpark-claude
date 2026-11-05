@@ -33930,6 +33930,29 @@ await test('Backlog 1013 (Blickwinkel „Leasingvertrag nennt 120.000 km pro Jah
   ok(/mileage per year/.test(translateValidation('en', m) || '') && /пробіг за рік/.test(translateImportReason('uk', m)), 'EN/UK übersetzt');
 });
 
+await test('Backlog 1014 (Blickwinkel „Leitung überträgt den Fahrzeugschein in die Akte“): zulässige Gesamtmasse mit Einheit/Bezeichnung („18.000 kg“, „F.2: 18000“, „18000 кг“) angenommen, Tonnen („18 t“, „7,49 t“, „18 Tonnen“, „18 т“) mit eigener Meldung statt „ungültige Zahl“, nie umgerechnet; DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const V = encodeURIComponent('VIN:WMA15SZZ2HM722774');
+  const spec = async (v) => { const cur = (await U.fleet.get(`/api/vehicles/${V}`)).data; const veh = cur.vehicle || cur; return U.fleet.post(`/api/vehicles/${V}/spec`, { zgm_kg: v, spec_source: 'Fahrzeugschein F.2', expected_updated_at: veh.updated_at }); };
+  for (const [v, kg] of [['18.000 kg', 18000], ['F.2: 18000', 18000], ['zul. Gesamtmasse 26 000 kg', 26000], ['18000 кг', 18000], ['7.490 Kilogramm', 7490], ['18000', 18000]]) {
+    const r = await spec(v); eq(r.status, 200, v + ' ' + JSON.stringify(r.data));
+    const d = (await U.fleet.get(`/api/vehicles/${V}`)).data; eq((d.vehicle || d).zgm_kg, kg, v);
+  }
+  for (const v of ['18 t', '7,49 t', '18 Tonnen', 'F.2: 18 t', '18 т', '26 tonnes']) {
+    const r = await spec(v); eq(r.status, 400, v);
+    eq(r.data.message, `zulässige Gesamtmasse (kg): „${v}“ ist in Tonnen angegeben – bitte die Masse in kg laut Fahrzeugschein (F.2) eingeben (die App rechnet nicht um).`, v);
+  }
+  const d = (await U.fleet.get(`/api/vehicles/${V}`)).data; eq((d.vehicle || d).zgm_kg, 18000, 'Tonnenwert nicht gespeichert');
+  eq((await spec('abc')).data.message, 'zulässige Gesamtmasse (kg): ungültige Zahl.', 'wie bisher');
+  eq((await spec('18 lbs')).data.message, 'zulässige Gesamtmasse (kg): ungültige Zahl.', 'fremde Einheit nicht geraten');
+  const { translateValidation, STRINGS } = await import('../public/i18n.js');
+  const m = 'zulässige Gesamtmasse (kg): „18 t“ ist in Tonnen angegeben – bitte die Masse in kg laut Fahrzeugschein (F.2) eingeben (die App rechnet nicht um).';
+  ok(/in tonnes/.test(translateValidation('en', m) || '') && /в тоннах/.test(translateValidation('uk', m) || ''), 'EN/UK übersetzt');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l] && STRINGS[l].zgm_t_hint, 'Feldhinweis ' + l);
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/zgm_kg: 'kg'/.test(app) && /massTonnes\(el\.value\)/.test(app), 'Feld zgm_kg: Einheit beim Verlassen, Tonnen-Hinweis');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

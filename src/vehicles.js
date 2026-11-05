@@ -13,6 +13,7 @@ import { winterMarks, winterStatus } from './tires.js';
 import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth, FIRST_ACK_SQL } from './reports.js';
 import { maintenanceWarnDays } from './settings.js';
 import { kmRejection } from './telematics.js';
+import { massTonnes } from '../public/hours.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 // Feuerlöscher/Verbandkasten/Ladungssicherung: Intervall bzw. Ablaufdatum trägt die Fuhrparkleitung selbst ein (keine Vorgabe der App)
@@ -1297,7 +1298,10 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   const v = await env.DB.prepare('SELECT id, plate, kind, zgm_class, zgm_kg, first_registration FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const source = str(body.spec_source, { required: true, max: 200, field: 'Nachweis (z. B. Fahrzeugschein)' });
-  const kg = body.zgm_kg === undefined || body.zgm_kg === null || body.zgm_kg === '' ? null : Math.round(num(body.zgm_kg, { min: 500, max: 60000, field: 'zulässige Gesamtmasse (kg)', grouped: true }));
+  // Backlog 1014: „18.000 kg“/„F.2: 18000“ wie im Fahrzeugschein annehmen (`unit: 'kg'`), Tonnen mit eigener Meldung – nie umgerechnet
+  const field = 'zulässige Gesamtmasse (kg)';
+  if (typeof body.zgm_kg === 'string' && massTonnes(body.zgm_kg)) throw bad('validation', `${field}: „${body.zgm_kg.replace(/\s+/g, ' ').trim().slice(0, 40)}“ ist in Tonnen angegeben – bitte die Masse in kg laut Fahrzeugschein (F.2) eingeben (die App rechnet nicht um).`);
+  const kg = body.zgm_kg === undefined || body.zgm_kg === null || body.zgm_kg === '' ? null : Math.round(num(body.zgm_kg, { min: 500, max: 60000, field, grouped: true, unit: 'kg' }));
   const allowed = v.kind === 'anhaenger' ? ZGM_CLASSES_TRAILER : ZGM_CLASSES_LKW;
   let cls = body.zgm_class ? oneOf(body.zgm_class, allowed, 'Gewichtsklasse') : null;
   if (kg !== null) {
