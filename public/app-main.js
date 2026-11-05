@@ -525,6 +525,8 @@ function applySiteJump(h) {
   const p = new URLSearchParams(m[2]); if (!p.has('vs')) return h;
   const v = String(p.get('vs') || '').slice(0, 80); p.delete('vs');
   const k = VS_KEYS[m[1]]; if (k && S.me && S.me.role !== 'driver') S[k] = v === '*' ? '' : v;
+  // Backlog 1016: Zähler der Startseite gelten für alle Werkstätten – eine früher gewählte Werkstatt der Vorgangsliste gilt nach dem Sprung nicht (Liste zeigte sonst weniger als der Zähler)
+  if (m[1] === 'cases' && S.me && S.me.role !== 'driver') { S.caseWs = null; S.caseLimit = null; }
   const q = p.toString(); const nh = h.slice(0, h.indexOf('?')) + (q ? '?' + q : '');
   try { history.replaceState(history.state, '', nh); } catch {}
   return nh;
@@ -1996,7 +1998,7 @@ function outboxAdd(path, body, photos = 0, who = outboxWho()) { if (!who) return
 
 // ---------- Neue Meldung ----------
 // Kein Fahrzeug wählbar (Erstnutzung bzw. offline ohne Zwischenspeicher): Hinweis statt leerer Auswahl (22.10.2026)
-const noVehiclesNote = () => `<div class="panel" role="note" data-novehicles><p>${esc(t(isMgr() ? 'no_vehicles_mgr' : 'no_vehicles_ask'))}</p>${isMgr() ? `<p><a class="btn" href="#/vehicles">${esc(t('nav_vehicles'))} ›</a></p>` : ''}</div>`;
+const noVehiclesNote = () => `<div class="panel" role="note" data-novehicles><p>${esc(t(isMgr() ? (S.me.role === 'fleet' ? 'no_vehicles_fleet' : 'no_vehicles_mgr') : 'no_vehicles_ask'))}</p>${isMgr() ? `<p><a class="btn" href="#/vehicles">${esc(t('nav_vehicles'))} ›</a></p>` : ''}</div>`;
 // Hinweis-Panel „Fahrtenschreiber gestört“ (Meldeformular und Abfahrtskontrolle)
 const tachoPanel = () => `<div id="tacho" class="panel" hidden role="status"><b>${esc(t('tacho_hint_title'))}</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${t('tacho_hint_steps').split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
 // Hinweis-Panel „Glasschaden“ (Meldeformular; Abfahrtskontrolle mit eigenem 3. Schritt ohne „Fahrbereitschaft unten“, Backlog 292)

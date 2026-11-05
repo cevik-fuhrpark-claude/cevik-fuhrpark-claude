@@ -33972,6 +33972,29 @@ await test('Backlog 1015 (Folge aus 1009, Blickwinkel „Werkstatt legt einen Ar
   ok(translateValidation('en', 'Mindestbestand: „4 l“ – Einheit passt nicht zum Artikel (Stk).') && translateValidation('uk', 'Anfangsbestand: „5 kg“ – Einheit passt nicht zum Artikel (l).'), 'EN/UK übersetzt');
 });
 
+await test('Backlog 1016 (Blickwinkel „Neue Fuhrparkleitung übernimmt am ersten Tag“): Zähler-Sprung in die Vorgangsliste setzt die Werkstatt-Auswahl zurück; „Behördenfristen in {n} Tagen“ nach Einstellung; Stammdatenimport für die Fuhrparkleitung als Inhaber-Aufgabe benannt; DE/UK/EN', async () => {
+  const fsx = await import('node:fs'); const src = fsx.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  // 1: applySiteJump setzt bei #/cases die Werkstatt zurück (Zähler gelten für alle Werkstätten)
+  const sj = src.slice(src.indexOf('function applySiteJump'), src.indexOf('const routeArg'));
+  ok(/m\[1\] === 'cases'[^\n]*S\.caseWs = null/.test(sj), 'Werkstatt-Auswahl wird beim Sprung zurückgesetzt');
+  ok(/if \(r === 'owner' \|\| r === 'fleet' \|\| r === 'workshop'\) s = '\*'/.test(src), 'hj setzt vs für Leitung');
+  // 2: Überschrift mit Zahl aus der Einstellung
+  ok(src.includes("k === 'todo_fines' ? t(k).replace('{n}', Number.isInteger(fs.warn_days) ? fs.warn_days : 7)"), 'todo_fines mit Zahl');
+  // 3: Fassungen für die Fuhrparkleitung
+  ok(src.includes("S.me.role === 'fleet' ? 'todo_no_vehicles_fleet' : 'todo_no_vehicles'") && (src.match(/'no_vehicles_fleet'/g) || []).length === 2, 'fleet-Texte verwendet');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].todo_fines.includes('{n}') && !/\b7\b/.test(STRINGS[l].todo_fines), `${l}: todo_fines mit {n}`);
+    for (const k of ['todo_no_vehicles_fleet', 'no_vehicles_fleet']) ok(STRINGS[l][k] && STRINGS[l][k] !== STRINGS.de[k] || l === 'de', `${l}: ${k}`);
+    ok(/(Inhaber|власник|owner)/.test(STRINGS[l].no_vehicles_fleet) && /(Inhaber|власник|owner)/.test(STRINGS[l].todo_no_vehicles_fleet), `${l}: nennt den Inhaber`);
+    ok(/(nur der Inhaber|лише власник|only be imported by the owner)/.test(STRINGS[l].help_exports_s || ''), `${l}: Hilfe Exporte nennt Inhaber-Import`);
+  }
+  // Server: Fahrzeug-Stammdatenimport bleibt Inhaber-Recht (Hilfetext stimmt)
+  const { U } = await freshWorld();
+  const r = await U.fleet.post('/api/vehicles/import', { csv: 'FIN;Kennzeichen\nWDB12345678901234;SZ-XX 1' });
+  eq(r.status, 403, 'Fuhrparkleitung darf Stammdaten nicht importieren');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
