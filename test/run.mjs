@@ -34403,6 +34403,17 @@ await test('Backlog 1029 (Blickwinkel „Teil-Export der Prüftermine/Verträge 
   ok(STRINGS.de.help_exports_s.includes('Teil-Datei') && STRINGS.uk.help_exports_s.includes('частковий файл') && STRINGS.en.help_exports_s.includes('partial file'), 'Hilfe DE/UK/EN');
 });
 
+await test('Backlog 1030: Prüftermine – Kalender-Knopf bei einer Auswahl ohne Termine mit Datum gesperrt mit Hinweis (keine leere Datei); Regel wie maintenanceIcs; DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/const micsN = f === 'gaps' \? 0 : rows\.filter\(\(r\) => \(r\.next_due_date && r\.date_status !== 'erledigt'\) \|\| \(r\.planned_date && r\.planned_date >= ov\.today\)\)\.length;/.test(app), 'Zählung wie maintenanceIcs (offene Frist oder Plan-Termin ab heute)');
+  ok(app.includes(`id="mics"\${micsN ? '' : ' disabled data-mics-none'}`) && app.includes('data-mics-hint'), 'Knopf gesperrt + Hinweis');
+  const mt = fs.readFileSync(new URL('../src/maintenance.js', import.meta.url), 'utf8');
+  ok(mt.includes("r.next_due_date && r.date_status !== 'erledigt'") && mt.includes('r.planned_date && r.planned_date >= today'), 'Server-Regel unverändert (sonst Zählung in app.js anpassen)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].mics_none, 'mics_none ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-kalender-auswahl.py|'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -155,6 +155,7 @@ UI-Archive Hinweis bei Kürzung|ui-archiv-hinweis.py|/tmp/cfp-archiv.log
 UI-Hinweise Zähler über alle|ui-hinweise-zaehler.py|/tmp/cfp-hzaehler.log
 UI-Glockensymbol (Push ohne Neuaufbau)|ui-glocke.py|/tmp/cfp-glocke.log
 UI-Kalender in der App-Sprache|ui-kalender-sprache.py|/tmp/cfp-kalender.log
+UI-Kalender-Auswahl (Teil-Export, Backlog 1029/1030)|ui-kalender-auswahl.py|/tmp/cfp-kalender-auswahl.log
 UI-Restarbeiten in der App-Sprache|ui-restarbeiten-sprache.py|/tmp/cfp-restarbeiten.log
 UI-Datensicherung im Protokoll|ui-sicherung-protokoll.py|/tmp/cfp-sicherung-protokoll.log
 UI-Reifenalter/Zahlformen|ui-reifenalter.py|/tmp/cfp-reifenalter.log

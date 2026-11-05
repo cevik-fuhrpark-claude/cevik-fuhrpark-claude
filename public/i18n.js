@@ -3793,3 +3793,7 @@ Object.assign(STRINGS.en, { wst_later: 'Booked since: {n}', wst_later_hint: 'Mor
 Object.assign(PLURALS.de, { wst_later: { one: 'Danach {n} weitere Buchung', other: 'Danach {n} weitere Buchungen' } });
 Object.assign(PLURALS.uk, { wst_later: { one: 'Пізніше ще {n} запис', few: 'Пізніше ще {n} записи', many: 'Пізніше ще {n} записів', other: 'Пізніше ще {n} запису' } });
 Object.assign(PLURALS.en, { wst_later: { one: '{n} more booking since', other: '{n} more bookings since' } });
+// Backlog 1030: Prüftermin-Kalender bei einer Auswahl ohne Termine mit Datum nicht anbieten (leere Datei)
+Object.assign(STRINGS.de, { mics_none: 'Kalender: Diese Auswahl enthält keine Termine mit Datum – bitte einen anderen Reiter wählen.' });
+Object.assign(STRINGS.uk, { mics_none: 'Календар: ця вибірка не містить термінів із датою – оберіть іншу вкладку.' });
+Object.assign(STRINGS.en, { mics_none: 'Calendar: this selection contains no dated events – please choose another tab.' });
