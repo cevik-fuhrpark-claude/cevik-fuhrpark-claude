@@ -416,7 +416,9 @@ export function partsWaitOf(events) {
   const lastPartial = partials[partials.length - 1];
   return { note: lastPartial ? lastPartial.note : (w.note || null), since: w.created_at, first_eta: firstEta, changes: moves.length, postponed,
     ...(lastNoted ? { last_change_note: lastNoted.note, last_change_at: lastNoted.created_at } : {}),
-    ...(lastPartial ? { partial_count: partials.length, last_partial_at: lastPartial.created_at, last_partial_by: lastPartial.actor_name || null, original_note: w.note || null } : {}) };
+    ...(lastPartial ? { partial_count: partials.length, last_partial_at: lastPartial.created_at, last_partial_by: lastPartial.actor_name || null, original_note: w.note || null } : {}),
+    // Backlog 1040: Lieferschein der letzten Teillieferung direkt in der Wartezeile (nicht erst in der Zeitleiste suchen)
+    ...(lastPartial && lastPartial.payload && lastPartial.payload.file_id ? { last_partial_file: { id: lastPartial.payload.file_id, name: lastPartial.payload.file_name || null } } : {}) };
 }
 
 export async function getCaseDetail(env, user, envName, caseId) {

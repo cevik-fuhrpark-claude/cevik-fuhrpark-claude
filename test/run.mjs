@@ -34595,6 +34595,33 @@ await test('Backlog 1039 (Folge aus 1032): „Reparatur fortgesetzt“ mit Zusat
   const t2 = { ...n, body: n.body.slice(0, -' · TEST'.length) }; ok(localizedBody(t2, 'de').endsWith('Fahrzeug in die Werkstatt'), 'ohne TEST: ' + localizedBody(t2, 'de'));
 });
 
+await test('Backlog 1040 (Blickwinkel „Werkstatt-Tablet (UK) meldet Teillieferung mit Lieferschein-Foto“): Wartezeile nennt den Lieferschein der letzten Teillieferung (ohne Datei keiner), Formular weist auf volle Dateiliste hin, Liefertermin-Felder mit Höchstdatum wie der Server; DE/UK/EN', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const img = () => concatBytes(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), crypto.getRandomValues(new Uint8Array(300)));
+  const up = async (cid, name) => { const r = await U.ws.req('POST', `/api/cases/${cid}/files`, img(), { 'content-type': 'image/jpeg', 'x-filename': name }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'wait_parts', {}, 'Bremssattel + Beläge bestellt')).status, 200);
+  ok(!('last_partial_file' in (await U.fleet.get(`/api/cases/${id}`)).data.parts_wait), 'vor einer Teillieferung kein Lieferschein');
+  const ls = await up(id, 'nakladna-1.jpg');
+  eq((await cmd(U.ws, id, 'parts_partial', { file_id: ls }, 'Beläge fehlen noch')).status, 200);
+  for (const c of [U.fleet, U.ws]) { const pw = (await c.get(`/api/cases/${id}`)).data.parts_wait; eq(pw.last_partial_file.id, ls); eq(pw.last_partial_file.name, 'nakladna-1.jpg'); eq(pw.partial_count, 1); }
+  // zweite Teillieferung ohne Lieferschein: Zeile zeigt keinen (veralteten) Lieferschein
+  eq((await cmd(U.ws, id, 'parts_partial', {}, 'Ein Belag fehlt noch')).status, 200);
+  { const pw = (await U.fleet.get(`/api/cases/${id}`)).data.parts_wait; eq(pw.partial_count, 2); ok(!('last_partial_file' in pw), 'letzte Teillieferung ohne Datei'); }
+  // Oberfläche: Link in der Wartezeile, Hinweise im Formular, max-Datum wie oneYearAhead
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/pw\.last_partial_file \? `<br><span class="small" id="pwdlv">📎 \$\{esc\(t\('dlv_file'\)\)\}: <a href="\$\{fileUrl\(pw\.last_partial_file\.id\)\}"/.test(app), 'Lieferschein-Link in partsPartialRow');
+  ok(/files\.length >= PHOTO_MAX \?[^\n]*id="dlvfile-full"[^\n]*t\('dlv_file_full'\)/.test(app), 'Hinweis volle Dateiliste in dlvFileSelect');
+  eq((app.match(/name="parts_expected_date" min="[^"]*"( max="\$\{bYearAhead\(\)\}")?/g) || []).filter((m) => !m.includes('bYearAhead')).length, 0, 'alle Liefertermin-Felder mit Höchstdatum');
+  const by = new Function('bDate', app.match(/const bYearAhead = (\(\) => \{[^\n]*\});/)[1].replace(/^/, 'return '))
+  const { oneYearAhead } = await import('../src/cases.js');
+  for (const day of ['2026-11-05', '2028-02-29', '2026-12-31', '2027-02-28']) eq(by(() => day)(), oneYearAhead(day), day);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['uk', 'en']) for (const k of ['dlv_file_full']) ok(STRINGS[l][k] && STRINGS[l][k] !== STRINGS.de[k], l + ': ' + k);
+  ok(STRINGS.de.dlv_file_full, 'de');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

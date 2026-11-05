@@ -1300,6 +1300,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1030: Prüftermin-Kalender bei einer Auswahl ohne Termine mit Datum nicht anbieten (leere Datei)
 // Backlog 1031: Vertrags-Kalender ohne künftige Kündigungstage/Vertragsenden nicht anbieten
 // Backlog 1032–1034: Teile eingegangen – Lieferschein verknüpfen, „fährt bis zur Teilelieferung“ endet, Arbeitsstand optional entfernen
+// Backlog 1040: Lieferschein-Auswahl bei voller Dateiliste
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
