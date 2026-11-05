@@ -558,6 +558,9 @@ async function route() {
       }
     }
     h = applySiteJump(h);
+    // Backlog 1019 (Blickwinkel „Vorgangs-Link per Messenger weitergeleitet“): Fahrer öffnet einen zugeschickten Fahrzeugakten-Link → Fahrerseite
+    // des Fahrzeugs (wie beim QR-Aufkleber: Schaden melden, Abfahrtskontrolle) statt „Fahrzeugakten sind für Fahrer nicht freigegeben“
+    { const vm = S.me && S.me.role === 'driver' && h.match(/^#\/vehicles\/(VIN:[A-Z0-9]+)(?:[/?].*)?$/); if (vm) { h = '#/v/' + vm[1]; try { history.replaceState(history.state, '', location.pathname + location.search + h); } catch { /* Adresse bleibt, Seite stimmt */ } } }
     for (const [re, fn] of routes) {
       const m = h.match(re);
       if (!m) continue;

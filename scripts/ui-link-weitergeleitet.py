@@ -3,6 +3,8 @@
 #     „Zu „Betrieb“ wechseln und öffnen“ → Vorgang erscheint, Umgebungsauswahl steht auf Betrieb.
 # (2) Werkstatt des anderen Standorts öffnet denselben Link (kalt, mit Anmeldung) → „Vorgang nicht gefunden“ + Hinweis, warum ein
 #     zugeschickter Link nicht aufgeht; KEIN Umschaltknopf, keine Umgebungsangabe (keine Existenz-Offenlegung).
+# (3) Backlog 1019: Fahrer öffnet einen zugeschickten Fahrzeugakten-Link (#/vehicles/VIN:…) → Fahrerseite des Fahrzeugs (#/v/VIN:…) statt
+#     „Fahrzeugakten sind für Fahrer nicht freigegeben“.
 # DE 390 px, UK 820 px, EN 1366 px. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -26,6 +28,9 @@ with sync_playwright() as p:
     check(owner is not None, f'Anmeldung Inhaber ({owner})')
     pid = os.getpid(); wun = f'lw.wsmuc{pid}'
     u = api('POST', '/api/users', {'username': wun, 'display_name': 'LW WS München', 'role': 'workshop', 'environment': 'production', 'workshop_site': 'MUENCHEN'})
+    c = br.new_context(); pg = c.new_page(); pg.goto(B); pg.evaluate(JS, ['POST', '/api/invite/accept', {'token': u['d']['invite_token'], 'password': PW}]); c.close()
+    dun = f'lw.fahrer{pid}'
+    u = api('POST', '/api/users', {'username': dun, 'display_name': 'LW Fahrer', 'role': 'driver', 'environment': 'production'})
     c = br.new_context(); pg = c.new_page(); pg.goto(B); pg.evaluate(JS, ['POST', '/api/invite/accept', {'token': u['d']['invite_token'], 'password': PW}]); c.close()
     vin = f'WDB9634033{pid % 1000000:06d}1'
     api('POST', '/api/vehicles', {'plate': f'LW-T {pid % 9000}', 'vin': vin, 'site': 'Dortmund'})
@@ -62,6 +67,22 @@ with sync_playwright() as p:
         check(q.locator('#rlhome').count() == 1, f'{lang} {w}px: „Zur Übersicht“')
         check(q.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), f'{lang} {w}px: ohne Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/link_ws_{lang}_{w}.png')
+        check(not errs, f'{lang}: ohne Skriptfehler {errs[:1]}'); ctx.close()
+        # (3) Fahrer, Fahrzeugakten-Link kalt geöffnet
+        ctx = br.new_context(viewport={'width': w, 'height': 900}); q = ctx.new_page(); errs = []; q.on('pageerror', lambda e: errs.append(str(e)))
+        q.goto(B); q.evaluate(JS, ['POST', '/api/login', {'username': dun, 'password': PW}]); q.evaluate(JS, ['PATCH', '/api/me', {'language': lang}]); q.evaluate(JS, ['POST', '/api/logout', None])
+        q.goto(B + f'/#/vehicles/VIN:{vin}'); q.wait_for_selector('#u', timeout=15000)
+        q.fill('#u', dun); q.fill('#p', PW); q.press('#p', 'Enter')
+        try: q.wait_for_function(f"() => location.hash === '#/v/VIN:{vin}' && document.querySelector('#main h1, main h1')", timeout=15000)
+        except Exception: pass
+        q.wait_for_timeout(500); txt = q.inner_text('#app')
+        check(q.evaluate('location.hash') == f'#/v/VIN:{vin}', f'{lang} {w}px: Fahrer landet auf der Fahrerseite ({q.evaluate("location.hash")})')
+        check(q.locator('#errh').count() == 0 and f'LW-T {pid % 9000}' in txt, f'{lang} {w}px: Fahrzeug sichtbar, keine Fehlerseite')
+        check(q.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), f'{lang} {w}px: ohne Querscrollen (Fahrer)')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/link_fahrer_{lang}_{w}.png')
+        # auch bei laufender App (Unterseite der Akte)
+        q.evaluate(f"location.hash = '#/vehicles/VIN:{vin}/timeline'"); q.wait_for_timeout(1500)
+        check(q.evaluate('location.hash') == f'#/v/VIN:{vin}' and q.locator('#errh').count() == 0, f'{lang} {w}px: Unterseite der Akte → Fahrerseite ({q.evaluate("location.hash")})')
         check(not errs, f'{lang}: ohne Skriptfehler {errs[:1]}'); ctx.close()
     br.close()
 print('FEHLER: ' + '; '.join(fails) if fails else 'Alles grün')

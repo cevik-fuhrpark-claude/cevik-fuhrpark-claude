@@ -34052,6 +34052,21 @@ await test('Backlog 1018 (Blickwinkel „Vorgangs-Link per Messenger weitergelei
   }
 });
 
+await test('Backlog 1019 (Blickwinkel „Vorgangs-Link per Messenger weitergeleitet“): Fahrer öffnet einen zugeschickten Fahrzeugakten-Link → Fahrerseite des Fahrzeugs (#/v/VIN:…) statt 403; Server bleibt bei 403', async () => {
+  const fsx = await import('node:fs'); const src = fsx.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const l = src.split('\n').find((x) => x.includes("S.me.role === 'driver' && h.match(/^#\\/vehicles\\/(VIN:[A-Z0-9]+)"));
+  ok(l && l.includes("h = '#/v/' + vm[1]") && l.includes('history.replaceState'), 'Umleitung für Fahrer');
+  const rx = /^#\/vehicles\/(VIN:[A-Z0-9]+)(?:[/?].*)?$/;
+  ok(l.includes('h.match(' + String(rx) + ')'), 'Muster im Quelltext');
+  for (const [h, want] of [['#/vehicles/VIN:WDB1', 'VIN:WDB1'], ['#/vehicles/VIN:WDB1/timeline', 'VIN:WDB1'], ['#/vehicles/VIN:WDB1?ev=x', 'VIN:WDB1'], ['#/vehicles/qr', null], ['#/vehicles', null], ['#/vehicles/VIN:WDB1x', null]])
+    eq((h.match(rx) || [])[1] || null, want, h);
+  // Umleitung vor der Routen-Schleife (nach applySiteJump)
+  ok(src.indexOf("h = '#/v/' + vm[1]") > src.indexOf('h = applySiteJump(h);') && src.indexOf("h = '#/v/' + vm[1]") < src.indexOf('for (const [re, fn] of routes)'), 'Reihenfolge');
+  const main = fsx.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); ok(main.includes("h = '#/v/' + vm[1]"), 'app-main.js aktuell');
+  const { U, V1 } = await freshWorld();
+  eq((await U.driver.get('/api/vehicles/' + V1)).status, 403, 'Fahrzeugakte für Fahrer weiterhin gesperrt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
