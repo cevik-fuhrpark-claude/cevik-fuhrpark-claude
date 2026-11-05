@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (05.11.2026, Backlog 1035, Blickwinkel „Disposition plant einen Lkw, dessen Teillieferung überfällig ist“):
 # Fahrzeug „fährt bis zur Teilelieferung“ – Liefertermin überschritten bzw. heute → Disposition sieht in der Zeile „Termin überschritten“/„heute“
 # mit Warnhinweis und in der Überschrift „Liefertermin erreicht: N“. Vergangene Liefertermine per /__dev/backdate?parts_days=N (nur Dev-Server).
-# Backlog 1036: Fahrer des Lkw sieht „Liefertermin der Teile erreicht“ (ohne Datum). DE/UK/EN bei 390/820/1366 px.
+# Backlog 1036: Fahrer des Lkw sieht „Liefertermin der Teile erreicht“ (ohne Datum). Backlog 1037: Werkstatt sieht „Unterwegs bis zur Teilelieferung: N“. DE/UK/EN bei 390/820/1366 px.
 import os, datetime
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -82,6 +82,19 @@ with sync_playwright() as p:
         check(qf.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: Fahrer ohne Querscrollen')
         if SHOTS: qf.locator('[data-kdpdrlate]').first.scroll_into_view_if_needed(); qf.screenshot(path=f'{SHOTS}/teilefahrt-ueberfaellig-fahrer-{lang}-{w}.png')
         ctx3.close()
+        # Backlog 1037: Werkstatt sieht über „Teile heute/überfällig“ den Hinweis, dass Fahrzeuge unterwegs sind
+        uw=api('POST','/api/users',{'username':f'tu.w{R}.{n}','display_name':f'TU Werkstatt {n}','role':'workshop','environment':envn,'language':lang,'workshop_site':'DORTMUND'})
+        ctx4=br.new_context(viewport={'width':w,'height':h}); qw=ctx4.new_page(); qw.on('pageerror',lambda e: errs.append(str(e))); qw.goto(B)
+        qw.evaluate(JS,['POST','/api/invite/accept',{'token':uw['d']['invite_token'],'password':PW}])
+        qw.evaluate(JS,['POST','/api/login',{'username':f'tu.w{R}.{n}','password':PW}]); qw.evaluate(JS,['PATCH','/api/me',{'language':lang}])
+        WT=qw.evaluate("async (l) => { const S = (await import('/i18n.js')).STRINGS[l]; return { due: S.ws_pdr_due, hint: S.ws_pdr_due_hint }; }", lang)
+        qw.goto(B+'/#/'); qw.reload(); qw.wait_for_selector('[data-wspdr]',timeout=20000)
+        wt=qw.locator('[data-wspdr]').inner_text(); pre=WT['due'].split('{n}')[0]
+        check(pre in wt and WT['hint'] in wt,f'{lang}/{w}: Werkstatt – „{wt[:50]}…“')
+        check(int(wt.split(pre)[1].split(' ')[0].strip(' –'))>=2,f'{lang}/{w}: Werkstatt zählt beide Fahrzeuge')
+        check(qw.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: Werkstatt ohne Querscrollen')
+        if SHOTS: qw.locator('[data-wspdr]').scroll_into_view_if_needed(); qw.screenshot(path=f'{SHOTS}/teilefahrt-ueberfaellig-werkstatt-{lang}-{w}.png')
+        ctx4.close()
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:2]}')
         ctx.close()
         for cid in (late,today): cmd(cid,'set_parts_drive',{'on':False})

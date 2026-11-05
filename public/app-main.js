@@ -1384,6 +1384,8 @@ async function workshopBoard() {
   if (costWait.length) lanes.unshift(['cost_approval_pending', costWait]);
   const partsDue = open.filter((c) => c.status === 'wartet_teile' && c.parts_expected_date && c.parts_expected_date <= bDate(1)).sort((a, b) => a.parts_expected_date.localeCompare(b.parts_expected_date) || dayOrder(a, b)); // Backlog 525: überschrittene zuerst
   if (partsDue.length) lanes.unshift(['ws_parts_due', partsDue]);
+  // Backlog 1037 (gleicher Blickwinkel, Werkstattseite): Teile kommen, das Fahrzeug fährt aber laut Leitung bis zur Lieferung – es steht nicht
+  // auf dem Hof; Hinweis über der Liste (die Zeilen tragen 🚚 bereits), Rückkehr mit Disposition/Fuhrparkleitung abstimmen
   if (passed.length) lanes.unshift(['todo_plan_passed', passed]);
   // wie die verlinkte Liste (repeat_days=3) inkl. Vorab-Info („gemeldet“ mit Vorschlag dieser Werkstatt) – vorher zählte die Startseite n, die Liste n+1 (20.10.2026)
   const rep = open.filter((c) => recentRepeat(c));
@@ -1407,7 +1409,7 @@ async function workshopBoard() {
   const dupNote = (k) => { if (noteDone || !above.size || !STEP_KEYS.includes(k)) return ''; noteDone = true; return `<p class="small muted" id="wsdupnote">${esc(tn('ws_dup_note', total))}</p>`; };
   // Backlog 1025: eigene Werkstatt nennen (falsch zugeordnetes Konto fällt sonst nicht auf) und leere Tafel erklären
   const mySite = S.me.workshop_site ? wsName(S.me.workshop_site) : '';
-  let html = wsFlow() + (shown.map(([k, l]) => `${dupNote(k)}<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${k === 'ws_planned_today' && l.length > 1 ? `<p class="small muted" id="wsdayorder">${esc(t('day_order_hint'))}</p>` : ''}${k === 'ws_mine' ? `<p class="small muted" id="wsminehint">${esc(t('ws_mine_hint'))} <a href="${esc(hj('#/cases?f=mine'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}${caseList(l, '', STEP_KEYS.includes(k) ? alsoAbove : null)}${k === 'ws_repeat' ? `<p class="small"><a href="${esc(hj('#/cases?f=repeat'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted" data-wsempty>${esc(mySite ? t('no_cases_ws').replace('{w}', () => mySite) : t('no_cases'))}</p>`);
+  let html = wsFlow() + (shown.map(([k, l]) => `${dupNote(k)}<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${k === 'ws_planned_today' && l.length > 1 ? `<p class="small muted" id="wsdayorder">${esc(t('day_order_hint'))}</p>` : ''}${k === 'ws_parts_due' && l.some(pdrOn) ? `<p class="small" data-wspdr>🚚 <b>${esc(t('ws_pdr_due').replace('{n}', l.filter(pdrOn).length))}</b> – ${esc(t('ws_pdr_due_hint'))}</p>` : ''}${k === 'ws_mine' ? `<p class="small muted" id="wsminehint">${esc(t('ws_mine_hint'))} <a href="${esc(hj('#/cases?f=mine'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}${caseList(l, '', STEP_KEYS.includes(k) ? alsoAbove : null)}${k === 'ws_repeat' ? `<p class="small"><a href="${esc(hj('#/cases?f=repeat'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted" data-wsempty>${esc(mySite ? t('no_cases_ws').replace('{w}', () => mySite) : t('no_cases'))}</p>`);
   if (mySite) html = `<p class="small muted" data-wssite>${esc(t('ws_site_lbl'))} <b>${esc(mySite)}</b></p>` + html;
   try {
     const ov = await pOv;

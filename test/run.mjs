@@ -34484,7 +34484,7 @@ await test('Backlog 1032–1034 (Blickwinkel „Werkstatt bekommt die Teile und 
   for (const l of ['de', 'uk', 'en']) for (const k of ['dlv_file', 'dlv_file_none', 'rr_pdr', 'rr_ws_clear', 'rr_ws_cleared']) ok(STRINGS[l][k] && STRINGS[l][k] !== STRINGS.de[k] || l === 'de', l + ': ' + k);
 });
 
-await test('Backlog 1035–1036 (Blickwinkel „Disposition plant einen Lkw, dessen Teillieferung überfällig ist“): Abschnitt „Fährt bis zur Teilelieferung“ kennzeichnet überschrittenen/heutigen Liefertermin mit Warnhinweis und Zähler; Fahrer erfährt „Liefertermin erreicht“ ohne Datum; DE/UK/EN', async () => {
+await test('Backlog 1035–1036 (Blickwinkel „Disposition plant einen Lkw, dessen Teillieferung überfällig ist“): Abschnitt „Fährt bis zur Teilelieferung“ kennzeichnet überschrittenen/heutigen Liefertermin mit Warnhinweis und Zähler; Fahrer erfährt „Liefertermin erreicht“ ohne Datum; Werkstatt-Tafel nennt unterwegs befindliche Fahrzeuge (1037); DE/UK/EN', async () => {
   const { e, U, cmd, toRepair, V1 } = await freshWorld();
   const x = await U.own.post('/api/users', { username: 'w.dispo35', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
   const disp = new Client(worker, e, 'w.dispo35'); await disp.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
@@ -34528,6 +34528,9 @@ await test('Backlog 1035–1036 (Blickwinkel „Disposition plant einen Lkw, des
   kd = await kdOf(); eq(kd.parts_drive, false); eq(kd.parts_eta_reached, false, 'ohne Vermerk kein Hinweis');
   ok(app.includes("${k.parts_drive && k.parts_eta_reached ? `<br><b class=\"small\" data-kdpdrlate>⚠ ${esc(t('kd_pdr_reached'))}</b>` : ''}"), 'Fahreransicht');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].kd_pdr_reached, 'kd_pdr_reached ' + l);
+  // Backlog 1037: Werkstatt-Tafel – Hinweis über „Teile heute/überfällig“, wenn Fahrzeuge bis zur Lieferung unterwegs sind
+  ok(app.includes("${k === 'ws_parts_due' && l.some(pdrOn) ? `<p class=\"small\" data-wspdr>"), 'Werkstatt-Hinweis');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].ws_pdr_due.includes('{n}') && STRINGS[l].ws_pdr_due_hint, 'ws_pdr_due ' + l); }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
