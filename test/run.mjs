@@ -33748,6 +33748,48 @@ await test('Backlog 1004 (Blickwinkel „Versicherung und Kfz-Steuer werden jäh
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-monatsrate-zahlweise.py|'), 'UI-Skript in pruefen.sh');
 });
 
+await test('Backlog 1006 (Blickwinkel „Leitung importiert Verträge/Prüftermine/Auslesungen aus einer Excel- bzw. Sheets-Liste“): Datum mit Uhrzeit („05.11.2026 00:00“, „2026-11-05 00:00:00“) und JJJJ/MM/TT übernommen; zweistellige Jahreszahl, TT/MM/JJJJ und Excel-Datumszahl mit eigener Meldung DE/UK/EN statt „nicht erkannt“, nie geraten; gleiche Regel in allen drei Importen', async () => {
+  const { importDay } = await import('../src/util.js'); const { parseDueDate } = await import('../src/maintenance.js'); const { parseDay } = await import('../src/contracts.js');
+  for (const [v, d] of [['2026-11-05', '2026-11-05'], ['5.11.2026', '2026-11-05'], ['05.11.2026 00:00', '2026-11-05'], ['05.11.2026 00:00:00', '2026-11-05'], ['5.11.2026, 14:30 Uhr', '2026-11-05'],
+    ['2026-11-05 00:00:00', '2026-11-05'], ['2026-11-05T08:15', '2026-11-05'], ['2026-03-31T22:30:00Z', '2026-04-01'], ['2026-03-31 22:30:00+0000', '2026-04-01'], ['2026/11/05', '2026-11-05'], ['  05.11.2026  ', '2026-11-05']]) {
+    eq(importDay(v).date, d, v); eq(parseDueDate(v).date, d, 'Prüftermine ' + v); eq(parseDay(v), d, 'Verträge ' + v);
+  }
+  const YY = (v) => `Datum „${v}“ hat eine zweistellige Jahreszahl – bitte vierstellig angeben (TT.MM.JJJJ).`;
+  const AMB = (v) => `Datum „${v}“ ist nicht eindeutig (Tag/Monat oder Monat/Tag) – bitte als TT.MM.JJJJ oder JJJJ-MM-TT angeben.`;
+  const SER = (v) => `„${v}“ ist eine Excel-Datumszahl – bitte die Spalte in Excel als Datum (TT.MM.JJJJ) formatieren und neu speichern (die App rechnet nicht um).`;
+  for (const [v, msg] of [['05.11.26', YY], ['5.1.27 00:00', YY], ['11/05/2026', AMB], ['05/11/2026', AMB], ['05-11-2026', AMB], ['5/11/26', AMB], ['46331', SER], ['46331,5', SER]]) {
+    eq(importDay(v).error, msg(v), v); eq(parseDueDate(v).error, msg(v), 'Prüftermine ' + v); eq(parseDay(v).error, msg(v), 'Verträge ' + v);
+  }
+  // unverändert: Plakette MM/JJJJ, ungültige Kalendertage, unbekannte Formate, kleine Zahlen (keine Datumszahl)
+  eq(parseDueDate('11/2026').date, '2026-11-30'); eq(parseDueDate('31.02.2026').error, 'Datum ungültig: 31.02.2026'); eq(parseDueDate('2026-02-30 00:00').error, 'Datum ungültig: 2026-02-30 00:00');
+  eq(importDay('abc'), null); eq(importDay('12345'), null); eq(importDay('2026'), null); eq(importDay('').date, ''); eq(parseDay('31.02.2026').error, 'Datum nicht erkannt: 31.02.2026');
+  const { U } = await freshWorld();
+  const post = (path, csv) => U.fleet.req('POST', path + '?dry_run=1', csv, { 'content-type': 'text/csv' });
+  // Verträge
+  let r = await post('/api/contracts/import', 'Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Nachweis\nSZ-YC 5513;Leasing;L-Bank;L-1;01.01.2026 00:00:00;2029-12-31 00:00:00;Vertrag\nSZ-YC 5513;Versicherung;V-AG;V-1;01.01.26;31.12.26;Police\nSZ-KC 5515;Leasing;L-Bank;L-2;46023;;Vertrag\nSZ-KC 5515;Wartung;W-GmbH;W-1;01/02/2026;;Vertrag\n');
+  eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.rows.length, 1); eq(r.data.rows[0].start_date, '2026-01-01'); eq(r.data.rows[0].end_date, '2029-12-31');
+  eq(r.data.skipped.map((x) => x.reason).join(' | '), [YY('01.01.26'), SER('46023'), AMB('01/02/2026')].join(' | '));
+  // Prüftermine
+  r = await post('/api/maintenance/import', 'Kennzeichen;Art;Nächster Termin;Letzte Prüfung;Intervall Monate;Nachweis\nSZ-YC 5513;UVV;;15.01.2026 00:00;12;UVV-Prüfbuch\nSZ-KC 5515;UVV;15.01.27;;;UVV-Prüfbuch\nSZ-KC 5515;Tacho;46387;;;Bescheinigung\n');
+  eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.created, 1, JSON.stringify(r.data));
+  eq(r.data.skipped.map((x) => x.reason).join(' | '), [YY('15.01.27'), SER('46387')].join(' | '));
+  // Auslesungen (Massenspeicher)
+  const today = (await import('../src/util.js')).berlinDate();
+  r = await post('/api/tacho/import', `Art;Kennzeichen;Datum;Datei\nMassenspeicher;SZ-YC 5513;${today.split('-').reverse().join('.')} 00:00;M_1.ddd\nMassenspeicher;SZ-KC 5515;03.11.26;M_2.ddd\nMassenspeicher;SZ-KC 5515;11/03/2026;M_3.ddd\n`);
+  eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.counts.neu, 1, JSON.stringify(r.data));
+  eq(r.data.skipped.map((x) => x.reason).join(' | '), [YY('03.11.26'), AMB('11/03/2026')].join(' | '));
+  // Übersetzung der Importgründe
+  const { translateImportReason, IMPORT_REASONS_TPL } = await import('../public/i18n.js');
+  for (const m of [YY('05.11.26'), AMB('11/05/2026'), SER('46331')]) {
+    ok(IMPORT_REASONS_TPL.some((re) => re.test(m)), 'übersetzbar: ' + m);
+    ok(!/[äöüß„]/.test(translateImportReason('en', m).replace(/“[^”]*”/g, '')), 'EN: ' + translateImportReason('en', m));
+    ok(/[а-яі]/i.test(translateImportReason('uk', m)), 'UK: ' + translateImportReason('uk', m));
+  }
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(/05\.11\.26/.test(STRINGS[l].help_exports_s) && /46331/.test(STRINGS[l].help_exports_s), 'Hilfe Ausdrucke & Exporte ' + l);
+  ok(/two-digit year/.test(translateImportReason('en', YY('05.11.26'))) && /ambiguous/.test(translateImportReason('en', AMB('1/2/2026'))) && /Excel date serial/.test(translateImportReason('en', SER('46331'))), 'EN-Texte');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

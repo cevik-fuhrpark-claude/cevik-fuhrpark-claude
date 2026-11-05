@@ -1,7 +1,7 @@
 // [CLAUDE] Prüftermine (HU/SP/UVV/Tachograph …) für den ganzen Fuhrpark: Übersicht, Lückenliste, CSV-Export und belegter CSV-Import.
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
 import { icsLang } from '../public/ics-texts.js';
-import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, num, normPlate, quoteCell, maxFutureDate, DUE_FAR_MSG, cutText } from './util.js';
+import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, importDay, num, normPlate, quoteCell, maxFutureDate, DUE_FAR_MSG, cutText } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor, dueMonthEnd } from './inspection_rules.js';
 import { MAINT_KINDS, ONE_TIME_KINDS, MULTI_RULE_KINDS, maintEventStmt, HUSP_RULE_EVIDENCE } from './vehicles.js';
@@ -54,11 +54,6 @@ export function parseDueDate(raw) {
   const s = String(raw || '').trim();
   if (!s) return { date: null };
   let m;
-  if (validIso(s)) return { date: s };
-  if ((m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/))) {
-    const d = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
-    return validIso(d) ? { date: d } : { error: `Datum ungültig: ${s}` };
-  }
   if ((m = s.match(/^(\d{1,2})[./](\d{4})$/))) {
     const mo = Number(m[1]);
     if (mo < 1 || mo > 12) return { error: `Monat ungültig: ${s}` };
@@ -66,6 +61,10 @@ export function parseDueDate(raw) {
     const last = new Date(Date.UTC(Number(m[2]), mo, 0)).toISOString().slice(0, 10);
     return { date: last, month_only: true };
   }
+  // Backlog 1006: gemeinsame Import-Regel (Uhrzeit aus Excel, JJJJ/MM/TT; eigene Meldung bei zweistelligem Jahr, TT/MM/JJJJ, Excel-Datumszahl)
+  const d = importDay(s);
+  if (d && d.date) return { date: d.date };
+  if (d && d.error) return { error: d.code === 'invalid' ? `Datum ungültig: ${s}` : d.error };
   return { error: `Datum nicht erkannt: ${s} (JJJJ-MM-TT, TT.MM.JJJJ oder MM/JJJJ)` };
 }
 

@@ -378,6 +378,32 @@ export function isCalendarDate(d) {
   const x = new Date(d + 'T00:00:00Z');
   return !Number.isNaN(x.getTime()) && x.toISOString().slice(0, 10) === d;
 }
+// Backlog 1006: Kalendertag aus Import-Dateien (Verträge, Prüftermine, Rückrufe, Auslesungen) – eine Regel für alle.
+// Erkannt: JJJJ-MM-TT, TT.MM.JJJJ, JJJJ/MM/TT; mit Uhrzeit aus Excel/Sheets („05.11.2026 00:00“, „2026-11-05 00:00:00“) → Datumsteil,
+// mit Zeitzone (Z/±hh:mm) → Berliner Kalendertag. Nie geraten: zweistellige Jahreszahl, TT/MM/JJJJ (Tag/Monat vertauschbar) und
+// Excel-Datumszahlen („46331“ – 1900er/1904er Zählung je nach Datei) bekommen eine eigene Meldung statt „nicht erkannt“.
+// Rückgabe: { date: '' } leer | { date } | { error, code } | null (unbekanntes Format – Aufrufer meldet „nicht erkannt“)
+export function importDay(raw) {
+  const t = String(raw ?? '').trim().replace(/\s+/g, ' '); let m;
+  if (!t) return { date: '' };
+  const v = t.slice(0, 40);
+  const ok = (d) => (isCalendarDate(d) ? { date: d } : { error: `Datum ungültig: ${v}`, code: 'invalid' });
+  const dmy = (d, mo, y) => ok(`${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+  const TIME = String.raw`(?:,?\s*(?:um\s*)?\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:\s*uhr)?)`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return ok(t);
+  if ((m = t.match(new RegExp(String.raw`^(\d{1,2})\.(\d{1,2})\.(\d{4})${TIME}?$`, 'i')))) return dmy(m[1], m[2], m[3]);
+  if ((m = t.match(/^(\d{4}-\d{2}-\d{2})[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(Z|[+-]\d{2}:?\d{2})$/i))) {
+    if (!isCalendarDate(m[1])) return ok(m[1]);
+    const d = new Date(t.replace(' ', 'T').replace(/\s+/g, '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
+    return Number.isNaN(d.getTime()) ? { error: `Datum ungültig: ${v}`, code: 'invalid' } : ok(berlinDate(d.toISOString()));
+  }
+  if ((m = t.match(/^(\d{4}-\d{2}-\d{2})[T\s]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/))) return ok(m[1]);
+  if ((m = t.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/))) return dmy(m[3], m[2], m[1]);
+  if (new RegExp(String.raw`^\d{1,2}\.\d{1,2}\.\d{2}${TIME}?$`, 'i').test(t)) return { error: `Datum „${v}“ hat eine zweistellige Jahreszahl – bitte vierstellig angeben (TT.MM.JJJJ).`, code: 'yy' };
+  if (new RegExp(String.raw`^\d{1,2}[/-]\d{1,2}[/-](?:\d{4}|\d{2})${TIME}?$`, 'i').test(t)) return { error: `Datum „${v}“ ist nicht eindeutig (Tag/Monat oder Monat/Tag) – bitte als TT.MM.JJJJ oder JJJJ-MM-TT angeben.`, code: 'ambig' };
+  if (/^\d{5}(?:[.,]\d+)?$/.test(t) && Number(t.replace(',', '.')) >= 18264 && Number(t.replace(',', '.')) < 109574) return { error: `„${v}“ ist eine Excel-Datumszahl – bitte die Spalte in Excel als Datum (TT.MM.JJJJ) formatieren und neu speichern (die App rechnet nicht um).`, code: 'serial' };
+  return null;
+}
 export function addMonths(dateStr, months) {
   const d = new Date(dateStr + 'T00:00:00Z');
   const day = d.getUTCDate();

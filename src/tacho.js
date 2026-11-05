@@ -6,7 +6,7 @@
 // daher „spätestens fällig“ = letzte erfasste Auslesung + 28 bzw. + 90 Tage. Ohne erfasste Auslesung wird KEINE Frist
 // berechnet (Status „keine Auslesung erfasst“). Sichtbarkeit: Inhaber/Fuhrparkleitung; Fahrer nur eigene Fahrerkarte.
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin, isCalendarDate, normPlate } from './util.js';
+import { nowIso, uuid, bad, forbidden, notFound, conflict, str, oneOf, berlinDate, parseCsv, normalizeVin, isCalendarDate, importDay, normPlate } from './util.js';
 import { siteSelection, siteKey } from './reports.js';
 import { audit } from './auth.js';
 import { PLATE_PASSED_ON_SKIP, platePassedOn, PLATE_FORMER_SKIP, plateFormerOther, formerPlatesAll } from './maintenance.js';
@@ -252,17 +252,14 @@ const MAX_IMPORT = 2000;
 // gilt für Auslesungen-Import und seit 23.10.2026 auch für Anlegen/Ändern der Fahrerakte (dort vorher SQL-lower nur ASCII, ohne Nullen)
 export const pnoKey = (x) => { const k = String(x || '').normalize('NFC').trim().toLowerCase(); return /^\d+$/.test(k) ? k.replace(/^0+(?=\d)/, '') : k || null; };
 export const normName = (n) => String(n || '').normalize('NFC').trim().toLowerCase().replace(/\s+/g, ' '); // NFC: Namen vom Mac (zerlegte Umlaute)
+// Backlog 1006: gemeinsame Import-Regel (`importDay`), dazu wie bisher TT.MM.JJJJ mit beliebigem Zusatz („05.11.2026, Lkw 3“)
 function parseDay(raw) {
   const t = String(raw || '').trim(); let m;
-  const iso = (d) => (ISO.test(d) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d ? d : null);
-  if (ISO.test(t)) return iso(t);
-  if ((m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:,?\s.*)?$/))) return iso(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
-  // Zeitstempel mit Zeitzone (Z oder ±hh:mm): Berliner Kalendertag (22:30Z am 31.03. = 01.04. in Berlin); ohne Zone der Datumsteil
-  if ((m = t.match(/^(\d{4}-\d{2}-\d{2})[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(Z|[+-]\d{2}:?\d{2})$/i)) && iso(m[1])) {
-    const d = new Date(t.replace(' ', 'T').replace(/\s+/g, '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
-    return Number.isNaN(d.getTime()) ? null : berlinDate(d.toISOString());
-  }
-  if ((m = t.match(/^(\d{4}-\d{2}-\d{2})[T\s]/))) return iso(m[1]);
+  const d = importDay(t);
+  if (d && d.date) return d.date;
+  if (d && d.error && d.code !== 'invalid') return d;
+  if ((m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4}),?\s.*$/))) { const x = importDay(`${m[1]}.${m[2]}.${m[3]}`); return x && x.date ? x.date : null; }
+  if ((m = t.match(/^(\d{4}-\d{2}-\d{2})[T\s]/))) { const x = importDay(m[1]); return x && x.date ? x.date : null; }
   return null;
 }
 // Spalte mit dem Auslesedatum (18.10.2026: „Downloaddatum“/„Datum der Auslesung“ neben „Datum letzte Aktivität“/„Datum Kartenablauf“
@@ -355,6 +352,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
     const kind = kindOf(get(cells, ci.kind));
     if (!kind) return skip(`Art unbekannt: ${get(cells, ci.kind) || '–'}`);
     const day = parseDay(get(cells, ci.day));
+    if (day && day.error) return skip(day.error);
     if (!day) return skip(`Datum nicht erkannt: ${get(cells, ci.day) || '–'}`);
     if (day > today) return skip('Datum liegt in der Zukunft');
     const evidence = get(cells, ci.ev) || fallbackEv;

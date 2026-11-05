@@ -4,7 +4,7 @@
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, normalizeVin, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso, maxFutureDate, berlinDaySql } from './util.js';
+import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, importDay, normPlate, normalizeVin, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso, maxFutureDate, berlinDaySql } from './util.js';
 import { audit } from './auth.js';
 import { ratePeriod } from '../public/hours.js';
 import { latestKmByVehicle, kmDigitsPrev, csvCell, csvText, KM_DROP_SQL, parseKmDrop, PLATE_FORMER_SKIP, plateFormerOther, formerPlatesAll } from './maintenance.js';
@@ -585,13 +585,11 @@ const normVin = normalizeVin; // Backlog 980: gleiche Regel wie Fahrzeugstamm (�
 const KIND_ALIASES = { leasing: 'leasing', leasingvertrag: 'leasing', miete: 'miete', mietvertrag: 'miete', vermietung: 'miete', rental: 'miete', finanzierung: 'finanzierung', kredit: 'finanzierung', darlehen: 'finanzierung',
   versicherung: 'versicherung', 'kfz-versicherung': 'versicherung', haftpflicht: 'versicherung', vollkasko: 'versicherung', teilkasko: 'versicherung', wartung: 'wartung', wartungsvertrag: 'wartung', service: 'wartung', 'full-service': 'wartung', sonstiges: 'sonstiges', sonstige: 'sonstiges', vertrag: 'sonstiges' };
 export function contractKindOf(raw) { return KIND_ALIASES[String(raw || '').trim().toLowerCase()] || null; }
+// Backlog 1006: gemeinsame Import-Regel (`importDay`); '' = leer, null = nicht erkannt, { error } = eigene Meldung
 export function parseDay(raw) {
-  const t = String(raw || '').trim(); let m;
-  const iso = (d) => (ISO.test(d) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d ? d : null);
-  if (!t) return '';
-  if (ISO.test(t)) return iso(t);
-  if ((m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/))) return iso(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
-  return null;
+  const d = importDay(raw);
+  if (!d) return null;
+  return d.error ? { error: d.code === 'invalid' ? `Datum nicht erkannt: ${String(raw || '').trim()}` : d.error } : d.date;
 }
 // Deutsche Zahlen: „1.234,50“, „100.000“, „1234,5“, „1 234“, „€ 999“ → Zahl; leer → null; sonst NaN
 export function parseDeNum(raw) {
@@ -683,6 +681,7 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     for (const [k, c] of [['start_date', ci.start], ['end_date', ci.end]]) {
       const d = parseDay(get(cells, c));
       if (d === null) return skip(`Datum nicht erkannt: ${get(cells, c)}`);
+      if (d && d.error) return skip(d.error);
       body[k] = d || null;
     }
     for (const [k, c] of [['notice_months', ci.notice], ['km_allowance', ci.allowance], ['start_km', ci.start_km], ['monthly_rate_net', ci.rate]]) {

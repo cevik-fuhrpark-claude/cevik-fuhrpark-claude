@@ -593,6 +593,10 @@ const IMPORT_TPL = [
   [/^Vorhandene letzte Prüfung (\d{4}-\d{2}-\d{2}) ist neuer – nicht überschrieben$/, 'Наявна остання перевірка $1 новіша – не перезаписано', 'Existing last inspection $1 is newer – not overwritten'],
   [/^Datum nicht erkannt: (.{0,200}) \(JJJJ-MM-TT, TT\.MM\.JJJJ oder MM\/JJJJ\)$/, 'Дату не розпізнано: $1 (РРРР-ММ-ДД, ДД.ММ.РРРР або ММ/РРРР)', 'Date not recognised: $1 (YYYY-MM-DD, DD.MM.YYYY or MM/YYYY)'],
   [/^Datum nicht erkannt: (.{0,200})$/, 'Дату не розпізнано: $1', 'Date not recognised: $1'],
+  // Backlog 1006: Datumsformate aus Excel/Sheets mit eigener Meldung (nie geraten)
+  [/^Datum „(.{0,40})“ hat eine zweistellige Jahreszahl – bitte vierstellig angeben \(TT\.MM\.JJJJ\)\.$/, 'Дата «$1» має двозначний рік – вкажіть рік чотирма цифрами (ДД.ММ.РРРР).', 'Date “$1” has a two-digit year – please give the year with four digits (DD.MM.YYYY).'],
+  [/^Datum „(.{0,40})“ ist nicht eindeutig \(Tag\/Monat oder Monat\/Tag\) – bitte als TT\.MM\.JJJJ oder JJJJ-MM-TT angeben\.$/, 'Дата «$1» неоднозначна (день/місяць чи місяць/день) – вкажіть як ДД.ММ.РРРР або РРРР-ММ-ДД.', 'Date “$1” is ambiguous (day/month or month/day) – please use DD.MM.YYYY or YYYY-MM-DD.'],
+  [/^„(.{0,40})“ ist eine Excel-Datumszahl – bitte die Spalte in Excel als Datum \(TT\.MM\.JJJJ\) formatieren und neu speichern \(die App rechnet nicht um\)\.$/, '«$1» – це числове значення дати Excel. Відформатуйте стовпець в Excel як дату (ДД.ММ.РРРР) і збережіть файл знову (застосунок не перераховує).', '“$1” is an Excel date serial number – please format the column as a date (DD.MM.YYYY) in Excel and save again (the app does not convert).'],
   [/^FIN doppelt in der Datei \(Zeile (\d{1,6}) gilt\)$/, 'VIN двічі у файлі (діє рядок $1)', 'VIN twice in the file (row $1 applies)'],
   [/^Datum ungültig: (.{0,200})$/, 'Недійсна дата: $1', 'Invalid date: $1'],
   [/^Monat ungültig: (.{0,200})$/, 'Недійсний місяць: $1', 'Invalid month: $1'],

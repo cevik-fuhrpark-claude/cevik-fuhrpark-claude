@@ -26,6 +26,8 @@ const w = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
 const gets = [...new Set([...w.matchAll(/path === '(\/api\/[a-z0-9/_-]+)' && m === 'GET'/g)].map((x) => x[1]))].filter((p) => !/backup|setup|integration/.test(p));
 gets.push(`/api/vehicles/${VE}`, `/api/vehicles/${VE}/timeline`, `/api/vehicles/${VE}/tires`, `/api/vehicles/${VE}/notes`, `/api/cases/${cid}`);
 const params = ['limit', 'days', 'weeks', 'stale_days', 'from', 'to', 'until', 'before', 'site', 'vsite', 'status', 'sort', 'q', 'filter', 'kind', 'format', 'types', 'user', 'vehicle', 'vehicle_id', 'inactive', 'archived', 'part', 'asof', 'item', 'repeat_days'];
+// Termine relativ zu heute (05.11.2026: feste Daten 02.–04.11. lagen in der Vergangenheit → Winterauftrag 400, Lauf rot)
+const ahead = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 const vals = ['2.5', '-1', '0', 'x', '', '[]', '2026-13', '2026-02-30', '1e400', 'a'.repeat(300), '%00'];
 for (const p of gets) for (const k of params) for (const v of vals) await hit(`GET ${p}?${k}=${v.slice(0, 12)}`, owner.get(`${p}?${k}=${encodeURIComponent(v)}`));
 
@@ -116,7 +118,7 @@ const muts = [
   ['POST', '/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: V, downloaded_on: '2026-10-01', evidence: 'x' }, ['kind', 'vehicle_id', 'driver_id', 'downloaded_on', 'evidence', 'note']],
   ['PUT', `/api/cases/${cid}/claim`, { insurer: 'A AG', reported_on: '2026-10-01', evidence: 'Meldung' }, ['insurer', 'reported_on', 'claim_no', 'status', 'evidence', 'note', 'amount_net', 'valuation', 'file_id']],
   ['PATCH', `/api/emergency/contacts/${ids.contact}`, {}, ['label', 'phone', 'kind', 'scope', 'site', 'vehicle_id', 'note']],
-  ['POST', `/api/maintenance/${ids.rule}/plan`, { planned_date: '2026-12-01' }, ['planned_date', 'workshop_site', 'note']],
+  ['POST', `/api/maintenance/${ids.rule}/plan`, { planned_date: ahead(26) }, ['planned_date', 'workshop_site', 'note']],
   ['POST', `/api/maintenance/${ids.rule}/order`, { workshop_site: ws }, ['workshop_site', 'planned_date', 'note', 'request_key']],
   ['POST', `/api/maintenance/${ids.rule}/complete`, { done_date: '2026-10-02', evidence: 'x', done_km: 2100 }, ['done_date', 'done_km', 'evidence', 'note', 'result', 'next_due_date']],
   ['POST', `/api/maintenance/events/${ids.event}/result`, { result: 'ohne_maengel', evidence: 'x' }, ['result', 'evidence', 'note', 'defects']],
@@ -124,7 +126,7 @@ const muts = [
   ['POST', `/api/vehicles/${VE}/maintenance`, { kind: 'UVV', last_done_date: '2025-01-10', interval_months: 12, evidence: 'E' }, ['kind', 'last_done_date', 'last_done_km', 'interval_months', 'interval_km', 'next_due_date', 'next_due_km', 'evidence', 'note']],
   ['POST', `/api/vehicles/${VE}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 5 }, ['event_type', 'position', 'positions', 'tread_mm', 'pressure_bar', 'dot', 'brand', 'size', 'winter_mark', 'odometer_km', 'at', 'note', 'case_id']],
   ['POST', `/api/vehicles/${VE}/tires/specs`, { axle: 'lenkachse', size: '315/70 R22.5', verified: true }, ['axle', 'size', 'verified', 'min_tread_mm', 'source', 'note']],
-  ['POST', `/api/vehicles/${VE}/tires/winter-order`, { workshop_site: ws, planned_date: '2026-11-02', request_key: 'fz-wo' }, ['workshop_site', 'planned_date', 'request_key', 'note']],
+  ['POST', `/api/vehicles/${VE}/tires/winter-order`, { workshop_site: ws, planned_date: ahead(3), request_key: 'fz-wo' }, ['workshop_site', 'planned_date', 'request_key', 'note']],
   ['POST', `/api/vehicles/${VE}/spec`, {}, ['zgm_kg', 'zgm_class', 'first_registration', 'spec_source', 'evidence', 'build_year']],
   ['POST', `/api/vehicles/${VE}/evaluation`, { excluded: false }, ['excluded', 'reason']],
   ['POST', `/api/vehicles/${VE}/drivers`, { user_id: uid, evidence: 'x' }, ['user_id', 'evidence', 'end_previous', 'note']],
@@ -213,14 +215,14 @@ await par('Auslesung gleicher Tag', () => owner.post('/api/tacho/downloads', { k
 await par('Fahrerakte gleiches Konto', () => owner.post('/api/drivers', { display_name: 'Par Fahrer', user_id: uid }));
 await par('km-Stand gleich', () => owner.post(`/api/vehicles/${VE}/odometer`, { km: 5000 }));
 one('Prüftermin-Auftrag', await par('Prüftermin-Auftrag gleicher Schlüssel', () => owner.post(`/api/maintenance/${ids.rule}/order`, { workshop_site: ws, request_key: 'fz-par-mo' })), true);
-one('Winterauftrag', await par('Winterauftrag gleicher Schlüssel', () => owner.post(`/api/vehicles/${VE}/tires/winter-order`, { workshop_site: ws, planned_date: '2026-11-03', request_key: 'fz-par-wo' })), true);
+one('Winterauftrag', await par('Winterauftrag gleicher Schlüssel', () => owner.post(`/api/vehicles/${VE}/tires/winter-order`, { workshop_site: ws, planned_date: ahead(4), request_key: 'fz-par-wo' })), true);
 await par('Lagerbuchung', () => owner.post(`/api/stock/${ids.item}/movements`, { type: 'entnahme', qty: 1 }));
 await par('Inventur', () => owner.post('/api/stock/inventory', { site: ws, counts: [{ item_id: ids.item, counted: 3 }] }));
 await par('Push-Anmeldung gleich', () => owner.post('/api/push/subscribe', { endpoint: 'https://push.example/par/1', keys: { p256dh: 'BPar', auth: 'par' } }));
 const rule2 = id(await owner.post(`/api/vehicles/${VE}/maintenance`, { kind: 'Feuerlöscher', last_done_date: '2025-10-20', interval_months: 12, evidence: 'Fuzz parallel' }));
 one('Prüftermin-Auftrag (neu)', await par('Prüftermin-Auftrag neu', () => owner.post(`/api/maintenance/${rule2}/order`, { workshop_site: ws, request_key: 'fz-par-mo2' })));
 const VIN2 = 'WDB96340310777088'; await owner.post('/api/vehicles', { vin: VIN2, plate: 'FZ-WIN', site: 'Dortmund' });
-one('Winterauftrag (neu)', await par('Winterauftrag neu', () => owner.post(`/api/vehicles/${encodeURIComponent('VIN:' + VIN2)}/tires/winter-order`, { workshop_site: ws, planned_date: '2026-11-04', request_key: 'fz-par-wo2' })));
+one('Winterauftrag (neu)', await par('Winterauftrag neu', () => owner.post(`/api/vehicles/${encodeURIComponent('VIN:' + VIN2)}/tires/winter-order`, { workshop_site: ws, planned_date: ahead(5), request_key: 'fz-par-wo2' })));
 // Integrations-API: gleiche Telematik-Lieferung mehrfach gleichzeitig (n8n-Wiederholung) – auch für ein zugeordnetes Gerät
 await par('Telematik gleiche Lieferung', () => anon.req('POST', '/api/integration/v1/telematics?environment=test', { provider: 'yellowfox', items: [{ external_id: 'YF-PAR', km: 6000, gps_time: '2026-10-15T10:00:00Z', lat: 51.5, lon: 7.4 }, { external_id: 'YF-UNBEKANNT', km: 1, gps_time: '2026-10-15T10:00:00Z' }] }, IH));
 const pc = (await owner.post('/api/cases', { vehicle_id: V, description: 'Parallel: Befehle', priority: 'niedrig', driveability: 'fahrbereit', request_key: 'fz-par-2' })).data.id;
