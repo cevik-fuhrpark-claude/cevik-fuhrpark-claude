@@ -9,7 +9,7 @@ import { localizedAgentBody, localizedAgentTitle } from './agent.js';
 const PRIO = { de: { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' }, uk: { niedrig: 'низький', mittel: 'середній', kritisch: 'критичний' }, en: { niedrig: 'low', mittel: 'medium', kritisch: 'critical' } };
 const T = {
   de: {
-    planned_on: 'Termin', ready_on: 'fertig ca.', ready_changed: 'Voraussichtlich fertig: neues Datum', pickup_hint: 'Abholhinweis: Mein Fahrzeug', rest_open: 'offene Restarbeiten: {n}', locked_by: 'gesperrt durch {c} ({p})', pdr_ended: 'Fahrt bis zur Teilelieferung beendet – Fahrzeug in die Werkstatt',
+    planned_on: 'Termin', ready_on: 'fertig ca.', ready_changed: 'Voraussichtlich fertig: neues Datum', pickup_hint: 'Abholhinweis: Mein Fahrzeug', rest_open: 'offene Restarbeiten: {n}', locked_by: 'gesperrt durch {c} ({p})', pdr_ended: 'Fahrt bis zur Teilelieferung beendet – Fahrzeug in die Werkstatt', parts_eta_changed: 'Liefertermin der Teile geändert', eta_on: 'Liefertermin', eta_removed: 'Liefertermin entfernt',
     created: 'Neue Schadensmeldung', created_urgent: 'KRITISCH: neue Meldung (ungeprüft)', received: 'Meldung ist eingegangen',
     priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', forwarded: 'Meldung an Werkstatt übergeben', rejected: 'Meldung abgelehnt', reopened: 'Meldung wieder geöffnet', withdrawn: 'Werkstattauftrag ohne Reparatur beendet',
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
@@ -21,7 +21,7 @@ const T = {
     res_gefaehrliche_maengel: 'gefährliche Mängel', res_verkehrsunsicher: 'verkehrsunsicher', do_not_plan: 'nicht einplanen',
   },
   uk: {
-    planned_on: 'Термін', ready_on: 'готово орієнт.', ready_changed: 'Орієнтовна готовність: нова дата', pickup_hint: 'Інформація для отримання: Мій транспорт', rest_open: 'відкриті залишкові роботи: {n}', locked_by: 'блокує {c} ({p})', pdr_ended: 'Рух до постачання запчастин завершено – транспорт до майстерні',
+    planned_on: 'Термін', ready_on: 'готово орієнт.', ready_changed: 'Орієнтовна готовність: нова дата', pickup_hint: 'Інформація для отримання: Мій транспорт', rest_open: 'відкриті залишкові роботи: {n}', locked_by: 'блокує {c} ({p})', pdr_ended: 'Рух до постачання запчастин завершено – транспорт до майстерні', parts_eta_changed: 'Термін постачання запчастин змінено', eta_on: 'Термін постачання', eta_removed: 'Термін постачання видалено',
     created: 'Нове повідомлення про пошкодження', created_urgent: 'КРИТИЧНО: нове повідомлення (неперевірене)', received: 'Повідомлення отримано',
     priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', forwarded: 'Повідомлення передано до майстерні', rejected: 'Повідомлення відхилено', reopened: 'Повідомлення знову відкрито', withdrawn: 'Замовлення майстерні завершено без ремонту',
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
@@ -33,7 +33,7 @@ const T = {
     res_gefaehrliche_maengel: 'небезпечні дефекти', res_verkehrsunsicher: 'небезпечний для руху', do_not_plan: 'не планувати',
   },
   en: {
-    planned_on: 'Workshop date', ready_on: 'ready approx.', ready_changed: 'Expected ready: new date', pickup_hint: 'Pick-up note: My vehicle', rest_open: 'open items: {n}', locked_by: 'locked by {c} ({p})', pdr_ended: 'Driving until parts delivery ended – vehicle to the workshop',
+    planned_on: 'Workshop date', ready_on: 'ready approx.', ready_changed: 'Expected ready: new date', pickup_hint: 'Pick-up note: My vehicle', rest_open: 'open items: {n}', locked_by: 'locked by {c} ({p})', pdr_ended: 'Driving until parts delivery ended – vehicle to the workshop', parts_eta_changed: 'Parts delivery date changed', eta_on: 'Parts delivery', eta_removed: 'Parts delivery date removed',
     created: 'New damage report', created_urgent: 'CRITICAL: new report (unverified)', received: 'Report received',
     priority_changed: 'Priority changed', approved: 'New workshop order', forwarded: 'Report handed over to workshop', rejected: 'Report rejected', reopened: 'Report reopened', withdrawn: 'Workshop order ended without repair',
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
@@ -51,7 +51,7 @@ export const nt = (lang, key) => (T[lang] && T[lang][key]) || T.de[key];
 
 // Nicht dringende Ereignisarten, deren Push jede Person für sich abschalten kann (dringende und Sicherheitsereignisse nie)
 export const MUTABLE_KINDS = ['created', 'received', 'priority_changed', 'approved', 'rejected', 'reopened', 'withdrawn', 'acknowledged', 'started', 'waiting_parts', 'resumed',
-  'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder', 'cost_limit', 'cost_approved', 'reassigned_away', 'forwarded', 'open_item', 'handover_missing', 'plan_changed', 'file_added', 'ready_changed'];
+  'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder', 'cost_limit', 'cost_approved', 'reassigned_away', 'forwarded', 'open_item', 'handover_missing', 'plan_changed', 'file_added', 'ready_changed', 'parts_eta_changed'];
 // Titel von Vorgangs-Hinweisen in der aktuellen Sprache der Person anzeigen (gespeichert wird die Sprache zum Zeitpunkt des Versands)
 export function localizedTitle(n, lang) {
   const L = T[lang] ? lang : 'de';
@@ -138,6 +138,13 @@ export function localizedBody(n, lang) {
     const pm = / · ([^·]+) (\d{2})[./](\d{2})[./](\d{4})$/.exec(core);
     if (pm && LANGS.some((l) => T[l].planned_on === pm[1])) { plan = `${pm[4]}-${pm[3]}-${pm[2]}`; core = core.slice(0, pm.index); }
   }
+  // Backlog 1038: „ · Liefertermin TT.MM.JJJJ“ bzw. „ · Liefertermin entfernt“
+  let eta = null;
+  if (n.kind === 'parts_eta_changed') {
+    const pm = / · ([^·]+) (\d{2})[./](\d{2})[./](\d{4})$/.exec(core);
+    if (pm && LANGS.some((l) => T[l].eta_on === pm[1])) { eta = ` · ${T[L].eta_on} ${dateLang(`${pm[4]}-${pm[3]}-${pm[2]}`, L)}`; core = core.slice(0, pm.index); }
+    else for (const l of LANGS) { const x = ' · ' + T[l].eta_removed; if (core.endsWith(x)) { core = core.slice(0, -x.length); eta = ' · ' + T[L].eta_removed; break; } }
+  }
   // Backlog 873: „ · fertig ca. TT.MM.JJJJ“
   if (n.kind === 'ready_changed') {
     const pm = / · ([^·]+) (\d{2})[./](\d{2})[./](\d{4})$/.exec(core);
@@ -150,7 +157,7 @@ export function localizedBody(n, lang) {
   const i = core2.lastIndexOf(' · ');
   const prio = i > 0 ? core2.slice(i + 3) : null;
   if (!prio || !PRIO_KEY.has(prio)) return b;
-  return `${core2.slice(0, i + 3)}${PRIO[L][PRIO_KEY.get(prio)]}${why ? ' · ' + T[L]['why_' + why] : ''}${plan ? ` · ${T[L].planned_on} ${dateLang(plan, L)}` : ''}${rdy ? ` · ${T[L].ready_on} ${dateLang(rdy, L)}` : ''}${rest}${pk}${test}`;
+  return `${core2.slice(0, i + 3)}${PRIO[L][PRIO_KEY.get(prio)]}${why ? ' · ' + T[L]['why_' + why] : ''}${plan ? ` · ${T[L].planned_on} ${dateLang(plan, L)}` : ''}${rdy ? ` · ${T[L].ready_on} ${dateLang(rdy, L)}` : ''}${eta || ''}${rest}${pk}${test}`;
 }
 
 // Abschaltbare Arten, die eine Rolle überhaupt bekommen kann (Empfängerregeln in caseRecipients; 19.10.2026: Fahrer sahen z. B. „Kostenfreigabe
@@ -159,8 +166,8 @@ const REPORTER_KINDS = ['received', 'rejected', 'reopened', 'withdrawn', 'priori
 const KINDS_BY_ROLE = {
   driver: [...REPORTER_KINDS, 'plan_changed', 'ready_changed'],
   // „Neue Meldung“ erreicht Disposition/Werkstatt nur dringend (nicht abschaltbar) – die Abwahl war wirkungslos (20.10.2026)
-  dispatch: [...REPORTER_KINDS, 'waiting_parts', 'resumed', 'plan_changed', 'ready_changed'],
-  workshop: [...REPORTER_KINDS, 'approved', 'rework', 'cost_approved', 'reassigned_away', 'plan_changed', 'file_added', 'ready_changed'],
+  dispatch: [...REPORTER_KINDS, 'waiting_parts', 'resumed', 'plan_changed', 'ready_changed', 'parts_eta_changed'],
+  workshop: [...REPORTER_KINDS, 'approved', 'rework', 'cost_approved', 'reassigned_away', 'plan_changed', 'file_added', 'ready_changed', 'parts_eta_changed'],
   viewer: [],
 };
 export function mutableKindsFor(role) { const k = KINDS_BY_ROLE[role]; return k ? MUTABLE_KINDS.filter((x) => k.includes(x)) : MUTABLE_KINDS; }
@@ -275,6 +282,13 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       if (ctxData.actor && ctxData.actor.role === 'workshop') add(usersByRole(['fleet', 'owner'])); else add(workshopUsers);
       add(reporter); add(assignedDrivers());
       break;
+    case 'parts_eta_changed':
+      // Backlog 1038 (Blickwinkel „Werkstatt erfährt vom Lieferanten einen früheren/späteren Liefertermin, der Lkw fährt bis zur Teilelieferung“):
+      // die Disposition hat das Fahrzeug bis zum Liefertermin eingeplant – sie und die jeweils andere Seite erfahren den neuen Termin; Fahrer nicht
+      // (sie sehen bewusst kein Lieferdatum, Backlog 1036); nie dringend
+      add(usersByRole(['dispatch']));
+      if (ctxData.actor && ctxData.actor.role === 'workshop') add(usersByRole(['fleet', 'owner'])); else add(workshopUsers);
+      break;
     case 'reassigned':
       // Werkstattwechsel (17.10.2026): neue Werkstatt bekommt „Neuer Werkstattauftrag“, die bisherige erfährt die Abgabe
       // (ohne Link – sie hat danach keinen Zugriff mehr); Melder nicht erneut (er bekam die Freigabe schon)
@@ -304,7 +318,7 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
     }
   }
   const actorId = ctxData.actor?.id;
-  return { list: list.filter((u) => u.id !== actorId), urgent: kind.startsWith('cost_') || kind === 'plan_changed' || kind === 'ready_changed' || kind === 'file_added' || kind === 'question' ? false : urgent || (kind !== 'safety_lock' && !!ctxData.still_locked && ['released', 'safety_lock_lifted'].includes(kind)) }; // Kostenhinweise nie dringend
+  return { list: list.filter((u) => u.id !== actorId), urgent: kind.startsWith('cost_') || kind === 'plan_changed' || kind === 'ready_changed' || kind === 'parts_eta_changed' || kind === 'file_added' || kind === 'question' ? false : urgent || (kind !== 'safety_lock' && !!ctxData.still_locked && ['released', 'safety_lock_lifted'].includes(kind)) }; // Kostenhinweise nie dringend
 }
 
 // Hinweise anlegen (doppelte Ereignisse je Person werden ignoriert) und die tatsächlich neuen zurückgeben.
@@ -340,6 +354,8 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     const plan = (k === 'approved' && c.status === 'werkstatt_freigegeben' && c.planned_date) || (k === 'plan_changed' && c.planned_date) ? ` · ${T[lang].planned_on} ${dateLang(c.planned_date, lang)}` : '';
     // Backlog 466: Freigabe mit Abholhinweis „für Fahrer sichtbar“ → zugeordnete Fahrer (ohne Vorgangslink) erfahren, wo er steht – fester Satz, kein Ablageort im Sperrbildschirm
     const rdy = k === 'ready_changed' && c.ready_expected_on ? ` · ${T[lang].ready_on} ${dateLang(c.ready_expected_on, lang)}` : ''; // Backlog 873
+    // Backlog 1038: neuer Liefertermin (oder „entfernt“) – nur Datum, kein Vermerk
+    const eta = k === 'parts_eta_changed' ? (c.parts_expected_date ? ` · ${T[lang].eta_on} ${dateLang(c.parts_expected_date, lang)}` : ' · ' + T[lang].eta_removed) : '';
     // Backlog 878 (Folge aus 877): Freigabe mit offenen, nicht sicherheitsrelevanten Restarbeiten nennt deren Anzahl (keine Beschreibung im Sperrbildschirm)
     const restN = k === 'released' && ctxData.payload ? Number(ctxData.payload.remaining_open_items) || 0 : 0;
     const rest = restN > 0 ? ' · ' + T[lang].rest_open.replace('{n}', restN) : '';
@@ -348,7 +364,7 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     const lb = k === 'still_locked' && ctxData.still_locked && ctxData.still_locked.case_no ? ' · ' + T[lang].locked_by.replace('{c}', ctxData.still_locked.case_no).replace('{p}', ctxData.still_locked.plate || '') : '';
     // Backlog 1032: „Reparatur fortgesetzt“ nach „fährt bis zur Teilelieferung“ – fester Satz (Fahrzeug muss in die Werkstatt)
     const pde = k === 'resumed' && ctxData.previous && ctxData.previous.parts_drive_at ? ' · ' + T[lang].pdr_ended : '';
-    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${k === 'created' ? urgentWhy(c, urgent, lang) : ''}${plan}${rdy}${rest}${pk}${lb}${pde}${c.environment === 'test' ? ' · TEST' : ''}`;
+    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${k === 'created' ? urgentWhy(c, urgent, lang) : ''}${plan}${rdy}${eta}${rest}${pk}${lb}${pde}${c.environment === 'test' ? ' · TEST' : ''}`;
     rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned || u.away ? null : c.id, event_key: eventKey, kind: k, urgent: urgent ? 1 : 0, title, body, created_at: now, lang });
   }
   const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at, environment: r.environment }));

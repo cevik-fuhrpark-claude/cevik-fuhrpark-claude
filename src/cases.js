@@ -1881,22 +1881,23 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'set_parts_eta': {
-      // Liefertermin setzen/verschieben/entfernen (leer); ohne Statuswechsel und ohne Push
+      // Liefertermin setzen/verschieben/entfernen (leer); ohne Statuswechsel; Push nur, wenn das Fahrzeug bis zur Teilelieferung fährt (Backlog 1038)
       const eta = p.parts_expected_date ? partsDate(p.parts_expected_date) : null;
       if (eta === (c.parts_expected_date || null)) throw bad('validation', 'Liefertermin ist unverändert.');
       set.parts_expected_date = eta; payload = { from: c.parts_expected_date || null, to: eta };
+      if (c.parts_drive_at && !c.safety_lock) notifyKind = 'parts_eta_changed'; // Backlog 1038: Lkw fährt bis zur Teilelieferung – Disposition plant danach
       break;
     }
     case 'parts_partial': {
       // Backlog 449 (Blickwinkel „Lieferant liefert nur einen Teil der Bestellung“): Teillieferung eingegangen – Status bleibt „wartet auf Teile“
       // (Arbeitszeit/Teile lassen sich in diesem Status bereits buchen), der Vermerk sagt, worauf NOCH gewartet wird (ersetzt in Listen/Suche den
-      // ursprünglichen Vermerk, der im Vorgang sichtbar bleibt). Liefertermin für den Rest optional laut Lieferant; ohne Push, Wartezeit läuft weiter.
+      // ursprünglichen Vermerk, der im Vorgang sichtbar bleibt). Liefertermin für den Rest optional laut Lieferant; ohne Push (außer geänderter Termin bei „fährt bis zur Teilelieferung“, Backlog 1038), Wartezeit läuft weiter.
       requireNote('Bitte angeben, worauf noch gewartet wird.');
       if (Object.prototype.hasOwnProperty.call(p, 'parts_expected_date')) {
         const cur = c.parts_expected_date || null;
         const raw = p.parts_expected_date ? String(p.parts_expected_date) : null;
         const eta = raw && raw !== cur ? partsDate(raw) : raw; // unveränderter (auch überschrittener) Termin bleibt stehen
-        if (eta !== cur) { set.parts_expected_date = eta; payload = { from: cur, to: eta }; }
+        if (eta !== cur) { set.parts_expected_date = eta; payload = { from: cur, to: eta }; if (c.parts_drive_at && !c.safety_lock) notifyKind = 'parts_eta_changed'; } // Backlog 1038
       }
       { const df = await deliveryFile(); if (df) payload = { ...(payload || {}), file_id: df.id, file_name: df.filename }; }
       break;

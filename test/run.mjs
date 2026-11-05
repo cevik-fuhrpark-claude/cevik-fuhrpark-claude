@@ -34533,6 +34533,48 @@ await test('Backlog 1035–1036 (Blickwinkel „Disposition plant einen Lkw, des
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].ws_pdr_due.includes('{n}') && STRINGS[l].ws_pdr_due_hint, 'ws_pdr_due ' + l); }
 });
 
+await test('Backlog 1038 (Blickwinkel „Lieferant nennt neuen Liefertermin, der Lkw fährt bis zur Teilelieferung“): geänderter Liefertermin (Termin ändern bzw. Teillieferung) meldet sich bei Disposition und der anderen Seite – nur bei „fährt bis zur Teilelieferung“, nie dringend, ohne Fahrer, abschaltbar, DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'w.dispo38', display_name: 'Dispo', role: 'dispatch', environment: 'test', language: 'uk' });
+  const D = new Client(worker, e, 'w.dispo38'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const dmy = (d) => d.split('-').reverse().join('.');
+  const nk = async (c) => (await c.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'parts_eta_changed');
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'wait_parts', { parts_expected_date: day(5) }, 'Luftbalg bestellt')).status, 200);
+  // ohne „fährt bis zur Teilelieferung“: kein Hinweis (wie bisher)
+  eq((await cmd(U.ws, id, 'set_parts_eta', { parts_expected_date: day(6) })).status, 200);
+  eq((await nk(D)).length, 0, 'Fahrzeug steht in der Werkstatt: still');
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: true }, 'nur Nahverkehr')).status, 200);
+  // Werkstatt zieht den Termin vor → Disposition (UK) + Leitung, nicht die Werkstatt selbst, nicht der Fahrer
+  eq((await cmd(U.ws, id, 'set_parts_eta', { parts_expected_date: day(2) })).status, 200);
+  let d = await nk(D); eq(d.length, 1, 'Disposition informiert');
+  ok(d[0].title === 'Термін постачання запчастин змінено' && d[0].body.includes('Термін постачання ' + dmy(day(2))) && !d[0].urgent, 'Titel UK, Datum, nicht dringend: ' + JSON.stringify(d[0]));
+  eq(d[0].case_id, id, 'mit Vorgangslink');
+  eq((await nk(U.fleet)).length, 1, 'Leitung (Werkstatt hat geändert)'); eq((await nk(U.ws)).length, 0, 'Werkstatt selbst nicht');
+  eq((await nk(U.driver)).length, 0, 'Fahrer nicht (sieht kein Lieferdatum)');
+  // Teillieferung mit neuem Termin → erneut; ohne Terminänderung → still
+  eq((await cmd(U.ws, id, 'parts_partial', { parts_expected_date: day(4) }, 'Rest: Halter')).status, 200);
+  eq((await nk(D)).length, 2, 'Teillieferung mit neuem Termin');
+  eq((await cmd(U.ws, id, 'parts_partial', { parts_expected_date: day(4) }, 'Rest weiterhin: Halter')).status, 200);
+  eq((await nk(D)).length, 2, 'Teillieferung ohne Terminänderung: still');
+  // Leitung entfernt den Termin → Werkstatt informiert, Text „entfernt“
+  eq((await cmd(U.fleet, id, 'set_parts_eta', { parts_expected_date: '' })).status, 200);
+  const w = await nk(U.ws); eq(w.length, 1, 'Werkstatt (Leitung hat geändert)'); ok(w[0].body.includes('Liefertermin entfernt'), w[0].body);
+  eq((await nk(D)).length, 3);
+  // Sprachwechsel der Texte, Push-Einstellungen, Formularhinweis
+  const { localizedBody, localizedTitle } = await import('../src/notify.js');
+  const d0 = (await nk(D)).find((n) => n.body.includes(dmy(day(4))));
+  ok(localizedTitle(d0, 'de') === 'Liefertermin der Teile geändert' && localizedBody(d0, 'de').includes('Liefertermin ' + dmy(day(4))) && localizedBody(d0, 'en').includes('Parts delivery ' + new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC' }).format(new Date(day(4) + 'T12:00:00Z'))), 'Sprachwechsel: ' + localizedBody(d0, 'en'));
+  ok(localizedBody(w[0], 'uk').includes('Термін постачання видалено'), 'entfernt UK: ' + localizedBody(w[0], 'uk'));
+  for (const c of [D, U.ws, U.fleet]) ok((await c.get('/api/me/notify-prefs')).data.kinds.includes('parts_eta_changed'), 'abschaltbar');
+  ok(!(await U.driver.get('/api/me/notify-prefs')).data.kinds.includes('parts_eta_changed'), 'Fahrer: nicht in der Liste');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].pk_parts_eta_changed === localizedTitle({ kind: 'parts_eta_changed', title: 'Liefertermin der Teile geändert' }, l), l + ': Push-Art = Titel'); ok(STRINGS[l].eta_pdr_hint, l + ': Formularhinweis'); }
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq(app.split('id="etapdr"').length - 1, 2, 'Hinweis in „Liefertermin ändern“ und „Teillieferung eingegangen“');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

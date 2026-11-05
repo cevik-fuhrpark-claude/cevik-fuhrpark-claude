@@ -3677,6 +3677,13 @@ Object.assign(PLURALS.en, { rdy_moved: { one: 'postponed {n} time', other: 'post
 Object.assign(STRINGS.de, { pk_ready_changed: 'Voraussichtlich fertig: neues Datum' });
 Object.assign(STRINGS.uk, { pk_ready_changed: 'Орієнтовна готовність: нова дата' });
 Object.assign(STRINGS.en, { pk_ready_changed: 'Expected ready: new date' });
+// Backlog 1038: Push-Art „Liefertermin der Teile geändert“ (Fahrzeug fährt bis zur Teilelieferung)
+Object.assign(STRINGS.de, { pk_parts_eta_changed: 'Liefertermin der Teile geändert' });
+Object.assign(STRINGS.uk, { pk_parts_eta_changed: 'Термін постачання запчастин змінено' });
+Object.assign(STRINGS.en, { pk_parts_eta_changed: 'Parts delivery date changed' });
+Object.assign(STRINGS.de, { eta_pdr_hint: 'Das Fahrzeug fährt bis zur Teilelieferung. Ein geänderter Liefertermin wird der Disposition gemeldet (und der Fuhrparkleitung bzw. der Werkstatt) – sie plant den Lkw danach.' });
+Object.assign(STRINGS.uk, { eta_pdr_hint: 'Транспорт їздить до постачання запчастин. Про змінений термін постачання буде повідомлено диспетчерську (а також керівництво автопарку або майстерню) – вона планує вантажівку відповідно.' });
+Object.assign(STRINGS.en, { eta_pdr_hint: 'The vehicle is driving until the parts are delivered. A changed delivery date is reported to dispatch (and to fleet management or the workshop) – they plan the truck accordingly.' });
 // [CLAUDE] Backlog 879 (Blickwinkel „Fahrer holt den Lkw nach Feierabend in der Werkstatt ab“): frühere Abholhinweise werden bei der Freigabe archiviert
 Object.assign(STRINGS.de, { pu_replaced_hint: 'Der noch aktive Abholhinweis für Fahrer aus einer früheren Freigabe ({d}) ist überholt und wird mit dieser Freigabe archiviert.', pu_ev_replaced: 'Frühere Abholhinweise für Fahrer archiviert: {n}' });
 Object.assign(STRINGS.uk, { pu_replaced_hint: 'Ще активна примітка про отримання для водіїв із попереднього допуску ({d}) застаріла й буде архівована під час цього допуску.', pu_ev_replaced: 'Попередні примітки про отримання для водіїв архівовано: {n}' });
