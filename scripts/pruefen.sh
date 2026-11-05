@@ -174,6 +174,7 @@ UI-Dublette wählen (alle offenen)|ui-dublette-auswahl.py|/tmp/cfp-dublette.log
 UI-Zahlenformat je Sprache|ui-zahlenformat.py|/tmp/cfp-zahlenformat.log
 UI-Gewährleistungen (Hinweis bei Kappung)|ui-gewaehrleistung.py|/tmp/cfp-gewaehrleistung.log
 UI-Nacharbeit/Kostenfreigabe (Hinweise im Aktionsformular)|ui-nacharbeit-freigabe.py|/tmp/cfp-nacharbeit-freigabe.log
+UI-Werkstatt erster Auftrag (Standort, leere Tafel, Abschlusskontrolle vorher prüfen)|ui-werkstatt-erster-auftrag.py|/tmp/cfp-werkstatt-erster-auftrag.log
 UI-Lager Entnahme mit Artikelpreis|ui-lager-entnahmepreis.py|/tmp/cfp-lager-entnahmepreis.log
 UI-Restarbeit nach Freigabe, Arbeitsdatum-Grenzen|ui-restarbeit-freigabe.py|/tmp/cfp-restarbeit-freigabe.log
 UI-Fahrerakte Nachtrag, Vertragsformular-Stand|ui-fahrerakte-nachtrag.py|/tmp/cfp-fahrerakte-nachtrag.log

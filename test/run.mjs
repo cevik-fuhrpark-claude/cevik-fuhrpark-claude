@@ -24412,7 +24412,7 @@ await test('Backlog 452 (Folge aus 449, Teillieferung im Lager): Wareneingang/Zu
 
 await test('Backlog 453 (Blickwinkel „Neue Werkstatt-Aushilfe, erster Tag am Tablet (UK)“): Werkstatt-Startseite zeigt den Kurzablauf eines Auftrags mit den echten Knopf-Beschriftungen (DE/UK/EN), ausblendbar je Konto; Vorab-Info-Zeilen brechen um statt den Hinweis abzuschneiden', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('let html = wsFlow() + shown.map('), 'Kurzablauf oben auf der Werkstatt-Startseite');
+  ok(app.includes('let html = wsFlow() + (shown.map('), 'Kurzablauf oben auf der Werkstatt-Startseite');
   ok(app.includes("render(html, 'home');\n  bindWsFlow();"), 'Ausblenden gebunden');
   ok(app.includes("b.onclick = () => { try { localStorage.setItem(wsFlowKey(), '1'); } catch {}"), 'Ausblenden als Eigenschaft, Speicher abgesichert');
   ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' || c.appraisal_wait_on || xh || rdyOf(c) || (c.work_state_note && WST_ST.includes(c.status)) ? ' wrap' : ''"), 'Vorab-Info bricht um'); // Backlog 867/871: auch mit Arbeitsstand bzw. „voraussichtlich fertig“
@@ -34276,6 +34276,43 @@ await test('Backlog 1024 (Folge aus 1023): Melder sieht an der abgelehnten Meldu
   ok(app.includes('${qBanner(c)}${rejBox(c, d)}') && app.includes("if (c.status !== 'abgelehnt' || isWithdrawn(c) || c.reporter_id !== S.me.id || isMgr()) return '';"), 'Kasten nur für den Melder, nicht bei ohne Reparatur beendet');
   const { STRINGS } = await import('../public/i18n.js');
   for (const L of ['de', 'uk', 'en']) for (const k of ['rej_box_t', 'rej_box_s']) ok(STRINGS[L][k], `${L}.${k}`);
+});
+
+await test('Backlog 1025 (Blickwinkel „Werkstatt Bayern, erster Auftrag“): Vorgang nennt vor „Zur Abschlusskontrolle“, was der Server noch ablehnen würde (Arbeitszeit, Kontrolle nach Reparatur, Nacharbeit, sicherheitsrelevante Restarbeit); Werkstatt-Text ohne Fremdleistung; eigene Werkstatt auf Tafel/Profil, leere Tafel erklärt; DE/UK/EN', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const id = await toRepair();
+  const qm = async (u = U.ws) => (await u.get(`/api/cases/${id}`)).data.qc_missing;
+  eq((await qm()).join(','), 'work,inspection', 'neu in Reparatur');
+  eq((await cmd(U.ws, id, 'request_quality_check', {}, 'Leuchte getauscht')).data.error, 'work_missing', 'Server lehnt ebenso ab');
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Rückleuchte getauscht' })).status, 200);
+  eq((await qm()).join(','), 'inspection');
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Bremsleitung scheuert', safety_relevant: true })).status, 200);
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((c) => ({ key: c.key, result: 'ok' }));
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await qm()).join(','), 'safety_items');
+  eq((await cmd(U.ws, id, 'request_quality_check', {}, 'Leuchte getauscht')).data.error, 'safety_items_open');
+  const oi = (await U.ws.get(`/api/cases/${id}`)).data.open_items.find((o) => o.safety_relevant);
+  eq((await cmd(U.ws, id, 'resolve_open_item', { open_item_id: oi.id }, 'Leitung neu verlegt')).status, 200);
+  eq((await qm()).length, 0, 'alles erfüllt');
+  ok(Array.isArray(await qm(U.fleet)), 'Leitung sieht es ebenfalls');
+  eq((await cmd(U.ws, id, 'request_quality_check', {}, 'Leuchte getauscht')).status, 200);
+  eq(await qm(), undefined, 'nach dem Schritt nicht mehr geliefert');
+  // Nacharbeit → neue Kontrolle nötig
+  eq((await cmd(U.fleet, id, 'return_for_rework', {}, 'Leuchte flackert')).status, 200);
+  const st = (await U.ws.get(`/api/cases/${id}`)).data;
+  if (st.allowed_actions.includes('start_repair')) eq((await cmd(U.ws, id, 'start_repair')).status, 200);
+  eq((await qm()).join(','), 'inspection_after_rework');
+  ok(!(await U.ws.get(`/api/cases/${id}`)).data.external_costs, 'Werkstatt sieht weiter keine Fremdleistungen');
+  // Oberfläche
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (isQc && d && Array.isArray(d.qc_missing)) {") && app.includes('id="qcmwork"') && app.includes('id="qcminsp"') && app.includes('id="qcmsafety"'), 'Hinweise im Formular');
+  ok(app.includes("t('qc_miss_work_ws').replace('{a}', () => t('act_record_work'))"), 'Werkstatt-Text mit Knopfnamen');
+  ok(app.includes('data-wssite') && app.includes("t('no_cases_ws')") && app.includes('data-mysite'), 'eigene Werkstatt auf Tafel und Profil');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const L of ['de', 'uk', 'en']) {
+    for (const k of ['ws_site_lbl', 'no_cases_ws', 'qc_miss_work_ws', 'qc_miss_safety']) ok(STRINGS[L][k], `${L}.${k}`);
+    ok(STRINGS[L].no_cases_ws.includes('{w}') && STRINGS[L].qc_miss_work_ws.includes('{a}'), 'Platzhalter ' + L);
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

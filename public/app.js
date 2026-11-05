@@ -1416,7 +1416,10 @@ async function workshopBoard() {
   const alsoAbove = (c) => (above.has(c.id) ? `<b data-alsoabove>↑ ${esc(t('ws_also_above'))}: ${esc(above.get(c.id).join(' · '))}</b> · ` : '');
   let noteDone = false;
   const dupNote = (k) => { if (noteDone || !above.size || !STEP_KEYS.includes(k)) return ''; noteDone = true; return `<p class="small muted" id="wsdupnote">${esc(tn('ws_dup_note', total))}</p>`; };
-  let html = wsFlow() + shown.map(([k, l]) => `${dupNote(k)}<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${k === 'ws_planned_today' && l.length > 1 ? `<p class="small muted" id="wsdayorder">${esc(t('day_order_hint'))}</p>` : ''}${k === 'ws_mine' ? `<p class="small muted" id="wsminehint">${esc(t('ws_mine_hint'))} <a href="${esc(hj('#/cases?f=mine'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}${caseList(l, '', STEP_KEYS.includes(k) ? alsoAbove : null)}${k === 'ws_repeat' ? `<p class="small"><a href="${esc(hj('#/cases?f=repeat'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted">${esc(t('no_cases'))}</p>`;
+  // Backlog 1025: eigene Werkstatt nennen (falsch zugeordnetes Konto fällt sonst nicht auf) und leere Tafel erklären
+  const mySite = S.me.workshop_site ? wsName(S.me.workshop_site) : '';
+  let html = wsFlow() + (shown.map(([k, l]) => `${dupNote(k)}<h2>${esc(t(k))} <span class="chip">${l.length}</span></h2>${k === 'ws_planned_today' && l.length > 1 ? `<p class="small muted" id="wsdayorder">${esc(t('day_order_hint'))}</p>` : ''}${k === 'ws_mine' ? `<p class="small muted" id="wsminehint">${esc(t('ws_mine_hint'))} <a href="${esc(hj('#/cases?f=mine'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}${caseList(l, '', STEP_KEYS.includes(k) ? alsoAbove : null)}${k === 'ws_repeat' ? `<p class="small"><a href="${esc(hj('#/cases?f=repeat'))}">${esc(t('show_in_list'))} ›</a></p>` : ''}`).join('') || `<p class="muted" data-wsempty>${esc(mySite ? t('no_cases_ws').replace('{w}', () => mySite) : t('no_cases'))}</p>`);
+  if (mySite) html = `<p class="small muted" data-wssite>${esc(t('ws_site_lbl'))} <b>${esc(mySite)}</b></p>` + html;
   try {
     const ov = await pOv;
     // ≤ 14 Tage nach Datum oder nach km fällig/überschritten (Warnschwelle aus den Einstellungen) – gleiche Status wie die Prüftermin-Übersicht
@@ -3907,7 +3910,15 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   // Winterreifen-Auftrag: Lage noch nicht erfüllt → Hinweis + ausdrückliche Bestätigung (Server verlangt sie ebenfalls)
   if (isQc && d && d.tire_winter && !['erfuellt', 'nicht_pflichtig'].includes(d.tire_winter.status)) f.push(`<p class="panel small" id="wqopen">${esc(t('wq_open_hint'))}</p><label class="check"><input type="checkbox" name="confirm_winter_open" required> ${esc(t('wq_open_confirm'))}</label>`);
   // Nacharbeit nach der letzten Kontrolle nach Reparatur → neue Kontrolle nötig (Server prüft ebenso); offene Kostenfreigabe sperrt die Freigabe
-  if (isQc && d && Array.isArray(d.inspections) && Array.isArray(d.events)) {
+  // Backlog 1025 (Blickwinkel „Werkstatt Bayern, erster Auftrag“): alles, was der Server bei der Abschlusskontrolle ablehnen würde, vorher nennen
+  // (`qc_missing` aus dem Vorgang); Werkstatt bekommt einen Text ohne „Fremdleistung“ (die trägt nur die Leitung ein)
+  if (isQc && d && Array.isArray(d.qc_missing)) {
+    const qm = d.qc_missing;
+    if (qm.includes('work')) f.push(`<p class="panel warn small" id="qcmwork" role="note">${esc(S.me.role === 'workshop' ? t('qc_miss_work_ws').replace('{a}', () => t('act_record_work')) : t('err_work_missing'))}</p>`);
+    if (qm.includes('inspection')) f.push(`<p class="panel warn small" id="qcminsp" role="note">${esc(t('err_inspection_missing'))}</p>`);
+    if (qm.includes('inspection_after_rework')) f.push(`<p class="panel warn small" id="rwinsp">${esc(t('err_inspection_after_rework_missing'))}</p>`);
+    if (qm.includes('safety_items') && !isRel) f.push(`<p class="panel warn small" id="qcmsafety" role="note">${esc(t('err_safety_items_open'))} ${esc(t('qc_miss_safety'))}</p>`);
+  } else if (isQc && d && Array.isArray(d.inspections) && Array.isArray(d.events)) {
     const li = d.inspections.filter((i) => i.kind === 'nach_reparatur').map((i) => i.created_at).sort().pop();
     const rw = d.events.filter((e) => e.action === 'return_for_rework').map((e) => e.created_at).sort().pop();
     if (li && rw && li <= rw) f.push(`<p class="panel warn small" id="rwinsp">${esc(t('err_inspection_after_rework_missing'))}</p>`);
@@ -8115,7 +8126,7 @@ function viewMore(open) {
     ${S.me.role === 'owner' ? `<a class="row" href="#/audit"><span>🔒</span><span class="title">${esc(t('audit'))}</span><span></span></a>` : ''}
     ${S.me.role === 'owner' ? `<a class="row" href="#/settings"><span>⚙</span><span class="title">${esc(t('settings'))}</span><span></span></a>` : ''}
   </div>
-  <h2>${esc(t('nav_profile'))}</h2><section class="panel"><p><b>${esc(S.me.display_name)}</b> · ${esc(S.me.username)} · ${esc(t('role_' + S.me.role))}${S.me.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>${langSelect()}
+  <h2>${esc(t('nav_profile'))}</h2><section class="panel"><p><b>${esc(S.me.display_name)}</b> · ${esc(S.me.username)} · ${esc(t('role_' + S.me.role))}${S.me.role === 'workshop' && S.me.workshop_site ? ` · <span data-mysite>${esc(t('ws_site_lbl'))} ${esc(wsName(S.me.workshop_site))}</span>` : ''}${S.me.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>${langSelect()}
   ${S.me.role !== 'driver' ? `<div id="hsbox"><label for="homesite">${esc(t('home_site'))}</label><select id="homesite"><option value="">${esc(t('filter_all'))}</option>${S.me.home_site ? `<option selected>${esc(S.me.home_site)}</option>` : ''}</select><p class="small muted">${esc(t(S.me.role === 'workshop' ? 'home_site_hint_ws' : S.me.role === 'dispatch' ? 'home_site_hint_dispo' : 'home_site_hint'))}</p></div>` : ''}
   <details><summary>${esc(t('change_password'))}</summary><form id="pw"><label>${esc(t('old_password'))}</label><input type="password" name="old_password" required autocomplete="current-password"><label>${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input type="password" name="new_password" required minlength="10" maxlength="200" autocomplete="new-password"><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
   <details id="tfa"><summary>${esc(t('tf_title'))} <span class="chip ok" id="tfchip"${S.me.totp_enabled ? '' : ' hidden'}>${esc(t('tf_chip'))}</span></summary><div id="tfabox"><p class="muted">${esc(t('loading'))}</p></div></details>

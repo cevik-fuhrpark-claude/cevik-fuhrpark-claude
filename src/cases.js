@@ -437,11 +437,16 @@ export async function getCaseDetail(env, user, envName, caseId) {
           AND EXISTS (SELECT 1 FROM json_each(p.items) j WHERE json_extract(j.value,'$.key')=?3 AND json_extract(j.value,'$.result')='ok') ORDER BY p.created_at DESC LIMIT 1)` : 'NULL'})
       FROM inspections s WHERE s.environment=?2 AND ${srcVeh} AND s.kind='abfahrt' AND s.case_id IS NULL AND EXISTS (SELECT 1 FROM json_each(s.items) j
         WHERE json_extract(j.value,'$.followup_case_id')=c.id AND json_extract(j.value,'$.repeat') IS NULL) ORDER BY s.created_at ASC LIMIT 1) AS src_insp` : '';
-  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}, ${APPR_WAIT_SQL(berlinDate())}${srcSql} FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
+  // Backlog 1025: Stand der Abschlusskontroll-Voraussetzungen in derselben Abfrage (Abfragebudget Vorgangsdetail ≤ 21), nur offene Vorgänge
+  const qcSql = OPEN_STATUSES.includes(c0.status) ? `, json_object('work', (SELECT COUNT(*) FROM work_entries WHERE case_id=c.id) + (SELECT COUNT(*) FROM external_costs WHERE case_id=c.id),
+      'latest', (SELECT MAX(created_at) FROM inspections WHERE case_id=c.id AND kind='nach_reparatur'),
+      'rework', (SELECT MAX(created_at) FROM case_events WHERE case_id=c.id AND action='return_for_rework'),
+      'safety', (SELECT COUNT(*) FROM open_items WHERE case_id=c.id AND status='offen' AND safety_relevant=1)) AS qc_state` : '';
+  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}, ${APPR_WAIT_SQL(berlinDate())}${srcSql}${qcSql} FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
     .bind(c0.id, ...(fromInsp ? [envName, ...(mgrUser ? [c0.check_item] : [])] : [])).first();
   const c = { ...c0, q_at: vq ? vq.q_at : null, q_reply: vq ? vq.q_reply : null, q_lead: vq ? vq.q_lead : null, appraisal_wait_on: vq ? vq.appraisal_wait_on : null };
   const srcInsp = vq && vq.src_insp ? JSON.parse(vq.src_insp) : null;
-  const vehicle = vq ? (({ q_at, q_reply, q_lead, src_insp, appraisal_wait_on, ...v }) => v)(vq) : null;
+  const vehicle = vq ? (({ q_at, q_reply, q_lead, src_insp, appraisal_wait_on, qc_state, ...v }) => v)(vq) : null;
   // reach: 0 = deaktiviert, 1 = erreichbar, 2 = aktiv, aber nicht benachrichtigbar (ohne Passwort/andere Umgebung; Regel wie candidateUsers.reporter_ok)
   // + Zuordnung des Melders zur Meldezeit (Backlog 421, nur Leitung) in derselben Abfrage (Abfragebudget Vorgangsdetail ≤ 20)
   const reporter = await env.DB.prepare(`SELECT display_name, CASE WHEN role='driver' OR was_driver=1 THEN 'driver' ELSE role END AS role,
@@ -682,6 +687,12 @@ export async function getCaseDetail(env, user, envName, caseId) {
   }
   // Backlog 378: worauf gewartet wird und wie oft der Liefertermin verschoben wurde (z. B. Teile falsch geliefert) – sonst nur im Verlauf
   if (c.status === 'wartet_teile') { const pw = partsWaitOf(events); if (pw) detail.parts_wait = pw; }
+  // Backlog 1025 (Blickwinkel „Werkstatt Bayern, erster Auftrag“): was der Abschlusskontrolle noch fehlt – dieselben Prüfungen wie
+  // `request_quality_check`, vor dem Absenden. Nur Kennungen (keine Beträge/Fremdleistungen): die Werkstatt sieht Fremdleistungen nicht.
+  if (vq && vq.qc_state && detail.allowed_actions.includes('request_quality_check')) {
+    const q = JSON.parse(vq.qc_state);
+    detail.qc_missing = [...(q.work ? [] : ['work']), ...(!q.latest ? ['inspection'] : q.rework && q.latest <= q.rework ? ['inspection_after_rework'] : []), ...(q.safety ? ['safety_items'] : [])];
+  }
   return detail;
 }
 
