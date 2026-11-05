@@ -1030,6 +1030,12 @@ export function allowedActions(user, c, access) {
     case 'abschlusskontrolle':
       if (mgr) a.push('return_for_rework', 'technical_release');
       break;
+    case 'abgelehnt':
+      // Backlog 1023 (Blickwinkel „Leitung lehnt eine Meldung versehentlich ab bzw. der Fahrer widerspricht“): abgelehnte Meldung wieder öffnen
+      // (zurück auf „gemeldet“) statt neu melden zu lassen – nur eine aus „gemeldet“ abgelehnte Meldung/Kontroll-Mangel (keine Werkstatt);
+      // „ohne Reparatur beendet“ (mit Werkstatt), Prüftermin-/Reifenaufträge bleiben abgeschlossen
+      if (mgr && !c.workshop_site && (c.origin === 'meldung' || c.origin === 'kontrolle') && !c.maintenance_rule_id && !c.tire_order) a.push('reopen');
+      break;
   }
   if (WORK_STATUSES.includes(c.status) && (ws || mgr)) a.push('record_work', 'add_part', 'add_open_item', 'resolve_open_item');
   // Nicht sicherheitsrelevante Restarbeiten nach der Freigabe noch erledigen (sonst blieben sie und der Agentenbefund „Restarbeiten planen“ für immer offen)
@@ -1800,6 +1806,18 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       toStatus = 'abgelehnt'; set.closed_at = now;
       notifyKind = 'rejected';
       break;
+    case 'reopen': {
+      // Backlog 1023: Grund Pflicht; Fahrzeug muss noch in Betrieb sein (im Stapel geprüft). Eingangsbestätigung bleibt, die Dublette-Zuordnung
+      // endet (umgehängter Versicherungsfall bzw. umgehängte Dubletten bleiben beim bisherigen Original – im Verlauf vermerkt)
+      requireNote('Bitte Grund angeben, warum die Meldung wieder geöffnet wird.');
+      const vr = await env.DB.prepare('SELECT v.active, (SELECT case_no FROM cases WHERE id=?2) AS dup_no FROM vehicles v WHERE v.id=?1').bind(c.vehicle_id, c.duplicate_of || '').first();
+      if (!vr || !vr.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
+      extra.push(env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT CASE WHEN EXISTS (SELECT 1 FROM vehicles WHERE id=? AND active=1) THEN 1 ELSE 0 END').bind(c.vehicle_id), env.DB.prepare('DELETE FROM cmd_guard'));
+      if (c.duplicate_of) { set.duplicate_of = null; payload.was_duplicate_of = c.duplicate_of; payload.was_duplicate_of_no = vr.dup_no || null; }
+      toStatus = 'gemeldet'; set.closed_at = null;
+      notifyKind = 'reopened';
+      break;
+    }
     case 'withdraw_order': {
       // Werkstattauftrag ohne Reparatur beenden (Teilagent „Totalschaden“, 23.10.2026): Status „abgelehnt“ (abgeschlossen, keine technische Freigabe),
       // Grund Pflicht; Sperre und sicherheitsrelevante Restarbeiten zuerst fachlich klären (wie „Ablehnen“) – sonst führe das Fahrzeug ohne Sperre weiter.

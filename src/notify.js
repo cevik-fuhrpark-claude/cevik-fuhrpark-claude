@@ -11,7 +11,7 @@ const T = {
   de: {
     planned_on: 'Termin', ready_on: 'fertig ca.', ready_changed: 'Voraussichtlich fertig: neues Datum', pickup_hint: 'Abholhinweis: Mein Fahrzeug', rest_open: 'offene Restarbeiten: {n}', locked_by: 'gesperrt durch {c} ({p})',
     created: 'Neue Schadensmeldung', created_urgent: 'KRITISCH: neue Meldung (ungeprüft)', received: 'Meldung ist eingegangen',
-    priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', forwarded: 'Meldung an Werkstatt übergeben', rejected: 'Meldung abgelehnt', withdrawn: 'Werkstattauftrag ohne Reparatur beendet',
+    priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', forwarded: 'Meldung an Werkstatt übergeben', rejected: 'Meldung abgelehnt', reopened: 'Meldung wieder geöffnet', withdrawn: 'Werkstattauftrag ohne Reparatur beendet',
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
     quality_check: 'Bereit zur Abschlusskontrolle', rework: 'Nacharbeit angefordert', released: 'Fahrzeug technisch freigegeben',
     safety_lock: 'Fahrzeug gesperrt', safety_lock_lifted: 'Sperre aufgehoben', still_locked: 'Fahrzeug bleibt gesperrt (weiterer offener Vorgang)', comment: 'Neuer Kommentar', file_added: 'Foto/Datei zur Meldung nachgereicht', question: 'Rückfrage zu Ihrer Meldung', open_item_safety: 'Sicherheitsrelevante Restarbeit', open_item: 'Neue Restarbeit (Werkstatt)', open_item_safety_resolved: 'Sicherheitsrelevante Restarbeit erledigt (Werkstatt)', plan_changed: 'Werkstatttermin geändert', handover_missing: 'Schlüssel oder Fahrzeugschein fehlt',
@@ -23,7 +23,7 @@ const T = {
   uk: {
     planned_on: 'Термін', ready_on: 'готово орієнт.', ready_changed: 'Орієнтовна готовність: нова дата', pickup_hint: 'Інформація для отримання: Мій транспорт', rest_open: 'відкриті залишкові роботи: {n}', locked_by: 'блокує {c} ({p})',
     created: 'Нове повідомлення про пошкодження', created_urgent: 'КРИТИЧНО: нове повідомлення (неперевірене)', received: 'Повідомлення отримано',
-    priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', forwarded: 'Повідомлення передано до майстерні', rejected: 'Повідомлення відхилено', withdrawn: 'Замовлення майстерні завершено без ремонту',
+    priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', forwarded: 'Повідомлення передано до майстерні', rejected: 'Повідомлення відхилено', reopened: 'Повідомлення знову відкрито', withdrawn: 'Замовлення майстерні завершено без ремонту',
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
     quality_check: 'Готово до фінального контролю', rework: 'Потрібна доробка', released: 'Транспорт технічно допущено',
     safety_lock: 'Транспорт заблоковано', safety_lock_lifted: 'Блокування знято', still_locked: 'Транспорт залишається заблокованим (інша відкрита справа)', comment: 'Новий коментар', file_added: 'До повідомлення додано фото/файл', question: 'Уточнення щодо вашого повідомлення', open_item_safety: 'Залишкова робота (безпека)', open_item: 'Нова незавершена робота (майстерня)', open_item_safety_resolved: 'Критичну для безпеки незавершену роботу виконано (майстерня)', handover_missing: 'Бракує ключа або свідоцтва про реєстрацію',
@@ -35,7 +35,7 @@ const T = {
   en: {
     planned_on: 'Workshop date', ready_on: 'ready approx.', ready_changed: 'Expected ready: new date', pickup_hint: 'Pick-up note: My vehicle', rest_open: 'open items: {n}', locked_by: 'locked by {c} ({p})',
     created: 'New damage report', created_urgent: 'CRITICAL: new report (unverified)', received: 'Report received',
-    priority_changed: 'Priority changed', approved: 'New workshop order', forwarded: 'Report handed over to workshop', rejected: 'Report rejected', withdrawn: 'Workshop order ended without repair',
+    priority_changed: 'Priority changed', approved: 'New workshop order', forwarded: 'Report handed over to workshop', rejected: 'Report rejected', reopened: 'Report reopened', withdrawn: 'Workshop order ended without repair',
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
     quality_check: 'Ready for final inspection', rework: 'Rework requested', released: 'Vehicle technically released',
     safety_lock: 'Vehicle locked', safety_lock_lifted: 'Lock lifted', still_locked: 'Vehicle remains locked (another open case)', comment: 'New comment', file_added: 'Photo/file added to the report', question: 'Question about your report', open_item_safety: 'Safety-relevant open item', open_item: 'New open item (workshop)', open_item_safety_resolved: 'Safety-relevant open item resolved (workshop)', handover_missing: 'Key or registration certificate missing', plan_changed: 'Workshop date changed',
@@ -50,7 +50,7 @@ const T = {
 export const nt = (lang, key) => (T[lang] && T[lang][key]) || T.de[key];
 
 // Nicht dringende Ereignisarten, deren Push jede Person für sich abschalten kann (dringende und Sicherheitsereignisse nie)
-export const MUTABLE_KINDS = ['created', 'received', 'priority_changed', 'approved', 'rejected', 'withdrawn', 'acknowledged', 'started', 'waiting_parts', 'resumed',
+export const MUTABLE_KINDS = ['created', 'received', 'priority_changed', 'approved', 'rejected', 'reopened', 'withdrawn', 'acknowledged', 'started', 'waiting_parts', 'resumed',
   'quality_check', 'rework', 'released', 'safety_lock_lifted', 'comment', 'agent_reminder', 'cost_limit', 'cost_approved', 'reassigned_away', 'forwarded', 'open_item', 'handover_missing', 'plan_changed', 'file_added', 'ready_changed'];
 // Titel von Vorgangs-Hinweisen in der aktuellen Sprache der Person anzeigen (gespeichert wird die Sprache zum Zeitpunkt des Versands)
 export function localizedTitle(n, lang) {
@@ -155,7 +155,7 @@ export function localizedBody(n, lang) {
 
 // Abschaltbare Arten, die eine Rolle überhaupt bekommen kann (Empfängerregeln in caseRecipients; 19.10.2026: Fahrer sahen z. B. „Kostenfreigabe
 // nötig“ und „Neuer Werkstattauftrag“). Inhaber/Leitung: alle. Melder-Arten (Eingang, Abgelehnt, Weitergeleitet …) bekommt jede meldende Rolle.
-const REPORTER_KINDS = ['received', 'rejected', 'withdrawn', 'priority_changed', 'forwarded', 'released', 'safety_lock_lifted', 'comment', 'handover_missing'];
+const REPORTER_KINDS = ['received', 'rejected', 'reopened', 'withdrawn', 'priority_changed', 'forwarded', 'released', 'safety_lock_lifted', 'comment', 'handover_missing'];
 const KINDS_BY_ROLE = {
   driver: [...REPORTER_KINDS, 'plan_changed', 'ready_changed'],
   // „Neue Meldung“ erreicht Disposition/Werkstatt nur dringend (nicht abschaltbar) – die Abwahl war wirkungslos (20.10.2026)
@@ -219,6 +219,10 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       if (kind === 'priority_changed' && c.status !== 'gemeldet') add(workshopUsers);
       // Hochstufung auf „kritisch“: wie eine kritische Meldung auch Disposition und (vorgeschlagene) Werkstatt (18.10.2026: erfuhren nichts)
       if (kind === 'priority_changed' && c.priority === 'kritisch') { add(usersByRole(['dispatch'])); add(workshopUsers); }
+      break;
+    case 'reopened':
+      // Backlog 1023: Melder (erfuhr die Ablehnung) und die übrigen Konten der Leitung/Inhaber (Meldung wartet wieder auf Entscheidung)
+      add(reporter); add(usersByRole(['fleet', 'owner']));
       break;
     case 'withdrawn':
       // Auftrag ohne Reparatur beendet: Melder, Werkstatt (Arbeit einstellen) und Disposition (Fahrzeug kommt nicht repariert zurück)

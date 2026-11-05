@@ -34217,6 +34217,49 @@ await test('Backlog 1022 (Blickwinkel „Inhaber wechselt das Handy“): Zwei-Fa
     ok(STRINGS[l].help_login2fa_s.split('|').some((p) => p.includes(STRINGS[l].tf_move)), `${l}: Hilfe nennt den Knopf`);
   }
 });
+await test('Backlog 1023 (Blickwinkel „Leitung lehnt eine Meldung versehentlich ab bzw. der Fahrer widerspricht“): abgelehnte Meldung wieder öffnen (Grund Pflicht, nur Leitung, nicht nach „ohne Reparatur beendet“, Dublette endet, Melder benachrichtigt); DE/UK/EN', async () => {
+  const { e, U, cmd, newCase, toRepair } = await freshWorld(); const db = e.DB.db;
+  const a = await newCase(); const b = await newCase({ description: 'Spiegel links abgebrochen' });
+  eq((await cmd(U.fleet, b, 'reject', { duplicate_of: a })).status, 200);
+  let d = (await U.fleet.get(`/api/cases/${b}`)).data;
+  eq(d.case.status, 'abgelehnt'); ok(d.allowed_actions.includes('reopen'), 'Leitung darf wieder öffnen');
+  ok(!(await U.driver.get(`/api/cases/${b}`)).data.allowed_actions.includes('reopen'), 'Fahrer nicht');
+  eq((await cmd(U.driver, b, 'reopen', {}, 'ist ein anderer Schaden')).status, 403, 'Fahrer abgewiesen');
+  const nr = await cmd(U.fleet, b, 'reopen'); eq(nr.status, 400); eq(nr.data.error, 'note_required');
+  // Fahrzeug inzwischen außer Betrieb → abgewiesen
+  const vid = d.case.vehicle_id;
+  db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(vid);
+  eq((await cmd(U.fleet, b, 'reopen', {}, 'anderer Schaden laut Fahrer')).status, 400, 'außer Betrieb');
+  db.prepare('UPDATE vehicles SET active=1 WHERE id=?').run(vid);
+  const r = await cmd(U.fleet, b, 'reopen', {}, 'anderer Schaden laut Fahrer'); eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.status, 'gemeldet');
+  d = (await U.fleet.get(`/api/cases/${b}`)).data;
+  eq(d.case.status, 'gemeldet'); eq(d.case.closed_at, null); eq(d.case.duplicate_of, null, 'Dublette endet');
+  ok(d.allowed_actions.includes('approve_repair') && d.allowed_actions.includes('reject') && !d.allowed_actions.includes('reopen'), 'wieder zu entscheiden: ' + d.allowed_actions);
+  const ev = d.events.find((x) => x.action === 'reopen');
+  ok(ev && ev.from_status === 'abgelehnt' && ev.to_status === 'gemeldet' && ev.note === 'anderer Schaden laut Fahrer', 'Verlauf mit Grund');
+  const caNo = db.prepare('SELECT case_no FROM cases WHERE id=?').get(a).case_no;
+  eq(ev.payload.was_duplicate_of_no, caNo, 'frühere Dublette im Verlauf');
+  ok(!((await U.fleet.get(`/api/cases/${a}`)).data.duplicates || []).some((x) => x.id === b), 'Original zeigt sie nicht mehr als Dublette');
+  // Melder benachrichtigt (abschaltbar), Handelnde nicht
+  ok((await U.driver.get('/api/notifications')).data.notifications.some((x) => x.kind === 'reopened' && x.case_id === b), 'Melder erfährt es');
+  ok(!(await U.fleet.get('/api/notifications')).data.notifications.some((x) => x.kind === 'reopened'), 'Handelnde nicht');
+  ok((await U.driver.get('/api/me/notify-prefs')).data.kinds.includes('reopened'), 'für Fahrer abschaltbar');
+  // Wiederholung derselben Befehlskennung: kein zweiter Wechsel; erneut ablehnen und wieder öffnen geht
+  eq((await cmd(U.fleet, b, 'reject', {}, 'doch abgelehnt')).status, 200);
+  eq((await cmd(U.fleet, b, 'reopen', {}, 'zweite Prüfung')).status, 200);
+  // „ohne Reparatur beendet“ bleibt abgeschlossen
+  const w = await toRepair(); eq((await cmd(U.fleet, w, 'withdraw_order', {}, 'Totalschaden')).status, 200);
+  ok(!(await U.fleet.get(`/api/cases/${w}`)).data.allowed_actions.includes('reopen'), 'nicht nach ohne Reparatur beendet');
+  eq((await cmd(U.fleet, w, 'reopen', {}, 'versehentlich')).status, 403);
+  // Oberfläche und Texte
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/const needsNote = \[[^\]]*'reopen'/.test(app) && app.includes("case 'reopen': f.push("), 'Formular mit Pflichtgrund und Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const L of ['de', 'uk', 'en']) for (const k of ['act_reopen', 'hev_reopen', 'pk_reopened', 'reopen_hint', 'reopen_dup_hint']) ok(STRINGS[L][k], `${L}.${k}`);
+  ok(fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8').includes("['Bitte Grund angeben, warum die Meldung wieder geöffnet wird.', 'Вкажіть"), 'Fehlertext übersetzt');
+  for (const L of ['de', 'uk', 'en']) ok(STRINGS[L].help_fleet_s.split('|').length >= 2 && STRINGS[L].help_fleet_s.split('|').some((x) => /^(Versehentlich abgelehnt|Відхилено помилково|Rejected by mistake).*(Wieder öffnen|Відкрити знову|Reopen)/.test(x)), 'Hilfe ' + L);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

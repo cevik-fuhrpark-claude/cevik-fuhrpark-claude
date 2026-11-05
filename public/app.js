@@ -3845,7 +3845,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   const box = $('#actform');
   S.openAct = { caseId: c.id, action, preset };
   const f = [];
-  const needsNote = ['change_priority', 'set_safety_lock', 'lift_safety_lock', 'approve_repair', 'reassign_workshop', 'correct_vehicle', 'reject', 'withdraw_order', 'wait_parts', 'parts_partial', 'resolve_open_item', 'resolve_released_item', 'request_quality_check', 'return_for_rework', 'technical_release', 'approve_costs', 'quality_release'];
+  const needsNote = ['change_priority', 'set_safety_lock', 'lift_safety_lock', 'approve_repair', 'reassign_workshop', 'correct_vehicle', 'reject', 'withdraw_order', 'wait_parts', 'parts_partial', 'resolve_open_item', 'resolve_released_item', 'request_quality_check', 'return_for_rework', 'technical_release', 'approve_costs', 'quality_release', 'reopen'];
   const qrel = action === 'quality_release'; // Backlog 629: beide Schritte in einem Formular
   const isQc = action === 'request_quality_check' || qrel; const isRel = action === 'technical_release' || qrel;
   const wsOpts = S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${(c.workshop_site || c.suggested_workshop_site) === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('');
@@ -3871,6 +3871,8 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
       f.push(`<p class="small muted" data-dupcoupled>${esc(t('dup_coupled_hint').replace('{a}', t('act_correct_vehicle')))}</p>`);
       break;
     }
+    // Backlog 1023: versehentlich abgelehnte Meldung wieder öffnen – was danach gilt (Dublette endet, Versicherungsfall bleibt beim Original)
+    case 'reopen': f.push(`<p class="small muted" id="reohint">${esc(t('reopen_hint'))}${c.duplicate_of ? ' ' + esc(t('reopen_dup_hint')) : ''}</p>`); break;
     case 'approve_costs': f.push(`<p class="small muted">${esc(t('cost_approve_hint'))}</p>${extDocList(d)}`); break;
     case 'acknowledge': f.push(`<label>${esc(t('planned'))}</label><input type="date" name="planned_date">`); break;
     case 'wait_parts': f.push(`<label>${esc(t('parts_eta'))}<span class="hint">${esc(t('parts_eta_hint'))}</span></label><input type="date" name="parts_expected_date" min="${bDate()}">`); break;

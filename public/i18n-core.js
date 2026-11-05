@@ -414,6 +414,7 @@ const V_MORE = [
   ['Voraussichtliche Fertigstellung liegt mehr als ein Jahr in der Zukunft.', 'Орієнтовна дата готовності більш ніж через рік.', 'The expected ready date is more than a year in the future.'],
   ['Voraussichtliche Fertigstellung liegt vor dem Werkstatttermin.', 'Орієнтовна дата готовності раніше за термін у майстерні.', 'The expected ready date is before the workshop appointment.'],
   ['Voraussichtliche Fertigstellung ist unverändert.', 'Орієнтовну дату готовності не змінено.', 'The expected ready date is unchanged.'],  ['Datum laut Rechnung ungültig (JJJJ-MM-TT).', 'Недійсна дата за рахунком (РРРР-ММ-ДД).', 'Invalid date per invoice (YYYY-MM-DD).'],
+  ['Bitte Grund angeben, warum die Meldung wieder geöffnet wird.', 'Вкажіть причину, чому повідомлення знову відкривається.', 'Please state why the report is being reopened.'],
   ['Datum laut Rechnung darf nicht in der Zukunft liegen.', 'Дата за рахунком не може бути в майбутньому.', 'The date per invoice must not be in the future.'],
 ];
 for (const [de, uk, en] of V_MORE) { VALIDATION_TEXTS.uk[de] = uk; VALIDATION_TEXTS.en[de] = en; }
@@ -1291,6 +1292,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // 05.11.2026 (Backlog 1018, Blickwinkel „Vorgangs-Link per Messenger weitergeleitet“): Fehlerseite bei Vorgang/Bußgeld aus der anderen Umgebung bzw. ohne Zugriff
 // Backlog 1020: Aufnahmezeit laut Kamera an Fotos des Vorgangs
 // Backlog 1021: Foto laut Kamera älter als Schadenzeitpunkt bzw. heute (nur Hinweis)
+// Backlog 1023: abgelehnte Meldung wieder öffnen
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
