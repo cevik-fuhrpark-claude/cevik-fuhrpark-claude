@@ -1510,6 +1510,7 @@ await test('Eingabefehler des Servers (validation) in der App-Sprache: Vorlagen 
     ['`${field}: ganze Zahl.`', 'km-Kontingent: ganze Zahl.', 'Ліміт пробігу: ціле число.', 'Mileage allowance: whole number.'],
     ['`Maximal ${MAX_IMPORT} Zeilen je Import.`', 'Maximal 2000 Zeilen je Import.', 'Не більше 2000 рядків за один імпорт.', 'At most 2000 rows per import.'],
     ['`Datumsspalte „${table[0][dateHead]}“ nicht zugeordnet – bitte „Beginn“ und „Ende“ als Spaltennamen verwenden.`', 'Datumsspalte „Policenstart“ nicht zugeordnet – bitte „Beginn“ und „Ende“ als Spaltennamen verwenden.', 'Стовпець дати «Policenstart» не розпізнано – використайте назви стовпців «Beginn» (початок) і «Ende» (кінець).', 'Date column “Policenstart” not assigned – please use “Beginn” (start) and “Ende” (end) as column names.'],
+    ['`Spalte „${table[0][ph]}“ enthält einen Jahres-, Halbjahres- bzw. Quartalsbetrag – bitte die Monatsrate netto als Spalte „Monatsrate netto“ angeben (Beträge werden nicht umgerechnet).`', 'Spalte „Jahresbeitrag“ enthält einen Jahres-, Halbjahres- bzw. Quartalsbetrag – bitte die Monatsrate netto als Spalte „Monatsrate netto“ angeben (Beträge werden nicht umgerechnet).', 'Стовпець «Jahresbeitrag» містить річну, піврічну або квартальну суму – вкажіть щомісячний платіж нетто як стовпець «Monatsrate netto» (суми не перераховуються).', 'Column “Jahresbeitrag” contains an annual, half-yearly or quarterly amount – please provide the net monthly rate as the column “Monatsrate netto” (amounts are not converted).'],
     ['`Maximal ${MAX_ROWS} Zeilen je Import.`', 'Maximal 500 Zeilen je Import.', 'Не більше 500 рядків за один імпорт.', 'At most 500 rows per import.'],
     ['`Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`', 'Höchstens 20 aktive Hinweise je Fahrzeug – bitte erledigte archivieren.', 'Не більше 20 активних приміток на транспорт – заархівуйте виконані.', 'At most 20 active notes per vehicle – please archive completed ones.'],
     ['`Fahrzeugart unbekannt: ${raw} (Lkw oder Anhänger)`', 'Fahrzeugart unbekannt: Bus (Lkw oder Anhänger)', 'Невідомий тип транспорту: Bus (Lkw або Anhänger)', 'Unknown vehicle type: Bus (Lkw or Anhänger)'],
@@ -33700,6 +33701,51 @@ await test('Backlog 1003 (Blickwinkel „Mietauflieger/Kühlaggregat: Zähler ze
   ok(app.includes("const fu = kmForeignUnit(el.value); if (fu) { el.setCustomValidity(t(fu === 'mi' ? 'km_mi' : 'km_hrs')); el.dataset.cfpFx = '1';"), 'Feldhinweis am km-Feld');
   ok(app.includes('e.target.dataset.cfpFx && e.target.validationMessage ? e.target.validationMessage'), 'Abfahrtskontrolle zeigt die Erklärung statt „nur als ganze Zahl“');
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-km-meilen.py|'), 'UI-Skript in pruefen.sh');
+});
+
+await test('Backlog 1004 (Blickwinkel „Versicherung und Kfz-Steuer werden jährlich bezahlt – Leitung trägt die Jahresprämie ein“): „4.800 € jährlich“, „Jahresbeitrag 4800“, „1.200 € vierteljährlich“, „4800 на рік“ im Feld Monatsrate mit eigener Meldung DE/UK/EN, nie umgerechnet; „450 €/Monat“, „mtl. 450“ übernommen; CSV-Spalte „Leasingrate p.a.“/„Jahresbeitrag“ abgewiesen statt still übernommen bzw. ignoriert; Hinweis am Feld', async () => {
+  const { num } = await import('../src/util.js'); const { ratePeriod } = await import('../public/hours.js');
+  const o = { min: 0, max: 1000000, field: 'Monatsrate', nullable: true, net: true, cents: true, monthly: true };
+  for (const [v, p] of [['4.800 € jährlich', 'Jahresbetrag'], ['4800 p.a.', 'Jahresbetrag'], ['4.800,00 EUR p. a.', 'Jahresbetrag'], ['Jahresbeitrag 4800', 'Jahresbetrag'], ['Jahresprämie: 4.800,00 €', 'Jahresbetrag'], ['Kfz-Steuer 900 jährlich', 'Jahresbetrag'],
+    ['4800 € netto p.a.', 'Jahresbetrag'], ['4800 brutto jährlich', 'Jahresbetrag'], ['4800 на рік', 'Jahresbetrag'], ['900 щорічно', 'Jahresbetrag'], ['4800 per year', 'Jahresbetrag'], ['annual premium 4800', 'Jahresbetrag'], ['4800 je Jahr', 'Jahresbetrag'],
+    ['2400 halbjährlich', 'Halbjahresbetrag'], ['2400 € halbjährl.', 'Halbjahresbetrag'], ['1.200 € vierteljährlich', 'Quartalsbetrag'], ['1200/Quartal', 'Quartalsbetrag'], ['1200 щоквартально', 'Quartalsbetrag'], ['1,200 quarterly', 'Quartalsbetrag']]) {
+    let e = null; try { num(v, o); } catch (x) { e = x; }
+    eq(e && e.message, `Monatsrate: „${v}“ ist ein ${p} – bitte die Monatsrate laut Vertrag eingeben (die App rechnet nicht um; Zahlweise gern in die Bemerkung).`, v);
+  }
+  for (const [v, x] of [['450 €/Monat', 450], ['mtl. 450', 450], ['450 monthly', 450], ['Monatsrate 450,50', 450.5], ['450 € netto monatlich', 450], ['450 zzgl. MwSt. monatlich', 450], ['450 pro Monat', 450], ['450 щомісяця', 450], ['450,- mtl.', 450], ['450', 450], ['1.099,90 €', 1099.9]]) eq(num(v, o), x, v);
+  // ohne `monthly` (andere Betragsfelder) und Fehlformen unverändert: nichts wird als Zahlweise gedeutet
+  for (const v of ['12 Monate', 'jährlich', 'ca. 4800 jährlich', '450', '450 €', 'Jahr 2026']) eq(ratePeriod(v), null, 'keine Zahlweise: ' + v);
+  { let e = null; try { num('4800 jährlich', { field: 'Betrag', cents: true, net: true }); } catch (x) { e = x; } ok(e && !/Jahresbetrag/.test(e.message), 'anderes Betragsfeld wie bisher'); }
+  // Ende-zu-Ende: Vertrag erfassen – abgewiesen, nichts gespeichert; „450 €/Monat“ gespeichert
+  const { U, V1 } = await freshWorld();
+  let r = await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Muster-Versicherung', evidence: 'Police 2027', monthly_rate_net: '4.800 € jährlich' });
+  eq(r.status, 400); ok(/ist ein Jahresbetrag/.test(JSON.stringify(r.data)), 'Meldung ' + JSON.stringify(r.data));
+  eq(((await U.fleet.get(`/api/vehicles/${V1}`)).data.contracts || []).length, 0, 'nichts gespeichert');
+  r = await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', partner: 'Muster-Versicherung', evidence: 'Police 2027', monthly_rate_net: '400 €/Monat' }); eq(r.status, 201, JSON.stringify(r.data));
+  eq((await U.fleet.get(`/api/vehicles/${V1}`)).data.contracts[0].monthly_rate_net, 400, 'Monatsrate gespeichert');
+  // CSV-Import: Spalte mit Jahres-/Quartalsbetrag statt Monatsrate → Meldung (vorher „Leasingrate p.a.“ still als Monatsrate, „Jahresbeitrag“ still ignoriert)
+  const imp = (csv, q = '?dry_run=1') => U.fleet.req('POST', '/api/contracts/import' + q, csv, { 'content-type': 'text/csv' });
+  for (const h of ['Leasingrate p.a.', 'Jahresbeitrag', 'Prämie jährlich', 'Quartalsrate', 'Beitrag (vierteljährlich)']) {
+    r = await imp(`Kennzeichen;Vertragsart;Vertragspartner;${h};Nachweis\nSZ-YC 5513;Versicherung;V-AG;4800;Police\n`);
+    eq(r.status, 400, h); eq(r.data.error && r.data.error.message || r.data.message, `Spalte „${h}“ enthält einen Jahres-, Halbjahres- bzw. Quartalsbetrag – bitte die Monatsrate netto als Spalte „Monatsrate netto“ angeben (Beträge werden nicht umgerechnet).`, h + ' ' + JSON.stringify(r.data));
+  }
+  r = await imp('Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Monatsrate netto;Jahresbeitrag;Nachweis\nSZ-YC 5513;Versicherung;V-AG;P-1;400;4800;Police\n'); eq(r.status, 200, 'Monatsrate neben Jahresbeitrag ' + JSON.stringify(r.data)); eq(r.data.rows[0].monthly_rate_net, 400);
+  r = await imp('Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Monatsrate;Nachweis\nSZ-YC 5513;Versicherung;V-AG;P-2;4.800 € jährlich;Police\nSZ-KC 5515;Versicherung;V-AG;P-3;450 €/Monat;Police\n');
+  eq(r.status, 200); eq(r.data.skipped.length, 1); eq(r.data.skipped[0].reason, 'Monatsrate: „4.800 € jährlich“ ist ein Jahresbetrag – bitte die Monatsrate laut Vertrag angeben (die App rechnet nicht um).', JSON.stringify(r.data.skipped)); eq(r.data.rows.find((x) => x.contract_no === 'P-3').monthly_rate_net, 450, 'Zelle „450 €/Monat“');
+  // Übersetzung der Server-Meldungen und Importgründe
+  const { translateValidation, STRINGS, IMPORT_REASONS_TPL } = await import('../public/i18n.js');
+  const m = 'Monatsrate: „4.800 € jährlich“ ist ein Jahresbetrag – bitte die Monatsrate laut Vertrag eingeben (die App rechnet nicht um; Zahlweise gern in die Bemerkung).';
+  ok(/“4\.800 € jährlich” is an annual amount/.test(translateValidation('en', m) || ''), 'EN: ' + translateValidation('en', m));
+  ok(/«4\.800 € jährlich» – це річна сума/.test(translateValidation('uk', m) || ''), 'UK: ' + translateValidation('uk', m));
+  ok(/quarterly amount/.test(translateValidation('en', m.replace('Jahresbetrag', 'Quartalsbetrag')) || ''), 'EN Quartal');
+  const col = 'Spalte „Jahresbeitrag“ enthält einen Jahres-, Halbjahres- bzw. Quartalsbetrag – bitte die Monatsrate netto als Spalte „Monatsrate netto“ angeben (Beträge werden nicht umgerechnet).';
+  ok(/Column “Jahresbeitrag” contains an annual/.test(translateValidation('en', col) || '') && /Стовпець «Jahresbeitrag»/.test(translateValidation('uk', col) || ''), 'Spaltenmeldung EN/UK');
+  ok(IMPORT_REASONS_TPL.some((re) => re.test('Monatsrate: „4.800 € jährlich“ ist ein Jahresbetrag – bitte die Monatsrate laut Vertrag angeben (die App rechnet nicht um).')), 'Importgrund übersetzt');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].rate_per && STRINGS[l].rp_year && STRINGS[l].rp_half && STRINGS[l].rp_quarter, 'Feldhinweis ' + l);
+  ok(/4\.800 € jährlich/.test(STRINGS.de.help_contracts_s) && /4800 на рік/.test(STRINGS.uk.help_contracts_s) && /4,800 per year/.test(STRINGS.en.help_contracts_s), 'Hilfe DE/UK/EN');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/import \{[^}]*ratePeriod[^}]*\} from '\.\/hours\.js'/.test(app) && app.includes("if (el.name === 'monthly_rate_net') { const rp = ratePeriod(el.value);"), 'Feldhinweis am Monatsrate-Feld');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-monatsrate-zahlweise.py|'), 'UI-Skript in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

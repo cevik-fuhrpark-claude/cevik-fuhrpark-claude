@@ -1,5 +1,5 @@
 // [CLAUDE] Hilfsfunktionen ohne externe Abhängigkeiten (Cloudflare Workers / WebCrypto)
-import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty, moneyIn, moneyForeign, KM_UNIT_RX, unitIn, kmForeignUnit } from '../public/hours.js';
+import { parseHours, H_UNIT, unitKey, unitGroup, unitCanon, parseQty, moneyIn, moneyForeign, KM_UNIT_RX, unitIn, kmForeignUnit, ratePeriod } from '../public/hours.js';
 
 export const nowIso = () => new Date().toISOString();
 // Zeitstempel für Änderungen mit Vergleich auf den gelesenen Stand (updated_at): immer später als der alte Wert, auch bei gleicher Millisekunde
@@ -283,7 +283,8 @@ export function qtyNum(v, unit, opts = {}) {
   }
   return num(v, { ...opts, field });
 }
-export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, money = false, net = false, unit = null, decimalComma = false, decimalPoint = false } = {}) {
+export const RATE_PERIOD_DE = { year: 'Jahresbetrag', half: 'Halbjahresbetrag', quarter: 'Quartalsbetrag' };
+export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, money = false, net = false, unit = null, monthly = false, decimalComma = false, decimalPoint = false } = {}) {
   if ((v === null || v === undefined || v === '') && nullable) return null;
   let n;
   if (typeof v === 'number') n = v;
@@ -291,6 +292,9 @@ export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullab
     // nur Text oder Zahl (17.10.2026: Liste ['7'] galt als 7, true als 1); leer ohne nullable → 400 statt still 0
     if (typeof v !== 'string') throw bad('validation', `${field}: ungültige Zahl.`);
     let t = v.trim();
+    // Backlog 1004: Feld „Monatsrate“ – Zahlweise monatlich („450 €/Monat“, „mtl. 450“) wird entfernt; Jahres-/Halbjahres-/Quartalsbetrag
+    // („4.800 € jährlich“, „Jahresbeitrag 4800“, „1.200 € vierteljährlich“) mit eigener Meldung abgewiesen – nie umgerechnet
+    if (monthly) { const rp = ratePeriod(t); if (rp && rp.period !== 'month') throw bad('validation', `${field}: „${t.replace(/\s+/g, ' ').slice(0, 40)}“ ist ein ${RATE_PERIOD_DE[rp.period]} – bitte die Monatsrate laut Vertrag eingeben (die App rechnet nicht um; Zahlweise gern in die Bemerkung).`); if (rp) t = rp.value; }
     // Einheit aus kopierten Werten (Rechnung/PDF/Nachricht/App-Anzeige, Backlog 897): Geldbetrag „1.234,56 €“/„EUR 99“, km-Stand „123.456 km“/„123 456 км“
     // Backlog 971 (Blickwinkel „Leitung erfasst die Rechnung einer Fremdwerkstatt am Handy“): Nettofelder (`net`) nehmen „netto“/„net“/„нетто“ bzw. „zzgl./ohne MwSt.“, „excl./plus VAT“, „без ПДВ“
     // vor oder hinter dem Betrag an; ein ausdrücklich als „brutto“/„gross“/„inkl. MwSt.“ bezeichneter Betrag wird mit eigener Meldung abgewiesen

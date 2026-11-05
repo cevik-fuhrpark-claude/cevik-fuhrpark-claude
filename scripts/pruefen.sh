@@ -365,6 +365,7 @@ UI-Teile diktiert: Zahlwörter im Mengenfeld, Menge aus dem Teilenamen per Knopf
 UI-Betrag diktiert: „240 Euro 50“/„50 Cent“ beim Verlassen des Betragsfelds in Ziffern, gebucht als 240,50, DE/UK/EN 390/820/1366|ui-betrag-diktat.py|/tmp/cfp-betrag-diktat.log
 UI-km diktiert: „123.456 Kilometer“/„123 456 кілометрів“ in Abfahrtskontrolle (Feld gültig) und Fahrzeugakte (gespeichert), DE/UK/EN 390/820/1366|ui-km-diktat.py|/tmp/cfp-km-diktat.log
 UI-km Meilen/Betriebsstunden: „152.000 mi“/„1.234 h“ im km-Feld erklärt, nicht gespeichert, nach Korrektur gespeichert, DE/UK/EN 390/820/1366|ui-km-meilen.py|/tmp/cfp-km-meilen.log
+UI-Monatsrate Zahlweise: „4.800 € jährlich“ im Feld Monatsrate erklärt, nicht gespeichert; „400 €/Monat“ als 400 gespeichert, DE/UK/EN 390/820/1366|ui-monatsrate-zahlweise.py|/tmp/cfp-monatsrate-zahlweise.log
 UI-Reifen diktiert: „Profil 6,5 Millimeter“/„6,5 мм“ und „8,5 bar“/„тиск 9 бар“ in der Fahrzeugakte (Feld umgeschrieben, gespeichert), DE/UK/EN 390/820/1366|ui-reifen-diktat.py|/tmp/cfp-reifen-diktat.log
 UI-Intervall diktiert: „alle 12 Monate“/„12 місяців“ und „alle 100.000 km“ im Prüftermin der Fahrzeugakte (umgeschrieben, gespeichert, maxlength), DE/UK/EN 390/820/1366|ui-intervall-diktat.py|/tmp/cfp-intervall-diktat.log
 UI-Reifengröße Schreibweise: „315 70 R 22,5“/„315/70 Р22,5“/„315/70r22.5 154/150 l“ ohne Hinweis andere Größe, beim Verlassen „315/70 R22.5“, Wechsel gespeichert; „315/80“ mit Hinweis, DE/UK/EN 390/820/1366|ui-reifengroesse-schreibweise.py|/tmp/cfp-reifengroesse-schreibweise.log

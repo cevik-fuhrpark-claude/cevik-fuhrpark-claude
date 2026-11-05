@@ -6,6 +6,7 @@ import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
 import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, normPlate, normalizeVin, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso, maxFutureDate, berlinDaySql } from './util.js';
 import { audit } from './auth.js';
+import { ratePeriod } from '../public/hours.js';
 import { latestKmByVehicle, kmDigitsPrev, csvCell, csvText, KM_DROP_SQL, parseKmDrop, PLATE_FORMER_SKIP, plateFormerOther, formerPlatesAll } from './maintenance.js';
 import { siteSelection } from './reports.js';
 import { SETTING_DEFAULTS } from './settings.js';
@@ -111,7 +112,7 @@ function readBody(body, existing = {}, user = null) {
     notice_months: intOrNull(pick('notice_months'), 'Kündigungsfrist (Monate)', 60),
     km_allowance: intOrNull(pick('km_allowance'), 'km-Kontingent', 5000000),
     start_km: intOrNull(pick('start_km'), 'km bei Übernahme', 9999999),
-    monthly_rate_net: num(pick('monthly_rate_net'), { min: 0, max: 1000000, field: 'Monatsrate', nullable: true, net: true, cents: true, ...(user ? { decimalComma: commaDec(user), decimalPoint: pointDec(user) } : {}) }),
+    monthly_rate_net: num(pick('monthly_rate_net'), { min: 0, max: 1000000, field: 'Monatsrate', nullable: true, net: true, cents: true, monthly: true, ...(user ? { decimalComma: commaDec(user), decimalPoint: pointDec(user) } : {}) }),
     evidence: str(pick('evidence'), { required: true, max: 300, field: 'Nachweis' }),
     note: str(pick('note'), { max: 1000, field: 'Bemerkung' }),
   };
@@ -630,6 +631,10 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   }
   // Brutto-Rate („inkl. MwSt.“, „gross“) ist keine Netto-Rate (18.10.2026: wurde still 19 % zu hoch übernommen); „zzgl./netto/exkl.“ bleibt netto
   const isGrossOrCount = (h) => h.includes('anzahl') || h.includes('brutto') || (/inkl|gross|mwst|\bust\b/.test(h) && !/zzgl|netto|exkl|ohne/.test(h));
+  // Backlog 1004: Rate/Beitrag je Jahr, Halbjahr oder Quartal („Leasingrate p.a.“, „Jahresbeitrag“, „Prämie jährlich“, „Quartalsrate“) ist keine
+  // Monatsrate – vorher wurde „Leasingrate p.a.“ still als Monatsrate übernommen (zwölffach in Vertragsraten/Jahreskosten), „Jahresbeitrag“ still ignoriert
+  const isPeriodic = (h) => /^(jahres|halbjahres|quartals)/.test(h) || /viertelj|quartal|halbj/.test(h) || (isAnnual(h) && !/^monat/.test(h));
+  const rateLike = (h) => /^(rate|leasingrate|mietrate|monatsrate|beitrag|prämie|praemie|versicherungsbeitrag|versicherungsprämie|versicherungspraemie|kfz-steuer|steuer|jahresbeitrag|jahresprämie|jahrespraemie|jahresrate|jahresmiete|halbjahresbeitrag|halbjahresrate|quartalsbeitrag|quartalsrate)/.test(h);
   // Kündigungsfrist in Tagen/Wochen ist keine Monatsangabe (18.10.2026: 30 Tage galten still als 30 Monate)
   if (head.some((h) => /^(kündigung|kuendigung)/.test(h) && /tag|woche/.test(h))) throw bad('validation', 'Kündigungsfrist in Tagen oder Wochen erkannt – bitte in Monaten angeben (Spalte „Kündigungsfrist (Monate)“; Tage/Wochen werden nicht umgerechnet).');
   // FIN/Fahrgestell ohne Anhänger-/Aufliegerspalten („FIN Anhänger“ ist nicht die Fahrzeug-FIN; 21.10.2026: Lkw-Vertrag landete am Anhänger)
@@ -638,11 +643,13 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     partner: col(['vertragspartner', 'partner', 'leasinggeber', 'vermieter', 'versicherer', 'gesellschaft']), no: col(['vertragsnummer', 'vertrags-nr', 'vertragsnr', 'vertrag nr', 'vertrag-nr', 'police', 'versicherungsschein', 'versicherungsnummer', 'vsnr', 'nummer', 'nr'], (h) => /schild|kennz|kfz-nr|amtl/.test(h)), // auch Versicherungsköpfe (19.10.2026)
     start: col(['vertragsbeginn', 'laufzeitbeginn', 'leasingbeginn', 'mietbeginn', 'versicherungsbeginn', 'policenbeginn', 'beginn', 'start', 'gültig ab', 'gueltig ab', 'gültig von', 'gueltig von']), end: col(['vertragsende', 'laufzeitende', 'leasingende', 'mietende', 'versicherungsende', 'policenende', 'ende', 'ablauf', 'gültig bis', 'gueltig bis']), notice: col(['kündigungsfrist', 'kuendigungsfrist', 'kündigung', 'kuendigung']),
     allowance: col(['km-kontingent', 'km kontingent', 'kontingent', 'laufleistung'], isAnnual), start_km: col(['km bei übernahme', 'km bei uebernahme', 'übernahme', 'uebernahme', 'km-stand bei']),
-    rate: col(['monatsrate netto', 'monatsrate (netto)', 'rate netto', 'leasingrate netto', 'leasingrate (netto)', 'mietrate netto', 'monatliche rate', 'rate (netto)', 'monatsrate', 'leasingrate', 'mietrate', 'rate'], isGrossOrCount), ev: col(['nachweis', 'beleg', 'quelle', 'datei']), note: col(['bemerkung', 'notiz']) };
+    rate: col(['monatsrate netto', 'monatsrate (netto)', 'rate netto', 'leasingrate netto', 'leasingrate (netto)', 'mietrate netto', 'monatliche rate', 'rate (netto)', 'monatsrate', 'leasingrate', 'mietrate', 'rate'], (h) => isGrossOrCount(h) || isPeriodic(h)), ev: col(['nachweis', 'beleg', 'quelle', 'datei']), note: col(['bemerkung', 'notiz']) };
   // Datumsspalte erkannt, aber keiner Spalte Beginn/Ende zugeordnet (z. B. „Hauptfälligkeit“-Varianten): nicht still ohne Laufzeit anlegen (23.10.2026:
   // „Versicherungsbeginn/-ende“ ergaben Verträge ohne Beginn/Ende – nie „läuft aus“, beim Re-Import doppelt)
   const dateHead = head.findIndex((h, i) => { const b = h.replace(/\s*\(.*\)$/, ''); return i !== ci.start && i !== ci.end && !/km|prognose/.test(b) && /(beginn|ende|ablauf)$|^gültig|^gueltig/.test(b); });
   if (dateHead >= 0) throw bad('validation', `Datumsspalte „${table[0][dateHead]}“ nicht zugeordnet – bitte „Beginn“ und „Ende“ als Spaltennamen verwenden.`);
+  { const ph = ci.rate < 0 ? head.findIndex((h) => rateLike(h) && isPeriodic(h)) : -1;
+    if (ph >= 0) throw bad('validation', `Spalte „${table[0][ph]}“ enthält einen Jahres-, Halbjahres- bzw. Quartalsbetrag – bitte die Monatsrate netto als Spalte „Monatsrate netto“ angeben (Beträge werden nicht umgerechnet).`); }
   const fallbackEv = str(source, { max: 300, field: 'Quelle' });
   if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte „Kennzeichen“ oder „FIN“ erforderlich.');
   if (ci.kind < 0) throw bad('validation', 'Spalte „Vertragsart“ erforderlich.');
@@ -680,8 +687,14 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     }
     for (const [k, c] of [['notice_months', ci.notice], ['km_allowance', ci.allowance], ['start_km', ci.start_km], ['monthly_rate_net', ci.rate]]) {
       // „3 Monate“ in der Spalte Kündigungsfrist: Einheit entfernen (wurde als „Zahl nicht erkannt“ übersprungen)
-      const n = parseDeNum(k === 'notice_months' ? get(cells, c).replace(/\s*(monate?|mon\.?|mo\.?)\s*$/i, '') : get(cells, c));
-      if (Number.isNaN(n)) return skip(`Zahl nicht erkannt: ${get(cells, c)}`);
+      // Backlog 1004: Zahlweise in der Zelle („450 €/Monat“ übernommen; „4.800 € jährlich“ übersprungen, nie umgerechnet)
+      let cell = get(cells, c);
+      if (k === 'monthly_rate_net') { const rp = ratePeriod(cell); const cv = cell.slice(0, 40);
+        if (rp && rp.period === 'year') return skip(`Monatsrate: „${cv}“ ist ein Jahresbetrag – bitte die Monatsrate laut Vertrag angeben (die App rechnet nicht um).`);
+        if (rp && rp.period === 'half') return skip(`Monatsrate: „${cv}“ ist ein Halbjahresbetrag – bitte die Monatsrate laut Vertrag angeben (die App rechnet nicht um).`);
+        if (rp && rp.period === 'quarter') return skip(`Monatsrate: „${cv}“ ist ein Quartalsbetrag – bitte die Monatsrate laut Vertrag angeben (die App rechnet nicht um).`); if (rp) cell = rp.value.replace(/\s*(netto|net|нетто|(zzgl\.?|ohne|plus|excl\.?)\s*(mwst|ust|vat)\.?)$/i, '').replace(/^(netto|net)\s*/i, ''); }
+      const n = parseDeNum(k === 'notice_months' ? cell.replace(/\s*(monate?|mon\.?|mo\.?)\s*$/i, '') : cell);
+      if (Number.isNaN(n)) return skip(`Zahl nicht erkannt: ${cell}`);
       body[k] = n;
     }
     let f;

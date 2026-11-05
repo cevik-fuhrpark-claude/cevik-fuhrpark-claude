@@ -9,7 +9,7 @@ import { dataQualityCsv, dqDetailText, defectItemsCsv, defectVehiclesCsv, agentF
 import { helpMatches, helpNorm } from './help.js';
 import { BUILD_VERSION } from './build-version.js';
 import { federalHoliday, STATES } from './holidays.js';
-import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, moneyForeign, kmIn, kmForeignUnit, unitIn, tireSizeSame, tireSizeFmt } from './hours.js';
+import { parseHours, durationIn, H_UNIT as H_U, parseQty, qtyIn, unitCanon, moneyIn, moneyForeign, kmIn, kmForeignUnit, ratePeriod, unitIn, tireSizeSame, tireSizeFmt } from './hours.js';
 import { reachableNow, dayRanges, coverageGaps, windowsOf, MORE_MAX, nextOpen, tzDiff, nextOpenLocal, holidayGaps, phoneIn } from './emhours.js';
 
 // [CLAUDE] Backlog 794: Lookbehind-Ausdrücke auch in Safari/iOS < 16.4 (eingesetzt von scripts/build-app.mjs, Erklärung dort)
@@ -690,6 +690,9 @@ document.addEventListener('change', (e) => {
   if (!(MONEY_FIELD.test(el.name || '') || el.id === 'ie_price' || /^rcp\d+$/.test(el.id || ''))) return;
   // Backlog 1001: fremde Währung („1.250 zł“, „PLN 1250“) gleich am Feld melden (der Server weist sie ebenso ab) – nie umrechnen
   const fx = moneyForeign(el.value); if (fx) { el.setCustomValidity(t('money_fx').replace('{c}', () => fx)); el.dataset.cfpFx = '1'; el.reportValidity(); return; }
+  // Backlog 1004: Monatsrate – Jahres-/Halbjahres-/Quartalsbetrag gleich am Feld erklären (der Server weist ihn ebenso ab), „450 €/Monat“ nur von der Zahlweise befreien
+  if (el.name === 'monthly_rate_net') { const rp = ratePeriod(el.value); if (rp && rp.period !== 'month') { el.setCustomValidity(t('rate_per').replace('{p}', () => t('rp_' + rp.period))); el.dataset.cfpFx = '1'; el.reportValidity(); return; }
+    if (rp) { el.value = rp.value; el.dispatchEvent(new Event('input', { bubbles: true })); } }
   const w = moneyIn(el.value); if (w === null) return;
   const v = /^\d+\.\d{2}$/.test(w) ? decIn(w) : w; if (v === el.value) return;
   el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));

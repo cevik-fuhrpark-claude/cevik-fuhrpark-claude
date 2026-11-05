@@ -251,6 +251,42 @@ const HR_W = 'h|hrs?|hours?|std|stdn|stunden|betriebsstunden|motorstunden|bh|г�
 const HR_L = 'betriebsstunden(?:stand)?|motorstunden|stundenzähler(?:stand)?|stundenzaehler|engine\\s+hours|operating\\s+hours|hour\\s*meter|мотогодини|мотогодин|моточасы|моточасов';
 const MI_RX = new RegExp(`^(?:meilen(?:stand)?|miles)\\s*[:.=]?\\s*${KMU_NUM}(?:\\s*(?:${MI_W})\\.?)?$|^(?:(?:km[-\\s]?stand|kilometerstand|tacho(?:stand)?|odometer|mileage|пробіг|пробег)\\s*[:.=]?\\s*)?${KMU_NUM}\\s*(?:${MI_W})\\.?$`, 'i');
 const HR_RX = new RegExp(`^(?:${HR_L})\\s*[:.=]?\\s*${KMU_NUM}(?:\\s*(?:${HR_W})\\.?)?$|^${KMU_NUM}\\s*(?:${HR_W})\\.?$`, 'i');
+// Backlog 1004 (Blickwinkel „Versicherung und Kfz-Steuer werden jährlich bezahlt – Leitung trägt die Jahresprämie ein“): Das Vertragsfeld heißt
+// „Monatsrate netto“; „4.800 € jährlich“, „4800 p.a.“, „Jahresbeitrag 4800“, „1.200 € vierteljährlich“, „4800 на рік“ wurden nur als „ungültige Zahl“
+// abgewiesen – und eine nackte Jahresprämie läuft als zwölffache Monatsrate in Vertragsraten/Jahreskosten. Erkannt wird ein Betrag mit Zahlweise
+// hinten (bzw. Bezeichnung vorn). Monatlich („450 €/Monat“, „mtl. 450“, „450 monthly“) wird nur von der Zahlweise befreit; Jahr/Halbjahr/Quartal
+// ergeben eine eigene Meldung – nie umgerechnet (Zahlweise und Fälligkeit stehen im Vertrag). Ohne Lookbehind (ältere iOS, Backlog 794).
+const RP_B = '(?:^|[^a-zäöüßа-яіїєґё])';
+const RP_W = {
+  half: 'halbjährlich|halbjaehrlich|halbjährl\\.?|halbjaehrl\\.?|(?:pro|je|im|/)\\s*halbjahr|half[-\\s]?yearly|semi[-\\s]?annual(?:ly)?|per\\s+half[-\\s]year|(?:раз\\s+)?(?:на|за)\\s+півроку|(?:раз\\s+)?(?:в|за)\\s+полгода',
+  quarter: 'vierteljährlich|vierteljaehrlich|vierteljährl\\.?|quartalsweise|(?:pro|je|im|/)\\s*quartal|quarterly|per\\s+quarter|/\\s*(?:quarter|qtr)|щоквартально|(?:на|за|/)\\s*квартал|ежеквартально|(?:в|за)\\s+квартал',
+  year: 'jährlich|jaehrlich|jährl\\.?|jaehrl\\.?|p\\.?\\s?a\\.?|(?:pro|je|im|/)\\s*jahr|yearly|annually|per\\s+(?:year|annum)|a\\s+year|/\\s*(?:year|yr)|щорічно|(?:на|за|/)\\s*рік|(?:в|за|/)\\s*год|ежегодно',
+  month: 'monatlich|mtl\\.?|(?:pro|je|im|/)\\s*monat|monthly|per\\s+month|a\\s+month|/\\s*(?:month|mo)|щомісяця|щомісячно|(?:на|за|/)\\s*місяць|(?:в|за)\\s+месяц|ежемесячно',
+};
+const RP_L = {
+  half: 'halbjahresbeitrag|halbjahresprämie|halbjahrespraemie|halbjahresrate|halbjahresbetrag',
+  quarter: 'quartalsbeitrag|quartalsprämie|quartalspraemie|quartalsrate|quartalsbetrag|quarterly\\s+(?:premium|rate|fee|amount)',
+  year: 'jahresbeitrag|jahresprämie|jahrespraemie|jahresrate|jahresmiete|jahresbetrag|annual\\s+(?:premium|rate|fee|amount)|річний\\s+внесок|річна\\s+премія|годовой\\s+взнос',
+  month: 'monatsrate|monatsbeitrag|monatsmiete|monatlich|mtl\\.?|monthly\\s+(?:rate|premium|fee)|щомісячний\\s+платіж|ежемесячный\\s+платеж',
+};
+const RP_SUF = Object.fromEntries(Object.entries(RP_W).map(([k, w]) => [k, new RegExp(`${RP_B}(?:${w})\\.?$`, 'i')]));
+const RP_PRE = Object.fromEntries(Object.entries(RP_L).map(([k, w]) => [k, new RegExp(`^(?:${w})(?:\\s*\\(?netto\\)?)?\\s*[:.=]?\\s*(?=[\\d€]|eur)`, 'i')]));
+const RP_GEN = /^(?:kfz-steuer|steuer|versicherung(?:sprämie|sbeitrag)?|prämie|praemie|beitrag|rate|miete|leasingrate|mietrate|premium|tax)\s*[:.=]?\s*/i;
+export function ratePeriod(raw) {
+  const s = String(raw ?? '').replace(/[\s  ]+/g, ' ').trim(); if (!s || s.length > 60 || !/\d/.test(s)) return null;
+  for (const p of ['half', 'quarter', 'year', 'month']) {
+    let t = s; const m = t.match(RP_SUF[p]);
+    if (m) t = t.slice(0, m.index + (m[0].length - m[0].replace(/^[^a-zäöüßа-яіїєґё/]/i, '').length)).trim();
+    const pre = RP_PRE[p].test(t); if (pre) t = t.replace(RP_PRE[p], '').trim();
+    if (!m && !pre) continue;
+    // nur ein Betrag bleibt übrig (ggf. Bezeichnung wie „Kfz-Steuer“, Ziffern/Trenner, Euro, netto/brutto/zzgl. MwSt.) – sonst keine Zahlweise erkannt
+    const rest = t.replace(/[\s,]*$/, '').trim();
+    if (!/\d/.test(rest) || !/^(?:(?:kfz-steuer|steuer|versicherung(?:sprämie|sbeitrag)?|prämie|praemie|beitrag|rate|miete|leasingrate|mietrate|premium|tax)\s*[:.=]?\s*)?(?:(?:€|eur|euro|netto|net|brutto)\s*)*[\d.,'’ ]*\d[\d.,'’ ]*(?:,-{1,2}|,–)?\s*(?:€|eur|euro|euros|євро|евро)?\.?\s*(?:netto|net|нетто|brutto|gross|брутто|(?:zzgl\.?|ohne|plus|excl\.?|inkl\.?|incl\.?)\s*(?:mwst|ust|vat)\.?)?$/i.test(rest)) return null;
+    return { period: p, value: rest.replace(RP_GEN, '').trim() };
+  }
+  return null;
+}
+
 export function kmForeignUnit(raw) {
   const s = String(raw ?? '').replace(/[\s  ]+/g, ' ').trim(); if (!s || s.length > 40 || !/\d/.test(s)) return null;
   if (MI_RX.test(s)) return 'mi';
