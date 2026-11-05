@@ -2,7 +2,7 @@
 # an einem Bayern-Fahrzeug überschreiten die Freigabegrenze. Die Leitung (Standard-Standort Dortmund) findet unter „Heute zu tun →
 # Kostenfreigabe ausstehend“ auch bei weniger als 9 Einträgen „In der Vorgangsliste anzeigen“; die Liste zeigt alle drei (alle Standorte),
 # ohne Sortierauswahl, am längsten wartende zuerst, mit „seit <Datum>“ am Chip. Der Bericht „Kennzahlen“ verlinkt im Abschnitt
-# „Kostenfreigaben“ dieselbe Liste. DE 390 px, UK 820 px, EN 1366 px; kein Querscrollen, keine Skriptfehler.
+# „Kostenfreigaben“ dieselbe Liste mit Anzahl – auch in einem Monat ohne Überschreitung (Backlog 1044). DE 390 px, UK 820 px, EN 1366 px; kein Querscrollen, keine Skriptfehler.
 # Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -64,8 +64,20 @@ with sync_playwright() as p:
         check(q.evaluate('document.documentElement.scrollWidth')<=wd, f'{lang} Liste ohne Querscrollen')
         q.goto(B+'/#/kpi'); q.wait_for_selector('#kpicalist',timeout=20000)
         if S: q.locator('#kpica').screenshot(path=f'{S}/kostenfreigabe-bericht-{lang}-{wd}.png')
+        check(q.inner_text('#kpicalist').strip().split(':')[-1].strip().startswith('3'), f'{lang} Bericht: Link nennt 3 offene')
         q.locator('#kpicalist').click(); q.wait_for_selector('#casort',timeout=15000); q.wait_for_timeout(800)
         check(q.locator('#cl .list a.row').count()==3, f'{lang} Bericht → Liste mit allen drei')
+        check(q.evaluate('document.documentElement.scrollWidth')<=wd, f'{lang} ohne Querscrollen'); check(not errs, f'{lang} keine Fehler {errs}')
+        ctx.close()
+    # Backlog 1044: Monat ohne Überschreitung (Januar 2025) – Abschnitt erscheint trotzdem mit Hinweis und Link auf die 3 offenen
+    for lang,wd in [('de',390),('en',1366)]:
+        ctx=br.new_context(viewport={'width':wd,'height':900}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+        q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'kf.leitung','password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
+        q.goto(B+'/#/kpi'); q.wait_for_selector('#kf2',timeout=20000)
+        q.fill('#kf2 [name=from]','2025-01'); q.fill('#kf2 [name=to]','2025-01'); q.locator('#kf2 button:not([type=button])').click()
+        q.wait_for_selector('#kpcanone',timeout=15000)
+        check('3' in q.inner_text('#kpicalist'), f'{lang} Monat ohne Überschreitung: Hinweis + Link mit 3')
+        if S: q.locator('#kpica').screenshot(path=f'{S}/kostenfreigabe-bericht-leer-{lang}-{wd}.png')
         check(q.evaluate('document.documentElement.scrollWidth')<=wd, f'{lang} ohne Querscrollen'); check(not errs, f'{lang} keine Fehler {errs}')
         ctx.close()
 print('FEHLER: ' + '; '.join(fails) if fails else 'ok: alle Prüfungen bestanden')

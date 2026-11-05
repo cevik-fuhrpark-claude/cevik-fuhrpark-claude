@@ -766,7 +766,11 @@ export async function kpiReport(env, user, envName, query = {}) {
   const pOut = (x) => ({ kept: x.kept, late: x.late, without_eta: x.without_eta, open_overdue: x.open_overdue,
     on_time_pct: x.kept + x.late ? Math.round((100 * x.kept) / (x.kept + x.late)) : null, late_days_median: x.late_days.length ? r1(quantile(x.late_days, 0.5)) : null });
   const parts_eta = { ...pOut(parts), by_site: [...partsSites.entries()].map(([site, x]) => ({ site, ...pOut(x) })).sort((a, b) => a.site.localeCompare(b.site)) };
-  const cost_approvals = { exceeded: ca.exceeded, approved: ca.approved, pending: ca.pending, closed_without: ca.closed_without, cleared: ca.cleared, cases: ca.cases, to_approval: stat(ca.wait) };
+  // Backlog 1044 (Folge aus 1042): jetzt offene Kostenfreigaben aller Meldemonate und Standorte (wie Liste „Kostenfreigabe ausstehend“ und
+  // „Heute zu tun“) – sonst fehlte der Abschnitt in einem Monat ohne Überschreitung, obwohl aus Vormonaten noch Freigaben offen sind
+  const openAll = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM cases WHERE environment=? AND cost_over_limit_at IS NOT NULL
+    AND status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')`).bind(envName).first()).n;
+  const cost_approvals = { exceeded: ca.exceeded, approved: ca.approved, pending: ca.pending, closed_without: ca.closed_without, cleared: ca.cleared, cases: ca.cases, to_approval: stat(ca.wait), open_all: openAll };
   // Mängelbeseitigung aus Prüfungen: Prüfungen des Zeitraums (Prüfdatum, Berliner Monat) mit erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher;
   // je Prüfung jüngster nicht abgelehnter Mängelauftrag der Umgebung und nächste spätere Durchführung derselben Prüfart. Dauer in Tagen (Prüfdatum → Freigabe).
   const DEF = `('erhebliche_maengel','gefaehrliche_maengel','verkehrsunsicher')`;

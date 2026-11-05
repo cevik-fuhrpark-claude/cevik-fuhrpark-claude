@@ -1143,12 +1143,13 @@ async function viewKpi() {
   if (pe && (pe.kept + pe.late + pe.without_eta + pe.open_overdue)) html += `<section class="panel" id="kpipe"><h3>${esc(t('kpi_pe'))}</h3><p>${peLine(pe)}</p>${pe.by_site.length > 1 ? `<dl class="kv">${pe.by_site.map((x) => `<dt>${esc(x.site === 'ohne' ? t('kpi_pe_nosite') : wsName(x.site))}</dt><dd>${peLine(x)}</dd>`).join('')}</dl>` : ''}<p class="small muted">${esc(t('kpi_pe_rule'))}</p></section>`;
   // Kostenfreigaben (nur Anzahl und Dauer bis zur Freigabe, keine Beträge)
   const ca = r.cost_approvals;
-  if (ca && ca.exceeded) html += `<section class="panel" id="kpica"><h3>${esc(t('kpi_ca'))}</h3><dl class="kv">
+  // Backlog 1044: Abschnitt auch ohne Überschreitung im Zeitraum, wenn aus Vormonaten noch Kostenfreigaben offen sind (open_all: alle Meldemonate/Standorte)
+  if (ca && (ca.exceeded || ca.open_all)) html += `<section class="panel" id="kpica"><h3>${esc(t('kpi_ca'))}</h3>${ca.exceeded ? `<dl class="kv">
     <dt>${esc(t('kpi_ca_exceeded'))}</dt><dd>${ca.exceeded}</dd><dt>${esc(t('kpi_ca_cases'))}</dt><dd>${ca.cases}</dd>
     <dt>${esc(t('kpi_ca_approved'))}</dt><dd>${ca.approved}</dd>
     <dt>${esc(t('kpi_ca_wait'))}</dt><dd>${st(ca.to_approval)}</dd>
     ${ca.pending ? `<dt>${esc(t('kpi_ca_pending'))}</dt><dd><b style="color:var(--stop)">${ca.pending}</b></dd>` : ''}
-    ${ca.closed_without ? `<dt>${esc(t('kpi_ca_closed'))}</dt><dd>${ca.closed_without}</dd>` : ''}</dl><p class="small muted">${esc(t('kpi_ca_rule'))}</p><p class="small"><a href="${hj('#/cases?f=cost_approval')}" id="kpicalist">${esc(t('kpi_ca_all_open'))} ›</a></p></section>`;
+    ${ca.closed_without ? `<dt>${esc(t('kpi_ca_closed'))}</dt><dd>${ca.closed_without}</dd>` : ''}</dl><p class="small muted">${esc(t('kpi_ca_rule'))}</p>` : `<p id="kpcanone">${esc(t('kpi_ca_none_period'))}</p>`}${ca.open_all ? `<p class="small"><a href="${hj('#/cases?f=cost_approval')}" id="kpicalist">${esc(t('kpi_ca_all_open'))}: ${ca.open_all} ›</a></p>` : ''}</section>`;
   // Mängelbeseitigung aus Prüfungen (Prüfdatum im Zeitraum; Dauer in Tagen bis zur technischen Freigabe des Mängelauftrags)
   const idf = r.inspection_defects;
   const dD = (v) => `${esc(nDays(v))}`;

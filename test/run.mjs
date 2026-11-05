@@ -34682,6 +34682,28 @@ await test('Backlog 1042 (Blickwinkel „Inhaber prüft am Monatsende offene Kos
   for (const k of ['ca_sort_wait', 'kpi_ca_all_open']) for (const l of ['uk', 'en']) ok(STRINGS.de[k] && STRINGS[l][k] && STRINGS[l][k] !== STRINGS.de[k], `${k} ${l}`);
 });
 
+await test('Backlog 1044 (Folge aus 1042): Bericht „Kostenfreigaben“ nennt offene Kostenfreigaben aller Meldemonate (open_all) und erscheint auch in einem Monat ohne Überschreitung; DE/UK/EN', async () => {
+  const { e, U, newCase } = await freshWorld();
+  const a = await newCase({ description: 'Getriebe', priority: 'niedrig' });
+  const b = await newCase({ description: 'Achse', priority: 'mittel' });
+  const r0 = await U.fleet.get('/api/reports/kpi?from=2025-01&to=2025-01'); eq(r0.status, 200);
+  eq(r0.data.cost_approvals.open_all, 0, 'ohne Markierung 0:');
+  await e.DB.prepare('UPDATE cases SET cost_over_limit_at=? WHERE id IN (?, ?)').bind('2026-10-01T10:00:00.000Z', a, b).run();
+  const r1 = (await U.fleet.get('/api/reports/kpi?from=2025-01&to=2025-01')).data.cost_approvals;
+  eq(`${r1.exceeded}/${r1.pending}/${r1.open_all}`, '0/0/2', 'Monat ohne Vorgänge: keine Überschreitung, aber 2 offen (alle Meldemonate):');
+  eq((await U.viewer.get('/api/reports/kpi?from=2025-01&to=2025-01')).data.cost_approvals.open_all, 2, 'Lesen: gleiche Zahl wie die Liste');
+  eq((await U.viewer.get('/api/cases?status=open&cost_approval=1')).data.cases.length, 2, 'Liste (Lesen) zeigt dieselben');
+  // abgeschlossene/abgelehnte zählen nicht (wie die Liste)
+  await e.DB.prepare("UPDATE cases SET status='abgelehnt' WHERE id=?").bind(b).run();
+  eq((await U.fleet.get('/api/reports/kpi?from=2025-01&to=2025-01')).data.cost_approvals.open_all, 1, 'abgelehnt zählt nicht:');
+  ok(!/net|eur|amount/i.test(Object.keys(r1).join(',')), 'keine Beträge');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('if (ca && (ca.exceeded || ca.open_all)) html +=') && app.includes('id="kpcanone"') && app.includes("${ca.open_all ? `<p class=\"small\"><a href=\"${hj('#/cases?f=cost_approval')}\" id=\"kpicalist\">"), 'Abschnitt auch ohne Überschreitung, Link mit Anzahl');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['uk', 'en']) ok(STRINGS.de.kpi_ca_none_period && STRINGS[l].kpi_ca_none_period && STRINGS[l].kpi_ca_none_period !== STRINGS.de.kpi_ca_none_period, l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -411,7 +411,7 @@ UI-Dispo-Startseite Gespann ohne Meldungen: Zähler mit gleicher Regel wie die F
 UI-Sammeltermin (Prüftermine): mehrere UVV an einem Tag, Absprache nicht still ersetzt, Rollen|ui-sammeltermin.py|/tmp/cfp-sammeltermin.log
 UI-Heute zu tun nach dem Urlaub: Kostenfreigaben älteste zuerst, „+N“ führt zur gefilterten Vorgangsliste|ui-heute-zu-tun-urlaub.py|/tmp/cfp-heute-zu-tun-urlaub.log
 UI-Vertretung: Eingang bestätigt – Bewertung offen (Heute zu tun, anderer Standort), „+N“ zeigt alle Standorte, DE/UK/EN 390/820/1366 (Backlog 1041)|ui-vertretung-bewertung-offen.py|/tmp/cfp-vertretung-bewertung-offen.log
-UI-Kostenfreigaben am Monatsende: Link aus Heute zu tun und Bericht, Liste nach Wartezeit, „seit“ am Chip, alle Standorte, DE/UK/EN 390/820/1366 (Backlog 1042)|ui-kostenfreigabe-monatsende.py|/tmp/cfp-kostenfreigabe-monatsende.log
+UI-Kostenfreigaben am Monatsende: Link aus Heute zu tun und Bericht, Liste nach Wartezeit, „seit“ am Chip, alle Standorte, Bericht ohne Überschreitung, DE/UK/EN 390/820/1366 (Backlog 1042, 1044)|ui-kostenfreigabe-monatsende.py|/tmp/cfp-kostenfreigabe-monatsende.log
 UI-Bußgeld ändern (Frist), deaktivierter Kandidat, Umgebung|ui-bussgeld-aendern.py|/tmp/cfp-bussgeld-aendern.log
 UI-Bußgeld Befund-Link, Zurücksetzen auf Eingegangen|ui-bussgeld-befundlink.py|/tmp/cfp-bussgeld-befundlink.log
 UI-Bußgeld-Verlauf mit Fahrernamen, Kandidat-Nachweis übersetzt, berechnete SP beim Fahrer, Reifenverlauf|ui-bussgeld-verlauf-sp-fahrer.py|/tmp/cfp-bussgeld-verlauf-sp-fahrer.log
