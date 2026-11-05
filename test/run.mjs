@@ -33894,6 +33894,22 @@ await test('Backlog 1011 (Blickwinkel „Wartungsliste aus Excel mit km-Einheit�
   eq(row.interval_km, 30000); eq(row.last_done_km, 123456); eq(row.next_due_km, 153456);
 });
 
+await test('Backlog 1012 (Blickwinkel „Reifendienst schickt die Größenliste als Excel“): Reifengrößen-Import ohne Spalte „Reifen …“ meldet das statt still „neu 0“; eigene Reifen-Übersicht mit eigenem Hinweis; DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const post = (csv) => U.own.req('POST', '/api/tires/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  const a = await post('Kennzeichen;FIN;Lenkachse;Antriebsachse\nSZ-YC 5513;WMA15SZZ2HM722774;385/65 R22.5;315/70 R22.5\n');
+  eq(a.status, 400, JSON.stringify(a.data)); eq(a.data.error, 'tire_cols_missing'); ok(/Keine Reifenspalte erkannt/.test(a.data.message), a.data.message);
+  const b = await post('Kennzeichen;Fahrzeugart;Status;Größe Lenkachse;Größe Antriebsachse\nSZ-YC 5513;Lkw;in Ordnung;385/65 R22.5;315/70 R22.5\n');
+  eq(b.status, 400); eq(b.data.error, 'wrong_file_tires', JSON.stringify(b.data));
+  const c = await post('Quelle;Kennzeichen;FIN;Reifen Lenkachse\nListe;SZ-YC 5513;WMA15SZZ2HM722774;385/65 R22.5\n');
+  eq(c.status, 200, 'mit Spalte „Reifen …“ wie bisher'); eq(c.data.counts.neu + c.data.counts.geaendert + c.data.counts.unveraendert, 1);
+  eq((await post('Quelle;Kennzeichen;Reifen Lenkachse\nListe;SZ-YC 5513;385/65 R22.5\n')).data.message, 'Spalte FIN fehlt.', 'FIN-Prüfung unverändert');
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  for (const k of ['err_wrong_file_tires', 'err_tire_cols_missing']) for (const l of ['de', 'uk', 'en']) ok(STRINGS[l][k], `${l}.${k}`);
+  eq(STRINGS.de.err_tire_cols_missing, a.data.message, 'DE-Text = Servertext'); eq(STRINGS.de.err_wrong_file_tires, b.data.message);
+  ok(/No tyre column/.test(translateValidation('en', a.data.message) || ''), 'Validierungstext übersetzt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -81,6 +81,9 @@ const VALIDATION_TEXTS = {
 // [CLAUDE] Backlog 83: restliche feste Eingabefehler (v. a. Inhaber/Fuhrparkleitung: Verträge, Bußgelder, Importe, Versicherung, Fahrer).
 // CSV-Spaltennamen bleiben deutsch (so heißen sie in der Datei). Rein technische Integrationsfehler bleiben unübersetzt.
 const V_MORE = [
+  // Backlog 1012: Reifengrößen-Import ohne Spalte „Reifen …“ bzw. eigene Reifen-Übersicht hochgeladen
+  ['Das ist die Reifen-Übersicht dieser App (Auswertung), keine Quelldatei. Bitte eine Datei mit Spalte „FIN“ und „Reifen Lenkachse“, „Reifen Liftachse“, „Reifen Antriebsachse“ bzw. „Reifen Anhänger“ hochladen.', 'Це огляд шин із цього застосунку (звіт), а не вихідний файл. Завантажте файл зі стовпцем «FIN» та «Reifen Lenkachse», «Reifen Liftachse», «Reifen Antriebsachse» або «Reifen Anhänger».', 'This is the tyre overview from this app (a report), not a source file. Please upload a file with the column “FIN” and “Reifen Lenkachse”, “Reifen Liftachse”, “Reifen Antriebsachse” or “Reifen Anhänger”.'],
+  ['Keine Reifenspalte erkannt – die Datei braucht mindestens eine der Spalten „Reifen Lenkachse“, „Reifen Liftachse“, „Reifen Antriebsachse“, „Reifen Anhänger“ (Überschrift anpassen und erneut hochladen).', 'Стовпець шин не розпізнано – файл має містити принаймні один зі стовпців «Reifen Lenkachse», «Reifen Liftachse», «Reifen Antriebsachse», «Reifen Anhänger» (виправте заголовок і завантажте знову).', 'No tyre column recognised – the file needs at least one of the columns “Reifen Lenkachse”, “Reifen Liftachse”, “Reifen Antriebsachse”, “Reifen Anhänger” (adjust the heading and upload again).'],
   ['Artikel nicht in diesem Lager.', 'Артикула немає на цьому складі.', 'Item is not in this stock location.'],
   ['Lager angeben.', 'Вкажіть склад.', 'Please specify the stock location.'],
   ['Mindestens eine Position angeben.', 'Вкажіть щонайменше одну позицію.', 'Please enter at least one line.'],
@@ -541,6 +544,7 @@ export function translateValidation(lang, msg) {
   return null;
 }
 // [CLAUDE] Weitere Fehlercodes in der App-Sprache (Benutzerverwaltung, Ersteinrichtung, falscher Import)
+// [CLAUDE] Backlog 1012: Reifengrößen-Import – Fehlercodes
 // [CLAUDE] Browser-Prüfhinweise an Formularfeldern in der App-Sprache (sonst Gerätesprache, z. B. Deutsch auf dem Handy, App auf Ukrainisch)
 // [CLAUDE] Zeilenhinweise der Import-Vorschauen (Fahrzeugstamm, Prüftermine, Verträge, Auslesungen) in der App-Sprache.
 // Der Server liefert deutsche Gründe je Zeile; Werte aus der Datei (Kennzeichen, Datum, Art) bleiben wörtlich stehen.

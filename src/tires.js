@@ -344,6 +344,12 @@ export async function importTireSpecs(env, user, text, { dryRun = false } = {}) 
   // Lkw-Größen dem Anhänger zu, „Finanzierung“ vor „FIN“ ließ alle Zeilen scheitern) – wie der Fahrzeugimport
   const finIdx = (() => { const ex = head.findIndex((h) => ['fin', 'fin (vin)', 'vin', 'fahrgestellnummer'].includes(h)); return ex >= 0 ? ex : head.findIndex((h) => h.startsWith('fin') && !/anh|aufl|trailer|finanz/.test(h)); })();
   const ci = { src: idx('quelle'), fin: finIdx, lenk: idx('reifen lenk'), lift: idx('reifen lift'), antr: idx('reifen antrieb'), anh: idx('reifen anh') };
+  // Backlog 1012 (Blickwinkel „Reifendienst schickt die Größenliste als Excel“): ohne Spalte „Reifen …“ wurde nichts übernommen und die
+  // Vorschau zeigte nur „neu 0 · geändert 0“ – jetzt Hinweis. Die eigene Reifen-Übersicht (Spalten „Größe …“) mit eigenem Hinweis statt „Spalte FIN fehlt“.
+  if (['lenk', 'lift', 'antr', 'anh'].every((k) => ci[k] < 0)) {
+    if (head.some((h) => /^größe (lenk|lift|antrieb|anh)/.test(h))) throw bad('wrong_file_tires', 'Das ist die Reifen-Übersicht dieser App (Auswertung), keine Quelldatei. Bitte eine Datei mit Spalte „FIN“ und „Reifen Lenkachse“, „Reifen Liftachse“, „Reifen Antriebsachse“ bzw. „Reifen Anhänger“ hochladen.');
+    throw bad('tire_cols_missing', 'Keine Reifenspalte erkannt – die Datei braucht mindestens eine der Spalten „Reifen Lenkachse“, „Reifen Liftachse“, „Reifen Antriebsachse“, „Reifen Anhänger“ (Überschrift anpassen und erneut hochladen).');
+  }
   if (ci.fin < 0) throw bad('validation', 'Spalte FIN fehlt.');
   const ciPlate = idx('kennzeichen');
   // skipped: Zeilennummer, Kennzeichen/FIN und Grund (wie die anderen Import-Vorschauen); skipped_no_vehicle bleibt für bestehende Aufrufer
