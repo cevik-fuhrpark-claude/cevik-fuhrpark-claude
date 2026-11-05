@@ -1735,7 +1735,7 @@ const PHOTO_TIMEOUT_MS = 120000;
 const SEND_TIMEOUT_MS = 60000;
 async function uploadCasePhotos(caseId, list, ox = {}) {
   let failed = 0;
-  for (const p of list) { try { await api('POST', `/api/cases/${caseId}/files`, p.blob, { timeoutMs: PHOTO_TIMEOUT_MS, ...ox, headers: { 'x-filename': encodeURIComponent(p.name), 'content-type': p.blob.type || 'application/octet-stream' } }); } catch (err) { if (photoRetry(err)) throw err; failed++; } }
+  for (const p of list) { try { await api('POST', `/api/cases/${caseId}/files`, p.blob, { timeoutMs: PHOTO_TIMEOUT_MS, ...ox, headers: photoHeaders(p.name, p.blob, p.taken) }); } catch (err) { if (photoRetry(err)) throw err; failed++; } }
   return failed;
 }
 let flushing = false;
@@ -1931,7 +1931,7 @@ async function vehiclesCached() {
 async function photosLater(path, body, r, target, files, who = outboxWho(), hold = false) {
   try {
     if (!who) return 0;
-    const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name });
+    const list = []; for (const f of files) list.push(await prepPhoto(f));
     await photosPut(body.request_key, list);
     outboxAdd(path, body, list.length, who);
     outboxSet(outboxGet(who.key).map((x) => (x.body.request_key === body.request_key ? { ...x, photo_target: target, case_no: r.case_no || null, ...(hold ? { hold: true } : {}) } : x)), who.key);
@@ -1954,7 +1954,7 @@ async function uploadPhotosSafe(path, body, r, target, files, sb, who = outboxWh
 async function uploadPhotosSafeRun(path, body, r, target, files, sb, who) {
   const key = body.request_key; let failed = 0; let later = 0; let list = null; let backed = false;
   const ox = who ? { env: who.env } : {};
-  try { list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); } catch { list = null; }
+  try { list = []; for (const f of files) list.push(await prepPhoto(f)); } catch { list = null; }
   if (list) {
     try {
       if (!who) throw new Error('no user');
@@ -2603,6 +2603,8 @@ function srcInsp(si) {
   if ('last_ok_at' in si) h += `<dt>${esc(t('srci_lastok'))}</dt><dd data-lastok>${si.last_ok_at ? esc(t('srci_val').replace('{d}', fmtDT(si.last_ok_at))) : `<span class="muted">${esc(t('srci_lastok_none'))}</span>`}<br><span class="small muted">${esc(t('srci_window'))}</span></dd>`;
   return h;
 }
+// Backlog 1020: „JJJJ-MM-TTTHH:MM“ (Kamerauhr) → Datum im Format der Sprache + „HH:MM“, ohne Zeitzonenumrechnung
+const takenFmt = (x) => `${fmtD(x.slice(0, 10))} ${x.slice(11, 16)}`;
 function occLate(c) {
   const a = c.occurred_at.length === 10 ? c.occurred_at : BERLIN_FMT.format(new Date(c.occurred_at)); const b = BERLIN_FMT.format(new Date(c.created_at));
   const n = Math.round((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / 86400000);
@@ -2845,7 +2847,7 @@ async function viewNew(preId) {
       if (err.offline || err.status === 401 || err.code === 'user_mismatch' || err.code === 'env_mismatch') {
         const files = photoFiles;
         let stored = 0;
-        if (files.length) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
+        if (files.length) { try { const list = []; for (const f of files) list.push(await prepPhoto(f)); await photosPut(key, list); stored = list.length; } catch {} }
         outboxAdd('/api/cases', body, stored, who);
         draft.clear();
         if (hold && stored && who) outboxSet(outboxGet(who.key).map((x) => (x.body.request_key === key ? { ...x, hold: true } : x)), who.key);
@@ -2983,7 +2985,10 @@ async function viewCase(id) {
     const name = f.uploaded_by_name_hidden ? t('name_hidden_driver') : (f.uploaded_by_name || '');
     const info = [fmtDT(f.created_at), role, name && name !== role ? name : ''].filter(Boolean);
     const link = f.content_type.startsWith('image/') ? `<a href="${fileUrl(f.id)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(f.id)}" alt="${esc([f.filename, ...info].join(' · '))}"></a>` : `<a href="${fileUrl(f.id)}" target="_blank" rel="noopener" aria-label="${esc(['PDF', f.filename, ...info].join(' · '))}">PDF<br>${esc(f.filename.slice(0, 14))}</a>`;
-    return `<figure class="thumb" data-fileinfo title="${esc(info.join(' · '))}">${link}<figcaption class="small muted"><span>${esc(fmtD(f.created_at))} ${esc(fmtHM(f.created_at))}</span>${role ? `<span data-uprole="${esc(f.uploader_role)}">${esc(role)}</span>` : ''}${name && name !== role ? `<span>${esc(name)}</span>` : ''}</figcaption></figure>`;
+    // Backlog 1020: Aufnahmezeit laut Kamera (Ortszeit der Kamera, ohne Umrechnung), Markierung bei Aufnahme vor dem Schadenzeitpunkt
+    const tk = f.taken_at ? `<span data-taken>📷 ${esc(takenFmt(f.taken_at))}</span>${f.taken_before_occurrence ? `<span class="chip mittel" data-taken-before>${esc(t('taken_before_occ'))}</span>` : ''}` : '';
+    if (f.taken_at) info.push(t('taken_at') + ' ' + takenFmt(f.taken_at));
+    return `<figure class="thumb" data-fileinfo title="${esc(info.join(' · '))}">${link}<figcaption class="small muted"><span>${esc(fmtD(f.created_at))} ${esc(fmtHM(f.created_at))}</span>${tk}${role ? `<span data-uprole="${esc(f.uploader_role)}">${esc(role)}</span>` : ''}${name && name !== role ? `<span>${esc(name)}</span>` : ''}</figcaption></figure>`;
   }).join('')}</div>`;
   const canUpload = A.includes('upload') || (c.reporter_id === S.me.id && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status));
   // Höchstzahl je Vorgang (wie Server MAX_FILES): voll → Hinweis statt Knopf; sonst freie Plätze nennen, wenn weniger als die Hälfte frei
@@ -3134,11 +3139,11 @@ async function viewCase(id) {
     for (const [i, file] of take.entries()) {
       prog.textContent = ` ${t('uploading')} ${i + 1}/${take.length}`;
       try {
-        const blob = await prepareUpload(file);
+        const taken = await photoTakenAt(file); const blob = await prepareUpload(file);
         // Backlog 603 (Blickwinkel „Werkstatt-Tablet UK mit Fotos“): Format/Größe vor dem Hochladen prüfen – sonst lud ein 20-MB-Scan
         // erst komplett hoch (bei langsamem WLAN Zeitüberschreitung → Postausgang → später erneut abgelehnt) bzw. HEIC kam als „zu groß“ zurück
         const rej = uploadReject(blob, file.name); if (rej) { errs.push(`${file.name}: ${rej}`); continue; }
-        const r = await api('POST', `/api/cases/${c.id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, ...ox, headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } });
+        const r = await api('POST', `/api/cases/${c.id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, ...ox, headers: photoHeaders(file.name, blob, taken) });
         if (r && r.duplicate) dupes.push(file.name); // gleiche Datei schon am Vorgang – Server legt keine zweite an
         else { const q = await photoCheck(blob); if (q.dark) darkN++; else if (q.blurry) blurN++; } // Backlog 863/864
       }
@@ -3287,6 +3292,40 @@ async function decodeImage(file) {
   try { img.src = url; await img.decode(); } catch (e) { URL.revokeObjectURL(url); throw e; }
   return { src: img, w: img.naturalWidth, h: img.naturalHeight, done: () => URL.revokeObjectURL(url) };
 }
+// Backlog 1020 (Blickwinkel „Fahrer schickt ein Foto aus der Galerie statt mit der Kamera“): Aufnahmezeit laut Kamera aus dem EXIF-Block
+// des Originals (DateTimeOriginal, sonst DateTimeDigitized; nicht DateTime = letzte Bearbeitung). Das verkleinerte Bild (prepareUpload) hat
+// keine EXIF-Daten mehr – deshalb vorher lesen und als Kopfzeile x-taken-at mitsenden. Nur JPEG, nur die ersten 128 KB; GPS wird nicht gelesen.
+function exifTaken(v) {
+  if (v.byteLength < 4 || v.getUint16(0) !== 0xFFD8) return null;
+  let p = 2;
+  while (p + 4 <= v.byteLength) {
+    const mk = v.getUint16(p); if ((mk & 0xFF00) !== 0xFF00 || mk === 0xFFDA) return null;
+    const len = v.getUint16(p + 2);
+    if (mk === 0xFFE1 && p + 10 <= v.byteLength && v.getUint32(p + 4) === 0x45786966) {
+      const t0 = p + 10, end = Math.min(v.byteLength, p + 2 + len); if (t0 + 8 > end) return null;
+      const bo = v.getUint16(t0); if (bo !== 0x4949 && bo !== 0x4D4D) return null; const le = bo === 0x4949;
+      const okR = (o, n) => o >= 0 && t0 + o + n <= end; const u16 = (o) => v.getUint16(t0 + o, le), u32 = (o) => v.getUint32(t0 + o, le);
+      const ifd = (o) => { const out = {}; if (!okR(o, 2)) return out; const n = u16(o); for (let i = 0; i < n && i < 400; i++) { const e = o + 2 + i * 12; if (!okR(e, 12)) break; out[u16(e)] = { type: u16(e + 2), count: u32(e + 4), at: e + 8 }; } return out; };
+      const str = (en) => { if (!en || en.type !== 2 || en.count > 64) return null; const off = en.count > 4 ? u32(en.at) : en.at; if (!okR(off, en.count)) return null; let x = ''; for (let i = 0; i < en.count; i++) { const ch = v.getUint8(t0 + off + i); if (!ch) break; x += String.fromCharCode(ch); } return x; };
+      if (!okR(4, 4)) return null;
+      const i0 = ifd(u32(4)); const ep = i0[0x8769]; const ex = ep && ep.count === 1 ? ifd(ep.type === 3 ? u16(ep.at) : u32(ep.at)) : {};
+      const m = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2})/.exec(str(ex[0x9003]) || str(ex[0x9004]) || '');
+      if (!m || m[1] < '2000' || +m[2] < 1 || +m[2] > 12 || +m[3] < 1 || +m[3] > 31 || +m[4] > 23 || +m[5] > 59) return null;
+      return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}`;
+    }
+    p += 2 + len;
+  }
+  return null;
+}
+async function photoTakenAt(file) {
+  try {
+    if (!file || !(/^image\/jpe?g$/i.test(file.type || '') || (!file.type && /\.jpe?g$/i.test(file.name || '')))) return null;
+    return exifTaken(new DataView(await file.slice(0, 131072).arrayBuffer()));
+  } catch { return null; }
+}
+// Foto für den Upload/Postausgang: verkleinert + Name + Aufnahmezeit (Backlog 1020)
+async function prepPhoto(f) { const taken = await photoTakenAt(f); return { blob: await prepareUpload(f), name: f.name, ...(taken ? { taken } : {}) }; }
+const photoHeaders = (name, blob, taken) => ({ 'x-filename': encodeURIComponent(name), 'content-type': blob.type || 'application/octet-stream', ...(taken ? { 'x-taken-at': taken } : {}) });
 async function prepareUpload(file) {
   if (!file.type.startsWith('image/') || file.type === 'image/gif') return file;
   try {
@@ -3930,7 +3969,7 @@ async function viewDepartureCheck(preId) {
       sb.disabled = false;
       if (err.offline || err.status === 401 || err.code === 'user_mismatch' || err.code === 'env_mismatch') { // wie Meldung (21.10.2026)
         let stored = 0;
-        if (files.length && hasDefect) { try { const list = []; for (const f of files) list.push({ blob: await prepareUpload(f), name: f.name }); await photosPut(key, list); stored = list.length; } catch {} }
+        if (files.length && hasDefect) { try { const list = []; for (const f of files) list.push(await prepPhoto(f)); await photosPut(key, list); stored = list.length; } catch {} }
         outboxAdd('/api/inspections', body, stored, who);
         draft.clear();
         if (!err.offline || !sb.isConnected) { toast(t(err.offline ? 'outbox_saved' : 'outbox_saved_login')); return; }

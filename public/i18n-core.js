@@ -1284,6 +1284,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 Object.assign(VALIDATION_TEXTS.uk, { zgm_tonnes: 'Дозволена повна маса (кг): «{v}» вказано в тоннах – введіть масу в кг згідно зі свідоцтвом про реєстрацію (F.2) (застосунок не перераховує).' });
 Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg): “{v}” is given in tonnes – please enter the weight in kg as stated in the registration certificate (F.2) (the app does not convert).' });
 // 05.11.2026 (Backlog 1018, Blickwinkel „Vorgangs-Link per Messenger weitergeleitet“): Fehlerseite bei Vorgang/Bußgeld aus der anderen Umgebung bzw. ohne Zugriff
+// Backlog 1020: Aufnahmezeit laut Kamera an Fotos des Vorgangs
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

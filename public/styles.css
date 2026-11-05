@@ -258,6 +258,9 @@ input[type=checkbox], input[type=radio] { width: 22px; height: 22px; min-height:
 .thumbs figure.thumb { margin: 0; width: 96px; }
 .thumbs figure.thumb figcaption { margin-top: 3px; font-size: 0.72rem; line-height: 1.25; }
 .thumbs figure.thumb figcaption span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Backlog 1020: Aufnahmezeit und Hinweis „vor dem Schadenzeitpunkt aufgenommen“ vollständig (umbrechen statt „…“) */
+.thumbs figure.thumb figcaption span[data-taken], .thumbs figure.thumb figcaption span[data-taken-before] { white-space: normal; overflow: visible; text-overflow: clip; }
+.thumbs figure.thumb figcaption span[data-taken-before] { display: inline-block; margin: 2px 0; padding: 1px 4px; font-size: inherit; font-weight: 600; line-height: 1.25; border-radius: 6px; }
 
 table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
 th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }

@@ -461,14 +461,17 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const ownName = (o, by, nameK) => (user.role === 'driver' && o[by] !== user.id ? { ...o, [nameK]: null, [nameK + '_role']: o[nameK.replace('_name', '_role')] } : o);
   // Dateien mit Name/Rolle der hochladenden Person (Backlog 223, 24.10.2026: Werkstatt konnte Schadensfotos des Fahrers nicht von eigenen
   // Reparaturfotos unterscheiden); gleiche Namensregeln wie Restarbeiten/Kontrollen
-  const files = (await env.DB.prepare(`SELECT f.id, f.filename, f.content_type, f.size, f.created_at, f.uploaded_by, u.display_name AS uploaded_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS uploaded_by_role
+  const occDay = c.occurred_at ? (c.occurred_at.length === 10 ? c.occurred_at : berlinDate(c.occurred_at)) : null;
+  const files = (await env.DB.prepare(`SELECT f.id, f.filename, f.content_type, f.size, f.created_at, f.taken_at, f.uploaded_by, u.display_name AS uploaded_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS uploaded_by_role
     FROM files f LEFT JOIN users u ON u.id=f.uploaded_by WHERE f.case_id=? ORDER BY f.created_at`).bind(c.id).all()).results
     .map((f) => {
       const role = f.uploaded_by_role || null;
       const r = hideDriverName(user, ownName(f, 'uploaded_by', 'uploaded_by_name'), 'uploaded_by_name', 'uploaded_by_role');
       delete r.uploaded_by_name_role;
       if (user.role === 'driver' && f.uploaded_by !== user.id) delete r.uploaded_by;
-      return { ...r, uploader_role: role };
+      // Backlog 1020: Aufnahme laut Kamera vor dem Tag des angegebenen Schadenzeitpunkts (Tagesvergleich – Kamerauhr ohne Zeitzone);
+      // nur Hinweis, z. B. älteres Foto aus der Galerie
+      return { ...r, uploader_role: role, taken_before_occurrence: !!(f.taken_at && occDay && f.taken_at.slice(0, 10) < occDay) };
     });
   const openItems = (await env.DB.prepare(`SELECT o.*, u.display_name AS created_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS created_by_role FROM open_items o JOIN users u ON u.id=o.created_by WHERE case_id=? ORDER BY created_at`).bind(c.id).all()).results
     .map((o) => hideDriverName(user, ownName(o, 'created_by', 'created_by_name'), 'created_by_name', 'created_by_role'));
@@ -2557,6 +2560,14 @@ export function sniffType(bytes) {
   return null;
 }
 
+// Backlog 1020: Kopfzeile x-taken-at „JJJJ-MM-TTTHH:MM“ (Ortszeit der Kamera). Nur echte Kalenderdaten ab 2000 und höchstens einen Tag nach
+// heute (Kamerauhr in anderer Zeitzone); alles andere wird verworfen (falsch gestellte Kamerauhr ist kein Grund, das Foto abzulehnen).
+export function takenAtHeader(v) {
+  const m = /^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):([0-5]\d)$/.exec(String(v || '').trim());
+  if (!m || !isCalendarDate(m[1]) || m[1] < '2000-01-01') return null;
+  const max = new Date(Date.parse(berlinDate() + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+  return m[1] > max ? null : m[0];
+}
 export async function uploadFile(env, user, envName, caseId, request, ctx = null) {
   const { c, access } = await loadCase(env, user, envName, caseId);
   // Fahrer dürfen Fotos an eigene offene Meldungen hängen
@@ -2577,6 +2588,8 @@ export async function uploadFile(env, user, envName, caseId, request, ctx = null
   const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM files WHERE case_id=?').bind(c.id).first();
   if (count.n >= MAX_FILES) throw bad('too_many', 'Maximal 10 Dateien pro Vorgang.');
   const rawName = (() => { try { return decodeURIComponent(request.headers.get('x-filename') || 'datei'); } catch { return 'datei'; } })(); // ungültige %-Folge: Ersatzname statt 500
+  // Backlog 1020: Aufnahmezeit laut Kamera (vom Gerät aus EXIF gelesen); ungültig, unplausibel oder bei PDF → ohne Angabe statt Fehler
+  const takenAt = type === 'application/pdf' ? null : takenAtHeader(request.headers.get('x-taken-at'));
   const filename = rawName.replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'datei';
   const id = uuid();
   const key = `${envName}/${c.id}/${id}`;
@@ -2589,9 +2602,9 @@ export async function uploadFile(env, user, envName, caseId, request, ctx = null
   try {
     // Höchstzahl und Dublette in derselben Anweisung geprüft – parallele Uploads (zwei Geräte, Offline-Postausgang) überschritten sonst die 10
     // „zuletzt geändert“ im selben Stapel, nur wenn die Datei eingetragen wurde (22.10.2026, Backlog 127e)
-    const [ins] = await env.DB.batch([env.DB.prepare(`INSERT INTO files(id,case_id,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at)
-      SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE (SELECT COUNT(*) FROM files WHERE case_id=?2) < ?11 AND NOT EXISTS (SELECT 1 FROM files WHERE case_id=?2 AND sha256=?8)`)
-      .bind(id, c.id, envName, key, filename, type, buf.length, sha, user.id, nowIso(), MAX_FILES),
+    const [ins] = await env.DB.batch([env.DB.prepare(`INSERT INTO files(id,case_id,environment,r2_key,filename,content_type,size,sha256,uploaded_by,created_at,taken_at)
+      SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?12 WHERE (SELECT COUNT(*) FROM files WHERE case_id=?2) < ?11 AND NOT EXISTS (SELECT 1 FROM files WHERE case_id=?2 AND sha256=?8)`)
+      .bind(id, c.id, envName, key, filename, type, buf.length, sha, user.id, nowIso(), MAX_FILES, takenAt),
     // neue Datei ist Bewegung am Vorgang („Ohne Bewegung“, „zuletzt geändert“ – 20.10.2026)
     env.DB.prepare('UPDATE cases SET updated_at=? WHERE id=? AND EXISTS (SELECT 1 FROM files WHERE id=?)').bind(nowIso(), c.id, id),
     // Backlog 462: Nachreichung durch den Melder nach dem Eingang bei der Leitung → Verlaufseintrag (im selben Stapel, nur wenn eingetragen)

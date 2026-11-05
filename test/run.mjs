@@ -34067,6 +34067,78 @@ await test('Backlog 1019 (Blickwinkel „Vorgangs-Link per Messenger weitergelei
   eq((await U.driver.get('/api/vehicles/' + V1)).status, 403, 'Fahrzeugakte für Fahrer weiterhin gesperrt');
 });
 
+await test('Backlog 1020 (Blickwinkel „Fahrer schickt ein Foto aus der Galerie statt mit der Kamera“): Aufnahmezeit aus EXIF (Gerät) → files.taken_at, Markierung „vor dem Schaden aufgenommen“; ungültige/künftige Angaben verworfen; DE/UK/EN', async () => {
+  const fsx = await import('node:fs'); const src = fsx.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  // EXIF-Leser aus app.js (reine Funktion)
+  const a = src.indexOf('function exifTaken('); const e = src.indexOf('\n}\n', a); ok(a > 0 && e > a, 'exifTaken vorhanden');
+  const exifTaken = eval('(' + src.slice(a, e + 2) + ')');
+  // JPEG mit APP1/Exif bauen: IFD0 mit Zeiger 0x8769 → Exif-IFD mit gewünschten ASCII-Tags; le = Intel-Byteordnung
+  const mkJpeg = (tags, le = false, ifd0Extra = []) => {
+    const ascii = (s) => { const b = new TextEncoder().encode(s + '\0'); return b; };
+    const t = []; const W16 = (v) => (le ? [v & 255, v >> 8] : [v >> 8, v & 255]); const W32 = (v) => (le ? [v & 255, (v >> 8) & 255, (v >> 16) & 255, v >>> 24] : [v >>> 24, (v >> 16) & 255, (v >> 8) & 255, v & 255]);
+    const ifd0Entries = [[0x8769, 4, 1, 0], ...ifd0Extra]; // Wert wird unten gesetzt
+    const ifd0Off = 8, ifd0Len = 2 + ifd0Entries.length * 12 + 4; const exOff = ifd0Off + ifd0Len; const exLen = 2 + tags.length * 12 + 4;
+    let dataOff = exOff + exLen; const data = [];
+    const exEntries = tags.map(([tag, s]) => { const b = ascii(s); const ent = [tag, 2, b.length, dataOff]; data.push(...b); dataOff += b.length; return ent; });
+    t.push(...(le ? [0x49, 0x49] : [0x4d, 0x4d]), ...W16(42), ...W32(ifd0Off));
+    t.push(...W16(ifd0Entries.length)); for (const [tag, type, cnt] of ifd0Entries) t.push(...W16(tag), ...W16(type), ...W32(cnt), ...W32(tag === 0x8769 ? exOff : 0)); t.push(...W32(0));
+    t.push(...W16(exEntries.length)); for (const [tag, type, cnt, off] of exEntries) t.push(...W16(tag), ...W16(type), ...W32(cnt), ...W32(off)); t.push(...W32(0));
+    t.push(...data);
+    const app1 = [0x45, 0x78, 0x69, 0x66, 0, 0, ...t]; const len = app1.length + 2;
+    return new Uint8Array([0xff, 0xd8, 0xff, 0xe1, len >> 8, len & 255, ...app1, 0xff, 0xda, 0, 2, ...crypto.getRandomValues(new Uint8Array(300))]);
+  };
+  const dv = (u) => new DataView(u.buffer, u.byteOffset, u.byteLength);
+  eq(exifTaken(dv(mkJpeg([[0x9003, '2026:09:12 14:03:27']]))), '2026-09-12T14:03', 'DateTimeOriginal (Motorola)');
+  eq(exifTaken(dv(mkJpeg([[0x9003, '2026:09:12 14:03:27']], true))), '2026-09-12T14:03', 'DateTimeOriginal (Intel)');
+  eq(exifTaken(dv(mkJpeg([[0x9004, '2025:01:02 07:08:09']]))), '2025-01-02T07:08', 'sonst DateTimeDigitized');
+  eq(exifTaken(dv(mkJpeg([[0x9004, '2025:01:02 07:08:09'], [0x9003, '2024:05:06 10:11:12']]))), '2024-05-06T10:11', 'Original vor Digitalisiert');
+  eq(exifTaken(dv(mkJpeg([[0x9003, '0000:00:00 00:00:00']]))), null, 'leere Kamerauhr');
+  eq(exifTaken(dv(mkJpeg([[0x9003, '2026:13:40 25:00:00']]))), null, 'unmöglich');
+  eq(exifTaken(dv(mkJpeg([]))), null, 'ohne Aufnahmezeit');
+  const full = mkJpeg([[0x9003, '2026:09:12 14:03:27']]); eq(exifTaken(dv(full.slice(0, 40))), null, 'abgeschnitten ohne Fehler');
+  eq(exifTaken(dv(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]))), null, 'PNG');
+  eq(exifTaken(dv(new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 0, 4, 0, 0, 0xff, 0xda]))), null, 'JPEG ohne EXIF');
+  // Server: Kopfzeile x-taken-at
+  const { U, newCase, cmd } = await freshWorld();
+  const id = await newCase({ occurred_at: BERLIN_TODAY });
+  const up = async (taken, by = U.driver) => { const h = { 'content-type': 'image/jpeg', 'x-filename': 'galerie.jpg' }; if (taken !== undefined) h['x-taken-at'] = taken; const r = await by.req('POST', `/api/cases/${id}/files`, mkJpeg([[0x9003, '2026:09:12 14:03:27']]), h); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const old = new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') - 20 * 86400000).toISOString().slice(0, 10);
+  const f1 = await up(old + 'T14:03');
+  const f2 = await up(BERLIN_TODAY + 'T08:15');
+  const f3 = await up('2026-02-30T10:00'); // kein Kalenderdatum
+  const fut = new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + 3 * 86400000).toISOString().slice(0, 10);
+  const f4 = await up(fut + 'T10:00'); // Kamerauhr in der Zukunft
+  const f5 = await up(); // ohne Angabe
+  const f6 = await up('1999-12-31T23:59');
+  const files = async (u = U.fleet) => Object.fromEntries((await u.get(`/api/cases/${id}`)).data.files.map((f) => [f.id, f]));
+  let F = await files();
+  eq(F[f1].taken_at, old + 'T14:03'); eq(F[f1].taken_before_occurrence, true, 'älteres Galeriefoto markiert');
+  eq(F[f2].taken_at, BERLIN_TODAY + 'T08:15'); eq(F[f2].taken_before_occurrence, false, 'gleicher Tag nicht markiert');
+  for (const x of [f3, f4, f5, f6]) { eq(F[x].taken_at, null, 'verworfen/ohne'); eq(F[x].taken_before_occurrence, false); }
+  // Fahrer sieht es an der eigenen Meldung ebenso
+  eq((await files(U.driver))[f1].taken_before_occurrence, true, 'Fahrer');
+  // Schadenzeitpunkt entfernt → keine Markierung; früher gesetzt → keine
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: '' })).status, 200);
+  eq((await files())[f1].taken_before_occurrence, false, 'ohne Schadenzeitpunkt keine Markierung');
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: new Date(Date.parse(old + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10) })).status, 200);
+  eq((await files())[f1].taken_before_occurrence, false, 'Schaden davor');
+  // PDF: nie eine Aufnahmezeit
+  const pdf = new TextEncoder().encode('%PDF-1.4\n' + 'x'.repeat(200));
+  const rp = await U.fleet.req('POST', `/api/cases/${id}/files`, pdf, { 'content-type': 'application/pdf', 'x-filename': 'r.pdf', 'x-taken-at': BERLIN_TODAY + 'T08:00' }); eq(rp.status, 201);
+  eq((await files())[rp.data.id].taken_at, null, 'PDF ohne Aufnahmezeit');
+  // Oberfläche: EXIF vor dem Verkleinern lesen, in allen Foto-Wegen mitsenden (direkt, Postausgang)
+  eq((src.match(/list\.push\(await prepPhoto\(f\)\)/g) || []).length, 4, 'alle Foto-Listen mit Aufnahmezeit');
+  ok(!src.includes('list.push({ blob: await prepareUpload(f), name: f.name })'), 'keine Liste ohne Aufnahmezeit');
+  ok(src.includes('headers: photoHeaders(p.name, p.blob, p.taken) }') && src.includes('headers: photoHeaders(file.name, blob, taken) }'), 'Kopfzeile in beiden Upload-Wegen');
+  ok(src.includes('const taken = await photoTakenAt(file); const blob = await prepareUpload(file);'), 'vor dem Verkleinern gelesen');
+  ok(!/0x8825/.test(src.slice(a, e)), 'kein GPS');
+  ok(src.includes('data-taken-before') && src.includes("t('taken_before_occ')"), 'Markierung in der Dateiliste');
+  ok(src.includes('const takenFmt = (x) => `${fmtD(x.slice(0, 10))} ${x.slice(11, 16)}`;'), 'Anzeige: Datum der Sprache, Uhrzeit der Kamera ohne Umrechnung');
+  const main = fsx.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); ok(main.includes('function exifTaken(') && main.includes('data-taken-before'), 'app-main.js aktuell');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['taken_at', 'taken_before_occ']) ok(STRINGS[l][k] && (l === 'de' || STRINGS[l][k] !== STRINGS.de[k]), `${l}: ${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
