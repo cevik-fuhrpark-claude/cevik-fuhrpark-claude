@@ -33953,6 +33953,25 @@ await test('Backlog 1014 (Blickwinkel „Leitung überträgt den Fahrzeugschein 
   ok(/zgm_kg: 'kg'/.test(app) && /massTonnes\(el\.value\)/.test(app), 'Feld zgm_kg: Einheit beim Verlassen, Tonnen-Hinweis');
 });
 
+await test('Backlog 1015 (Folge aus 1009, Blickwinkel „Werkstatt legt einen Artikel am Tablet an“): Anfangs- und Mindestbestand im Artikelformular mit Einheit („5 Stück“, „20 l“, „2 Stk.“) wie Buchung und Lagerimport; fremde Einheit mit eigenem Grund statt „ungültige Zahl“; DE/UK/EN', async () => {
+  const { U } = await freshWorld(); let i = 0;
+  const mk = (b) => U.ws.post('/api/stock', { name: `Artikel ${i++}`, ...b });
+  const item = async (id) => { const d = (await U.ws.get(`/api/stock/${id}`)).data; return d.item || d; };
+  const a = await mk({ initial_qty: '5 Stück', min_qty: '2 Stk.' }); eq(a.status, 201, JSON.stringify(a.data));
+  const ia = await item(a.data.id); eq(ia.on_hand, 5, 'Anfangsbestand 5'); eq(ia.min_qty, 2, 'Mindestbestand 2');
+  const b = await mk({ unit: 'l', initial_qty: '20 l', min_qty: '7,5 Liter' }); eq(b.status, 201, JSON.stringify(b.data));
+  const ib = await item(b.data.id); eq(ib.on_hand, 20); eq(ib.min_qty, 7.5);
+  const c = await mk({ unit: 'l', initial_qty: '5 kg' }); eq(c.status, 400); eq(c.data.message, 'Anfangsbestand: „5 kg“ – Einheit passt nicht zum Artikel (l).');
+  const d = await mk({ initial_qty: '3', min_qty: '4 l' }); eq(d.status, 400); eq(d.data.message, 'Mindestbestand: „4 l“ – Einheit passt nicht zum Artikel (Stk).');
+  eq((await U.ws.get('/api/stock')).data.items.filter((x) => /^Artikel [23]$/.test(x.name)).length, 0, 'abgewiesene Artikel nicht angelegt');
+  eq((await mk({ initial_qty: 'abc' })).data.message, 'Anfangsbestand: ungültige Zahl.', 'wie bisher');
+  // Ändern: Mindestbestand mit Einheit des Artikels
+  const p = await U.ws.patch(`/api/stock/${b.data.id}`, { min_qty: '10 Liter' }); eq(p.status, 200, JSON.stringify(p.data)); eq((await item(b.data.id)).min_qty, 10);
+  eq((await U.ws.patch(`/api/stock/${b.data.id}`, { min_qty: '3 Stück' })).data.message, 'Mindestbestand: „3 Stück“ – Einheit passt nicht zum Artikel (l).');
+  const { translateValidation } = await import('../public/i18n.js');
+  ok(translateValidation('en', 'Mindestbestand: „4 l“ – Einheit passt nicht zum Artikel (Stk).') && translateValidation('uk', 'Anfangsbestand: „5 kg“ – Einheit passt nicht zum Artikel (l).'), 'EN/UK übersetzt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

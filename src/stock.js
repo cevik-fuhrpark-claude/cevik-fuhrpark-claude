@@ -202,7 +202,9 @@ export async function createItem(env, user, envName, body) {
   if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
   // Anfangsbestand VOR dem Anlegen prüfen (17.10.2026): vorher war der Artikel bei ungültigem Anfangsbestand („1.000“, -5) trotz 400
   // schon angelegt – erneutes Senden ergab „existiert bereits“
-  const initial = num(body.initial_qty, { min: 0, max: 1e6, field: 'Anfangsbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+  // Backlog 1015: Anfangs-/Mindestbestand mit Einheit („5 Stück“, „20 l“) wie Buchung und Lagerimport (`qtyNum`, Einheit laut Formular); fremde Einheit mit eigenem Grund
+  const unitIn0 = stdUnit(str(body.unit, { max: 20, field: 'Einheit' })) || 'Stk';
+  const initial = qtyNum(body.initial_qty, unitIn0, { min: 0, max: 1e6, field: 'Anfangsbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
   // 0,0004 rundet beim Buchen auf 0 → Buchung abgelehnt, Artikel aber schon angelegt (17.10.2026) – vorher prüfen
   if (initial && r3(initial) <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
   await assertNoTwin(env, envName, site, str(body.name, { required: true, max: 200, field: 'Bezeichnung' }), str(body.part_number, { max: 80, field: 'Teilenummer' }));
@@ -211,7 +213,7 @@ export async function createItem(env, user, envName, body) {
   try {
     await env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at,item_key)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, str(body.part_number, { max: 80, field: 'Teilenummer' }), str(body.name, { required: true, max: 200, field: 'Bezeichnung' }),
-      stdUnit(str(body.unit, { max: 20, field: 'Einheit' })), r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) })), str(body.location, { max: 80, field: 'Ort' }),
+      stdUnit(str(body.unit, { max: 20, field: 'Einheit' })), r3n(qtyNum(body.min_qty, unitIn0, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) })), str(body.location, { max: 80, field: 'Ort' }),
       num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }), user.id, now, now,
       itemKey(str(body.name, { required: true, max: 200, field: 'Bezeichnung' }), str(body.part_number, { max: 80, field: 'Teilenummer' }))).run();
   } catch (e) {
@@ -230,7 +232,7 @@ export async function updateItem(env, user, envName, id, body) {
   const fields = {
     name: body.name !== undefined ? str(body.name, { required: true, max: 200, field: 'Bezeichnung' }) : it.name,
     part_number: body.part_number !== undefined ? str(body.part_number, { max: 80, field: 'Teilenummer' }) : it.part_number,
-    min_qty: body.min_qty !== undefined ? r3n(num(body.min_qty, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) })) : it.min_qty,
+    min_qty: body.min_qty !== undefined ? r3n(qtyNum(body.min_qty, it.unit, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) })) : it.min_qty,
     location: body.location !== undefined ? str(body.location, { max: 80, field: 'Ort' }) : it.location,
     unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }) : it.unit_price_net,
     active: body.active === undefined ? it.active : (flag(body.active, 'Aktiv', !!it.active) ? 1 : 0),
