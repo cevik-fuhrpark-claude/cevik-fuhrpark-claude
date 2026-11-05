@@ -252,6 +252,8 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/me/totp/setup' && m === 'POST') return json(await totp.totpSetup(env, user, await readJson(request), auth.audit));
   if (path === '/api/me/totp/enable' && m === 'POST') return json(await totp.totpEnable(env, user, await readJson(request), auth.audit));
   if (path === '/api/me/totp/disable' && m === 'POST') return json(await totp.totpDisable(env, user, await readJson(request), auth.audit));
+  if (path === '/api/me/totp/move' && m === 'POST') return json(await totp.totpMoveStart(env, user, await readJson(request), auth.audit));
+  if (path === '/api/me/totp/move/finish' && m === 'POST') return json(await totp.totpMoveFinish(env, user, await readJson(request), auth.audit));
   if (path === '/api/me/totp/recovery-codes' && m === 'POST') return json(await totp.totpNewRecovery(env, user, await readJson(request), auth.audit));
   if (path === '/api/me/password' && m === 'POST') return json(await auth.changePassword(env, user, await readJson(request)));
 

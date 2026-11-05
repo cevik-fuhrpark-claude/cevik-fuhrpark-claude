@@ -181,6 +181,53 @@ export async function totpNewRecovery(env, user, body, auditFn) {
   return { ok: true, recovery_codes: codes };
 }
 
+// Backlog 1022 (Blickwinkel „Inhaber wechselt das Handy“): Authenticator-App auf ein neues Handy übertragen, ohne die
+// Zwei-Faktor-Anmeldung zwischendurch auszuschalten (vorher nur Ausschalten + neu Einrichten – dazwischen reichte das Passwort).
+// Schritt 1: Passwort + aktueller Code vom alten Handy (oder Ersatzcode, wenn das alte Handy fehlt) → neues Geheimnis (noch nicht aktiv)
+export async function totpMoveStart(env, user, body, auditFn) {
+  const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
+  if (!row.totp_enabled_at) throw bad('totp_off', 'Zwei-Faktor-Anmeldung ist nicht eingeschaltet.');
+  await reauthLocked(env, user);
+  if (!(await checkPassword(row, body.password))) { await reauthFailed(env, user); throw bad('wrong_password', 'Passwort falsch.'); }
+  const r = await checkSecondFactor(env, row, body.code);
+  if (!r && (await codeAlreadyUsed(row, body.code))) { await reauthOk(env, user); throw usedErr(); }
+  if (!r) { await reauthFailed(env, user); throw bad('totp_invalid', 'Code falsch oder abgelaufen.'); }
+  await reauthOk(env, user);
+  const secret = newSecret();
+  await env.DB.prepare('UPDATE users SET totp_pending=?, updated_at=? WHERE id=? AND totp_enabled_at IS NOT NULL').bind(secret, nowIso(), user.id).run();
+  await auditFn(env, user.id, 'totp.move_started', user.id, { by: r.kind });
+  return { secret, uri: otpauthUri(secret, row.username), ...(r.kind === 'recovery' ? { recovery_left: r.left } : {}) };
+}
+
+// Schritt 2: ersten Code der App auf dem neuen Handy eingeben → neues Geheimnis gilt, das alte Handy erzeugt keine gültigen Codes mehr;
+// Ersatzcodes bleiben gültig (sie hängen nicht am Handy); andere Anmeldungen enden (das alte Handy kann verloren sein)
+export async function totpMoveFinish(env, user, body, auditFn) {
+  const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
+  if (!row.totp_enabled_at) throw bad('totp_off', 'Zwei-Faktor-Anmeldung ist nicht eingeschaltet.');
+  if (!row.totp_pending) throw bad('totp_no_move', 'Bitte zuerst „Auf neues Handy übertragen“ beginnen.');
+  await reauthLocked(env, user);
+  const step = await verifyTotp(row.totp_pending, body.code);
+  if (step === null) { await reauthFailed(env, user); throw bad('totp_invalid', 'Code falsch oder abgelaufen. Bitte den aktuellen Code aus der App auf dem neuen Handy eingeben (Uhrzeit des Handys prüfen).'); }
+  await reauthOk(env, user);
+  const now = nowIso();
+  try {
+    await env.DB.batch([
+      env.DB.prepare('UPDATE users SET totp_secret=totp_pending, totp_pending=NULL, totp_last_step=?, updated_at=? WHERE id=? AND totp_enabled_at IS NOT NULL AND totp_pending=?')
+        .bind(step, now, user.id, row.totp_pending),
+      env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'),
+      env.DB.prepare('DELETE FROM cmd_guard'),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(user.id, user._session),
+      env.DB.prepare('DELETE FROM login_challenges WHERE user_id=?').bind(user.id),
+      pushOrphanStmt(env, user.id),
+    ]);
+  } catch (e) {
+    if (String(e && e.message).includes('CHECK')) throw bad('totp_no_move', 'Bitte zuerst „Auf neues Handy übertragen“ beginnen.');
+    throw e;
+  }
+  await auditFn(env, user.id, 'totp.moved', user.id, null);
+  return { ok: true };
+}
+
 // Code (6 Ziffern) oder Ersatzcode prüfen und verbrauchen. Liefert { kind: 'totp'|'recovery', left } oder null.
 // Verbrauch atomar: Zeitschritt bzw. Ersatzcode-Liste wird nur geschrieben, wenn sie seit dem Lesen unverändert ist.
 export async function checkSecondFactor(env, row, code) {

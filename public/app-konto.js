@@ -82,12 +82,38 @@ async function loadTotp() {
   }
   box.innerHTML = `<p><span class="chip ok">${esc(t('tf_on').replace('{d}', fmtDT(st.enabled_at)))}</span> <span class="small ${st.recovery_left <= 2 ? '' : 'muted'}">${esc(t('tf_rc_left').replace('{n}', st.recovery_left))}</span></p>
     <details><summary>${esc(t('tf_rc_new'))}</summary><form id="tfr"><p class="small muted">${esc(t('tf_rc_new_hint'))}</p><label for="tfrc">${esc(t('tf_code'))}</label><input id="tfrc" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required><div class="actions"><button class="btn secondary">${esc(t('tf_rc_new'))}</button></div></form></details>
+    <details id="tfmv"><summary>${esc(t('tf_move'))}</summary><form id="tfm"><p class="small muted">${esc(t('tf_move_hint'))}</p><label for="tfmpw">${esc(t('tf_pw'))}</label><input id="tfmpw" type="password" autocomplete="current-password" required><label for="tfmc">${esc(t('tf_code_or_rc'))}</label><input id="tfmc" autocomplete="one-time-code" autocapitalize="none" maxlength="14" required><div class="actions"><button class="btn secondary">${esc(t('tf_move'))}</button></div></form><div id="tfmstep"></div></details>
     <details><summary>${esc(t('tf_disable'))}</summary><form id="tfd"><label for="tfdpw">${esc(t('tf_pw'))}</label><input id="tfdpw" type="password" autocomplete="current-password" required><label for="tfdc">${esc(t('tf_code_or_rc'))}</label><input id="tfdc" autocomplete="one-time-code" autocapitalize="none" maxlength="14" required><div class="actions"><button class="btn danger">${esc(t('tf_disable'))}</button></div></form></details>
     <div id="tfout"></div>`;
   $('#tfr').onsubmit = async (e) => {
     e.preventDefault();
     try { const x = await api('POST', '/api/me/totp/recovery-codes', { code: $('#tfrc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); $('#tfout').innerHTML = rcBlock(x.recovery_codes); wireRc(x.recovery_codes); $('#tfrc').value = ''; }
     catch (err) { toast(err.message, true); }
+  };
+  // Backlog 1022: Authenticator-App auf ein neues Handy übertragen (2FA bleibt eingeschaltet)
+  $('#tfm').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api('POST', '/api/me/totp/move', { password: $('#tfmpw').value, code: $('#tfmc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); // Wiederholung erzeugt nur einen neuen, noch nicht genutzten Schlüssel
+      $('#tfmpw').value = ''; $('#tfmc').value = ''; $('#tfm').hidden = true;
+      const key = r.secret.replace(/(.{4})/g, '$1 ').trim();
+      $('#tfmstep').innerHTML = `${r.recovery_left !== undefined ? `<p class="small" role="note">${esc(t('tf_move_rc_used').replace('{n}', r.recovery_left))}</p>` : ''}<p class="small">${esc(t('tf_move_scan'))}</p><div class="qr">${(() => { try { return qrSvg(r.uri, { label: t('tf_title') }); } catch { return ''; } })()}</div>
+        <p class="small">${esc(t('tf_key'))}: <code style="word-break:break-all">${esc(key)}</code></p>
+        <form id="tfmf"><label for="tfmn">${esc(t('tf_code'))}</label><input id="tfmn" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required><div class="actions"><button class="btn">${esc(t('tf_move_finish'))}</button><button type="button" class="btn secondary" id="tfmx">${esc(t('tf_cancel'))}</button></div></form>`;
+      $('#tfmx').onclick = () => loadTotp();
+      $('#tfmf').onsubmit = async (ev) => {
+        ev.preventDefault();
+        try {
+          await api('POST', '/api/me/totp/move/finish', { code: $('#tfmn').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS });
+          box.innerHTML = `<div class="panel ok small" role="status" id="tfmok">${esc(t('tf_move_done'))}</div><div class="actions"><button type="button" class="btn" id="tfdone">OK</button></div>`;
+          $('#tfdone').onclick = () => loadTotp();
+        } catch (err) {
+          // Funkloch: übertragen, aber die Antwort ging verloren → Wiederholung meldet totp_no_move
+          if (lostDup(ev.target, {}, err, ['totp_no_move'])) { toast(t('saved_before')); loadTotp(); return; }
+          lostMark(ev.target, {}, err); toast(err.message, true);
+        }
+      };
+    } catch (err) { toast(err.message, true); }
   };
   $('#tfd').onsubmit = async (e) => {
     e.preventDefault();

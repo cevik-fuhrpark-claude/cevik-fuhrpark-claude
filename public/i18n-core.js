@@ -81,6 +81,9 @@ const VALIDATION_TEXTS = {
 // [CLAUDE] Backlog 83: restliche feste Eingabefehler (v. a. Inhaber/Fuhrparkleitung: Verträge, Bußgelder, Importe, Versicherung, Fahrer).
 // CSV-Spaltennamen bleiben deutsch (so heißen sie in der Datei). Rein technische Integrationsfehler bleiben unübersetzt.
 const V_MORE = [
+  // Backlog 1022: Zwei-Faktor-Anmeldung auf neues Handy übertragen
+  ['Bitte zuerst „Auf neues Handy übertragen“ beginnen.', 'Спершу розпочніть «Перенести на новий телефон».', 'Please start “Move to a new phone” first.'],
+  ['Code falsch oder abgelaufen. Bitte den aktuellen Code aus der App auf dem neuen Handy eingeben (Uhrzeit des Handys prüfen).', 'Код неправильний або застарів. Введіть поточний код із застосунку на новому телефоні (перевірте час на телефоні).', 'Code wrong or expired. Please enter the current code from the app on the new phone (check the phone’s clock).'],
   // Backlog 1012: Reifengrößen-Import ohne Spalte „Reifen …“ bzw. eigene Reifen-Übersicht hochgeladen
   ['Das ist die Reifen-Übersicht dieser App (Auswertung), keine Quelldatei. Bitte eine Datei mit Spalte „FIN“ und „Reifen Lenkachse“, „Reifen Liftachse“, „Reifen Antriebsachse“ bzw. „Reifen Anhänger“ hochladen.', 'Це огляд шин із цього застосунку (звіт), а не вихідний файл. Завантажте файл зі стовпцем «FIN» та «Reifen Lenkachse», «Reifen Liftachse», «Reifen Antriebsachse» або «Reifen Anhänger».', 'This is the tyre overview from this app (a report), not a source file. Please upload a file with the column “FIN” and “Reifen Lenkachse”, “Reifen Liftachse”, “Reifen Antriebsachse” or “Reifen Anhänger”.'],
   ['Keine Reifenspalte erkannt – die Datei braucht mindestens eine der Spalten „Reifen Lenkachse“, „Reifen Liftachse“, „Reifen Antriebsachse“, „Reifen Anhänger“ (Überschrift anpassen und erneut hochladen).', 'Стовпець шин не розпізнано – файл має містити принаймні один зі стовпців «Reifen Lenkachse», «Reifen Liftachse», «Reifen Antriebsachse», «Reifen Anhänger» (виправте заголовок і завантажте знову).', 'No tyre column recognised – the file needs at least one of the columns “Reifen Lenkachse”, “Reifen Liftachse”, “Reifen Antriebsachse”, “Reifen Anhänger” (adjust the heading and upload again).'],
@@ -797,6 +800,8 @@ const AUDIT_ACTIONS = {
   'totp.disable': ['Zwei-Faktor-Anmeldung ausgeschaltet', 'Двофакторний вхід вимкнено', 'Two-factor sign-in disabled'],
   'totp.reset': ['Zwei-Faktor-Anmeldung zurückgesetzt', 'Двофакторний вхід скинуто', 'Two-factor sign-in reset'],
   'totp.recovery_renewed': ['Ersatzcodes erneuert', 'Резервні коди оновлено', 'Recovery codes renewed'],
+  'totp.move_started': ['Zwei-Faktor-Anmeldung: Übertragung auf neues Handy begonnen', 'Двофакторний вхід: перенесення на новий телефон розпочато', 'Two-factor sign-in: move to a new phone started'],
+  'totp.moved': ['Zwei-Faktor-Anmeldung auf neues Handy übertragen', 'Двофакторний вхід перенесено на новий телефон', 'Two-factor sign-in moved to a new phone'],
   'user.create': ['Benutzer angelegt', 'Користувача створено', 'User created'],
   'user.update': ['Benutzer geändert (Rolle/Umgebung/aktiv)', 'Користувача змінено (роль/середовище/активний)', 'User changed (role/environment/active)'],
   'user.invite_reset': ['Neuer Einladungslink', 'Нове посилання-запрошення', 'New invitation link'],

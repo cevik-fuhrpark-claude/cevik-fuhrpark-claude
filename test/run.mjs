@@ -7949,7 +7949,7 @@ await test('Anmelde-Hinweis bei neuem Gerät: erste Anmeldung still, bekanntes G
   eq(dx.known_devices.length, 15); ok(dx.known_devices.every((x) => !('device_hash' in x) && x.first_seen && x.last_seen), 'Auskunft ohne Kennung');
   // Texte DE/UK/EN, App sendet Kennung und verlinkt den Hinweis auf die Geräteliste
   const { STRINGS } = await import('../public/i18n.js');
-  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].new_login_hint && STRINGS[l].help_login2fa_s.split('|').length === 5, 'Text ' + l); }
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].new_login_hint && STRINGS[l].help_login2fa_s.split('|').length === 6, 'Text ' + l) /* Backlog 1022: Absatz „Neues Handy“ */; }
   const { nt } = await import('../src/notify.js');
   for (const l of ['uk', 'en']) for (const k of ['new_login', 'new_login_body', 'unknown_device']) ok(nt(l, k) && nt(l, k) !== nt('de', k), `${k} ${l}`);
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -34157,6 +34157,64 @@ await test('Backlog 1021 (Folge aus 1020): Foto laut Kamera älter als Schadenze
   const main = fsx.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); ok(main.includes('const photoOldDay = ') && main.includes('dataset.photoold'), 'app-main.js aktuell');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['photo_old_new', 'photo_old_occ', 'photo_old_check']) ok(STRINGS[l][k] && STRINGS[l][k].includes('{d}') && (l === 'de' || STRINGS[l][k] !== STRINGS.de[k]), `${l}: ${k}`);
+});
+await test('Backlog 1022 (Blickwinkel „Inhaber wechselt das Handy“): Zwei-Faktor-Anmeldung auf neues Handy übertragen, ohne sie auszuschalten; alter Code ungültig, Ersatzcodes bleiben, andere Sitzungen enden; DE/UK/EN', async () => {
+  const T = await import('../src/totp.js');
+  const PW = 'Sicheres-Passwort-2026';
+  const next = (sec, k = 1) => T.totpAt(sec, Date.now() + k * T.STEP_SEC * 1000);
+  const u = await invite(owner, { username: 'test.handywechsel', display_name: 'Test Handywechsel', role: 'viewer', environment: 'test' });
+  // ohne eingeschaltete 2FA nicht möglich
+  eq((await u.post('/api/me/totp/move', { password: PW, code: '123456' })).data.error, 'totp_off');
+  eq((await u.post('/api/me/totp/move/finish', { code: '123456' })).data.error, 'totp_off');
+  const oldSec = (await u.post('/api/me/totp/setup', { password: PW })).data.secret;
+  const en = await u.post('/api/me/totp/enable', { code: await T.totpAt(oldSec) }); eq(en.status, 200);
+  eq((await u.post('/api/me/totp/move/finish', { code: '123456' })).data.error, 'totp_no_move', 'Abschluss ohne Beginn');
+  // Beginn: falsches Passwort / falscher Code abgelehnt
+  eq((await u.post('/api/me/totp/move', { password: 'falsch-falsch-1', code: await next(oldSec) })).data.error, 'wrong_password');
+  eq((await u.post('/api/me/totp/move', { password: PW, code: '000000' === await next(oldSec) ? '111111' : '000000' })).data.error, 'totp_invalid');
+  const other = new Client(worker, env, 'hw-other'); const lo = await other.post('/api/login', { username: 'test.handywechsel', password: PW });
+  eq((await other.post('/api/login/totp', { challenge: lo.data.challenge, code: en.data.recovery_codes[5] })).status, 200, 'zweites Gerät angemeldet (Ersatzcode)');
+  const st1 = await u.post('/api/me/totp/move', { password: PW, code: await next(oldSec) });
+  eq(st1.status, 200); ok(/^[A-Z2-7]{32}$/.test(st1.data.secret) && st1.data.secret !== oldSec, 'neues Geheimnis'); ok(st1.data.uri.includes('secret=' + st1.data.secret), 'otpauth');
+  ok(!('recovery_left' in st1.data), 'mit Code kein Ersatzcode verbraucht');
+  // bis zum Abschluss gilt das alte Handy weiter, 2FA bleibt eingeschaltet
+  eq((await u.get('/api/me/totp')).data.enabled, true, 'zwischendurch eingeschaltet');
+  const c1 = new Client(worker, env, 'hw-l1'); const l1 = await c1.post('/api/login', { username: 'test.handywechsel', password: PW });
+  eq(l1.data.second_factor, 'totp', 'Passwort allein reicht nicht');
+  eq((await c1.post('/api/login/totp', { challenge: l1.data.challenge, code: await T.totpAt(st1.data.secret) })).status, 401, 'neues Handy vor Abschluss ungültig');
+  // Abschluss: falscher Code zählt, richtiger Code vom neuen Handy
+  eq((await u.post('/api/me/totp/move/finish', { code: await T.totpAt(oldSec) === await T.totpAt(st1.data.secret) ? '000000' : await T.totpAt(oldSec) })).data.error, 'totp_invalid', 'Code vom alten Handy beim Abschluss abgelehnt');
+  const fin = await u.post('/api/me/totp/move/finish', { code: await T.totpAt(st1.data.secret) });
+  eq(fin.status, 200); eq(fin.data.ok, true);
+  eq((await u.post('/api/me/totp/move/finish', { code: await next(st1.data.secret) })).data.error, 'totp_no_move', 'doppelter Abschluss');
+  eq((await other.get('/api/me')).status, 401, 'andere Sitzung beendet'); eq((await u.get('/api/me')).status, 200, 'eigene Sitzung bleibt');
+  const st = (await u.get('/api/me/totp')).data; eq(st.enabled, true); eq(st.recovery_left, 9, 'Ersatzcodes unverändert (einer vom zweiten Gerät verbraucht)');
+  // Anmeldung: altes Handy ungültig, neues gültig, Ersatzcode gültig
+  const c2 = new Client(worker, env, 'hw-l2'); const l2 = await c2.post('/api/login', { username: 'test.handywechsel', password: PW });
+  eq((await c2.post('/api/login/totp', { challenge: l2.data.challenge, code: await next(oldSec) === await next(st1.data.secret) ? '000000' : await next(oldSec) })).status, 401, 'Code vom alten Handy ungültig');
+  eq((await c2.post('/api/login/totp', { challenge: l2.data.challenge, code: await next(st1.data.secret) })).status, 200, 'Code vom neuen Handy gültig');
+  // altes Handy verloren: Beginn mit Ersatzcode (wird verbraucht)
+  const st2 = await u.post('/api/me/totp/move', { password: PW, code: en.data.recovery_codes[0] });
+  eq(st2.status, 200); eq(st2.data.recovery_left, 8, 'Ersatzcode verbraucht');
+  eq((await u.post('/api/me/totp/move', { password: PW, code: en.data.recovery_codes[0] })).data.error, 'totp_invalid', 'Ersatzcode nur einmal');
+  // Abbrechen = nichts abschließen: Ausschalten verwirft auch den angefangenen Umzug
+  eq((await u.post('/api/me/totp/disable', { password: PW, code: en.data.recovery_codes[1] })).status, 200);
+  eq((await u.post('/api/me/totp/move/finish', { code: await T.totpAt(st2.data.secret) })).data.error, 'totp_off');
+  // Protokoll, nie in Sicherung
+  const au = (await owner.get(`/api/admin/audit?action=totp.`)).data.entries.filter((e) => e.target === u.id);
+  ok(au.some((e) => e.action === 'totp.move_started' && e.detail && e.detail.by === 'totp'), 'Beginn protokolliert (Code)');
+  ok(au.some((e) => e.action === 'totp.move_started' && e.detail && e.detail.by === 'recovery'), 'Beginn protokolliert (Ersatzcode)');
+  ok(au.some((e) => e.action === 'totp.moved'), 'Abschluss protokolliert');
+  const bk = JSON.stringify((await owner.get('/api/admin/backup')).data); ok(!bk.includes(st1.data.secret) && !bk.includes(st2.data.secret), 'Geheimnis nicht in der Sicherung');
+  // Oberfläche und Texte
+  const fsx = await import('node:fs'); const src = fsx.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(src.includes("api('POST', '/api/me/totp/move', {") && src.includes("api('POST', '/api/me/totp/move/finish', {"), 'Oberfläche nutzt beide Schritte');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['tf_move', 'tf_move_hint', 'tf_move_scan', 'tf_move_finish', 'tf_move_done', 'tf_move_rc_used']) ok(STRINGS[l][k] && (l === 'de' || STRINGS[l][k] !== STRINGS.de[k]), `${l}: ${k}`);
+    ok(STRINGS[l].tf_move_rc_used.includes('{n}'), `${l}: {n}`);
+    ok(STRINGS[l].help_login2fa_s.split('|').some((p) => p.includes(STRINGS[l].tf_move)), `${l}: Hilfe nennt den Knopf`);
+  }
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
