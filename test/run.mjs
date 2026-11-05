@@ -33847,6 +33847,19 @@ await test('Backlog 1009 (Blickwinkel „Werkstatt übernimmt die Teileliste des
   eq(real.status, 200, JSON.stringify(real.data)); eq(real.data.created, 1);
 });
 
+await test('Backlog 1010 (Folge aus 1009, Leasingliste mit Beträgen wie auf dem Vertrag): Vertragsimport liest die Monatsrate wie das Formular („450 € netto“, „450,- €“, „450 zzgl. MwSt.“); Fremdwährung und Bruttobetrag mit eigenem Grund statt „Zahl nicht erkannt“, nie umgerechnet', async () => {
+  const { U } = await freshWorld();
+  const post = (csv) => U.fleet.req('POST', '/api/contracts/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  let i = 0; const one = async (r) => (await post(`Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;Monatsrate netto;Nachweis\nSZ-YC 5513;Leasing;L;N-${i++};${r};Vertrag\n`)).data;
+  for (const r of ['450,- €', '450 € netto', '450 zzgl. MwSt.', 'EUR 450', '450']) { const d = await one(r); eq(d.skipped.length, 0, r + JSON.stringify(d.skipped)); eq(d.rows[0].monthly_rate_net, 450, r); }
+  eq((await one('450 zł')).skipped[0].reason, 'Monatsrate: „450 zł“ ist ein Betrag in PLN – bitte den Euro-Betrag laut Beleg bzw. Abrechnung eingeben (die App rechnet nicht um).');
+  ok(/ist ein Bruttobetrag/.test((await one('535,50 brutto')).skipped[0].reason) && /ist ein Bruttobetrag/.test((await one('450 inkl. MwSt.')).skipped[0].reason), 'Brutto');
+  eq((await one('abc')).skipped[0].reason, 'Zahl nicht erkannt: abc', 'wie bisher');
+  eq((await one('4.800 € jährlich')).skipped[0].reason, 'Monatsrate: „4.800 € jährlich“ ist ein Jahresbetrag – bitte die Monatsrate laut Vertrag angeben (die App rechnet nicht um).', 'Backlog 1004 unverändert');
+  const { translateImportReason } = await import('../public/i18n.js');
+  ok(/PLN/.test(translateImportReason('en', 'Monatsrate: „450 zł“ ist ein Betrag in PLN – bitte den Euro-Betrag laut Beleg bzw. Abrechnung eingeben (die App rechnet nicht um).')) && !/bitte/.test(translateImportReason('en', 'Monatsrate: „450 zł“ ist ein Betrag in PLN – bitte den Euro-Betrag laut Beleg bzw. Abrechnung eingeben (die App rechnet nicht um).')), 'EN übersetzt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

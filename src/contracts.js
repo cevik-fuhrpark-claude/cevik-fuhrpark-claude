@@ -692,7 +692,9 @@ export async function importContracts(env, user, text, { dryRun = false, source 
         if (rp && rp.period === 'year') return skip(`Monatsrate: „${cv}“ ist ein Jahresbetrag – bitte die Monatsrate laut Vertrag angeben (die App rechnet nicht um).`);
         if (rp && rp.period === 'half') return skip(`Monatsrate: „${cv}“ ist ein Halbjahresbetrag – bitte die Monatsrate laut Vertrag angeben (die App rechnet nicht um).`);
         if (rp && rp.period === 'quarter') return skip(`Monatsrate: „${cv}“ ist ein Quartalsbetrag – bitte die Monatsrate laut Vertrag angeben (die App rechnet nicht um).`); if (rp) cell = rp.value.replace(/\s*(netto|net|нетто|(zzgl\.?|ohne|plus|excl\.?)\s*(mwst|ust|vat)\.?)$/i, '').replace(/^(netto|net)\s*/i, ''); }
-      const n = parseDeNum(k === 'notice_months' ? cell.replace(/\s*(monate?|mon\.?|mo\.?)\s*$/i, '') : cell);
+      let n = parseDeNum(k === 'notice_months' ? cell.replace(/\s*(monate?|mon\.?|mo\.?)\s*$/i, '') : cell);
+      // Backlog 1010: Monatsrate wie im Formular („450 € netto“, „450,- €“, „450 zzgl. MwSt.“; Fremdwährung/Brutto mit eigenem Grund)
+      if (Number.isNaN(n) && k === 'monthly_rate_net') { try { n = num(cell, { min: 0, max: 1000000, field: 'Monatsrate', net: true, cents: true, monthly: true }); } catch (e) { if (!/ungültige Zahl\.$/.test(e.message)) return skip(e.message); } }
       if (Number.isNaN(n)) return skip(`Zahl nicht erkannt: ${cell}`);
       body[k] = n;
     }
