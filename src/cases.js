@@ -267,6 +267,8 @@ export async function listCases(env, user, envName, query, meta = null) {
       CASE c.status WHEN 'wartet_teile' THEN (SELECT e.note FROM case_events e WHERE e.case_id=c.id AND e.action IN ('wait_parts','parts_partial') ORDER BY e.created_at DESC LIMIT 1) END AS parts_wait_note,
       -- Backlog 867: wer den Arbeitsstand zuletzt eingetragen hat (Werkstatt-Tafel/Liste)
       CASE WHEN c.work_state_by IS NOT NULL THEN (SELECT wu.display_name FROM users wu WHERE wu.id=c.work_state_by) END AS work_state_by_name,
+      -- Backlog 1026 (Blickwinkel „Schichtübergabe in der Werkstatt“): wer den Auftrag übernommen hat (steht auch im Verlauf; Fahrer erhält es nicht)
+      CASE WHEN c.workshop_ack_by IS NOT NULL THEN (SELECT au.display_name FROM users au WHERE au.id=c.workshop_ack_by) END AS workshop_ack_by_name,
       ${APPR_WAIT_SQL(berlinDate())}
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN users u ON u.id=c.reporter_id
     WHERE ${where.join(' AND ')}
@@ -365,7 +367,7 @@ function shapeOmit(user) {
   if (!o) {
     o = new Set(['request_key', 'content_hash']);
     if (!canSeeCosts(user)) o.add('cost_approved_net');
-    if (user.role === 'driver') { o.add('cost_over_limit_at'); o.add('fleet_received_by'); o.add('workshop_ack_by'); o.add('parts_drive_by'); } // Fahrer: keine internen Zuständigkeiten
+    if (user.role === 'driver') { o.add('cost_over_limit_at'); o.add('fleet_received_by'); o.add('workshop_ack_by'); o.add('workshop_ack_by_name'); o.add('parts_drive_by'); } // Fahrer: keine internen Zuständigkeiten
     // Backlog 867: Arbeitsstand ist eine Übergabe innerhalb der Werkstatt/Leitung (Fahrer sieht Status und Abholvermerk)
     if (user.role === 'driver') { o.add('work_state_note'); o.add('work_state_at'); o.add('work_state_by'); o.add('work_state_by_name'); }
     if (user.role === 'driver' || user.role === 'viewer') o.add('appraisal_wait_on'); // Backlog 903: nur Leitung, Werkstatt, Disposition
@@ -442,11 +444,12 @@ export async function getCaseDetail(env, user, envName, caseId) {
       'latest', (SELECT MAX(created_at) FROM inspections WHERE case_id=c.id AND kind='nach_reparatur'),
       'rework', (SELECT MAX(created_at) FROM case_events WHERE case_id=c.id AND action='return_for_rework'),
       'safety', (SELECT COUNT(*) FROM open_items WHERE case_id=c.id AND status='offen' AND safety_relevant=1)) AS qc_state` : '';
-  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}, ${APPR_WAIT_SQL(berlinDate())}${srcSql}${qcSql} FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
+  // Backlog 1026: Name der übernehmenden Werkstattperson in derselben Abfrage (Abfragebudget Vorgangsdetail)
+  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}, ${APPR_WAIT_SQL(berlinDate())}${srcSql}${qcSql}, (SELECT au.display_name FROM users au WHERE au.id=c.workshop_ack_by) AS ack_by_name FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
     .bind(c0.id, ...(fromInsp ? [envName, ...(mgrUser ? [c0.check_item] : [])] : [])).first();
-  const c = { ...c0, q_at: vq ? vq.q_at : null, q_reply: vq ? vq.q_reply : null, q_lead: vq ? vq.q_lead : null, appraisal_wait_on: vq ? vq.appraisal_wait_on : null };
+  const c = { ...c0, q_at: vq ? vq.q_at : null, q_reply: vq ? vq.q_reply : null, q_lead: vq ? vq.q_lead : null, appraisal_wait_on: vq ? vq.appraisal_wait_on : null, workshop_ack_by_name: vq && c0.workshop_ack_by ? vq.ack_by_name || null : null };
   const srcInsp = vq && vq.src_insp ? JSON.parse(vq.src_insp) : null;
-  const vehicle = vq ? (({ q_at, q_reply, q_lead, src_insp, appraisal_wait_on, qc_state, ...v }) => v)(vq) : null;
+  const vehicle = vq ? (({ q_at, q_reply, q_lead, src_insp, appraisal_wait_on, qc_state, ack_by_name, ...v }) => v)(vq) : null;
   // reach: 0 = deaktiviert, 1 = erreichbar, 2 = aktiv, aber nicht benachrichtigbar (ohne Passwort/andere Umgebung; Regel wie candidateUsers.reporter_ok)
   // + Zuordnung des Melders zur Meldezeit (Backlog 421, nur Leitung) in derselben Abfrage (Abfragebudget Vorgangsdetail ≤ 20)
   const reporter = await env.DB.prepare(`SELECT display_name, CASE WHEN role='driver' OR was_driver=1 THEN 'driver' ELSE role END AS role,
@@ -670,7 +673,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
   }
   if (seesWork) {
     detail.work = (await env.DB.prepare(`SELECT w.*, u.display_name AS user_name FROM work_entries w JOIN users u ON u.id=w.user_id WHERE case_id=? ORDER BY work_date, created_at`).bind(c.id).all()).results;
-    detail.parts = (await env.DB.prepare('SELECT * FROM parts WHERE case_id=? ORDER BY created_at').bind(c.id).all()).results;
+    // Backlog 1026: wer das Teil gebucht hat (steht auch im Verlauf „Teil hinzugefügt“) – Schichtübergabe in der Werkstatt
+    detail.parts = (await env.DB.prepare('SELECT p.*, u.display_name AS user_name FROM parts p LEFT JOIN users u ON u.id=p.user_id WHERE p.case_id=? ORDER BY p.created_at').bind(c.id).all()).results;
   }
   if (canSeeCosts(user)) {
     detail.external_costs = (await env.DB.prepare('SELECT x.*, f.filename AS file_name, f.content_type AS file_type FROM external_costs x LEFT JOIN files f ON f.id=x.file_id WHERE x.case_id=? ORDER BY x.created_at').bind(c.id).all()).results;

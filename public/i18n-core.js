@@ -1295,6 +1295,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1023: abgelehnte Meldung wieder öffnen
 // Backlog 1024: Melder sieht Ablehnungsgrund und Widerspruchsweg
 // Backlog 1025 (Blickwinkel „Werkstatt Bayern, erster Auftrag“): eigene Werkstatt nennen, leere Tafel erklären, Abschlusskontrolle vorher prüfen
+// Backlog 1026 (Blickwinkel „Schichtübergabe in der Werkstatt“)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

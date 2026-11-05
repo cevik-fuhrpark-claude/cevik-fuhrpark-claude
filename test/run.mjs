@@ -34315,6 +34315,39 @@ await test('Backlog 1025 (Blickwinkel „Werkstatt Bayern, erster Auftrag“): V
   }
 });
 
+await test('Backlog 1026 (Blickwinkel „Schichtübergabe in der Werkstatt“): Vorgang/Liste nennen, wer übernommen hat (nicht für Fahrer), Teile mit buchender Person, Arbeitsstand weist auf spätere Buchungen hin; DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'freigegeben')).status, 200);
+  eq((await U.ws.get(`/api/cases/${id}`)).data.case.workshop_ack_by_name, null, 'noch nicht übernommen');
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200);
+  eq((await U.ws.get(`/api/cases/${id}`)).data.case.workshop_ack_by_name, 'WS DO', 'Vorgang nennt die Person');
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.case.workshop_ack_by_name, 'WS DO', 'Leitung ebenso');
+  const row = (await U.ws.get('/api/cases')).data.cases.find((c) => c.id === id);
+  eq(row.workshop_ack_by_name, 'WS DO', 'Liste/Tafel');
+  const dv = (await U.driver.get(`/api/cases/${id}`)).data.case;
+  ok(!('workshop_ack_by_name' in dv) && !('workshop_ack_by' in dv), 'Fahrer erhält keine internen Zuständigkeiten');
+  const dl = (await U.driver.get('/api/cases')).data.cases.find((c) => c.id === id);
+  ok(dl && !('workshop_ack_by_name' in dl), 'auch nicht in der Liste');
+  eq((await cmd(U.ws, id, 'start_repair')).status, 200);
+  eq((await cmd(U.ws, id, 'set_work_state', {}, 'Rad HL abgebaut')).status, 200);
+  eq((await cmd(U.ws, id, 'add_part', { name: 'Bremsscheibe', quantity: 1 })).status, 200);
+  const d = (await U.ws.get(`/api/cases/${id}`)).data;
+  eq(d.parts[0].user_name, 'WS DO', 'Teil mit buchender Person');
+  ok(d.events.some((e) => e.action === 'add_part' && e.created_at > d.case.work_state_at), 'Buchung nach dem Arbeitsstand im Verlauf (Grundlage des Hinweises)');
+  ok(!(await U.driver.get(`/api/cases/${id}`)).data.parts, 'Fahrer sieht keine Teile');
+  // Oberfläche
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-wstlater') && app.includes("tn('wst_later', later)") && app.includes("const WST_LATER = ['record_work', 'add_part', 'add_open_item', 'resolve_open_item', 'add_external_cost'];"), 'Hinweis „danach gebucht“');
+  ok(app.includes('data-ackby') && app.includes('${ackList(c)}') && app.includes('data-ackl'), 'übernommen von in Vorgang und Liste');
+  ok(app.includes('${bookedWho(p.created_at, p.user_name)}') && app.includes('data-bkat'), 'Teile/Arbeitszeit mit Person bzw. Uhrzeit heute');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const L of ['de', 'uk', 'en']) {
+    for (const k of ['wst_later', 'wst_later_hint', 'ws_ack_by']) ok(STRINGS[L][k], `${L}.${k}`);
+    ok(PLURALS[L].wst_later && PLURALS[L].wst_later.one.includes('{n}'), 'Pluralformen ' + L);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
