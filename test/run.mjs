@@ -34260,6 +34260,24 @@ await test('Backlog 1023 (Blickwinkel „Leitung lehnt eine Meldung versehentlic
   for (const L of ['de', 'uk', 'en']) ok(STRINGS[L].help_fleet_s.split('|').length >= 2 && STRINGS[L].help_fleet_s.split('|').some((x) => /^(Versehentlich abgelehnt|Відхилено помилково|Rejected by mistake).*(Wieder öffnen|Відкрити знову|Reopen)/.test(x)), 'Hilfe ' + L);
 });
 
+await test('Backlog 1024 (Folge aus 1023): Melder sieht an der abgelehnten Meldung den Grund und kann per Kommentar widersprechen – Leitung wird benachrichtigt; nicht bei „ohne Reparatur beendet“; DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'reject', {}, 'Schaden war schon vorher bekannt')).status, 200);
+  const d = (await U.driver.get(`/api/cases/${id}`)).data;
+  const rj = (d.events || []).filter((e) => e.action === 'reject');
+  eq(rj.length && rj[rj.length - 1].note, 'Schaden war schon vorher bekannt', 'Fahrer sieht den Grund im Verlauf');
+  ok(d.allowed_actions.includes('comment'), 'Fahrer kann kommentieren');
+  const c = await U.driver.post(`/api/cases/${id}/commands`, { action: 'comment', command_id: 'rej-1024-' + Date.now(), expected_version: d.case.version, note: 'Ist ein neuer Kratzer, nicht der alte' });
+  eq(c.status, 200, JSON.stringify(c.data));
+  ok((await U.fleet.get('/api/notifications')).data.notifications.some((x) => x.kind === 'comment' && x.case_id === id), 'Leitung erfährt den Widerspruch');
+  ok((await U.fleet.get(`/api/cases/${id}`)).data.allowed_actions.includes('reopen'), 'Leitung kann wieder öffnen');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${qBanner(c)}${rejBox(c, d)}') && app.includes("if (c.status !== 'abgelehnt' || isWithdrawn(c) || c.reporter_id !== S.me.id || isMgr()) return '';"), 'Kasten nur für den Melder, nicht bei ohne Reparatur beendet');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const L of ['de', 'uk', 'en']) for (const k of ['rej_box_t', 'rej_box_s']) ok(STRINGS[L][k], `${L}.${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

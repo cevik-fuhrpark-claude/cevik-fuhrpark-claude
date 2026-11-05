@@ -1853,6 +1853,13 @@ function vehLocInfo(c) {
 // extra(c): optionaler Zusatz vorn in der Unterzeile (z. B. „steht auch oben“ auf der Werkstatt-Startseite, Backlog 454) – Zeile bricht dann um
 // Backlog 463: Rückfrage an den Melder – Stand aus der Schnittstelle (q_state open/answered), nie geschätzt
 function qChip(c) { return c.q_state ? ` · <span class="chip ${c.q_state === 'open' ? 'mittel' : 'ok'}" data-qchip="${esc(c.q_state)}">${esc(t(c.q_state === 'open' ? 'q_open' : 'q_answered'))}</span>` : ''; }
+// Backlog 1024 (Folge aus 1023): Melder sieht an seiner abgelehnten Meldung den Grund oben und wie er widersprechen kann (Kommentar →
+// Leitung kann „Wieder öffnen“); nicht bei „ohne Reparatur beendet“ und nicht für Leitung/Inhaber
+function rejBox(c, d) {
+  if (c.status !== 'abgelehnt' || isWithdrawn(c) || c.reporter_id !== S.me.id || isMgr()) return '';
+  const rj = (d.events || []).filter((e) => e.action === 'reject'); const ev = rj[rj.length - 1];
+  return `<div class="panel" id="rejbox"><b>${esc(t('rej_box_t'))}</b>${ev && ev.note ? `<p style="white-space:pre-wrap;margin:6px 0"${langAttr(ev.note)}>${esc(ev.note)}</p>` : ''}<p class="small muted" style="margin:0">${esc(t('rej_box_s'))}</p></div>`;
+}
 function qBanner(c) {
   if (!c.q_state) return '';
   if (S.me.role === 'driver' || c.reporter_id === S.me.id) return c.q_state === 'open' ? `<div class="panel warn" role="note" data-qbanner="open"><b>${esc(t('q_drv_title'))}</b><br>${esc(t('q_drv_hint'))} <a href="#cf" data-qjump>${esc(t('q_drv_jump'))}</a></div>` : '';
@@ -3237,7 +3244,7 @@ async function viewCase(id) {
     ${d.maintenance_event ? (() => { const me = d.maintenance_event; const ri = me.reinspection; const good = ri && !DEFECT_RESULTS.includes(ri.result); return `<div class="panel ${good ? 'good' : ''}"><b>${esc(t('md_case'))}: ${esc(mk(me.kind))} ${fmtD(me.done_date)}</b> · ${esc(t('res_' + me.result))} – ${ri ? `${esc(t('reinsp_done'))} ${fmtD(ri.done_date)}${ri.result ? ' · ' + esc(t('res_' + ri.result)) : ''} (${esc(ri.evidence)})` : `${c.status === 'fahrzeug_freigegeben' ? `<span class="chip mittel">${esc(t('todo_reinspection'))}</span> ` : ''}${esc(t('md_case_hint'))}`} <a class="noprint" href="#/vehicles/${esc(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a></div>`; })() : ''}
     ${d.maintenance_rule ? `<div class="panel ${d.maintenance_rule.done_since_order ? 'good' : ''}"><b>${esc(t('mo_case'))}: ${esc(mk(d.maintenance_rule.kind))}</b> – ${d.maintenance_rule.done_since_order ? `${esc(t('mo_done'))} ${fmtD(d.maintenance_rule.last_done_date)}` : esc(t('mo_case_hint'))} <a class="noprint" href="#/vehicles/${esc(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a></div>` : ''}
     ${d.tire_winter ? (() => { const w = d.tire_winter; const good = w.status === 'erfuellt'; return `<div class="panel ${good ? 'good' : ''}" id="cwinter"><b>${esc(t('wo_case'))}</b> <span class="chip ${good ? 'ok' : w.status === 'nicht_erfuellt' ? 'kritisch' : 'mittel'}">${esc(t('ws_' + w.status))}</span>${w.noncompliant.length ? ` – ${esc(t('winter_bad').replace('{p}', w.noncompliant.map(posL).join(', ')))}` : ''}${w.missing.length ? ` – ${esc(t('winter_missing').replace('{p}', w.missing.map(posL).join(', ')))}` : ''}${good ? '' : `<p class="small" id="cwhint">${esc(t(['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? 'wo_case_hint_closed' : 'wo_case_hint'))}</p>`}${!good && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) && ['owner', 'fleet', 'workshop'].includes(S.me.role) ? ` <span class="noprint"><a href="#/vehicles/${esc(c.vehicle_id)}?sec=wo" id="cwrec">❄ ${esc(t('wo_rec'))} ›</a> ·</span>` : ''} <a class="noprint" href="#/vehicles/${esc(c.vehicle_id)}">${esc(t('vehicle_file'))} ›</a></div>`; })() : ''}
-    ${qBanner(c)}
+    ${qBanner(c)}${rejBox(c, d)}
     ${isMgr() && TACHO_HINT.test(cDesc(c.description) || '') ? `<div class="panel" data-tachocard><b>${esc(t('tcard_mgr_t'))}</b> ${esc(t('tcard_mgr_s'))} <a class="noprint" href="${d.reporter_driver_id ? '#/drivers/' + esc(d.reporter_driver_id) : '#/drivers'}">${esc(t(d.reporter_driver_id ? 'tcard_mgr_link' : 'drivers'))} ›</a></div>` : ''}
     ${apwBox(c)}
     ${c.cost_over_limit_at ? `<div class="panel warn"><b>${esc(t('cost_approval_pending'))}</b>${isMgr() || S.me.role === 'workshop' ? ` – ${esc(t(isMgr() ? 'cost_approval_hint_mgr' : 'cost_approval_hint_ws'))}` : ''} <span class="small muted">(${fmtDT(c.cost_over_limit_at)})</span></div>` : ''}

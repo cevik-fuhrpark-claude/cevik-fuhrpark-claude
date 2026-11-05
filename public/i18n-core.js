@@ -1293,6 +1293,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1020: Aufnahmezeit laut Kamera an Fotos des Vorgangs
 // Backlog 1021: Foto laut Kamera älter als Schadenzeitpunkt bzw. heute (nur Hinweis)
 // Backlog 1023: abgelehnte Meldung wieder öffnen
+// Backlog 1024: Melder sieht Ablehnungsgrund und Widerspruchsweg
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
