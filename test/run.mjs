@@ -34484,8 +34484,8 @@ await test('Backlog 1032–1034 (Blickwinkel „Werkstatt bekommt die Teile und 
   for (const l of ['de', 'uk', 'en']) for (const k of ['dlv_file', 'dlv_file_none', 'rr_pdr', 'rr_ws_clear', 'rr_ws_cleared']) ok(STRINGS[l][k] && STRINGS[l][k] !== STRINGS.de[k] || l === 'de', l + ': ' + k);
 });
 
-await test('Backlog 1035 (Blickwinkel „Disposition plant einen Lkw, dessen Teillieferung überfällig ist“): Abschnitt „Fährt bis zur Teilelieferung“ kennzeichnet überschrittenen/heutigen Liefertermin mit Warnhinweis und Zähler; Daten kommen bei der Disposition an; DE/UK/EN', async () => {
-  const { e, U, cmd, toRepair } = await freshWorld();
+await test('Backlog 1035–1036 (Blickwinkel „Disposition plant einen Lkw, dessen Teillieferung überfällig ist“): Abschnitt „Fährt bis zur Teilelieferung“ kennzeichnet überschrittenen/heutigen Liefertermin mit Warnhinweis und Zähler; Fahrer erfährt „Liefertermin erreicht“ ohne Datum; DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld();
   const x = await U.own.post('/api/users', { username: 'w.dispo35', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
   const disp = new Client(worker, e, 'w.dispo35'); await disp.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
   const id = await toRepair();
@@ -34511,6 +34511,23 @@ await test('Backlog 1035 (Blickwinkel „Disposition plant einen Lkw, dessen Tei
   }
   const dev = fs.readFileSync(new URL('../scripts/dev-server.mjs', import.meta.url), 'utf8');
   ok(dev.includes("url.searchParams.get('parts_days')"), 'Dev-Server: Liefertermin zurückdatieren');
+  // Backlog 1036: Fahrer erfährt „Liefertermin erreicht“ (nur ja/nein, kein überschrittenes Datum)
+  await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Test 1036' });
+  const kdOf = async () => (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1).known_defects.find((k) => k.case_no === c.case_no);
+  let kd = await kdOf();
+  eq(kd.parts_drive, true); eq(kd.parts_eta_reached, true, 'überschritten → erreicht'); eq(kd.parts_expected_date, null, 'überschrittenes Datum bleibt verborgen');
+  e.DB.db.prepare(`UPDATE cases SET parts_expected_date = ? WHERE id=?`).run(BERLIN_TODAY, id);
+  kd = await kdOf(); eq(kd.parts_eta_reached, true, 'heute → erreicht'); eq(kd.parts_expected_date, BERLIN_TODAY);
+  e.DB.db.prepare(`UPDATE cases SET parts_expected_date = ? WHERE id=?`).run(fut, id);
+  kd = await kdOf(); eq(kd.parts_eta_reached, false, 'künftig → nicht erreicht');
+  e.DB.db.prepare(`UPDATE cases SET parts_expected_date = NULL WHERE id=?`).run(id);
+  kd = await kdOf(); eq(kd.parts_eta_reached, false, 'ohne Liefertermin → nicht erreicht');
+  // ohne Vermerk „fährt bis zur Teilelieferung“ kein Hinweis (Fahrzeug steht ohnehin in der Werkstatt)
+  e.DB.db.prepare(`UPDATE cases SET parts_expected_date = date(?, '-2 days') WHERE id=?`).run(BERLIN_TODAY, id);
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '0' })).status, 200);
+  kd = await kdOf(); eq(kd.parts_drive, false); eq(kd.parts_eta_reached, false, 'ohne Vermerk kein Hinweis');
+  ok(app.includes("${k.parts_drive && k.parts_eta_reached ? `<br><b class=\"small\" data-kdpdrlate>⚠ ${esc(t('kd_pdr_reached'))}</b>` : ''}"), 'Fahreransicht');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].kd_pdr_reached, 'kd_pdr_reached ' + l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

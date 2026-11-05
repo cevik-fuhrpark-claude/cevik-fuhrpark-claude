@@ -927,7 +927,10 @@ export async function myVehicles(env, user, envName) {
         // Teile-Liefertermin laut Werkstatt (nur ab heute – ein überschrittener Termin ist Sache der Werkstatt/Leitung)
         parts_expected_date: c.status === 'wartet_teile' && c.parts_expected_date >= today ? c.parts_expected_date : null,
         // Backlog 880: Leitung hat vermerkt, dass das Fahrzeug bis zur Teilelieferung fahren darf (nur ja/nein, ohne Person)
-        parts_drive: c.status === 'wartet_teile' && !!c.parts_drive_at && !c.safety_lock }));
+        parts_drive: c.status === 'wartet_teile' && !!c.parts_drive_at && !c.safety_lock,
+        // Backlog 1036 (Blickwinkel „Fahrer fährt bis zur Teilelieferung, der Liefertermin ist vorbei“): nur ja/nein (kein überschrittenes Datum –
+        // das bleibt Sache von Werkstatt/Leitung) – der Fahrer weiß, dass er jederzeit zurück in die Werkstatt gerufen werden kann
+        parts_eta_reached: c.status === 'wartet_teile' && !!c.parts_drive_at && !c.safety_lock && !!c.parts_expected_date && c.parts_expected_date <= today }));
   // Fahrtenschreiber-Prüfung (§ 57b StVZO) beim Lkw ohne Frist: wie HU/SP „fehlend = ungeklärt“ statt still weglassen (Backlog 436,
   // Blickwinkel „Kalibrierung läuft ab“ – bei der Straßenkontrolle wird das Einbauschild geprüft). Nicht bei Anhängern und ruhenden Fahrzeugen
   // (gleiche Pflichtliste wie Lückenliste/Datenqualität); eine Frist wird nicht angenommen.

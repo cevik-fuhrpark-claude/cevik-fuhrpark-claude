@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (05.11.2026, Backlog 1035, Blickwinkel „Disposition plant einen Lkw, dessen Teillieferung überfällig ist“):
 # Fahrzeug „fährt bis zur Teilelieferung“ – Liefertermin überschritten bzw. heute → Disposition sieht in der Zeile „Termin überschritten“/„heute“
 # mit Warnhinweis und in der Überschrift „Liefertermin erreicht: N“. Vergangene Liefertermine per /__dev/backdate?parts_days=N (nur Dev-Server).
-# DE/UK/EN bei 390/820/1366 px.
+# Backlog 1036: Fahrer des Lkw sieht „Liefertermin der Teile erreicht“ (ohne Datum). DE/UK/EN bei 390/820/1366 px.
 import os, datetime
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -64,6 +64,24 @@ with sync_playwright() as p:
         check(order,f'{lang}/{w}: überschritten vor heute')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#dpdrive').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/teilefahrt-ueberfaellig-{lang}-{w}.png')
+        # Backlog 1036: Fahrer des Lkw sieht „Liefertermin erreicht“ ohne Datum
+        uf=api('POST','/api/users',{'username':f'tu.f{R}.{n}','display_name':f'TU Fahrer {n}','role':'driver','environment':envn,'language':lang})
+        vid=api('GET',f'/api/cases/{late}')['d']['case']['vehicle_id']
+        check(api('POST',f'/api/vehicles/{vid}/drivers',{'user_id':uf['d']['id'],'evidence':'UI-Test 1036'})['s'] in (200,201),f'{lang}/{w}: Fahrer zugeordnet')
+        ctx3=br.new_context(viewport={'width':w,'height':h}); qf=ctx3.new_page(); qf.on('pageerror',lambda e: errs.append(str(e))); qf.goto(B)
+        qf.evaluate(JS,['POST','/api/invite/accept',{'token':uf['d']['invite_token'],'password':PW}])
+        qf.evaluate(JS,['POST','/api/login',{'username':f'tu.f{R}.{n}','password':PW}]); qf.evaluate(JS,['PATCH','/api/me',{'language':lang}])
+        KD=qf.evaluate("async (l) => (await import('/i18n.js')).STRINGS[l].kd_pdr_reached", lang)
+        qf.goto(B+'/#/'); qf.reload(); qf.wait_for_selector('[data-kdpdrlate]',state='attached',timeout=20000)
+        qf.evaluate("() => document.querySelectorAll('details').forEach((d) => { if (d.querySelector('[data-kdpdrlate]')) d.open = true; })")
+        lt=qf.locator('[data-kdpdrlate]').first.inner_text()
+        check(KD in lt,f'{lang}/{w}: Fahrer – „{KD[:30]}…“')
+        li=qf.locator('[data-kdpdrlate]').first.evaluate("e => e.closest('li').textContent")
+        PE=qf.evaluate("async (l) => (await import('/i18n.js')).STRINGS[l].parts_eta", lang)
+        check(PE not in li,f'{lang}/{w}: Fahrer ohne überschrittenes Datum')
+        check(qf.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: Fahrer ohne Querscrollen')
+        if SHOTS: qf.locator('[data-kdpdrlate]').first.scroll_into_view_if_needed(); qf.screenshot(path=f'{SHOTS}/teilefahrt-ueberfaellig-fahrer-{lang}-{w}.png')
+        ctx3.close()
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:2]}')
         ctx.close()
         for cid in (late,today): cmd(cid,'set_parts_drive',{'on':False})
