@@ -3797,3 +3797,7 @@ Object.assign(PLURALS.en, { wst_later: { one: '{n} more booking since', other: '
 Object.assign(STRINGS.de, { mics_none: 'Kalender: Diese Auswahl enthält keine Termine mit Datum – bitte einen anderen Reiter wählen.' });
 Object.assign(STRINGS.uk, { mics_none: 'Календар: ця вибірка не містить термінів із датою – оберіть іншу вкладку.' });
 Object.assign(STRINGS.en, { mics_none: 'Calendar: this selection contains no dated events – please choose another tab.' });
+// Backlog 1031: Vertrags-Kalender ohne künftige Kündigungstage/Vertragsenden nicht anbieten
+Object.assign(STRINGS.de, { ctics_none: 'Kalender: Keine laufenden Verträge mit künftigem Kündigungstag oder Vertragsende in dieser Auswahl.' });
+Object.assign(STRINGS.uk, { ctics_none: 'Календар: у цій вибірці немає чинних договорів із майбутнім днем розірвання або кінцем договору.' });
+Object.assign(STRINGS.en, { ctics_none: 'Calendar: no running contracts with a future notice day or contract end in this selection.' });

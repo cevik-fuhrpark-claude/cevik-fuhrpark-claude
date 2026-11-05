@@ -1297,6 +1297,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1025 (Blickwinkel „Werkstatt Bayern, erster Auftrag“): eigene Werkstatt nennen, leere Tafel erklären, Abschlusskontrolle vorher prüfen
 // Backlog 1026 (Blickwinkel „Schichtübergabe in der Werkstatt“)
 // Backlog 1030: Prüftermin-Kalender bei einer Auswahl ohne Termine mit Datum nicht anbieten (leere Datei)
+// Backlog 1031: Vertrags-Kalender ohne künftige Kündigungstage/Vertragsenden nicht anbieten
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

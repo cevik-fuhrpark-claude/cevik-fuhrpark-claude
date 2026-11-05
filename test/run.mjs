@@ -34414,6 +34414,20 @@ await test('Backlog 1030: Prüftermine – Kalender-Knopf bei einer Auswahl ohne
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-kalender-auswahl.py|'), 'UI-Skript in pruefen.sh');
 });
 
+await test('Backlog 1031: Verträge – Kalender-Knopf gesperrt mit Hinweis, wenn die Auswahl (laufend/alle, ohne Stichtag) keine künftigen Kündigungstage/Vertragsenden enthält; Regel wie contractsIcs; DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const ctIcsNone = (f === 'aktiv' || f === 'alle') && !asof && !r.contracts.some((c) => !c.ended_on && ((c.status && c.status.notice && c.status.notice.by >= r.today) || (c.end_date && c.end_date >= r.today)));"), 'Regel in app.js');
+  ok(app.includes("${ctIcsNone ? ' disabled data-ctics-none' : ''}") && app.includes('data-ctics-hint'), 'Knopf gesperrt + Hinweis');
+  const ct = fs.readFileSync(new URL('../src/contracts.js', import.meta.url), 'utf8');
+  ok(ct.includes('if (s.notice && s.notice.by >= ov.today)') && ct.includes('if (c.end_date && c.end_date >= ov.today)') && ct.includes('if (c.ended_on) continue;'), 'Server-Regel unverändert (sonst app.js anpassen)');
+  ok(app.includes("`/api/contracts?format=ics&filter=aktiv"), 'Kalender lädt laufende Verträge');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ctics_none, 'ctics_none ' + l);
+  // über die API: ohne passende Verträge leerer Kalender (dieselbe Lage, die die App erkennt)
+  const cal = new TextDecoder().decode((await users.fleet.get('/api/contracts?format=ics&filter=aktiv&kind=sonstiges&partner=' + encodeURIComponent('Gibt es nicht 1031'))).data);
+  ok(cal.startsWith('BEGIN:VCALENDAR') && !cal.includes('BEGIN:VEVENT'), 'leere Auswahl → keine Termine');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (05.11.2026, Backlog 1030): Prüftermine – Knopf „Kalender“ ist bei einer Auswahl ohne Termine mit Datum
 # (z. B. Reiter „Pflichtprüfungen ohne Termin“ oder leerer Reiter) gesperrt und nennt den Grund; mit Terminen (Reiter „Alle“) aktiv,
 # Kalendername der Auswahl (Backlog 1029). 390/820/1366 px, DE/UK/EN, kein Querscrollen, keine Skriptfehler.
+# Verträge (Backlog 1031): Kalender bei einer Vertragsart ohne laufende Verträge gesperrt mit Hinweis, sonst aktiv.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os, datetime
 from playwright.sync_api import sync_playwright
@@ -25,6 +26,9 @@ with sync_playwright() as p:
     # Ölwechsel in ca. 200 Tagen fällig (außerhalb jeder Vorwarnung) – synthetische Testdaten
     r=api('POST',f'/api/vehicles/VIN:{vin}/maintenance',{'kind':'Ölwechsel','interval_months':12,'last_done_date':(td-datetime.timedelta(days=160)).isoformat(),'evidence':'UI-Test Beleg'})
     check(r['s'] in (200,201),f'Prüfregel (synthetisch) {r["s"]}')
+    r=api('POST',f'/api/vehicles/VIN:{vin}/contracts',{'kind':'leasing','partner':'UI-Test-Leasing','start_date':(td-datetime.timedelta(days=30)).isoformat(),
+        'end_date':(td+datetime.timedelta(days=500)).isoformat(),'notice_months':3,'evidence':'UI-Test Kalender'})
+    check(r['s'] in (200,201),f'Vertrag (synthetisch) {r["s"]}')
     for (w,h),lang in [((390,844),'de'),((820,1180),'uk'),((1366,900),'en')]:
         c=br.new_context(viewport={'width':w,'height':h},locale='de-DE',service_workers='block'); q=c.new_page(); q.goto(B)
         errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
@@ -40,6 +44,13 @@ with sync_playwright() as p:
         check('KA-ICS 1' in cal and 'X-WR-CALNAME:' in cal and ' · ' not in cal.split('X-WR-CALNAME:')[1].split('\r\n')[0],f'{w}px/{lang}: „Alle“ – Termin enthalten, Kalendername ohne Zusatz')
         part=q.evaluate(TXT,'/api/maintenance?format=ics&filter=all&kind=%C3%96lwechsel')
         check(' · ' in part.split('X-WR-CALNAME:')[1].split('\r\n')[0],f'{w}px/{lang}: Prüfart im Kalendernamen')
+        q.goto(B+'/#/contracts'); q.wait_for_selector('#ctics',timeout=15000); q.wait_for_timeout(400)
+        check(not q.locator('#ctics').is_disabled() and q.locator('[data-ctics-hint]').count()==0,f'{w}px/{lang}: Verträge – Kalender aktiv')
+        q.select_option('#ctk','versicherung'); q.wait_for_timeout(700)
+        check(q.locator('#ctics').is_disabled() and q.locator('[data-ctics-hint]').count()==1,f'{w}px/{lang}: Vertragsart ohne Verträge – Kalender gesperrt mit Hinweis')
+        check(q.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'),f'{w}px/{lang}: Verträge kein waagrechtes Scrollen')
+        if SHOTS: q.locator('#ctics').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/kalender-vertraege_{lang}_{w}.png')
+        q.select_option('#ctk',''); q.wait_for_timeout(500)
         check(not errs,f'{w}px/{lang}: keine Skriptfehler {errs[:1]}')
         c.close()
     br.close()
