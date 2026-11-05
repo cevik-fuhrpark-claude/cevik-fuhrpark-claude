@@ -586,6 +586,7 @@ const IMPORT_TPL = [
   [/^Vorhandener km-Stand der letzten Prüfung (.{1,40}) ist höher – nicht überschrieben$/, 'Наявний пробіг останньої перевірки $1 більший – не перезаписано', 'Existing mileage at last inspection $1 is higher – not overwritten'],
   [/^Vorhandene km-Fälligkeit (.{1,40}) ist höher – nicht überschrieben$/, 'Наявний строк за км $1 більший – не перезаписано', 'Existing mileage due $1 is higher – not overwritten'],
   [/^Intervall ungültig: (.{0,200})$/, 'Недійсний інтервал: $1', 'Invalid interval: $1'],
+  [/^Intervall: „(.{0,40})“ ist eine Angabe in Jahren – bitte in Monaten angeben \(die App rechnet nicht um\)\.$/, 'Інтервал: «$1» – це значення в роках. Вкажіть у місяцях (застосунок не перераховує).', 'Interval: “$1” is given in years – please state it in months (the app does not convert).'],
   [/^Doppelt in der Datei \(Zeile (\d{1,6}) ist gleich oder neuer\)$/, 'Двічі у файлі (рядок $1 такий самий або новіший)', 'Duplicate in the file (line $1 is the same or newer)'],
   [/^Ersetzt durch Zeile (\d{1,6}) \(neuerer Beleg\)$/, 'Замінено рядком $1 (новіший документ)', 'Replaced by line $1 (newer evidence)'],
   [/^Vorhandener Termin (\d{4}-\d{2}-\d{2}) ist neuer – nicht überschrieben$/, 'Наявний термін $1 новіший – не перезаписано', 'Existing due date $1 is newer – not overwritten'],

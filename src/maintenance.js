@@ -1,6 +1,7 @@
 // [CLAUDE] Prüftermine (HU/SP/UVV/Tachograph …) für den ganzen Fuhrpark: Übersicht, Lückenliste, CSV-Export und belegter CSV-Import.
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
 import { icsLang } from '../public/ics-texts.js';
+import { unitIn } from '../public/hours.js';
 import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, importDay, num, normPlate, plateKeyIn, quoteCell, maxFutureDate, DUE_FAR_MSG, cutText } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor, dueMonthEnd } from './inspection_rules.js';
@@ -515,7 +516,10 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     if (matchedBy === 'Kennzeichen' && plateFormerOther(offOf.former, v, last.date)) return skip(PLATE_FORMER_SKIP);
     let interval = null;
     const husp = kind === 'HU' || kind === 'SP';
-    const ir = husp ? '' : get(cells, ci.interval); // HU/SP: Intervall spielt keine Rolle (Zeile mit „12 Monate“ fiel sonst weg, 18.10.2026)
+    let ir = husp ? '' : get(cells, ci.interval); // HU/SP: Intervall spielt keine Rolle (Zeile mit „12 Monate“ fiel sonst weg, 18.10.2026)
+    // Backlog 1008: „12 Monate“, „alle 24 Monate“, „12 міс.“ wie im Formular (`unitIn`, Backlog 987); Jahresangabe mit eigenem Grund, nie umgerechnet
+    if (ir && /^\d{1,2}([.,]\d)?\s*(jahre?n?|j\.|jhr\.?|years?|yrs?|рік|роки|років|год|года|лет)\.?$/i.test(ir.trim())) return skip(`Intervall: „${ir.trim().slice(0, 40)}“ ist eine Angabe in Jahren – bitte in Monaten angeben (die App rechnet nicht um).`);
+    if (ir && unitIn(ir, 'months') !== null) ir = unitIn(ir, 'months');
     if (ir) { interval = Number(ir.replace(',', '.')); if (!Number.isInteger(interval) || interval < 1 || interval > 120) return skip(`Intervall ungültig: ${ir}`); }
     // HU/SP: Fälligkeit nur aus Nachweis (Plakette/Beleg) oder zentral nach StVZO Anlage VIII – nie aus einem pauschalen Intervall
     if (husp) interval = null;

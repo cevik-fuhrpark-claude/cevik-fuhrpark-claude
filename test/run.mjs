@@ -33806,6 +33806,26 @@ await test('Backlog 1007 (Folge aus 1006, gleiche Liste aus dem Ausland bzw. vom
   const r = await post('/api/maintenance/import', 'Kennzeichen;Art;Nächster Termin;Nachweis\nD XX-NIE 1;UVV;2027-01-01;Beleg\n'); eq(r.data.skipped[0].reason, 'Kennzeichen nicht im Fahrzeugstamm');
 });
 
+await test('Backlog 1008 (Blickwinkel „UVV-/Wartungsliste aus Excel mit Einheit in der Intervallspalte“): Prüftermin-Import nimmt „12 Monate“, „alle 24 Monate“, „12 Mon.“, „12 міс.“ wie das Formular; „1 Jahr“/„2 Jahre“ mit eigenem Grund DE/UK/EN, nie umgerechnet', async () => {
+  const { U } = await freshWorld();
+  const post = (csv) => U.fleet.req('POST', '/api/maintenance/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  for (const iv of ['12', '12 Monate', 'alle 24 Monate', '12 Mon.', '12 months', '12 міс.', '6 Monaten']) {
+    const r = await post(`Kennzeichen;Art;Letzte Prüfung;Intervall Monate;Nachweis\nSZ-YC 5513;UVV;15.01.2026;${iv};Prüfbuch\n`);
+    eq(r.data.created, 1, iv + ' ' + JSON.stringify(r.data.skipped));
+  }
+  const real = await U.fleet.req('POST', '/api/maintenance/import', 'Kennzeichen;Art;Letzte Prüfung;Intervall Monate;Nachweis\nSZ-YC 5513;UVV;15.01.2026;alle 12 Monate;Prüfbuch\n', { 'content-type': 'text/csv' });
+  eq(real.data.created, 1); const row = (await U.fleet.get('/api/maintenance')).data.rows.find((x) => x.kind === 'UVV' && x.plate === 'SZ-YC 5513');
+  eq(row.interval_months, 12, JSON.stringify(row)); eq(row.next_due_date, '2027-01-15');
+  for (const iv of ['1 Jahr', '2 Jahre', '1 year', '1 рік']) {
+    const r = await post(`Kennzeichen;Art;Letzte Prüfung;Intervall Monate;Nachweis\nSZ-KC 5515;UVV;15.01.2026;${iv};Prüfbuch\n`);
+    eq(r.data.created, 0); eq(r.data.skipped[0].reason, `Intervall: „${iv}“ ist eine Angabe in Jahren – bitte in Monaten angeben (die App rechnet nicht um).`);
+  }
+  eq((await post('Kennzeichen;Art;Letzte Prüfung;Intervall Monate;Nachweis\nSZ-KC 5515;UVV;15.01.2026;12 Wochen;Prüfbuch\n')).data.skipped[0].reason, 'Intervall ungültig: 12 Wochen', 'andere Einheit wie bisher');
+  const { translateImportReason, IMPORT_REASONS_TPL } = await import('../public/i18n.js');
+  const m = 'Intervall: „1 Jahr“ ist eine Angabe in Jahren – bitte in Monaten angeben (die App rechnet nicht um).';
+  ok(IMPORT_REASONS_TPL.some((re) => re.test(m)), 'übersetzbar'); ok(/given in years/.test(translateImportReason('en', m)) && /у місяцях/.test(translateImportReason('uk', m)), 'EN/UK');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
