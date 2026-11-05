@@ -9,7 +9,7 @@ import { localizedAgentBody, localizedAgentTitle } from './agent.js';
 const PRIO = { de: { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' }, uk: { niedrig: 'низький', mittel: 'середній', kritisch: 'критичний' }, en: { niedrig: 'low', mittel: 'medium', kritisch: 'critical' } };
 const T = {
   de: {
-    planned_on: 'Termin', ready_on: 'fertig ca.', ready_changed: 'Voraussichtlich fertig: neues Datum', pickup_hint: 'Abholhinweis: Mein Fahrzeug', rest_open: 'offene Restarbeiten: {n}', locked_by: 'gesperrt durch {c} ({p})',
+    planned_on: 'Termin', ready_on: 'fertig ca.', ready_changed: 'Voraussichtlich fertig: neues Datum', pickup_hint: 'Abholhinweis: Mein Fahrzeug', rest_open: 'offene Restarbeiten: {n}', locked_by: 'gesperrt durch {c} ({p})', pdr_ended: 'Fahrt bis zur Teilelieferung beendet – Fahrzeug in die Werkstatt',
     created: 'Neue Schadensmeldung', created_urgent: 'KRITISCH: neue Meldung (ungeprüft)', received: 'Meldung ist eingegangen',
     priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', forwarded: 'Meldung an Werkstatt übergeben', rejected: 'Meldung abgelehnt', reopened: 'Meldung wieder geöffnet', withdrawn: 'Werkstattauftrag ohne Reparatur beendet',
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
@@ -21,7 +21,7 @@ const T = {
     res_gefaehrliche_maengel: 'gefährliche Mängel', res_verkehrsunsicher: 'verkehrsunsicher', do_not_plan: 'nicht einplanen',
   },
   uk: {
-    planned_on: 'Термін', ready_on: 'готово орієнт.', ready_changed: 'Орієнтовна готовність: нова дата', pickup_hint: 'Інформація для отримання: Мій транспорт', rest_open: 'відкриті залишкові роботи: {n}', locked_by: 'блокує {c} ({p})',
+    planned_on: 'Термін', ready_on: 'готово орієнт.', ready_changed: 'Орієнтовна готовність: нова дата', pickup_hint: 'Інформація для отримання: Мій транспорт', rest_open: 'відкриті залишкові роботи: {n}', locked_by: 'блокує {c} ({p})', pdr_ended: 'Рух до постачання запчастин завершено – транспорт до майстерні',
     created: 'Нове повідомлення про пошкодження', created_urgent: 'КРИТИЧНО: нове повідомлення (неперевірене)', received: 'Повідомлення отримано',
     priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', forwarded: 'Повідомлення передано до майстерні', rejected: 'Повідомлення відхилено', reopened: 'Повідомлення знову відкрито', withdrawn: 'Замовлення майстерні завершено без ремонту',
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
@@ -33,7 +33,7 @@ const T = {
     res_gefaehrliche_maengel: 'небезпечні дефекти', res_verkehrsunsicher: 'небезпечний для руху', do_not_plan: 'не планувати',
   },
   en: {
-    planned_on: 'Workshop date', ready_on: 'ready approx.', ready_changed: 'Expected ready: new date', pickup_hint: 'Pick-up note: My vehicle', rest_open: 'open items: {n}', locked_by: 'locked by {c} ({p})',
+    planned_on: 'Workshop date', ready_on: 'ready approx.', ready_changed: 'Expected ready: new date', pickup_hint: 'Pick-up note: My vehicle', rest_open: 'open items: {n}', locked_by: 'locked by {c} ({p})', pdr_ended: 'Driving until parts delivery ended – vehicle to the workshop',
     created: 'New damage report', created_urgent: 'CRITICAL: new report (unverified)', received: 'Report received',
     priority_changed: 'Priority changed', approved: 'New workshop order', forwarded: 'Report handed over to workshop', rejected: 'Report rejected', reopened: 'Report reopened', withdrawn: 'Workshop order ended without repair',
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
@@ -159,7 +159,7 @@ const REPORTER_KINDS = ['received', 'rejected', 'reopened', 'withdrawn', 'priori
 const KINDS_BY_ROLE = {
   driver: [...REPORTER_KINDS, 'plan_changed', 'ready_changed'],
   // „Neue Meldung“ erreicht Disposition/Werkstatt nur dringend (nicht abschaltbar) – die Abwahl war wirkungslos (20.10.2026)
-  dispatch: [...REPORTER_KINDS, 'waiting_parts', 'plan_changed', 'ready_changed'],
+  dispatch: [...REPORTER_KINDS, 'waiting_parts', 'resumed', 'plan_changed', 'ready_changed'],
   workshop: [...REPORTER_KINDS, 'approved', 'rework', 'cost_approved', 'reassigned_away', 'plan_changed', 'file_added', 'ready_changed'],
   viewer: [],
 };
@@ -241,6 +241,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
     case 'acknowledged': case 'started': case 'waiting_parts': case 'resumed': case 'quality_check': case 'open_item_safety': case 'open_item': case 'open_item_safety_resolved':
       add(usersByRole(['fleet', 'owner']));
       if (kind === 'waiting_parts') add(usersByRole(['dispatch']));
+      // Backlog 1032: Fuhr das Fahrzeug bis zur Teilelieferung, endet das mit „Reparatur fortgesetzt“ – die Disposition hatte den Lkw ggf. eingeplant
+      if (kind === 'resumed' && ctxData.previous && ctxData.previous.parts_drive_at) add(usersByRole(['dispatch']));
       break;
     case 'handover_missing':
       // Backlog 423: Werkstatt vermisst Schlüssel/Fahrzeugschein – Leitung klärt, Melder hat den Schlüssel oft noch; trägt die Leitung es
@@ -344,7 +346,9 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     const pk = k === 'released' && u.assigned && ctxData.payload && ctxData.payload.pickup_for_driver ? ' · ' + T[lang].pickup_hint : '';
     // Backlog 641 (Blickwinkel „Fremder Auflieger“): „Fahrzeug bleibt gesperrt“ nennt Vorgangsnummer und Kennzeichen des sperrenden Vorgangs (keine Beschreibung)
     const lb = k === 'still_locked' && ctxData.still_locked && ctxData.still_locked.case_no ? ' · ' + T[lang].locked_by.replace('{c}', ctxData.still_locked.case_no).replace('{p}', ctxData.still_locked.plate || '') : '';
-    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${k === 'created' ? urgentWhy(c, urgent, lang) : ''}${plan}${rdy}${rest}${pk}${lb}${c.environment === 'test' ? ' · TEST' : ''}`;
+    // Backlog 1032: „Reparatur fortgesetzt“ nach „fährt bis zur Teilelieferung“ – fester Satz (Fahrzeug muss in die Werkstatt)
+    const pde = k === 'resumed' && ctxData.previous && ctxData.previous.parts_drive_at ? ' · ' + T[lang].pdr_ended : '';
+    const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${k === 'created' ? urgentWhy(c, urgent, lang) : ''}${plan}${rdy}${rest}${pk}${lb}${pde}${c.environment === 'test' ? ' · TEST' : ''}`;
     rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned || u.away ? null : c.id, event_key: eventKey, kind: k, urgent: urgent ? 1 : 0, title, body, created_at: now, lang });
   }
   const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at, environment: r.environment }));

@@ -34428,6 +34428,60 @@ await test('Backlog 1031: Verträge – Kalender-Knopf gesperrt mit Hinweis, wen
   ok(cal.startsWith('BEGIN:VCALENDAR') && !cal.includes('BEGIN:VEVENT'), 'leere Auswahl → keine Termine');
 });
 
+await test('Backlog 1032–1034 (Blickwinkel „Werkstatt bekommt die Teile und fotografiert den Lieferschein“): Lieferschein an Teillieferung/Fortsetzen (fremde Datei abgewiesen), Disposition erfährt Ende von „fährt bis zur Teilelieferung“, Arbeitsstand optional entfernen; DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const disp = await (async () => { const x = await U.own.post('/api/users', { username: 'w.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test' }); const c = new Client(worker, e, 'w.dispo'); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; })();
+  const img = () => concatBytes(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), crypto.getRandomValues(new Uint8Array(300)));
+  const up = async (cid, name, u = U.ws) => { const r = await u.req('POST', `/api/cases/${cid}/files`, img(), { 'content-type': 'image/jpeg', 'x-filename': name }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const id = await toRepair(); const other = await toRepair();
+  const ls1 = await up(id, 'lieferschein-1.jpg'); const ls2 = await up(id, 'lieferschein-2.jpg'); const foreign = await up(other, 'fremd.jpg');
+  eq((await cmd(U.ws, id, 'set_work_state', {}, 'Rad demontiert, warte auf Bremssattel')).status, 200);
+  eq((await cmd(U.ws, id, 'wait_parts', {}, 'Bremssattel + Beläge bestellt')).status, 200);
+  // 1033: Teillieferung mit Lieferschein; fremde Datei abgewiesen (nichts gebucht)
+  const v0 = (await U.fleet.get(`/api/cases/${id}`)).data.case.version;
+  { const r = await cmd(U.ws, id, 'parts_partial', { file_id: foreign }, 'Beläge fehlen noch'); eq(r.status, 400); ok(/Datei dieses Vorgangs/.test(r.data.message || ''), r.data.message); }
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.case.version, v0, 'nichts gebucht');
+  eq((await cmd(U.ws, id, 'parts_partial', { file_id: ls1 }, 'Beläge fehlen noch')).status, 200);
+  let d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  { const ev = d.events.filter((x) => x.action === 'parts_partial').pop(); eq(ev.payload.file_id, ls1); eq(ev.payload.file_name, 'lieferschein-1.jpg'); ok(!('to' in ev.payload), 'kein Liefertermin-Eintrag ohne Änderung'); }
+  eq(d.case.status, 'wartet_teile');
+  // 1032: Leitung lässt den Lkw bis zur Lieferung fahren; Fortsetzen → Disposition und Leitung erfahren es (fester Satz)
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '1' })).status, 200);
+  const before = (await disp.get('/api/notifications')).data.notifications.length;
+  { const r = await cmd(U.ws, id, 'resume_repair', { file_id: foreign }); eq(r.status, 400); }
+  ok((await U.fleet.get(`/api/cases/${id}`)).data.case.parts_drive_at, 'abgewiesen: nichts geändert');
+  eq((await cmd(U.ws, id, 'resume_repair', { file_id: ls2 })).status, 200);
+  const dn = (await disp.get('/api/notifications')).data.notifications;
+  eq(dn.length, before + 1, 'Disposition bekommt genau einen Hinweis');
+  ok(dn.some((n) => n.kind === 'resumed' && n.case_id === id && n.body.includes('Fahrt bis zur Teilelieferung beendet')), 'Disposition: „Reparatur fortgesetzt“ mit Satz');
+  ok((await U.fleet.get('/api/notifications')).data.notifications.some((n) => n.kind === 'resumed' && n.case_id === id && n.body.includes('Fahrt bis zur Teilelieferung beendet')), 'Leitung ebenso');
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  { const ev = d.events.filter((x) => x.action === 'resume_repair').pop(); eq(ev.payload.file_id, ls2); eq(ev.payload.file_name, 'lieferschein-2.jpg'); eq(ev.payload.parts_drive_ended, true); ok(!ev.payload.work_state_cleared, 'ohne Häkchen'); }
+  eq(d.case.work_state_note, 'Rad demontiert, warte auf Bremssattel', '1034: ohne Häkchen bleibt der Arbeitsstand');
+  // ohne „fährt bis zur Teilelieferung“: Disposition bekommt nichts; 1034 mit Häkchen
+  eq((await cmd(U.ws, id, 'wait_parts', {}, 'Beläge nachbestellt')).status, 200);
+  const before2 = (await disp.get('/api/notifications')).data.notifications.length;
+  eq((await cmd(U.ws, id, 'resume_repair', { clear_work_state: true })).status, 200);
+  eq((await disp.get('/api/notifications')).data.notifications.length, before2, 'Disposition: kein Hinweis ohne Fahrt bis zur Lieferung');
+  d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  ok(d.case.work_state_note === null && d.case.work_state_at === null, 'Arbeitsstand entfernt');
+  { const ev = d.events.filter((x) => x.action === 'resume_repair').pop(); eq(ev.payload.work_state_cleared, true); ok(!ev.payload.file_id, 'ohne Datei'); }
+  ok(d.events.some((x) => x.action === 'set_work_state' && x.note === 'Rad demontiert, warte auf Bremssattel'), 'bleibt im Verlauf');
+  // „clear_work_state“ nur als echtes true; ohne Arbeitsstand kein Eintrag
+  eq((await cmd(U.ws, id, 'wait_parts', {}, 'noch ein Teil')).status, 200);
+  eq((await cmd(U.ws, id, 'resume_repair', { clear_work_state: true })).status, 200);
+  ok(!(await U.fleet.get(`/api/cases/${id}`)).data.events.filter((x) => x.action === 'resume_repair').pop().payload.work_state_cleared, 'nichts zu entfernen');
+  // Disposition kann „Reparatur fortgesetzt“ abschalten (Einstellungen)
+  const { mutableKindsFor } = await import('../src/notify.js');
+  ok(mutableKindsFor('dispatch').includes('resumed'), 'abschaltbar für Disposition');
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("case 'resume_repair':") && app.includes('id="rrpdr"') && app.includes('name="clear_work_state"') && app.includes('${dlvFileSelect(d)}`); break; }'), 'Formulare');
+  ok(app.includes('data-dlvev') && app.includes('data-wscev') && app.includes("'pickup_for_driver', 'clear_work_state']) if (k in p) p[k] = true;"), 'Verlauf, Häkchen als true');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['dlv_file', 'dlv_file_none', 'rr_pdr', 'rr_ws_clear', 'rr_ws_cleared']) ok(STRINGS[l][k] && STRINGS[l][k] !== STRINGS.de[k] || l === 'de', l + ': ' + k);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

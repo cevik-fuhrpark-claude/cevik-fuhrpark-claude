@@ -1488,6 +1488,13 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   let notifyKind = null;
 
   const requireNote = (msg) => { if (!note || note.length < 3) throw bad('note_required', msg); };
+  // Backlog 1033: Lieferschein (Foto/PDF) zu „Teillieferung eingegangen“ bzw. „Reparatur fortsetzen“ – optional eine Datei dieses Vorgangs derselben Umgebung
+  const deliveryFile = async () => {
+    if (p.file_id === undefined || p.file_id === null || p.file_id === '') return null;
+    const f = await env.DB.prepare('SELECT id, filename FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(p.file_id, { max: 40, field: 'Datei' }), c.id, envName).first();
+    if (!f) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
+    return f;
+  };
 
   switch (action) {
     case 'comment':
@@ -1891,13 +1898,19 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
         const eta = raw && raw !== cur ? partsDate(raw) : raw; // unveränderter (auch überschrittener) Termin bleibt stehen
         if (eta !== cur) { set.parts_expected_date = eta; payload = { from: cur, to: eta }; }
       }
+      { const df = await deliveryFile(); if (df) payload = { ...(payload || {}), file_id: df.id, file_name: df.filename }; }
       break;
     }
-    case 'resume_repair':
+    case 'resume_repair': {
       set.parts_expected_date = null; // Teile da – Liefertermin erledigt (bleibt im Verlauf)
       toStatus = 'in_reparatur';
       notifyKind = 'resumed';
+      // Backlog 1033 (Blickwinkel „Werkstatt fotografiert den Lieferschein“): Foto/PDF des Lieferscheins optional mit dem Teileeingang verknüpfen
+      const df = await deliveryFile(); if (df) payload = { ...(payload || {}), file_id: df.id, file_name: df.filename };
+      // Backlog 1034: Arbeitsstand („warte auf Bremssattel“) auf Wunsch mit dem Fortsetzen entfernen (bleibt im Verlauf); ohne Häkchen unverändert
+      if (p.clear_work_state === true && c.work_state_note) { set.work_state_note = null; set.work_state_at = null; set.work_state_by = null; payload = { ...(payload || {}), work_state_cleared: true }; }
       break;
+    }
     case 'record_work': {
       const hours = hoursNum(p.hours, { min: 0.05, max: 24, field: 'Stunden', decimalPoint: pointDec(user), decimalComma: commaDec(user) });
       const desc = str(p.description, { required: true, max: 2000, field: 'Tätigkeit' });
