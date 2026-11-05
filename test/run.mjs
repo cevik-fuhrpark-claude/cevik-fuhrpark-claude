@@ -33910,6 +33910,26 @@ await test('Backlog 1012 (Blickwinkel „Reifendienst schickt die Größenliste 
   ok(/No tyre column/.test(translateValidation('en', a.data.message) || ''), 'Validierungstext übersetzt');
 });
 
+await test('Backlog 1013 (Blickwinkel „Leasingvertrag nennt 120.000 km pro Jahr“): km-Kontingent als Jahreswert („120.000 km/Jahr“, „p.a.“, „jährlich“, „per year“, „на рік“) im Formular und Vertragsimport mit eigenem Grund statt „ungültige Zahl“, nie umgerechnet; „gesamt“ erlaubt; DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const V = encodeURIComponent('VIN:WMA15SZZ2HM722774'); let i = 0;
+  const form = (v) => U.fleet.post(`/api/vehicles/${V}/contracts`, { kind: 'leasing', partner: 'L', contract_no: `K-${i++}`, evidence: 'Vertrag', km_allowance: v, start_km: 10000 });
+  for (const v of ['120.000 km/Jahr', '120000 km p.a.', '120.000 km jährlich', '120,000 km per year', '120 000 км на рік', '120.000 km / a']) {
+    const r = await form(v); eq(r.status, 400, v); eq(r.data.message, `km-Kontingent: „${v}“ ist eine Laufleistung pro Jahr – bitte das Gesamtkontingent laut Vertrag (ganze Laufzeit) eingeben (die App rechnet nicht um).`, v);
+  }
+  for (const v of ['360.000 km gesamt', 'insgesamt 360000', '360.000 km', '360000']) { const r = await form(v); eq(r.status, 201, v + ' ' + JSON.stringify(r.data)); }
+  const js = JSON.stringify((await U.fleet.get('/api/contracts')).data);
+  eq((js.match(/"km_allowance":360000\b/g) || []).length, 4, 'gespeichert 360000'); ok(!/"km_allowance":120/.test(js), 'kein Jahreswert gespeichert');
+  // Import: gleiche Regel je Zelle
+  const imp = async (v) => (await U.fleet.req('POST', '/api/contracts/import?dry_run=1', `Kennzeichen;Vertragsart;Vertragspartner;Vertragsnummer;km-Kontingent;km bei Übernahme;Nachweis\nSZ-YC 5513;Leasing;L;I-${i++};${v};10.000;Vertrag\n`, { 'content-type': 'text/csv' })).data;
+  const a = await imp('120.000 km/Jahr'); eq(a.rows.length, 0); eq(a.skipped[0].reason, 'km-Kontingent: „120.000 km/Jahr“ ist eine Laufleistung pro Jahr – bitte das Gesamtkontingent laut Vertrag (ganze Laufzeit) eingeben (die App rechnet nicht um).');
+  const b = await imp('360.000 km gesamt'); eq(b.skipped.length, 0, JSON.stringify(b.skipped)); eq(b.rows[0].km_allowance, 360000);
+  eq((await imp('abc')).skipped[0].reason, 'Zahl nicht erkannt: abc', 'wie bisher');
+  const { translateValidation, translateImportReason } = await import('../public/i18n.js');
+  const m = a.skipped[0].reason;
+  ok(/mileage per year/.test(translateValidation('en', m) || '') && /пробіг за рік/.test(translateImportReason('uk', m)), 'EN/UK übersetzt');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

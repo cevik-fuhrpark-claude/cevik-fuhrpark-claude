@@ -30,6 +30,12 @@ function date(v, field, { notFuture = false } = {}) {
   if (notFuture && d > berlinDate()) throw bad('validation', `${field}: darf nicht in der Zukunft liegen.`);
   return d;
 }
+// Backlog 1013 (Blickwinkel „Leasingvertrag nennt 120.000 km pro Jahr“): das km-Kontingent ist das Gesamtkontingent der Laufzeit – ein
+// Jahreswert („120.000 km/Jahr“, „p.a.“, „jährlich“, „per year“, „на рік“) wird mit eigener Meldung abgewiesen (vorher „ungültige Zahl“), nie umgerechnet;
+// „gesamt“/„insgesamt“/„total“ hinter der Zahl ist erlaubt.
+export const KM_ANNUAL_RX = /(\/\s*(jahr|j|a|year|yr|рік)\b\.?|\bp\.?\s*a\b\.?|pro\s+jahr|im\s+jahr|jährl|jaehrl|per\s+(year|annum)|a\s+year|annual|yearly|на\s+рік|за\s+рік|щороку|річн)/i;
+export const kmAllowanceAnnualMsg = (v) => `km-Kontingent: „${String(v).trim().replace(/\s+/g, ' ').slice(0, 40)}“ ist eine Laufleistung pro Jahr – bitte das Gesamtkontingent laut Vertrag (ganze Laufzeit) eingeben (die App rechnet nicht um).`;
+const kmAllowanceIn = (v) => { if (typeof v !== 'string') return v; if (KM_ANNUAL_RX.test(v)) throw bad('validation', kmAllowanceAnnualMsg(v)); return v.trim().replace(/\s*(gesamt|insgesamt|total|in\s+total|загалом)\.?$/i, '').replace(/^(gesamt|insgesamt|total)\s*:?\s*/i, ''); };
 const intOrNull = (v, field, max) => { const n = num(v, { min: 0, max, field, nullable: true, grouped: true }); if (n !== null && !Number.isInteger(n)) throw bad('validation', `${field}: ganze Zahl.`); return n; };
 
 export function warnDaysOf(settings) {
@@ -110,7 +116,7 @@ function readBody(body, existing = {}, user = null) {
     start_date: date(pick('start_date'), 'Vertragsbeginn'),
     end_date: date(pick('end_date'), 'Vertragsende'),
     notice_months: intOrNull(pick('notice_months'), 'Kündigungsfrist (Monate)', 60),
-    km_allowance: intOrNull(pick('km_allowance'), 'km-Kontingent', 5000000),
+    km_allowance: intOrNull(kmAllowanceIn(pick('km_allowance')), 'km-Kontingent', 5000000),
     start_km: intOrNull(pick('start_km'), 'km bei Übernahme', 9999999),
     monthly_rate_net: num(pick('monthly_rate_net'), { min: 0, max: 1000000, field: 'Monatsrate', nullable: true, net: true, cents: true, monthly: true, ...(user ? { decimalComma: commaDec(user), decimalPoint: pointDec(user) } : {}) }),
     evidence: str(pick('evidence'), { required: true, max: 300, field: 'Nachweis' }),
@@ -692,6 +698,7 @@ export async function importContracts(env, user, text, { dryRun = false, source 
         if (rp && rp.period === 'year') return skip(`Monatsrate: „${cv}“ ist ein Jahresbetrag – bitte die Monatsrate laut Vertrag angeben (die App rechnet nicht um).`);
         if (rp && rp.period === 'half') return skip(`Monatsrate: „${cv}“ ist ein Halbjahresbetrag – bitte die Monatsrate laut Vertrag angeben (die App rechnet nicht um).`);
         if (rp && rp.period === 'quarter') return skip(`Monatsrate: „${cv}“ ist ein Quartalsbetrag – bitte die Monatsrate laut Vertrag angeben (die App rechnet nicht um).`); if (rp) cell = rp.value.replace(/\s*(netto|net|нетто|(zzgl\.?|ohne|plus|excl\.?)\s*(mwst|ust|vat)\.?)$/i, '').replace(/^(netto|net)\s*/i, ''); }
+      if (k === 'km_allowance') { if (KM_ANNUAL_RX.test(cell)) return skip(kmAllowanceAnnualMsg(cell)); cell = kmAllowanceIn(cell); } // Backlog 1013
       let n = parseDeNum(k === 'notice_months' ? cell.replace(/\s*(monate?|mon\.?|mo\.?)\s*$/i, '') : cell);
       // Backlog 1010: Monatsrate wie im Formular („450 € netto“, „450,- €“, „450 zzgl. MwSt.“; Fremdwährung/Brutto mit eigenem Grund)
       if (Number.isNaN(n) && k === 'monthly_rate_net') { try { n = num(cell, { min: 0, max: 1000000, field: 'Monatsrate', net: true, cents: true, monthly: true }); } catch (e) { if (!/ungültige Zahl\.$/.test(e.message)) return skip(e.message); } }
