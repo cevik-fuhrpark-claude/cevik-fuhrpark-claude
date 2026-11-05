@@ -34651,6 +34651,7 @@ await test('Backlog 1041 (Blickwinkel „Leitung vertritt die erkrankte Kollegin
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['uk', 'en']) ok(STRINGS[l].todo_untriaged && STRINGS[l].todo_untriaged !== STRINGS.de.todo_untriaged, l);
   ok(STRINGS.de.todo_untriaged === 'Eingang bestätigt – Bewertung offen', 'de');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_fleet_recv.includes(STRINGS[l].todo_untriaged) && STRINGS[l].ue_fleet_recv.includes(STRINGS[l].todo_today), l + ': Deaktivierungshinweis nennt die Gruppe');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
