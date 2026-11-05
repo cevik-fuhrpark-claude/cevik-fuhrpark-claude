@@ -1,8 +1,8 @@
 // [CLAUDE] Prüftermine (HU/SP/UVV/Tachograph …) für den ganzen Fuhrpark: Übersicht, Lückenliste, CSV-Export und belegter CSV-Import.
 // Grundsatz: Termine nur aus Belegen. Jede Importzeile braucht einen Nachweis; ein vorhandener späterer Termin wird nie durch einen älteren ersetzt.
 import { icsLang } from '../public/ics-texts.js';
-import { unitIn } from '../public/hours.js';
-import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, importDay, num, normPlate, plateKeyIn, quoteCell, maxFutureDate, DUE_FAR_MSG, cutText } from './util.js';
+import { unitIn, kmForeignUnit } from '../public/hours.js';
+import { nowIso, uuid, bad, forbidden, berlinWindowStartIso, normalizeVin, isValidVin, addMonths, berlinDate, berlinDaySql, parseCsv, icsCalendar, isCalendarDate, importDay, num, kmNum as kmNumU, normPlate, plateKeyIn, quoteCell, maxFutureDate, DUE_FAR_MSG, cutText } from './util.js';
 import { audit } from './auth.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor, dueMonthEnd } from './inspection_rules.js';
 import { MAINT_KINDS, ONE_TIME_KINDS, MULTI_RULE_KINDS, maintEventStmt, HUSP_RULE_EVIDENCE } from './vehicles.js';
@@ -526,10 +526,21 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     // Kilometer (nicht HU/SP – dort zählt nur die Zeit): belegte Fälligkeit, km bei letzter Prüfung, Intervall km
     let dueKm = null, lastKm = null, intervalKm = null;
     if (!husp) {
-      const kmNum = (raw, min, max) => { if (!raw) return null; let n; try { n = num(raw, { min, max, field: 'km', grouped: true }); } catch { return NaN; } return Number.isInteger(n) ? n : NaN; };
-      dueKm = kmNum(kmRaw[0], 1, 5000000); if (Number.isNaN(dueKm)) return skip(`km ungültig: ${kmRaw[0]}`);
-      lastKm = kmNum(kmRaw[1], 0, 5000000); if (Number.isNaN(lastKm)) return skip(`km ungültig: ${kmRaw[1]}`);
-      intervalKm = kmNum(kmRaw[2], 100, 1000000); if (Number.isNaN(intervalKm)) return skip(`km ungültig: ${kmRaw[2]}`);
+      // Backlog 1011 (Blickwinkel „Wartungsliste aus Excel mit km-Einheit“): km-Spalten wie das Formular lesen – km-Stand über `kmNum`
+      // („123.456 Kilometer“, „km-Stand: 123.456“, „Tacho 123456“), Intervall über `unitIn` („alle 30.000 km“, „30 000 Kilometer“);
+      // Meilen/Betriebsstunden mit eigenem Grund (vorher „km ungültig“), nie umgerechnet. Sonst unverändert „km ungültig: …“.
+      const kmIn = (raw, min, max, iv) => {
+        if (!raw) return null;
+        try {
+          if (iv && kmForeignUnit(raw)) kmNumU(raw, { field: 'Intervall km' }); // Meilen/Betriebsstunden → eigene Meldung
+          const n = iv ? num(raw, { min, max, field: 'Intervall km', unit: 'km', grouped: true }) : kmNumU(raw, { min, max, field: 'km' });
+          return Number.isInteger(n) ? n : NaN;
+        } catch (e) { return /ist ein Meilenstand|sind Betriebsstunden/.test(e.message || '') ? e.message : NaN; }
+      };
+      const kmSkip = (v, raw) => (typeof v === 'string' ? v : `km ungültig: ${raw}`);
+      dueKm = kmIn(kmRaw[0], 1, 5000000); if (Number.isNaN(dueKm) || typeof dueKm === 'string') return skip(kmSkip(dueKm, kmRaw[0]));
+      lastKm = kmIn(kmRaw[1], 0, 5000000); if (Number.isNaN(lastKm) || typeof lastKm === 'string') return skip(kmSkip(lastKm, kmRaw[1]));
+      intervalKm = kmIn(kmRaw[2], 100, 1000000, true); if (Number.isNaN(intervalKm) || typeof intervalKm === 'string') return skip(kmSkip(intervalKm, kmRaw[2]));
       // „Fällig bei km ≤ km letzte Prüfung“ erst nach dem Abgleich mit dem gespeicherten Termin (zweite Schleife): im eigenen Export ist die
       // km-Fälligkeit abgeleitet – eine verspätet nachgetragene Durchführung wurde sonst abgewiesen (20.10.2026)
     }

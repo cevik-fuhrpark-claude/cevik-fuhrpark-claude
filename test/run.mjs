@@ -33860,6 +33860,40 @@ await test('Backlog 1010 (Folge aus 1009, Leasingliste mit Beträgen wie auf dem
   ok(/PLN/.test(translateImportReason('en', 'Monatsrate: „450 zł“ ist ein Betrag in PLN – bitte den Euro-Betrag laut Beleg bzw. Abrechnung eingeben (die App rechnet nicht um).')) && !/bitte/.test(translateImportReason('en', 'Monatsrate: „450 zł“ ist ein Betrag in PLN – bitte den Euro-Betrag laut Beleg bzw. Abrechnung eingeben (die App rechnet nicht um).')), 'EN übersetzt');
 });
 
+await test('Backlog 1011 (Blickwinkel „Wartungsliste aus Excel mit km-Einheit“): Prüftermin-Import liest km-Spalten wie das Formular („123.456 Kilometer“, „km-Stand: 160.000“, „alle 30.000 km“); Meilen/Betriebsstunden mit eigenem Grund DE/UK/EN statt „km ungültig“, nie umgerechnet', async () => {
+  const { U } = await freshWorld();
+  const H = 'Kennzeichen;Art;Fällig bei km;km bei letzter Prüfung;Intervall km;Nachweis\n';
+  const post = (row, dry = true) => U.fleet.req('POST', '/api/maintenance/import' + (dry ? '?dry_run=1' : ''), `${H}SZ-YC 5513;${row};Serviceheft\n`, { 'content-type': 'text/csv' });
+  for (const [row, due, last, iv] of [
+    [';123.456 Kilometer;alle 30.000 km', 153456, 123456, 30000],
+    ['km-Stand: 160.000;;', 160000, null, null],
+    [';Tacho 120000;30 000 Kilometer', 150000, 120000, 30000],
+    ['160.000 km;;', 160000, null, null],
+    [';120.000;alle 30000km', 150000, 120000, 30000],
+  ]) {
+    const r = await post('Ölwechsel;' + row);
+    eq(r.status, 200); eq(r.data.skipped.length, 0, row + ' ' + JSON.stringify(r.data.skipped));
+    const x = r.data.rows[0];
+    eq([x.next_due_km ?? null, x.last_done_km ?? null, x.interval_km ?? null].join('/'), [due, last, iv].join('/'), row + ' ' + JSON.stringify(x));
+  }
+  const why = async (row) => { const r = await post('Ölwechsel;' + row); eq(r.data.rows.length, 0, row); return r.data.skipped[0].reason; };
+  eq(await why('99.000 mi;;'), 'km: „99.000 mi“ ist ein Meilenstand – bitte den Kilometerstand in km eingeben (die App rechnet nicht um).');
+  eq(await why(';4.500 Bh;'), 'km: „4.500 Bh“ sind Betriebsstunden – hier nur den Kilometerstand in km eintragen (Betriebsstunden gern in die Bemerkung).');
+  eq(await why(';;20.000 Meilen'), 'Intervall km: „20.000 Meilen“ ist ein Meilenstand – bitte den Kilometerstand in km eingeben (die App rechnet nicht um).');
+  eq(await why('abc;;'), 'km ungültig: abc', 'Text wie bisher');
+  eq(await why(';;30 Tkm'), 'km ungültig: 30 Tkm', 'unbekannte Einheit wie bisher');
+  const { translateImportReason } = await import('../public/i18n.js');
+  const m = 'km: „99.000 mi“ ist ein Meilenstand – bitte den Kilometerstand in km eingeben (die App rechnet nicht um).';
+  ok(/miles/.test(translateImportReason('en', m)) && /милях/.test(translateImportReason('uk', m)), 'EN/UK: ' + translateImportReason('en', m));
+  const mi = 'Intervall km: „20.000 Meilen“ ist ein Meilenstand – bitte den Kilometerstand in km eingeben (die App rechnet nicht um).';
+  ok(/Interval \(km\)/.test(translateImportReason('en', mi)) && !/Intervall/.test(translateImportReason('uk', mi)), 'Feldname übersetzt: ' + translateImportReason('uk', mi));
+  // Übernahme schreibt dieselben Werte wie die Vorschau
+  const real = await post('Ölwechsel;;123.456 Kilometer;alle 30.000 km', false);
+  eq(real.data.created, 1, JSON.stringify(real.data));
+  const row = (await U.fleet.get('/api/maintenance')).data.rows.find((r) => r.kind === 'Ölwechsel' && r.plate === 'SZ-YC 5513');
+  eq(row.interval_km, 30000); eq(row.last_done_km, 123456); eq(row.next_due_km, 153456);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
