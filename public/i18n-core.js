@@ -19,6 +19,7 @@ export { CHECK_LABELS } from './check-labels.js';
 // Backlog 265: Werkstatt wechseln im Werkstattplan
 // Backlog 261: Foto/PDF zur Restarbeit
 // Backlog 260: Restarbeit → Folgeauftrag
+// Backlog 1057: Sperre des Ursprungsauftrags bleibt beim Abtrennen eines Mangels bestehen
 // Backlog 255: Fahrzeug korrigieren für Mängel aus einer Abfahrtskontrolle (ganze Kontrolle wird umgehängt)
 
 // Backlog 467 (Blickwinkel „Sporadische Störung – Werkstatt findet keinen Fehler“)

@@ -34897,6 +34897,25 @@ await test('Backlog 1056 (Folge aus 1055): Lagerentnahme als Lieferant „Lager 
   ok(app.includes("esc(supplierLabel(i.supplier) || '–')") && app.includes('esc(supplierLabel(s.supplier))'), 'App: Teile-Verwendung und Kosten je Firma mit supplierLabel');
 });
 
+await test('Backlog 1057 (Blickwinkel „zwei unabhängige Mängel in einer Meldung“): Restarbeit eines gesperrten Auftrags als Folgeauftrag – Sperre des Ursprungs bleibt (keine stille Aufhebung), Oberfläche weist im Formular darauf hin (DE/UK/EN), Aufheben danach möglich', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
+  const id = await toRepair();
+  eq((await cmd(U.fleet, id, 'set_safety_lock', {}, 'Bremse quietscht, Spiegel ab')).status, 200);
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Bremse vorne links quietscht', safety_relevant: true })).status, 200);
+  const oi = db.prepare('SELECT id FROM open_items WHERE case_id=?').get(id).id;
+  const r = await U.fleet.post(`/api/cases/${id}/open-items/${oi}/followup`, { priority: 'kritisch' }); eq(r.status, 201, JSON.stringify(r.data));
+  eq(db.prepare('SELECT safety_lock FROM cases WHERE id=?').get(id).safety_lock, 1, 'Ursprung bleibt gesperrt');
+  eq(db.prepare('SELECT safety_lock FROM cases WHERE id=?').get(r.data.id).safety_lock, 1, 'Folgeauftrag gesperrt');
+  const d = (await U.fleet.get(`/api/cases/${id}`)).data; ok(d.allowed_actions.includes('lift_safety_lock'), 'Leitung kann die Sperre des Ursprungs aufheben');
+  eq((await cmd(U.fleet, id, 'lift_safety_lock', { confirm: true }, 'Sperre liegt am Folgeauftrag')).status, 200);
+  eq(db.prepare('SELECT safety_lock FROM cases WHERE id=?').get(r.data.id).safety_lock, 1, 'Folgeauftrag sperrt weiter');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("${c.safety_lock ? `<p class=\"small warn\" role=\"note\" data-oilock>${esc(t('oi_lock_stays'))}</p>` : ''}"), 'Hinweis nur bei gesperrtem Ursprung');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].oi_lock_stays && STRINGS[l].oi_lock_stays.includes(STRINGS[l].act_lift_safety_lock), l + ': oi_lock_stays nennt den Knopf');
+  const sh = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(sh.includes('ui-folgeauftrag-sperre.py'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Backlog 1048 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Hinweis beim Standortwechsel liefert offene Aufträge je Werkstatt und Status (Bearbeiten und CSV-Import); App trennt „bei Freigabe wählbar“, „jetzt übergebbar“, „nicht übergebbar“ und lässt die Werkstatt des neuen Standorts weg (DE/UK/EN)', async () => {
   const { U, newCase, toRepair } = await freshWorld();
   await toRepair();                                    // in Reparatur bei DORTMUND → nicht übergebbar

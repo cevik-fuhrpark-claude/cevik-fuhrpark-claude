@@ -3110,11 +3110,13 @@ async function viewCase(id) {
   // Backlog 882: bekannte Restarbeit eines freigegebenen Vorgangs hier mit erledigen
   $$('[data-relres]').forEach((b) => (b.onclick = () => actionForm('resolve_released_item', c, cmd, { open_item_id: b.dataset.relres }, d)));
   // Restarbeit → Folgeauftrag (Backlog 260): kleines Formular unter der Zeile, Dringlichkeit vorbelegt wie bei Kontroll-Mängeln
+  // Backlog 1057 (Blickwinkel „zwei unabhängige Mängel in einer Meldung“): ist dieser Auftrag gesperrt, bleibt die Sperre nach dem Abtrennen
+  // bestehen – Hinweis, sie hier aufzuheben, wenn nur der abgetrennte Mangel sie begründet (keine automatische Aufhebung)
   $$('[data-oifu]').forEach((b) => (b.onclick = () => {
     const old = $('#oiff'); if (old) old.remove();
     const row = b.closest('.row'); const safety = b.dataset.safety === '1';
     const f = document.createElement('form'); f.id = 'oiff'; f.className = 'panel';
-    f.innerHTML = `<p class="small muted">${esc(t(safety ? 'oi_to_case_hint_safety' : 'oi_to_case_hint'))}</p><label for="oifp">${esc(t('urgency'))}</label><select id="oifp" name="priority">${['niedrig', 'mittel', 'kritisch'].map((p) => `<option value="${p}"${p === (safety ? 'kritisch' : 'mittel') ? ' selected' : ''}>${esc(t('prio_' + p))}</option>`).join('')}</select><label for="oifn">${esc(t('note'))}</label><textarea id="oifn" name="note" rows="2" maxlength="1000"></textarea><div class="actions"><button class="btn">${esc(t('oi_to_case'))}</button><button type="button" class="btn secondary" id="oifx">${esc(t('cancel'))}</button></div>`;
+    f.innerHTML = `<p class="small muted">${esc(t(safety ? 'oi_to_case_hint_safety' : 'oi_to_case_hint'))}</p>${c.safety_lock ? `<p class="small warn" role="note" data-oilock>${esc(t('oi_lock_stays'))}</p>` : ''}<label for="oifp">${esc(t('urgency'))}</label><select id="oifp" name="priority">${['niedrig', 'mittel', 'kritisch'].map((p) => `<option value="${p}"${p === (safety ? 'kritisch' : 'mittel') ? ' selected' : ''}>${esc(t('prio_' + p))}</option>`).join('')}</select><label for="oifn">${esc(t('note'))}</label><textarea id="oifn" name="note" rows="2" maxlength="1000"></textarea><div class="actions"><button class="btn">${esc(t('oi_to_case'))}</button><button type="button" class="btn secondary" id="oifx">${esc(t('cancel'))}</button></div>`;
     row.after(f);
     $('#oifx').onclick = () => f.remove();
     f.onsubmit = async (e) => {

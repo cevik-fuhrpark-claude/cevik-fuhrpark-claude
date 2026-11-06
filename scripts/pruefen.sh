@@ -537,6 +537,7 @@ UI-Foto-unscharf: stark unscharfe Fotos in Melden, Abfahrtskontrolle und am Vorg
 UI-Reifenwechsel mit anderer Größe als für die Achse hinterlegt: Hinweis beim Tippen und nach dem Speichern (DE/UK/EN; Backlog 849)|ui-reifen-groesse-abweichend.py|/tmp/cfp-reifen-groesse-abweichend.log
 UI-Freigabe-Formular: Werkstatt zum Fahrzeugstandort vorgewählt, „–“ ohne passende Werkstatt, Hinweis bei abweichendem Vorschlag (DE/UK/EN; Backlog 1047)|ui-freigabe-standort.py|/tmp/cfp-freigabe-standort.log
 UI-Freigabe bei geschlossener Vorschlags-Werkstatt: Werkstatt am Fahrzeugstandort bzw. „–“, Hinweis „geschlossen“ (DE/UK/EN; Backlog 1051)|ui-werkstatt-geschlossen.py|/tmp/cfp-werkstatt-geschlossen.log
+UI-Folgeauftrag aus Restarbeit eines gesperrten Auftrags: Hinweis „Sperre bleibt“ (DE/UK/EN; Backlog 1057)|ui-folgeauftrag-sperre.py|/tmp/cfp-folgeauftrag-sperre.log
 UI-Kostenbericht: Chip „Standort gewechselt“ und Hinweis mit Datum/alt → neu am versetzten Lkw (DE/UK/EN; Backlog 1049)|ui-kosten-standortwechsel.py|/tmp/cfp-kosten-standortwechsel.log
 '
 N=0
