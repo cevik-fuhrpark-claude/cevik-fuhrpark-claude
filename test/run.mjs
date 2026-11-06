@@ -35063,6 +35063,22 @@ await test('Backlog 1061 (gleicher Blickwinkel, Fahrer-Nachweise): Nachweise und
   ok(app.includes("${r.site ? '&site=' + encodeURIComponent(r.site) : ''}&format=csv&part=${part}`)") && app.includes('data-drnositehidden'), 'App: CSV mit Standort, Hinweis');
 });
 
+await test('Backlog 1062 (Blickwinkel „Seitenfilter wirkt auf alle Teile“, Lager): Lagerliste mit Auswahl „Werkstatt“ für Inhaber/Leitung – Liste, Lagerwert, Druckvermerk und CSV folgen ihr; Bestellvorschlag-Zahl je Lager; Auswahl wird an Bestellvorschlag, Lagerjournal, Bestand zum Stichtag und Inventur weitergegeben', async () => {
+  const { U } = await freshWorld();
+  eq((await U.fleet.post('/api/stock', { site: 'DORTMUND', name: 'Ölfilter DO', initial_qty: '2', min_qty: '5' })).status, 201);
+  const mu = (await U.fleet.post('/api/stock', { site: 'MUENCHEN', name: 'Ölfilter MU', initial_qty: '1', unit_price_net: '10' })).data.id;
+  const all = (await U.fleet.get('/api/stock')).data.items; ok(new Set(all.map((i) => i.site)).size >= 2, 'Artikel in zwei Lagern');
+  const only = (await U.fleet.get('/api/stock?site=MUENCHEN')).data.items; ok(only.length && only.every((i) => i.site === 'MUENCHEN'), 'Server grenzt auf ein Lager ein');
+  const csv = await U.fleet.post('/api/stock/export', { ids: [mu] }); eq(csv.status, 200); const ct = new TextDecoder().decode(csv.data); ok(ct.includes('Ölfilter MU') && !ct.includes('Ölfilter DO'), 'CSV der Auswahl nur mit dem gewählten Lager');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const h = !!((ws && r.i.site !== ws) ||"), 'Liste filtert nach Lager (Lagerwert/Druck/CSV nutzen die angezeigten Zeilen)');
+  ok(app.includes("ws ? `${t('workshop')}: ${wsName(ws)}` : ''"), 'Druckvermerk nennt das Lager');
+  ok(app.includes("const stSites = S.me.role === 'workshop' ? []"), 'Auswahl nicht für die Werkstatt (sieht nur ihr Lager)');
+  for (const k of ['cfp_reorder_site', 'cfp_sj_site', 'cfp_sa_site']) ok(app.includes(`setSub('${k}')`), 'Lagerwahl an Unterseite weitergegeben: ' + k);
+  ok(app.includes("sessionStorage.setItem('cfp_stock_site', ws)"), 'Lagerwahl gemerkt');
+  const sh = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(sh.includes('ui-lager-werkstattwahl.py'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

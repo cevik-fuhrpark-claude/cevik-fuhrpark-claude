@@ -5586,6 +5586,11 @@ async function viewStock() {
   // Zahl am „Bestellvorschlag“: nur Artikel mit noch offener Fehlmenge (voll bestellte nicht – wie der Agent, 19.10.2026)
   const nReorder = items.filter((i) => i.below_min && !(i.ordered_on && i.min_qty - i.on_hand - (i.ordered_qty || 0) <= 1e-9)).length;
   const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site) : S.meta.workshops;
+  // Backlog 1062: Auswahl „Werkstatt“ (Lager) für Inhaber/Leitung – Lager aus den Artikeln (auch geschlossene Werkstätten mit Restbestand);
+  // wirkt auf Liste, Lagerwert, Druck, CSV und wird an Bestellvorschlag, Lagerjournal, Bestand zum Stichtag und Inventur weitergegeben
+  const stSites = S.me.role === 'workshop' ? [] : [...new Set(items.map((i) => i.site))].sort((a, b) => wsName(a).localeCompare(wsName(b)));
+  let stSite = ''; try { stSite = sessionStorage.getItem('cfp_stock_site') || ''; } catch { /* ohne Speicher: alle Lager */ }
+  if (!stSites.includes(stSite)) stSite = '';
   // Ausdruck der Lagerliste: genau die angezeigten Artikel (Suche/Filter) samt Lagerwert-Zeile; Auswahl im Vermerk (#sprsel)
   render(`<h1>${esc(t('stock'))}</h1>${printHead([S.me.role === 'workshop' ? `${t('workshop')}: ${wsName(S.me.workshop_site)}` : ''])}<p class="print-only small" id="sprsel"></p>${helpLink('stock')}
     <details class="panel noprint"><summary>${esc(t('new_item'))}</summary><form id="nf">
@@ -5603,6 +5608,7 @@ async function viewStock() {
       <p class="small" id="invlast"></p><p class="noprint actions"><a class="btn secondary" href="#/stock/count" id="invsheet">${esc(t('count_sheet'))}</a><a class="btn secondary" href="#/stock/journal" id="invdiffs">${esc(t('inventory_diffs'))}</a></p><div id="invdraft"></div><div id="invlist"></div><label for="invnote">${esc(t('note'))}</label><input id="invnote" maxlength="300">
       <div class="actions"><button type="button" class="btn secondary" id="invchk">${esc(t('inventory_check'))}</button><button type="button" class="btn" id="invbook" disabled>${esc(t('inventory_book'))}</button></div><div id="invres"></div></details>` : ''}
     <div class="noprint"><input id="q" placeholder="${esc(t('part_name'))} / ${esc(t('part_number'))}" aria-label="${esc(t('part_name'))} / ${esc(t('part_number'))}" style="margin-bottom:8px">
+    ${stSites.length > 1 ? `<label for="ssite">${esc(t('workshop'))}</label><select id="ssite"><option value="">${esc(t('all'))}</option>${stSites.map((c) => `<option value="${esc(c)}"${c === stSite ? ' selected' : ''}>${esc(wsName(c))}</option>`).join('')}</select>` : ''}
     <label for="sf">${esc(t('stock_filter'))}</label><select id="sf"><option value="">${esc(t('all'))}</option><option value="min">${esc(t('below_min'))}</option><option value="180">${esc(t('stock_idle').replace('{d}', 180))}</option><option value="365">${esc(t('stock_idle').replace('{d}', 365))}</option><option value="c365">${esc(t('count_age_n').replace('{n}', 365))}</option></select></div>
     <p class="small muted" id="sfsum" hidden></p>
     <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}" data-pk="${esc(pnCompact(i.part_number))}" data-id="${esc(i.id)}">${S.me.role === 'workshop' ? '<span></span>' : `<span class="chip">${esc(wsName(i.site))}</span>`}<span class="title" style="white-space:normal">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + fmtNum(i.min_qty) + ')', i.unit_price_net !== null && eur3(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || noneP()}</div>`, 'more');
@@ -5612,21 +5618,36 @@ async function viewStock() {
   // vorher je Taste alle Zeilen aus dem DOM gelesen und neu gesetzt – 500 Artikel am Handy ≈ 40 ms je Taste)
   const slRows = $$('#sl a').map((a) => ({ a, s: a.dataset.s, pk: a.dataset.pk, i: byId.get(a.dataset.id) }));
   const applyStock = () => {
-    const q = helpNorm($('#q').value); const f = $('#sf').value; const qc = pnCompact($('#q').value); const qcOk = qc.length >= 3; // Backlog 862: Teilenummer ohne Trennzeichen // Umlaute/ue gleich: „bremsbelaege“ findet „Bremsbeläge“
+    const ws = $('#ssite') ? $('#ssite').value : ''; const q = helpNorm($('#q').value); const f = $('#sf').value; const qc = pnCompact($('#q').value); const qcOk = qc.length >= 3; // Backlog 862: Teilenummer ohne Trennzeichen // Umlaute/ue gleich: „bremsbelaege“ findet „Bremsbeläge“
     const cut = /^\d+$/.test(f) ? bDate(-Number(f)) : null;
     const hit = (i) => (!f || (f === 'min' ? i.below_min : f === 'c365' ? !i.last_counted_date || i.last_counted_date <= bDate(-365) : i.on_hand > 0 && (!i.last_out_date || i.last_out_date < cut)));
     const shown = [];
-    for (const r of slRows) { const h = !!((q && !r.s.includes(q) && !(qcOk && r.pk.includes(qc))) || !hit(r.i)); if (r.a.hidden !== h) r.a.hidden = h; if (!h) shown.push(r.i); }
+    for (const r of slRows) { const h = !!((ws && r.i.site !== ws) || (q && !r.s.includes(q) && !(qcOk && r.pk.includes(qc))) || !hit(r.i)); if (r.a.hidden !== h) r.a.hidden = h; if (!h) shown.push(r.i); }
     // Summe der angezeigten Artikel: Bestand × hinterlegter Artikelpreis (netto); Artikel mit Bestand ohne Preis = unbewertet (nie 0 €), ohne bewertbaren Artikel „–“
     const sum = $('#sfsum'); sum.hidden = !shown.length;
     const stocked = shown.filter((i) => i.on_hand > 0); const priced = stocked.filter((i) => i.unit_price_net !== null);
     const v = priced.length ? eur(rc2(priced.reduce((a, i) => a + rc2(i.on_hand * i.unit_price_net), 0))) : '–';
     const unv = stocked.length - priced.length ? ` (${stocked.length - priced.length} ${t('unvalued_short')})` : '';
     const qv = $('#q').value.trim(); const sfo = $('#sf').selectedOptions[0];
-    $('#sprsel').textContent = [`${t('print_filter')}: ${f && sfo ? sfo.textContent : t('all')}`, qv ? `${t('print_search')}: „${qv}“` : ''].filter(Boolean).join(' · ');
+    $('#sprsel').textContent = [ws ? `${t('workshop')}: ${wsName(ws)}` : '', `${t('print_filter')}: ${f && sfo ? sfo.textContent : t('all')}`, qv ? `${t('print_search')}: „${qv}“` : ''].filter(Boolean).join(' · ');
     sum.textContent = cut ? tn('stock_idle_sum', shown.length).replace('{v}', v) + unv : tn('stock_value_sum', shown.length).replace('{v}', v) + unv;
   };
   let sqT = null; $('#q').oninput = () => { clearTimeout(sqT); sqT = setTimeout(applyStock, items.length > 300 ? 150 : 0); };
+  // Lagerwahl merken und an die Unterseiten weitergeben (dort weiter änderbar); Zahl am Bestellvorschlag je Lager
+  const reoA = $('a[href="#/stock/reorder"]');
+  const passSite = () => {
+    const ws = $('#ssite') ? $('#ssite').value : '';
+    try { sessionStorage.setItem('cfp_stock_site', ws); } catch { /* ohne Speicher */ }
+    if (reoA) { const nr = items.filter((i) => (!ws || i.site === ws) && i.below_min && !(i.ordered_on && i.min_qty - i.on_hand - (i.ordered_qty || 0) <= 1e-9)).length; reoA.innerHTML = `${esc(t('reorder'))}${nr ? ` <span class="chip mittel">${nr}</span>` : ''}`; }
+    if (ws && $('#invsite') && [...$('#invsite').options].some((o) => o.value === ws) && $('#invsite').value !== ws) { $('#invsite').value = ws; if ($('#invsite').onchange) $('#invsite').onchange(); }
+  };
+  const setSub = (k) => { const ws = $('#ssite') ? $('#ssite').value : ''; try { sessionStorage.setItem(k, ws); } catch { /* ohne Speicher */ } };
+  if ($('#ssite')) {
+    $('#ssite').onchange = () => { passSite(); applyStock(); };
+    if (reoA) reoA.addEventListener('click', () => setSub('cfp_reorder_site'));
+    $$('a[href="#/stock/journal"]:not(#invdiffs)').forEach((a) => a.addEventListener('click', () => { setSub('cfp_sj_site'); }));
+    $('#sasof').addEventListener('click', () => setSub('cfp_sa_site'));
+  }
   $('#sf').onchange = applyStock; applyStock(); // Lagerwert gleich beim Öffnen
   const sqFlush = () => { if (sqT) { clearTimeout(sqT); sqT = null; applyStock(); } }; // Druck/CSV direkt nach dem Tippen: entprellte Suche zuerst anwenden
   $('#sprt').onclick = () => { sqFlush(); window.print(); };
@@ -5703,6 +5724,7 @@ async function viewStock() {
   const pnDupShow = (list) => { pnBox.hidden = !list.length; pnBox.innerHTML = list.length ? `⚠ ${esc(t('stock_pn_dup'))} ${list.slice(0, 3).map((i) => `<a href="#/stock/${esc(i.id)}" data-pndupitem="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''}</a>${i.on_hand === null || i.on_hand === undefined ? '' : ` (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})`}`).join(', ')}${list.length > 3 ? ` +${list.length - 3}` : ''}` : ''; };
   const pnDupCheck = () => { const c = pnCompact(nfm.part_number.value); const site = nfm.site ? nfm.site.value : (sites[0] || {}).code; pnDupShow(c.length >= 3 ? items.filter((i) => i.site === site && pnCompact(i.part_number) === c) : []); };
   nfm.part_number.oninput = pnDupCheck; if (nfm.site) nfm.site.onchange = pnDupCheck;
+  if ($('#ssite') && $('#ssite').value) { passSite(); if (nfm.site && [...nfm.site.options].some((o) => o.value === $('#ssite').value)) nfm.site.value = $('#ssite').value; } // gemerkte Lagerwahl: Inventur/Neuer Artikel vorbelegen
   $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['initial_qty', 'min_qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } const sf = e.target; try { await api('POST', '/api/stock', b, { timeoutMs: SEND_TIMEOUT_MS }); viewStock(); } catch (err) { /* Backlog 805i (Funkloch): Wiederholung → duplicate_item */ if (lostDup(sf, b, err, ['duplicate_item'])) { toast(t('saved_before')); viewStock(); return; } lostMark(sf, b, err); if (err.code === 'duplicate_item' && err.data && err.data.item_id) { const tw = items.find((i) => i.id === err.data.item_id); pnDupShow([tw || { id: err.data.item_id, name: err.data.name, part_number: err.data.part_number }]); } toast(err.message, true); } };
 }
 
