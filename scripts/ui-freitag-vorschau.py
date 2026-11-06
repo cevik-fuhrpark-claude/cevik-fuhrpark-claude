@@ -42,6 +42,22 @@ with sync_playwright() as p:
     d = api('POST', '/api/drivers', {'display_name': 'Freitag Fahrer'})['d']['id']
     check(api('POST', f'/api/drivers/{d}/documents', {'kind': 'fahrerkarte', 'valid_until': iso(last), 'evidence': 'Fahrerkarte Kopie'})['s'] == 201, 'Fahrerkarte bis zum Tag vor dem nächsten Werktag')
     check(api('POST', f'/api/drivers/{d}/documents', {'kind': 'fuehrerschein', 'license_classes': 'CE', 'valid_until': iso(nwd), 'evidence': 'Führerschein gesehen'})['s'] == 201, 'Führerschein bis zum nächsten Werktag')
+    # Backlog 1071: zwei Reparaturen mit „voraussichtlich fertig“ (nächster Werktag bzw. Tag danach) durch die Werkstatt
+    uw = api('POST', '/api/users', {'username': U + '.w', 'display_name': 'FV Mechaniker', 'role': 'workshop', 'workshop_site': 'DORTMUND', 'environment': 'production'})
+    check(uw['s'] in (200, 201), 'Werkstattkonto')
+    wctx = br.new_context(); qw = wctx.new_page(); qw.goto(B); qw.evaluate(JS, ['POST', '/api/invite/accept', {'token': uw['d']['invite_token'], 'password': PW}])
+    check(qw.evaluate(JS, ['POST', '/api/login', {'username': U + '.w', 'password': PW}])['s'] == 200, 'Anmeldung Werkstatt')
+    def cmd(page, cid, action, payload=None, note=None):
+        v = page.evaluate(JS, ['GET', f'/api/cases/{cid}', None])['d']['case']['version']
+        b = {'action': action, 'command_id': f'fv-{action}-{cid[-6:]}-{v}', 'expected_version': v, 'payload': payload or {}}
+        if note: b['note'] = note
+        return page.evaluate(JS, ['POST', f'/api/cases/{cid}/commands', b])['s']
+    for key, desc, on in [('fv-r1', 'Getriebe Werktag fertig', nwd), ('fv-r2', 'Kupplung spaeter fertig', nwd + datetime.timedelta(days=1))]:
+        cs = api('POST', '/api/cases', {'vehicle_id': v1, 'description': desc, 'priority': 'mittel', 'driveability': 'fahrbereit', 'request_key': key})['d']
+        cid = cs['case']['id'] if 'case' in cs else cs['id']
+        check(cmd(a, cid, 'approve_repair', {'workshop_site': 'DORTMUND'}, 'Reparatur') == 200 and cmd(qw, cid, 'start_repair') == 200, f'{desc}: in Reparatur')
+        check(cmd(qw, cid, 'set_ready_date', {'ready_expected_on': iso(on)}) == 200, f'{desc}: voraussichtlich fertig {iso(on)}')
+    wctx.close()
     for lang, w, h in [('de', 390, 844), ('uk', 820, 1180), ('en', 1366, 900)]:
         api('PATCH', '/api/me', {'language': lang})
         ctx = br.new_context(viewport={'width': w, 'height': h}); q = ctx.new_page(); errs = []; q.on('pageerror', lambda e: errs.append(str(e)))
@@ -53,6 +69,12 @@ with sync_playwright() as p:
         fu1 = 'Werkstatt anrufen' in txt; fu2 = 'Werktag nachfragen' in txt; hint = q.locator('[data-todofree]').count()
         check(fu1 and not fu2, f'{tag}: Wiedervorlage bis zum Vortag des nächsten Werktags, nicht die des Werktags ({fu1}/{fu2})')
         check(hint == (1 if free else 0), f'{tag}: Hinweis freie Tage {hint} (erwartet {1 if free else 0})')
+        rdy = q.evaluate("() => [...document.querySelectorAll('#app details')].filter((d) => /\\(.*\\)/.test(d.querySelector('summary').textContent) && [...d.querySelectorAll('.row')].some((r) => r.getAttribute('href') && r.getAttribute('href').startsWith('#/cases/'))).map((d) => d.querySelector('summary').textContent + ' || ' + d.querySelector('.list').textContent)")
+        rdy = [x for x in rdy if 'S-' in x and ('fertig' in x.lower() or 'ready' in x.lower() or 'готов' in x.lower())]
+        if free:
+            check(len(rdy) == 1 and rdy[0].count('S-') == 1, f'{tag}: Gruppe „voraussichtlich fertig bis zum nächsten Werktag“ mit genau einem Vorgang ({rdy[:1]})')
+        else:
+            check(len(rdy) == 0, f'{tag}: ohne freie Tage keine Fertig-Gruppe ({rdy[:1]})')
         rows = q.evaluate("() => [...document.querySelectorAll('#app details .row')].map((r) => r.textContent).filter((x) => x.includes('Freitag Fahrer'))")
         lic = {'de': 'Führerschein', 'uk': 'Посвідчення водія', 'en': 'Driving licence'}[lang]
         check(len(rows) == 1 and ', ' not in rows[0] and lic not in rows[0], f'{tag}: Fahrergruppe nennt nur den Nachweis, der am nächsten Werktag nicht mehr gilt ({rows[:1]})')

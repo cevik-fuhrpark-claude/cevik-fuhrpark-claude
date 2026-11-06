@@ -35256,7 +35256,7 @@ await test('Backlog 1069/1070 (Blickwinkel „Fuhrparkleitung am Freitag: Wochen
   const ft = app.slice(app.indexOf('async function fleetTodo()'), app.indexOf('\n}\n', app.indexOf('async function fleetTodo()')));
   ok(ft.includes('const hz = freeDaysEnd(today);'), 'Horizont');
   ok(ft.includes("['todo_followup', cs.filter((c) => c.followup_on && c.followup_on <= hz)") && ft.includes('c.followup_on > today ? fmtDue(c.followup_on) : fmtD(c.followup_on)'), 'Wiedervorlage bis zum Vortag des nächsten Werktags, mit Wochentag');
-  ok(ft.includes("['todo_driver_docs_soon', dr.filter((d) => drvDocsSoon(d, today, hz).length)") && ft.includes("k === 'todo_driver_docs_soon' ? t(k).replace('{d}', fmtDue(nextWorkdayAfter(today)))"), 'Fahrernachweise mit nächstem Werktag');
+  ok(ft.includes("['todo_driver_docs_soon', dr.filter((d) => drvDocsSoon(d, today, hz).length)") && ft.includes("['todo_driver_docs_soon', 'todo_ready_soon'].includes(k) ? t(k).replace('{d}', fmtDue(nextWorkdayAfter(today)))"), 'Fahrernachweise mit nächstem Werktag');
   ok(ft.includes("k === 'todo_followup' && hz > today ?") && ft.includes('data-todofree'), 'Hinweis nur vor freien Tagen');
   // Server liefert die nötigen Felder (Art, Gültig bis, Status) in der Fahrerliste
   const { U } = await freshWorld();
@@ -35269,6 +35269,27 @@ await test('Backlog 1069/1070 (Blickwinkel „Fuhrparkleitung am Freitag: Wochen
   for (const l of ['de', 'uk', 'en']) {
     for (const k of ['todo_upto_free', 'todo_driver_docs_soon']) ok(STRINGS[l][k] && STRINGS[l][k].includes('{d}'), l + ' ' + k);
     ok(STRINGS[l].help_fleet_s.split('|').some((x) => x.includes(STRINGS[l].todo_followup) && x.includes(STRINGS[l].valid_until)), l + ': Hilfe Fuhrparkleitung nennt beides');
+  }
+});
+await test('Backlog 1071 (Folge aus 1069): „Heute zu tun“ nennt vor freien Tagen die Fahrzeuge, die laut Werkstatt bis zum nächsten Werktag voraussichtlich fertig sind (heute bis einschließlich nächster Werktag, nur Werkstatt-Status); an gewöhnlichen Werktagen keine Gruppe; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i = app.indexOf('async function fleetTodo()'); const ft = app.slice(i, app.indexOf('\n}\n', i));
+  const line = ft.split('\n').find((l) => l.includes("['todo_ready_soon',")); ok(line, 'Gruppe');
+  ok(line.includes("hz > today ? cs.filter((c) => rdyOf(c) && c.ready_expected_on >= today && c.ready_expected_on <= nextWorkdayAfter(today))"), 'nur vor freien Tagen, heute bis nächster Werktag, rdyOf (Werkstatt-Status)');
+  ok(ft.indexOf("['todo_ready_soon',") < ft.indexOf("['todo_paused',") && ft.indexOf("['todo_ready_overdue',") < ft.indexOf("['todo_ready_soon',"), 'nach „überschritten“');
+  ok(ft.includes("['todo_driver_docs_soon', 'todo_ready_soon'].includes(k) ? t(k).replace('{d}', fmtDue(nextWorkdayAfter(today)))"), 'Überschrift mit nächstem Werktag');
+  // Filterlogik nachgestellt
+  const rdyOf = new Function('RDY_ST', 'return ' + app.match(/const rdyOf = (\(c\) => [^;]*);/)[1])(['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile']);
+  const pick = (cs, today, hz, nwd) => (hz > today ? cs.filter((c) => rdyOf(c) && c.ready_expected_on >= today && c.ready_expected_on <= nwd) : []).map((c) => c.id).join(',');
+  const cs = [{ id: 'a', status: 'in_reparatur', ready_expected_on: '2026-11-09' }, { id: 'b', status: 'wartet_teile', ready_expected_on: '2026-11-06' }, { id: 'c', status: 'in_reparatur', ready_expected_on: '2026-11-10' },
+    { id: 'd', status: 'abschlusskontrolle', ready_expected_on: '2026-11-09' }, { id: 'e', status: 'in_reparatur', ready_expected_on: '2026-11-05' }];
+  eq(pick(cs, '2026-11-06', '2026-11-08', '2026-11-09'), 'a,b', 'Freitag: heute und Montag; Dienstag nicht, Abschlusskontrolle nicht, Überschrittenes steht in todo_ready_overdue');
+  eq(pick(cs, '2026-11-05', '2026-11-05', '2026-11-06'), '', 'Donnerstag: keine Gruppe');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].todo_ready_soon && STRINGS[l].todo_ready_soon.includes('{d}'), l + ' todo_ready_soon');
+    ok(STRINGS[l].help_fleet_s.split('|').some((x) => x.includes(STRINGS[l].todo_followup) && /voraussichtlich fertig|оцінкою майстерні|expects to be ready/.test(x)), l + ': Hilfe Fuhrparkleitung');
   }
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
