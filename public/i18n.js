@@ -1892,6 +1892,9 @@ Object.assign(STRINGS.en, { veh_site_ws_open: 'Open workshop orders that stay wi
 Object.assign(STRINGS.de, { apr_ws_site_hint: 'Das Fahrzeug steht laut Stammdaten am Standort {site} ({ws}) – bitte die Werkstatt prüfen.' });
 Object.assign(STRINGS.uk, { apr_ws_site_hint: 'За основними даними транспортний засіб знаходиться на локації {site} ({ws}) – перевірте, будь ласка, майстерню.' });
 Object.assign(STRINGS.en, { apr_ws_site_hint: 'According to the master data the vehicle is at site {site} ({ws}) – please check the workshop.' });
+Object.assign(STRINGS.de, { apr_ws_closed_hint: 'Die vorgeschlagene Werkstatt {ws} ist geschlossen – bitte eine andere Werkstatt wählen.' });
+Object.assign(STRINGS.uk, { apr_ws_closed_hint: 'Запропонована майстерня {ws} закрита – оберіть, будь ласка, іншу майстерню.' });
+Object.assign(STRINGS.en, { apr_ws_closed_hint: 'The suggested workshop {ws} is closed – please choose another workshop.' });
 // Backlog 1049: Kostenbericht – Standortwechsel ab Zeitraumbeginn (Kosten zählen beim heutigen Standort)
 Object.assign(STRINGS.de, { cost_site_moved: 'Standort gewechselt', cost_site_moved_hint: 'Standort gewechselt am {list}. Alle Kosten des Zeitraums zählen beim heutigen Standort laut Fahrzeugstamm.' });
 Object.assign(STRINGS.uk, { cost_site_moved: 'Локацію змінено', cost_site_moved_hint: 'Локацію змінено {list}. Усі витрати за період зараховуються до поточної локації за основними даними.' });

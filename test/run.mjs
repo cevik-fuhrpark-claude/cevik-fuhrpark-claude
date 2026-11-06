@@ -34753,12 +34753,30 @@ await test('Backlog 1047 (Blickwinkel „Lkw wechselt dauerhaft den Standort“)
   ok(!(r.data.site_changes || []).length, 'beide versetzt: kein Hinweis');
   const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("...(x.coupled_other_site || []).map((y) => t('veh_site_coupled')"), 'Importhinweis zeigt das gekoppelte Fahrzeug');
-  ok(app.includes("const wsSel = c.workshop_site || c.suggested_workshop_site || vWs;") && app.includes("${wsSel ? '' : '<option value=\"\" selected>–</option>'}"), 'Freigabe: Vorwahl nach Standort, sonst „–“');
-  ok(app.includes('<select name="workshop_site" required>${wsOpts}</select>${wsSiteHint}'), 'Freigabe: Pflichtauswahl + Hinweis');
+  ok(app.includes("const wsSel = (wsCandClosed ? '' : wsCand) || vWs;") && app.includes("${wsSel ? '' : '<option value=\"\" selected>–</option>'}"), 'Freigabe: Vorwahl nach Standort, sonst „–“');
+  ok(app.includes('<select name="workshop_site" required>${wsOpts}</select>${wsClosedHint}${wsSiteHint}'), 'Freigabe: Pflichtauswahl + Hinweis');
   // Backlog 1050: derselbe Hinweis in „Werkstatt wechseln“
   ok(app.includes("(action === 'approve_repair' || action === 'reassign_workshop') && d && d.vehicle") && app.includes('</select>${wsSiteHint}${rwsDrop(c)}'), 'Werkstatt wechseln: Hinweis');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].apr_ws_site_hint && STRINGS[l].apr_ws_site_hint.includes('{site}') && STRINGS[l].apr_ws_site_hint.includes('{ws}'), l + ': apr_ws_site_hint');
+});
+
+await test('Backlog 1051 (Blickwinkel „Werkstatt Bayern schließt, Aufträge gehen nach Dortmund“): Freigabe-Formular wählt bei Vorschlag einer geschlossenen Werkstatt nicht still die erste aktive, sondern die Werkstatt am Fahrzeugstandort bzw. „–“, mit Hinweis (DE/UK/EN); Server lehnt die geschlossene Werkstatt ab', async () => {
+  const { e, U, newCase } = await freshWorld();
+  const id = await newCase({ description: 'Vorschlag München', workshop_site: 'MUENCHEN' });
+  const c0 = (await U.fleet.get(`/api/cases/${id}`)).data.case; eq(c0.suggested_workshop_site, 'MUENCHEN', 'Vorschlag gespeichert');
+  e.DB.db.prepare(`UPDATE workshops SET active=0 WHERE code='MUENCHEN'`).run();
+  const m = (await U.fleet.get('/api/meta')).data; ok(!m.workshops.some((w) => w.code === 'MUENCHEN'), 'Auswahl ohne geschlossene Werkstatt');
+  const r = await U.fleet.post(`/api/cases/${id}/commands`, { action: 'approve_repair', command_id: 'c1051', expected_version: c0.version, note: 'Freigabe', payload: { workshop_site: 'MUENCHEN' } });
+  eq(r.status, 400, 'geschlossene Werkstatt abgelehnt: ' + JSON.stringify(r.data));
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const wsCandClosed = action === 'approve_repair' && wsCand && !S.meta.workshops.some((w) => w.code === wsCand);"), 'Vorschlag gegen aktive Werkstätten geprüft');
+  ok(app.includes("const wsSel = (wsCandClosed ? '' : wsCand) || vWs;"), 'geschlossener Vorschlag wird nicht vorgewählt');
+  ok(app.includes('data-apwsclosed') && app.includes("t('apr_ws_closed_hint')"), 'Hinweis „geschlossen“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].apr_ws_closed_hint && STRINGS[l].apr_ws_closed_hint.includes('{ws}'), l + ': apr_ws_closed_hint');
+  const sh = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(sh.includes('ui-werkstatt-geschlossen.py'), 'UI-Skript in pruefen.sh');
+  const dev = readFileSync(new URL('../scripts/dev-server.mjs', import.meta.url), 'utf8'); ok(dev.includes("'/__dev/workshop-active'"), 'Entwicklungsserver kann Werkstatt schließen');
 });
 
 await test('Backlog 1048 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Hinweis beim Standortwechsel liefert offene Aufträge je Werkstatt und Status (Bearbeiten und CSV-Import); App trennt „bei Freigabe wählbar“, „jetzt übergebbar“, „nicht übergebbar“ und lässt die Werkstatt des neuen Standorts weg (DE/UK/EN)', async () => {

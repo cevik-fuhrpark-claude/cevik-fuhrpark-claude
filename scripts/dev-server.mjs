@@ -95,6 +95,11 @@ http.createServer(async (req, res) => {
       : env.DB.db.prepare(`INSERT INTO settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(k, v, new Date().toISOString()).changes;
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ changed: Number(n) })); return;
   }
+  // Nur lokal: Werkstatt schließen/wieder öffnen – in der App gibt es dafür (bewusst) keinen Knopf, nur Migrationen (scripts/ui-werkstatt-geschlossen.py)
+  if (url.pathname === '/__dev/workshop-active' && req.method === 'POST') {
+    const n = env.DB.db.prepare('UPDATE workshops SET active=? WHERE code=?').run(url.searchParams.get('active') === '1' ? 1 : 0, String(url.searchParams.get('code') || '')).changes;
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ changed: Number(n) })); return;
+  }
   if (url.pathname.startsWith('/api/') || url.pathname === '/healthz') {
     const chunks = []; for await (const c of req) chunks.push(c);
     const body = chunks.length ? Buffer.concat(chunks) : undefined;
