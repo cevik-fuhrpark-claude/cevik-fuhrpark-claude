@@ -758,10 +758,18 @@ async function otherLockCaseNo(env, c) {
 
 // Backlog 1073 (Blickwinkel „Werkstatt bekommt zwei Aufträge für denselben Lkw am selben Tag“): weiterer Werkstattauftrag am selben Fahrzeug
 // (freigegeben/in Reparatur/wartet auf Teile/Abschlusskontrolle, ohne Sicherheitssperre – die meldet otherLockCaseNo) – Vorgangsnummer oder null
+// Backlog 1081 (Blickwinkel „Werkstatt Dortmund und Bayern arbeiten am selben Gespann“): ohne weiteren Auftrag am selben Fahrzeug auch das fest
+// gekoppelte Fahrzeug (Kopplung wie otherLockCaseNo) – dann { case_no, plate } (Kennzeichen wie locked_by; keine Beschreibung, kein Standort)
 async function otherWorkshopCaseNo(env, c) {
-  const r = await env.DB.prepare(`SELECT case_no FROM cases WHERE environment=?1 AND vehicle_id=?2 AND id<>?3 AND safety_lock=0
-    AND status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') ORDER BY created_at LIMIT 1`).bind(c.environment, c.vehicle_id, c.id).first();
-  return r ? r.case_no : null;
+  const PK = PLATE_KEY_SQL;
+  const r = await env.DB.prepare(`SELECT x.case_no, x.vehicle_id, (SELECT p.plate FROM vehicles p WHERE p.id=x.vehicle_id) AS plate FROM cases x WHERE x.environment=?1 AND x.id<>?3 AND x.safety_lock=0
+    AND x.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')
+    AND (x.vehicle_id=?2 OR x.vehicle_id IN (SELECT o.id FROM vehicles o JOIN vehicles v ON v.id=?2 WHERE o.active=1 AND o.id<>v.id AND ${COUPLING_PREFERRED_SQL('v')} AND ${COUPLING_PREFERRED_SQL('o')} AND (
+      (v.kind='anhaenger' AND o.kind='lkw' AND ${PK('o.trailer_plate')}<>'' AND ${PK('o.trailer_plate')}=${PK('v.plate')})
+      OR (v.kind='lkw' AND o.kind='anhaenger' AND ${PK('v.trailer_plate')}<>'' AND ${PK('o.plate')}=${PK('v.trailer_plate')}))))
+    ORDER BY x.vehicle_id=?2 DESC, x.created_at LIMIT 1`).bind(c.environment, c.vehicle_id, c.id).first();
+  if (!r) return null;
+  return r.vehicle_id === c.vehicle_id ? r.case_no : { case_no: r.case_no, plate: r.plate };
 }
 
 async function repairInspection(env, caseId) {

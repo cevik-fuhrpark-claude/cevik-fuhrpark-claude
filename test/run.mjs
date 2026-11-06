@@ -24561,7 +24561,7 @@ await test('Backlog 458 (Blickwinkel „Disposition fragt am Nachmittag: welcher
     ok(STRINGS[lang].help_dispo_s.includes(STRINGS[lang].dispo_back) && STRINGS[lang].help_dispo_s.includes(STRINGS[lang].pu_title), lang + ': Hilfe Disposition');
   }
   eq(await run('de')(open.concat([{ vehicle_id: (await D.get(`/api/cases/${a}`)).data.case.vehicle_id, status: 'gemeldet', safety_lock: 1 }]), ''), '', 'gesperrt durch neue Meldung → nicht wieder einsatzbereit');
-  ok(app.includes("if (cases !== null) html += await dispoBack(dcs, hq);"), 'Startseite Disposition ruft den Abschnitt auf');
+  ok(app.includes("if (cases !== null) html += await dispoBack(dcs, hq, new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])));") /* Backlog 1080: Gespann-Zustand */, 'Startseite Disposition ruft den Abschnitt auf');
   void b;
 });
 
@@ -35490,6 +35490,49 @@ await test('Backlog 1079 (Folge aus 1076): Abfahrtskontrolle nennt Prüffristen 
   ok(mv && mv.coupled && mv.coupled.planned_inspection && mv.coupled.planned_inspection.kind === 'UVV' && mv.coupled.planned_inspection.planned_date === pd && mv.planned_inspection === null, JSON.stringify(mv && mv.coupled));
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['dc_insp_t', 'dc_insp_over', 'dc_insp_over_hint']) ok(STRINGS[l][k], l + ' ' + k);
+});
+await test('Backlog 1080–1082 (Blickwinkel „Werkstatt Dortmund und Bayern arbeiten am selben Gespann“): Freigabe der Zugmaschine nennt den laufenden Auftrag am gekoppelten Auflieger (Nummer + Kennzeichen, DE/UK/EN, Sprachwechsel), Freigabeformular und Dispo-Gruppen zeigen den Zustand des gekoppelten Fahrzeugs', async () => {
+  const { e, U, cmd } = await freshWorld();
+  const mk = async (un, lang) => { const x = await U.own.post('/api/users', { username: un, display_name: un, role: 'dispatch', environment: 'test', language: lang }); const c = new Client(worker, e, un); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; };
+  const D = { de: await mk('d1081.de', 'de'), uk: await mk('d1081.uk', 'uk'), en: await mk('d1081.en', 'en') };
+  eq((await U.fleet.post('/api/vehicles', { plate: 'GW-ZM 1', vin: 'WDB96340310108101', trailer_plate: 'GW-AH 1' })).status, 201);
+  eq((await U.fleet.post('/api/vehicles', { plate: 'GW-AH 1', vin: 'WDB96340310108102', kind: 'anhaenger' })).status, 201);
+  const repair = async (vin, site, ws) => {
+    const x = await U.fleet.post('/api/cases', { vehicle_id: 'VIN:' + vin, description: 'Bremse prüfen', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }); eq(x.status, 201, JSON.stringify(x.data));
+    eq((await cmd(U.fleet, x.data.id, 'approve_repair', { workshop_site: site }, 'freigegeben')).status, 200); eq((await cmd(ws, x.data.id, 'start_repair')).status, 200); return x.data.id;
+  };
+  const a = await repair('WDB96340310108101', 'DORTMUND', U.ws); const b = await repair('WDB96340310108102', 'MUENCHEN', U.wsMuc);
+  const bNo = (await U.fleet.get(`/api/cases/${b}`)).data.case.case_no;
+  // Grundlage des Formular-Hinweises: Leitung sieht den Auftrag am Auflieger im Detail der Zugmaschine; Werkstatt Dortmund nicht (fremder Standort)
+  const cpl = (await U.fleet.get(`/api/cases/${a}`)).data.vehicle_info.coupled;
+  ok(cpl.some((g) => g.plate === 'GW-AH 1' && g.open_cases.some((o) => o.case_no === bNo && o.status === 'in_reparatur')), JSON.stringify(cpl));
+  ok(!((await U.ws.get(`/api/cases/${a}`)).data.vehicle_info.coupled || []).some((g) => (g.open_cases || []).some((o) => o.case_no === bNo)), 'Werkstatt Dortmund sieht den Münchner Auftrag nicht');
+  const src = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(src.includes('id="relcoupled"') && src.includes("d.vehicle_info.coupled.flatMap((g) => (g.open_cases || [])"), 'Hinweis im Freigabeformular');
+  ok(src.includes('dispoBack(dcs, hq, new Map(dvs.filter((v) => v.coupled)') && src.includes('cpState(cpl.get(c.vehicle_id))') && src.includes('cpState(coupled.get(c.vehicle_id))'), 'Dispo-Gruppen mit Zustand des Gespanns');
+  // Zustand in der Fahrzeugliste (Quelle von cpState)
+  const zm = (await D.de.get('/api/vehicles')).data.vehicles.find((v) => v.plate === 'GW-ZM 1'); eq(zm.coupled.availability, 'werkstatt', JSON.stringify(zm.coupled));
+  const cps = new Function('esc', 't', 'return ' + src.match(/const cpState = (\(cp\) => [^\n]*);\n/)[1])((x) => String(x), (k) => ({ vk_anhaenger: 'Anhänger', av_werkstatt: 'In Werkstatt' })[k] || k);
+  ok(cps(zm.coupled).includes('data-cpstate') && cps(zm.coupled).includes('Anhänger GW-AH 1: In Werkstatt') && cps({ ...zm.coupled, availability: 'frei' }) === '' && cps(null) === '', 'cpState');
+  // Freigabe der Zugmaschine
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  eq((await cmd(U.ws, a, 'record_work', { hours: 1, description: 'Bremse' })).status, 200);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: a, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, a, 'request_quality_check', {}, 'fertig')).status, 200);
+  eq((await cmd(U.fleet, a, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200, 'Freigabe');
+  const aNo = (await U.fleet.get(`/api/cases/${a}`)).data.case.case_no;
+  const want = { de: `Auftrag ${bNo} (GW-AH 1) noch in Werkstatt`, uk: `замовлення ${bNo} (GW-AH 1) ще в майстерні`, en: `order ${bNo} (GW-AH 1) still in the workshop` };
+  for (const l of ['de', 'uk', 'en']) {
+    const n = (await D[l].get('/api/notifications')).data.notifications.find((x) => x.body.startsWith(aNo));
+    ok(n && n.kind === 'released' && n.body.includes(' · ' + want[l]) && !/Bremse/.test(n.body), l + ': ' + (n && n.body));
+  }
+  const { localizedBody } = await import('../src/notify.js');
+  const deBody = (await D.de.get('/api/notifications')).data.notifications.find((n) => n.body.startsWith(aNo)).body;
+  const en = localizedBody({ kind: 'released', body: deBody }, 'en'); ok(en.includes(' · ' + want.en) && !en.includes('Werkstatt'), en);
+  const uk = localizedBody({ kind: 'released', body: deBody.replace(' · TEST', '') + ' · Abholhinweis: Mein Fahrzeug' }, 'uk');
+  ok(uk.endsWith(' · ' + want.uk + ' · Інформація для отримання: Мій транспорт'), uk);
+  // Rückweg in eine Sprache mit gleichem Aufbau bleibt stabil (de → en → de)
+  ok(localizedBody({ kind: 'released', body: en }, 'de').includes(' · ' + want.de), 'en → de');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

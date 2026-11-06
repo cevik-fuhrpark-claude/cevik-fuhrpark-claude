@@ -3891,3 +3891,7 @@ Object.assign(STRINGS.en, { c_due_on: 'due {d}' });
 Object.assign(STRINGS.de, { dc_insp_t: 'Prüfung heute oder morgen', dc_insp_over: 'Prüffrist überschritten', dc_insp_over_hint: 'Vor der Fahrt mit Fuhrparkleitung bzw. Disposition klären.' });
 Object.assign(STRINGS.uk, { dc_insp_t: 'Перевірка сьогодні або завтра', dc_insp_over: 'Строк перевірки минув', dc_insp_over_hint: 'Перед поїздкою з’ясуйте з керівником автопарку або диспетчерською.' });
 Object.assign(STRINGS.en, { dc_insp_t: 'Inspection today or tomorrow', dc_insp_over: 'Inspection deadline passed', dc_insp_over_hint: 'Before driving, check with fleet management or dispatch.' });
+// Backlog 1080–1082 (Blickwinkel „Werkstatt Dortmund und Bayern arbeiten am selben Gespann“)
+Object.assign(STRINGS.de, { rel_cpl_ws: 'Gekoppeltes Fahrzeug noch in der Werkstatt:', rel_cpl_ws_hint: 'Das Gespann ist erst komplett, wenn auch dieser Auftrag freigegeben ist – der Hinweis „freigegeben“ nennt ihn.' });
+Object.assign(STRINGS.uk, { rel_cpl_ws: 'Зчеплений транспорт ще в майстерні:', rel_cpl_ws_hint: 'Зчіпка буде повною лише після допуску й цього замовлення – повідомлення «допущено» його згадує.' });
+Object.assign(STRINGS.en, { rel_cpl_ws: 'Coupled vehicle still in the workshop:', rel_cpl_ws_hint: 'The combination is only complete once this order is also released – the “released” notification mentions it.' });
