@@ -19235,7 +19235,7 @@ await test('Backlog 212 (Teilagent „Fahrtenschreiber gestört unterwegs“): M
     const h = STRINGS[l].help_tachofault_s; ok(STRINGS[l].help_tachofault_t && h, 'Hilfe ' + l);
     ok(h.includes(STRINGS[l].tacho_hint_steps) && h.includes(STRINGS[l].nav_new), 'Hilfe nennt Pflichten und „' + STRINGS[l].nav_new + '“ ' + l);
   }
-  ok(app.indexOf("$('#d').addEventListener('input', hints)") > 0 && app.indexOf("$('#d').addEventListener('input', hints)") < app.indexOf("bindFormDraft('new'"), 'Listener vor bindFormDraft');
+  ok(app.indexOf("dEl.addEventListener('input', hintsSoon)") > 0 && app.indexOf("dEl.addEventListener('input', hintsSoon)") < app.indexOf("bindFormDraft('new'"), 'Listener vor bindFormDraft (seit Backlog 1102 hintsSoon)');
 });
 
 await test('Backlog 214/215 (Teilagent „Fahrzeug gestohlen / Einbruch“): Meldeformular zeigt bei Diebstahl/Einbruch die Schritte (Polizei, Spuren, Liste, Fuhrparkleitung; DE/UK/EN), Hilfe-Abschnitt für alle meldenden Rollen; „Leistungseinbruch“, „вкрай“, „зламано“ lösen nichts aus', async () => {
@@ -19773,7 +19773,7 @@ await test('Backlog 228/229 (Teilagent „Fahrer diktiert die Meldung auf Ukrain
   const dq = (await users.fleet.get('/api/admin/data-quality')).data.items.filter((i) => i.check === 'accident_no_claim').map((i) => i.case_id);
   ok(dq.includes(ru) && dq.includes(ruCap), 'russ. „авария“ in der Datenqualität'); ok(!dq.includes(haz), 'Warnblinker nicht');
   // Diktat: auch „change“ prüft die Hinweise
-  ok(app.includes("$('#d').addEventListener('input', hints); $('#d').addEventListener('change', hints);"), 'input + change');
+  ok(app.includes("dEl.addEventListener('input', hintsSoon); dEl.addEventListener('change', hintsNow);"), 'input + change (seit Backlog 1102: change prüft sofort)');
   // Backlog 230: Kraftstoffdiebstahl per Diktat (ukr./russ./engl.), russ. „карта водителя“
   const th = new RegExp(app.match(/const THEFT_HINT = \/(.+)\/i;/)[1], 'i'); const ta = new RegExp(app.match(/const TACHO_HINT = \/(.+)\/i;/)[1], 'i');
   for (const x of ['Вночі злили пальне з бака', 'Злили дизель', 'Слили топливо ночью', 'слили солярку', 'fuel siphoned overnight']) ok(th.test(x), 'Diebstahl: ' + x);
@@ -35737,6 +35737,22 @@ await test('Backlog 1101 (Blickwinkel „Fuhrparkleitung nachts in Rufbereitscha
   for (const r of ['#/contracts', '#/claims', '#/settings', '#/vehicles/qr', "'dispatch'", "'viewer'"]) ok(ui.includes(r), 'Kontrastprüfung umfasst ' + r);
   const sh = fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8');
   ok(sh.includes('|ui-kontrast-alle.py|'), 'UI-Skript steht in pruefen.sh');
+});
+
+await test('Backlog 1102 (Blickwinkel „Fahrer mit älterem Handy fügt eine lange Nachricht in die Beschreibung ein“): Hinweismuster vorgewärmt, ab 1000 Zeichen nach Tipp-Pause', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/const HINT_LONG = (\d+); const HINT_PAUSE = (\d+);/);
+  ok(m, 'Konstanten HINT_LONG/HINT_PAUSE vorhanden');
+  ok(Number(m[1]) >= 500 && Number(m[1]) <= 2000 && Number(m[2]) >= 150 && Number(m[2]) <= 600, 'Grenze 500–2000 Zeichen, Pause 150–600 ms');
+  ok(app.includes("dEl.addEventListener('input', hintsSoon); dEl.addEventListener('change', hintsNow);"), 'input verzögert ab Grenze, change sofort');
+  ok(!app.includes("$('#d').addEventListener('input', hints)"), 'keine unverzögerte Prüfung je Taste mehr');
+  ok(/\(window\.requestIdleCallback \|\| \(\(f\) => setTimeout\(f, \d+\)\)\)\(\(\) => \{ if \(dEl\.isConnected/.test(app), 'Vorwärmen im Leerlauf mit Rückfall für ältere iOS');
+  ok(/if \(dEl\.isConnected\) hints\(\); \}, HINT_PAUSE\)/.test(app), 'verzögerte Prüfung nur, solange das Formular noch angezeigt wird');
+  const main = fs.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  ok(main.includes('hintsSoon'), 'Meldeformular (Start-Modul) enthält die Änderung');
+  const sh = fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8');
+  ok(sh.includes('|ui-lange-beschreibung.py|'), 'UI-Skript steht in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

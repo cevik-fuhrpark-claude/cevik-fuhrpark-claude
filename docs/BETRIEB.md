@@ -232,6 +232,10 @@ haben einen Rückfall und sind je mit einem UI-Skript abgesichert, das einen äl
 - `createImageBitmap` (iOS < 15): Fotos werden über `<img>` dekodiert und trotzdem auf 1600 px verkleinert (Backlog 795, `ui-foto-ohne-imagebitmap.py`).
 - `AbortSignal.timeout` (Chrome < 103, iOS < 16): Zeitlimit des Foto-Uploads über `AbortController` + `setTimeout` (`timeoutSignal`) – ohne Rückfall hing „Lade Foto 1/1“ im Funkloch ohne Ende (Backlog 797, `ui-foto-zeitlimit-ohne-abortsignal.py`).
 Neue JS/CSS-Funktionen deshalb vor dem Einsatz auf Unterstützung prüfen und ggf. mit Rückfall bauen.
+Rechenlast am langsamen Handy (Backlog 1102, 06.11.2026, `ui-lange-beschreibung.py`): Das Meldeformular prüft rund 100 Hinweismuster. Gemessen in Chrome mit
+CPU-Drosselung 4× (≈ älteres Handy): erste Taste vorher 300–460 ms, jetzt ≈ 3 ms (Muster im Leerlauf vorgewärmt, `requestIdleCallback`, Rückfall `setTimeout`);
+4000 Zeichen vorher bis ≈ 440 ms je Taste, jetzt < 1 ms je Taste und eine Prüfung nach 300 ms Tipp-Pause (ab 1000 Zeichen, `HINT_LONG`/`HINT_PAUSE`).
+Neue Hinweismuster mit Wortfenstern (`(?:\S+\s+){0,N}?`) auf langen Texten messen (siehe Backlog 1103).
 
 ## Uhrzeiten und Zeitzone des Geräts (Stand 01.11.2026, Backlog 806)
 Alle Uhrzeiten in der App sind deutsche Zeit (Anzeige und Eingabe: Schadenzeitpunkt, Tatzeit bei Bußgeldern, Push-Ruhezeit). Steht ein Handy auf einer anderen Zeitzone (z. B. ukrainische Fahrer mit Kyjiwer Zeit, +1:00), zeigt die App an diesen Eingaben „Dieses Gerät steht auf einer anderen Zeitzone (Unterschied zu Deutschland: +1:00) … in Deutschland ist es jetzt HH:MM Uhr“ (`tzNote()` in `public/app.js`, Uhrzeit serverzeit-korrigiert). Die App ändert die Zeitzone des Handys nicht und rechnet Eingaben nicht um. UI-Prüfung: `scripts/ui-zeitzone-hinweis.py` (Kyjiw/New York/Berlin). Hinweis: die UI-Skripte laufen in der Zeitzone des Containers (UTC) – dort erscheint der Hinweis ebenfalls (−1:00/−2:00).

@@ -2730,6 +2730,8 @@ function occDrivers(o) {
   return `<dt>${esc(t('occ_drivers'))}</dt><dd data-occdrivers>${o.drivers.length ? `<ul class="small" style="margin:0;padding-left:18px">${o.drivers.map(row).join('')}</ul>` : `<span class="muted">${esc(t('occ_drv_none'))}</span>`}<p class="small muted" style="margin:2px 0 0">${esc(t(o.day_only ? 'occ_drv_hint_day' : 'occ_drv_hint'))}${o.truncated ? ' ' + esc(t('occ_drv_more')) : ''}</p></dd>`;
 }
  
+// Backlog 1102: ab so vielen Zeichen prüft das Meldeformular die Hinweismuster erst nach einer Tipp-Pause (ms)
+const HINT_LONG = 1000; const HINT_PAUSE = 300;
 const tfill = (k, o) => Object.entries(o).reduce((a, [x, y]) => a.split(`{${x}}`).join(String(y)), t(k));
 async function viewNewMulti(...a) { return (await lazyModule('verwaltung')).viewNewMulti(...a); }
 async function viewNew(preId) {
@@ -2881,7 +2883,16 @@ async function viewNew(preId) {
     w.hidden = !bad; w.textContent = bad ? '⚠️ ' + t('fuel_drv_warn').replace('{a}', t('drv_' + d.value)).replace('{b}', t('drv_nicht_fahrbereit')) : ''; };
   const hintOpen = new Set();
   // Spracheingabe (Diktat) meldet sich je nach Gerät nur mit „change“ statt „input“ (Backlog 228) – beide prüfen
-  $('#d').addEventListener('input', hints); $('#d').addEventListener('change', hints);
+  // [CLAUDE] Backlog 1102 (Blickwinkel „Fahrer mit älterem Handy fügt eine lange Nachricht in die Beschreibung ein“): rund 100 Hinweismuster
+  // laufen bei jeder Eingabe. Gemessen (Chrome, CPU 4× gedrosselt ≈ älteres Handy): erste Taste 300–460 ms Stillstand (Muster werden erst dann
+  // übersetzt), bei 4000 Zeichen bis ≈ 440 ms je Taste. Deshalb: Muster einmal in einer Leerlaufphase nach dem Aufbau vorwärmen (ältere iOS
+  // ohne requestIdleCallback → setTimeout) und ab HINT_LONG Zeichen erst nach kurzer Tipp-Pause prüfen; „change“ (Diktat, Verlassen des Felds)
+  // prüft sofort. Hinweise bleiben reine Information – das Absenden hängt nicht an ihnen.
+  const dEl = $('#d'); let hintT = 0;
+  const hintsSoon = () => { clearTimeout(hintT); if (dEl.value.length > HINT_LONG) hintT = setTimeout(() => { if (dEl.isConnected) hints(); }, HINT_PAUSE); else hints(); };
+  const hintsNow = () => { clearTimeout(hintT); hints(); };
+  dEl.addEventListener('input', hintsSoon); dEl.addEventListener('change', hintsNow);
+  (window.requestIdleCallback || ((f) => setTimeout(f, 250)))(() => { if (dEl.isConnected && $('#d') === dEl) hints(); });
   $$('input[name=drv]').forEach((x) => x.addEventListener('change', fuelDrv));
   $$('input[name=veh]').forEach((x) => x.addEventListener('change', hints)); // Backlog 634: Hinweis hängt auch vom gewählten Fahrzeug ab
   photoLimitWatch($('#ph'), () => { const d = $('#occd').value; return d ? { day: d, k: 'photo_old_occ' } : { day: bDate(), k: 'photo_old_new' }; });
