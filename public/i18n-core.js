@@ -1306,6 +1306,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1031: Vertrags-Kalender ohne künftige Kündigungstage/Vertragsenden nicht anbieten
 // Backlog 1032–1034: Teile eingegangen – Lieferschein verknüpfen, „fährt bis zur Teilelieferung“ endet, Arbeitsstand optional entfernen
 // Backlog 1040: Lieferschein-Auswahl bei voller Dateiliste
+// Backlog 1068: angefangene, nicht gesendete Formulare auf der Startseite
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

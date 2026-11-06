@@ -1498,7 +1498,7 @@ async function viewHome() {
     if (!err.offline || S.me.role !== 'driver') throw err;
     d = {}; cases = null; // Fahrer ohne Netz: Startseite mit zuletzt gespeicherten Fahrzeugdaten
   }
-  let html = `<h1>${esc(t('welcome'))}, ${esc(S.me.display_name)}</h1>${outboxBanner()}`;
+  let html = `<h1>${esc(t('welcome'))}, ${esc(S.me.display_name)}</h1>${outboxBanner()}${draftsBanner()}`;
   if (S.me.role === 'driver') {
     html += `<a class="btn block" href="#/new" style="margin:8px 0 12px">${esc(t('report_damage'))}</a><a class="btn secondary block" href="#/check">${esc(t('departure_check'))}</a><a class="btn secondary block" href="#/emergency" id="emhome" style="margin-top:8px">☎ ${esc(t('em_title'))}</a><p style="margin-top:8px"><a href="#/help">${esc(t('help'))} ›</a></p><section class="panel" id="pushnudge" hidden></section>`;
     const mvKey = `cfp_myveh_${S.me.id}_${S.me.environment}`;
@@ -1554,6 +1554,7 @@ async function viewHome() {
   }
   render(html, 'home');
   bindWsFlow();
+  bindDraftsBanner();
   pushNudge().catch(() => {});
   const trb = $('#todoretry'); if (trb) trb.onclick = async () => { await viewHome(); };
   // Liste mit demselben Standort wie die gezählte Tafel (Standard-Standort bzw. „alle“)
@@ -2039,6 +2040,35 @@ async function logoutOutboxOk() {
   // werden beim Abmelden gelöscht (gewollt: geteiltes Gerät) – vorher ohne Rückfrage
   const dr = logoutDraftCount();
   return !dr || confirm(tn('logout_drafts_confirm', dr));
+}
+// Backlog 1068 (Blickwinkel „Fahrer-Handy: Meldung halb ausgefüllt, Anruf kommt rein / App wird vom System beendet“): Entwürfe überstanden
+// Neuladen schon (Backlog 868/1066), waren aber nur sichtbar, wenn man dasselbe Formular erneut öffnete – wer nach dem Telefonat über
+// „Panne & Notfall“, das Logo oder den Neustart der installierten App (Startadresse `#/`) auf der Startseite landete, sah keinen Hinweis und
+// meldete den Schaden ein zweites Mal bzw. gar nicht. Jetzt nennt die Startseite angefangene, nicht gesendete Formulare dieses Kontos.
+function draftsBanner() {
+  if (!S.me) return '';
+  const sfx = `_${S.me.id}_${S.viewEnv && S.me.role === 'owner' ? S.viewEnv : S.me.environment}`;
+  let plates = {}; try { for (const v of JSON.parse(localStorage.getItem(`cfp_veh_${S.me.id}_${envFn()}`) || '[]')) plates[v.id] = v.plate; } catch { plates = {}; }
+  const items = [];
+  try {
+    for (const k of Object.keys(sessionStorage)) {
+      if (!k.startsWith('cfp_fd_') || !k.endsWith(sfx)) continue;
+      const page = k.slice(7, -sfx.length); let x = null; try { x = JSON.parse(sessionStorage.getItem(k) || 'null'); } catch {}
+      if (!x || !x.v || typeof x.v !== 'object' || !Object.keys(x.v).length || !(Date.now() - Date.parse(x.at) < FORM_DRAFT_MS)) continue;
+      let href = null; let label = ''; let vid = '';
+      if (page === 'new') { href = '#/new'; label = t('report_damage'); vid = x.v.veh; }
+      else if (page === 'check') { href = '#/check'; label = t('departure_check'); vid = x.v.v; }
+      else if (/^insp_[A-Za-z0-9-]+$/.test(page)) { href = '#/inspect/' + page.slice(5); label = t('inspection'); }
+      else if (/^act_[A-Za-z0-9-]+$/.test(page) && x.action && S.hideDraft !== page.slice(4)) { href = '#/cases/' + page.slice(4); label = t('act_' + x.action); }
+      if (href) items.push({ k, href, label, plate: vid && plates[vid] ? plates[vid] : '', at: x.at, photos: x.photos });
+    }
+  } catch { return ''; }
+  if (!items.length) return '';
+  items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return `<section class="panel warn" id="homedrafts" role="note"><h2 style="margin-top:0">${esc(t('home_drafts'))}</h2><p class="small">${esc(t('home_drafts_hint'))}</p>${items.map((i) => `<div class="obx-item" data-homedraft="${esc(i.href)}" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid var(--rule);padding-top:10px;margin-top:10px"><span style="flex:1 1 200px"><b>${esc(i.label)}</b>${i.plate ? ' · ' + plate(i.plate) : ''} <span class="small muted" style="white-space:nowrap">${fmtDT(i.at)}</span>${i.photos ? `<br><span class="small">${esc(t('form_draft_photos'))}</span>` : ''}</span><a class="btn" href="${esc(i.href)}">${esc(t('home_draft_continue'))}</a><button type="button" class="btn secondary" data-fdrop="${esc(i.k)}">${esc(t('inventory_draft_discard'))}</button></div>`).join('')}</section>`;
+}
+function bindDraftsBanner() {
+  $$('[data-fdrop]').forEach((b) => (b.onclick = () => { if (!confirm(t('form_draft_discard_confirm'))) return; try { sessionStorage.removeItem(b.dataset.fdrop); } catch {} const it = b.closest('[data-homedraft]'); if (it) it.remove(); const box = $('#homedrafts'); if (box && !$('[data-homedraft]', box)) box.remove(); }));
 }
 function logoutDraftCount() {
   if (!S.me) return 0;

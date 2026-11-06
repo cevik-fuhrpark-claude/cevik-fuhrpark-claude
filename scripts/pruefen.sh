@@ -299,6 +299,7 @@ UI-Prüftermin für mehrere Fahrzeuge (Wintercheck): 5 Fahrzeuge, Hinweise ohne 
 UI-Winterreifen-Bedarf je Reifengröße (Reifen-Flotte, Winter-Reiter), Größe nicht hinterlegt getrennt, DE/UK/EN 390/820/1366|ui-winterreifen-bedarf.py|/tmp/cfp-winterreifen-bedarf.log
 UI-Reifen-Flotte: CSV folgt dem gewählten Reiter, Dateiname mit festem Zusatz, DE/UK/EN 390/820/1366|ui-reifen-csv-auswahl.py|/tmp/cfp-reifen-csv-auswahl.log
 UI-Akku/Neuladen: Aktionsformular beim Verlassen gesichert, Anmeldung abgelaufen behält Entwürfe nur für dieselbe Person (DE/UK/EN; Backlog 1066)|ui-akku-neuladen.py|/tmp/cfp-akku-neuladen.log
+UI-Startseite nennt angefangene, nicht gesendete Formulare (Weiter/Verwerfen, andere Person nichts), DE/UK/EN 390/820/1366 (Backlog 1068)|ui-startseite-entwurf.py|/tmp/cfp-startseite-entwurf.log
 UI-Winterreifen-Aufträge für mehrere Lkw (Werkstatt Pflicht, je Lkw ein Auftrag mit Link, danach nicht wählbar), DE/UK/EN 390/820/1366|ui-winterreifen-auftraege.py|/tmp/cfp-winterreifen-auftraege.log
 UI-Umrüstung zum Winterreifen-Auftrag erfassen (je Achse vorbereitet, Kennzeichnung Pflicht, Größe per Knopf, danach erfüllt mit Link), DE/UK/EN 390/820/1366|ui-winterreifen-umruestung.py|/tmp/cfp-winterreifen-umruestung.log
 UI-Verträge „Ende/Kündigung bis“ (Quartalsende, eigenes Datum, alle Termine, Stichtag hebt auf), DE/UK/EN 390/820/1366|ui-vertraege-faellig-bis.py|/tmp/cfp-vertraege-faellig-bis.log

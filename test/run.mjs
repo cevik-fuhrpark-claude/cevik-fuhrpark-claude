@@ -16185,7 +16185,7 @@ await test('Fehlersuche 21.10. (Rechte/Umgebungen): Vorgang zeigt Folgeauftrag/U
   e.DB.db.prepare(`UPDATE insurance_claims SET environment='test' WHERE contract_id=?`).run(kv);
   // 6. Oberfläche: Offline-Fahrzeugliste und Kennzeichen im Postausgang je Ansicht (envFn), Links nur mit Kennung
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(!app.includes('cfp_veh_${S.me.id}_${S.me.environment}') && (app.match(/cfp_veh_\$\{S\.me\.id\}_\$\{envFn\(\)\}/g) || []).length === 3, 'cfp_veh_ mit envFn()');
+  ok(!app.includes('cfp_veh_${S.me.id}_${S.me.environment}') && (app.match(/cfp_veh_\$\{S\.me\.id\}_\$\{envFn\(\)\}/g) || []).length === 4, 'cfp_veh_ mit envFn() (4. Stelle: Backlog 1068, Startseite liest Kennzeichen)');
   ok(app.includes('it.followup_case_id ? ` → <a') && app.includes('d.parent.id ? `<a'), 'Link nur mit Kennung');
 });
 
@@ -35182,6 +35182,54 @@ await test('Backlog 1065 (Blickwinkel „Seitenfilter wirkt auf alle Teile einer
   ok(app.includes("(f !== 'all' ? '&filter=' + f : '')"), 'App übergibt den Reiter');
 });
 
+await test('Backlog 1068 (Blickwinkel „Fahrer-Handy: Meldung halb ausgefüllt, Anruf kommt rein / App wird vom System beendet“): Startseite nennt angefangene, nicht gesendete Formulare des eigenen Kontos (Meldung, Abfahrtskontrolle, Kontrolle nach Reparatur, Aktion nach Netzabbruch) mit Kennzeichen, Weiter/Verwerfen; fremde Konten/Umgebungen, leere und abgelaufene Entwürfe nicht; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = (name) => { const i = app.indexOf('function ' + name + '('); ok(i >= 0, name); return app.slice(i, app.indexOf('\n}\n', i)) + '\n}\n'; };
+  ok(app.includes("${outboxBanner()}${draftsBanner()}`;"), 'Startseite (alle Rollen) zeigt den Hinweis direkt unter dem Postausgang');
+  const vh = fn('viewHome'); ok(/bindWsFlow\(\);\n  bindDraftsBanner\(\);/.test(vh), 'Verwerfen-Knöpfe gebunden');
+  ok(fn('bindDraftsBanner').includes("confirm(t('form_draft_discard_confirm'))"), 'Verwerfen nur nach Rückfrage');
+  const store = new Map(); const ss = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+  const keysProxy = new Proxy(ss, { ownKeys: () => [...store.keys()], getOwnPropertyDescriptor: (_, k) => (store.has(k) ? { enumerable: true, configurable: true, value: store.get(k) } : undefined) });
+  const ls = { getItem: (k) => (k === 'cfp_veh_u1_production' ? JSON.stringify([{ id: 'v1', plate: 'SZ-YC 5523' }, { id: 'v2', plate: 'SZ-YC 5517' }]) : null) };
+  const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const mk = new Function('S', 'sessionStorage', 'localStorage', 't', 'esc', 'plate', 'fmtDT', 'envFn', 'FORM_DRAFT_MS', fn('draftsBanner') + 'return draftsBanner;');
+  const S = { me: { id: 'u1', role: 'driver', environment: 'production' } };
+  const banner = mk(S, keysProxy, ls, (k) => '[' + k + ']', esc, (p) => `<plate>${p}</plate>`, (d) => 'DT(' + d + ')', () => 'production', 12 * 3600000);
+  eq(banner(), '', 'ohne Entwurf kein Hinweis');
+  const now = Date.now(); const at = (min) => new Date(now - min * 60000).toISOString();
+  store.set('cfp_fd_new_u1_production', JSON.stringify({ at: at(5), v: { veh: 'v1', d: 'Spiegel abgefahren' }, photos: 2 }));
+  store.set('cfp_fd_check_u1_production', JSON.stringify({ at: at(20), v: { v: 'v2', brakes: 'ok' }, photos: 0 }));
+  store.set('cfp_fd_insp_c9_u1_production', JSON.stringify({ at: at(30), v: { km: '412000' } }));
+  store.set('cfp_fd_act_c7_u1_production', JSON.stringify({ at: at(40), action: 'record_work', v: { hours: '2' } }));
+  store.set('cfp_fd_new_u2_production', JSON.stringify({ at: at(1), v: { veh: 'v1' } })); // andere Person (geteiltes Gerät)
+  store.set('cfp_fd_new_u1_test', JSON.stringify({ at: at(1), v: { veh: 'v1' } })); // andere Umgebung
+  store.set('cfp_fd_check_u1_production_x', JSON.stringify({ at: at(1), v: { v: 'v1' } }));
+  store.set('cfp_fd_act_c8_u1_test', JSON.stringify({ at: at(1), action: 'add_part', v: { q: '1' } }));
+  let h = banner();
+  ok(h.includes('id="homedrafts"') && h.includes('[home_drafts]') && h.includes('[home_drafts_hint]'), 'Hinweis mit Titel');
+  eq((h.match(/data-homedraft=/g) || []).length, 4, 'genau die vier eigenen Entwürfe dieser Umgebung');
+  ok(h.indexOf('[report_damage]') < h.indexOf('[departure_check]') && h.indexOf('[departure_check]') < h.indexOf('[inspection]') && h.indexOf('[inspection]') < h.indexOf('[act_record_work]'), 'neuester zuerst');
+  ok(h.includes('<plate>SZ-YC 5523</plate>') && h.includes('<plate>SZ-YC 5517</plate>'), 'Kennzeichen aus der Fahrzeugliste des Geräts');
+  ok(h.includes('href="#/new"') && h.includes('href="#/check"') && h.includes('href="#/inspect/c9"') && h.includes('href="#/cases/c7"'), 'Weiter führt zum Formular');
+  eq((h.match(/\[form_draft_photos\]/g) || []).length, 1, 'Fotos erneut auswählen nur beim Entwurf mit Fotos');
+  ok(h.includes('data-fdrop="cfp_fd_new_u1_production"') && !h.includes('u2_') && !h.includes('_test'), 'Verwerfen je Entwurf, nichts Fremdes');
+  // leerer, abgelaufener oder beim Verlassen nur vorübergehend gesicherter Entwurf (Backlog 1066) zählt nicht
+  store.set('cfp_fd_check_u1_production', JSON.stringify({ at: at(20), v: {} }));
+  store.set('cfp_fd_insp_c9_u1_production', JSON.stringify({ at: at(13 * 60), v: { km: '412000' } }));
+  S.hideDraft = 'c7';
+  h = banner(); eq((h.match(/data-homedraft=/g) || []).length, 1, 'nur noch die Meldung');
+  S.me = null; eq(banner(), '', 'abgemeldet: nichts');
+  // Inhaber in der Testansicht: Entwürfe der gewählten Umgebung
+  S.me = { id: 'u1', role: 'owner', environment: 'production' }; S.viewEnv = 'test'; S.hideDraft = null;
+  h = banner(); ok(h.includes('href="#/new"') && h.includes('href="#/cases/c8"') && !h.includes('#/check'), 'Inhaber: Umgebung der Ansicht');
+  // Texte
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['home_drafts', 'home_drafts_hint', 'home_draft_continue']) ok(STRINGS[l][k], l + ' ' + k);
+    ok(/\|[^|]*(Startseite|головній сторінці|home page)[^|]*$/.test(STRINGS[l].help_offline_s), l + ': Hilfe „Offline“ nennt den Hinweis');
+  }
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
