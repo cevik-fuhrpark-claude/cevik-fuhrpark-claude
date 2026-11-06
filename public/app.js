@@ -266,7 +266,7 @@ async function api(method, path, body, extra = {}) {
   // (22.10.2026: Fahrzeug-/Notfall-Zwischenspeicher blieben auf dem geteilten Tablet stehen)
   // Backlog 492 (Blickwinkel „QR-Aufkleber auf dem Hof scannen“): Sitzung bei offener App abgelaufen – das gescannte Fahrzeug (nur QR-Ziele, keine
   // Vorgänge der vorherigen Person auf geteilten Tablets) nach der Anmeldung wieder öffnen wie beim App-Start
-  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { const h0 = (location.hash || '').replace(/%3A/gi, ':'); const fromPush = pushNavFresh(h0); resetUserState(); clearOfflineData(); markSession(''); if (/^#\/(new|check|v)\/VIN:[A-Z0-9]+$/.test(h0) || (fromPush && AFTER_LOGIN_RX.test(h0))) { try { sessionStorage.setItem('cfp_after_login', h0); } catch {} } location.hash = '#/login'; const e = new Error(t('err_unauthenticated')); e.status = 401; throw e; }
+  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/invite') && !path.startsWith('/api/setup')) { const h0 = (location.hash || '').replace(/%3A/gi, ':'); const fromPush = pushNavFresh(h0); const kept = authLostKeep(); resetUserState(kept); clearOfflineData(); markSession(''); if (kept) setTimeout(() => toast(t('session_expired_kept')), 300); if (/^#\/(new|check|v)\/VIN:[A-Z0-9]+$/.test(h0) || (fromPush && AFTER_LOGIN_RX.test(h0))) { try { sessionStorage.setItem('cfp_after_login', h0); } catch {} } location.hash = '#/login'; const e = new Error(t('err_unauthenticated')); e.status = 401; throw e; }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json() : await res.blob();
   // Exporte mit Zeilengrenze melden die Begrenzung per Header (z. B. Vorgangs-CSV)
@@ -935,15 +935,25 @@ function resetUserState(keepFor = null) {
 // offenes Aktionsformular mit Eingaben als Entwurf sichern, Entwürfe dieses Kontos und die Seite merken; nach erneuter Anmeldung derselben
 // Person zurück auf die Seite (Entwurf wird dort wie nach einem Netzabbruch wiederhergestellt). Andere Person: alles gelöscht, nichts gezeigt.
 const IDLE_KEY = 'cfp_idle_resume';
-function idleKeep() {
-  if (!S.me) return null;
+// uid (Backlog 1066): beim 401 nach Neuladen ist S.me noch leer – dann Konto-ID aus der Offline-Sitzung (nur Anzeige-Daten)
+function idleKeep(uid = S.me && S.me.id) {
+  if (!uid) return null;
   try {
-    if (S.openAct && $('#af') && viewDirty()) actDraftSave(S.openAct.caseId, S.openAct.action);
-    const id = S.me.id; const has = Object.keys(sessionStorage).some((k) => k.startsWith('cfp_fd_') && k.includes('_' + id + '_'));
+    if (S.me && S.openAct && $('#af') && viewDirty()) actDraftSave(S.openAct.caseId, S.openAct.action);
+    const id = uid; const has = Object.keys(sessionStorage).some((k) => k.startsWith('cfp_fd_') && k.includes('_' + id + '_'));
     if (!has) return null;
     sessionStorage.setItem(IDLE_KEY, JSON.stringify({ u: id, page: location.hash || '#/', at: new Date().toISOString() }));
     return id;
   } catch { return null; }
+}
+// Backlog 1066 (Blickwinkel „Werkstatt-Tablet: Akku leer bzw. Seite lädt neu mitten in der Eingabe“): Anmeldung am Server abgelaufen (401) –
+// vorher löschte `resetUserState()` alle Formularentwürfe, auch die 18 Punkte der Kontrolle nach Reparatur und ein offenes Aktionsformular
+// (Arbeitszeit, Teil, Fremdleistung), obwohl `session_lost_dirty` das Gegenteil versprach. Jetzt wie die Leerlauf-Abmeldung (Backlog 868):
+// Entwürfe dieses Kontos und die Seite merken; nur dieselbe Person bekommt sie nach der Anmeldung zurück (`idleResume`), jede andere nicht.
+function authLostKeep() {
+  let id = S.me && S.me.id;
+  if (!id) { const o = offlineSession(); id = o && o.me && o.me.id; }
+  return id ? idleKeep(id) : null;
 }
 function idleResume(userId, h) {
   let x = null; try { x = JSON.parse(sessionStorage.getItem(IDLE_KEY) || 'null'); sessionStorage.removeItem(IDLE_KEY); } catch {}
@@ -1020,6 +1030,24 @@ async function checkIdle() {
 }
 ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => window.addEventListener(ev, noteActivity, { passive: true, capture: true }));
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkIdle(); });
+// Backlog 1066: offenes Aktionsformular (Arbeitszeit, Teil, Fremdleistung …) mit Eingaben beim Verlassen der Seite sichern – Tablet geht in
+// den Ruhezustand, Browser verwirft den Tab, Akku leer, Seite heruntergezogen: nach dem Neuladen öffnet `viewCase` den Entwurf wieder (Backlog 187).
+// Kommt die Seite ohne Neuladen zurück, wird ein nur dafür angelegter Entwurf wieder entfernt – sonst bliebe das Formular nach einem
+// Seitenwechsel entgegen Backlog 88 erhalten. Ein Entwurf nach Netzabbruch (schon vorhanden) bleibt unberührt.
+function keepActOnHide() {
+  try {
+    if (!S.me || !S.openAct || !$('#af') || !viewDirty()) return;
+    const id = S.openAct.caseId; if (!actDraft(id).load()) S.hideDraft = id;
+    actDraftSave(id, S.openAct.action);
+  } catch {}
+}
+function dropHideDraft() {
+  const id = S.hideDraft; if (!id) return; S.hideDraft = null;
+  if (S.me) actDraft(id).clear();
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') keepActOnHide(); else dropHideDraft(); });
+window.addEventListener('pagehide', keepActOnHide);
+window.addEventListener('pageshow', (e) => { if (e.persisted) dropHideDraft(); });
 setInterval(checkIdle, 5000); // nur Zeitvergleich, ohne Serveraufruf
 // Netz wieder da nach Offline-Start: Seite nur neu aufbauen, wenn nichts eingegeben ist – sonst (z. B. halb ausgefüllte Schadensmeldung im Funkloch)
 // Sitzung und Stammdaten im Hintergrund auffrischen, die Eingaben bleiben stehen

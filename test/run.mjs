@@ -1439,7 +1439,7 @@ await test('Abmelden/Sitzungsende verwirft Ansichtszustand der vorherigen Person
   eq([...store.keys()].sort().join(','), 'cfp_after_login,fremd');
   const lo = app.slice(app.indexOf("$('#lo').onclick"), app.indexOf('\n', app.indexOf("$('#lo').onclick")));
   ok(lo.includes('resetUserState()'), 'Abmelden setzt zurück');
-  ok(/res\.status === 401[^\n]*resetUserState\(\)/.test(app), '401 (z. B. Leerlauf-Abmeldung) setzt zurück');
+  ok(/res\.status === 401[^\n]*resetUserState\(kept\)/.test(app), '401 (z. B. Leerlauf-Abmeldung) setzt zurück (Backlog 1066: eigene Entwürfe bleiben)');
   // Sortierwahl: unbekannte/gefährliche Werte → Standard
   const sp = app.slice(app.indexOf('const sortPref'), app.indexOf('\n', app.indexOf('const sortPref')));
   const mem = new Map([['cfp_sort_cases', '__proto__'], ['cfp_sort_vehicles', 'km_desc']]);
@@ -17880,7 +17880,7 @@ await test('Werkstatt-Tablet im Schichtwechsel (Teilagent 22.10.): Anmeldung/Ein
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].case_conflict_lost.includes('{st}'), l);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/S\.lostAct = \{ caseId: c\.id, action, note, payload \}/.test(app) && /function showLostInputs/.test(app), 'abgewiesene Eingaben bleiben stehen');
-  ok(/resetUserState\(\); clearOfflineData\(\); markSession\(''\);/.test(app), '401 leert Offline-Daten');
+  ok(/resetUserState\(kept\); clearOfflineData\(\); markSession\(''\);/.test(app), '401 leert Offline-Daten');
 });
 
 await test('Erster Tag der Fuhrparkleitung / Unfall mit Drittschaden (Teilagenten 22.10.): Datenauskunft nennt Umgebung des Versicherungsfalls, Befundtext „gemeldet am“ statt „seit … in Prüfung“, leere Listen mit Text, Lücken-Wegweiser öffnet den Reiter „ohne Termin“, Reifen-Hinweis „nur Inhaber“', async () => {
@@ -30936,7 +30936,7 @@ await test('Backlog 868 (Folge aus 867): Leerlauf-Abmeldung behält Formularentw
   const reset = fn('resetUserState');
   ok(reset.includes("k.startsWith('cfp_fd_') && k.includes('_' + keepFor + '_')") && reset.includes('k === IDLE_KEY'), 'nur Entwürfe des eigenen Kontos bleiben');
   const keep = fn('idleKeep');
-  ok(keep.includes('if (S.openAct && $(\'#af\') && viewDirty()) actDraftSave(S.openAct.caseId, S.openAct.action);'), 'offenes Aktionsformular mit Eingaben wird gesichert');
+  ok(keep.includes('if (S.me && S.openAct && $(\'#af\') && viewDirty()) actDraftSave(S.openAct.caseId, S.openAct.action);'), 'offenes Aktionsformular mit Eingaben wird gesichert');
   ok(keep.includes("k.includes('_' + id + '_')") && keep.includes('return null;'), 'ohne eigene Entwürfe kein Rückweg');
   const res = fn('idleResume');
   ok(res.includes('x.u !== userId') && res.includes("!k.includes('_' + userId + '_')"), 'andere Person: fremde Entwürfe gelöscht');
@@ -30945,12 +30945,59 @@ await test('Backlog 868 (Folge aus 867): Leerlauf-Abmeldung behält Formularentw
   ok(idle.includes('const kept = idleKeep();') && idle.includes('resetUserState(kept)') && idle.indexOf('idleKeep()') < idle.indexOf('resetUserState(kept)'), 'Leerlauf: erst sichern, dann zurücksetzen');
   ok(app.includes('S.me = r.user; markSession(r.user.id); lastActivity = Date.now(); h = idleResume(r.user.id, h);'), 'nach der Anmeldung geprüft');
   ok(fn('formDraft').includes('if (!S.me) return { load: () => null, save() {}, clear() {}, restore() {} };'), 'nachlaufende Ereignisse nach der Abmeldung ohne Fehler');
-  // 401 vom Server (Sitzung abgelaufen) und „Abmelden“ löschen weiterhin alles
-  ok(/resetUserState\(\); clearOfflineData\(\); markSession\(''\);/.test(app), '401: alles gelöscht');
+  // 401 vom Server (Sitzung abgelaufen) behält seit Backlog 1066 die eigenen Entwürfe wie der Leerlauf (Test „Backlog 1066“)
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) {
     const S = STRINGS[l]; ok(S.idle_signed_out_kept && S.idle_resumed && S.idle_signed_out_kept !== S.idle_signed_out, l + ': Texte');
     ok(S.help_ws_s.split('|').some((x) => x.includes(l === 'de' ? 'Halb ausgefüllte Formulare' : l === 'uk' ? 'Напівзаповнені форми' : 'Half-filled forms')), l + ': Hilfe Werkstatt');
+  }
+});
+
+await test('Backlog 1066 (Blickwinkel „Werkstatt-Tablet: Akku leer bzw. Seite lädt neu mitten in der Eingabe“): 401 behält Entwürfe des eigenen Kontos (auch beim Neuladen ohne S.me aus der Offline-Sitzung), Aktionsformular wird beim Verlassen der Seite gesichert und bei Rückkehr ohne Neuladen wieder entfernt; Texte DE/UK/EN', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = (name) => { const i = app.indexOf('function ' + name + '('); ok(i >= 0, name); return app.slice(i, app.indexOf('\n}\n', i)); };
+  // 401-Zweig von api(): erst sichern, dann zurücksetzen, Offline-Sitzung erst danach löschen (Konto-ID wird daraus gelesen)
+  const i401 = app.indexOf("if (res.status === 401 && !path.startsWith('/api/login')"); ok(i401 > 0, '401-Zweig');
+  const b401 = app.slice(i401, app.indexOf('\n', i401));
+  ok(b401.includes('const kept = authLostKeep(); resetUserState(kept); clearOfflineData();'), '401: sichern → zurücksetzen → Offline-Daten löschen');
+  ok(b401.includes("if (kept) setTimeout(() => toast(t('session_expired_kept')), 300);"), '401 mit Entwurf: Hinweis');
+  ok(!/resetUserState\(\); clearOfflineData\(\); markSession\(''\);/.test(app), 'kein 401-Zweig löscht mehr alles');
+  const alk = fn('authLostKeep');
+  ok(alk.includes('S.me && S.me.id') && alk.includes('offlineSession()') && alk.includes('idleKeep(id)'), 'Konto-ID aus S.me oder Offline-Sitzung');
+  const keep = fn('idleKeep');
+  ok(keep.startsWith('function idleKeep(uid = S.me && S.me.id)') && keep.includes('if (!uid) return null;'), 'idleKeep mit Konto-ID');
+  ok(fn('checkIdle').includes('const kept = idleKeep();'), 'Leerlauf unverändert');
+  // Verlassen der Seite
+  const hide = fn('keepActOnHide');
+  ok(hide.includes("!S.me || !S.openAct || !$('#af') || !viewDirty()") && hide.includes('if (!actDraft(id).load()) S.hideDraft = id;') && hide.includes('actDraftSave(id, S.openAct.action)'), 'nur offenes Formular mit Eingaben; vorhandener Entwurf (Netzabbruch) wird nicht als „nur für das Verlassen“ markiert');
+  const drop = fn('dropHideDraft');
+  ok(drop.includes('S.hideDraft = null') && drop.includes('if (S.me) actDraft(id).clear();'), 'Rückkehr ohne Neuladen: Entwurf weg (Backlog 88 bleibt)');
+  ok(app.includes("document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') keepActOnHide(); else dropHideDraft(); });"), 'visibilitychange');
+  ok(app.includes("window.addEventListener('pagehide', keepActOnHide);") && app.includes("window.addEventListener('pageshow', (e) => { if (e.persisted) dropHideDraft(); });"), 'pagehide/pageshow');
+  ok(!['hideDraft'].some((k) => /KEEP_STATE = \[[^\]]*hideDraft/.test(app)), 'Merker wird beim Zurücksetzen verworfen');
+  // Ablauf nachgestellt: sessionStorage-Attrappe, resetUserState/idleKeep/idleResume aus app.js
+  const store = new Map(); const ss = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+  const keysProxy = new Proxy(ss, { ownKeys: () => [...store.keys()], getOwnPropertyDescriptor: (_, k) => (store.has(k) ? { enumerable: true, configurable: true, value: store.get(k) } : undefined) });
+  const src = ['resetUserState', 'idleKeep', 'authLostKeep', 'idleResume'].map(fn).join('\n}\n') + '\n}\n';
+  const mk = new Function('S', 'sessionStorage', 'offlineSession', 'location', 'history', '$', 'viewDirty', 'actDraftSave', 'toast', 't', 'FORM_DRAFT_MS', `const KEEP_STATE = ['lang', 'appVersion', 'meta']; const IDLE_KEY = 'cfp_idle_resume'; const setTimeout = () => {};\n${src}\nreturn { resetUserState, idleKeep, authLostKeep, idleResume };`);
+  const S = { lang: 'de', me: null }; let off = { me: { id: 'u1' } };
+  const loc = { hash: '#/cases/c1', pathname: '/', search: '' };
+  const f = mk(S, keysProxy, () => off, loc, { replaceState: (_, __, u) => { loc.hash = u.slice(1); } }, () => null, () => false, () => {}, () => {}, (k) => k, 12 * 3600000);
+  store.set('cfp_fd_inspect_c1_u1_production', '{}'); store.set('cfp_fd_act_c2_u2_production', '{}'); store.set('cfp_q', 'x');
+  // Neuladen nach Ruhezustand: S.me leer, Konto aus der Offline-Sitzung
+  const kept = f.authLostKeep(); eq(kept, 'u1', 'Konto aus Offline-Sitzung'); f.resetUserState(kept);
+  ok(store.has('cfp_fd_inspect_c1_u1_production') && store.has('cfp_idle_resume') && !store.has('cfp_fd_act_c2_u2_production') && !store.has('cfp_q'), 'eigene Entwürfe + Rückweg bleiben, fremde/sonstige weg');
+  // dieselbe Person meldet sich an → zurück auf die Kontrolle
+  eq(f.idleResume('u1', '#/'), '#/cases/c1', 'Rückweg für dieselbe Person');
+  // andere Person: Entwürfe weg
+  store.set('cfp_idle_resume', JSON.stringify({ u: 'u1', page: '#/cases/c1', at: new Date().toISOString() }));
+  eq(f.idleResume('u3', '#/'), '#/', 'andere Person: Startseite'); ok(!store.has('cfp_fd_inspect_c1_u1_production'), 'andere Person: fremder Entwurf gelöscht');
+  // ohne Offline-Sitzung und ohne Entwürfe: nichts behalten
+  off = null; store.clear(); eq(f.authLostKeep(), null, 'ohne Konto nichts'); S.me = { id: 'u1' }; eq(f.authLostKeep(), null, 'ohne Entwürfe kein Rückweg');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const T = STRINGS[l]; ok(T.session_expired_kept && T.session_expired_kept !== T.idle_signed_out_kept && T.session_lost_dirty, l + ': Texte');
+    ok(T.help_ws_s.includes(l === 'de' ? 'Akku leer' : l === 'uk' ? 'розряджений акумулятор' : 'flat battery'), l + ': Hilfe Werkstatt');
   }
 });
 
@@ -34015,7 +34062,7 @@ await test('Backlog 1017 (Blickwinkel „Push-Benachrichtigung tippen, nachdem d
   ok(src.includes('if (!st.needs_setup && AFTER_LOGIN_RX.test(h))'), 'App-Start nutzt AFTER_LOGIN_RX');
   // 401-Weg: Herkunft vor resetUserState bestimmen (S wird dort geleert), nur frische Push-Navigation auf genau diese Seite
   const l = src.split('\n').find((x) => x.includes("res.status === 401 && !path.startsWith('/api/login')"));
-  ok(l && l.indexOf('const fromPush = pushNavFresh(h0)') > 0 && l.indexOf('const fromPush') < l.indexOf('resetUserState()'), 'fromPush vor resetUserState');
+  ok(l && l.indexOf('const fromPush = pushNavFresh(h0)') > 0 && l.indexOf('const fromPush') < l.indexOf('resetUserState(kept)'), 'fromPush vor resetUserState');
   ok(l.includes('(fromPush && AFTER_LOGIN_RX.test(h0))') && l.includes('/^#\\/(new|check|v)\\/VIN:[A-Z0-9]+$/.test(h0)'), 'QR-Ziele immer, sonst nur nach Benachrichtigung');
   ok(/S\.pushNav = \{ hash: e\.data\.hash, at: Date\.now\(\) \}/.test(src), 'Service-Worker-Nachricht merkt das Ziel');
   ok(/function pushNavFresh\(h\) \{[^\n]*Date\.now\(\) - p\.at < PUSH_NAV_MS/.test(src) && /const PUSH_NAV_MS = 2 \* 60 \* 1000;/.test(src), 'nur frisch (2 Min.)');
