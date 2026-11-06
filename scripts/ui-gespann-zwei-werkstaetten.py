@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (06.11.2026, Backlog 1080–1082, Blickwinkel „Werkstatt Dortmund und Bayern arbeiten am selben Gespann“): Auflieger in Reparatur
 # bei Werkstatt MUENCHEN, Zugmaschine bei DORTMUND → das Formular „Technisch freigeben“ der Zugmaschine nennt den Auftrag am Auflieger (#relcoupled),
 # die Disposition sieht in „Wieder einsatzbereit“ beim Lkw „🔗 Anhänger …: In Werkstatt“ (data-cpstate). DE/UK/EN bei 390/820/1366 px,
+# Backlog 1083: Werkstatt Dortmund sieht beim Auflieger nur „in einer anderen Werkstatt in Arbeit“.
 # kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (scripts/dev-server.mjs). Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -49,6 +50,11 @@ with sync_playwright() as p:
         ok=cmd(a,cid,'approve_repair',{'workshop_site':'DORTMUND'},'Spiegel')==200 and cmd(wd,cid,'start_repair')==200 and cmd(wd,cid,'record_work',{'hours':1,'description':'Spiegel'})==200
         ok=ok and wd.evaluate(JS,['POST','/api/inspections',{'kind':'nach_reparatur','case_id':cid,'request_key':f'gz-i-{R}-{k}','items':items}])['s']==201 and cmd(wd,cid,'request_quality_check',{},'fertig')==200
         check(ok,f'{lang} {w}px: Zugmaschine bis Abschlusskontrolle')
+        if k==1:
+            wd.goto(B+'/#/cases/'+cid); wd.reload(); wd.wait_for_selector('[data-vicoupled]',state='attached',timeout=15000)
+            vc=wd.locator('[data-vicoupled]').text_content() or ''
+            check(wd.locator('[data-vicelse]').count()==1 and bno not in vc and 'München' not in vc,f'Werkstatt Dortmund: Auflieger „in einer anderen Werkstatt in Arbeit“ ohne Nummer/Standort ({vc})')
+            pass
         ctx=br.new_context(viewport={'width':w,'height':h}); m=ctx.new_page(); errs=[]; m.on('pageerror',lambda e: errs.append(str(e)))
         m.goto(B); m.context.add_cookies(a.context.cookies()); m.evaluate(JS,['PATCH','/api/me',{'language':lang}])
         m.goto(B+'/#/cases/'+cid); m.reload(); m.wait_for_selector('button[data-act="technical_release"]',timeout=15000)

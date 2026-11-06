@@ -35491,7 +35491,7 @@ await test('Backlog 1079 (Folge aus 1076): Abfahrtskontrolle nennt Prüffristen 
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['dc_insp_t', 'dc_insp_over', 'dc_insp_over_hint']) ok(STRINGS[l][k], l + ' ' + k);
 });
-await test('Backlog 1080–1082 (Blickwinkel „Werkstatt Dortmund und Bayern arbeiten am selben Gespann“): Freigabe der Zugmaschine nennt den laufenden Auftrag am gekoppelten Auflieger (Nummer + Kennzeichen, DE/UK/EN, Sprachwechsel), Freigabeformular und Dispo-Gruppen zeigen den Zustand des gekoppelten Fahrzeugs', async () => {
+await test('Backlog 1080–1083 (Blickwinkel „Werkstatt Dortmund und Bayern arbeiten am selben Gespann“): Freigabe der Zugmaschine nennt den laufenden Auftrag am gekoppelten Auflieger (Nummer + Kennzeichen, DE/UK/EN, Sprachwechsel), Freigabeformular und Dispo-Gruppen zeigen den Zustand des gekoppelten Fahrzeugs; Werkstatt sieht nur „bei anderer Werkstatt in Arbeit“', async () => {
   const { e, U, cmd } = await freshWorld();
   const mk = async (un, lang) => { const x = await U.own.post('/api/users', { username: un, display_name: un, role: 'dispatch', environment: 'test', language: lang }); const c = new Client(worker, e, un); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; };
   const D = { de: await mk('d1081.de', 'de'), uk: await mk('d1081.uk', 'uk'), en: await mk('d1081.en', 'en') };
@@ -35506,8 +35506,13 @@ await test('Backlog 1080–1082 (Blickwinkel „Werkstatt Dortmund und Bayern ar
   // Grundlage des Formular-Hinweises: Leitung sieht den Auftrag am Auflieger im Detail der Zugmaschine; Werkstatt Dortmund nicht (fremder Standort)
   const cpl = (await U.fleet.get(`/api/cases/${a}`)).data.vehicle_info.coupled;
   ok(cpl.some((g) => g.plate === 'GW-AH 1' && g.open_cases.some((o) => o.case_no === bNo && o.status === 'in_reparatur')), JSON.stringify(cpl));
-  ok(!((await U.ws.get(`/api/cases/${a}`)).data.vehicle_info.coupled || []).some((g) => (g.open_cases || []).some((o) => o.case_no === bNo)), 'Werkstatt Dortmund sieht den Münchner Auftrag nicht');
+  const wsc = (await U.ws.get(`/api/cases/${a}`)).data.vehicle_info.coupled || [];
+  ok(!wsc.some((g) => (g.open_cases || []).some((o) => o.case_no === bNo)), 'Werkstatt Dortmund sieht den Münchner Auftrag nicht');
+  // Backlog 1083: nur der Zustand „bei einer anderen Werkstatt in Arbeit“ (ohne Standort/Nummer/Text); Leitung bekommt das Feld nicht, München sieht den eigenen Auftrag
+  ok(wsc.length === 1 && wsc[0].elsewhere === true && !JSON.stringify(wsc).includes('MUENCHEN') && !JSON.stringify(wsc).includes(bNo), JSON.stringify(wsc));
+  ok(!('elsewhere' in cpl[0]), 'Leitung ohne Feld');
   const src = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(src.includes('g.elsewhere ? `<br><span class="chip mittel" data-vicelse>'), 'Anzeige statt „keine offenen Vorgänge“');
   ok(src.includes('id="relcoupled"') && src.includes("d.vehicle_info.coupled.flatMap((g) => (g.open_cases || [])"), 'Hinweis im Freigabeformular');
   ok(src.includes('dispoBack(dcs, hq, new Map(dvs.filter((v) => v.coupled)') && src.includes('cpState(cpl.get(c.vehicle_id))') && src.includes('cpState(coupled.get(c.vehicle_id))'), 'Dispo-Gruppen mit Zustand des Gespanns');
   // Zustand in der Fahrzeugliste (Quelle von cpState)

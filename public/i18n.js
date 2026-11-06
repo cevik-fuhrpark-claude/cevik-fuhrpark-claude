@@ -3895,3 +3895,7 @@ Object.assign(STRINGS.en, { dc_insp_t: 'Inspection today or tomorrow', dc_insp_o
 Object.assign(STRINGS.de, { rel_cpl_ws: 'Gekoppeltes Fahrzeug noch in der Werkstatt:', rel_cpl_ws_hint: 'Das Gespann ist erst komplett, wenn auch dieser Auftrag freigegeben ist – der Hinweis „freigegeben“ nennt ihn.' });
 Object.assign(STRINGS.uk, { rel_cpl_ws: 'Зчеплений транспорт ще в майстерні:', rel_cpl_ws_hint: 'Зчіпка буде повною лише після допуску й цього замовлення – повідомлення «допущено» його згадує.' });
 Object.assign(STRINGS.en, { rel_cpl_ws: 'Coupled vehicle still in the workshop:', rel_cpl_ws_hint: 'The combination is only complete once this order is also released – the “released” notification mentions it.' });
+// Backlog 1083: Werkstatt sieht nur den Zustand des gekoppelten Fahrzeugs bei einer anderen Werkstatt
+Object.assign(STRINGS.de, { vi_coupled_else: 'in einer anderen Werkstatt in Arbeit' });
+Object.assign(STRINGS.uk, { vi_coupled_else: 'у роботі в іншій майстерні' });
+Object.assign(STRINGS.en, { vi_coupled_else: 'being worked on at another workshop' });

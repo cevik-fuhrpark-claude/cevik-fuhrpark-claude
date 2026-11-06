@@ -579,7 +579,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
     // Polizeiangaben) zum Übernehmen. Werkstatt nur Vorgänge ihres Standorts (wie oben), eine Zeile mehr gelesen → coupled_truncated
     const PK = PLATE_KEY_SQL;
     const coupledRows = (await env.DB.prepare(`SELECT o.id AS vehicle_id, o.plate, o.kind, x.id, x.case_no, x.status, x.priority, x.safety_lock, substr(x.description, 1, 120) AS description,
-        ${isManager(user) ? "(SELECT json_object('insurer', ic.insurer, 'claim_no', ic.claim_no, 'police_station', ic.police_station, 'police_ref', ic.police_ref, 'police_reported_on', ic.police_reported_on) FROM insurance_claims ic WHERE ic.case_id=x.id)" : 'NULL'} AS claim
+        ${isManager(user) ? "(SELECT json_object('insurer', ic.insurer, 'claim_no', ic.claim_no, 'police_station', ic.police_station, 'police_ref', ic.police_ref, 'police_reported_on', ic.police_reported_on) FROM insurance_claims ic WHERE ic.case_id=x.id)" : 'NULL'} AS claim,
+        ${wsOnly ? "(SELECT COUNT(*) FROM cases y WHERE y.vehicle_id=o.id AND y.environment=?2 AND y.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') AND COALESCE(y.workshop_site,'')<>?3)" : '0'} AS elsewhere
       FROM vehicles o JOIN vehicles v ON v.id=?1
       LEFT JOIN cases x ON x.vehicle_id=o.id AND x.environment=?2 AND x.status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') ${wsOnly ? "AND x.workshop_site=?3 AND x.status<>'gemeldet'" : ''}
       WHERE o.active=1 AND o.id<>v.id AND ${COUPLING_PREFERRED_SQL('v')} AND ${COUPLING_PREFERRED_SQL('o')} AND (
@@ -590,7 +591,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
     const coupled = [];
     for (const r of coupledRows) {
       let g = coupled.find((x) => x.vehicle_id === r.vehicle_id);
-      if (!g) { g = { vehicle_id: r.vehicle_id, plate: r.plate, kind: r.kind, open_cases: [] }; coupled.push(g); }
+      // Backlog 1083: Werkstatt – gekoppeltes Fahrzeug in einem Auftrag einer anderen Werkstatt nur als Zustand (ohne Standort, Nummer, Text)
+      if (!g) { g = { vehicle_id: r.vehicle_id, plate: r.plate, kind: r.kind, open_cases: [], ...(wsOnly ? { elsewhere: r.elsewhere > 0 } : {}) }; coupled.push(g); }
       if (r.id && g.open_cases.length + coupled.reduce((n, x) => n + (x === g ? 0 : x.open_cases.length), 0) < COUPLED_CASE_MAX) g.open_cases.push({ id: r.id, case_no: r.case_no, status: r.status, priority: r.priority, safety_lock: r.safety_lock, description: r.description, ...(r.claim ? { claim: JSON.parse(r.claim) } : {}) });
     }
     const others = othersRows.map(({ total, ...o }) => o);
