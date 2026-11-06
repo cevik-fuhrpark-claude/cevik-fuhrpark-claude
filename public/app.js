@@ -6932,9 +6932,11 @@ const TST = { ueberfaellig: 'kritisch', bald: 'mittel', keine: '', ok: 'ok' };
 async function viewTachoHistory() {
   if (!isMgr()) return render(`<p>${esc(t('err_forbidden'))}</p>`);
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
-  const qs = () => { const f = ss('cfp_th_from'); const to = ss('cfp_th_to'); return [f && 'from=' + encodeURIComponent(f), to && 'to=' + encodeURIComponent(to)].filter(Boolean).join('&'); };
+  // Backlog 1060: Standort wie auf „Auslesungen“ (gemeinsame Auswahl `tachoSite`) – Liste, Summen, Ausdruck und CSV
+  const ths = vsDef('tachoSite') || '';
+  const qs = () => { const f = ss('cfp_th_from'); const to = ss('cfp_th_to'); return [f && 'from=' + encodeURIComponent(f), to && 'to=' + encodeURIComponent(to), ths && 'site=' + encodeURIComponent(ths)].filter(Boolean).join('&'); };
   let h;
-  try { h = await api('GET', '/api/tacho/history' + (qs() ? '?' + qs() : '')); } catch (err) { ss('cfp_th_from', ''); ss('cfp_th_to', ''); toast(err.message, true); h = await api('GET', '/api/tacho/history'); }
+  try { h = await api('GET', '/api/tacho/history' + (qs() ? '?' + qs() : '')); } catch (err) { ss('cfp_th_from', ''); ss('cfp_th_to', ''); toast(err.message, true); h = await api('GET', '/api/tacho/history' + (ths ? '?site=' + encodeURIComponent(ths) : '')); }
   const today = bDate();
   const gapTxt = (g) => `${esc(t('th_overdue').replace('{d}', fmtD(g.overdue_from)))} – ${g.open ? `<b>${esc(t('th_open'))}</b>` : g.cut ? esc(t('th_cut')) : esc(t('th_until').replace('{d}', fmtD(g.until)))} · ${esc(nDays(g.days))}`;
   const table = (list, kind) => list.length ? `<div class="scroll"><table class="stack printsm" data-th="${kind}"><thead><tr><th>${esc(kind === 'drivers' ? t('role_driver') : t('vehicle'))}</th><th>${esc(t('th_downloads'))}</th><th>${esc(t('th_gaps'))}</th></tr></thead><tbody>${list.map((x) => `<tr>
@@ -6944,15 +6946,17 @@ async function viewTachoHistory() {
   const sum = (k) => `${h.totals[k].subjects} · ${esc(t('th_with_gaps').replace('{n}', h.totals[k].with_gaps))}${h.totals[k].none_recorded ? ' · ' + esc(t('th_none_count').replace('{n}', h.totals[k].none_recorded)) : ''}`;
   render(`<p class="noprint"><a class="backlink" href="#/tacho">‹ ${esc(t('back'))}</a></p><h1>${esc(t('th_title'))}</h1>
     <p class="small muted">${esc(t('th_hint'))}</p><p class="small muted">${esc(t('tacho_rule'))}</p>
-    <p class="print-only small">${printStamp()} · ${esc(fmtD(h.from))} – ${esc(fmtD(h.to))} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    <p class="print-only small">${printStamp()} · ${esc(fmtD(h.from))} – ${esc(fmtD(h.to))}${h.site ? ' · ' + esc(t('site')) + ': ' + esc(h.site === 'ohne' ? t('cs_nosite') : h.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    ${(h.site_options || []).length > 1 || h.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('thsite', '', h.site_options, h.site, t('site'), t('filter_all'))}</div></div>` : ''}${h.no_site_hidden ? `<p class="small muted noprint" data-thnositehidden>${esc(tn('drv_nosite_hidden', h.no_site_hidden))}</p>` : ''}
     <form id="thf" class="panel noprint"><div class="grid2"><div><label for="thfrom">${esc(t('from'))}</label><input type="date" id="thfrom" value="${esc(h.from)}" max="${esc(today)}"></div><div><label for="thto">${esc(t('to'))}</label><input type="date" id="thto" value="${esc(h.to)}" max="${esc(today)}"></div></div>
       <div class="actions"><button class="btn">${esc(t('show'))}</button><button type="button" class="btn secondary" id="thcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="thprt">${esc(t('print'))}</button></div></form>
     ${h.truncated ? `<p class="panel warn" id="thtrunc">${esc(t('th_truncated').replaceAll('{n}', h.max))}</p>` : ''}
     <h2>${esc(t('tacho_cards'))} <span class="small muted">${sum('drivers')}</span></h2>${table(h.drivers, 'drivers')}
     <h2>${esc(t('tacho_vus'))} <span class="small muted">${sum('vehicles')}</span></h2>${table(h.vehicles, 'vehicles')}`, 'more');
   $('#thf').onsubmit = (e) => { e.preventDefault(); ss('cfp_th_from', $('#thfrom').value); ss('cfp_th_to', $('#thto').value); viewTachoHistory(); };
+  const thse = $('#thsite'); if (thse) thse.onchange = () => { S.tachoSite = thse.value; viewTachoHistory(); };
   $('#thprt').onclick = () => window.print();
-  $('#thcsv').onclick = async () => { try { download(await api('GET', `/api/tacho/history?from=${encodeURIComponent(h.from)}&to=${encodeURIComponent(h.to)}&format=csv`), `fuhrpark-auslesungen-verlauf_${h.from}_${h.to}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#thcsv').onclick = async () => { try { download(await api('GET', `/api/tacho/history?from=${encodeURIComponent(h.from)}&to=${encodeURIComponent(h.to)}${h.site ? '&site=' + encodeURIComponent(h.site) : ''}&format=csv`), `fuhrpark-auslesungen-verlauf_${h.from}_${h.to}${h.site ? '_' + fnPart(h.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 async function viewTacho() {

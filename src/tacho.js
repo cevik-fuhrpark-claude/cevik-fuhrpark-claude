@@ -225,11 +225,15 @@ export async function tachoHistory(env, user, envName, query = {}) {
     out.drivers.push({ id: d.id, downloads: [], count: 0, last_before: null, gaps: [], gap_days: 0, none_recorded: true, ...(d.no_card ? { no_card: true } : {}), display_name: d.display_name, personnel_no: d.personnel_no || null, site: d.site, active: true });
   }
   for (const v of cur.vehicles) if (!subj.has('v|' + v.id)) out.vehicles.push({ id: v.id, downloads: [], count: 0, last_before: null, gaps: [], gap_days: 0, none_recorded: true, plate: v.plate, site: v.site, active: true });
+  // Backlog 1060: Standortfilter wie die Übersicht (Fahrer nach Fahrerakte, Fahrzeuge nach Fahrzeugstamm; Fahrer ohne Standort ausgeblendet → gezählt)
+  const sel = siteSelection([...out.drivers, ...out.vehicles].map((x) => ({ site: x.site })), query.site);
+  const noSiteHidden = sel.site && sel.site !== 'ohne' ? out.drivers.filter((x) => siteKey(x.site) === 'ohne').length : 0;
+  if (sel.site) for (const k of ['drivers', 'vehicles']) out[k] = out[k].filter((x) => sel.match(x.site));
   // Fahrzeuge/Fahrer mit Lücke zuerst, dann alphabetisch
   const sortBy = (name) => (a, b) => (b.gaps.length ? 1 : 0) - (a.gaps.length ? 1 : 0) || (b.none_recorded ? 1 : 0) - (a.none_recorded ? 1 : 0) || String(a[name] || '').localeCompare(String(b[name] || ''), 'de', { sensitivity: 'base' });
   out.drivers.sort(sortBy('display_name')); out.vehicles.sort(sortBy('plate'));
   const cnt = (l) => ({ subjects: l.length, downloads: l.reduce((a, x) => a + x.count, 0), with_gaps: l.filter((x) => x.gaps.length).length, gaps: l.reduce((a, x) => a + x.gaps.length, 0), none_recorded: l.filter((x) => x.none_recorded).length });
-  return { from, to, today, rule: TACHO_RULE, ...out, totals: { drivers: cnt(out.drivers), vehicles: cnt(out.vehicles) }, truncated, max: TACHO_HISTORY_MAX };
+  return { from, to, today, rule: TACHO_RULE, site: sel.site, site_options: sel.options, no_site_hidden: noSiteHidden, ...out, totals: { drivers: cnt(out.drivers), vehicles: cnt(out.vehicles) }, truncated, max: TACHO_HISTORY_MAX };
 }
 
 export function tachoHistoryCsv(h, cell) {

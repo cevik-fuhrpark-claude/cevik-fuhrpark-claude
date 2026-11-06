@@ -35003,6 +35003,38 @@ await test('Backlog 1059 (Blickwinkel „Leitung Bayern zieht vor der HU-Woche d
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-nachweisliste-standort.py'), 'UI-Skript in pruefen.sh');
 });
 
+await test('Backlog 1060 (gleicher Blickwinkel, Auslesungs-Verlauf): Verlauf der Auslesungen folgt dem Standortfilter (Fahrer nach Fahrerakte, Lkw nach Fahrzeugstamm, Summen, CSV mit Standort im Dateinamen, Protokoll); Fahrer ohne Standort gezählt; App übernimmt die Auswahl der Seite „Auslesungen“', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner');
+  const s0 = await own.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'ts.inhaber', display_name: 'TS' });
+  await own.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const A = (await own.post('/api/drivers', { display_name: 'Anna Dortmund', personnel_no: 'TS-1', site: 'Dortmund' })).data.id;
+  const B = (await own.post('/api/drivers', { display_name: 'Bora Bayern', personnel_no: 'TS-2', site: 'bayern ' })).data.id;
+  const N = (await own.post('/api/drivers', { display_name: 'Nils Ohne', personnel_no: 'TS-3' })).data.id;
+  eq((await own.post('/api/vehicles', { plate: 'TS-LK 1', vin: 'WDB96340310826001', site: 'Dortmund' })).status, 201);
+  eq((await own.post('/api/vehicles', { plate: 'TS-LK 2', vin: 'WDB96340310826002', site: 'Bayern' })).status, 201);
+  const dl = async (b, d) => eq((await own.post('/api/tacho/downloads', { ...b, downloaded_on: d, evidence: 'Auslesesoftware' })).status, 201, d);
+  for (const id of [A, B, N]) await dl({ kind: 'fahrerkarte', driver_id: id }, day(-20));
+  await dl({ kind: 'massenspeicher', vehicle_id: 'VIN:WDB96340310826001' }, day(-30)); await dl({ kind: 'massenspeicher', vehicle_id: 'VIN:WDB96340310826002' }, day(-30));
+  let h = (await own.get('/api/tacho/history')).data; eq(h.site, null); eq(h.drivers.length, 3); eq(h.vehicles.length, 2); eq(h.no_site_hidden, 0);
+  ok(h.site_options.includes('Dortmund') && h.site_options.includes('ohne'), JSON.stringify(h.site_options));
+  h = (await own.get('/api/tacho/history?site=BAYERN')).data;
+  eq(h.drivers.map((d) => d.display_name).join(), 'Bora Bayern', 'Fahrer nach Fahrerakte, Schreibweise egal'); eq(h.vehicles.map((v) => v.plate).join(), 'TS-LK 2', 'Lkw nach Fahrzeugstamm');
+  eq(h.totals.drivers.subjects, 1, 'Summen nach Filter'); eq(h.totals.vehicles.downloads, 1); eq(h.no_site_hidden, 1, 'Fahrer ohne Standort gezählt');
+  h = (await own.get('/api/tacho/history?site=ohne')).data; eq(h.drivers.map((d) => d.display_name).join(), 'Nils Ohne'); eq(h.vehicles.length, 0); eq(h.no_site_hidden, 0);
+  eq((await own.get('/api/tacho/history?site=%20')).data.drivers.length, 3, 'nur Leerzeichen = keine Auswahl');
+  const c = await own.req('GET', '/api/tacho/history?site=Dortmund&format=csv'); eq(c.status, 200);
+  ok(/filename="fuhrpark-auslesungen-verlauf_[^"]*dortmund[^"]*\.csv"/i.test(c.headers.get('content-disposition')), c.headers.get('content-disposition'));
+  const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(c.data).replace(/^﻿/, '').trim().split('\r\n');
+  eq(lines.length, 3, 'Kopf + Anna + TS-LK 1'); ok(lines.some((l) => l.startsWith('Fahrerkarte;Anna Dortmund;')) && lines.some((l) => l.startsWith('Massenspeicher;TS-LK 1;')), lines.join('|'));
+  const au = e.DB.db.prepare("SELECT detail FROM audit_log WHERE action='reports.tacho.history_export' ORDER BY created_at DESC LIMIT 1").get(); eq(JSON.parse(au.detail).site, 'Dortmund');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const ths = vsDef('tachoSite') || '';") && app.includes("ths && 'site=' + encodeURIComponent(ths)"), 'App: Verlauf nutzt die Auswahl der Seite Auslesungen');
+  ok(app.includes("siteSelect('thsite', ''") && app.includes('S.tachoSite = thse.value; viewTachoHistory();') && app.includes('data-thnositehidden'), 'App: Auswahl auf der Verlaufsseite, Hinweis ausgeblendete Fahrer');
+  ok(app.includes("${h.site ? '&site=' + encodeURIComponent(h.site) : ''}&format=csv`), `fuhrpark-auslesungen-verlauf_${h.from}_${h.to}${h.site ? '_' + fnPart(h.site) : ''}.csv`"), 'App: CSV mit Standort');
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-auslesungen-verlauf-standort.py'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
