@@ -393,6 +393,9 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 .qrcard { display: flex; gap: 12px; align-items: center; background: #fff; color: #000; border: 1px dashed var(--rule); border-radius: var(--radius-m); padding: 10px; break-inside: avoid; }
 .qrcard .qr svg { width: 120px; }
 .qrcard p { margin: 4px 0; }
+/* [CLAUDE] Backlog 1101 (Blickwinkel „Fuhrparkleitung nachts in Rufbereitschaft, Handy im Dunkelmodus“): die Aufkleber-Karte ist immer weiß (wie der Druck) –
+   der Untertitel darf daher nicht das helle Grau des Dunkelmodus übernehmen (vorher 2,2:1, jetzt 7,5:1) */
+.qrcard .muted { color: #555; }
 @media print { .qrsheet { grid-template-columns: repeat(2, 1fr); gap: 6mm; } .qrcard { border: 1px dashed #999; } .qrcard .qr svg { width: 38mm; } }
 /* Papiervordruck Abfahrtskontrolle */
 .paper-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 24px; margin: 12px 0; }

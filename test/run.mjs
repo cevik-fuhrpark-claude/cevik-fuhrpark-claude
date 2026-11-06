@@ -35728,6 +35728,17 @@ await test('Backlog 1099 (Blickwinkel „Leitung druckt ‚Kostenfreigabe ausste
   ok(/const cPrint = [^\n]*printHead\(\[[\s\S]{0,700}?f === 'cost_approval' \? 'ca_sort_wait'/.test(app), 'Druckkopf nennt die Sortierung');
 });
 
+await test('Backlog 1101 (Blickwinkel „Fuhrparkleitung nachts in Rufbereitschaft, Handy im Dunkelmodus“): QR-Aufkleber-Untertitel dunkel auf der weißen Karte, Kontrastprüfung aller übrigen Ansichten', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(css.includes('.qrcard .muted { color: #555; }'), 'Untertitel auf der weißen Aufkleber-Karte mit festem dunklem Grau');
+  ok(/\.qrcard \{[^}]*background: #fff; color: #000;/.test(css), 'Aufkleber-Karte bleibt weiß');
+  const ui = fs.readFileSync(new URL('../scripts/ui-kontrast-alle.py', import.meta.url), 'utf8');
+  for (const r of ['#/contracts', '#/claims', '#/settings', '#/vehicles/qr', "'dispatch'", "'viewer'"]) ok(ui.includes(r), 'Kontrastprüfung umfasst ' + r);
+  const sh = fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8');
+  ok(sh.includes('|ui-kontrast-alle.py|'), 'UI-Skript steht in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
