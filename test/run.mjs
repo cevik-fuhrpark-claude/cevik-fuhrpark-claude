@@ -35684,6 +35684,23 @@ await test('Backlog 1095 (Folge aus 1093): Folgeaufträge im Vorgang nennen Drin
   ok(app.includes("<span class=\"sub\" data-fuprio>${esc(t('prio_' + f.priority))}${f.safety_lock ? ` · <b>${esc(t('locked'))}</b>` : ''}</span>"), 'Zeile Folgeauftrag');
 });
 
+await test('Backlog 1096/1097 (Folge aus 1093): Disposition „Geplante Werkstatttermine“ nennt „Gesperrt“ und nicht fahrbereit/abgeschleppt als Text; Chip „einplanbar bis“ ohne Querscrollen', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.match(/\nfunction dispoSub\(i\) \{[\s\S]*?\n\}\n/); ok(src, 'dispoSub gefunden');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const T = STRINGS[l];
+    const f = new Function('t', 'esc', 'wsName', 'clipTxt', 'planVehTag', 'fmtD', src[0] + 'return dispoSub;')((k) => T[k], (x) => String(x), (x) => String(x), (x) => String(x), () => '', (x) => x);
+    const base = { type: 'case', case_no: 'S-1', workshop_site: 'DORTMUND', status: 'werkstatt_freigegeben', reported_driveability: 'fahrbereit' };
+    ok(f({ ...base, safety_lock: 1 }).includes(T.locked), `${l}: Gesperrt`);
+    ok(!f(base).includes(T.locked) && !f(base).includes(T.cl_not_drivable), `${l}: fahrbereit ohne Zusatz`);
+    ok(f({ ...base, reported_driveability: 'nicht_fahrbereit' }).includes(T.cl_not_drivable), `${l}: nicht fahrbereit`);
+    const tw = f({ ...base, reported_driveability: 'nicht_fahrbereit', tow_service: 'Abschlepp X' }); ok(tw.includes(T.vl_towed_chip) && !tw.includes(T.cl_not_drivable), `${l}: abgeschleppt`);
+    ok(!f({ ...base, status: 'in_reparatur', reported_driveability: 'nicht_fahrbereit' }).includes(T.cl_not_drivable), `${l}: nach Reparaturbeginn nicht mehr`);
+  }  // Backlog 1097: Chip „einplanbar bis …“ bricht an Leerzeichen (vorher nowrap → Querscrollen am Handy auf Ukrainisch)
+  ok(app.includes('<span class="chip ok" style="overflow-wrap:normal" data-dupcuntil>'), 'Chip ohne nowrap');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

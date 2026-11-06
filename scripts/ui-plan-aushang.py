@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (06.11.2026, Backlog 1093/1094, Blickwinkel „Werkstatt druckt den Wochenplan fürs Schwarze Brett“): Auftragszeilen im
 # Werkstattplan nennen Dringlichkeit, „Gesperrt“ und die Fahrbereitschaft laut Meldung (nicht/eingeschränkt fahrbereit, abgeschleppt) als Text –
-# auf dem Bildschirm und in der Druckansicht (Schwarz-Weiß ohne Farben). Handy 390, Tablet 820, PC 1366 je DE/UK/EN; kein Querscrollen, keine Skriptfehler.
+# auf dem Bildschirm und in der Druckansicht (Schwarz-Weiß ohne Farben). Backlog 1096: Disposition-Startseite „Geplante Termine“ nennt
+# „Gesperrt“, „nicht fahrbereit“ bzw. „abgeschleppt“. Backlog 1097: Chip „einplanbar bis …“ ohne Querscrollen am Handy (UK). Handy 390, Tablet 820, PC 1366 je DE/UK/EN; kein Querscrollen, keine Skriptfehler.
 import os, datetime, uuid, re
 from playwright.sync_api import sync_playwright
 B = os.environ.get('CFP_URL', 'http://localhost:8787'); PW = 'Sicheres-Passwort-2026'; SHOTS = os.environ.get('CFP_SHOTS')
@@ -19,6 +20,9 @@ with sync_playwright() as p:
     me = api('GET', '/api/me')['d']; env = me['active_environment']; pid = os.getpid()
     WS = f'pa.ws{pid}'
     wu = api('POST', '/api/users', {'username': WS, 'display_name': 'PA Werkstatt', 'role': 'workshop', 'environment': env, 'workshop_site': 'DORTMUND'})
+    DS = f'pa.dispo{pid}'
+    du = api('POST', '/api/users', {'username': DS, 'display_name': 'PA Dispo', 'role': 'dispatch', 'environment': env})
+    dctx = br.new_context(); dp = dctx.new_page(); dp.goto(B); dp.evaluate(JS, ['POST', '/api/invite/accept', {'token': du['d']['invite_token'], 'password': PW}]); dctx.close()
     wctx = br.new_context(); wp = wctx.new_page(); wp.goto(B); wp.evaluate(JS, ['POST', '/api/invite/accept', {'token': wu['d']['invite_token'], 'password': PW}])
     today = datetime.date.today()
     STR = a.evaluate("async () => { const m = await import('/i18n.js'); const o = {}; for (const l of ['de','uk','en']) o[l] = Object.fromEntries(['prio_kritisch','prio_mittel','prio_niedrig','locked','cl_not_drivable','dispo_upcoming_limited','vl_towed_chip'].map((k) => [k, m.STRINGS[l][k]])); return o; }")
@@ -48,6 +52,15 @@ with sync_playwright() as p:
         check(T['vl_towed_chip'] in txt(3) and T['cl_not_drivable'] not in txt(3), f'{lang} {w}: abgeschleppt')
         check(q.evaluate('document.documentElement.scrollWidth') <= w, f'{lang} {w}: kein Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/plan-aushang-{lang}-{w}.png', full_page=False)
+        # Disposition: Startseite „Geplante Termine (7 Tage)“
+        dc = br.new_context(viewport={'width': w, 'height': h}); d = dc.new_page(); d.on('pageerror', lambda e: errs.append(str(e)))
+        d.goto(B); d.evaluate(JS, ['POST', '/api/login', {'username': DS, 'password': PW}]); d.evaluate(JS, ['PATCH', '/api/me', {'language': lang}]); d.evaluate("l => localStorage.setItem('cfp_lang', l)", lang)
+        d.goto(B + '/#/'); d.reload(); d.wait_for_selector(f'a.row[href="#/cases/{ids[3]}"] [data-dpdrv]', timeout=15000)
+        dtx = lambda i, a: ' '.join(x.inner_text() for x in d.locator(f'a.row[href="#/cases/{ids[i]}"] [{a}]').all())
+        check((not locked or T['locked'] in dtx(0, 'data-dplock')) and T['cl_not_drivable'] in dtx(1, 'data-dpdrv') and dtx(3, 'data-dpdrv') == T['vl_towed_chip'] and dtx(2, 'data-dpdrv') == '', f'{lang} {w}: Disposition – Gesperrt/nicht fahrbereit/abgeschleppt')
+        check(d.evaluate('document.documentElement.scrollWidth') <= w, f'{lang} {w}: Disposition kein Querscrollen')
+        if SHOTS: d.locator(f'a.row[href="#/cases/{ids[1]}"] [data-dpdrv]').first.scroll_into_view_if_needed(); d.screenshot(path=f'{SHOTS}/plan-aushang-dispo-{lang}-{w}.png')
+        dc.close()
         q.emulate_media(media='print')
         check(q.locator(f'a.row[href="#/cases/{ids[1]}"] [data-pdrv]').first.is_visible(), f'{lang} {w}: Fahrbereitschaft im Druck sichtbar')
         check(q.locator(f'a.row[href="#/cases/{ids[0]}"] [data-pprio]').first.is_visible(), f'{lang} {w}: Dringlichkeit im Druck sichtbar')
