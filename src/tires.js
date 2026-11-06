@@ -546,6 +546,14 @@ export async function winterFleet(env, user, envName, query = {}) {
 // die Datei ist eine Auswertung und soll nicht versehentlich den Reifengrößen-Import (Quelldatei) überschreiben.
 const WS_DE = { erfuellt: 'erfüllt', nicht_erfuellt: 'nicht erfüllt', unbekannt: 'nicht vollständig erfasst', nicht_pflichtig: 'nicht betroffen (Anhänger)' };
 const TS_DE = { unter_minimum: 'unter gesetzlichem Minimum', warnung: 'unter Warnschwelle', ok: 'in Ordnung', unbekannt: 'kein Messwert' };
+// Backlog 1065: Reiter der Ansicht „Reifen – Flotte“ als Auswahl für die CSV (`filter`), gleiche Regel wie die App (`sel` in `viewFleetTires`);
+// ohne/unbekannter Filter bzw. `all` = alle Fahrzeuge (bisheriges Verhalten). Dateinamen-Zusatz je Reiter.
+export const TIRE_FLEET_FILTERS = {
+  attention: (x) => x.status === 'unter_minimum' || x.status === 'warnung', never: (x) => x.measured_positions === 0, stale: (x) => x.stale && x.measured_positions > 0,
+  winter_bad: (x) => x.winter === 'nicht_erfuellt', winter_unknown: (x) => x.winter === 'unbekannt', winter_closed: (x) => !!x.winter_closed_order, age: (x) => x.age_warn > 0,
+};
+export const TIRE_FLEET_FILE = { attention: 'unter-minimum-warnung', never: 'nie-gemessen', stale: 'messung-veraltet', winter_bad: 'winter-nicht-erfuellt', winter_unknown: 'winter-nicht-erfasst', winter_closed: 'winterauftrag-abgeschlossen', age: 'reifenalter' };
+export const tireFleetFilter = (f) => (Object.prototype.hasOwnProperty.call(TIRE_FLEET_FILTERS, f) ? f : null);
 export async function fleetTiresCsv(env, ov, csvCell) {
   const specs = (await env.DB.prepare('SELECT vehicle_id, axle, size, verified FROM tire_specs WHERE vehicle_id IN (SELECT value FROM json_each(?))')
     .bind(JSON.stringify(ov.rows.map((r) => r.vehicle_id))).all()).results;

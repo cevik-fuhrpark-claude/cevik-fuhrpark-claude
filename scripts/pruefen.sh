@@ -297,6 +297,7 @@ UI-Ruhendes Fahrzeug/Versicherung beendet: Hinweis an den Fahrer auf „Mein Fah
 UI-Sammelmeldung (Hagel): gleicher Schaden an 14 Fahrzeugen in zwei Blöcken, je Fahrzeug ein Vorgang mit Link, weniger als zwei Fahrzeuge abgewiesen, DE/UK/EN 390/820/1366|ui-hagel-sammelmeldung.py|/tmp/cfp-hagel-sammelmeldung.log
 UI-Prüftermin für mehrere Fahrzeuge (Wintercheck): 5 Fahrzeuge, Hinweise ohne Bezeichnung/Fahrzeug, Link zur Fahrzeugakte, erneut ohne Dubletten, DE/UK/EN 390/820/1366|ui-pruefung-sammelanlage.py|/tmp/cfp-pruefung-sammelanlage.log
 UI-Winterreifen-Bedarf je Reifengröße (Reifen-Flotte, Winter-Reiter), Größe nicht hinterlegt getrennt, DE/UK/EN 390/820/1366|ui-winterreifen-bedarf.py|/tmp/cfp-winterreifen-bedarf.log
+UI-Reifen-Flotte: CSV folgt dem gewählten Reiter, Dateiname mit festem Zusatz, DE/UK/EN 390/820/1366|ui-reifen-csv-auswahl.py|/tmp/cfp-reifen-csv-auswahl.log
 UI-Winterreifen-Aufträge für mehrere Lkw (Werkstatt Pflicht, je Lkw ein Auftrag mit Link, danach nicht wählbar), DE/UK/EN 390/820/1366|ui-winterreifen-auftraege.py|/tmp/cfp-winterreifen-auftraege.log
 UI-Umrüstung zum Winterreifen-Auftrag erfassen (je Achse vorbereitet, Kennzeichnung Pflicht, Größe per Knopf, danach erfüllt mit Link), DE/UK/EN 390/820/1366|ui-winterreifen-umruestung.py|/tmp/cfp-winterreifen-umruestung.log
 UI-Verträge „Ende/Kündigung bis“ (Quartalsende, eigenes Datum, alle Termine, Stichtag hebt auf), DE/UK/EN 390/820/1366|ui-vertraege-faellig-bis.py|/tmp/cfp-vertraege-faellig-bis.log

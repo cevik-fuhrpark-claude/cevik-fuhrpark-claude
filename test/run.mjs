@@ -35106,8 +35106,33 @@ await test('Backlog 1064 (Blickwinkel „Seitenfilter wirkt auf alle Teile einer
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const m = app.match(/const noDue = \(f\) => (.*?);\n/); const appRule = new Function('return (f) => ' + m[1])();
   for (const f of [{ status: 'eingegangen' }, { status: 'beantwortet' }, { status: 'fahrer_ermittelt', response_due: '2030-01-01' }, { status: 'erledigt' }]) eq(appRule(f), fineNoDue(f), 'App = Server ' + JSON.stringify(f));
-  ok(app.includes("${S.fineNoDue ? '&no_due=1' : ''}") && app.includes("${S.fineNoDue ? '_' + fnPart(t('fine_no_due')) : ''}.csv"), 'App übergibt die Auswahl');
+  ok(app.includes("${S.fineNoDue ? '&no_due=1' : ''}") && app.includes("${S.fineNoDue ? '_ohne-antwortfrist' : ''}.csv"), 'App übergibt die Auswahl');
   const w = (await import('node:fs')).readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); ok(w.includes('...(noDue ? { no_due: true } : {})'), 'Protokoll');
+});
+
+await test('Backlog 1065 (Blickwinkel „Seitenfilter wirkt auf alle Teile einer Seite“, Reifen – Flotte): CSV folgt dem gewählten Reiter (filter=…), Dateiname nennt ihn fest auf Deutsch; ohne/unbekannter Filter = alle; App-Regel = Server-Regel', async () => {
+  const { U } = await freshWorld();
+  const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  const ov = (await U.fleet.get('/api/tires/fleet')).data; ok(ov.rows.length >= 2, 'Fahrzeuge vorhanden');
+  const plates = (c) => c.trim().split('\r\n').slice(1).map((l) => l.split(';')[0].replace(/^"|"$/g, ''));
+  const all = dec(await U.fleet.get('/api/tires/fleet?format=csv')); eq(plates(all).length, ov.rows.length, 'ohne Filter alle');
+  eq(plates(dec(await U.fleet.get('/api/tires/fleet?format=csv&filter=all'))).length, ov.rows.length, 'all = alle');
+  eq(plates(dec(await U.fleet.get('/api/tires/fleet?format=csv&filter=quatsch'))).length, ov.rows.length, 'unbekannt = alle');
+  const { TIRE_FLEET_FILTERS, TIRE_FLEET_FILE } = await import('../src/tires.js');
+  for (const f of Object.keys(TIRE_FLEET_FILTERS)) {
+    const r = await U.fleet.get('/api/tires/fleet?format=csv&filter=' + f); eq(r.status, 200);
+    eq(plates(dec(r)).sort().join(','), ov.rows.filter(TIRE_FLEET_FILTERS[f]).map((x) => x.plate).sort().join(','), 'Auswahl ' + f);
+    ok(r.headers.get('content-disposition').endsWith(`_${TIRE_FLEET_FILE[f]}.csv"`), 'Dateiname ' + r.headers.get('content-disposition'));
+  }
+  ok(ov.rows.some((x) => x.measured_positions === 0) && plates(dec(await U.fleet.get('/api/tires/fleet?format=csv&filter=never'))).length > 0, 'nie gemessen nicht leer');
+  eq((await U.driver.get('/api/tires/fleet?format=csv&filter=never')).status, 403, 'Rechte unverändert');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/const sel = (\{ attention: .*? \})\[f\]/); ok(m, 'App-Regel gefunden'); const appSel = new Function('return ' + m[1])();
+  eq(Object.keys(appSel).filter((k) => k !== 'all').sort().join(), Object.keys(TIRE_FLEET_FILTERS).sort().join(), 'gleiche Reiter');
+  const samples = [{ status: 'unter_minimum', measured_positions: 3 }, { status: 'warnung', measured_positions: 1, stale: true }, { status: 'ok', measured_positions: 0, winter: 'unbekannt' }, { status: 'ok', measured_positions: 4, stale: true, winter: 'nicht_erfuellt', age_warn: 2 }, { status: 'unbekannt', measured_positions: 0, winter_closed_order: { case_no: 'X' } }];
+  for (const k of Object.keys(TIRE_FLEET_FILTERS)) for (const x of samples) eq(!!appSel[k](x), !!TIRE_FLEET_FILTERS[k](x), `App = Server ${k} ${JSON.stringify(x)}`);
+  const fm = app.match(/const TIRE_FLEET_FILE = (\{.*?\});/); ok(fm, 'App-Dateinamen gefunden'); eq(JSON.stringify(new Function('return ' + fm[1])()), JSON.stringify(TIRE_FLEET_FILE), 'Dateinamen App = Server');
+  ok(app.includes("(f !== 'all' ? '&filter=' + f : '')"), 'App übergibt den Reiter');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

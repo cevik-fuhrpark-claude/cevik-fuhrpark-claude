@@ -426,7 +426,11 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/specs$/)) && m === 'POST') return json(await tires.setTireSpec(env, user, mm[1], await readJson(request)));
   if (path === '/api/tires/fleet' && m === 'GET') {
     const ov = await tires.fleetTires(env, user, envName, Object.fromEntries(url.searchParams));
-    if (url.searchParams.get('format') === 'csv') return new Response(await tires.fleetTiresCsv(env, ov, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-reifen_${envName}_${berlinDate()}${siteSuffix(ov.site)}.csv"` } });
+    if (url.searchParams.get('format') === 'csv') {
+      const tf = tires.tireFleetFilter(url.searchParams.get('filter')); // Backlog 1065: CSV = gewählter Reiter
+      const csvOv = tf ? { ...ov, rows: ov.rows.filter(tires.TIRE_FLEET_FILTERS[tf]) } : ov;
+      return new Response(await tires.fleetTiresCsv(env, csvOv, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-reifen_${envName}_${berlinDate()}${siteSuffix(ov.site)}${tf ? '_' + tires.TIRE_FLEET_FILE[tf] : ''}.csv"` } });
+    }
     return json(ov);
   }
   if ((mm = path.match(/^\/api\/vehicles\/(VIN:[A-Z0-9]+)\/tires\/winter-order$/)) && m === 'POST') return json(await cases.orderWinterTires(env, ctx, user, envName, mm[1], await readJson(request)), 201);
