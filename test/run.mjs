@@ -34755,6 +34755,8 @@ await test('Backlog 1047 (Blickwinkel „Lkw wechselt dauerhaft den Standort“)
   ok(app.includes("...(x.coupled_other_site || []).map((y) => t('veh_site_coupled')"), 'Importhinweis zeigt das gekoppelte Fahrzeug');
   ok(app.includes("const wsSel = c.workshop_site || c.suggested_workshop_site || vWs;") && app.includes("${wsSel ? '' : '<option value=\"\" selected>–</option>'}"), 'Freigabe: Vorwahl nach Standort, sonst „–“');
   ok(app.includes('<select name="workshop_site" required>${wsOpts}</select>${wsSiteHint}'), 'Freigabe: Pflichtauswahl + Hinweis');
+  // Backlog 1050: derselbe Hinweis in „Werkstatt wechseln“
+  ok(app.includes("(action === 'approve_repair' || action === 'reassign_workshop') && d && d.vehicle") && app.includes('</select>${wsSiteHint}${rwsDrop(c)}'), 'Werkstatt wechseln: Hinweis');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].apr_ws_site_hint && STRINGS[l].apr_ws_site_hint.includes('{site}') && STRINGS[l].apr_ws_site_hint.includes('{ws}'), l + ': apr_ws_site_hint');
 });

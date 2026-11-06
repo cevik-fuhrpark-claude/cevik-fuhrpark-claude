@@ -3887,7 +3887,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   const isQc = action === 'request_quality_check' || qrel; const isRel = action === 'technical_release' || qrel;
   // Backlog 1047 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): ohne Vorschlag die Werkstatt zum heutigen Fahrzeugstandort vorwählen,
   // sonst „–“ mit Pflichtauswahl (vorher wählte der Browser still die erste Werkstatt); weicht der Vorschlag davon ab, Hinweis zum Standort
-  const vSite = action === 'approve_repair' && d && d.vehicle ? d.vehicle.site || '' : ''; const vWs = vSite ? wsForSite(vSite) : '';
+  const vSite = (action === 'approve_repair' || action === 'reassign_workshop') && d && d.vehicle ? d.vehicle.site || '' : ''; const vWs = vSite ? wsForSite(vSite) : '';
   const wsSel = c.workshop_site || c.suggested_workshop_site || vWs;
   const wsOpts = `${wsSel ? '' : '<option value="" selected>–</option>'}${S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${wsSel === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}`;
   const wsSiteHint = vWs && wsSel && wsSel !== vWs ? `<p class="small alert" data-apwshint>${esc(t('apr_ws_site_hint').replace('{site}', () => vSite).replace('{ws}', () => wsLabel(S.meta.workshops.find((w) => w.code === vWs) || { code: vWs })))}</p>` : '';
@@ -3902,7 +3902,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     case 'change_priority': f.push(`<label>${esc(t('new_priority'))}</label><select name="priority">${prioOpts(c.priority)}</select>`); break;
     case 'approve_repair': f.push(`<label>${esc(t('workshop'))}</label><select name="workshop_site" required>${wsOpts}</select>${wsSiteHint}<label>${esc(t('urgency'))}</label><select name="priority">${prioOpts(c.priority)}</select><label>${esc(t('planned'))}</label><input type="date" name="planned_date">`); break;
     // Backlog 513/514: ohne die bisherige Werkstatt (Server lehnt „unverändert“ ab, wie im Werkstattplan) und Hinweis, dass Termin/Übernahme entfallen
-    case 'reassign_workshop': f.push(`<label>${esc(t('workshop'))}</label><select name="workshop_site" required><option value="">${esc(t('rws_choose'))}</option>${S.meta.workshops.filter((w) => w.code !== c.workshop_site).map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>${rwsDrop(c)}`); break;
+    case 'reassign_workshop': f.push(`<label>${esc(t('workshop'))}</label><select name="workshop_site" required><option value="">${esc(t('rws_choose'))}</option>${S.meta.workshops.filter((w) => w.code !== c.workshop_site).map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>${wsSiteHint}${rwsDrop(c)}`); break; // Backlog 1050: Hinweis auf die Werkstatt am Fahrzeugstandort (versetzter Lkw)
     // Meldung am falschen Fahrzeug (Backlog 254): Auswahl wird nachgeladen (aktive Fahrzeuge ohne das bisherige)
     case 'correct_vehicle': f.push(`<p class="small muted" id="cvhint">${esc(t(c.origin === 'kontrolle' && c.check_item ? 'cv_hint_insp' : 'cv_hint'))}${c.safety_lock ? ' ' + esc(t('cv_hint_lock')) : ''}</p><label for="cvveh">${esc(t('cv_new_vehicle'))}</label><select id="cvveh" name="vehicle_id" required><option value="">${esc(t('loading'))}</option></select>`); break;
     case 'reject': {

@@ -1889,9 +1889,9 @@ Object.assign(STRINGS.de, { veh_site_ws_open: 'Offene Werkstattaufträge, die be
 Object.assign(STRINGS.uk, { veh_site_ws_open: 'Відкриті замовлення, що залишаються в попередній майстерні ({list}): {n}', veh_site_planned: 'Заплановані огляди, які залишаються без змін: {n} – за потреби заплануйте заново на новій локації.', veh_site_coupled: 'Зчеплений транспорт {p} ще закріплений за локацією {site} – за потреби змініть і там.' });
 Object.assign(STRINGS.en, { veh_site_ws_open: 'Open workshop orders that stay with the previous workshop ({list}): {n}', veh_site_planned: 'Planned inspections that remain unchanged: {n} – reschedule at the new site if needed.', veh_site_coupled: 'Coupled vehicle {p} is still assigned to site {site} – change it there as well if needed.' });
 // Backlog 1047 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Freigabe-Formular – Vorschlag weicht von der Werkstatt am Fahrzeugstandort ab
-Object.assign(STRINGS.de, { apr_ws_site_hint: 'Das Fahrzeug steht laut Stammdaten am Standort {site} (Werkstatt {ws}) – bitte die Werkstatt prüfen.' });
-Object.assign(STRINGS.uk, { apr_ws_site_hint: 'За основними даними транспортний засіб знаходиться на локації {site} (майстерня {ws}) – перевірте, будь ласка, майстерню.' });
-Object.assign(STRINGS.en, { apr_ws_site_hint: 'According to the master data the vehicle is at site {site} (workshop {ws}) – please check the workshop.' });
+Object.assign(STRINGS.de, { apr_ws_site_hint: 'Das Fahrzeug steht laut Stammdaten am Standort {site} ({ws}) – bitte die Werkstatt prüfen.' });
+Object.assign(STRINGS.uk, { apr_ws_site_hint: 'За основними даними транспортний засіб знаходиться на локації {site} ({ws}) – перевірте, будь ласка, майстерню.' });
+Object.assign(STRINGS.en, { apr_ws_site_hint: 'According to the master data the vehicle is at site {site} ({ws}) – please check the workshop.' });
 // Backlog 1049: Kostenbericht – Standortwechsel ab Zeitraumbeginn (Kosten zählen beim heutigen Standort)
 Object.assign(STRINGS.de, { cost_site_moved: 'Standort gewechselt', cost_site_moved_hint: 'Standort gewechselt am {list}. Alle Kosten des Zeitraums zählen beim heutigen Standort laut Fahrzeugstamm.' });
 Object.assign(STRINGS.uk, { cost_site_moved: 'Локацію змінено', cost_site_moved_hint: 'Локацію змінено {list}. Усі витрати за період зараховуються до поточної локації за основними даними.' });

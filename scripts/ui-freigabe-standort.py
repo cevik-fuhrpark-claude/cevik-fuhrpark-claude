@@ -2,6 +2,7 @@
 # - Meldung ohne Werkstattvorschlag: Werkstatt zum Fahrzeugstandort ist vorgewählt (nicht still die erste der Liste)
 # - Fahrzeug an einem Standort ohne passende Werkstatt: „–“ vorgewählt, Pflichtauswahl (Speichern ohne Wahl nicht möglich)
 # - Vorschlag weicht von der Werkstatt am Fahrzeugstandort ab: Hinweis (DE/UK/EN), kein waagrechtes Scrollen (390/820/1280 px)
+# - Backlog 1050: „Werkstatt wechseln“ zeigt denselben Hinweis, wenn der Auftrag nicht bei der Werkstatt am Fahrzeugstandort liegt
 # Voraussetzung: frischer lokaler Entwicklungsserver (sh scripts/restart-dev.sh). Aufruf: python3 scripts/ui-freigabe-standort.py [Screenshot-Ordner]
 import sys, os
 from playwright.sync_api import sync_playwright
@@ -83,6 +84,23 @@ with sync_playwright() as p:
                 h.scroll_into_view_if_needed()
                 pg.screenshot(path=os.path.join(OUT, f'freigabe_standort_{lang}_{w}.png'))
         pg.set_viewport_size({'width': 390, 'height': 844})
+    # Backlog 1050: „Werkstatt wechseln“ bei einem freigegebenen Auftrag, der bei einer anderen Werkstatt als der am Fahrzeugstandort liegt → Hinweis
+    api('PATCH', '/api/me', {'language': 'de'})
+    v = api('GET', f'/api/cases/{c_other}')['d']['case']['version']
+    r = api('POST', f'/api/cases/{c_other}/commands', {'action': 'approve_repair', 'command_id': os.urandom(8).hex(), 'expected_version': v, 'payload': {'workshop_site': first}, 'note': 'UI-Test'})
+    if r['s'] != 200:
+        fail(f'Freigabe per API: {r}')
+    pg.goto(f'{B}/#/cases/{c_other}'); pg.reload()
+    pg.wait_for_selector('[data-act="reassign_workshop"]', timeout=8000)
+    pg.locator('[data-act="reassign_workshop"]').first.click()
+    pg.wait_for_selector('#af select[name="workshop_site"]')
+    if pg.locator('#af select[name="workshop_site"]').input_value() != '':
+        fail('Werkstatt wechseln: keine Vorwahl erwartet')
+    h = pg.locator('#af [data-apwshint]')
+    if not h.count() or HINT['de'] not in h.text_content():
+        fail('Werkstatt wechseln: Hinweis zum Fahrzeugstandort fehlt')
+    if OUT:
+        h.scroll_into_view_if_needed(); pg.screenshot(path=os.path.join(OUT, 'werkstatt_wechseln_standort_de_390.png'))
     if errs:
         fail('JS-Fehler: ' + '; '.join(errs[:3]))
     print('OK: Freigabe-Formular – Werkstatt am Fahrzeugstandort vorgewählt, „–“ ohne passende Werkstatt (Pflicht), Hinweis bei abweichendem Vorschlag (DE/UK/EN, 390/820/1280 px)')
