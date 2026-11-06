@@ -18044,7 +18044,7 @@ await test('Urlaubsvertretung / Monatsplanung (Teilagenten 23.10.): Werkstattpla
   for (const l of ['de', 'uk', 'en']) for (const k of ['dec_recent', 'dec_recent_hint', 'dec_decided']) ok(STRINGS[l][k], `${l} ${k}`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('${[7, 14, 30, 60].map((n) =>'), 'Plan bis 60 Tage');
-  ok((app.match(/subs\(vsTag\(i\),/g) || []).length === 3, 'Standort in Auftrag, Prüftermin, fällig ohne Termin');
+  ok((app.match(/subs\((?:prioTag\(i\), drvTag\(i\), )?vsTag\(i\),/g) || []).length === 3, 'Standort in Auftrag, Prüftermin, fällig ohne Termin'); // Backlog 1093: Auftragszeile mit Dringlichkeit/Fahrbereitschaft davor
   ok(app.includes("werkstattplan_${envFn()}_${bDate()}${site ? '_' + fnPart(site) : ''}${r.vehicle_site ? '_' + fnPart(r.vehicle_site) : ''}.ics") && app.includes("fuhrpark-prueftermine_${ov.today}${ov.site ? '_' + fnPart(ov.site) : ''}_${f}${dueBy ? '_bis-' + dueBy : ''}${mKind ? '_' + fnPart(mKind) : ''}.ics"), 'ICS-Dateinamen mit Standort');
   ok(app.includes('id="decdone"') && app.includes("!['offen', 'gesehen'].includes(m.decision_status) && m.decided_at"), 'Abschnitt zuletzt entschieden');
 });
@@ -35646,6 +35646,34 @@ await test('Backlog 1091/1092 (Blickwinkel „Fahrer kehrt nach drei Wochen Urla
   for (const l of ['de', 'uk', 'en']) for (const k of ['drv_assigned_since', 'drv_vchange_title', 'drv_vchange_new', 'drv_vchange_gone', 'drv_vchange_hint', 'drv_vchange_ok']) ok(STRINGS[l][k], `${l}.${k}`);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].drv_vchange_hint.includes('{c}'), l);
   ok(app.includes('<dd data-assignedsince>${fmtD(v.valid_from)}</dd>'), '„Zugeordnet seit“ in der Karte');
+});
+
+await test('Backlog 1093/1094 (Blickwinkel „Werkstatt druckt den Wochenplan fürs Schwarze Brett“): Werkstattplan nennt Dringlichkeit, Sperre und Fahrbereitschaft (nicht/eingeschränkt fahrbereit, abgeschleppt) als Text statt nur über Farbe', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const mk = async (extra, plan) => { const id = await newCase(extra); eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200); return id; };
+  const nf = await mk({ priority: 'mittel', driveability: 'nicht_fahrbereit' });
+  const ei = await mk({ priority: 'niedrig', driveability: 'eingeschraenkt' });
+  const tw = await mk({ priority: 'mittel', driveability: 'nicht_fahrbereit' });
+  eq((await cmd(U.fleet, tw, 'set_vehicle_location', { vehicle_location: 'Hof Abschlepp Test', tow_service: 'Abschlepp Test GmbH', towed_on: BERLIN_TODAY })).status, 200);
+  const p = (await U.ws.get('/api/workshop/plan')).data; const it = (id) => p.unplanned.find((i) => i.id === id);
+  eq(it(nf).reported_driveability, 'nicht_fahrbereit'); eq(it(ei).reported_driveability, 'eingeschraenkt');
+  eq(it(tw).tow_service, 'Abschlepp Test GmbH', 'Abschleppdienst im Plan'); eq(it(nf).tow_service, null);
+  // Oberfläche: Zeilen-Helfer aus viewPlan mit den Plan-Einträgen ausführen
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.match(/  const prioTag = [^\n]*\n  const drvTag = [^\n]*\n/); ok(src, 'prioTag/drvTag gefunden');
+  ok(app.includes('${subs(prioTag(i), drvTag(i), vsTag(i),'), 'in der Auftragszeile verwendet');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const f = new Function('t', 'esc', src[0] + 'return { prioTag, drvTag };')((k) => STRINGS[l][k], (x) => String(x));
+    ok(f.prioTag(it(nf)).includes(STRINGS[l].prio_mittel), `${l}: Dringlichkeit`);
+    ok(f.drvTag(it(nf)).includes(STRINGS[l].cl_not_drivable), `${l}: nicht fahrbereit`);
+    ok(f.drvTag(it(ei)).includes(STRINGS[l].dispo_upcoming_limited), `${l}: eingeschränkt`);
+    ok(f.drvTag(it(tw)).includes(STRINGS[l].vl_towed_chip) && !f.drvTag(it(tw)).includes(STRINGS[l].cl_not_drivable), `${l}: abgeschleppt statt nicht fahrbereit`);
+    ok(f.prioTag({ priority: 'kritisch', safety_lock: true }).includes(STRINGS[l].locked), `${l}: Gesperrt als Text`);
+    eq(f.drvTag({ ...it(nf), status: 'in_reparatur' }), '', `${l}: nach Reparaturbeginn ohne Fahrbereitschaft`);
+    eq(f.drvTag({ ...it(ei), safety_lock: true }), '', `${l}: gesperrt – kein „eingeschränkt fahrbereit“`);
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
