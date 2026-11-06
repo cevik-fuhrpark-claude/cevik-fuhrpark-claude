@@ -35035,6 +35035,34 @@ await test('Backlog 1060 (gleicher Blickwinkel, Auslesungs-Verlauf): Verlauf der
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-auslesungen-verlauf-standort.py'), 'UI-Skript in pruefen.sh');
 });
 
+await test('Backlog 1061 (gleicher Blickwinkel, Fahrer-Nachweise): Nachweise und Führerscheinkontrollen für einen Zeitraum folgen dem Standortfilter der Fahrerliste (Fahrerakte, Schreibweise egal, CSV beider Teile mit Standort im Dateinamen, Protokoll); Fahrer ohne Standort gezählt', async () => {
+  const e = makeEnv(); const own = new Client(worker, e, 'owner');
+  const s0 = await own.post('/api/setup', { setup_code: 'test-setup-code-123', username: 'ds.inhaber', display_name: 'DS' });
+  await own.post('/api/invite/accept', { token: s0.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const mk = async (name, site) => (await own.post('/api/drivers', { display_name: name, personnel_no: name.slice(0, 3), ...(site ? { site } : {}) })).data.id;
+  const A = await mk('Ada Dortmund', 'Dortmund'); const B = await mk('Bea Bayern', ' BAYERN'); const N = await mk('Nora Ohne', null);
+  for (const id of [A, B, N]) {
+    eq((await own.post(`/api/drivers/${id}/documents`, { evidence: 'Kopie', kind: 'fuehrerschein', issued_on: day(-100), valid_until: day(500) })).status, 201);
+    eq((await own.post(`/api/drivers/${id}/license-checks`, { checked_on: day(-10), result: 'in_ordnung' })).status, 201);
+  }
+  let r = (await own.get('/api/drivers/records')).data; eq(r.documents.length, 3); eq(r.checks.length, 3); eq(r.site, null); eq(r.no_site_hidden, 0);
+  ok(r.site_options.includes('Dortmund') && r.site_options.includes('ohne'), JSON.stringify(r.site_options));
+  r = (await own.get('/api/drivers/records?site=bayern')).data;
+  eq(r.documents.map((x) => x.display_name).join(), 'Bea Bayern'); eq(r.checks.map((x) => x.display_name).join(), 'Bea Bayern'); eq(r.no_site_hidden, 1);
+  r = (await own.get('/api/drivers/records?site=ohne')).data; eq(r.documents.map((x) => x.display_name).join(), 'Nora Ohne'); eq(r.no_site_hidden, 0);
+  eq((await own.get('/api/drivers/records?site=%20')).data.documents.length, 3, 'nur Leerzeichen = keine Auswahl');
+  for (const part of ['documents', 'checks']) {
+    const c = await own.req('GET', `/api/drivers/records?site=Dortmund&format=csv&part=${part}`); eq(c.status, 200);
+    ok(/filename="fuhrpark-fahrer-(nachweise|kontrollen)_[^"]*dortmund[^"]*\.csv"/i.test(c.headers.get('content-disposition')), c.headers.get('content-disposition'));
+    const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(c.data).replace(/^﻿/, '').trim().split('\r\n'); eq(lines.length, 2, part); ok(lines[1].startsWith('Ada Dortmund;'), lines[1]);
+  }
+  const au = e.DB.db.prepare("SELECT detail FROM audit_log WHERE action='reports.drivers.records_export' ORDER BY created_at DESC LIMIT 1").get(); eq(JSON.parse(au.detail).site, 'Dortmund');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const drs = vsDef('drvSite') || '';") && app.includes("drs && 'site=' + encodeURIComponent(drs)") && app.includes("siteSelect('drsite', ''") && app.includes('S.drvSite = drse.value; viewDriverRecords();'), 'App: Auswahl der Fahrerliste, eigene Auswahl');
+  ok(app.includes("${r.site ? '&site=' + encodeURIComponent(r.site) : ''}&format=csv&part=${part}`)") && app.includes('data-drnositehidden'), 'App: CSV mit Standort, Hinweis');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

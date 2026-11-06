@@ -6,6 +6,7 @@ import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, requestKey,
 import { audit } from './auth.js';
 import { tachoStatus, warnDaysOf, TACHO_RULE, pnoKey, normName, periodOf } from './tacho.js';
 import { SETTING_DEFAULTS } from './settings.js';
+import { siteSelection, siteKey } from './reports.js';
 
 export const DOC_KINDS = ['fuehrerschein', 'fahrerkarte', 'code95', 'unterweisung', 'sonstiges'];
 export const CHECK_RESULTS = ['in_ordnung', 'maengel', 'nicht_vorgelegt'];
@@ -585,9 +586,13 @@ export async function driverRecords(env, user, envName, query = {}, settings = n
     FROM driver_license_checks c JOIN drivers d ON d.id=c.driver_id LEFT JOIN users u ON u.id=c.checked_by
     WHERE d.environment=? AND c.checked_on >= ? AND c.checked_on <= ? ORDER BY c.checked_on, d.display_name LIMIT ${RECORDS_MAX + 1}`).bind(envName, from, to).all()).results;
   const checksTrunc = checks.length > RECORDS_MAX; if (checksTrunc) checks.length = RECORDS_MAX;
+  // Backlog 1061: Standort der Fahrerakte wie Fahrerliste/Auslesungen (Schreibweise egal, 'ohne' = ohne Standort); Fahrer ohne Standort, die der Filter ausblendet, gezählt
+  const sel = siteSelection((await env.DB.prepare('SELECT site FROM drivers WHERE environment=?').bind(envName).all()).results, query.site);
+  const noSiteHidden = sel.site && sel.site !== 'ohne' ? new Set([...documents, ...checks].filter((x) => siteKey(x.site) === 'ohne').map((x) => x.driver_id)).size : 0;
+  const docsF = sel.site ? documents.filter((x) => sel.match(x.site)) : documents; const checksF = sel.site ? checks.filter((x) => sel.match(x.site)) : checks;
   const sortName = (a, b) => byName(a, b);
-  documents.sort((a, b) => sortName(a, b) || String(a.kind).localeCompare(String(b.kind)) || String(a.issued_on || a.entry_day).localeCompare(String(b.issued_on || b.entry_day)));
-  return { from, to, today, documents, checks: checks.map((x) => ({ ...x, active: !!x.active })), truncated: docsTrunc || checksTrunc, max: RECORDS_MAX };
+  docsF.sort((a, b) => sortName(a, b) || String(a.kind).localeCompare(String(b.kind)) || String(a.issued_on || a.entry_day).localeCompare(String(b.issued_on || b.entry_day)));
+  return { from, to, today, site: sel.site, site_options: sel.options, no_site_hidden: noSiteHidden, documents: docsF, checks: checksF.map((x) => ({ ...x, active: !!x.active })), truncated: docsTrunc || checksTrunc, max: RECORDS_MAX };
 }
 
 const DOC_STATE_DE = { aktuell: 'aktuell', abgelaufen: 'abgelaufen', abgeloest: 'abgelöst', storniert: 'storniert' };

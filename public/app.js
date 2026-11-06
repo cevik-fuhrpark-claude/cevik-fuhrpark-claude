@@ -6396,9 +6396,11 @@ const DST = { ok: 'ok', hinweis: 'mittel', kritisch: 'kritisch', laeuft_ab: 'mit
 async function viewDriverRecords() {
   if (!isMgr()) return render(`<p>${esc(t('err_forbidden'))}</p>`);
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
-  const qs = () => { const f = ss('cfp_dr_from'); const to = ss('cfp_dr_to'); return [f && 'from=' + encodeURIComponent(f), to && 'to=' + encodeURIComponent(to)].filter(Boolean).join('&'); };
+  // Backlog 1061: Standort wie in der Fahrerliste (gemeinsame Auswahl `drvSite`) – Listen, Ausdruck und CSV
+  const drs = vsDef('drvSite') || '';
+  const qs = () => { const f = ss('cfp_dr_from'); const to = ss('cfp_dr_to'); return [f && 'from=' + encodeURIComponent(f), to && 'to=' + encodeURIComponent(to), drs && 'site=' + encodeURIComponent(drs)].filter(Boolean).join('&'); };
   let r;
-  try { r = await api('GET', '/api/drivers/records' + (qs() ? '?' + qs() : '')); } catch (err) { ss('cfp_dr_from', ''); ss('cfp_dr_to', ''); toast(err.message, true); r = await api('GET', '/api/drivers/records'); }
+  try { r = await api('GET', '/api/drivers/records' + (qs() ? '?' + qs() : '')); } catch (err) { ss('cfp_dr_from', ''); ss('cfp_dr_to', ''); toast(err.message, true); r = await api('GET', '/api/drivers/records' + (drs ? '?site=' + encodeURIComponent(drs) : '')); }
   const today = bDate();
   const ST = { aktuell: 'ok', abgelaufen: 'kritisch', abgeloest: '', storniert: '' };
   const who = (x) => `<a href="#/drivers/${esc(x.driver_id)}">${esc(x.display_name)}</a>${x.personnel_no ? `<div class="small muted">${noTr(x.personnel_no)}</div>` : ''}${x.active ? '' : `<div><span class="chip">${esc(t('th_inactive'))}</span></div>`}`;
@@ -6413,15 +6415,17 @@ async function viewDriverRecords() {
       <td data-label="${esc(t('dr_by'))}">${esc(x.checked_by_name || '–')}</td></tr>`).join('')}</tbody></table></div>` : `<p class="muted">${esc(t('dr_none_checks'))}</p>`;
   render(`<p class="noprint"><a class="backlink" href="#/drivers">‹ ${esc(t('back'))}</a></p><h1>${esc(t('dr_title'))}</h1>
     <p class="small muted">${esc(t('dr_hint'))}</p>
-    <p class="print-only small">${printStamp()} · ${esc(fmtD(r.from))} – ${esc(fmtD(r.to))} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    <p class="print-only small">${printStamp()} · ${esc(fmtD(r.from))} – ${esc(fmtD(r.to))}${r.site ? ' · ' + esc(t('site')) + ': ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('drsite', '', r.site_options, r.site, t('site'), t('filter_all'))}</div></div>` : ''}${r.no_site_hidden ? `<p class="small muted noprint" data-drnositehidden>${esc(tn('drv_nosite_hidden', r.no_site_hidden))}</p>` : ''}
     <form id="drf" class="panel noprint"><div class="grid2"><div><label for="drfrom">${esc(t('from'))}</label><input type="date" id="drfrom" value="${esc(r.from)}" max="${esc(today)}"></div><div><label for="drto">${esc(t('to'))}</label><input type="date" id="drto" value="${esc(r.to)}" max="${esc(today)}"></div></div>
       <div class="actions"><button class="btn">${esc(t('show'))}</button><button type="button" class="btn secondary" id="drcsvd">${esc(t('dr_csv_docs'))}</button><button type="button" class="btn secondary" id="drcsvc">${esc(t('dr_csv_checks'))}</button><button type="button" class="btn secondary" id="drprt">${esc(t('print'))}</button></div></form>
     ${r.truncated ? `<p class="panel warn" id="drtrunc">${esc(t('dr_truncated').replaceAll('{n}', r.max))}</p>` : ''}
     <h2>${esc(t('dr_docs'))} <span class="small muted">${r.documents.length}</span></h2>${docs}
     <h2>${esc(t('dr_checks'))} <span class="small muted">${r.checks.length}</span></h2>${checks}`, 'more');
   $('#drf').onsubmit = (e) => { e.preventDefault(); ss('cfp_dr_from', $('#drfrom').value); ss('cfp_dr_to', $('#drto').value); viewDriverRecords(); };
+  const drse = $('#drsite'); if (drse) drse.onchange = () => { S.drvSite = drse.value; viewDriverRecords(); };
   $('#drprt').onclick = () => window.print();
-  const csv = (part, name) => async () => { try { download(await api('GET', `/api/drivers/records?from=${encodeURIComponent(r.from)}&to=${encodeURIComponent(r.to)}&format=csv&part=${part}`), `fuhrpark-fahrer-${name}_${envFn()}_${r.from}_${r.to}.csv`); } catch (err) { toast(err.message, true); } };
+  const csv = (part, name) => async () => { try { download(await api('GET', `/api/drivers/records?from=${encodeURIComponent(r.from)}&to=${encodeURIComponent(r.to)}${r.site ? '&site=' + encodeURIComponent(r.site) : ''}&format=csv&part=${part}`), `fuhrpark-fahrer-${name}_${envFn()}_${r.from}_${r.to}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
   $('#drcsvd').onclick = csv('documents', 'nachweise'); $('#drcsvc').onclick = csv('checks', 'kontrollen');
 }
 

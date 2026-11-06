@@ -539,7 +539,7 @@ UI-Freigabe-Formular: Werkstatt zum Fahrzeugstandort vorgewählt, „–“ ohne
 UI-Freigabe bei geschlossener Vorschlags-Werkstatt: Werkstatt am Fahrzeugstandort bzw. „–“, Hinweis „geschlossen“ (DE/UK/EN; Backlog 1051)|ui-werkstatt-geschlossen.py|/tmp/cfp-werkstatt-geschlossen.log
 UI-Folgeauftrag aus Restarbeit eines gesperrten Auftrags: Hinweis „Sperre bleibt“ (DE/UK/EN; Backlog 1057)|ui-folgeauftrag-sperre.py|/tmp/cfp-folgeauftrag-sperre.log
 UI-Nachweisliste „Durchgeführte Prüfungen“ mit Standortfilter der Seite (DE/UK/EN; Backlog 1059)|ui-nachweisliste-standort.py|/tmp/cfp-nachweisliste-standort.log
-UI-Auslesungs-Verlauf mit Standortfilter der Seite „Auslesungen“ (DE/UK/EN; Backlog 1060)|ui-auslesungen-verlauf-standort.py|/tmp/cfp-auslesungen-verlauf-standort.log
+UI-Auslesungs-Verlauf und Fahrer-Nachweise mit Standortfilter der Seiten „Auslesungen“/„Fahrer“ (DE/UK/EN; Backlog 1060/1061)|ui-auslesungen-verlauf-standort.py|/tmp/cfp-auslesungen-verlauf-standort.log
 UI-Kostenbericht: Chip „Standort gewechselt“ und Hinweis mit Datum/alt → neu am versetzten Lkw (DE/UK/EN; Backlog 1049)|ui-kosten-standortwechsel.py|/tmp/cfp-kosten-standortwechsel.log
 '
 N=0

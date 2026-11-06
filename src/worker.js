@@ -623,8 +623,8 @@ async function handleApi(request, env, ctx, url) {
     const r = await drivers.driverRecords(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') !== 'csv') return json(r);
     const part = url.searchParams.get('part') === 'checks' ? 'checks' : 'documents';
-    await auth.audit(env, user.id, 'reports.drivers.records_export', null, { environment: envName, part, from: r.from, to: r.to, rows: part === 'checks' ? r.checks.length : r.documents.length, ...(r.truncated ? { truncated: true } : {}) });
-    return new Response(drivers.driverRecordsCsv(r, part, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-${part === 'checks' ? 'kontrollen' : 'nachweise'}_${envName}_${r.from}_${r.to}.csv"`, ...(r.truncated ? { 'x-cfp-truncated': String(r.max) } : {}) } });
+    await auth.audit(env, user.id, 'reports.drivers.records_export', null, { environment: envName, part, from: r.from, to: r.to, ...(r.site ? { site: r.site } : {}), rows: part === 'checks' ? r.checks.length : r.documents.length, ...(r.truncated ? { truncated: true } : {}) });
+    return new Response(drivers.driverRecordsCsv(r, part, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-${part === 'checks' ? 'kontrollen' : 'nachweise'}_${envName}_${r.from}_${r.to}${siteSuffix(r.site)}.csv"`, ...(r.truncated ? { 'x-cfp-truncated': String(r.max) } : {}) } });
   }
   if ((mm = path.match(/^\/api\/drivers\/([\w-]+)$/)) && m === 'GET') {
     const dd = await drivers.driverDetail(env, user, envName, mm[1]);

@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (06.11.2026, Backlog 1060, Blickwinkel „Leitung Bayern zieht vor der Betriebskontrolle den Auslesungs-Verlauf des eigenen Standorts“):
 # Auslesungen → Standort Bayern → „Verlauf“ zeigt nur Fahrer/Lkw dieses Standorts (vorher ganze Flotte), Auswahl auch auf der Verlaufsseite,
-# Hinweis auf ausgeblendete Fahrer ohne Standort. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Hinweis auf ausgeblendete Fahrer ohne Standort; Backlog 1061: Fahrer-Nachweise übernehmen den Standort der Fahrerliste. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server (scripts/dev-server.mjs). Screenshots: CFP_SHOTS=<Ordner>.
 import os, datetime
 from playwright.sync_api import sync_playwright
@@ -28,7 +28,9 @@ with sync_playwright() as p:
         names[site] = f'AV Fahrer {site} {pid}'
         r = api('POST', '/api/drivers', {'display_name': names[site], 'personnel_no': f'AV-{pid}-{n}', 'site': site})
         check(r['s'] in (200, 201), f'Fahrer {site} {r["s"]}')
-        if r['s'] in (200, 201): api('POST', '/api/tacho/downloads', {'kind': 'fahrerkarte', 'driver_id': r['d']['id'], 'downloaded_on': d0, 'evidence': 'UI-Test'})
+        if r['s'] in (200, 201):
+            api('POST', '/api/tacho/downloads', {'kind': 'fahrerkarte', 'driver_id': r['d']['id'], 'downloaded_on': d0, 'evidence': 'UI-Test'})
+            api('POST', f"/api/drivers/{r['d']['id']}/license-checks", {'checked_on': d0, 'result': 'in_ordnung'})
     for lang in ['de', 'uk', 'en']:
         api('PATCH', '/api/me', {'language': lang})
         for w, h in [(390, 844), (820, 1180), (1366, 900)]:
@@ -37,7 +39,8 @@ with sync_playwright() as p:
             m.goto(B + '/#/tacho'); m.reload(); m.wait_for_selector('#tsite', timeout=15000)
             opt = m.evaluate("() => [...document.querySelectorAll('#tsite option')].map((o) => o.value).find((v) => v.toLowerCase() === 'bayern')")
             check(bool(opt), f'{lang} {w}px: Standort Bayern wählbar')
-            m.select_option('#tsite', opt); m.wait_for_function("() => document.querySelector('#tsite') && document.querySelector('#tsite').value.toLowerCase() === 'bayern'", timeout=15000)
+            m.evaluate("() => { document.querySelector('#tsite').dataset.alt = '1'; }")
+            m.select_option('#tsite', opt); m.wait_for_function("() => { const x = document.querySelector('#tsite'); return x && !x.dataset.alt && x.value.toLowerCase() === 'bayern'; }", timeout=15000)
             m.click('#thlink'); m.wait_for_selector('#thf', timeout=15000)
             m.wait_for_selector('#thsite', timeout=15000)
             body = m.inner_text('#app')
@@ -50,6 +53,21 @@ with sync_playwright() as p:
             check(m.evaluate(noscroll), f'{lang} {w}px: ohne Querscrollen')
             check(not errs, f'{lang} {w}px: keine Skriptfehler {errs[:1]}')
             if SHOTS: m.screenshot(path=f'{SHOTS}/auslesung_verlauf_standort_{lang}_{w}.png')
+            # Backlog 1061: Fahrer-Nachweise übernehmen den Standort der Fahrerliste
+            m.goto(B + '/#/drivers'); m.wait_for_selector('#dsite', timeout=15000)
+            # alte Auswahl markieren und auf die neu gezeichnete warten (sonst überholt der Seitenwechsel das Neuzeichnen)
+            m.evaluate("() => { document.querySelector('#dsite').dataset.alt = '1'; }")
+            m.select_option('#dsite', opt); m.wait_for_function("() => { const x = document.querySelector('#dsite'); return x && !x.dataset.alt && x.value.toLowerCase() === 'bayern'; }", timeout=15000)
+            m.goto(B + '/#/drivers/records'); m.wait_for_selector('#drf', timeout=15000)
+            try: m.wait_for_selector('#drsite', timeout=15000)
+            except Exception:
+                print(m.inner_text('#app')[:800]); raise
+            body = m.inner_text('#app')
+            check(m.evaluate("() => document.querySelector('#drsite').value.toLowerCase()") == 'bayern', f'{lang} {w}px: Fahrer-Nachweise übernehmen Standort Bayern')
+            check(names['Bayern'] in body and names['Dortmund'] not in body, f'{lang} {w}px: Fahrer-Nachweise nur Bayern')
+            check(m.evaluate(noscroll), f'{lang} {w}px: Fahrer-Nachweise ohne Querscrollen')
+            check(not errs, f'{lang} {w}px: Fahrer-Nachweise keine Skriptfehler {errs[:1]}')
+            if SHOTS and w == 390: m.screenshot(path=f'{SHOTS}/fahrer_nachweise_standort_{lang}_{w}.png')
             ctx.close()
     api('PATCH', '/api/me', {'language': 'de'})
     br.close()
