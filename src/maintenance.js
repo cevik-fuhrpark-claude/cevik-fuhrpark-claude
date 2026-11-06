@@ -461,7 +461,7 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
 
   // km_drop: letzter km-Rücksprung je Fahrzeug (km-Grundlage einer Durchführung vor dem Tachotausch bleibt „ungeklärt“, kmBasisForDone)
   // last_km (Backlog 843): letzter erfasster km-Stand – Vorschau nennt „Ziffern prüfen“, wenn „km bei letzter Prüfung“ mehr Stellen hat (gleiche Abfrage)
-  const vehicles = (await env.DB.prepare(`SELECT v.id, v.plate, v.eval_excluded, v.created_at, ${KM_DROP_SQL('v.id')} AS km_drop,
+  const vehicles = (await env.DB.prepare(`SELECT v.id, v.plate, v.eval_excluded, v.created_at, v.first_registration, ${KM_DROP_SQL('v.id')} AS km_drop,
     (SELECT o.km FROM odometer_readings o WHERE o.vehicle_id=v.id ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS last_km FROM vehicles v WHERE v.active=1`).all()).results;
   const offOf = await inactiveIndex(env); // außer Betrieb genommene Fahrzeuge: eigener Grund statt „nicht im Fahrzeugstamm“ (20.10.2026)
   const byId = new Map(vehicles.map((v) => [v.id, v]));
@@ -512,6 +512,9 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
     if (last.month_only) return skip('Letzte Prüfung bitte taggenau (JJJJ-MM-TT oder TT.MM.JJJJ)');
     // wie Einzelerfassung/„erledigt“: keine Durchführung in der Zukunft (sonst verdeckte eine erfundene Folgefrist einen fälligen Termin, 17.10.2026)
     if (last.date && last.date > berlinDate()) return skip('Letzte Prüfung liegt in der Zukunft');
+    // Backlog 1089: Plausibilität wie Einzelerfassung/„erledigt“ – nicht vor 1950, HU/SP nicht vor der Erstzulassung (Monat)
+    if (last.date && last.date < '1950-01-01') return skip('Letzte Prüfung vor 1950 ist nicht plausibel');
+    if (last.date && (kind === 'HU' || kind === 'SP') && v.first_registration && last.date.slice(0, 7) < String(v.first_registration).slice(0, 7)) return skip('Letzte Prüfung liegt vor der Erstzulassung des Fahrzeugs');
     if (matchedBy === 'Kennzeichen' && platePassedOn(offOf.plates, v, last.date)) return skip(PLATE_PASSED_ON_SKIP);
     if (matchedBy === 'Kennzeichen' && plateFormerOther(offOf.former, v, last.date)) return skip(PLATE_FORMER_SKIP);
     let interval = null;

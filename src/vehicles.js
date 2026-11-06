@@ -1042,6 +1042,13 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   // wie beim Import (17.10.2026): nächster Termin nicht vor der letzten Durchführung
   if (nextDue && lastDate && nextDue < lastDate) throw bad('validation', 'Nächster Termin liegt vor der letzten Durchführung.');
   if (lastDate && lastDate > berlinDate()) throw bad('validation', 'Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
+  // Backlog 1089 (Blickwinkel „Neufahrzeug kommt in den Bestand“): Plausibilität wie „erledigt“ (Backlog 619) – eine vertippte letzte HU
+  // vor der Erstzulassung legte sofort eine Durchführung an und machte den nagelneuen Lkw „bald fällig“/„überfällig“
+  if (lastDate && lastDate < '1950-01-01') throw bad('validation', 'Durchführungsdatum vor 1950 ist nicht plausibel.');
+  if (husp && lastDate) {
+    const fr = (await env.DB.prepare('SELECT first_registration FROM vehicles WHERE id=?').bind(vehicleId).first() || {}).first_registration;
+    if (fr && lastDate.slice(0, 7) < String(fr).slice(0, 7)) throw bad('validation', 'Durchführungsdatum liegt vor der Erstzulassung des Fahrzeugs.');
+  }
   const id = uuid();
   const now = nowIso();
   // Je Fahrzeug höchstens ein Prüftermin derselben Art (außer Rückruf/Sonstiges): ein zweiter HU-/UVV-Eintrag ergab zwei Fälligkeiten,
@@ -1322,6 +1329,12 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   if (ez && (!isCalendarDate(ez) || ez > berlinDate())) throw bad('validation', 'Erstzulassung im Format JJJJ-MM-TT, nicht in der Zukunft.');
   // Untergrenze wie Baujahr (23.10.2026: 1900-01-01 wurde angenommen und trieb die SP-Prognose)
   if (ez && ez < '1950-01-01') throw bad('validation', 'Erstzulassung vor 1950 ist nicht plausibel.');
+  // Backlog 1090 (Gegenrichtung zu Backlog 619/1089): neue/geänderte Erstzulassung nach einer schon erfassten HU/SP – typisch Feld I
+  // („Datum dieser Zulassung“) statt Feld B; die fällige SP wurde sonst still zu „erste SP künftig“ (Übersicht, Agent, Lückenliste)
+  if (ez && ez !== v.first_registration) {
+    const first = (await env.DB.prepare(`SELECT MIN(done_date) AS d FROM maintenance_events WHERE vehicle_id=? AND kind IN ('HU','SP')`).bind(vehicleId).first() || {}).d;
+    if (first && String(first).slice(0, 7) < ez.slice(0, 7)) throw bad('validation', 'Erstzulassung liegt nach einer bereits erfassten HU/SP – bitte Feld B (Erstzulassung) der Zulassungsbescheinigung prüfen.');
+  }
   // gelesener Stand (Formular sendet `expected_updated_at`): zwischenzeitliche Änderung → 409 statt still überschreiben (21.10.2026, Backlog 105)
   const expected = body.expected_updated_at ? str(body.expected_updated_at, { max: 40, field: 'Stand' }) : null;
   const up = await env.DB.prepare('UPDATE vehicles SET zgm_class=?, zgm_kg=?, first_registration=?, spec_source=?, updated_at=? WHERE id=? AND (? IS NULL OR updated_at=?)').bind(cls, kg, ez, source, nowIso(), vehicleId, expected, expected).run();

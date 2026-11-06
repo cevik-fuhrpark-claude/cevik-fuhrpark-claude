@@ -35585,6 +35585,35 @@ await test('Backlog 1087/1088 (Blickwinkel „Werkstatt-Tablet fällt aus, Mecha
   ok(idle.includes("await api('POST', '/api/logout', { push_endpoint: ep })"), 'Server erfährt den Endpunkt, wenn Netz da ist');
 });
 
+await test('Backlog 1089/1090 (Blickwinkel „Neufahrzeug kommt in den Bestand“): „Prüftermin anlegen“ und Import weisen eine letzte HU/SP vor der Erstzulassung bzw. vor 1950 ab; Erstzulassung nach erfasster HU/SP abgewiesen', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const V1 = 'VIN:WMA15SZZ2HM722774';
+  const { translateValidation } = await import('../public/i18n.js');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', first_registration: '2024-06-10', spec_source: 'Test: Fahrzeugschein B' })).status, 200);
+  const noRule = (k) => !db.prepare('SELECT 1 FROM maintenance_rules WHERE vehicle_id=? AND kind=?').get(V1, k);
+  // 1089: Einzelerfassung
+  const pre = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', last_done_date: '2023-06-05', evidence: 'Tippfehler (Test)' });
+  eq(pre.status, 400, JSON.stringify(pre.data)); ok(noRule('HU'), 'kein HU-Eintrag angelegt');
+  const old = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: '1949-12-31', interval_months: 12, evidence: 'Tippfehler (Test)' });
+  eq(old.status, 400, JSON.stringify(old.data)); ok(noRule('UVV'), 'kein UVV-Eintrag angelegt');
+  for (const m of [pre.data.message, old.data.message]) ok(translateValidation('uk', m) && translateValidation('en', m), 'übersetzt: ' + m);
+  // 1089: Import (Vorschau nennt den Grund je Zeile)
+  const csv = 'FIN;Art;Letzte Prüfung;Nachweis\nWMA15SZZ2HM722774;HU;2023-06-05;Bericht (Test)\nWMA15SZZ2HM722774;UVV;1920-01-05;Bericht (Test)\n';
+  const dry = await U.fleet.req('POST', '/api/maintenance/import?dry_run=1', csv, { 'content-type': 'text/csv' });
+  eq(dry.status, 200, JSON.stringify(dry.data));
+  const reasons = dry.data.skipped.map((x) => x.reason);
+  ok(reasons.includes('Letzte Prüfung liegt vor der Erstzulassung des Fahrzeugs'), JSON.stringify(reasons));
+  ok(reasons.includes('Letzte Prüfung vor 1950 ist nicht plausibel'), JSON.stringify(reasons));
+  // gleicher Monat wie die Erstzulassung (EZ ggf. nur nach Monat bekannt) bleibt erlaubt
+  eq((await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'HU', last_done_date: '2024-06-01', evidence: 'HU-Bericht (Test)' })).status, 201);
+  // 1090: Erstzulassung nach der erfassten HU (Feld I statt Feld B) → abgewiesen, Wert bleibt
+  const late = await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', first_registration: '2025-01-10', spec_source: 'Test: Feld I' });
+  eq(late.status, 400, JSON.stringify(late.data)); eq(db.prepare('SELECT first_registration FROM vehicles WHERE id=?').get(V1).first_registration, '2024-06-10');
+  ok(translateValidation('uk', late.data.message) && translateValidation('en', late.data.message), 'übersetzt');
+  // unveränderte Erstzulassung (nur Masse geändert) und frühere Erstzulassung bleiben möglich
+  eq((await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_kg: '18000', first_registration: '2024-06-10', spec_source: 'Test' })).status, 200);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_kg: '18000', first_registration: '2023-01-02', spec_source: 'Test' })).status, 200);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
