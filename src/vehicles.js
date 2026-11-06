@@ -948,6 +948,8 @@ export async function myVehicles(env, user, envName) {
     }
   }
   const nextInsp = (vid) => [...rules.results.filter((r) => r.vehicle_id === vid && r.next_due_date && !['HU', 'SP'].includes(r.kind) && !(r.kind === 'Rückruf' && r.last_done_date)), ...(virtBy.get(vid) || [])].sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)).slice(0, 4).map(({ kind, next_due_date, planned_date }) => ({ kind, next_due_date, planned_date: planned_date >= today ? planned_date : null }));
+  // nächster Prüftermin ab heute (eigenes bzw. gekoppeltes Fahrzeug, Backlog 1079)
+  const plannedInsp = (vid) => { const r = rules.results.filter((x) => x.vehicle_id === vid && x.planned_date >= today).sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0]; return r ? { kind: r.kind, planned_date: r.planned_date } : null; };
   return {
     vehicles: vs.map((v) => ({
       // Backlog 403: ruhend → Hinweis an den Fahrer
@@ -961,7 +963,7 @@ export async function myVehicles(env, user, envName) {
       // Backlog 472: Werkstatt(en) des nächsten Termins – der Fahrer bringt den Lkw oft selbst hin (z. B. Überführung nach Dortmund)
       planned_workshop_sites: (() => { const d = minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)); return d ? [...new Set(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status) && c.planned_date === d && c.workshop_site).map((c) => c.workshop_site))] : []; })(),
       planned_workshop_note: (() => { const d = minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)); return d ? mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status) && c.planned_date === d && c.planned_note).map((c) => c.planned_note).join(' · ') || null : null; })(),
-      planned_inspection: (() => { const r = rules.results.filter((x) => x.vehicle_id === v.id && x.planned_date >= today).sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0]; return r ? { kind: r.kind, planned_date: r.planned_date } : null; })(),
+      planned_inspection: plannedInsp(v.id),
       last_km: (({ vehicle_id, km, measured_at }) => (vehicle_id ? { vehicle_id, km, measured_at } : null))(kmMap.get(v.id) || {}),
       km_due: rules.results.filter((r) => r.vehicle_id === v.id && !['HU', 'SP'].includes(r.kind)).map((r) => ({ r, k: kmDue(r, kmMap.get(v.id), warnKm) }))
         .filter((x) => x.k && ['ueberfaellig', 'faellig'].includes(x.k.km_status)).sort((a, b) => a.k.km_remaining - b.k.km_remaining).slice(0, 4)
@@ -977,7 +979,7 @@ export async function myVehicles(env, user, envName) {
       // gekoppeltes Fahrzeug: Sperre, offene Vorgänge, bekannte Mängel (Verweis nur auf eigene Meldungen) und HU/SP-/Prüftermine – bei der Straßenkontrolle zählt das
       // ganze Gespann (Backlog 202, Teilagent „Straßenkontrolle“: überfällige HU des Anhängers und dessen Mängel waren für den Fahrer unsichtbar)
       coupled: coupledOf.has(v.id) ? (({ id, plate, kind }) => ({ id, plate, kind, locked: !!(lockMap.get(id) || {}).locked, open_cases_total: (lockMap.get(id) || {}).open || 0,
-        known_defects: defects(id), open_items_after_release: relOf(id), next_inspections: nextInsp(id), inspections_unclear: unclearBy.get(id) || [] }))(coupledOf.get(v.id)) : null,
+        known_defects: defects(id), open_items_after_release: relOf(id), next_inspections: nextInsp(id), inspections_unclear: unclearBy.get(id) || [], planned_inspection: plannedInsp(id) }))(coupledOf.get(v.id)) : null, // Backlog 1079: Prüftermin des gekoppelten Fahrzeugs
     })),
   };
 }

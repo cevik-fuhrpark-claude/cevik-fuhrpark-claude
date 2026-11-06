@@ -4758,7 +4758,32 @@ function departureLockBox(sv, kv) {
   const c = (kv && kv.coupled) || (sv && sv.coupled && sv.coupled.availability === 'gesperrt' ? { ...sv.coupled, locked: true } : null);
   // Backlog 508: heute (Berlin) liegt für das Fahrzeug schon eine Kontrolle vor – z. B. auf dem zweiten Gerät erfasst; nur Hinweis, keine Sperre, kein Name
   const today = sv && sv.last_check_at && BERLIN_FMT.format(new Date(sv.last_check_at)) === bDate() ? `<p class="panel small" role="status" data-dctoday style="margin:0 0 8px">${esc(t('dc_today_done').replace('{t}', fmtDT(sv.last_check_at)).replace('{r}', t(sv.last_check_result === 'maengel' ? 'dc_today_def' : 'dc_today_ok')))}</p>` : '';
-  return (sv ? outboxVehAlert(sv.id) : '') + today + (locked ? `<div class="alert" role="alert" style="margin-bottom:8px"><b>${esc(t('scan_locked'))}</b></div>` : '') + coupledAlert(c) + (kv ? drvNotes(kv.notes) + knownDefects(kv.known_defects) + relItems(kv.open_items_after_release) + coupledDefects(kv.coupled) : '');
+  return (sv ? outboxVehAlert(sv.id) : '') + today + (locked ? `<div class="alert" role="alert" style="margin-bottom:8px"><b>${esc(t('scan_locked'))}</b></div>` : '') + coupledAlert(c) + (kv ? drvNotes(kv.notes) + knownDefects(kv.known_defects) + relItems(kv.open_items_after_release) + coupledDefects(kv.coupled) + dcInspBox(kv) : '');
+}
+// Backlog 1079 (Folge aus 1076, Blickwinkel „Fahrer macht morgens die Abfahrtskontrolle mit dem Lkw, der heute zur HU muss“): Prüffristen des
+// eigenen und des gekoppelten Fahrzeugs nur wenn überschritten bzw. Frist oder Prüftermin heute/morgen – wer über den QR-Aufkleber kommt, sieht
+// die Startseite nie. Nur Hinweis, keine Sperre (ob eine überschrittene HU/SP die Kontrolle sperrt, entscheidet der Auftraggeber); auch offline
+function dcInspItems(v, who = '') {
+  if (!v) return [];
+  const today = bDate(); const tm = bDate(1); const out = [];
+  const dk = (k) => (k === 'HU' ? t('hu_long') : k === 'SP' ? t('sp_long') : mk(k));
+  for (const r of v.next_inspections || []) {
+    const parts = [];
+    if (r.next_due_date && r.next_due_date < today) parts.push(`${fmtD(r.next_due_date)} <span class="chip kritisch">${esc(t('drv_overdue'))}</span>`);
+    else if (r.next_due_date && r.next_due_date <= tm) parts.push(`${esc(t('c_due_on').replace('{d}', fmtD(r.next_due_date)))}${todayMark(r.next_due_date)}`);
+    if (r.planned_date && r.planned_date >= today && r.planned_date <= tm) parts.push(`${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}`);
+    if (parts.length) out.push({ crit: !!(r.next_due_date && r.next_due_date < today), html: `<li>${who}<b>${esc(dk(r.kind))}</b>: ${parts.join(' · ')}</li>` });
+  }
+  const pi = v.planned_inspection;
+  if (pi && pi.planned_date >= today && pi.planned_date <= tm && !(v.next_inspections || []).some((r) => r.kind === pi.kind && r.planned_date)) out.push({ crit: false, html: `<li>${who}<b>${esc(dk(pi.kind))}</b>: ${esc(t('planned'))} ${fmtD(pi.planned_date)}${todayMark(pi.planned_date)}</li>` });
+  return out;
+}
+function dcInspBox(kv) {
+  const c = kv.coupled;
+  const items = [...dcInspItems(kv), ...dcInspItems(c, c ? `${esc(t(c.kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(c.plate)} – ` : '')];
+  if (!items.length) return '';
+  const crit = items.some((i) => i.crit);
+  return `<div class="panel ${crit ? 'warn' : ''} small" role="note" data-dcinsp style="margin:8px 0"><b>${esc(t(crit ? 'dc_insp_over' : 'dc_insp_t'))}</b><ul style="margin:4px 0 0;padding-left:18px">${items.map((i) => i.html).join('')}</ul>${crit ? `<p style="margin:4px 0 0">${esc(t('dc_insp_over_hint'))}</p>` : ''}</div>`;
 }
 const lockedWarn = (r) => (r && r.vehicle_locked ? ` · ${t('locked')} – ${t('do_not_drive')}` : '') + (r && r.coupled_locked ? ` · ${coupledLockedText(r.coupled_locked)}` : ''); // gekoppeltes Gespann gesperrt (23.10.2026)
 const coupledAlert = (c) => (c && c.locked ? `<div class="alert" role="alert" style="margin-bottom:8px">${esc(coupledLockedText(c))}</div>` : '');

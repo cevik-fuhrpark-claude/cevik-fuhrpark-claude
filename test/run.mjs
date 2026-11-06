@@ -25123,8 +25123,8 @@ await test('Backlog 481/482 (Blickwinkel „Springer holt den Lkw eines kranken 
   const fn = (name) => { const i = app.indexOf(`function ${name}(`); return app.slice(i, app.indexOf('\n}\n', i) + 2); };
   const src = ['drvNotes', 'coupledDefects', 'departureLockBox', 'coupledKnown'].map(fn).join('\n');
   const T = { trailer: 'Anhänger', truck: 'Lkw', vnote_until: 'bis {d}', scan_locked: 'GESPERRT' };
-  const lib = new Function('esc', 't', 'fmtD', 'bDate', 'knownDefects', 'relItems', 'outboxVehAlert', 'coupledAlert', src + '\nreturn { drvNotes, coupledDefects, departureLockBox, coupledKnown };')(
-    (v) => String(v), (k) => T[k] || k, (v) => v, () => '2026-10-28', (l) => (l || []).map((k) => `<kd>${k.description}</kd>`).join(''), (l) => (l || []).map((o) => `<ri>${o.description}</ri>`).join(''), () => '', () => '');
+  const lib = new Function('esc', 't', 'fmtD', 'bDate', 'knownDefects', 'relItems', 'outboxVehAlert', 'coupledAlert', 'dcInspBox', src + '\nreturn { drvNotes, coupledDefects, departureLockBox, coupledKnown };')(
+    (v) => String(v), (k) => T[k] || k, (v) => v, () => '2026-10-28', (l) => (l || []).map((k) => `<kd>${k.description}</kd>`).join(''), (l) => (l || []).map((o) => `<ri>${o.description}</ri>`).join(''), () => '', () => '', () => ''); // Backlog 1079: Prüffristen eigener Test
   const h = lib.departureLockBox({ id: VZ }, mv);
   ok(h.includes('class="vnotes-drv"') && h.includes('Autohof A2') && h.includes('SP-H 481: Hecktür klemmt'), 'Abfahrtskontrolle: Hinweise für Fahrer');
   ok(h.includes('data-coupled') && h.includes('Anhänger SP-H 481') && h.includes('<kd>Rückleuchte Auflieger rechts gesprungen</kd>'), 'Abfahrtskontrolle: Mangel des gekoppelten Anhängers');
@@ -29882,7 +29882,7 @@ await test('Backlog 827 (Blickwinkel „Anhänger ohne eigene Zugmaschine – Fr
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) {
     ok(STRINGS[l].kmtr_hint && STRINGS[l].kmtr_hint.length > 40, 'Text kmtr_hint ' + l);
-    ok(/Achskilometerzähler|лічильника на осі|hub odometer/.test(STRINGS[l].help_check_s.split('|').pop()), 'Hilfe-Absatz ' + l);
+    ok(STRINGS[l].help_check_s.split('|').some((x) => /Achskilometerzähler|лічильника на осі|hub odometer/.test(x)), 'Hilfe-Absatz ' + l); // Backlog 1079: nicht mehr zwingend der letzte Absatz
   }
 });
 
@@ -35460,6 +35460,36 @@ await test('Backlog 1077/1078 (Folge aus 1076): Fahrer-Startseite markiert Termi
   ok(c && c.planned_inspection_date === pd && c.planned_inspection_kind === 'UVV' && 'planned_workshop_date' in c, JSON.stringify(c));
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].c_due_on && STRINGS[l].c_due_on.includes('{d}'), l);
+});
+await test('Backlog 1079 (Folge aus 1076): Abfahrtskontrolle nennt Prüffristen des eigenen und gekoppelten Fahrzeugs nur bei Überschreitung bzw. Frist/Prüftermin heute oder morgen (Hinweis, keine Sperre); /api/me/vehicles liefert planned_inspection auch für das gekoppelte Fahrzeug; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = (name) => { const i = app.indexOf('function ' + name + '('); ok(i >= 0, name); return app.slice(i, app.indexOf('\n}', i)) + '\n}\n'; };
+  const today = '2026-11-06'; const tm = '2026-11-07';
+  const T = { hu_long: 'HU lang', sp_long: 'SP lang', drv_overdue: 'abgelaufen', c_due_on: 'fällig {d}', planned: 'Geplant', trailer: 'Anhänger', truck: 'Lkw', dc_insp_t: 'Prüfung heute oder morgen', dc_insp_over: 'Prüffrist überschritten', dc_insp_over_hint: 'klären' };
+  const box = new Function('esc', 't', 'fmtD', 'todayMark', 'mk', 'bDate', fn('dcInspItems') + fn('dcInspBox') + 'return dcInspBox;')((x) => String(x), (k) => T[k] || k, (d) => d, (d) => (d === today ? ' (heute)' : d === tm ? ' (morgen)' : ''), (k) => k, (n) => (n ? tm : today));
+  eq(box({ next_inspections: [{ kind: 'UVV', next_due_date: '2026-12-01', planned_date: '2026-11-20' }], coupled: null }), '', 'nichts Dringendes: kein Kasten');
+  const a = box({ next_inspections: [{ kind: 'HU', next_due_date: '2026-11-30', planned_date: tm }], coupled: { kind: 'anhaenger', plate: 'AH-1', next_inspections: [{ kind: 'SP', next_due_date: today }] } });
+  ok(a.includes('data-dcinsp') && a.includes('Prüfung heute oder morgen') && a.includes('<b>HU lang</b>: Geplant 2026-11-07 (morgen)') && a.includes('Anhänger AH-1 – <b>SP lang</b>: fällig 2026-11-06 (heute)') && !a.includes('panel warn'), a);
+  const b = box({ next_inspections: [{ kind: 'Tachograph', next_due_date: '2026-11-01' }], coupled: null });
+  ok(b.includes('panel warn') && b.includes('Prüffrist überschritten') && b.includes('2026-11-01 <span class="chip kritisch">abgelaufen') && b.includes('klären'), b);
+  const c = box({ next_inspections: [], planned_inspection: { kind: 'UVV', planned_date: today }, coupled: { kind: 'lkw', plate: 'LK-1', next_inspections: [], planned_inspection: { kind: 'HU', planned_date: tm } } });
+  ok(c.includes('<b>UVV</b>: Geplant 2026-11-06 (heute)') && c.includes('Lkw LK-1 – <b>HU lang</b>: Geplant 2026-11-07 (morgen)'), c);
+  ok(!/alert/.test(fn('dcInspBox')), 'keine Sperre/kein Alarm');
+  ok(fn('departureLockBox').includes('coupledDefects(kv.coupled) + dcInspBox(kv)'), 'Einbau in der Abfahrtskontrolle');
+  // Server: Prüftermin des gekoppelten Fahrzeugs in /api/me/vehicles
+  const { U } = await freshWorld();
+  eq((await U.fleet.post('/api/vehicles', { plate: 'PT-ZM 9', vin: 'WDB96340310107901', trailer_plate: 'PT-AH 9' })).status, 201);
+  eq((await U.fleet.post('/api/vehicles', { plate: 'PT-AH 9', vin: 'WDB96340310107902', kind: 'anhaenger' })).status, 201);
+  const vs = (await U.fleet.get('/api/vehicles')).data.vehicles; const zm = vs.find((v) => v.plate === 'PT-ZM 9'); const ah = vs.find((v) => v.plate === 'PT-AH 9');
+  eq((await U.fleet.post(`/api/vehicles/${encodeURIComponent(zm.id)}/drivers`, { user_id: U.driver.id, evidence: 'Dienstplan' })).status, 201);
+  const pd = new Date(Date.now() + 86400000).toISOString().slice(0, 10); const due = new Date(Date.now() + 40 * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${encodeURIComponent(ah.id)}/maintenance`, { kind: 'UVV', next_due_date: due, evidence: 'Prüfbuch (Test)' }); eq(r.status, 201);
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: pd })).status, 200);
+  const mv = (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === zm.id);
+  ok(mv && mv.coupled && mv.coupled.planned_inspection && mv.coupled.planned_inspection.kind === 'UVV' && mv.coupled.planned_inspection.planned_date === pd && mv.planned_inspection === null, JSON.stringify(mv && mv.coupled));
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['dc_insp_t', 'dc_insp_over', 'dc_insp_over_hint']) ok(STRINGS[l][k], l + ' ' + k);
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

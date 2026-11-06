@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (06.11.2026, Backlog 1076, Blickwinkel „Disposition bucht einen Lkw ein, der morgen zur HU muss“): „Prüfung/Wartung fällig bis …“
 # nennt je Frist den Planungsstand – Prüftermin mit „morgen“, Termin nach dem Fristende (Warnung), „kein Prüftermin geplant“;
 # Backlog 1078: Fahrzeugliste nennt beim Lkw den Prüftermin des gekoppelten Anhängers morgen.
+# Backlog 1079: Abfahrtskontrolle des Fahrers nennt überschrittene Frist (Lkw) und Prüftermin morgen (Anhänger) – Hinweis, keine Sperre.
 # DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from datetime import date, timedelta
@@ -36,6 +37,13 @@ with sync_playwright() as p:
     check(api('POST','/api/vehicles',{'plate':'PS-AH 4','vin':'WSM00000000761004','kind':'anhaenger','site':'Dortmund'})['s'] in (200,201),'Gespann Anhänger')
     r=api('POST','/api/vehicles/VIN:WSM00000000761004/maintenance',{'kind':'UVV','next_due_date':(date.fromisoformat(today)+timedelta(days=20)).isoformat(),'evidence':'UVV-Nachweis'}); check(r['s']==201,'UVV Anhänger')
     check(api('POST',f'/api/maintenance/{r["d"]["id"]}/plan',{'planned_date':d1})['s']==200,'Anhänger Prüftermin morgen')
+    dm1=(date.fromisoformat(today)-timedelta(days=1)).isoformat()
+    check(api('POST','/api/vehicles/VIN:WDB96340310761004/maintenance',{'kind':'Tachograph','next_due_date':dm1,'evidence':'Einbauschild'})['s']==201,'Lkw Tachograph überschritten')
+    for lang in ['de','uk','en']:
+        u=api('POST','/api/users',{'username':'ps.fahrer.'+lang,'display_name':'PS FAHRER '+lang,'role':'driver','environment':'production','language':lang})
+        uid=u['d'].get('id') or u['d'].get('user',{}).get('id')
+        c0=br.new_context(); q0=c0.new_page(); q0.goto(B); q0.evaluate(JS,['POST','/api/invite/accept',{'token':u['d']['invite_token'],'password':PW}]); c0.close()
+        check(api('POST','/api/vehicles/VIN:WDB96340310761004/drivers',{'user_id':uid,'end_previous':False})['s'] in (200,201),'Fahrer zugeordnet '+lang)
     for lang in ['de','uk','en']:
       for w,h in [(390,844),(820,1180),(1366,900)]:
         ctx=br.new_context(viewport={'width':w,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
@@ -53,6 +61,16 @@ with sync_playwright() as p:
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Liste ohne Querscrollen')
         if SHOTS: cp.first.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/ps_vl_{lang}_{w}.png')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs[:2]}')
+        ctx.close()
+        ctx=br.new_context(viewport={'width':w,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+        q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'ps.fahrer.'+lang,'password':PW}])
+        q.goto(B+'/#/check/VIN:WDB96340310761004'); q.reload(); q.wait_for_selector('#known [data-dcinsp]', state='attached', timeout=15000)
+        bx=q.inner_text('#known [data-dcinsp]')
+        check(q.locator('#known [data-dcinsp].warn').count()==1 and 'PS-AH 4' in bx and TM[lang] in bx and q.locator('#known [data-dcinsp] .chip.kritisch').count()==1,f'{lang} {w}px: Abfahrtskontrolle nennt Fristen ({bx})')
+        check(q.locator('#known .alert').count()==0,f'{lang} {w}px: keine Sperre')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Kontrolle ohne Querscrollen')
+        if SHOTS: q.locator('#known').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/ps_dc_{lang}_{w}.png')
+        check(not errs,f'{lang} {w}px: Kontrolle ohne Skriptfehler {errs[:2]}')
         ctx.close()
     br.close()
 print('FEHLER: '+str(len(fails)) if fails else 'Alles grün')
