@@ -1528,7 +1528,7 @@ async function viewHome() {
       ${drvNotes(v.notes)}
       ${v.eval_excluded ? `<p class="small" role="note" data-drvresting><b>⚠ ${esc(t('drv_resting'))}</b></p>` : ''}
       ${v.winter ? `<p class="small" role="note" data-drvwinter><b>❄ ${esc(t('drv_winter').replace('{p}', v.winter.noncompliant.map(posL).join(', ')))}</b></p>` : ''}
-      <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${myPlanned(v)}${drvInspRows(v)}${(v.km_due || []).map((r) => `<dt>${esc(mk(r.kind))}</dt><dd>${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining < 0 ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ` <span class="small">(${esc(t('km_left'))} ${fmtKm(r.km_remaining)})</span>`}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${r.planned_date === bDate() ? ' (' + esc(t('today')) + ')' : ''}</span>` : ''}</dd>`).join('')}</dl>${knownDefects(v.known_defects)}${relItems(v.open_items_after_release)}${drvCoupled(v.coupled)}</section>`; }).join('')}`;
+      <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${myPlanned(v)}${drvInspRows(v)}${(v.km_due || []).map((r) => `<dt>${esc(mk(r.kind))}</dt><dd>${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining < 0 ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ` <span class="small">(${esc(t('km_left'))} ${fmtKm(r.km_remaining)})</span>`}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}</span>` : ''}</dd>`).join('')}</dl>${knownDefects(v.known_defects)}${relItems(v.open_items_after_release)}${drvCoupled(v.coupled)}</section>`; }).join('')}`;
     // Fahrer ohne zugeordnetes Fahrzeug (Erstnutzung, Rundgang Schritt 3): sagen, was fehlt (22.10.2026: Startseite zeigte nur die Knöpfe)
     else if (mv && !mvOffline) html += `<div class="panel" role="note" data-novehicle>${esc(t('drv_no_vehicle'))}</div>`;
     // Backlog 463: offene Rückfragen der Fuhrparkleitung zu eigenen Meldungen zuerst
@@ -1666,14 +1666,25 @@ function dispoDueSoon(dvs, inSite, mrows = null) {
   const today = bDate(); const nwd = nextWorkdayAfter(today);
   const byV = new Map(dvs.map((v) => [v.id, v])); const g = new Map();
   // Backlog 564: alle Fristen des Zeitraums je Fahrzeug aus der Prüfterminliste (auch neben einer schon überfälligen Frist); ohne Liste nur `next_due`
-  const put = (v, kind, due) => { if (!v || v.eval_excluded || !inSite(v) || !due || due < today || due > nwd) return; const x = g.get(v.id) || { v, d: [] }; x.d.push({ kind, due }); g.set(v.id, x); };
-  if (Array.isArray(mrows)) for (const r of mrows) { if (!['erledigt', 'nicht_pflichtig'].includes(r.status)) put(byV.get(r.vehicle_id), r.kind, r.next_due_date); }
+  // Backlog 1076 (Blickwinkel „Disposition bucht einen Lkw ein, der morgen zur HU muss“): je Frist der geplante Termin bzw. offene Auftrag aus der
+  // Prüfterminliste (`planned_date`, `open_order`) – „kein Termin geplant“ nur mit Liste; Termin nach dem Fristende bzw. verstrichen wie `noplan`
+  const put = (v, kind, due, r = null) => { if (!v || v.eval_excluded || !inSite(v) || !due || due < today || due > nwd) return; const x = g.get(v.id) || { v, d: [] }; x.d.push({ kind, due, r }); g.set(v.id, x); };
+  if (Array.isArray(mrows)) for (const r of mrows) { if (!['erledigt', 'nicht_pflichtig'].includes(r.status)) put(byV.get(r.vehicle_id), r.kind, r.next_due_date, r); }
   else for (const v of dvs) put(v, v.next_due_kind, v.next_due);
   const list = [...g.values()].map((x) => ({ ...x, d: x.d.sort((a, b) => a.due.localeCompare(b.due) || String(a.kind).localeCompare(String(b.kind))) }))
     .sort((a, b) => a.d[0].due.localeCompare(b.d[0].due) || plateCmp(a.v.plate, b.v.plate));
   if (!list.length) return '';
   const dueTxt = (d) => (d === today ? t('today') : fmtDue(d));
-  return `<h2 id="dduesoon">${esc(t('dispo_due_soon').replace('{d}', fmtDue(nwd)))} <span class="chip mittel">${list.length}</span></h2><p class="small muted">${esc(t('dispo_due_soon_hint'))}</p><div class="list">${list.map(({ v, d }) => `<a class="row p-mittel" href="#/vehicles/${encodeURIComponent(v.id)}" data-dduesoon>${plate(v.plate)}<span class="title" style="white-space:normal">${d.length > 1 ? d.map((x) => `${esc(x.kind ? mk(x.kind) : t('next_due'))} (${esc(dueTxt(x.due))})`).join(' · ') : esc(d[0].kind ? mk(d[0].kind) : t('next_due'))}</span><span class="chip mittel" style="white-space:nowrap">${esc(dueTxt(d[0].due))}</span>${v.coupled ? `<span class="sub wrap" data-dduecoupled>🔗 ${esc(t('vk_' + v.coupled.kind))} ${esc(v.coupled.plate)}</span>` : ''}</a>`).join('')}</div>`;
+  return `<h2 id="dduesoon">${esc(t('dispo_due_soon').replace('{d}', fmtDue(nwd)))} <span class="chip mittel">${list.length}</span></h2><p class="small muted">${esc(t('dispo_due_soon_hint'))}</p><div class="list">${list.map(({ v, d }) => `<a class="row p-mittel" href="#/vehicles/${encodeURIComponent(v.id)}" data-dduesoon>${plate(v.plate)}<span class="title" style="white-space:normal">${d.length > 1 ? d.map((x) => `${esc(x.kind ? mk(x.kind) : t('next_due'))} (${esc(dueTxt(x.due))})`).join(' · ') : esc(d[0].kind ? mk(d[0].kind) : t('next_due'))}</span><span class="chip mittel" style="white-space:nowrap">${esc(dueTxt(d[0].due))}</span>${d.some((x) => x.r) ? `<span class="sub wrap" data-ddueplan>${d.filter((x) => x.r).map((x) => (d.length > 1 ? esc(x.kind ? mk(x.kind) : t('next_due')) + ': ' : '') + dueSoonPlan(x.r, x.due, today)).join(' · ')}</span>` : ''}${v.coupled ? `<span class="sub wrap" data-dduecoupled>🔗 ${esc(t('vk_' + v.coupled.kind))} ${esc(v.coupled.plate)}</span>` : ''}</a>`).join('')}</div>`;
+}
+// Backlog 1076: Planungsstand einer Frist für die Disposition – Termin (mit „heute“/„morgen“), Termin nach dem Fristende (rot),
+// offener Werkstattauftrag ohne Prüftermin oder „kein Termin geplant“; ein verstrichener Termin zählt nicht als geplant
+function dueSoonPlan(r, due, today) {
+  const pd = r.planned_date && r.planned_date >= today ? r.planned_date : null;
+  if (pd && pd > due) return `<b style="color:var(--stop)" data-dplate>⚠ ${esc(t('dispo_ds_late').replace('{d}', fmtD(pd)))}</b>`;
+  if (pd) return `<span data-dplan>📅 ${esc(t('dispo_ds_plan').replace('{d}', fmtD(pd)))}${todayMark(pd)}</span>`;
+  if (r.open_order) return `<span data-dplanord>🔧 ${esc(t('mo_open'))} ${esc(r.open_order.case_no)}</span>`;
+  return `<b data-dnoplan>${esc(t('dispo_ds_noplan'))}</b>`;
 }
 // Backlog 877 (Blickwinkel „Disposition plant den Lkw nach der Rückkehr aus der Werkstatt wieder ein“): mit offenen (nicht sicherheitsrelevanten)
 // Restarbeiten freigegeben → Anzahl in der Zeile (Liste liefert `open_items`); vorher sah die Disposition nur „frei seit“
@@ -3251,11 +3262,12 @@ async function viewNew(preId) {
 }
 
 // Geplanter Werkstatttermin/Prüftermin am eigenen Fahrzeug (nur gespeicherte Termine, ab heute)
+// Backlog 1077 (Folge aus 1076): Termine heute bzw. morgen markiert (`todayMark`) – am Vortag sieht der Fahrer, dass der Lkw morgen zur Prüfung/Werkstatt muss
 function myPlanned(v) {
   let h = '';
-  if (v.planned_workshop_date) h += `<dt>${esc(t('planned_ws_short'))}</dt><dd><b>${fmtD(v.planned_workshop_date)}</b>${v.planned_workshop_date === bDate() ? ' (' + esc(t('today')) + ')' : ''} ${(v.planned_workshop_sites || []).length ? ` · <span data-plannedws>${v.planned_workshop_sites.map((w) => esc(wsName(w))).join(', ')}</span>` : ''} <span class="small muted">${esc(t('my_ws_hint'))}</span>${v.planned_workshop_note ? `<br><span data-plannote>${esc(t('plan_note_lbl'))}: ${esc(v.planned_workshop_note)}</span>` : ''}</dd>`;
+  if (v.planned_workshop_date) h += `<dt>${esc(t('planned_ws_short'))}</dt><dd><b>${fmtD(v.planned_workshop_date)}</b>${todayMark(v.planned_workshop_date)} ${(v.planned_workshop_sites || []).length ? ` · <span data-plannedws>${v.planned_workshop_sites.map((w) => esc(wsName(w))).join(', ')}</span>` : ''} <span class="small muted">${esc(t('my_ws_hint'))}</span>${v.planned_workshop_note ? `<br><span data-plannote>${esc(t('plan_note_lbl'))}: ${esc(v.planned_workshop_note)}</span>` : ''}</dd>`;
   const pi = v.planned_inspection;
-  if (pi && ![...(v.next_inspections || []), ...(v.km_due || [])].some((r) => r.kind === pi.kind && r.planned_date)) h += `<dt>${esc(mk(pi.kind))}</dt><dd>${esc(t('planned'))} ${fmtD(pi.planned_date)}${pi.planned_date === bDate() ? ' (' + esc(t('today')) + ')' : ''}</dd>`;
+  if (pi && ![...(v.next_inspections || []), ...(v.km_due || [])].some((r) => r.kind === pi.kind && r.planned_date)) h += `<dt>${esc(mk(pi.kind))}</dt><dd>${esc(t('planned'))} ${fmtD(pi.planned_date)}${todayMark(pi.planned_date)}</dd>`;
   return h;
 }
 
@@ -3268,7 +3280,7 @@ function myVehCached() { try { const c = JSON.parse(localStorage.getItem(`cfp_my
 function drvInspRows(v) {
   // Backlog 380: HU/SP ausgeschrieben (Fahrer am ersten Tag verstand die Kürzel nicht) und bei „ungeklärt“, wer es klärt
   const dk = (k) => (k === 'HU' ? t('hu_long') : k === 'SP' ? t('sp_long') : mk(k));
-  return (v.next_inspections || []).map((r) => `<dt>${esc(dk(r.kind))}</dt><dd>${fmtD(r.next_due_date)}${r.next_due_date < bDate() ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ''}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${r.planned_date === bDate() ? ' (' + esc(t('today')) + ')' : ''}</span>` : ''}</dd>`).join('')
+  return (v.next_inspections || []).map((r) => `<dt>${esc(dk(r.kind))}</dt><dd>${fmtD(r.next_due_date)}${r.next_due_date < bDate() ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ''}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}</span>` : ''}</dd>`).join('')
     + (v.inspections_unclear || []).map((k) => `<dt>${esc(dk(k))}</dt><dd><span class="chip mittel" data-unclear>${esc(t('ms_ungeklaert'))}</span> <span class="small muted" data-unclearwho>${esc(t('drv_unclear_fleet'))}</span></dd>`).join('');
 }
 // Gekoppelter Anhänger bzw. Zugmaschine: HU/SP-/Prüftermine und bekannte Mängel (Backlog 202) – Sperre steht schon oben im Kopf der Karte
@@ -4759,6 +4771,10 @@ function coupledChip(c) {
   if (c.failed_inspection) h += `<b class="chip kritisch" data-cfail>${who}: ${esc(t('insp_failed_chip'))}</b> `;
   else if (c.reinspection_open && !c.eval_excluded) h += `<span class="chip mittel" data-creinsp title="${esc(t('reinsp_open_title'))}">${who}: ${esc(t('reinsp_open_chip'))}</span> `; // Backlog 618
   if (!c.eval_excluded && ((c.next_due && c.next_due < bDate()) || (c.km_remaining !== null && c.km_remaining !== undefined && c.km_remaining < 0))) h += `<b class="chip kritisch" data-cover>${who}: ${esc(t('av_maint_overdue'))}</b> `;
+  // Backlog 1078: Frist bzw. Prüf-/Werkstatttermin des gekoppelten Fahrzeugs heute oder morgen – das Gespann fällt dann mit aus (nur Information)
+  else if (!c.eval_excluded && c.next_due && c.next_due <= bDate(1)) h += `<span class="chip mittel" data-cdue>${who}: ${esc(t('c_due_on').replace('{d}', fmtD(c.next_due)))}${todayMark(c.next_due)}${c.next_due_kind ? ` (${esc(mk(c.next_due_kind))})` : ''}</span> `;
+  if (c.planned_inspection_date && c.planned_inspection_date <= bDate(1)) h += `<span class="chip mittel" data-cpinsp>${who}: ${esc(t('planned_inspection'))}${c.planned_inspection_kind ? ' ' + esc(String(c.planned_inspection_kind).split(', ').map(mk).join(', ')) : ''} ${fmtD(c.planned_inspection_date)}${todayMark(c.planned_inspection_date)}</span> `;
+  if (c.planned_workshop_date && c.planned_workshop_date <= bDate(1)) h += `<span class="chip mittel" data-cpws>${who}: ${esc(t('planned_ws_short'))} ${fmtD(c.planned_workshop_date)}${todayMark(c.planned_workshop_date)}</span> `;
   return h;
 }
 // Fälligkeit nach Kilometern: belegter Wert (due_km) oder letzte Durchführung in km + Intervall (gleiche Regel wie Server)

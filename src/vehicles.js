@@ -130,7 +130,9 @@ export async function listVehicles(env, user, envName, query = {}) {
     // Prüfstand des gekoppelten Fahrzeugs (25.10.2026, Teilagent „Disposition sucht Ersatzfahrzeug“): Lkw-Zeile zeigte „Keine offenen Meldungen“,
     // obwohl der Anhänger HU/SP überfällig oder „verkehrsunsicher“ war – nur Information, availability bleibt unverändert
     v.coupled = p ? { id: p.id, plate: p.plate, kind: p.kind, availability: p.availability, eval_excluded: p.eval_excluded ? 1 : 0, next_due: p.next_due || null, next_due_kind: p.next_due ? p.next_due_kind || null : null,
-      km_remaining: p.km_remaining ?? null, failed_inspection: p.failed_inspection || null, reinspection_open: p.reinspection_open || null } : null;
+      km_remaining: p.km_remaining ?? null, failed_inspection: p.failed_inspection || null, reinspection_open: p.reinspection_open || null,
+      // Backlog 1078 (Blickwinkel „Disposition bucht einen Lkw ein, der morgen zur HU muss“): nächster Prüf-/Werkstatttermin des gekoppelten Fahrzeugs (ab heute)
+      planned_inspection_date: p.planned_inspection_date || null, planned_inspection_kind: p.planned_inspection_date ? p.planned_inspection_kind || null : null, planned_workshop_date: p.planned_workshop_date || null } : null;
   }
   for (const v of list) { if (user.role !== 'driver') delete v._lcBy; }
   if (user.role === 'driver') {

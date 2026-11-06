@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { BERLIN_FMT, S, WST_ST, api, bDate, cDesc, clipTxt, comboClearV, dispoDayBefore, esc, federalHoliday, fmtD, fmtDT, fmtDue, helpLink, hj, hoMissing, langAttr, ltxt, mk, nextWorkdayAfter, partsEta, planVehTag, plate, plateCmp, posL, rdyOf, rdyTxt, siteKeyUi, t, tn, translateLockReason, vOverdue, vlAt, woApptTxt, woTag, wsName } from './app-main.js';
+import { BERLIN_FMT, S, WST_ST, api, bDate, cDesc, clipTxt, comboClearV, dispoDayBefore, esc, federalHoliday, fmtD, fmtDT, fmtDue, helpLink, hj, hoMissing, langAttr, ltxt, mk, nextWorkdayAfter, partsEta, planVehTag, plate, plateCmp, posL, rdyOf, rdyTxt, siteKeyUi, t, tn, todayMark, translateLockReason, vOverdue, vlAt, woApptTxt, woTag, wsName } from './app-main.js';
 
 // Teile-Liefertermin laut Werkstatt (nur bei „wartet auf Teile“); überschritten = markiert
 // „Rückkehr: ungeklärt“ (Disposition): der Werkstatttermin ist der Beginn, nicht die Fertigstellung – ein Datum zählt nur, solange es noch
@@ -88,14 +88,25 @@ function dispoDueSoon(dvs, inSite, mrows = null) {
   const today = bDate(); const nwd = nextWorkdayAfter(today);
   const byV = new Map(dvs.map((v) => [v.id, v])); const g = new Map();
   // Backlog 564: alle Fristen des Zeitraums je Fahrzeug aus der Prüfterminliste (auch neben einer schon überfälligen Frist); ohne Liste nur `next_due`
-  const put = (v, kind, due) => { if (!v || v.eval_excluded || !inSite(v) || !due || due < today || due > nwd) return; const x = g.get(v.id) || { v, d: [] }; x.d.push({ kind, due }); g.set(v.id, x); };
-  if (Array.isArray(mrows)) for (const r of mrows) { if (!['erledigt', 'nicht_pflichtig'].includes(r.status)) put(byV.get(r.vehicle_id), r.kind, r.next_due_date); }
+  // Backlog 1076 (Blickwinkel „Disposition bucht einen Lkw ein, der morgen zur HU muss“): je Frist der geplante Termin bzw. offene Auftrag aus der
+  // Prüfterminliste (`planned_date`, `open_order`) – „kein Termin geplant“ nur mit Liste; Termin nach dem Fristende bzw. verstrichen wie `noplan`
+  const put = (v, kind, due, r = null) => { if (!v || v.eval_excluded || !inSite(v) || !due || due < today || due > nwd) return; const x = g.get(v.id) || { v, d: [] }; x.d.push({ kind, due, r }); g.set(v.id, x); };
+  if (Array.isArray(mrows)) for (const r of mrows) { if (!['erledigt', 'nicht_pflichtig'].includes(r.status)) put(byV.get(r.vehicle_id), r.kind, r.next_due_date, r); }
   else for (const v of dvs) put(v, v.next_due_kind, v.next_due);
   const list = [...g.values()].map((x) => ({ ...x, d: x.d.sort((a, b) => a.due.localeCompare(b.due) || String(a.kind).localeCompare(String(b.kind))) }))
     .sort((a, b) => a.d[0].due.localeCompare(b.d[0].due) || plateCmp(a.v.plate, b.v.plate));
   if (!list.length) return '';
   const dueTxt = (d) => (d === today ? t('today') : fmtDue(d));
-  return `<h2 id="dduesoon">${esc(t('dispo_due_soon').replace('{d}', fmtDue(nwd)))} <span class="chip mittel">${list.length}</span></h2><p class="small muted">${esc(t('dispo_due_soon_hint'))}</p><div class="list">${list.map(({ v, d }) => `<a class="row p-mittel" href="#/vehicles/${encodeURIComponent(v.id)}" data-dduesoon>${plate(v.plate)}<span class="title" style="white-space:normal">${d.length > 1 ? d.map((x) => `${esc(x.kind ? mk(x.kind) : t('next_due'))} (${esc(dueTxt(x.due))})`).join(' · ') : esc(d[0].kind ? mk(d[0].kind) : t('next_due'))}</span><span class="chip mittel" style="white-space:nowrap">${esc(dueTxt(d[0].due))}</span>${v.coupled ? `<span class="sub wrap" data-dduecoupled>🔗 ${esc(t('vk_' + v.coupled.kind))} ${esc(v.coupled.plate)}</span>` : ''}</a>`).join('')}</div>`;
+  return `<h2 id="dduesoon">${esc(t('dispo_due_soon').replace('{d}', fmtDue(nwd)))} <span class="chip mittel">${list.length}</span></h2><p class="small muted">${esc(t('dispo_due_soon_hint'))}</p><div class="list">${list.map(({ v, d }) => `<a class="row p-mittel" href="#/vehicles/${encodeURIComponent(v.id)}" data-dduesoon>${plate(v.plate)}<span class="title" style="white-space:normal">${d.length > 1 ? d.map((x) => `${esc(x.kind ? mk(x.kind) : t('next_due'))} (${esc(dueTxt(x.due))})`).join(' · ') : esc(d[0].kind ? mk(d[0].kind) : t('next_due'))}</span><span class="chip mittel" style="white-space:nowrap">${esc(dueTxt(d[0].due))}</span>${d.some((x) => x.r) ? `<span class="sub wrap" data-ddueplan>${d.filter((x) => x.r).map((x) => (d.length > 1 ? esc(x.kind ? mk(x.kind) : t('next_due')) + ': ' : '') + dueSoonPlan(x.r, x.due, today)).join(' · ')}</span>` : ''}${v.coupled ? `<span class="sub wrap" data-dduecoupled>🔗 ${esc(t('vk_' + v.coupled.kind))} ${esc(v.coupled.plate)}</span>` : ''}</a>`).join('')}</div>`;
+}
+// Backlog 1076: Planungsstand einer Frist für die Disposition – Termin (mit „heute“/„morgen“), Termin nach dem Fristende (rot),
+// offener Werkstattauftrag ohne Prüftermin oder „kein Termin geplant“; ein verstrichener Termin zählt nicht als geplant
+function dueSoonPlan(r, due, today) {
+  const pd = r.planned_date && r.planned_date >= today ? r.planned_date : null;
+  if (pd && pd > due) return `<b style="color:var(--stop)" data-dplate>⚠ ${esc(t('dispo_ds_late').replace('{d}', fmtD(pd)))}</b>`;
+  if (pd) return `<span data-dplan>📅 ${esc(t('dispo_ds_plan').replace('{d}', fmtD(pd)))}${todayMark(pd)}</span>`;
+  if (r.open_order) return `<span data-dplanord>🔧 ${esc(t('mo_open'))} ${esc(r.open_order.case_no)}</span>`;
+  return `<b data-dnoplan>${esc(t('dispo_ds_noplan'))}</b>`;
 }
 // Backlog 877 (Blickwinkel „Disposition plant den Lkw nach der Rückkehr aus der Werkstatt wieder ein“): mit offenen (nicht sicherheitsrelevanten)
 // Restarbeiten freigegeben → Anzahl in der Zeile (Liste liefert `open_items`); vorher sah die Disposition nur „frei seit“

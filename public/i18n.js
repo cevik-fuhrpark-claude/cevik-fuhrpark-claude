@@ -3264,9 +3264,9 @@ Object.assign(STRINGS.en, { fine_sameday_title: 'Assignment changes on the day o
 Object.assign(STRINGS.de, { fine_no_due: 'Antwortfrist fehlt', fine_no_due_hint: 'Antwortfrist laut Schreiben unter „Angaben ändern“ nachtragen – die App schätzt keine Frist.' });
 Object.assign(STRINGS.uk, { fine_no_due: 'Строк відповіді не внесено', fine_no_due_hint: 'Додайте строк відповіді з листа в розділі «Змінити дані» – застосунок не оцінює строки.' });
 Object.assign(STRINGS.en, { fine_no_due: 'Response deadline missing', fine_no_due_hint: 'Add the response deadline from the letter under “Change details” – the app does not estimate deadlines.' });
-Object.assign(STRINGS.de, { dispo_due_soon: 'Prüfung/Wartung fällig bis {d}', dispo_due_soon_hint: 'Fristen laut Fahrzeugakte von heute bis zum nächsten Werktag (Wochenende und Feiertage eingeschlossen) – vor dem Einplanen klären, ob die Prüfung rechtzeitig stattfindet.', next_workday: 'nächster Werktag' });
-Object.assign(STRINGS.uk, { dispo_due_soon: 'Огляд/ТО до {d}', dispo_due_soon_hint: 'Строки з картки транспорту від сьогодні до наступного робочого дня (включно з вихідними та святами) – перед плануванням з’ясуйте, чи огляд відбудеться вчасно.', next_workday: 'наступний робочий день' });
-Object.assign(STRINGS.en, { dispo_due_soon: 'Inspection/maintenance due by {d}', dispo_due_soon_hint: 'Deadlines from the vehicle file from today until the next working day (weekends and public holidays included) – before scheduling, check whether the inspection will take place in time.', next_workday: 'next working day' });
+Object.assign(STRINGS.de, { dispo_due_soon: 'Prüfung/Wartung fällig bis {d}', dispo_due_soon_hint: 'Fristen laut Fahrzeugakte von heute bis zum nächsten Werktag (Wochenende und Feiertage eingeschlossen) – vor dem Einplanen klären, ob die Prüfung rechtzeitig stattfindet. Darunter steht der geplante Prüftermin, ein offener Werkstattauftrag oder „kein Prüftermin geplant“; ein Termin nach dem Fristende ist rot markiert.', next_workday: 'nächster Werktag' });
+Object.assign(STRINGS.uk, { dispo_due_soon: 'Огляд/ТО до {d}', dispo_due_soon_hint: 'Строки з картки транспорту від сьогодні до наступного робочого дня (включно з вихідними та святами) – перед плануванням з’ясуйте, чи огляд відбудеться вчасно. Нижче вказано заплановану дату перевірки, відкрите замовлення майстерні або «дату перевірки не заплановано»; дату після кінцевого терміну позначено червоним.', next_workday: 'наступний робочий день' });
+Object.assign(STRINGS.en, { dispo_due_soon: 'Inspection/maintenance due by {d}', dispo_due_soon_hint: 'Deadlines from the vehicle file from today until the next working day (weekends and public holidays included) – before scheduling, check whether the inspection will take place in time. Below it is the planned inspection date, an open workshop order or “no inspection date planned”; a date after the deadline is marked in red.', next_workday: 'next working day' });
 Object.assign(STRINGS.de, { dispo_print_title: 'Disposition – Tagesübersicht' });
 Object.assign(STRINGS.uk, { dispo_print_title: 'Диспетчеризація – огляд дня' });
 Object.assign(STRINGS.en, { dispo_print_title: 'Dispatch – daily overview' });
@@ -3878,3 +3878,12 @@ Object.assign(STRINGS.en, { vi_done_parts: 'Parts: {list}' });
 Object.assign(STRINGS.de, { vi_later: 'Danach erneut gemeldet (90 Tage)', vi_later_same: 'gleicher Prüfpunkt', vi_later_hint: 'Vorgänge desselben Fahrzeugs nach dieser Freigabe – bei gleichem Mangel Nacharbeit bzw. Gewährleistung prüfen.' });
 Object.assign(STRINGS.uk, { vi_later: 'Згодом повідомлено знову (90 днів)', vi_later_same: 'той самий пункт перевірки', vi_later_hint: 'Справи щодо цього транспорту після цього допуску – за тієї самої несправності перевірте доопрацювання або гарантію.' });
 Object.assign(STRINGS.en, { vi_later: 'Reported again afterwards (90 days)', vi_later_same: 'same check item', vi_later_hint: 'Cases for this vehicle after this release – if it is the same defect, check rework or warranty.' });
+
+// Backlog 1076 (Blickwinkel „Disposition bucht einen Lkw ein, der morgen zur HU muss“): Planungsstand je Frist in „Prüfung/Wartung fällig bis …“
+Object.assign(STRINGS.de, { dispo_ds_plan: 'Prüftermin {d}', dispo_ds_late: 'Prüftermin {d} liegt nach dem Fristende', dispo_ds_noplan: 'kein Prüftermin geplant' });
+Object.assign(STRINGS.uk, { dispo_ds_plan: 'Дата перевірки {d}', dispo_ds_late: 'Дата перевірки {d} пізніша за кінцевий термін', dispo_ds_noplan: 'дату перевірки не заплановано' });
+Object.assign(STRINGS.en, { dispo_ds_plan: 'Inspection date {d}', dispo_ds_late: 'Inspection date {d} is after the deadline', dispo_ds_noplan: 'no inspection date planned' });
+// Backlog 1078: Frist des gekoppelten Fahrzeugs heute/morgen in der Fahrzeugliste
+Object.assign(STRINGS.de, { c_due_on: 'fällig {d}' });
+Object.assign(STRINGS.uk, { c_due_on: 'строк {d}' });
+Object.assign(STRINGS.en, { c_due_on: 'due {d}' });

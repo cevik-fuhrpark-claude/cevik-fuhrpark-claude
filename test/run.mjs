@@ -25693,8 +25693,8 @@ await test('Backlog 564: Dispo „fällig bis nächster Werktag“ aus allen Pr�
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const m = app.match(/function dispoDueSoon\(dvs, inSite, mrows = null\) \{[\s\S]*?\n\}/); ok(m, 'Funktion');
   const T = { today: 'heute', next_due: 'Fällig', dispo_due_soon: 'bis {d}', dispo_due_soon_hint: 'H', vk_anhaenger: 'Anhänger', vk_lkw: 'Lkw' };
-  const f = new Function('bDate', 'nextWorkdayAfter', 'plateCmp', 'esc', 't', 'fmtDue', 'mk', 'plate', m[0] + '\nreturn dispoDueSoon;')(
-    () => '2026-10-30', () => '2026-11-02', (a, b) => String(a).localeCompare(String(b)), (x) => String(x), (k) => T[k] || k, (d) => 'D' + d, (k) => k, (p) => `[${p}]`);
+  const f = new Function('bDate', 'nextWorkdayAfter', 'plateCmp', 'esc', 't', 'fmtDue', 'mk', 'plate', 'dueSoonPlan', m[0] + '\nreturn dispoDueSoon;')(
+    () => '2026-10-30', () => '2026-11-02', (a, b) => String(a).localeCompare(String(b)), (x) => String(x), (k) => T[k] || k, (d) => 'D' + d, (k) => k, (p) => `[${p}]`, (r) => `{plan ${r.kind}}`); // Backlog 1076: Planungsstand je Frist
   const dvs = [{ id: 'a', plate: 'A-1', next_due: '2026-10-01', next_due_kind: 'UVV' }, { id: 'b', plate: 'B-1', next_due: '2026-11-01', next_due_kind: 'SP', coupled: { kind: 'anhaenger', plate: 'AH-1' } },
     { id: 'c', plate: 'C-1', eval_excluded: 1 }, { id: 'd', plate: 'D-1', site: 'MUC' }];
   const rows = [{ vehicle_id: 'a', kind: 'UVV', next_due_date: '2026-10-01', status: 'ueberfaellig' }, { vehicle_id: 'a', kind: 'HU', next_due_date: '2026-11-02', status: 'faellig' },
@@ -25705,7 +25705,8 @@ await test('Backlog 564: Dispo „fällig bis nächster Werktag“ aus allen Pr�
   eq((h.match(/data-dduesoon/g) || []).length, 2, h); ok(h.indexOf('[B-1]') < h.indexOf('[A-1]'), 'früheste Frist zuerst');
   ok(h.includes('Tachograph (heute) · SP (D2026-11-01)'), 'mehrere Arten'); ok(h.includes('>HU<') && !h.includes('UVV2') && !h.includes('Rückruf') && !h.includes('C-1') && !h.includes('D-1'), h);
   ok(h.includes('data-dduecoupled>🔗 Anhänger AH-1'), 'Gespann');
-  const h2 = f(dvs, () => true, null); eq((h2.match(/data-dduesoon/g) || []).length, 1, 'Rückfall next_due'); ok(h2.includes('[B-1]') && h2.includes('>SP<'), h2);
+  ok(h.includes('Tachograph: {plan Tachograph} · SP: {plan SP}') && h.includes('data-ddueplan>{plan HU}'), 'Backlog 1076: Planungsstand je Frist, Art nur bei mehreren');
+  const h2 = f(dvs, () => true, null); ok(!h2.includes('data-ddueplan'), 'ohne Liste kein Planungsstand'); eq((h2.match(/data-dduesoon/g) || []).length, 1, 'Rückfall next_due'); ok(h2.includes('[B-1]') && h2.includes('>SP<'), h2);
   eq(f(dvs, () => true, []), '', 'leer');
   ok(app.includes("dmo && Array.isArray(dmo.rows) ? dmo.rows : null);"), 'Tafel nutzt die Prüfterminliste');
 });
@@ -35402,6 +35403,64 @@ await test('Backlog 1075 (Folge aus 1074): freigegebener Vorgang nennt „Danach
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].vi_later && STRINGS[l].vi_later_same && STRINGS[l].vi_later_hint, l);
 });
 
+await test('Backlog 1076 (Blickwinkel „Disposition bucht einen Lkw ein, der morgen zur HU muss“): „Prüfung/Wartung fällig bis …“ nennt je Frist den Planungsstand – Prüftermin (heute/morgen), Termin nach dem Fristende, offener Werkstattauftrag oder „kein Prüftermin geplant“; Liste liefert planned_date; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = (name) => { const i = app.indexOf('function ' + name + '('); ok(i >= 0, name); return app.slice(i, app.indexOf('\n}', i)) + '\n}\n'; };
+  const T = { dispo_ds_plan: 'Prüftermin {d}', dispo_ds_late: 'Prüftermin {d} liegt nach dem Fristende', dispo_ds_noplan: 'kein Prüftermin geplant', mo_open: 'Werkstattauftrag', today: 'heute', tomorrow: 'morgen' };
+  const today = '2026-11-06'; const tm = '2026-11-07';
+  const plan = new Function('esc', 't', 'fmtD', 'todayMark', fn('dueSoonPlan') + 'return dueSoonPlan;')((x) => String(x), (k) => T[k], (d) => d.split('-').reverse().join('.'), (d) => (d === today ? ' (heute)' : d === tm ? ' (morgen)' : ''));
+  const a = plan({ planned_date: tm }, '2026-11-09', today); ok(a.includes('data-dplan') && a.includes('Prüftermin 07.11.2026 (morgen)'), a);
+  ok(plan({ planned_date: today }, today, today).includes('(heute)'), 'Termin heute');
+  const b = plan({ planned_date: '2026-11-12' }, '2026-11-09', today); ok(b.includes('data-dplate') && b.includes('nach dem Fristende') && b.includes('var(--stop)'), b);
+  const c = plan({ planned_date: '2026-11-02' }, '2026-11-09', today); ok(c.includes('data-dnoplan'), 'verstrichener Termin zählt nicht als geplant: ' + c);
+  const d = plan({ planned_date: null, open_order: { case_no: 'V-0001' } }, '2026-11-09', today); ok(d.includes('data-dplanord') && d.includes('V-0001'), d);
+  ok(plan({}, '2026-11-09', today).includes('kein Prüftermin geplant'), 'ohne Termin');
+  // Einbau: nur mit Prüfterminliste (ohne Liste kein „kein Termin“ behaupten), Art nur bei mehreren Fristen
+  const ds = fn('dispoDueSoon');
+  ok(ds.includes('put(byV.get(r.vehicle_id), r.kind, r.next_due_date, r)') && ds.includes('d.some((x) => x.r)') && ds.includes('dueSoonPlan(x.r, x.due, today)') && ds.includes('data-ddueplan'), 'Einbau');
+  ok(/else for \(const v of dvs\) put\(v, v\.next_due_kind, v\.next_due\);/.test(ds), 'Rückfall ohne Liste ohne Planungsstand');
+  // Server: Prüfterminliste liefert planned_date und open_order je Frist (Quelle der Anzeige)
+  const { U, V1 } = await freshWorld();
+  const due = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', next_due_date: due, evidence: 'Prüfbuch (Test)' }); eq(r.status, 201, JSON.stringify(r.data));
+  let row = (await U.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === r.data.id);
+  ok(row && row.planned_date === null && 'open_order' in row, JSON.stringify(row));
+  const pd = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: pd })).status, 200);
+  row = (await U.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === r.data.id); eq(row.planned_date, pd);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['dispo_ds_plan', 'dispo_ds_late']) ok(STRINGS[l][k] && STRINGS[l][k].includes('{d}'), l + ' ' + k); ok(STRINGS[l].dispo_ds_noplan, l); }
+});
+await test('Backlog 1077/1078 (Folge aus 1076): Fahrer-Startseite markiert Termine mit „heute“/„morgen“; Fahrzeugliste/API nennen Frist sowie Prüf-/Werkstatttermin des gekoppelten Fahrzeugs heute/morgen (überfällig bleibt rot, ruhend ohne Frist-Chip); Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = (name) => { const i = app.indexOf('function ' + name + '('); ok(i >= 0, name); return app.slice(i, app.indexOf('\n}', i)) + '\n}\n'; };
+  for (const x of ['myPlanned', 'drvInspRows']) ok(!fn(x).includes("=== bDate() ? ' ('") && fn(x).includes('todayMark('), x + ' nutzt todayMark');
+  const today = '2026-11-06'; const tm = '2026-11-07';
+  const T = { trailer: 'Anhänger', truck: 'Lkw', c_due_on: 'fällig {d}', planned_inspection: 'Prüftermin geplant', planned_ws_short: 'Werkstatttermin', av_maint_overdue: 'überfällig' };
+  const chip = new Function('esc', 't', 'fmtD', 'todayMark', 'mk', 'bDate', fn('coupledChip') + 'return coupledChip;')((x) => String(x), (k) => T[k] || k, (d) => d, (d) => (d === today ? ' (heute)' : d === tm ? ' (morgen)' : ''), (k) => k, (n) => (n ? tm : today));
+  const base = { kind: 'anhaenger', plate: 'AH-1', availability: 'frei', km_remaining: null };
+  const a = chip({ ...base, next_due: tm, next_due_kind: 'HU', planned_inspection_date: tm, planned_inspection_kind: 'HU, SP', planned_workshop_date: today });
+  ok(a.includes('data-cdue>Anhänger AH-1: fällig 2026-11-07 (morgen) (HU)') && a.includes('data-cpinsp>Anhänger AH-1: Prüftermin geplant HU, SP 2026-11-07 (morgen)') && a.includes('data-cpws>Anhänger AH-1: Werkstatttermin 2026-11-06 (heute)'), a);
+  const b = chip({ ...base, next_due: '2026-11-01', planned_inspection_date: '2026-11-09', planned_workshop_date: '2026-11-20' });
+  ok(b.includes('data-cover') && !b.includes('data-cdue') && !b.includes('data-cpinsp') && !b.includes('data-cpws'), 'überfällig rot, spätere Termine ohne Chip: ' + b);
+  ok(!chip({ ...base, eval_excluded: 1, next_due: tm }).includes('data-cdue'), 'ruhend ohne Frist-Chip');
+  eq(chip({ ...base, next_due: '2026-11-20' }), '', 'Frist später: nichts');
+  // Server: gekoppeltes Fahrzeug trägt Prüf-/Werkstatttermin (auch in der Integrations-API über `coupled`)
+  const { U } = await freshWorld();
+  eq((await U.fleet.post('/api/vehicles', { plate: 'PT-ZM 1', vin: 'WDB96340310107801', trailer_plate: 'PT-AH 1' })).status, 201);
+  eq((await U.fleet.post('/api/vehicles', { plate: 'PT-AH 1', vin: 'WDB96340310107802', kind: 'anhaenger' })).status, 201);
+  const lk = (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.plate === 'PT-ZM 1');
+  ok(lk && lk.trailer_id, 'Gespann: ' + JSON.stringify(lk && lk.coupled));
+  const pd = new Date(Date.now() + 86400000).toISOString().slice(0, 10); const due = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${encodeURIComponent(lk.trailer_id)}/maintenance`, { kind: 'UVV', next_due_date: due, evidence: 'Prüfbuch (Test)' }); eq(r.status, 201, JSON.stringify(r.data));
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: pd })).status, 200);
+  const c = (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.id === lk.id).coupled;
+  ok(c && c.planned_inspection_date === pd && c.planned_inspection_kind === 'UVV' && 'planned_workshop_date' in c, JSON.stringify(c));
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].c_due_on && STRINGS[l].c_due_on.includes('{d}'), l);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, TST, VEH_SORTS, afLink, announceHits, api, bDate, bindTachoCancel, caseList, checkLabel, comboClearV, conflictKeep, conflictMine, ctChip, ctLines, ctRet, decIn, download, dqDetail, dur, envFn, esc, eur, eurIst, fMsg, fcLabel, fileUrl, fmtD, fmtDT, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hj, hoMissing, huNote, isMgr, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, langAttr, lostDup, lostIs, lostMark, mEv, mY, maintOrderHtml, mayReport, mk, mkR, noTr, noneP, offDayWatch, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, render, rkFor, searchKey, siteKeyUi, siteWsHints, sortPref, stackTables, supplierLabel, t, tachoHistList, tireAge, tireSizeSame, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, uid, unitIn, vOverdue, vlAt, vsDef, warrChip, wsForSite, wsOptions } from './app-main.js';
+import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, TST, VEH_SORTS, afLink, announceHits, api, bDate, bindTachoCancel, caseList, checkLabel, comboClearV, conflictKeep, conflictMine, ctChip, ctLines, ctRet, decIn, download, dqDetail, dur, envFn, esc, eur, eurIst, fMsg, fcLabel, fileUrl, fmtD, fmtDT, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hj, hoMissing, huNote, isMgr, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, langAttr, lostDup, lostIs, lostMark, mEv, mY, maintOrderHtml, mayReport, mk, mkR, noTr, noneP, offDayWatch, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, render, rkFor, searchKey, siteKeyUi, siteWsHints, sortPref, stackTables, supplierLabel, t, tachoHistList, tireAge, tireSizeSame, tlHash, tmAge, tmKmRej, tn, toast, todayMark, translateNextAction, uid, unitIn, vOverdue, vlAt, vsDef, warrChip, wsForSite, wsOptions } from './app-main.js';
 
 // Durchführung älter als die gespeicherte letzte: nur im Verlauf gespeichert, Fälligkeit unverändert – ausdrücklich sagen (17.10.2026)
 const doneToast = (r) => toast(r && r.older_than_last ? '✓ ' + t('mt_older_saved').replace('{d}', fmtD(r.last_done_date)) : '✓');
@@ -139,9 +139,6 @@ function returnCheckText(rc) {
     rc.active_notes ? tn('rc_notes', rc.active_notes) : '', rc.open_items ? tn('rc_open_items', rc.open_items) + (rc.open_items_safety ? ' ' + t('oi_safety_deact').replace('{n}', fmtNum(rc.open_items_safety)) : '') : '', rc.last_km_at ? t('rc_km').replace('{d}', fmtD(rc.last_km_at)) : t('rc_km_none')].filter(Boolean);
   return `${t('rc_head')}: ${parts.join(' · ')}`;
 }
-// „(heute)“ hinter einem geplanten Termin in Listen (Backlog 209: Prüftermin heute in der Fahrzeugliste nicht erkennbar – Ersatzsuche)
-// Backlog 484 (Blickwinkel „Disposition plant abends den nächsten Tag“): Termin morgen ebenso markieren (Berliner Datum)
-const todayMark = (d) => (d && d === bDate() ? ` <b data-today>(${esc(t('today'))})</b>` : d && d === bDate(1) ? ` <b data-tomorrow>(${esc(t('tomorrow'))})</b>` : '');
 function coupledChip(c) {
   if (!c) return '';
   const who = `${esc(t(c.kind === 'anhaenger' ? 'trailer' : 'truck'))} ${esc(c.plate)}`;
@@ -151,6 +148,10 @@ function coupledChip(c) {
   if (c.failed_inspection) h += `<b class="chip kritisch" data-cfail>${who}: ${esc(t('insp_failed_chip'))}</b> `;
   else if (c.reinspection_open && !c.eval_excluded) h += `<span class="chip mittel" data-creinsp title="${esc(t('reinsp_open_title'))}">${who}: ${esc(t('reinsp_open_chip'))}</span> `; // Backlog 618
   if (!c.eval_excluded && ((c.next_due && c.next_due < bDate()) || (c.km_remaining !== null && c.km_remaining !== undefined && c.km_remaining < 0))) h += `<b class="chip kritisch" data-cover>${who}: ${esc(t('av_maint_overdue'))}</b> `;
+  // Backlog 1078: Frist bzw. Prüf-/Werkstatttermin des gekoppelten Fahrzeugs heute oder morgen – das Gespann fällt dann mit aus (nur Information)
+  else if (!c.eval_excluded && c.next_due && c.next_due <= bDate(1)) h += `<span class="chip mittel" data-cdue>${who}: ${esc(t('c_due_on').replace('{d}', fmtD(c.next_due)))}${todayMark(c.next_due)}${c.next_due_kind ? ` (${esc(mk(c.next_due_kind))})` : ''}</span> `;
+  if (c.planned_inspection_date && c.planned_inspection_date <= bDate(1)) h += `<span class="chip mittel" data-cpinsp>${who}: ${esc(t('planned_inspection'))}${c.planned_inspection_kind ? ' ' + esc(String(c.planned_inspection_kind).split(', ').map(mk).join(', ')) : ''} ${fmtD(c.planned_inspection_date)}${todayMark(c.planned_inspection_date)}</span> `;
+  if (c.planned_workshop_date && c.planned_workshop_date <= bDate(1)) h += `<span class="chip mittel" data-cpws>${who}: ${esc(t('planned_ws_short'))} ${fmtD(c.planned_workshop_date)}${todayMark(c.planned_workshop_date)}</span> `;
   return h;
 }
 const fmtBar = (n) => fmtNum(n) + (S.lang === 'uk' ? ' бар' : ' bar');
