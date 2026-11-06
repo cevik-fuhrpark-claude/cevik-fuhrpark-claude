@@ -35614,6 +35614,40 @@ await test('Backlog 1089/1090 (Blickwinkel „Neufahrzeug kommt in den Bestand�
   eq((await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_kg: '18000', first_registration: '2023-01-02', spec_source: 'Test' })).status, 200);
 });
 
+await test('Backlog 1091/1092 (Blickwinkel „Fahrer kehrt nach drei Wochen Urlaub zurück, Lkw inzwischen getauscht“): „Mein Fahrzeug“ nennt „zugeordnet seit“; Hinweis auf geänderte Zuordnung je Gerät bis „Verstanden“', async () => {
+  const { e, U, V1 } = await freshWorld(); const V2 = 'VIN:WDB9630051L917317';
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id })).status, 201);
+  const a = (await U.driver.get('/api/me/vehicles')).data.vehicles;
+  eq(a.map((v) => v.id).join(), V1); ok(/^\d{4}-\d\d-\d\dT/.test(a[0].valid_from), 'valid_from: ' + a[0].valid_from);
+  // Fahrzeugwechsel während des Urlaubs: neues Fahrzeug mit eigenem Beginn, bisheriges nicht mehr in „Mein Fahrzeug“
+  await new Promise((r) => setTimeout(r, 5));
+  const sw = await U.fleet.post(`/api/vehicles/${V2}/drivers`, { user_id: U.driver.id, end_previous: true });
+  eq(sw.status, 201, JSON.stringify(sw.data));
+  const b = (await U.driver.get('/api/me/vehicles')).data.vehicles;
+  eq(b.map((v) => v.id).join(), V2); ok(b[0].valid_from > a[0].valid_from, 'neuer Beginn');
+  // Oberfläche: Hinweislogik aus app.js mit Gerätespeicher-Attrappe ausführen
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.match(/const vehSeenKey = [\s\S]*?\n}\n/); ok(src, 'vehChangeNote gefunden');
+  const store = new Map(); const localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) };
+  const S = { me: { id: 'u1', environment: 'test' } };
+  const { STRINGS } = await import('../public/i18n.js');
+  const f = new Function('S', 'localStorage', 't', 'esc', 'fmtD', src[0] + '\nreturn { vehChangeNote, vehSeenSave };')(S, localStorage, (k) => STRINGS.de[k], (x) => String(x), (d) => String(d).slice(0, 10));
+  eq(f.vehChangeNote(a), '', 'erstes Öffnen auf dem Gerät: kein Hinweis'); eq(f.vehChangeNote(a), '', 'unverändert: kein Hinweis');
+  const h = f.vehChangeNote(b);
+  ok(h.includes('id="vchange"') && h.includes('SZ-KC 5515') && h.includes('data-vchgone') && h.includes('SZ-YC 5513'), h);
+  ok(h.includes(STRINGS.de.nav_cases), 'nennt „Vorgänge“');
+  eq(f.vehChangeNote(b).includes('vchange'), true, 'bleibt bis „Verstanden“');
+  f.vehSeenSave(S.vcur); eq(f.vehChangeNote(b), '', 'nach „Verstanden“ weg');
+  ok(f.vehChangeNote([]).includes('data-vchgone'), 'Zuordnung beendet → „nicht mehr zugeordnet“');
+  // Verdrahtung: nur mit frischen Daten, Knopf gebunden, Merkliste übersteht das Abmelden (nicht in clearOfflineData), Texte DE/UK/EN
+  ok(app.includes("if (mv && !mvOffline) html += vehChangeNote(mv);"), 'nur online'); ok(app.includes("$('#vchangeok')"), 'Knopf gebunden');
+  const clr = app.split('\n').find((l) => l.includes("k.startsWith('cfp_myveh_')")); ok(clr && !clr.includes('cfp_vseen_'), 'cfp_vseen_ bleibt beim Abmelden');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['drv_assigned_since', 'drv_vchange_title', 'drv_vchange_new', 'drv_vchange_gone', 'drv_vchange_hint', 'drv_vchange_ok']) ok(STRINGS[l][k], `${l}.${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].drv_vchange_hint.includes('{c}'), l);
+  ok(app.includes('<dd data-assignedsince>${fmtD(v.valid_from)}</dd>'), '„Zugeordnet seit“ in der Karte');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

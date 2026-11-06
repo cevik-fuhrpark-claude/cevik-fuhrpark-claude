@@ -309,6 +309,7 @@ UI-Stundensatz-Verlauf (bisherigen Satz behalten, Liste, Entfernen), DE/UK/EN 39
 UI-Kostenbericht Schnellwahl (Vormonat, laufendes Jahr, Vorjahr, letzte 12 Monate), DE/UK/EN 390/820/1366|ui-kosten-schnellwahl.py|/tmp/cfp-kosten-schnellwahl.log
 UI-Arbeitszeit am Tag (eigene Summe je Auftrag, Rest bis 24 h, Doppel-Warnung), DE/UK/EN 390/820/1366|ui-arbeitszeit-tag.py|/tmp/cfp-arbeitszeit-tag.log
 UI-Fahrzeugtausch unterwegs: Hinweis „nicht dir zugeordnet“ in Kontrolle/Meldung, Zuordnung des Melders im Vorgang (Leitung), DE/UK/EN 390/820/1366|ui-fahrzeugtausch.py|/tmp/cfp-fahrzeugtausch.log
+UI-Fahrzeugzuordnung geändert (Urlaubsrückkehr): „Zugeordnet seit“, Hinweis neu/nicht mehr zugeordnet bis „Verstanden“, DE/UK/EN 390/820/1366|ui-zuordnung-geaendert.py|/tmp/cfp-zuordnung-geaendert.log
 UI-Werkstatt ohne Schlüssel/Fahrzeugschein: „fehlt“ im Vorgang, Vorgangsliste, Werkstattplan, DE/UK/EN 390/820/1366|ui-werkstatt-schluessel.py|/tmp/cfp-werkstatt-schluessel.log
 UI-Abholung nach der Reparatur: Abholvermerk Werkstatt → Freigabe → Fahrerhinweis, Vorgang/Fahrzeugakte, DE/UK/EN 390/820/1366|ui-abholung.py|/tmp/cfp-abholung.log
 UI-Abholhinweis ersetzt (Backlog 879): frühere Abholhinweise für Fahrer bei der nächsten Freigabe archiviert, Formular + Verlauf, DE/UK/EN 390/820/1366|ui-abholung-ersetzt.py|/tmp/cfp-abholung-ersetzt.log

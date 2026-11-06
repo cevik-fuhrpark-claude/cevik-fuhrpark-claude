@@ -1527,11 +1527,13 @@ async function viewHome() {
       api('GET', '/api/emergency').then((d) => { try { localStorage.setItem(`cfp_emerg_${S.me.id}_${S.me.environment}_`, JSON.stringify({ at: new Date().toISOString(), d })); } catch {} }).catch(() => {}); }
     catch { try { const c = JSON.parse(localStorage.getItem(mvKey) || 'null'); if (c) { mv = c.vehicles; mvOffline = c.at; } } catch {} }
     if (mvOffline || cases === null) html += `<div class="panel alert">${esc(t('offline_view'))}${mvOffline ? ` (${esc(t('as_of'))} ${fmtDT(mvOffline)})` : ''}</div>`;
+    // Backlog 1092: geänderte Zuordnung seit dem letzten Öffnen auf diesem Gerät (nur mit frischen Daten)
+    if (mv && !mvOffline) html += vehChangeNote(mv);
     if (mv && mv.length) html += `<h2>${esc(t('my_vehicle'))}</h2>${mv.map((v) => { const ob = outboxVeh(v.id); const obc = v.coupled && v.coupled.id ? outboxVeh(v.coupled.id) : { n: 0, crit: false }; const obCrit = ob.crit || obc.crit; const obN = ob.n + obc.n; return `<section class="panel ${v.locked || v.coupled?.locked || obCrit ? 'alert' : ''}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${plate(v.plate, { locked: v.locked })}${coupledLockedChip(v.coupled)}${v.locked ? `<span class="chip kritisch">${esc(t('locked'))} – ${esc(t('do_not_drive'))}</span>` : v.open_cases_total ? `<span class="chip mittel">${esc(tn('open_reports_n', v.open_cases_total))}</span>` : obN || v.coupled?.locked || v.coupled?.open_cases_total ? '' : `<span class="chip ok">${esc(t('no_open_reports'))}</span>`}${v.coupled && !v.coupled.locked && v.coupled.open_cases_total ? `<span class="chip mittel" data-coupledopen>${esc(v.coupled.plate)}: ${esc(tn('open_reports_n', v.coupled.open_cases_total))}</span>` : ''}${obN ? `<span class="chip ${obCrit ? 'kritisch' : 'mittel'}" data-outboxveh>${esc(tn('outbox_veh_pending', obN))}</span>` : ''}</div>${obCrit ? `<p role="alert" data-outboxcrit><b>⚠ ${esc(t('outbox_veh_crit'))}</b></p>` : ''}
       ${drvNotes(v.notes)}
       ${v.eval_excluded ? `<p class="small" role="note" data-drvresting><b>⚠ ${esc(t('drv_resting'))}</b></p>` : ''}
       ${v.winter ? `<p class="small" role="note" data-drvwinter><b>❄ ${esc(t('drv_winter').replace('{p}', v.winter.noncompliant.map(posL).join(', ')))}</b></p>` : ''}
-      <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${myPlanned(v)}${drvInspRows(v)}${(v.km_due || []).map((r) => `<dt>${esc(mk(r.kind))}</dt><dd>${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining < 0 ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ` <span class="small">(${esc(t('km_left'))} ${fmtKm(r.km_remaining)})</span>`}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}</span>` : ''}</dd>`).join('')}</dl>${knownDefects(v.known_defects)}${relItems(v.open_items_after_release)}${drvCoupled(v.coupled)}</section>`; }).join('')}`;
+      <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}${v.valid_from ? `<dt>${esc(t('drv_assigned_since'))}</dt><dd data-assignedsince>${fmtD(v.valid_from)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${myPlanned(v)}${drvInspRows(v)}${(v.km_due || []).map((r) => `<dt>${esc(mk(r.kind))}</dt><dd>${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining < 0 ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ` <span class="small">(${esc(t('km_left'))} ${fmtKm(r.km_remaining)})</span>`}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}</span>` : ''}</dd>`).join('')}</dl>${knownDefects(v.known_defects)}${relItems(v.open_items_after_release)}${drvCoupled(v.coupled)}</section>`; }).join('')}`;
     // Fahrer ohne zugeordnetes Fahrzeug (Erstnutzung, Rundgang Schritt 3): sagen, was fehlt (22.10.2026: Startseite zeigte nur die Knöpfe)
     else if (mv && !mvOffline) html += `<div class="panel" role="note" data-novehicle>${esc(t('drv_no_vehicle'))}</div>`;
     // Backlog 463: offene Rückfragen der Fuhrparkleitung zu eigenen Meldungen zuerst
@@ -1572,6 +1574,7 @@ async function viewHome() {
   render(html, 'home');
   bindWsFlow();
   bindDraftsBanner();
+  const vco = $('#vchangeok'); if (vco) vco.onclick = () => { vehSeenSave(S.vcur || []); const p = $('#vchange'); if (p) p.remove(); };
   pushNudge().catch(() => {});
   const trb = $('#todoretry'); if (trb) trb.onclick = async () => { await viewHome(); };
   // Liste mit demselben Standort wie die gezählte Tafel (Standard-Standort bzw. „alle“)
@@ -3295,6 +3298,22 @@ function myPlanned(v) {
   return h;
 }
 
+// Backlog 1092 (Blickwinkel „Fahrer kehrt nach drei Wochen Urlaub zurück, Lkw inzwischen getauscht“): zuletzt auf diesem Gerät bestätigte
+// Zuordnung (nur Fahrzeug-ID + Kennzeichen, je Konto/Umgebung; bleibt bewusst über das Abmelden hinaus, damit der Hinweis auch nach einer
+// Abmeldung vor dem Urlaub erscheint). Erstes Öffnen auf einem Gerät: still merken, kein Hinweis.
+const vehSeenKey = () => `cfp_vseen_${S.me.id}_${S.me.environment}`;
+function vehSeenSave(cur) { try { localStorage.setItem(vehSeenKey(), JSON.stringify(cur)); } catch {} }
+function vehChangeNote(mv) {
+  const cur = mv.map((v) => ({ id: v.id, plate: v.plate }));
+  S.vcur = cur;
+  let seen = null; try { seen = JSON.parse(localStorage.getItem(vehSeenKey()) || 'null'); } catch {}
+  if (!Array.isArray(seen)) { vehSeenSave(cur); return ''; }
+  const ids = new Set(seen.map((x) => x && x.id));
+  const added = mv.filter((v) => !ids.has(v.id));
+  const gone = seen.filter((x) => x && x.id && !mv.some((v) => v.id === x.id));
+  if (!added.length && !gone.length) { vehSeenSave(cur); return ''; }
+  return `<section class="panel warn" role="note" id="vchange"><h2 style="margin-top:0">${esc(t('drv_vchange_title'))}</h2>${added.length ? `<p data-vchnew>${esc(t('drv_vchange_new'))} ${added.map((v) => `<b style="white-space:nowrap">${esc(v.plate)}</b>${v.valid_from ? ` <span class="small muted" style="white-space:nowrap">(${esc(t('drv_assigned_since'))} ${fmtD(v.valid_from)})</span>` : ''}`).join(', ')}</p>` : ''}${gone.length ? `<p data-vchgone>${esc(t('drv_vchange_gone'))} ${gone.map((x) => `<b style="white-space:nowrap">${esc(x.plate || '')}</b>`).join(', ')}</p>` : ''}<p class="small">${esc(t('drv_vchange_hint').replace('{c}', t('nav_cases')))}</p><div class="actions"><button class="btn secondary" id="vchangeok">${esc(t('drv_vchange_ok'))}</button></div></section>`;
+}
 // „Mein Fahrzeug“ aus dem Zwischenspeicher der Startseite (ohne Netz: Sperre/Anhänger-Sperre/bekannte Mängel weiter sichtbar, 20.10.2026)
 function myVehCached() { try { const c = JSON.parse(localStorage.getItem(`cfp_myveh_${S.me.id}_${S.me.environment}`) || 'null'); return c && Array.isArray(c.vehicles) ? c.vehicles : null; } catch { return null; } }
 

@@ -1326,6 +1326,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1079: Prüffristen/-termine in der Abfahrtskontrolle (nur Hinweis)
 // Backlog 1080–1082 (Blickwinkel „Werkstatt Dortmund und Bayern arbeiten am selben Gespann“)
 // Backlog 1083: Werkstatt sieht nur den Zustand des gekoppelten Fahrzeugs bei einer anderen Werkstatt
+// Backlog 1091/1092 (Blickwinkel „Fahrer kehrt nach drei Wochen Urlaub zurück, Lkw inzwischen getauscht“)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
