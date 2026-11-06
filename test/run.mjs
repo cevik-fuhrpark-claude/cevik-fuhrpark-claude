@@ -35701,6 +35701,14 @@ await test('Backlog 1096/1097 (Folge aus 1093): Disposition „Geplante Werkstat
   ok(app.includes('<span class="chip ok" style="overflow-wrap:normal" data-dupcuntil>'), 'Chip ohne nowrap');
 });
 
+await test('Backlog 1098 (Blickwinkel „Disposition druckt die Startseite für die Spätschicht“): Navigationslinks („Alle“, „Werkstattplan ›“) erscheinen nicht im Ausdruck', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(/@media print \{\n[^@]*?\n  \.navlinks \{ display: none !important; \}/.test(css), 'Druck-CSS blendet .navlinks aus');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes(`<p class="navlinks"><a href="\${hj('#/cases')}">\${esc(t('all'))}</a></p>`), 'Startseite: „Alle“ steht in .navlinks');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
