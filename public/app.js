@@ -1587,6 +1587,7 @@ async function dispoHome(cases) {
     cases === null ? [] : api('GET', '/api/vehicles').then((r) => r.vehicles).catch(() => [])]);
   html += dispoBoard(dcs, dmo && dmo.defects_without_case ? dmo.defects_without_case : [], new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])), new Set(dvs.filter((v) => v.eval_excluded).map((v) => v.id)));
   if (cases !== null) html += await dispoBack(dcs, hq, new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])));
+  html += dispoApw(dcs);
   // Neue Meldungen, deren Eingang die Leitung noch nicht bestätigt hat (gleiche Regel wie Filter `unreceived`; Standort wie die Tafel) –
   // vorher sah die Disposition „was ist neu?“ nur über die nach Dringlichkeit sortierte Liste (Blickwinkel „Disposition, erster Tag“, 26.10.2026)
   const nu = dcs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).length;
@@ -1620,6 +1621,16 @@ async function dispoHome(cases) {
   html += helpLink('dispo');
   if (cases !== null) html += await dispoPlanned(S.me.home_site && !S.dispoAll ? S.me.home_site : '');
   return html;
+}
+// Backlog 1085 (Blickwinkel „Unfallschaden: Gutachter muss vor der Reparatur besichtigen“): geplante Besichtigungen an offenen Vorgängen
+// (`appraisal_wait_on`, nur Datum) als eigene Gruppe – vorher nur in der Vorgangsliste; ein gemeldeter, eingeschränkt weiterfahrender Lkw
+// stand auf der Tafel nirgends und konnte für den Besichtigungstag auf Tour gehen. Je Fahrzeug der früheste Termin.
+function dispoApw(cs) {
+  const byV = new Map();
+  for (const c of cs) { if (!c.appraisal_wait_on) continue; const x = byV.get(c.vehicle_id); if (!x || c.appraisal_wait_on < x.appraisal_wait_on) byV.set(c.vehicle_id, c); }
+  const list = [...byV.values()].sort((a, b) => a.appraisal_wait_on.localeCompare(b.appraisal_wait_on) || plateCmp(a.plate, b.plate));
+  if (!list.length) return '';
+  return `<h2 id="dapw">🔍 ${esc(t('dispo_apw'))} <span class="chip mittel">${list.length}</span></h2><p class="small muted">${esc(t('apw_hint_dispo'))}</p><div class="list">${list.map((c) => `<a class="row p-mittel" href="#/cases/${esc(c.id)}" data-dapw>${plate(c.plate, { locked: c.safety_lock })}<span class="title" style="white-space:normal">${esc(stTxt(c))}</span><span class="chip mittel" style="white-space:nowrap" data-dapwon>${fmtD(c.appraisal_wait_on)}${todayMark(c.appraisal_wait_on)}</span><span class="sub wrap">${esc(c.case_no)}</span></a>`).join('')}</div>${dispoPrintLine('apw', t('dispo_apw'), list.map((c) => `${c.plate} (${fmtD(c.appraisal_wait_on)})`))}`;
 }
 // Backlog 560: Warnhinweise der Dispo-Tafel im Ausdruck mit Kennzeichen (am Bildschirm nur Zähler mit Link auf die Liste)
 function dispoPrintLine(key, label, items, alert = false) {
@@ -4099,7 +4110,8 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   const bkDoc = ['add_part', 'add_external_cost'].includes(action) ? `${bkVin ? `<br><span id="bkvin">${esc(t('vin'))}: <span translate="no">${esc(bkVin)}</span></span>` : ''}${bkKm ? `<br><span class="muted" id="bkkm">${esc(t('irv_last_km').replace('{km}', fmtNum(bkKm.km)).replace('{d}', fmtD(bkKm.measured_at)))}</span>` : ''}${action === 'add_external_cost' ? `<br><span class="muted" id="bkdoc">${esc(t('bk_doc'))}</span>` : ''}` : '';
   const bkFor = ['record_work', 'add_part', 'add_external_cost'].includes(action) ? `<p class="panel small" id="afcase"><b>${esc(t('bk_for'))}: ${esc(c.case_no || '')} · ${esc((d && d.vehicle && d.vehicle.plate) || c.plate || '')}</b>${c.description ? `<br><span class="muted">${ltxt(clipTxt(c.description, 80))}</span>` : ''}${bkDoc}<br><span class="muted">${esc(t('bk_check'))}</span></p>` : '';
   // Backlog 903: geplante Gutachter-Besichtigung direkt im Formular der Arbeitsschritte (am Tablet ist der Kopf weggescrollt)
-  const apwF = ['start_repair', 'record_work', 'add_part', 'add_external_cost'].includes(action) && c.appraisal_wait_on ? `<p class="panel warn small" data-apwform>🔍 <b>${esc(t('apw_title'))} ${fmtD(c.appraisal_wait_on)}</b> – ${esc(t('apw_hint_ws'))}</p>` : '';
+  // Backlog 1084 (Blickwinkel „Unfallschaden: Gutachter muss vor der Reparatur besichtigen“): auch im Formular „Reparatur freigeben“ der Leitung
+  const apwF = ['start_repair', 'record_work', 'add_part', 'add_external_cost', 'approve_repair'].includes(action) && c.appraisal_wait_on ? `<p class="panel warn small" data-apwform>🔍 <b>${esc(t('apw_title'))} ${fmtD(c.appraisal_wait_on)}</b> – ${esc(t(action === 'approve_repair' ? 'apw_appr_mgr' : 'apw_hint_ws'))}</p>` : '';
   box.innerHTML = `<form class="panel" id="af"><h3>${esc(t('act_' + action))}</h3>${apwF}${bkFor}${f.join('')}<div class="actions"><button class="btn">${esc(t('save'))}</button><button type="button" class="btn secondary" id="ac">${esc(t('cancel'))}</button></div></form>`;
   if (!restore) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   // Tastatur/Screenreader: Fokus ins Formular, „Abbrechen“ gibt ihn an den auslösenden Knopf zurück (21.10.2026: blieb auf dem Knopf bzw. fiel auf body)

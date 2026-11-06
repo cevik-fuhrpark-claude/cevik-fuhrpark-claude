@@ -32084,6 +32084,27 @@ await test('Backlog 903 (Gutachter-Besichtigung, Lkw in der Werkstatt): Werkstat
   for (const l of ['de', 'uk', 'en']) { for (const k of ['apw_title', 'apw_short', 'apw_hint_ws', 'apw_hint_mgr', 'apw_hint_dispo']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].help_claims_s.includes(STRINGS[l].apw_title), `${l}: Hilfe`); }
   ok((await import('node:fs')).readFileSync(new URL('../scripts/ui-gutachter-werkstatt.py', import.meta.url), 'utf8').includes('Backlog 903'), 'UI-Prüfung');
 });
+await test('Backlog 1084/1085 (Blickwinkel „Unfallschaden: Gutachter muss vor der Reparatur besichtigen“): Dispo-Tafel zeigt geplante Besichtigung auch für gemeldete, eingeschränkt fahrende Lkw; Hinweis im Formular „Reparatur freigeben“; Foto-Hinweis für die Werkstatt; Hilfe DE/UK/EN', async () => {
+  eq((await owner.post('/api/vehicles', { plate: 'GW-T 1084', vin: 'WDB96340391084108', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340391084108';
+  const cid = (await users.driver.post('/api/cases', { vehicle_id: V, description: 'Seitenschaden nach Unfall, fährt noch (Test 1084)', priority: 'mittel', driveability: 'eingeschraenkt', request_key: rk() })).data.id;
+  eq((await users.fleet.put(`/api/cases/${cid}/claim`, { insurer: 'Test-Versicherung 1084', reported_on: bDayOff(0), evidence: 'Test', appraisal_on: bDayOff(1), expected_updated_at: null })).status, 200);
+  const row = (await users.dispatch.get('/api/cases?status=open&limit=500')).data.cases.find((c) => c.id === cid);
+  ok(row && row.status === 'gemeldet' && row.appraisal_wait_on === bDayOff(1), 'Dispo-Liste liefert Termin auch im Status „gemeldet“');
+  ok(!JSON.stringify(row).includes('Test-Versicherung 1084'), 'ohne Versicherer');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('function dispoApw(cs)') && app.includes('html += dispoApw(dcs);'), 'Gruppe auf der Dispo-Tafel');
+  for (const m of ['data-dapw>', 'data-dapwon', "dispoPrintLine('apw'"]) ok(app.includes(m), m);
+  ok(app.includes("'add_external_cost', 'approve_repair'].includes(action) && c.appraisal_wait_on") && app.includes("action === 'approve_repair' ? 'apw_appr_mgr' : 'apw_hint_ws'"), 'Formular „Reparatur freigeben“');
+  const { STRINGS } = await import('../public/i18n.js');
+  const foto = { de: 'fotografieren', uk: 'фотографуйте', en: 'photograph' };
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['dispo_apw', 'apw_appr_mgr']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].apw_hint_ws.includes(foto[l]), `${l}: Foto-Hinweis`);
+    ok(STRINGS[l].help_dispo_s.includes(STRINGS[l].dispo_apw), `${l}: Hilfe Disposition`);
+  }
+  ok((await import('node:fs')).readFileSync(new URL('../scripts/ui-gutachter-werkstatt.py', import.meta.url), 'utf8').includes('Backlog 1085'), 'UI-Prüfung');
+});
 await test('Backlog 904 (Jahresgespräch mit Fremdwerkstatt/Lieferant): Kosten je Firma aus den Einzelpositionen – Schreibweisen zusammengefasst, Ist/Schätzung/unbewertet getrennt, ersetzte Teile nicht gezählt, eigene Arbeitszeit ausgenommen; CSV, Rechte, Texte DE/UK/EN', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'FK-T 904', vin: 'WDB96340390400904', site: 'Dortmund' })).status, 201);
   const V = 'VIN:WDB96340390400904';

@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { BERLIN_FMT, S, WST_ST, api, bDate, cDesc, clipTxt, comboClearV, dispoDayBefore, esc, federalHoliday, fmtD, fmtDT, fmtDue, helpLink, hj, hoMissing, langAttr, ltxt, mk, nextWorkdayAfter, partsEta, planVehTag, plate, plateCmp, posL, rdyOf, rdyTxt, siteKeyUi, t, tn, todayMark, translateLockReason, vOverdue, vlAt, woApptTxt, woTag, wsName } from './app-main.js';
+import { BERLIN_FMT, S, WST_ST, api, bDate, cDesc, clipTxt, comboClearV, dispoDayBefore, esc, federalHoliday, fmtD, fmtDT, fmtDue, helpLink, hj, hoMissing, langAttr, ltxt, mk, nextWorkdayAfter, partsEta, planVehTag, plate, plateCmp, posL, rdyOf, rdyTxt, siteKeyUi, stTxt, t, tn, todayMark, translateLockReason, vOverdue, vlAt, woApptTxt, woTag, wsName } from './app-main.js';
 
 // Teile-Liefertermin laut Werkstatt (nur bei „wartet auf Teile“); überschritten = markiert
 // „Rückkehr: ungeklärt“ (Disposition): der Werkstatttermin ist der Beginn, nicht die Fertigstellung – ein Datum zählt nur, solange es noch
@@ -22,6 +22,7 @@ async function dispoHome(cases) {
     cases === null ? [] : api('GET', '/api/vehicles').then((r) => r.vehicles).catch(() => [])]);
   html += dispoBoard(dcs, dmo && dmo.defects_without_case ? dmo.defects_without_case : [], new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])), new Set(dvs.filter((v) => v.eval_excluded).map((v) => v.id)));
   if (cases !== null) html += await dispoBack(dcs, hq, new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])));
+  html += dispoApw(dcs);
   // Neue Meldungen, deren Eingang die Leitung noch nicht bestätigt hat (gleiche Regel wie Filter `unreceived`; Standort wie die Tafel) –
   // vorher sah die Disposition „was ist neu?“ nur über die nach Dringlichkeit sortierte Liste (Blickwinkel „Disposition, erster Tag“, 26.10.2026)
   const nu = dcs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).length;
@@ -55,6 +56,16 @@ async function dispoHome(cases) {
   html += helpLink('dispo');
   if (cases !== null) html += await dispoPlanned(S.me.home_site && !S.dispoAll ? S.me.home_site : '');
   return html;
+}
+// Backlog 1085 (Blickwinkel „Unfallschaden: Gutachter muss vor der Reparatur besichtigen“): geplante Besichtigungen an offenen Vorgängen
+// (`appraisal_wait_on`, nur Datum) als eigene Gruppe – vorher nur in der Vorgangsliste; ein gemeldeter, eingeschränkt weiterfahrender Lkw
+// stand auf der Tafel nirgends und konnte für den Besichtigungstag auf Tour gehen. Je Fahrzeug der früheste Termin.
+function dispoApw(cs) {
+  const byV = new Map();
+  for (const c of cs) { if (!c.appraisal_wait_on) continue; const x = byV.get(c.vehicle_id); if (!x || c.appraisal_wait_on < x.appraisal_wait_on) byV.set(c.vehicle_id, c); }
+  const list = [...byV.values()].sort((a, b) => a.appraisal_wait_on.localeCompare(b.appraisal_wait_on) || plateCmp(a.plate, b.plate));
+  if (!list.length) return '';
+  return `<h2 id="dapw">🔍 ${esc(t('dispo_apw'))} <span class="chip mittel">${list.length}</span></h2><p class="small muted">${esc(t('apw_hint_dispo'))}</p><div class="list">${list.map((c) => `<a class="row p-mittel" href="#/cases/${esc(c.id)}" data-dapw>${plate(c.plate, { locked: c.safety_lock })}<span class="title" style="white-space:normal">${esc(stTxt(c))}</span><span class="chip mittel" style="white-space:nowrap" data-dapwon>${fmtD(c.appraisal_wait_on)}${todayMark(c.appraisal_wait_on)}</span><span class="sub wrap">${esc(c.case_no)}</span></a>`).join('')}</div>${dispoPrintLine('apw', t('dispo_apw'), list.map((c) => `${c.plate} (${fmtD(c.appraisal_wait_on)})`))}`;
 }
 // Backlog 560: Warnhinweise der Dispo-Tafel im Ausdruck mit Kennzeichen (am Bildschirm nur Zähler mit Link auf die Liste)
 function dispoPrintLine(key, label, items, alert = false) {
