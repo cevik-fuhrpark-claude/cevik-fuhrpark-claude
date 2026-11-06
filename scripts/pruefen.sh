@@ -422,6 +422,7 @@ UI-Bußgeld Zuordnungswechsel am Tattag mit Uhrzeit (Backlog 557), DE/UK/EN 390/
 UI-Dokumentangaben korrigieren (seit Backlog 817 mit Konflikt: eigene Eingaben bleiben, Felder der anderen Person markiert)|ui-dokument-korrigieren.py|/tmp/cfp-dokument-korrigieren.log
 UI-Dokument-Gültigkeit (Chips), Dublette mit anderen Angaben öffnet Korrektur|ui-dokument-status.py|/tmp/cfp-dokument-status.log
 UI-Wiedervorlage behält Vermerk, Suche findet außer Betrieb, Chip-Zeilen 390 px|ui-wiedervorlage-suche.py|/tmp/cfp-wiedervorlage-suche.log
+UI-Heute zu tun vor freien Tagen: Wiedervorlagen/Fahrernachweise bis zum nächsten Werktag|ui-freitag-vorschau.py|/tmp/cfp-freitag-vorschau.log
 UI-Fahrzeugimport-Art/-Spalten, Versicherungsfall unvollständig, EN-Dezimalpunkt|ui-import-lager-versicherung.py|/tmp/cfp-import-lager-versicherung.log
 UI-Fahrerakte: Nachweise gestapelt, App-Konto verknüpfen, nur freie Konten|ui-fahrerakte-konto.py|/tmp/cfp-fahrerakte-konto.log
 UI-Offline-Postausgang (Fotos, Wiederholung, keine Verluste)|ui-postausgang.py|/tmp/cfp-postausgang.log

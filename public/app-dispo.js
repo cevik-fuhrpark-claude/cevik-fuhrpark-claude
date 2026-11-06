@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { BERLIN_FMT, S, WST_ST, api, bDate, cDesc, clipTxt, comboClearV, esc, federalHoliday, fmtD, fmtDT, fmtDue, helpLink, hj, hoMissing, langAttr, ltxt, mk, partsEta, planVehTag, plate, plateCmp, posL, rdyOf, rdyTxt, siteKeyUi, t, tn, translateLockReason, vOverdue, vlAt, woApptTxt, woTag, wsName } from './app-main.js';
+import { BERLIN_FMT, S, WST_ST, api, bDate, cDesc, clipTxt, comboClearV, dispoDayBefore, esc, federalHoliday, fmtD, fmtDT, fmtDue, helpLink, hj, hoMissing, langAttr, ltxt, mk, nextWorkdayAfter, partsEta, planVehTag, plate, plateCmp, posL, rdyOf, rdyTxt, siteKeyUi, t, tn, translateLockReason, vOverdue, vlAt, woApptTxt, woTag, wsName } from './app-main.js';
 
 // Teile-Liefertermin laut Werkstatt (nur bei „wartet auf Teile“); überschritten = markiert
 // „Rückkehr: ungeklärt“ (Disposition): der Werkstatttermin ist der Beginn, nicht die Fertigstellung – ein Datum zählt nur, solange es noch
@@ -82,13 +82,6 @@ function lastWorkdayBefore(iso) {
   for (let i = 0; i < 10; i++) { d = new Date(d.getTime() - 86400000); const wd = d.getUTCDay(); if (wd !== 0 && wd !== 6 && !federalHoliday(ymd(d))) return ymd(d); }
   return ymd(new Date(Date.parse(iso + 'T12:00:00Z') - 86400000));
 }
-// Backlog 559: nächster Werktag nach `iso` (Sa/So und bundesweite Feiertage übersprungen) – wie lastWorkdayBefore
-function nextWorkdayAfter(iso) {
-  const ymd = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-  let d = new Date(Date.parse(iso + 'T12:00:00Z'));
-  for (let i = 0; i < 10; i++) { d = new Date(d.getTime() + 86400000); const wd = d.getUTCDay(); if (wd !== 0 && wd !== 6 && !federalHoliday(ymd(d))) return ymd(d); }
-  return ymd(new Date(Date.parse(iso + 'T12:00:00Z') + 86400000));
-}
 // Backlog 559 (Blickwinkel „Disposition Freitag → Montag“): Prüf-/Wartungsfristen von heute bis zum nächsten Werktag (Wochenende/Feiertage
 // dazwischen eingeschlossen) als eigene Gruppe – Anhänger mit Zugmaschine; Überfälliges steht weiter in „Prüfung/Wartung überfällig“
 function dispoDueSoon(dvs, inSite, mrows = null) {
@@ -131,7 +124,6 @@ async function dispoBack(open, hq = '') {
 function dispoUpcoming(c, today) {
   return c.status === 'werkstatt_freigegeben' && !c.safety_lock && !!c.planned_date && c.planned_date > today && !c.vehicle_location && !c.tow_service && c.reported_driveability !== 'nicht_fahrbereit';
 }
-function dispoDayBefore(d) { const [y, m, dd] = String(d).split('-').map(Number); const x = new Date(Date.UTC(y, m - 1, dd - 1)); return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; }
 // Backlog 870 (Blickwinkel „Disposition: Lkw steht halb zerlegt in der Werkstatt“): Arbeitsstand (Backlog 867) auch in „Nicht einplanen“ –
 // die Zeile zeigt nur den ranghöchsten Vorgang, der Arbeitsstand kann an einem anderen offenen Vorgang desselben Fahrzeugs stehen
 const dispoWst = (cs, c) => { const w = [c, ...cs.filter((x) => x.vehicle_id === c.vehicle_id && x !== c)].find((x) => x.work_state_note && WST_ST.includes(x.status)); return w ? ` · <span data-dwst>⏸ <b>${esc(t('wst_short'))}</b>: ${ltxt(clipTxt(w.work_state_note, 80))}${w !== c ? ` (${esc(w.case_no)})` : ''}</span>` : ''; };

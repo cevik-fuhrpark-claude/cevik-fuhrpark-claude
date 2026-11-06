@@ -20257,7 +20257,7 @@ await test('Backlog 239 („Heute zu tun“ nach dem Urlaub): Gruppen älteste z
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("['todo_cost_approval', cs.filter((c) => c.cost_over_limit_at).sort(asc((c) => c.cost_over_limit_at)),"), 'Kostenfreigabe älteste zuerst');
   ok(app.includes("cs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).sort((a, b) => (b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PR[a.priority] ?? 3) - (PR[b.priority] ?? 3) || asc((c) => c.created_at)(a, b))"), 'Meldungen: gesperrt (Backlog 278), Dringlichkeit, dann älteste');
-  ok(app.includes("cs.filter((c) => c.followup_on && c.followup_on <= today).sort(asc((c) => c.followup_on))"), 'Wiedervorlage nach Datum');
+  ok(app.includes("cs.filter((c) => c.followup_on && c.followup_on <= hz).sort(asc((c) => c.followup_on))"), 'Wiedervorlage nach Datum (bis zum Vortag des nächsten Werktags, Backlog 1069)');
   ok(app.includes("TODO_LIST[k] ? ` · <a href=\"${hj(TODO_LIST[k])}\">${esc(t('show_in_list'))} ›</a>` : ''") && app.includes("todo_cost_approval: '#/cases?f=cost_approval'"), '„+N“ mit Link');
   ok(app.includes("f === 'cost_approval' ? 'status=open&cost_approval=1'"), 'Listenfilter');
 });
@@ -35228,6 +35228,47 @@ await test('Backlog 1068 (Blickwinkel „Fahrer-Handy: Meldung halb ausgefüllt,
   for (const l of ['de', 'uk', 'en']) {
     for (const k of ['home_drafts', 'home_drafts_hint', 'home_draft_continue']) ok(STRINGS[l][k], l + ' ' + k);
     ok(/\|[^|]*(Startseite|головній сторінці|home page)[^|]*$/.test(STRINGS[l].help_offline_s), l + ': Hilfe „Offline“ nennt den Hinweis');
+  }
+});
+await test('Backlog 1069/1070 (Blickwinkel „Fuhrparkleitung am Freitag: Wochenabschluss vor dem Wochenende“): „Heute zu tun“ zeigt Wiedervorlagen und Fahrernachweise, die bis zum nächsten Werktag fällig werden bzw. ablaufen (Sa/So/Feiertag), mit Wochentag; an gewöhnlichen Werktagen unverändert; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = (name) => { const i = app.indexOf('function ' + name + '('); ok(i >= 0, name); return app.slice(i, app.indexOf('\n}', i)) + '\n}\n'; };
+  const one = (name) => { const i = app.indexOf('function ' + name + '('); ok(i >= 0, name); return app.slice(i, app.indexOf('\n', i)) + '\n'; };
+  const { federalHoliday } = await import('../public/holidays.js');
+  const hzOf = new Function('federalHoliday', fn('nextWorkdayAfter') + one('dispoDayBefore') + one('freeDaysEnd') + 'return freeDaysEnd;')(federalHoliday);
+  eq(hzOf('2026-11-06'), '2026-11-08', 'Freitag → bis Sonntag'); eq(hzOf('2026-11-05'), '2026-11-05', 'Donnerstag → nur heute');
+  eq(hzOf('2026-11-07'), '2026-11-08', 'Samstag → bis Sonntag'); eq(hzOf('2026-12-23'), '2026-12-23', 'Mi 23.12. → nur heute (24.12. ist Werktag)');
+  eq(hzOf('2026-12-24'), '2026-12-27', 'Do 24.12. → bis So 27.12. (Weihnachten)'); eq(hzOf('2027-03-25'), '2027-03-29', 'Do vor Karfreitag → bis Ostermontag');
+  eq(hzOf('2026-12-31'), '2027-01-03', 'Silvester → bis So 03.01.');
+  const soon = new Function(one('drvDocsSoon') + 'return drvDocsSoon;')();
+  const d = { status: { items: [
+    { type: 'doc', kind: 'fahrerkarte', valid_until: '2026-11-07', status: 'laeuft_ab' },
+    { type: 'doc', kind: 'fuehrerschein', valid_until: '2026-11-09', status: 'laeuft_ab' },
+    { type: 'doc', kind: 'code95', valid_until: '2026-11-05', status: 'abgelaufen' },
+    { type: 'doc', kind: 'unterweisung', valid_until: '2026-11-06', status: 'laeuft_ab' },
+    { type: 'tacho', kind: 'fahrerkarte', valid_until: '2026-11-07', status: 'bald' },
+  ] } };
+  eq(soon(d, '2026-11-06', '2026-11-08').map((i) => i.kind).join(','), 'fahrerkarte,unterweisung', 'Freitag: Sa-Ablauf und heute letzter Tag; Montag gilt noch, Abgelaufenes steht in der kritischen Gruppe');
+  eq(soon(d, '2026-11-05', '2026-11-05').map((i) => i.kind).join(','), '', 'Donnerstag: nichts (Ablauf erst Freitag/Samstag)');
+  eq(soon({ status: {} }, '2026-11-06', '2026-11-08').length, 0, 'ohne Nachweise');
+  // Einbau in „Heute zu tun“
+  const ft = app.slice(app.indexOf('async function fleetTodo()'), app.indexOf('\n}\n', app.indexOf('async function fleetTodo()')));
+  ok(ft.includes('const hz = freeDaysEnd(today);'), 'Horizont');
+  ok(ft.includes("['todo_followup', cs.filter((c) => c.followup_on && c.followup_on <= hz)") && ft.includes('c.followup_on > today ? fmtDue(c.followup_on) : fmtD(c.followup_on)'), 'Wiedervorlage bis zum Vortag des nächsten Werktags, mit Wochentag');
+  ok(ft.includes("['todo_driver_docs_soon', dr.filter((d) => drvDocsSoon(d, today, hz).length)") && ft.includes("k === 'todo_driver_docs_soon' ? t(k).replace('{d}', fmtDue(nextWorkdayAfter(today)))"), 'Fahrernachweise mit nächstem Werktag');
+  ok(ft.includes("k === 'todo_followup' && hz > today ?") && ft.includes('data-todofree'), 'Hinweis nur vor freien Tagen');
+  // Server liefert die nötigen Felder (Art, Gültig bis, Status) in der Fahrerliste
+  const { U } = await freshWorld();
+  const dv = await U.fleet.post('/api/drivers', { display_name: 'Wochenend Fahrer' }); eq(dv.status, 201);
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  eq((await U.fleet.post(`/api/drivers/${dv.data.id}/documents`, { kind: 'fahrerkarte', valid_until: tomorrow, evidence: 'Fahrerkarte Kopie' })).status, 201);
+  const it = (await U.fleet.get('/api/drivers')).data.drivers.find((x) => x.id === dv.data.id).status.items.find((i) => i.kind === 'fahrerkarte');
+  ok(it && it.type === 'doc' && it.valid_until === tomorrow && it.status !== 'abgelaufen', JSON.stringify(it));
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['todo_upto_free', 'todo_driver_docs_soon']) ok(STRINGS[l][k] && STRINGS[l][k].includes('{d}'), l + ' ' + k);
+    ok(STRINGS[l].help_fleet_s.split('|').some((x) => x.includes(STRINGS[l].todo_followup) && x.includes(STRINGS[l].valid_until)), l + ': Hilfe Fuhrparkleitung nennt beides');
   }
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
