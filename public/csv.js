@@ -42,6 +42,7 @@ export function dqDetailText(i, t, fmtD, mk = (k) => k, x = {}) {
   // Backlog 623: Lücke im erfassten Versicherungsschutz
   if (i.check === 'insurance_gap' && a.end) return `${a.partner || ''}${a.contract_no ? ` (${a.contract_no})` : ''} · ${a.next_start ? t('dq_ins_gap').replace('{d}', fmtD(a.end)).replace('{s}', fmtD(a.next_start)).replace('{p}', a.next_partner || '').replace('{n}', a.gap_days) : t('dq_ins_no_next').replace('{d}', fmtD(a.end))}`;
   if (a.contract_kind) return `${t('ck_' + a.contract_kind)} · ${a.partner}${a.start_km !== undefined ? ` · ${km(a.km)} < ${km(a.start_km)}` : ''}`;
+  if (i.check === 'workshop_account_closed_site' && a.ws) return `${a.name} · ${x.ws ? x.ws(a.ws) : a.ws}`; // Backlog 1053
   if (a.role) return `${a.name} (${t('role_' + a.role)})${a.expired ? ' – ' + t('dq_invite_expired') : ''}`;
   if (i.check === 'insurance_none_running') return `${a.partner || ''}${a.contract_no ? ` (${a.contract_no})` : ''} · ${t('dq_ins_ended').replace('{d}', a.ended ? fmtD(a.ended) : '–')}`;
   if (i.check === 'tire_size_after_tacho' && a.from) return `${a.from} → ${a.to} (${fmtD(a.changed_on)}) · ${t('dq_last_tacho').replace('{d}', fmtD(a.last_done))}`;

@@ -16839,7 +16839,7 @@ await test('Fehlersuche 22.10. (Schnittstelle/Befunde): kurzes Token-Secret = ni
   ok(!(await kmItem()), 'späterer Stand ≥ vorigem: geklärt');
   // 5./6. Quelltext: Konto-Befunde verlinkt, Kosten-Hinweis nennt nur Mögliches (DE/UK/EN)
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("i.check === 'invite_pending' || i.check === 'driver_account_file_inactive' ? '#/users' : i.check === 'driver_account_no_file' ? '#/drivers'"), 'Datenqualität: Konto-Zeilen mit Link');
+  ok(app.includes("i.check === 'invite_pending' || i.check === 'driver_account_file_inactive' || i.check === 'workshop_account_closed_site' ? '#/users' : i.check === 'driver_account_no_file' ? '#/drivers'"), 'Datenqualität: Konto-Zeilen mit Link');
   const ag = (await import('node:fs')).readFileSync(new URL('../src/agent.js', import.meta.url), 'utf8');
   ok(!ag.includes('Rechnungsbeträge der Fremdleistungen nachtragen') && ag.includes('lassen sich nach der Freigabe nicht nachtragen'), 'Kosten-Hinweis ohne unmögliche Aktion');
 });
@@ -34801,6 +34801,29 @@ await test('Backlog 1052 (Blickwinkel „Werkstatt Bayern schließt“): Werksta
   e.DB.db.prepare(`UPDATE workshops SET active=0 WHERE code='MUENCHEN'`).run();
   eq((await U.fleet.get('/api/stock/journal?site=MUENCHEN')).status, 200, 'Journal mit geschlossener Werkstatt');
   eq((await U.fleet.get('/api/stock/asof?site=MUENCHEN')).status, 200, 'Stichtag mit geschlossener Werkstatt');
+});
+
+await test('Backlog 1053 (Blickwinkel „Werkstatt Bayern schließt“): Datenqualität meldet aktive Werkstattkonten einer geschlossenen Werkstatt als Hinweis (nicht deaktivierte/andere Werkstätten nicht), Text DE/UK/EN, Link zur Benutzerverwaltung', async () => {
+  const { e, U } = await freshWorld();
+  const envF = (await U.fleet.get('/api/me')).data.active_environment;
+  const mk = async (username, active) => { const r = await U.own.post('/api/users', { username, display_name: username, role: 'workshop', workshop_site: 'MUENCHEN', environment: envF }); eq(r.status, 201, JSON.stringify(r.data)); if (!active) e.DB.db.prepare('UPDATE users SET active=0 WHERE username=?').run(username); };
+  await mk('ws.muc.1053', true); await mk('ws.muc.alt', false);
+  const items = async () => { const d = (await U.fleet.get('/api/admin/data-quality')).data; return (d.items || d.issues || []).filter((i) => i.check === 'workshop_account_closed_site'); };
+  eq((await items()).length, 0, 'Werkstatt offen: kein Hinweis');
+  e.DB.db.prepare(`UPDATE workshops SET active=0 WHERE code='MUENCHEN'`).run();
+  const it = await items();
+  const names = it.map((i) => i.detail_args.name);
+  ok(names.includes('ws.muc.1053') && !names.includes('ws.muc.alt'), 'aktive Konten ja, deaktivierte nein: ' + JSON.stringify(names));
+  const actives = e.DB.db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role='workshop' AND workshop_site='MUENCHEN' AND active=1 AND environment=?`).get(envF).n;
+  eq(it.length, actives, 'je aktivem Konto der geschlossenen Werkstatt ein Hinweis');
+  ok(it.every((i) => i.severity === 'hinweis' && i.detail_args.ws === 'MUENCHEN'), 'Hinweis mit Werkstatt');
+  const i0 = it.find((i) => i.detail_args.name === 'ws.muc.1053');
+  const { dqDetailText } = await import('../public/csv.js');
+  eq(dqDetailText(i0, (k) => k, (d) => d, (k) => k, { ws: (c) => 'Name ' + c }), 'ws.muc.1053 · Name MUENCHEN', 'Detail mit Werkstattname');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].dq_workshop_account_closed_site, l);
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("ws: (c) => wsName(c) });"), 'App übergibt Werkstattnamen');
 });
 
 await test('Backlog 1048 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Hinweis beim Standortwechsel liefert offene Aufträge je Werkstatt und Status (Bearbeiten und CSV-Import); App trennt „bei Freigabe wählbar“, „jetzt übergebbar“, „nicht übergebbar“ und lässt die Werkstatt des neuen Standorts weg (DE/UK/EN)', async () => {

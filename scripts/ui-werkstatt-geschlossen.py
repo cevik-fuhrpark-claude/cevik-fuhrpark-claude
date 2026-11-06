@@ -2,6 +2,7 @@
 # - Meldung mit Vorschlag einer inzwischen geschlossenen Werkstatt: nicht still die erste aktive Werkstatt, sondern die Werkstatt am Fahrzeugstandort
 #   (bzw. „–“ mit Pflichtauswahl, wenn es dort keine gibt) und Hinweis „vorgeschlagene Werkstatt geschlossen“ (DE/UK/EN, 390/820/1280 px)
 # - Backlog 1052: Werkstatt-Auslastung zeigt die geschlossene Werkstatt mit Restauftrag mit Namen und „(geschlossen)“, nicht nur den Code
+# - Backlog 1053: Datenqualität meldet das aktive Werkstattkonto der geschlossenen Werkstatt (Link zur Benutzerverwaltung)
 # Voraussetzung: frischer lokaler Entwicklungsserver (sh scripts/restart-dev.sh). Aufruf: python3 scripts/ui-werkstatt-geschlossen.py [Screenshot-Ordner]
 import sys, os
 from playwright.sync_api import sync_playwright
@@ -43,6 +44,11 @@ with sync_playwright() as p:
     mk = lambda vin: api('POST', '/api/cases', {'vehicle_id': 'VIN:' + vin, 'description': 'Werkstatt schließt Spiegel locker', 'priority': 'niedrig', 'driveability': 'fahrbereit', 'request_key': os.urandom(8).hex(), 'workshop_site': close})['d']['id']
     c_site = mk('WDB96340310651001')    # Vorschlag geschlossene Werkstatt, Fahrzeugstandort hat Werkstatt → diese vorwählen
     c_nosite = mk('WDB96340310651002')  # Vorschlag geschlossene Werkstatt, Standort ohne Werkstatt → „–“
+    # Backlog 1053: aktives Werkstattkonto der später geschlossenen Werkstatt → Hinweis in der Datenqualität
+    envn = api('GET', '/api/me')['d'].get('active_environment')
+    r = api('POST', '/api/users', {'username': 'wg.werkstatt', 'display_name': 'WG Werkstattkonto', 'role': 'workshop', 'workshop_site': close, 'environment': envn})
+    if r['s'] != 201:
+        fail(f'Werkstattkonto: {r}')
     # Backlog 1052: freigegebener Auftrag bei der später geschlossenen Werkstatt → Werkstatt-Auslastung zeigt Namen mit „(geschlossen)“
     c_rest = mk('WDB96340310651001')
     v = api('GET', f'/api/cases/{c_rest}')['d']['case']['version']
@@ -55,6 +61,7 @@ with sync_playwright() as p:
 
     def open_form(cid):
         pg.goto(f'{B}/#/cases/{cid}')
+        pg.reload()  # Hash-Wechsel direkt nach dem Laden wurde gelegentlich nicht ausgewertet – Neuladen mit Ziel-Hash ist eindeutig
         pg.wait_for_selector('[data-act="approve_repair"]', timeout=8000)
         pg.locator('[data-act="approve_repair"]').first.click()
         pg.wait_for_selector('#af select[name="workshop_site"]')
@@ -115,6 +122,22 @@ with sync_playwright() as p:
             fail(f'{lang}: Auslastung {over}px zu breit')
         if OUT:
             pg.screenshot(path=os.path.join(OUT, f'auslastung_geschlossen_{lang}_390.png'), full_page=True)
+    DQ = {'de': 'Aktives Werkstattkonto an geschlossener Werkstatt', 'uk': 'Активний обліковий запис майстерні', 'en': 'Active workshop account at a closed workshop'}
+    for lang in ['de', 'uk', 'en']:
+        api('PATCH', '/api/me', {'language': lang})
+        pg.goto(f'{B}/#/quality'); pg.reload()
+        row = pg.locator('a.row', has_text=DQ[lang])
+        row.first.wait_for(timeout=8000)
+        txt = row.first.text_content()
+        if 'WG Werkstattkonto' not in txt or close_name not in txt:
+            fail(f'{lang}: Datenqualität ohne Konto/Werkstattnamen: {txt}')
+        if row.first.get_attribute('href') != '#/users':
+            fail(f'{lang}: Link zur Benutzerverwaltung fehlt')
+        over = pg.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
+        if over > 2:
+            fail(f'{lang}: Datenqualität {over}px zu breit')
+        if OUT:
+            row.first.scroll_into_view_if_needed(); pg.screenshot(path=os.path.join(OUT, f'dq_ws_geschlossen_{lang}_390.png'))
     # Backlog 1052: Lagerjournal und Bestand zum Stichtag bieten die geschlossene Werkstatt als Filter an
     for route, sid in [('stock/journal', 'jsite'), ('stock/asof', 'sasite')]:
         pg.goto(f'{B}/#/{route}'); pg.reload()

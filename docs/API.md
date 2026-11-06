@@ -96,6 +96,7 @@ Schweregrad im Feld `severity`: `fehler` = Widerspruch, `luecke` = fehlt für Au
 | `vu_no_download` | `hinweis` | Massenspeicher ohne erfasste Auslesung |
 | `driver_account_no_file` | `hinweis` | Fahrer-Konto ohne Fahrerakte |
 | `driver_account_file_inactive` | `fehler` | Aktives Fahrer-Konto, dessen Fahrerakte ausgeschieden (inaktiv) ist – Konto deaktivieren (seit 23.10.2026) |
+| `workshop_account_closed_site` | `hinweis` | Aktives Werkstattkonto an einer geschlossenen Werkstatt (`detail_args {name, ws}`) – Konto deaktivieren oder andere Werkstatt zuordnen (seit 06.11.2026, Backlog 1053) |
 | `contract_vehicle_inactive` | `fehler` | Vertrag läuft, Fahrzeug außer Betrieb (Vertrag beenden?) |
 | `contract_km_no_reading` | `luecke` | Vertrag mit km-Kontingent ohne km-Stand seit Vertragsbeginn |
 | `contract_km_below_start` | `fehler` | Letzter km-Stand unter „km bei Übernahme“ des laufenden Vertrags mit km-Kontingent (Tippfehler im Vertrag oder km-Stand) – Kontingent sonst nicht überwacht |

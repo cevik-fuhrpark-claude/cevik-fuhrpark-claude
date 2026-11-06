@@ -40,7 +40,7 @@ export const CHECKS = {
   // gleicher Standort in abweichender Schreibweise (Dortmund/DORTMUND) – Auswertungen fassen sie zusammen, Stammdaten vereinheitlichen
   site_spelling: 'hinweis',
   // Fahrerakte & Auslesungen
-  driver_account_inactive: 'fehler', driver_no_license: 'luecke', driver_card_no_download: 'luecke', vu_no_download: 'hinweis', driver_account_no_file: 'hinweis', driver_account_file_inactive: 'fehler',
+  driver_account_inactive: 'fehler', driver_no_license: 'luecke', driver_card_no_download: 'luecke', vu_no_download: 'hinweis', driver_account_no_file: 'hinweis', driver_account_file_inactive: 'fehler', workshop_account_closed_site: 'hinweis',
   // Fahrzeugverträge
   contract_vehicle_inactive: 'fehler', contract_km_no_reading: 'luecke',
   // letzter km-Stand unter „km bei Übernahme“ (Tippfehler im Vertrag oder Zähler) – Kontingent wird sonst nie überwacht (17.10.2026)
@@ -163,7 +163,9 @@ export async function dataQuality(env, user, envName, query = {}) {
       EXISTS(SELECT 1 FROM tacho_downloads t WHERE t.driver_id=d.id AND t.cancelled_at IS NULL) AS has_download
       FROM drivers d LEFT JOIN users u ON u.id=d.user_id WHERE d.environment=? AND d.active=1`).bind(envName).all(),
     // aktives Fahrerkonto, dessen Akte ausgeschieden (inaktiv) ist (Backlog 191): eigener Fehler – Konto arbeitete weiter (Push, Meldungen)
-    env.DB.prepare(`SELECT u.id, u.display_name, EXISTS (SELECT 1 FROM drivers d WHERE d.user_id=u.id) AS has_file FROM users u WHERE u.environment=? AND u.role='driver' AND u.active=1 AND NOT EXISTS (SELECT 1 FROM drivers d WHERE d.user_id=u.id AND d.active=1)`).bind(envName).all(),
+    // Backlog 1053: dazu aktive Werkstattkonten einer geschlossenen Werkstatt (ws_code gesetzt) – in derselben Abfrage (Abfragebudget)
+    env.DB.prepare(`SELECT u.id, u.display_name, EXISTS (SELECT 1 FROM drivers d WHERE d.user_id=u.id) AS has_file, NULL AS ws_code, NULL AS ws_name FROM users u WHERE u.environment=?1 AND u.role='driver' AND u.active=1 AND NOT EXISTS (SELECT 1 FROM drivers d WHERE d.user_id=u.id AND d.active=1)
+      UNION ALL SELECT u.id, u.display_name, 0, w.code, w.name FROM users u JOIN workshops w ON w.code=u.workshop_site WHERE u.environment=?1 AND u.role='workshop' AND u.active=1 AND w.active=0`).bind(envName).all(),
     env.DB.prepare(`SELECT DISTINCT vehicle_id FROM tacho_downloads WHERE environment=? AND vehicle_id IS NOT NULL AND cancelled_at IS NULL`).bind(envName).all(),
     // nur aktive, bewertete Fahrzeuge schon in SQL – ruhende/außer Betrieb verbrauchten sonst die Grenze (18.10.2026)
     // Kontrollen im Zeitraum, deren km-Stand kleiner war als der zuvor erfasste (nicht in die Akte übernommen) – zur Klärung;
@@ -479,7 +481,8 @@ export async function dataQuality(env, user, envName, query = {}) {
     if (!d.has_license) addD('driver_no_license', d);
     if (d.has_card && !d.has_download) addD('driver_card_no_download', d);
   }
-  for (const u of acc.results) { const ck = u.has_file ? 'driver_account_file_inactive' : 'driver_account_no_file'; items.push({ check: ck, severity: CHECKS[ck], vehicle_id: null, plate: null, detail: u.display_name }); }
+  for (const u of acc.results.filter((x) => x.ws_code)) items.push({ check: 'workshop_account_closed_site', severity: CHECKS.workshop_account_closed_site, vehicle_id: null, plate: null, detail: `${u.display_name} – ${u.ws_name || u.ws_code}`, detail_args: { name: u.display_name, ws: u.ws_code } });
+  for (const u of acc.results.filter((x) => !x.ws_code)) { const ck = u.has_file ? 'driver_account_file_inactive' : 'driver_account_no_file'; items.push({ check: ck, severity: CHECKS[ck], vehicle_id: null, plate: null, detail: u.display_name }); }
   for (const u of invites.results) items.push({ check: 'invite_pending', severity: CHECKS.invite_pending, vehicle_id: null, plate: null, detail: `${u.display_name} (${u.role})${!u.expires_at || u.expires_at < nowIso() ? ' – Einladung abgelaufen' : ''}`,
     detail_args: { name: u.display_name, role: u.role, expired: !u.expires_at || u.expires_at < nowIso() } });
   const rank = { fehler: 0, luecke: 1, hinweis: 2 };

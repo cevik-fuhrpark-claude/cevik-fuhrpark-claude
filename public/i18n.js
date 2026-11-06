@@ -2765,6 +2765,9 @@ Object.assign(STRINGS.en, { dr_inactive_match: 'A driver file of a former employ
 Object.assign(STRINGS.de, { dq_driver_account_file_inactive: 'Aktives App-Konto, Fahrerakte ausgeschieden (Konto deaktivieren?)' });
 Object.assign(STRINGS.uk, { dq_driver_account_file_inactive: 'Активний обліковий запис, картку водія деактивовано (вимкнути обліковий запис?)' });
 Object.assign(STRINGS.en, { dq_driver_account_file_inactive: 'Active app account, driver file deactivated (deactivate account?)' });
+Object.assign(STRINGS.de, { dq_workshop_account_closed_site: 'Aktives Werkstattkonto an geschlossener Werkstatt (Konto deaktivieren oder andere Werkstatt zuordnen?)' });
+Object.assign(STRINGS.uk, { dq_workshop_account_closed_site: 'Активний обліковий запис майстерні в закритій майстерні (вимкнути обліковий запис або призначити іншу майстерню?)' });
+Object.assign(STRINGS.en, { dq_workshop_account_closed_site: 'Active workshop account at a closed workshop (deactivate account or assign another workshop?)' });
 Object.assign(STRINGS.de, { ue_invites_voided: 'Offene Einladungen dieses Kontos sind damit ungültig ({n}).' });
 Object.assign(STRINGS.uk, { ue_invites_voided: 'Відкриті запрошення цього облікового запису тепер недійсні ({n}).' });
 Object.assign(STRINGS.en, { ue_invites_voided: 'Open invitations issued by this account are now invalid ({n}).' });
