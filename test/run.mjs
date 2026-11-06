@@ -34733,6 +34733,32 @@ await test('Backlog 1045 (Blickwinkel „Jahresabschluss für den Steuerberater�
   }
 });
 
+await test('Backlog 1047 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Fahrzeug-CSV-Import meldet das gekoppelte Fahrzeug am alten Standort; Freigabe-Formular wählt ohne Vorschlag die Werkstatt zum Fahrzeugstandort, sonst „–“ mit Pflichtauswahl, Hinweis bei abweichendem Vorschlag (DE/UK/EN)', async () => {
+  const { U } = await freshWorld();
+  const head = 'Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN;Anhänger Kennzeichen;Fahrzeugart\n';
+  const truck = (site) => `SZ-YC 5513;${site};in Betrieb;MAN;2016;WMA15SZZ2HM722774;SZ-YC 5514;Lkw`;
+  const trailer = (site) => `SZ-YC 5514;${site};in Betrieb;Krone;2016;WKESD000000123456;;Anhänger`;
+  let r = await U.own.req('POST', '/api/vehicles/import', head + truck('Dortmund') + '\n' + trailer('Dortmund'), { 'content-type': 'text/csv' }); eq(r.status, 200, JSON.stringify(r.data));
+  const vs = (await U.fleet.get('/api/vehicles')).data; const list = vs.vehicles || vs;
+  const tr = list.find((v) => v.plate === 'SZ-YC 5514'); ok(tr, 'Anhänger angelegt'); eq(tr.kind, 'anhaenger', 'Fahrzeugart Anhänger');
+  // nur der Lkw wird versetzt → Hinweis auf den Anhänger am alten Standort
+  r = await U.own.req('POST', '/api/vehicles/import', head + truck('Bayern'), { 'content-type': 'text/csv' }); eq(r.status, 200, JSON.stringify(r.data));
+  eq((r.data.site_changes || []).length, 1, 'Hinweis trotz fehlender Aufträge/Termine/Fahrer: ' + JSON.stringify(r.data));
+  eq(JSON.stringify(r.data.site_changes[0].coupled_other_site), JSON.stringify([{ plate: 'SZ-YC 5514', site: 'Dortmund' }]));
+  // Anhänger zieht nach → kein Hinweis mehr (Gespann wieder an einem Standort)
+  r = await U.own.req('POST', '/api/vehicles/import', head + trailer('Bayern'), { 'content-type': 'text/csv' }); eq(r.status, 200);
+  ok(!(r.data.site_changes || []).length, 'Anhänger nachgezogen: kein Hinweis ' + JSON.stringify(r.data.site_changes));
+  // beide zusammen versetzt → kein Hinweis
+  r = await U.own.req('POST', '/api/vehicles/import', head + truck('Dortmund') + '\n' + trailer('Dortmund'), { 'content-type': 'text/csv' }); eq(r.status, 200);
+  ok(!(r.data.site_changes || []).length, 'beide versetzt: kein Hinweis');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("...(x.coupled_other_site || []).map((y) => t('veh_site_coupled')"), 'Importhinweis zeigt das gekoppelte Fahrzeug');
+  ok(app.includes("const wsSel = c.workshop_site || c.suggested_workshop_site || vWs;") && app.includes("${wsSel ? '' : '<option value=\"\" selected>–</option>'}"), 'Freigabe: Vorwahl nach Standort, sonst „–“');
+  ok(app.includes('<select name="workshop_site" required>${wsOpts}</select>${wsSiteHint}'), 'Freigabe: Pflichtauswahl + Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].apr_ws_site_hint && STRINGS[l].apr_ws_site_hint.includes('{site}') && STRINGS[l].apr_ws_site_hint.includes('{ws}'), l + ': apr_ws_site_hint');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

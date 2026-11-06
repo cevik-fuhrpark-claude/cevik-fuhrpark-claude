@@ -1689,9 +1689,17 @@ export async function importVehiclesCsv(env, user, text, { dryRun = false } = {}
           JOIN drivers dr ON dr.user_id=u.id WHERE dv.vehicle_id=json_extract(j.value,'$.id') AND (dv.valid_to IS NULL OR dv.valid_to > ?3) AND dr.site IS NOT NULL AND trim(dr.site)<>'')) AS drv
       FROM json_each(?1) j`).bind(JSON.stringify(moved), berlinDate(), nowIso()).all()).results;
     const byId = new Map(hs.map((h) => [h.id, h]));
+    // Backlog 1047 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): gekoppeltes Fahrzeug am alten Standort wie bei „Stammdaten bearbeiten“
+    // (`coupled_other_site`) – vorher stand das Gespann nach einem Import ohne Hinweis an zwei Standorten. Stand nach dem Import, eine Abfrage.
+    const act = (await env.DB.prepare(`SELECT id, plate, kind, site, trailer_plate FROM vehicles WHERE active=1`).all()).results;
+    const actById = new Map(act.map((v) => [v.id, v]));
+    const coupledOf = (m) => { const me = actById.get(m.id); if (!me) return [];
+      const own = me.kind !== 'anhaenger' ? normPlate(me.trailer_plate) : '';
+      return act.filter((v) => v.id !== me.id && (own ? v.kind === 'anhaenger' && normPlate(v.plate) === own : me.kind === 'anhaenger' && v.kind === 'lkw' && v.trailer_plate && normPlate(v.trailer_plate) === normPlate(me.plate)) && skx(v.site) !== skx(m.to))
+        .map((v) => ({ plate: v.plate, site: v.site || null })); };
     result.site_changes = moved.map((m) => { const h = byId.get(m.id) || {}; let drv = []; try { drv = JSON.parse(h.drv || '[]'); } catch { drv = []; }
-      return { plate: m.plate, site: m.to, open_workshop_cases: h.ws || 0, open_workshop_sites: h.wsl ? String(h.wsl).split(', ') : [], planned_appointments: h.p || 0, drivers_other_site: drv.filter((x) => skx(x.site) !== skx(m.to)).map((x) => ({ name: x.name, site: x.site })) }; })
-      .filter((x) => x.open_workshop_cases || x.planned_appointments || x.drivers_other_site.length);
+      return { plate: m.plate, site: m.to, open_workshop_cases: h.ws || 0, open_workshop_sites: h.wsl ? String(h.wsl).split(', ') : [], planned_appointments: h.p || 0, drivers_other_site: drv.filter((x) => skx(x.site) !== skx(m.to)).map((x) => ({ name: x.name, site: x.site })), coupled_other_site: coupledOf(m) }; })
+      .filter((x) => x.open_workshop_cases || x.planned_appointments || x.drivers_other_site.length || x.coupled_other_site.length);
   }
   return result;
 }

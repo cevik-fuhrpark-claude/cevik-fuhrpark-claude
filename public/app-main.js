@@ -3439,7 +3439,12 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   const needsNote = ['change_priority', 'set_safety_lock', 'lift_safety_lock', 'approve_repair', 'reassign_workshop', 'correct_vehicle', 'reject', 'withdraw_order', 'wait_parts', 'parts_partial', 'resolve_open_item', 'resolve_released_item', 'request_quality_check', 'return_for_rework', 'technical_release', 'approve_costs', 'quality_release', 'reopen'];
   const qrel = action === 'quality_release'; // Backlog 629: beide Schritte in einem Formular
   const isQc = action === 'request_quality_check' || qrel; const isRel = action === 'technical_release' || qrel;
-  const wsOpts = S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${(c.workshop_site || c.suggested_workshop_site) === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('');
+  // Backlog 1047 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): ohne Vorschlag die Werkstatt zum heutigen Fahrzeugstandort vorwählen,
+  // sonst „–“ mit Pflichtauswahl (vorher wählte der Browser still die erste Werkstatt); weicht der Vorschlag davon ab, Hinweis zum Standort
+  const vSite = action === 'approve_repair' && d && d.vehicle ? d.vehicle.site || '' : ''; const vWs = vSite ? wsForSite(vSite) : '';
+  const wsSel = c.workshop_site || c.suggested_workshop_site || vWs;
+  const wsOpts = `${wsSel ? '' : '<option value="" selected>–</option>'}${S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${wsSel === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}`;
+  const wsSiteHint = vWs && wsSel && wsSel !== vWs ? `<p class="small alert" data-apwshint>${esc(t('apr_ws_site_hint').replace('{site}', () => vSite).replace('{ws}', () => wsLabel(S.meta.workshops.find((w) => w.code === vWs) || { code: vWs })))}</p>` : '';
   const prioOpts = (sel) => ['niedrig', 'mittel', 'kritisch'].map((p) => `<option value="${p}"${p === sel ? ' selected' : ''}>${esc(t('prio_' + p))}</option>`).join('');
   switch (action) {
     // Backlog 882: welche Restarbeit aus welchem Vorgang – Vermerk erscheint dort als „Erledigt in Vorgang …“
@@ -3449,7 +3454,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
       break;
     }
     case 'change_priority': f.push(`<label>${esc(t('new_priority'))}</label><select name="priority">${prioOpts(c.priority)}</select>`); break;
-    case 'approve_repair': f.push(`<label>${esc(t('workshop'))}</label><select name="workshop_site">${wsOpts}</select><label>${esc(t('urgency'))}</label><select name="priority">${prioOpts(c.priority)}</select><label>${esc(t('planned'))}</label><input type="date" name="planned_date">`); break;
+    case 'approve_repair': f.push(`<label>${esc(t('workshop'))}</label><select name="workshop_site" required>${wsOpts}</select>${wsSiteHint}<label>${esc(t('urgency'))}</label><select name="priority">${prioOpts(c.priority)}</select><label>${esc(t('planned'))}</label><input type="date" name="planned_date">`); break;
     // Backlog 513/514: ohne die bisherige Werkstatt (Server lehnt „unverändert“ ab, wie im Werkstattplan) und Hinweis, dass Termin/Übernahme entfallen
     case 'reassign_workshop': f.push(`<label>${esc(t('workshop'))}</label><select name="workshop_site" required><option value="">${esc(t('rws_choose'))}</option>${S.meta.workshops.filter((w) => w.code !== c.workshop_site).map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>${rwsDrop(c)}`); break;
     // Meldung am falschen Fahrzeug (Backlog 254): Auswahl wird nachgeladen (aktive Fahrzeuge ohne das bisherige)

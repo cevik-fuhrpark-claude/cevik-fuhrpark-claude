@@ -535,6 +535,7 @@ UI-Teilesuche: Lagerliste, Teil buchen und Wareneingang finden Teilenummern ohne
 UI-Foto-dunkel: sehr dunkle Fotos in Melden, Abfahrtskontrolle und am Vorgang lösen einen Hinweis aus, Senden bleibt möglich (DE/UK/EN; Backlog 863)|ui-foto-dunkel.py|/tmp/cfp-foto-dunkel.log
 UI-Foto-unscharf: stark unscharfe Fotos in Melden, Abfahrtskontrolle und am Vorgang lösen einen Hinweis aus, Senden bleibt möglich (DE/UK/EN; Backlog 864)|ui-foto-unscharf.py|/tmp/cfp-foto-unscharf.log
 UI-Reifenwechsel mit anderer Größe als für die Achse hinterlegt: Hinweis beim Tippen und nach dem Speichern (DE/UK/EN; Backlog 849)|ui-reifen-groesse-abweichend.py|/tmp/cfp-reifen-groesse-abweichend.log
+UI-Freigabe-Formular: Werkstatt zum Fahrzeugstandort vorgewählt, „–“ ohne passende Werkstatt, Hinweis bei abweichendem Vorschlag (DE/UK/EN; Backlog 1047)|ui-freigabe-standort.py|/tmp/cfp-freigabe-standort.log
 '
 N=0
 NL='
