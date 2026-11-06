@@ -25,6 +25,8 @@ const SAME_FINE_SQL = (ref, auth) => `${REF_KEY_SQL('reference')}=${REF_KEY_SQL(
 export const FINE_KINDS = ['anhoerung', 'zeugenfragebogen', 'bussgeldbescheid', 'verwarnung', 'maut', 'sonstiges'];
 export const OFFENSES = ['geschwindigkeit', 'abstand', 'parken', 'rotlicht', 'lenk_ruhezeit', 'ladung', 'maut', 'handy', 'sonstiges'];
 export const FINE_STATUSES = ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert', 'beantwortet', 'bezahlt', 'eingestellt', 'erledigt'];
+// Backlog 1064: offenes Schreiben ohne erfasste Antwortfrist (wie Agent-Befund FINE_NO_DUE und Listen-Auswahl der App)
+export const fineNoDue = (f) => !f.response_due && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status);
 const BASES = ['zuordnung', 'tourenplan', 'telematik', 'fahrerangabe', 'manuell'];
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
 

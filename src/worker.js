@@ -678,8 +678,10 @@ async function handleApi(request, env, ctx, url) {
         return new Response(fines.finesIcs(list, warn, icsCalendar, sel.site, user.language, envName), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-behoerdenfristen_${envName}_${day}.ics"`, ...trunc } });
       }
       const withDriver = q.with_driver === '1' && ['owner', 'fleet'].includes(user.role);
-      await auth.audit(env, user.id, 'reports.fines.export', null, { rows: list.length, with_driver: withDriver, environment: envName, site: sel.site, ...(sel.truncated ? { truncated: true } : {}) });
-      return new Response(fines.finesCsv(list, maint.csvCell, withDriver), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bussgelder_${envName}_${day}${siteSuffix(sel.site)}.csv"`, ...trunc } });
+      // Backlog 1064: Auswahl „Antwortfrist fehlt“ der Liste gilt auch für die CSV (wie Druck) – gleiche Regel wie Agent-Befund FINE_NO_DUE
+      const noDue = q.no_due === '1'; const rowsCsv = noDue ? list.filter(fines.fineNoDue) : list;
+      await auth.audit(env, user.id, 'reports.fines.export', null, { rows: rowsCsv.length, with_driver: withDriver, environment: envName, site: sel.site, ...(noDue ? { no_due: true } : {}), ...(sel.truncated ? { truncated: true } : {}) });
+      return new Response(fines.finesCsv(rowsCsv, maint.csvCell, withDriver), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bussgelder_${envName}_${day}${siteSuffix(sel.site)}${noDue ? '_ohne-antwortfrist' : ''}.csv"`, ...trunc } });
     }
     // Backlog 555: Vorwarnung laut Einstellung `fine_warn_days` (wie Agent und Kalender) – die Startseite „Heute zu tun“ nutzt sie statt fester 7 Tage
     const fw = await env.DB.prepare(`SELECT value FROM settings WHERE key='fine_warn_days'`).first();

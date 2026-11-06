@@ -35091,6 +35091,25 @@ await test('Backlog 1063 (gleicher Blickwinkel, Bestellvorschlag): CSV-Dateiname
   ok(app.includes("let site = ''; try { site = sessionStorage.getItem('cfp_reorder_site') || ''; } catch"), 'Sitzungsspeicher abgesichert');
 });
 
+await test('Backlog 1064 (Blickwinkel „Seitenfilter wirkt auf alle Teile einer Seite“, Bußgelder): CSV mit Auswahl „Antwortfrist fehlt“ (no_due=1) enthält nur offene Schreiben ohne Frist, Dateiname/Protokoll nennen die Auswahl; App übergibt die Auswahl', async () => {
+  const { U } = await freshWorld();
+  const dec = (r) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data);
+  const at = new Date(Date.now() - 86400000).toISOString();
+  eq((await U.fleet.post('/api/fines', { kind: 'verwarnung', authority: 'Ordnungsamt Nodue', reference: 'AZ-NODUE-1', offense_type: 'parken', offense_at: at, plate_in_letter: 'XX-ZZ 9998' })).status, 201);
+  eq((await U.fleet.post('/api/fines', { kind: 'verwarnung', authority: 'Ordnungsamt Nodue', reference: 'AZ-MITDUE-1', offense_type: 'parken', offense_at: at, plate_in_letter: 'XX-ZZ 9998', response_due: '2040-04-01' })).status, 201);
+  const r = await U.fleet.get('/api/fines?format=csv&no_due=1'); eq(r.status, 200);
+  const c = dec(r); ok(c.includes('AZ-NODUE-1') && !c.includes('AZ-MITDUE-1'), 'nur ohne Frist');
+  ok(/_ohne-antwortfrist\.csv"$/.test(r.headers.get('content-disposition')), 'Dateiname: ' + r.headers.get('content-disposition'));
+  const all = dec(await U.fleet.get('/api/fines?format=csv')); ok(all.includes('AZ-NODUE-1') && all.includes('AZ-MITDUE-1'), 'ohne Auswahl alle');
+  const { fineNoDue } = await import('../src/fines.js');
+  ok(fineNoDue({ status: 'fahrer_informiert' }) && !fineNoDue({ status: 'bezahlt' }) && !fineNoDue({ status: 'eingegangen', response_due: '2040-01-01' }), 'Regel');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/const noDue = \(f\) => (.*?);\n/); const appRule = new Function('return (f) => ' + m[1])();
+  for (const f of [{ status: 'eingegangen' }, { status: 'beantwortet' }, { status: 'fahrer_ermittelt', response_due: '2030-01-01' }, { status: 'erledigt' }]) eq(appRule(f), fineNoDue(f), 'App = Server ' + JSON.stringify(f));
+  ok(app.includes("${S.fineNoDue ? '&no_due=1' : ''}") && app.includes("${S.fineNoDue ? '_' + fnPart(t('fine_no_due')) : ''}.csv"), 'App übergibt die Auswahl');
+  const w = (await import('node:fs')).readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8'); ok(w.includes('...(noDue ? { no_due: true } : {})'), 'Protokoll');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

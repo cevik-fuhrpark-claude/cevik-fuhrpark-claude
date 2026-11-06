@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test Backlog 557 (Blickwinkel „Anhörungsbogen“): Bußgeld-Detail zeigt „Zuordnungswechsel am Tattag“ mit Uhrzeit und
-# dem Hinweis „Uhrzeit der Eingabe, nicht der Übergabe“; Kandidaten-Nachweis nennt die Uhrzeit. Backlog 558/565: Chip und Auswahl „Antwortfrist fehlt“. DE/UK/EN bei 390/820/1366 px. Frischer Dev-Server nötig.
+# dem Hinweis „Uhrzeit der Eingabe, nicht der Übergabe“; Kandidaten-Nachweis nennt die Uhrzeit. Backlog 558/565: Chip und Auswahl „Antwortfrist fehlt“, Backlog 1064: CSV übernimmt die Auswahl. DE/UK/EN bei 390/820/1366 px. Frischer Dev-Server nötig.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -52,6 +52,10 @@ with sync_playwright() as p:
         check(n0==2 and n1==1 and q.locator('a.row [data-fnodue]').count()==1,f'{lang} {w}px: 565 Auswahl „Antwortfrist fehlt“ ({n0} → {n1})')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: Liste ohne Querscrollen')
         if SHOTS and w==390: q.screenshot(path=f'{SHOTS}/tz_fines_{lang}_{w}.png',full_page=True)
+        # Backlog 1064: CSV übernimmt die Auswahl (nur Schreiben ohne Frist, Dateiname nennt die Auswahl)
+        with q.expect_download(timeout=15000) as dl: q.click('#fcsv')
+        dd=dl.value; body=open(dd.path(),encoding='utf-8-sig').read()
+        check('AZ-TZ-557' in body and 'AZ-TZ-565' not in body and dd.suggested_filename.endswith('.csv') and dd.suggested_filename.count('_')>=3,f'{lang} {w}px: 1064 CSV mit Auswahl ({dd.suggested_filename})')
         q.uncheck('#fnodue'); q.wait_for_timeout(300)
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs[:2]}')
         ctx.close()
