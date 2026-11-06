@@ -2,6 +2,7 @@
 # - Meldung mit Vorschlag einer inzwischen geschlossenen Werkstatt: nicht still die erste aktive Werkstatt, sondern die Werkstatt am Fahrzeugstandort
 #   (bzw. „–“ mit Pflichtauswahl, wenn es dort keine gibt) und Hinweis „vorgeschlagene Werkstatt geschlossen“ (DE/UK/EN, 390/820/1280 px)
 # - Backlog 1052: Werkstatt-Auslastung zeigt die geschlossene Werkstatt mit Restauftrag mit Namen und „(geschlossen)“, nicht nur den Code
+# - Backlog 1055: Agentenbefund im Management-Panel mit Werkstattnamen, ohne doppeltes „Werkstatt“ (DE/UK/EN)
 # - Backlog 1053: Datenqualität meldet das aktive Werkstattkonto der geschlossenen Werkstatt (Link zur Benutzerverwaltung)
 # Voraussetzung: frischer lokaler Entwicklungsserver (sh scripts/restart-dev.sh). Aufruf: python3 scripts/ui-werkstatt-geschlossen.py [Screenshot-Ordner]
 import sys, os
@@ -12,7 +13,7 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else None
 PW = 'Sicheres-Passwort-2026'
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-HINT = {'de': 'ist geschlossen', 'uk': 'закрита', 'en': 'is closed'}
+HINT = {'de': 'ist geschlossen', 'uk': 'закрито', 'en': 'is closed'}
 
 
 def fail(msg):
@@ -145,6 +146,26 @@ with sync_playwright() as p:
         o = pg.locator(f'#{sid} option[value="{close}"]')
         if not o.count() or CL['en'] not in o.text_content():
             fail(f'{route}: Filter ohne geschlossene Werkstatt')
+    # Backlog 1055: Agentenbefund zum Restauftrag nennt die Werkstatt mit Namen, ohne „(geschlossen)“ und ohne doppeltes „Werkstatt“
+    r = api('POST', '/api/agent/run')
+    if r['s'] != 200:
+        fail(f'Agentenlauf: {r}')
+    import re
+    DBL = re.compile(r'(Werkstatt|workshop|майстерн\w*) Werkstatt', re.I)
+    for lang in ['de', 'uk', 'en']:
+        api('PATCH', '/api/me', {'language': lang})
+        pg.goto(f'{B}/#/master'); pg.reload()
+        pg.wait_for_function('n => document.body.innerText.includes(n)', arg=close_name, timeout=8000)
+        body = pg.evaluate('document.body.innerText')
+        hit = [ln for ln in body.split('\n') if close_name in ln and 'WG-A 1' in ln]
+        if DBL.search(body):
+            fail(f'{lang}: doppeltes „Werkstatt“ im Management-Panel: {DBL.search(body).group(0)}')
+        if not hit or not any(HINT[lang] in ln for ln in hit):
+            fail(f'{lang}: Befund „{HINT[lang]}“ mit Werkstattnamen fehlt: {hit}')
+        if any(f'{close_name} ({CL[lang]})' in ln for ln in hit):
+            fail(f'{lang}: Befund mit „({CL[lang]})“ – Vorlage sagt es selbst: {hit}')
+        if OUT:
+            pg.screenshot(path=os.path.join(OUT, f'master_ws_name_{lang}_390.png'))
     pg.evaluate("async (u) => (await fetch(u, { method: 'POST' })).json()", f'/__dev/workshop-active?code={close}&active=1')
     if errs:
         fail('JS-Fehler: ' + '; '.join(errs[:3]))

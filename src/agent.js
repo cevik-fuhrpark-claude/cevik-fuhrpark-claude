@@ -15,7 +15,7 @@ import { staleBefore } from './cases.js';
 import { latestKmByVehicle, kmDue, ruleDueKm, maintenanceEventLists } from './maintenance.js';
 import { syncHuSpDues, loadHuSpInputs, huSpFor } from './inspection_rules.js';
 import { findingLabel } from '../public/finding-labels.js';
-import { findingText as fm, FINDING_ENUMS } from '../public/finding-messages.js';
+import { findingText as fm, FINDING_ENUMS, renderFindingMessage } from '../public/finding-messages.js';
 import { maintenanceWarnDays } from './settings.js';
 
 // Fingerabdrücke wiederkehrender Befunde je Worker-Instanz zwischengespeichert (22.10.2026): dieselben Befunde werden alle 15 Min. neu bewertet,
@@ -157,7 +157,8 @@ const BASICS_SQL = `SELECT
      AND NOT EXISTS (SELECT 1 FROM case_events e WHERE e.case_id=q.cid AND e.actor_id=q.user_id AND e.created_at >= q.created_at)
      GROUP BY q.cid, CASE WHEN q.cid IS NULL THEN q.vref END)) AS undelivered,
   (SELECT json_group_array(id) FROM vehicles WHERE eval_excluded=1) AS excluded,
-  (SELECT json_group_array(code) FROM workshops WHERE active=0) AS closed_ws`;
+  (SELECT json_group_array(code) FROM workshops WHERE active=0) AS closed_ws,
+  (SELECT json_group_object(code, name) FROM workshops) AS ws_names`;
 
 // Empfänger einer nicht zugestellten dringenden Nachricht: [{name, role}] nach Name sortiert (gleiche Reihenfolge je Lauf – sonst würde der
 // Befund bei jedem Lauf neu geschrieben), höchstens 8 genannt, Rest als „+n“
@@ -197,6 +198,7 @@ export async function agentBasics(env, environment) {
   const row = await env.DB.prepare(BASICS_SQL).bind(environment, new Date(Date.now() - 48 * 3600000).toISOString()).first();
   const out = {};
   for (const k of ['settings', 'users', 'safety_open', 'locked', 'released_open', 'undelivered', 'excluded', 'closed_ws']) out[k] = JSON.parse(row?.[k] || '[]');
+  out.ws_names = JSON.parse(row?.ws_names || '{}');
   return out;
 }
 
@@ -240,6 +242,10 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
     // geschlossene Werkstatt (workshops.active=0, Backlog 191): ihr noch aktives Konto zählt nicht als Empfänger – vorher meldete der
     // Master-Eingang „alles erledigt“, obwohl dort niemand mehr arbeitet; Handlungsempfehlung ohne „Werkstattbenutzer anlegen“ (dort unmöglich)
     const closedWs = new Set(base.closed_ws || []);
+    // Backlog 1055: deutscher Text `message` (Master-Eingang, Integrations-API, Protokoll) nennt die Werkstatt/das Lager mit Namen statt Code
+    // („Werkstatt Dortmund“ statt „DORTMUND“); `message_args` behält den Code – die Oberfläche setzt den Namen in der App-Sprache ein
+    const wsNames = base.ws_names || {};
+    const wsMsg = (r) => { const o = JSON.parse(r.message_args); const nm = o.a && o.a.site && wsNames[o.a.site]; return nm ? { ...r, message: renderFindingMessage(o.k, { ...o.a, site: nm }, 'de') ?? r.message } : r; };
     const sitesWithUsers = new Set(activeUsers.filter((u) => u.role === 'workshop' && !closedWs.has(u.workshop_site)).map((r) => r.workshop_site));
 
     const safetyOpen = new Map(base.safety_open.map((r) => [r.case_id, r.n]));
@@ -299,15 +305,15 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
             ...fm('WORKSHOP_ACK_PENDING_EXTERN', { label, at: berlinDateTime(c.status_since) }), next_action: 'Übergabe an die externe Werkstatt im Vorgang mit „Auftrag übernehmen“ bestätigen.' });
         } else if (noUser) {
           add({ code: 'NO_WORKSHOP_RECIPIENT', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'kritisch', owner_role: 'fleet', requires_decision: 1,
-            ...fm('NO_WORKSHOP_RECIPIENT', { label, site: c.workshop_site }),
+            ...wsMsg(fm(closedWs.has(c.workshop_site) ? 'NO_WORKSHOP_RECIPIENT_CLOSED' : 'NO_WORKSHOP_RECIPIENT', { label, site: c.workshop_site })), // Backlog 1055: auch vor der Übernahme „ist geschlossen“
             next_action: closedWs.has(c.workshop_site) ? 'Werkstatt geschlossen – andere Werkstatt zuweisen.' : 'Werkstattbenutzer anlegen oder andere Werkstatt zuweisen.' });
         } else if (c.priority === 'kritisch' || (sla !== null && age > sla)) {
           add({ code: 'WORKSHOP_ACK_MISSING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: c.priority === 'kritisch' ? 'kritisch' : 'handeln', owner_role: 'fleet', requires_decision: c.priority === 'kritisch' ? 1 : 0,
-            ...fm('WORKSHOP_ACK_MISSING', { label, at: berlinDateTime(c.status_since), site: c.workshop_site }),
+            ...wsMsg(fm('WORKSHOP_ACK_MISSING', { label, at: berlinDateTime(c.status_since), site: c.workshop_site })),
             next_action: 'Werkstatt direkt kontaktieren oder Auftrag umleiten.' });
         } else {
           add({ code: 'WORKSHOP_ACK_PENDING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: 'workshop',
-            ...fm(sla === null ? 'WORKSHOP_ACK_PENDING_NOSLA' : 'WORKSHOP_ACK_PENDING', { label, site: c.workshop_site, at: berlinDateTime(c.status_since) }), next_action: 'Auftrag übernehmen.' });
+            ...wsMsg(fm(sla === null ? 'WORKSHOP_ACK_PENDING_NOSLA' : 'WORKSHOP_ACK_PENDING', { label, site: c.workshop_site, at: berlinDateTime(c.status_since) })), next_action: 'Auftrag übernehmen.' });
         }
       }
       // Übernommener Auftrag, dessen Werkstatt-Standort kein aktives Konto mehr hat (Konto deaktiviert/versetzt, 22.10.2026):
@@ -319,7 +325,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
         add({ code: 'NO_WORKSHOP_RECIPIENT', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: crit ? 'kritisch' : 'handeln', owner_role: 'fleet', requires_decision: 1,
           // Backlog 1054 (Blickwinkel „Werkstatt Bayern schließt“): bei geschlossener Werkstatt eigener Text (nicht „kein aktiver Benutzer“ – das Konto
           // kann noch aktiv sein); übernommen, aber noch nicht begonnen → „Werkstatt wechseln“ ist möglich und wird empfohlen
-          ...fm(closedWs.has(c.workshop_site) ? 'NO_WORKSHOP_RECIPIENT_CLOSED' : 'NO_WORKSHOP_RECIPIENT_ACKED', { label, site: c.workshop_site }),
+          ...wsMsg(fm(closedWs.has(c.workshop_site) ? 'NO_WORKSHOP_RECIPIENT_CLOSED' : 'NO_WORKSHOP_RECIPIENT_ACKED', { label, site: c.workshop_site })),
           next_action: closedWs.has(c.workshop_site) ? (c.status === 'werkstatt_freigegeben' ? 'Werkstatt geschlossen – andere Werkstatt zuweisen.' : 'Werkstatt geschlossen – Auftrag als Fuhrparkleitung weiterführen.') : 'Werkstattbenutzer anlegen oder Auftrag als Fuhrparkleitung weiterführen.' });
       }
       if (c.status === 'wartet_teile') {
@@ -549,12 +555,12 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       const sa = { site: it.site, name: it.name, pn: it.part_number || null, stock: it.on_hand, unit: it.unit, min: it.min_qty, oq: it.ordered_on ? it.ordered_qty : null, oon: it.ordered_on || null, eta: it.ordered_eta || null };
       if (it.code === 'STOCK_ORDER_OVERDUE') {
         add({ code: 'STOCK_ORDER_OVERDUE', subject: it.id, severity: 'hinweis', owner_role: 'workshop',
-          ...fm('STOCK_ORDER_OVERDUE', sa),
+          ...wsMsg(fm('STOCK_ORDER_OVERDUE', sa)),
           next_action: 'Beim Lieferanten nachfragen; bei Eingang Zugang buchen (beendet den Vermerk).' });
         continue;
       }
       add({ code: 'STOCK_BELOW_MIN', subject: it.id, severity: 'hinweis', owner_role: 'workshop',
-        ...(it.ordered_on ? fm('STOCK_BELOW_MIN_ORD', { ...sa, open: it.open }) : fm('STOCK_BELOW_MIN', sa)),
+        ...wsMsg((it.ordered_on ? fm('STOCK_BELOW_MIN_ORD', { ...sa, open: it.open }) : fm('STOCK_BELOW_MIN', sa))),
         next_action: 'Nachbestellung prüfen (Bestellung nur nach Freigabe).' });
     }
 

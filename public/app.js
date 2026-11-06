@@ -7162,7 +7162,8 @@ function fMsg(stored, fallback) {
     if (typeof a.reason === 'string') a.reason = translateLockReason(S.lang, a.reason); // automatischer Sperrgrund (20.10.2026: blieb in UK/EN deutsch)
     if (typeof a.pos === 'string') a.pos = posL(a.pos);
     if ('unit' in a && a.unit != null) a.unit = unitL(a.unit);
-    if (typeof a.site === 'string' && a.site && S.meta && S.meta.workshops) a.site = wsName(a.site);
+    // Backlog 1055: Name ohne „(geschlossen)“ – die Vorlage sagt es selbst bzw. der Befund betrifft den offenen Auftrag; Vorlagen ohne vorangestelltes „Werkstatt“ (vorher „Werkstatt Werkstatt Dortmund“)
+    if (typeof a.site === 'string' && a.site && S.meta && S.meta.workshops) { const w = wsAll().find((x) => x.code === a.site); a.site = w ? wsLabel({ ...w, active: true }) || a.site : a.site; }
     o = { ...o, a };
   }
   return findingMessage(o, fallback, S.lang);

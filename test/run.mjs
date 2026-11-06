@@ -7640,7 +7640,9 @@ await test('Agentenbefunde: Meldungstext aus gemeinsamer Vorlage – Panel in DE
   const diff = []; const leftovers = [];
   for (const r of withArgs) {
     // gespeicherter Text = Vorlage ohne Datumsanpassung; die Anzeige (findingMessage) schreibt Datumswerte zusätzlich im Format der Sprache
-    { const o = JSON.parse(r.message_args); if (renderFindingMessage(o.k, o.a, 'de') !== r.message) diff.push(`${r.finding_code}: ${r.message}`); }
+    // Backlog 1055: Werkstatt/Lager im gespeicherten Text mit Namen statt Code
+    { const o = JSON.parse(r.message_args); const wsN = Object.fromEntries(env.DB.db.prepare('SELECT code, name FROM workshops').all().map((w) => [w.code, w.name]));
+      const a = o.a && o.a.site && wsN[o.a.site] ? { ...o.a, site: wsN[o.a.site] } : o.a; if (renderFindingMessage(o.k, a, 'de') !== r.message) diff.push(`${r.finding_code}: ${r.message}`); }
     if (/\b\d{4}-\d{2}-\d{2}\b/.test(findingMessage(r.message_args, null, 'de') || '')) diff.push(`ISO-Datum in der Anzeige: ${r.finding_code}: ${findingMessage(r.message_args, null, 'de')}`);
     for (const l of ['uk', 'en']) { const t = findingMessage(r.message_args, null, l); if (!t || /[{}]|\[\[|undefined|null/.test(t)) leftovers.push(`${l}:${r.finding_code}: ${t}`); }
   }
@@ -14343,7 +14345,7 @@ await test('Fehlersuche 19.10. (Agentenbefunde/Datenqualität/Telematik): Befund
   const sb = { k: 'STOCK_BELOW_MIN', a: { site: 'DORTMUND', name: 'Filter', stock: 2.5, unit: 'Stk', min: 10.5 } };
   ok(findingMessage(sb, '', 'de').includes('Bestand 2,5 Stk, Mindestbestand 10,5'), findingMessage(sb, '', 'de'));
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("if (typeof a.kind === 'string') a.kind = mk(a.kind);") && app.includes("a.pos = posL(a.pos)") && app.includes("a.unit = unitL(a.unit)") && app.includes("a.site = wsName(a.site)"), 'fMsg übersetzt Prüfart/Position/Einheit/Werkstatt');
+  ok(app.includes("if (typeof a.kind === 'string') a.kind = mk(a.kind);") && app.includes("a.pos = posL(a.pos)") && app.includes("a.unit = unitL(a.unit)") && app.includes("a.site = w ? wsLabel({ ...w, active: true })"), 'fMsg übersetzt Prüfart/Position/Einheit/Werkstatt');
   ok(!/esc\([a-z]+\.provider\)/.test(app) && app.includes("`${t('area_telematics')} (${provL(v.slice(10))})`"), 'Anbieter als „YellowFox“');
   const css = (await import('node:fs')).readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
   ok(css.includes('#tmmism .row > .plate + .title { display: block; -webkit-line-clamp: unset;'), 'gemeldetes Kennzeichen nicht abgeschnitten');
@@ -34843,6 +34845,35 @@ await test('Backlog 1054 (Blickwinkel „Werkstatt Bayern schließt“): Fuhrpar
   f = await finding(); eq(f.next_action, 'Werkstatt geschlossen – Auftrag als Fuhrparkleitung weiterführen.', 'in Reparatur: weiterführen');
   const fmMod = await import('../public/finding-messages.js');
   for (const l of ['de', 'uk', 'en']) { const txt = fmMod.renderFindingMessage('NO_WORKSHOP_RECIPIENT_CLOSED', { label: 'X', site: 'MUENCHEN' }, l); ok(txt && txt.includes('MUENCHEN') && !txt.includes('{'), l + ': ' + txt); }
+});
+
+await test('Backlog 1055 (Blickwinkel „Agent-Texte nennen Werkstatt/Lager nur als Code“): deutscher Befundtext (Master-Eingang, Integrations-API) nennt den Werkstattnamen statt Code, `message_args` behält den Code; Vorlagen und Freigabe-Hinweis ohne doppeltes „Werkstatt“ (DE/UK/EN)', async () => {
+  const { e, U, newCase } = await freshWorld();
+  const id = await newCase({ description: 'Auftrag München 1055' });
+  const cmd = async (action, payload = {}) => { const c = (await U.fleet.get(`/api/cases/${id}`)).data.case; const r = await U.fleet.post(`/api/cases/${id}/commands`, { action, command_id: action + '-1055', expected_version: c.version, note: 'Test 1055', payload }); eq(r.status, 200, action + ' ' + JSON.stringify(r.data)); };
+  await cmd('approve_repair', { workshop_site: 'MUENCHEN' }); await cmd('acknowledge');
+  e.DB.db.prepare(`UPDATE workshops SET active=0 WHERE code='MUENCHEN'`).run();
+  eq((await U.fleet.post('/api/agent/run')).status, 200);
+  const f = e.DB.db.prepare(`SELECT message, message_args FROM agent_findings WHERE case_id=? AND finding_code='NO_WORKSHOP_RECIPIENT' AND status='offen'`).get(id);
+  ok(f && f.message.includes('Werkstatt München ist geschlossen') && !f.message.includes('MUENCHEN') && !f.message.includes('Werkstatt Werkstatt'), 'Name statt Code: ' + (f && f.message));
+  eq(JSON.parse(f.message_args).a.site, 'MUENCHEN', 'Vorlagenwert bleibt der Code (App setzt den Namen in der Sprache ein)');
+  // noch nicht übernommener Auftrag bei der geschlossenen Werkstatt: ebenfalls „ist geschlossen“ statt „kein aktiver Benutzer“
+  const id2 = await newCase({ description: 'Auftrag München 1055 b' });
+  { const c = (await U.fleet.get(`/api/cases/${id2}`)).data.case; eq((await U.fleet.post(`/api/cases/${id2}/commands`, { action: 'approve_repair', command_id: 'apr-1055b', expected_version: c.version, note: 'Test', payload: { workshop_site: 'DORTMUND' } })).status, 200); }
+  e.DB.db.prepare(`UPDATE cases SET workshop_site='MUENCHEN' WHERE id=?`).run(id2);
+  eq((await U.fleet.post('/api/agent/run')).status, 200);
+  const f2 = e.DB.db.prepare(`SELECT message, message_args, next_action FROM agent_findings WHERE case_id=? AND finding_code='NO_WORKSHOP_RECIPIENT' AND status='offen'`).get(id2);
+  ok(f2 && JSON.parse(f2.message_args).k === 'NO_WORKSHOP_RECIPIENT_CLOSED' && f2.message.includes('Werkstatt München ist geschlossen'), 'vor Übernahme: ' + (f2 && f2.message));
+  eq(f2.next_action, 'Werkstatt geschlossen – andere Werkstatt zuweisen.');
+  const mi = e.DB.db.prepare(`SELECT payload FROM master_inbox WHERE case_id=? ORDER BY received_at DESC LIMIT 1`).get(id);
+  ok(mi && JSON.parse(mi.payload).message.includes('Werkstatt München'), 'Master-Eingang mit Namen: ' + (mi && mi.payload));
+  const fmMod = await import('../public/finding-messages.js');
+  const dbl = /(Werkstatt|workshop|майстерн\S*|Lager|Store|Склад) \{site\}/i;
+  for (const l of ['de', 'uk', 'en']) for (const [k, tpl] of Object.entries(fmMod.FINDING_MESSAGES[l])) {
+    if (/^(NO_WORKSHOP|WORKSHOP_ACK)/.test(k)) { ok(!dbl.test(tpl), `${l} ${k} ohne vorangestelltes Wort: ${tpl}`); const txt = fmMod.renderFindingMessage(k, { label: 'X', site: 'Werkstatt Dortmund', at: '01.01.2026 10:00' }, l); ok(!/(Werkstatt|workshop|майстерн\S*) Werkstatt/i.test(txt), l + ': ' + txt); }
+  }
+  const i18n = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(!/(Werkstatt|workshop|майстерн\S*) \{ws\}/i.test(i18n.STRINGS[l].apr_ws_closed_hint), l + ' Freigabe-Hinweis: ' + i18n.STRINGS[l].apr_ws_closed_hint);
 });
 
 await test('Backlog 1048 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Hinweis beim Standortwechsel liefert offene Aufträge je Werkstatt und Status (Bearbeiten und CSV-Import); App trennt „bei Freigabe wählbar“, „jetzt übergebbar“, „nicht übergebbar“ und lässt die Werkstatt des neuen Standorts weg (DE/UK/EN)', async () => {
