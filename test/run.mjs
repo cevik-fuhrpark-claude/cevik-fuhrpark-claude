@@ -34964,6 +34964,45 @@ await test('Backlog 1049 (Blickwinkel „Lkw wechselt dauerhaft den Standort“)
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cost_site_moved && STRINGS[l].cost_site_moved_hint.includes('{list}'), l);
 });
 
+await test('Backlog 1059 (Blickwinkel „Leitung Bayern zieht vor der HU-Woche die Nachweisliste des eigenen Standorts“): Durchgeführte Prüfungen mit Standortfilter (App, CSV mit Standort im Dateinamen, Protokoll, Integrations-API), Filter vor der 5000er-Grenze; App übergibt die Standort-Auswahl der Seite (DE/UK/EN)', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const csv = 'Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN;Anhänger Kennzeichen\nSZ-YC 5513;Dortmund;in Betrieb;MAN;2016;WMA15SZZ2HM722774;\nSZ-KC 5515; bayern ;in Betrieb;DAIMLER;2015;WDB9630051L917317;';
+  eq((await U.own.req('POST', '/api/vehicles/import', csv, { 'content-type': 'text/csv' })).status, 200);
+  const vid = (vin) => db.prepare('SELECT id FROM vehicles WHERE vin=?').get(vin).id;
+  const VD = vid('WMA15SZZ2HM722774'); const VB = vid('WDB9630051L917317');
+  db.prepare(`INSERT INTO vehicles(id, vin, plate, site, active, created_at, updated_at) VALUES ('VIN:WDB00000000001059','WDB00000000001059','SZ-YC 9059','Bayern',0,?,?)`).run(now, now); // ausgeschieden, Standort Bayern
+  const rule = (id, v) => db.prepare(`INSERT INTO maintenance_rules(id,vehicle_id,kind,next_due_date,evidence,created_by,created_at,updated_at) VALUES (?,?,'UVV','2027-01-31','Beleg',?,?,?)`).run(id, v, U.own.id || db.prepare("SELECT id FROM users WHERE role='owner'").get().id, now, now);
+  rule('r1059d', VD); rule('r1059b', VB); rule('r1059x', 'VIN:WDB00000000001059');
+  const ev = db.prepare(`INSERT INTO maintenance_events(id, rule_id, vehicle_id, kind, done_date, evidence, source, created_at) VALUES (?,?,?,'UVV',?,'Beleg','erfasst',?)`);
+  ev.run('e1059d', 'r1059d', VD, '2026-02-10', now); ev.run('e1059b', 'r1059b', VB, '2026-02-11', now); ev.run('e1059x', 'r1059x', 'VIN:WDB00000000001059', '2026-02-12', now);
+  const q = '/api/maintenance/history?from=2026-01-01&to=2026-06-30&kind=UVV';
+  let h = (await U.fleet.get(q)).data; eq(h.rows.map((r) => r.event_id).sort().join(), 'e1059b,e1059d,e1059x', 'ohne Auswahl alle'); eq(h.site, null); ok(h.site_options.includes('Dortmund') && h.site_options.some((x) => /^bayern$/i.test(x)), JSON.stringify(h.site_options));
+  h = (await U.fleet.get(q + '&site=BAYERN')).data; eq(h.rows.map((r) => r.event_id).sort().join(), 'e1059b,e1059x', 'Bayern: Schreibweise egal, ausgeschiedenes Fahrzeug mit'); ok(/^bayern$/i.test(h.site), h.site);
+  h = (await U.viewer.get(q + '&site=Dortmund')).data; eq(h.rows.map((r) => r.event_id).join(), 'e1059d', 'Lesezugriff, Dortmund');
+  eq((await U.fleet.get(q + '&site=ohne')).data.rows.length, 0, 'ohne Standort');
+  eq((await U.fleet.get(q + '&site=%20%20')).data.rows.length, 3, 'nur Leerzeichen = keine Auswahl');
+  eq((await U.ws.get(q + '&site=Dortmund')).status, 403, 'Werkstatt weiterhin nicht');
+  const c = await U.fleet.req('GET', q + '&site=Dortmund&format=csv'); eq(c.status, 200);
+  ok(/filename="fuhrpark-durchgefuehrte-pruefungen_2026-01-01_2026-06-30_[^"]*dortmund[^"]*\.csv"/i.test(c.headers.get('content-disposition')), c.headers.get('content-disposition'));
+  const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(c.data).replace(/^﻿/, '').trim().split('\r\n'); eq(lines.length, 2, 'Kopf + eine Zeile'); ok(lines[1].startsWith('SZ-YC 5513;'), lines[1]);
+  const au = db.prepare("SELECT detail FROM audit_log WHERE action='maintenance.history_export' ORDER BY created_at DESC LIMIT 1").get(); eq(JSON.parse(au.detail).site, 'Dortmund', 'Protokoll nennt Standort');
+  // Integrations-API: site additiv
+  const an = new Client(worker, e, 'anon'); const H = { authorization: 'Bearer integration-token-xyz' };
+  const ih = await an.req('GET', '/api/integration/v1/maintenance/history?from=2026-01-01&to=2026-06-30&kind=UVV&environment=test&site=bayern', undefined, H); eq(ih.status, 200, JSON.stringify(ih.data));
+  eq(ih.data.events.map((r) => r.event_id).sort().join(), 'e1059b,e1059x'); ok(ih.data.site && Array.isArray(ih.data.site_options));
+  // Filter vor der Grenze: 5000 Dortmunder Ereignisse + 1 Bayern → Bayern nicht begrenzt
+  db.exec('BEGIN'); const d0 = Date.UTC(1990, 0, 1); for (let i = 0; i < 5001; i++) ev.run('e1059g' + i, 'r1059d', VD, new Date(d0 + i * 86400000).toISOString().slice(0, 10), now); db.exec('COMMIT');
+  ev.run('e1059bb', 'r1059b', VB, '1990-01-05', now);
+  const qa = '/api/maintenance/history?from=1990-01-01&to=2010-12-31&kind=UVV';
+  h = (await U.fleet.get(qa)).data; eq(h.truncated, true, 'ohne Auswahl begrenzt');
+  h = (await U.fleet.get(qa + '&site=Bayern')).data; eq(h.truncated, false); eq(h.rows.map((r) => r.event_id).join(), 'e1059bb', 'Bayern-Ereignis trotz 5000 jüngerer Dortmunder');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("${mhf.kind.value ? '&kind=' + encodeURIComponent(mhf.kind.value) : ''}` + msQ;"), 'App: Nachweisliste mit Standort der Seite');
+  ok(app.includes('data-mhsite') && app.includes("fuhrpark-durchgefuehrte-pruefungen_${mhf.from.value}_${mhf.to.value}${ov.site ? '_' + fnPart(ov.site) : ''}.csv"), 'App: Hinweis und Dateiname');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].mh_site && STRINGS[l].mh_site.includes('{s}'), l);
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-nachweisliste-standort.py'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

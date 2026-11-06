@@ -929,19 +929,25 @@ export async function maintenanceHistory(env, user, query = {}, envName = 'produ
   // Prüfart ohne Groß-/Kleinschreibung (z. B. „hu“ → „HU“, 22.10.2026: lieferte still 0 Ereignisse); unbekannte Art unverändert
   const kindRaw = query.kind ? String(query.kind).slice(0, 40) : null;
   const kind = kindRaw ? MAINT_KINDS.find((k) => k.toLowerCase() === kindRaw.toLowerCase()) || kindRaw : null;
+  // Backlog 1059: Standort laut Fahrzeugstamm (heutiger Stand, auch ausgeschiedene Fahrzeuge), Filter vor der 5000er-Grenze per json_each
+  const allV = (await env.DB.prepare('SELECT id, site FROM vehicles').all()).results;
+  const sel = siteSelection(allV, query.site);
+  const args = [envName, from, to]; let extra = '';
+  if (kind) { args.push(kind); extra += ` AND e.kind = ?${args.length}`; }
+  if (sel.site !== null) { args.push(JSON.stringify(allV.filter((v) => sel.match(v.site)).map((v) => v.id))); extra += ` AND e.vehicle_id IN (SELECT value FROM json_each(?${args.length}))`; }
   const rows = (await env.DB.prepare(`SELECT e.id AS event_id, e.vehicle_id, v.plate, v.kind AS vehicle_kind, v.site, e.kind, e.done_date, e.done_km, e.result, e.evidence, e.source, u.display_name AS recorded_by_name, e.created_at,
       ${DEFECT_CASE_SQL('id')} AS defect_case_id, ${DEFECT_CASE_SQL('case_no')} AS defect_case_no, ${DEFECT_CASE_SQL('status')} AS defect_case_status,
       ${NEXT_EVENT_SQL('done_date')} AS reinspection_date, ${NEXT_EVENT_SQL('result')} AS reinspection_result,
       CASE WHEN e.result IS NULL AND NOT EXISTS (SELECT 1 FROM maintenance_events e3 WHERE e3.vehicle_id=e.vehicle_id AND e3.kind=e.kind AND (e3.kind NOT IN ('Rückruf','Sonstiges') OR e3.rule_id=e.rule_id) AND e3.id<>e.id
         AND (e3.done_date > e.done_date OR (e3.done_date = e.done_date AND e3.created_at > e.created_at))) THEN 1 ELSE 0 END AS result_addable
     FROM maintenance_events e JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN users u ON u.id=e.recorded_by
-    WHERE e.done_date >= ?2 AND e.done_date <= ?3 ${kind ? 'AND e.kind = ?4' : ''} ORDER BY e.done_date DESC, v.plate LIMIT 5001`)
-    .bind(...(kind ? [envName, from, to, kind] : [envName, from, to])).all()).results;
+    WHERE e.done_date >= ?2 AND e.done_date <= ?3${extra} ORDER BY e.done_date DESC, v.plate LIMIT 5001`)
+    .bind(...args).all()).results;
   // eine Zeile mehr gelesen: genau 5000 Treffer gelten nicht als begrenzt
   const truncated = rows.length > HISTORY_MAX; if (truncated) rows.length = HISTORY_MAX;
   const by_kind = {};
   for (const r of rows) by_kind[r.kind] = (by_kind[r.kind] || 0) + 1;
-  return { from, to, kind, rows, by_kind, truncated, max: HISTORY_MAX };
+  return { from, to, kind, site: sel.site, site_options: sel.options, rows, by_kind, truncated, max: HISTORY_MAX };
 }
 export function maintenanceHistoryCsv(h) {
   const lines = [['Kennzeichen', 'FIN-Schlüssel', 'Fahrzeugart', 'Standort', 'Prüfart', 'Durchgeführt am', 'km bei Durchführung', 'Ergebnis', 'Nachweis', 'Herkunft', 'Erfasst von', 'Erfasst am', 'Mängelauftrag', 'Status Mängelauftrag', 'Nachprüfung am', 'Ergebnis Nachprüfung'].join(';')];
