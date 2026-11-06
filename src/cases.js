@@ -741,6 +741,14 @@ async function otherLockCaseNo(env, c) {
   return r ? { case_no: r.case_no, plate: r.plate } : null; // Backlog 641: mit Kennzeichen für den Hinweistext
 }
 
+// Backlog 1073 (Blickwinkel „Werkstatt bekommt zwei Aufträge für denselben Lkw am selben Tag“): weiterer Werkstattauftrag am selben Fahrzeug
+// (freigegeben/in Reparatur/wartet auf Teile/Abschlusskontrolle, ohne Sicherheitssperre – die meldet otherLockCaseNo) – Vorgangsnummer oder null
+async function otherWorkshopCaseNo(env, c) {
+  const r = await env.DB.prepare(`SELECT case_no FROM cases WHERE environment=?1 AND vehicle_id=?2 AND id<>?3 AND safety_lock=0
+    AND status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') ORDER BY created_at LIMIT 1`).bind(c.environment, c.vehicle_id, c.id).first();
+  return r ? r.case_no : null;
+}
+
 async function repairInspection(env, caseId) {
   const r = await env.DB.prepare(`SELECT
       (SELECT MAX(created_at) FROM inspections WHERE case_id=?1 AND kind='nach_reparatur') AS latest,
@@ -2250,7 +2258,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const vPlate = updated.v_plate; delete updated.v_plate;
   // Freigabe/Aufhebung: sperrt ein weiterer offener Vorgang das Fahrzeug oder das fest gekoppelte Gespann, keine „freigegeben“-Meldung
   const still_locked = ['released', 'safety_lock_lifted'].includes(notifyKind) ? await otherLockCaseNo(env, updated) : null;
-  const sent = notifyKind ? await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c, vehicle: { plate: vPlate }, still_locked }) : null;
+  // Backlog 1073: Freigabe, während am selben Fahrzeug ein weiterer Werkstattauftrag läuft – Zusatz „Auftrag … noch in Werkstatt“
+  const in_workshop = notifyKind === 'released' && !still_locked ? await otherWorkshopCaseNo(env, updated) : null;
+  const sent = notifyKind ? await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c, vehicle: { plate: vPlate }, still_locked, in_workshop }) : null;
   // Fahrzeug korrigiert (Backlog 254): Fahrer/Disposition des falschen Fahrzeugs erfahren, dass die Sperre dort nicht mehr gilt
   // (außer ein anderer offener Vorgang sperrt es weiter – dann „bleibt gesperrt“)
   if (action === 'correct_vehicle' && (c.safety_lock || payload.lock_case_id)) {

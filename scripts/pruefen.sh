@@ -312,6 +312,7 @@ UI-Fahrzeugtausch unterwegs: Hinweis „nicht dir zugeordnet“ in Kontrolle/Mel
 UI-Werkstatt ohne Schlüssel/Fahrzeugschein: „fehlt“ im Vorgang, Vorgangsliste, Werkstattplan, DE/UK/EN 390/820/1366|ui-werkstatt-schluessel.py|/tmp/cfp-werkstatt-schluessel.log
 UI-Abholung nach der Reparatur: Abholvermerk Werkstatt → Freigabe → Fahrerhinweis, Vorgang/Fahrzeugakte, DE/UK/EN 390/820/1366|ui-abholung.py|/tmp/cfp-abholung.log
 UI-Abholhinweis ersetzt (Backlog 879): frühere Abholhinweise für Fahrer bei der nächsten Freigabe archiviert, Formular + Verlauf, DE/UK/EN 390/820/1366|ui-abholung-ersetzt.py|/tmp/cfp-abholung-ersetzt.log
+UI-Zweiter Auftrag (Backlog 1073): Freigabe-Formular nennt weiteren laufenden Werkstattauftrag am selben Fahrzeug, DE/UK/EN 390/820/1366|ui-zweiter-auftrag.py|/tmp/cfp-zweiter-auftrag.log
 UI-Fährt bis zur Teilelieferung (Backlog 880): Leitung setzt/entfernt den Vermerk im Vorgang, Disposition sieht eigenen Abschnitt statt „Nicht einplanen“, DE/UK/EN 390/820/1366|ui-teilefahrt.py|/tmp/cfp-teilefahrt.log
 UI-Fährt bis zur Teilelieferung, Liefertermin überschritten/heute (Backlog 1035): Disposition sieht Kennzeichnung, Warnhinweis und Zähler, DE/UK/EN 390/820/1366|ui-teilefahrt-ueberfaellig.py|/tmp/cfp-teilefahrt-ueberfaellig.log
 UI-Liefertermin geändert bei Fahrt bis zur Teilelieferung (Backlog 1038): Formularhinweis, Disposition erhält Hinweis, DE/UK/EN 390/820/1366|ui-liefertermin-teilefahrt.py|/tmp/cfp-liefertermin-teilefahrt.log

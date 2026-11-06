@@ -3862,3 +3862,9 @@ Object.assign(STRINGS.en, { home_drafts: 'Started, not sent yet', home_drafts_hi
 Object.assign(STRINGS.de, { todo_upto_free: 'Bis zum nächsten Werktag ({d}) folgen freie Tage – Wiedervorlagen dieser Tage stehen schon heute hier.', todo_driver_docs_soon: 'Fahrer: Nachweis gilt am nächsten Werktag ({d}) nicht mehr', todo_ready_soon: 'Voraussichtlich fertig bis zum nächsten Werktag ({d})' });
 Object.assign(STRINGS.uk, { todo_upto_free: 'До наступного робочого дня ({d}) вихідні – нагадування на ці дні показано вже сьогодні.', todo_driver_docs_soon: 'Водії: документ уже не дійсний у наступний робочий день ({d})', todo_ready_soon: 'Орієнтовно готово до наступного робочого дня ({d})' });
 Object.assign(STRINGS.en, { todo_upto_free: 'Days off until the next working day ({d}) – follow-ups for those days are already shown today.', todo_driver_docs_soon: 'Drivers: document no longer valid on the next working day ({d})', todo_ready_soon: 'Expected ready by the next working day ({d})' });
+
+// Backlog 1073 (Blickwinkel „Werkstatt bekommt zwei Aufträge für denselben Lkw am selben Tag“): Abschlusskontrolle/Freigabe nennt einen weiteren
+// laufenden Werkstattauftrag am selben Fahrzeug
+Object.assign(STRINGS.de, { rel_other_ws: 'Weiterer Werkstattauftrag an diesem Fahrzeug:', rel_other_ws_hint: 'Abholvermerk und Hinweis für die Fahrer nur eintragen, wenn das Fahrzeug trotzdem abgeholt werden kann.' });
+Object.assign(STRINGS.uk, { rel_other_ws: 'Інше замовлення майстерні для цього транспорту:', rel_other_ws_hint: 'Додавайте інформацію для отримання та примітку для водіїв лише тоді, коли транспорт усе одно можна забрати.' });
+Object.assign(STRINGS.en, { rel_other_ws: 'Another workshop order for this vehicle:', rel_other_ws_hint: 'Only add a pick-up note or a note for the drivers if the vehicle can be collected anyway.' });

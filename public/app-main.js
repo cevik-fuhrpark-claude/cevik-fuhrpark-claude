@@ -3588,6 +3588,10 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   }
   // Backlog 424: Schlüssel/Fahrzeugschein noch als „fehlt“ eingetragen – freigegebenes Fahrzeug stünde ohne Schlüssel da (kein Server-Stopp, nur Hinweis)
   if ((isQc || isRel) && hoMissing(c).length) f.push(`<p class="panel warn small" id="relho">${esc(t('ho_release_warn').replace('{x}', hoMissing(c).join(', ')))}</p>`);
+  // Backlog 1073 (Blickwinkel „Werkstatt bekommt zwei Aufträge für denselben Lkw am selben Tag“): weiterer laufender Werkstattauftrag am
+  // selben Fahrzeug – vor dem Abholvermerk nennen (nur Hinweis, kein Server-Stopp)
+  { const ow = (isQc || isRel) && d && d.vehicle_info && Array.isArray(d.vehicle_info.other_open_cases) ? d.vehicle_info.other_open_cases.filter((o) => ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'].includes(o.status)) : [];
+    if (ow.length) f.push(`<p class="panel warn small" id="relother" role="note"><b>${esc(t('rel_other_ws'))}</b> ${ow.map((o) => `<span style="white-space:nowrap"><a href="#/cases/${esc(o.id)}" translate="no">${esc(o.case_no)}</a> · ${esc(t('st_' + o.status))}</span>`).join(', ')}<br>${esc(t('rel_other_ws_hint'))}</p>`); }
   if (isQc || isRel) {
     // Backlog 629: ohne Abholvermerk mit dem eingetragenen Standort vorbelegen (externe Werkstatt – Fahrzeug steht dort)
     const puPre = !c.pickup_note && qrel && c.vehicle_location ? c.vehicle_location.slice(0, 300) : '';

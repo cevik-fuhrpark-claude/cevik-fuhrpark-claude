@@ -35292,6 +35292,47 @@ await test('Backlog 1071 (Folge aus 1069): „Heute zu tun“ nennt vor freien T
     ok(STRINGS[l].help_fleet_s.split('|').some((x) => x.includes(STRINGS[l].todo_followup) && /voraussichtlich fertig|оцінкою майстерні|expects to be ready/.test(x)), l + ': Hilfe Fuhrparkleitung');
   }
 });
+await test('Backlog 1073 (Blickwinkel „Werkstatt bekommt zwei Aufträge für denselben Lkw am selben Tag“): „Fahrzeug technisch freigegeben“ nennt einen weiteren laufenden Werkstattauftrag am selben Fahrzeug (Nummer, DE/UK/EN, Sprachwechsel); gemeldete/abgeschlossene Vorgänge zählen nicht', async () => {
+  const { e, U, cmd, newCase, toRepair, V1 } = await freshWorld();
+  const mk = async (un, lang) => { const x = await U.own.post('/api/users', { username: un, display_name: un, role: 'dispatch', environment: 'test', language: lang }); const c = new Client(worker, e, un); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; };
+  const D = { de: await mk('d1073.de', 'de'), uk: await mk('d1073.uk', 'uk'), en: await mk('d1073.en', 'en') };
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const release = async (id) => {
+    eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Bremse' })).status, 200);
+    eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+    eq((await cmd(U.fleet, id, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200, 'Freigabe');
+    return (await U.fleet.get(`/api/cases/${id}`)).data.case.case_no;
+  };
+  const no = async (id) => (await U.fleet.get(`/api/cases/${id}`)).data.case.case_no;
+  // 1. A (Bremse) und B (Beleuchtung) am selben Lkw in Reparatur: Freigabe von A nennt B
+  const a = await toRepair(); const b = await toRepair(); const bNo = await no(b);
+  ok(!(await U.fleet.get(`/api/cases/${b}`)).data.case.safety_lock, 'B ohne Sperre');
+  // Werkstatt sieht B im Vorgang A (Grundlage des Hinweises im Freigabeformular, public/app.js `#relother`)
+  const oc = (await U.ws.get(`/api/cases/${a}`)).data.vehicle_info.other_open_cases;
+  ok(oc.some((o) => o.case_no === bNo && o.status === 'in_reparatur'), JSON.stringify(oc));
+  const src = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(src.includes('id="relother"') && /rel_other_ws_hint/.test(src), 'Hinweis im Formular');
+  const aNo = await release(a);
+  const want = { de: `Auftrag ${bNo} noch in Werkstatt`, uk: `замовлення ${bNo} ще в майстерні`, en: `order ${bNo} still in the workshop` };
+  for (const l of ['de', 'uk', 'en']) {
+    const n = (await D[l].get('/api/notifications')).data.notifications.find((x) => x.body.startsWith(aNo));
+    ok(n && n.kind === 'released' && n.body.includes(' · ' + want[l]), l + ': ' + (n && n.kind + ' ' + n.body));
+  }
+  // gespeicherter Text wird für eine andere Anzeigesprache umgesetzt (auch mit Abholhinweis dahinter)
+  const { localizedBody } = await import('../src/notify.js');
+  const deBody = (await D.de.get('/api/notifications')).data.notifications.find((n) => n.body.startsWith(aNo)).body;
+  const en = localizedBody({ kind: 'released', body: deBody }, 'en'); ok(en.includes(' · ' + want.en) && !en.includes('Werkstatt'), en);
+  const uk = localizedBody({ kind: 'released', body: deBody.replace(' · TEST', '') + ' · Abholhinweis: Mein Fahrzeug' }, 'uk');
+  ok(uk.endsWith(' · ' + want.uk + ' · Інформація для отримання: Мій транспорт'), uk);
+  // 2. Gegenprobe: B freigeben – kein weiterer Werkstattauftrag (A abgeschlossen, C nur gemeldet)
+  await newCase(); const bRel = await release(b);
+  for (const l of ['de', 'uk', 'en']) {
+    const n = (await D[l].get('/api/notifications')).data.notifications.find((x) => x.body.startsWith(bRel));
+    ok(n && n.kind === 'released' && !n.body.includes(want[l]), l + ' ohne Zusatz: ' + (n && n.body));
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

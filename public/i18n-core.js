@@ -1310,6 +1310,9 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 
 // Backlog 1069/1070 (Blickwinkel „Fuhrparkleitung am Freitag: Wochenabschluss vor dem Wochenende“): „Heute zu tun“ nimmt Wiedervorlagen und
 // ablaufende Fahrernachweise bis zum nächsten Werktag vorweg
+
+// Backlog 1073 (Blickwinkel „Werkstatt bekommt zwei Aufträge für denselben Lkw am selben Tag“): Abschlusskontrolle/Freigabe nennt einen weiteren
+// laufenden Werkstattauftrag am selben Fahrzeug
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
