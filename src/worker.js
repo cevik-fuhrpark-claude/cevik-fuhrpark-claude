@@ -176,7 +176,10 @@ async function handleApi(request, env, ctx, url) {
   await guardSharedWrite(env, user, path, m);
   const { _session, ...me } = user;
 
-  if (path === '/api/logout' && m === 'POST') return json({ ok: true }, 200, { 'set-cookie': await auth.logout(env, user, await readJson(request).catch(() => ({}))) });
+  // Backlog 1087 (Blickwinkel „Werkstatt-Tablet fällt aus, Mechaniker arbeitet am privaten Handy“): Vorgangsfotos/Fahrzeugdokumente
+  // (`private, max-age=300`) blieben nach dem Abmelden im HTTP-Cache des Geräts. `Clear-Site-Data: "cache"` leert nur diesen Cache –
+  // nicht Service-Worker-Caches/Postausgang („storage“), der Offline-Start bleibt erhalten. Ältere Browser ignorieren den Header.
+  if (path === '/api/logout' && m === 'POST') return json({ ok: true }, 200, { 'set-cookie': await auth.logout(env, user, await readJson(request).catch(() => ({}))), 'clear-site-data': '"cache"' });
   if (path === '/api/me' && m === 'GET') {
     const row = await env.DB.prepare('SELECT language, home_site, totp_enabled_at FROM users WHERE id=?').bind(user.id).first();
     return json({ user: { ...me, language: row.language, home_site: user.role === 'driver' ? null : row.home_site || null, totp_enabled: !!row.totp_enabled_at,

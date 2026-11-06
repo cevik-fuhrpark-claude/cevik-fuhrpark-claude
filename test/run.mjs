@@ -35569,6 +35569,22 @@ await test('Backlog 1080–1083 (Blickwinkel „Werkstatt Dortmund und Bayern ar
   // Rückweg in eine Sprache mit gleichem Aufbau bleibt stabil (de → en → de)
   ok(localizedBody({ kind: 'released', body: en }, 'de').includes(' · ' + want.de), 'en → de');
 });
+await test('Backlog 1087/1088 (Blickwinkel „Werkstatt-Tablet fällt aus, Mechaniker arbeitet am privaten Handy“): Abmelden leert den HTTP-Cache (Clear-Site-Data "cache", nicht „storage“), Leerlauf-Abmeldung schließt Mitteilungen und kündigt das Push-Abo auch ohne Netz', async () => {
+  const { e, U } = await freshWorld();
+  const dev = new Client(worker, e, 'w.fuhrpark');
+  eq((await dev.post('/api/login', { username: 'w.fuhrpark', password: 'Sicheres-Passwort-2026' })).status, 200);
+  const lo = await dev.post('/api/logout', {});
+  eq(lo.status, 200); eq(lo.headers.get('clear-site-data'), '"cache"', 'nur HTTP-Cache – Service-Worker-Caches/Postausgang bleiben');
+  ok((lo.headers.get('set-cookie') || '').length > 0, 'Sitzungscookie weiter gelöscht');
+  eq((await dev.get('/api/me')).status, 401, 'abgemeldet');
+  ok(!(await U.fleet.get('/api/me')).headers.get('clear-site-data'), 'andere Antworten ohne Header');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i = app.indexOf('async function checkIdle('); const idle = app.slice(i, app.indexOf('\n}\n', i));
+  const po = idle.indexOf('const ep = await pushOffForLogout();'), net = idle.indexOf("navigator.onLine !== false");
+  ok(po > 0 && net > po, 'pushOffForLogout vor dem Netz-Check (läuft auch offline)');
+  ok(idle.includes("await api('POST', '/api/logout', { push_endpoint: ep })"), 'Server erfährt den Endpunkt, wenn Netz da ist');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

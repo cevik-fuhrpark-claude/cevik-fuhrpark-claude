@@ -1050,7 +1050,10 @@ async function checkIdle() {
   idleWarn(left > 0 && left <= 60000 && !idleBusy ? left : null);
   if (!ms || idleBusy || left > 0) return;
   idleBusy = true;
-  try { if (!S.offlineStart && navigator.onLine !== false) await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }).catch(() => {}); } catch {}
+  // Backlog 1088: Mitteilungen schließen und Push-Abo im Browser kündigen auch ohne Netz (Werkstatthalle, Funkloch) – vorher hing beides am
+  // Netz-Check, „Vorgangsnummer · Kennzeichen“ blieb auf dem Sperrbildschirm (privates Handy, geteiltes Tablet); der Server erfährt das Ende
+  // dann beim nächsten Push (Abo „gone“) bzw. über den Sitzungsablauf.
+  try { const ep = await pushOffForLogout(); if (!S.offlineStart && navigator.onLine !== false) await api('POST', '/api/logout', { push_endpoint: ep }).catch(() => {}); } catch {}
   const kept = idleKeep(); // Backlog 868: Entwürfe dieses Kontos für die erneute Anmeldung behalten
   clearOfflineData(); resetUserState(kept); markSession(''); idleBusy = false;
   location.hash = '#/login'; toast(t(kept ? 'idle_signed_out_kept' : 'idle_signed_out'));
