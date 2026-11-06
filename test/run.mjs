@@ -34826,6 +34826,25 @@ await test('Backlog 1053 (Blickwinkel „Werkstatt Bayern schließt“): Datenqu
   ok(app.includes("ws: (c) => wsName(c) });"), 'App übergibt Werkstattnamen');
 });
 
+await test('Backlog 1054 (Blickwinkel „Werkstatt Bayern schließt“): Fuhrparkagent bei übernommenem Auftrag einer geschlossenen Werkstatt – eigener Text „ist geschlossen“ statt „kein aktiver Benutzer“, vor Reparaturbeginn Empfehlung „andere Werkstatt zuweisen“, danach „als Fuhrparkleitung weiterführen“ (DE/UK/EN)', async () => {
+  const { e, U, newCase } = await freshWorld();
+  const id = await newCase({ description: 'Auftrag München übernommen' });
+  const cmd = async (action, payload = {}) => { const c = (await U.fleet.get(`/api/cases/${id}`)).data.case; const r = await U.fleet.post(`/api/cases/${id}/commands`, { action, command_id: action + '-1054', expected_version: c.version, note: 'Test 1054', payload }); eq(r.status, 200, action + ' ' + JSON.stringify(r.data)); };
+  await cmd('approve_repair', { workshop_site: 'MUENCHEN' }); await cmd('acknowledge');
+  e.DB.db.prepare(`UPDATE workshops SET active=0 WHERE code='MUENCHEN'`).run();
+  const finding = async () => { eq((await U.fleet.post('/api/agent/run')).status, 200); return e.DB.db.prepare(`SELECT message, message_args, next_action FROM agent_findings WHERE case_id=? AND finding_code='NO_WORKSHOP_RECIPIENT' AND status='offen'`).get(id); };
+  let f = await finding();
+  ok(f, 'Befund vorhanden');
+  eq(f.next_action, 'Werkstatt geschlossen – andere Werkstatt zuweisen.', 'übernommen, nicht begonnen: Werkstatt wechseln empfohlen');
+  ok(f.message.includes('ist geschlossen') && !f.message.includes('keinen aktiven Benutzer'), 'eigener Text: ' + f.message);
+  ok(JSON.parse(f.message_args).k === 'NO_WORKSHOP_RECIPIENT_CLOSED', 'Textschlüssel');
+  const c = (await U.fleet.get(`/api/cases/${id}`)).data; ok(c.allowed_actions.includes('reassign_workshop'), 'Werkstatt wechseln ist erlaubt: ' + JSON.stringify(c.allowed_actions));
+  await cmd('start_repair');
+  f = await finding(); eq(f.next_action, 'Werkstatt geschlossen – Auftrag als Fuhrparkleitung weiterführen.', 'in Reparatur: weiterführen');
+  const fmMod = await import('../public/finding-messages.js');
+  for (const l of ['de', 'uk', 'en']) { const txt = fmMod.renderFindingMessage('NO_WORKSHOP_RECIPIENT_CLOSED', { label: 'X', site: 'MUENCHEN' }, l); ok(txt && txt.includes('MUENCHEN') && !txt.includes('{'), l + ': ' + txt); }
+});
+
 await test('Backlog 1048 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Hinweis beim Standortwechsel liefert offene Aufträge je Werkstatt und Status (Bearbeiten und CSV-Import); App trennt „bei Freigabe wählbar“, „jetzt übergebbar“, „nicht übergebbar“ und lässt die Werkstatt des neuen Standorts weg (DE/UK/EN)', async () => {
   const { U, newCase, toRepair } = await freshWorld();
   await toRepair();                                    // in Reparatur bei DORTMUND → nicht übergebbar

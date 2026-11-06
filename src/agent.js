@@ -317,8 +317,10 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
           && c.workshop_site && !sitesWithUsers.has(c.workshop_site) && !isExternal(c)) {
         const crit = c.priority === 'kritisch' || !!c.safety_lock;
         add({ code: 'NO_WORKSHOP_RECIPIENT', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: crit ? 'kritisch' : 'handeln', owner_role: 'fleet', requires_decision: 1,
-          ...fm('NO_WORKSHOP_RECIPIENT_ACKED', { label, site: c.workshop_site }),
-          next_action: closedWs.has(c.workshop_site) ? 'Werkstatt geschlossen – Auftrag als Fuhrparkleitung weiterführen.' : 'Werkstattbenutzer anlegen oder Auftrag als Fuhrparkleitung weiterführen.' });
+          // Backlog 1054 (Blickwinkel „Werkstatt Bayern schließt“): bei geschlossener Werkstatt eigener Text (nicht „kein aktiver Benutzer“ – das Konto
+          // kann noch aktiv sein); übernommen, aber noch nicht begonnen → „Werkstatt wechseln“ ist möglich und wird empfohlen
+          ...fm(closedWs.has(c.workshop_site) ? 'NO_WORKSHOP_RECIPIENT_CLOSED' : 'NO_WORKSHOP_RECIPIENT_ACKED', { label, site: c.workshop_site }),
+          next_action: closedWs.has(c.workshop_site) ? (c.status === 'werkstatt_freigegeben' ? 'Werkstatt geschlossen – andere Werkstatt zuweisen.' : 'Werkstatt geschlossen – Auftrag als Fuhrparkleitung weiterführen.') : 'Werkstattbenutzer anlegen oder Auftrag als Fuhrparkleitung weiterführen.' });
       }
       if (c.status === 'wartet_teile') {
         // Liefertermin laut Werkstatt (Backlog 253, 25.10.2026): im Text; überschritten → „handeln“ (Datum stammt von der Werkstatt, keine eigene Frist)
