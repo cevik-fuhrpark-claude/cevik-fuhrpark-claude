@@ -34876,6 +34876,27 @@ await test('Backlog 1055 (Blickwinkel „Agent-Texte nennen Werkstatt/Lager nur 
   for (const l of ['de', 'uk', 'en']) ok(!/(Werkstatt|workshop|майстерн\S*) \{ws\}/i.test(i18n.STRINGS[l].apr_ws_closed_hint), l + ' Freigabe-Hinweis: ' + i18n.STRINGS[l].apr_ws_closed_hint);
 });
 
+await test('Backlog 1056 (Folge aus 1055): Lagerentnahme als Lieferant „Lager <Code>“ in Kostenpositionen-, Kosten-je-Firma- und Teile-Verwendungs-CSV mit Werkstattnamen, Werkstatt-Spalte der Teile-Verwendung mit Namen; App zeigt „Lager <Name>“ (supplierLabel)', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const st = await U.ws.post('/api/stock', { name: 'Ölfilter 1056', part_number: 'OF-1056', unit_price_net: '12,50', initial_qty: 4 }); eq(st.status, 201, JSON.stringify(st.data));
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'add_part', { stock_item_id: st.data.id, quantity: 1 })).status, 200);
+  const y = new Date().toISOString().slice(0, 7);
+  const csvOf = async (path) => { const r = await U.fleet.req('GET', path); eq(r.status, 200, path + ' ' + JSON.stringify(r.data).slice(0, 200)); return new TextDecoder().decode(r.data); };
+  const items = await csvOf(`/api/reports/costs?from=${y}&to=${y}&part=items`);
+  ok(items.includes('Lager Werkstatt Dortmund') && !items.includes('Lager DORTMUND'), 'Kostenpositionen: ' + items.split('\r\n').filter((l) => l.includes('Lager')).join(' | '));
+  const sup = await csvOf(`/api/reports/costs?from=${y}&to=${y}&part=suppliers&format=csv`);
+  ok(sup.includes('Lager Werkstatt Dortmund') && !sup.includes('Lager DORTMUND'), 'Kosten je Firma: ' + sup.split('\r\n')[1]);
+  const pu = await csvOf(`/api/parts/usage?q=OF-1056&format=csv`);
+  const row = pu.split('\r\n').find((l) => l.includes('Ölfilter 1056')) || '';
+  ok(row.includes('Lager Werkstatt Dortmund') && row.includes(';Werkstatt Dortmund;') && !row.includes('DORTMUND'), 'Teile-Verwendung: ' + row);
+  const { stockSupplierName } = await import('../src/util.js');
+  eq(stockSupplierName('Lager XY', new Map([['DORTMUND', 'Werkstatt Dortmund']])), 'Lager XY', 'unbekannter Code bleibt');
+  eq(stockSupplierName('Bosch Service', new Map()), 'Bosch Service', 'freier Lieferant bleibt');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("esc(supplierLabel(i.supplier) || '–')") && app.includes('esc(supplierLabel(s.supplier))'), 'App: Teile-Verwendung und Kosten je Firma mit supplierLabel');
+});
+
 await test('Backlog 1048 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Hinweis beim Standortwechsel liefert offene Aufträge je Werkstatt und Status (Bearbeiten und CSV-Import); App trennt „bei Freigabe wählbar“, „jetzt übergebbar“, „nicht übergebbar“ und lässt die Werkstatt des neuen Standorts weg (DE/UK/EN)', async () => {
   const { U, newCase, toRepair } = await freshWorld();
   await toRepair();                                    // in Reparatur bei DORTMUND → nicht übergebbar

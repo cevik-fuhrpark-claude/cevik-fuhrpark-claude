@@ -826,3 +826,14 @@ export function valueWork(current, periods, work) {
   }
   return { net: roundCents(net), valued, unvalued_hours: unv };
 }
+
+// [CLAUDE] Backlog 1056: Lagerentnahmen tragen als Lieferant „Lager <Werkstattcode>“ (src/cases.js) – in CSV-Exporten mit Werkstattnamen
+// („Lager Werkstatt Dortmund“) wie in der App (`supplierLabel`); unbekannter Code oder freier Lieferantenname bleibt unverändert
+export function stockSupplierName(s, wsNames) {
+  const m = /^Lager (\S+)$/.exec(String(s ?? ''));
+  return m && wsNames && wsNames.get(m[1]) ? `Lager ${wsNames.get(m[1])}` : s;
+}
+// Werkstatt-Code → Name (alle, auch geschlossene) für CSV-Exporte
+export async function workshopNameMap(env) {
+  return new Map((await env.DB.prepare('SELECT code, name FROM workshops').all()).results.map((r) => [r.code, r.name]));
+}

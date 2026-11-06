@@ -1,6 +1,6 @@
 // [CLAUDE] Cevik Fuhrpark – Worker-Einstieg: Router, Sicherheit, Selbstmigration, Cron
 import { icsLang } from '../public/ics-texts.js';
-import { plateCmp, b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, conflict, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, fileSlug, pointDec, cleanText, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL } from './util.js';
+import { plateCmp, b64urlDecode, json, errorResponse, readJson, HttpError, forbidden, bad, conflict, notFound, nowIso, str, timingSafeEqual, uuid, rateLimit, berlinDateTime, berlinDate, icsCalendar, csvResponseDatesDe, testMasterReadonly, QUIET_TIME, siteSuffix, fileSlug, pointDec, cleanText, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, workshopNameMap } from './util.js';
 import * as auth from './auth.js';
 import * as totp from './totp.js';
 import { personExport } from './privacy.js';
@@ -479,13 +479,13 @@ async function handleApi(request, env, ctx, url) {
     const rep = await reports.costSuppliers(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') !== 'csv') return json(rep);
     await auth.audit(env, user.id, 'reports.costs.suppliers_export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site, ...(rep.vehicle_id ? { vehicle_id: rep.vehicle_id } : {}), suppliers: rep.suppliers.length });
-    return new Response(reports.costSuppliersCsv(rep), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kosten-je-firma_${envName}_${rep.from}_${rep.to}_${reports.standTag()}.csv"` } });
+    return new Response(reports.costSuppliersCsv(rep, await workshopNameMap(env)), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kosten-je-firma_${envName}_${rep.from}_${rep.to}_${reports.standTag()}.csv"` } });
   }
   if (path === '/api/reports/costs' && m === 'GET' && url.searchParams.get('part') === 'items') {
     const rep = await reports.costItems(env, user, envName, Object.fromEntries(url.searchParams));
     await auth.audit(env, user.id, 'reports.costs.items_export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site, ...(rep.vehicle_id ? { vehicle_id: rep.vehicle_id } : {}), items: rep.items.length, ...(rep.truncated ? { truncated: true } : {}) });
     // Backlog 1045 (Blickwinkel „Jahresabschluss für den Steuerberater“): Kürzung wie andere Exporte im Header melden (App zeigt Hinweis)
-    return new Response(reports.costItemsCsv(rep), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', ...(rep.truncated ? { 'x-cfp-truncated': String(reports.COST_ITEMS_MAX) } : {}), 'content-disposition': `attachment; filename="fuhrpark-kostenpositionen_${envName}_${rep.from}_${rep.to}_${reports.standTag()}.csv"` } });
+    return new Response(reports.costItemsCsv(rep, await workshopNameMap(env)), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', ...(rep.truncated ? { 'x-cfp-truncated': String(reports.COST_ITEMS_MAX) } : {}), 'content-disposition': `attachment; filename="fuhrpark-kostenpositionen_${envName}_${rep.from}_${rep.to}_${reports.standTag()}.csv"` } });
   }
   // Kostenbericht je Fahrzeug/Monat
   if (path === '/api/reports/costs' && m === 'GET') {
@@ -567,7 +567,7 @@ async function handleApi(request, env, ctx, url) {
     const rep = await partsUsage.partsUsage(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
       await auth.audit(env, user.id, 'reports.parts_usage_export', null, { q: rep.q, from: rep.from, to: rep.to, rows: rep.items.length, vehicles: rep.vehicles.length, environment: envName });
-      return new Response(partsUsage.partsUsageCsv(rep, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', ...(rep.truncated ? { 'x-cfp-truncated': String(rep.max) } : {}), 'content-disposition': `attachment; filename="fuhrpark-teileverwendung_${envName}_${fileSlug(rep.q).slice(0, 40) || 'suche'}${rep.from ? '_' + rep.from : ''}${rep.to ? '_' + rep.to : ''}.csv"` } });
+      return new Response(partsUsage.partsUsageCsv(rep, maint.csvCell, await workshopNameMap(env)), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', ...(rep.truncated ? { 'x-cfp-truncated': String(rep.max) } : {}), 'content-disposition': `attachment; filename="fuhrpark-teileverwendung_${envName}_${fileSlug(rep.q).slice(0, 40) || 'suche'}${rep.from ? '_' + rep.from : ''}${rep.to ? '_' + rep.to : ''}.csv"` } });
     }
     return json(rep);
   }

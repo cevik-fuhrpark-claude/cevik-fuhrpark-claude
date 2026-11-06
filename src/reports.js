@@ -2,7 +2,7 @@
 // fehlende Preise = unbewertet (nie 0 €), Schätzungen getrennt, Fremdleistung „ersetzt eigene Stunden/Teile“ ohne Doppelzählung.
 // Monatszuordnung nach Buchungsdatum (Arbeitstag bzw. Erfassungszeitpunkt, Zeitzone Europe/Berlin).
 import { icsLang } from '../public/ics-texts.js';
-import { bad, forbidden, normPlate, berlinWindowStartIso, berlinDate, berlinDateTime, berlinDayStartIso, addMonths, icsCalendar, maintIcsUid, intParam, rateOf, roundCents, roundMilli, ratePeriods, ratePeriodIndex, rateAtIndex } from './util.js';
+import { bad, forbidden, normPlate, berlinWindowStartIso, berlinDate, berlinDateTime, berlinDayStartIso, addMonths, icsCalendar, maintIcsUid, intParam, rateOf, roundCents, roundMilli, ratePeriods, ratePeriodIndex, rateAtIndex, stockSupplierName } from './util.js';
 import { maintenanceOverview, csvCell } from './maintenance.js';
 
 const READ_ROLES = ['owner', 'fleet', 'viewer'];
@@ -519,22 +519,23 @@ export async function costSuppliers(env, user, envName, query = {}) {
     totals: { suppliers: suppliers.filter((s) => s.supplier !== null).length, actual_net: sum('actual_net'), estimate_net: sum('estimate_net'), unvalued_items: suppliers.reduce((a, s) => a + s.unvalued_items, 0) },
     generated_at: new Date().toISOString() };
 }
-export function costSuppliersCsv(rep) {
+// Backlog 1056: Lagerentnahme als Lieferant „Lager <Code>“ → „Lager <Werkstattname>“ (wsNames: Map Code → Name)
+export function costSuppliersCsv(rep, wsNames = null) {
   const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const d = (x) => (x ? x.split('-').reverse().join('.') : '');
   const lines = [['Firma', 'Fremdleistungen', 'Teile-Positionen', 'Vorgänge', 'Fahrzeuge', 'Rechnungen/Belege', 'Ist netto €', 'Schätzung netto €', 'unbewertet', 'nicht gezählt (ersetzt durch Fremdleistung)', 'Fremdleistungen ohne Beleg-Datei', 'erste Position', 'letzte Position'].join(';')];
-  for (const s of rep.suppliers) lines.push([s.supplier === null ? 'ohne Angabe (Teile ohne Lieferant)' : csvCell(s.supplier), s.external_items, s.part_items, s.cases, s.vehicles, s.documents,
+  for (const s of rep.suppliers) lines.push([s.supplier === null ? 'ohne Angabe (Teile ohne Lieferant)' : csvCell(stockSupplierName(s.supplier, wsNames)), s.external_items, s.part_items, s.cases, s.vehicles, s.documents,
     num(s.actual_net), num(s.estimate_net), s.unvalued_items, s.not_counted_items, s.external_without_file, d(s.first_date), d(s.last_date)].join(';'));
   return '\uFEFF' + lines.join('\r\n') + '\r\n';
 }
 
-export function costItemsCsv(rep) {
+export function costItemsCsv(rep, wsNames = null) {
   const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const cell = csvCell;
   const ART = { arbeitszeit: 'Arbeitszeit', teil: 'Teil', fremdleistung: 'Fremdleistung' };
   const WERT = { actual: 'belegt', estimate: 'geschätzt', unvalued: 'unbewertet' };
   const lines = [['Datum', 'Monat', 'Vorgang', 'Kennzeichen', 'Standort', 'Fahrzeugstatus', 'Art', 'Bezeichnung', 'Lieferant', 'Rechnung/Beleg', 'Menge', 'Einheit', 'Einzelpreis netto', 'Betrag netto', 'Wertart', 'Zählt in Summe belegt', 'Erfasst am', 'Beleg-Datei in App (Dateiname)', 'FIN-Schlüssel'].join(';')]; // Backlog 517: FIN am Ende (Kennzeichen kann übergehen)
-  for (const i of rep.items) lines.push([i.date.split('-').reverse().join('.'), i.month, cell(i.case_no), cell(i.plate), cell(i.site), i.vehicle_active ? 'aktiv' : 'außer Betrieb', ART[i.type], cell(i.description), cell(i.supplier), cell(i.document),
+  for (const i of rep.items) lines.push([i.date.split('-').reverse().join('.'), i.month, cell(i.case_no), cell(i.plate), cell(i.site), i.vehicle_active ? 'aktiv' : 'außer Betrieb', ART[i.type], cell(i.description), cell(stockSupplierName(i.supplier, wsNames)), cell(i.document),
     num(i.quantity), cell(i.unit), num(i.unit_price_net), num(i.amount_net), WERT[i.valuation], i.counted ? (i.valuation === 'actual' && i.amount_net !== null ? 'ja' : 'nein') : 'nein (durch Fremdleistung ersetzt)', i.recorded_at ? berlinDateTime(i.recorded_at) : '', i.type === 'fremdleistung' ? (i.has_file ? cell(i.file_name || 'ja') : 'nein') : '', cell(i.vehicle_id)].join(';'));
   if (rep.truncated) lines.push(`Gekürzt: nur die ersten ${COST_ITEMS_MAX} Positionen – Zeitraum verkleinern.`);
   return '\ufeff' + lines.join('\r\n') + '\r\n';

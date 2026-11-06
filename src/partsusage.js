@@ -4,7 +4,7 @@
 // Inhaber/Fuhrparkleitung: alle Vorgänge der Umgebung; Werkstatt: nur Aufträge des eigenen Standorts; sonst 403.
 // Keine Preise und keine Personen (Datensparsamkeit) – die Liste dient dem Auffinden der Fahrzeuge, nicht der Kostenauswertung.
 // Die App weiß nur, wo ein Teil laut Vorgang eingebaut wurde – nicht, ob es inzwischen wieder ausgebaut ist (Hinweis in der Oberfläche).
-import { bad, forbidden, str, isCalendarDate, berlinDate, berlinDayStartIso, caseVariants, plateCmp, quoteCell } from './util.js';
+import { bad, forbidden, str, isCalendarDate, berlinDate, berlinDayStartIso, caseVariants, plateCmp, quoteCell, stockSupplierName } from './util.js';
 import { CASE_STATUS_DE } from './cases.js';
 import { noKey, NO_KEY_SQL } from './contracts.js';
 
@@ -63,13 +63,14 @@ export async function partsUsage(env, user, envName, query = {}) {
   return { q, from: from || null, to: to || null, environment: envName, workshop_site: ws ? user.workshop_site : null, truncated, max: PARTS_USAGE_MAX, items, vehicles: [...byV.values()], stock: stock.slice(0, 200), stock_truncated: stock.length > 200 };
 }
 
-export function partsUsageCsv(rep, csvCell) {
+// Backlog 1056: Werkstatt und „Lager <Code>“ mit Namen (wsNames: Map Code → Name; wie die Vorgangs-CSV)
+export function partsUsageCsv(rep, csvCell, wsNames = null) {
   const n = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const head = ['Kennzeichen', 'Fahrzeugstandort', 'Fahrzeugstatus', 'Einbau am', 'Vorgang', 'Status Vorgang', 'Werkstatt', 'Bezeichnung', 'Teilenummer', 'Menge', 'Einheit', 'Lieferant', 'Beleg', 'Gewährleistung bis', 'Aus dem Lager'];
   const lines = [head.join(';')];
   for (const i of rep.items) {
     lines.push([csvCell(i.plate), csvCell(i.vehicle_site), !i.vehicle_active ? 'außer Betrieb' : i.eval_excluded ? 'ruhend' : 'aktiv', i.date.split('-').reverse().join('.'), csvCell(i.case_no), CASE_STATUS_DE[i.case_status] || csvCell(i.case_status),
-      csvCell(i.workshop_site), csvCell(i.name), quoteCell(csvCell(i.part_number)), n(i.quantity), csvCell(i.unit), csvCell(i.supplier), quoteCell(csvCell(i.document_ref)), i.warranty_until ? i.warranty_until.split('-').reverse().join('.') : '', i.from_stock ? 'ja' : 'nein'].join(';'));
+      csvCell((wsNames && wsNames.get(i.workshop_site)) || i.workshop_site), csvCell(i.name), quoteCell(csvCell(i.part_number)), n(i.quantity), csvCell(i.unit), csvCell(stockSupplierName(i.supplier, wsNames)), quoteCell(csvCell(i.document_ref)), i.warranty_until ? i.warranty_until.split('-').reverse().join('.') : '', i.from_stock ? 'ja' : 'nein'].join(';'));
   }
   if (rep.truncated) lines.push(`Gekürzt: nur die ersten ${rep.max} Einbauten – Suche oder Zeitraum eingrenzen.`);
   return '﻿' + lines.join('\r\n') + '\r\n';

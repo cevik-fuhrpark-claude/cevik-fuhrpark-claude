@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (03.11.2026, Backlog 904, Blickwinkel „Inhaber bereitet das Jahresgespräch mit der Fremdwerkstatt/dem Lieferanten vor“):
 # Kostenbericht → „Kosten je Firma“ aufklappen: Firmen mit Ist/Schätzung/unbewertet, Schreibweisen zusammengefasst, Teile ohne Lieferant zuletzt,
-# Hinweis „ohne Beleg-Datei“; CSV-Knopf lädt eine Datei. DE 390 / UK 820 / EN 1366 px, keine Skriptfehler, kein waagerechtes Scrollen.
+# Hinweis „ohne Beleg-Datei“; Lagerentnahme als „Lager <Werkstattname>“ (Backlog 1056); CSV-Knopf lädt eine Datei. DE 390 / UK 820 / EN 1366 px, keine Skriptfehler, kein waagerechtes Scrollen.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -39,6 +39,9 @@ with sync_playwright() as p:
     ok1=ok1 and cmd(cid,'add_external_cost',{'supplier':' '+F.upper()+' ','amount_net':200,'valuation':'estimate','invoice_no':f'RE-{R}-2'})==200
     ok1=ok1 and cmd(cid,'add_part',{'name':'Schraube M8','quantity':4})==200
     check(ok1,'Fremdleistungen/Teile erfasst')
+    # Backlog 1056: Lagerentnahme erscheint als „Lager Werkstatt Dortmund“ statt „Lager DORTMUND“
+    si=api('POST','/api/stock',{'name':f'Filter 1056 {R}','site':'DORTMUND','unit_price_net':'9,90','initial_qty':2})
+    check(si['s']==201 and cmd(cid,'add_part',{'stock_item_id':si['d']['id'],'quantity':1})==200,f'Lagerentnahme erfasst {si["s"]}')
     for lang,(w,h) in [('de',(390,844)),('uk',(820,1180)),('en',(1366,900))]:
         n+=1
         api('PATCH','/api/me',{'language':lang})
@@ -58,6 +61,8 @@ with sync_playwright() as p:
             tx=mine.inner_text()
             check(T['est'] in tx and '200' in tx,f'{lang}/{w}: Schätzung getrennt')
             check(mine.locator('[data-csupnofile]').count()==1,f'{lang}/{w}: Hinweis ohne Beleg-Datei')
+        stk=q.locator('#costsupbody [data-csup="Lager DORTMUND"]')
+        check(stk.count()==1 and 'Werkstatt Dortmund' in stk.inner_text() and 'DORTMUND' not in stk.inner_text(),f'{lang}/{w}: Lager mit Werkstattnamen ({stk.inner_text()[:60] if stk.count() else "–"})')
         last=rows.nth(rows.count()-1)
         check(last.get_attribute('data-csup')=='' and T['none'] in last.inner_text(),f'{lang}/{w}: Teile ohne Lieferant zuletzt')
         sw=q.evaluate('document.documentElement.scrollWidth'); check(sw<=w+1,f'{lang}/{w}: kein waagerechtes Scrollen ({sw})')
