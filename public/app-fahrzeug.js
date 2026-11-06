@@ -3,6 +3,13 @@ import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, PHOTO_TIMEOU
 
 // Durchführung älter als die gespeicherte letzte: nur im Verlauf gespeichert, Fälligkeit unverändert – ausdrücklich sagen (17.10.2026)
 const doneToast = (r) => toast(r && r.older_than_last ? '✓ ' + t('mt_older_saved').replace('{d}', fmtD(r.last_done_date)) : '✓');
+// Backlog 1086 (Blickwinkel „Lkw fertig repariert, wird tagelang nicht abgeholt“): der Abholvermerk stand in der Fahrzeugakte beliebig lange als
+// aktuell („Schlüssel im Kasten“ noch Wochen später). Gibt es seit der Freigabe eine Abfahrtskontrolle, wird er grau mit Hinweis gezeigt
+// (Vermerk bleibt lesbar; eine fehlende Kontrolle beweist umgekehrt nicht, dass der Lkw noch in der Werkstatt steht – dazu Frage an den Auftraggeber).
+function puBox(c, lc) {
+  const stale = !!(lc && lc.created_at && c.closed_at && lc.created_at > c.closed_at);
+  return `<div class="panel small${stale ? ' muted' : ''}" id="vpickup"${stale ? ' data-pustale' : ''}><b>${esc(t('pu_title'))}:</b> <span${langAttr(c.pickup_note)}>${esc(c.pickup_note)}</span> – <a href="#/cases/${esc(c.id)}" translate="no">${esc(c.case_no)}</a> · ${esc(t('st_fahrzeug_freigegeben'))} ${fmtDT(c.closed_at)}${stale ? `<br><span data-pustaletxt>ⓘ ${esc(t('pu_stale').replace('{d}', fmtDT(lc.created_at)))}</span>` : ''}</div>`;
+}
 // Papiervordruck der Abfahrtskontrolle (Notfall: Handy leer/defekt) – gleiche Prüfpunkte wie in der App
 async function viewCheckPaper() {
   const line = (l) => `<div class="paper-field"><span>${esc(l)}</span><i></i></div>`;
@@ -288,7 +295,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
     const hoc = d.cases.filter((c) => hoMissing(c).length);
     // Abholvermerk des letzten Werkstattaufenthalts (Backlog 425): nur solange das Fahrzeug nicht wieder bei einer Werkstatt ist
     const puLast = d.cases.filter((c) => c.status === 'fahrzeug_freigegeben' && c.closed_at).sort((x, y) => (y.closed_at > x.closed_at ? 1 : -1))[0];
-    if (puLast && puLast.pickup_note && !d.cases.some((c) => ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'].includes(c.status))) html += `<div class="panel small" id="vpickup"><b>${esc(t('pu_title'))}:</b> <span${langAttr(puLast.pickup_note)}>${esc(puLast.pickup_note)}</span> – <a href="#/cases/${esc(puLast.id)}" translate="no">${esc(puLast.case_no)}</a> · ${esc(t('st_fahrzeug_freigegeben'))} ${fmtDT(puLast.closed_at)}</div>`;
+    if (puLast && puLast.pickup_note && !d.cases.some((c) => ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'].includes(c.status))) html += puBox(puLast, d.last_check);
     if (hoc.length) html += `<div class="panel warn" id="vho">${hoc.map((c) => `<b>${esc(t('ho_title'))}:</b> ${esc(hoMissing(c).join(', '))} – <a href="#/cases/${esc(c.id)}" translate="no">${esc(c.case_no)}</a>`).join('<br>')}</div>`;
     if (vlc.length) html += `<div class="panel warn" id="vvehloc">${vlc.map((c) => `<b>${esc(t('vl_title'))}:</b> ${c.vehicle_location ? esc(c.vehicle_location) : c.location_note ? `${esc(t('location_shown'))}: ${esc(c.location_note)}` : `<span class="muted">${esc(t('vl_unknown'))}</span>`}${c.tow_service ? ` · <span class="chip mittel">${esc(t('vl_towed_chip'))}</span> ${esc(c.tow_service)}${c.towed_on ? ' · ' + fmtD(c.towed_on) : ''}` : ''}${vlAt(c)} – <a href="#/cases/${esc(c.id)}" translate="no">${esc(c.case_no)}</a>`).join('<br>')}</div>`; }
   if (S.me.role !== 'driver') html += `<section class="panel" id="vnotes" aria-live="polite"></section>`;

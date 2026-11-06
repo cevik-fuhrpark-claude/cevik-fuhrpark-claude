@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (27.10.2026, Backlog 425, Blickwinkel „Fahrzeug kommt aus der Werkstatt zurück, Fahrer findet den Schlüssel nicht“):
 # Werkstatt trägt bei „Bereit zur Abschlusskontrolle“ den Abholvermerk ein → Leitung sieht ihn vorbelegt im Formular „Technisch freigeben“,
 # setzt „auch den Fahrern anzeigen“ (Feld „gültig bis“ erscheint erst dann) → Vorgang zeigt „Abholung nach der Reparatur“, Verlauf den
-# Fahrerhinweis, Fahrzeugakte die Tafel #vpickup. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Fahrerhinweis, Fahrzeugakte die Tafel #vpickup (Backlog 1086: nach einer Abfahrtskontrolle grau, [data-pustale]). DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server (scripts/dev-server.mjs). Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -75,6 +75,15 @@ with sync_playwright() as p:
         check(NOTE in m.inner_text('#vpickup') and TITLE[lang] in m.inner_text('#vpickup'),f'{lang} {w}px: Fahrzeugakte zeigt Abholung')
         check(m.evaluate(noscroll),f'{lang} {w}px: Fahrzeugakte ohne Querscrollen')
         if SHOTS: m.locator('#vpickup').scroll_into_view_if_needed(); m.screenshot(path=f'{SHOTS}/abholung_akte_{lang}_{w}.png')
+        # Backlog 1086: Abfahrtskontrolle nach der Freigabe → Vermerk grau mit „vermutlich überholt“
+        check(m.locator('[data-pustale]').count()==0,f'{lang} {w}px: Vermerk vor einer Kontrolle aktuell')
+        keys=[i['key'] for i in m.evaluate(JS,['GET','/api/meta',None])['d']['checklist']]
+        rc=m.evaluate(JS,['POST','/api/inspections',{'kind':'abfahrt','vehicle_id':'VIN:'+vin,'request_key':f'pu-{lang}-{w}-{os.getpid()}','items':[{'key':k,'result':'ok'} for k in keys]}])
+        check(rc['s']==201,f'{lang} {w}px: Abfahrtskontrolle nach Freigabe ({rc["s"]})')
+        m.reload(); m.wait_for_selector('#vpickup[data-pustale] [data-pustaletxt]',timeout=15000)
+        check(NOTE in m.inner_text('#vpickup'),f'{lang} {w}px: Vermerk bleibt lesbar (grau)')
+        check(m.evaluate(noscroll),f'{lang} {w}px: Akte mit überholtem Vermerk ohne Querscrollen')
+        if SHOTS: m.locator('#vpickup').scroll_into_view_if_needed(); m.screenshot(path=f'{SHOTS}/abholung_akte_alt_{lang}_{w}.png')
         notes=m.evaluate(JS,['GET','/api/vehicles/VIN%3A'+vin+'/notes',None])['d']['notes']
         check(any(NOTE in x['text'] and x['for_driver'] for x in notes),f'{lang} {w}px: Hinweis für Fahrer angelegt')
         check(not errs,f'{lang} {w}px: Leitung ohne Skriptfehler {errs[:1]}')

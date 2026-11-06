@@ -32105,6 +32105,15 @@ await test('Backlog 1084/1085 (Blickwinkel „Unfallschaden: Gutachter muss vor 
   }
   ok((await import('node:fs')).readFileSync(new URL('../scripts/ui-gutachter-werkstatt.py', import.meta.url), 'utf8').includes('Backlog 1085'), 'UI-Prüfung');
 });
+await test('Backlog 1086 (Blickwinkel „Lkw fertig repariert, wird tagelang nicht abgeholt“): Abholvermerk in der Fahrzeugakte nach einer Abfahrtskontrolle seit der Freigabe grau mit „vermutlich überholt“; Hilfe DE/UK/EN', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('function puBox(c, lc)') && app.includes('html += puBox(puLast, d.last_check);'), 'Fahrzeugakte nutzt puBox');
+  ok(app.includes('lc.created_at > c.closed_at') && app.includes('data-pustale') && app.includes('data-pustaletxt'), 'nur Kontrolle nach der Freigabe');
+  const { STRINGS } = await import('../public/i18n.js');
+  const w = { de: 'überholt', uk: 'застаріла', en: 'out of date' };
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].pu_stale && STRINGS[l].pu_stale.includes('{d}'), `${l}.pu_stale`); ok(STRINGS[l].help_fleet_s.includes(w[l]), `${l}: Hilfe`); }
+  ok((await import('node:fs')).readFileSync(new URL('../scripts/ui-abholung.py', import.meta.url), 'utf8').includes('Backlog 1086'), 'UI-Prüfung');
+});
 await test('Backlog 904 (Jahresgespräch mit Fremdwerkstatt/Lieferant): Kosten je Firma aus den Einzelpositionen – Schreibweisen zusammengefasst, Ist/Schätzung/unbewertet getrennt, ersetzte Teile nicht gezählt, eigene Arbeitszeit ausgenommen; CSV, Rechte, Texte DE/UK/EN', async () => {
   eq((await owner.post('/api/vehicles', { plate: 'FK-T 904', vin: 'WDB96340390400904', site: 'Dortmund' })).status, 201);
   const V = 'VIN:WDB96340390400904';

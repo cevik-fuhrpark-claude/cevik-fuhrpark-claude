@@ -1571,6 +1571,7 @@ async function dispoHome(...a) { return (await lazyModule('dispo')).dispoHome(..
 
 
 
+
 // Backlog 559: nächster Werktag nach `iso` (Sa/So und bundesweite Feiertage übersprungen) – wie lastWorkdayBefore
 function nextWorkdayAfter(iso) {
   const ymd = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
