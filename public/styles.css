@@ -180,6 +180,9 @@ div.alert:not(.panel) { color: var(--stop); background: var(--stop-bg); border: 
 .kv { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: 4px 16px; margin: 0; }
 .kv dt { color: var(--steel); }
 .kv dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+/* [CLAUDE] Backlog 1100 (Blickwinkel „Werkstatt-Tablet im Querformat mit Handschuhen“): alleinstehende Links in Angabenlisten
+   (z. B. „Fahrzeugakte: SZ-YC 5517“ im Vorgang) hatten nur 20 px Tippfläche – jetzt mind. 24 px (WCAG 2.5.8, wie Tabellen-Links). */
+.kv dd > a:only-child { display: inline-flex; align-items: center; min-height: 24px; }
 @media (max-width: 480px) { .kv { grid-template-columns: minmax(0, 1fr); gap: 0 } .kv dt { margin-top: 8px; font-size: .85em } }
 /* Druck: Wertspalte mind. 7,5em – lange ukrainische Beschriftungen ließen 44 px übrig (Datum „10.01./2026“ zerbrochen, 22.10.2026) */
 @media print { .kv { grid-template-columns: minmax(0, max-content) minmax(7.5em, 1fr); } }
@@ -226,6 +229,13 @@ input[type=checkbox], input[type=radio] { width: 22px; height: 22px; min-height:
 .seg { display: inline-flex; border: 1.5px solid var(--ink); border-radius: var(--radius-s); overflow: hidden; }
 .seg label { margin: 0; padding: 10px 12px; font-weight: 600; cursor: pointer; min-width: 52px; text-align: center; overflow-wrap: normal; }
 .checkitem .seg label { padding-inline: 8px; }
+/* [CLAUDE] Backlog 1100 (Blickwinkel „Werkstatt-Tablet im Querformat mit Handschuhen“): Am Tablet/PC waren OK/Mangel/entfällt nur
+   52–73 px breit und lagen ohne Trennung aneinander – mit Handschuhen traf man leicht „Mangel“ statt „OK“. Ab 700 px breitere Felder
+   (mind. 88 px) mit Trennlinie; am Handy unverändert (Platz für den Prüfpunkt-Text). */
+@media (min-width: 700px) {
+  .checkitem .seg label { min-width: 88px; padding-inline: 14px; }
+  .checkitem .seg label + label { border-left: 1.5px solid var(--ink); }
+}
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
 .seg label:has(input:checked) { background: var(--ink); color: var(--surface); }
 .seg label.bad:has(input:checked) { background: var(--stop-solid); color: #fff; }

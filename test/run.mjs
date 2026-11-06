@@ -35709,6 +35709,16 @@ await test('Backlog 1098 (Blickwinkel „Disposition druckt die Startseite für 
   ok(app.includes(`<p class="navlinks"><a href="\${hj('#/cases')}">\${esc(t('all'))}</a></p>`), 'Startseite: „Alle“ steht in .navlinks');
 });
 
+await test('Backlog 1100 (Blickwinkel „Werkstatt-Tablet im Querformat mit Handschuhen“): OK/Mangel/entfällt ab 700 px breit mit Trennlinie, alleinstehende Links in Angabenlisten mind. 24 px', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(css.includes('@media (min-width: 700px) {\n  .checkitem .seg label { min-width: 88px; padding-inline: 14px; }\n  .checkitem .seg label + label { border-left: 1.5px solid var(--ink); }\n}'), 'Prüfpunkt-Felder am Tablet breit und getrennt');
+  ok(css.includes('.checkitem .seg label { padding-inline: 8px; }'), 'am Handy bleibt es kompakt');
+  ok(css.includes('.kv dd > a:only-child { display: inline-flex; align-items: center; min-height: 24px; }'), 'Link „Fahrzeugakte“ mind. 24 px');
+  const sh = fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8');
+  ok(sh.includes('|ui-tablet-handschuhe.py|'), 'UI-Skript steht in pruefen.sh');
+});
+
 await test('Backlog 1099 (Blickwinkel „Leitung druckt ‚Kostenfreigabe ausstehend‘ für die Montagsbesprechung“): Werkstatt je Zeile, Sortierhinweis nur einmal im Ausdruck', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
