@@ -663,6 +663,7 @@ export function translateImportReason(lang, reason) {
 // [CLAUDE] Reifen – Flotte: Reiter „Winterauftrag abgeschlossen, Lage offen“ (nur bei Treffern, 13.10.2026)
 // [CLAUDE] Hinweis beim Speichern: Kennzeichen schon an einem anderen Fahrzeug (13.10.2026)
 // Backlog 1047 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Freigabe-Formular – Vorschlag weicht von der Werkstatt am Fahrzeugstandort ab
+// Backlog 1048: Grundtexte (Formen in PLURALS)
 // [CLAUDE] Datenqualität: Telematik-Gerät meldet anderes Kennzeichen (13.10.2026)
 // [CLAUDE] Telematik-Übersicht: abweichend gemeldete Kennzeichen (13.10.2026)
 // [CLAUDE] Telematik-Übersicht: letzter Stand je Fahrzeug (13.10.2026)

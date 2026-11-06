@@ -4549,7 +4549,7 @@ async function saveVehicleForm(form, edit = false) {
   if (tr && tr.length) setTimeout(() => toast(t('trailer_renamed_warn').replace('{old}', r.trailer_plate_old).replace('{list}', tr.map((x) => x.plate).join(', ')), true), d && d.length ? 6000 : 400);
   // Standort geändert: was beim bisherigen Standort bleibt (offene Aufträge, geplante Prüftermine, gekoppeltes Fahrzeug) – reine Information (22.10.2026)
   if (r && r.site_changed) {
-    const sh = [r.open_workshop_cases ? tn('veh_site_ws_open', r.open_workshop_cases).replace('{list}', (r.open_workshop_sites || []).join(', ')) : '',
+    const sh = [...siteWsHints(r, b.site),
       r.planned_appointments ? tn('veh_site_planned', r.planned_appointments) : '',
       ...(r.coupled_other_site || []).map((x) => t('veh_site_coupled').replace('{p}', x.plate).replace('{site}', x.site || t('cs_nosite'))),
       (r.drivers_other_site || []).length ? t('veh_site_drivers').replace('{list}', () => r.drivers_other_site.map((x) => `${x.name} (${x.site})`).join(', ')) : ''].filter(Boolean);
@@ -4745,6 +4745,19 @@ function wsForSite(site) {
   const byName = S.meta.workshops.filter((x) => wsTranslit(x.name).includes(k));
   const w = S.meta.workshops.find((x) => wsTranslit(x.code) === k) || (byName.length === 1 ? byName[0] : null);
   return w ? w.code : '';
+}
+// Backlog 1048 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): offene Aufträge beim Standortwechsel getrennt nach „bei Freigabe wählbar“
+// (gemeldet), „jetzt übergebbar“ (Werkstatt freigegeben) und „nicht übergebbar“ (in Arbeit); Aufträge bei der Werkstatt des neuen Standorts zählen nicht
+function siteWsHints(r, newSite) {
+  const bs = r && r.open_workshop_by_status;
+  if (!Array.isArray(bs)) return r && r.open_workshop_cases ? [tn('veh_site_ws_open', r.open_workshop_cases).replace('{list}', () => (r.open_workshop_sites || []).join(', '))] : [];
+  const nw = wsForSite(newSite); const g = { gemeldet: [], werkstatt_freigegeben: [], fixed: [] };
+  for (const x of bs) if (!(nw && x.site === nw)) (x.status === 'gemeldet' || x.status === 'werkstatt_freigegeben' ? g[x.status] : g.fixed).push(x);
+  const name = (c) => wsLabel(S.meta.workshops.find((w) => w.code === c) || { name: c });
+  const cnt = (arr) => arr.reduce((a, x) => a + x.n, 0); const lst = (arr) => [...new Set(arr.map((x) => name(x.site)))].join(', ');
+  return [g.gemeldet.length ? tn('veh_site_ws_reported', cnt(g.gemeldet)).replace('{list}', () => lst(g.gemeldet)) : '',
+    g.werkstatt_freigegeben.length ? tn('veh_site_ws_movable', cnt(g.werkstatt_freigegeben)).replace('{list}', () => lst(g.werkstatt_freigegeben)) : '',
+    g.fixed.length ? tn('veh_site_ws_fixed', cnt(g.fixed)).replace('{list}', () => lst(g.fixed)) : ''].filter(Boolean);
 }
 const wsOptions = (site) => `${site ? '' : '<option value="" selected>–</option>'}${S.meta.workshops.map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}`;
 // Werkstattauftrag aus Prüftermin (nur Leitung): offener Auftrag als Link, sonst Formular
@@ -8513,7 +8526,7 @@ async function viewSettings(sec) {
       $('#csvr').innerHTML = `<p><b>${esc(t('preview'))}:</b> ${esc(t('imp_new'))}: ${r.counts.neu} · ${esc(t('imp_changed'))}: ${r.counts.geaendert} · ${esc(t('imp_same'))}: ${r.counts.unveraendert}</p>${skipped(r)}${igHtml}${pcHtml}${kdHtml}${ikHtml}${siHtml}
         ${changed.length ? `<div class="list">${changed.slice(0, 200).map((x) => `<div class="row ${x.action === 'neu' ? '' : 'p-mittel'}"><span class="chip">${esc(t('line'))} ${x.line}</span><span class="title">${esc(x.plate)}</span><span class="chip">${esc(x.action === 'neu' ? t('imp_new') : x.action === 'unverändert' ? t('imp_same') : t('imp_changed'))}</span>${(x.changes && x.changes.length) || x.plate_conflict || x.year_unrecognized ? `<span class="sub" style="white-space:normal">${[...(x.plate_conflict ? [`⚠ ${esc(t('dq_duplicate_plate'))}`] : []), ...(x.year_unrecognized ? [`⚠ ${esc(t('imp_year_unrecognized').replace('{v}', x.year_unrecognized))}`] : []), ...(x.changes || []).map((c) => `${esc(FL[c.field] || c.field)}: ${esc(c.field === 'kind' && c.from ? t('vk_' + c.from) : c.from ?? '–')} → ${esc(c.field === 'kind' ? t('vk_' + c.to) : c.to)}`)].join(' · ')}</span>` : ''}</div>`).join('')}</div>${impMore(changed.length, 200)}` : ''}
         <p class="small muted">${esc(t('imp_keep_hint'))}</p><div class="actions"><button type="button" class="btn" id="csvgo"${r.preview.length ? '' : ' disabled'}>${esc(t('apply_import'))}</button></div>`;
-      $('#csvgo').onclick = async () => { try { const g = await api('POST', '/api/vehicles/import', text, { headers: { 'content-type': 'text/csv' } }); $('#csvr').innerHTML = `<p>✓ ${g.imported}</p>${skipped(g)}${(g.site_changes || []).length ? `<div class="panel warn small" id="impsite"><b>${esc(t('imp_site_changes'))}</b><ul>${g.site_changes.map((x) => `<li>${esc(x.plate)} → ${esc(x.site || t('cs_nosite'))}: ${[x.open_workshop_cases ? tn('veh_site_ws_open', x.open_workshop_cases).replace('{list}', () => (x.open_workshop_sites || []).join(', ')) : '', x.planned_appointments ? tn('veh_site_planned', x.planned_appointments) : '', x.drivers_other_site.length ? t('veh_site_drivers').replace('{list}', () => x.drivers_other_site.map((d) => `${d.name} (${d.site})`).join(', ')) : '', ...(x.coupled_other_site || []).map((y) => t('veh_site_coupled').replace('{p}', () => y.plate).replace('{site}', () => y.site || t('cs_nosite')))].filter(Boolean).map(esc).join(' · ')}</li>`).join('')}</ul></div>` : ''}`; } catch (err) { toast(err.message, true); } };
+      $('#csvgo').onclick = async () => { try { const g = await api('POST', '/api/vehicles/import', text, { headers: { 'content-type': 'text/csv' } }); $('#csvr').innerHTML = `<p>✓ ${g.imported}</p>${skipped(g)}${(g.site_changes || []).length ? `<div class="panel warn small" id="impsite"><b>${esc(t('imp_site_changes'))}</b><ul>${g.site_changes.map((x) => `<li>${esc(x.plate)} → ${esc(x.site || t('cs_nosite'))}: ${[...siteWsHints(x, x.site), x.planned_appointments ? tn('veh_site_planned', x.planned_appointments) : '', x.drivers_other_site.length ? t('veh_site_drivers').replace('{list}', () => x.drivers_other_site.map((d) => `${d.name} (${d.site})`).join(', ')) : '', ...(x.coupled_other_site || []).map((y) => t('veh_site_coupled').replace('{p}', () => y.plate).replace('{site}', () => y.site || t('cs_nosite')))].filter(Boolean).map(esc).join(' · ')}</li>`).join('')}</ul></div>` : ''}`; } catch (err) { toast(err.message, true); } };
     } catch (err) { toast(err.message, true); }
   };
 }

@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test (22.10.2026, Fund Teilagent „Standortwechsel“): Standort eines Lkw in „Stammdaten bearbeiten“ ändern →
-# Hinweis nennt den offenen Auftrag bei der bisherigen Werkstatt, den geplanten Prüftermin und den gekoppelten Anhänger am alten Standort;
+# Hinweis nennt den offenen Auftrag bei der bisherigen Werkstatt (seit Backlog 1048: „jetzt übergebbar“ mit Werkstattname), den geplanten Prüftermin und den gekoppelten Anhänger am alten Standort;
 # Werkstatt mit Standard-Standort sieht den Auftrag des versetzten Lkw in Vorgängen und Werkstattplan (kein Standort-Vorfilter).
 # DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os, datetime, uuid
@@ -7,9 +7,9 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-EXP={'de':['offener Werkstattauftrag bleibt bei der bisherigen Werkstatt (DORTMUND)','geplanter Prüftermin bleibt unverändert','SW-AH 2 steht noch am Standort Dortmund'],
-     'uk':['відкрите замовлення залишається в попередній майстерні (DORTMUND)','запланований огляд залишається без змін','SW-AH 2 ще закріплений за локацією Dortmund'],
-     'en':['open workshop order stays with the previous workshop (DORTMUND)','planned inspection remains unchanged','SW-AH 2 is still assigned to site Dortmund']}
+EXP={'de':['freigegebener Werkstattauftrag liegt noch bei Werkstatt Dortmund','geplanter Prüftermin bleibt unverändert','SW-AH 2 steht noch am Standort Dortmund'],
+     'uk':['дозволене замовлення ще в майстерні Werkstatt Dortmund','запланований огляд залишається без змін','SW-AH 2 ще закріплений за локацією Dortmund'],
+     'en':['approved workshop order is still with Werkstatt Dortmund','planned inspection remains unchanged','SW-AH 2 is still assigned to site Dortmund']}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)

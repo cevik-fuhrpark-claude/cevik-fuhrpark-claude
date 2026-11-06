@@ -34759,6 +34759,29 @@ await test('Backlog 1047 (Blickwinkel „Lkw wechselt dauerhaft den Standort“)
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].apr_ws_site_hint && STRINGS[l].apr_ws_site_hint.includes('{site}') && STRINGS[l].apr_ws_site_hint.includes('{ws}'), l + ': apr_ws_site_hint');
 });
 
+await test('Backlog 1048 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Hinweis beim Standortwechsel liefert offene Aufträge je Werkstatt und Status (Bearbeiten und CSV-Import); App trennt „bei Freigabe wählbar“, „jetzt übergebbar“, „nicht übergebbar“ und lässt die Werkstatt des neuen Standorts weg (DE/UK/EN)', async () => {
+  const { U, newCase, toRepair } = await freshWorld();
+  await toRepair();                                    // in Reparatur bei DORTMUND → nicht übergebbar
+  await newCase({ description: 'Spiegel (Vorschlag Dortmund)' }); // gemeldet mit Vorschlag DORTMUND
+  await newCase({ description: 'Kabel (Vorschlag München)', workshop_site: 'MUENCHEN' });
+  const save = (site) => U.own.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', manufacturer: 'MAN', build_year: 2016, keep_active: true, site });
+  const r = await save('München'); eq(r.status, 201, JSON.stringify(r.data)); eq(r.data.site_changed, true);
+  const bs = r.data.open_workshop_by_status.map((x) => `${x.site}/${x.status}/${x.n}`).sort().join();
+  eq(bs, 'DORTMUND/gemeldet/1,DORTMUND/in_reparatur/1,MUENCHEN/gemeldet/1', 'je Werkstatt und Status');
+  eq(r.data.open_workshop_cases, 3, 'Summe unverändert'); eq(r.data.open_workshop_sites.join(), 'DORTMUND,MUENCHEN', 'Werkstätten ohne Doppelte');
+  const head = 'Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN;Anhänger Kennzeichen\n';
+  const im = await U.own.req('POST', '/api/vehicles/import', head + 'SZ-YC 5513;Dortmund;in Betrieb;MAN;2016;WMA15SZZ2HM722774;', { 'content-type': 'text/csv' }); eq(im.status, 200, JSON.stringify(im.data));
+  eq(im.data.site_changes[0].open_workshop_by_status.map((x) => `${x.site}/${x.status}/${x.n}`).sort().join(), bs, 'Import: dieselbe Aufteilung');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('function siteWsHints(r, newSite)') && app.includes('const sh = [...siteWsHints(r, b.site),') && app.includes('${[...siteWsHints(x, x.site), x.planned_appointments'), 'App nutzt die Aufteilung (Bearbeiten und Import)');
+  ok(app.includes("const nw = wsForSite(newSite);") && app.includes("if (!(nw && x.site === nw))"), 'Werkstatt des neuen Standorts zählt nicht');
+  const { PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['veh_site_ws_reported', 'veh_site_ws_movable', 'veh_site_ws_fixed']) {
+    const f = PLURALS[l][k]; ok(f && f.one && (f.other || f.many) && f.one.includes('{n}') && f.one.includes('{list}'), `${l}.${k}`);
+    if (l === 'uk') ok(f.few && f.many, `${l}.${k}: few/many`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
