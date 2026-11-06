@@ -5762,7 +5762,7 @@ async function viewStockCount() {
 // Bestellvorschlag: Artikel unter Mindestbestand mit Fehlmenge – es wird nichts bestellt (Liste für den Einkauf)
 async function viewReorder() {
   const sites = S.me.role === 'workshop' ? [] : S.meta.workshops;
-  const site = sessionStorage.getItem('cfp_reorder_site') || '';
+  let site = ''; try { site = sessionStorage.getItem('cfp_reorder_site') || ''; } catch { /* ohne Speicher: alle Lager */ }
   const q = site && sites.some((w) => w.code === site) ? `&site=${encodeURIComponent(site)}` : '';
   const items = (await api('GET', '/api/stock?reorder=1' + q)).items;
   const valued = items.filter((i) => i.shortfall_value_net !== null);
@@ -5770,7 +5770,7 @@ async function viewReorder() {
   const n = (x) => fmtNum(x);
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('reorder'))}</h1>
     <p class="small muted">${esc(t('reorder_hint'))}</p>
-    <p class="print-only small">${printStamp()} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    <p class="print-only small" id="rprsite">${printStamp()}${q ? ` · ${esc(t('workshop'))}: ${esc(wsName(site))}` : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     ${sites.length > 1 ? `<div class="noprint"><label for="rsite">${esc(t('workshop'))}</label><select id="rsite"><option value="">${esc(t('all'))}</option>${sites.map((w) => `<option value="${esc(w.code)}"${q && w.code === site ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>` : ''}
     <div class="actions noprint"><button type="button" class="btn secondary" id="rcsv"${items.length ? '' : ' disabled'}>${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="rprt">${esc(t('print'))}</button></div>
     ${items.length ? `<div class="scroll"><table class="stack printsm"><thead><tr><th>${esc(t('workshop'))}</th><th>${esc(t('part_name'))}</th><th>${esc(t('on_hand'))}</th><th>${esc(t('min_qty'))}</th><th>${esc(t('shortfall'))}</th><th>${esc(t('used_90d'))}</th><th>${esc(t('shortfall_value'))}</th><th>${esc(t('last_supplier'))}</th></tr></thead><tbody>
@@ -5779,7 +5779,7 @@ async function viewReorder() {
       <p id="rosum"><b>${esc(t('reorder_sum'))}:</b> ${valued.length ? eur(sum) : '–'}${valued.length < items.length ? ` <span class="small muted">(${esc(tn('unvalued_items_n', items.length - valued.length))})</span>` : ''}</p>` : `<p class="muted">${esc(t('reorder_none'))}</p>`}`, 'more');
   if ($('#rsite')) $('#rsite').onchange = () => { try { sessionStorage.setItem('cfp_reorder_site', $('#rsite').value); } catch {} viewReorder(); };
   $('#rprt').onclick = () => window.print();
-  $('#rcsv').onclick = async () => { try { download(await api('GET', '/api/stock?reorder=1&format=csv' + q), `fuhrpark-bestellvorschlag_${envFn()}_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#rcsv').onclick = async () => { try { download(await api('GET', '/api/stock?reorder=1&format=csv' + q), `fuhrpark-bestellvorschlag_${envFn()}_${bDate()}${q ? '_' + site : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 
 // Bestand zum Stichtag (Jahresabschluss): Menge aus allen Buchungen bis Tagesende, zwei Preisangaben, Bewertung legt die Buchhaltung fest

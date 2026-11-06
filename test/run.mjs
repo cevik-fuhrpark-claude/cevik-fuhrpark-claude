@@ -35079,6 +35079,18 @@ await test('Backlog 1062 (Blickwinkel „Seitenfilter wirkt auf alle Teile“, L
   const sh = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(sh.includes('ui-lager-werkstattwahl.py'), 'UI-Skript in pruefen.sh');
 });
 
+await test('Backlog 1063 (gleicher Blickwinkel, Bestellvorschlag): CSV-Dateiname nennt das gewählte Lager (Leitung) bzw. das eigene (Werkstatt), Ausdruck nennt das Lager, gemerkte Auswahl ohne Sitzungsspeicher kein Fehler', async () => {
+  const { U } = await freshWorld();
+  eq((await U.fleet.post('/api/stock', { site: 'MUENCHEN', name: 'Luftfilter MU', initial_qty: '0', min_qty: '2' })).status, 201);
+  const r = await U.fleet.get('/api/stock?reorder=1&format=csv&site=MUENCHEN'); eq(r.status, 200);
+  ok(/bestellvorschlag_[a-z]+_\d{4}-\d{2}-\d{2}_MUENCHEN\.csv/.test(r.headers.get('content-disposition')), 'Lager im Dateinamen: ' + r.headers.get('content-disposition'));
+  const r2 = await U.fleet.get('/api/stock?reorder=1&format=csv'); ok(/bestellvorschlag_[a-z]+_\d{4}-\d{2}-\d{2}\.csv/.test(r2.headers.get('content-disposition')), 'ohne Auswahl kein Lager im Namen');
+  const r3 = await U.ws.get('/api/stock?reorder=1&format=csv'); eq(r3.status, 200); ok(r3.headers.get('content-disposition').includes('_DORTMUND.csv'), 'Werkstatt: eigenes Lager im Namen');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("${q ? ` · ${esc(t('workshop'))}: ${esc(wsName(site))}` : ''}"), 'Ausdruck nennt das Lager');
+  ok(app.includes("let site = ''; try { site = sessionStorage.getItem('cfp_reorder_site') || ''; } catch"), 'Sitzungsspeicher abgesichert');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

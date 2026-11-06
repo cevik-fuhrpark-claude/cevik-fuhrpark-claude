@@ -543,7 +543,7 @@ async function handleApi(request, env, ctx, url) {
   }
   if (path === '/api/stock' && m === 'GET') {
     const items = await stock.listStock(env, user, envName, Object.fromEntries(url.searchParams));
-    if (url.searchParams.get('format') === 'csv' && url.searchParams.get('reorder') === '1') return new Response(stock.reorderCsv(items, maint.csvCell, items.some((i) => i.other_stock && i.other_stock.length) ? Object.fromEntries((await env.DB.prepare('SELECT code, name FROM workshops').all()).results.map((w) => [w.code, w.name || w.code])) : {}), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bestellvorschlag_${envName}_${berlinDate()}.csv"` } });
+    if (url.searchParams.get('format') === 'csv' && url.searchParams.get('reorder') === '1') return new Response(stock.reorderCsv(items, maint.csvCell, items.some((i) => i.other_stock && i.other_stock.length) ? Object.fromEntries((await env.DB.prepare('SELECT code, name FROM workshops').all()).results.map((w) => [w.code, w.name || w.code])) : {}), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-bestellvorschlag_${envName}_${berlinDate()}${siteSuffix(user.role === 'workshop' ? user.workshop_site : url.searchParams.get('site'))}.csv"` } }); // Backlog 1063: Lager im Dateinamen
     // Auswahl der Liste (Filter/Suche) wie der Druck (20.10.2026); ohne „ids“ alle Artikel
     const sids = url.searchParams.get('ids');
     const sel = sids === null ? items : stockSel(items, sids.split(','));
