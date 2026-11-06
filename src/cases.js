@@ -507,7 +507,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
   }
   // Folgeaufträge und als Dublette geschlossene Meldungen zu diesem Vorgang in einer Abfrage
   // nur Vorgänge, die die Person selbst öffnen darf (17.10.2026: Fahrer sah Beschreibung fremder Folgeaufträge der Werkstatt, Link → 404)
-  const linked = (await env.DB.prepare('SELECT id, case_no, status, priority, description, created_at, parent_case_id, reporter_id, workshop_site, suggested_workshop_site, environment FROM cases WHERE parent_case_id=?1 OR duplicate_of=?1 ORDER BY created_at').bind(c.id).all()).results
+  const linked = (await env.DB.prepare('SELECT id, case_no, status, priority, safety_lock, description, created_at, parent_case_id, reporter_id, workshop_site, suggested_workshop_site, environment FROM cases WHERE parent_case_id=?1 OR duplicate_of=?1 ORDER BY created_at').bind(c.id).all()).results
     .filter((x) => caseAccess(user, x)).map(({ reporter_id, workshop_site, suggested_workshop_site, environment, ...x }) => x);
   const followups = linked.filter((x) => x.parent_case_id === c.id).map(({ created_at, parent_case_id, ...x }) => x);
   const duplicates = linked.filter((x) => x.parent_case_id !== c.id).map((x) => ({ id: x.id, case_no: x.case_no, created_at: x.created_at }));

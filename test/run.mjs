@@ -35676,6 +35676,14 @@ await test('Backlog 1093/1094 (Blickwinkel „Werkstatt druckt den Wochenplan f�
   }
 });
 
+await test('Backlog 1095 (Folge aus 1093): Folgeaufträge im Vorgang nennen Dringlichkeit und „Gesperrt“ als Text (bisher nur Randfarbe)', async () => {
+  const f = (await users.fleet.get(`/api/cases/${C1}`)).data.followups.find((x) => x.id === FOLLOW);
+  ok(f, 'Folgeauftrag in der Antwort'); ok(['niedrig', 'mittel', 'kritisch'].includes(f.priority), 'priority'); ok('safety_lock' in f, 'safety_lock geliefert');
+  eq(f.safety_lock, (await users.fleet.get(`/api/cases/${FOLLOW}`)).data.case.safety_lock ? 1 : 0, 'Sperre wie am Folgeauftrag');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("<span class=\"sub\" data-fuprio>${esc(t('prio_' + f.priority))}${f.safety_lock ? ` · <b>${esc(t('locked'))}</b>` : ''}</span>"), 'Zeile Folgeauftrag');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
