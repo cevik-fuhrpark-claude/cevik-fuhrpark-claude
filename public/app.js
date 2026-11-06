@@ -2018,6 +2018,8 @@ async function viewCases() {
   const fLabel = t(f === 'unreceived' && !isMgr() ? 'dispo_unreceived' : CF_LABEL[f] || f); // Backlog 483: Druckkopf wie der Reiter (Disposition bestätigt nicht)
   const cPrint = (l, qq) => printHead([`${t('print_filter')}: ${fLabel}`, qq && qq.length >= 2 ? `${t('print_search')}: „${qq}“` : '',
     res.site ? `${t('kpi_vsite')}: ${res.site === 'ohne' ? t('cs_nosite') : res.site}` : '', S.caseWs && wsFilterOk() ? `${t('workshop')}: ${wsName(S.caseWs)}` : '', f !== 'followup' && S.me.role !== 'driver' ? `${t('sort_by')}: ${t(f === 'cost_approval' ? 'ca_sort_wait' : 'csort_' + (S.caseSort || 'priority'))}` : '', t('print_count').replace('{n}', l.length)]);
+  // Backlog 1099 (Blickwinkel „Leitung druckt ‚Kostenfreigabe ausstehend‘ für die Montagsbesprechung“): Werkstatt je Zeile wie in „Heute zu tun“
+  const cExtra = f === 'cost_approval' ? (c) => (c.workshop_site ? `<span data-caws>${esc(wsName(c.workshop_site))}</span> · ` : '') : undefined;
   const list = f === 'followup' ? res.cases.slice().sort((x, y) => (x.followup_on < y.followup_on ? -1 : x.followup_on > y.followup_on ? 1 : 0)) : res.cases;
   const vsel = S.me.role !== 'driver' && ((res.site_options || []).length > 1 || res.site) ? `<div class="noprint" style="margin-bottom:12px">${siteSelect('cvsite', '', res.site_options, res.site, t('kpi_vsite'), t('filter_all'))}</div>` : '';
   // Werkstatt-Filter (Backlog 264): Leitung/Disposition/Lesezugriff, auch geschlossene Werkstätten wählbar
@@ -2025,8 +2027,8 @@ async function viewCases() {
   render(`<h1>${esc(t('nav_cases'))}</h1>
     <input id="cq" class="noprint" type="search" value="${esc(q)}" placeholder="${esc(t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search'))}" aria-label="${esc(t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search'))}" style="margin-bottom:12px" autocomplete="off">${vsel}${wsel}
     <div class="seg-tabs noprint">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? ['mine'] : ['followup']), ...(['critical', 'locked', 'cost_approval', 'unreceived', 'received_open', 'limited', 'open_items', 'paused', 'ready_overdue'].includes(f) || (f === 'mine' && S.me.role !== 'workshop') ? [f] : [])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}"${k === f ? ' aria-current="true"' : ''}>${esc(t(k === 'unreceived' && !isMgr() ? 'dispo_unreceived' : CF_LABEL[k] || k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', nDays(res.stale_days)) : ownerT('filter_stale_off'))}</p>` : ''}
-    ${f === 'cost_approval' ? `<p class="small muted" id="casort">${esc(t('sort_by'))}: ${esc(t('ca_sort_wait'))}</p>` : ''}${f !== 'followup' && f !== 'cost_approval' ? `<select id="csort" class="noprint" aria-label="${esc(t('sort_by'))}" style="max-width:420px;margin-bottom:12px">${CASE_SORTS.map((k) => `<option value="${k}"${(S.caseSort || 'priority') === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('csort_' + k))}</option>`).join('')}</select>` : ''}
-    <div id="cl">${cPrint(list, q)}${caseList(list)}${trunc(res)}</div>
+    ${f === 'cost_approval' ? `<p class="small muted noprint" id="casort">${esc(t('sort_by'))}: ${esc(t('ca_sort_wait'))}</p>` : ''}${f !== 'followup' && f !== 'cost_approval' ? `<select id="csort" class="noprint" aria-label="${esc(t('sort_by'))}" style="max-width:420px;margin-bottom:12px">${CASE_SORTS.map((k) => `<option value="${k}"${(S.caseSort || 'priority') === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('csort_' + k))}</option>`).join('')}</select>` : ''}
+    <div id="cl">${cPrint(list, q)}${caseList(list, null, cExtra)}${trunc(res)}</div>
     <div class="actions">${S.me.role !== 'driver' ? `<button type="button" class="btn secondary" id="ccsv">${esc(t('export_csv'))}</button>${f === 'followup' ? `<button type="button" class="btn secondary" id="cics">${esc(t('followup_ics'))}</button>` : ''}` : ''}<button type="button" class="btn secondary" id="cprl">${esc(t('print'))}</button></div>`, 'cases');
   $('#cprl').onclick = () => window.print();
   const ci = $('#cics'); if (ci) ci.onclick = async () => { try { download(await api('GET', `/api/cases?format=ics${vq()}`), `fuhrpark-wiedervorlagen_${envFn()}_${bDate()}.ics`); } catch (err) { toast(err.message, true); } };
@@ -2041,7 +2043,7 @@ async function viewCases() {
   const cq = $('#cq');
   cq.oninput = () => { clearTimeout(timer); timer = setTimeout(async () => {
     S.caseQ = cq.value.trim();
-    try { const r = await api('GET', `/api/cases?${caseFilterQ(f)}${S.caseQ.length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}${vq()}${lq()}`); const l2 = f === 'followup' ? r.cases.slice().sort((x, y) => (x.followup_on < y.followup_on ? -1 : x.followup_on > y.followup_on ? 1 : 0)) : r.cases; $('#cl').innerHTML = cPrint(l2, S.caseQ) + caseList(l2) + trunc(r); bindMore(); announceHits(l2.length); } catch (err) { toast(err.message, true); }
+    try { const r = await api('GET', `/api/cases?${caseFilterQ(f)}${S.caseQ.length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}${vq()}${lq()}`); const l2 = f === 'followup' ? r.cases.slice().sort((x, y) => (x.followup_on < y.followup_on ? -1 : x.followup_on > y.followup_on ? 1 : 0)) : r.cases; $('#cl').innerHTML = cPrint(l2, S.caseQ) + caseList(l2, null, cExtra) + trunc(r); bindMore(); announceHits(l2.length); } catch (err) { toast(err.message, true); }
   }, 300); };
 }
 

@@ -114,6 +114,7 @@ UI-Fahrer zuordnen mit ausgeschiedener Fahrerakte: Auswahl und Warnhinweis|ui-zu
 UI-Werkstattplan: Auftrag nach Fristende und mehrfach verschoben|ui-plan-verschoben.py|/tmp/cfp-plan-verschoben.log
 UI-Werkstattplan: Dringlichkeit, Sperre und Fahrbereitschaft als Text (Aushang/Druck)|ui-plan-aushang.py|/tmp/cfp-plan-aushang.log
 UI-Startseite: Navigationslinks nicht im Ausdruck (Disposition)|ui-startseite-druck.py|/tmp/cfp-startseite-druck.log
+UI-Kostenfreigabe ausstehend: Werkstatt je Zeile, Ausdruck für die Besprechung|ui-kostenfreigabe-druck.py|/tmp/cfp-kostenfreigabe-druck.log
 UI-Gesperrtes Fahrzeug genutzt: Ergebnisseite, Verlauf, Befund|ui-sperre-genutzt.py|/tmp/cfp-sperre-genutzt.log
 UI-Werkstattplan: begonnener Auftrag mit vergangenem Termin unter „in Arbeit“|ui-plan-inarbeit.py|/tmp/cfp-plan-inarbeit.log
 UI-Fahrzeug korrigieren (Meldung am falschen Fahrzeug)|ui-fahrzeug-korrigieren.py|/tmp/cfp-fahrzeug-korrigieren.log

@@ -35709,6 +35709,15 @@ await test('Backlog 1098 (Blickwinkel „Disposition druckt die Startseite für 
   ok(app.includes(`<p class="navlinks"><a href="\${hj('#/cases')}">\${esc(t('all'))}</a></p>`), 'Startseite: „Alle“ steht in .navlinks');
 });
 
+await test('Backlog 1099 (Blickwinkel „Leitung druckt ‚Kostenfreigabe ausstehend‘ für die Montagsbesprechung“): Werkstatt je Zeile, Sortierhinweis nur einmal im Ausdruck', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<p class="small muted noprint" id="casort">'), 'Sortierhinweis am Bildschirm, im Ausdruck steht er im Druckkopf');
+  ok(app.includes("const cExtra = f === 'cost_approval' ? (c) => (c.workshop_site ? `<span data-caws>${esc(wsName(c.workshop_site))}</span> · ` : '') : undefined;"), 'Werkstatt je Zeile (nur Kostenfreigabe ausstehend)');
+  ok(app.includes('${caseList(list, null, cExtra)}') && app.includes('caseList(l2, null, cExtra)'), 'auch nach der Suche');
+  ok(/const cPrint = [^\n]*printHead\(\[[\s\S]{0,700}?f === 'cost_approval' \? 'ca_sort_wait'/.test(app), 'Druckkopf nennt die Sortierung');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
