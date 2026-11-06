@@ -1,4 +1,4 @@
-# [CLAUDE] UI-Test Backlog 856/857 (Blickwinkel „Werkstatt-Nacharbeit“): früherer Auftrag mit Fremdleistung wird beendet, danach erneute Meldung →
+# [CLAUDE] UI-Test Backlog 856/857/1074 (Blickwinkel „Werkstatt-Nacharbeit“): früherer Auftrag mit Fremdleistung wird beendet, danach erneute Meldung →
 # „Zum Fahrzeug“ nennt Werkstatt und Fremdfirma ([data-viby]); im Formular „Fremdleistung“ erscheint beim Tippen derselben Firma (Groß-/Kleinschreibung egal)
 # der Hinweis auf Nacharbeit/Gewährleistung mit Link ([#xsprev]). DE/UK/EN bei 390/820/1366 px. Frischer Dev-Server nötig.
 import os
@@ -6,6 +6,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
+PARTS={'de':'Teile:','uk':'Запчастини:','en':'Parts:'}
 EXT={'de':'Fremdleistung','uk':'Стороння послуга','en':'External service'}
 HINT={'de':'Nacharbeit','uk':'доопрацювання','en':'rework'}
 fails=[]
@@ -27,6 +28,7 @@ with sync_playwright() as p:
     c1=mk('Bremse zieht schief','a')
     check(cmd(c1,'approve_repair',{'workshop_site':site},'prüfen')['s']==200,'Auftrag 1')
     check(cmd(c1,'add_external_cost',{'supplier':'Bremsen Müller GmbH','invoice_no':'R-856','amount_net':'250,00'})['s']==200,'Fremdleistung gebucht')
+    check(cmd(c1,'add_part',{'name':'Bremszylinder VA links','quantity':1})['s']==200,'1074: Teil gebucht')
     check(cmd(c1,'withdraw_order',{},'Bremse eingestellt, Probefahrt ok')['s']==200,'Auftrag 1 beendet')
     c2=mk('Bremse zieht wieder schief','b')
     check(cmd(c2,'approve_repair',{'workshop_site':site},'Nacharbeit prüfen')['s']==200,'Auftrag 2')
@@ -38,6 +40,7 @@ with sync_playwright() as p:
         q.goto(B+'/#/cases/'+c2); q.wait_for_selector('[data-viby]',state='attached',timeout=15000)
         tx=q.inner_text('[data-viby]') if q.locator('[data-viby]').first.is_visible() else q.text_content('[data-viby]')
         check(EXT[lang] in tx and 'Bremsen Müller GmbH' in tx,f'{lang} {w}px: 856 Fremdfirma beim früheren Auftrag ({tx[:60]})')
+        check(PARTS[lang] in tx and 'Bremszylinder VA links' in tx,f'{lang} {w}px: 1074 Teile beim früheren Auftrag')
         if SHOTS: q.locator('.vinfo').screenshot(path=f'{SHOTS}/na_vinfo_{lang}_{w}.png')
         q.click('[data-act=add_external_cost]'); q.wait_for_selector('#af [name=supplier]',timeout=15000)
         check(q.locator('#xsprev').is_hidden(),f'{lang} {w}px: Hinweis anfangs verborgen')

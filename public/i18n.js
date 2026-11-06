@@ -3868,3 +3868,13 @@ Object.assign(STRINGS.en, { todo_upto_free: 'Days off until the next working day
 Object.assign(STRINGS.de, { rel_other_ws: 'Weiterer Werkstattauftrag an diesem Fahrzeug:', rel_other_ws_hint: 'Abholvermerk und Hinweis für die Fahrer nur eintragen, wenn das Fahrzeug trotzdem abgeholt werden kann.' });
 Object.assign(STRINGS.uk, { rel_other_ws: 'Інше замовлення майстерні для цього транспорту:', rel_other_ws_hint: 'Додавайте інформацію для отримання та примітку для водіїв лише тоді, коли транспорт усе одно можна забрати.' });
 Object.assign(STRINGS.en, { rel_other_ws: 'Another workshop order for this vehicle:', rel_other_ws_hint: 'Only add a pick-up note or a note for the drivers if the vehicle can be collected anyway.' });
+
+// Backlog 1074 (Blickwinkel „Wiederholungsreparatur: derselbe Mangel kommt wenige Wochen nach der Reparatur wieder“): eingebaute Teile früherer Aufträge
+Object.assign(STRINGS.de, { vi_done_parts: 'Teile: {list}' });
+Object.assign(STRINGS.uk, { vi_done_parts: 'Запчастини: {list}' });
+Object.assign(STRINGS.en, { vi_done_parts: 'Parts: {list}' });
+
+// Backlog 1075 (Folge aus 1074): am freigegebenen Vorgang „Danach erneut gemeldet“
+Object.assign(STRINGS.de, { vi_later: 'Danach erneut gemeldet (90 Tage)', vi_later_same: 'gleicher Prüfpunkt', vi_later_hint: 'Vorgänge desselben Fahrzeugs nach dieser Freigabe – bei gleichem Mangel Nacharbeit bzw. Gewährleistung prüfen.' });
+Object.assign(STRINGS.uk, { vi_later: 'Згодом повідомлено знову (90 днів)', vi_later_same: 'той самий пункт перевірки', vi_later_hint: 'Справи щодо цього транспорту після цього допуску – за тієї самої несправності перевірте доопрацювання або гарантію.' });
+Object.assign(STRINGS.en, { vi_later: 'Reported again afterwards (90 days)', vi_later_same: 'same check item', vi_later_hint: 'Cases for this vehicle after this release – if it is the same defect, check rework or warranty.' });

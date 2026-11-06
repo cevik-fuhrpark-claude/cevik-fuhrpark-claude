@@ -1313,6 +1313,10 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 
 // Backlog 1073 (Blickwinkel „Werkstatt bekommt zwei Aufträge für denselben Lkw am selben Tag“): Abschlusskontrolle/Freigabe nennt einen weiteren
 // laufenden Werkstattauftrag am selben Fahrzeug
+
+// Backlog 1074 (Blickwinkel „Wiederholungsreparatur: derselbe Mangel kommt wenige Wochen nach der Reparatur wieder“): eingebaute Teile früherer Aufträge
+
+// Backlog 1075 (Folge aus 1074): am freigegebenen Vorgang „Danach erneut gemeldet“
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

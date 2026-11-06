@@ -34928,7 +34928,7 @@ await test('Backlog 1056 (Folge aus 1055): Lagerentnahme als Lieferant „Lager 
   const st = await U.ws.post('/api/stock', { name: 'Ölfilter 1056', part_number: 'OF-1056', unit_price_net: '12,50', initial_qty: 4 }); eq(st.status, 201, JSON.stringify(st.data));
   const id = await toRepair();
   eq((await cmd(U.ws, id, 'add_part', { stock_item_id: st.data.id, quantity: 1 })).status, 200);
-  const y = new Date().toISOString().slice(0, 7);
+  const y = BERLIN_TODAY.slice(0, 7); // Berliner Monat wie der Bericht (06.11.2026 Zeitreise: um Mitternacht des Monatswechsels rot)
   const csvOf = async (path) => { const r = await U.fleet.req('GET', path); eq(r.status, 200, path + ' ' + JSON.stringify(r.data).slice(0, 200)); return new TextDecoder().decode(r.data); };
   const items = await csvOf(`/api/reports/costs?from=${y}&to=${y}&part=items`);
   ok(items.includes('Lager Werkstatt Dortmund') && !items.includes('Lager DORTMUND'), 'Kostenpositionen: ' + items.split('\r\n').filter((l) => l.includes('Lager')).join(' | '));
@@ -35331,6 +35331,75 @@ await test('Backlog 1073 (Blickwinkel „Werkstatt bekommt zwei Aufträge für d
     const n = (await D[l].get('/api/notifications')).data.notifications.find((x) => x.body.startsWith(bRel));
     ok(n && n.kind === 'released' && !n.body.includes(want[l]), l + ' ohne Zusatz: ' + (n && n.body));
   }
+});
+
+await test('Backlog 1074 (Blickwinkel „Wiederholungsreparatur: derselbe Mangel kommt wenige Wochen nach der Reparatur wieder“): „Früher abgeschlossen“ und „gleicher Prüfpunkt“ nennen die eingebauten Teile (nur Bezeichnung, max. 3, ohne Menge/Preis); Werkstatt nur eigener Standort', async () => {
+  const { e, U, cmd, newCase, toRepair } = await freshWorld();
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const ci = items[0].key;
+  const a = await toRepair({ description: 'Bremse links schleift' });
+  await e.DB.prepare('UPDATE cases SET check_item=? WHERE id=?').bind(ci, a).run(); // gleicher Prüfpunkt (Ablauf über die Abfahrtskontrolle ist anderswo geprüft)
+  eq((await cmd(U.ws, a, 'record_work', { hours: 1, description: 'Beläge gewechselt' })).status, 200);
+  for (const [name, price] of [['Bremsbelagsatz HA links', 88.5], ['Verschleißanzeiger', null], ['Bremsbelagsatz HA links', 88.5], ['Schraubensatz', 3], ['Zubehörsatz Bremse', 7]]) eq((await cmd(U.ws, a, 'add_part', { name, quantity: 2, ...(price ? { unit_price_net: price } : {}) })).status, 200, name);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: a, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, a, 'request_quality_check', {}, 'fertig')).status, 200);
+  eq((await cmd(U.fleet, a, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200);
+  const n = await newCase({ description: 'Bremse links quietscht wieder' });
+  await e.DB.prepare('UPDATE cases SET created_at=?, check_item=? WHERE id=?').bind(new Date(Date.now() + 1000).toISOString(), ci, n).run();
+  let vi = (await U.fleet.get(`/api/cases/${n}`)).data.vehicle_info;
+  const ra = vi.recent_closed.find((x) => x.id === a);
+  ok(ra && Array.isArray(ra.parts) && ra.parts.length === 3, JSON.stringify(ra && ra.parts));
+  eq(ra.parts.join('|'), 'Bremsbelagsatz HA links|Schraubensatz|Verschleißanzeiger', 'alphabetisch, ohne Doppelte, max. 3');
+  ok(!JSON.stringify(ra).includes('88.5'), 'ohne Preis');
+  const ps = vi.previous_same_item.find((x) => x.id === a); ok(ps && ps.parts.includes('Bremsbelagsatz HA links'), 'gleicher Prüfpunkt: ' + JSON.stringify(vi.previous_same_item));
+  // Werkstatt (eigener Standort) sieht sie im neuen Auftrag; Vorgang ohne Teile → leere Liste
+  eq((await cmd(U.fleet, n, 'approve_repair', { workshop_site: 'DORTMUND' }, 'prüfen')).status, 200);
+  vi = (await U.ws.get(`/api/cases/${n}`)).data.vehicle_info; ok(vi.recent_closed.find((x) => x.id === a).parts.includes('Verschleißanzeiger'), 'Werkstatt');
+  const b = await newCase({ description: 'Spiegel locker' }); eq((await cmd(U.fleet, b, 'reject', {}, 'kein Mangel')).status, 200);
+  await e.DB.prepare('UPDATE cases SET closed_at=? WHERE id=?').bind(new Date(Date.now() - 1000).toISOString(), b).run();
+  vi = (await U.fleet.get(`/api/cases/${n}`)).data.vehicle_info; eq(JSON.stringify(vi.recent_closed.find((x) => x.id === b).parts), '[]');
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/const viBy = [^\n]*vi_done_parts/.test(app), 'viBy zeigt Teile');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].vi_done_parts && STRINGS[l].vi_done_parts.includes('{list}'), l);
+});
+
+await test('Backlog 1075 (Folge aus 1074): freigegebener Vorgang nennt „Danach erneut gemeldet“ – spätere Vorgänge desselben Fahrzeugs bis 90 Tage nach dem Abschluss, gleicher Prüfpunkt markiert, ohne Dubletten, max. 5; offener Vorgang ohne; Werkstatt nur eigener Standort', async () => {
+  const { e, U, cmd, newCase, toRepair } = await freshWorld();
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const ci = items[0].key;
+  const a = await toRepair({ description: 'Bremse links schleift' });
+  await e.DB.prepare('UPDATE cases SET check_item=? WHERE id=?').bind(ci, a).run();
+  eq((await U.fleet.get(`/api/cases/${a}`)).data.vehicle_info.later_cases.length, 0, 'offener Vorgang: kein Rückblick nach vorn');
+  eq((await cmd(U.ws, a, 'record_work', { hours: 1, description: 'Beläge' })).status, 200);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: a, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, a, 'request_quality_check', {}, 'fertig')).status, 200);
+  eq((await cmd(U.fleet, a, 'technical_release', { confirm: true }, 'Kontrolle ok')).status, 200);
+  const closed = (await U.fleet.get(`/api/cases/${a}`)).data.case.closed_at;
+  const at = (days) => new Date(Date.parse(closed) + days * 86400000).toISOString();
+  const b = await newCase({ description: 'Bremse links quietscht wieder' }); const c = await newCase({ description: 'Spiegel locker' });
+  const dup = await newCase({ description: 'Bremse quietscht (doppelt)' }); const old = await newCase({ description: 'viel später' });
+  await e.DB.prepare('UPDATE cases SET created_at=?, check_item=? WHERE id=?').bind(at(20), ci, b).run();
+  await e.DB.prepare('UPDATE cases SET created_at=? WHERE id=?').bind(at(10), c).run();
+  await e.DB.prepare('UPDATE cases SET created_at=?, duplicate_of=? WHERE id=?').bind(at(21), b, dup).run();
+  await e.DB.prepare('UPDATE cases SET created_at=? WHERE id=?').bind(at(91), old).run();
+  let vi = (await U.fleet.get(`/api/cases/${a}`)).data.vehicle_info;
+  eq(vi.later_cases.map((x) => x.id).join(), [c, b].join(), 'älteste zuerst, ohne Dublette, ohne > 90 Tage');
+  eq(vi.later_cases.map((x) => x.same_item).join(), 'false,true', 'gleicher Prüfpunkt markiert');
+  eq(vi.later_cases_truncated, false); ok(vi.later_cases[1].description.startsWith('Bremse links'), 'Kurzbeschreibung');
+  // Werkstatt: nur Vorgänge ihres Standorts (gemeldete ohne Werkstatt nicht)
+  eq((await U.ws.get(`/api/cases/${a}`)).data.vehicle_info.later_cases.length, 0, 'Werkstatt: gemeldete Vorgänge ohne Werkstatt nicht');
+  eq((await cmd(U.fleet, b, 'approve_repair', { workshop_site: 'DORTMUND' }, 'prüfen')).status, 200);
+  eq((await U.ws.get(`/api/cases/${a}`)).data.vehicle_info.later_cases.map((x) => x.id).join(), b, 'Werkstatt: eigener Standort');
+  // mehr als 5 → 5 + truncated
+  for (let i = 0; i < 5; i++) { const x = await newCase({ description: 'Weitere ' + i }); await e.DB.prepare('UPDATE cases SET created_at=? WHERE id=?').bind(at(30 + i), x).run(); }
+  vi = (await U.fleet.get(`/api/cases/${a}`)).data.vehicle_info; eq(vi.later_cases.length, 5); eq(vi.later_cases_truncated, true);
+  // Oberfläche und Texte
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-vilater') && app.includes("t('vi_later_same')"), 'Anzeige in vehInfo');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].vi_later && STRINGS[l].vi_later_same && STRINGS[l].vi_later_hint, l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

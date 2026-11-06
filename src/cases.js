@@ -15,6 +15,7 @@ import { noteActiveSql, NOTES_MAX_ACTIVE } from './vnotes.js';
 const RECENT_CLOSED_MAX = 5;
 // Backlog 881: offene Restarbeiten aus bereits freigegebenen Vorgängen desselben Fahrzeugs – Kurzinfo im Vorgang höchstens 10 (mehr → *_truncated)
 const RELEASED_ITEMS_MAX = 10;
+const LATER_CASES_MAX = 5; // Backlog 1075: „Danach erneut gemeldet“ am freigegebenen Vorgang
 // Laufende Gewährleistungen: Kurzinfo im Vorgang höchstens 20, Fahrzeugakte höchstens 50 (früheste Abläufe zuerst; mehr → *_truncated)
 // Backlog 626: Vergleichsschlüssel einer Rechnungsnummer – führendes „Nr./No./N°/Nº“ weg, nur ASCII-Buchstaben und Ziffern, Großschreibung
 export const invoiceKey = (v) => String(v || '').trim().replace(/^(?:nr|no|n°|nº|num(?:ber|éro|ero)?)[.:\s]+/i, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -607,6 +608,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
     let dueTotal = due.length < 10 ? due.length : (await env.DB.prepare(`SELECT COUNT(*) AS n FROM maintenance_rules WHERE vehicle_id=?
       AND ((next_due_date IS NOT NULL AND next_due_date <= ? AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) OR (kind='Rückruf' AND last_done_date IS NULL))`).bind(c.vehicle_id, soon).first()).n;
     // letzter km-Stand und aktive Hinweise zum Fahrzeug (ohne Verfasser) in einer Abfrage – Vorgangsdetail bleibt im Abfragebudget
+    const laterFrom = c.status === 'fahrzeug_freigegeben' && c.closed_at ? c.closed_at : null; // Backlog 1075
     const kmn = await env.DB.prepare(`SELECT o.km, o.measured_at,
         (SELECT json_group_array(json_object('text', n.text, 'for_driver', n.for_driver, 'created_at', n.created_at, 'valid_until', n.valid_until, 'pickup', n.pickup)) FROM
           (SELECT text, for_driver, created_at, valid_until, CASE WHEN source_case_id IS NOT NULL AND source_case_id<>?4 THEN 1 ELSE 0 END AS pickup FROM vehicle_notes WHERE vehicle_id=?1 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?3) ORDER BY created_at DESC, rowid DESC LIMIT 20) n) AS notes,
@@ -623,11 +625,13 @@ export async function getCaseDetail(env, user, envName, caseId) {
         -- Backlog 467 (Blickwinkel „Sporadische Störung – Werkstatt findet keinen Fehler“): in den 90 Tagen vor dieser Meldung abgeschlossene Vorgänge
         -- desselben Fahrzeugs (freigegeben, ohne Reparatur beendet, Meldung abgelehnt; keine Dubletten) mit Abschlussvermerk – die zweite Meldung
         -- „Warnleuchte wieder an“ kam sonst ohne Vorgeschichte in die Werkstatt. Werkstatt nur eigener Standort (abgelehnte Meldungen ohne Werkstatt nicht)
-        (SELECT json_group_array(json_object('id', CASE WHEN ?7 IS NOT NULL AND r.status='abgelehnt' THEN NULL ELSE r.id END, 'case_no', r.case_no, 'status', r.status, 'kind', r.kind, 'description', r.description, 'closed_at', r.closed_at, 'note', r.note, 'workshop_site', r.workshop_site, 'ext_suppliers', json(r.ext_suppliers))) FROM
+        (SELECT json_group_array(json_object('id', CASE WHEN ?7 IS NOT NULL AND r.status='abgelehnt' THEN NULL ELSE r.id END, 'case_no', r.case_no, 'status', r.status, 'kind', r.kind, 'description', r.description, 'closed_at', r.closed_at, 'note', r.note, 'workshop_site', r.workshop_site, 'ext_suppliers', json(r.ext_suppliers), 'parts', json(r.parts))) FROM
           (SELECT x.id, x.case_no, x.status, CASE WHEN x.status='fahrzeug_freigegeben' THEN 'released' WHEN x.workshop_site IS NOT NULL THEN 'withdrawn' ELSE 'rejected' END AS kind,
             substr(x.description, 1, 120) AS description, x.closed_at, x.workshop_site,
             -- Backlog 856 (Blickwinkel „Werkstatt-Nacharbeit“): Fremdfirmen des früheren Auftrags (ohne Beträge/Bemerkungen; max. 3) – Nacharbeit derselben Firma erkennbar
             (SELECT json_group_array(s) FROM (SELECT DISTINCT supplier AS s FROM external_costs WHERE case_id=x.id AND trim(supplier)<>'' ORDER BY s LIMIT 3)) AS ext_suppliers,
+            -- Backlog 1074 (Blickwinkel „Wiederholungsreparatur“): eingebaute Teile des früheren Auftrags (nur Bezeichnung, ohne Menge/Preis/Person; max. 3)
+            (SELECT json_group_array(s) FROM (SELECT DISTINCT trim(name) AS s FROM parts WHERE case_id=x.id AND trim(name)<>'' ORDER BY s LIMIT 3)) AS parts,
             (SELECT substr(e.note, 1, 200) FROM case_events e WHERE e.case_id=x.id AND e.to_status=x.status AND e.note IS NOT NULL AND trim(e.note)<>'' ORDER BY e.created_at DESC LIMIT 1) AS note
            FROM cases x WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.status IN ('fahrzeug_freigegeben','abgelehnt') AND x.duplicate_of IS NULL
              AND x.closed_at IS NOT NULL AND x.closed_at <= ?6 AND x.closed_at >= ?9 AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY x.closed_at DESC LIMIT ${RECENT_CLOSED_MAX + 1}) r) AS recent_closed,
@@ -638,8 +642,16 @@ export async function getCaseDetail(env, user, envName, caseId) {
           (SELECT oi.id, x.id AS case_id, x.case_no, x.closed_at, substr(oi.description, 1, 200) AS description, oi.safety_relevant, oi.created_at
            FROM open_items oi JOIN cases x ON x.id=oi.case_id WHERE oi.status='offen' AND x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.status='fahrzeug_freigegeben'
              AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY oi.safety_relevant DESC, oi.created_at DESC LIMIT ${RELEASED_ITEMS_MAX + 1}) ri) AS released_items,
+        -- Backlog 1075 (Folge aus 1074, Blickwinkel „Wiederholungsreparatur“): am freigegebenen Vorgang die danach (bis 90 Tage nach dem Abschluss,
+        -- Regel aus 467) gemeldeten Vorgänge desselben Fahrzeugs – Leitung erkennt am alten Auftrag (Gewährleistung, Fremdfirma) die erneute Meldung.
+        -- Keine Dubletten; Werkstatt nur eigener Standort (ohne Reparatur beendete ohne Link wie 609); gleicher Prüfpunkt markiert
+        (SELECT json_group_array(json_object('id', CASE WHEN ?7 IS NOT NULL AND l.status='abgelehnt' THEN NULL ELSE l.id END, 'case_no', l.case_no, 'status', l.status, 'created_at', l.created_at, 'description', l.description, 'same_item', l.same_item, 'safety_lock', l.safety_lock)) FROM
+          (SELECT x.id, x.case_no, x.status, x.created_at, x.safety_lock, substr(x.description, 1, 120) AS description, CASE WHEN ?12 IS NOT NULL AND x.check_item=?12 THEN 1 ELSE 0 END AS same_item
+           FROM cases x WHERE ?10 IS NOT NULL AND x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.duplicate_of IS NULL AND x.created_at > ?10 AND x.created_at <= ?11
+             AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY x.created_at LIMIT ${LATER_CASES_MAX + 1}) l) AS later_cases,
         ${HUSP_ONE_SQL}
-      FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate(), c.id, berlinDate(c.created_at), c.created_at, wsOnly, isManager(user) ? 1 : 0, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString()).first();
+      FROM (SELECT 1) one LEFT JOIN (SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=?1 ORDER BY measured_at DESC LIMIT 1) o ON 1`).bind(c.vehicle_id, envName, berlinDate(), c.id, berlinDate(c.created_at), c.created_at, wsOnly, isManager(user) ? 1 : 0, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString(),
+        laterFrom, laterFrom ? new Date(Date.parse(laterFrom) + 90 * 86400000).toISOString() : null, c.check_item || null).first();
     const km = kmn && kmn.km !== null && kmn.km !== undefined ? { km: kmn.km, measured_at: kmn.measured_at } : null;
     // HU/SP ohne eigenen Eintrag mit berechenbarer Frist (z. B. SP aus HU + Erstzulassung) wie Übersicht/Werkstattplan/Fahrer-Startseite
     // (21.10.2026: überfällige berechnete SP fehlte im Vorgang – Werkstatt erfuhr nicht, dass sie beim selben Aufenthalt fällig ist). Nichts angelegt;
@@ -665,10 +677,10 @@ export async function getCaseDetail(env, user, envName, caseId) {
     // Gleicher Prüfpunkt an diesem Fahrzeug in den 90 Tagen vor dieser Meldung bereits repariert und freigegeben (Hinweis auf mögliche Nacharbeit)
     let prevSame = [];
     if (c.check_item) {
-      prevSame = (await env.DB.prepare(`SELECT x.id, x.case_no, x.closed_at, x.workshop_site, (SELECT json_group_array(s) FROM (SELECT DISTINCT supplier AS s FROM external_costs WHERE case_id=x.id AND trim(supplier)<>'' ORDER BY s LIMIT 3)) AS ext_suppliers FROM cases x WHERE vehicle_id=? AND environment=? AND id<>? AND check_item=?
+      prevSame = (await env.DB.prepare(`SELECT x.id, x.case_no, x.closed_at, x.workshop_site, (SELECT json_group_array(s) FROM (SELECT DISTINCT supplier AS s FROM external_costs WHERE case_id=x.id AND trim(supplier)<>'' ORDER BY s LIMIT 3)) AS ext_suppliers, (SELECT json_group_array(s) FROM (SELECT DISTINCT trim(name) AS s FROM parts WHERE case_id=x.id AND trim(name)<>'' ORDER BY s LIMIT 3)) AS parts FROM cases x WHERE vehicle_id=? AND environment=? AND id<>? AND check_item=?
         AND status='fahrzeug_freigegeben' AND closed_at IS NOT NULL AND closed_at <= ? AND closed_at >= ? ${wsOnly ? 'AND workshop_site=?' : ''} ORDER BY closed_at DESC LIMIT 5`)
         .bind(...[c.vehicle_id, envName, c.id, c.check_item, c.created_at, new Date(Date.parse(c.created_at) - 90 * 86400000).toISOString(), ...(wsOnly ? [wsOnly] : [])]).all()).results
-        .map((o) => ({ ...o, ext_suppliers: o.ext_suppliers ? JSON.parse(o.ext_suppliers) : [] }));
+        .map((o) => ({ ...o, ext_suppliers: o.ext_suppliers ? JSON.parse(o.ext_suppliers) : [], parts: o.parts ? JSON.parse(o.parts) : [] }));
     }
     // Backlog 467: eine Zeile mehr gelesen → recent_closed_truncated (nie still kappen)
     const recentClosed = kmn && kmn.recent_closed ? JSON.parse(kmn.recent_closed) : [];
@@ -676,7 +688,10 @@ export async function getCaseDetail(env, user, envName, caseId) {
     // Backlog 881: eine Zeile mehr gelesen → released_items_truncated (nie still kappen)
     const releasedItems = (kmn && kmn.released_items ? JSON.parse(kmn.released_items) : []).map((o) => ({ ...o, safety_relevant: !!o.safety_relevant }));
     const releasedItemsTruncated = releasedItems.length > RELEASED_ITEMS_MAX; if (releasedItemsTruncated) releasedItems.length = RELEASED_ITEMS_MAX;
-    detail.vehicle_info = { recent_closed: recentClosed, recent_closed_truncated: recentClosedTruncated, released_items: releasedItems, released_items_truncated: releasedItemsTruncated, other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, inspections_due_days: dueDays, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties, warranties_truncated: warrantiesTruncated, warranties_max: WARR_CASE_MAX, coupled, coupled_truncated: coupledTruncated };
+    // Backlog 1075: eine Zeile mehr gelesen → later_cases_truncated
+    const laterCases = (kmn && kmn.later_cases ? JSON.parse(kmn.later_cases) : []).map((o) => ({ ...o, same_item: !!o.same_item, safety_lock: !!o.safety_lock && !['fahrzeug_freigegeben', 'abgelehnt'].includes(o.status) }));
+    const laterCasesTruncated = laterCases.length > LATER_CASES_MAX; if (laterCasesTruncated) laterCases.length = LATER_CASES_MAX;
+    detail.vehicle_info = { later_cases: laterCases, later_cases_truncated: laterCasesTruncated, recent_closed: recentClosed, recent_closed_truncated: recentClosedTruncated, released_items: releasedItems, released_items_truncated: releasedItemsTruncated, other_open_cases: others, other_open_total: othersTotal, inspections_due: due, inspections_due_total: dueTotal, inspections_due_days: dueDays, last_km: km || null, previous_same_item: prevSame, notes: vnotes, warranties, warranties_truncated: warrantiesTruncated, warranties_max: WARR_CASE_MAX, coupled, coupled_truncated: coupledTruncated };
     if (isManager(user)) detail.vehicle_info.lease_contracts = kmn && kmn.leases ? JSON.parse(kmn.leases) : [];
   }
   if (seesWork) {
