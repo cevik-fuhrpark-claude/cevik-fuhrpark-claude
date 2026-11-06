@@ -198,6 +198,22 @@ export async function costReport(env, user, envName, query = {}) {
     return { ...v, actual_net: r2(v.actual_net), estimate_net: r2(v.estimate_net), km, ...kmInfo, // nur geschätzte/unbewertete Positionen → kein €/km (vorher „0,000 €/km“ ohne Hinweis); Schätzung im Zeitraum → €/km unvollständig (19.10.2026)
     cost_per_km: km && !(v.valued_items === 0 && (v.unvalued_items > 0 || v.estimate_net > 0)) ? roundMilli(v.actual_net / km) : null, complete: v.unvalued_items === 0 && !(v.estimate_net > 0) };
   }).sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
+  // Backlog 1049 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Kosten zählen beim heutigen Standort (Fahrzeugstamm). Standortwechsel ab
+  // Zeitraumbeginn (Stammdaten `site` bzw. CSV-Import `changed.site`, Protokoll) je Fahrzeug ausweisen – reine Anzeige, keine Umbuchung; eine Abfrage
+  if (vehicles.length) {
+    const sc = (await env.DB.prepare(`SELECT target, detail, created_at FROM audit_log WHERE action='vehicle.upsert' AND created_at >= ?1 AND target IN (SELECT value FROM json_each(?2))
+      AND CASE WHEN json_valid(detail) THEN json_type(detail,'$.site')='object' OR json_type(detail,'$.changed.site')='object' ELSE 0 END ORDER BY created_at, rowid`)
+      .bind(lo, JSON.stringify(vehicles.map((v) => v.vehicle_id))).all()).results;
+    const byV = new Map();
+    for (const a of sc) {
+      if (berlinDate(a.created_at).slice(0, 7) < from) continue;
+      let det = {}; try { det = JSON.parse(a.detail || '{}') || {}; } catch { det = {}; }
+      const x = (det.site && typeof det.site === 'object' ? det.site : det.changed && det.changed.site) || {};
+      if (siteKey(x.from) === siteKey(x.to)) continue; // nur Schreibweise (Dortmund/DORTMUND) – kein Wechsel
+      const l = byV.get(a.target) || []; l.push({ at: a.created_at, from: x.from ?? null, to: x.to ?? null }); byV.set(a.target, l);
+    }
+    for (const v of vehicles) { const l = byV.get(v.vehicle_id); if (l) v.site_changes = l.slice(-5); }
+  }
   // Vertragsraten (Leasing/Miete/…) getrennt von der Instandhaltung – nur Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten; nicht über die Integrations-API)
   const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates, label) : undefined;
   // Versicherungserstattungen (nur Leitung) getrennt ausgewiesen – werden NICHT von den Instandhaltungskosten abgezogen
@@ -362,7 +378,7 @@ export function costVehiclesCsv(rep, inactiveSince = new Map()) {
   const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const cell = csvCell;
   const head = ['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Von (Monat)', 'Bis (Monat)', 'Stunden', 'Arbeitszeit netto', 'Teile netto', 'Teile geschätzt netto', 'Fremdleistung netto', 'Fremdleistung geschätzt netto',
-    'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet', 'Gefahrene km', 'km-Ablesung von', 'km-Ablesung bis', 'Kosten je km netto (belegt)', 'km-Zeitraum unvollständig', 'Fahrzeugstatus', 'Außer Betrieb seit'];
+    'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet', 'Gefahrene km', 'km-Ablesung von', 'km-Ablesung bis', 'Kosten je km netto (belegt)', 'km-Zeitraum unvollständig', 'Fahrzeugstatus', 'Außer Betrieb seit', 'Standortwechsel ab Zeitraumbeginn'];
   const agg = new Map(); const blank = () => ({ hours: 0, work: 0, workV: false, workU: false, pa: 0, paV: false, paU: false, pe: 0, ea: 0, eaV: false, eaU: false, ee: 0, actual: 0, est: 0, valued: 0, unvalued: 0, active: true });
   for (const r of rep.rows) {
     const a = agg.get(r.vehicle_id) || blank();
@@ -377,7 +393,9 @@ export function costVehiclesCsv(rep, inactiveSince = new Map()) {
   const add = (t, a) => { for (const k of ['hours', 'work', 'pa', 'pe', 'ea', 'ee', 'actual', 'est', 'valued', 'unvalued']) t[k] += a[k]; t.workV ||= a.workV; t.workU ||= a.workU; t.paV ||= a.paV; t.paU ||= a.paU; t.eaV ||= a.eaV; t.eaU ||= a.eaU; };
   const row = (label, vid, site, a, v) => [label, vid, site, rep.from, rep.to, num(r2(a.hours)), amt(a.work, a.workV, a.workU), amt(a.pa, a.paV, a.paU), num(r2(a.pe)), amt(a.ea, a.eaV, a.eaU), num(r2(a.ee)),
     a.valued === 0 && a.unvalued > 0 ? '' : num(r2(a.actual)), num(r2(a.est)), a.unvalued, a.unvalued === 0 && !(a.est > 0) ? 'ja' : 'nein',
-    v ? num(v.km) : '', v && v.km !== null && v.km_from_at ? berlinDate(v.km_from_at) : '', v && v.km !== null && v.km_to_at ? berlinDate(v.km_to_at) : '', v ? num(v.cost_per_km) : '', v && v.km_partial ? 'ja' : '', v ? (a.active ? 'aktiv' : 'außer Betrieb') : '', v && inactiveSince.get(v.vehicle_id) ? berlinDate(inactiveSince.get(v.vehicle_id)) : ''];
+    v ? num(v.km) : '', v && v.km !== null && v.km_from_at ? berlinDate(v.km_from_at) : '', v && v.km !== null && v.km_to_at ? berlinDate(v.km_to_at) : '', v ? num(v.cost_per_km) : '', v && v.km_partial ? 'ja' : '', v ? (a.active ? 'aktiv' : 'außer Betrieb') : '', v && inactiveSince.get(v.vehicle_id) ? berlinDate(inactiveSince.get(v.vehicle_id)) : '',
+    // Backlog 1049: Standortwechsel ab Zeitraumbeginn („TT.MM.JJJJ: A → B“ wie alle CSV-Kalendertage); Kosten stehen beim heutigen Standort
+    v && (v.site_changes || []).length ? cell(v.site_changes.map((x) => `${berlinDate(x.at).split('-').reverse().join('.')}: ${x.from || '–'} → ${x.to || '–'}`).join(' | ')) : ''];
   for (const v of rep.vehicles) {
     const a = agg.get(v.vehicle_id) || blank(); if (!agg.has(v.vehicle_id) && inactiveSince.has(v.vehicle_id)) a.active = false;
     lines.push(row(cell(v.plate), cell(v.vehicle_id), cell(v.site), a, v).join(';'));

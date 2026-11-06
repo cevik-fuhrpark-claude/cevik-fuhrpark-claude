@@ -1892,6 +1892,10 @@ Object.assign(STRINGS.en, { veh_site_ws_open: 'Open workshop orders that stay wi
 Object.assign(STRINGS.de, { apr_ws_site_hint: 'Das Fahrzeug steht laut Stammdaten am Standort {site} (Werkstatt {ws}) – bitte die Werkstatt prüfen.' });
 Object.assign(STRINGS.uk, { apr_ws_site_hint: 'За основними даними транспортний засіб знаходиться на локації {site} (майстерня {ws}) – перевірте, будь ласка, майстерню.' });
 Object.assign(STRINGS.en, { apr_ws_site_hint: 'According to the master data the vehicle is at site {site} (workshop {ws}) – please check the workshop.' });
+// Backlog 1049: Kostenbericht – Standortwechsel ab Zeitraumbeginn (Kosten zählen beim heutigen Standort)
+Object.assign(STRINGS.de, { cost_site_moved: 'Standort gewechselt', cost_site_moved_hint: 'Standort gewechselt am {list}. Alle Kosten des Zeitraums zählen beim heutigen Standort laut Fahrzeugstamm.' });
+Object.assign(STRINGS.uk, { cost_site_moved: 'Локацію змінено', cost_site_moved_hint: 'Локацію змінено {list}. Усі витрати за період зараховуються до поточної локації за основними даними.' });
+Object.assign(STRINGS.en, { cost_site_moved: 'Site changed', cost_site_moved_hint: 'Site changed on {list}. All costs of the period count towards the current site in the vehicle master data.' });
 // Backlog 1048: Grundtexte (Formen in PLURALS)
 Object.assign(STRINGS.de, { veh_site_ws_reported: 'Offene Meldungen mit Werkstattvorschlag {list}: {n} – bei der Freigabe die Werkstatt prüfen.', veh_site_ws_movable: 'Freigegebene Werkstattaufträge noch bei {list}: {n} – bei Bedarf im Vorgang über „Werkstatt wechseln“ übergeben.', veh_site_ws_fixed: 'Werkstattaufträge bereits in Arbeit bei {list}: {n} – ein Werkstattwechsel ist in diesem Stand nicht möglich.' });
 Object.assign(STRINGS.uk, { veh_site_ws_reported: 'Відкриті повідомлення із запропонованою майстернею {list}: {n} – під час дозволу перевірте майстерню.', veh_site_ws_movable: 'Дозволені замовлення ще в майстерні {list}: {n} – за потреби передайте у заявці через «Змінити майстерню».', veh_site_ws_fixed: 'Замовлення, що вже виконуються в майстерні {list}: {n} – на цьому етапі змінити майстерню неможливо.' });

@@ -26546,7 +26546,7 @@ await test('Backlog 616 (Blickwinkel „Jahreskosten für den Steuerberater“):
   odo(1, 200000, '2025-12-30T10:00:00Z'); odo(2, 210000, '2026-03-31T10:00:00Z');
   const rows = async (q) => { const r = await U.fleet.get('/api/reports/costs?from=2026-01&to=2026-09&format=csv' + q); eq(r.status, 200); return new TextDecoder().decode(r.data).replace(/^﻿/, '').trim().split('\r\n').map((l) => l.split(';')); };
   const c = await rows('&part=vehicles'); const h = c[0];
-  eq(h.length, 22, 'Spalten'); ok(h[0] === 'Kennzeichen' && h.at(-1) === 'Außer Betrieb seit' && h.includes('km-Zeitraum unvollständig'), h.join('|'));
+  eq(h.length, 23, 'Spalten (seit Backlog 1049 + Standortwechsel)'); ok(h[0] === 'Kennzeichen' && h.at(-2) === 'Außer Betrieb seit' && h.at(-1) === 'Standortwechsel ab Zeitraumbeginn' && h.includes('km-Zeitraum unvollständig'), h.join('|'));
   const col = (r, n) => r[h.indexOf(n)];
   const v = c.find((r) => r[1] === V1); ok(v, 'Zeile V1');
   eq(col(v, 'Stunden'), '3,5'); eq(col(v, 'Arbeitszeit netto'), '350'); eq(col(v, 'Summe belegt netto'), '350'); eq(col(v, 'Gefahrene km'), '10000');
@@ -34780,6 +34780,31 @@ await test('Backlog 1048 (Blickwinkel „Lkw wechselt dauerhaft den Standort“)
     const f = PLURALS[l][k]; ok(f && f.one && (f.other || f.many) && f.one.includes('{n}') && f.one.includes('{list}'), `${l}.${k}`);
     if (l === 'uk') ok(f.few && f.many, `${l}.${k}: few/many`);
   }
+});
+
+await test('Backlog 1049 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Kostenbericht nennt je Fahrzeug Standortwechsel ab Zeitraumbeginn (Stammdaten und CSV-Import, Protokoll), CSV je Fahrzeug mit Spalte „Standortwechsel ab Zeitraumbeginn“; ältere Wechsel nicht; App-Hinweis DE/UK/EN', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const id = await newCase({ description: 'Kostenposten' }); const uid = db.prepare("SELECT id FROM users WHERE role='owner'").get().id;
+  db.prepare(`INSERT INTO parts (id, case_id, user_id, name, quantity, unit, unit_price_net, valuation, created_at) VALUES ('p-1049', ?, ?, 'Spiegel', 1, 'Stk', 100, 'actual', ?)`).run(id, uid, now);
+  // älterer Wechsel (vor dem Zeitraum) zählt nicht
+  db.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES ('a-1049','x','vehicle.upsert',?,?,'2025-01-10T10:00:00.000Z')`).run(V1, JSON.stringify({ site: { from: 'Hamburg', to: 'Dortmund' } }));
+  const { berlinDate } = await import('../src/util.js'); const today0 = berlinDate(); const today = today0.split('-').reverse().join('.'); const m = today0.slice(0, 7); const q = `from=${m}&to=${m}`;
+  let r = await U.fleet.get(`/api/reports/costs?${q}`); eq(r.status, 200); ok(!r.data.vehicles.find((v) => v.vehicle_id === V1).site_changes, 'ohne Wechsel im Zeitraum kein Vermerk');
+  eq((await U.own.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', manufacturer: 'MAN', build_year: 2016, keep_active: true, site: 'Bayern' })).status, 201);
+  const head = 'Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN;Anhänger Kennzeichen\n';
+  eq((await U.own.req('POST', '/api/vehicles/import', head + 'SZ-YC 5513;Sachsen;in Betrieb;MAN;2016;WMA15SZZ2HM722774;', { 'content-type': 'text/csv' })).status, 200);
+  eq((await U.own.post('/api/vehicles', { vin: 'WMA15SZZ2HM722774', plate: 'SZ-YC 5513', manufacturer: 'MAN', build_year: 2016, keep_active: true, site: 'SACHSEN' })).status, 201); // nur Schreibweise
+  r = await U.fleet.get(`/api/reports/costs?${q}`); const v = r.data.vehicles.find((x) => x.vehicle_id === V1);
+  eq(v.site_changes.map((x) => `${x.from}>${x.to}`).join(), 'Dortmund>Bayern,Bayern>Sachsen', 'Stammdaten und Import, älterer Wechsel nicht');
+  eq(v.site, 'SACHSEN', 'Kosten beim heutigen Standort');
+  const csv = await U.fleet.req('GET', `/api/reports/costs?${q}&format=csv&part=vehicles`); eq(csv.status, 200);
+  const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data).replace(/^﻿/, '').trim().split('\r\n');
+  ok(lines[0].endsWith(';Standortwechsel ab Zeitraumbeginn'), lines[0]);
+  const row = lines.find((l) => l.startsWith('SZ-YC 5513;')); ok(row && row.endsWith(`${today}: Dortmund → Bayern | ${today}: Bayern → Sachsen`), row);
+  ok(lines.filter((l) => l.startsWith('Summe')).every((l) => l.endsWith(';')), 'Summenzeilen ohne Vermerk');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-csitechip') && app.includes("t('cost_site_moved_hint').replace('{list}'"), 'App: Chip und Hinweis');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cost_site_moved && STRINGS[l].cost_site_moved_hint.includes('{list}'), l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
