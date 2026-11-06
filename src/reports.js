@@ -823,7 +823,7 @@ export function workshopLoadCsv(rep) {
   const last = rep.weeks[rep.weeks.length - 1];
   const lines = [['Standort', 'Werkstatt-Code', 'Kalenderwoche', 'Stunden', 'Übernommen', 'Freigegeben', ...rep.open_statuses.map((st) => OPEN_DE[st] || st)].join(';')];
   for (const s of rep.sites) for (const w of s.weeks) {
-    lines.push([cell(s.site === 'ohne' ? 'ohne Werkstatt' : s.name), cell(s.site), w.week, num(w.hours), w.acknowledged, w.released, ...rep.open_statuses.map((st) => (w.week === last ? s.open[st] || 0 : ''))].join(';'));
+    lines.push([cell(s.site === 'ohne' ? 'ohne Werkstatt' : s.name + (s.closed ? ' (geschlossen)' : '')), cell(s.site), w.week, num(w.hours), w.acknowledged, w.released, ...rep.open_statuses.map((st) => (w.week === last ? s.open[st] || 0 : ''))].join(';'));
   }
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
@@ -859,21 +859,22 @@ export async function workshopLoad(env, user, envName, query = {}) {
     env.DB.prepare(`SELECT c.workshop_site AS site, c.closed_at AS t FROM cases c WHERE c.environment=? AND c.status='fahrzeug_freigegeben' AND c.closed_at >= ?${sf} AND c.workshop_site IS NOT NULL`).bind(...args(berlinDayStartIso(startDate))).all(),
     env.DB.prepare(`SELECT c.workshop_site AS site, c.status, COUNT(*) AS n FROM cases c WHERE c.environment=? AND c.status IN (${OPEN_WS.map(() => '?').join(',')})${sf} GROUP BY c.workshop_site, c.status`)
       .bind(envName, ...OPEN_WS, ...(siteFilter ? [siteFilter] : [])).all(),
-    env.DB.prepare('SELECT code, name FROM workshops WHERE active=1').all(),
+    // Backlog 1052: alle Werkstätten (Namen auch für geschlossene mit Restaufträgen/Stunden), Abschnitte vorab nur für aktive
+    env.DB.prepare('SELECT code, name, active FROM workshops').all(),
     env.DB.prepare(`SELECT json_extract(e.payload,'$.from') AS site, json_extract(e.payload,'$.prev_ack_at') AS t FROM case_events e
       WHERE e.environment=? AND e.action='reassign_workshop' AND json_extract(e.payload,'$.prev_ack_at') >= ?${siteFilter ? " AND json_extract(e.payload,'$.from')=?" : ''}`).bind(...args(berlinDayStartIso(startDate))).all(),
   ]);
   const weekList = []; for (let i = 0; i < weeks; i++) weekList.push(isoWeek(new Date(Date.parse(startDate + 'T00:00:00Z') + i * 7 * 86400000).toISOString().slice(0, 10)));
   const bySite = new Map();
   const site = (code) => { const k = code || 'ohne'; if (!bySite.has(k)) bySite.set(k, { site: k, weeks: Object.fromEntries(weekList.map((w) => [w, { hours: 0, acknowledged: 0, released: 0 }])), open: {} }); return bySite.get(k); };
-  for (const s of sites.results) if (!siteFilter || s.code === siteFilter) site(s.code);
+  for (const s of sites.results) if (s.active && (!siteFilter || s.code === siteFilter)) site(s.code);
   for (const r of hours.results) { const w = site(r.site).weeks[isoWeek(r.d)]; if (w) w.hours = Math.round((w.hours + r.h) * 100) / 100; }
   for (const r of [...acks.results, ...prevAcks.results]) { const w = site(r.site).weeks[isoWeek(berlinDate(r.t))]; if (w) w.acknowledged++; }
   for (const r of closed.results) { const w = site(r.site).weeks[isoWeek(berlinDate(r.t))]; if (w) w.released++; }
   for (const r of open.results) site(r.site).open[r.status] = r.n;
-  const names = new Map(sites.results.map((s) => [s.code, s.name]));
+  const names = new Map(sites.results.map((s) => [s.code, s.name])); const closedWs = new Set(sites.results.filter((s) => !s.active).map((s) => s.code));
   return { environment: envName, from: startDate, weeks: weekList, open_statuses: OPEN_WS,
-    sites: [...bySite.values()].map((s) => ({ ...s, name: names.get(s.site) || s.site, weeks: weekList.map((w) => ({ week: w, ...s.weeks[w] })) })) };
+    sites: [...bySite.values()].map((s) => ({ ...s, name: names.get(s.site) || s.site, ...(closedWs.has(s.site) ? { closed: true } : {}), weeks: weekList.map((w) => ({ week: w, ...s.weeks[w] })) })) };
 }
 
 // Mängelstatistik der Kontrollen (Abfahrt / nach Reparatur): welche Prüfpunkte wie oft und an welchen Fahrzeugen als Mangel

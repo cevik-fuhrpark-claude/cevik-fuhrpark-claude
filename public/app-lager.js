@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, STOCK_Q_MIN, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, stockOpt, stockPick, stockQHtml, t, tn, toast, uid, unitL, wsLabel, wsName } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, STOCK_Q_MIN, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, stockOpt, stockPick, stockQHtml, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
 
 // Lager-Buchungstexte in der Oberflächensprache (Standortcode → Name, Zahl/Datum im Sprachformat)
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
@@ -184,7 +184,7 @@ async function viewReorder() {
 async function viewStockAsOf() {
   if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`); // Formulare nicht für Fahrer/Lesezugriff (Server antwortet ohnehin 403)
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
-  const sites = S.me.role === 'workshop' ? [] : S.meta.workshops;
+  const sites = S.me.role === 'workshop' ? [] : wsAll(); // Backlog 1052: auch geschlossene Werkstätten (Restlager auswerten)
   const today = bDate();
   const date = ss('cfp_sa_date') || `${Number(today.slice(0, 4)) - 1}-12-31`;
   const site = sites.some((w) => w.code === ss('cfp_sa_site')) ? ss('cfp_sa_site') : '';
@@ -214,7 +214,7 @@ async function viewStockAsOf() {
 async function viewStockJournal() {
   if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`); // Formulare nicht für Fahrer/Lesezugriff (Server antwortet ohnehin 403)
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
-  const sites = S.me.role === 'workshop' ? [] : S.meta.workshops;
+  const sites = S.me.role === 'workshop' ? [] : wsAll(); // Backlog 1052: auch geschlossene Werkstätten (Restlager auswerten)
   const today = bDate();
   const from = ss('cfp_sj_from') || today.slice(0, 8) + '01'; const to = ss('cfp_sj_to') || today;
   const site = sites.some((w) => w.code === ss('cfp_sj_site')) ? ss('cfp_sj_site') : ''; const type = ss('cfp_sj_type');

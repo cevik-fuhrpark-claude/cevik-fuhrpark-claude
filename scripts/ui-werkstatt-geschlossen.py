@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test Backlog 1051 (Blickwinkel „Werkstatt Bayern schließt, Aufträge gehen nach Dortmund“): Freigabe-Formular „Reparatur freigeben“
 # - Meldung mit Vorschlag einer inzwischen geschlossenen Werkstatt: nicht still die erste aktive Werkstatt, sondern die Werkstatt am Fahrzeugstandort
 #   (bzw. „–“ mit Pflichtauswahl, wenn es dort keine gibt) und Hinweis „vorgeschlagene Werkstatt geschlossen“ (DE/UK/EN, 390/820/1280 px)
+# - Backlog 1052: Werkstatt-Auslastung zeigt die geschlossene Werkstatt mit Restauftrag mit Namen und „(geschlossen)“, nicht nur den Code
 # Voraussetzung: frischer lokaler Entwicklungsserver (sh scripts/restart-dev.sh). Aufruf: python3 scripts/ui-werkstatt-geschlossen.py [Screenshot-Ordner]
 import sys, os
 from playwright.sync_api import sync_playwright
@@ -42,6 +43,12 @@ with sync_playwright() as p:
     mk = lambda vin: api('POST', '/api/cases', {'vehicle_id': 'VIN:' + vin, 'description': 'Werkstatt schließt Spiegel locker', 'priority': 'niedrig', 'driveability': 'fahrbereit', 'request_key': os.urandom(8).hex(), 'workshop_site': close})['d']['id']
     c_site = mk('WDB96340310651001')    # Vorschlag geschlossene Werkstatt, Fahrzeugstandort hat Werkstatt → diese vorwählen
     c_nosite = mk('WDB96340310651002')  # Vorschlag geschlossene Werkstatt, Standort ohne Werkstatt → „–“
+    # Backlog 1052: freigegebener Auftrag bei der später geschlossenen Werkstatt → Werkstatt-Auslastung zeigt Namen mit „(geschlossen)“
+    c_rest = mk('WDB96340310651001')
+    v = api('GET', f'/api/cases/{c_rest}')['d']['case']['version']
+    r = api('POST', f'/api/cases/{c_rest}/commands', {'action': 'approve_repair', 'command_id': os.urandom(8).hex(), 'expected_version': v, 'payload': {'workshop_site': close}, 'note': 'UI-Test Restauftrag'})
+    if r['s'] != 200:
+        fail(f'Freigabe Restauftrag: {r}')
     r = pg.evaluate("async (u) => (await fetch(u, { method: 'POST' })).json()", f'/__dev/workshop-active?code={close}&active=0')
     if r.get('changed') != 1:
         fail(f'Werkstatt {close} nicht geschlossen: {r}')
@@ -93,6 +100,28 @@ with sync_playwright() as p:
     c = api('GET', f'/api/cases/{c_site}')['d']['case']
     if c['status'] != 'werkstatt_freigegeben' or c['workshop_site'] != keep:
         fail(f'Freigabe nicht an {keep}: {c["status"]} / {c.get("workshop_site")}')
+    CL = {'de': 'geschlossen', 'uk': 'закрито', 'en': 'closed'}
+    for lang in ['de', 'uk', 'en']:
+        api('PATCH', '/api/me', {'language': lang})
+        pg.goto(f'{B}/#/wsload'); pg.reload()
+        pg.wait_for_selector('section.panel h2', timeout=8000)
+        hs = [x.text_content() for x in pg.locator('section.panel h2').all()]
+        if f'{close_name} ({CL[lang]})' not in hs:
+            fail(f'{lang}: Werkstatt-Auslastung ohne „{close_name} ({CL[lang]})“: {hs}')
+        if close in hs:
+            fail(f'{lang}: Werkstatt-Auslastung zeigt nur den Code')
+        over = pg.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
+        if over > 2:
+            fail(f'{lang}: Auslastung {over}px zu breit')
+        if OUT:
+            pg.screenshot(path=os.path.join(OUT, f'auslastung_geschlossen_{lang}_390.png'), full_page=True)
+    # Backlog 1052: Lagerjournal und Bestand zum Stichtag bieten die geschlossene Werkstatt als Filter an
+    for route, sid in [('stock/journal', 'jsite'), ('stock/asof', 'sasite')]:
+        pg.goto(f'{B}/#/{route}'); pg.reload()
+        pg.wait_for_selector(f'#{sid}', timeout=8000)
+        o = pg.locator(f'#{sid} option[value="{close}"]')
+        if not o.count() or CL['en'] not in o.text_content():
+            fail(f'{route}: Filter ohne geschlossene Werkstatt')
     pg.evaluate("async (u) => (await fetch(u, { method: 'POST' })).json()", f'/__dev/workshop-active?code={close}&active=1')
     if errs:
         fail('JS-Fehler: ' + '; '.join(errs[:3]))

@@ -34779,6 +34779,30 @@ await test('Backlog 1051 (Blickwinkel „Werkstatt Bayern schließt, Aufträge g
   const dev = readFileSync(new URL('../scripts/dev-server.mjs', import.meta.url), 'utf8'); ok(dev.includes("'/__dev/workshop-active'"), 'Entwicklungsserver kann Werkstatt schließen');
 });
 
+await test('Backlog 1052 (Blickwinkel „Werkstatt Bayern schließt“): Werkstatt-Auslastung zeigt eine geschlossene Werkstatt mit Restaufträgen mit Namen und closed (App „(geschlossen)“, CSV), ohne Restaufträge keinen Abschnitt; Lagerjournal/Bestand zum Stichtag filtern auch geschlossene Werkstätten', async () => {
+  const { e, U, newCase } = await freshWorld();
+  const id = await newCase({ description: 'Auftrag München' });
+  const c0 = (await U.fleet.get(`/api/cases/${id}`)).data.case;
+  eq((await U.fleet.post(`/api/cases/${id}/commands`, { action: 'approve_repair', command_id: 'c1052', expected_version: c0.version, note: 'Freigabe', payload: { workshop_site: 'MUENCHEN' } })).status, 200);
+  const name = e.DB.db.prepare(`SELECT name FROM workshops WHERE code='MUENCHEN'`).get().name;
+  let r = (await U.fleet.get('/api/reports/workshop-load?weeks=4')).data; let mu = r.sites.find((x) => x.site === 'MUENCHEN');
+  ok(mu && mu.name === name && !mu.closed, 'aktiv: Name, kein closed');
+  e.DB.db.prepare(`UPDATE workshops SET active=0 WHERE code='MUENCHEN'`).run();
+  r = (await U.fleet.get('/api/reports/workshop-load?weeks=4')).data; mu = r.sites.find((x) => x.site === 'MUENCHEN');
+  ok(mu && mu.name === name && mu.closed === true && mu.open.werkstatt_freigegeben === 1, 'geschlossen mit Restauftrag: Name statt Code, closed ' + JSON.stringify(mu));
+  const csv = new TextDecoder().decode((await U.fleet.req('GET', '/api/reports/workshop-load?weeks=4&format=csv')).data);
+  ok(csv.includes(name + ' (geschlossen);MUENCHEN;'), 'CSV mit Namen und „(geschlossen)“');
+  e.DB.db.prepare(`UPDATE cases SET status='abgelehnt' WHERE id=?`).run(id);
+  r = (await U.fleet.get('/api/reports/workshop-load?weeks=4')).data;
+  ok(!r.sites.some((x) => x.site === 'MUENCHEN'), 'ohne Restaufträge/Stunden kein Abschnitt für die geschlossene Werkstatt');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("wsLabel({ code: s.site, name: s.name, active: !s.closed })"), 'App zeigt „(geschlossen)“');
+  ok((app.match(/const sites = S\.me\.role === 'workshop' \? \[\] : wsAll\(\); \/\/ Backlog 1052/g) || []).length === 2, 'Lagerjournal und Bestand zum Stichtag filtern auch geschlossene Werkstätten');
+  e.DB.db.prepare(`UPDATE workshops SET active=0 WHERE code='MUENCHEN'`).run();
+  eq((await U.fleet.get('/api/stock/journal?site=MUENCHEN')).status, 200, 'Journal mit geschlossener Werkstatt');
+  eq((await U.fleet.get('/api/stock/asof?site=MUENCHEN')).status, 200, 'Stichtag mit geschlossener Werkstatt');
+});
+
 await test('Backlog 1048 (Blickwinkel „Lkw wechselt dauerhaft den Standort“): Hinweis beim Standortwechsel liefert offene Aufträge je Werkstatt und Status (Bearbeiten und CSV-Import); App trennt „bei Freigabe wählbar“, „jetzt übergebbar“, „nicht übergebbar“ und lässt die Werkstatt des neuen Standorts weg (DE/UK/EN)', async () => {
   const { U, newCase, toRepair } = await freshWorld();
   await toRepair();                                    // in Reparatur bei DORTMUND → nicht übergebbar

@@ -5762,7 +5762,7 @@ async function viewReorder() {
 async function viewStockAsOf() {
   if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`); // Formulare nicht für Fahrer/Lesezugriff (Server antwortet ohnehin 403)
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
-  const sites = S.me.role === 'workshop' ? [] : S.meta.workshops;
+  const sites = S.me.role === 'workshop' ? [] : wsAll(); // Backlog 1052: auch geschlossene Werkstätten (Restlager auswerten)
   const today = bDate();
   const date = ss('cfp_sa_date') || `${Number(today.slice(0, 4)) - 1}-12-31`;
   const site = sites.some((w) => w.code === ss('cfp_sa_site')) ? ss('cfp_sa_site') : '';
@@ -5793,7 +5793,7 @@ async function viewStockAsOf() {
 async function viewStockJournal() {
   if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`); // Formulare nicht für Fahrer/Lesezugriff (Server antwortet ohnehin 403)
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
-  const sites = S.me.role === 'workshop' ? [] : S.meta.workshops;
+  const sites = S.me.role === 'workshop' ? [] : wsAll(); // Backlog 1052: auch geschlossene Werkstätten (Restlager auswerten)
   const today = bDate();
   const from = ss('cfp_sj_from') || today.slice(0, 8) + '01'; const to = ss('cfp_sj_to') || today;
   const site = sites.some((w) => w.code === ss('cfp_sj_site')) ? ss('cfp_sj_site') : ''; const type = ss('cfp_sj_type');
@@ -7774,7 +7774,7 @@ async function viewWsLoad() {
   const n = (x) => fmtNum(x);
   render(`<h1>${esc(t('ws_load'))}</h1>${printHead([`${tn('weeks_n', weeks)}`])}<p class="small muted">${esc(t('ws_load_hint'))}</p>
     <div class="actions" style="flex-wrap:wrap">${[4, 8, 13, 26].map((w) => `<button type="button" class="btn ${w === weeks ? '' : 'secondary'}" data-wl="${w}">${esc(tn('weeks_n', w))}</button>`).join('')}<button type="button" class="btn secondary" id="wlcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="wlprt">${esc(t('print'))}</button></div>
-    ${r.sites.map((s) => { const max = Math.max(1, ...s.weeks.map((w) => w.hours)); return `<section class="panel"><h2 style="margin-top:0">${esc(s.name === 'ohne' ? t('no_workshop') : s.site === 'EXTERN' ? t('ws_extern') : s.name)}</h2>
+    ${r.sites.map((s) => { const max = Math.max(1, ...s.weeks.map((w) => w.hours)); return `<section class="panel"><h2 style="margin-top:0">${esc(s.name === 'ohne' ? t('no_workshop') : wsLabel({ code: s.site, name: s.name, active: !s.closed }))}</h2>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${r.open_statuses.map((st) => `<span class="chip ${s.open[st] ? 'mittel' : ''}">${esc(t('st_' + st))}: ${s.open[st] || 0}</span>`).join('')}</div>
       <div class="scroll"><table style="font-size:.85rem"><thead><tr><th>${esc(t('week'))}</th><th>${esc(t('hours'))}</th><th>${esc(t('ws_acknowledged'))}</th><th>${esc(t('ws_released'))}</th></tr></thead><tbody>
       ${s.weeks.slice().reverse().map((w) => `<tr><td style="white-space:nowrap" title="${esc(w.week)}">${esc(t('cw'))} ${esc(w.week.slice(6))}</td><td><div style="display:flex;align-items:center;gap:6px"><span aria-hidden="true" style="display:inline-block;height:10px;width:${Math.round((w.hours / max) * 40)}px;background:var(--steel);border-radius:2px"></span>${n(w.hours)}</div></td><td>${w.acknowledged}</td><td>${w.released}</td></tr>`).join('')}</tbody></table></div></section>`; }).join('') || noneP()}`, 'more');
