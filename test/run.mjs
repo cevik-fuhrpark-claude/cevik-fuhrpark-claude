@@ -35939,7 +35939,7 @@ await test('Backlog 1112 (Blickwinkel „Disposition mit zwei Browserfenstern ne
   ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart'), 'nur sichtbar, online, nicht für Fahrer');
   ok(fn.includes("S.lastHash !== '#/'") && fn.includes('viewDirty()') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open]'), 'nur Startseite, nie bei Eingaben/Fokus/Dialog');
   ok(fn.includes('try { await viewHome(); } catch') && fn.includes('finally { S.quietHome = false; }'), 'Fehler: alte Ansicht bleibt');
-  ok(app.includes('const HOME_REFRESH_MS = 5 * 60000;') && app.includes('setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); }, 30000);') && app.includes("window.addEventListener('focus', () => { homeAutoRefresh(60000); });"), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min.');
+  ok(app.includes('const HOME_REFRESH_MS = 5 * 60000;') && app.includes('setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); casesAutoRefresh(HOME_REFRESH_MS); }, 30000);') && app.includes("window.addEventListener('focus', () => { homeAutoRefresh(60000); casesAutoRefresh(60000); });"), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min. (seit Backlog 1113 auch Vorgangsliste)');
   ok(app.includes("if (S.quietHome && method === 'GET' && !extra.bg) extra = { ...extra, bg: true };"), 'Abfragen der stillen Aktualisierung als Hintergrund (x-cfp-bg)');
   // Server: Hintergrund-Abfrage der Startseite funktioniert und verlängert die Sitzung nicht (auth.js prüft x-cfp-bg)
   const auth = fs.readFileSync(new URL('../src/auth.js', import.meta.url), 'utf8');
@@ -35947,6 +35947,24 @@ await test('Backlog 1112 (Blickwinkel „Disposition mit zwei Browserfenstern ne
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].home_asof.includes('{t}') && STRINGS[l].home_asof_hint && STRINGS[l].update_now, 'Texte ' + l);
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-startseite-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
+await test('Backlog 1113 (Blickwinkel „Fuhrparkleitung hat Vorgangsliste und Vorgang in zwei Fenstern“): Vorgangsliste zeigt den Stand und aktualisiert nur die Liste still, ohne die Sitzung zu verlängern', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('async function viewCases('); const vc = app.slice(a, app.indexOf('\n}\n', a));
+  ok(vc.includes("${S.me.role !== 'driver' ? `<p class=\"small muted noprint\" id=\"casesasof\"") && vc.includes("t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString()))") && vc.includes("t('cases_asof_hint')"), 'Standzeile (nicht für Fahrer, nicht im Druck)');
+  ok(vc.includes("undefined, { bg: true });\n    if (!S.casesQuiet || S.casesQuiet.fn !== quiet || !isCasesHash()) return;"), 'Hintergrund-Abfrage; überholte Liste/andere Seite: nichts überschreiben');
+  ok(vc.includes("cl.innerHTML = cPrint(l2, S.caseQ) + caseList(l2, null, cExtra) + trunc(r); bindMore();") && vc.includes('${vq()}${lq()}`, undefined, { bg: true })'), 'nur die Liste, gleiche Auswahl/Standort/Werkstatt/Anzahl/Sortierung');
+  ok(vc.includes("S.casesQuiet = S.me.role !== 'driver' ? { fn: quiet, at: Date.now() } : null;"), 'Fahrer: keine stille Aktualisierung');
+  const r = app.indexOf('async function casesAutoRefresh('); const fn = app.slice(r, app.indexOf('\n}\n', r));
+  ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart') && fn.includes('cq.busy'), 'nur sichtbar, online, nicht doppelt');
+  ok(fn.includes("ae.matches('input, select, textarea')") && fn.includes("inp.value.trim() !== (S.caseQ || '')") && fn.includes('dialog[open], .toast.err') && fn.includes('sel.isCollapsed'), 'nie bei Fokus/ungesuchter Eingabe/Dialog/Fehler/Textauswahl');
+  ok(fn.includes('try { await cq.fn(); } catch { cq.at = Date.now(); }'), 'Fehler: alte Liste bleibt');
+  ok(app.includes('setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); casesAutoRefresh(HOME_REFRESH_MS); }, 30000);') && app.includes("window.addEventListener('focus', () => { homeAutoRefresh(60000); casesAutoRefresh(60000); });"), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min.');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cases_asof_hint && STRINGS[l].cases_asof_hint !== STRINGS[l].home_asof_hint, 'Text ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-vorgangsliste-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

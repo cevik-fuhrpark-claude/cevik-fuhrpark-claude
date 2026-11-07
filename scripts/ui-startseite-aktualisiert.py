@@ -65,7 +65,8 @@ with sync_playwright() as p:
     y1 = w1.evaluate("() => window.scrollY")
     check(y0 > 100 and y1 >= y0 - 5, f'Scrollposition bleibt, kein Sprung nach oben ({y0} → {y1}; neue Karte oben darf verschieben)')
     check(w1.url.endswith('#/'), 'Fenster 1 bleibt auf der Startseite')
-    check(w2.inner_text('main') == n2, 'Fenster 2 (Vorgangsliste) wird nicht still umgebaut')
+    # seit Backlog 1113 aktualisiert sich auch die Vorgangsliste still (eigenes Skript ui-vorgangsliste-aktualisiert.py)
+    check('SA-W 905' not in n2 and 'SA-W 905' in w2.inner_text('#cl'), 'Fenster 2 (Vorgangsliste) zeigt die neue Meldung ebenfalls (Backlog 1113)')
     # Eingabe/Fokus im Formular: keine Aktualisierung
     api('POST', '/api/cases', {'vehicle_id': 'VIN:' + vins[4], 'description': 'Spiegel rechts abgebrochen, nicht fahrbereit (Test)', 'priority': 'kritisch', 'driveability': 'nicht_fahrbereit', 'request_key': str(uuid.uuid4())})
     w1.evaluate("() => { const i = document.createElement('input'); i.id = 'tmpin'; document.querySelector('main').appendChild(i); i.focus(); }")

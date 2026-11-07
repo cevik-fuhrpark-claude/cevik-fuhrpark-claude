@@ -1238,9 +1238,23 @@ async function homeAutoRefresh(minAge) {
   S.quietHome = true;
   try { await viewHome(); } catch { /* alte Ansicht bleibt; nächster Versuch beim nächsten Takt */ S.homeAt = Date.now(); } finally { S.quietHome = false; }
 }
-setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); }, 30000);
-window.addEventListener('focus', () => { homeAutoRefresh(60000); });
-document.addEventListener('visibilitychange', () => { homeAutoRefresh(60000); });
+setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); casesAutoRefresh(HOME_REFRESH_MS); }, 30000);
+window.addEventListener('focus', () => { homeAutoRefresh(60000); casesAutoRefresh(60000); });
+document.addEventListener('visibilitychange', () => { homeAutoRefresh(60000); casesAutoRefresh(60000); });
+// Backlog 1113 (Blickwinkel „Fuhrparkleitung hat Vorgangsliste und Vorgang in zwei Fenstern“): Vorgangsliste ebenso still aktualisieren –
+// nur die Liste (Reiter, Suchfeld, Auswahlfelder bleiben unberührt), nie während einer Eingabe ins Suchfeld (Fokus oder noch nicht gesucht),
+// bei Textauswahl, offenem Dialog oder Fehlermeldung. Fehler: alte Liste bleibt, nächster Versuch beim nächsten Takt.
+const isCasesHash = () => /^#\/cases(?:\?f=\w+)?$/.test(location.hash || '');
+async function casesAutoRefresh(minAge) {
+  const cq = S.casesQuiet;
+  if (!cq || !S.me || S.me.role === 'driver' || S.offlineStart || cq.busy || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isCasesHash() || !/^#\/cases(?:\?|$)/.test(S.lastHash || '') || Date.now() - cq.at < minAge) return;
+  const ae = document.activeElement; const inp = document.getElementById('cq');
+  if ((ae && ae.matches && ae.matches('input, select, textarea')) || (inp && inp.value.trim() !== (S.caseQ || '')) || document.querySelector('dialog[open], .toast.err')) return;
+  const sel = window.getSelection && window.getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  cq.busy = true;
+  try { await cq.fn(); } catch { cq.at = Date.now(); } finally { cq.busy = false; }
+}
 
 // ---------- Öffentliche Ansichten ----------
 // Anmeldeseite: unversendete Meldungen auf diesem Gerät (Anmeldung beendet, z. B. Leerlauf/Passwortwechsel) – nur Name und Anzahl,
@@ -2056,7 +2070,10 @@ async function viewCases() {
   const vsel = S.me.role !== 'driver' && ((res.site_options || []).length > 1 || res.site) ? `<div class="noprint" style="margin-bottom:12px">${siteSelect('cvsite', '', res.site_options, res.site, t('kpi_vsite'), t('filter_all'))}</div>` : '';
   // Werkstatt-Filter (Backlog 264): Leitung/Disposition/Lesezugriff, auch geschlossene Werkstätten wählbar
   const wsel = wsFilterOk() && wsAll().length > 1 ? `<div class="noprint" style="margin-bottom:12px"><label for="cws">${esc(t('workshop'))}</label><select id="cws"><option value="">${esc(t('filter_all'))}</option>${wsAll().map((w) => `<option value="${esc(w.code)}"${S.caseWs === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>` : '';
-  render(`<h1>${esc(t('nav_cases'))}</h1>
+  // Backlog 1113 (Blickwinkel „Fuhrparkleitung hat Vorgangsliste und Vorgang in zwei Fenstern“): Liste blieb nach Statuswechsel im anderen
+  // Fenster auf dem Stand des Öffnens. Jetzt „Stand HH:MM · Neu laden“ und stille Aktualisierung nur der Liste (casesAutoRefresh), nicht für Fahrer.
+  const asof = () => `${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/cases" id="casesreload" title="${esc(t('cases_asof_hint'))}">${esc(t('update_now'))}</a>`;
+  render(`<h1>${esc(t('nav_cases'))}</h1>${S.me.role !== 'driver' ? `<p class="small muted noprint" id="casesasof" style="margin:-6px 0 8px">${asof()}</p>` : ''}
     <input id="cq" class="noprint" type="search" value="${esc(q)}" placeholder="${esc(t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search'))}" aria-label="${esc(t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search'))}" style="margin-bottom:12px" autocomplete="off">${vsel}${wsel}
     <div class="seg-tabs noprint">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? ['mine'] : ['followup']), ...(['critical', 'locked', 'cost_approval', 'unreceived', 'received_open', 'limited', 'open_items', 'paused', 'ready_overdue'].includes(f) || (f === 'mine' && S.me.role !== 'workshop') ? [f] : [])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}"${k === f ? ' aria-current="true"' : ''}>${esc(t(k === 'unreceived' && !isMgr() ? 'dispo_unreceived' : CF_LABEL[k] || k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', nDays(res.stale_days)) : ownerT('filter_stale_off'))}</p>` : ''}
     ${f === 'cost_approval' ? `<p class="small muted noprint" id="casort">${esc(t('sort_by'))}: ${esc(t('ca_sort_wait'))}</p>` : ''}${f !== 'followup' && f !== 'cost_approval' ? `<select id="csort" class="noprint" aria-label="${esc(t('sort_by'))}" style="max-width:420px;margin-bottom:12px">${CASE_SORTS.map((k) => `<option value="${k}"${(S.caseSort || 'priority') === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('csort_' + k))}</option>`).join('')}</select>` : ''}
@@ -2071,6 +2088,19 @@ async function viewCases() {
   const cws = $('#cws'); if (cws) cws.onchange = () => { S.caseWs = cws.value || null; S.caseLimit = null; viewCases(); };
   const cso = $('#csort'); if (cso) cso.onchange = () => { S.caseSort = sortPref('cases', CASE_SORTS, 'priority', CASE_SORTS.includes(cso.value) ? cso.value : 'priority'); viewCases(); };
   bindMore();
+  // stille Aktualisierung (Backlog 1113): gleiche Auswahl/Suche/Sortierung/Anzahl, nur #cl und Standzeile; Abfrage als Hintergrund (x-cfp-bg)
+  const quiet = async () => {
+    const r = await api('GET', `/api/cases?${caseFilterQ(f)}${(S.caseQ || '').length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}${vq()}${lq()}`, undefined, { bg: true });
+    if (!S.casesQuiet || S.casesQuiet.fn !== quiet || !isCasesHash()) return;
+    const l2 = f === 'followup' ? r.cases.slice().sort((x, y) => (x.followup_on < y.followup_on ? -1 : x.followup_on > y.followup_on ? 1 : 0)) : r.cases;
+    const cl = $('#cl'); if (!cl) return;
+    cl.innerHTML = cPrint(l2, S.caseQ) + caseList(l2, null, cExtra) + trunc(r); bindMore();
+    const ao = $('#casesasof'); if (ao) ao.innerHTML = asof(); bindCasesReload();
+    S.casesQuiet.at = Date.now();
+  };
+  const bindCasesReload = () => { const a = $('#casesreload'); if (a) a.onclick = (e) => { e.preventDefault(); viewCases(); }; };
+  bindCasesReload();
+  S.casesQuiet = S.me.role !== 'driver' ? { fn: quiet, at: Date.now() } : null;
   let timer = null;
   const cq = $('#cq');
   cq.oninput = () => { clearTimeout(timer); timer = setTimeout(async () => {

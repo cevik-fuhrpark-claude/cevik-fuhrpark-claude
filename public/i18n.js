@@ -3914,3 +3914,6 @@ Object.assign(STRINGS.en, { fine_home_title: 'Authority letters: please read', f
 Object.assign(STRINGS.de, { home_asof: 'Stand {t}', home_asof_hint: 'Die Übersicht aktualisiert sich alle 5 Minuten und beim Zurückkehren ins Fenster selbst – nicht, solange du hier etwas eingibst.' });
 Object.assign(STRINGS.uk, { home_asof: 'Станом на {t}', home_asof_hint: 'Огляд оновлюється сам кожні 5 хвилин і коли ви повертаєтеся до вікна – але не тоді, коли ви тут щось вводите.' });
 Object.assign(STRINGS.en, { home_asof: 'As of {t}', home_asof_hint: 'The overview refreshes itself every 5 minutes and when you return to the window – not while you are typing here.' });
+Object.assign(STRINGS.de, { cases_asof_hint: 'Die Liste aktualisiert sich alle 5 Minuten und beim Zurückkehren ins Fenster selbst – nicht, solange du im Suchfeld tippst.' });
+Object.assign(STRINGS.uk, { cases_asof_hint: 'Список оновлюється сам кожні 5 хвилин і коли ви повертаєтеся до вікна – але не тоді, коли ви вводите текст у поле пошуку.' });
+Object.assign(STRINGS.en, { cases_asof_hint: 'The list refreshes itself every 5 minutes and when you return to the window – not while you are typing in the search field.' });
