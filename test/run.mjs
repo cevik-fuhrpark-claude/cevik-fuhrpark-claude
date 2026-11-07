@@ -35877,7 +35877,7 @@ await test('Backlog 1108 (Blickwinkel „Inhaber druckt Mängelstatistik, Kennza
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("printHead([`${tn('weeks_n', weeks)}`, `${t('period')}: ${fmtD(r.from)} – ${fmtD(bDate())}`])"), 'Werkstattauslastung: Druckkopf mit Datum von–bis');
   ok(app.includes("const wlYears = new Set(r.weeks.map((w) => w.slice(0, 4))).size > 1;") && app.includes('data-wlweek>${esc(wlWeek(w.week))}'), 'Werkstattauslastung: KW mit Jahr bei Jahreswechsel');
-  ok(app.includes('(<span data-dper>${esc(fmtD(r.since))} – ${esc(fmtD(bDate()))}</span>)'), 'Mängelstatistik: Druckkopf mit Datum von–bis');
+  ok(app.includes('(<span data-dper>${esc(fmtD(r.since))} – ${esc(fmtD(r.until_date && r.until_date < bDate() ? r.until_date : bDate()))}</span>)'), 'Mängelstatistik: Druckkopf mit Datum von–bis (Kalendermonat: bis Monatsende, Backlog 1128)');
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-berichte-druck-tablet.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
@@ -36173,6 +36173,40 @@ await test('Backlog 1127 (Blickwinkel „Werkstatt-Tablet bzw. Fuhrparkleitung h
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].tires_asof_hint && STRINGS[l].tires_asof_hint !== STRINGS[l].fines_asof_hint, 'Text ' + l);
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-reifen-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
+await test('Backlog 1128 (Blickwinkel „Fuhrparkleitung bespricht in der Monatsrunde die Mängel des Vormonats“): Mängelstatistik nach Kalendermonat mit Berliner Monatsgrenzen', async () => {
+  const { berlinDate, berlinDayStartIso, addMonths } = await import('../src/util.js');
+  const { e, U } = await freshWorld(); const db = e.DB.db; const F = U.fleet;
+  const vid = db.prepare(`SELECT id FROM vehicles WHERE vin='WMA15SZZ2HM722774'`).get().id;
+  const cur = berlinDate().slice(0, 7); const prev = addMonths(`${cur}-01`, -1).slice(0, 7);
+  const start = Date.parse(berlinDayStartIso(`${cur}-01`)); // Berliner Mitternacht am Monatsersten
+  const key = (await U.driver.get('/api/meta')).data.checklist[0].key;
+  const ins = (id, ms, res) => db.prepare(`INSERT INTO inspections(id,environment,vehicle_id,kind,template_version,performed_by,items,result,created_at) VALUES(?,'test',?,'abfahrt','x',?,?,?,?)`)
+    .run(id, vid, U.driver.id, JSON.stringify([{ key, result: res === 'maengel' ? 'mangel' : 'ok' }]), res, new Date(ms).toISOString());
+  ins('m1128a', start - 30 * 60000, 'maengel'); // Vormonat 23:30 Berliner Zeit
+  ins('m1128b', start + 30 * 60000, 'ok'); // laufender Monat 00:30 Berliner Zeit
+  ins('m1128c', Date.parse(berlinDayStartIso(`${prev}-01`)) - 60000, 'maengel'); // Monat davor 23:59 – gehört in keinen der beiden
+  const p = await F.get('/api/reports/defects?month=' + prev); eq(p.status, 200);
+  eq(p.data.month, prev); eq(p.data.days, null, 'Monat statt Tage');
+  eq(p.data.since, berlinDayStartIso(`${prev}-01`)); eq(p.data.until_date, berlinDate(new Date(start - 1).toISOString()), 'letzter Tag des Vormonats');
+  const pv = p.data.vehicles.find((v) => v.vehicle_id === vid);
+  ok(pv && pv.checks === 1 && pv.defect_items === 1 && pv.last_check_at === new Date(start - 30 * 60000).toISOString(), 'Vormonat: nur die Kontrolle 23:30 am Monatsletzten ' + JSON.stringify(pv));
+  const c = (await F.get('/api/reports/defects?month=' + cur)).data;
+  const cv = c.vehicles.find((v) => v.vehicle_id === vid);
+  ok(cv && cv.checks === 1 && cv.checks_with_defects === 0, 'laufender Monat: nur die Kontrolle 00:30 am Monatsersten ' + JSON.stringify(cv));
+  eq(c.until_date >= berlinDate(), true, 'laufender Monat endet am Monatsende');
+  ok(c.items.every((i) => i.defects >= 0) && !c.items.some((i) => i.item === key && i.vehicles.some((v) => v.vehicle_id === vid)), 'Mangel des Vormonats zählt nicht im laufenden Monat');
+  const g = (await F.get('/api/reports/defects?days=365')).data; ok(g.days === 365 && g.month === null && g.until_date === null, 'gleitend unverändert');
+  for (const q of ['month=2026-13', 'month=26-01', 'month=abc', 'month=' + addMonths(`${cur}-01`, 1).slice(0, 7), 'month=' + addMonths(`${cur}-01`, -25).slice(0, 7)]) { const x = await F.get('/api/reports/defects?' + q); eq(x.status, 400, q); eq(x.data.error, 'invalid_month', q); }
+  eq((await F.get('/api/reports/defects?month=' + addMonths(`${cur}-01`, -24).slice(0, 7))).status, 200, '24 Monate zurück erlaubt');
+  eq((await U.ws.get('/api/reports/defects?month=' + cur)).status, 403, 'Werkstatt weiterhin ohne Zugriff');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('async function viewDefects('); const vd = app.slice(a, app.indexOf('\n}\n', a));
+  ok(vd.includes("month ? 'month=' + month : 'days=' + days") && vd.includes("t('def_calmonth')") && vd.includes("v.startsWith('m:')") && vd.includes("${month || days + 't'}"), 'Oberfläche: Auswahl Kalendermonat, Abfrage, Dateiname');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['def_rolling', 'def_calmonth', 'def_month_running']) ok(STRINGS[l][k], k + ' ' + l); ok(/12/.test(STRINGS[l].help_defects_s.split('|')[0]), 'Hilfe ' + l); }
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-maengel-monat.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {

@@ -8645,14 +8645,17 @@ function helpWire(parts, want) {
 
 // ---------- Mängelstatistik der Kontrollen ----------
 async function viewDefects() {
-  const days = S.defDays || 90; const kind = S.defKind || '';
-  const r = await api('GET', `/api/reports/defects?days=${days}${kind ? '&kind=' + kind : ''}${vsDef('defSite') ? '&site=' + encodeURIComponent(vsDef('defSite')) : ''}`);
+  // Backlog 1128: Zeitraum wahlweise gleitend (N Tage) oder Kalendermonat (laufender und die 12 vorherigen) – für die Monatsrunde
+  const months = Array.from({ length: 13 }, (_, i) => bYm(i));
+  if (S.defMonth && !months.includes(S.defMonth)) S.defMonth = ''; // gemerkter Monat ist inzwischen zu alt
+  const month = S.defMonth || ''; const days = S.defDays || 90; const kind = S.defKind || '';
+  const r = await api('GET', `/api/reports/defects?${month ? 'month=' + month : 'days=' + days}${kind ? '&kind=' + kind : ''}${vsDef('defSite') ? '&site=' + encodeURIComponent(vsDef('defSite')) : ''}`);
   const veh = (id, p) => `<a href="#/vehicles/${encodeURIComponent(id)}">${esc(p)}</a>`;
   const vlist = r.vehicles.filter((v) => v.defect_items > 0);
   render(`<h1>${esc(t('defect_stats'))}</h1>${helpLink('defects')}<p class="small muted">${esc(t('defect_stats_hint'))}</p>
-    <p class="print-only small">${printStamp()} · ${esc(nDays(days))} (<span data-dper>${esc(fmtD(r.since))} – ${esc(fmtD(bDate()))}</span>)${kind ? ' · ' + esc(kind === 'abfahrt' ? t('nav_check') : t('inspection')) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    <p class="print-only small">${printStamp()} · ${esc(month ? fmtMonth(month) : nDays(days))} (<span data-dper>${esc(fmtD(r.since))} – ${esc(fmtD(r.until_date && r.until_date < bDate() ? r.until_date : bDate()))}</span>)${kind ? ' · ' + esc(kind === 'abfahrt' ? t('nav_check') : t('inspection')) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
-      <div><label for="dd">${esc(t('period'))}</label><select id="dd">${[30, 90, 180, 365].map((d) => `<option value="${d}"${d === days ? ' selected' : ''}>${esc(nDays(d))}</option>`).join('')}</select></div>
+      <div><label for="dd">${esc(t('period'))}</label><select id="dd"><optgroup label="${esc(t('def_rolling'))}">${[30, 90, 180, 365].map((d) => `<option value="${d}"${!month && d === days ? ' selected' : ''}>${esc(nDays(d))}</option>`).join('')}</optgroup><optgroup label="${esc(t('def_calmonth'))}">${months.map((m, i) => `<option value="m:${m}"${m === month ? ' selected' : ''}>${esc(fmtMonth(m))}${i === 0 ? ' ' + esc(t('def_month_running')) : ''}</option>`).join('')}</optgroup></select></div>
       <div><label for="dk">${esc(t('check_kind'))}</label><select id="dk">${[['', t('all')], ['abfahrt', t('nav_check')], ['nach_reparatur', t('inspection')]].map(([k, l]) => `<option value="${k}"${k === kind ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
       ${(r.site_options || []).length > 1 || r.site ? `<div>${siteSelect('dsite', '', r.site_options, r.site)}</div>` : ''}
       <button type="button" class="btn secondary" id="dprt">${esc(t('print'))}</button>
@@ -8666,12 +8669,12 @@ async function viewDefects() {
     ${vlist.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('vehicle'))}</th><th>${esc(t('checks_done'))}</th><th>${esc(t('checks_with_defects'))}</th><th>${esc(t('defect_items'))}</th><th>${esc(t('last_check_any'))}</th></tr></thead><tbody>
       ${vlist.map((v) => `<tr><td>${veh(v.vehicle_id, v.plate)}</td><td>${v.checks}</td><td>${v.checks_with_defects}</td><td><b>${v.defect_items}</b></td><td>${fmtD(v.last_check_at)}</td></tr>`).join('')}</tbody></table></div>` : `<p class="muted">${esc(t('no_defects_period'))}</p>`}
     <p class="small muted">${esc(t('defect_stats_rule'))}</p>`, 'more');
-  $('#dd').onchange = () => { S.defDays = Number($('#dd').value); viewDefects(); };
+  $('#dd').onchange = () => { const v = $('#dd').value; if (v.startsWith('m:')) S.defMonth = v.slice(2); else { S.defMonth = ''; S.defDays = Number(v); } viewDefects(); };
   $('#dk').onchange = () => { S.defKind = $('#dk').value; viewDefects(); };
   const dsel = $('#dsite'); if (dsel) dsel.onchange = () => { S.defSite = dsel.value; viewDefects(); };
   $('#dprt').onclick = () => window.print();
   // CSV im Browser (Beschriftungen in der App-Sprache), Dateiname mit Zeitraum, Kontrollart und Standort
-  const dn = (part) => `fuhrpark-maengel-${part}_${r.environment}_${days}t${kind ? '_' + kind : ''}${r.site ? '_' + fnPart(r.site) : ''}_${bDate()}.csv`;
+  const dn = (part) => `fuhrpark-maengel-${part}_${r.environment}_${month || days + 't'}${kind ? '_' + kind : ''}${r.site ? '_' + fnPart(r.site) : ''}_${bDate()}.csv`;
   const dd = (iso) => fmtD(iso);
   const ci = $('#dcsvi'); if (ci) ci.onclick = () => download(new Blob([defectItemsCsv(r, t, checkLabel, dd)], { type: 'text/csv;charset=utf-8' }), dn('pruefpunkte'));
   const cv = $('#dcsvv'); if (cv) cv.onclick = () => download(new Blob([defectVehiclesCsv(r, t, dd)], { type: 'text/csv;charset=utf-8' }), dn('fahrzeuge'));

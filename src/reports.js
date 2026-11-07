@@ -888,9 +888,18 @@ export async function defectReport(env, user, envName, query = {}) {
   if (kind && !['abfahrt', 'nach_reparatur'].includes(kind)) throw bad('invalid_kind', 'kind: abfahrt oder nach_reparatur');
   // letzte N Berliner Kalendertage einschließlich heute (wie `staleBefore`) – vorher 24-h-Schritte ab jetzt: Zahlen hingen von der Uhrzeit ab,
   // am Tag der Zeitumstellung fiel ein Kalendertag halb heraus (18.10.2026)
-  const since = berlinWindowStartIso(days);
-  const kf = kind ? ' AND i.kind=?' : '';
-  const args = kind ? [envName, since, kind] : [envName, since];
+  // Backlog 1128 (Blickwinkel „Fuhrparkleitung bespricht in der Monatsrunde die Mängel des Vormonats“): statt der gleitenden N Tage optional ein
+  // Kalendermonat (Berliner Monatsgrenzen, `month=YYYY-MM`, frühestens 24 Monate zurück, nicht in der Zukunft) – Zahlen bleiben gleich, egal an
+  // welchem Tag der Monatsrunde die Liste geöffnet wird. Der laufende Monat zählt bis heute.
+  let month = null; let since; let until = null;
+  if (query.month !== undefined && query.month !== '') {
+    month = String(query.month);
+    const cur = berlinDate().slice(0, 7);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || month > cur || month < addMonths(`${cur}-01`, -24).slice(0, 7)) throw bad('invalid_month', 'month: JJJJ-MM, höchstens 24 Monate zurück, nicht in der Zukunft');
+    since = berlinDayStartIso(`${month}-01`); until = berlinDayStartIso(addMonths(`${month}-01`, 1));
+  } else since = berlinWindowStartIso(days);
+  const kf = (until ? ' AND i.created_at < ?' : '') + (kind ? ' AND i.kind=?' : '');
+  const args = [envName, since, ...(until ? [until] : []), ...(kind ? [kind] : [])];
   const [checks, items, again] = await Promise.all([
     env.DB.prepare(`SELECT i.vehicle_id, v.plate, v.kind AS vehicle_kind, v.site, COUNT(*) AS checks, SUM(i.result='maengel') AS with_defects, MAX(i.created_at) AS last_at
       FROM inspections i JOIN vehicles v ON v.id=i.vehicle_id AND v.eval_excluded=0
@@ -901,9 +910,9 @@ export async function defectReport(env, user, envName, query = {}) {
     // Vorgänge aus Kontrollen (alle Kontrollarten) im Zeitraum, deren Prüfpunkt am selben Fahrzeug in den 90 Tagen davor repariert und freigegeben wurde
     // Backlog 858 (Blickwinkel „Werkstatt-Nacharbeit“): dieselbe Abfrage liefert auch die Vorgänge (Link statt nur Zahl; Gewährleistung prüfbar)
     env.DB.prepare(`SELECT c.check_item AS item, v.site, COUNT(*) AS n, json_group_array(json_object('id', c.id, 'case_no', c.case_no, 'vehicle_id', c.vehicle_id, 'plate', v.plate, 'created_at', c.created_at)) AS cases FROM cases c JOIN vehicles v ON v.id=c.vehicle_id AND v.eval_excluded=0
-      WHERE c.environment=? AND c.created_at >= ? AND c.origin='kontrolle' AND c.check_item IS NOT NULL AND c.status<>'abgelehnt' AND c.duplicate_of IS NULL AND EXISTS (SELECT 1 FROM cases p
+      WHERE c.environment=? AND c.created_at >= ?${until ? ' AND c.created_at < ?' : ''} AND c.origin='kontrolle' AND c.check_item IS NOT NULL AND c.status<>'abgelehnt' AND c.duplicate_of IS NULL AND EXISTS (SELECT 1 FROM cases p
         WHERE p.vehicle_id=c.vehicle_id AND p.environment=c.environment AND p.check_item=c.check_item AND p.id<>c.id AND p.status='fahrzeug_freigegeben'
-        AND p.closed_at <= c.created_at AND p.closed_at >= strftime('%Y-%m-%dT%H:%M:%fZ', c.created_at, '-90 days')) GROUP BY c.check_item, v.site`).bind(envName, since).all(),
+        AND p.closed_at <= c.created_at AND p.closed_at >= strftime('%Y-%m-%dT%H:%M:%fZ', c.created_at, '-90 days')) GROUP BY c.check_item, v.site`).bind(envName, since, ...(until ? [until] : [])).all(),
   ]);
   // optional nur ein Standort laut Fahrzeugstamm (Auswahl aus Fahrzeugen mit Kontrollen bzw. Wiederholungsmängeln im Zeitraum)
   const sel = siteSelection([...checks.results, ...again.results], query.site);
@@ -925,7 +934,7 @@ export async function defectReport(env, user, envName, query = {}) {
   const vehicles = checks.results.map((c) => ({ vehicle_id: c.vehicle_id, plate: c.plate, vehicle_kind: c.vehicle_kind, checks: c.checks, checks_with_defects: c.with_defects || 0, defect_items: byVeh.get(c.vehicle_id) || 0, last_check_at: c.last_at }))
     .sort((a, b) => b.defect_items - a.defect_items || b.checks_with_defects - a.checks_with_defects || a.plate.localeCompare(b.plate));
   const total = vehicles.reduce((s, v) => s + v.checks, 0);
-  return { environment: envName, days, kind: kind || null, since, site: sel.site, site_options: sel.options,
+  return { environment: envName, days: month ? null : days, month, kind: kind || null, since, until_date: until ? berlinDate(new Date(Date.parse(until) - 1).toISOString()) : null, site: sel.site, site_options: sel.options,
     totals: { checks: total, checks_with_defects: vehicles.reduce((s, v) => s + v.checks_with_defects, 0), defect_items: itemsOut.reduce((s, i) => s + i.defects, 0), again_after_repair: itemsOut.reduce((s, i) => s + i.again_after_repair, 0), vehicles_checked: vehicles.length },
     items: itemsOut, vehicles };
 }

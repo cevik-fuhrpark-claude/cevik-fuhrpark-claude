@@ -114,6 +114,7 @@ const V_MORE = [
   ['Beide Vorgänge haben einen Versicherungsfall – bitte zuerst klären, welcher gilt.', 'Обидва випадки мають страховий випадок – спершу з’ясуйте, який із них чинний.', 'Both cases have an insurance claim – please clarify first which one applies.'],
   ['Kündigungsfrist in Tagen oder Wochen erkannt – bitte in Monaten angeben (Spalte „Kündigungsfrist (Monate)“; Tage/Wochen werden nicht umgerechnet).', 'Розпізнано строк розірвання в днях або тижнях – вкажіть у місяцях (стовпець «Kündigungsfrist (Monate)»; дні/тижні не перераховуються).', 'Notice period in days or weeks detected – please give it in months (column “Kündigungsfrist (Monate)”; days/weeks are not converted).'],
   ['days: 7–730 Tage', 'days: 7–730 днів', 'days: 7–730 days'],
+  ['month: JJJJ-MM, höchstens 24 Monate zurück, nicht in der Zukunft', 'month: РРРР-ММ, щонайбільше 24 місяці тому, не в майбутньому', 'month: YYYY-MM, at most 24 months back, not in the future'],
   ['kind: abfahrt oder nach_reparatur', 'kind: abfahrt або nach_reparatur', 'kind: abfahrt or nach_reparatur'],
   ['Diese Personalnummer ist bereits einem aktiven Fahrer zugeordnet.', 'Цей табельний номер уже призначено активному водієві.', 'This personnel number is already assigned to an active driver.'],
   ['Diese Kontrolle ist bereits erfasst.', 'Цю перевірку вже внесено.', 'This check has already been recorded.'],
@@ -1332,6 +1333,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1117: geöffneter Vorgang wurde inzwischen von anderen geändert
 // Backlog 1118: geöffnete Fahrzeugakte wurde inzwischen geändert
 // Backlog 1127: Reifenübersicht aktualisiert sich still
+// Backlog 1128: Mängelstatistik nach Kalendermonat
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
