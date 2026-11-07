@@ -240,7 +240,7 @@ function lazyModule(g, quiet) {
 // Safari/iOS < 16.4 ein Syntaxfehler beim Laden – das ganze Modul (app-main.js) startete dort nicht (nur „Die App konnte nicht vollständig
 // geladen werden“). Die erzeugten Module enthalten solche Literale daher als `lbRx(String.raw`…`, 'flags'[, 1])`: neue Browser bauen
 // denselben Ausdruck, alte eine Fassung ohne Lookbehind (`lbFallback`). Die Quelle app.js bleibt unverändert (Tests lesen die Literale dort).
-// Drittes Argument 1 = Ausdruck wird nur mit `.test()` benutzt (ohne g/y): dann wird ein Lookbehind am Anfang einer Alternative exakt
+// Drittes Argument 1 = Ausdruck wird nur mit `.test()` (bzw. `fastHint(NAME);`, Backlog 1103 – ersetzt nur `.test`) benutzt (ohne g/y): dann wird ein Lookbehind am Anfang einer Alternative exakt
 // nachgebildet; sonst (replace, .source, g) entfällt er – der Ausdruck trifft dann eher mehr (Hinweis öfter), nie weniger.
 // lbFallback: `at` = Position am Anfang einer obersten Alternative (Startpunkt der Suche frei wählbar). Nur dort ist ein Lookbehind exakt
 // nachbildbar (ein Zeichen davor bzw. Textanfang wird mitgelesen – für .test() gleichwertig); sonst entfällt die Bedingung (trifft eher mehr,
@@ -299,7 +299,7 @@ export function lookbehindSafe(code, full = code) {
     const p1 = toks[k - 1], p2 = toks[k - 2], p3 = toks[k - 3];
     if (!/[gy]/.test(flags) && p1 && p1.v === '=' && p2 && p2.t === 'w' && p3 && p3.v === 'const') {
       const name = p2.v; const uses = [...full.matchAll(new RegExp(`(?<![\\w$.])${name}(?![\\w$])`, 'g'))];
-      only = uses.length > 1 && uses.every((m) => full.startsWith('.test(', m.index + name.length) || full.startsWith(' = /', m.index + name.length));
+      only = uses.length > 1 && uses.every((m) => full.startsWith('.test(', m.index + name.length) || full.startsWith(' = /', m.index + name.length) || (full.startsWith('fastHint(', m.index - 9) && full.startsWith(');', m.index + name.length)));
     }
     out += code.slice(last, t.s) + `lbRx(String.raw\`${body}\`, '${flags}'${only ? ', 1' : ''})`; last = t.e; n++; if (only) testOnly++;
   }

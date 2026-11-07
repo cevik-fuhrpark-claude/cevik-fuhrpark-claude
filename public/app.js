@@ -2591,7 +2591,7 @@ const LASHGEAR_HINT = /(?<![а-яіїєґё])(?:стяжн\S*|такелажн\S
 // [CLAUDE] Backlog 694 (30.10.2026, Blickwinkel „Konturmarkierung, Rückstrahler oder Warntafel abgerissen/fehlt“): Reflexstreifen (Konturmarkierung), Rückstrahler,
 // rot-weiße Warntafeln/Heckmarkierung fehlen, abgerissen, lose, beschädigt oder verschmutzt → Schritte (Mangel, Leitung entscheidet; reinigen, lose Teile nur gefahrlos
 // abnehmen; was/wo, Fotos; Auswahl „Kann das Fahrzeug fahren?“) – reine Information, keine Frist. Scheinwerfer-Reflektor, Warnweste/„світловідбивний жилет“,
-// „Konturmarkierung erneuert“, „Warntafel nötig“ nicht. Leuchten bleiben bei LIGHTS_HINT.
+// „Konturmarkierung erneuert“, „Warntafel nötig“ nicht. Leuchten bleiben beim Licht-Hinweis (Name hier bewusst nicht genannt: Kommentar-Erwähnung verhindert sonst die genaue Lookbehind-Nachbildung, Backlog 1103).
 // Backlog 696: Umwelt-/HU-Plakette fehlt, abgefallen oder unleserlich – eigene Schritte; die Fundstelle zählt nicht zusätzlich als Kennzeichen-, Scheiben- oder loses Teil
 const STICKER_HINT = /(?<![a-zäöüß])(?:(?:umwelt|feinstaub|hu|t(?:ü|ue|u)v|pr(?:ü|ue)f)-?\s?)?plakette(?:n)?(?![a-zäöüß])\s+(?:(?:ist|sind|wurde|wurden|am|an|auf|in|der|die|das|dem|den|hinten|vorne|kennzeichen|nummernschild|scheibe|windschutzscheibe|frontscheibe|lkw|zugmaschine|anh(?:ä|ae)nger|auflieger|komplett|ganz|teilweise|halb|fast|stark|schon|seit|heute|gestern|nach|waschanlage|scheibentausch|einfach|leider|nicht|mehr|wieder)[,;]?\s+){0,4}(?:fehl(?:t|en)|weg(?![a-zäöüß])|abgefallen|abgel(?:ö|oe)st|l(?:ö|oe)s(?:t|en)\s+sich|lose(?![a-zäöüß])|abgerissen|abgekratzt|abgerubbelt|unleserlich|(?:nicht|kaum)\s+(?:mehr\s+)?(?:lesbar|leserlich|erkennbar|zu\s+lesen|zu\s+erkennen|vorhanden|da(?![a-zäöüß]))|verblasst|ausgeblichen|besch(?:ä|ae|a)digt|kaputt|zerkratzt|zerrissen|eingerissen|gestohlen|geklaut|entwendet)(?![a-zäöüß])(?![,;.]?\s+(?:\S+\s+)?(?:wieder\s+(?:da|dran|drauf|angebracht)|ersetzt|erneuert|neu(?![a-zäöüß])|geklebt|angebracht|erledigt|ok(?![a-zäöüß])|in\s+ordnung|bestellt|beantragt))|(?<![a-zäöüß])(?:fehlende[nmrs]?|abgefallene[nmrs]?|unleserliche[nmrs]?|besch(?:ä|ae|a)digte[nmrs]?|kaputte[nmrs]?|verblasste[nmrs]?|keine|kein|ohne)\s+(?:\S+\s+)?(?:(?:umwelt|feinstaub|hu|t(?:ü|ue|u)v|pr(?:ü|ue)f)-?\s?)?plakette(?:n)?(?![a-zäöüß])(?!\s+(?:\S+\s+)?(?:n(?:ö|oe)tig|erforderlich|vorgeschrieben|bestellt|beantragt|ersetzt|erneuert|angebracht|geklebt))|(?<![a-z])(?:(?:emissions?|environmental|low[- ]emission(?:\s+zone)?|clean[- ]air(?:\s+zone)?|green|inspection|mot|roadworthiness|t(?:ü|u)v|hu)\s+(?:stickers?|badges?|vignettes?|discs?))\s+(?:(?:is|are|on|the|windscreen|windshield|plate|number|rear|front|has|have|completely|partly|now|already|just)\s+){0,3}(?:missing|gone|fell\s+off|fallen\s+off|came\s+off|come\s+off|peeling(?:\s+off)?|torn(?:\s+off)?|scratched\s+off|damaged|unreadable|illegible|faded|stolen|not\s+(?:readable|legible|visible|there))(?![a-z])(?!\s+(?:\S+\s+)?(?:replaced|renewed|ordered|fixed|ok(?![a-z])))|(?<![a-z])(?:missing|no|damaged|illegible|unreadable|faded|torn|stolen)\s+(?:(?:emissions?|environmental|low[- ]emission(?:\s+zone)?|clean[- ]air(?:\s+zone)?|green|inspection|mot|roadworthiness|t(?:ü|u)v|hu)\s+(?:stickers?|badges?|vignettes?|discs?))(?![a-z])(?!\s+(?:\S+\s+)?(?:needed|required|ordered))|(?<![а-яіїєґё])(?:плакетк\S*|(?:екологічн|экологическ|зелен)\S*\s+(?:наклейк|стикер|значок|плакетк)\S*|наклейк\S*\s+(?:про\s+|о\s+)?(?:техогляд|техосмотр|то(?![а-яіїєґё])|hu|t(?:ü|u)v)\S*)\s+(?:\S+\s+){0,3}?(?:немає|нема(?![а-яіїєґё])|нет(?![а-яіїєґё])|відсутн|отсутств|відклеї|відклеє|отклеи|отклее|відпа|отпа|відірва|оторва|пошкоджен|поврежден|не\s+читає|не\s+читае|нечитаб|нечитаем|не\s+видно|вицві|выцве|вкра|укра)|(?<![а-яіїєґё])(?:немає|нема|нет|без|бракує|відсутн\S*|отсутств\S*|пошкоджен\S*|поврежден\S*)\s+(?:\S+\s+)?(?:плакетк|(?:екологічн|экологическ|зелен)\S*\s+(?:наклейк|стикер|значок|плакетк)|наклейк\S*\s+(?:про\s+|о\s+)?(?:техогляд|техосмотр|то(?![а-яіїєґё])))\S*/i;
 const STICKER_SPANS = new RegExp(STICKER_HINT.source, 'gi');
@@ -3012,6 +3012,30 @@ function occDrivers(o) {
 const BATCH_MAX = 40; const BATCH_CHUNK = 12;
 // Backlog 1102: ab so vielen Zeichen prüft das Meldeformular die Hinweismuster erst nach einer Tipp-Pause (ms)
 const HINT_LONG = 1000; const HINT_PAUSE = 300;
+// [CLAUDE] Backlog 1103: sehr große Hinweismuster (über HINT_RX_PART Zeichen Quelltext) übersetzt V8 (Chrome/Android) nicht mehr in
+// Maschinencode, sondern prüft sie im langsamen Interpreter – gemessen (Node 22, 4000 Zeichen ohne Satzzeichen) Bremsen-Muster ≈ 3,3 s und
+// Motor-Muster ≈ 2,6 s je Prüfung, alle Hinweismuster zusammen ≈ 6,2 s; in Teile zerlegt ≈ 0,26 s. Deshalb prüft `.test` dieser Muster die
+// obersten Alternativen in Teilen (gleiches Ergebnis: ein Text passt genau dann, wenn eine Alternative passt; keine Rückverweise/Gruppen-
+// namen in den Mustern – Test prüft das). Quelltext (`.source`) bleibt unverändert, Tests lesen weiter die Literal-Zeile.
+const HINT_RX_PART = 8000;
+function rxAlts(s) {
+  const top = []; let d = 0, cls = false, st = 0;
+  for (let i = 0; i < s.length; i++) { const c = s[i]; if (c === '\\') { i++; continue; } if (cls) { if (c === ']') cls = false; continue; } if (c === '[') cls = true; else if (c === '(') d++; else if (c === ')') d--; else if (c === '|' && !d) { top.push(s.slice(st, i)); st = i + 1; } }
+  top.push(s.slice(st));
+  // eine einzelne Hülle „(?:A|B|…)“ ohne weiteren Inhalt wird aufgelöst, damit auch sie geteilt werden kann
+  const wrapped = (a) => { if (!a.startsWith('(?:') || !a.endsWith(')')) return false; let k = 0, c2 = false; for (let i = 0; i < a.length - 1; i++) { const c = a[i]; if (c === '\\') { i++; continue; } if (c2) { if (c === ']') c2 = false; continue; } if (c === '[') c2 = true; else if (c === '(') k++; else if (c === ')' && --k === 0) return false; } return true; };
+  return top.flatMap((a) => (a.length > HINT_RX_PART && wrapped(a) ? rxAlts(a.slice(3, -1)) : [a]));
+}
+function fastHint(rx) {
+  if (rx.source.length <= HINT_RX_PART || rx.global || rx.sticky) return;
+  const parts = []; let cur = '';
+  for (const a of rxAlts(rx.source)) { if (cur && cur.length + a.length + 1 > HINT_RX_PART) { parts.push(cur); cur = a; } else cur = cur ? `${cur}|${a}` : a; }
+  if (cur) parts.push(cur);
+  const rs = parts.map((p) => new RegExp(p, rx.flags));
+  rx.test = (s) => rs.some((r) => r.test(s));
+}
+// einzeln aufgerufen: scripts/build-app.mjs erkennt `fastHint(NAME)` als reine `.test()`-Nutzung (genaue Lookbehind-Nachbildung für iOS < 16.4)
+fastHint(ENGINE_HINT); fastHint(BRAKE_HINT); fastHint(TYRE_HINT); fastHint(GEAR_HINT); fastHint(SUSP_HINT); fastHint(CABLEAK_HINT); fastHint(STEER_HINT); fastHint(LIGHTS_HINT); fastHint(TARP_HINT); fastHint(LEAK_HINT);
 const tfill = (k, o) => Object.entries(o).reduce((a, [x, y]) => a.split(`{${x}}`).join(String(y)), t(k));
 async function viewNewMulti() {
   if (!S.me || !['owner', 'fleet'].includes(S.me.role)) { render(`<h1>${esc(t('multi_title'))}</h1><p class="muted">${esc(t('no_permission_view'))}</p>`, 'new'); return; }

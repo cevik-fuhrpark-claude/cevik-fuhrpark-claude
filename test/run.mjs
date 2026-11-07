@@ -35755,6 +35755,56 @@ await test('Backlog 1102 (Blickwinkel „Fahrer mit älterem Handy fügt eine la
   ok(sh.includes('|ui-lange-beschreibung.py|'), 'UI-Skript steht in pruefen.sh');
 });
 
+await test('Backlog 1103 (Folge aus 1102): sehr große Hinweismuster in Teilen geprüft – gleiches Ergebnis, Interpreter-Rückfall von V8 vermieden', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('const HINT_RX_PART = '), b = app.indexOf('\nfastHint(ENGINE_HINT);');
+  ok(a > 0 && b > a, 'Helfer HINT_RX_PART/rxAlts/fastHint vor den fastHint-Aufrufen');
+  const { fastHint, PART } = new Function(app.slice(a, b) + '\nreturn { fastHint, PART: HINT_RX_PART };')();
+  const calls = new Set([...app.slice(b, app.indexOf('\n', b + 1)).matchAll(/fastHint\(([A-Z_]+)\);/g)].map((m) => m[1]));
+  const lit = {}; for (const m of app.matchAll(/^const ([A-Z_]+_HINT) = \/(.+)\/([a-z]*);/gm)) lit[m[1]] = [m[2], m[3]];
+  ok(Object.keys(lit).length > 70, 'Hinweismuster gefunden');
+  for (const [n, [src]] of Object.entries(lit)) if (src.length > PART) ok(calls.has(n), `${n} (${src.length} Zeichen) wird mit fastHint geprüft`);
+  for (const n of calls) ok(lit[n] && lit[n][0].length > PART, `${n} ist groß genug für fastHint`);
+  // Corpus: alle Zeichenketten aus den Tests (Treffer und Nicht-Treffer aller Hinweis-Tests) – geteiltes Muster muss genau gleich entscheiden
+  const runSrc = fs.readFileSync(new URL('./run.mjs', import.meta.url), 'utf8');
+  const corpus = [...new Set([...runSrc.matchAll(/'((?:[^'\\\n]|\\.){3,300})'/g)].map((m) => m[1].replace(/\\'/g, "'")))];
+  ok(corpus.length > 3000, 'Prüftexte: ' + corpus.length);
+  const short = corpus.filter((x) => x.length <= 120); // Meldungstexte der Hinweis-Tests sind kurz; lange Zeichenketten sind Code/HTML
+  const long = ['Der Lkw hat seit gestern ein Problem, ich bin heute morgen losgefahren und dann ist es passiert. ', 'aaaa bbbb cccc dddd eeee ffff gggg ', 'Привіт, вчора ввечері на стоянці щось сталося з машиною, будь ласка перевірте ', 'Yesterday the truck had an issue on the motorway and the driver said it was making noise ']
+    .map((x) => x.repeat(Math.ceil(4000 / x.length)).slice(0, 4000));
+  // In der App laufen die ungeteilten Muster nie (`.test` ist ersetzt, bevor eine Prüfung läuft)
+  const fasts = {};
+  for (const n of calls) {
+    const [src, fl] = lit[n]; ok(!/\\[1-9]|\\k<|\(\?<[a-zA-Z]/.test(src), `${n}: keine Rückverweise/benannten Gruppen`);
+    const fast = fasts[n] = new RegExp(src, fl); fastHint(fast);
+    ok(Object.prototype.hasOwnProperty.call(fast, 'test') && fast.source === src, `${n}: .test ersetzt, Quelltext unverändert`);
+  }
+  // Laufzeit in einem frischen Prozess: frühere Tests haben die ungeteilten Riesenmuster bereits ausgeführt (Interpreter) – danach ist V8
+  // im selben Prozess auch bei anderen Ausdrücken langsamer, die Messung wäre verfälscht
+  const { spawnSync } = await import('node:child_process');
+  const code = `const fs = require('fs'); const app = fs.readFileSync(${JSON.stringify(new URL('../public/app.js', import.meta.url).pathname)}, 'utf8');
+    const a = app.indexOf('const HINT_RX_PART = '), b = app.indexOf('\\nfastHint(ENGINE_HINT);'); const { fastHint } = new Function(app.slice(a, b) + '\\nreturn { fastHint };')();
+    const long = ${JSON.stringify(long)}; const out = {};
+    for (const m of app.matchAll(/^const ([A-Z_]+_HINT) = \\/(.+)\\/([a-z]*);/gm)) { if (!${JSON.stringify([...calls])}.includes(m[1])) continue; const r = new RegExp(m[2], m[3]); fastHint(r);
+      out[m[1]] = Math.max(...long.map((x) => { r.test(x); const t0 = performance.now(); r.test(x); return performance.now() - t0; })); }
+    console.log(JSON.stringify(out));`;
+  const pr = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', timeout: 120000 });
+  const ms = JSON.parse(pr.stdout || '{}');
+  for (const n of calls) ok(ms[n] >= 0 && ms[n] < 400, `${n}: 4000 Zeichen in ${ms[n] && ms[n].toFixed(0)} ms (ungeteilt bis ≈ 3 s) ${pr.stderr || ''}`);
+  // je Muster die Prüftexte der Testzeilen, die es nennen, plus jeden 10. kurzen Text (ganzer Corpus ≈ 45 s: die ungeteilten Riesenmuster
+  // laufen im Interpreter und bremsen danach auch die übrigen) – kleinste Muster zuerst, die beiden Riesenmuster zuletzt
+  const lines = runSrc.split('\n'); const strs = (l) => [...l.matchAll(/'((?:[^'\\\n]|\\.){3,300})'/g)].map((m) => m[1].replace(/\\'/g, "'"));
+  for (const n of [...calls].sort((x, y) => lit[x][0].length - lit[y][0].length)) {
+    const orig = new RegExp(...lit[n]), fast = fasts[n];
+    const cs = [...new Set([...lines.filter((l) => l.includes(n)).flatMap(strs), ...short.filter((x, i) => i % 10 === 0)])];
+    let diff = 0, hits = 0; for (const x of cs) for (const y of [x, x.toLowerCase()]) { const r = orig.test(y); if (r) hits++; if (r !== fast.test(y)) diff++; }
+    eq(diff, 0, `${n}: abweichende Entscheidungen`); ok(hits > 0, `${n}: Corpus enthält Treffer`);
+  }
+  const main = fs.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  for (const n of calls) ok(new RegExp(`^const ${n} = lbRx\\(String\\.raw\`[^\\n]*\`, 'i', 1\\);$`, 'm').test(main), `${n}: Start-Modul baut weiter die genaue Lookbehind-Nachbildung (nur .test)`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

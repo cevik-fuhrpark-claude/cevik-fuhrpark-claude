@@ -236,6 +236,12 @@ Rechenlast am langsamen Handy (Backlog 1102, 06.11.2026, `ui-lange-beschreibung.
 CPU-Drosselung 4× (≈ älteres Handy): erste Taste vorher 300–460 ms, jetzt ≈ 3 ms (Muster im Leerlauf vorgewärmt, `requestIdleCallback`, Rückfall `setTimeout`);
 4000 Zeichen vorher bis ≈ 440 ms je Taste, jetzt < 1 ms je Taste und eine Prüfung nach 300 ms Tipp-Pause (ab 1000 Zeichen, `HINT_LONG`/`HINT_PAUSE`).
 Neue Hinweismuster mit Wortfenstern (`(?:\S+\s+){0,N}?`) auf langen Texten messen (siehe Backlog 1103).
+Sehr große Hinweismuster (Backlog 1103, 07.11.2026, `ui-hinweis-riesenmuster.py`): Ab rund 20 000 Zeichen Quelltext übersetzt V8 (Node 22 / V8 12.4,
+entspricht Chrome ≈ 124) ein Muster nicht mehr in Maschinencode, sondern prüft es im Interpreter – gemessen Bremse ≈ 3,3 s, Motor ≈ 2,6 s, alle Muster ≈ 6,2 s
+bei 4000 Zeichen ohne Satzzeichen. Muster über 8000 Zeichen (`HINT_RX_PART`) werden deshalb mit `fastHint(NAME);` in Teile (oberste Alternativen) zerlegt
+geprüft: ≈ 0,26 s für alle. Aktuelles Playwright-Chromium (153) war nicht betroffen: „change“ mit 4000 Zeichen bei CPU 4× vorher ≈ 340 ms, jetzt ≈ 250 ms.
+Neues großes Muster → `fastHint(NAME);` ergänzen (Test „Backlog 1103“ verlangt es); Musternamen nicht in Kommentaren nennen, sonst erkennt `npm run build`
+keine reine `.test()`-Nutzung mehr und die Lookbehind-Ersatzfassung für iOS < 16.4 wird ungenauer.
 
 ## Uhrzeiten und Zeitzone des Geräts (Stand 01.11.2026, Backlog 806)
 Alle Uhrzeiten in der App sind deutsche Zeit (Anzeige und Eingabe: Schadenzeitpunkt, Tatzeit bei Bußgeldern, Push-Ruhezeit). Steht ein Handy auf einer anderen Zeitzone (z. B. ukrainische Fahrer mit Kyjiwer Zeit, +1:00), zeigt die App an diesen Eingaben „Dieses Gerät steht auf einer anderen Zeitzone (Unterschied zu Deutschland: +1:00) … in Deutschland ist es jetzt HH:MM Uhr“ (`tzNote()` in `public/app.js`, Uhrzeit serverzeit-korrigiert). Die App ändert die Zeitzone des Handys nicht und rechnet Eingaben nicht um. UI-Prüfung: `scripts/ui-zeitzone-hinweis.py` (Kyjiw/New York/Berlin). Hinweis: die UI-Skripte laufen in der Zeitzone des Containers (UTC) – dort erscheint der Hinweis ebenfalls (−1:00/−2:00).
