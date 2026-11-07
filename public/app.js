@@ -216,6 +216,8 @@ function timeoutSignal(ms) {
 // nach einem Offline-Start kürzer (OFFLINE_GET_TIMEOUT_MS), damit die Meldung im Funkloch nicht zweimal so lange wartet
 const START_TIMEOUT_MS = 15000, OFFLINE_GET_TIMEOUT_MS = 8000;
 async function api(method, path, body, extra = {}) {
+  // Backlog 1112: stille Aktualisierung der Startseite = Hintergrund-Abfrage (keine Bedienung, verlängert die Sitzung nicht)
+  if (S.quietHome && method === 'GET' && !extra.bg) extra = { ...extra, bg: true };
   const headers = { 'x-cfp': '1', ...(extra.headers || {}), ...(extra.bg ? { 'x-cfp-bg': '1' } : {}) };
   // Zahlen werden nach der hier angezeigten Sprache gelesen (geteiltes Konto: andere Geräte können eine andere Sprache zeigen, 23.10.2026)
   if (S.lang && !headers['x-cfp-lang']) headers['x-cfp-lang'] = S.lang;
@@ -1221,6 +1223,24 @@ function pollUnread() {
 }
 document.addEventListener('visibilitychange', pollUnread);
 setInterval(pollUnread, 120000);
+// Backlog 1112 (Blickwinkel „Disposition mit zwei Browserfenstern nebeneinander am 1920-px-Monitor“): Zwei Fenster nebeneinander sind beide
+// ständig „sichtbar“ – die Startseite (Sperren, Nicht einplanen, Wieder einsatzbereit) blieb stundenlang auf dem Stand des Öffnens.
+// Jetzt still neu aufbauen: alle 5 Min. und beim Zurückholen des Fensters (älter als 1 Min.) – nur Startseite, nicht für Fahrer, nur ohne
+// Eingaben/Fokus im Formular, online. Abfragen als Hintergrund (x-cfp-bg): verlängern die Sitzung nicht (Leerlauf-Abmeldung bleibt wirksam).
+// Fehler: alte Ansicht bleibt stehen (kein Fehlerbild). Scrollposition und aufgeklappte Bereiche bleiben (render: gleiche Seite).
+const HOME_REFRESH_MS = 5 * 60000;
+const isHomeHash = () => ['#/', '#', ''].includes(location.hash || '');
+async function homeAutoRefresh(minAge) {
+  if (!S.me || S.me.role === 'driver' || S.offlineStart || S.quietHome || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isHomeHash() || S.lastHash !== '#/' || !S.homeAt || Date.now() - S.homeAt < minAge) return;
+  const ae = document.activeElement;
+  if (viewDirty() || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err')) return;
+  S.quietHome = true;
+  try { await viewHome(); } catch { /* alte Ansicht bleibt; nächster Versuch beim nächsten Takt */ S.homeAt = Date.now(); } finally { S.quietHome = false; }
+}
+setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); }, 30000);
+window.addEventListener('focus', () => { homeAutoRefresh(60000); });
+document.addEventListener('visibilitychange', () => { homeAutoRefresh(60000); });
 
 // ---------- Öffentliche Ansichten ----------
 // Anmeldeseite: unversendete Meldungen auf diesem Gerät (Anmeldung beendet, z. B. Leerlauf/Passwortwechsel) – nur Name und Anzahl,
@@ -1496,7 +1516,7 @@ function hj(href) {
   return s === null ? href : href + (href.includes('?') ? '&' : '?') + 'vs=' + encodeURIComponent(s);
 }
 async function viewHome() {
-  render(`<p class="muted">${esc(t('loading'))}</p>`, 'home');
+  if (!S.quietHome) render(`<p class="muted">${esc(t('loading'))}</p>`, 'home');
   // Werkstatt/Leitung/Disposition: Fahrzeugliste für „Schaden melden“/Abfahrtskontrolle ohne Netz ebenfalls vorhalten (19.10.2026: offline
   // nach dem Anmelden nur „Keine Verbindung“) – einmal je Anmeldung im Hintergrund, Fahrer siehe unten
   if (S.me.role !== 'driver' && mayReport() && navigator.onLine) vehCacheRefresh();
@@ -1519,6 +1539,9 @@ async function viewHome() {
     d = {}; cases = null; // Fahrer ohne Netz: Startseite mit zuletzt gespeicherten Fahrzeugdaten
   }
   let html = `<h1>${esc(t('welcome'))}, ${esc(S.me.display_name)}</h1>${outboxBanner()}${draftsBanner()}`;
+  // Backlog 1112 (Blickwinkel „Disposition mit zwei Browserfenstern nebeneinander“): Startseite blieb in einem dauerhaft sichtbaren Fenster
+  // auf dem Stand des Öffnens (neue Sperren fehlten). Jetzt „Stand HH:MM · Neu laden“ und stille Aktualisierung (homeAutoRefresh).
+  if (S.me.role !== 'driver') html += `<p class="small muted" id="homeasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/" id="homereload" title="${esc(t('home_asof_hint'))}">${esc(t('update_now'))}</a></p>`;
   if (S.me.role === 'driver') {
     html += `<a class="btn block" href="#/new" style="margin:8px 0 12px">${esc(t('report_damage'))}</a><a class="btn secondary block" href="#/check">${esc(t('departure_check'))}</a><a class="btn secondary block" href="#/emergency" id="emhome" style="margin-top:8px">☎ ${esc(t('em_title'))}</a><p style="margin-top:8px"><a class="tap" href="#/help">${esc(t('help'))} ›</a></p><section class="panel" id="pushnudge" hidden></section>`;
     const mvKey = `cfp_myveh_${S.me.id}_${S.me.environment}`;
@@ -1576,9 +1599,13 @@ async function viewHome() {
       if (S.me.role === 'viewer') html += helpLink('viewer');
     }
   }
+  // stille Aktualisierung (Backlog 1112): inzwischen andere Seite aufgerufen → nichts überschreiben
+  if (S.quietHome && !isHomeHash()) return;
   render(html, 'home');
   bindWsFlow();
   bindDraftsBanner();
+  S.homeAt = Date.now();
+  const hrl = $('#homereload'); if (hrl) hrl.onclick = async (e) => { e.preventDefault(); await viewHome(); };
   const vco = $('#vchangeok'); if (vco) vco.onclick = () => { vehSeenSave(S.vcur || []); const p = $('#vchange'); if (p) p.remove(); };
   pushNudge().catch(() => {});
   const trb = $('#todoretry'); if (trb) trb.onclick = async () => { await viewHome(); };

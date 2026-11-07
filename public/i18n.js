@@ -3910,3 +3910,7 @@ Object.assign(STRINGS.en, { drv_assigned_since: 'Assigned since', drv_vchange_ti
 Object.assign(STRINGS.de, { fine_home_title: 'Behördenschreiben: bitte lesen', fine_home_hint: 'Öffnen, lesen und „{a}“ tippen. Nicht gefahren? Im Schreiben „{d}“ wählen.' });
 Object.assign(STRINGS.uk, { fine_home_title: 'Листи від органів влади: прочитайте, будь ласка', fine_home_hint: 'Відкрийте, прочитайте та натисніть «{a}». Не керували? У листі оберіть «{d}».' });
 Object.assign(STRINGS.en, { fine_home_title: 'Authority letters: please read', fine_home_hint: 'Open, read and tap “{a}”. Did not drive? Choose “{d}” in the letter.' });
+// Backlog 1112 (Blickwinkel „Disposition mit zwei Browserfenstern nebeneinander“): Stand der Startseite, stille Aktualisierung
+Object.assign(STRINGS.de, { home_asof: 'Stand {t}', home_asof_hint: 'Die Übersicht aktualisiert sich alle 5 Minuten und beim Zurückkehren ins Fenster selbst – nicht, solange du hier etwas eingibst.' });
+Object.assign(STRINGS.uk, { home_asof: 'Станом на {t}', home_asof_hint: 'Огляд оновлюється сам кожні 5 хвилин і коли ви повертаєтеся до вікна – але не тоді, коли ви тут щось вводите.' });
+Object.assign(STRINGS.en, { home_asof: 'As of {t}', home_asof_hint: 'The overview refreshes itself every 5 minutes and when you return to the window – not while you are typing here.' });

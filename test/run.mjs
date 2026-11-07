@@ -35928,6 +35928,27 @@ await test('Backlog 1111 (Blickwinkel „Inhaber am Breitbildmonitor 2560 px“)
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-breitbild.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
+await test('Backlog 1112 (Blickwinkel „Disposition mit zwei Browserfenstern nebeneinander am 1920-px-Monitor“): Startseite zeigt den Stand und aktualisiert sich still, ohne die Sitzung zu verlängern', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('async function viewHome('); const home = app.slice(a, app.indexOf('\n}\n', a));
+  ok(home.startsWith("async function viewHome() {\n  if (!S.quietHome) render(`<p class=\"muted\">${esc(t('loading'))}</p>`, 'home');"), 'stille Aktualisierung ohne „Lädt…“-Zwischenbild');
+  ok(home.includes("if (S.me.role !== 'driver') html += `<p class=\"small muted\" id=\"homeasof\"") && home.includes("t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString()))"), 'Standzeile (nicht für Fahrer)');
+  ok(home.includes("if (S.quietHome && !isHomeHash()) return;\n  render(html, 'home');\n  bindWsFlow();\n  bindDraftsBanner();\n  S.homeAt = Date.now();"), 'inzwischen andere Seite: nichts überschreiben; Zeitpunkt merken');
+  const r = app.indexOf('async function homeAutoRefresh('); const fn = app.slice(r, app.indexOf('\n}\n', r));
+  ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart'), 'nur sichtbar, online, nicht für Fahrer');
+  ok(fn.includes("S.lastHash !== '#/'") && fn.includes('viewDirty()') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open]'), 'nur Startseite, nie bei Eingaben/Fokus/Dialog');
+  ok(fn.includes('try { await viewHome(); } catch') && fn.includes('finally { S.quietHome = false; }'), 'Fehler: alte Ansicht bleibt');
+  ok(app.includes('const HOME_REFRESH_MS = 5 * 60000;') && app.includes('setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); }, 30000);') && app.includes("window.addEventListener('focus', () => { homeAutoRefresh(60000); });"), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min.');
+  ok(app.includes("if (S.quietHome && method === 'GET' && !extra.bg) extra = { ...extra, bg: true };"), 'Abfragen der stillen Aktualisierung als Hintergrund (x-cfp-bg)');
+  // Server: Hintergrund-Abfrage der Startseite funktioniert und verlängert die Sitzung nicht (auth.js prüft x-cfp-bg)
+  const auth = fs.readFileSync(new URL('../src/auth.js', import.meta.url), 'utf8');
+  ok(auth.includes("request.headers.get('x-cfp-bg') !== '1'"), 'Server verlängert bei x-cfp-bg nicht');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].home_asof.includes('{t}') && STRINGS[l].home_asof_hint && STRINGS[l].update_now, 'Texte ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-startseite-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
