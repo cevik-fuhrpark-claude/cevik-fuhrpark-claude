@@ -35919,6 +35919,15 @@ await test('Backlog 1110 (Blickwinkel „Fahrer liest am Handy sein Bußgeld“)
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-bussgeld-fahrer-handy.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
+await test('Backlog 1111 (Blickwinkel „Inhaber am Breitbildmonitor 2560 px“): Inhalt ab 1800 px Fensterbreite 1400 px breit, nur Bildschirm; darunter und im Druck unverändert', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(/\nmain \{ max-width: 1100px;/.test(css), 'Grundbreite 1100 px bleibt');
+  ok(/@media screen and \(min-width: 1800px\) \{ main \{ max-width: 1400px; \} \}/.test(css), 'Breitbild-Regel nur für Bildschirm ab 1800 px');
+  ok(/@media print[\s\S]*?main \{ max-width: none; padding: 0; \}/.test(css), 'Druck ohne Breitengrenze');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-breitbild.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

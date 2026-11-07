@@ -128,6 +128,7 @@ UI-Mängelstatistik/Kennzahlen/Werkstattauslastung im Druck am Tablet: kein Übe
 UI-Verträge/Versicherungsfälle im Druck am Tablet: kein Überstand bei langen Namen/Nummern, Filter im Kopf|ui-vertraege-schaeden-druck-tablet.py|/tmp/cfp-vertraege-schaeden-druck-tablet.log
 UI-Bußgelder/Fahrerakte im Druck am Tablet: kein Überstand bei langen Behörden-/Fahrernamen, Aktenzeichen in der Liste|ui-bussgeld-fahrerakte-druck-tablet.py|/tmp/cfp-bussgeld-fahrerakte-druck-tablet.log
 UI-Fahrer liest sein Bußgeld am Handy: Hinweis auf der Startseite bis zur Quittung, lange Behörden-/Tatortangaben ohne Überstand|ui-bussgeld-fahrer-handy.py|/tmp/cfp-bussgeld-fahrer-handy.log
+UI-Breitbildmonitor: Inhalt ab 1800 px 1400 px breit, Tabellenköpfe einzeilig, kein Überstand, Druck unverändert|ui-breitbild.py|/tmp/cfp-breitbild.log
 UI-Gesperrtes Fahrzeug genutzt: Ergebnisseite, Verlauf, Befund|ui-sperre-genutzt.py|/tmp/cfp-sperre-genutzt.log
 UI-Werkstattplan: begonnener Auftrag mit vergangenem Termin unter „in Arbeit“|ui-plan-inarbeit.py|/tmp/cfp-plan-inarbeit.log
 UI-Fahrzeug korrigieren (Meldung am falschen Fahrzeug)|ui-fahrzeug-korrigieren.py|/tmp/cfp-fahrzeug-korrigieren.log

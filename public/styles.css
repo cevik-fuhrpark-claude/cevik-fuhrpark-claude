@@ -76,6 +76,9 @@ input:is([type=date],[type=month],[type=time],[type=datetime-local]):focus-withi
 .testband { background: repeating-linear-gradient(135deg, var(--test) 0 14px, #7d52b3 14px 28px); color: #fff; text-align: center; font-weight: 600; font-family: var(--din); padding: 6px 12px; letter-spacing: 0.02em; }
 .clockband { background: var(--mid-bg); color: var(--mid); border-bottom: 2px solid var(--signal); text-align: center; font-weight: 600; padding: 6px 12px; overflow-wrap: anywhere; }
 main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+/* [CLAUDE] Backlog 1111 (Blickwinkel „Inhaber am Breitbildmonitor 2560 px“): Tabellen (Management-Panel, Berichte) brachen bei 1100 px
+   Kopfzeilen und Beschreibungen um, während rechts 1400 px leer blieben – ab 1800 px Fensterbreite darf der Inhalt 1400 px breit werden (nur Bildschirm) */
+@media screen and (min-width: 1800px) { main { max-width: 1400px; } }
 
 .tabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; background: var(--surface); border-top: 1px solid var(--rule); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding-bottom: env(safe-area-inset-bottom); } /* minmax(0,…): lange Beschriftung schiebt „Mehr“ nicht aus dem Bild (21.10.2026) */
 /* Backlog 590: Tab-Schrift bis 18 px (567), auf schmalen Handys aber höchstens ≈ 4,2 % der Breite (mind. 15 px) – bei 360 px und 150 % brach „Management“/„Kontrolle“ sonst mitten im Wort */
