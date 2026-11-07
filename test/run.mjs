@@ -8517,7 +8517,7 @@ await test('Hinweise: Zähler über alle (nicht nur die neuesten 100), Filter se
   ok(sw.includes('refreshUnread(true).then(inboxPush)'), 'Push ruft inboxPush auf: ' + sw);
   { const ib = app.slice(app.indexOf('function inboxPush()'), app.indexOf('async function pushPanel('));
     ok(ib.includes("if (!S.me || !/^#\\/inbox/.test(location.hash)) return;"), 'nur in den Hinweisen');
-    ok(ib.includes("if (!viewDirty() && !(np && np.open)) { route(); return; }"), 'Neuaufbau nur ohne Eingaben und mit zugeklapptem „Push für diese Hinweise“');
+    ok(ib.includes("if (!viewDirty() && !(np && np.open) && !(nl && nl.dataset.more)) { route(); return; }"), 'Neuaufbau nur ohne Eingaben und mit zugeklapptem „Push für diese Hinweise“ (seit Backlog 1116 auch nicht nach „Ältere laden“)');
     ok(ib.includes("t('nf_new')") && ib.includes("t('nf_reload')") && ib.includes("if ($('#nnew')) return;"), 'sonst einmaliger Hinweis mit Knopf');
     for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].nf_new && STRINGS[l].nf_reload && (l === 'de' || STRINGS[l].nf_new !== STRINGS.de.nf_new), 'nf_new/nf_reload übersetzt: ' + l);
     { const vi = app.slice(app.indexOf('async function viewInbox()'), app.indexOf('function inboxPush()'));
@@ -15189,7 +15189,7 @@ await test('Fehlersuche 20.10. (15): Einstellungen (Schreibweise/Wirkung, „kri
   eq(db.prepare("SELECT opened_at FROM notifications WHERE id='nlate'").get().opened_at, null, 'später eingetroffener Hinweis bleibt ungelesen');
   eq((await U.fleet.post('/api/notifications/read-all')).status, 200);
   ok(db.prepare("SELECT opened_at FROM notifications WHERE id='nlate'").get().opened_at, 'ohne before alle');
-  ok(app.includes("api('POST', '/api/notifications/read-all', n.as_of ? { before: n.as_of } : {})") && app.includes('if (S.viewEnv !== ev) return; S.unread = n.unread;'), 'App');
+  ok(app.includes("api('POST', '/api/notifications/read-all', n.as_of ? { before: n.as_of } : {})") && app.includes('if (S.viewEnv !== ev) return; const prev = S.unread; S.unread = n.unread;'), 'App');
   ok(rd('src/worker.js').includes("WHERE user_id=? AND event_key=?').bind(user.id, ek)"), 'Push-Test liest genau seinen Hinweis');
   // 5. Anruf-Link: „0049 (0)231 …“ ohne die (0)
   const th = app.match(/const telHref = (.*);\n/)[1]; const telHref = eval(th);
@@ -35999,6 +35999,22 @@ await test('Backlog 1115 (Blickwinkel „Disposition hat die Fahrzeugliste den g
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].veh_asof_hint && ![STRINGS[l].home_asof_hint, STRINGS[l].plan_asof_hint, STRINGS[l].cases_asof_hint].includes(STRINGS[l].veh_asof_hint), 'Text ' + l);
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-fahrzeugliste-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
+await test('Backlog 1116 (Blickwinkel „Fuhrparkleitung am PC ohne Push-Erlaubnis hat ‚Hinweise‘ den ganzen Tag offen“): Liste baut sich bei neuer Zahl an der Glocke still neu auf, ohne die Sitzung zu verlängern', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const ru = app.slice(app.indexOf('async function refreshUnread('), app.indexOf('\n}\n', app.indexOf('async function refreshUnread(')));
+  ok(ru.includes('const prev = S.unread; S.unread = n.unread;') && ru.includes('if (bg && n.unread > (prev || 0)) inboxPoll();'), 'nur bei steigender Zahl aus einer Hintergrund-Abfrage');
+  const r = app.indexOf('async function inboxPoll('); const fn = app.slice(r, app.indexOf('\n}\n', r));
+  ok(fn.includes("S.lastHash !== '#/inbox'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('S.quietBg'), 'nur auf „Hinweise“, sichtbar, nicht doppelt');
+  ok(fn.includes('viewDirty()') && fn.includes('np && np.open') && fn.includes('nl && nl.dataset.more') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open], .toast.err') && fn.includes('{ inboxBanner(); return; }'), 'bei Eingaben/aufgeklapptem Bereich/nachgeladenen Hinweisen nur der Hinweis');
+  ok(fn.includes('S.quietBg = true;') && fn.includes('try { await viewInbox(); } catch'), 'Abfragen als Hintergrund (x-cfp-bg)');
+  const vi = app.slice(app.indexOf('async function viewInbox('), app.indexOf('\n}\n', app.indexOf('async function viewInbox(')));
+  ok(vi.includes("if (S.quietBg && (location.hash || '') !== '#/inbox') return;") && vi.includes("$('#nlist').dataset.more = '1';"), 'inzwischen andere Seite: nichts überschreiben; „Ältere laden“ merkt sich');
+  const ip = app.slice(app.indexOf('function inboxPush('), app.indexOf('\n}\n', app.indexOf('function inboxPush(')));
+  ok(ip.includes('!(nl && nl.dataset.more)') && ip.includes('inboxBanner();'), 'Push: nachgeladene Hinweise nicht verwerfen');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-hinweise-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

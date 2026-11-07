@@ -1200,7 +1200,8 @@ async function refreshUnread(bg = false) {
   try { const n = await api('GET', '/api/notifications?count=1' + (tray.length ? '&tray=' + tray.map((x) => x.data.id).join(',') : ''), undefined, { bg });
     // Backlog 507: auf einem anderen Gerät (oder in der App) gelesene/quittierte Mitteilungen aus der Leiste dieses Geräts entfernen – auch dringende (requireInteraction)
     if (tray.length && Array.isArray(n.tray_unread)) { const keep = new Set(n.tray_unread); for (const x of tray) if (!keep.has(x.data.id)) { try { x.close(); } catch { /* bereits geschlossen */ } } }
-    if (S.viewEnv !== ev) return; S.unread = n.unread; lastUnreadAt = Date.now(); paintBadge(); } catch {}
+    if (S.viewEnv !== ev) return; const prev = S.unread; S.unread = n.unread; lastUnreadAt = Date.now(); paintBadge();
+    if (bg && n.unread > (prev || 0)) inboxPoll(); /* Backlog 1116: geöffnete Liste „Hinweise“ ohne Push nachziehen */ } catch {}
 }
 // angezeigte Mitteilungen dieses Geräts mit Hinweis-Kennung (höchstens 50); ohne Service Worker/Mitteilungen leer
 async function trayNotifications() {
@@ -7349,6 +7350,7 @@ async function viewInbox() {
   let n = await api('GET', '/api/notifications?filter=' + (NF[S.inboxF] ? S.inboxF : 'unread'));
   const nf = NF[S.inboxF] ? S.inboxF : n.counts.unread ? 'unread' : 'all';
   if (nf !== n.filter) n = await api('GET', '/api/notifications' + (nf === 'all' ? '' : '?filter=' + nf));
+  if (S.quietBg && (location.hash || '') !== '#/inbox') return; // stille Aktualisierung (Backlog 1116): inzwischen andere Seite – nichts überschreiben
   S.unread = n.counts.unread;
   const shown = n.notifications;
   render(`<h1>${esc(t('notifications'))}</h1>${n.quiet ? `<p class="small muted" id="qinfo">${esc(t('quiet_on').replace('{f}', n.quiet.from).replace('{t}', n.quiet.to))} – ${esc(t('quiet_short'))}</p>` : ''}<section class="panel" id="push"></section>
@@ -7397,7 +7399,7 @@ async function viewInbox() {
     try {
       const m = await api('GET', `/api/notifications?${nf === 'all' ? '' : 'filter=' + nf + '&'}before=${encodeURIComponent(last)}`);
       const box = document.createElement('div'); box.innerHTML = m.notifications.map((x) => nRow(x)).join(''); bindRows(box);
-      $('#nlist').append(...box.children);
+      $('#nlist').append(...box.children); $('#nlist').dataset.more = '1'; // Backlog 1116: nicht still neu aufbauen
       if (m.notifications.length) last = m.notifications[m.notifications.length - 1].id;
       if (!m.truncated) more.parentElement.remove();
     } catch (err) { toast(err.message, true); }
@@ -7408,14 +7410,31 @@ async function viewInbox() {
 
 // Push bei geöffneten Hinweisen: Liste nur neu aufbauen, wenn nichts eingegeben und „Push für diese Hinweise“ zugeklappt ist –
 // sonst gingen Ruhezeit-Eingaben bzw. der aufgeklappte Bereich verloren; stattdessen Hinweis mit Knopf „Liste aktualisieren“
+// Backlog 1116: auch nach „Ältere laden“ (#nlist data-more) nur der Hinweis – ein Neuaufbau verwürfe die nachgeladenen Hinweise samt Scrollposition
 function inboxPush() {
   if (!S.me || !/^#\/inbox/.test(location.hash)) return;
-  const np = $('#np');
-  if (!viewDirty() && !(np && np.open)) { route(); return; }
+  const np = $('#np'); const nl = $('#nlist');
+  if (!viewDirty() && !(np && np.open) && !(nl && nl.dataset.more)) { route(); return; }
+  inboxBanner();
+}
+function inboxBanner() {
   if ($('#nnew')) return;
   const h = $('#main h1') || document.querySelector('main h1'); if (!h) return;
   h.insertAdjacentHTML('afterend', `<p class="panel small" id="nnew" role="status">${esc(t('nf_new'))} <button type="button" class="btn secondary" id="nnewb">${esc(t('nf_reload'))}</button></p>`);
   $('#nnewb').onclick = () => route();
+}
+
+// Backlog 1116 (Blickwinkel „Fuhrparkleitung am PC ohne Push-Erlaubnis hat ‚Hinweise‘ den ganzen Tag offen“): Ohne Push zählte die Glocke
+// neue Hinweise (pollUnread alle 2 Min.), die geöffnete Liste darunter blieb aber auf dem Stand des Öffnens. Jetzt: steigt die Zahl bei einer
+// Hintergrund-Abfrage, wird die Liste still neu aufgebaut (Abfragen als Hintergrund – verlängern die Sitzung nicht; Filter bleibt) – außer bei
+// Eingaben, Fokus im Feld, aufgeklapptem „Push für diese Hinweise“, nachgeladenen älteren Hinweisen, offenem Dialog oder Fehlermeldung: dann
+// nur der Hinweis „Neue Hinweise – Liste aktualisieren“. Nur sichtbar; kein Markieren als gesehen (die Liste ändert keinen Zustand).
+async function inboxPoll() {
+  if (!S.me || S.quietBg || (location.hash || '') !== '#/inbox' || S.lastHash !== '#/inbox' || document.visibilityState !== 'visible') return;
+  const np = $('#np'); const nl = $('#nlist'); const ae = document.activeElement;
+  if (viewDirty() || (np && np.open) || (nl && nl.dataset.more) || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err')) { inboxBanner(); return; }
+  S.quietBg = true;
+  try { await viewInbox(); } catch { /* alte Liste bleibt; nächster Versuch bei der nächsten neuen Zahl */ } finally { S.quietBg = false; }
 }
 
 // Backlog 227 (Teilagent „Fahrer wechselt sein Handy“): Fahrer-Startseite – einmaliger, ausblendbarer Hinweis, wenn dieses Gerät keine Push-Hinweise
