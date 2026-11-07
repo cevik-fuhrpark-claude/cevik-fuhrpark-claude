@@ -36308,6 +36308,16 @@ await test('Backlog 1134 (Sonde Bremsen): Luftverlust am Brems-/Membran-/Federsp
   for (const x of ['Bremszylinder verliert Luft', 'Bremszylinder hinten links verliert viel Luft', 'Membranzylinder undicht', 'Federspeicher bläst ab', 'Federspeicherzylinder undicht', 'Bremskammer zischt', 'brake chamber leaking air', 'spring brake chamber hissing', 'гальмівна камера травить повітря', 'енергоакумулятор травить', 'энергоаккумулятор травит']) ok(re.test(noPb(x)), 'Bremsen-Schritte: ' + x);
   for (const x of ['Federspeicher bläst ab, repariert', 'brake chamber leaking, replaced', 'Bremszylinder getauscht, verliert keine Luft mehr', 'Bremszylinder neu', 'Zylinderkopf undicht', 'енергоакумулятор травить, замінили']) ok(!re.test(noPb(x)), 'keine Bremsen-Schritte: ' + x);
 });
+await test('Backlog 1135 (Sonde Reifen/Räder, sicherheitsrelevant): Flanke aufgeschnitten, Stein zwischen Zwillingsreifen, Reifendruckanzeige rot, „sidewall cut“, „у шині цвях“ → Reifen-Schritte; Radmutter-Anzeiger verdreht, „wheel nut indicators moved“, „бракує колісної гайки“ → Räder-Schritte; mit „entfernt/nachgezogen/замінили“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const TY = pat('TYRE_HINT'), WH = pat('WHEEL_HINT');
+  for (const x of ['Reifenflanke aufgeschnitten', 'Stein zwischen Zwillingsreifen', 'Stein zwischen den Zwillingsreifen eingeklemmt', 'Reifendruckanzeige rot', 'sidewall cut', 'stone stuck between the twin wheels', 'порізана шина', 'у шині цвях', 'в шині саморіз', 'камінь між спареними колесами']) ok(TY.test(x), 'Reifen: ' + x);
+  for (const x of ['Radmutteranzeiger verdreht', 'Radmutterindikatoren verdreht', 'Checkpoint Anzeiger verdreht', 'wheel nut indicators moved', 'wheel nut indicator turned', 'бракує колісної гайки', 'немає колісної гайки']) ok(WH.test(x), 'Räder: ' + x);
+  for (const x of ['Stein zwischen Zwillingsreifen entfernt', 'у шині цвях, замінили', 'Reifen bestellt', 'Flanke Auflieger zerkratzt']) ok(!TY.test(x), 'kein Reifen-Hinweis: ' + x);
+  for (const x of ['Radmutteranzeiger verdreht, nachgezogen', 'wheel nut indicators moved, tightened', 'Radmutteranzeiger montiert']) ok(!WH.test(x), 'kein Räder-Hinweis: ' + x);
+});
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');

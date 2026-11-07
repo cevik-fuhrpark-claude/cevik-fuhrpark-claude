@@ -25,6 +25,7 @@ export const GROUPS = {
   konto: ['viewInvite', 'viewSetup', 'loadTotp'], // Backlog 933: Einladung annehmen / Ersteinrichtung – je Person einmal, Reserve im Start-Modul; Backlog 952: Zwei-Faktor-Einrichtung (loadTotp, async, nur beim Aufklappen in „Mehr“)
   dispo: ['dispoHome'], // Backlog 968: Startseite der Disposition (Tafel, Hinweise, Ausdruck) – nur Rolle Disposition, async, Aufruf in viewHome vor dem Seitenaufbau
   leitung: ['fleetTodo'], // Backlog 968: Aufgabenliste der Inhaber/Fuhrparkleitung auf der Startseite – nur diese Rollen, async (early() in viewHome vor dem Seitenaufbau)
+  suche: ['viewSearch'], // 07.11.2026 (Backlog 1135, Reserve Start-Modul nach neuen Hinweismustern): globale Suche erst beim Öffnen laden (Lupe; async, Aufruf aus route)
   lager: ['viewStock', 'viewStockCount', 'viewReorder', 'viewStockAsOf', 'viewStockJournal', 'viewStockReceipt', 'viewPartsUsage', 'viewStockItem'],
 };
 
