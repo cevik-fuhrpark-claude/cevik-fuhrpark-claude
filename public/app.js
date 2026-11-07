@@ -1402,6 +1402,26 @@ async function tachoAutoRefresh(minAge) {
 setInterval(() => { driversAutoRefresh(HOME_REFRESH_MS); tachoAutoRefresh(HOME_REFRESH_MS); }, 30000);
 window.addEventListener('focus', () => { driversAutoRefresh(60000); tachoAutoRefresh(60000); });
 document.addEventListener('visibilitychange', () => { driversAutoRefresh(60000); tachoAutoRefresh(60000); });
+// Backlog 1127 (Blickwinkel „Werkstatt-Tablet bzw. Fuhrparkleitung hat die Reifenübersicht den ganzen Tag offen, Kollegen messen Profiltiefen“):
+// Die Reifenübersicht (unter Minimum/Warnung, nie gemessen, Messung veraltet, Winterpflicht, Reifenalter; Zähler je Reiter) blieb auf dem Stand des
+// Öffnens – ein frisch gemessener oder gewechselter Reifen stand weiter als „unter Minimum“ da, ein neuer Winterreifen-Auftrag fehlte. Jetzt wie die
+// Bußgeldliste: Standzeile und still neu aufbauen (alle 5 Min., beim Zurückholen des Fensters nach ≥ 1 Min.; Reiter und Standort stehen in S). Ein
+// Direktsprung von der Werkstatt-Startseite (#/tires?f=…) wird auf #/tires umgeschrieben – gleiche Seite. Nie bei Fokus im Feld, Eingaben
+// (Sammelauftrag Winterreifen: Auswahl/Werkstatt/Termin), angezeigtem Ergebnis des Sammelauftrags, Textauswahl, Dialog oder Fehlermeldung.
+const isTiresHash = () => (location.hash || '') === '#/tires';
+async function tiresAutoRefresh(minAge) {
+  if (!S.me || S.me.role === 'driver' || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isTiresHash() || !/^#\/tires(?:\?|$)/.test(S.lastHash || '') || !S.tiresAt || Date.now() - S.tiresAt < minAge) return;
+  const ae = document.activeElement;
+  if (viewDirty() || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err, [data-wobdone], [data-wobfail]')) return;
+  const sel = window.getSelection && window.getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  S.lastHash = '#/tires'; // Sprung aus der Werkstatt-Startseite (#/tires?f=…) wurde auf #/tires umgeschrieben – gleiche Seite, damit render() Scrollposition/aufgeklappte Bereiche behält
+  S.quietBg = true;
+  try { await viewFleetTires(); } catch { S.tiresAt = Date.now(); } finally { S.quietBg = false; }
+}
+setInterval(() => tiresAutoRefresh(HOME_REFRESH_MS), 30000);
+window.addEventListener('focus', () => tiresAutoRefresh(60000));
+document.addEventListener('visibilitychange', () => tiresAutoRefresh(60000));
 // Backlog 1117 (Blickwinkel „Fuhrparkleitung hat einen Vorgang den ganzen Tag offen, die Werkstatt arbeitet daran“): Der geöffnete Vorgang
 // blieb auf dem Stand des Öffnens – „Zur Abschlusskontrolle“, neue Arbeitszeit, Fotos oder eine Rückfrage der Werkstatt erschienen erst nach
 // Neuladen; ein Knopfdruck auf dem alten Stand endete im Versionskonflikt. Jetzt alle 2 Min., beim Zurückholen des Fensters (≥ 1 Min.) und bei
@@ -8726,7 +8746,8 @@ async function viewFleetTires() {
   const nTrucks = r.rows.filter((x) => x.kind !== 'anhaenger').length;
   const wProg = (wf || f === 'all') && nTrucks ? t('tires_winter_prog').replace('{ok}', fmtNum(r.totals.winter_ok || 0)).replace('{n}', fmtNum(nTrucks)) : '';
   const tabs = [['attention', `${t('ts_unter_minimum')} / ${t('ts_warnung')}`, r.totals.below_min + r.totals.warn], ['stale', t('tires_stale').replace('{d}', r.stale_days), r.totals.stale], ['never', t('tires_never'), r.totals.never_measured], ['winter_bad', t('tires_winter_bad'), r.totals.winter_noncompliant], ['winter_unknown', t('tires_winter_unknown'), r.totals.winter_unknown], ['winter_closed', t('tires_winter_closed'), r.rows.filter((x) => x.winter_closed_order).length], ...(r.warn_age_years !== null ? [['age', tn('tires_age_tab', r.warn_age_years), r.totals.age_warn]] : []), ['all', t('filter_all'), r.totals.vehicles]].filter(([k, , n]) => n || k === f || !(k.startsWith('winter') || k === 'age'));
-  render(`<h1>${esc(t('fleet_tires'))}</h1>${helpLink('tires')}<p class="small muted">${esc(t(r.warn_tread_mm === null || r.warn_tread_mm === undefined ? (S.me.role === 'owner' ? 'tires_rule_nowarn' : 'tires_rule_nowarn_mgr') : 'tires_rule').replace('{min}', fmtNum(r.legal_min_tread_mm)).replace('{warn}', r.warn_tread_mm == null ? '' : fmtNum(r.warn_tread_mm)))}</p>
+  if (S.quietBg && !isTiresHash()) return; // stille Aktualisierung (Backlog 1127): inzwischen andere Seite – nichts überschreiben
+  render(`<h1>${esc(t('fleet_tires'))}</h1><p class="small muted noprint" id="tiresasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/tires" id="tirereload" title="${esc(t('tires_asof_hint'))}">${esc(t('update_now'))}</a></p>${helpLink('tires')}<p class="small muted">${esc(t(r.warn_tread_mm === null || r.warn_tread_mm === undefined ? (S.me.role === 'owner' ? 'tires_rule_nowarn' : 'tires_rule_nowarn_mgr') : 'tires_rule').replace('{min}', fmtNum(r.legal_min_tread_mm)).replace('{warn}', r.warn_tread_mm == null ? '' : fmtNum(r.warn_tread_mm)))}</p>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="panel noprint">${siteSelect('tsite', '', r.site_options, r.site)}</div>` : ''}
     <div class="actions noprint" style="flex-wrap:wrap">${tabs.map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tf="${k}" aria-pressed="${f === k}">${esc(l)} (${n})</button>`).join('')}</div>
     <div class="actions noprint"><button type="button" class="btn secondary" id="trcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="trprt">${esc(t('print'))}</button></div>
@@ -8735,6 +8756,8 @@ async function viewFleetTires() {
     ${(f === 'winter_bad' || f === 'winter_unknown') && r.winter_need && (r.winter_need.groups.length || r.winter_need.missing_positions) ? winterNeedHtml(r.winter_need) : ''}
     <div class="list">${rows.map((x) => `<a class="row ${x.status === 'unter_minimum' ? 'p-kritisch' : x.status === 'warnung' ? 'p-mittel' : ''}" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}?sec=tires">${plate(x.plate)}<span class="title">${x.min_tread_mm === null ? '–' : esc(fmtMm(x.min_tread_mm))}</span><span class="chip ${cls[x.status]}">${esc(t('ts_' + x.status))}</span>${x.winter === 'nicht_erfuellt' ? `<span class="chip kritisch">${esc(t('ws_nicht_erfuellt'))}</span>` : ''}<span class="sub">${[x.kind === 'anhaenger' && esc(t('vk_anhaenger')), x.site && esc(x.site), `${esc(tn('tires_measured_n', x.measured_positions))}`, x.below_min && `${x.below_min}× < ${fmtMm(r.legal_min_tread_mm)}`, x.spare_below_min && esc(t('tires_spare_below').replace('{min}', fmtNum(r.legal_min_tread_mm))), x.oldest_measure_at && `${esc(t('tires_oldest'))} ${fmtD(x.oldest_measure_at)}`, x.oldest_dot_months !== null && `${esc(t('tires_oldest_dot'))} ${esc(tireAge(x.oldest_dot_months))}${x.age_warn ? ` (${x.age_warn}× ${esc(tn('tire_age_warn', r.warn_age_years))})` : ''}`, wf && x.winter_noncompliant.length && esc(t('winter_bad').replace('{p}', x.winter_noncompliant.map(posL).join(', '))), wf && x.winter_missing.length && esc(t('winter_missing').replace('{p}', x.winter_missing.map(posL).join(', '))), wf && x.winter_order && woApptTxt(x.winter_order), wf && x.winter_closed_order && `⚠ ${esc(t('wo_closed_short').replace('{no}', x.winter_closed_order.case_no))}`].filter(Boolean).join(' · ')}</span></a>`).join('') || noneP()}</div>${woBatchHtml(f, rows)}${S.woRes ? `<div id="wobres" class="noprint" role="status">${S.woRes}</div>` : ''}${wf ? `<p class="small muted">${esc(t('winter_rule'))}</p>` : ''}`, 'more');
   S.woRes = ''; wireWoBatch();
+  S.tiresAt = Date.now();
+  const trl = $('#tirereload'); if (trl) trl.onclick = async (e) => { e.preventDefault(); try { await viewFleetTires(); } catch (err) { toast(err.message, true); } };
   $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tireFilter = b.dataset.tf; viewFleetTires(); }));
   // CSV: Fahrzeuge des gewählten Reiters (Backlog 1065, wie Liste und Ausdruck; „Alle“ = ganzer Bestand) und Standorts mit Status und Reifengrößen je Achse
   $('#trcsv').onclick = async () => { try { download(await api('GET', '/api/tires/fleet?format=csv' + (r.site ? '&site=' + encodeURIComponent(r.site) : '') + (f !== 'all' ? '&filter=' + f : '')), `fuhrpark-reifen_${envFn()}_${bDate()}${r.site ? '_' + fnPart(r.site) : ''}${TIRE_FLEET_FILE[f] ? '_' + TIRE_FLEET_FILE[f] : ''}.csv`); } catch (err) { toast(err.message, true); } };

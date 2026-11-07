@@ -3946,3 +3946,7 @@ Object.assign(STRINGS.en, { case_chg_banner: 'This case has been changed in the 
 Object.assign(STRINGS.de, { veh_chg_banner: 'Diese Fahrzeugakte wurde inzwischen geändert (Stand {t}).' });
 Object.assign(STRINGS.uk, { veh_chg_banner: 'Картку транспорту тим часом змінено (стан {t}).' });
 Object.assign(STRINGS.en, { veh_chg_banner: 'This vehicle file has been changed in the meantime (as of {t}).' });
+// Backlog 1127: Reifenübersicht aktualisiert sich still
+Object.assign(STRINGS.de, { tires_asof_hint: 'Die Übersicht aktualisiert sich alle 5 Minuten und beim Zurückkehren ins Fenster selbst (Messungen, Reifenwechsel und Winterreifen-Aufträge der Kollegen) – nicht, solange du hier etwas auswählst oder eingibst.' });
+Object.assign(STRINGS.uk, { tires_asof_hint: 'Огляд оновлюється сам кожні 5 хвилин і коли ви повертаєтеся до вікна (вимірювання, заміна шин і замовлення зимових шин колег) – але не тоді, коли ви тут щось вибираєте або вводите.' });
+Object.assign(STRINGS.en, { tires_asof_hint: 'The overview refreshes itself every 5 minutes and when you return to the window (colleagues\' measurements, tyre changes and winter tyre orders) – not while you are selecting or typing here.' });

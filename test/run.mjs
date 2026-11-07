@@ -36158,6 +36158,23 @@ await test('Backlog 1125/1126 (Blickwinkel „Fuhrparkleitung hat Fahrerliste bz
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-fahrer-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
+await test('Backlog 1127 (Blickwinkel „Werkstatt-Tablet bzw. Fuhrparkleitung hat die Reifenübersicht den ganzen Tag offen“): Reifenübersicht zeigt den Stand und aktualisiert sich still', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('async function viewFleetTires('); const vt = app.slice(a, app.indexOf('\n}\n', a));
+  ok(vt.includes('<p class="small muted noprint" id="tiresasof"') && vt.includes("t('tires_asof_hint')") && vt.includes("$('#tirereload')"), 'Standzeile (nicht im Druck) + „Neu laden“');
+  ok(vt.includes("if (S.quietBg && !isTiresHash()) return; // stille Aktualisierung (Backlog 1127): inzwischen andere Seite – nichts überschreiben\n  render(") && vt.includes('S.tiresAt = Date.now();'), 'inzwischen andere Seite: nichts überschreiben; Zeitpunkt merken');
+  const r = app.indexOf('async function tiresAutoRefresh('); const fn = app.slice(r, app.indexOf('\n}\n', r));
+  ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart') && fn.includes('S.quietBg'), 'nur sichtbar, online, nicht doppelt');
+  ok(fn.includes('isTiresHash()') && fn.includes('viewDirty()') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open], .toast.err, [data-wobdone], [data-wobfail]') && fn.includes('sel.isCollapsed'), 'nur auf der Übersicht; nie bei Fokus/Eingaben/Ergebnis Sammelauftrag/Textauswahl/Dialog/Fehlermeldung');
+  ok(fn.includes("S.lastHash = '#/tires';") && fn.indexOf("S.lastHash = '#/tires';") < fn.indexOf('S.quietBg = true;'), 'Direktsprung #/tires?f=… zählt als dieselbe Seite');
+  ok(fn.includes('try { await viewFleetTires(); } catch { S.tiresAt = Date.now(); } finally { S.quietBg = false; }'), 'Fehler: alte Ansicht bleibt');
+  ok(app.includes('setInterval(() => tiresAutoRefresh(HOME_REFRESH_MS), 30000);') && app.includes("window.addEventListener('focus', () => tiresAutoRefresh(60000));") && app.includes("document.addEventListener('visibilitychange', () => tiresAutoRefresh(60000));"), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min.');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].tires_asof_hint && STRINGS[l].tires_asof_hint !== STRINGS[l].fines_asof_hint, 'Text ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-reifen-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
