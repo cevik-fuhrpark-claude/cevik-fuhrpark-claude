@@ -35835,6 +35835,22 @@ await test('Backlog 1105 (Folge aus 1104, Fuhrparkleitung am Tablet): Links „N
   ok(css.indexOf('.legend a { color: inherit;') < css.indexOf('@media (pointer: coarse) { .legend a { min-height: 44px; }'), 'CSS: Legende-Regel nach der Grundregel');
 });
 
+await test('Backlog 1106 (Folge aus 1104/1105, Werkstatt/Inhaber/Fahrer am Tablet): Aufklapper, Tabellen- und Akte-Links, Protokoll-Ziele, Ankreuzfelder bei Fingerbedienung 44 px; Knöpfe in Tabellen behalten Knopfgröße', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(css.includes('@media screen { td > a[href]:not(.btn) { display: inline-block; min-height: 24px;') && !css.includes('td > a[href] {'), 'CSS: Tabellen-Link-Regel nimmt Knöpfe (.btn) aus');
+  const co = css.indexOf('@media (pointer: coarse) {\n  details summary { min-height: 44px;');
+  ok(co > css.indexOf('details summary { cursor: pointer;') && co > css.indexOf('.kv dd > a:only-child { display: inline-flex;') && co > css.indexOf('[data-scanav] > a.chip { display: inline-flex;'), 'CSS: Fingerbedienungs-Regel nach den Grundregeln');
+  ok(/\.kv dd > a:only-child, a\.autgt, \.chkl, \[data-scanav\] > a\.chip \{ display: inline-flex; align-items: center; min-height: 44px; \}/.test(css), 'CSS: Akte-Link, Protokoll-Ziel, Ankreuzfelder, Verfügbarkeits-Chip 44 px');
+  ok(css.includes('@media screen and (pointer: coarse) { td > a[href]:not(.btn) { display: inline-flex; align-items: center; min-height: 44px; } }'), 'CSS: Tabellen-Links 44 px bei Fingerbedienung');
+  ok(!app.includes('class="chip mittel" style="display:inline-block;min-height:24px'), 'Verfügbarkeits-Chip ohne Inline-Mindesthöhe (sonst greift die Fingerbedienungs-Regel nicht)');
+  for (const s of ['<label class="chkl" style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="inact"', '<label class="chkl" style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="dinact"', '<label class="small chkl" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fdrv">', '<a href="#/new/multi" class="tap" id="tomulti">', '<a class="tap" href="#/check/paper">', '<a class="tap" id="dcdmglink" href="', 'class="tap" id="wswunk"', '<a class="tap" href="#/maintenance?f=gaps">', '<p style="margin-top:8px"><a class="tap" href="#/help">']) ok(app.includes(s), s);
+  const all = ['main', 'verwaltung', 'fahrzeug', 'leitung'].map((g) => { try { return fs.readFileSync(new URL(`../public/app-${g}.js`, import.meta.url), 'utf8'); } catch { return ''; } }).join('');
+  ok(all.includes('class="tap" id="dcdmglink"') && all.includes('class="tap" id="tomulti"'), 'Module neu erzeugt');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-tippflaechen-rollen.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

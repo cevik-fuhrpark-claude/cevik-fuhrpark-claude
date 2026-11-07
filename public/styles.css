@@ -188,6 +188,7 @@ div.alert:not(.panel) { color: var(--stop); background: var(--stop-bg); border: 
 /* [CLAUDE] Backlog 1100 (Blickwinkel „Werkstatt-Tablet im Querformat mit Handschuhen“): alleinstehende Links in Angabenlisten
    (z. B. „Fahrzeugakte: SZ-YC 5517“ im Vorgang) hatten nur 20 px Tippfläche – jetzt mind. 24 px (WCAG 2.5.8, wie Tabellen-Links). */
 .kv dd > a:only-child { display: inline-flex; align-items: center; min-height: 24px; }
+[data-scanav] > a.chip { display: inline-flex; align-items: center; min-height: 24px; } /* Verfügbarkeit in der Fahrzeugakte (vorher Inline-Stil) */
 @media (max-width: 480px) { .kv { grid-template-columns: minmax(0, 1fr); gap: 0 } .kv dt { margin-top: 8px; font-size: .85em } }
 /* Druck: Wertspalte mind. 7,5em – lange ukrainische Beschriftungen ließen 44 px übrig (Datum „10.01./2026“ zerbrochen, 22.10.2026) */
 @media print { .kv { grid-template-columns: minmax(0, max-content) minmax(7.5em, 1fr); } }
@@ -313,7 +314,7 @@ th { color: var(--steel); font-weight: 600; }
 .backlink, .navlinks a { display: inline-flex; align-items: center; min-height: 44px; padding-right: 12px; }
 .navlinks { display: flex; flex-wrap: wrap; gap: 0 12px; }
 /* Kennzeichen-/Vorgangsnummer-Links in Tabellenzellen: Tippfläche mind. 24 px hoch (WCAG 2.5.8; vorher 20–23 px, 22.10.2026) – nur Bildschirm */
-@media screen { td > a[href] { display: inline-block; min-height: 24px; padding: 2px 0; box-sizing: border-box; } }
+@media screen { td > a[href]:not(.btn) { display: inline-block; min-height: 24px; padding: 2px 0; box-sizing: border-box; } } /* Backlog 1106: Knöpfe (.btn) in Tabellen ausgenommen – vorher 26 px ohne Innenabstand („Protokoll“ in der Benutzerliste) */
 .seg-tabs a { min-height: 44px; display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 999px; border: 1.5px solid var(--rule); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
 .seg-tabs a.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
@@ -322,6 +323,15 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 .specrow { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); align-items: center; }
 .btn.small { min-height: 36px; padding: 6px 12px; font-size: 0.875rem; }
 @media (pointer: coarse) { .btn.small { min-height: 44px; } } /* Backlog 1105: kleine Knöpfe bei Fingerbedienung 44 px (Kosten-Zeiträume, CSV, Verträge) */
+/* [CLAUDE] Backlog 1106 (Folge aus 1104/1105, Werkstatt und Inhaber am Tablet): bei Fingerbedienung 44 px für Aufklapper (Passwort ändern,
+   Artikel anlegen, Fahrzeug anlegen … – vorher 40 px), Vorgangsnummer-/Kennzeichen-Links in Tabellen (24–27 px), alleinstehende Links in
+   Angabenlisten (Fahrzeugakte im Vorgang, 24 px), Ziel-Links im Protokoll (17 px), Ankreuzfelder mit Beschriftung (.chkl, 28 px) und den
+   Verfügbarkeits-Chip der Fahrzeugakte (29 px). Mit Maus bleibt alles wie bisher (24 px, WCAG 2.5.8). Muss nach den Grundregeln stehen. */
+@media (pointer: coarse) {
+  details summary { min-height: 44px; box-sizing: border-box; padding: 10px 0; }
+  .kv dd > a:only-child, a.autgt, .chkl, [data-scanav] > a.chip { display: inline-flex; align-items: center; min-height: 44px; }
+}
+@media screen and (pointer: coarse) { td > a[href]:not(.btn) { display: inline-flex; align-items: center; min-height: 44px; } }
 .occq { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .occq .btn { white-space: nowrap; }
 [data-occdesc] { margin-top: 6px; }
