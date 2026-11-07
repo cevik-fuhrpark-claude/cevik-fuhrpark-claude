@@ -36400,6 +36400,14 @@ await test('Backlog 1142 (Sonde Aufbau/Kupplung/Kühlung EN/UK): „Temperatur i
   for (const x of ['дах кабіни полагодили', 'протікає дах причепа']) ok(!hit(CA, x), 'nicht Fahrerhaus undicht: ' + x);
 });
 
+await test('Backlog 1143 (Sonde Tankkarte EN/UK): „fuel card not going through/not accepted/won’t go through“, „паливна картка не проходить“, „топливная карта не проходит“, „картка на заправці не проходить“, „карту не приймають на заправці“ → Tankkarte; „картка не проходить“/„оплата не проходить“ ohne Tankstelle nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const FC = new RegExp(app.match(/^const FUELCARD_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['fuel card not going through', 'fuel card not accepted', 'fuel card won\'t go through', 'паливна картка не проходить', 'топливная карта не проходит', 'картка на заправці не проходить', 'карту не приймають на заправці', 'Tankkarte geht nicht durch']) ok(FC.test(recurFix(x)), 'Tankkarte: ' + x);
+  for (const x of ['картка не проходить', 'оплата не проходить', 'карту не приймають', 'картка водія не проходить']) ok(!FC.test(recurFix(x)), 'nicht Tankkarte: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
