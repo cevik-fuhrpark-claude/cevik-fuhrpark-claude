@@ -1369,6 +1369,39 @@ async function claimsAutoRefresh(minAge) {
 setInterval(() => { contractsAutoRefresh(HOME_REFRESH_MS); claimsAutoRefresh(HOME_REFRESH_MS); }, 30000);
 window.addEventListener('focus', () => { contractsAutoRefresh(60000); claimsAutoRefresh(60000); });
 document.addEventListener('visibilitychange', () => { contractsAutoRefresh(60000); claimsAutoRefresh(60000); });
+// Backlog 1125 (Blickwinkel „Fuhrparkleitung hat die Fahrerliste den ganzen Tag offen, Kollegin trägt Führerscheinkontrollen und Unterweisungen ein“):
+// Die Fahrerliste (Fristen-Ampel je Fahrer: Führerschein, Fahrerkarte, Code 95, Unterweisungen, Kontrolle) blieb auf dem Stand des Öffnens – eine
+// erledigte Führerscheinkontrolle stand weiter als fällig da. Jetzt wie die Bußgeldliste: Standzeile und still neu aufbauen (alle 5 Min., beim
+// Zurückholen des Fensters nach ≥ 1 Min.; Standort, „Fristen bis“ und „ausgeschiedene“ stehen in S). Nur Inhaber/Fuhrparkleitung (Fahrer sehen ihre
+// eigene Akte). Nie bei Fokus im Feld, Eingaben (Neuer Fahrer, Sammelerfassung), angezeigtem Ergebnis einer Sammelerfassung, Textauswahl, Dialog, Fehlermeldung.
+const isDriversHash = () => (location.hash || '') === '#/drivers';
+async function driversAutoRefresh(minAge) {
+  if (!isMgr() || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isDriversHash() || S.lastHash !== '#/drivers' || !S.drvAt || Date.now() - S.drvAt < minAge) return;
+  const ae = document.activeElement;
+  if (viewDirty() || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err, [data-dtbdone], [data-dlbdone]')) return;
+  const sel = window.getSelection && window.getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  S.quietBg = true;
+  try { await viewDrivers(); } catch { S.drvAt = Date.now(); } finally { S.quietBg = false; }
+}
+// Backlog 1126 (Blickwinkel „Fuhrparkleitung hat die Auslese-Fristen den ganzen Tag offen, Disposition liest Fahrerkarten aus“): Die Liste
+// „Auslesungen“ (überfällig/bald je Fahrerkarte und Massenspeicher) blieb auf dem Stand des Öffnens. Jetzt ebenso Standzeile und still neu aufbauen
+// (Reiter, Auswahl und Standort stehen in S). Nie bei Fokus im Feld, Eingaben (Importquelle/-datei, Erfassungsformular), angezeigter Import-Vorschau,
+// Textauswahl, Dialog oder Fehlermeldung.
+const isTachoHash = () => (location.hash || '') === '#/tacho';
+async function tachoAutoRefresh(minAge) {
+  if (!S.me || S.me.role === 'driver' || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isTachoHash() || S.lastHash !== '#/tacho' || !S.tachoAt || Date.now() - S.tachoAt < minAge) return;
+  const ae = document.activeElement;
+  if (viewDirty() || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err')) return;
+  const imp = document.getElementById('timpr'); if (imp && imp.innerHTML.trim()) return;
+  const sel = window.getSelection && window.getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  S.quietBg = true;
+  try { await viewTacho(); } catch { S.tachoAt = Date.now(); } finally { S.quietBg = false; }
+}
+setInterval(() => { driversAutoRefresh(HOME_REFRESH_MS); tachoAutoRefresh(HOME_REFRESH_MS); }, 30000);
+window.addEventListener('focus', () => { driversAutoRefresh(60000); tachoAutoRefresh(60000); });
+document.addEventListener('visibilitychange', () => { driversAutoRefresh(60000); tachoAutoRefresh(60000); });
 // Backlog 1117 (Blickwinkel „Fuhrparkleitung hat einen Vorgang den ganzen Tag offen, die Werkstatt arbeitet daran“): Der geöffnete Vorgang
 // blieb auf dem Stand des Öffnens – „Zur Abschlusskontrolle“, neue Arbeitszeit, Fotos oder eine Rückfrage der Werkstatt erschienen erst nach
 // Neuladen; ein Knopfdruck auf dem alten Stand endete im Versionskonflikt. Jetzt alle 2 Min., beim Zurückholen des Fensters (≥ 1 Min.) und bei
@@ -7000,7 +7033,7 @@ async function viewDrivers() {
   // nur wählbare Konten: Rolle Fahrer, aktiv, Umgebung der Ansicht, noch keiner Akte zugeordnet (Server prüft dasselbe, 19.10.2026)
   const ve = S.me.role === 'owner' && S.viewEnv ? S.viewEnv : S.me.environment; const linked = new Set([...list.map((d) => d.user_id).filter(Boolean), ...(dr.linked_user_ids || [])]); // auch Akten anderer Standorte/inaktive (Backlog 101)
   try { users = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active && (!ve || !u.environment || u.environment === ve) && !linked.has(u.id)); } catch {}
-  const html = `<h1>${esc(t('drivers'))}</h1>${helpLink('drivers')}<p class="small muted">${esc(t('driver_privacy'))}</p>
+  const html = `<h1>${esc(t('drivers'))}</h1><p class="small muted noprint" id="driversasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/drivers" id="drvreload" title="${esc(t('drivers_asof_hint'))}">${esc(t('update_now'))}</a></p>${helpLink('drivers')}<p class="small muted">${esc(t('driver_privacy'))}</p>
     <details class="panel"><summary>${esc(t('new_driver'))}</summary><form id="ndf"><label>${esc(t('display_name'))}</label><input name="display_name" required><label>${esc(t('personnel_no'))}</label><input name="personnel_no"><label>${esc(t('site'))}</label><input name="site">
       <label>${esc(t('app_account'))}</label><select name="user_id"><option value="">${esc(t('no_account'))}</option>${users.map((u) => `<option value="${esc(u.id)}">${esc(u.display_name)} (${esc(u.username)})</option>`).join('')}</select>
       <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
@@ -7012,7 +7045,10 @@ async function viewDrivers() {
     <p class="noprint"><label class="chkl" style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="dinact" ${S.drvInactive ? 'checked' : ''} style="width:auto"> ${esc(t('inactive_drivers'))}</label></p>
     ${(dr.site_options || []).length > 1 || dr.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('dsite', '', dr.site_options, dr.site, t('site'), t('filter_all'))}</div></div>` : ''}${dr.no_site_hidden ? `<p class="small muted noprint" data-nositehidden>${esc(tn('drv_nosite_hidden', dr.no_site_hidden))}</p>` : ''}
     <div class="list">${list.map((d) => { const crit = d.status.items.filter((i) => i.status !== 'ok'); return `<a class="row ${d.status.overall === 'kritisch' ? 'p-kritisch' : d.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/drivers/${esc(d.id)}"><span>🪪</span><span class="title">${esc(d.display_name)}${d.personnel_no ? ` <span class="small muted">${noTr(d.personnel_no)}</span>` : ''}</span><span class="chip ${DST[d.status.overall]}">${esc(t('dov_' + d.status.overall))}</span><span class="sub">${d.due_items ? [...d.due_items.map((i) => `${i.kind === 'kontrolle' ? t('license_check') : i.kind === 'auslesung' ? t('tacho_card') : t('dk2_' + i.kind) + (i.title ? ' ' + i.title : '')}: ${fmtD(i.date)}`), d.username ? t('app_account') + ': ' + d.username : ''].filter(Boolean).map(esc).join(' · ') : [...crit.map((i) => `${t('dk2_' + i.kind)}${i.title ? ' ' + i.title : ''}: ${t('dst_' + i.status)} (${fmtD(i.valid_until)})`), d.status.check.status !== 'ok' ? `${t('license_check')}: ${t('dck_' + d.status.check.status)}` : '', d.status.tacho_status && d.status.tacho_status !== 'ok' ? `${t('tacho_card')}: ${t('tst_' + d.status.tacho_status)}` : '', !d.status.has_license ? t('no_license_doc') : '', d.username ? t('app_account') + ': ' + d.username : ''].filter(Boolean).map(esc).join(' · ')}</span></a>`; }).join('') || noneP()}</div>`;
+  if (S.quietBg && !isDriversHash()) return; // stille Aktualisierung (Backlog 1125): inzwischen andere Seite – nichts überschreiben
   render(html, 'more');
+  S.drvAt = Date.now();
+  { const rl = $('#drvreload'); if (rl) rl.onclick = async (e) => { e.preventDefault(); try { await viewDrivers(); } catch (err) { toast(err.message, true); } }; }
   S.dtbRes = ''; S.dlbRes = ''; wireDtb(); wireDlb();
   const ia = $('#dinact'); if (ia) ia.onchange = () => { S.drvInactive = ia.checked; viewDrivers(); };
   const dse = $('#dsite'); if (dse) dse.onchange = () => { S.drvSite = dse.value; viewDrivers(); };
@@ -7472,7 +7508,8 @@ async function viewTacho() {
   const opts = list.map((x) => `<option value="${esc(x.id)}">${esc(tab === 'drivers' ? x.display_name : x.plate)}</option>`).join('');
   // Ausdruck (Nachweis/Ablage): Reiter, Auswahl, Standort und Anzahl im Vermerk – Erfassen/Import erscheinen nicht
   const fl = (filters.find(([k]) => k === f) || [])[1] || '';
-  render(`<h1>${esc(t('tacho'))}</h1>${printHead([tab === 'drivers' ? t('tacho_cards') : t('tacho_vus'), `${t('print_filter')}: ${fl}`, r.site ? `${t('site')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', rows.length)])}<p class="small muted">${esc(t('tacho_rule'))}</p>
+  if (S.quietBg && !isTachoHash()) return; // stille Aktualisierung (Backlog 1126): inzwischen andere Seite – nichts überschreiben
+  render(`<h1>${esc(t('tacho'))}</h1><p class="small muted noprint" id="tachoasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/tacho" id="tachoreload" title="${esc(t('tacho_asof_hint'))}">${esc(t('update_now'))}</a></p>${printHead([tab === 'drivers' ? t('tacho_cards') : t('tacho_vus'), `${t('print_filter')}: ${fl}`, r.site ? `${t('site')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', rows.length)])}<p class="small muted">${esc(t('tacho_rule'))}</p>
     <div class="actions" style="flex-wrap:wrap"><button type="button" class="btn ${tab === 'drivers' ? '' : 'secondary'}" data-tt="drivers">${esc(t('tacho_cards'))} (${r.drivers.length})</button><button type="button" class="btn ${tab === 'vehicles' ? '' : 'secondary'}" data-tt="vehicles">${esc(t('tacho_vus'))} (${r.vehicles.length})</button></div>
     <div class="actions" style="flex-wrap:wrap;margin-top:0">${filters.map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tf="${k}">${esc(l)} (${n})</button>`).join('')}</div>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('tsite', '', r.site_options, r.site, t('site'), t('filter_all'))}</div></div>` : ''}${r.no_site_hidden ? `<p class="small muted noprint" data-nositehidden>${esc(tn('drv_nosite_hidden', r.no_site_hidden))}</p>` : ''}
@@ -7485,6 +7522,8 @@ async function viewTacho() {
     <p class="noprint"><a href="#/tacho/history" class="tap" id="thlink">${esc(t('th_link'))} ›</a></p>
     <section class="panel noprint"><h2 style="margin-top:0">${esc(t('tacho_import'))}</h2><p class="small muted">${esc(t('tacho_import_hint'))}</p>
       <label for="tsrc">${esc(t('tacho_import_src'))}</label><input id="tsrc" maxlength="300" placeholder="${esc(t('tacho_ev_ph'))}"><input type="file" id="timp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('tacho_import'))}" style="margin-top:8px"><div id="timpr"></div></section>`, 'more');
+  S.tachoAt = Date.now();
+  { const rl = $('#tachoreload'); if (rl) rl.onclick = async (e) => { e.preventDefault(); try { await viewTacho(); } catch (err) { toast(err.message, true); } }; }
   $$('[data-tt]').forEach((b) => (b.onclick = () => { S.tachoTab = b.dataset.tt; viewTacho(); }));
   $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tachoFilter = b.dataset.tf; viewTacho(); }));
   const tse = $('#tsite'); if (tse) tse.onchange = () => { S.tachoSite = tse.value; viewTacho(); };

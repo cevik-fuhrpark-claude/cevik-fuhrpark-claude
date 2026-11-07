@@ -36136,6 +36136,28 @@ await test('Backlog 1123/1124 (Blickwinkel „Inhaber/Fuhrparkleitung hat Vertr�
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-vertraege-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
+await test('Backlog 1125/1126 (Blickwinkel „Fuhrparkleitung hat Fahrerliste bzw. Auslese-Fristen den ganzen Tag offen“): beide Listen zeigen den Stand und aktualisieren sich still', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const body = (name) => { const a = app.indexOf('async function ' + name + '('); ok(a > 0, name); return app.slice(a, app.indexOf('\n}\n', a)); };
+  const vd = body('viewDrivers'); const vt = body('viewTacho');
+  ok(vd.includes('id="driversasof"') && vd.includes("t('drivers_asof_hint')") && vd.includes("$('#drvreload')") && vd.includes("if (S.quietBg && !isDriversHash()) return;") && vd.includes('S.drvAt = Date.now();'), 'Fahrerliste: Standzeile, „Neu laden“, nichts überschreiben, Zeitpunkt');
+  ok(vd.indexOf('id="driversasof"') > vd.indexOf("if (!isMgr())"), 'Fahrer (eigene Akte) bekommen keine Standzeile');
+  ok(vt.includes('id="tachoasof"') && vt.includes("t('tacho_asof_hint')") && vt.includes("$('#tachoreload')") && vt.includes("if (S.quietBg && !isTachoHash()) return;") && vt.includes('S.tachoAt = Date.now();'), 'Auslesungen: Standzeile, „Neu laden“, nichts überschreiben, Zeitpunkt');
+  for (const [fnName, view, at, hash] of [['driversAutoRefresh', 'viewDrivers', 'drvAt', '#/drivers'], ['tachoAutoRefresh', 'viewTacho', 'tachoAt', '#/tacho']]) {
+    const fn = body(fnName);
+    ok(fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart') && fn.includes('S.quietBg'), fnName + ': nur sichtbar, online, nicht doppelt');
+    ok(fn.includes(`S.lastHash !== '${hash}'`) && fn.includes('viewDirty()') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open], .toast.err') && fn.includes('sel.isCollapsed'), fnName + ': nie bei Fokus/Eingaben/Textauswahl/Dialog/Fehlermeldung');
+    ok(fn.includes(`try { await ${view}(); } catch { S.${at} = Date.now(); } finally { S.quietBg = false; }`), fnName + ': Fehler – alte Ansicht bleibt');
+    ok(app.includes(`${fnName}(HOME_REFRESH_MS)`) && app.includes(`${fnName}(60000)`), fnName + ': Takt 5 Min. / Fenster nach 1 Min.');
+  }
+  ok(body('driversAutoRefresh').includes('!isMgr()') && body('driversAutoRefresh').includes('[data-dtbdone], [data-dlbdone]'), 'Fahrerliste: nur Leitung; Ergebnis der Sammelerfassung bleibt stehen');
+  ok(body('tachoAutoRefresh').includes("S.me.role === 'driver'") && body('tachoAutoRefresh').includes("getElementById('timpr')"), 'Auslesungen: nicht für Fahrer; Import-Vorschau bleibt stehen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['drivers_asof_hint', 'tacho_asof_hint']) ok(STRINGS[l][k] && STRINGS[l][k] !== STRINGS[l].fines_asof_hint, k + ' ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-fahrer-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
