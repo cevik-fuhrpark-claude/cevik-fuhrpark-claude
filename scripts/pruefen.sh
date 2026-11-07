@@ -576,6 +576,7 @@ UI-Foto-dunkel: sehr dunkle Fotos in Melden, Abfahrtskontrolle und am Vorgang l�
 UI-Foto-unscharf: stark unscharfe Fotos in Melden, Abfahrtskontrolle und am Vorgang lösen einen Hinweis aus, Senden bleibt möglich (DE/UK/EN; Backlog 864)|ui-foto-unscharf.py|/tmp/cfp-foto-unscharf.log
 UI-Foto-Video: Videos/Tonaufnahmen in Melden und Abfahrtskontrolle mit Hinweis genannt, nicht gesendet; am Vorgang eigener Hinweis (DE/UK/EN; Backlog 1129)|ui-foto-video.py|/tmp/cfp-foto-video.log
 UI-Strafzettel: eigene Schritte im Meldeformular, Strafzettel „an der Windschutzscheibe“ ohne Glasschaden-Schritte, Hilfe-Abschnitt (DE/UK/EN; Backlog 1130)|ui-strafzettel.py|/tmp/cfp-strafzettel.log
+UI-Sitzfederung: „Fahrersitz Luftfederung“ zeigt Sitz- statt Federungs-Schritte (DE/UK/EN; Backlog 1132)|ui-sitz-federung.py|/tmp/cfp-sitz-federung.log
 UI-Reifenwechsel mit anderer Größe als für die Achse hinterlegt: Hinweis beim Tippen und nach dem Speichern (DE/UK/EN; Backlog 849)|ui-reifen-groesse-abweichend.py|/tmp/cfp-reifen-groesse-abweichend.log
 UI-Freigabe-Formular: Werkstatt zum Fahrzeugstandort vorgewählt, „–“ ohne passende Werkstatt, Hinweis bei abweichendem Vorschlag (DE/UK/EN; Backlog 1047)|ui-freigabe-standort.py|/tmp/cfp-freigabe-standort.log
 UI-Freigabe bei geschlossener Vorschlags-Werkstatt: Werkstatt am Fahrzeugstandort bzw. „–“, Hinweis „geschlossen“ (DE/UK/EN; Backlog 1051)|ui-werkstatt-geschlossen.py|/tmp/cfp-werkstatt-geschlossen.log

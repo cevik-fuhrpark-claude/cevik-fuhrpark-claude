@@ -21763,7 +21763,7 @@ await test('Backlog 318 (Blickwinkel „Luftfederung defekt oder Lkw/Auflieger h
     ok(L.susp_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="susp" class="panel" hidden role="status">`), 'Panel #susp');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#susp').hidden = !SUSP_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv));") /* Backlog 1132 */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('susp') && order.indexOf('flat') < order.indexOf('susp') && order.indexOf('brake') < order.indexOf('susp') && order.indexOf('coupling') < order.indexOf('susp') && order.indexOf('susp') < order.indexOf('loose') && order.indexOf('susp') < order.indexOf('load'), 'Gruppierung: Reifen/Bremse/Kupplung vor Federung vor losem Teil/Ladung');
   ok(helpAfter(app, 'susp', 'engine'), 'Hilfe-Abschnitt susp nach engine');
@@ -21819,7 +21819,7 @@ await test('Backlog 321 (Blickwinkel „Sicherheitsgurt oder Fahrersitz defekt�
     ok(L.seat_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="seat" class="panel" hidden role="status">`), 'Panel #seat');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#seat').hidden = !SEAT_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#seat').hidden = !SEAT_HINT.test(dfx) && !SEATSUSP_HINT.test(dfx);") /* Backlog 1132 */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('seat') && order.indexOf('acc') < order.indexOf('seat') && order.indexOf('steer') < order.indexOf('seat') && order.indexOf('adas') < order.indexOf('seat') && order.indexOf('seat') < order.indexOf('mirror') && order.indexOf('seat') < order.indexOf('door'), 'Gruppierung: Unfall/Lenkung/Assistent vor Gurt/Sitz vor Spiegel/Tür');
   ok(helpAfter(app, 'seat', 'gear'), 'Hilfe-Abschnitt seat nach gear');
@@ -27587,7 +27587,7 @@ await test('Backlog 783 (Sonde Reparaturvermerk Federung): nur die Federbein-/Fe
   const m = app.match(/^const SUSP_HINT = \/(.+)\/i;$/m); ok(m, 'SUSP_HINT auf Modulebene');
   const r = new RegExp(m[1], 'i');
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
-  ok(app.includes("$('#susp').hidden = !SUSP_HINT.test(dv);"), 'Federungs-Hinweis prüft dv (eigener Ausschluss)');
+  ok(app.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv));"), 'Federungs-Hinweis prüft dv (eigener Ausschluss; ohne Sitzfederung, Backlog 1132)');
   for (const x of ['Luftfederung defekt', 'Liftachse geht nicht hoch', 'Liftachse geht nicht mehr hoch', 'air suspension failed', 'Пневмоподушка лопнула', 'Ресора зламана', 'Luftfederung wieder defekt, obwohl repariert', 'подушка лопнула знову, хоча замінили', 'Feder gebrochen, nicht repariert', 'Luftbalg kaputt, muss getauscht werden', 'air bag burst, needs to be replaced', 'Пневмоподушка лопнула, треба замінити', 'Auflieger hängt schief. Luftbalg getauscht']) ok(r.test(recurFix(x)), 'SUSP_HINT: ' + x);
   for (const x of ['Luftfederung defekt, repariert', 'Liftachse geht nicht hoch, repariert', 'air suspension failed, repaired', 'Пневмоподушка лопнула, замінили', 'Ресора зламана, замінили', 'Подвеска не работает, отремонтировали', 'Auflieger hängt schief, Luftbalg getauscht', 'Federbein gebrochen, getauscht']) ok(!r.test(recurFix(x)), 'SUSP_HINT nicht: ' + x);
 });
@@ -36275,6 +36275,21 @@ await test('Backlog 1131 (Sonde Glas-Hinweis): Gegenstände an/vor der Windschut
   for (const x of ['Navi-Halterung an der Windschutzscheibe fällt ab', 'Handyhalter an der Frontscheibe hält nicht', 'Saugnapf der Dashcam an der Windschutzscheibe lose', 'Sonnenblende vor der Windschutzscheibe abgebrochen', 'Vignette an der Windschutzscheibe fehlt', 'Gardine vor der Frontscheibe gerissen', 'phone holder on the windscreen fell off', 'sun visor in front of the windshield broken', 'тримач телефону на лобовому склі відпав']) { ok(GL.test(x), 'vorher Glas-Schritte: ' + x); ok(!GL.test(noWsObj(x)), 'jetzt keine: ' + x); }
   for (const x of ['Navi-Halterung an der Windschutzscheibe, Scheibe hat einen Riss', 'Halterung an der Windschutzscheibe abgerissen, Windschutzscheibe gesprungen', 'sat nav mount on the windscreen loose, windscreen cracked', 'Windschutzscheibe gerissen', 'Steinschlag in der Frontscheibe', 'тріщина на лобовому склі']) ok(GL.test(noWsObj(x)), 'Glasschaden bleibt: ' + x);
   ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk)));") && app.includes('const glassNoClaim = !cl && GLASS_HINT.test(noTicket(noWsObj(noSticker(desc))));'), 'Meldeformular und Versicherungsabschnitt');
+});
+await test('Backlog 1132 (Sonde Federung/Sitz): Luftfederung des Fahrer-/Beifahrersitzes zeigt die Sitz-Schritte statt der Federungs-Schritte (DE/UK/EN); Fahrzeugfederung daneben bleibt erkannt', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const sp = app.match(/^const SEATSUSP_SPANS = \/(.+)\/gi;$/m); ok(sp, 'SEATSUSP_SPANS auf Modulebene');
+  const G = new RegExp(sp[1], 'gi'), I = new RegExp(sp[1], 'i'); const no = (x) => x.replace(G, ' ');
+  const SU = pat('SUSP_HINT'), SE = pat('SEAT_HINT');
+  for (const x of ['Fahrersitz Luftfederung verliert Luft', 'Sitz Luftfederung kaputt', 'Luftfederung vom Fahrersitz defekt', 'Luftfederung am Sitz geht nicht', 'Beifahrersitz Federung kaputt', 'seat air suspension leaking', 'driver seat suspension broken', 'пневмопідвіска сидіння не працює', 'сидіння водія пневмопідвіска спускає']) { ok(!SU.test(no(x)), 'keine Federungs-Schritte: ' + x); ok(SE.test(x) || I.test(x), 'Sitz-Schritte: ' + x); }
+  ok(SU.test('Fahrersitz Luftfederung verliert Luft') && SU.test('seat air suspension leaking'), 'vorher Federungs-Schritte');
+  for (const x of ['Luftfederung hinten links verliert Luft', 'Federung hinten links defekt, Fahrersitz Luftfederung auch', 'cab suspension broken', 'Besitzer sagt Luftfederung kaputt']) { ok(SU.test(no(x)), 'Fahrzeugfederung bleibt: ' + x); }
+  ok(!I.test('Luftfederung hinten links verliert Luft') && !I.test('Fahrersitz verstellt'), 'keine Sitzfederung');
+  ok(app.includes('const SEATSUSP_HINT = new RegExp(SEATSUSP_SPANS.source, \'i\');'), 'Prüfmuster ohne g (kein lastIndex)');
+  const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
+  ok(hl.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv));") && hl.includes("$('#seat').hidden = !SEAT_HINT.test(dfx) && !SEATSUSP_HINT.test(dfx);"), 'Meldeformular');
 });
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
