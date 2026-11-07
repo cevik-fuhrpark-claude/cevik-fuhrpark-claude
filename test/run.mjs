@@ -36538,6 +36538,20 @@ await test('Backlog 1155 (Sonde Achse/Radlager/Spanngurt, sicherheitsrelevant): 
   for (const w of ['eine Achse verbogen oder gebrochen', 'вісь погнулась чи зламалась', 'an axle is bent or broken', 'eine verbogene oder gebrochene Achse', 'погнуту чи зламану вісь', 'a bent or broken axle']) ok(de.includes(w), 'Text fehlt: ' + w);
 });
 
+await test('Backlog 1156 (Sonde ABS/Anbauteile/Fahrerhaustür, sicherheitsrelevant): „ABS Kabel Auflieger abgerissen“, „trailer ABS cable damaged“, „не працює ABS причепа“, „обірваний кабель ABS“, „роз\'єм ABS пошкоджений“ → Bremsen; „боковий обтічник відпав“, „відірвало спойлер“ → Teil hängt/verloren; „дверь кабины не закрывается“ nicht mehr Wasser im Fahrerhaus; Reparaturvermerk, „abs pump“, „спойлер у порядку“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [BR, LO, CL] = ['BRAKE_HINT', 'LOOSE_HINT', 'CABLEAK_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['ABS Kabel Auflieger abgerissen', 'trailer ABS cable damaged', 'не працює ABS причепа', 'обірваний кабель ABS', 'кабель ABS обірвало', 'ABS не працює', 'не работает ABS на прицепе', "роз'єм ABS пошкоджений", 'ABS geht nicht', 'ABS-Stecker am Auflieger kaputt']) ok(hit(BR, x), 'Bremsen: ' + x);
+  for (const x of ['не працює ABS, вже відремонтували', 'ABS war defekt, wurde repariert', 'ABS-Kabel abgerissen, inzwischen ersetzt', 'abs pump', 'ABS ok']) ok(!hit(BR, x), 'nicht Bremsen: ' + x);
+  for (const x of ['боковий обтічник відпав', 'відірвало спойлер на даху', 'обтекатель оторвался', 'спойлер звисає', 'дефлектор висить']) ok(hit(LO, x), 'Teil hängt/verloren: ' + x);
+  ok(!hit(LO, 'спойлер у порядку'), 'nicht Teil hängt: спойлер у порядку');
+  for (const x of ['дверь кабины не закрывается', 'не закривається двері кабіни']) ok(!hit(CL, x), 'nicht Wasser im Fahrerhaus: ' + x);
+  for (const x of ['люк не закривається', 'кабіна протікає']) ok(hit(CL, x), 'Wasser im Fahrerhaus: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
