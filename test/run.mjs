@@ -36361,6 +36361,16 @@ await test('Backlog 1139 (Sonde Elektrik/Licht): „Steckdose am Auflieger verbr
   for (const x of ['headlight cracked', 'headlamp smashed', 'indicator flashing fast', 'blinkers blinking too fast']) ok(LI.test(x), 'Beleuchtung: ' + x);
   ok(!LI.test('headlight cracked, replaced'), 'Reparaturvermerk');
 });
+await test('Backlog 1140 (Sonde EN/UK-Gegenstücke): „mirror glass fell out“/„скло дзеркала випало“ → Spiegel, „key won’t turn“/„ключ не провертається“ → Schloss, „wiper blade torn“/„щітка двірника порвалась“ → Sicht (wie DE); Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const MI = pat('MIRROR_HINT'), CL = pat('CABLOCK_HINT'), VI = pat('VISIB_HINT');
+  for (const x of ['mirror glass fell out', 'mirror glass missing', 'скло дзеркала випало', 'стекло зеркала выпало']) ok(MI.test(x), 'Spiegel: ' + x);
+  for (const x of ['key won’t turn', "key doesn't turn", 'ключ не провертається', 'ключ не проворачивается']) ok(CL.test(x), 'Schloss: ' + x);
+  for (const x of ['wiper blade torn', 'wiper blades worn', 'щітка двірника порвалась', 'резинка дворника порвалась']) ok(VI.test(x), 'Sicht: ' + x);
+  for (const [re, x] of [[MI, 'mirror glass fell out, replaced'], [CL, 'ключ не провертається, полагодили'], [VI, 'wiper blade torn, replaced']]) ok(!re.test(x), 'Reparaturvermerk: ' + x);
+});
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
