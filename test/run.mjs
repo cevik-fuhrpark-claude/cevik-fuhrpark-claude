@@ -7719,7 +7719,7 @@ await test('Fahrzeugliste: Anzahl offener Agentenbefunde je Fahrzeug (davon krit
     ok(/VEH_AV_LINK\.includes\(hf\) && \(!hf\.startsWith\('with_findings'\) \|\| isMgr\(\)\)/.test(app) && /history\.replaceState\(history\.state, '', '#\/vehicles'\)/.test(app), 'Direktsprung: nur bekannte Filter, Adresse bereinigt');
     ok(/async function viewFine[\s\S]*?printHead\(\[t\('fines'\), f\.fine_no\]\)[\s\S]*?id="fdprt"[\s\S]*?\$\('#fdprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Bußgeld-Detail druckbar (Aktenzeichen im Vermerk)');
     ok(/async function viewDriver[\s\S]*?printHead\(\[t\('driver_file'\), d\.display_name\]\)[\s\S]*?id="ddprt"[\s\S]*?\$\('#ddprt'\)\.onclick = \(\) => window\.print\(\)/.test(app) && /const PRINT_OPEN = '[^']*#ddhist, #dthist, #dlchist[^']*'/.test(app), 'Fahrerakte druckbar, Verläufe werden mitgedruckt');
-    ok(/async function viewWsLoad[\s\S]*?printHead\(\[`\$\{tn\('weeks_n', weeks\)\}`\]\)[\s\S]*?id="wlprt"[\s\S]*?\$\('#wlprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Werkstattauslastung druckbar (Zeitraum im Vermerk)');
+    ok(/async function viewWsLoad[\s\S]*?printHead\(\[`\$\{tn\('weeks_n', weeks\)\}`, `\$\{t\('period'\)\}: [^`]*`\]\)[\s\S]*?id="wlprt"[\s\S]*?\$\('#wlprt'\)\.onclick = \(\) => window\.print\(\)/.test(app), 'Werkstattauslastung druckbar (Zeitraum im Vermerk)');
     ok(app.includes('href="#/master?q=${encodeURIComponent(v.plate)}" id="vafm"') && app.includes("[/^#\\/master(?:\\?(q|sev)=([^&]*))?$/, viewMaster]") && /async function viewMaster\(argKey, argVal, cached\) \{\n  const q = argKey === 'q' \? \(argVal \?\? ''\) : undefined;[\s\S]{0,400}?history\.replaceState\(history\.state, '', '#\/master'\)/.test(app) && !/\$\('#vafm'\)/.test(app), 'Akte → Management-Panel per Direktsprung #/master?q=<Kennzeichen>, Adresse bereinigt');
     ok(app.includes("href=\"${hj('#/vehicles?f=with_notes')}\" id=\"dnotes\"") && !/\$\('#dnotes'\)/.test(app), 'Disposition „Fahrzeuge mit Hinweisen“ nutzt den Direktsprung statt Klick-Handler');
     const crit = vl.filter((x) => x.agent_findings_critical > 0).length;
@@ -35863,6 +35863,22 @@ await test('Backlog 1107 (Blickwinkel „Werkstatt bucht Teile mit Handschuhen �
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(!/<(?:input|select|textarea)\b[^>]*style="[^"]*font-size/.test(app), 'app.js: keine Inline-Schriftgröße an Feldern');
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-feldschrift-touch.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
+await test('Backlog 1108 (Blickwinkel „Inhaber druckt Mängelstatistik, Kennzahlen und Werkstattauslastung am Tablet“): Druckkopf mit Datumszeitraum, Kalenderwoche mit Jahr über den Jahreswechsel', async () => {
+  const fs = await import('node:fs');
+  const { isoWeek } = await import('../src/reports.js');
+  // Wochenkennung liefert das ISO-Jahr in den ersten 4 Zeichen und die Woche ab Zeichen 7 – darauf baut die Anzeige „KW 53/2026“
+  eq(isoWeek('2026-12-31'), '2026-W53'); eq(isoWeek('2027-01-04'), '2027-W01'); eq(isoWeek('2027-01-01'), '2026-W53');
+  const wl = (await users.fleet.get('/api/reports/workshop-load?weeks=26')).data;
+  ok(/^\d{4}-\d{2}-\d{2}$/.test(wl.from) && wl.weeks.length === 26 && wl.weeks.every((w) => /^\d{4}-W\d{2}$/.test(w)), 'Werkstattauslastung: from + Wochenkennungen');
+  const d = (await users.fleet.get('/api/reports/defects?days=30')).data;
+  ok(typeof d.since === 'string' && !Number.isNaN(Date.parse(d.since)), 'Mängelstatistik liefert since');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("printHead([`${tn('weeks_n', weeks)}`, `${t('period')}: ${fmtD(r.from)} – ${fmtD(bDate())}`])"), 'Werkstattauslastung: Druckkopf mit Datum von–bis');
+  ok(app.includes("const wlYears = new Set(r.weeks.map((w) => w.slice(0, 4))).size > 1;") && app.includes('data-wlweek>${esc(wlWeek(w.week))}'), 'Werkstattauslastung: KW mit Jahr bei Jahreswechsel');
+  ok(app.includes('(<span data-dper>${esc(fmtD(r.since))} – ${esc(fmtD(bDate()))}</span>)'), 'Mängelstatistik: Druckkopf mit Datum von–bis');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-berichte-druck-tablet.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -8016,12 +8016,15 @@ async function viewWsLoad() {
   const weeks = S.wlWeeks || 8;
   const r = await api('GET', `/api/reports/workshop-load?weeks=${weeks}`);
   const n = (x) => fmtNum(x);
-  render(`<h1>${esc(t('ws_load'))}</h1>${printHead([`${tn('weeks_n', weeks)}`])}<p class="small muted">${esc(t('ws_load_hint'))}</p>
+  // Backlog 1108: Druckkopf mit Zeitraum (Datum), Kalenderwoche mit Jahr, wenn der Zeitraum über einen Jahreswechsel reicht
+  const wlYears = new Set(r.weeks.map((w) => w.slice(0, 4))).size > 1;
+  const wlWeek = (w) => `${t('cw')} ${w.slice(6)}${wlYears ? '/' + w.slice(0, 4) : ''}`;
+  render(`<h1>${esc(t('ws_load'))}</h1>${printHead([`${tn('weeks_n', weeks)}`, `${t('period')}: ${fmtD(r.from)} – ${fmtD(bDate())}`])}<p class="small muted">${esc(t('ws_load_hint'))}</p>
     <div class="actions" style="flex-wrap:wrap">${[4, 8, 13, 26].map((w) => `<button type="button" class="btn ${w === weeks ? '' : 'secondary'}" data-wl="${w}">${esc(tn('weeks_n', w))}</button>`).join('')}<button type="button" class="btn secondary" id="wlcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="wlprt">${esc(t('print'))}</button></div>
     ${r.sites.map((s) => { const max = Math.max(1, ...s.weeks.map((w) => w.hours)); return `<section class="panel"><h2 style="margin-top:0">${esc(s.name === 'ohne' ? t('no_workshop') : wsLabel({ code: s.site, name: s.name, active: !s.closed }))}</h2>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${r.open_statuses.map((st) => `<span class="chip ${s.open[st] ? 'mittel' : ''}">${esc(t('st_' + st))}: ${s.open[st] || 0}</span>`).join('')}</div>
       <div class="scroll"><table style="font-size:.85rem"><thead><tr><th>${esc(t('week'))}</th><th>${esc(t('hours'))}</th><th>${esc(t('ws_acknowledged'))}</th><th>${esc(t('ws_released'))}</th></tr></thead><tbody>
-      ${s.weeks.slice().reverse().map((w) => `<tr><td style="white-space:nowrap" title="${esc(w.week)}">${esc(t('cw'))} ${esc(w.week.slice(6))}</td><td><div style="display:flex;align-items:center;gap:6px"><span aria-hidden="true" style="display:inline-block;height:10px;width:${Math.round((w.hours / max) * 40)}px;background:var(--steel);border-radius:2px"></span>${n(w.hours)}</div></td><td>${w.acknowledged}</td><td>${w.released}</td></tr>`).join('')}</tbody></table></div></section>`; }).join('') || noneP()}`, 'more');
+      ${s.weeks.slice().reverse().map((w) => `<tr><td style="white-space:nowrap" title="${esc(w.week)}" data-wlweek>${esc(wlWeek(w.week))}</td><td><div style="display:flex;align-items:center;gap:6px"><span aria-hidden="true" style="display:inline-block;height:10px;width:${Math.round((w.hours / max) * 40)}px;background:var(--steel);border-radius:2px"></span>${n(w.hours)}</div></td><td>${w.acknowledged}</td><td>${w.released}</td></tr>`).join('')}</tbody></table></div></section>`; }).join('') || noneP()}`, 'more');
   $$('[data-wl]').forEach((b) => (b.onclick = () => { S.wlWeeks = Number(b.dataset.wl); viewWsLoad(); }));
   $('#wlprt').onclick = () => window.print();
   $('#wlcsv').onclick = async () => { try { download(await api('GET', `/api/reports/workshop-load?weeks=${weeks}&format=csv`), `werkstatt-auslastung_${envFn()}_${r.from}_${weeks}kw.csv`); } catch (err) { toast(err.message, true); } };
@@ -8292,7 +8295,7 @@ async function viewDefects() {
   const veh = (id, p) => `<a href="#/vehicles/${encodeURIComponent(id)}">${esc(p)}</a>`;
   const vlist = r.vehicles.filter((v) => v.defect_items > 0);
   render(`<h1>${esc(t('defect_stats'))}</h1>${helpLink('defects')}<p class="small muted">${esc(t('defect_stats_hint'))}</p>
-    <p class="print-only small">${printStamp()} · ${esc(nDays(days))}${kind ? ' · ' + esc(kind === 'abfahrt' ? t('nav_check') : t('inspection')) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
+    <p class="print-only small">${printStamp()} · ${esc(nDays(days))} (<span data-dper>${esc(fmtD(r.since))} – ${esc(fmtD(bDate()))}</span>)${kind ? ' · ' + esc(kind === 'abfahrt' ? t('nav_check') : t('inspection')) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
       <div><label for="dd">${esc(t('period'))}</label><select id="dd">${[30, 90, 180, 365].map((d) => `<option value="${d}"${d === days ? ' selected' : ''}>${esc(nDays(d))}</option>`).join('')}</select></div>
       <div><label for="dk">${esc(t('check_kind'))}</label><select id="dk">${[['', t('all')], ['abfahrt', t('nav_check')], ['nach_reparatur', t('inspection')]].map(([k, l]) => `<option value="${k}"${k === kind ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
