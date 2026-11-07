@@ -19274,8 +19274,8 @@ await test('Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“)
     ok(STRINGS[l].claim_glass_hint.includes('{b}') && STRINGS[l].claim_add, 'Versicherungs-Hinweis nennt den Knopf ' + l);
   }
   ok(app.includes(`<div id="glass" class="panel" hidden role="status">`), 'Panel #glass');
-  const lp = app.indexOf("$('#glass').hidden = !GLASS_HINT.test(noTicket(dsk))") /* Backlog 1130 */; ok(lp > 0 && lp < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("const glassNoClaim = !cl && GLASS_HINT.test(noTicket(noSticker(desc)));") && app.includes('data-claimglass'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
+  const lp = app.indexOf("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk)))") /* Backlog 1130 */; ok(lp > 0 && lp < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("const glassNoClaim = !cl && GLASS_HINT.test(noTicket(noWsObj(noSticker(desc))));") && app.includes('data-claimglass'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
   ok(app.includes("'theft', 'glass', "), 'Hilfe-Abschnitt glass für meldende Rollen');
 });
 
@@ -36249,8 +36249,8 @@ await test('Backlog 1130 (Blickwinkel „Fahrer findet einen Strafzettel am Lkw 
   const GL = new RegExp(app.match(/^const GLASS_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['Strafzettel an der Windschutzscheibe', 'Knöllchen hinter der Frontscheibe', 'parking ticket on the windscreen', 'штраф за паркування на лобовому склі']) { ok(GL.test(x), 'vorher Glas-Schritte: ' + x); ok(!GL.test(noTicket(x)), 'jetzt keine Glas-Schritte: ' + x); }
   for (const x of ['Strafzettel an der Windschutzscheibe, außerdem Steinschlag', 'Windschutzscheibe gerissen, Strafzettel dran', 'parking ticket under the wiper, windscreen cracked', 'Windschutzscheibe gerissen']) ok(GL.test(noTicket(x)), 'Glasschaden bleibt: ' + x);
-  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(dsk));"), 'Glas-Prüfung ohne Strafzettel-Ort');
-  ok(app.includes('const glassNoClaim = !cl && GLASS_HINT.test(noTicket(noSticker(desc)));'), 'Versicherungsabschnitt: Strafzettel an der Scheibe ist kein Glasschaden');
+  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk)));"), 'Glas-Prüfung ohne Strafzettel-Ort');
+  ok(app.includes('const glassNoClaim = !cl && GLASS_HINT.test(noTicket(noWsObj(noSticker(desc))));'), 'Versicherungsabschnitt: Strafzettel an der Scheibe ist kein Glasschaden');
   ok(app.includes("$('#ticket').hidden = !$('#roadchk').hidden || !TICKET_HINT.test(dv);") && app.indexOf("$('#roadchk').hidden = ") < app.indexOf("$('#ticket').hidden = "), 'neben Einwand bei Kontrolle nur deren Schritte');
   ok(app.includes('<div id="ticket" class="panel" hidden role="status">'), 'Panel #ticket');
   ok(app.includes("'fuelcard', 'toll', 'ticket', 'tacho']"), 'Reihenfolge nach Maut');
@@ -36263,6 +36263,18 @@ await test('Backlog 1130 (Blickwinkel „Fahrer findet einen Strafzettel am Lkw 
     ok(st[2].includes(S.fines) && st[3].includes(S.my_fines), 'nennt „' + S.fines + '“ und „' + S.my_fines + '“ ' + l);
     ok(S.help_ticket_t && S.help_ticket_s.includes(S.ticket_hint_steps) && S.help_ticket_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
+});
+
+await test('Backlog 1131 (Sonde Glas-Hinweis): Gegenstände an/vor der Windschutzscheibe (Navi-/Handyhalterung, Saugnapf, Dashcam, Sonnenblende, Vignette, Gardine; EN/UK) zeigen keine Glasschaden-Schritte mehr – ein Glasschaden im selben Text weiterhin', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const sp = app.match(/^const WSOBJ_SPANS = \/(.+)\/gi;$/m); ok(sp, 'WSOBJ_SPANS auf Modulebene');
+  const WSOBJ_SPANS = new RegExp(sp[1], 'gi'); // eslint-disable-line no-unused-vars
+  const noWsObj = eval('(' + app.match(/^const noWsObj = (.*);$/m)[1] + ')');
+  const GL = new RegExp(app.match(/^const GLASS_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['Navi-Halterung an der Windschutzscheibe fällt ab', 'Handyhalter an der Frontscheibe hält nicht', 'Saugnapf der Dashcam an der Windschutzscheibe lose', 'Sonnenblende vor der Windschutzscheibe abgebrochen', 'Vignette an der Windschutzscheibe fehlt', 'Gardine vor der Frontscheibe gerissen', 'phone holder on the windscreen fell off', 'sun visor in front of the windshield broken', 'тримач телефону на лобовому склі відпав']) { ok(GL.test(x), 'vorher Glas-Schritte: ' + x); ok(!GL.test(noWsObj(x)), 'jetzt keine: ' + x); }
+  for (const x of ['Navi-Halterung an der Windschutzscheibe, Scheibe hat einen Riss', 'Halterung an der Windschutzscheibe abgerissen, Windschutzscheibe gesprungen', 'sat nav mount on the windscreen loose, windscreen cracked', 'Windschutzscheibe gerissen', 'Steinschlag in der Frontscheibe', 'тріщина на лобовому склі']) ok(GL.test(noWsObj(x)), 'Glasschaden bleibt: ' + x);
+  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk)));") && app.includes('const glassNoClaim = !cl && GLASS_HINT.test(noTicket(noWsObj(noSticker(desc))));'), 'Meldeformular und Versicherungsabschnitt');
 });
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
