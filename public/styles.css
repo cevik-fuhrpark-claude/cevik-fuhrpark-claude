@@ -346,6 +346,8 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 @media (pointer: coarse) { input, select, textarea, .topbar select { font-size: 16px; font-size: max(1em, 16px); } }
 .occq { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .occq .btn { white-space: nowrap; }
+/* [CLAUDE] 07.11.2026 (ui-grosse-schrift, Zoom 200 % ≈ 180 px): „Day before yesterday“ ragte über den Rand – sehr schmal an Leerzeichen umbrechen */
+@media (max-width: 300px) { .occq .btn { white-space: normal; max-width: 100%; } }
 [data-occdesc] { margin-top: 6px; }
 .topbar .brand { white-space: nowrap; min-width: 0; overflow: hidden; } /* große Schrift: Name gekürzt, Glocke/Suche bleiben sichtbar */
 .topbar .brand .bn { min-width: 0; overflow: hidden; text-overflow: ellipsis; } /* gekürzter App-Name endet mit „…“ statt abgeschnittenem Buchstaben (vorher „CEVII“, EN, 24.10.2026) */
