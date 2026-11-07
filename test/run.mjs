@@ -36291,6 +36291,15 @@ await test('Backlog 1132 (Sonde Federung/Sitz): Luftfederung des Fahrer-/Beifahr
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
   ok(hl.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv));") && hl.includes("$('#seat').hidden = !SEAT_HINT.test(dfx) && !SEATSUSP_HINT.test(dfx);"), 'Meldeformular');
 });
+await test('Backlog 1133 (Sonde Glas-Hinweis, Folge aus 760): „Seiten-/Heckscheibe (von innen) beschlagen“ zeigt nur Sicht/Lüftung, keine Glasschaden-Schritte – mit Riss/kaputt im selben Satz weiterhin Glas', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const GL = pat('GLASS_HINT'), VI = pat('VISIB_HINT');
+  for (const x of ['Seitenscheibe beschlagen', 'Seitenscheibe von innen beschlagen', 'Heckscheibe beschlagen', 'Seitenscheiben beschlagen ständig', 'Heckscheibe beschlagen. Spiegel kaputt']) { ok(!GL.test(x), 'keine Glas-Schritte: ' + x); ok(VI.test(x), 'Sicht-Schritte: ' + x); }
+  for (const x of ['Heckscheibe beschlagen und gerissen', 'Seitenscheibe gerissen, beschlagen von innen', 'Seitenscheibe gerissen', 'Heckscheibe kaputt', 'Heckscheibe Riss']) ok(GL.test(x), 'Glas-Schritte: ' + x);
+  ok(!GL.test('Seitenscheibe geht nicht runter'), 'Fensterheber weiter ohne Glas');
+});
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
