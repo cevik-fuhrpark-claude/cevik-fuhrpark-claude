@@ -20381,7 +20381,7 @@ await test('Backlog 245 (Blickwinkel „Betriebsprüfung“): Verlauf der Ausles
   eq((await ws.get('/api/tacho/history')).status, 403, 'Werkstatt nicht');
   // Oberfläche: Route, Link aus der Übersicht, Texte DE/UK/EN, Hilfe
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('[/^#\\/tacho\\/history$/, viewTachoHistory]') && app.includes('href="#/tacho/history" id="thlink"'), 'Route und Link');
+  ok(app.includes('[/^#\\/tacho\\/history$/, viewTachoHistory]') && app.includes('href="#/tacho/history" class="tap" id="thlink"'), 'Route und Link');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['th_title', 'th_link', 'th_hint', 'th_downloads', 'th_gaps', 'th_no_gap', 'th_open', 'th_cut', 'th_overdue', 'th_until', 'th_before', 'th_inactive', 'th_with_gaps', 'th_truncated', 'th_none']) ok(STRINGS[l][k], `${l} ${k}`);
   ok(STRINGS.de.help_drivers_s.includes('Verlauf für einen Zeitraum') && STRINGS.uk.help_drivers_s.includes('Історія за період') && STRINGS.en.help_drivers_s.includes('History for a period'), 'Hilfe');
@@ -20436,7 +20436,7 @@ await test('Backlog 246 (Betriebsprüfung): Nachweise und Führerscheinkontrolle
   const drv = new Client(worker, e, 'dr.fahrer'); await drv.post('/api/invite/accept', { token: w.data.invite_token, password: 'Sicheres-Passwort-2026' });
   eq((await drv.get('/api/drivers/records')).status, 403, 'Fahrer nicht');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('[/^#\\/drivers\\/records$/, viewDriverRecords], [/^#\\/drivers\\/([\\w-]+)$/, viewDriver]') && app.includes('href="#/drivers/records" id="drlink"'), 'Route vor der Fahrerakte, Link');
+  ok(app.includes('[/^#\\/drivers\\/records$/, viewDriverRecords], [/^#\\/drivers\\/([\\w-]+)$/, viewDriver]') && app.includes('href="#/drivers/records" class="tap" id="drlink"'), 'Route vor der Fahrerakte, Link');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['dr_title', 'dr_link', 'dr_hint', 'dr_docs', 'dr_checks', 'dr_st_aktuell', 'dr_st_abgelaufen', 'dr_st_abgeloest', 'dr_st_storniert', 'dr_csv_docs', 'dr_csv_checks', 'dr_truncated']) ok(STRINGS[l][k], `${l} ${k}`);
 });
@@ -35823,6 +35823,16 @@ await test('Backlog 1104 (Blickwinkel „Disposition am Tablet im Querformat bei
   const main = fs.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const all = main + ['dispo', 'leitung', 'verwaltung'].map((g) => { try { return fs.readFileSync(new URL(`../public/app-${g}.js`, import.meta.url), 'utf8'); } catch { return ''; } }).join('');
   ok(all.includes('class="tap" id="dsitetoggle"') && all.includes('class="tap" id="dunrec"'), 'Module neu erzeugt');
+});
+await test('Backlog 1105 (Folge aus 1104, Fuhrparkleitung am Tablet): Links „Nachweise …“, „Verlauf für einen Zeitraum“, Hilfe-Links der Benutzerliste 44 px; kleine Knöpfe bei Fingerbedienung 44 px', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  for (const s of ['href="#/drivers/records" class="tap" id="drlink"', 'href="#/tacho/history" class="tap" id="thlink"', '<a class="noprint tap" href="#/help?s=login2fa">', '<a class="noprint tap" href="#/help?s=push">']) ok(app.includes(s), s);
+  // Reihenfolge: die Fingerbedienungs-Regel muss NACH der Grundregel stehen (gleiche Spezifität – sonst gewinnt 36 px)
+  const base = css.indexOf('.btn.small { min-height: 36px;'), coarse = css.indexOf('@media (pointer: coarse) { .btn.small { min-height: 44px; } }');
+  ok(base > 0 && coarse > base, 'CSS: .btn.small 44 px bei Fingerbedienung nach der Grundregel');
+  ok(css.indexOf('.legend a { color: inherit;') < css.indexOf('@media (pointer: coarse) { .legend a { min-height: 44px; }'), 'CSS: Legende-Regel nach der Grundregel');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

@@ -321,6 +321,7 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 
 .specrow { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); align-items: center; }
 .btn.small { min-height: 36px; padding: 6px 12px; font-size: 0.875rem; }
+@media (pointer: coarse) { .btn.small { min-height: 44px; } } /* Backlog 1105: kleine Knöpfe bei Fingerbedienung 44 px (Kosten-Zeiträume, CSV, Verträge) */
 .occq { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .occq .btn { white-space: nowrap; }
 [data-occdesc] { margin-top: 6px; }

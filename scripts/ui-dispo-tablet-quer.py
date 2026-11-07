@@ -2,7 +2,8 @@
 # Links der Disposition mit 44 px Tippfläche: Standortwechsel (#dsitetoggle, vorher 17 px), „Neue Meldungen, Eingang noch nicht bestätigt“
 # (#dunrec, vorher 20 px), Notfallseite „Schaden melden ›“/„Unfall melden ›“ (vorher 20 px), Hinweistitel im Eingang (vorher 24 px);
 # Legende der Flotte 44 px nur bei Fingerbedienung (pointer: coarse), mit Maus weiter 24 px. Tablet quer 1024×768/1180×820 mit Touch,
-# Handy 390 mit Touch, PC 1366 ohne Touch; DE/UK/EN, ohne Querscrollen/Skriptfehler/Wortumbruch-Prüfung. Frischer Dev-Server nötig
+# Handy 390 mit Touch, PC 1366 ohne Touch; Backlog 1105: Fuhrparkleitung – „Nachweise und Führerscheinkontrollen ›“, „Verlauf für einen
+# Zeitraum ›“, Hilfe-Links der Benutzerliste 44 px, kleine Knöpfe (Kosten-Zeiträume, CSV) bei Touch 44 px, mit Maus 36 px; DE/UK/EN, ohne Querscrollen/Skriptfehler/Wortumbruch-Prüfung. Frischer Dev-Server nötig
 # (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -26,6 +27,25 @@ with sync_playwright() as p:
         api('POST','/api/vehicles',{'vin':vin,'plate':pl,'site':'Dortmund'})
     r=api('POST','/api/cases',{'vehicle_id':'VIN:WDB9634031L310001','description':'Bremse quietscht','priority':'kritisch','driveability':'nicht_fahrbereit','request_key':str(uuid.uuid4())})
     check(r['s'] in (200,201),'kritische Meldung (Hinweis an Disposition, Eingang unbestätigt)')
+    u=api('POST','/api/users',{'username':'tq.leitung','display_name':'TQ Leitung','role':'fleet','environment':'production'})
+    c0=br.new_context(); q0=c0.new_page(); q0.goto(B); q0.evaluate(JS,['POST','/api/invite/accept',{'token':u['d']['invite_token'],'password':PW}]); c0.close()
+    for lang in ['de','uk','en']:
+      for wd,h,touch in [(1024,768,True),(390,844,True),(1366,900,False)]:
+        ctx=br.new_context(viewport={'width':wd,'height':h},has_touch=touch); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+        tag=f"Leitung {lang} {wd}px{' Touch' if touch else ''}"
+        q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'tq.leitung','password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
+        for route,sel in [('/#/drivers','#drlink'),('/#/tacho','#thlink'),('/#/users','main a.tap[href^="#/help?s="]')]:
+            q.goto(B+route); q.reload(); q.wait_for_selector(sel,timeout=15000); q.wait_for_timeout(400)
+            hs=q.evaluate(H,sel)
+            check(hs and min(hs)>=44,f'{tag} {route}: {sel} {hs}')
+            check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{tag} {route}: ohne Querscrollen')
+        q.goto(B+'/#/costs'); q.reload(); q.wait_for_selector('main .btn.small',timeout=15000); q.wait_for_timeout(400)
+        bs=q.evaluate(H,'main .btn.small')
+        check(bs and (min(bs)>=44 if touch else max(bs)<44),f'{tag} Kosten: kleine Knöpfe {bs}')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{tag} Kosten: ohne Querscrollen')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/leitung_kosten_{lang}_{wd}.png')
+        check(not errs,f'{tag}: keine Skriptfehler {errs}')
+        ctx.close()
     for lang in ['de','uk','en']:
       for wd,h,touch in [(1024,768,True),(1180,820,True),(390,844,True),(1366,900,False)]:
         ctx=br.new_context(viewport={'width':wd,'height':h},has_touch=touch); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
