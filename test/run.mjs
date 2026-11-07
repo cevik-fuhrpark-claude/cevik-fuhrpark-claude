@@ -36408,6 +36408,19 @@ await test('Backlog 1143 (Sonde Tankkarte EN/UK): „fuel card not going through
   for (const x of ['картка не проходить', 'оплата не проходить', 'карту не приймають', 'картка водія не проходить']) ok(!FC.test(recurFix(x)), 'nicht Tankkarte: ' + x);
 });
 
+await test('Backlog 1144 (Sonde Unfall/Wild/Vandalismus EN/UK): „someone hit the truck and drove off“, „хтось врізався і поїхав“, „інша машина зачепила дзеркало і поїхала“ → Unfallflucht; „збив козулю/сарну“ → Wildunfall; „пошкодили хулігани“ → Vandalismus; Gegenproben', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [HR, WI, VA] = ['HITRUN_HINT', 'WILD_HINT', 'VANDAL_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['someone hit the truck and drove off', 'a car scraped the trailer and just drove away', 'хтось врізався і поїхав', 'хтось подряпав причіп і втік', 'інша машина зачепила дзеркало і поїхала', 'Fahrerflucht']) ok(hit(HR, x), 'Unfallflucht: ' + x);
+  for (const x of ['someone called and left', 'хтось подзвонив і поїхав', 'I hit a pole and drove on']) ok(!hit(HR, x), 'keine Unfallflucht: ' + x);
+  for (const x of ['збив козулю', 'збив сарну', 'збив оленя']) ok(hit(WI, x), 'Wildunfall: ' + x);
+  ok(!hit(WI, 'сарнина ковбаса'), 'kein Wildunfall: сарнина');
+  for (const x of ['вантажівку пошкодили хулігани', 'хулігани розбили дзеркало']) ok(hit(VA, x), 'Vandalismus: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
