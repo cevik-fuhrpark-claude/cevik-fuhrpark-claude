@@ -36459,6 +36459,19 @@ await test('Backlog 1148 (Vogel-/Mäusenest im Motorraum): eigenes Panel #engnes
   for (const l of ['de', 'uk', 'en']) for (const k of ['engnest_hint_title', 'engnest_hint_steps', 'help_engnest_t', 'help_engnest_s']) ok(new RegExp('STRINGS\\.' + l + ', \\{[^\\n]*\\b' + k + ':').test(i18n), l + ': ' + k);
 });
 
+await test('Backlog 1149 (Sonde Aufbau): „Stoßstange am Auflieger verbogen“, „trailer bumper bent“, „бампер причепа/задній бампер погнутий“ → Unterfahrschutz; „дірка в підлозі причепа/кузова“ → Ladeboden; „Zwischendeck/Doppelstock klemmt“ → Etage; „front bumper bent“, „бампер тягача“, „дірка в підлозі кабіни“, „… gerichtet“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [UR, FL, DE] = ['UNDERRUN_HINT', 'FLOOR_HINT', 'DECK_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['Stoßstange am Auflieger verbogen', 'Aufliegerstoßstange abgerissen', 'trailer bumper bent', 'rear bumper hanging', 'бампер причепа погнутий', 'задній бампер погнутий', 'Unterfahrschutz verbogen']) ok(hit(UR, x), 'Unterfahrschutz: ' + x);
+  for (const x of ['Stoßstange am Auflieger gerichtet', 'front bumper bent', 'бампер тягача погнутий']) ok(!hit(UR, x), 'nicht Unterfahrschutz: ' + x);
+  for (const x of ['дірка в підлозі причепа', 'дірка в підлозі кузова', 'Loch im Ladeboden']) ok(hit(FL, x), 'Ladeboden: ' + x);
+  ok(!hit(FL, 'дірка в підлозі кабіни'), 'Fahrerhausboden nicht Ladeboden');
+  for (const x of ['Zwischendeck klemmt', 'Doppelstock klemmt', 'Zwischenboden lässt sich nicht absenken', 'Ladedeck geht nicht runter']) ok(hit(DE, x), 'Etage: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
