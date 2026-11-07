@@ -36569,6 +36569,18 @@ await test('Backlog 1157 (Sonde Kühlaggregat/Ladebordwand/Kabinenkippung/Scheib
   for (const x of ['тріснуло лобове скло', 'лобове скло розбите', 'скол на лобовому склі', 'лобовое стекло треснуло']) ok(hit(GL, x), 'Glasschaden: ' + x);
 });
 
+await test('Backlog 1158 (Sonde Luftfederung/Feststellbremse UK, sicherheitsrelevant): „Auflieger hängt hinten tief“, „не опускается подвеска“, „не піднімається причіп на подушках“, „лопнула подушка“ → Federung; „не спрацьовує ручник“ → Feststellbremse; Airbag/Sitzkissen, Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [SU, PB] = ['SUSP_HINT', 'PARKBRAKE_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['Auflieger hängt hinten tief', 'Lkw hängt links tief', 'не опускается подвеска', 'підвіска не піднімається', 'не піднімається причіп на подушках', 'лопнула подушка', 'лопнула пневмоподушка', 'лопнула подушка на причепі', 'Auflieger steht hinten tief']) ok(hit(SU, x), 'Federung: ' + x);
+  for (const x of ['лопнула подушка безпеки', 'лопнула подушка сидіння', 'Lkw hängt tief, wurde repariert', 'лопнула подушка, вже замінили', 'не піднімається причіп']) ok(!hit(SU, x), 'nicht Federung: ' + x);
+  for (const x of ['не спрацьовує ручник', 'ручник не спрацьовує', 'ручник не срабатывает', 'ручник не тримає']) ok(hit(PB, x), 'Feststellbremse: ' + x);
+  ok(!hit(PB, 'ручник не спрацьовує, вже відремонтували'), 'nicht Feststellbremse: Reparaturvermerk');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

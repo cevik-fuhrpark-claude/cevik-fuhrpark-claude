@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, afterLogin, api, bindLang, bindPwShow, deviceId, ensureLang, esc, fmtDT, langSelect, lostDup, lostMark, pwField, qrSvg, render, resetUserState, t, toast, viewLogin } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, afterLogin, api, bindLang, bindPwShow, deviceId, ensureLang, esc, fmtDT, langSelect, lostDup, lostMark, pwField, qrSvg, render, resetUserState, t, toast, tzNote, viewInbox, viewLogin } from './app-main.js';
 
 // Zweiter Schritt: Code aus der Authenticator-App oder Ersatzcode (Passwort bleibt nicht im Speicher der Seite)
 async function viewLoginCode(challenge) {
@@ -56,6 +56,28 @@ async function viewInvite(token) {
     try { const r = await api('POST', '/api/invite/accept', { token, password: $('#p').value, device_id: deviceId() }); resetUserState(); /* evtl. im Tab angemeldete andere Person: Sprache ging sonst verloren (user_mismatch), Ansichtszustand wurde vererbt (20.10.2026) */ if (r.second_factor) { await viewLoginCode(r.challenge); return; } await api('PATCH', '/api/me', { language: S.lang }).catch(() => {}); S.me = null; location.hash = '#/'; }
     catch (err) { toast(err.message, true); }
   };
+}
+// Backlog 1158: Inhalt „Push für diese Hinweise“ (Arten, persönliche Ruhezeit) – nachgeladen in Gruppe konto (still, wie loadTotp)
+async function loadNotifyPrefs(np) {
+  try {
+    const pr = await api('GET', '/api/me/notify-prefs'); np.dataset.loaded = '1';
+    const q = pr.quiet;
+    $('#npl').innerHTML = pr.kinds.map((k) => `<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" data-pk="${esc(k)}"${pr.muted.includes(k) ? '' : ' checked'}> ${esc(t('pk_' + k))}</label>`).join('') + (pr.kinds.length ? '' : `<p class="small muted" id="npnone">${esc(t('push_kinds_none'))}</p>`)
+      + `<h3 style="margin-top:14px">${esc(t('quiet_title'))}</h3><p class="small muted">${esc(t('quiet_hint'))}</p>
+      <p id="qst"><b>${esc(q ? t('quiet_on').replace('{f}', q.from).replace('{t}', q.to) : t('quiet_none'))}</b></p>
+      <form id="qf" class="grid2"><div><label for="qfrom">${esc(t('quiet_from'))}</label><input id="qfrom" type="time" step="60" required value="${esc(q ? q.from : '')}"></div>
+      <div><label for="qto">${esc(t('quiet_to'))}</label><input id="qto" type="time" step="60" required value="${esc(q ? q.to : '')}"></div>${tzNote() ? `<div style="grid-column:1/-1">${tzNote()}</div>` : ''}
+      <div class="actions" style="grid-column:1/-1"><button class="btn secondary">${esc(t('quiet_save'))}</button>${q ? `<button type="button" class="btn secondary" id="qoff">${esc(t('quiet_off'))}</button>` : ''}</div></form>`;
+    const qsave = async (quiet) => {
+      try { await api('PUT', '/api/me/notify-prefs', { quiet }); toast('✓'); await viewInbox(); const d = $('#np'); if (d) d.open = true; } catch (err) { toast(err.message, true); }
+    };
+    $('#qf').onsubmit = (e) => { e.preventDefault(); return qsave({ from: $('#qfrom').value.slice(0, 5), to: $('#qto').value.slice(0, 5) }); };
+    const qoff = $('#qoff'); if (qoff) qoff.onclick = () => qsave(null);
+    $$('[data-pk]', np).forEach((cb) => (cb.onchange = async () => {
+      const muted = $$('[data-pk]', np).filter((x) => !x.checked).map((x) => x.dataset.pk);
+      try { await api('PUT', '/api/me/notify-prefs', { muted }); toast('✓'); } catch (err) { toast(err.message, true); }
+    }));
+  } catch (err) { toast(err.message, true); }
 }
 // Backlog 1153 (Reserve Start-Modul): Sitzungs-/Geräteliste aus „Mehr“ als eigene Funktionen (Gruppe konto, still nachgeladen beim Aufklappen)
 async function loadSessions() {
@@ -165,4 +187,4 @@ async function loadTotp() {
   };
 }
 
-export { loadSessions, loadTotp, viewInvite, viewLoginCode, viewSetup };
+export { loadNotifyPrefs, loadSessions, loadTotp, viewInvite, viewLoginCode, viewSetup };
