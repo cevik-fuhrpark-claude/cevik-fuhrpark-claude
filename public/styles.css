@@ -332,6 +332,11 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
   .kv dd > a:only-child, a.autgt, .chkl, [data-scanav] > a.chip { display: inline-flex; align-items: center; min-height: 44px; }
 }
 @media screen and (pointer: coarse) { td > a[href]:not(.btn) { display: inline-flex; align-items: center; min-height: 44px; } }
+/* [CLAUDE] Backlog 1107 (Blickwinkel „Werkstatt bucht Teile mit Handschuhen – Zahlenfelder und Auswahllisten am Tablet“): Eingabefelder erben die
+   Schrift ihrer Umgebung (font: inherit) – in kleiner Schrift (.small, Tabellen, Kopfleiste) waren sie 14–15,2 px groß (Verträge „Stichtag“/„Ende/Kündigung bis“,
+   Fristen-Tabelle der Einstellungen, Umgebungswahl oben). iOS vergrößert beim Antippen eines Feldes unter 16 px die ganze Seite. Bei Fingerbedienung daher
+   mindestens 16 px (Rückfall ohne max(): 16 px). Muss nach den Grundregeln stehen. */
+@media (pointer: coarse) { input, select, textarea, .topbar select { font-size: 16px; font-size: max(1em, 16px); } }
 .occq { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .occq .btn { white-space: nowrap; }
 [data-occdesc] { margin-top: 6px; }

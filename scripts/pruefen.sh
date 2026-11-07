@@ -121,6 +121,7 @@ UI-Lange Beschreibung am langsamen Handy: Hinweismuster vorgewärmt, Prüfung na
 UI-Sehr große Hinweismuster in Teilen geprüft: 4000 Zeichen ohne Stillstand, Bremse/Motor-Hinweis weiter erkannt|ui-hinweis-riesenmuster.py|/tmp/cfp-hinweis-riesenmuster.log
 UI-Disposition am Tablet quer: Standortwechsel, „Neue Meldungen …“, Notfall-Links, Hinweistitel 44 px, Legende bei Touch|ui-dispo-tablet-quer.py|/tmp/cfp-dispo-tablet-quer.log
 UI-Tippflächen je Rolle am Tablet: Werkstatt, Inhaber, Leitung, Fahrer, Lesezugriff – alle Tippziele 44 px bei Touch|ui-tippflaechen-rollen.py|/tmp/cfp-tippflaechen-rollen.log
+UI-Feldschrift bei Touch: Eingabe-/Auswahlfelder ≥ 16 px (kein iOS-Zoom) in Werkstatt-Formularen, Verträgen, Einstellungen, Kopfleiste|ui-feldschrift-touch.py|/tmp/cfp-feldschrift-touch.log
 UI-Gesperrtes Fahrzeug genutzt: Ergebnisseite, Verlauf, Befund|ui-sperre-genutzt.py|/tmp/cfp-sperre-genutzt.log
 UI-Werkstattplan: begonnener Auftrag mit vergangenem Termin unter „in Arbeit“|ui-plan-inarbeit.py|/tmp/cfp-plan-inarbeit.log
 UI-Fahrzeug korrigieren (Meldung am falschen Fahrzeug)|ui-fahrzeug-korrigieren.py|/tmp/cfp-fahrzeug-korrigieren.log

@@ -35851,6 +35851,20 @@ await test('Backlog 1106 (Folge aus 1104/1105, Werkstatt/Inhaber/Fahrer am Table
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-tippflaechen-rollen.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
+await test('Backlog 1107 (Blickwinkel „Werkstatt bucht Teile mit Handschuhen – Zahlenfelder und Auswahllisten am Tablet“): Eingabefelder bei Fingerbedienung mindestens 16 px (kein iOS-Zoom), auch in kleiner Schrift und in der Kopfleiste', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const rule = '@media (pointer: coarse) { input, select, textarea, .topbar select { font-size: 16px; font-size: max(1em, 16px); } }';
+  ok(css.includes(rule), 'CSS: Felder bei Fingerbedienung ≥ 16 px mit Rückfall ohne max()');
+  const at = css.indexOf(rule);
+  ok(at > css.indexOf('input, select, textarea { width: 100%; font: inherit;') && at > css.indexOf('.topbar select, .topbar button {'), 'CSS: Regel steht nach den Grundregeln (font: inherit / Kopfleiste)');
+  // keine Feld-Regel und kein Inline-Stil, der die Schrift von Feldern später wieder verkleinert
+  ok(!/(?:input|select|textarea)[^{}]*\{[^}]*font-size/.test(css.slice(at + rule.length)), 'CSS: keine spätere Feld-Schriftgröße');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!/<(?:input|select|textarea)\b[^>]*style="[^"]*font-size/.test(app), 'app.js: keine Inline-Schriftgröße an Feldern');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-feldschrift-touch.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
