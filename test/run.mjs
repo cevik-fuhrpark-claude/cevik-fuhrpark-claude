@@ -36437,6 +36437,14 @@ await test('Backlog 1146 (Sonde Auspuff UK): „вихлопна труба ві
   ok(!LO.test(recurFix('вихлопна труба димить')), 'Rauch ist kein loses Teil');
 });
 
+await test('Backlog 1147 (Sonde Brand, sicherheitsrelevant): „Brand im Motorraum/am Reifen“, „загорівся (наш) причіп“, „причіп/вантаж загорівся“, „загорілась кабіна“, „спалахнула проводка“ → Brand; „kein Brand im Motorraum“, „Brandschutzübung“, „Brand im Lager beim Kunden“, „загорілась (на машині) лампочка“, „на причепі загорілась лампа“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const FI = new RegExp(app.match(/^const FIRE_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['Brand im Motorraum', 'Brand am Reifen', 'Brand im Fahrerhaus gelöscht', 'загорівся причіп', 'загорівся наш причіп', 'причіп загорівся', 'вантаж загорівся', 'загорілась кабіна', 'спалахнула проводка', 'машина загорілась', 'Motorbrand']) ok(FI.test(recurFix(x)), 'Brand: ' + x);
+  for (const x of ['kein Brand im Motorraum', 'Brandschutzübung im Depot', 'Brand im Lager beim Kunden', 'загорілась лампочка', 'загорілась на машині лампочка', 'на причепі загорілась лампа', 'загорівся індикатор']) ok(!FI.test(recurFix(x)), 'kein Brand: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
