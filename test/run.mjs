@@ -36372,6 +36372,21 @@ await test('Backlog 1140 (Sonde EN/UK-Gegenstücke): „mirror glass fell out“
   for (const [re, x] of [[MI, 'mirror glass fell out, replaced'], [CL, 'ключ не провертається, полагодили'], [VI, 'wiper blade torn, replaced']]) ok(!re.test(x), 'Reparaturvermerk: ' + x);
 });
 
+await test('Backlog 1141 (Sonde Ladung/Plane/Aufbau EN/UK): „Planenschnalle/Spannschloss der Plane kaputt“, „пряжка тенту зламана“, „дах причепа протікає“, „hole in the trailer roof“, „TIR/customs cable broken“, „трос TIR обірваний“ → Plane; „TIR cable broken“ nicht Elektrik, „trailer doors won’t lock“ nicht Kupplung, „trailer door lock broken“ nicht Fahrerhaus-Schloss; Gegenproben', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [TA, EL, CO, CL, CA] = ['TARP_HINT', 'ELEC_HINT', 'COUPLING_HINT', 'CABLOCK_HINT', 'CABLEAK_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['Planenschnalle kaputt', 'Spannschloss der Plane gebrochen', 'Planenspannschloss abgerissen', 'пряжка тенту зламана', 'пряжка на тенті зламалась', 'зламалась пряжка тенту', 'дах причепа протікає', 'протікає дах причепа', 'дах причепа дірявий', 'дах напівпричепа тече', 'roof of the trailer has a hole', 'hole in the trailer roof', 'trailer roof has a crack', 'TIR cable broken', 'customs cable cut', 'трос TIR обірваний', 'митний трос порвався', 'Zollseil gerissen', 'curtain buckle broken']) ok(hit(TA, x), 'Planen-Hinweis erwartet: ' + x);
+  for (const x of ['Planenschnalle kaputt, repariert', 'пряжка тенту відремонтована', 'дах причепа полагодили', 'TIR cable broken, fixed now', 'дах кабіни протікає', 'Planenspanner fehlt']) ok(!hit(TA, x), 'kein Planen-Hinweis: ' + x);
+  ok(hit(CA, 'дах кабіни протікає'), 'Fahrerhausdach bleibt Fahrerhaus-Undichtigkeit');
+  for (const x of ['TIR cable broken', 'customs cable cut']) ok(!hit(EL, x), 'keine Elektrik: ' + x);
+  ok(hit(EL, 'trailer cable broken'), 'Anhängerkabel bleibt Elektrik');
+  ok(!hit(CO, 'trailer doors won\'t lock'), 'Türen nicht Kupplung'); ok(hit(CO, 'trailer won\'t lock onto the fifth wheel'), 'Kupplung bleibt');
+  ok(!hit(CL, 'trailer door lock broken'), 'Aufliegertür nicht Fahrerhaus-Schloss'); ok(hit(CL, 'driver door lock broken'), 'Fahrertür-Schloss bleibt');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
