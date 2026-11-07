@@ -36300,6 +36300,14 @@ await test('Backlog 1133 (Sonde Glas-Hinweis, Folge aus 760): „Seiten-/Hecksch
   for (const x of ['Heckscheibe beschlagen und gerissen', 'Seitenscheibe gerissen, beschlagen von innen', 'Seitenscheibe gerissen', 'Heckscheibe kaputt', 'Heckscheibe Riss']) ok(GL.test(x), 'Glas-Schritte: ' + x);
   ok(!GL.test('Seitenscheibe geht nicht runter'), 'Fensterheber weiter ohne Glas');
 });
+await test('Backlog 1134 (Sonde Bremsen): Luftverlust am Brems-/Membran-/Federspeicherzylinder zeigt die Bremsen-Schritte (DE/UK/EN, sicherheitsrelevant); „getauscht/repariert/replaced“ und „verliert keine Luft mehr“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const BRAKE_HINT = \/(.+)\/i;$/m); ok(m, 'BRAKE_HINT'); const re = new RegExp(m[1], 'i');
+  const PB = new RegExp(app.match(/^const PARKBRAKE_HINT = \/(.+)\/i;$/m)[1], 'gi'); const noPb = (x) => x.replace(PB, ' ');
+  for (const x of ['Bremszylinder verliert Luft', 'Bremszylinder hinten links verliert viel Luft', 'Membranzylinder undicht', 'Federspeicher bläst ab', 'Federspeicherzylinder undicht', 'Bremskammer zischt', 'brake chamber leaking air', 'spring brake chamber hissing', 'гальмівна камера травить повітря', 'енергоакумулятор травить', 'энергоаккумулятор травит']) ok(re.test(noPb(x)), 'Bremsen-Schritte: ' + x);
+  for (const x of ['Federspeicher bläst ab, repariert', 'brake chamber leaking, replaced', 'Bremszylinder getauscht, verliert keine Luft mehr', 'Bremszylinder neu', 'Zylinderkopf undicht', 'енергоакумулятор травить, замінили']) ok(!re.test(noPb(x)), 'keine Bremsen-Schritte: ' + x);
+});
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
