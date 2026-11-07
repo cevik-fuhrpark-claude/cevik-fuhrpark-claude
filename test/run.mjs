@@ -36499,6 +36499,18 @@ await test('Backlog 1151 (Sonde Bremse/Lenkung, sicherheitsrelevant): „Lkw hä
   for (const x of ['riecht nach Diesel', 'smell of diesel', 'запах дизеля']) ok(!hit(BR, x), 'nicht Bremse: ' + x);
 });
 
+await test('Backlog 1152 (Sonde Papiere/Ausstattung): „немає/нет техпаспорта“, „немає ключів від машини“ → verloren; „used the fire extinguisher“, „extinguisher used“, „використав вогнегасник“, „использовал огнетушитель“ → Sicherheitsausstattung; „немає часу“, „немає ключової інформації“, „used the toilet“, „використав паливну картку“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [LO, SK] = ['LOST_HINT', 'SAFETYKIT_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['немає техпаспорта', 'нет техпаспорта', 'немає ключів від машини', 'Schlüssel verloren']) ok(hit(LO, x), 'verloren: ' + x);
+  for (const x of ['немає часу', 'немає ключової інформації']) ok(!hit(LO, x), 'nicht verloren: ' + x);
+  for (const x of ['extinguisher used', 'used the fire extinguisher', 'використав вогнегасник', 'использовал огнетушитель', 'Feuerlöscher benutzt']) ok(hit(SK, x), 'Ausstattung: ' + x);
+  for (const x of ['used the toilet', 'використав паливну картку']) ok(!hit(SK, x), 'nicht Ausstattung: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
