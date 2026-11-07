@@ -3929,6 +3929,9 @@ Object.assign(STRINGS.en, { stock_asof_hint: 'The stock list refreshes itself ev
 Object.assign(STRINGS.de, { maint_asof_hint: 'Die Prüfterminliste aktualisiert sich alle 5 Minuten und beim Zurückkehren ins Fenster selbst (eingetragene Durchführungen und Werkstatttermine) – nicht, solange du hier etwas eingibst oder ein Ergebnis angezeigt wird.' });
 Object.assign(STRINGS.uk, { maint_asof_hint: 'Список строків перевірок оновлюється сам кожні 5 хвилин і коли ви повертаєтеся до вікна (внесені проходження та записи в сервіс) – але не тоді, коли ви тут щось вводите або показано результат.' });
 Object.assign(STRINGS.en, { maint_asof_hint: 'The inspection list refreshes itself every 5 minutes and when you return to the window (recorded inspections and workshop appointments) – not while you are typing here or a result is shown.' });
+Object.assign(STRINGS.de, { fines_asof_hint: 'Die Liste aktualisiert sich alle 5 Minuten und beim Zurückkehren ins Fenster selbst (neue Schreiben, Zahlungen und Antworten der Kollegen) – nicht, solange du hier etwas eingibst.' });
+Object.assign(STRINGS.uk, { fines_asof_hint: 'Список оновлюється сам кожні 5 хвилин і коли ви повертаєтеся до вікна (нові листи, оплати та відповіді колег) – але не тоді, коли ви тут щось вводите.' });
+Object.assign(STRINGS.en, { fines_asof_hint: 'The list refreshes itself every 5 minutes and when you return to the window (colleagues\' new letters, payments and replies) – not while you are typing here.' });
 // Backlog 1117: geöffneter Vorgang wurde inzwischen von anderen geändert
 Object.assign(STRINGS.de, { case_chg_banner: 'Dieser Vorgang wurde inzwischen geändert (Stand {t}, Status: {st}).', case_chg_done: 'Vorgang wurde inzwischen geändert – Ansicht aktualisiert.' });
 Object.assign(STRINGS.uk, { case_chg_banner: 'Тим часом змінено кимось іншим (стан {t}, статус: {st}).', case_chg_done: 'Тим часом змінено кимось іншим – вигляд оновлено.' });

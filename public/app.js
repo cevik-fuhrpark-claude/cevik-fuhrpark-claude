@@ -1317,6 +1317,24 @@ async function maintAutoRefresh(minAge) {
 setInterval(() => maintAutoRefresh(HOME_REFRESH_MS), 30000);
 window.addEventListener('focus', () => maintAutoRefresh(60000));
 document.addEventListener('visibilitychange', () => maintAutoRefresh(60000));
+// Backlog 1122 (Blickwinkel „Büro hat die Bußgeldliste den ganzen Tag offen, Kollegin erfasst Schreiben und trägt Zahlungen ein“): Die Liste
+// „Bußgelder & Schreiben“ (Status, Antwortfrist überschritten, „Antwortfrist fehlt“) blieb auf dem Stand des Öffnens – ein neu erfasstes Schreiben
+// oder ein als bezahlt markiertes Bußgeld erschien erst nach Seitenwechsel. Jetzt wie die Prüfterminliste: Standzeile und still neu aufbauen
+// (alle 5 Min., beim Zurückholen des Fensters nach ≥ 1 Min.; Standort und „Antwortfrist fehlt“ stehen in S). Nicht für Fahrer („Meine Bußgelder“);
+// nie bei Fokus im Feld, Eingaben (Formular „Neues Schreiben“, Haken „mit Fahrer“), Textauswahl, Dialog oder Fehlermeldung.
+const isFinesHash = () => (location.hash || '') === '#/fines';
+async function finesAutoRefresh(minAge) {
+  if (!S.me || S.me.role === 'driver' || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isFinesHash() || S.lastHash !== '#/fines' || !S.finesAt || Date.now() - S.finesAt < minAge) return;
+  const ae = document.activeElement;
+  if (viewDirty() || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err')) return;
+  const sel = window.getSelection && window.getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  S.quietBg = true;
+  try { await viewFines(); } catch { S.finesAt = Date.now(); } finally { S.quietBg = false; }
+}
+setInterval(() => finesAutoRefresh(HOME_REFRESH_MS), 30000);
+window.addEventListener('focus', () => finesAutoRefresh(60000));
+document.addEventListener('visibilitychange', () => finesAutoRefresh(60000));
 // Backlog 1117 (Blickwinkel „Fuhrparkleitung hat einen Vorgang den ganzen Tag offen, die Werkstatt arbeitet daran“): Der geöffnete Vorgang
 // blieb auf dem Stand des Öffnens – „Zur Abschlusskontrolle“, neue Arbeitszeit, Fotos oder eine Rückfrage der Werkstatt erschienen erst nach
 // Neuladen; ein Knopfdruck auf dem alten Stand endete im Versionskonflikt. Jetzt alle 2 Min., beim Zurückholen des Fensters (≥ 1 Min.) und bei
@@ -6583,7 +6601,7 @@ async function viewFines() {
   const mgr = isMgr();
   const today = bDate();
   const own = S.me.role === 'driver'; // Lesezugriff sieht alle Schreiben – Überschrift/Hilfe wie Leitung (19.10.2026: „Meine …“)
-  let html = `<h1>${esc(own ? t('my_fines') : t('fines'))}</h1>${helpLink(own ? 'myfines' : 'fines')}`;
+  let html = `<h1>${esc(own ? t('my_fines') : t('fines'))}</h1>${own ? '' : `<p class="small muted noprint" id="finesasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/fines" id="finesreload" title="${esc(t('fines_asof_hint'))}">${esc(t('update_now'))}</a></p>`}${helpLink(own ? 'myfines' : 'fines')}`;
   const fsiteSel = (fr.site_options || []).length > 1 || fr.site ? `<div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end"><div>${siteSelect('fsite', '', fr.site_options, fr.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : '';
   if (mgr) html += `<details class="panel"><summary>${esc(t('new_fine'))}</summary><form id="nf">
     <label>${esc(t('kind'))}</label><select name="kind">${S.meta.fine_kinds.map((k) => `<option value="${k}">${esc(t('fk_' + k))}</option>`).join('')}</select>
@@ -6604,7 +6622,10 @@ async function viewFines() {
   if (fr.truncated) html += `<p class="small muted">${esc(t('fines_truncated'))}</p>`;
   html += `<div class="list">${shownF.map((f) => { const over = f.response_due && f.response_due < today && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status); return `<a class="row ${over ? 'p-kritisch' : ''}" href="#/fines/${esc(f.id)}">${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))} · ${esc(t('of_' + f.offense_type))}</span><span class="chip ${over ? 'kritisch' : ['bezahlt', 'eingestellt', 'erledigt', 'beantwortet'].includes(f.status) ? 'ok' : ''}">${esc(t('fs_' + f.status))}</span>${f.driving_ban_months ? `<span class="chip kritisch" data-fban>${esc(t('fine_ban'))}: ${esc(tn('ban_months', f.driving_ban_months))}</span>` : ''}${!f.response_due && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status) ? `<span class="chip" data-fnodue>${esc(t('fine_no_due'))}</span>` : ''}<span class="sub">${noTr(f.fine_no)} · ${fmtDT(f.offense_at)}${f.authority ? ' · ' + esc(f.authority) : ''}${f.reference ? ` · <span data-fref>${esc(t('reference'))} ${noTr(f.reference)}</span>` : ''}${f.response_due ? ' · ' + esc(t('response_due')) + ' ' + esc(fmtDue(f.response_due)) : ''}${f.driver_name || f.driver_name_note ? ' · ' + esc(f.driver_name || f.driver_name_note) : ''}</span></a>`; }).join('') || `<p class="muted">${esc(t('no_fines'))}</p>`}</div>`;
   if (['owner', 'fleet', 'viewer'].includes(S.me.role)) html += `<div class="actions" style="flex-wrap:wrap"><button type="button" class="btn secondary" id="fcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="fics">${esc(t('export_ics'))}</button><button type="button" class="btn secondary" id="fprt">${esc(t('print'))}</button>${mgr ? `<label class="small chkl" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fdrv"> ${esc(t('with_driver_names'))}</label>` : ''}</div>`;
+  if (S.quietBg && !isFinesHash()) return; // stille Aktualisierung (Backlog 1122): inzwischen andere Seite – nichts überschreiben
   render(html, 'more');
+  S.finesAt = Date.now();
+  const frl = $('#finesreload'); if (frl) frl.onclick = async (e) => { e.preventDefault(); try { await viewFines(); } catch (err) { toast(err.message, true); } };
   const day = bDate();
   const fc = $('#fcsv'); if (fc) fc.onclick = async () => { try { downloadChecked(await api('GET', `/api/fines?format=csv${$('#fdrv') && $('#fdrv').checked ? '&with_driver=1' : ''}${fq ? '&' + fq : ''}${S.fineNoDue ? '&no_due=1' : ''}`), `fuhrpark-bussgelder_${envFn()}_${day}${fr.site ? '_' + fnPart(fr.site) : ''}${S.fineNoDue ? '_ohne-antwortfrist' : ''}.csv`); } catch (err) { toast(err.message, true); } };
   const fi = $('#fics'); if (fi) fi.onclick = async () => { try { downloadChecked(await api('GET', '/api/fines?format=ics' + (fq ? '&' + fq : '')), `fuhrpark-behoerdenfristen_${envFn()}_${day}.ics`); } catch (err) { toast(err.message, true); } };

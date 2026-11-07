@@ -36097,6 +36097,22 @@ await test('Backlog 1120 (Blickwinkel „Fuhrparkleitung hat die Prüfterminlist
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-prueftermine-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
+await test('Backlog 1122 (Blickwinkel „Büro hat die Bußgeldliste den ganzen Tag offen, Kollegin erfasst Schreiben“): Bußgeldliste zeigt den Stand und aktualisiert sich still – nicht für Fahrer', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('async function viewFines('); const vf = app.slice(a, app.indexOf('\n}\n', a));
+  ok(vf.includes("${own ? '' : `<p class=\"small muted noprint\" id=\"finesasof\"") && vf.includes("t('fines_asof_hint')"), 'Standzeile (nicht im Druck, nicht für Fahrer)');
+  ok(vf.includes("if (S.quietBg && !isFinesHash()) return; // stille Aktualisierung (Backlog 1122): inzwischen andere Seite – nichts überschreiben\n  render(html, 'more');\n  S.finesAt = Date.now();") && vf.includes("$('#finesreload')"), 'inzwischen andere Seite: nichts überschreiben; Zeitpunkt merken; „Neu laden“');
+  const r = app.indexOf('async function finesAutoRefresh('); const fn = app.slice(r, app.indexOf('\n}\n', r));
+  ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart') && fn.includes('S.quietBg'), 'nur sichtbar, online, nicht für Fahrer, nicht doppelt');
+  ok(fn.includes("S.lastHash !== '#/fines'") && fn.includes('viewDirty()') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open], .toast.err') && fn.includes('sel.isCollapsed'), 'nur auf der Liste; nie bei Fokus/Eingaben/Textauswahl/Dialog/Fehlermeldung');
+  ok(fn.includes('try { await viewFines(); } catch { S.finesAt = Date.now(); } finally { S.quietBg = false; }'), 'Fehler: alte Ansicht bleibt');
+  ok(app.includes('setInterval(() => finesAutoRefresh(HOME_REFRESH_MS), 30000);') && app.includes("window.addEventListener('focus', () => finesAutoRefresh(60000));") && app.includes("document.addEventListener('visibilitychange', () => finesAutoRefresh(60000));"), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min.');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].fines_asof_hint && STRINGS[l].fines_asof_hint !== STRINGS[l].maint_asof_hint, 'Text ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-bussgelder-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
