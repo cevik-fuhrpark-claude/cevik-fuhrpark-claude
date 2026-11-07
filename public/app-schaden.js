@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, FUEL_HINT, GLASS_HINT, HITRUN_HINT, MARTEN_HINT, NUMPLATE_HINT, ROOFICE_HINT, STORM_HINT, STOW_HINT, THEFT_HINT, TOW_HINT, VANDAL_HINT, WILD_HINT, bDate, claimChip, decIn, esc, eur, fileUrl, fmtD, mayReport, noSticker, noTr, plate, recurFix, t, tn } from './app-main.js';
+import { BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, FUEL_HINT, GLASS_HINT, HITRUN_HINT, MARTEN_HINT, NUMPLATE_HINT, ROOFICE_HINT, STORM_HINT, STOW_HINT, THEFT_HINT, TOW_HINT, VANDAL_HINT, WILD_HINT, bDate, claimChip, decIn, esc, eur, fileUrl, fmtD, mayReport, noSticker, noTicket, noTr, plate, recurFix, t, tn } from './app-main.js';
 
 const CLAIM_ST = ['gemeldet', 'in_pruefung', 'reguliert', 'abgelehnt', 'zurueckgezogen'];
 // Gutachter-Angaben im Versicherungsfall (Teilagent „Versicherungsschaden mit Gutachter“, 23.10.2026): nur was eingetragen ist
@@ -68,7 +68,7 @@ async function claimSection(cl, contracts, files = [], desc = '', c = null, coup
   // Backlog 675: Personen im Laderaum ohne Aktenzeichen – Hinweis an die Leitung (Anzeige eintragen, Plane/Siegel/Ladung laut Vertrag klären; nichts angenommen)
   const stowNoRef = !theftNoRef && !hitrunNoRef && !vandalNoRef && !bridgeNoRef && STOW_HINT.test(desc || '') && !(cl && cl.police_ref);
   // Backlog 291: Glasschaden ohne Versicherungsfall – Hinweis an die Leitung, Versicherungsschutz laut Vertrag zu prüfen (nichts angenommen)
-  const glassNoClaim = !cl && GLASS_HINT.test(noSticker(desc));
+  const glassNoClaim = !cl && GLASS_HINT.test(noTicket(noSticker(desc)));
   // Backlog 663: Marderschaden ohne Versicherungsfall – Hinweis an die Leitung, Deckung (auch Folgeschäden) laut Vertrag prüfen (nichts angenommen)
   const martenNoClaim = !cl && MARTEN_HINT.test(desc || '');
   // Backlog 666: Unwetterschaden ohne Versicherungsfall – Hinweis an die Leitung, Deckung laut Vertrag prüfen (nichts angenommen)

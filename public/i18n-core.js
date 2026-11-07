@@ -51,6 +51,7 @@ export { CHECK_LABELS } from './check-labels.js';
 // Backlog 314: Blickwinkel „Teil hängt herunter, schleift oder wurde unterwegs verloren“
 // Backlog 315: Blickwinkel „Fahrerassistenzsystem fällt aus oder bremst grundlos“
 // Backlog 747: Kraftstoff ausgegangen, Tank leergefahren (Meldeformular + Hilfe)
+// Backlog 1130: Strafzettel/Verwarnung/geblitzt im Meldeformular – kein Schaden, an die Fuhrparkleitung (keine Frist, keine Zahlungsregel)
 // Backlog 354: Autotransporter – Ladeetage, Auffahrrampe oder Hydraulik des Aufbaus gestört (Hinweis im Meldeformular + Hilfe).
 // Backlog 306: mehrere passende Hinweise im Meldeformular – wichtigster offen, weitere eingeklappt
 

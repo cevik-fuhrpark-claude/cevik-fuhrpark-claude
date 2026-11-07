@@ -19274,8 +19274,8 @@ await test('Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“)
     ok(STRINGS[l].claim_glass_hint.includes('{b}') && STRINGS[l].claim_add, 'Versicherungs-Hinweis nennt den Knopf ' + l);
   }
   ok(app.includes(`<div id="glass" class="panel" hidden role="status">`), 'Panel #glass');
-  const lp = app.indexOf("$('#glass').hidden = !GLASS_HINT.test(dsk)"); ok(lp > 0 && lp < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("const glassNoClaim = !cl && GLASS_HINT.test(noSticker(desc));") && app.includes('data-claimglass'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
+  const lp = app.indexOf("$('#glass').hidden = !GLASS_HINT.test(noTicket(dsk))") /* Backlog 1130 */; ok(lp > 0 && lp < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("const glassNoClaim = !cl && GLASS_HINT.test(noTicket(noSticker(desc)));") && app.includes('data-claimglass'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
   ok(app.includes("'theft', 'glass', "), 'Hilfe-Abschnitt glass für meldende Rollen');
 });
 
@@ -36234,6 +36234,35 @@ await test('Backlog 1129 (Blickwinkel „Fahrer will ein Video bzw. eine Tonaufn
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].photos_media_skip && STRINGS[l].photos_media_skip.includes('{names}') && !/\(e\)|\(s\)/.test(STRINGS[l].photos_media_skip), l + ' photos_media_skip'); ok(STRINGS[l].file_media_hint, l + ' file_media_hint'); }
   for (const [l, x] of [['de', 'Tonaufnahmen'], ['uk', 'аудіозаписи'], ['en', 'audio recordings']]) ok(STRINGS[l].help_report_s.split('|').some((p) => p.includes(x)), 'Hilfe „Melden“ ' + l);
+});
+
+await test('Backlog 1130 (Blickwinkel „Fahrer findet einen Strafzettel am Lkw bzw. wurde geblitzt“): Meldeformular zeigt eigene Schritte (kein Schaden, Foto, Fuhrparkleitung Bescheid geben, keine Frist/Zahlungsregel); „Strafzettel an der Windschutzscheibe“ zeigt keine Glasschaden-Schritte mehr, echter Glasschaden daneben schon; neben Einwand bei Kontrolle nur deren Schritte; DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const TICKET_HINT = \/(.+)\/i;$/m); ok(m, 'TICKET_HINT auf Modulebene'); eq((app.match(/const TICKET_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const re = new RegExp(m[1], 'i');
+  for (const x of ['Strafzettel an der Windschutzscheibe', 'Knöllchen am Lkw', 'Knoellchen hinter dem Wischer', 'wurde auf der A2 geblitzt', 'vom Blitzer erwischt', 'Verwarnungsgeld wegen Parken', 'Bußgeldbescheid bekommen', 'Anhörungsbogen im Briefkasten', 'Parkverstoß am Rasthof', 'parking ticket on the windscreen', 'got a speeding ticket', 'flashed by a speed camera', 'penalty charge notice under the wiper', 'штраф за паркування на лобовому склі', 'спрацювала камера швидкості', 'штраф за перевищення швидкості']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Zettel für die Werkstatt', 'Ticket für die Fähre', 'Windschutzscheibe gerissen', 'Blinker defekt', 'Lichtblitz im Display', 'Rückfahrkamera defekt', 'camera not working', 'speed limiter broken', 'камера заднього ходу не працює', 'Blitzer am Lkw? nein']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  const W = (n) => new RegExp(app.match(new RegExp(`^const ${n} = \\/(.+)\\/i;$`, 'm'))[1], 'i');
+  const TICKET_WORDS = W('TICKET_WORDS'), TICKET_GLASS_DMG = W('TICKET_GLASS_DMG'); // eslint-disable-line no-unused-vars
+  const noTicket = eval('(' + app.match(/^const noTicket = (.*);$/m)[1] + ')');
+  const GL = new RegExp(app.match(/^const GLASS_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['Strafzettel an der Windschutzscheibe', 'Knöllchen hinter der Frontscheibe', 'parking ticket on the windscreen', 'штраф за паркування на лобовому склі']) { ok(GL.test(x), 'vorher Glas-Schritte: ' + x); ok(!GL.test(noTicket(x)), 'jetzt keine Glas-Schritte: ' + x); }
+  for (const x of ['Strafzettel an der Windschutzscheibe, außerdem Steinschlag', 'Windschutzscheibe gerissen, Strafzettel dran', 'parking ticket under the wiper, windscreen cracked', 'Windschutzscheibe gerissen']) ok(GL.test(noTicket(x)), 'Glasschaden bleibt: ' + x);
+  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(dsk));"), 'Glas-Prüfung ohne Strafzettel-Ort');
+  ok(app.includes('const glassNoClaim = !cl && GLASS_HINT.test(noTicket(noSticker(desc)));'), 'Versicherungsabschnitt: Strafzettel an der Scheibe ist kein Glasschaden');
+  ok(app.includes("$('#ticket').hidden = !$('#roadchk').hidden || !TICKET_HINT.test(dv);") && app.indexOf("$('#roadchk').hidden = ") < app.indexOf("$('#ticket').hidden = "), 'neben Einwand bei Kontrolle nur deren Schritte');
+  ok(app.includes('<div id="ticket" class="panel" hidden role="status">'), 'Panel #ticket');
+  ok(app.includes("'fuelcard', 'toll', 'ticket', 'tacho']"), 'Reihenfolge nach Maut');
+  ok(helpAfter(app, 'ticket', 'toll'), 'Hilfe-Abschnitt für meldende Rollen nach Maut');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.ticket_hint_title, 'Titel ' + l);
+    const st = S.ticket_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.ticket_hint_steps) && !/\d/.test(S.help_ticket_s), 'keine Zahl/Frist ' + l);
+    ok(st[2].includes(S.fines) && st[3].includes(S.my_fines), 'nennt „' + S.fines + '“ und „' + S.my_fines + '“ ' + l);
+    ok(S.help_ticket_t && S.help_ticket_s.includes(S.ticket_hint_steps) && S.help_ticket_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
 });
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
