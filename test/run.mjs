@@ -8798,7 +8798,7 @@ await test('Vorgangsdateien: Höchstzahl vor dem Hochladen sichtbar (freie Plät
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
-  const v = app.slice(app.indexOf('async function viewCase(id)'), app.indexOf('function photoLimitWatch('));
+  const v = app.slice(app.indexOf('async function viewCase(id, pre = null)'), app.indexOf('function photoLimitWatch('));
   ok(!v.includes('d.files.length < 10'), 'keine feste 10 mehr');
   ok(v.includes('const filesFree = Math.max(0, PHOTO_MAX - d.files.length);'), 'freie Plätze aus PHOTO_MAX');
   ok(v.includes('id="filesfull"') && v.includes('id="filesfree"'), 'Hinweise voll / freie Plätze');
@@ -36015,6 +36015,31 @@ await test('Backlog 1116 (Blickwinkel „Fuhrparkleitung am PC ohne Push-Erlaubn
   const ip = app.slice(app.indexOf('function inboxPush('), app.indexOf('\n}\n', app.indexOf('function inboxPush(')));
   ok(ip.includes('!(nl && nl.dataset.more)') && ip.includes('inboxBanner();'), 'Push: nachgeladene Hinweise nicht verwerfen');
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-hinweise-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
+await test('Backlog 1117 (Blickwinkel „Fuhrparkleitung hat einen Vorgang den ganzen Tag offen, die Werkstatt arbeitet daran“): geöffneter Vorgang aktualisiert sich still bei Änderungen anderer, ohne die Sitzung zu verlängern', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const r = app.indexOf('async function caseAutoRefresh('); const fn = app.slice(r, app.indexOf('\n}\n', r));
+  ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart') && fn.includes('S.quietBg'), 'nur sichtbar, online, nicht für Fahrer, nicht doppelt');
+  ok(fn.includes('caseHashId() !== cv.id || S.lastHash !== location.hash'), 'nur auf genau diesem Vorgang');
+  ok(fn.includes("S.quietBg = true;\n  try { d = await api('GET', '/api/cases/' + encodeURIComponent(cv.id)); } catch { return;") && fn.includes('finally { S.quietBg = false; }'), 'Abfrage als Hintergrund (x-cfp-bg); Fehler: alte Ansicht bleibt');
+  ok(fn.includes('if (caseSig(d) === cv.sig) return;'), 'unverändert: kein Neuaufbau');
+  ok(fn.includes('viewDirty()') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open], .toast.err, #lostact') && fn.includes('sel.isCollapsed') && fn.includes('{ caseChangedBanner(d); return; }'), 'bei Eingaben/Fokus/Dialog/Fehler/Konflikt-Kasten/Textauswahl nur Hinweis');
+  ok(fn.includes("try { await viewCase(cv.id, d); toast(t('case_chg_done')); }"), 'sonst still neu aufbauen (geladener Stand, keine zweite Abfrage) mit kurzem Hinweis');
+  const sig = app.slice(app.indexOf('const caseSig = '), app.indexOf('\n', app.indexOf('const caseSig = ')));
+  for (const k of ['d.case.version', 'd.case.status', "'events'", "'files'", "'work'", "'parts'", "'external_costs'", "'open_items'", 'd.claim.updated_at']) ok(sig.includes(k), 'Vergleich umfasst ' + k);
+  const vc = app.slice(app.indexOf('async function viewCase('), app.indexOf('async function viewCase(') + 400);
+  ok(vc.includes("async function viewCase(id, pre = null) {\n  const d = pre || await api('GET', '/api/cases/' + id);"), 'viewCase nimmt den geladenen Stand');
+  ok(app.includes("if (S.quietBg && caseHashId() !== String(id)) return; // stille Aktualisierung (Backlog 1117)") && app.includes("S.caseView = { id: String(id), at: Date.now(), sig: caseSig(d) };"), 'inzwischen andere Seite: nichts überschreiben; Stand merken');
+  ok(app.includes('const CASE_REFRESH_MS = 2 * 60000;') && app.includes('setInterval(() => caseAutoRefresh(CASE_REFRESH_MS), 30000);') && app.includes("window.addEventListener('focus', () => caseAutoRefresh(60000));") && app.includes("document.addEventListener('visibilitychange', () => caseAutoRefresh(60000));"), 'Takt 2 Min., beim Zurückholen des Fensters nach 1 Min.');
+  ok(app.includes('if (bg && n.unread > (prev || 0)) caseAutoRefresh(15000);') && app.includes("refreshUnread(true).then(inboxPush).then(() => caseAutoRefresh(15000));"), 'auch bei neuer Zahl an der Glocke bzw. Push');
+  const bn = app.slice(app.indexOf('function caseChangedBanner('), app.indexOf('\n}\n', app.indexOf('function caseChangedBanner(')));
+  ok(bn.includes('class="panel warn noprint" id="casechg" role="status"') && bn.includes("t('update_now')") && bn.includes("t('case_chg_banner')"), 'Hinweis mit „Neu laden“, nicht im Druck');
+  ok(/#casechg \{ position: sticky;/.test(fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')), 'Hinweis bleibt beim Scrollen sichtbar');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].case_chg_banner.includes('{t}') && STRINGS[l].case_chg_banner.includes('{st}') && STRINGS[l].case_chg_done, 'Texte ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-vorgang-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

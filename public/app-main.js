@@ -1228,7 +1228,7 @@ async function refreshUnread(bg = false) {
     // Backlog 507: auf einem anderen Gerät (oder in der App) gelesene/quittierte Mitteilungen aus der Leiste dieses Geräts entfernen – auch dringende (requireInteraction)
     if (tray.length && Array.isArray(n.tray_unread)) { const keep = new Set(n.tray_unread); for (const x of tray) if (!keep.has(x.data.id)) { try { x.close(); } catch { /* bereits geschlossen */ } } }
     if (S.viewEnv !== ev) return; const prev = S.unread; S.unread = n.unread; lastUnreadAt = Date.now(); paintBadge();
-    if (bg && n.unread > (prev || 0)) inboxPoll(); /* Backlog 1116: geöffnete Liste „Hinweise“ ohne Push nachziehen */ } catch {}
+    if (bg && n.unread > (prev || 0)) inboxPoll(); if (bg && n.unread > (prev || 0)) caseAutoRefresh(15000); /* Backlog 1117: geöffneten Vorgang nachziehen */ /* Backlog 1116: geöffnete Liste „Hinweise“ ohne Push nachziehen */ } catch {}
 }
 // angezeigte Mitteilungen dieses Geräts mit Hinweis-Kennung (höchstens 50); ohne Service Worker/Mitteilungen leer
 async function trayNotifications() {
@@ -1303,6 +1303,42 @@ async function vehAutoRefresh(minAge) {
   S.quietBg = true;
   try { await viewVehicles(); } catch { S.vehAt = Date.now(); } finally { S.quietBg = false; }
 }
+// Backlog 1117 (Blickwinkel „Fuhrparkleitung hat einen Vorgang den ganzen Tag offen, die Werkstatt arbeitet daran“): Der geöffnete Vorgang
+// blieb auf dem Stand des Öffnens – „Zur Abschlusskontrolle“, neue Arbeitszeit, Fotos oder eine Rückfrage der Werkstatt erschienen erst nach
+// Neuladen; ein Knopfdruck auf dem alten Stand endete im Versionskonflikt. Jetzt alle 2 Min., beim Zurückholen des Fensters (≥ 1 Min.) und bei
+// neuer Zahl an der Glocke bzw. eingehendem Push den Vorgang im Hintergrund abfragen (x-cfp-bg, verlängert die Sitzung nicht). Unverändert →
+// nichts tun. Geändert → still neu aufbauen (render(): gleiche Seite, aufgeklappte Bereiche/Scrollposition bleiben) mit kurzem Hinweis;
+// bei Eingaben, Fokus im Feld, Textauswahl, offenem Dialog, Fehlermeldung oder Konflikt-Kasten nur ein Hinweis „inzwischen geändert · Neu laden“.
+// Nicht für Fahrer (wie die übrigen stillen Aktualisierungen).
+const CASE_REFRESH_MS = 2 * 60000;
+const caseHashId = () => { const m = (location.hash || '').match(/^#\/cases\/([\w-]+)$/); return m ? m[1] : null; };
+const caseSig = (d) => (d && d.case ? [d.case.version, d.case.status, d.case.safety_lock ? 1 : 0, ...['events', 'files', 'work', 'parts', 'external_costs', 'open_items', 'inspections', 'followups'].map((k) => (Array.isArray(d[k]) ? d[k].length : '')), d.claim ? d.claim.updated_at || '' : ''].join('|') : '');
+async function caseAutoRefresh(minAge) {
+  const cv = S.caseView;
+  if (!cv || !S.me || S.me.role === 'driver' || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (caseHashId() !== cv.id || S.lastHash !== location.hash || Date.now() - cv.at < minAge) return;
+  cv.at = Date.now(); let d;
+  S.quietBg = true;
+  try { d = await api('GET', '/api/cases/' + encodeURIComponent(cv.id)); } catch { return; /* alte Ansicht bleibt; nächster Versuch beim nächsten Takt */ } finally { S.quietBg = false; }
+  if (S.caseView !== cv || caseHashId() !== cv.id || S.lastHash !== location.hash) return; // inzwischen andere Seite oder neu aufgebaut
+  if (caseSig(d) === cv.sig) return;
+  const ae = document.activeElement; const sel = window.getSelection && window.getSelection();
+  if (viewDirty() || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err, #lostact') || (sel && !sel.isCollapsed && String(sel).trim())) { caseChangedBanner(d); return; }
+  S.quietBg = true;
+  try { await viewCase(cv.id, d); toast(t('case_chg_done')); } catch { /* alte Ansicht bleibt */ } finally { S.quietBg = false; }
+}
+// Hinweis oben im Vorgang (einmal, wird bei weiterer Änderung nur aktualisiert): Zeitpunkt der Abfrage und neuer Status, „Neu laden“
+function caseChangedBanner(d) {
+  const m = document.getElementById('main'); if (!m || !d || !d.case) return;
+  const txt = t('case_chg_banner').replace('{t}', fmtHM(new Date(nowMs()).toISOString())).replace('{st}', stTxt(d.case));
+  let b = document.getElementById('casechg');
+  if (!b) { m.insertAdjacentHTML('afterbegin', `<div class="panel warn noprint" id="casechg" role="status"><span></span> · <a href="${esc(location.hash)}" id="casechgre">${esc(t('update_now'))}</a></div>`); b = document.getElementById('casechg');
+    b.querySelector('#casechgre').onclick = async (e) => { e.preventDefault(); const id = caseHashId(); if (!id) return; try { await viewCase(id); } catch (err) { toast(err.message, true); } }; }
+  b.querySelector('span').textContent = 'ⓘ ' + txt;
+}
+setInterval(() => caseAutoRefresh(CASE_REFRESH_MS), 30000);
+window.addEventListener('focus', () => caseAutoRefresh(60000));
+document.addEventListener('visibilitychange', () => caseAutoRefresh(60000));
 const isCasesHash = () => /^#\/cases(?:\?f=\w+)?$/.test(location.hash || '');
 async function casesAutoRefresh(minAge) {
   const cq = S.casesQuiet;
@@ -3172,8 +3208,8 @@ function apwBox(c) {
   const k = S.me.role === 'workshop' ? 'apw_hint_ws' : isMgr() ? 'apw_hint_mgr' : 'apw_hint_dispo';
   return `<div class="panel warn" role="note" data-apwcase><b>🔍 ${esc(t('apw_title'))} ${fmtD(c.appraisal_wait_on)}${c.appraisal_wait_on === bDate() ? ' (' + esc(t('today')) + ')' : ''}</b> – ${esc(t(k))}</div>`;
 }
-async function viewCase(id) {
-  const d = await api('GET', '/api/cases/' + id);
+async function viewCase(id, pre = null) {
+  const d = pre || await api('GET', '/api/cases/' + id); // pre: schon geladener Stand der stillen Aktualisierung (Backlog 1117)
   const c = d.case;
   // Backlog 629: externe Werkstatt ohne Konto – Leitung führt Abschlusskontrolle und Freigabe selbst aus; kombinierter Knopf (nur Oberfläche,
   // zwei Befehle nacheinander, Server-Prüfungen unverändert)
@@ -3279,7 +3315,9 @@ async function viewCase(id) {
   // Verlauf + Kommentar
   html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(e.action === 'comment' && e.payload && e.payload.question ? t('act_question') : evLabel(e.action) ? evLabel(e.action) : e.action === 'create' ? t('report_sent') : e.action)}</b>${e.actor_name || e.actor_name_hidden ? ' · ' + esc(pnm(e.actor_name, e.actor_name_hidden)) : ''}${e.to_status && e.from_status !== e.to_status ? ` → ${esc(t('st_' + e.to_status))}` : ''}${e.note ? `<div style="white-space:pre-wrap"${langAttr(evNote(e))}>${esc(evNote(e))}</div>` : ''}${e.action === 'cost_limit_exceeded' && e.payload ? `<div class="small muted">${esc(t('costs'))} ${eur(e.payload.total_net)} > ${esc(t((e.payload.approved_net || 0) > (e.payload.limit_net || 0) ? 'cost_approved_upto' : 'cost_limit'))} ${eur(Math.max(e.payload.limit_net, e.payload.approved_net || 0))}</div>` : ''}${e.action === 'correct_vehicle' && e.payload && e.payload.inspection_id ? `<div class="small muted cvinsp">${esc(cvInspText(e.payload))}</div>` : ''}${e.action === 'file_added' && e.payload && e.payload.filename ? `<div class="small muted" data-fileev>📎 ${esc(e.payload.filename)}</div>` : ''}${e.action === 'approve_costs' && e.payload ? `<div class="small muted">${esc(t('cost_approved_upto'))} ${eur(e.payload.approved_net)}</div>` : ''}${e.action === 'parts_partial' && e.payload && 'to' in e.payload ? `<div class="small muted" data-ppev>${esc(t('pp_eta'))}: ${e.payload.from ? fmtD(e.payload.from) : '–'} → ${e.payload.to ? fmtD(e.payload.to) : '–'}</div>` : ''}${['parts_partial', 'resume_repair'].includes(e.action) && e.payload && e.payload.file_id ? `<div class="small" data-dlvev>📎 ${esc(t('dlv_file'))}: <a href="${fileUrl(e.payload.file_id)}" target="_blank" rel="noopener">${esc(e.payload.file_name || '')}</a></div>` : ''}${e.payload && e.payload.work_state_cleared ? `<div class="small muted" data-wscev>${esc(t('rr_ws_cleared'))}</div>` : ''}${e.action === 'set_parts_eta' && e.payload ? `<div class="small muted">${e.payload.from ? fmtD(e.payload.from) : '–'} → ${e.payload.to ? fmtD(e.payload.to) : '–'}</div>` : evFromTo(e)}${e.payload && e.payload.planned_to ? `<div class="small muted">${esc(t('planned'))}: ${e.payload.planned_from ? fmtD(e.payload.planned_from) + ' → ' : ''}${fmtD(e.payload.planned_to)}</div>` : ''}${e.payload && e.payload.parts_expected_date ? `<div class="small muted">${esc(t('parts_eta'))} ${fmtD(e.payload.parts_expected_date)}</div>` : ''}${e.payload && e.payload.pickup_for_driver ? `<div class="small muted" data-puev>${esc(t('pu_ev_driver'))}${e.payload.pickup_valid_until ? ' · ' + esc(t('pu_valid_until')) + ' ' + fmtD(e.payload.pickup_valid_until) : ''}</div>` : ''}${e.payload && e.payload.pickup_replaced ? `<div class="small muted" data-pureplev>${esc(tn('pu_ev_replaced', e.payload.pickup_replaced))}</div>` : ''}${e.payload && e.payload.winter_open_confirmed ? `<div class="small muted wqev">❄ ${esc(t('wq_ev_open'))}${[...(e.payload.noncompliant || []), ...(e.payload.missing || [])].length ? ': ' + esc([...(e.payload.noncompliant || []), ...(e.payload.missing || [])].join(', ')) : ''}</div>` : ''}</li>`).join('')}</ol>`;
   if (A.includes('comment')) html += `<form id="cf"><label for="ct">${esc(t('act_comment'))}</label><textarea id="ct" required minlength="3"></textarea>${S.me.role !== 'driver' ? `<fieldset style="border:0;padding:0;margin:8px 0"><legend class="small muted">${esc(t('notify_only'))}</legend><div style="display:flex;gap:14px;flex-wrap:wrap">${[['fleet', t('nt_fleet_owner')], ['workshop', t('role_workshop')], ['reporter', t('reported_by')]].filter(([k]) => k !== 'workshop' || (c.status !== 'abgelehnt' && (c.workshop_site || c.suggested_workshop_site))).map(([k, l]) => { const off = k === 'reporter' && d.reporter_unreachable; return `<label class="small${off ? ' muted' : ''}" style="display:flex;gap:6px;align-items:center;min-height:44px"><input type="checkbox" data-nt="${k}"${off ? ' disabled' : ''}> ${esc(l)}${off ? ` <span style="white-space:nowrap">(${esc(t(d.reporter_unreachable === 'inactive' ? 'reporter_off_inactive' : 'reporter_off_other'))})</span>` : ''}</label>`; }).join('')}</div>${isMgr() && !d.reporter_unreachable && c.reporter_id && c.reporter_id !== S.me.id && OPEN_CASE_ST.includes(c.status) ? `<label class="small" style="display:flex;gap:6px;align-items:center;min-height:44px"><input type="checkbox" data-q> ${esc(t('q_ask'))}</label>` : ''}</fieldset>` : ''}<div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form>`;
+  if (S.quietBg && caseHashId() !== String(id)) return; // stille Aktualisierung (Backlog 1117): inzwischen andere Seite – nichts überschreiben
   render(html, 'cases', { defer: true });
+  S.caseView = { id: String(id), at: Date.now(), sig: caseSig(d) };
   $('#cprt').onclick = () => window.print();
 
   // Befehlskennung je Inhalt: wiederholtes Absenden desselben Eintrags nach verlorener Antwort (Funkloch) nutzt dieselbe command_id –
@@ -5510,7 +5548,7 @@ if ('serviceWorker' in navigator) {
     if (typeof e.data.hash === 'string') S.pushNav = { hash: e.data.hash, at: Date.now() }; // Backlog 1017: Ziel nach erneuter Anmeldung
     // abgemeldet (Leerlauf) bei offenem Fenster: Umgebung für die Anmeldung in der Adresse merken – wie beim Kaltstart „?env=“ (23.10.2026: Test-Vorgang → „nicht gefunden“)
     if (!S.me && ['test', 'production'].includes(e.data.env)) history.replaceState(history.state, '', location.pathname + '?env=' + e.data.env + location.hash);
-    if (pushEnv(e.data.env)) { if (location.hash === e.data.hash) route(); else location.hash = e.data.hash; return; } if (location.hash === e.data.hash) { if (!viewDirty()) route(); } else location.hash = e.data.hash; } if (e.data && e.data.type === 'push') refreshUnread(true).then(inboxPush); });
+    if (pushEnv(e.data.env)) { if (location.hash === e.data.hash) route(); else location.hash = e.data.hash; return; } if (location.hash === e.data.hash) { if (!viewDirty()) route(); } else location.hash = e.data.hash; } if (e.data && e.data.type === 'push') refreshUnread(true).then(inboxPush).then(() => caseAutoRefresh(15000)); });
 }
 document.documentElement.lang = S.lang;
 route();
