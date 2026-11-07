@@ -8716,10 +8716,10 @@ await test('Management-Panel: alle offenen Entscheidungen im Master-Eingang (nic
 
 await test('Netz wieder da nach Offline-Start: Seite nur ohne Eingaben neu aufbauen (Eingaben im Funkloch bleiben erhalten)', async () => {
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const h = app.slice(app.indexOf("window.addEventListener('online'"), app.indexOf('function viewDirty()'));
+  const h = app.slice(app.indexOf("window.addEventListener('online'"), app.indexOf('function viewDirty(skip)'));
   ok(h.includes('if (!viewDirty()) { S.offlineStart = false; S.me = null; route(); return; }') && h.includes("api('GET', '/api/me', undefined, { keepDirty: true })") && h.includes('saveOfflineSession()'), 'online: mit Eingaben kein route(), Sitzung im Hintergrund (401 ohne Sprung zur Anmeldung, 22.10.2026)');
   // viewDirty mit nachgebauten Feldern prüfen (ohne Browser)
-  const src = app.slice(app.indexOf('function viewDirty()'), app.indexOf('\n}\n', app.indexOf('function viewDirty()')) + 2);
+  const src = app.slice(app.indexOf('function viewDirty(skip)'), app.indexOf('\n}\n', app.indexOf('function viewDirty(skip)')) + 2);
   const mk = (els) => ({ getElementById: () => ({ querySelectorAll: () => els }), querySelector: () => null });
   const vd = (els) => new Function('document', src + '\nreturn viewDirty();')(mk(els));
   const opt = (sel, def) => ({ selected: sel, defaultSelected: def });
@@ -35939,7 +35939,7 @@ await test('Backlog 1112 (Blickwinkel „Disposition mit zwei Browserfenstern ne
   ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart'), 'nur sichtbar, online, nicht für Fahrer');
   ok(fn.includes("S.lastHash !== '#/'") && fn.includes('viewDirty()') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open]'), 'nur Startseite, nie bei Eingaben/Fokus/Dialog');
   ok(fn.includes('try { await viewHome(); } catch') && fn.includes('finally { S.quietHome = false; }'), 'Fehler: alte Ansicht bleibt');
-  ok(app.includes('const HOME_REFRESH_MS = 5 * 60000;') && app.includes('setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); casesAutoRefresh(HOME_REFRESH_MS); planAutoRefresh(HOME_REFRESH_MS); }, 30000);') && app.includes("window.addEventListener('focus', () => { homeAutoRefresh(60000); casesAutoRefresh(60000); planAutoRefresh(60000); });"), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min. (seit Backlog 1113 auch Vorgangsliste)');
+  ok(app.includes('const HOME_REFRESH_MS = 5 * 60000;') && app.includes('setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); casesAutoRefresh(HOME_REFRESH_MS); planAutoRefresh(HOME_REFRESH_MS); vehAutoRefresh(HOME_REFRESH_MS); }, 30000);') && app.includes("window.addEventListener('focus', () => { homeAutoRefresh(60000); casesAutoRefresh(60000); planAutoRefresh(60000); vehAutoRefresh(60000); });"), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min. (seit Backlog 1113 auch Vorgangsliste)');
   ok(app.includes("if (S.quietHome && method === 'GET' && !extra.bg) extra = { ...extra, bg: true };"), 'Abfragen der stillen Aktualisierung als Hintergrund (x-cfp-bg)');
   // Server: Hintergrund-Abfrage der Startseite funktioniert und verlängert die Sitzung nicht (auth.js prüft x-cfp-bg)
   const auth = fs.readFileSync(new URL('../src/auth.js', import.meta.url), 'utf8');
@@ -35961,7 +35961,7 @@ await test('Backlog 1113 (Blickwinkel „Fuhrparkleitung hat Vorgangsliste und V
   ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart') && fn.includes('cq.busy'), 'nur sichtbar, online, nicht doppelt');
   ok(fn.includes("ae.matches('input, select, textarea')") && fn.includes("inp.value.trim() !== (S.caseQ || '')") && fn.includes('dialog[open], .toast.err') && fn.includes('sel.isCollapsed'), 'nie bei Fokus/ungesuchter Eingabe/Dialog/Fehler/Textauswahl');
   ok(fn.includes('try { await cq.fn(); } catch { cq.at = Date.now(); }'), 'Fehler: alte Liste bleibt');
-  ok(app.includes('setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); casesAutoRefresh(HOME_REFRESH_MS); planAutoRefresh(HOME_REFRESH_MS); }, 30000);') && app.includes("window.addEventListener('focus', () => { homeAutoRefresh(60000); casesAutoRefresh(60000); planAutoRefresh(60000); });"), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min.');
+  ok(app.includes('setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); casesAutoRefresh(HOME_REFRESH_MS); planAutoRefresh(HOME_REFRESH_MS); vehAutoRefresh(HOME_REFRESH_MS); }, 30000);') && app.includes("window.addEventListener('focus', () => { homeAutoRefresh(60000); casesAutoRefresh(60000); planAutoRefresh(60000); vehAutoRefresh(60000); });"), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min.');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cases_asof_hint && STRINGS[l].cases_asof_hint !== STRINGS[l].home_asof_hint, 'Text ' + l);
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-vorgangsliste-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
@@ -35977,11 +35977,28 @@ await test('Backlog 1114 (Blickwinkel „Werkstatt-Wandbildschirm zeigt den ganz
   ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart'), 'nur sichtbar, online, nicht für Fahrer');
   ok(fn.includes('S.lastHash !== location.hash') && fn.includes('viewDirty()') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open], .toast.err'), 'nur Werkstattplan, nie bei Eingaben/Fokus/Dialog');
   ok(fn.includes('try { await viewPlan(); } catch { S.planAt = Date.now(); } finally { S.quietBg = false; }'), 'ohne Abschnittssprung; Fehler: alte Ansicht bleibt');
-  ok(app.includes('planAutoRefresh(HOME_REFRESH_MS); }, 30000);') && app.includes('planAutoRefresh(60000); });'), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min.');
+  ok(app.includes('planAutoRefresh(HOME_REFRESH_MS); vehAutoRefresh(HOME_REFRESH_MS); }, 30000);') && app.includes('planAutoRefresh(60000); vehAutoRefresh(60000); });'), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min.');
   ok(app.includes("if (S.quietBg && method === 'GET' && !extra.bg) extra = { ...extra, bg: true };"), 'Abfragen als Hintergrund (x-cfp-bg)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].plan_asof_hint && STRINGS[l].plan_asof_hint !== STRINGS[l].home_asof_hint, 'Text ' + l);
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-plan-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
+await test('Backlog 1115 (Blickwinkel „Disposition hat die Fahrzeugliste den ganzen Tag offen“): Fahrzeugliste zeigt den Stand und aktualisiert sich still, ohne die Sitzung zu verlängern', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('async function viewVehicles('); const vv = app.slice(a, app.indexOf('\n}\n', a));
+  ok(vv.includes(`\${S.me.role !== 'driver' ? \`<p class="small muted noprint" id="vehasof"`) && vv.includes("t('veh_asof_hint')") && vv.includes("t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString()))"), 'Standzeile (nicht für Fahrer, nicht im Druck)');
+  ok(vv.includes('if (S.quietBg && !isVehHash()) return; // stille Aktualisierung: inzwischen andere Seite – nichts überschreiben\n  render(') && vv.includes('S.vehAt = Date.now();'), 'inzwischen andere Seite: nichts überschreiben; Zeitpunkt merken');
+  const r = app.indexOf('async function vehAutoRefresh('); const fn = app.slice(r, app.indexOf('\n}\n', r));
+  ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart') && fn.includes('S.quietBg'), 'nur sichtbar, online, nicht für Fahrer, nicht doppelt');
+  ok(fn.includes("viewDirty(document.getElementById('q'))") && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open], .toast.err') && fn.includes('sel.isCollapsed'), 'nie bei Fokus/anderen Eingaben/Textauswahl/Dialog/Fehlermeldung; Suchtext allein hindert nicht');
+  ok(fn.includes("S.lastHash = '#/vehicles';") && fn.includes('try { await viewVehicles(); } catch { S.vehAt = Date.now(); } finally { S.quietBg = false; }'), 'gleiche Seite (Suchtext/Scrollposition bleiben); Fehler: alte Ansicht bleibt');
+  ok(app.includes('if (el === skip) return false;'), 'viewDirty kann das Suchfeld ausnehmen');
+  ok(app.includes('vehAutoRefresh(HOME_REFRESH_MS); }, 30000);') && (app.match(/vehAutoRefresh\(60000\); \}\);/g) || []).length === 2, 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min.');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].veh_asof_hint && ![STRINGS[l].home_asof_hint, STRINGS[l].plan_asof_hint, STRINGS[l].cases_asof_hint].includes(STRINGS[l].veh_asof_hint), 'Text ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-fahrzeugliste-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
