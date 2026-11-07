@@ -36318,6 +36318,20 @@ await test('Backlog 1135 (Sonde Reifen/Räder, sicherheitsrelevant): Flanke aufg
   for (const x of ['Stein zwischen Zwillingsreifen entfernt', 'у шині цвях, замінили', 'Reifen bestellt', 'Flanke Auflieger zerkratzt']) ok(!TY.test(x), 'kein Reifen-Hinweis: ' + x);
   for (const x of ['Radmutteranzeiger verdreht, nachgezogen', 'wheel nut indicators moved, tightened', 'Radmutteranzeiger montiert']) ok(!WH.test(x), 'kein Räder-Hinweis: ' + x);
 });
+await test('Backlog 1136 (Sonde Feststellbremse UK/DE, sicherheitsrelevant): „ручник не працює/заклинило/зламався“, „Handbremse lässt sich nicht lösen“ → Bremsen-Schritte; vorangestelltes Prädikat auch mit „не тримає/не відкриваються/не открывается“; Reparaturvermerk („полагодили“, „замінили“, „repariert“) blendet aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const BR = pat('BRAKE_HINT'), PB = pat('PARKBRAKE_HINT');
+  for (const x of ['ручник не працює', 'ручник заклинило', 'ручник зламався', 'ручник не работает', 'Handbremse lässt sich nicht lösen', 'Feststellbremse löst nicht', 'Handbremse geht nicht mehr raus']) ok(BR.test(x), 'Bremsen-Schritte: ' + x);
+  for (const x of ['ручник не працює, полагодили', 'Handbremse lässt sich nicht lösen, repariert', 'ручник заклинило, замінили трос']) ok(!BR.test(x), 'keine Bremsen-Schritte: ' + x);
+  ok(PB.test('ручник не тримає') && !PB.test('ручник не тримає, замінили трос') && !PB.test('стоянкове гальмо не тримає, полагодили'), 'Feststellbremse hält nicht (UK) mit Reparatur-Ausschluss');
+  const pf = app.match(/^const PRED_FIRST = \/(.+)\/gi;$/m); ok(pf, 'PRED_FIRST');
+  const PF = new RegExp(pf[1], 'gi'); const swap = (x) => x.replace(PF, (m, v, subj) => m + ' ⁘' + subj + ' ' + v);
+  ok(PB.test(swap('не тримає ручник')), '„не тримає ручник“ → Feststellbremse');
+  const DO = pat('DOOR_HINT');
+  for (const x of ['не відкриваються двері', 'не закривається двері', 'не открывается дверь']) { ok(!DO.test(x), 'vorher ohne Tür-Schritte: ' + x); ok(DO.test(swap(x)), 'jetzt Tür-Schritte: ' + x); }
+});
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
