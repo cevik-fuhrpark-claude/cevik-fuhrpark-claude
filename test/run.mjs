@@ -36332,6 +36332,13 @@ await test('Backlog 1136 (Sonde Feststellbremse UK/DE, sicherheitsrelevant): „
   const DO = pat('DOOR_HINT');
   for (const x of ['не відкриваються двері', 'не закривається двері', 'не открывается дверь']) { ok(!DO.test(x), 'vorher ohne Tür-Schritte: ' + x); ok(DO.test(swap(x)), 'jetzt Tür-Schritte: ' + x); }
 });
+await test('Backlog 1137 (Sonde Undichtigkeit UK): „гідроборт тече“, „тече гідравліка“, „гидроборт течет“ zeigen die Schritte für Undichtigkeit wie „Ladebordwand verliert Öl“/„tail lift leaking oil“', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const LE = new RegExp(app.match(/^const LEAK_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['гідроборт тече', 'тече гідравліка', 'гидроборт течет', 'гідравліка підтікає', 'Ladebordwand verliert Öl', 'tail lift leaking oil']) ok(LE.test(x), 'Undichtigkeit: ' + x);
+  for (const x of ['гідроборт не працює', 'гідравліка в нормі']) ok(!LE.test(x), 'keine Undichtigkeit: ' + x);
+});
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
