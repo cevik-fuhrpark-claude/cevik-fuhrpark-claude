@@ -36511,6 +36511,17 @@ await test('Backlog 1152 (Sonde Papiere/Ausstattung): „немає/нет те�
   for (const x of ['used the toilet', 'використав паливну картку']) ok(!hit(SK, x), 'nicht Ausstattung: ' + x);
 });
 
+await test('Backlog 1154 (Sonde Warnleuchten, sicherheitsrelevant): „STOP-Leuchte an“, „im Display steht STOP“, „STOP light on the dash“, „на панелі горить STOP“, „загорівся STOP“, „помилка на дисплеї“, „ошибка на дисплее“ → Warnleuchte; „odometer stopped“, „mileage not counting“ → Armaturen; „Stoppleuchte geht nicht“, „не горить стоп“, „stop sign on the road“, „STOP-Leuchte war an, ist wieder aus“ nicht Warnleuchte', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [WL, DA] = ['WARNLIGHT_HINT', 'DASH_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['STOP-Leuchte an', 'im Display steht STOP', 'STOP light on the dash', 'stop lamp is on', 'на панелі горить STOP', 'загорівся STOP', 'помилка на дисплеї', 'ошибка на дисплее', 'Fehlercode im Display']) ok(hit(WL, x), 'Warnleuchte: ' + x);
+  for (const x of ['Stoppleuchte geht nicht', 'не горить стоп', 'stop sign on the road', 'STOP-Leuchte war an, ist wieder aus', 'stop light not working']) ok(!hit(WL, x), 'nicht Warnleuchte: ' + x);
+  for (const x of ['odometer stopped', 'mileage not counting', 'Kilometerzähler geht nicht']) ok(hit(DA, x), 'Armaturen: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
