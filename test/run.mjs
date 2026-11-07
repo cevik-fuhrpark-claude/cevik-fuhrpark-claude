@@ -36077,6 +36077,37 @@ await test('Backlog 1119 (Blickwinkel „Werkstatt-Tablet zeigt den ganzen Tag d
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-lager-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
+await test('Backlog 1120 (Blickwinkel „Fuhrparkleitung hat die Prüfterminliste den ganzen Tag offen, Werkstatt trägt Durchführungen ein“): Prüfterminliste zeigt den Stand und aktualisiert sich still, ohne die Sitzung zu verlängern', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('async function viewMaint('); const vm = app.slice(a, app.indexOf('\n}\n', a));
+  ok(vm.includes('<p class="small muted noprint" id="maintasof"') && vm.includes("t('maint_asof_hint')") && vm.includes("t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString()))"), 'Standzeile (nicht im Druck)');
+  ok(vm.includes("if (S.quietBg && !isMaintHash()) return; // stille Aktualisierung (Backlog 1120): inzwischen andere Seite – nichts überschreiben\n  render(html, 'more');\n  S.maintAt = Date.now();") && vm.includes("$('#maintreload')"), 'inzwischen andere Seite: nichts überschreiben; Zeitpunkt merken; „Neu laden“');
+  ok(vm.includes('catch (err) { if (S.quietBg) throw err;'), 'Ladefehler bei stiller Aktualisierung: alte Liste bleibt (kein Fehlerbild)');
+  const r = app.indexOf('async function maintAutoRefresh('); const fn = app.slice(r, app.indexOf('\n}\n', r));
+  ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart') && fn.includes('S.quietBg'), 'nur sichtbar, online, nicht für Fahrer, nicht doppelt');
+  ok(fn.includes('!isMaintHash() || S.lastHash !== location.hash'), 'nur auf der Prüfterminliste');
+  ok(fn.includes('viewDirty()') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open], .toast.err') && fn.includes('sel.isCollapsed') && fn.includes("['mhres', 'mimpr', 'rimpr']") && fn.includes("document.getElementById('mbres')"), 'nie bei Fokus/Eingaben/angezeigten Ergebnissen/Textauswahl/Dialog/Fehlermeldung');
+  ok(fn.includes('try { await viewMaint(); } catch { S.maintAt = Date.now(); } finally { S.quietBg = false; }'), 'Fehler: alte Ansicht bleibt');
+  ok(app.includes('setInterval(() => maintAutoRefresh(HOME_REFRESH_MS), 30000);') && app.includes("window.addEventListener('focus', () => maintAutoRefresh(60000));") && app.includes("document.addEventListener('visibilitychange', () => maintAutoRefresh(60000));"), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min.');
+  const re = /^#\/maintenance(?:\?f=(?:gaps|due|noplan|all))?$/; ok(app.includes("const isMaintHash = () => /^#\\/maintenance(?:\\?f=(?:gaps|due|noplan|all))?$/.test(location.hash || '');"), 'Seitenerkennung wie die Route');
+  ok(re.test('#/maintenance') && re.test('#/maintenance?f=noplan') && !re.test('#/maintenance/multi'), 'Sammelanlage ist keine Prüfterminliste');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].maint_asof_hint && STRINGS[l].maint_asof_hint !== STRINGS[l].stock_asof_hint, 'Text ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-prueftermine-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
+await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const ids = [...new Set([...app.matchAll(/<p class="small muted[^"]*" id="(\w+asof)"/g)].map((m) => m[1]))];
+  ok(ids.length >= 6, 'Standzeilen gefunden: ' + ids.join(','));
+  const sel = (css.match(/:is\(([^)]*)\) a \{ display: inline-flex; align-items: center; min-height: 24px; \}/) || [])[1] || '';
+  const coarse = (css.match(/@media \(pointer: coarse\) \{ :is\(([^)]*)\) a \{ min-height: 44px; \} \}/) || [])[1] || '';
+  for (const id of ids) { ok(sel.includes('#' + id), 'CSS 24 px fehlt für #' + id); ok(coarse.includes('#' + id), 'CSS 44 px (Touch) fehlt für #' + id); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

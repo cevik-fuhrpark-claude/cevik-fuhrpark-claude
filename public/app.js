@@ -1296,6 +1296,27 @@ async function stockAutoRefresh(minAge) {
 setInterval(() => stockAutoRefresh(HOME_REFRESH_MS), 30000);
 window.addEventListener('focus', () => stockAutoRefresh(60000));
 document.addEventListener('visibilitychange', () => stockAutoRefresh(60000));
+// Backlog 1120 (Blickwinkel „Fuhrparkleitung hat die Prüfterminliste den ganzen Tag offen, Werkstatt trägt Durchführungen ein“): Die Liste
+// „Prüftermine“ (überfällig, bald fällig, ohne Termin, Lücken) blieb auf dem Stand des Öffnens – eine von der Werkstatt eingetragene HU stand
+// weiter als „überfällig“ da, ein frisch vergebener Werkstatttermin fehlte unter „fällig ohne Termin“. Jetzt wie die Lagerliste: Standzeile
+// „Stand HH:MM · Neu laden“ und still neu aufbauen (alle 5 Min., beim Zurückholen des Fensters nach ≥ 1 Min.; ganze Seite über render():
+// Reiter, „Fällig bis“, Prüfart und Standort stehen in S, aufgeklappte Bereiche und Scrollposition bleiben). Nie bei Fokus im Feld, geänderten
+// Feldern (Sammeltermin-Auswahl, Zeitraum der Nachweisliste, Import-Datei), angezeigten Ergebnissen (Nachweisliste, Import-Vorschau,
+// Sammeltermin-Ergebnis), Textauswahl, offenem Dialog oder Fehlermeldung. Abfragen als Hintergrund (S.quietBg → x-cfp-bg).
+const isMaintHash = () => /^#\/maintenance(?:\?f=(?:gaps|due|noplan|all))?$/.test(location.hash || '');
+async function maintAutoRefresh(minAge) {
+  if (!S.me || S.me.role === 'driver' || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isMaintHash() || S.lastHash !== location.hash || !S.maintAt || Date.now() - S.maintAt < minAge) return;
+  const ae = document.activeElement;
+  if (viewDirty() || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err')) return;
+  if (['mhres', 'mimpr', 'rimpr'].some((x) => { const el = document.getElementById(x); return el && el.innerHTML.trim(); }) || document.getElementById('mbres')) return;
+  const sel = window.getSelection && window.getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  S.quietBg = true;
+  try { await viewMaint(); } catch { S.maintAt = Date.now(); } finally { S.quietBg = false; }
+}
+setInterval(() => maintAutoRefresh(HOME_REFRESH_MS), 30000);
+window.addEventListener('focus', () => maintAutoRefresh(60000));
+document.addEventListener('visibilitychange', () => maintAutoRefresh(60000));
 // Backlog 1117 (Blickwinkel „Fuhrparkleitung hat einen Vorgang den ganzen Tag offen, die Werkstatt arbeitet daran“): Der geöffnete Vorgang
 // blieb auf dem Stand des Öffnens – „Zur Abschlusskontrolle“, neue Arbeitszeit, Fotos oder eine Rückfrage der Werkstatt erschienen erst nach
 // Neuladen; ein Knopfdruck auf dem alten Stand endete im Versionskonflikt. Jetzt alle 2 Min., beim Zurückholen des Fensters (≥ 1 Min.) und bei
@@ -7767,7 +7788,7 @@ async function viewMaint(fq) {
   if (typeof fq === 'string' && fq) S.maintFilter = fq; // Wegweiser „#/maintenance?f=gaps“ (Startseite: Pflichtprüfungen ohne Termin)
   let ov;
   const msQ = vsDef('maintSite') ? '&site=' + encodeURIComponent(vsDef('maintSite')) : '';
-  try { ov = await api('GET', '/api/maintenance' + (msQ ? '?' + msQ.slice(1) : '')); } catch (err) { render(`<h1>${esc(t('inspections_due'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
+  try { ov = await api('GET', '/api/maintenance' + (msQ ? '?' + msQ.slice(1) : '')); } catch (err) { if (S.quietBg) throw err; /* Backlog 1120: stille Aktualisierung – alte Liste bleibt */ render(`<h1>${esc(t('inspections_due'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const f = S.maintFilter || 'due';
   // „Fällig bis“ (Backlog 504): erweitert „bald fällig“ um eingetragene Fristen bis zu diesem Tag (gleiche Regel wie `maintFilterRows` am Server)
   const dueBy = S.maintDueBy && /^\d{4}-\d{2}-\d{2}$/.test(S.maintDueBy) ? S.maintDueBy : null;
@@ -7793,7 +7814,7 @@ async function viewMaint(fq) {
   const micsN = f === 'gaps' ? 0 : rows.filter((r) => (r.next_due_date && r.date_status !== 'erledigt') || (r.planned_date && r.planned_date >= ov.today)).length;
   const cls = { ueberfaellig: 'kritisch', faellig: 'mittel', ok: 'ok', ohne_termin: '', erledigt: 'ok', ungeklaert: 'mittel', nicht_pflichtig: '', erste_sp: '' };
   const tabs = [['due', `${t('ms_ueberfaellig')} + ${dueBy ? t('mdueby_tab').replace('{d}', fmtD(dueBy)) : t('ms_faellig')}`, ov.rows.filter(inWin).length], ['noplan', t('due_no_plan'), ov.rows.filter(noPlan).length], ['ueberfaellig', t('ms_ueberfaellig'), ov.totals.overdue], ['ungeklaert', t('ms_ungeklaert'), ov.totals.unclear || 0], ...(kmN || f === 'km' ? [['km', t('km_due_tab'), kmN]] : []), ...(fcN || f === 'fc30' ? [['fc30', t('fc30_tab'), fcN]] : []), ['all', t('filter_all'), ov.rows.length], ['gaps', t('gaps'), ov.totals.vehicles_with_gaps]];
-  let html = `<h1>${esc(t('inspections_due'))}</h1>${helpLink('dates')}${isMgr() ? `<p class="small noprint navlinks"><a href="#/maintenance/multi" id="tomcreate">${esc(t('mc_link'))}</a></p>` : ''}
+  let html = `<h1>${esc(t('inspections_due'))}</h1><p class="small muted noprint" id="maintasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="${esc(location.hash || '#/maintenance')}" id="maintreload" title="${esc(t('maint_asof_hint'))}">${esc(t('update_now'))}</a></p>${helpLink('dates')}${isMgr() ? `<p class="small noprint navlinks"><a href="#/maintenance/multi" id="tomcreate">${esc(t('mc_link'))}</a></p>` : ''}
     <section class="panel"><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip ${ov.totals.overdue ? 'kritisch' : ''}">${esc(t('ms_ueberfaellig'))}: ${ov.totals.overdue}</span><span class="chip ${ov.totals.due ? 'mittel' : ''}">${esc(t('ms_faellig'))} (≤ ${esc(nDays(ov.warn_days))}): ${ov.totals.due}</span><span class="chip ok">${esc(t('ms_ok'))}: ${ov.totals.ok}</span><span class="chip ${ov.totals.vehicles_with_gaps ? 'mittel' : ''}">${esc(t('gaps'))}: ${ov.totals.vehicles_with_gaps} / ${ov.totals.vehicles}</span></div>
     ${(ov.site_options || []).length > 1 || ov.site ? `<div class="noprint" style="margin-top:10px">${siteSelect('msite', '', ov.site_options, ov.site)}</div>` : ''}
     <div class="noprint" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:10px"><div><label for="mdueby">${esc(t('mdueby_label'))}</label><input type="date" id="mdueby" min="${esc(ov.today)}" value="${esc(dueBy || '')}"></div><button type="button" class="btn secondary" id="mduenext">${esc(t('mdueby_next'))}</button><button type="button" class="btn secondary" id="mdueyear">${esc(t('mdueby_year'))}</button>${dueBy ? `<button type="button" class="btn secondary" id="mdueclr">${esc(t('mdueby_clear'))}</button>` : ''}${mKinds.length > 1 || mKind ? `<div><label for="mkind">${esc(t('mkind_label'))}</label><select id="mkind"><option value="">${esc(t('filter_all'))}</option>${mKinds.map((k) => `<option value="${esc(k)}"${k === mKind ? ' selected' : ''}>${esc(mk(k))}</option>`).join('')}</select></div>` : ''}</div>
@@ -7833,7 +7854,10 @@ async function viewMaint(fq) {
     <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn secondary" id="mhcsv">${esc(t('export_csv'))}</button></div></form><div id="mhres"></div></details>`;
   if (isMgr()) html += `<section class="panel noprint"><h2 style="margin-top:0">${esc(t('import_maint'))}</h2><p class="small muted">${esc(t('import_maint_hint'))}</p><input type="file" id="mimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_maint'))}"><div id="mimpr"></div></section>
     <section class="panel noprint"><h2 style="margin-top:0">${esc(t('import_recalls'))}</h2><p class="small muted">${esc(t('import_recalls_hint'))}</p><input type="file" id="rimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_recalls'))}"><div id="rimpr"></div></section>`;
+  if (S.quietBg && !isMaintHash()) return; // stille Aktualisierung (Backlog 1120): inzwischen andere Seite – nichts überschreiben
   render(html, 'more');
+  S.maintAt = Date.now();
+  const mrl = $('#maintreload'); if (mrl) mrl.onclick = async (e) => { e.preventDefault(); try { await viewMaint(); } catch (err) { toast(err.message, true); } };
   $$('[data-mf]').forEach((b) => (b.onclick = () => { S.maintFilter = b.dataset.mf; viewMaint(); }));
   $$('#app a[data-fromplan]').forEach((a) => (a.onclick = () => { S.fromPlan = '#/maintenance'; }));
   { const di = $('#mdueby'); if (di) di.onchange = () => { S.maintDueBy = di.value && di.value >= ov.today ? di.value : null; viewMaint(); };
