@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, S, announceHits, api, caseList, ctChip, esc, fmtD, fmtNum, helpLoaded, helpMatches, helpNorm, helpSections, isMgr, loadHelp, noTr, noneP, plate, render, searchKey, stockHit, t, unitL, vinOf, wsName } from './app-main.js';
+import { $, $$, S, announceHits, api, caseList, ctChip, esc, fmtD, fmtNum, helpLoaded, helpMatches, helpNorm, helpSections, isMgr, loadHelp, noTr, noneP, plate, render, searchKey, stockHit, t, tn, unitL, vinOf, wsName } from './app-main.js';
 
 // Kennzeichen mit Länderkennung aus ausländischen Schreiben („D SZ-YC 5501“, „SZYC5501 (D)“) – gleiche Regel wie plateNoCountry im Server (Backlog 902)
 const plateNoCountry = (p) => { const x = String(p || '').trim(); const y = x.replace(/^\(?(?:D|DE|DEU)\)?[\s\-–:/.]+(?=\S)/i, '').replace(/(\S)[\s\-–/,]+\(?(?:D|DE|DEU)\)?$/i, '$1').replace(/(\S)\((?:D|DE|DEU)\)$/i, '$1').trim(); return y !== x && searchKey(y).length >= 4 ? y : null; };
@@ -61,5 +61,50 @@ async function viewSearch() {
   $('#gq').focus();
   run();
 }
+// want = Abschnitt (?s=), q = Suchbegriff (&q=, z. B. aus der globalen Suche – Treffer bleiben markiert)
+async function viewHelp(want, q) {
+  // Hilfe-Schritte als eigenes Paket (Backlog 597): erst hier laden; Fehler → Fehlerseite mit „Erneut versuchen“ (route)
+  try { await loadHelp(S.lang); } catch (e) { console.error(e); throw new Error(t('lazy_load_failed')); }
+  const sec = (n) => `<section class="panel helpsec" id="help-${n}"><h2 style="margin-top:0">${esc(t(`help_${n}_t`))}</h2><ol>${t(`help_${n}_s`).split('|').map((x) => `<li>${esc(x)}</li>`).join('')}</ol></section>`;
+  const parts = helpSections(S.me.role);
+  render(`<h1>${esc(t('help'))}</h1><div class="panel"><label for="hq">${esc(t('help_search'))}</label><input id="hq" type="search" autocomplete="off">${helpToc(parts)}</div>`
+    + parts.map(sec).join('') + `<p class="small muted">${esc(t('app_version'))}: ${esc(S.appVersion || '–')}</p>`, 'more');
+  if (q) $('#hq').value = q.slice(0, 100);
+  const run = helpWire(parts, want);
+  let timer;
+  // Suchbegriff in die Adresse übernehmen (ohne neuen Verlaufseintrag, ohne Neuaufbau): „Zurück“ aus einem Treffer behält ihn
+  const keepQ = () => { const v = $('#hq').value.trim().slice(0, 100); try { history.replaceState(history.state, '', helpHash(v)); } catch { /* z. B. eingeschränkte Vorschau */ } };
+  $('#hq').oninput = () => { clearTimeout(timer); timer = setTimeout(() => { run(); keepQ(); }, 150); };
+}
+const helpHash = (q) => '#/help' + (q ? '?q=' + encodeURIComponent(q) : '');
+// Hilfe: Trefferzeile + Inhaltsverzeichnis (Sprungmarken als Knöpfe – die Raute gehört dem Router)
+function helpToc(parts) {
+  return `<p id="hres" class="small muted" aria-live="polite" style="margin:6px 0 0"></p>
+    <details id="htoc"${innerWidth >= 700 ? " open" : ""}><summary>${esc(t('help_toc'))} (${parts.length})</summary><ul class="helptoc">${parts.map((n) => `<li data-hn="${n}"><button type="button" class="linkbtn" data-hgo="${n}">${esc(t(`help_${n}_t`))}</button></li>`).join('')}</ul></details>`;
+}
+function helpWire(parts, want) {
+  const sections = parts.map((n) => ({ name: n, title: t(`help_${n}_t`), steps: t(`help_${n}_s`).split('|') }));
+  const go = (n) => {
+    const el = document.getElementById(`help-${n}`); if (!el) return;
+    const h = el.querySelector('h2'); h.tabIndex = -1; h.dataset.keepfocus = '1';
+    el.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true });
+    el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600);
+  };
+  $$('[data-hgo]').forEach((b) => (b.onclick = () => go(b.dataset.hgo)));
+  const run = () => {
+    const res = helpMatches(sections, document.getElementById('hq').value);
+    for (const s of sections) {
+      const m = res && res.find((x) => x.name === s.name);
+      const el = document.getElementById(`help-${s.name}`);
+      el.hidden = !!res && !m;
+      $$('li', el).forEach((li, i) => li.classList.toggle('hit', !!m && m.steps.includes(i)));
+      const tl = $(`[data-hn="${s.name}"]`); if (tl) tl.hidden = el.hidden;
+    }
+    $('#hres').textContent = !res ? '' : res.length === 1 ? t('help_hits1') : res.length ? tn('help_hits', res.length) : t('help_none');
+  };
+  if (document.getElementById('hq').value) run(); // vorbelegter Suchbegriff: erst filtern, dann zum Abschnitt springen
+  if (want && parts.includes(want)) go(want);
+  return run;
+}
 
-export { viewSearch };
+export { viewHelp, viewSearch };

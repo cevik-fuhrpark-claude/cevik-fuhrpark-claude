@@ -1,6 +1,28 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, S, SEND_TIMEOUT_MS, api, bindLang, bindPwShow, deviceId, ensureLang, esc, fmtDT, langSelect, lostDup, lostMark, pwField, qrSvg, render, resetUserState, t, toast, viewLoginCode } from './app-main.js';
+import { $, S, SEND_TIMEOUT_MS, afterLogin, api, bindLang, bindPwShow, deviceId, ensureLang, esc, fmtDT, langSelect, lostDup, lostMark, pwField, qrSvg, render, resetUserState, t, toast, viewLogin } from './app-main.js';
 
+// Zweiter Schritt: Code aus der Authenticator-App oder Ersatzcode (Passwort bleibt nicht im Speicher der Seite)
+async function viewLoginCode(challenge) {
+  render(`<div class="center"><form id="f2" class="narrow panel">
+    <h1>${esc(t('tf_title'))}</h1><p class="small">${esc(t('tf_login_hint'))}</p>
+    <label for="tc">${esc(t('tf_code_or_rc'))}</label><input id="tc" autocomplete="one-time-code" inputmode="text" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="14" required>
+    <div class="actions"><button class="btn block">${esc(t('tf_confirm'))}</button></div>
+    <p class="small"><a href="#/login" id="tback">${esc(t('tf_back'))}</a></p>
+  </form></div>`);
+  const inp = $('#tc'); inp.focus();
+  $('#tback').onclick = (e) => { e.preventDefault(); viewLogin(); };
+  $('#f2').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api('POST', '/api/login/totp', { challenge, code: inp.value.trim(), device_id: deviceId() });
+      if (r.recovery_left !== undefined) toast(t('tf_rc_used').replace('{n}', r.recovery_left));
+      afterLogin();
+    } catch (err) {
+      toast(err.message, true);
+      if (err.code === 'totp_expired' || err.code === 'locked') viewLogin(); else { inp.value = ''; inp.focus(); }
+    }
+  };
+}
 async function viewSetup() {
   const st = await api('GET', '/api/setup/status');
   if (!st.needs_setup) { location.hash = '#/login'; return; }
@@ -31,7 +53,7 @@ async function viewInvite(token) {
   bindLang(); bindPwShow();
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
-    try { const r = await api('POST', '/api/invite/accept', { token, password: $('#p').value, device_id: deviceId() }); resetUserState(); /* evtl. im Tab angemeldete andere Person: Sprache ging sonst verloren (user_mismatch), Ansichtszustand wurde vererbt (20.10.2026) */ if (r.second_factor) { viewLoginCode(r.challenge); return; } await api('PATCH', '/api/me', { language: S.lang }).catch(() => {}); S.me = null; location.hash = '#/'; }
+    try { const r = await api('POST', '/api/invite/accept', { token, password: $('#p').value, device_id: deviceId() }); resetUserState(); /* evtl. im Tab angemeldete andere Person: Sprache ging sonst verloren (user_mismatch), Ansichtszustand wurde vererbt (20.10.2026) */ if (r.second_factor) { await viewLoginCode(r.challenge); return; } await api('PATCH', '/api/me', { language: S.lang }).catch(() => {}); S.me = null; location.hash = '#/'; }
     catch (err) { toast(err.message, true); }
   };
 }
@@ -122,4 +144,4 @@ async function loadTotp() {
   };
 }
 
-export { loadTotp, viewInvite, viewSetup };
+export { loadTotp, viewInvite, viewLoginCode, viewSetup };

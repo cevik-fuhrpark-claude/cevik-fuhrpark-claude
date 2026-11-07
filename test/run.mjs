@@ -28333,7 +28333,7 @@ await test('Backlog 727–728 (Blickwinkel „Wespen-, Hornissen- oder Bienennes
   }
   ok(app.includes('<div id="nest" class="panel" hidden role="status">'), 'Panel #nest');
   ok(app.includes("$('#nest').hidden = !nest;") && app.indexOf("$('#nest').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("'cablock', 'pest', 'nest', 'stuck'"), 'Reihenfolge nach Ungeziefer');
+  ok(app.includes("'cablock', 'pest', 'nest', 'engnest', 'stuck'"), 'Reihenfolge nach Ungeziefer');
   ok(helpAfter(app, 'nest', 'pest'), 'Hilfe-Abschnitt für meldende Rollen nach Ungeziefer');
 });
 
@@ -28444,7 +28444,7 @@ await test('Backlog 711–712 (Blickwinkel „Mäuse, Bettwanzen oder Ungeziefer
   ok(app.includes('<div id="pest" class="panel" hidden role="status">'), 'Panel #pest');
   // seit Backlog 727 ohne Wespen-/Hornissenwörter, wenn die Nest-Schritte erscheinen
   ok(app.includes("$('#pest').hidden = !PEST_HINT.test(nest ? dv.replace(NEST_WORDS, ' ') : dv);") && app.indexOf("$('#pest').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("'cablock', 'pest', 'nest', 'stuck'"), 'Reihenfolge nach Fahrerhaus-Schloss');
+  ok(app.includes("'cablock', 'pest', 'nest', 'engnest', 'stuck'"), 'Reihenfolge nach Fahrerhaus-Schloss');
   ok(helpAfter(app, 'pest', 'cabtilt'), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
@@ -36443,6 +36443,20 @@ await test('Backlog 1147 (Sonde Brand, sicherheitsrelevant): „Brand im Motorra
   const FI = new RegExp(app.match(/^const FIRE_HINT = \/(.+)\/i;/m)[1], 'i');
   for (const x of ['Brand im Motorraum', 'Brand am Reifen', 'Brand im Fahrerhaus gelöscht', 'загорівся причіп', 'загорівся наш причіп', 'причіп загорівся', 'вантаж загорівся', 'загорілась кабіна', 'спалахнула проводка', 'машина загорілась', 'Motorbrand']) ok(FI.test(recurFix(x)), 'Brand: ' + x);
   for (const x of ['kein Brand im Motorraum', 'Brandschutzübung im Depot', 'Brand im Lager beim Kunden', 'загорілась лампочка', 'загорілась на машині лампочка', 'на причепі загорілась лампа', 'загорівся індикатор']) ok(!FI.test(recurFix(x)), 'kein Brand: ' + x);
+});
+
+await test('Backlog 1148 (Vogel-/Mäusenest im Motorraum): eigenes Panel #engnest mit Texten DE/UK/EN und Hilfe-Abschnitt; „Vogelnest im Motorraum“, „Mäuse unter der Motorhaube“, „bird nest in the engine bay“, „mice in the engine bay“, „гніздо під капотом“, „птичье гнездо под капотом“ → Schritte; Wespennest, „Nest entfernt“, „kein Nest“, „Nestlé“, „Mäuse im Lkw“, „nest in the mirror housing“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  eq((app.match(/const ENGNEST_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const EN = new RegExp(app.match(/^const ENGNEST_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['Vogelnest im Motorraum', 'Mäusenest im Motorraum', 'Nest unter der Motorhaube', 'Mäuse im Motorraum', 'Vögel nisten im Motorraum', 'bird nest in the engine bay', 'mouse nest under the bonnet', 'mice in the engine bay', 'гніздо під капотом', 'пташине гніздо в моторному відсіку', 'миші під капотом', 'птичье гнездо под капотом']) ok(EN.test(recurFix(x)), 'Nest im Motorraum: ' + x);
+  for (const x of ['Vogelnest im Motorraum entfernt', 'kein Nest im Motorraum', 'Wespennest im Motorraum', 'осине гніздо під капотом', 'Wespennest am Spiegel', 'Nestlé Palette im Auflieger', 'Mäuse im Lkw', 'bird nest removed from the engine bay', 'nest in the mirror housing']) ok(!EN.test(recurFix(x)), 'kein Hinweis: ' + x);
+  ok(app.includes('<div id="engnest" class="panel" hidden role="status">'), 'Panel #engnest');
+  ok(app.includes("$('#engnest').hidden = !ENGNEST_HINT.test(dv);"), 'Prüfung im Listener');
+  ok(app.includes("'pest', 'nest', 'engnest', 'gelfuel'"), 'Hilfe-Abschnitt nach Wespennest');
+  const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['engnest_hint_title', 'engnest_hint_steps', 'help_engnest_t', 'help_engnest_s']) ok(new RegExp('STRINGS\\.' + l + ', \\{[^\\n]*\\b' + k + ':').test(i18n), l + ': ' + k);
 });
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
