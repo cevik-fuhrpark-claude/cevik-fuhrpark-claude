@@ -131,6 +131,7 @@ UI-Fahrer liest sein Bußgeld am Handy: Hinweis auf der Startseite bis zur Quitt
 UI-Breitbildmonitor: Inhalt ab 1800 px 1400 px breit, Tabellenköpfe einzeilig, kein Überstand, Druck unverändert|ui-breitbild.py|/tmp/cfp-breitbild.log
 UI-Startseite aktualisiert sich still (Disposition mit zwei Fenstern): Stand-Zeile, 5-Min.-Takt, Hintergrund-Abfrage, kein Lädt-Zwischenbild, Fokus schützt|ui-startseite-aktualisiert.py|/tmp/cfp-startseite-aktualisiert.log
 UI-Vorgangsliste aktualisiert sich still (Leitung mit Liste und Vorgang in zwei Fenstern): Stand-Zeile, nur Liste, Suchfeld schützt|ui-vorgangsliste-aktualisiert.py|/tmp/cfp-vorgangsliste-aktualisiert.log
+UI-Werkstattplan aktualisiert sich still (Werkstatt-Wandbildschirm): Stand-Zeile, 5-Min.-Takt, Hintergrund-Abfrage, geänderte Felder schützen|ui-plan-aktualisiert.py|/tmp/cfp-plan-aktualisiert.log
 UI-Gesperrtes Fahrzeug genutzt: Ergebnisseite, Verlauf, Befund|ui-sperre-genutzt.py|/tmp/cfp-sperre-genutzt.log
 UI-Werkstattplan: begonnener Auftrag mit vergangenem Termin unter „in Arbeit“|ui-plan-inarbeit.py|/tmp/cfp-plan-inarbeit.log
 UI-Fahrzeug korrigieren (Meldung am falschen Fahrzeug)|ui-fahrzeug-korrigieren.py|/tmp/cfp-fahrzeug-korrigieren.log

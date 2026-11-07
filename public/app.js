@@ -218,6 +218,8 @@ const START_TIMEOUT_MS = 15000, OFFLINE_GET_TIMEOUT_MS = 8000;
 async function api(method, path, body, extra = {}) {
   // Backlog 1112: stille Aktualisierung der Startseite = Hintergrund-Abfrage (keine Bedienung, verlängert die Sitzung nicht)
   if (S.quietHome && method === 'GET' && !extra.bg) extra = { ...extra, bg: true };
+  // Backlog 1114: ebenso die stille Aktualisierung des Werkstattplans
+  if (S.quietBg && method === 'GET' && !extra.bg) extra = { ...extra, bg: true };
   const headers = { 'x-cfp': '1', ...(extra.headers || {}), ...(extra.bg ? { 'x-cfp-bg': '1' } : {}) };
   // Zahlen werden nach der hier angezeigten Sprache gelesen (geteiltes Konto: andere Geräte können eine andere Sprache zeigen, 23.10.2026)
   if (S.lang && !headers['x-cfp-lang']) headers['x-cfp-lang'] = S.lang;
@@ -1238,12 +1240,24 @@ async function homeAutoRefresh(minAge) {
   S.quietHome = true;
   try { await viewHome(); } catch { /* alte Ansicht bleibt; nächster Versuch beim nächsten Takt */ S.homeAt = Date.now(); } finally { S.quietHome = false; }
 }
-setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); casesAutoRefresh(HOME_REFRESH_MS); }, 30000);
-window.addEventListener('focus', () => { homeAutoRefresh(60000); casesAutoRefresh(60000); });
-document.addEventListener('visibilitychange', () => { homeAutoRefresh(60000); casesAutoRefresh(60000); });
+setInterval(() => { homeAutoRefresh(HOME_REFRESH_MS); casesAutoRefresh(HOME_REFRESH_MS); planAutoRefresh(HOME_REFRESH_MS); }, 30000);
+window.addEventListener('focus', () => { homeAutoRefresh(60000); casesAutoRefresh(60000); planAutoRefresh(60000); });
+document.addEventListener('visibilitychange', () => { homeAutoRefresh(60000); casesAutoRefresh(60000); planAutoRefresh(60000); });
 // Backlog 1113 (Blickwinkel „Fuhrparkleitung hat Vorgangsliste und Vorgang in zwei Fenstern“): Vorgangsliste ebenso still aktualisieren –
 // nur die Liste (Reiter, Suchfeld, Auswahlfelder bleiben unberührt), nie während einer Eingabe ins Suchfeld (Fokus oder noch nicht gesucht),
 // bei Textauswahl, offenem Dialog oder Fehlermeldung. Fehler: alte Liste bleibt, nächster Versuch beim nächsten Takt.
+// Backlog 1114 (Blickwinkel „Werkstatt-Wandbildschirm zeigt den ganzen Tag den Werkstattplan“): Werkstattplan ebenso still neu aufbauen
+// (wie die Startseite: ganze Seite, Eingaben/aufgeklappte Bereiche/Scrollposition bleiben über render(); nie bei geänderten Feldern, Fokus im
+// Formular, offenem Dialog oder Fehlermeldung; ohne Sprung zu „Fällig – ohne Termin“). Abfragen als Hintergrund (S.quietBg → x-cfp-bg).
+const isPlanHash = () => /^#\/plan(?:\?s=mdue)?$/.test(location.hash || '');
+async function planAutoRefresh(minAge) {
+  if (!S.me || S.me.role === 'driver' || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isPlanHash() || S.lastHash !== location.hash || !S.planAt || Date.now() - S.planAt < minAge) return;
+  const ae = document.activeElement;
+  if (viewDirty() || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err')) return;
+  S.quietBg = true;
+  try { await viewPlan(); } catch { S.planAt = Date.now(); } finally { S.quietBg = false; }
+}
 const isCasesHash = () => /^#\/cases(?:\?f=\w+)?$/.test(location.hash || '');
 async function casesAutoRefresh(minAge) {
   const cq = S.casesQuiet;
@@ -7988,7 +8002,8 @@ async function viewPlan(sec) {
   }
   // Fällig ohne Termin (nach Datum oder km): Sprung in die Fahrzeugakte, dort Termin planen oder Werkstattauftrag anlegen
   const drow = (i) => `<a class="row ${i.status === 'ueberfaellig' ? 'p-kritisch' : 'p-mittel'}" href="${doneHref(i)}" data-fromplan>${plate(i.plate)}<span class="title">${esc(mk(i.kind))}${i.next_due_date ? ' · ' + esc(t('next_due')) + ' ' + fmtD(i.next_due_date) : ''}</span><span class="chip ${i.status === 'ueberfaellig' ? 'kritisch' : 'mittel'}">${esc(i.status === 'ohne_termin' && i.recall_ref ? t('vi_recall_open') : t('ms_' + i.status))}${i.by_km ? ' · km' : ''}</span>${subs(vsTag(i), kmTxt(i), i.recall_ref && noTr(i.recall_ref), i.prev_cycle_open && `<span data-mdue-prev>${esc(t('wplan_sp_prev_open').replace('{m}', `${i.prev_cycle_open.slice(5, 7)}/${i.prev_cycle_open.slice(0, 4)}`))}</span>`, i.past_planned_date && `${esc(t('wplan_mdue_past'))} ${fmtD(i.past_planned_date)}`, i.planned_after_due && `<span data-mdue-late>${esc(t('wplan_mdue_late').replace('{d}', fmtD(i.planned_after_due)))}</span>`, other(i))}</a>`;
-  let html = `<h1>${esc(t('wplan'))}</h1><p class="small muted noprint">${esc(t('wplan_hint'))}</p>${r.days.some((d) => d.items.filter((x) => x.type === 'case').length > 1) ? `<p class="small muted noprint" id="wpdayorder">${esc(t('day_order_hint'))}</p>` : ''}
+  // Backlog 1114 (Blickwinkel „Werkstatt-Wandbildschirm zeigt den ganzen Tag den Werkstattplan“): Stand und „Neu laden“, stille Aktualisierung (planAutoRefresh)
+  let html = `<h1>${esc(t('wplan'))}</h1><p class="small muted noprint" id="planasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/plan" id="planreload" title="${esc(t('plan_asof_hint'))}">${esc(t('update_now'))}</a></p><p class="small muted noprint">${esc(t('wplan_hint'))}</p>${r.days.some((d) => d.items.filter((x) => x.type === 'case').length > 1) ? `<p class="small muted noprint" id="wpdayorder">${esc(t('day_order_hint'))}</p>` : ''}
     <p class="print-only small">${printStamp()} · ${site || r.site ? esc(wsName(site || r.site)) + ' · ' : ''}${r.vehicle_site ? esc(t('kpi_vsite')) + ': ' + esc(r.vehicle_site === 'ohne' ? t('cs_nosite') : r.vehicle_site) + ' · ' : ''}${fmtD(r.from)} – ${fmtD(r.to)} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
       ${mgr ? `<div><label for="psite">${esc(t('workshop'))}</label><select id="psite"><option value="">${esc(t('all'))}</option>${wsAll().map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>` : ''}
@@ -8015,7 +8030,10 @@ async function viewPlan(sec) {
   if (r.unplanned.length) html += `<h2>${esc(t('wplan_unplanned'))} <span class="chip mittel">${r.unplanned.length}</span></h2><p class="small muted noprint">${esc(t('wplan_unplanned_hint'))}</p><div class="list">${r.unplanned.map((i) => prow(i, row(i))).join('')}</div>`;
   const md = r.maintenance_due || [];
   if (md.length) html += `<h2 id="wp-mdue" tabindex="-1" data-keepfocus>${esc(t('wplan_mdue'))} <span class="chip ${md.some((i) => i.status === 'ueberfaellig') ? 'kritisch' : 'mittel'}">${md.length}</span></h2><p class="small muted noprint">${esc(t('wplan_mdue_hint'))}</p><div class="list">${md.map((i) => { const f = !['HU', 'SP'].includes(i.kind) ? maintOrderHtml(i.id, i.kind, null, { site: i.vehicle_site, svc: i.service_contracts || [] }) : ''; return f ? `<div class="planitem">${drow(i)}${f}</div>` : drow(i); }).join('')}</div>`;
+  if (S.quietBg && !isPlanHash()) return; // stille Aktualisierung: inzwischen andere Seite – nichts überschreiben
   render(html, 'more');
+  S.planAt = Date.now();
+  const prl = $('#planreload'); if (prl) prl.onclick = async (e) => { e.preventDefault(); try { await viewPlan(); } catch (err) { toast(err.message, true); } };
   // Direktsprung aus Startseite/„Heute zu tun“ (#/plan?s=mdue): Abschnitt „Fällig – ohne Termin“ zeigen; fehlt er, bleibt der Plan oben
   $$('a[data-fromplan]').forEach((a) => (a.onclick = () => { S.fromPlan = location.hash || '#/plan'; }));
   if (sec === 'mdue') { const h = $('#wp-mdue'); if (h) { h.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true }); } }

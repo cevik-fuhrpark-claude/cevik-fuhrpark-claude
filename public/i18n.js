@@ -3917,3 +3917,6 @@ Object.assign(STRINGS.en, { home_asof: 'As of {t}', home_asof_hint: 'The overvie
 Object.assign(STRINGS.de, { cases_asof_hint: 'Die Liste aktualisiert sich alle 5 Minuten und beim Zurückkehren ins Fenster selbst – nicht, solange du im Suchfeld tippst.' });
 Object.assign(STRINGS.uk, { cases_asof_hint: 'Список оновлюється сам кожні 5 хвилин і коли ви повертаєтеся до вікна – але не тоді, коли ви вводите текст у поле пошуку.' });
 Object.assign(STRINGS.en, { cases_asof_hint: 'The list refreshes itself every 5 minutes and when you return to the window – not while you are typing in the search field.' });
+Object.assign(STRINGS.de, { plan_asof_hint: 'Der Plan aktualisiert sich alle 5 Minuten und beim Zurückkehren ins Fenster selbst – nicht, solange du hier etwas eingibst.' });
+Object.assign(STRINGS.uk, { plan_asof_hint: 'План оновлюється сам кожні 5 хвилин і коли ви повертаєтеся до вікна – але не тоді, коли ви тут щось вводите.' });
+Object.assign(STRINGS.en, { plan_asof_hint: 'The plan refreshes itself every 5 minutes and when you return to the window – not while you are typing here.' });
