@@ -36485,6 +36485,20 @@ await test('Backlog 1150 (Sonde Kraftstoff/Kühlung): „залив AdBlue в б
   ok(!hit(RE, 'термописець надрукував'), 'Ausdruck ok ist kein Mangel');
 });
 
+await test('Backlog 1151 (Sonde Bremse/Lenkung, sicherheitsrelevant): „Lkw hält nicht am Berg“, „artic won’t hold on a hill“, „тягач не тримається на підйомі“ → Feststellbremse; „fährt nicht geradeaus“, „fährt unruhig, schwimmt“, „вантажівку водить по дорозі“, „wagon wanders“ → Lenkung; „riecht nach heißen Bremsen“, „smell of hot brakes“, „пахне гальмами“, „запах гальм“ → Bremse; Gegenproben', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [PB, ST, BR] = ['PARKBRAKE_HINT', 'STEER_HINT', 'BRAKE_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['Lkw hält nicht am Berg', 'artic won\'t hold on a hill', 'тягач не тримається на підйомі']) ok(hit(PB, x), 'Feststellbremse: ' + x);
+  ok(!hit(PB, 'Lkw hält am Berg wieder, Bremse eingestellt'), 'Reparaturvermerk');
+  for (const x of ['fährt nicht geradeaus, schwimmt', 'faehrt unruhig, schwimmt', 'вантажівку водить по дорозі', 'wagon wanders on the motorway', 'Lkw schwimmt auf der Autobahn']) ok(hit(ST, x), 'Lenkung: ' + x);
+  for (const x of ['Fahrer schwimmt im Urlaub', 'fährt geradeaus', 'Ladung schwimmt', 'перевізника водить за ніс']) ok(!hit(ST, x), 'nicht Lenkung: ' + x);
+  for (const x of ['riecht nach heißen Bremsen', 'smell of hot brakes', 'пахне гальмами', 'запах гальм', 'Bremsen stinken']) ok(hit(BR, x), 'Bremse: ' + x);
+  for (const x of ['riecht nach Diesel', 'smell of diesel', 'запах дизеля']) ok(!hit(BR, x), 'nicht Bremse: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
