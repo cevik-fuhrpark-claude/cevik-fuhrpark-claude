@@ -3927,3 +3927,7 @@ Object.assign(STRINGS.en, { veh_asof_hint: 'The vehicle list refreshes itself ev
 Object.assign(STRINGS.de, { case_chg_banner: 'Dieser Vorgang wurde inzwischen geändert (Stand {t}, Status: {st}).', case_chg_done: 'Vorgang wurde inzwischen geändert – Ansicht aktualisiert.' });
 Object.assign(STRINGS.uk, { case_chg_banner: 'Тим часом змінено кимось іншим (стан {t}, статус: {st}).', case_chg_done: 'Тим часом змінено кимось іншим – вигляд оновлено.' });
 Object.assign(STRINGS.en, { case_chg_banner: 'This case has been changed in the meantime (as of {t}, status: {st}).', case_chg_done: 'Case was changed in the meantime – view updated.' });
+// Backlog 1118: geöffnete Fahrzeugakte wurde inzwischen geändert
+Object.assign(STRINGS.de, { veh_chg_banner: 'Diese Fahrzeugakte wurde inzwischen geändert (Stand {t}).' });
+Object.assign(STRINGS.uk, { veh_chg_banner: 'Картку транспорту тим часом змінено (стан {t}).' });
+Object.assign(STRINGS.en, { veh_chg_banner: 'This vehicle file has been changed in the meantime (as of {t}).' });

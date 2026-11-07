@@ -1228,7 +1228,7 @@ async function refreshUnread(bg = false) {
     // Backlog 507: auf einem anderen Gerät (oder in der App) gelesene/quittierte Mitteilungen aus der Leiste dieses Geräts entfernen – auch dringende (requireInteraction)
     if (tray.length && Array.isArray(n.tray_unread)) { const keep = new Set(n.tray_unread); for (const x of tray) if (!keep.has(x.data.id)) { try { x.close(); } catch { /* bereits geschlossen */ } } }
     if (S.viewEnv !== ev) return; const prev = S.unread; S.unread = n.unread; lastUnreadAt = Date.now(); paintBadge();
-    if (bg && n.unread > (prev || 0)) inboxPoll(); if (bg && n.unread > (prev || 0)) caseAutoRefresh(15000); /* Backlog 1117: geöffneten Vorgang nachziehen */ /* Backlog 1116: geöffnete Liste „Hinweise“ ohne Push nachziehen */ } catch {}
+    if (bg && n.unread > (prev || 0)) inboxPoll(); if (bg && n.unread > (prev || 0)) { caseAutoRefresh(15000); vehFileAutoRefresh(15000); } /* Backlog 1117: geöffneten Vorgang nachziehen */ /* Backlog 1116: geöffnete Liste „Hinweise“ ohne Push nachziehen */ } catch {}
 }
 // angezeigte Mitteilungen dieses Geräts mit Hinweis-Kennung (höchstens 50); ohne Service Worker/Mitteilungen leer
 async function trayNotifications() {
@@ -1337,6 +1337,34 @@ function caseChangedBanner(d) {
   b.querySelector('span').textContent = 'ⓘ ' + txt;
 }
 setInterval(() => caseAutoRefresh(CASE_REFRESH_MS), 30000);
+// Backlog 1118 (Blickwinkel „Fuhrparkleitung hat die Fahrzeugakte eines gesperrten Lkw den ganzen Tag offen“): Die Akte blieb auf dem Stand des
+// Öffnens – Freigabe/Sperre, neue Meldung, erledigte Prüfung oder neuer km-Stand erschienen erst nach Neuladen. Die Akte hat viele Formulare und
+// nachgeladene Teile (Reifen, Hinweise, KI-Vorschlag, Datenqualität), die ein stiller Neuaufbau verwerfen würde – daher nur abfragen (alle 2 Min.,
+// beim Zurückholen des Fensters, bei neuer Zahl an der Glocke/Push; Hintergrund x-cfp-bg) und bei Änderung den angehefteten Hinweis
+// „Fahrzeugakte inzwischen geändert · Neu laden“ zeigen (Eingaben bleiben beim Neuladen über render()). Nicht für Fahrer.
+const dataSig = (d) => { const s = JSON.stringify(d) || ''; let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return s.length + ':' + h; };
+// Akte: Standzeit-Monatswerte wachsen bei offener Sperre/Werkstatt mit der Uhr, Agentenbefund-Texte mit dem Alter – zählen nicht als Änderung
+const vehSig = (d) => dataSig({ ...d, downtime: undefined, agent_findings: (d.agent_findings || []).map((f) => f.id + ':' + f.severity) });
+const hashNorm = () => (location.hash || '').replace(/%3A/gi, ':');
+async function vehFileAutoRefresh(minAge) {
+  const vf = S.vehFile;
+  if (!vf || !S.me || S.me.role === 'driver' || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (hashNorm() !== vf.hash || S.lastHash !== vf.hash || Date.now() - vf.at < minAge) return;
+  vf.at = Date.now(); let d;
+  S.quietBg = true;
+  try { d = await api('GET', '/api/vehicles/' + encodeURIComponent(vf.id)); } catch { return; /* alte Ansicht bleibt; nächster Versuch beim nächsten Takt */ } finally { S.quietBg = false; }
+  if (S.vehFile !== vf || hashNorm() !== vf.hash) return; // inzwischen andere Seite oder neu aufgebaut
+  if (vehSig(d) === vf.sig) return;
+  const m = document.getElementById('main'); if (!m) return;
+  const txt = t('veh_chg_banner').replace('{t}', fmtHM(new Date(nowMs()).toISOString()));
+  let b = document.getElementById('vehchg');
+  if (!b) { m.insertAdjacentHTML('afterbegin', `<div class="panel warn noprint" id="vehchg" role="status"><span></span> · <a href="${esc(location.hash)}" id="vehchgre">${esc(t('update_now'))}</a></div>`); b = document.getElementById('vehchg');
+    b.querySelector('#vehchgre').onclick = async (e) => { e.preventDefault(); try { await viewVehicle(vf.id); } catch (err) { toast(err.message, true); } }; }
+  b.querySelector('span').textContent = 'ⓘ ' + txt;
+}
+setInterval(() => vehFileAutoRefresh(CASE_REFRESH_MS), 30000);
+window.addEventListener('focus', () => vehFileAutoRefresh(60000));
+document.addEventListener('visibilitychange', () => vehFileAutoRefresh(60000));
 window.addEventListener('focus', () => caseAutoRefresh(60000));
 document.addEventListener('visibilitychange', () => caseAutoRefresh(60000));
 const isCasesHash = () => /^#\/cases(?:\?f=\w+)?$/.test(location.hash || '');
@@ -5548,7 +5576,7 @@ if ('serviceWorker' in navigator) {
     if (typeof e.data.hash === 'string') S.pushNav = { hash: e.data.hash, at: Date.now() }; // Backlog 1017: Ziel nach erneuter Anmeldung
     // abgemeldet (Leerlauf) bei offenem Fenster: Umgebung für die Anmeldung in der Adresse merken – wie beim Kaltstart „?env=“ (23.10.2026: Test-Vorgang → „nicht gefunden“)
     if (!S.me && ['test', 'production'].includes(e.data.env)) history.replaceState(history.state, '', location.pathname + '?env=' + e.data.env + location.hash);
-    if (pushEnv(e.data.env)) { if (location.hash === e.data.hash) route(); else location.hash = e.data.hash; return; } if (location.hash === e.data.hash) { if (!viewDirty()) route(); } else location.hash = e.data.hash; } if (e.data && e.data.type === 'push') refreshUnread(true).then(inboxPush).then(() => caseAutoRefresh(15000)); });
+    if (pushEnv(e.data.env)) { if (location.hash === e.data.hash) route(); else location.hash = e.data.hash; return; } if (location.hash === e.data.hash) { if (!viewDirty()) route(); } else location.hash = e.data.hash; } if (e.data && e.data.type === 'push') refreshUnread(true).then(inboxPush).then(() => { caseAutoRefresh(15000); vehFileAutoRefresh(15000); }); });
 }
 document.documentElement.lang = S.lang;
 route();
@@ -5566,4 +5594,4 @@ function lazyModule(g, quiet) {
   return LAZY_MODULES[g];
 }
 
-export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, CT_KINDS, DEFECT_RESULTS, FUEL_HINT, GLASS_HINT, HITRUN_HINT, MARTEN_HINT, MORE_MAX, NUMPLATE_HINT, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, ROOFICE_HINT, S, SEND_TIMEOUT_MS, STATES, STOCK_Q_MIN, STORM_HINT, STOW_HINT, STRINGS, THEFT_HINT, TM_PROV, TOW_HINT, TST, VANDAL_HINT, VEH_SORTS, WILD_HINT, WST_ST, afLink, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindLang, bindPwShow, bindTachoCancel, cDesc, caseList, checkLabel, claimChip, clipTxt, comboClearV, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, deviceId, dispoDayBefore, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, helpLink, helpNorm, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isPlanHash, isUnusedUser, isVehHash, isWeekendD, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmUnclearDateDue, langAttr, langLoaded, langSelect, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mayReport, mk, mkR, nDays, nextWorkdayAfter, noSticker, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, partsWaitDays, phoneIn, planVehTag, plate, plateCmp, pnCompact, pnm, posL, prepareUpload, printHead, printStamp, provL, pwField, qrSvg, rc2, rdyOf, rdyTxt, readCsvFile, reasonText, recentRepeat, recurFix, render, resetUserState, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, siteWsHints, sortPref, sortUsers, stTxt, stackTables, stockHit, stockNoteText, stockOpt, stockPick, stockQHtml, supplierLabel, t, tachoHistList, telAbroad, telHref, tfill, tireAge, tireSizeSame, tlHash, tmAge, tmKmRej, tn, toast, todayMark, translateLockReason, translateNextAction, tzNote, uiLoc, uid, unitIn, unitL, usersCsv, vOverdue, vehiclesCached, viewLoginCode, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };
+export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, CT_KINDS, DEFECT_RESULTS, FUEL_HINT, GLASS_HINT, HITRUN_HINT, MARTEN_HINT, MORE_MAX, NUMPLATE_HINT, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, ROOFICE_HINT, S, SEND_TIMEOUT_MS, STATES, STOCK_Q_MIN, STORM_HINT, STOW_HINT, STRINGS, THEFT_HINT, TM_PROV, TOW_HINT, TST, VANDAL_HINT, VEH_SORTS, WILD_HINT, WST_ST, afLink, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindLang, bindPwShow, bindTachoCancel, cDesc, caseList, checkLabel, claimChip, clipTxt, comboClearV, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, deviceId, dispoDayBefore, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hashNorm, helpLink, helpNorm, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isMgr, isPlanHash, isUnusedUser, isVehHash, isWeekendD, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmUnclearDateDue, langAttr, langLoaded, langSelect, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mayReport, mk, mkR, nDays, nextWorkdayAfter, noSticker, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, partsWaitDays, phoneIn, planVehTag, plate, plateCmp, pnCompact, pnm, posL, prepareUpload, printHead, printStamp, provL, pwField, qrSvg, rc2, rdyOf, rdyTxt, readCsvFile, reasonText, recentRepeat, recurFix, render, resetUserState, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, siteWsHints, sortPref, sortUsers, stTxt, stackTables, stockHit, stockNoteText, stockOpt, stockPick, stockQHtml, supplierLabel, t, tachoHistList, telAbroad, telHref, tfill, tireAge, tireSizeSame, tlHash, tmAge, tmKmRej, tn, toast, todayMark, translateLockReason, translateNextAction, tzNote, uiLoc, uid, unitIn, unitL, usersCsv, vOverdue, vehSig, vehiclesCached, viewLoginCode, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };

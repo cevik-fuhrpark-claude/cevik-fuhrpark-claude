@@ -36033,13 +36033,30 @@ await test('Backlog 1117 (Blickwinkel „Fuhrparkleitung hat einen Vorgang den g
   ok(vc.includes("async function viewCase(id, pre = null) {\n  const d = pre || await api('GET', '/api/cases/' + id);"), 'viewCase nimmt den geladenen Stand');
   ok(app.includes("if (S.quietBg && caseHashId() !== String(id)) return; // stille Aktualisierung (Backlog 1117)") && app.includes("S.caseView = { id: String(id), at: Date.now(), sig: caseSig(d) };"), 'inzwischen andere Seite: nichts überschreiben; Stand merken');
   ok(app.includes('const CASE_REFRESH_MS = 2 * 60000;') && app.includes('setInterval(() => caseAutoRefresh(CASE_REFRESH_MS), 30000);') && app.includes("window.addEventListener('focus', () => caseAutoRefresh(60000));") && app.includes("document.addEventListener('visibilitychange', () => caseAutoRefresh(60000));"), 'Takt 2 Min., beim Zurückholen des Fensters nach 1 Min.');
-  ok(app.includes('if (bg && n.unread > (prev || 0)) caseAutoRefresh(15000);') && app.includes("refreshUnread(true).then(inboxPush).then(() => caseAutoRefresh(15000));"), 'auch bei neuer Zahl an der Glocke bzw. Push');
+  ok(app.includes('if (bg && n.unread > (prev || 0)) { caseAutoRefresh(15000); vehFileAutoRefresh(15000); }') && app.includes("refreshUnread(true).then(inboxPush).then(() => { caseAutoRefresh(15000); vehFileAutoRefresh(15000); });"), 'auch bei neuer Zahl an der Glocke bzw. Push');
   const bn = app.slice(app.indexOf('function caseChangedBanner('), app.indexOf('\n}\n', app.indexOf('function caseChangedBanner(')));
   ok(bn.includes('class="panel warn noprint" id="casechg" role="status"') && bn.includes("t('update_now')") && bn.includes("t('case_chg_banner')"), 'Hinweis mit „Neu laden“, nicht im Druck');
-  ok(/#casechg \{ position: sticky;/.test(fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')), 'Hinweis bleibt beim Scrollen sichtbar');
+  ok(/#casechg[^{]*\{ position: sticky;/.test(fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')), 'Hinweis bleibt beim Scrollen sichtbar');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].case_chg_banner.includes('{t}') && STRINGS[l].case_chg_banner.includes('{st}') && STRINGS[l].case_chg_done, 'Texte ' + l);
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-vorgang-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
+await test('Backlog 1118 (Blickwinkel „Fuhrparkleitung hat die Fahrzeugakte eines gesperrten Lkw den ganzen Tag offen“): Akte fragt im Hintergrund nach und zeigt bei Änderung „inzwischen geändert · Neu laden“, ohne Neuaufbau und ohne die Sitzung zu verlängern', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const r = app.indexOf('async function vehFileAutoRefresh('); const fn = app.slice(r, app.indexOf('\n}\n', r));
+  ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart') && fn.includes('S.quietBg'), 'nur sichtbar, online, nicht für Fahrer, nicht doppelt');
+  ok(fn.includes('hashNorm() !== vf.hash || S.lastHash !== vf.hash'), 'nur auf genau dieser Akte');
+  ok(fn.includes("S.quietBg = true;\n  try { d = await api('GET', '/api/vehicles/' + encodeURIComponent(vf.id)); } catch { return;") && fn.includes('finally { S.quietBg = false; }'), 'Abfrage als Hintergrund (x-cfp-bg); Fehler: alte Ansicht bleibt');
+  ok(fn.includes('if (vehSig(d) === vf.sig) return;') && app.includes('const vehSig = (d) => dataSig({ ...d, downtime: undefined, agent_findings: (d.agent_findings || []).map((f) => f.id + \':\' + f.severity) });'), 'unverändert: nichts (Standzeit und Befundtexte wachsen mit der Uhr – zählen nicht)');
+  ok(!fn.includes('render(') && !/await viewVehicle\(vf\.id\); \}? ?catch \{/.test(fn) && fn.includes('class="panel warn noprint" id="vehchg" role="status"') && fn.includes("t('veh_chg_banner')") && fn.includes("t('update_now')"), 'nie still neu aufbauen (KI-Vorschlag, nachgeladene Teile), nur Hinweis mit „Neu laden“, nicht im Druck');
+  ok(app.includes("S.vehFile = { id, hash: hashNorm(), at: Date.now(), sig: vehSig(d) };"), 'Stand beim Aufbau der Akte merken');
+  ok(app.includes('setInterval(() => vehFileAutoRefresh(CASE_REFRESH_MS), 30000);') && app.includes("window.addEventListener('focus', () => vehFileAutoRefresh(60000));") && app.includes("document.addEventListener('visibilitychange', () => vehFileAutoRefresh(60000));"), 'Takt 2 Min., beim Zurückholen des Fensters nach 1 Min.');
+  ok(/#casechg, #vehchg \{ position: sticky;/.test(fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')), 'Hinweis bleibt beim Scrollen sichtbar');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].veh_chg_banner && STRINGS[l].veh_chg_banner.includes('{t}'), 'Text ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-akte-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

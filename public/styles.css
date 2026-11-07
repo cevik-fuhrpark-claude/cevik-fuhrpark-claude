@@ -538,4 +538,4 @@ form[aria-busy="true"] button:not([type="button"]), button[aria-busy="true"], a[
   a.btn[href^="tel:"] { background: none !important; color: #000 !important; border: 1.5px solid #000 !important; min-height: 0; padding: 2px 8px; }
 }
 /* Backlog 1117: Hinweis „Vorgang inzwischen geändert · Neu laden“ bleibt beim Scrollen sichtbar (z. B. beim Tippen im Kommentarfeld unten) */
-#casechg { position: sticky; top: calc(68px + env(safe-area-inset-top)); z-index: 5; border-left: 4px solid var(--accent, #f2a900); }
+#casechg, #vehchg { position: sticky; top: calc(68px + env(safe-area-inset-top)); z-index: 5; border-left: 4px solid var(--accent, #f2a900); }

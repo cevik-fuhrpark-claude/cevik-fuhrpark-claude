@@ -1330,6 +1330,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1110 (Blickwinkel „Fahrer liest am Handy sein Bußgeld“): Hinweis auf der Fahrer-Startseite
 // Backlog 1112 (Blickwinkel „Disposition mit zwei Browserfenstern nebeneinander“): Stand der Startseite, stille Aktualisierung
 // Backlog 1117: geöffneter Vorgang wurde inzwischen von anderen geändert
+// Backlog 1118: geöffnete Fahrzeugakte wurde inzwischen geändert
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

@@ -135,6 +135,7 @@ UI-Werkstattplan aktualisiert sich still (Werkstatt-Wandbildschirm): Stand-Zeile
 UI-Fahrzeugliste aktualisiert sich still (Disposition den ganzen Tag): Stand-Zeile, 5-Min.-Takt, Hintergrund-Abfrage, Filter/Suchtext/Scrollposition bleiben|ui-fahrzeugliste-aktualisiert.py|/tmp/cfp-fahrzeugliste-aktualisiert.log
 UI-Hinweise ohne Push aktualisieren sich still (Fuhrparkleitung am PC): neue Zahl an der Glocke baut die Liste neu auf, Hintergrund-Abfrage, aufgeklappter Bereich schützt|ui-hinweise-aktualisiert.py|/tmp/cfp-hinweise-aktualisiert.log
 UI-Geöffneter Vorgang aktualisiert sich still (Leitung hat Vorgang den ganzen Tag offen): 2-Min.-Takt, Hintergrund-Abfrage, unverändert kein Neuaufbau, Eingaben → angehefteter Hinweis|ui-vorgang-aktualisiert.py|/tmp/cfp-vorgang-aktualisiert.log
+UI-Fahrzeugakte meldet Änderungen anderer (Leitung hat Akte eines gesperrten Lkw den ganzen Tag offen): 2-Min.-Takt, Hintergrund-Abfrage, Standzeit zählt nicht, angehefteter Hinweis, kein stiller Neuaufbau|ui-akte-aktualisiert.py|/tmp/cfp-akte-aktualisiert.log
 UI-Gesperrtes Fahrzeug genutzt: Ergebnisseite, Verlauf, Befund|ui-sperre-genutzt.py|/tmp/cfp-sperre-genutzt.log
 UI-Werkstattplan: begonnener Auftrag mit vergangenem Termin unter „in Arbeit“|ui-plan-inarbeit.py|/tmp/cfp-plan-inarbeit.log
 UI-Fahrzeug korrigieren (Meldung am falschen Fahrzeug)|ui-fahrzeug-korrigieren.py|/tmp/cfp-fahrzeug-korrigieren.log
