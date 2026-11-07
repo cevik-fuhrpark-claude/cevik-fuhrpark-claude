@@ -36351,6 +36351,16 @@ await test('Backlog 1138 (Sonde Motor/Getriebe/Start): „won’t go into gear�
   for (const x of ['Gas geht nicht, repariert', 'Gasflasche leer']) ok(!EN.test(x), 'kein Motor: ' + x);
   ok(!GE.test('помилка коробки, полагодили'), 'Reparaturvermerk');
 });
+await test('Backlog 1139 (Sonde Elektrik/Licht): „Steckdose am Auflieger verbrannt“, „7-/15-polig Stecker defekt“, „спіральний кабель порвався“, „фішка причепа зламана“ → Elektrik; „headlight cracked“, „indicator flashing fast“ → Beleuchtung; Steckdose im Fahrerhaus und Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const EL = pat('ELEC_HINT'), LI = pat('LIGHTS_HINT');
+  for (const x of ['Steckdose am Auflieger verbrannt', '7-polig Stecker defekt', '15-poliger Stecker locker', '13 polig Steckdose abgebrochen', 'спіральний кабель порвався', 'фішка причепа зламана']) ok(EL.test(x), 'Elektrik: ' + x);
+  for (const x of ['Steckdose im Fahrerhaus kaputt', '7-polig Stecker defekt, getauscht', 'фішка причепа зламана, замінили']) ok(!EL.test(x), 'keine Elektrik: ' + x);
+  for (const x of ['headlight cracked', 'headlamp smashed', 'indicator flashing fast', 'blinkers blinking too fast']) ok(LI.test(x), 'Beleuchtung: ' + x);
+  ok(!LI.test('headlight cracked, replaced'), 'Reparaturvermerk');
+});
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
