@@ -36339,6 +36339,18 @@ await test('Backlog 1137 (Sonde Undichtigkeit UK): „гідроборт теч�
   for (const x of ['гідроборт тече', 'тече гідравліка', 'гидроборт течет', 'гідравліка підтікає', 'Ladebordwand verliert Öl', 'tail lift leaking oil']) ok(LE.test(x), 'Undichtigkeit: ' + x);
   for (const x of ['гідроборт не працює', 'гідравліка в нормі']) ok(!LE.test(x), 'keine Undichtigkeit: ' + x);
 });
+await test('Backlog 1138 (Sonde Motor/Getriebe/Start): „won’t go into gear“, „помилка коробки“ → Getriebe; „потрібен прикурювач“, „треба прикурити“ → springt nicht an (Zigarettenanzünder „прикурювач не працює“ nicht); „Gas geht nicht, nur Standgas“ → Motor; Reparaturvermerk blendet aus', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const GE = pat('GEAR_HINT'), NS = pat('NOSTART_HINT'), EN = pat('ENGINE_HINT');
+  for (const x of ["won't go into gear", "can't get it into gear", 'gears won’t engage', 'помилка коробки', 'ошибка КПП', 'коробка видає помилку']) ok(GE.test(x), 'Getriebe: ' + x);
+  for (const x of ['потрібен прикурювач', 'треба прикурити', 'нужно прикурить', 'прикурили від іншої машини']) ok(NS.test(x), 'Start: ' + x);
+  ok(!NS.test('прикурювач не працює'), 'Zigarettenanzünder ist kein Startproblem');
+  for (const x of ['Gas geht nicht, nur Standgas', 'nur noch Standgas', 'Gas nimmt nicht an']) ok(EN.test(x), 'Motor: ' + x);
+  for (const x of ['Gas geht nicht, repariert', 'Gasflasche leer']) ok(!EN.test(x), 'kein Motor: ' + x);
+  ok(!GE.test('помилка коробки, полагодили'), 'Reparaturvermerk');
+});
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
