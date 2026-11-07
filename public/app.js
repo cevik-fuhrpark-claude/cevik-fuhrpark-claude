@@ -1089,6 +1089,7 @@ function viewDirty(skip) {
   const m = document.getElementById('main') || document.querySelector('main'); if (!m) return false;
   return [...m.querySelectorAll('input, textarea, select')].some((el) => {
     if (el === skip) return false; // Backlog 1115: Suchfeld der Fahrzeugliste (Wert bleibt über render() erhalten)
+    if (Array.isArray(skip) && skip.includes(el)) return false; // Backlog 1119: Suche/Auswahlfelder der Lagerliste (bleiben über render() erhalten)
     if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return false;
     if (el.type === 'file') return !!el.value;
     if (el.type === 'checkbox' || el.type === 'radio') return el.checked !== el.defaultChecked;
@@ -1276,6 +1277,25 @@ async function vehAutoRefresh(minAge) {
   S.quietBg = true;
   try { await viewVehicles(); } catch { S.vehAt = Date.now(); } finally { S.quietBg = false; }
 }
+// Backlog 1119 (Blickwinkel „Werkstatt-Tablet zeigt den ganzen Tag die Lagerliste, Kollegen buchen Teile in Aufträge“): Die Lagerliste
+// (Bestand, unter Mindestbestand, Lagerwert, Zahl am Bestellvorschlag) blieb auf dem Stand des Öffnens – wer am Tablet nachsah, ob ein Teil
+// noch da ist, sah den Bestand vor den Entnahmen der Kollegen. Jetzt wie die Fahrzeugliste: Standzeile „Stand HH:MM · Neu laden“ und still
+// neu aufbauen (alle 5 Min., beim Zurückholen des Fensters nach ≥ 1 Min.; ganze Seite über render(): Suchtext, Filter, Lagerwahl, aufgeklappte
+// Bereiche und Scrollposition bleiben). Suchtext/Filter/Lagerwahl allein hindern nicht; nie bei Fokus im Feld, anderen Eingaben (Neuer Artikel,
+// Import-Datei, Inventur-Zählmengen), Textauswahl, offenem Dialog oder Fehlermeldung. Abfragen als Hintergrund (S.quietBg → x-cfp-bg).
+const isStockHash = () => (location.hash || '') === '#/stock';
+async function stockAutoRefresh(minAge) {
+  if (!S.me || S.me.role === 'driver' || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isStockHash() || S.lastHash !== '#/stock' || !S.stockAt || Date.now() - S.stockAt < minAge) return;
+  const ae = document.activeElement;
+  if (viewDirty(['q', 'sf', 'ssite'].map((x) => document.getElementById(x)).filter(Boolean)) || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err')) return;
+  const sel = window.getSelection && window.getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  S.quietBg = true;
+  try { await viewStock(); } catch { S.stockAt = Date.now(); } finally { S.quietBg = false; }
+}
+setInterval(() => stockAutoRefresh(HOME_REFRESH_MS), 30000);
+window.addEventListener('focus', () => stockAutoRefresh(60000));
+document.addEventListener('visibilitychange', () => stockAutoRefresh(60000));
 // Backlog 1117 (Blickwinkel „Fuhrparkleitung hat einen Vorgang den ganzen Tag offen, die Werkstatt arbeitet daran“): Der geöffnete Vorgang
 // blieb auf dem Stand des Öffnens – „Zur Abschlusskontrolle“, neue Arbeitszeit, Fotos oder eine Rückfrage der Werkstatt erschienen erst nach
 // Neuladen; ein Knopfdruck auf dem alten Stand endete im Versionskonflikt. Jetzt alle 2 Min., beim Zurückholen des Fensters (≥ 1 Min.) und bei
@@ -5958,7 +5978,8 @@ async function viewStock() {
   let stSite = ''; try { stSite = sessionStorage.getItem('cfp_stock_site') || ''; } catch { /* ohne Speicher: alle Lager */ }
   if (!stSites.includes(stSite)) stSite = '';
   // Ausdruck der Lagerliste: genau die angezeigten Artikel (Suche/Filter) samt Lagerwert-Zeile; Auswahl im Vermerk (#sprsel)
-  render(`<h1>${esc(t('stock'))}</h1>${printHead([S.me.role === 'workshop' ? `${t('workshop')}: ${wsName(S.me.workshop_site)}` : ''])}<p class="print-only small" id="sprsel"></p>${helpLink('stock')}
+  if (S.quietBg && !isStockHash()) return; // stille Aktualisierung (Backlog 1119): inzwischen andere Seite – nichts überschreiben
+  render(`<h1>${esc(t('stock'))}</h1><p class="small muted noprint" id="stockasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/stock" id="stockreload" title="${esc(t('stock_asof_hint'))}">${esc(t('update_now'))}</a></p>${printHead([S.me.role === 'workshop' ? `${t('workshop')}: ${wsName(S.me.workshop_site)}` : ''])}<p class="print-only small" id="sprsel"></p>${helpLink('stock')}
     <details class="panel noprint"><summary>${esc(t('new_item'))}</summary><form id="nf">
       ${sites.length > 1 ? `<label>${esc(t('workshop'))}</label><select name="site">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
       <label>${esc(t('part_name'))}</label><input name="name" required><label>${esc(t('part_number'))}</label><input name="part_number"><div class="small" data-pndup role="status" aria-live="polite" hidden></div>
@@ -5979,6 +6000,8 @@ async function viewStock() {
     <p class="small muted" id="sfsum" hidden></p>
     <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}" data-pk="${esc(pnCompact(i.part_number))}" data-id="${esc(i.id)}">${S.me.role === 'workshop' ? '<span></span>' : `<span class="chip">${esc(wsName(i.site))}</span>`}<span class="title" style="white-space:normal">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + fmtNum(i.min_qty) + ')', i.unit_price_net !== null && eur3(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || noneP()}</div>`, 'more');
   // Filter: unter Mindestbestand bzw. „ohne Entnahme seit N Tagen“ (nur Artikel mit Bestand; nie entnommen zählt mit) bzw. „nicht gezählt seit 365 Tagen“ – nur Anzeige
+  S.stockAt = Date.now();
+  const srl = $('#stockreload'); if (srl) srl.onclick = async (e) => { e.preventDefault(); try { await viewStock(); } catch (err) { toast(err.message, true); } };
   const byId = new Map(items.map((i) => [i.id, i]));
   // Zeilen einmal vorab lesen (Suchtext, Artikel) und „hidden“ nur bei Änderung setzen; Suche ab 300 Artikeln entprellt (22.10.2026:
   // vorher je Taste alle Zeilen aus dem DOM gelesen und neu gesetzt – 500 Artikel am Handy ≈ 40 ms je Taste)

@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, STOCK_Q_MIN, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, stockOpt, stockPick, stockQHtml, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, STOCK_Q_MIN, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, isStockHash, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, nowMs, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, stockOpt, stockPick, stockQHtml, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
 
 // Lager-Buchungstexte in der Oberflächensprache (Standortcode → Name, Zahl/Datum im Sprachformat)
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
@@ -15,7 +15,8 @@ async function viewStock() {
   let stSite = ''; try { stSite = sessionStorage.getItem('cfp_stock_site') || ''; } catch { /* ohne Speicher: alle Lager */ }
   if (!stSites.includes(stSite)) stSite = '';
   // Ausdruck der Lagerliste: genau die angezeigten Artikel (Suche/Filter) samt Lagerwert-Zeile; Auswahl im Vermerk (#sprsel)
-  render(`<h1>${esc(t('stock'))}</h1>${printHead([S.me.role === 'workshop' ? `${t('workshop')}: ${wsName(S.me.workshop_site)}` : ''])}<p class="print-only small" id="sprsel"></p>${helpLink('stock')}
+  if (S.quietBg && !isStockHash()) return; // stille Aktualisierung (Backlog 1119): inzwischen andere Seite – nichts überschreiben
+  render(`<h1>${esc(t('stock'))}</h1><p class="small muted noprint" id="stockasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/stock" id="stockreload" title="${esc(t('stock_asof_hint'))}">${esc(t('update_now'))}</a></p>${printHead([S.me.role === 'workshop' ? `${t('workshop')}: ${wsName(S.me.workshop_site)}` : ''])}<p class="print-only small" id="sprsel"></p>${helpLink('stock')}
     <details class="panel noprint"><summary>${esc(t('new_item'))}</summary><form id="nf">
       ${sites.length > 1 ? `<label>${esc(t('workshop'))}</label><select name="site">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
       <label>${esc(t('part_name'))}</label><input name="name" required><label>${esc(t('part_number'))}</label><input name="part_number"><div class="small" data-pndup role="status" aria-live="polite" hidden></div>
@@ -36,6 +37,8 @@ async function viewStock() {
     <p class="small muted" id="sfsum" hidden></p>
     <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}" data-pk="${esc(pnCompact(i.part_number))}" data-id="${esc(i.id)}">${S.me.role === 'workshop' ? '<span></span>' : `<span class="chip">${esc(wsName(i.site))}</span>`}<span class="title" style="white-space:normal">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + fmtNum(i.min_qty) + ')', i.unit_price_net !== null && eur3(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || noneP()}</div>`, 'more');
   // Filter: unter Mindestbestand bzw. „ohne Entnahme seit N Tagen“ (nur Artikel mit Bestand; nie entnommen zählt mit) bzw. „nicht gezählt seit 365 Tagen“ – nur Anzeige
+  S.stockAt = Date.now();
+  const srl = $('#stockreload'); if (srl) srl.onclick = async (e) => { e.preventDefault(); try { await viewStock(); } catch (err) { toast(err.message, true); } };
   const byId = new Map(items.map((i) => [i.id, i]));
   // Zeilen einmal vorab lesen (Suchtext, Artikel) und „hidden“ nur bei Änderung setzen; Suche ab 300 Artikeln entprellt (22.10.2026:
   // vorher je Taste alle Zeilen aus dem DOM gelesen und neu gesetzt – 500 Artikel am Handy ≈ 40 ms je Taste)

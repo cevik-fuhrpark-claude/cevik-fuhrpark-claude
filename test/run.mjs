@@ -36059,6 +36059,24 @@ await test('Backlog 1118 (Blickwinkel „Fuhrparkleitung hat die Fahrzeugakte ei
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-akte-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
+await test('Backlog 1119 (Blickwinkel „Werkstatt-Tablet zeigt den ganzen Tag die Lagerliste, Kollegen buchen Teile in Aufträge“): Lagerliste zeigt den Stand und aktualisiert sich still, ohne die Sitzung zu verlängern', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('async function viewStock('); const vs = app.slice(a, app.indexOf('\n}\n', a));
+  ok(vs.includes('<p class="small muted noprint" id="stockasof"') && vs.includes("t('stock_asof_hint')") && vs.includes("t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString()))"), 'Standzeile (nicht im Druck)');
+  ok(vs.includes("if (S.quietBg && !isStockHash()) return; // stille Aktualisierung (Backlog 1119): inzwischen andere Seite – nichts überschreiben\n  render(") && vs.includes('S.stockAt = Date.now();') && vs.includes("$('#stockreload')"), 'inzwischen andere Seite: nichts überschreiben; Zeitpunkt merken; „Neu laden“');
+  const r = app.indexOf('async function stockAutoRefresh('); const fn = app.slice(r, app.indexOf('\n}\n', r));
+  ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart') && fn.includes('S.quietBg'), 'nur sichtbar, online, nicht für Fahrer, nicht doppelt');
+  ok(fn.includes("S.lastHash !== '#/stock'"), 'nur auf der Lagerliste');
+  ok(fn.includes("viewDirty(['q', 'sf', 'ssite'].map((x) => document.getElementById(x)).filter(Boolean))") && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open], .toast.err') && fn.includes('sel.isCollapsed'), 'nie bei Fokus/anderen Eingaben/Textauswahl/Dialog/Fehlermeldung; Suche/Filter/Lagerwahl allein hindern nicht');
+  ok(fn.includes('try { await viewStock(); } catch { S.stockAt = Date.now(); } finally { S.quietBg = false; }'), 'Fehler: alte Ansicht bleibt');
+  ok(app.includes('if (Array.isArray(skip) && skip.includes(el)) return false;'), 'viewDirty kann mehrere Felder ausnehmen');
+  ok(app.includes('setInterval(() => stockAutoRefresh(HOME_REFRESH_MS), 30000);') && app.includes("window.addEventListener('focus', () => stockAutoRefresh(60000));") && app.includes("document.addEventListener('visibilitychange', () => stockAutoRefresh(60000));"), 'Takt 5 Min., beim Zurückholen des Fensters nach 1 Min.');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].stock_asof_hint && STRINGS[l].stock_asof_hint !== STRINGS[l].veh_asof_hint, 'Text ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-lager-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
