@@ -36522,6 +36522,22 @@ await test('Backlog 1154 (Sonde Warnleuchten, sicherheitsrelevant): „STOP-Leuc
   for (const x of ['odometer stopped', 'mileage not counting', 'Kilometerzähler geht nicht']) ok(hit(DA, x), 'Armaturen: ' + x);
 });
 
+await test('Backlog 1155 (Sonde Achse/Radlager/Spanngurt, sicherheitsrelevant): „Achse verbogen/gebrochen“, „axle bent“, „погнута вісь“ → Federung/Achse; „гуде/шумить підшипник“ → Rad/Radlager; „Spanngurt ist gerissen“, „порвалась стяжка“, „strap snapped“ → Ladungssicherungsmittel; Verneinung, Reparaturvermerk, Reifen an der Achse, ukr. „ось“ (= hier), Motorgeräusch, Sicherheitsgurt nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [SU, WH, LG] = ['SUSP_HINT', 'WHEEL_HINT', 'LASHGEAR_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['Achse verbogen', 'Achse gebrochen', 'Achse ist krumm nach Bordstein', 'Achsaufhängung gerissen', 'Hinterachse verbogen', 'verbogene Achse', 'Achse 3 ist verbogen', 'axle bent', 'axle is bent after hitting a kerb', 'broken axle', 'погнута вісь', 'вісь погнулась', 'зламалась вісь', 'лопнула вісь', 'погнута ось']) ok(hit(SU, x), 'Federung/Achse: ' + x);
+  for (const x of ['Achse nicht verbogen', 'Achse 2 Reifen gerissen', 'Achse verbogen, wurde getauscht', 'axle not damaged', 'ось погнута дверка', 'вісь не погнута']) ok(!hit(SU, x), 'nicht Federung/Achse: ' + x);
+  for (const x of ['гуде підшипник', 'шумить задній підшипник', 'підшипник шумить', 'шумит подшипник', 'підшипник виє', 'Radlager heiß', 'wheel bearing noise']) ok(hit(WH, x), 'Radlager: ' + x);
+  ok(!hit(WH, 'шумить двигун'), 'nicht Radlager: шумить двигун');
+  for (const x of ['Spanngurt ist gerissen', 'ремінь кріплення порвався', 'порвалась стяжка', 'стяжка порвалась', 'порвався лашинг', 'lashing strap snapped', 'strap snapped', 'Zurrgurt kaputt']) ok(hit(LG, x), 'Ladungssicherungsmittel: ' + x);
+  for (const x of ['seat belt strap snapped', 'Spanngurte reichen aus', 'ремень безопасности порвался']) ok(!hit(LG, x), 'nicht Ladungssicherungsmittel: ' + x);
+  const de = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const w of ['eine Achse verbogen oder gebrochen', 'вісь погнулась чи зламалась', 'an axle is bent or broken', 'eine verbogene oder gebrochene Achse', 'погнуту чи зламану вісь', 'a bent or broken axle']) ok(de.includes(w), 'Text fehlt: ' + w);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
