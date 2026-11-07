@@ -36472,6 +36472,19 @@ await test('Backlog 1149 (Sonde Aufbau): „Stoßstange am Auflieger verbogen“
   for (const x of ['Zwischendeck klemmt', 'Doppelstock klemmt', 'Zwischenboden lässt sich nicht absenken', 'Ladedeck geht nicht runter']) ok(hit(DE, x), 'Etage: ' + x);
 });
 
+await test('Backlog 1150 (Sonde Kraftstoff/Kühlung): „залив AdBlue в бак для дизеля“, „залив бензин у бак під дизель“ → Fehlbetankung; „Diesel (ist) leer“ → Tank leer; „термописець/термопринтер не друкує/не працює“, „терморегистратор не печатает“ → Kühlung; „Diesel leer gepumpt“, „Dieselkanister leer“, „термописець надрукував“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [FU, DR, RE] = ['FUEL_HINT', 'DRYFUEL_HINT', 'REEFER_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['залив AdBlue в бак для дизеля', 'залив бензин у бак під дизель', 'залив дизель у бак для AdBlue', 'AdBlue in den Dieseltank getankt']) ok(hit(FU, x), 'Fehlbetankung: ' + x);
+  for (const x of ['Diesel leer, liegengeblieben', 'Diesel ist leer', 'ran out of diesel']) ok(hit(DR, x), 'Tank leer: ' + x);
+  for (const x of ['Diesel leer gepumpt', 'Dieselkanister leer', 'Diesel leer getankt']) ok(!hit(DR, x), 'nicht Tank leer: ' + x);
+  for (const x of ['термописець не друкує', 'термопринтер не працює', 'терморегистратор не печатает', 'Temperaturschreiber druckt nicht', 'temperature recorder not printing']) ok(hit(RE, x), 'Kühlung: ' + x);
+  ok(!hit(RE, 'термописець надрукував'), 'Ausdruck ok ist kein Mangel');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
