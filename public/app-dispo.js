@@ -26,7 +26,7 @@ async function dispoHome(cases) {
   // Neue Meldungen, deren Eingang die Leitung noch nicht bestätigt hat (gleiche Regel wie Filter `unreceived`; Standort wie die Tafel) –
   // vorher sah die Disposition „was ist neu?“ nur über die nach Dringlichkeit sortierte Liste (Blickwinkel „Disposition, erster Tag“, 26.10.2026)
   const nu = dcs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).length;
-  if (nu) html += `<p class="noprint"><a href="${hj('#/cases?f=unreceived')}" id="dunrec" data-site="${esc(hs)}"><b>${esc(t('dispo_unreceived'))} (${nu})</b></a></p>`;
+  if (nu) html += `<p class="noprint"><a href="${hj('#/cases?f=unreceived')}" class="tap" id="dunrec" data-site="${esc(hs)}"><b>${esc(t('dispo_unreceived'))} (${nu})</b></a></p>`;
   // Backlog 474: eingeschränkt fahrbereit gemeldet, noch ohne Werkstattauftrag und ohne Sperre (gleiche Regel wie Filter `limited`) –
   // stand vorher in keinem Abschnitt der Tafel; nur Hinweis, ob das Fahrzeug eingeplant wird, entscheidet die Disposition
   const nlL = dcs.filter((c) => c.status === 'gemeldet' && !c.safety_lock && c.reported_driveability === 'eingeschraenkt'); const nl = nlL.length;

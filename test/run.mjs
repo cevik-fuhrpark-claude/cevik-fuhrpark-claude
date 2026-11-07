@@ -16799,7 +16799,7 @@ await test('Fehlersuche 22.10. (Konsistenz/Rollen/Tastatur): HU/SP-Widerspruch m
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("r.next_due_date <= in7 && r.date_status !== 'erledigt'"), 'Heute zu tun ohne erledigte');
   ok(app.includes("<b>${d.locked}</b>${esc(t('locked_cases'))}</a>"), 'Kachel zählt Vorgänge und heißt so'); // seit Backlog 238 als Link
-  ok(app.includes("${mayReport() ? `<a href=\"${vid ? `#/new/${esc(vid)}` : '#/new'}\">"), 'Panne & Notfall: Melden nur mit Recht');
+  ok(app.includes("${mayReport() ? `<a class=\"tap\" href=\"${vid ? `#/new/${esc(vid)}` : '#/new'}\">"), 'Panne & Notfall: Melden nur mit Recht');
   ok(app.includes(`\${key === active ? ' aria-current="page"' : ''}`), 'aktive Seite aria-current');
   ok(!app.includes('role="tablist"') && !app.includes('role="tab"'), 'keine Tab-Rollen ohne Pfeiltasten');
   ok(app.includes("if (e.key !== 'Escape'") && app.includes("e.target.closest('#af')") && app.includes("form[data-mdone]"), 'Escape schließt Formulare');
@@ -35803,6 +35803,26 @@ await test('Backlog 1103 (Folge aus 1102): sehr große Hinweismuster in Teilen g
   }
   const main = fs.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   for (const n of calls) ok(new RegExp(`^const ${n} = lbRx\\(String\\.raw\`[^\\n]*\`, 'i', 1\\);$`, 'm').test(main), `${n}: Start-Modul baut weiter die genaue Lookbehind-Nachbildung (nur .test)`);
+});
+
+await test('Backlog 1104 (Blickwinkel „Disposition am Tablet im Querformat bei der Frühschicht“): Links der Disposition, Notfallseite und Hinweistitel mit 44 px Tippfläche, Legende bei Fingerbedienung', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  ok(/\.tap \{[^}]*display: inline-flex;[^}]*min-height: 44px;/.test(css), 'CSS: .tap mit 44 px');
+  ok(/\.row\.note > a\.title \{[^}]*min-height: 44px;/.test(css), 'CSS: Hinweistitel 44 px');
+  ok(/@media \(pointer: coarse\) \{ \.legend a \{ min-height: 44px; \}/.test(css), 'CSS: Legende 44 px nur bei Fingerbedienung');
+  ok(/\.legend a \{[^}]*min-height: 24px;/.test(css), 'CSS: Legende mit Maus weiter 24 px (WCAG 2.5.8)');
+  ok(app.includes('<a href="#/" class="tap" id="dsitetoggle">'), 'Standortwechsel der Disposition mit .tap');
+  ok(/href="\$\{hj\('#\/cases\?f=unreceived'\)\}" class="tap" id="dunrec"/.test(app), '„Neue Meldungen …“ mit .tap');
+  const em = app.slice(app.indexOf('async function viewEmergency('), app.indexOf('async function viewEmergencyEdit('));
+  ok((em.match(/<a class="tap" href=/g) || []).length === 2 && em.includes("t('report_damage')") && em.includes('#/help?s=accident'), 'Notfallseite: beide Links mit .tap');
+  const nrow = app.slice(app.indexOf('const nRow = '), app.indexOf('async function viewInbox('));
+  ok(nrow.includes('<a class="title"'), 'Hinweiszeile: Titel-Link mit Klasse title');
+  // erzeugte Module enthalten die Änderung (npm run build)
+  const main = fs.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  const all = main + ['dispo', 'leitung', 'verwaltung'].map((g) => { try { return fs.readFileSync(new URL(`../public/app-${g}.js`, import.meta.url), 'utf8'); } catch { return ''; } }).join('');
+  ok(all.includes('class="tap" id="dsitetoggle"') && all.includes('class="tap" id="dunrec"'), 'Module neu erzeugt');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

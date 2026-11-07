@@ -1544,7 +1544,7 @@ async function viewHome() {
     // Disposition mit Standard-Standort: Standortzeile vor den Zählern, damit klar ist, wofür die Zahlen gelten
     // Backlog 560: Druckkopf der Dispo-Startseite (Zeitpunkt, Person, Standort der Tafel)
     if (S.me.role === 'dispatch') { const hp = S.me.home_site && !S.dispoAll ? S.me.home_site : ''; html += `<div data-dprinthead>${printHead([t('dispo_print_title'), `${t('kpi_vsite')}: ${hp ? (hp === 'ohne' ? t('cs_nosite') : hp) : t('filter_all')}`])}</div>`; }
-    if (S.me.role === 'dispatch' && S.me.home_site) { const hs0 = !S.dispoAll ? S.me.home_site : ''; html += `<p class="small muted noprint" id="dsitebar">${esc(t('kpi_vsite'))}: <b>${esc(hs0 ? (hs0 === 'ohne' ? t('cs_nosite') : hs0) : t('filter_all'))}</b> · <a href="#/" id="dsitetoggle">${esc(hs0 ? t('dispo_all_sites') : t('dispo_my_site'))}</a></p>`; }
+    if (S.me.role === 'dispatch' && S.me.home_site) { const hs0 = !S.dispoAll ? S.me.home_site : ''; html += `<p class="small muted noprint" id="dsitebar">${esc(t('kpi_vsite'))}: <b>${esc(hs0 ? (hs0 === 'ohne' ? t('cs_nosite') : hs0) : t('filter_all'))}</b> · <a href="#/" class="tap" id="dsitetoggle">${esc(hs0 ? t('dispo_all_sites') : t('dispo_my_site'))}</a></p>`; }
     if (d.vehicles) {
       const v = d.vehicles; const tot = Math.max(v.total, 1);
       const seg = [['gesperrt', v.gesperrt, 'var(--stop)'], ['werkstatt', v.werkstatt, 'var(--mid)'], ['meldung_offen', v.meldung_offen, 'var(--signal)'], ['einsatzbereit_lt_system', v.einsatzbereit, 'var(--go)']];
@@ -1597,7 +1597,7 @@ async function dispoHome(cases) {
   // Neue Meldungen, deren Eingang die Leitung noch nicht bestätigt hat (gleiche Regel wie Filter `unreceived`; Standort wie die Tafel) –
   // vorher sah die Disposition „was ist neu?“ nur über die nach Dringlichkeit sortierte Liste (Blickwinkel „Disposition, erster Tag“, 26.10.2026)
   const nu = dcs.filter((c) => c.status === 'gemeldet' && !c.fleet_received_at).length;
-  if (nu) html += `<p class="noprint"><a href="${hj('#/cases?f=unreceived')}" id="dunrec" data-site="${esc(hs)}"><b>${esc(t('dispo_unreceived'))} (${nu})</b></a></p>`;
+  if (nu) html += `<p class="noprint"><a href="${hj('#/cases?f=unreceived')}" class="tap" id="dunrec" data-site="${esc(hs)}"><b>${esc(t('dispo_unreceived'))} (${nu})</b></a></p>`;
   // Backlog 474: eingeschränkt fahrbereit gemeldet, noch ohne Werkstattauftrag und ohne Sperre (gleiche Regel wie Filter `limited`) –
   // stand vorher in keinem Abschnitt der Tafel; nur Hinweis, ob das Fahrzeug eingeplant wird, entscheidet die Disposition
   const nlL = dcs.filter((c) => c.status === 'gemeldet' && !c.safety_lock && c.reported_driveability === 'eingeschraenkt'); const nl = nlL.length;
@@ -7033,7 +7033,7 @@ async function viewEmergency(vid) {
     if (!d.general.length && !d.vehicles.some((v) => v.contacts.length)) html += `<p class="muted" id="emnone">${esc(t(d.can_edit ? 'em_none_mgr' : 'em_none'))}</p>`;
     if (d.can_edit && !cachedAt) html += `<div class="actions noprint"><a class="btn secondary" href="#/emergency/edit">${esc(t('em_manage'))}</a></div>`;
   }
-  html += `<p style="margin-top:16px">${mayReport() ? `<a href="${vid ? `#/new/${esc(vid)}` : '#/new'}">${esc(t('report_damage'))} ›</a> · ` : ''}<a href="#/help?s=accident">${esc(t('help_accident_t'))} ›</a></p>`;
+  html += `<p style="margin-top:16px">${mayReport() ? `<a class="tap" href="${vid ? `#/new/${esc(vid)}` : '#/new'}">${esc(t('report_damage'))} ›</a> · ` : ''}<a class="tap" href="#/help?s=accident">${esc(t('help_accident_t'))} ›</a></p>`;
   render(html, 'more');
 }
 // Backlog 429: Lücken der Erreichbarkeit über die Nummern „für alle Fahrzeuge“ (nur wenn alle Zeiten tragen; Feiertage nicht eingerechnet)

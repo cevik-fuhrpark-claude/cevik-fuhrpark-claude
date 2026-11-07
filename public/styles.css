@@ -165,6 +165,11 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 .fleetbar span { display: block; height: 100%; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.9rem; }
 .legend a { color: inherit; display: inline-flex; align-items: center; gap: 0.3em; min-height: 24px; }
+/* Backlog 1104 (Blickwinkel „Disposition am Tablet im Querformat bei der Frühschicht“): Links neben Text mit 44 px Tippfläche
+   (Standortwechsel 17 px, „Neue Meldungen …“ 20 px, Notfallseite 20 px, Hinweistitel 24 px); Legende der Flotte nur bei Fingerbedienung */
+.tap { display: inline-flex; align-items: center; min-height: 44px; }
+.row.note > a.title { display: flex; align-items: center; min-height: 44px; }
+@media (pointer: coarse) { .legend a { min-height: 44px; } .legend { gap: 0 16px; } }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
 .stats { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 8px 0 16px; }
 .stats div { font-family: var(--din); }
