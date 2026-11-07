@@ -1075,6 +1075,7 @@ export function auditDetailText(lang, detail, refs) {
 // Bestand zum Stichtag (Jahresabschluss)
 // Inventur ohne Abweichungen abschließen und „letzte Inventur“ je Lager
 // [CLAUDE] Zeitleiste: Hinweis, wenn ältere Einträge nicht angezeigt werden (15.10.2026)
+// Backlog 1129: Videos/Tonaufnahmen werden nicht gespeichert
 // [CLAUDE] Artikel-Stammdaten in der Artikelakte bearbeiten (Bezeichnung, Teilenummer, Mindestbestand, Lagerort, Preis, aktiv) – 15.10.2026
 // [CLAUDE] Pluralformen für Zähltexte (16.10.2026): statt „1 Hinweis(e)“, „3 заявк(и)“, „1 device(s)“ die richtige Form je Sprache
 // (Intl.PluralRules: de/en one/other, uk one/few/many). Fehlt eine Sprache oder Form, gilt der Grundtext aus STRINGS.

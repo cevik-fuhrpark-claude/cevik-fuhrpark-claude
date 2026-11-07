@@ -26246,7 +26246,10 @@ await test('Backlog 603 (Blickwinkel „Werkstatt-Tablet UK mit Fotos“): Datei
   const a = app.indexOf('function uploadReject('); const e = app.indexOf('\n}\n', a);
   const t = (k) => k;
   const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], UPLOAD_MAX_BYTES = 5 * 1024 * 1024; // eslint-disable-line no-unused-vars
+  const isMediaFile = eval('(' + app.match(/^const isMediaFile = (.*);$/m)[1] + ')'); const MEDIA_EXT = eval(app.match(/^const MEDIA_EXT = (.*);$/m)[1]); // eslint-disable-line no-unused-vars
   const uploadReject = eval('(' + app.slice(a, e + 2) + ')');
+  eq(uploadReject({ type: 'video/mp4', size: 4e6 }, 'geraeusch.mp4'), 'file_media_hint', 'Video mit eigenem Hinweis (Backlog 1129)');
+  eq(uploadReject({ type: '', size: 9e6 }, 'aufnahme.m4a'), 'file_media_hint', 'Tonaufnahme ohne Typ (vor „zu groß“)');
   eq(uploadReject({ type: 'image/jpeg', size: 300000 }, 'a.jpg'), '', 'JPG ok');
   eq(uploadReject({ type: 'application/pdf', size: 5 * 1024 * 1024 }, 'r.pdf'), '', 'genau 5 MB ok');
   eq(uploadReject({ type: 'application/pdf', size: 5 * 1024 * 1024 + 1 }, 'r.pdf'), 'err_too_large', 'zu groß vor dem Hochladen');
@@ -36207,6 +36210,30 @@ await test('Backlog 1128 (Blickwinkel „Fuhrparkleitung bespricht in der Monats
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const k of ['def_rolling', 'def_calmonth', 'def_month_running']) ok(STRINGS[l][k], k + ' ' + l); ok(/12/.test(STRINGS[l].help_defects_s.split('|')[0]), 'Hilfe ' + l); }
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-maengel-monat.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
+await test('Backlog 1129 (Blickwinkel „Fahrer will ein Video bzw. eine Tonaufnahme vom Geräusch anhängen“): Videos/Tonaufnahmen werden bei der Auswahl mit Namen genannt, nicht gesendet und zählen nicht zur Höchstzahl; am Vorgang eigener Hinweis; DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const line = (name) => { const m = app.match(new RegExp(`^const ${name} = .*$`, 'm')); ok(m, name); return m[0]; };
+  const fn = new Function(`${line('PHOTO_MAX')} ${line('MEDIA_EXT')} ${line('isMediaFile')} ${line('photoUsable')} return { isMediaFile, photoUsable, PHOTO_MAX };`)();
+  const F = (name, type) => ({ name, type });
+  for (const f of [F('geraeusch.mp4', 'video/mp4'), F('IMG_0001.MOV', 'video/quicktime'), F('x.3gp', 'video/3gpp'), F('Sprachnachricht.m4a', 'audio/mp4'), F('klopfen.ogg', 'audio/ogg'), F('aufnahme.opus', ''), F('clip.webm', 'application/octet-stream'), F('VID_2026.MP4', '')]) ok(fn.isMediaFile(f), 'Video/Ton erkannt: ' + f.name);
+  for (const f of [F('foto.jpg', 'image/jpeg'), F('foto.png', 'image/png'), F('x.webp', 'image/webp'), F('beleg.pdf', 'application/pdf'), F('IMG_0002.HEIC', 'image/heic'), F('mp4-anleitung.jpg', 'image/jpeg'), F('ohne_typ.jpg', ''), F('video.jpg', 'image/jpeg')]) ok(!fn.isMediaFile(f), 'kein Video/Ton: ' + f.name);
+  ok(!fn.isMediaFile(null), 'leer');
+  const many = []; for (let i = 0; i < fn.PHOTO_MAX + 3; i++) many.push(i % 2 ? F(`v${i}.mp4`, 'video/mp4') : F(`f${i}.jpg`, 'image/jpeg'));
+  const use = fn.photoUsable({ files: many }); ok(use.length <= fn.PHOTO_MAX && use.every((f) => f.type === 'image/jpeg') && use.length === many.filter((f) => f.type === 'image/jpeg').slice(0, fn.PHOTO_MAX).length, 'nur Fotos, höchstens PHOTO_MAX');
+  eq(fn.photoUsable(null).length, 0, 'ohne Eingabefeld');
+  const w = app.slice(app.indexOf('function photoLimitWatch('), app.indexOf('const PHOTO_DARK_LUMA'));
+  ok(w.includes("media.dataset.photomedia = ''") && w.includes("t('photos_media_skip').replace('{names}'") && w.includes('const n = (input.files || []).length - mf.length;'), 'Hinweis bei der Auswahl mit Namen; Höchstzahl ohne Videos');
+  ok(w.includes('for (const f of photoUsable(input)) tk.push') && w.includes('for (const f of photoUsable(input)) {'), 'Aufnahmezeit/Helligkeit nur für Fotos');
+  ok(!/disabled|preventDefault/.test(w), 'nichts gesperrt');
+  ok(app.includes("const photoFiles = photoUsable($('#ph'));") && app.includes("const files = photoUsable($('#ph'));") && app.includes("w.hidden = !photoUsable($('#ph')).length;"), 'Meldung und Abfahrtskontrolle senden bzw. halten nur Fotos zurück');
+  ok(!/\[\.\.\.\(\$\('#ph'\)\.files \|\| \[\]\)\]\.slice\(0, PHOTO_MAX\)/.test(app), 'keine ungefilterte Fotoliste mehr');
+  const rj = app.slice(app.indexOf('function uploadReject('), app.indexOf('async function decodeImage('));
+  ok(rj.indexOf("t('file_media_hint')") > rj.indexOf("t('file_heic_hint')") && rj.indexOf("t('file_media_hint')") < rj.indexOf("t('err_type')"), 'Vorgang: eigener Hinweis vor „Dateityp nicht erlaubt“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].photos_media_skip && STRINGS[l].photos_media_skip.includes('{names}') && !/\(e\)|\(s\)/.test(STRINGS[l].photos_media_skip), l + ' photos_media_skip'); ok(STRINGS[l].file_media_hint, l + ' file_media_hint'); }
+  for (const [l, x] of [['de', 'Tonaufnahmen'], ['uk', 'аудіозаписи'], ['en', 'audio recordings']]) ok(STRINGS[l].help_report_s.split('|').some((p) => p.includes(x)), 'Hilfe „Melden“ ' + l);
 });
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {

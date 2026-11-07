@@ -3226,7 +3226,7 @@ async function viewNew(preId) {
   photoLimitWatch($('#ph'), () => { const d = $('#occd').value; return d ? { day: d, k: 'photo_old_occ' } : { day: bDate(), k: 'photo_old_new' }; });
   $('#occd').addEventListener('input', () => $('#ph')._photoOld()); $('#occd').addEventListener('change', () => $('#ph')._photoOld());
   // Backlog 807: Auswahl „Fotos später senden“ nur mit gewählten Fotos zeigen (nicht im Entwurf gemerkt – Fotos werden nicht wiederhergestellt)
-  $('#ph').addEventListener('change', () => { const w = $('#phlater_w'); if (w) w.hidden = !($('#ph').files || []).length; if (w && w.hidden) $('#phlater').checked = false; });
+  $('#ph').addEventListener('change', () => { const w = $('#phlater_w'); if (w) w.hidden = !photoUsable($('#ph')).length; if (w && w.hidden) $('#phlater').checked = false; });
   const draft = bindFormDraft('new', $('#f'), 'veh', preId, ['vq', 'phlater']);
   const key = uid();
   // Suchfeld: Enter („Los“ am Handy) filtert nur – sendet nicht ab; ein ausgeblendetes gewähltes Fahrzeug wird abgewählt (19.10.2026:
@@ -3247,7 +3247,7 @@ async function viewNew(preId) {
     if (occ && occ.slice(0, 10) > bDate()) { toast(t('occ_future'), true); markInvalid($('#occd'), t('occ_future')); $('#occd').focus(); return; }
     sb.disabled = true;
     const who = outboxWho();
-    const photoFiles = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
+    const photoFiles = photoUsable($('#ph')); // Backlog 1129: ohne Videos/Tonaufnahmen
     // Backlog 807 (Blickwinkel „Fahrer im Ausland, Roaming teuer“): Fotos auf dem Gerät zurückhalten – Meldung (Text) geht sofort, die Leitung
     // sieht am Vorgang „N Fotos folgen“; gesendet wird im WLAN automatisch (wo der Browser es erkennt) oder per „Fotos jetzt senden“
     const hold = !!(photoFiles.length && $('#phlater') && $('#phlater').checked);
@@ -3678,6 +3678,12 @@ const ltxt = (s) => { const a = langAttr(s); return a ? `<span${a}>${esc(s)}</sp
 // Bilder vor dem Hochladen verkleinern (max. 1600 px, JPEG) – spart Datenvolumen unterwegs
 // Mehr als 10 Fotos gewählt: nur die ersten 10 werden angehängt (Server-Grenze je Vorgang) – sofort sichtbar sagen statt still weglassen
 const PHOTO_MAX = 10;
+// Backlog 1129 (Blickwinkel „Fahrer will ein Video bzw. eine Tonaufnahme vom Geräusch anhängen“): Videos/Tonaufnahmen kann die App nicht speichern
+// (Server: nur JPG/PNG/WEBP/PDF). Manche Galerien/Dateimanager bieten sie trotz accept an – vorher gingen sie mit „Foto fehlgeschlagen“ bzw.
+// lagen zurückgehalten im Postausgang. Jetzt: Hinweis schon bei der Auswahl (mit Namen), nicht gesendet, zählen nicht zur Höchstzahl.
+const MEDIA_EXT = /\.(mp4|m4v|mov|qt|3gp|3g2|avi|mkv|webm|wmv|mpe?g|m4a|mp3|aac|amr|ogg|oga|opus|wav|flac|caf)$/i;
+const isMediaFile = (f) => !!f && (/^(video|audio)\//i.test(f.type || '') || ((!f.type || f.type === 'application/octet-stream') && MEDIA_EXT.test(f.name || '')));
+const photoUsable = (input) => [...((input && input.files) || [])].filter((f) => !isMediaFile(f)).slice(0, PHOTO_MAX);
 // Backlog 1021 (Folge aus 1020): ältester Aufnahmetag laut Kamera, der vor dem Bezugstag liegt (sonst null); reine Funktion, nur Hinweis
 const photoOldDay = (taken, ref) => { let o = null; for (const x of taken || []) { const d = x ? String(x).slice(0, 10) : ''; if (/^\d{4}-\d{2}-\d{2}$/.test(d) && ref && d < ref && (!o || d < o)) o = d; } return o; };
 function photoLimitWatch(input, oldRef) {
@@ -3693,17 +3699,22 @@ function photoLimitWatch(input, oldRef) {
   // Backlog 1021: Foto laut Kamera älter als Schadenzeitpunkt/heute → Hinweis (nichts vorbelegen); oldRef() liefert { day, k } oder null
   const old = document.createElement('p'); old.className = 'panel warn small'; old.setAttribute('role', 'status'); old.hidden = true; old.dataset.photoold = '';
   blur.insertAdjacentElement('afterend', old);
+  // Backlog 1129: Videos/Tonaufnahmen in der Auswahl – mit Namen, werden nicht gesendet
+  const media = document.createElement('p'); media.className = 'panel warn small'; media.setAttribute('role', 'status'); media.hidden = true; media.dataset.photomedia = '';
+  input.insertAdjacentElement('afterend', media);
   let taken = [];
   const oldUpd = () => { const r = oldRef ? oldRef() : null; const d = r ? photoOldDay(taken, r.day) : null; old.hidden = !d; old.textContent = d ? t(r.k).replace('{d}', fmtD(d)) : ''; };
   input._photoOld = oldUpd;
   let run = 0;
   input.onchange = async () => {
-    const n = (input.files || []).length;
+    const mf = [...(input.files || [])].filter(isMediaFile);
+    media.hidden = !mf.length; media.textContent = mf.length ? t('photos_media_skip').replace('{names}', mf.map((f) => f.name || '?').join(', ')) : '';
+    const n = (input.files || []).length - mf.length;
     note.hidden = n <= PHOTO_MAX;
     note.textContent = n > PHOTO_MAX ? t('photos_over_max').replace('{n}', n).replace('{max}', PHOTO_MAX) : '';
     const my = ++run; dark.hidden = true; dark.textContent = ''; blur.hidden = true; blur.textContent = ''; taken = []; oldUpd();
-    if (oldRef) { const tk = []; for (const f of [...(input.files || [])].slice(0, PHOTO_MAX)) tk.push(await photoTakenAt(f)); if (my !== run || !old.isConnected) return; taken = tk; oldUpd(); }
-    let d = 0, b = 0; for (const f of [...(input.files || [])].slice(0, PHOTO_MAX)) { const q = await photoCheck(f); if (q.dark) d++; else if (q.blurry) b++; }
+    if (oldRef) { const tk = []; for (const f of photoUsable(input)) tk.push(await photoTakenAt(f)); if (my !== run || !old.isConnected) return; taken = tk; oldUpd(); }
+    let d = 0, b = 0; for (const f of photoUsable(input)) { const q = await photoCheck(f); if (q.dark) d++; else if (q.blurry) b++; }
     if (my !== run || !dark.isConnected) return;
     dark.hidden = !d; dark.textContent = d ? tn('photos_dark', d) : '';
     blur.hidden = !b; blur.textContent = b ? tn('photos_blurry', b) : '';
@@ -3751,6 +3762,7 @@ const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'
 function uploadReject(blob, name = '') {
   const tp = String(blob.type || '').toLowerCase();
   if (/heic|heif/.test(tp) || /\.(heic|heif)$/i.test(name) && !UPLOAD_TYPES.includes(tp)) return t('file_heic_hint');
+  if (isMediaFile({ type: tp, name })) return t('file_media_hint'); // Backlog 1129
   if (tp && !UPLOAD_TYPES.includes(tp)) return t('err_type');
   if (blob.size > UPLOAD_MAX_BYTES) return t('err_too_large');
   return '';
@@ -4445,7 +4457,7 @@ async function viewDepartureCheck(preId) {
     // km-Stand wie der Server prüfen (0–5.000.000, ganze Zahl, Tausenderpunkt erlaubt) – sonst scheiterte die Kontrolle offline dauerhaft im Postausgang (20.10.2026)
     if ($('#km').value.trim() && !kmInputOk($('#km').value)) { $('#km').focus(); toast(t('km_invalid'), true); return; }
     const body = { kind: 'abfahrt', vehicle_id: $('#v').value, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null, checklist_version: S.meta.checklist_version || undefined }; // Fassung der Prüfliste (Postausgang über einen App-Wechsel)
-    const files = [...($('#ph').files || [])].slice(0, PHOTO_MAX);
+    const files = photoUsable($('#ph')); // Backlog 1129: ohne Videos/Tonaufnahmen
     const hasDefect = body.items.some((i) => i.result === 'mangel');
     try {
       sb.disabled = true;
