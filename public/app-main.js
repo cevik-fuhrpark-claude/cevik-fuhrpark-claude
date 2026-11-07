@@ -1362,6 +1362,40 @@ async function finesAutoRefresh(minAge) {
 setInterval(() => finesAutoRefresh(HOME_REFRESH_MS), 30000);
 window.addEventListener('focus', () => finesAutoRefresh(60000));
 document.addEventListener('visibilitychange', () => finesAutoRefresh(60000));
+// Backlog 1123 (Blickwinkel „Inhaber hat die Vertragsübersicht den ganzen Tag offen, Fuhrparkleitung trägt Kündigungen/Vertragsenden ein“): Die Liste
+// „Verträge“ (Status „handeln“/„Hinweis“, Kündigungsfristen, Monatsraten-Summe, Zähler je Reiter) blieb auf dem Stand des Öffnens – ein inzwischen
+// beendeter oder neu angelegter Vertrag erschien erst nach Seitenwechsel. Jetzt wie die Bußgeldliste: Standzeile und still neu aufbauen (alle 5 Min.,
+// beim Zurückholen des Fensters nach ≥ 1 Min.; Reiter, Art, Stichtag, „Ende/Kündigung bis“, Standort und Partner stehen in S). Nie bei Fokus im Feld,
+// Eingaben (Sammeländerung, Importquelle/-datei), angezeigten Ergebnissen (Import-Vorschau, Ergebnis der Sammeländerung), Textauswahl, Dialog oder Fehlermeldung.
+const isContractsHash = () => (location.hash || '') === '#/contracts';
+async function contractsAutoRefresh(minAge) {
+  if (!S.me || S.me.role === 'driver' || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isContractsHash() || S.lastHash !== '#/contracts' || !S.ctAt || Date.now() - S.ctAt < minAge) return;
+  const ae = document.activeElement;
+  if (viewDirty() || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err')) return;
+  const imp = document.getElementById('ctimpr'); if ((imp && imp.innerHTML.trim()) || document.querySelector('[data-ctbres]')) return;
+  const sel = window.getSelection && window.getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  S.quietBg = true;
+  try { await viewContracts(); } catch { S.ctAt = Date.now(); } finally { S.quietBg = false; }
+}
+// Backlog 1124 (Blickwinkel „Fuhrparkleitung hat die Versicherungsfälle den ganzen Tag offen, Kollegin trägt Regulierungen ein“): Die Liste
+// „Versicherungsfälle“ (Reiter-Zähler, „Nachfassen fällig“, Erstattungssummen) blieb auf dem Stand des Öffnens. Jetzt ebenso Standzeile und still
+// neu aufbauen (Reiter, Standort, Zeitraum, Versicherer und Suchtext stehen in S). Nie bei Fokus im Feld (auch Suchfeld während der Eingabe),
+// gesetztem Haken „mit Unfallgegner“, Textauswahl, Dialog oder Fehlermeldung.
+const isClaimsHash = () => (location.hash || '') === '#/claims';
+async function claimsAutoRefresh(minAge) {
+  if (!S.me || S.me.role === 'driver' || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isClaimsHash() || S.lastHash !== '#/claims' || !S.clAt || Date.now() - S.clAt < minAge) return;
+  const ae = document.activeElement;
+  if (viewDirty() || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err')) return;
+  const q = document.getElementById('clq'); if (q && q.value.trim() !== (S.clQ || '')) return; // Suchtext noch nicht übernommen (300 ms)
+  const sel = window.getSelection && window.getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  S.quietBg = true;
+  try { await viewClaims(); } catch { S.clAt = Date.now(); } finally { S.quietBg = false; }
+}
+setInterval(() => { contractsAutoRefresh(HOME_REFRESH_MS); claimsAutoRefresh(HOME_REFRESH_MS); }, 30000);
+window.addEventListener('focus', () => { contractsAutoRefresh(60000); claimsAutoRefresh(60000); });
+document.addEventListener('visibilitychange', () => { contractsAutoRefresh(60000); claimsAutoRefresh(60000); });
 // Backlog 1117 (Blickwinkel „Fuhrparkleitung hat einen Vorgang den ganzen Tag offen, die Werkstatt arbeitet daran“): Der geöffnete Vorgang
 // blieb auf dem Stand des Öffnens – „Zur Abschlusskontrolle“, neue Arbeitszeit, Fotos oder eine Rückfrage der Werkstatt erschienen erst nach
 // Neuladen; ein Knopfdruck auf dem alten Stand endete im Versionskonflikt. Jetzt alle 2 Min., beim Zurückholen des Fensters (≥ 1 Min.) und bei
@@ -5653,4 +5687,4 @@ function lazyModule(g, quiet) {
   return LAZY_MODULES[g];
 }
 
-export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, CT_KINDS, DEFECT_RESULTS, FUEL_HINT, GLASS_HINT, HITRUN_HINT, MARTEN_HINT, MORE_MAX, NUMPLATE_HINT, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, ROOFICE_HINT, S, SEND_TIMEOUT_MS, STATES, STOCK_Q_MIN, STORM_HINT, STOW_HINT, STRINGS, THEFT_HINT, TM_PROV, TOW_HINT, TST, VANDAL_HINT, VEH_SORTS, WILD_HINT, WST_ST, afLink, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindLang, bindPwShow, bindTachoCancel, cDesc, caseList, checkLabel, claimChip, clipTxt, comboClearV, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, deviceId, dispoDayBefore, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hashNorm, helpLink, helpNorm, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isFinesHash, isMaintHash, isMgr, isPlanHash, isStockHash, isUnusedUser, isVehHash, isWeekendD, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmUnclearDateDue, langAttr, langLoaded, langSelect, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mayReport, mk, mkR, nDays, nextWorkdayAfter, noSticker, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, partsWaitDays, phoneIn, planVehTag, plate, plateCmp, pnCompact, pnm, posL, prepareUpload, printHead, printStamp, provL, pwField, qrSvg, rc2, rdyOf, rdyTxt, readCsvFile, reasonText, recentRepeat, recurFix, render, resetUserState, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, siteWsHints, sortPref, sortUsers, stTxt, stackTables, stockHit, stockNoteText, stockOpt, stockPick, stockQHtml, supplierLabel, t, tachoHistList, telAbroad, telHref, tfill, tireAge, tireSizeSame, tlHash, tmAge, tmKmRej, tn, toast, todayMark, translateLockReason, translateNextAction, tzNote, uiLoc, uid, unitIn, unitL, usersCsv, vOverdue, vehSig, vehiclesCached, viewLoginCode, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };
+export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, CT_KINDS, DEFECT_RESULTS, FUEL_HINT, GLASS_HINT, HITRUN_HINT, MARTEN_HINT, MORE_MAX, NUMPLATE_HINT, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, ROOFICE_HINT, S, SEND_TIMEOUT_MS, STATES, STOCK_Q_MIN, STORM_HINT, STOW_HINT, STRINGS, THEFT_HINT, TM_PROV, TOW_HINT, TST, VANDAL_HINT, VEH_SORTS, WILD_HINT, WST_ST, afLink, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindLang, bindPwShow, bindTachoCancel, cDesc, caseList, checkLabel, claimChip, clipTxt, comboClearV, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, deviceId, dispoDayBefore, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hashNorm, helpLink, helpNorm, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isClaimsHash, isContractsHash, isFinesHash, isMaintHash, isMgr, isPlanHash, isStockHash, isUnusedUser, isVehHash, isWeekendD, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmUnclearDateDue, langAttr, langLoaded, langSelect, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mayReport, mk, mkR, nDays, nextWorkdayAfter, noSticker, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, partsWaitDays, phoneIn, planVehTag, plate, plateCmp, pnCompact, pnm, posL, prepareUpload, printHead, printStamp, provL, pwField, qrSvg, rc2, rdyOf, rdyTxt, readCsvFile, reasonText, recentRepeat, recurFix, render, resetUserState, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, siteWsHints, sortPref, sortUsers, stTxt, stackTables, stockHit, stockNoteText, stockOpt, stockPick, stockQHtml, supplierLabel, t, tachoHistList, telAbroad, telHref, tfill, tireAge, tireSizeSame, tlHash, tmAge, tmKmRej, tn, toast, todayMark, translateLockReason, translateNextAction, tzNote, uiLoc, uid, unitIn, unitL, usersCsv, vOverdue, vehSig, vehiclesCached, viewLoginCode, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };

@@ -175,8 +175,8 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 @media (pointer: coarse) { .legend a { min-height: 44px; } .legend { gap: 0 16px; } }
 /* Backlog 1121: „Stand HH:MM · Neu laden“ (Startseite, Vorgänge, Fahrzeuge, Werkstattplan, Lager, Prüftermine) – Link 17 px hoch, unter der
    Mindest-Tippfläche 24 px (WCAG 2.5.8; ui-tippflaechen-links war seit Backlog 1112 rot); am Touchgerät 44 px wie .tap */
-:is(#homeasof, #casesasof, #vehasof, #planasof, #stockasof, #maintasof, #finesasof) a { display: inline-flex; align-items: center; min-height: 24px; }
-@media (pointer: coarse) { :is(#homeasof, #casesasof, #vehasof, #planasof, #stockasof, #maintasof, #finesasof) a { min-height: 44px; } }
+:is(#homeasof, #casesasof, #vehasof, #planasof, #stockasof, #maintasof, #finesasof, #contractsasof, #claimsasof) a { display: inline-flex; align-items: center; min-height: 24px; }
+@media (pointer: coarse) { :is(#homeasof, #casesasof, #vehasof, #planasof, #stockasof, #maintasof, #finesasof, #contractsasof, #claimsasof) a { min-height: 44px; } }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
 .stats { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 8px 0 16px; }
 .stats div { font-family: var(--din); }

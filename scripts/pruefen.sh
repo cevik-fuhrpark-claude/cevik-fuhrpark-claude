@@ -139,6 +139,7 @@ UI-Fahrzeugakte meldet Änderungen anderer (Leitung hat Akte eines gesperrten Lk
 UI-Lagerliste aktualisiert sich still (Werkstatt-Tablet zeigt den ganzen Tag die Lagerliste): Standzeile, 5-Min.-Takt, Hintergrund-Abfrage, Suchtext/Filter/Scrollposition bleiben, nie bei Eingaben|ui-lager-aktualisiert.py|/tmp/cfp-lager-aktualisiert.log
 UI-Prüfterminliste aktualisiert sich still (Fuhrparkleitung hat die Prüfterminliste den ganzen Tag offen): Standzeile, 5-Min.-Takt, Hintergrund-Abfrage, Reiter/„Fällig bis“/Scrollposition bleiben, nie bei Eingaben/Ergebnissen|ui-prueftermine-aktualisiert.py|/tmp/cfp-prueftermine-aktualisiert.log
 UI-Bußgeldliste aktualisiert sich still (Büro hat die Bußgeldliste den ganzen Tag offen): Standzeile, 5-Min.-Takt, Hintergrund-Abfrage, Scrollposition bleibt, nie bei Eingaben, nicht für Fahrer|ui-bussgelder-aktualisiert.py|/tmp/cfp-bussgelder-aktualisiert.log
+UI-Verträge und Versicherungsfälle aktualisieren sich still (Inhaber/Fuhrparkleitung hat sie den ganzen Tag offen): Standzeile, 5-Min.-Takt, Hintergrund-Abfrage, Scrollposition bleibt, nie bei Eingaben/Import-Vorschau|ui-vertraege-aktualisiert.py|/tmp/cfp-vertraege-aktualisiert.log
 UI-Gesperrtes Fahrzeug genutzt: Ergebnisseite, Verlauf, Befund|ui-sperre-genutzt.py|/tmp/cfp-sperre-genutzt.log
 UI-Werkstattplan: begonnener Auftrag mit vergangenem Termin unter „in Arbeit“|ui-plan-inarbeit.py|/tmp/cfp-plan-inarbeit.log
 UI-Fahrzeug korrigieren (Meldung am falschen Fahrzeug)|ui-fahrzeug-korrigieren.py|/tmp/cfp-fahrzeug-korrigieren.log

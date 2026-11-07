@@ -1335,6 +1335,40 @@ async function finesAutoRefresh(minAge) {
 setInterval(() => finesAutoRefresh(HOME_REFRESH_MS), 30000);
 window.addEventListener('focus', () => finesAutoRefresh(60000));
 document.addEventListener('visibilitychange', () => finesAutoRefresh(60000));
+// Backlog 1123 (Blickwinkel „Inhaber hat die Vertragsübersicht den ganzen Tag offen, Fuhrparkleitung trägt Kündigungen/Vertragsenden ein“): Die Liste
+// „Verträge“ (Status „handeln“/„Hinweis“, Kündigungsfristen, Monatsraten-Summe, Zähler je Reiter) blieb auf dem Stand des Öffnens – ein inzwischen
+// beendeter oder neu angelegter Vertrag erschien erst nach Seitenwechsel. Jetzt wie die Bußgeldliste: Standzeile und still neu aufbauen (alle 5 Min.,
+// beim Zurückholen des Fensters nach ≥ 1 Min.; Reiter, Art, Stichtag, „Ende/Kündigung bis“, Standort und Partner stehen in S). Nie bei Fokus im Feld,
+// Eingaben (Sammeländerung, Importquelle/-datei), angezeigten Ergebnissen (Import-Vorschau, Ergebnis der Sammeländerung), Textauswahl, Dialog oder Fehlermeldung.
+const isContractsHash = () => (location.hash || '') === '#/contracts';
+async function contractsAutoRefresh(minAge) {
+  if (!S.me || S.me.role === 'driver' || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isContractsHash() || S.lastHash !== '#/contracts' || !S.ctAt || Date.now() - S.ctAt < minAge) return;
+  const ae = document.activeElement;
+  if (viewDirty() || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err')) return;
+  const imp = document.getElementById('ctimpr'); if ((imp && imp.innerHTML.trim()) || document.querySelector('[data-ctbres]')) return;
+  const sel = window.getSelection && window.getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  S.quietBg = true;
+  try { await viewContracts(); } catch { S.ctAt = Date.now(); } finally { S.quietBg = false; }
+}
+// Backlog 1124 (Blickwinkel „Fuhrparkleitung hat die Versicherungsfälle den ganzen Tag offen, Kollegin trägt Regulierungen ein“): Die Liste
+// „Versicherungsfälle“ (Reiter-Zähler, „Nachfassen fällig“, Erstattungssummen) blieb auf dem Stand des Öffnens. Jetzt ebenso Standzeile und still
+// neu aufbauen (Reiter, Standort, Zeitraum, Versicherer und Suchtext stehen in S). Nie bei Fokus im Feld (auch Suchfeld während der Eingabe),
+// gesetztem Haken „mit Unfallgegner“, Textauswahl, Dialog oder Fehlermeldung.
+const isClaimsHash = () => (location.hash || '') === '#/claims';
+async function claimsAutoRefresh(minAge) {
+  if (!S.me || S.me.role === 'driver' || S.offlineStart || S.quietBg || navigator.onLine === false || document.visibilityState !== 'visible') return;
+  if (!isClaimsHash() || S.lastHash !== '#/claims' || !S.clAt || Date.now() - S.clAt < minAge) return;
+  const ae = document.activeElement;
+  if (viewDirty() || (ae && ae.matches && ae.matches('input, select, textarea')) || document.querySelector('dialog[open], .toast.err')) return;
+  const q = document.getElementById('clq'); if (q && q.value.trim() !== (S.clQ || '')) return; // Suchtext noch nicht übernommen (300 ms)
+  const sel = window.getSelection && window.getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  S.quietBg = true;
+  try { await viewClaims(); } catch { S.clAt = Date.now(); } finally { S.quietBg = false; }
+}
+setInterval(() => { contractsAutoRefresh(HOME_REFRESH_MS); claimsAutoRefresh(HOME_REFRESH_MS); }, 30000);
+window.addEventListener('focus', () => { contractsAutoRefresh(60000); claimsAutoRefresh(60000); });
+document.addEventListener('visibilitychange', () => { contractsAutoRefresh(60000); claimsAutoRefresh(60000); });
 // Backlog 1117 (Blickwinkel „Fuhrparkleitung hat einen Vorgang den ganzen Tag offen, die Werkstatt arbeitet daran“): Der geöffnete Vorgang
 // blieb auf dem Stand des Öffnens – „Zur Abschlusskontrolle“, neue Arbeitszeit, Fotos oder eine Rückfrage der Werkstatt erschienen erst nach
 // Neuladen; ein Knopfdruck auf dem alten Stand endete im Versionskonflikt. Jetzt alle 2 Min., beim Zurückholen des Fensters (≥ 1 Min.) und bei
@@ -4010,7 +4044,7 @@ async function viewClaims() {
   const tabs = ['offen', ...(r.followup_days || f === 'nachfassen' ? ['nachfassen'] : []), 'gutachten', 'alle', 'reguliert', ...(r.counts.ohne_erstattung || f === 'ohne_erstattung' ? ['ohne_erstattung'] : []), 'abgelehnt', 'zurueckgezogen'];
   const fName = (x) => (x === 'offen' ? t('claim_f_open') : x === 'gutachten' ? t('ca_pending') : x === 'alle' ? t('filter_all') : x === 'nachfassen' ? t('todo_claims') : x === 'ohne_erstattung' ? t('claim_f_noreimb') : t('cls_' + x));
   const fLabel = fName(f);
-  let html = `<h1>${esc(t('claims'))}</h1>${printHead([`${t('print_filter')}: ${fLabel}`, r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', r.from || r.to ? `${t('claim_period')}: ${r.from ? fmtD(r.from) : '…'} – ${r.to ? fmtD(r.to) : '…'}` : '', r.insurer ? `${t('claim_insurer')}: ${r.insurer}` : '', q ? t('claim_print_search').replace('{q}', q) : '', t('print_count').replace('{n}', r.claims.length)])}${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
+  let html = `<h1>${esc(t('claims'))}</h1><p class="small muted noprint" id="claimsasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/claims" id="clreload" title="${esc(t('claims_asof_hint'))}">${esc(t('update_now'))}</a></p>${printHead([`${t('print_filter')}: ${fLabel}`, r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', r.from || r.to ? `${t('claim_period')}: ${r.from ? fmtD(r.from) : '…'} – ${r.to ? fmtD(r.to) : '…'}` : '', r.insurer ? `${t('claim_insurer')}: ${r.insurer}` : '', q ? t('claim_print_search').replace('{q}', q) : '', t('print_count').replace('{n}', r.claims.length)])}${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
     <div class="actions noprint" style="flex-wrap:wrap">${tabs.map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-clf="${x}">${esc(fName(x))} (${r.counts[x] || 0})</button>`).join('')}</div>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('clsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : ''}
     <div class="actions noprint" style="margin-top:0;align-items:end;flex-wrap:wrap" id="clper"><div><label for="clfrom">${esc(t('claim_from'))}</label><input type="date" id="clfrom" value="${esc(r.from || '')}"></div><div><label for="clto">${esc(t('claim_to'))}</label><input type="date" id="clto" value="${esc(r.to || '')}"></div>${(r.insurer_options || []).length > 1 || r.insurer ? `<div><label for="clins">${esc(t('claim_insurer'))}</label><select id="clins"><option value="">${esc(t('filter_all'))}</option>${[...new Set([...(r.insurer_options || []), ...(r.insurer ? [r.insurer] : [])])].map((x) => `<option value="${esc(x)}"${x === r.insurer ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div>` : ''}</div>
@@ -4020,7 +4054,10 @@ async function viewClaims() {
     <div class="list">${r.claims.length ? r.claims.map((c) => `<a class="row${c.followup_due ? ' p-mittel' : ''}" href="#/cases/${encodeURIComponent(c.case_id)}">${plate(c.plate)}<span class="title">${c.eval_excluded ? `<span class="chip">${esc(t('eval_excluded'))}</span> ` : ''}${esc(c.insurer)}${c.claim_no ? ' · ' + noTr(c.claim_no) : ''}${c.opponent ? ` <span class="chip" title="${esc(t('co_title'))}">${esc(t('co_chip'))}</span>` : ''}${c.police ? ` <span class="chip" title="${esc(t('cp_title'))}">${esc(t('cp_chip'))}</span>` : ''}</span>${claimChip(c.status)}<span class="sub" style="white-space:normal">${c.followup_due ? `<b>${esc(t('todo_claims'))}</b> · ` : ''}${esc(c.case_no)}${c.case_location ? ` · <span data-clloc${langAttr(c.case_location)}>${esc(t('location_shown'))}: ${esc(clipTxt(c.case_location, 60))}</span>` : ''} · ${esc(t('claim_reported'))} ${fmtD(c.reported_on)}${c.days_open !== null ? ` · ${esc(tn('claim_days_open', c.days_open))}` : ''}${c.deductible_net !== null ? ` · ${esc(t('claim_deductible_short'))} ${eur(c.deductible_net)}` : ''}${c.reimbursed_net !== null ? ` · ${esc(t('claim_reimbursed_short'))} ${eur(c.reimbursed_net)}` : ''}${c.case_cost_net !== null ? ` · ${esc(t('claim_case_cost'))} ${eur(c.case_cost_net)}` : c.cost_incomplete ? ` · ${esc(t('claim_case_cost'))} – <span class="chip mittel">${esc(t('incomplete'))}</span>` : ''}${c.balance_net !== null ? ` · <b>${esc(t('claim_balance'))} ${eur(c.balance_net)}</b>` : ''}${c.appraisal_pending ? ` · <span class="chip mittel">${esc(t('ca_pending'))}</span>${c.appraisal_on ? ` ${esc(t('ca_on'))} ${fmtD(c.appraisal_on)}` : ''}` : c.appraisal_net !== null && c.appraisal_net !== undefined ? ` · ${esc(t('ca_net'))} ${eur(c.appraisal_net)}` : ''}</span></a>`).join('') : `<p class="muted">${esc(t('claims_none'))}</p>`}</div>
     ${r.sums && r.sums.total && r.sums.total.n ? `<section class="panel" id="clsums"><h2 style="margin-top:0">${esc(t('claim_sums'))}</h2><div class="scroll"><table class="stack"><thead><tr><th>${esc(t('claim_year'))}</th><th>${esc(t('claim_count'))}</th><th>${esc(t('claim_ded_short'))}</th><th>${esc(t('ca_net_short'))}</th><th>${esc(t('claim_case_cost'))}</th><th>${esc(t('claim_reimbursed_short'))}</th></tr></thead><tbody>${[...r.sums.by_year, { year: t('total'), ...r.sums.total }].map((y) => `<tr><td data-l="${esc(t('claim_year'))}">${esc(y.year)}</td><td data-l="${esc(t('claim_count'))}">${y.n}</td><td data-l="${esc(t('claim_ded_short'))}">${y.deductible_n ? eur(y.deductible_net) : '–'}</td><td data-l="${esc(t('ca_net_short'))}">${y.appraisal_n ? eur(y.appraisal_net) : '–'}</td><td data-l="${esc(t('claim_case_cost'))}">${y.cost_n ? eur(y.case_cost_net) : '–'}${y.cost_incomplete ? ` <span class="small muted">(${esc(tn('claim_cost_incompl', y.cost_incomplete))})</span>` : ''}</td><td data-l="${esc(t('claim_reimbursed_short'))}">${y.reimbursed_n ? eur(y.reimbursed_net) : '–'}</td></tr>`).join('')}</tbody></table></div><p class="small muted">${esc(t('claim_sums_hint'))}</p></section>` : ''}
     <div class="actions noprint" style="flex-wrap:wrap;align-items:center"><button type="button" class="btn secondary" id="clcsv">${esc(t('export_csv'))}</button><label class="check" style="margin:0"><input type="checkbox" id="cl3p"> ${esc(t('claim_third_party'))}</label><button type="button" class="btn secondary" id="clprt">${esc(t('print'))}</button></div>`;
+  if (S.quietBg && !isClaimsHash()) return; // stille Aktualisierung (Backlog 1124): inzwischen andere Seite – nichts überschreiben
   render(html, 'more');
+  S.clAt = Date.now();
+  { const rl = $('#clreload'); if (rl) rl.onclick = async (e) => { e.preventDefault(); try { await viewClaims(); } catch (err) { toast(err.message, true); } }; }
   $$('[data-clf]').forEach((b) => (b.onclick = () => { S.clFilter = b.dataset.clf; viewClaims(); }));
   const clq = $('#clq');
   clq.oninput = () => { clearTimeout(timer); timer = setTimeout(() => { const v = clq.value.trim(); if (v === (S.clQ || '')) return; S.clQ = v; viewClaims().then(() => { const n = $('#clq'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }); }, 300); };
@@ -5724,7 +5761,8 @@ async function viewContracts() {
   // Backlog 1031: Vertrags-Kalender (immer „laufend“, ohne Stichtag) wäre leer – nur sicher erkennbar, wenn die Liste dieselben Verträge zeigt (Reiter laufend/alle, kein Stichtag);
   // Regel wie contractsIcs: nicht beendet und Kündigungstag oder Vertragsende ab heute
   const ctIcsNone = (f === 'aktiv' || f === 'alle') && !asof && !r.contracts.some((c) => !c.ended_on && ((c.status && c.status.notice && c.status.notice.by >= r.today) || (c.end_date && c.end_date >= r.today)));
-  render(`<h1>${esc(t('ct_title'))}</h1>${helpLink('contracts')}<p class="small muted">${esc(t('ct_hint'))}</p>
+  if (S.quietBg && !isContractsHash()) return; // stille Aktualisierung (Backlog 1123): inzwischen andere Seite – nichts überschreiben
+  render(`<h1>${esc(t('ct_title'))}</h1><p class="small muted noprint" id="contractsasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/contracts" id="ctreload" title="${esc(t('contracts_asof_hint'))}">${esc(t('update_now'))}</a></p>${helpLink('contracts')}<p class="small muted">${esc(t('ct_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(t('print_filter'))}: ${esc(t('cf_' + f))}${k ? ' · ' + esc(t('ck_' + k)) : ''}${r.partner ? ' · ' + esc(r.partner) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''}${r.as_of ? ' · ' + esc(t('ct_asof')) + ': ' + fmtD(r.as_of) : ''}${r.ends_by ? ' · ' + esc(t('ct_endsby')) + ': ' + fmtD(r.ends_by) : ''} · ${esc(t('print_count').replace('{n}', r.contracts.length))} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="actions noprint" style="flex-wrap:wrap">${['aktiv', 'aktion', 'beendet', 'alle'].map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-cf="${x}">${esc(t('cf_' + x))} (${r.counts[x]})</button>`).join('')}</div>
     <div class="actions noprint" style="margin-top:0"><select id="ctk" aria-label="${esc(t('ct_kind'))}" style="max-width:260px"><option value="">${esc(t('ct_all_kinds'))}</option>${CT_KINDS.map((x) => `<option value="${x}"${k === x ? ' selected' : ''}>${esc(t('ck_' + x))}</option>`).join('')}</select>
@@ -5740,6 +5778,8 @@ async function viewContracts() {
     ${ctb.html}
     <details class="panel noprint"><summary>${esc(t('ct_import'))}</summary><p class="small muted">${esc(t('ct_import_hint'))}</p>
       <label for="ctsrc">${esc(t('ct_import_src'))}</label><input id="ctsrc" maxlength="300"><input type="file" id="ctimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('ct_import'))}" style="margin-top:8px"><div id="ctimpr"></div></details>`, 'more');
+  S.ctAt = Date.now();
+  { const rl = $('#ctreload'); if (rl) rl.onclick = async (e) => { e.preventDefault(); try { await viewContracts(); } catch (err) { toast(err.message, true); } }; }
   $$('[data-cf]').forEach((b) => (b.onclick = () => { S.ctFilter = b.dataset.cf; viewContracts(); }));
   ctb.bind();
   $('#ctk').onchange = () => { S.ctKind = $('#ctk').value; viewContracts(); };

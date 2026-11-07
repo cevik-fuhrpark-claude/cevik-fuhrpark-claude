@@ -36113,6 +36113,29 @@ await test('Backlog 1122 (Blickwinkel „Büro hat die Bußgeldliste den ganzen 
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-bussgelder-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
+await test('Backlog 1123/1124 (Blickwinkel „Inhaber/Fuhrparkleitung hat Verträge bzw. Versicherungsfälle den ganzen Tag offen“): beide Listen zeigen den Stand und aktualisieren sich still', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const body = (name) => { const a = app.indexOf('async function ' + name + '('); ok(a > 0, name); return app.slice(a, app.indexOf('\n}\n', a)); };
+  const vc = body('viewContracts'); const vl = body('viewClaims');
+  ok(vc.includes('id="contractsasof"') && vc.includes("t('contracts_asof_hint')") && vc.includes("$('#ctreload')"), 'Verträge: Standzeile + „Neu laden“');
+  ok(vl.includes('id="claimsasof"') && vl.includes("t('claims_asof_hint')") && vl.includes("$('#clreload')"), 'Versicherungsfälle: Standzeile + „Neu laden“');
+  ok(vc.includes("if (S.quietBg && !isContractsHash()) return;") && vc.includes('S.ctAt = Date.now();'), 'Verträge: inzwischen andere Seite – nichts überschreiben; Zeitpunkt');
+  ok(vl.includes("if (S.quietBg && !isClaimsHash()) return; // stille Aktualisierung (Backlog 1124): inzwischen andere Seite – nichts überschreiben\n  render(html, 'more');\n  S.clAt = Date.now();"), 'Versicherungsfälle: inzwischen andere Seite – nichts überschreiben; Zeitpunkt');
+  for (const [fnName, view, at, hash] of [['contractsAutoRefresh', 'viewContracts', 'ctAt', '#/contracts'], ['claimsAutoRefresh', 'viewClaims', 'clAt', '#/claims']]) {
+    const fn = body(fnName);
+    ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart') && fn.includes('S.quietBg'), fnName + ': nur sichtbar, online, nicht doppelt');
+    ok(fn.includes(`S.lastHash !== '${hash}'`) && fn.includes('viewDirty()') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open], .toast.err') && fn.includes('sel.isCollapsed'), fnName + ': nie bei Fokus/Eingaben/Textauswahl/Dialog/Fehlermeldung');
+    ok(fn.includes(`try { await ${view}(); } catch { S.${at} = Date.now(); } finally { S.quietBg = false; }`), fnName + ': Fehler – alte Ansicht bleibt');
+    ok(app.includes(`${fnName}(HOME_REFRESH_MS)`) && app.includes(`${fnName}(60000)`), fnName + ': Takt 5 Min. / Fenster nach 1 Min.');
+  }
+  const cf = body('contractsAutoRefresh');
+  ok(cf.includes("getElementById('ctimpr')") && cf.includes('[data-ctbres]'), 'Verträge: Import-Vorschau und Ergebnis der Sammeländerung bleiben stehen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['contracts_asof_hint', 'claims_asof_hint']) ok(STRINGS[l][k] && STRINGS[l][k] !== STRINGS[l].fines_asof_hint, k + ' ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-vertraege-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
