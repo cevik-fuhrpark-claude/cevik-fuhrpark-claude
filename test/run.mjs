@@ -36552,6 +36552,23 @@ await test('Backlog 1156 (Sonde ABS/Anbauteile/Fahrerhaustür, sicherheitsreleva
   for (const x of ['люк не закривається', 'кабіна протікає']) ok(hit(CL, x), 'Wasser im Fahrerhaus: ' + x);
 });
 
+await test('Backlog 1157 (Sonde Kühlaggregat/Ladebordwand/Kabinenkippung/Scheibenwaschanlage): „reefer unit not starting“ → Kühlung; „Ladebordwand lässt sich nicht bedienen“, „не піднімається гідроборт“ → Tür/Ladebordwand; „не відкидається кабіна“ → Kabinenkippung; „не бризкає омивач“ → Sicht, nicht Glasschaden; „скло двері“ nicht Tür; Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [RF, DR, CT, VI, GL] = ['REEFER_HINT', 'DOOR_HINT', 'CABTILT_HINT', 'VISIB_HINT', 'GLASS_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['reefer unit not starting', "fridge unit won't turn on", 'reefer does not start', 'не запускається холодильна установка', 'reefer unit alarm']) ok(hit(RF, x), 'Kühlung: ' + x);
+  for (const x of ['reefer unit not starting, now fixed', 'reefer unit alarm, repaired', 'reefer ok']) ok(!hit(RF, x), 'nicht Kühlung: ' + x);
+  for (const x of ['Ladebordwand lässt sich nicht bedienen', 'LBW lässt sich nicht mehr hochfahren', 'не піднімається гідроборт', 'не опускається гідроборт', 'не поднимается гидроборт', 'гідроборт не працює']) ok(hit(DR, x), 'Ladebordwand: ' + x);
+  for (const x of ['Ladebordwand lässt sich wieder bedienen', 'не піднімається скло двері']) ok(!hit(DR, x), 'nicht Ladebordwand/Tür: ' + x);
+  ok(hit(DR, 'не закриваються двері кабіни'), 'Tür weiterhin: не закриваються двері кабіни');
+  for (const x of ['не відкидається кабіна', 'не поднимается кабина', 'не опускається кабіна', 'кабіна не піднімається']) ok(hit(CT, x), 'Kabinenkippung: ' + x);
+  for (const x of ['не бризкає омивач', 'не бризкає омивач лобового скла', 'омивач не бризкає', 'не брызгает омыватель', 'двірники лобового скла не працюють']) ok(hit(VI, x), 'Sicht: ' + x);
+  for (const x of ['не бризкає омивач лобового скла', 'двірники лобового скла не працюють', 'омыватель лобового стекла не работает']) ok(!hit(GL, x), 'nicht Glasschaden: ' + x);
+  for (const x of ['тріснуло лобове скло', 'лобове скло розбите', 'скол на лобовому склі', 'лобовое стекло треснуло']) ok(hit(GL, x), 'Glasschaden: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
