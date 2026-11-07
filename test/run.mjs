@@ -36421,6 +36421,14 @@ await test('Backlog 1144 (Sonde Unfall/Wild/Vandalismus EN/UK): „someone hit t
   for (const x of ['вантажівку пошкодили хулігани', 'хулігани розбили дзеркало']) ok(hit(VA, x), 'Vandalismus: ' + x);
 });
 
+await test('Backlog 1145 (Sonde blinde Passagiere, Ort/Verb vorne): „im Auflieger Menschen gefunden“, „found people in the trailer“, „heard someone inside the trailer“, „в причепі знайшов людей“, „у кузові сховались люди“, „під причепом хтось ховається“ → Schritte; „в причепі хтось залишив коробку“, „im Auflieger hat jemand die Ladung verschoben“, „found boxes in the trailer“, „у причепі люди зі складу розвантажили“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const ST = new RegExp(app.match(/^const STOW_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['im Auflieger Menschen gefunden', 'im Laderaum versteckte Leute', 'found people in the trailer', 'heard someone inside the trailer', 'в причепі знайшов людей', 'у кузові сховались люди', 'під причепом хтось ховається', 'знайшов людей у причепі', 'Leute im Laderaum']) ok(ST.test(recurFix(x)), 'blinde Passagiere: ' + x);
+  for (const x of ['в причепі хтось залишив коробку', 'im Auflieger hat jemand die Ladung verschoben', 'found boxes in the trailer', 'у причепі люди зі складу розвантажили', 'in der Ladung Personenwagen-Teile']) ok(!ST.test(recurFix(x)), 'kein Hinweis: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
