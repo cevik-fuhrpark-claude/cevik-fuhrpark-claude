@@ -1490,6 +1490,9 @@ async function viewHome() {
   // Backlog 600: Teile der Startseite, die nicht von Zählern/Vorgängen abhängen, gleich mit anfordern (vorher erst danach – Werkstatt
   // bis zu 7 Abfragen nacheinander, Fahrer 3). Fehler bleiben erhalten (early: erst beim await wirksam, vorher keine unbehandelte Ablehnung).
   const mvP = S.me.role === 'driver' ? early(api('GET', '/api/me/vehicles')) : null;
+  // Backlog 1110 (Blickwinkel „Fahrer liest am Handy sein Bußgeld“): eigene Behördenschreiben ohne Quittung auf der Startseite – vorher nur über
+  // Glocke/Push und „Mehr“ erreichbar; ohne Push (kein Gerät) sah der Fahrer es nicht. Gleichzeitig angefordert, Fehler/offline = kein Hinweis.
+  const finP = S.me.role === 'driver' ? early(api('GET', '/api/fines')) : null;
   const boardP = S.me.role === 'workshop' ? early(workshopBoard()) : S.me.role !== 'driver' && isMgr() ? early(fleetTodo()) : null;
   try {
     // Disposition mit Standard-Standort: Standort schon serverseitig filtern – sonst verdrängen neuere Vorgänge anderer Standorte die eigenen aus den 8 (19.10.2026)
@@ -1525,6 +1528,8 @@ async function viewHome() {
     // Backlog 463: offene Rückfragen der Fuhrparkleitung zu eigenen Meldungen zuerst
     const qo = (cases || []).filter((c) => c.q_state === 'open');
     if (qo.length) html += `<section class="panel warn" role="note" id="qhome"><h2 style="margin-top:0">${esc(t('q_drv_title'))}</h2><p class="small">${esc(t('q_drv_hint'))}</p>${caseList(qo)}</section>`;
+    let fo = []; try { fo = cases === null ? [] : ((await finP).fines || []).filter((f) => f.driver_informed_at && !f.driver_ack_at && !['beantwortet', 'bezahlt', 'eingestellt', 'erledigt'].includes(f.status)); } catch { fo = []; }
+    if (fo.length) html += `<section class="panel warn" role="note" id="fhome"><h2 style="margin-top:0">${esc(t('fine_home_title'))}</h2><p class="small">${esc(t('fine_home_hint').replace('{a}', t('ack_fine')).replace('{d}', t('fine_dispute')))}</p><div class="list">${fo.map((f) => `<a class="row" href="#/fines/${esc(f.id)}" data-fhome>${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))} · ${esc(t('of_' + f.offense_type))}</span><span class="sub" style="white-space:normal">${noTr(f.fine_no)} · ${fmtDT(f.offense_at)}${f.response_due ? ` · ${esc(t('response_due'))} ${esc(fmtDue(f.response_due))}` : ''}</span></a>`).join('')}</div></section>`;
     if (cases) html += `<h2>${esc(t('nav_cases'))}</h2>${caseList(cases, t('no_cases_driver'))}`;
   } else {
     // Disposition mit Standard-Standort: Standortzeile vor den Zählern, damit klar ist, wofür die Zahlen gelten

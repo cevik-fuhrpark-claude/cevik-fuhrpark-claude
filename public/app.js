@@ -1504,6 +1504,9 @@ async function viewHome() {
   // Backlog 600: Teile der Startseite, die nicht von Zählern/Vorgängen abhängen, gleich mit anfordern (vorher erst danach – Werkstatt
   // bis zu 7 Abfragen nacheinander, Fahrer 3). Fehler bleiben erhalten (early: erst beim await wirksam, vorher keine unbehandelte Ablehnung).
   const mvP = S.me.role === 'driver' ? early(api('GET', '/api/me/vehicles')) : null;
+  // Backlog 1110 (Blickwinkel „Fahrer liest am Handy sein Bußgeld“): eigene Behördenschreiben ohne Quittung auf der Startseite – vorher nur über
+  // Glocke/Push und „Mehr“ erreichbar; ohne Push (kein Gerät) sah der Fahrer es nicht. Gleichzeitig angefordert, Fehler/offline = kein Hinweis.
+  const finP = S.me.role === 'driver' ? early(api('GET', '/api/fines')) : null;
   const boardP = S.me.role === 'workshop' ? early(workshopBoard()) : S.me.role !== 'driver' && isMgr() ? early(fleetTodo()) : null;
   try {
     // Disposition mit Standard-Standort: Standort schon serverseitig filtern – sonst verdrängen neuere Vorgänge anderer Standorte die eigenen aus den 8 (19.10.2026)
@@ -1539,6 +1542,8 @@ async function viewHome() {
     // Backlog 463: offene Rückfragen der Fuhrparkleitung zu eigenen Meldungen zuerst
     const qo = (cases || []).filter((c) => c.q_state === 'open');
     if (qo.length) html += `<section class="panel warn" role="note" id="qhome"><h2 style="margin-top:0">${esc(t('q_drv_title'))}</h2><p class="small">${esc(t('q_drv_hint'))}</p>${caseList(qo)}</section>`;
+    let fo = []; try { fo = cases === null ? [] : ((await finP).fines || []).filter((f) => f.driver_informed_at && !f.driver_ack_at && !['beantwortet', 'bezahlt', 'eingestellt', 'erledigt'].includes(f.status)); } catch { fo = []; }
+    if (fo.length) html += `<section class="panel warn" role="note" id="fhome"><h2 style="margin-top:0">${esc(t('fine_home_title'))}</h2><p class="small">${esc(t('fine_home_hint').replace('{a}', t('ack_fine')).replace('{d}', t('fine_dispute')))}</p><div class="list">${fo.map((f) => `<a class="row" href="#/fines/${esc(f.id)}" data-fhome>${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))} · ${esc(t('of_' + f.offense_type))}</span><span class="sub" style="white-space:normal">${noTr(f.fine_no)} · ${fmtDT(f.offense_at)}${f.response_due ? ` · ${esc(t('response_due'))} ${esc(fmtDue(f.response_due))}` : ''}</span></a>`).join('')}</div></section>`;
     if (cases) html += `<h2>${esc(t('nav_cases'))}</h2>${caseList(cases, t('no_cases_driver'))}`;
   } else {
     // Disposition mit Standard-Standort: Standortzeile vor den Zählern, damit klar ist, wofür die Zahlen gelten
@@ -6452,7 +6457,8 @@ async function viewFine(id) {
       <dt>${esc(t('authority'))}</dt><dd>${esc(f.authority)}</dd><dt>${esc(t('reference'))}</dt><dd translate="no">${esc(f.reference || '–')}</dd><dt>${esc(t('amount'))}</dt><dd>${eur(f.amount_eur)}</dd><dt>${esc(t('fine_ban'))}</dt><dd>${f.driving_ban_months ? esc(tn('ban_months', f.driving_ban_months)) : esc(t('fine_ban_none'))}</dd>
       <dt>${esc(t('response_due'))}</dt><dd>${f.response_due ? esc(fmtDue(f.response_due)) : '–' + (['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status) ? ` <span class="chip" data-fnodue title="${esc(t('fine_no_due_hint'))}">${esc(t('fine_no_due'))}</span><div class="small muted">${esc(t('fine_no_due_hint'))}</div>` : '')}${dueOffHint(f.response_due) ? `<div class="small muted">${esc(dueOffHint(f.response_due))}</div>` : ''}</dd><dt>${esc(t('role_driver'))}</dt><dd>${f.driver_hidden ? esc(t('fine_driver_hidden')) : esc(d.driver_name || '–')}${f.driver_basis ? ' · ' + esc(t('fb_' + f.driver_basis)) : ''}${f.driver_evidence ? `<div class="small muted">${esc(fineEvTr(f.driver_evidence))}</div>` : ''}${d.driver_unreachable ? `<div class="panel alert small" data-funreach role="note" style="margin-top:6px">${esc(t('fine_driver_unreachable'))}</div>` : ''}${fineInfLine(d, f)}</dd></dl>
       ${f.note ? `<p style="white-space:pre-wrap;margin-top:8px">${esc(f.note)}</p>` : ''}</section>`;
-  html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((x) => `<a href="${fileUrl(x.id)}" target="_blank" rel="noopener">${x.content_type.startsWith('image/') ? `<img src="${fileUrl(x.id)}" alt="${esc(x.filename)}">` : 'PDF<br>' + esc(x.filename.slice(0, 14))}</a>`).join('')}</div>`;
+  // Backlog 1110: Überschrift „Fotos & Dokumente“ nur mit Dateien oder Hochladen (Fahrer sah eine leere Überschrift)
+  if (d.files.length || A.includes('upload')) html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((x) => `<a href="${fileUrl(x.id)}" target="_blank" rel="noopener">${x.content_type.startsWith('image/') ? `<img src="${fileUrl(x.id)}" alt="${esc(x.filename)}">` : 'PDF<br>' + esc(x.filename.slice(0, 14))}</a>`).join('')}</div>`;
   // Höchstzahl je Bußgeldvorgang wie Server (MAX_FINE_FILES): voll → Hinweis statt Knopf
   if (A.includes('upload') && d.files.length < FINE_FILES_MAX) html += `<label class="btn secondary noprint" style="margin-top:8px;display:inline-flex">${esc(t('upload'))}<input id="ff" type="file" accept="application/pdf,image/jpeg,image/png" hidden></label>`;
   else if (A.includes('upload')) html += `<p class="small muted" id="ffull">${esc(t('files_full').replace('{max}', FINE_FILES_MAX))}</p>`;

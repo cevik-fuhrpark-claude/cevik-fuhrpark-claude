@@ -35893,6 +35893,32 @@ await test('Backlog 1109 (Blickwinkel „Fuhrparkleitung druckt Bußgelder und F
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-bussgeld-fahrerakte-druck-tablet.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
+await test('Backlog 1110 (Blickwinkel „Fahrer liest am Handy sein Bußgeld“): Startseite des Fahrers zeigt eigene Behördenschreiben ohne Quittung, nach „Zur Kenntnis genommen“ nicht mehr; leere Überschrift „Fotos & Dokumente“ entfällt', async () => {
+  const fs = await import('node:fs');
+  const r = await users.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Bußgeldstelle Test 1110', reference: 'Az 1110', offense_type: 'geschwindigkeit', offense_at: '2026-10-02T09:30', plate_in_letter: 'XX 1110', response_due: '2026-12-01', request_key: crypto.randomUUID() });
+  eq(r.status, 201, 'Bußgeld angelegt'); const id = r.data.id;
+  // aktiver Fahrer der Testumgebung (frühere Tests deaktivieren/verschieben einzelne Testkonten)
+  let drv = null; for (const u of [users.driver, users.driver2]) { const x = await env.DB.prepare('SELECT active, role, environment FROM users WHERE id=?').bind(u.id).first(); if (x && x.active && x.role === 'driver' && x.environment === 'test') { drv = u; break; } }
+  ok(drv, 'aktiver Testfahrer vorhanden');
+  eq((await users.fleet.post(`/api/fines/${id}/commands`, { action: 'confirm_driver', payload: { driver_id: drv.id, basis: 'manuell', evidence: 'Tourenplan Test 1110' } })).status, 200, 'Fahrer ermittelt');
+  ok(!(await drv.get('/api/fines')).data.fines.some((x) => x.id === id), 'vor der Information nicht in der Fahrerliste');
+  eq((await users.fleet.post(`/api/fines/${id}/commands`, { action: 'inform_driver' })).status, 200, 'Fahrer informiert');
+  let f = (await drv.get('/api/fines')).data.fines.find((x) => x.id === id);
+  ok(f && f.driver_informed_at && !f.driver_ack_at && f.status === 'fahrer_informiert' && f.response_due === '2026-12-01' && f.fine_no, 'Liste des Fahrers liefert Information, offene Quittung, Frist und Nummer');
+  ok(!('note' in f) && !('driver_evidence' in f), 'ohne interne Notiz/Nachweis');
+  eq((await drv.post(`/api/fines/${id}/commands`, { action: 'driver_ack' })).status, 200, 'quittiert');
+  f = (await drv.get('/api/fines')).data.fines.find((x) => x.id === id); ok(f && f.driver_ack_at, 'nach der Quittung mit Zeitpunkt (Startseite blendet aus)');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('async function viewHome('); const home = app.slice(a, app.indexOf('\n}\n', a));
+  ok(home.includes("const finP = S.me.role === 'driver' ? early(api('GET', '/api/fines')) : null;") && home.indexOf('const finP') < home.indexOf('await Promise.all'), 'Schreiben gleichzeitig mit der Startseite angefordert');
+  ok(home.includes("f.driver_informed_at && !f.driver_ack_at && !['beantwortet', 'bezahlt', 'eingestellt', 'erledigt'].includes(f.status)") && home.includes('id="fhome"'), 'Hinweis nur für offene, nicht quittierte Schreiben');
+  ok(/try \{ fo = cases === null \? \[\] : \(\(await finP\)/.test(home) && home.includes('catch { fo = []; }'), 'offline/Fehler: kein Hinweis, Startseite bleibt nutzbar');
+  ok(app.includes("if (d.files.length || A.includes('upload')) html += `<h2>${esc(t('files'))}</h2>"), 'Dateien-Überschrift nur mit Dateien oder Hochladen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].fine_home_title && STRINGS[l].fine_home_hint.includes('{a}') && STRINGS[l].fine_home_hint.includes('{d}'), 'Texte ' + l);
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-bussgeld-fahrer-handy.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
