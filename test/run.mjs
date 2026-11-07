@@ -36429,6 +36429,14 @@ await test('Backlog 1145 (Sonde blinde Passagiere, Ort/Verb vorne): „im Auflie
   for (const x of ['в причепі хтось залишив коробку', 'im Auflieger hat jemand die Ladung verschoben', 'found boxes in the trailer', 'у причепі люди зі складу розвантажили', 'in der Ladung Personenwagen-Teile']) ok(!ST.test(recurFix(x)), 'kein Hinweis: ' + x);
 });
 
+await test('Backlog 1146 (Sonde Auspuff UK): „вихлопна труба відпала/висить“, „выхлопная труба висит“, „відпала вихлопна труба“ → loses Teil wie „Auspuff abgefallen“, „exhaust fell off“, „глушник відпав“; „вихлопна труба димить“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const LO = new RegExp(app.match(/^const LOOSE_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['вихлопна труба відпала', 'вихлопна труба висить', 'выхлопная труба висит', 'відпала вихлопна труба', 'Auspuff abgefallen', 'exhaust fell off', 'глушник відпав']) ok(LO.test(recurFix(x)), 'loses Teil: ' + x);
+  ok(!LO.test(recurFix('вихлопна труба димить')), 'Rauch ist kein loses Teil');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
