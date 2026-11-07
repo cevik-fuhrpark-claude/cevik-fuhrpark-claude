@@ -35881,6 +35881,18 @@ await test('Backlog 1108 (Blickwinkel „Inhaber druckt Mängelstatistik, Kennza
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-berichte-druck-tablet.py|'), 'UI-Prüfung steht in pruefen.sh');
 });
 
+await test('Backlog 1109 (Blickwinkel „Fuhrparkleitung druckt Bußgelder und Fahrerakte am Tablet“): Bußgeldliste nennt das Aktenzeichen der Behörde', async () => {
+  const fs = await import('node:fs');
+  const ref = 'Az 1109/' + Date.now().toString(36);
+  const r = await users.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Bußgeldstelle Test 1109', reference: ref, offense_type: 'parken', offense_at: '2026-10-01T10:00', plate_in_letter: 'XX 1109', request_key: crypto.randomUUID() });
+  eq(r.status, 201, 'Bußgeld angelegt');
+  const list = (await users.fleet.get('/api/fines')).data.fines;
+  const f = list.find((x) => x.id === r.data.id); ok(f && typeof f.reference === 'string' && f.reference.includes('1109/'), 'Liste liefert das Aktenzeichen');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("${f.reference ? ` · <span data-fref>${esc(t('reference'))} ${noTr(f.reference)}</span>` : ''}"), 'Listenzeile zeigt Aktenzeichen (nicht übersetzt)');
+  ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-bussgeld-fahrerakte-druck-tablet.py|'), 'UI-Prüfung steht in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

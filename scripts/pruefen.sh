@@ -126,6 +126,7 @@ UI-Werkstatt-Tablet mit Bildschirmtastatur (quer/hochkant): Felder und Speichern
 UI-Kosten je Fahrzeug im Druck (A4): kein Überstand, Zeitraum im Kopf, alle Fahrzeugzeilen|ui-kostenbericht-druck.py|/tmp/cfp-kostenbericht-druck.log
 UI-Mängelstatistik/Kennzahlen/Werkstattauslastung im Druck am Tablet: kein Überstand, Datumszeitraum im Kopf|ui-berichte-druck-tablet.py|/tmp/cfp-berichte-druck-tablet.log
 UI-Verträge/Versicherungsfälle im Druck am Tablet: kein Überstand bei langen Namen/Nummern, Filter im Kopf|ui-vertraege-schaeden-druck-tablet.py|/tmp/cfp-vertraege-schaeden-druck-tablet.log
+UI-Bußgelder/Fahrerakte im Druck am Tablet: kein Überstand bei langen Behörden-/Fahrernamen, Aktenzeichen in der Liste|ui-bussgeld-fahrerakte-druck-tablet.py|/tmp/cfp-bussgeld-fahrerakte-druck-tablet.log
 UI-Gesperrtes Fahrzeug genutzt: Ergebnisseite, Verlauf, Befund|ui-sperre-genutzt.py|/tmp/cfp-sperre-genutzt.log
 UI-Werkstattplan: begonnener Auftrag mit vergangenem Termin unter „in Arbeit“|ui-plan-inarbeit.py|/tmp/cfp-plan-inarbeit.log
 UI-Fahrzeug korrigieren (Meldung am falschen Fahrzeug)|ui-fahrzeug-korrigieren.py|/tmp/cfp-fahrzeug-korrigieren.log
