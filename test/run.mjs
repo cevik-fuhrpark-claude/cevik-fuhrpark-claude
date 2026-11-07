@@ -36387,6 +36387,19 @@ await test('Backlog 1141 (Sonde Ladung/Plane/Aufbau EN/UK): „Planenschnalle/Sp
   ok(!hit(CL, 'trailer door lock broken'), 'Aufliegertür nicht Fahrerhaus-Schloss'); ok(hit(CL, 'driver door lock broken'), 'Fahrertür-Schloss bleibt');
 });
 
+await test('Backlog 1142 (Sonde Aufbau/Kupplung/Kühlung EN/UK): „Temperatur im Kühlauflieger zu hoch“, „temperature too high in the trailer/reefer“ → Kühlung; „сідло/седло не відкривається/открывается“ → Kupplung; „протікає/тече дах кабіни“ → Fahrerhaus undicht; „temperature too high in the cab“, „Temperatur im Fahrerhaus zu hoch“ nicht Kühlung', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [RE, CO, CA] = ['REEFER_HINT', 'COUPLING_HINT', 'CABLEAK_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['Temperatur im Kühlauflieger zu hoch', 'Temperatur im Auflieger zu hoch', 'temperature too high in the trailer', 'temperature too high in the reefer', 'reefer temperature alarm']) ok(hit(RE, x), 'Kühlung: ' + x);
+  for (const x of ['temperature too high in the cab', 'Temperatur im Fahrerhaus zu hoch']) ok(!hit(RE, x), 'nicht Kühlung: ' + x);
+  for (const x of ['сідло не відкривається', 'седло не открывается', 'сідло не закривається', 'fifth wheel won\'t open']) ok(hit(CO, x), 'Kupplung: ' + x);
+  for (const x of ['протікає дах кабіни', 'тече дах кабіни', 'дах кабіни протікає']) ok(hit(CA, x), 'Fahrerhaus undicht: ' + x);
+  for (const x of ['дах кабіни полагодили', 'протікає дах причепа']) ok(!hit(CA, x), 'nicht Fahrerhaus undicht: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
