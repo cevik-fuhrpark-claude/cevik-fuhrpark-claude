@@ -3174,7 +3174,8 @@ const FUEL_HINT = /falsch\s+(?:\S+\s+){0,2}?(?:getankt|betankt)|falsche[nmrs]?\s
 // + russ. „карта водителя“ (Backlog 230)
 // Backlog 569: dieselbe Erkennung blendet im Vorgang für die Leitung den Hinweis „Gerät → Werkstatt, Karte → Ersatzkarte in der Fahrerakte“ ein (Link zur Akte des Melders)
 // Backlog 568 (Blickwinkel „Fahrerkarte defekt/verloren“): + „водійська картка“, „тахокарта“, „карта водія“, „Fahrer-Karte“, „driver’s card“ (nicht „Tankkarte“)
-const TACHO_HINT = /fahrtenschreiber|fahrtschreiber|tachogra(?:ph|f)|kontrollger(?:ä|ae|a)t|fahrer-?karte|driver(?:['’]?s)? ?card|tacho(?!meter)|тахограф|тахокарт|(?<![а-яіїєґё])тахо(?![а-яіїєґё])|водійськ\S*\s+картк|картк\S*\s+водія|карт[аиуі]\s+водія|карт\S* водител/i;
+// Backlog 1190: Geschwindigkeitssensor/Impulsgeber/KITAS, „speed sensor“, „датчик скорости/швидкості“ speisen den Fahrtenschreiber (wie TACHO_WORK) – nicht Rad-/ABS-Sensor
+const TACHO_HINT = /fahrtenschreiber|fahrtschreiber|tachogra(?:ph|f)|kontrollger(?:ä|ae|a)t|fahrer-?karte|driver(?:['’]?s)? ?card|tacho(?!meter)|тахограф|тахокарт|(?<![а-яіїєґё])тахо(?![а-яіїєґё])|водійськ\S*\s+картк|картк\S*\s+водія|карт[аиуі]\s+водія|карт\S* водител|(?<![a-zäöüß])(?:geschwindigkeits(?:sensor|geber)|impulsgeber|kitas)(?![a-zäöüß])|(?<![a-z-])(?<!(?:wheel|abs)\s)(?:vehicle\s+)?speed\s+sensor|(?<![а-яіїєґё])датчик\S*\s+(?:швидкост|скорост)(?![а-яіїєґё]*\s+(?:колес|коліс|обертан|вращен))/i;
 // Backlog 285: „N Tage später gemeldet“ (Berliner Kalendertage zwischen Schadentag und Meldung) und Fahrer laut Zuordnung/Kontrolle (nur Leitung)
 // Backlog 306: Passen mehrere Hinweise zur Beschreibung (z. B. „Unfall, Reifen geplatzt, Öl läuft aus“), stand bisher eine lange Kette
 // gleichrangiger Kästen über der Dringlichkeit. Jetzt: Reihenfolge nach Gefahr für Leib und Leben/Verkehr, der wichtigste Hinweis offen,
