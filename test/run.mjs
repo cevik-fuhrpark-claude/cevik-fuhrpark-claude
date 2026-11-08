@@ -36762,6 +36762,17 @@ await test('Backlog 1173 (Sonde Hupe/Standheizung, Backlog 195): „не сиг�
   for (const x of ['не заводится', 'машина не заводиться']) ok(NS.test(recurFix(x)), 'Startprobleme: ' + x);
 });
 
+await test('Backlog 1174 (Sonde Tachograph/Kupplung/Getriebe, Backlog 195): „тахо не читає карту“ → Tachograph (nicht „тахометр“); „сцепление не выжимается“, „педаль сцепления не возвращается“, „коробка скрипить“, „Getriebe/Kupplung quietscht“ → Getriebe/Kupplung; Reparaturvermerk löst nicht aus (Satzlogik der App fängt „…, заменили цилиндр“, „…, Lager getauscht“ zusätzlich ab – Sonde geprüft)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const TA = rx('TACHO_HINT'), GE = rx('GEAR_HINT');
+  for (const x of ['тахо не читає карту', 'тахо не читает карту', 'тахо показує помилку', 'тахограф не читає картку']) ok(TA.test(recurFix(x)), 'Tachograph: ' + x);
+  for (const x of ['тахометр не працює', 'стрелка тахометра не двигается']) ok(!TA.test(recurFix(x)), 'kein Tachograph: ' + x);
+  for (const x of ['сцепление не выжимается', 'зчеплення не вичавлюється', 'зчеплення не вижимається', 'педаль сцепления не возвращается', 'педаль зчеплення не повертається', 'коробка передач скрипить', 'коробка скрипит', 'Getriebe quietscht', 'Kupplung quietscht', 'Kupplung rutscht']) ok(GE.test(recurFix(x)), 'Getriebe/Kupplung: ' + x);
+  for (const x of ['коробка скрипить, замінили масло', 'Getriebe quietscht nicht mehr', 'Tür quietscht', 'скрипить сидіння']) ok(!GE.test(recurFix(x)), 'kein Getriebe: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
