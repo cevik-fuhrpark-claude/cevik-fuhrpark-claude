@@ -37093,6 +37093,17 @@ await test('Backlog 1196 (Sonde Rangieren/Rampe/Frost, Backlog 195): „Rampe to
   for (const R of [CD, UR, DO]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1197 (Sonde Heizung/Winterausrüstung, Backlog 195): „keine Heizung im Fahrerhaus“, „Heizung ist tot“, „no heat in the cab“, „нет отопления“, „печка сдохла“ → Hinweis Sicht (Heizung/Gebläse)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + '_HINT = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const VI = rx('VISIB');
+  for (const x of ['keine Heizung im Fahrerhaus', 'Heizung ist tot', 'no heat in the cab', 'no heating in the cab', 'there is no heating', 'нет отопления в кабине', 'в кабине холодно, печка сдохла', 'Heizung heizt nicht', 'печка не греет', 'пічка не гріє']) ok(VI.test(recurFix(x)), 'Sicht/Heizung: ' + x);
+  for (const x of ['keine Heizung nötig', 'keine Heizungsprobleme', 'no heating issues', 'no heat damage', 'нет проблем с печкой', 'no heating in the cab, fixed now', 'Totwinkelspiegel kaputt', 'Heizung wieder repariert']) ok(!VI.test(recurFix(x)), 'keine Sicht/Heizung: ' + x);
+  ok(/fastHint\(VISIB_HINT\)/.test(app), 'VISIB_HINT (> 8000 Zeichen) über fastHint');
+  ok(!VI.source.includes('||') && !VI.source.includes('(?:|') && !VI.source.includes('|)'), 'leere Alternative');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
