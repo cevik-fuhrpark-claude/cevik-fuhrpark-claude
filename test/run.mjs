@@ -36930,6 +36930,20 @@ await test('Backlog 1186 (Sonde Heizung/Klima/Sitz UK/RU-Umgangssprache, Backlog
   for (const n of ['CLIMATE_HINT', 'VISIB_HINT', 'SEAT_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
 });
 
+await test('Backlog 1187 (Sonde Sitz/Kühlaggregat/Kipper, Backlog 195): „Sitz sackt durch“, „Sitz ist durchgesessen“, „Fahrersitz federt nicht“, „driver seat sinks“, „air seat leaking“, „сиденье проседает“, „сидіння просідає“ → Sitz; „рефка не морозит“ → Kühlaggregat; Reparaturvermerk, „Kabine federt nicht“, „пол проседает“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const noFixed = new Function(app.slice(app.indexOf('const FIXED_NOTE'), app.indexOf("}).join('');", app.indexOf('const noFixed')) + 12) + '; return noFixed;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const SE = rx('SEAT_HINT'), RF = rx('REEFER_HINT');
+  const f = (x) => noFixed(recurFix(x));
+  for (const x of ['Sitz sackt durch', 'Fahrersitz sackt durch', 'Sitz ist durchgesessen', 'Fahrersitz federt nicht', 'Sitz federt nicht mehr', 'driver seat sinks', 'seat sags', 'air seat leaking', 'сиденье проседает', 'сидіння просідає', 'Sitz sackt ab']) ok(SE.test(f(x)), 'Sitz: ' + x);
+  for (const x of ['Sitz sackt durch, repariert', 'Fahrersitz federt nicht, getauscht', 'air seat leaks, replaced', 'seat sinks, fixed', 'сиденье проседает, отремонтировали', 'Kabine federt nicht', 'пол проседает в кузове', 'the truck sinks into mud']) ok(!SE.test(f(x)), 'kein Sitz: ' + x);
+  for (const x of ['рефка не морозит', 'рефка не работает', 'рефка сломалась', 'реф не морозит', 'холодильник не морозит']) ok(RF.test(f(x)), 'Kühlaggregat: ' + x);
+  for (const x of ['рефка не морозит, отремонтировали']) ok(!RF.test(f(x)), 'kein Kühlaggregat: ' + x);
+  for (const n of ['SEAT_HINT', 'REEFER_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
