@@ -36872,6 +36872,23 @@ await test('Backlog 1182 (Sonde Batterie/AdBlue/Blinker, Backlog 195): „аку
   for (const n of ['NOSTART_HINT', 'ENGINE_HINT', 'LIGHTS_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
 });
 
+await test('Backlog 1183 (Sonde Reparaturvermerke/Wischer, Backlog 195): RU „исправили“, UK „виправили“ gelten als Reparaturvermerk (nicht verneint/geplant, nicht „исправно“); „AdBlue Fehler behoben“ ohne Motor-Hinweis; „Scheibenwischer abgerissen“, „двірник порвався/відірвався“, „дворник порвался/плохо чистит“ → Sicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const noFixed = new Function(app.slice(app.indexOf('const FIXED_NOTE'), app.indexOf('const noFixed')) + app.slice(app.indexOf('const noFixed'), app.indexOf('\n', app.indexOf('const noFixed'))) + '; return noFixed;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const EN = rx('ENGINE_HINT'), LI = rx('LIGHTS_HINT'), VI = rx('VISIB_HINT');
+  eq(recurFix('ошибку исправили'), 'ошибку отремонтировали', 'RU исправили'); eq(recurFix('помилку виправили'), 'помилку відремонтували', 'UK виправили');
+  for (const x of ['работает исправно', 'тахограф неисправен', 'надо исправить', 'треба виправити']) eq(recurFix(x), x, 'unverändert: ' + x);
+  for (const x of ['AdBlue Fehler', 'AdBlue Warnung', 'адблю ошибку не исправили', 'адблю ошибка, надо исправить', 'мочевина ошибка, исправили, но опять горит']) ok(EN.test(recurFix(x)), 'Motor/AdBlue: ' + x);
+  for (const x of ['AdBlue Fehler behoben', 'AdBlue Warnung, wurde behoben', 'адблю ошибку исправили', 'ошибку мочевины исправили', 'адблю помилку виправили']) ok(!EN.test(recurFix(x)), 'kein Motor (Reparaturvermerk): ' + x);
+  ok(LI.test(noFixed(recurFix('фара не светит'))) && !LI.test(noFixed(recurFix('фара не светит, исправили'))) && !LI.test(noFixed(recurFix('фара не світить, виправили'))), 'Beleuchtung mit исправили/виправили');
+  const v = (x) => VI.test(noFixed(recurFix(x)));
+  for (const x of ['Scheibenwischer abgerissen', 'Wischerarm verbogen', 'двірник порвався', 'двірник відірвався', 'двірник погнувся', 'дворник порвался', 'дворник оторвался', 'дворник плохо чистит', 'двірник погано чистить', 'дворник не чистит стекло', 'двірник не прилягає', 'Wischerblatt gerissen']) ok(v(x), 'Sicht: ' + x);
+  for (const x of ['Scheibenwischer abgerissen, erneuert', 'двірник порвався, замінили', 'дворник порвался, поменяли', 'дворник оторвался, исправили', 'двірник у дворі прибирає', 'дворник подметает двор', 'дворник чистит снег у ворот']) ok(!v(x), 'keine Sicht: ' + x);
+  for (const n of ['ENGINE_HINT', 'VISIB_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
