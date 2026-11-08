@@ -1,8 +1,28 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, announceHits, api, caseList, ctChip, esc, fmtD, fmtNum, helpLoaded, helpMatches, helpNorm, helpSections, isMgr, loadHelp, noTr, noneP, plate, render, searchKey, stockHit, t, tn, unitL, vinOf, wsName } from './app-main.js';
+import { $, $$, FORM_DRAFT_MS, ICON, S, SEND_TIMEOUT_MS, announceHits, api, bindLang, caseList, clearOfflineData, ctChip, esc, flushOutbox, fmtD, fmtNum, helpLoaded, helpMatches, helpNorm, helpSections, isMgr, langSelect, loadHelp, loadSessions, loadTotp, markSession, mayCheck, noTr, noneP, otherEnvOutbox, outboxGet, plate, pushOffForLogout, render, resetUserState, searchKey, siteKeyUi, stockHit, t, tn, toast, unitL, vinOf, wsName } from './app-main.js';
 
 // Kennzeichen mit Länderkennung aus ausländischen Schreiben („D SZ-YC 5501“, „SZYC5501 (D)“) – gleiche Regel wie plateNoCountry im Server (Backlog 902)
 const plateNoCountry = (p) => { const x = String(p || '').trim(); const y = x.replace(/^\(?(?:D|DE|DEU)\)?[\s\-–:/.]+(?=\S)/i, '').replace(/(\S)[\s\-–/,]+\(?(?:D|DE|DEU)\)?$/i, '$1').replace(/(\S)\((?:D|DE|DEU)\)$/i, '$1').trim(); return y !== x && searchKey(y).length >= 4 ? y : null; };
+// Abmelden mit unversendeten Meldungen: vorher senden versuchen, sonst ausdrücklich bestätigen (sie bleiben auf dem Gerät für diese Person – 18.10.2026)
+async function logoutOutboxOk() {
+  if (outboxGet().some((x) => !x.failed) && navigator.onLine !== false) await flushOutbox().catch(() => {});
+  const pend = outboxGet().filter((x) => !x.failed).length;
+  if (pend && !confirm(tn('logout_outbox_confirm', pend))) return false;
+  // Backlog 532: abgelehnte Meldungen (auch aus der anderen Umgebung) liegen nur auf diesem Gerät – vor dem Abmelden ausdrücklich nachfragen
+  const bad = outboxGet().filter((x) => x.failed).length + otherEnvOutbox().length;
+  if (bad && !confirm(tn('logout_failed_confirm', bad))) return false;
+  // Backlog 479: ungesicherte Formularentwürfe (Arbeitszeit/Teil nach Netzabbruch, Meldung, Kontrolle) und Inventurzählungen dieser Person
+  // werden beim Abmelden gelöscht (gewollt: geteiltes Gerät) – vorher ohne Rückfrage
+  const dr = logoutDraftCount();
+  return !dr || confirm(tn('logout_drafts_confirm', dr));
+}
+function logoutDraftCount() {
+  if (!S.me) return 0;
+  const mid = `_${S.me.id}_`; let n = 0;
+  try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('cfp_fd_') && k.includes(mid)) { const x = JSON.parse(sessionStorage.getItem(k) || 'null'); if (x && x.v && Object.keys(x.v).length && Date.now() - Date.parse(x.at) < FORM_DRAFT_MS) n++; } } catch {}
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith(`cfp_inv_${S.me.id}_`)) { const x = JSON.parse(localStorage.getItem(k) || 'null'); if (x && x.counts && Date.now() - Date.parse(x.at) < 14 * 86400000) n++; } } catch {}
+  return n;
+}
 async function viewSearch() {
   if (S.me.role === 'driver') { location.hash = '#/'; return; }
   render(`<h1>${esc(t('search_title'))}</h1><input id="gq" type="search" autocomplete="off" aria-label="${esc(t('search_title'))}" placeholder="${esc(t('search_ph'))}" value="${esc(S.lastSearch || '')}"><div id="gr"></div>`, '');
@@ -106,5 +126,72 @@ function helpWire(parts, want) {
   if (want && parts.includes(want)) go(want);
   return run;
 }
+async function viewMore(open) { // Backlog 1196: liegt im nachgeladenen Modul app-suche.js (Reserve Start-Modul)
+  render(`<h1>${esc(t('nav_more'))}</h1><div class="list morelist">
+    ${S.me.role !== 'driver' ? `<a class="row" href="#/vehicles"><span>${ICON.truck}</span><span class="title">${esc(t('vehicles'))}</span><span></span></a>` : ''}
+    ${mayCheck() ? `<a class="row" href="#/check"><span>✓</span><span class="title">${esc(t('departure_check'))}</span><span></span></a>` : ''}
+    <a class="row" href="#/inbox"><span>${ICON.bell}</span><span class="title">${esc(t('notifications'))}</span><span></span></a>
+    <a class="row" href="#/help"><span>?</span><span class="title">${esc(t('help'))}</span><span></span></a>
+    <a class="row" href="#/emergency"><span>☎</span><span class="title">${esc(t('em_title'))}</span><span></span></a>
+    ${isMgr() || S.me.role === 'dispatch' || S.me.role === 'workshop' ? `<a class="row" href="#/guide"><span>▤</span><span class="title">${esc(t('guide'))}</span><span></span></a>` : ''}
+    ${isMgr() ? `<a class="row" href="#/drivers"><span>🪪</span><span class="title">${esc(t('drivers'))}</span><span></span></a>` : S.me.role === 'driver' ? `<a class="row" href="#/drivers"><span>🪪</span><span class="title">${esc(t('my_driver_file'))}</span><span></span></a>` : ''}
+    ${isMgr() ? `<a class="row" href="#/contracts"><span>📄</span><span class="title">${esc(t('ct_title'))}</span><span></span></a>` : ''}
+    ${isMgr() ? `<a class="row" href="#/claims"><span>🛡️</span><span class="title">${esc(t('claims'))}</span><span></span></a>` : ''}
+    ${isMgr() ? `<a class="row" href="#/tacho"><span>⏏</span><span class="title">${esc(t('tacho'))}</span><span></span></a>` : ''}
+    ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/fines"><span>§</span><span class="title">${esc(t('fines'))}</span><span></span></a>` : S.me.role === 'driver' ? `<a class="row" href="#/fines"><span>§</span><span class="title">${esc(t('my_fines'))}</span><span></span></a>` : ''}
+    ${['owner', 'fleet', 'workshop', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/tires"><span>◎</span><span class="title">${esc(t('fleet_tires'))}</span><span></span></a>` : ''}
+    ${S.me.role !== 'driver' ? `<a class="row" href="#/maintenance"><span>📅</span><span class="title">${esc(t('inspections_due'))}</span><span></span></a>` : ''}
+    ${['owner', 'fleet', 'viewer', 'workshop', 'dispatch'].includes(S.me.role) ? `<a class="row" href="#/plan"><span>🗓</span><span class="title">${esc(t('wplan'))}</span><span></span></a>` : ''}
+    ${['owner', 'fleet', 'viewer', 'workshop'].includes(S.me.role) ? `<a class="row" href="#/wsload"><span>⚒</span><span class="title">${esc(t('ws_load'))}</span><span></span></a>` : ''}
+    ${isMgr() ? `<a class="row" href="#/defects"><span>⚠</span><span class="title">${esc(t('defect_stats'))}</span><span></span></a>` : ''}
+    ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/kpi"><span>⏱</span><span class="title">${esc(t('kpi'))}</span><span></span></a>` : ''}
+    ${['owner', 'fleet', 'viewer'].includes(S.me.role) ? `<a class="row" href="#/costs"><span>€</span><span class="title">${esc(t('costs_report'))}</span><span></span></a>` : ''}
+    ${['owner', 'fleet', 'workshop'].includes(S.me.role) ? `<a class="row" href="#/stock"><span>▦</span><span class="title">${esc(t('stock'))}</span><span></span></a>` : ''}
+    ${isMgr() ? `<a class="row" href="#/users"><span>👤</span><span class="title">${esc(t('users'))}</span><span></span></a>` : ''}
+    ${isMgr() ? `<a class="row" href="#/telematics"><span>⌖</span><span class="title">${esc(t('telematics'))}</span><span></span></a>` : ''}
+    ${isMgr() ? `<a class="row" href="#/quality"><span>✓</span><span class="title">${esc(t('dq'))}</span><span></span></a>` : ''}
+    ${S.me.role === 'owner' ? `<a class="row" href="#/readiness"><span>☑</span><span class="title">${esc(t('rd_title'))}</span><span></span></a>` : ''}
+    ${S.me.role === 'owner' ? `<a class="row" href="#/usage"><span>📊</span><span class="title">${esc(t('usage'))}</span><span></span></a>` : ''}
+    ${S.me.role === 'owner' ? `<a class="row" href="#/audit"><span>🔒</span><span class="title">${esc(t('audit'))}</span><span></span></a>` : ''}
+    ${S.me.role === 'owner' ? `<a class="row" href="#/settings"><span>⚙</span><span class="title">${esc(t('settings'))}</span><span></span></a>` : ''}
+  </div>
+  <h2>${esc(t('nav_profile'))}</h2><section class="panel"><p><b>${esc(S.me.display_name)}</b> · ${esc(S.me.username)} · ${esc(t('role_' + S.me.role))}${S.me.role === 'workshop' && S.me.workshop_site ? ` · <span data-mysite>${esc(t('ws_site_lbl'))} ${esc(wsName(S.me.workshop_site))}</span>` : ''}${S.me.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>${langSelect()}
+  ${S.me.role !== 'driver' ? `<div id="hsbox"><label for="homesite">${esc(t('home_site'))}</label><select id="homesite"><option value="">${esc(t('filter_all'))}</option>${S.me.home_site ? `<option selected>${esc(S.me.home_site)}</option>` : ''}</select><p class="small muted">${esc(t(S.me.role === 'workshop' ? 'home_site_hint_ws' : S.me.role === 'dispatch' ? 'home_site_hint_dispo' : 'home_site_hint'))}</p></div>` : ''}
+  <details><summary>${esc(t('change_password'))}</summary><form id="pw"><label>${esc(t('old_password'))}</label><input type="password" name="old_password" required autocomplete="current-password"><label>${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input type="password" name="new_password" required minlength="10" maxlength="200" autocomplete="new-password"><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
+  <details id="tfa"><summary>${esc(t('tf_title'))} <span class="chip ok" id="tfchip"${S.me.totp_enabled ? '' : ' hidden'}>${esc(t('tf_chip'))}</span></summary><div id="tfabox"><p class="muted">${esc(t('loading'))}</p></div></details>
+  <details id="sess"><summary>${esc(t('my_sessions'))}</summary><p class="small muted">${esc(t('new_login_hint'))}</p><div id="sesslist" class="list"><p class="muted">${esc(t('loading'))}</p></div><h3>${esc(t('kd_title'))}</h3><p class="small muted">${esc(t('kd_hint'))}</p><div id="kdlist" class="list"></div></details>
+  <div class="actions"><button class="btn secondary" id="lo">${esc(t('logout'))}</button></div></section>`, 'more');
+  bindLang(true);
+  const hs = $('#homesite');
+  if (hs) {
+    api('GET', '/api/sites').then((r) => {
+      // gespeicherter Standort in anderer Schreibweise („Hamburg“ ↔ „HAMBURG“): vorhandene Option wählen statt doppelt anzeigen (23.10.2026)
+      const cur0 = S.me.home_site || ''; const cur = (cur0 && r.sites.find((x) => siteKeyUi(x) === siteKeyUi(cur0))) || cur0;
+      hs.innerHTML = `<option value="">${esc(t('filter_all'))}</option>` + [...new Set([...r.sites, ...(cur ? [cur] : [])])].map((x) => `<option value="${esc(x)}"${x === cur ? ' selected' : ''}>${esc(x === 'ohne' ? t('cs_nosite') : x)}</option>`).join('');
+    }).catch(() => {});
+    hs.onchange = async () => {
+      try {
+        await api('PATCH', '/api/me', { home_site: hs.value }, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 805k: Wiederholung unverändert
+        S.me.home_site = hs.value || null;
+        // neue Voreinstellung gilt sofort für alle Standortfilter dieser Sitzung
+        for (const k of ['costSite', 'defSite', 'fineSite', 'maintSite', 'tireSite', 'vehSite', 'caseVsite', 'kpiVsite', 'planVsite', 'dqSite', 'claimSite', 'ctSite', 'drvSite', 'tachoSite']) delete S[k];
+        toast('✓');
+      } catch (err) { toast(err.message, true); }
+    };
+  }
+  const sess = $('#sess');
+  sess.ontoggle = () => { if (sess.open) loadSessions().catch((err) => toast(err.message, true)); };
+  // Sprung aus dem Hinweis „Neue Anmeldung auf einem anderen Gerät“: Geräteliste gleich öffnen
+  if (open === 'sess') { sess.open = true; sess.scrollIntoView({ block: 'start' }); }
+  const tfa = $('#tfa');
+  tfa.ontoggle = () => { if (tfa.open) loadTotp().catch((err) => toast(err.message, true)); };
+  // Abmelden ohne Netz: Meldung statt stillem Abbruch (Sitzung bliebe sonst unbemerkt bestehen – geteilte Tablets); bereits abgelaufen (401): trotzdem aufräumen
+  // Backlog 533: ohne Verbindung stehender Hinweis (#lo_off) statt kurzer Einblendung, damit das Gerät nicht angemeldet weitergegeben wird
+  $('#lo').onclick = async () => { if (!(await logoutOutboxOk())) return; try { await api('POST', '/api/logout', { push_endpoint: await pushOffForLogout() }); } catch (err) { if (err.status !== 401) { if (err.offline) { const box = $('#lo_off') || Object.assign(document.createElement('p'), { id: 'lo_off', className: 'small alert' }); box.setAttribute('role', 'alert'); box.textContent = t('logout_offline'); $('#lo').closest('.actions').after(box); return; } toast(err.message, true); return; } } clearOfflineData(); resetUserState(); markSession(''); location.hash = '#/login'; };
+  $('#pw').onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', '/api/me/password', Object.fromEntries(new FormData(e.target)), { timeoutMs: SEND_TIMEOUT_MS });
+    // Passwörter nicht im offenen Formular stehen lassen; der Server meldet andere Geräte ab (19.10.2026)
+    // Backlog 805k (Funkloch): Wiederholung nach verlorener Antwort – neues Passwort gilt schon → duplicate statt „Altes Passwort falsch“
+    e.target.reset(); const dd = e.target.closest('details'); if (dd) dd.open = false; toast(r && r.duplicate ? t('saved_before') : '✓ ' + t('pw_changed_others')); } catch (err) { toast(err.message, true); } };
+}
 
-export { viewHelp, viewSearch };
+export { viewHelp, viewMore, viewSearch };

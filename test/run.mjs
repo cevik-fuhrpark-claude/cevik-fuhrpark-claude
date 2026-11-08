@@ -32636,7 +32636,7 @@ await test('Backlog 952 (Reserve Start-Modul): Zwei-Faktor-Einrichtung in „Meh
   const main = rd('app-main.js'), konto = rd('app-konto.js');
   ok(/^async function loadTotp\(\) \{/m.test(konto), 'loadTotp in app-konto.js');
   ok(main.includes("async function loadTotp(...a) { return (await lazyModule('konto', 1)).loadTotp(...a); }"), 'Platzhalter im Start-Modul (Backlog 953: still laden)');
-  ok(main.includes('if (tfa.open) loadTotp().catch('), 'Aufruf beim Aufklappen mit Fehlerbehandlung');
+  ok((main + rd('app-suche.js')).includes('if (tfa.open) loadTotp().catch('), 'Aufruf beim Aufklappen mit Fehlerbehandlung'); // Backlog 1196: viewMore liegt in app-suche.js
 });
 
 await test('Backlog 953 (langsames Netz): ausgelagerte Hilfsfunktionen, die in die bestehende Seite schreiben (loadTotp), laden ihr Modul still – kein seitenfüllendes „Lädt…“; jede Nicht-Ansicht ist eingeordnet (INPLACE/BEFORE_RENDER)', async () => {
@@ -37072,6 +37072,25 @@ await test('Backlog 1195 (Sonde Winter, Backlog 195): „Druckluftbremse eingefr
   for (const x of ['замок зажигания замерз', 'замерз замок зажигания', 'door lock frozen but thawed now']) ok(!CL.test(recurFix(x)), 'kein Schloss: ' + x);
   for (const x of ['стекло замерзает изнутри', 'скло замерзає зсередини', 'дворники примерзли', 'двірники примерзли', 'омывайка замерзла', 'омивайка замерзла']) ok(VI.test(recurFix(x)), 'Sicht: ' + x);
   for (const R of [BR, CL, VI]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
+});
+
+await test('Backlog 1196 (Sonde Rangieren/Rampe/Frost, Backlog 195): „Rampe touchiert“, „задел рампу“ → Schaden beim Kunden; „Stoßstange hinten verbogen“, „погнул задний бампер“ → Unterfahrschutz; „Fahrertür friert zu“, „door frozen shut“, „дверь примерзла“ → Tür', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + '_HINT = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const CD = rx('CUSTDMG'), UR = rx('UNDERRUN'), DO = rx('DOOR'), CL = rx('CABLOCK');
+  for (const x of ['Rampe beim Andocken touchiert, Stoßstange hinten verbogen', 'an der Rampe angestoßen', 'Rampe touchiert', 'задел рампу, погнул задний бампер', 'зачепив рампу', 'в\'їхав у рампу задом', 'сдавал назад и въехал в рампу']) ok(CD.test(recurFix(x)), 'Kunde/Rampe: ' + x);
+  for (const x of ['Rampe am Hof neu gestrichen', 'Stoßstange hinten verbogen']) ok(!CD.test(recurFix(x)), 'kein Kunde/Rampe: ' + x);
+  for (const x of ['Stoßstange hinten verbogen', 'hintere Stoßstange abgerissen', 'погнул задний бампер', 'погнув бампер причепа', 'Rampe beim Andocken touchiert, Stoßstange hinten verbogen']) ok(UR.test(recurFix(x)), 'Unterfahrschutz: ' + x);
+  for (const x of ['Stoßstange hinten verbogen, wurde gerichtet', 'Stoßstange vorne verbogen', 'погнул задний бампер, уже выправили']) ok(!UR.test(recurFix(x)), 'kein Unterfahrschutz: ' + x);
+  for (const x of ['Fahrertür friert zu', 'Tür ist zugefroren', 'Beifahrertür ist festgefroren', 'driver door frozen shut', 'door is frozen', 'дверь примерзла', 'двері примерзли', 'примерзла дверь кабины']) ok(DO.test(recurFix(x)), 'Tür: ' + x);
+  for (const x of ['Tür war zugefroren, jetzt wieder aufgetaut', 'дверь примерзла, разморозили', 'door lock frozen', 'замок двери замёрз', 'замок водійських дверей замерз', 'door seal frozen', 'Türschloss eingefroren']) ok(!DO.test(recurFix(x)), 'keine Tür: ' + x);
+  for (const x of ['door lock frozen', 'замок двери замёрз', 'замок водійських дверей замерз']) ok(CL.test(recurFix(x)), 'Schloss bleibt: ' + x);
+  const { GROUPS } = await import('../scripts/build-app.mjs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  ok(GROUPS.suche.includes('viewMore') && /^async function viewMore\(open\) \{/m.test(rd('app-suche.js')), 'Menü „Mehr“ im Modul suche (Reserve Start-Modul)');
+  ok(rd('app-main.js').includes("async function viewMore(...a) { return (await lazyModule('suche')).viewMore(...a); }"), 'Platzhalter viewMore im Start-Modul');
+  ok(/fastHint\(DOOR_HINT\)/.test(app), 'DOOR_HINT (> 8000 Zeichen) über fastHint');
+  for (const R of [CD, UR, DO]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
 });
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
