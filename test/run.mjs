@@ -37104,6 +37104,19 @@ await test('Backlog 1197 (Sonde Heizung/Winterausrüstung, Backlog 195): „kein
   ok(!VI.source.includes('||') && !VI.source.includes('(?:|') && !VI.source.includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1198 (Sonde Aufbau/Ladebordwand/Ladungssicherung, Backlog 195): „ворота фургона не закрываются“ → Tür; „Airlineschiene lose“, „lashing rail torn off“, „такелажная рейка оторвалась“ → Ladungssicherungsmittel', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + '_HINT = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const DO = rx('DOOR'), LG = rx('LASHGEAR');
+  for (const x of ['ворота фургона не закрываются', 'ворота будки не закрываются', 'ворота полуприцепа не закрываются', 'задние ворота не закрываются', 'ворота причепа не зачиняються', 'ворота фургона сломаны']) ok(DO.test(recurFix(x)), 'Tür/Ворота: ' + x);
+  for (const x of ['ворота склада не закрываются', 'на складе ворота сломались', 'ворота не закрываются']) ok(!DO.test(recurFix(x)), 'kein Fahrzeug-Tor: ' + x);
+  for (const x of ['Ladungssicherungsschiene abgerissen', 'Airlineschiene lose', 'Zurrschiene ausgerissen', 'lashing rail torn off', 'lashing point broken', 'такелажная рейка оторвалась', 'шина для крепления оторвалась']) ok(LG.test(recurFix(x)), 'Ladungssicherung/Schiene: ' + x);
+  for (const x of ['lashing rail torn off, fixed', 'такелажная рейка оторвалась, уже заменили', 'lashing points needed', 'шины для крепления не нужны', 'Zurrschiene wurde wieder festgeschraubt']) ok(!LG.test(recurFix(x)), 'keine Ladungssicherung/Schiene: ' + x);
+  ok(/fastHint\(DOOR_HINT\)/.test(app), 'DOOR_HINT (> 8000 Zeichen) über fastHint');
+  for (const R of [DO, LG]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
