@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, TST, VEH_SORTS, afLink, announceHits, api, bDate, bindTachoCancel, caseList, checkLabel, comboClearV, conflictKeep, conflictMine, ctChip, ctLines, ctRet, decIn, download, dqDetail, dur, envFn, esc, eur, eurIst, fMsg, fcLabel, fileUrl, fmtD, fmtDT, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hashNorm, hj, hoMissing, huNote, isMgr, isVehHash, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, langAttr, lostDup, lostIs, lostMark, mEv, mY, maintOrderHtml, mayReport, mk, mkR, noTr, noneP, nowMs, offDayWatch, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, render, rkFor, searchKey, siteKeyUi, siteWsHints, sortPref, stackTables, supplierLabel, t, tachoHistList, tireAge, tireSizeSame, tlHash, tmAge, tmKmRej, tn, toast, todayMark, translateNextAction, uid, unitIn, vOverdue, vehSig, vlAt, vsDef, warrChip, wsForSite, wsOptions } from './app-main.js';
+import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, TST, VEH_SORTS, afLink, announceHits, api, bDate, bindChecklist, bindFormDraft, bindTachoCancel, cDesc, caseList, checkLabel, checklistHtml, collectChecklist, comboClearV, conflictKeep, conflictMine, ctChip, ctLines, ctRet, decIn, download, dqDetail, dur, envFn, esc, eur, eurIst, fMsg, fcLabel, fileUrl, fmtD, fmtDT, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hashNorm, hj, hoMissing, huNote, isMgr, isVehHash, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmWarn, langAttr, lostDup, lostIs, lostMark, mEv, mY, maintOrderHtml, mayReport, mk, mkR, noTr, noneP, nowMs, offDayWatch, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, render, rkFor, searchKey, siteKeyUi, siteWsHints, sortPref, stackTables, supplierLabel, t, tachoHistList, tireAge, tireSizeSame, tlHash, tmAge, tmKmRej, tn, toast, todayMark, translateNextAction, uid, unitIn, vOverdue, vehSig, vlAt, vsDef, warrChip, wsForSite, wsOptions } from './app-main.js';
 
 // Durchführung älter als die gespeicherte letzte: nur im Verlauf gespeichert, Fälligkeit unverändert – ausdrücklich sagen (17.10.2026)
 const doneToast = (r) => toast(r && r.older_than_last ? '✓ ' + t('mt_older_saved').replace('{d}', fmtD(r.last_done_date)) : '✓');
@@ -9,6 +9,51 @@ const doneToast = (r) => toast(r && r.older_than_last ? '✓ ' + t('mt_older_sav
 function puBox(c, lc) {
   const stale = !!(lc && lc.created_at && c.closed_at && lc.created_at > c.closed_at);
   return `<div class="panel small${stale ? ' muted' : ''}" id="vpickup"${stale ? ' data-pustale' : ''}><b>${esc(t('pu_title'))}:</b> <span${langAttr(c.pickup_note)}>${esc(c.pickup_note)}</span> – <a href="#/cases/${esc(c.id)}" translate="no">${esc(c.case_no)}</a> · ${esc(t('st_fahrzeug_freigegeben'))} ${fmtDT(c.closed_at)}${stale ? `<br><span data-pustaletxt>ⓘ ${esc(t('pu_stale').replace('{d}', fmtDT(lc.created_at)))}</span>` : ''}</div>`;
+}
+async function viewInspection(caseId) {
+  const d = await api('GET', '/api/cases/' + caseId);
+  // Backlog 826 (Blickwinkel „Werkstatt-Tablet: Kontrolle nach Reparatur für den falschen Vorgang begonnen“): Kennzeichen stand nur klein neben der
+  // Auftragsnummer – wer auf dem Tablet den falschen Auftrag antippte, speicherte die 18 Punkte und den km-Stand des Lkw vor sich am anderen
+  // Fahrzeug (Kontrolle/Abschluss am falschen Auftrag, km eines anderen Lkw in der Akte). Jetzt großes Kennzeichen mit Fahrzeugart/Hersteller/
+  // Auftrag, letzter erfasster km-Stand mit Differenz während der Eingabe; kleiner als zuletzt erfasst → Hinweis und Bestätigung vor dem Speichern.
+  // Backlog 831 (Folge aus 826/829, Blickwinkel „Werkstatt schließt Reparatur am Anhänger mit km der Zugmaschine ab“): am km-Feld fehlte der
+  // Anhänger-Hinweis – der Stand der Zugmaschine landete über die Kontrolle in der Akte des Anhängers. Jetzt Hinweis „nur Achskilometerzähler“.
+  const veh = d.vehicle || {}; const lastKm = d.vehicle_info && d.vehicle_info.last_km ? d.vehicle_info.last_km : null;
+  const vDesc = [veh.kind ? t('vk_' + veh.kind) : '', [veh.manufacturer, veh.model].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
+  const cRaw = String(d.case.description || ''); const cDesc = cRaw.length > 90 ? cRaw.slice(0, 90).replace(/\s+\S*$/, '') + ' …' : cRaw; // an Wortgrenze kürzen
+  render(`<p><a class="backlink" href="#/cases/${esc(caseId)}">‹ ${esc(t('back'))}</a></p><h1 data-title="${esc(d.case.case_no)} · ${esc(d.vehicle.plate)} · ${esc(t('inspection'))}">${esc(t('inspection'))}</h1>
+    <section class="panel" id="irv" data-plate="${esc(veh.plate || '')}"><p style="margin:0 0 6px">${plate(veh.plate, { big: true })}</p>${vDesc ? `<p class="small" style="margin:0" id="irvveh">${esc(vDesc)}</p>` : ''}<p class="small" style="margin:4px 0 0"><b translate="no">${esc(d.case.case_no)}</b>${cDesc ? ' · ' + esc(cDesc) : ''}</p><p class="small muted" style="margin:6px 0 0">${esc(t('irv_plate_hint'))}</p></section>
+    <form id="f">${checklistHtml()}<label for="km">${esc(t('km'))}${veh.kind === 'anhaenger' ? `<span class="hint" id="irvkmtr">${esc(t('mdone_kmtr'))}</span>` : ''}${lastKm ? `<span class="hint" id="kmlast">${esc(t('irv_last_km').replace('{km}', fmtNum(lastKm.km)).replace('{d}', fmtD(lastKm.measured_at)))}</span>` : ''}</label><input id="km" name="km" inputmode="numeric" pattern=" *[0-9][0-9 .]*" maxlength="40"><div id="kmd" aria-live="polite"></div><label for="n">${esc(t('note'))}</label><textarea id="n" name="n"></textarea><input type="hidden" name="rk" value="${esc(uid())}">
+    <div class="actions"><button class="btn block" id="isb">${esc(t('irv_submit').replace('{plate}', veh.plate || ''))}</button></div></form>`, 'cases');
+  const form = $('#f'); bindChecklist(form);
+  // km-Eingabe wie der Server (Leerzeichen/Punkte als Tausendertrennung); ungültig → keine Anzeige, der Server meldet den Fehler
+  const kmVal = () => { const v = $('#km').value; return /^ *[0-9][0-9 .]*$/.test(v) ? Number(v.replace(/[ .]/g, '')) : null; };
+  const kmLower = () => { const k = kmVal(); return !!(lastKm && k !== null && Number.isFinite(k) && k < lastKm.km); };
+  const kmInfo = () => {
+    const box = $('#kmd'); if (!box) return; const k = kmVal();
+    if (!lastKm || k === null || !Number.isFinite(k)) { box.innerHTML = ''; return; }
+    if (k < lastKm.km) {
+      const was = $('#kmok') && $('#kmok').checked;
+      box.innerHTML = `<div class="panel warn" role="alert" id="kmlow"><p class="small" style="margin:0 0 6px">${esc(t('irv_km_lower').replace('{prev}', fmtNum(lastKm.km)).replace('{d}', fmtD(lastKm.measured_at)).replace('{plate}', veh.plate || ''))}</p><label style="display:flex;gap:8px;align-items:flex-start;font-weight:normal"><input type="checkbox" id="kmok"${was ? ' checked' : ''} style="width:auto;margin-top:3px"><span>${esc(t('irv_km_lower_ok').replace('{plate}', veh.plate || ''))}</span></label></div>`;
+    } else box.innerHTML = `<p class="small muted" id="kmdiff" style="margin:4px 0 0">${esc(t('irv_km_diff').replace('{n}', fmtNum(k - lastKm.km)))}</p>${kmDigitsWarn(k, lastKm.km, 'id="kmdigits"')}`; // Backlog 837
+  };
+  $('#km').addEventListener('input', kmInfo);
+  // Entwurf je Vorgang (Backlog 186, Werkstatt-Tablet in der Halle): Netzabbruch/Neuladen/Seitenwechsel verlieren die 18 Punkte nicht; die
+  // Anfragekennung steht im Entwurf (verstecktes Feld) – kam die erste Sendung doch an, liefert der Server dieselbe Kontrolle statt einer zweiten.
+  // Die Bestätigung „km-Stand stimmt“ gehört nicht in den Entwurf (Backlog 826) – nach dem Wiederherstellen erneut bewusst bestätigen
+  const draft = bindFormDraft('insp_' + caseId, form, '', null, ['kmok']);
+  kmInfo();
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (kmLower() && !($('#kmok') && $('#kmok').checked)) { toast(t('irv_km_confirm'), true); const cb = $('#kmok'); if (cb) { cb.focus(); cb.closest('.panel').scrollIntoView({ block: 'center' }); } return; }
+    const key = form.rk.value || uid();
+    try {
+      const r = await api('POST', '/api/inspections', { kind: 'nach_reparatur', case_id: caseId, request_key: key, checklist_version: S.meta.checklist_version || undefined, items: collectChecklist(form), odometer_km: $('#km').value || null, note: $('#n').value || null }, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 799
+      draft.clear();
+      toast(`${t('check_saved')}${r.followups.length ? ' · ' + r.followups.map((f) => f.case_no).join(', ') : ''}${kmWarn(r)}`, !!r.km_rejected || !!r.km_equals_truck);
+      location.hash = '#/cases/' + caseId;
+    } catch (err) { if (err.offline) draft.save(); toast(err.offline ? `${err.message} ${t('form_draft_kept')}` : err.message, true); }
+  };
 }
 // Papiervordruck der Abfahrtskontrolle (Notfall: Handy leer/defekt) – gleiche Prüfpunkte wie in der App
 async function viewCheckPaper() {
@@ -719,4 +764,4 @@ async function renderTires(id, el, keep = null) {
 }
 const VEH_DOCS_MAX = 30;
 
-export { viewCheckPaper, viewVehicle, viewVehicles };
+export { viewCheckPaper, viewInspection, viewVehicle, viewVehicles };

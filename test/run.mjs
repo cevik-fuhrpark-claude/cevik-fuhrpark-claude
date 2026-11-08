@@ -36812,6 +36812,20 @@ await test('Backlog 1178 (Sonde Tankdeckel/Reifen/Kotflügel, Backlog 195): RU �
   for (const x of ['крыло на месте', 'Kotflügel kaputt']) ok(!LO.test(recurFix(x)), 'nicht lose: ' + x);
 });
 
+await test('Backlog 1180 (Reserve Start-Modul vor neuen Hinweismustern): Ansicht einer Abfahrtskontrolle (viewInspection, Route #/inspect/…) liegt im nachgeladenen Modul app-fahrzeug.js; Platzhalter im Start-Modul; Start-Modul ≤ 63,5 %', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const { GROUPS, BEFORE_RENDER, INPLACE } = await import('../scripts/build-app.mjs');
+  ok(GROUPS.fahrzeug.includes('viewInspection') && !BEFORE_RENDER.has('viewInspection') && !INPLACE.has('viewInspection'), 'Gruppe fahrzeug, normale Ansicht mit Ladehinweis');
+  const app = rd('app.js'), main = rd('app-main.js'), fz = rd('app-fahrzeug.js');
+  ok(/^async function viewInspection\(caseId\) \{/m.test(app), 'viewInspection async in app.js');
+  ok(app.includes('[/^#\\/inspect\\/([\\w-]+)$/, viewInspection]'), 'nur über die Route aufgerufen');
+  eq((app.match(/\bviewInspection\b/g) || []).length, 2, 'keine weiteren Aufrufer (Definition + Route)');
+  ok(main.includes("async function viewInspection(...a) { return (await lazyModule('fahrzeug')).viewInspection(...a); }"), 'Platzhalter im Start-Modul');
+  ok(/^async function viewInspection\(caseId\) \{/m.test(fz), 'Ansicht im Modul fahrzeug');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100;
+  ok(pct <= 63.5, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 63,5 %)');
+});
+
 await test('Backlog 1179 (Sonde Maut/Schmierung/Elektrik, Backlog 195): „автозмазка/автосмазка не працює/пустая“, „нет смазки на седле“ → Schmierung; „провід/голый провод оголений“, „спіраль/кабель причепа порвався“, „предохранитель горит/выбивает/сгорел“ → Elektrik; „smells like burning wires“, „riecht nach Kabel“, „пахнет проводкой“ → Brand; Reparaturvermerk nicht', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
