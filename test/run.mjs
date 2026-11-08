@@ -36656,6 +36656,14 @@ await test('Backlog 1164 (Sonde Sitzheizung/-belüftung DE/EN/UK/RU, Backlog 195
   ok(/const dsh = noSeatHeat\(dfx\);/.test(app) && /\$\('#seat'\)\.hidden = !SEAT_HINT\.test\(dsh\)/.test(app) && /\$\('#visib'\)\.hidden = !VISIB_HINT\.test\(dsh\)/.test(app), 'Meldeformular nutzt noSeatHeat für Sitz und Sicht');
 });
 
+await test('Backlog 1165 (Sonde AdBlue leuchtet UK/RU, Backlog 195): „горить AdBlue“, „горит AdBlue“, „AdBlue мигает“, „блимає AdBlue“ → Motor-Schritte wie DE „AdBlue leuchtet“; mit Reparaturvermerk („отремонтировали“, „відремонтували“) und ohne Leuchten („AdBlue долили“) nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const m = app.match(/^const ENGINE_HINT = \/(.+)\/([a-z]*);$/m); const EN = new RegExp(m[1], m[2]); const hit = (x) => EN.test(recurFix(x));
+  for (const x of ['горить AdBlue', 'горит AdBlue', 'AdBlue горить', 'AdBlue мигает', 'блимає AdBlue', 'горит адблю', 'горить значок AdBlue', 'AdBlue leuchtet']) ok(hit(x), 'Motor: ' + x);
+  for (const x of ['горит AdBlue, отремонтировали', 'горить AdBlue - відремонтували', 'AdBlue долили', 'горит фара']) ok(!hit(x), 'nicht Motor: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
