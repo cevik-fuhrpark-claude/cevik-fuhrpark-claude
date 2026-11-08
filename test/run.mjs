@@ -22229,7 +22229,7 @@ await test('Backlog 345 (Blickwinkel „Reifen beschädigt, verliert Luft oder i
     for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
   }
   ok(app.includes(`<div id="tyre" class="panel" hidden role="status">`), 'Panel #tyre');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#tyre').hidden = !TYRE_HINT.test(noAux(dv));"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#tyre').hidden = !TYRE_HINT.test(noAux(dv)) || bodyWall(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('tyre') && order.indexOf('flat') < order.indexOf('tyre') && order.indexOf('tyre') < order.indexOf('wheel') && order.indexOf('tyre') < order.indexOf('brake'), 'Gruppierung: Reifenpanne vor Reifenschaden vor Rad/Bremse');
   ok(helpAfter(app, 'tyre', 'underrun'), 'Hilfe-Abschnitt tyre nach underrun');
@@ -32343,7 +32343,7 @@ await test('Backlog 922 (Flurförderzeuge und Kleingeräte sind nicht der Lkw): 
   ok(app.includes("const noAux = (s) => String(s || '').replace(EQUIP_SPAN, ' ◇ ').replace(AUX_UNIT, "), 'noAux wie im Test');
   const eq = new RegExp(eqm[1], 'gi'), aux = new RegExp(axm[1], 'gi');
   const noAux = (x) => String(x || '').replace(eq, ' ◇ ').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));
-  for (const x of ["$('#flat').hidden = !FLAT_HINT.test(noAux(dv));", "$('#wheel').hidden = !WHEEL_HINT.test(noAux(dv));", "$('#tyre').hidden = !TYRE_HINT.test(noAux(dv));"]) ok(app.includes(x), 'im Formular: ' + x);
+  for (const x of ["$('#flat').hidden = !FLAT_HINT.test(noAux(dv));", "$('#wheel').hidden = !WHEEL_HINT.test(noAux(dv));", "$('#tyre').hidden = !TYRE_HINT.test(noAux(dv)) || bodyWall(dv);"]) ok(app.includes(x), 'im Formular: ' + x);
   const lkw = ['ENGINE_HINT', 'NOSTART_HINT', 'DRYFUEL_HINT', 'BATT_HINT', 'FLAT_HINT', 'TYRE_HINT', 'WHEEL_HINT'].map(g);
   for (const x of ['Hubwagen Reifen platt', 'Ameise Batterie leer', 'Mitnahmestapler Batterie leer', 'Stapler springt nicht an', 'Mitnahmestapler Motor geht aus', 'Stapler Reifen kaputt', 'Sackkarre Reifen platt', 'Taschenlampe Batterie leer', 'Funkgerät Batterie leer', 'Schlüssel Batterie leer', 'Batterie vom Schlüssel leer', 'Fernbedienung Batterie leer']) ok(!lkw.some((r) => r.test(noAux(x))), 'kein Lkw-Hinweis: ' + x);
   ok(lkw[1].test(noAux('Stapler kaputt, Lkw springt nicht an')) && lkw[1].test(noAux('Schlüssel steckt und Batterie leer')) && lkw[1].test(noAux('Lkw Batterie leer')), 'Lkw-Start weiter erkannt');
@@ -37115,6 +37115,27 @@ await test('Backlog 1198 (Sonde Aufbau/Ladebordwand/Ladungssicherung, Backlog 19
   for (const x of ['lashing rail torn off, fixed', 'такелажная рейка оторвалась, уже заменили', 'lashing points needed', 'шины для крепления не нужны', 'Zurrschiene wurde wieder festgeschraubt']) ok(!LG.test(recurFix(x)), 'keine Ladungssicherung/Schiene: ' + x);
   ok(/fastHint\(DOOR_HINT\)/.test(app), 'DOOR_HINT (> 8000 Zeichen) über fastHint');
   for (const R of [DO, LG]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
+});
+
+await test('Backlog 1199 (Sonde Tür auf während der Fahrt/Ladung durch die Wand, Backlog 195): „открылись ворота прицепа на ходу“, „сломал ворота прицепа“, „Hecktür während der Fahrt aufgegangen“, „doors swung open“ → Tür; „Ladung durch die Stirnwand“ → Ladung; Seitenwand bei Ladung kein Reifen', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + '_HINT = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const DO = rx('DOOR'), LG = rx('LASHGEAR'), LO = rx('LOAD'), FO = rx('FIXOBJ'), TY = rx('TYRE'), FL = rx('FLOOR');
+  for (const x of ['сломал ворота прицепа', 'сломали ворота фургона', 'зламав ворота причепа', 'открылись ворота прицепа на ходу', 'на ходу открылись задние ворота', 'на ходу задние ворота открылись', 'відчинилися ворота причепа під час руху', 'ворота причепа відчинилися під час руху',
+    'Hecktür ist während der Fahrt aufgegangen', 'Während der Fahrt ist die Hecktür aufgegangen', 'Hecktüren während der Fahrt aufgesprungen', 'rear doors opened while driving', 'trailer doors swung open on the motorway', 'the doors flew open on the motorway', 'while driving the rear doors opened']) ok(DO.test(recurFix(x)), 'Tür: ' + x);
+  for (const x of ['Hecktür ist während der Fahrt aufgegangen, wieder zu und gesichert', 'Tür aufgegangen', 'Ich habe die Hecktür geöffnet', 'Hecktür beim Kunden geöffnet', 'rear doors opened at the customer', 'I opened the rear doors', 'двери открылись на складе', 'открыл ворота прицепа на складе', 'сломал ворота склада', 'сломал ворота прицепа, уже починили']) ok(!DO.test(recurFix(x)), 'keine Tür: ' + x);
+  for (const x of ['ремень стяжной порвался', 'lashing straps torn']) ok(LG.test(recurFix(x)), 'Ladungssicherung: ' + x);
+  for (const x of ['lashing straps torn, replaced', 'straps broken, replaced', 'ремень безопасности порвался', 'seat belt torn', 'ремень стяжной порвался, заменили']) ok(!LG.test(recurFix(x)), 'keine Ladungssicherung: ' + x);
+  for (const x of ['Ladung durch die Stirnwand gedrückt', 'Ladung hat die Stirnwand durchbrochen', 'load went through the headboard', 'груз пробил передний борт', 'вантаж пробив борт']) ok(LO.test(recurFix(x)), 'Ladung: ' + x);
+  ok(!LO.test('Stirnwand eingedrückt'), 'Stirnwand allein ist Aufbau, nicht Ladung');
+  ok(!FO.test('pallet fell and damaged the side wall') && FO.test('damaged the wall of the warehouse') && FO.test('damaged the front wall of the shop'), 'side wall ist Aufbau, Hauswand bleibt Gegenstand');
+  const bodyWall = new Function('LOAD_HINT', 'FLOOR_HINT', app.match(/^const bodyWall = (.+);$/m)[0] + ' return bodyWall;')(LO, FL);
+  const tyre = (x) => TY.test(x) && !bodyWall(x);
+  ok(!tyre('Palette ist umgefallen und hat die Seitenwand beschädigt'), 'Seitenwand bei Ladung ist kein Reifen');
+  ok(tyre('Reifen Seitenwand beschädigt') && tyre('Seitenwand vom Reifen beschädigt'), 'Reifen-Seitenwand bleibt Reifen');
+  ok(/\$\('#tyre'\)\.hidden = !TYRE_HINT\.test\(noAux\(dv\)\) \|\| bodyWall\(dv\)/.test(app), 'Reifen-Hinweis nutzt bodyWall');
+  for (const R of [DO, LG, LO, FO]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
 });
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
