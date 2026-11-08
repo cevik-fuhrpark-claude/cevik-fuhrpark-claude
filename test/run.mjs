@@ -37165,6 +37165,19 @@ await test('Backlog 1201 (Sonde Motor überhitzt/Kühlmittel, Backlog 195): „D
   for (const R of [EN, LK]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1202 (Sonde Scheibenwischer/Waschwasser/Bremsflüssigkeit, Backlog 195): „wiper arm broken“/„mirror arm broken“ kein Verletzungs-Hinweis; „бачок омывателя пустой“ → Sicht; „Bremsflüssigkeit leer“, „мало тормозной жидкости“, „рівень гальмівної рідини низький“ → Bremse', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + '_HINT = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const IN = rx('INJURY'), VI = rx('VISIB'), BR = rx('BRAKE');
+  for (const x of ['wiper arm broken', 'mirror arm broken', 'crane arm broken']) ok(!IN.test(x), 'keine Verletzung: ' + x);
+  for (const x of ['I broke my arm', 'arm broken', 'hand trapped in the door']) ok(IN.test(x), 'Verletzung: ' + x);
+  for (const x of ['бачок омывателя пустой', 'пустой бачок омывателя', 'бачок омивача порожній']) ok(VI.test(x), 'Sicht: ' + x);
+  for (const x of ['бачок омывателя пустой, долил', 'бачок тормозной жидкости']) ok(!VI.test(x), 'keine Sicht: ' + x);
+  for (const x of ['Bremsflüssigkeit leer', 'Bremsflüssigkeit zu niedrig', 'мало тормозной жидкости', 'бачок тормозной жидкости пустой', 'рівень гальмівної рідини низький']) ok(BR.test(x), 'Bremse: ' + x);
+  for (const x of ['keine Bremsflüssigkeit nötig', 'нет проблем с тормозной жидкостью', 'Bremsflüssigkeit leer, aufgefüllt']) ok(!BR.test(x), 'keine Bremse: ' + x);
+  for (const R of [IN, VI, BR]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
