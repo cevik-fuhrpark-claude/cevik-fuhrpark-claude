@@ -36634,6 +36634,15 @@ await test('Backlog 1162 (Sonde Spiegel/Gurt/Lenkung UK/RU/EN, Folge aus 1161): 
   ok(!hit(ST, 'вода не уводит'), 'nicht Lenkung: вода не уводит');
 });
 
+await test('Backlog 1163 (Sonde Scheibenwischer gehen nicht aus EN/UK/RU, Folge aus 1162): „wipers won’t stop/turn off“, „wipers keep going“, „wiper stuck on“, „двірники не вимикаються/зупиняються“, „дворники не выключаются/останавливаются“ (auch Prädikat vorne) → Sicht; „engine won’t stop“, „машина не зупиняється“ nicht (Reparaturvermerk blendet die App über noFixed aus, Sonde geprüft)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const VI = new RegExp(app.match(/^const VISIB_HINT = \/(.+)\/i;/m)[1], 'i');
+  const hit = (x) => VI.test(recurFix(x));
+  for (const x of ["wipers won't stop", 'wipers won’t turn off', 'wipers keep going', 'wiper stuck on', 'двірники не вимикаються', 'не вимикаються двірники', 'не зупиняються двірники', 'дворники не выключаются', 'не останавливаются дворники', 'дворники не останавливаются']) ok(hit(x), 'Sicht: ' + x);
+  for (const x of ["engine won't stop", 'не зупиняється машина', 'не зупиняється таймер']) ok(!hit(x), 'nicht Sicht: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
