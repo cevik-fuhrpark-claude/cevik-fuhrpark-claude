@@ -37221,6 +37221,14 @@ await test('Backlog 1207 (Sonde Differential-/Achsgeräusch, Backlog 195): „Di
   for (const R of [GR, VB, WH]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1208 (Sonde Retarder/Motorbremse, Backlog 195): „Retarder ohne Wirkung“, „Retarder wirkt kaum“, „Motorbremse bremst nicht“, „Bremsen wirken fast nicht“ → Bremse; „Retarder wirkt“, „Motorbremse bremst gut“, „Retarder repariert, wirkt wieder“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const BRAKE_HINT = \/(.+?)\/([a-z]*);(?: *\/\/.*)?$/m); ok(m, 'BRAKE_HINT nicht gefunden'); const BR = new RegExp(m[1], m[2]);
+  for (const x of ['Retarder ohne Wirkung', 'Retarder wirkt kaum', 'Motorbremse bremst nicht', 'Bremsen wirken fast nicht', 'Retarder geht nicht', 'Motorbremse ohne Funktion']) ok(BR.test(x.toLowerCase()), 'Bremse fehlt: ' + x);
+  for (const x of ['Retarder wirkt', 'Motorbremse bremst gut', 'Retarder repariert, wirkt wieder', 'Bremsen gewechselt, bremst wieder gut']) ok(!BR.test(x.toLowerCase()), 'Bremse fälschlich: ' + x);
+  ok(!BR.source.includes('||') && !BR.source.includes('(?:|') && !BR.source.includes('|)'), 'leere Alternative');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
