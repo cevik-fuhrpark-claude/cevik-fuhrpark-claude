@@ -36721,6 +36721,21 @@ await test('Backlog 1170 (Sonde Kühltemperatur/Trittstufe, Backlog 195): „Tem
   for (const x of ['відламалась сходинка, приварили', 'ступенька в кабіну в порядку']) ok(!ST.test(recurFix(x)), 'kein Aufstieg: ' + x);
 });
 
+await test('Backlog 1171 (Sonde Batterie/Licht/Plane, Backlog 195): „акум сів“, „аккум сел“ → Startprobleme; „габарити не горять“, „не горить стоп на причепі“, „keine Begrenzungsleuchten“, „Standlicht geht nicht“ → Licht; „Plane hat Riss“, „gerissene Plane“, „torn tarp“, „tarp strap broken“, „порвався тент“ → Plane (nicht Zurrmittel); Reparaturvermerk/Fremdbedeutung nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const NS = rx('NOSTART_HINT'), LI = rx('LIGHTS_HINT'), TA = rx('TARP_HINT'), LG = rx('LASHGEAR_HINT');
+  for (const x of ['акум сів', 'сів акум', 'аккум сел', 'сел аккум', 'акумулятор сів', 'аккумулятор разряжен']) ok(NS.test(recurFix(x)), 'Startprobleme: ' + x);
+  for (const x of ['акумулятор на зарядці', 'акум заряджений', 'аккум новый']) ok(!NS.test(recurFix(x)), 'keine Startprobleme: ' + x);
+  for (const x of ['габарити не горять', 'не горять габарити на причепі', 'не горить стоп на причепі', 'стоп не горить', 'габариты не горят', 'не горят габариты на прицепе', 'keine Begrenzungsleuchten', 'Standlicht geht nicht', 'не горит стоп-сигнал']) ok(LI.test(recurFix(x)), 'Licht: ' + x);
+  for (const x of ['стоп-кран не працює', 'сів на стоп', 'Begrenzungsleuchten gehen wieder', 'Standlicht vergessen auszumachen', 'keine Standlichter nötig', 'габарити не горять, замінили лампочку']) ok(!LI.test(recurFix(x)), 'kein Licht: ' + x);
+  for (const x of ['Plane hat Riss', 'gerissene Plane', 'zerrissene Seitenplane', 'torn tarp', 'ripped curtain side', 'tarp strap broken', 'tarp straps broken', 'curtain straps snapped', 'порвався тент', 'порвался тент', 'розірвало тент']) ok(TA.test(recurFix(x)), 'Plane: ' + x);
+  for (const x of ['Plane geflickt, Riss repariert', 'gerissene Plane wurde ersetzt', 'torn tarp fixed', 'порвався тент, вже замінили', 'порвал куртку о тент']) ok(!TA.test(recurFix(x)), 'keine Plane: ' + x);
+  for (const x of ['tarp straps broken', 'curtain straps snapped']) ok(!LG.test(recurFix(x)), 'kein Zurrmittel: ' + x);
+  for (const x of ['straps snapped', 'ratchet straps broken', 'not enough straps']) ok(LG.test(recurFix(x)), 'Zurrmittel: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
