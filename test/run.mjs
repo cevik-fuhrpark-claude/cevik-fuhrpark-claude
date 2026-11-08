@@ -28607,7 +28607,7 @@ await test('Backlog 696–697 (Blickwinkel „Umweltplakette bzw. HU-Plakette fe
   }
   ok(app.includes('<div id="sticker" class="panel" hidden role="status">'), 'Panel #sticker');
   ok(app.includes("$('#sticker').hidden = !STICKER_HINT.test(dv);") && app.indexOf("$('#sticker').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("{ let dl = dsk; if (!$('#numplate')") && app.includes("const numplateHint = NUMPLATE_HINT.test(noSticker(desc));"), 'Lose-Teil- und Leitungs-Hinweis ohne Plaketten-Fundstelle');
+  ok(app.includes("{ let dl = noFixed(dsk); if (!$('#numplate')") && app.includes("const numplateHint = NUMPLATE_HINT.test(noSticker(desc));"), 'Lose-Teil- und Leitungs-Hinweis ohne Plaketten-Fundstelle');
   ok(app.includes("'numplate', 'sticker', 'fuelcard'"), 'Reihenfolge nach Kennzeichen');
   ok(app.includes("'contour', 'sticker', 'cabkit', 'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -36579,6 +36579,21 @@ await test('Backlog 1158 (Sonde Luftfederung/Feststellbremse UK, sicherheitsrele
   for (const x of ['лопнула подушка безпеки', 'лопнула подушка сидіння', 'Lkw hängt tief, wurde repariert', 'лопнула подушка, вже замінили', 'не піднімається причіп']) ok(!hit(SU, x), 'nicht Federung: ' + x);
   for (const x of ['не спрацьовує ручник', 'ручник не спрацьовує', 'ручник не срабатывает', 'ручник не тримає']) ok(hit(PB, x), 'Feststellbremse: ' + x);
   ok(!hit(PB, 'ручник не спрацьовує, вже відремонтували'), 'nicht Feststellbremse: Reparaturvermerk');
+});
+
+await test('Backlog 1159 (Sonde Werkzeugkasten/Standheizung): „toolbox lid broken off“, „storage box hanging loose“, „відірвало ящик для інструментів“ → loses Teil; „не гріє/не греє автономний обігрівач“ → Klima/Standheizung, nicht Sicht; Reparaturvermerk blendet „loses Teil“ aus', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [LO, CL, VI, LD] = ['LOOSE_HINT', 'CLIMATE_HINT', 'VISIB_HINT', 'LOAD_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['toolbox lid broken off', 'the tool box is hanging open, lock broken', 'side storage box hanging loose', 'pallet box came off on the motorway', 'відірвало ящик для інструментів', 'ящик для інструментів відвалився', 'инструментальный ящик оторвался', 'палетний ящик висить', 'Werkzeugkasten Deckel abgerissen']) ok(hit(LO, x), 'loses Teil: ' + x);
+  for (const x of ['toolbox missing a key', 'ящик для інструментів не закривається', 'ящик з вантажем впав']) ok(!hit(LO, x), 'nicht loses Teil: ' + x);
+  ok(hit(LD, 'ящик з вантажем впав'), 'Ladung: ящик з вантажем впав');
+  for (const x of ['не греє автономний обігрівач', 'не гріє автономний обігрівач', 'автономний обігрівач не гріє', 'не гріє автономка', 'не греет автономка', 'не охолоджує кондиціонер', 'автономная печка не греет', 'автономка не греє']) { ok(hit(CL, x), 'Klima: ' + x); ok(!hit(VI, x), 'nicht Sicht: ' + x); }
+  for (const x of ['обігрівач не гріє', 'пічка не греє, вікна запотівають', 'не работает печка']) ok(hit(VI, x), 'Sicht: ' + x);
+  ok(!hit(CL, 'не гріє сидіння'), 'nicht Klima: Sitzheizung');
+  ok(app.includes("{ let dl = noFixed(dsk); if (!$('#numplate').hidden)"), 'loses Teil nutzt den Reparaturvermerk (noFixed)');
 });
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
