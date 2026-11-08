@@ -2945,7 +2945,7 @@ const noAux = (s) => String(s || '').replace(EQUIP_SPAN, ' ◇ ').replace(AUX_UN
 // fixed“, „not been replaced“, „знову, хоча відремонтували“, „не відремонтували“, „опять, хотя отремонтировали“) verschwand dadurch sogar
 // der Bremsen-/Lenkungshinweis. recurFix neutralisiert die Reparaturwörter nur in solchen Sätzen (bzw. direkt nach einer Verneinung);
 // echte Reparaturvermerke („…, repariert“, „funktioniert wieder“, „working again“, „знову працює“) bleiben unverändert.
-const FIX_WORD = /(?<![a-zäöüß])(?:repariert|erneuert|(?:aus)?getauscht|ersetzt|behoben|(?:aus)?gewechselt|instandgesetzt|eingestellt|befestigt|gereinigt|freigeschaltet|fixed|repaired|replaced)(?![a-zäöüß])|(?<=(?<![a-zäöüß])(?:funktioniert|geht|läuft|laeuft|k(?:ü|ue)hlt|heizt|startet|schlie(?:ß|ss)t|(?:ö|oe)ffnet|l(?:ä|ae)dt|reagiert)\s+)(?:schon\s+|immer\s+)?wieder\s+(?=nicht(?![a-zäöüß]))|(?<![а-яіїєґё])(?:відремонт|отремонт|замінил|замінен|заменил|заменен|усунул|усунен|устранил|устранен|поміня|поменя|полагод|почини)[а-яіїєґё']*/gi;
+const FIX_WORD = /(?<![a-zäöüß])(?:repariert|erneuert|(?:aus)?getauscht|ersetzt|behoben|(?:aus)?gewechselt|instandgesetzt|eingestellt|befestigt|gereinigt|freigeschaltet|geflickt|fixed|repaired|replaced|patched)(?![a-zäöüß])|(?<=(?<![a-zäöüß])(?:funktioniert|geht|läuft|laeuft|k(?:ü|ue)hlt|heizt|startet|schlie(?:ß|ss)t|(?:ö|oe)ffnet|l(?:ä|ae)dt|reagiert)\s+)(?:schon\s+|immer\s+)?wieder\s+(?=nicht(?![a-zäöüß]))|(?<![а-яіїєґё])(?:відремонт|отремонт|замінил|замінен|заменил|заменен|усунул|усунен|устранил|устранен|поміня|поменя|полагод|почини)[а-яіїєґё']*/gi;
 // Backlog 1183: RU „исправил(и)/исправлено“ und UK „виправив/виправили/виправлено“ sind Reparaturvermerke wie „отремонтировали/відремонтували“ –
 // recurFix setzt sie gleich (Verneinung/Plan wie dort; Infinitiv „исправить“ und „исправно/неисправен“ bleiben unverändert).
 // Backlog 1190: ebenso RU/UK „починил(и)/починено“, „починив“ und UK „полагодив/полагодили/полагоджено“ (Infinitiv „починить/полагодити“ bleibt).
@@ -3076,9 +3076,31 @@ const clauseCut = (s) => String(s || '').split(/([.;!?\n]+)/).map((part) => {
   }
   return [...new Set(cuts)].sort((a, b) => b - a).reduce((p, at) => p.slice(0, at).replace(/\s+$/, '') + '. ' + p.slice(at), part);
 }).join(""); // doppelte Anführungszeichen: Tests schneiden bis zum ersten join mit einfachen Anführungszeichen nach FIX_WORD (Ende von recurFix)
+// Backlog 1193 (Sonde „Mangel kommt nach der Reparatur wieder“): Wiederauftreten mit Gegensatzwort, Befund ohne Gegenstand („Reifen getauscht,
+// verliert aber wieder Luft“, „tyre replaced but still losing air“, „шину заменили, но опять травит“, „engine repaired but still misfiring“,
+// „Kühlaggregat repariert, kühlt aber wieder nicht“) zeigte keinen Hinweis: Gegenstand und Befund standen getrennt. In solchen Sätzen
+// (RECUR_MARK) hängt recurFix hinter ⁘ „Gegenstand + Befund“ ohne Vermerk, Gegensatzwort, Füllwörter und Fürwörter an (wie noFixed, Backlog 774);
+// nur Abholung/Abrechnung offen („…, aber noch nicht abgeholt“) nicht. „шину/резину“ (Akkusativ) wird dort zu „шина/резина“.
+const RECUR_BUT = /(?<![a-zäöüß])(?:aber|jedoch|doch|allerdings|but|however|yet)(?![a-zäöüß])|(?<![а-яіїєґё])(?:але|проте|однак|но|однако)(?![а-яіїєґё])/i;
+const RECUR_DROP = /(?<![a-zäöüß])(?:immer\s+noch|noch\s+immer|schon\s+wieder|trotzdem|dennoch|weiterhin|erneut|wieder|aber|jedoch|doch|allerdings|still|again|anyway|but|however|yet|es|er|sie|it|they)(?![a-zäöüß])|(?<![а-яіїєґё])(?:все\s+одно|вс[её]\s+равно|до\s+сих\s+пор|вс[её]\s+ещ[её]|досі|ще|ещ[её]|знову|знов|снова|опять|але|проте|однак|но|однако|он|она|оно|они|він|вона|воно|вони)(?![а-яіїєґё])/gi;
+const RECUR_ADMIN = /(?<![a-zäöüß])(?:abgeholt|bezahlt|abgerechnet|berechnet|picked\s+up|collected|invoiced|paid)(?![a-zäöüß])|(?<![а-яіїєґё])(?:забра|оплат|заплат)[а-яіїєґё]*/i;
+// „…, verliert aber wieder Luft“: „aber … wieder“ gilt für den Nachsatz als Wiederauftreten (RECUR_MARK kennt nur „wieder kaputt/nicht …“); der Vermerk selbst bleibt
+const RECUR_AGAIN = /(?<![a-zäöüß])(?:aber|jedoch|doch|allerdings)\s+(?:\S+\s+)?wieder(?![a-zäöüß])/i;
+const RECUR_AUX = /(?:\s+(?:wurde|wurden|ist|sind|war|waren|hat|haben|was|were|is|are|has|have|had|been|got|gets))+\s*$/i;
+const recurTail = (part) => {
+  const f = new RegExp(FIX_WORD.source, 'i').exec(part); if (!f) return '';
+  const rest = part.slice(f.index + f[0].length), but = rest.match(RECUR_BUT); if (!but || RECUR_ADMIN.test(rest)) return '';
+  // eigener Gegenstand direkt hinter dem Gegensatzwort („…, aber Licht geht wieder nicht“, „… but the lights …“) – dann zeigt der Satz ihn ohnehin;
+  // nicht bei Umstellung („…, verliert aber wieder Luft“: dort ist das großgeschriebene Wort das Objekt)
+  const nxt = rest.slice(but.index + but[0].length).replace(RECUR_DROP, ' ').trim();
+  if (!/[a-zäöüßа-яіїєґё]/i.test(rest.slice(0, but.index)) && /^(?:[A-ZÄÖÜ][a-zäöüß]{2,}(?![a-zäöüß]*\s+(?:sich|mal)(?![a-zäöüß]))|(?:der|die|das|den|dem|the|my|our|this|that|these|those)\s)/.test(nxt)) return '';
+  const subj = part.slice(0, f.index).split(/[,:⁘]/).pop().replace(RECUR_AUX, '').replace(/(?<![а-яіїєґё])(шин|резин)у(?![а-яіїєґё])/gi, '$1а');
+  const tail = (subj + ' ' + rest.replace(RECUR_DROP, ' ')).replace(/[,:]/g, ' ').replace(/\s+/g, ' ').trim();
+  return tail ? ' ⁘ ' + tail : '';
+};
 const recurFix = (s) => noFunc(noPlace(clauseCut(String(s || '').replace(/ё/g, 'е').replace(/Ё/g, 'Е').replace(FIX_SYN, (w) => (/^(?:и|почин)/i.test(w) ? 'отремонтировали' : 'відремонтували')))).replace(STOP_WORK, 'not working')).replace(PRED_FIRST, (m, v, subj) => m + ' ⁘' + subj + ' ' + v).replace(V2_INV, (m, adv, v, subj) => m + ' ⁘' + subj + ' ' + v).replace(NO_MORE, '◦ ⁂ behoben').replace(NO_MORE_X, '◦ ⁂ behoben').split(/([.;!?\n]+)/).map((part) => {
   const all = RECUR_MARK.test(part);
-  return part.replace(FIX_WORD, (w, off) => (all || FIX_NEG.test(part.slice(0, off)) || FIX_PLAN.test(part.slice(0, off)) || FIX_PLAN_AFTER.test(part.slice(off + w.length)) || /(?:ти|ть|тися|ться)$/i.test(w) ? (/^\S*wieder/i.test(w) || /^(?:schon|immer)\s/i.test(w) ? '' : '◦') : w));
+  return (all || RECUR_AGAIN.test(part) ? part + recurTail(part) : part).replace(FIX_WORD, (w, off) => (all || FIX_NEG.test(part.slice(0, off)) || FIX_PLAN.test(part.slice(0, off)) || FIX_PLAN_AFTER.test(part.slice(off + w.length)) || /(?:ти|ть|тися|ться)$/i.test(w) ? (/^\S*wieder/i.test(w) || /^(?:schon|immer)\s/i.test(w) ? '' : '◦') : w));
 }).join('');
 // Backlog 764: Reparaturvermerk zentral für ältere Hinweise zu Geräten/Ausstattung (Warnleuchte, DPF, Startprobleme, Armaturen, Telematik, Sitz,
 // Fenster, Fahrerhaus-Ausstattung/-Nässe/-Schloss, Tankdeckel, Elektrik, Batterie, Spiegel, Getriebe, Abgas, Maut, Türen, Sicht, Aufstieg):

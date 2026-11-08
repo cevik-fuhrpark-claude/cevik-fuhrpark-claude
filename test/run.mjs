@@ -37029,6 +37029,29 @@ await test('Backlog 1192 (Sonde Motor/Licht/Klima RU/UK/DE, Backlog 195): „м�
   ok(!EN.source.includes('||') && !EN.source.includes('(?:|'), 'leere Alternative in ENGINE_HINT');
 });
 
+await test('Backlog 1193 (Sonde „Mangel kommt nach der Reparatur wieder“, Backlog 195): Vermerk + Gegensatzwort + Befund ohne Gegenstand („Reifen getauscht, verliert aber wieder Luft“, „tyre replaced but still losing air“, „шину заменили, но опять травит“, „engine repaired but still misfiring“, „Kühlaggregat repariert, kühlt aber wieder nicht“) zeigt den Hinweis; nicht bei Abholung/positivem Befund/eigenem Gegenstand', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const yes = (n, xs) => { const r = rx(n); for (const x of xs) ok(r.test(recurFix(x)), n + ': ' + x); };
+  const no = (n, xs) => { const r = rx(n); for (const x of xs) ok(!r.test(recurFix(x)), 'nicht ' + n + ': ' + x); };
+  yes('TYRE_HINT', ['Reifen getauscht, verliert aber wieder Luft', 'Reifen wurde geflickt, verliert aber immer noch Luft', 'tyre replaced but still losing air', 'tyre was patched but it is losing air again', 'шину заменили, но опять травит', 'шину заменили, но она снова спускает', 'шину замінили, але знову спускає', 'колесо полагодили, але воно знову спускає', 'Reifen nicht geflickt, verliert Luft']);
+  no('TYRE_HINT', ['Reifen getauscht, aber noch nicht abgeholt', 'Reifen getauscht, läuft aber wieder gut', 'Reifen getauscht, aber wieder ok', 'tyre replaced but working again', 'Reifen geflickt', 'tyre losing air, repaired']);
+  yes('ENGINE_HINT', ['engine repaired but still misfiring', 'двигатель отремонтировали, но опять троит', 'Motor repariert, ruckelt aber immer noch']);
+  yes('LIGHTS_HINT', ['Licht repariert, geht aber wieder nicht', 'headlight replaced but still not working']);
+  no('LIGHTS_HINT', ['Licht getauscht, funktioniert aber wieder', 'Licht repariert']);
+  yes('REEFER_HINT', ['Kühlaggregat repariert, kühlt aber wieder nicht', 'холодильну установку полагодили, але знову не холодить']);
+  // eigener Gegenstand direkt hinter dem Gegensatzwort: kein Anhang (der Satz nennt ihn selbst)
+  ok(!recurFix('Licht getauscht, aber Reifen verliert wieder Luft').includes('⁘'), 'kein Anhang bei eigenem Gegenstand');
+  ok(!recurFix('brakes fixed but the lights still not working').includes('⁘'), 'kein Anhang bei Artikel + Gegenstand');
+  ok(recurFix('Reifen getauscht, verliert aber wieder Luft').endsWith('⁘ Reifen verliert Luft'), 'Anhang Gegenstand + Befund');
+  ok(app.includes("RECUR_AGAIN.test(part) ? part + recurTail(part) : part"), 'recurTail in recurFix');
+  // Reserve Start-Modul: Auswahl nach QR-Scan (viewScan) liegt im eigenen Modul app-scan.js, App-Hülle kennt es
+  const scan = fs.readFileSync(new URL('../public/app-scan.js', import.meta.url), 'utf8'), main = fs.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  ok(scan.includes('async function viewScan(id)') && !main.includes('async function viewScan(id)') && main.includes("lazyModule('scan')"), 'viewScan in app-scan.js');
+  ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/app-scan.js'"), 'SHELL enthält app-scan.js');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
