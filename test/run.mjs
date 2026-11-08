@@ -36736,6 +36736,20 @@ await test('Backlog 1171 (Sonde Batterie/Licht/Plane, Backlog 195): „акум 
   for (const x of ['straps snapped', 'ratchet straps broken', 'not enough straps']) ok(LG.test(recurFix(x)), 'Zurrmittel: ' + x);
 });
 
+await test('Backlog 1172 (Sonde Spiegel/AdBlue/Tankanzeige, Backlog 195): „розбите дзеркало“, „сломанное зеркало“ → Spiegel; „Harnstoff-Warnung“, „горить сечовина“, „загорелась мочевина“ → Motor/AdBlue; „Tankanzeige hängt“, „fuel gauge stuck/frozen“ → Anzeige (nicht Diesel gefroren); Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const MI = rx('MIRROR_HINT'), EN = rx('ENGINE_HINT'), DA = rx('DASH_HINT'), GF = rx('GELFUEL_HINT');
+  for (const x of ['розбите дзеркало', 'розбито дзеркало', 'зламане дзеркало', 'разбитое зеркало', 'сломанное зеркало', 'дзеркало збили']) ok(MI.test(recurFix(x)), 'Spiegel: ' + x);
+  for (const x of ['розбите дзеркало, вже замінили', 'розбите скло фари']) ok(!MI.test(recurFix(x)), 'kein Spiegel: ' + x);
+  for (const x of ['Harnstoff-Warnung', 'Harnstoff Warnung', 'Harnstofffehler', 'горить сечовина', 'загорілась сечовина', 'горит мочевина', 'загорелась мочевина', 'AdBlue-Warnung', 'помилка adblue']) ok(EN.test(recurFix(x)), 'AdBlue: ' + x);
+  for (const x of ['Harnstoff nachgefüllt', 'Harnstofftank voll', 'горить фара', 'мочевина горит']) ok(!EN.test(recurFix(x)), 'kein AdBlue: ' + x);
+  for (const x of ['Tankanzeige hängt', 'Tankanzeige bewegt sich nicht', 'fuel gauge stuck', 'fuel gauge stuck on full', 'fuel gauge frozen', 'Tankanzeige bleibt stehen']) ok(DA.test(recurFix(x)), 'Anzeige: ' + x);
+  ok(!GF.test(recurFix('fuel gauge frozen')), 'Tankanzeige ist kein gefrorener Diesel');
+  for (const x of ['diesel frozen', 'fuel frozen in the tank']) ok(GF.test(recurFix(x)), 'Diesel gefroren: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
