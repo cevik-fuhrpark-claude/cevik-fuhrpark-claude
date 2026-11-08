@@ -36710,6 +36710,17 @@ await test('Backlog 1169 (Sonde Kühlauflieger-Tür/Wischwasser, Backlog 195): �
   for (const x of ['kein Wischwasser, nachgefüllt', 'нема омивайки, долив', 'out of washer fluid, topped up', 'kein Wischwasser nötig', 'нет проблем']) ok(!VI.test(recurFix(x)), 'keine Sicht: ' + x);
 });
 
+await test('Backlog 1170 (Sonde Kühltemperatur/Trittstufe, Backlog 195): „Temperatur geht hoch im Auflieger“, „trailer temperature going up“, „піднімається температура в рефрижераторі“ → Kühlaggregat; „ступенька відламалась“, „отломалась подножка“ → Aufstieg; Motorkühler/Kabine/Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const RF = rx('REEFER_HINT'), ST = rx('STEP_HINT');
+  for (const x of ['Temperatur geht hoch im Auflieger', 'Temperatur steigt im Kühlauflieger', 'temperature in trailer rising', 'trailer temperature going up', 'temp in the box is going up', 'піднімається температура в рефрижераторі', 'температура в рефрижераторі піднімається', 'температура в будці росте', 'растет температура в прицепе', 'поднимается температура в рефрижераторе']) ok(RF.test(recurFix(x)), 'Kühlaggregat: ' + x);
+  for (const x of ['Temperatur steigt im Kühler', 'температура в кабіні росте', 'температура в рефрижераторі піднімається, відремонтували', 'temperature in trailer rising, back to normal']) ok(!RF.test(recurFix(x)), 'kein Kühlaggregat: ' + x);
+  for (const x of ['ступенька відламалась', 'відламалась сходинка', 'ступенька сломалась', 'отломалась подножка', 'сходинка зламана']) ok(ST.test(recurFix(x)), 'Aufstieg: ' + x);
+  for (const x of ['відламалась сходинка, приварили', 'ступенька в кабіну в порядку']) ok(!ST.test(recurFix(x)), 'kein Aufstieg: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
