@@ -36679,6 +36679,16 @@ await test('Backlog 1166 (Sonde Motorfehler/Kühlaggregat-Alarm/Reifendruck UK/R
   ok(/fastHint\(WARNLIGHT_HINT\);/.test(app), 'gewachsenes Warnleuchten-Muster wird in Teilen geprüft');
 });
 
+await test('Backlog 1167 (Sonde Druckluft DE/EN/UK/RU, Backlog 195): „Luftdruck fällt“, „Luftdruckwarnung“, „Auflieger verliert Luft“, „low air pressure“, „падає тиск повітря“, „утечка воздуха“ → Bremsen; Reifen/Klima/Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);$', 'm')); return new RegExp(m[1], m[2]); };
+  const BR = rx('BRAKE_HINT');
+  for (const x of ['Luftdruck fällt', 'Luftdruck fällt ab', 'Luftdruck sinkt', 'Luftdruck zu niedrig', 'Luftdruckwarnung leuchtet', 'Druckluftwarnung', 'Lkw verliert Luft', 'Auflieger verliert Luft', 'low air pressure warning', 'air pressure warning', 'trailer losing air', 'падає тиск повітря', 'низький тиск повітря', 'витік повітря', 'витікає повітря', 'падает давление воздуха', 'низкое давление воздуха', 'утечка воздуха']) ok(BR.test(recurFix(x)), 'Bremsen: ' + x);
+  for (const x of ['Luftdruck fällt, wurde repariert', 'Luftdruck im Reifen fällt', 'Reifendruck niedrig', 'low air pressure in tyre', 'витік повітря з колеса', 'утечка воздуха из шины', 'падає тиск повітря, відремонтували', 'Luftdruck ist normal']) ok(!BR.test(recurFix(x)), 'keine Bremsen: ' + x);
+  ok(/fastHint\(BRAKE_HINT\);/.test(app), 'Bremsen-Muster wird in Teilen geprüft');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
