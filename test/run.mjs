@@ -37189,6 +37189,17 @@ await test('Backlog 1203 (Sonde Rad/Radlager/Kardanwelle, Backlog 195): „Nabe 
   for (const R of [WH, VB]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1204 (Sonde Motor geht aus/springt schlecht an, Backlog 195): „Motor ist auf der Autobahn ausgegangen“, „engine hesitates“, „заглох на трассе“, „заглух на трасі“ → Motor; „плохо заводится“, „погано заводиться“ → Startprobleme; „двигатель/машина больше не глохнет“, „печка плохо заводится“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + '_HINT = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const EN = rx('ENGINE'), NS = rx('NOSTART');
+  for (const x of ['Motor ist auf der Autobahn ausgegangen', 'Motor ist an der Ampel ausgegangen', 'engine hesitates when accelerating', 'заглох на трассе', 'Заглох на трассе, стою', 'заглух на трасі', 'машина заглохла', 'двигатель глохнет на ходу', 'двигун глухне на ходу']) ok(EN.test(x), 'Motor: ' + x);
+  for (const x of ['двигатель больше не глохнет', 'машина больше не глохнет', 'двигатель не глохнет', 'двигун вже не глухне', 'Motor ist ausgegangen, Zündung aus', 'Lkw ist der Diesel ausgegangen', 'Motor war ausgegangen, Filter gewechselt']) ok(!EN.test(x), 'kein Motor: ' + x);
+  for (const x of ['плохо заводится утром', 'погано заводиться', 'тяжело запускается', 'машина не заводится']) ok(NS.test(x), 'Startproblem: ' + x);
+  for (const x of ['печка плохо заводится', 'плохо заводится, аккумулятор поменяли']) ok(!NS.test(x), 'kein Startproblem: ' + x);
+  for (const R of [EN, NS]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
