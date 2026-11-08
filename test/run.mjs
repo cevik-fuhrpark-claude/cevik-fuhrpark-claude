@@ -36976,6 +36976,22 @@ await test('Backlog 1189 (Sonde Ladung/Standheizung/Hydraulik, Backlog 195): „
   for (const n of ['LOAD_HINT', 'CLIMATE_HINT', 'ENGINE_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
 });
 
+await test('Backlog 1190 (Sonde Totwinkel/Druckluft/Reifen-Reparaturvermerk, Backlog 195): „датчик мертвой/сліпої зони“, „датчики парковки“ → Assistenz; „losing/no air pressure“, „не накачує/нагнетает воздух“ → Bremse (Reifen davor nicht); Reifen-Hinweis EN/RU/UK blendet bei Reparaturvermerk aus wie DE; „починили/полагодили“ = Reparaturvermerk', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const AD = rx('ADAS_HINT'), BR = rx('BRAKE_HINT'), TY = rx('TYRE_HINT');
+  const f = (x) => recurFix(x);
+  for (const x of ['датчик мертвой зоны не работает', 'датчик сліпої зони не працює', 'сенсор слепой зоны сломался', 'датчики парковки не работают', 'датчики паркування не працюють']) ok(AD.test(f(x)), 'Assistenz: ' + x);
+  for (const x of ['датчик температуры не работает', 'датчик мертвой зоны заменили, больше не пищит']) ok(!AD.test(f(x)), 'keine Assistenz: ' + x);
+  for (const x of ['losing air pressure', 'truck loses air pressure', 'no air pressure', 'low air pressure warning on dashboard', 'не накачує повітря', 'компрессор не нагнетает воздух', 'не накачивает воздух']) ok(BR.test(f(x)), 'Bremse: ' + x);
+  for (const x of ['tyre is losing air pressure', 'front tire losing air pressure', 'tyre low air pressure', 'wheel losing air pressure', 'шину не накачивает']) ok(!BR.test(f(x)), 'keine Bremse: ' + x);
+  for (const x of ['tyre low air pressure', 'tyre has low air pressure', 'tyre is losing air pressure', 'Reifen verliert Luft', 'Reifen hinten links hat Beule', 'колесо травит, нужно починить', 'tyre has a bulge', 'шина с грыжей']) ok(TY.test(f(x)), 'Reifen: ' + x);
+  for (const x of ['Reifen hat Beule, wurde getauscht', 'tyre has a bulge, replaced', 'шина с грыжей, заменили', 'шина з грижею, замінили', 'Reifen verliert Luft, geflickt', 'tyre losing air, repaired', 'колесо травит, починили', 'колесо спускає, полагодили', 'tyre has a nail, patched']) ok(!TY.test(f(x)), 'Reifen repariert: ' + x);
+  ok(f('дверь починили').includes('отремонтировали') && f('двері полагодили').includes('відремонтували') && !f('нужно починить').includes('отремонт'), 'FIX_SYN починили/полагодили');
+  for (const n of ['ADAS_HINT', 'BRAKE_HINT', 'TYRE_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
