@@ -36699,6 +36699,17 @@ await test('Backlog 1168 (Sonde Luftfederung/Königszapfen EN/UK/RU, Backlog 195
   for (const x of ['шворінь зношений', 'шворінь пошкоджений', 'шворень зношений', 'шкворінь розбитий', 'шкворень разбит']) ok(CO.test(recurFix(x)), 'Kupplung: ' + x);
 });
 
+await test('Backlog 1169 (Sonde Kühlauflieger-Tür/Wischwasser, Backlog 195): „Kühlaufliegertür schließt nicht“, „Kofferaufbautür“ → Tür/Aufbau; „kein Wischwasser“, „out of washer fluid“, „нема омивайки“, „омывайка закончилась“ → Sicht; nachgefüllt/долив nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);$', 'm')); return new RegExp(m[1], m[2]); };
+  const DO = rx('DOOR_HINT'), VI = rx('VISIB_HINT');
+  for (const x of ['Kühlaufliegertür schließt nicht', 'Kühlertür geht nicht zu', 'Kofferaufbautür schließt nicht', 'Kühlkoffertür klemmt', 'Aufbautür springt auf', 'Hecktür schließt nicht']) ok(DO.test(recurFix(x)), 'Tür: ' + x);
+  for (const x of ['Kühlaufliegertür eingedrückt', 'Kühlertür offen gelassen']) ok(!DO.test(recurFix(x)), 'keine Tür: ' + x);
+  for (const x of ['kein Wischwasser', 'Wischwasser alle', 'no washer fluid', 'out of washer fluid', 'нема омивайки', 'немає незамерзайки', 'закінчилась рідина омивача', 'нет омывайки', 'омывайка закончилась', 'Wischwasser leer']) ok(VI.test(recurFix(x)), 'Sicht: ' + x);
+  for (const x of ['kein Wischwasser, nachgefüllt', 'нема омивайки, долив', 'out of washer fluid, topped up', 'kein Wischwasser nötig', 'нет проблем']) ok(!VI.test(recurFix(x)), 'keine Sicht: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
