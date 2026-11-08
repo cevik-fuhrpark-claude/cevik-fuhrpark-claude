@@ -36944,6 +36944,23 @@ await test('Backlog 1187 (Sonde Sitz/Kühlaggregat/Kipper, Backlog 195): „Sitz
   for (const n of ['SEAT_HINT', 'REEFER_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
 });
 
+await test('Backlog 1188 (Sonde Kabinenkippung/Tankdeckel/Kühlaggregat einschalten, Backlog 195): „кабину не поднять“, „кабіну не підняти“ → Kabine kippen („в кабине не поднимается стекло“ nicht); „замок бака сломан“ → Tankdeckel („замок багажника“ nicht); „Kühlung lässt sich nicht einschalten“, „реф не включается“, „рефку не включить“ → Kühlaggregat; „реф не заводится“ nicht mehr „springt nicht an“', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const CT = rx('CABTILT_HINT'), FC = rx('FUELCAP_HINT'), RF = rx('REEFER_HINT'), NS = rx('NOSTART_HINT');
+  const f = (x) => recurFix(x);
+  for (const x of ['кабину не поднять', 'кабіну не підняти', 'кабину не могу опустить', 'кабина не поднимается', 'кабіна не піднімається']) ok(CT.test(f(x)), 'Kabine: ' + x);
+  for (const x of ['в кабине не поднимается стекло', 'у кабіні не піднімається скло', 'стекло в кабине не поднимается', 'в кабине не поднять стекло']) ok(!CT.test(f(x)), 'keine Kabine: ' + x);
+  for (const x of ['замок бака сломан', 'замок бака заклинило', 'крышка бака потерялась']) ok(FC.test(f(x)), 'Tankdeckel: ' + x);
+  for (const x of ['замок багажника сломан']) ok(!FC.test(f(x)), 'kein Tankdeckel: ' + x);
+  for (const x of ['Kühlung lässt sich nicht einschalten', 'Kühlaggregat schaltet nicht ein', 'Kühlaggregat schaltet sich nicht mehr ein', 'рефку не включить', 'реф не включается', 'реф не вмикається', 'реф не заводится']) ok(RF.test(f(x)), 'Kühlaggregat: ' + x);
+  for (const x of ['печка не включается']) ok(!RF.test(f(x)), 'kein Kühlaggregat: ' + x);
+  for (const x of ['реф не заводится', 'рефрижератор не заводится', 'холодильник не заводится']) ok(!NS.test(f(x)), 'kein „springt nicht an“: ' + x);
+  for (const x of ['машина не заводится', 'не заводится']) ok(NS.test(f(x)), 'springt nicht an: ' + x);
+  for (const n of ['CABTILT_HINT', 'FUELCAP_HINT', 'REEFER_HINT', 'NOSTART_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
