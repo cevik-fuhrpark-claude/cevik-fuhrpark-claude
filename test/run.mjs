@@ -36995,6 +36995,31 @@ await test('Backlog 1190 (Sonde Totwinkel/Druckluft/Reifen-Reparaturvermerk, Bac
   for (const n of ['ADAS_HINT', 'BRAKE_HINT', 'TYRE_HINT', 'TACHO_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
 });
 
+await test('Backlog 1191 (Sonde Unfall/Sturm/Plane/Spiegel/Papiere/Tankkarte RU/UK/DE/EN, Backlog 195): „задел машину/мост“ → Unfall/Brücke; „порезали тент“, „Plane aufgeschlitzt“ → Vandalismus; „ветром сорвало“, „wind ripped“ → Unwetter; „Spiegel eingeschlagen“ → Spiegel; „забыл документы на машину“, „forgot the vehicle documents“ → Verlust; „заправочная карта“, „карта DKV“ → Tankkarte', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const f = (x) => recurFix(x);
+  const yes = (n, xs) => { const r = rx(n); for (const x of xs) ok(r.test(f(x)), n + ': ' + x); };
+  const no = (n, xs) => { const r = rx(n); for (const x of xs) ok(!r.test(f(x)), 'nicht ' + n + ': ' + x); };
+  yes('ACC_HINT', ['задел машину при развороте', 'задели легковушку на парковке', 'зачепив машину при розвороті']);
+  no('ACC_HINT', ['задел бордюр', 'машина задела ветку']);
+  yes('BRIDGE_HINT', ['задел мост крышей', 'зачепив міст дахом']);
+  no('BRIDGE_HINT', ['задел задний мост', 'задний мост гудит']);
+  yes('VANDAL_HINT', ['порезали тент', 'порізали тент', 'тент порезали', 'штору разрезали ножом', 'Plane aufgeschlitzt', 'Seitenplane wurde aufgeschlitzt', 'aufgeschlitzte Plane', 'curtain slashed']);
+  no('VANDAL_HINT', ['тент порвался', 'Plane gerissen', 'порезал руку', 'Plane aufgeschlitzt, Ladung fehlt', 'порезали тент, украли груз', 'порізали тент, вкрали вантаж']);
+  yes('TARP_HINT', ['порезали тент', 'порізали тент']);
+  yes('STORM_HINT', ['ветром сорвало тент', 'вітром зірвало тент', 'тент сорвало ветром', 'ветер сорвал зеркало', 'wind ripped the curtain off', 'door blown open by the wind', 'Wind hat die Plane abgerissen', 'vom Wind umgeworfen']);
+  no('STORM_HINT', ['wind noise from the door', 'windscreen cracked', 'сильный ветер, еду медленно', 'Windschutzscheibe gerissen']);
+  yes('MIRROR_HINT', ['Spiegel eingeschlagen auf dem Parkplatz', 'Außenspiegel zerschlagen', 'разбили зеркало на стоянке']);
+  no('MIRROR_HINT', ['Seitenscheibe eingeschlagen', 'Fenster eingeschlagen']);
+  yes('LOST_HINT', ['forgot the vehicle documents at home', 'забыл документы на машину дома', 'забув документи на машину', 'посеял ключи', 'потерял ключи от машины']);
+  no('LOST_HINT', ['забыл документы на груз', 'forgot to lock the door', 'забыл закрыть дверь']);
+  yes('FUELCARD_HINT', ['заправочная карта заблокирована', 'карта DKV не работает', 'картку UTA загубив', 'DKV card not working', 'DKV Karte geht nicht', 'fuel card declined']);
+  no('FUELCARD_HINT', ['карта не работает', 'DKV Rechnung kam']);
+  for (const n of ['ACC_HINT', 'BRIDGE_HINT', 'VANDAL_HINT', 'TARP_HINT', 'STORM_HINT', 'MIRROR_HINT', 'LOST_HINT', 'FUELCARD_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
