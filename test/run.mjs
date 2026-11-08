@@ -37208,6 +37208,19 @@ await test('Backlog 1205 (Sonde Ölverlust an Achse/Differential/Getriebe/Lenkun
   ok(!LK.source.includes('||') && !LK.source.includes('(?:|') && !LK.source.includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1207 (Sonde Differential-/Achsgeräusch, Backlog 195): „Differential heult“, „Hinterachse brummt“, „diff whining“, „rear axle making a whining noise“, „мост гудит“, „задній міст виє“ → Getriebe; „Kardanwelle brummt“ → Vibration; „Nabe ist laut“ → Rad; Reparaturvermerke, „мост через реку гудит“, „Radlager laut Rechnung getauscht“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re = (k) => { const m = app.match(new RegExp('^const ' + k + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); ok(m, k + ' nicht gefunden'); return new RegExp(m[1], m[2]); };
+  const GR = re('GEAR_HINT'), VB = re('VIBR_HINT'), WH = re('WHEEL_HINT'); const e = (x) => x.replace(/ё/g, 'е');
+  for (const x of ['Differential heult ab 60 km/h', 'Hinterachse heult beim Gas geben', 'Hinterachse brummt laut', 'Achse macht komische Geräusche', 'Das Differential brummt stark', 'Achsgetriebe heult', 'Getriebe heult', 'diff whining at speed', 'rear axle whining', 'differential is noisy', 'rear diff making a loud noise', 'rear axle making a whining noise', 'gearbox whining', 'мост гудит', 'задний мост воет', 'редуктор моста гудит', 'редуктор гудит на скорости', 'міст гуде', 'задній міст виє', 'редуктор моста гуде', 'коробка гудит']) ok(GR.test(e(x.toLowerCase())), 'Getriebe fehlt: ' + x);
+  for (const x of ['Differential wurde getauscht, heult nicht mehr', 'Hinterachse repariert, brummt nicht mehr', 'differential replaced, no more whining', 'diff was replaced last week, no whining now', 'мост гудел, заменили редуктор', 'редуктор моста заменили, больше не гудит', 'міст відремонтували, більше не гуде', 'мост через реку гудит от ветра', 'міст через річку гуде', 'проехал под мостом, что-то гудит', 'axle nut loose', 'Achse ist verbogen']) ok(!GR.test(e(x.toLowerCase())), 'Getriebe fälschlich: ' + x);
+  for (const x of ['Kardanwelle brummt', 'Kardanwelle rattert beim Anfahren']) ok(VB.test(x.toLowerCase()), 'Vibration fehlt: ' + x);
+  ok(!VB.test('kardanwelle getauscht, brummt nicht mehr'), 'Vibration fälschlich nach Reparatur');
+  for (const x of ['Nabe ist laut', 'Radnabe sehr laut hinten links', 'Radlager brummt']) ok(WH.test(x.toLowerCase()), 'Rad fehlt: ' + x);
+  for (const x of ['Radlager laut Werkstatt in Ordnung', 'Radlager laut Rechnung getauscht']) ok(!WH.test(x.toLowerCase()), 'Rad fälschlich: ' + x);
+  for (const R of [GR, VB, WH]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
