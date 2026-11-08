@@ -36608,6 +36608,18 @@ await test('Backlog 1160 (Sonde Motor/Kupplung UK/RU): „обірвався р�
   for (const x of ['педаль гальма провалюється', 'Bremspedal fällt durch', 'не вимикається світло']) ok(!hit(GE, x), 'nicht Kupplung: ' + x);
 });
 
+await test('Backlog 1161 (Sonde Gurt/Zurrgurt/Licht UK/RU/EN, Folge aus 1160): „порвався ремінь безпеки“, „не застібається ремінь безпеки“ → Sitz/Gurt; „порвався ремінь на вантажі“, „обірвався ремінь кріплення вантажу“ → Ladungssicherung (nicht Gurt); „не вимикається світло“, „аварійка не вимикається“, „lights won’t turn off“, „brake lights stuck on“ → Beleuchtung; Ampel, Motor, Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [SE, LG, LI] = ['SEAT_HINT', 'LASHGEAR_HINT', 'LIGHTS_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['порвався ремінь безпеки', 'порвался ремень безопасности', 'обірвався ремінь безпеки', 'не застібається ремінь безпеки', 'ремінь безпеки порвався', 'ремінь порвався']) ok(hit(SE, x), 'Gurt: ' + x);
+  for (const x of ['порвався ремінь на вантажі', 'обірвався ремінь кріплення вантажу', 'ремінь кріплення вантажу порвався', 'ремень на грузе порвался', 'ремінь на вантажі порвався']) { ok(hit(LG, x), 'Zurrgurt: ' + x); ok(!hit(SE, x), 'nicht Gurt: ' + x); }
+  for (const x of ['не вимикається світло', 'не вимикаються фари', 'не выключается свет', 'фари не вимикаються', 'аварійка не вимикається', 'не выключается аварийка', "lights won't turn off", 'hazard lights won’t turn off', 'brake lights stuck on']) ok(hit(LI, x), 'Licht: ' + x);
+  for (const x of ['світлофор не вимикається', 'не вимикається двигун', 'фари не вимикаються, вже відремонтували']) ok(!hit(LI, x), 'nicht Licht: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
