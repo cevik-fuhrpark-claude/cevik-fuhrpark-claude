@@ -37152,6 +37152,19 @@ await test('Backlog 1200 (Reserve Start-Modul nach neuen Tür-/Ladungsmustern): 
   ok(pct <= 63.5, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 63,5 %)');
 });
 
+await test('Backlog 1201 (Sonde Motor überhitzt/Kühlmittel, Backlog 195): „Dampf aus dem Motorraum“, „Ausgleichsbehälter leer“, „Leistung gedrosselt“, „steam from the engine“, „low coolant“, „пар из-под капота“, „расширительный бачок треснул“, „вентилятор радиатора не включается“, „тосол уходит“ → Motor; „лопнул патрубок“, „помпа течёт“ → Leck', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + '_HINT = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const EN = rx('ENGINE'), LK = rx('LEAK');
+  for (const x of ['Dampf kommt aus dem Motorraum', 'Dampf aus dem Kühler', 'Motor dampft', 'Ausgleichsbehälter leer', 'Ausgleichsbehälter gerissen', 'Motor hat Leistung reduziert', 'Leistung wird reduziert', 'Leistung gedrosselt', 'Lkw drosselt auf 20 km/h',
+    'steam coming from the engine', 'engine is steaming', 'expansion tank empty', 'low coolant, topped up 5 litres', 'topped up coolant', 'low on coolant',
+    'пар из-под капота', 'пара з-під капота', 'расширительный бачок треснул', 'вискомуфта не работает', 'вентилятор радиатора не включается', 'не включается вентилятор радиатора', 'тосол уходит', 'мало тосола']) ok(EN.test(x), 'Motor: ' + x);
+  for (const x of ['steam from the exhaust', 'пар из выхлопной трубы', 'пара шин зношена', 'Ausgleichsbehälter erneuert', 'Kühlaggregat Leistung reduziert', 'Standheizung Leistung reduziert', 'Klimaanlage Leistung gedrosselt', 'вискомуфту заменили', 'вентилятор печки не работает', 'тосол заменили', 'Temperatur normal, keine Probleme']) ok(!EN.test(x), 'kein Motor: ' + x);
+  for (const x of ['лопнул патрубок радиатора', 'помпа течет', 'течет помпа', 'помпа течёт']) ok(LK.test(x), 'Leck: ' + x);
+  for (const x of ['помпа течёт, заменили', 'пара шин']) ok(!LK.test(x), 'kein Leck: ' + x);
+  for (const R of [EN, LK]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
