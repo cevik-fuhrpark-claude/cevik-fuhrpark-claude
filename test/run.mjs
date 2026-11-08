@@ -37052,6 +37052,15 @@ await test('Backlog 1193 (Sonde „Mangel kommt nach der Reparatur wieder“, Ba
   ok(fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/app-scan.js'"), 'SHELL enthält app-scan.js');
 });
 
+await test('Backlog 1194 (Sonde Bremsgeräusch, Backlog 195): Prädikat vorn „скрипят тормоза“, „скриплять гальма“ und „скрип при торможении“, „quietscht beim Bremsen“, „squeal when braking“ → Bremsen-Hinweis (wie „тормоза скрипят“, „Bremse quietscht“)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const m = app.match(/^const BRAKE_HINT = \/(.+?)\/([a-z]*);(?: *\/\/.*)?$/m); const BR = new RegExp(m[1], m[2]);
+  for (const x of ['скрипят тормоза', 'опять скрипят тормоза', 'сильно скрипят задние тормоза', 'після заміни колодок знову скриплять гальма', 'скрип при торможении', 'скрегіт при гальмуванні', 'Quietschen beim Bremsen', 'quietscht beim Bremsen', 'Schleifgeräusch beim Bremsen', 'squeal when braking', 'squealing noise when braking', 'grinding when I brake']) ok(BR.test(recurFix(x)), 'Bremse: ' + x);
+  for (const x of ['скрипит сиденье', 'свистит турбина', 'скрипит дверь, тормоза в порядке', 'скрип при повороте', 'Lenkung quietscht beim Einlenken']) ok(!BR.test(recurFix(x)), 'keine Bremse: ' + x);
+  ok(!BR.source.includes('||') && !BR.source.includes('(?:|'), 'leere Alternative in BRAKE_HINT');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
