@@ -36961,6 +36961,21 @@ await test('Backlog 1188 (Sonde Kabinenkippung/Tankdeckel/Kühlaggregat einschal
   for (const n of ['CABTILT_HINT', 'FUELCAP_HINT', 'REEFER_HINT', 'NOSTART_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
 });
 
+await test('Backlog 1189 (Sonde Ladung/Standheizung/Hydraulik, Backlog 195): „груз поехал“, „вантаж з’їхав/поїхав“, „груз съехал“, „палеты сползли“ → Ladung („груз поехал на склад“ nicht); „webasto not working“ → Heizung/Klima; „перегрузили/перегруз“ nicht mehr Motor (Überhitzung bleibt)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const LO = rx('LOAD_HINT'), CL = rx('CLIMATE_HINT'), EN = rx('ENGINE_HINT');
+  const f = (x) => recurFix(x);
+  for (const x of ['груз поехал', 'груз поехал.', "вантаж з'їхав", 'вантаж з’їхав', 'вантаж поїхав', 'груз съехал', 'палеты сползли', 'вантаж сповз']) ok(LO.test(f(x)), 'Ladung: ' + x);
+  for (const x of ['груз поехал на склад', 'вантаж поїхав до клієнта']) ok(!LO.test(f(x)), 'keine Ladung: ' + x);
+  for (const x of ['webasto not working', "Webasto doesn't start", 'вебасто не запускається']) ok(CL.test(f(x)), 'Klima/Heizung: ' + x);
+  ok(!CL.test('webasto not working, fixed'), 'Reparaturvermerk Webasto');
+  for (const x of ['груз перегрузили', 'перегруз', 'груз сместился, перегрузили']) ok(!EN.test(f(x)), 'kein Motor: ' + x);
+  for (const x of ['двигатель перегревается', 'мотор перегрівається', 'перегрев', 'перегрелся мотор']) ok(EN.test(f(x)), 'Motor: ' + x);
+  for (const n of ['LOAD_HINT', 'CLIMATE_HINT', 'ENGINE_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
