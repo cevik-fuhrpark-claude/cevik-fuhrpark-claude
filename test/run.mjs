@@ -37020,6 +37020,15 @@ await test('Backlog 1191 (Sonde Unfall/Sturm/Plane/Spiegel/Papiere/Tankkarte RU/
   for (const n of ['ACC_HINT', 'BRIDGE_HINT', 'VANDAL_HINT', 'TARP_HINT', 'STORM_HINT', 'MIRROR_HINT', 'LOST_HINT', 'FUELCARD_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
 });
 
+await test('Backlog 1192 (Sonde Motor/Licht/Klima RU/UK/DE, Backlog 195): „машина глохнет/глохне“, „глохнет на ходу“, „троит двигатель“, „Motor läuft unrund“ → Hinweis Motor (wie „двигатель глохнет“, „engine stalling/misfiring“, „Motor ruckelt“)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const m = app.match(/^const ENGINE_HINT = \/(.+?)\/([a-z]*);(?: *\/\/.*)?$/m); const EN = new RegExp(m[1], m[2]);
+  for (const x of ['машина глохнет', 'машина глохне', 'тягач заглох на трассе', 'глохнет на ходу', 'глохне під час руху', 'троит двигатель', 'Motor läuft unrund', 'Motor lief sehr unrund', 'двигатель глохнет', 'двигун троїть', 'engine misfiring']) ok(EN.test(recurFix(x)), 'Motor: ' + x);
+  for (const x of ['машина дергается при торможении', 'Motor läuft wieder rund', 'машина глохнет, заменили фильтр', 'музыка глохнет']) ok(!EN.test(recurFix(x)), 'kein Motor: ' + x);
+  ok(!EN.source.includes('||') && !EN.source.includes('(?:|'), 'leere Alternative in ENGINE_HINT');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
