@@ -36841,6 +36841,22 @@ await test('Backlog 1179 (Sonde Maut/Schmierung/Elektrik, Backlog 195): „ав�
   for (const n of ['GREASE_HINT', 'ELEC_HINT', 'FIRE_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
 });
 
+await test('Backlog 1181 (Sonde Unterfahrschutz/Lenkrad/Wegfahrsperre, Backlog 195): RU „отбойник оторвался/висит/болтается“ → Teil lose; „underride guard broken/hanging“ → Unterfahrschutz bzw. Teil lose; „б\'є кермо“, „бьет руль“, „вибрирует руль“ → Lenkung; „руль трясется/бьет“, „кермо трясеться/б\'є“ → zusätzlich Vibration; „Lenkrad schlägt“ → Lenkung + Vibration; Verneinung/„nicht mehr“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const LO = rx('LOOSE_HINT'), UR = rx('UNDERRUN_HINT'), ST = rx('STEER_HINT'), VI = rx('VIBR_HINT');
+  const f = (x) => recurFix(x);
+  for (const x of ['задний отбойник оторвался', 'отбойник висит', 'отбойник оторвало', 'отбойник отвалился', 'отбойник болтается', 'underride guard hanging', 'відбійник задній відірвався']) ok(LO.test(f(x)), 'Teil lose: ' + x);
+  for (const x of ['underride guard broken', 'underride guard bent', 'отбойник сломан', 'Unterfahrschutz kaputt']) ok(UR.test(f(x)), 'Unterfahrschutz: ' + x);
+  for (const x of ["б'є кермо", 'бьет руль', "б'є руль", 'вибрирует руль', 'вібрує кермо', 'трясет руль', 'руль бьет', 'кермо трясеться', 'Lenkrad schlägt', 'Lenkung schlägt', 'Lenkrad vibriert']) ok(ST.test(f(x)), 'Lenkung: ' + x);
+  for (const x of ['руль трясется', 'кермо трясеться', 'руль бьет', "кермо б'є", "б'є кермо", 'бьет руль', 'Lenkrad schlägt', 'Lenkrad schlägt beim Bremsen', 'steering wheel shaking']) ok(VI.test(f(x)), 'Vibration: ' + x);
+  for (const x of ["кермо не б'є", 'руль не бьет']) ok(!ST.test(f(x)) && !VI.test(f(x)), 'verneint: ' + x);
+  for (const x of ['Lenkrad schlägt nicht mehr', 'Kind schlägt gegen Tür', 'Tür schlägt zu', 'Lenkrad vibriert nicht mehr']) ok(!ST.test(f(x)) && !VI.test(f(x)), 'kein Lenkung/Vibration: ' + x);
+  for (const x of ['Mautbox defekt', 'всё в порядке', 'Bremse quietscht']) ok(!LO.test(f(x)) && !ST.test(f(x)) && !VI.test(f(x)) && !UR.test(f(x)), 'leere Alternative?: ' + x);
+  for (const n of ['LOOSE_HINT', 'UNDERRUN_HINT', 'STEER_HINT', 'VIBR_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
