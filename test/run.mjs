@@ -36889,6 +36889,18 @@ await test('Backlog 1183 (Sonde Reparaturvermerke/Wischer, Backlog 195): RU „�
   for (const n of ['ENGINE_HINT', 'VISIB_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
 });
 
+await test('Backlog 1184 (Sonde Öl/Kühlwasser RU/UK-Umgangssprache, Backlog 195): „гонит масло/антифриз“, „масло гонит“, „двигун жене оливу“, „пятно масла под машиной“, „пляма оливи під вантажівкою“ → Leck; „масло жрет/жере“ → Ölstand; „пятно масла на сиденье“, „гоняли машину без масла“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const LK = rx('LEAK_HINT'), OL = rx('OILLEVEL_HINT');
+  for (const x of ['гонит масло', 'масло гонит', 'гонит антифриз', 'гонит тосол', 'двигун жене оливу', 'пятно масла под машиной', 'масляное пятно под грузовиком', 'пляма оливи під вантажівкою', 'тече масло']) ok(LK.test(recurFix(x)), 'Leck: ' + x);
+  for (const x of ['пятно масла на сиденье', 'гоняли машину без масла', 'гонит машину на мойку', 'масло долили']) ok(!LK.test(recurFix(x)), 'kein Leck: ' + x);
+  for (const x of ['масло жрет', 'масло жере', 'олива жере', 'жрет масло']) ok(OL.test(recurFix(x)), 'Ölstand: ' + x);
+  for (const x of ['масло купили', 'олива свіжа']) ok(!OL.test(recurFix(x)), 'kein Ölstand: ' + x);
+  for (const n of ['LEAK_HINT', 'OILLEVEL_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
