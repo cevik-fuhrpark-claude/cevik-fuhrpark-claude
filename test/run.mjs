@@ -36689,6 +36689,16 @@ await test('Backlog 1167 (Sonde Druckluft DE/EN/UK/RU, Backlog 195): „Luftdruc
   ok(/fastHint\(BRAKE_HINT\);/.test(app), 'Bremsen-Muster wird in Teilen geprüft');
 });
 
+await test('Backlog 1168 (Sonde Luftfederung/Königszapfen EN/UK/RU, Backlog 195): „trailer sinks overnight“, „причіп опускається“, „прицеп проседает“ → Federung; „шворінь зношений“ → Sattelkupplung; Schlamm/Stützen/Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);$', 'm')); return new RegExp(m[1], m[2]); };
+  const SU = rx('SUSP_HINT'), CO = rx('COUPLING_HINT');
+  for (const x of ['trailer sinks overnight', 'trailer sags at the back', 'trailer drops overnight', 'trailer is lowering by itself', 'причіп осідає', 'причіп опускається вночі', 'напівпричіп опускається', 'прицеп проседает', 'прицеп оседает', 'полуприцеп опускается за ночь']) ok(SU.test(recurFix(x)), 'Federung: ' + x);
+  for (const x of ['trailer sinks into the mud', 'trailer sinks overnight, fixed now', 'прицеп опускается на ножки', 'причіп опускається на опори', 'причіп опускається, відремонтували', 'trailer dropped at the customer']) ok(!SU.test(recurFix(x)), 'keine Federung: ' + x);
+  for (const x of ['шворінь зношений', 'шворінь пошкоджений', 'шворень зношений', 'шкворінь розбитий', 'шкворень разбит']) ok(CO.test(recurFix(x)), 'Kupplung: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
