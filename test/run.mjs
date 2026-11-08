@@ -36794,6 +36794,15 @@ await test('Backlog 1176 (Sonde Auspuff/Türschloss/Kippverriegelung, Backlog 19
   for (const x of ['Fahrerhaus Kippverriegelung defekt', 'Kabinenverriegelung kaputt']) ok(CT.test(recurFix(x)), 'Kippen: ' + x);
 });
 
+await test('Backlog 1177 (Sonde Fenster/Kühlauflieger/Ladebordwand, Backlog 195): „гідроборт зламався“, „гидроборт сломался/поломался“, „гидроборт опускается сам“ → Tür/Ladebordwand wie „Ladebordwand kaputt“, „senkt sich von selbst“; Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const DO = rx('DOOR_HINT');
+  for (const x of ['гідроборт зламався', 'гидроборт сломался', 'гидроборт поломался', 'гидроборт опускается сам', 'гидроборт сам опускается', 'гідроборт сам опускається', 'двері зламалися', 'Ladebordwand kaputt', 'Ladebordwand senkt sich von selbst']) ok(DO.test(recurFix(x)), 'Ladebordwand/Tür: ' + x);
+  for (const x of ['гідроборт полагодили', 'сам опускаю гідроборт', 'скло дверей розбилось']) ok(!DO.test(recurFix(x)), 'kein Hinweis: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
