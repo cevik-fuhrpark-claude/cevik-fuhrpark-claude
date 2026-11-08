@@ -36803,6 +36803,15 @@ await test('Backlog 1177 (Sonde Fenster/Kühlauflieger/Ladebordwand, Backlog 195
   for (const x of ['гідроборт полагодили', 'сам опускаю гідроборт', 'скло дверей розбилось']) ok(!DO.test(recurFix(x)), 'kein Hinweis: ' + x);
 });
 
+await test('Backlog 1178 (Sonde Tankdeckel/Reifen/Kotflügel, Backlog 195): RU „крыло отвалилось/оторвалось/висит“, „крылья отвалились“, „потерял крыло“ → Teil lose/verloren wie UK „крило відвалилось“, „загубив крило“; „крыло на месте“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const LO = rx('LOOSE_HINT');
+  for (const x of ['крыло отвалилось', 'крыло оторвалось', 'крыло висит', 'крылья отвалились', 'потерял крыло', 'крило відвалилось', 'загубив крило', 'Kotflügel abgefallen']) ok(LO.test(recurFix(x)), 'lose: ' + x);
+  for (const x of ['крыло на месте', 'Kotflügel kaputt']) ok(!LO.test(recurFix(x)), 'nicht lose: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
