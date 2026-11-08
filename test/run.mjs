@@ -36620,6 +36620,20 @@ await test('Backlog 1161 (Sonde Gurt/Zurrgurt/Licht UK/RU/EN, Folge aus 1160): �
   for (const x of ['світлофор не вимикається', 'не вимикається двигун', 'фари не вимикаються, вже відремонтували']) ok(!hit(LI, x), 'nicht Licht: ' + x);
 });
 
+await test('Backlog 1162 (Sonde Spiegel/Gurt/Lenkung UK/RU/EN, Folge aus 1161): „не регулюється дзеркало“, „can’t adjust the mirror“ → Spiegel; „не застібається ремінь сидіння“, „ремень не пристегивается“ → Sitz/Gurt (nicht „на грузе“); „машину уводит вправо“, „грузовик уводит в сторону“ → Lenkung; Reparaturvermerk nicht (UK-Reparaturvermerk am Spiegel blendet die App über noFixed aus, Sonde geprüft)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [MI, SE, ST] = ['MIRROR_HINT', 'SEAT_HINT', 'STEER_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['не регулюється дзеркало', 'не регулируется зеркало', 'не регулюється дзеркало заднього виду', 'дзеркало не регулюється', "can't adjust the mirror", 'cannot adjust mirror', 'unable to adjust the side mirror', "mirror can't be adjusted"]) ok(hit(MI, x), 'Spiegel: ' + x);
+  for (const x of ["can't adjust the mirror, already fixed", 'не регулюється температура']) ok(!hit(MI, x), 'nicht Spiegel: ' + x);
+  for (const x of ['не застібається ремінь сидіння', 'не пристегивается ремень', 'ремень безопасности не пристегивается', 'ремінь не пристібається', 'не пристёгивается ремень безопасности']) ok(hit(SE, x), 'Gurt: ' + x);
+  for (const x of ['не пристегивается ремень на грузе', 'не застібається ремінь на вантажі']) ok(!hit(SE, x), 'nicht Gurt: ' + x);
+  for (const x of ['машину уводит вправо', 'грузовик уводит в сторону', 'кермо тягне вбік', 'машину ведет влево']) ok(hit(ST, x), 'Lenkung: ' + x);
+  ok(!hit(ST, 'вода не уводит'), 'nicht Lenkung: вода не уводит');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
