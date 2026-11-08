@@ -37061,6 +37061,19 @@ await test('Backlog 1194 (Sonde Bremsgeräusch, Backlog 195): Prädikat vorn „
   ok(!BR.source.includes('||') && !BR.source.includes('(?:|'), 'leere Alternative in BRAKE_HINT');
 });
 
+await test('Backlog 1195 (Sonde Winter, Backlog 195): „Druckluftbremse eingefroren“, „пневматика замерзла“ → Bremse; „door lock frozen“, „замок двери замёрз“ → Fahrerhaus abschließen; „дворники примерзли“, „стекло замерзает изнутри“, „омывайка замерзла“ → Sicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + '_HINT = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const BR = rx('BRAKE'), CL = rx('CABLOCK'), VI = rx('VISIB');
+  for (const x of ['Druckluftbremse eingefroren', 'Druckluftanlage ist eingefroren', 'Bremsleitung eingefroren', 'air lines frozen', 'air system is frozen', 'пневматика замерзла', 'замерзла пневматика', 'тормозная магистраль замерзла', 'пневматика перемерзла']) ok(BR.test(recurFix(x)), 'Bremse: ' + x);
+  for (const x of ['Druckluftbremse eingefroren, wieder aufgetaut', 'пневматику разморозили, всё работает']) ok(!BR.test(recurFix(x)), 'keine Bremse: ' + x);
+  for (const x of ['door lock frozen', 'cab door lock is frozen', 'driver’s door lock frozen', 'замок двери замёрз', 'замок дверей замерз', 'примерз замок', 'замок водійських дверей замерз']) ok(CL.test(recurFix(x)), 'Schloss: ' + x);
+  for (const x of ['замок зажигания замерз', 'замерз замок зажигания', 'door lock frozen but thawed now']) ok(!CL.test(recurFix(x)), 'kein Schloss: ' + x);
+  for (const x of ['стекло замерзает изнутри', 'скло замерзає зсередини', 'дворники примерзли', 'двірники примерзли', 'омывайка замерзла', 'омивайка замерзла']) ok(VI.test(recurFix(x)), 'Sicht: ' + x);
+  for (const R of [BR, CL, VI]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
