@@ -36901,6 +36901,20 @@ await test('Backlog 1184 (Sonde Öl/Kühlwasser RU/UK-Umgangssprache, Backlog 19
   for (const n of ['LEAK_HINT', 'OILLEVEL_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
 });
 
+await test('Backlog 1185 (Sonde Reifen/Kupplung/Getriebe DE/EN/UK/RU, Backlog 195): „резина лысая“, „лысая резина“, „(боковой) порез шины“ → Reifen; „колесо пробил(и)“ → Platten; „передачи туго включаются“, „коробка клинит“, „сцепление ведёт“, „Gänge gehen schwer rein“, „Getriebe blockiert“, „gears hard to engage“ → Getriebe; „в клинике“, „ведёт себя нормально“, „резинка дворника“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const TY = rx('TYRE_HINT'), FL = rx('FLAT_HINT'), GE = rx('GEAR_HINT');
+  const noFixed = new Function(app.slice(app.indexOf('const FIXED_NOTE'), app.indexOf("}).join('');", app.indexOf('const noFixed')) + 12) + '; return noFixed;')();
+  for (const x of ['резина лысая', 'лысая резина', 'шины лысые', 'порез шины', 'боковой порез шины', 'боковий поріз шини', 'порез на шине']) ok(TY.test(recurFix(x)), 'Reifen: ' + x);
+  for (const x of ['резинка дворника порвалась', 'резиновый коврик грязный']) ok(!TY.test(recurFix(x)), 'kein Reifen: ' + x);
+  for (const x of ['колесо пробил', 'колесо пробили', 'колесо пробито', 'пробил колесо на трассе']) ok(FL.test(recurFix(x)), 'Platten: ' + x);
+  for (const x of ['передачи туго включаются', 'передачі туго вмикаються', 'коробка клинит', 'сцепление ведёт', 'зчеплення веде', 'Gänge gehen schwer rein', 'Getriebe blockiert', 'gears hard to engage', 'Gang geht schwer rein']) ok(GE.test(noFixed(recurFix(x))), 'Getriebe: ' + x);
+  for (const x of ['коробка в клинике', 'сцепление новое, ведёт себя нормально', 'Getriebe blockiert, repariert', 'Gänge gehen schwer rein, Getriebe getauscht', 'коробка хрустит, поменяли синхрон', 'Gang im Laderaum blockiert']) ok(!GE.test(noFixed(recurFix(x))), 'kein Getriebe: ' + x);
+  for (const n of ['TYRE_HINT', 'FLAT_HINT', 'GEAR_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
