@@ -36773,6 +36773,15 @@ await test('Backlog 1174 (Sonde Tachograph/Kupplung/Getriebe, Backlog 195): „�
   for (const x of ['коробка скрипить, замінили масло', 'Getriebe quietscht nicht mehr', 'Tür quietscht', 'скрипить сидіння']) ok(!GE.test(recurFix(x)), 'kein Getriebe: ' + x);
 });
 
+await test('Backlog 1175 (Sonde Überhitzung, Backlog 195): „Kühler kocht/wird zu heiß“, „radiator boiling“, „тосол кипит/закипел“ → Motor/Überhitzung wie „Motor kocht“, „антифриз кипить“; „Kühler undicht“, „тосол долили“, „Kühlaggregat kocht nicht“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const EN = rx('ENGINE_HINT');
+  for (const x of ['Kühler kocht', 'Kühler wird zu heiß', 'radiator boiling', 'radiator is too hot', 'тосол кипит', 'тосол кипить', 'тосол закипел', 'Motor kocht', 'антифриз кипить']) ok(EN.test(recurFix(x)), 'Überhitzung: ' + x);
+  for (const x of ['Kühler undicht', 'тосол долили', 'Kühlaggregat kocht nicht']) ok(!EN.test(recurFix(x)), 'keine Überhitzung: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
