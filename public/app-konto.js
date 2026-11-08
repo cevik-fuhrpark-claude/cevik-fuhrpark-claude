@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, afterLogin, api, bindLang, bindPwShow, deviceId, ensureLang, esc, fmtDT, langSelect, lostDup, lostMark, pwField, qrSvg, render, resetUserState, t, toast, tzNote, viewInbox, viewLogin } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, afterLogin, api, bindLang, bindPwShow, deviceId, deviceLabel, ensureLang, esc, fmtDT, langSelect, lostDup, lostMark, pwField, qrSvg, render, resetUserState, t, toast, tzNote, viewInbox, viewLogin } from './app-main.js';
 
 // Zweiter Schritt: Code aus der Authenticator-App oder Ersatzcode (Passwort bleibt nicht im Speicher der Seite)
 async function viewLoginCode(challenge) {
@@ -57,6 +57,13 @@ async function viewInvite(token) {
     catch (err) { toast(err.message, true); }
   };
 }
+// Fehler beim Einschalten von Push: Browsermeldungen (englisch, z. B. „Registration failed - permission denied“) als übersetzter Hinweis
+// mit Handlungsweg, Originaltext klein dahinter (23.10.2026, Teilagent „Disposition erster Tag“); Serverfehler (mit status) unverändert
+function pushErrText(err) {
+  if (!err || err.status || err.offline || err.code) return err && err.message ? err.message : String(err || '');
+  const k = err.name === 'NotAllowedError' ? 'push_err_denied' : err.name === 'AbortError' || err.name === 'NetworkError' ? 'push_err_service' : err.name === 'InvalidStateError' ? 'push_err_state' : 'push_err_other';
+  return `${t(k)}${err.message ? ` (${err.message})` : ''}`;
+}
 // Backlog 1158: Inhalt „Push für diese Hinweise“ (Arten, persönliche Ruhezeit) – nachgeladen in Gruppe konto (still, wie loadTotp)
 async function loadNotifyPrefs(np) {
   try {
@@ -78,6 +85,36 @@ async function loadNotifyPrefs(np) {
       try { await api('PUT', '/api/me/notify-prefs', { muted }); toast('✓'); } catch (err) { toast(err.message, true); }
     }));
   } catch (err) { toast(err.message, true); }
+}
+async function pushPanel(el) {
+  const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const ios = /iPhone|iPad/.test(navigator.userAgent) && !window.navigator.standalone;
+  if (!supported) { el.innerHTML = `<h3>${esc(t('push_title'))}</h3><p class="muted">${esc(ios ? t('push_ios') : t('push_unsupported'))}</p>`; return; }
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  el.innerHTML = `<h3>${esc(t('push_title'))}</h3><p>${sub ? `<span class="chip ok">${esc(t('push_on'))}</span>` : `<span class="chip">${esc(t('push_off'))}</span>`}${Notification.permission === 'denied' ? ` <span class="chip kritisch">${esc(t('push_denied'))}</span>` : ''}</p>
+    <div class="actions">${sub ? `<button class="btn secondary" id="pt">${esc(t('push_test'))}</button>` : `<button class="btn" id="pe">${esc(t('push_enable'))}</button>`}</div>`;
+  const pe = $('#pe', el);
+  if (pe) pe.onclick = async () => {
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { toast(t('push_denied'), true); return; }
+      const key = S.meta.vapid_public_key;
+      const raw = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((key.length + 3) % 4)), (c) => c.charCodeAt(0));
+      const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
+      const j = s.toJSON();
+      await api('POST', '/api/push/subscribe', { endpoint: j.endpoint, keys: j.keys, device_label: deviceLabel() });
+      pushPanel(el);
+    } catch (err) { toast(pushErrText(err), true); }
+  };
+  const pt = $('#pt', el);
+  if (pt) pt.onclick = async () => { pt.disabled = true; try {
+      // Test genau an dieses Gerät (eigenes Abo), sonst an alle Geräte der Person (20.10.2026)
+      let ep = null; try { const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null; const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null; ep = sub ? sub.endpoint : null; } catch { /* ohne Abo: alle Geräte */ }
+      const r = await api('POST', '/api/push/test', ep ? { endpoint: ep } : undefined);
+      // Rohtext des Push-Dienstes nicht anzeigen (deutsch/technisch); Ruhezeit und abgemeldetes Gerät mit eigener Meldung (19.10.2026)
+      const st = r.hold_until ? t('pst_held').replace('{t}', fmtDT(r.hold_until)) : r.device_gone ? t('pst_gone') : t('pst_' + r.push_status) === 'pst_' + r.push_status ? r.push_status : t('pst_' + r.push_status);
+      toast(`Push: ${st}`, r.push_status !== 'accepted' && !r.hold_until); } catch (err) { toast(err.message, true); } finally { pt.disabled = false; } };
 }
 // Backlog 1153 (Reserve Start-Modul): Sitzungs-/Geräteliste aus „Mehr“ als eigene Funktionen (Gruppe konto, still nachgeladen beim Aufklappen)
 async function loadSessions() {
@@ -187,4 +224,4 @@ async function loadTotp() {
   };
 }
 
-export { loadNotifyPrefs, loadSessions, loadTotp, viewInvite, viewLoginCode, viewSetup };
+export { loadNotifyPrefs, loadSessions, loadTotp, pushPanel, viewInvite, viewLoginCode, viewSetup };

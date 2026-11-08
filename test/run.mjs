@@ -36596,6 +36596,18 @@ await test('Backlog 1159 (Sonde Werkzeugkasten/Standheizung): „toolbox lid bro
   ok(app.includes("{ let dl = noFixed(dsk); if (!$('#numplate').hidden)"), 'loses Teil nutzt den Reparaturvermerk (noFixed)');
 });
 
+await test('Backlog 1160 (Sonde Motor/Kupplung UK/RU): „обірвався ремінь генератора“, „свистить ремінь“, „температура двигуна в червоній зоні“, „мотор греется“, „кипит радиатор“, „турбина не дует“, „акумулятор не заряджається“, „battery not charging“ → Motor; „зчеплення не вимикається“, „педаль зчеплення провалюється“, „Kupplungspedal fällt durch“, „clutch pedal goes to the floor“ → Getriebe/Kupplung; „ремінь порвався“ allein (Gurt), Zurrgurt, Heizungsmotor, Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const [EN, GE] = ['ENGINE_HINT', 'GEAR_HINT'].map(g);
+  const hit = (re, x) => re.test(recurFix(x));
+  for (const x of ['обірвався ремінь генератора', 'порвався ремінь генератора', 'порвався приводний ремінь', 'свистить ремінь', 'свистить ремінь генератора', 'Riemen quietscht', 'температура двигуна в червоній зоні', 'стрелка температуры в красной зоне', 'мотор греется', 'двигун гріється', 'кипит радиатор', 'радіатор закипів', 'турбина не дует', 'турбіна не дує', 'акумулятор не заряджається', 'не заряджає акумулятор', 'аккумулятор не заряжается', 'battery not charging', 'перегрівається двигун']) ok(hit(EN, x), 'Motor: ' + x);
+  for (const x of ['обірвався ремінь', 'ремінь порвався', 'ремень порвался', 'порвався ремінь безпеки', 'ремінь безпеки порвався', 'свистить ремінь безпеки', 'обірвався ремінь кріплення вантажу', 'стяжний ремінь порвався', 'порвався ремінь на вантажі', 'ремінь сидіння обірвався', 'мотор склоочисника гріється', 'мотор печки греется', 'не заряджає телефон', 'перегрівається двигун, вже відремонтували', 'двигун гріється, вже відремонтували', 'ремінь генератора замінили', 'Temperatur im Laderaum im roten Bereich', 'не вимикається світло']) ok(!hit(EN, x), 'nicht Motor: ' + x);
+  for (const x of ['зчеплення не вимикається', 'не вимикається зчеплення', 'педаль зчеплення провалюється', 'педаль сцепления проваливается', 'сцепление не выключается', 'Kupplungspedal fällt durch', 'Kupplung fällt durch', 'clutch pedal goes to the floor', 'clutch pedal dropped straight to the floor']) ok(hit(GE, x), 'Kupplung: ' + x);
+  for (const x of ['педаль гальма провалюється', 'Bremspedal fällt durch', 'не вимикається світло']) ok(!hit(GE, x), 'nicht Kupplung: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
