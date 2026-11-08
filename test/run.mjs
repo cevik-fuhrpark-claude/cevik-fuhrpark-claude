@@ -36750,6 +36750,18 @@ await test('Backlog 1172 (Sonde Spiegel/AdBlue/Tankanzeige, Backlog 195): „р�
   for (const x of ['diesel frozen', 'fuel frozen in the tank']) ok(GF.test(recurFix(x)), 'Diesel gefroren: ' + x);
 });
 
+await test('Backlog 1173 (Sonde Hupe/Standheizung, Backlog 195): „не сигналить“, „не сигналит“ → Anzeige/Hupe; „вебаста не работает“ → Klima/Standheizung; „автономка не заводится“ nicht mehr zusätzlich Startprobleme; „не заводится“ bleibt Startprobleme', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const DA = rx('DASH_HINT'), CL = rx('CLIMATE_HINT'), NS = rx('NOSTART_HINT');
+  for (const x of ['не сигналить', 'не сигналит', 'сигнал не працює', 'гудок не работает']) ok(DA.test(recurFix(x)), 'Hupe: ' + x);
+  for (const x of ['не сигналить, полагодили', 'поставив сигнал на телефоні']) ok(!DA.test(recurFix(x)), 'keine Hupe: ' + x);
+  for (const x of ['вебаста не работает', 'вебаста не працює', 'вебаста не запускается', 'не работает webasto', 'автономка не заводится']) ok(CL.test(recurFix(x)), 'Standheizung: ' + x);
+  for (const x of ['автономка не заводится', 'автономка не заводиться', 'вебаста не заводится']) ok(!NS.test(recurFix(x)), 'keine Startprobleme: ' + x);
+  for (const x of ['не заводится', 'машина не заводиться']) ok(NS.test(recurFix(x)), 'Startprobleme: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
