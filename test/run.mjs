@@ -37178,6 +37178,17 @@ await test('Backlog 1202 (Sonde Scheibenwischer/Waschwasser/Bremsflüssigkeit, B
   for (const R of [IN, VI, BR]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1203 (Sonde Rad/Radlager/Kardanwelle, Backlog 195): „Nabe heiß“, „нет гайки на колесе“, „немає гайки на колесі“, „открутилась гайка колеса“ → Rad; „Radlager getauscht, kein Geräusch mehr“ nicht; „propshaft UJ worn“, „кардан бьёт“, „хрестовина кардана розбита“ → Vibration', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + '_HINT = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const WH = rx('WHEEL'), VB = rx('VIBR');
+  for (const x of ['Nabe ist sehr heiß', 'Radlager brummt laut', 'Radlager macht Geräusche', 'нет гайки на колесе', 'немає гайки на колесі', 'открутилась гайка колеса', 'открутилась колесная гайка', 'Radmutter fehlt hinten links']) ok(WH.test(x), 'Rad: ' + x);
+  for (const x of ['Radlager getauscht, kein Geräusch mehr', 'Nabe getauscht, nicht mehr heiß', 'Lenkradnabe locker', 'немає гайки на колесі, затягнули']) ok(!WH.test(x), 'kein Rad: ' + x);
+  for (const x of ['propshaft UJ worn', 'UJ knocking', 'кардан бьет на скорости 80', "кардан б'є", 'крестовина кардана разбита', 'хрестовина кардана розбита', 'кардан стучит', 'Kardanwelle schlägt']) ok(VB.test(x), 'Vibration: ' + x);
+  for (const x of ['UJ replaced, no clunk', 'кардан заменили, больше не стучит', 'крестовину заменили']) ok(!VB.test(x), 'keine Vibration: ' + x);
+  for (const R of [WH, VB]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
