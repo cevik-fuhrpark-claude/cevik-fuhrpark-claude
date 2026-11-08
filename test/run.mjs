@@ -36812,6 +36812,21 @@ await test('Backlog 1178 (Sonde Tankdeckel/Reifen/Kotflügel, Backlog 195): RU �
   for (const x of ['крыло на месте', 'Kotflügel kaputt']) ok(!LO.test(recurFix(x)), 'nicht lose: ' + x);
 });
 
+await test('Backlog 1179 (Sonde Maut/Schmierung/Elektrik, Backlog 195): „автозмазка/автосмазка не працює/пустая“, „нет смазки на седле“ → Schmierung; „провід/голый провод оголений“, „спіраль/кабель причепа порвався“, „предохранитель горит/выбивает/сгорел“ → Elektrik; „smells like burning wires“, „riecht nach Kabel“, „пахнет проводкой“ → Brand; Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const GR = rx('GREASE_HINT'), EL = rx('ELEC_HINT'), FI = rx('FIRE_HINT');
+  for (const x of ['автозмазка порожня', 'автозмащення не працює', 'автосмазка не работает', 'автосмазка пустая', 'нет смазки на седле', 'змащення сідла немає', 'Zentralschmierung leer', 'седло сухое']) ok(GR.test(recurFix(x)), 'Schmierung: ' + x);
+  for (const x of ['автосмазка заправлена', 'автосмазка не работала, отремонтировали']) ok(!GR.test(recurFix(x)), 'keine Schmierung: ' + x);
+  for (const x of ['провід оголений', 'оголений провід', 'оголенный провод', 'голый провод', 'спіралька порвана', 'спиралька порвана', 'спіраль причепа порвалась', 'кабель прицепа порван', 'предохранитель горит', 'предохранитель выбивает', 'предохранитель сгорел', 'запобіжник горить', 'Kabel liegt blank', 'fuse keeps blowing']) ok(EL.test(recurFix(x)), 'Elektrik: ' + x);
+  for (const x of ['предохранитель сгорел, поменяли', 'спіраль порвалась, замінили', 'голый провод заизолировали', 'запобіжник замінили', 'Plane: шнур порвався']) ok(!EL.test(recurFix(x)), 'keine Elektrik: ' + x);
+  for (const x of ['smells like burning wires', 'riecht nach Kabel', 'riecht nach Kabelbrand', 'пахне проводкою', 'пахнет проводкой', 'smells burnt']) ok(FI.test(recurFix(x)), 'Brandgeruch: ' + x);
+  for (const x of ['Kabel getauscht', 'riecht nach Diesel']) ok(!FI.test(recurFix(x)), 'kein Brand: ' + x);
+  for (const x of ['Mautbox defekt', 'Bremse quietscht', 'всё в порядке']) ok(!GR.test(recurFix(x)) && !EL.test(recurFix(x)), 'weder Schmierung noch Elektrik (leere Alternative?): ' + x);
+  for (const n of ['GREASE_HINT', 'ELEC_HINT', 'FIRE_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
