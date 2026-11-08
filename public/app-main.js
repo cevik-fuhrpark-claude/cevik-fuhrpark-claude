@@ -5089,53 +5089,8 @@ async function viewTachoHistory(...a) { return (await lazyModule('verwaltung')).
 async function viewTacho(...a) { return (await lazyModule('verwaltung')).viewTacho(...a); }
 
 // ---------- Hinweise & Push ----------
-// Zeile der Hinweisliste (auch für „Ältere laden“)
-const nRow = (x) => `<div class="row note ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at || x.own_device ? 'opacity:.7' : ''}"${x.own_device ? ' data-owndev' : ''}><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" style="white-space:normal" href="${esc(notifHref(x))}" data-open="${esc(x.id)}">${esc(x.title)}${x.own_device ? ` <span class="chip ok">${esc(t('nl_own_device'))}</span>` : ''}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub" style="white-space:normal">${x.coupled_locked ? `<b class="chip kritisch" data-ncoupled>${esc(t('notif_coupled_locked').replace('{v}', `${t(x.coupled_locked.kind === 'anhaenger' ? 'trailer' : 'truck')} ${x.coupled_locked.plate}`))}</b> ` : ''}${esc(x.body)} · Push: ${esc(x.push_status === 'pending' && x.push_hold_until && Date.parse(x.push_hold_until) > Date.now() ? t('pst_held').replace('{t}', fmtDT(x.push_hold_until)) : x.push_status === 'pending' && x.push_hold_until && x.push_hold_until >= '0001' && (x.opened_at || x.acknowledged_at) ? t('pst_held_opened') : t('pst_' + x.push_status) === 'pst_' + x.push_status ? x.push_status : t('pst_' + x.push_status))}</span></div>`;
-async function viewInbox() {
-  // Filter: alle / ungelesen (weder geöffnet noch quittiert) / dringend – serverseitig, Zähler über ALLE Hinweise (nicht nur die neuesten 100)
-  const NF = { all: () => true, unread: (x) => !x.opened_at && !x.acknowledged_at, urgent: (x) => !!x.urgent };
-  // Gewählter Filter gilt für die App-Sitzung; ohne Wahl: „Ungelesen“, solange es ungelesene gibt, sonst „Alle“
-  // ohne Wahl gleich „Ungelesen“ anfragen (vorher erst „Alle“ geladen und verworfen – doppelte Abfrage bei jedem Quittieren, 23.10.2026)
-  let n = await api('GET', '/api/notifications?filter=' + (NF[S.inboxF] ? S.inboxF : 'unread'));
-  const nf = NF[S.inboxF] ? S.inboxF : n.counts.unread ? 'unread' : 'all';
-  if (nf !== n.filter) n = await api('GET', '/api/notifications' + (nf === 'all' ? '' : '?filter=' + nf));
-  if (S.quietBg && (location.hash || '') !== '#/inbox') return; // stille Aktualisierung (Backlog 1116): inzwischen andere Seite – nichts überschreiben
-  S.unread = n.counts.unread;
-  const shown = n.notifications;
-  render(`<h1>${esc(t('notifications'))}</h1>${n.quiet ? `<p class="small muted" id="qinfo">${esc(t('quiet_on').replace('{f}', n.quiet.from).replace('{t}', n.quiet.to))} – ${esc(t('quiet_short'))}</p>` : ''}<section class="panel" id="push"></section>
-    <details class="panel" id="np"><summary>${esc(t('push_prefs'))}</summary><p class="small muted">${esc(t('push_prefs_hint'))}</p><div id="npl"></div></details>
-    ${n.counts.all ? `<div class="actions"><button class="btn secondary" id="ra">${esc(t('mark_read'))}</button></div>
-    <div class="seg-tabs" id="nfil">${Object.keys(NF).map((k) => `<a href="#/inbox" data-nf="${k}" class="${k === nf ? 'on' : ''}"${k === nf ? ' aria-current="true"' : ''}>${esc(t(k === 'all' ? 'all' : 'nf_' + k))} (${n.counts[k]})</a>`).join('')}</div>` : ''}
-    ${n.truncated ? `<p class="small panel" id="ntrunc">${esc(t('nf_truncated').replace('{max}', n.max).replace('{n}', n.counts[nf]))}</p>` : ''}
-    <div class="list" id="nlist">${shown.map((x) => nRow(x)).join('') || `<p class="muted">${esc(t(n.counts.all ? 'nf_none' : 'no_notifications'))}</p>`}</div>
-    ${n.truncated ? `<div class="actions"><button type="button" class="btn secondary" id="nmore">${esc(t('nf_more'))}</button></div>` : ''}`, '');
-  
-  pushPanel($('#push'));
-  const np = $('#np');
-  // Backlog 1158 (Reserve Start-Modul): Push-Einstellungen/Ruhezeit erst beim Aufklappen aus dem Modul konto laden (einmalige Einstellung)
-  np.ontoggle = () => { if (np.open && !np.dataset.loaded) loadNotifyPrefs(np).catch((err) => toast(err.message, true)); };
-  // Nach Quittieren/„Alle gelesen“/Filterwechsel: aufgeklappter Bereich „Push für diese Hinweise“ bleibt offen; Fehler (z. B. kein Netz) als Meldung statt stillem Abbruch
-  const again = async () => { const o = np.open; await viewInbox(); const d = $('#np'); if (d && o) d.open = true; };
-  const bindRows = (root) => {
-    $$('[data-ack]', root).forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/notifications/${b.dataset.ack}/ack`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g: wiederholbar */ await refreshUnread(); again(); } catch (err) { toast(err.message, true); } }));
-    $$('[data-open]', root).forEach((a) => a.addEventListener('click', () => api('POST', `/api/notifications/${a.dataset.open}/opened`).then(() => refreshUnread(true)).catch(() => {}))); // Zähler gleich nachziehen (19.10.2026: blieb bis zum nächsten Öffnen stehen)
-  };
-  bindRows(document);
-  // „Ältere laden“: nächste Seite nach dem letzten angezeigten Hinweis anhängen (23.10.2026 – vorher nach 100 nicht erreichbar)
-  let last = shown.length ? shown[shown.length - 1].id : null;
-  const more = $('#nmore');
-  if (more) more.onclick = async () => {
-    try {
-      const m = await api('GET', `/api/notifications?${nf === 'all' ? '' : 'filter=' + nf + '&'}before=${encodeURIComponent(last)}`);
-      const box = document.createElement('div'); box.innerHTML = m.notifications.map((x) => nRow(x)).join(''); bindRows(box);
-      $('#nlist').append(...box.children); $('#nlist').dataset.more = '1'; // Backlog 1116: nicht still neu aufbauen
-      if (m.notifications.length) last = m.notifications[m.notifications.length - 1].id;
-      if (!m.truncated) more.parentElement.remove();
-    } catch (err) { toast(err.message, true); }
-  };
-  const ra = $('#ra'); if (ra) ra.onclick = async () => { try { await api('POST', '/api/notifications/read-all', n.as_of ? { before: n.as_of } : {}); S.unread = 0; paintBadge(); refreshUnread(true); again(); } catch (err) { toast(err.message, true); } };
-  $$('[data-nf]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); S.inboxF = a.dataset.nf; again().catch((err) => toast(err.message, true)); }));
-}
+
+async function viewInbox(...a) { return (await lazyModule('suche')).viewInbox(...a); }
 
 // Push bei geöffneten Hinweisen: Liste nur neu aufbauen, wenn nichts eingegeben und „Push für diese Hinweise“ zugeklappt ist –
 // sonst gingen Ruhezeit-Eingaben bzw. der aufgeklappte Bereich verloren; stattdessen Hinweis mit Knopf „Liste aktualisieren“
@@ -5467,4 +5422,4 @@ function lazyModule(g, quiet) {
   return LAZY_MODULES[g];
 }
 
-export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, CT_KINDS, DEFECT_RESULTS, FORM_DRAFT_MS, FUEL_HINT, GLASS_HINT, HITRUN_HINT, ICON, MARTEN_HINT, MORE_MAX, NUMPLATE_HINT, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, ROOFICE_HINT, S, SEND_TIMEOUT_MS, STATES, STORM_HINT, STOW_HINT, STRINGS, THEFT_HINT, TM_PROV, TOW_HINT, TST, VANDAL_HINT, VEH_SORTS, WILD_HINT, WST_ST, afLink, afterLogin, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindChecklist, bindFormDraft, bindLang, bindPwShow, bindTachoCancel, cDesc, caseList, checkLabel, checklistHtml, claimChip, clearOfflineData, clipTxt, collectChecklist, comboClearV, conflictKeep, conflictMine, coupledLockedText, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, deviceId, deviceLabel, dispoDayBefore, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, flushOutbox, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hashNorm, helpLink, helpLoaded, helpMatches, helpNorm, helpSections, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isClaimsHash, isContractsHash, isDriversHash, isFinesHash, isMaintHash, isMgr, isPlanHash, isStockHash, isTachoHash, isTiresHash, isUnusedUser, isVehHash, isWeekendD, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmUnclearDateDue, kmWarn, langAttr, langLoaded, langSelect, loadHelp, loadSessions, loadTotp, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, markSession, mayCheck, mayReport, mk, mkR, nDays, nextWorkdayAfter, noSticker, noTicket, noTr, noVehiclesNote, noWsObj, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, otherEnvOutbox, outboxGet, ownerT, parseQty, partsEta, partsWaitDays, phoneIn, planVehTag, plate, plateCmp, pnCompact, pnm, posL, prepareUpload, printHead, printStamp, provL, pushOffForLogout, pwField, qrSvg, rc2, rdyOf, rdyTxt, readCsvFile, reasonText, recentRepeat, recurFix, render, resetUserState, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, siteWsHints, sortPref, sortUsers, stTxt, stackTables, stockHit, stockNoteText, supplierLabel, t, tachoHistList, telAbroad, telHref, tfill, tireAge, tireSizeSame, tlHash, tmAge, tmKmRej, tn, toast, todayMark, translateLockReason, translateNextAction, tzNote, uiLoc, uid, unitIn, unitL, usersCsv, vOverdue, vehSig, vehiclesCached, viewInbox, viewLogin, vinOf, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };
+export { $, $$, BERLIN_DT_FMT, BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, CT_KINDS, DEFECT_RESULTS, FORM_DRAFT_MS, FUEL_HINT, GLASS_HINT, HITRUN_HINT, ICON, MARTEN_HINT, MORE_MAX, NUMPLATE_HINT, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, ROOFICE_HINT, S, SEND_TIMEOUT_MS, STATES, STORM_HINT, STOW_HINT, STRINGS, THEFT_HINT, TM_PROV, TOW_HINT, TST, VANDAL_HINT, VEH_SORTS, WILD_HINT, WST_ST, afLink, afterLogin, agentFindingsCsv, announceHits, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindChecklist, bindFormDraft, bindLang, bindPwShow, bindTachoCancel, cDesc, caseList, checkLabel, checklistHtml, claimChip, clearOfflineData, clipTxt, collectChecklist, comboClearV, conflictKeep, conflictMine, coupledLockedText, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, deviceId, deviceLabel, dispoDayBefore, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, eur, eur3, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, flushOutbox, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hashNorm, helpLink, helpLoaded, helpMatches, helpNorm, helpSections, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isClaimsHash, isContractsHash, isDriversHash, isFinesHash, isMaintHash, isMgr, isPlanHash, isStockHash, isTachoHash, isTiresHash, isUnusedUser, isVehHash, isWeekendD, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmUnclearDateDue, kmWarn, langAttr, langLoaded, langSelect, loadHelp, loadNotifyPrefs, loadSessions, loadTotp, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, markSession, mayCheck, mayReport, mk, mkR, nDays, nextWorkdayAfter, noSticker, noTicket, noTr, noVehiclesNote, noWsObj, noneP, notifHref, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, otherEnvOutbox, outboxGet, ownerT, paintBadge, parseQty, partsEta, partsWaitDays, phoneIn, planVehTag, plate, plateCmp, pnCompact, pnm, posL, prepareUpload, printHead, printStamp, provL, pushOffForLogout, pushPanel, pwField, qrSvg, rc2, rdyOf, rdyTxt, readCsvFile, reasonText, recentRepeat, recurFix, refreshUnread, render, resetUserState, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, siteWsHints, sortPref, sortUsers, stTxt, stackTables, stockHit, stockNoteText, supplierLabel, t, tachoHistList, telAbroad, telHref, tfill, tireAge, tireSizeSame, tlHash, tmAge, tmKmRej, tn, toast, todayMark, translateLockReason, translateNextAction, tzNote, uiLoc, uid, unitIn, unitL, usersCsv, vOverdue, vehSig, vehiclesCached, viewInbox, viewLogin, vinOf, vlAt, vsDef, warrChip, woApptTxt, woTag, wsAll, wsForSite, wsLabel, wsName, wsOptions };

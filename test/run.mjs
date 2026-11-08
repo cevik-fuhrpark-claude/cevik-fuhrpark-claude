@@ -37138,6 +37138,20 @@ await test('Backlog 1199 (Sonde Tür auf während der Fahrt/Ladung durch die Wan
   for (const R of [DO, LG, LO, FO]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1200 (Reserve Start-Modul nach neuen Tür-/Ladungsmustern): Hinweis-Liste (viewInbox, Route #/inbox) liegt im nachgeladenen Modul app-suche.js; Platzhalter im Start-Modul; Hintergrund-Abruf (inboxPoll) bleibt im Start-Modul; Start-Modul ≤ 63,5 %', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const { GROUPS, BEFORE_RENDER, INPLACE } = await import('../scripts/build-app.mjs');
+  ok(GROUPS.suche.includes('viewInbox') && !BEFORE_RENDER.has('viewInbox') && !INPLACE.has('viewInbox'), 'Gruppe suche, normale Ansicht mit Ladehinweis');
+  const app = rd('app.js'), main = rd('app-main.js'), su = rd('app-suche.js'), sw = rd('sw.js');
+  ok(/^async function viewInbox\(\) \{/m.test(app), 'viewInbox async in app.js');
+  ok(main.includes("async function viewInbox(...a) { return (await lazyModule('suche')).viewInbox(...a); }"), 'Platzhalter im Start-Modul');
+  ok(/^async function viewInbox\(\) \{/m.test(su) && !/^async function viewInbox\(\) \{/m.test(main), 'Ansicht im Modul suche');
+  ok(/^async function inboxPoll\(/m.test(main), 'Hintergrund-Abruf der Hinweise bleibt im Start-Modul');
+  ok(sw.includes('/app-suche.js'), 'Modul in der App-Hülle des Service Workers');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100;
+  ok(pct <= 63.5, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 63,5 %)');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
