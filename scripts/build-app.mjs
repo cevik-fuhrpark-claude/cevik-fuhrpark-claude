@@ -26,7 +26,8 @@ export const GROUPS = {
   dispo: ['dispoHome'], // Backlog 968: Startseite der Disposition (Tafel, Hinweise, Ausdruck) – nur Rolle Disposition, async, Aufruf in viewHome vor dem Seitenaufbau
   leitung: ['fleetTodo'], // Backlog 968: Aufgabenliste der Inhaber/Fuhrparkleitung auf der Startseite – nur diese Rollen, async (early() in viewHome vor dem Seitenaufbau)
   suche: ['viewSearch', 'viewHelp'], // Backlog 1148: Hilfe-Seite viewHelp dazu (Hilfe-Schritte werden ohnehin erst dort nachgeladen) – Reserve Start-Modul; 07.11.2026 (Backlog 1135, Reserve Start-Modul nach neuen Hinweismustern): globale Suche erst beim Öffnen laden (Lupe; async, Aufruf aus route)
-  lager: ['viewStock', 'viewStockCount', 'viewReorder', 'viewStockAsOf', 'viewStockJournal', 'viewStockReceipt', 'viewPartsUsage', 'viewStockItem'],
+  lager: ['viewStock', 'viewStockCount', 'viewReorder', 'viewStockAsOf', 'viewStockJournal', 'viewStockReceipt', 'viewPartsUsage', 'viewStockItem',
+    'loadStockSelect'], // Backlog 1166: Lagerauswahl im Formular „Teil buchen“ (async, still in das aufgebaute Formular) – Reserve Start-Modul nach neuen Warnleuchten-/Reifenmustern
 };
 
 // Backlog 953 (Funkloch/langsames Netz): ausgelagerte Hilfsfunktionen, die in eine bereits aufgebaute Seite schreiben (z. B. beim
@@ -34,7 +35,7 @@ export const GROUPS = {
 // Seite durch „Lädt…“ ersetzt (sonst blieb „Mehr“ leer, weil das Ziel #tfabox fehlte). Ansichten und Funktionen, die vor dem Neuaufbau
 // der Seite laufen (claimSection in viewCase), behalten den Hinweis. Test „Backlog 953“ verlangt, dass jede neue Nicht-Ansicht hier
 // oder in BEFORE_RENDER eingeordnet wird.
-export const INPLACE = new Set(['loadTotp', 'loadSessions', 'loadKnown', 'loadNotifyPrefs', 'pushPanel']);
+export const INPLACE = new Set(['loadTotp', 'loadSessions', 'loadKnown', 'loadNotifyPrefs', 'pushPanel', 'loadStockSelect']);
 export const BEFORE_RENDER = new Set(['claimSection', 'dispoHome', 'fleetTodo']);
 
 const KW_BEFORE_REGEX = new Set(['return', 'typeof', 'case', 'in', 'of', 'delete', 'void', 'throw', 'new', 'else', 'do', 'instanceof', 'yield', 'await']);

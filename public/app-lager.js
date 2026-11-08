@@ -1,8 +1,77 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, STOCK_Q_MIN, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, isStockHash, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, nowMs, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, stockOpt, stockPick, stockQHtml, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, isStockHash, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, nowMs, parseQty, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
 
 // Lager-Buchungstexte in der Oberflächensprache (Standortcode → Name, Zahl/Datum im Sprachformat)
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
+const stockOpt = (i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`;
+const STOCK_Q_MIN = 8;
+const stockQHtml = (id) => `<input type="search" id="${id}" class="stockq" data-stockq placeholder="${esc(t('stock_q_ph'))}" aria-label="${esc(t('stock_q_ph'))}" autocomplete="off" enterkeyhint="search" style="margin-bottom:4px"><p class="small muted" data-stockqn role="status" aria-live="polite" hidden></p>`;
+// Suchfeld filtert die Auswahl (Optionen neu aufbauen – option.hidden wirkt in iOS Safari nicht); die gewählte Position bleibt immer erhalten,
+// genau ein Treffer wird bei leerer Auswahl vorgewählt (onchange wie bei Handauswahl)
+function stockPick(inp, sel, list, first) {
+  const info = inp.nextElementSibling;
+  inp.oninput = () => {
+    const cur = sel.value; const all = list(); const q = inp.value.trim(); const hits = all.filter((i) => i.id === cur || stockHit(i, q));
+    sel.innerHTML = first + hits.map(stockOpt).join('');
+    const n = hits.filter((i) => i.id !== cur || stockHit(i, q)).length;
+    if (cur && hits.some((i) => i.id === cur)) sel.value = cur; else if (!cur && q && n === 1) sel.value = hits[0].id; else sel.value = '';
+    if (info) { info.hidden = !q; info.textContent = n ? tn('stock_q_hits', n) : t('stock_q_none'); }
+    if (sel.value !== cur && sel.onchange) sel.onchange();
+  };
+}
+async function loadStockSelect(c) {
+  const el = $('#stocksel'); if (!el) return;
+  let items = [];
+  let siteItems = [];
+  try { siteItems = (await api('GET', `/api/stock?site=${encodeURIComponent(c.workshop_site || '')}`)).items.filter((i) => i.site === c.workshop_site); items = siteItems.filter((i) => i.on_hand > 0); } catch { return; }
+  // Backlog 515 (Blickwinkel „Werkstatt Bayern vertritt Dortmund“): angeboten wird nur das Lager der zuständigen Werkstatt – Name nennen; geführtes
+  // Lager ohne Bestand → kurzer Hinweis statt still fehlender Auswahl
+  if (!items.length) { if (siteItems.length && c.workshop_site) el.innerHTML = `<p class="small muted" data-stocknone>${esc(t('stock_none_ws').replace('{ws}', wsName(c.workshop_site)))}</p>`; return; }
+  const first = `<option value="">${esc(t('without_stock'))}</option>`;
+  el.innerHTML = `<label for="stocksi">${esc(t('from_stock'))}: ${esc(wsName(c.workshop_site))}</label>${items.length >= STOCK_Q_MIN ? stockQHtml('stockq') : ''}<select name="stock_item_id" id="stocksi">${first}${items.map(stockOpt).join('')}</select><p class="small muted" id="stockpricehint" hidden>${esc(t('stock_out_price_hint'))}</p>`;
+  const sel = $('select', el); el._items = items;
+  sel.onchange = () => {
+    const fp = $('#freepart'); fp.querySelector('[name=name]').required = !sel.value; $$('[name=name],[name=part_number],[name=supplier]', fp).forEach((x) => { x.disabled = !!sel.value; });
+    // Lagerartikel mit Preis: der Server bucht den Artikelpreis – Preisfeld sperren und Hinweis zeigen (19.10.2026: Eingabe wurde still ersetzt)
+    const it = items.find((i) => i.id === sel.value); const fixed = !!it && it.unit_price_net !== null && it.unit_price_net !== undefined;
+    const pr = el.closest('form') && el.closest('form').querySelector('[name=unit_price_net]');
+    if (pr) { pr.disabled = fixed; if (fixed) pr.value = ''; }
+    // … und „Schätzung“ ebenso (fester Artikelpreis ist kein Schätzwert, 22.10.2026)
+    const es = el.closest('form') && el.closest('form').querySelector('[name=estimate]');
+    if (es) { es.disabled = fixed; if (fixed) es.checked = false; }
+    $('#stockpricehint').hidden = !fixed;
+    qtyCheck();
+  };
+  // Menge über dem angezeigten Bestand: Hinweis schon vor dem Speichern (Backlog 234; der Server prüft weiterhin verbindlich)
+  const qf = el.closest('form') && el.closest('form').querySelector('[name=quantity]');
+  const qtyCheck = () => {
+    let h = $('#stockqty'); const it = items.find((i) => i.id === sel.value);
+    const raw = qf ? String(qf.value).trim() : ''; const pw = parseQty(raw); const q = pw ? pw.n : Number(raw.replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.')); // Backlog 983: „zwei“
+    const over = !!it && raw !== '' && Number.isFinite(q) && q > it.on_hand + 1e-9;
+    if (!over) { if (h) h.remove(); return; }
+    if (!h) { h = document.createElement('p'); h.id = 'stockqty'; h.className = 'small panel warn'; h.setAttribute('role', 'status'); qf.after(h); }
+    h.textContent = t('stock_qty_over').replace('{q}', fmtNum(it.on_hand)).replace('{u}', unitL(it.unit)).replace(/\.\.(?=\s|$)/g, '.');
+  };
+  if (qf) qf.addEventListener('input', qtyCheck);
+  const sq = $('#stockq', el); if (sq) stockPick(sq, sel, () => items.filter((i) => i.on_hand > 0), first); // leer gebuchte Artikel (Backlog 232) fallen beim Filtern weg
+  // Backlog 990 (Blickwinkel „Mechaniker tippt die Teilenummer vom Karton ab, statt den Artikel aus dem Lager zu wählen“): frei erfasste
+  // Teilenummer eines vorrätigen Artikels (auch anders geschrieben, „A 000 420 12 20“) → Hinweis mit Knopf „aus dem Lager entnehmen“;
+  // sonst bleibt der Lagerbestand stehen, obwohl das Teil verbaut ist (Buchbestand ≠ Regal, Bestellvorschlag zu spät)
+  const fpn = $('#freepart [name=part_number]');
+  if (fpn) {
+    const box = document.createElement('p'); box.className = 'small panel'; box.id = 'pninstock'; box.setAttribute('role', 'status'); box.hidden = true; fpn.after(box);
+    const pnCheck = () => {
+      const c = pnCompact(fpn.value); const hits = !sel.value && !fpn.disabled && c.length >= 3 ? items.filter((i) => i.on_hand > 0 && pnCompact(i.part_number) === c) : [];
+      box.hidden = !hits.length; if (!hits.length) { box.textContent = ''; return; }
+      box.innerHTML = `📦 ${esc(t('stock_pn_instock'))}<br>${hits.slice(0, 3).map((i) => `<button type="button" class="btn secondary small" data-pnpick="${esc(i.id)}" style="margin-top:4px">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</button>`).join(' ')}${hits.length > 3 ? ` +${hits.length - 3}` : ''}`;
+      box.querySelectorAll('[data-pnpick]').forEach((b) => { b.onclick = () => {
+        if (sq && ![...sel.options].some((o) => o.value === b.dataset.pnpick)) { sq.value = ''; sq.dispatchEvent(new Event('input', { bubbles: true })); }
+        sel.value = b.dataset.pnpick; sel.onchange(); box.hidden = true; box.textContent = ''; sel.focus();
+      }; });
+    };
+    fpn.addEventListener('input', pnCheck); sel.addEventListener('change', pnCheck); pnCheck();
+  }
+}
 async function viewStock() {
   try { sessionStorage.removeItem('cfp_sj_item'); } catch { /* egal */ } // Artikelfilter des Journals gilt nur für den Weg aus der Artikelakte
   const stockResp = await api('GET', '/api/stock'); const items = stockResp.items; const lastInv = stockResp.last_inventory || {};
@@ -581,4 +650,4 @@ async function viewStockItem(id) {
     try { const r = await api('POST', `/api/stock/${id}/transfer`, b, { timeoutMs: SEND_TIMEOUT_MS }); toast(t('transfer_done').replace('{q}', fmtNum(r.qty)).replace('{u}', unitL(it.unit)).replace('{w}', wsName(b.to_site)) + (r.target_created ? ' · ' + t('transfer_created') : '')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
 }
 
-export { viewPartsUsage, viewReorder, viewStock, viewStockAsOf, viewStockCount, viewStockItem, viewStockJournal, viewStockReceipt };
+export { loadStockSelect, viewPartsUsage, viewReorder, viewStock, viewStockAsOf, viewStockCount, viewStockItem, viewStockJournal, viewStockReceipt };

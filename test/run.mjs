@@ -36664,6 +36664,21 @@ await test('Backlog 1165 (Sonde AdBlue leuchtet UK/RU, Backlog 195): „гори
   for (const x of ['горит AdBlue, отремонтировали', 'горить AdBlue - відремонтували', 'AdBlue долили', 'горит фара']) ok(!hit(x), 'nicht Motor: ' + x);
 });
 
+await test('Backlog 1166 (Sonde Motorfehler/Kühlaggregat-Alarm/Reifendruck UK/RU, Backlog 195): „Motorfehler leuchtet“, „engine fault light on“, „горить помилка двигуна“ → Warnleuchte; „аварія рефрижератора“ → Kühlaggregat statt Unfall; „горить тиск шин“, „ошибка давления шин“ → Reifen; Reparaturvermerk und echter Unfall bleiben', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);$', 'm')); return new RegExp(m[1], m[2]); };
+  const WL = rx('WARNLIGHT_HINT'), TY = rx('TYRE_HINT'), AC = rx('ACC_HINT'), RF = rx('REEFER_HINT');
+  for (const x of ['Motorfehler leuchtet', 'Motorstörung im Display', 'Motorfehlerleuchte ist an', 'Engine fault light on', 'engine error message', 'загорілась помилка двигуна', 'горить помилка двигуна', 'загорелась ошибка двигателя', 'горит ошибка мотора']) ok(WL.test(recurFix(x)), 'Warnleuchte: ' + x);
+  for (const x of ['Motorfehler leuchtet, wurde repariert', 'engine fault light on, fixed now', 'горить помилка двигуна, відремонтували', 'Motorstörung, Lkw verliert Leistung', 'помилка в накладній']) ok(!WL.test(recurFix(x)), 'keine Warnleuchte: ' + x);
+  for (const x of ['попередження про тиск у шинах', 'горить тиск шин', 'горит давление в шинах', 'ошибка давления шин', 'светится низкое давление в шинах']) ok(TY.test(recurFix(x)), 'Reifen: ' + x);
+  for (const x of ['горить тиск шин, підкачали і зникло', 'тиск у шинах нормальний']) ok(!TY.test(recurFix(x)), 'kein Reifen: ' + x);
+  for (const x of ['аварія рефрижератора', 'авария рефрижератора', 'аварія холодильної установки', 'холодильна установка видає аварію', 'холодильная установка аварія']) { ok(!AC.test(recurFix(x)), 'kein Unfall: ' + x); }
+  for (const x of ['аварія рефрижератора', 'авария рефрижератора', 'аварія холодильної установки']) ok(RF.test(recurFix(x)), 'Kühlaggregat: ' + x);
+  for (const x of ['сталася аварія, рефрижератор пошкоджений', 'потрапив в аварію', 'была авария на трассе']) ok(AC.test(recurFix(x)), 'Unfall bleibt: ' + x);
+  ok(/fastHint\(WARNLIGHT_HINT\);/.test(app), 'gewachsenes Warnleuchten-Muster wird in Teilen geprüft');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
