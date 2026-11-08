@@ -21646,7 +21646,7 @@ await test('Backlog 313 (Blickwinkel „Heizung/Gebläse/Scheibenwischer fällt 
     ok(L.visib_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="visib" class="panel" hidden role="status">`), 'Panel #visib');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test(dsh);") /* Backlog 1164: dsh = noSeatHeat(dfx) */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('visib') && order.indexOf('acc') < order.indexOf('visib') && order.indexOf('visib') < order.indexOf('glass') && order.indexOf('visib') < order.indexOf('nostart'), 'Gruppierung: Unfall vor Sicht vor Glasschaden/springt nicht an (beschlagene Windschutzscheibe zeigt Sicht offen, Glas eingeklappt)');
   ok(helpAfter(app, 'visib', 'stuck'), 'Hilfe-Abschnitt visib nach stuck');
@@ -21819,7 +21819,7 @@ await test('Backlog 321 (Blickwinkel „Sicherheitsgurt oder Fahrersitz defekt�
     ok(L.seat_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="seat" class="panel" hidden role="status">`), 'Panel #seat');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#seat').hidden = !SEAT_HINT.test(dfx) && !SEATSUSP_HINT.test(dfx);") /* Backlog 1132 */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh);") /* Backlog 1132, 1164 */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('seat') && order.indexOf('acc') < order.indexOf('seat') && order.indexOf('steer') < order.indexOf('seat') && order.indexOf('adas') < order.indexOf('seat') && order.indexOf('seat') < order.indexOf('mirror') && order.indexOf('seat') < order.indexOf('door'), 'Gruppierung: Unfall/Lenkung/Assistent vor Gurt/Sitz vor Spiegel/Tür');
   ok(helpAfter(app, 'seat', 'gear'), 'Hilfe-Abschnitt seat nach gear');
@@ -27915,7 +27915,7 @@ await test('Backlog 764 (Folge aus 761/763, Sonde Reparaturvermerke): ältere Hi
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
   ok(hl.includes("const dv = recurFix($('#d').value);") && hl.includes("$('#trlr').hidden = !trailerHint(); const dfx = noFixed(dv);"), 'Meldeformular: dfx = noFixed(recurFix(Text))');
   const SET = ['WARNLIGHT', 'PFILTER', 'NOSTART', 'DASH', 'TELEM', 'SEAT', 'WINDOW', 'CABKIT', 'CABLEAK', 'CABLOCK', 'FUELCAP', 'ELEC', 'BATT', 'MIRROR', 'GEAR', 'EXHAUST', 'TOLL', 'DOOR', 'VISIB', 'STEP'];
-  for (const n of SET) ok(hl.includes('!' + n + '_HINT.test(dfx)') || hl.includes('!' + n + '_HINT.test(noAux(dfx))'), n + ' über dfx'); // noAux: Backlog 919
+  for (const n of SET) ok(hl.includes('!' + n + '_HINT.test(dfx)') || hl.includes('!' + n + '_HINT.test(noAux(dfx))') || (hl.includes('const dsh = noSeatHeat(dfx);') && hl.includes('!' + n + '_HINT.test(dsh)')), n + ' über dfx'); // noAux: Backlog 919; dsh = noSeatHeat(dfx): Backlog 1164
   for (const n of ['BRAKE', 'PARKBRAKE', 'STEER', 'SUSP', 'TYRE', 'FLAT', 'WHEEL', 'COUPLING', 'FIRE', 'LEAK', 'ENGINE', 'TACHO', 'ACC', 'THEFT', 'GLASS', 'FUEL']) ok(!hl.includes('!' + n + '_HINT.test(dfx'), n + ' bewusst nicht über dfx');
   const t = (x) => noFixed(recurFix(x));
   const T = {
@@ -28578,7 +28578,7 @@ await test('Backlog 698–699 (Blickwinkel „Fahrerhaus-Ausstattung defekt – 
     ok(S.help_cabkit_t && S.help_cabkit_s.includes(S.cabkit_hint_steps) && S.help_cabkit_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="cabkit" class="panel" hidden role="status">'), 'Panel #cabkit');
-  ok(app.includes("$('#cabkit').hidden = !CABKIT_HINT.test(dfx);") && app.indexOf("$('#cabkit').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#cabkit').hidden = !CABKIT_HINT.test(dfx) && !CABKIT_HINT.test(noSeatHeat(dfx, 1));") /* Backlog 1164 */ && app.indexOf("$('#cabkit').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'seat', 'cabkit', 'mirror'"), 'Reihenfolge nach Sitz');
   ok(app.includes("'sticker', 'cabkit', 'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -36289,7 +36289,7 @@ await test('Backlog 1132 (Sonde Federung/Sitz): Luftfederung des Fahrer-/Beifahr
   ok(!I.test('Luftfederung hinten links verliert Luft') && !I.test('Fahrersitz verstellt'), 'keine Sitzfederung');
   ok(app.includes('const SEATSUSP_HINT = new RegExp(SEATSUSP_SPANS.source, \'i\');'), 'Prüfmuster ohne g (kein lastIndex)');
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
-  ok(hl.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv));") && hl.includes("$('#seat').hidden = !SEAT_HINT.test(dfx) && !SEATSUSP_HINT.test(dfx);"), 'Meldeformular');
+  ok(hl.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv));") && hl.includes("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh);") /* Backlog 1164 */, 'Meldeformular');
 });
 await test('Backlog 1133 (Sonde Glas-Hinweis, Folge aus 760): „Seiten-/Heckscheibe (von innen) beschlagen“ zeigt nur Sicht/Lüftung, keine Glasschaden-Schritte – mit Riss/kaputt im selben Satz weiterhin Glas', async () => {
   const { readFileSync } = await import('node:fs');
@@ -36641,6 +36641,19 @@ await test('Backlog 1163 (Sonde Scheibenwischer gehen nicht aus EN/UK/RU, Folge 
   const hit = (x) => VI.test(recurFix(x));
   for (const x of ["wipers won't stop", 'wipers won’t turn off', 'wipers keep going', 'wiper stuck on', 'двірники не вимикаються', 'не вимикаються двірники', 'не зупиняються двірники', 'дворники не выключаются', 'не останавливаются дворники', 'дворники не останавливаются']) ok(hit(x), 'Sicht: ' + x);
   for (const x of ["engine won't stop", 'не зупиняється машина', 'не зупиняється таймер']) ok(!hit(x), 'nicht Sicht: ' + x);
+});
+
+await test('Backlog 1164 (Sonde Sitzheizung/-belüftung DE/EN/UK/RU, Backlog 195): „seat heater not working“, „не працює підігрів сидіння“, „подогрев (водительского) сиденья не работает“, „seat ventilation“, „Heizung im Fahrersitz“, „Fahrersitz Heizung defekt“ → nur Fahrerhaus-Ausstattung, nicht Sitz/Gurt (und „Heizung im Fahrersitz“ nicht Sicht); defekter Sitz/Gurt bleibt Sitz/Gurt', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);', 'm')); return new RegExp(m[1], m[2]); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const SEATHEAT = rx('SEATHEAT'); const noSeatHeat = new Function('SEATHEAT', 'return ' + app.match(/^const noSeatHeat = (.+);$/m)[1])(SEATHEAT);
+  const SE = rx('SEAT_HINT'), CK = rx('CABKIT_HINT'), VI = rx('VISIB_HINT');
+  const seat = (x) => SE.test(noSeatHeat(recurFix(x))), cab = (x) => { const d = recurFix(x); return CK.test(d) || CK.test(noSeatHeat(d, 1)); };
+  for (const x of ['seat heater not working', 'heated seat not working', 'seat heating broken', 'seat ventilation not working', 'не працює підігрів сидіння', 'підігрів сидіння не працює', 'вентиляція сидіння не працює', 'не работает подогрев сиденья', 'подогрев водительского сиденья не работает', 'Sitzheizung geht nicht', 'Heizung im Fahrersitz geht nicht', 'Fahrersitz Heizung defekt', 'Sitzbelüftung geht nicht']) { ok(!seat(x), 'nicht Sitz/Gurt: ' + x); ok(cab(x), 'Fahrerhaus-Ausstattung: ' + x); }
+  ok(!VI.test(noSeatHeat(recurFix('Heizung im Fahrersitz geht nicht'))), 'nicht Sicht: Heizung im Fahrersitz'); ok(VI.test(noSeatHeat(recurFix('Heizung geht nicht'))), 'Sicht bleibt: Heizung geht nicht');
+  for (const x of ['Fahrersitz wackelt', 'Fahrersitz wackelt, Sitzheizung geht nicht', 'seat wobbles and seat heater not working', 'сиденье не регулируется', "seat won't adjust", 'Gurt klemmt']) ok(seat(x), 'Sitz/Gurt bleibt: ' + x);
+  ok(/const dsh = noSeatHeat\(dfx\);/.test(app) && /\$\('#seat'\)\.hidden = !SEAT_HINT\.test\(dsh\)/.test(app) && /\$\('#visib'\)\.hidden = !VISIB_HINT\.test\(dsh\)/.test(app), 'Meldeformular nutzt noSeatHeat für Sitz und Sicht');
 });
 
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
