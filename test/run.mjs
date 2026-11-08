@@ -36915,6 +36915,21 @@ await test('Backlog 1185 (Sonde Reifen/Kupplung/Getriebe DE/EN/UK/RU, Backlog 19
   for (const n of ['TYRE_HINT', 'FLAT_HINT', 'GEAR_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
 });
 
+await test('Backlog 1186 (Sonde Heizung/Klima/Sitz UK/RU-Umgangssprache, Backlog 195): „кондей не морозит“, „кондер не працює“ → Klima; „пічка дме холодним“ → Sicht/Heizung; „сидіння не тримає“, „сиденье не держит/проваливается“ → Sitz; „ремень не держит груз“, „кондеру не надо“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const noFixed = new Function(app.slice(app.indexOf('const FIXED_NOTE'), app.indexOf("}).join('');", app.indexOf('const noFixed')) + 12) + '; return noFixed;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const CL = rx('CLIMATE_HINT'), VI = rx('VISIB_HINT'), SE = rx('SEAT_HINT');
+  const f = (x) => noFixed(recurFix(x));
+  for (const x of ['кондей не морозит', 'кондер не працює', 'кондиционер не холодит']) ok(CL.test(f(x)), 'Klima: ' + x);
+  for (const x of ['кондеру не надо', 'кондер не працює, замінили компресор']) ok(!CL.test(f(x)), 'kein Klima: ' + x);
+  for (const x of ['пічка дме холодним', 'печка дует холодным воздухом']) ok(VI.test(f(x)), 'Heizung: ' + x);
+  for (const x of ['сидіння не тримає', 'сиденье не держит', 'сиденье проваливается', 'сидіння провалюється']) ok(SE.test(f(x)), 'Sitz: ' + x);
+  for (const x of ['ремень не держит груз', 'ремінь не тримає вантаж', 'сидіння не тримає, відремонтували']) ok(!SE.test(f(x)), 'kein Sitz: ' + x);
+  for (const n of ['CLIMATE_HINT', 'VISIB_HINT', 'SEAT_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
