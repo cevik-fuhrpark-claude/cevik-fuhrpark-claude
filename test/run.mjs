@@ -36857,6 +36857,21 @@ await test('Backlog 1181 (Sonde Unterfahrschutz/Lenkrad/Wegfahrsperre, Backlog 1
   for (const n of ['LOOSE_HINT', 'UNDERRUN_HINT', 'STEER_HINT', 'VIBR_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
 });
 
+await test('Backlog 1182 (Sonde Batterie/AdBlue/Blinker, Backlog 195): „акум/аккумулятор сдох“, „акумулятор здох“ → springt nicht an; „мочевина ошибка“, „сечовина помилка“ → Motor (AdBlue); „поворот не мигает“, „повороти не блимають“ → Beleuchtung; Reparaturvermerk und „крутой поворот“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2]); };
+  const NS = rx('NOSTART_HINT'), EN = rx('ENGINE_HINT'), LI = rx('LIGHTS_HINT');
+  const f = (x) => recurFix(x);
+  for (const x of ['акум сдох', 'акумулятор здох', 'аккумулятор сдох', 'аккумулятор сел', 'Batterie leer']) ok(NS.test(f(x)), 'springt nicht an: ' + x);
+  for (const x of ['мочевина ошибка', 'сечовина помилка', 'адблю ошибка', 'AdBlue Warnung']) ok(EN.test(f(x)), 'Motor/AdBlue: ' + x);
+  for (const x of ['мочевина долита', 'купил мочевину']) ok(!EN.test(f(x)), 'kein Motor: ' + x);
+  for (const x of ['поворот не мигает', 'повороти не блимають', 'поворотник не работает']) ok(LI.test(f(x)), 'Beleuchtung: ' + x);
+  for (const x of ['поворот не мигает, поменяли реле', 'крутой поворот, не мигает ничего', 'поворот направо']) ok(!LI.test(f(x)), 'keine Beleuchtung: ' + x);
+  for (const x of ['Mautbox defekt', 'всё в порядке']) ok(!NS.test(f(x)) && !LI.test(f(x)), 'leere Alternative?: ' + x);
+  for (const n of ['NOSTART_HINT', 'ENGINE_HINT', 'LIGHTS_HINT']) ok(!rx(n).source.includes('||') && !rx(n).source.includes('(?:|'), 'leere Alternative in ' + n);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
