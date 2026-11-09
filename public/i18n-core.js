@@ -1241,6 +1241,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // [CLAUDE] Backlog 692–693 (30.10.2026, Blickwinkel „Vor dem Laden: Zurrgurte, Kantenschutz oder Antirutschmatten fehlen bzw. sind beschädigt“): Schritte im Meldeformular, Hilfe
 // [CLAUDE] Backlog 741–742 (30.10.2026, Blickwinkel „Ladeboden, Bordwand, Seitenwand oder Runge beschädigt“): eigene Schritte im Meldeformular und Hilfe-Abschnitt.
 // [CLAUDE] Backlog 694–695 (30.10.2026, Blickwinkel „Konturmarkierung, Rückstrahler oder Warntafel abgerissen/fehlt“): Schritte im Meldeformular, Hilfe
+// Backlog 1237 (Blickwinkel „Fahrer meldet eine Service-/Wartungsanzeige im Display“): eigene Schritte – keine Frist, kein Intervall, keine Zahl
 // [CLAUDE] Backlog 1148: Vogel-/Mäusenest im Motorraum (Brandgefahr)
 // Backlog 788 (Blickwinkel „Werkstatt-Tablet mit fremder Sprache (UK) und Fotos“): Verlauf eines Vorgangs nennt erledigte Schritte in der
 // Vergangenheitsform statt mit der Knopf-Beschriftung („Reparatur freigeben · Inhaber“ las sich wie eine Aufforderung, auf UK „Дозволити ремонт“).

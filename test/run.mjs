@@ -37285,6 +37285,32 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1237 (Blickwinkel „Fahrer meldet eine Service-/Wartungsanzeige im Display“): Meldeformular zeigt eigene Schritte (Warnleuchte/Störung → deren Schritte, sonst Leitung plant den Termin; Display fotografieren, Meldetext und km-Stand notieren; nicht selbst zurücksetzen/kein eigener Service; „Ja, fahrbereit“ nur bei reiner Erinnerung); DE/EN/UK/RU, Reparaturvermerke, „Reifenservice“/„Pannenservice“ und „keine Serviceanzeige“ nicht; Hilfe DE/UK/EN ohne Frist/Intervall', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const SERVICE_HINT = \/(.+)\/i;$/m); ok(m, 'SERVICE_HINT auf Modulebene'); eq((app.match(/const SERVICE_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const re = new RegExp(m[1], 'i'); const h = (x) => re.test(recurFix(x));
+  for (const x of ['Service Anzeige leuchtet', 'Serviceanzeige im Display', 'Service fällig laut Display', 'Service ist seit 2000 km überfällig', 'Ölwechsel fällig', 'Oelwechsel faellig', 'Inspektion fällig', 'Wartung überfällig', 'Wartungsanzeige blinkt', 'Schraubenschlüssel leuchtet im Display', 'Kundendienst fällig',
+    'service due', 'service light on', 'oil change overdue', 'maintenance reminder on dash', 'потрібне ТО', 'пора на ТО', 'сервіс потрібен', 'заміна масла прострочена', 'нужно на ТО', 'замена масла нужна']) ok(h(x), 'Hinweis: ' + x);
+  for (const x of ['Service erledigt, Anzeige zurückgesetzt', 'Serviceanzeige zurückgesetzt', 'Ölwechsel fällig, gestern gemacht', 'keine Serviceanzeige', 'Reifenservice war da', 'Pannenservice angerufen', 'Kundenservice erreicht', 'Wartung der Ladebordwand gemacht', 'service due, done yesterday', 'service light reset',
+    'пора на ТО, вже зробили', 'лампа то горить, то ні', 'Wartung am Montag', 'Inspektion beim Händler', 'Service Partner Dortmund', 'Reifen platt', 'Motorkontrollleuchte leuchtet', 'Ölstand zu niedrig']) ok(!h(x), 'kein Hinweis: ' + x);
+  const OL = new RegExp(app.match(/^const OILLEVEL_HINT = \/(.+)\/i;/m)[1], 'i'), WL = new RegExp(app.match(/^const WARNLIGHT_HINT = \/(.+)\/i;/m)[1], 'i');
+  ok(OL.test('Ölstand zu niedrig') && WL.test('Motorkontrollleuchte leuchtet'), 'Ölstand und Warnleuchte behalten ihre eigenen Schritte');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.service_hint_title, 'Titel ' + l);
+    const st = S.service_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.service_hint_steps) && !/\d/.test(S.help_service_s), 'keine Zahl/Frist/Intervall ' + l);
+    ok([S.drv_fahrbereit, S.drv_unbekannt, S.driveable].every((x) => st[3].includes(x)), 'Schritt 4 nennt Frage und Auswahl wörtlich ' + l);
+    ok(S.help_service_t && S.help_service_s.includes(S.service_hint_steps) && S.help_service_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
+  }
+  ok(app.includes('<div id="service" class="panel" hidden role="status">'), 'Panel #service');
+  ok(app.includes("$('#service').hidden = !SERVICE_HINT.test(dv);") && app.indexOf("$('#service').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'gear', 'service', 'dash'"), 'Reihenfolge nach Getriebe, vor Anzeige/Hupe');
+  ok(helpAfter(app, 'service', 'engine'), 'Hilfe-Abschnitt für meldende Rollen nach Motor');
+});
+
 await test('Backlog 1236 (Folge aus 1235, Blickwinkel „Leitung ändert einen Filter/lädt neu und tippt sofort auf eine andere Seite“, Backlog 195): auch Startseite, Vorgangsliste, Hinweise, Master, Berichte, Lager-Auswertungen, Zeitleiste und QR-Bogen bauen nach dem Laden nur auf, solange ihre Seite noch angezeigt wird', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const V = { viewCases: "'#/cases'", viewMaster: "'#/master'", viewInbox: "'#/inbox'", viewKpi: "'#/kpi'", viewAudit: "'#/audit'", viewQuality: "'#/quality'", viewUsage: "'#/usage'", viewDefects: "'#/defects'", viewCosts: "'#/costs'", viewDriverRecords: "'#/drivers/records'", viewStockAsOf: "'#/stock/asof'", viewStockJournal: "'#/stock/journal'", viewPartsUsage: "'#/stock/usage'", viewWsLoad: "'#/wsload'", viewTachoHistory: "'#/tacho/history'", viewReadiness: "'#/readiness'", viewStockReceipt: "'#/stock/receipt'", viewQrSheet: "'#/vehicles/qr', '#/vehicles/qr/' + oneId", viewTimeline: "'#/vehicles/' + id + '/timeline'" };
