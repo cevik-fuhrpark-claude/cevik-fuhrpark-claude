@@ -37285,6 +37285,33 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1231 (Blickwinkel „Werkstatt scannt Teilenummern mit einem Barcode-Scanner“, Backlog 195): Enter im Lager-Suchfeld (Wareneingang, Teil am Vorgang) sendet nie das Formular – passender gewählter Artikel → Cursor in die Menge, sonst Suchtext markiert; Lagerliste öffnet bei genau einem Treffer den Artikel', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('function stockPick('); const b = app.indexOf('\nasync function loadStockSelect', a); ok(a > 0 && b > a, 'stockPick gefunden');
+  const helpNorm = (x) => String(x || '').toLowerCase(); const pnCompact = (x) => String(x || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+  const stockHit = (i, q) => { const h = helpNorm(q); if (!h) return true; if ([i.name, i.part_number].some((x) => helpNorm(x).includes(h))) return true; const c = pnCompact(q); return c.length >= 3 && pnCompact(i.part_number).includes(c); };
+  const stockPick = new Function('stockHit', 'stockOpt', 'tn', 't', app.slice(a, b) + '; return stockPick;')(stockHit, (i) => `<option value="${i.id}">`, () => '', () => '');
+  const items = [{ id: 'a', name: 'Ölfilter', part_number: 'A 000 180 26 09' }, { id: 'b', name: 'Luftfilter', part_number: 'A 000 180 77 01' }];
+  const mk = () => {
+    let focused = null; const el = (n) => ({ n, value: '', disabled: false, hidden: false, focus() { focused = n; }, select() { this.sel = true; } });
+    const inp = el('inp'); inp.nextElementSibling = { hidden: true, textContent: '' }; const qty = el('qty'); const sel = { value: '', innerHTML: '' };
+    stockPick(inp, sel, () => items, '<option value="">', () => qty);
+    const enter = () => { let prevented = false; inp.onkeydown({ key: 'Enter', isComposing: false, preventDefault() { prevented = true; } }); return prevented; };
+    return { inp, qty, sel, enter, focused: () => focused };
+  };
+  let x = mk(); x.inp.value = 'A0001802609'; x.inp.oninput();
+  ok(x.sel.value === 'a', 'Scan ohne Leerzeichen wählt den einen Treffer'); ok(x.enter(), 'Enter: Formular wird nicht gesendet'); ok(x.focused() === 'qty' && x.qty.sel, 'Cursor in der Menge, markiert');
+  x = mk(); x.inp.value = 'A000180'; x.inp.oninput(); ok(x.sel.value === '' && x.enter() && x.focused() === 'inp' && x.inp.sel, 'mehrere Treffer: Suchtext markiert');
+  x = mk(); x.inp.value = 'A0001802609'; x.inp.oninput(); x.inp.value = 'ZZ999'; x.inp.oninput();
+  ok(x.sel.value === 'a', 'gewählter Artikel bleibt (bisheriges Verhalten)'); x.enter(); ok(x.focused() === 'inp', 'neuer Scan ohne Treffer: nicht in die Menge des alten Artikels');
+  x = mk(); let other = false; x.inp.onkeydown({ key: 'a', preventDefault() { other = true; } }); ok(!other, 'andere Tasten unverändert');
+  ok(/stockPick\(sq, sel, [^;]*, first, \(\) => qf\)/.test(app), 'Teil am Vorgang: Menge als Ziel');
+  ok(app.includes("stockPick($('.stockq', d), $('select', d), siteItems, '<option value=\"\">–</option>', () => $('.rcq', d))"), 'Wareneingang: Menge der Position als Ziel');
+  const lq = app.slice(app.indexOf("$('#q').onkeydown = (e) =>"), app.indexOf("$('#q').onkeydown = (e) =>") + 700);
+  ok(lq.includes('e.preventDefault()') && lq.includes('vis.length === 1') && lq.includes('r.pk === qc') && lq.includes("$('#q').select()"), 'Lagerliste: Enter öffnet genau einen Treffer bzw. markiert den Suchtext');
+  for (const l of ['de', 'uk', 'en']) ok(/Barcode|штрихкод/i.test((await import('../public/i18n.js')).STRINGS[l].help_stock_s), 'Hilfe Lager nennt den Scanner: ' + l);
+});
+
 await test('Backlog 1230 (Sonde getrennt diktierte Zusammensetzungen, Backlog 195): „CB Funk kaputt“, „USB Anschluss defekt“, „Blink(-)Licht geht nicht“, „Kenn Zeichen Beleuchtung aus“, „Warn Dreieck fehlt“, „Unterleg Keil“, „Verbands Kasten“, „Gurt Schloss“, „Stütz Bein“, „Zurr Gurt“ zeigen denselben Hinweis wie die zusammengeschriebene Form; Reparaturvermerke, „Warnblinklicht an“ und Sätze ohne Mangel nicht', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };

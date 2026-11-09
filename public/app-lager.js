@@ -8,8 +8,19 @@ const STOCK_Q_MIN = 8;
 const stockQHtml = (id) => `<input type="search" id="${id}" class="stockq" data-stockq placeholder="${esc(t('stock_q_ph'))}" aria-label="${esc(t('stock_q_ph'))}" autocomplete="off" enterkeyhint="search" style="margin-bottom:4px"><p class="small muted" data-stockqn role="status" aria-live="polite" hidden></p>`;
 
 
-function stockPick(inp, sel, list, first) {
+
+
+
+
+function stockPick(inp, sel, list, first, next) {
   const info = inp.nextElementSibling;
+  inp.onkeydown = (e) => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    e.preventDefault();
+    const q = inp.value.trim(); const it = sel.value ? list().find((i) => i.id === sel.value) : null;
+    const n = it && next && (!q || stockHit(it, q)) ? next() : null;
+    const el = n && !n.disabled && !n.hidden ? n : inp; el.focus(); try { el.select(); } catch {   }
+  };
   inp.oninput = () => {
     const cur = sel.value; const all = list(); const q = inp.value.trim(); const hits = all.filter((i) => i.id === cur || stockHit(i, q));
     sel.innerHTML = first + hits.map(stockOpt).join('');
@@ -53,7 +64,7 @@ async function loadStockSelect(c) {
     h.textContent = t('stock_qty_over').replace('{q}', fmtNum(it.on_hand)).replace('{u}', unitL(it.unit)).replace(/\.\.(?=\s|$)/g, '.');
   };
   if (qf) qf.addEventListener('input', qtyCheck);
-  const sq = $('#stockq', el); if (sq) stockPick(sq, sel, () => items.filter((i) => i.on_hand > 0), first);
+  const sq = $('#stockq', el); if (sq) stockPick(sq, sel, () => items.filter((i) => i.on_hand > 0), first, () => qf);
 
 
 
@@ -131,6 +142,17 @@ async function viewStock() {
     sum.textContent = cut ? tn('stock_idle_sum', shown.length).replace('{v}', v) + unv : tn('stock_value_sum', shown.length).replace('{v}', v) + unv;
   };
   let sqT = null; $('#q').oninput = () => { clearTimeout(sqT); sqT = setTimeout(applyStock, items.length > 300 ? 150 : 0); };
+
+
+  $('#q').onkeydown = (e) => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    e.preventDefault(); clearTimeout(sqT); applyStock();
+    const vis = slRows.filter((r) => !r.a.hidden); const qc = pnCompact($('#q').value);
+    const exact = qc.length >= 3 ? vis.filter((r) => r.pk === qc) : [];
+    const one = vis.length === 1 ? vis[0] : exact.length === 1 ? exact[0] : null;
+    if (one) { location.hash = one.a.getAttribute('href'); return; }
+    try { $('#q').select(); } catch {   }
+  };
 
   const reoA = $('a[href="#/stock/reorder"]');
   const passSite = () => {
@@ -456,7 +478,7 @@ async function viewStockReceipt() {
       <div class="small rclast" data-rclast style="margin:4px 0 8px"></div>
       <button type="button" class="btn secondary rcdel">${esc(t('rcpt_remove'))}</button>`;
     $('#rclines').append(d);
-    stockPick($('.stockq', d), $('select', d), siteItems, '<option value="">–</option>'); rcQVis(d);
+    stockPick($('.stockq', d), $('select', d), siteItems, '<option value="">–</option>', () => $('.rcq', d)); rcQVis(d);
     $('select', d).onchange = () => { sum(); rcLast(d); if (!$('select', d).value) $('[data-rcnok]', d).hidden = true; }; $('.rcp', d).oninput = () => rcLast(d); $('.rcnew', d).onclick = () => rcNew(d);
 
     const qi = $('.stockq', d); const qin = qi.oninput; qi.oninput = () => { qin(); const none = !!qi.value.trim() && !$('select', d).value && !siteItems().some((i) => stockHit(i, qi.value.trim())); $('.rcnew', d).style.fontWeight = none ? '700' : ''; if (none) $('.rcnew', d).setAttribute('data-rcnhot', ''); else $('.rcnew', d).removeAttribute('data-rcnhot'); };
