@@ -37456,6 +37456,37 @@ await test('Backlog 1223 (Blickwinkel „Werkstatt erfasst Arbeitszeit am Ende d
   eq(wd.cases.map((x) => `${x.case_id === ra ? 'a' : 'b'}:${x.hours}`).join(), 'a:1.5', 'Stunden je Auftrag am Tag');
 });
 
+await test('Backlog 1224 (Blickwinkel „Fuhrparkleitung bearbeitet Bußgeldbescheide am PC“, Backlog 195): im Schreiben „Nächstes offenes Schreiben“ in der Reihenfolge der Liste (am Ende wieder das erste offene, geschlossene fallen heraus); Betrag in der Liste', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  const a = app.indexOf('function fineNextOf('); ok(a > 0, 'fineNextOf fehlt');
+  const fineNextOf = new Function(app.slice(a, app.indexOf('\n}\n', a) + 2) + '\nreturn fineNextOf;')();
+  const L = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  eq(fineNextOf(L, 'a').next.id + fineNextOf(L, 'a').left, 'b2', 'nach a kommt b, 2 weitere offen');
+  eq(fineNextOf(L, 'c').next.id, 'a', 'am Ende wieder das erste offene');
+  eq(fineNextOf(L, 'x').next.id + fineNextOf(L, 'x').left, 'a3', 'geschlossenes Schreiben (nicht in der Liste) → erstes offenes');
+  eq(fineNextOf([{ id: 'a' }], 'a').next, null, 'keines mehr offen');
+  eq(fineNextOf(null, 'a'), null, 'Liste nicht geladen → kein Verweis');
+  ok(app.includes("isMgr() ? fineOpenList().catch(() => null) : null]"), 'nur Inhaber/Leitung, Fehler der Liste blendet nur aus');
+  ok(app.includes("'/api/fines?status=open' + (fsite ? '&site='") && app.includes('return S.fineNoDue ? r.fines.filter(noDue) : r.fines;'), 'Standort und „Antwortfrist fehlt“ wie in der Liste');
+  ok(app.includes('${nextHtml}') && app.includes('data-fnext>${noTr(nx.next.fine_no)}'), 'Verweis oben im Schreiben, Nummer nicht übersetzt');
+  ok(app.includes('<span data-famt style="white-space:nowrap">${esc(eur(f.amount_eur))}</span>'), 'Betrag in der Liste');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].fine_next && STRINGS[l].fine_next_none && STRINGS[l].fine_open_left, 'Texte ' + l); ok(PLURALS[l].fine_open_left && PLURALS[l].fine_open_left.other.includes('{n}'), 'Pluralformen ' + l); }
+  ok(PLURALS.uk.fine_open_left.few && PLURALS.uk.fine_open_left.many, 'uk few/many');
+  // Server: offene Liste nach Frist, geschlossene fehlen
+  const { U } = await freshWorld();
+  const at = '2026-10-03T08:00';
+  const mk = async (ref, due) => (await U.fleet.post('/api/fines', { kind: 'bussgeldbescheid', authority: 'Bußgeldstelle 1224', reference: ref, offense_type: 'parken', offense_at: at, plate_in_letter: 'XX-NX 1224', amount_eur: 35, response_due: due, request_key: crypto.randomUUID() })).data.id;
+  const f1 = await mk('AZ-1224-1', '2040-05-02'), f2 = await mk('AZ-1224-2', '2040-05-01'), f3 = await mk('AZ-1224-3', '2040-05-03');
+  const v3 = (await U.fleet.get('/api/fines/' + f3)).data.fine.version;
+  eq((await U.fleet.post(`/api/fines/${f3}/commands`, { action: 'set_status', payload: { status: 'eingestellt' }, note: 'Verfahren eingestellt', expected_version: v3 })).status, 200);
+  const open = (await U.fleet.get('/api/fines?status=open')).data.fines.map((x) => x.id).filter((x) => [f1, f2, f3].includes(x));
+  eq(open.join(), [f2, f1].join(), 'offene nach Frist, eingestelltes fehlt');
+  eq(fineNextOf(open.map((id) => ({ id })), f2).next.id, f1, 'nach dem frühesten das nächste');
+  eq(fineNextOf(open.map((id) => ({ id })), f3).next.id, f2, 'vom eingestellten zum frühesten offenen');
+  const one = (await U.fleet.get('/api/fines?status=open')).data.fines.find((x) => x.id === f1); eq(one.amount_eur, 35, 'Betrag in der Liste vorhanden');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

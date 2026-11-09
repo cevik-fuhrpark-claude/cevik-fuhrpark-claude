@@ -1141,6 +1141,7 @@ Object.assign(VALIDATION_TEXTS.en, { evidence_exists: 'A different proof is alre
 // Backlog 414: Wartungs-/Full-Service-Vertrag im Vorgang (nur Leitung)
 // Backlog 415: Wartungsvertrag beim Werkstattauftrag aus Prüftermin (Fahrzeugakte, nur Leitung)
 // [CLAUDE] 26.10.2026 Backlog 364: Fahrverbot laut Bußgeldschreiben (1–3 Monate, § 25 StVG)
+// Backlog 1224: im Schreiben direkt zum nächsten offenen Schreiben (Reihenfolge der Liste)
 // Backlog 375: Zustellstand der Fahrerinformation im Bußgeld (Leitung)
 // Backlog 376: Kandidaten aus Zuordnung und Abfahrtskontrolle widersprechen sich
 // Backlog 377: Einwand des Fahrers zum Bußgeld

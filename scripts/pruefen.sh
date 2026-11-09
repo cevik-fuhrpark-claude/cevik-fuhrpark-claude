@@ -341,6 +341,7 @@ UI-Stundensatz-Verlauf (bisherigen Satz behalten, Liste, Entfernen), DE/UK/EN 39
 UI-Kostenbericht Schnellwahl (Vormonat, laufendes Jahr, Vorjahr, letzte 12 Monate), DE/UK/EN 390/820/1366|ui-kosten-schnellwahl.py|/tmp/cfp-kosten-schnellwahl.log
 UI-Arbeitszeit am Tag (eigene Summe je Auftrag, Rest bis 24 h, Doppel-Warnung), DE/UK/EN 390/820/1366|ui-arbeitszeit-tag.py|/tmp/cfp-arbeitszeit-tag.log
 UI-Arbeitszeit weiterbuchen (Backlog 1223: nach dem Buchen weitere Aufträge der Werkstatt, Formular öffnet direkt), DE/UK/EN 390/820/1366|ui-arbeitszeit-weiter.py|/tmp/cfp-arbeitszeit-weiter.log
+UI-Bußgeld nächstes offenes Schreiben (Backlog 1224: Verweis im Schreiben nach Frist, am Ende wieder das erste, Betrag in der Liste), DE/UK/EN 390/820/1366|ui-bussgeld-naechstes.py|/tmp/cfp-bussgeld-naechstes.log
 UI-Fahrzeugtausch unterwegs: Hinweis „nicht dir zugeordnet“ in Kontrolle/Meldung, Zuordnung des Melders im Vorgang (Leitung), DE/UK/EN 390/820/1366|ui-fahrzeugtausch.py|/tmp/cfp-fahrzeugtausch.log
 UI-Fahrzeugzuordnung geändert (Urlaubsrückkehr): „Zugeordnet seit“, Hinweis neu/nicht mehr zugeordnet bis „Verstanden“, DE/UK/EN 390/820/1366|ui-zuordnung-geaendert.py|/tmp/cfp-zuordnung-geaendert.log
 UI-Werkstatt ohne Schlüssel/Fahrzeugschein: „fehlt“ im Vorgang, Vorgangsliste, Werkstattplan, DE/UK/EN 390/820/1366|ui-werkstatt-schluessel.py|/tmp/cfp-werkstatt-schluessel.log

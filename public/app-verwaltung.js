@@ -255,7 +255,7 @@ async function viewFines() {
   if (noDueN) html += `<p class="noprint"><label class="small" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="fnodue"${S.fineNoDue ? ' checked' : ''}> ${esc(t('fine_no_due'))} (${noDueN})</label></p>`;
   html += printHead([fr.site ? `${t('kpi_vsite')}: ${fr.site === 'ohne' ? t('cs_nosite') : fr.site}` : '', S.fineNoDue ? `${t('print_filter')}: ${t('fine_no_due')}` : '', t('print_count').replace('{n}', shownF.length)]);
   if (fr.truncated) html += `<p class="small muted">${esc(t('fines_truncated'))}</p>`;
-  html += `<div class="list">${shownF.map((f) => { const over = f.response_due && f.response_due < today && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status); return `<a class="row ${over ? 'p-kritisch' : ''}" href="#/fines/${esc(f.id)}">${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))} · ${esc(t('of_' + f.offense_type))}</span><span class="chip ${over ? 'kritisch' : ['bezahlt', 'eingestellt', 'erledigt', 'beantwortet'].includes(f.status) ? 'ok' : ''}">${esc(t('fs_' + f.status))}</span>${f.driving_ban_months ? `<span class="chip kritisch" data-fban>${esc(t('fine_ban'))}: ${esc(tn('ban_months', f.driving_ban_months))}</span>` : ''}${!f.response_due && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status) ? `<span class="chip" data-fnodue>${esc(t('fine_no_due'))}</span>` : ''}<span class="sub">${noTr(f.fine_no)} · ${fmtDT(f.offense_at)}${f.authority ? ' · ' + esc(f.authority) : ''}${f.reference ? ` · <span data-fref>${esc(t('reference'))} ${noTr(f.reference)}</span>` : ''}${f.response_due ? ' · ' + esc(t('response_due')) + ' ' + esc(fmtDue(f.response_due)) : ''}${f.driver_name || f.driver_name_note ? ' · ' + esc(f.driver_name || f.driver_name_note) : ''}</span></a>`; }).join('') || `<p class="muted">${esc(t('no_fines'))}</p>`}</div>`;
+  html += `<div class="list">${shownF.map((f) => { const over = f.response_due && f.response_due < today && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status); return `<a class="row ${over ? 'p-kritisch' : ''}" href="#/fines/${esc(f.id)}">${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))} · ${esc(t('of_' + f.offense_type))}</span><span class="chip ${over ? 'kritisch' : ['bezahlt', 'eingestellt', 'erledigt', 'beantwortet'].includes(f.status) ? 'ok' : ''}">${esc(t('fs_' + f.status))}</span>${f.driving_ban_months ? `<span class="chip kritisch" data-fban>${esc(t('fine_ban'))}: ${esc(tn('ban_months', f.driving_ban_months))}</span>` : ''}${!f.response_due && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status) ? `<span class="chip" data-fnodue>${esc(t('fine_no_due'))}</span>` : ''}<span class="sub">${noTr(f.fine_no)} · ${fmtDT(f.offense_at)}${f.authority ? ' · ' + esc(f.authority) : ''}${f.reference ? ` · <span data-fref>${esc(t('reference'))} ${noTr(f.reference)}</span>` : ''}${f.amount_eur !== null && f.amount_eur !== undefined ? ` · <span data-famt style="white-space:nowrap">${esc(eur(f.amount_eur))}</span>` : ''}${f.response_due ? ' · ' + esc(t('response_due')) + ' ' + esc(fmtDue(f.response_due)) : ''}${f.driver_name || f.driver_name_note ? ' · ' + esc(f.driver_name || f.driver_name_note) : ''}</span></a>`; }).join('') || `<p class="muted">${esc(t('no_fines'))}</p>`}</div>`;
   if (['owner', 'fleet', 'viewer'].includes(S.me.role)) html += `<div class="actions" style="flex-wrap:wrap"><button type="button" class="btn secondary" id="fcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="fics">${esc(t('export_ics'))}</button><button type="button" class="btn secondary" id="fprt">${esc(t('print'))}</button>${mgr ? `<label class="small chkl" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fdrv"> ${esc(t('with_driver_names'))}</label>` : ''}</div>`;
   if (S.quietBg && !isFinesHash()) return;
   render(html, 'more');
@@ -302,12 +302,30 @@ function fineInfLine(d, f) {
   return h;
 }
 const FINE_EV = { create: 'new_fine', confirm_driver: 'confirm_driver', inform_driver: 'inform_driver', set_status: 'set_status', driver_ack: 'ack_fine', update: 'fine_updated', upload: 'upload', driver_dispute: 'fine_dispute_ev' };
+
+
+
+function fineNextOf(list, id) {
+  if (!list) return null;
+  const rest = list.filter((x) => x.id !== id);
+  const i = list.findIndex((x) => x.id === id);
+  const next = (i >= 0 && list.slice(i + 1).find((x) => x.id !== id)) || rest[0] || null;
+  return { next, left: rest.length };
+}
+async function fineOpenList() {
+  const fsite = vsDef('fineSite') || '';
+  const r = await api('GET', '/api/fines?status=open' + (fsite ? '&site=' + encodeURIComponent(fsite) : ''));
+  const noDue = (f) => !f.response_due && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status);
+  return S.fineNoDue ? r.fines.filter(noDue) : r.fines;
+}
 async function viewFine(id) {
-  const d = await api('GET', '/api/fines/' + id);
+  const [d, openList] = await Promise.all([api('GET', '/api/fines/' + id), isMgr() ? fineOpenList().catch(() => null) : null]);
   const f = d.fine; const A = d.allowed_actions;
+  const nx = fineNextOf(openList, id);
+  const nextHtml = !nx ? '' : nx.next ? `<p class="small noprint" id="fnext" style="margin:4px 0 8px"><span style="white-space:nowrap">${esc(t('fine_next'))}:</span> <a href="#/fines/${esc(nx.next.id)}" data-fnext>${noTr(nx.next.fine_no)} · ${esc(nx.next.plate || nx.next.plate_in_letter)}${nx.next.response_due ? ' · ' + esc(t('response_due')) + ' ' + esc(fmtDue(nx.next.response_due)) : ''} ›</a> <span class="muted" style="white-space:nowrap">(${esc(tn('fine_open_left', nx.left))})</span></p>` : `<p class="small muted noprint" id="fnext" style="margin:4px 0 8px">${esc(t('fine_next_none'))} <a href="#/fines">${esc(t('fines'))} ›</a></p>`;
   let html = `<p class="noprint"><a class="backlink" href="#/fines">‹ ${esc(t('back'))}</a></p><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${plate(f.plate || f.plate_in_letter, { big: true })}<span class="chip">${esc(t('fs_' + f.status))}</span>${f.environment === 'test' ? '<span class="chip test">TEST</span>' : ''}</div>
     <h1 style="margin-top:12px">${noTr(f.fine_no)} · ${esc(t('fk_' + f.kind))}</h1>${printHead([t('fines'), f.fine_no])}
-    <div class="actions noprint"><button type="button" class="btn secondary" id="fdprt">${esc(t('print'))}</button></div>
+    <div class="actions noprint"><button type="button" class="btn secondary" id="fdprt">${esc(t('print'))}</button></div>${nextHtml}
     ${f.vehicle_id && f.plate && f.plate_in_letter && searchKey(f.plate) !== searchKey(f.plate_in_letter) ? d.plate_country ? `<p class="panel small" id="fcountry">${esc(t('fine_plate_country').replace('{old}', f.plate_in_letter).replace('{plate}', f.plate))}</p>` : `<p class="panel small" id="fformer">${esc(t('fine_former_plate').replace('{old}', f.plate_in_letter).replace('{plate}', f.plate))}</p>` : ''}
     ${!f.vehicle_id ? `<div class="panel alert" id="fvu">${d.vehicle_ambiguous ? `${esc(f.plate_in_letter)}: ${esc(t('fine_vehicle_ambiguous'))}` : `${esc(t('vehicle_unknown'))}: ${esc(f.plate_in_letter)}`}${d.vehicle_matchable ? `<div class="small" data-fmatch>${esc(t('fine_vehicle_matchable').replace('{p}', d.vehicle_matchable.plate))}</div>` : d.trailer_of ? `<div class="small" data-ftrailer>${esc(t('fine_trailer_of').replace('{p}', d.trailer_of.plate))}</div>` : ''}</div>` : ''}
     ${d.driver_dispute ? `<div class="panel alert" id="fdisp" role="note"><b>${esc(t('fine_dispute_mgr').replace('{t}', fmtDT(d.driver_dispute.at)))}</b><div style="white-space:pre-wrap">${esc(d.driver_dispute.note || '')}</div></div>` : ''}
