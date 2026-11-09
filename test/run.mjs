@@ -37229,6 +37229,22 @@ await test('Backlog 1208 (Sonde Retarder/Motorbremse, Backlog 195): „Retarder 
   ok(!BR.source.includes('||') && !BR.source.includes('(?:|') && !BR.source.includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1209 (Sonde Lenkstockhebel, Backlog 195): abgebrochener/defekter Blinker-, Wischer-, Retarder- oder Tempomathebel bzw. Lenkstockschalter (DE/EN/RU/UK) zeigt Licht-, Sicht-, Bremsen- bzw. Assistenz-Hinweis; Reparaturvermerke nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const STALK_HINT = \/(.+?)\/([a-z]*);$/m); ok(m, 'STALK_HINT nicht gefunden');
+  const f = app.match(/^function stalkKinds\(v\) \{.*\}$/m); ok(f, 'stalkKinds nicht gefunden');
+  const kinds = Function('STALK_SPANS', f[0] + '; return stalkKinds;')(new RegExp(m[1], 'gi'));
+  const want = { 'Retarder Hebel abgebrochen': 'brake', 'Hebel vom Retarder ist abgebrochen': 'brake', 'Retarderhebel rastet nicht mehr ein': 'brake', 'retarder lever broke off': 'brake', 'важіль ретардера відламався': 'brake', 'ручка ретардера отломалась': 'brake',
+    'Lenkstockschalter abgebrochen': 'lights', 'Blinkerhebel klemmt': 'lights', 'abgebrochener Blinkerhebel': 'lights', 'indicator stalk broken': 'lights', 'steering column switch broken': 'lights', 'підрульовий перемикач зламався': 'lights', 'подрулевой переключатель сломан': 'lights',
+    'Wischerhebel abgebrochen': 'visib', 'Hebel für den Scheibenwischer abgebrochen': 'visib', 'wiper stalk snapped': 'visib', 'сломался рычаг дворников': 'visib', 'важіль двірників зламався': 'visib',
+    'Tempomat Hebel abgebrochen': 'adas', 'рычаг круиз-контроля сломан': 'adas' };
+  for (const [x, k] of Object.entries(want)) { const got = [...kinds(x.toLowerCase())]; ok(got.length === 1 && got[0] === k, x + ' → ' + got.join(',') + ' statt ' + k); }
+  for (const x of ['Retarderhebel repariert', 'Blinkerhebel neu, alles ok', 'Blinkerhebel wurde getauscht', 'retarder lever replaced', 'важіль ретардера замінили', 'Retarder Hebel abgebrochen, wurde heute getauscht', 'Retarder wirkt nicht', 'Blinker geht nicht']) eq(kinds(x.toLowerCase()).size, 0, 'fälschlich: ' + x);
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("for (const k of stalkKinds(dv)) $('#' + k).hidden = false; groupHints(hintOpen); };"); ok(i > 0, 'hints zeigt Panels laut stalkKinds vor der Gruppierung'); }
+  for (const id of ['brake', 'lights', 'visib', 'adas']) ok(app.includes(`<div id="${id}" class="panel" hidden role="status">`), 'Panel ' + id);
+  ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
