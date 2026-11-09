@@ -27347,7 +27347,7 @@ await test('Backlog 690–691 (Blickwinkel „Fahrer rutscht beim Absteigen aus 
   ok(/Verletzung gehören nicht in diese Meldung/.test(STRINGS.de.step_hint_steps) && /do not belong in this report/.test(STRINGS.en.step_hint_steps), 'Datensparsamkeit: keine Verletzungsangaben im Fahrzeugvorgang');
   ok(app.includes('<div id="step" class="panel" hidden role="status">'), 'Panel #step');
   ok(app.includes("$('#step').hidden = !STEP_HINT.test(dfx);") && app.indexOf("$('#step').hidden") < app.indexOf("$('#loose').hidden") && app.indexOf("$('#step').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung vor dem Lose-Teile-Hinweis und vor bindFormDraft');
-  ok(app.includes("'susp', 'step', 'injury', 'loose'"), 'Reihenfolge vor „loses Teil“ (seit Backlog 731 Arbeitsunfall dazwischen)');
+  ok(app.includes("'susp', 'step', 'injury', 'airbag', 'loose'"), 'Reihenfolge vor „loses Teil“ (seit Backlog 731 Arbeitsunfall, seit 1238 Airbag dazwischen)');
   ok(app.includes("'pfilter', 'step', "), 'Hilfe-Abschnitt für meldende Rollen');
 });
 await test('Backlog 692–693 (Blickwinkel „Vor dem Laden: Zurrgurte, Kantenschutz oder Antirutschmatten fehlen bzw. sind beschädigt“): Meldeformular zeigt Schritte (nicht ohne ausreichende Sicherung laden/losfahren, Leitung klärt Ersatz, beschädigte Gurte aussortieren, was fehlt/Fotos, Auswahl „Kann das Fahrzeug fahren?“); Hilfe DE/UK/EN; „Sicherheitsgurt defekt“, „Zurrgurte nachbestellt“, „Kantenschutz nötig“, „немає ременя безпеки“ lösen nichts aus', async () => {
@@ -28306,7 +28306,7 @@ await test('Backlog 731–732 (Blickwinkel „Jemand verletzt sich bei der Arbei
   }
   ok(app.includes('<div id="injury" class="panel" hidden role="status">'), 'Panel #injury');
   ok(app.includes("$('#injury').hidden = !injhit || wild || hitrun || bridge || accReal || !$('#step').hidden || !$('#stow').hidden;") && app.indexOf("$('#injury').hidden") < app.indexOf("bindFormDraft('new'") && app.indexOf("$('#step').hidden = ") < app.indexOf("$('#injury').hidden"), 'Prüfung im Listener nach Trittstufe, vor bindFormDraft');
-  ok(app.includes("'susp', 'step', 'injury', 'loose'"), 'Reihenfolge nach Trittstufe');
+  ok(app.includes("'susp', 'step', 'injury', 'airbag', 'loose'"), 'Reihenfolge nach Trittstufe (seit 1238 Airbag direkt danach)');
   ok(helpAfter(app, 'injury', 'pedal'), 'Hilfe-Abschnitt für meldende Rollen nach Gaspedal');
 });
 
@@ -28383,7 +28383,7 @@ await test('Backlog 718–719 (Blickwinkel „Kabel blank, durchgescheuert oder 
   }
   ok(app.includes('<div id="elec" class="panel" hidden role="status">'), 'Panel #elec');
   ok(app.includes("$('#elec').hidden = !ELEC_HINT.test(dfx);") && app.indexOf("$('#elec').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("'gelfuel', 'elec', 'batt', 'engine'"), 'Reihenfolge nach Diesel/Kälte, vor Batterie/Motor (Backlog 720)');
+  ok(app.includes("'gelfuel', 'waterfuel', 'elec', 'batt', 'engine'"), 'Reihenfolge nach Diesel/Kälte (seit 1239 Wasser im Diesel dazwischen), vor Batterie/Motor (Backlog 720)');
   ok(helpAfter(app, 'elec', 'grease'), 'Hilfe-Abschnitt für meldende Rollen');
 });
 
@@ -37283,6 +37283,34 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   const r = new RegExp(m[1], m[2]);
   for (const x of ['Frontverkleidung wackelt', 'Radkastenverkleidung lose', 'Einstiegsverkleidung links locker', 'Eckverkleidung klappert', 'Seitenverkleidung ist lose', 'Frontverkleidung flattert']) ok(r.test(x.toLowerCase()), 'fehlt: ' + x);
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
+});
+
+await test('Backlog 1238/1239 (Sonde aus 1237, Blickwinkel „Fahrer meldet ausgelösten Airbag/Gurtstraffer“ bzw. „Wasser im Diesel/Wasserabscheider“): Meldeformular zeigt eigene Schritte; DE/EN/UK/RU; „nicht ausgelöst“, Airbag-Kontrollleuchte, „kein Wasser“, „abgelassen“, Kühl-/Wischwasser und Reparaturvermerke nicht; Hilfe DE/UK/EN ohne Frist', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const R = {}; for (const k of ['AIRBAG', 'WATERFUEL', 'WARNLIGHT', 'ACC']) { const m = app.match(new RegExp('^const ' + k + '_HINT = \\/(.+)\\/i;$', 'm')); ok(m, k + '_HINT auf Modulebene'); R[k] = new RegExp(m[1], 'i'); }
+  eq((app.match(/const (?:AIRBAG|WATERFUEL)_HINT = /g) || []).length, 2, 'je eine Definition');
+  const A = (x) => R.AIRBAG.test(recurFix(x)), W = (x) => R.WATERFUEL.test(recurFix(x));
+  for (const x of ['Airbag ausgelöst', 'Airbag ist aufgegangen nach Bremsung', 'Gurtstraffer hat ausgelöst', 'Fahrerairbag ausgelöst', 'Beifahrer-Airbag aufgegangen', 'ausgelöster Airbag hängt aus dem Lenkrad', 'Seitenairbag ging auf', 'Airbags ausgeloest', 'airbag deployed', 'the airbag went off', 'seat belt pretensioner fired', 'спрацювала подушка безпеки', 'подушка безпеки спрацювала', 'сработала подушка безопасности', 'подушка безопасности сработала', 'Unfall, Airbag ausgelöst']) ok(A(x), 'Airbag-Hinweis: ' + x);
+  for (const x of ['Airbag nicht ausgelöst', 'Airbag hat nicht ausgelöst', 'kein Airbag ausgelöst', 'Airbag ist nicht aufgegangen', 'Airbagleuchte leuchtet', 'Airbag Kontrollleuchte an', 'Airbag ausgelöst, inzwischen getauscht', 'airbag did not deploy', 'airbag not deployed', 'подушка безпеки не спрацювала', 'подушка безопасности не сработала', 'Lenkrad Airbag Abdeckung lose', 'Gurt rollt nicht mehr auf', 'Wasser im Diesel']) ok(!A(x), 'kein Airbag-Hinweis: ' + x);
+  for (const x of ['Wasser im Diesel', 'Wasser im Kraftstoff Anzeige', 'Wasserabscheider Warnung', 'Wasserabscheider ist voll', 'Kraftstofffilter Wasser Symbol leuchtet', 'Wasser im Tank, Motor ruckelt', 'Wasser in dem Dieseltank', 'water in fuel warning', 'water in the diesel', 'water separator light on', 'вода в паливі', 'у баку вода', 'вода в топливе']) ok(W(x), 'Wasser-Hinweis: ' + x);
+  for (const x of ['kein Wasser im Diesel', 'Wasserabscheider abgelassen, Warnung weg', 'Wasserabscheider abgelassen', 'Kühlwasser im Tank', 'Wasser im Fußraum', 'Wasser läuft ins Fahrerhaus', 'Diesel getankt', 'water in fuel warning, drained', 'Scheibenwischwasser leer', 'Wasser im Laderaum', 'немає води в паливі', 'Kraftstofffilter gewechselt', 'Airbag ausgelöst']) ok(!W(x), 'kein Wasser-Hinweis: ' + x);
+  ok(R.WARNLIGHT.test('airbagleuchte leuchtet'), 'Airbag-Kontrollleuchte behält die Schritte für Warnleuchten');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l];
+    for (const [id, drv] of [['airbag', [S.drv_nicht_fahrbereit]], ['waterfuel', [S.drv_unbekannt, S.drv_nicht_fahrbereit]]]) {
+      ok(S[id + '_hint_title'], 'Titel ' + id + ' ' + l); const st = S[id + '_hint_steps'].split('|'); eq(st.length, 4, 'Schritte ' + id + ' ' + l);
+      ok(!/\d/.test(S[id + '_hint_steps']) && !/\d/.test(S['help_' + id + '_s']), 'keine Zahl/Frist ' + id + ' ' + l);
+      ok([S.driveable, ...drv].every((x) => st[3].includes(x)), 'Schritt 4 nennt Frage und Auswahl wörtlich ' + id + ' ' + l);
+      ok(S['help_' + id + '_t'] && S['help_' + id + '_s'].includes(S[id + '_hint_steps']) && S['help_' + id + '_s'].includes(S.nav_new), 'Hilfe ' + id + ' ' + l);
+      ok(app.includes(`<div id="${id}" class="panel" hidden role="status">`), 'Panel #' + id);
+    }
+  }
+  ok(app.includes("$('#airbag').hidden = !AIRBAG_HINT.test(dv); $('#waterfuel').hidden = !WATERFUEL_HINT.test(dv);") && app.indexOf("$('#airbag').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'injury', 'airbag', 'loose'") && app.includes("'gelfuel', 'waterfuel', 'elec'"), 'Reihenfolge: Airbag nach Verletzung, Wasser im Diesel nach geliertem Diesel');
+  ok(helpAfter(app, 'airbag', 'injury') && helpAfter(app, 'waterfuel', 'gelfuel'), 'Hilfe-Abschnitte für meldende Rollen');
 });
 
 await test('Backlog 1237 (Blickwinkel „Fahrer meldet eine Service-/Wartungsanzeige im Display“): Meldeformular zeigt eigene Schritte (Warnleuchte/Störung → deren Schritte, sonst Leitung plant den Termin; Display fotografieren, Meldetext und km-Stand notieren; nicht selbst zurücksetzen/kein eigener Service; „Ja, fahrbereit“ nur bei reiner Erinnerung); DE/EN/UK/RU, Reparaturvermerke, „Reifenservice“/„Pannenservice“ und „keine Serviceanzeige“ nicht; Hilfe DE/UK/EN ohne Frist/Intervall', async () => {
