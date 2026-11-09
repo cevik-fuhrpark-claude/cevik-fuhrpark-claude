@@ -37276,6 +37276,24 @@ await test('Backlog 1212 (Sonde Lenkradverstellung, Backlog 195): „Lenkradvers
   ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1214 (Sonde Bedienknöpfe/Schalter im Fahrerhaus, Backlog 195): abgebrochener/defekter Regler, Knopf, Schalter oder Hebel von Heizung/Gebläse, Warnblinker, Hand-/Feststellbremse, Lenkrad-/Spiegelverstellung, Tempomat (DE/EN/RU/UK) zeigt Sicht-, Licht-, Bremsen-, Lenkungs-, Spiegel- bzw. Assistenz-Hinweis; Reparaturvermerke nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const CTRL_HINT = \/(.+?)\/([a-z]*);$/m); ok(m, 'CTRL_HINT nicht gefunden');
+  ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative');
+  const f = app.match(/^function ctrlKinds\(v\) \{.*\}$/m); ok(f, 'ctrlKinds nicht gefunden');
+  const kinds = Function('CTRL_SPANS', f[0] + '; return ctrlKinds;')(new RegExp(m[1], 'gi'));
+  const want = { 'Heizungsregler abgebrochen': 'visib', 'Drehknopf Heizung abgebrochen': 'visib', 'Regler für Gebläse abgebrochen': 'visib', 'Gebläseschalter abgebrochen': 'visib', 'heater control knob snapped': 'visib', 'ручка печки отломалась': 'visib', 'сломалась ручка печки': 'visib', 'ручка пічки відламалась': 'visib',
+    'Warnblinkschalter abgebrochen': 'lights', 'Schalter Warnblinker abgebrochen': 'lights', 'Drehschalter Licht lose': 'lights', 'hazard switch broken': 'lights',
+    'Handbremshebel abgebrochen': 'brake', 'Knopf für die Handbremse abgebrochen': 'brake', 'Feststellbremshebel lose': 'brake', 'parking brake lever broken': 'brake', 'кнопка ручника заела': 'brake',
+    'Knopf für Lenkradverstellung abgebrochen': 'steer', 'Hebel Lenkradverstellung abgebrochen': 'steer', 'ручка регулировки руля отломалась': 'steer',
+    'Spiegelverstellung Schalter abgebrochen': 'mirror', 'Tempomat Taste abgebrochen': 'adas' };
+  for (const [x, k] of Object.entries(want)) { const got = [...kinds(x.toLowerCase())]; ok(got.length === 1 && got[0] === k, x + ' → ' + got.join(',') + ' statt ' + k); }
+  for (const x of ['Heizungsregler abgebrochen, wurde getauscht', 'Heizungsregler getauscht, alles gut', 'Handbremshebel repariert', 'parking brake lever replaced', 'Heizung geht nicht', 'Licht geht nicht', 'Drehknopf Radio abgebrochen', 'Schalter vom Kühlaggregat abgebrochen', 'Handbremse angezogen']) eq(kinds(x.toLowerCase()).size, 0, 'fälschlich: ' + x);
+  const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
+  ok(hl.includes("for (const k of ctrlKinds(dv)) $('#' + k).hidden = false; for (const k of stalkKinds(dv))"), 'hints zeigt Panels laut ctrlKinds');
+  for (const id of ['brake', 'lights', 'visib', 'adas', 'steer', 'mirror']) ok(app.includes(`<div id="${id}" class="panel" hidden role="status">`), 'Panel ' + id);
+});
+
 await test('Backlog 1213 (Reserve Start-Modul): erzeugte App-Module enthalten keine Kommentare (nur die Kopfzeile), Code und Zeilenumbrüche unverändert, „//“ in Zeichenketten/Regex bleibt; Start-Modul ≤ 53 % von app.js', async () => {
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const { GROUPS, stripComments, tokens } = await import('../scripts/build-app.mjs');
