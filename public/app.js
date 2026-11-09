@@ -6400,9 +6400,27 @@ async function viewStock() {
       const coll = new Intl.Collator(S.lang === 'uk' ? 'uk' : S.lang === 'en' ? 'en' : 'de', { numeric: true, sensitivity: 'base' });
       const its = items.filter((i) => i.site === invSite()).sort((a, b) => (a.location ? 0 : 1) - (b.location ? 0 : 1) || coll.compare(a.location || '', b.location || '') || coll.compare(a.name, b.name));
       const locs = [...new Set(its.map((i) => i.location || ''))]; const wb = !!S.invBook;
-      $('#invlist').innerHTML = `<div class="actions" style="flex-wrap:wrap;align-items:end;margin-top:0">${locs.length > 1 ? `<div><label for="invloc">${esc(t('inventory_loc'))}</label><select id="invloc"><option value="*">${esc(t('filter_all'))}</option>${locs.map((l) => `<option value="${esc(l)}">${esc(l || t('inventory_loc_none'))}</option>`).join('')}</select></div>` : ''}<label style="display:flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="invbookshow"${wb ? ' checked' : ''} style="width:auto">${esc(t('inventory_show_book'))}</label></div>
+      $('#invlist').innerHTML = `<div class="actions" style="flex-wrap:wrap;align-items:end;margin-top:0">${locs.length > 1 ? `<div><label for="invloc">${esc(t('inventory_loc'))}</label><select id="invloc"><option value="*">${esc(t('filter_all'))}</option>${locs.map((l) => `<option value="${esc(l)}">${esc(l || t('inventory_loc_none'))}</option>`).join('')}</select></div>` : ''}${its.length >= STOCK_Q_MIN ? `<div style="flex:1 1 220px"><label for="invq">${esc(t('inventory_find'))}</label><input id="invq" type="search" autocomplete="off" enterkeyhint="go" placeholder="${esc(t('stock_q_ph'))}"><p class="small muted" id="invqn" role="status" aria-live="polite" hidden></p></div>` : ''}<label style="display:flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="invbookshow"${wb ? ' checked' : ''} style="width:auto">${esc(t('inventory_show_book'))}</label></div>
         <div class="scroll"><table><thead><tr><th>${esc(t('part_name'))}</th>${wb ? `<th>${esc(t('inventory_book_qty'))}</th>` : ''}<th>${esc(t('inventory_counted'))}</th></tr></thead><tbody>${its.map((i) => `<tr data-invloc="${esc(i.location || '')}"><td>${esc(i.name)}${i.part_number ? `<div class="small muted pn">${esc(i.part_number)}</div>` : ''}${i.location ? `<div class="small muted">${esc(i.location)}</div>` : ''}<div class="small muted" data-lc>${esc(i.last_counted_date ? t('last_counted') + ': ' + fmtD(i.last_counted_date) : t('never_counted'))}</div></td>${wb ? `<td>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</td>` : ''}<td><input data-inv="${esc(i.id)}" data-invname="${esc(i.name + (i.location ? ' (' + i.location + ')' : ''))}" inputmode="decimal" style="max-width:110px" aria-label="${esc(t('inventory_counted'))} ${esc(i.name)}"></td></tr>`).join('')}</tbody></table></div>`; $('#invbook').disabled = true; $('#invres').innerHTML = ''; invPrev = null;
       const il = $('#invloc'); if (il) il.onchange = () => $$('#invlist tr[data-invloc]').forEach((tr) => (tr.hidden = il.value !== '*' && tr.dataset.invloc !== il.value));
+      // Backlog 1233 (Blickwinkel „Werkstatt zählt die Inventur mit Barcode-Scanner“): Artikel suchen/scannen + Enter springt ins Zählfeld des
+      // einen passenden Artikels (Lagerort-Auswahl wird bei Bedarf auf „alle“ gestellt), Enter im Zählfeld zurück ins Suchfeld – scannen,
+      // zählen, Enter, nächster Scan. Mehrere/keine Treffer: Anzahl nennen, Suchtext markiert. Nur Anzeige/Fokus, gebucht wird wie bisher.
+      const iq = $('#invq');
+      if (iq) {
+        const find = () => {
+          const q = iq.value.trim(); const info = $('#invqn'); if (!q) { info.hidden = true; return; }
+          const hits = its.filter((i) => stockHit(i, q)); const qc = pnCompact(q); const exact = qc.length >= 3 ? hits.filter((i) => pnCompact(i.part_number) === qc) : [];
+          const one = hits.length === 1 ? hits[0] : exact.length === 1 ? exact[0] : null;
+          if (!one) { info.hidden = false; info.textContent = hits.length ? tn('stock_q_hits', hits.length) : t('stock_q_none'); try { iq.select(); } catch { /* ältere Browser */ } return; }
+          info.hidden = true; const x = $(`[data-inv="${CSS.escape(one.id)}"]`); const tr = x.closest('tr');
+          if (tr.hidden && il) { il.value = '*'; il.onchange(); }
+          try { tr.scrollIntoView({ block: 'center' }); } catch { tr.scrollIntoView(); }
+          x.focus(); try { x.select(); } catch { /* ältere Browser */ }
+        };
+        iq.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); find(); } };
+        $$('[data-inv]').forEach((x) => x.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); iq.focus(); try { iq.select(); } catch { /* ältere Browser */ } } }));
+      }
       $('#invbookshow').onchange = () => { invDraft.save(); S.invBook = $('#invbookshow').checked; fill(); };
       // Zählmengen nach der Prüfung geändert → erst erneut prüfen (gebucht wird nur, was geprüft wurde)
       // Entwurf der Zählmengen auf diesem Gerät (je Person/Umgebung/Lager, 14 Tage): Wegklicken oder Neuladen verliert keine Zählung

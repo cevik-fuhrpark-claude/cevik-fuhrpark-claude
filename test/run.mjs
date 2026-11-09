@@ -37285,6 +37285,17 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1233 (Blickwinkel „Werkstatt zählt die Inventur mit Barcode-Scanner“, Backlog 195): Inventur hat ab STOCK_Q_MIN Artikeln ein Such-/Scanfeld – Enter springt ins Zählfeld des einen Treffers (Lagerort auf alle), Enter im Zählfeld zurück; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/its\.length >= STOCK_Q_MIN \? `<div style="flex:1 1 220px"><label for="invq">\$\{esc\(t\('inventory_find'\)\)\}/.test(app), 'Suchfeld in der Inventur ab STOCK_Q_MIN Artikeln');
+  const a = app.indexOf("const iq = $('#invq');"); ok(a > 0, 'Scan-Logik vorhanden'); const src = app.slice(a, app.indexOf('\n      }', a));
+  ok(src.includes('stockHit(i, q)') && src.includes('pnCompact(i.part_number) === qc') && src.includes("il.value = '*'") && src.includes('x.focus()'), 'eindeutiger Treffer (auch Teilenummer ohne Leerzeichen) → Zählfeld, Lagerort alle');
+  ok(src.includes('e.preventDefault(); iq.focus()') && src.includes("tn('stock_q_hits', hits.length)"), 'Enter im Zählfeld zurück; mehrere Treffer mit Anzahl');
+  ok(!/api\(/.test(src), 'Scan bucht nichts');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(/Enter/.test(STRINGS[l].inventory_find || ''), 'inventory_find ' + l); ok(/Inventur|Інвентаризація|Stocktake/.test(STRINGS[l].help_stock_s.split('|').pop()), 'Hilfe Lager nennt Inventur mit Scanner: ' + l); }
+});
+
 await test('Backlog 1232 (Folge aus 1231, Barcode-Scanner/Enter): globale Suche – Enter sucht sofort (ohne 300-ms-Pause), genau ein Treffer ohne Hilfe-Abschnitte wird geöffnet, sonst Suchtext markiert; PC-Tipp nennt Enter (DE/UK/EN)', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const a = app.indexOf("$('#gq').onkeydown = async (e) =>"); ok(a > 0 && a < app.indexOf("$('#gq').focus();", a), 'Enter-Behandlung in viewSearch');
