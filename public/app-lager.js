@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, isStockHash, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, nowMs, parseQty, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, isStockHash, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, nowMs, onPage, parseQty, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
 
 
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
@@ -137,6 +137,7 @@ async function viewStock() {
 
 
 
+  if (!onPage('#/stock')) return;
   if (S.quietBg && !isStockHash()) return;
   render(`<h1>${esc(t('stock'))}</h1><p class="small muted noprint" id="stockasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/stock" id="stockreload" title="${esc(t('stock_asof_hint'))}">${esc(t('update_now'))}</a></p>${printHead([S.me.role === 'workshop' ? `${t('workshop')}: ${wsName(S.me.workshop_site)}` : ''])}<p class="print-only small" id="sprsel"></p>${helpLink('stock')}
     <div class="actions"><button type="button" class="btn secondary" id="scsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="sprt">${esc(t('print'))}</button><a class="btn secondary" href="#/stock/receipt" id="srcpt">${esc(t('rcpt_title'))}</a><a class="btn secondary" href="#/stock/journal">${esc(t('stock_journal'))}</a><a class="btn secondary" href="#/stock/asof" id="sasof">${esc(t('asof_title'))}</a><a class="btn secondary" href="#/stock/usage" id="spu">${esc(t('ptu_title'))}</a><a class="btn secondary" href="#/stock/reorder">${esc(t('reorder'))}${nReorder ? ` <span class="chip mittel">${nReorder}</span>` : ''}</a></div>
@@ -321,6 +322,7 @@ async function viewStockCount() {
   const coll = new Intl.Collator(S.lang === 'uk' ? 'uk' : S.lang === 'en' ? 'en' : 'de', { numeric: true, sensitivity: 'base' });
   items.sort((a, b) => (a.location ? 0 : 1) - (b.location ? 0 : 1) || coll.compare(a.location || '', b.location || '') || coll.compare(a.name, b.name));
   const n = (x) => fmtNum(x);
+  if (!onPage('#/stock/count')) return;
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('count_sheet_title'))}</h1>${helpLink('stock')}
     <p class="small muted noprint">${esc(t('count_sheet_hint'))}</p>
     ${printHead([t('count_sheet_title'), site ? `${t('workshop')}: ${wsName(site)}` : '', withBook ? t('count_with_book') : t('count_blind'), ageLabel, t('print_count').replace('{n}', items.length), li ? t('inventory_last').replace('{d}', fmtDT(li.at)).replace('{c}', li.counted ?? '–').replace('{x}', li.differences ?? '–') : t('inventory_last_none')])}
@@ -346,6 +348,7 @@ async function viewReorder() {
   const valued = items.filter((i) => i.shortfall_value_net !== null);
   const sum = rc2(valued.reduce((a, i) => a + i.shortfall_value_net, 0));
   const n = (x) => fmtNum(x);
+  if (!onPage('#/stock/reorder')) return;
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('reorder'))}</h1>
     <p class="small muted">${esc(t('reorder_hint'))}</p>
     <p class="print-only small" id="rprsite">${printStamp()}${q ? ` · ${esc(t('workshop'))}: ${esc(wsName(site))}` : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -680,6 +683,7 @@ async function viewStockItem(id) {
   const d = await api('GET', '/api/stock/' + id);
   const it = d.item;
   const others = (S.meta.workshops || []).filter((w) => w.code !== it.site);
+  if (!onPage('#/stock/' + id, '#/stock/' + it.id)) return;
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(it.name)}${it.active ? '' : ` <span class="chip" id="itinact">${esc(t('item_inactive_badge'))}</span>`}</h1>${printHead([`${t('workshop')}: ${wsName(it.site)}`, it.part_number ? `${t('part_number')}: ${it.part_number}` : ''])}
     <section class="panel"><dl class="kv"><dt>${esc(t('on_hand'))}</dt><dd><b style="font-size:1.4rem">${fmtNum(it.on_hand)} ${esc(unitL(it.unit))}</b></dd><dt>${esc(t('part_number'))}</dt><dd>${esc(it.part_number || '–')}</dd><dt>${esc(t('workshop'))}</dt><dd>${esc(wsName(it.site))}</dd><dt>${esc(t('storage'))}</dt><dd>${esc(it.location || '–')}</dd><dt>${esc(t('min_qty'))}</dt><dd>${it.min_qty === null || it.min_qty === undefined ? '–' : fmtNum(it.min_qty)}</dd><dt>${esc(t('stock_price_per').replace('{u}', unitL(it.unit)))}</dt><dd>${it.unit_price_net === null || it.unit_price_net === undefined ? esc(t('unvalued')) : eur3(it.unit_price_net)}</dd><dt>${esc(t('last_counted'))}</dt><dd id="lcnt">${it.last_counted_at ? `${esc(fmtD(it.last_counted_at))} · ${fmtNum(it.last_counted_qty)} ${esc(unitL(it.unit))}` : esc(t('never_counted'))}</dd></dl></section>
     ${otherStockP(d.other_stock, it.unit)}

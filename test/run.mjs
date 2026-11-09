@@ -37285,6 +37285,28 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1235 (Blickwinkel „Werkstatt/Leitung speichert und tippt sofort auf eine andere Seite“, Backlog 195): Ansichten, die sich nach einer Aktion selbst neu laden, überschreiben die inzwischen geöffnete Seite nicht – onPage() vergleicht die Adresse ohne „?…“, mit „VIN:“; jede betroffene Ansicht prüft vor dem Aufbau', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.match(/function onPage\(\.\.\.bases\) \{[^\n]+/); ok(src, 'onPage vorhanden');
+  const mk = (hash) => new Function('location', `${src[0]}\nreturn onPage;`)({ hash });
+  ok(mk('#/stock/abc')('#/stock/abc') && !mk('#/vehicles')('#/stock/abc'), 'gleiche/andere Seite');
+  ok(mk('#/vehicles/VIN%3AWDB123?sec=tires')('#/vehicles/VIN:WDB123'), 'Abschnitt „?…“ und VIN%3A zählen als dieselbe Seite');
+  ok(mk('#/cases/c-1')('#/cases/2026-1', '#/cases/c-1') && !mk('#/cases/c-2')('#/cases/2026-1', '#/cases/c-1'), 'mehrere Adressen (Kennung aus Adresse oder Daten)');
+  ok(mk('')('#/') && !mk('#/stock')('#/stock/count'), 'leere Adresse = Startseite; Unterseiten getrennt');
+  // Jede Ansicht, die sich nach Aktionen selbst neu lädt: Prüfung zwischen Laden (await) und Aufbau (render)
+  const V = { viewStockItem: "'#/stock/' + id", viewStock: "'#/stock'", viewStockCount: "'#/stock/count'", viewReorder: "'#/stock/reorder'", viewVehicle: "'#/vehicles/' + id", viewDriver: "'#/drivers/' + id", viewDrivers: "'#/drivers'", viewFine: "'#/fines/' + id", viewFines: "'#/fines'", viewCase: "'#/cases/' + id", viewUsers: "'#/users'", viewContracts: "'#/contracts'", viewMaint: "'#/maintenance'", viewPlan: "'#/plan'", viewClaims: "'#/claims'", viewTacho: "'#/tacho'", viewSettings: "'#/settings'", viewTelematics: "'#/telematics'", viewEmergencyEdit: "'#/emergency/edit'", viewFleetTires: "'#/tires'", viewVehicles: "'#/vehicles'" };
+  for (const [fn, base] of Object.entries(V)) {
+    const a = app.search(new RegExp(`\\n(async )?function ${fn}\\(`)); ok(a > 0, fn + ' gefunden');
+    const body = app.slice(a + 1, app.indexOf('\n}', a + 1));
+    const g = body.indexOf(`if (!onPage(${base}`); ok(g > 0, `${fn}: prüft onPage(${base})`);
+    const aw = body.indexOf('await '); ok(aw > 0 && aw < g, `${fn}: Prüfung nach dem Laden`);
+    const nl = body.indexOf('\n', g); ok(/^\s*(if \(S\.quietBg[^\n]*\n\s*)?render\(/.test(body.slice(nl + 1)), `${fn}: Prüfung direkt vor dem Aufbau`);
+  }
+  // Startmodul enthält onPage (viewCase/Fahrer-Ansichten), ausgelagerte Gruppen greifen darauf zu
+  const main = fs.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); ok(main.includes('function onPage(...bases)'), 'onPage im Start-Modul');
+  const scripts = fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(scripts.includes('|ui-seitenwechsel-nach-speichern.py|'), 'UI-Skript in pruefen.sh');
+});
+
 await test('Backlog 1234 (Blickwinkel „Werkstatt bucht Zugang/Entnahme per Barcode-Scanner“, Backlog 195): gescannter Code im Mengen-/Preis-/Zählfeld bucht nicht – Erkennung (Teilenummer, schnelle Tastenfolge, ≥ 7 Ziffern), Weitergabe als nächster Scan (Wareneingang, Inventur, Teil am Vorgang), Hinweis in der Artikelakte; Enter im Wareneingang Menge → Preis → nächste Position; Texte DE/UK/EN', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const a = app.indexOf('function scanWatch('); const b = app.indexOf('\nfunction scanRestore', a); ok(a > 0 && b > a, 'scanWatch gefunden');
