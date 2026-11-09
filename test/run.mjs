@@ -37285,6 +37285,18 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1225 (Sonde Motor: Leistungsverlust, Turbo, Rauch, Riemen, Lichtmaschine, Backlog 195): farbiger Rauch beim Gasgeben/Beschleunigen/Kaltstart (ohne „Auspuff“) und Ladeluftschlauch/-kühler/Intercooler-Schlauch/патрубок інтеркулера → Motor-Schritte statt Brand-Hinweis; Rauch aus dem Motorraum, Rauch beim Anfahren und Feuer bleiben Brand; Verneinung und Reparaturvermerk nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
+  const E = rx('ENGINE_HINT'), F = rx('FIRE_HINT'); const t = (r, x) => r.test(x.toLowerCase());
+  for (const x of ['Schwarzer Rauch beim Gasgeben', 'Rauch kommt beim Beschleunigen', 'Blauer Rauch beim Kaltstart', 'Black smoke when accelerating', 'white smoke on cold start', 'smoke when accelerating', 'Чорний дим при розгоні', 'дим при натисканні на газ']) { ok(t(E, x), 'Motor fehlt: ' + x); ok(!t(F, x), 'Brand fälschlich: ' + x); }
+  // mehrdeutig (Kupplung unter Last, Start): Motor-Schritte zusätzlich, Brand-Hinweis bleibt
+  for (const x of ['weißer Qualm unter Last', 'Синий дым при запуске']) ok(t(E, x) && t(F, x), 'Motor + Brand erwartet: ' + x);
+  for (const x of ['Ladeluftschlauch abgerutscht, zischt', 'Ladeluftkühler undicht', 'Ladeluftschlauch ab', 'intercooler hose split', 'charge air pipe came off', 'Злетів патрубок інтеркулера', 'Патрубок турбіни лопнув']) ok(t(E, x), 'Motor fehlt: ' + x);
+  for (const x of ['Rauch aus dem Motorraum', 'schwarzer Rauch aus dem Motorraum', 'Rauch beim Anfahren', 'Feuer im Motorraum, Rauch beim Gasgeben', 'smoke from the engine bay', 'Дим з-під капота']) ok(t(F, x), 'Brand fehlt: ' + x);
+  for (const x of ['kein schwarzer Rauch mehr beim Gasgeben', 'no black smoke when accelerating', 'Ladeluftschlauch abgerutscht, wieder festgemacht', 'Ladeluftschlauch getauscht', 'intercooler hose split, replaced']) ok(!t(E, x), 'Motor fälschlich: ' + x);
+});
+
 await test('Backlog 1222 (Sonde EN/UK-Gegenstücke aus 1220/1221, Backlog 195): „compressor runs constantly“ → Bremse/Druckluft, „air suspension sagging“ → Luftfederung, „Розетка 24В/на 12V“ → Fahrerhaus; Kühlaggregat-Kompressor, Reparaturvermerk und Anhängersteckdose („розетка 24в причепа“) nicht', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
