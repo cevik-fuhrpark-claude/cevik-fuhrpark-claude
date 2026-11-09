@@ -37276,6 +37276,15 @@ await test('Backlog 1212 (Sonde Lenkradverstellung, Backlog 195): „Lenkradvers
   ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backlog 195): Front-/Radkasten-/Einstiegs-/Eckverkleidung lose, locker, wackelt oder klappert → Teile-Hinweis; Innenverkleidung (Tür), festgeschraubte/getauschte Verkleidung und „Verkleidung sauber“ nicht (der Satz „Verkleidung lose, wieder befestigt“ fängt erst die Oberfläche über recurFix ab)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const LOOSE_HINT = \/(.+?)\/([a-z]*);$/m); ok(m, 'LOOSE_HINT nicht gefunden');
+  ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative');
+  const r = new RegExp(m[1], m[2]);
+  for (const x of ['Frontverkleidung wackelt', 'Radkastenverkleidung lose', 'Einstiegsverkleidung links locker', 'Eckverkleidung klappert', 'Seitenverkleidung ist lose', 'Frontverkleidung flattert']) ok(r.test(x.toLowerCase()), 'fehlt: ' + x);
+  for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
+});
+
 await test('Backlog 1217 (Sonde offene Lücken aus 1216, Backlog 195): Tür lässt sich nur von innen bzw. nicht von außen öffnen → Tür-Hinweis, Auspuff kaputt/abgefallen/verbogen → Auspuff-Hinweis, Diesel-/Kraftstofffilter verstopft → Motor-Hinweis (DE/EN/UK/RU); Türgriff und defekter Reifendrucksensor bleiben bewusst ohne Hinweis (Backlog 323/915/962), Reparaturvermerke und Auspuffblende nicht', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
