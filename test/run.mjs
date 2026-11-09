@@ -37285,6 +37285,28 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1242 (Sonde, Blickwinkel „Fahrer meldet ein neues/ungewohntes Geräusch“): allgemeine Geräusch-Schritte nur, wenn kein genauerer Hinweis greift (Warnzeichen → anhalten; Leitung entscheidet; woher/wie/wann notieren; „Weiß nicht“); DE/EN/UK/RU; Radio/Handy/Funk, Verneinungen, „Brummi“ und Reparaturvermerke nicht; Hilfe DE/UK/EN ohne Zahl', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const m = app.match(/^const NOISE_HINT = \/(.+)\/i;$/m); ok(m, 'NOISE_HINT auf Modulebene'); eq((app.match(/const NOISE_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const R = new RegExp(m[1], 'i'); const N = (x) => R.test(recurFix(x));
+  for (const x of ['Motor macht komische Geräusche', 'Motor rasselt', 'Motor pfeift', 'komisches Geräusch vorne', 'Geräusch beim Bremsen', 'es quietscht beim Lenken', 'lautes Klackern hinten links', 'Brummen ab Tempo achtzig', 'Schleifgeräusch am Rad', 'Lärm aus dem Motorraum', 'engine making strange noise', 'squeaking from the front axle', 'grinding when braking', 'дивний звук у двигуні', 'стук спереду', 'скрип при гальмуванні', 'странный шум в моторе']) ok(N(x), 'Geräusch-Hinweis: ' + x);
+  for (const x of ['Radio rauscht und knackt', 'Handy pfeift', 'kein Geräusch mehr', 'ohne Geräusche', 'Geräusch hinten, Lager getauscht', 'Geräusch ist weg', 'no noise', 'noise fixed', 'Brummi steht auf dem Hof', 'Spiegel abgebrochen', 'без шуму', 'шум зник']) ok(!N(x), 'kein Geräusch-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.noise_hint_title, 'Titel ' + l); const st = S.noise_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.noise_hint_steps) && !/\d/.test(S.help_noise_s), 'keine Zahl/Frist ' + l);
+    ok([S.driveable, S.drv_unbekannt, S.drv_nicht_fahrbereit].every((x) => st[3].includes(x)), 'Schritt 4 nennt Frage und Auswahl wörtlich ' + l);
+    ok(S.help_noise_t && S.help_noise_s.includes(S.noise_hint_steps) && S.help_noise_s.includes(S.nav_new), 'Hilfe ' + l);
+  }
+  ok(app.includes('<div id="noise" class="panel" hidden role="status">'), 'Panel #noise');
+  const i = app.indexOf("$('#noise').hidden = !NOISE_HINT.test(dv) || ");
+  const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; ok(i > 0 && hl.includes("$('#noise').hidden = !NOISE_HINT.test(dv) || ctrlKinds(dv).size > 0 || stalkKinds(dv).size > 0 || HINT_ORDER.some(") && hl.indexOf("$('#noise').hidden") > hl.indexOf("$('#floor').hidden") && hl.indexOf("$('#noise').hidden") < hl.indexOf('groupHints(hintOpen)'), 'Geräusch zuletzt geprüft – nur ohne genaueren Hinweis (auch Bedien-/Lenkstockhebel)');
+  ok(app.includes("'steer', 'vibr', 'noise', 'coupling'"), 'Reihenfolge nach Vibration');
+  ok(helpAfter(app, 'noise', 'susp'), 'Hilfe-Abschnitt nach Federung für meldende Rollen');
+});
+
 await test('Backlog 1241 (Sonde Einbruch, Blickwinkel „Fahrerhaus aufgebrochen, Scheibe eingeschlagen, Navi weg“): aufgehebelt/aufgestemmt, eingeschlagene Scheibe + fehlende Sachen, durchwühlt, „broke into“/„forced open“, „зламали замок/взломали дверь“ zeigen die Diebstahl-Schritte; „jemand hat … eingeschlagen“/„someone smashed“ die Vandalismus-Schritte; Steinschlag, Spiegel, eingeschlagene Lenkung und Tür klemmt nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
