@@ -1340,6 +1340,8 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1128: Mängelstatistik nach Kalendermonat
 // Backlog 1219: Preis in der Artikelakte mit Bezeichnung statt nur „€“
 // Backlog 1223 (Blickwinkel „Werkstatt erfasst Arbeitszeit am Ende der Schicht am Tablet“): nach dem Buchen direkt den nächsten Auftrag
+
+// Backlog 1234 (Blickwinkel „Werkstatt bucht Zugang/Entnahme per Barcode-Scanner“): gescannter Code im Mengen-/Zählfeld
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

@@ -4105,6 +4105,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   if (action === 'add_part') partQtyWatch();
   $('#af').onsubmit = (e) => {
     e.preventDefault();
+    if (e.target._scanChk && e.target._scanChk()) return;
     const fd = new FormData(e.target);
     const p = { ...preset };
     for (const [k, v] of fd.entries()) if (k !== 'note' && v !== '') p[k] = v;
@@ -4768,6 +4769,10 @@ const woApptTxt = (o) => `🔧 ${esc(t('mo_open'))} ${esc(o.case_no)} · ${o.pla
 
 const pnCompact = (x) => String(x || '').toLowerCase().replace(/[\s\-./]/g, '');
 const stockHit = (i, q) => { const h = helpNorm(q); if (!h) return true; if ([i.name, i.part_number, i.location].some((x) => helpNorm(x).includes(h))) return true; const c = pnCompact(q); return c.length >= 3 && pnCompact(i.part_number).includes(c); };
+
+
+
+
 
 
 

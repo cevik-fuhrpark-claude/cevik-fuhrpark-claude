@@ -30,6 +30,38 @@ function stockPick(inp, sel, list, first, next) {
     if (sel.value !== cur && sel.onchange) sel.onchange();
   };
 }
+
+
+
+
+
+function scanWatch(inp) {
+  if (inp._scanW) return inp._scanW;
+  let ts = [];
+  inp.addEventListener('focus', () => { ts = []; inp._v0 = inp.value; });
+  inp.addEventListener('keydown', (e) => { if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { const n = Date.now(); if (ts.length && n - ts[ts.length - 1] > 50) ts = []; ts.push(n); } else if (e.key === 'Backspace' || e.key === 'Delete') ts = []; });
+  inp.addEventListener('paste', () => { ts = []; });
+  inp._scanW = (items) => {
+    const v = inp.value.trim(); if (!v) return null; const c = pnCompact(v);
+    const item = c.length >= 3 ? (items || []).find((i) => pnCompact(i.part_number) === c) || null : null;
+    return item || ts.length >= 6 || /^\d{7,}$/.test(v) ? { code: v, item } : null;
+  };
+  return inp._scanW;
+}
+
+function scanRestore(inp, s) { const v0 = inp._v0 === undefined ? '' : String(inp._v0); inp.value = v0.trim() && v0.trim() !== s.code ? v0 : ''; inp.dispatchEvent(new Event('input', { bubbles: true })); inp._v0 = inp.value; }
+function scanNote(inp, s, moved) {
+  if (moved) { toast(t('scan_qty_moved').replace('{c}', s.code)); return; }
+  toast(t('scan_in_qty').replace('{c}', s.code), true); markInvalid(inp, t('scan_in_qty').replace('{c}', s.code)); inp.focus(); try { inp.select(); } catch {   }
+}
+
+function scanGuard(inp, items, onScan) {
+  if (!inp) return () => false;
+  const chk = scanWatch(inp);
+  const run = () => { const s = chk(typeof items === 'function' ? items() : items); if (!s) return false; scanRestore(inp, s); scanNote(inp, s, !!(onScan && onScan(s))); return true; };
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && run()) { e.preventDefault(); e.stopImmediatePropagation(); } });
+  return run;
+}
 async function loadStockSelect(c) {
   const el = $('#stocksel'); if (!el) return;
   let items = [];
@@ -65,6 +97,13 @@ async function loadStockSelect(c) {
   };
   if (qf) qf.addEventListener('input', qtyCheck);
   const sq = $('#stockq', el); if (sq) stockPick(sq, sel, () => items.filter((i) => i.on_hand > 0), first, () => qf);
+
+
+  if (qf && el.closest('form')) el.closest('form')._scanChk = scanGuard(qf, () => items, (s) => {
+    if (sq) { sel.value = ''; sq.value = s.code; sq.oninput(); if (!sel.value) sel.onchange(); sq.onkeydown({ key: 'Enter', isComposing: false, preventDefault() {} }); return true; }
+    if (s.item && items.some((i) => i.id === s.item.id)) { sel.value = s.item.id; sel.onchange(); qf.focus(); try { qf.select(); } catch {   } return true; }
+    return false;
+  });
 
 
 
@@ -203,8 +242,11 @@ async function viewStock() {
           x.focus(); try { x.select(); } catch {   }
         };
         iq.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); find(); } };
+
+        $$('[data-inv]').forEach((x) => { x._scanChk = scanGuard(x, its, (s) => { iq.value = s.code; find(); return true; }); });
         $$('[data-inv]').forEach((x) => x.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); iq.focus(); try { iq.select(); } catch {   } } }));
       }
+      else $$('[data-inv]').forEach((x) => { x._scanChk = scanGuard(x, its); });
       $('#invbookshow').onchange = () => { invDraft.save(); S.invBook = $('#invbookshow').checked; fill(); };
 
 
@@ -231,7 +273,7 @@ async function viewStock() {
 
     const ctToday = (r) => (r.already_counted_today && r.already_counted_today.length ? `<div class="panel warn small" role="note" data-invtoday><b>${esc(tn('inventory_counted_today', r.already_counted_today.length))}</b><ul style="margin:.3rem 0;padding-left:1.2rem">${r.already_counted_today.slice(0, 100).map((x) => `<li>${esc(x.name)}${x.part_number ? ' (' + esc(x.part_number) + ')' : ''}: ${esc(t('inventory_counted_at').replace('{t}', fmtHM(x.at)))}${x.qty !== null && x.qty !== undefined ? ` – ${esc(t('inventory_counted'))} ${fmtNum(x.qty)} ${esc(unitL(x.unit))}` : ''}</li>`).join('')}${r.already_counted_today.length > 100 ? '<li>…</li>' : ''}</ul><span class="muted">${esc(t('inventory_counted_today_hint'))}</span></div>` : '');
     const show = (r, booked) => { $('#invres').innerHTML = (booked ? '' : prog() + ctToday(r)) + (r.differences.length ? `<div class="list">${r.differences.map((d) => `<div class="row ${booked ? '' : 'p-mittel'}" data-invdiff style="grid-template-columns:minmax(0,1fr) auto"><span class="title" style="white-space:normal">${esc(d.name)}</span><b style="white-space:nowrap">${d.delta > 0 ? '+' : ''}${fmtNum(d.delta)} ${esc(unitL(d.unit))}</b><span class="sub" style="white-space:normal;grid-column:1/-1">${esc(t('inventory_book_qty'))} ${fmtNum(d.book)} → ${esc(t('inventory_counted'))} ${fmtNum(d.counted)}</span></div>`).join('')}</div>` : `<p>${esc(t('inventory_no_diff'))}</p>`); };
-    $('#invchk').onclick = async () => { try { const r = await api('POST', '/api/stock/inventory?dry_run=1', body(), { timeoutMs: SEND_TIMEOUT_MS }); show(r, false); invPrev = r.differences; $('#invbook').disabled = !(r.counted > 0); $('#invbook').textContent = t(r.differences.length ? 'inventory_book' : 'inventory_close'); } catch (err) { toast(err.message, true); } };
+    $('#invchk').onclick = async () => { if ($$('[data-inv]').some((x) => x._scanChk && x._scanChk())) return; try { const r = await api('POST', '/api/stock/inventory?dry_run=1', body(), { timeoutMs: SEND_TIMEOUT_MS }); show(r, false); invPrev = r.differences; $('#invbook').disabled = !(r.counted > 0); $('#invbook').textContent = t(r.differences.length ? 'inventory_book' : 'inventory_close'); } catch (err) { toast(err.message, true); } };
     $('#invbook').onclick = async () => {
       if (!invPrev) return;
       if (!confirm((invPrev.length ? tn('inventory_book_confirm', invPrev.length) : t('inventory_close_confirm')) + uncTxt())) return;
@@ -501,8 +543,22 @@ async function viewStockReceipt() {
 
     const qi = $('.stockq', d); const qin = qi.oninput; qi.oninput = () => { qin(); const none = !!qi.value.trim() && !$('select', d).value && !siteItems().some((i) => stockHit(i, qi.value.trim())); $('.rcnew', d).style.fontWeight = none ? '700' : ''; if (none) $('.rcnew', d).setAttribute('data-rcnhot', ''); else $('.rcnew', d).removeAttribute('data-rcnhot'); };
     $('.rcdel', d).onclick = () => { d.remove(); if (!$$('#rclines .rcl').length) addLine(); sum(); };
+
+
+
+    const rq = $('.rcq', d); const rp = $('.rcp', d);
+    const fwd = (s) => rcScanNext(d, s.code);
+    const rqS = scanGuard(rq, siteItems, fwd); const rpS = scanGuard(rp, siteItems, fwd); d._scan = () => rqS() || rpS();
+    rq.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); rp.focus(); try { rp.select(); } catch {   } } });
+    rp.addEventListener('keydown', (e) => { if (e.key !== 'Enter' || e.isComposing) return; e.preventDefault(); if (!$('select', d).value || !rq.value.trim()) { (!$('select', d).value ? $('select', d) : rq).focus(); return; } rcFocus(rcFree(d)); });
     sum();
   };
+
+  const rcFree = (d) => { const all = $$('#rclines .rcl'); const nx = all.slice(all.indexOf(d) + 1).find((r) => !$('select', r).value && !$('.rcq', r).value.trim()); if (nx) return nx; addLine(); const l = $$('#rclines .rcl'); return l[l.length - 1]; };
+  const rcFocus = (r) => { const q = $('.stockq', r); const el = q && !q.hidden ? q : $('select', r); el.focus(); try { el.select(); } catch {   } return q; };
+
+  const rcScanNext = (d, code) => { const q0 = $('.stockq', d); if (q0 && q0.hidden && !siteItems().some((i) => stockHit(i, code))) return false;
+    const r = rcFree(d); const q = rcFocus(r); if (!q) return false; q.value = code; q.oninput(); q.onkeydown({ key: 'Enter', isComposing: false, preventDefault() {} }); return true; };
 
 
   const supList = () => { const seen = new Map(); items.filter((i) => i.site === site() && i.last_supplier).forEach((i) => { const k = supKey(i.last_supplier); if (!seen.has(k)) seen.set(k, i.last_supplier); });
@@ -514,6 +570,7 @@ async function viewStockReceipt() {
   if ($('#rcsite')) $('#rcsite').onchange = () => { $$('#rclines [data-rcnf]').forEach((f) => { f.hidden = true; f.innerHTML = ''; }); $$('#rclines [data-rcnok]').forEach((x) => { x.hidden = true; }); $$('#rclines .rci').forEach((x) => { x.innerHTML = opts(); }); $$('#rclines .rcl').forEach(rcQVis); $$('#rclines .rcl').forEach(rcLast); supList(); sum(); };
   $('#rcf').onsubmit = async (e) => {
     e.preventDefault();
+    for (const r of $$('#rclines .rcl')) if (r._scan && r._scan()) return;
     const rows = $$('#rclines .rcl').filter((r) => $('select', r).value || $('.rcq', r).value.trim());
     if (!rows.length) { toast(t('rcpt_need_line'), true); return; }
     for (const r of rows) {
@@ -663,7 +720,9 @@ async function viewStockItem(id) {
   if ($('#wof')) $('#wof').onsubmit = async (e) => { e.preventDefault(); if (!confirm(t('item_writeoff_confirm').replace('{q}', fmtNum(it.on_hand)).replace('{u}', unitL(it.unit)))) return;
     const b = { type: 'korrektur', qty: String(-it.on_hand), note: e.target.elements.namedItem('note').value.trim() }; b.request_key = rkFor(e.target, b);
     try { await api('POST', `/api/stock/${id}/movements`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { toast(err.message, true); } };
-  $('#mf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } b.request_key = rkFor(e.target, b); try { await api('POST', `/api/stock/${id}/movements`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { toast(err.message, true); } };
+
+  const mfScan = scanGuard($('#mf [name=qty]'), [it]); const ofScan = scanGuard($('#oqty'), [it]); const tfScan = scanGuard($('#tqty'), [it]);
+  $('#mf').onsubmit = async (e) => { e.preventDefault(); if (mfScan()) return; const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } b.request_key = rkFor(e.target, b); try { await api('POST', `/api/stock/${id}/movements`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { toast(err.message, true); } };
 
 
 
@@ -686,10 +745,10 @@ async function viewStockItem(id) {
     if (!Object.keys(b).length) { toast(t('item_unchanged')); return; }
     if (it.updated_at) b.expected_updated_at = it.updated_at;
     try { const r = await api('PATCH', `/api/stock/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS });   toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { if (err.code === 'version_conflict') { S.stockLost = { id, form: 'itedf', ...conflictMine(e.target) }; viewStockItem(id); return; } toast(err.message, true); } };
-  if ($('#of')) $('#of').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); for (const k of ['eta', 'note']) if (!b[k]) delete b[k];
+  if ($('#of')) $('#of').onsubmit = async (e) => { e.preventDefault(); if (ofScan()) return; const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); for (const k of ['eta', 'note']) if (!b[k]) delete b[k];
     const ofm = e.target; try { await api('PUT', `/api/stock/${id}/order`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { if (lostDup(ofm, b, err, ['stock_order_exists'])) { toast(t('saved_before')); viewStockItem(id); return; } lostMark(ofm, b, err);   if (!stockConflict(err, 'of', b, ['order_changed', 'stock_order_exists'])) toast(err.message, true); } };
   if ($('#ordclr')) $('#ordclr').onclick = async () => { try { await api('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`, undefined, { timeoutMs: SEND_TIMEOUT_MS });   viewStockItem(id); } catch (err) { if (['order_changed', 'stock_order_exists'].includes(err.code)) { toast(err.message, true); viewStockItem(id); } else toast(err.message, true); } };
-  if ($('#tf')) $('#tf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); if (!b.note) delete b.note; b.request_key = rkFor(e.target, b);
+  if ($('#tf')) $('#tf').onsubmit = async (e) => { e.preventDefault(); if (tfScan()) return; const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); if (!b.note) delete b.note; b.request_key = rkFor(e.target, b);
     try { const r = await api('POST', `/api/stock/${id}/transfer`, b, { timeoutMs: SEND_TIMEOUT_MS }); toast(t('transfer_done').replace('{q}', fmtNum(r.qty)).replace('{u}', unitL(it.unit)).replace('{w}', wsName(b.to_site)) + (r.target_created ? ' · ' + t('transfer_created') : '')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
 }
 

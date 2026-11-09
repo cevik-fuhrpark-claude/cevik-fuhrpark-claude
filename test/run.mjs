@@ -37285,6 +37285,38 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1234 (Blickwinkel „Werkstatt bucht Zugang/Entnahme per Barcode-Scanner“, Backlog 195): gescannter Code im Mengen-/Preis-/Zählfeld bucht nicht – Erkennung (Teilenummer, schnelle Tastenfolge, ≥ 7 Ziffern), Weitergabe als nächster Scan (Wareneingang, Inventur, Teil am Vorgang), Hinweis in der Artikelakte; Enter im Wareneingang Menge → Preis → nächste Position; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf('function scanWatch('); const b = app.indexOf('\nfunction scanRestore', a); ok(a > 0 && b > a, 'scanWatch gefunden');
+  const pnSrc = app.match(/const pnCompact = [^\n]+/)[0];
+  const mk = new Function(`${pnSrc}\n${app.slice(a, b)}\nreturn scanWatch;`)();
+  // Eingabefeld-Attrappe: Ereignisse wie im Browser, Uhr steuerbar
+  let now = 1000; const realNow = Date.now; Date.now = () => now;
+  try {
+    const inp = () => { const h = {}; const o = { value: '', addEventListener: (k, f) => { (h[k] = h[k] || []).push(f); }, fire: (k, e = {}) => (h[k] || []).forEach((f) => f(e)) }; o.typeIn = (str, ms) => { for (const ch of str) { now += ms; o.fire('keydown', { key: ch }); o.value += ch; } }; return o; };
+    const items = [{ id: 'a', part_number: 'A 000 180 12 09' }, { id: 'b', part_number: '123456' }];
+    let x = inp(); let chk = mk(x); x.fire('focus'); x.typeIn('654321', 8); ok(chk(items) && chk(items).code === '654321' && !chk(items).item, 'unbekannter 6-stelliger Code in schneller Folge = Scan');
+    x = inp(); chk = mk(x); x.fire('focus'); x.typeIn('654321', 150); ok(chk(items) === null, 'langsam getippte Zahl (Mensch) ist eine Menge');
+    x = inp(); chk = mk(x); x.fire('focus'); x.typeIn('123456', 150); ok(chk(items) && chk(items).item.id === 'b', 'Teilenummer eines Artikels = Scan, auch langsam');
+    x = inp(); chk = mk(x); x.fire('focus'); x.typeIn('A0001801209', 150); ok(chk(items) && chk(items).item.id === 'a', 'Teilenummer ohne Leerzeichen erkannt');
+    x = inp(); chk = mk(x); x.fire('focus'); x.typeIn('4006381', 200); ok(chk(items) !== null, '≥ 7 Ziffern = Scan (EAN)');
+    x = inp(); chk = mk(x); x.fire('focus'); x.typeIn('12,5', 5); ok(chk(items) === null, 'kurze Menge auch schnell getippt bleibt Menge');
+    x = inp(); chk = mk(x); x.fire('focus'); x.typeIn('987654', 8); x.fire('keydown', { key: 'Backspace' }); x.value = x.value.slice(0, -1); x.typeIn('3', 300); ok(chk(items) === null, 'nach Korrektur per Hand keine Scan-Erkennung mehr');
+    ok(mk(x) === chk, 'je Feld nur einmal eingerichtet');
+  } finally { Date.now = realNow; }
+  const g = app.slice(app.indexOf('function scanGuard('), app.indexOf('\nasync function loadStockSelect'));
+  ok(/e\.key === 'Enter' && !e\.isComposing && run\(\)\) \{ e\.preventDefault\(\); e\.stopImmediatePropagation\(\);/.test(g) && !/api\(/.test(g), 'Enter mit Scan sendet nicht, Guard bucht nichts');
+  ok(app.includes("if (e.target._scanChk && e.target._scanChk()) return; // Backlog 1234"), 'Teil am Vorgang: Knopf prüft ebenfalls');
+  ok(/el\.closest\('form'\)\._scanChk = scanGuard\(qf, \(\) => items,/.test(app) && app.includes("sel.value = ''; sq.value = s.code; sq.oninput();"), 'Teil am Vorgang: Scan in der Menge → gescannter Artikel');
+  ok(app.includes("const mfScan = scanGuard($('#mf [name=qty]'), [it]);") && app.includes('e.preventDefault(); if (mfScan()) return;') && app.includes('if (ofScan()) return;') && app.includes('if (tfScan()) return;'), 'Artikelakte: Buchen/Bestellt/Umlagern prüfen');
+  ok(app.includes("x._scanChk = scanGuard(x, its, (s) => { iq.value = s.code; find(); return true; });") && app.includes("if ($$('[data-inv]').some((x) => x._scanChk && x._scanChk())) return;"), 'Inventur: Scan im Zählfeld → Suche, Prüfen blockiert');
+  ok(app.includes('const rqS = scanGuard(rq, siteItems, fwd); const rpS = scanGuard(rp, siteItems, fwd);') && app.includes("for (const r of $$('#rclines .rcl')) if (r._scan && r._scan()) return;"), 'Wareneingang: Menge/Preis geprüft, Buchen blockiert');
+  ok(/rq\.addEventListener\('keydown', \(e\) => \{ if \(e\.key === 'Enter' && !e\.isComposing\) \{ e\.preventDefault\(\); rp\.focus\(\)/.test(app) && /rp\.addEventListener\('keydown'[^\n]*rcFocus\(rcFree\(d\)\)/.test(app), 'Wareneingang: Enter Menge → Preis → nächste Position');
+  const scripts = fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(scripts.includes('|ui-lager-scan-menge.py|'), 'UI-Skript in pruefen.sh');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(/\{c\}/.test(STRINGS[l].scan_in_qty || '') && /\{c\}/.test(STRINGS[l].scan_qty_moved || ''), 'Hinweise ' + l); ok(/Enter/.test(STRINGS[l].help_stock_s.split('|').pop()) && STRINGS[l].help_stock_s.split('|').pop().length > 600, 'Hilfe Lager ergänzt: ' + l); }
+});
+
 await test('Backlog 1233 (Blickwinkel „Werkstatt zählt die Inventur mit Barcode-Scanner“, Backlog 195): Inventur hat ab STOCK_Q_MIN Artikeln ein Such-/Scanfeld – Enter springt ins Zählfeld des einen Treffers (Lagerort auf alle), Enter im Zählfeld zurück; Texte DE/UK/EN', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/its\.length >= STOCK_Q_MIN \? `<div style="flex:1 1 220px"><label for="invq">\$\{esc\(t\('inventory_find'\)\)\}/.test(app), 'Suchfeld in der Inventur ab STOCK_Q_MIN Artikeln');
