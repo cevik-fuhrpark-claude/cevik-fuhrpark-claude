@@ -21739,7 +21739,7 @@ await test('Backlog 317 (Blickwinkel „Motor im Notlauf, verliert Leistung oder
     ok(L.engine_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="engine" class="panel" hidden role="status">`), 'Panel #engine');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv));"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv));"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('engine') && order.indexOf('fire') < order.indexOf('engine') && order.indexOf('steer') < order.indexOf('engine') && order.indexOf('warnlight') < order.indexOf('engine') && order.indexOf('engine') < order.indexOf('adas') && order.indexOf('engine') < order.indexOf('nostart'), 'Gruppierung: Brand/Lenkung/Warnleuchte vor Motor vor Assistent/Startproblem');
   ok(helpAfter(app, 'engine', 'steer'), 'Hilfe-Abschnitt engine nach steer');
@@ -21787,7 +21787,7 @@ await test('Backlog 319 (Blickwinkel „Getriebe schaltet nicht, Gang geht nicht
     ok(L.gear_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="gear" class="panel" hidden role="status">`), 'Panel #gear');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#gear').hidden = !GEAR_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#gear').hidden = !GEAR_HINT.test(dfx) && !GEAR2_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('gear') && order.indexOf('brake') < order.indexOf('gear') && order.indexOf('warnlight') < order.indexOf('gear') && order.indexOf('engine') < order.indexOf('gear') && order.indexOf('gear') < order.indexOf('adas') && order.indexOf('gear') < order.indexOf('stuck'), 'Gruppierung: Bremse/Warnleuchte/Motor vor Getriebe vor Assistent/festgefahren');
   ok(helpAfter(app, 'gear', 'susp'), 'Hilfe-Abschnitt gear nach susp');
@@ -32309,7 +32309,7 @@ await test('Backlog 919 (Motor/Batterie/Tank des Kühlaggregats ist nicht der Lk
   const m = app.match(/^const AUX_UNIT = \/(.+)\/gi;/m); ok(m, 'AUX_UNIT fehlt');
   const aux = new RegExp(m[1], 'gi'); const noAux = (x) => String(x || '').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));
   ok(app.includes(".replace(AUX_UNIT, (m) => m.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));"), 'noAux wie im Test');
-  for (const x of ["$('#engine').hidden = !ENGINE_HINT.test(noAux(dv));", "$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx));", "$('#dryfuel').hidden = !DRYFUEL_HINT.test(noAux(dv));", "$('#batt').hidden = !BATT_HINT.test(noAux(dfx));"]) ok(app.includes(x), 'im Formular: ' + x);
+  for (const x of ["$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv));", "$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx));", "$('#dryfuel').hidden = !DRYFUEL_HINT.test(noAux(dv));", "$('#batt').hidden = !BATT_HINT.test(noAux(dfx));"]) ok(app.includes(x), 'im Formular: ' + x);
   const lkw = ['ENGINE_HINT', 'NOSTART_HINT', 'DRYFUEL_HINT', 'BATT_HINT'].map(g), rf = g('REEFER_HINT');
   for (const x of ['Kühlaggregat Motor geht aus', 'Kühlaggregat Batterie leer', 'Aggregat hat keinen Diesel mehr', 'Aggregattank leer', 'Tank vom Kühlaggregat leer', 'Batterie vom Kühlaggregat leer', 'Standheizung Batterie leer']) ok(!lkw.some((r) => r.test(noAux(x))), 'kein Lkw-Hinweis: ' + x);
   for (const x of ['Kühlaggregat Batterie leer', 'Aggregat hat keinen Diesel mehr', 'Aggregattank leer', 'Tank vom Kühlaggregat leer', 'Kühlaggregat Motor geht aus']) ok(rf.test(x), 'Kühlgerät-Hinweis erwartet: ' + x);
@@ -37339,6 +37339,18 @@ await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast üb
   ok(app.includes("$('#overload').hidden = !OVERLOAD_HINT.test(dv);") && app.indexOf("$('#overload').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'underrun', 'overload', 'load'"), 'Reihenfolge: vor Ladungssicherung');
   ok(helpAfter(app, 'overload', 'load'), 'Hilfe-Abschnitt nach Ladungssicherung für meldende Rollen');
+});
+
+await test('Backlog 1250 (Sonde, Blickwinkel „Fahrer diktiert Motor-/Getriebeproblem ohne Satzzeichen“): „Motor säuft ab“, „dreht nicht hoch“, „Drehzahl geht nicht über 1500“, Aussetzer, „fährt nur noch 30“ → Motor; „Getriebe hängt im Neutral“, „schaltet nicht hoch“, „bleibt im 3. Gang“, „stuck in neutral“ → Getriebe; Stau/Glätte/Reifen, „Licht/Lüfter schaltet nicht“, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const E = new RegExp(app.match(/^const ENGINE2_HINT = \/(.+)\/i;$/m)[1], 'i'); const G = new RegExp(app.match(/^const GEAR2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['motor säuft ab im leerlauf', 'der motor saeuft immer wieder ab', 'motor ist abgesoffen', 'motor dreht nicht mehr richtig hoch', 'drehzahl geht nicht über 1500', 'leerlauf drehzahl schwankt', 'motor hat zündaussetzer', 'motor läuft heiß', 'lkw fährt nur noch 30', 'fahre nur noch schritttempo', 'lkw kriecht nur noch', 'fährt nicht schneller als 40', 'wont go above 20', 'truck only does 30', 'engine misfiring', 'двигун не набирає обертів', 'вантажівка їде тільки 30']) ok(E.test(recurFix(x)), 'Motor: ' + x);
+  for (const x of ['motor säuft ab repariert', 'motor dreht nicht hoch, behoben', 'fahre nur noch 30 wegen stau', 'fahre nur noch schritttempo wegen glatteis', 'reifen platt fahre nur noch 20', 'motor wird nicht heiß', 'motor dreht hoch', 'fährt nur noch heute', 'lkw wird nur noch 30 tage gefahren', 'engine running fine', 'drehzahlmesser defekt']) ok(!E.test(recurFix(x)), 'kein Motor-Zusatz: ' + x);
+  for (const x of ['getriebe hängt im neutral', 'getriebe bleibt im leerlauf', 'getriebe geht auf N', 'schaltet nicht hoch', 'schaltet nicht mehr', 'schaltet nur bis zum 6 gang', 'bleibt im 3. Gang', 'bleibt im dritten gang hängen', 'kommt nicht über den 4 gang', 'getriebe spinnt', 'kriechgang geht nicht', 'lkw bewegt sich nicht obwohl gang drin', 'motor läuft aber lkw fährt nicht', 'schaltet ruckartig', 'truck stuck in neutral', 'stuck in 3rd gear', 'no reverse gear', 'коробка застрягла на нейтралі']) ok(G.test(recurFix(x)), 'Getriebe: ' + x);
+  for (const x of ['licht schaltet nicht', 'lüfter schaltet nicht hoch', 'blinker schaltet nicht ab', 'klima schaltet nicht', 'ampel schaltet nicht', 'getriebe schaltet wieder normal', 'schaltet nicht hoch, getriebe gewechselt', 'gearbox stuck in neutral fixed', 'no reverse parking here', 'bleibt im hof', 'im 3 gang angefahren']) ok(!G.test(recurFix(x)), 'kein Getriebe-Zusatz: ' + x);
+  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv));") && app.includes("$('#gear').hidden = !GEAR_HINT.test(dfx) && !GEAR2_HINT.test(dfx);"), 'Listener');
 });
 
 await test('Backlog 1249 (Sonde, Blickwinkel „Fahrer diktiert Lichtausfall ohne Satzzeichen“): „am anhaenger geht garnix mit licht“, „Licht geht gar nicht“, „Glühbirne kaputt“ → Licht-Schritte; Lichtmaschine, Warnlicht, „Birne gewechselt“, Innenbeleuchtung im Fahrerhaus nicht', async () => {
