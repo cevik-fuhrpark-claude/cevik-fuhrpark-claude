@@ -37268,6 +37268,14 @@ await test('Backlog 1211 (Sonde Heizung/Klima Fahrerhaus, Backlog 195): „Gebl�
   for (const x of ['Klimaanlage tropft nicht mehr, repariert', 'Kühlaggregat riecht muffig', 'Standheizung eingeschaltet, alles gut', 'Klimaanlage gewartet']) ok(!CL.test(x.toLowerCase()), 'Klima fälschlich: ' + x);
 });
 
+await test('Backlog 1212 (Sonde Lenkradverstellung, Backlog 195): „Lenkradverstellung lässt sich nicht arretieren“, „Lenkrad bleibt nicht in Position“, „Lenkrad fällt nach unten“, „steering wheel drops down“ → Lenkung; Reparaturvermerke und „Ladung fällt nach unten“ nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const m = app.match(/^const STEER_HINT = \/(.+?)\/([a-z]*);(?: *\/\/.*)?$/m); ok(m, 'STEER_HINT nicht gefunden'); const ST = new RegExp(m[1], m[2]);
+  for (const x of ['Lenkradverstellung lässt sich nicht arretieren', 'Lenksäulenverstellung rastet nicht ein', 'Lenkrad bleibt nicht in Position', 'Lenkrad fällt nach unten', 'Lenkrad fällt immer wieder runter', 'steering wheel drops down', 'steering column keeps sinking down', 'Lenkrad rastet nicht ein']) ok(ST.test(x.toLowerCase()), 'Lenkung fehlt: ' + x);
+  for (const x of ['Lenkrad fällt nach unten, wurde repariert', 'steering wheel drops down, fixed now', 'Ladung fällt nach unten', 'Lenkradverstellung repariert, rastet wieder ein']) ok(!ST.test(x.toLowerCase()), 'Lenkung fälschlich: ' + x);
+  ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
