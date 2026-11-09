@@ -37276,6 +37276,23 @@ await test('Backlog 1212 (Sonde Lenkradverstellung, Backlog 195): „Lenkradvers
   ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1217 (Sonde offene Lücken aus 1216, Backlog 195): Tür lässt sich nur von innen bzw. nicht von außen öffnen → Tür-Hinweis, Auspuff kaputt/abgefallen/verbogen → Auspuff-Hinweis, Diesel-/Kraftstofffilter verstopft → Motor-Hinweis (DE/EN/UK/RU); Türgriff und defekter Reifendrucksensor bleiben bewusst ohne Hinweis (Backlog 323/915/962), Reparaturvermerke und Auspuffblende nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
+  const want = {
+    DOOR_HINT: ['Fahrertür lässt sich von außen nicht öffnen', 'Fahrertür geht nur noch von innen auf', 'Beifahrertür lässt sich von außen nicht mehr öffnen', 'Beifahrertür geht von innen nicht auf', 'Fahrertür lässt sich nur von außen öffnen'],
+    EXHAUST_HINT: ['Auspuff kaputt', 'Auspuff ist komplett kaputt', 'Endtopf abgefallen', 'Auspuffrohr verbogen', 'exhaust broken', 'exhaust pipe has snapped'],
+    ENGINE_HINT: ['Dieselfilter verstopft', 'Kraftstofffilter zu', 'Dieselfilter ist zu, Motor ruckelt', 'fuel filter clogged', 'паливний фільтр забився', 'топливный фильтр засорился'] };
+  const no = {
+    DOOR_HINT: ['Türgriff abgebrochen', 'Türgriff kaputt', 'Tür innen nicht', 'Fahrertür ging von außen nicht auf, wurde repariert'],
+    EXHAUST_HINT: ['Auspuff kaputt, wurde erneuert', 'Auspuffblende verbogen', 'exhaust broken, replaced today'],
+    ENGINE_HINT: ['Dieselfilter gewechselt', 'Dieselfilter zu, wurde getauscht', 'Kraftstofffilter neu'],
+    TYRE_HINT: ['Reifendrucksensor defekt', 'TPMS Fehler behoben'] };
+  for (const [n, xs] of Object.entries(want)) { const r = rx(n); for (const x of xs) ok(r.test(x.toLowerCase()), n + ' fehlt: ' + x); }
+  for (const [n, xs] of Object.entries(no)) { const r = rx(n); for (const x of xs) ok(!r.test(x.toLowerCase()), n + ' fälschlich: ' + x); }
+  for (const id of ['door', 'exhaust', 'engine']) ok(app.includes(`<div id="${id}" class="panel" hidden role="status">`), 'Panel ' + id);
+});
+
 await test('Backlog 1216 (Sonde Sprachdiktat, Backlog 195): ausgesprochene Satzzeichen, getrennt diktierte Zusammensetzungen und typische Tippfehler zeigen denselben Hinweis wie die richtige Schreibweise; Zahlen mit „komma“, „Prüfpunkt“, „zurück licht“ und Reparaturvermerke vor „punkt“ bleiben richtig', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
