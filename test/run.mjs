@@ -37285,6 +37285,19 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1220 (Sonde Fahrerhaus-Zubehör und Sicherheitsgurt, Backlog 195): Steckdose mit Spannungsangabe („Steckdose 24V/24 V/12 Volt geht nicht“) → Fahrerhaus-Hinweis, „seat belt does not latch/retract“, „the belt won’t click in“ und „пасок безпеки“ → Sitz-/Gurt-Hinweis; Keil-/Lüfterriemen, Anhängersteckdose und Reparaturvermerk an der Steckdose nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
+  const want = {
+    CABKIT_HINT: ['Steckdose 24V geht nicht', 'Steckdose 24 V geht nicht', 'Steckdose 12 Volt ohne Strom', 'Steckdose 24-Volt kaputt', 'Steckdose geht nicht', '24V Steckdose geht nicht'],
+    SEAT_HINT: ['seat belt does not latch', 'seat belt does not retract', 'the belt won\'t click in', 'belt does not buckle', 'Пасок безпеки не працює', 'Sicherheitsgurt rastet nicht ein', 'seatbelt is not latching'] };
+  const no = {
+    CABKIT_HINT: ['Steckdose 24V repariert', 'Anhängersteckdose 24V kaputt', 'Steckdose am Anhänger geht nicht'],
+    SEAT_HINT: ['v-belt doesn\'t latch', 'fan belt does not work'] };
+  for (const [n, xs] of Object.entries(want)) { const r = rx(n); for (const x of xs) ok(r.test(x.toLowerCase()), n + ' fehlt: ' + x); }
+  for (const [n, xs] of Object.entries(no)) { const r = rx(n); for (const x of xs) ok(!r.test(x.toLowerCase()), n + ' fälschlich: ' + x); }
+});
+
 await test('Backlog 1217 (Sonde offene Lücken aus 1216, Backlog 195): Tür lässt sich nur von innen bzw. nicht von außen öffnen → Tür-Hinweis, Auspuff kaputt/abgefallen/verbogen → Auspuff-Hinweis, Diesel-/Kraftstofffilter verstopft → Motor-Hinweis (DE/EN/UK/RU); Türgriff und defekter Reifendrucksensor bleiben bewusst ohne Hinweis (Backlog 323/915/962), Reparaturvermerke und Auspuffblende nicht', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
