@@ -37341,6 +37341,30 @@ await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast üb
   ok(helpAfter(app, 'overload', 'load'), 'Hilfe-Abschnitt nach Ladungssicherung für meldende Rollen');
 });
 
+await test('Backlog 1243 (Sonde, Blickwinkel „Alarmanlage geht ständig los“): Meldeformular zeigt eigene Schritte (Einbruchsspuren prüfen, nicht abklemmen, notieren; „Weiß nicht“); DE/EN/UK/RU; Kühlaggregat-/Reifendruck-/Rauch-/Rückfahr-/Gurtalarm, Warnblinker, Verneinung und Reparatur nicht; Diebstahl hat Vorrang; „Diebstahlwarnanlage“ allein ist kein Diebstahl; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const m = app.match(/^const ALARM_HINT = \/(.+)\/i;$/m); ok(m, 'ALARM_HINT auf Modulebene'); eq((app.match(/const ALARM_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const R = new RegExp(m[1], 'i'); const A = (x) => R.test(recurFix(x));
+  const th = app.match(/const THEFT_HINT = \/(.+)\/i;/); ok(th, 'THEFT_HINT'); const T = (x) => new RegExp(th[1], 'i').test(recurFix(x));
+  for (const x of ['Alarmanlage geht ständig los', 'Alarmanlage geht nachts immer an', 'Diebstahlwarnanlage löst ständig aus', 'Alarmanlage spinnt', 'Alarm geht los ohne Grund', 'Alarmanlage lässt sich nicht ausschalten', 'Alarmanlage piept dauernd', 'ständig Fehlalarm', 'DWA löst aus', 'Innenraumüberwachung löst aus', 'Alarmanlage ging an der Tankstelle los', 'alarm keeps going off', 'truck alarm goes off at night', 'the alarm won\'t stop', 'car alarm triggered for no reason', 'сигналізація постійно спрацьовує', 'сигналізація сама вмикається', 'сигнализация срабатывает сама', 'сигнализация постоянно орет']) ok(A(x), 'Alarm-Hinweis: ' + x);
+  for (const x of ['Kühlaggregat Alarm', 'Alarm am Kühlaggregat', 'Alarm Reifendruck', 'Tankalarm', 'Rauchmelder Alarm im Fahrerhaus', 'Feueralarm', 'fire alarm went off', 'Rückfahrwarner piept', 'reversing alarm beeping', 'Gurtwarner piept dauernd', 'Spurhalteassistent Alarm', 'увімкнулася аварійна сигналізація', 'аварийная сигнализация не выключается', 'keine Alarmanlage verbaut', 'Lkw ohne Alarmanlage', 'Kein Alarm', 'Alarmanlage repariert', 'Alarmanlage funktioniert wieder', 'alarm fixed', 'Lkw hat Alarm', 'Handy Wecker Alarm']) ok(!A(x), 'kein Alarm-Hinweis: ' + x);
+  ok(!T('Diebstahlwarnanlage löst ständig aus') && !T('Diebstahl-Alarmanlage spinnt'), 'Diebstahlwarnanlage allein ist kein Diebstahl');
+  for (const x of ['Alarmanlage ausgelöst, Tür aufgebrochen', 'Diebstahl, Alarmanlage ging los', 'Kraftstoffdiebstahl in der Nacht', 'Diebstahl der Ladung']) ok(T(x), 'Diebstahl bleibt: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.alarm_hint_title, 'Titel ' + l); const st = S.alarm_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.alarm_hint_steps) && !/\d/.test(S.help_alarm_s), 'keine Zahl/Frist ' + l);
+    ok([S.driveable, S.drv_unbekannt, S.drv_nicht_fahrbereit].every((x) => st[3].includes(x)), 'Schritt 4 nennt Frage und Auswahl wörtlich ' + l);
+    ok(S.help_alarm_t && S.help_alarm_s.includes(S.alarm_hint_steps) && S.help_alarm_s.includes(S.nav_new), 'Hilfe ' + l);
+  }
+  ok(app.includes('<div id="alarm" class="panel" hidden role="status">'), 'Panel #alarm');
+  ok(app.includes("$('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv); $('#alarm').hidden = theft || !ALARM_HINT.test(dv);") && app.indexOf("$('#alarm').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener, Diebstahl hat Vorrang');
+  ok(app.includes("'tow', 'reefer', 'alarm', 'fuel'"), 'Reihenfolge: nach Kühlaggregat');
+  ok(helpAfter(app, 'alarm', 'cablock'), 'Hilfe-Abschnitt nach Zentralverriegelung für meldende Rollen');
+});
+
 await test('Backlog 1238/1239 (Sonde aus 1237, Blickwinkel „Fahrer meldet ausgelösten Airbag/Gurtstraffer“ bzw. „Wasser im Diesel/Wasserabscheider“): Meldeformular zeigt eigene Schritte; DE/EN/UK/RU; „nicht ausgelöst“, Airbag-Kontrollleuchte, „kein Wasser“, „abgelassen“, Kühl-/Wischwasser und Reparaturvermerke nicht; Hilfe DE/UK/EN ohne Frist', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
