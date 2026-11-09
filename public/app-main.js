@@ -1825,7 +1825,8 @@ async function viewHome() {
     }
   }
 
-  if (S.quietHome && !isHomeHash()) return;
+
+  if (!isHomeHash()) return;
   render(html, 'home');
   bindWsFlow();
   bindDraftsBanner();

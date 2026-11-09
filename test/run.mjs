@@ -35937,7 +35937,7 @@ await test('Backlog 1112 (Blickwinkel „Disposition mit zwei Browserfenstern ne
   const a = app.indexOf('async function viewHome('); const home = app.slice(a, app.indexOf('\n}\n', a));
   ok(home.startsWith("async function viewHome() {\n  if (!S.quietHome) render(`<p class=\"muted\">${esc(t('loading'))}</p>`, 'home');"), 'stille Aktualisierung ohne „Lädt…“-Zwischenbild');
   ok(home.includes("if (S.me.role !== 'driver') html += `<p class=\"small muted\" id=\"homeasof\"") && home.includes("t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString()))"), 'Standzeile (nicht für Fahrer)');
-  ok(home.includes("if (S.quietHome && !isHomeHash()) return;\n  render(html, 'home');\n  bindWsFlow();\n  bindDraftsBanner();\n  S.homeAt = Date.now();"), 'inzwischen andere Seite: nichts überschreiben; Zeitpunkt merken');
+  ok(home.includes("if (!isHomeHash()) return;\n  render(html, 'home');\n  bindWsFlow();\n  bindDraftsBanner();\n  S.homeAt = Date.now();"), 'inzwischen andere Seite: nichts überschreiben; Zeitpunkt merken');
   const r = app.indexOf('async function homeAutoRefresh('); const fn = app.slice(r, app.indexOf('\n}\n', r));
   ok(fn.includes("S.me.role === 'driver'") && fn.includes("document.visibilityState !== 'visible'") && fn.includes('navigator.onLine === false') && fn.includes('S.offlineStart'), 'nur sichtbar, online, nicht für Fahrer');
   ok(fn.includes("S.lastHash !== '#/'") && fn.includes('viewDirty()') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open]'), 'nur Startseite, nie bei Eingaben/Fokus/Dialog');
@@ -36014,7 +36014,7 @@ await test('Backlog 1116 (Blickwinkel „Fuhrparkleitung am PC ohne Push-Erlaubn
   ok(fn.includes('viewDirty()') && fn.includes('np && np.open') && fn.includes('nl && nl.dataset.more') && fn.includes("ae.matches('input, select, textarea')") && fn.includes('dialog[open], .toast.err') && fn.includes('{ inboxBanner(); return; }'), 'bei Eingaben/aufgeklapptem Bereich/nachgeladenen Hinweisen nur der Hinweis');
   ok(fn.includes('S.quietBg = true;') && fn.includes('try { await viewInbox(); } catch'), 'Abfragen als Hintergrund (x-cfp-bg)');
   const vi = app.slice(app.indexOf('async function viewInbox('), app.indexOf('\n}\n', app.indexOf('async function viewInbox(')));
-  ok(vi.includes("if (S.quietBg && (location.hash || '') !== '#/inbox') return;") && vi.includes("$('#nlist').dataset.more = '1';"), 'inzwischen andere Seite: nichts überschreiben; „Ältere laden“ merkt sich');
+  ok(vi.includes("if (!onPage('#/inbox')) return;") && vi.includes("$('#nlist').dataset.more = '1';"), 'inzwischen andere Seite: nichts überschreiben; „Ältere laden“ merkt sich');
   const ip = app.slice(app.indexOf('function inboxPush('), app.indexOf('\n}\n', app.indexOf('function inboxPush(')));
   ok(ip.includes('!(nl && nl.dataset.more)') && ip.includes('inboxBanner();'), 'Push: nachgeladene Hinweise nicht verwerfen');
   ok(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('|ui-hinweise-aktualisiert.py|'), 'UI-Prüfung steht in pruefen.sh');
@@ -37283,6 +37283,35 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   const r = new RegExp(m[1], m[2]);
   for (const x of ['Frontverkleidung wackelt', 'Radkastenverkleidung lose', 'Einstiegsverkleidung links locker', 'Eckverkleidung klappert', 'Seitenverkleidung ist lose', 'Frontverkleidung flattert']) ok(r.test(x.toLowerCase()), 'fehlt: ' + x);
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
+});
+
+await test('Backlog 1236 (Folge aus 1235, Blickwinkel „Leitung ändert einen Filter/lädt neu und tippt sofort auf eine andere Seite“, Backlog 195): auch Startseite, Vorgangsliste, Hinweise, Master, Berichte, Lager-Auswertungen, Zeitleiste und QR-Bogen bauen nach dem Laden nur auf, solange ihre Seite noch angezeigt wird', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const V = { viewCases: "'#/cases'", viewMaster: "'#/master'", viewInbox: "'#/inbox'", viewKpi: "'#/kpi'", viewAudit: "'#/audit'", viewQuality: "'#/quality'", viewUsage: "'#/usage'", viewDefects: "'#/defects'", viewCosts: "'#/costs'", viewDriverRecords: "'#/drivers/records'", viewStockAsOf: "'#/stock/asof'", viewStockJournal: "'#/stock/journal'", viewPartsUsage: "'#/stock/usage'", viewWsLoad: "'#/wsload'", viewTachoHistory: "'#/tacho/history'", viewReadiness: "'#/readiness'", viewStockReceipt: "'#/stock/receipt'", viewQrSheet: "'#/vehicles/qr', '#/vehicles/qr/' + oneId", viewTimeline: "'#/vehicles/' + id + '/timeline'" };
+  const routes = app.slice(app.indexOf('const routes = ['), app.indexOf('];', app.indexOf('const routes = [')));
+  for (const [fn, base] of Object.entries(V)) {
+    const a = app.search(new RegExp(`\\n(async )?function ${fn}\\(`)); ok(a > 0, fn + ' gefunden');
+    const body = app.slice(a + 1, app.indexOf('\n}', a + 1));
+    const g = body.lastIndexOf(`if (!onPage(${base}`); ok(g > 0, `${fn}: prüft onPage(${base})`);
+    const aw = body.indexOf('await '); ok(aw > 0 && aw < g, `${fn}: Prüfung nach dem Laden`);
+    const nl = body.indexOf('\n', g); const rest = body.slice(nl + 1);
+    ok(/^\s*(S\.unread = [^\n]+\n\s*const shown = [^\n]+\n\s*)?(if \(!sites\.length\) return )?render\(/.test(rest), `${fn}: Prüfung direkt vor dem Aufbau`);
+    // Adresse der Prüfung passt zur Route (sonst baute die Ansicht nie auf)
+    const path = base.match(/^'#\/([^']+)'/)[1].split('/')[0]; ok(routes.includes(`#\\/${path}`), `${fn}: Route zu ${path}`);
+  }
+  // Fehlerpfad der Kostenauswertung ebenso
+  const c = app.slice(app.indexOf('\nasync function viewCosts('), app.indexOf('\n}', app.indexOf('\nasync function viewCosts(') + 1));
+  ok(/if \(!onPage\('#\/costs'\)\) return; \/\* Backlog 1236 \*\/ render\(`<h1>\$\{esc\(t\('costs_report'\)\)\}<\/h1><div class="panel alert">/.test(c), 'Kosten: Fehlermeldung nur auf der eigenen Seite');
+  // Startseite: nicht nur bei der stillen Aktualisierung, auch nach „Neu laden“/„Erneut versuchen“
+  const h = app.slice(app.indexOf('\nasync function viewHome('), app.indexOf("render(html, 'home');"));
+  ok(/\n  if \(!isHomeHash\(\)\) return;\n  $/.test(h), 'Startseite prüft die Adresse immer direkt vor dem Aufbau');
+  ok(!app.includes("if (S.quietHome && !isHomeHash()) return;") && !app.includes("if (S.quietBg && (location.hash || '') !== '#/inbox') return;"), 'alte, nur stille Prüfungen ersetzt');
+  // onPage-Logik für die neuen Adressen (Abschnitt „?…“ zählt als dieselbe Seite)
+  const src = app.match(/function onPage\(\.\.\.bases\) \{[^\n]+/)[0];
+  const mk = (hash) => new Function('location', `${src}\nreturn onPage;`)({ hash });
+  ok(mk('#/master?sev=act')('#/master') && mk('#/audit?u=u1')('#/audit') && mk('#/cases?f=open')('#/cases') && !mk('#/cases/c-1')('#/cases'), 'Filter in der Adresse = dieselbe Seite, Vorgang ≠ Liste');
+  ok(mk('#/vehicles/VIN%3AWDB1/timeline?f=odo')('#/vehicles/VIN:WDB1/timeline') && !mk('#/vehicles/VIN:WDB1')('#/vehicles/VIN:WDB1/timeline'), 'Zeitleiste ≠ Fahrzeugakte');
+  const scripts = fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(scripts.includes('|ui-seitenwechsel-filter.py|'), 'UI-Skript in pruefen.sh');
 });
 
 await test('Backlog 1235 (Blickwinkel „Werkstatt/Leitung speichert und tippt sofort auf eine andere Seite“, Backlog 195): Ansichten, die sich nach einer Aktion selbst neu laden, überschreiben die inzwischen geöffnete Seite nicht – onPage() vergleicht die Adresse ohne „?…“, mit „VIN:“; jede betroffene Ansicht prüft vor dem Aufbau', async () => {

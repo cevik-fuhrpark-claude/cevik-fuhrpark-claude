@@ -1861,7 +1861,8 @@ async function viewHome() {
     }
   }
   // stille Aktualisierung (Backlog 1112): inzwischen andere Seite aufgerufen → nichts überschreiben
-  if (S.quietHome && !isHomeHash()) return;
+  // Backlog 1236: auch nach „Neu laden“/„Erneut versuchen“ – inzwischen andere Seite aufgerufen → nichts überschreiben
+  if (!isHomeHash()) return;
   render(html, 'home');
   bindWsFlow();
   bindDraftsBanner();
@@ -2320,6 +2321,7 @@ async function viewCases() {
   // Backlog 1113 (Blickwinkel „Fuhrparkleitung hat Vorgangsliste und Vorgang in zwei Fenstern“): Liste blieb nach Statuswechsel im anderen
   // Fenster auf dem Stand des Öffnens. Jetzt „Stand HH:MM · Neu laden“ und stille Aktualisierung nur der Liste (casesAutoRefresh), nicht für Fahrer.
   const asof = () => `${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/cases" id="casesreload" title="${esc(t('cases_asof_hint'))}">${esc(t('update_now'))}</a>`;
+  if (!onPage('#/cases')) return; // Backlog 1236
   render(`<h1>${esc(t('nav_cases'))}</h1>${S.me.role !== 'driver' ? `<p class="small muted noprint" id="casesasof" style="margin:-6px 0 8px">${asof()}</p>` : ''}
     <input id="cq" class="noprint" type="search" value="${esc(q)}" placeholder="${esc(t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search'))}" aria-label="${esc(t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search'))}" style="margin-bottom:12px" autocomplete="off">${vsel}${wsel}
     <div class="seg-tabs noprint">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? ['mine'] : ['followup']), ...(['critical', 'locked', 'cost_approval', 'unreceived', 'received_open', 'limited', 'open_items', 'paused', 'ready_overdue'].includes(f) || (f === 'mine' && S.me.role !== 'workshop') ? [f] : [])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}"${k === f ? ' aria-current="true"' : ''}>${esc(t(k === 'unreceived' && !isMgr() ? 'dispo_unreceived' : CF_LABEL[k] || k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', nDays(res.stale_days)) : ownerT('filter_stale_off'))}</p>` : ''}
@@ -6606,6 +6608,7 @@ async function viewStockAsOf() {
   const n = (x) => (x === null || x === undefined ? '' : fmtNum(x));
   const val = (x) => (x === null ? `<span class="muted">${esc(t('unvalued_short'))}</span>` : eur(x));
   const sm = (k) => `${rep.summary[k].unvalued === rep.summary.count ? '–' : eur(rep.summary[k].value_net)}${rep.summary[k].unvalued ? ` <span class="small muted">(${rep.summary[k].unvalued} ${esc(t('unvalued_short'))})</span>` : ''}`;
+  if (!onPage('#/stock/asof')) return; // Backlog 1236
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('asof_title'))}</h1>
     <p class="small muted">${esc(t('asof_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(t('asof_date'))} ${esc(fmtD(date))}${site ? ' · ' + esc(wsName(site)) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -6639,6 +6642,7 @@ async function viewStockJournal() {
   const TYPES = ['zugang', 'entnahme', 'korrektur', 'umlagerung'];
   const inv = type === 'inventur' && rep && rep.summary.inventur; const is = inv ? rep.summary.inventur : null;
   const sumRow = rep ? TYPES.map((k) => { const x = rep.summary[k]; return x.count ? `<li>${esc(t('mv_' + k))}: ${x.count} · ${x.unvalued === x.count ? '–' : eur(x.value_net)}${x.unvalued ? ` <span class="small muted">(${x.unvalued} ${esc(t('unvalued_short'))})</span>` : ''}</li>` : ''; }).join('') : '';
+  if (!onPage('#/stock/journal')) return; // Backlog 1236
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t(inv ? 'inventory_diffs' : 'stock_journal'))}</h1>
     <p class="small muted">${esc(t(inv ? 'inv_hint' : 'journal_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(fmtD(from))} – ${esc(fmtD(to))}${site ? ' · ' + esc(wsName(site)) : ''}${rep && rep.item ? ' · ' + esc(rep.item.name) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -6668,6 +6672,7 @@ async function viewStockReceipt() {
   // auch ein noch leeres Lager kann seine erste Lieferung erfassen
   const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site)
     : [...S.meta.workshops.filter((w) => items.some((i) => i.site === w.code)), ...S.meta.workshops.filter((w) => !items.some((i) => i.site === w.code))];
+  if (!onPage('#/stock/receipt')) return; // Backlog 1236
   if (!sites.length) return render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="muted" id="rcnone">${esc(t('rcpt_no_items'))}</p>`, 'more');
   let key = uid().replace(/[^\w-]/g, '');
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="print-only small">${printStamp()} · CEVIK ${esc(t('app'))} [CLAUDE]</p><p class="small muted">${esc(t('rcpt_hint'))}</p>
@@ -6873,6 +6878,7 @@ async function viewPartsUsage() {
   const stockPanel = () => (!rep || !rep.stock || !rep.stock.length ? '' : `<section class="panel warn" id="pustock"><h3>${esc(t('ptu_stock_title'))}</h3><p class="small">${esc(t('ptu_stock_hint'))}</p>
     <ul>${rep.stock.map((i) => `<li><a href="#/stock/${esc(i.id)}">${esc(i.name)}</a>${i.part_number ? ` <span class="small muted pn">${esc(i.part_number)}</span>` : ''} · <b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b> · ${esc(wsName(i.site))}${i.location ? ' · ' + esc(i.location) : ''}${i.active ? '' : ` <span class="chip">${esc(t('item_inactive_badge'))}</span>`}</li>`).join('')}</ul>${rep.stock_truncated ? `<p class="small muted">${esc(t('ptu_stock_more'))}</p>` : ''}</section>`);
   const vChip = (i) => (!i.vehicle_active ? ` <span class="chip" data-puinact>${esc(t('inactive_vehicles'))}</span>` : i.eval_excluded ? ` <span class="chip" data-pudorm>${esc(t('eval_excluded'))}</span>` : '');
+  if (!onPage('#/stock/usage')) return; // Backlog 1236
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('ptu_title'))}</h1>
     <p class="small muted">${esc(t(S.me.role === 'workshop' ? 'ptu_hint_ws' : 'ptu_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(t('ptu_q'))}: ${esc(q)}${from || to ? ` · ${esc(from ? fmtD(from) : '…')} – ${esc(to ? fmtD(to) : '…')}` : ''}${S.me.role === 'workshop' ? ' · ' + esc(wsName(S.me.workshop_site)) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -7205,7 +7211,7 @@ async function viewCosts() {
     // ungültiger Zeitraum: Meldung zeigen und mit dem Standardzeitraum weiter – sonst blieb die Seite bis zum Neuladen gesperrt (19.10.2026)
     if (S.costFrom || S.costTo) { S.costFrom = null; S.costTo = null; toast(err.message, true); return viewCosts(); }
     if (err.status === 403 || err.status === 404) throw err; // gemeinsamer Fehlerpfad „Seite nicht verfügbar“ + „Zur Übersicht“ (23.10.2026)
-    render(`<h1>${esc(t('costs_report'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
+    if (!onPage('#/costs')) return; /* Backlog 1236 */ render(`<h1>${esc(t('costs_report'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const byV = new Map();
   for (const r of rep.rows) { const v = byV.get(r.vehicle_id) || { plate: r.plate, site: r.site, inactive: r.vehicle_active === false, actual: 0, valued: 0, estimate: 0, unvalued: 0, hours: 0, months: [] }; v.actual += r.actual_net; v.valued += r.valued_items || 0; v.estimate += r.estimate_net; v.unvalued += r.unvalued_items; v.hours += r.hours; v.months.push(r); byV.set(r.vehicle_id, v); }
   const vs = [...byV.entries()].sort((a, b) => b[1].actual - a[1].actual);
@@ -7240,6 +7246,7 @@ ${(() => { const sc = (kmBy.get(id) || {}).site_changes; /* Backlog 1049: Stando
   const cl = rep.claim_reimbursements;
   if (cl) html += `<h2>${esc(t('cr_title'))}</h2><section class="panel"><dl class="kv"><dt>${esc(t('cr_sum'))}</dt><dd><b>${cl.total_net === null ? '–' : eur(cl.total_net)}</b></dd></dl><p class="small muted">${esc(t('cr_rule'))}</p></section>
     <div class="list">${cl.items.length ? cl.items.map((x) => `<a class="row" href="#/cases/${encodeURIComponent(x.case_id)}">${plate(x.plate || x.vehicle_id)}<span class="title">${eur(x.reimbursed_net)}</span><span class="chip">${fmtD(x.reimbursed_on)}</span><span class="sub" style="white-space:normal">${esc(x.case_no)} · ${esc(x.insurer)}${x.claim_no ? ' · ' + noTr(x.claim_no) : ''}</span></a>`).join('') : `<p class="muted">${esc(t('cr_none'))}</p>`}</div>`;
+  if (!onPage('#/costs')) return; // Backlog 1236
   render(html, 'more');
   const cr = $('#cr');
   $('#costprt').onclick = () => window.print();
@@ -7287,6 +7294,7 @@ async function viewDriverRecords() {
       <td>${who(x)}</td><td data-label="${esc(t('date'))}">${esc(fmtD(x.checked_on))}</td>
       <td data-label="${esc(t('dr_result'))}">${x.cancelled_at ? `<s>${esc(t('lcr_' + x.result))}</s> <span class="chip">${esc(t('dr_st_storniert'))}</span>` : `<span class="chip ${x.result === 'in_ordnung' ? 'ok' : 'kritisch'}">${esc(t('lcr_' + x.result))}</span>`}</td>
       <td data-label="${esc(t('dr_by'))}">${esc(x.checked_by_name || '–')}</td></tr>`).join('')}</tbody></table></div>` : `<p class="muted">${esc(t('dr_none_checks'))}</p>`;
+  if (!onPage('#/drivers/records')) return; // Backlog 1236
   render(`<p class="noprint"><a class="backlink" href="#/drivers">‹ ${esc(t('back'))}</a></p><h1>${esc(t('dr_title'))}</h1>
     <p class="small muted">${esc(t('dr_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(fmtD(r.from))} – ${esc(fmtD(r.to))}${r.site ? ' · ' + esc(t('site')) + ': ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -7777,6 +7785,7 @@ async function viewQrSheet(oneId) {
   const k = S.qrKind || 'lkw';
   const list = oneId ? all.filter((v) => v.id === oneId) : all.filter((v) => k === 'all' || v.kind === k).sort((a, b) => plateCmp(a.plate, b.plate));
   const card = (v) => { const link = `${location.origin}/#/v/${v.id}`; return `<div class="qrcard"><div class="qr">${qrSvg(link, { label: `${t('report_damage')} ${v.plate}` })}</div><div>${plate(v.plate)}<p class="small"><b>${esc(t('qr_sticker_text'))}</b></p><p class="small muted">${esc(t('qr_sticker_sub'))}</p></div></div>`; };
+  if (!onPage('#/vehicles/qr', '#/vehicles/qr/' + oneId)) return; // Backlog 1236
   render(`<div class="noprint">${oneId ? `<p><a class="backlink" href="#/vehicles/${esc(oneId)}">‹ ${esc(t('back'))}</a></p>` : `<p><a class="backlink" href="#/vehicles">‹ ${esc(t('back'))}</a></p>`}<h1>${esc(t('qr_sheet'))}</h1><p class="small muted">${esc(t('qr_sheet_hint'))}</p>
     ${oneId ? '' : `<div class="actions" style="flex-wrap:wrap">${[['lkw', t('vk_lkw')], ['anhaenger', t('vk_anhaenger')], ['all', t('filter_all')]].map(([key, l]) => `<button type="button" class="btn ${k === key ? '' : 'secondary'}" data-qk="${key}">${esc(l)}</button>`).join('')}</div>`}
     <div class="actions"><button type="button" class="btn" id="qprt">${esc(t('print'))} (${list.length})</button></div></div>
@@ -7832,6 +7841,7 @@ async function viewTachoHistory() {
       <td data-label="${esc(t('th_downloads'))}"><div><b>${x.count}</b>${x.downloads.length ? ': ' + x.downloads.map((d) => esc(fmtD(d))).join(', ') : ''}</div>${x.last_before ? `<div class="small muted">${esc(t('th_before'))}: ${esc(fmtD(x.last_before))}</div>` : ''}</td>
       <td data-label="${esc(t('th_gaps'))}">${x.gaps.length ? `<ul class="small" style="margin:0;padding-left:1.1em">${x.gaps.map((g) => `<li>${gapTxt(g)}</li>`).join('')}</ul>` : x.none_recorded ? `<span class="chip mittel" data-thnone>${esc(t(x.no_card ? 'th_none_card' : 'th_none_recorded'))}</span>` : `<span class="chip ok">${esc(t('th_no_gap'))}</span>`}</td></tr>`).join('')}</tbody></table></div>` : `<p class="muted">${esc(t('th_none'))}</p>`;
   const sum = (k) => `${h.totals[k].subjects} · ${esc(t('th_with_gaps').replace('{n}', h.totals[k].with_gaps))}${h.totals[k].none_recorded ? ' · ' + esc(t('th_none_count').replace('{n}', h.totals[k].none_recorded)) : ''}`;
+  if (!onPage('#/tacho/history')) return; // Backlog 1236
   render(`<p class="noprint"><a class="backlink" href="#/tacho">‹ ${esc(t('back'))}</a></p><h1>${esc(t('th_title'))}</h1>
     <p class="small muted">${esc(t('th_hint'))}</p><p class="small muted">${esc(t('tacho_rule'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(fmtD(h.from))} – ${esc(fmtD(h.to))}${h.site ? ' · ' + esc(t('site')) + ': ' + esc(h.site === 'ohne' ? t('cs_nosite') : h.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -7912,7 +7922,7 @@ async function viewInbox() {
   let n = await api('GET', '/api/notifications?filter=' + (NF[S.inboxF] ? S.inboxF : 'unread'));
   const nf = NF[S.inboxF] ? S.inboxF : n.counts.unread ? 'unread' : 'all';
   if (nf !== n.filter) n = await api('GET', '/api/notifications' + (nf === 'all' ? '' : '?filter=' + nf));
-  if (S.quietBg && (location.hash || '') !== '#/inbox') return; // stille Aktualisierung (Backlog 1116): inzwischen andere Seite – nichts überschreiben
+  if (!onPage('#/inbox')) return; // Backlog 1236 (vorher nur stille Aktualisierung, Backlog 1116): inzwischen andere Seite – nichts überschreiben // stille Aktualisierung (Backlog 1116): inzwischen andere Seite – nichts überschreiben
   S.unread = n.counts.unread;
   const shown = n.notifications;
   render(`<h1>${esc(t('notifications'))}</h1>${n.quiet ? `<p class="small muted" id="qinfo">${esc(t('quiet_on').replace('{f}', n.quiet.from).replace('{t}', n.quiet.to))} – ${esc(t('quiet_short'))}</p>` : ''}<section class="panel" id="push"></section>
@@ -8119,6 +8129,7 @@ async function viewMaster(argKey, argVal, cached) {
     <h2>${esc(t('findings'))}</h2>${p.findings.length > 1 ? `<div class="actions noprint" style="flex-wrap:wrap;margin-top:0">${[['all', t('filter_all'), p.findings.length], ...(afSev === 'act' ? [['act', t('asev_act'), p.findings.filter((f) => afSevMatch('act', f.severity)).length]] : []), ...['kritisch', 'handeln', 'hinweis', 'info'].map((k) => [k, t('asev_' + k), p.findings.filter((f) => f.severity === k).length]).filter(([k, , n]) => n || afSev === k)].map(([k, l, n]) => `<button type="button" class="btn ${afSev === k ? '' : 'secondary'}" data-afsev="${k}">${esc(l)} (${n})</button>`).join('')}</div><input id="afq" class="noprint" placeholder="${esc(t('search_label'))}" aria-label="${esc(t('search_label'))}" style="margin-bottom:8px" value="${esc(S.afQ || '')}"><p class="small muted noprint" id="afcnt" aria-live="polite"></p>` : ''}<div class="list" id="afl">${p.findings.map((f, i) => `<div class="row ${f.severity === 'kritisch' ? 'p-kritisch' : f.severity === 'handeln' ? 'p-mittel' : ''}" data-afi="${i}" data-sev="${esc(f.severity)}"><span class="chip ${sev[f.severity]}">${esc(t('asev_' + f.severity))}</span><span class="title" style="white-space:normal">${fcLabel(f.finding_code)}${esc(fMsg(f.message_args, f.message))}</span><span>${afLink(f.case_id, f.finding_code, f.subject_key)}</span><span class="sub" style="white-space:normal">${esc(translateNextAction(S.lang, f.next_action))}${!f.case_id && f.vehicle_id ? ` · <a href="#/vehicles/${esc(f.vehicle_id)}" data-afv>${esc(t('vehicle_file'))}</a>` : ''} · ${esc(t('role_' + f.owner_role))} · ${esc(t('open_since'))} ${fmtDT(f.first_seen)}</span></div>`).join('') || noneP()}</div>
     <h2>${esc(t('nav_cases'))}</h2><div class="scroll"><table class="stack mtab"><thead><tr><th></th><th>${esc(t('case_no'))}</th><th>${esc(t('urgency'))}</th><th>${esc(t('status_label'))}</th><th>${esc(t('workshop'))}</th><th>${esc(t('received'))}</th><th>${esc(t('workshop_ack'))}</th><th>${esc(t('open_items'))}</th></tr></thead><tbody>
     ${p.cases.map((c) => `<tr><td>${plate(c.plate, { locked: c.safety_lock })}</td><td><a href="#/cases/${esc(c.id)}" style="white-space:nowrap" translate="no">${esc(c.case_no)}</a><div class="small muted">${esc(cDesc(c.description).slice(0, 60))}</div></td><td><span class="chip ${esc(c.priority)}">${esc(t('prio_' + c.priority))}</span></td><td>${esc(t('st_' + c.status))}</td><td>${esc(wsName(c.workshop_site))}</td><td>${c.fleet_received_at ? fmtDT(c.fleet_received_at) : '–'}</td><td>${c.workshop_ack_at ? fmtDT(c.workshop_ack_at) : '–'}</td><td>${c.open_items || ''}</td></tr>`).join('')}</tbody></table></div>${p.cases.length ? '' : `<p class="muted" data-none>${esc(t('no_cases'))}</p>`}${p.cases_truncated ? `<p class="small muted" id="mctrunc">${esc(t('master_cases_truncated').replace('{n}', p.cases.length))} <a href="#/cases">${esc(t('nav_cases'))} ›</a></p>` : ''}`;
+  if (!onPage('#/master')) return; // Backlog 1236
   render(html, 'master');
   $('#mprt').onclick = () => window.print();
   const afRows = $$('#afl [data-afi]');
@@ -8447,6 +8458,7 @@ async function viewKpi() {
     <dt>${esc(t('kpi_id_days'))}</dt><dd>${stD(idf.to_release_days)}</dd>
     <dt>${esc(t('kpi_id_reinsp'))}</dt><dd>${idf.reinspected}${idf.defects_again ? ` · <b style="color:var(--stop)">${esc(t('kpi_id_again'))} ${idf.defects_again}</b>` : ''}</dd></dl><p class="small muted">${esc(t('kpi_id_rule'))}</p></section>`;
   html += `<p class="small muted">${esc(t('kpi_rules'))}</p>`;
+  if (!onPage('#/kpi')) return; // Backlog 1236
   render(html, 'more');
   $('#kpiprt').onclick = async () => { if (!kvAll) { S.kpiVehAll = true; await viewKpi(); } window.print(); };
   const kva = $('#kpivall'); if (kva) kva.onclick = async () => { S.kpiVehAll = true; await viewKpi(); };
@@ -8485,6 +8497,7 @@ async function viewAudit(more, uArg, vArg) {
   const auTarget = (e) => (e.target_plate ? ` · ${esc(t('au_target'))}: <a class="autgt" href="#/vehicles/${esc(e.target)}">${esc(e.target_plate)}</a>`
     : (e.target_name || e.target_username) && e.target !== e.actor_id ? ` · ${esc(t('au_target'))}: <a class="autgt" href="#/audit?u=${esc(e.target)}">${esc(e.target_name || e.target_username)}</a>`
     : e.target_driver_name ? ` · ${esc(t('au_target'))}: <a class="autgt" href="#/drivers/${esc(e.target)}">${esc(e.target_driver_name)}</a>` : ''); // Fahrerakte (20.10.2026)
+  if (!onPage('#/audit')) return; // Backlog 1236
   render(`<h1>${esc(t('audit'))}</h1>${helpLink('access')}<p class="small muted">${esc(t('audit_hint'))}</p>
     ${printHead([t('audit'), f ? `${t('audit_area')}: ${gl || f}` : '', aq.length >= 2 ? `${t('print_search')}: „${aq}“` : '', au ? `${t('audit_until')} ${fmtD(au)}` : '', pu ? `${t('audit_person')}: ${S.auditUserName || ''}` : '', pv ? `${t('vehicle')}: ${S.auditVehName || ''}` : '', t('print_count').replace('{n}', S.auditRows.length)])}
     <form id="aqf" class="actions noprint" style="flex-wrap:wrap;align-items:flex-end;margin-top:0"><div style="flex:1 1 200px"><label for="afsel">${esc(t('audit_area'))}</label><select id="afsel">${groups.map(([k, l]) => `<option value="${esc(k)}"${f === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
@@ -8547,6 +8560,7 @@ async function viewTimeline(id, fArg) {
   const visible = Object.keys(groups).filter((k) => !TL_MGR_ONLY.includes(k) || isMgr()).filter((k) => k !== 'tacho' || r.vehicle.kind !== 'anhaenger')
     .filter((k) => k !== 'driver' || isMgr() || S.me.role === 'dispatch'); // Fahrerzuordnungen liefert der Server nur diesen Rollen (sonst „–“ wie „nie zugeordnet“, 20.10.2026)
   // Ausdruck (z. B. Fahrzeughistorie für Verkauf/Rückgabe): Kennzeichen, Auswahl und Anzahl im Vermerk
+  if (!onPage('#/vehicles/' + id + '/timeline', '#/vehicles/' + r.vehicle.id + '/timeline')) return; // Backlog 1236
   render(`<p class="noprint"><a class="backlink" href="#/vehicles/${esc(id)}">‹ ${esc(t('back'))}</a></p><div>${plate(r.vehicle.plate, { big: true })}</div>
     <h1 style="margin-top:12px" data-title="${esc(r.vehicle.plate)} · ${esc(t('timeline'))}">${esc(t('timeline'))}</h1>${printHead([r.vehicle.plate, `${t('print_filter')}: ${labels[f]}`, t('print_count').replace('{n}', r.items.length) + (r.truncated ? ' · ' + t('tl_trunc_short') : '')])}<p class="small muted">${esc(t('timeline_hint'))}</p>${r.truncated ? `<p class="small" id="tltrunc">⚠ ${esc(t('tl_truncated').replace('{n}', r.items.length))}</p>` : ''}
     <div class="actions noprint"><button type="button" class="btn secondary" id="tlprt">${esc(t('print'))}</button></div>
@@ -8709,6 +8723,7 @@ async function viewWsLoad() {
   // Backlog 1108: Druckkopf mit Zeitraum (Datum), Kalenderwoche mit Jahr, wenn der Zeitraum über einen Jahreswechsel reicht
   const wlYears = new Set(r.weeks.map((w) => w.slice(0, 4))).size > 1;
   const wlWeek = (w) => `${t('cw')} ${w.slice(6)}${wlYears ? '/' + w.slice(0, 4) : ''}`;
+  if (!onPage('#/wsload')) return; // Backlog 1236
   render(`<h1>${esc(t('ws_load'))}</h1>${printHead([`${tn('weeks_n', weeks)}`, `${t('period')}: ${fmtD(r.from)} – ${fmtD(bDate())}`])}<p class="small muted">${esc(t('ws_load_hint'))}</p>
     <div class="actions" style="flex-wrap:wrap">${[4, 8, 13, 26].map((w) => `<button type="button" class="btn ${w === weeks ? '' : 'secondary'}" data-wl="${w}">${esc(tn('weeks_n', w))}</button>`).join('')}<button type="button" class="btn secondary" id="wlcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="wlprt">${esc(t('print'))}</button></div>
     ${r.sites.map((s) => { const max = Math.max(1, ...s.weeks.map((w) => w.hours)); return `<section class="panel"><h2 style="margin-top:0">${esc(s.name === 'ohne' ? t('no_workshop') : wsLabel({ code: s.site, name: s.name, active: !s.closed }))}</h2>
@@ -8789,6 +8804,7 @@ async function viewQuality(pre) {
   const items = r.items.filter((i) => (!sev || i.severity === sev) && (!f || i.check === f));
   const checks = Object.keys(r.counts).filter((c) => !sev || sevOf[c] === sev);
   // Ausdruck (Arbeitsliste zum Abarbeiten): Schweregrad, Prüfung, Standort und Anzahl im Vermerk
+  if (!onPage('#/quality')) return; // Backlog 1236
   render(`<h1>${esc(t('dq'))}</h1>${printHead([sev ? `${t('dq_col_severity')}: ${t('dq_sev_' + sev)}` : '', f ? `${t('dq_col_check')}: ${t('dq_' + f)}` : '', r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', items.length)])}${helpLink('dates')}<p class="small muted">${esc(t('dq_hint'))}</p>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="panel noprint">${siteSelect('dqsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}${r.other_hidden ? `<p class="small muted" style="margin-bottom:0">${esc(tn('dq_other_hidden', r.other_hidden))}</p>` : ''}</div>` : ''}
     ${(r.truncated_checks || []).length ? `<p class="panel warn small" id="dqtrunc">${esc(t('dq_truncated').replaceAll('{n}', r.check_max))} ${r.truncated_checks.map((c) => esc(t('dq_' + c))).join(' · ')}</p>` : ''}
@@ -8823,6 +8839,7 @@ async function viewReadiness() {
   };
   const rows = RD_ORDER.map((k) => by.get(k)).filter(Boolean).map((x) => `<a class="row" href="${esc(x.link)}" data-rd="${esc(x.key)}" style="display:block"><span class="title" style="white-space:normal">${esc(t('rd_' + x.key + '_t'))}</span> <span class="chip ${CLS[x.state]}">${esc(t('rd_state_' + x.state))}</span>
     ${detail(x) ? `<div class="small muted" style="overflow-wrap:anywhere">${esc(detail(x))}</div>` : ''}${x.state !== 'ok' ? `<div class="small">${esc(t('rd_' + x.key + '_todo'))}</div>` : ''}</a>`).join('');
+  if (!onPage('#/readiness')) return; // Backlog 1236
   render(`<h1>${esc(t('rd_title'))}</h1><p class="small muted">${esc(t('rd_hint'))}</p>
     <div class="stats"><div><b${r.open ? ' style="color:var(--stop)"' : ''}>${r.open}</b>${esc(t('rd_open_n'))}</div><div><b>${r.items.filter((x) => x.state === 'ok').length}</b>${esc(t('rd_ok_n'))}</div></div>
     <div class="list">${rows}</div>`, 'more');
@@ -8834,6 +8851,7 @@ async function viewUsage() {
   const AREA = { cases: 'nav_cases', vehicles: 'vehicles', tires: 'fleet_tires', stock: 'stock', fines: 'fines', maintenance: 'inspections_due', reports: 'area_reports',
     master: 'nav_master', notifications: 'notifications', admin: 'area_admin', account: 'nav_profile', dashboard: 'nav_home', checks: 'departure_check', drivers: 'area_drivers', claims: 'area_claims', telematics: 'area_telematics', workshop: 'area_workshop', emergency: 'area_emergency', tacho: 'area_tacho', other: 'area_other' };
   const max = Math.max(1, ...r.daily.map((d) => d.calls));
+  if (!onPage('#/usage')) return; // Backlog 1236
   render(`<h1>${esc(t('usage'))}</h1><p class="small muted">${esc(t('usage_hint'))}</p>
     <div class="actions" style="flex-wrap:wrap">${[7, 30, 90, 365].map((d) => `<button type="button" class="btn ${d === days ? '' : 'secondary'}" data-ud="${d}">${esc(nDays(d))}</button>`).join('')}</div>
     <div class="stats"><div><b>${r.total_calls}</b>${esc(t('calls'))}</div><div><b>${r.daily.length}</b>${esc(t('days_used'))}</div><div><b${r.areas.some((a) => a.errors) ? ' style="color:var(--stop)"' : ''}>${r.areas.reduce((s, a) => s + a.errors, 0)}</b>${esc(t('errors_count'))}</div></div>
@@ -8999,6 +9017,7 @@ async function viewDefects() {
   const r = await api('GET', `/api/reports/defects?${month ? 'month=' + month : 'days=' + days}${kind ? '&kind=' + kind : ''}${vsDef('defSite') ? '&site=' + encodeURIComponent(vsDef('defSite')) : ''}`);
   const veh = (id, p) => `<a href="#/vehicles/${encodeURIComponent(id)}">${esc(p)}</a>`;
   const vlist = r.vehicles.filter((v) => v.defect_items > 0);
+  if (!onPage('#/defects')) return; // Backlog 1236
   render(`<h1>${esc(t('defect_stats'))}</h1>${helpLink('defects')}<p class="small muted">${esc(t('defect_stats_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(month ? fmtMonth(month) : nDays(days))} (<span data-dper>${esc(fmtD(r.since))} – ${esc(fmtD(r.until_date && r.until_date < bDate() ? r.until_date : bDate()))}</span>)${kind ? ' · ' + esc(kind === 'abfahrt' ? t('nav_check') : t('inspection')) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">

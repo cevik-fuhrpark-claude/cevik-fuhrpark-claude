@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, CASE_SORTS, FORM_DRAFT_MS, ICON, S, SEND_TIMEOUT_MS, announceHits, api, bDate, bindLang, caseFilterQ, caseList, clearOfflineData, ctChip, download, envFn, esc, flushOutbox, fmtD, fmtDT, fmtHM, fmtNum, helpLoaded, helpMatches, helpNorm, helpSections, isCasesHash, isMgr, langSelect, loadHelp, loadNotifyPrefs, loadSessions, loadTotp, markSession, mayCheck, nDays, noTr, noneP, notifHref, nowMs, otherEnvOutbox, outboxGet, ownerT, paintBadge, plate, printHead, pushOffForLogout, pushPanel, refreshUnread, render, resetUserState, searchKey, siteKeyUi, siteSelect, sortPref, stockHit, t, tn, toast, unitL, vinOf, vsDef, wsAll, wsLabel, wsName } from './app-main.js';
+import { $, $$, CASE_SORTS, FORM_DRAFT_MS, ICON, S, SEND_TIMEOUT_MS, announceHits, api, bDate, bindLang, caseFilterQ, caseList, clearOfflineData, ctChip, download, envFn, esc, flushOutbox, fmtD, fmtDT, fmtHM, fmtNum, helpLoaded, helpMatches, helpNorm, helpSections, isCasesHash, isMgr, langSelect, loadHelp, loadNotifyPrefs, loadSessions, loadTotp, markSession, mayCheck, nDays, noTr, noneP, notifHref, nowMs, onPage, otherEnvOutbox, outboxGet, ownerT, paintBadge, plate, printHead, pushOffForLogout, pushPanel, refreshUnread, render, resetUserState, searchKey, siteKeyUi, siteSelect, sortPref, stockHit, t, tn, toast, unitL, vinOf, vsDef, wsAll, wsLabel, wsName } from './app-main.js';
 
 
 const plateNoCountry = (p) => { const x = String(p || '').trim(); const y = x.replace(/^\(?(?:D|DE|DEU)\)?[\s\-–:/.]+(?=\S)/i, '').replace(/(\S)[\s\-–/,]+\(?(?:D|DE|DEU)\)?$/i, '$1').replace(/(\S)\((?:D|DE|DEU)\)$/i, '$1').trim(); return y !== x && searchKey(y).length >= 4 ? y : null; };
@@ -34,6 +34,7 @@ async function viewCases() {
 
 
   const asof = () => `${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/cases" id="casesreload" title="${esc(t('cases_asof_hint'))}">${esc(t('update_now'))}</a>`;
+  if (!onPage('#/cases')) return;
   render(`<h1>${esc(t('nav_cases'))}</h1>${S.me.role !== 'driver' ? `<p class="small muted noprint" id="casesasof" style="margin:-6px 0 8px">${asof()}</p>` : ''}
     <input id="cq" class="noprint" type="search" value="${esc(q)}" placeholder="${esc(t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search'))}" aria-label="${esc(t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search'))}" style="margin-bottom:12px" autocomplete="off">${vsel}${wsel}
     <div class="seg-tabs noprint">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? ['mine'] : ['followup']), ...(['critical', 'locked', 'cost_approval', 'unreceived', 'received_open', 'limited', 'open_items', 'paused', 'ready_overdue'].includes(f) || (f === 'mine' && S.me.role !== 'workshop') ? [f] : [])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}"${k === f ? ' aria-current="true"' : ''}>${esc(t(k === 'unreceived' && !isMgr() ? 'dispo_unreceived' : CF_LABEL[k] || k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', nDays(res.stale_days)) : ownerT('filter_stale_off'))}</p>` : ''}
@@ -101,7 +102,7 @@ async function viewInbox() {
   let n = await api('GET', '/api/notifications?filter=' + (NF[S.inboxF] ? S.inboxF : 'unread'));
   const nf = NF[S.inboxF] ? S.inboxF : n.counts.unread ? 'unread' : 'all';
   if (nf !== n.filter) n = await api('GET', '/api/notifications' + (nf === 'all' ? '' : '?filter=' + nf));
-  if (S.quietBg && (location.hash || '') !== '#/inbox') return;
+  if (!onPage('#/inbox')) return;
   S.unread = n.counts.unread;
   const shown = n.notifications;
   render(`<h1>${esc(t('notifications'))}</h1>${n.quiet ? `<p class="small muted" id="qinfo">${esc(t('quiet_on').replace('{f}', n.quiet.from).replace('{t}', n.quiet.to))} – ${esc(t('quiet_short'))}</p>` : ''}<section class="panel" id="push"></section>

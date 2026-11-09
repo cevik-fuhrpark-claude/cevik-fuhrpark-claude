@@ -376,6 +376,7 @@ async function viewStockAsOf() {
   const n = (x) => (x === null || x === undefined ? '' : fmtNum(x));
   const val = (x) => (x === null ? `<span class="muted">${esc(t('unvalued_short'))}</span>` : eur(x));
   const sm = (k) => `${rep.summary[k].unvalued === rep.summary.count ? '–' : eur(rep.summary[k].value_net)}${rep.summary[k].unvalued ? ` <span class="small muted">(${rep.summary[k].unvalued} ${esc(t('unvalued_short'))})</span>` : ''}`;
+  if (!onPage('#/stock/asof')) return;
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('asof_title'))}</h1>
     <p class="small muted">${esc(t('asof_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(t('asof_date'))} ${esc(fmtD(date))}${site ? ' · ' + esc(wsName(site)) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -408,6 +409,7 @@ async function viewStockJournal() {
   const TYPES = ['zugang', 'entnahme', 'korrektur', 'umlagerung'];
   const inv = type === 'inventur' && rep && rep.summary.inventur; const is = inv ? rep.summary.inventur : null;
   const sumRow = rep ? TYPES.map((k) => { const x = rep.summary[k]; return x.count ? `<li>${esc(t('mv_' + k))}: ${x.count} · ${x.unvalued === x.count ? '–' : eur(x.value_net)}${x.unvalued ? ` <span class="small muted">(${x.unvalued} ${esc(t('unvalued_short'))})</span>` : ''}</li>` : ''; }).join('') : '';
+  if (!onPage('#/stock/journal')) return;
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t(inv ? 'inventory_diffs' : 'stock_journal'))}</h1>
     <p class="small muted">${esc(t(inv ? 'inv_hint' : 'journal_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(fmtD(from))} – ${esc(fmtD(to))}${site ? ' · ' + esc(wsName(site)) : ''}${rep && rep.item ? ' · ' + esc(rep.item.name) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
@@ -436,6 +438,7 @@ async function viewStockReceipt() {
 
   const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site)
     : [...S.meta.workshops.filter((w) => items.some((i) => i.site === w.code)), ...S.meta.workshops.filter((w) => !items.some((i) => i.site === w.code))];
+  if (!onPage('#/stock/receipt')) return;
   if (!sites.length) return render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="muted" id="rcnone">${esc(t('rcpt_no_items'))}</p>`, 'more');
   let key = uid().replace(/[^\w-]/g, '');
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="print-only small">${printStamp()} · CEVIK ${esc(t('app'))} [CLAUDE]</p><p class="small muted">${esc(t('rcpt_hint'))}</p>
@@ -638,6 +641,7 @@ async function viewPartsUsage() {
   const stockPanel = () => (!rep || !rep.stock || !rep.stock.length ? '' : `<section class="panel warn" id="pustock"><h3>${esc(t('ptu_stock_title'))}</h3><p class="small">${esc(t('ptu_stock_hint'))}</p>
     <ul>${rep.stock.map((i) => `<li><a href="#/stock/${esc(i.id)}">${esc(i.name)}</a>${i.part_number ? ` <span class="small muted pn">${esc(i.part_number)}</span>` : ''} · <b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b> · ${esc(wsName(i.site))}${i.location ? ' · ' + esc(i.location) : ''}${i.active ? '' : ` <span class="chip">${esc(t('item_inactive_badge'))}</span>`}</li>`).join('')}</ul>${rep.stock_truncated ? `<p class="small muted">${esc(t('ptu_stock_more'))}</p>` : ''}</section>`);
   const vChip = (i) => (!i.vehicle_active ? ` <span class="chip" data-puinact>${esc(t('inactive_vehicles'))}</span>` : i.eval_excluded ? ` <span class="chip" data-pudorm>${esc(t('eval_excluded'))}</span>` : '');
+  if (!onPage('#/stock/usage')) return;
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('ptu_title'))}</h1>
     <p class="small muted">${esc(t(S.me.role === 'workshop' ? 'ptu_hint_ws' : 'ptu_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(t('ptu_q'))}: ${esc(q)}${from || to ? ` · ${esc(from ? fmtD(from) : '…')} – ${esc(to ? fmtD(to) : '…')}` : ''}${S.me.role === 'workshop' ? ' · ' + esc(wsName(S.me.workshop_site)) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
