@@ -37341,6 +37341,17 @@ await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast üb
   ok(helpAfter(app, 'overload', 'load'), 'Hilfe-Abschnitt nach Ladungssicherung für meldende Rollen');
 });
 
+await test('Backlog 1244 (Sonde, Blickwinkel „Falsch getankt, Schlüssel eingeschlossen, weggerollt, festgefahren“): Scheibenwasch-/Kühl-/Leitungswasser oder Öl im AdBlue-Tank → Falsch-getankt-Schritte; UK/RU „ключі зачинив у кабіні“, „ключи закрыл в кабине“ → Schlüssel-Schritte; Nachfüllen, Verneinung und „закрив кабіну на ключ“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const F = new RegExp(app.match(/^const FUEL_HINT = \/(.+)\/i;$/m)[1], 'i'); const L = new RegExp(app.match(/^const LOST_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['Scheibenwaschwasser in den AdBlue-Tank', 'Wasser statt AdBlue getankt', 'Kühlmittel in den AdBlue Tank gefüllt', 'Öl in den AdBlue-Tank gekippt', 'Diesel in den AdBlue Tank getankt', 'washer fluid into the AdBlue tank', 'put coolant in the DEF tank', 'Benzin statt Diesel getankt']) ok(F.test(recurFix(x)), 'Falsch getankt: ' + x);
+  for (const x of ['kein Wasser im AdBlue', 'AdBlue nachgefüllt', 'Kühlwasser nachgefüllt', 'Wasser im Tank', 'Öl nachgefüllt', 'Scheibenwaschwasser leer']) ok(!F.test(recurFix(x)), 'kein Falsch-getankt-Hinweis: ' + x);
+  for (const x of ['ключі зачинив у кабіні', 'зачинив ключі в кабіні', 'ключи закрыл в кабине', 'забыл ключи в машине', 'Schlüssel im Fahrzeug eingeschlossen', 'locked keys in the cab']) ok(L.test(recurFix(x)), 'Schlüssel: ' + x);
+  for (const x of ['ключ від кабіни зламався', 'ключі в кабіні, все добре', 'закрив кабіну на ключ']) ok(!L.test(recurFix(x)), 'kein Schlüssel-Hinweis: ' + x);
+});
+
 await test('Backlog 1243 (Sonde, Blickwinkel „Alarmanlage geht ständig los“): Meldeformular zeigt eigene Schritte (Einbruchsspuren prüfen, nicht abklemmen, notieren; „Weiß nicht“); DE/EN/UK/RU; Kühlaggregat-/Reifendruck-/Rauch-/Rückfahr-/Gurtalarm, Warnblinker, Verneinung und Reparatur nicht; Diebstahl hat Vorrang; „Diebstahlwarnanlage“ allein ist kein Diebstahl; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
