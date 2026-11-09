@@ -37341,6 +37341,15 @@ await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast üb
   ok(helpAfter(app, 'overload', 'load'), 'Hilfe-Abschnitt nach Ladungssicherung für meldende Rollen');
 });
 
+await test('Backlog 1251 (Folge aus 1250): „truck stuck in neutral/3rd gear“, „коробка застрягла на нейтралі“ zeigen nicht mehr „festgefahren“, sondern nur Getriebe; „stuck in the mud“, „truck is stuck“, „застрягла в багнюці“ bleiben festgefahren', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const S = new RegExp(app.match(/^const STUCK_HINT = \/(.+)\/i;$/m)[1], 'i'); const G = new RegExp(app.match(/^const GEAR2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['truck stuck in neutral', 'truck is stuck in 3rd gear', 'коробка застрягла на нейтралі']) { ok(!S.test(recurFix(x)), 'nicht festgefahren: ' + x); ok(G.test(recurFix(x)), 'Getriebe: ' + x); }
+  for (const x of ['truck stuck in the mud', 'truck is stuck', 'we are stuck in the snow', 'вантажівка застрягла в багнюці', 'застрягли']) ok(S.test(recurFix(x)), 'festgefahren: ' + x);
+});
+
 await test('Backlog 1250 (Sonde, Blickwinkel „Fahrer diktiert Motor-/Getriebeproblem ohne Satzzeichen“): „Motor säuft ab“, „dreht nicht hoch“, „Drehzahl geht nicht über 1500“, Aussetzer, „fährt nur noch 30“ → Motor; „Getriebe hängt im Neutral“, „schaltet nicht hoch“, „bleibt im 3. Gang“, „stuck in neutral“ → Getriebe; Stau/Glätte/Reifen, „Licht/Lüfter schaltet nicht“, Reparaturvermerk nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
