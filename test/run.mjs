@@ -37258,6 +37258,16 @@ await test('Backlog 1210 (Reserve Start-Modul nach 1209): Vorgangsliste (viewCas
   ok(pct <= 63, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 63 %)');
 });
 
+await test('Backlog 1211 (Sonde Heizung/Klima Fahrerhaus, Backlog 195): „Gebläse dreht nicht“, „Lüftung pustet nicht“, „Heizungsgebläse kaputt“, „fan doesn\'t blow“ → Sicht; „Standheizung geht nach 5 Minuten aus“, „Klimaanlage riecht muffig/tropft“ → Klima; Reparaturvermerke und Motorlüfter nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);(?: *\\/\\/.*)?$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative ' + n); return new RegExp(m[1], m[2]); };
+  const VI = rx('VISIB_HINT'), CL = rx('CLIMATE_HINT');
+  for (const x of ['Gebläse dreht nicht', 'Lüftung pustet nicht', 'Heizungsgebläse kaputt', 'Gebläse läuft nur noch auf Stufe 4', "fan doesn't blow", 'blower not blowing', 'Gebläse geht nicht mehr']) ok(VI.test(x.toLowerCase()), 'Sicht fehlt: ' + x);
+  for (const x of ['Gebläse wurde getauscht, dreht wieder', 'Motorlüfter dreht nicht', "engine fan doesn't blow"]) ok(!VI.test(x.toLowerCase()), 'Sicht fälschlich: ' + x);
+  for (const x of ['Standheizung geht nach 5 Minuten aus', 'Klimaanlage riecht muffig', 'Klimaanlage tropft Wasser in den Fußraum', 'Klimaanlage kühlt nicht']) ok(CL.test(x.toLowerCase()), 'Klima fehlt: ' + x);
+  for (const x of ['Klimaanlage tropft nicht mehr, repariert', 'Kühlaggregat riecht muffig', 'Standheizung eingeschaltet, alles gut', 'Klimaanlage gewartet']) ok(!CL.test(x.toLowerCase()), 'Klima fälschlich: ' + x);
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
