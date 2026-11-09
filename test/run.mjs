@@ -37285,6 +37285,21 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1228 (Sonde Heizung/Lüftung/Klima und AdBlue/Abgas, Backlog 195): Gebläse nur auf höchster Stufe, „Defrost“, „blower stuck on max/only works on full speed“, RU „отопитель не работает/не запускается“ → Sicht-Schritte; „Lüftung riecht muffig“/„vents smell musty“ → Klima-Schritte; AdBlue-Qualität/-Füllstand niedrig, „AdBlue level low“, NOx-Sensor defekt (DE/EN/UK) → Motor-Schritte; Reparaturvermerk, „kein … mehr“ und Abgasgeruch nicht (Reparaturvermerk bei Sicht über noFixed)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
+  const want = {
+    VISIB_HINT: ['Gebläse geht nur noch auf höchster Stufe', 'Gebläse geht nur auf Stufe 4', 'Defrost funktioniert nicht', 'Blower only works on full speed', 'Blower fan stuck on max', 'Fan only works on speed 4', 'Отопитель не работает', 'Отопитель не запускается'],
+    CLIMATE_HINT: ['Lüftung stinkt muffig', 'Lüftung riecht muffig', 'Gebläse riecht nach Schimmel', 'vents smell musty'],
+    ENGINE_HINT: ['AdBlue Qualität schlecht Meldung', 'AdBlue Füllstand niedrig', 'AdBlue level low', 'low AdBlue', 'AdBlue quality warning', 'NOx Sensor defekt', 'NOx-Sensor Fehler im Display', 'NOx sensor fault', 'Датчик NOx несправний', 'kein AdBlue im Tank, Warnung im Display', 'Kein AdBlue mehr im Tank'] };
+  const no = {
+    VISIB_HINT: ['engine fan stuck on max', 'radiator fan only works on full speed'],
+    CLIMATE_HINT: ['Lüftung riecht muffig, Filter gewechselt', 'Lüftung stinkt nach Abgas'],
+    ENGINE_HINT: ['AdBlue Füllstand ok', 'kein AdBlue Fehler mehr', 'NOx Sensor getauscht, Fehler weg', 'NOx sensor fault, replaced'] };
+  for (const [n, xs] of Object.entries(want)) { const r = rx(n); for (const x of xs) ok(r.test(x.toLowerCase()), n + ' fehlt: ' + x); }
+  for (const [n, xs] of Object.entries(no)) { const r = rx(n); for (const x of xs) ok(!r.test(x.toLowerCase()), n + ' fälschlich: ' + x); }
+});
+
 await test('Backlog 1227 (Sonde Licht/Elektrik im Fahrerhaus, Backlog 195): „Bremslicht leuchtet dauerhaft/geht nicht aus“ (DE/UK/EN), Scheinwerfer mit Wasser/beschlagen (EN/UK) und UK „не горить підсвітка номера“ → Licht-Schritte; „electric window stuck“ → Fenster-Schritte; Reparaturvermerk und fremde Wörter nicht', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
