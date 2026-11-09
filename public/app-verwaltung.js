@@ -1,28 +1,28 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
 import { $, $$, BERLIN_DT_FMT, CT_KINDS, DEFECT_RESULTS, MORE_MAX, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, STATES, STRINGS, TM_PROV, TST, afLink, agentFindingsCsv, api, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindTachoCancel, cDesc, checkLabel, claimChip, clipTxt, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, eur, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, helpLink, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isClaimsHash, isContractsHash, isDriversHash, isFinesHash, isMaintHash, isMgr, isPlanHash, isTachoHash, isTiresHash, isUnusedUser, isWeekendD, kmDigHtml, kmFcHtml, kmUnclearDateDue, langAttr, langLoaded, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mY, maintOrderHtml, markInvalid, mk, mkR, nDays, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, ownerT, partsEta, phoneIn, planVehTag, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, qrSvg, rdyOf, rdyTxt, readCsvFile, reasonText, render, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, siteWsHints, sortPref, sortUsers, stackTables, supplierLabel, t, tachoHistList, telAbroad, telHref, tfill, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, tzNote, uiLoc, uid, usersCsv, vehiclesCached, vlAt, vsDef, woApptTxt, woTag, wsAll, wsLabel, wsName, wsOptions } from './app-main.js';
 
-// Backlog 804 (Funkloch): Antwort verloren (Zeitlimit/Netz) – meldet der Server beim erneuten Senden derselben Eingaben „gibt es bereits“,
-// war der erste Versuch gespeichert (nur für Endpunkte mit eindeutiger Dublettenprüfung: Vertrag, Führerscheinkontrolle, Auslesung, Fahrerzuordnung)
-// Backlog 805f (Funkloch): Vorgangsbefehle außerhalb der Vorgangsansicht (Werkstattplan) – dieselbe Kennung für denselben Inhalt kurz nach
-// einem Fehlschlag, damit der Server die Wiederholung als `duplicate` erkennt (Muster `S.pendCmd` in viewCase); nach Erfolg verworfen
+
+
+
+
 const cidFor = (key) => { const p = S.pendCid; const id = p && p.key === key && Date.now() - p.at < 10 * 60000 ? p.id : uid(); S.pendCid = { key, id, at: Date.now() }; return id; };
-// Folgetag eines Kalenderdatums JJJJ-MM-TT (Stundensatz-Verlauf: „ab“ = Tag nach „bis“)
+
 const bDateNext = (d) => { const [y, m, dd] = String(d).split('-').map(Number); const x = new Date(Date.UTC(y, m - 1, dd + 1)); return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; };
 const bYm = (back = 0) => { const [y, m] = bDate().slice(0, 7).split('-').map(Number); return new Date(Date.UTC(y, m - 1 - back, 1)).toISOString().slice(0, 7); };
-// Konto schon mit einer (oft ausgeschiedenen) Fahrerakte verknüpft: Akte nennen (Backlog 191)
+
 const linkedMsg = (err) => { const ld = err && err.code === 'duplicate' && err.data && err.data.linked_driver; return ld ? `${err.message} ${t('dr_linked_to').replace('{name}', ld.display_name)}${ld.active ? '' : ' (' + t('inactive') + ')'}` : err.message; };
-// Hinweistext zur Antwortfrist: Feiertag vor Wochenende (Frist bleibt der Tag laut Schreiben)
+
 const dueOffHint = (iso) => (federalHoliday(iso) ? t('due_holiday_hint') : isWeekendD(iso) ? t('due_weekend_hint') : '');
 function dueWeekendWatch() { for (const el of $$('input[name=response_due]')) { const h = document.createElement('p'); h.className = 'small muted'; h.dataset.dueWe = ''; h.textContent = t('due_weekend_hint'); el.after(h); const upd = () => { const x = dueOffHint(el.value); h.hidden = !x; if (x) h.textContent = x; }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); } }
-// Lange Import-Vorschauen zeigen nur die ersten Zeilen – dann ausdrücklich sagen, wie viele es insgesamt sind (nie still abschneiden)
+
 const impMore = (total, shown) => (total > shown ? `<p class="small" role="note" data-impmore>${esc(t('imp_first_n').replace('{n}', fmtNum(shown)).replace('{m}', fmtNum(total)))}</p>` : '');
-// Offline-Fahrzeugliste auffrischen: fehlt sie oder ist sie älter als 5 Minuten (bzw. force nach eigener Änderung) – 20.10.2026: vorher nur
-// angelegt, wenn sie fehlte; nach Fahrzeugimport/-änderung/neuer Zuordnung blieb sie auf dem Gerät veraltet
-// Datenauskunft mit gekappten Abschnitten: Hinweis wie bei der Datensicherung (21.10.2026: Vermerk stand nur in der Datei)
+
+
+
 function dexTrunc(x) { const tr = x && x.meta && Array.isArray(x.meta.truncated) ? x.meta.truncated : []; if (tr.length) toast(t('dex_truncated').replace('{t}', tr.join(', ')), true); }
-// Backlog 404 (26.10.2026, Blickwinkel „Hagelschaden an mehreren Lkw auf dem Hof“): gleicher Schaden an mehreren Fahrzeugen in einem Schritt
-// (nur Inhaber/Fuhrparkleitung). Je Fahrzeug ein eigener Vorgang; Fotos danach im jeweiligen Vorgang ergänzen.
-// App: bis 40 Fahrzeuge (ganzer Hof); Server nimmt höchstens 12 je Aufruf → gleichmäßige Blöcke (je ≥ 2) mit demselben Schlüssel
+
+
+
 const BATCH_MAX = 40;
 const BATCH_CHUNK = 12;
 async function viewNewMulti() {
@@ -46,7 +46,7 @@ async function viewNewMulti() {
   const count = () => { const n = chosen().length; const el = $('#mcount'); if (el) { el.textContent = tfill('multi_selected', { n, max: BATCH_MAX }); el.classList.toggle('err', n > BATCH_MAX); } };
   $$('input[name=mveh]').forEach((x) => x.addEventListener('change', count)); count();
   $('#vq').onkeydown = (e) => { if (e.key === 'Enter') e.preventDefault(); };
-  // Filter blendet nur aus – bereits gewählte Fahrzeuge bleiben gewählt und sichtbar (Hof-Liste wird oft in mehreren Suchen zusammengestellt)
+
   $('#vq').oninput = () => { const q = searchKey($('#vq').value); $$('#mpick label').forEach((l) => { const r = $('input', l); l.hidden = !!q && !(r && r.checked) && !searchKey(l.textContent).includes(q); }); };
   const key = uid();
   $('#f').onsubmit = async (e) => {
@@ -64,10 +64,10 @@ async function viewNewMulti() {
     try {
       const k = Math.ceil(ids.length / BATCH_CHUNK); const size = Math.ceil(ids.length / k); const r = { count: 0, cases: [] };
       try {
-        for (let i = 0; i < ids.length; i += size) { const x = await api('POST', '/api/cases/batch', { ...body, vehicle_ids: ids.slice(i, i + size) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h: request_key → keine Dubletten */ r.count += x.count; r.cases.push(...x.cases); }
+        for (let i = 0; i < ids.length; i += size) { const x = await api('POST', '/api/cases/batch', { ...body, vehicle_ids: ids.slice(i, i + size) }, { timeoutMs: SEND_TIMEOUT_MS });   r.count += x.count; r.cases.push(...x.cases); }
       } catch (err) { if (r.count) err.message = `${err.offline ? t('multi_offline') : err.message} ${tfill('multi_partial', { n: r.count, m: ids.length })}`; err.offline = err.offline && !r.count; throw err; }
       if (!sb.isConnected) return;
-      document.querySelectorAll('.toast.err').forEach((x) => x.remove()); // Hinweis eines früheren Versuchs (z. B. „mindestens zwei“) ist erledigt
+      document.querySelectorAll('.toast.err').forEach((x) => x.remove());
       const pl = new Map(vs.map((v) => [v.id, v]));
       render(`<h1>${esc(t('multi_title'))}</h1><div class="panel" role="status" data-multidone><p><b>${esc(tn('multi_done', r.count))}</b></p><p class="small muted">${esc(t('multi_photos_after'))}</p>
         <ul class="list">${r.cases.map((c) => { const v = pl.get(c.vehicle_id); return `<li><a href="#/cases/${esc(c.id)}" data-mcase="${esc(c.case_no)}" translate="no">${esc(c.case_no)}</a> · ${v ? plate(v.plate, { locked: !!c.safety_lock }) : esc(c.vehicle_id)}${c.duplicate ? ` <span class="small muted">${esc(t('multi_dup'))}</span>` : ''}</li>`; }).join('')}</ul>
@@ -82,14 +82,14 @@ async function viewClaims() {
   let timer = null;
   const f = S.clFilter || 'offen';
   const cs = vsDef('claimSite') || ''; const csq = cs ? '&site=' + encodeURIComponent(cs) : '';
-  const q = S.clQ || ''; const qq0 = q ? '&q=' + encodeURIComponent(q) : ''; // Suche nach Kennzeichen/Nummern (Backlog 219)
-  // Zeitraum (Meldedatum) und Versicherer (Backlog 274, Schadenaufstellung für den Versicherer)
+  const q = S.clQ || ''; const qq0 = q ? '&q=' + encodeURIComponent(q) : '';
+
   const pq = `${S.clFrom ? '&from=' + S.clFrom : ''}${S.clTo ? '&to=' + S.clTo : ''}${S.clIns ? '&insurer=' + encodeURIComponent(S.clIns) : ''}`;
   const qq = qq0 + pq;
   let r;
-  // ungültiger Zeitraum (400): Filter zurücksetzen und einmal neu laden; ohne gesetzte Filter normale Fehlerbehandlung (keine Schleife)
+
   try { r = await api('GET', `/api/claims?filter=${f}${csq}${qq}`); } catch (err) { if (!pq) throw err; S.clFrom = S.clTo = S.clIns = null; toast(err.message, true); return viewClaims(); }
-  // Backlog 527/531: „Nachfassen fällig“ (nur mit eingestellter Frist), „reguliert ohne eingetragene Erstattung“ und „zurückgezogen“ als eigene Reiter
+
   const tabs = ['offen', ...(r.followup_days || f === 'nachfassen' ? ['nachfassen'] : []), 'gutachten', 'alle', 'reguliert', ...(r.counts.ohne_erstattung || f === 'ohne_erstattung' ? ['ohne_erstattung'] : []), 'abgelehnt', 'zurueckgezogen'];
   const fName = (x) => (x === 'offen' ? t('claim_f_open') : x === 'gutachten' ? t('ca_pending') : x === 'alle' ? t('filter_all') : x === 'nachfassen' ? t('todo_claims') : x === 'ohne_erstattung' ? t('claim_f_noreimb') : t('cls_' + x));
   const fLabel = fName(f);
@@ -103,7 +103,7 @@ async function viewClaims() {
     <div class="list">${r.claims.length ? r.claims.map((c) => `<a class="row${c.followup_due ? ' p-mittel' : ''}" href="#/cases/${encodeURIComponent(c.case_id)}">${plate(c.plate)}<span class="title">${c.eval_excluded ? `<span class="chip">${esc(t('eval_excluded'))}</span> ` : ''}${esc(c.insurer)}${c.claim_no ? ' · ' + noTr(c.claim_no) : ''}${c.opponent ? ` <span class="chip" title="${esc(t('co_title'))}">${esc(t('co_chip'))}</span>` : ''}${c.police ? ` <span class="chip" title="${esc(t('cp_title'))}">${esc(t('cp_chip'))}</span>` : ''}</span>${claimChip(c.status)}<span class="sub" style="white-space:normal">${c.followup_due ? `<b>${esc(t('todo_claims'))}</b> · ` : ''}${esc(c.case_no)}${c.case_location ? ` · <span data-clloc${langAttr(c.case_location)}>${esc(t('location_shown'))}: ${esc(clipTxt(c.case_location, 60))}</span>` : ''} · ${esc(t('claim_reported'))} ${fmtD(c.reported_on)}${c.days_open !== null ? ` · ${esc(tn('claim_days_open', c.days_open))}` : ''}${c.deductible_net !== null ? ` · ${esc(t('claim_deductible_short'))} ${eur(c.deductible_net)}` : ''}${c.reimbursed_net !== null ? ` · ${esc(t('claim_reimbursed_short'))} ${eur(c.reimbursed_net)}` : ''}${c.case_cost_net !== null ? ` · ${esc(t('claim_case_cost'))} ${eur(c.case_cost_net)}` : c.cost_incomplete ? ` · ${esc(t('claim_case_cost'))} – <span class="chip mittel">${esc(t('incomplete'))}</span>` : ''}${c.balance_net !== null ? ` · <b>${esc(t('claim_balance'))} ${eur(c.balance_net)}</b>` : ''}${c.appraisal_pending ? ` · <span class="chip mittel">${esc(t('ca_pending'))}</span>${c.appraisal_on ? ` ${esc(t('ca_on'))} ${fmtD(c.appraisal_on)}` : ''}` : c.appraisal_net !== null && c.appraisal_net !== undefined ? ` · ${esc(t('ca_net'))} ${eur(c.appraisal_net)}` : ''}</span></a>`).join('') : `<p class="muted">${esc(t('claims_none'))}</p>`}</div>
     ${r.sums && r.sums.total && r.sums.total.n ? `<section class="panel" id="clsums"><h2 style="margin-top:0">${esc(t('claim_sums'))}</h2><div class="scroll"><table class="stack"><thead><tr><th>${esc(t('claim_year'))}</th><th>${esc(t('claim_count'))}</th><th>${esc(t('claim_ded_short'))}</th><th>${esc(t('ca_net_short'))}</th><th>${esc(t('claim_case_cost'))}</th><th>${esc(t('claim_reimbursed_short'))}</th></tr></thead><tbody>${[...r.sums.by_year, { year: t('total'), ...r.sums.total }].map((y) => `<tr><td data-l="${esc(t('claim_year'))}">${esc(y.year)}</td><td data-l="${esc(t('claim_count'))}">${y.n}</td><td data-l="${esc(t('claim_ded_short'))}">${y.deductible_n ? eur(y.deductible_net) : '–'}</td><td data-l="${esc(t('ca_net_short'))}">${y.appraisal_n ? eur(y.appraisal_net) : '–'}</td><td data-l="${esc(t('claim_case_cost'))}">${y.cost_n ? eur(y.case_cost_net) : '–'}${y.cost_incomplete ? ` <span class="small muted">(${esc(tn('claim_cost_incompl', y.cost_incomplete))})</span>` : ''}</td><td data-l="${esc(t('claim_reimbursed_short'))}">${y.reimbursed_n ? eur(y.reimbursed_net) : '–'}</td></tr>`).join('')}</tbody></table></div><p class="small muted">${esc(t('claim_sums_hint'))}</p></section>` : ''}
     <div class="actions noprint" style="flex-wrap:wrap;align-items:center"><button type="button" class="btn secondary" id="clcsv">${esc(t('export_csv'))}</button><label class="check" style="margin:0"><input type="checkbox" id="cl3p"> ${esc(t('claim_third_party'))}</label><button type="button" class="btn secondary" id="clprt">${esc(t('print'))}</button></div>`;
-  if (S.quietBg && !isClaimsHash()) return; // stille Aktualisierung (Backlog 1124): inzwischen andere Seite – nichts überschreiben
+  if (S.quietBg && !isClaimsHash()) return;
   render(html, 'more');
   S.clAt = Date.now();
   { const rl = $('#clreload'); if (rl) rl.onclick = async (e) => { e.preventDefault(); try { await viewClaims(); } catch (err) { toast(err.message, true); } }; }
@@ -117,16 +117,16 @@ async function viewClaims() {
   $('#clprt').onclick = () => window.print();
   $('#clcsv').onclick = async () => { try { download(await api('GET', `/api/claims?format=csv&filter=${f}${csq}${qq}${$('#cl3p').checked ? '&third_party=1' : ''}`), `fuhrpark-versicherungsfaelle_${envFn()}_${r.today}${r.site ? '_' + fnPart(r.site) : ''}${r.from || r.to ? '_' + (r.from || '') + '-' + (r.to || '') : ''}${q ? '_suche-' + fnPart(q) : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
-// Backlog 409: letzter Tag des Quartals (0 = laufendes, 1 = nächstes) zum Berliner Tag `ymd` (JJJJ-MM-TT)
+
 function quarterEnd(ymd, off = 0) {
   const y = Number(ymd.slice(0, 4)); const m = Number(ymd.slice(5, 7));
-  const em = (Math.floor((m - 1) / 3) + off + 1) * 3; // Endmonat ab Jahresbeginn, kann > 12 sein
+  const em = (Math.floor((m - 1) / 3) + off + 1) * 3;
   const yy = y + Math.floor((em - 1) / 12); const mm = ((em - 1) % 12) + 1;
   const last = new Date(Date.UTC(yy, mm, 0)).getUTCDate(); return `${yy}-${String(mm).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
 }
-// Backlog 624 (Blickwinkel „Versichererwechsel zum 01.01.“): mehrere laufende Verträge der aktuellen Ansicht beenden oder ein Vertragsende eintragen
+
 function ctBatch(list) {
-  // keine laufenden Verträge mehr in der Ansicht (z. B. gerade alle beendet): Ergebnis trotzdem zeigen
+
   if (!list.length) { const res = S.ctbRes || ''; S.ctbRes = ''; S.ctbOpen = false; return { html: res ? `<div class="noprint" id="ctbatch">${res}</div>` : '', bind: () => {} }; }
   const res = S.ctbRes || ''; const open = !!S.ctbOpen; S.ctbRes = ''; S.ctbOpen = false;
   const html = `<details class="panel noprint" id="ctbatch"${open ? ' open' : ''}><summary>${esc(t('ctb_title'))}</summary><p class="small muted">${esc(t('ctb_hint'))}</p>${res}
@@ -154,7 +154,7 @@ function ctBatch(list) {
     const m = fm.mode.value;
     if (m === 'end' && !confirm(t('ctb_confirm_end').replace('{n}', ids.length))) return;
     try {
-      const r = await api('POST', '/api/contracts/batch', m === 'end' ? { mode: m, ids, ended_on: fm.ended_on.value || null, end_note: fm.end_note.value } : { mode: m, ids, end_date: fm.end_date.value, replace: fm.replace.checked }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h: je Vertrag geprüft, nie doppelt */
+      const r = await api('POST', '/api/contracts/batch', m === 'end' ? { mode: m, ids, ended_on: fm.ended_on.value || null, end_note: fm.end_note.value } : { mode: m, ids, end_date: fm.end_date.value, replace: fm.replace.checked }, { timeoutMs: SEND_TIMEOUT_MS });
       const skip = (r.skipped || []).map((x) => `<li>${x.plate ? esc(x.plate) + ' · ' : ''}${x.kind ? esc(t('ck_' + x.kind)) + ' · ' : ''}${x.partner ? esc(x.partner) + ': ' : ''}${esc(t('ctb_sk_' + x.code))}</li>`).join('');
       S.ctbRes = `<div class="panel ${skip ? 'warn' : 'ok'}" style="margin-top:8px" data-ctbres><b>${esc(t(m === 'end' ? 'ctb_done_end' : 'ctb_done_date').replace('{n}', r.done.length).replace('{d}', fmtD(m === 'end' ? r.ended_on : r.end_date)))}</b>${skip ? `<br><span class="small">${esc(t('ctb_skipped'))}:</span><ul class="small" style="margin:4px 0 0 18px">${skip}</ul>` : ''}</div>`;
       S.ctbOpen = true; toast('✓');
@@ -166,17 +166,17 @@ function ctBatch(list) {
 async function viewContracts() {
   const f = S.ctFilter || 'aktiv'; const k = S.ctKind || '';
   const cts = vsDef('ctSite') || ''; const asof = S.ctAsOf || '';
-  // Backlog 409: „Ende/Kündigung bis“ (laufende Verträge mit Vertragsende oder Kündigungsfrist bis zum Datum) – nicht zusammen mit dem Stichtag
+
   const eby = !asof && f !== 'beendet' ? S.ctEndsBy || '' : '';
-  // Stichtag (Backlog 196): km/Status zum Ende des Berliner Tags – nur Ablesungen bis dahin; gilt für Liste, Ausdruck und CSV
-  const ctp = S.ctPartner || ''; // Backlog 625: Vertragspartner
+
+  const ctp = S.ctPartner || '';
   const sq = (cts ? '&site=' + encodeURIComponent(cts) : '') + (asof ? '&as_of=' + asof : '') + (eby ? '&ends_by=' + eby : '') + (ctp ? '&partner=' + encodeURIComponent(ctp) : '');
   const r = await api('GET', `/api/contracts?filter=${f}${k ? '&kind=' + k : ''}${sq}`);
-  const ctb = ctBatch(r.contracts.filter((c) => !c.ended_on)); // Backlog 624
-  // Backlog 1031: Vertrags-Kalender (immer „laufend“, ohne Stichtag) wäre leer – nur sicher erkennbar, wenn die Liste dieselben Verträge zeigt (Reiter laufend/alle, kein Stichtag);
-  // Regel wie contractsIcs: nicht beendet und Kündigungstag oder Vertragsende ab heute
+  const ctb = ctBatch(r.contracts.filter((c) => !c.ended_on));
+
+
   const ctIcsNone = (f === 'aktiv' || f === 'alle') && !asof && !r.contracts.some((c) => !c.ended_on && ((c.status && c.status.notice && c.status.notice.by >= r.today) || (c.end_date && c.end_date >= r.today)));
-  if (S.quietBg && !isContractsHash()) return; // stille Aktualisierung (Backlog 1123): inzwischen andere Seite – nichts überschreiben
+  if (S.quietBg && !isContractsHash()) return;
   render(`<h1>${esc(t('ct_title'))}</h1><p class="small muted noprint" id="contractsasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/contracts" id="ctreload" title="${esc(t('contracts_asof_hint'))}">${esc(t('update_now'))}</a></p>${helpLink('contracts')}<p class="small muted">${esc(t('ct_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(t('print_filter'))}: ${esc(t('cf_' + f))}${k ? ' · ' + esc(t('ck_' + k)) : ''}${r.partner ? ' · ' + esc(r.partner) : ''}${r.site ? ' · ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''}${r.as_of ? ' · ' + esc(t('ct_asof')) + ': ' + fmtD(r.as_of) : ''}${r.ends_by ? ' · ' + esc(t('ct_endsby')) + ': ' + fmtD(r.ends_by) : ''} · ${esc(t('print_count').replace('{n}', r.contracts.length))} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="actions noprint" style="flex-wrap:wrap">${['aktiv', 'aktion', 'beendet', 'alle'].map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-cf="${x}">${esc(t('cf_' + x))} (${r.counts[x]})</button>`).join('')}</div>
@@ -198,13 +198,13 @@ async function viewContracts() {
   $$('[data-cf]').forEach((b) => (b.onclick = () => { S.ctFilter = b.dataset.cf; viewContracts(); }));
   ctb.bind();
   $('#ctk').onchange = () => { S.ctKind = $('#ctk').value; viewContracts(); };
-  const ao = $('#ctasof'); if (ao) ao.onchange = () => { const v = ao.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctAsOf = v && v <= bDate() ? v : ''; /* Backlog 511: heute als Stichtag zulässig (Monatsletzter am Monatsende) */ if (S.ctAsOf) S.ctEndsBy = ''; viewContracts(); };
+  const ao = $('#ctasof'); if (ao) ao.onchange = () => { const v = ao.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctAsOf = v && v <= bDate() ? v : '';   if (S.ctAsOf) S.ctEndsBy = ''; viewContracts(); };
   const aox = $('#ctasofx'); if (aox) aox.onclick = () => { S.ctAsOf = ''; viewContracts(); };
-  // Backlog 601: Monatsmeldung Leasing – Stichtag „Ende Vormonat“ mit einem Tipp (Berliner Datum)
-  const aop = $('#ctasofprev'); if (aop) aop.onclick = () => { S.ctAsOf = bDate(-Number(bDate().slice(8, 10))); S.ctEndsBy = ''; viewContracts(); }; // heute minus Tag des Monats = Monatsletzter davor
+
+  const aop = $('#ctasofprev'); if (aop) aop.onclick = () => { S.ctAsOf = bDate(-Number(bDate().slice(8, 10))); S.ctEndsBy = ''; viewContracts(); };
   const ebEl = $('#ctendsby'); if (ebEl) ebEl.onchange = () => { const v = ebEl.value; if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return; S.ctEndsBy = v; viewContracts(); };
   $$('[data-ctq]').forEach((b) => (b.onclick = () => { S.ctEndsBy = quarterEnd(bDate(), Number(b.dataset.ctq)); viewContracts(); }));
-  { const cy = $('#ctyear'); if (cy) cy.onclick = () => { S.ctEndsBy = `${Number(bDate().slice(0, 4)) + 1}-12-31`; viewContracts(); }; } // Backlog 613: Jahresplanung wie Prüftermine (545)
+  { const cy = $('#ctyear'); if (cy) cy.onclick = () => { S.ctEndsBy = `${Number(bDate().slice(0, 4)) + 1}-12-31`; viewContracts(); }; }
   const ebx = $('#ctendsbyx'); if (ebx) ebx.onclick = () => { S.ctEndsBy = ''; viewContracts(); };
   const ctsEl = $('#ctsite'); if (ctsEl) ctsEl.onchange = () => { S.ctSite = ctsEl.value; viewContracts(); };
   const ctpEl = $('#ctpartner'); if (ctpEl) ctpEl.onchange = () => { S.ctPartner = ctpEl.value; viewContracts(); };
@@ -225,7 +225,7 @@ async function viewContracts() {
     };
     try { show(await api('POST', '/api/contracts/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
   };
-  $('#ctics').onclick = async () => { try { download(await api('GET', `/api/contracts?format=ics&filter=aktiv${k ? '&kind=' + k : ''}${sq.replace(/&as_of=[^&]*/, '')}`), `fuhrpark-vertraege_${r.today}${r.ends_by ? '_bis-' + r.ends_by : ''}${r.site ? '_' + fnPart(r.site) : ''}${k ? '_' + k : ''}${r.partner ? '_' + fnPart(r.partner) : ''}.ics` /* Backlog 1029: Auswahl auch im Dateinamen */); } catch (err) { toast(err.message, true); } };
+  $('#ctics').onclick = async () => { try { download(await api('GET', `/api/contracts?format=ics&filter=aktiv${k ? '&kind=' + k : ''}${sq.replace(/&as_of=[^&]*/, '')}`), `fuhrpark-vertraege_${r.today}${r.ends_by ? '_bis-' + r.ends_by : ''}${r.site ? '_' + fnPart(r.site) : ''}${k ? '_' + k : ''}${r.partner ? '_' + fnPart(r.partner) : ''}.ics`  ); } catch (err) { toast(err.message, true); } };
   $('#ctcsv').onclick = async () => { try { download(await api('GET', `/api/contracts?format=csv&filter=${f}${k ? '&kind=' + k : ''}${sq}`), `fuhrpark-vertraege_${r.as_of ? 'stichtag-' + r.as_of : r.today}${r.ends_by ? '_bis-' + r.ends_by : ''}${r.site ? '_' + fnPart(r.site) : ''}${r.partner ? '_' + fnPart(r.partner) : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
 async function viewFines() {
@@ -235,7 +235,7 @@ async function viewFines() {
   const list = fr.fines;
   const mgr = isMgr();
   const today = bDate();
-  const own = S.me.role === 'driver'; // Lesezugriff sieht alle Schreiben – Überschrift/Hilfe wie Leitung (19.10.2026: „Meine …“)
+  const own = S.me.role === 'driver';
   let html = `<h1>${esc(own ? t('my_fines') : t('fines'))}</h1>${own ? '' : `<p class="small muted noprint" id="finesasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/fines" id="finesreload" title="${esc(t('fines_asof_hint'))}">${esc(t('update_now'))}</a></p>`}${helpLink(own ? 'myfines' : 'fines')}`;
   const fsiteSel = (fr.site_options || []).length > 1 || fr.site ? `<div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end"><div>${siteSelect('fsite', '', fr.site_options, fr.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : '';
   if (mgr) html += `<details class="panel"><summary>${esc(t('new_fine'))}</summary><form id="nf">
@@ -248,7 +248,7 @@ async function viewFines() {
     <label>${esc(t('response_due'))}</label><input type="date" name="response_due"><label>${esc(t('note'))}</label><textarea name="note" maxlength="2000"></textarea>
     <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>`;
   html += fsiteSel;
-  // Backlog 565: Auswahl „Antwortfrist fehlt“ (offene Schreiben ohne erfasste Frist, wie Chip/Agent-Hinweis FINE_NO_DUE)
+
   const noDue = (f) => !f.response_due && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status);
   const noDueN = own ? 0 : list.filter(noDue).length; if (!noDueN) S.fineNoDue = false;
   const shownF = S.fineNoDue ? list.filter(noDue) : list;
@@ -257,7 +257,7 @@ async function viewFines() {
   if (fr.truncated) html += `<p class="small muted">${esc(t('fines_truncated'))}</p>`;
   html += `<div class="list">${shownF.map((f) => { const over = f.response_due && f.response_due < today && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status); return `<a class="row ${over ? 'p-kritisch' : ''}" href="#/fines/${esc(f.id)}">${plate(f.plate || f.plate_in_letter)}<span class="title">${esc(t('fk_' + f.kind))} · ${esc(t('of_' + f.offense_type))}</span><span class="chip ${over ? 'kritisch' : ['bezahlt', 'eingestellt', 'erledigt', 'beantwortet'].includes(f.status) ? 'ok' : ''}">${esc(t('fs_' + f.status))}</span>${f.driving_ban_months ? `<span class="chip kritisch" data-fban>${esc(t('fine_ban'))}: ${esc(tn('ban_months', f.driving_ban_months))}</span>` : ''}${!f.response_due && ['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status) ? `<span class="chip" data-fnodue>${esc(t('fine_no_due'))}</span>` : ''}<span class="sub">${noTr(f.fine_no)} · ${fmtDT(f.offense_at)}${f.authority ? ' · ' + esc(f.authority) : ''}${f.reference ? ` · <span data-fref>${esc(t('reference'))} ${noTr(f.reference)}</span>` : ''}${f.response_due ? ' · ' + esc(t('response_due')) + ' ' + esc(fmtDue(f.response_due)) : ''}${f.driver_name || f.driver_name_note ? ' · ' + esc(f.driver_name || f.driver_name_note) : ''}</span></a>`; }).join('') || `<p class="muted">${esc(t('no_fines'))}</p>`}</div>`;
   if (['owner', 'fleet', 'viewer'].includes(S.me.role)) html += `<div class="actions" style="flex-wrap:wrap"><button type="button" class="btn secondary" id="fcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="fics">${esc(t('export_ics'))}</button><button type="button" class="btn secondary" id="fprt">${esc(t('print'))}</button>${mgr ? `<label class="small chkl" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fdrv"> ${esc(t('with_driver_names'))}</label>` : ''}</div>`;
-  if (S.quietBg && !isFinesHash()) return; // stille Aktualisierung (Backlog 1122): inzwischen andere Seite – nichts überschreiben
+  if (S.quietBg && !isFinesHash()) return;
   render(html, 'more');
   S.finesAt = Date.now();
   const frl = $('#finesreload'); if (frl) frl.onclick = async (e) => { e.preventDefault(); try { await viewFines(); } catch (err) { toast(err.message, true); } };
@@ -269,13 +269,13 @@ async function viewFines() {
   const fnd = $('#fnodue'); if (fnd) fnd.onchange = () => { S.fineNoDue = fnd.checked; viewFines(); };
   dueWeekendWatch();
   const nf = $('#nf');
-  if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; if (b.amount_eur) b.amount_eur = b.amount_eur.trim(); b.request_key = nf.dataset.rk || (nf.dataset.rk = uid()); try { const r = await api('POST', '/api/fines', b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 803 */ if (r.duplicate) toast(t('fine_dup_existing').replace('{no}', r.fine_no), true); else if (!r.vehicle_matched) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); location.hash = '#/fines/' + r.id; } catch (err) { toast(err.message, true); /* Backlog 993: Aktenzeichen derselben Behörde (auch anders geschrieben) schon erfasst → Verweis, Eingaben bleiben */ if (err.code === 'duplicate_fine' && err.data && err.data.id) { let h = $('#nfdup'); if (!h) { h = document.createElement('p'); h.id = 'nfdup'; h.className = 'panel warn small'; h.setAttribute('role', 'alert'); nf.prepend(h); } h.innerHTML = `${esc(err.message)} <a href="#/fines/${esc(err.data.id)}">${esc(t('fine_dup_open'))}</a>`; h.scrollIntoView({ block: 'center' }); } } };
+  if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; if (b.amount_eur) b.amount_eur = b.amount_eur.trim(); b.request_key = nf.dataset.rk || (nf.dataset.rk = uid()); try { const r = await api('POST', '/api/fines', b, { timeoutMs: SEND_TIMEOUT_MS });   if (r.duplicate) toast(t('fine_dup_existing').replace('{no}', r.fine_no), true); else if (!r.vehicle_matched) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); location.hash = '#/fines/' + r.id; } catch (err) { toast(err.message, true);   if (err.code === 'duplicate_fine' && err.data && err.data.id) { let h = $('#nfdup'); if (!h) { h = document.createElement('p'); h.id = 'nfdup'; h.className = 'panel warn small'; h.setAttribute('role', 'alert'); nf.prepend(h); } h.innerHTML = `${esc(err.message)} <a href="#/fines/${esc(err.data.id)}">${esc(t('fine_dup_open'))}</a>`; h.scrollIntoView({ block: 'center' }); } } };
 }
-// Verlauf: Zielstatus bzw. geänderte Angaben aus payload (19.10.2026: nur „Status setzen“/„Angaben geändert“ ohne Inhalt)
+
 function fineEvDetail(e, names = {}) {
   let p = e.payload; if (typeof p === 'string') { try { p = JSON.parse(p); } catch { p = null; } }
   if (!p || typeof p !== 'object') return '';
-  // Fahrer im Verlauf mit Namen (bestätigt bzw. beim Zurücksetzen abgelöst; 20.10.2026)
+
   const who = (o) => (o.driver_id ? names[o.driver_id] || '' : o.driver_name_note || '');
   if (e.action === 'confirm_driver') { const n = who(p); return (n ? ' → ' + esc(n) : '') + (p.basis ? ' · ' + esc(t('fb_' + p.basis)) : ''); }
   if (e.action === 'set_status' && p.to) return ' → ' + esc(t('fs_' + p.to)) + (p.driver_reset ? ' · ' + esc(t('fine_driver_reset')) + (who(p.driver_reset) ? ` (${esc(t('fine_prev_driver').replace('{n}', who(p.driver_reset)))})` : '') : '');
@@ -283,15 +283,15 @@ function fineEvDetail(e, names = {}) {
   const fv = { driving_ban_months: (v) => (v ? tn('ban_months', v) : t('fine_ban_none')), amount_eur: (v) => (v === null || v === undefined ? '–' : eur(v)), response_due: (v) => (v ? fmtD(v) : '–'), offense_at: (v) => (v ? fmtDT(v) : '–') };
   const val = (k, v) => (fv[k] ? fv[k](v) : v || '–');
   const name = { offense_at: 'offense_at', amount_eur: 'amount', driving_ban_months: 'fine_ban', response_due: 'response_due', reference: 'reference', authority: 'authority', plate_in_letter: 'plate_letter' };
-  // seit 19.10.2026 mit bisherigem Wert (prev): „alt → neu“; ältere Einträge nur der neue Wert
+
   const parts = Object.keys(name).filter((k) => k in p).map((k) => `${t(name[k])}: ${p.prev && k in p.prev ? val(k, p.prev[k]) + ' → ' : ''}${val(k, p[k])}${k === 'plate_in_letter' && p.vehicle_id === null ? ' (' + t(p.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown') + ')' : ''}`);
   return parts.length ? ' · ' + esc(parts.join(' · ')) : '';
 }
-// Fahrverbot laut Schreiben (Backlog 364): Auswahl 1–3 Monate, leer = nicht angegeben
+
 function fineBanSel(id, cur) {
   return `<select name="driving_ban_months" id="${id}" aria-describedby="${id}h"><option value="">${esc(t('fine_ban_none'))}</option>${[1, 2, 3].map((n) => `<option value="${n}"${cur === n ? ' selected' : ''}>${esc(tn('ban_months', n))}</option>`).join('')}</select><p class="small muted" id="${id}h" style="margin:2px 0 8px">${esc(t('fine_ban_hint'))}</p>`;
 }
-// Zustellstand der Fahrerinformation (Backlog 375): informiert/quittiert, Push am Gerät angekommen (nicht „geöffnet“), Hinweis zur Frist
+
 function fineInfLine(d, f) {
   const x = d.inform_delivery; if (!x) return '';
   const ps = x.push === 'received' ? t('fine_push_received') : x.push === 'held' ? t('pst_held').replace('{t}', fmtDT(x.hold_until)) : !x.push ? t('fine_push_none') : t('pst_' + x.push) === 'pst_' + x.push ? x.push : t('pst_' + x.push);
@@ -316,9 +316,9 @@ async function viewFine(id) {
       <dt>${esc(t('authority'))}</dt><dd>${esc(f.authority)}</dd><dt>${esc(t('reference'))}</dt><dd translate="no">${esc(f.reference || '–')}</dd><dt>${esc(t('amount'))}</dt><dd>${eur(f.amount_eur)}</dd><dt>${esc(t('fine_ban'))}</dt><dd>${f.driving_ban_months ? esc(tn('ban_months', f.driving_ban_months)) : esc(t('fine_ban_none'))}</dd>
       <dt>${esc(t('response_due'))}</dt><dd>${f.response_due ? esc(fmtDue(f.response_due)) : '–' + (['eingegangen', 'fahrer_ermittelt', 'fahrer_informiert'].includes(f.status) ? ` <span class="chip" data-fnodue title="${esc(t('fine_no_due_hint'))}">${esc(t('fine_no_due'))}</span><div class="small muted">${esc(t('fine_no_due_hint'))}</div>` : '')}${dueOffHint(f.response_due) ? `<div class="small muted">${esc(dueOffHint(f.response_due))}</div>` : ''}</dd><dt>${esc(t('role_driver'))}</dt><dd>${f.driver_hidden ? esc(t('fine_driver_hidden')) : esc(d.driver_name || '–')}${f.driver_basis ? ' · ' + esc(t('fb_' + f.driver_basis)) : ''}${f.driver_evidence ? `<div class="small muted">${esc(fineEvTr(f.driver_evidence))}</div>` : ''}${d.driver_unreachable ? `<div class="panel alert small" data-funreach role="note" style="margin-top:6px">${esc(t('fine_driver_unreachable'))}</div>` : ''}${fineInfLine(d, f)}</dd></dl>
       ${f.note ? `<p style="white-space:pre-wrap;margin-top:8px">${esc(f.note)}</p>` : ''}</section>`;
-  // Backlog 1110: Überschrift „Fotos & Dokumente“ nur mit Dateien oder Hochladen (Fahrer sah eine leere Überschrift)
+
   if (d.files.length || A.includes('upload')) html += `<h2>${esc(t('files'))}</h2><div class="thumbs">${d.files.map((x) => `<a href="${fileUrl(x.id)}" target="_blank" rel="noopener">${x.content_type.startsWith('image/') ? `<img src="${fileUrl(x.id)}" alt="${esc(x.filename)}">` : 'PDF<br>' + esc(x.filename.slice(0, 14))}</a>`).join('')}</div>`;
-  // Höchstzahl je Bußgeldvorgang wie Server (MAX_FINE_FILES): voll → Hinweis statt Knopf
+
   if (A.includes('upload') && d.files.length < FINE_FILES_MAX) html += `<label class="btn secondary noprint" style="margin-top:8px;display:inline-flex">${esc(t('upload'))}<input id="ff" type="file" accept="application/pdf,image/jpeg,image/png" hidden></label>`;
   else if (A.includes('upload')) html += `<p class="small muted" id="ffull">${esc(t('files_full').replace('{max}', FINE_FILES_MAX))}</p>`;
   if (A.includes('confirm_driver')) {
@@ -331,23 +331,23 @@ async function viewFine(id) {
   if (A.includes('inform_driver')) acts.push(`<button class="btn" id="inf">${esc(t('inform_driver'))}</button>`);
   if (A.includes('driver_ack')) acts.push(`<button class="btn" id="ack">${esc(t('ack_fine'))}</button>`);
   if (acts.length) html += `<div class="actions">${acts.join('')}</div>`;
-  // Einwand des Fahrers (Backlog 377): Fahrer kann begründet widersprechen, die Leitung sieht es im Schreiben
+
   if (d.my_dispute) html += `<p class="panel small" data-fmydisp>${esc(t('fine_dispute_sent').replace('{t}', fmtDT(d.my_dispute.at)))}</p>`;
   if (A.includes('driver_dispute')) html += `<details class="panel noprint"><summary>${esc(t('fine_dispute'))}</summary><form id="dpf"><p class="small muted" id="dpfh">${esc(t('fine_dispute_hint'))}</p><label for="dpn">${esc(t('fine_dispute_reason'))}</label><textarea id="dpn" name="note" required maxlength="2000" rows="3" aria-describedby="dpfh"></textarea><div class="actions"><button class="btn secondary">${esc(t('fine_dispute_send'))}</button></div></form></details>`;
-  // Frist/Betrag/Aktenzeichen laut neuem Schreiben ändern (Server konnte es, die App bot es nicht an – 18.10.2026; z. B. Fristverlängerung)
+
   if (A.includes('update')) html += `<details class="panel noprint"><summary>${esc(t('fine_edit'))}</summary><form id="uf"><label>${esc(t('offense_at'))}</label><input type="datetime-local" name="offense_at" required value="${esc(berlinLocalDT(f.offense_at))}"${f.driver_confirmed_at ? ` disabled aria-describedby="ufoth"><p class="small muted" id="ufoth">${esc(t('fine_offense_locked'))}</p>` : ` aria-describedby="ufotz"><p class="small muted" id="ufotz">${esc(t('offense_at_tz'))}</p>${tzNote()}`}<label>${esc(t('response_due'))}</label><input type="date" name="response_due" value="${esc(f.response_due || '')}"><label>${esc(t('amount'))}</label><input name="amount_eur" inputmode="decimal" value="${f.amount_eur === null || f.amount_eur === undefined ? '' : esc(decIn(f.amount_eur))}"><label for="ufban">${esc(t('fine_ban'))}</label>${fineBanSel('ufban', f.driving_ban_months)}<label>${esc(t('reference'))}</label><input name="reference" maxlength="80" value="${esc(f.reference || '')}"><label>${esc(t('authority'))}</label><input name="authority" required maxlength="200" value="${esc(f.authority || '')}"><label>${esc(t('plate_letter'))}</label><input name="plate_in_letter" required maxlength="20" value="${esc(f.plate_in_letter || '')}"${f.driver_confirmed_at ? ` disabled aria-describedby="ufplh"><p class="small muted" id="ufplh">${esc(t('fine_plate_locked'))}</p>` : '>'}<p class="small muted">${esc(t('fine_edit_hint'))}</p><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (A.includes('set_status')) html += `<details class="panel"><summary>${esc(t('set_status'))}</summary><form id="sf"><label>${esc(t('status'))}</label><select name="status">${['beantwortet', 'bezahlt', 'eingestellt', 'erledigt', 'eingegangen'].map((x) => `<option value="${x}">${esc(t('fs_' + x))}</option>`).join('')}</select><label>${esc(t('note'))}</label><input name="note" required><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>`;
   if (d.events) html += `<h2>${esc(t('history'))}</h2><ol class="timeline">${d.events.map((e) => `<li><time>${fmtDT(e.created_at)}</time> · <b>${esc(FINE_EV[e.action] ? t(FINE_EV[e.action]) : e.action)}</b>${fineEvDetail(e, d.event_driver_names || {})}${e.actor_name ? ' · ' + esc(e.actor_name) : ''}${e.note ? `<div>${esc(e.note)}</div>` : ''}</li>`).join('')}</ol>`;
   render(html, 'more');
   $('#fdprt').onclick = () => window.print();
-  // Backlog 805d (Funkloch): Zeitlimit; Wiederholung auf den Stand davor meldet der Server als `duplicate` (je Aktion geprüft, nie doppelt)
-  // Backlog 814 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig dasselbe Bußgeld“): Konflikt in einem Formular → Ansicht neu laden, eigene
-  // Eingaben bleiben im Formular, Felder der anderen Person markiert (vorher „Bitte neu laden“ – Neuladen verwarf Nachweis/Notiz/Änderungen)
+
+
+
   const fnLost = (err, fm) => { if (err.code !== 'version_conflict' || !fm || !fm.id) return false; S.fnLost = { id, form: fm.id, msg: err.message, ...conflictMine(fm) }; viewFine(id); return true; };
-  const cmd = async (action, payload = {}, note = null, fm = null) => { try { const r = await api('POST', `/api/fines/${id}/commands`, { action, payload, note, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS }); toast(r && r.duplicate ? t('saved_before') : '✓'); viewFine(id); } catch (err) { if (fnLost(err, fm)) return; /* Backlog 820: Knopf ohne Formular (Fahrer informieren/quittieren) → neu laden */ if (err.code === 'version_conflict') { await viewFine(id); toast(t('changed_reloaded'), true); return; } toast(err.message, true); } };
+  const cmd = async (action, payload = {}, note = null, fm = null) => { try { const r = await api('POST', `/api/fines/${id}/commands`, { action, payload, note, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS }); toast(r && r.duplicate ? t('saved_before') : '✓'); viewFine(id); } catch (err) { if (fnLost(err, fm)) return;   if (err.code === 'version_conflict') { await viewFine(id); toast(t('changed_reloaded'), true); return; } toast(err.message, true); } };
   const cf = $('#cf');
   if (cf) {
-    // nur Fahrer der Umgebung des Schreibens (Inhaber sieht Konten aller Umgebungen); Kandidaten ergänzen, auch wenn inzwischen deaktiviert/Rolle gewechselt (18.10.2026)
+
     try {
       const us = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active && (!u.environment || !f.environment || u.environment === f.environment));
       const ids = new Set(us.map((u) => u.id)); const extra = [];
@@ -357,51 +357,51 @@ async function viewFine(id) {
       const ex = $('#drv'); if (ex) for (const c of d.candidates || []) if (c.user_id && ![...ex.options].some((o) => o.value === c.user_id)) ex.add(new Option(c.display_name, c.user_id));
     }
     $$('input[name=cand]').forEach((r) => (r.onchange = () => { const c = d.candidates[r.value]; $('#drv').value = c.user_id; cf.basis.value = c.basis; cf.evidence.value = candEv(c); cf.dataset.evShown = cf.evidence.value; cf.dataset.evDe = c.evidence; }));
-    cf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(cf)); if (cf.dataset.evShown && b.evidence === cf.dataset.evShown) b.evidence = cf.dataset.evDe; /* angezeigt in der Oberflächensprache, gespeichert wie vom Server (Übersetzung später über fineEvTr) */ if (!b.driver_id) delete b.driver_id; if (!b.driver_name_note) delete b.driver_name_note; return cmd('confirm_driver', b, null, cf); };
+    cf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(cf)); if (cf.dataset.evShown && b.evidence === cf.dataset.evShown) b.evidence = cf.dataset.evDe;   if (!b.driver_id) delete b.driver_id; if (!b.driver_name_note) delete b.driver_name_note; return cmd('confirm_driver', b, null, cf); };
   }
   const inf = $('#inf'); if (inf) inf.onclick = () => cmd('inform_driver');
   const ack = $('#ack'); if (ack) ack.onclick = () => cmd('driver_ack');
   const dpf = $('#dpf'); if (dpf) dpf.onsubmit = (e) => { e.preventDefault(); const n = dpf.note.value.trim(); if (!n) return; return cmd('driver_dispute', {}, n, dpf); };
   const sf = $('#sf'); if (sf) sf.onsubmit = (e) => { e.preventDefault(); if (sf.status.value === 'eingegangen' && (f.driver_confirmed_at || f.driver_id || f.driver_name_note || f.driver_hidden) && !confirm(t('fine_reopen_confirm'))) return; return cmd('set_status', { status: sf.status.value }, sf.note.value, sf); };
-  // Behörde/Kennzeichen korrigierbar (19.10.2026); Kennzeichen nur senden, wenn geändert – Antwort meldet die neue Zuordnung
+
   dueWeekendWatch();
   const uf = $('#uf'); if (uf) uf.onsubmit = async (e) => { e.preventDefault();
     const b = { response_due: uf.response_due.value || null, amount_eur: uf.amount_eur.value.trim() || null, reference: uf.reference.value.trim() || null, authority: uf.authority.value.trim(), driving_ban_months: uf.driving_ban_months.value ? Number(uf.driving_ban_months.value) : null };
-    // ohne zugeordnetes Fahrzeug immer senden: Server ordnet neu zu, wenn das Kennzeichen inzwischen eindeutig ist (21.10.2026)
-    // Tatzeit (Berliner Ortszeit) nur senden, wenn geändert – sonst Minutenrundung = scheinbare Änderung (23.10.2026)
+
+
     if (!uf.offense_at.disabled && uf.offense_at.value && uf.offense_at.value !== berlinLocalDT(f.offense_at)) b.offense_at = uf.offense_at.value;
     if (!uf.plate_in_letter.disabled && (!f.vehicle_id || uf.plate_in_letter.value.trim().toUpperCase() !== String(f.plate_in_letter || ''))) b.plate_in_letter = uf.plate_in_letter.value.trim();
-    try { const r = await api('POST', `/api/fines/${id}/commands`, { action: 'update', payload: b, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805d */
+    try { const r = await api('POST', `/api/fines/${id}/commands`, { action: 'update', payload: b, expected_version: f.version }, { timeoutMs: SEND_TIMEOUT_MS });
       if (r.vehicle_matched === false) toast(t(r.vehicle_ambiguous ? 'fine_vehicle_ambiguous' : 'vehicle_unknown'), true); else toast(r.duplicate ? t('saved_before') : '✓'); viewFine(id); } catch (err) { if (fnLost(err, uf)) return; toast(err.message, true); } };
-  // Backlog 814: nach dem Neuladen eigene Eingaben zurück ins Formular (gibt es das Formular nicht mehr – Aktion nicht mehr möglich –, Meldung)
+
   if (S.fnLost && S.fnLost.id === id) { const L = S.fnLost; S.fnLost = null; const fm = $('#' + L.form); if (fm) conflictKeep(fm, L, 'fnlost-' + L.form); else toast(L.msg, true); }
-  // Backlog 805c (Funkloch): Zeitlimit; gleiche Datei erneut = duplicate (Server prüft Prüfsumme), nach verlorener Antwort „War bereits gespeichert“;
-  // Auswahl nach Fehler leeren – sonst löst dieselbe Datei kein zweites onchange aus
+
+
   const ff = $('#ff'); if (ff) ff.onchange = async () => { const file = ff.files[0]; if (!file) return; const fsig = [file.name, file.size, file.lastModified].join('|'); try { const blob = await prepareUpload(file); const r = await api('POST', `/api/fines/${id}/files`, blob, { timeoutMs: PHOTO_TIMEOUT_MS, headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': blob.type || 'application/octet-stream' } }); if (r && r.duplicate) toast(t(S.fineLostFile === fsig ? 'saved_before' : 'doc_duplicate')); S.fineLostFile = null; viewFine(id); } catch (err) { if (err && err.offline) S.fineLostFile = fsig; ff.value = ''; toast(err.message, true); } };
 }
-// Standortauswahl (Standort laut Fahrzeugstamm; Server liefert options in häufigster Schreibweise, 'ohne' = ohne Standort)
-// Filter „Fahrzeug-Standort“: in dieser Sitzung gewählter Wert (auch „Alle“ = ''), sonst der Standard-Standort aus „Mein Konto“
-// Standort als Teil eines Dateinamens (Umlaute bleiben, sonst Bindestrich)
+
+
+
 function fnPart(x) { return String(x).replace(/[^\wÄÖÜäöüß-]+/g, '-'); }
-// Abrufzeitpunkt (Berlin, Serverzeit) im Dateinamen der Kosten-CSVs wie auf dem Server: „stand-JJJJ-MM-TT-HHMM“ (24.10.2026, Abgabe an die Buchhaltung)
+
 function standTag() { const x = BERLIN_DT_FMT.format(new Date(nowMs())).replace(/[^0-9]/g, ''); return x.length === 12 ? `stand-${x.slice(0, 4)}-${x.slice(4, 6)}-${x.slice(6, 8)}-${x.slice(8)}` : 'stand'; }
 async function viewCosts() {
   const to = S.costTo || bYm(); const from = S.costFrom || bYm(11); const site = vsDef('costSite') || '';
   const siteQ = site ? `&site=${encodeURIComponent(site)}` : '';
   let rep;
   try { rep = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}`); } catch (err) {
-    // ungültiger Zeitraum: Meldung zeigen und mit dem Standardzeitraum weiter – sonst blieb die Seite bis zum Neuladen gesperrt (19.10.2026)
+
     if (S.costFrom || S.costTo) { S.costFrom = null; S.costTo = null; toast(err.message, true); return viewCosts(); }
-    if (err.status === 403 || err.status === 404) throw err; // gemeinsamer Fehlerpfad „Seite nicht verfügbar“ + „Zur Übersicht“ (23.10.2026)
+    if (err.status === 403 || err.status === 404) throw err;
     render(`<h1>${esc(t('costs_report'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const byV = new Map();
   for (const r of rep.rows) { const v = byV.get(r.vehicle_id) || { plate: r.plate, site: r.site, inactive: r.vehicle_active === false, actual: 0, valued: 0, estimate: 0, unvalued: 0, hours: 0, months: [] }; v.actual += r.actual_net; v.valued += r.valued_items || 0; v.estimate += r.estimate_net; v.unvalued += r.unvalued_items; v.hours += r.hours; v.months.push(r); byV.set(r.vehicle_id, v); }
   const vs = [...byV.entries()].sort((a, b) => b[1].actual - a[1].actual);
   const kmBy = new Map((rep.vehicles || []).map((v) => [v.vehicle_id, v]));
-  // Backlog 413 (Blickwinkel „Jahresabschluss: Kosten 2026 für die Steuerberatung“): Schnellwahl laufendes Jahr / Vorjahr / letzte 12 Monate
+
   const cy = bYm().slice(0, 4);
   const costQuick = [['prevm', bYm(1), bYm(1)], ['year', `${cy}-01`, bYm()], ['prev', `${Number(cy) - 1}-01`, `${Number(cy) - 1}-12`], ['12m', bYm(11), bYm()]];
-  // Ausdruck (Besprechung/Ablage): Zeitraum und Standort im Vermerk, weil das Formular nicht mitgedruckt wird
+
   let html = `<h1>${esc(t('costs_report'))}</h1>${printHead([`${t('period')}: ${fmtMonth(from)} – ${fmtMonth(to)}`, site ? `${t('site')}: ${site === 'ohne' ? t('cs_nosite') : site}` : ''])}${helpLink('costs')}<form id="cr" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
     <div><label>${esc(t('from'))}</label><input type="month" name="from" value="${esc(from)}" required></div><div><label>${esc(t('to'))}</label><input type="month" name="to" value="${esc(to)}" required></div>
     ${(rep.site_options || []).length > 1 || site ? `<div>${siteSelect('crsite', 'site', rep.site_options, site)}</div>` : ''}
@@ -412,12 +412,12 @@ async function viewCosts() {
     <p class="small muted" style="margin-top:8px">${esc(t('cost_rules'))}${(rep.hourly_rate_periods || []).length ? ' ' + esc(t('cost_rate_periods').replace('{list}', rep.hourly_rate_periods.map((x) => t('hr_until').replace('{d}', fmtD(x.valid_until)) + ' ' + eur(x.rate_net)).join(', '))) + (rep.hourly_rate_net === null ? ' ' + esc(ownerT('no_rate')) : '') : rep.hourly_rate_net === null ? ' ' + esc(ownerT('no_rate')) : ' ' + esc(t('cost_rate_today'))} ${esc(t('cost_per_km_rule'))}</p>${rep.excluded_dormant ? `<p class="small" data-costdormant>${esc(tn('cost_dormant_hidden', rep.excluded_dormant.vehicles))}</p>` : ''}</section>`;
   const sites = rep.sites || [];
   if (sites.length > 1) html += `<section class="panel" id="costsites"><h3>${esc(t('cs_title'))}</h3><dl class="kv">${sites.map((s) => `<dt>${esc(s.site === 'ohne' ? t('cs_nosite') : s.site)}</dt><dd><b>${eurIst(s)}</b>${s.estimate_net ? ' · ' + esc(t('estimate')) + ' ' + eur(s.estimate_net) : ''}${s.unvalued_items ? ` · <span class="chip kritisch">${s.unvalued_items} ${esc(t('unvalued_short'))}</span>` : ''} · ${esc(t('cs_vehicles').replace('{n}', s.vehicles))}</dd>`).join('')}</dl><p class="small muted" style="margin-top:8px">${esc(t('cs_rule'))}</p></section>`;
-  // Backlog 904: Kosten je Firma (Fremdleistungen + Teile-Lieferanten) – erst beim Aufklappen geladen
+
   html += `<details class="panel" id="costsup"><summary style="cursor:pointer"><b>${esc(t('csu_title'))}</b></summary><p class="small muted" style="margin-top:8px">${esc(t('csu_rule'))}</p><div id="costsupbody"><p class="muted">${esc(t('loading'))}</p></div>
     <div class="actions noprint"><button type="button" class="btn secondary small" id="csvsup">${esc(t('export_csv'))}</button></div></details>`;
   html += `<div class="list print-summary">${vs.map(([id, v]) => `<details class="row" style="display:block"><summary style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;cursor:pointer">${plate(v.plate || id)}${v.inactive ? `<span class="chip" data-cinact>${esc(t('inactive_vehicles'))}</span>` : ''}<span class="title">${eurIst({ actual_net: Math.round(v.actual * 100) / 100, valued_items: v.valued, unvalued_items: v.unvalued })}</span>${v.estimate ? `<span class="chip">${esc(t('estimate'))}: ${eur(Math.round(v.estimate * 100) / 100)}</span>` : ''}${v.unvalued ? `<span class="chip kritisch">${v.unvalued} ${esc(t('unvalued_short'))}</span>` : ''}${(kmBy.get(id) || {}).site_changes ? `<span class="chip mittel" data-csitechip>${esc(t('cost_site_moved'))}</span>` : ''}${(() => { const k = kmBy.get(id); return k && k.km ? `<span class="chip">${fmtKm(k.km)} · ${k.cost_per_km !== null ? fmtNum(k.cost_per_km, { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + (S.lang === 'uk' ? ' €/км' : ' €/km') : '–'}${k.complete ? '' : ' (' + esc(t('incomplete')) + ')'}</span>${k.km_partial ? ` <span class="chip mittel" data-ckmpartial title="${esc(t('ckm_partial_hint'))}">${esc(t('ckm_partial').replace('{a}', fmtD(k.km_from_at)).replace('{b}', fmtD(k.km_to_at)))}</span>` : ''}` : k && k.km_status === 'decrease' ? `<span class="chip" data-ckm="decrease">${esc(t('vm_decrease'))}</span>` : ''; })()}</summary>
     <dl class="kv" style="margin-top:8px">${v.months.map((m) => `<dt>${esc(fmtMonth(m.month))}</dt><dd>${eurIst(m)}${m.estimate_net ? ' · ' + esc(t('estimate')) + ' ' + eur(m.estimate_net) : ''}${m.unvalued_items ? ' · ' + m.unvalued_items + ' ' + esc(t('unvalued_short')) : ''}${m.late_items ? ` · <span class="chip mittel" data-clate title="${esc(t('late_items_hint'))}">${esc(tn('late_items_n', m.late_items))}</span>` : ''} · ${esc(fmtNum(m.hours))} ${esc(t('h_short'))}${m.km !== null && m.km !== undefined ? ' · ' + fmtKm(m.km) : ''}</dd>`).join('')}</dl>${(() => { const k = kmBy.get(id); return k && k.km !== null && k.km_from_at ? `<p class="small muted" data-ckm="span">${esc(t('ckm_span').replace('{a}', fmtD(k.km_from_at)).replace('{b}', fmtD(k.km_to_at)))}${k.km_basis === 'first_in_period' ? ' · ' + esc(t('ckm_first')) : ''}</p>` : ''; })()}
-${(() => { const sc = (kmBy.get(id) || {}).site_changes; /* Backlog 1049: Standortwechsel ab Zeitraumbeginn – Kosten stehen beim heutigen Standort */
+${(() => { const sc = (kmBy.get(id) || {}).site_changes;
       return sc ? `<p class="small" data-csite>${esc(t('cost_site_moved_hint').replace('{list}', () => sc.map((x) => `${fmtD(x.at)} (${x.from || t('cs_nosite')} → ${x.to || t('cs_nosite')})`).join(', ')))}</p>` : ''; })()}
     <p class="navlinks"><a href="#/vehicles/${encodeURIComponent(id)}">${esc(t('vehicle'))} ›</a></p></details>`).join('') || `<p class="muted">${esc(t('no_costs'))}</p>`}</div>`;
   const cc = rep.contract_costs;
@@ -433,10 +433,10 @@ ${(() => { const sc = (kmBy.get(id) || {}).site_changes; /* Backlog 1049: Stando
   $('#costprt').onclick = () => window.print();
   cr.onsubmit = (e) => { e.preventDefault(); S.costFrom = cr.from.value; S.costTo = cr.to.value; S.costSite = cr.site ? cr.site.value : ''; viewCosts(); };
   $$('[data-crq]').forEach((bt) => { bt.onclick = () => { const q = costQuick.find((x) => x[0] === bt.dataset.crq); S.costFrom = q[1]; S.costTo = q[2]; viewCosts(); }; });
-  // Dateiname aus dem angezeigten Zeitraum/Standort (nicht aus noch nicht abgeschickten Formularfeldern)
+
   $('#csv').onclick = async () => { try { const blob = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}&format=csv`); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `fuhrpark-kosten_${envFn()}_${rep.from || from}_${rep.to || to}${rep.site ? '_' + fnPart(rep.site) : ''}_${standTag()}.csv`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };
-  // Einzelpositionen (Lieferant, Rechnung/Beleg) für den Abgleich mit den Belegen – Jahresabschluss (23.10.2026)
-  // Backlog 616: eine Zeile je Fahrzeug + Summen je Standort/gesamt (Jahresaufstellung)
+
+
   $('#csvv').onclick = async () => { try { download(await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}&format=csv&part=vehicles`), `fuhrpark-kosten-je-fahrzeug_${envFn()}_${rep.from || from}_${rep.to || to}${rep.site ? '_' + fnPart(rep.site) : ''}_${standTag()}.csv`); } catch (err) { toast(err.message, true); } };
   const sup = $('#costsup'); let supLoaded = false;
   sup.ontoggle = async () => {
@@ -449,14 +449,14 @@ ${(() => { const sc = (kmBy.get(id) || {}).site_changes; /* Backlog 1049: Stando
     body.innerHTML = r.suppliers.length ? `<dl class="kv"><dt>${esc(t('csu_total'))}</dt><dd><b>${eur(r.totals.actual_net)}</b>${r.totals.estimate_net ? ' · ' + esc(t('estimate')) + ' ' + eur(r.totals.estimate_net) : ''} · ${esc(tn('csu_count', r.totals.suppliers))}</dd></dl><div class="list" style="margin-top:8px">${r.suppliers.map(row).join('')}</div>` : `<p class="muted">${esc(t('csu_empty'))}</p>`;
   };
   $('#csvsup').onclick = async () => { try { download(await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}&part=suppliers&format=csv`), `fuhrpark-kosten-je-firma_${envFn()}_${rep.from || from}_${rep.to || to}${rep.site ? '_' + fnPart(rep.site) : ''}_${standTag()}.csv`); } catch (err) { toast(err.message, true); } };
-  $('#csvi').onclick = async () => { try { const blob = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}&part=items`); download(blob, `fuhrpark-kostenpositionen_${envFn()}_${rep.from || from}_${rep.to || to}${rep.site ? '_' + fnPart(rep.site) : ''}_${standTag()}.csv`); if (blob.cfpTruncated) toast(t('cost_items_truncated').replace('{n}', blob.cfpTruncated), true); /* Backlog 1045 */ } catch (err) { toast(err.message, true); } };
+  $('#csvi').onclick = async () => { try { const blob = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}&part=items`); download(blob, `fuhrpark-kostenpositionen_${envFn()}_${rep.from || from}_${rep.to || to}${rep.site ? '_' + fnPart(rep.site) : ''}_${standTag()}.csv`); if (blob.cfpTruncated) toast(t('cost_items_truncated').replace('{n}', blob.cfpTruncated), true);   } catch (err) { toast(err.message, true); } };
 }
 const DST = { ok: 'ok', hinweis: 'mittel', kritisch: 'kritisch', laeuft_ab: 'mittel', abgelaufen: 'kritisch', faellig: 'kritisch', bald: 'mittel', fehlt: 'mittel', mangel: 'kritisch' };
-// Nachweise und Führerscheinkontrollen aller Fahrer für einen Zeitraum (Backlog 246, Betriebsprüfung) – Ansicht, 2 CSV, Ausdruck
+
 async function viewDriverRecords() {
   if (!isMgr()) return render(`<p>${esc(t('err_forbidden'))}</p>`);
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
-  // Backlog 1061: Standort wie in der Fahrerliste (gemeinsame Auswahl `drvSite`) – Listen, Ausdruck und CSV
+
   const drs = vsDef('drvSite') || '';
   const qs = () => { const f = ss('cfp_dr_from'); const to = ss('cfp_dr_to'); return [f && 'from=' + encodeURIComponent(f), to && 'to=' + encodeURIComponent(to), drs && 'site=' + encodeURIComponent(drs)].filter(Boolean).join('&'); };
   let r;
@@ -488,8 +488,8 @@ async function viewDriverRecords() {
   const csv = (part, name) => async () => { try { download(await api('GET', `/api/drivers/records?from=${encodeURIComponent(r.from)}&to=${encodeURIComponent(r.to)}${r.site ? '&site=' + encodeURIComponent(r.site) : ''}&format=csv&part=${part}`), `fuhrpark-fahrer-${name}_${envFn()}_${r.from}_${r.to}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
   $('#drcsvd').onclick = csv('documents', 'nachweise'); $('#drcsvc').onclick = csv('checks', 'kontrollen');
 }
-// Backlog 410 (Blickwinkel „Jährliche Fahrerunterweisung – viele Fahrer in einer Schulung“): eine Unterweisung für mehrere Fahrer erfassen
-// (nur aktive Fahrer der Liste; „gültig bis“ nur laut Nachweis; erneutes Senden legt nichts doppelt an – Server vergleicht Thema/Datum/Nachweis)
+
+
 const dtbHtml = (list) => {
   if (!isMgr() || S.drvInactive || !list.length) return '';
   return `<details class="panel noprint" id="dtb"${S.dtbRes ? ' open' : ''}><summary>${esc(t('dtb_title'))}</summary><p class="small muted">${esc(t('dtb_hint'))}</p><form id="dtbf">
@@ -514,15 +514,15 @@ function wireDtb() {
     if (!ids.length) { toast(t('dtb_none'), true); return; }
     const b = { driver_ids: ids, title: fd.get('title'), issued_on: fd.get('issued_on'), evidence: fd.get('evidence') }; if (fd.get('valid_until')) b.valid_until = fd.get('valid_until');
     try {
-      const r = await api('POST', '/api/drivers/trainings', b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h: gleicher Eintrag je Fahrer nur einmal */
-      document.querySelectorAll('.toast.err').forEach((x) => x.remove()); // Hinweis eines früheren Versuchs („Fahrer auswählen“) ist erledigt
+      const r = await api('POST', '/api/drivers/trainings', b, { timeoutMs: SEND_TIMEOUT_MS });
+      document.querySelectorAll('.toast.err').forEach((x) => x.remove());
       S.dtbRes = `<p class="panel good" data-dtbdone>✓ ${esc(tn('dtb_done', r.created))}${r.existing ? ` · ${esc(tn('dtb_existing', r.existing))}` : ''}</p><p class="small">${r.rows.map((x) => `<a href="#/drivers/${esc(x.driver_id)}">${esc(x.display_name)}</a>${x.status === 'vorhanden' ? ` <span class="muted">(${esc(t('dtb_was'))})</span>` : ''}`).join(', ')}</p>`;
-      await viewDrivers(); // zeigt S.dtbRes einmal im aufgeklappten Bereich und setzt es zurück
+      await viewDrivers();
     } catch (err) { toast(err.code === 'driver_inactive' && err.data && err.data.drivers ? t('dtb_inactive').replace('{list}', err.data.drivers.map((x) => x.display_name).join(', ')) : err.message, true); }
   };
 }
-// Backlog 411 (Blickwinkel „Halbjährliche Führerscheinkontrolle aller Fahrer an einem Tag“): Kontrolle „in Ordnung“ für mehrere Fahrer;
-// Mängel/nicht vorgelegt nur einzeln in der Akte (Vermerk je Person). „Fällige auswählen“ = Kontrolle fällig, bald fällig oder noch keine erfasst.
+
+
 const DLB_DUE = ['faellig', 'bald', 'fehlt'];
 const dlbHtml = (list) => {
   if (!isMgr() || S.drvInactive || !list.length) return '';
@@ -547,23 +547,23 @@ function wireDlb() {
     if (!ids.length) { toast(t('dtb_none'), true); return; }
     const b = { driver_ids: ids, checked_on: fd.get('checked_on'), result: 'in_ordnung' }; if (fd.get('note')) b.note = fd.get('note');
     try {
-      const r = await api('POST', '/api/drivers/license-checks', b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h */
+      const r = await api('POST', '/api/drivers/license-checks', b, { timeoutMs: SEND_TIMEOUT_MS });
       document.querySelectorAll('.toast.err').forEach((x) => x.remove());
       S.dlbRes = `<p class="panel good" data-dlbdone>✓ ${esc(tn('dlb_done', r.created))}${r.existing ? ` · ${esc(tn('dtb_existing', r.existing))}` : ''}</p><p class="small">${r.rows.map((x) => `<a href="#/drivers/${esc(x.driver_id)}">${esc(x.display_name)}</a>${x.status === 'vorhanden' ? ` <span class="muted">(${esc(t('dtb_was'))})</span>` : ''}`).join(', ')}</p>`;
-      await viewDrivers(); // zeigt S.dlbRes einmal im aufgeklappten Bereich und setzt es zurück
+      await viewDrivers();
     } catch (err) { toast(err.code === 'driver_inactive' && err.data && err.data.drivers ? t('dtb_inactive').replace('{list}', err.data.drivers.map((x) => x.display_name).join(', ')) : err.message, true); }
   };
 }
 async function viewDrivers() {
   const dsite = isMgr() ? vsDef('drvSite') || '' : '';
-  // Backlog 611: „Fristen bis“ (Jahresplanung) – nur Leitung; Stichtag in der Vergangenheit zählt nicht
+
   const ddue = isMgr() && S.drvDueBy && S.drvDueBy >= bDate() ? S.drvDueBy : '';
   const dq = [S.drvInactive ? 'inactive=1' : '', dsite ? 'site=' + encodeURIComponent(dsite) : '', ddue ? 'due_by=' + ddue : ''].filter(Boolean).join('&');
   const dr = await api('GET', '/api/drivers' + (dq ? '?' + dq : '')); const list = dr.drivers;
-  if (!isMgr()) { if (list.length) { location.replace('#/drivers/' + encodeURIComponent(list[0].id)); return; } /* ohne Verlaufseintrag: „Zurück“ führte sonst sofort wieder hierher (20.10.2026) */ render(`<h1>${esc(t('my_driver_file'))}</h1><p class="muted">${esc(t('no_driver_file'))}</p>`, 'more'); return; }
+  if (!isMgr()) { if (list.length) { location.replace('#/drivers/' + encodeURIComponent(list[0].id)); return; }   render(`<h1>${esc(t('my_driver_file'))}</h1><p class="muted">${esc(t('no_driver_file'))}</p>`, 'more'); return; }
   let users = [];
-  // nur wählbare Konten: Rolle Fahrer, aktiv, Umgebung der Ansicht, noch keiner Akte zugeordnet (Server prüft dasselbe, 19.10.2026)
-  const ve = S.me.role === 'owner' && S.viewEnv ? S.viewEnv : S.me.environment; const linked = new Set([...list.map((d) => d.user_id).filter(Boolean), ...(dr.linked_user_ids || [])]); // auch Akten anderer Standorte/inaktive (Backlog 101)
+
+  const ve = S.me.role === 'owner' && S.viewEnv ? S.viewEnv : S.me.environment; const linked = new Set([...list.map((d) => d.user_id).filter(Boolean), ...(dr.linked_user_ids || [])]);
   try { users = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && u.active && (!ve || !u.environment || u.environment === ve) && !linked.has(u.id)); } catch {}
   const html = `<h1>${esc(t('drivers'))}</h1><p class="small muted noprint" id="driversasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/drivers" id="drvreload" title="${esc(t('drivers_asof_hint'))}">${esc(t('update_now'))}</a></p>${helpLink('drivers')}<p class="small muted">${esc(t('driver_privacy'))}</p>
     <details class="panel"><summary>${esc(t('new_driver'))}</summary><form id="ndf"><label>${esc(t('display_name'))}</label><input name="display_name" required><label>${esc(t('personnel_no'))}</label><input name="personnel_no"><label>${esc(t('site'))}</label><input name="site">
@@ -577,7 +577,7 @@ async function viewDrivers() {
     <p class="noprint"><label class="chkl" style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="dinact" ${S.drvInactive ? 'checked' : ''} style="width:auto"> ${esc(t('inactive_drivers'))}</label></p>
     ${(dr.site_options || []).length > 1 || dr.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('dsite', '', dr.site_options, dr.site, t('site'), t('filter_all'))}</div></div>` : ''}${dr.no_site_hidden ? `<p class="small muted noprint" data-nositehidden>${esc(tn('drv_nosite_hidden', dr.no_site_hidden))}</p>` : ''}
     <div class="list">${list.map((d) => { const crit = d.status.items.filter((i) => i.status !== 'ok'); return `<a class="row ${d.status.overall === 'kritisch' ? 'p-kritisch' : d.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/drivers/${esc(d.id)}"><span>🪪</span><span class="title">${esc(d.display_name)}${d.personnel_no ? ` <span class="small muted">${noTr(d.personnel_no)}</span>` : ''}</span><span class="chip ${DST[d.status.overall]}">${esc(t('dov_' + d.status.overall))}</span><span class="sub">${d.due_items ? [...d.due_items.map((i) => `${i.kind === 'kontrolle' ? t('license_check') : i.kind === 'auslesung' ? t('tacho_card') : t('dk2_' + i.kind) + (i.title ? ' ' + i.title : '')}: ${fmtD(i.date)}`), d.username ? t('app_account') + ': ' + d.username : ''].filter(Boolean).map(esc).join(' · ') : [...crit.map((i) => `${t('dk2_' + i.kind)}${i.title ? ' ' + i.title : ''}: ${t('dst_' + i.status)} (${fmtD(i.valid_until)})`), d.status.check.status !== 'ok' ? `${t('license_check')}: ${t('dck_' + d.status.check.status)}` : '', d.status.tacho_status && d.status.tacho_status !== 'ok' ? `${t('tacho_card')}: ${t('tst_' + d.status.tacho_status)}` : '', !d.status.has_license ? t('no_license_doc') : '', d.username ? t('app_account') + ': ' + d.username : ''].filter(Boolean).map(esc).join(' · ')}</span></a>`; }).join('') || noneP()}</div>`;
-  if (S.quietBg && !isDriversHash()) return; // stille Aktualisierung (Backlog 1125): inzwischen andere Seite – nichts überschreiben
+  if (S.quietBg && !isDriversHash()) return;
   render(html, 'more');
   S.drvAt = Date.now();
   { const rl = $('#drvreload'); if (rl) rl.onclick = async (e) => { e.preventDefault(); try { await viewDrivers(); } catch (err) { toast(err.message, true); } }; }
@@ -590,15 +590,15 @@ async function viewDrivers() {
     const dc = $('#dueclr'); if (dc) dc.onclick = () => { S.drvDueBy = null; viewDrivers(); }; }
   $('#dprl').onclick = () => window.print();
   $('#dcsv').onclick = async () => { try { download(await api('GET', '/api/drivers?format=csv' + (dq ? '&' + dq : '')), `fuhrpark-fahrer-fristen_${envFn()}_${S.drvInactive ? 'inaktiv_' : ''}${bDate()}${dr.site ? '_' + fnPart(dr.site) : ''}${dr.due_by ? '_bis_' + dr.due_by : ''}.csv`); } catch (err) { toast(err.message, true); } };
-  const f = $('#ndf'); f.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(f)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; b.check_inactive = true; b.request_key = rkFor(f, b); /* Backlog 805e: je Formularinhalt */ try {
-    // ausgeschiedene Akte mit gleicher Personalnummer/gleichem Namen (Wiedereinstellung, Backlog 191): nachfragen – Abbrechen öffnet die alte Akte
+  const f = $('#ndf'); f.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(f)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; b.check_inactive = true; b.request_key = rkFor(f, b);   try {
+
     let r; try { r = await api('POST', '/api/drivers', b, { timeoutMs: SEND_TIMEOUT_MS }); } catch (err) {
       const mm = err.code === 'inactive_match' && err.data && err.data.matches; if (!mm || !mm.length) throw err;
       if (!confirm(t('dr_inactive_match').replace('{list}', mm.map((x) => x.personnel_no ? `${x.display_name} (${x.personnel_no})` : x.display_name).join(', ')))) { location.hash = '#/drivers/' + mm[0].id; return; }
       r = await api('POST', '/api/drivers', { ...b, confirm_inactive: true }, { timeoutMs: SEND_TIMEOUT_MS }); }
     if (r.duplicate) toast(t('saved_before'));
     location.hash = '#/drivers/' + r.id;
-    // gleichnamige aktive Fahrer: nur Hinweis, gespeichert ist die Akte trotzdem (gleiche Namen sind möglich, 23.10.2026)
+
     const dn = r && r.duplicate_names;
     if (dn && dn.length) setTimeout(() => toast(tn('dup_driver_name_warn', dn.length).replace('{name}', b.display_name || '').replace('{list}', dn.slice(0, 3).map((x) => x.personnel_no ? x.display_name + ' (' + x.personnel_no + ')' : x.display_name).join(', ') + (dn.length > 3 ? ` +${dn.length - 3}` : '')), true), 400);
   } catch (err) { toast(linkedMsg(err), true); } };
@@ -616,12 +616,12 @@ async function viewDriver(id) {
     ${!d.active ? `<p class="chip">${esc(t('driver_inactive'))}</p>` : ''}${(x.driving_ban_fines || []).length ? `<div class="panel alert small" id="dban" role="note" style="margin-top:8px">${esc(t('drv_ban_file'))} ${x.driving_ban_fines.map((b) => `<a href="#/fines/${esc(b.id)}" style="white-space:nowrap">${noTr(b.fine_no)}</a> (${esc(tn('ban_months', b.months))}, ${esc(t('fs_' + b.status))})`).join(', ')}</div>` : ''}${!st.has_license ? `<div class="alert small" style="margin-top:8px">${esc(t('no_license_doc'))}</div>` : ''}${S.me.role === 'owner' ? `<div class="actions"><button type="button" class="btn secondary" id="ddex" title="${esc(t('data_export_hint'))}">${esc(t('data_export'))}</button></div>` : ''}<div class="actions noprint"><button type="button" class="btn secondary" id="ddprt">${esc(t('print'))}</button></div></section>
     <h2>${esc(t('driver_docs'))}</h2>${cur.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('kind'))}</th><th>${esc(t('ddoc_col_detail'))}</th><th>${esc(t('valid_until'))}</th><th>${esc(t('evidence'))}</th></tr></thead><tbody>${cur.map(docRow).join('')}</tbody></table></div>` : noneP()}
     ${old.length ? `<details id="ddhist"><summary>${esc(t('history'))} (${old.length})</summary><div class="scroll"><table class="stack"><thead><tr><th>${esc(t('kind'))}</th><th>${esc(t('ddoc_col_detail'))}</th><th>${esc(t('valid_until'))}</th><th>${esc(t('evidence'))}</th></tr></thead><tbody>${old.map(docRow).join('')}</tbody></table></div></details>` : ''}`;
-  // Leitung: erste Fahrerkarten-Auslesung auch ohne erfasste Fahrerkarte erfassbar (vorher nur per Import, 18.10.2026)
+
   if (!x.tacho && mgr) x.tacho = { last: null, due: null, days: null, status: 'keine' };
   if (x.tacho) html += `<h2>${esc(t('tacho_card'))}</h2><section class="panel"><dl class="kv"><dt>${esc(t('tacho_last'))}</dt><dd>${x.tacho.last ? fmtD(x.tacho.last) : '–'}</dd><dt>${esc(t('tacho_due'))}</dt><dd>${x.tacho.due ? fmtD(x.tacho.due) + ' ' : ''}<span class="chip ${TST[x.tacho.status]}">${esc(t('tst_' + x.tacho.status))}</span></dd></dl>
     ${x.tacho_downloads.length ? `<details id="dthist"><summary>${esc(t('history'))} (${x.tacho_downloads.length}${x.tacho_downloads_truncated ? '+' : ''})</summary>${tachoHistList(x.tacho_downloads, mgr)}${x.tacho_downloads_truncated ? `<p class="small muted dtrunc">${esc(t('hist_truncated').replace('{n}', x.tacho_downloads.length))}</p>` : ''}</details>` : ''}
     ${mgr ? `<form id="tdf" class="actions" style="flex-wrap:wrap;align-items:flex-end"><div><label>${esc(t('tacho_date'))}</label><input type="date" name="downloaded_on" required value="${bDate()}"></div><div style="flex:1;min-width:200px"><label>${esc(t('evidence'))}</label><input name="evidence" required placeholder="${esc(t('tacho_ev_ph'))}"></div><button class="btn secondary">${esc(t('tacho_record'))}</button></form>` : ''}</section>`;
-  // App-Konto nachträglich verknüpfen/lösen (z. B. Akte vor der Einladung angelegt oder nach Umgebungs-/Rollenwechsel gelöst; 19.10.2026)
+
   let linkUsers = [];
   if (mgr) { try { const taken = new Set(x.linked_user_ids || []); linkUsers = (await api('GET', '/api/users')).users.filter((u) => u.role === 'driver' && (u.active || u.id === d.user_id) && (!d.environment || !u.environment || u.environment === d.environment) && (u.id === d.user_id || !taken.has(u.id))); } catch {} if (d.user_id && !linkUsers.some((u) => u.id === d.user_id)) linkUsers.unshift({ id: d.user_id, display_name: d.username || d.user_id, username: d.username || '' }); }
   if (mgr) {
@@ -638,34 +638,34 @@ async function viewDriver(id) {
   render(html, 'more');
   $('#ddprt').onclick = () => window.print();
   const dx = $('#ddex'); if (dx) dx.onclick = async () => { if (!confirm(t('data_export_hint'))) return; try { const r = await api('GET', `/api/drivers/${id}/data-export`); dexTrunc(r); download(r instanceof Blob ? r : new Blob([JSON.stringify(r, null, 1)], { type: 'application/json' }), `datenauskunft_fahrer_${String(d.personnel_no || d.display_name || id).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || String(id).slice(0, 8)}_${bDate()}.json`); } catch (err) { toast(err.message, true); } };
-  // Backlog 804 (Funkloch): mit Formular Zeitlimit; Nachweis mit request_key (dupCodes leer), Führerscheinkontrolle über die Dublettenprüfung („duplicate“)
+
   const post = async (path, b, form = null, dupCodes = null) => { for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; const sig = { ...b }; if (form && !dupCodes) b.request_key = rkFor(form, sig);
     try { const r = await api('POST', path, b, form ? { timeoutMs: SEND_TIMEOUT_MS } : {}); toast(r && r.duplicate ? t('saved_before') : r && r.older_than_current ? t('ddoc_older_saved') : '✓'); viewDriver(id); }
     catch (err) { if (form && dupCodes && lostDup(form, sig, err, dupCodes)) { toast(t('saved_before')); viewDriver(id); return; } if (form) lostMark(form, sig, err); toast(err.message, true); } };
   bindTachoCancel(document, () => viewDriver(id));
-  // Nachweis stornieren (Tippfehler): bleibt mit Begründung im Verlauf, der neueste verbliebene gilt wieder
-  $$('[data-lccancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('lc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/license-checks/${b.dataset.lccancel}/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
-  $$('[data-dcancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('ddoc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/documents/${b.dataset.dcancel}/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
+
+  $$('[data-lccancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('lc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/license-checks/${b.dataset.lccancel}/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS });   toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
+  $$('[data-dcancel]').forEach((b) => (b.onclick = async () => { const reason = prompt(t('ddoc_cancel_reason')); if (!reason) return; try { await api('POST', `/api/drivers/${encodeURIComponent(id)}/documents/${b.dataset.dcancel}/cancel`, { reason }, { timeoutMs: SEND_TIMEOUT_MS });   toast('✓'); viewDriver(id); } catch (err) { toast(err.message, true); } }));
   const ddf = $('#ddf');
-  // Klassen nur beim Führerschein (Server speichert sie sonst nicht – vorher still verworfen, 20.10.2026)
+
   if (ddf) { const cls = () => { $('#ddcls').hidden = ddf.kind.value !== 'fuehrerschein'; }; ddf.kind.onchange = cls; cls();
     ddf.onsubmit = (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(ddf)); if (b.kind !== 'fuehrerschein') delete b.license_classes; return post(`/api/drivers/${id}/documents`, b, ddf); }; }
-  const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); return post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }, tdf, ['duplicate']); }; // Backlog 805
+  const tdf = $('#tdf'); if (tdf) tdf.onsubmit = (e) => { e.preventDefault(); return post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: id, ...Object.fromEntries(new FormData(tdf)) }, tdf, ['duplicate']); };
   const lcf = $('#lcf'); if (lcf) lcf.onsubmit = (e) => { e.preventDefault(); return post(`/api/drivers/${id}/license-checks`, Object.fromEntries(new FormData(lcf)), lcf, ['duplicate']); };
-  // Backlog 809: Konflikt (andere Leitung hat die Fahrerakte inzwischen geändert) → neu laden, eigene Änderungen bleiben im Formular
+
   if (S.drLost && S.drLost.id === id) { const L = S.drLost; S.drLost = null; if ($('#edf')) conflictKeep($('#edf'), L, 'drlost'); }
   const edf = $('#edf'); if (edf) edf.onsubmit = async (e) => { e.preventDefault(); const all = Object.fromEntries(new FormData(edf)); all.active = !!edf.active.checked;
-    // nur geänderte Felder auf dem gelesenen Stand senden (älteres Formular machte sonst z. B. eine Deaktivierung still rückgängig)
+
     const was = { display_name: d.display_name || '', personnel_no: d.personnel_no || '', site: d.site || '', active: !!d.active, user_id: d.user_id || '' };
     const b = Object.fromEntries(Object.entries(all).filter(([k, v]) => v !== was[k])); if (!Object.keys(b).length) { toast('✓'); return; }
-    if (d.updated_at) b.expected_updated_at = d.updated_at; try { const r = await api('PATCH', `/api/drivers/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate) { toast(t('saved_before')); viewDriver(id); return; } // Backlog 805j
-      // ausgeschieden: verknüpftes Konto weiter aktiv / Fahrzeug weiter zugeordnet → Hinweis (Backlog 190)
-      const h = []; if (r && r.account_still_active) h.push(t('dr_left_account_active').replace('{name}', r.account_still_active.name)); if (r && r.open_assignments) h.push(tn('dr_left_assignments', r.open_assignments)); if (r && r.card_download) h.push(r.card_download.last_on ? t('ue_card_dl').replace('{d}', fmtD(r.card_download.last_on)) : t('ue_card_dl_none')); // Backlog 656
+    if (d.updated_at) b.expected_updated_at = d.updated_at; try { const r = await api('PATCH', `/api/drivers/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate) { toast(t('saved_before')); viewDriver(id); return; }
+
+      const h = []; if (r && r.account_still_active) h.push(t('dr_left_account_active').replace('{name}', r.account_still_active.name)); if (r && r.open_assignments) h.push(tn('dr_left_assignments', r.open_assignments)); if (r && r.card_download) h.push(r.card_download.last_on ? t('ue_card_dl').replace('{d}', fmtD(r.card_download.last_on)) : t('ue_card_dl_none'));
       toast(h.length ? h.join(' ') : '✓'); viewDriver(id); } catch (err) { if (err.code === 'version_conflict') { S.drLost = { id, ...conflictMine(edf) }; viewDriver(id); return; } toast(linkedMsg(err), true); } };
 }
-// Fahrzeug außer Betrieb kenntlich (Nachfolger kann dasselbe Kennzeichen tragen, 23.10.2026)
+
 const emScope = (c) => (c.scope === 'vehicle' ? (c.plate || t('em_scope_vehicle')) + (c.vehicle_active === false ? ` (${t('inactive_vehicles')})` : '') : c.scope === 'site' ? `${t('site')}: ${c.site}` : t('em_scope_all'));
-// Backlog 429: Lücken der Erreichbarkeit über die Nummern „für alle Fahrzeuge“ (nur wenn alle Zeiten tragen; Feiertage nicht eingerechnet)
+
 function emGapsPanel(contacts) {
   const g = coverageGaps(contacts.filter((c) => c.scope === 'all').map((c) => c.hours));
   if (!g) return '';
@@ -674,7 +674,7 @@ function emGapsPanel(contacts) {
   const txt = g[0].all ? t('em_gaps_all') : g.map((x) => `${wd(x.from)} ${x.from.hm} – ${x.to.wd === x.from.wd && x.to.hm > x.from.hm ? '' : wd(x.to) + ' '}${x.to.hm}`).join('; ');
   return `<section class="panel warn small" id="emgaps" data-gaps="${g.length}" role="note"><p style="margin:0"><b>${esc(t('em_gaps_title'))}</b></p><p style="margin:4px 0" translate="no">${esc(txt)}</p><p class="muted" style="margin:0">${esc(t('em_gaps_hint'))}</p></section>`;
 }
-// Backlog 434: Feiertage der nächsten 60 Tage, an denen wegen „nicht an Feiertagen“ zusätzlich keine Nummer „für alle Fahrzeuge“ besetzt ist
+
 function emHolGapsPanel(contacts, now = new Date()) {
   const g = holidayGaps(contacts.filter((c) => c.scope === 'all').map((c) => c.hours), now, 60);
   if (!g || !g.length) return '';
@@ -689,7 +689,7 @@ async function viewEmergencyEdit() {
   const edit = S.emEdit ? d.contacts.find((c) => c.id === S.emEdit) : null;
   const e = edit || { kind: 'dispo', scope: 'all' };
   const opt = (v, cur, label) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(label)}</option>`;
-  const emFull = !edit && d.contacts.length >= d.max_active; // voll: nur Bearbeiten/Archivieren, kein neues Formular (Server lehnt ab)
+  const emFull = !edit && d.contacts.length >= d.max_active;
   const form = showArch ? '' : emFull ? `<p class="panel small" id="emfull" role="note">${esc(t('em_full').replace('{m}', d.max_active))}</p>` : `<section class="panel"><h2 style="margin-top:0">${esc(t(edit ? 'em_edit' : 'em_add'))}</h2><form id="emf">${edit ? `<input type="hidden" name="expected_updated_at" value="${esc(edit.updated_at || '')}">` : ''}
     <label>${esc(t('em_kind'))}</label><select name="kind">${d.kinds.map((k) => opt(k, e.kind, t('em_kind_' + k))).join('')}</select>
     <label>${esc(t('em_label'))}</label><input name="label" maxlength="60" required value="${esc(e.label || '')}">
@@ -715,31 +715,31 @@ async function viewEmergencyEdit() {
   if (f) {
     const natHint = () => { const a = telAbroad(phoneIn(f.elements.phone.value)); $('#emnat').hidden = !a; $('#emnat').textContent = a ? t('em_phone_national').replace('{p}', a.label) : ''; };
     f.elements.phone.addEventListener('input', natHint); natHint();
-    // Backlog 992: aus Signatur/Website eingefügte Nummer („Tel.: …“, „tel:+49…“, Gedankenstrich) beim Verlassen bereinigen (gleiche Regel wie Server)
+
     f.elements.phone.addEventListener('change', () => { const el = f.elements.phone; const v = phoneIn(el.value); if (v && v !== el.value) { el.value = v; natHint(); } });
     $('#emnohol').onchange = () => { $('#emstate').disabled = !$('#emnohol').checked; };
     $('#emscope').onchange = () => { const sc = $('#emscope').value; $('#emsite').hidden = sc !== 'site'; $('#emveh').hidden = sc !== 'vehicle'; };
     const cc = $('#emcancel'); if (cc) cc.onclick = () => { S.emEdit = null; viewEmergencyEdit(); };
-    // Backlog 812: Konflikt beim Bearbeiten → neu geladen; eigene Änderungen zurück ins Formular, Felder der anderen Person markiert
+
     if (S.emLost && edit && S.emLost.id === edit.id) { const L = S.emLost; S.emLost = null; if (conflictKeep(f, L, 'emlost')) { $('#emstate').disabled = !$('#emnohol').checked; $('#emscope').onchange(); natHint(); if ($$('[data-emmore] input').some((x) => x.type === 'checkbox' ? x.checked : x.value)) $('#emmore').open = true;
-      /* render() stellt bei derselben Seite die alte Scrollposition nach setTimeout 0 wieder her – Hinweis danach zeigen */ setTimeout(() => { const hn = f.querySelector('[data-ctlost]'); if (hn && hn.isConnected) hn.scrollIntoView({ block: 'center' }); }, 30); } } else if (S.emLost) { /* inzwischen archiviert */ toast(S.emLost.msg, true); S.emLost = null; }
+        setTimeout(() => { const hn = f.querySelector('[data-ctlost]'); if (hn && hn.isConnected) hn.scrollIntoView({ block: 'center' }); }, 30); } } else if (S.emLost) {   toast(S.emLost.msg, true); S.emLost = null; }
     f.onsubmit = async (ev) => {
       ev.preventDefault();
       const b = Object.fromEntries(new FormData(f));
       if (b.scope !== 'site') delete b.site; if (b.scope !== 'vehicle') delete b.vehicle_id;
-      // Erreichbarkeit: Wochentage aus den Kästchen; ohne Wochentage keine Zeiten (Server weist Uhrzeit ohne Tage ab)
+
       b.hours_days = $$('[data-emwd]').filter((x) => x.checked).map((x) => x.dataset.emwd).join('');
       b.hours_no_holidays = !!b.hours_days && $('#emnohol').checked;
-      b.hours_holiday_state = b.hours_no_holidays ? $('#emstate').value || null : null; // Backlog 431
-      // Backlog 430: weitere Zeitspannen – ganz leere Blöcke entfallen; unvollständige gehen an den Server (der nennt, was fehlt)
+      b.hours_holiday_state = b.hours_no_holidays ? $('#emstate').value || null : null;
+
       b.hours_more = $$('[data-emmore]').map((x) => ({ days: $$('[data-emmwd]', x).filter((c) => c.checked).map((c) => c.dataset.emmwd).join(''), from: $('[data-emmfrom]', x).value || null, to: $('[data-emmto]', x).value || null })).filter((w) => w.days || w.from || w.to);
       if (!b.hours_days && !b.hours_more.length) b.hours_more = null;
-      const emf = f; try { if (edit) await api('PATCH', `/api/emergency/contacts/${edit.id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); else await api('POST', '/api/emergency/contacts', b, { timeoutMs: SEND_TIMEOUT_MS }); toast(t('em_saved')); S.emEdit = null; viewEmergencyEdit(); } catch (err) { if (edit && err.code === 'version_conflict') { S.emLost = { id: edit.id, msg: err.message, ...conflictMine(emf) }; viewEmergencyEdit(); return; } /* Backlog 805i (Funkloch): Wiederholung der Anlage → duplicate_contact */ if (!edit && lostDup(emf, b, err, ['duplicate_contact'])) { toast(t('saved_before')); S.emEdit = null; viewEmergencyEdit(); return; } lostMark(emf, b, err); toast(err.message, true); }
+      const emf = f; try { if (edit) await api('PATCH', `/api/emergency/contacts/${edit.id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); else await api('POST', '/api/emergency/contacts', b, { timeoutMs: SEND_TIMEOUT_MS }); toast(t('em_saved')); S.emEdit = null; viewEmergencyEdit(); } catch (err) { if (edit && err.code === 'version_conflict') { S.emLost = { id: edit.id, msg: err.message, ...conflictMine(emf) }; viewEmergencyEdit(); return; }   if (!edit && lostDup(emf, b, err, ['duplicate_contact'])) { toast(t('saved_before')); S.emEdit = null; viewEmergencyEdit(); return; } lostMark(emf, b, err); toast(err.message, true); }
     };
   }
-  if (S.emLost) { toast(S.emLost.msg, true); S.emLost = null; } // Formular nicht mehr da (archiviert, Liste voll)
+  if (S.emLost) { toast(S.emLost.msg, true); S.emLost = null; }
   $$('[data-emedit]').forEach((b) => (b.onclick = async () => { S.emEdit = b.dataset.emedit; await viewEmergencyEdit(); window.scrollTo(0, 0); }));
-  $$('[data-emarch]').forEach((b) => (b.onclick = async () => { if (!confirm(t('em_archive_confirm'))) return; try { await api('POST', `/api/emergency/contacts/${b.dataset.emarch}/archive`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ if (S.emEdit === b.dataset.emarch) S.emEdit = null; toast(t('em_saved')); viewEmergencyEdit(); } catch (err) { toast(err.message, true); } }));
+  $$('[data-emarch]').forEach((b) => (b.onclick = async () => { if (!confirm(t('em_archive_confirm'))) return; try { await api('POST', `/api/emergency/contacts/${b.dataset.emarch}/archive`, undefined, { timeoutMs: SEND_TIMEOUT_MS });   if (S.emEdit === b.dataset.emarch) S.emEdit = null; toast(t('em_saved')); viewEmergencyEdit(); } catch (err) { toast(err.message, true); } }));
 }
 async function viewQrSheet(oneId) {
   if (!isMgr()) { location.hash = '#/'; return; }
@@ -754,7 +754,7 @@ async function viewQrSheet(oneId) {
   $$('[data-qk]').forEach((b) => (b.onclick = () => { S.qrKind = b.dataset.qk; viewQrSheet(); }));
   $('#qprt').onclick = () => window.print();
 }
-// {key} = App-Text in der Sprache des Aushangs (fett), {=key} = ohne Hervorhebung. Keine Namen, keine Telefonnummern (Linien zum Ausfüllen).
+
 const GUIDE_SECTIONS = ['access', 'install', 'report', 'check', 'crit', 'offline', 'status'];
 function guideFill(lang, s) {
   const get = (k) => (STRINGS[lang] && STRINGS[lang][k]) || STRINGS.de[k] || k;
@@ -762,7 +762,7 @@ function guideFill(lang, s) {
 }
 async function viewDriverGuide(l) {
   const g = ['de', 'uk', 'en'].includes(l) ? l : S.guideLang || S.lang || 'de';
-  if (!langLoaded(g)) { ensureLang(g).then((ok) => viewDriverGuide(ok ? g : S.lang)); return; } // Aushang in anderer Sprache: Paket nachladen (Backlog 588; ohne Netz/Cache: Oberflächensprache)
+  if (!langLoaded(g)) { ensureLang(g).then((ok) => viewDriverGuide(ok ? g : S.lang)); return; }
   S.guideLang = g;
   const gt = (k) => (STRINGS[g] && STRINGS[g][k]) || STRINGS.de[k] || k;
   const addr = `${location.origin}/`;
@@ -781,11 +781,11 @@ async function viewDriverGuide(l) {
     <p class="small muted">${esc(gt('g_printed'))}: ${esc(new Intl.DateTimeFormat(locOf(g), dateOpts('UTC')).format(new Date(bDate() + 'T12:00:00Z')))} · CEVIK ${esc(gt("app"))} [CLAUDE]</p></article>`, 'more');
   $('#gprt').onclick = () => window.print();
 }
-// Verlauf der Auslesungen für einen Zeitraum mit Fristüberschreitungen (Backlog 245, Betriebsprüfung) – Ansicht, CSV, Ausdruck
+
 async function viewTachoHistory() {
   if (!isMgr()) return render(`<p>${esc(t('err_forbidden'))}</p>`);
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
-  // Backlog 1060: Standort wie auf „Auslesungen“ (gemeinsame Auswahl `tachoSite`) – Liste, Summen, Ausdruck und CSV
+
   const ths = vsDef('tachoSite') || '';
   const qs = () => { const f = ss('cfp_th_from'); const to = ss('cfp_th_to'); return [f && 'from=' + encodeURIComponent(f), to && 'to=' + encodeURIComponent(to), ths && 'site=' + encodeURIComponent(ths)].filter(Boolean).join('&'); };
   let h;
@@ -820,9 +820,9 @@ async function viewTacho() {
   const rows = list.filter(sel); const tot = r.totals[tab];
   const filters = [['attention', `${t('tst_ueberfaellig')} / ${t('tst_bald')}`, tot.ueberfaellig + tot.bald], ['keine', t('tst_keine'), tot.keine], ['all', t('filter_all'), list.length]];
   const opts = list.map((x) => `<option value="${esc(x.id)}">${esc(tab === 'drivers' ? x.display_name : x.plate)}</option>`).join('');
-  // Ausdruck (Nachweis/Ablage): Reiter, Auswahl, Standort und Anzahl im Vermerk – Erfassen/Import erscheinen nicht
+
   const fl = (filters.find(([k]) => k === f) || [])[1] || '';
-  if (S.quietBg && !isTachoHash()) return; // stille Aktualisierung (Backlog 1126): inzwischen andere Seite – nichts überschreiben
+  if (S.quietBg && !isTachoHash()) return;
   render(`<h1>${esc(t('tacho'))}</h1><p class="small muted noprint" id="tachoasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/tacho" id="tachoreload" title="${esc(t('tacho_asof_hint'))}">${esc(t('update_now'))}</a></p>${printHead([tab === 'drivers' ? t('tacho_cards') : t('tacho_vus'), `${t('print_filter')}: ${fl}`, r.site ? `${t('site')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', rows.length)])}<p class="small muted">${esc(t('tacho_rule'))}</p>
     <div class="actions" style="flex-wrap:wrap"><button type="button" class="btn ${tab === 'drivers' ? '' : 'secondary'}" data-tt="drivers">${esc(t('tacho_cards'))} (${r.drivers.length})</button><button type="button" class="btn ${tab === 'vehicles' ? '' : 'secondary'}" data-tt="vehicles">${esc(t('tacho_vus'))} (${r.vehicles.length})</button></div>
     <div class="actions" style="flex-wrap:wrap;margin-top:0">${filters.map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tf="${k}">${esc(l)} (${n})</button>`).join('')}</div>
@@ -861,31 +861,31 @@ async function viewTacho() {
   };
   const nf = $('#tnf'); if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); const body = { kind: tab === 'drivers' ? 'fahrerkarte' : 'massenspeicher', downloaded_on: b.downloaded_on, evidence: b.evidence };
     body[tab === 'drivers' ? 'driver_id' : 'vehicle_id'] = b.target; if (b.note) body.note = b.note;
-    try { await api('POST', '/api/tacho/downloads', body, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewTacho(); } catch (err) { /* Backlog 805j (Funkloch): Wiederholung → 409 duplicate */ if (lostDup(nf, body, err, ['duplicate'])) { toast(t('saved_before')); viewTacho(); return; } lostMark(nf, body, err); toast(err.message, true); } };
+    try { await api('POST', '/api/tacho/downloads', body, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewTacho(); } catch (err) {   if (lostDup(nf, body, err, ['duplicate'])) { toast(t('saved_before')); viewTacho(); return; } lostMark(nf, body, err); toast(err.message, true); } };
 }
-// Fuhrparkagent läuft planmäßig alle 15 (Betrieb) bzw. 30 Min. (Test): > 75 Min. ohne Lauf, offener Lauf oder Fehler → Hinweis
+
 const agentStale = (r) => !r || !!r.error || nowMs() - Date.parse(r.finished_at || r.started_at) > 75 * 60000 || (!r.finished_at && nowMs() - Date.parse(r.started_at) > 10 * 60000);
 const AF_SEVS = ['all', 'act', 'kritisch', 'handeln', 'hinweis', 'info'];
 const afSevMatch = (sel, sv) => sel === 'all' || sv === sel || (sel === 'act' && (sv === 'kritisch' || sv === 'handeln'));
-// Leistung bei großem Bestand (22.10.2026, Fund Teilagent „Oberfläche bei großem Bestand“): offene Entscheidungen zuerst 100
-// („weitere anzeigen“), Schweregrad-Knopf baut aus den geladenen Daten neu auf (vorher /api/master je Klick neu, bis 4,6 MB),
-// Suche entprellt mit vorab berechnetem Zeilentext (vorher je Taste alle Zeilen neu gelesen, Hänger bis 1,7 s bei 3000 Befunden).
+
+
+
 const DEC_SHOW = 100;
 async function viewMaster(argKey, argVal, cached) {
   const q = argKey === 'q' ? (argVal ?? '') : undefined; const sevArg = argKey === 'sev' ? (argVal ?? '') : undefined;
-  // Direktsprung #/master?q=<Kennzeichen> (z. B. aus der Fahrzeugakte): Suche vorbelegen, alle Schweregrade, Adresse ohne Parameter
+
   if (q !== undefined) { S.afQ = String(q).slice(0, 80); S.afSev = 'all'; try { history.replaceState(history.state, '', '#/master'); } catch {} }
-  // Direktsprung #/master?sev=act (Startseite „Befunde: n“ zählt kritisch + handeln): passende Auswahl vorbelegen, Suche leeren
+
   if (sevArg !== undefined) { S.afSev = AF_SEVS.includes(sevArg) ? sevArg : 'all'; S.afQ = ''; try { history.replaceState(history.state, '', '#/master'); } catch {} }
   const p = cached || await api('GET', '/api/master');
-  // Backlog 502: nach „gesehen“/„erledigt“ (Neuladen ohne Cache) bleibt „alle anzeigen“ offen – nur beim Navigieren zurück auf 100
+
   if (!cached && !S.mDecKeep) S.mDecAll = false; S.mDecKeep = false;
   const decOpen = p.inbox.filter((m) => ['offen', 'gesehen'].includes(m.decision_status) && !m.superseded);
   const decShown = S.mDecAll ? decOpen : decOpen.slice(0, DEC_SHOW);
-  // zuletzt entschiedene/erledigte Übergaben mit Person und Vermerk (Server liefert bis 100) – Rückkehr aus Urlaub/Vertretung (23.10.2026, Teilagent)
+
   const decDone = p.inbox.filter((m) => !['offen', 'gesehen'].includes(m.decision_status) && m.decided_at).sort((a, b) => String(b.decided_at).localeCompare(String(a.decided_at)));
-  // Befunde filtern (nur Anzeige im Browser): Schweregrad + Freitext über den angezeigten Zeilentext; CSV exportiert die angezeigte Auswahl
-  if (p.findings.length <= 1) { S.afSev = 'all'; S.afQ = ''; } // Filterknöpfe/Suchfeld gibt es erst ab zwei Befunden
+
+  if (p.findings.length <= 1) { S.afSev = 'all'; S.afQ = ''; }
   const afSev = AF_SEVS.includes(S.afSev) ? S.afSev : 'all';
   const sev = { kritisch: 'kritisch', handeln: 'mittel', hinweis: '', info: '' };
   let html = `<h1>${esc(t('master_title'))}</h1>
@@ -900,11 +900,11 @@ async function viewMaster(argKey, argVal, cached) {
   render(html, 'master');
   $('#mprt').onclick = () => window.print();
   const afRows = $$('#afl [data-afi]');
-  const afText = new Map(); // Zeilentext einmal vorab (Suche je Taste ohne erneutes Auslesen)
+  const afText = new Map();
   const afShown = () => afRows.filter((r) => r.style.display !== 'none').map((r) => p.findings[Number(r.dataset.afi)]);
   const applyAf = () => {
-    // Backlog 490: wie Fahrzeugliste/globale Suche über `searchKey` (Kennzeichen ohne Leer-/Bindestriche, kyrillische Doppelgänger) – die Akte verlinkt #/master?q=<Kennzeichen>
-    const q = $('#afq') ? searchKey((S.afQ || '').trim()) : ''; // ohne Suchfeld (≤ 1 Befund) nie unsichtbar filtern
+
+    const q = $('#afq') ? searchKey((S.afQ || '').trim()) : '';
     if (q && !afText.size) for (const r of afRows) afText.set(r, searchKey(r.textContent));
     for (const r of afRows) { const v = afSevMatch(afSev, r.dataset.sev) && (!q || afText.get(r).includes(q)) ? '' : 'none'; if (r.style.display !== v) r.style.display = v; }
     const c = $('#afcnt'); if (c) { const n = afShown().length; c.textContent = n === p.findings.length ? '' : t('af_shown').replace('{n}', n).replace('{m}', p.findings.length); }
@@ -915,14 +915,14 @@ async function viewMaster(argKey, argVal, cached) {
   let afT = null; const afq = $('#afq'); if (afq) afq.oninput = () => { S.afQ = afq.value; clearTimeout(afT); afT = setTimeout(applyAf, afRows.length > 300 ? 150 : 0); };
   const afc = $('#afcsv'); if (afc) afc.onclick = () => download(new Blob([agentFindingsCsv(afShown(), t, (f) => fMsg(f.message_args, f.message), (x) => translateNextAction(S.lang, x), fmtDT)], { type: 'text/csv;charset=utf-8' }), `fuhrpark-agentenbefunde_${p.environment}_${bDate()}.csv`);
   $('#ra').onclick = async () => { try { const r = await api('POST', '/api/agent/run'); toast(`${t('findings')}: ${fmtNum(r.findings_open)}`); viewMaster(); } catch (err) { toast(err.message, true); } };
-  // Entscheidung im Master-Eingang: ohne Netz Meldung statt stillem Abbruch; Doppeltippen sendet nicht zweimal
-  // „Erledigt“ ist endgültig (Status steigt nur auf, schließt auch ältere Einträge desselben Befunds) – Rückfrage gegen Fehltipp am Handy (23.10.2026)
+
+
   $$('[data-dec]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); if (a.dataset.busy) return; if (a.dataset.st === 'erledigt' && !confirm(t('dec_resolve_confirm'))) return; a.dataset.busy = '1'; a.setAttribute('aria-disabled', 'true');
-    try { const r = await api('POST', `/api/master/${a.dataset.dec}/decision`, { decision_status: a.dataset.st, ...(a.dataset.was ? { expected_status: a.dataset.was } : {}) }, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate) toast(t('saved_before')); /* Backlog 805j */ S.mDecKeep = true; await viewMaster(); } catch (err) { /* Backlog 820: andere Leitung hat inzwischen entschieden → neu laden statt „Bitte neu laden“ */ if (err.code === 'version_conflict') { S.mDecKeep = true; await viewMaster(); toast(t('changed_reloaded'), true); } else toast(err.message, true); } finally { delete a.dataset.busy; a.removeAttribute('aria-disabled'); } }));
+    try { const r = await api('POST', `/api/master/${a.dataset.dec}/decision`, { decision_status: a.dataset.st, ...(a.dataset.was ? { expected_status: a.dataset.was } : {}) }, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate) toast(t('saved_before'));   S.mDecKeep = true; await viewMaster(); } catch (err) {   if (err.code === 'version_conflict') { S.mDecKeep = true; await viewMaster(); toast(t('changed_reloaded'), true); } else toast(err.message, true); } finally { delete a.dataset.busy; a.removeAttribute('aria-disabled'); } }));
 }
 const evTr = (e) => (e === 'Zuordnung durch Fuhrparkleitung' ? t('ev_assign_default') : e || '');
-// Fahrerkandidat (Bußgeld): Begründung in der App-Sprache; übernommen wird weiter der gespeicherte deutsche Nachweis
-// gespeicherter Nachweis der Fahrerermittlung (deutscher Aktenvermerk aus dem Kandidaten) in der App-Sprache anzeigen; Freitext bleibt (19.10.2026)
+
+
 const fineEvTr = (s) => {
   const m = /^Fahrzeugzuordnung seit (\d{4}-\d{2}-\d{2}|\d{2}\.\d{2}\.\d{4})(?: (\d{2}:\d{2}) Uhr)?(?: bis (\d{2}\.\d{2}\.\d{4})(?: (\d{2}:\d{2}) Uhr)?)?(?: – Zugmaschine (.+?))?(?: \((.*)\))?$/.exec(s || '');
   const iso = (x) => (x.includes('.') ? x.split('.').reverse().join('-') : x);
@@ -930,16 +930,16 @@ const fineEvTr = (s) => {
   const k = /^Abfahrtskontrolle am Tattag (\d{2}:\d{2}) Uhr( – nach der Tatzeit)?(?: – Zugmaschine (.+))?$/.exec(s || '');
   return k ? t('cand_check').replace('{t}', k[1]) + (k[2] ? ' – ' + t('cand_after') : '') + (k[3] ? ' – ' + t('cand_via').replace('{p}', k[3]) : '') : s || '';
 };
-// Backlog 557: Zuordnungswechsel am Tattag (Beginn/Ende mit Uhrzeit der Eingabe, nicht der Übergabe)
+
 const sameDayHtml = (list) => (list && list.length ? `<div class="panel small" data-fcsameday role="note"><b>${esc(t('fine_sameday_title'))}</b><ul style="margin:.3rem 0;padding-left:1.2rem">${list.map((x) => `<li>${esc(x.time)} – ${esc(x.display_name)}: ${esc(t(x.change === 'start' ? 'fine_sameday_start' : 'fine_sameday_end'))}${x.via_plate ? ' – ' + esc(t('cand_via').replace('{p}', x.via_plate)) : ''}${x.after_offense ? ' – ' + esc(t('cand_after')) : ''}</li>`).join('')}</ul><span class="muted">${esc(t('fine_sameday_note'))}</span></div>` : '');
-// Backlog 422: zugeordnete Person hat am Tattag die Abfahrtskontrolle an einem anderen Fahrzeug gemacht (Hinweis auf Fahrzeugtausch)
+
 const candElse = (c) => (c.checks_elsewhere && c.checks_elsewhere.length ? ' – ' + t('cand_elsewhere').replace('{p}', c.checks_elsewhere.map((x) => `${x.plate} ${fmtDT(x.at)}`).join(', ')) : '');
-// Backlog 557: Uhrzeit, wenn die Zuordnung am Tattag begann/endete
+
 const candEv = (c) => (c.since ? t('cand_since').replace('{d}', fmtD(c.since) + (c.since_time ? ' ' + c.since_time : '')) + (c.until ? ' ' + t('cand_until').replace('{d}', fmtD(c.until) + (c.until_time ? ' ' + c.until_time : '')) : '') + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') + (c.assign_evidence ? ` (${evTr(c.assign_evidence)})` : '') + candElse(c) : c.check_at ? t('cand_check').replace('{t}', fmtDT(c.check_at)) + (c.after_offense ? ' – ' + t('cand_after') : '') + (c.via_plate ? ' – ' + t('cand_via').replace('{p}', c.via_plate) : '') : c.evidence || '');
-// Planungshilfe: km-Prognose fällt in die nächsten 30 Tage (ändert keinen Status, nur Anzeige)
+
 const fcSoon = (r, today, days = 30) => !!(r.km_forecast && r.km_forecast.date && Date.parse(r.km_forecast.date) - Date.parse(today) <= days * 86400000);
-// Backlog 405 (Blickwinkel „Wintercheck vor der Saison für alle Lkw“): Prüftermin für mehrere Fahrzeuge anlegen – Inhaber/Fuhrparkleitung.
-// Je Fahrzeug ein eigener Eintrag (Server `POST /api/maintenance/create-batch`); Durchführung/km danach je Fahrzeug mit „Erledigt“.
+
+
 const MC_MAX = 200;
 async function viewMaintMulti() {
   if (!isMgr()) { render(`<h1>${esc(t('mc_title'))}</h1><p class="muted">${esc(t('no_permission_view'))}</p>`, 'more'); return; }
@@ -962,11 +962,11 @@ async function viewMaintMulti() {
   const count = () => { const n = chosen().length; const el = $('#mccount'); if (el) { el.textContent = tn('mc_selected', n); el.classList.toggle('err', n > MC_MAX); } };
   boxes().forEach((x) => x.addEventListener('change', count)); count();
   $('#vq').onkeydown = (e) => { if (e.key === 'Enter') e.preventDefault(); };
-  // Filter blendet nur aus – gewählte Fahrzeuge bleiben sichtbar (wie die Sammelmeldung)
+
   $('#vq').oninput = () => { const q = searchKey($('#vq').value); $$('#mcpick label').forEach((l) => { const r = $('input', l); l.hidden = !!q && !(r && r.checked) && !searchKey(l.textContent).includes(q); }); };
   $('#mcall').onclick = () => { $$('#mcpick label').forEach((l) => { const r = $('input', l); if (r && !l.hidden) r.checked = true; }); count(); };
   $('#mcnone').onclick = () => { boxes().forEach((x) => (x.checked = false)); count(); };
-  { const tt = () => { $('[data-mctitle]').hidden = $('#mck').value !== 'Sonstiges'; }; $('#mck').addEventListener('change', tt); tt(); } // Backlog 577
+  { const tt = () => { $('[data-mctitle]').hidden = $('#mck').value !== 'Sonstiges'; }; $('#mck').addEventListener('change', tt); tt(); }
   $('#mcf').onsubmit = async (e) => {
     e.preventDefault();
     const sb = $('#mcsb'); const ids = chosen().map((x) => x.value);
@@ -975,7 +975,7 @@ async function viewMaintMulti() {
     if (ids.length > MC_MAX) { toast(t('mc_too_many'), true); markInvalid($('#mcpick'), t('mc_too_many')); return; }
     sb.disabled = true;
     try {
-      const r = await api('POST', '/api/maintenance/create-batch', { /* Backlog 805h: vorhandene werden übersprungen */ kind: $('#mck').value, evidence: $('#mce').value, ...($('#mck').value === 'Sonstiges' && $('#mct').value.trim() ? { title: $('#mct').value.trim() } : {}), next_due_date: $('#mcd').value || null, interval_months: $('#mci').value.trim() || null, vehicle_ids: ids }, { timeoutMs: SEND_TIMEOUT_MS });
+      const r = await api('POST', '/api/maintenance/create-batch', {   kind: $('#mck').value, evidence: $('#mce').value, ...($('#mck').value === 'Sonstiges' && $('#mct').value.trim() ? { title: $('#mct').value.trim() } : {}), next_due_date: $('#mcd').value || null, interval_months: $('#mci').value.trim() || null, vehicle_ids: ids }, { timeoutMs: SEND_TIMEOUT_MS });
       if (!sb.isConnected) return;
       document.querySelectorAll('.toast.err').forEach((x) => x.remove());
       const skip = (r.skipped || []).map((x) => `<li>${x.plate ? esc(x.plate) + ' · ' : ''}${esc(t('mc_sk_' + x.code))}</li>`).join('');
@@ -987,32 +987,32 @@ async function viewMaintMulti() {
   };
 }
 async function viewMaint(fq) {
-  if (typeof fq === 'string' && fq) S.maintFilter = fq; // Wegweiser „#/maintenance?f=gaps“ (Startseite: Pflichtprüfungen ohne Termin)
+  if (typeof fq === 'string' && fq) S.maintFilter = fq;
   let ov;
   const msQ = vsDef('maintSite') ? '&site=' + encodeURIComponent(vsDef('maintSite')) : '';
-  try { ov = await api('GET', '/api/maintenance' + (msQ ? '?' + msQ.slice(1) : '')); } catch (err) { if (S.quietBg) throw err; /* Backlog 1120: stille Aktualisierung – alte Liste bleibt */ render(`<h1>${esc(t('inspections_due'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
+  try { ov = await api('GET', '/api/maintenance' + (msQ ? '?' + msQ.slice(1) : '')); } catch (err) { if (S.quietBg) throw err;   render(`<h1>${esc(t('inspections_due'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const f = S.maintFilter || 'due';
-  // „Fällig bis“ (Backlog 504): erweitert „bald fällig“ um eingetragene Fristen bis zu diesem Tag (gleiche Regel wie `maintFilterRows` am Server)
+
   const dueBy = S.maintDueBy && /^\d{4}-\d{2}-\d{2}$/.test(S.maintDueBy) ? S.maintDueBy : null;
   const inWin = (r) => r.status === 'ueberfaellig' || r.status === 'faellig' || (!!dueBy && !!r.next_due_date && r.next_due_date <= dueBy && !['erledigt', 'nicht_pflichtig'].includes(r.status));
   const unclDueBy = (r) => r.status === 'ungeklaert' && !!dueBy && !!r.next_due_date && r.next_due_date <= dueBy;
-  // „fällig ohne Termin“: überfällig/bald fällig und kein geplanter Werkstatttermin ab heute – was noch eingeplant werden muss
-  // Backlog 608: Termin nach dem Fristende zählt nicht als eingeplant (wie `maintFilterRows` im Server)
+
+
   const noPlan = (r) => (inWin(r) || kmUnclearDateDue(r) || unclDueBy(r)) && !(r.planned_date && r.planned_date >= ov.today && !(r.next_due_date && r.planned_date > r.next_due_date));
-  // Backlog 541 (Blickwinkel „UVV/Tachograph des Folgejahres im Dezember planen“): Auswahl „Prüfart“ wirkt auf Liste, Zähler, Sammeltermin, Druck, CSV und Kalender
+
   const mKinds = [...new Set(ov.rows.map((r) => r.kind))].sort((a, b) => mk(a).localeCompare(mk(b)));
   const mKind = S.maintKind && mKinds.includes(S.maintKind) ? S.maintKind : null;
   if (mKind) { ov.rows = ov.rows.filter((r) => r.kind === mKind); ov.totals = { ...ov.totals, overdue: ov.rows.filter((r) => r.status === 'ueberfaellig').length, unclear: ov.rows.filter((r) => r.status === 'ungeklaert').length }; }
   const mkQ = mKind ? '&kind=' + encodeURIComponent(mKind) : '';
   const fcN = ov.rows.filter((r) => fcSoon(r, ov.today)).length;
-  // „nach km fällig“: km-Regel überschritten bzw. innerhalb der Warnschwelle (gleiche km_status wie Status/Werkstatt-Startseite)
+
   const kmDue = (r) => r.km_status === 'ueberfaellig' || r.km_status === 'faellig';
   const kmN = ov.rows.filter(kmDue).length;
   const sel = (r) => (f === 'all' ? true : f === 'due' ? inWin(r) : f === 'noplan' ? noPlan(r) : f === 'fc30' ? fcSoon(r, ov.today) : f === 'km' ? kmDue(r) : r.status === f);
   const rows = ov.rows.filter(sel);
   if (f === 'km') rows.sort((a, b) => (a.km_remaining ?? 0) - (b.km_remaining ?? 0) || plateCmp(a.plate, b.plate));
   if (f === 'fc30') rows.sort((a, b) => (a.km_forecast.date < b.km_forecast.date ? -1 : a.km_forecast.date > b.km_forecast.date ? 1 : 0));
-  // Backlog 1030: Termine, die der Kalender enthalten würde (wie maintenanceIcs: offene Frist bzw. geplanter Werkstatttermin ab heute) – sonst leere Datei
+
   const micsN = f === 'gaps' ? 0 : rows.filter((r) => (r.next_due_date && r.date_status !== 'erledigt') || (r.planned_date && r.planned_date >= ov.today)).length;
   const cls = { ueberfaellig: 'kritisch', faellig: 'mittel', ok: 'ok', ohne_termin: '', erledigt: 'ok', ungeklaert: 'mittel', nicht_pflichtig: '', erste_sp: '' };
   const tabs = [['due', `${t('ms_ueberfaellig')} + ${dueBy ? t('mdueby_tab').replace('{d}', fmtD(dueBy)) : t('ms_faellig')}`, ov.rows.filter(inWin).length], ['noplan', t('due_no_plan'), ov.rows.filter(noPlan).length], ['ueberfaellig', t('ms_ueberfaellig'), ov.totals.overdue], ['ungeklaert', t('ms_ungeklaert'), ov.totals.unclear || 0], ...(kmN || f === 'km' ? [['km', t('km_due_tab'), kmN]] : []), ...(fcN || f === 'fc30' ? [['fc30', t('fc30_tab'), fcN]] : []), ['all', t('filter_all'), ov.rows.length], ['gaps', t('gaps'), ov.totals.vehicles_with_gaps]];
@@ -1029,18 +1029,18 @@ async function viewMaint(fq) {
   if (f === 'gaps') {
     html += `<p class="small muted">${esc(t('gaps_hint'))}</p><div class="list">${ov.gaps.map((g) => `<a class="row" href="#/vehicles/${encodeURIComponent(g.vehicle_id)}">${plate(g.plate)}<span class="title">${g.vehicle_kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(g.site || '')}</span><span></span><span class="sub" style="white-space:normal">${g.missing.map((k) => `<span class="chip">${esc(mk(k))}</span>`).join(' ')}</span></a>`).join('') || noneP()}</div>`;
   } else {
-    // Backlog 506: Inhaber/Leitung/Werkstatt springen wie im Werkstattplan (Backlog 236) direkt ins Formular „Durchführung erfassen“ und nach dem
-    // Speichern zurück in diese Liste; HU/SP ohne eigenen Eintrag (`husp:`) und erledigte Rückrufe wie bisher zur Akte
+
+
     const canDone = isMgr() || S.me.role === 'workshop';
     const mHref = (r) => '#/vehicles/' + encodeURIComponent(r.vehicle_id) + (canDone && !r.virtual && /^[\w-]+$/.test(String(r.id)) && !(r.kind === 'Rückruf' && r.last_done_date) ? '?done=' + encodeURIComponent(r.id) : '');
-    // Backlog 612 (Blickwinkel „Jahresplanung 2027“): mit „Fällig bis“ Zwischenüberschriften je Fälligkeitsmonat (überfällig zuerst) – Liste und Ausdruck
+
     const mGrpOn = !!dueBy && (f === 'due' || f === 'noplan'); let mGrpLast = null;
     const mGrp = (r) => { if (!mGrpOn) return ''; const k = r.status === 'ueberfaellig' ? 'over' : r.next_due_date ? r.next_due_date.slice(0, 7) : 'none'; if (k === mGrpLast) return ''; mGrpLast = k;
       return `<h3 class="mgrp" data-mgrp="${esc(k)}" style="margin:12px 0 4px">${esc(k === 'over' ? t('ms_ueberfaellig') : k === 'none' ? t('mgrp_none') : fmtMonth(k))}</h3>`; };
     const mGk = (r) => (r.status === 'ueberfaellig' ? '0' : r.next_due_date ? '1' + r.next_due_date : '2');
     html += `<div class="list">${(mGrpOn ? [...rows].sort((a, b) => (mGk(a) < mGk(b) ? -1 : mGk(a) > mGk(b) ? 1 : 0)) : rows).map((r) => mGrp(r) + `<a class="row ${r.status === 'ueberfaellig' ? 'p-kritisch' : r.status === 'faellig' ? 'p-mittel' : ''}" href="${mHref(r)}"${mHref(r).includes('?done=') ? ' data-fromplan' : ''}>${plate(r.plate)}<span class="title">${r.vehicle_kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(mkR(r))}${r.due_month || r.next_due_date || r.prognosis || !r.next_due_km ? ' · ' : ''}${r.due_month ? `${esc(t('due_until_end'))} ${esc(r.due_month)}${r.due_basis ? ` <span class="small muted">(${esc(t('db_' + r.due_basis))})</span>` : ''}` : r.next_due_date ? fmtD(r.next_due_date) : r.prognosis ? `${esc(t('prognosis'))} ${mY(r.prognosis)}` : r.next_due_km ? '' : r.status === 'erledigt' && r.last_done_date ? `${esc(t('done_on'))} ${fmtD(r.last_done_date)}` : '–'}${r.planned_date ? ` · ${esc(t('planned_appt'))} ${fmtD(r.planned_date)}` : ''}${r.open_order ? ` · 🔧 ${esc(r.open_order.case_no)}` : ''}${r.next_due_km ? ` · ${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining !== null ? ` (${r.km_remaining < 0 ? esc(t('km_over')) + ' ' + fmtKm(-r.km_remaining) : esc(t('km_left')) + ' ' + fmtKm(r.km_remaining)})` : ''}${r.km_status === 'ohne_km' ? ` · <b data-kmnone>${esc(t('km_none_unclear'))}</b>` : r.km_measured_at ? ` <span class="small muted" data-kmasof>${esc(t('km_as_of').replace('{d}', fmtD(r.km_measured_at)))}</span>` : ''}` : ''}</span><span class="chip ${cls[r.status]}">${esc(t('ms_' + r.status))}${kmUnclearDateDue(r) ? ' · ' + esc(t('ms_' + r.date_status)) : ''}${r.days !== null ? ` (${r.days})` : ''}</span><span class="sub">${r.km_digits_prev ? kmDigHtml(r).trim() + ' · ' : ''}${r.km_unclear ? `<span class="km-unclear">${esc(t('km_unclear_drop').replace('{d}', fmtD(r.km_drop_at)))}</span> · ` : ''}${r.km_forecast ? kmFcHtml(r.km_forecast) + ' · ' : ''}${r.notes && r.notes.length && ['ungeklaert', 'ueberfaellig'].includes(r.status) ? esc(huNote(r, r.notes.length - 1)) + ' · ' : ''}${esc(mEv(r.evidence))}${r.site ? ' · ' + esc(r.site) : ''}</span></a>`).join('') || `<p class="muted">${esc(t('none_due'))}</p>`}</div>`;
   }
-  // Sammeltermin (Backlog 235): gleichen Termin für ausgewählte Einträge der aktuellen Ansicht – Inhaber, Fuhrparkleitung, Werkstatt
+
   const mbRows = f === 'gaps' ? [] : rows.filter((r) => !(r.kind === 'Rückruf' && r.last_done_date));
   if ((isMgr() || S.me.role === 'workshop') && mbRows.length) html += `<details class="panel noprint" id="mbatch"${S.mbOpen ? ' open' : ''}><summary>${esc(t('mb_title'))}</summary><p class="small muted">${esc(t('mb_hint'))}</p>
     <form id="mbf"><div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end"><div><label for="mbdate">${esc(t('mb_date'))}</label><input type="date" id="mbdate" name="planned_date" min="${esc(ov.today)}" value="${esc(S.mbDate || '')}" required></div>
@@ -1049,14 +1049,14 @@ async function viewMaint(fq) {
     <div class="list" style="max-height:340px;overflow:auto">${mbRows.slice(0, 200).map((r) => `<label class="row" style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:8px 10px;margin:0"><input type="checkbox" name="mbid" value="${esc(r.id)}"${r.virtual ? ' disabled' : ''}> ${plate(r.plate)}<span class="title" style="white-space:normal;flex:1 1 150px">${r.vehicle_kind === 'anhaenger' ? `<span class="chip">${esc(t('vk_anhaenger'))}</span> ` : ''}${esc(mkR(r))}${r.due_month ? ` · ${esc(t('due_until_end'))} ${esc(r.due_month)}` : r.next_due_date ? ` · ${fmtD(r.next_due_date)}` : ''}${!ov.site && r.site ? ` · <span class="small muted">${esc(r.site)}</span>` : ''}${r.virtual ? ` <span class="small muted">– ${esc(t('mb_virtual'))}</span>` : ''}${r.planned_date && r.planned_date >= ov.today ? ` <span class="chip">${esc(t('mb_has_plan').replace('{d}', fmtD(r.planned_date)))}</span>` : ''}</span></label>`).join('')}</div>${impMore(mbRows.length, 200)}
     <div class="actions"><button class="btn" id="mbgo">${esc(t('mb_submit'))}</button></div></form></details>`;
   if (S.mbRes) html += `<div id="mbres" class="noprint" role="status">${S.mbRes}</div>`;
-  // Durchgeführte Prüfungen (Wartungshistorie der Flotte) – Inhaber, Fuhrparkleitung, Lesezugriff
+
   if (['owner', 'fleet', 'viewer'].includes(S.me.role)) html += `<details class="panel noprint" id="mhist"><summary>${esc(t('mh_title'))}</summary><p class="small muted">${esc(t('mh_hint'))}</p>
     <form id="mhf" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end"><div><label>${esc(t('from'))}</label><input type="date" name="from" value="${esc(ov.today.slice(0, 4))}-01-01" required></div><div><label>${esc(t('to'))}</label><input type="date" name="to" value="${esc(ov.today)}" required></div>
     <div><label>${esc(t('kind'))}</label><select name="kind"><option value="">${esc(t('filter_all'))}</option>${(S.meta.maintenance_kinds || []).map((k) => `<option value="${esc(k)}">${esc(mk(k))}</option>`).join('')}</select></div>
     <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn secondary" id="mhcsv">${esc(t('export_csv'))}</button></div></form><div id="mhres"></div></details>`;
   if (isMgr()) html += `<section class="panel noprint"><h2 style="margin-top:0">${esc(t('import_maint'))}</h2><p class="small muted">${esc(t('import_maint_hint'))}</p><input type="file" id="mimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_maint'))}"><div id="mimpr"></div></section>
     <section class="panel noprint"><h2 style="margin-top:0">${esc(t('import_recalls'))}</h2><p class="small muted">${esc(t('import_recalls_hint'))}</p><input type="file" id="rimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_recalls'))}"><div id="rimpr"></div></section>`;
-  if (S.quietBg && !isMaintHash()) return; // stille Aktualisierung (Backlog 1120): inzwischen andere Seite – nichts überschreiben
+  if (S.quietBg && !isMaintHash()) return;
   render(html, 'more');
   S.maintAt = Date.now();
   const mrl = $('#maintreload'); if (mrl) mrl.onclick = async (e) => { e.preventDefault(); try { await viewMaint(); } catch (err) { toast(err.message, true); } };
@@ -1064,14 +1064,14 @@ async function viewMaint(fq) {
   $$('#app a[data-fromplan]').forEach((a) => (a.onclick = () => { S.fromPlan = '#/maintenance'; }));
   { const di = $('#mdueby'); if (di) di.onchange = () => { S.maintDueBy = di.value && di.value >= ov.today ? di.value : null; viewMaint(); };
     const dn = $('#mduenext'); if (dn) dn.onclick = () => { const [y, m] = ov.today.split('-').map(Number); const x = new Date(Date.UTC(y, m + 1, 0)); S.maintDueBy = `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; viewMaint(); };
-    // Backlog 545: Jahresplanung „bis Ende nächsten Jahres“ (nur Vergleich mit eingetragenen Fristen, keine neue Frist)
+
     const dy = $('#mdueyear'); if (dy) dy.onclick = () => { S.maintDueBy = `${Number(ov.today.slice(0, 4)) + 1}-12-31`; viewMaint(); };
     const mks = $('#mkind'); if (mks) mks.onchange = () => { S.maintKind = mks.value || null; viewMaint(); };
     const dc = $('#mdueclr'); if (dc) dc.onclick = () => { S.maintDueBy = null; viewMaint(); }; }
-  S.mbRes = ''; S.mbOpen = false; // Ergebnis des Sammeltermins nur direkt nach dem Speichern zeigen
+  S.mbRes = ''; S.mbOpen = false;
   const mbf = $('#mbf');
   if (mbf) {
-    offDayWatch([$('#mbdate')]); // Backlog 890
+    offDayWatch([$('#mbdate')]);
     const boxes = () => $$('#mbf input[name=mbid]:not(:disabled)');
     const cnt = () => { $('#mbcount').textContent = tn('mb_selected', boxes().filter((x) => x.checked).length); };
     boxes().forEach((x) => (x.onchange = cnt)); cnt();
@@ -1082,7 +1082,7 @@ async function viewMaint(fq) {
       const ids = boxes().filter((x) => x.checked).map((x) => x.value);
       if (!ids.length) { toast(t('mb_pick'), true); return; }
       try {
-        const r = await api('POST', '/api/maintenance/plan-batch', { planned_date: mbf.planned_date.value, ids, replace: mbf.replace.checked }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h */
+        const r = await api('POST', '/api/maintenance/plan-batch', { planned_date: mbf.planned_date.value, ids, replace: mbf.replace.checked }, { timeoutMs: SEND_TIMEOUT_MS });
         const skip = (r.skipped || []).map((x) => `<li>${x.plate ? esc(x.plate) + ' · ' : ''}${x.kind ? esc(mk(x.kind)) + ': ' : ''}${esc(t('mb_sk_' + x.code).replace('{d}', fmtD(x.planned_date)))}</li>`).join('');
         S.mbRes = `<p class="panel ${r.skipped && r.skipped.length ? 'warn' : 'ok'}" style="margin-top:8px"><b>${esc(tn('mb_done', r.planned.length).replace('{d}', fmtD(r.planned_date)))}</b>${r.unchanged ? ` · ${esc(t('mb_unchanged').replace('{n}', fmtNum(r.unchanged)))}` : ''}${r.planned.some((x) => x.after_due) ? `<br><span class="small" data-mbafterdue>⚠ ${esc(t('mb_after_due'))}: ${r.planned.filter((x) => x.after_due).map((x) => `${esc(x.plate)} · ${esc(mk(x.kind))} (${esc(t('next_due'))} ${fmtD(x.after_due)})`).join('; ')}</span>` : ''}${r.planned.some((x) => x.replaced) ? `<br><span class="small">${r.planned.filter((x) => x.replaced).map((x) => `${esc(x.plate)} · ${esc(mk(x.kind))} (${esc(t('mb_replaced').replace('{d}', fmtD(x.replaced)))})`).join('; ')}</span>` : ''}</p>${skip ? `<p class="small"><b>${esc(t('mb_skipped'))}</b></p><ul class="small">${skip}</ul>` : ''}`;
         S.mbOpen = true; S.mbDate = r.planned_date;
@@ -1093,11 +1093,11 @@ async function viewMaint(fq) {
   const msel = $('#msite'); if (msel) msel.onchange = () => { S.maintSite = msel.value; viewMaint(); };
   $('#mics').onclick = async () => { try { download(await api('GET', `/api/maintenance?format=ics&filter=${encodeURIComponent(f)}${dueBy ? '&due_by=' + dueBy : ''}${mkQ}` + msQ), `fuhrpark-prueftermine_${ov.today}${ov.site ? '_' + fnPart(ov.site) : ''}_${f}${dueBy ? '_bis-' + dueBy : ''}${mKind ? '_' + fnPart(mKind) : ''}.ics`); } catch (err) { toast(err.message, true); } };
   $('#mprt').onclick = () => window.print();
-  // Mängelauftrag und Nachprüfung zu Prüfungen mit erheblichen Mängeln (nur gespeicherte Daten; ohne Nachprüfung „noch nicht eingetragen“)
+
   const mhDefect = (r) => DEFECT_RESULTS.includes(r.result) ? `<br><span class="small">${esc(t('mh_order'))}: ${r.defect_case_no ? `${esc(r.defect_case_no)} (${esc(t('st_' + r.defect_case_status))})` : esc(t('mh_no_order'))} · ${esc(t('mh_reinsp'))}: ${r.reinspection_date ? `${fmtD(r.reinspection_date)}${r.reinspection_result ? ' – ' + esc(t('res_' + r.reinspection_result)) : ''}` : esc(t('mh_reinsp_none'))}</span>` : '';
   const mhf = $('#mhf');
   if (mhf) {
-    // Backlog 1059: Standort-Auswahl der Seite gilt auch für die Nachweisliste (Liste, CSV)
+
     const mhq = () => `from=${encodeURIComponent(mhf.from.value)}&to=${encodeURIComponent(mhf.to.value)}${mhf.kind.value ? '&kind=' + encodeURIComponent(mhf.kind.value) : ''}` + msQ;
     mhf.onsubmit = async (e) => { e.preventDefault(); try {
       const h = await api('GET', '/api/maintenance/history?' + mhq());
@@ -1105,12 +1105,12 @@ async function viewMaint(fq) {
     } catch (err) { toast(err.message, true); } };
     $('#mhcsv').onclick = async () => { if (!mhf.reportValidity()) return; try { const blob = await api('GET', '/api/maintenance/history?format=csv&' + mhq()); download(blob, `fuhrpark-durchgefuehrte-pruefungen_${mhf.from.value}_${mhf.to.value}${ov.site ? '_' + fnPart(ov.site) : ''}.csv`); if (blob.cfpTruncated) toast(t('mh_truncated').replaceAll('{n}', blob.cfpTruncated), true); } catch (err) { toast(err.message, true); } };
   }
-  // CSV mit derselben Auswahl wie Liste/Ausdruck (Backlog 505); Dateiname nennt Filter und „fällig bis“
+
   $('#mcsv').onclick = async () => { try { download(await api('GET', `/api/maintenance?format=csv&filter=${encodeURIComponent(f)}${dueBy ? '&due_by=' + dueBy : ''}${mkQ}` + msQ), `fuhrpark-prueftermine_${ov.today}${ov.site ? '_' + fnPart(ov.site) : ''}_${f}${dueBy ? '_bis-' + dueBy : ''}${mKind ? '_' + fnPart(mKind) : ''}.csv`); } catch (err) { toast(err.message, true); } };
   const inp = $('#mimp');
-  // Lückenzeilen aus dem eigenen Export (nicht ausgefüllt) getrennt und zugeklappt – sonst verdecken sie die echten Hinweise
+
   const GAP_ROW = 'Kein Termin eingetragen – Zeile bleibt unverändert';
-  // Backlog 589: bei „Prüfart unbekannt“ die erlaubten Arten nennen (Spalte „Art“ erwartet den deutschen Namen bzw. einen Alias, Rückrufe eigener Import)
+
   const skipList = (list, title, open) => (list.length ? `<details ${open ? 'open' : ''}><summary>${esc(title)} (${list.length})</summary><ul class="small">${list.map((x) => `<li>${esc(t('line'))} ${x.line}${x.plate ? ' · ' + esc(x.plate) : ''}: ${esc(reasonText(x.reason))}</li>`).join('')}</ul></details>` : '');
   if (inp) inp.onchange = async () => {
     const file = inp.files[0]; if (!file) return;
@@ -1126,7 +1126,7 @@ async function viewMaint(fq) {
     };
     try { show(await api('POST', '/api/maintenance/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
   };
-  // Rückruf-Import (Hersteller-/KBA-Liste): Vorschau, dann Übernehmen; Frist nur laut Liste, vorhandene Frist wird nie überschrieben
+
   const rinp = $('#rimp');
   if (rinp) rinp.onchange = async () => {
     const file = rinp.files[0]; if (!file) return;
@@ -1159,28 +1159,28 @@ async function viewKpi() {
   html += r.by_priority.length ? r.by_priority.map((p) => `<section class="panel ${p.priority === 'kritisch' ? 'alert' : ''}"><h3>${esc(p.priority === 'alle' ? t('filter_all') : t('prio_' + p.priority))}</h3><dl class="kv">
     <dt>${esc(t('kpi_reports'))}</dt><dd>${p.created} · ${esc(t('kpi_released'))} ${p.released} · ${esc(t('kpi_open'))} ${p.open}${p.rejected ? ` · ${esc(t('kpi_rejected'))} ${p.rejected}${p.duplicates || p.withdrawn ? ` (${[p.duplicates ? esc(t('kpi_dupes').replace('{n}', p.duplicates)) : '', p.withdrawn ? esc(t('kpi_withdrawn').replace('{n}', p.withdrawn)) : ''].filter(Boolean).join(', ')})` : ''}` : ''}${p.internal ? ` · ${esc(t('kpi_internal').replace('{n}', p.internal))}` : ''}</dd>
     <dt>${esc(t('kpi_triage'))}</dt><dd>${st(p.triage)}</dd><dt>${esc(t('kpi_ack'))}</dt><dd>${st(p.workshop_ack)}</dd><dt>${esc(t('kpi_total'))}</dt><dd>${st(p.created_to_release)}</dd><dt>${esc(t('kpi_parts'))}</dt><dd>${dur(p.parts_wait_h)}</dd></dl></section>`).join('') : noneP();
-  // Technische Verfügbarkeit (Flotte) – nur ohne Werkstattfilter; Liste der geringsten nur mit Ausfall
+
   const pct = (x) => `${fmtNum(x, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
   const av = r.availability;
   if (av) html += `<section class="panel" id="kpiav"><h3>${esc(t('kpi_av'))}</h3><p><b style="font-size:1.4em">${esc(pct(av.pct))}</b> <span class="muted">${esc(t('kpi_av_of'))}</span></p><p>${esc(t('kpi_av_line').replace('{n}', fmtNum(av.vehicles)).replace('{d}', dur(av.downtime_h)))}</p>${av.lowest.length ? `<h4>${esc(t('kpi_av_lowest'))}</h4><div class="list">${av.lowest.map((x) => `<a class="row" href="#/vehicles/${encodeURIComponent(x.vehicle_id)}">${plate(x.plate || x.vehicle_id)}<span class="title">${esc(pct(x.pct))}</span><span class="sub">${esc(t('kpi_downtime'))}: ${dur(x.downtime_h)}</span></a>`).join('')}</div>` : `<p class="muted">${esc(t('kpi_av_none'))}</p>`}<p class="small muted">${esc(t('kpi_av_rule'))}</p><p class="small muted" id="kpical">${esc(t('kpi_calendar_hint'))}</p></section>`;
   else if (r.site) html += `<p class="small muted" id="kpiavsite">${esc(t('kpi_av_site'))}</p>`;
-  // Fahrzeugliste: meiste Werkstattzeit zuerst, die ersten KPI_VEH_MAX; Gesamtzahl und „Alle anzeigen“ statt stillem Abschneiden (Druck zeigt alle)
+
   const kvAll = !!S.kpiVehAll || r.vehicles.length <= KPI_VEH_MAX; const kvShown = kvAll ? r.vehicles : r.vehicles.slice(0, KPI_VEH_MAX);
   if (r.vehicles.length) html += `<h2 id="kpiveh">${esc(t('kpi_vehicles'))} <span class="chip">${r.vehicles.length}</span></h2>${kvAll ? '' : `<div id="kpivmore" role="status"><p class="small muted">${esc(t('kpi_veh_more').replace('{n}', KPI_VEH_MAX).replace('{m}', r.vehicles.length))}</p><div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="kpivall">${esc(t('kpi_veh_all').replace('{m}', r.vehicles.length))}</button></div></div>`}<div class="list" id="kpivl">${kvShown.map((v) => `<a class="row" href="#/vehicles/${encodeURIComponent(v.vehicle_id)}">${plate(v.plate || v.vehicle_id)}<span class="title">${esc(t('kpi_workshop'))}: ${dur(v.workshop_h)}</span><span class="chip">${v.cases}</span><span class="sub">${esc(t('kpi_parts'))}: ${dur(v.parts_wait_h)} · ${esc(t('kpi_released'))} ${v.released}${v.duplicates ? ` · ${esc(t('kpi_dupes').replace('{n}', v.duplicates))}` : ''}${v.locked_h ? ` · <b style="color:var(--stop)">${esc(t('kpi_locked'))}: ${dur(v.locked_h)}</b>` : ''}${v.downtime_h ? ` · ${esc(t('kpi_downtime'))}: ${dur(v.downtime_h)}` : ''}${v.availability_pct !== null && v.availability_pct !== undefined && (v.downtime_h || v.availability_pct < 100) ? ` · ${esc(t('kpi_av_short'))}: ${esc(pct(v.availability_pct))}${v.availability_downtime_h && v.availability_downtime_h !== v.downtime_h ? ` (${esc(t('kpi_downtime'))}: ${dur(v.availability_downtime_h)})` : ''}` : ''}</span></a>`).join('')}</div>`;
-  // Termintreue Teile-Liefertermine (nur Abschnitte „wartet auf Teile“ aus dem Zeitraum; Termin laut Werkstatt)
+
   const pe = r.parts_eta;
   const peLine = (x) => `${esc(t('kpi_pe_kept'))} ${x.kept} · ${esc(t('kpi_pe_late'))} ${x.late}${x.on_time_pct !== null ? ` (${x.on_time_pct} % ${esc(t('kpi_pe_on_time'))})` : ''}${x.late_days_median !== null ? ` · ${esc(t('kpi_pe_median'))} ${esc(nDays(x.late_days_median))}` : ''}${x.open_overdue ? ` · <b style="color:var(--stop)">${esc(t('kpi_pe_open'))} ${x.open_overdue}</b>` : ''}${x.without_eta ? ` · ${esc(t('kpi_pe_without'))} ${x.without_eta}` : ''}`;
   if (pe && (pe.kept + pe.late + pe.without_eta + pe.open_overdue)) html += `<section class="panel" id="kpipe"><h3>${esc(t('kpi_pe'))}</h3><p>${peLine(pe)}</p>${pe.by_site.length > 1 ? `<dl class="kv">${pe.by_site.map((x) => `<dt>${esc(x.site === 'ohne' ? t('kpi_pe_nosite') : wsName(x.site))}</dt><dd>${peLine(x)}</dd>`).join('')}</dl>` : ''}<p class="small muted">${esc(t('kpi_pe_rule'))}</p></section>`;
-  // Kostenfreigaben (nur Anzahl und Dauer bis zur Freigabe, keine Beträge)
+
   const ca = r.cost_approvals;
-  // Backlog 1044: Abschnitt auch ohne Überschreitung im Zeitraum, wenn aus Vormonaten noch Kostenfreigaben offen sind (open_all: alle Meldemonate/Standorte)
+
   if (ca && (ca.exceeded || ca.open_all)) html += `<section class="panel" id="kpica"><h3>${esc(t('kpi_ca'))}</h3>${ca.exceeded ? `<dl class="kv">
     <dt>${esc(t('kpi_ca_exceeded'))}</dt><dd>${ca.exceeded}</dd><dt>${esc(t('kpi_ca_cases'))}</dt><dd>${ca.cases}</dd>
     <dt>${esc(t('kpi_ca_approved'))}</dt><dd>${ca.approved}</dd>
     <dt>${esc(t('kpi_ca_wait'))}</dt><dd>${st(ca.to_approval)}</dd>
     ${ca.pending ? `<dt>${esc(t('kpi_ca_pending'))}</dt><dd><b style="color:var(--stop)">${ca.pending}</b></dd>` : ''}
     ${ca.closed_without ? `<dt>${esc(t('kpi_ca_closed'))}</dt><dd>${ca.closed_without}</dd>` : ''}</dl><p class="small muted">${esc(t('kpi_ca_rule'))}</p>` : `<p id="kpcanone">${esc(t('kpi_ca_none_period'))}</p>`}${ca.open_all ? `<p class="small"><a href="${hj('#/cases?f=cost_approval')}" id="kpicalist">${esc(t('kpi_ca_all_open'))}: ${ca.open_all} ›</a></p>` : ''}</section>`;
-  // Mängelbeseitigung aus Prüfungen (Prüfdatum im Zeitraum; Dauer in Tagen bis zur technischen Freigabe des Mängelauftrags)
+
   const idf = r.inspection_defects;
   const dD = (v) => `${esc(nDays(v))}`;
   const stD = (x) => (x.n ? `${dD(x.median_d)} <span class="small muted">(P90 ${dD(x.p90_d)}, n=${x.n})</span>` : '–');
@@ -1201,8 +1201,8 @@ async function viewKpi() {
   }
 }
 async function viewAudit(more, uArg, vArg) {
-  // Person (handelnd oder betroffen) aus dem Direktsprung #/audit?u=<id> (Benutzer → „Protokoll“), Fahrzeug aus #/audit?v=<VIN:…>
-  // (Fahrzeugakte → „Protokoll“); Adresse danach bereinigt. Ein Direktsprung ersetzt die jeweils andere Auswahl nicht.
+
+
   if (uArg) { S.auditUser = uArg; S.auditUserName = null; }
   if (vArg) { S.auditVeh = vArg; S.auditVehName = null; }
   if (uArg || vArg) { history.replaceState(history.state, '', '#/audit'); S.lastHash = '#/audit'; }
@@ -1220,13 +1220,13 @@ async function viewAudit(more, uArg, vArg) {
   S.auditRows = more ? [...(S.auditRows || []), ...r.entries] : r.entries;
   S.auditBefore = r.entries.length ? r.entries[r.entries.length - 1].created_at : null;
   S.auditBeforeId = r.entries.length ? r.entries[r.entries.length - 1].id : null;
-  const groups = [['', t('filter_all')], ['login', t('au_login')], ['user.', t('users')], ['vehicle', t('vehicles')], ['maintenance.', t('inspections_due')], ['backup.', t('backup')], ['reports.,contract.export,claim.export,maintenance.export,maintenance.history_export,stock.journal.export,admin.audit_export,backup.export', t('au_exports')] /* alle Exporte (20.10.2026: nur „reports.“), höchstens 8 Präfixe */, ['stock.', t('stock')], ['contract', t('ct_title')], ['claim', t('claims')], ['driver', t('drivers')], ['tacho.', t('tacho')], ['privacy.', t('data_export')], ['admin.', t('audit')], ['settings.', t('settings')], ['invite.,password.,session.,totp.,setup.,integration.', t('au_access')], ['tires.', t('tires')], ['telematics.', t('telematics')], ['emergency.', t('em_title')], ['master.', t('nav_master')]];
-  const det = (d, refs) => auditDetailText(S.lang, d, refs); // Schlüssel in der Oberflächensprache, Werte unverändert (Rohtext in CSV/Suche)
+  const groups = [['', t('filter_all')], ['login', t('au_login')], ['user.', t('users')], ['vehicle', t('vehicles')], ['maintenance.', t('inspections_due')], ['backup.', t('backup')], ['reports.,contract.export,claim.export,maintenance.export,maintenance.history_export,stock.journal.export,admin.audit_export,backup.export', t('au_exports')]  , ['stock.', t('stock')], ['contract', t('ct_title')], ['claim', t('claims')], ['driver', t('drivers')], ['tacho.', t('tacho')], ['privacy.', t('data_export')], ['admin.', t('audit')], ['settings.', t('settings')], ['invite.,password.,session.,totp.,setup.,integration.', t('au_access')], ['tires.', t('tires')], ['telematics.', t('telematics')], ['emergency.', t('em_title')], ['master.', t('nav_master')]];
+  const det = (d, refs) => auditDetailText(S.lang, d, refs);
   const gl = (groups.find(([k]) => k === f) || [])[1];
-  // Betrifft: anderes Konto → Protokoll dieser Person, Fahrzeug → Fahrzeugakte (Ausdruck zeigt den Namen ohne Link)
+
   const auTarget = (e) => (e.target_plate ? ` · ${esc(t('au_target'))}: <a class="autgt" href="#/vehicles/${esc(e.target)}">${esc(e.target_plate)}</a>`
     : (e.target_name || e.target_username) && e.target !== e.actor_id ? ` · ${esc(t('au_target'))}: <a class="autgt" href="#/audit?u=${esc(e.target)}">${esc(e.target_name || e.target_username)}</a>`
-    : e.target_driver_name ? ` · ${esc(t('au_target'))}: <a class="autgt" href="#/drivers/${esc(e.target)}">${esc(e.target_driver_name)}</a>` : ''); // Fahrerakte (20.10.2026)
+    : e.target_driver_name ? ` · ${esc(t('au_target'))}: <a class="autgt" href="#/drivers/${esc(e.target)}">${esc(e.target_driver_name)}</a>` : '');
   render(`<h1>${esc(t('audit'))}</h1>${helpLink('access')}<p class="small muted">${esc(t('audit_hint'))}</p>
     ${printHead([t('audit'), f ? `${t('audit_area')}: ${gl || f}` : '', aq.length >= 2 ? `${t('print_search')}: „${aq}“` : '', au ? `${t('audit_until')} ${fmtD(au)}` : '', pu ? `${t('audit_person')}: ${S.auditUserName || ''}` : '', pv ? `${t('vehicle')}: ${S.auditVehName || ''}` : '', t('print_count').replace('{n}', S.auditRows.length)])}
     <form id="aqf" class="actions noprint" style="flex-wrap:wrap;align-items:flex-end;margin-top:0"><div style="flex:1 1 200px"><label for="afsel">${esc(t('audit_area'))}</label><select id="afsel">${groups.map(([k, l]) => `<option value="${esc(k)}"${f === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
@@ -1248,8 +1248,8 @@ async function viewAudit(more, uArg, vArg) {
     if (af.from.value > af.to.value) { toast(t('err_from_after_to'), true); return; }
     try { const blob = await api('GET', `/api/admin/audit?format=csv&from=${encodeURIComponent(af.from.value)}&to=${encodeURIComponent(af.to.value)}${f ? '&action=' + encodeURIComponent(f) : ''}${aq.length >= 2 ? '&q=' + encodeURIComponent(aq) : ''}${pu ? '&user=' + encodeURIComponent(pu) : ''}${pv ? '&vehicle=' + encodeURIComponent(pv) : ''}`); download(blob, `fuhrpark-protokoll_${af.from.value}_${af.to.value}${pu && S.auditUserName ? '_' + fnPart(S.auditUserName) : ''}${pv && S.auditVehName ? '_' + fnPart(S.auditVehName) : ''}.csv`); if (blob.cfpTruncated) toast(t('audit_csv_truncated').replace('{n}', blob.cfpTruncated), true); } catch (err) { toast(err.message, true); } };
 }
-// Filter steht in der Adresse (#/vehicles/<id>/timeline?f=<Bereich>): „Zurück“ aus einem Vorgang zeigt dieselbe Auswahl,
-// Links können direkt gefiltert öffnen; unbekannte oder für die Rolle nicht sichtbare Bereiche → „Alle“
+
+
 const TL_GROUPS = { '': [], case: ['case', 'case_closed'], inspection: ['inspection'], tire: ['tire'], maintenance: ['maintenance', 'odometer'], document: ['document'], driver: ['driver_from', 'driver_to'], fine: ['fine'], tacho: ['tacho'], contract: ['contract'], claim: ['claim'], note: ['note'], status: ['status'] };
 const TL_MGR_ONLY = ['fine', 'tacho', 'contract', 'claim', 'status'];
 async function viewTimeline(id, fArg) {
@@ -1263,7 +1263,7 @@ async function viewTimeline(id, fArg) {
       case 'case': return [x.priority === 'kritisch' ? 'p-kritisch' : '', `${esc(t('tl_case'))}: ${esc(clipTxt(cDesc(x.text), 140))}`, `<span class="chip ${esc(x.priority)}">${esc(t('prio_' + x.priority))}</span> ${esc(t('st_' + x.status))}${caseLink(x)}`];
       case 'case_closed': return ['', `${esc(t('tl_case_closed'))}`, `${esc(t('st_' + x.status))}${caseLink(x)}`];
       case 'inspection': return [x.result === 'maengel' ? 'p-mittel' : '', `${esc(t(x.inspection_kind === 'abfahrt' ? 'departure_check' : 'inspection'))}: ${esc(t(x.result === 'ok' ? 'ok' : 'defect'))}`, `${esc(pnm(x.by, x.by_hidden) || '')}${km(x.km)}${x.received_at ? ` · ${esc(t('insp_received_late').replace('{d}', fmtDT(x.received_at)))}` : ''}${caseLink(x)}`];
-      // Backlog 838: mehr Stellen als der vorherige Stand (km_digits = vorheriger Stand) – Hinweis + „Begründung nachtragen“ mit eigener Rückfrage
+
       case 'odometer': return [x.note || x.km_drop || x.km_eq_truck || x.km_digits ? 'p-mittel' : '', `${esc(t('km'))}${km(x.km)}`, `${esc(odoSrc(x.source))}${x.note ? ' · ' + esc(x.note) : ''}${(x.km_drop || x.km_eq_truck || x.km_digits) && !x.note && x.odometer_id ? ` · ${x.km_drop ? esc(t('odo_drop_unexplained')) : [x.km_eq_truck ? `<span data-odoeqtruck>${esc(t('odo_eq_truck').replace('{p}', x.km_eq_truck))}</span>` : '', x.km_digits ? `<span data-ododigits>${esc(t('odo_digits').replace('{prev}', fmtNum(x.km_digits)))}</span>` : ''].filter(Boolean).join(' · ')} <button type="button" class="linkbtn" data-odonote="${esc(x.odometer_id)}"${!x.km_drop ? ` data-odoeq="${x.km_eq_truck ? '1' : 'd'}"` : ''}>${esc(t('odo_add_reason'))}</button>` : ''}`];
       case 'driver_from': return ['', `${esc(t('tl_driver_from'))}: ${esc(x.by)}`, esc(evTr(x.evidence))];
       case 'driver_to': return ['', `${esc(t('tl_driver_to'))}: ${esc(x.by)}`, ''];
@@ -1284,8 +1284,8 @@ async function viewTimeline(id, fArg) {
   };
   const labels = { '': t('filter_all'), case: t('nav_cases'), inspection: t('inspections'), tire: t('tires'), maintenance: t('maintenance'), document: t('documents'), driver: t('drivers'), fine: t('fines'), tacho: t('tacho'), contract: t('ct_title'), claim: t('claims'), note: t('vnotes'), status: t('tl_status') };
   const visible = Object.keys(groups).filter((k) => !TL_MGR_ONLY.includes(k) || isMgr()).filter((k) => k !== 'tacho' || r.vehicle.kind !== 'anhaenger')
-    .filter((k) => k !== 'driver' || isMgr() || S.me.role === 'dispatch'); // Fahrerzuordnungen liefert der Server nur diesen Rollen (sonst „–“ wie „nie zugeordnet“, 20.10.2026)
-  // Ausdruck (z. B. Fahrzeughistorie für Verkauf/Rückgabe): Kennzeichen, Auswahl und Anzahl im Vermerk
+    .filter((k) => k !== 'driver' || isMgr() || S.me.role === 'dispatch');
+
   render(`<p class="noprint"><a class="backlink" href="#/vehicles/${esc(id)}">‹ ${esc(t('back'))}</a></p><div>${plate(r.vehicle.plate, { big: true })}</div>
     <h1 style="margin-top:12px" data-title="${esc(r.vehicle.plate)} · ${esc(t('timeline'))}">${esc(t('timeline'))}</h1>${printHead([r.vehicle.plate, `${t('print_filter')}: ${labels[f]}`, t('print_count').replace('{n}', r.items.length) + (r.truncated ? ' · ' + t('tl_trunc_short') : '')])}<p class="small muted">${esc(t('timeline_hint'))}</p>${r.truncated ? `<p class="small" id="tltrunc">⚠ ${esc(t('tl_truncated').replace('{n}', r.items.length))}</p>` : ''}
     <div class="actions noprint"><button type="button" class="btn secondary" id="tlprt">${esc(t('print'))}</button></div>
@@ -1293,15 +1293,15 @@ async function viewTimeline(id, fArg) {
     <div class="list">${r.items.map((x) => { const [cls, title, sub] = line(x); return `<div class="row ${cls}"><span class="chip">${x.at.length === 10 ? fmtD(x.at) : fmtDT(x.at)}</span><span class="title" style="white-space:normal">${title}</span><span></span>${sub ? `<span class="sub" style="white-space:normal">${sub}</span>` : ''}</div>`; }).join('') || noneP()}</div>
 `, 'vehicles');
   $('#tlprt').onclick = () => window.print();
-  // Rücksprung ohne Begründung: Begründung nachtragen (km-Wert bleibt; Datenqualität „Rücksprung ohne Begründung“ erledigt sich)
+
   $$('[data-odonote]').forEach((b) => (b.onclick = async () => {
     const n = prompt(t(b.dataset.odoeq === 'd' ? 'odo_digits_prompt' : b.dataset.odoeq ? 'odo_eq_prompt' : 'odo_reason_prompt')); if (!n || !n.trim()) return;
-    try { const r = await api('POST', `/api/odometer/${encodeURIComponent(b.dataset.odonote)}/note`, { note: n.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast(t(r && r.duplicate ? 'saved_before' : 'saved_ok')); viewTimeline(id, fArg); } catch (err) { toast(err.message, true); }
+    try { const r = await api('POST', `/api/odometer/${encodeURIComponent(b.dataset.odonote)}/note`, { note: n.trim() }, { timeoutMs: SEND_TIMEOUT_MS });   toast(t(r && r.duplicate ? 'saved_before' : 'saved_ok')); viewTimeline(id, fArg); } catch (err) { toast(err.message, true); }
   }));
-  // Filterwechsel ersetzt nur den Verlaufseintrag (kein neuer Eintrag je Klick), Fokus bleibt auf dem gewählten Knopf
+
   $$('[data-tl]').forEach((b) => (b.onclick = async () => {
     const k = b.dataset.tl;
-    try { history.replaceState(history.state, '', tlHash(id, k)); } catch { /* z. B. eingeschränkte Vorschau */ }
+    try { history.replaceState(history.state, '', tlHash(id, k)); } catch {   }
     S.lastHash = (location.hash || '').replace(/%3A/gi, ':');
     await viewTimeline(id, k);
     const nb = document.querySelector(`[data-tl="${k}"]`); if (nb) nb.focus({ preventScroll: true });
@@ -1315,36 +1315,36 @@ async function viewPlan(sec) {
   const pq = `${site ? '&site=' + encodeURIComponent(site) : ''}${vsite ? '&vsite=' + encodeURIComponent(vsite) : ''}`;
   const r = await api('GET', `/api/workshop/plan?days=${days}${pq}`);
   const loc = uiLoc();
-  // Wochentag einzeln (Chromium setzt ihn im Ukrainischen mit Tag/Monat in den Akkusativ: „середу“ statt „середа“, 19.10.2026)
+
   const wd = (d) => { const x = new Date(d + 'T12:00:00Z'); return `${x.toLocaleDateString(loc, { weekday: 'long', timeZone: 'UTC' })}, ${x.toLocaleDateString(loc, { day: '2-digit', month: '2-digit', timeZone: 'UTC' })}`; };
-  // weiterer geplanter Tag desselben Fahrzeugs → Hinweis zum Zusammenlegen (nur Anzeige)
+
   const other = (i) => (i.other_dates && i.other_dates.length ? `<span class="otherdates">${esc(t('plan_other_dates'))}: ${i.other_dates.map(fmtD).join(', ')}</span>` : '') + (i.coupled && i.coupled_dates && i.coupled_dates.length ? `${i.other_dates && i.other_dates.length ? ' · ' : ''}<span class="otherdates" data-cdates>🔗 ${esc(t('plan_coupled_dates').replace('{v}', i.coupled.plate))}: ${i.coupled_dates.map(fmtD).join(', ')}</span>` : '');
   const subs = (...xs) => { const x = xs.filter(Boolean); return x.length ? `<span class="sub" style="white-space:normal">${x.join(' · ')}</span>` : ''; };
-  // Prüftermin abarbeiten (Backlog 236): Inhaber/Leitung/Werkstatt springen direkt ins Formular „Durchführung erfassen“ des Eintrags und nach dem
-  // Speichern zurück in den Plan (Sammeltermin: ein Fahrzeug nach dem anderen); HU/SP ohne eigenen Eintrag (`husp:`) wie bisher zur Akte
+
+
   const canDone = isMgr() || S.me.role === 'workshop';
   const doneHref = (i) => '#/vehicles/' + encodeURIComponent(i.vehicle_id) + (canDone && i.id && /^[\w-]+$/.test(i.id) ? '?done=' + encodeURIComponent(i.id) : '');
-  // Fahrzeug-Standort je Zeile, wenn nicht nach Fahrzeug-Standort gefiltert und mehrere Standorte (23.10.2026)
+
   const vsTag = (i) => (!r.vehicle_site && (r.vehicle_sites || []).length > 1 && i.vehicle_site_label ? `<span data-vsite>📍 ${esc(i.vehicle_site_label === 'ohne' ? t('cs_nosite') : i.vehicle_site_label)}</span>` : '');
-  // Backlog 1093/1094 (Blickwinkel „Werkstatt druckt den Wochenplan fürs Schwarze Brett“): Dringlichkeit und Sperre bisher nur über Farbe
-  // (Rand/rotes Kennzeichen) – auf dem Schwarz-Weiß-Ausdruck und für Screenreader nicht lesbar; ob der Lkw selbst kommt (nicht/eingeschränkt
-  // fahrbereit laut Meldung, abgeschleppt), stand nur in der Vorgangsliste. Fahrbereitschaft nur vor Reparaturbeginn (Status „freigegeben“).
+
+
+
   const prioTag = (i) => `<span data-pprio>${esc(t('prio_' + i.priority))}</span>${i.safety_lock ? ` · <b data-plock>${esc(t('locked'))}</b>` : ''}`;
   const drvTag = (i) => i.status !== 'werkstatt_freigegeben' ? '' : i.tow_service ? `<b data-pdrv>${esc(t('vl_towed_chip'))}</b>` : i.reported_driveability === 'nicht_fahrbereit' ? `<b data-pdrv>${esc(t('cl_not_drivable'))}</b>` : i.reported_driveability === 'eingeschraenkt' && !i.safety_lock ? `<b data-pdrv>${esc(t('dispo_upcoming_limited'))}</b>` : '';
   const row = (i) => i.type === 'case'
     ? `<a class="row p-${esc(i.priority)}" href="#/cases/${esc(i.id)}">${plate(i.plate, { locked: i.safety_lock })}<span class="title">${esc(i.case_no)} · ${woTag(i)}${ltxt(clipTxt(cDesc(i.description), 100))}</span><span class="chip">${esc(t('st_' + i.status))}</span>${subs(prioTag(i), drvTag(i), vsTag(i), planVehTag(i), mgr && !site && esc(wsName(i.workshop_site)), i.planned_note && `<span data-plannote>📝 ${esc(t('plan_note_lbl'))}: ${esc(clipTxt(i.planned_note, 120))}</span>`, i.vehicle_location && `<span data-vloc>${esc(t('vl_title'))}: ${esc(clipTxt(i.vehicle_location, 80))}${vlAt(i)}</span>`, hoMissing(i).length && `<span class="chip mittel" data-hotag style="white-space:nowrap">${esc(hoMissing(i).join(', '))}</span>`, partsEta(i, '', true), rdyOf(i) && `<span data-wprdy>${rdyTxt(i.ready_expected_on)}</span>`, i.status === 'wartet_teile' && i.parts_expected_date && i.planned_date && i.planned_date < i.parts_expected_date && `<span class="chip mittel">${esc(t('plan_before_parts'))}</span>`, i.reschedules >= 2 && `<span class="chip mittel" style="white-space:nowrap">${esc(tn('plan_moved_n', i.reschedules))}</span>`, i.after_due_date && `<span class="chip kritisch">${esc(t('wplan_mdue_late').replace('{d}', fmtD(i.planned_date)))} (${fmtD(i.after_due_date)})</span>`, other(i))}</a>`
     : `<a class="row" href="${doneHref(i)}" data-fromplan>${plate(i.plate)}<span class="title">${esc(t('planned_inspection'))}: ${esc(mk(i.kind))}</span>${i.next_due_date ? `<span class="chip">${esc(t('next_due'))} ${fmtD(i.next_due_date)}</span>` : ''}${subs(vsTag(i), planVehTag(i), i.after_due_date && `<span class="chip kritisch" data-afterdue>${esc(t('wplan_mdue_late').replace('{d}', fmtD(i.planned_date)))} (${fmtD(i.after_due_date)})</span>`, i.order && `🔧 ${esc(t('mo_open'))} ${esc(i.order.case_no)}`, kmTxt(i), other(i))}</a>`;
-  // km-Fälligkeit als Text (Rest bzw. überschritten); ohne km-Regel leer
+
   function kmTxt(i) {
     if (i.next_due_km === null || i.next_due_km === undefined) return '';
-    // Zähler gesunken: keine Restlaufleistung, sondern Hinweis (gleicher Text wie Fahrzeugakte/Prüftermine)
+
     if (i.km_unclear) return `${esc(t('due_at_km'))} ${fmtKm(i.next_due_km)} · <span class="km-unclear">${esc(t('km_unclear_drop').replace('{d}', fmtD(i.km_drop_at)))}</span>`;
     const rest = i.km_remaining === null || i.km_remaining === undefined ? '' : ` (${i.km_remaining < 0 ? esc(t('km_over')) + ' ' + fmtKm(-i.km_remaining) : esc(t('km_left')) + ' ' + fmtKm(i.km_remaining)})`;
-    return `${esc(t('due_at_km'))} ${fmtKm(i.next_due_km)}${rest}${i.km_measured_at && rest ? ` <span class="muted" data-kmasof>${esc(t('km_as_of').replace('{d}', fmtD(i.km_measured_at)))}</span>` : ''}${kmDigHtml(i)}`; // Backlog 637, 841
+    return `${esc(t('due_at_km'))} ${fmtKm(i.next_due_km)}${rest}${i.km_measured_at && rest ? ` <span class="muted" data-kmasof>${esc(t('km_as_of').replace('{d}', fmtD(i.km_measured_at)))}</span>` : ''}${kmDigHtml(i)}`;
   }
-  // Fällig ohne Termin (nach Datum oder km): Sprung in die Fahrzeugakte, dort Termin planen oder Werkstattauftrag anlegen
+
   const drow = (i) => `<a class="row ${i.status === 'ueberfaellig' ? 'p-kritisch' : 'p-mittel'}" href="${doneHref(i)}" data-fromplan>${plate(i.plate)}<span class="title">${esc(mk(i.kind))}${i.next_due_date ? ' · ' + esc(t('next_due')) + ' ' + fmtD(i.next_due_date) : ''}</span><span class="chip ${i.status === 'ueberfaellig' ? 'kritisch' : 'mittel'}">${esc(i.status === 'ohne_termin' && i.recall_ref ? t('vi_recall_open') : t('ms_' + i.status))}${i.by_km ? ' · km' : ''}</span>${subs(vsTag(i), kmTxt(i), i.recall_ref && noTr(i.recall_ref), i.prev_cycle_open && `<span data-mdue-prev>${esc(t('wplan_sp_prev_open').replace('{m}', `${i.prev_cycle_open.slice(5, 7)}/${i.prev_cycle_open.slice(0, 4)}`))}</span>`, i.past_planned_date && `${esc(t('wplan_mdue_past'))} ${fmtD(i.past_planned_date)}`, i.planned_after_due && `<span data-mdue-late>${esc(t('wplan_mdue_late').replace('{d}', fmtD(i.planned_after_due)))}</span>`, other(i))}</a>`;
-  // Backlog 1114 (Blickwinkel „Werkstatt-Wandbildschirm zeigt den ganzen Tag den Werkstattplan“): Stand und „Neu laden“, stille Aktualisierung (planAutoRefresh)
+
   let html = `<h1>${esc(t('wplan'))}</h1><p class="small muted noprint" id="planasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/plan" id="planreload" title="${esc(t('plan_asof_hint'))}">${esc(t('update_now'))}</a></p><p class="small muted noprint">${esc(t('wplan_hint'))}</p>${r.days.some((d) => d.items.filter((x) => x.type === 'case').length > 1) ? `<p class="small muted noprint" id="wpdayorder">${esc(t('day_order_hint'))}</p>` : ''}
     <p class="print-only small">${printStamp()} · ${site || r.site ? esc(wsName(site || r.site)) + ' · ' : ''}${r.vehicle_site ? esc(t('kpi_vsite')) + ': ' + esc(r.vehicle_site === 'ohne' ? t('cs_nosite') : r.vehicle_site) + ' · ' : ''}${fmtD(r.from)} – ${fmtD(r.to)} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     <div class="panel noprint" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
@@ -1352,44 +1352,44 @@ async function viewPlan(sec) {
       ${(r.vehicle_sites || []).length > 1 || r.vehicle_site ? `<div>${siteSelect('pvsite', '', r.vehicle_sites, r.vehicle_site, t('kpi_vsite'), t('filter_all'))}</div>` : ''}
       <div><label for="pdays">${esc(t('period'))}</label><select id="pdays">${[7, 14, 30, 60].map((n) => `<option value="${n}"${n === days ? ' selected' : ''}>${esc(nDays(n))}</option>`).join('')}</select></div>
       <button type="button" class="btn secondary" id="plprt">${esc(t('print'))}</button><button type="button" class="btn secondary" id="pics">${esc(t('export_ics'))}</button></div>`;
-  // Termin direkt im Plan setzen (Backlog 60): nur für Aufträge, die der Vorgangsbefehl set_planned_date zulässt.
-  // „Vorschlag“ füllt nur das Feld (Werktag mit den wenigsten geplanten Aufträgen) – gespeichert wird erst mit „Termin setzen“.
+
+
   const canEdit = ['owner', 'fleet', 'workshop'].includes(S.me.role);
   const setForm = (i) => i.can_plan
     ? `<div class="planset noprint"><label for="pd-${esc(i.id)}">${esc(t('planned'))}</label><input type="date" id="pd-${esc(i.id)}" min="${esc(r.today)}" value="">${i.planned_date ? `<input type="text" id="pr-${esc(i.id)}" maxlength="500" placeholder="${esc(t('plan_reason_ph'))}" aria-label="${esc(t('plan_reason_ph'))}">` : ''}<button type="button" class="btn secondary" data-psug="${esc(i.id)}" title="${esc(t('plan_suggest_hint'))}">${esc(t('plan_suggest'))}</button><button type="button" class="btn" data-pset="${esc(i.id)}">${esc(t('plan_set'))}</button></div>`
     : canEdit ? `<p class="small muted noprint planset">${esc(t('plan_need_ack'))}</p>` : '';
-  // Werkstatt wechseln direkt im Plan (Backlog 265, Teilagent „Werkstatt fällt eine Woche aus“): Leitung, Aufträge im Status „freigegeben“
-  // (wie der Vorgangsbefehl reassign_workshop), Grund Pflicht; aktive Werkstätten außer der bisherigen
+
+
   const canWs = (i) => i.type === 'case' && isMgr() && i.status === 'werkstatt_freigegeben';
   const wsForm = (i) => canWs(i) ? `<details class="planws noprint"><summary>${esc(t('act_reassign_workshop'))}</summary><label for="pw-${esc(i.id)}">${esc(t('workshop'))}</label><select id="pw-${esc(i.id)}">${(S.meta.workshops || []).filter((w) => w.code !== i.workshop_site).map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>${rwsDrop(i)}<input type="text" id="pwr-${esc(i.id)}" maxlength="2000" placeholder="${esc(t('pws_reason_ph'))}" aria-label="${esc(t('pws_reason_ph'))}"><button type="button" class="btn secondary" data-pws="${esc(i.id)}">${esc(t('save'))}</button></details>` : '';
   const prow = (i, base) => i.type === 'case' && canEdit ? `<div class="planitem">${base}${setForm(i)}${wsForm(i)}</div>` : base;
   const drowC = (i) => (canWs(i) ? `<div class="planitem">${row(i)}${wsForm(i)}</div>` : row(i));
   if (r.overdue.length) html += `<h2>${esc(t('wplan_overdue'))} <span class="chip kritisch">${r.overdue.length}</span></h2><div class="list">${r.overdue.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip kritisch">${fmtD(i.planned_date)} · `))).join('')}</div>`;
-  // begonnene Aufträge mit vergangenem Termin (Backlog 253): eigene Gruppe, Termin neutral, Teile-Liefertermin in der Zeile
+
   const iw = r.in_work || [];
   if (iw.length) html += `<h2 id="wp-inwork">${esc(t('wplan_inwork'))} <span class="chip">${iw.length}</span></h2><p class="small muted noprint">${esc(t('wplan_inwork_hint'))}</p><div class="list">${iw.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip">${fmtD(i.planned_date)} · `))).join('')}</div>`;
   html += r.days.length ? r.days.map((d) => `<h2>${esc(wd(d.date))}${d.date === r.today ? ` <span class="chip ok">${esc(t('today'))}</span>` : ''}${holName(d.date) ? ` <span class="chip mittel" data-hol title="${esc(t('plan_holiday_hint'))}">${esc(holName(d.date))}</span>` : ''}</h2><div class="list">${d.items.map(drowC).join('')}</div>`).join('') : `<div class="panel">${esc(t('wplan_empty'))}</div>`;
   if (r.unplanned.length) html += `<h2>${esc(t('wplan_unplanned'))} <span class="chip mittel">${r.unplanned.length}</span></h2><p class="small muted noprint">${esc(t('wplan_unplanned_hint'))}</p><div class="list">${r.unplanned.map((i) => prow(i, row(i))).join('')}</div>`;
   const md = r.maintenance_due || [];
   if (md.length) html += `<h2 id="wp-mdue" tabindex="-1" data-keepfocus>${esc(t('wplan_mdue'))} <span class="chip ${md.some((i) => i.status === 'ueberfaellig') ? 'kritisch' : 'mittel'}">${md.length}</span></h2><p class="small muted noprint">${esc(t('wplan_mdue_hint'))}</p><div class="list">${md.map((i) => { const f = !['HU', 'SP'].includes(i.kind) ? maintOrderHtml(i.id, i.kind, null, { site: i.vehicle_site, svc: i.service_contracts || [] }) : ''; return f ? `<div class="planitem">${drow(i)}${f}</div>` : drow(i); }).join('')}</div>`;
-  if (S.quietBg && !isPlanHash()) return; // stille Aktualisierung: inzwischen andere Seite – nichts überschreiben
+  if (S.quietBg && !isPlanHash()) return;
   render(html, 'more');
   S.planAt = Date.now();
   const prl = $('#planreload'); if (prl) prl.onclick = async (e) => { e.preventDefault(); try { await viewPlan(); } catch (err) { toast(err.message, true); } };
-  // Direktsprung aus Startseite/„Heute zu tun“ (#/plan?s=mdue): Abschnitt „Fällig – ohne Termin“ zeigen; fehlt er, bleibt der Plan oben
+
   $$('a[data-fromplan]').forEach((a) => (a.onclick = () => { S.fromPlan = location.hash || '#/plan'; }));
   if (sec === 'mdue') { const h = $('#wp-mdue'); if (h) { h.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true }); } }
   const all = [...r.overdue, ...(r.in_work || []), ...r.unplanned];
   const suggest = (i) => {
-    // Wartet der Auftrag auf Teile mit Liefertermin: frühestens an diesem Tag (Termin laut Werkstatt, die App schätzt nichts).
+
     const minD = i.status === 'wartet_teile' && i.parts_expected_date > r.today ? i.parts_expected_date : '';
-    // Hat dasselbe Fahrzeug ab morgen schon einen Termin (anderer Auftrag oder Prüfung) an einem Werktag: diesen vorschlagen –
-    // das Fahrzeug fällt dann nur einmal aus. Sonst Werktag ab morgen mit den wenigsten geplanten Aufträgen derselben Werkstatt.
-    // Wochenende und bundesweite Feiertage nie vorschlagen (Backlog 267; vorher z. B. 25.12./01.01.)
+
+
+
     const same = r.days.filter((d) => d.date > r.today && d.date >= minD && ![0, 6].includes(new Date(d.date + 'T12:00:00Z').getUTCDay()) && !federalHoliday(d.date)
       && d.items.some((x) => x.vehicle_id === i.vehicle_id && x.id !== i.id && (x.type === 'maintenance' || x.workshop_site === i.workshop_site)))[0];
     if (same) return same.date;
-    // Auslastung vom Server (alle Aufträge der Werkstatt, auch bei Fahrzeug-Standortfilter); ältere Antwort: aus den angezeigten Tagen
+
     const load = r.case_load ? new Map(Object.entries(r.case_load).map(([d, m]) => [d, m[i.workshop_site] || 0])) : new Map(r.days.map((d) => [d.date, d.items.filter((x) => x.type === 'case' && x.workshop_site === i.workshop_site).length]));
     let best = null;
     for (let n = 1; n <= days + 7 + (minD ? Math.max(0, Math.round((Date.parse(minD) - Date.parse(r.today)) / 86400000)) : 0); n++) {
@@ -1403,8 +1403,8 @@ async function viewPlan(sec) {
     }
     return best && best.ds;
   };
-  // Werkstattauftrag aus „Fällig – ohne Termin“ (nur Leitung, nicht HU/SP): bleibt im Plan, der Auftrag erscheint danach unter „Ohne Termin“
-  $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const x = await api('POST', `/api/maintenance/${fm.dataset.mord}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805f */ toast('✓ ' + x.case_no); viewPlan(); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
+
+  $$('form[data-mord]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(fm)); fm.querySelector('button').disabled = true; try { const x = await api('POST', `/api/maintenance/${fm.dataset.mord}/order`, { ...b, request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS });   toast('✓ ' + x.case_no); viewPlan(); } catch (err) { fm.querySelector('button').disabled = false; toast(err.message, true); } }));
   offDayWatch($$('.planset input[type=date]'));
   $$('[data-psug]').forEach((b) => (b.onclick = () => { const i = all.find((x) => x.id === b.dataset.psug); const f = $('#pd-' + CSS.escape(i.id)); f.value = suggest(i) || ''; f.focus(); }));
   $$('[data-pset]').forEach((b) => (b.onclick = async () => {
@@ -1412,8 +1412,8 @@ async function viewPlan(sec) {
     if (!f.value) { toast(t('plan_pick_date'), true); f.focus(); return; }
     b.disabled = true;
     const pn = ($('#pr-' + CSS.escape(i.id))?.value || '').trim() || null;
-    try { const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'set_planned_date', command_id: cidFor(JSON.stringify([i.id, i.version, 'set_planned_date', pn, f.value])), expected_version: i.version, note: pn, payload: { planned_date: f.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; toast(x && x.duplicate ? t('saved_before') : '✓'); viewPlan(); } // Backlog 805f
-    catch (err) { b.disabled = false; /* Backlog 813: Plan lädt neu, Eingaben (Datum/Grund/Werkstatt) bleiben über render() erhalten – Hinweis statt „Bitte neu laden“ */ if (err.code === 'version_conflict') { toast(t('case_conflict_kept'), true); viewPlan(); return; } toast(err.message, true); }
+    try { const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'set_planned_date', command_id: cidFor(JSON.stringify([i.id, i.version, 'set_planned_date', pn, f.value])), expected_version: i.version, note: pn, payload: { planned_date: f.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; toast(x && x.duplicate ? t('saved_before') : '✓'); viewPlan(); }
+    catch (err) { b.disabled = false;   if (err.code === 'version_conflict') { toast(t('case_conflict_kept'), true); viewPlan(); return; } toast(err.message, true); }
   }));
   const allCases = [...all, ...r.days.flatMap((d) => d.items.filter((x) => x.type === 'case'))];
   $$('[data-pws]').forEach((b) => (b.onclick = async () => {
@@ -1423,10 +1423,10 @@ async function viewPlan(sec) {
     if (!sel.value) return;
     b.disabled = true;
     try {
-      const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'reassign_workshop', command_id: cidFor(JSON.stringify([i.id, i.version, 'reassign_workshop', note, sel.value])), expected_version: i.version, note, payload: { workshop_site: sel.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; // Backlog 805f
+      const x = await api('POST', `/api/cases/${i.id}/commands`, { action: 'reassign_workshop', command_id: cidFor(JSON.stringify([i.id, i.version, 'reassign_workshop', note, sel.value])), expected_version: i.version, note, payload: { workshop_site: sel.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null;
       if (x && x.duplicate) { toast(t('saved_before')); viewPlan(); return; }
       toast(x && x.no_workshop_user ? t('no_ws_user_warn') : x && x.external_workshop ? t('ext_ws_hint') : '✓', !!(x && x.no_workshop_user)); viewPlan();
-    } catch (err) { b.disabled = false; /* Backlog 813: Plan lädt neu, Eingaben (Datum/Grund/Werkstatt) bleiben über render() erhalten – Hinweis statt „Bitte neu laden“ */ if (err.code === 'version_conflict') { toast(t('case_conflict_kept'), true); viewPlan(); return; } toast(err.message, true); }
+    } catch (err) { b.disabled = false;   if (err.code === 'version_conflict') { toast(t('case_conflict_kept'), true); viewPlan(); return; } toast(err.message, true); }
   }));
   const ps = $('#psite'); if (ps) ps.onchange = () => { S.planSite = ps.value; viewPlan(); };
   const pvs = $('#pvsite'); if (pvs) pvs.onchange = () => { S.planVsite = pvs.value; viewPlan(); };
@@ -1438,7 +1438,7 @@ async function viewWsLoad() {
   const weeks = S.wlWeeks || 8;
   const r = await api('GET', `/api/reports/workshop-load?weeks=${weeks}`);
   const n = (x) => fmtNum(x);
-  // Backlog 1108: Druckkopf mit Zeitraum (Datum), Kalenderwoche mit Jahr, wenn der Zeitraum über einen Jahreswechsel reicht
+
   const wlYears = new Set(r.weeks.map((w) => w.slice(0, 4))).size > 1;
   const wlWeek = (w) => `${t('cw')} ${w.slice(6)}${wlYears ? '/' + w.slice(0, 4) : ''}`;
   render(`<h1>${esc(t('ws_load'))}</h1>${printHead([`${tn('weeks_n', weeks)}`, `${t('period')}: ${fmtD(r.from)} – ${fmtD(bDate())}`])}<p class="small muted">${esc(t('ws_load_hint'))}</p>
@@ -1472,42 +1472,42 @@ async function viewTelematics() {
     <h2>${esc(t('tm_unmatched'))}</h2>${r.unmatched_truncated ? `<p class="panel warn small" id="tmtrunc">${esc(t('tm_unmatched_truncated').replace('{n}', r.unmatched.length).replace('{m}', r.unmatched_total))}</p>` : ''}<div class="list">${r.unmatched.map((u, i) => `<div class="row p-mittel"><span class="chip">${esc(provL(u.provider))}</span><span class="title" style="white-space:normal">${esc(u.external_id)}${u.source_plate ? ' · ' + esc(u.source_plate) : ''}${u.source_vin ? ' · ' + esc(t('vin')) + ' ' + esc(u.source_vin) : ''}</span><span></span>
       <form class="sub" data-map="${i}" style="white-space:normal;display:grid;gap:6px;margin-top:6px"><label>${esc(t('vehicle'))}</label><select name="vehicle_id" required><option value="">–</option>${opts(null)}</select>${u.candidate_plate ? `<span class="small muted">${esc(t('tm_candidate'))}: ${esc(u.candidate_plate)}</span>` : ''}<label>${esc(t('evidence'))}</label><input name="evidence" required maxlength="300" placeholder="${esc(t('tm_evidence_ph'))}"><button class="btn secondary">${esc(t('tm_confirm'))}</button></form></div>`).join('') || noneP()}</div>
     <h2>${esc(t('tm_mappings'))}</h2><div class="list">${r.mappings.map((m) => `<div class="row">${plate(m.plate)}<span class="title" style="white-space:normal">${esc(provL(m.provider))} · ${esc(m.external_id)}</span><button type="button" class="btn secondary" data-unmap="${esc(provL(m.provider))}|${esc(m.external_id)}">${esc(t('tm_remove'))}</button><span class="sub" style="white-space:normal">${esc(m.evidence)} · ${esc(m.confirmed_by_name || '')} · ${fmtDT(m.confirmed_at)}</span></div>`).join('') || noneP()}</div>`, 'more');
-  // Ausdruck: „Letzter Stand je Fahrzeug“ immer mitdrucken (zugeklappte Bereiche blendet das Druck-CSS aus)
+
   $('#tmprt').onclick = () => { const d = $('#tmpos'); if (d) d.open = true; window.print(); };
   const tms = $('#tmsite'); if (tms) tms.onchange = () => { S.tmSite = tms.value; viewTelematics(); };
   const tmc = $('#tmcsv'); if (tmc) tmc.onclick = async () => { try { download(await api('GET', '/api/telematics?format=csv' + (r.site ? '&site=' + encodeURIComponent(r.site) : '')), `fuhrpark-telematik-stand_${bDate()}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
   $$('[data-map]').forEach((f) => (f.onsubmit = async (e) => {
     e.preventDefault(); const u = r.unmatched[Number(f.dataset.map)];
     const mb = { provider: u.provider, external_id: u.external_id, vehicle_id: f.vehicle_id.value, evidence: f.evidence.value };
-    try { await api('POST', '/api/telematics/mappings', mb, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewTelematics(); } catch (err) { /* Backlog 805j (Funkloch): Wiederholung → mapping_exists */ if (lostDup(f, mb, err, ['mapping_exists'])) { toast(t('saved_before')); viewTelematics(); return; } lostMark(f, mb, err); toast(err.message, true); }
+    try { await api('POST', '/api/telematics/mappings', mb, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewTelematics(); } catch (err) {   if (lostDup(f, mb, err, ['mapping_exists'])) { toast(t('saved_before')); viewTelematics(); return; } lostMark(f, mb, err); toast(err.message, true); }
   }));
   $$('[data-unmap]').forEach((b) => (b.onclick = async () => {
     if (!confirm(t('tm_remove') + '?')) return;
-    const u = b.dataset.unmap; const cut = u.indexOf('|'); const provider = u.slice(0, cut), ext = u.slice(cut + 1); // Geräte-ID darf „|“ enthalten (18.10.2026)
-    const ub = { u }; try { await api('DELETE', `/api/telematics/mappings?provider=${encodeURIComponent(provider)}&external_id=${encodeURIComponent(ext)}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); viewTelematics(); } catch (err) { /* Backlog 805j: Wiederholung → 404 */ if (lostDup(b, ub, err, ['not_found'])) { toast(t('saved_before')); viewTelematics(); return; } lostMark(b, ub, err); toast(err.message, true); }
+    const u = b.dataset.unmap; const cut = u.indexOf('|'); const provider = u.slice(0, cut), ext = u.slice(cut + 1);
+    const ub = { u }; try { await api('DELETE', `/api/telematics/mappings?provider=${encodeURIComponent(provider)}&external_id=${encodeURIComponent(ext)}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); viewTelematics(); } catch (err) {   if (lostDup(b, ub, err, ['not_found'])) { toast(t('saved_before')); viewTelematics(); return; } lostMark(b, ub, err); toast(err.message, true); }
   }));
 }
 async function viewQuality(pre) {
-  // Direktsprung mit Prüffilter (#/quality?f=<Prüfung>, z. B. aus „Heute zu tun“): Schweregrad-Filter zurücksetzen
+
   const jump = !!pre && pre !== S.dqPre;
   if (jump) { S.dqFilter = pre; S.dqSev = ''; }
   S.dqPre = pre || '';
   const dqUrl = () => '/api/admin/data-quality' + (vsDef('dqSite') ? '?site=' + encodeURIComponent(vsDef('dqSite')) : '');
   let r = await api('GET', dqUrl());
-  // Direktsprung, aber der Befund liegt außerhalb des gewählten (bzw. Heimat-)Standorts → Standort „Alle“ statt still eine fremde Liste (20.10.2026)
+
   if (jump && vsDef('dqSite') && !r.counts[pre]) { S.dqSite = ''; r = await api('GET', dqUrl()); }
   const sevCls = { fehler: 'kritisch', luecke: 'mittel', hinweis: '' };
-  // Filter nach Schweregrad (fehler/luecke/hinweis) und darin nach Prüfung; ein Prüffilter außerhalb des Schweregrads wird verworfen
+
   const sevOf = Object.fromEntries(r.items.map((i) => [i.check, i.severity]));
   let sev = ['fehler', 'luecke', 'hinweis'].includes(S.dqSev) ? S.dqSev : '';
-  // Schweregrad ohne Treffer in der neuen Auswahl (z. B. nach Standortwechsel) verwerfen – sonst leere Liste ohne gedrückten Knopf und leere CSV (20.10.2026)
+
   if (sev && !r.items.some((i) => i.severity === sev)) { S.dqSev = ''; sev = ''; }
   const sevCount = (s) => r.items.filter((i) => i.severity === s).length;
   if (S.dqFilter && (!r.counts[S.dqFilter] || (sev && sevOf[S.dqFilter] !== sev))) S.dqFilter = '';
   const f = S.dqFilter || '';
   const items = r.items.filter((i) => (!sev || i.severity === sev) && (!f || i.check === f));
   const checks = Object.keys(r.counts).filter((c) => !sev || sevOf[c] === sev);
-  // Ausdruck (Arbeitsliste zum Abarbeiten): Schweregrad, Prüfung, Standort und Anzahl im Vermerk
+
   render(`<h1>${esc(t('dq'))}</h1>${printHead([sev ? `${t('dq_col_severity')}: ${t('dq_sev_' + sev)}` : '', f ? `${t('dq_col_check')}: ${t('dq_' + f)}` : '', r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', t('print_count').replace('{n}', items.length)])}${helpLink('dates')}<p class="small muted">${esc(t('dq_hint'))}</p>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="panel noprint">${siteSelect('dqsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}${r.other_hidden ? `<p class="small muted" style="margin-bottom:0">${esc(tn('dq_other_hidden', r.other_hidden))}</p>` : ''}</div>` : ''}
     ${(r.truncated_checks || []).length ? `<p class="panel warn small" id="dqtrunc">${esc(t('dq_truncated').replaceAll('{n}', r.check_max))} ${r.truncated_checks.map((c) => esc(t('dq_' + c))).join(' · ')}</p>` : ''}
@@ -1522,7 +1522,7 @@ async function viewQuality(pre) {
   const dp = $('#dqprt'); if (dp) dp.onclick = () => window.print();
   const dc = $('#dqcsv'); if (dc) dc.onclick = () => download(new Blob([dataQualityCsv(items, t, fmtD, mk, { km: (n) => fmtKm(n), src: (v) => odoSrc(v), pos: (p) => posL(p), mm: (n) => fmtMm(n), ax: (v) => t('axle_' + v) })], { type: 'text/csv;charset=utf-8' }), `fuhrpark-datenqualitaet_${r.environment}_${bDate()}.csv`);
 }
-// Einrichtungsstand (nur Inhaber, nur lesend, 22.10.2026): was vor bzw. im Betrieb noch offen ist – Werte nur aus Daten/Einstellungen
+
 const RD_ORDER = ['agent', 'vehicles', 'emergency', 'two_factor', 'own_push', 'idle_workshop', 'test_readonly', 'hourly_rate', 'license_interval', 'cost_limit', 'backup', 'owner_backup', 'prod_accounts', 'integration'];
 async function viewReadiness() {
   if (!S.me || S.me.role !== 'owner') { location.hash = '#/'; return; }
@@ -1561,9 +1561,9 @@ async function viewUsage() {
   $$('[data-ud]').forEach((b) => (b.onclick = () => { S.usageDays = Number(b.dataset.ud); viewUsage(); }));
 }
 async function viewDefects() {
-  // Backlog 1128: Zeitraum wahlweise gleitend (N Tage) oder Kalendermonat (laufender und die 12 vorherigen) – für die Monatsrunde
+
   const months = Array.from({ length: 13 }, (_, i) => bYm(i));
-  if (S.defMonth && !months.includes(S.defMonth)) S.defMonth = ''; // gemerkter Monat ist inzwischen zu alt
+  if (S.defMonth && !months.includes(S.defMonth)) S.defMonth = '';
   const month = S.defMonth || ''; const days = S.defDays || 90; const kind = S.defKind || '';
   const r = await api('GET', `/api/reports/defects?${month ? 'month=' + month : 'days=' + days}${kind ? '&kind=' + kind : ''}${vsDef('defSite') ? '&site=' + encodeURIComponent(vsDef('defSite')) : ''}`);
   const veh = (id, p) => `<a href="#/vehicles/${encodeURIComponent(id)}">${esc(p)}</a>`;
@@ -1589,17 +1589,17 @@ async function viewDefects() {
   $('#dk').onchange = () => { S.defKind = $('#dk').value; viewDefects(); };
   const dsel = $('#dsite'); if (dsel) dsel.onchange = () => { S.defSite = dsel.value; viewDefects(); };
   $('#dprt').onclick = () => window.print();
-  // CSV im Browser (Beschriftungen in der App-Sprache), Dateiname mit Zeitraum, Kontrollart und Standort
+
   const dn = (part) => `fuhrpark-maengel-${part}_${r.environment}_${month || days + 't'}${kind ? '_' + kind : ''}${r.site ? '_' + fnPart(r.site) : ''}_${bDate()}.csv`;
   const dd = (iso) => fmtD(iso);
   const ci = $('#dcsvi'); if (ci) ci.onclick = () => download(new Blob([defectItemsCsv(r, t, checkLabel, dd)], { type: 'text/csv;charset=utf-8' }), dn('pruefpunkte'));
   const cv = $('#dcsvv'); if (cv) cv.onclick = () => download(new Blob([defectVehiclesCsv(r, t, dd)], { type: 'text/csv;charset=utf-8' }), dn('fahrzeuge'));
 }
-// Backlog 407 (Blickwinkel „Winterreifen bestellen“, Fortsetzung von 406): Winterreifen-Aufträge für mehrere Lkw in einem Schritt –
-// nur Inhaber/Fuhrparkleitung, nur in den Winter-Reitern, Lkw mit offenem Auftrag nicht wählbar. Die App ruft je Lkw den bestehenden
-// Einzelauftrag (`POST /api/vehicles/:id/tires/winter-order`) nacheinander auf – gleiche Prüfungen, gleiches Abfragebudget je Aufruf;
-// `request_key` je Lkw aus einem Schlüssel je Absenden (erneutes Senden nach Netzabbruch legt nichts doppelt an). Fehler je Lkw werden
-// gesammelt, die übrigen laufen weiter.
+
+
+
+
+
 const woBatchHtml = (f, rows) => {
   if (!isMgr() || !['winter_bad', 'winter_unknown'].includes(f)) return '';
   const cand = rows.filter((x) => x.kind !== 'anhaenger');
@@ -1618,7 +1618,7 @@ function wireWoBatch() {
   const boxes = () => $$('#wobf input[name=wobid]:not(:disabled)');
   const cnt = () => { $('#wobcount').textContent = tn('mb_selected', boxes().filter((x) => x.checked).length); };
   boxes().forEach((x) => (x.onchange = cnt)); cnt();
-  offDayWatch([$('#wobd')]); // Backlog 890
+  offDayWatch([$('#wobd')]);
   $$('[data-wob]', fm).forEach((b) => (b.onclick = () => { boxes().forEach((x) => (x.checked = b.dataset.wob === '1')); cnt(); }));
   fm.onsubmit = async (e) => {
     e.preventDefault();
@@ -1626,7 +1626,7 @@ function wireWoBatch() {
     if (!sel.length) { toast(t('wob_pick'), true); return; }
     if (!fm.workshop_site.value) { toast(t('wob_ws'), true); markInvalid(fm.workshop_site, t('wob_ws')); fm.workshop_site.focus(); return; }
     const body = { workshop_site: fm.workshop_site.value, priority: fm.priority.value, ...(fm.planned_date.value ? { planned_date: fm.planned_date.value } : {}), ...(fm.note.value.trim() ? { note: fm.note.value.trim() } : {}) };
-    // Schlüssel je Inhalt (wie „Reifen erfassen“): gleiche Eingaben erneut → dieselben Aufträge; geänderte Eingaben → neue Kennung
+
     const ck = JSON.stringify([body, sel.map((x) => x.value)]); if (fm.dataset.ck !== ck) { fm.dataset.ck = ck; fm.dataset.key = uid(); }
     const go = $('#wobgo'); go.disabled = true;
     const ok = []; const bad = [];
@@ -1636,34 +1636,34 @@ function wireWoBatch() {
       catch (err) { bad.push({ plate: x.dataset.plate, msg: err.offline ? t('wob_offline') : err.message }); if (err.offline) { for (const y of sel.slice(i + 1)) bad.push({ plate: y.dataset.plate, msg: t('wob_offline') }); break; } }
     }
     if (!go.isConnected) return;
-    if (!bad.length) document.querySelectorAll('.toast.err').forEach((x) => x.remove()); // Hinweis eines früheren Versuchs (z. B. „Werkstatt wählen“) ist erledigt
+    if (!bad.length) document.querySelectorAll('.toast.err').forEach((x) => x.remove());
     S.woRes = `<p class="panel ${bad.length ? 'warn' : 'ok'}" style="margin-top:8px" data-wobdone><b>${esc(tn('wob_done', ok.length))}</b>${ok.length ? `<br><span class="small">${ok.map((o) => `${esc(o.plate)} · <a href="#/cases/${esc(o.id)}" translate="no">${esc(o.case_no)}</a>`).join('; ')}</span>` : ''}</p>${bad.length ? `<p class="small"><b>${esc(t('wob_failed'))}</b></p><ul class="small" data-wobfail>${bad.map((b) => `<li>${esc(b.plate)}: ${esc(b.msg)}</li>`).join('')}</ul>` : ''}`;
     await viewFleetTires();
     const res = $('#wobres'); if (res) res.scrollIntoView({ block: 'nearest' });
   };
 }
-// Backlog 406: Winterreifen-Bedarf je Achse und Reifengröße (Server `winter_need`), auch im Druck – Grundlage für die Anfrage beim Reifendienst
+
 const winterNeedHtml = (n) => `<section class="panel" id="twneed"><h2 style="margin-top:0">${esc(t('twn_title'))}</h2><p class="small muted">${esc(t('twn_hint'))}</p>
   ${n.groups.length ? `<div class="scroll"><table class="stack"><thead><tr><th>${esc(t('twn_axle'))}</th><th>${esc(t('twn_size'))}</th><th>${esc(t('twn_positions'))}</th><th>${esc(t('twn_vehicles'))}</th></tr></thead><tbody>${n.groups.map((g) => `<tr data-twn="${esc(g.axle)}"><td>${esc(t('axle_' + g.axle))}</td><td>${g.size ? `<b>${esc(g.size)}</b>` : `<span class="muted">${esc(t('twn_nosize'))}</span>`}${g.unverified ? `<br><span class="small muted">${esc(t('twn_unverified').replace('{n}', fmtNum(g.unverified)))}</span>` : ''}</td><td><b>${fmtNum(g.positions)}</b></td><td>${fmtNum(g.vehicles)}<br><span class="small" style="white-space:normal">${g.plates.map((pl, i) => g.vehicle_ids && g.vehicle_ids[i] ? `<a href="#/vehicles/${encodeURIComponent(g.vehicle_ids[i])}?sec=tires">${esc(pl)}</a>` : esc(pl)).join(', ')}</span></td></tr>`).join('')}</tbody></table></div>` : ''}
   ${n.missing_positions ? `<p class="small">${esc(tn('twn_missing', n.missing_positions))} · ${esc(t('twn_vehicles'))}: ${fmtNum(n.missing_vehicles)}</p>` : ''}</section>`;
-// Backlog 1065: Dateinamen-Zusatz je Reiter – fest (wie Server `TIRE_FLEET_FILE`), damit UK/EN keine leeren Namensteile erzeugen
+
 const TIRE_FLEET_FILE = { attention: 'unter-minimum-warnung', never: 'nie-gemessen', stale: 'messung-veraltet', winter_bad: 'winter-nicht-erfuellt', winter_unknown: 'winter-nicht-erfasst', winter_closed: 'winterauftrag-abgeschlossen', age: 'reifenalter' };
 async function viewFleetTires() {
   const r = await api('GET', '/api/tires/fleet' + (vsDef('tireSite') ? '?site=' + encodeURIComponent(vsDef('tireSite')) : ''));
-  // Direktsprung von der Werkstatt-Startseite (#/tires?f=winter_bad|winter_unknown): Reiter übernehmen, danach normale Bedienung
+
   const hf = new URLSearchParams(location.hash.split('?')[1] || '').get('f');
   if (hf && ['attention', 'stale', 'never', 'winter_bad', 'winter_unknown', 'winter_closed', 'age', 'all'].includes(hf)) S.tireFilter = hf;
-  if (hf) try { history.replaceState(history.state, '', '#/tires'); } catch {} // Reiterwechsel danach nicht vom Link überschrieben
+  if (hf) try { history.replaceState(history.state, '', '#/tires'); } catch {}
   const f = S.tireFilter || 'attention';
   const sel = { attention: (x) => x.status === 'unter_minimum' || x.status === 'warnung', never: (x) => x.measured_positions === 0, stale: (x) => x.stale && x.measured_positions > 0, winter_bad: (x) => x.winter === 'nicht_erfuellt', winter_unknown: (x) => x.winter === 'unbekannt', winter_closed: (x) => !!x.winter_closed_order, age: (x) => x.age_warn > 0, all: () => true }[f] || (() => true);
   const rows = r.rows.filter(sel);
-  const wf = f === 'winter_bad' || f === 'winter_unknown' || f === 'winter_closed'; // Winter-Reiter: Positionen und Aufträge in der Zeile
+  const wf = f === 'winter_bad' || f === 'winter_unknown' || f === 'winter_closed';
   const cls = { unter_minimum: 'kritisch', warnung: 'mittel', ok: 'ok', unbekannt: '' };
-  // Backlog 520: Fortschritt der Umrüstung (Server zählt `winter_ok` schon) – in Winter-Reitern und „Alle“, auch im Ausdruck
+
   const nTrucks = r.rows.filter((x) => x.kind !== 'anhaenger').length;
   const wProg = (wf || f === 'all') && nTrucks ? t('tires_winter_prog').replace('{ok}', fmtNum(r.totals.winter_ok || 0)).replace('{n}', fmtNum(nTrucks)) : '';
   const tabs = [['attention', `${t('ts_unter_minimum')} / ${t('ts_warnung')}`, r.totals.below_min + r.totals.warn], ['stale', t('tires_stale').replace('{d}', r.stale_days), r.totals.stale], ['never', t('tires_never'), r.totals.never_measured], ['winter_bad', t('tires_winter_bad'), r.totals.winter_noncompliant], ['winter_unknown', t('tires_winter_unknown'), r.totals.winter_unknown], ['winter_closed', t('tires_winter_closed'), r.rows.filter((x) => x.winter_closed_order).length], ...(r.warn_age_years !== null ? [['age', tn('tires_age_tab', r.warn_age_years), r.totals.age_warn]] : []), ['all', t('filter_all'), r.totals.vehicles]].filter(([k, , n]) => n || k === f || !(k.startsWith('winter') || k === 'age'));
-  if (S.quietBg && !isTiresHash()) return; // stille Aktualisierung (Backlog 1127): inzwischen andere Seite – nichts überschreiben
+  if (S.quietBg && !isTiresHash()) return;
   render(`<h1>${esc(t('fleet_tires'))}</h1><p class="small muted noprint" id="tiresasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/tires" id="tirereload" title="${esc(t('tires_asof_hint'))}">${esc(t('update_now'))}</a></p>${helpLink('tires')}<p class="small muted">${esc(t(r.warn_tread_mm === null || r.warn_tread_mm === undefined ? (S.me.role === 'owner' ? 'tires_rule_nowarn' : 'tires_rule_nowarn_mgr') : 'tires_rule').replace('{min}', fmtNum(r.legal_min_tread_mm)).replace('{warn}', r.warn_tread_mm == null ? '' : fmtNum(r.warn_tread_mm)))}</p>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="panel noprint">${siteSelect('tsite', '', r.site_options, r.site)}</div>` : ''}
     <div class="actions noprint" style="flex-wrap:wrap">${tabs.map(([k, l, n]) => `<button type="button" class="btn ${f === k ? '' : 'secondary'}" data-tf="${k}" aria-pressed="${f === k}">${esc(l)} (${n})</button>`).join('')}</div>
@@ -1676,7 +1676,7 @@ async function viewFleetTires() {
   S.tiresAt = Date.now();
   const trl = $('#tirereload'); if (trl) trl.onclick = async (e) => { e.preventDefault(); try { await viewFleetTires(); } catch (err) { toast(err.message, true); } };
   $$('[data-tf]').forEach((b) => (b.onclick = () => { S.tireFilter = b.dataset.tf; viewFleetTires(); }));
-  // CSV: Fahrzeuge des gewählten Reiters (Backlog 1065, wie Liste und Ausdruck; „Alle“ = ganzer Bestand) und Standorts mit Status und Reifengrößen je Achse
+
   $('#trcsv').onclick = async () => { try { download(await api('GET', '/api/tires/fleet?format=csv' + (r.site ? '&site=' + encodeURIComponent(r.site) : '') + (f !== 'all' ? '&filter=' + f : '')), `fuhrpark-reifen_${envFn()}_${bDate()}${r.site ? '_' + fnPart(r.site) : ''}${TIRE_FLEET_FILE[f] ? '_' + TIRE_FLEET_FILE[f] : ''}.csv`); } catch (err) { toast(err.message, true); } };
   const ts = $('#tsite'); if (ts) ts.onchange = () => { S.tireSite = ts.value; viewFleetTires(); };
   $('#trprt').onclick = () => window.print();
@@ -1684,16 +1684,16 @@ async function viewFleetTires() {
 const USER_SORTS = ['role', 'name', 'login_oldest'];
 const USER_ROLES = ['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'];
 const USER_FILTERS = ['all', 'active', 'inactive', 'invite', 'locked', 'unused', ...USER_ROLES.map((r) => 'r_' + r)];
-// Hinweise nach Deaktivieren/Versetzen eines Kontos (22.10.2026): Fahrerakte weiter aktiv, Werkstatt-Standort ohne Zugang mit offenen Aufträgen
+
 function userUpdateHints(r) {
   const h = [];
   if (r && r.driver_file_active) h.push(t('ue_driver_file_active').replace('{name}', r.driver_file_active.name));
-  if (r && r.ended_assignments && r.ended_assignments.length) h.push(t('ue_assign_ended').replace('{plates}', r.ended_assignments.join(', '))); // Backlog 248
-  if (r && r.invites_voided) h.push(tn('ue_invites_voided', r.invites_voided)); // Backlog 193: Einladungen des deaktivierten Kontos entwertet
+  if (r && r.ended_assignments && r.ended_assignments.length) h.push(t('ue_assign_ended').replace('{plates}', r.ended_assignments.join(', ')));
+  if (r && r.invites_voided) h.push(tn('ue_invites_voided', r.invites_voided));
   if (r && r.workshop_orphaned_cases) h.push(tn('ue_ws_orphaned', r.workshop_orphaned_cases).replace('{site}', wsName(r.workshop_site)));
-  // Leitungswechsel (Backlog 258d): was hängt noch an der ausscheidenden Fuhrparkleitung
+
   const fh = r && r.fleet_handover;
-  // Backlog 656/657: ausscheidender Fahrer – letzte erfasste Auslesung der Fahrerkarte, offene Meldungen, Bußgeldvorgänge ohne Bestätigung
+
   const dh = r && r.driver_handover;
   if (dh && dh.cases_total) h.push(t('ue_drv_cases').replace('{n}', dh.cases_total).replace('{list}', dh.cases.join(', ') + (dh.cases_total > dh.cases.length ? ', …' : '')));
   if (dh && dh.fines) h.push(t('ue_drv_fines').replace('{n}', dh.fines));
@@ -1704,23 +1704,23 @@ function userUpdateHints(r) {
 async function viewUsers() {
   const ures = await api('GET', '/api/users');
   const all = ures.users;
-  // Einstellung „lange nicht angemeldet“ (Tage, leer = aus): nur dann Hinweis, Kennzeichnung und Auswahl „unused“
+
   const ud = ures.unused_days > 0 ? ures.unused_days : null;
-  // Sortierung und Auswahl nur in der Ansicht (Server liefert Umgebung → Rolle → Name), siehe sortUsers()/filterUsers() in csv.js
+
   const uso = S.userSort || (S.userSort = sortPref('users', USER_SORTS, 'role'));
   let ufi = S.userFilter || (S.userFilter = sortPref('users_filter', USER_FILTERS, 'all'));
-  if (ufi === 'unused' && !ud) ufi = 'all'; // Einstellung inzwischen aus
+  if (ufi === 'unused' && !ud) ufi = 'all';
   const us = sortUsers(filterUsers(all, ufi, ud), uso);
   const roles = S.me.role === 'owner' ? USER_ROLES : ['driver', 'workshop', 'viewer'];
-  // Bearbeiten (Name, Rolle, Werkstatt, Umgebung): Inhaber alle anderen Konten; Fuhrparkleitung nur Fahrer/Werkstatt/Leser der eigenen Umgebung (wie Server)
+
   const mayEdit = (u) => u.id !== S.me.id && (S.me.role === 'owner' || (roles.includes(u.role) && u.environment === S.me.environment));
   const ufLabel = (k) => (k.startsWith('r_') ? t('role_' + k.slice(2)) : t('ufilter_' + k).replace('{d}', nDays(ud)));
-  // Hinweise immer über alle Konten (unabhängig von der Auswahl)
-  // Hinweis (nur Anzeige, keine Pflicht): aktive Verwaltungskonten im Betrieb ohne Zwei-Faktor-Anmeldung
+
+
   const no2fa = all.filter((u) => u.active && u.has_password && u.environment === 'production' && ['owner', 'fleet'].includes(u.role) && !u.has_totp);
-  // Hinweis (nur Anzeige): aktive Betriebskonten ohne angemeldetes Push-Gerät – dringende Hinweise (z. B. Fahrzeugsperre) nur in der App
+
   const noPush = all.filter((u) => u.active && u.has_password && u.environment === 'production' && u.role !== 'viewer' && !u.push_devices);
-  // Hinweis (nur Anzeige, nichts wird automatisch deaktiviert): aktive Konten ohne Anmeldung seit über ud Tagen
+
   const unused = ud ? all.filter((u) => isUnusedUser(u, ud)) : [];
   render(`<h1>${esc(t('users'))}</h1>${helpLink('access')}${no2fa.length ? `<div class="panel warn small" role="note">${esc(tn('tf_admin_hint', no2fa.length))} <a class="noprint tap" href="#/help?s=login2fa">${esc(t('help_login2fa_t'))} ›</a></div>` : ''}${noPush.length ? `<div class="panel warn small" role="note" id="nopush">${esc(tn('push_admin_hint', noPush.length))} <a class="noprint tap" href="#/help?s=push">${esc(t('help_push_t'))} ›</a></div>` : ''}${unused.length ? `<div class="panel warn small" role="note" id="unusedhint">${esc(tn('unused_admin_hint', unused.length).replace('{d}', nDays(ud)))}${ufi !== 'unused' ? `<div class="actions"><button type="button" class="btn secondary" id="ushowunused">${esc(t('unused_show'))}</button></div>` : ''}</div>` : ''}<div id="inv"></div>
     <details class="panel"><summary>${esc(t('new_user'))}</summary><form id="nf">
@@ -1740,16 +1740,16 @@ async function viewUsers() {
   $('#usort').onchange = () => { const v = $('#usort').value; S.userSort = sortPref('users', USER_SORTS, 'role', USER_SORTS.includes(v) ? v : 'role'); viewUsers(); };
   $('#uprt').onclick = () => window.print();
   $('#ucsv').onclick = () => download(new Blob([usersCsv(us, t, wsName, fmtDT)], { type: 'text/csv;charset=utf-8' }), `fuhrpark-benutzer_${bDate()}.csv`);
-  $$('[data-revoke]').forEach((b) => (b.onclick = async () => { if (!confirm(t('revoke_sessions_confirm').replace('{name}', b.dataset.name))) return; try { const r = await api('POST', `/api/users/${b.dataset.revoke}/revoke-sessions`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805k: Wiederholung beendet nur, was noch offen ist */ if (lostIs(b, {}) && !r.sessions && !r.push_devices) { toast(t('saved_before')); viewUsers(); return; } toast(t('revoked_n').replace('{n}', r.sessions).replace('{p}', r.push_devices)); viewUsers(); } catch (err) { lostMark(b, {}, err); toast(err.message, true); } }));
+  $$('[data-revoke]').forEach((b) => (b.onclick = async () => { if (!confirm(t('revoke_sessions_confirm').replace('{name}', b.dataset.name))) return; try { const r = await api('POST', `/api/users/${b.dataset.revoke}/revoke-sessions`, undefined, { timeoutMs: SEND_TIMEOUT_MS });   if (lostIs(b, {}) && !r.sessions && !r.push_devices) { toast(t('saved_before')); viewUsers(); return; } toast(t('revoked_n').replace('{n}', r.sessions).replace('{p}', r.push_devices)); viewUsers(); } catch (err) { lostMark(b, {}, err); toast(err.message, true); } }));
   $$('[data-dex]').forEach((b) => (b.onclick = async () => { if (!confirm(t('data_export_hint'))) return; try { const x = await api('GET', `/api/admin/users/${b.dataset.dex}/data-export`); dexTrunc(x); download(x instanceof Blob ? x : new Blob([JSON.stringify(x, null, 1)], { type: 'application/json' }), `datenauskunft_${b.dataset.user}_${bDate()}.json`); } catch (err) { toast(err.message, true); } }));
-  $$('[data-tfr]').forEach((b) => (b.onclick = async () => { if (!confirm(t('tf_reset_confirm').replace('{name}', b.dataset.name))) return; try { await api('POST', `/api/users/${b.dataset.tfr}/totp-reset`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewUsers(); } catch (err) { /* Backlog 805k (Funkloch): Wiederholung → totp_off */ if (lostDup(b, {}, err, ['totp_off'])) { toast(t('saved_before')); viewUsers(); return; } lostMark(b, {}, err); toast(err.message, true); } }));
+  $$('[data-tfr]').forEach((b) => (b.onclick = async () => { if (!confirm(t('tf_reset_confirm').replace('{name}', b.dataset.name))) return; try { await api('POST', `/api/users/${b.dataset.tfr}/totp-reset`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewUsers(); } catch (err) {   if (lostDup(b, {}, err, ['totp_off'])) { toast(t('saved_before')); viewUsers(); return; } lostMark(b, {}, err); toast(err.message, true); } }));
   $$('[data-unlock]').forEach((b) => (b.onclick = async () => { try { await api('POST', `/api/users/${b.dataset.unlock}/unlock`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewUsers(); } catch (err) { toast(err.message, true); } }));
   const showInvite = (token) => { const link = `${location.origin}/#/invite/${token}`; $('#inv').innerHTML = `<div class="panel good"><p>${esc(t('invite_link'))}</p><input readonly value="${esc(link)}" id="il"><div class="actions"><button class="btn" id="cp">${esc(t('copy'))}</button></div><p class="small muted">${esc(t('invite_qr_hint'))}</p><div class="qr">${(() => { try { return qrSvg(link, { label: t('invite_link') }); } catch { return ''; } })()}</div></div>`; $('#cp').onclick = async () => { try { await navigator.clipboard.writeText(link); toast(t('copied')); } catch { $('#il').select(); } }; window.scrollTo(0, 0); };
   $('#rs').onchange = () => ($('#wsrow').hidden = $('#rs').value !== 'workshop');
   $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); if (b.role !== 'workshop') delete b.workshop_site; if (!b.language) delete b.language; b.username = b.username.toLowerCase(); const nf = e.target; try { const r = await api('POST', '/api/users', b, { timeoutMs: SEND_TIMEOUT_MS }); await viewUsers(); showInvite(r.invite_token); } catch (err) {
-    // Backlog 805e (Funkloch): Antwort verloren – erneutes Speichern meldet `username_taken`; der Einladungslink ging verloren → in der Liste neu erzeugen
+
     if (lostDup(nf, b, err, ['username_taken'])) { await viewUsers(); toast(t('user_saved_before_invite')); return; } lostMark(nf, b, err); toast(err.message, true); } };
-  // Konto mit Passwort: Rückfrage (frühere Links werden ungültig; Einlösen setzt ein neues Passwort und beendet alle Anmeldungen)
+
   $$('[data-inv]').forEach((b) => (b.onclick = async () => { if (b.dataset.haspw && !confirm(t('reinvite_confirm').replace('{name}', b.dataset.name))) return; try { const r = await api('POST', `/api/users/${b.dataset.inv}/invite`); showInvite(r.invite_token); } catch (err) { toast(err.message, true); } }));
   $$('[data-ue]').forEach((b) => (b.onclick = () => {
     const u = all.find((x) => x.id === b.dataset.ue); if (!u) return;
@@ -1763,38 +1763,38 @@ async function viewUsers() {
     $('#uex').onclick = () => ($('#inv').innerHTML = '');
     $('#uef').onsubmit = async (e) => {
       e.preventDefault();
-      // leerer Name: Server prüft und meldet (übersetzt) – vorher galt „“ als „unverändert“ und die App zeigte „✓“ (20.10.2026)
+
       const body = { display_name: $('#uen').value.trim() || ' ', role: $('#uer').value };
       if (body.role === 'workshop') body.workshop_site = $('#uews').value;
       if ($('#uee')) body.environment = $('#uee').value;
       const roleEnvChange = body.role !== u.role || (body.environment && body.environment !== u.environment);
-      // Werkstatt-Standortwechsel beendet serverseitig ebenfalls alle Anmeldungen (Tablet) – dieselbe Rückfrage (20.10.2026)
+
       const ends = roleEnvChange || (u.role === 'workshop' && body.role === 'workshop' && (body.workshop_site || null) !== (u.workshop_site || null));
       if (!roleEnvChange && body.display_name === u.display_name && (body.role !== 'workshop' || body.workshop_site === u.workshop_site)) { toast(t('ue_none')); return; }
       if (ends && !confirm(t('ue_confirm').replace('{name}', u.display_name))) return;
-      // Backlog 812: gelesene Werte mitsenden – Server lehnt ab, wenn eine andere Leitung den Benutzer inzwischen geändert hat
+
       body.expected = { display_name: u.display_name, role: u.role, environment: u.environment, workshop_site: u.workshop_site || null };
       const uef = $('#uef');
-      try { const r = await api('PATCH', `/api/users/${u.id}`, body, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805j: Wiederholung → unverändert */ const h = userUpdateHints(r); toast([r.sessions_ended && ends ? t('ue_saved_ended') : '✓', ...h].join(' · '), h.length > 0); viewUsers(); } catch (err) {
-        // Backlog 812: Konflikt → Liste neu laden, Formular mit dem gespeicherten Stand öffnen, eigene Änderungen übernehmen, Felder der anderen Person markieren
+      try { const r = await api('PATCH', `/api/users/${u.id}`, body, { timeoutMs: SEND_TIMEOUT_MS });   const h = userUpdateHints(r); toast([r.sessions_ended && ends ? t('ue_saved_ended') : '✓', ...h].join(' · '), h.length > 0); viewUsers(); } catch (err) {
+
         if (err.code === 'version_conflict' && uef) { const L = conflictMine(uef); await viewUsers(); const ob = $(`[data-ue="${CSS.escape(u.id)}"]`); if (ob) { ob.click(); const fm = $('#uef'); if (fm) { conflictKeep(fm, L, 'uelost'); $('#uewsrow').hidden = $('#uer').value !== 'workshop'; } return; } }
         toast(err.message, true); }
     };
     $('#uen').focus({ preventScroll: true }); $('#uef').scrollIntoView({ block: 'start' });
   }));
-  // Deaktivieren beendet sofort alle Anmeldungen (z. B. am geteilten Tablet) – deshalb nachfragen; Aktivieren ohne Rückfrage
+
   $$('[data-act]').forEach((b) => (b.onclick = async () => { if (b.dataset.on !== '1' && !confirm(t('deactivate_confirm').replace('{name}', b.dataset.name))) return; try { const r = await api('PATCH', `/api/users/${b.dataset.act}`, { active: b.dataset.on === '1' }, { timeoutMs: SEND_TIMEOUT_MS }); const h = userUpdateHints(r); if (h.length) toast(h.join(' · '), true); viewUsers(); } catch (err) { toast(err.message, true); } }));
 }
 async function viewSettings(sec) {
   const s = await api('GET', '/api/settings');
   const v = s.values;
-  // gespeicherte Kommazahlen („12.5“) im Formular mit Dezimalkomma (DE/UK) – der Server liest beide Schreibweisen
+
   const shown = (x) => (x !== null && x !== undefined && S.lang !== 'en' && /^\d+\.\d+$/.test(String(x)) ? String(x).replace('.', ',') : x ?? '');
-  // Kommazahlen nur bei Euro/mm (Prüfung „2.000 mehrdeutig“ am Feld); ganze Zahlen (Tage, km, Minuten) numerisch – „15.000“ km = 15000 (Server)
+
   const DEC = ['workshop_hourly_rate_net', 'tire_warn_tread_mm', 'tire_tread_rise_mm', 'repair_cost_limit_net'];
-  const field = (k, label) => `<label for="${k}">${esc(label)}</label><input id="${k}" name="${k}" inputmode="${DEC.includes(k) ? 'decimal' : 'numeric'}"${s.defaults && s.defaults[k] !== undefined ? ` placeholder="${esc(fmtNum(s.defaults[k]))}"` : ''} value="${esc(shown(v[k]))}">`; // Platzhalter = Standard bei leerem Feld (Server)
-  const slaRows = ['test', 'production'].map((e) => `<h3>${esc(e === 'test' ? t('env_testname') : t('env_prod'))}</h3><div class="scroll"><table class="stack slatab"><thead><tr><th></th>${['niedrig', 'mittel', 'kritisch'].map((p) => `<th>${esc(t('prio_' + p))}</th>`).join('')}</tr></thead><tbody>${['triage', 'ack'].map((k) => `<tr><td class="slak">${esc(k === 'triage' ? t('act_receive') : t('act_acknowledge'))}</td>${['niedrig', 'mittel', 'kritisch'].map((p) => p === 'kritisch' ? `<td class="small muted" style="white-space:nowrap" data-label="${esc(t('prio_' + p))}">${esc(t('sla_immediate'))}</td>` /* Agent meldet kritische Vorgänge sofort – eine Frist wirkte nie (20.10.2026) */ : `<td data-label="${esc(t('prio_' + p))}"><input name="sla_${e}_${k}_${p}_min" inputmode="numeric" style="width:4em;padding:6px" value="${esc(v[`sla_${e}_${k}_${p}_min`] ?? '')}" aria-label="${esc((e === 'test' ? t('env_testname') : t('env_prod')) + ' · ' + (k === 'triage' ? t('act_receive') : t('act_acknowledge')) + ' · ' + t('prio_' + p) + ' (min)')}"></td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join('');
-  // Backlog 412: bisherigen Stundensatz beim Ändern für Arbeit bis einschließlich Datum behalten (frühere Monate bleiben unverändert)
+  const field = (k, label) => `<label for="${k}">${esc(label)}</label><input id="${k}" name="${k}" inputmode="${DEC.includes(k) ? 'decimal' : 'numeric'}"${s.defaults && s.defaults[k] !== undefined ? ` placeholder="${esc(fmtNum(s.defaults[k]))}"` : ''} value="${esc(shown(v[k]))}">`;
+  const slaRows = ['test', 'production'].map((e) => `<h3>${esc(e === 'test' ? t('env_testname') : t('env_prod'))}</h3><div class="scroll"><table class="stack slatab"><thead><tr><th></th>${['niedrig', 'mittel', 'kritisch'].map((p) => `<th>${esc(t('prio_' + p))}</th>`).join('')}</tr></thead><tbody>${['triage', 'ack'].map((k) => `<tr><td class="slak">${esc(k === 'triage' ? t('act_receive') : t('act_acknowledge'))}</td>${['niedrig', 'mittel', 'kritisch'].map((p) => p === 'kritisch' ? `<td class="small muted" style="white-space:nowrap" data-label="${esc(t('prio_' + p))}">${esc(t('sla_immediate'))}</td>`   : `<td data-label="${esc(t('prio_' + p))}"><input name="sla_${e}_${k}_${p}_min" inputmode="numeric" style="width:4em;padding:6px" value="${esc(v[`sla_${e}_${k}_${p}_min`] ?? '')}" aria-label="${esc((e === 'test' ? t('env_testname') : t('env_prod')) + ' · ' + (k === 'triage' ? t('act_receive') : t('act_acknowledge')) + ' · ' + t('prio_' + p) + ' (min)')}"></td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join('');
+
   const oldRate = Number(v.workshop_hourly_rate_net); const hasOldRate = v.workshop_hourly_rate_net && Number.isFinite(oldRate) && oldRate > 0;
   const periods = s.hourly_rate_periods || [];
   const hrKeep = hasOldRate ? `<div id="hrkeep" hidden><label class="check"><input type="checkbox" id="hrk"> ${esc(t('hr_keep').replace('{r}', eur(oldRate)))}</label><div id="hrkd" hidden><label for="hrkdate">${esc(t('hr_keep_until'))}</label><input type="date" id="hrkdate" value="${esc(bDate(-1))}"${periods.length ? ` min="${esc(bDateNext(periods[periods.length - 1].valid_until))}"` : ''}><p class="small muted">${esc(t('hr_keep_hint'))}</p></div></div>` : '';
@@ -1803,20 +1803,20 @@ async function viewSettings(sec) {
     <section class="panel"><h2 style="margin-top:0">${esc(t('import_csv'))}</h2><p class="small muted">${esc(t('import_vehicle_cols'))} · ${esc(t('import_trailer_hint'))}</p><input type="file" id="csv" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_csv'))}"><div id="csvr"></div></section>
     <section class="panel"><h2 style="margin-top:0">${esc(t('import_tires'))}</h2><p class="small muted" id="tirecols">${esc(t('import_tire_cols'))}</p><input type="file" id="tcsv" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_tires'))}"><div id="tcsvr"></div></section>
     <section class="panel"><h2 style="margin-top:0">${esc(t('backup'))}</h2><p class="small muted">${esc(t('backup_hint'))}</p><button type="button" class="btn secondary" id="bkp">${esc(t('backup_download'))}</button></section>`, 'more');
-  // Gespeicherte Werte außerhalb der Regeln (vor der Werteprüfung 16.10.2026 oder aus einer Sicherung) gleich beim Öffnen zeigen und markieren
+
   const setLabel = (inp, k) => ((inp && inp.id && $(`label[for="${inp.id}"]`) ? $(`label[for="${inp.id}"]`).textContent : inp && inp.getAttribute('aria-label')) || (k === 'test_master_readonly' ? t('test_master_readonly') : k)).trim();
   if ((s.invalid || []).length) {
     const items = s.invalid.map((x) => {
       const inp = x.setting === 'test_master_readonly' ? $('#tmr') : $(`#sf [name="${x.setting}"]`);
       if (inp) inp.setAttribute('aria-invalid', 'true');
       const range = x.min !== undefined ? t('setting_stored_range').replace('{min}', fmtNum(x.min)).replace('{max}', fmtNum(x.max)).replace('{int}', x.integer ? t('setting_int') : '') : '';
-      // gespeicherter Text unverändert; bei mehrdeutiger Schreibweise Grund + heutige Wirkung statt „außerhalb des Bereichs“ (20.10.2026)
+
       const why = x.reason && x.reason !== 'range' ? t('setting_stored_' + (x.reason === 'format' ? 'format' : 'precision')).replace('{e}', x.effective !== undefined ? fmtNum(x.effective) : t('setting_off')) : '';
       return `<li data-reason="${esc(x.reason || '')}">${esc(t('setting_stored_item').replace('{f}', setLabel(inp, x.setting)).replace('{v}', x.reason ? String(x.value) : shown(x.value)))}${esc(why)}${esc(range)}</li>`;
     });
     $('#sinv').innerHTML = `<section class="panel warn" role="alert"><p style="margin-top:0"><b>${esc(t('settings_stored_invalid'))}</b></p><ul class="small">${items.join('')}</ul></section>`;
   }
-  // Sprung aus dem Einrichtungsstand (Adresse mit Abschnitt s=…): Feld zeigen und fokussieren
+
   const SEC = { idle_workshop: '#idle_logout_workshop_min', test_readonly: '#tmr', hourly_rate: '#workshop_hourly_rate_net', license_interval: '#license_check_months', cost_limit: '#repair_cost_limit_net', backup: '#bkp', import: '#csv' };
   const secEl = sec && SEC[sec] ? $(SEC[sec]) : null;
   if (secEl) { secEl.scrollIntoView({ block: 'center' }); try { secEl.focus({ preventScroll: true }); } catch {} }
@@ -1825,11 +1825,11 @@ async function viewSettings(sec) {
     const sync = () => { const ch = ri.value.trim() !== String(shown(v.workshop_hourly_rate_net) ?? '').trim(); $('#hrkeep').hidden = !ch; if (!ch) $('#hrk').checked = false; $('#hrkd').hidden = !$('#hrk').checked; };
     ri.oninput = sync; $('#hrk').onchange = sync;
   }
-  // Backlog 821 (Inhaber mit Handy und PC): nach Konflikt eigene Änderungen ins frisch geladene Formular, Felder des anderen Geräts markieren
+
   if (S.setLost) { const L = S.setLost; S.setLost = null; const fm = $('#sf'); if (fm && conflictKeep(fm, L, 'setlost', true)) { const ri = $('#workshop_hourly_rate_net'); if (ri && 'workshop_hourly_rate_net' in L.mine) ri.dispatchEvent(new Event('input')); } }
   $$('[data-hrdel]').forEach((bt) => { bt.onclick = async () => {
     if (!confirm(t('hr_period_remove_confirm').replace('{d}', fmtD(bt.dataset.hrdel)))) return;
-    try { await api('DELETE', `/api/settings/hourly-rate-periods/${encodeURIComponent(bt.dataset.hrdel)}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewSettings(); } catch (err) { /* Backlog 805k (Funkloch): Wiederholung → 404 */ if (lostDup(bt, {}, err, ['not_found'])) { toast(t('saved_before')); viewSettings(); return; } lostMark(bt, {}, err); toast(err.message, true); }
+    try { await api('DELETE', `/api/settings/hourly-rate-periods/${encodeURIComponent(bt.dataset.hrdel)}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); viewSettings(); } catch (err) {   if (lostDup(bt, {}, err, ['not_found'])) { toast(t('saved_before')); viewSettings(); return; } lostMark(bt, {}, err); toast(err.message, true); }
   }; });
   $('#bkp').onclick = async () => { try { const blob = await api('GET', '/api/admin/backup'); const b = blob instanceof Blob ? blob : new Blob([JSON.stringify(blob)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `fuhrpark-sicherung_${bDate()}.json`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); if (blob && Array.isArray(blob.truncated) && blob.truncated.length) toast(t('backup_truncated').replace('{t}', blob.truncated.join(', ')), true); } catch (err) { toast(err.message, true); } };
   $('#tcsv').onchange = async () => {
@@ -1841,14 +1841,14 @@ async function viewSettings(sec) {
       $('#tgo').onclick = async () => { try { const g = await api('POST', '/api/tires/import', text, { headers: { 'content-type': 'text/csv' } }); $('#tcsvr').innerHTML = `<p>✓ ${esc(t('imp_new'))}: ${g.counts.neu} · ${esc(t('imp_changed'))}: ${g.counts.geaendert} · ${esc(t('imp_same'))}: ${g.counts.unveraendert}</p>`; } catch (err) { toast(err.message, true); } };
     } catch (err) { toast(err.message, true); }
   };
-  // Werte unverändert senden (Server versteht „12,5“, „1.234,50“, „2000“ und weist Mehrdeutiges/außerhalb des Bereichs ab – nichts wird halb gespeichert)
+
   $('#sf').onsubmit = async (e) => {
     e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k in b) b[k] = b[k].trim() === '' ? null : b[k].trim(); b.test_master_readonly = $('#tmr').checked ? '1' : null;
-    // nur geänderte Felder senden (17.10.2026): ein länger geöffnetes Formular setzte sonst zwischenzeitlich anderswo gespeicherte Einstellungen still zurück
+
     const was = (k) => { const x = k === 'test_master_readonly' ? (v[k] === '1' ? '1' : null) : String(shown(v[k]) ?? '').trim(); return x === '' ? null : x; };
     for (const k of Object.keys(b)) if (b[k] === was(k)) delete b[k];
     if ($('#hrk') && $('#hrk').checked && 'workshop_hourly_rate_net' in b) b.hourly_rate_keep_until = $('#hrkdate').value || '';
-    // Backlog 821: gelesene Rohwerte der geänderten Felder mitsenden – hat ein anderes Gerät/Fenster sie inzwischen geändert, 409 statt still überschreiben
+
     b.expected = Object.fromEntries(Object.keys(b).filter((k) => k !== 'hourly_rate_keep_until').map((k) => [k, v[k] ?? null]));
     $$('#sf [aria-invalid]').forEach((x) => x.removeAttribute('aria-invalid'));
     try { const r = await api('PUT', '/api/settings', b, { timeoutMs: SEND_TIMEOUT_MS }); toast(r && r.hourly_rate_period ? '✓ ' + t('hr_kept_toast').replace('{r}', eur(r.hourly_rate_period.rate_net)).replace('{d}', fmtD(r.hourly_rate_period.valid_until)) : '✓'); viewSettings(); } catch (err) {

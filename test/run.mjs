@@ -37276,6 +37276,24 @@ await test('Backlog 1212 (Sonde Lenkradverstellung, Backlog 195): „Lenkradvers
   ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1213 (Reserve Start-Modul): erzeugte App-Module enthalten keine Kommentare (nur die Kopfzeile), Code und Zeilenumbrüche unverändert, „//“ in Zeichenketten/Regex bleibt; Start-Modul ≤ 53 % von app.js', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const { GROUPS, stripComments, tokens } = await import('../scripts/build-app.mjs');
+  const smp = "// Kopf\nconst a = 'https://x'; // weg\n/* Block\n zwei */ const r = /\\/\\//g; const s = `a//b ${a /* x */}`;\n  // ganze Zeile\nfunction f() { return a / 2; } // Ende\n";
+  const o = stripComments(smp);
+  ok(o.startsWith('// Kopf\n'), 'Kopfzeile bleibt');
+  ok(o.includes("'https://x'") && o.includes('/\\/\\//g') && o.includes('`a//b ${a  }`') && o.includes('return a / 2;'), 'Zeichenketten/Regex/Division unverändert: ' + o);
+  ok(!/weg|Block|zwei|ganze Zeile|Ende/.test(o), 'Kommentare entfernt: ' + o);
+  eq(o.split('\n').length, smp.split('\n').length, 'Zeilenzahl bleibt');
+  for (const f of ['app-main.js', ...Object.keys(GROUPS).map((g) => `app-${g}.js`)]) {
+    const txt = rd(f), body = txt.slice(txt.indexOf('\n') + 1);
+    ok(!/^\s*\/\/|\/\*/m.test(body.split('\n').filter((l) => !/[`'"]/.test(l)).join('\n')), f + ': Kommentarzeile übrig');
+    const tk = tokens(body); ok(tk.length > 10, f + ' Tokens');
+  }
+  const pct = Buffer.byteLength(rd('app-main.js')) / Buffer.byteLength(rd('app.js')) * 100;
+  ok(pct <= 53, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 53 %)');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

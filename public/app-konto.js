@@ -1,7 +1,7 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
 import { $, $$, S, SEND_TIMEOUT_MS, afterLogin, api, bindLang, bindPwShow, deviceId, deviceLabel, ensureLang, esc, fmtDT, langSelect, lostDup, lostMark, pwField, qrSvg, render, resetUserState, t, toast, tzNote, viewInbox, viewLogin } from './app-main.js';
 
-// Zweiter Schritt: Code aus der Authenticator-App oder Ersatzcode (Passwort bleibt nicht im Speicher der Seite)
+
 async function viewLoginCode(challenge) {
   render(`<div class="center"><form id="f2" class="narrow panel">
     <h1>${esc(t('tf_title'))}</h1><p class="small">${esc(t('tf_login_hint'))}</p>
@@ -41,9 +41,9 @@ async function viewSetup() {
 async function viewInvite(token) {
   let info;
   try { info = await api('GET', '/api/invite/' + encodeURIComponent(token)); }
-  // benutzte/abgelaufene Einladung: Weg zur Anmeldung und wen man ansprechen kann, Sprachauswahl (20.10.2026: vorher Sackgasse)
+
   catch (e) { render(`<div class="center"><div class="panel narrow alert" id="invbad"><p>${esc(e.message)}</p><p class="small">${esc(t('forgot_pw_hint'))}</p><div class="actions"><a class="btn block" href="#/login">${esc(t('login'))}</a></div>${langSelect()}</div></div>`); bindLang(); return; }
-  // Backlog 381: Sprache, die die Leitung beim Anlegen gewählt hat, gilt auf der Einladungsseite (umstellbar unten)
+
   if (info.language && ['de', 'uk', 'en'].includes(info.language) && info.language !== S.lang) { S.lang = info.language; try { localStorage.setItem('cfp_lang', info.language); } catch {} }
   await ensureLang(S.lang);
   render(`<div class="center"><form id="f" class="narrow panel" novalidate><h1>${esc(t('welcome'))}, ${esc(info.display_name)}</h1>
@@ -53,18 +53,18 @@ async function viewInvite(token) {
   bindLang(); bindPwShow();
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
-    try { const r = await api('POST', '/api/invite/accept', { token, password: $('#p').value, device_id: deviceId() }); resetUserState(); /* evtl. im Tab angemeldete andere Person: Sprache ging sonst verloren (user_mismatch), Ansichtszustand wurde vererbt (20.10.2026) */ if (r.second_factor) { await viewLoginCode(r.challenge); return; } await api('PATCH', '/api/me', { language: S.lang }).catch(() => {}); S.me = null; location.hash = '#/'; }
+    try { const r = await api('POST', '/api/invite/accept', { token, password: $('#p').value, device_id: deviceId() }); resetUserState();   if (r.second_factor) { await viewLoginCode(r.challenge); return; } await api('PATCH', '/api/me', { language: S.lang }).catch(() => {}); S.me = null; location.hash = '#/'; }
     catch (err) { toast(err.message, true); }
   };
 }
-// Fehler beim Einschalten von Push: Browsermeldungen (englisch, z. B. „Registration failed - permission denied“) als übersetzter Hinweis
-// mit Handlungsweg, Originaltext klein dahinter (23.10.2026, Teilagent „Disposition erster Tag“); Serverfehler (mit status) unverändert
+
+
 function pushErrText(err) {
   if (!err || err.status || err.offline || err.code) return err && err.message ? err.message : String(err || '');
   const k = err.name === 'NotAllowedError' ? 'push_err_denied' : err.name === 'AbortError' || err.name === 'NetworkError' ? 'push_err_service' : err.name === 'InvalidStateError' ? 'push_err_state' : 'push_err_other';
   return `${t(k)}${err.message ? ` (${err.message})` : ''}`;
 }
-// Backlog 1158: Inhalt „Push für diese Hinweise“ (Arten, persönliche Ruhezeit) – nachgeladen in Gruppe konto (still, wie loadTotp)
+
 async function loadNotifyPrefs(np) {
   try {
     const pr = await api('GET', '/api/me/notify-prefs'); np.dataset.loaded = '1';
@@ -109,26 +109,26 @@ async function pushPanel(el) {
   };
   const pt = $('#pt', el);
   if (pt) pt.onclick = async () => { pt.disabled = true; try {
-      // Test genau an dieses Gerät (eigenes Abo), sonst an alle Geräte der Person (20.10.2026)
-      let ep = null; try { const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null; const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null; ep = sub ? sub.endpoint : null; } catch { /* ohne Abo: alle Geräte */ }
+
+      let ep = null; try { const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null; const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null; ep = sub ? sub.endpoint : null; } catch {   }
       const r = await api('POST', '/api/push/test', ep ? { endpoint: ep } : undefined);
-      // Rohtext des Push-Dienstes nicht anzeigen (deutsch/technisch); Ruhezeit und abgemeldetes Gerät mit eigener Meldung (19.10.2026)
+
       const st = r.hold_until ? t('pst_held').replace('{t}', fmtDT(r.hold_until)) : r.device_gone ? t('pst_gone') : t('pst_' + r.push_status) === 'pst_' + r.push_status ? r.push_status : t('pst_' + r.push_status);
       toast(`Push: ${st}`, r.push_status !== 'accepted' && !r.hold_until); } catch (err) { toast(err.message, true); } finally { pt.disabled = false; } };
 }
-// Backlog 1153 (Reserve Start-Modul): Sitzungs-/Geräteliste aus „Mehr“ als eigene Funktionen (Gruppe konto, still nachgeladen beim Aufklappen)
+
 async function loadSessions() {
     const box = $('#sesslist'); if (!box) return;
     const sr = await api('GET', '/api/me/sessions'); const list = sr.sessions; const orphan = sr.orphan_push_devices || 0;
     box.innerHTML = list.map((x) => `<div class="row"><span>${x.current ? '●' : '○'}</span><span class="title">${esc(x.device === 'Unbekanntes Gerät' ? t('unknown_device_l') : x.device)}${x.current ? ` <span class="chip ok">${esc(t('this_device'))}</span>` : ''}</span>${x.current ? '<span></span>' : `<button type="button" class="btn secondary" data-sid="${esc(x.id)}">${esc(t('sign_out_device'))}</button>`}<span class="sub" style="white-space:normal">${esc(t('last_active'))}: ${fmtDT(x.last_seen)} · ${esc(t('signed_in_at'))}: ${fmtDT(x.created_at)}</span></div>`).join('')
-      // Backlog 225: Push-Geräte ohne lebende Anmeldung (altes/verlorenes Handy) – Hinweis und Knopf auch, wenn nur „dieses Gerät“ angemeldet ist
+
       + (orphan > 0 ? `<p class="small" id="sessorphan">⚠ ${esc(t('sess_orphan_push').replace('{n}', orphan))}</p>` : '')
       + (list.length > 1 || orphan > 0 ? `<div class="actions"><button type="button" class="btn secondary" id="sessall">${esc(t('sign_out_others'))}</button></div>` : '');
-    $$('[data-sid]', box).forEach((b) => (b.onclick = async () => { try { await api('DELETE', `/api/me/sessions/${b.dataset.sid}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); await loadSessions(); } catch (err) { /* Backlog 805k (Funkloch): Wiederholung → 404 */ if (lostDup(b, {}, err, ['not_found'])) { toast(t('saved_before')); await loadSessions(); return; } lostMark(b, {}, err); toast(err.message, true); } }));
+    $$('[data-sid]', box).forEach((b) => (b.onclick = async () => { try { await api('DELETE', `/api/me/sessions/${b.dataset.sid}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); await loadSessions(); } catch (err) {   if (lostDup(b, {}, err, ['not_found'])) { toast(t('saved_before')); await loadSessions(); return; } lostMark(b, {}, err); toast(err.message, true); } }));
     const all = $('#sessall', box); if (all) all.onclick = async () => { try { const r = await api('POST', '/api/me/sessions/revoke-others', undefined, { timeoutMs: SEND_TIMEOUT_MS }); toast(t('sessions_ended_n').replace('{n}', r.revoked) + (r.push_devices ? ' · ' + t('push_revoked_n').replace('{n}', r.push_devices) : '')); await loadSessions(); } catch (err) { toast(err.message, true); } };
     await loadKnown();
 }
-// Bekannte Geräte: „dieses Gerät“ über die Gerätekennung (Header, wird serverseitig nur gehasht verglichen); dieses Gerät kann nicht vergessen werden
+
 async function loadKnown() {
     const box = $('#kdlist'); if (!box) return;
     const list = (await api('GET', '/api/me/known-devices', undefined, { headers: { 'x-cfp-device': deviceId() } })).devices;
@@ -137,27 +137,27 @@ async function loadKnown() {
       : `<p class="muted">${esc(t('kd_none'))}</p>`;
     $$('[data-kd]', box).forEach((b) => (b.onclick = async () => { if (!confirm(t('kd_forget_confirm').replace('{d}', b.dataset.dev))) return; try { await api('DELETE', `/api/me/known-devices/${b.dataset.kd}`, undefined, { headers: { 'x-cfp-device': deviceId() } }); toast('✓'); await loadKnown(); } catch (err) { toast(err.message, true); } }));
 }
-// Mein Konto → Zwei-Faktor-Anmeldung: Status, Einrichten (QR + Schlüssel), Ersatzcodes einmalig, neue Ersatzcodes, Ausschalten
+
 const rcBlock = (codes, extra = '') => `<div class="panel good" id="rcbox"><h3>${esc(t('tf_rc_title'))}</h3><p class="small">${esc(t('tf_rc_hint'))}${extra ? ' ' + esc(extra) : ''}</p>
   <ul class="rclist" style="font-family:monospace;font-size:1.1em;columns:2;list-style:none;padding:0">${codes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
   <div class="actions noprint"><button type="button" class="btn secondary" id="rccp">${esc(t('copy'))}</button></div></div>`;
 function wireRc(codes) {
   const cp = $('#rccp'); if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(codes.join('\n')); toast(t('copied')); } catch { toast(codes.join(' ')); } };
 }
-// Chip „2FA“ in der Überschrift folgt dem Zustand (vorher erst nach erneutem Öffnen von „Mehr“, 19.10.2026)
+
 function tfChip() { const c = $('#tfchip'); if (c) c.hidden = !S.me.totp_enabled; }
 async function loadTotp() {
   const box = $('#tfabox'); if (!box) return;
   const st = await api('GET', '/api/me/totp');
   S.me.totp_enabled = st.enabled; tfChip();
-  if (!box.isConnected) return; // Ansicht inzwischen gewechselt
+  if (!box.isConnected) return;
   if (!st.enabled) {
     box.innerHTML = `<p class="small">${esc(t('tf_intro'))}</p><p><span class="chip">${esc(t('tf_off'))}</span></p>
       <form id="tfs"><label for="tfpw">${esc(t('tf_pw'))}</label><input id="tfpw" type="password" autocomplete="current-password" required><div class="actions"><button class="btn secondary">${esc(t('tf_start'))}</button></div></form><div id="tfstep"></div>`;
     $('#tfs').onsubmit = async (e) => {
       e.preventDefault();
       try {
-        const r = await api('POST', '/api/me/totp/setup', { password: $('#tfpw').value }, { timeoutMs: SEND_TIMEOUT_MS }); // Backlog 805k: Wiederholung erzeugt nur einen neuen, noch nicht genutzten Schlüssel
+        const r = await api('POST', '/api/me/totp/setup', { password: $('#tfpw').value }, { timeoutMs: SEND_TIMEOUT_MS });
         $('#tfpw').value = ''; $('#tfs').hidden = true;
         const key = r.secret.replace(/(.{4})/g, '$1 ').trim();
         $('#tfstep').innerHTML = `<p class="small">${esc(t('tf_scan'))}</p><div class="qr">${(() => { try { return qrSvg(r.uri, { label: t('tf_title') }); } catch { return ''; } })()}</div>
@@ -173,7 +173,7 @@ async function loadTotp() {
             wireRc(x.recovery_codes);
             $('#tfdone').onclick = () => loadTotp();
           } catch (err) {
-            // Backlog 805k (Funkloch): eingeschaltet, aber die Antwort mit den Ersatzcodes ging verloren → Hinweis, neue Ersatzcodes zu erzeugen
+
             if (lostDup(ev.target, {}, err, ['totp_already'])) { S.me.totp_enabled = true; tfChip(); toast(t('tf_saved_before_rc'), true); loadTotp(); return; }
             lostMark(ev.target, {}, err); toast(err.message, true);
           }
@@ -192,11 +192,11 @@ async function loadTotp() {
     try { const x = await api('POST', '/api/me/totp/recovery-codes', { code: $('#tfrc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); $('#tfout').innerHTML = rcBlock(x.recovery_codes); wireRc(x.recovery_codes); $('#tfrc').value = ''; }
     catch (err) { toast(err.message, true); }
   };
-  // Backlog 1022: Authenticator-App auf ein neues Handy übertragen (2FA bleibt eingeschaltet)
+
   $('#tfm').onsubmit = async (e) => {
     e.preventDefault();
     try {
-      const r = await api('POST', '/api/me/totp/move', { password: $('#tfmpw').value, code: $('#tfmc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); // Wiederholung erzeugt nur einen neuen, noch nicht genutzten Schlüssel
+      const r = await api('POST', '/api/me/totp/move', { password: $('#tfmpw').value, code: $('#tfmc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS });
       $('#tfmpw').value = ''; $('#tfmc').value = ''; $('#tfm').hidden = true;
       const key = r.secret.replace(/(.{4})/g, '$1 ').trim();
       $('#tfmstep').innerHTML = `${r.recovery_left !== undefined ? `<p class="small" role="note">${esc(t('tf_move_rc_used').replace('{n}', r.recovery_left))}</p>` : ''}<p class="small">${esc(t('tf_move_scan'))}</p><div class="qr">${(() => { try { return qrSvg(r.uri, { label: t('tf_title') }); } catch { return ''; } })()}</div>
@@ -207,10 +207,10 @@ async function loadTotp() {
         ev.preventDefault();
         try {
           await api('POST', '/api/me/totp/move/finish', { code: $('#tfmn').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS });
-          box.innerHTML = `<div class="panel ok small" role="status" id="tfmok">${esc(t('tf_move_done'))} <a href="#/more?o=sess" id="tfmkd">${esc(t('kd_title'))} ›</a></div><div class="actions"><button type="button" class="btn" id="tfdone">OK</button></div>`; // altes Handy dort „Vergessen“
+          box.innerHTML = `<div class="panel ok small" role="status" id="tfmok">${esc(t('tf_move_done'))} <a href="#/more?o=sess" id="tfmkd">${esc(t('kd_title'))} ›</a></div><div class="actions"><button type="button" class="btn" id="tfdone">OK</button></div>`;
           $('#tfdone').onclick = () => loadTotp();
         } catch (err) {
-          // Funkloch: übertragen, aber die Antwort ging verloren → Wiederholung meldet totp_no_move
+
           if (lostDup(ev.target, {}, err, ['totp_no_move'])) { toast(t('saved_before')); loadTotp(); return; }
           lostMark(ev.target, {}, err); toast(err.message, true);
         }
@@ -220,7 +220,7 @@ async function loadTotp() {
   $('#tfd').onsubmit = async (e) => {
     e.preventDefault();
     const tfd = e.target; try { await api('POST', '/api/me/totp/disable', { password: $('#tfdpw').value, code: $('#tfdc').value.trim() }, { timeoutMs: SEND_TIMEOUT_MS }); S.me.totp_enabled = false; tfChip(); toast('✓'); loadTotp(); }
-    catch (err) { /* Backlog 805k (Funkloch): Wiederholung → totp_off */ if (lostDup(tfd, {}, err, ['totp_off'])) { S.me.totp_enabled = false; tfChip(); toast(t('saved_before')); loadTotp(); return; } lostMark(tfd, {}, err); toast(err.message, true); }
+    catch (err) {   if (lostDup(tfd, {}, err, ['totp_off'])) { S.me.totp_enabled = false; tfChip(); toast(t('saved_before')); loadTotp(); return; } lostMark(tfd, {}, err); toast(err.message, true); }
   };
 }
 

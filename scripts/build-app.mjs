@@ -235,7 +235,7 @@ function lazyModule(g, quiet) {
     sizes[g] = Buffer.byteLength(out[`app-${g}.js`]);
   }
   out['app-main.js'] = `${HEAD}${main}\nexport { ${[...exportNames].sort().join(', ')} };\n`;
-  for (const f of Object.keys(out)) out[f] = lookbehindSafe(out[f], src).code;
+  for (const f of Object.keys(out)) out[f] = stripComments(lookbehindSafe(out[f], src).code);
   return { files: out, stubs, sizes, moved: owner.size };
 }
 
@@ -310,6 +310,21 @@ export function lookbehindSafe(code, full = code) {
   if (LB_RE.test(tokens(out).filter((t) => t.t === 'r').map((t) => out.slice(t.s, t.e)).join('\n'))) throw new Error('build-app: Lookbehind-Literal übrig');
   // Helfer hinter die Kopfzeilen (Funktionsdeklarationen werden ohnehin vorgezogen)
   return { code: out.replace(/\n\n/, '\n' + LB_HELPER + '\n'), n, testOnly };
+}
+
+// Backlog 1213 (Reserve Start-Modul, 09.11.2026): Kommentare stehen nur in der Quelle app.js – die erzeugten Module enthalten sie nicht
+// (≈ 17 % von app-main.js waren Kommentarzeilen, die jedes Gerät beim Start mitlud). Zeilenumbrüche bleiben erhalten (Zeilennummern in
+// Fehlermeldungen stimmen mit dem unveränderten Modul überein, automatische Semikolons unverändert); die Kopfzeile (HEAD) bleibt stehen.
+// Zeichenketten, Vorlagen und Regex-Literale erkennt tokens() – „//“ darin (z. B. https://) bleibt unberührt.
+export function stripComments(code) {
+  const nl = code.indexOf('\n') + 1, head = code.slice(0, nl), body = code.slice(nl);
+  const toks = tokens(body);
+  let out = '', last = 0;
+  const gap = (g) => g.replace(/\/\*[\s\S]*?\*\//g, (m) => (m.includes('\n') ? m.replace(/[^\n]+/g, '') : ' ')).replace(/\/\/[^\n]*/g, '').replace(/[ \t]+\n/g, '\n');
+  for (const t of toks) { out += gap(body.slice(last, t.s)) + body.slice(t.s, t.e); last = t.e; }
+  out += gap(body.slice(last));
+  if (tokens(out).length !== toks.length) throw new Error('build-app: Kommentarentfernung verändert den Code');
+  return head + out;
 }
 
 // Wörter einer Deklaration (aus der Tokenliste, ohne Zeichenketten – Vorlagen-Ausdrücke separat)

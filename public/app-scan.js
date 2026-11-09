@@ -1,12 +1,12 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
 import { ICON, S, api, coupledLockedText, esc, mayCheck, mayReport, plate, render, t, toast, vehiclesCached } from './app-main.js';
 
-// Nach Scan des Fahrzeug-Aufklebers: Auswahl „Schaden melden“ / „Abfahrtskontrolle“ für dieses Fahrzeug
+
 async function viewScan(id) {
   const vs = await vehiclesCached();
   const v = vs.find((x) => x.id === id);
-  // Backlog 493: außer Betrieb genommenes Fahrzeug (nicht in der Liste) – Rollen mit Fahrzeugakte dorthin (zeigt „außer Betrieb“);
-  // sonst wie bisher, Lesezugriff ohne Melderecht zur Startseite statt auf „keine Berechtigung“
+
+
   if (!v) {
     if (S.me.role !== 'driver' && /^VIN:[A-Z0-9]+$/.test(id)) { try { await api('GET', '/api/vehicles/' + encodeURIComponent(id)); location.hash = '#/vehicles/' + id; return; } catch (e) { if (e && e.status === 401) return; } }
     toast(t('qr_vehicle_unknown'), true); location.hash = mayReport() ? '#/new' : '#/'; return;

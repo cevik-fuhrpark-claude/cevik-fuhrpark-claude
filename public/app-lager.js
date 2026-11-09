@@ -1,13 +1,13 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
 import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, isStockHash, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, nowMs, parseQty, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
 
-// Lager-Buchungstexte in der Oberflächensprache (Standortcode → Name, Zahl/Datum im Sprachformat)
+
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
 const stockOpt = (i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`;
 const STOCK_Q_MIN = 8;
 const stockQHtml = (id) => `<input type="search" id="${id}" class="stockq" data-stockq placeholder="${esc(t('stock_q_ph'))}" aria-label="${esc(t('stock_q_ph'))}" autocomplete="off" enterkeyhint="search" style="margin-bottom:4px"><p class="small muted" data-stockqn role="status" aria-live="polite" hidden></p>`;
-// Suchfeld filtert die Auswahl (Optionen neu aufbauen – option.hidden wirkt in iOS Safari nicht); die gewählte Position bleibt immer erhalten,
-// genau ein Treffer wird bei leerer Auswahl vorgewählt (onchange wie bei Handauswahl)
+
+
 function stockPick(inp, sel, list, first) {
   const info = inp.nextElementSibling;
   inp.oninput = () => {
@@ -24,39 +24,39 @@ async function loadStockSelect(c) {
   let items = [];
   let siteItems = [];
   try { siteItems = (await api('GET', `/api/stock?site=${encodeURIComponent(c.workshop_site || '')}`)).items.filter((i) => i.site === c.workshop_site); items = siteItems.filter((i) => i.on_hand > 0); } catch { return; }
-  // Backlog 515 (Blickwinkel „Werkstatt Bayern vertritt Dortmund“): angeboten wird nur das Lager der zuständigen Werkstatt – Name nennen; geführtes
-  // Lager ohne Bestand → kurzer Hinweis statt still fehlender Auswahl
+
+
   if (!items.length) { if (siteItems.length && c.workshop_site) el.innerHTML = `<p class="small muted" data-stocknone>${esc(t('stock_none_ws').replace('{ws}', wsName(c.workshop_site)))}</p>`; return; }
   const first = `<option value="">${esc(t('without_stock'))}</option>`;
   el.innerHTML = `<label for="stocksi">${esc(t('from_stock'))}: ${esc(wsName(c.workshop_site))}</label>${items.length >= STOCK_Q_MIN ? stockQHtml('stockq') : ''}<select name="stock_item_id" id="stocksi">${first}${items.map(stockOpt).join('')}</select><p class="small muted" id="stockpricehint" hidden>${esc(t('stock_out_price_hint'))}</p>`;
   const sel = $('select', el); el._items = items;
   sel.onchange = () => {
     const fp = $('#freepart'); fp.querySelector('[name=name]').required = !sel.value; $$('[name=name],[name=part_number],[name=supplier]', fp).forEach((x) => { x.disabled = !!sel.value; });
-    // Lagerartikel mit Preis: der Server bucht den Artikelpreis – Preisfeld sperren und Hinweis zeigen (19.10.2026: Eingabe wurde still ersetzt)
+
     const it = items.find((i) => i.id === sel.value); const fixed = !!it && it.unit_price_net !== null && it.unit_price_net !== undefined;
     const pr = el.closest('form') && el.closest('form').querySelector('[name=unit_price_net]');
     if (pr) { pr.disabled = fixed; if (fixed) pr.value = ''; }
-    // … und „Schätzung“ ebenso (fester Artikelpreis ist kein Schätzwert, 22.10.2026)
+
     const es = el.closest('form') && el.closest('form').querySelector('[name=estimate]');
     if (es) { es.disabled = fixed; if (fixed) es.checked = false; }
     $('#stockpricehint').hidden = !fixed;
     qtyCheck();
   };
-  // Menge über dem angezeigten Bestand: Hinweis schon vor dem Speichern (Backlog 234; der Server prüft weiterhin verbindlich)
+
   const qf = el.closest('form') && el.closest('form').querySelector('[name=quantity]');
   const qtyCheck = () => {
     let h = $('#stockqty'); const it = items.find((i) => i.id === sel.value);
-    const raw = qf ? String(qf.value).trim() : ''; const pw = parseQty(raw); const q = pw ? pw.n : Number(raw.replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.')); // Backlog 983: „zwei“
+    const raw = qf ? String(qf.value).trim() : ''; const pw = parseQty(raw); const q = pw ? pw.n : Number(raw.replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.'));
     const over = !!it && raw !== '' && Number.isFinite(q) && q > it.on_hand + 1e-9;
     if (!over) { if (h) h.remove(); return; }
     if (!h) { h = document.createElement('p'); h.id = 'stockqty'; h.className = 'small panel warn'; h.setAttribute('role', 'status'); qf.after(h); }
     h.textContent = t('stock_qty_over').replace('{q}', fmtNum(it.on_hand)).replace('{u}', unitL(it.unit)).replace(/\.\.(?=\s|$)/g, '.');
   };
   if (qf) qf.addEventListener('input', qtyCheck);
-  const sq = $('#stockq', el); if (sq) stockPick(sq, sel, () => items.filter((i) => i.on_hand > 0), first); // leer gebuchte Artikel (Backlog 232) fallen beim Filtern weg
-  // Backlog 990 (Blickwinkel „Mechaniker tippt die Teilenummer vom Karton ab, statt den Artikel aus dem Lager zu wählen“): frei erfasste
-  // Teilenummer eines vorrätigen Artikels (auch anders geschrieben, „A 000 420 12 20“) → Hinweis mit Knopf „aus dem Lager entnehmen“;
-  // sonst bleibt der Lagerbestand stehen, obwohl das Teil verbaut ist (Buchbestand ≠ Regal, Bestellvorschlag zu spät)
+  const sq = $('#stockq', el); if (sq) stockPick(sq, sel, () => items.filter((i) => i.on_hand > 0), first);
+
+
+
   const fpn = $('#freepart [name=part_number]');
   if (fpn) {
     const box = document.createElement('p'); box.className = 'small panel'; box.id = 'pninstock'; box.setAttribute('role', 'status'); box.hidden = true; fpn.after(box);
@@ -73,18 +73,18 @@ async function loadStockSelect(c) {
   }
 }
 async function viewStock() {
-  try { sessionStorage.removeItem('cfp_sj_item'); } catch { /* egal */ } // Artikelfilter des Journals gilt nur für den Weg aus der Artikelakte
+  try { sessionStorage.removeItem('cfp_sj_item'); } catch {   }
   const stockResp = await api('GET', '/api/stock'); const items = stockResp.items; const lastInv = stockResp.last_inventory || {};
-  // Zahl am „Bestellvorschlag“: nur Artikel mit noch offener Fehlmenge (voll bestellte nicht – wie der Agent, 19.10.2026)
+
   const nReorder = items.filter((i) => i.below_min && !(i.ordered_on && i.min_qty - i.on_hand - (i.ordered_qty || 0) <= 1e-9)).length;
   const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site) : S.meta.workshops;
-  // Backlog 1062: Auswahl „Werkstatt“ (Lager) für Inhaber/Leitung – Lager aus den Artikeln (auch geschlossene Werkstätten mit Restbestand);
-  // wirkt auf Liste, Lagerwert, Druck, CSV und wird an Bestellvorschlag, Lagerjournal, Bestand zum Stichtag und Inventur weitergegeben
+
+
   const stSites = S.me.role === 'workshop' ? [] : [...new Set(items.map((i) => i.site))].sort((a, b) => wsName(a).localeCompare(wsName(b)));
-  let stSite = ''; try { stSite = sessionStorage.getItem('cfp_stock_site') || ''; } catch { /* ohne Speicher: alle Lager */ }
+  let stSite = ''; try { stSite = sessionStorage.getItem('cfp_stock_site') || ''; } catch {   }
   if (!stSites.includes(stSite)) stSite = '';
-  // Ausdruck der Lagerliste: genau die angezeigten Artikel (Suche/Filter) samt Lagerwert-Zeile; Auswahl im Vermerk (#sprsel)
-  if (S.quietBg && !isStockHash()) return; // stille Aktualisierung (Backlog 1119): inzwischen andere Seite – nichts überschreiben
+
+  if (S.quietBg && !isStockHash()) return;
   render(`<h1>${esc(t('stock'))}</h1><p class="small muted noprint" id="stockasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/stock" id="stockreload" title="${esc(t('stock_asof_hint'))}">${esc(t('update_now'))}</a></p>${printHead([S.me.role === 'workshop' ? `${t('workshop')}: ${wsName(S.me.workshop_site)}` : ''])}<p class="print-only small" id="sprsel"></p>${helpLink('stock')}
     <details class="panel noprint"><summary>${esc(t('new_item'))}</summary><form id="nf">
       ${sites.length > 1 ? `<label>${esc(t('workshop'))}</label><select name="site">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
@@ -105,20 +105,20 @@ async function viewStock() {
     <label for="sf">${esc(t('stock_filter'))}</label><select id="sf"><option value="">${esc(t('all'))}</option><option value="min">${esc(t('below_min'))}</option><option value="180">${esc(t('stock_idle').replace('{d}', 180))}</option><option value="365">${esc(t('stock_idle').replace('{d}', 365))}</option><option value="c365">${esc(t('count_age_n').replace('{n}', 365))}</option></select></div>
     <p class="small muted" id="sfsum" hidden></p>
     <div class="list" id="sl">${items.map((i) => `<a class="row ${i.below_min ? 'p-mittel' : ''}" href="#/stock/${esc(i.id)}" data-s="${esc(helpNorm(i.name + ' ' + (i.part_number || '')))}" data-pk="${esc(pnCompact(i.part_number))}" data-id="${esc(i.id)}">${S.me.role === 'workshop' ? '<span></span>' : `<span class="chip">${esc(wsName(i.site))}</span>`}<span class="title" style="white-space:normal">${esc(i.name)}</span><b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b><span class="sub">${[i.part_number && esc(i.part_number), i.location && esc(i.location), i.below_min && esc(t('below_min')) + ' (' + fmtNum(i.min_qty) + ')', i.unit_price_net !== null && eur3(i.unit_price_net), esc(t('last_out')) + ': ' + (i.last_out_date ? esc(fmtD(i.last_out_date)) : esc(t('never')))].filter(Boolean).join(' · ')}</span></a>`).join('') || noneP()}</div>`, 'more');
-  // Filter: unter Mindestbestand bzw. „ohne Entnahme seit N Tagen“ (nur Artikel mit Bestand; nie entnommen zählt mit) bzw. „nicht gezählt seit 365 Tagen“ – nur Anzeige
+
   S.stockAt = Date.now();
   const srl = $('#stockreload'); if (srl) srl.onclick = async (e) => { e.preventDefault(); try { await viewStock(); } catch (err) { toast(err.message, true); } };
   const byId = new Map(items.map((i) => [i.id, i]));
-  // Zeilen einmal vorab lesen (Suchtext, Artikel) und „hidden“ nur bei Änderung setzen; Suche ab 300 Artikeln entprellt (22.10.2026:
-  // vorher je Taste alle Zeilen aus dem DOM gelesen und neu gesetzt – 500 Artikel am Handy ≈ 40 ms je Taste)
+
+
   const slRows = $$('#sl a').map((a) => ({ a, s: a.dataset.s, pk: a.dataset.pk, i: byId.get(a.dataset.id) }));
   const applyStock = () => {
-    const ws = $('#ssite') ? $('#ssite').value : ''; const q = helpNorm($('#q').value); const f = $('#sf').value; const qc = pnCompact($('#q').value); const qcOk = qc.length >= 3; // Backlog 862: Teilenummer ohne Trennzeichen // Umlaute/ue gleich: „bremsbelaege“ findet „Bremsbeläge“
+    const ws = $('#ssite') ? $('#ssite').value : ''; const q = helpNorm($('#q').value); const f = $('#sf').value; const qc = pnCompact($('#q').value); const qcOk = qc.length >= 3;
     const cut = /^\d+$/.test(f) ? bDate(-Number(f)) : null;
     const hit = (i) => (!f || (f === 'min' ? i.below_min : f === 'c365' ? !i.last_counted_date || i.last_counted_date <= bDate(-365) : i.on_hand > 0 && (!i.last_out_date || i.last_out_date < cut)));
     const shown = [];
     for (const r of slRows) { const h = !!((ws && r.i.site !== ws) || (q && !r.s.includes(q) && !(qcOk && r.pk.includes(qc))) || !hit(r.i)); if (r.a.hidden !== h) r.a.hidden = h; if (!h) shown.push(r.i); }
-    // Summe der angezeigten Artikel: Bestand × hinterlegter Artikelpreis (netto); Artikel mit Bestand ohne Preis = unbewertet (nie 0 €), ohne bewertbaren Artikel „–“
+
     const sum = $('#sfsum'); sum.hidden = !shown.length;
     const stocked = shown.filter((i) => i.on_hand > 0); const priced = stocked.filter((i) => i.unit_price_net !== null);
     const v = priced.length ? eur(rc2(priced.reduce((a, i) => a + rc2(i.on_hand * i.unit_price_net), 0))) : '–';
@@ -128,34 +128,34 @@ async function viewStock() {
     sum.textContent = cut ? tn('stock_idle_sum', shown.length).replace('{v}', v) + unv : tn('stock_value_sum', shown.length).replace('{v}', v) + unv;
   };
   let sqT = null; $('#q').oninput = () => { clearTimeout(sqT); sqT = setTimeout(applyStock, items.length > 300 ? 150 : 0); };
-  // Lagerwahl merken und an die Unterseiten weitergeben (dort weiter änderbar); Zahl am Bestellvorschlag je Lager
+
   const reoA = $('a[href="#/stock/reorder"]');
   const passSite = () => {
     const ws = $('#ssite') ? $('#ssite').value : '';
-    try { sessionStorage.setItem('cfp_stock_site', ws); } catch { /* ohne Speicher */ }
+    try { sessionStorage.setItem('cfp_stock_site', ws); } catch {   }
     if (reoA) { const nr = items.filter((i) => (!ws || i.site === ws) && i.below_min && !(i.ordered_on && i.min_qty - i.on_hand - (i.ordered_qty || 0) <= 1e-9)).length; reoA.innerHTML = `${esc(t('reorder'))}${nr ? ` <span class="chip mittel">${nr}</span>` : ''}`; }
     if (ws && $('#invsite') && [...$('#invsite').options].some((o) => o.value === ws) && $('#invsite').value !== ws) { $('#invsite').value = ws; if ($('#invsite').onchange) $('#invsite').onchange(); }
   };
-  const setSub = (k) => { const ws = $('#ssite') ? $('#ssite').value : ''; try { sessionStorage.setItem(k, ws); } catch { /* ohne Speicher */ } };
+  const setSub = (k) => { const ws = $('#ssite') ? $('#ssite').value : ''; try { sessionStorage.setItem(k, ws); } catch {   } };
   if ($('#ssite')) {
     $('#ssite').onchange = () => { passSite(); applyStock(); };
     if (reoA) reoA.addEventListener('click', () => setSub('cfp_reorder_site'));
     $$('a[href="#/stock/journal"]:not(#invdiffs)').forEach((a) => a.addEventListener('click', () => { setSub('cfp_sj_site'); }));
     $('#sasof').addEventListener('click', () => setSub('cfp_sa_site'));
   }
-  $('#sf').onchange = applyStock; applyStock(); // Lagerwert gleich beim Öffnen
-  const sqFlush = () => { if (sqT) { clearTimeout(sqT); sqT = null; applyStock(); } }; // Druck/CSV direkt nach dem Tippen: entprellte Suche zuerst anwenden
+  $('#sf').onchange = applyStock; applyStock();
+  const sqFlush = () => { if (sqT) { clearTimeout(sqT); sqT = null; applyStock(); } };
   $('#sprt').onclick = () => { sqFlush(); window.print(); };
-  // CSV = angezeigte Auswahl (Filter/Suche) wie der Druck; ungefiltert alle Artikel (20.10.2026)
+
   $('#scsv').onclick = async () => { sqFlush(); try { const vis = $$('#sl a').filter((a) => !a.hidden).map((a) => a.dataset.id); download(vis.length < items.length ? await api('POST', '/api/stock/export', { ids: vis }) : await api('GET', '/api/stock?format=csv'), `fuhrpark-lager_${envFn()}_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
   if ($('#inv')) {
-    // „Inventurdifferenzen“: Lagerjournal mit Auswahl Inventur, letzte 12 Monate, aktuelles Inventurlager
-    $('#invdiffs').onclick = () => { try { sessionStorage.setItem('cfp_sj_type', 'inventur'); sessionStorage.setItem('cfp_sj_from', bDate(-364)); sessionStorage.setItem('cfp_sj_to', bDate()); sessionStorage.setItem('cfp_sj_site', $('#invsite') ? $('#invsite').value : ''); } catch { /* ohne Speicher: Standardzeitraum */ } };
+
+    $('#invdiffs').onclick = () => { try { sessionStorage.setItem('cfp_sj_type', 'inventur'); sessionStorage.setItem('cfp_sj_from', bDate(-364)); sessionStorage.setItem('cfp_sj_to', bDate()); sessionStorage.setItem('cfp_sj_site', $('#invsite') ? $('#invsite').value : ''); } catch {   } };
     const invSite = () => ($('#invsite') ? $('#invsite').value : sites[0] && sites[0].code);
     const fill = () => { const li = lastInv[invSite()]; $('#invlast').textContent = li ? t('inventory_last').replace('{d}', fmtDT(li.at)).replace('{c}', li.counted ?? '–').replace('{x}', li.differences ?? '–') : t('inventory_last_none');
       $('#invbook').textContent = t('inventory_book');
-      // Backlog 546/548 (Blickwinkel „Jahresinventur am Werkstatt-Tablet“): gleiche Reihenfolge wie die gedruckte Zählliste (Lagerort, Name; nach Sprache
-      // sortiert), Teilenummer, Anzeige nach Lagerort (nur ausblenden – gesendet werden alle Werte) und Buchbestand nur auf Wunsch (Blindzählung wie die Zählliste)
+
+
       const coll = new Intl.Collator(S.lang === 'uk' ? 'uk' : S.lang === 'en' ? 'en' : 'de', { numeric: true, sensitivity: 'base' });
       const its = items.filter((i) => i.site === invSite()).sort((a, b) => (a.location ? 0 : 1) - (b.location ? 0 : 1) || coll.compare(a.location || '', b.location || '') || coll.compare(a.name, b.name));
       const locs = [...new Set(its.map((i) => i.location || ''))]; const wb = !!S.invBook;
@@ -163,8 +163,8 @@ async function viewStock() {
         <div class="scroll"><table><thead><tr><th>${esc(t('part_name'))}</th>${wb ? `<th>${esc(t('inventory_book_qty'))}</th>` : ''}<th>${esc(t('inventory_counted'))}</th></tr></thead><tbody>${its.map((i) => `<tr data-invloc="${esc(i.location || '')}"><td>${esc(i.name)}${i.part_number ? `<div class="small muted pn">${esc(i.part_number)}</div>` : ''}${i.location ? `<div class="small muted">${esc(i.location)}</div>` : ''}<div class="small muted" data-lc>${esc(i.last_counted_date ? t('last_counted') + ': ' + fmtD(i.last_counted_date) : t('never_counted'))}</div></td>${wb ? `<td>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</td>` : ''}<td><input data-inv="${esc(i.id)}" data-invname="${esc(i.name + (i.location ? ' (' + i.location + ')' : ''))}" inputmode="decimal" style="max-width:110px" aria-label="${esc(t('inventory_counted'))} ${esc(i.name)}"></td></tr>`).join('')}</tbody></table></div>`; $('#invbook').disabled = true; $('#invres').innerHTML = ''; invPrev = null;
       const il = $('#invloc'); if (il) il.onchange = () => $$('#invlist tr[data-invloc]').forEach((tr) => (tr.hidden = il.value !== '*' && tr.dataset.invloc !== il.value));
       $('#invbookshow').onchange = () => { invDraft.save(); S.invBook = $('#invbookshow').checked; fill(); };
-      // Zählmengen nach der Prüfung geändert → erst erneut prüfen (gebucht wird nur, was geprüft wurde)
-      // Entwurf der Zählmengen auf diesem Gerät (je Person/Umgebung/Lager, 14 Tage): Wegklicken oder Neuladen verliert keine Zählung
+
+
       const dr = invDraft.load(); let restored = 0;
       if (dr) for (const x of $$('[data-inv]')) if (typeof dr.counts[x.dataset.inv] === 'string' && dr.counts[x.dataset.inv] !== '') { x.value = dr.counts[x.dataset.inv]; restored++; }
       if (dr && dr.note && !$('#invnote').value) $('#invnote').value = dr.note;
@@ -180,12 +180,12 @@ async function viewStock() {
     };
     $('#invnote').oninput = () => invDraft.save();
     fill(); if ($('#invsite')) $('#invsite').onchange = fill;
-    const body = () => ({ site: invSite(), note: $('#invnote').value || null, counts: $$('[data-inv]').filter((x) => x.value.trim() !== '').map((x) => ({ item_id: x.dataset.inv, counted: x.value.trim() })) }); // nur gezählte Zeilen (Lager > 2000 Artikel, 20.10.2026)
-    // Backlog 547: wie viele Artikel des Lagers nicht gezählt sind (bleiben unverändert) – vorher wirkte eine Teilzählung als vollständige Inventur
+    const body = () => ({ site: invSite(), note: $('#invnote').value || null, counts: $$('[data-inv]').filter((x) => x.value.trim() !== '').map((x) => ({ item_id: x.dataset.inv, counted: x.value.trim() })) });
+
     const unc = () => $$('[data-inv]').filter((x) => x.value.trim() === '');
     const prog = () => { const all = $$('[data-inv]').length; const u = unc(); return `<p class="small" data-invprog>${esc(t('inventory_progress').replace('{c}', all - u.length).replace('{n}', all))}${u.length ? ` · <b>${esc(tn('inventory_uncounted', u.length))}</b>` : ''}</p>${u.length ? `<details class="small"><summary>${esc(t('inventory_uncounted_list'))}</summary><ul>${u.slice(0, 300).map((x) => `<li>${esc(x.dataset.invname || '')}</li>`).join('')}${u.length > 300 ? '<li>…</li>' : ''}</ul></details>` : ''}`; };
     const uncTxt = () => { const n = unc().length; return n ? '\n\n' + tn('inventory_uncounted_confirm', n) : ''; };
-    // Backlog 562: heute schon gezählt (andere Person/anderes Gerät) – Hinweis vor dem Buchen
+
     const ctToday = (r) => (r.already_counted_today && r.already_counted_today.length ? `<div class="panel warn small" role="note" data-invtoday><b>${esc(tn('inventory_counted_today', r.already_counted_today.length))}</b><ul style="margin:.3rem 0;padding-left:1.2rem">${r.already_counted_today.slice(0, 100).map((x) => `<li>${esc(x.name)}${x.part_number ? ' (' + esc(x.part_number) + ')' : ''}: ${esc(t('inventory_counted_at').replace('{t}', fmtHM(x.at)))}${x.qty !== null && x.qty !== undefined ? ` – ${esc(t('inventory_counted'))} ${fmtNum(x.qty)} ${esc(unitL(x.unit))}` : ''}</li>`).join('')}${r.already_counted_today.length > 100 ? '<li>…</li>' : ''}</ul><span class="muted">${esc(t('inventory_counted_today_hint'))}</span></div>` : '');
     const show = (r, booked) => { $('#invres').innerHTML = (booked ? '' : prog() + ctToday(r)) + (r.differences.length ? `<div class="list">${r.differences.map((d) => `<div class="row ${booked ? '' : 'p-mittel'}" data-invdiff style="grid-template-columns:minmax(0,1fr) auto"><span class="title" style="white-space:normal">${esc(d.name)}</span><b style="white-space:nowrap">${d.delta > 0 ? '+' : ''}${fmtNum(d.delta)} ${esc(unitL(d.unit))}</b><span class="sub" style="white-space:normal;grid-column:1/-1">${esc(t('inventory_book_qty'))} ${fmtNum(d.book)} → ${esc(t('inventory_counted'))} ${fmtNum(d.counted)}</span></div>`).join('')}</div>` : `<p>${esc(t('inventory_no_diff'))}</p>`); };
     $('#invchk').onclick = async () => { try { const r = await api('POST', '/api/stock/inventory?dry_run=1', body(), { timeoutMs: SEND_TIMEOUT_MS }); show(r, false); invPrev = r.differences; $('#invbook').disabled = !(r.counted > 0); $('#invbook').textContent = t(r.differences.length ? 'inventory_book' : 'inventory_close'); } catch (err) { toast(err.message, true); } };
@@ -196,7 +196,7 @@ async function viewStock() {
       catch (err) { toast(err.message, true); if (err.code === 'inventory_changed') { invPrev = null; $('#invbook').disabled = true; $('#invres').innerHTML = `<p class="small muted">${esc(t('inventory_recheck'))}</p>`; } }
     };
   }
-  // Artikel-Import (CSV): Vorschau, dann Übernehmen – nur neue Artikel, vorhandene bleiben unverändert (19.10.2026)
+
   const simpf = $('#simpf');
   if (simpf) simpf.onchange = async () => {
     const file = simpf.files[0]; if (!file) return;
@@ -213,23 +213,23 @@ async function viewStock() {
     try { show(await api('POST', '/api/stock/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
   };
   if (S.simpDone && $('#simpr')) { const d = $('#simp'); d.open = true; const r = S.simpDone; S.simpDone = null; $('#simpr').innerHTML = `<p id="simpsum"><b>✓</b> · ${esc(wsName(r.site))} · ${esc(t('ia_neu'))}: ${r.created} · ${esc(t('ia_unverändert'))}: ${r.unchanged} · ${esc(t('skipped'))}: ${r.skipped.length}</p>`; }
-  // Backlog 989 (Blickwinkel „Werkstatt bucht vom Lieferschein“): Teilenummer gibt es in diesem Lager schon (auch anders geschrieben,
-  // „A 000 420 12 20“ = „A0004201220“) → beim Tippen auf den vorhandenen Artikel verweisen (Zugang dort buchen statt zweiten Artikel anlegen)
+
+
   const nfm = $('#nf'); const pnBox = nfm.querySelector('[data-pndup]');
   const pnDupShow = (list) => { pnBox.hidden = !list.length; pnBox.innerHTML = list.length ? `⚠ ${esc(t('stock_pn_dup'))} ${list.slice(0, 3).map((i) => `<a href="#/stock/${esc(i.id)}" data-pndupitem="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''}</a>${i.on_hand === null || i.on_hand === undefined ? '' : ` (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})`}`).join(', ')}${list.length > 3 ? ` +${list.length - 3}` : ''}` : ''; };
   const pnDupCheck = () => { const c = pnCompact(nfm.part_number.value); const site = nfm.site ? nfm.site.value : (sites[0] || {}).code; pnDupShow(c.length >= 3 ? items.filter((i) => i.site === site && pnCompact(i.part_number) === c) : []); };
   nfm.part_number.oninput = pnDupCheck; if (nfm.site) nfm.site.onchange = pnDupCheck;
-  if ($('#ssite') && $('#ssite').value) { passSite(); if (nfm.site && [...nfm.site.options].some((o) => o.value === $('#ssite').value)) nfm.site.value = $('#ssite').value; } // gemerkte Lagerwahl: Inventur/Neuer Artikel vorbelegen
-  $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['initial_qty', 'min_qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } const sf = e.target; try { await api('POST', '/api/stock', b, { timeoutMs: SEND_TIMEOUT_MS }); viewStock(); } catch (err) { /* Backlog 805i (Funkloch): Wiederholung → duplicate_item */ if (lostDup(sf, b, err, ['duplicate_item'])) { toast(t('saved_before')); viewStock(); return; } lostMark(sf, b, err); if (err.code === 'duplicate_item' && err.data && err.data.item_id) { const tw = items.find((i) => i.id === err.data.item_id); pnDupShow([tw || { id: err.data.item_id, name: err.data.name, part_number: err.data.part_number }]); } toast(err.message, true); } };
+  if ($('#ssite') && $('#ssite').value) { passSite(); if (nfm.site && [...nfm.site.options].some((o) => o.value === $('#ssite').value)) nfm.site.value = $('#ssite').value; }
+  $('#nf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['initial_qty', 'min_qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } const sf = e.target; try { await api('POST', '/api/stock', b, { timeoutMs: SEND_TIMEOUT_MS }); viewStock(); } catch (err) {   if (lostDup(sf, b, err, ['duplicate_item'])) { toast(t('saved_before')); viewStock(); return; } lostMark(sf, b, err); if (err.code === 'duplicate_item' && err.data && err.data.item_id) { const tw = items.find((i) => i.id === err.data.item_id); pnDupShow([tw || { id: err.data.item_id, name: err.data.name, part_number: err.data.part_number }]); } toast(err.message, true); } };
 }
-// Zählliste für die Inventur (Ausdruck zum Ausfüllen): je Lager nach Lagerort/Artikel, standardmäßig ohne Buchbestand (Blindzählung)
+
 async function viewStockCount() {
   const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site) : S.meta.workshops;
   const site = S.countSite && sites.some((w) => w.code === S.countSite) ? S.countSite : (sites[0] && sites[0].code) || '';
   const withBook = !!S.countBook;
   const sr = site ? await api('GET', '/api/stock?site=' + encodeURIComponent(site)) : { items: [], last_inventory: {} };
   const li = (sr.last_inventory || {})[site];
-  // Rollierende Inventur: nur Artikel, die seit N Tagen nicht (oder noch nie) gezählt wurden
+
   const age = ['90', '180', '365'].includes(S.countAge) ? Number(S.countAge) : 0;
   const items = age ? sr.items.filter((i) => !i.last_counted_date || i.last_counted_date <= bDate(-age)) : sr.items;
   const ageLabel = age ? t('count_age_n').replace('{n}', age) : '';
@@ -252,10 +252,10 @@ async function viewStockCount() {
   $('#cage').onchange = () => { S.countAge = $('#cage').value; viewStockCount(); };
   $('#cprt').onclick = () => window.print();
 }
-// Bestellvorschlag: Artikel unter Mindestbestand mit Fehlmenge – es wird nichts bestellt (Liste für den Einkauf)
+
 async function viewReorder() {
   const sites = S.me.role === 'workshop' ? [] : S.meta.workshops;
-  let site = ''; try { site = sessionStorage.getItem('cfp_reorder_site') || ''; } catch { /* ohne Speicher: alle Lager */ }
+  let site = ''; try { site = sessionStorage.getItem('cfp_reorder_site') || ''; } catch {   }
   const q = site && sites.some((w) => w.code === site) ? `&site=${encodeURIComponent(site)}` : '';
   const items = (await api('GET', '/api/stock?reorder=1' + q)).items;
   const valued = items.filter((i) => i.shortfall_value_net !== null);
@@ -274,11 +274,11 @@ async function viewReorder() {
   $('#rprt').onclick = () => window.print();
   $('#rcsv').onclick = async () => { try { download(await api('GET', '/api/stock?reorder=1&format=csv' + q), `fuhrpark-bestellvorschlag_${envFn()}_${bDate()}${q ? '_' + site : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
-// Bestand zum Stichtag (Jahresabschluss): Menge aus allen Buchungen bis Tagesende, zwei Preisangaben, Bewertung legt die Buchhaltung fest
+
 async function viewStockAsOf() {
-  if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`); // Formulare nicht für Fahrer/Lesezugriff (Server antwortet ohnehin 403)
+  if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`);
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
-  const sites = S.me.role === 'workshop' ? [] : wsAll(); // Backlog 1052: auch geschlossene Werkstätten (Restlager auswerten)
+  const sites = S.me.role === 'workshop' ? [] : wsAll();
   const today = bDate();
   const date = ss('cfp_sa_date') || `${Number(today.slice(0, 4)) - 1}-12-31`;
   const site = sites.some((w) => w.code === ss('cfp_sa_site')) ? ss('cfp_sa_site') : '';
@@ -304,15 +304,15 @@ async function viewStockAsOf() {
   $('#saprt').onclick = () => window.print();
   $('#sacsv').onclick = async () => { try { download(await api('GET', '/api/stock/asof?format=csv&' + qs), `fuhrpark-lagerbestand-stichtag_${envFn()}_${date}${site ? '_' + site : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
-// Lagerjournal: alle Buchungen eines Zeitraums (Berliner Datum), Wert nur mit Preis, ohne buchende Person
+
 async function viewStockJournal() {
-  if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`); // Formulare nicht für Fahrer/Lesezugriff (Server antwortet ohnehin 403)
+  if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`);
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
-  const sites = S.me.role === 'workshop' ? [] : wsAll(); // Backlog 1052: auch geschlossene Werkstätten (Restlager auswerten)
+  const sites = S.me.role === 'workshop' ? [] : wsAll();
   const today = bDate();
   const from = ss('cfp_sj_from') || today.slice(0, 8) + '01'; const to = ss('cfp_sj_to') || today;
   const site = sites.some((w) => w.code === ss('cfp_sj_site')) ? ss('cfp_sj_site') : ''; const type = ss('cfp_sj_type');
-  const itemId = ss('cfp_sj_item'); // gesetzt aus der Artikelakte („Im Lagerjournal anzeigen“)
+  const itemId = ss('cfp_sj_item');
   const qs = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${site ? '&site=' + encodeURIComponent(site) : ''}${type ? '&type=' + encodeURIComponent(type) : ''}${itemId ? '&item=' + encodeURIComponent(itemId) : ''}`;
   let rep;
   try { rep = await api('GET', '/api/stock/journal?' + qs); } catch (err) { ss('cfp_sj_from', ''); ss('cfp_sj_to', ''); ss('cfp_sj_item', ''); toast(err.message, true); rep = null; }
@@ -339,13 +339,13 @@ async function viewStockJournal() {
   if ($('#jitemclr')) $('#jitemclr').onclick = () => { ss('cfp_sj_item', ''); viewStockJournal(); };
   $('#jcsv').onclick = async () => { try { downloadChecked(await api('GET', '/api/stock/journal?format=csv&' + qs), `fuhrpark-${inv ? 'inventurdifferenzen' : 'lagerjournal'}_${envFn()}_${from}_${to}${site ? '_' + site : ''}${rep && rep.item && rep.item.part_number ? '_' + rep.item.part_number.replace(/[^\w-]/g, '') : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
-// Backlog 445 (Blickwinkel „Lieferung mit mehreren Positionen kommt – Wareneingang“): Lieferant/Lieferschein einmal, mehrere Artikel eines Lagers
-// in einem Schritt als Zugang buchen (ganz oder gar nicht, Wiederholung bucht nichts doppelt).
+
+
 async function viewStockReceipt() {
   if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`);
   const items = (await api('GET', '/api/stock?last=1')).items.filter((i) => i.active);
-  // Backlog 991: Positionen ohne Lagerartikel können hier angelegt werden – Leitung sieht daher alle Lager (zuerst die mit Artikeln),
-  // auch ein noch leeres Lager kann seine erste Lieferung erfassen
+
+
   const sites = S.me.role === 'workshop' ? S.meta.workshops.filter((w) => w.code === S.me.workshop_site)
     : [...S.meta.workshops.filter((w) => items.some((i) => i.site === w.code)), ...S.meta.workshops.filter((w) => !items.some((i) => i.site === w.code))];
   if (!sites.length) return render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="muted" id="rcnone">${esc(t('rcpt_no_items'))}</p>`, 'more');
@@ -360,12 +360,12 @@ async function viewStockReceipt() {
   const site = () => ($('#rcsite') ? $('#rcsite').value : sites[0].code);
   const siteItems = () => items.filter((i) => i.site === site());
   const opts = () => `<option value="">–</option>${siteItems().map(stockOpt).join('')}`;
-  // Backlog 862: Suchfeld je Position erst ab STOCK_Q_MIN Artikeln des gewählten Lagers (Lagerwechsel: Suche leeren)
+
   const rcQVis = (d) => { const q = $('.stockq', d); q.value = ''; q.hidden = siteItems().length < STOCK_Q_MIN; q.nextElementSibling.hidden = true; };
-  // Backlog 860 (Blickwinkel „Werkstatt wechselt den Lieferanten für Bremsteile“): je Position der letzte Zugang (Lieferant, Datum) und der
-  // letzte bekannte Einkaufspreis; anderer Lieferant als zuletzt bzw. abweichender Preis werden nur benannt (keine Schwelle, nichts gesperrt)
+
+
   const byId = new Map(items.map((i) => [i.id, i]));
-  const decNum = (x) => { // nur für den Hinweis: letztes Trennzeichen = Dezimalzeichen, außer genau eines mit drei Ziffern danach (Tausender, Sprache entscheidet)
+  const decNum = (x) => {
     const v = String(x || '').replace(/\s/g, ''); if (!/^\d[\d.,]*$/.test(v)) return null;
     const k = Math.max(v.lastIndexOf(','), v.lastIndexOf('.')); const seps = (v.match(/[.,]/g) || []).length;
     const dec = k >= 0 && !(seps === 1 && v.length - k - 1 === 3 && v[k] === (S.lang === 'en' ? ',' : '.'));
@@ -386,11 +386,11 @@ async function viewStockReceipt() {
     if (p !== null && it.unit_price_net && p !== Number(it.unit_price_net)) { const pc = Math.round((p / it.unit_price_net - 1) * 1000) / 10; chips.push(`<span class="chip${pc > 0 ? ' mittel' : ''}" data-rclpct>${esc(t('rcl_diff').replace('{p}', (pc > 0 ? '+' : '') + fmtNum(pc) + ' %'))}</span>`); }
     box.innerHTML = `<span class="muted">${parts.join(' · ')}</span>${chips.length ? `<div>${chips.join(' ')}</div>` : ''}`;
   };
-  // Backlog 991 (Blickwinkel „Wareneingang vom Lieferschein: Position mit Teilenummer, die es im Lager nicht gibt“): bisher musste man den
-  // Wareneingang verlassen (Eingaben weg), den Artikel unter „Neuer Artikel“ anlegen und neu beginnen. Jetzt je Position „Artikel fehlt –
-  // neu anlegen“: Bezeichnung, Teilenummer (aus der Suche vorbelegt), Einheit, Lagerort; angelegt wird ohne Bestand (Menge/Preis bucht der
-  // Wareneingang). Gleiche Teilenummer (auch anders geschrieben) im Lager → Verweis „diesen nehmen“ statt zweitem Artikel; 409 wählt den
-  // vorhandenen Artikel (auch nach Funkloch-Wiederholung). Keine neuen Rechte: POST /api/stock wie bisher (Werkstatt nur eigenes Lager).
+
+
+
+
+
   const rcAddItem = (it) => {
     if (!byId.has(it.id)) { items.push(it); byId.set(it.id, it); }
     $$('#rclines .rcl').forEach((r) => { const sel = $('select', r); const cur = sel.value; const q = $('.stockq', r);
@@ -416,12 +416,12 @@ async function viewStockReceipt() {
       <div class="actions"><button type="button" class="btn" data-rcnsave>${esc(t('rcn_save'))}</button><button type="button" class="btn secondary" data-rcncancel>${esc(t('cancel'))}</button></div></div>`;
     f.hidden = false; btn.setAttribute('aria-expanded', 'true');
     const nm = $('[data-rcnname]', f); const pn = $('[data-rcnpn]', f); const dup = $('[data-rcndup]', f);
-    // gleiche Teilenummer (Regel wie Suche/Lager-Schlüssel) in diesem Lager → vorhandenen Artikel anbieten
+
     const dupCheck = () => { const c = pnCompact(pn.value); const tw = c.length >= 3 ? siteItems().filter((i) => pnCompact(i.part_number) === c) : [];
       dup.hidden = !tw.length; dup.innerHTML = tw.length ? `⚠ ${esc(t('rcn_dup'))} ${tw.slice(0, 3).map((i) => `<button type="button" class="linkbtn" data-rcnuse="${esc(i.id)}">${esc(i.name)} · ${esc(i.part_number)} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</button>`).join(' ')}${tw.length > 3 ? ` +${tw.length - 3}` : ''}` : '';
       $$('[data-rcnuse]', dup).forEach((b) => { b.onclick = () => rcPick(d, b.dataset.rcnuse, false); }); };
     pn.oninput = dupCheck; dupCheck();
-    // Enter in den Feldern legt den Artikel an (nicht den ganzen Wareneingang buchen)
+
     f.onkeydown = (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); $('[data-rcnsave]', f).click(); } };
     $('[data-rcncancel]', f).onclick = () => { f.hidden = true; f.innerHTML = ''; btn.setAttribute('aria-expanded', 'false'); btn.focus(); };
     $('[data-rcnsave]', f).onclick = async () => {
@@ -432,7 +432,7 @@ async function viewStockReceipt() {
         rcAddItem({ id: r.id, site: body.site, name: body.name, part_number: body.part_number || null, unit: body.unit || 'Stk', location: body.location || null, on_hand: 0, min_qty: null, unit_price_net: null, active: 1, last_supplier: null, last_receipt_date: null });
         rcPick(d, r.id, true);
       } catch (err) {
-        // vorhandener Artikel (gleiche Bezeichnung + Teilenummer, auch nach Wiederholung im Funkloch) → diesen wählen statt Fehler
+
         if (err.code === 'duplicate_item' && err.data && err.data.item_id) {
           if (!byId.has(err.data.item_id)) { try { const x = (await api('GET', `/api/stock/${encodeURIComponent(err.data.item_id)}`)).item; if (x.active) rcAddItem({ ...x, last_supplier: null, last_receipt_date: null }); else { toast(t('rcn_inactive'), true); return; } } catch (e2) { toast(e2.message, true); return; } }
           rcPick(d, err.data.item_id, false); return;
@@ -455,13 +455,13 @@ async function viewStockReceipt() {
     $('#rclines').append(d);
     stockPick($('.stockq', d), $('select', d), siteItems, '<option value="">–</option>'); rcQVis(d);
     $('select', d).onchange = () => { sum(); rcLast(d); if (!$('select', d).value) $('[data-rcnok]', d).hidden = true; }; $('.rcp', d).oninput = () => rcLast(d); $('.rcnew', d).onclick = () => rcNew(d);
-    // Suche ohne Treffer → „neu anlegen“ hervorheben (Lieferschein-Position gibt es im Lager nicht)
+
     const qi = $('.stockq', d); const qin = qi.oninput; qi.oninput = () => { qin(); const none = !!qi.value.trim() && !$('select', d).value && !siteItems().some((i) => stockHit(i, qi.value.trim())); $('.rcnew', d).style.fontWeight = none ? '700' : ''; if (none) $('.rcnew', d).setAttribute('data-rcnhot', ''); else $('.rcnew', d).removeAttribute('data-rcnhot'); };
     $('.rcdel', d).onclick = () => { d.remove(); if (!$$('#rclines .rcl').length) addLine(); sum(); };
     sum();
   };
-  // Backlog 861 (gleicher Blickwinkel): bisherige Lieferanten dieses Lagers als Vorschlag – eine Schreibweise je Lieferant hält den
-  // Bestellvorschlag (gruppiert nach letztem Lieferanten) zusammen; freie Eingabe bleibt möglich
+
+
   const supList = () => { const seen = new Map(); items.filter((i) => i.site === site() && i.last_supplier).forEach((i) => { const k = supKey(i.last_supplier); if (!seen.has(k)) seen.set(k, i.last_supplier); });
     $('#rcsupl').innerHTML = [...seen.values()].sort((x, y) => x.localeCompare(y, 'de')).map((v) => `<option value="${esc(v)}">`).join(''); };
   supList();
@@ -482,8 +482,8 @@ async function viewStockReceipt() {
     const body = { site: site(), supplier: $('#rcsup').value.trim() || null, document_ref: $('#rcdoc').value.trim() || null, note: $('#rcnote').value.trim() || null, request_key: key,
       lines: rows.map((r) => ({ item_id: $('select', r).value, qty: $('.rcq', r).value.trim(), unit_price_net: $('.rcp', r).value.trim() || null })) };
     try {
-      // Backlog 802 (Blickwinkel „Werkstatt-Lager im Funkloch der Halle“): Buchungen mit Zeitlimit – ohne Antwort „Keine Verbindung“, Knopf frei;
-      // erneut buchen mit demselben request_key ergibt „duplicate“ (nichts doppelt gebucht)
+
+
       const res = await api('POST', '/api/stock/receipt', body, { timeoutMs: SEND_TIMEOUT_MS });
       key = uid().replace(/[^\w-]/g, '');
       toast('✓');
@@ -494,11 +494,11 @@ async function viewStockReceipt() {
     } catch (err) { toast(err.message, true); }
   };
 }
-// Backlog 450 (Folge aus 449, Blickwinkel „Wareneingang: gelieferte Teile gehören zu einem wartenden Auftrag“): nach dem Buchen die Aufträge
-// dieser Werkstatt im Status „wartet auf Teile“ mit ihrem Vermerk zeigen – nennt der Vermerk den Lieferanten, einen gelieferten Artikel oder
-// dessen Teilenummer, steht der Auftrag oben mit Kennzeichnung. Reine Textübereinstimmung, keine Zuordnung, nichts wird automatisch gebucht.
+
+
+
 async function rcptWaiting(site, supplier, got) {
-  // Backlog 524: nur „wartet auf Teile“ dieser Werkstatt abfragen (vorher erste 200 offene aller Standorte → wartende konnten fehlen)
+
   let cs; try { cs = (await api('GET', `/api/cases?status=wartet_teile&ws=${encodeURIComponent(site)}&limit=500`)).cases; } catch { return; }
   const box = $('#rcres'); if (!box || !$('#rcdone')) return;
   const w = cs.filter((c) => c.status === 'wartet_teile' && c.workshop_site === site);
@@ -508,10 +508,10 @@ async function rcptWaiting(site, supplier, got) {
   const hit = (c) => { const n = low(c.parts_wait_note); const np = pn(c.parts_wait_note); return !!n && keys.some((x) => (x.k ? n.includes(x.k) : np.includes(x.p))); };
   const rows = w.map((c) => ({ c, m: hit(c), d: partsWaitDays(c) })).sort((a, b) => (b.m - a.m) || ((b.d || 0) - (a.d || 0)));
   box.insertAdjacentHTML('beforeend', `<section class="panel" id="rcwait"><h3>${esc(t('rcw_title'))} <span class="chip">${rows.length}</span></h3><p class="small muted">${esc(t('rcw_hint').replace('{a}', t('act_resume_repair')).replace('{b}', t('act_parts_partial')))}</p>
-    <ul>${rows.map(({ c, m, d }) => `<li${m ? ' data-rcwhit' : ''}><a href="#/cases/${esc(c.id)}">${esc(c.case_no)} · ${esc(c.plate)}</a>${m ? ` <span class="chip mittel">${esc(t('rcw_match'))}</span>` : ''}<div class="small">${c.parts_wait_note ? `${esc(t('parts_wait_for'))}: ${ltxt(clipTxt(c.parts_wait_note, 120))}` : `<span class="muted">${esc(t('rcw_no_note'))}</span>`}${d ? ` · ${esc(t('parts_wait_days').replace('{d}', nDays(d)))}` : ''}${partsEta(c)}</div></li>`).join('')}</ul></section>`); // Backlog 524: Liefertermin
+    <ul>${rows.map(({ c, m, d }) => `<li${m ? ' data-rcwhit' : ''}><a href="#/cases/${esc(c.id)}">${esc(c.case_no)} · ${esc(c.plate)}</a>${m ? ` <span class="chip mittel">${esc(t('rcw_match'))}</span>` : ''}<div class="small">${c.parts_wait_note ? `${esc(t('parts_wait_for'))}: ${ltxt(clipTxt(c.parts_wait_note, 120))}` : `<span class="muted">${esc(t('rcw_no_note'))}</span>`}${d ? ` · ${esc(t('parts_wait_days').replace('{d}', nDays(d)))}` : ''}${partsEta(c)}</div></li>`).join('')}</ul></section>`);
 }
-// Backlog 441 (Blickwinkel „Rückruf eines Teilelieferanten“): Teile-Verwendung – an welchen Fahrzeugen ist Teil X laut Vorgang verbaut?
-// Suche über Teilenummer (Schreibweise egal), Bezeichnung, Lieferant, Beleg; optional Einbauzeitraum. Keine Preise, keine Personen.
+
+
 async function viewPartsUsage() {
   if (!['owner', 'fleet', 'workshop'].includes(S.me.role)) return render(`<p>${esc(t('err_forbidden'))}</p>`);
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
@@ -519,9 +519,9 @@ async function viewPartsUsage() {
   const qs = `q=${encodeURIComponent(q)}${from ? '&from=' + encodeURIComponent(from) : ''}${to ? '&to=' + encodeURIComponent(to) : ''}`;
   let rep = null;
   if (q.trim().length >= 3) { try { rep = await api('GET', '/api/parts/usage?' + qs); } catch (err) { toast(err.message, true); rep = null; } }
-  // Backlog 442: betroffene Fahrzeuge (in Betrieb) in einem Schritt als offenen Rückruf erfassen – über den vorhandenen Rückruf-Import
-  // (Vorschau, dann Übernehmen; gleiche Referenz am Fahrzeug nie doppelt; Frist nur laut Schreiben). Nur Inhaber/Fuhrparkleitung.
-  // Backlog 470 (Blickwinkel „Teilespender“): ruhende Fahrzeuge nicht vorgewählt (oft Teilespender – Teil evtl. ausgebaut), bleiben wählbar
+
+
+
   const rcVeh = rep && isMgr() ? rep.vehicles.filter((v) => v.active) : [];
   const rcOff = rep && isMgr() ? rep.vehicles.length - rcVeh.length : 0;
   const rcPanel = () => (!rcVeh.length ? '' : `<details class="panel noprint" id="purc"><summary>${esc(t('ptu_rc_title'))}</summary><p class="small muted">${esc(t('ptu_rc_hint'))}</p>
@@ -531,7 +531,7 @@ async function viewPartsUsage() {
       <p class="small" style="margin:12px 0 6px"><b>${esc(t('ptu_rc_vehicles'))}</b></p><div class="vehpick multi" id="purcpick">${rcVeh.map((v) => `<label><input type="checkbox" name="purcveh" value="${esc(v.vehicle_id)}" data-plate="${esc(v.plate)}"${v.eval_excluded ? ' data-purcdorm' : ' checked'}>${plate(v.plate)}${v.eval_excluded ? `<span class="small muted">${esc(t('eval_excluded'))} – ${esc(t('ptu_rc_dormant_hint'))}</span>` : ''}</label>`).join('')}</div>
       ${rcOff ? `<p class="small muted" id="purcoff">${esc(t('ptu_rc_off').replace('{n}', rcOff))}</p>` : ''}
       <div class="actions"><button class="btn secondary" id="purcprev">${esc(t('preview'))}</button></div></form><div id="purcres" role="status" aria-live="polite"></div></details>`);
-  // Backlog 444: passende Lagerartikel mit Bestand – Rückruf betrifft oft auch noch nicht verbaute Teile (vor Verwendung prüfen/sperren)
+
   const stockPanel = () => (!rep || !rep.stock || !rep.stock.length ? '' : `<section class="panel warn" id="pustock"><h3>${esc(t('ptu_stock_title'))}</h3><p class="small">${esc(t('ptu_stock_hint'))}</p>
     <ul>${rep.stock.map((i) => `<li><a href="#/stock/${esc(i.id)}">${esc(i.name)}</a>${i.part_number ? ` <span class="small muted pn">${esc(i.part_number)}</span>` : ''} · <b>${fmtNum(i.on_hand)} ${esc(unitL(i.unit))}</b> · ${esc(wsName(i.site))}${i.location ? ' · ' + esc(i.location) : ''}${i.active ? '' : ` <span class="chip">${esc(t('item_inactive_badge'))}</span>`}</li>`).join('')}</ul>${rep.stock_truncated ? `<p class="small muted">${esc(t('ptu_stock_more'))}</p>` : ''}</section>`);
   const vChip = (i) => (!i.vehicle_active ? ` <span class="chip" data-puinact>${esc(t('inactive_vehicles'))}</span>` : i.eval_excluded ? ` <span class="chip" data-pudorm>${esc(t('eval_excluded'))}</span>` : '');
@@ -550,7 +550,7 @@ async function viewPartsUsage() {
   $('#puprt').onclick = () => window.print();
   if ($('#purcf')) {
     const q2 = (x) => `"${String(x).replace(/"/g, '""')}"`;
-    // CSV wie „Rückrufe importieren“: FIN (sonst Kennzeichen), Referenz, Frist (nur wenn eingetragen), Bemerkung
+
     const csvOf = () => ['Kennzeichen;FIN;Referenz;Frist;Bemerkung', ...$$('input[name=purcveh]').filter((x) => x.checked).map((x) => [x.dataset.plate, x.value.startsWith('VIN:') ? x.value.slice(4) : '', $('#purcref').value.trim(), $('#purcdue').value, $('#purcnote').value.trim()].map(q2).join(';'))].join('\r\n');
     const act = (a) => (a === 'erledigt' ? t('ms_erledigt') : t('ia_' + a));
     const show = (r, applied, text) => {
@@ -572,8 +572,8 @@ async function viewPartsUsage() {
   }
   $('#pucsv').onclick = async () => { try { downloadChecked(await api('GET', '/api/parts/usage?format=csv&' + qs), `fuhrpark-teileverwendung_${envFn()}_${q.replace(/[^\w-]/g, '').slice(0, 40) || 'suche'}${from ? '_' + from : ''}${to ? '_' + to : ''}.csv`); } catch (err) { toast(err.message, true); } };
 }
-// Backlog 815 (Blickwinkel „Werkstatt bucht Teile, Lager im anderen Standort“): derselbe Artikel in anderen Lagern vorrätig (nur Leitung) –
-// Verweis auf den Artikel dort (Umlagerung wird dort gebucht); Bestellvorschlag zeigt dieselbe Angabe kompakt
+
+
 const otherStockLine = (l, unit) => l.map((o) => `<a href="#/stock/${esc(o.item_id)}">${esc(wsName(o.site))}</a>: <b>${fmtNum(o.on_hand)} ${esc(unitL(unit))}</b>${o.min_qty !== null && o.min_qty !== undefined ? ` <span class="muted">(${esc(t('min_qty'))} ${fmtNum(o.min_qty)})</span>` : ''}`).join('<br>');
 const otherStockP = (l, unit) => (l && l.length ? `<section class="panel noprint" id="otherstock"><h3 style="margin-top:0">📦 ${esc(t('other_stock'))}</h3><p>${otherStockLine(l, unit)}</p><p class="small muted">${esc(t('other_stock_hint'))}</p></section>` : '');
 async function viewStockItem(id) {
@@ -606,46 +606,46 @@ async function viewStockItem(id) {
       <label for="tqty">${esc(t('qty'))} (${esc(t('on_hand'))} ${fmtNum(it.on_hand)} ${esc(unitL(it.unit))})</label><input id="tqty" name="qty" inputmode="decimal" required><label for="tnote">${esc(t('note'))}</label><input id="tnote" name="note" maxlength="300">
       <div class="actions"><button class="btn">${esc(t('transfer'))}</button></div></form></details>` : ''}
     <h2>${esc(t('history'))}</h2>${d.movements_truncated ? `<p class="panel warn small" id="histtrunc">${esc(t('item_history_truncated').replaceAll('{n}', d.movements_max))}</p>` : ''}<p class="noprint"><button type="button" class="btn secondary" id="histjournal">${esc(t('item_in_journal'))}</button> <button type="button" class="btn secondary" id="itemprt">${esc(t('print'))}</button> <button type="button" class="btn secondary" id="itempu">${esc(t('ptu_item_btn'))}</button></p><div class="scroll"><table class="stack"><thead><tr><th>${esc(t('date'))}</th><th>${esc(t('kind'))}</th><th>${esc(t('qty'))}</th><th>${esc(t('note'))}</th></tr></thead><tbody>${d.movements.map((m) => `<tr><td class="small">${fmtDT(m.created_at)}</td><td>${m.transfer_id ? `${esc(t('mv_umlagerung'))} ${m.qty < 0 ? '→' : '←'} ${esc(wsName(m.transfer_site))}` : esc(t('mv_' + m.type))}</td><td><b>${m.qty > 0 ? '+' : ''}${fmtNum(m.qty)}</b></td><td class="small">${m.case_no ? `<a href="#/cases/${esc(m.case_id)}" translate="no">${esc(m.case_no)}</a> · ` : ''}${esc(m.supplier || '')} ${m.document_ref && !(m.note || '').startsWith(m.document_ref) ? esc(stNote(m.document_ref)) : ''} ${esc(stNote(m.note || ''))}<br>${esc(m.user_name)}</td></tr>`).join('')}</tbody></table></div>`, 'more');
-  // Artikelakte drucken (Stammdaten + Verlauf; Buchungs-/Bestell-/Umlagerungsformulare erscheinen im Ausdruck nicht)
+
   $('#itemprt').onclick = () => window.print();
-  // Backlog 441: Teile-Verwendung mit Teilenummer (sonst Bezeichnung) dieses Artikels – alle Einbauten, nicht nur Entnahmen aus diesem Lager
-  $('#itempu').onclick = () => { try { sessionStorage.setItem('cfp_pu_q', it.part_number || it.name); sessionStorage.setItem('cfp_pu_from', ''); sessionStorage.setItem('cfp_pu_to', ''); } catch { /* ohne Sitzungsspeicher: leeres Suchfeld */ } location.hash = '#/stock/usage'; };
-  // Lagerjournal auf diesen Artikel eingrenzen, Zeitraum: letzte 12 Monate (Höchstspanne des Journals), Buchungsart: alle
+
+  $('#itempu').onclick = () => { try { sessionStorage.setItem('cfp_pu_q', it.part_number || it.name); sessionStorage.setItem('cfp_pu_from', ''); sessionStorage.setItem('cfp_pu_to', ''); } catch {   } location.hash = '#/stock/usage'; };
+
   $('#histjournal').onclick = () => { try { const today = bDate(); const f = bDate(-365);
-    sessionStorage.setItem('cfp_sj_item', id); sessionStorage.setItem('cfp_sj_from', f); sessionStorage.setItem('cfp_sj_to', today); sessionStorage.setItem('cfp_sj_type', ''); sessionStorage.setItem('cfp_sj_site', ''); } catch { /* ohne Sitzungsspeicher: Journal ungefiltert */ } location.hash = '#/stock/journal'; };
-  // Entnahme: Wert = hinterlegter Artikelpreis (Server übernimmt ihn) – Preisfeld dann aus, Hinweis an
-  const mfType = $('#mf [name=type]'); const mfSync = () => { const fixed = mfType.value !== 'zugang' && !!$('#mfpricehint'); /* Korrektur ebenfalls zum Artikelpreis (23.10.2026) */ $('#mfprice').hidden = fixed; $('#mf [name=unit_price_net]').disabled = fixed; if ($('#mfpricehint')) $('#mfpricehint').hidden = !fixed; };
+    sessionStorage.setItem('cfp_sj_item', id); sessionStorage.setItem('cfp_sj_from', f); sessionStorage.setItem('cfp_sj_to', today); sessionStorage.setItem('cfp_sj_type', ''); sessionStorage.setItem('cfp_sj_site', ''); } catch {   } location.hash = '#/stock/journal'; };
+
+  const mfType = $('#mf [name=type]'); const mfSync = () => { const fixed = mfType.value !== 'zugang' && !!$('#mfpricehint');   $('#mfprice').hidden = fixed; $('#mf [name=unit_price_net]').disabled = fixed; if ($('#mfpricehint')) $('#mfpricehint').hidden = !fixed; };
   mfType.onchange = mfSync; mfSync();
-  // Restbestand eines deaktivierten Artikels ausbuchen (23.10.2026): Korrektur genau auf 0, Grund Pflicht
+
   if ($('#wof')) $('#wof').onsubmit = async (e) => { e.preventDefault(); if (!confirm(t('item_writeoff_confirm').replace('{q}', fmtNum(it.on_hand)).replace('{u}', unitL(it.unit)))) return;
     const b = { type: 'korrektur', qty: String(-it.on_hand), note: e.target.elements.namedItem('note').value.trim() }; b.request_key = rkFor(e.target, b);
     try { await api('POST', `/api/stock/${id}/movements`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { toast(err.message, true); } };
   $('#mf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); for (const k of Object.keys(b)) { if (b[k] === '') delete b[k]; else if (['qty', 'unit_price_net'].includes(k)) b[k] = b[k].trim(); } b.request_key = rkFor(e.target, b); try { await api('POST', `/api/stock/${id}/movements`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { toast(err.message, true); } };
-  // Backlog 480 (Blickwinkel „geteiltes Werkstatt-Tablet“): nach einem Versionskonflikt ist die Ansicht neu geladen – eigene Eingaben zurück ins
-  // Formular – nur die selbst geänderten Felder, die Änderung der anderen Person bleibt sichtbar und wird nicht still zurückgesetzt (vorher
-  // „Bitte neu laden“, jeder neue Versuch scheiterte am alten Stand; Neuladen verwarf die Eingaben)
+
+
+
   if (S.stockLost && S.stockLost.id === id) {
     const L = S.stockLost; S.stockLost = null; const f = $('#' + L.form); const dp = f && f.closest('details');
-    // Backlog 814: Artikel-Stammdaten wie Vertrag/Fahrzeug – Felder der anderen Person markiert, gleiches Feld → Warnung, eigene schon gespeichert → „War bereits gespeichert“
+
     if (f && L.mine) conflictKeep(f, L, 'stlost-' + L.form);
     else if (f) { for (const [k, v] of Object.entries(L.v)) { const el = f.elements.namedItem(k); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; } if (dp) dp.open = true;
       f.insertAdjacentHTML('afterbegin', `<div class="panel warn small" role="status" data-stocklost>${esc(t('case_conflict_kept'))}</div>`); dp && dp.scrollIntoView({ block: 'center' }); }
   }
   const stockConflict = (err, form, v, codes) => { if (!codes.includes(err.code)) return false; S.stockLost = { id, form, v }; viewStockItem(id); return true; };
-  // Artikel-Stammdaten: alle Felder senden (leer = entfernen); Deaktivieren mit Restbestand nur nach Rückfrage
+
   $('#itedf').onsubmit = async (e) => { e.preventDefault(); const g = (k) => e.target.elements.namedItem(k);
     const b = { name: g('name').value, part_number: g('part_number').value, min_qty: g('min_qty').value, location: g('location').value, unit_price_net: g('unit_price_net').value, active: g('active').checked };
     if (it.active && !b.active && it.on_hand !== 0 && !confirm(t('item_inactive_onhand').replace('{q}', fmtNum(it.on_hand)).replace('{u}', unitL(it.unit)))) return;
-    // nur geänderte Felder auf dem gelesenen Stand (18.10.2026: älteres Formular setzte Preis aus Zugang/Mindestbestand der Leitung still zurück)
+
     const nv = (x) => (x === null || x === undefined ? '' : decIn(x));
     const was = { name: it.name, part_number: it.part_number || '', min_qty: nv(it.min_qty), location: it.location || '', unit_price_net: nv(it.unit_price_net), active: !!it.active };
     for (const k of Object.keys(b)) if (b[k] === was[k]) delete b[k];
     if (!Object.keys(b).length) { toast(t('item_unchanged')); return; }
     if (it.updated_at) b.expected_updated_at = it.updated_at;
-    try { const r = await api('PATCH', `/api/stock/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805i: Wiederholung → Konflikt lädt mit gespeichertem Stand */ toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { if (err.code === 'version_conflict') { S.stockLost = { id, form: 'itedf', ...conflictMine(e.target) }; viewStockItem(id); return; } toast(err.message, true); } };
+    try { const r = await api('PATCH', `/api/stock/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS });   toast(r.changed && r.changed.length ? '✓' : t('item_unchanged')); viewStockItem(id); } catch (err) { if (err.code === 'version_conflict') { S.stockLost = { id, form: 'itedf', ...conflictMine(e.target) }; viewStockItem(id); return; } toast(err.message, true); } };
   if ($('#of')) $('#of').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); for (const k of ['eta', 'note']) if (!b[k]) delete b[k];
-    const ofm = e.target; try { await api('PUT', `/api/stock/${id}/order`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { if (lostDup(ofm, b, err, ['stock_order_exists'])) { toast(t('saved_before')); viewStockItem(id); return; } lostMark(ofm, b, err); /* Backlog 805i */ if (!stockConflict(err, 'of', b, ['order_changed', 'stock_order_exists'])) toast(err.message, true); } };
-  if ($('#ordclr')) $('#ordclr').onclick = async () => { try { await api('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`, undefined, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805j: Wiederholung → unverändert */ viewStockItem(id); } catch (err) { if (['order_changed', 'stock_order_exists'].includes(err.code)) { toast(err.message, true); viewStockItem(id); } else toast(err.message, true); } };
+    const ofm = e.target; try { await api('PUT', `/api/stock/${id}/order`, b, { timeoutMs: SEND_TIMEOUT_MS }); viewStockItem(id); } catch (err) { if (lostDup(ofm, b, err, ['stock_order_exists'])) { toast(t('saved_before')); viewStockItem(id); return; } lostMark(ofm, b, err);   if (!stockConflict(err, 'of', b, ['order_changed', 'stock_order_exists'])) toast(err.message, true); } };
+  if ($('#ordclr')) $('#ordclr').onclick = async () => { try { await api('DELETE', `/api/stock/${id}/order?expected=${encodeURIComponent((it.ordered_on || '') + '|' + (it.ordered_by || ''))}`, undefined, { timeoutMs: SEND_TIMEOUT_MS });   viewStockItem(id); } catch (err) { if (['order_changed', 'stock_order_exists'].includes(err.code)) { toast(err.message, true); viewStockItem(id); } else toast(err.message, true); } };
   if ($('#tf')) $('#tf').onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.qty = String(b.qty).trim(); if (!b.note) delete b.note; b.request_key = rkFor(e.target, b);
     try { const r = await api('POST', `/api/stock/${id}/transfer`, b, { timeoutMs: SEND_TIMEOUT_MS }); toast(t('transfer_done').replace('{q}', fmtNum(r.qty)).replace('{u}', unitL(it.unit)).replace('{w}', wsName(b.to_site)) + (r.target_created ? ' · ' + t('transfer_created') : '')); viewStockItem(id); } catch (err) { toast(err.message, true); } };
 }
