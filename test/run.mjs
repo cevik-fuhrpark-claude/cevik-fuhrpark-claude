@@ -37285,6 +37285,19 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1227 (Sonde Licht/Elektrik im Fahrerhaus, Backlog 195): „Bremslicht leuchtet dauerhaft/geht nicht aus“ (DE/UK/EN), Scheinwerfer mit Wasser/beschlagen (EN/UK) und UK „не горить підсвітка номера“ → Licht-Schritte; „electric window stuck“ → Fenster-Schritte; Reparaturvermerk und fremde Wörter nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
+  const want = {
+    LIGHTS_HINT: ['Bremslicht leuchtet dauerhaft', 'Bremslicht geht nicht mehr aus', 'Brake light stays on', 'brake lights won’t go off', 'Стоп-сигнал горить постійно', 'Headlight full of water', 'Фара запотіла, вода всередині', 'Не горить підсвітка номера'],
+    WINDOW_HINT: ['Electric window stuck', 'driver window jammed'] };
+  const no = {
+    LIGHTS_HINT: ['Bremslicht leuchtet dauerhaft, Schalter getauscht', 'brake light stays on, fixed', 'Стоп-сигнал горить постійно, поміняли датчик', 'lights on', 'Bremse dauerhaft'],
+    WINDOW_HINT: ['window sticker stuck', 'electric window stuck, repaired'] };
+  for (const [n, xs] of Object.entries(want)) { const r = rx(n); for (const x of xs) ok(r.test(x.toLowerCase()), n + ' fehlt: ' + x); }
+  for (const [n, xs] of Object.entries(no)) { const r = rx(n); for (const x of xs) ok(!r.test(x.toLowerCase()), n + ' fälschlich: ' + x); }
+});
+
 await test('Backlog 1226 (Sonde Getriebe/Kupplung/Lenkung/Federung, Backlog 195): Getriebe im Notlauf, Automatik/Splitgruppe schaltet ruckartig bzw. nicht, Gänge kratzen, Kupplung überlastet/Verschleißwarnung → Getriebe-Schritte; UK „важке кермо“ → Lenkung (DE/UK/EN); Reparaturvermerk, „nicht mehr“ und fremde Bauteile nicht', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
