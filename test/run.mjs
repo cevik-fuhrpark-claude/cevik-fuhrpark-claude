@@ -37341,6 +37341,15 @@ await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast üb
   ok(helpAfter(app, 'overload', 'load'), 'Hilfe-Abschnitt nach Ladungssicherung für meldende Rollen');
 });
 
+await test('Backlog 1245 (Sonde, Blickwinkel „Ladebordwand/Hebebühne defekt“): „Ladebordwand senkt sich von allein“, „sackt ab“, „Plattform verbogen“, „tail lift drops/bent“, „гідроборт сам опускається“, „гидроборт опускается“ → Tür-/Ladebordwand-Schritte; Reparaturvermerk, „abgesenkt und beladen“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const D = new RegExp(app.match(/^const DOOR_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['Ladebordwand senkt sich von allein', 'Ladebordwand Plattform verbogen', 'Hebebühne sackt ab', 'LBW sackt langsam durch', 'tail lift drops on its own', 'tail lift platform bent', 'гідроборт сам опускається', 'гідроборт погнутий', 'гидроборт опускается сам', 'Ladebordwand geht nicht hoch', 'tail lift not working']) ok(D.test(recurFix(x)), 'Ladebordwand: ' + x);
+  for (const x of ['Ladebordwand repariert', 'Ladebordwand senkt sich nicht mehr, repariert', 'Ladebordwand ok', 'Ladebordwand abgesenkt und beladen', 'tail lift repaired']) ok(!D.test(recurFix(x)), 'kein Hinweis: ' + x);
+});
+
 await test('Backlog 1244 (Sonde, Blickwinkel „Falsch getankt, Schlüssel eingeschlossen, weggerollt, festgefahren“): Scheibenwasch-/Kühl-/Leitungswasser oder Öl im AdBlue-Tank → Falsch-getankt-Schritte; UK/RU „ключі зачинив у кабіні“, „ключи закрыл в кабине“ → Schlüssel-Schritte; Nachfüllen, Verneinung und „закрив кабіну на ключ“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
