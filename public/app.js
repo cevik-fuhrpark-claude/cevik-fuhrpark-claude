@@ -3985,7 +3985,7 @@ async function viewCase(id, pre = null) {
     const key = JSON.stringify([c.id, action, note ?? null, payload]);
     // nur kurz nach dem Fehlschlag wiederverwenden: am geteilten Tablet bucht später ein anderer Mechaniker evtl. denselben Inhalt (23.10.2026)
     const commandId = S.pendCmd && S.pendCmd.key === key && Date.now() - S.pendCmd.at < 10 * 60000 ? S.pendCmd.id : uid(); S.pendCmd = { key, id: commandId, at: Date.now() };
-    try { const r = await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }, { timeoutMs: SEND_TIMEOUT_MS }); if (S.cmdOffline && S.cmdOffline.key === key) S.cmdOffline = null; S.pendCmd = null; if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true); else if (r && r.external_workshop) toast(t('ext_ws_hint')); else if (r && r.no_recipients) toast(t('no_recipients_warn'), true); else if (r && r.km_rejected && !r.duplicate) toast('✓ · ⚠ ' + (r.km_rejected.next_km !== undefined ? t('ev_km_greater').replace('{km}', fmtNum(r.km_rejected.km)).replace('{next}', fmtNum(r.km_rejected.next_km)) : t('ev_km_smaller').replace('{km}', fmtNum(r.km_rejected.km)).replace('{prev}', fmtNum(r.km_rejected.previous_km))), true); else if (r && r.km_test_only && !r.duplicate) toast('✓ · ' + t('ext_km_test_toast')); else toast(r && r.duplicate ? t('cmd_duplicate') : '✓'); if (S.openAct && S.openAct.action === fAct) S.openAct = null; actDraft(c.id).clear(); if (opts.next) return opts.next(r); viewCase(c.id); }
+    try { const r = await api('POST', `/api/cases/${c.id}/commands`, { action, command_id: commandId, expected_version: c.version, note, payload }, { timeoutMs: SEND_TIMEOUT_MS }); if (S.cmdOffline && S.cmdOffline.key === key) S.cmdOffline = null; S.pendCmd = null; if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true); else if (r && r.external_workshop) toast(t('ext_ws_hint')); else if (r && r.no_recipients) toast(t('no_recipients_warn'), true); else if (r && r.km_rejected && !r.duplicate) toast('✓ · ⚠ ' + (r.km_rejected.next_km !== undefined ? t('ev_km_greater').replace('{km}', fmtNum(r.km_rejected.km)).replace('{next}', fmtNum(r.km_rejected.next_km)) : t('ev_km_smaller').replace('{km}', fmtNum(r.km_rejected.km)).replace('{prev}', fmtNum(r.km_rejected.previous_km))), true); else if (r && r.km_test_only && !r.duplicate) toast('✓ · ' + t('ext_km_test_toast')); else toast(r && r.duplicate ? t('cmd_duplicate') : '✓'); if (action === 'record_work' && r && !r.duplicate) S.workNext = { from: c.id, date: payload.work_date || bDate(), at: Date.now() }; if (S.openAct && S.openAct.action === fAct) S.openAct = null; actDraft(c.id).clear(); if (opts.next) return opts.next(r); viewCase(c.id); }
     // Konflikt: Befehl wurde NICHT ausgeführt – Eingaben (z. B. Kommentartext) beim Neuladen behalten (17.10.2026: Text war nach 409 weg)
     // cost_approval_open: Server hat die Kostengrenze eben markiert (Version +1) – neu laden, damit „Kosten freigeben“ erscheint (20.10.2026)
     // Schichtwechsel 22.10.2026: allgemeines „bitte neu laden“ führte zum Neuladen im Browser – dann waren die Eingaben weg. Die App lädt selbst
@@ -4062,6 +4062,10 @@ async function viewCase(id, pre = null) {
   // Lagerauswahl („Teil erfassen“) wird nachgeladen – erst danach Eingaben wiederherstellen, sonst passt die Formular-Signatur nicht (19.10.2026)
   if (S.openAct) { try { await actionForm(S.openAct.action, c, cmd, S.openAct.preset, d, { restore: true }); } catch { /* Lagerliste nicht ladbar: Formular ohne Lager */ } }
   if (actDr && $('#af')) restoreActDraft(c, actDr);
+  // Backlog 1223 (Blickwinkel „Werkstatt erfasst Arbeitszeit am Ende der Schicht am Tablet“): nach dem Buchen weitere Aufträge der Werkstatt
+  // zum direkten Weiterbuchen anbieten; „Arbeitszeit erfassen“ öffnet sich dort sofort, ein nachgetragenes Datum wird übernommen
+  if (S.autoAct && S.autoAct.caseId === c.id) { const aa = S.autoAct; S.autoAct = null; if (!S.openAct && A.includes(aa.action) && $('#actform')) { await actionForm(aa.action, c, cmd, {}, d); const wi = $('#af input[name=work_date]'); if (wi && aa.date && aa.date !== wi.value && aa.date <= bDate()) { wi.value = aa.date; wi.dispatchEvent(new Event('change', { bubbles: true })); } } }
+  if (S.workNext && S.workNext.from === c.id && !S.openAct && Date.now() - S.workNext.at < 60000) { const wn = S.workNext; S.workNext = null; workNextPanel(c, wn); } else if (S.workNext && S.workNext.from !== c.id) S.workNext = null;
   finishRender();
   // Backlog 811: Versicherungsfall gleichzeitig bearbeitet → neu laden, eigene Änderungen bleiben im Formular (vorher verwarf das Neuladen die Eingaben)
   if (S.clLost && S.clLost.id === c.id) { const L = S.clLost; S.clLost = null; if ($('#clf')) conflictKeep($('#clf'), L, 'cllost'); }
@@ -4787,6 +4791,28 @@ function partQtyWatch() {
 
 // Eigene Arbeitszeit am gewählten Tag über alle Aufträge (Backlog 419): Mechaniker mit zwei Aufträgen am selben Tag sieht, was schon gebucht ist,
 // wie viel bis zur 24-h-Grenze bleibt und ob für diesen Auftrag an dem Tag schon etwas erfasst ist (Doppelbuchung nach Funkloch/Schichtwechsel)
+// Backlog 1223: „Weitere Arbeitszeit buchen“ – andere Aufträge derselben Werkstatt (in Reparatur zuerst), je mit den am Buchungstag
+// mit diesem Konto schon erfassten Stunden; Tippen öffnet den Auftrag mit dem Formular. Nur Anzeige – gebucht wird erst dort.
+const WN_ST = ['in_reparatur', 'wartet_teile', 'werkstatt_freigegeben'];
+function workNextPanel(c, wn) {
+  const box = $('#actform'); if (!box || box.innerHTML.trim() || !c.workshop_site) return;
+  Promise.all([api('GET', '/api/cases?status=open&limit=100'), api('GET', '/api/work-day?date=' + encodeURIComponent(wn.date)).catch(() => null)]).then(([r, wd]) => {
+    if (!document.body.contains(box) || box.innerHTML.trim() || S.openAct) return;
+    const xs = (r.cases || []).filter((x) => x.id !== c.id && WN_ST.includes(x.status) && x.workshop_site === c.workshop_site)
+      .sort((x, y) => WN_ST.indexOf(x.status) - WN_ST.indexOf(y.status) || plateCmp(x.plate || '', y.plate || ''));
+    const h = (x) => fmtNum(x, { maximumFractionDigits: 2 });
+    const byCase = new Map(((wd && wd.cases) || []).map((x) => [x.case_id, x.hours]));
+    const sum = wd ? (wd.hours ? t('wd_sum').replace('{d}', fmtD(wd.date)).replace('{h}', h(wd.hours)) : '') : '';
+    if (!xs.length) { if (sum) box.innerHTML = `<div class="panel small noprint" id="worknext" role="status"><p style="margin:0">${esc(sum)}.</p></div>`; return; }
+    const shown = xs.slice(0, 8);
+    box.innerHTML = `<div class="panel noprint" id="worknext" role="status"><h3 style="margin-top:0">${esc(t('wnx_title'))}</h3>${sum ? `<p class="small" id="wnxsum">${esc(sum)}.</p>` : ''}<p class="small muted">${esc(t('wnx_hint').replace('{a}', () => t('act_record_work')))}</p><ul style="list-style:none;padding:0;margin:0;display:grid;gap:6px">${shown.map((x) => {
+      const bk = byCase.get(x.id);
+      return `<li><button type="button" class="btn secondary" data-wnext="${esc(x.id)}" style="width:100%;text-align:left;display:block;white-space:normal"><b translate="no">${esc(x.plate || '')}</b> · <span translate="no">${esc(x.case_no || '')}</span> · ${esc(t('st_' + x.status))}${x.description ? `<br><span class="small muted">${ltxt(clipTxt(x.description, 70))}</span>` : ''}<br><span class="small" data-wnxh>${esc(bk ? t('wnx_booked').replace('{d}', fmtD(wn.date)).replace('{h}', h(bk)) : t('wnx_none').replace('{d}', fmtD(wn.date)))}</span></button></li>`;
+    }).join('')}</ul>${xs.length > shown.length ? `<p class="small muted"><a href="#/cases">${esc(t('wnx_more').replace('{n}', xs.length - shown.length))}</a></p>` : ''}<div class="actions"><button type="button" class="btn secondary" id="wnxclose">${esc(t('wnx_done'))}</button></div></div>`;
+    $$('[data-wnext]', box).forEach((b) => { b.onclick = () => { S.autoAct = { caseId: b.dataset.wnext, action: 'record_work', date: wn.date }; location.hash = '#/cases/' + encodeURIComponent(b.dataset.wnext); }; });
+    $('#wnxclose').onclick = () => { box.innerHTML = ''; };
+  }).catch(() => {});
+}
 function workDayWatch(c) {
   const inp = $('#af input[name=work_date]'); const box = $('#workday'); if (!inp || !box) return;
   let seq = 0;

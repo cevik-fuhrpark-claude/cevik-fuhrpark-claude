@@ -3977,3 +3977,7 @@ Object.assign(STRINGS.en, { def_rolling: 'Last days (rolling)', def_calmonth: 'C
 Object.assign(STRINGS.de, { stock_price_per: 'Preis netto je {u}' });
 Object.assign(STRINGS.uk, { stock_price_per: 'Ціна нетто за {u}' });
 Object.assign(STRINGS.en, { stock_price_per: 'Net price per {u}' });
+// Backlog 1223 (Blickwinkel „Werkstatt erfasst Arbeitszeit am Ende der Schicht am Tablet“): nach dem Buchen direkt den nächsten Auftrag
+Object.assign(STRINGS.de, { wnx_title: 'Weitere Arbeitszeit buchen', wnx_hint: 'Antippen öffnet den Auftrag mit „{a}“. Vorher Kennzeichen und Auftrag prüfen.', wnx_none: 'Am {d} noch nichts gebucht', wnx_booked: 'Am {d} gebucht: {h} h', wnx_more: 'Alle Aufträge anzeigen (weitere: {n})', wnx_done: 'Fertig' });
+Object.assign(STRINGS.uk, { wnx_title: 'Записати ще час роботи', wnx_hint: 'Натискання відкриває замовлення з формою «{a}». Спершу перевірте номер і замовлення.', wnx_none: '{d} ще нічого не внесено', wnx_booked: '{d} внесено: {h} год', wnx_more: 'Показати всі замовлення (ще: {n})', wnx_done: 'Готово' });
+Object.assign(STRINGS.en, { wnx_title: 'Book more working time', wnx_hint: 'Tap to open the order with “{a}”. Check the plate and order first.', wnx_none: 'Nothing booked on {d} yet', wnx_booked: 'Booked on {d}: {h} h', wnx_more: 'Show all orders (more: {n})', wnx_done: 'Done' });

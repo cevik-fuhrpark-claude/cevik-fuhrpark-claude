@@ -37429,6 +37429,33 @@ await test('Backlog 1219 (Blickwinkel „Werkstatt erfasst Teile vom Handy im La
   eq(STRINGS.de.stock_price_per.replace('{u}', 'Stk'), 'Preis netto je Stk');
 });
 
+await test('Backlog 1223 (Blickwinkel „Werkstatt erfasst Arbeitszeit am Ende der Schicht am Tablet“, Backlog 195): nach „Arbeitszeit erfassen“ bietet der Vorgang die anderen Aufträge derselben Werkstatt zum Weiterbuchen an (in Reparatur zuerst, mit den am Tag gebuchten Stunden); Antippen öffnet dort das Formular, nachgetragenes Datum bleibt', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (action === 'record_work' && r && !r.duplicate) S.workNext = { from: c.id, date: payload.work_date || bDate(), at: Date.now() }; if (S.openAct && S.openAct.action === fAct)"), 'Erfolg merkt den Buchungstag (nicht bei Doppelbuchung)');
+  const a = app.indexOf('function workNextPanel('); ok(a > 0, 'workNextPanel fehlt'); const f = app.slice(a, app.indexOf('\nfunction ', a + 10));
+  ok(app.includes("const WN_ST = ['in_reparatur', 'wartet_teile', 'werkstatt_freigegeben'];"), 'Reihenfolge der Status');
+  ok(f.includes('x.id !== c.id && WN_ST.includes(x.status) && x.workshop_site === c.workshop_site'), 'nur andere Aufträge derselben Werkstatt');
+  ok(f.includes("'/api/work-day?date=' + encodeURIComponent(wn.date)"), 'Stunden des Buchungstags je Auftrag');
+  ok(f.includes("S.autoAct = { caseId: b.dataset.wnext, action: 'record_work', date: wn.date }"), 'Antippen öffnet das Formular im gewählten Auftrag');
+  ok(f.includes('translate="no">${esc(x.plate') && f.includes('translate="no">${esc(x.case_no'), 'Kennzeichen/Auftragsnummer nicht übersetzen');
+  ok(app.includes("if (S.autoAct && S.autoAct.caseId === c.id) { const aa = S.autoAct; S.autoAct = null; if (!S.openAct && A.includes(aa.action)"), 'Formular nur, wenn die Aktion erlaubt ist');
+  ok(app.includes('aa.date <= bDate()'), 'kein Datum in der Zukunft übernehmen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['wnx_title', 'wnx_hint', 'wnx_none', 'wnx_booked', 'wnx_more', 'wnx_done']) ok(STRINGS[l][k], `${l}: ${k}`);
+    ok(STRINGS[l].wnx_hint.includes('{a}') && STRINGS[l].wnx_none.includes('{d}') && STRINGS[l].wnx_booked.includes('{h}') && STRINGS[l].wnx_more.includes('{n}'), l + ': Platzhalter');
+  }
+  // Server liefert, was die Liste braucht: Werkstatt je Vorgang und Stunden je Auftrag am Tag
+  const { U, cmd, toRepair } = await freshWorld();
+  const ra = await toRepair(); const rb = await toRepair();
+  eq((await cmd(U.ws, ra, 'record_work', { hours: 1.5, description: 'Bremse' })).status, 200);
+  const list = (await U.ws.get('/api/cases?status=open&limit=100')).data.cases;
+  const la = list.find((x) => x.id === ra), lb = list.find((x) => x.id === rb);
+  ok(la && lb && la.workshop_site && la.workshop_site === lb.workshop_site && la.plate && lb.case_no, 'Liste der Werkstatt mit Werkstatt, Kennzeichen, Nummer');
+  const wd = (await U.ws.get('/api/work-day')).data;
+  eq(wd.cases.map((x) => `${x.case_id === ra ? 'a' : 'b'}:${x.hours}`).join(), 'a:1.5', 'Stunden je Auftrag am Tag');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
