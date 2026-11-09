@@ -37285,6 +37285,19 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1241 (Sonde Einbruch, Blickwinkel „Fahrerhaus aufgebrochen, Scheibe eingeschlagen, Navi weg“): aufgehebelt/aufgestemmt, eingeschlagene Scheibe + fehlende Sachen, durchwühlt, „broke into“/„forced open“, „зламали замок/взломали дверь“ zeigen die Diebstahl-Schritte; „jemand hat … eingeschlagen“/„someone smashed“ die Vandalismus-Schritte; Steinschlag, Spiegel, eingeschlagene Lenkung und Tür klemmt nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const R = {}; for (const k of ['THEFT', 'VANDAL']) { const m = app.match(new RegExp('^const ' + k + '_HINT = \\/(.+?)\\/i;(?: //.*)?$', 'm')); ok(m, k + '_HINT auf Modulebene'); R[k] = new RegExp(m[1], 'i'); }
+  const T = (x) => R.THEFT.test(recurFix(x)), V = (x) => R.VANDAL.test(recurFix(x));
+  for (const x of ['Tür aufgehebelt', 'Fahrertür aufgestemmt', 'Kabine gewaltsam geöffnet', 'Scheibe eingeschlagen Navi weg', 'Scheibe wurde eingeschlagen und das Navi ist weg', 'Fenster eingeschlagen Handy und Geldbörse fehlen', 'Seitenscheibe eingeschlagen, Fahrerhaus ausgeräumt', 'Fahrerhaus durchwühlt', 'someone broke into the cab', 'door was forced open', 'cab door pried open', 'зламали замок кабіни', 'взломали дверь']) ok(T(x), 'Diebstahl-Hinweis: ' + x);
+  for (const x of ['Seitenscheibe eingeschlagen', 'Spiegel eingeschlagen Glas fehlt', 'Lenkung schlägt ein', 'Steinschlag Frontscheibe', 'Tür klemmt', 'side window smashed', 'Scheibe eingeschlagen, Splitter weggefegt']) ok(!T(x), 'kein Diebstahl-Hinweis: ' + x);
+  for (const x of ['jemand hat die Scheibe eingeschlagen', 'Unbekannte haben den Lack zerkratzt', 'Täter haben die Tür eingetreten', 'someone smashed the window', 'somebody keyed the door']) ok(V(x), 'Vandalismus-Hinweis: ' + x);
+  for (const x of ['Seitenscheibe eingeschlagen', 'Lenkung schlägt ein', 'jemand hat angerufen', 'someone called dispatch']) ok(!V(x), 'kein Vandalismus-Hinweis: ' + x);
+  ok(app.includes("const theft = THEFT_HINT.test(dv);") && app.includes("$('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv);"), 'Diebstahl hat Vorrang vor Vandalismus');
+});
+
 await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast überschritten“): Meldeformular zeigt eigene Schritte (nicht losfahren, Leitung klärt Teilentladung/Umladen; nur nach Absprache umverteilen; Wiegeschein fotografieren, Gewicht laut Beleg notieren; „Weiß nicht“); DE/EN/UK/RU; Verneinungen, Überladebrücke, Kupplung und Umladen nicht; Hilfe DE/UK/EN ohne Grenze/Frist', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
