@@ -32437,7 +32437,7 @@ await test('Backlog 931 (verneinte Symptome UK/RU/EN): „гальма не ск
 
 await test('Backlog 932 (Gebäude statt Lkw): „Tür vom Büro geht nicht zu“, „im Büro ist das Licht kaputt“, „Licht in der Halle geht nicht“, „Heizung im Büro geht nicht“, „office door won\'t close“, „двері в офісі не зачиняються“ zeigen keine Lkw-Hinweise; „Fahrertür klemmt“, „In der Halle ging die Tür nicht zu“, „Licht im Fahrerhaus“ und Zusammenstoß mit dem Tor („Tor vom Hof gerammt“) weiter mit Hinweis', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("const recurFix = (s) => noFunc(noPlace(clauseCut(String(s || '')"), 'recurFix blendet Gebäude-Teilsätze aus (Backlog 965: nach clauseCut)');
+  ok(app.includes("const recurFix = (s) => noFunc(noPlace(clauseCut(dictFix(s)"), 'recurFix blendet Gebäude-Teilsätze aus (Backlog 965: nach clauseCut)');
   ok(app.indexOf('const PLACE_SPAN') > app.indexOf('const FIX_WORD') && app.indexOf('const noPlace') < app.indexOf('const recurFix'), 'Reihenfolge');
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
   const all = [...app.matchAll(/^const ([A-Z_]+_HINT) = \/(.+)\/i;/mg)].map((m) => [m[1], new RegExp(m[2], 'i')]);
@@ -37274,6 +37274,24 @@ await test('Backlog 1212 (Sonde Lenkradverstellung, Backlog 195): „Lenkradvers
   for (const x of ['Lenkradverstellung lässt sich nicht arretieren', 'Lenksäulenverstellung rastet nicht ein', 'Lenkrad bleibt nicht in Position', 'Lenkrad fällt nach unten', 'Lenkrad fällt immer wieder runter', 'steering wheel drops down', 'steering column keeps sinking down', 'Lenkrad rastet nicht ein']) ok(ST.test(x.toLowerCase()), 'Lenkung fehlt: ' + x);
   for (const x of ['Lenkrad fällt nach unten, wurde repariert', 'steering wheel drops down, fixed now', 'Ladung fällt nach unten', 'Lenkradverstellung repariert, rastet wieder ein']) ok(!ST.test(x.toLowerCase()), 'Lenkung fälschlich: ' + x);
   ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative');
+});
+
+await test('Backlog 1216 (Sonde Sprachdiktat, Backlog 195): ausgesprochene Satzzeichen, getrennt diktierte Zusammensetzungen und typische Tippfehler zeigen denselben Hinweis wie die richtige Schreibweise; Zahlen mit „komma“, „Prüfpunkt“, „zurück licht“ und Reparaturvermerke vor „punkt“ bleiben richtig', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const dictFix = new Function(app.slice(app.indexOf('const DICT_PAIRS'), app.indexOf('const recurFix')) + '; return dictFix;')();
+  const dj = app.match(/^const DICT_JOIN = .*$/m); ok(dj && !/\(\?<[!=]/.test(dj[0]), 'DICT_JOIN ohne Lookbehind (per new RegExp gebaut – der Build ersetzt das für iOS < 16.4 nicht)');
+  ok(app.includes("const recurFix = (s) => noFunc(noPlace(clauseCut(dictFix(s)."), 'recurFix nutzt dictFix (alle Hinweise im Meldeformular und an die Leitung)');
+  const join = { 'schein werfer vorne rechts kaputt': 'scheinwerfer vorne rechts kaputt', 'lade bord wand geht nicht hoch': 'ladebordwand geht nicht hoch', 'luft feder balg geplatzt': 'luftfederbalg geplatzt', 'stein schlag in der front scheibe': 'steinschlag in der frontscheibe', 'Stoss Stange kaputt': 'StossStange kaputt', 'kühl aggregat läuft nicht': 'kühlaggregat läuft nicht', 'kuehl wasser verlust': 'kuehlwasser verlust', 'ad blue leuchte an': 'adblue leuchte an', 'motor kontroll leuchte an': 'motorkontrollleuchte an', 'rück fahr kamera': 'rückfahrkamera',
+    'reiffen platt': 'reifen platt', 'Bremsse quietscht': 'Bremse quietscht', 'spigel ab': 'spiegel ab', 'ölferlust': 'ölverlust', 'oelverlust': 'ölverlust', 'blinker defeckt': 'blinker defekt', 'kuplung rutscht': 'kupplung rutscht', 'Ad-Blue leer': 'Adblue leer',
+    'fahre zurück licht kaputt': 'fahre zurück licht kaputt', '2 komma 5 bar': '2 komma 5 bar', 'Punkt 1 bremse': 'Punkt 1 bremse', 'Prüfpunkt 3 offen': 'Prüfpunkt 3 offen', 'kommandant': 'kommandant' };
+  for (const [x, y] of Object.entries(join)) eq(dictFix(x), y, 'dictFix: ' + x);
+  eq(dictFix('reifen platt komma hinten links punkt').replace(/\s+/g, ' ').trim(), 'reifen platt , hinten links .', 'Satzzeichen');
+  ok(dictFix('licht kaputt neue zeile bremse quietscht').includes('\n') && dictFix('is it broken question mark').includes('?'), 'Zeile/Fragezeichen');
+  const hit = { TACHO_HINT: ['fahrer karte wird nicht gelesen'], LEAK_HINT: ['ölferlust unterm motor', 'oelverlust unterm motor', 'öl verlust unterm motor'], COUPLING_HINT: ['sattel kupplung geht nicht auf'], ADAS_HINT: ['rück fahr kamera geht nicht'], SUSP_HINT: ['luft feder balg geplatzt', 'Luftfederbalg geplatzt'], NUMPLATE_HINT: ['kenn zeichen verloren'] };
+  for (const [n, xs] of Object.entries(hit)) { const r = g(n); for (const x of xs) ok(r.test(recurFix(x)), n + ': ' + x); }
+  const fx = recurFix('bremse repariert punkt licht vorne links kaputt'); ok(/repariert\s*\./.test(fx) && !/◦/.test(fx), 'Reparaturvermerk gilt nur bis „punkt“: ' + fx);
 });
 
 await test('Backlog 1215 (Sonde Schalter Differentialsperre/Kühlaggregat/Achslift, Backlog 195): Schalter/Taste oder Sperre selbst defekt (DE/EN/RU) zeigt Getriebe-, Kühlgerät- bzw. Luftfederungs-Hinweis; Reparaturvermerke, „alles ok“ und fremde Sperren nicht', async () => {
