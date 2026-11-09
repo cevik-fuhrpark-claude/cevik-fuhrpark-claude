@@ -37245,6 +37245,19 @@ await test('Backlog 1209 (Sonde Lenkstockhebel, Backlog 195): abgebrochener/defe
   ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative');
 });
 
+await test('Backlog 1210 (Reserve Start-Modul nach 1209): Vorgangsliste (viewCases, Route #/cases) liegt im nachgeladenen Modul app-suche.js; Platzhalter im Start-Modul, Fahrer-/Werkstatt-Ansichten bleiben; Start-Modul ≤ 63 %', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const { GROUPS } = await import('../scripts/build-app.mjs');
+  ok(GROUPS.suche.includes('viewCases'), 'Gruppe suche');
+  const app = rd('app.js'), main = rd('app-main.js'), su = rd('app-suche.js');
+  ok(/^async function viewCases\(\) \{/m.test(app) && /^async function viewCases\(\) \{/m.test(su), 'viewCases im Modul');
+  ok(main.includes("async function viewCases(...a) { return (await lazyModule('suche')).viewCases(...a); }") && !/^async function viewCases\(\) \{/m.test(main), 'Platzhalter im Start-Modul');
+  for (const n of ['viewHome', 'viewNew', 'viewCase', 'viewDepartureCheck', 'workshopBoard']) ok(new RegExp(`^async function ${n}\\(\\) ?\\{|^async function ${n}\\([^.]`, 'm').test(main), n + ' bleibt im Start-Modul');
+  ok(rd('sw.js').includes("'/app-suche.js'"), 'App-Hülle kennt app-suche.js');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100;
+  ok(pct <= 63, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 63 %)');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

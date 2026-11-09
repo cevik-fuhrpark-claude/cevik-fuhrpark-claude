@@ -1,8 +1,74 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, FORM_DRAFT_MS, ICON, S, SEND_TIMEOUT_MS, announceHits, api, bindLang, caseList, clearOfflineData, ctChip, esc, flushOutbox, fmtD, fmtDT, fmtNum, helpLoaded, helpMatches, helpNorm, helpSections, isMgr, langSelect, loadHelp, loadNotifyPrefs, loadSessions, loadTotp, markSession, mayCheck, noTr, noneP, notifHref, otherEnvOutbox, outboxGet, paintBadge, plate, pushOffForLogout, pushPanel, refreshUnread, render, resetUserState, searchKey, siteKeyUi, stockHit, t, tn, toast, unitL, vinOf, wsName } from './app-main.js';
+import { $, $$, CASE_SORTS, FORM_DRAFT_MS, ICON, S, SEND_TIMEOUT_MS, announceHits, api, bDate, bindLang, caseFilterQ, caseList, clearOfflineData, ctChip, download, envFn, esc, flushOutbox, fmtD, fmtDT, fmtHM, fmtNum, helpLoaded, helpMatches, helpNorm, helpSections, isCasesHash, isMgr, langSelect, loadHelp, loadNotifyPrefs, loadSessions, loadTotp, markSession, mayCheck, nDays, noTr, noneP, notifHref, nowMs, otherEnvOutbox, outboxGet, ownerT, paintBadge, plate, printHead, pushOffForLogout, pushPanel, refreshUnread, render, resetUserState, searchKey, siteKeyUi, siteSelect, sortPref, stockHit, t, tn, toast, unitL, vinOf, vsDef, wsAll, wsLabel, wsName } from './app-main.js';
 
 // Kennzeichen mit Länderkennung aus ausländischen Schreiben („D SZ-YC 5501“, „SZYC5501 (D)“) – gleiche Regel wie plateNoCountry im Server (Backlog 902)
 const plateNoCountry = (p) => { const x = String(p || '').trim(); const y = x.replace(/^\(?(?:D|DE|DEU)\)?[\s\-–:/.]+(?=\S)/i, '').replace(/(\S)[\s\-–/,]+\(?(?:D|DE|DEU)\)?$/i, '$1').replace(/(\S)\((?:D|DE|DEU)\)$/i, '$1').trim(); return y !== x && searchKey(y).length >= 4 ? y : null; };
+const CF_LABEL = { unreceived: 'todo_receive', received_open: 'todo_untriaged', limited: 'dispo_limited_new', open_items: 'filter_open_items', repeat: 'filter_repeat', warranty: 'filter_warranty', stale: 'filter_stale', followup: 'filter_followup', critical: 'prio_kritisch', locked: 'locked_cases', cost_approval: 'todo_cost_approval', q_open: 'q_open', q_answered: 'q_answered', mine: 'filter_mine', paused: 'todo_paused', ready_overdue: 'todo_ready_overdue' };
+async function viewCases() {
+  const hf = new URLSearchParams(location.hash.split('?')[1] || '').get('f');
+  if (hf) try { sessionStorage.setItem('cfp_cf', hf); } catch {}
+  // Sprung aus einem Zähler (#/cases?f=…): früherer Suchbegriff gilt nicht (Zahl und Liste passten sonst nicht, 22.10.2026)
+  if (hf) S.caseQ = '';
+  let f = hf || sessionStorage.getItem('cfp_cf') || 'open';
+  if (!['open', 'closed', 'all', 'repeat', 'warranty', 'stale', 'followup', 'critical', 'locked', 'cost_approval', 'unreceived', 'received_open', 'limited', 'open_items', 'q_open', 'q_answered', 'mine', 'paused', 'ready_overdue'].includes(f) || (['repeat', 'warranty', 'stale', 'critical', 'locked', 'cost_approval', 'unreceived', 'received_open', 'limited', 'open_items', 'mine', 'paused', 'ready_overdue'].includes(f) && S.me.role === 'driver') || (f === 'followup' && ['driver', 'workshop'].includes(S.me.role))) f = 'open';
+  const q = S.caseQ || '';
+  const vq = () => (vsDef('caseVsite') && S.me.role !== 'driver' ? '&vsite=' + encodeURIComponent(vsDef('caseVsite')) : '') + (S.caseWs && wsFilterOk() ? '&ws=' + encodeURIComponent(S.caseWs) : '');
+  const lq = () => (S.caseLimit ? '&limit=' + S.caseLimit : '') + sq();
+  if (!S.caseSort) S.caseSort = sortPref('cases', CASE_SORTS, 'priority');
+  // Backlog 1042: „Kostenfreigabe ausstehend“ fest nach Wartezeit (Server-Standard), wie „Heute zu tun“
+  const sq = () => (S.caseSort && S.caseSort !== 'priority' && f !== 'followup' && f !== 'cost_approval' ? '&sort=' + S.caseSort : '');
+  // Liste ist begrenzt (Server: 200, „weitere laden“ bis 500) – sonst fehlten ältere Vorgänge ohne Hinweis
+  const trunc = (r) => (r.truncated ? `<p class="small muted">${esc(t('list_truncated').replace('{n}', r.limit))}${r.limit < 500 ? ` <button type="button" class="btn secondary" id="cmore">${esc(t('cases_upto500'))}</button>` : ''}</p>` : '');
+  const bindMore = () => { const b = $('#cmore'); if (b) b.onclick = () => { S.caseLimit = 500; viewCases(); }; };
+  const res = await api('GET', `/api/cases?${caseFilterQ(f)}${q.length >= 2 ? '&q=' + encodeURIComponent(q) : ''}${vq()}${lq()}`);
+  // Ausdruck: gewählte Auswahl, Suche, Standort, Sortierung und Anzahl im Kopf (wie Prüftermine)
+  const fLabel = t(f === 'unreceived' && !isMgr() ? 'dispo_unreceived' : CF_LABEL[f] || f); // Backlog 483: Druckkopf wie der Reiter (Disposition bestätigt nicht)
+  const cPrint = (l, qq) => printHead([`${t('print_filter')}: ${fLabel}`, qq && qq.length >= 2 ? `${t('print_search')}: „${qq}“` : '',
+    res.site ? `${t('kpi_vsite')}: ${res.site === 'ohne' ? t('cs_nosite') : res.site}` : '', S.caseWs && wsFilterOk() ? `${t('workshop')}: ${wsName(S.caseWs)}` : '', f !== 'followup' && S.me.role !== 'driver' ? `${t('sort_by')}: ${t(f === 'cost_approval' ? 'ca_sort_wait' : 'csort_' + (S.caseSort || 'priority'))}` : '', t('print_count').replace('{n}', l.length)]);
+  // Backlog 1099 (Blickwinkel „Leitung druckt ‚Kostenfreigabe ausstehend‘ für die Montagsbesprechung“): Werkstatt je Zeile wie in „Heute zu tun“
+  const cExtra = f === 'cost_approval' ? (c) => (c.workshop_site ? `<span data-caws>${esc(wsName(c.workshop_site))}</span> · ` : '') : undefined;
+  const list = f === 'followup' ? res.cases.slice().sort((x, y) => (x.followup_on < y.followup_on ? -1 : x.followup_on > y.followup_on ? 1 : 0)) : res.cases;
+  const vsel = S.me.role !== 'driver' && ((res.site_options || []).length > 1 || res.site) ? `<div class="noprint" style="margin-bottom:12px">${siteSelect('cvsite', '', res.site_options, res.site, t('kpi_vsite'), t('filter_all'))}</div>` : '';
+  // Werkstatt-Filter (Backlog 264): Leitung/Disposition/Lesezugriff, auch geschlossene Werkstätten wählbar
+  const wsel = wsFilterOk() && wsAll().length > 1 ? `<div class="noprint" style="margin-bottom:12px"><label for="cws">${esc(t('workshop'))}</label><select id="cws"><option value="">${esc(t('filter_all'))}</option>${wsAll().map((w) => `<option value="${esc(w.code)}"${S.caseWs === w.code ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select></div>` : '';
+  // Backlog 1113 (Blickwinkel „Fuhrparkleitung hat Vorgangsliste und Vorgang in zwei Fenstern“): Liste blieb nach Statuswechsel im anderen
+  // Fenster auf dem Stand des Öffnens. Jetzt „Stand HH:MM · Neu laden“ und stille Aktualisierung nur der Liste (casesAutoRefresh), nicht für Fahrer.
+  const asof = () => `${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/cases" id="casesreload" title="${esc(t('cases_asof_hint'))}">${esc(t('update_now'))}</a>`;
+  render(`<h1>${esc(t('nav_cases'))}</h1>${S.me.role !== 'driver' ? `<p class="small muted noprint" id="casesasof" style="margin:-6px 0 8px">${asof()}</p>` : ''}
+    <input id="cq" class="noprint" type="search" value="${esc(q)}" placeholder="${esc(t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search'))}" aria-label="${esc(t(isMgr() ? 'case_search_mgr' : S.me.role === 'workshop' ? 'case_search_ws' : 'case_search'))}" style="margin-bottom:12px" autocomplete="off">${vsel}${wsel}
+    <div class="seg-tabs noprint">${['open', 'closed', 'all', ...(S.me.role === 'driver' ? [] : ['repeat', 'warranty', ...(res.stale_days || f === 'stale' ? ['stale'] : []), ...(S.me.role === 'workshop' ? ['mine'] : ['followup']), ...(['critical', 'locked', 'cost_approval', 'unreceived', 'received_open', 'limited', 'open_items', 'paused', 'ready_overdue'].includes(f) || (f === 'mine' && S.me.role !== 'workshop') ? [f] : [])])].map((k) => `<a href="#/cases" data-f="${k}" class="${k === f ? 'on' : ''}"${k === f ? ' aria-current="true"' : ''}>${esc(t(k === 'unreceived' && !isMgr() ? 'dispo_unreceived' : CF_LABEL[k] || k))}</a>`).join('')}</div>${f === 'stale' ? `<p class="small muted">${esc(res.stale_days ? t('filter_stale_hint').replace('{n}', nDays(res.stale_days)) : ownerT('filter_stale_off'))}</p>` : ''}
+    ${f === 'cost_approval' ? `<p class="small muted noprint" id="casort">${esc(t('sort_by'))}: ${esc(t('ca_sort_wait'))}</p>` : ''}${f !== 'followup' && f !== 'cost_approval' ? `<select id="csort" class="noprint" aria-label="${esc(t('sort_by'))}" style="max-width:420px;margin-bottom:12px">${CASE_SORTS.map((k) => `<option value="${k}"${(S.caseSort || 'priority') === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('csort_' + k))}</option>`).join('')}</select>` : ''}
+    <div id="cl">${cPrint(list, q)}${caseList(list, null, cExtra)}${trunc(res)}</div>
+    <div class="actions">${S.me.role !== 'driver' ? `<button type="button" class="btn secondary" id="ccsv">${esc(t('export_csv'))}</button>${f === 'followup' ? `<button type="button" class="btn secondary" id="cics">${esc(t('followup_ics'))}</button>` : ''}` : ''}<button type="button" class="btn secondary" id="cprl">${esc(t('print'))}</button></div>`, 'cases');
+  $('#cprl').onclick = () => window.print();
+  const ci = $('#cics'); if (ci) ci.onclick = async () => { try { download(await api('GET', `/api/cases?format=ics${vq()}`), `fuhrpark-wiedervorlagen_${envFn()}_${bDate()}.ics`); } catch (err) { toast(err.message, true); } };
+  const cc = $('#ccsv'); if (cc) cc.onclick = async () => { try { const blob = await api('GET', `/api/cases?format=csv&${caseFilterQ(f)}${(S.caseQ || '').length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}${vq()}${sq()}`); download(blob, `fuhrpark-vorgaenge_${envFn()}_${bDate()}.csv`); if (blob.cfpTruncated) toast(t('csv_truncated').replace('{n}', blob.cfpTruncated), true); } catch (err) { toast(err.message, true); } };
+  // Reiter: ein Filter aus dem Link (#/cases?f=…) hätte sonst Vorrang und der Klick bliebe ohne Wirkung (19.10.2026)
+  $$('.seg-tabs a').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sessionStorage.setItem('cfp_cf', a.dataset.f); S.caseLimit = null; if (location.hash.includes('?')) history.replaceState(history.state, '', '#/cases'); viewCases(); }));
+  const cvs = $('#cvsite'); if (cvs) cvs.onchange = () => { S.caseVsite = cvs.value; S.caseLimit = null; viewCases(); };
+  const cws = $('#cws'); if (cws) cws.onchange = () => { S.caseWs = cws.value || null; S.caseLimit = null; viewCases(); };
+  const cso = $('#csort'); if (cso) cso.onchange = () => { S.caseSort = sortPref('cases', CASE_SORTS, 'priority', CASE_SORTS.includes(cso.value) ? cso.value : 'priority'); viewCases(); };
+  bindMore();
+  // stille Aktualisierung (Backlog 1113): gleiche Auswahl/Suche/Sortierung/Anzahl, nur #cl und Standzeile; Abfrage als Hintergrund (x-cfp-bg)
+  const quiet = async () => {
+    const r = await api('GET', `/api/cases?${caseFilterQ(f)}${(S.caseQ || '').length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}${vq()}${lq()}`, undefined, { bg: true });
+    if (!S.casesQuiet || S.casesQuiet.fn !== quiet || !isCasesHash()) return;
+    const l2 = f === 'followup' ? r.cases.slice().sort((x, y) => (x.followup_on < y.followup_on ? -1 : x.followup_on > y.followup_on ? 1 : 0)) : r.cases;
+    const cl = $('#cl'); if (!cl) return;
+    cl.innerHTML = cPrint(l2, S.caseQ) + caseList(l2, null, cExtra) + trunc(r); bindMore();
+    const ao = $('#casesasof'); if (ao) ao.innerHTML = asof(); bindCasesReload();
+    S.casesQuiet.at = Date.now();
+  };
+  const bindCasesReload = () => { const a = $('#casesreload'); if (a) a.onclick = (e) => { e.preventDefault(); viewCases(); }; };
+  bindCasesReload();
+  S.casesQuiet = S.me.role !== 'driver' ? { fn: quiet, at: Date.now() } : null;
+  let timer = null;
+  const cq = $('#cq');
+  cq.oninput = () => { clearTimeout(timer); timer = setTimeout(async () => {
+    S.caseQ = cq.value.trim();
+    try { const r = await api('GET', `/api/cases?${caseFilterQ(f)}${S.caseQ.length >= 2 ? '&q=' + encodeURIComponent(S.caseQ) : ''}${vq()}${lq()}`); const l2 = f === 'followup' ? r.cases.slice().sort((x, y) => (x.followup_on < y.followup_on ? -1 : x.followup_on > y.followup_on ? 1 : 0)) : r.cases; $('#cl').innerHTML = cPrint(l2, S.caseQ) + caseList(l2, null, cExtra) + trunc(r); bindMore(); announceHits(l2.length); } catch (err) { toast(err.message, true); }
+  }, 300); };
+}
 // Abmelden mit unversendeten Meldungen: vorher senden versuchen, sonst ausdrücklich bestätigen (sie bleiben auf dem Gerät für diese Person – 18.10.2026)
 async function logoutOutboxOk() {
   if (outboxGet().some((x) => !x.failed) && navigator.onLine !== false) await flushOutbox().catch(() => {});
@@ -23,6 +89,8 @@ function logoutDraftCount() {
   try { for (const k of Object.keys(localStorage)) if (k.startsWith(`cfp_inv_${S.me.id}_`)) { const x = JSON.parse(localStorage.getItem(k) || 'null'); if (x && x.counts && Date.now() - Date.parse(x.at) < 14 * 86400000) n++; } } catch {}
   return n;
 }
+// alle Werkstätten inkl. geschlossener (Namen, Filter) – Auswahl für Neues bleibt S.meta.workshops (nur aktive), Backlog 192
+const wsFilterOk = () => S.me && ['owner', 'fleet', 'dispatch', 'viewer'].includes(S.me.role);
 // Zeile der Hinweisliste (auch für „Ältere laden“)
 const nRow = (x) => `<div class="row note ${x.urgent ? 'p-kritisch' : ''}" style="${x.opened_at || x.acknowledged_at || x.own_device ? 'opacity:.7' : ''}"${x.own_device ? ' data-owndev' : ''}><span class="chip ${x.urgent ? 'kritisch' : ''}">${fmtDT(x.created_at)}</span><a class="title" style="white-space:normal" href="${esc(notifHref(x))}" data-open="${esc(x.id)}">${esc(x.title)}${x.own_device ? ` <span class="chip ok">${esc(t('nl_own_device'))}</span>` : ''}</a>${x.acknowledged_at ? '<span class="chip ok">✓</span>' : `<button class="btn secondary" data-ack="${esc(x.id)}">${esc(t('ack'))}</button>`}<span class="sub" style="white-space:normal">${x.coupled_locked ? `<b class="chip kritisch" data-ncoupled>${esc(t('notif_coupled_locked').replace('{v}', `${t(x.coupled_locked.kind === 'anhaenger' ? 'trailer' : 'truck')} ${x.coupled_locked.plate}`))}</b> ` : ''}${esc(x.body)} · Push: ${esc(x.push_status === 'pending' && x.push_hold_until && Date.parse(x.push_hold_until) > Date.now() ? t('pst_held').replace('{t}', fmtDT(x.push_hold_until)) : x.push_status === 'pending' && x.push_hold_until && x.push_hold_until >= '0001' && (x.opened_at || x.acknowledged_at) ? t('pst_held_opened') : t('pst_' + x.push_status) === 'pst_' + x.push_status ? x.push_status : t('pst_' + x.push_status))}</span></div>`;
 async function viewInbox() {
@@ -241,4 +309,4 @@ async function viewMore(open) { // Backlog 1196: liegt im nachgeladenen Modul ap
     e.target.reset(); const dd = e.target.closest('details'); if (dd) dd.open = false; toast(r && r.duplicate ? t('saved_before') : '✓ ' + t('pw_changed_others')); } catch (err) { toast(err.message, true); } };
 }
 
-export { viewHelp, viewInbox, viewMore, viewSearch };
+export { viewCases, viewHelp, viewInbox, viewMore, viewSearch };
