@@ -37341,6 +37341,15 @@ await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast üb
   ok(helpAfter(app, 'overload', 'load'), 'Hilfe-Abschnitt nach Ladungssicherung für meldende Rollen');
 });
 
+await test('Backlog 1246 (Sonde, Blickwinkel „Kontrolle durch Polizei/BALM/Zoll“): Zollkontrolle mit Mängeln/untersagter Weiterfahrt, „Mängelkarte“, „Sicherheitsleistung“, „перевірка BAG, видали протокол“ → Kontroll-Schritte; „keine Mängel“, „alles ok“, „22,5 Zoll“, „Bagger“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const R = new RegExp(app.match(/^const ROADCHK_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['Zoll hat kontrolliert, Mängel an Bremse', 'Zollkontrolle, Weiterfahrt untersagt', 'Sicherheitsleistung bezahlt bei Kontrolle', 'Mängelkarte von der Polizei', 'перевірка BAG, видали протокол', 'BAG Kontrolle, Mängelbericht bekommen', 'Polizeikontrolle, Weiterfahrt untersagt']) ok(R.test(recurFix(x)), 'Kontrolle: ' + x);
+  for (const x of ['Zoll hat kontrolliert, keine Mängel', 'Zoll hat kontrolliert, alles ok', 'Reifen 22,5 Zoll, Mängel am Profil', 'keine Mängelkarte', 'Bagger kaputt', 'Поліція склала протокол ДТП', 'BAG протокол ДТП']) ok(!R.test(recurFix(x)), 'kein Kontroll-Hinweis: ' + x);
+});
+
 await test('Backlog 1245 (Sonde, Blickwinkel „Ladebordwand/Hebebühne defekt“): „Ladebordwand senkt sich von allein“, „sackt ab“, „Plattform verbogen“, „tail lift drops/bent“, „гідроборт сам опускається“, „гидроборт опускается“ → Tür-/Ladebordwand-Schritte; Reparaturvermerk, „abgesenkt und beladen“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
