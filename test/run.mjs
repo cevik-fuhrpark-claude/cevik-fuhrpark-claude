@@ -37285,6 +37285,17 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1232 (Folge aus 1231, Barcode-Scanner/Enter): globale Suche – Enter sucht sofort (ohne 300-ms-Pause), genau ein Treffer ohne Hilfe-Abschnitte wird geöffnet, sonst Suchtext markiert; PC-Tipp nennt Enter (DE/UK/EN)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = app.indexOf("$('#gq').onkeydown = async (e) =>"); ok(a > 0 && a < app.indexOf("$('#gq').focus();", a), 'Enter-Behandlung in viewSearch');
+  const src = app.slice(a, app.indexOf("$('#gq').focus();", a));
+  ok(/e\.key !== 'Enter' \|\| e\.isComposing/.test(src) && src.includes('e.preventDefault(); clearTimeout(timer)') && src.includes('await run()'), 'Enter: sofort suchen, entprellte Suche verworfen');
+  ok(src.includes("startsWith('#/help')") && src.includes('rows.length === 1') && src.includes("$('#gq').select()"), 'genau ein Treffer (ohne Hilfe) öffnet, sonst markieren');
+  ok(src.includes("$('#gq').value !== q0"), 'weitergetippt → nichts öffnen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(/Enter/.test(STRINGS[l].search_kbd) && /\//.test(STRINGS[l].search_kbd), 'search_kbd nennt Enter: ' + l);
+});
+
 await test('Backlog 1231 (Blickwinkel „Werkstatt scannt Teilenummern mit einem Barcode-Scanner“, Backlog 195): Enter im Lager-Suchfeld (Wareneingang, Teil am Vorgang) sendet nie das Formular – passender gewählter Artikel → Cursor in die Menge, sonst Suchtext markiert; Lagerliste öffnet bei genau einem Treffer den Artikel', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const a = app.indexOf('function stockPick('); const b = app.indexOf('\nasync function loadStockSelect', a); ok(a > 0 && b > a, 'stockPick gefunden');

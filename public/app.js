@@ -8800,6 +8800,17 @@ async function viewSearch() {
     } catch (err) { if (my === seq) box.innerHTML = `<div class="panel alert" role="alert">${esc(err.message)}</div>`; }
   };
   $('#gq').oninput = () => { clearTimeout(timer); timer = setTimeout(run, 300); };
+  // Backlog 1232 (Folge aus 1231, Blickwinkel „Barcode-Scanner/Enter“; auch „Kennzeichen am PC eintippen + Enter“): Enter suchte nichts
+  // (Suche erst nach 300 ms Pause, ein Scanner sendet Enter sofort). Jetzt: Enter sucht sofort; genau ein Treffer (Hilfe-Abschnitte zählen
+  // nicht) öffnet ihn, sonst wird der Suchtext markiert – der nächste Scan bzw. die nächste Eingabe ersetzt ihn.
+  $('#gq').onkeydown = async (e) => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    e.preventDefault(); clearTimeout(timer); const q0 = $('#gq').value; await run();
+    if (!$('#gq') || $('#gq').value !== q0 || !location.hash.startsWith('#/search')) return; // inzwischen weitergetippt bzw. Seite verlassen
+    const rows = $$('#gr a.row').filter((a) => !(a.getAttribute('href') || '').startsWith('#/help'));
+    if (rows.length === 1) { location.hash = rows[0].getAttribute('href'); return; }
+    try { $('#gq').select(); } catch { /* ältere Browser */ }
+  };
   $('#gq').focus();
   run();
 }

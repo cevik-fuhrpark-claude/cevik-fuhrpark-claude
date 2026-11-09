@@ -3825,9 +3825,9 @@ Object.assign(STRINGS.uk, { rcn_open: 'Артикула немає на скла
 Object.assign(STRINGS.en, { rcn_open: 'Item missing in stock – create it', rcn_hint: 'New item in stock {ws}, initially without quantity – this goods receipt posts quantity and purchase price.', rcn_save: 'Create item', rcn_done: 'Item created and selected', rcn_taken: 'Existing item selected', rcn_dup: 'This part number already exists in this stock – use this item:', rcn_need_name: 'Please enter the name.', rcn_inactive: 'This item already exists but is deactivated – please reactivate it in the item record.' });
 
 // Backlog 1002: Taste „/“ öffnet die Suche (Hinweis nur an Geräten mit Maus/Touchpad)
-Object.assign(STRINGS.de, { search_kbd: 'Tipp am PC: Die Taste / öffnet die Suche von jeder Seite aus.' });
-Object.assign(STRINGS.uk, { search_kbd: 'Порада для ПК: клавіша / відкриває пошук з будь-якої сторінки.' });
-Object.assign(STRINGS.en, { search_kbd: 'Tip on a computer: press / on any page to open search.' });
+Object.assign(STRINGS.de, { search_kbd: 'Tipp am PC: Die Taste / öffnet die Suche von jeder Seite aus. Enter öffnet den Treffer, wenn es genau einen gibt (auch mit Barcode-Scanner).' });
+Object.assign(STRINGS.uk, { search_kbd: 'Порада для ПК: клавіша / відкриває пошук з будь-якої сторінки. Enter відкриває результат, якщо він лише один (також зі сканером штрихкодів).' });
+Object.assign(STRINGS.en, { search_kbd: 'Tip on a computer: press / on any page to open search. Enter opens the result if there is exactly one (also with a barcode scanner).' });
 // Backlog 1014: zulässige Gesamtmasse in Tonnen („18 t“) – Server-Meldung und Hinweis am Feld, nie umgerechnet
 Object.assign(VALIDATION_TEXTS.uk, { zgm_tonnes: 'Дозволена повна маса (кг): «{v}» вказано в тоннах – введіть масу в кг згідно зі свідоцтвом про реєстрацію (F.2) (застосунок не перераховує).' });
 Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg): “{v}” is given in tonnes – please enter the weight in kg as stated in the registration certificate (F.2) (the app does not convert).' });

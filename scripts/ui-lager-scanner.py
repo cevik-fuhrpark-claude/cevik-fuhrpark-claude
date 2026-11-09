@@ -51,8 +51,12 @@ with sync_playwright() as p:
         if SHOTS: q.screenshot(path=f'{SHOTS}/lager-scanner-liste-{lang}-{w}.png')
         q.keyboard.type(scan, delay=3)
         check(q.input_value('#q') == scan, f'{lang}: nächster Scan ersetzt den Suchtext (kein Anhängen)')
-        q.keyboard.press('Enter'); q.wait_for_function(f"location.hash === '#/stock/{ia}'", timeout=10000)
-        check(True, f'{lang}: Scan ohne Leerzeichen + Enter öffnet den Artikel „{pn}“')
+        q.keyboard.press('Enter'); okh = False
+        for _ in range(50):  # kein wait_for_function (eval – CSP der App)
+            okh = q.evaluate('() => location.hash') == f'#/stock/{ia}'
+            if okh: break
+            q.wait_for_timeout(200)
+        check(okh, f'{lang}: Scan ohne Leerzeichen + Enter öffnet den Artikel „{pn}“')
         # 2) Wareneingang: Menge zuerst, dann Scan + Enter
         q.goto(B + '/#/stock/receipt'); q.wait_for_selector('#rcf', timeout=15000)
         q.fill('#rcsup', f'Lieferant {tag}'); q.fill('#rclines .rcl:nth-child(1) .rcq', '2')

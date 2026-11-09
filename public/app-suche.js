@@ -193,6 +193,17 @@ async function viewSearch() {
     } catch (err) { if (my === seq) box.innerHTML = `<div class="panel alert" role="alert">${esc(err.message)}</div>`; }
   };
   $('#gq').oninput = () => { clearTimeout(timer); timer = setTimeout(run, 300); };
+
+
+
+  $('#gq').onkeydown = async (e) => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    e.preventDefault(); clearTimeout(timer); const q0 = $('#gq').value; await run();
+    if (!$('#gq') || $('#gq').value !== q0 || !location.hash.startsWith('#/search')) return;
+    const rows = $$('#gr a.row').filter((a) => !(a.getAttribute('href') || '').startsWith('#/help'));
+    if (rows.length === 1) { location.hash = rows[0].getAttribute('href'); return; }
+    try { $('#gq').select(); } catch {   }
+  };
   $('#gq').focus();
   run();
 }
