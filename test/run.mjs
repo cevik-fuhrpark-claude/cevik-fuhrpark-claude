@@ -37285,6 +37285,19 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1230 (Sonde getrennt diktierte Zusammensetzungen, Backlog 195): „CB Funk kaputt“, „USB Anschluss defekt“, „Blink(-)Licht geht nicht“, „Kenn Zeichen Beleuchtung aus“, „Warn Dreieck fehlt“, „Unterleg Keil“, „Verbands Kasten“, „Gurt Schloss“, „Stütz Bein“, „Zurr Gurt“ zeigen denselben Hinweis wie die zusammengeschriebene Form; Reparaturvermerke, „Warnblinklicht an“ und Sätze ohne Mangel nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const hit = { CABKIT_HINT: ['CB Funk kaputt', 'CB Funk geht nicht', 'CB Funkgerät defekt', 'USB Anschluss defekt', 'USB Buchse geht nicht'],
+    LIGHTS_HINT: ['Blink Licht geht nicht', 'Blinklicht geht nicht', 'Blinklicht hinten links defekt', 'Kenn Zeichen Beleuchtung aus', 'Kennzeichen Beleuchtung defekt', 'Warnblinklicht geht nicht'],
+    SAFETYKIT_HINT: ['Unterleg Keil fehlt', 'Verbands Kasten abgelaufen', 'Warn Dreieck fehlt', 'Warn Weste fehlt'], SEAT_HINT: ['Gurt Schloss defekt'],
+    COUPLING_HINT: ['Stütz Bein klemmt', 'Stütz Winde lässt sich nicht kurbeln'], LASHGEAR_HINT: ['Zurr Gurt gerissen', 'Spann Gurt gerissen'] };
+  const all = Object.keys(hit).map((n) => [n, g(n)]);
+  for (const [n, xs] of Object.entries(hit)) { const r = g(n); for (const x of xs) ok(r.test(recurFix(x)), n + ': ' + x); }
+  for (const x of ['Blinklicht repariert', 'Warnblinklicht an', 'CB Funk mit Disposition', 'Kennzeichen Beleuchtung repariert', 'Warn Dreieck aufgestellt', 'Gurt schloss die Tür nicht']) { const f = recurFix(x); for (const [n, r] of all) ok(!r.test(f), 'kein Hinweis ' + n + ': ' + x); }
+});
+
 await test('Backlog 1229 (Sonde Kofferaufbau/Hecktüren/Laderaum, Backlog 195): Verriegelungsstange verbogen, Türfeststeller abgerissen/fehlt, Hecktür hängt schief, „locking bar bent“, „запірна штанга погнута“ → Tür-Schritte; „Zurrschiene (aus der Wand) gerissen“ → Ladungssicherungsmittel; Thermometer im Laderaum/Kühlkoffer zeigt nichts → Kühlgerät; Reparaturvermerk, Fahrerhaus und fremde Bauteile nicht', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
