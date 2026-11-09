@@ -37285,6 +37285,19 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1226 (Sonde Getriebe/Kupplung/Lenkung/Federung, Backlog 195): Getriebe im Notlauf, Automatik/Splitgruppe schaltet ruckartig bzw. nicht, Gänge kratzen, Kupplung überlastet/Verschleißwarnung → Getriebe-Schritte; UK „важке кермо“ → Lenkung (DE/UK/EN); Reparaturvermerk, „nicht mehr“ und fremde Bauteile nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
+  const want = {
+    GEAR_HINT: ['Getriebe im Notlauf, nur 1. und R', 'Automatik schaltet ruckartig', 'Getriebe Warnung im Display, Kupplung überlastet', 'Kupplungsverschleiß Warnung', 'Gänge kratzen beim Schalten', 'Splitgruppe schaltet nicht', 'gears grinding', 'gearbox in limp mode', 'transmission shifts harshly', 'clutch overheating', 'Коробка в аварійному режимі', 'Передачі хрустять', 'Зчеплення перегрівається'],
+    STEER_HINT: ['Важке кермо', 'Кермо дуже важке', 'Тяжелый руль'] };
+  const no = {
+    GEAR_HINT: ['Kupplung überlastet, nach Pause wieder ok', 'Gänge kratzen nicht mehr', 'Splitgruppe repariert', 'Kühlerjalousie im Notlauf', 'Klima schaltet nicht', 'Ganganzeige kratzt', 'intercooler hose split'],
+    STEER_HINT: ['важке кермо полагодили', 'Ladung ist schwer'] };
+  for (const [n, xs] of Object.entries(want)) { const r = rx(n); for (const x of xs) ok(r.test(x.toLowerCase()), n + ' fehlt: ' + x); }
+  for (const [n, xs] of Object.entries(no)) { const r = rx(n); for (const x of xs) ok(!r.test(x.toLowerCase()), n + ' fälschlich: ' + x); }
+});
+
 await test('Backlog 1225 (Sonde Motor: Leistungsverlust, Turbo, Rauch, Riemen, Lichtmaschine, Backlog 195): farbiger Rauch beim Gasgeben/Beschleunigen/Kaltstart (ohne „Auspuff“) und Ladeluftschlauch/-kühler/Intercooler-Schlauch/патрубок інтеркулера → Motor-Schritte statt Brand-Hinweis; Rauch aus dem Motorraum, Rauch beim Anfahren und Feuer bleiben Brand; Verneinung und Reparaturvermerk nicht', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
