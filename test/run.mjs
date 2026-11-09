@@ -21579,7 +21579,7 @@ await test('Backlog 310 (Blickwinkel „Beleuchtung am Lkw/Auflieger ausgefallen
     ok(L.lights_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="lights" class="panel" hidden role="status">`), 'Panel #lights');
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck); $('#door')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck); $('#door')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('lights') && order.indexOf('mirror') < order.indexOf('lights') && order.indexOf('lights') < order.indexOf('glass'), 'Gruppierung: Unfall/Spiegel vor Licht vor Glas');
   ok(helpAfter(app, 'lights', 'coupling'), 'Hilfe-Abschnitt lights nach coupling');
@@ -27623,7 +27623,7 @@ await test('Backlog 781 (Sonde Beleuchtung UK/RU „зламалась/злам�
   const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
   const t = (x) => noFixed(recurFix(x));
   const run = (T) => { for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(t(x)), n + ': ' + x); for (const x of neg) ok(!r.test(t(x)), n + ' nicht: ' + x); } };
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck);"), 'Licht-Hinweis weiter ohne noFixed (eigener Reparaturvermerk-Ausschluss)');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck);"), 'Licht-Hinweis weiter ohne noFixed (eigener Reparaturvermerk-Ausschluss)');
   const r = g('LIGHTS_HINT');
   for (const x of ['фара зламалась', 'ліхтар зламався', 'стоп-сигнал зламався', 'поворотник зламався', 'фара сломалась', 'фара не світить', 'Scheinwerfer kaputt', 'headlight broken', 'фара знову не світить, хоча замінили']) ok(r.test(recurFix(x)), 'LIGHTS_HINT: ' + x);
   for (const x of ['фара зламалась, замінили', 'фара розбита, замінили', 'фара не світить, замінили', 'не світить фара, замінили лампочку', 'фара сломалась, заменили', 'Scheinwerfer kaputt, getauscht']) ok(!r.test(recurFix(x)), 'LIGHTS_HINT nicht: ' + x);
@@ -37339,6 +37339,16 @@ await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast üb
   ok(app.includes("$('#overload').hidden = !OVERLOAD_HINT.test(dv);") && app.indexOf("$('#overload').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'underrun', 'overload', 'load'"), 'Reihenfolge: vor Ladungssicherung');
   ok(helpAfter(app, 'overload', 'load'), 'Hilfe-Abschnitt nach Ladungssicherung für meldende Rollen');
+});
+
+await test('Backlog 1249 (Sonde, Blickwinkel „Fahrer diktiert Lichtausfall ohne Satzzeichen“): „am anhaenger geht garnix mit licht“, „Licht geht gar nicht“, „Glühbirne kaputt“ → Licht-Schritte; Lichtmaschine, Warnlicht, „Birne gewechselt“, Innenbeleuchtung im Fahrerhaus nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const L2 = new RegExp(app.match(/^const LIGHTS2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['am anhaenger geht garnix mit licht', 'Licht geht gar nicht', 'licht am auflieger geht ueberhaupt nicht', 'Glühbirne kaputt', 'Birnen kaputt am Rücklicht']) ok(L2.test(recurFix(x)), 'Licht: ' + x);
+  for (const x of ['Lichtmaschine geht gar nicht', 'Warnlicht geht gar nicht aus', 'Birne gewechselt', 'Licht geht gar nicht, repariert', 'Licht geht']) ok(!L2.test(recurFix(x)), 'kein Licht-Zusatz: ' + x);
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck);"), 'Listener prüft nach noCabkit (Innenbeleuchtung bleibt bei Fahrerhaus-Ausstattung)');
 });
 
 await test('Backlog 1248 (Sonde, Blickwinkel „Fahrer diktiert Reifenschaden ohne Satzzeichen“): Reifen/Flanke aufgescheuert, „Laufläche löst sich“ (Tippfehler), EN „tread separating/coming off“ → Reifen-Schritte; „Reifen Seitenwand beschädigt“ zeigt keinen Aufbau-/Boden-Hinweis mehr, „Seitenwand vom Auflieger beschädigt“ schon; Reparatur, „Knie/Plane aufgescheuert“ nicht', async () => {
