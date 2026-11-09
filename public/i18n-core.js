@@ -1337,6 +1337,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1118: geöffnete Fahrzeugakte wurde inzwischen geändert
 // Backlog 1127: Reifenübersicht aktualisiert sich still
 // Backlog 1128: Mängelstatistik nach Kalendermonat
+// Backlog 1219: Preis in der Artikelakte mit Bezeichnung statt nur „€“
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

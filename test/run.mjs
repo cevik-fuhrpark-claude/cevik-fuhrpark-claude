@@ -37370,6 +37370,21 @@ await test('Backlog 1213 (Reserve Start-Modul): erzeugte App-Module enthalten ke
   ok(pct <= 53, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 53 %)');
 });
 
+await test('Backlog 1219 (Blickwinkel „Werkstatt erfasst Teile vom Handy im Lager“, Backlog 195): im Ersatzteillager folgen Suche, Filter und Artikelliste direkt auf die Aktionsknöpfe (Artikel anlegen, Import, Inventur darunter); Artikelakte beschriftet den Preis „Preis netto je <Einheit>“ statt nur „€“, fehlender Preis = „unbewertet“', async () => {
+  const fs = await import('node:fs'); const appSrc = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const a = appSrc.indexOf('async function viewStock() {'), b = appSrc.indexOf('\nasync function ', a + 10); const v = appSrc.slice(a, b);
+  const at = (x) => { const i = v.indexOf(x); ok(i > 0, 'fehlt in viewStock: ' + x); return i; };
+  const iBtn = at('id="scsv"'), iQ = at('<input id="q"'), iSf = at('<select id="sf"'), iSl = at('<div class="list" id="sl">'), iNf = at('<form id="nf">'), iImp = at('id="simp"'), iInv = at('id="inv"');
+  ok(iBtn < iQ && iQ < iSf && iSf < iSl, 'Knöpfe → Suche → Filter → Liste');
+  ok(iSl < iNf && iSl < iImp && iSl < iInv, 'Artikel anlegen/Import/Inventur stehen unter der Liste');
+  const c = appSrc.indexOf('async function viewStockItem('); const it = appSrc.slice(c, appSrc.indexOf('\nasync function ', c + 10));
+  ok(!it.includes('<dt>€</dt>'), 'kein Etikett nur „€“');
+  ok(it.includes("t('stock_price_per').replace('{u}', unitL(it.unit))") && it.includes("esc(t('unvalued'))"), 'Preis-Etikett mit Einheit, fehlender Preis unbewertet');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].stock_price_per && STRINGS[l].stock_price_per.includes('{u}'), l + ': stock_price_per mit {u}');
+  eq(STRINGS.de.stock_price_per.replace('{u}', 'Stk'), 'Preis netto je Stk');
+});
+
 await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläche ≥ 24 px (am Touchgerät 44 px) – jede Standzeile der App ist abgedeckt', async () => {
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

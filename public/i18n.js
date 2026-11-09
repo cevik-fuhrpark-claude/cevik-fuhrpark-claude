@@ -3973,3 +3973,7 @@ Object.assign(STRINGS.en, { tires_asof_hint: 'The overview refreshes itself ever
 Object.assign(STRINGS.de, { def_rolling: 'Letzte Tage (gleitend)', def_calmonth: 'Kalendermonat', def_month_running: '(laufend, bis heute)' });
 Object.assign(STRINGS.uk, { def_rolling: 'Останні дні (ковзний період)', def_calmonth: 'Календарний місяць', def_month_running: '(поточний, до сьогодні)' });
 Object.assign(STRINGS.en, { def_rolling: 'Last days (rolling)', def_calmonth: 'Calendar month', def_month_running: '(current, up to today)' });
+// Backlog 1219: Preis in der Artikelakte mit Bezeichnung statt nur „€“
+Object.assign(STRINGS.de, { stock_price_per: 'Preis netto je {u}' });
+Object.assign(STRINGS.uk, { stock_price_per: 'Ціна нетто за {u}' });
+Object.assign(STRINGS.en, { stock_price_per: 'Net price per {u}' });
