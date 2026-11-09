@@ -37285,6 +37285,27 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast überschritten“): Meldeformular zeigt eigene Schritte (nicht losfahren, Leitung klärt Teilentladung/Umladen; nur nach Absprache umverteilen; Wiegeschein fotografieren, Gewicht laut Beleg notieren; „Weiß nicht“); DE/EN/UK/RU; Verneinungen, Überladebrücke, Kupplung und Umladen nicht; Hilfe DE/UK/EN ohne Grenze/Frist', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const m = app.match(/^const OVERLOAD_HINT = \/(.+)\/i;$/m); ok(m, 'OVERLOAD_HINT auf Modulebene'); eq((app.match(/const OVERLOAD_HINT = /g) || []).length, 1, 'nur eine Definition');
+  const R = new RegExp(m[1], 'i'); const O = (x) => R.test(recurFix(x));
+  for (const x of ['Lkw überladen Achslast überschritten', 'Lkw ist überladen', 'Fahrzeug überladen, Polizei hat gewogen', 'Achslast überschritten', 'Hinterachse zu schwer', 'zulässiges Gesamtgewicht überschritten', 'zu schwer beladen', 'Übergewicht laut Wiegeschein', 'Ueberladung festgestellt', 'Überschreitung der Achslast', 'truck is overloaded', 'axle weight exceeded', 'over the weight limit', 'gross vehicle weight too high', 'машина перевантажена', 'перевищено осьове навантаження', 'перевантаження на вісь', 'перегруз по оси', 'машина перегружена', 'превышена нагрузка на ось', 'осевая нагрузка превышена']) ok(O(x), 'Überladungs-Hinweis: ' + x);
+  for (const x of ['Lkw nicht überladen', 'kein Übergewicht', 'Achslast nicht überschritten', 'Überladebrücke kaputt', 'Kupplung überlastet', 'clutch overloaded', 'not overloaded', 'вантаж перевантажили в іншу машину', 'перевантаження вантажу на інший причіп', 'сцепление перегружено', 'Ladung verrutscht', 'Lkw beladen', 'Gewicht ok']) ok(!O(x), 'kein Überladungs-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    const S = STRINGS[l]; ok(S.overload_hint_title, 'Titel ' + l); const st = S.overload_hint_steps.split('|'); eq(st.length, 4, 'Schritte ' + l);
+    ok(!/\d/.test(S.overload_hint_steps) && !/\d/.test(S.help_overload_s), 'keine Zahl/Grenze/Frist ' + l);
+    ok([S.driveable, S.drv_unbekannt, S.drv_nicht_fahrbereit].every((x) => st[3].includes(x)), 'Schritt 4 nennt Frage und Auswahl wörtlich ' + l);
+    ok(S.help_overload_t && S.help_overload_s.includes(S.overload_hint_steps) && S.help_overload_s.includes(S.nav_new) && S.help_overload_s.includes(S.fines), 'Hilfe ' + l);
+  }
+  ok(app.includes('<div id="overload" class="panel" hidden role="status">'), 'Panel #overload');
+  ok(app.includes("$('#overload').hidden = !OVERLOAD_HINT.test(dv);") && app.indexOf("$('#overload').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("'underrun', 'overload', 'load'"), 'Reihenfolge: vor Ladungssicherung');
+  ok(helpAfter(app, 'overload', 'load'), 'Hilfe-Abschnitt nach Ladungssicherung für meldende Rollen');
+});
+
 await test('Backlog 1238/1239 (Sonde aus 1237, Blickwinkel „Fahrer meldet ausgelösten Airbag/Gurtstraffer“ bzw. „Wasser im Diesel/Wasserabscheider“): Meldeformular zeigt eigene Schritte; DE/EN/UK/RU; „nicht ausgelöst“, Airbag-Kontrollleuchte, „kein Wasser“, „abgelassen“, Kühl-/Wischwasser und Reparaturvermerke nicht; Hilfe DE/UK/EN ohne Frist', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
