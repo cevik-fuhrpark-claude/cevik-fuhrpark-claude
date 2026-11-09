@@ -37285,6 +37285,21 @@ await test('Backlog 1218 (Sonde Karosserie/Verkleidung ohne Unfallhergang, Backl
   for (const x of ['Türverkleidung locker', 'Frontverkleidung lose, wieder festgeschraubt', 'Verkleidung sauber', 'Radkastenverkleidung getauscht']) ok(!r.test(x.toLowerCase()), 'fälschlich: ' + x);
 });
 
+await test('Backlog 1229 (Sonde Kofferaufbau/Hecktüren/Laderaum, Backlog 195): Verriegelungsstange verbogen, Türfeststeller abgerissen/fehlt, Hecktür hängt schief, „locking bar bent“, „запірна штанга погнута“ → Tür-Schritte; „Zurrschiene (aus der Wand) gerissen“ → Ladungssicherungsmittel; Thermometer im Laderaum/Kühlkoffer zeigt nichts → Kühlgerät; Reparaturvermerk, Fahrerhaus und fremde Bauteile nicht', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
+  const want = {
+    DOOR_HINT: ['Verriegelungsstange verbogen', 'Türfeststeller abgerissen', 'Türfeststeller fehlt', 'Hecktür hängt schief', 'Locking bar bent', 'door hinge snapped', 'Запірна штанга погнута'],
+    LASHGEAR_HINT: ['Zurrschiene aus der Wand gerissen', 'Zurrschiene gerissen'],
+    REEFER_HINT: ['Thermometer im Laderaum zeigt nichts an', 'Temperaturfühler im Kühlkoffer defekt'] };
+  const no = {
+    DOOR_HINT: ['Verriegelungsstange verbogen, gerichtet', 'Locking bar bent, replaced', 'Запірна штанга погнута, вже замінили', 'Verriegelungsstange am Tankdeckel'],
+    LASHGEAR_HINT: ['Zurrschiene gerissen, getauscht'],
+    REEFER_HINT: ['Thermometer im Kühlkoffer defekt, getauscht', 'Thermometer im Fahrerhaus defekt'] };
+  for (const [n, xs] of Object.entries(want)) { const r = rx(n); for (const x of xs) ok(r.test(x.toLowerCase()), n + ' fehlt: ' + x); }
+  for (const [n, xs] of Object.entries(no)) { const r = rx(n); for (const x of xs) ok(!r.test(x.toLowerCase()), n + ' fälschlich: ' + x); }
+});
+
 await test('Backlog 1228 (Sonde Heizung/Lüftung/Klima und AdBlue/Abgas, Backlog 195): Gebläse nur auf höchster Stufe, „Defrost“, „blower stuck on max/only works on full speed“, RU „отопитель не работает/не запускается“ → Sicht-Schritte; „Lüftung riecht muffig“/„vents smell musty“ → Klima-Schritte; AdBlue-Qualität/-Füllstand niedrig, „AdBlue level low“, NOx-Sensor defekt (DE/EN/UK) → Motor-Schritte; Reparaturvermerk, „kein … mehr“ und Abgasgeruch nicht (Reparaturvermerk bei Sicht über noFixed)', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+?)\\/([a-z]*);$', 'm')); ok(m, n + ' nicht gefunden'); ok(!m[1].includes('||') && !m[1].includes('(?:|') && !m[1].includes('|)'), 'leere Alternative in ' + n); return new RegExp(m[1], m[2]); };
