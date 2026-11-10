@@ -21536,7 +21536,7 @@ await test('Backlog 308 (Blickwinkel „Spiegel abgefahren“): Meldeformular ze
     ok(L.mirror_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="mirror" class="panel" hidden role="status">`), 'Panel #mirror');
-  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test(dfx); $('#coupling')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test(dfx) && !MIRROR2_HINT.test(dfx); $('#coupling')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('mirror') && order.indexOf('mirror') < order.indexOf('glass'), 'Gruppierung: Unfall vor Spiegel vor Glas');
   ok(helpAfter(app, 'mirror', 'load'), 'Hilfe-Abschnitt mirror nach load');
@@ -21646,7 +21646,7 @@ await test('Backlog 313 (Blickwinkel „Heizung/Gebläse/Scheibenwischer fällt 
     ok(L.visib_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="visib" class="panel" hidden role="status">`), 'Panel #visib');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test(dsh);") /* Backlog 1164: dsh = noSeatHeat(dfx) */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh);") /* Backlog 1164: dsh = noSeatHeat(dfx) */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('visib') && order.indexOf('acc') < order.indexOf('visib') && order.indexOf('visib') < order.indexOf('glass') && order.indexOf('visib') < order.indexOf('nostart'), 'Gruppierung: Unfall vor Sicht vor Glasschaden/springt nicht an (beschlagene Windschutzscheibe zeigt Sicht offen, Glas eingeklappt)');
   ok(helpAfter(app, 'visib', 'stuck'), 'Hilfe-Abschnitt visib nach stuck');
@@ -37369,6 +37369,21 @@ await test('Backlog 1256 (Sonde, Blickwinkel „Fahrer diktiert Tür-/Schloss-Pr
   for (const x of ['back door lock broken', 'head light broken', 'back doors jammed']) ok(!INJ.test(x), 'keine Verletzung: ' + x);
   for (const x of ['hand trapped in the door', 'back broken', 'head cut']) ok(INJ.test(x), 'Verletzung bleibt: ' + x);
   ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dfx) && !DOOR2_HINT.test(dfx);") && app.includes("$('#cablock').hidden = !CABLOCK_HINT.test(dfx) && !CABLOCK2_HINT.test(dfx);"), 'Listener (nach noFixed)');
+});
+
+await test('Backlog 1257 (Sonde, Blickwinkel „Fahrer diktiert Spiegel-/Scheibenproblem ohne Satzzeichen“): Spiegel lässt sich elektrisch nicht verstellen, klappt während der Fahrt ein, steht schief, „spiegel rechts hengt“, hält nicht mehr, zittert → Spiegel (nicht Vibration); Wischer bleibt in der Mitte stehen, läuft nur langsam, Wischwasser spritzt nicht, Spritzdüsen verstopft, Waschpumpe defekt, Scheibe friert von innen zu, Spiegel beschlägt → Sicht; EN/UK/RU; „Spiegel eingestellt“, Ölspiegel, Reparatur, „Düsen spritzen nicht“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const M2 = rx('MIRROR2_HINT'), V2 = rx('VISIB2_HINT'), VIB = rx('VIBR_HINT');
+  for (const x of ['spiegel elektrisch verstellen geht nicht', 'spiegel kann man nicht verstellen', 'spiegel klappt immer ein', 'spiegel klappt während der fahrt ein', 'spiegel klappt von alleine ein', 'spiegel steht schief', 'der spiegel auf der fahrerseite ist schief', 'spiegel ist verbogen', 'spiegel rechts hengt', 'spiegel hängt', 'spiegel hält nicht mehr', 'spiegel zittert', 'spiegel vibriert stark man sieht nix', 'mirror keeps folding in', 'mirror is crooked', 'mirror shaking at speed', 'зеркало трясется', 'дзеркало складається само', 'дзеркало погнуте']) ok(M2.test(recurFix(x)), 'Spiegel: ' + x);
+  for (const x of ['spiegel eingestellt', 'spiegel neu eingestellt', 'spiegel klappt wieder ein', 'spiegel hängt runter, repariert', 'spiegel ist schief, getauscht', 'ölspiegel zu niedrig', 'spiegelheizung geht nicht', 'spiegelei', 'spiegel in ordnung', 'mirror adjusted', 'mirror is crooked, fixed', 'spiegel beschlägt']) ok(!M2.test(recurFix(x)), 'kein Spiegel-Zusatz: ' + x);
+  for (const x of ['wischer bleibt in der mitte stehen', 'scheibenwischer bleiben mitten auf der scheibe stehen', 'scheibenwischer läuft nur langsam', 'scheibenwischer geht nur auf schnell', 'wischer läuft nur auf stufe 2', 'wischer hört nicht auf', 'waschwasser spritzt nicht', 'wischwasser kommt nur links', 'spritzdüsen verstopft', 'waschdüsen eingefroren', 'scheibenwaschpumpe defekt', 'wischwasserpumpe kaputt', 'scheibe friert von innen zu', 'spiegel beschlägt immer', 'spiegel ist zugefroren', 'wipers stuck in the middle', 'wipers only work on fast', 'washer fluid not spraying', 'двірники зупинились посередині', 'дворники остановились посередине', 'двірники працюють тільки швидко', 'форсунки омивача забиті']) ok(V2.test(recurFix(x)), 'Sicht: ' + x);
+  for (const x of ['düsen spritzen nicht', 'adblue düse verstopft', 'wischwasser nachgefüllt', 'wischerblätter gewechselt', 'wischer bleibt in der mitte stehen, repariert', 'waschpumpe defekt, getauscht', 'wipers replaced', 'scheibe sauber gemacht', 'spiegel von innen gesehen alles ok', 'fahrzeug bleibt stehen']) ok(!V2.test(recurFix(x)), 'kein Sicht-Zusatz: ' + x);
+  for (const x of ['spiegel zittert', 'spiegel vibriert stark', 'mirror shaking at speed', 'зеркало трясется']) ok(!VIB.test(x), 'keine Vibration: ' + x);
+  for (const x of ['lkw vibriert stark', 'lenkrad zittert', 'truck shaking at speed']) ok(VIB.test(x), 'Vibration bleibt: ' + x);
+  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test(dfx) && !MIRROR2_HINT.test(dfx);") && app.includes("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh);"), 'Listener (nach noFixed)');
 });
 
 await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleichlautende Ausschlüsse der Hinweismuster stehen in den erzeugten Modulen nur einmal (`const __RX`), lbRx setzt sie per ${__RX[k]} ein; jeder Ausdruck bleibt Zeichen für Zeichen gleich; Start-Modul ≤ 47 % von app.js', async () => {

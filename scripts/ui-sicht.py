@@ -7,6 +7,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
+DIK={'de':'wischer bleibt in der mitte stehen','uk':'двірники зупинились посередині','en':'wipers stuck in the middle'}
 TXT={'de':'Heizung geht nicht, Scheibe beschlägt','uk':'Пічка не працює, скло запотіває','en':'Heater not working, windscreen fogging up'}
 BOTH={'de':'Unfall, Scheibenwischer ausgefallen','uk':'ДТП, двірники не працюють','en':'Accident, wipers not working'}
 GL={'de':'Windschutzscheibe vereist von innen','uk':'Лобове скло замерзло','en':'Frozen windscreen'}
@@ -34,6 +35,8 @@ with sync_playwright() as p:
         check(not vis('#visib'),f'{lang}/{w}: anfangs kein Hinweis')
         q.fill('#d',NO[lang]); q.wait_for_timeout(100)
         check(not vis('#visib') and vis('#hintsum')==False,f'{lang}/{w}: „{NO[lang]}“ → kein Sicht-Hinweis')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#visib'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Hinweis (Backlog 1257)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#visib'),f'{lang}/{w}: Hinweis bei Heizung/beschlagener Scheibe')
         tx=q.inner_text('#visib')

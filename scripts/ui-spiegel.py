@@ -7,6 +7,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
+DIK={'de':'spiegel klappt während der fahrt ein','uk':'дзеркало складається само','en':'mirror keeps folding in'}
 TXT={'de':'Außenspiegel rechts abgefahren, an der Einfahrt','uk':'Праве дзеркало збите','en':'Right wing mirror knocked off'}
 BOTH={'de':'Unfall beim Rangieren, Spiegel abgerissen','uk':'ДТП, дзеркало відірване','en':'Accident while reversing, mirror smashed'}
 NO={'de':'Windschutzscheibe gesprungen','uk':'Лобове скло тріснуло','en':'Windscreen cracked'}
@@ -33,6 +34,8 @@ with sync_playwright() as p:
         check(not vis('#mirror'),f'{lang}/{w}: anfangs kein Hinweis')
         q.fill('#d',NO[lang]); q.wait_for_timeout(100)
         check(not vis('#mirror') and vis('#glass'),f'{lang}/{w}: „{NO[lang]}“ → nur Glas-Hinweis')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#mirror'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Hinweis (Backlog 1257)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#mirror') and not vis('#glass'),f'{lang}/{w}: Hinweis bei Spiegel')
         tx=q.inner_text('#mirror')
