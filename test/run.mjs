@@ -21601,7 +21601,7 @@ await test('Backlog 311 (Blickwinkel „Tür/Ladebordwand/Hecktür schließt nic
     ok(L.door_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="door" class="panel" hidden role="status">`), 'Panel #door');
-  ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dfx); $('#stuck')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dfx) && !DOOR2_HINT.test(dfx); $('#stuck')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('door') && order.indexOf('load') < order.indexOf('door') && order.indexOf('door') < order.indexOf('custdmg') && order.indexOf('door') < order.indexOf('theft'), 'Gruppierung: Unfall/Ladung vor Tür vor Diebstahl/Kundenschaden');
   ok(helpAfter(app, 'door', 'lights'), 'Hilfe-Abschnitt door nach lights');
@@ -22253,6 +22253,7 @@ await test('Backlog 348 (Blickwinkel „Fahrerhaus lässt sich nicht abschließe
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const m = app.match(/^const CABLOCK_HINT = \/(.+)\/i;/m); ok(m, 'CABLOCK_HINT vorhanden');
   const re = new RegExp(m[1], 'i');
+  const re2 = new RegExp(app.match(/^const CABLOCK2_HINT = \/(.+)\/i;$/m)[1], 'i'); // Backlog 1256: Diktat-Ergänzung
   for (const x of ['Zentralverriegelung defekt', 'Zentralverriegelung geht nicht', 'Funkschlüssel reagiert nicht', 'Schlüssel abgebrochen', 'Schlüssel im Schloss abgebrochen', 'Lkw lässt sich nicht abschließen', 'Fahrerhaus lässt sich nicht mehr abschließen', 'Türschloss klemmt', 'central locking not working', 'key fob dead', 'cab won’t lock', "truck can't be locked", 'key snapped in the lock', 'центральний замок не працює', 'ключ зламався', 'брелок не працює', 'центральный замок не работает', 'кабіна не зачиняється на ключ']) ok(re.test(x), 'Hinweis erwartet: ' + x);
   for (const x of ['Schlüssel verloren', 'Schlüssel abgegeben', 'Zentralverriegelung geht wieder', 'Tür abgeschlossen', 'Schlüsselbund', 'Ersatzschlüssel bestellt', 'ключ загубив', 'Lost the keys']) ok(!re.test(x), 'kein Hinweis: ' + x);
   const pat = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
@@ -22265,10 +22266,10 @@ await test('Backlog 348 (Blickwinkel „Fahrerhaus lässt sich nicht abschließe
     const h = L.help_cablock_s; ok(L.help_cablock_t && h && h.includes(L.cablock_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
     ok(L.cablock_hint_title, 'Titel ' + l);
     // die Beispiele im Hilfetext lösen den Hinweis tatsächlich aus
-    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
+    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex) || re2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
   }
   ok(app.includes(`<div id="cablock" class="panel" hidden role="status">`), 'Panel #cablock');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#cablock').hidden = !CABLOCK_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#cablock').hidden = !CABLOCK_HINT.test(dfx) && !CABLOCK2_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('cablock') && order.indexOf('door') < order.indexOf('cablock') && order.indexOf('window') < order.indexOf('cablock') && order.indexOf('cablock') < order.indexOf('theft') && order.indexOf('cablock') < order.indexOf('lost'), 'Gruppierung: Tür/Fenster vor Abschließen vor Diebstahl/Schlüssel verloren');
   ok(helpAfter(app, 'cablock', 'tyre'), 'Hilfe-Abschnitt cablock nach tyre');
@@ -37353,6 +37354,21 @@ await test('Backlog 1255 (Sonde, Blickwinkel „Fahrer diktiert Klima-/Lüftungs
   for (const x of ['klima macht nur warme luft', 'aus der lüftung kommt gestank', 'lüftung riecht muffig', 'heizung lässt sich nicht abschalten', 'heizung bläst nur heiß', 'heizung geht nicht mehr aus', 'klima lässt sich nicht einstellen', 'klimabedienteil ausgefallen', 'bedienteil der klima ausgefallen', 'temperaturregler kaputt', 'umluft klappe klemmt', 'lüftungsklappe klappert', 'klima kompressor macht geräusche', 'klimakompressor quietscht', 'vents smell', 'the ac panel is dead', 'a/c compressor noisy', 'heater stuck on hot', 'кондиціонер дме теплим', 'кондиционер дует теплым']) ok(C2.test(recurFix(x)), 'Klima: ' + x);
   for (const x of ['klima repariert macht wieder kalte luft', 'heizung lässt sich nicht abschalten, behoben', 'lüftung riecht neu', 'display kaputt', 'navi display dunkel', 'klappe vom staufach klemmt', 'ladeklappe klemmt', 'heckklappe klemmt', 'kompressor macht geräusche', 'luftkompressor laut', 'temperatur im kühlkoffer lässt sich nicht einstellen', 'temperatur lässt sich nicht einstellen', 'кондиціонер дме теплим, полагодили']) ok(!C2.test(recurFix(x)), 'kein Klima-Zusatz: ' + x);
   ok(app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx);"), 'Listener (nach noFixed)');
+});
+
+await test('Backlog 1256 (Sonde, Blickwinkel „Fahrer diktiert Tür-/Schloss-Problem ohne Satzzeichen“): Tür geht nicht mehr richtig zu, Hecktür-Hebel abgebrochen, „tür klemt“, Tür springt während der Fahrt auf, hängt durch, Scharnier ausgeschlagen, Drehstangenverschluss klemmt → Tür; Schlüssel steckt im Türschloss fest, Zentralverriegelung schließt von allein, Lkw lässt sich nicht aufschließen, komme nicht ins Fahrerhaus → Schloss; „back door lock broken“ keine Verletzung; Türgriff bleibt ohne Hinweis (Backlog 323)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const D2 = rx('DOOR2_HINT'), L2 = rx('CABLOCK2_HINT'), INJ = rx('INJURY_HINT');
+  for (const x of ['fahrertür geht nicht mehr richtig zu', 'fahrer tür schliest nicht', 'tür klemt', 'tür springt beim fahren auf', 'tür geht während der fahrt auf', 'fahrertür hängt durch', 'scharnier an der fahrertür ausgeschlagen', 'drehstangenverschluss klemmt', 'hecktür hebel abgebrochen', 'hecktürgriff ist ab', 'door flies open while driving', 'door sagging']) ok(D2.test(recurFix(x)), 'Tür: ' + x);
+  for (const x of ['schlüssel steckt fest im türschloss', 'zentralverriegelung schliesst von alleine', 'lkw lässt sich nicht aufschliessen', 'lkw geht nicht zu', 'komme nicht mehr in den lkw', 'cant lock the truck', 'cant open the cab', 'locked out of the cab', 'не можу закрити кабіну']) ok(L2.test(recurFix(x)), 'Schloss: ' + x);
+  for (const x of ['türgriff abgebrochen', 'türgriff ist ab', 'door handle snapped', 'ручка дверей відламалась', 'hecktür hebel abgebrochen, repariert', 'tür geht nicht zu, behoben', 'türdichtung kaputt', 'tür geht zu', 'tor beim kunden geht nicht zu', 'haltegriff abgebrochen', 'motorhaube scharnier gebrochen', 'klappe hängt durch', 'plane hängt durch', 'door handle replaced']) ok(!D2.test(recurFix(x)), 'kein Tür-Zusatz: ' + x);
+  for (const x of ['schlüssel steckt fest im zündschloss', 'zentralverriegelung schliesst wieder', 'lkw geht nicht an', 'komme nicht in den lkw tritt abgebrochen', 'cant open the hood', 'не можу відкрити капот', 'не можу завести вантажівку']) ok(!L2.test(recurFix(x)), 'kein Schloss-Zusatz: ' + x);
+  for (const x of ['back door lock broken', 'head light broken', 'back doors jammed']) ok(!INJ.test(x), 'keine Verletzung: ' + x);
+  for (const x of ['hand trapped in the door', 'back broken', 'head cut']) ok(INJ.test(x), 'Verletzung bleibt: ' + x);
+  ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dfx) && !DOOR2_HINT.test(dfx);") && app.includes("$('#cablock').hidden = !CABLOCK_HINT.test(dfx) && !CABLOCK2_HINT.test(dfx);"), 'Listener (nach noFixed)');
 });
 
 await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleichlautende Ausschlüsse der Hinweismuster stehen in den erzeugten Modulen nur einmal (`const __RX`), lbRx setzt sie per ${__RX[k]} ein; jeder Ausdruck bleibt Zeichen für Zeichen gleich; Start-Modul ≤ 47 % von app.js', async () => {
