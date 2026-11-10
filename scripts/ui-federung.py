@@ -9,6 +9,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Luftbalg geplatzt','uk':'Пневмоподушка лопнула','en':'Trailer is leaning to the left'}
 BOTH={'de':'Unfall, Auflieger hängt jetzt schief','uk':'ДТП, причіп просів','en':'Accident, air suspension failure'}
+DIKT={'de':'lkw hengt hinten rechts stoßdämpfer ölt','uk':'амортизатор потік підвіска пробиває','en':'suspension bottoms out ride height wrong'}  # Backlog 1258
 NO={'de':'Spiegel schief','uk':'Двері пошкоджені','en':'Reefer unit fault'}
 HT={'de':'Luftfederung defekt oder Lkw/Auflieger hängt schief','uk':'Несправна пневмопідвіска або вантажівка/напівпричіп перекошені','en':'Air suspension faulty or truck/trailer leaning'}
 fails=[]
@@ -36,6 +37,8 @@ with sync_playwright() as p:
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#susp'),f'{lang}/{w}: Hinweis bei Federungsschaden')
         tx=q.inner_text('#susp')
+        q.fill('#d',DIKT[lang]); q.wait_for_timeout(100)
+        check(vis('#susp'),f'{lang}/{w}: Diktat ohne Satzzeichen „{DIKT[lang]}“ → Hinweis (Backlog 1258)')
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#susp').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/federung-{lang}-{w}.png')

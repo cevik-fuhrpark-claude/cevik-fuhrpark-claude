@@ -21763,7 +21763,7 @@ await test('Backlog 318 (Blickwinkel „Luftfederung defekt oder Lkw/Auflieger h
     ok(L.susp_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="susp" class="panel" hidden role="status">`), 'Panel #susp');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv));") /* Backlog 1132 */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv)) && !SUSP2_HINT.test(noSeatSusp(dv));") /* Backlog 1132 */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('susp') && order.indexOf('flat') < order.indexOf('susp') && order.indexOf('brake') < order.indexOf('susp') && order.indexOf('coupling') < order.indexOf('susp') && order.indexOf('susp') < order.indexOf('loose') && order.indexOf('susp') < order.indexOf('load'), 'Gruppierung: Reifen/Bremse/Kupplung vor Federung vor losem Teil/Ladung');
   ok(helpAfter(app, 'susp', 'engine'), 'Hilfe-Abschnitt susp nach engine');
@@ -27588,7 +27588,7 @@ await test('Backlog 783 (Sonde Reparaturvermerk Federung): nur die Federbein-/Fe
   const m = app.match(/^const SUSP_HINT = \/(.+)\/i;$/m); ok(m, 'SUSP_HINT auf Modulebene');
   const r = new RegExp(m[1], 'i');
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
-  ok(app.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv));"), 'Federungs-Hinweis prüft dv (eigener Ausschluss; ohne Sitzfederung, Backlog 1132)');
+  ok(app.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv)) && !SUSP2_HINT.test(noSeatSusp(dv));"), 'Federungs-Hinweis prüft dv (eigener Ausschluss; ohne Sitzfederung, Backlog 1132)');
   for (const x of ['Luftfederung defekt', 'Liftachse geht nicht hoch', 'Liftachse geht nicht mehr hoch', 'air suspension failed', 'Пневмоподушка лопнула', 'Ресора зламана', 'Luftfederung wieder defekt, obwohl repariert', 'подушка лопнула знову, хоча замінили', 'Feder gebrochen, nicht repariert', 'Luftbalg kaputt, muss getauscht werden', 'air bag burst, needs to be replaced', 'Пневмоподушка лопнула, треба замінити', 'Auflieger hängt schief. Luftbalg getauscht']) ok(r.test(recurFix(x)), 'SUSP_HINT: ' + x);
   for (const x of ['Luftfederung defekt, repariert', 'Liftachse geht nicht hoch, repariert', 'air suspension failed, repaired', 'Пневмоподушка лопнула, замінили', 'Ресора зламана, замінили', 'Подвеска не работает, отремонтировали', 'Auflieger hängt schief, Luftbalg getauscht', 'Federbein gebrochen, getauscht']) ok(!r.test(recurFix(x)), 'SUSP_HINT nicht: ' + x);
 });
@@ -36294,7 +36294,7 @@ await test('Backlog 1132 (Sonde Federung/Sitz): Luftfederung des Fahrer-/Beifahr
   ok(!I.test('Luftfederung hinten links verliert Luft') && !I.test('Fahrersitz verstellt'), 'keine Sitzfederung');
   ok(app.includes('const SEATSUSP_HINT = new RegExp(SEATSUSP_SPANS.source, \'i\');'), 'Prüfmuster ohne g (kein lastIndex)');
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
-  ok(hl.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv));") && hl.includes("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh);") /* Backlog 1164 */, 'Meldeformular');
+  ok(hl.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv)) && !SUSP2_HINT.test(noSeatSusp(dv));") && hl.includes("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh);") /* Backlog 1164 */, 'Meldeformular');
 });
 await test('Backlog 1133 (Sonde Glas-Hinweis, Folge aus 760): „Seiten-/Heckscheibe (von innen) beschlagen“ zeigt nur Sicht/Lüftung, keine Glasschaden-Schritte – mit Riss/kaputt im selben Satz weiterhin Glas', async () => {
   const { readFileSync } = await import('node:fs');
@@ -37402,6 +37402,19 @@ await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleich
   for (const g of Object.keys(B.GROUPS)) { const t = rd(`app-${g}.js`); if (t.includes('${__RX[')) ok(/^const __RX = \[/m.test(t), `app-${g}.js hat eigene Bausteinliste`); }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
   ok(pct <= 47, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 47 %)');
+});
+
+await test('Backlog 1258 (Sonde, Blickwinkel „Fahrer diktiert Federungsproblem ohne Satzzeichen“): „lkw hengt hinten rechts“, „liegt hinten tief“, „balg zischt“, Heben/Senken, Fahrhöhe, Federlage/-bügel/-bride, „Stoßdämpfer ölt“, „Federung hart/schlägt durch“, „poltert über Unebenheiten“, Stabilisator, Höhenventil, EN/UK/RU → Federungs-Schritte; Berg, Reparatur, Anhänger am Lkw, Motor springt an, Lenkungsdämpfer, Sitzfederung nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const S2 = new RegExp(app.match(/^const SUSP2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  const noSeatSusp = new Function(app.slice(app.indexOf('const SEATSUSP_SPANS'), app.indexOf('\n', app.indexOf('const noSeatSusp'))) + '; return noSeatSusp;')();
+  for (const x of ['lkw hängt hinten links runter', 'lkw hengt hinten rechts', 'fahrzeug liegt hinten tief', 'balg zischt', 'heben senken geht nicht', 'auflieger lässt sich nicht heben', 'fahrhöhe stimmt nicht', 'lkw kommt nicht hoch', 'federlage gebrochen', 'stoßdämpfer ölt', 'dämpfer hinten links verliert öl', 'federung ist hart', 'federung schlägt durch', 'schlägt durch bei schlagloch', 'lkw springt auf der straße', 'hinterachse poltert', 'es poltert hinten beim fahren über unebenheiten', 'achse hebt sich nicht', 'liftachse lässt sich nicht runter', 'stabilisator gebrochen', 'stabi lose', 'stabilisator gummis kaputt', 'federbügel locker', 'federbride gerissen', 'höhenventil kaputt', 'niveauventil defekt', 'luftfederung pfeift', 'suspension bottoms out', 'ride height wrong', 'level control not working', 'anti roll bar broken', 'trailer wont go up', 'подушка травит', 'амортизатор потік', 'підвіска пробиває', 'стабілізатор зламаний', 'пневмоподушка шипить']) ok(S2.test(recurFix(x)), 'Federung: ' + x);
+  for (const x of ['luftfederung repariert', 'dämpfer gewechselt ölt nicht mehr', 'hinterachse poltert nicht mehr', 'heben senken geht nicht, repariert', 'lkw kommt den berg nicht hoch', 'berg lkw kommt nicht hoch', 'anhänger hängt hinten am lkw', 'lkw steht links unten am tor', 'lkw hängt im stau', 'motor springt nicht an', 'lkw springt nicht an', 'stabil gesichert', 'lenkungsdämpfer ölt', 'truck wont lift the load', 'trailer wont go up the ramp', 'spiegel steht schief', 'ladung hängt schief', 'air suspension fixed', 'liftachse eingestellt']) ok(!S2.test(recurFix(x)), 'kein Federungs-Zusatz: ' + x);
+  for (const x of ['sitzfederung schlägt durch', 'fahrersitz luftfederung pfeift']) ok(!S2.test(noSeatSusp(recurFix(x))), 'Sitzfederung bleibt Sitz-Hinweis: ' + x);
+  ok(app.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv)) && !SUSP2_HINT.test(noSeatSusp(dv));"), 'Listener');
+  ok(/lkw hengt hinten rechts/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
 
 await test('Backlog 1253 (Sonde, Blickwinkel „Fahrer diktiert Lenkungsproblem ohne Satzzeichen“): „zieht stark nach links“, „Lenkrad steht schräg“, Servoöl verliert, Servopumpe heult, „knackt beim Einlenken“, „Lenkung geht nicht zurück“, Achsschenkel, Spur verstellt, Lenkachse lenkt nicht, Lenkungs-/Lenkradleuchte, „muss ständig gegenlenken“, EN/UK/RU → Lenkungs-Schritte; Seitenwind, Reparatur, Spurwechsel, „läuft schief“, Ausweichen vor Wild nicht', async () => {
