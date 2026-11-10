@@ -22090,7 +22090,7 @@ await test('Backlog 335 (Blickwinkel „Fensterheber defekt – Seitenscheibe ge
     ok(L.window_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="window" class="panel" hidden role="status">`), 'Panel #window');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#window').hidden = !WINDOW_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#window').hidden = !WINDOW_HINT.test(dfx) && !WINDOW2_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('window') && order.indexOf('door') < order.indexOf('window') && order.indexOf('window') < order.indexOf('theft') && order.indexOf('window') < order.indexOf('glass'), 'Gruppierung: Tür vor Fenster vor Diebstahl/Glas');
   ok(helpAfter(app, 'window', 'climate'), 'Hilfe-Abschnitt window nach climate');
@@ -37432,6 +37432,18 @@ await test('Backlog 1277 (Reserve Start-Modul nach 1276: 46,96 % ≤ 47 %): hund
   for (const tk of new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')()) ok(Buffer.byteLength(tk) > Buffer.byteLength('${__T[0]}'), 'Baustein länger als Platzhalter: ' + tk);
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
   ok(pct <= 46, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 46 %)');
+});
+
+await test('Backlog 1279 (Sonde, Blickwinkel „Fahrer diktiert Fenster/Fensterheber ohne Satzzeichen“): „fenster ist runtergefallen“, „fenster fährt von alleine runter“, „fenster geht nur halb hoch“, „fenster schalter geht nicht“, EN „electric window broken“, „passenger window not going down“, UK/RU „вікно впало в двері“ → Fenster-Schritte; Fenster geputzt/offen, Handy, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const W2 = rx('WINDOW2_HINT');
+  for (const x of ['fenster ist runtergefallen', 'seitenscheibe ist in die tür gefallen', 'fenster fährt von alleine runter', 'beifahrerfenster geht immer wieder runter', 'fenster geht nur halb hoch', 'fenster schalter geht nicht', 'fensterschalter defekt', 'electric window broken', 'power window not working', 'passenger window not going down', 'drivers window goes down by itself', 'window only goes halfway', 'вікно впало в двері', 'окно упало в дверь', 'скло провалилося в двері']) ok(W2.test(x), 'Fenster: ' + x);
+  for (const x of ['fenster geputzt', 'fenster ist offen', 'handy ist runtergefallen', 'fenster runtergefallen wurde repariert', 'fenster geht nur halb hoch fensterheber getauscht', 'power window fixed', 'window cleaned', 'broken window', 'ключ упал в дверь']) ok(!W2.test(x), 'kein Fenster-Zusatz: ' + x);
+  ok(app.includes("$('#window').hidden = !WINDOW_HINT.test(dfx) && !WINDOW2_HINT.test(dfx);"), 'Listener Fenster (nach noFixed)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['Fenster ist in die Tür gefallen', 'Fenster fährt von alleine runter', 'Fensterschalter geht nicht']], ['uk', ['вікно впало в двері']], ['en', ['window only goes halfway', 'passenger window not going down']]]) for (const ex of exs) { ok(STRINGS[l].help_window_s.includes(ex), 'Hilfe Fenster ' + l + ': ' + ex); ok(W2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
 
 await test('Backlog 1278 (Sonde, Blickwinkel „Fahrer diktiert Überhitzung/Kühlwasser ohne Satzzeichen“): „temperatur nadel geht ganz hoch“, „die temperatur steigt bergauf“, „temperatur 105 grad“, „unterm fahrerhaus dampft es“, „kühlerlüfter springt nicht an“, EN „truck is running hot“, „temp keeps rising on hills“, „steam from under the cab“, UK/RU „пар з-під кабіни“, „мотор закипел“ → Motor-Schritte; Öl-/Außentemperatur, Kühlaggregat/Ladung, „kein Dampf“, Reparaturvermerk nicht; „Lüfter springt nicht an“ ist kein Startproblem', async () => {

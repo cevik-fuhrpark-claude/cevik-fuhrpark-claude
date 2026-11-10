@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 335, Blickwinkel „Fensterheber defekt – Seitenscheibe geht nicht mehr zu“): Meldeformular zeigt
 # fünf Schritte (Leitung vor Pause/Abstellen, Fahrerhaus nicht offen lassen, nicht mit Gewalt, Seite/Foto, Auswahl Fahrbereitschaft);
 # „Seitenscheibe eingeschlagen“ zeigt den Glas-, nicht den Fenster-Hinweis; zusammen mit „Unfall“ ist der Unfall-Hinweis offen und der Fenster-Hinweis eingeklappt; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Backlog 1279: Diktat-Satz je Sprache („fenster ist in die tür gefallen“ …) zeigt den Fenster-Hinweis.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -9,6 +10,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Fensterheber kaputt, Scheibe bleibt unten','uk':'вікно не закривається','en':'Driver window won’t close'}
 BOTH={'de':'Unfall, Fenster geht nicht zu','uk':'ДТП, склопідйомник не працює','en':'Accident, window stuck open'}
+DIK={'de':'fenster ist in die tür gefallen','uk':'вікно впало в двері','en':'passenger window not going down'}  # Backlog 1279: Diktat ohne Satzzeichen
 NO={'de':'Seitenscheibe eingeschlagen','uk':'Скло тріснуло','en':'Broken window'}
 HT={'de':'Fensterheber defekt oder Seitenscheibe geht nicht mehr zu','uk':'Несправний склопідйомник або бічне скло не зачиняється','en':'Window regulator faulty or side window won’t close'}
 fails=[]
@@ -33,6 +35,8 @@ with sync_playwright() as p:
         check(not vis('#window'),f'{lang}/{w}: anfangs kein Hinweis')
         q.fill('#d',NO[lang]); q.wait_for_timeout(100)
         check(not vis('#window') and vis('#glass'),f'{lang}/{w}: „{NO[lang]}“ → Glas-, kein Fenster-Hinweis')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#window'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Fenster-Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#window'),f'{lang}/{w}: Hinweis bei Fenster, das nicht zugeht')
         tx=q.inner_text('#window')
