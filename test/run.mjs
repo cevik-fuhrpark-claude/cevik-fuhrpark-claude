@@ -37500,7 +37500,7 @@ await test('Backlog 1296 (Reserve Start-Modul nach 1295: 45,84 % > 45,8 %): häu
   ok(d.code.includes('${__T[10]}fixed${__T[11]}заменил))') && d.code.includes('${__T[10]}eingestellt${__T[12]}полагод))'), 'Bausteine 10–12 eingesetzt: ' + d.code);
   eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (zweistelliger Index)');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 13, 'Bausteinliste hat 13 Einträge');
+  eq(T.length, 14, 'Bausteinliste hat 14 Einträge (Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“)'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
   ok((main.match(/\$\{__T\[1[0-2]\]\}/g) || []).length > 60, 'zweistellige Bausteine werden genutzt');
   for (const tk of T.slice(10)) ok(Buffer.byteLength(tk) > Buffer.byteLength('${__T[10]}'), 'Baustein länger als Platzhalter: ' + tk);
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
