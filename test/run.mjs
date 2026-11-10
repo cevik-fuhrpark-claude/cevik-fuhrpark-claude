@@ -27524,7 +27524,7 @@ await test('Backlog 741–742 (Blickwinkel „Ladeboden, Bordwand, Seitenwand od
     ok(S.help_floor_t && S.help_floor_s.includes(S.floor_hint_steps) && S.help_floor_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="floor" class="panel" hidden role="status">'), 'Panel #floor');
-  ok(app.includes("$('#floor').hidden = !FLOOR_HINT.test(noTyreWall(dv));") && app.indexOf("$('#floor').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#floor').hidden = !FLOOR_HINT.test(noTyreWall(dv)) && !FLOOR2_HINT.test(noTyreWall(dv));") && app.indexOf("$('#floor').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'lashgear', 'deck', 'floor', 'leak'"), 'Reihenfolge nach Ladeetage, vor Leck');
   ok(app.includes("'underrun', 'floor', 'tyre'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -27599,7 +27599,7 @@ await test('Backlog 782 (Sonde Reparaturvermerk UK/RU in Hinweisen ohne noFixed)
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
   const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", app.indexOf('const noFixed')) + 12;
   const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
-  for (const [n, h] of [['PEDAL_HINT', 'dv'], ['CONTOUR_HINT', 'dv'], ['FLOOR_HINT', 'noTyreWall(dv)'], ['GREASE_HINT', 'dv'], ['SPARE_HINT', 'dv'], ['BATT_HINT', 'noAux(dfx)']]) ok(app.includes('.hidden = !' + n + '.test(' + h + ');'), n + ' prüft ' + h);
+  for (const [n, h] of [['PEDAL_HINT', 'dv'], ['CONTOUR_HINT', 'dv'], ['FLOOR_HINT', 'noTyreWall(dv)'], ['GREASE_HINT', 'dv'], ['SPARE_HINT', 'dv'], ['BATT_HINT', 'noAux(dfx)']]) ok(app.includes('.hidden = !' + n + '.test(' + h + ');') || app.includes('.hidden = !' + n + '.test(' + h + ') && !' + n.replace('_HINT', '2_HINT') + '.test(' + h + ');') /* Backlog 1262: Ergänzungsmuster */, n + ' prüft ' + h);
   const T = {
     PEDAL_HINT: [['педаль газу заїдає', 'педаль газа заедает', 'килимок під педаллю', 'коврик под педалью', 'педаль газу знову заїдає, хоча замінили', 'Gaspedal klemmt'],
       ['педаль газу заїдає, замінили', 'педаль газа заедает, отремонтировали', 'педаль газу залипає, полагодили', 'килимок під педаллю, прибрали', 'коврик под педалью, убрали', 'Gaspedal klemmt, repariert', 'Gaspedal klemmt, замінили']],
@@ -37404,6 +37404,16 @@ await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleich
   ok(pct <= 47, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 47 %)');
 });
 
+await test('Backlog 1262 (Sonde, Restlücke aus 1260 „Fahrer diktiert Koffer-/Rungenproblem“): „seitenrunge locker“, „mittelrunge geht nicht raus“, „koffer hat ein loch“, „kofferwand loch“, „dach vom auflieger loch“, „latten fehlen“, „slats missing“, „hole in the box body“ → Aufbau-Schritte; Reparatur, „kein Loch“, „mein koffer hat ein loch“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const F2 = new RegExp(app.match(/^const FLOOR2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['seitenrunge locker', 'mittelrunge geht nicht raus', 'runge lässt sich nicht ziehen', 'rungen wackeln', 'runge steckt fest', 'koffer hat ein loch', 'kofferwand loch', 'dach vom auflieger loch', 'wand vom auflieger hat ein riss', 'aufbau hat ein loch', 'latten fehlen', 'latte gebrochen', 'zwei latten fehlen', 'slats missing', 'stanchion bent', 'hole in the box body']) ok(F2.test(recurFix(x)), 'Aufbau: ' + x);
+  for (const x of ['runge repariert', 'koffer hat kein loch', 'runge fest', 'latten ok', 'latte geschweißt', 'koffer geschweißt kein loch', 'ich gehe zur latte', 'mein koffer hat ein loch', 'slats replaced']) ok(!F2.test(recurFix(x)), 'kein Aufbau-Zusatz: ' + x);
+  ok(app.includes("$('#floor').hidden = !FLOOR_HINT.test(noTyreWall(dv)) && !FLOOR2_HINT.test(noTyreWall(dv));"), 'Listener');
+});
+
 await test('Backlog 1261 (Sonde, Restlücke aus 1260 „Fahrer diktiert Aufbau-/Türproblem“): „heckportal verbogen“, „portaltür klemmt“, „portalrahmen verzogen“, „rear portal bent“, „roller shutter jammed“, „рольставня заклинила“ → Tür-Schritte; Reparatur, „portal geht nicht“, „kundenportal klemmt“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -37512,7 +37522,7 @@ await test('Backlog 1248 (Sonde, Blickwinkel „Fahrer diktiert Reifenschaden oh
   for (const x of ['Reifen aufgescheuert, gewechselt', 'Knie aufgescheuert', 'Plane aufgescheuert', 'Laufband löst sich', 'tread replaced']) ok(!T2.test(recurFix(x)), 'kein Reifen-Zusatz: ' + x);
   for (const x of ['Reifen Seitenwand beschädigt', 'Seitenwand vom Reifen beschädigt', 'reifen ist kaputt seitenwand beschaedigt', 'reifen von innen aufgescheuert seitenwand beschaedigt']) ok(!F.test(noTyreWall(recurFix(x))), 'kein Boden-/Aufbau-Hinweis: ' + x);
   for (const x of ['Seitenwand beschädigt', 'Seitenwand vom Auflieger beschädigt', 'reifen platt seitenwand vom auflieger beschaedigt', 'Reifen platt, Seitenwand beschädigt']) ok(F.test(noTyreWall(recurFix(x))), 'Aufbau bleibt: ' + x);
-  ok(app.includes("$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv))) || bodyWall(dv);") && app.includes("$('#floor').hidden = !FLOOR_HINT.test(noTyreWall(dv));"), 'Listener');
+  ok(app.includes("$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv))) || bodyWall(dv);") && app.includes("$('#floor').hidden = !FLOOR_HINT.test(noTyreWall(dv)) && !FLOOR2_HINT.test(noTyreWall(dv));"), 'Listener');
 });
 
 await test('Backlog 1247 (Sonde, Blickwinkel „Sattelkupplung beim Ab-/Aufsatteln per Sprachdiktat“): Tippfehler, Fanghorn/Sattelplatte, Defekt „beim Ab-/Aufsatteln“ ohne Satzzeichen, Auflieger runtergefallen/zu niedrig, EN „jaws not locking“/„cant unhook the trailer“, UK/RU „не можу відчепити причіп“ → Kuppel-Schritte; roter/gelber Schlauch, Duomatik, Kupplungskopf → Brems-Schritte; Reparatur, „zu hoch beladen“, „Brücke“ nicht', async () => {

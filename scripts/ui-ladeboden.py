@@ -6,6 +6,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
+DIK={'de':'seitenrunge locker koffer hat ein loch','uk':'Підлога в причепі зламана','en':'slats missing hole in the box body'}  # Backlog 1262 (UK: kein neues Muster)
 TXT={'de':'Ladeboden im Auflieger gebrochen, Bordwand verbogen','uk':'Підлога в причепі зламана, борт погнутий','en':'Trailer floor broken, side board bent'}
 fails=[]
 def check(c,m):
@@ -28,6 +29,9 @@ with sync_playwright() as p:
         vis=lambda sel: q.evaluate(f"!document.querySelector('{sel}').hidden")
         q.fill('#d',TXT[lang]); q.wait_for_timeout(150)
         check(vis('#floor'),f'{lang}/{w}: Aufbau-Schritte bei „{TXT[lang]}“')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(150)
+        check(vis('#floor'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Aufbau-Schritte (Backlog 1262)')
+        q.fill('#d',TXT[lang]); q.wait_for_timeout(150)
         check(q.evaluate("!document.querySelector('#floor ul').hidden"),f'{lang}/{w}: Schritte aufgeklappt')
         tx=q.inner_text('#floor'); check('floor_' not in tx and len(tx)>200,f'{lang}/{w}: Text übersetzt')
         if SHOTS: q.locator('#floor').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/ladeboden-{lang}-{w}.png')
