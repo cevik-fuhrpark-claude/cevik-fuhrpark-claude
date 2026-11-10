@@ -335,21 +335,30 @@ function rxGroups(body) {
 }
 const RX_CALL = /lbRx\(String\.raw`((?:[^`\\]|\\.)*)`/g;
 export function expandRx(code) {
+  const t = /^const __T = \[(.*)\];$/m.exec(code);
+  if (t) { const tp = [...t[1].matchAll(/String\.raw`((?:[^`\\]|\\.)*)`/g)].map((x) => x[1]); code = code.replace(t[0] + '\n', '').replace(/\$\{__T\[(\d)\]\}/g, (_, k) => tp[+k]); }
   const m = /^const __RX = \[(.*)\];$/m.exec(code); if (!m) return code;
   const parts = [...m[1].matchAll(/String\.raw`((?:[^`\\]|\\.)*)`/g)].map((x) => x[1]);
   return code.replace(m[0], '').replace(/\$\{__RX\[(\d+)\]\}/g, (_, k) => parts[+k]);
 }
+// Backlog 1277 (Reserve Start-Modul nach 1276: 46,96 % ≤ 47 %): kurze, hundertfach wiederkehrende Wortgrenzen der Hinweismuster
+// (z. B. `(?![a-zäöüß])` über 1000×) stehen in `const __T = [String.raw`…`, …]` und werden in lbRx-Quellen per `${__T[k]}` (9 Byte)
+// eingesetzt – nur Bausteine, die in UTF-8 länger als der Platzhalter sind. Höchstens 10 Einträge (einstelliger Index).
+const RX_TOK = ['(?![a-zäöüß])', '(?<![a-zäöüß-])', '(?<![а-яіїєґё])', '(?<![a-zäöüß])', '(?<![а-яіїєґ])', '(?<![a-z-])', '(?![а-яіїєґё])'];
 export function dedupeLooks(code) {
   const calls = [...code.matchAll(RX_CALL)], count = new Map();
   for (const c of calls) for (const [a, e] of rxGroups(c[1])) { const g = c[1].slice(a, e); count.set(g, (count.get(g) || 0) + 1); }
   const idx = new Map(); for (const [g, k] of count) if (k > 1 && !g.includes('`') && !g.includes('${')) idx.set(g, idx.size);
   if (!idx.size) return { code, def: '', n: 0 };
-  const out = code.replace(RX_CALL, (all, body) => {
+  let out = code.replace(RX_CALL, (all, body) => {
     let b = '', last = 0;
     for (const [a, e] of rxGroups(body)) { const g = body.slice(a, e); if (idx.has(g)) { b += body.slice(last, a) + '${__RX[' + idx.get(g) + ']}'; last = e; } }
     return 'lbRx(String.raw`' + b + body.slice(last) + '`';
   });
-  const def = 'const __RX = [' + [...idx.keys()].map((g) => 'String.raw`' + g + '`').join(', ') + '];\n';
+  let def = 'const __RX = [' + [...idx.keys()].map((g) => 'String.raw`' + g + '`').join(', ') + '];\n';
+  let used = false;
+  const out2 = out.replace(RX_CALL, (all, body) => 'lbRx(String.raw`' + RX_TOK.reduce((b, tk, k) => { if (!b.includes(tk)) return b; used = true; return b.split(tk).join('${__T[' + k + ']}'); }, body) + '`');
+  if (used) { def = 'const __T = [' + RX_TOK.map((g) => 'String.raw`' + g + '`').join(', ') + '];\n' + def; out = out2; }
   if (expandRx(def + out).slice(1) !== code) throw new Error('build-app: Bausteinliste __RX verändert einen Ausdruck');
   return { code: out, def, n: idx.size };
 }

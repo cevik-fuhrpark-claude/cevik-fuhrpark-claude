@@ -28843,7 +28843,8 @@ await test('Backlog 794 (Blickwinkel „Fahrer mit älterem Handy/Browser“): k
   // Backlog 1254: gemeinsame Ausschlüsse stehen einmal in __RX und werden per ${__RX[k]} eingesetzt – wie im Browser auswerten
   const rxDef = (main.match(/^const __RX = \[.*\];$/m) || [''])[0]; ok(rxDef, 'Bausteinliste __RX im Start-Modul');
   const RX = new Function(rxDef + '; return __RX;')();
-  for (const [i, m] of calls.entries()) eq(`/${new Function('__RX', 'return String.raw`' + m[1] + '`;')(RX)}/${m[2]}`, srcLits[i], `Ausdruck ${i} unverändert`);
+  const tDef = (main.match(/^const __T = \[.*\];$/m) || ['const __T = []'])[0]; const T = new Function(tDef + '; return __T;')(); // Backlog 1277: kurze Wortgrenzen in __T
+  for (const [i, m] of calls.entries()) eq(`/${new Function('__RX', '__T', 'return String.raw`' + m[1] + '`;')(RX, T)}/${m[2]}`, srcLits[i], `Ausdruck ${i} unverändert`);
   ok(calls.filter((m) => m[1].includes('${__RX[')).length >= 50 && RX.length >= 50, 'Ausschlüsse werden geteilt (' + RX.length + ' Bausteine)');
   // Einzelfälle der Ersatzfassung
   eq(B.lbFallback('(?<![a-zäöüß-])fahrrad', true), '(?:^|[^a-zäöüß-])fahrrad', 'Anfang exakt');
@@ -37413,6 +37414,24 @@ await test('Backlog 1267 (Sonde, Blickwinkel „Fahrer diktiert Tankkarten-/Tank
   for (const x of ['ec karte an der tankstelle abgelehnt', 'meine karte an der tanke abgelehnt', 'bankkarte an der tankstelle abgelehnt', 'tankkarte pin falsch eingegeben jetzt geht wieder', 'kann nicht tanken zapfsäule kaputt', 'karte an der tankstelle abgelehnt neue karte bekommen', 'credit card declined at the fuel station', 'fuel card pin wrong works again now', 'karte an der tankstelle bezahlt']) ok(!F2.test(recurFix(x)), 'kein Tankkarten-Zusatz: ' + x);
   ok(app.includes("$('#fuelcard').hidden = !FUELCARD_HINT.test(dv) && !FUELCARD2_HINT.test(dv);"), 'Listener');
   ok(/karte an der tanke abgelehnt/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
+});
+
+await test('Backlog 1277 (Reserve Start-Modul nach 1276: 46,96 % ≤ 47 %): hundertfach wiederkehrende kurze Wortgrenzen der Hinweismuster (z. B. (?![a-zäöüß])) stehen in den erzeugten Modulen einmal in `const __T`, lbRx-Quellen setzen sie per ${__T[k]} ein; Rückverwandlung Zeichen für Zeichen gleich; Start-Modul ≤ 46 % von app.js', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const B = await import('../scripts/build-app.mjs');
+  const ex = '(?![^.;!?]*(?:repariert|erneuert|getauscht|ersetzt|behoben|fixed|repaired))';
+  const code = "x\nconst A = lbRx(String.raw`(?<![a-zäöüß-])lenkung(?![a-zäöüß])\\s+schwer" + ex + "`, 'i', 1);\nconst B2 = lbRx(String.raw`(?<![а-яіїєґё])гальм\\S*(?![a-zäöüß])" + ex + "`, 'i', 1);\nconst C = /(?![a-zäöüß])x/i;\n";
+  const d = B.dedupeLooks(code);
+  ok(d.def.startsWith('const __T = [String.raw`(?![a-zäöüß])`, String.raw`(?<![a-zäöüß-])`, String.raw`(?<![а-яіїєґё])`') && d.def.includes('\nconst __RX = [String.raw`(?![^.;!?]*'), 'Bausteinlisten: ' + d.def);
+  ok(d.code.includes('${__T[1]}lenkung${__T[0]}\\s+schwer${__RX[0]}`') && d.code.includes('${__T[2]}гальм\\S*${__T[0]}${__RX[0]}`') && d.code.includes('const C = /(?![a-zäöüß])x/i;'), 'Einsetzen nur in lbRx-Quellen: ' + d.code);
+  eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich');
+  const RX = new Function(d.def + 'return [__T, __RX];')(); const r = new Function('lbRx', '__T', '__RX', d.code.replace(/^x$/m, '') + 'return [A, B2];')((s) => s, RX[0], RX[1]);
+  eq(r[0], '(?<![a-zäöüß-])lenkung(?![a-zäöüß])\\s+schwer' + ex, 'String.raw setzt den Text unverändert ein');
+  const main = rd('app-main.js'); ok(/^const __T = \[String\.raw`/m.test(main) && main.indexOf('const __T = [') < main.indexOf('const __RX = [') && (main.match(/\$\{__T\[\d\]\}/g) || []).length > 1000, 'Wortgrenzen geteilt, Liste vor __RX');
+  for (const g of Object.keys(B.GROUPS)) { const t = rd(`app-${g}.js`); if (t.includes('${__T[')) ok(/^const __T = \[/m.test(t), `app-${g}.js hat eigene Liste __T`); }
+  for (const tk of new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')()) ok(Buffer.byteLength(tk) > Buffer.byteLength('${__T[0]}'), 'Baustein länger als Platzhalter: ' + tk);
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
+  ok(pct <= 46, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 46 %)');
 });
 
 await test('Backlog 1276 (Sonde, Blickwinkel „Fahrer diktiert Heizung/Standheizung ohne Satzzeichen“): „heizung macht nur kalte luft“, „in der kabine wird es nicht warm“, „gebläse geht gar nicht“, „scheibe taut nicht ab gebläse schwach“, EN „blower is weak“, UK/RU „вентилятор печки не крутится“ → Sicht-Schritte; „standheizung geht nach paar minuten wieder aus“, „parking heater keeps shutting off“, „автономка вимикається“ → Klima-Schritte; Sitzheizung, Kühlbox, Motor, Reparaturvermerk nicht', async () => {
