@@ -10,6 +10,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
 DIK={'de':'wischer bleibt in der mitte stehen','uk':'двірники зупинились посередині','en':'wipers stuck in the middle'}
 TXT={'de':'Heizung geht nicht, Scheibe beschlägt','uk':'Пічка не працює, скло запотіває','en':'Heater not working, windscreen fogging up'}
 BOTH={'de':'Unfall, Scheibenwischer ausgefallen','uk':'ДТП, двірники не працюють','en':'Accident, wipers not working'}
+DIK2={'de':'in der kabine wird es nicht warm gebläse schwach','uk':'вентилятор пічки не крутиться','en':'heater only blows cold'}
 GL={'de':'Windschutzscheibe vereist von innen','uk':'Лобове скло замерзло','en':'Frozen windscreen'}
 NO={'de':'Standheizung startet nicht','uk':'Двері пошкоджені','en':'Parking heater not working'}
 HT={'de':'Heizung, Gebläse oder Scheibenwischer ausgefallen, Sicht eingeschränkt','uk':'Не працює обігрів, обдув або двірники, огляд обмежений','en':'Heater, blower or wipers failed, restricted view'}
@@ -37,6 +38,8 @@ with sync_playwright() as p:
         check(not vis('#visib') and vis('#hintsum')==False,f'{lang}/{w}: „{NO[lang]}“ → kein Sicht-Hinweis')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
         check(vis('#visib'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Hinweis (Backlog 1257)')
+        q.fill('#d',DIK2[lang]); q.wait_for_timeout(100)
+        check(vis('#visib'),f'{lang}/{w}: Diktat „{DIK2[lang]}“ → Hinweis (Backlog 1276)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#visib'),f'{lang}/{w}: Hinweis bei Heizung/beschlagener Scheibe')
         tx=q.inner_text('#visib')

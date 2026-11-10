@@ -21646,7 +21646,7 @@ await test('Backlog 313 (Blickwinkel „Heizung/Gebläse/Scheibenwischer fällt 
     ok(L.visib_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="visib" class="panel" hidden role="status">`), 'Panel #visib');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh);") /* Backlog 1164: dsh = noSeatHeat(dfx) */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !HEAT_HINT.test(dsh);") /* Backlog 1164: dsh = noSeatHeat(dfx) */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('visib') && order.indexOf('acc') < order.indexOf('visib') && order.indexOf('visib') < order.indexOf('glass') && order.indexOf('visib') < order.indexOf('nostart'), 'Gruppierung: Unfall vor Sicht vor Glasschaden/springt nicht an (beschlagene Windschutzscheibe zeigt Sicht offen, Glas eingeklappt)');
   ok(helpAfter(app, 'visib', 'stuck'), 'Hilfe-Abschnitt visib nach stuck');
@@ -22065,7 +22065,7 @@ await test('Backlog 334 (Blickwinkel „Standheizung oder Klimaanlage im Fahrerh
     ok(L.climate_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="climate" class="panel" hidden role="status">`), 'Panel #climate');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('climate') && order.indexOf('fire') < order.indexOf('climate') && order.indexOf('exhaust') < order.indexOf('climate') && order.indexOf('visib') < order.indexOf('climate') && order.indexOf('climate') < order.indexOf('door'), 'Gruppierung: Brand/Abgase/Sicht vor Standheizung/Klima vor Tür');
   ok(helpAfter(app, 'climate', 'toll'), 'Hilfe-Abschnitt climate nach toll');
@@ -27860,7 +27860,7 @@ await test('Backlog 767 (Folge aus 764/766): Klima-/Standheizungs-Hinweis liest 
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
-  ok(hl.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx);"), 'Klima über dfx');
+  ok(hl.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx);"), 'Klima über dfx');
   const m = app.match(/^const CLIMATE_HINT = \/(.+)\/i;(?: \/\/.*)?$/m); ok(m, 'CLIMATE_HINT auf Modulebene'); const r = new RegExp(m[1], 'i');
   const a = app.indexOf('const FIX_WORD'), b = app.indexOf("}).join('');", a) + 12;
   const recurFix = new Function(app.slice(a, b) + '; return recurFix;')();
@@ -37353,7 +37353,7 @@ await test('Backlog 1255 (Sonde, Blickwinkel „Fahrer diktiert Klima-/Lüftungs
   const C2 = new RegExp(app.match(/^const CLIMATE2_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['klima macht nur warme luft', 'aus der lüftung kommt gestank', 'lüftung riecht muffig', 'heizung lässt sich nicht abschalten', 'heizung bläst nur heiß', 'heizung geht nicht mehr aus', 'klima lässt sich nicht einstellen', 'klimabedienteil ausgefallen', 'bedienteil der klima ausgefallen', 'temperaturregler kaputt', 'umluft klappe klemmt', 'lüftungsklappe klappert', 'klima kompressor macht geräusche', 'klimakompressor quietscht', 'vents smell', 'the ac panel is dead', 'a/c compressor noisy', 'heater stuck on hot', 'кондиціонер дме теплим', 'кондиционер дует теплым']) ok(C2.test(recurFix(x)), 'Klima: ' + x);
   for (const x of ['klima repariert macht wieder kalte luft', 'heizung lässt sich nicht abschalten, behoben', 'lüftung riecht neu', 'display kaputt', 'navi display dunkel', 'klappe vom staufach klemmt', 'ladeklappe klemmt', 'heckklappe klemmt', 'kompressor macht geräusche', 'luftkompressor laut', 'temperatur im kühlkoffer lässt sich nicht einstellen', 'temperatur lässt sich nicht einstellen', 'кондиціонер дме теплим, полагодили']) ok(!C2.test(recurFix(x)), 'kein Klima-Zusatz: ' + x);
-  ok(app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx);"), 'Listener (nach noFixed)');
+  ok(app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx);"), 'Listener (nach noFixed)');
 });
 
 await test('Backlog 1256 (Sonde, Blickwinkel „Fahrer diktiert Tür-/Schloss-Problem ohne Satzzeichen“): Tür geht nicht mehr richtig zu, Hecktür-Hebel abgebrochen, „tür klemt“, Tür springt während der Fahrt auf, hängt durch, Scharnier ausgeschlagen, Drehstangenverschluss klemmt → Tür; Schlüssel steckt im Türschloss fest, Zentralverriegelung schließt von allein, Lkw lässt sich nicht aufschließen, komme nicht ins Fahrerhaus → Schloss; „back door lock broken“ keine Verletzung; Türgriff bleibt ohne Hinweis (Backlog 323)', async () => {
@@ -37383,7 +37383,7 @@ await test('Backlog 1257 (Sonde, Blickwinkel „Fahrer diktiert Spiegel-/Scheibe
   for (const x of ['düsen spritzen nicht', 'adblue düse verstopft', 'wischwasser nachgefüllt', 'wischerblätter gewechselt', 'wischer bleibt in der mitte stehen, repariert', 'waschpumpe defekt, getauscht', 'wipers replaced', 'scheibe sauber gemacht', 'spiegel von innen gesehen alles ok', 'fahrzeug bleibt stehen']) ok(!V2.test(recurFix(x)), 'kein Sicht-Zusatz: ' + x);
   for (const x of ['spiegel zittert', 'spiegel vibriert stark', 'mirror shaking at speed', 'зеркало трясется']) ok(!VIB.test(x), 'keine Vibration: ' + x);
   for (const x of ['lkw vibriert stark', 'lenkrad zittert', 'truck shaking at speed']) ok(VIB.test(x), 'Vibration bleibt: ' + x);
-  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test(dfx) && !MIRROR2_HINT.test(dfx);") && app.includes("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh);"), 'Listener (nach noFixed)');
+  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test(dfx) && !MIRROR2_HINT.test(dfx);") && app.includes("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !HEAT_HINT.test(dsh);"), 'Listener (nach noFixed)');
 });
 
 await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleichlautende Ausschlüsse der Hinweismuster stehen in den erzeugten Modulen nur einmal (`const __RX`), lbRx setzt sie per ${__RX[k]} ein; jeder Ausdruck bleibt Zeichen für Zeichen gleich; Start-Modul ≤ 47 % von app.js', async () => {
@@ -37413,6 +37413,21 @@ await test('Backlog 1267 (Sonde, Blickwinkel „Fahrer diktiert Tankkarten-/Tank
   for (const x of ['ec karte an der tankstelle abgelehnt', 'meine karte an der tanke abgelehnt', 'bankkarte an der tankstelle abgelehnt', 'tankkarte pin falsch eingegeben jetzt geht wieder', 'kann nicht tanken zapfsäule kaputt', 'karte an der tankstelle abgelehnt neue karte bekommen', 'credit card declined at the fuel station', 'fuel card pin wrong works again now', 'karte an der tankstelle bezahlt']) ok(!F2.test(recurFix(x)), 'kein Tankkarten-Zusatz: ' + x);
   ok(app.includes("$('#fuelcard').hidden = !FUELCARD_HINT.test(dv) && !FUELCARD2_HINT.test(dv);"), 'Listener');
   ok(/karte an der tanke abgelehnt/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
+});
+
+await test('Backlog 1276 (Sonde, Blickwinkel „Fahrer diktiert Heizung/Standheizung ohne Satzzeichen“): „heizung macht nur kalte luft“, „in der kabine wird es nicht warm“, „gebläse geht gar nicht“, „scheibe taut nicht ab gebläse schwach“, EN „blower is weak“, UK/RU „вентилятор печки не крутится“ → Sicht-Schritte; „standheizung geht nach paar minuten wieder aus“, „parking heater keeps shutting off“, „автономка вимикається“ → Klima-Schritte; Sitzheizung, Kühlbox, Motor, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const H = rx('HEAT_HINT'), C3 = rx('CLIMATE3_HINT');
+  for (const x of ['heizung macht nur kalte luft', 'in der kabine wird es nicht warm', 'fahrerhaus bleibt eiskalt', 'gebläse geht gar nicht', 'die scheibe taut nicht ab gebläse schwach', 'lüftung ist sehr schwach', 'heater only blows cold', 'blower is weak', 'cab isn’t warming up', 'cab wont warm up', 'вентилятор печки не крутится', 'вентилятор пічки не працює', 'пічка дме холодним']) ok(H.test(x), 'Heizung/Gebläse: ' + x);
+  for (const x of ['heizung macht nur kalte luft wurde repariert', 'sitzheizung bleibt kalt', 'heizung an batterie schwach', 'kühlbox bleibt kalt', 'motor wird nicht warm', 'blower weak but fixed now', 'scheibe taut nicht ab heizung getauscht']) ok(!H.test(x), 'kein Heizungs-Zusatz: ' + x);
+  for (const x of ['standheizung geht nach paar minuten wieder aus', 'webasto schaltet sich nach 5 min ab', 'standheizung geht immer wieder aus', 'parking heater keeps shutting off', 'night heater kept cutting out', 'автономка вимикається через хвилину', 'автономка тухнет']) ok(C3.test(x), 'Standheizung schaltet ab: ' + x);
+  for (const x of ['standheizung geht an', 'standheizung geht wieder aus wurde repariert', 'parking heater keeps the cab warm', 'автономка працює']) ok(!C3.test(x), 'kein Standheizungs-Zusatz: ' + x);
+  ok(app.includes("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !HEAT_HINT.test(dsh);") && app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx);"), 'Listener Sicht (nach noSeatHeat) und Klima (nach noFixed)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['Heizung macht nur kalte Luft', 'in der Kabine wird es nicht warm', 'Gebläse geht gar nicht']], ['uk', ['вентилятор пічки не крутиться', 'пічка дме холодним']], ['en', ['heater only blows cold', 'blower is weak', 'cab isn’t warming up']]]) for (const ex of exs) { ok(STRINGS[l].help_visib_s.includes(ex), 'Hilfe Sicht ' + l + ': ' + ex); ok(H.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+  for (const [l, ex] of [['de', 'Standheizung geht nach ein paar Minuten wieder aus'], ['uk', 'автономка вимикається через хвилину'], ['en', 'parking heater keeps shutting off']]) { ok(STRINGS[l].help_climate_s.includes(ex), 'Hilfe Klima ' + l + ': ' + ex); ok(C3.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
 
 await test('Backlog 1275 (Sonde, Blickwinkel „Fahrer diktiert Bordstein-/Felgenschaden ohne Satzzeichen“): „beim abbiegen bordstein mitgenommen felge zerkratzt“, „auf den bordstein gekommen“, „reifen am bordstein aufgeschlitzt“, EN „clipped the curb“, UK/RU „бордюр зачепив диск“ → Reifen-Schritte; Bordsteinschaden ist kein Vandalismus; „bordstein ist hoch“, Reparaturvermerk nicht', async () => {
