@@ -21787,7 +21787,7 @@ await test('Backlog 319 (Blickwinkel „Getriebe schaltet nicht, Gang geht nicht
     ok(L.gear_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="gear" class="panel" hidden role="status">`), 'Panel #gear');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#gear').hidden = !GEAR_HINT.test(dfx) && !GEAR2_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#gear').hidden = !GEAR_HINT.test(dfx) && !GEAR2_HINT.test(dfx) && !GEAR3_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('gear') && order.indexOf('brake') < order.indexOf('gear') && order.indexOf('warnlight') < order.indexOf('gear') && order.indexOf('engine') < order.indexOf('gear') && order.indexOf('gear') < order.indexOf('adas') && order.indexOf('gear') < order.indexOf('stuck'), 'Gruppierung: Bremse/Warnleuchte/Motor vor Getriebe vor Assistent/festgefahren');
   ok(helpAfter(app, 'gear', 'susp'), 'Hilfe-Abschnitt gear nach susp');
@@ -37434,6 +37434,22 @@ await test('Backlog 1277 (Reserve Start-Modul nach 1276: 46,96 % ≤ 47 %): hund
   ok(pct <= 46, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 46 %)');
 });
 
+await test('Backlog 1286 (Sonde, Blickwinkel „Fahrer diktiert Getriebe/Kupplung auf Russisch/Ukrainisch“): „педаль сцепления осталась в полу“, „хрустит/скрежет при переключении“, „завис в нейтрали“, „пахнет сцеплением“, „не едет ни вперед ни назад“, „не переключается выше третьей“, „коробка тупит/дергается“, „riecht nach Kupplung“, „smells of burnt clutch“ → Getriebe-Schritte; Verneinung, Gas-/Bremspedal, normales Kuppeln, Reparaturvermerk nicht; „застряла в нейтрали“ nicht mehr als festgefahren', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const G3 = rx('GEAR3_HINT'), G1 = rx('GEAR_HINT'), ST = rx('STUCK_HINT');
+  for (const x of ['педаль сцепления осталась в полу', 'педаль зчеплення залишилась у підлозі', 'сцепление провалилось в пол', 'педаль сцепления не возвращается', 'хрустит при включении передачи', 'скрежет при переключении передач', 'скрегіт при перемиканні передач', 'коробка завис в нейтрали', 'висит на нейтрали не едет', 'застряла в нейтрали', 'пахнет сцеплением', 'пахне зчепленням', 'горит сцепление запах', 'сгорело сцепление', 'машина не едет передача включена', 'не едет ни вперед ни назад', 'не їде ні вперед ні назад', 'не переключается выше третьей', 'не переключається вище третьої', 'коробка тупит переключает поздно', 'коробка дергается при переключении', 'riecht nach kupplung', 'kupplung stinkt', 'smells of burnt clutch']) ok(G3.test(x), 'Getriebe: ' + x);
+  for (const x of ['коробка не дергается', 'не пахнет сцеплением', 'педаль газа в пол', 'нажал педаль сцепления в пол и завелся', 'коробка тупит после ремонта отремонтировали', 'дергается при торможении', 'скрипит при торможении', 'пахнет соляркой', 'kupplung riecht nicht mehr, getauscht', 'smells of diesel']) ok(!G3.test(x), 'kein Getriebe-Zusatz: ' + x);
+  for (const x of ['сцепление не буксует', 'сцепление не пробуксовывает']) ok(!G1.test(x) && !G3.test(x), 'Verneinung: ' + x);
+  for (const x of ['сцепление буксует', 'зчеплення пробуксовує']) ok(G1.test(x), 'Kupplung rutscht weiter: ' + x);
+  for (const x of ['застряла в нейтрали', 'застряла на нейтрали']) ok(!ST.test(x), 'nicht festgefahren: ' + x);
+  for (const x of ['застряли в снегу', 'грузовик застрял в грязи']) ok(ST.test(x), 'festgefahren weiter: ' + x);
+  ok(app.includes("$('#gear').hidden = !GEAR_HINT.test(dfx) && !GEAR2_HINT.test(dfx) && !GEAR3_HINT.test(dfx);"), 'Listener Getriebe (nach noFixed)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['riecht nach Kupplung']], ['uk', ['педаль зчеплення залишилась у підлозі', 'пахне зчепленням', 'скрегіт при перемиканні передач', 'не їде ні вперед ні назад']], ['en', ['smells of burnt clutch']]]) for (const ex of exs) { ok(STRINGS[l].help_gear_s.includes(ex), 'Hilfe Getriebe ' + l + ': ' + ex); ok(G3.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1285 (Sonde, Blickwinkel „Fahrer diktiert Motor springt nicht an/geht aus auf Russisch/Ukrainisch“): „щелкает стартер“, „клацає стартер“, „Anlasser klackt nur“ → Start-Schritte; „глохнет на холостых“, „заводится и сразу глохнет“, „обороты скачут“, „пропала тяга“, „машина дергается при разгоне“, „rpm jumping up and down“, „hat keine Leistung mehr“ → Motor-Schritte; Verneinung, Getriebe/Bremse, Akku, Reparaturvermerk nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -37812,7 +37828,7 @@ await test('Backlog 1250 (Sonde, Blickwinkel „Fahrer diktiert Motor-/Getriebep
   for (const x of ['motor säuft ab repariert', 'motor dreht nicht hoch, behoben', 'fahre nur noch 30 wegen stau', 'fahre nur noch schritttempo wegen glatteis', 'reifen platt fahre nur noch 20', 'motor wird nicht heiß', 'motor dreht hoch', 'fährt nur noch heute', 'lkw wird nur noch 30 tage gefahren', 'engine running fine', 'drehzahlmesser defekt']) ok(!E.test(recurFix(x)), 'kein Motor-Zusatz: ' + x);
   for (const x of ['getriebe hängt im neutral', 'getriebe bleibt im leerlauf', 'getriebe geht auf N', 'schaltet nicht hoch', 'schaltet nicht mehr', 'schaltet nur bis zum 6 gang', 'bleibt im 3. Gang', 'bleibt im dritten gang hängen', 'kommt nicht über den 4 gang', 'getriebe spinnt', 'kriechgang geht nicht', 'lkw bewegt sich nicht obwohl gang drin', 'motor läuft aber lkw fährt nicht', 'schaltet ruckartig', 'truck stuck in neutral', 'stuck in 3rd gear', 'no reverse gear', 'коробка застрягла на нейтралі']) ok(G.test(recurFix(x)), 'Getriebe: ' + x);
   for (const x of ['licht schaltet nicht', 'lüfter schaltet nicht hoch', 'blinker schaltet nicht ab', 'klima schaltet nicht', 'ampel schaltet nicht', 'getriebe schaltet wieder normal', 'schaltet nicht hoch, getriebe gewechselt', 'gearbox stuck in neutral fixed', 'no reverse parking here', 'bleibt im hof', 'im 3 gang angefahren']) ok(!G.test(recurFix(x)), 'kein Getriebe-Zusatz: ' + x);
-  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));") && app.includes("$('#gear').hidden = !GEAR_HINT.test(dfx) && !GEAR2_HINT.test(dfx);"), 'Listener');
+  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));") && app.includes("$('#gear').hidden = !GEAR_HINT.test(dfx) && !GEAR2_HINT.test(dfx) && !GEAR3_HINT.test(dfx);"), 'Listener');
 });
 
 await test('Backlog 1249 (Sonde, Blickwinkel „Fahrer diktiert Lichtausfall ohne Satzzeichen“): „am anhaenger geht garnix mit licht“, „Licht geht gar nicht“, „Glühbirne kaputt“ → Licht-Schritte; Lichtmaschine, Warnlicht, „Birne gewechselt“, Innenbeleuchtung im Fahrerhaus nicht', async () => {
