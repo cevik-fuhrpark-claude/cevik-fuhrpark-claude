@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 310, Blickwinkel „Beleuchtung am Lkw/Auflieger ausgefallen“): Meldeformular zeigt
 # fünf Schritte (anhalten, Stecker/Kabel nur gefahrlos, Leitung, Fotos, Auswahl Fahrbereitschaft); „Warnleuchte leuchtet“
 # zeigt keinen Hinweis; zusammen mit „Unfall“ ist der Unfall-Hinweis offen und der Licht-Hinweis eingeklappt; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Backlog 1270: zusätzlich Diktat-Satz ohne Satzzeichen je Sprache.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -11,6 +12,7 @@ TXT={'de':'Rücklicht links am Auflieger ausgefallen','uk':'Ліва фара н
 BOTH={'de':'Unfall, Scheinwerfer kaputt','uk':'ДТП, фара не світить','en':'Accident, headlight broken'}
 NO={'de':'Licht im Laderaum ist an','uk':'Світло в кабіні увімкнене','en':'Lights are fine'}
 HT={'de':'Licht am Lkw oder Auflieger ausgefallen','uk':'Не працює світло на тягачі чи напівпричепі','en':'Lights on the truck or trailer not working'}
+DIKTAT={'de':'anhänger hat kein strom','uk':'причіп без світла','en':'trailer has no power'}  # Backlog 1270: Diktat ohne Satzzeichen
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -41,6 +43,8 @@ with sync_playwright() as p:
         if SHOTS: q.locator('#lights').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/licht-{lang}-{w}.png')
         q.fill('#d',BOTH[lang]); q.wait_for_timeout(100)
         check(vis('#lights') and vis('#acc') and q.evaluate("!document.querySelector('#acc ul').hidden && document.querySelector('#lights ul').hidden"),f'{lang}/{w}: mit Unfall zusammen → Unfall offen, Licht eingeklappt')
+        q.fill('#d',DIKTAT[lang]); q.wait_for_timeout(100)
+        check(vis('#lights'),f'{lang}/{w}: Diktat „{DIKTAT[lang]}“ → Hinweis')
         q.fill('#d','')
         q.goto(B+'/#/help?s=lights'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_lights' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')

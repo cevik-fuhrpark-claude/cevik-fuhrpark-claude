@@ -21410,7 +21410,7 @@ await test('Backlog 302 (Blickwinkel „Rauch oder Brandgeruch aus dem Motorraum
     ok(L.fire_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="fire" class="panel" hidden role="status">`), 'Panel #fire');
-  ok(app.includes("$('#fire').hidden = !FIRE_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#fire').hidden = !FIRE_HINT.test(noLampBurn(dv));"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'fire', 'custdmg'), 'Hilfe-Abschnitt fire nach custdmg');
 });
 
@@ -21448,7 +21448,7 @@ await test('Backlog 304 (Blickwinkel „Bremsen ziehen schief, quietschen oder v
     ok(L.brake_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="brake" class="panel" hidden role="status">`), 'Panel #brake');
-  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)) && !AIRLINE_HINT.test(dv) && !BRAKE2_HINT.test(noParkbrake(dv));"), 'Hinweis abhängig von der Beschreibung (ohne Feststellbremsen-Fundstelle, Backlog 707)');
+  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)) && !AIRLINE_HINT.test(dv) && !BRAKE2_HINT.test(noParkbrake(dv)) && !BRAKE3_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung (ohne Feststellbremsen-Fundstelle, Backlog 707)');
   ok(helpAfter(app, 'brake', 'reefer'), 'Hilfe-Abschnitt brake nach reefer');
 });
 
@@ -21579,7 +21579,7 @@ await test('Backlog 310 (Blickwinkel „Beleuchtung am Lkw/Auflieger ausgefallen
     ok(L.lights_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="lights" class="panel" hidden role="status">`), 'Panel #lights');
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck); $('#door')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck); $('#door')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('lights') && order.indexOf('mirror') < order.indexOf('lights') && order.indexOf('lights') < order.indexOf('glass'), 'Gruppierung: Unfall/Spiegel vor Licht vor Glas');
   ok(helpAfter(app, 'lights', 'coupling'), 'Hilfe-Abschnitt lights nach coupling');
@@ -27624,7 +27624,7 @@ await test('Backlog 781 (Sonde Beleuchtung UK/RU „зламалась/злам�
   const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
   const t = (x) => noFixed(recurFix(x));
   const run = (T) => { for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(t(x)), n + ': ' + x); for (const x of neg) ok(!r.test(t(x)), n + ' nicht: ' + x); } };
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck);"), 'Licht-Hinweis weiter ohne noFixed (eigener Reparaturvermerk-Ausschluss)');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck);"), 'Licht-Hinweis weiter ohne noFixed (eigener Reparaturvermerk-Ausschluss)');
   const r = g('LIGHTS_HINT');
   for (const x of ['фара зламалась', 'ліхтар зламався', 'стоп-сигнал зламався', 'поворотник зламався', 'фара сломалась', 'фара не світить', 'Scheinwerfer kaputt', 'headlight broken', 'фара знову не світить, хоча замінили']) ok(r.test(recurFix(x)), 'LIGHTS_HINT: ' + x);
   for (const x of ['фара зламалась, замінили', 'фара розбита, замінили', 'фара не світить, замінили', 'не світить фара, замінили лампочку', 'фара сломалась, заменили', 'Scheinwerfer kaputt, getauscht']) ok(!r.test(recurFix(x)), 'LIGHTS_HINT nicht: ' + x);
@@ -28486,7 +28486,7 @@ await test('Backlog 707–709 (Blickwinkel „Feststellbremse hält nicht – Lk
     ok(S.help_parkbrake_t && S.help_parkbrake_s.includes(S.parkbrake_hint_steps) && S.help_parkbrake_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="parkbrake" class="panel" hidden role="status">'), 'Panel #parkbrake');
-  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)) && !AIRLINE_HINT.test(dv) && !BRAKE2_HINT.test(noParkbrake(dv)); $('#parkbrake').hidden = !PARKBRAKE_HINT.test(dv);") && app.indexOf("$('#parkbrake').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)) && !AIRLINE_HINT.test(dv) && !BRAKE2_HINT.test(noParkbrake(dv)) && !BRAKE3_HINT.test(dv); $('#parkbrake').hidden = !PARKBRAKE_HINT.test(dv);") && app.indexOf("$('#parkbrake').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'brake', 'parkbrake', 'pedal', 'steer'"), 'Reihenfolge nach Bremse (seit Backlog 729 Gaspedal dazwischen)');
   ok(helpAfter(app, 'parkbrake', 'brake'), 'Hilfe-Abschnitt für meldende Rollen nach Bremse');
 });
@@ -37415,6 +37415,26 @@ await test('Backlog 1267 (Sonde, Blickwinkel „Fahrer diktiert Tankkarten-/Tank
   ok(/karte an der tanke abgelehnt/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
 
+await test('Backlog 1270 (Sonde, Blickwinkel „Fahrer diktiert Anhänger-Elektrik/ABS-Leuchte ohne Satzzeichen“): „anhänger hat kein strom“, „kein strom am anhänger“, „trailer has no power“, „причіп без світла“ → Licht-Schritte; „abs anhänger leuchte an“, „abs kabel auflieger ab“, „anhänger zieht schief“, „trailer pulls to the left“, „шланг до причепа травить“ → Brems-Schritte; „ABS-Leuchte vom Anhänger brennt“ ist kein Brand; Reparaturvermerk, Tankstelle/Fahrerhaus ohne Strom, Lkw zieht nach rechts nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const L3 = new RegExp(app.match(/^const LIGHTS3_HINT = \/(.+)\/i;$/m)[1], 'i');
+  const B3 = new RegExp(app.match(/^const BRAKE3_HINT = \/(.+)\/i;$/m)[1], 'i');
+  const FIRE = new RegExp(app.match(/^const FIRE_HINT = \/(.+)\/i;$/m)[1], 'i');
+  const noLampBurn = new Function('return ' + app.match(/^const noLampBurn = (.+);$/m)[1])();
+  for (const x of ['anhänger kein strom', 'anhänger hat kein strom', 'der auflieger hat keinen strom mehr', 'kein strom am anhänger', 'kein strom auf dem auflieger', 'hänger ist tot', 'trailer has no power', 'no power to the trailer', 'trailer electrics dead', 'причіп не має світла', 'причіп без світла', 'немає світла на причепі', 'прицеп нет света', 'прицеп без света', 'нет света на прицепе']) ok(L3.test(x), 'Licht: ' + x);
+  for (const x of ['anhänger strom wieder da', 'kein strom am anhänger stecker getauscht', 'tankstelle hat kein strom', 'im fahrerhaus kein strom', 'lkw hat keinen strom', 'причіп без світла відремонтовано']) ok(!L3.test(x), 'kein Licht-Zusatz: ' + x);
+  for (const x of ['abs anhänger leuchte an', 'ebs auflieger lampe leuchtet', 'abs vom anhänger fehler', 'abs kabel auflieger ab', 'abs kabel vom auflieger abgerissen', 'ebs stecker kaputt', 'anhänger zieht schief', 'der auflieger zieht nach links', 'trailer pulls to the left', 'trailer is pulling to one side', 'trailer abs light on', 'abs cable broken', 'шланг до причепа травить', 'шланг на прицеп травит воздух', 'напівпричіп тягне вбік', 'прицеп тянет в сторону']) ok(B3.test(x), 'Bremse: ' + x);
+  for (const x of ['abs anhänger leuchte repariert', 'abs kabel getauscht geht wieder', 'lkw zieht nach rechts', 'anhänger angekuppelt', 'trailer pulls fine', 'trailer pulls to the left fixed']) ok(!B3.test(x), 'kein Brems-Zusatz: ' + x);
+  for (const x of ['abs leuchte vom anhänger brennt', 'lampe am auflieger brennt', 'leuchte vom anhänger brennt nicht']) ok(!FIRE.test(noLampBurn(x)), 'kein Brand: ' + x);
+  for (const x of ['anhänger brennt', 'ladung vom anhänger brennt', 'kabel am auflieger brennt']) ok(FIRE.test(noLampBurn(x)), 'Brand bleibt: ' + x);
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck);"), 'Listener Licht');
+  ok(app.includes("&& !BRAKE2_HINT.test(noParkbrake(dv)) && !BRAKE3_HINT.test(dv);"), 'Listener Bremse');
+  ok(app.includes("$('#fire').hidden = !FIRE_HINT.test(noLampBurn(dv));"), 'Listener Brand');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, k, ex, re] of [['de', 'help_brake_s', 'anhänger zieht schief', B3], ['de', 'help_brake_s', 'abs anhänger leuchte an', B3], ['uk', 'help_brake_s', 'шланг до причепа травить', B3], ['en', 'help_brake_s', 'trailer pulls to the left', B3], ['de', 'help_lights_s', 'anhänger hat kein strom', L3], ['uk', 'help_lights_s', 'причіп без світла', L3], ['en', 'help_lights_s', 'trailer has no power', L3]]) { ok(STRINGS[l][k].includes(ex), 'Hilfe-Beispiel ' + l + ': ' + ex); ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1269 (Sonde, Blickwinkel „Fahrer diktiert Sattelkupplung-/Anhängerproblem ohne Satzzeichen“): „kupplung schließt nicht“, „kupplungshebel geht nicht zurück“, „hebel von der kupplung klemmt“, „sicherung kupplung rastet nicht ein“, „kriege den hänger nicht ab“, „königszapfen sitzt nicht richtig“, „auflieger springt raus“, EN/UK/RU → Kuppel-Schritte; Pedal/Gang/rutscht (Fahrzeugkupplung), Türschloss, Reparaturvermerk nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -37558,7 +37578,7 @@ await test('Backlog 1252 (Sonde, Blickwinkel „Fahrer diktiert Bremsproblem ohn
   for (const x of ['bremse repariert', 'bremsbeläge gewechselt', 'bremsscheibe glüht, behoben', 'bremsbeläge alle ok', 'abs lampe geht nach dem start aus', 'abs geprüft ok', 'abs light goes out after start', 'dauert lange bis reifen luft hat', 'luftdruck im reifen baut sich langsam auf', 'zischt am reifen', 'bremslicht defekt', 'ruckelt beim anfahren', 'beim bremsen alles gut', 'abs-Sensor getauscht, lampe leuchtet nicht mehr', 'motorbremse zieht gut']) ok(!B2.test(recurFix(x)), 'kein Brems-Zusatz: ' + x);
   const noParkbrake = new Function(app.slice(app.indexOf('const PARKBRAKE_HINT'), app.indexOf('\n', app.indexOf('const noParkbrake'))) + '; return noParkbrake;')();
   for (const x of ['parking brake not releasing', 'handbrake wont release']) ok(!B2.test(noParkbrake(recurFix(x))), 'Feststellbremse bleibt eigener Hinweis: ' + x);
-  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)) && !AIRLINE_HINT.test(dv) && !BRAKE2_HINT.test(noParkbrake(dv));"), 'Listener');
+  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)) && !AIRLINE_HINT.test(dv) && !BRAKE2_HINT.test(noParkbrake(dv)) && !BRAKE3_HINT.test(dv);"), 'Listener');
 });
 
 await test('Backlog 1251 (Folge aus 1250): „truck stuck in neutral/3rd gear“, „коробка застрягла на нейтралі“ zeigen nicht mehr „festgefahren“, sondern nur Getriebe; „stuck in the mud“, „truck is stuck“, „застрягла в багнюці“ bleiben festgefahren', async () => {
@@ -37589,7 +37609,7 @@ await test('Backlog 1249 (Sonde, Blickwinkel „Fahrer diktiert Lichtausfall ohn
   const L2 = new RegExp(app.match(/^const LIGHTS2_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['am anhaenger geht garnix mit licht', 'Licht geht gar nicht', 'licht am auflieger geht ueberhaupt nicht', 'Glühbirne kaputt', 'Birnen kaputt am Rücklicht']) ok(L2.test(recurFix(x)), 'Licht: ' + x);
   for (const x of ['Lichtmaschine geht gar nicht', 'Warnlicht geht gar nicht aus', 'Birne gewechselt', 'Licht geht gar nicht, repariert', 'Licht geht']) ok(!L2.test(recurFix(x)), 'kein Licht-Zusatz: ' + x);
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck);"), 'Listener prüft nach noCabkit (Innenbeleuchtung bleibt bei Fahrerhaus-Ausstattung)');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck);"), 'Listener prüft nach noCabkit (Innenbeleuchtung bleibt bei Fahrerhaus-Ausstattung)');
 });
 
 await test('Backlog 1248 (Sonde, Blickwinkel „Fahrer diktiert Reifenschaden ohne Satzzeichen“): Reifen/Flanke aufgescheuert, „Laufläche löst sich“ (Tippfehler), EN „tread separating/coming off“ → Reifen-Schritte; „Reifen Seitenwand beschädigt“ zeigt keinen Aufbau-/Boden-Hinweis mehr, „Seitenwand vom Auflieger beschädigt“ schon; Reparatur, „Knie/Plane aufgescheuert“ nicht', async () => {
@@ -37615,7 +37635,7 @@ await test('Backlog 1247 (Sonde, Blickwinkel „Sattelkupplung beim Ab-/Aufsatte
   for (const x of ['sattelkupplung repariert', 'sattelkupplung abgeschmiert alles ok', 'kupplung rutscht beim anfahren', 'auflieger abgesattelt im hof', 'beim absatteln alles gut', 'auflieger zu hoch beladen', 'komme nicht unter die brücke', 'не можу знайти причіп', "can't find the trailer", 'fifth wheel greased', 'fanghorn verbogen, repariert']) ok(!C(x), 'kein Kuppel-Hinweis: ' + x);
   for (const x of ['der rote schlauch ist beim abkuppeln abgerissen', 'der gelbe schlauch ist undicht', 'druckluftkupplung undicht zischt', 'duomatik kupplung undicht', 'Kupplungskopf zischt', 'red air line ripped off', 'gladhand leaking', 'шланги повітря відірвались', 'воздушный шланг оторвало']) ok(A.test(recurFix(x)), 'Druckluft: ' + x);
   for (const x of ['roter schlauch getauscht', 'gelber schlauch ok', 'duomatik repariert', 'red air line replaced', 'шланг повітря замінили']) ok(!A.test(recurFix(x)), 'kein Druckluft-Hinweis: ' + x);
-  ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test(dv) && !COUPLING2_HINT.test(dv) && !COUPLING3_HINT.test(dv);") && app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)) && !AIRLINE_HINT.test(dv) && !BRAKE2_HINT.test(noParkbrake(dv));"), 'beide Ergänzungen im Listener');
+  ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test(dv) && !COUPLING2_HINT.test(dv) && !COUPLING3_HINT.test(dv);") && app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)) && !AIRLINE_HINT.test(dv) && !BRAKE2_HINT.test(noParkbrake(dv)) && !BRAKE3_HINT.test(dv);"), 'beide Ergänzungen im Listener');
 });
 
 await test('Backlog 1246 (Sonde, Blickwinkel „Kontrolle durch Polizei/BALM/Zoll“): Zollkontrolle mit Mängeln/untersagter Weiterfahrt, „Mängelkarte“, „Sicherheitsleistung“, „перевірка BAG, видали протокол“ → Kontroll-Schritte; „keine Mängel“, „alles ok“, „22,5 Zoll“, „Bagger“ nicht', async () => {

@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 304, Blickwinkel „Bremsen ziehen schief, quietschen oder verlieren Druck“): Meldeformular
 # zeigt bei einer Auffälligkeit an Bremse/Druckluft fünf Schritte (Druckverlust anhalten, Geräusche klären, heiße Bremse, Rad/Achse + Foto,
 # Auswahl Fahrbereitschaft); „Bremslicht defekt“ zeigt nichts; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Backlog 1270: zusätzlich Diktat-Satz ohne Satzzeichen je Sprache.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -10,6 +11,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
 TXT={'de':'Bremse zieht nach links und quietscht','uk':'Гальма скриплять і тягнуть вліво','en':'Brakes pulling to the left and squealing'}
 NO={'de':'Bremslicht defekt','uk':'Стоп-сигнал не горить','en':'brake light out'}
 HT={'de':'Bremsen ziehen schief, quietschen oder verlieren Druck','uk':'Гальма тягнуть убік, скриплять або втрачають тиск','en':'Brakes pull, squeal or lose pressure'}
+DIKTAT={'de':'abs anhänger leuchte an','uk':'шланг до причепа травить','en':'trailer pulls to the left'}  # Backlog 1270: Diktat ohne Satzzeichen
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -38,6 +40,10 @@ with sync_playwright() as p:
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#brake').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/bremse-{lang}-{w}.png')
+        q.fill('#d',DIKTAT[lang]); q.wait_for_timeout(100)
+        check(vis('#brake'),f'{lang}/{w}: Diktat „{DIKTAT[lang]}“ → Hinweis')
+        q.fill('#d','abs leuchte vom anhänger brennt'); q.wait_for_timeout(100)
+        check(vis('#brake') and not vis('#fire'),f'{lang}/{w}: „ABS-Leuchte vom Anhänger brennt“ → Bremse, kein Brand-Hinweis')
         q.fill('#d','')
         q.goto(B+'/#/help?s=brake'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_brake' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')
