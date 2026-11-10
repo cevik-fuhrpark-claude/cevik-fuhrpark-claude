@@ -28383,7 +28383,7 @@ await test('Backlog 718–719 (Blickwinkel „Kabel blank, durchgescheuert oder 
     ok(S.help_elec_t && S.help_elec_s.includes(S.elec_hint_steps) && S.help_elec_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="elec" class="panel" hidden role="status">'), 'Panel #elec');
-  ok(app.includes("$('#elec').hidden = !ELEC_HINT.test(dfx) && !ELEC2_HINT.test(dfx);") && app.indexOf("$('#elec').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#elec').hidden = !ELEC_HINT.test(dfx) && !ELEC2_HINT.test(dfx) && !ELEC3_HINT.test(dfx);") && app.indexOf("$('#elec').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'gelfuel', 'waterfuel', 'elec', 'batt', 'engine'"), 'Reihenfolge nach Diesel/Kälte (seit 1239 Wasser im Diesel dazwischen), vor Batterie/Motor (Backlog 720)');
   ok(helpAfter(app, 'elec', 'grease'), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -37434,6 +37434,19 @@ await test('Backlog 1277 (Reserve Start-Modul nach 1276: 46,96 % ≤ 47 %): hund
   ok(pct <= 46, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 46 %)');
 });
 
+await test('Backlog 1280 (Sonde, Blickwinkel „Fahrer diktiert Elektrik/Spiralkabel auf Russisch/Ukrainisch“): RU „короткое замыкание“, „замыкание в проводке“, „постійно перегорає запобіжник“, „опять сгорел предохранитель“ → Elektrik-Schritte; „выключатель массы сломался“ → Batterie; Reparaturvermerk, „замыкание двери“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const E3 = rx('ELEC3_HINT'), B = rx('BATT_HINT');
+  for (const x of ['короткое замыкание', 'короткое замыкание в проводке', 'замыкание в проводке', 'постійно перегорає запобіжник', 'опять сгорел предохранитель', 'постоянно выбивает предохранитель', 'предохранитель постоянно перегорает']) ok(E3.test(x), 'Elektrik: ' + x);
+  for (const x of ['короткое замыкание устранили', 'предохранитель сгорел заменили', 'замыкание двери', 'запобіжник перегорів і його замінили']) ok(!E3.test(x), 'kein Elektrik-Zusatz: ' + x);
+  ok(B.test('выключатель массы сломался') && B.test('вимикач маси не працює'), 'Batterie: Massetrennschalter RU/UK');
+  ok(app.includes("$('#elec').hidden = !ELEC_HINT.test(dfx) && !ELEC2_HINT.test(dfx) && !ELEC3_HINT.test(dfx);"), 'Listener Elektrik (nach noFixed)');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.uk.help_elec_s.includes('постійно перегорає запобіжник') && E3.test('постійно перегорає запобіжник'), 'Hilfe Elektrik UK mit Beispiel, das den Hinweis auslöst');
+});
+
 await test('Backlog 1279 (Sonde, Blickwinkel „Fahrer diktiert Fenster/Fensterheber ohne Satzzeichen“): „fenster ist runtergefallen“, „fenster fährt von alleine runter“, „fenster geht nur halb hoch“, „fenster schalter geht nicht“, EN „electric window broken“, „passenger window not going down“, UK/RU „вікно впало в двері“ → Fenster-Schritte; Fenster geputzt/offen, Handy, Reparaturvermerk nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -37673,7 +37686,7 @@ await test('Backlog 1259 (Sonde, Blickwinkel „Fahrer diktiert Elektrik-/Batter
   const E2 = new RegExp(app.match(/^const ELEC2_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['spannung zu niedrig', 'bordspannung schwankt', 'batteriespannung fällt ab', 'spannung nur noch 22 volt', 'spannungswandler defekt', 'elektrik spinnt', 'elektrik fällt immer wieder aus', 'alles elektrische fällt aus', 'elektronik spinnt', 'die elektrik spielt verrückt', 'strom im fahrerhaus fällt aus', 'blown fuse', 'fuses blown', 'electrics playing up', 'voltage too low', 'battery voltage dropping', 'електрика глючить', 'електроніка вирубається', 'электрика барахлит', 'проводка глючит', 'напруга низька', 'напряжение падает']) ok(E2.test(recurFix(x)), 'Elektrik: ' + x);
   for (const x of ['elektrik repariert', 'elektriker kommt morgen', 'spannung vom gurt zu niedrig', 'plane spannung zu niedrig', 'elektrik ok', 'alles elektrische geht', 'fuse replaced', 'electrics fixed', 'elektronik spinnt nicht mehr', 'spannung ok', 'stromzähler', 'strom fällt aus, repariert']) ok(!E2.test(recurFix(x)), 'kein Elektrik-Zusatz: ' + x);
-  ok(app.includes("$('#elec').hidden = !ELEC_HINT.test(dfx) && !ELEC2_HINT.test(dfx);"), 'Listener');
+  ok(app.includes("$('#elec').hidden = !ELEC_HINT.test(dfx) && !ELEC2_HINT.test(dfx) && !ELEC3_HINT.test(dfx);"), 'Listener');
   ok(/bordspannung schwankt/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
 
