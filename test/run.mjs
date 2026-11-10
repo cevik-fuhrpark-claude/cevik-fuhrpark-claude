@@ -21601,7 +21601,7 @@ await test('Backlog 311 (Blickwinkel „Tür/Ladebordwand/Hecktür schließt nic
     ok(L.door_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="door" class="panel" hidden role="status">`), 'Panel #door');
-  ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dfx) && !DOOR2_HINT.test(dfx) && !DOOR3_HINT.test(dfx); $('#stuck')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dfx) && !DOOR2_HINT.test(dfx) && !DOOR3_HINT.test(dfx) && !DOOR4_HINT.test(dfx); $('#stuck')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('door') && order.indexOf('load') < order.indexOf('door') && order.indexOf('door') < order.indexOf('custdmg') && order.indexOf('door') < order.indexOf('theft'), 'Gruppierung: Unfall/Ladung vor Tür vor Diebstahl/Kundenschaden');
   ok(helpAfter(app, 'door', 'lights'), 'Hilfe-Abschnitt door nach lights');
@@ -37368,7 +37368,7 @@ await test('Backlog 1256 (Sonde, Blickwinkel „Fahrer diktiert Tür-/Schloss-Pr
   for (const x of ['schlüssel steckt fest im zündschloss', 'zentralverriegelung schliesst wieder', 'lkw geht nicht an', 'komme nicht in den lkw tritt abgebrochen', 'cant open the hood', 'не можу відкрити капот', 'не можу завести вантажівку']) ok(!L2.test(recurFix(x)), 'kein Schloss-Zusatz: ' + x);
   for (const x of ['back door lock broken', 'head light broken', 'back doors jammed']) ok(!INJ.test(x), 'keine Verletzung: ' + x);
   for (const x of ['hand trapped in the door', 'back broken', 'head cut']) ok(INJ.test(x), 'Verletzung bleibt: ' + x);
-  ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dfx) && !DOOR2_HINT.test(dfx) && !DOOR3_HINT.test(dfx);") && app.includes("$('#cablock').hidden = !CABLOCK_HINT.test(dfx) && !CABLOCK2_HINT.test(dfx);"), 'Listener (nach noFixed)');
+  ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dfx) && !DOOR2_HINT.test(dfx) && !DOOR3_HINT.test(dfx) && !DOOR4_HINT.test(dfx);") && app.includes("$('#cablock').hidden = !CABLOCK_HINT.test(dfx) && !CABLOCK2_HINT.test(dfx);"), 'Listener (nach noFixed)');
 });
 
 await test('Backlog 1257 (Sonde, Blickwinkel „Fahrer diktiert Spiegel-/Scheibenproblem ohne Satzzeichen“): Spiegel lässt sich elektrisch nicht verstellen, klappt während der Fahrt ein, steht schief, „spiegel rechts hengt“, hält nicht mehr, zittert → Spiegel (nicht Vibration); Wischer bleibt in der Mitte stehen, läuft nur langsam, Wischwasser spritzt nicht, Spritzdüsen verstopft, Waschpumpe defekt, Scheibe friert von innen zu, Spiegel beschlägt → Sicht; EN/UK/RU; „Spiegel eingestellt“, Ölspiegel, Reparatur, „Düsen spritzen nicht“ nicht', async () => {
@@ -37402,6 +37402,17 @@ await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleich
   for (const g of Object.keys(B.GROUPS)) { const t = rd(`app-${g}.js`); if (t.includes('${__RX[')) ok(/^const __RX = \[/m.test(t), `app-${g}.js hat eigene Bausteinliste`); }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
   ok(pct <= 47, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 47 %)');
+});
+
+await test('Backlog 1266 (Sonde, Blickwinkel „Fahrer diktiert Ladebordwand-Problem ohne Satzzeichen“): „ladebordwand sinkt ab“, „bleibt halb oben“, „nur noch manuell“, „kann nicht hochgeklappt werden“, „kippt nicht“, „sicherung raus“, „hat keinen strom“, „pumpe läuft nicht“, „warnflaggen abgebrochen“, Tippfehler, EN/UK → Tür-/Ladebordwand-Schritte; Reparatur, „geladen“, Fahrzeugbatterie, „bordwand“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const D4 = new RegExp(app.match(/^const DOOR4_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['ladebordwand sinkt ab', 'die ladebordwand vom auflieger sinkt immer ab', 'ladebordwand bleibt halb oben stehen', 'ladebordwand bleibt unten', 'ladebordwand nur noch manuell', 'ladebordwand geht nur noch mit der handpumpe', 'ladebordwand kann nicht hochgeklappt werden', 'ladebordwand kippt nicht', 'ladebordwand neigt sich nicht', 'ladebordwand sicherung raus', 'ladebordwand batterie leer', 'ladebordwand hat keinen strom', 'hydraulikpumpe ladebordwand läuft nicht', 'pumpe von der ladebordwand läuft nicht', 'ladebordwand warnflaggen abgebrochen', 'kontrollleuchte ladebordwand an', 'kein strom an der ladebordwand', 'ladebortwand geht nicht', 'ladeboardwand defekt', 'tail lift has no power', 'tail lift fuse blown', 'tail lift only manual', 'warning light for tail lift is on', 'гідроборт без струму', 'немає струму на гідроборті', 'гидроборт не наклоняется']) ok(D4.test(recurFix(x)), 'Ladebordwand: ' + x);
+  for (const x of ['ladebordwand repariert sinkt nicht mehr ab', 'ladebordwand batterie geladen geht wieder', 'sicherung getauscht ladebordwand geht wieder', 'ladebordwand ok', 'batterie leer', 'lkw hat keinen strom', 'bordwand kaputt', 'kühlaggregat strom weg', 'tail lift fixed no longer stays down', 'ladebordwand prüfung fällig']) ok(!D4.test(recurFix(x)), 'kein Ladebordwand-Zusatz: ' + x);
+  ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dfx) && !DOOR2_HINT.test(dfx) && !DOOR3_HINT.test(dfx) && !DOOR4_HINT.test(dfx);"), 'Listener');
+  ok(/ladebordwand sinkt ab/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
 
 await test('Backlog 1265 (Sonde, Blickwinkel „Fahrer diktiert Auspuff-/Abgasproblem ohne Satzzeichen“): „auspuff macht krach“, „auspuff knallt“, „endtopf klappert“, „abgas riecht stark“, „abgasgeruch“, „exhaust banging“, „exhaust making noise“, „smell of exhaust“ → Abgas-Schritte; Motorbremse, Reparatur, „kein Geruch mehr“ nicht', async () => {
@@ -37456,7 +37467,7 @@ await test('Backlog 1261 (Sonde, Restlücke aus 1260 „Fahrer diktiert Aufbau-/
   const D3 = new RegExp(app.match(/^const DOOR3_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['heckportal verbogen', 'heckportal kaputt', 'portaltür klemmt', 'portaltüren gehen schwer', 'heckportal eingedrückt', 'portalrahmen verzogen', 'heckportal beschädigt beim rangieren', 'rear portal bent', 'roller shutter jammed', 'рольставня заклинила', 'рольставня не відкривається', 'рольставня не закрывается']) ok(D3.test(recurFix(x)), 'Tür: ' + x);
   for (const x of ['heckportal repariert', 'portal geht nicht', 'das portal ist kaputt', 'kundenportal klemmt', 'heckportal ok', 'portaltür gerichtet', 'roller shutter fixed', 'рольставню відремонтували']) ok(!D3.test(recurFix(x)), 'kein Tür-Zusatz: ' + x);
-  ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dfx) && !DOOR2_HINT.test(dfx) && !DOOR3_HINT.test(dfx);"), 'Listener');
+  ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dfx) && !DOOR2_HINT.test(dfx) && !DOOR3_HINT.test(dfx) && !DOOR4_HINT.test(dfx);"), 'Listener');
 });
 
 await test('Backlog 1260 (Sonde, Blickwinkel „Fahrer diktiert Planen-/Aufbauproblem ohne Satzzeichen“): „plane hat ein riss hinten links“, „plane hängt durch“, „lässt sich nicht spannen“, Spanner/Ratsche der Plane, Wasser durch die Plane, „regnet rein im Auflieger“, Hubdach/Schiebedach am Auflieger, Zollseil, Spriegel, EN/UK/RU → Planen-Schritte; „ich plane“, Reparatur, Fahrerhaus-Schiebedach, „kein Riss“ nicht', async () => {
