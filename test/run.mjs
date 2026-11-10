@@ -21692,7 +21692,7 @@ await test('Backlog 315 (Blickwinkel „Fahrerassistenzsystem fällt aus oder br
     ok(L.adas_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="adas" class="panel" hidden role="status">`), 'Panel #adas');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#adas').hidden = !ADAS_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#adas').hidden = !ADAS_HINT.test(dv) && !ADAS2_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('adas') && order.indexOf('acc') < order.indexOf('adas') && order.indexOf('brake') < order.indexOf('adas') && order.indexOf('warnlight') < order.indexOf('adas') && order.indexOf('adas') < order.indexOf('mirror'), 'Gruppierung: Unfall/Bremse/Warnleuchte vor Assistent vor Spiegel');
   ok(helpAfter(app, 'adas', 'loose'), 'Hilfe-Abschnitt adas nach loose');
@@ -37413,6 +37413,18 @@ await test('Backlog 1267 (Sonde, Blickwinkel „Fahrer diktiert Tankkarten-/Tank
   for (const x of ['ec karte an der tankstelle abgelehnt', 'meine karte an der tanke abgelehnt', 'bankkarte an der tankstelle abgelehnt', 'tankkarte pin falsch eingegeben jetzt geht wieder', 'kann nicht tanken zapfsäule kaputt', 'karte an der tankstelle abgelehnt neue karte bekommen', 'credit card declined at the fuel station', 'fuel card pin wrong works again now', 'karte an der tankstelle bezahlt']) ok(!F2.test(recurFix(x)), 'kein Tankkarten-Zusatz: ' + x);
   ok(app.includes("$('#fuelcard').hidden = !FUELCARD_HINT.test(dv) && !FUELCARD2_HINT.test(dv);"), 'Listener');
   ok(/karte an der tanke abgelehnt/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
+});
+
+await test('Backlog 1273 (Sonde, Blickwinkel „Fahrer diktiert Assistenzsystem-/Kamerastörung ohne Satzzeichen“): „abbiegeassistent schlägt dauernd an“, „abstandsradar geht nicht“, „radar sensor vorne kaputt“, „totwinkel warner piept“, „mirrorcam ausgefallen“, „spiegelkamera schwarz“, „kamera bild verzerrt“, „lkw bremst von alleine“, EN/UK/RU → Assistenz-Schritte; Radarfalle, Notbremsung als Handlung, „bremst schlecht“, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const A2 = new RegExp(app.match(/^const ADAS2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['abbiegeassistent schlägt dauernd an', 'abbiegeassistent piept die ganze zeit', 'abstandsradar geht nicht', 'abstandsradar verschmutzt meldung', 'radar sensor vorne kaputt', 'totwinkel warner piept', 'spurassistent vibriert die ganze zeit', 'mirrorcam ausgefallen', 'spiegelkamera schwarz', 'kamera bild verzerrt', 'lkw bremst von alleine', 'notbremse bremst einfach so', 'notbremsung ohne grund', 'der lkw macht einfach eine vollbremsung von alleine', 'blind spot warning keeps beeping', 'radar sensor blocked message', 'camera screen is black', 'camera picture flickering', 'асистент повороту постійно пищить', 'камера блимає', 'екран камери чорний', 'ассистент поворота постоянно пищит', 'экран камеры черный']) ok(A2.test(x), 'Assistenz-Zusatz: ' + x);
+  for (const x of ['radarfalle hat geblitzt', 'radarkontrolle an der a2', 'ich musste eine notbremsung machen', 'notbremse gezogen weil reh', 'abstandsradar repariert', 'spiegelkamera schwarz wurde getauscht', 'lkw bremst schlecht', 'lkw bremst nicht', 'totwinkel warner piept nicht mehr', 'dashcam schwarz', 'camera screen fixed', 'радар полагоджено']) ok(!A2.test(x), 'kein Assistenz-Zusatz: ' + x);
+  ok(app.includes("$('#adas').hidden = !ADAS_HINT.test(dv) && !ADAS2_HINT.test(dv);"), 'Listener');
+  const { STRINGS } = await import('../public/i18n.js');
+  const A1 = new RegExp(app.match(/^const ADAS_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const [l, exs] of [['de', ['abbiegeassistent schlägt dauernd an', 'abstandsradar geht nicht', 'spiegelkamera schwarz', 'lkw bremst von alleine']], ['uk', ['асистент повороту постійно пищить', 'камера блимає']], ['en', ['blind spot warning keeps beeping', 'camera picture flickering', 'radar sensor blocked']]]) for (const ex of exs) { ok(STRINGS[l].help_adas_s.includes(ex), 'Hilfe-Beispiel ' + l + ': ' + ex); ok(A1.test(ex) || A2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
 
 await test('Backlog 1272 (Sonde, Blickwinkel „Fahrer diktiert Warnleuchte/Display-Meldung ohne Satzzeichen“): „gelbe lampe im display an“, „rotes symbol im cockpit“, „display zeigt werkstatt aufsuchen“, „abgas lampe leuchtet“, „ausrufezeichen leuchtet“, „gelbes dreieck im display“, „schraubenschlüssel symbol an“, EN/UK/RU → Warnleuchten-Schritte; Außenleuchten am Anhänger, Warndreieck als Ausrüstung, „werkstatt aufsuchen“ als Vorhaben, Werkzeug, Reparaturvermerk nicht', async () => {

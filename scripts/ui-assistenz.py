@@ -9,6 +9,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Abbiegeassistent ausgefallen','uk':'Асистент не працює','en':'Blind spot camera not working'}
 BOTH={'de':'Unfall nach Phantombremsung','uk':'ДТП, гальмує без причини','en':'Accident after phantom braking'}
+DIK={'de':'abbiegeassistent schlägt dauernd an','uk':'асистент повороту постійно пищить','en':'blind spot warning keeps beeping'}  # Backlog 1273: Diktat ohne Satzzeichen
 NO={'de':'Navi kaputt','uk':'Двері пошкоджені','en':'Tyre pressure sensor fault'}
 HT={'de':'Assistenzsystem gestört oder Lkw bremst grundlos','uk':'Несправна система допомоги водієві або гальмування без причини','en':'Driver assistance system faulty or braking for no reason'}
 fails=[]
@@ -39,6 +40,8 @@ with sync_playwright() as p:
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#adas').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/assistenz-{lang}-{w}.png')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#adas'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Assistenz-Hinweis')
         q.fill('#d',BOTH[lang]); q.wait_for_timeout(100)
         check(vis('#adas') and vis('#acc') and q.evaluate("!document.querySelector('#acc ul').hidden && document.querySelector('#adas ul').hidden"),f'{lang}/{w}: mit Unfall zusammen → Unfall offen, Assistenz eingeklappt')
         q.fill('#d','')
