@@ -11,6 +11,8 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
 TXT={'de':'Öl tropft unter dem Motor, Ölspur auf dem Hof','uk':'Тече масло з двигуна, калюжа під вантажівкою','en':'Oil leak under the truck, dripping from the engine'}
 NO={'de':'Öl kontrolliert, Ölwechsel fällig','uk':'Заміна масла','en':'Oil checked, oil change due'}
 DIK={'de':'motor ist ölig von unten der lkw tropft','uk':'під машиною пляма мастила','en':'there is oil under the truck'}
+DIK2={'de':['шланг лопнул','масло на колесе'],'uk':['патрубок тече','масло на колесі','капає з-під двигуна'],'en':['радиатор потек','капает под мотором']}  # Backlog 1292: Diktat RU/UK
+NEG2=['сальник не тече','воздушный шланг лопнул']
 HT={'de':'Ölspur oder Leck unter dem Lkw','uk':'Масляний слід або протікання під вантажівкою','en':'Oil trail or leak under the truck'}
 fails=[]
 def check(c,m):
@@ -38,6 +40,8 @@ with sync_playwright() as p:
         check(vis('#leak'),f'{lang}/{w}: Hinweis bei Leck')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
         check(vis('#leak'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Hinweis (Backlog 1263)')
+        for dk in DIK2[lang]: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#leak'),f'{lang}/{w}: Diktat „{dk}“ → Leck-Hinweis (Backlog 1292)')
+        for dk in NEG2: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#leak'),f'{lang}/{w}: „{dk}“ → kein Leck-Hinweis (Backlog 1292)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         tx=q.inner_text('#leak')
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')

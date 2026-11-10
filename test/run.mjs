@@ -21372,7 +21372,7 @@ await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lk
     ok(L.leak_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="leak" class="panel" hidden role="status">`), 'Panel #leak');
-  ok(app.includes("$('#leak').hidden = !LEAK_HINT.test(dv) && !LEAK2_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#leak').hidden = !LEAK_HINT.test(dv) && !LEAK2_HINT.test(dv) && !LEAK3_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'leak', 'warnlight'), 'Hilfe-Abschnitt leak nach warnlight');
 });
 
@@ -37449,6 +37449,19 @@ await test('Backlog 1288 (Reserve Start-Modul nach 1287: 46,09 % > 46 %): die h�
   ok(pct <= 45.8, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 45,8 %)');
 });
 
+await test('Backlog 1292 (Sonde, Blickwinkel „Fahrer diktiert Undichtigkeit/Leckage auf Russisch/Ukrainisch“): „шланг/патрубок лопнул/потек/тече“, „радиатор потек“, „масло на колесе/диске“, „капает под мотором“, „капає з-під двигуна“ → Leck-Schritte; Luft-/Bremsschlauch, Dusche, Verneinung („сальник/масло/радиатор не течет“), Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const K = ['LEAK_HINT', 'LEAK2_HINT', 'LEAK3_HINT'].map(rx); const any = (x) => K.some((r) => r.test(x));
+  for (const x of ['шланг лопнул', 'шланг потек', 'шланг лопнув', 'патрубок течет', 'патрубок тече', 'патрубок охлаждения лопнул', 'радиатор потек', 'масло на колесе', 'масло на диске', 'масло на колесі', 'капает под мотором', 'капає з-під двигуна']) ok(K[2].test(x), 'Leck: ' + x);
+  for (const x of ['воздушный шланг лопнул', 'шланг лопнул шипит воздух', 'тормозной шланг потек', 'шланг тормозной потек', 'шланг душа порвался', 'шланг не лопнул', 'шланг лопнул, заменили', 'масло на дороге', 'капает с крыши', 'радиатор не течет', 'масло не течет', 'бак не течет', 'сальник не тече', 'мост не течет']) ok(!any(x), 'kein Leck-Hinweis: ' + x);
+  for (const x of ['масло течет', 'бак течет', 'сальник тече', 'мост течет', 'масло трохи тече']) ok(any(x), 'weiterhin Leck: ' + x);
+  ok(app.includes("$('#leak').hidden = !LEAK_HINT.test(dv) && !LEAK2_HINT.test(dv) && !LEAK3_HINT.test(dv);"), 'Listener Leck');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['шланг лопнул', 'масло на колесе']], ['uk', ['патрубок тече', 'масло на колесі', 'капає з-під двигуна']], ['en', ['радиатор потек', 'капает под мотором']]]) for (const ex of exs) { ok(STRINGS[l].help_leak_s.includes(ex), 'Hilfe Leck ' + l + ': ' + ex); ok(any(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1291 (Sonde, Blickwinkel „Fahrer diktiert Licht/Beleuchtung auf Russisch/Ukrainisch“): „перегорела лампочка“, „фара/фонарь треснул(а)“, „фара запітніла“, „вода в фаре“, „фара плохо светит“, „свет тусклый“, „поворотник часто моргает“, „не працює поворот“, „номер не подсвечивается“, „не горят противотуманки“, „неисправность освещения“ → Licht-Schritte; Verneinung, Straßen-Abbiegung, Reparaturvermerk, andere Wörter nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -37806,7 +37819,7 @@ await test('Backlog 1263 (Sonde, Blickwinkel „Fahrer diktiert Undichtigkeit/Le
   const L2 = new RegExp(app.match(/^const LEAK2_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['ölfilter undicht', 'ölablassschraube undicht', 'ventildeckel undicht', 'dieselfilter undicht', 'kraftstofffilter tropft', 'kippzylinder leckt', 'hubzylinder verliert öl', 'motor ist ölig von unten', 'der ganze motor ist voller öl', 'hinterachse ist nass von öl', 'der lkw tropft', 'auflieger tropft hinten', 'da tropft was unterm motor raus ich glaube öl', 'irgendwas tropft vorne unten', 'grüne flüssigkeit unter dem auto', 'öl unterm lkw', 'there is oil under the truck', 'under the truck there is a puddle', 'під машиною пляма мастила', 'под машиной пятно']) ok(L2.test(recurFix(x)), 'Leck: ' + x);
   for (const x of ['klimaanlage tropft unter dem lkw', 'es tropft rein bei regen', 'lkw tropft nach dem waschen', 'kein öl unter dem lkw', 'motor ist nicht ölig', 'ölfilter gewechselt', 'ölfilter undicht wurde getauscht', 'der lkw tropft nicht mehr', 'zylinder 3 fällt aus', 'ich schaue mal unter dem lkw nach', 'ich habe öl unterm arm', 'no oil under the truck', 'під машиною нема плями']) ok(!L2.test(recurFix(x)), 'kein Leck-Zusatz: ' + x);
-  ok(app.includes("$('#leak').hidden = !LEAK_HINT.test(dv) && !LEAK2_HINT.test(dv);"), 'Listener');
+  ok(app.includes("$('#leak').hidden = !LEAK_HINT.test(dv) && !LEAK2_HINT.test(dv) && !LEAK3_HINT.test(dv);"), 'Listener');
   ok(/motor ist ölig von unten/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
 
