@@ -37434,6 +37434,21 @@ await test('Backlog 1277 (Reserve Start-Modul nach 1276: 46,96 % ≤ 47 %): hund
   ok(pct <= 46, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 46 %)');
 });
 
+await test('Backlog 1281 (Sonde, Blickwinkel „Fahrer diktiert Kraftstoff/Tank leer/Diesel vergessen ohne Satzzeichen“): „lkw ist trocken gefahren“, „hab vergessen zu tanken jetzt steht er“, „forgot to fill up now stuck“, „забыл заправиться заглох“ → Kraftstoff-ausgegangen-Schritte (nur mit Stillstand); „злили соляру“ → Diebstahl; „адблю закінчився“ → Motor; Verneinungen, „bin trocken gefahren“, „злили масло“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const D = rx('DRYFUEL_HINT'), E = rx('ENGINE_HINT'); const T = new RegExp(app.match(/^const THEFT_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['lkw ist trocken gefahren', 'hab ihn trocken gefahren', 'ich hab vergessen zu tanken jetzt steht er', 'hab tanken vergessen bin liegengeblieben', 'steh auf der autobahn hab vergessen zu tanken', 'nicht getankt jetzt springt er nicht an', 'forgot to fill up now stuck', 'stuck on the a2 forgot to refuel', 'забыл заправиться заглох на трассе', 'забув заправитися стою', 'стою на трассе забыл заправиться', 'diesel ist leer lkw steht', 'ran out of diesel']) ok(D.test(x), 'Kraftstoff ausgegangen: ' + x);
+  for (const x of ['nicht vergessen zu tanken morgen', 'diesel vergessen zu tanken', 'bin trocken gefahren keine probleme', 'не забыл заправиться', 'забыл заправиться', 'forgot to fill up', 'adblue tank leer', 'tank leer gemacht']) ok(!D.test(x), 'kein Kraftstoff-ausgegangen-Hinweis: ' + x);
+  for (const x of ['злили соляру ночью', 'слили солярку', 'злили пальне']) ok(T.test(x), 'Diebstahl: ' + x);
+  ok(!T.test('злили масло на сервисе'), 'Ölwechsel ist kein Diebstahl');
+  for (const x of ['адблю закінчився', 'адблю закончился', 'адблю бак пустой']) ok(E.test(x), 'Motor (AdBlue): ' + x);
+  ok(!E.test('адблю не закончился'), 'Verneinung AdBlue');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['lkw ist trocken gefahren', 'hab vergessen zu tanken jetzt steht er']], ['uk', ['забув заправитися стою']], ['en', ['forgot to fill up now stuck']]]) for (const ex of exs) { ok(STRINGS[l].help_dryfuel_s.includes(ex), 'Hilfe Kraftstoff ' + l + ': ' + ex); ok(D.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1280 (Sonde, Blickwinkel „Fahrer diktiert Elektrik/Spiralkabel auf Russisch/Ukrainisch“): RU „короткое замыкание“, „замыкание в проводке“, „постійно перегорає запобіжник“, „опять сгорел предохранитель“ → Elektrik-Schritte; „выключатель массы сломался“ → Batterie; Reparaturvermerk, „замыкание двери“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

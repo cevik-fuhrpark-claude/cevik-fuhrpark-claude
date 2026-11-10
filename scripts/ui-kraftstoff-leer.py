@@ -1,12 +1,13 @@
 # [CLAUDE] UI-Test (30.10.2026, Backlog 747, Blickwinkel „Kraftstoff ausgegangen, Tank leergefahren“): Meldeformular zeigt
 # eigene Schritte (#dryfuel), nicht die Schritte „Falsch getankt“ bzw. „Diesel versulzt“;
-# „Lkw leer gefahren“ (Leerfahrt) nicht. Hilfe zeigt den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server.
+# „Lkw leer gefahren“ (Leerfahrt) nicht. Backlog 1281: Diktat ohne Satzzeichen je Sprache. Hilfe zeigt den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server.
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'kein Diesel mehr, Tank leergefahren','uk':'скінчилось пальне','en':'ran out of diesel'}
+DIKTAT={'de':'hab vergessen zu tanken jetzt steht er','uk':'забув заправитися стою','en':'forgot to fill up now stuck'}  # Backlog 1281
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -33,6 +34,10 @@ with sync_playwright() as p:
         check(q.evaluate("!document.querySelector('#dryfuel ul').hidden"),f'{lang}/{w}: Schritte aufgeklappt')
         tx=q.inner_text('#dryfuel'); check('dryfuel_' not in tx and len(tx)>200,f'{lang}/{w}: Text übersetzt')
         if SHOTS: q.locator('#dryfuel').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/dryfuel-{lang}-{w}.png')
+        q.fill('#d',DIKTAT[lang]); q.wait_for_timeout(150)
+        check(vis('#dryfuel') and not vis('#fuel'),f'{lang}/{w}: Diktat „{DIKTAT[lang]}“ → Kraftstoff-Schritte')
+        q.fill('#d','nicht vergessen zu tanken'); q.wait_for_timeout(150)
+        check(not vis('#dryfuel'),f'{lang}/{w}: „nicht vergessen zu tanken“ → kein Hinweis')
         q.fill('#d','Lkw leer gefahren nach Dortmund'); q.wait_for_timeout(150)
         check(not vis('#dryfuel'),f'{lang}/{w}: „leer gefahren“ (Leerfahrt) → kein Hinweis')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen (Formular)')
