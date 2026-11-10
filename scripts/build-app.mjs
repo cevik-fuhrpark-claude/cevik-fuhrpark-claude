@@ -336,17 +336,21 @@ function rxGroups(body) {
 const RX_CALL = /lbRx\(String\.raw`((?:[^`\\]|\\.)*)`/g;
 export function expandRx(code) {
   const t = /^const __T = \[(.*)\];$/m.exec(code);
-  if (t) { const tp = [...t[1].matchAll(/String\.raw`((?:[^`\\]|\\.)*)`/g)].map((x) => x[1]); code = code.replace(t[0] + '\n', '').replace(/\$\{__T\[(\d)\]\}/g, (_, k) => tp[+k]); }
+  if (t) { const tp = [...t[1].matchAll(/String\.raw`((?:[^`\\]|\\.)*)`/g)].map((x) => x[1]); code = code.replace(t[0] + '\n', '').replace(/\$\{__T\[(\d+)\]\}/g, (_, k) => tp[+k]); }
   const m = /^const __RX = \[(.*)\];$/m.exec(code); if (!m) return code;
   const parts = [...m[1].matchAll(/String\.raw`((?:[^`\\]|\\.)*)`/g)].map((x) => x[1]);
   return code.replace(m[0], '').replace(/\$\{__RX\[(\d+)\]\}/g, (_, k) => parts[+k]);
 }
 // Backlog 1277 (Reserve Start-Modul nach 1276: 46,96 % ≤ 47 %): kurze, hundertfach wiederkehrende Wortgrenzen der Hinweismuster
 // (z. B. `(?![a-zäöüß])` über 1000×) stehen in `const __T = [String.raw`…`, …]` und werden in lbRx-Quellen per `${__T[k]}` (9 Byte)
-// eingesetzt – nur Bausteine, die in UTF-8 länger als der Platzhalter sind. Höchstens 10 Einträge (einstelliger Index).
+// eingesetzt – nur Bausteine, die in UTF-8 länger als der Platzhalter sind. Index 0–9 einstellig; ab Backlog 1296 auch zweistellig (nur für Bausteine > 10 Byte).
 // Backlog 1288 (Reserve Start-Modul nach 1287: 46,09 % > 46 %): zusätzlich die häufigsten Wortlücken `\s+(?:\S+\s+)?` (≈ 1170×),
 // `(?:\S+\s+){0,2}?` (≈ 560×) und `(?:\S+\s+){0,3}?` (≈ 350×) – Index 7–9, damit bleibt die Liste bei 10 Einträgen.
-const RX_TOK = ['(?![a-zäöüß])', '(?<![a-zäöüß-])', '(?<![а-яіїєґё])', '(?<![a-zäöüß])', '(?<![а-яіїєґ])', '(?<![a-z-])', '(?![а-яіїєґё])', String.raw`\s+(?:\S+\s+)?`, String.raw`(?:\S+\s+){0,2}?`, String.raw`(?:\S+\s+){0,3}?`];
+// Backlog 1296 (Reserve Start-Modul nach 1295: 45,84 % > 45,8 %): Index 10–12 (Platzhalter `${__T[10]}` = 10 Byte) für die häufigsten Anfänge
+// verschiedener Reparatur-Ausschlüsse (`(?![^.;!?]*(?:repariert|…|gewechselt|` ≈ 40×, RU/UK-Reparaturwörter ≈ 17× bzw. 36×), die __RX nicht
+// erfasst, weil die Ausschlüsse als Ganzes verschieden sind. Reihenfolge wichtig: längerer RU/UK-Baustein vor dem kürzeren.
+const RX_TOK = ['(?![a-zäöüß])', '(?<![a-zäöüß-])', '(?<![а-яіїєґё])', '(?<![a-zäöüß])', '(?<![а-яіїєґ])', '(?<![a-z-])', '(?![а-яіїєґё])', String.raw`\s+(?:\S+\s+)?`, String.raw`(?:\S+\s+){0,2}?`, String.raw`(?:\S+\s+){0,3}?`,
+  '(?![^.;!?]*(?:repariert|erneuert|getauscht|ersetzt|behoben|gewechselt|', String.raw`|відремонт\S*|замінил\S*|замінен\S*|отремонт\S*|`, String.raw`|відремонт\S*|замінил\S*|`];
 export function dedupeLooks(code) {
   const calls = [...code.matchAll(RX_CALL)], count = new Map();
   for (const c of calls) for (const [a, e] of rxGroups(c[1])) { const g = c[1].slice(a, e); count.set(g, (count.get(g) || 0) + 1); }

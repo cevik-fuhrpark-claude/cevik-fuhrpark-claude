@@ -28863,9 +28863,10 @@ await test('Backlog 794 (Blickwinkel „Fahrer mit älterem Handy/Browser“): k
   ok(corpus.length > 1000, `Stichprobe (${corpus.length})`);
   let exact = 0, only = 0;
   for (const m of calls) {
-    const fb = B.lbFallback(m[1], !!m[3]); ok(!LB.test(fb), `Ersatz ohne Lookbehind: ${m[1].slice(0, 40)}`);
-    const o = new RegExp(m[1], m[2]), f = new RegExp(fb, m[2]); let d = 0;
-    for (const x of corpus) { o.lastIndex = 0; f.lastIndex = 0; const a = o.test(x), b = f.test(x); if (a && !b) ok(false, `Ersatz trifft weniger: „${x}“ – ${m[1].slice(0, 60)}`); if (a !== b) d++; }
+    const src = new Function('__RX', '__T', 'return String.raw`' + m[1] + '`;')(RX, T); // Backlog 1296: wie im Browser – lbRx erhält die eingesetzte Quelle (Bausteine 10–12 sind für sich keine gültigen Ausdrücke)
+    const fb = B.lbFallback(src, !!m[3]); ok(!LB.test(fb), `Ersatz ohne Lookbehind: ${src.slice(0, 40)}`);
+    const o = new RegExp(src, m[2]), f = new RegExp(fb, m[2]); let d = 0;
+    for (const x of corpus) { o.lastIndex = 0; f.lastIndex = 0; const a = o.test(x), b = f.test(x); if (a && !b) ok(false, `Ersatz trifft weniger: „${x}“ – ${src.slice(0, 60)}`); if (a !== b) d++; }
     if (m[3]) { only++; if (!d) exact++; }
   }
   ok(only >= 60 && exact >= 45, `reine .test()-Ausdrücke: ${exact} von ${only} auf der Stichprobe exakt`);
@@ -37444,8 +37445,8 @@ await test('Backlog 1288 (Reserve Start-Modul nach 1287: 46,09 % > 46 %): die h�
   ok(d.code.includes('kupplung${__T[7]}rutscht|gang\\s+${__T[8]}raus|${__T[9]}klemmt'), 'Wortlücken eingesetzt: ' + d.code);
   eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 10, 'Bausteinliste hat 10 Einträge (einstelliger Index)');
-  eq(T.slice(7).join(' '), '\\s+(?:\\S+\\s+)? (?:\\S+\\s+){0,2}? (?:\\S+\\s+){0,3}?', 'Wortlücken 7–9');
+  ok(T.length >= 10, 'Bausteinliste hat mindestens 10 Einträge (Backlog 1296: Index 10–12 zweistellig)');
+  eq(T.slice(7, 10).join(' '), '\\s+(?:\\S+\\s+)? (?:\\S+\\s+){0,2}? (?:\\S+\\s+){0,3}?', 'Wortlücken 7–9');
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
   ok(pct <= 45.8, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 45,8 %)');
 });
@@ -37488,6 +37489,42 @@ await test('Backlog 1294 (Sonde, Blickwinkel „Fahrer diktiert Fenster/Spiegel/
     ['help_visib_s', visib, { de: ['дворники остановились', 'не брызгает вода на стекло'], uk: ['двірники зупинилися', 'не бризкає на скло', 'дзеркало запотіває'], en: ['нет воды в омывателе', 'зеркало запотевает'] }],
     ['help_window_s', win, { de: ['окно не открывается'], uk: ['склопідіймач не працює', 'вікно не відчиняється'], en: ['окно не открывается', 'вікно не відкривається'] }],
     ['help_glass_s', glass, { de: ['камень в лобовое прилетел'], uk: ['камінь прилетів у лобове'], en: ['в лобовое попал камень'] }]];
+  for (const [k, f, by] of H) for (const l of ['de', 'uk', 'en']) for (const ex of by[l]) { ok(STRINGS[l][k].includes(ex), k + ' ' + l + ': ' + ex); ok(f(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
+await test('Backlog 1296 (Reserve Start-Modul nach 1295: 45,84 % > 45,8 %): häufige Anfänge verschiedener Reparatur-Ausschlüsse (DE-Liste bis „gewechselt|“, RU/UK-Reparaturwörter) stehen als __T[10]–__T[12] (zweistelliger Index) in der Bausteinliste; Rückverwandlung gleich; Start-Modul ≤ 45,7 %', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const B = await import('../scripts/build-app.mjs');
+  const code = "x\nconst A = lbRx(String.raw`(?<![а-яіїєґё])(?:гальм|тормоз)\\S*\\s+скрип(?![^.;!?]*(?:repariert|erneuert|getauscht|ersetzt|behoben|gewechselt|fixed|відремонт\\S*|замінил\\S*|замінен\\S*|отремонт\\S*|заменил))|x(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\nconst B2 = lbRx(String.raw`(?<![a-zäöüß-])bremse\\s+(?:гальм|тормоз)\\s+quietscht(?![^.;!?]*(?:repariert|erneuert|getauscht|ersetzt|behoben|gewechselt|eingestellt|відремонт\\S*|замінил\\S*|полагод))|x(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\n";
+  const d = B.dedupeLooks(code);
+  ok(d.code.includes('${__T[10]}fixed${__T[11]}заменил))') && d.code.includes('${__T[10]}eingestellt${__T[12]}полагод))'), 'Bausteine 10–12 eingesetzt: ' + d.code);
+  eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (zweistelliger Index)');
+  const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
+  eq(T.length, 13, 'Bausteinliste hat 13 Einträge');
+  ok((main.match(/\$\{__T\[1[0-2]\]\}/g) || []).length > 60, 'zweistellige Bausteine werden genutzt');
+  for (const tk of T.slice(10)) ok(Buffer.byteLength(tk) > Buffer.byteLength('${__T[10]}'), 'Baustein länger als Platzhalter: ' + tk);
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
+  ok(pct <= 45.7, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 45,7 %)');
+});
+
+await test('Backlog 1295 (Sonde, Blickwinkel „Fahrer diktiert Bremse/Druckluft auf Russisch/Ukrainisch“): Ausfall („тормоза пропали“, „відмовили гальма“, „нет тормозов“), festgegangen („тормоз прикипел“, „гальмо закисло“, „прицеп не отпускает тормоза“, „колесо клинит“), „тормоза стучат“, „тормозной диск кривой“, „колодки до металла“, „воздух не накачивается“, „пищит давление воздуха“, „горить ABS“ → Bremse; „машина катится на ручнике“ → Feststellbremse; Verneinung, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const B4 = rx('BRAKE4_HINT'), PB = rx('PARKBRAKE_HINT');
+  const PBG = new RegExp(PB.source, 'gi'); const noPb = (x) => x.replace(PBG, ' ');
+  const BR = ['BRAKE_HINT', 'BRAKE2_HINT', 'BRAKE4_HINT'].map(rx), BRd = ['AIRLINE_HINT', 'BRAKE3_HINT'].map(rx);
+  const brake = (x) => BR.some((r) => r.test(noPb(x))) || BRd.some((r) => r.test(x));
+  eq((app.match(/const BRAKE4_HINT = /g) || []).length, 1, 'nur eine Definition BRAKE4_HINT');
+  for (const x of ['тормоза пропали', 'отказали тормоза', 'нет тормозов', 'зникли гальма', 'відмовили гальма', 'тормоза отказывают', 'тормоз прикипел', 'тормоз закис', 'гальмо закисло', 'колодки прикипели', 'прицеп не отпускает тормоза', 'колесо клинит',
+    'тормоза стучат при торможении', 'гальма стукають', 'тормозной диск кривой', 'колодки до металла', 'воздух не накачивается', 'повітря не накачується', 'воздух долго набирает', 'пищит давление воздуха', 'загорелся стоп давление воздуха', 'горит ABS', 'горить ABS', 'горить EBS причепа', 'ошибка ABS']) ok(B4.test(x) && brake(x), 'Bremse: ' + x);
+  for (const x of ['тормоза не пропали', 'тормоза в норме', 'гальма в нормі', 'тормоза ремонтировали все нормально', 'не горит ABS', 'тормоза пропали, отремонтировали', 'отказали тормоза, заменили колодки', 'нет проблем с тормозами', 'давление воздуха в норме', 'колесо не клинит', 'тормоза не стучат']) ok(!B4.test(x), 'kein Brems-Zusatz: ' + x);
+  for (const x of ['машина катится на ручнике', 'вантажівка котиться на ручнику', 'прицеп ползет на ручнике']) { ok(PB.test(x), 'Feststellbremse: ' + x); ok(!brake(x), 'nicht zusätzlich allgemeine Bremse: ' + x); }
+  for (const x of ['машина не катится на ручнике', 'машина катится на ручнике, отремонтировали', 'фура едет на ручнике']) ok(!PB.test(x), 'keine Feststellbremse: ' + x);
+  ok(app.includes("&& !BRAKE4_HINT.test(noParkbrake(dv)); $('#parkbrake').hidden = !PARKBRAKE_HINT.test(dv);"), 'Listener Bremse/Feststellbremse unverändert');
+  const { STRINGS } = await import('../public/i18n.js');
+  const H = [['help_brake_s', brake, { de: ['тормоза пропали', 'тормоз прикипел', 'воздух не накачивается'], uk: ['відмовили гальма', 'гальмо закисло', 'повітря не накачується', 'горить ABS'], en: ['отказали тормоза', 'колодки до металла', 'пищит давление воздуха'] }],
+    ['help_parkbrake_s', (x) => PB.test(x), { de: ['машина катится на ручнике'], uk: ['машина котиться на ручнику'], en: ['машина катится на ручнике'] }]];
   for (const [k, f, by] of H) for (const l of ['de', 'uk', 'en']) for (const ex of by[l]) { ok(STRINGS[l][k].includes(ex), k + ' ' + l + ': ' + ex); ok(f(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
 

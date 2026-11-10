@@ -32,6 +32,8 @@ with sync_playwright() as p:
         check(q.evaluate("!document.querySelector('#parkbrake ul').hidden"),f'{lang}/{w}: Schritte aufgeklappt')
         tx=q.inner_text('#parkbrake'); check('parkbrake_' not in tx and len(tx)>200,f'{lang}/{w}: Text übersetzt')
         if SHOTS: q.locator('#parkbrake').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/feststellbremse-{lang}-{w}.png')
+        q.fill('#d','машина катится на ручнике'); q.wait_for_timeout(150)  # Backlog 1295: Diktat RU
+        check(vis('#parkbrake') and not vis('#brake'),f'{lang}/{w}: „машина катится на ручнике“ → Feststellbremsen-Schritte')
         q.fill('#d','Feststellbremse löst nicht'); q.wait_for_timeout(150)
         check(not vis('#parkbrake') and vis('#brake'),f'{lang}/{w}: „löst nicht“ → nur Bremsen-Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen (Formular)')
