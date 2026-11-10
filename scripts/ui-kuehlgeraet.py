@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 303, Blickwinkel „Kühlaggregat des Kühlaufliegers fällt unterwegs aus“): Meldeformular
 # zeigt bei einer Störung am Kühlgerät fünf Schritte (Leitung/Türen zu, Display-Foto/Uhrzeit, nur unterwiesene Prüfungen, Ware/Liefertermin,
 # Auswahl Fahrbereitschaft); „Klimaanlage kühlt nicht“ zeigt nichts; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# 10.11.2026 (Backlog 1264): zusätzlich Diktat ohne Satzzeichen („aggregat geht immer aus laderaum wird nicht kalt“, „реф не включається“, „fridge unit wont start“).
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -8,6 +9,7 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Kühlaggregat ausgefallen, Display zeigt Alarm','uk':'Холодильна установка вийшла з ладу','en':'Reefer unit failed, alarm on the display'}
+DIK={'de':'aggregat geht immer aus laderaum wird nicht kalt','uk':'реф не включається','en':'fridge unit wont start'}
 NO={'de':'Klimaanlage kühlt nicht','uk':'Кондиціонер не працює','en':'AC not cooling'}
 HT={'de':'Kühlgerät des Kühlaufliegers fällt aus','uk':'Збій холодильної установки рефрижератора','en':'Reefer trailer’s refrigeration unit fails'}
 fails=[]
@@ -34,6 +36,9 @@ with sync_playwright() as p:
         check(not vis('#reefer'),f'{lang}/{w}: „{NO[lang]}“ → kein Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#reefer'),f'{lang}/{w}: Hinweis bei Kühlgerät-Störung')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#reefer'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Hinweis (Backlog 1264)')
+        q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         tx=q.inner_text('#reefer')
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')

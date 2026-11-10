@@ -21429,7 +21429,7 @@ await test('Backlog 303 (Blickwinkel „Kühlaggregat des Kühlaufliegers fällt
     ok(L.reefer_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="reefer" class="panel" hidden role="status">`), 'Panel #reefer');
-  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test(dck);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test(dck) && !REEFER2_HINT.test(dck);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'reefer', 'fire'), 'Hilfe-Abschnitt reefer nach fire');
 });
 
@@ -37402,6 +37402,19 @@ await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleich
   for (const g of Object.keys(B.GROUPS)) { const t = rd(`app-${g}.js`); if (t.includes('${__RX[')) ok(/^const __RX = \[/m.test(t), `app-${g}.js hat eigene Bausteinliste`); }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
   ok(pct <= 47, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 47 %)');
+});
+
+await test('Backlog 1264 (Sonde, Blickwinkel „Fahrer diktiert Kühlaggregat-Störung ohne Satzzeichen“): „aggregat geht immer aus“, „aggregat kühlt nicht runter“, „aggregat vereist“, „läuft nur auf netz“, „display vom aggregat aus“, „stromkabel für aggregat kaputt“, „laderaum wird nicht kalt“, „temperatur schwankt im laderaum“ → Kühlgerät-Schritte; Hydraulik-/Strom-/Klimaaggregat, Reparatur nicht; „temperatur im auflieger zu hoch“ nicht mehr als Sattelkupplung', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const R2 = new RegExp(app.match(/^const REEFER2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  const C2 = new RegExp(app.match(/^const COUPLING2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['aggregat geht immer aus', 'aggregat kühlt nicht runter', 'kühlaggregat schaltet sich ständig ab', 'aggregat vereist', 'aggregat taut nicht ab', 'aggregat läuft nur auf netz nicht auf diesel', 'aggregat springt nicht an auf diesel', 'display vom aggregat aus', 'stromkabel für aggregat kaputt', 'laderaum wird nicht kalt', 'koffer wird nicht mehr kühl', 'temperatur schwankt im laderaum']) ok(R2.test(recurFix(x)), 'Kühlgerät: ' + x);
+  for (const x of ['hydraulikaggregat von der ladebordwand geht immer aus', 'stromaggregat geht immer aus', 'ladebordwand aggregat geht immer aus', 'aggregat kühlt wieder alles ok', 'kühlaggregat repariert läuft wieder auf diesel', 'klimaaggregat kühlt nicht', 'laderaum ist sauber', 'display vom tacho dunkel', 'kabel für die ladebordwand kaputt']) ok(!R2.test(recurFix(x)), 'kein Kühlgerät-Zusatz: ' + x);
+  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test(dck) && !REEFER2_HINT.test(dck);"), 'Listener');
+  ok(!C2.test(recurFix('temperatur im auflieger zu hoch')) && C2.test(recurFix('auflieger zu hoch zum ankuppeln')), 'Sattelkupplung: „im auflieger zu hoch“ nicht, „auflieger zu hoch“ weiter');
+  ok(/aggregat geht immer aus/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
 
 await test('Backlog 1263 (Sonde, Blickwinkel „Fahrer diktiert Undichtigkeit/Leckage ohne Satzzeichen“): „ölfilter undicht“, „kippzylinder leckt“, „motor ist ölig von unten“, „hinterachse ist nass von öl“, „der lkw tropft“, „da tropft was unterm motor raus“, „grüne flüssigkeit unter dem auto“, „there is oil under the truck“, „під машиною пляма мастила“ → Leck-Schritte; Klima-Kondenswasser, Regen, Waschen, „kein öl“, Reparatur nicht', async () => {
