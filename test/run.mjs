@@ -28383,7 +28383,7 @@ await test('Backlog 718–719 (Blickwinkel „Kabel blank, durchgescheuert oder 
     ok(S.help_elec_t && S.help_elec_s.includes(S.elec_hint_steps) && S.help_elec_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="elec" class="panel" hidden role="status">'), 'Panel #elec');
-  ok(app.includes("$('#elec').hidden = !ELEC_HINT.test(dfx);") && app.indexOf("$('#elec').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#elec').hidden = !ELEC_HINT.test(dfx) && !ELEC2_HINT.test(dfx);") && app.indexOf("$('#elec').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'gelfuel', 'waterfuel', 'elec', 'batt', 'engine'"), 'Reihenfolge nach Diesel/Kälte (seit 1239 Wasser im Diesel dazwischen), vor Batterie/Motor (Backlog 720)');
   ok(helpAfter(app, 'elec', 'grease'), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -37402,6 +37402,17 @@ await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleich
   for (const g of Object.keys(B.GROUPS)) { const t = rd(`app-${g}.js`); if (t.includes('${__RX[')) ok(/^const __RX = \[/m.test(t), `app-${g}.js hat eigene Bausteinliste`); }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
   ok(pct <= 47, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 47 %)');
+});
+
+await test('Backlog 1259 (Sonde, Blickwinkel „Fahrer diktiert Elektrik-/Batterieproblem ohne Satzzeichen“): Bordspannung zu niedrig/schwankt, Spannungswandler, „Elektrik/Elektronik spinnt/fällt aus“, „alles Elektrische fällt aus“, „blown fuse“, „electrics playing up“, „електрика глючить“, „напряжение падает“ → Elektrik-Schritte; Gurt-/Planenspannung, Reparatur, „Elektriker kommt“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const E2 = new RegExp(app.match(/^const ELEC2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['spannung zu niedrig', 'bordspannung schwankt', 'batteriespannung fällt ab', 'spannung nur noch 22 volt', 'spannungswandler defekt', 'elektrik spinnt', 'elektrik fällt immer wieder aus', 'alles elektrische fällt aus', 'elektronik spinnt', 'die elektrik spielt verrückt', 'strom im fahrerhaus fällt aus', 'blown fuse', 'fuses blown', 'electrics playing up', 'voltage too low', 'battery voltage dropping', 'електрика глючить', 'електроніка вирубається', 'электрика барахлит', 'проводка глючит', 'напруга низька', 'напряжение падает']) ok(E2.test(recurFix(x)), 'Elektrik: ' + x);
+  for (const x of ['elektrik repariert', 'elektriker kommt morgen', 'spannung vom gurt zu niedrig', 'plane spannung zu niedrig', 'elektrik ok', 'alles elektrische geht', 'fuse replaced', 'electrics fixed', 'elektronik spinnt nicht mehr', 'spannung ok', 'stromzähler', 'strom fällt aus, repariert']) ok(!E2.test(recurFix(x)), 'kein Elektrik-Zusatz: ' + x);
+  ok(app.includes("$('#elec').hidden = !ELEC_HINT.test(dfx) && !ELEC2_HINT.test(dfx);"), 'Listener');
+  ok(/bordspannung schwankt/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
 
 await test('Backlog 1258 (Sonde, Blickwinkel „Fahrer diktiert Federungsproblem ohne Satzzeichen“): „lkw hengt hinten rechts“, „liegt hinten tief“, „balg zischt“, Heben/Senken, Fahrhöhe, Federlage/-bügel/-bride, „Stoßdämpfer ölt“, „Federung hart/schlägt durch“, „poltert über Unebenheiten“, Stabilisator, Höhenventil, EN/UK/RU → Federungs-Schritte; Berg, Reparatur, Anhänger am Lkw, Motor springt an, Lenkungsdämpfer, Sitzfederung nicht', async () => {

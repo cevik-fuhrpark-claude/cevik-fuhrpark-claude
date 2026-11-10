@@ -6,6 +6,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
+DIKT={'de':'bordspannung schwankt elektrik spinnt','uk':'електрика глючить напруга низька','en':'electrics playing up voltage too low'}  # Backlog 1259
 TXT={'de':'Kabelbaum am Rahmen durchgescheuert, Sicherung fliegt immer raus','uk':'Кабель оголений','en':'Wiring chafed, fuse keeps blowing'}
 fails=[]
 def check(c,m):
@@ -26,6 +27,8 @@ with sync_playwright() as p:
         q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'km.inhaber','password':PW},None]); q.evaluate("localStorage.setItem('cfp_lang', %r)" % lang)
         q.goto(B+'/#/new'); q.wait_for_selector('#f #d',timeout=15000)
         vis=lambda sel: q.evaluate(f"!document.querySelector('{sel}').hidden")
+        q.fill('#d',DIKT[lang]); q.wait_for_timeout(150)
+        check(vis('#elec'),f'{lang}/{w}: Diktat ohne Satzzeichen „{DIKT[lang]}“ → Elektrik-Schritte (Backlog 1259)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(150)
         check(vis('#elec'),f'{lang}/{w}: Elektrik-Schritte bei „{TXT[lang]}“')
         check(not vis('#marten'),f'{lang}/{w}: keine Marder-Schritte')
