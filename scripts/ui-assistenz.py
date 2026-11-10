@@ -34,6 +34,9 @@ with sync_playwright() as p:
         check(not vis('#adas'),f'{lang}/{w}: anfangs kein Hinweis')
         q.fill('#d',NO[lang]); q.wait_for_timeout(100)
         check(not vis('#adas') and vis('#hintsum')==False,f'{lang}/{w}: „{NO[lang]}“ → kein Assistenz-Hinweis')
+        if lang=='uk':  # Backlog 1283: Diktat UK
+            q.fill('#d','камера запотіла нічого не видно'); q.wait_for_timeout(100)
+            check(vis('#adas'),f'{lang}/{w}: Diktat „камера запотіла нічого не видно“ → Hinweis (Backlog 1283)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#adas'),f'{lang}/{w}: Hinweis bei gestörtem Assistenzsystem')
         tx=q.inner_text('#adas')

@@ -37434,6 +37434,19 @@ await test('Backlog 1277 (Reserve Start-Modul nach 1276: 46,96 % ≤ 47 %): hund
   ok(pct <= 46, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 46 %)');
 });
 
+await test('Backlog 1283 (Sonde, Blickwinkel „Fahrer diktiert Spiegel/Kamera auf Russisch/Ukrainisch“): „відірвало дзеркало“, „дзеркало відвалилося“, „зеркало висит“ → Spiegel-Schritte; „камера мутная ничего не видно“, „камера запотіла“ → Assistenz/Kamera-Schritte; Reparatur/Reinigung nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const M = rx('MIRROR_HINT'), A2 = rx('ADAS2_HINT');
+  for (const x of ['відірвало дзеркало', 'зірвало праве дзеркало', 'сорвало зеркало', 'дзеркало відвалилося', 'зеркало отвалилось', 'зеркало висит на проводе']) ok(M.test(x), 'Spiegel: ' + x);
+  for (const x of ['відірвало дзеркало відремонтували', 'дзеркало відвалилося замінили', 'зеркало висит заменили']) ok(!M.test(x), 'kein Spiegel-Hinweis (Reparaturvermerk): ' + x);
+  for (const x of ['камера мутная ничего не видно', 'камера запотіла', 'камера заднего вида ничего не показывает', 'камера розмита']) ok(A2.test(x), 'Kamera: ' + x);
+  for (const x of ['камера мутная почистил все ок', 'камера запотіла помили', 'кімната запотіла']) ok(!A2.test(x), 'kein Kamera-Zusatz: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [k, R, ex] of [['help_mirror_s', M, 'відірвало дзеркало'], ['help_mirror_s', M, 'дзеркало відвалилося'], ['help_adas_s', A2, 'камера запотіла нічого не видно']]) { ok(STRINGS.uk[k].includes(ex), 'Hilfe UK ' + k + ': ' + ex); ok(R.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1282 (Sonde, Blickwinkel „Fahrer diktiert Hupe/Scheibenwischer auf Englisch“): „horn sounds weak“, „no horn“, „hupe ist sehr leise“, „keine hupe“ → Armaturen-Schritte; „wipers are stuck“, „wiper blade came off“, „lost a wiper blade“, „wischerarm ist abgefallen“, „wischer nur noch langsame stufe“ → Sicht-Schritte; „no horn used“, „stuck in traffic“, Reparaturvermerk nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

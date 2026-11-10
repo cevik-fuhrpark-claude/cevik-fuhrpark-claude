@@ -36,6 +36,9 @@ with sync_playwright() as p:
         check(not vis('#mirror') and vis('#glass'),f'{lang}/{w}: „{NO[lang]}“ → nur Glas-Hinweis')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
         check(vis('#mirror'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Hinweis (Backlog 1257)')
+        if lang=='uk':  # Backlog 1283: Diktat UK
+            q.fill('#d','дзеркало відвалилося'); q.wait_for_timeout(100)
+            check(vis('#mirror'),f'{lang}/{w}: Diktat „дзеркало відвалилося“ → Hinweis (Backlog 1283)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#mirror') and not vis('#glass'),f'{lang}/{w}: Hinweis bei Spiegel')
         tx=q.inner_text('#mirror')
