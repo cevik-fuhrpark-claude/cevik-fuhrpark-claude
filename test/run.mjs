@@ -21353,7 +21353,7 @@ await test('Backlog 299 (Blickwinkel „Motorwarnleuchte rot während der Fahrt�
     ok(L.warnlight_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="warnlight" class="panel" hidden role="status">`), 'Panel #warnlight');
-  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx) && !WARNLIGHT2_HINT.test(dfx);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'warnlight', 'nostart'), 'Hilfe-Abschnitt warnlight nach nostart');
 });
 
@@ -37413,6 +37413,20 @@ await test('Backlog 1267 (Sonde, Blickwinkel „Fahrer diktiert Tankkarten-/Tank
   for (const x of ['ec karte an der tankstelle abgelehnt', 'meine karte an der tanke abgelehnt', 'bankkarte an der tankstelle abgelehnt', 'tankkarte pin falsch eingegeben jetzt geht wieder', 'kann nicht tanken zapfsäule kaputt', 'karte an der tankstelle abgelehnt neue karte bekommen', 'credit card declined at the fuel station', 'fuel card pin wrong works again now', 'karte an der tankstelle bezahlt']) ok(!F2.test(recurFix(x)), 'kein Tankkarten-Zusatz: ' + x);
   ok(app.includes("$('#fuelcard').hidden = !FUELCARD_HINT.test(dv) && !FUELCARD2_HINT.test(dv);"), 'Listener');
   ok(/karte an der tanke abgelehnt/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
+});
+
+await test('Backlog 1272 (Sonde, Blickwinkel „Fahrer diktiert Warnleuchte/Display-Meldung ohne Satzzeichen“): „gelbe lampe im display an“, „rotes symbol im cockpit“, „display zeigt werkstatt aufsuchen“, „abgas lampe leuchtet“, „ausrufezeichen leuchtet“, „gelbes dreieck im display“, „schraubenschlüssel symbol an“, EN/UK/RU → Warnleuchten-Schritte; Außenleuchten am Anhänger, Warndreieck als Ausrüstung, „werkstatt aufsuchen“ als Vorhaben, Werkzeug, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const W2 = new RegExp(app.match(/^const WARNLIGHT2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  for (const x of ['ausrufezeichen leuchtet', 'das ausrufezeichen im display', 'exclamation mark on the dash', 'exclamation mark light is on']) { ok(recurFix(x).includes(x.match(/ausrufezeichen|exclamation mark/)[0]), 'Warnsymbol bleibt Wort: ' + x); ok(W2.test(recurFix(x)), 'Warnleuchte nach Diktat-Aufbereitung: ' + x); }
+  for (const x of ['tür kaputt ausrufezeichen', 'reifen platt ausrufezeichen bitte schnell', 'spiegel ab exclamation mark help']) ok(/!/.test(recurFix(x)), 'diktiertes Satzzeichen bleibt: ' + x);
+  for (const x of ['gelbe lampe im display an', 'rotes symbol im cockpit leuchtet', 'im display rote lampe an', 'orange warnung im kombiinstrument', 'display zeigt werkstatt aufsuchen', 'meldung werkstatt aufsuchen', 'werkstatt aufsuchen steht im display', 'abgas lampe leuchtet', 'abgaswarnleuchte an', 'ausrufezeichen leuchtet', 'gelbes dreieck im display', 'schraubenschlüssel symbol an', 'schraubenschlüssel leuchtet', 'amber warning on display', 'exclamation mark on the dash', 'wrench light is on', 'знак оклику горить', 'горить жовтий трикутник', 'горит восклицательный знак', 'гайковий ключ горить']) ok(W2.test(x), 'Warnleuchte: ' + x);
+  for (const x of ['rote lampe am auflieger kaputt', 'gelbe lampe hinten links kaputt', 'rote leuchte am anhänger geht nicht', 'warndreieck fehlt', 'gelbes dreieck vergessen', 'ich muss eine werkstatt aufsuchen', 'schraubenschlüssel fehlt im werkzeug', 'red light at the traffic light', 'gelbe lampe im display repariert', 'ключ загубив']) ok(!W2.test(x), 'kein Warnleuchten-Zusatz: ' + x);
+  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx) && !WARNLIGHT2_HINT.test(dfx);"), 'Listener');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['gelbe lampe im display an', 'display zeigt werkstatt aufsuchen', 'ausrufezeichen leuchtet']], ['uk', ['знак оклику горить', 'горить жовтий трикутник']], ['en', ['amber warning on display', 'exclamation mark on the dash', 'wrench light is on']]]) for (const ex of exs) { ok(STRINGS[l].help_warnlight_s.includes(ex), 'Hilfe-Beispiel ' + l + ': ' + ex); ok(W2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
 
 await test('Backlog 1271 (Sonde, Blickwinkel „Fahrer diktiert Fahrersitz-/Gurtproblem ohne Satzzeichen“): „sitz geht nicht mehr hoch“, „bleibt unten“, „lässt sich nicht hochpumpen“, „sitz zischt“, „rutscht nach hinten“, „sitz kann man nicht nach vorne schieben“, „rückenlehne klappt nach hinten“, „kopfstütze abgebrochen“, „gurt zieht nicht mehr ein“, EN/UK/RU → Sitz-/Gurt-Schritte; Ladungs-/Spanngurt, Bett-Lehne, Armlehne, Sitzheizung, Reparaturvermerk nicht; „Fahrersitz wackelt beim Bremsen“ ist kein Brems-Hinweis', async () => {

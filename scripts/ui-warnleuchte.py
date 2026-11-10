@@ -8,6 +8,7 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Motorwarnleuchte rot während der Fahrt','uk':'Загорівся індикатор двигуна під час руху','en':'Red engine warning light came on while driving'}
+DIK={'de':'ausrufezeichen leuchtet','uk':'горить жовтий трикутник','en':'amber warning on display'}  # Backlog 1272: Diktat ohne Satzzeichen
 NO={'de':'Rückleuchte links defekt','uk':'Задній ліхтар не горить','en':'Tail light broken on the left'}
 HT={'de':'Warnleuchte während der Fahrt (z. B. Motorwarnleuchte rot)','uk':'Попереджувальний індикатор під час руху','en':'Warning light while driving (e.g. red engine warning light)'}
 fails=[]
@@ -38,6 +39,8 @@ with sync_playwright() as p:
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#warnlight').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/warnleuchte-{lang}-{w}.png')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#warnlight'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Warnleuchten-Hinweis')
         q.fill('#d','')
         q.goto(B+'/#/help?s=warnlight'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_warnlight' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')
