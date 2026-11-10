@@ -37507,6 +37507,34 @@ await test('Backlog 1296 (Reserve Start-Modul nach 1295: 45,84 % > 45,8 %): häu
   ok(pct <= 45.7, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 45,7 %)');
 });
 
+await test('Backlog 1298 (Sonde, Blickwinkel „Fahrer diktiert Sattelkupplung/Anhängerkupplung auf Russisch/Ukrainisch“): „рычаг/важіль седла не возвращается/повертається“, „седло разбито“, „люфт в седле/у сідлі“, „стучит седло“, „сідло стукає“, „фаркоп сломан/зламаний“, „сцепка прицепа сломана“, „дышло погнуто“, „прицеп упал с седла“, „не могу зацепить полуприцеп“ → Kuppel-Schritte; „замок седла“ keine Tür-Schritte; Verneinung, Kupplung (Pedal), Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const C = ['COUPLING_HINT', 'COUPLING2_HINT', 'COUPLING3_HINT'].map(rx); const cpl = (x) => C.some((r) => r.test(x));
+  const D = ['DOOR_HINT', 'DOOR2_HINT', 'DOOR3_HINT', 'DOOR4_HINT', 'DOOR5_HINT'].map(rx); const door = (x) => D.some((r) => r.test(x));
+  for (const x of ['рычаг седла не возвращается', 'важіль сідла не повертається', 'седло разбито', 'люфт в седле', 'люфт у сідлі', 'стучит седло', 'седло стучит при торможении', 'сідло стукає', 'фаркоп сломан', 'фаркоп разбит', 'фаркоп зламаний', 'сцепка прицепа сломана', 'дышло прицепа погнуто', 'дишло погнуте', 'прицеп упал с седла', 'не могу зацепить полуприцеп', 'замок седла не закрывается', 'замок сідла не закривається']) ok(cpl(x), 'Kupplung: ' + x);
+  for (const x of ['в седле нет люфта', 'седло не стучит', 'фаркоп не сломан', 'седло стучит, отремонтировали', 'дышло погнуто, заменили', 'сиденье стучит', 'сцепление пробуксовывает', 'седло смазали', 'стук в двигателе', 'люфт в рулевом']) ok(!cpl(x), 'kein Kuppel-Hinweis: ' + x);
+  for (const x of ['замок седла не закрывается', 'замок сідла не закривається']) ok(!door(x), 'keine Tür-Schritte: ' + x);
+  for (const x of ['замок двери не закрывается', 'замок не закривається']) ok(door(x), 'weiterhin Tür: ' + x);
+  ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test(dv) && !COUPLING2_HINT.test(dv) && !COUPLING3_HINT.test(dv);"), 'Listener Kupplung unverändert');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['рычаг седла не возвращается', 'люфт в седле', 'фаркоп сломан']], ['uk', ['важіль сідла не повертається', 'сідло стукає', 'дишло погнуте']], ['en', ['седло разбито', 'прицеп упал с седла']]]) for (const ex of exs) { ok(STRINGS[l].help_coupling_s.includes(ex), 'Hilfe Kupplung ' + l + ': ' + ex); ok(cpl(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
+await test('Backlog 1297 (Sonde, Blickwinkel „Fahrer diktiert Ölverbrauch auf Russisch/Ukrainisch“): „масло уходит/пропало“, „олива йде“, „большой расход масла“, „витрата оливи велика“, „масло ниже минимума“, „не хватает масла“, „уровень масла упал“, „рівень масла впав“, „мотор берет масло“, „долил 2 литра масла“ → Ölstand-Schritte; „масло йде з-під двигуна“ → Leck; Verneinung, Kraftstoff, Ölwechsel, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const O = rx('OILLEVEL_HINT'), K = ['LEAK_HINT', 'LEAK2_HINT', 'LEAK3_HINT'].map(rx); const leak = (x) => K.some((r) => r.test(x));
+  for (const x of ['масло уходит', 'масло пропало', 'олива йде', 'масло йде', 'большой расход масла', 'расход масла большой', 'расход масла вырос', 'великий розхід оливи', 'витрата оливи велика', 'масло ниже минимума', 'масло на минимуме', 'олива нижче мінімуму', 'не хватает масла', 'не вистачає оливи', 'уровень масла упал', 'рівень масла впав', 'мотор берет масло', 'долил 2 литра масла', 'двигун жере масло']) ok(O.test(x), 'Ölstand: ' + x);
+  for (const x of ['масло не уходит', 'расход масла в норме', 'расход топлива большой', 'расход масла больше не', 'замена масла', 'масло поменяли', 'большой расход масла, отремонтировали', 'масло йде з-під двигуна', 'масло уходит из под двигателя']) ok(!O.test(x), 'kein Ölstand-Hinweis: ' + x);
+  for (const x of ['масло йде з-під двигуна', 'масло уходит из под двигателя']) ok(leak(x), 'Leck: ' + x);
+  ok(app.includes("$('#oillevel').hidden = !OILLEVEL_HINT.test(dv);"), 'Listener Ölstand unverändert');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['масло уходит', 'большой расход масла', 'не вистачає оливи']], ['uk', ['олива йде', 'витрата оливи велика', 'масло ниже минимума']], ['en', ['масло уходит', 'рівень масла впав']]]) for (const ex of exs) { ok(STRINGS[l].help_oillevel_s.includes(ex), 'Hilfe Ölstand ' + l + ': ' + ex); ok(O.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1295 (Sonde, Blickwinkel „Fahrer diktiert Bremse/Druckluft auf Russisch/Ukrainisch“): Ausfall („тормоза пропали“, „відмовили гальма“, „нет тормозов“), festgegangen („тормоз прикипел“, „гальмо закисло“, „прицеп не отпускает тормоза“, „колесо клинит“), „тормоза стучат“, „тормозной диск кривой“, „колодки до металла“, „воздух не накачивается“, „пищит давление воздуха“, „горить ABS“ → Bremse; „машина катится на ручнике“ → Feststellbremse; Verneinung, Reparaturvermerk nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

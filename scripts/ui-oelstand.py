@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (30.10.2026, Backlog 704–705, Blickwinkel „Motorölstand zu niedrig / Öl nachgefüllt“): Meldeformular zeigt
 # bei niedrigem Ölstand eigene Schritte (#oillevel), nicht die Undichtigkeits-Schritte;
-# „Hydrauliköl nachgefüllt“ nicht. Hilfe zeigt den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server.
+# „Hydrauliköl nachgefüllt“ nicht. Backlog 1297: Diktat RU/UK („масло уходит“) → Ölstand, „масло йде з-під …“ → Leck. Hilfe zeigt den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server.
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -34,6 +34,9 @@ with sync_playwright() as p:
         if SHOTS: q.locator('#oillevel').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/oelstand-{lang}-{w}.png')
         q.fill('#d','Hydrauliköl nachgefüllt'); q.wait_for_timeout(150)
         check(not vis('#oillevel'),f'{lang}/{w}: Hydrauliköl → kein Hinweis')
+        for dx in ['масло уходит','витрата оливи велика']:  # Backlog 1297: Diktat RU/UK
+            q.fill('#d',dx); q.wait_for_timeout(150); check(vis('#oillevel') and not vis('#leak'),f'{lang}/{w}: Diktat „{dx}“ → Ölstand-Schritte')
+        q.fill('#d','масло йде з-під двигуна'); q.wait_for_timeout(150); check(vis('#leak') and not vis('#oillevel'),f'{lang}/{w}: „масло йде з-під двигуна“ → Leck, nicht Ölstand')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen (Formular)')
         q.fill('#d','')
         q.goto(B+'/#/help'); q.wait_for_timeout(1200)
