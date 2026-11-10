@@ -21372,7 +21372,7 @@ await test('Backlog 300 (Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lk
     ok(L.leak_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="leak" class="panel" hidden role="status">`), 'Panel #leak');
-  ok(app.includes("$('#leak').hidden = !LEAK_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#leak').hidden = !LEAK_HINT.test(dv) && !LEAK2_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'leak', 'warnlight'), 'Hilfe-Abschnitt leak nach warnlight');
 });
 
@@ -37402,6 +37402,17 @@ await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleich
   for (const g of Object.keys(B.GROUPS)) { const t = rd(`app-${g}.js`); if (t.includes('${__RX[')) ok(/^const __RX = \[/m.test(t), `app-${g}.js hat eigene Bausteinliste`); }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
   ok(pct <= 47, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 47 %)');
+});
+
+await test('Backlog 1263 (Sonde, Blickwinkel „Fahrer diktiert Undichtigkeit/Leckage ohne Satzzeichen“): „ölfilter undicht“, „kippzylinder leckt“, „motor ist ölig von unten“, „hinterachse ist nass von öl“, „der lkw tropft“, „da tropft was unterm motor raus“, „grüne flüssigkeit unter dem auto“, „there is oil under the truck“, „під машиною пляма мастила“ → Leck-Schritte; Klima-Kondenswasser, Regen, Waschen, „kein öl“, Reparatur nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const L2 = new RegExp(app.match(/^const LEAK2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['ölfilter undicht', 'ölablassschraube undicht', 'ventildeckel undicht', 'dieselfilter undicht', 'kraftstofffilter tropft', 'kippzylinder leckt', 'hubzylinder verliert öl', 'motor ist ölig von unten', 'der ganze motor ist voller öl', 'hinterachse ist nass von öl', 'der lkw tropft', 'auflieger tropft hinten', 'da tropft was unterm motor raus ich glaube öl', 'irgendwas tropft vorne unten', 'grüne flüssigkeit unter dem auto', 'öl unterm lkw', 'there is oil under the truck', 'under the truck there is a puddle', 'під машиною пляма мастила', 'под машиной пятно']) ok(L2.test(recurFix(x)), 'Leck: ' + x);
+  for (const x of ['klimaanlage tropft unter dem lkw', 'es tropft rein bei regen', 'lkw tropft nach dem waschen', 'kein öl unter dem lkw', 'motor ist nicht ölig', 'ölfilter gewechselt', 'ölfilter undicht wurde getauscht', 'der lkw tropft nicht mehr', 'zylinder 3 fällt aus', 'ich schaue mal unter dem lkw nach', 'ich habe öl unterm arm', 'no oil under the truck', 'під машиною нема плями']) ok(!L2.test(recurFix(x)), 'kein Leck-Zusatz: ' + x);
+  ok(app.includes("$('#leak').hidden = !LEAK_HINT.test(dv) && !LEAK2_HINT.test(dv);"), 'Listener');
+  ok(/motor ist ölig von unten/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
 
 await test('Backlog 1262 (Sonde, Restlücke aus 1260 „Fahrer diktiert Koffer-/Rungenproblem“): „seitenrunge locker“, „mittelrunge geht nicht raus“, „koffer hat ein loch“, „kofferwand loch“, „dach vom auflieger loch“, „latten fehlen“, „slats missing“, „hole in the box body“ → Aufbau-Schritte; Reparatur, „kein Loch“, „mein koffer hat ein loch“ nicht', async () => {

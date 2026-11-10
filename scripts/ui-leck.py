@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 300, Blickwinkel „Fahrer bemerkt Ölspur/Leck unter dem Lkw“): Meldeformular
 # zeigt bei auslaufender Flüssigkeit fünf Schritte (anhalten/Leitung, kein Feuer/Notruf, nicht in Gully – Ölspur melden, Foto/Tropfstelle,
 # Auswahl Fahrbereitschaft); „Öl kontrolliert, Ölwechsel fällig“ zeigt nichts; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# 10.11.2026 (Backlog 1263): zusätzlich Diktat ohne Satzzeichen („motor ist ölig von unten der lkw tropft“, „під машиною пляма мастила“, „there is oil under the truck“).
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -9,6 +10,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Öl tropft unter dem Motor, Ölspur auf dem Hof','uk':'Тече масло з двигуна, калюжа під вантажівкою','en':'Oil leak under the truck, dripping from the engine'}
 NO={'de':'Öl kontrolliert, Ölwechsel fällig','uk':'Заміна масла','en':'Oil checked, oil change due'}
+DIK={'de':'motor ist ölig von unten der lkw tropft','uk':'під машиною пляма мастила','en':'there is oil under the truck'}
 HT={'de':'Ölspur oder Leck unter dem Lkw','uk':'Масляний слід або протікання під вантажівкою','en':'Oil trail or leak under the truck'}
 fails=[]
 def check(c,m):
@@ -34,6 +36,9 @@ with sync_playwright() as p:
         check(not vis('#leak'),f'{lang}/{w}: „{NO[lang]}“ → kein Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#leak'),f'{lang}/{w}: Hinweis bei Leck')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#leak'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Hinweis (Backlog 1263)')
+        q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         tx=q.inner_text('#leak')
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
