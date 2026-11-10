@@ -2,6 +2,7 @@
 # fünf Schritte (Abgasgeruch: anhalten/frische Luft, Notruf, Leitung, Fotos, Auswahl Fahrbereitschaft);
 # „Auspuff laut Rechnung getauscht“ zeigt keinen Abgas-Hinweis; zusammen mit „Unfall“ ist der Unfall-Hinweis offen und der Abgas-Hinweis eingeklappt; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
+# 10.11.2026 (Backlog 1265): zusätzlich Diktat ohne Satzzeichen („auspuff macht krach abgas riecht stark“, „exhaust banging smell of exhaust“).
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -9,6 +10,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Im Fahrerhaus riecht es nach Abgasen','uk':'Запах вихлопу в кабіні','en':'Exhaust fumes in the cab'}
 BOTH={'de':'Unfall, Auspuff jetzt sehr laut','uk':'ДТП, глушник прогорів','en':'Accident, exhaust very loud'}
+DIK={'de':'auspuff macht krach abgas riecht stark','uk':'Запах вихлопу в кабіні','en':'exhaust banging smell of exhaust'}
 NO={'de':'Auspuff laut Rechnung getauscht','uk':'Двері пошкоджені','en':'Exhaust brake noisy'}
 HT={'de':'Auspuff laut oder undicht, Abgase im Fahrerhaus','uk':'Гучний чи негерметичний вихлоп, вихлопні гази в кабіні','en':'Exhaust loud or leaking, fumes in the cab'}
 fails=[]
@@ -35,6 +37,9 @@ with sync_playwright() as p:
         check(not vis('#exhaust') and vis('#hintsum')==False,f'{lang}/{w}: „{NO[lang]}“ → kein Abgas-Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#exhaust'),f'{lang}/{w}: Hinweis bei Abgas/lautem Auspuff')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#exhaust'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Hinweis (Backlog 1265)')
+        q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         tx=q.inner_text('#exhaust')
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')

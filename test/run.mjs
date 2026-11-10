@@ -21891,7 +21891,7 @@ await test('Backlog 325 (Blickwinkel „Auspuff laut oder undicht, Abgase im Fah
     ok(L.exhaust_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="exhaust" class="panel" hidden role="status">`), 'Panel #exhaust');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#exhaust').hidden = !EXHAUST_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#exhaust').hidden = !EXHAUST_HINT.test(dfx) && !EXHAUST2_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('exhaust') && order.indexOf('fire') < order.indexOf('exhaust') && order.indexOf('acc') < order.indexOf('exhaust') && order.indexOf('exhaust') < order.indexOf('flat') && order.indexOf('exhaust') < order.indexOf('loose') && order.indexOf('exhaust') < order.indexOf('engine'), 'Gruppierung: Brand/Unfall vor Abgas vor Reifen/loses Teil/Motor');
   ok(helpAfter(app, 'exhaust', 'dash'), 'Hilfe-Abschnitt exhaust nach dash');
@@ -37402,6 +37402,17 @@ await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleich
   for (const g of Object.keys(B.GROUPS)) { const t = rd(`app-${g}.js`); if (t.includes('${__RX[')) ok(/^const __RX = \[/m.test(t), `app-${g}.js hat eigene Bausteinliste`); }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
   ok(pct <= 47, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 47 %)');
+});
+
+await test('Backlog 1265 (Sonde, Blickwinkel „Fahrer diktiert Auspuff-/Abgasproblem ohne Satzzeichen“): „auspuff macht krach“, „auspuff knallt“, „endtopf klappert“, „abgas riecht stark“, „abgasgeruch“, „exhaust banging“, „exhaust making noise“, „smell of exhaust“ → Abgas-Schritte; Motorbremse, Reparatur, „kein Geruch mehr“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const E2 = new RegExp(app.match(/^const EXHAUST2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['auspuff macht krach', 'auspuff macht komische geräusche', 'auspuff macht lärm', 'auspuff knallt beim gas wegnehmen', 'endtopf klappert', 'schalldämpfer rasselt', 'abgas riecht stark', 'abgasgeruch beim fahren', 'exhaust banging', 'exhaust making noise', 'exhaust fumes smell', 'smell of exhaust']) ok(E2.test(recurFix(x)), 'Abgas: ' + x);
+  for (const x of ['auspuff geschweißt macht keinen krach mehr', 'auspuff knallt nicht mehr', 'kein abgasgeruch', 'exhaust brake making noise', 'exhaust brake banging', 'auspuff getauscht', 'exhaust fixed no longer banging']) ok(!E2.test(recurFix(x)), 'kein Abgas-Zusatz: ' + x);
+  ok(app.includes("$('#exhaust').hidden = !EXHAUST_HINT.test(dfx) && !EXHAUST2_HINT.test(dfx);"), 'Listener');
+  ok(/auspuff macht krach/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
 
 await test('Backlog 1264 (Sonde, Blickwinkel „Fahrer diktiert Kühlaggregat-Störung ohne Satzzeichen“): „aggregat geht immer aus“, „aggregat kühlt nicht runter“, „aggregat vereist“, „läuft nur auf netz“, „display vom aggregat aus“, „stromkabel für aggregat kaputt“, „laderaum wird nicht kalt“, „temperatur schwankt im laderaum“ → Kühlgerät-Schritte; Hydraulik-/Strom-/Klimaaggregat, Reparatur nicht; „temperatur im auflieger zu hoch“ nicht mehr als Sattelkupplung', async () => {
