@@ -9,6 +9,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Standheizung startet nicht','uk':'автономка не працює','en':'Parking heater not working'}
 BOTH={'de':'Unfall, Klimaanlage defekt','uk':'ДТП, кондиціонер не працює','en':'Accident, AC broken'}
+DIK={'de':'klima macht nur warme luft','uk':'кондиціонер дме теплим','en':'vents smell'}
 NO={'de':'Standheizung läuft','uk':'Кондиціонер працює','en':'Air conditioning serviced'}
 HT={'de':'Standheizung oder Klimaanlage im Fahrerhaus ausgefallen','uk':'Автономний обігрівач або кондиціонер у кабіні не працює','en':'Parking heater or cab air conditioning not working'}
 fails=[]
@@ -35,6 +36,9 @@ with sync_playwright() as p:
         check(not vis('#climate') and vis('#hintsum')==False,f'{lang}/{w}: „{NO[lang]}“ → kein Klima-Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#climate'),f'{lang}/{w}: Hinweis bei Standheizung-/Klima-Ausfall')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#climate'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Klima-Hinweis (Backlog 1255)')
+        q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         tx=q.inner_text('#climate')
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')

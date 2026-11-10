@@ -22065,7 +22065,7 @@ await test('Backlog 334 (Blickwinkel „Standheizung oder Klimaanlage im Fahrerh
     ok(L.climate_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="climate" class="panel" hidden role="status">`), 'Panel #climate');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#climate').hidden = !CLIMATE_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('climate') && order.indexOf('fire') < order.indexOf('climate') && order.indexOf('exhaust') < order.indexOf('climate') && order.indexOf('visib') < order.indexOf('climate') && order.indexOf('climate') < order.indexOf('door'), 'Gruppierung: Brand/Abgase/Sicht vor Standheizung/Klima vor Tür');
   ok(helpAfter(app, 'climate', 'toll'), 'Hilfe-Abschnitt climate nach toll');
@@ -27859,7 +27859,7 @@ await test('Backlog 767 (Folge aus 764/766): Klima-/Standheizungs-Hinweis liest 
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
-  ok(hl.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx);"), 'Klima über dfx');
+  ok(hl.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx);"), 'Klima über dfx');
   const m = app.match(/^const CLIMATE_HINT = \/(.+)\/i;(?: \/\/.*)?$/m); ok(m, 'CLIMATE_HINT auf Modulebene'); const r = new RegExp(m[1], 'i');
   const a = app.indexOf('const FIX_WORD'), b = app.indexOf("}).join('');", a) + 12;
   const recurFix = new Function(app.slice(a, b) + '; return recurFix;')();
@@ -37343,6 +37343,16 @@ await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast üb
   ok(app.includes("$('#overload').hidden = !OVERLOAD_HINT.test(dv);") && app.indexOf("$('#overload').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'underrun', 'overload', 'load'"), 'Reihenfolge: vor Ladungssicherung');
   ok(helpAfter(app, 'overload', 'load'), 'Hilfe-Abschnitt nach Ladungssicherung für meldende Rollen');
+});
+
+await test('Backlog 1255 (Sonde, Blickwinkel „Fahrer diktiert Klima-/Lüftungsproblem ohne Satzzeichen“): „Klima macht nur warme Luft“, Gestank aus der Lüftung, Heizung lässt sich nicht abschalten/bläst nur heiß, Klima-Bedienteil/Temperaturregler kaputt, Umluftklappe klemmt, Klimakompressor quietscht, EN „vents smell“, „heater stuck on hot“, UK/RU „кондиціонер дме теплим“ → Klima-Schritte; Reparatur, Kühlkoffer, Lade-/Heckklappe, Druckluftkompressor, Navi-Display nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const C2 = new RegExp(app.match(/^const CLIMATE2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['klima macht nur warme luft', 'aus der lüftung kommt gestank', 'lüftung riecht muffig', 'heizung lässt sich nicht abschalten', 'heizung bläst nur heiß', 'heizung geht nicht mehr aus', 'klima lässt sich nicht einstellen', 'klimabedienteil ausgefallen', 'bedienteil der klima ausgefallen', 'temperaturregler kaputt', 'umluft klappe klemmt', 'lüftungsklappe klappert', 'klima kompressor macht geräusche', 'klimakompressor quietscht', 'vents smell', 'the ac panel is dead', 'a/c compressor noisy', 'heater stuck on hot', 'кондиціонер дме теплим', 'кондиционер дует теплым']) ok(C2.test(recurFix(x)), 'Klima: ' + x);
+  for (const x of ['klima repariert macht wieder kalte luft', 'heizung lässt sich nicht abschalten, behoben', 'lüftung riecht neu', 'display kaputt', 'navi display dunkel', 'klappe vom staufach klemmt', 'ladeklappe klemmt', 'heckklappe klemmt', 'kompressor macht geräusche', 'luftkompressor laut', 'temperatur im kühlkoffer lässt sich nicht einstellen', 'temperatur lässt sich nicht einstellen', 'кондиціонер дме теплим, полагодили']) ok(!C2.test(recurFix(x)), 'kein Klima-Zusatz: ' + x);
+  ok(app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx);"), 'Listener (nach noFixed)');
 });
 
 await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleichlautende Ausschlüsse der Hinweismuster stehen in den erzeugten Modulen nur einmal (`const __RX`), lbRx setzt sie per ${__RX[k]} ein; jeder Ausdruck bleibt Zeichen für Zeichen gleich; Start-Modul ≤ 47 % von app.js', async () => {
