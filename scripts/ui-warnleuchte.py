@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 299, Blickwinkel „Motorwarnleuchte rot während der Fahrt“): Meldeformular
 # zeigt bei einer Warnleuchte fünf Schritte (rot anhalten, gelb klären, Display-Foto, Rauch/Notruf, Auswahl Fahrbereitschaft);
 # „Rückleuchte links defekt“ zeigt nichts; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Backlog 1299: umgangssprachlich RU/UK („загорелась масленка“, „чек горит на панели“, „загорілась температура“) → Hinweis, „масленка не горит“ nicht.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -41,6 +42,9 @@ with sync_playwright() as p:
         if SHOTS: q.locator('#warnlight').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/warnleuchte-{lang}-{w}.png')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
         check(vis('#warnlight'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Warnleuchten-Hinweis')
+        for x in ['загорелась масленка','чек горит на панели','загорілась температура']:
+            q.fill('#d',x); q.wait_for_timeout(100); check(vis('#warnlight'),f'{lang}/{w}: umgangssprachlich „{x}“ → Warnleuchten-Hinweis')
+        q.fill('#d','масленка не горит'); q.wait_for_timeout(100); check(not vis('#warnlight'),f'{lang}/{w}: „масленка не горит“ → kein Hinweis')
         q.fill('#d','')
         q.goto(B+'/#/help?s=warnlight'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_warnlight' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')

@@ -37507,6 +37507,36 @@ await test('Backlog 1296 (Reserve Start-Modul nach 1295: 45,84 % > 45,8 %): häu
   ok(pct <= 45.7, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 45,7 %)');
 });
 
+await test('Backlog 1300 (Folge aus 1299, Blickwinkel „Fahrer mit älterem Handy/Browser“): Lookbehind innerhalb eines negativen Lookaheads (Reparatur-/Reifen-Ausschluss) – Ersatzfassung macht die Alternative unerfüllbar statt den Ausschluss zu verschärfen; die RU/UK-Ausschlüsse „шин/колес/офис“ kommen ohne Lookbehind aus („шипит воздух под машиной“ bleibt Bremse auch auf alten iPhones)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const B = await import('../scripts/build-app.mjs');
+  eq(B.lbFallback('a(?![^.;!?]*(?:fix|(?<![a-z])neu))', true), 'a(?![^.;!?]*(?:fix|(?!)neu))', 'im negativen Lookahead unerfüllbar');
+  eq(B.lbFallback('a(?!x(?!(?<![a-z])y))', true), 'a(?!x(?!y))', 'doppelt verneint: entfällt wie sonst');
+  eq(B.lbFallback('(?<![a-z])a(?=(?<!b)c)', true), '(?:^|[^a-z])a(?=c)', 'positiver Lookahead: entfällt wie sonst');
+  const r = new RegExp(B.lbFallback('kaputt(?![^.;!?]*(?:fix|(?<![a-z])neu))', true));
+  ok(r.test('kaputt erneut') && r.test('kaputt neu') && !r.test('kaputt fix'), 'Ersatz trifft nie weniger');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  eq((app.match(/\(\?!\[\^\.;!\?\]\*\(\?<!\[а-яіїєґё\]\)/g) || []).length, 0, 'RU/UK-Ausschlüsse ohne Lookbehind');
+  const src = app.match(/^const BRAKE_HINT = \/(.+)\/i;$/m)[1];
+  for (const x of ['шипит воздух под машиной', 'повітря шипить під машиною']) { ok(new RegExp(src, 'i').test(x), 'Bremse: ' + x); ok(new RegExp(B.lbFallback(src, true), 'i').test(x), 'Bremse (alte Browser): ' + x); }
+  for (const x of ['шипит воздух в шине', 'шипит воздух у колеса']) { ok(!new RegExp(src, 'i').test(x), 'Reifen, keine Bremse: ' + x); ok(!new RegExp(B.lbFallback(src, true), 'i').test(x), 'Reifen, keine Bremse (alte Browser): ' + x); }
+});
+
+await test('Backlog 1299 (Sonde, Blickwinkel „Fahrer diktiert Warnleuchten umgangssprachlich auf Russisch/Ukrainisch“): „загорелась масленка“, „маслянка блимає“, „чек горит на панели“, „чек енжин горить“, „загорілась температура“, „горит аккумулятор на панели“, „ошибка на приборке“ → Warnleuchten-Schritte; Verneinung, Reparaturvermerk, Außentemperatur, Kassenbon („чек“), Batteriebrand ohne Anzeige nicht; Hilfe DE/UK/EN mit Beispielen', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const W = ['WARNLIGHT_HINT', 'WARNLIGHT2_HINT'].map(rx); const warn = (x) => W.some((r) => r.test(x));
+  for (const x of ['загорелась масленка', 'горит масленка на панели', 'масленка мигает', 'масленка горит красным', 'загорілась маслянка', 'горить маслянка', 'маслянка блимає', 'чек горит на панели', 'чек енжин горить', 'чек двигателя мигает', 'горит температура красным', 'загорілась температура', 'температура двигателя горит', 'горит аккумулятор на панели', 'загорівся акумулятор на панелі', 'вылезла ошибка на приборке', 'помилка на приборці'])
+    ok(warn(x), 'Warnleuchte: ' + x);
+  for (const x of ['масленка не горит', 'не горит масленка', 'чек больше не горит', 'маслянка не горить', 'масленка погасла', 'чек погас после замены датчика', 'чек горит на панели, отремонтировали', 'горит аккумулятор', 'аккумулятор горит дым из под кабины', 'температура на улице минус десять', 'чек с заправки потерял', 'нужно поменять масло масленку купить', 'ошибка в накладной'])
+    ok(!warn(x), 'keine Warnleuchte: ' + x);
+  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx) && !WARNLIGHT2_HINT.test(dfx);"), 'Listener unverändert');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['загорелась масленка', 'чек горит на панели', 'загорілась температура', 'ошибка на приборке']], ['uk', ['загорілась маслянка', 'чек горить', 'загорелась температура', 'горит аккумулятор на панели']], ['en', ['загорелась масленка', 'чек енжин горить', 'горит температура красным']]])
+    for (const ex of exs) { ok(STRINGS[l].help_warnlight_s.includes(ex), 'Hilfe ' + l + ': ' + ex); ok(warn(ex), 'Hilfe-Beispiel löst aus: ' + ex); }
+});
+
 await test('Backlog 1298 (Sonde, Blickwinkel „Fahrer diktiert Sattelkupplung/Anhängerkupplung auf Russisch/Ukrainisch“): „рычаг/важіль седла не возвращается/повертається“, „седло разбито“, „люфт в седле/у сідлі“, „стучит седло“, „сідло стукає“, „фаркоп сломан/зламаний“, „сцепка прицепа сломана“, „дышло погнуто“, „прицеп упал с седла“, „не могу зацепить полуприцеп“ → Kuppel-Schritte; „замок седла“ keine Tür-Schritte; Verneinung, Kupplung (Pedal), Reparaturvermerk nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

@@ -247,7 +247,9 @@ function lazyModule(g, quiet) {
 // nachgebildet; sonst (replace, .source, g) entfällt er – der Ausdruck trifft dann eher mehr (Hinweis öfter), nie weniger.
 // lbFallback: `at` = Position am Anfang einer obersten Alternative (Startpunkt der Suche frei wählbar). Nur dort ist ein Lookbehind exakt
 // nachbildbar (ein Zeichen davor bzw. Textanfang wird mitgelesen – für .test() gleichwertig); sonst entfällt die Bedingung (trifft eher mehr,
-// nie weniger). Kommentare stehen hier außerhalb der Funktionen, weil toString() sie sonst ins Start-Modul übernimmt (Größengrenze 66 %).
+// nie weniger). Backlog 1300: Ein Lookbehind innerhalb eines negativen Lookaheads (z. B. Reparatur-Ausschluss „(?![^.;!?]*(?<![a-z])neu)“)
+// darf nicht einfach entfallen – der Ausschluss griffe dann öfter und der Ausdruck träfe weniger; dort wird die Alternative stattdessen
+// unerfüllbar `(?!)` (Ausschluss greift seltener, Ausdruck trifft eher mehr). Kommentare stehen hier außerhalb der Funktionen, weil toString() sie sonst ins Start-Modul übernimmt (Größengrenze 66 %).
 export function lbRx(src, flags, testOnly) {
   if (lbRx.ok === undefined) { try { lbRx.ok = !!new RegExp('(?<=a)b'); } catch (e) { lbRx.ok = false; } }
   return new RegExp(lbRx.ok ? src : lbFallback(src, !!testOnly), flags);
@@ -259,7 +261,7 @@ export function lbFallback(src, exact) {
     if (/^\\[wdsWDS]$/.test(x)) return '\\' + (x[1] === x[1].toLowerCase() ? x[1].toUpperCase() : x[1].toLowerCase());
     if (x.length === 1 && !/[\\^$.|?*+()[\]{}/]/.test(x)) return '[^' + (x === '-' ? '\\-' : x) + ']';
     return null; };
-  let out = ''; const st = [true]; let at = true;
+  let out = ''; const st = [true], pol = [1]; let at = true;
   for (let i = 0; i < src.length;) {
     const c = src[i];
     if (c === '\\') { out += src.slice(i, i + 2); i += 2; at = false; continue; }
@@ -269,12 +271,12 @@ export function lbFallback(src, exact) {
       if (exact && at) {
         if (src[i + 3] === '=') { out += '(?:' + lbFallback(inner, false) + ')'; at = false; }
         else { const one = negOne(inner); if (one) { out += '(?:^|' + one + ')'; at = false; } }
-      }
+      } else if (pol[pol.length - 1] < 0) out += '(?!)';
       i = e; continue;
     }
     if (c === '(') { const look = src.startsWith('(?=', i) || src.startsWith('(?!', i); const h = look || src.startsWith('(?:', i) ? 3 : src.startsWith('(?<', i) ? src.indexOf('>', i) + 1 - i : 1;
-      st.push(at && !look); out += src.slice(i, i + h); i += h; at = at && !look; continue; }
-    if (c === ')') { st.pop(); out += c; i++; at = false; continue; }
+      st.push(at && !look); pol.push(pol[pol.length - 1] * (src.startsWith('(?!', i) ? -1 : 1)); out += src.slice(i, i + h); i += h; at = at && !look; continue; }
+    if (c === ')') { st.pop(); pol.pop(); out += c; i++; at = false; continue; }
     if (c === '|') { out += c; i++; at = st[st.length - 1]; continue; }
     if (c === '^') { out += c; i++; continue; }
     out += c; i++; at = false;
