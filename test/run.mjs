@@ -22226,10 +22226,10 @@ await test('Backlog 345 (Blickwinkel „Reifen beschädigt, verliert Luft oder i
     const h = L.help_tyre_s; ok(L.help_tyre_t && h && h.includes(L.tyre_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
     ok(L.tyre_hint_title, 'Titel ' + l);
     // die Beispiele im Hilfetext lösen den Hinweis tatsächlich aus
-    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
+    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex) || new RegExp(app.match(/^const TYRE3_HINT = \/(.+)\/i;$/m)[1], 'i').test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
   }
   ok(app.includes(`<div id="tyre" class="panel" hidden role="status">`), 'Panel #tyre');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv))) || bodyWall(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv)) || bodyWall(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('tyre') && order.indexOf('flat') < order.indexOf('tyre') && order.indexOf('tyre') < order.indexOf('wheel') && order.indexOf('tyre') < order.indexOf('brake'), 'Gruppierung: Reifenpanne vor Reifenschaden vor Rad/Bremse');
   ok(helpAfter(app, 'tyre', 'underrun'), 'Hilfe-Abschnitt tyre nach underrun');
@@ -27083,7 +27083,7 @@ await test('Backlog 659–661 (Blickwinkel „Vandalismus über Nacht – Reifen
     ok(S.cp_vandal_hint.includes(S.cp_title), 'Versicherungs-Hinweis nennt den Anzeige-Abschnitt ' + l);
   }
   ok(app.includes('<div id="vandal" class="panel" hidden role="status">'), 'Panel #vandal');
-  ok(app.includes("const theft = THEFT_HINT.test(dv); $('#theft').hidden = !theft; $('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv);"), 'nicht zusätzlich zu Diebstahl/Unfallflucht');
+  ok(app.includes("const theft = THEFT_HINT.test(dv); $('#theft').hidden = !theft; $('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv) || TYRE3_HINT.test(dv);"), 'nicht zusätzlich zu Diebstahl/Unfallflucht');
   ok(app.indexOf("$('#vandal').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun', 'vandal',/.test(app), 'Reihenfolge direkt nach Unfallflucht');
   ok(app.includes("const vandalNoRef = !theftNoRef && !hitrunNoRef && VANDAL_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimvandal'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt');
@@ -32348,7 +32348,7 @@ await test('Backlog 922 (Flurförderzeuge und Kleingeräte sind nicht der Lkw): 
   ok(app.includes("const noAux = (s) => String(s || '').replace(EQUIP_SPAN, ' ◇ ').replace(AUX_UNIT, "), 'noAux wie im Test');
   const eq = new RegExp(eqm[1], 'gi'), aux = new RegExp(axm[1], 'gi');
   const noAux = (x) => String(x || '').replace(eq, ' ◇ ').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));
-  for (const x of ["$('#flat').hidden = !FLAT_HINT.test(noAux(dv));", "$('#wheel').hidden = !WHEEL_HINT.test(noAux(dv));", "$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv))) || bodyWall(dv);"]) ok(app.includes(x), 'im Formular: ' + x);
+  for (const x of ["$('#flat').hidden = !FLAT_HINT.test(noAux(dv));", "$('#wheel').hidden = !WHEEL_HINT.test(noAux(dv));", "$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv)) || bodyWall(dv);"]) ok(app.includes(x), 'im Formular: ' + x);
   const lkw = ['ENGINE_HINT', 'NOSTART_HINT', 'DRYFUEL_HINT', 'BATT_HINT', 'FLAT_HINT', 'TYRE_HINT', 'WHEEL_HINT'].map(g);
   for (const x of ['Hubwagen Reifen platt', 'Ameise Batterie leer', 'Mitnahmestapler Batterie leer', 'Stapler springt nicht an', 'Mitnahmestapler Motor geht aus', 'Stapler Reifen kaputt', 'Sackkarre Reifen platt', 'Taschenlampe Batterie leer', 'Funkgerät Batterie leer', 'Schlüssel Batterie leer', 'Batterie vom Schlüssel leer', 'Fernbedienung Batterie leer']) ok(!lkw.some((r) => r.test(noAux(x))), 'kein Lkw-Hinweis: ' + x);
   ok(lkw[1].test(noAux('Stapler kaputt, Lkw springt nicht an')) && lkw[1].test(noAux('Schlüssel steckt und Batterie leer')) && lkw[1].test(noAux('Lkw Batterie leer')), 'Lkw-Start weiter erkannt');
@@ -37139,7 +37139,7 @@ await test('Backlog 1199 (Sonde Tür auf während der Fahrt/Ladung durch die Wan
   const tyre = (x) => TY.test(x) && !bodyWall(x);
   ok(!tyre('Palette ist umgefallen und hat die Seitenwand beschädigt'), 'Seitenwand bei Ladung ist kein Reifen');
   ok(tyre('Reifen Seitenwand beschädigt') && tyre('Seitenwand vom Reifen beschädigt'), 'Reifen-Seitenwand bleibt Reifen');
-  ok(/\$\('#tyre'\)\.hidden = !\(TYRE_HINT\.test\(noAux\(dv\)\) \|\| TYRE2_HINT\.test\(noAux\(dv\)\)\) \|\| bodyWall\(dv\)/.test(app), 'Reifen-Hinweis nutzt bodyWall');
+  ok(/\$\('#tyre'\)\.hidden = !\(TYRE_HINT\.test\(noAux\(dv\)\) \|\| TYRE2_HINT\.test\(noAux\(dv\)\) \|\| TYRE3_HINT\.test\(dv\)\) \|\| bodyWall\(dv\)/.test(app), 'Reifen-Hinweis nutzt bodyWall');
   for (const R of [DO, LG, LO, FO]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
 });
 
@@ -37322,7 +37322,7 @@ await test('Backlog 1241 (Sonde Einbruch, Blickwinkel „Fahrerhaus aufgebrochen
   for (const x of ['Seitenscheibe eingeschlagen', 'Spiegel eingeschlagen Glas fehlt', 'Lenkung schlägt ein', 'Steinschlag Frontscheibe', 'Tür klemmt', 'side window smashed', 'Scheibe eingeschlagen, Splitter weggefegt']) ok(!T(x), 'kein Diebstahl-Hinweis: ' + x);
   for (const x of ['jemand hat die Scheibe eingeschlagen', 'Unbekannte haben den Lack zerkratzt', 'Täter haben die Tür eingetreten', 'someone smashed the window', 'somebody keyed the door']) ok(V(x), 'Vandalismus-Hinweis: ' + x);
   for (const x of ['Seitenscheibe eingeschlagen', 'Lenkung schlägt ein', 'jemand hat angerufen', 'someone called dispatch']) ok(!V(x), 'kein Vandalismus-Hinweis: ' + x);
-  ok(app.includes("const theft = THEFT_HINT.test(dv);") && app.includes("$('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv);"), 'Diebstahl hat Vorrang vor Vandalismus');
+  ok(app.includes("const theft = THEFT_HINT.test(dv);") && app.includes("$('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv) || TYRE3_HINT.test(dv);"), 'Diebstahl hat Vorrang vor Vandalismus');
 });
 
 await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast überschritten“): Meldeformular zeigt eigene Schritte (nicht losfahren, Leitung klärt Teilentladung/Umladen; nur nach Absprache umverteilen; Wiegeschein fotografieren, Gewicht laut Beleg notieren; „Weiß nicht“); DE/EN/UK/RU; Verneinungen, Überladebrücke, Kupplung und Umladen nicht; Hilfe DE/UK/EN ohne Grenze/Frist', async () => {
@@ -37413,6 +37413,18 @@ await test('Backlog 1267 (Sonde, Blickwinkel „Fahrer diktiert Tankkarten-/Tank
   for (const x of ['ec karte an der tankstelle abgelehnt', 'meine karte an der tanke abgelehnt', 'bankkarte an der tankstelle abgelehnt', 'tankkarte pin falsch eingegeben jetzt geht wieder', 'kann nicht tanken zapfsäule kaputt', 'karte an der tankstelle abgelehnt neue karte bekommen', 'credit card declined at the fuel station', 'fuel card pin wrong works again now', 'karte an der tankstelle bezahlt']) ok(!F2.test(recurFix(x)), 'kein Tankkarten-Zusatz: ' + x);
   ok(app.includes("$('#fuelcard').hidden = !FUELCARD_HINT.test(dv) && !FUELCARD2_HINT.test(dv);"), 'Listener');
   ok(/karte an der tanke abgelehnt/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
+});
+
+await test('Backlog 1275 (Sonde, Blickwinkel „Fahrer diktiert Bordstein-/Felgenschaden ohne Satzzeichen“): „beim abbiegen bordstein mitgenommen felge zerkratzt“, „auf den bordstein gekommen“, „reifen am bordstein aufgeschlitzt“, EN „clipped the curb“, UK/RU „бордюр зачепив диск“ → Reifen-Schritte; Bordsteinschaden ist kein Vandalismus; „bordstein ist hoch“, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const T3 = rx('TYRE3_HINT');
+  for (const x of ['beim abbiegen bordstein mitgenommen felge zerkratzt', 'beim rechtsabbiegen auf den bordstein gekommen', 'reifen am bordstein aufgeschlitzt', 'bordstein gestreift', 'kantstein touchiert reifen vorne rechts', 'über den bordstein drübergefahren', 'clipped the curb rim damaged', 'hit the kerb tyre bulge', 'kerb damage on the steer tyre', 'бордюр зачепив диск', 'зачепив бордюр колесом', 'наехал на бордюр']) ok(T3.test(x), 'Reifen/Bordstein: ' + x);
+  for (const x of ['bordstein ist hoch an der rampe', 'reifen bordstein repariert', 'bordstein gestreift reifen getauscht', 'parked next to the curb', 'бордюр високий']) ok(!T3.test(x), 'kein Bordstein-Zusatz: ' + x);
+  ok(app.includes("|| TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv)) || bodyWall(dv);") && app.includes("$('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv) || TYRE3_HINT.test(dv);"), 'Listener Reifen und Vandalismus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['beim abbiegen bordstein mitgenommen felge zerkratzt', 'auf den bordstein gekommen']], ['uk', ['бордюр зачепив диск']], ['en', ['clipped the curb rim damaged', 'hit the kerb']]]) for (const ex of exs) { ok(STRINGS[l].help_tyre_s.includes(ex), 'Hilfe-Beispiel ' + l + ': ' + ex); ok(T3.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
 
 await test('Backlog 1274 (Sonde, Blickwinkel „Fahrer diktiert Unfall-/Rangierschaden ohne Satzzeichen“): „pkw hat mich beim spurwechsel gestreift“, „ein pkw hat mir die tür abgefahren“, „hat ein lkw meinen auflieger erwischt“, „beim einparken anderen lkw angefahren“, „ist mir in die seite“, EN/UK/RU → Unfall-Schritte; „angefahren und ist weg“ → Unfallflucht; „ins tor gerutscht“, „вдарився в стовп“ → fremde Sache; „an der rampe eingedrückt“ → Schaden beim Kunden; ohne Berührung, eigenes Fahrzeug, Bremsdefekt, Reparaturvermerk nicht', async () => {
@@ -37681,7 +37693,7 @@ await test('Backlog 1248 (Sonde, Blickwinkel „Fahrer diktiert Reifenschaden oh
   for (const x of ['Reifen aufgescheuert, gewechselt', 'Knie aufgescheuert', 'Plane aufgescheuert', 'Laufband löst sich', 'tread replaced']) ok(!T2.test(recurFix(x)), 'kein Reifen-Zusatz: ' + x);
   for (const x of ['Reifen Seitenwand beschädigt', 'Seitenwand vom Reifen beschädigt', 'reifen ist kaputt seitenwand beschaedigt', 'reifen von innen aufgescheuert seitenwand beschaedigt']) ok(!F.test(noTyreWall(recurFix(x))), 'kein Boden-/Aufbau-Hinweis: ' + x);
   for (const x of ['Seitenwand beschädigt', 'Seitenwand vom Auflieger beschädigt', 'reifen platt seitenwand vom auflieger beschaedigt', 'Reifen platt, Seitenwand beschädigt']) ok(F.test(noTyreWall(recurFix(x))), 'Aufbau bleibt: ' + x);
-  ok(app.includes("$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv))) || bodyWall(dv);") && app.includes("$('#floor').hidden = !FLOOR_HINT.test(noTyreWall(dv)) && !FLOOR2_HINT.test(noTyreWall(dv));"), 'Listener');
+  ok(app.includes("$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv)) || bodyWall(dv);") && app.includes("$('#floor').hidden = !FLOOR_HINT.test(noTyreWall(dv)) && !FLOOR2_HINT.test(noTyreWall(dv));"), 'Listener');
 });
 
 await test('Backlog 1247 (Sonde, Blickwinkel „Sattelkupplung beim Ab-/Aufsatteln per Sprachdiktat“): Tippfehler, Fanghorn/Sattelplatte, Defekt „beim Ab-/Aufsatteln“ ohne Satzzeichen, Auflieger runtergefallen/zu niedrig, EN „jaws not locking“/„cant unhook the trailer“, UK/RU „не можу відчепити причіп“ → Kuppel-Schritte; roter/gelber Schlauch, Duomatik, Kupplungskopf → Brems-Schritte; Reparatur, „zu hoch beladen“, „Brücke“ nicht', async () => {
@@ -37745,7 +37757,7 @@ await test('Backlog 1243 (Sonde, Blickwinkel „Alarmanlage geht ständig los“
     ok(S.help_alarm_t && S.help_alarm_s.includes(S.alarm_hint_steps) && S.help_alarm_s.includes(S.nav_new), 'Hilfe ' + l);
   }
   ok(app.includes('<div id="alarm" class="panel" hidden role="status">'), 'Panel #alarm');
-  ok(app.includes("$('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv); $('#alarm').hidden = theft || !ALARM_HINT.test(dv);") && app.indexOf("$('#alarm').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener, Diebstahl hat Vorrang');
+  ok(app.includes("$('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv) || TYRE3_HINT.test(dv); $('#alarm').hidden = theft || !ALARM_HINT.test(dv);") && app.indexOf("$('#alarm').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener, Diebstahl hat Vorrang');
   ok(app.includes("'tow', 'reefer', 'alarm', 'fuel'"), 'Reihenfolge: nach Kühlaggregat');
   ok(helpAfter(app, 'alarm', 'cablock'), 'Hilfe-Abschnitt nach Zentralverriegelung für meldende Rollen');
 });

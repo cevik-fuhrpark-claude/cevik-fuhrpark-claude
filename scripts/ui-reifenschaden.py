@@ -7,6 +7,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
+DIK={'de':'beim abbiegen bordstein mitgenommen felge zerkratzt','uk':'бордюр зачепив диск','en':'clipped the curb rim damaged'}  # Backlog 1275: Bordstein per Diktat
 TXT={'de':'Reifen hinten links hat eine Beule','uk':'цвях у шині','en':'Nail in the tyre, losing air'}
 BOTH={'de':'Unfall, Reifen Seitenwand beschädigt','uk':'ДТП, грижа на шині','en':'Accident, tyre bulge'}
 NO={'de':'Reifen geplatzt','uk':'Спустило колесо','en':'Tyre burst'}
@@ -35,6 +36,11 @@ with sync_playwright() as p:
         check(not vis('#tyre') and vis('#flat'),f'{lang}/{w}: „{NO[lang]}“ → Reifenpanne-, nicht dieser Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#tyre'),f'{lang}/{w}: Hinweis bei beschädigtem Reifen')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#tyre') and not vis('#vandal'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Reifen-Hinweis, kein Vandalismus')
+        q.fill('#d','reifen am bordstein aufgeschlitzt'); q.wait_for_timeout(100)
+        check(vis('#tyre') and not vis('#vandal'),f'{lang}/{w}: „reifen am bordstein aufgeschlitzt“ → kein Vandalismus')
+        q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         tx=q.inner_text('#tyre')
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
