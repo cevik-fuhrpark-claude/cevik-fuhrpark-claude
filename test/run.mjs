@@ -21819,7 +21819,7 @@ await test('Backlog 321 (Blickwinkel „Sicherheitsgurt oder Fahrersitz defekt�
     ok(L.seat_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="seat" class="panel" hidden role="status">`), 'Panel #seat');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh);") /* Backlog 1132, 1164 */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh) && !SEAT2_HINT.test(dsh);") /* Backlog 1132, 1164 */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('seat') && order.indexOf('acc') < order.indexOf('seat') && order.indexOf('steer') < order.indexOf('seat') && order.indexOf('adas') < order.indexOf('seat') && order.indexOf('seat') < order.indexOf('mirror') && order.indexOf('seat') < order.indexOf('door'), 'Gruppierung: Unfall/Lenkung/Assistent vor Gurt/Sitz vor Spiegel/Tür');
   ok(helpAfter(app, 'seat', 'gear'), 'Hilfe-Abschnitt seat nach gear');
@@ -36294,7 +36294,7 @@ await test('Backlog 1132 (Sonde Federung/Sitz): Luftfederung des Fahrer-/Beifahr
   ok(!I.test('Luftfederung hinten links verliert Luft') && !I.test('Fahrersitz verstellt'), 'keine Sitzfederung');
   ok(app.includes('const SEATSUSP_HINT = new RegExp(SEATSUSP_SPANS.source, \'i\');'), 'Prüfmuster ohne g (kein lastIndex)');
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
-  ok(hl.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv)) && !SUSP2_HINT.test(noSeatSusp(dv));") && hl.includes("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh);") /* Backlog 1164 */, 'Meldeformular');
+  ok(hl.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv)) && !SUSP2_HINT.test(noSeatSusp(dv));") && hl.includes("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh) && !SEAT2_HINT.test(dsh);") /* Backlog 1164 */, 'Meldeformular');
 });
 await test('Backlog 1133 (Sonde Glas-Hinweis, Folge aus 760): „Seiten-/Heckscheibe (von innen) beschlagen“ zeigt nur Sicht/Lüftung, keine Glasschaden-Schritte – mit Riss/kaputt im selben Satz weiterhin Glas', async () => {
   const { readFileSync } = await import('node:fs');
@@ -37413,6 +37413,22 @@ await test('Backlog 1267 (Sonde, Blickwinkel „Fahrer diktiert Tankkarten-/Tank
   for (const x of ['ec karte an der tankstelle abgelehnt', 'meine karte an der tanke abgelehnt', 'bankkarte an der tankstelle abgelehnt', 'tankkarte pin falsch eingegeben jetzt geht wieder', 'kann nicht tanken zapfsäule kaputt', 'karte an der tankstelle abgelehnt neue karte bekommen', 'credit card declined at the fuel station', 'fuel card pin wrong works again now', 'karte an der tankstelle bezahlt']) ok(!F2.test(recurFix(x)), 'kein Tankkarten-Zusatz: ' + x);
   ok(app.includes("$('#fuelcard').hidden = !FUELCARD_HINT.test(dv) && !FUELCARD2_HINT.test(dv);"), 'Listener');
   ok(/karte an der tanke abgelehnt/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
+});
+
+await test('Backlog 1271 (Sonde, Blickwinkel „Fahrer diktiert Fahrersitz-/Gurtproblem ohne Satzzeichen“): „sitz geht nicht mehr hoch“, „bleibt unten“, „lässt sich nicht hochpumpen“, „sitz zischt“, „rutscht nach hinten“, „sitz kann man nicht nach vorne schieben“, „rückenlehne klappt nach hinten“, „kopfstütze abgebrochen“, „gurt zieht nicht mehr ein“, EN/UK/RU → Sitz-/Gurt-Schritte; Ladungs-/Spanngurt, Bett-Lehne, Armlehne, Sitzheizung, Reparaturvermerk nicht; „Fahrersitz wackelt beim Bremsen“ ist kein Brems-Hinweis', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const S2 = new RegExp(app.match(/^const SEAT2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  const S1 = new RegExp(app.match(/^const SEAT_HINT = \/(.+)\/i;$/m)[1], 'i');
+  const B2 = new RegExp(app.match(/^const BRAKE2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['fahrersitz geht nicht mehr hoch', 'sitz fährt nicht hoch', 'sitz bleibt unten', 'sitz ist ganz unten und geht nicht hoch', 'fahrersitz lässt sich nicht hochpumpen', 'sitz pumpt nicht mehr', 'sitz zischt', 'fahrersitz rutscht nach hinten', 'mein sitz rutscht immer weg', 'sitz fällt immer runter beim fahren', 'beifahrersitz geht nicht zurück', 'sitz kann man nicht nach vorne schieben', 'sitz kann ich nicht mehr verstellen', 'der sitz ist durch rücken tut weh', 'sitz ist aufgerissen', 'sitzbezug gerissen', 'lehne lässt sich nicht verstellen', 'rückenlehne kaputt', 'rückenlehne klappt nach hinten', 'lehne hält nicht', 'kopfstütze abgebrochen', 'kopfstütze lässt sich nicht verstellen', 'gurt geht nicht rein', 'gurt geht nicht zu', 'gurt zieht nicht mehr ein', 'gurt bleibt hängen', 'seat keeps going down', "seat won't stay up", 'seat slides back by itself', 'seat is stuck in the lowest position', 'backrest falls back', "the seat back won't lock", 'headrest broken off', 'seat belt doesn’t pull out', 'seatbelt keeps locking', 'сидіння сповзає назад', 'спинка не фіксується', 'підголівник відламався', 'пас безпеки не витягується', 'ремінь безпеки не змотується', 'кресло не фиксируется', 'подголовник оторван', 'ремень безопасности не вытягивается']) ok(S2.test(x), 'Sitz/Gurt: ' + x);
+  for (const x of ['spanngurt geht nicht zu', 'gurt von der plane geht nicht zu', 'ladung gurt bleibt hängen', 'gurt zieht nicht ein ratsche kaputt', 'gurt für die ladung klemmt', 'die lehne vom bett ist kaputt', 'armlehne abgebrochen', 'sitzheizung geht nicht', 'seat heater broken', 'sitz ist durch den regen nass', 'ich sitze im lkw und der motor geht nicht', 'sitzung mit dem chef geht nicht', 'rückenlehne repariert', 'sitz geht nicht hoch wurde repariert', 'sitz wieder ok', 'ремень на генератор не натягивается']) ok(!S2.test(x), 'kein Sitz-Zusatz: ' + x);
+  for (const x of ['sitz geht nicht hoch wurde repariert', 'sitz defekt wurde repariert']) ok(!S1.test(x), 'Sitz-Muster: Reparaturvermerk zählt nicht: ' + x);
+  ok(S1.test('sitz defekt') && S1.test('fahrersitz wackelt'), 'Sitz-Muster weiter: Sitz defekt, wackelt');
+  ok(!B2.test('fahrersitz wackelt beim bremsen') && !B2.test('spiegel wackelt beim bremsen') && B2.test('lkw wackelt beim bremsen'), 'Bremse: wackelnder Sitz/Spiegel beim Bremsen nicht, Lkw schon');
+  ok(app.includes("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh) && !SEAT2_HINT.test(dsh);"), 'Listener');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['sitz geht nicht mehr hoch', 'rückenlehne klappt nach hinten', 'kopfstütze abgebrochen', 'gurt zieht nicht mehr ein']], ['uk', ['сидіння сповзає назад', 'спинка не фіксується', 'ремінь безпеки не змотується']], ['en', ['seat keeps going down', 'backrest falls back', 'seat belt doesn’t pull out']]]) for (const ex of exs) { ok(STRINGS[l].help_seat_s.includes(ex), 'Hilfe-Beispiel ' + l + ': ' + ex); ok(S2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
 
 await test('Backlog 1270 (Sonde, Blickwinkel „Fahrer diktiert Anhänger-Elektrik/ABS-Leuchte ohne Satzzeichen“): „anhänger hat kein strom“, „kein strom am anhänger“, „trailer has no power“, „причіп без світла“ → Licht-Schritte; „abs anhänger leuchte an“, „abs kabel auflieger ab“, „anhänger zieht schief“, „trailer pulls to the left“, „шланг до причепа травить“ → Brems-Schritte; „ABS-Leuchte vom Anhänger brennt“ ist kein Brand; Reparaturvermerk, Tankstelle/Fahrerhaus ohne Strom, Lkw zieht nach rechts nicht', async () => {

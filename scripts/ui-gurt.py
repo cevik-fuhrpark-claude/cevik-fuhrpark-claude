@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 321, Blickwinkel „Sicherheitsgurt oder Fahrersitz defekt“): Meldeformular zeigt
 # fünf Schritte (nicht ohne Gurt, Sitz nicht sicher, Leitung/nicht reparieren, Fotos/Seite, Auswahl Fahrbereitschaft);
 # „Spanngurt gerissen“ zeigt keinen Gurt-Hinweis; zusammen mit „Unfall“ ist der Unfall-Hinweis offen und der Gurt-Hinweis eingeklappt; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Backlog 1271: zusätzlich ein Diktat-Satz ohne Satzzeichen je Sprache.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -9,6 +10,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Sicherheitsgurt rastet nicht ein','uk':'Сидіння зламане','en':'Seat belt won’t latch'}
 BOTH={'de':'Unfall, Fahrersitz wackelt jetzt','uk':'ДТП, сидіння зламане','en':'Accident, seat belt torn'}
+DIK={'de':'sitz geht nicht mehr hoch','uk':'сидіння сповзає назад','en':'seat keeps going down'}  # Backlog 1271: Diktat ohne Satzzeichen
 NO={'de':'Spanngurt gerissen','uk':'Двері пошкоджені','en':'Reefer unit fault'}
 HT={'de':'Sicherheitsgurt oder Fahrersitz defekt','uk':'Несправний ремінь безпеки або сидіння водія','en':'Seat belt or driver’s seat faulty'}
 fails=[]
@@ -40,6 +42,8 @@ with sync_playwright() as p:
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#seat').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/gurt-{lang}-{w}.png')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#seat'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Sitz-Hinweis')
         q.fill('#d',BOTH[lang]); q.wait_for_timeout(100)
         check(vis('#seat') and vis('#acc') and q.evaluate("!document.querySelector('#acc ul').hidden && document.querySelector('#seat ul').hidden"),f'{lang}/{w}: mit Unfall zusammen → Unfall offen, Gurt eingeklappt')
         q.fill('#d','')
