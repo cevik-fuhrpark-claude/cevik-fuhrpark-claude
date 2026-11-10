@@ -21467,7 +21467,7 @@ await test('Backlog 305 (Blickwinkel „Plane des Aufliegers gerissen, Ladung na
     ok(L.tarp_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="tarp" class="panel" hidden role="status">`), 'Panel #tarp');
-  ok(app.includes("$('#tarp').hidden = !TARP_HINT.test(dck);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#tarp').hidden = !TARP_HINT.test(dck) && !TARP2_HINT.test(dck);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'tarp', 'brake'), 'Hilfe-Abschnitt tarp nach brake');
 });
 
@@ -27573,7 +27573,7 @@ await test('Backlog 784 (Sonde Reparaturvermerk Lenkung/Plane): Lenkungs- und Pl
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
   const cabkit = new RegExp(g('CABKIT_HINT').source, 'gi'); ok(app.includes("const CABKIT_SPANS = new RegExp(CABKIT_HINT.source, 'gi');"), 'noCabkit wie im Test');
   const noCabkit = (x) => String(x || '').replace(cabkit, ' ');
-  ok(app.includes("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv);") && app.includes("$('#tarp').hidden = !TARP_HINT.test(dck);"), 'Hinweise prüfen dv bzw. dck');
+  ok(app.includes("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv);") && app.includes("$('#tarp').hidden = !TARP_HINT.test(dck) && !TARP2_HINT.test(dck);"), 'Hinweise prüfen dv bzw. dck');
   const T = {
     STEER_HINT: [(x) => recurFix(x), ['Lenkung geht schwer', 'Lenkung hat Spiel', 'Кермо туго повертається', 'Руль тянет влево', 'steering heavy', 'Lenkung hat Spiel, muss repariert werden', 'кермо трясеться, після ремонту знову, хоча замінили'],
       ['Lenkung geht schwer, repariert', 'Lenkung hat Spiel, Spurstange getauscht', 'steering heavy, fixed', 'Кермо туго повертається, відремонтували', 'Руль тянет влево, отремонтировали']],
@@ -37402,6 +37402,17 @@ await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleich
   for (const g of Object.keys(B.GROUPS)) { const t = rd(`app-${g}.js`); if (t.includes('${__RX[')) ok(/^const __RX = \[/m.test(t), `app-${g}.js hat eigene Bausteinliste`); }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
   ok(pct <= 47, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 47 %)');
+});
+
+await test('Backlog 1260 (Sonde, Blickwinkel „Fahrer diktiert Planen-/Aufbauproblem ohne Satzzeichen“): „plane hat ein riss hinten links“, „plane hängt durch“, „lässt sich nicht spannen“, Spanner/Ratsche der Plane, Wasser durch die Plane, „regnet rein im Auflieger“, Hubdach/Schiebedach am Auflieger, Zollseil, Spriegel, EN/UK/RU → Planen-Schritte; „ich plane“, Reparatur, Fahrerhaus-Schiebedach, „kein Riss“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const T2 = new RegExp(app.match(/^const TARP2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['plane hat ein riss hinten links', 'seitenplane hat mehrere löcher', 'plane lässt sich nicht spannen', 'plane hängt durch', 'seitenplane hängt raus', 'seitenplane abgerissen', 'plane reißt', 'spanner von der plane gebrochen', 'plane ratsche geht nicht', 'wasser kommt durch die plane', 'es regnet rein im auflieger', 'schiebedach vom auflieger klemmt', 'hubdach geht nicht hoch', 'hubdach hängt', 'dach geht nicht hoch beim auflieger', 'zollseil fehlt', 'spriegel fehlt', 'side curtain hanging out', 'curtain is sagging', 'water coming through the tarp', 'hole in the curtain', 'customs cord missing', 'тент не закрывается', 'тент провис', 'митний трос обірваний']) ok(T2.test(recurFix(x)), 'Plane: ' + x);
+  for (const x of ['ich plane hängt davon ab', 'wir plane reißt uns', 'ich plane die tour morgen', 'plane gespannt alles ok', 'plane geflickt hat keinen riss mehr', 'plane hat keinen riss', 'plane hängt durch, repariert', 'plane hängt zum trocknen raus', 'es regnet draußen stark', 'es regnet rein ins fahrerhaus', 'schiebedach im fahrerhaus klemmt', 'dach klemmt', 'dachluke klemmt', 'zollseil eingezogen', 'spriegel gerade', 'curtain closed', 'curtain fixed', 'water coming through the roof of the cab', 'plane ist dicht', 'hubdach repariert geht wieder']) ok(!T2.test(recurFix(x)), 'kein Planen-Zusatz: ' + x);
+  ok(app.includes("$('#tarp').hidden = !TARP_HINT.test(dck) && !TARP2_HINT.test(dck);"), 'Listener');
+  ok(/plane hat ein riss hinten links/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
 
 await test('Backlog 1259 (Sonde, Blickwinkel „Fahrer diktiert Elektrik-/Batterieproblem ohne Satzzeichen“): Bordspannung zu niedrig/schwankt, Spannungswandler, „Elektrik/Elektronik spinnt/fällt aus“, „alles Elektrische fällt aus“, „blown fuse“, „electrics playing up“, „електрика глючить“, „напряжение падает“ → Elektrik-Schritte; Gurt-/Planenspannung, Reparatur, „Elektriker kommt“ nicht', async () => {

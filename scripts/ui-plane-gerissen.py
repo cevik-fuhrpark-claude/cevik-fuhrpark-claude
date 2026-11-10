@@ -8,6 +8,7 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Plane links eingerissen, Ware nass','uk':'Тент порваний, вантаж намок','en':'Curtain torn on the left, goods are wet'}
+DIKT={'de':'plane hat ein riss hinten links hubdach geht nicht hoch','uk':'тент провис митний трос обірваний','en':'side curtain hanging out water coming through the tarp'}  # Backlog 1260
 NO={'de':'Werkstatttermin planen','uk':'Тент новий','en':'sheet metal damaged'}
 HT={'de':'Plane des Aufliegers gerissen, Ladung nass','uk':'Порвався тент напівпричепа, вантаж мокрий','en':'Trailer curtain torn, load wet'}
 fails=[]
@@ -38,6 +39,9 @@ with sync_playwright() as p:
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#tarp').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/plane-{lang}-{w}.png')
+        q.fill('#d',''); q.wait_for_timeout(100)
+        q.fill('#d',DIKT[lang]); q.wait_for_timeout(100)
+        check(vis('#tarp'),f'{lang}/{w}: Diktat ohne Satzzeichen „{DIKT[lang]}“ → Hinweis (Backlog 1260)')
         q.fill('#d','')
         q.goto(B+'/#/help?s=tarp'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_tarp' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')
