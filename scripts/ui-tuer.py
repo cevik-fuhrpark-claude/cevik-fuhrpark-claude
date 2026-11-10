@@ -10,6 +10,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
 DIK={'de':'fahrer tür schliest nicht','uk':'задні двері не зачиняються','en':'door flies open while driving'}
 TXT={'de':'Hecktür am Auflieger schließt nicht','uk':'Задні двері не закриваються','en':'Rear door on the trailer won\'t close'}
 BOTH={'de':'Unfall, Seitentür klemmt','uk':'ДТП, двері не закриваються','en':'Accident, side door stuck'}
+DIK3={'de':'heckportal verbogen portaltür klemmt','uk':'рольставня заклинила','en':'rear portal bent roller shutter jammed'}  # Backlog 1261
 NO={'de':'Tür eingedrückt','uk':'Двері пошкоджені','en':'Door dented'}
 HT={'de':'Tür, Hecktür oder Ladebordwand schließt nicht','uk':'Двері, задні двері чи гідроборт не закриваються','en':'Door, rear door or tail lift will not close'}
 fails=[]
@@ -37,6 +38,8 @@ with sync_playwright() as p:
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
         check(vis('#door'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Tür-Hinweis (Backlog 1256)')
+        q.fill('#d',DIK3[lang]); q.wait_for_timeout(100)
+        check(vis('#door'),f'{lang}/{w}: Diktat „{DIK3[lang]}“ → Tür-Hinweis (Backlog 1261)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#door'),f'{lang}/{w}: Hinweis bei nicht schließender Tür')
         tx=q.inner_text('#door')
