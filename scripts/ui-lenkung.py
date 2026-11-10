@@ -9,6 +9,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Lkw schwimmt auf der Autobahn','uk':'Кермо гуляє','en':'Truck wanders on the motorway'}
 BOTH={'de':'Unfall, Lkw zieht nach links','uk':'ДТП, тягне вправо','en':'Accident, steering is very heavy'}
+DIK={'de':'servopumpe heult und lenkrad steht schief','uk':'насос гідропідсилювача гуде','en':'power steering pump whining'}
 NO={'de':'Lenkzeit überschritten','uk':'Двері пошкоджені','en':'Steering committee meeting'}
 HT={'de':'Lenkung schwergängig, mit Spiel oder Lkw zieht zur Seite','uk':'Кермо туго повертається, має люфт або вантажівку тягне вбік','en':'Steering heavy, with play or truck pulling to one side'}
 fails=[]
@@ -39,6 +40,8 @@ with sync_playwright() as p:
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#steer').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/lenkung-{lang}-{w}.png')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#steer'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Lenkungs-Hinweis (Backlog 1253)')
         q.fill('#d',BOTH[lang]); q.wait_for_timeout(100)
         check(vis('#steer') and vis('#acc') and q.evaluate("!document.querySelector('#acc ul').hidden && document.querySelector('#steer ul').hidden"),f'{lang}/{w}: mit Unfall zusammen → Unfall offen, Lenkung eingeklappt')
         q.fill('#d','')

@@ -308,8 +308,50 @@ export function lookbehindSafe(code, full = code) {
   }
   out += code.slice(last);
   if (LB_RE.test(tokens(out).filter((t) => t.t === 'r').map((t) => out.slice(t.s, t.e)).join('\n'))) throw new Error('build-app: Lookbehind-Literal übrig');
-  // Helfer hinter die Kopfzeilen (Funktionsdeklarationen werden ohnehin vorgezogen)
-  return { code: out.replace(/\n\n/, '\n' + LB_HELPER + '\n'), n, testOnly };
+  const dd = dedupeLooks(out);
+  // Helfer hinter die Kopfzeilen (Funktionsdeklarationen werden ohnehin vorgezogen; die Bausteinliste __RX steht vor dem ersten lbRx-Aufruf)
+  return { code: dd.code.replace(/\n\n/, '\n' + LB_HELPER + dd.def + '\n'), n, testOnly, shared: dd.n };
+}
+
+// Backlog 1254 (Reserve Start-Modul, 10.11.2026): Die Hinweismuster enthalten hunderte gleichlautende Ausschlüsse als negative Vorschau
+// (meist der Reparaturvermerk `(?![^.;!?]*(?:repariert|…))`, je 200–400 Zeichen). In den erzeugten Modulen steht jeder mehrfach
+// vorkommende Ausschluss (≥ RX_MIN Zeichen) nur noch einmal in `const __RX = [String.raw`…`, …]`; die lbRx-Quelle setzt ihn per
+// `${__RX[k]}` ein (String.raw übernimmt den Text unverändert). Der Build prüft, dass jeder Ausdruck danach Zeichen für Zeichen der
+// Quelle entspricht (Test „Backlog 794“ vergleicht zusätzlich jedes Literal mit app.js). Nur Ausdrücke mit Lookbehind (lbRx) – reine
+// Regex-Literale bleiben unverändert.
+const RX_MIN = 60;
+function rxGroups(body) {
+  const classEnd = (i) => { for (let j = i + 1; j < body.length; j++) { if (body[j] === '\\') j++; else if (body[j] === ']') return j + 1; } return body.length; };
+  const groupEnd = (i) => { let d = 0; for (let j = i; j < body.length; j++) { const c = body[j]; if (c === '\\') j++; else if (c === '[') j = classEnd(j) - 1; else if (c === '(') d++; else if (c === ')' && --d === 0) return j + 1; } return -1; };
+  const res = [];
+  for (let i = 0; i < body.length;) {
+    const c = body[i];
+    if (c === '\\') { i += 2; continue; }
+    if (c === '[') { i = classEnd(i); continue; }
+    if (body.startsWith('(?!', i)) { const e = groupEnd(i); if (e > 0 && e - i >= RX_MIN) { res.push([i, e]); i = e; continue; } }
+    i++;
+  }
+  return res;
+}
+const RX_CALL = /lbRx\(String\.raw`((?:[^`\\]|\\.)*)`/g;
+export function expandRx(code) {
+  const m = /^const __RX = \[(.*)\];$/m.exec(code); if (!m) return code;
+  const parts = [...m[1].matchAll(/String\.raw`((?:[^`\\]|\\.)*)`/g)].map((x) => x[1]);
+  return code.replace(m[0], '').replace(/\$\{__RX\[(\d+)\]\}/g, (_, k) => parts[+k]);
+}
+export function dedupeLooks(code) {
+  const calls = [...code.matchAll(RX_CALL)], count = new Map();
+  for (const c of calls) for (const [a, e] of rxGroups(c[1])) { const g = c[1].slice(a, e); count.set(g, (count.get(g) || 0) + 1); }
+  const idx = new Map(); for (const [g, k] of count) if (k > 1 && !g.includes('`') && !g.includes('${')) idx.set(g, idx.size);
+  if (!idx.size) return { code, def: '', n: 0 };
+  const out = code.replace(RX_CALL, (all, body) => {
+    let b = '', last = 0;
+    for (const [a, e] of rxGroups(body)) { const g = body.slice(a, e); if (idx.has(g)) { b += body.slice(last, a) + '${__RX[' + idx.get(g) + ']}'; last = e; } }
+    return 'lbRx(String.raw`' + b + body.slice(last) + '`';
+  });
+  const def = 'const __RX = [' + [...idx.keys()].map((g) => 'String.raw`' + g + '`').join(', ') + '];\n';
+  if (expandRx(def + out).slice(1) !== code) throw new Error('build-app: Bausteinliste __RX verändert einen Ausdruck');
+  return { code: out, def, n: idx.size };
 }
 
 // Backlog 1213 (Reserve Start-Modul, 09.11.2026): Kommentare stehen nur in der Quelle app.js – die erzeugten Module enthalten sie nicht

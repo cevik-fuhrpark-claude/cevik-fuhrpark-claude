@@ -21715,7 +21715,7 @@ await test('Backlog 316 (Blickwinkel „Lenkung schwergängig, hat Spiel oder Lk
     ok(L.steer_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="steer" class="panel" hidden role="status">`), 'Panel #steer');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#steer').hidden = !STEER_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('steer') && order.indexOf('acc') < order.indexOf('steer') && order.indexOf('flat') < order.indexOf('steer') && order.indexOf('brake') < order.indexOf('steer') && order.indexOf('steer') < order.indexOf('warnlight') && order.indexOf('steer') < order.indexOf('adas'), 'Gruppierung: Unfall/Reifen/Bremse vor Lenkung vor Warnleuchte/Assistent');
   ok(helpAfter(app, 'steer', 'adas'), 'Hilfe-Abschnitt steer nach adas');
@@ -27572,7 +27572,7 @@ await test('Backlog 784 (Sonde Reparaturvermerk Lenkung/Plane): Lenkungs- und Pl
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
   const cabkit = new RegExp(g('CABKIT_HINT').source, 'gi'); ok(app.includes("const CABKIT_SPANS = new RegExp(CABKIT_HINT.source, 'gi');"), 'noCabkit wie im Test');
   const noCabkit = (x) => String(x || '').replace(cabkit, ' ');
-  ok(app.includes("$('#steer').hidden = !STEER_HINT.test(dv);") && app.includes("$('#tarp').hidden = !TARP_HINT.test(dck);"), 'Hinweise prüfen dv bzw. dck');
+  ok(app.includes("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv);") && app.includes("$('#tarp').hidden = !TARP_HINT.test(dck);"), 'Hinweise prüfen dv bzw. dck');
   const T = {
     STEER_HINT: [(x) => recurFix(x), ['Lenkung geht schwer', 'Lenkung hat Spiel', 'Кермо туго повертається', 'Руль тянет влево', 'steering heavy', 'Lenkung hat Spiel, muss repariert werden', 'кермо трясеться, після ремонту знову, хоча замінили'],
       ['Lenkung geht schwer, repariert', 'Lenkung hat Spiel, Spurstange getauscht', 'steering heavy, fixed', 'Кермо туго повертається, відремонтували', 'Руль тянет влево, отремонтировали']],
@@ -28839,7 +28839,11 @@ await test('Backlog 794 (Blickwinkel „Fahrer mit älterem Handy/Browser“): k
   ok(/^function lbRx\(src, flags, testOnly\) \{/m.test(main) && /^function lbFallback\(src, exact\) \{/m.test(main), 'Helfer im Start-Modul');
   const calls = [...main.matchAll(/lbRx\(String\.raw`((?:[^`\\]|\\.)*)`, '([a-z]*)'(, 1)?\)/g)];
   eq(calls.length, srcLits.length, 'jedes Literal ersetzt');
-  for (const [i, m] of calls.entries()) eq(`/${m[1]}/${m[2]}`, srcLits[i], `Ausdruck ${i} unverändert`);
+  // Backlog 1254: gemeinsame Ausschlüsse stehen einmal in __RX und werden per ${__RX[k]} eingesetzt – wie im Browser auswerten
+  const rxDef = (main.match(/^const __RX = \[.*\];$/m) || [''])[0]; ok(rxDef, 'Bausteinliste __RX im Start-Modul');
+  const RX = new Function(rxDef + '; return __RX;')();
+  for (const [i, m] of calls.entries()) eq(`/${new Function('__RX', 'return String.raw`' + m[1] + '`;')(RX)}/${m[2]}`, srcLits[i], `Ausdruck ${i} unverändert`);
+  ok(calls.filter((m) => m[1].includes('${__RX[')).length >= 50 && RX.length >= 50, 'Ausschlüsse werden geteilt (' + RX.length + ' Bausteine)');
   // Einzelfälle der Ersatzfassung
   eq(B.lbFallback('(?<![a-zäöüß-])fahrrad', true), '(?:^|[^a-zäöüß-])fahrrad', 'Anfang exakt');
   eq(B.lbFallback('foo|(?<![^a-z])bar|(?<!\\w)baz', true), 'foo|(?:^|[a-z])bar|(?:^|\\W)baz', 'jede oberste Alternative');
@@ -37339,6 +37343,34 @@ await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast üb
   ok(app.includes("$('#overload').hidden = !OVERLOAD_HINT.test(dv);") && app.indexOf("$('#overload').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'underrun', 'overload', 'load'"), 'Reihenfolge: vor Ladungssicherung');
   ok(helpAfter(app, 'overload', 'load'), 'Hilfe-Abschnitt nach Ladungssicherung für meldende Rollen');
+});
+
+await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleichlautende Ausschlüsse der Hinweismuster stehen in den erzeugten Modulen nur einmal (`const __RX`), lbRx setzt sie per ${__RX[k]} ein; jeder Ausdruck bleibt Zeichen für Zeichen gleich; Start-Modul ≤ 47 % von app.js', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const B = await import('../scripts/build-app.mjs');
+  const ex = '(?![^.;!?]*(?:repariert|erneuert|getauscht|ersetzt|behoben|fixed|repaired))';
+  const code = "x\nconst A = lbRx(String.raw`(?<![a-z])lenkung\\s+schwer" + ex + "`, 'i', 1);\nconst B2 = lbRx(String.raw`(?<![a-z])bremse" + ex + "|[(?!x)]`, 'i', 1);\nconst C = lbRx(String.raw`(?<![a-z])kurz(?!\\s+ok)`, 'i');\n";
+  const d = B.dedupeLooks(code);
+  eq(d.n, 1, 'ein gemeinsamer Baustein'); ok(d.def.startsWith('const __RX = [String.raw`(?![^.;!?]*(?:repariert'), 'Bausteinliste: ' + d.def);
+  ok(d.code.includes('schwer${__RX[0]}`') && d.code.includes('bremse${__RX[0]}|[(?!x)]`') && d.code.includes('kurz(?!\\s+ok)`'), 'Einsetzen nur bei mehrfachen, langen Ausschlüssen: ' + d.code);
+  eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich');
+  const RX = new Function(d.def + 'return __RX;')(); const lb = (src, f) => src; const A = new Function('lbRx', '__RX', d.code.replace(/^x$/m, '') + 'return [A, B2, C];')((s) => s, RX);
+  eq(A[0], '(?<![a-z])lenkung\\s+schwer' + ex, 'String.raw setzt den Text unverändert ein');
+  eq(B.dedupeLooks('const A = 1;\n').n, 0, 'ohne lbRx unverändert');
+  const main = rd('app-main.js'); ok(/^const __RX = \[String\.raw`/m.test(main) && main.indexOf('const __RX = [') < main.indexOf('lbRx(String.raw`'), 'Bausteinliste vor dem ersten Ausdruck');
+  for (const g of Object.keys(B.GROUPS)) { const t = rd(`app-${g}.js`); if (t.includes('${__RX[')) ok(/^const __RX = \[/m.test(t), `app-${g}.js hat eigene Bausteinliste`); }
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
+  ok(pct <= 47, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 47 %)');
+});
+
+await test('Backlog 1253 (Sonde, Blickwinkel „Fahrer diktiert Lenkungsproblem ohne Satzzeichen“): „zieht stark nach links“, „Lenkrad steht schräg“, Servoöl verliert, Servopumpe heult, „knackt beim Einlenken“, „Lenkung geht nicht zurück“, Achsschenkel, Spur verstellt, Lenkachse lenkt nicht, Lenkungs-/Lenkradleuchte, „muss ständig gegenlenken“, EN/UK/RU → Lenkungs-Schritte; Seitenwind, Reparatur, Spurwechsel, „läuft schief“, Ausweichen vor Wild nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const S2 = new RegExp(app.match(/^const STEER2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['zieht stark nach links beim fahren', 'lenkrad steht schräg', 'lenkrad nicht gerade', 'servolenkungsöl verliert', 'servoöl läuft aus', 'lenkgetriebe undicht', 'servoöl leer', 'servopumpe heult', 'servopumpe macht geräusche', 'es knackt beim lenken', 'beim einschlagen knarzt es', 'lenkung klappert', 'lenkung ruckelt', 'lenkung geht nicht zurück', 'lenkrad geht nicht zurück in die mitte', 'lenkung ist tot geht nicht mehr', 'achsschenkel ausgeschlagen', 'achsschenkelbolzen spiel', 'spur stimmt nicht', 'spur ist verstellt', 'achsvermessung nötig', 'reifen fahren innen ab wegen spur', 'nachlaufachse lenkt nicht', 'lenkachse lenkt nicht mit', 'lenkachse warnung', 'lenkungswarnung im display', 'gelbe lenkungsleuchte an', 'lenkradsymbol leuchtet rot', 'fährt schräg', 'lkw fährt schief', 'muss ständig gegenlenken', 'muss dauernd nachlenken', 'lenkung reagiert spät', 'lenkung ist weg', 'steering wheel not straight', 'truck pulls left', 'power steering fluid leaking', 'power steering pump whining', 'steering wheel wont return', 'clunk when turning the wheel', 'steering warning light on', 'alignment is off', 'have to keep correcting the steering', 'тече гідропідсилювач', 'насос гідропідсилювача гуде', 'стукає при повороті керма', 'помилка рульового управління', 'течет гидроусилитель', 'стучит при повороте руля', 'ошибка рулевого управления']) ok(S2.test(recurFix(x)), 'Lenkung: ' + x);
+  for (const x of ['seitenwind zieht nach rechts', 'der wind zieht stark nach links', 'lenkung repariert zieht nicht mehr nach links', 'lenkrad ist nicht gerade sauber', 'servoöl nachgefüllt alles ok', 'servopumpe getauscht heult nicht mehr', 'spur eingestellt', 'spur wechseln', 'fahrspur gesperrt', 'achsvermessung gemacht', 'pulled left into the yard', 'i was pulling left into the lane', 'truck pulls to the right, fixed', 'wheel alignment fine', 'es läuft alles schief heute', 'die tour läuft schief', 'lenkachse ok', 'ich musste stark bremsen und gegenlenken wegen reh', 'beim lenken alles normal', 'power steering fluid topped up', 'keep correcting the invoice', 'кермо відремонтували', 'помилка в накладній', 'стук в двері', 'lenkrad steht gerade']) ok(!S2.test(recurFix(x)), 'kein Lenkungs-Zusatz: ' + x);
+  ok(app.includes("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv);"), 'Listener');
 });
 
 await test('Backlog 1252 (Sonde, Blickwinkel „Fahrer diktiert Bremsproblem ohne Satzzeichen“): „Bremsscheibe glüht“, „Bremsbelege sind unten“, Belagverschleißanzeige, „ruckelt/flattert beim Bremsen“, „zischt an der Bremse“, „dauert ewig bis Druck da ist“, „ABS-Leuchte an“, „trailer brake not releasing“, „причіп не розгальмовується“ → Brems-Schritte; Reparatur, Feststellbremse, Reifenluft, ABS-Lampe „geht nach dem Start aus“ nicht', async () => {
