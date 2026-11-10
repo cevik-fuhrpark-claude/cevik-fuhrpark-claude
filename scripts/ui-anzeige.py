@@ -7,6 +7,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
+DIK={'de':'hupe ist sehr leise','uk':'клаксон не работает','en':'no horn at all'}  # Backlog 1282
 TXT={'de':'Kombiinstrument ausgefallen','uk':'Панель приладів не працює','en':'Horn doesn’t work'}
 BOTH={'de':'Unfall, Display jetzt schwarz','uk':'ДТП, дисплей погас','en':'Accident, dashboard dead'}
 NO={'de':'Spanngurt gerissen','uk':'Двері пошкоджені','en':'Phone screen broken'}
@@ -34,6 +35,10 @@ with sync_playwright() as p:
         q.fill('#d',NO[lang]); q.wait_for_timeout(100)
         check(not vis('#dash'),  # Backlog 1155: „Spanngurt gerissen“ zeigt jetzt Ladung + Ladungssicherungsmittel (Sammelzeile erlaubt)
               f'{lang}/{w}: „{NO[lang]}“ → kein Anzeige-Hinweis')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#dash'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Hinweis (Backlog 1282)')
+        q.fill('#d','no horn used'); q.wait_for_timeout(100)
+        check(not vis('#dash'),f'{lang}/{w}: „no horn used“ → kein Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#dash'),f'{lang}/{w}: Hinweis bei ausgefallener Anzeige/Hupe')
         tx=q.inner_text('#dash')

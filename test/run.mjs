@@ -37434,6 +37434,19 @@ await test('Backlog 1277 (Reserve Start-Modul nach 1276: 46,96 % ≤ 47 %): hund
   ok(pct <= 46, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 46 %)');
 });
 
+await test('Backlog 1282 (Sonde, Blickwinkel „Fahrer diktiert Hupe/Scheibenwischer auf Englisch“): „horn sounds weak“, „no horn“, „hupe ist sehr leise“, „keine hupe“ → Armaturen-Schritte; „wipers are stuck“, „wiper blade came off“, „lost a wiper blade“, „wischerarm ist abgefallen“, „wischer nur noch langsame stufe“ → Sicht-Schritte; „no horn used“, „stuck in traffic“, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const D = rx('DASH_HINT'), V2 = rx('VISIB2_HINT');
+  for (const x of ['horn sounds weak', 'horn is very weak', 'no horn', 'no horn at all', 'lost the horn', 'hupe ist sehr leise', 'hupe krächzt nur noch', 'keine hupe']) ok(D.test(x), 'Hupe: ' + x);
+  for (const x of ['no horn used', 'horn sounds weak fixed now', 'keine hupe benutzt', 'hupe ist leise wurde repariert', 'thorn in the tyre']) ok(!D.test(x), 'kein Hupen-Hinweis: ' + x);
+  for (const x of ['wipers are stuck', 'wipers stuck', 'wiper blade came off', 'wiper arm fell off', 'lost a wiper blade on the motorway', 'wischerarm ist abgefallen', 'wischer klemmt', 'wischer nur noch langsame stufe', 'wischer nur schnelle stufe']) ok(V2.test(x), 'Wischer: ' + x);
+  for (const x of ['wipers stuck in traffic for an hour', 'wischer nur schnelle stufe wurde repariert', 'wiper blade came off but fixed now']) ok(!V2.test(x), 'kein Wischer-Zusatz: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, k, R, exs] of [['de', 'help_dash_s', D, ['Hupe ist sehr leise', 'keine Hupe']], ['en', 'help_dash_s', D, ['horn sounds weak', 'no horn']], ['de', 'help_visib_s', V2, ['Wischerarm ist abgefallen', 'Wischer nur noch langsame Stufe']], ['en', 'help_visib_s', V2, ['wipers are stuck', 'wiper blade came off', 'lost a wiper blade']]]) for (const ex of exs) { ok(STRINGS[l][k].includes(ex), 'Hilfe ' + k + ' ' + l + ': ' + ex); ok(R.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1281 (Sonde, Blickwinkel „Fahrer diktiert Kraftstoff/Tank leer/Diesel vergessen ohne Satzzeichen“): „lkw ist trocken gefahren“, „hab vergessen zu tanken jetzt steht er“, „forgot to fill up now stuck“, „забыл заправиться заглох“ → Kraftstoff-ausgegangen-Schritte (nur mit Stillstand); „злили соляру“ → Diebstahl; „адблю закінчився“ → Motor; Verneinungen, „bin trocken gefahren“, „злили масло“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
