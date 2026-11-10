@@ -21579,7 +21579,7 @@ await test('Backlog 310 (Blickwinkel „Beleuchtung am Lkw/Auflieger ausgefallen
     ok(L.lights_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="lights" class="panel" hidden role="status">`), 'Panel #lights');
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck); $('#door')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck); $('#door')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('lights') && order.indexOf('mirror') < order.indexOf('lights') && order.indexOf('lights') < order.indexOf('glass'), 'Gruppierung: Unfall/Spiegel vor Licht vor Glas');
   ok(helpAfter(app, 'lights', 'coupling'), 'Hilfe-Abschnitt lights nach coupling');
@@ -27624,7 +27624,7 @@ await test('Backlog 781 (Sonde Beleuchtung UK/RU „зламалась/злам�
   const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
   const t = (x) => noFixed(recurFix(x));
   const run = (T) => { for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(t(x)), n + ': ' + x); for (const x of neg) ok(!r.test(t(x)), n + ' nicht: ' + x); } };
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck);"), 'Licht-Hinweis weiter ohne noFixed (eigener Reparaturvermerk-Ausschluss)');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck);"), 'Licht-Hinweis weiter ohne noFixed (eigener Reparaturvermerk-Ausschluss)');
   const r = g('LIGHTS_HINT');
   for (const x of ['фара зламалась', 'ліхтар зламався', 'стоп-сигнал зламався', 'поворотник зламався', 'фара сломалась', 'фара не світить', 'Scheinwerfer kaputt', 'headlight broken', 'фара знову не світить, хоча замінили']) ok(r.test(recurFix(x)), 'LIGHTS_HINT: ' + x);
   for (const x of ['фара зламалась, замінили', 'фара розбита, замінили', 'фара не світить, замінили', 'не світить фара, замінили лампочку', 'фара сломалась, заменили', 'Scheinwerfer kaputt, getauscht']) ok(!r.test(recurFix(x)), 'LIGHTS_HINT nicht: ' + x);
@@ -37449,6 +37449,18 @@ await test('Backlog 1288 (Reserve Start-Modul nach 1287: 46,09 % > 46 %): die h�
   ok(pct <= 45.8, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 45,8 %)');
 });
 
+await test('Backlog 1291 (Sonde, Blickwinkel „Fahrer diktiert Licht/Beleuchtung auf Russisch/Ukrainisch“): „перегорела лампочка“, „фара/фонарь треснул(а)“, „фара запітніла“, „вода в фаре“, „фара плохо светит“, „свет тусклый“, „поворотник часто моргает“, „не працює поворот“, „номер не подсвечивается“, „не горят противотуманки“, „неисправность освещения“ → Licht-Schritte; Verneinung, Straßen-Abbiegung, Reparaturvermerk, andere Wörter nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const L4 = rx('LIGHTS4_HINT'), L1 = rx('LIGHTS_HINT'), L2 = rx('LIGHTS2_HINT'), L3 = rx('LIGHTS3_HINT');
+  for (const x of ['перегорела лампочка', 'перегоріла лампочка', 'перегорела лампа ближнего света', 'фонарь треснул', 'фара треснула', 'фара тріснула', 'задній ліхтар тріснув', 'фара запітніла', 'вода в фаре', 'вода у фарі', 'конденсат внутри фары', 'фара плохо светит', 'ближний очень слабо светит', 'свет тусклый', 'світло тьмяне', 'левый поворотник часто моргает', 'поворотник швидко блимає', 'не працює поворот', 'не работает правый поворот', 'не работает поворот на прицепе', 'номер не подсвечивается', 'номерний знак не підсвічується', 'не горят противотуманки', 'не горить протитуманка', 'горит лампа неисправности освещения', 'помилка зовнішнього світла']) ok(L4.test(x), 'Licht: ' + x);
+  for (const x of ['фара не треснула', 'фара треснула, заменили', 'лампочка перегорела, отремонтировали', 'не работает поворот на развязке', 'поворот налево не работает', 'не працює поворот праворуч', 'фарш', 'вода в баке', 'свет в порядке', 'перегорел предохранитель', 'свет тусклый больше не', 'номер не тот']) ok(!L4.test(x), 'kein Licht-Zusatz: ' + x);
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck);"), 'Listener Licht');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['фара треснула', 'вода у фарі', 'поворотник часто моргает']], ['uk', ['перегоріла лампочка', 'фара тріснула', 'світло тьмяне', 'не працює поворот']], ['en', ['перегорела лампочка', 'номер не подсвечивается']]]) for (const ex of exs) { ok(STRINGS[l].help_lights_s.includes(ex), 'Hilfe Licht ' + l + ': ' + ex); ok(L1.test(ex) || L2.test(ex) || L3.test(ex) || L4.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1290 (Sonde, Blickwinkel „Fahrer diktiert Lenkung auf Russisch/Ukrainisch“): „руль не возвращается“, „машина гуляє по дорозі“, „руль гудит/стучит“, „стук в рулевой“, „стукіт у кермі“, „наконечник рулевой тяги стучит“, „лампа рулевого управления“, „Lenkung brummt/klopft“, „Lenkrad geht nicht von selbst zurück“ → Lenkungs-Schritte; Verneinung, andere Bauteile, Reparaturvermerk nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -37722,7 +37734,7 @@ await test('Backlog 1270 (Sonde, Blickwinkel „Fahrer diktiert Anhänger-Elektr
   for (const x of ['abs anhänger leuchte repariert', 'abs kabel getauscht geht wieder', 'lkw zieht nach rechts', 'anhänger angekuppelt', 'trailer pulls fine', 'trailer pulls to the left fixed']) ok(!B3.test(x), 'kein Brems-Zusatz: ' + x);
   for (const x of ['abs leuchte vom anhänger brennt', 'lampe am auflieger brennt', 'leuchte vom anhänger brennt nicht']) ok(!FIRE.test(noLampBurn(x)), 'kein Brand: ' + x);
   for (const x of ['anhänger brennt', 'ladung vom anhänger brennt', 'kabel am auflieger brennt']) ok(FIRE.test(noLampBurn(x)), 'Brand bleibt: ' + x);
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck);"), 'Listener Licht');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck);"), 'Listener Licht');
   ok(app.includes("&& !BRAKE2_HINT.test(noParkbrake(dv)) && !BRAKE3_HINT.test(dv) && !BRAKE4_HINT.test(noParkbrake(dv));"), 'Listener Bremse');
   ok(app.includes("$('#fire').hidden = !FIRE_HINT.test(noLampBurn(dv));"), 'Listener Brand');
   const { STRINGS } = await import('../public/i18n.js');
@@ -37903,7 +37915,7 @@ await test('Backlog 1249 (Sonde, Blickwinkel „Fahrer diktiert Lichtausfall ohn
   const L2 = new RegExp(app.match(/^const LIGHTS2_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['am anhaenger geht garnix mit licht', 'Licht geht gar nicht', 'licht am auflieger geht ueberhaupt nicht', 'Glühbirne kaputt', 'Birnen kaputt am Rücklicht']) ok(L2.test(recurFix(x)), 'Licht: ' + x);
   for (const x of ['Lichtmaschine geht gar nicht', 'Warnlicht geht gar nicht aus', 'Birne gewechselt', 'Licht geht gar nicht, repariert', 'Licht geht']) ok(!L2.test(recurFix(x)), 'kein Licht-Zusatz: ' + x);
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck);"), 'Listener prüft nach noCabkit (Innenbeleuchtung bleibt bei Fahrerhaus-Ausstattung)');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck);"), 'Listener prüft nach noCabkit (Innenbeleuchtung bleibt bei Fahrerhaus-Ausstattung)');
 });
 
 await test('Backlog 1248 (Sonde, Blickwinkel „Fahrer diktiert Reifenschaden ohne Satzzeichen“): Reifen/Flanke aufgescheuert, „Laufläche löst sich“ (Tippfehler), EN „tread separating/coming off“ → Reifen-Schritte; „Reifen Seitenwand beschädigt“ zeigt keinen Aufbau-/Boden-Hinweis mehr, „Seitenwand vom Auflieger beschädigt“ schon; Reparatur, „Knie/Plane aufgescheuert“ nicht', async () => {

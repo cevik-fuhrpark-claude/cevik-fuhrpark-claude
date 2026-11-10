@@ -13,6 +13,7 @@ BOTH={'de':'Unfall, Scheinwerfer kaputt','uk':'ДТП, фара не світи�
 NO={'de':'Licht im Laderaum ist an','uk':'Світло в кабіні увімкнене','en':'Lights are fine'}
 HT={'de':'Licht am Lkw oder Auflieger ausgefallen','uk':'Не працює світло на тягачі чи напівпричепі','en':'Lights on the truck or trailer not working'}
 DIKTAT={'de':'anhänger hat kein strom','uk':'причіп без світла','en':'trailer has no power'}  # Backlog 1270: Diktat ohne Satzzeichen
+DIK2={'de':['фара треснула'],'uk':['перегоріла лампочка','фара тріснула','світло тьмяне','не працює поворот'],'en':['номер не подсвечивается']}  # Backlog 1291: Diktat RU/UK
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -45,6 +46,7 @@ with sync_playwright() as p:
         check(vis('#lights') and vis('#acc') and q.evaluate("!document.querySelector('#acc ul').hidden && document.querySelector('#lights ul').hidden"),f'{lang}/{w}: mit Unfall zusammen → Unfall offen, Licht eingeklappt')
         q.fill('#d',DIKTAT[lang]); q.wait_for_timeout(100)
         check(vis('#lights'),f'{lang}/{w}: Diktat „{DIKTAT[lang]}“ → Hinweis')
+        for dk in DIK2[lang]: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#lights'),f'{lang}/{w}: Diktat „{dk}“ → Licht-Hinweis (Backlog 1291)')
         q.fill('#d','')
         q.goto(B+'/#/help?s=lights'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_lights' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')
