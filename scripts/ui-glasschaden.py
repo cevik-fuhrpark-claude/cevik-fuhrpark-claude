@@ -30,6 +30,8 @@ with sync_playwright() as p:
         q.goto(B+'/#/new'); q.wait_for_selector('#f #d',timeout=15000)
         vis=lambda sel: q.evaluate(f"!document.querySelector('{sel}').hidden")
         check(not vis('#glass'),f'{lang}/{w}: anfangs kein Hinweis')
+        for dk in ['камень в лобовое прилетел', 'камінь прилетів у лобове']: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#glass'),f'{lang}/{w}: Diktat „{dk}“ → Hinweis (Backlog 1294)')
+        for dk in ['камень в лобовое прилетел, стекло заменили']: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#glass'),f'{lang}/{w}: „{dk}“ → kein Hinweis (Backlog 1294)')
         q.fill('#d',NEG[lang]); q.wait_for_timeout(100)
         check(not vis('#glass'),f'{lang}/{w}: „{NEG[lang]}“ ohne Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)

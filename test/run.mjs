@@ -21536,7 +21536,7 @@ await test('Backlog 308 (Blickwinkel „Spiegel abgefahren“): Meldeformular ze
     ok(L.mirror_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="mirror" class="panel" hidden role="status">`), 'Panel #mirror');
-  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test(dfx) && !MIRROR2_HINT.test(dfx); $('#coupling')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test(dfx) && !MIRROR2_HINT.test(dfx) && !MIRROR3_HINT.test(dfx); $('#coupling')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('mirror') && order.indexOf('mirror') < order.indexOf('glass'), 'Gruppierung: Unfall vor Spiegel vor Glas');
   ok(helpAfter(app, 'mirror', 'load'), 'Hilfe-Abschnitt mirror nach load');
@@ -21646,7 +21646,7 @@ await test('Backlog 313 (Blickwinkel „Heizung/Gebläse/Scheibenwischer fällt 
     ok(L.visib_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="visib" class="panel" hidden role="status">`), 'Panel #visib');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !HEAT_HINT.test(dsh);") /* Backlog 1164: dsh = noSeatHeat(dfx) */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !VISIB3_HINT.test(dsh) && !HEAT_HINT.test(dsh);") /* Backlog 1164: dsh = noSeatHeat(dfx) */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('visib') && order.indexOf('acc') < order.indexOf('visib') && order.indexOf('visib') < order.indexOf('glass') && order.indexOf('visib') < order.indexOf('nostart'), 'Gruppierung: Unfall vor Sicht vor Glasschaden/springt nicht an (beschlagene Windschutzscheibe zeigt Sicht offen, Glas eingeklappt)');
   ok(helpAfter(app, 'visib', 'stuck'), 'Hilfe-Abschnitt visib nach stuck');
@@ -22090,7 +22090,7 @@ await test('Backlog 335 (Blickwinkel „Fensterheber defekt – Seitenscheibe ge
     ok(L.window_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="window" class="panel" hidden role="status">`), 'Panel #window');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#window').hidden = !WINDOW_HINT.test(dfx) && !WINDOW2_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#window').hidden = !WINDOW_HINT.test(dfx) && !WINDOW2_HINT.test(dfx) && !WINDOW3_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('window') && order.indexOf('door') < order.indexOf('window') && order.indexOf('window') < order.indexOf('theft') && order.indexOf('window') < order.indexOf('glass'), 'Gruppierung: Tür vor Fenster vor Diebstahl/Glas');
   ok(helpAfter(app, 'window', 'climate'), 'Hilfe-Abschnitt window nach climate');
@@ -37385,7 +37385,7 @@ await test('Backlog 1257 (Sonde, Blickwinkel „Fahrer diktiert Spiegel-/Scheibe
   for (const x of ['düsen spritzen nicht', 'adblue düse verstopft', 'wischwasser nachgefüllt', 'wischerblätter gewechselt', 'wischer bleibt in der mitte stehen, repariert', 'waschpumpe defekt, getauscht', 'wipers replaced', 'scheibe sauber gemacht', 'spiegel von innen gesehen alles ok', 'fahrzeug bleibt stehen']) ok(!V2.test(recurFix(x)), 'kein Sicht-Zusatz: ' + x);
   for (const x of ['spiegel zittert', 'spiegel vibriert stark', 'mirror shaking at speed', 'зеркало трясется']) ok(!VIB.test(x), 'keine Vibration: ' + x);
   for (const x of ['lkw vibriert stark', 'lenkrad zittert', 'truck shaking at speed']) ok(VIB.test(x), 'Vibration bleibt: ' + x);
-  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test(dfx) && !MIRROR2_HINT.test(dfx);") && app.includes("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !HEAT_HINT.test(dsh);"), 'Listener (nach noFixed)');
+  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test(dfx) && !MIRROR2_HINT.test(dfx) && !MIRROR3_HINT.test(dfx);") && app.includes("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !VISIB3_HINT.test(dsh) && !HEAT_HINT.test(dsh);"), 'Listener (nach noFixed)');
 });
 
 await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleichlautende Ausschlüsse der Hinweismuster stehen in den erzeugten Modulen nur einmal (`const __RX`), lbRx setzt sie per ${__RX[k]} ein; jeder Ausdruck bleibt Zeichen für Zeichen gleich; Start-Modul ≤ 47 % von app.js', async () => {
@@ -37465,6 +37465,30 @@ await test('Backlog 1293 (Sonde, Blickwinkel „Fahrer diktiert Tür/Schloss auf
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['дверь открывается на ходу', 'ручка двери оторвалась', 'штанга запора заклинила']], ['uk', ['двері провисли', 'двері погано закриваються', 'ручка дверей відвалилася']], ['en', ['дверь не захлопывается', 'двері відчиняються на ходу']]]) for (const ex of exs) { ok(STRINGS[l].help_door_s.includes(ex), 'Hilfe Tür ' + l + ': ' + ex); ok(door(ex), 'Hilfe-Beispiel löst Tür-Hinweis aus: ' + ex); }
   for (const [l, exs] of [['de', ['центральный замок не закрывает', 'двери не блокируются']], ['uk', ['центральний замок не закриває', 'двері не блокуються', 'кабіна не замикається']], ['en', ['брелок не открывает машину', 'кабина не закрывается на ключ']]]) for (const ex of exs) { ok(STRINGS[l].help_cablock_s.includes(ex), 'Hilfe Abschließen ' + l + ': ' + ex); ok(cab(ex), 'Hilfe-Beispiel löst Abschließen-Hinweis aus: ' + ex); }
+});
+
+await test('Backlog 1294 (Sonde, Blickwinkel „Fahrer diktiert Fenster/Spiegel/Scheibenwischer auf Russisch/Ukrainisch“): „зеркало разбилось/отломилось/погнулось“, „дзеркало розбилося/відламалося“ → Spiegel; „дворники остановились“, „не брызгает вода на стекло“, „нет воды в омывателе“, „зеркало запотевает“ → Sicht; „склопідіймач не працює“, „окно не открывается“ → Fenster; „камень в лобовое прилетел“ → Glas; Büro/Bad/Programm, Verneinung, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const mirror = any(['MIRROR_HINT', 'MIRROR2_HINT', 'MIRROR3_HINT']), visib = any(['VISIB_HINT', 'VISIB2_HINT', 'VISIB3_HINT']), win = any(['WINDOW_HINT', 'WINDOW2_HINT', 'WINDOW3_HINT']), glass = any(['GLASS_HINT']);
+  const M3 = rx('MIRROR3_HINT'), V3 = rx('VISIB3_HINT'), W3 = rx('WINDOW3_HINT');
+  for (const x of ['зеркало разбилось', 'зеркало отломилось', 'зеркало погнулось', 'зеркало вырвало', 'правое зеркало вырвало', 'снесли зеркало', 'дзеркало розбилося', 'дзеркало відламалося']) ok(M3.test(x), 'Spiegel: ' + x);
+  for (const x of ['дворники остановились', 'двірники зупинилися', 'дворник встал посередине стекла', 'не брызгает вода на стекло', 'не бризкає на скло', 'нет воды в омывателе', 'зеркало запотевает', 'дзеркало запотіває']) ok(V3.test(x), 'Sicht: ' + x);
+  for (const x of ['склопідіймач не працює', 'окно не открывается', 'вікно не відкривається', 'вікно не відчиняється', 'окно водителя не опускается']) ok(W3.test(x), 'Fenster: ' + x);
+  for (const x of ['камень в лобовое прилетел', 'камінь прилетів у лобове', 'в лобовое попал камень', 'камень прилетел в стекло']) ok(glass(x), 'Glas: ' + x);
+  for (const x of ['зеркало не разбилось', 'зеркало разбилось, заменили', 'в туалете зеркало разбилось', 'зеркало в офисе разбилось', 'зеркало отрегулировал']) ok(!M3.test(x), 'kein Spiegel-Zusatz: ' + x);
+  for (const x of ['дворники поменял', 'дворники не остановились', 'дворники остановились, отремонтировали', 'зеркало не запотевает']) ok(!V3.test(x), 'kein Sicht-Zusatz: ' + x);
+  for (const x of ['окно в приложении не открывается', 'окно в офисе не открывается', 'на складе окно не открывается', 'склад не открывается', 'склопідіймач не працює, полагодили']) ok(!W3.test(x), 'kein Fenster-Zusatz: ' + x);
+  for (const x of ['камень в лобовое прилетел, стекло заменили', 'уровень масла в норме']) ok(!glass(x), 'kein Glas-Hinweis: ' + x);
+  ok(app.includes("&& !MIRROR3_HINT.test(dfx);") && app.includes("&& !VISIB3_HINT.test(dsh) && !HEAT_HINT.test(dsh);") && app.includes("&& !WINDOW3_HINT.test(dfx);"), 'Listener Spiegel/Sicht/Fenster');
+  const { STRINGS } = await import('../public/i18n.js');
+  const H = [['help_mirror_s', mirror, { de: ['зеркало разбилось', 'зеркало отломилось'], uk: ['дзеркало розбилося', 'дзеркало відламалося'], en: ['зеркало погнулось', 'дзеркало розбилося'] }],
+    ['help_visib_s', visib, { de: ['дворники остановились', 'не брызгает вода на стекло'], uk: ['двірники зупинилися', 'не бризкає на скло', 'дзеркало запотіває'], en: ['нет воды в омывателе', 'зеркало запотевает'] }],
+    ['help_window_s', win, { de: ['окно не открывается'], uk: ['склопідіймач не працює', 'вікно не відчиняється'], en: ['окно не открывается', 'вікно не відкривається'] }],
+    ['help_glass_s', glass, { de: ['камень в лобовое прилетел'], uk: ['камінь прилетів у лобове'], en: ['в лобовое попал камень'] }]];
+  for (const [k, f, by] of H) for (const l of ['de', 'uk', 'en']) for (const ex of by[l]) { ok(STRINGS[l][k].includes(ex), k + ' ' + l + ': ' + ex); ok(f(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
 
 await test('Backlog 1292 (Sonde, Blickwinkel „Fahrer diktiert Undichtigkeit/Leckage auf Russisch/Ukrainisch“): „шланг/патрубок лопнул/потек/тече“, „радиатор потек“, „масло на колесе/диске“, „капает под мотором“, „капає з-під двигуна“ → Leck-Schritte; Luft-/Bremsschlauch, Dusche, Verneinung („сальник/масло/радиатор не течет“), Reparaturvermerk nicht', async () => {
@@ -37647,7 +37671,7 @@ await test('Backlog 1279 (Sonde, Blickwinkel „Fahrer diktiert Fenster/Fensterh
   const W2 = rx('WINDOW2_HINT');
   for (const x of ['fenster ist runtergefallen', 'seitenscheibe ist in die tür gefallen', 'fenster fährt von alleine runter', 'beifahrerfenster geht immer wieder runter', 'fenster geht nur halb hoch', 'fenster schalter geht nicht', 'fensterschalter defekt', 'electric window broken', 'power window not working', 'passenger window not going down', 'drivers window goes down by itself', 'window only goes halfway', 'вікно впало в двері', 'окно упало в дверь', 'скло провалилося в двері']) ok(W2.test(x), 'Fenster: ' + x);
   for (const x of ['fenster geputzt', 'fenster ist offen', 'handy ist runtergefallen', 'fenster runtergefallen wurde repariert', 'fenster geht nur halb hoch fensterheber getauscht', 'power window fixed', 'window cleaned', 'broken window', 'ключ упал в дверь']) ok(!W2.test(x), 'kein Fenster-Zusatz: ' + x);
-  ok(app.includes("$('#window').hidden = !WINDOW_HINT.test(dfx) && !WINDOW2_HINT.test(dfx);"), 'Listener Fenster (nach noFixed)');
+  ok(app.includes("$('#window').hidden = !WINDOW_HINT.test(dfx) && !WINDOW2_HINT.test(dfx) && !WINDOW3_HINT.test(dfx);"), 'Listener Fenster (nach noFixed)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['Fenster ist in die Tür gefallen', 'Fenster fährt von alleine runter', 'Fensterschalter geht nicht']], ['uk', ['вікно впало в двері']], ['en', ['window only goes halfway', 'passenger window not going down']]]) for (const ex of exs) { ok(STRINGS[l].help_window_s.includes(ex), 'Hilfe Fenster ' + l + ': ' + ex); ok(W2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
@@ -37675,7 +37699,7 @@ await test('Backlog 1276 (Sonde, Blickwinkel „Fahrer diktiert Heizung/Standhei
   for (const x of ['heizung macht nur kalte luft wurde repariert', 'sitzheizung bleibt kalt', 'heizung an batterie schwach', 'kühlbox bleibt kalt', 'motor wird nicht warm', 'blower weak but fixed now', 'scheibe taut nicht ab heizung getauscht']) ok(!H.test(x), 'kein Heizungs-Zusatz: ' + x);
   for (const x of ['standheizung geht nach paar minuten wieder aus', 'webasto schaltet sich nach 5 min ab', 'standheizung geht immer wieder aus', 'parking heater keeps shutting off', 'night heater kept cutting out', 'автономка вимикається через хвилину', 'автономка тухнет']) ok(C3.test(x), 'Standheizung schaltet ab: ' + x);
   for (const x of ['standheizung geht an', 'standheizung geht wieder aus wurde repariert', 'parking heater keeps the cab warm', 'автономка працює']) ok(!C3.test(x), 'kein Standheizungs-Zusatz: ' + x);
-  ok(app.includes("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !HEAT_HINT.test(dsh);") && app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx);"), 'Listener Sicht (nach noSeatHeat) und Klima (nach noFixed)');
+  ok(app.includes("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !VISIB3_HINT.test(dsh) && !HEAT_HINT.test(dsh);") && app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx);"), 'Listener Sicht (nach noSeatHeat) und Klima (nach noFixed)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['Heizung macht nur kalte Luft', 'in der Kabine wird es nicht warm', 'Gebläse geht gar nicht']], ['uk', ['вентилятор пічки не крутиться', 'пічка дме холодним']], ['en', ['heater only blows cold', 'blower is weak', 'cab isn’t warming up']]]) for (const ex of exs) { ok(STRINGS[l].help_visib_s.includes(ex), 'Hilfe Sicht ' + l + ': ' + ex); ok(H.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
   for (const [l, ex] of [['de', 'Standheizung geht nach ein paar Minuten wieder aus'], ['uk', 'автономка вимикається через хвилину'], ['en', 'parking heater keeps shutting off']]) { ok(STRINGS[l].help_climate_s.includes(ex), 'Hilfe Klima ' + l + ': ' + ex); ok(C3.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
