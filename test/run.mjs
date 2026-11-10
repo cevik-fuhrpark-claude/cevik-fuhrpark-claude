@@ -21334,7 +21334,7 @@ await test('Backlog 298 (Blickwinkel „Lkw springt morgens bei Kälte nicht an�
     ok(STRINGS[l].nostart_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="nostart" class="panel" hidden role="status">`), 'Panel #nostart');
-  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx));"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx)) && !NOSTART2_HINT.test(noAux(dfx));"), 'Hinweis abhängig von der Beschreibung');
   ok(app.includes("'flat', 'roadchk', 'nostart', "), 'Hilfe-Abschnitt nostart nach roadchk');
 });
 
@@ -21739,7 +21739,7 @@ await test('Backlog 317 (Blickwinkel „Motor im Notlauf, verliert Leistung oder
     ok(L.engine_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="engine" class="panel" hidden role="status">`), 'Panel #engine');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv));"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('engine') && order.indexOf('fire') < order.indexOf('engine') && order.indexOf('steer') < order.indexOf('engine') && order.indexOf('warnlight') < order.indexOf('engine') && order.indexOf('engine') < order.indexOf('adas') && order.indexOf('engine') < order.indexOf('nostart'), 'Gruppierung: Brand/Lenkung/Warnleuchte vor Motor vor Assistent/Startproblem');
   ok(helpAfter(app, 'engine', 'steer'), 'Hilfe-Abschnitt engine nach steer');
@@ -32208,7 +32208,7 @@ await test('Backlog 909 (Sonde „Lkw springt nicht an“ in Fahrerworten): „o
     ok(re.test(x), 'Hinweis erwartet: ' + x);
   for (const x of ['Lkw orgelt, Batterie getauscht, springt wieder an', 'Motor kommt nicht auf Drehzahl', 'Schlüssel verloren, sonst passiert nichts', 'Schlüssel abgebrochen', 'Kunde will nicht warten', 'Orgelpfeife im Laderaum'])
     ok(!re.test(x), 'kein Hinweis: ' + x);
-  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx));"), 'Hinweis weiter abhängig von der Beschreibung');
+  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx)) && !NOSTART2_HINT.test(noAux(dfx));"), 'Hinweis weiter abhängig von der Beschreibung');
 });
 
 await test('Backlog 910 (Sonde Reifenpanne in Umgangssprache): „hab nen/’n Platten“, „Platten am Auflieger/hinten rechts“, „Reifen hat Platten“, „Reifen schlaff“ → Reifenpannen-Hinweis; Holz-/Bodenplatten und „Platten auf der Ladefläche“ nicht', async () => {
@@ -32315,7 +32315,7 @@ await test('Backlog 919 (Motor/Batterie/Tank des Kühlaggregats ist nicht der Lk
   const m = app.match(/^const AUX_UNIT = \/(.+)\/gi;/m); ok(m, 'AUX_UNIT fehlt');
   const aux = new RegExp(m[1], 'gi'); const noAux = (x) => String(x || '').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));
   ok(app.includes(".replace(AUX_UNIT, (m) => m.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));"), 'noAux wie im Test');
-  for (const x of ["$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv));", "$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx));", "$('#dryfuel').hidden = !DRYFUEL_HINT.test(noAux(dv));", "$('#batt').hidden = !BATT_HINT.test(noAux(dfx));"]) ok(app.includes(x), 'im Formular: ' + x);
+  for (const x of ["$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));", "$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx)) && !NOSTART2_HINT.test(noAux(dfx));", "$('#dryfuel').hidden = !DRYFUEL_HINT.test(noAux(dv));", "$('#batt').hidden = !BATT_HINT.test(noAux(dfx));"]) ok(app.includes(x), 'im Formular: ' + x);
   const lkw = ['ENGINE_HINT', 'NOSTART_HINT', 'DRYFUEL_HINT', 'BATT_HINT'].map(g), rf = g('REEFER_HINT');
   for (const x of ['Kühlaggregat Motor geht aus', 'Kühlaggregat Batterie leer', 'Aggregat hat keinen Diesel mehr', 'Aggregattank leer', 'Tank vom Kühlaggregat leer', 'Batterie vom Kühlaggregat leer', 'Standheizung Batterie leer']) ok(!lkw.some((r) => r.test(noAux(x))), 'kein Lkw-Hinweis: ' + x);
   for (const x of ['Kühlaggregat Batterie leer', 'Aggregat hat keinen Diesel mehr', 'Aggregattank leer', 'Tank vom Kühlaggregat leer', 'Kühlaggregat Motor geht aus']) ok(rf.test(x), 'Kühlgerät-Hinweis erwartet: ' + x);
@@ -37434,6 +37434,22 @@ await test('Backlog 1277 (Reserve Start-Modul nach 1276: 46,96 % ≤ 47 %): hund
   ok(pct <= 46, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 46 %)');
 });
 
+await test('Backlog 1285 (Sonde, Blickwinkel „Fahrer diktiert Motor springt nicht an/geht aus auf Russisch/Ukrainisch“): „щелкает стартер“, „клацає стартер“, „Anlasser klackt nur“ → Start-Schritte; „глохнет на холостых“, „заводится и сразу глохнет“, „обороты скачут“, „пропала тяга“, „машина дергается при разгоне“, „rpm jumping up and down“, „hat keine Leistung mehr“ → Motor-Schritte; Verneinung, Getriebe/Bremse, Akku, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const N2 = rx('NOSTART2_HINT'), E4 = rx('ENGINE4_HINT');
+  for (const x of ['щелкает стартер и все', 'клацає стартер', 'щелкает только стартер', 'anlasser klackt nur', 'es klickt nur beim starten']) ok(N2.test(x), 'Start: ' + x);
+  for (const x of ['anlasser getauscht klackt nicht mehr', 'щелкает стартер заменили', 'klickt nur beim blinken']) ok(!N2.test(x), 'kein Start-Zusatz: ' + x);
+  for (const x of ['глохне на холостих', 'глохнет на холостом ходу', 'машина дергается при разгоне', 'вантажівка смикається', 'тягач дергается', 'фура дергается на газу', 'пропала тяга', 'пропала потужність', 'тяга пропала', 'заводится и сразу глохнет', 'заводиться і одразу глохне', 'завелся и заглох', 'завівся і заглух', 'обороты скачут', 'оберти плавають', 'обороты прыгают', 'hat keine leistung mehr', 'truck jerks when accelerating', 'rpm jumping up and down']) ok(E4.test(x), 'Motor: ' + x);
+  for (const x of ['не глохнет на холостых', 'пропала тяга после ремонта устранили', 'коробка дергается при переключении', 'тягач дергается при торможении', 'машина не дергается', 'обороты не скачут', 'batterie hat keine leistung mehr', 'akku vom handy hat keine leistung mehr', 'truck jerks when braking', 'rpm jumping fixed']) ok(!E4.test(x), 'kein Motor-Zusatz: ' + x);
+  ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx)) && !NOSTART2_HINT.test(noAux(dfx));"), 'Listener Start (nach noFixed)');
+  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));"), 'Listener Motor');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['Anlasser klackt nur']], ['uk', ['клацає стартер']]]) for (const ex of exs) { ok(STRINGS[l].help_nostart_s.includes(ex), 'Hilfe Start ' + l + ': ' + ex); ok(N2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+  for (const [l, exs] of [['de', ['Lkw hat keine Leistung mehr']], ['uk', ['оберти скачуть', 'глохне на холостих', 'пропала потужність']], ['en', ['rpm jumping up and down', 'truck jerks when accelerating']]]) for (const ex of exs) { ok(STRINGS[l].help_engine_s.includes(ex), 'Hilfe Motor ' + l + ': ' + ex); ok(E4.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1284 (Sonde, Blickwinkel „Fahrer diktiert Ladebordwand/Hebebühne ohne Satzzeichen“): „ladebordwand fährt von alleine runter“, „senkt sich langsam ab“, „rolle abgebrochen“, „bleibt halb offen stehen“, „ist beim entladen stehen/hängen geblieben“ → Tür/Ladebordwand-Schritte; Reparaturvermerk, Bordwand ohne „Lade“ nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -37521,7 +37537,7 @@ await test('Backlog 1278 (Sonde, Blickwinkel „Fahrer diktiert Überhitzung/Kü
   for (const x of ['öltemperatur 105 grad', 'außentemperatur 35 grad', 'temperatur im kühlauflieger steigt bergauf', 'kühlaggregat temperatur nadel geht hoch', 'reefer temp rising on hills', 'die temperatur steigt', 'kein dampf unter der kabine', 'dampfstrahler unter der kabine benutzt', 'temperaturnadel geht hoch wurde repariert', 'fan in the cab running constantly', 'the heater is running hot', 'truck running fine', 'пар з-під кабіни відремонтували', 'чайник закипел']) ok(!E3.test(x), 'kein Überhitzungs-Zusatz: ' + x);
   for (const x of ['lüfter springt nicht an', 'gebläse springt nicht an', 'kühlerlüfter springt nicht an', 'lüfter lässt sich nicht starten']) ok(!NS.test(x), 'kein Startproblem: ' + x);
   for (const x of ['motor springt nicht an', 'lkw springt nicht an', 'lkw lässt sich nicht starten']) ok(NS.test(x), 'Startproblem weiter: ' + x);
-  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv));"), 'Listener Motor');
+  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));"), 'Listener Motor');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['Temperaturnadel geht ganz hoch', 'Dampf unter dem Fahrerhaus', 'Kühlerlüfter springt nicht an']], ['uk', ['пар з-під кабіни', 'двигун закипів']], ['en', ['truck is running hot', 'temp keeps rising on hills', 'steam from under the cab']]]) for (const ex of exs) { ok(STRINGS[l].help_engine_s.includes(ex), 'Hilfe Motor ' + l + ': ' + ex); ok(E3.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
@@ -37796,7 +37812,7 @@ await test('Backlog 1250 (Sonde, Blickwinkel „Fahrer diktiert Motor-/Getriebep
   for (const x of ['motor säuft ab repariert', 'motor dreht nicht hoch, behoben', 'fahre nur noch 30 wegen stau', 'fahre nur noch schritttempo wegen glatteis', 'reifen platt fahre nur noch 20', 'motor wird nicht heiß', 'motor dreht hoch', 'fährt nur noch heute', 'lkw wird nur noch 30 tage gefahren', 'engine running fine', 'drehzahlmesser defekt']) ok(!E.test(recurFix(x)), 'kein Motor-Zusatz: ' + x);
   for (const x of ['getriebe hängt im neutral', 'getriebe bleibt im leerlauf', 'getriebe geht auf N', 'schaltet nicht hoch', 'schaltet nicht mehr', 'schaltet nur bis zum 6 gang', 'bleibt im 3. Gang', 'bleibt im dritten gang hängen', 'kommt nicht über den 4 gang', 'getriebe spinnt', 'kriechgang geht nicht', 'lkw bewegt sich nicht obwohl gang drin', 'motor läuft aber lkw fährt nicht', 'schaltet ruckartig', 'truck stuck in neutral', 'stuck in 3rd gear', 'no reverse gear', 'коробка застрягла на нейтралі']) ok(G.test(recurFix(x)), 'Getriebe: ' + x);
   for (const x of ['licht schaltet nicht', 'lüfter schaltet nicht hoch', 'blinker schaltet nicht ab', 'klima schaltet nicht', 'ampel schaltet nicht', 'getriebe schaltet wieder normal', 'schaltet nicht hoch, getriebe gewechselt', 'gearbox stuck in neutral fixed', 'no reverse parking here', 'bleibt im hof', 'im 3 gang angefahren']) ok(!G.test(recurFix(x)), 'kein Getriebe-Zusatz: ' + x);
-  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv));") && app.includes("$('#gear').hidden = !GEAR_HINT.test(dfx) && !GEAR2_HINT.test(dfx);"), 'Listener');
+  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));") && app.includes("$('#gear').hidden = !GEAR_HINT.test(dfx) && !GEAR2_HINT.test(dfx);"), 'Listener');
 });
 
 await test('Backlog 1249 (Sonde, Blickwinkel „Fahrer diktiert Lichtausfall ohne Satzzeichen“): „am anhaenger geht garnix mit licht“, „Licht geht gar nicht“, „Glühbirne kaputt“ → Licht-Schritte; Lichtmaschine, Warnlicht, „Birne gewechselt“, Innenbeleuchtung im Fahrerhaus nicht', async () => {
