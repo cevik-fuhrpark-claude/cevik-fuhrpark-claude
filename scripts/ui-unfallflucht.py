@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (30.10.2026, Backlog 653–654, Blickwinkel „Parkschaden – Unfallgegner unbekannt (Unfallflucht)“): Meldeformular zeigt
 # bei Unfallflucht/Parkschaden eigene Schritte statt der allgemeinen Unfall-Hinweise (#acc ausgeblendet), normaler Unfall weiter #acc;
 # Vorgang zeigt der Leitung im Versicherungsabschnitt den Hinweis „Anzeige eintragen, Gegner unbekannt → leer lassen“.
+# Backlog 1274: diktierte Sätze ohne Satzzeichen (Unfall bzw. „angefahren und ist weg“).
 # DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -8,6 +9,8 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Parkschaden über Nacht auf dem Rastplatz, Verursacher unbekannt','uk':'Водій втік з місця ДТП, бампер пошкоджено','en':'Hit-and-run at the rest area, bumper damaged'}
+DIK={'de':'pkw hat mich beim spurwechsel gestreift','uk':'мене підрізали і зачепили бампер','en':'a car hit my trailer while turning'}  # Backlog 1274: Diktat ohne Satzzeichen
+DIKH={'de':'auf dem rastplatz hat mich einer angefahren und ist weg','uk':'auf dem rastplatz hat mich einer angefahren und ist weg','en':'someone scraped the trailer and then drove off'}
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -36,6 +39,11 @@ with sync_playwright() as p:
         if SHOTS: q.locator('#hitrun').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/unfallflucht-{lang}-{w}.png')
         q.fill('#d','Unfall beim Rangieren, Stoßstange beschädigt'); q.wait_for_timeout(150)
         check(vis('#acc') and not vis('#hitrun'),f'{lang}/{w}: normaler Unfall → allgemeiner Hinweis')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(150)
+        check(vis('#acc') and not vis('#hitrun'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Unfall-Hinweis')
+        q.fill('#d',DIKH[lang]); q.wait_for_timeout(150)
+        check(vis('#hitrun') and not vis('#acc'),f'{lang}/{w}: Diktat „{DIKH[lang]}“ → Unfallflucht-Schritte')
+        if SHOTS and w==390: q.locator('#hitrun').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/unfallflucht-diktat-{lang}-{w}.png')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen (Formular)')
         q.fill('#d','')
         q.goto(B+f'/#/cases/{cid}'); q.wait_for_selector('[data-claimhitrun]',timeout=15000)

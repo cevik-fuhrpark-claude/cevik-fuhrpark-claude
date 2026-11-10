@@ -27043,11 +27043,11 @@ await test('Backlog 653–655 (Blickwinkel „Parkschaden – Unfallgegner unbek
     ok(S.dq_claim_hitrun_no_police, 'Datenqualität ' + l);
   }
   ok(app.includes('<div id="hitrun" class="panel" hidden role="status">'), 'Panel #hitrun');
-  ok(app.includes("const hitrun = !wild && HITRUN_HINT.test(dv); $('#hitrun').hidden = !hitrun;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !accReal;"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor (Backlog 668: Brückenanprall ebenso)');
+  ok(app.includes("const hitrun = !wild && (HITRUN_HINT.test(dv) || HITRUN2_HINT.test(dv)); $('#hitrun').hidden = !hitrun;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !accReal;"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor (Backlog 668: Brückenanprall ebenso)');
   ok(app.indexOf("$('#hitrun').hidden = !hitrun") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun',/.test(app), 'Reihenfolge direkt nach Unfall/Wildunfall');
   ok(app.includes("'custdmg', 'hitrun', 'vandal', 'marten', 'storm', 'bridge', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen (Backlog 661/664/667: Vandalismus, Marder, Unwetter direkt dahinter)');
-  ok(app.includes("const hitrunNoRef = !theftNoRef && HITRUN_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimhitrun'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt zum Diebstahl-Hinweis');
+  ok(app.includes("const hitrunNoRef = !theftNoRef && (HITRUN_HINT.test(desc || '') || HITRUN2_HINT.test(desc || '')) && !(cl && cl.police_ref);") && app.includes('data-claimhitrun'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt zum Diebstahl-Hinweis');
   // Datenqualität (655)
   const hr = await newCase({ description: 'Parkschaden über Nacht, Verursacher unbekannt' });
   const hrUk = await newCase({ description: 'ВТЕЧА з місця ДТП, бампер пошкоджено' });
@@ -37413,6 +37413,23 @@ await test('Backlog 1267 (Sonde, Blickwinkel „Fahrer diktiert Tankkarten-/Tank
   for (const x of ['ec karte an der tankstelle abgelehnt', 'meine karte an der tanke abgelehnt', 'bankkarte an der tankstelle abgelehnt', 'tankkarte pin falsch eingegeben jetzt geht wieder', 'kann nicht tanken zapfsäule kaputt', 'karte an der tankstelle abgelehnt neue karte bekommen', 'credit card declined at the fuel station', 'fuel card pin wrong works again now', 'karte an der tankstelle bezahlt']) ok(!F2.test(recurFix(x)), 'kein Tankkarten-Zusatz: ' + x);
   ok(app.includes("$('#fuelcard').hidden = !FUELCARD_HINT.test(dv) && !FUELCARD2_HINT.test(dv);"), 'Listener');
   ok(/karte an der tanke abgelehnt/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
+});
+
+await test('Backlog 1274 (Sonde, Blickwinkel „Fahrer diktiert Unfall-/Rangierschaden ohne Satzzeichen“): „pkw hat mich beim spurwechsel gestreift“, „ein pkw hat mir die tür abgefahren“, „hat ein lkw meinen auflieger erwischt“, „beim einparken anderen lkw angefahren“, „ist mir in die seite“, EN/UK/RU → Unfall-Schritte; „angefahren und ist weg“ → Unfallflucht; „ins tor gerutscht“, „вдарився в стовп“ → fremde Sache; „an der rampe eingedrückt“ → Schaden beim Kunden; ohne Berührung, eigenes Fahrzeug, Bremsdefekt, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const A1 = rx('ACC_HINT'), A2 = rx('ACC2_HINT'), H1 = rx('HITRUN_HINT'), H2 = rx('HITRUN2_HINT'), FX = rx('FIXOBJ_HINT'), CU = rx('CUSTDMG_HINT');
+  for (const x of ['auto hat mich geschnitten und ist mir in die seite', 'pkw hat mich beim spurwechsel gestreift', 'beim einparken anderen lkw angefahren', 'im kreisverkehr mit dem auflieger einen pkw erwischt', 'ein pkw hat mir die tür abgefahren', 'sprinter hat mir den spiegel abgefahren', 'beim ausparken hat ein lkw meinen auflieger erwischt', 'stoßstange eingedrückt weil ein auto reingefahren ist', 'hat mich ein pkw angefahren', 'ich habe einen geparkten pkw gestreift', 'zusammengeprallt mit pkw', 'crash with a car at the roundabout', 'a car hit my trailer while turning', 'someone rear ended me at the lights', 'i scraped a car while parking', 'car pulled out in front of me and i hit it', 'мене підрізали і зачепили бампер', 'подрезал и задел зеркало']) ok(A2.test(x), 'Unfall: ' + x);
+  for (const x of ['auto hat mich geschnitten', 'pkw hat mich beim spurwechsel gestreift wurde repariert', 'ich habe den lkw beschädigt', 'wir haben den kunden angefahren', 'ich habe eine tankstelle angefahren', 'ich konnte nicht mehr bremsen', 'a car hit the brakes in front of me', 'we hit a pothole', 'the truck hit a pothole', 'i hit the curb', 'ich habe einen lkw gefahren', 'einen pkw überholt', 'ein pkw stand im weg']) ok(!A1.test(x) && !A2.test(x), 'kein Unfall: ' + x);
+  for (const x of ['auf dem rastplatz hat mich einer angefahren und ist weg', 'hat mich einer angefahren und haut einfach ab', 'spiegel gestreift und fährt einfach weiter', 'someone scraped the trailer and then drove off']) ok(H2.test(x), 'Unfallflucht: ' + x);
+  for (const x of ['pfosten angefahren und bin weitergefahren', 'kunde angefahren und weiter zum nächsten', 'we hit traffic and went home']) ok(!H1.test(x) && !H2.test(x), 'keine Unfallflucht: ' + x);
+  for (const x of ['beim zurücksetzen ins tor gerutscht', 'ans tor gefahren', 'здаючи назад вдарився в стовп', 'сдавал назад и ударился в столб']) ok(FX.test(x), 'fremde Sache: ' + x);
+  ok(!FX.test('ins büro gefahren') && !FX.test('ударился головой'), 'keine fremde Sache: Büro, Kopf');
+  ok(CU.test('heck vom auflieger an der rampe eingedrückt'), 'Schaden beim Kunden: Rampe eingedrückt');
+  ok(app.includes("const hitrun = !wild && (HITRUN_HINT.test(dv) || HITRUN2_HINT.test(dv));") && app.includes("const accReal = ACC_HINT.test(daccx) || ACC2_HINT.test(daccx);") && app.includes("(HITRUN_HINT.test(desc || '') || HITRUN2_HINT.test(desc || ''))"), 'Listener und Vorgangshinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['pkw hat mich beim spurwechsel gestreift', 'ein pkw hat mir die tür abgefahren', 'beim einparken anderen lkw angefahren']], ['uk', ['мене підрізали і зачепили бампер']], ['en', ['a car hit my trailer while turning', 'someone rear ended me at the lights', 'i scraped a car while parking']]]) for (const ex of exs) { ok(STRINGS[l].help_accident_s.includes(ex), 'Hilfe-Beispiel ' + l + ': ' + ex); ok(A1.test(ex) || A2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
 
 await test('Backlog 1273 (Sonde, Blickwinkel „Fahrer diktiert Assistenzsystem-/Kamerastörung ohne Satzzeichen“): „abbiegeassistent schlägt dauernd an“, „abstandsradar geht nicht“, „radar sensor vorne kaputt“, „totwinkel warner piept“, „mirrorcam ausgefallen“, „spiegelkamera schwarz“, „kamera bild verzerrt“, „lkw bremst von alleine“, EN/UK/RU → Assistenz-Schritte; Radarfalle, Notbremsung als Handlung, „bremst schlecht“, Reparaturvermerk nicht', async () => {
