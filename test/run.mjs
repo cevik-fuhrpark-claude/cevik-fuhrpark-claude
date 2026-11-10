@@ -37434,6 +37434,18 @@ await test('Backlog 1277 (Reserve Start-Modul nach 1276: 46,96 % ≤ 47 %): hund
   ok(pct <= 46, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 46 %)');
 });
 
+await test('Backlog 1284 (Sonde, Blickwinkel „Fahrer diktiert Ladebordwand/Hebebühne ohne Satzzeichen“): „ladebordwand fährt von alleine runter“, „senkt sich langsam ab“, „rolle abgebrochen“, „bleibt halb offen stehen“, „ist beim entladen stehen/hängen geblieben“ → Tür/Ladebordwand-Schritte; Reparaturvermerk, Bordwand ohne „Lade“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const D4 = rx('DOOR4_HINT');
+  for (const x of ['ladebordwand fährt von alleine runter', 'ladebordwand senkt sich langsam ab', 'hebebühne geht immer wieder runter', 'ladebordwand rolle abgebrochen', 'hebebühne rolle verbogen', 'ladebordwand bleibt halb offen stehen', 'die ladebordwand ist beim entladen stehen geblieben', 'lbw ist beim entladen hängen geblieben', 'ladebordwand blieb hängen']) ok(D4.test(x), 'Ladebordwand: ' + x);
+  for (const x of ['ladebordwand fährt von alleine runter wurde repariert', 'ladebordwand rolle abgebrochen getauscht', 'bordwand hängt', 'ware blieb auf der ladebordwand stehen geblieben repariert']) ok(!D4.test(x), 'kein Ladebordwand-Zusatz: ' + x);
+  ok(app.includes("$('#door').hidden = !DOOR_HINT.test(dfx) && !DOOR2_HINT.test(dfx) && !DOOR3_HINT.test(dfx) && !DOOR4_HINT.test(dfx);"), 'Listener Tür/Ladebordwand');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const ex of ['ladebordwand fährt von alleine runter', 'ladebordwand rolle abgebrochen', 'ladebordwand ist beim entladen stehen geblieben']) { ok(STRINGS.de.help_door_s.includes(ex), 'Hilfe Tür DE: ' + ex); ok(D4.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1283 (Sonde, Blickwinkel „Fahrer diktiert Spiegel/Kamera auf Russisch/Ukrainisch“): „відірвало дзеркало“, „дзеркало відвалилося“, „зеркало висит“ → Spiegel-Schritte; „камера мутная ничего не видно“, „камера запотіла“ → Assistenz/Kamera-Schritte; Reparatur/Reinigung nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

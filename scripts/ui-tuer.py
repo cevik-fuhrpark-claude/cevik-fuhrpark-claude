@@ -11,6 +11,7 @@ DIK={'de':'fahrer tür schliest nicht','uk':'задні двері не зачи
 TXT={'de':'Hecktür am Auflieger schließt nicht','uk':'Задні двері не закриваються','en':'Rear door on the trailer won\'t close'}
 BOTH={'de':'Unfall, Seitentür klemmt','uk':'ДТП, двері не закриваються','en':'Accident, side door stuck'}
 DIK3={'de':'heckportal verbogen portaltür klemmt','uk':'рольставня заклинила','en':'rear portal bent roller shutter jammed'}  # Backlog 1261
+DIK5={'de':'ladebordwand ist beim entladen stehen geblieben','uk':'гідроборт не працює','en':'tail lift stuck down'}  # Backlog 1284
 DIK4={'de':'ladebordwand sinkt ab hat keinen strom','uk':'гідроборт без струму','en':'tail lift has no power fuse blown'}  # Backlog 1266
 NO={'de':'Tür eingedrückt','uk':'Двері пошкоджені','en':'Door dented'}
 HT={'de':'Tür, Hecktür oder Ladebordwand schließt nicht','uk':'Двері, задні двері чи гідроборт не закриваються','en':'Door, rear door or tail lift will not close'}
@@ -43,6 +44,8 @@ with sync_playwright() as p:
         check(vis('#door'),f'{lang}/{w}: Diktat „{DIK3[lang]}“ → Tür-Hinweis (Backlog 1261)')
         q.fill('#d',DIK4[lang]); q.wait_for_timeout(100)
         check(vis('#door'),f'{lang}/{w}: Diktat „{DIK4[lang]}“ → Tür-Hinweis (Backlog 1266)')
+        q.fill('#d',DIK5[lang]); q.wait_for_timeout(100)
+        check(vis('#door'),f'{lang}/{w}: Diktat „{DIK5[lang]}“ → Hinweis (Backlog 1284)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#door'),f'{lang}/{w}: Hinweis bei nicht schließender Tür')
         tx=q.inner_text('#door')
