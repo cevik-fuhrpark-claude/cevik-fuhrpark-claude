@@ -21557,7 +21557,7 @@ await test('Backlog 309 (Blickwinkel „Auflieger lässt sich nicht sicher kuppe
     ok(L.coupling_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="coupling" class="panel" hidden role="status">`), 'Panel #coupling');
-  ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test(dv) && !COUPLING2_HINT.test(dv); $('#lights')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test(dv) && !COUPLING2_HINT.test(dv) && !COUPLING3_HINT.test(dv); $('#lights')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('coupling') && order.indexOf('brake') < order.indexOf('coupling') && order.indexOf('coupling') < order.indexOf('load'), 'Gruppierung: Unfall/Bremse vor Kupplung vor Ladung');
   ok(helpAfter(app, 'coupling', 'mirror'), 'Hilfe-Abschnitt coupling nach mirror');
@@ -37415,6 +37415,17 @@ await test('Backlog 1267 (Sonde, Blickwinkel „Fahrer diktiert Tankkarten-/Tank
   ok(/karte an der tanke abgelehnt/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
 
+await test('Backlog 1269 (Sonde, Blickwinkel „Fahrer diktiert Sattelkupplung-/Anhängerproblem ohne Satzzeichen“): „kupplung schließt nicht“, „kupplungshebel geht nicht zurück“, „hebel von der kupplung klemmt“, „sicherung kupplung rastet nicht ein“, „kriege den hänger nicht ab“, „königszapfen sitzt nicht richtig“, „auflieger springt raus“, EN/UK/RU → Kuppel-Schritte; Pedal/Gang/rutscht (Fahrzeugkupplung), Türschloss, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const C3 = new RegExp(app.match(/^const COUPLING3_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['kupplung schließt nicht', 'die kupplung verriegelt nicht richtig', 'kupplungshebel geht nicht zurück', 'hebel von der kupplung klemmt', 'sicherung kupplung rastet nicht ein', 'kriege den hänger nicht ab', 'bekomme den auflieger nicht los', 'königszapfen sitzt nicht richtig', 'auflieger springt raus', "trailer won't unhook", 'fifth wheel handle stuck', 'kingpin not locked', 'причіп не відчіплюється', 'замок сідла не закривається', 'замок седла не закрывается']) ok(C3.test(x), 'Kupplung: ' + x);
+  for (const x of ['kupplung rutscht', 'kupplungspedal klemmt', 'kupplung trennt nicht gang geht nicht rein', 'kupplung schließt nicht richtig beim schalten', 'kupplung geht nicht zu wenn ich das pedal loslasse', 'kupplungshebel klemmt wurde abgeschmiert', 'kriege den lkw nicht an', 'anhänger angekuppelt', 'sicherung im sicherungskasten kaputt', "trailer won't brake", 'kupplungshebel repariert', 'kupplung schließt nicht jetzt geht wieder', 'замок дверей не закривається', 'замок не закривається']) ok(!C3.test(x), 'kein Kupplungs-Zusatz: ' + x);
+  ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test(dv) && !COUPLING2_HINT.test(dv) && !COUPLING3_HINT.test(dv);"), 'Listener');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, ex] of [['de', 'kupplungshebel geht nicht zurück'], ['uk', 'причіп не відчіплюється'], ['en', 'trailer won’t unhook']]) { ok(STRINGS[l].help_coupling_s.includes(ex), 'Hilfe-Beispiel ' + l); ok(C3.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1268 (Sonde, Blickwinkel „Fahrer diktiert Fahrtenschreiber-/Fahrerkartenproblem ohne Satzzeichen“): „karte steckt fest im gerät“, „karte kommt nicht mehr raus“, „kartenleser kaputt“, „dtco zeigt fehler“, „papierrolle leer“, „drucker druckt nicht“, „massenspeicher fehler“, „kalibrierung abgelaufen“, „fahrkarte gesteckt“, EN/UK/RU → Fahrtenschreiber-Schritte; Tank-/Bank-/SIM-/Parkhaus-/Büro-Bezug, „geht wieder“, Papiere/Lieferschein nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -37604,7 +37615,7 @@ await test('Backlog 1247 (Sonde, Blickwinkel „Sattelkupplung beim Ab-/Aufsatte
   for (const x of ['sattelkupplung repariert', 'sattelkupplung abgeschmiert alles ok', 'kupplung rutscht beim anfahren', 'auflieger abgesattelt im hof', 'beim absatteln alles gut', 'auflieger zu hoch beladen', 'komme nicht unter die brücke', 'не можу знайти причіп', "can't find the trailer", 'fifth wheel greased', 'fanghorn verbogen, repariert']) ok(!C(x), 'kein Kuppel-Hinweis: ' + x);
   for (const x of ['der rote schlauch ist beim abkuppeln abgerissen', 'der gelbe schlauch ist undicht', 'druckluftkupplung undicht zischt', 'duomatik kupplung undicht', 'Kupplungskopf zischt', 'red air line ripped off', 'gladhand leaking', 'шланги повітря відірвались', 'воздушный шланг оторвало']) ok(A.test(recurFix(x)), 'Druckluft: ' + x);
   for (const x of ['roter schlauch getauscht', 'gelber schlauch ok', 'duomatik repariert', 'red air line replaced', 'шланг повітря замінили']) ok(!A.test(recurFix(x)), 'kein Druckluft-Hinweis: ' + x);
-  ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test(dv) && !COUPLING2_HINT.test(dv);") && app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)) && !AIRLINE_HINT.test(dv) && !BRAKE2_HINT.test(noParkbrake(dv));"), 'beide Ergänzungen im Listener');
+  ok(app.includes("$('#coupling').hidden = !COUPLING_HINT.test(dv) && !COUPLING2_HINT.test(dv) && !COUPLING3_HINT.test(dv);") && app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)) && !AIRLINE_HINT.test(dv) && !BRAKE2_HINT.test(noParkbrake(dv));"), 'beide Ergänzungen im Listener');
 });
 
 await test('Backlog 1246 (Sonde, Blickwinkel „Kontrolle durch Polizei/BALM/Zoll“): Zollkontrolle mit Mängeln/untersagter Weiterfahrt, „Mängelkarte“, „Sicherheitsleistung“, „перевірка BAG, видали протокол“ → Kontroll-Schritte; „keine Mängel“, „alles ok“, „22,5 Zoll“, „Bagger“ nicht', async () => {

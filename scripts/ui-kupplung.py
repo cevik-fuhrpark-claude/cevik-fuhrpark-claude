@@ -8,6 +8,7 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Sattelkupplung rastet nicht ein, Auflieger lässt sich nicht ankuppeln','uk':'Напівпричіп не зчіплюється','en':"Fifth wheel won't lock, trailer will not couple"}
+DIK={'de':'kriege den hänger nicht ab kupplungshebel geht nicht zurück','uk':'причіп не відчіплюється','en':"trailer won't unhook"}  # Backlog 1269
 BOTH={'de':'Unfall, Auflieger hat sich gelöst','uk':'ДТП, напівпричіп відчепився','en':'Accident, trailer came loose'}
 NO={'de':'Kupplung rutscht beim Anfahren','uk':'Зчеплення буксує','en':'Clutch is slipping'}
 HT={'de':'Auflieger lässt sich nicht kuppeln oder hat sich gelöst','uk':'Напівпричіп не зчіплюється або відчепився','en':'Trailer will not couple or came loose'}
@@ -33,6 +34,8 @@ with sync_playwright() as p:
         check(not vis('#coupling'),f'{lang}/{w}: anfangs kein Hinweis')
         q.fill('#d',NO[lang]); q.wait_for_timeout(100)
         check(not vis('#coupling') and vis('#hintsum')==False,f'{lang}/{w}: „{NO[lang]}“ → kein Kupplungs-Hinweis')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#coupling'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Kupplungs-Hinweis (Backlog 1269)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#coupling'),f'{lang}/{w}: Hinweis bei Sattelkupplung/Auflieger')
         tx=q.inner_text('#coupling')
