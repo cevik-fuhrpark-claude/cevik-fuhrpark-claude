@@ -9,6 +9,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Fahrtenschreiber zeigt Fehler, kein Ausdruck','uk':'Тахограф не працює, роздруківки немає','en':'Tachograph error, no printout'}
 ACC={'de':'Unfall beim Rangieren, Fahrerkarte klemmt','uk':'ДТП, картка водія застрягла','en':'Accident while manoeuvring, driver card stuck'}
+DIK={'de':'karte steckt fest im gerät kommt nicht mehr raus','uk':'карта застрягла не виходить','en':'card stuck in the slot'}  # Backlog 1268
 NEG={'de':'Tachometer zeigt nichts an','uk':'Спідометр не працює','en':'Speedometer shows nothing'}
 fails=[]
 def check(c,m):
@@ -31,6 +32,8 @@ with sync_playwright() as p:
         check(not vis('#tacho'),f'{lang}/{w}: anfangs kein Hinweis')
         q.fill('#d',NEG[lang]); q.wait_for_timeout(100)
         check(not vis('#tacho'),f'{lang}/{w}: „{NEG[lang]}“ ohne Hinweis')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#tacho'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Fahrtenschreiber-Hinweis (Backlog 1268)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#tacho') and not vis('#acc'),f'{lang}/{w}: Fahrtenschreiber-Hinweis sichtbar')
         tx=q.inner_text('#tacho')
