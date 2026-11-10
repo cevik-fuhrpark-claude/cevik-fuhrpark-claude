@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 317, Blickwinkel „Motor im Notlauf, verliert Leistung oder wird zu heiß“): Meldeformular zeigt
 # fünf Schritte (anhalten, Kühlerdeckel/AdBlue, Leitung/Notlauf, Display-Foto/Situation, Auswahl Fahrbereitschaft);
 # „Motor springt nicht an“ zeigt keinen Motor-Hinweis; zusammen mit „Unfall“ ist der Unfall-Hinweis offen und der Motor-Hinweis eingeklappt; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Backlog 1278: Diktat-Satz zur Überhitzung je Sprache zeigt den Motor-Hinweis; „kühlerlüfter springt nicht an“ zeigt keinen Start-Hinweis.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -10,6 +11,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
 TXT={'de':'Motor im Notlauf','uk':'Перегрів двигуна','en':'Engine overheating'}
 BOTH={'de':'Unfall, danach Motor im Notlauf','uk':'ДТП, аварійний режим','en':'Accident, now in limp mode'}
 NO={'de':'Motor springt nicht an','uk':'Двері пошкоджені','en':'Reefer unit fault'}
+DIK={'de':'unterm fahrerhaus dampft es temperatur nadel geht ganz hoch','uk':'пар з-під кабіни двигун закипів','en':'truck is running hot temp keeps rising on hills'}  # Backlog 1278: Diktat ohne Satzzeichen
 HT={'de':'Motor im Notlauf, verliert Leistung oder wird zu heiß','uk':'Двигун в аварійному режимі, втрачає потужність або перегрівається','en':'Engine in limp mode, losing power or overheating'}
 fails=[]
 def check(c,m):
@@ -39,6 +41,11 @@ with sync_playwright() as p:
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#engine').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/motor-{lang}-{w}.png')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#engine') and not vis('#nostart'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Motor-Hinweis')
+        if lang=='de':
+            q.fill('#d','kühlerlüfter springt nicht an'); q.wait_for_timeout(100)
+            check(vis('#engine') and not vis('#nostart'),f'{lang}/{w}: Kühlerlüfter springt nicht an → Motor, kein Startproblem')
         q.fill('#d',BOTH[lang]); q.wait_for_timeout(100)
         check(vis('#engine') and vis('#acc') and q.evaluate("!document.querySelector('#acc ul').hidden && document.querySelector('#engine ul').hidden"),f'{lang}/{w}: mit Unfall zusammen → Unfall offen, Motor eingeklappt')
         q.fill('#d','')
