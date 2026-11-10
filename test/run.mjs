@@ -22139,7 +22139,7 @@ await test('Backlog 339 (Fehlersuche Assistenz-Hinweis): einfacher Tempomat ausg
 });
 await test('Backlog 340 (Blickwinkel „Tankkarte verloren, gestohlen oder an der Kasse abgelehnt“): Meldeformular zeigt Hinweise (sofort Leitung zum Sperren; PIN/Kartennummer nie in die Meldung; Diebstahl-Schritte; abgelehnt: nicht mehrfach mit unsicherer PIN; Auswahl „Kann das Fahrzeug fahren?“ wörtlich); Getankt/neue Karte/Fahrerkarte lösen nichts aus, gestohlene Karte zeigt auch den Diebstahl-Hinweis; Reihenfolge der Gruppierung; Hilfe DE/UK/EN', async () => {
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const m = app.match(/^const FUELCARD_HINT = \/(.+)\/i;/m); ok(m, 'FUELCARD_HINT vorhanden');
+  const m = app.match(/^const FUELCARD_HINT = \/(.+)\/i;/m); ok(m, 'FUELCARD_HINT vorhanden'); const re2 = new RegExp(app.match(/^const FUELCARD2_HINT = \/(.+)\/i;$/m)[1], 'i');
   const re = new RegExp(m[1], 'i');
   for (const x of ['Tankkarte verloren', 'Tankkarte weg', 'Tankkarte gestohlen', 'Tankkarte wird nicht angenommen', 'Tankkarte an der Tankstelle liegen lassen', 'DKV-Karte gesperrt', 'PIN der Tankkarte vergessen', 'fuel card lost', 'fuel card declined', 'lost my fuel card', "fuel card doesn't work", 'загубив паливну картку', 'паливна картка не працює', 'топливная карта не работает', 'потерял топливную карту']) ok(re.test(x), 'Hinweis erwartet: ' + x);
   for (const x of ['mit Tankkarte getankt', 'neue Tankkarte erhalten', 'Tankkarte liegt im Handschuhfach', 'Fahrerkarte verloren', 'fuel card receipt', 'Tankkarte abgeholt', 'Tankkartenabrechnung fehlt', 'Tankdeckel verloren']) ok(!re.test(x), 'kein Hinweis: ' + x);
@@ -22154,10 +22154,10 @@ await test('Backlog 340 (Blickwinkel „Tankkarte verloren, gestohlen oder an de
     const h = L.help_fuelcard_s; ok(L.help_fuelcard_t && h && h.includes(L.fuelcard_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
     ok(L.fuelcard_hint_title, 'Titel ' + l);
     // die Beispiele im Hilfetext lösen den Hinweis tatsächlich aus
-    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
+    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex) || re2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
   }
   ok(app.includes(`<div id="fuelcard" class="panel" hidden role="status">`), 'Panel #fuelcard');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#fuelcard').hidden = !FUELCARD_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#fuelcard').hidden = !FUELCARD_HINT.test(dv) && !FUELCARD2_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('fuelcard') && order.indexOf('theft') < order.indexOf('fuelcard') && order.indexOf('lost') < order.indexOf('fuelcard') && order.indexOf('fuelcard') < order.indexOf('toll'), 'Gruppierung: Diebstahl/Schlüssel vor Tankkarte vor Maut');
   ok(helpAfter(app, 'fuelcard', 'fuelcap'), 'Hilfe-Abschnitt fuelcard nach fuelcap');
@@ -37402,6 +37402,17 @@ await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleich
   for (const g of Object.keys(B.GROUPS)) { const t = rd(`app-${g}.js`); if (t.includes('${__RX[')) ok(/^const __RX = \[/m.test(t), `app-${g}.js hat eigene Bausteinliste`); }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
   ok(pct <= 47, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 47 %)');
+});
+
+await test('Backlog 1267 (Sonde, Blickwinkel „Fahrer diktiert Tankkarten-/Tankdeckelproblem ohne Satzzeichen“): „tankkarte pin falsch“, „karte an der tanke abgelehnt“, „an der zapfsäule die karte geht nicht“, „kann nicht tanken karte geht nicht“, „fuel card pin wrong“, „card declined at the pump“ → Tankkarten-Schritte; EC-/Bank-/Privatkarte, „geht wieder“, „neue Karte bekommen“ nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const F2 = new RegExp(app.match(/^const FUELCARD2_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['tankkarte pin falsch', 'tankkarte pin wird nicht angenommen', 'dkv karte pin gesperrt', 'karte an der tanke abgelehnt', 'karte an der tankstelle wird abgelehnt', 'an der tankstelle karte abgelehnt', 'an der zapfsäule die karte geht nicht', 'kann nicht tanken karte geht nicht', 'kann nicht tanken weil karte abgelehnt', 'karte wird abgelehnt ich kann nicht tanken', 'fuel card pin wrong', 'card declined at the fuel station', 'card got declined at the pump', "can't fuel because card is blocked"]) ok(F2.test(recurFix(x)), 'Tankkarte: ' + x);
+  for (const x of ['ec karte an der tankstelle abgelehnt', 'meine karte an der tanke abgelehnt', 'bankkarte an der tankstelle abgelehnt', 'tankkarte pin falsch eingegeben jetzt geht wieder', 'kann nicht tanken zapfsäule kaputt', 'karte an der tankstelle abgelehnt neue karte bekommen', 'credit card declined at the fuel station', 'fuel card pin wrong works again now', 'karte an der tankstelle bezahlt']) ok(!F2.test(recurFix(x)), 'kein Tankkarten-Zusatz: ' + x);
+  ok(app.includes("$('#fuelcard').hidden = !FUELCARD_HINT.test(dv) && !FUELCARD2_HINT.test(dv);"), 'Listener');
+  ok(/karte an der tanke abgelehnt/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
 
 await test('Backlog 1266 (Sonde, Blickwinkel „Fahrer diktiert Ladebordwand-Problem ohne Satzzeichen“): „ladebordwand sinkt ab“, „bleibt halb oben“, „nur noch manuell“, „kann nicht hochgeklappt werden“, „kippt nicht“, „sicherung raus“, „hat keinen strom“, „pumpe läuft nicht“, „warnflaggen abgebrochen“, Tippfehler, EN/UK → Tür-/Ladebordwand-Schritte; Reparatur, „geladen“, Fahrzeugbatterie, „bordwand“ nicht', async () => {
