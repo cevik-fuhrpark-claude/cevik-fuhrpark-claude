@@ -8,6 +8,7 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Lkw schwimmt auf der Autobahn','uk':'Кермо гуляє','en':'Truck wanders on the motorway'}
+DIK2={'de':['Lenkung brummt beim Einschlagen'],'uk':['кермо гуде при повороті','стукіт у кермі','руль не возвращается'],'en':['steering wheel does not return']}  # Backlog 1290: Diktat RU/UK
 BOTH={'de':'Unfall, Lkw zieht nach links','uk':'ДТП, тягне вправо','en':'Accident, steering is very heavy'}
 DIK={'de':'servopumpe heult und lenkrad steht schief','uk':'насос гідропідсилювача гуде','en':'power steering pump whining'}
 NO={'de':'Lenkzeit überschritten','uk':'Двері пошкоджені','en':'Steering committee meeting'}
@@ -42,6 +43,7 @@ with sync_playwright() as p:
         if SHOTS: q.locator('#steer').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/lenkung-{lang}-{w}.png')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
         check(vis('#steer'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Lenkungs-Hinweis (Backlog 1253)')
+        for dk in DIK2[lang]: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#steer'),f'{lang}/{w}: Diktat „{dk}“ → Lenkungs-Hinweis (Backlog 1290)')
         q.fill('#d',BOTH[lang]); q.wait_for_timeout(100)
         check(vis('#steer') and vis('#acc') and q.evaluate("!document.querySelector('#acc ul').hidden && document.querySelector('#steer ul').hidden"),f'{lang}/{w}: mit Unfall zusammen → Unfall offen, Lenkung eingeklappt')
         q.fill('#d','')
