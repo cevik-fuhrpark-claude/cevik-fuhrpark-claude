@@ -1,6 +1,8 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 326, Blickwinkel „Fahrerhaus lässt sich nicht kippen oder ist nicht verriegelt“): Meldeformular zeigt
 # fünf Schritte (nicht verriegelt: nicht losfahren, halb gekippt: nicht darunter, Leitung, Fotos, Auswahl Fahrbereitschaft);
 # „Kippbrücke geht nicht hoch“ zeigt keinen Fahrerhaus-Hinweis; zusammen mit „Unfall“ ist der Unfall-Hinweis offen und der Fahrerhaus-Hinweis eingeklappt; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Backlog 1331: „гидравлика кабины течет“/„Kipphydraulik Fahrerhaus undicht“/„cab tilt hydraulics leaking“ → Fahrerhaus kippen, nicht Wasser im Fahrerhaus/Ladefläche;
+# „кабина не встала на замок, починили“ (Reparaturvermerk) → kein Hinweis.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -41,6 +43,14 @@ with sync_playwright() as p:
         if SHOTS: q.locator('#cabtilt').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/kippen-{lang}-{w}.png')
         q.fill('#d',BOTH[lang]); q.wait_for_timeout(100)
         check(vis('#cabtilt') and vis('#acc') and q.evaluate("!document.querySelector('#acc ul').hidden && document.querySelector('#cabtilt ul').hidden"),f'{lang}/{w}: mit Unfall zusammen → Unfall offen, Fahrerhaus eingeklappt')
+        for x in ['гидравлика кабины течет','Kipphydraulik Fahrerhaus undicht','cab tilt hydraulics leaking']:
+            q.fill('#d',x); q.wait_for_timeout(100)
+            check(vis('#cabtilt') and not vis('#cableak') and not vis('#deck'),f'{lang}/{w}: „{x}“ → Fahrerhaus kippen, nicht Wasser/Ladefläche')
+        for x in ['кабина не встала на замок, починили','кабіна не стала на замок, полагодили']:
+            q.fill('#d',x); q.wait_for_timeout(100)
+            check(not vis('#cabtilt'),f'{lang}/{w}: „{x}“ → kein Hinweis (repariert)')
+        q.fill('#d','кабина протекает'); q.wait_for_timeout(100)
+        check(vis('#cableak') and not vis('#cabtilt'),f'{lang}/{w}: „кабина протекает“ → weiter Wasser im Fahrerhaus')
         q.fill('#d','')
         q.goto(B+'/#/help?s=cabtilt'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_cabtilt' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')

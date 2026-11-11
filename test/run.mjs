@@ -21915,7 +21915,7 @@ await test('Backlog 326 (Blickwinkel „Fahrerhaus lässt sich nicht kippen oder
     ok(L.cabtilt_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="cabtilt" class="panel" hidden role="status">`), 'Panel #cabtilt');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#cabtilt').hidden = !CABTILT_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#cabtilt').hidden = !CABTILT_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('cabtilt') && order.indexOf('brake') < order.indexOf('cabtilt') && order.indexOf('coupling') < order.indexOf('cabtilt') && order.indexOf('cabtilt') < order.indexOf('susp') && order.indexOf('cabtilt') < order.indexOf('door'), 'Gruppierung: Bremse/Sattelkupplung vor Fahrerhaus vor Federung/Tür');
   ok(helpAfter(app, 'cabtilt', 'exhaust'), 'Hilfe-Abschnitt cabtilt nach exhaust');
@@ -22364,7 +22364,7 @@ await test('Backlog 354 (Blickwinkel „Autotransporter: Ladeetage, Auffahrrampe
     for (const e of ex) ok(re.test(e), 'Hilfe-Beispiel löst Hinweis aus: ' + e);
   }
   ok(app.includes(`<div id="deck" class="panel" hidden role="status">`), 'Panel #deck');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#deck').hidden = !DECK_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#deck').hidden = !DECK_HINT.test(noCabHyd(dv));"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('deck') && order.indexOf('load') < order.indexOf('deck') && order.indexOf('deck') < order.indexOf('leak'), 'Gruppierung: Ladung vor Ladeetage vor Leck');
   ok(helpAfter(app, 'deck', 'vibr'), 'Hilfe-Abschnitt deck nach vibr');
@@ -27916,8 +27916,8 @@ await test('Backlog 764 (Folge aus 761/763, Sonde Reparaturvermerke): ältere Hi
   const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
   ok(hl.includes("const dv = recurFix($('#d').value);") && hl.includes("$('#trlr').hidden = !trailerHint(); const dfx = noFixed(dv);"), 'Meldeformular: dfx = noFixed(recurFix(Text))');
-  const SET = ['WARNLIGHT', 'PFILTER', 'NOSTART', 'DASH', 'TELEM', 'SEAT', 'WINDOW', 'CABKIT', 'CABLEAK', 'CABLOCK', 'FUELCAP', 'ELEC', 'BATT', 'MIRROR', 'GEAR', 'EXHAUST', 'TOLL', 'DOOR', 'VISIB', 'STEP'];
-  for (const n of SET) ok(hl.includes('!' + n + '_HINT.test(dfx)') || hl.includes('!' + n + '_HINT.test(noAux(dfx))') || (hl.includes('const dsh = noSeatHeat(noReefRu(dfx));') && hl.includes('!' + n + '_HINT.test(dsh)')), n + ' über dfx'); // noAux: Backlog 919; dsh = noSeatHeat(dfx): Backlog 1164; noReefRu: Backlog 1310
+  const SET = ['WARNLIGHT', 'PFILTER', 'NOSTART', 'DASH', 'TELEM', 'SEAT', 'WINDOW', 'CABKIT', 'CABLEAK', 'CABLOCK', 'CABTILT', 'FUELCAP', 'ELEC', 'BATT', 'MIRROR', 'GEAR', 'EXHAUST', 'TOLL', 'DOOR', 'VISIB', 'STEP'];
+  for (const n of SET) ok(hl.includes('!' + n + '_HINT.test(dfx)') || hl.includes('!' + n + '_HINT.test(noAux(dfx))') || hl.includes('!' + n + '_HINT.test(noCabHyd(dfx))') || (hl.includes('const dsh = noSeatHeat(noReefRu(dfx));') && hl.includes('!' + n + '_HINT.test(dsh)')), n + ' über dfx'); // noAux: Backlog 919; dsh = noSeatHeat(dfx): Backlog 1164; noReefRu: Backlog 1310
   for (const n of ['BRAKE', 'PARKBRAKE', 'STEER', 'SUSP', 'TYRE', 'FLAT', 'WHEEL', 'COUPLING', 'FIRE', 'LEAK', 'ENGINE', 'TACHO', 'ACC', 'THEFT', 'GLASS', 'FUEL']) ok(!hl.includes('!' + n + '_HINT.test(dfx'), n + ' bewusst nicht über dfx');
   const t = (x) => noFixed(recurFix(x));
   const T = {
@@ -28553,7 +28553,7 @@ await test('Backlog 700–701 (Blickwinkel „Wasser im Fahrerhaus – Dachluke 
     ok(S.help_cableak_t && S.help_cableak_s.includes(S.cableak_hint_steps) && S.help_cableak_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="cableak" class="panel" hidden role="status">'), 'Panel #cableak');
-  ok(app.includes("$('#cableak').hidden = !CABLEAK_HINT.test(dfx);") && app.indexOf("$('#cableak').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#cableak').hidden = !CABLEAK_HINT.test(noCabHyd(dfx));") && app.indexOf("$('#cableak').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'window', 'cableak', 'cablock'"), 'Reihenfolge nach Fenster');
   ok(app.includes("'cabkit', 'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -37561,6 +37561,18 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1331 (Nebenbefund 1329): Kipphydraulik/Kipppumpe des Fahrerhauses („гидравлика кабины течет“, „Kipphydraulik Fahrerhaus undicht“, „Hydraulik der Kabine verliert Öl“, „cab tilt hydraulics leaking“) → Fahrerhaus kippen, nicht Wasser im Fahrerhaus/Ladefläche; Fahrerhaus kippen beachtet Reparaturvermerke (noFixed)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const C = rx('CABTILT_HINT'), L = rx('CABLEAK_HINT'), D = rx('DECK_HINT');
+  const H = new RegExp(app.match(/^const CABHYD = \/(.+)\/gi;$/m)[1], 'gi'), mask = (s) => s.replace(H, ' ◇ ');
+  for (const x of ['гидравлика кабины течет', 'гідравліка кабіни тече', 'Kipphydraulik Fahrerhaus undicht', 'Hydraulik der Kabine verliert Öl', 'cab tilt hydraulics leaking', 'cab tilt hydraulic oil leaking', 'насос подъема кабины течет']) { ok(C.test(x), 'Fahrerhaus kippen: ' + x); ok(!L.test(mask(x)), 'kein Wasser im Fahrerhaus: ' + x); ok(!D.test(mask(x)), 'keine Ladefläche: ' + x); }
+  for (const x of ['кабина протекает', 'вода в кабине', 'кабина течет когда дождь', 'Kabine undicht', 'кабіна протікає', 'Wasser im Fahrerhaus', 'вода в кабине, насос не работает', 'Fahrerhaus undicht, Hydraulik am Kipper undicht']) ok(L.test(mask(x)), 'weiter Wasser im Fahrerhaus: ' + x);
+  for (const x of ['Kipper Hydraulik undicht', 'гидравлика кузова течет', 'Fahrerhaus undicht, Hydraulik am Kipper undicht']) ok(D.test(mask(x)), 'weiter Ladefläche: ' + x);
+  ok(app.includes("$('#cableak').hidden = !CABLEAK_HINT.test(noCabHyd(dfx))") && app.includes("$('#deck').hidden = !DECK_HINT.test(noCabHyd(dv))") && app.includes("$('#cabtilt').hidden = !CABTILT_HINT.test(dfx)"), 'Listener: Maske für Wasser/Ladefläche, Fahrerhaus kippen mit noFixed');
+});
+
 await test('Backlog 1330 (Reserve Start-Modul nach 1329: 45,631 %): Bausteine __T[47] (Ausnahmeliste Handy/Sitz/Spiegel), __T[48] (Verneinungsliste mit Wortabstand), __T[49] (RU/UK „geöffnet“) werden genutzt; Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
@@ -37585,7 +37597,7 @@ await test('Backlog 1329 (Sonde, Blickwinkel „Kabine/Fahrerhauslagerung per Di
   for (const x of ['кабина не качается', 'кабина не стучит', 'в кабине стучит что-то', 'кабина качается после ремонта починили', 'сиденье качается', 'водитель качается', 'кабина чистая', 'cab rocks after repair fixed', 'the cab door is knocking', 'Fahrerhauslagerung defekt, getauscht']) ok(!susp(x), 'keine Federung: ' + x);
   for (const x of ['кабина не защелкнулась', 'кабина не встала на замок', 'кабіна не стала на замок', 'насос подъема кабины не качает', 'насос підйому кабіни не качає', 'гидравлика кабины течет']) ok(C.test(x), 'Fahrerhaus kippen/verriegeln: ' + x);
   for (const x of ['насос подъема кабины не качает, заменили', 'в кабине течет', 'кабина чистая']) ok(!C.test(x), 'kein Kipp-Hinweis: ' + x);
-  ok(app.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv)) && !SUSP2_HINT.test(noSeatSusp(dv));") && app.includes("$('#cabtilt').hidden = !CABTILT_HINT.test(dv);"), 'Listener unverändert');
+  ok(app.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv)) && !SUSP2_HINT.test(noSeatSusp(dv));") && app.includes("$('#cabtilt').hidden = !CABTILT_HINT.test(dfx);"), 'Listener unverändert (Backlog 1331: Fahrerhaus kippen mit noFixed)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['Fahrerhauslagerung defekt', 'кабина сильно качается', 'опоры кабины сломаны']], ['uk', ['кабіна сильно хитається', 'кабіна гойдається на ямах', 'опори кабіни зламані']], ['en', ['cab rocking a lot', 'cab mount broken', 'кабина сильно качается']]]) for (const ex of exs) { ok(STRINGS[l].help_susp_s.includes(ex), 'Hilfe Federung ' + l + ': ' + ex); ok(susp(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
   for (const [l, exs] of [['de', ['кабина не встала на замок', 'насос подъема кабины не качает']], ['uk', ['кабіна не стала на замок', 'насос підйому кабіни не качає']], ['en', ['кабина не встала на замок', 'насос подъема кабины не качает']]]) for (const ex of exs) { ok(STRINGS[l].help_cabtilt_s.includes(ex), 'Hilfe Fahrerhaus ' + l + ': ' + ex); ok(C.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
