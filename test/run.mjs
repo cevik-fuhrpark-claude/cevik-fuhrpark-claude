@@ -37665,6 +37665,23 @@ await test('Backlog 1352 (Sonde, Blickwinkel „Fahrer meldet Kabine/Innenraum a
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1353 (Sonde, Blickwinkel „Fahrer meldet Kabine/Innenraum auf Russisch/Ukrainisch per Diktat“, Backlog 195): „ручка двери отломалась“, „ручка дверей відламалася“ → Tür; „ремень безопасности не защелкивается“ (auch mit „ё“ über die Angleichung), „ремінь безпеки не клацає“ → Gurt; „шторка порвалась/порвалася“, „шторка розірвалася“ → Fahrerhaus-Ausstattung; Verneinung („не отломалась“, „не порвана“) nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x.toLowerCase())); };
+  const door = any(['DOOR_HINT', 'DOOR2_HINT', 'DOOR3_HINT', 'DOOR4_HINT', 'DOOR5_HINT', 'DOOR6_HINT']), seat = any(['SEAT_HINT', 'SEAT2_HINT']), cabkit = any(['CABKIT_HINT']);
+  for (const x of ['ручка двери отломалась', 'ручка дверей відламалася', 'ручка двери оторвалась']) ok(door(x), 'Tür: ' + x);
+  ok(!door('ручка двери не отломалась'), 'Verneinung Türgriff');
+  for (const x of ['ремень безопасности не защелкивается', 'ремінь безпеки не клацає', 'ремінь безпеки не застібається']) ok(seat(x), 'Gurt: ' + x);
+  for (const x of ['шторка порвалась', 'шторка порвалася', 'шторка в спальнике порвалась', 'шторка розірвалася', 'шторка порвана']) ok(cabkit(x), 'Ausstattung: ' + x);
+  for (const x of ['шторка не порвалась', 'шторка не порвана']) ok(!cabkit(x), 'Verneinung Ausstattung: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_door_s.includes('„ручка двери отломалась“') && STRINGS.uk.help_door_s.includes('«ручка дверей відламалася»'), 'Hilfe Tür DE/UK');
+  ok(STRINGS.de.help_seat_s.includes('„ремень безопасности не защелкивается“') && STRINGS.uk.help_seat_s.includes('«ремінь безпеки не клацає»') && STRINGS.en.help_seat_s.includes('“ремень безопасности не защелкивается”'), 'Hilfe Gurt DE/UK/EN');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1346 (Sonde, Blickwinkel „Fahrer meldet Unfall/Wild/Kundenschaden auf Englisch“, Backlog 195): „scraped a parked car“, „caught a van while turning“, „brushed a parked van“, „scraped the parked car“ → Unfall; „hit a fox/badger“, „ran over a hare“ → Wildunfall; „damage to the curtain from a forklift“ → Schaden beim Kunden; „caught the bus on time“, „caught a bus to the depot“, „hit the trailer while coupling“, „Fox Logistics …“ nicht; Diebstahl EN war abgedeckt; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
