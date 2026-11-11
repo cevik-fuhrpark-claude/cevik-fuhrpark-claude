@@ -11,6 +11,9 @@ TXT={'de':'Reifen hinten links geplatzt, A3 Richtung Würzburg','uk':'Лопну
 NO={'de':'Reifendruck zu niedrig, Batterie platt','uk':'Перевірити тиск у шинах','en':'Tyre pressure low, battery flat'}
 HT={'de':'Reifenpanne unterwegs (z. B. auf der Autobahn)','uk':'Пробита шина в дорозі','en':'Flat tyre on the road (e.g. on the motorway)'}
 fails=[]
+# Backlog 1315: Diktat ohne Satzzeichen (RU/UK/DE/EN) → Reifenpanne bzw. Reifen beschädigt
+DIKT={'de':['взорвалось колесо на прицепе','Radmuttern lassen sich nicht lösen'],'uk':['стою з пробитим колесом чекаю допомогу','не можу відкрутити колесо'],'en':['tyre exploded on the motorway','нужен выездной шиномонтаж']}
+DIKT_T={'de':['Lauffläche hat sich abgelöst','в колесе саморез'],'uk':['протектор злетів','в колесі шуруп'],'en':['tread separated on trailer tyre','в колесе саморез']}
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
     if not c: fails.append(m)
@@ -34,6 +37,12 @@ with sync_playwright() as p:
         check(not vis('#flat'),f'{lang}/{w}: „{NO[lang]}“ → kein Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#flat'),f'{lang}/{w}: Hinweis bei Reifenpanne')
+        for x in DIKT[lang]:
+            q.fill('#d',x); q.wait_for_timeout(100); check(vis('#flat'),f'{lang}/{w}: Diktat „{x}“ → Reifenpanne')
+        for x in DIKT_T[lang]:
+            q.fill('#d',x); q.wait_for_timeout(100); check(vis('#tyre'),f'{lang}/{w}: Diktat „{x}“ → Reifen beschädigt')
+        q.fill('#d','болт на зеркале не откручивается'); q.wait_for_timeout(100); check(not vis('#flat'),f'{lang}/{w}: Spiegelschraube → keine Reifenpanne')
+        q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         tx=q.inner_text('#flat')
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')

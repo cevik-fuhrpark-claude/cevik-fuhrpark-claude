@@ -364,7 +364,12 @@ const RX_TOK = ['(?![a-zäöüß])', '(?<![a-zäöüß-])', '(?<![а-яіїєґ�
   String.raw`(?:колес\S*|колiс\S*|коліс\S*|шин\S*|покрышк\S*|покришк\S*|резин\S*|гум[аиуі]|баллон\S*|балон\S*)`, '(?:ab(?:gebrochen|gerissen)?|gebrochen|durchgebrochen|kaputt|defekt|lose|locker|wackelt|wackelig|klemmt|h(?:ä|ae)ngt|',
   String.raw`|реф)\S*|(?:задн\S*|задні)\s+(?:ворота|двер\S*)|(?:боков\S*|бічн\S*)\s+двер\S*|`, String.raw`|більше\s+не|больше\s+не))`, '|fixed|repaired|replaced|', '(?![a-z])|(?<![a-z])',
   // Backlog 1311 (Reserve Start-Modul nach 1310: 45,70 %): häufige Alternativen-Folgen (Häufigkeitsanalyse über alle lbRx-Ausdrücke in app-main.js)
-  '|auflieger|anh(?:ä|', String.raw`|funktioniert\s+wieder|wieder\s+(?:ok|`, String.raw`|geht\s+nicht|funktioniert\s+nicht|`, String.raw`|злама[вл]\S*|сломал\S*|`, String.raw`|отремонт\S*|заменил\S*|`, String.raw`|злама[внл]\S*|сломан\S*|`];
+  '|auflieger|anh(?:ä|', String.raw`|funktioniert\s+wieder|wieder\s+(?:ok|`, String.raw`|geht\s+nicht|funktioniert\s+nicht|`, String.raw`|злама[вл]\S*|сломал\S*|`, String.raw`|отремонт\S*|заменил\S*|`, String.raw`|злама[внл]\S*|сломан\S*|`,
+  // Backlog 1316 (Reserve Start-Modul nach 1315: 45,68 % > 45,65 %): weitere Folgen laut Häufigkeitsanalyse (je 4–7×) – RU/UK-Defektverben, „während der Fahrt“ RU/UK,
+  // DE-Kühlaufbauten, DE-Reifenarten, DE-Spiegelarten.
+  String.raw`|оторва\S*|тріснув\S*|треснул\S*|теліпа\S*|болта\S*|хита\S*|шата\S*|заклин\S*|`, String.raw`|під\s+час\s+руху|во\s+время\s+движения|в\s+дороге|в\s+дорозі|`,
+  '|kühlanhänger|kühlkoffer|kuehlkoffer|kühler|kuehler|kofferaufbau|aufbau|sattelauflieger|', '|pneu|zwillingsreifen|vorderreifen|hinterreifen|aufliegerreifen|anh(?:ä|',
+  '|ss)en|haupt|weitwinkel|rampen|front|fahrer|beifahrer|'];
 export function dedupeLooks(code) {
   const calls = [...code.matchAll(RX_CALL)], count = new Map();
   for (const c of calls) for (const [a, e] of rxGroups(c[1])) { const g = c[1].slice(a, e); count.set(g, (count.get(g) || 0) + 1); }

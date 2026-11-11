@@ -21296,7 +21296,7 @@ await test('Backlog 296 (Blickwinkel „Reifenpanne auf der Autobahn“): Meldef
     ok(STRINGS[l].flat_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="flat" class="panel" hidden role="status">`), 'Panel #flat');
-  ok(app.includes("$('#flat').hidden = !FLAT_HINT.test(noAux(dv)) && !FLAT2_HINT.test(noAux(dv));"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#flat').hidden = !FLAT_HINT.test(noAux(dv)) && !FLAT2_HINT.test(noAux(dv)) && !FLAT3_HINT.test(noAux(dv));"), 'Hinweis abhängig von der Beschreibung');
   ok(app.includes("'lost', 'fuel', 'flat', "), 'Hilfe-Abschnitt flat nach fuel');
 });
 
@@ -22226,10 +22226,10 @@ await test('Backlog 345 (Blickwinkel „Reifen beschädigt, verliert Luft oder i
     const h = L.help_tyre_s; ok(L.help_tyre_t && h && h.includes(L.tyre_hint_steps) && h.includes(L.nav_new), 'Hilfe ' + l);
     ok(L.tyre_hint_title, 'Titel ' + l);
     // die Beispiele im Hilfetext lösen den Hinweis tatsächlich aus
-    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex) || ['TYRE3_HINT', 'TYRE4_HINT'].some((n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i').test(ex)), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
+    for (const ex of (h.split('|')[0].match(/[„“"«]([^“”"»]+)[“”"»]/g) || []).map((x) => x.slice(1, -1)).filter((x) => x !== L.nav_new)) ok(re.test(ex) || ['TYRE3_HINT', 'TYRE4_HINT', 'TYRE5_HINT'].some((n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i').test(ex)), 'Hilfe-Beispiel löst Hinweis aus: ' + ex);
   }
   ok(app.includes(`<div id="tyre" class="panel" hidden role="status">`), 'Panel #tyre');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv))) || bodyWall(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv)) || TYRE5_HINT.test(noAux(dv))) || bodyWall(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('tyre') && order.indexOf('flat') < order.indexOf('tyre') && order.indexOf('tyre') < order.indexOf('wheel') && order.indexOf('tyre') < order.indexOf('brake'), 'Gruppierung: Reifenpanne vor Reifenschaden vor Rad/Bremse');
   ok(helpAfter(app, 'tyre', 'underrun'), 'Hilfe-Abschnitt tyre nach underrun');
@@ -32351,7 +32351,7 @@ await test('Backlog 922 (Flurförderzeuge und Kleingeräte sind nicht der Lkw): 
   ok(app.includes("const noAux = (s) => noReefRu(s).replace(EQUIP_SPAN, ' ◇ ').replace(AUX_UNIT, "), 'noAux wie im Test (Backlog 1310: RU/UK-Kühlaggregat vorab)');
   const eq = new RegExp(eqm[1], 'gi'), aux = new RegExp(axm[1], 'gi');
   const noAux = (x) => String(x || '').replace(eq, ' ◇ ').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));
-  for (const x of ["$('#flat').hidden = !FLAT_HINT.test(noAux(dv)) && !FLAT2_HINT.test(noAux(dv));", "$('#wheel').hidden = !WHEEL_HINT.test(noAux(dv)) && !WHEEL2_HINT.test(noAux(dv));", "$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv))) || bodyWall(dv);"]) ok(app.includes(x), 'im Formular: ' + x);
+  for (const x of ["$('#flat').hidden = !FLAT_HINT.test(noAux(dv)) && !FLAT2_HINT.test(noAux(dv)) && !FLAT3_HINT.test(noAux(dv));", "$('#wheel').hidden = !WHEEL_HINT.test(noAux(dv)) && !WHEEL2_HINT.test(noAux(dv));", "$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv)) || TYRE5_HINT.test(noAux(dv))) || bodyWall(dv);"]) ok(app.includes(x), 'im Formular: ' + x);
   const lkw = ['ENGINE_HINT', 'NOSTART_HINT', 'DRYFUEL_HINT', 'BATT_HINT', 'FLAT_HINT', 'TYRE_HINT', 'WHEEL_HINT'].map(g);
   for (const x of ['Hubwagen Reifen platt', 'Ameise Batterie leer', 'Mitnahmestapler Batterie leer', 'Stapler springt nicht an', 'Mitnahmestapler Motor geht aus', 'Stapler Reifen kaputt', 'Sackkarre Reifen platt', 'Taschenlampe Batterie leer', 'Funkgerät Batterie leer', 'Schlüssel Batterie leer', 'Batterie vom Schlüssel leer', 'Fernbedienung Batterie leer']) ok(!lkw.some((r) => r.test(noAux(x))), 'kein Lkw-Hinweis: ' + x);
   ok(lkw[1].test(noAux('Stapler kaputt, Lkw springt nicht an')) && lkw[1].test(noAux('Schlüssel steckt und Batterie leer')) && lkw[1].test(noAux('Lkw Batterie leer')), 'Lkw-Start weiter erkannt');
@@ -37142,7 +37142,7 @@ await test('Backlog 1199 (Sonde Tür auf während der Fahrt/Ladung durch die Wan
   const tyre = (x) => TY.test(x) && !bodyWall(x);
   ok(!tyre('Palette ist umgefallen und hat die Seitenwand beschädigt'), 'Seitenwand bei Ladung ist kein Reifen');
   ok(tyre('Reifen Seitenwand beschädigt') && tyre('Seitenwand vom Reifen beschädigt'), 'Reifen-Seitenwand bleibt Reifen');
-  ok(/\$\('#tyre'\)\.hidden = !\(TYRE_HINT\.test\(noAux\(dv\)\) \|\| TYRE2_HINT\.test\(noAux\(dv\)\) \|\| TYRE3_HINT\.test\(dv\) \|\| TYRE4_HINT\.test\(noAux\(dv\)\)\) \|\| bodyWall\(dv\)/.test(app), 'Reifen-Hinweis nutzt bodyWall');
+  ok(/\$\('#tyre'\)\.hidden = !\(TYRE_HINT\.test\(noAux\(dv\)\) \|\| TYRE2_HINT\.test\(noAux\(dv\)\) \|\| TYRE3_HINT\.test\(dv\) \|\| TYRE4_HINT\.test\(noAux\(dv\)\) \|\| TYRE5_HINT\.test\(noAux\(dv\)\)\) \|\| bodyWall\(dv\)/.test(app), 'Reifen-Hinweis nutzt bodyWall');
   for (const R of [DO, LG, LO, FO]) ok(!R.source.includes('||') && !R.source.includes('(?:|') && !R.source.includes('|)'), 'leere Alternative');
 });
 
@@ -37500,7 +37500,7 @@ await test('Backlog 1296/1303 (Reserve Start-Modul nach 1295: 45,84 % > 45,8 %; 
   ok(d.code.includes('${__T[10]}fixed${__T[11]}заменил))') && d.code.includes('${__T[10]}eingestellt${__T[12]}полагод))'), 'Bausteine 10–12 eingesetzt: ' + d.code);
   eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (zweistelliger Index)');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 31, 'Bausteinliste hat 31 Einträge (Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18; Backlog 1307: Index 19–24; Backlog 1311: Index 25–30)'); eq(T[23], '|fixed|repaired|replaced|', 'Baustein 23 (Backlog 1307)'); eq(T[24], '(?![a-z])|(?<![a-z])', 'Baustein 24 (Backlog 1307)'); ok([19, 20, 21].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4) && [22, 23, 24].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 12), 'Bausteine 19–24 werden genutzt'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
+  eq(T.length, 36, 'Bausteinliste hat 36 Einträge (Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18; Backlog 1307: Index 19–24; Backlog 1311: Index 25–30; Backlog 1316: Index 31–35)'); eq(T[23], '|fixed|repaired|replaced|', 'Baustein 23 (Backlog 1307)'); eq(T[24], '(?![a-z])|(?<![a-z])', 'Baustein 24 (Backlog 1307)'); ok([19, 20, 21].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4) && [22, 23, 24].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 12), 'Bausteine 19–24 werden genutzt'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
   ok((main.match(/\$\{__T\[1[0-2]\]\}/g) || []).length > 60, 'zweistellige Bausteine werden genutzt');
   for (const tk of T.slice(10)) ok(Buffer.byteLength(tk) > Buffer.byteLength('${__T[10]}'), 'Baustein länger als Platzhalter: ' + tk);
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
@@ -37541,6 +37541,36 @@ await test('Backlog 1305 (Sonde, Blickwinkel „Fahrer diktiert Tank/AdBlue/Dies
   const H = { help_fuel_s: fuel, help_dryfuel_s: dry, help_gelfuel_s: gel };
   for (const [k, l, ex] of [['help_fuel_s', 'de', 'залил адблю в солярку'], ['help_fuel_s', 'de', 'перепутал бак'], ['help_fuel_s', 'uk', 'переплутав бак'], ['help_fuel_s', 'uk', 'залив адблю в бак з дизелем'], ['help_fuel_s', 'en', 'перепутал бак'], ['help_dryfuel_s', 'de', 'обсох'], ['help_dryfuel_s', 'en', 'обсох'], ['help_gelfuel_s', 'de', 'соляра загустела'], ['help_gelfuel_s', 'de', 'парафин в соляре'], ['help_gelfuel_s', 'uk', 'соляра загустела'], ['help_gelfuel_s', 'en', 'парафин в соляре']]) { ok(STRINGS[l][k].includes(ex), 'Hilfe ' + k + ' ' + l + ': ' + ex); ok(H[k](ex), 'Hilfe-Beispiel löst aus: ' + ex); }
   ok(fuel('Tank verwechselt'.toLowerCase()), 'DE-Hilfebeispiel „Tank verwechselt“');
+});
+
+await test('Backlog 1316 (Reserve Start-Modul nach 1315: 45,68 % > 45,65 %): weitere Alternativen-Folgen (RU/UK-Defektverben, „во время движения/під час руху“, DE-Kühlaufbauten, DE-Reifenarten, DE-Spiegelarten) stehen als __T[31]–__T[35] in der Bausteinliste, je ≥ 4× genutzt; Rückverwandlung gleich; Start-Modul ≤ 45,65 %', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const B = await import('../scripts/build-app.mjs');
+  const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
+  eq(T.length, 36, 'Bausteine 0–35');
+  ok(T[31].includes('теліпа') && T[32].includes('движения') && T[33].includes('kühlkoffer') && T[34].includes('zwillingsreifen') && T[35].includes('weitwinkel'), 'Bausteine 31–35');
+  for (let k = 31; k <= 35; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4, 'Baustein ' + k + ' wird ≥ 4× genutzt');
+  const code = "x\nconst A = lbRx(String.raw`(?<![а-яіїєґё])a|оторва\\S*|тріснув\\S*|треснул\\S*|теліпа\\S*|болта\\S*|хита\\S*|шата\\S*|заклин\\S*|(?<![а-яіїєґё])b|pneu|zwillingsreifen|vorderreifen|hinterreifen|aufliegerreifen|anh(?:ä|ae)nger)(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\nconst B2 = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))c`, 'i', 1);\n";
+  const d = B.dedupeLooks(code);
+  ok(/\$\{__T\[31\]\}/.test(d.code) && /\$\{__T\[34\]\}/.test(d.code), 'neue Bausteine eingesetzt: ' + d.code);
+  eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
+  ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 45,65 %)');
+});
+
+await test('Backlog 1315 (Sonde, Blickwinkel „Reifenpanne per Diktat RU/UK“): „взорвалось/бахнуло/вибухнуло колесо“, „стою с/з пробитым колесом“, „колесо в лохмотья/лахміття“, „не могу открутить колесо“, „болты/гайки на колесе не откручиваются“, „выездной шиномонтаж“, „Reifen explodiert/in Fetzen“, „Radmuttern lassen sich nicht lösen“, „tyre exploded“ → Reifenpanne; „в колесе саморез“, „протектор слетел/злетів“, „Lauffläche hat sich abgelöst“, „tread separated“ → Reifen beschädigt; Spiegelschraube, Motor, Werkstattvermerk, Sensorfehler der Reifendruckkontrolle nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const flat = any(['FLAT_HINT', 'FLAT2_HINT', 'FLAT3_HINT']), tyre = any(['TYRE_HINT', 'TYRE2_HINT', 'TYRE3_HINT', 'TYRE4_HINT', 'TYRE5_HINT']);
+  ok(app.includes('!FLAT3_HINT.test(noAux(dv))') && app.includes('TYRE5_HINT.test(noAux(dv))'), 'neue Muster im Meldeformular verdrahtet');
+  for (const x of ['взорвалось колесо на прицепе', 'бахнуло колесо на полуприцепе', 'вибухнуло колесо на причепі', 'бахнуло на трасі колесо', 'стою с пробитым колесом жду помощь', 'стою з пробитим колесом чекаю допомогу', 'колесо на прицепе в лохмотья', 'колесо на причепі в лахміття', 'не могу открутить колесо', 'не можу відкрутити колесо', 'не откручиваются болты на колесе', 'болты на колесе не откручиваются', 'колесные гайки не откручиваются', 'колісні гайки не відкручуються', 'гайки на колесі не відкручуються', 'вызвал шиномонтаж на трассу', 'нужен выездной шиномонтаж', 'потрібен виїзний шиномонтаж', 'Reifen explodiert auf der A2', 'Reifen in Fetzen', 'Radmuttern lassen sich nicht lösen', 'mobiler Reifendienst gerufen', 'tyre exploded on the motorway']) ok(flat(x), 'Reifenpanne: ' + x);
+  for (const x of ['в колесе саморез', 'в колесі шуруп', 'протектор слетел', 'протектор злетів', 'Lauffläche hat sich abgelöst', 'tread separated on trailer tyre']) ok(tyre(x), 'Reifen beschädigt: ' + x);
+  for (const x of ['болт на зеркале не откручивается', 'болты не откручиваются на двери', 'двигатель взорвался', 'взорвался двигатель и колесо целое', 'колесо поменяли на шиномонтаже', 'шиномонтаж заменил колесо больше не спускает', 'не могу снять запаску', 'mobiler Reifendienst gerufen, Reifen inzwischen gewechselt']) ok(!flat(x), 'keine Reifenpanne: ' + x);
+  for (const x of ['в кабине саморез валяется', 'протектор слетел, колесо заменили', 'RDKS Fehler', 'Reifendrucksensor defekt', 'датчик тиску в шинах не працює']) ok(!tyre(x), 'kein Reifenhinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, k, ex, f] of [['de', 'help_flat_s', 'взорвалось колесо на прицепе', flat], ['de', 'help_flat_s', 'стою с пробитым колесом', flat], ['de', 'help_flat_s', 'Radmuttern lassen sich nicht lösen', flat], ['de', 'help_flat_s', 'не могу открутить колесо', flat], ['uk', 'help_flat_s', 'вибухнуло колесо на причепі', flat], ['uk', 'help_flat_s', 'не можу відкрутити колесо', flat], ['uk', 'help_flat_s', 'гайки на колесі не відкручуються', flat], ['en', 'help_flat_s', 'стою с пробитым колесом', flat], ['de', 'help_tyre_s', 'в колесе саморез', tyre], ['de', 'help_tyre_s', 'протектор слетел', tyre], ['de', 'help_tyre_s', 'Lauffläche hat sich abgelöst', tyre], ['uk', 'help_tyre_s', 'протектор злетів', tyre], ['uk', 'help_tyre_s', 'в колесі шуруп', tyre], ['en', 'help_tyre_s', 'tread separated', tyre], ['en', 'help_tyre_s', 'в колесе саморез', tyre]]) { ok(STRINGS[l][k].includes(ex), 'Hilfe ' + l + ' ' + k + ' nennt ' + ex); ok(f(ex), 'Hilfebeispiel greift: ' + ex); }
 });
 
 await test('Backlog 1314 (Sonde, Blickwinkel „Fahrer meldet Kühlaggregat auf Englisch“): „reefer is beeping“, „carrier unit showing alarm code“, „only runs on electric“, „won’t switch to diesel“, „iced up/won’t defrost“, Stecker/Lüfter, „reefer battery flat/out of fuel/belt snapped“ → Kühlgerät statt Lkw-Start/Tank/Motor; Lkw-Batterie/-Tank neben laufendem Reefer bleibt Lkw; Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
@@ -37597,7 +37627,7 @@ await test('Backlog 1311 (Reserve Start-Modul nach 1310: 45,70 % ≈ Grenze 45,7
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const B = await import('../scripts/build-app.mjs');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(JSON.stringify(T.slice(25)), JSON.stringify(['|auflieger|anh(?:ä|', String.raw`|funktioniert\s+wieder|wieder\s+(?:ok|`, String.raw`|geht\s+nicht|funktioniert\s+nicht|`, String.raw`|злама[вл]\S*|сломал\S*|`, String.raw`|отремонт\S*|заменил\S*|`, String.raw`|злама[внл]\S*|сломан\S*|`]), 'Bausteine 25–30');
+  eq(JSON.stringify(T.slice(25, 31)), JSON.stringify(['|auflieger|anh(?:ä|', String.raw`|funktioniert\s+wieder|wieder\s+(?:ok|`, String.raw`|geht\s+nicht|funktioniert\s+nicht|`, String.raw`|злама[вл]\S*|сломал\S*|`, String.raw`|отремонт\S*|заменил\S*|`, String.raw`|злама[внл]\S*|сломан\S*|`]), 'Bausteine 25–30');
   for (let k = 25; k <= 30; k++) { ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 8, 'Baustein ' + k + ' wird genutzt'); ok(Buffer.byteLength(T[k]) > Buffer.byteLength('${__T[25]}'), 'länger als Platzhalter: ' + T[k]); }
   const code = "x\nconst A = lbRx(String.raw`(?<![a-z])x|auflieger|anh(?:ä|ae)nger|geht\\s+nicht|funktioniert\\s+nicht|y(?![^.;!?]*(?:repariert|отремонт\\S*|заменил\\S*|злама[вл]\\S*|сломал\\S*|z))(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\nconst B2 = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))a|funktioniert\\s+wieder|wieder\\s+(?:ok|in)|злама[внл]\\S*|сломан\\S*|b`, 'i', 1);\n";
   const d = B.dedupeLooks(code);
@@ -37855,7 +37885,7 @@ await test('Backlog 1287 (Sonde, Blickwinkel „Fahrer diktiert Reifen/Rad auf R
   for (const x of ['травит воздух из ресивера', 'шланг травит']) ok(B3.test(x), 'Bremse/Luft weiter: ' + x);
   for (const x of ['камень застрял между колесами', 'камень между колес застрял']) ok(!ST.test(x), 'nicht festgefahren: ' + x);
   for (const x of ['грузовик застрял в грязи', 'застряли в снегу']) ok(ST.test(x), 'festgefahren weiter: ' + x);
-  for (const x of ["$('#flat').hidden = !FLAT_HINT.test(noAux(dv)) && !FLAT2_HINT.test(noAux(dv));", "$('#wheel').hidden = !WHEEL_HINT.test(noAux(dv)) && !WHEEL2_HINT.test(noAux(dv));", "$('#vibr').hidden = !VIBR_HINT.test(dv) && !VIBR2_HINT.test(dv);", "|| TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv))) || bodyWall(dv);"]) ok(app.includes(x), 'Listener: ' + x);
+  for (const x of ["$('#flat').hidden = !FLAT_HINT.test(noAux(dv)) && !FLAT2_HINT.test(noAux(dv)) && !FLAT3_HINT.test(noAux(dv));", "$('#wheel').hidden = !WHEEL_HINT.test(noAux(dv)) && !WHEEL2_HINT.test(noAux(dv));", "$('#vibr').hidden = !VIBR_HINT.test(dv) && !VIBR2_HINT.test(dv);", "|| TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv)) || TYRE5_HINT.test(noAux(dv))) || bodyWall(dv);"]) ok(app.includes(x), 'Listener: ' + x);
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['Ventil abgebrochen']], ['uk', ['колесо підспускає', 'протектор відшарувався', 'лиса гума', 'камінь між колесами']], ['en', ['tyre valve broken']]]) for (const ex of exs) { ok(STRINGS[l].help_tyre_s.includes(ex), 'Hilfe Reifen ' + l + ': ' + ex); ok(T4.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
@@ -38006,7 +38036,7 @@ await test('Backlog 1275 (Sonde, Blickwinkel „Fahrer diktiert Bordstein-/Felge
   const T3 = rx('TYRE3_HINT');
   for (const x of ['beim abbiegen bordstein mitgenommen felge zerkratzt', 'beim rechtsabbiegen auf den bordstein gekommen', 'reifen am bordstein aufgeschlitzt', 'bordstein gestreift', 'kantstein touchiert reifen vorne rechts', 'über den bordstein drübergefahren', 'clipped the curb rim damaged', 'hit the kerb tyre bulge', 'kerb damage on the steer tyre', 'бордюр зачепив диск', 'зачепив бордюр колесом', 'наехал на бордюр']) ok(T3.test(x), 'Reifen/Bordstein: ' + x);
   for (const x of ['bordstein ist hoch an der rampe', 'reifen bordstein repariert', 'bordstein gestreift reifen getauscht', 'parked next to the curb', 'бордюр високий']) ok(!T3.test(x), 'kein Bordstein-Zusatz: ' + x);
-  ok(app.includes("|| TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv))) || bodyWall(dv);") && app.includes("$('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv) || TYRE3_HINT.test(dv);"), 'Listener Reifen und Vandalismus');
+  ok(app.includes("|| TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv)) || TYRE5_HINT.test(noAux(dv))) || bodyWall(dv);") && app.includes("$('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv) || TYRE3_HINT.test(dv);"), 'Listener Reifen und Vandalismus');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['beim abbiegen bordstein mitgenommen felge zerkratzt', 'auf den bordstein gekommen']], ['uk', ['бордюр зачепив диск']], ['en', ['clipped the curb rim damaged', 'hit the kerb']]]) for (const ex of exs) { ok(STRINGS[l].help_tyre_s.includes(ex), 'Hilfe-Beispiel ' + l + ': ' + ex); ok(T3.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
@@ -38277,7 +38307,7 @@ await test('Backlog 1248 (Sonde, Blickwinkel „Fahrer diktiert Reifenschaden oh
   for (const x of ['Reifen aufgescheuert, gewechselt', 'Knie aufgescheuert', 'Plane aufgescheuert', 'Laufband löst sich', 'tread replaced']) ok(!T2.test(recurFix(x)), 'kein Reifen-Zusatz: ' + x);
   for (const x of ['Reifen Seitenwand beschädigt', 'Seitenwand vom Reifen beschädigt', 'reifen ist kaputt seitenwand beschaedigt', 'reifen von innen aufgescheuert seitenwand beschaedigt']) ok(!F.test(noTyreWall(recurFix(x))), 'kein Boden-/Aufbau-Hinweis: ' + x);
   for (const x of ['Seitenwand beschädigt', 'Seitenwand vom Auflieger beschädigt', 'reifen platt seitenwand vom auflieger beschaedigt', 'Reifen platt, Seitenwand beschädigt']) ok(F.test(noTyreWall(recurFix(x))), 'Aufbau bleibt: ' + x);
-  ok(app.includes("$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv))) || bodyWall(dv);") && app.includes("$('#floor').hidden = !FLOOR_HINT.test(noTyreWall(dv)) && !FLOOR2_HINT.test(noTyreWall(dv));"), 'Listener');
+  ok(app.includes("$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv)) || TYRE5_HINT.test(noAux(dv))) || bodyWall(dv);") && app.includes("$('#floor').hidden = !FLOOR_HINT.test(noTyreWall(dv)) && !FLOOR2_HINT.test(noTyreWall(dv));"), 'Listener');
 });
 
 await test('Backlog 1247 (Sonde, Blickwinkel „Sattelkupplung beim Ab-/Aufsatteln per Sprachdiktat“): Tippfehler, Fanghorn/Sattelplatte, Defekt „beim Ab-/Aufsatteln“ ohne Satzzeichen, Auflieger runtergefallen/zu niedrig, EN „jaws not locking“/„cant unhook the trailer“, UK/RU „не можу відчепити причіп“ → Kuppel-Schritte; roter/gelber Schlauch, Duomatik, Kupplungskopf → Brems-Schritte; Reparatur, „zu hoch beladen“, „Brücke“ nicht', async () => {
