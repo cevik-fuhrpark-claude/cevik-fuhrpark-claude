@@ -355,10 +355,14 @@ export function expandRx(code) {
 // Backlog 1303 (Reserve Start-Modul nach 1302: 45,68 % bei Ziel 45,7 %): Index 14 = RU/UK-Aufbauwörter `(?:фургон|будк|прицеп|…|кузов|` (≈ 11×, je 106 Byte),
 // Index 15 = `|не\s+працю\S*|не\s+работа\S*|` (≈ 17×) – per Häufigkeitsanalyse (Anfang an `|`/`(`, Ende an `|`/`)`, Ersparnis n × (Länge − 10)).
 // Backlog 1305 (Reserve nach 1305: 45,72 % > 45,7 %): Index 16–18 = `(?:auflieger|anh(?:ä|ae)nger|` (≈ 29×), `|сломал\S*|сломан\S*|` (≈ 25×), `(?:won['’]?t|will\s+not|doesn['’]?t|` (≈ 18×).
+// Backlog 1307 (Reserve nach 1306: 45,68 % bei Ziel 45,7 %): Index 19–24 per Häufigkeitsanalyse – RU/UK-Reifenwörter (5×, je 120 Byte), DE-Defektliste (5×),
+// RU/UK-Aufbautüren (5×), `|більше\s+не|больше\s+не))` (16×), `|fixed|repaired|replaced|` (34×), `(?![a-z])|(?<![a-z])` (50×).
 const RX_TOK = ['(?![a-zäöüß])', '(?<![a-zäöüß-])', '(?<![а-яіїєґё])', '(?<![a-zäöüß])', '(?<![а-яіїєґ])', '(?<![a-z-])', '(?![а-яіїєґё])', String.raw`\s+(?:\S+\s+)?`, String.raw`(?:\S+\s+){0,2}?`, String.raw`(?:\S+\s+){0,3}?`,
   '(?![^.;!?]*(?:repariert|erneuert|getauscht|ersetzt|behoben|gewechselt|', String.raw`|відремонт\S*|замінил\S*|замінен\S*|отремонт\S*|`, String.raw`|відремонт\S*|замінил\S*|`,
   String.raw`nicht\s+(?:mehr\s+)?`, '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', String.raw`|не\s+працю\S*|не\s+работа\S*|`,
-  '(?:auflieger|anh(?:ä|ae)nger|', String.raw`|сломал\S*|сломан\S*|`, String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`];
+  '(?:auflieger|anh(?:ä|ae)nger|', String.raw`|сломал\S*|сломан\S*|`, String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`,
+  String.raw`(?:колес\S*|колiс\S*|коліс\S*|шин\S*|покрышк\S*|покришк\S*|резин\S*|гум[аиуі]|баллон\S*|балон\S*)`, '(?:ab(?:gebrochen|gerissen)?|gebrochen|durchgebrochen|kaputt|defekt|lose|locker|wackelt|wackelig|klemmt|h(?:ä|ae)ngt|',
+  String.raw`|реф)\S*|(?:задн\S*|задні)\s+(?:ворота|двер\S*)|(?:боков\S*|бічн\S*)\s+двер\S*|`, String.raw`|більше\s+не|больше\s+не))`, '|fixed|repaired|replaced|', '(?![a-z])|(?<![a-z])'];
 export function dedupeLooks(code) {
   const calls = [...code.matchAll(RX_CALL)], count = new Map();
   for (const c of calls) for (const [a, e] of rxGroups(c[1])) { const g = c[1].slice(a, e); count.set(g, (count.get(g) || 0) + 1); }
