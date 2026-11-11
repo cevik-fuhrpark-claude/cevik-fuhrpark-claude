@@ -37698,6 +37698,17 @@ await test('Backlog 1357 (Sonde, Blickwinkel „Fahrer meldet AdBlue/Auspuff/DPF
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1358 (Folge aus 1357): „Schürze/Seitenschürze/Heckschürze hängt herunter/abgerissen“ → loses Teil (bisher nur „Frontschürze“); Verneinung und „Küchenschürze“ ohne Hinweis; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const L = new RegExp(app.match(/^const LOOSE_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['Schürze hängt etwas herunter', 'Seitenschürze abgerissen', 'Heckschürze hängt lose', 'Frontschürze hängt runter']) ok(L.test(x), 'loses Teil: ' + x);
+  for (const x of ['Seitenschürze hängt nicht runter', 'Küchenschürze im Fahrerhaus']) ok(!L.test(x), 'kein Hinweis: ' + x); // „… ist nicht abgerissen“ blendet das Formular vor dem Muster aus (Sonde 19:15-Sitzung)
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_loose_s.includes('Seitenschürze abgerissen'), 'Hilfe loses Teil ' + l);
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1351 (Reserve Start-Modul nach 1354: 45,595 % bei Grenze 45,60 %): Bausteine __T[63] (DE-Bedienelemente Heizung … Liftachse), __T[64] (RU/UK-Unterfahrschutz), __T[65] (DE-Konturmarkierung/Rückstrahler), __T[66] (EN-Verneinung + „snapped off … does nothing“) je 2× genutzt (→ 45,54 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
