@@ -37,6 +37,7 @@ with sync_playwright() as p:
         q.fill('#d','Parkschaden, niemand verletzt'); q.wait_for_timeout(150)
         check(not vis('#injury'),f'{lang}/{w}: „niemand verletzt“ → kein Hinweis')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen (Formular)')
+        for en,want in [('I got hit by a pallet',True),('twisted my ankle jumping down',True),('Palette ist mir auf den Fuß gefallen',True),('the trailer was hit by a forklift',False)]: q.fill('#d',en); q.wait_for_timeout(100); check(vis('#injury')==want,f'{lang}/{w}: „{en}“ → Verletzung {want} (Backlog 1348)')
         q.fill('#d','')
         q.goto(B+'/#/help'); q.wait_for_timeout(1200)
         ht=q.inner_text('#app'); check('help_injury' not in ht and (('Jemand verletzt sich bei der Arbeit am Fahrzeug' in ht) or ('Хтось травмувався під час роботи з авто' in ht) or ('Someone hurt while working on the vehicle' in ht)),f'{lang}/{w}: Hilfe-Abschnitt vorhanden')

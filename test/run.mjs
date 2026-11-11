@@ -37561,6 +37561,24 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1348 (Sonde, Blickwinkel „Fahrer meldet Verletzung/Plombe auf Englisch und Deutsch“, Backlog 195): „twisted my ankle“, „I got hit by a pallet“, „pallet fell on my foot“, „Palette ist mir auf den Fuß gefallen“, „ich wurde von einer Palette getroffen“ → Verletzung („the trailer was hit by a forklift“ nicht); „Plombe beschädigt/fehlt“, „Plombennummer stimmt nicht“, „seal broken on arrival“, „seal number doesn’t match“, „customs seal cut“ → Diebstahl/Einbruch („door/oil/palm coupling seal“, „Plombe ist in Ordnung“ nicht); Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: //.*)?$', 'm'))[1], 'i');
+  const INJ = rx('INJURY_HINT'), TH = rx('THEFT_HINT');
+  for (const x of ['twisted my ankle jumping down', 'sprained my wrist', 'I got hit by a pallet', 'driver was knocked over by a roll cage', 'pallet fell on my foot', 'Palette ist mir auf den Fuß gefallen', 'Kiste ist dem Fahrer auf die Hand gefallen', 'ich wurde von einer Palette getroffen']) ok(INJ.test(x), 'Verletzung: ' + x);
+  for (const x of ['the trailer was hit by a forklift', 'forklift hit the trailer', 'pallet fell over in the trailer', 'Palette ist umgefallen']) ok(!INJ.test(x), 'keine Verletzung: ' + x);
+  for (const x of ['Plombe beschädigt', 'Plombe fehlt', 'Plombe wurde aufgebrochen', 'Plombennummer stimmt nicht', 'seal broken on arrival', 'seal number doesn’t match', "seal numbers don't match", 'customs seal cut', 'trailer seal has been tampered with']) ok(TH.test(x), 'Plombe: ' + x);
+  for (const x of ['door seal broken', 'oil seal leaking on the hub', 'palm coupling seal missing', 'Plombe ist in Ordnung', 'Plombe angebracht', 'seal applied at loading']) ok(!TH.test(x), 'keine Plombe/kein Diebstahl: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const ex of ['I got hit by a pallet', 'twisted my ankle']) { ok(STRINGS[l].help_injury_s.includes(ex), 'Hilfe Verletzung ' + l + ': ' + ex); ok(INJ.test(ex), 'Hilfe-Beispiel: ' + ex); }
+    ok(STRINGS[l].help_theft_s.includes('seal broken on arrival') && TH.test('seal broken on arrival'), 'Hilfe Diebstahl ' + l);
+  }
+  for (const ex of ['Palette ist mir auf den Fuß gefallen']) ok(STRINGS.de.help_injury_s.includes(ex) && INJ.test(ex), 'Hilfe DE: ' + ex);
+  for (const ex of ['Plombe fehlt', 'Plombennummer stimmt nicht']) ok(STRINGS.de.help_theft_s.includes(ex) && TH.test(ex), 'Hilfe DE: ' + ex);
+});
+
 await test('Backlog 1347 (Blickwinkel „Fahrer meldet eine Panne / liegengeblieben ohne Ursache“, Backlog 195): Panne/liegengeblieben/Standstreifen DE, „broke down“, „stuck on the hard shoulder“, „need a tow“ EN, „зламалася на трасі“, „стою на узбіччі“ → allgemeine Pannen-Schritte (absichern, 112/110, Leitung + „Panne & Notfall“, Standort notieren, „nicht fahrbereit“); „Reifenpanne“, „keine Panne“, „no breakdown“, „breakdown cover number“ nicht; keine Entfernung/Frist; Hilfe DE/UK/EN; Reserve Start-Modul: Bausteine __T[55]–__T[58] (45,601 % → 45,53 %)', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');

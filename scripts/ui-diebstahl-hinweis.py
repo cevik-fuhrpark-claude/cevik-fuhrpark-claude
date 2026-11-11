@@ -38,6 +38,7 @@ with sync_playwright() as p:
         check('110' in tx and '112' in tx and tx.count('\n')>=4,f'{lang}/{w}: Titel und 4 Schritte mit 110/112')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#theft').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/diebstahl-{lang}-{w}.png')
+        for en,want in [('seal broken on arrival',True),('Plombe fehlt',True),('Plombennummer stimmt nicht',True),('door seal broken',False)]: q.fill('#d',en); q.wait_for_timeout(100); check(vis('#theft')==want,f'{lang}/{w}: „{en}“ → Diebstahl {want} (Backlog 1348)')
         q.fill('#d',ACC[lang]); q.wait_for_timeout(100)
         check(vis('#tacho') and vis('#theft'),f'{lang}/{w}: Diebstahl- und Fahrtenschreiber-Hinweis zusammen')
         # Entwurf: Mehr → zurück, Hinweis ohne erneutes Tippen
