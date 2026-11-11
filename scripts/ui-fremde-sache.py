@@ -39,6 +39,7 @@ with sync_playwright() as p:
         q.fill('#d','Schranke geht nicht auf'); q.wait_for_timeout(150)
         check(not vis('#fixobj'),f'{lang}/{w}: „Schranke geht nicht auf“ → kein Hinweis')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen (Formular)')
+        for en,want in [('hit a tree',True),('Baum gestreift',True),('clipped a tree branch',False)]: q.fill('#d',en); q.wait_for_timeout(100); check(vis('#fixobj')==want,f'{lang}/{w}: „{en}“ → #fixobj {want} (Backlog 1349)')
         q.fill('#d','')
         q.goto(B+'/#/help'); q.wait_for_timeout(1200)
         ht=q.inner_text('#app'); check('help_fixobj' not in ht and (('Schranke, Poller, Laterne, Zaun, Schild oder Leitplanke angefahren' in ht) or ('Наїхали на шлагбаум, стовпчик, ліхтар, паркан, знак чи відбійник' in ht) or ('Hit a barrier, bollard, lamp post, fence, sign or guard rail' in ht)),f'{lang}/{w}: Hilfe-Abschnitt vorhanden')

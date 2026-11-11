@@ -37561,6 +37561,24 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1349 (Sonde, Blickwinkel „Fahrer meldet Papiere/Ausrüstung/Hindernis auf Englisch und Deutsch“, Backlog 195): „Versicherungskarte fehlt“, „grüne Karte fehlt im Lkw“, „Gemeinschaftslizenz nicht im Fahrzeug“, „insurance certificate not in the truck“, „no green card in the cab“, „community licence copy missing“, „operator licence disc missing“ → Schlüssel/Papiere; „Baum gestreift“, „gegen einen Baum gefahren“, „hit a tree“ → fester Gegenstand („clipped a tree branch“, „Baum auf den Lkw gefallen“ nicht); Ausrüstung war abgedeckt; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: //.*)?$', 'm'))[1], 'i');
+  const LO = rx('LOST_HINT'), FX = rx('FIXOBJ_HINT');
+  for (const x of ['Versicherungskarte fehlt', 'grüne Karte fehlt im Lkw', 'Gemeinschaftslizenz fehlt', 'Gemeinschaftslizenz nicht im Fahrzeug', 'insurance certificate not in the truck', 'no green card in the cab', 'green card missing', 'operator licence disc missing', 'community licence copy missing', 'Fahrzeugschein fehlt']) ok(LO.test(x), 'Papiere: ' + x);
+  for (const x of ['Versicherungskarte liegt im Handschuhfach', 'green card is in the cab', 'fuel card missing']) ok(!LO.test(x), 'keine fehlenden Papiere: ' + x);
+  for (const x of ['Baum gestreift', 'Straßenbaum angefahren', 'gegen einen Baum gefahren', 'hit a tree', 'reversed into a tree']) ok(FX.test(x), 'Baum: ' + x);
+  for (const x of ['clipped a tree branch', 'Baum auf den Lkw gefallen', 'Kabelbaum defekt']) ok(!FX.test(x), 'kein fester Gegenstand: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].help_lost_s.includes('green card missing') || STRINGS[l].help_lost_s.includes('Versicherungskarte fehlt'), 'Hilfe Papiere ' + l);
+    ok(STRINGS[l].help_fixobj_s.includes('hit a tree'), 'Hilfe fester Gegenstand ' + l);
+  }
+  for (const ex of ['green card missing', 'insurance certificate not in the truck', 'community licence copy missing', 'Versicherungskarte fehlt', 'Gemeinschaftslizenz nicht im Fahrzeug']) ok(LO.test(ex), 'Hilfe-Beispiel: ' + ex);
+  for (const ex of ['Baum gestreift', 'hit a tree']) ok(FX.test(ex), 'Hilfe-Beispiel: ' + ex);
+});
+
 await test('Backlog 1348 (Sonde, Blickwinkel „Fahrer meldet Verletzung/Plombe auf Englisch und Deutsch“, Backlog 195): „twisted my ankle“, „I got hit by a pallet“, „pallet fell on my foot“, „Palette ist mir auf den Fuß gefallen“, „ich wurde von einer Palette getroffen“ → Verletzung („the trailer was hit by a forklift“ nicht); „Plombe beschädigt/fehlt“, „Plombennummer stimmt nicht“, „seal broken on arrival“, „seal number doesn’t match“, „customs seal cut“ → Diebstahl/Einbruch („door/oil/palm coupling seal“, „Plombe ist in Ordnung“ nicht); Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

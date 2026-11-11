@@ -38,6 +38,7 @@ with sync_playwright() as p:
         check('Zulassungsbescheinigung Teil I' in tx and '110' in tx and '112' in tx and tx.count('\n')>=4,f'{lang}/{w}: Titel und 4 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#lost').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/schluessel-{lang}-{w}.png')
+        for en,want in [('green card missing',True),('Gemeinschaftslizenz nicht im Fahrzeug',True),('Versicherungskarte liegt im Handschuhfach',False)]: q.fill('#d',en); q.wait_for_timeout(100); check(vis('#lost')==want,f'{lang}/{w}: „{en}“ → #lost {want} (Backlog 1349)')
         q.fill('#d','')
         q.goto(B+'/#/help?s=lost'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_lost' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')
