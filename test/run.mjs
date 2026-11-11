@@ -37543,6 +37543,22 @@ await test('Backlog 1305 (Sonde, Blickwinkel „Fahrer diktiert Tank/AdBlue/Dies
   ok(fuel('Tank verwechselt'.toLowerCase()), 'DE-Hilfebeispiel „Tank verwechselt“');
 });
 
+await test('Backlog 1313 (Sonde, Blickwinkel „Scheibe/Spiegel nach Steinschlag auf Russisch/Ukrainisch“): „на лобовом скол“, „по лобовому пошла трещина“, „трещина растет по лобовому“, „тріщина по лобовому пішла“, „лобовик в трещинах“ → Scheibe; „скол заклеили/заклеїли“ nicht; „зеркало не греется/дзеркало не гріється“ → Sicht; „стекло в двери не поднимается“ → nur Fenster, nicht Tür; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const glass = rx('GLASS_HINT'), visib = rx('VISIB_HINT'), door = any(['DOOR_HINT', 'DOOR2_HINT', 'DOOR3_HINT', 'DOOR4_HINT', 'DOOR5_HINT']), win = any(['WINDOW_HINT', 'WINDOW2_HINT', 'WINDOW3_HINT']);
+  for (const x of ['на лобовом скол', 'по лобовому пошла трещина', 'трещина растет по лобовому', 'тріщина по лобовому пішла', 'лобовик в трещинах', 'скол на лобовом', 'камень прилетел в лобовое']) ok(glass.test(x), 'Scheibe: ' + x);
+  for (const x of ['скол на лобовом заклеили', 'скол на лобовому заклеїли', 'на лобовом чисто', 'лобовое заменили', 'камень прилетел, всё нормально']) ok(!glass.test(x), 'keine Scheibe: ' + x);
+  for (const x of ['зеркало не греется', 'дзеркало не гріється', 'зеркала не подогреваются', 'дзеркала не підігріваються']) ok(visib.test(x), 'Sicht: ' + x);
+  ok(!visib.test('зеркало не греется, починили'), 'Reparaturvermerk: keine Sicht');
+  for (const x of ['стекло в двери не поднимается', 'скло у дверях не піднімається']) { ok(win(x), 'Fenster: ' + x); ok(!door(x), 'nicht Tür: ' + x); }
+  for (const x of ['двери не закрываются', 'задние двери не закрываются']) ok(door(x), 'Tür bleibt: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, k, ex] of [['de', 'help_glass_s', 'на лобовом скол'], ['de', 'help_glass_s', 'по лобовому пошла трещина'], ['uk', 'help_glass_s', 'тріщина по лобовому пішла'], ['uk', 'help_glass_s', 'лобовик в трещинах'], ['en', 'help_glass_s', 'на лобовом скол'], ['de', 'help_visib_s', 'зеркало не греется'], ['uk', 'help_visib_s', 'дзеркало не гріється'], ['en', 'help_visib_s', 'зеркало не греется']]) { ok(STRINGS[l][k].includes(ex), 'Hilfe ' + l + ' ' + k + ' nennt ' + ex); ok((k === 'help_glass_s' ? glass : visib).test(ex), 'Hilfebeispiel greift: ' + ex); }
+});
+
 await test('Backlog 1312 (Sonde, Blickwinkel „Fahrer diktiert Ladebordwand/Hebebühne auf Russisch/Ukrainisch“): „гидроборт не складывается/не реагирует/не выдвигается“, „гідроборт пищить“, „гидроборт застрял внизу“, „заклинило гідроборт“ → Tür/Ladebordwand statt Festgefahren; „гидроборт не пищит“, Reparaturvermerk, Lkw im Schnee nicht bzw. weiter Festgefahren; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

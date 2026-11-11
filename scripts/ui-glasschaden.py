@@ -32,6 +32,8 @@ with sync_playwright() as p:
         check(not vis('#glass'),f'{lang}/{w}: anfangs kein Hinweis')
         for dk in ['камень в лобовое прилетел', 'камінь прилетів у лобове']: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#glass'),f'{lang}/{w}: Diktat „{dk}“ → Hinweis (Backlog 1294)')
         for dk in ['камень в лобовое прилетел, стекло заменили']: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#glass'),f'{lang}/{w}: „{dk}“ → kein Hinweis (Backlog 1294)')
+        for dk in ['на лобовом скол', 'тріщина по лобовому пішла', 'лобовик в трещинах']: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#glass'),f'{lang}/{w}: Diktat „{dk}“ → Hinweis (Backlog 1313)')
+        for dk in ['скол на лобовом заклеили', 'стекло в двери не поднимается']: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#glass') and not vis('#door'),f'{lang}/{w}: „{dk}“ → kein Scheiben-/Tür-Hinweis (Backlog 1313)')
         q.fill('#d',NEG[lang]); q.wait_for_timeout(100)
         check(not vis('#glass'),f'{lang}/{w}: „{NEG[lang]}“ ohne Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
