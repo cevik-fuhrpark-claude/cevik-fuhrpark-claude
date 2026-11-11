@@ -37543,6 +37543,19 @@ await test('Backlog 1305 (Sonde, Blickwinkel „Fahrer diktiert Tank/AdBlue/Dies
   ok(fuel('Tank verwechselt'.toLowerCase()), 'DE-Hilfebeispiel „Tank verwechselt“');
 });
 
+await test('Backlog 1321 (Sonde, Blickwinkel „Blinker/Warnblinker per Diktat RU/UK“, Backlog 195): „сигнал поворота не работает“, „левый поворот на прицепе не работает“, „поворот не показує“, „не моргает поворотник справа“, „повторитель поворота разбит/не горит“, „боковой поворотник отвалился“, „бічний поворотник відпав“, „лампочка поворотника сгорела“, „реле поворотов щелкает быстро“, „поворотники мигают сами“, „поворотник моргає дуже часто“ → Licht-Hinweis; Straße, „поворот руля“, „не разбит“, Reparaturvermerke nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const L = ['LIGHTS_HINT', 'LIGHTS2_HINT', 'LIGHTS3_HINT', 'LIGHTS4_HINT'].map(rx); const hit = (x) => L.some((r) => r.test(x));
+  for (const x of ['сигнал поворота не работает', 'сигнал повороту не працює', 'не моргает поворотник справа', 'поворот не показывает', 'поворот не показує', 'левый поворот на прицепе не работает', 'поворотники мигают сами', 'повторитель поворота разбит', 'повторитель поворота не горит', 'повторювач повороту розбитий', 'боковой поворотник отвалился', 'бічний поворотник відпав', 'реле поворотов щелкает быстро', 'реле поворотів клацає швидко', 'лампочка поворотника сгорела', 'поворотник моргає дуже часто', 'ліва мигалка не працює']) ok(rx('LIGHTS4_HINT').test(x), 'Blinker erkannt: ' + x);
+  for (const x of ['включил аварийку стою на обочине', 'аварийка включена жду эвакуатор', 'увімкнув аварійку чекаю', 'поворотник починили работает', 'сигнал поворота заменили теперь работает', 'поворотник поменяли', 'на повороте занесло прицеп', 'после поворота не работает навигатор', 'до поворота не доехал сломался', 'поворот руля не работает', 'поворот налево не работает', 'бічний поворотник відпав, полагодили']) ok(!hit(x), 'kein Licht-Hinweis: ' + x);
+  for (const x of ['поворотник не разбит всё нормально', 'на повороте не горит фонарь на улице']) ok(!rx('LIGHTS4_HINT').test(x), 'neue Blinker-Alternative greift nicht: ' + x);
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck);"), 'Listener Licht');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['левый поворот на прицепе не работает', 'повторитель поворота разбит']], ['uk', ['сигнал повороту не працює', 'бічний поворотник відпав']], ['en', ['сигнал поворота не работает', 'повторитель поворота разбит']]]) for (const ex of exs) { ok(STRINGS[l].help_lights_s.includes(ex), 'Hilfe Licht ' + l + ': ' + ex); ok(hit(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1320 (Reserve Start-Modul nach 1319: 45,654 % > 45,65 %): Folgen „|(?<![a-z])(?:“, RU/UK-Rad/Reifen „(?:колес|…|балон)“ und „(?![a-z])(?![^.;!?]*(?:fixed|repaired|replaced“ stehen als __T[39]–__T[41] in der Bausteinliste und werden genutzt; Rückverwandlung gleich; Start-Modul ≤ 45,65 %', async () => {
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const B = await import('../scripts/build-app.mjs');

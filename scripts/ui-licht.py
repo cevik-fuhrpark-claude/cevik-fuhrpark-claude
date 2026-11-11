@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 310, Blickwinkel „Beleuchtung am Lkw/Auflieger ausgefallen“): Meldeformular zeigt
 # fünf Schritte (anhalten, Stecker/Kabel nur gefahrlos, Leitung, Fotos, Auswahl Fahrbereitschaft); „Warnleuchte leuchtet“
 # zeigt keinen Hinweis; zusammen mit „Unfall“ ist der Unfall-Hinweis offen und der Licht-Hinweis eingeklappt; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
-# Backlog 1270: zusätzlich Diktat-Satz ohne Satzzeichen je Sprache.
+# Backlog 1270: zusätzlich Diktat-Satz ohne Satzzeichen je Sprache. Backlog 1321: Blinker-Diktate RU/UK, „поворот руля“/Straße ohne Hinweis.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -13,6 +13,7 @@ BOTH={'de':'Unfall, Scheinwerfer kaputt','uk':'ДТП, фара не світи�
 NO={'de':'Licht im Laderaum ist an','uk':'Світло в кабіні увімкнене','en':'Lights are fine'}
 HT={'de':'Licht am Lkw oder Auflieger ausgefallen','uk':'Не працює світло на тягачі чи напівпричепі','en':'Lights on the truck or trailer not working'}
 DIKTAT={'de':'anhänger hat kein strom','uk':'причіп без світла','en':'trailer has no power'}  # Backlog 1270: Diktat ohne Satzzeichen
+DIK3={'de':['левый поворот на прицепе не работает','повторитель поворота разбит'],'uk':['сигнал повороту не працює','бічний поворотник відпав','не моргает поворотник справа'],'en':['сигнал поворота не работает','реле поворотов щелкает быстро']}  # Backlog 1321: Blinker RU/UK
 DIK2={'de':['фара треснула','фары не включаются','аварійна сигналізація не вмикається'],'uk':['перегоріла лампочка','фара тріснула','світло тьмяне','не працює поворот','фари не вмикаються','аварійна сигналізація не вмикається'],'en':['номер не подсвечивается','фары не включаются']}  # Backlog 1291: Diktat RU/UK
 fails=[]
 def check(c,m):
@@ -47,6 +48,8 @@ with sync_playwright() as p:
         q.fill('#d',DIKTAT[lang]); q.wait_for_timeout(100)
         check(vis('#lights'),f'{lang}/{w}: Diktat „{DIKTAT[lang]}“ → Hinweis')
         for dk in DIK2[lang]: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#lights'),f'{lang}/{w}: Diktat „{dk}“ → Licht-Hinweis (Backlog 1291)')
+        for dk in DIK3[lang]: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#lights'),f'{lang}/{w}: Blinker-Diktat „{dk}“ → Licht-Hinweis (Backlog 1321)')
+        for dk in ['поворот руля не работает','после поворота не работает навигатор']: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#lights'),f'{lang}/{w}: „{dk}“ ohne Licht-Hinweis (Backlog 1321)')
         q.fill('#d','')
         q.goto(B+'/#/help?s=lights'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_lights' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')
