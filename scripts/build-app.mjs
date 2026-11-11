@@ -377,7 +377,10 @@ const RX_TOK = ['(?![a-zäöüß])', '(?<![a-zäöüß-])', '(?<![а-яіїєґ�
   // Backlog 1324 (Reserve Start-Modul nach 1323: 45,657 % > 45,65 %): DE-Reparaturvermerk „funktioniert wieder|wieder (ok|in ordnung“ (41×) laut Häufigkeitsanalyse.
   String.raw`funktioniert\s+wieder|wieder\s+(?:ok|in\s+ordnung`,
   // Backlog 1326 (Reserve Start-Modul nach 1325: 45,648 % ≈ Grenze 45,65 %): RU/UK „не працю…/не работа…“ ohne umgebende „|“ (19×) und „\s+(?:\S+\s+){0,4}?(?:“ (33×) laut Häufigkeitsanalyse.
-  String.raw`не\s+працю\S*|не\s+работа\S*`, String.raw`\s+(?:\S+\s+){0,4}?(?:`];
+  String.raw`не\s+працю\S*|не\s+работа\S*`, String.raw`\s+(?:\S+\s+){0,4}?(?:`,
+  // Backlog 1328 (Reserve Start-Modul nach 1327: 45,625 % ≈ Grenze 45,63 %): Laderaum-Wörter EN/RU/UK am Ende eines Ausschlusses (3×, je 129 Byte) und DE-Türarten (4×) laut Häufigkeitsanalyse.
+  String.raw`|load(?![a-z])|trailer|box\s+body|curtain|вантаж\S*|кузов\S*|причіп\S*|прицеп\S*|напівпричіп\S*|полуприцеп\S*|тент\S*|фургон\S*)[^.;!?]*)`,
+  String.raw`(?:fahrer|beifahrer|heck|seiten|schiebe|kabinen|fahrerhaus|koffer|aufbau|hinter|vorder|fl(?:ü|ue)gel)?[\s-]?t(?:ü|ue)r(?:en)`];
 export function dedupeLooks(code) {
   const calls = [...code.matchAll(RX_CALL)], count = new Map();
   for (const c of calls) for (const [a, e] of rxGroups(c[1])) { const g = c[1].slice(a, e); count.set(g, (count.get(g) || 0) + 1); }
