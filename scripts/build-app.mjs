@@ -352,9 +352,11 @@ export function expandRx(code) {
 // verschiedener Reparatur-Ausschlüsse (`(?![^.;!?]*(?:repariert|…|gewechselt|` ≈ 40×, RU/UK-Reparaturwörter ≈ 17× bzw. 36×), die __RX nicht
 // erfasst, weil die Ausschlüsse als Ganzes verschieden sind. Reihenfolge wichtig: längerer RU/UK-Baustein vor dem kürzeren.
 // Backlog 1301 (Reserve Start-Modul nach 1299/1300: 45,69 % bei Ziel 45,7 %): Index 13 = Verneinung `nicht\s+(?:mehr\s+)?` (≈ 130×).
+// Backlog 1303 (Reserve Start-Modul nach 1302: 45,68 % bei Ziel 45,7 %): Index 14 = RU/UK-Aufbauwörter `(?:фургон|будк|прицеп|…|кузов|` (≈ 11×, je 106 Byte),
+// Index 15 = `|не\s+працю\S*|не\s+работа\S*|` (≈ 17×) – per Häufigkeitsanalyse (Anfang an `|`/`(`, Ende an `|`/`)`, Ersparnis n × (Länge − 10)).
 const RX_TOK = ['(?![a-zäöüß])', '(?<![a-zäöüß-])', '(?<![а-яіїєґё])', '(?<![a-zäöüß])', '(?<![а-яіїєґ])', '(?<![a-z-])', '(?![а-яіїєґё])', String.raw`\s+(?:\S+\s+)?`, String.raw`(?:\S+\s+){0,2}?`, String.raw`(?:\S+\s+){0,3}?`,
   '(?![^.;!?]*(?:repariert|erneuert|getauscht|ersetzt|behoben|gewechselt|', String.raw`|відремонт\S*|замінил\S*|замінен\S*|отремонт\S*|`, String.raw`|відремонт\S*|замінил\S*|`,
-  String.raw`nicht\s+(?:mehr\s+)?`];
+  String.raw`nicht\s+(?:mehr\s+)?`, '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', String.raw`|не\s+працю\S*|не\s+работа\S*|`];
 export function dedupeLooks(code) {
   const calls = [...code.matchAll(RX_CALL)], count = new Map();
   for (const c of calls) for (const [a, e] of rxGroups(c[1])) { const g = c[1].slice(a, e); count.set(g, (count.get(g) || 0) + 1); }
