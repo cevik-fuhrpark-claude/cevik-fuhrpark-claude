@@ -1,6 +1,8 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 307, Blickwinkel „Ladung verrutscht während der Fahrt“): Meldeformular zeigt bei
 # verrutschter/umgefallener Ladung fünf Schritte (anhalten, vorsichtig öffnen, Leitung, Fotos, Auswahl Fahrbereitschaft);
 # „Ladung nass“ zeigt nur den Plane-Hinweis; zusammen mit „Plane gerissen“ ist der Ladungs-Hinweis offen; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Backlog 1306 (11.11.2026): Diktat RU/UK – „поддоны попадали“, „вантаж тисне на двері“ → Ladung; „тріскачка зламалася“ → Sicherungsmittel (kein Geräusch);
+# „груз не сместился“ nichts; „груз сместился, ремень порвался“ kein Sitz-Hinweis.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -41,6 +43,12 @@ with sync_playwright() as p:
         if SHOTS: q.locator('#load').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/ladung-{lang}-{w}.png')
         q.fill('#d',BOTH[lang]); q.wait_for_timeout(100)
         check(vis('#load') and vis('#tarp') and q.evaluate("!document.querySelector('#load ul').hidden && document.querySelector('#tarp ul').hidden"),f'{lang}/{w}: mit Plane zusammen → Ladung offen, Plane eingeklappt')
+        for x in ['поддоны попадали','вантаж тисне на двері','груз шатается']:
+            q.fill('#d',x); q.wait_for_timeout(100); check(vis('#load'),f'{lang}/{w}: „{x}“ → Ladung')
+        q.fill('#d','груз сместился, ремень порвался'); q.wait_for_timeout(100); check(vis('#load') and not vis('#seat'),f'{lang}/{w}: Ladung + Gurt → kein Sitz-Hinweis')
+        q.fill('#d','тріскачка зламалася'); q.wait_for_timeout(100); check(vis('#lashgear') and not vis('#noise'),f'{lang}/{w}: Ratsche → Sicherungsmittel, kein Geräusch')
+        if SHOTS and w==390: q.locator('#lashgear').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/ratsche-{lang}-{w}.png')
+        q.fill('#d','груз не сместился'); q.wait_for_timeout(100); check(not vis('#load'),f'{lang}/{w}: verneint → kein Hinweis')
         q.fill('#d','')
         q.goto(B+'/#/help?s=load'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_load' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')

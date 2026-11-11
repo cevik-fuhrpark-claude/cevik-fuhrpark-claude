@@ -21515,7 +21515,7 @@ await test('Backlog 307 (Blickwinkel „Ladung verrutscht während der Fahrt“)
     ok(L.load_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="load" class="panel" hidden role="status">`), 'Panel #load');
-  ok(app.includes("$('#load').hidden = !LOAD_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#load').hidden = !LOAD_HINT.test(dv) && !LOAD2_HINT.test(dv);"), 'Hinweis abhängig von der Beschreibung');
   { const o = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, '')); ok(o.indexOf('brake') < o.indexOf('load') && o.indexOf('load') < o.indexOf('leak') && o.slice(o.indexOf('load') + 1, o.indexOf('leak')).every((x) => ['deck', 'lashgear', 'floor'].includes(x)), 'Gruppierung: nach Bremse, vor Leck (dazwischen nur Sicherungsmittel, Ladeetage und Ladeboden, Backlog 354/692/741)'); }
   ok(helpAfter(app, 'load', 'tarp'), 'Hilfe-Abschnitt load nach tarp');
 });
@@ -27368,7 +27368,7 @@ await test('Backlog 692–693 (Blickwinkel „Vor dem Laden: Zurrgurte, Kantensc
     ok(S.help_lashgear_t && S.help_lashgear_s.includes(S.lashgear_hint_steps) && S.help_lashgear_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="lashgear" class="panel" hidden role="status">'), 'Panel #lashgear');
-  ok(app.includes("$('#lashgear').hidden = !LASHGEAR_HINT.test(dv);") && app.indexOf("$('#lashgear').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#lashgear').hidden = !LASHGEAR_HINT.test(dv) && !LASHGEAR2_HINT.test(dv);") && app.indexOf("$('#lashgear').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'load', 'lashgear', 'deck'"), 'Reihenfolge nach verrutschter Ladung');
   ok(app.includes("'step', 'lashgear', "), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -37541,6 +37541,25 @@ await test('Backlog 1305 (Sonde, Blickwinkel „Fahrer diktiert Tank/AdBlue/Dies
   const H = { help_fuel_s: fuel, help_dryfuel_s: dry, help_gelfuel_s: gel };
   for (const [k, l, ex] of [['help_fuel_s', 'de', 'залил адблю в солярку'], ['help_fuel_s', 'de', 'перепутал бак'], ['help_fuel_s', 'uk', 'переплутав бак'], ['help_fuel_s', 'uk', 'залив адблю в бак з дизелем'], ['help_fuel_s', 'en', 'перепутал бак'], ['help_dryfuel_s', 'de', 'обсох'], ['help_dryfuel_s', 'en', 'обсох'], ['help_gelfuel_s', 'de', 'соляра загустела'], ['help_gelfuel_s', 'de', 'парафин в соляре'], ['help_gelfuel_s', 'uk', 'соляра загустела'], ['help_gelfuel_s', 'en', 'парафин в соляре']]) { ok(STRINGS[l][k].includes(ex), 'Hilfe ' + k + ' ' + l + ': ' + ex); ok(H[k](ex), 'Hilfe-Beispiel löst aus: ' + ex); }
   ok(fuel('Tank verwechselt'.toLowerCase()), 'DE-Hilfebeispiel „Tank verwechselt“');
+});
+
+await test('Backlog 1306 (Sonde, Blickwinkel „Fahrer diktiert Ladung/Ladungssicherung auf Russisch/Ukrainisch“): „поддоны попадали“, „груз шатается/давит на двери“, „груз поехал на повороте“, „коробки упали“, „груз не/плохо закреплён“, „потерял часть груза“, DE „Ladung nicht gesichert“ → Ladung; „трещотка сломалась“, „тріскачка зламалася“ (nicht mehr Geräusch), „храповик не держит“ → Sicherungsmittel; „груз сместился, ремень порвался“ nicht Sitz; Verneinung, Getriebe, Papiere nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const load = any(['LOAD_HINT', 'LOAD2_HINT']), lash = any(['LASHGEAR_HINT', 'LASHGEAR2_HINT']), seat = any(['SEAT_HINT', 'SEAT2_HINT']), noise = rx('NOISE_HINT');
+  ok(app.includes("$('#load').hidden = !LOAD_HINT.test(dv) && !LOAD2_HINT.test(dv);") && app.includes("$('#lashgear').hidden = !LASHGEAR_HINT.test(dv) && !LASHGEAR2_HINT.test(dv);"), 'Meldeformular nutzt LOAD2/LASHGEAR2');
+  for (const x of ['груз поехал на повороте', 'поддоны попадали', 'ящики попадали', 'коробки упали', 'груз шатается', 'вантаж хитається', 'ремни ослабли груз болтается', 'груз давит на ворота', 'вантаж тисне на двері', 'груз не закреплён', 'вантаж погано закріплений', 'потерял часть груза на дороге', 'загубив частину вантажу', 'ladung nicht gesichert', 'ungesicherte ladung']) ok(load(x), 'Ladung: ' + x);
+  for (const x of ['груз не сместился', 'вантаж не зсунувся', 'груз надёжно закреплён, не шатается', 'грузовик шатается на ходу', 'коробка передач болтается', 'коробки передач болтаются', 'потерял документы на груз', 'потерял грузовик', 'ladung ist gesichert']) ok(!load(x), 'keine Ladung: ' + x);
+  for (const x of ['трещотка сломалась', 'тріскачка зламалася', 'храповик не держит', 'храповик не тримає', 'порвался стяжной ремень', 'лопнул ремень на грузе']) ok(lash(x), 'Sicherungsmittel: ' + x);
+  for (const x of ['трещотка не сломалась', 'тріскачка зламалася вчора замінили', 'ремень безопасности порвался']) ok(!lash(x), 'kein Sicherungsmittel: ' + x);
+  ok(!noise.test('тріскачка зламалася'), 'Ratsche ist kein Geräusch'); ok(noise.test('тріск у двигуні'), 'Knacken weiterhin Geräusch');
+  for (const x of ['груз сместился, ремень порвался', 'ремень порвался, груз упал']) ok(!seat(x), 'kein Sitz: ' + x);
+  for (const x of ['ремень безопасности порвался', 'ремінь безпеки порвався', 'ремень порвался']) ok(seat(x), 'weiterhin Sitz: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [k, l, ex, f] of [['help_load_s', 'de', 'груз шатается', load], ['help_load_s', 'de', 'поддоны попадали', load], ['help_load_s', 'de', 'вантаж тисне на двері', load], ['help_load_s', 'uk', 'вантаж хитається', load], ['help_load_s', 'uk', 'вантаж погано закріплений', load], ['help_load_s', 'en', 'груз шатается', load], ['help_lashgear_s', 'de', 'трещотка сломалась', lash], ['help_lashgear_s', 'uk', 'храповик не тримає', lash], ['help_lashgear_s', 'en', 'тріскачка зламалася', lash]]) { ok(STRINGS[l][k].includes(ex), 'Hilfe ' + k + ' ' + l + ': ' + ex); ok(f(ex), 'Hilfebeispiel trifft: ' + ex); }
+  ok(load('Ladung nicht gesichert'.toLowerCase()), 'DE-Hilfebeispiel');
 });
 
 await test('Backlog 1304 (Sonde, Blickwinkel „Fahrer diktiert Reifen/Rad auf Russisch/Ukrainisch (Nachlese)“): „шишка на шине“, „шипит колесо“, „повітря шипить у шині“ (→ Reifen, nicht mehr Bremse), „колесо взорвалось/пустое“, „шина бортанулась“ → Panne, „гайки ослабли на колесе“, „трещина на диске“, „колесо открутилось/восьмерит“ → Rad, „колесо бьёт/бʼє“ → Vibration; DE „Rad hat sich gelöst“, „Reifen ist von der Felge gesprungen“, „es zischt am Reifen“; Verneinung, Brems-/Kupplungsscheibe, Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
