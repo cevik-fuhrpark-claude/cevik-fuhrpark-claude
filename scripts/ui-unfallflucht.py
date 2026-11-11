@@ -2,6 +2,7 @@
 # bei Unfallflucht/Parkschaden eigene Schritte statt der allgemeinen Unfall-Hinweise (#acc ausgeblendet), normaler Unfall weiter #acc;
 # Vorgang zeigt der Leitung im Versicherungsabschnitt den Hinweis „Anzeige eintragen, Gegner unbekannt → leer lassen“.
 # Backlog 1274: diktierte Sätze ohne Satzzeichen (Unfall bzw. „angefahren und ist weg“).
+# Backlog 1308: russisch/ukrainisch diktiert – Auffahrunfall → #acc, Parkschaden „мне помяли дверь на стоянке“ → #hitrun, „об столб“ → #fixobj.
 # DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -44,6 +45,10 @@ with sync_playwright() as p:
         q.fill('#d',DIKH[lang]); q.wait_for_timeout(150)
         check(vis('#hitrun') and not vis('#acc'),f'{lang}/{w}: Diktat „{DIKH[lang]}“ → Unfallflucht-Schritte')
         if SHOTS and w==390: q.locator('#hitrun').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/unfallflucht-diktat-{lang}-{w}.png')
+        for x,pan in [('мне въехали в зад','#acc'),('легківка в’їхала в причіп','#acc'),('мені пом’яли двері на стоянці','#hitrun'),('помял бампер об столб','#fixobj')]:  # Backlog 1308
+            q.fill('#d',x); q.wait_for_timeout(150)
+            check(vis(pan) and all(not vis(o) for o in ['#acc','#hitrun','#fixobj'] if o!=pan),f'{lang}/{w}: „{x}“ → {pan}')
+        if SHOTS and w in (390,1366): q.fill('#d','мне въехали в зад'); q.wait_for_timeout(150); q.locator('#acc').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/unfall-ru-{lang}-{w}.png')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen (Formular)')
         q.fill('#d','')
         q.goto(B+f'/#/cases/{cid}'); q.wait_for_selector('[data-claimhitrun]',timeout=15000)

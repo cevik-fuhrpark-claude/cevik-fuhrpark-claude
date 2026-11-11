@@ -27044,11 +27044,11 @@ await test('Backlog 653–655 (Blickwinkel „Parkschaden – Unfallgegner unbek
     ok(S.dq_claim_hitrun_no_police, 'Datenqualität ' + l);
   }
   ok(app.includes('<div id="hitrun" class="panel" hidden role="status">'), 'Panel #hitrun');
-  ok(app.includes("const hitrun = !wild && (HITRUN_HINT.test(dv) || HITRUN2_HINT.test(dv)); $('#hitrun').hidden = !hitrun;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !accReal;"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor (Backlog 668: Brückenanprall ebenso)');
+  ok(app.includes("const hitrun = !wild && (HITRUN_HINT.test(dv) || HITRUN2_HINT.test(dv) || HITRUN3_HINT.test(dv)); $('#hitrun').hidden = !hitrun;") && app.includes("$('#acc').hidden = wild || hitrun || bridge || !accReal;"), 'statt der allgemeinen Unfall-Hinweise, Wildunfall geht vor (Backlog 668: Brückenanprall ebenso)');
   ok(app.indexOf("$('#hitrun').hidden = !hitrun") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun',/.test(app), 'Reihenfolge direkt nach Unfall/Wildunfall');
   ok(app.includes("'custdmg', 'hitrun', 'vandal', 'marten', 'storm', 'bridge', 'fire'"), 'Hilfe-Abschnitt für meldende Rollen (Backlog 661/664/667: Vandalismus, Marder, Unwetter direkt dahinter)');
-  ok(app.includes("const hitrunNoRef = !theftNoRef && (HITRUN_HINT.test(desc || '') || HITRUN2_HINT.test(desc || '')) && !(cl && cl.police_ref);") && app.includes('data-claimhitrun'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt zum Diebstahl-Hinweis');
+  ok(app.includes("const hitrunNoRef = !theftNoRef && (HITRUN_HINT.test(desc || '') || HITRUN2_HINT.test(desc || '') || HITRUN3_HINT.test(desc || '')) && !(cl && cl.police_ref);") && app.includes('data-claimhitrun'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt zum Diebstahl-Hinweis');
   // Datenqualität (655)
   const hr = await newCase({ description: 'Parkschaden über Nacht, Verursacher unbekannt' });
   const hrUk = await newCase({ description: 'ВТЕЧА з місця ДТП, бампер пошкоджено' });
@@ -37543,6 +37543,25 @@ await test('Backlog 1305 (Sonde, Blickwinkel „Fahrer diktiert Tank/AdBlue/Dies
   ok(fuel('Tank verwechselt'.toLowerCase()), 'DE-Hilfebeispiel „Tank verwechselt“');
 });
 
+await test('Backlog 1308 (Sonde, Blickwinkel „Fahrer diktiert Unfall/Rangierschaden auf Russisch/Ukrainisch“): „мне въехали в зад“, „легківка в’їхала в причіп“, „сзади въехал грузовик“, „я въехал в машину“, „поцарапал чужую машину“, „есть пострадавшие“ → Unfall; „помял бампер об столб“, „зацепил шлагбаум“, „снес столбик“, „сдавал задом и ударил ворота“ → fremde Sache; „мне помяли дверь на стоянке“ → Parkschaden/Unfallflucht; Garage/Rampe/Waschanlage, „ударил по тормозам“, Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const acc = any(['ACC_HINT', 'ACC2_HINT', 'ACC3_HINT']), hitrun = any(['HITRUN_HINT', 'HITRUN2_HINT', 'HITRUN3_HINT']), fixobj = rx('FIXOBJ_HINT');
+  ok(app.includes('|| ACC3_HINT.test(daccx)') && app.includes('|| HITRUN3_HINT.test(dv))') && app.includes("|| HITRUN3_HINT.test(desc || ''))"), 'Meldeformular und Vorgang nutzen ACC3/HITRUN3');
+  for (const x of ['мне въехали в зад', 'мені в’їхали в зад', "мені в'їхали в бік", 'легковушка въехала в прицеп', 'легківка в’їхала в причіп', 'сзади въехал грузовик', 'ззаду в’їхав вантажівка', 'я въехал в впереди стоящую машину', 'не встиг загальмувати і в’їхав у машину', 'легковик въехал мне в бок', 'поцарапал чужую машину на стоянке', 'зачепив легківку при перестроюванні', 'пострадавших нет, только железо', 'є постраждалі']) ok(acc(x), 'Unfall: ' + x);
+  for (const x of ['въехал в гараж', 'в’їхав у задній двір складу', 'въехал в автомойку', 'въехал на рампу', 'мне въехали в зад, вчера отремонтировали', 'сдавал назад, ничего не задел', 'поцарапал машину на стоянке']) ok(!acc(x), 'kein Unfall: ' + x);
+  for (const x of ['помял бампер об столб', 'разбил фару об столб', 'м’яв бампер об стовп', 'розбив фару об стовп', 'зацепил шлагбаум', 'снес столбик на заправке', 'сдавал задом и ударил ворота']) ok(fixobj.test(x), 'fremde Sache: ' + x);
+  for (const x of ['сдавал назад и ударил по тормозам', 'ударил кулаком по рулю', 'разбил телефон об пол']) ok(!fixobj.test(x), 'keine fremde Sache: ' + x);
+  for (const x of ['мне помяли дверь на стоянке', 'мені пом’яли двері на стоянці', 'на парковці подряпали причіп']) ok(hitrun(x), 'Parkschaden: ' + x);
+  for (const x of ['на стоянке помыли машину', 'мне помяли дверь на стоянке, вчера заменили']) ok(!hitrun(x), 'kein Parkschaden: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, ex, f] of [['de', 'мне въехали в зад', acc], ['de', 'мне помяли дверь на стоянке', hitrun], ['uk', 'мені в’їхали в зад', acc], ['uk', 'легківка в’їхала в причіп', acc], ['uk', 'мені пом’яли двері на стоянці', hitrun], ['en', 'легківка в’їхала в причіп', acc]]) {
+    ok(STRINGS[l].help_accident_s.includes(ex), 'Hilfe ' + l + ' nennt ' + ex); ok(f(ex), 'Hilfebeispiel greift: ' + ex);
+  }
+});
+
 await test('Backlog 1306 (Sonde, Blickwinkel „Fahrer diktiert Ladung/Ladungssicherung auf Russisch/Ukrainisch“): „поддоны попадали“, „груз шатается/давит на двери“, „груз поехал на повороте“, „коробки упали“, „груз не/плохо закреплён“, „потерял часть груза“, DE „Ladung nicht gesichert“ → Ladung; „трещотка сломалась“, „тріскачка зламалася“ (nicht mehr Geräusch), „храповик не держит“ → Sicherungsmittel; „груз сместился, ремень порвался“ nicht Sitz; Verneinung, Getriebe, Papiere nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -37903,7 +37922,7 @@ await test('Backlog 1274 (Sonde, Blickwinkel „Fahrer diktiert Unfall-/Rangiers
   for (const x of ['beim zurücksetzen ins tor gerutscht', 'ans tor gefahren', 'здаючи назад вдарився в стовп', 'сдавал назад и ударился в столб']) ok(FX.test(x), 'fremde Sache: ' + x);
   ok(!FX.test('ins büro gefahren') && !FX.test('ударился головой'), 'keine fremde Sache: Büro, Kopf');
   ok(CU.test('heck vom auflieger an der rampe eingedrückt'), 'Schaden beim Kunden: Rampe eingedrückt');
-  ok(app.includes("const hitrun = !wild && (HITRUN_HINT.test(dv) || HITRUN2_HINT.test(dv));") && app.includes("const accReal = ACC_HINT.test(daccx) || ACC2_HINT.test(daccx);") && app.includes("(HITRUN_HINT.test(desc || '') || HITRUN2_HINT.test(desc || ''))"), 'Listener und Vorgangshinweis');
+  ok(app.includes("const hitrun = !wild && (HITRUN_HINT.test(dv) || HITRUN2_HINT.test(dv) || HITRUN3_HINT.test(dv));") && app.includes("const accReal = ACC_HINT.test(daccx) || ACC2_HINT.test(daccx) || ACC3_HINT.test(daccx);") && app.includes("(HITRUN_HINT.test(desc || '') || HITRUN2_HINT.test(desc || '') || HITRUN3_HINT.test(desc || ''))"), 'Listener und Vorgangshinweis');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['pkw hat mich beim spurwechsel gestreift', 'ein pkw hat mir die tür abgefahren', 'beim einparken anderen lkw angefahren']], ['uk', ['мене підрізали і зачепили бампер']], ['en', ['a car hit my trailer while turning', 'someone rear ended me at the lights', 'i scraped a car while parking']]]) for (const ex of exs) { ok(STRINGS[l].help_accident_s.includes(ex), 'Hilfe-Beispiel ' + l + ': ' + ex); ok(A1.test(ex) || A2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
