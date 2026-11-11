@@ -15,6 +15,8 @@ DIK5={'de':'ladebordwand ist beim entladen stehen geblieben','uk':'гідроб�
 DIK4={'de':'ladebordwand sinkt ab hat keinen strom','uk':'гідроборт без струму','en':'tail lift has no power fuse blown'}  # Backlog 1266
 DIK6={'de':['дверь открывается на ходу','ручка двери оторвалась'],'uk':['двері провисли','двері погано закриваються'],'en':['штанга запора заклинила','дверь не захлопывается']}  # Backlog 1293: Diktat RU/UK
 NEG6=['дверь в офисе плохо закрывается','замок зажигания заклинило','дверь не провисла']
+DIK7={'de':['гидроборт застрял внизу','гидроборт не складывается'],'uk':['гідроборт застряг унизу','гідроборт пищить'],'en':['заклинило гидроборт','гідроборт не реагує на пульт']}  # Backlog 1312: Ladebordwand RU/UK
+NEG7=['гидроборт не пищит','гидроборт отремонтировали теперь складывается']
 NO={'de':'Tür eingedrückt','uk':'Двері пошкоджені','en':'Door dented'}
 HT={'de':'Tür, Hecktür oder Ladebordwand schließt nicht','uk':'Двері, задні двері чи гідроборт не закриваються','en':'Door, rear door or tail lift will not close'}
 fails=[]
@@ -39,6 +41,8 @@ with sync_playwright() as p:
         check(not vis('#door'),f'{lang}/{w}: anfangs kein Hinweis')
         q.fill('#d',NO[lang]); q.wait_for_timeout(100)
         check(not vis('#door') and vis('#hintsum')==False,f'{lang}/{w}: „{NO[lang]}“ → kein Tür-Hinweis')
+        for dk in DIK7[lang]: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#door') and not vis('#stuck'),f'{lang}/{w}: Diktat „{dk}“ → Ladebordwand, nicht Festgefahren (Backlog 1312)')
+        for dk in NEG7: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#door'),f'{lang}/{w}: „{dk}“ → kein Tür-Hinweis (Backlog 1312)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
         check(vis('#door'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Tür-Hinweis (Backlog 1256)')

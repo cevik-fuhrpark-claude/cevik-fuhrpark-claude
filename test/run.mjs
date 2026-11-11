@@ -37543,6 +37543,22 @@ await test('Backlog 1305 (Sonde, Blickwinkel „Fahrer diktiert Tank/AdBlue/Dies
   ok(fuel('Tank verwechselt'.toLowerCase()), 'DE-Hilfebeispiel „Tank verwechselt“');
 });
 
+await test('Backlog 1312 (Sonde, Blickwinkel „Fahrer diktiert Ladebordwand/Hebebühne auf Russisch/Ukrainisch“): „гидроборт не складывается/не реагирует/не выдвигается“, „гідроборт пищить“, „гидроборт застрял внизу“, „заклинило гідроборт“ → Tür/Ladebordwand statt Festgefahren; „гидроборт не пищит“, Reparaturvermerk, Lkw im Schnee nicht bzw. weiter Festgefahren; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const door = any(['DOOR_HINT', 'DOOR2_HINT', 'DOOR3_HINT', 'DOOR4_HINT', 'DOOR5_HINT']), stuck = rx('STUCK_HINT');
+  const pos = ['гидроборт не складывается', 'гідроборт не складається', 'гидроборт не складывается до конца', 'гидроборт пищит', 'гідроборт пищить', 'гидроборт застрял внизу', 'гідроборт застряг унизу', 'гидроборт застрял вверху', 'гідроборт застряг вгорі', 'гидроборт застрял в нижнем положении', 'заклинило гидроборт', 'застряг гідроборт унизу', 'гидроборт не реагирует на пульт', 'гідроборт не реагує на пульт', 'гидроборт не выдвигается', 'гідроборт не висувається'];
+  for (const x of pos) ok(door(x), 'Ladebordwand: ' + x);
+  for (const x of ['гидроборт застрял внизу', 'гідроборт застряг унизу', 'застряг гідроборт унизу', 'гидроборт застрял в нижнем положении']) ok(!stuck.test(x), 'nicht Festgefahren: ' + x);
+  for (const x of ['гидроборт не пищит', 'гидроборт починили теперь складывается', 'гидроборт застрял внизу, вчера отремонтировали', 'гідроборт працює нормально']) ok(!door(x), 'kein Ladebordwand-Hinweis: ' + x);
+  for (const x of ['машина застряла в снегу', 'застряг у багнюці', 'грузовик застрял на подъеме']) ok(stuck.test(x), 'Festgefahren bleibt: ' + x);
+  ok(!stuck.test('ключ застрял в замке'), 'Schlüssel im Schloss weiter nicht Festgefahren');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, ex] of [['de', 'гидроборт застрял внизу'], ['de', 'гидроборт не складывается'], ['de', 'гідроборт пищить'], ['uk', 'гідроборт застряг унизу'], ['uk', 'гідроборт не складається'], ['uk', 'гідроборт пищить'], ['en', 'гидроборт застрял внизу'], ['en', 'гідроборт не складається']]) { ok(STRINGS[l].help_door_s.includes(ex), 'Hilfe ' + l + ' nennt ' + ex); ok(door(ex) && !stuck.test(ex), 'Hilfebeispiel greift: ' + ex); }
+});
+
 await test('Backlog 1311 (Reserve Start-Modul nach 1310: 45,70 % ≈ Grenze 45,7 %): häufige Alternativen-Folgen („|auflieger|anh(?:ä|“, „funktioniert wieder|wieder (ok|“, „geht nicht|funktioniert nicht“, „злама[вл]/сломал“, „отремонт/заменил“, „злама[внл]/сломан“) stehen als __T[25]–__T[30] in der Bausteinliste, werden je ≥ 8× genutzt, sind länger als der Platzhalter; Rückverwandlung jedes Ausdrucks gleich; Start-Modul ≤ 45,65 %', async () => {
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const B = await import('../scripts/build-app.mjs');
