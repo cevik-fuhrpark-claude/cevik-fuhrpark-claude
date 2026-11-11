@@ -37790,6 +37790,22 @@ await test('Backlog 1364 (Sonde, Blickwinkel „Fahrer diktiert Auspuff/Abgas/DP
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1365 (Sonde, Blickwinkel „Fahrer diktiert Fahrtenschreiber/Fahrerkarte/Tacho auf Russisch/Ukrainisch“, Backlog 195): „не могу вставить карту“, „не можу вставити картку“, „слот карты сломан“, „гніздо для картки зламане“ → Fahrtenschreiber (nicht „не сломан“, nicht Tank-/Bankkarte, nicht nach Reparatur); „спидометр на нуле/показывает ноль/не двигается“, „нет скорости на спидометре“ → Anzeige-Hinweis; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(recurFix(x).toLowerCase())); };
+  const tacho = any(['TACHO_HINT', 'TACHO2_HINT']), dash = any(['DASH_HINT']);
+  for (const x of ['не могу вставить карту', 'не можу вставити картку', 'не могу вытащить карту водителя', 'слот карты сломан', 'слот для карты не работает', 'щель для карты повреждена', 'гніздо для картки зламане']) ok(tacho(x), 'Fahrtenschreiber: ' + x);
+  for (const x of ['слот карты не сломан', 'не могу вставить топливную карту', 'не могу вставить карту в банкомат', 'слот карты сломан, уже отремонтировали']) ok(!tacho(x), 'kein Fahrtenschreiber-Hinweis: ' + x);
+  for (const x of ['спидометр показывает ноль', 'спидометр стоит на нуле', 'спідометр показує нуль', 'стрелка спидометра не двигается', 'спидометр врёт', 'нет скорости на спидометре', 'немає швидкості на спідометрі']) ok(dash(x), 'Anzeige: ' + x);
+  for (const x of ['спидометр работает', 'скорость 80 на спидометре']) ok(!dash(x), 'kein Anzeige-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(/не мо[гж]у вставит/.test(STRINGS[l].help_tachofault_s), 'Hilfe Fahrtenschreiber ' + l); ok(/спідометр показує нуль/.test(STRINGS[l].help_dash_s), 'Hilfe Anzeige ' + l); }
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1355 (Reserve Start-Modul nach 1359: 45,59 % bei Grenze 45,60 %): Bausteine __T[67] (DE-Durchfahrtshindernisse Brücke … Torbogen), __T[68] (RU/UK-Verlust-/Abfallverben), __T[69] (EN-Ladeboden/Bordwände) je 2× genutzt (→ 45,56 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
