@@ -9,6 +9,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Radmuttern hinten links locker','uk':'Колісні гайки ослабли','en':'Wheel nuts loose on trailer'}
 BOTH={'de':'Unfall, Rad wackelt','uk':'ДТП, колесо хитається','en':'Accident, wheel is wobbling'}
+DIK={'de':'rad hat sich gelöst','uk':'тріщина на диску','en':'гайки ослабли на колесе'}
 NO={'de':'Lenkrad wackelt','uk':'Двері пошкоджені','en':'Steering wheel loose'}
 HT={'de':'Rad wackelt, Radmuttern locker oder Radlager heiß','uk':'Колесо хитається, колісні гайки ослабли або маточина гаряча','en':'Wheel wobbling, wheel nuts loose or hub hot'}
 fails=[]
@@ -35,6 +36,9 @@ with sync_playwright() as p:
         check(not vis('#wheel') and vis('#hintsum')==False,f'{lang}/{w}: „{NO[lang]}“ → kein Rad-Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#wheel'),f'{lang}/{w}: Hinweis bei Rad-Problem')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#wheel'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Rad-Hinweis (Backlog 1304)')
+        q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         tx=q.inner_text('#wheel')
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')

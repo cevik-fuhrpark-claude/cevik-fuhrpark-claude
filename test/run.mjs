@@ -37522,6 +37522,26 @@ await test('Backlog 1300 (Folge aus 1299, Blickwinkel „Fahrer mit älterem Han
   for (const x of ['шипит воздух в шине', 'шипит воздух у колеса']) { ok(!new RegExp(src, 'i').test(x), 'Reifen, keine Bremse: ' + x); ok(!new RegExp(B.lbFallback(src, true), 'i').test(x), 'Reifen, keine Bremse (alte Browser): ' + x); }
 });
 
+await test('Backlog 1304 (Sonde, Blickwinkel „Fahrer diktiert Reifen/Rad auf Russisch/Ukrainisch (Nachlese)“): „шишка на шине“, „шипит колесо“, „повітря шипить у шині“ (→ Reifen, nicht mehr Bremse), „колесо взорвалось/пустое“, „шина бортанулась“ → Panne, „гайки ослабли на колесе“, „трещина на диске“, „колесо открутилось/восьмерит“ → Rad, „колесо бьёт/бʼє“ → Vibration; DE „Rad hat sich gelöst“, „Reifen ist von der Felge gesprungen“, „es zischt am Reifen“; Verneinung, Brems-/Kupplungsscheibe, Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const tyre = any(['TYRE_HINT', 'TYRE2_HINT', 'TYRE3_HINT', 'TYRE4_HINT']), flat = any(['FLAT_HINT', 'FLAT2_HINT']), wheel = any(['WHEEL_HINT', 'WHEEL2_HINT']), vibr = any(['VIBR_HINT', 'VIBR2_HINT']), brake = any(['BRAKE_HINT', 'BRAKE2_HINT', 'BRAKE3_HINT', 'BRAKE4_HINT', 'AIRLINE_HINT']);
+  for (const x of ['шишка на шине', 'шишка на колесі', 'шипит колесо', 'повітря шипить у шині', 'из колеса воздух шипит', 'воздух выходит из шины', 'es zischt am reifen']) ok(tyre(x), 'Reifen: ' + x);
+  for (const x of ['повітря шипить у шині', 'из колеса воздух шипит', 'воздух выходит из шины']) ok(!brake(x), 'keine Bremse: ' + x);
+  for (const x of ['воздух травит', 'повітря шипить', 'шипит воздух под машиной']) ok(brake(x), 'weiterhin Bremse: ' + x);
+  for (const x of ['колесо взорвалось', 'колесо вибухнуло', 'шина бортанулась', 'колесо пустое', 'колесо пусте', 'колесо сдулось', 'reifen ist von der felge gesprungen']) ok(flat(x), 'Panne: ' + x);
+  for (const x of ['колесо пустое поменяли', 'колесо не взорвалось', 'бак пустой']) ok(!flat(x), 'keine Panne: ' + x);
+  for (const x of ['гайки ослабли на колесе', 'гайки открутились на колесе', 'трещина на диске', 'тріщина на диску', 'трещина на диске колеса', 'колесо открутилось', 'колесо восьмерит', 'rad hat sich gelöst', 'rad ist abgefallen']) ok(wheel(x), 'Rad: ' + x);
+  for (const x of ['гайки на колесе не ослабли', 'колесо не открутилось', 'трещина на диске сцепления', 'трещина на тормозном диске', 'rad hat sich nicht gelöst', 'гайка открутилась']) ok(!wheel(x), 'kein Rad: ' + x);
+  for (const x of ['колесо бьёт', 'колесо бʼє', 'колесо б’є']) ok(vibr(x), 'Vibration: ' + x);
+  ok(!vibr('колесо не бьёт'), 'keine Vibration: колесо не бьёт');
+  const { STRINGS } = await import('../public/i18n.js');
+  const H = { help_wheel_s: wheel, help_flat_s: flat, help_tyre_s: tyre };
+  for (const [k, l, ex] of [['help_wheel_s', 'de', 'гайки ослабли на колесе'], ['help_wheel_s', 'de', 'трещина на диске'], ['help_wheel_s', 'uk', 'тріщина на диску'], ['help_wheel_s', 'uk', 'колесо відкрутилось'], ['help_wheel_s', 'en', 'трещина на диске'], ['help_flat_s', 'de', 'колесо взорвалось'], ['help_flat_s', 'uk', 'колесо пусте'], ['help_flat_s', 'uk', 'шина бортанулась'], ['help_flat_s', 'en', 'колесо пустое'], ['help_tyre_s', 'de', 'шишка на шине'], ['help_tyre_s', 'uk', 'повітря шипить у шині'], ['help_tyre_s', 'en', 'воздух выходит из шины']]) { ok(STRINGS[l][k].includes(ex), 'Hilfe ' + k + ' ' + l + ': ' + ex); ok(H[k](ex), 'Hilfe-Beispiel löst aus: ' + ex); }
+});
+
 await test('Backlog 1302 (Sonde, Blickwinkel „Fahrer diktiert Heizung/Klima auf Russisch/Ukrainisch“): „в кабине/кабіні холодно“, „печка дует только в ноги“, „heizung bläst nur in den fußraum“, „im fahrerhaus ist es kalt“ → Sicht-/Heizungsschritte; „кондей не дует“, „заслонка печки/пічки не переключается/перемикається“ → Klima-Schritte; „печка гудит/пічка гуде“ → Geräusch; Verneinung und Reparaturvermerk („поменяли“) nicht; Hilfe DE/UK/EN mit Beispielen', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
