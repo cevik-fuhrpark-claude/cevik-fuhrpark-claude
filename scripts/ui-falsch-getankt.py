@@ -8,6 +8,7 @@ B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 TXT={'de':'Falsch getankt: AdBlue in den Dieseltank gefüllt','uk':'Залив AdBlue у паливний бак','en':'Put AdBlue into the diesel tank by mistake'}
+DIK={'de':'tank verwechselt','uk':'переплутав бак','en':'залил адблю в солярку'}  # Backlog 1305
 NO={'de':'AdBlue nachgefüllt, Warnung bleibt','uk':'Заправив AdBlue, попередження горить','en':'AdBlue topped up, warning stays on'}
 HT={'de':'Falsch getankt (z. B. AdBlue im Dieseltank)','uk':'Заправлено не те пальне','en':'Wrong fuel (e.g. AdBlue in the diesel tank)'}
 fails=[]
@@ -34,6 +35,9 @@ with sync_playwright() as p:
         check(not vis('#fuel'),f'{lang}/{w}: „{NO[lang]}“ → kein Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#fuel'),f'{lang}/{w}: Hinweis bei Fehlbetankung')
+        q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
+        check(vis('#fuel'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Fehlbetankung (Backlog 1305)')
+        q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         tx=q.inner_text('#fuel')
         check(tx.count('\n')>=4,f'{lang}/{w}: Titel und 4 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')

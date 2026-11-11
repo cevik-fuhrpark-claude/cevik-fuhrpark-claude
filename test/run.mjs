@@ -37500,7 +37500,7 @@ await test('Backlog 1296/1303 (Reserve Start-Modul nach 1295: 45,84 % > 45,8 %; 
   ok(d.code.includes('${__T[10]}fixed${__T[11]}заменил))') && d.code.includes('${__T[10]}eingestellt${__T[12]}полагод))'), 'Bausteine 10–12 eingesetzt: ' + d.code);
   eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (zweistelliger Index)');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 16, 'Bausteinliste hat 16 Einträge (Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15)'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
+  eq(T.length, 19, 'Bausteinliste hat 19 Einträge (Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18)'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
   ok((main.match(/\$\{__T\[1[0-2]\]\}/g) || []).length > 60, 'zweistellige Bausteine werden genutzt');
   for (const tk of T.slice(10)) ok(Buffer.byteLength(tk) > Buffer.byteLength('${__T[10]}'), 'Baustein länger als Platzhalter: ' + tk);
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
@@ -37520,6 +37520,27 @@ await test('Backlog 1300 (Folge aus 1299, Blickwinkel „Fahrer mit älterem Han
   const src = app.match(/^const BRAKE_HINT = \/(.+)\/i;$/m)[1];
   for (const x of ['шипит воздух под машиной', 'повітря шипить під машиною']) { ok(new RegExp(src, 'i').test(x), 'Bremse: ' + x); ok(new RegExp(B.lbFallback(src, true), 'i').test(x), 'Bremse (alte Browser): ' + x); }
   for (const x of ['шипит воздух в шине', 'шипит воздух у колеса']) { ok(!new RegExp(src, 'i').test(x), 'Reifen, keine Bremse: ' + x); ok(!new RegExp(B.lbFallback(src, true), 'i').test(x), 'Reifen, keine Bremse (alte Browser): ' + x); }
+});
+
+await test('Backlog 1305 (Sonde, Blickwinkel „Fahrer diktiert Tank/AdBlue/Diesel auf Russisch/Ukrainisch“): Fehlbetankung „залил адблю в солярку“, „перепутал/переплутав бак“, DE „Tank verwechselt“; AdBlue „закончилась мочевина“, „мочевина не качает“, Leistungs-/Startsperre; „обсох“ → leer gefahren (nicht Farbe/Straße); „соляра загустела“, „парафин в соляре“ → versulzt; „пробит бак“, DE „Tank aufgerissen“ → Leck; Verneinung nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const fuel = any(['FUEL_HINT']), eng = any(['ENGINE_HINT', 'ENGINE2_HINT', 'ENGINE3_HINT', 'ENGINE4_HINT']), dry = any(['DRYFUEL_HINT']), gel = any(['GELFUEL_HINT']), leak = any(['LEAK_HINT', 'LEAK2_HINT', 'LEAK3_HINT']);
+  for (const x of ['залил адблю в солярку', 'залив адблю в бак з дизелем', 'перепутал бак', 'переплутав бак', 'tank verwechselt', 'zapfpistole verwechselt']) ok(fuel(x), 'Fehlbetankung: ' + x);
+  for (const x of ['не перепутал бак', 'tank nicht verwechselt', 'адблю долил']) ok(!fuel(x), 'keine Fehlbetankung: ' + x);
+  for (const x of ['закончилась мочевина', 'закінчилась сечовина', 'мочевина не качает', 'обмеження потужності адблю', 'ограничение скорости адблю', 'отсчет пробега до запрета запуска']) ok(eng(x), 'Motor/AdBlue: ' + x);
+  for (const x of ['не закончилась мочевина', 'мочевина качает', 'адблю в норме']) ok(!eng(x), 'kein Motor: ' + x);
+  for (const x of ['обсох', 'обсохла машина', 'обсох на трассе']) ok(dry(x), 'leer gefahren: ' + x);
+  for (const x of ['дорога обсохла', 'краска уже обсохла', 'не обсох', 'лак обсох']) ok(!dry(x), 'nicht leer gefahren: ' + x);
+  for (const x of ['соляра загустела', 'парафин в соляре', 'солярка замерзла']) ok(gel(x), 'versulzt: ' + x);
+  for (const x of ['пробит бак', 'пробил топливный бак', 'бак пробили', 'tank aufgerissen', 'tank hat ein loch']) ok(leak(x), 'Leck: ' + x);
+  for (const x of ['бак не пробит', 'tankdeckel weg', 'tankkarte gesperrt']) ok(!leak(x), 'kein Leck: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  const H = { help_fuel_s: fuel, help_dryfuel_s: dry, help_gelfuel_s: gel };
+  for (const [k, l, ex] of [['help_fuel_s', 'de', 'залил адблю в солярку'], ['help_fuel_s', 'de', 'перепутал бак'], ['help_fuel_s', 'uk', 'переплутав бак'], ['help_fuel_s', 'uk', 'залив адблю в бак з дизелем'], ['help_fuel_s', 'en', 'перепутал бак'], ['help_dryfuel_s', 'de', 'обсох'], ['help_dryfuel_s', 'en', 'обсох'], ['help_gelfuel_s', 'de', 'соляра загустела'], ['help_gelfuel_s', 'de', 'парафин в соляре'], ['help_gelfuel_s', 'uk', 'соляра загустела'], ['help_gelfuel_s', 'en', 'парафин в соляре']]) { ok(STRINGS[l][k].includes(ex), 'Hilfe ' + k + ' ' + l + ': ' + ex); ok(H[k](ex), 'Hilfe-Beispiel löst aus: ' + ex); }
+  ok(fuel('Tank verwechselt'.toLowerCase()), 'DE-Hilfebeispiel „Tank verwechselt“');
 });
 
 await test('Backlog 1304 (Sonde, Blickwinkel „Fahrer diktiert Reifen/Rad auf Russisch/Ukrainisch (Nachlese)“): „шишка на шине“, „шипит колесо“, „повітря шипить у шині“ (→ Reifen, nicht mehr Bremse), „колесо взорвалось/пустое“, „шина бортанулась“ → Panne, „гайки ослабли на колесе“, „трещина на диске“, „колесо открутилось/восьмерит“ → Rad, „колесо бьёт/бʼє“ → Vibration; DE „Rad hat sich gelöst“, „Reifen ist von der Felge gesprungen“, „es zischt am Reifen“; Verneinung, Brems-/Kupplungsscheibe, Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
