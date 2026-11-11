@@ -34,6 +34,7 @@ with sync_playwright() as p:
         check(not vis('#mirror'),f'{lang}/{w}: anfangs kein Hinweis')
         for dk in ['зеркало разбилось', 'дзеркало відламалося']: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#mirror'),f'{lang}/{w}: Diktat „{dk}“ → Hinweis (Backlog 1294)')
         for dk in ['в туалете зеркало разбилось', 'зеркало не разбилось']: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#mirror'),f'{lang}/{w}: „{dk}“ → kein Hinweis (Backlog 1294)')
+        for dk in ['mirror got clipped by a lorry','mirror folded back after a truck passed','mirror got clipped, fixed now']: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#mirror') != ('fixed' in dk),f'{lang}/{w}: „{dk}“ → Spiegel nur ohne Reparaturvermerk (Backlog 1343)')
         q.fill('#d',NO[lang]); q.wait_for_timeout(100)
         check(not vis('#mirror') and vis('#glass'),f'{lang}/{w}: „{NO[lang]}“ → nur Glas-Hinweis')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)

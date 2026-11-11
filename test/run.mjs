@@ -37561,6 +37561,18 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1343 (Sonde, Blickwinkel „Fahrer meldet Spiegel/Scheiben/Wischer/Türen auf Englisch“, Backlog 195): Spiegel passiv getroffen („mirror got clipped by a lorry“, „mirror got hit by an oncoming truck“, „mirror was clipped by a bus“, „mirror folded back after a truck passed“) und DE „Spiegel wurde von einem LKW gestreift“ → Spiegel; „mirror folds in automatically when parking“, „mirror is fine“ nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const M = ['MIRROR_HINT', 'MIRROR2_HINT', 'MIRROR3_HINT'].map(rx), mi = (x) => M.some((r) => r.test(x));
+  for (const x of ['mirror got clipped by a lorry', 'mirror got hit by an oncoming truck', 'mirror was clipped by a bus', 'wing mirror got knocked by a van', 'mirror folded back after a truck passed', 'mirror folded in when a truck passed', 'Spiegel wurde von einem LKW gestreift', 'mirror is smashed', 'clipped the mirror on a post']) ok(mi(x), 'Spiegel: ' + x);
+  for (const x of ['mirror folds in automatically when parking', 'mirror is fine', 'mirror fixed']) ok(!mi(x), 'kein Spiegel-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const ex of ['mirror got clipped by a lorry', 'mirror folded back after a truck passed']) { ok(STRINGS[l].help_mirror_s.includes(ex), 'Hilfe Spiegel ' + l + ': ' + ex); ok(mi(ex), 'Hilfe-Beispiel: ' + ex); }
+  ok(STRINGS.de.help_mirror_s.includes('Spiegel wurde von einem LKW gestreift'), 'Hilfe DE gestreift');
+});
+
 await test('Backlog 1342 (Sonde, Blickwinkel „Fahrer meldet Getriebe/Kupplung auf Englisch“, Backlog 195): „stuck in gear“, „transmission warning on dash“, „gearbox warning came on“, „gearbox shifts by itself“, „automatic gearbox keeps changing up and down“, „gearbox keeps hunting for gears“, DE „Getriebewarnung im Display“, „hängt im Gang fest“ → Getriebe; „gearbox (is) not stuck“, „the clutch is not slipping“, „no gearbox warning anymore“, Rückfahrwarner, Reparaturvermerk nicht; PTO/Nebenantrieb bewusst nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
