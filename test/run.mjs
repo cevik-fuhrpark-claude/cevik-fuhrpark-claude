@@ -37681,6 +37681,23 @@ await test('Backlog 1356 (Sonde, Blickwinkel „Unterfahrschutz/Spiegel abgeriss
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1357 (Sonde, Blickwinkel „Fahrer meldet AdBlue/Auspuff/DPF auf Englisch und Deutsch“, Backlog 195): Auspuff hängt herunter/schleift, Halter/Schelle/hanger/clamp gebrochen, muffler/silencer klappert → Auspuff; AdBlue-Kristalle und AGR/EGR-Fehler → Motor; Verneinungen („no AdBlue warning“, „Auspuff hängt nicht runter“, „EGR valve not stuck“) ohne Hinweis; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const X = ['EXHAUST_HINT', 'EXHAUST2_HINT'].map(rx), ex = (x) => X.some((r) => r.test(x));
+  const E = ['ENGINE_HINT', 'ENGINE2_HINT', 'ENGINE3_HINT', 'ENGINE4_HINT'].map(rx), en = (x) => E.some((r) => r.test(x)), L = rx('LOOSE_HINT');
+  for (const x of ['exhaust pipe hanging down', 'exhaust dragging on the ground', 'the exhaust bracket is broken', 'exhaust hanger snapped', 'the exhaust clamp came off', 'the silencer is rattling', 'muffler rattling', 'Auspuffhalter gebrochen', 'Auspuffschelle abgerissen', 'Auspuff hängt runter', 'Endtopf schleift']) ok(ex(x), 'Auspuff: ' + x);
+  for (const x of ['the exhaust bracket is not broken', 'silencer was rattling, fixed now', 'exhaust bracket broken, welded now', 'Auspuffhalter ist nicht gebrochen', 'Auspuff hängt nicht runter', 'Auspuff schleift nicht', 'exhaust is fine']) ok(!ex(x), 'kein Auspuff-Hinweis: ' + x);
+  for (const x of ['there is crystallised adblue on the dosing valve', 'AdBlue kristallisiert am Dosierventil', 'AdBlue-Kristalle am Dosiermodul', 'kristallisiertes adblue am einspritzventil', 'EGR valve stuck', 'EGR fault on the dash', 'AGR-Ventil Fehler im Display', 'AGR-Fehler', 'AdBlue warning on dash']) ok(en(x), 'Motor: ' + x);
+  for (const x of ['no AdBlue warning', 'kein kristallisiertes AdBlue gefunden', 'EGR valve not stuck']) ok(!en(x), 'kein Motor-Hinweis: ' + x);
+  ok(!L.test('Auspuff hängt nicht runter') && L.test('Stoßstange hängt runter'), 'loses Teil: Verneinung „hängt nicht runter“');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_engine_s.includes('EGR valve stuck'), 'Hilfe Motor ' + l);
+  ok(STRINGS.de.help_exhaust_s.includes('Auspuffhalter') && STRINGS.uk.help_exhaust_s.includes('хомут глушника') && STRINGS.en.help_exhaust_s.includes('exhaust hanger snapped'), 'Hilfe Auspuff DE/UK/EN');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1351 (Reserve Start-Modul nach 1354: 45,595 % bei Grenze 45,60 %): Bausteine __T[63] (DE-Bedienelemente Heizung … Liftachse), __T[64] (RU/UK-Unterfahrschutz), __T[65] (DE-Konturmarkierung/Rückstrahler), __T[66] (EN-Verneinung + „snapped off … does nothing“) je 2× genutzt (→ 45,54 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
