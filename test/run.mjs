@@ -37543,6 +37543,24 @@ await test('Backlog 1305 (Sonde, Blickwinkel „Fahrer diktiert Tank/AdBlue/Dies
   ok(fuel('Tank verwechselt'.toLowerCase()), 'DE-Hilfebeispiel „Tank verwechselt“');
 });
 
+await test('Backlog 1314 (Sonde, Blickwinkel „Fahrer meldet Kühlaggregat auf Englisch“): „reefer is beeping“, „carrier unit showing alarm code“, „only runs on electric“, „won’t switch to diesel“, „iced up/won’t defrost“, Stecker/Lüfter, „reefer battery flat/out of fuel/belt snapped“ → Kühlgerät statt Lkw-Start/Tank/Motor; Lkw-Batterie/-Tank neben laufendem Reefer bleibt Lkw; Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const reefer = any(['REEFER_HINT', 'REEFER2_HINT', 'REEFER3_HINT']), nostart = any(['NOSTART_HINT', 'NOSTART2_HINT']), dry = rx('DRYFUEL_HINT');
+  const fn = (name) => app.match(new RegExp('^const ' + name + ' = .+$', 'm'))[0];
+  const noReefRu = new Function(fn('REEF_RU') + fn('REEF_PART') + fn('REEF_STOP') + fn('noReefRu') + '; return noReefRu;')();
+  for (const x of ['reefer is beeping', 'carrier unit showing alarm code', 'reefer only runs on electric', 'reefer won\'t switch to diesel', 'reefer iced up', 'reefer won\'t defrost', 'reefer plug damaged', 'reefer fan not spinning', 'reefer battery flat', 'reefer out of fuel', 'reefer belt snapped', 'thermo king alarm']) ok(reefer(x), 'Kühlgerät: ' + x);
+  for (const x of ['reefer running fine', 'reefer was fixed yesterday', 'reefer alarm, fixed now', 'truck won\'t start']) ok(!reefer(x), 'kein Kühlgerät: ' + x);
+  for (const x of ['reefer battery flat', 'reefer unit won\'t start']) ok(!nostart(noReefRu(x)), 'kein Lkw-Start: ' + x);
+  ok(!dry.test(noReefRu('reefer out of fuel')), 'kein Lkw-Tank: reefer out of fuel');
+  for (const x of ['truck won\'t start', 'battery flat truck won\'t start', 'reefer runs fine but truck battery flat']) ok(nostart(noReefRu(x)), 'Lkw-Start bleibt: ' + x);
+  ok(dry.test(noReefRu('truck out of fuel, reefer running fine')), 'Lkw-Tank bleibt');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, ex] of [['de', 'reefer is beeping'], ['de', 'reefer battery flat'], ['uk', 'reefer is beeping'], ['uk', 'reefer battery flat'], ['en', 'reefer only runs on electric'], ['en', 'reefer iced up'], ['en', 'reefer battery flat']]) { ok(STRINGS[l].help_reefer_s.includes(ex), 'Hilfe ' + l + ' nennt ' + ex); ok(reefer(ex), 'Hilfebeispiel greift: ' + ex); }
+});
+
 await test('Backlog 1313 (Sonde, Blickwinkel „Scheibe/Spiegel nach Steinschlag auf Russisch/Ukrainisch“): „на лобовом скол“, „по лобовому пошла трещина“, „трещина растет по лобовому“, „тріщина по лобовому пішла“, „лобовик в трещинах“ → Scheibe; „скол заклеили/заклеїли“ nicht; „зеркало не греется/дзеркало не гріється“ → Sicht; „стекло в двери не поднимается“ → nur Fenster, nicht Tür; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

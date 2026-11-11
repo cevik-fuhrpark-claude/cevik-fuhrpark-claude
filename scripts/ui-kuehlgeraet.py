@@ -37,6 +37,7 @@ with sync_playwright() as p:
         check(not vis('#reefer'),f'{lang}/{w}: „{NO[lang]}“ → kein Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#reefer'),f'{lang}/{w}: Hinweis bei Kühlgerät-Störung')
+        for en in ['reefer is beeping', 'reefer battery flat', 'reefer out of fuel']: q.fill('#d',en); q.wait_for_timeout(100); check(vis('#reefer') and not vis('#nostart') and not vis('#dryfuel'),f'{lang}/{w}: „{en}“ → Kühlgerät, nicht Lkw-Start/Tank (Backlog 1314)')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
         check(vis('#reefer'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Hinweis (Backlog 1264)')
         for ru,other in [('у рефа сел аккумулятор','#nostart'),('у рефа сів акумулятор','#batt'),('ремень на рефе порвался','#seat'),('реф в аварии','#acc'),('в будке жарко товар греется','#nostart')]:
