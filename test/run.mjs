@@ -37561,6 +37561,24 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1345 (Sonde, Blickwinkel „Fahrer meldet Heizung/Klima/Sitz/Ladung auf Englisch“, Backlog 195): Standheizungs-Marken ohne Umlaut bzw. englischer Markenname („eberspacher not working“, „espar heater not working“, „espar/eberspacher keeps cutting out“) → Standheizung/Klima; „Webasto/Eberspaecher springt nicht an“ kein Motorstart-Hinweis mehr (wie Standheizung); „spare wheel missing“, „desparate“ nicht als Heizung; Sitz/Gurt/Ladung waren abgedeckt (Stichproben); Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const C = ['CLIMATE_HINT', 'CLIMATE2_HINT', 'CLIMATE3_HINT'].map(rx), cl = (x) => C.some((r) => r.test(x));
+  const NS = rx('NOSTART_HINT');
+  for (const x of ['eberspacher not working', 'espar heater not working', 'espar keeps cutting out', 'eberspacher keeps cutting out', 'Eberspächer geht nicht', 'eberspaecher springt nicht an', 'Webasto springt nicht an']) ok(cl(x), 'Standheizung: ' + x);
+  for (const x of ['espar works fine', 'spare wheel missing', 'desparate, truck won’t start']) ok(!cl(x), 'kein Standheizungs-Hinweis: ' + x);
+  for (const x of ['Webasto springt nicht an', 'eberspaecher springt nicht an', 'Eberspächer springt nicht an', 'Standheizung springt nicht an']) ok(!NS.test(x), 'kein Motorstart-Hinweis: ' + x);
+  for (const x of ['Lkw springt nicht an', 'desparate, truck won’t start']) ok(NS.test(x), 'Motorstart weiterhin: ' + x);
+  const S = ['SEAT_HINT', 'SEAT2_HINT'].map(rx), L = ['LOAD_HINT', 'LOAD2_HINT', 'LASHGEAR_HINT', 'LASHGEAR2_HINT'].map(rx);
+  for (const x of ['seat belt won’t retract', 'seatbelt won’t click in', 'seat is stuck']) ok(S.some((r) => r.test(x)), 'Sitz/Gurt: ' + x);
+  for (const x of ['load has shifted', 'straps snapped', 'load bar missing']) ok(L.some((r) => r.test(x)), 'Ladung: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const ex of ['espar heater not working', 'eberspacher keeps cutting out']) { ok(STRINGS[l].help_climate_s.includes(ex), 'Hilfe Klima ' + l + ': ' + ex); ok(cl(ex), 'Hilfe-Beispiel: ' + ex); }
+  ok(STRINGS.de.help_climate_s.includes('Webasto springt nicht an') && !NS.test('Webasto springt nicht an'), 'Hilfe DE Webasto');
+});
+
 await test('Backlog 1344 (Sonde, Blickwinkel „Fahrer meldet Kühlgerät/Ladebordwand/Tacho auf Englisch“, Backlog 195): „the carrier unit won’t hold temperature“, „reefer not holding temp“, „fridge unit isn’t holding the set point“, „thermo king doesn’t hold temperature“ → Kühlgerät; „reefer holds temperature fine“ nicht; Ladebordwand und Tacho waren abgedeckt (Stichproben); Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

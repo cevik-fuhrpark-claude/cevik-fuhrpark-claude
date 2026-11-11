@@ -40,6 +40,7 @@ with sync_playwright() as p:
         check(not vis('#climate') and vis('#hintsum')==False,f'{lang}/{w}: „{NO[lang]}“ → kein Klima-Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#climate'),f'{lang}/{w}: Hinweis bei Standheizung-/Klima-Ausfall')
+        for en in ['espar heater not working','eberspacher keeps cutting out','Webasto springt nicht an']: q.fill('#d',en); q.wait_for_timeout(100); check(vis('#climate') and not vis('#nostart'),f'{lang}/{w}: „{en}“ → Standheizung, kein Motorstart (Backlog 1345)')
         q.fill('#d',DIK2[lang]); q.wait_for_timeout(100)
         check(vis('#climate'),f'{lang}/{w}: Diktat „{DIK2[lang]}“ → Klima-Hinweis (Backlog 1276)')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
