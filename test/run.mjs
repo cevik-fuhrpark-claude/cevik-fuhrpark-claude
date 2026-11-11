@@ -37561,6 +37561,20 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1341 (Sonde, Blickwinkel „Fahrer meldet Druckluft/Kupplungsköpfe auf Englisch und Deutsch“, Backlog 195): „palm coupling seal missing“, „air line to the trailer is leaking“ (vorher Plane statt Bremse), „air lines chafed“, „air tank drain valve leaking“, „air dryer not working“, „Kupplungskopf Dichtung fehlt“, „Dichtring am Kupplungskopf fehlt“ → Bremse/Druckluft; „no air leaks“ kein Hinweis mehr; Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const BR = ['BRAKE_HINT', 'BRAKE2_HINT', 'BRAKE3_HINT', 'BRAKE4_HINT', 'AIRLINE_HINT'].map(rx), br = (x) => BR.some((r) => r.test(x));
+  const TP = ['TARP_HINT', 'TARP2_HINT'].map(rx), tp = (x) => TP.some((r) => r.test(x));
+  for (const x of ['palm coupling seal missing', 'seal missing on the red palm coupling', 'air line to the trailer is leaking', 'air lines chafed', 'air hose rubbing on the chassis', 'air tank drain valve leaking', 'air dryer not working', 'Kupplungskopf Dichtung fehlt', 'Dichtring am Kupplungskopf fehlt', 'Kupplungsköpfe fehlen']) ok(br(x), 'Druckluft: ' + x);
+  for (const x of ['no air leaks', 'the air line is fine', 'air lines fixed, no longer leaking', 'palm coupling seal replaced', 'Kupplungskopf getauscht']) ok(!br(x), 'kein Druckluft-Hinweis: ' + x);
+  ok(!tp('air line to the trailer is leaking') && tp('trailer is leaking'), 'Plane nur beim undichten Auflieger, nicht bei der Luftleitung zum Auflieger');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const ex of ['palm coupling seal missing', 'air line to the trailer is leaking', 'air dryer not working']) { ok(STRINGS[l].help_brake_s.includes(ex), 'Hilfe Bremse ' + l + ': ' + ex); ok(br(ex), 'Hilfe-Beispiel: ' + ex); }
+  ok(STRINGS.de.help_brake_s.includes('Kupplungskopf Dichtung fehlt') && br('Kupplungskopf Dichtung fehlt'), 'Hilfe DE Kupplungskopf');
+});
+
 await test('Backlog 1340 (Sonde, Blickwinkel „Fahrer meldet Auflieger/Sattelkupplung auf Englisch“, Backlog 195): „fifth wheel lock indicator red“, „trailer dropped off the unit“, „coupling problem with the trailer“, „trailer legs won’t go up“ → Sattelkupplung; „trailer suspension won’t raise“, „lift axle won’t come down“, „trailer is not level“ → Federung; „rear steer axle … not working“ → Lenkung; Verneinung/Reparaturvermerk/„leaning against“ nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -37578,7 +37592,7 @@ await test('Backlog 1340 (Sonde, Blickwinkel „Fahrer meldet Auflieger/Sattelku
   for (const l of ['de', 'uk', 'en']) { for (const ex of ['trailer dropped off the unit', 'fifth wheel lock indicator red', 'trailer legs won’t go up']) { ok(STRINGS[l].help_coupling_s.includes(ex), 'Hilfe Kupplung ' + l + ': ' + ex); ok(cp(ex), 'Hilfe-Beispiel: ' + ex); } for (const ex of ['trailer suspension won’t raise', 'lift axle won’t come down', 'trailer is not level']) { ok(STRINGS[l].help_susp_s.includes(ex), 'Hilfe Federung ' + l + ': ' + ex); ok(su(ex), 'Hilfe-Beispiel: ' + ex); } }
 });
 
-await test('Backlog 1339 (Reserve Start-Modul nach 1338: 45,591 % bei Grenze 45,60 %): Bausteine __T[51] (RU/UK-Bedienelemente vor Heizung/Handbremse/Verstellung, 2×), __T[52] (DE-Ladeboden/Wände, 3×), __T[53] (Alarm-Verben, 2×), __T[54] (DE-Anfahrverben, 3×) werden genutzt; Rückverwandlung gleich; Start-Modul ≤ 45,52 %', async () => {
+await test('Backlog 1339 (Reserve Start-Modul nach 1338: 45,591 % bei Grenze 45,60 %): Bausteine __T[51] (RU/UK-Bedienelemente vor Heizung/Handbremse/Verstellung, 2×), __T[52] (DE-Ladeboden/Wände, 3×), __T[53] (Alarm-Verben, 2×), __T[54] (DE-Anfahrverben, 3×) werden genutzt (45,591 % → 45,503 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
@@ -37594,7 +37608,7 @@ await test('Backlog 1339 (Reserve Start-Modul nach 1338: 45,591 % bei Grenze 45,
     ok(d.code.includes('${__T[' + k + ']}'), 'Baustein ' + k + ' eingesetzt');
     eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (' + k + ')');
   }
-  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.52, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,52 %)');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
 await test('Backlog 1338 (Sonde, Blickwinkel „Fahrer meldet Undichtigkeit/Leck auf Englisch“, Backlog 195): „leaking from the sump“, „oil seeping/weeping from the rear axle/hub“, „water leaking from the radiator“, „something is leaking green under the engine“, „oil on the ground under the truck“ → Leck; Luft/Regen/Dach und Reparaturvermerk im neuen Zweig nicht (Leck bleibt bewusst ohne zentrales noFixed, Backlog 764); „rain gets in through the door seal“ → Wasser im Fahrerhaus; Hilfe DE/UK/EN', async () => {

@@ -53,6 +53,9 @@ with sync_playwright() as p:
         for x in ['no brake issues','brakes fixed now']:  # Backlog 1332
             q.fill('#d',x); q.wait_for_timeout(100); check(not vis('#brake'),f'{lang}/{w}: EN „{x}“ → kein Hinweis')
         q.fill('#d','тормоза не пропали'); q.wait_for_timeout(100); check(not vis('#brake'),f'{lang}/{w}: Verneinung → kein Hinweis')
+        for dk in ['palm coupling seal missing','air line to the trailer is leaking','air dryer not working','Kupplungskopf Dichtung fehlt']: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#brake'),f'{lang}/{w}: „{dk}“ → Bremse/Druckluft (Backlog 1341)')
+        q.fill('#d','air line to the trailer is leaking'); q.wait_for_timeout(100); check(not vis('#tarp'),f'{lang}/{w}: Luftleitung zum Auflieger → keine Plane (Backlog 1341)')
+        q.fill('#d','no air leaks'); q.wait_for_timeout(100); check(not vis('#brake'),f'{lang}/{w}: „no air leaks“ → kein Hinweis (Backlog 1341)')
         q.fill('#d','abs leuchte vom anhänger brennt'); q.wait_for_timeout(100)
         check(vis('#brake') and not vis('#fire'),f'{lang}/{w}: „ABS-Leuchte vom Anhänger brennt“ → Bremse, kein Brand-Hinweis')
         q.fill('#d','')
