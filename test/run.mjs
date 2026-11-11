@@ -37665,6 +37665,22 @@ await test('Backlog 1352 (Sonde, Blickwinkel „Fahrer meldet Kabine/Innenraum a
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1356 (Sonde, Blickwinkel „Unterfahrschutz/Spiegel abgerissen RU/UK/EN“, Backlog 195): „отбойный брус оторвался“, „противоподкатный брус оторвался“, „відбійний брус відірвався“ → loses Teil; Verneinung („бампер/отбойник не оторвался“, „відбійний брус не відірвався“) nicht mehr; „mirror arm came off“, „the mirror fell off“ → Spiegel („came off the motorway“ nicht); Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const L = rx('LOOSE_HINT'), M = ['MIRROR_HINT', 'MIRROR2_HINT', 'MIRROR3_HINT'].map(rx), mir = (x) => M.some((r) => r.test(x));
+  for (const x of ['отбойный брус оторвался', 'противоподкатный брус оторвался', 'відбійний брус відірвався', 'отбойник оторвался', 'бампер почти оторвался', 'глушитель отвалился']) ok(L.test(x), 'loses Teil: ' + x);
+  for (const x of ['бампер не оторвался', 'отбойник не оторвался', 'відбійник не відірвався', 'відбійний брус не відірвався']) ok(!L.test(x), 'Verneinung: ' + x);
+  for (const x of ['mirror arm came off', 'the mirror came off', 'mirror fell off on the motorway']) ok(mir(x), 'Spiegel: ' + x);
+  for (const x of ['came off the motorway, mirror ok', 'mirror arm is fine']) ok(!mir(x), 'kein Spiegel-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_mirror_s.includes('mirror arm came off'), 'Hilfe Spiegel ' + l);
+  ok(STRINGS.de.help_loose_s.includes('„отбойный брус оторвался“') && STRINGS.uk.help_loose_s.includes('«відбійний брус відірвався»') && STRINGS.en.help_loose_s.includes('“отбойный брус оторвался”'), 'Hilfe loses Teil DE/UK/EN');
+  ok(L.test('отбойный брус оторвался') && L.test('відбійний брус відірвався'), 'Hilfe-Beispiele greifen');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1351 (Reserve Start-Modul nach 1354: 45,595 % bei Grenze 45,60 %): Bausteine __T[63] (DE-Bedienelemente Heizung … Liftachse), __T[64] (RU/UK-Unterfahrschutz), __T[65] (DE-Konturmarkierung/Rückstrahler), __T[66] (EN-Verneinung + „snapped off … does nothing“) je 2× genutzt (→ 45,54 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
