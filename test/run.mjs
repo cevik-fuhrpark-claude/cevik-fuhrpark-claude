@@ -37561,6 +37561,25 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1346 (Sonde, Blickwinkel „Fahrer meldet Unfall/Wild/Kundenschaden auf Englisch“, Backlog 195): „scraped a parked car“, „caught a van while turning“, „brushed a parked van“, „scraped the parked car“ → Unfall; „hit a fox/badger“, „ran over a hare“ → Wildunfall; „damage to the curtain from a forklift“ → Schaden beim Kunden; „caught the bus on time“, „caught a bus to the depot“, „hit the trailer while coupling“, „Fox Logistics …“ nicht; Diebstahl EN war abgedeckt; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const A = ['ACC_HINT', 'ACC2_HINT', 'ACC3_HINT'].map(rx), acc = (x) => A.some((r) => r.test(x));
+  const W = rx('WILD_HINT'), K = rx('CUSTDMG_HINT');
+  for (const x of ['scraped a parked car', 'scraped a car in the car park', 'touched a car while turning', 'caught a van while turning', 'brushed a parked van', 'scraped the parked car', 'clipped someone’s car']) ok(acc(x), 'Unfall: ' + x);
+  for (const x of ['caught the bus on time', 'caught a bus to the depot', 'hit the trailer while coupling', 'touched the trailer brake']) ok(!acc(x), 'kein Unfall-Hinweis: ' + x);
+  for (const x of ['hit a fox', 'hit a badger', 'ran over a hare', 'struck a stag', 'hit a deer']) ok(W.test(x), 'Wild: ' + x);
+  for (const x of ['Fox Logistics delivery damaged', 'badger the dispatcher']) ok(!W.test(x), 'kein Wild-Hinweis: ' + x);
+  for (const x of ['damage to the curtain from a forklift', 'damage to the floor caused by the customer’s forklift', 'forklift ripped the curtain']) ok(K.test(x), 'Kundenschaden: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const ex of ['scraped a parked car', 'caught a van while turning']) { ok(STRINGS[l].help_accident_s.includes(ex), 'Hilfe Unfall ' + l + ': ' + ex); ok(acc(ex), 'Hilfe-Beispiel: ' + ex); }
+    for (const ex of ['hit a fox', 'hit a badger']) { ok(STRINGS[l].help_wild_s.includes(ex), 'Hilfe Wild ' + l + ': ' + ex); ok(W.test(ex), 'Hilfe-Beispiel: ' + ex); }
+    ok(STRINGS[l].help_custdmg_s.includes('damage to the curtain from a forklift'), 'Hilfe Kundenschaden ' + l);
+  }
+});
+
 await test('Backlog 1345 (Sonde, Blickwinkel „Fahrer meldet Heizung/Klima/Sitz/Ladung auf Englisch“, Backlog 195): Standheizungs-Marken ohne Umlaut bzw. englischer Markenname („eberspacher not working“, „espar heater not working“, „espar/eberspacher keeps cutting out“) → Standheizung/Klima; „Webasto/Eberspaecher springt nicht an“ kein Motorstart-Hinweis mehr (wie Standheizung); „spare wheel missing“, „desparate“ nicht als Heizung; Sitz/Gurt/Ladung waren abgedeckt (Stichproben); Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

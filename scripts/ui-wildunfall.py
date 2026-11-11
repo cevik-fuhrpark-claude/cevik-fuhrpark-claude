@@ -38,6 +38,7 @@ with sync_playwright() as p:
         check('110' in tx and '112' in tx and tx.count('\n')>=4,f'{lang}/{w}: Titel und 4 Schritte mit 110/112')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#wild').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/wildunfall-{lang}-{w}.png')
+        for en,want in [('hit a fox','wild'),('hit a badger','wild'),('scraped a parked car','acc'),('caught a van while turning','acc'),('caught a bus to the depot',None)]: q.fill('#d',en); q.wait_for_timeout(100); check((vis('#wild'),vis('#acc'))==(want=='wild',want=='acc'),f'{lang}/{w}: „{en}“ → {want} (Backlog 1346)')
         q.fill('#d','')
         r=api('POST','/api/cases',{'vehicle_id':'VIN:'+vin,'description':TXT[lang],'priority':'mittel','driveability':'eingeschraenkt','request_key':str(uuid.uuid4())})
         check(r['s'] in (200,201),f'{lang}/{w}: Vorgang angelegt'); cid=r['d']['id']

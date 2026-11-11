@@ -41,6 +41,7 @@ with sync_playwright() as p:
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte {tx!r}' if tx.count('\n')<5 else f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#custdmg').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/kunde-{lang}-{w}.png')
+        for en,want in [('damage to the curtain from a forklift',True),('no damage from the forklift',False)]: q.fill('#d',en); q.wait_for_timeout(100); check(vis('#custdmg')==want,f'{lang}/{w}: „{en}“ → Kundenschaden {want} (Backlog 1346)')
         q.fill('#d','')
         q.goto(B+'/#/help?s=custdmg'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_custdmg' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')
