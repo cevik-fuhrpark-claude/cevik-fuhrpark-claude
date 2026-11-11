@@ -43,6 +43,8 @@ with sync_playwright() as p:
         if SHOTS: q.locator('#steer').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/lenkung-{lang}-{w}.png')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
         check(vis('#steer'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Lenkungs-Hinweis (Backlog 1253)')
+        for dk in ['hard to steer','too much play in the steering','knocking from the steering','steering pump whining']: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#steer'),f'{lang}/{w}: EN „{dk}“ → Lenkungs-Hinweis (Backlog 1334)')
+        q.fill('#d','not hard to steer'); q.wait_for_timeout(100); check(not vis('#steer'),f'{lang}/{w}: „not hard to steer“ → kein Hinweis (Backlog 1334)')
         for dk in DIK2[lang]: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#steer'),f'{lang}/{w}: Diktat „{dk}“ → Lenkungs-Hinweis (Backlog 1290)')
         q.fill('#d',BOTH[lang]); q.wait_for_timeout(100)
         check(vis('#steer') and vis('#acc') and q.evaluate("!document.querySelector('#acc ul').hidden && document.querySelector('#steer ul').hidden"),f'{lang}/{w}: mit Unfall zusammen → Unfall offen, Lenkung eingeklappt')

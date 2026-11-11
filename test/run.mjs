@@ -37561,6 +37561,20 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1334 (Sonde, Blickwinkel „Fahrer meldet Lenkung/Reifen auf Englisch“, Backlog 195): „too much play in the steering“, „knocking from the steering“, „steering pump whining“, „hard to steer“ → Lenkung; „tyre is low“, „tread is low on the front tyres“ → Reifen; Verneinung, „low profile“, Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const S = ['STEER_HINT', 'STEER2_HINT', 'STEER3_HINT'].map(rx), T = ['TYRE_HINT', 'TYRE2_HINT', 'TYRE3_HINT', 'TYRE4_HINT', 'TYRE5_HINT'].map(rx);
+  const st = (x) => S.some((r) => r.test(x)), ty = (x) => T.some((r) => r.test(x));
+  for (const x of ['too much play in the steering', 'excessive play on the steering wheel', 'knocking from the steering', 'clunking noise from the steering', 'steering pump whining', 'steering pump is making a noise', 'hard to steer', 'very difficult to turn the steering wheel']) ok(st(x), 'Lenkung: ' + x);
+  for (const x of ['not hard to steer', 'isn’t hard to steer', 'steering fixed yesterday', 'knocking from the steering, repaired', 'steering wheel cover is torn']) ok(!st(x), 'keine Lenkung: ' + x);
+  for (const x of ['tyre is low', 'the front tyres are low', 'tyre looks a bit low', 'tread is low on the front tyres', 'tread is very low', 'tread bald']) ok(ty(x), 'Reifen: ' + x);
+  for (const x of ['tyre is low profile', 'low profile tyres fitted', 'tread is fine', 'tyre was low, pumped up and fixed', 'the tyre was replaced']) ok(!ty(x), 'kein Reifen: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const ex of ['hard to steer', 'too much play in the steering', 'knocking from the steering']) { ok(STRINGS[l].help_steer_s.includes(ex), 'Hilfe Lenkung ' + l + ': ' + ex); ok(st(ex), 'Hilfe-Beispiel: ' + ex); } for (const ex of ['tyre is low', 'tread is low']) { ok(STRINGS[l].help_tyre_s.includes(ex), 'Hilfe Reifen ' + l + ': ' + ex); ok(ty(ex), 'Hilfe-Beispiel: ' + ex); } }
+});
+
 await test('Backlog 1332 (Sonde, Blickwinkel „Fahrer meldet Bremsen auf Englisch“, Backlog 195): „no brakes“, „lost all brakes“, „brakes stay on/stuck on“, „brakes are making a noise“, „pulls to one side under braking“, „smoke from the brakes“, „brake warning light on“, „brake pads need replacing“ → Bremse; „no brake issues“, „brakes fixed now“, „brake pads replaced yesterday“, „brake light not working“ nicht; „parking brakes stay on“ wie „Handbremse löst nicht“ → Bremse; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

@@ -37,6 +37,8 @@ with sync_playwright() as p:
         check(not vis('#tyre') and vis('#flat'),f'{lang}/{w}: „{NO[lang]}“ → Reifenpanne-, nicht dieser Hinweis')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#tyre'),f'{lang}/{w}: Hinweis bei beschädigtem Reifen')
+        for x in ['tyre is low','tread is low on the front tyres']: q.fill('#d',x); q.wait_for_timeout(100); check(vis('#tyre'),f'{lang}/{w}: EN „{x}“ → Reifen-Hinweis (Backlog 1334)')
+        q.fill('#d','tyre is low profile'); q.wait_for_timeout(100); check(not vis('#tyre'),f'{lang}/{w}: „tyre is low profile“ → kein Hinweis (Backlog 1334)')
         q.fill('#d',DIK2[lang]); q.wait_for_timeout(100)
         check(vis('#tyre') and not vis('#brake'),f'{lang}/{w}: Diktat „{DIK2[lang]}“ → Reifen-Hinweis, keine Bremse (Backlog 1304)')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
