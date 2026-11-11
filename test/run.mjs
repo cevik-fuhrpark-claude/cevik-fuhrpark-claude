@@ -37763,7 +37763,31 @@ await test('Backlog 1360 (Reserve Start-Modul nach 1355/1362: 45,58 % bei Grenze
     const code = "x\nconst A = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))a" + T[k] + "b`, 'i', 1);\nconst B2 = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))z`, 'i', 1);\n";
     const d = B.dedupeLooks(code); ok(d.code.includes('${__T[' + k + ']}'), 'Baustein ' + k + ' eingesetzt'); eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (' + k + ')');
   }
-  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.5, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,50 % direkt nach der Reserve)');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (direkt nach der Reserve 45,47 %; seit Backlog 1364 wieder ≤ 45,60 % für neue Muster)');
+});
+
+await test('Backlog 1364 (Sonde, Blickwinkel „Fahrer diktiert Auspuff/Abgas/DPF auf Russisch/Ukrainisch“, Backlog 195): „прогорел глушитель“, „дырка в глушителе“, „выхлоп в кабину“, Krümmer/Dichtung, Auspuffhalter RU/UK → Auspuff; „не проходит регенерация“, „регенерация не идет“ → Partikelfilter, „сажевый фильтр новый“ nicht; Katalysator/SCR/EGR/NOx RU/UK/DE/EN → Motor; „дыма нет“/„нет дыма“ kein Brand-Hinweis; Verneinungen ohne Hinweis; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(recurFix(x).toLowerCase())); };
+  const ex = any(['EXHAUST_HINT', 'EXHAUST2_HINT']), pf = any(['PFILTER_HINT']), en = any(['ENGINE_HINT', 'ENGINE2_HINT', 'ENGINE3_HINT', 'ENGINE4_HINT']), fire = any(['FIRE_HINT']);
+  for (const x of ['прогорел глушитель', 'дырка в глушителе', 'дірка в глушнику', 'тріснула вихлопна труба', 'выхлоп в кабину', 'вихлоп у кабіну', 'пропускает выхлопной коллектор', 'прокладка выпускного коллектора пробита', 'выпускной коллектор треснул', 'випускний колектор тріснув', 'хомут глушителя слетел', 'кронштейн глушителя сломан', 'кріплення глушника зламане']) ok(ex(x), 'Auspuff: ' + x);
+  for (const x of ['глушитель не прогорел', 'не прогорел глушитель', 'глушник не тріснув', 'хомут глушителя не сломан', 'впускной коллектор пропускает', 'глушитель в порядке', 'глушитель поменяли', 'выхлоп в кабину больше не идет']) ok(!ex(x), 'kein Auspuff-Hinweis: ' + x);
+  for (const x of ['не проходит регенерация', 'регенерация не идет', 'регенерація не йде', 'регенерация не завершается', 'сажевый фильтр забит', 'сажевый фильтр забит, нужно заменить']) ok(pf(x), 'Partikelfilter: ' + x);
+  for (const x of ['сажевый фильтр новый', 'сажевый фильтр уже почистили', 'сажовий фільтр замінили', 'сажевый фильтр в порядке']) ok(!pf(x), 'kein Partikelfilter-Hinweis: ' + x);
+  for (const x of ['ошибка системы SCR', 'ошибка катализатора', 'катализатор забит', 'помилка датчика NOx', 'EGR клапан ошибка', 'клапан ЕГР заклинил', 'Katalysator verstopft', 'Fehler im SCR-System', 'SCR fault']) ok(en(x), 'Motor: ' + x);
+  for (const x of ['нет ошибки EGR', 'Katalysator nicht verstopft', 'Katalysator getauscht']) ok(!en(x), 'kein Motor-Hinweis: ' + x);
+  for (const x of ['дыма нет', 'нет дыма', 'без дыма', 'немає диму', 'диму немає']) ok(!fire(x), 'kein Brand-Hinweis: ' + x);
+  for (const x of ['дым из кабины', 'машина дымит', 'из-под капота идет дым']) ok(fire(x), 'Brand-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(/прогорел глушитель/.test(STRINGS[l].help_exhaust_s) && /выхлоп в кабину/.test(STRINGS[l].help_exhaust_s), 'Hilfe Auspuff ' + l);
+    ok(/регенера/.test(STRINGS[l].help_pfilter_s) && /сажов/.test(STRINGS[l].help_pfilter_s), 'Hilfe Partikelfilter ' + l);
+    ok(/SCR/.test(STRINGS[l].help_engine_s), 'Hilfe Motor ' + l);
+  }
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
 await test('Backlog 1355 (Reserve Start-Modul nach 1359: 45,59 % bei Grenze 45,60 %): Bausteine __T[67] (DE-Durchfahrtshindernisse Brücke … Torbogen), __T[68] (RU/UK-Verlust-/Abfallverben), __T[69] (EN-Ladeboden/Bordwände) je 2× genutzt (→ 45,56 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
