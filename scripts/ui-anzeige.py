@@ -45,6 +45,8 @@ with sync_playwright() as p:
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#dash').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/anzeige-{lang}-{w}.png')
+        for dk in ['сигнал не гудит', 'гудок пропал', 'пропав звуковий сигнал', 'бибикалка не работает', 'сигнал хрипит']: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#dash'),f'{lang}/{w}: „{dk}“ → Hupe/Anzeige-Hinweis (Backlog 1319)')
+        for dk in ['сигнал пропал', 'нет сигнала', 'сигнал поворота не работает']: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#dash'),f'{lang}/{w}: „{dk}“ → kein Hupen-Hinweis (Backlog 1319)')
         q.fill('#d',BOTH[lang]); q.wait_for_timeout(100)
         check(vis('#dash') and vis('#acc') and q.evaluate("!document.querySelector('#acc ul').hidden && document.querySelector('#dash ul').hidden"),f'{lang}/{w}: mit Unfall zusammen → Unfall offen, Anzeige eingeklappt')
         q.fill('#d','')

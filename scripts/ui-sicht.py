@@ -37,6 +37,8 @@ with sync_playwright() as p:
         check(not vis('#visib'),f'{lang}/{w}: anfangs kein Hinweis')
         for dk in ['дворники остановились', 'не бризкає на скло', 'нет воды в омывателе']: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#visib'),f'{lang}/{w}: Diktat „{dk}“ → Hinweis (Backlog 1294)')
         for dk in ['дворники поменял']: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#visib'),f'{lang}/{w}: „{dk}“ → kein Hinweis (Backlog 1294)')
+        for dk in ['дворник отвалился', 'двірник відвалився', 'дворники оставляют полосы', 'поводок дворника сломан', 'омывайка не льется']: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#visib'),f'{lang}/{w}: „{dk}“ → Sicht-Hinweis (Backlog 1319)')
+        for dk in ['дворник отвалился, поменяли']: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#visib'),f'{lang}/{w}: „{dk}“ → kein Hinweis (Backlog 1319)')
         q.fill('#d',NO[lang]); q.wait_for_timeout(100)
         check(not vis('#visib') and vis('#hintsum')==False,f'{lang}/{w}: „{NO[lang]}“ → kein Sicht-Hinweis')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)

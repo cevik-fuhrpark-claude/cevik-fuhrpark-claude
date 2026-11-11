@@ -371,7 +371,9 @@ const RX_TOK = ['(?![a-zäöüß])', '(?<![a-zäöüß-])', '(?<![а-яіїєґ�
   '|kühlanhänger|kühlkoffer|kuehlkoffer|kühler|kuehler|kofferaufbau|aufbau|sattelauflieger|', '|pneu|zwillingsreifen|vorderreifen|hinterreifen|aufliegerreifen|anh(?:ä|',
   '|ss)en|haupt|weitwinkel|rampen|front|fahrer|beifahrer|',
   // Backlog 1318 (Reserve Start-Modul nach 1317: 45,66 % > 45,65 %): drei weitere Folgen laut Häufigkeitsanalyse (je 13–17×) – „немає/нема/нет“, „відсутн/отсутств“, EN „won’t/doesn’t/does“.
-  '(?:немає|нема|нет', String.raw`|відсутн\S*|отсутств`, "(?:won['’]?t|doesn['’]?t|does"];
+  '(?:немає|нема|нет', String.raw`|відсутн\S*|отсутств`, "(?:won['’]?t|doesn['’]?t|does",
+  // Backlog 1320 (Reserve Start-Modul nach 1319: 45,654 % > 45,65 %): drei weitere Folgen laut Häufigkeitsanalyse – EN-Wortanfang nach „|“ (116×), RU/UK-Rad/Reifen (4×), EN-Reparaturvermerk nach Wortende (9×).
+  '|(?<![a-z])(?:', '(?:колес|колiс|коліс|шин|покрышк|покришк|резин|баллон|балон)', '(?![a-z])(?![^.;!?]*(?:fixed|repaired|replaced'];
 export function dedupeLooks(code) {
   const calls = [...code.matchAll(RX_CALL)], count = new Map();
   for (const c of calls) for (const [a, e] of rxGroups(c[1])) { const g = c[1].slice(a, e); count.set(g, (count.get(g) || 0) + 1); }
