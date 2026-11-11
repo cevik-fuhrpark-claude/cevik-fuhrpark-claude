@@ -37733,6 +37733,24 @@ await test('Backlog 1361 (Sonde Wasserpumpe, Backlog 195): „водяной н�
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1362 (Sonde, Blickwinkel „Fahrer diktiert Öldruck/Ölwarnung auf Russisch/Ukrainisch“, Backlog 195): „нет давления масла“, „немає тиску масла“, „ошибка давления масла“, „тиск масла на нулі“, „no oil pressure“, „kein Öldruck“ → Warnleuchte; „лампа не горит“ ist keine Warnleuchte, „лампа давления масла не горит“ keine Beleuchtung; Zylinderkopfdichtung/head gasket/„прокладка ГБЦ“, Öl im Kühlmittel, Wasser im Öl, „эмульсия“ → Motor (nicht verneint/erneuert); Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(recurFix(x).toLowerCase())); };
+  const warn = any(['WARNLIGHT_HINT', 'WARNLIGHT2_HINT']), light = any(['LIGHTS_HINT', 'LIGHTS2_HINT', 'LIGHTS3_HINT', 'LIGHTS4_HINT']), en = any(['ENGINE_HINT', 'ENGINE2_HINT', 'ENGINE3_HINT', 'ENGINE4_HINT']);
+  for (const x of ['Нет давления масла', 'Немає тиску масла', 'Ошибка давления масла на панели', 'Помилка тиску масла', 'Давление масла на нуле', 'Тиск масла на нулі', 'no oil pressure', 'oil pressure gauge at zero', 'kein Öldruck', 'Горит лампочка давления масла', 'Низкое давление масла']) ok(warn(x), 'Warnleuchte: ' + x);
+  for (const x of ['Ошибки давления масла нет', 'Давление масла в норме', 'Тиск масла в нормі', 'лампа не горит', 'лампочка не горит', 'лампа давления масла не горит', 'oil pressure is fine']) ok(!warn(x), 'keine Warnleuchte: ' + x);
+  for (const x of ['лампа давления масла не горит', 'лампа тиску масла не горить']) ok(!light(x), 'keine Beleuchtung: ' + x);
+  for (const x of ['лампа не горит', 'фара не горит']) ok(light(x), 'Beleuchtung: ' + x);
+  for (const x of ['head gasket gone', 'Zylinderkopfdichtung defekt', 'прокладка ГБЦ пробита', 'пробило прокладку головки', 'прокладку головки блоку пробило', 'oil in the coolant', 'coolant in the oil', 'Wasser im Öl', 'эмульсия в масле', 'Емульсія під кришкою', 'Mayonnaise am Öldeckel', 'milky oil']) ok(en(x), 'Motor: ' + x);
+  for (const x of ['Zylinderkopfdichtung erneuert', 'neue Zylinderkopfdichtung', 'no oil in the coolant', 'нет эмульсии', 'kein Wasser im Öl', 'прокладку ГБЦ заменили', 'Wasser im Ölabscheider']) ok(!en(x), 'kein Motor-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].help_warnlight_s.includes('немає тиску масла') && STRINGS[l].help_warnlight_s.includes('нет давления масла'), 'Hilfe Warnleuchte ' + l); ok(STRINGS[l].help_engine_s.includes('Zylinderkopfdichtung') || STRINGS[l].help_engine_s.includes('head gasket'), 'Hilfe Motor ' + l); ok(STRINGS[l].help_engine_s.includes('прокладк'), 'Hilfe Motor RU/UK ' + l); }
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1355 (Reserve Start-Modul nach 1359: 45,59 % bei Grenze 45,60 %): Bausteine __T[67] (DE-Durchfahrtshindernisse Brücke … Torbogen), __T[68] (RU/UK-Verlust-/Abfallverben), __T[69] (EN-Ladeboden/Bordwände) je 2× genutzt (→ 45,56 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
