@@ -48,6 +48,10 @@ with sync_playwright() as p:
         if SHOTS: q.locator('#brake').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/bremse-diktat-{lang}-{w}.png')
         for x in ['тормоза пропали','відмовили гальма','тормоз прикипел','воздух не накачивается','горить ABS']:  # Backlog 1295: Diktat RU/UK
             q.fill('#d',x); q.wait_for_timeout(100); check(vis('#brake'),f'{lang}/{w}: Diktat „{x}“ → Hinweis')
+        for x in ['no brakes','brakes stay on','smoke from the brakes','brake pads need replacing']:  # Backlog 1332
+            q.fill('#d',x); q.wait_for_timeout(100); check(vis('#brake'),f'{lang}/{w}: EN „{x}“ → Hinweis')
+        for x in ['no brake issues','brakes fixed now']:  # Backlog 1332
+            q.fill('#d',x); q.wait_for_timeout(100); check(not vis('#brake'),f'{lang}/{w}: EN „{x}“ → kein Hinweis')
         q.fill('#d','тормоза не пропали'); q.wait_for_timeout(100); check(not vis('#brake'),f'{lang}/{w}: Verneinung → kein Hinweis')
         q.fill('#d','abs leuchte vom anhänger brennt'); q.wait_for_timeout(100)
         check(vis('#brake') and not vis('#fire'),f'{lang}/{w}: „ABS-Leuchte vom Anhänger brennt“ → Bremse, kein Brand-Hinweis')
