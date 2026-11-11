@@ -37709,6 +37709,19 @@ await test('Backlog 1358 (Folge aus 1357): „Schürze/Seitenschürze/Heckschür
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1359 (Sonde, Blickwinkel „Fahrer diktiert Motor überhitzt/Kühlmittel/Thermostat auf Russisch/Ukrainisch“, Backlog 195): Verneinungen „Motor überhitzt nicht“, „engine is not overheating“, „двигатель не перегревается“, „антифриз не тече“ ohne Motor-Hinweis (nicht „не всегда“, „nicht immer“, „…, але рівень падає“); Thermostat defekt/stuck/„термостат не працює“ → Motor (nicht Heizung/Kühlaggregat, nicht „not stuck“); Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const E = ['ENGINE_HINT', 'ENGINE2_HINT', 'ENGINE3_HINT', 'ENGINE4_HINT'].map(rx), en = (x) => E.some((r) => r.test(recurFix(x)));
+  for (const x of ['Двигатель перегревается', 'Мотор перегрелся, пар из-под кабины', 'Двигун перегрівається', 'Motor überhitzt', 'engine is overheating', 'Мотор не перегревается, но антифриз уходит', 'Двигатель не всегда перегревается, только в горку', 'Motor überhitzt nicht immer, nur am Berg', 'Антифриз не тече, але рівень падає', 'Мотор не греется', 'Thermostat defekt, Motor wird nicht warm', 'thermostat stuck', 'faulty thermostat', 'Термостат не работает', 'Термостат не працює']) ok(en(x), 'Motor: ' + x);
+  for (const x of ['Двигатель не перегревается, всё нормально', 'Двигун не перегрівається', 'Мотор не перегрелся', 'Motor überhitzt nicht', 'engine is not overheating', 'Антифриз не течёт', 'Антифриз не тече', 'Антифриз больше не течёт', 'Thermostat is not stuck', 'Heizung Thermostat defekt', 'Kühlaggregat Thermostat defekt']) ok(!en(x), 'kein Motor-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_engine_s.includes('thermostat stuck') && STRINGS[l].help_engine_s.includes('антифриз не тече'), 'Hilfe Motor ' + l);
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1351 (Reserve Start-Modul nach 1354: 45,595 % bei Grenze 45,60 %): Bausteine __T[63] (DE-Bedienelemente Heizung … Liftachse), __T[64] (RU/UK-Unterfahrschutz), __T[65] (DE-Konturmarkierung/Rückstrahler), __T[66] (EN-Verneinung + „snapped off … does nothing“) je 2× genutzt (→ 45,54 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
