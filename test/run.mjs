@@ -37722,6 +37722,17 @@ await test('Backlog 1359 (Sonde, Blickwinkel „Fahrer diktiert Motor überhitzt
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1361 (Sonde Wasserpumpe, Backlog 195): „водяной насос течёт“, „водяний насос тече“ → Undichtigkeit wie „помпа течёт“; Verneinung ohne Hinweis; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const L = new RegExp(app.match(/^const LEAK_HINT = \/(.+)\/i;$/m)[1], 'i');
+  for (const x of ['Водяной насос течёт', 'водяной насос течет', 'Водяний насос тече', 'водяной насос сильно течёт', 'Помпа течёт']) ok(L.test(x), 'Undichtigkeit: ' + x);
+  for (const x of ['Водяной насос течёт, заменили', 'Водяной насос шумит']) ok(!L.test(x), 'kein Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.help_leak_s.includes('водяной насос течёт') && STRINGS.uk.help_leak_s.includes('водяний насос тече') && STRINGS.en.help_leak_s.includes('водяной насос течёт'), 'Hilfe Undichtigkeit DE/UK/EN');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1355 (Reserve Start-Modul nach 1359: 45,59 % bei Grenze 45,60 %): Bausteine __T[67] (DE-Durchfahrtshindernisse Brücke … Torbogen), __T[68] (RU/UK-Verlust-/Abfallverben), __T[69] (EN-Ladeboden/Bordwände) je 2× genutzt (→ 45,56 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
