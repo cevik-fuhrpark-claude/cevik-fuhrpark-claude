@@ -375,7 +375,9 @@ const RX_TOK = ['(?![a-zäöüß])', '(?<![a-zäöüß-])', '(?<![а-яіїєґ�
   // Backlog 1320 (Reserve Start-Modul nach 1319: 45,654 % > 45,65 %): drei weitere Folgen laut Häufigkeitsanalyse – EN-Wortanfang nach „|“ (116×), RU/UK-Rad/Reifen (4×), EN-Reparaturvermerk nach Wortende (9×).
   '|(?<![a-z])(?:', '(?:колес|колiс|коліс|шин|покрышк|покришк|резин|баллон|балон)', '(?![a-z])(?![^.;!?]*(?:fixed|repaired|replaced',
   // Backlog 1324 (Reserve Start-Modul nach 1323: 45,657 % > 45,65 %): DE-Reparaturvermerk „funktioniert wieder|wieder (ok|in ordnung“ (41×) laut Häufigkeitsanalyse.
-  String.raw`funktioniert\s+wieder|wieder\s+(?:ok|in\s+ordnung`];
+  String.raw`funktioniert\s+wieder|wieder\s+(?:ok|in\s+ordnung`,
+  // Backlog 1326 (Reserve Start-Modul nach 1325: 45,648 % ≈ Grenze 45,65 %): RU/UK „не працю…/не работа…“ ohne umgebende „|“ (19×) und „\s+(?:\S+\s+){0,4}?(?:“ (33×) laut Häufigkeitsanalyse.
+  String.raw`не\s+працю\S*|не\s+работа\S*`, String.raw`\s+(?:\S+\s+){0,4}?(?:`];
 export function dedupeLooks(code) {
   const calls = [...code.matchAll(RX_CALL)], count = new Map();
   for (const c of calls) for (const [a, e] of rxGroups(c[1])) { const g = c[1].slice(a, e); count.set(g, (count.get(g) || 0) + 1); }
