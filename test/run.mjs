@@ -37561,6 +37561,17 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1336 (Sonde, Blickwinkel „Fahrer meldet Beleuchtung auf Englisch“, Backlog 195): „main/high/low/full beam(s) not working/out“, „lights flicker“, „no (rear) lights on the trailer“ → Beleuchtung; Reparaturvermerk und „low beam works fine“ nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const L = ['LIGHTS_HINT', 'LIGHTS2_HINT', 'LIGHTS3_HINT', 'LIGHTS4_HINT'].map(rx), li = (x) => L.some((r) => r.test(x));
+  for (const x of ['main beam not working', 'high beams out', 'full beam broken', 'lights flicker', 'no lights on the trailer', 'no rear lights on the trailer', 'headlight out', 'dipped beam broken']) ok(li(x), 'Beleuchtung: ' + x);
+  for (const x of ['low beam works fine', 'no lights on the trailer, fixed', 'headlight bulb replaced', 'flicker of the dash display']) ok(!li(x), 'keine Beleuchtung: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const ex of ['main beam not working', 'no lights on the trailer']) { ok(STRINGS[l].help_lights_s.includes(ex), 'Hilfe Beleuchtung ' + l + ': ' + ex); ok(li(ex), 'Hilfe-Beispiel: ' + ex); }
+});
+
 await test('Backlog 1335 (Sonde, Blickwinkel „Fahrer meldet Motor/Start auf Englisch“, Backlog 195): „engine cranks but doesn’t fire“ ist kein Brand (FIRE_HINT nach Verneinung/„fire up“ aus), sondern Startproblem wie „engine won’t fire (up)“; „engine running/idles rough“ → Motor; echter Brand („fire in the engine bay“, „truck is on fire“) bleibt; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

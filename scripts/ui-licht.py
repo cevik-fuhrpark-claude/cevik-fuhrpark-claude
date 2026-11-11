@@ -43,6 +43,7 @@ with sync_playwright() as p:
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#lights').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/licht-{lang}-{w}.png')
+        for x in ['main beam not working','no lights on the trailer','lights flicker']: q.fill('#d',x); q.wait_for_timeout(100); check(vis('#lights'),f'{lang}/{w}: EN „{x}“ → Beleuchtung (Backlog 1336)')
         q.fill('#d',BOTH[lang]); q.wait_for_timeout(100)
         check(vis('#lights') and vis('#acc') and q.evaluate("!document.querySelector('#acc ul').hidden && document.querySelector('#lights ul').hidden"),f'{lang}/{w}: mit Unfall zusammen → Unfall offen, Licht eingeklappt')
         q.fill('#d',DIKTAT[lang]); q.wait_for_timeout(100)
