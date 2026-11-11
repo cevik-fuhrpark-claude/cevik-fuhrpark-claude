@@ -37665,6 +37665,26 @@ await test('Backlog 1352 (Sonde, Blickwinkel „Fahrer meldet Kabine/Innenraum a
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1354 (Sonde, Blickwinkel „Fahrer meldet Ladung/Autotransport auf Englisch und Deutsch“, Backlog 195): „the load moved“, „load is leaning against the side“, „cars on the trailer are not secured“, „a car fell off the ramp“, „Ladung hat sich beim Bremsen verschoben“, „Auto ist von der Rampe gerutscht“, „Pkw auf dem Oberdeck nicht gesichert“ → Ladung; „Radvorleger fehlen/kaputt“ → Sicherungsmittel; Verneinungen („load hasn’t moved“, „nothing moved“, „Ladung hat sich nicht verschoben“), umgeladene Ladung und das eigene, nicht gesicherte Fahrzeug nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x.toLowerCase())); };
+  const load = any(['LOAD_HINT', 'LOAD2_HINT']), lash = any(['LASHGEAR_HINT', 'LASHGEAR2_HINT']);
+  for (const x of ['the curtain is bulging because the load moved', 'load is leaning against the side', 'the cars on the trailer are not secured', 'a car fell off the ramp', 'car rolled off the upper deck', 'cars on the upper deck not secured', 'Ladung hat sich beim Bremsen verschoben', 'Ein Auto ist von der Rampe gerutscht', 'Pkw auf dem Oberdeck nicht gesichert', 'Neuwagen vom Auflieger gerollt']) ok(load(x), 'Ladung: ' + x);
+  for (const x of ['load hasn’t moved', 'the load is fine, nothing moved', 'load moved to another trailer', 'the load was moved by the forklift', 'the truck was not secured and rolled away', 'my car is parked at the depot', 'Pkw sind gesichert', 'the load has not moved at all']) ok(!load(x), 'kein Ladungs-Hinweis: ' + x);
+  ok(!rx('LOAD2_HINT').test('ladung hat sich nicht verschoben'), 'Verneinung im neuen Zweig: Ladung hat sich nicht verschoben (Oberfläche zeigt keinen Hinweis, Sonde)');
+  for (const x of ['Radvorleger fehlen', 'Radvorleger kaputt', 'zu wenige Radvorleger']) ok(lash(x), 'Sicherungsmittel: ' + x);
+  ok(!lash('Radvorleger sind wieder da'), 'Radvorleger wieder da');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const ex of ['Pkw auf dem Oberdeck nicht gesichert', 'a car fell off the ramp']) { ok(STRINGS[l].help_load_s.includes(ex), 'Hilfe Ladung ' + l + ': ' + ex); ok(load(ex), 'Hilfe-Beispiel: ' + ex); }
+    ok(STRINGS[l].help_lashgear_s.includes('Radvorleger fehlen'), 'Hilfe Sicherungsmittel ' + l);
+  }
+  ok(load(STRINGS.en.help_load_s.match(/“(cars on the upper deck not secured)”/)[1]), 'Hilfe EN Beispiel Oberdeck');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1353 (Sonde, Blickwinkel „Fahrer meldet Kabine/Innenraum auf Russisch/Ukrainisch per Diktat“, Backlog 195): „ручка двери отломалась“, „ручка дверей відламалася“ → Tür; „ремень безопасности не защелкивается“ (auch mit „ё“ über die Angleichung), „ремінь безпеки не клацає“ → Gurt; „шторка порвалась/порвалася“, „шторка розірвалася“ → Fahrerhaus-Ausstattung; Verneinung („не отломалась“, „не порвана“) nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
