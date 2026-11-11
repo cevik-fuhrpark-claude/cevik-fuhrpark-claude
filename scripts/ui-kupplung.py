@@ -38,6 +38,8 @@ with sync_playwright() as p:
         check(vis('#coupling'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Kupplungs-Hinweis (Backlog 1269)')
         for dx in ['люфт в седле','важіль сідла не повертається','замок сідла не закривається']:  # Backlog 1298: Diktat RU/UK
             q.fill('#d',dx); q.wait_for_timeout(100); check(vis('#coupling') and not vis('#door'),f'{lang}/{w}: Diktat „{dx}“ → Kupplung, keine Tür (Backlog 1298)')
+        for dk in ['trailer dropped off the unit','fifth wheel lock indicator red','trailer legs won\'t go up','coupling problem with the trailer']: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#coupling'),f'{lang}/{w}: EN „{dk}“ → Kupplung (Backlog 1340)')
+        q.fill('#d','no coupling problems'); q.wait_for_timeout(100); check(not vis('#coupling'),f'{lang}/{w}: „no coupling problems“ ohne Hinweis (Backlog 1340)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(vis('#coupling'),f'{lang}/{w}: Hinweis bei Sattelkupplung/Auflieger')
         tx=q.inner_text('#coupling')

@@ -37561,6 +37561,23 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1340 (Sonde, Blickwinkel „Fahrer meldet Auflieger/Sattelkupplung auf Englisch“, Backlog 195): „fifth wheel lock indicator red“, „trailer dropped off the unit“, „coupling problem with the trailer“, „trailer legs won’t go up“ → Sattelkupplung; „trailer suspension won’t raise“, „lift axle won’t come down“, „trailer is not level“ → Federung; „rear steer axle … not working“ → Lenkung; Verneinung/Reparaturvermerk/„leaning against“ nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const C = ['COUPLING_HINT', 'COUPLING2_HINT', 'COUPLING3_HINT'].map(rx), cp = (x) => C.some((r) => r.test(x));
+  const SU = ['SUSP_HINT', 'SUSP2_HINT'].map(rx), su = (x) => SU.some((r) => r.test(x));
+  const ST = ['STEER_HINT', 'STEER2_HINT', 'STEER3_HINT'].map(rx), st = (x) => ST.some((r) => r.test(x));
+  for (const x of ['fifth wheel lock indicator red', 'fifth wheel shows red', 'trailer dropped off the unit', 'trailer fell off the tractor', 'coupling problem with the trailer', 'trailer legs won’t go up', 'trailer leg is bent']) ok(cp(x), 'Sattelkupplung: ' + x);
+  for (const x of ['no coupling problems', 'the trailer legs are fine', 'fifth wheel greased, ok now']) ok(!cp(x), 'keine Sattelkupplung: ' + x);
+  for (const x of ['trailer suspension won’t raise', 'lift axle won’t come down', 'trailer lift axle will not go up', 'trailer is not level', 'the truck is leaning', 'trailer is sinking on the left side', 'trailer leaning on one side']) ok(su(x), 'Federung: ' + x);
+  for (const x of ['trailer leaning against the wall', 'trailer is not level, fixed', 'lift axle won’t come down, repaired']) ok(!su(x), 'keine Federung: ' + x);
+  for (const x of ['rear steer axle on the trailer is not working', 'self-steer axle stuck']) ok(st(x), 'Lenkung: ' + x);
+  ok(!st('rear steer axle fault, repaired'), 'Lenkachse repariert: keine Lenkung');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const ex of ['trailer dropped off the unit', 'fifth wheel lock indicator red', 'trailer legs won’t go up']) { ok(STRINGS[l].help_coupling_s.includes(ex), 'Hilfe Kupplung ' + l + ': ' + ex); ok(cp(ex), 'Hilfe-Beispiel: ' + ex); } for (const ex of ['trailer suspension won’t raise', 'lift axle won’t come down', 'trailer is not level']) { ok(STRINGS[l].help_susp_s.includes(ex), 'Hilfe Federung ' + l + ': ' + ex); ok(su(ex), 'Hilfe-Beispiel: ' + ex); } }
+});
+
 await test('Backlog 1339 (Reserve Start-Modul nach 1338: 45,591 % bei Grenze 45,60 %): Bausteine __T[51] (RU/UK-Bedienelemente vor Heizung/Handbremse/Verstellung, 2×), __T[52] (DE-Ladeboden/Wände, 3×), __T[53] (Alarm-Verben, 2×), __T[54] (DE-Anfahrverben, 3×) werden genutzt; Rückverwandlung gleich; Start-Modul ≤ 45,52 %', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');

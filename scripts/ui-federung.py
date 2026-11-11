@@ -45,6 +45,8 @@ with sync_playwright() as p:
         for dk in ['подушка сиденья не накачивается','машина села в грязь']: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#susp'),f'{lang}/{w}: „{dk}“ ohne Federungs-Hinweis (Backlog 1322)')
         for dk in CAB[lang]: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#susp'),f'{lang}/{w}: Fahrerhaus „{dk}“ → Federungs-Hinweis (Backlog 1329)')
         for dk in ['кабина не качается','в кабине стучит что-то']: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#susp'),f'{lang}/{w}: „{dk}“ ohne Federungs-Hinweis (Backlog 1329)')
+        for dk in ['trailer suspension won\'t raise','lift axle won\'t come down','trailer is not level']: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#susp'),f'{lang}/{w}: EN „{dk}“ → Federung (Backlog 1340)')
+        q.fill('#d','trailer leaning against the wall'); q.wait_for_timeout(100); check(not vis('#susp'),f'{lang}/{w}: „trailer leaning against the wall“ ohne Federung (Backlog 1340)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
