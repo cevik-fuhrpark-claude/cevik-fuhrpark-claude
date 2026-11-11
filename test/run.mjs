@@ -37561,6 +37561,19 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1338 (Sonde, Blickwinkel „Fahrer meldet Undichtigkeit/Leck auf Englisch“, Backlog 195): „leaking from the sump“, „oil seeping/weeping from the rear axle/hub“, „water leaking from the radiator“, „something is leaking green under the engine“, „oil on the ground under the truck“ → Leck; Luft/Regen/Dach und Reparaturvermerk im neuen Zweig nicht (Leck bleibt bewusst ohne zentrales noFixed, Backlog 764); „rain gets in through the door seal“ → Wasser im Fahrerhaus; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const LK = ['LEAK_HINT', 'LEAK2_HINT', 'LEAK3_HINT'].map(rx), lk = (x) => LK.some((r) => r.test(x)), CL = rx('CABLEAK_HINT');
+  for (const x of ['leaking from the sump', 'oil seeping from the rear axle', 'oil weeping from the hub seal', 'water leaking from the radiator', 'something is leaking green under the engine', 'oil on the ground under the truck', 'leaking from the hose']) ok(lk(x), 'Leck: ' + x);
+  for (const x of ['air leaking from the tank', 'rain leaking from the trailer roof', 'water dripping from the trailer roof', 'aircon dripping water under the truck', 'leaking from the sump, fixed']) ok(!lk(x), 'kein Leck: ' + x);
+  ok(app.includes("$('#leak').hidden = !LEAK_HINT.test(dv) && !LEAK2_HINT.test(dv) && !LEAK3_HINT.test(dv);"), 'Leck bleibt bewusst ohne zentrales noFixed (Sicherheit, Backlog 764)');
+  ok(CL.test('rain gets in through the door seal') && CL.test('water comes in through the roof hatch'), 'Wasser im Fahrerhaus');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const ex of ['leaking from the sump', 'oil seeping from the rear axle', 'oil on the ground under the truck']) { ok(STRINGS[l].help_leak_s.includes(ex), 'Hilfe Leck ' + l + ': ' + ex); ok(lk(ex), 'Hilfe-Beispiel: ' + ex); }
+});
+
 await test('Backlog 1337 (Sonde, Blickwinkel „Fahrer meldet Elektrik/Batterie auf Englisch“, Backlog 195): „battery terminals corroded/loose“, „electrical fault“, „ebs cable broken“, „no power in the cab“ → Elektrik (nicht Motor); „master switch does not work“ → Batterie; „batteries drained“ → Startproblem; „phone charger socket“ → Fahrerhaus-Ausstattung; „no power steering“ kein Motor; Verneinung/Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
