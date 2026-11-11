@@ -37561,6 +37561,25 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1337 (Sonde, Blickwinkel „Fahrer meldet Elektrik/Batterie auf Englisch“, Backlog 195): „battery terminals corroded/loose“, „electrical fault“, „ebs cable broken“, „no power in the cab“ → Elektrik (nicht Motor); „master switch does not work“ → Batterie; „batteries drained“ → Startproblem; „phone charger socket“ → Fahrerhaus-Ausstattung; „no power steering“ kein Motor; Verneinung/Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const EL = ['ELEC_HINT', 'ELEC2_HINT', 'ELEC3_HINT'].map(rx), el = (x) => EL.some((r) => r.test(x));
+  const EN = ['ENGINE_HINT', 'ENGINE2_HINT', 'ENGINE3_HINT', 'ENGINE4_HINT'].map(rx), en = (x) => EN.some((r) => r.test(x));
+  const B = rx('BATT_HINT'), N = rx('NOSTART_HINT'), C = rx('CABKIT_HINT');
+  for (const x of ['battery terminals corroded', 'battery terminal is loose', 'battery clamp broken', 'corroded battery terminals', 'terminals on the battery are green', 'electrical fault', 'electrical problems again', 'ebs cable for the trailer is broken', 'suzie cable broken', 'abs lead damaged', 'no power in the cab', 'no power to the sockets']) ok(el(x), 'Elektrik: ' + x);
+  for (const x of ['battery terminals were loose, tightened them', 'no electrical fault found', 'the abs cable is fine', 'the battery terminal is not loose', 'battery terminals corroded, cleaned']) ok(!el(x), 'keine Elektrik: ' + x);
+  for (const x of ['no power in the cab', 'no power to the sockets', 'no power steering']) ok(!en(x), 'kein Motor: ' + x);
+  for (const x of ['engine has no power', 'no power when going uphill']) ok(en(x), 'Motor bleibt: ' + x);
+  ok(B.test('master switch does not work') && B.test('battery isolator switch broken'), 'Batterie: Hauptschalter');
+  for (const x of ['batteries drained because the fridge was on', 'drained battery', 'batteries are flat']) ok(N.test(x), 'Startproblem: ' + x);
+  ok(!N.test('batteries aren’t flat'), 'keine Startproblem-Meldung bei Verneinung');
+  ok(C.test('phone charger socket doesn’t work') && C.test('charging port broken'), 'Fahrerhaus-Ausstattung: Ladebuchse');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const ex of ['battery terminals corroded', 'electrical fault', 'ebs cable broken', 'no power in the cab']) { ok(STRINGS[l].help_elec_s.includes(ex), 'Hilfe Elektrik ' + l + ': ' + ex); ok(el(ex), 'Hilfe-Beispiel: ' + ex); }
+});
+
 await test('Backlog 1336 (Sonde, Blickwinkel „Fahrer meldet Beleuchtung auf Englisch“, Backlog 195): „main/high/low/full beam(s) not working/out“, „lights flicker“, „no (rear) lights on the trailer“ → Beleuchtung; Reparaturvermerk und „low beam works fine“ nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
