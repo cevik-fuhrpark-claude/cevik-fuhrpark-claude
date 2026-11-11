@@ -45,6 +45,11 @@ with sync_playwright() as p:
         for x in ['загорелась масленка','чек горит на панели','загорілась температура']:
             q.fill('#d',x); q.wait_for_timeout(100); check(vis('#warnlight'),f'{lang}/{w}: umgangssprachlich „{x}“ → Warnleuchten-Hinweis')
         q.fill('#d','масленка не горит'); q.wait_for_timeout(100); check(not vis('#warnlight'),f'{lang}/{w}: „масленка не горит“ → kein Hinweis')
+        # Backlog 1317: englische Alltagsformulierungen (Warnleuchte, Partikelfilter, Kombiinstrument)
+        for x,sel in [('dash lit up like a christmas tree','#warnlight'),('fault code showing','#warnlight'),('warning buzzer keeps beeping','#warnlight'),('exclamation mark on dash','#warnlight'),('regen light flashing','#pfilter'),('cluster is dead','#dash')]:
+            q.fill('#d',x); q.wait_for_timeout(100); check(vis(sel),f'{lang}/{w}: „{x}“ → {sel}')
+        for x in ['no fault codes showing','air pressure buzzer going off','sat nav screen frozen']:
+            q.fill('#d',x); q.wait_for_timeout(100); check(not vis('#warnlight') and not vis('#dash'),f'{lang}/{w}: „{x}“ → kein Warnleuchten-/Display-Hinweis')
         q.fill('#d','')
         q.goto(B+'/#/help?s=warnlight'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_warnlight' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')

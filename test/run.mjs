@@ -37500,7 +37500,7 @@ await test('Backlog 1296/1303 (Reserve Start-Modul nach 1295: 45,84 % > 45,8 %; 
   ok(d.code.includes('${__T[10]}fixed${__T[11]}заменил))') && d.code.includes('${__T[10]}eingestellt${__T[12]}полагод))'), 'Bausteine 10–12 eingesetzt: ' + d.code);
   eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (zweistelliger Index)');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 36, 'Bausteinliste hat 36 Einträge (Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18; Backlog 1307: Index 19–24; Backlog 1311: Index 25–30; Backlog 1316: Index 31–35)'); eq(T[23], '|fixed|repaired|replaced|', 'Baustein 23 (Backlog 1307)'); eq(T[24], '(?![a-z])|(?<![a-z])', 'Baustein 24 (Backlog 1307)'); ok([19, 20, 21].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4) && [22, 23, 24].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 12), 'Bausteine 19–24 werden genutzt'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
+  eq(T.length, 39, 'Bausteinliste hat 39 Einträge (Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18; Backlog 1307: Index 19–24; Backlog 1311: Index 25–30; Backlog 1316: Index 31–35; Backlog 1318: Index 36–38)'); eq(T[23], '|fixed|repaired|replaced|', 'Baustein 23 (Backlog 1307)'); eq(T[24], '(?![a-z])|(?<![a-z])', 'Baustein 24 (Backlog 1307)'); ok([19, 20, 21].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4) && [22, 23, 24].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 12), 'Bausteine 19–24 werden genutzt'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
   ok((main.match(/\$\{__T\[1[0-2]\]\}/g) || []).length > 60, 'zweistellige Bausteine werden genutzt');
   for (const tk of T.slice(10)) ok(Buffer.byteLength(tk) > Buffer.byteLength('${__T[10]}'), 'Baustein länger als Platzhalter: ' + tk);
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
@@ -37543,11 +37543,45 @@ await test('Backlog 1305 (Sonde, Blickwinkel „Fahrer diktiert Tank/AdBlue/Dies
   ok(fuel('Tank verwechselt'.toLowerCase()), 'DE-Hilfebeispiel „Tank verwechselt“');
 });
 
+await test('Backlog 1317 (Sonde, Blickwinkel „Warnlampe/Display auf Englisch“): „dash lit up like a christmas tree“, „red stop on display“, „fault code showing“, „dashboard error message“, „display says workshop visit“, „warning buzzer keeps beeping“, „dash keeps beeping“ → Warnleuchte; „regen light flashing“ → Partikelfilter; „cluster is dead“ → Kombiinstrument; „exclamation mark on dash“ bleibt Warnsymbol (kein diktiertes Satzzeichen); Navi-Bildschirm, Rückleuchten-„cluster“, Luftdruck-/Rückfahrsummer, „no fault codes“, Reparaturvermerk nicht', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const warn = any(['WARNLIGHT_HINT', 'WARNLIGHT2_HINT']), pf = any(['PFILTER_HINT']), dash = any(['DASH_HINT']);
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  for (const x of ['dash lit up like a christmas tree', 'dashboard all lit up', 'red stop on display', 'big red stop on the dash', 'fault code showing', 'fault code on the dash', 'error codes popped up', 'dashboard error message', 'display showing fault code', 'display says workshop visit', 'screen says go to the workshop', 'warning buzzer keeps beeping', 'buzzer won’t stop', 'dash keeps beeping', 'exclamation mark on dash', 'exclamation mark in the display', 'exclamation mark came on']) ok(warn(recurFix(x)), 'Warnleuchte: ' + x);
+  for (const x of ['no fault codes showing', 'air pressure buzzer going off', 'low air pressure warning buzzer', 'reversing buzzer keeps beeping', 'fault code showing, fixed now', 'reefer keeps beeping', 'go to the workshop tomorrow', 'phone keeps beeping']) ok(!warn(recurFix(x)), 'keine Warnleuchte: ' + x);
+  for (const x of ['tür kaputt ausrufezeichen', 'spiegel ab exclamation mark help']) ok(/!/.test(recurFix(x)), 'diktiertes Satzzeichen bleibt: ' + x);
+  for (const x of ['regen light flashing', 'regen light is on', 'regeneration warning came on']) ok(pf(x), 'Partikelfilter: ' + x);
+  for (const x of ['regen light flashing, fixed', 'it is raining regen light', 'Regen auf der Plane']) ok(!pf(x), 'kein Partikelfilter: ' + x);
+  for (const x of ['cluster is dead', 'instrument cluster is dead', 'cluster went blank', 'display screen frozen']) ok(dash(x), 'Kombiinstrument/Display: ' + x);
+  for (const x of ['sat nav screen frozen', 'phone screen frozen', 'rear light cluster broken', 'tail light cluster is dead']) ok(!dash(x), 'kein Kombiinstrument: ' + x);
+  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx) && !WARNLIGHT2_HINT.test(dfx);") && app.includes("$('#pfilter').hidden = !PFILTER_HINT.test(dfx);") && app.includes("$('#dash').hidden = !DASH_HINT.test(dfx);"), 'Listener unverändert');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, k, ex, f] of [['de', 'help_warnlight_s', 'fault code showing', warn], ['de', 'help_warnlight_s', 'warning buzzer keeps beeping', warn], ['uk', 'help_warnlight_s', 'dash lit up like a christmas tree', warn], ['en', 'help_warnlight_s', 'display says workshop visit', warn], ['de', 'help_pfilter_s', 'regen light flashing', pf], ['uk', 'help_pfilter_s', 'regen light flashing', pf], ['en', 'help_pfilter_s', 'regen light flashing', pf], ['de', 'help_dash_s', 'cluster is dead', dash], ['uk', 'help_dash_s', 'cluster is dead', dash], ['en', 'help_dash_s', 'cluster is dead', dash]]) { ok(STRINGS[l][k].includes(ex), 'Hilfe-Beispiel ' + l + '/' + k + ': ' + ex); ok(f(recurFix(ex)), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
+await test('Backlog 1318 (Reserve Start-Modul nach 1317: 45,66 % > 45,65 %): Folgen „(?:немає|нема|нет“, „|відсутн\\S*|отсутств“ und EN „(?:won’t|doesn’t|does“ stehen als __T[36]–__T[38] in der Bausteinliste, je ≥ 10× genutzt; Rückverwandlung gleich; Start-Modul ≤ 45,65 %', async () => {
+  const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const B = await import('../scripts/build-app.mjs');
+  const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
+  eq(T.length, 39, 'Bausteine 0–38');
+  eq(T[36], '(?:немає|нема|нет', 'Baustein 36'); eq(T[37], String.raw`|відсутн\S*|отсутств`, 'Baustein 37'); eq(T[38], "(?:won['’]?t|doesn['’]?t|does", 'Baustein 38');
+  for (let k = 36; k <= 38; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10, 'Baustein ' + k + ' wird ≥ 10× genutzt');
+  const code = "x\nconst A = lbRx(String.raw`(?:немає|нема|нет\\s+a|відсутн\\S*|отсутств\\S*|(?:won['’]?t|doesn['’]?t|does\\s+not)\\s+work)(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\nconst B2 = lbRx(String.raw`c(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\n";
+  const d = B.dedupeLooks(code);
+  ok(/\$\{__T\[36\]\}/.test(d.code) && /\$\{__T\[37\]\}/.test(d.code) && /\$\{__T\[38\]\}/.test(d.code), 'neue Bausteine eingesetzt: ' + d.code);
+  eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
+  ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(2) + ' % von app.js (Ziel ≤ 45,65 %)');
+});
+
 await test('Backlog 1316 (Reserve Start-Modul nach 1315: 45,68 % > 45,65 %): weitere Alternativen-Folgen (RU/UK-Defektverben, „во время движения/під час руху“, DE-Kühlaufbauten, DE-Reifenarten, DE-Spiegelarten) stehen als __T[31]–__T[35] in der Bausteinliste, je ≥ 4× genutzt; Rückverwandlung gleich; Start-Modul ≤ 45,65 %', async () => {
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const B = await import('../scripts/build-app.mjs');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 36, 'Bausteine 0–35');
+  ok(T.length >= 36, 'Bausteine 0–35 (seit Backlog 1318 weitere)');
   ok(T[31].includes('теліпа') && T[32].includes('движения') && T[33].includes('kühlkoffer') && T[34].includes('zwillingsreifen') && T[35].includes('weitwinkel'), 'Bausteine 31–35');
   for (let k = 31; k <= 35; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4, 'Baustein ' + k + ' wird ≥ 4× genutzt');
   const code = "x\nconst A = lbRx(String.raw`(?<![а-яіїєґё])a|оторва\\S*|тріснув\\S*|треснул\\S*|теліпа\\S*|болта\\S*|хита\\S*|шата\\S*|заклин\\S*|(?<![а-яіїєґё])b|pneu|zwillingsreifen|vorderreifen|hinterreifen|aufliegerreifen|anh(?:ä|ae)nger)(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\nconst B2 = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))c`, 'i', 1);\n";
