@@ -37500,7 +37500,7 @@ await test('Backlog 1296/1303 (Reserve Start-Modul nach 1295: 45,84 % > 45,8 %; 
   ok(d.code.includes('${__T[10]}fixed${__T[11]}заменил))') && d.code.includes('${__T[10]}eingestellt${__T[12]}полагод))'), 'Bausteine 10–12 eingesetzt: ' + d.code);
   eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (zweistelliger Index)');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 59, 'Bausteinliste hat 59 Einträge (Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18; Backlog 1307: Index 19–24; Backlog 1311: Index 25–30; Backlog 1316: Index 31–35; Backlog 1318: Index 36–38; Backlog 1320: Index 39–41; Backlog 1324: Index 42; Backlog 1326: Index 43/44; Backlog 1328: Index 45/46; Backlog 1330: Index 47–49)'); eq(T[23], '|fixed|repaired|replaced|', 'Baustein 23 (Backlog 1307)'); eq(T[24], '(?![a-z])|(?<![a-z])', 'Baustein 24 (Backlog 1307)'); ok([19, 20, 21].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4) && [22, 23, 24].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 12), 'Bausteine 19–24 werden genutzt'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
+  eq(T.length, 63, 'Bausteinliste hat 63 Einträge (Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18; Backlog 1307: Index 19–24; Backlog 1311: Index 25–30; Backlog 1316: Index 31–35; Backlog 1318: Index 36–38; Backlog 1320: Index 39–41; Backlog 1324: Index 42; Backlog 1326: Index 43/44; Backlog 1328: Index 45/46; Backlog 1330: Index 47–49)'); eq(T[23], '|fixed|repaired|replaced|', 'Baustein 23 (Backlog 1307)'); eq(T[24], '(?![a-z])|(?<![a-z])', 'Baustein 24 (Backlog 1307)'); ok([19, 20, 21].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4) && [22, 23, 24].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 12), 'Bausteine 19–24 werden genutzt'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
   ok((main.match(/\$\{__T\[1[0-2]\]\}/g) || []).length > 60, 'zweistellige Bausteine werden genutzt');
   for (const tk of T.slice(10)) ok(Buffer.byteLength(tk) > Buffer.byteLength('${__T[10]}'), 'Baustein länger als Platzhalter: ' + tk);
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
@@ -37624,6 +37624,22 @@ await test('Backlog 1347 (Blickwinkel „Fahrer meldet eine Panne / liegengeblie
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1350 (Reserve Start-Modul nach 1349: 45,584 % bei Grenze 45,60 %): Bausteine __T[59] (DE-Fahrsituationen, 3×), __T[60] (DE-Fahrzeugarten, 3×), __T[61] (RU/UK-Wortende ohne „ё“, ≥ 30×), __T[62] (DE-Ordnungszahlen, 3×) werden genutzt (→ 45,52 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
+  eq(T.length, 63, 'Bausteine 0–62');
+  for (const [k, n] of [[59, 3], [60, 3], [61, 30], [62, 3]]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= n && main.split(T[k]).length === 2, 'Baustein ' + k + ' ' + n + '× genutzt');
+  ok(T[59].startsWith('(?:fahrt|fahren|') && T[59].endsWith('|grundlos)'), 'Baustein 59'); ok(T[60].startsWith('(?:auto|pkw|lkw|') && T[60].endsWith('|taxi|suv)'), 'Baustein 60');
+  eq(T[61], '(?![а-яіїєґ])', 'Baustein 61'); ok(T[62].startsWith(String.raw`(?:\d+\.?|erste[nm]?|`) && T[62].endsWith('zw(?:ö|oe)lfte[nm]?)'), 'Baustein 62');
+  const B = await import('../scripts/build-app.mjs');
+  for (const k of [59, 60, 61, 62]) {
+    const code = "x\nconst A = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))a" + T[k] + "b`, 'i', 1);\nconst B2 = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))z`, 'i', 1);\n";
+    const d = B.dedupeLooks(code); ok(d.code.includes('${__T[' + k + ']}'), 'Baustein ' + k + ' eingesetzt'); eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (' + k + ')');
+  }
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1346 (Sonde, Blickwinkel „Fahrer meldet Unfall/Wild/Kundenschaden auf Englisch“, Backlog 195): „scraped a parked car“, „caught a van while turning“, „brushed a parked van“, „scraped the parked car“ → Unfall; „hit a fox/badger“, „ran over a hare“ → Wildunfall; „damage to the curtain from a forklift“ → Schaden beim Kunden; „caught the bus on time“, „caught a bus to the depot“, „hit the trailer while coupling“, „Fox Logistics …“ nicht; Diebstahl EN war abgedeckt; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -37735,7 +37751,7 @@ await test('Backlog 1339 (Reserve Start-Modul nach 1338: 45,591 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 59, 'Bausteine 0–58 (Backlog 1347: Index 55–58)');
+  eq(T.length, 63, 'Bausteine 0–62 (Backlog 1347: Index 55–58; Backlog 1350: Index 59–62)');
   ok(T[51].startsWith(String.raw`(?:ручк\S*|кнопк\S*|`) && T[51].endsWith(String.raw`блокуванн\S*\s+диф\S*`), 'Baustein 51');
   ok(T[52].includes('siebdruck)boden|ladefl(?:ä|ae)che|'), 'Baustein 52'); ok(T[53].includes('losgegangen|'), 'Baustein 53'); ok(T[54].includes('|touchiert|gerammt|'), 'Baustein 54');
   for (const [k, n] of [[51, 2], [52, 3], [53, 2], [54, 3]]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= n, 'Baustein ' + k + ' wird ' + n + '× genutzt');
@@ -37837,7 +37853,7 @@ await test('Backlog 1333 (Reserve Start-Modul nach 1332: 45,61 % > 45,60 %): Bau
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 59, 'Bausteine 0–58 (Backlog 1339/1347)'); ok(T[50].startsWith('(?:schranke|poller|') && T[50].endsWith('blumenk(?:ü|ue)bel)(?:n|en|e|s|es|er)'), 'Baustein 50');
+  eq(T.length, 63, 'Bausteine 0–62 (Backlog 1339/1347/1350)'); ok(T[50].startsWith('(?:schranke|poller|') && T[50].endsWith('blumenk(?:ü|ue)bel)(?:n|en|e|s|es|er)'), 'Baustein 50');
   ok((main.match(/\$\{__T\[50\]\}/g) || []).length >= 3, 'Baustein 50 wird genutzt');
   ok(!main.includes('wartenh(?:ä|ae)uschen|wareh(?:ä|ae)uschen|blumenk') || main.split('wartenh(?:ä|ae)uschen|wareh(?:ä|ae)uschen|blumenk').length === 2, 'Liste nur noch in der Bausteinliste');
   const B = await import('../scripts/build-app.mjs');
@@ -37864,7 +37880,7 @@ await test('Backlog 1330 (Reserve Start-Modul nach 1329: 45,631 %): Bausteine __
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 59, 'Bausteine 0–58 (Backlog 1333/1339/1347)');
+  eq(T.length, 63, 'Bausteine 0–62 (Backlog 1333/1339/1347/1350)');
   ok(T[47].startsWith('(?<!(?:handy|telefon|smartphone') && T[47].endsWith(String.raw`зеркало)\s+)`), 'Baustein 47'); ok(T[48].startsWith('(?:niemand|keiner|keine|kein|nicht') && T[48].endsWith(String.raw`|без)\s+(?:\S+\s+){0,2})`), 'Baustein 48'); eq(T[49], '(?:открыл|відкрил|відчинил|распахнул|розчинил|розчахнул)', 'Baustein 49');
   ok((main.match(/\$\{__T\[47\]\}/g) || []).length >= 3 && (main.match(/\$\{__T\[48\]\}/g) || []).length >= 3 && (main.match(/\$\{__T\[49\]\}/g) || []).length >= 4, 'Bausteine 47–49 werden genutzt');
   const B = await import('../scripts/build-app.mjs');
@@ -37980,7 +37996,7 @@ await test('Backlog 1320 (Reserve Start-Modul nach 1319: 45,654 % > 45,65 %): Fo
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const B = await import('../scripts/build-app.mjs');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 59, 'Bausteine 0–58 (Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1324: Index 42, Backlog 1326: Index 43/44, Backlog 1328: Index 45/46, Backlog 1330: Index 47–49)');
+  eq(T.length, 63, 'Bausteine 0–62 (Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1324: Index 42, Backlog 1326: Index 43/44, Backlog 1328: Index 45/46, Backlog 1330: Index 47–49)');
   eq(T[39], '|(?<![a-z])(?:', 'Baustein 39'); ok(T[40].startsWith('(?:колес|') && T[40].endsWith('|балон)'), 'Baustein 40'); eq(T[41], '(?![a-z])(?![^.;!?]*(?:fixed|repaired|replaced', 'Baustein 41');
   for (const [k, n] of [[39, 50], [40, 4], [41, 5]]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= n, 'Baustein ' + k + ' wird ≥ ' + n + '× genutzt');
   const code = "x\nconst A = lbRx(String.raw`a|(?<![a-z])(?:b|c)(?![a-z])(?![^.;!?]*(?:fixed|repaired|replaced|ok))(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\nconst B2 = lbRx(String.raw`c(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\n";
