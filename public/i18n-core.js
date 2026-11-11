@@ -1156,6 +1156,7 @@ Object.assign(FIELD_NAMES.en, { Sprache: 'Language' });
 // Backlog 665–667 (30.10.2026, Blickwinkel „Unwetter: Ast/Baum auf dem Lkw, Hagel, Hochwasser auf dem Hof“): Schritte im Meldeformular, Hinweis Versicherungsschutz, Hilfe
 // Backlog 668–670 (30.10.2026, Blickwinkel „Lkw bleibt an Brücke/Unterführung/Tankstellendach hängen – Durchfahrtshöhe“): Schritte im Meldeformular, Hinweis Anzeige/Versicherer im Vorgang, Hilfe
 // Backlog 671–673 (30.10.2026, Blickwinkel „Lkw steht nicht mehr da – abgeschleppt, umgesetzt oder Parkkralle“): Schritte im Meldeformular, Hinweis Kosten/Schreiben im Vorgang, Hilfe
+// [CLAUDE] Backlog 1347: allgemeine Panne / liegengeblieben (ohne erkennbare Ursache) – Absichern, Leitung, Standort; keine Entfernungen oder Fristen vorgegeben
 // Backlog 674–676 (30.10.2026, Blickwinkel „Personen im Laderaum entdeckt – blinde Passagiere am Rastplatz/Hafen“): Schritte im Meldeformular, Hinweis Anzeige im Vorgang, Hilfe
 // [CLAUDE] Backlog 405: Prüftermin für mehrere Fahrzeuge anlegen (Sammelanlage, z. B. Wintercheck)
 // [CLAUDE] Backlog 406: Winterreifen-Bedarf je Reifengröße (Reifen-Flotte, Reiter „Winter nicht erfüllt“)

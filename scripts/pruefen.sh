@@ -286,6 +286,7 @@ UI-Hinweise im Telegrammstil (GROSSBUCHSTABEN, Abkürzungen, Emojis)|ui-telegram
 UI-Hinweis Motor im Notlauf/Leistungsverlust/Überhitzung im Meldeformular und Hilfe|ui-motor.py|/tmp/cfp-motor.log
 UI-Hinweis Luftfederung defekt/Lkw oder Auflieger hängt schief im Meldeformular und Hilfe|ui-federung.py|/tmp/cfp-federung.log
 UI-Hinweis Getriebe schaltet nicht/Gang geht nicht rein/Kupplung rutscht im Meldeformular und Hilfe|ui-getriebe.py|/tmp/cfp-getriebe.log
+UI-Hinweis Panne/liegengeblieben ohne Ursache im Meldeformular und Hilfe (Backlog 1347)|ui-panne.py|/tmp/cfp-panne.log
 UI-Hinweis Sicherheitsgurt/Fahrersitz defekt im Meldeformular und Hilfe|ui-gurt.py|/tmp/cfp-gurt.log
 UI-Hinweis Kombiinstrument/Display/Hupe ausgefallen im Meldeformular und Hilfe|ui-anzeige.py|/tmp/cfp-anzeige.log
 UI-Hinweis Auspuff laut/undicht, Abgase im Fahrerhaus im Meldeformular und Hilfe|ui-abgas.py|/tmp/cfp-abgas.log
