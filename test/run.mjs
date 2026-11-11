@@ -37543,6 +37543,19 @@ await test('Backlog 1305 (Sonde, Blickwinkel „Fahrer diktiert Tank/AdBlue/Dies
   ok(fuel('Tank verwechselt'.toLowerCase()), 'DE-Hilfebeispiel „Tank verwechselt“');
 });
 
+await test('Backlog 1322 (Sonde, Blickwinkel „Luftfederung/Fahrwerk per Diktat RU/UK“, Backlog 195): „прицеп сел на одну сторону“, „полуприцеп/тягач просел сзади/спереди“, „причіп сів на правий бік“, „пробило (пневмо)подушку“, „подушка не накачивается/не держит воздух/не тримає повітря“ → Federung; Airbag/Sitzkissen, „водитель сел“, „сел аккумулятор“, „села в грязь“, Verneinung, Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const S1 = rx('SUSP_HINT'), S2 = rx('SUSP2_HINT'); const hit = (x) => S1.test(x) || S2.test(x);
+  for (const x of ['прицеп сел на одну сторону', 'полуприцеп просел сзади', 'тягач просел спереди', 'машина села на задние колёса', 'причіп сів на правий бік', 'пробило подушку на прицепе', 'пробило пневмоподушку', 'подушка не накачивается', 'пневмоподушки не держат воздух', 'подушка не тримає повітря']) ok(S1.test(x), 'Federung erkannt: ' + x);
+  for (const x of ['сработала подушка безопасности', 'подушка сиденья не накачивается', 'подушка водительского сиденья не держит', 'водитель сел в машину', 'сел аккумулятор на прицепе', 'прицеп не сел на сторону всё ровно', 'прицеп сел на одну сторону заменили подушку', 'я сел на правую сторону кабины', 'машина села в грязь', 'пробило колесо', 'машина завалилась на правый бок']) ok(!hit(x), 'kein Federungs-Hinweis: ' + x);
+  ok(app.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv)) && !SUSP2_HINT.test(noSeatSusp(dv));"), 'Listener Federung');
+  ok(/fastHint\(SUSP_HINT\)/.test(app), 'großes Muster mit fastHint');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['прицеп сел на одну сторону', 'пробило подушку']], ['uk', ['причіп сів на правий бік', 'подушка не тримає повітря']], ['en', ['полуприцеп просел сзади', 'подушка не накачивается']]]) for (const ex of exs) { ok(STRINGS[l].help_susp_s.includes(ex), 'Hilfe Federung ' + l + ': ' + ex); ok(hit(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1321 (Sonde, Blickwinkel „Blinker/Warnblinker per Diktat RU/UK“, Backlog 195): „сигнал поворота не работает“, „левый поворот на прицепе не работает“, „поворот не показує“, „не моргает поворотник справа“, „повторитель поворота разбит/не горит“, „боковой поворотник отвалился“, „бічний поворотник відпав“, „лампочка поворотника сгорела“, „реле поворотов щелкает быстро“, „поворотники мигают сами“, „поворотник моргає дуже часто“ → Licht-Hinweis; Straße, „поворот руля“, „не разбит“, Reparaturvermerke nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
