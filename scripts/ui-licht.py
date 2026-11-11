@@ -13,7 +13,7 @@ BOTH={'de':'Unfall, Scheinwerfer kaputt','uk':'ДТП, фара не світи�
 NO={'de':'Licht im Laderaum ist an','uk':'Світло в кабіні увімкнене','en':'Lights are fine'}
 HT={'de':'Licht am Lkw oder Auflieger ausgefallen','uk':'Не працює світло на тягачі чи напівпричепі','en':'Lights on the truck or trailer not working'}
 DIKTAT={'de':'anhänger hat kein strom','uk':'причіп без світла','en':'trailer has no power'}  # Backlog 1270: Diktat ohne Satzzeichen
-DIK2={'de':['фара треснула'],'uk':['перегоріла лампочка','фара тріснула','світло тьмяне','не працює поворот'],'en':['номер не подсвечивается']}  # Backlog 1291: Diktat RU/UK
+DIK2={'de':['фара треснула','фары не включаются','аварійна сигналізація не вмикається'],'uk':['перегоріла лампочка','фара тріснула','світло тьмяне','не працює поворот','фари не вмикаються','аварійна сигналізація не вмикається'],'en':['номер не подсвечивается','фары не включаются']}  # Backlog 1291: Diktat RU/UK
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)

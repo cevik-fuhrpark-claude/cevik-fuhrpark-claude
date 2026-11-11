@@ -37543,6 +37543,21 @@ await test('Backlog 1305 (Sonde, Blickwinkel „Fahrer diktiert Tank/AdBlue/Dies
   ok(fuel('Tank verwechselt'.toLowerCase()), 'DE-Hilfebeispiel „Tank verwechselt“');
 });
 
+await test('Backlog 1309 (Sonde, Nachlese aus 1308 „Warnblinkanlage/Licht schaltet nicht ein“ RU/UK): „аварійна сигналізація не вмикається“, „аварийная сигнализация не включается“, „аварийка не включается“, „не включается аварийка“, „поворотники не включаются“, „фары/фари не включаются/вмикаються“, „габариты не включаются“ → Licht; „включил аварийку и стоял“, „фары горят“, „аварійна сигналізація працює“ nicht; „аварія“-Formen bleiben Unfall; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const lights = any(['LIGHTS_HINT', 'LIGHTS2_HINT', 'LIGHTS3_HINT', 'LIGHTS4_HINT']), acc = any(['ACC_HINT', 'ACC2_HINT', 'ACC3_HINT']);
+  for (const x of ['аварійна сигналізація не вмикається', 'аварийная сигнализация не включается', 'аварийка не включается', 'аварійка не вмикається', 'не включается аварийка', 'поворотники не включаются', 'поворотник не вмикається', 'фары не включаются', 'фари не вмикаються', 'габариты не включаются', 'фары не горят']) ok(lights(x), 'Licht: ' + x);
+  for (const x of ['аварийку включил на трассе', 'включил аварийку и стоял', 'аварійна сигналізація працює', 'фары горят', 'фары не работают после ремонта заменили']) ok(!lights(x), 'kein Licht: ' + x);
+  for (const x of ['аварійна сигналізація не вмикається', 'аварийная сигнализация не включается']) ok(!acc(x), 'kein Unfall: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, ex] of [['de', 'фары не включаются'], ['de', 'аварійна сигналізація не вмикається'], ['uk', 'фари не вмикаються'], ['uk', 'аварійна сигналізація не вмикається'], ['en', 'фары не включаются']]) {
+    ok(STRINGS[l].help_lights_s.includes(ex), 'Hilfe ' + l + ' nennt ' + ex); ok(lights(ex), 'Hilfebeispiel greift: ' + ex);
+  }
+});
+
 await test('Backlog 1308 (Sonde, Blickwinkel „Fahrer diktiert Unfall/Rangierschaden auf Russisch/Ukrainisch“): „мне въехали в зад“, „легківка в’їхала в причіп“, „сзади въехал грузовик“, „я въехал в машину“, „поцарапал чужую машину“, „есть пострадавшие“ → Unfall; „помял бампер об столб“, „зацепил шлагбаум“, „снес столбик“, „сдавал задом и ударил ворота“ → fremde Sache; „мне помяли дверь на стоянке“ → Parkschaden/Unfallflucht; Garage/Rampe/Waschanlage, „ударил по тормозам“, Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
