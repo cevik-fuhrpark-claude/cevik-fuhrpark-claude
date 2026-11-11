@@ -21429,7 +21429,7 @@ await test('Backlog 303 (Blickwinkel „Kühlaggregat des Kühlaufliegers fällt
     ok(L.reefer_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="reefer" class="panel" hidden role="status">`), 'Panel #reefer');
-  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test(dck) && !REEFER2_HINT.test(dck);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test(dck) && !REEFER2_HINT.test(dck) && !REEFER3_HINT.test(dck);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'reefer', 'fire'), 'Hilfe-Abschnitt reefer nach fire');
 });
 
@@ -27917,7 +27917,7 @@ await test('Backlog 764 (Folge aus 761/763, Sonde Reparaturvermerke): ältere Hi
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
   ok(hl.includes("const dv = recurFix($('#d').value);") && hl.includes("$('#trlr').hidden = !trailerHint(); const dfx = noFixed(dv);"), 'Meldeformular: dfx = noFixed(recurFix(Text))');
   const SET = ['WARNLIGHT', 'PFILTER', 'NOSTART', 'DASH', 'TELEM', 'SEAT', 'WINDOW', 'CABKIT', 'CABLEAK', 'CABLOCK', 'FUELCAP', 'ELEC', 'BATT', 'MIRROR', 'GEAR', 'EXHAUST', 'TOLL', 'DOOR', 'VISIB', 'STEP'];
-  for (const n of SET) ok(hl.includes('!' + n + '_HINT.test(dfx)') || hl.includes('!' + n + '_HINT.test(noAux(dfx))') || (hl.includes('const dsh = noSeatHeat(dfx);') && hl.includes('!' + n + '_HINT.test(dsh)')), n + ' über dfx'); // noAux: Backlog 919; dsh = noSeatHeat(dfx): Backlog 1164
+  for (const n of SET) ok(hl.includes('!' + n + '_HINT.test(dfx)') || hl.includes('!' + n + '_HINT.test(noAux(dfx))') || (hl.includes('const dsh = noSeatHeat(noReefRu(dfx));') && hl.includes('!' + n + '_HINT.test(dsh)')), n + ' über dfx'); // noAux: Backlog 919; dsh = noSeatHeat(dfx): Backlog 1164; noReefRu: Backlog 1310
   for (const n of ['BRAKE', 'PARKBRAKE', 'STEER', 'SUSP', 'TYRE', 'FLAT', 'WHEEL', 'COUPLING', 'FIRE', 'LEAK', 'ENGINE', 'TACHO', 'ACC', 'THEFT', 'GLASS', 'FUEL']) ok(!hl.includes('!' + n + '_HINT.test(dfx'), n + ' bewusst nicht über dfx');
   const t = (x) => noFixed(recurFix(x));
   const T = {
@@ -32348,7 +32348,7 @@ await test('Backlog 922 (Flurförderzeuge und Kleingeräte sind nicht der Lkw): 
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
   const eqm = app.match(/^const EQUIP_SPAN = \/(.+)\/gi;/m), axm = app.match(/^const AUX_UNIT = \/(.+)\/gi;/m); ok(eqm && axm, 'EQUIP_SPAN/AUX_UNIT fehlen');
-  ok(app.includes("const noAux = (s) => String(s || '').replace(EQUIP_SPAN, ' ◇ ').replace(AUX_UNIT, "), 'noAux wie im Test');
+  ok(app.includes("const noAux = (s) => noReefRu(s).replace(EQUIP_SPAN, ' ◇ ').replace(AUX_UNIT, "), 'noAux wie im Test (Backlog 1310: RU/UK-Kühlaggregat vorab)');
   const eq = new RegExp(eqm[1], 'gi'), aux = new RegExp(axm[1], 'gi');
   const noAux = (x) => String(x || '').replace(eq, ' ◇ ').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));
   for (const x of ["$('#flat').hidden = !FLAT_HINT.test(noAux(dv)) && !FLAT2_HINT.test(noAux(dv));", "$('#wheel').hidden = !WHEEL_HINT.test(noAux(dv)) && !WHEEL2_HINT.test(noAux(dv));", "$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv))) || bodyWall(dv);"]) ok(app.includes(x), 'im Formular: ' + x);
@@ -36661,7 +36661,7 @@ await test('Backlog 1164 (Sonde Sitzheizung/-belüftung DE/EN/UK/RU, Backlog 195
   for (const x of ['seat heater not working', 'heated seat not working', 'seat heating broken', 'seat ventilation not working', 'не працює підігрів сидіння', 'підігрів сидіння не працює', 'вентиляція сидіння не працює', 'не работает подогрев сиденья', 'подогрев водительского сиденья не работает', 'Sitzheizung geht nicht', 'Heizung im Fahrersitz geht nicht', 'Fahrersitz Heizung defekt', 'Sitzbelüftung geht nicht']) { ok(!seat(x), 'nicht Sitz/Gurt: ' + x); ok(cab(x), 'Fahrerhaus-Ausstattung: ' + x); }
   ok(!VI.test(noSeatHeat(recurFix('Heizung im Fahrersitz geht nicht'))), 'nicht Sicht: Heizung im Fahrersitz'); ok(VI.test(noSeatHeat(recurFix('Heizung geht nicht'))), 'Sicht bleibt: Heizung geht nicht');
   for (const x of ['Fahrersitz wackelt', 'Fahrersitz wackelt, Sitzheizung geht nicht', 'seat wobbles and seat heater not working', 'сиденье не регулируется', "seat won't adjust", 'Gurt klemmt']) ok(seat(x), 'Sitz/Gurt bleibt: ' + x);
-  ok(/const dsh = noSeatHeat\(dfx\);/.test(app) && /\$\('#seat'\)\.hidden = !SEAT_HINT\.test\(dsh\)/.test(app) && /\$\('#visib'\)\.hidden = !VISIB_HINT\.test\(dsh\)/.test(app), 'Meldeformular nutzt noSeatHeat für Sitz und Sicht');
+  ok(/const dsh = noSeatHeat\(noReefRu\(dfx\)\);/.test(app) && /\$\('#seat'\)\.hidden = !SEAT_HINT\.test\(dsh\)/.test(app) && /\$\('#visib'\)\.hidden = !VISIB_HINT\.test\(dsh\)/.test(app), 'Meldeformular nutzt noSeatHeat für Sitz und Sicht');
 });
 
 await test('Backlog 1165 (Sonde AdBlue leuchtet UK/RU, Backlog 195): „горить AdBlue“, „горит AdBlue“, „AdBlue мигает“, „блимає AdBlue“ → Motor-Schritte wie DE „AdBlue leuchtet“; mit Reparaturvermerk („отремонтировали“, „відремонтували“) und ohne Leuchten („AdBlue долили“) nicht', async () => {
@@ -37543,6 +37543,28 @@ await test('Backlog 1305 (Sonde, Blickwinkel „Fahrer diktiert Tank/AdBlue/Dies
   ok(fuel('Tank verwechselt'.toLowerCase()), 'DE-Hilfebeispiel „Tank verwechselt“');
 });
 
+await test('Backlog 1310 (Sonde, Blickwinkel „Fahrer diktiert Kühlaggregat/Reefer auf Russisch/Ukrainisch“): „термокинг не заводится“, „у рефа сел/сів аккумулятор“, „в рефе закончилось топливо“, „бак рефа пустой“ → Kühlgerät statt Lkw-Motor/Tank; „ремень на рефе порвался“ nicht Sitz; „реф в аварии“ nicht Unfall; Fehler/Alarm, nur Netzbetrieb, vereist, Display/Kabel/Lüfter, „в будке жарко товар греется“ → Kühlgerät; Lkw-Motor, Fahrerhaus-Kühlschrank, Reparaturvermerk, „реф попал в аварию“ nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const reefer = any(['REEFER_HINT', 'REEFER2_HINT', 'REEFER3_HINT']), nostart = any(['NOSTART_HINT', 'NOSTART2_HINT']), dry = rx('DRYFUEL_HINT'), seat = any(['SEAT_HINT', 'SEAT2_HINT']), acc = any(['ACC_HINT', 'ACC2_HINT', 'ACC3_HINT']);
+  ok(app.includes("const dsh = noSeatHeat(noReefRu(dfx));") && app.includes("const daccx = noReefRu(") && app.includes("const noAux = (s) => noReefRu(s)"), 'Aggregat-Satzteile vor Lkw-, Sitz- und Unfallhinweisen ausgeblendet');
+  const fn = (name) => { const m = app.match(new RegExp('^const ' + name + ' = .+$', 'm'))[0]; return m; };
+  const noReefRu = new Function(fn('REEF_RU') + fn('REEF_PART') + fn('REEF_STOP') + fn('noReefRu') + '; return noReefRu;')();
+  for (const x of ['холодильник не морозит', 'агрегат не охлаждает температура в прицепе плюс восемь', 'термокинг не заводится', 'кэриер выдает ошибку', 'на рефе горит ошибка', 'на рефі горить помилка', 'реф пищит и показывает аларм', 'реф в аварии', 'в будке жарко товар греется', 'в будці жарко товар гріється', 'реф работает только от сети', 'реф працює тільки від мережі', 'реф не переходит на дизель', 'у рефа сел аккумулятор', 'у рефа сів акумулятор', 'в рефе закончилось топливо', 'в рефі закінчилось паливо', 'бак рефа пустой', 'реф обмерз испаритель во льду', 'реф не розморожується', 'дисплей рефа не горит', 'кабель для рефа порван', 'вилка рефа сгорела', 'вентилятор рефа не крутится', 'ремень на рефе порвался']) ok(reefer(x), 'Kühlgerät: ' + x);
+  for (const x of ['реф отремонтировали теперь работает', 'реф працює нормально', 'агрегат не охлаждает, вчера заменили компрессор', 'в будке не жарко всё нормально', 'товар не греется', 'реф попал в аварию', 'реф работает нормально тягач не заводится', 'двигатель не заводится реф работает нормально', 'гидроагрегат не работает', 'машина не заводится']) ok(!reefer(x), 'kein Kühlgerät: ' + x);
+  const cab = new RegExp(rx('CABKIT_HINT').source, 'gi'); for (const x of ['холодильник в кабине не работает', 'холодильник в кабіні не працює']) ok(!reefer(x.replace(cab, ' ')), 'Fahrerhaus-Kühlschrank nicht: ' + x);
+  for (const x of ['термокинг не заводится', 'у рефа сел аккумулятор', 'у рефа сів акумулятор', 'двигатель рефа не заводится']) ok(!nostart(noReefRu(x)), 'kein Lkw-Start: ' + x);
+  for (const x of ['в рефе закончилось топливо', 'бак рефа пустой', 'в рефі закінчилось паливо']) ok(!dry.test(noReefRu(x)), 'kein Lkw-Tank: ' + x);
+  ok(!seat(noReefRu('ремень на рефе порвался')) && !acc(noReefRu('реф в аварии')), 'Riemen am Aggregat nicht Sitz, Alarm nicht Unfall');
+  for (const x of ['машина не заводится', 'аккумулятор сел тягач не заводится', 'двигатель не заводится реф работает нормально', 'реф работает нормально тягач не заводится']) ok(nostart(noReefRu(x)), 'Lkw-Start bleibt: ' + x);
+  for (const x of ['бак пустой', 'закончилось топливо стою на трассе']) ok(dry.test(noReefRu(x)), 'Lkw-Tank bleibt: ' + x);
+  ok(seat(noReefRu('ремень безопасности порвался')) && acc(noReefRu('реф попал в аварию')) && acc(noReefRu('грузовик в аварии')), 'Sitz und Unfall bleiben');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, ex] of [['de', 'реф пищит и показывает аларм'], ['de', 'у рефа сел аккумулятор'], ['de', 'в будке жарко товар греется'], ['uk', 'у рефа сів акумулятор'], ['uk', 'в будці жарко товар гріється'], ['uk', 'реф працює тільки від мережі'], ['en', 'у рефа сел аккумулятор'], ['en', 'в будці жарко товар гріється']]) { ok(STRINGS[l].help_reefer_s.includes(ex), 'Hilfe ' + l + ' nennt ' + ex); ok(reefer(ex), 'Hilfebeispiel greift: ' + ex); }
+});
+
 await test('Backlog 1309 (Sonde, Nachlese aus 1308 „Warnblinkanlage/Licht schaltet nicht ein“ RU/UK): „аварійна сигналізація не вмикається“, „аварийная сигнализация не включается“, „аварийка не включается“, „не включается аварийка“, „поворотники не включаются“, „фары/фари не включаются/вмикаються“, „габариты не включаются“ → Licht; „включил аварийку и стоял“, „фары горят“, „аварійна сигналізація працює“ nicht; „аварія“-Formen bleiben Unfall; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -38057,7 +38079,7 @@ await test('Backlog 1264 (Sonde, Blickwinkel „Fahrer diktiert Kühlaggregat-St
   const C2 = new RegExp(app.match(/^const COUPLING2_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['aggregat geht immer aus', 'aggregat kühlt nicht runter', 'kühlaggregat schaltet sich ständig ab', 'aggregat vereist', 'aggregat taut nicht ab', 'aggregat läuft nur auf netz nicht auf diesel', 'aggregat springt nicht an auf diesel', 'display vom aggregat aus', 'stromkabel für aggregat kaputt', 'laderaum wird nicht kalt', 'koffer wird nicht mehr kühl', 'temperatur schwankt im laderaum']) ok(R2.test(recurFix(x)), 'Kühlgerät: ' + x);
   for (const x of ['hydraulikaggregat von der ladebordwand geht immer aus', 'stromaggregat geht immer aus', 'ladebordwand aggregat geht immer aus', 'aggregat kühlt wieder alles ok', 'kühlaggregat repariert läuft wieder auf diesel', 'klimaaggregat kühlt nicht', 'laderaum ist sauber', 'display vom tacho dunkel', 'kabel für die ladebordwand kaputt']) ok(!R2.test(recurFix(x)), 'kein Kühlgerät-Zusatz: ' + x);
-  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test(dck) && !REEFER2_HINT.test(dck);"), 'Listener');
+  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test(dck) && !REEFER2_HINT.test(dck) && !REEFER3_HINT.test(dck);"), 'Listener');
   ok(!C2.test(recurFix('temperatur im auflieger zu hoch')) && C2.test(recurFix('auflieger zu hoch zum ankuppeln')), 'Sattelkupplung: „im auflieger zu hoch“ nicht, „auflieger zu hoch“ weiter');
   ok(/aggregat geht immer aus/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });

@@ -2,6 +2,7 @@
 # zeigt bei einer Störung am Kühlgerät fünf Schritte (Leitung/Türen zu, Display-Foto/Uhrzeit, nur unterwiesene Prüfungen, Ware/Liefertermin,
 # Auswahl Fahrbereitschaft); „Klimaanlage kühlt nicht“ zeigt nichts; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # 10.11.2026 (Backlog 1264): zusätzlich Diktat ohne Satzzeichen („aggregat geht immer aus laderaum wird nicht kalt“, „реф не включається“, „fridge unit wont start“).
+# 11.11.2026 (Backlog 1310): RU/UK-Diktat „у рефа сел аккумулятор“, „ремень на рефе порвался“, „реф в аварии“ → Kühlgerät, nicht Motorstart/Sitz/Unfall; „машина не заводится“ weiter Motorstart.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -38,6 +39,11 @@ with sync_playwright() as p:
         check(vis('#reefer'),f'{lang}/{w}: Hinweis bei Kühlgerät-Störung')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
         check(vis('#reefer'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Hinweis (Backlog 1264)')
+        for ru,other in [('у рефа сел аккумулятор','#nostart'),('у рефа сів акумулятор','#batt'),('ремень на рефе порвался','#seat'),('реф в аварии','#acc'),('в будке жарко товар греется','#nostart')]:
+            q.fill('#d',ru); q.wait_for_timeout(100)
+            check(vis('#reefer') and not vis(other),f'{lang}/{w}: „{ru}“ → Kühlgerät, nicht {other} (Backlog 1310)')
+        q.fill('#d','машина не заводится'); q.wait_for_timeout(100)
+        check(vis('#nostart') and not vis('#reefer'),f'{lang}/{w}: „машина не заводится“ → Motorstart, kein Kühlgerät')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         tx=q.inner_text('#reefer')
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
