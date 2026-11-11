@@ -37522,6 +37522,25 @@ await test('Backlog 1300 (Folge aus 1299, Blickwinkel „Fahrer mit älterem Han
   for (const x of ['шипит воздух в шине', 'шипит воздух у колеса']) { ok(!new RegExp(src, 'i').test(x), 'Reifen, keine Bremse: ' + x); ok(!new RegExp(B.lbFallback(src, true), 'i').test(x), 'Reifen, keine Bremse (alte Browser): ' + x); }
 });
 
+await test('Backlog 1302 (Sonde, Blickwinkel „Fahrer diktiert Heizung/Klima auf Russisch/Ukrainisch“): „в кабине/кабіні холодно“, „печка дует только в ноги“, „heizung bläst nur in den fußraum“, „im fahrerhaus ist es kalt“ → Sicht-/Heizungsschritte; „кондей не дует“, „заслонка печки/пічки не переключается/перемикається“ → Klima-Schritte; „печка гудит/пічка гуде“ → Geräusch; Verneinung und Reparaturvermerk („поменяли“) nicht; Hilfe DE/UK/EN mit Beispielen', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const V = ['VISIB_HINT', 'VISIB2_HINT', 'VISIB3_HINT', 'HEAT_HINT'].map(rx); const vis = (x) => V.some((r) => r.test(x));
+  const C = ['CLIMATE_HINT', 'CLIMATE2_HINT', 'CLIMATE3_HINT'].map(rx); const cli = (x) => C.some((r) => r.test(x));
+  const N = rx('NOISE_HINT');
+  for (const x of ['в кабине холодно', 'в кабіні холодно', 'холодно в кабине', 'в кабине очень холодно ночью', 'печка дует только в ноги', 'печка греет только на ноги', 'пічка гріє тільки на ноги', 'heizung bläst nur in den fußraum', 'heizung wärmt nur im fußraum', 'im fahrerhaus ist es kalt', 'in der kabine eiskalt', 'печка не греет', 'пічка дме холодним']) ok(vis(x), 'Sicht/Heizung: ' + x);
+  for (const x of ['в кабине не холодно', 'в кабіні не холодно', 'im fahrerhaus ist es nicht kalt', 'в кабине холодно поменяли радиатор печки', 'печка в норме', 'на улице холодно']) ok(!vis(x), 'keine Sicht-Schritte: ' + x);
+  for (const x of ['кондей не дует', 'кондей не дує', 'кондиционер не дует', 'заслонка печки не переключается', 'заслонка пічки не перемикається', 'заслонку печки заклинило', 'автономка не запускается', 'кондиционер не холодит']) ok(cli(x), 'Klima: ' + x);
+  for (const x of ['кондей дует нормально', 'заслонка печки переключается', 'кондей не дует, заменили компрессор', 'кондиционер не холодит, заправили', 'автономка не запускается, починили', 'заслонка печки сломана, отремонтировали']) ok(!cli(x), 'keine Klima-Schritte: ' + x);
+  for (const x of ['печка гудит', 'пічка гуде', 'вентилятор пічки гуде', 'печка свистит']) ok(N.test(x), 'Geräusch: ' + x);
+  for (const x of ['печка не гудит', 'печка гудит поменяли моторчик', 'печка свистит помінял вентилятор']) ok(!N.test(x), 'kein Geräusch: ' + x);
+  ok(app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx);"), 'Listener Klima unverändert');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['в кабине холодно', 'печка дует только в ноги', 'im Fahrerhaus ist es kalt']], ['uk', ['в кабіні холодно', 'пічка гріє тільки на ноги']], ['en', ['в кабине холодно']]]) for (const ex of exs) { ok(STRINGS[l].help_visib_s.includes(ex), 'Hilfe Sicht ' + l + ': ' + ex); ok(vis(ex.toLowerCase()), 'Hilfe-Beispiel löst aus: ' + ex); }
+  for (const [l, exs] of [['de', ['кондей не дует', 'заслонка печки не переключается']], ['uk', ['кондей не дує', 'заслонка пічки не перемикається']], ['en', ['кондей не дует']]]) for (const ex of exs) { ok(STRINGS[l].help_climate_s.includes(ex), 'Hilfe Klima ' + l + ': ' + ex); ok(cli(ex), 'Hilfe-Beispiel löst aus: ' + ex); }
+});
+
 await test('Backlog 1299 (Sonde, Blickwinkel „Fahrer diktiert Warnleuchten umgangssprachlich auf Russisch/Ukrainisch“): „загорелась масленка“, „маслянка блимає“, „чек горит на панели“, „чек енжин горить“, „загорілась температура“, „горит аккумулятор на панели“, „ошибка на приборке“ → Warnleuchten-Schritte; Verneinung, Reparaturvermerk, Außentemperatur, Kassenbon („чек“), Batteriebrand ohne Anzeige nicht; Hilfe DE/UK/EN mit Beispielen', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

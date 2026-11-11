@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 334, Blickwinkel „Standheizung oder Klimaanlage im Fahrerhaus ausgefallen“): Meldeformular zeigt
 # fünf Schritte (Leitung vor der Ruhezeit, kein Motor im Stand/keine Gasgeräte, nicht öffnen, Anzeige/Foto, Auswahl Fahrbereitschaft);
 # „Standheizung läuft“ zeigt keinen Hinweis; zusammen mit „Unfall“ ist der Unfall-Hinweis offen und der Klima-Hinweis eingeklappt; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Backlog 1302: Diktat RU/UK („кондей не дует“, „заслонка пічки не перемикається“ → Klima; „в кабіні холодно“, „im fahrerhaus ist es kalt“ → Sicht/Heizung).
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -12,6 +13,8 @@ BOTH={'de':'Unfall, Klimaanlage defekt','uk':'ДТП, кондиціонер н�
 DIK2={'de':'standheizung geht nach paar minuten wieder aus','uk':'автономка вимикається через хвилину','en':'parking heater keeps shutting off'}
 DIK={'de':'klima macht nur warme luft','uk':'кондиціонер дме теплим','en':'vents smell'}
 NO={'de':'Standheizung läuft','uk':'Кондиціонер працює','en':'Air conditioning serviced'}
+DIK3={'de':'кондей не дует','uk':'заслонка пічки не перемикається','en':'заслонка печки не переключается'}
+KALT={'de':'im fahrerhaus ist es kalt','uk':'в кабіні холодно','en':'печка дует только в ноги'}
 HT={'de':'Standheizung oder Klimaanlage im Fahrerhaus ausgefallen','uk':'Автономний обігрівач або кондиціонер у кабіні не працює','en':'Parking heater or cab air conditioning not working'}
 fails=[]
 def check(c,m):
@@ -41,6 +44,11 @@ with sync_playwright() as p:
         check(vis('#climate'),f'{lang}/{w}: Diktat „{DIK2[lang]}“ → Klima-Hinweis (Backlog 1276)')
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
         check(vis('#climate'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Klima-Hinweis (Backlog 1255)')
+        q.fill('#d',DIK3[lang]); q.wait_for_timeout(100)
+        check(vis('#climate'),f'{lang}/{w}: Diktat „{DIK3[lang]}“ → Klima-Hinweis (Backlog 1302)')
+        q.fill('#d',KALT[lang]); q.wait_for_timeout(100)
+        check(vis('#visib') and not vis('#climate'),f'{lang}/{w}: Diktat „{KALT[lang]}“ → Sicht-/Heizungshinweis (Backlog 1302)')
+        if SHOTS: q.locator('#visib').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/kalt-{lang}-{w}.png')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         tx=q.inner_text('#climate')
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
