@@ -38,6 +38,8 @@ with sync_playwright() as p:
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#fire').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/rauch-{lang}-{w}.png')
+        q.fill('#d',"engine cranks but doesn't fire"); q.wait_for_timeout(100)
+        check(not vis('#fire') and vis('#nostart'),f'{lang}/{w}: „engine cranks but doesn’t fire“ → Startproblem, kein Brand (Backlog 1335)')
         q.fill('#d','')
         q.goto(B+'/#/help?s=fire'); q.wait_for_timeout(800); bt=q.evaluate("document.body.innerText")
         check(HT[lang] in bt and 'help_fire' not in bt,f'{lang}/{w}: Hilfe mit Abschnitt')

@@ -37561,6 +37561,21 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1335 (Sonde, Blickwinkel „Fahrer meldet Motor/Start auf Englisch“, Backlog 195): „engine cranks but doesn’t fire“ ist kein Brand (FIRE_HINT nach Verneinung/„fire up“ aus), sondern Startproblem wie „engine won’t fire (up)“; „engine running/idles rough“ → Motor; echter Brand („fire in the engine bay“, „truck is on fire“) bleibt; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const F = rx('FIRE_HINT'), N = rx('NOSTART_HINT'), E = ['ENGINE_HINT', 'ENGINE2_HINT', 'ENGINE3_HINT', 'ENGINE4_HINT'].map(rx), en = (x) => E.some((r) => r.test(x));
+  for (const x of ['engine cranks but doesn’t fire', "engine won't fire up", 'engine does not fire', 'it didnt fire']) { ok(!F.test(x), 'kein Brand: ' + x); }
+  for (const x of ['engine cranks but doesn’t fire', "engine won't fire up", 'engine does not fire']) ok(N.test(x), 'Startproblem: ' + x);
+  for (const x of ['fire in the engine bay', 'the truck is on fire', 'fire under the trailer', 'small fire at the wheel']) ok(F.test(x), 'Brand: ' + x);
+  for (const x of ['engine running rough', 'engine idles rough', 'engine is running very lumpy']) ok(en(x), 'Motor: ' + x);
+  for (const x of ['engine running rough, fixed now', 'engine runs fine']) ok(!en(x), 'kein Motor: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].help_engine_s.includes('engine running rough'), 'Hilfe Motor ' + l); ok(STRINGS[l].help_nostart_s.includes('engine won’t fire'), 'Hilfe Start ' + l); }
+  ok(N.test('engine won’t fire') && !F.test('engine won’t fire'), 'Hilfe-Beispiel Start löst Startproblem aus, keinen Brand');
+});
+
 await test('Backlog 1334 (Sonde, Blickwinkel „Fahrer meldet Lenkung/Reifen auf Englisch“, Backlog 195): „too much play in the steering“, „knocking from the steering“, „steering pump whining“, „hard to steer“ → Lenkung; „tyre is low“, „tread is low on the front tyres“ → Reifen; Verneinung, „low profile“, Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
