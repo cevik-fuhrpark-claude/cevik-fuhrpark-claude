@@ -362,7 +362,9 @@ const RX_TOK = ['(?![a-zäöüß])', '(?<![a-zäöüß-])', '(?<![а-яіїєґ�
   String.raw`nicht\s+(?:mehr\s+)?`, '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', String.raw`|не\s+працю\S*|не\s+работа\S*|`,
   '(?:auflieger|anh(?:ä|ae)nger|', String.raw`|сломал\S*|сломан\S*|`, String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`,
   String.raw`(?:колес\S*|колiс\S*|коліс\S*|шин\S*|покрышк\S*|покришк\S*|резин\S*|гум[аиуі]|баллон\S*|балон\S*)`, '(?:ab(?:gebrochen|gerissen)?|gebrochen|durchgebrochen|kaputt|defekt|lose|locker|wackelt|wackelig|klemmt|h(?:ä|ae)ngt|',
-  String.raw`|реф)\S*|(?:задн\S*|задні)\s+(?:ворота|двер\S*)|(?:боков\S*|бічн\S*)\s+двер\S*|`, String.raw`|більше\s+не|больше\s+не))`, '|fixed|repaired|replaced|', '(?![a-z])|(?<![a-z])'];
+  String.raw`|реф)\S*|(?:задн\S*|задні)\s+(?:ворота|двер\S*)|(?:боков\S*|бічн\S*)\s+двер\S*|`, String.raw`|більше\s+не|больше\s+не))`, '|fixed|repaired|replaced|', '(?![a-z])|(?<![a-z])',
+  // Backlog 1311 (Reserve Start-Modul nach 1310: 45,70 %): häufige Alternativen-Folgen (Häufigkeitsanalyse über alle lbRx-Ausdrücke in app-main.js)
+  '|auflieger|anh(?:ä|', String.raw`|funktioniert\s+wieder|wieder\s+(?:ok|`, String.raw`|geht\s+nicht|funktioniert\s+nicht|`, String.raw`|злама[вл]\S*|сломал\S*|`, String.raw`|отремонт\S*|заменил\S*|`, String.raw`|злама[внл]\S*|сломан\S*|`];
 export function dedupeLooks(code) {
   const calls = [...code.matchAll(RX_CALL)], count = new Map();
   for (const c of calls) for (const [a, e] of rxGroups(c[1])) { const g = c[1].slice(a, e); count.set(g, (count.get(g) || 0) + 1); }
