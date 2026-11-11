@@ -37561,6 +37561,18 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1327 (Sonde, Blickwinkel „Fahrer meldet Kupplung/Getriebe auf Englisch“, Backlog 195): „won’t go into reverse“, „gearbox won’t change gear“, „won’t shift above 4th“, „clutch pedal does not come back up“, „burning smell from the clutch“, „gearbox jerks when changing gear“, „truck won’t move in gear“, „in gear but no drive“, „AMT/Opticruise/I-Shift fault“ → Getriebe-Schritte; Tempo, Tür, Ladebordwand, Bremsen, Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const G = [rx('GEAR_HINT'), rx('GEAR2_HINT'), rx('GEAR3_HINT')], gear = (x) => G.some((r) => r.test(x));
+  for (const x of ['clutch pedal does not come back up', 'clutch pedal won’t return', 'burning smell from the clutch', "won't go into reverse", 'cannot put it in gear', "gearbox won't change gear", "won't shift above 4th", 'automatic gearbox jerking', 'gearbox jerks when changing gear', 'gear shift is jerky', "truck won't move in gear", "truck won't move forward or backward", 'in gear but no drive', "in gear but it doesn't move", 'AMT fault', 'opticruise fault', 'i-shift error', 'powershift not working']) ok(gear(x), 'Getriebe: ' + x);
+  for (const x of ["door won't go into the lock", "the truck doesn't go above 80 km/h", "driver won't move the truck before the check", "the clutch doesn't slip anymore", "won't go into reverse, fixed now", 'clutch pedal does not come back up, repaired', 'night shift is jerky', 'tail lift jerks when lowering', 'truck jerks when braking', "the wipers won't go back up", "won't move the trailer forward or backward without key", 'gearbox jerking was fixed', 'AMT fault repaired', 'reverse gear works again']) ok(!gear(x), 'kein Getriebe-Hinweis: ' + x);
+  ok(app.includes("$('#gear').hidden = !GEAR_HINT.test(dfx) && !GEAR2_HINT.test(dfx) && !GEAR3_HINT.test(dfx);"), 'Listener Getriebe (nach noFixed)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, exs] of [['de', ['won’t go into reverse', 'clutch pedal does not come back up']], ['uk', ['won’t go into reverse', 'clutch pedal does not come back up']], ['en', ['won’t go into reverse', 'clutch pedal does not come back up', 'gearbox jerks when changing gear', 'in gear but no drive', 'AMT fault']]]) for (const ex of exs) { ok(STRINGS[l].help_gear_s.includes(ex), 'Hilfe Getriebe ' + l + ': ' + ex); ok(gear(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
+});
+
 await test('Backlog 1326 (Reserve Start-Modul nach 1325: 45,648 %): Bausteine __T[43] („не працю…|не работа…“) und __T[44] („Wortabstand bis 4 Wörter + Gruppe“) werden je ≥ 10× genutzt; Rückverwandlung jedes Ausdrucks gleich; Start-Modul ≤ 45,63 %', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');

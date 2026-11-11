@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 319, Blickwinkel „Getriebe schaltet nicht, Gang geht nicht rein oder Kupplung rutscht“): Meldeformular zeigt
 # fünf Schritte (anhalten, Feststellbremse/nicht mit Gewalt schalten, Leitung, Display-Foto/Gänge, Auswahl Fahrbereitschaft);
 # „Auflieger lässt sich nicht kuppeln“ zeigt keinen Getriebe-Hinweis; zusammen mit „Unfall“ ist der Unfall-Hinweis offen und der Getriebe-Hinweis eingeklappt; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Backlog 1327: englische Getriebe-/Kupplungsmeldungen (Rückwärtsgang, Kupplungspedal, Ruckeln, kein Kraftschluss, AMT) in allen Sprachen.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -11,6 +12,8 @@ TXT={'de':'Kupplung geht schwer','uk':'Зчеплення туге','en':'Clutch
 BOTH={'de':'Unfall, Getriebe schaltet nicht mehr','uk':'ДТП, коробка передач не перемикає','en':'Accident, clutch slipping now'}
 NO={'de':'Auflieger lässt sich nicht kuppeln','uk':'Двері пошкоджені','en':'Reefer unit fault'}
 HT={'de':'Getriebe schaltet nicht, Gang geht nicht rein oder Kupplung rutscht','uk':'Коробка передач не перемикає, передача не вмикається або буксує зчеплення','en':'Gearbox not shifting, gear won’t engage or clutch slipping'}
+EN_NEW=["won't go into reverse",'clutch pedal does not come back up','gearbox jerks when changing gear','in gear but no drive','AMT fault']
+EN_NO=["the truck doesn't go above 80 km/h",'truck jerks when braking','AMT fault repaired']
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -39,6 +42,10 @@ with sync_playwright() as p:
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
         if SHOTS: q.locator('#gear').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/getriebe-{lang}-{w}.png')
+        for x in EN_NEW:  # Backlog 1327: englische Formulierungen in jeder Oberflächensprache
+            q.fill('#d',x); q.wait_for_timeout(100); check(vis('#gear'),f'{lang}/{w}: „{x}“ → Getriebe-Hinweis')
+        for x in EN_NO:
+            q.fill('#d',x); q.wait_for_timeout(100); check(not vis('#gear'),f'{lang}/{w}: „{x}“ → kein Getriebe-Hinweis')
         q.fill('#d',BOTH[lang]); q.wait_for_timeout(100)
         check(vis('#gear') and vis('#acc') and q.evaluate("!document.querySelector('#acc ul').hidden && document.querySelector('#gear ul').hidden"),f'{lang}/{w}: mit Unfall zusammen → Unfall offen, Getriebe eingeklappt')
         q.fill('#d','')
