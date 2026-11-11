@@ -380,7 +380,9 @@ const RX_TOK = ['(?![a-zäöüß])', '(?<![a-zäöüß-])', '(?<![а-яіїєґ�
   String.raw`не\s+працю\S*|не\s+работа\S*`, String.raw`\s+(?:\S+\s+){0,4}?(?:`,
   // Backlog 1328 (Reserve Start-Modul nach 1327: 45,625 % ≈ Grenze 45,63 %): Laderaum-Wörter EN/RU/UK am Ende eines Ausschlusses (3×, je 129 Byte) und DE-Türarten (4×) laut Häufigkeitsanalyse.
   String.raw`|load(?![a-z])|trailer|box\s+body|curtain|вантаж\S*|кузов\S*|причіп\S*|прицеп\S*|напівпричіп\S*|полуприцеп\S*|тент\S*|фургон\S*)[^.;!?]*)`,
-  String.raw`(?:fahrer|beifahrer|heck|seiten|schiebe|kabinen|fahrerhaus|koffer|aufbau|hinter|vorder|fl(?:ü|ue)gel)?[\s-]?t(?:ü|ue)r(?:en)`];
+  String.raw`(?:fahrer|beifahrer|heck|seiten|schiebe|kabinen|fahrerhaus|koffer|aufbau|hinter|vorder|fl(?:ü|ue)gel)?[\s-]?t(?:ü|ue)r(?:en)`,
+  // Backlog 1330 (Reserve Start-Modul nach 1329: 45,631 % > 45,60 %): Ausnahmeliste Handy/Sitz/Spiegel vor einem Wort (3×), Verneinungsliste DE/EN/RU/UK mit Wortabstand (3×), RU/UK „geöffnet“ (4×) laut Häufigkeitsanalyse.
+  String.raw`(?<!(?:handy|telefon|smartphone|tablet|sitz|fahrersitz|uhr|phone|seat|телефон|сидіння|сиденье|spiegel|mirror|дзеркало|зеркало)\s+)`, String.raw`(?:niemand|keiner|keine|kein|nicht|nichts|ohne|nobody|no\s+one|noone|not|no|never|without|ніхто\s+не|никто\s+не|не|без)\s+(?:\S+\s+){0,2})`, String.raw`(?:открыл|відкрил|відчинил|распахнул|розчинил|розчахнул)`];
 export function dedupeLooks(code) {
   const calls = [...code.matchAll(RX_CALL)], count = new Map();
   for (const c of calls) for (const [a, e] of rxGroups(c[1])) { const g = c[1].slice(a, e); count.set(g, (count.get(g) || 0) + 1); }

@@ -10,6 +10,7 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
 TXT={'de':'Luftbalg geplatzt','uk':'Пневмоподушка лопнула','en':'Trailer is leaning to the left'}
 BOTH={'de':'Unfall, Auflieger hängt jetzt schief','uk':'ДТП, причіп просів','en':'Accident, air suspension failure'}
 DIK3={'de':['прицеп сел на одну сторону','пробило подушку на прицепе'],'uk':['причіп сів на правий бік','подушка не тримає повітря'],'en':['полуприцеп просел сзади','подушка не накачивается']}  # Backlog 1322
+CAB={'de':['Fahrerhauslagerung defekt','кабина сильно качается'],'uk':['кабіна гойдається на ямах','опори кабіни зламані'],'en':['cab mount broken','cab rocking a lot']}  # Backlog 1329: Fahrerhauslagerung
 DIKT={'de':'lkw hengt hinten rechts stoßdämpfer ölt','uk':'амортизатор потік підвіска пробиває','en':'suspension bottoms out ride height wrong'}  # Backlog 1258
 NO={'de':'Spiegel schief','uk':'Двері пошкоджені','en':'Reefer unit fault'}
 HT={'de':'Luftfederung defekt oder Lkw/Auflieger hängt schief','uk':'Несправна пневмопідвіска або вантажівка/напівпричіп перекошені','en':'Air suspension faulty or truck/trailer leaning'}
@@ -42,6 +43,8 @@ with sync_playwright() as p:
         check(vis('#susp'),f'{lang}/{w}: Diktat ohne Satzzeichen „{DIKT[lang]}“ → Hinweis (Backlog 1258)')
         for dk in DIK3[lang]: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#susp'),f'{lang}/{w}: Diktat RU/UK „{dk}“ → Federungs-Hinweis (Backlog 1322)')
         for dk in ['подушка сиденья не накачивается','машина села в грязь']: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#susp'),f'{lang}/{w}: „{dk}“ ohne Federungs-Hinweis (Backlog 1322)')
+        for dk in CAB[lang]: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#susp'),f'{lang}/{w}: Fahrerhaus „{dk}“ → Federungs-Hinweis (Backlog 1329)')
+        for dk in ['кабина не качается','в кабине стучит что-то']: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#susp'),f'{lang}/{w}: „{dk}“ ohne Federungs-Hinweis (Backlog 1329)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: ohne Querscrollen')
