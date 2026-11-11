@@ -37561,6 +37561,21 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1344 (Sonde, Blickwinkel „Fahrer meldet Kühlgerät/Ladebordwand/Tacho auf Englisch“, Backlog 195): „the carrier unit won’t hold temperature“, „reefer not holding temp“, „fridge unit isn’t holding the set point“, „thermo king doesn’t hold temperature“ → Kühlgerät; „reefer holds temperature fine“ nicht; Ladebordwand und Tacho waren abgedeckt (Stichproben); Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const R = ['REEFER_HINT', 'REEFER2_HINT', 'REEFER3_HINT'].map(rx), re = (x) => R.some((r) => r.test(x));
+  for (const x of ['the carrier unit won’t hold temperature', "the carrier unit won't hold temperature", 'reefer not holding temp', 'fridge unit isn’t holding the set point', 'thermo king doesn’t hold temperature', 'reefer unit alarm']) ok(re(x), 'Kühlgerät: ' + x);
+  for (const x of ['reefer holds temperature fine', 'carrier unit won’t hold temp, fixed now', 'reefer working fine']) ok(!re(x), 'kein Kühlgerät-Hinweis: ' + x);
+  const D = ['DOOR_HINT', 'DOOR4_HINT'].map(rx), T = ['TACHO_HINT', 'TACHO2_HINT'].map(rx);
+  for (const x of ['tail lift won’t go up', 'tail lift stuck down']) ok(D.some((r) => r.test(x)), 'Ladebordwand: ' + x);
+  for (const x of ['tacho not reading my card', 'card stuck in the tacho', 'tacho printer not working']) ok(T.some((r) => r.test(x)), 'Tacho: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].help_reefer_s.includes('the carrier unit won’t hold temp'), 'Hilfe Kühlgerät ' + l); }
+  ok(re('the carrier unit won’t hold temp'), 'Hilfe-Beispiel erkannt (ohne „temperature“, damit Backlog 584 genau ein Temperaturschreiber-Beispiel findet)');
+});
+
 await test('Backlog 1343 (Sonde, Blickwinkel „Fahrer meldet Spiegel/Scheiben/Wischer/Türen auf Englisch“, Backlog 195): Spiegel passiv getroffen („mirror got clipped by a lorry“, „mirror got hit by an oncoming truck“, „mirror was clipped by a bus“, „mirror folded back after a truck passed“) und DE „Spiegel wurde von einem LKW gestreift“ → Spiegel; „mirror folds in automatically when parking“, „mirror is fine“ nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
