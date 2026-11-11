@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (25.10.2026, Backlog 311, Blickwinkel „Tür/Ladebordwand/Hecktür schließt nicht“): Meldeformular zeigt
 # fünf Schritte (nicht losfahren, unterwegs anhalten/nichts mit Gewalt, Leitung, Fotos, Auswahl Fahrbereitschaft); „Tür eingedrückt“
 # zeigt keinen Hinweis; zusammen mit „Unfall“ ist der Unfall-Hinweis offen und der Tür-Hinweis eingeklappt; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Backlog 1325: englische Ladebordwand-Meldungen („tail lift battery flat“) → Ladebordwand, kein Startproblem.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -17,6 +18,8 @@ DIK6={'de':['дверь открывается на ходу','ручка две
 NEG6=['дверь в офисе плохо закрывается','замок зажигания заклинило','дверь не провисла']
 DIK7={'de':['гидроборт застрял внизу','гидроборт не складывается'],'uk':['гідроборт застряг унизу','гідроборт пищить'],'en':['заклинило гидроборт','гідроборт не реагує на пульт']}  # Backlog 1312: Ladebordwand RU/UK
 NEG7=['гидроборт не пищит','гидроборт отремонтировали теперь складывается']
+DIK8=['tail lift stopped working','tail lift battery flat','the ramp on the tail lift is damaged']  # Backlog 1325
+NEG8=['tail lift working again','the tail lift is charged now']
 NO={'de':'Tür eingedrückt','uk':'Двері пошкоджені','en':'Door dented'}
 HT={'de':'Tür, Hecktür oder Ladebordwand schließt nicht','uk':'Двері, задні двері чи гідроборт не закриваються','en':'Door, rear door or tail lift will not close'}
 fails=[]
@@ -43,6 +46,8 @@ with sync_playwright() as p:
         check(not vis('#door') and vis('#hintsum')==False,f'{lang}/{w}: „{NO[lang]}“ → kein Tür-Hinweis')
         for dk in DIK7[lang]: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#door') and not vis('#stuck'),f'{lang}/{w}: Diktat „{dk}“ → Ladebordwand, nicht Festgefahren (Backlog 1312)')
         for dk in NEG7: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#door'),f'{lang}/{w}: „{dk}“ → kein Tür-Hinweis (Backlog 1312)')
+        for dk in DIK8: q.fill('#d',dk); q.wait_for_timeout(100); check(vis('#door') and not vis('#nostart'),f'{lang}/{w}: „{dk}“ → Ladebordwand, kein Startproblem (Backlog 1325)')
+        for dk in NEG8: q.fill('#d',dk); q.wait_for_timeout(100); check(not vis('#door'),f'{lang}/{w}: „{dk}“ → kein Tür-Hinweis (Backlog 1325)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         q.fill('#d',DIK[lang]); q.wait_for_timeout(100)
         check(vis('#door'),f'{lang}/{w}: Diktat „{DIK[lang]}“ → Tür-Hinweis (Backlog 1256)')

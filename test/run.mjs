@@ -32315,8 +32315,8 @@ await test('Backlog 919 (Motor/Batterie/Tank des Kühlaggregats ist nicht der Lk
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const g = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
   const m = app.match(/^const AUX_UNIT = \/(.+)\/gi;/m); ok(m, 'AUX_UNIT fehlt');
-  const aux = new RegExp(m[1], 'gi'); const noAux = (x) => String(x || '').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));
-  ok(app.includes(".replace(AUX_UNIT, (m) => m.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));"), 'noAux wie im Test');
+  const aux = new RegExp(m[1], 'gi'); const noAux = (x) => String(x || '').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batter(?:ies|ie|y)|akku|tank|kraftstoff)/gi, '◇'));
+  ok(app.includes(".replace(AUX_UNIT, (m) => m.replace(/(?:dieselmotor|motor|diesel|batter(?:ies|ie|y)|akku|tank|kraftstoff)/gi, '◇'));"), 'noAux wie im Test'); // Backlog 1325: auch engl. „battery“ (Ladebordwand)
   for (const x of ["$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));", "$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx)) && !NOSTART2_HINT.test(noAux(dfx));", "$('#dryfuel').hidden = !DRYFUEL_HINT.test(noAux(dv));", "$('#batt').hidden = !BATT_HINT.test(noAux(dfx));"]) ok(app.includes(x), 'im Formular: ' + x);
   const lkw = ['ENGINE_HINT', 'NOSTART_HINT', 'DRYFUEL_HINT', 'BATT_HINT'].map(g), rf = g('REEFER_HINT');
   for (const x of ['Kühlaggregat Motor geht aus', 'Kühlaggregat Batterie leer', 'Aggregat hat keinen Diesel mehr', 'Aggregattank leer', 'Tank vom Kühlaggregat leer', 'Batterie vom Kühlaggregat leer', 'Standheizung Batterie leer']) ok(!lkw.some((r) => r.test(noAux(x))), 'kein Lkw-Hinweis: ' + x);
@@ -32350,7 +32350,7 @@ await test('Backlog 922 (Flurförderzeuge und Kleingeräte sind nicht der Lkw): 
   const eqm = app.match(/^const EQUIP_SPAN = \/(.+)\/gi;/m), axm = app.match(/^const AUX_UNIT = \/(.+)\/gi;/m); ok(eqm && axm, 'EQUIP_SPAN/AUX_UNIT fehlen');
   ok(app.includes("const noAux = (s) => noReefRu(s).replace(EQUIP_SPAN, ' ◇ ').replace(AUX_UNIT, "), 'noAux wie im Test (Backlog 1310: RU/UK-Kühlaggregat vorab)');
   const eq = new RegExp(eqm[1], 'gi'), aux = new RegExp(axm[1], 'gi');
-  const noAux = (x) => String(x || '').replace(eq, ' ◇ ').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batterie|akku|tank|kraftstoff)/gi, '◇'));
+  const noAux = (x) => String(x || '').replace(eq, ' ◇ ').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batter(?:ies|ie|y)|akku|tank|kraftstoff)/gi, '◇'));
   for (const x of ["$('#flat').hidden = !FLAT_HINT.test(noAux(dv)) && !FLAT2_HINT.test(noAux(dv)) && !FLAT3_HINT.test(noAux(dv));", "$('#wheel').hidden = !WHEEL_HINT.test(noAux(dv)) && !WHEEL2_HINT.test(noAux(dv));", "$('#tyre').hidden = !(TYRE_HINT.test(noAux(dv)) || TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv)) || TYRE5_HINT.test(noAux(dv))) || bodyWall(dv);"]) ok(app.includes(x), 'im Formular: ' + x);
   const lkw = ['ENGINE_HINT', 'NOSTART_HINT', 'DRYFUEL_HINT', 'BATT_HINT', 'FLAT_HINT', 'TYRE_HINT', 'WHEEL_HINT'].map(g);
   for (const x of ['Hubwagen Reifen platt', 'Ameise Batterie leer', 'Mitnahmestapler Batterie leer', 'Stapler springt nicht an', 'Mitnahmestapler Motor geht aus', 'Stapler Reifen kaputt', 'Sackkarre Reifen platt', 'Taschenlampe Batterie leer', 'Funkgerät Batterie leer', 'Schlüssel Batterie leer', 'Batterie vom Schlüssel leer', 'Fernbedienung Batterie leer']) ok(!lkw.some((r) => r.test(noAux(x))), 'kein Lkw-Hinweis: ' + x);
@@ -37558,6 +37558,26 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   for (const [l, exs] of [['de', ['клеммы окислились', 'клемма отвалилась']], ['uk', ['клема відпала', 'клеми в нальоті']], ['en', ['клеммы окислились', 'клемма отвалилась']]]) for (const ex of exs) { ok(STRINGS[l].help_elec_s.includes(ex), 'Hilfe Elektrik ' + l + ': ' + ex); ok(e(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
   eq(T[42], String.raw`funktioniert\s+wieder|wieder\s+(?:ok|in\s+ordnung`, 'Baustein 42'); ok((main.match(/\$\{__T\[42\]\}/g) || []).length >= 5, 'Baustein 42 wird genutzt');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
+});
+
+await test('Backlog 1325 (Sonde, Blickwinkel „Fahrer meldet Ladebordwand auf Englisch“, Backlog 195): „tail lift stopped working“, „tail-lift motor not running“, „buttons not responding“, „roller/cable snapped“, „tilts on one side“, „jerks when lowering“, „battery flat“, „won’t charge“, „tuck under lift won’t come out“, „column lift not working“, „the ramp on the tail lift is damaged“ → Tür/Ladebordwand; Batterie der Ladebordwand (EN/DE) kein Startproblem, Fahrzeugbatterie weiter; Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const door = any(['DOOR_HINT', 'DOOR2_HINT', 'DOOR3_HINT', 'DOOR4_HINT', 'DOOR5_HINT']), d4 = rx('DOOR4_HINT');
+  const aux = new RegExp(app.match(/^const AUX_UNIT = \/(.+)\/gi;$/m)[1], 'gi');
+  const noAux = (s) => s.replace(aux, (m) => m.replace(/(?:dieselmotor|motor|diesel|batter(?:ies|ie|y)|akku|tank|kraftstoff)/gi, '◇'));
+  const ns = any(['NOSTART_HINT', 'NOSTART2_HINT']); const nostart = (x) => ns(noAux(x));
+  ok(app.includes("m.replace(/(?:dieselmotor|motor|diesel|batter(?:ies|ie|y)|akku|tank|kraftstoff)/gi, '◇')"), 'noAux ersetzt auch battery');
+  for (const x of ['tail lift stopped working', 'tail-lift motor not running', 'tail lift buttons not responding', 'tail lift roller snapped', 'tail lift cable snapped', 'tail lift tilts on one side', 'tail lift jerks when lowering', 'tail lift battery flat', 'tail lift wont charge', 'tail lift not charging', 'tuck under lift won\'t come out', 'column lift not working', 'column lift is not level', 'the ramp on the tail lift is damaged', 'the battery on the tail lift is flat']) ok(d4.test(x), 'Ladebordwand (DOOR4): ' + x);
+  for (const x of ['tail lift fixed', 'tail lift working again', 'the tail lift was repaired yesterday', 'tail lift works fine', 'no problem with the tail lift', 'the tail lift is charged now', 'tail lift stopped working, fixed now']) ok(!d4.test(x), 'kein neuer Ladebordwand-Treffer: ' + x);
+  for (const x of ['tail lift battery flat', 'the battery on the tail lift is flat', 'ladebordwand batterie leer', 'batterie der ladebordwand leer']) ok(!nostart(x), 'kein Startproblem: ' + x);
+  for (const x of ['truck battery flat', 'battery flat truck won\'t start', 'batterie leer lkw springt nicht an']) ok(nostart(x), 'Startproblem bleibt: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const [l, ex] of [['de', 'tail lift stopped working'], ['de', 'tail lift battery flat'], ['de', 'tail lift roller snapped'], ['uk', 'tail lift stopped working'], ['uk', 'tail lift battery flat'], ['uk', 'tail lift roller snapped'], ['en', 'tail lift stopped working'], ['en', 'the ramp on the tail lift is damaged']]) { ok(STRINGS[l].help_door_s.includes(ex), 'Hilfe ' + l + ' nennt ' + ex); ok(door(ex), 'Hilfebeispiel greift: ' + ex); }
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
