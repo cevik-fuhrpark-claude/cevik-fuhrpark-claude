@@ -29,6 +29,8 @@ with sync_playwright() as p:
         vis=lambda sel: q.evaluate(f"!document.querySelector('{sel}').hidden")
         q.fill('#d',DIKT[lang]); q.wait_for_timeout(150)
         check(vis('#elec'),f'{lang}/{w}: Diktat ohne Satzzeichen „{DIKT[lang]}“ → Elektrik-Schritte (Backlog 1259)')
+        for dk,sel in [('клеммы окислились','#elec'),('клема відпала','#elec'),('акб не держит заряд','#nostart'),('акумулятор не тримає заряд','#nostart')]: q.fill('#d',dk); q.wait_for_timeout(150); check(vis(sel),f'{lang}/{w}: Diktat RU/UK „{dk}“ → {sel} (Backlog 1323)')
+        for dk in ['батарея телефона разряжена','клеммы почистили теперь заводится']: q.fill('#d',dk); q.wait_for_timeout(150); check(not vis('#nostart') and not vis('#elec'),f'{lang}/{w}: „{dk}“ ohne Hinweis (Backlog 1323)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(150)
         check(vis('#elec'),f'{lang}/{w}: Elektrik-Schritte bei „{TXT[lang]}“')
         check(not vis('#marten'),f'{lang}/{w}: keine Marder-Schritte')
