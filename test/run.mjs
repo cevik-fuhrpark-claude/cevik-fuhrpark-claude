@@ -37561,6 +37561,18 @@ await test('Backlog 1323/1324 (Sonde, Blickwinkel „Batterie/Klemmen per Diktat
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.65, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,65 %)');
 });
 
+await test('Backlog 1342 (Sonde, Blickwinkel „Fahrer meldet Getriebe/Kupplung auf Englisch“, Backlog 195): „stuck in gear“, „transmission warning on dash“, „gearbox warning came on“, „gearbox shifts by itself“, „automatic gearbox keeps changing up and down“, „gearbox keeps hunting for gears“, DE „Getriebewarnung im Display“, „hängt im Gang fest“ → Getriebe; „gearbox (is) not stuck“, „the clutch is not slipping“, „no gearbox warning anymore“, Rückfahrwarner, Reparaturvermerk nicht; PTO/Nebenantrieb bewusst nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const G = ['GEAR_HINT', 'GEAR2_HINT', 'GEAR3_HINT'].map(rx), g = (x) => G.some((r) => r.test(x));
+  for (const x of ['stuck in gear', 'the truck is stuck in gear', 'transmission warning on dash', 'gearbox warning came on', 'gearbox shifts by itself', 'gearbox changes gear on its own', 'automatic gearbox keeps changing up and down', 'gearbox keeps hunting for gears', 'Getriebewarnung im Display', 'Getriebewarnleuchte an', 'hängt im Gang fest', 'clutch slipping', 'gearbox fault light on', 'reverse gear not working']) ok(g(x), 'Getriebe: ' + x);
+  for (const x of ['gearbox not stuck', 'gearbox is not stuck', 'the clutch is not slipping', 'no gearbox warning anymore', 'reverse gear warning beeper not working', 'no problem with the gearbox', 'landing gear stuck', 'lashing gear keeps falling', 'pto won\'t engage', 'Nebenantrieb geht nicht']) ok(!g(x), 'kein Getriebe-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const ex of ['stuck in gear', 'gearbox keeps hunting for gears', 'transmission warning on dash']) { ok(STRINGS[l].help_gear_s.includes(ex), 'Hilfe Getriebe ' + l + ': ' + ex); ok(g(ex), 'Hilfe-Beispiel: ' + ex); }
+  for (const l of ['de', 'uk']) for (const ex of ['Getriebewarnung im Display', 'hängt im Gang fest']) { ok(STRINGS[l].help_gear_s.includes(ex), 'Hilfe Getriebe ' + l + ': ' + ex); ok(g(ex), 'Hilfe-Beispiel: ' + ex); }
+});
+
 await test('Backlog 1341 (Sonde, Blickwinkel „Fahrer meldet Druckluft/Kupplungsköpfe auf Englisch und Deutsch“, Backlog 195): „palm coupling seal missing“, „air line to the trailer is leaking“ (vorher Plane statt Bremse), „air lines chafed“, „air tank drain valve leaking“, „air dryer not working“, „Kupplungskopf Dichtung fehlt“, „Dichtring am Kupplungskopf fehlt“ → Bremse/Druckluft; „no air leaks“ kein Hinweis mehr; Reparaturvermerk nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

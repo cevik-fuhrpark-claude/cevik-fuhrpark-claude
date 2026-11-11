@@ -12,8 +12,8 @@ TXT={'de':'Kupplung geht schwer','uk':'Зчеплення туге','en':'Clutch
 BOTH={'de':'Unfall, Getriebe schaltet nicht mehr','uk':'ДТП, коробка передач не перемикає','en':'Accident, clutch slipping now'}
 NO={'de':'Auflieger lässt sich nicht kuppeln','uk':'Двері пошкоджені','en':'Reefer unit fault'}
 HT={'de':'Getriebe schaltet nicht, Gang geht nicht rein oder Kupplung rutscht','uk':'Коробка передач не перемикає, передача не вмикається або буксує зчеплення','en':'Gearbox not shifting, gear won’t engage or clutch slipping'}
-EN_NEW=["won't go into reverse",'clutch pedal does not come back up','gearbox jerks when changing gear','in gear but no drive','AMT fault']
-EN_NO=["the truck doesn't go above 80 km/h",'truck jerks when braking','AMT fault repaired']
+EN_NEW=["won't go into reverse",'clutch pedal does not come back up','gearbox jerks when changing gear','in gear but no drive','AMT fault','stuck in gear','gearbox keeps hunting for gears','transmission warning on dash','Getriebewarnung im Display']  # + Backlog 1342
+EN_NO=["the truck doesn't go above 80 km/h",'truck jerks when braking','AMT fault repaired','gearbox is not stuck','no gearbox warning anymore']  # + Backlog 1342
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
