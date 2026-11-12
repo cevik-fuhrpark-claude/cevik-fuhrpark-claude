@@ -1,12 +1,13 @@
 # [CLAUDE] UI-Test (12.11.2026, Backlog 1407, Blickwinkel „Fahrer schreibt die Meldung auf Türkisch“):
 # Meldeformular zeigt bei „frenler tutmuyor“, „lastik patladı“, „direksiyon kilitlendi“, „kabinden duman çıkıyor“, „motor yağ kaçırıyor“, „kaza yaptım“
 # die Hinweise Bremse/Reifenpanne/Lenkung/Brand/Leck/Unfall (Backlog 1409: auch Motor startet nicht/Spiegel/Licht/Tür; Backlog 1410: Scheibe/Batterie/Fahrtenschreiber/Kupplung/Tank leer/Motor/Reifen; Backlog 1412: Kühlgerät/Ladebordwand/Luftfederung/Getriebe/Klima/Plane/Auspuff); „lastik değiştirildi, sorun yok“, „egzozdan duman çıkıyor“ ohne. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
+# Backlog 1414: auch Scheibenwischer/Sicht, Gurt/Sitz, Rad/Radmuttern, festgefahren, Schlüssel verloren, Kennzeichen und Assistenzsystem (ohne Bremse).
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-CASES=[('frenler tutmuyor','#brake','#noise'),('frigo çalışmıyor','#reefer',None),('lift kalkmıyor','#door',None),('körük patladı','#susp',None),('vites geçmiyor','#gear',None),('klima çalışmıyor','#climate',None),('branda yırtıldı','#tarp',None),('egzoz patladı','#exhaust',None),('lastik patladı','#flat',None),('direksiyon kilitlendi','#steer',None),('kabinden duman çıkıyor','#fire',None),('motor yağ kaçırıyor','#leak',None),('kaza yaptım','#acc',None),('motor çalışmıyor','#nostart',None),('ayna kırıldı','#mirror',None),('far yanmıyor','#lights',None),('kapı kapanmıyor','#door',None),('ön cam çatladı','#glass',None),('akü bitti','#batt',None),('takograf çalışmıyor','#tacho',None),('dorse bağlanmıyor','#coupling',None),('mazot bitti','#dryfuel',None),('motor hararet yaptı','#engine',None),('lastik havası düşük','#tyre',None)]
+CASES=[('frenler tutmuyor','#brake','#noise'),('frigo çalışmıyor','#reefer',None),('lift kalkmıyor','#door',None),('körük patladı','#susp',None),('vites geçmiyor','#gear',None),('klima çalışmıyor','#climate',None),('branda yırtıldı','#tarp',None),('egzoz patladı','#exhaust',None),('lastik patladı','#flat',None),('direksiyon kilitlendi','#steer',None),('kabinden duman çıkıyor','#fire',None),('motor yağ kaçırıyor','#leak',None),('kaza yaptım','#acc',None),('motor çalışmıyor','#nostart',None),('ayna kırıldı','#mirror',None),('far yanmıyor','#lights',None),('kapı kapanmıyor','#door',None),('ön cam çatladı','#glass',None),('akü bitti','#batt',None),('takograf çalışmıyor','#tacho',None),('dorse bağlanmıyor','#coupling',None),('mazot bitti','#dryfuel',None),('motor hararet yaptı','#engine',None),('lastik havası düşük','#tyre',None),('silecek çalışmıyor','#visib',None),('emniyet kemeri takılmıyor','#seat',None),('bijon gevşedi','#wheel',None),('çamura saplandı','#stuck',None),('anahtar kayboldu','#lost',None),('plaka düştü','#numplate',None),('şerit takip asistanı arıza','#adas','#brake')]
 NO=['lastik değiştirildi, sorun yok','egzozdan duman çıkıyor','fren tamir edildi','koltuk ısıtıcısı çalışmıyor','soğutma suyu bitti','adblue bitti','akü yeni değiştirildi']
 fails=[]
 def check(c,m):
@@ -31,7 +32,7 @@ with sync_playwright() as p:
             q.fill('#d',txt); q.wait_for_timeout(100)
             check(vis(want),f'{lang}/{w}: „{txt}“ → {want}')
             if notw: check(not vis(notw),f'{lang}/{w}: „{txt}“ ohne {notw}')
-            if SHOTS and txt.startswith(('frenler','frigo')): q.locator(want).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/tuerkisch-{txt[:5]}-{lang}-{w}.png')
+            if SHOTS and txt.startswith(('frenler','frigo','bijon')): q.locator(want).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/tuerkisch-{txt[:5]}-{lang}-{w}.png')
         for txt in NO:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
