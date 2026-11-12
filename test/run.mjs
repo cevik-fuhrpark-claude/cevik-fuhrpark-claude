@@ -37861,6 +37861,28 @@ await test('Backlog 1368 (Reserve Start-Modul nach 1369: 45,603 % bei Grenze 45,
   }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
+await test('Backlog 1371 (Sonde, Blickwinkel „Fahrer meldet Fahrerhaus/Innenraum auf Englisch“, Backlog 195): „sunroof won’t close“, „skylight leaking“, „roof vent broken“, „carpet soaked“, „cab floor is wet“, „Dachfenster schließt nicht mehr“ → Wasser im Fahrerhaus; „cigarette lighter socket“, „inverter not working“ → Ausstattung; „no cold air“, „smell from the vents“, „condensation dripping from the dash“, „heating stuck on hot“ → Standheizung/Klima; „temperature knob broken“ → Heizung/Sicht; Kühlaggregat, Brandgeruch, verneint, nach Reparatur nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x.toLowerCase())); };
+  const leak = any(['CABLEAK_HINT']), kit = any(['CABKIT_HINT']), clim = any(['CLIMATE_HINT', 'CLIMATE2_HINT', 'CLIMATE3_HINT']), heat = any(['HEAT_HINT']);
+  for (const x of ['sunroof won’t close', "sun roof stuck open", 'skylight won’t shut', 'skylight leaking', 'roof vent broken', 'roof hatch won\'t close', 'the cab floor is wet', 'carpet soaked', 'footwell full of water', 'Dachfenster schließt nicht mehr', 'Dachfenster schließt nicht']) ok(leak(x), 'Wasser im Fahrerhaus: ' + x);
+  for (const x of ['the footwell is not wet', 'sunroof works', 'Dachfenster wurde repariert, schließt nicht mehr schlecht']) ok(!leak(x), 'kein Fahrerhaus-Wasser-Hinweis: ' + x);
+  for (const x of ['cigarette lighter socket not working', 'lighter socket broken', 'inverter not working', 'power inverter broken', 'cigarette lighter not working']) ok(kit(x), 'Ausstattung: ' + x);
+  for (const x of ['lighter than usual steering', 'socket works']) ok(!kit(x), 'kein Ausstattungs-Hinweis: ' + x);
+  for (const x of ['no cold air', 'not getting any cold air from the ac', 'smell from the vents', 'bad smell coming from the air vents', 'condensation dripping from the dash', 'heating stuck on hot', 'heater stuck on hot']) ok(clim(x), 'Standheizung/Klima: ' + x);
+  for (const x of ['no cold air in the reefer', 'the fridge has no cold air', 'burning smell from the vents', 'heating stuck on hot but fixed now']) ok(!clim(x), 'kein Klima-Hinweis: ' + x);
+  for (const x of ['temperature knob broken', 'heater control broken', 'temp dial stuck']) ok(heat(x), 'Heizung: ' + x);
+  ok(!heat('heating stuck on hot') && !heat('temperature knob fixed, heater control broken before, repaired'), 'stuck on hot bleibt bei Standheizung/Klima, nach Reparatur nichts');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(/sunroof|Dachfenster/.test(STRINGS[l].help_cableak_s) && /інвертор|inverter|Inverter/.test(STRINGS[l].help_cabkit_s), 'Hilfe Fahrerhaus ' + l);
+    for (const ex of ['no cold air', 'smell from the vents', 'condensation dripping from the dash']) { ok(STRINGS[l].help_climate_s.includes(ex), 'Hilfe Klima ' + l + ': ' + ex); ok(clim(ex), 'Hilfe-Beispiel: ' + ex); }
+  }
+  for (const ex of ['sunroof won’t close', 'skylight leaking', 'carpet soaked', 'cab floor is wet']) ok(STRINGS.de.help_cableak_s.includes(ex) && STRINGS.uk.help_cableak_s.includes(ex) && leak(ex), 'Hilfe-Beispiel Fahrerhaus: ' + ex);
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
 
 await test('Backlog 1366 (Sonde, Blickwinkel „Fahrer diktiert Fahrersitz/Gurt auf Russisch/Ukrainisch“, Backlog 195): „замок ремня безопасности сломан“, „пряжка ремня сломана“, „замок ременя безпеки зламаний“, „ремень не блокируется при торможении“, „ремінь безпеки не блокується“, „сиденье болтается“, „сиденье падает вниз“ → Sitz/Gurt; „ремень безопасности не порван“, Türschloss, Spanngurt, „на сиденье падает вода“, nach Reparatur nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
