@@ -19274,7 +19274,7 @@ await test('Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“)
     ok(STRINGS[l].claim_glass_hint.includes('{b}') && STRINGS[l].claim_add, 'Versicherungs-Hinweis nennt den Knopf ' + l);
   }
   ok(app.includes(`<div id="glass" class="panel" hidden role="status">`), 'Panel #glass');
-  const lp = app.indexOf("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk)))") /* Backlog 1130 */; ok(lp > 0 && lp < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  const lp = app.indexOf("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(noDemist(dsk))))") /* Backlog 1130 */; ok(lp > 0 && lp < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("const glassNoClaim = !cl && (GLASS_HINT.test(noTicket(noWsObj(noSticker(desc)))) || GLASS2_HINT.test(noSticker(desc)));") && app.includes('data-claimglass'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
   ok(app.includes("'theft', 'glass', "), 'Hilfe-Abschnitt glass für meldende Rollen');
 });
@@ -21646,7 +21646,7 @@ await test('Backlog 313 (Blickwinkel „Heizung/Gebläse/Scheibenwischer fällt 
     ok(L.visib_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="visib" class="panel" hidden role="status">`), 'Panel #visib');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !VISIB3_HINT.test(dsh) && !HEAT_HINT.test(dsh);") /* Backlog 1164: dsh = noSeatHeat(dfx) */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !VISIB3_HINT.test(dsh) && !HEAT_HINT.test(dsh) && !VISIB4_HINT.test(dsh);") /* Backlog 1164: dsh = noSeatHeat(dfx) */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('visib') && order.indexOf('acc') < order.indexOf('visib') && order.indexOf('visib') < order.indexOf('glass') && order.indexOf('visib') < order.indexOf('nostart'), 'Gruppierung: Unfall vor Sicht vor Glasschaden/springt nicht an (beschlagene Windschutzscheibe zeigt Sicht offen, Glas eingeklappt)');
   ok(helpAfter(app, 'visib', 'stuck'), 'Hilfe-Abschnitt visib nach stuck');
@@ -22067,7 +22067,7 @@ await test('Backlog 334 (Blickwinkel „Standheizung oder Klimaanlage im Fahrerh
     ok(L.climate_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="climate" class="panel" hidden role="status">`), 'Panel #climate');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx) && !CLIMATE4_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('climate') && order.indexOf('fire') < order.indexOf('climate') && order.indexOf('exhaust') < order.indexOf('climate') && order.indexOf('visib') < order.indexOf('climate') && order.indexOf('climate') < order.indexOf('door'), 'Gruppierung: Brand/Abgase/Sicht vor Standheizung/Klima vor Tür');
   ok(helpAfter(app, 'climate', 'toll'), 'Hilfe-Abschnitt climate nach toll');
@@ -27863,7 +27863,7 @@ await test('Backlog 767 (Folge aus 764/766): Klima-/Standheizungs-Hinweis liest 
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
-  ok(hl.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx);"), 'Klima über dfx');
+  ok(hl.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx) && !CLIMATE4_HINT.test(dfx);"), 'Klima über dfx');
   const m = app.match(/^const CLIMATE_HINT = \/(.+)\/i;(?: \/\/.*)?$/m); ok(m, 'CLIMATE_HINT auf Modulebene'); const r = new RegExp(m[1], 'i');
   const a = app.indexOf('const FIX_WORD'), b = app.indexOf("}).join('');", a) + 12;
   const recurFix = new Function(app.slice(a, b) + '; return recurFix;')();
@@ -28555,7 +28555,7 @@ await test('Backlog 700–701 (Blickwinkel „Wasser im Fahrerhaus – Dachluke 
     ok(S.help_cableak_t && S.help_cableak_s.includes(S.cableak_hint_steps) && S.help_cableak_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="cableak" class="panel" hidden role="status">'), 'Panel #cableak');
-  ok(app.includes("$('#cableak').hidden = !CABLEAK_HINT.test(noCabHyd(dfx));") && app.indexOf("$('#cableak').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#cableak').hidden = !CABLEAK_HINT.test(noCabHyd(dfx)) && !CABLEAK2_HINT.test(dfx);") && app.indexOf("$('#cableak').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'window', 'cableak', 'cablock'"), 'Reihenfolge nach Fenster');
   ok(app.includes("'cabkit', 'cableak', 'telem', 'oillevel', 'prio'"), 'Hilfe-Abschnitt für meldende Rollen');
 });
@@ -36259,7 +36259,7 @@ await test('Backlog 1130 (Blickwinkel „Fahrer findet einen Strafzettel am Lkw 
   const GL = new RegExp(app.match(/^const GLASS_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['Strafzettel an der Windschutzscheibe', 'Knöllchen hinter der Frontscheibe', 'parking ticket on the windscreen', 'штраф за паркування на лобовому склі']) { ok(GL.test(x), 'vorher Glas-Schritte: ' + x); ok(!GL.test(noTicket(x)), 'jetzt keine Glas-Schritte: ' + x); }
   for (const x of ['Strafzettel an der Windschutzscheibe, außerdem Steinschlag', 'Windschutzscheibe gerissen, Strafzettel dran', 'parking ticket under the wiper, windscreen cracked', 'Windschutzscheibe gerissen']) ok(GL.test(noTicket(x)), 'Glasschaden bleibt: ' + x);
-  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk))) && !GLASS2_HINT.test(dsk);"), 'Glas-Prüfung ohne Strafzettel-Ort');
+  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(noDemist(dsk)))) && !GLASS2_HINT.test(dsk);"), 'Glas-Prüfung ohne Strafzettel-Ort');
   ok(app.includes('const glassNoClaim = !cl && (GLASS_HINT.test(noTicket(noWsObj(noSticker(desc)))) || GLASS2_HINT.test(noSticker(desc)));'), 'Versicherungsabschnitt: Strafzettel an der Scheibe ist kein Glasschaden');
   ok(app.includes("$('#ticket').hidden = !$('#roadchk').hidden || !TICKET_HINT.test(dv);") && app.indexOf("$('#roadchk').hidden = ") < app.indexOf("$('#ticket').hidden = "), 'neben Einwand bei Kontrolle nur deren Schritte');
   ok(app.includes('<div id="ticket" class="panel" hidden role="status">'), 'Panel #ticket');
@@ -36284,7 +36284,7 @@ await test('Backlog 1131 (Sonde Glas-Hinweis): Gegenstände an/vor der Windschut
   const GL = new RegExp(app.match(/^const GLASS_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['Navi-Halterung an der Windschutzscheibe fällt ab', 'Handyhalter an der Frontscheibe hält nicht', 'Saugnapf der Dashcam an der Windschutzscheibe lose', 'Sonnenblende vor der Windschutzscheibe abgebrochen', 'Vignette an der Windschutzscheibe fehlt', 'Gardine vor der Frontscheibe gerissen', 'phone holder on the windscreen fell off', 'sun visor in front of the windshield broken', 'тримач телефону на лобовому склі відпав']) { ok(GL.test(x), 'vorher Glas-Schritte: ' + x); ok(!GL.test(noWsObj(x)), 'jetzt keine: ' + x); }
   for (const x of ['Navi-Halterung an der Windschutzscheibe, Scheibe hat einen Riss', 'Halterung an der Windschutzscheibe abgerissen, Windschutzscheibe gesprungen', 'sat nav mount on the windscreen loose, windscreen cracked', 'Windschutzscheibe gerissen', 'Steinschlag in der Frontscheibe', 'тріщина на лобовому склі']) ok(GL.test(noWsObj(x)), 'Glasschaden bleibt: ' + x);
-  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk))) && !GLASS2_HINT.test(dsk);") && app.includes('const glassNoClaim = !cl && (GLASS_HINT.test(noTicket(noWsObj(noSticker(desc)))) || GLASS2_HINT.test(noSticker(desc)));'), 'Meldeformular und Versicherungsabschnitt');
+  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(noDemist(dsk)))) && !GLASS2_HINT.test(dsk);") && app.includes('const glassNoClaim = !cl && (GLASS_HINT.test(noTicket(noWsObj(noSticker(desc)))) || GLASS2_HINT.test(noSticker(desc)));'), 'Meldeformular und Versicherungsabschnitt');
 });
 await test('Backlog 1132 (Sonde Federung/Sitz): Luftfederung des Fahrer-/Beifahrersitzes zeigt die Sitz-Schritte statt der Federungs-Schritte (DE/UK/EN); Fahrzeugfederung daneben bleibt erkannt', async () => {
   const { readFileSync } = await import('node:fs');
@@ -37358,7 +37358,7 @@ await test('Backlog 1255 (Sonde, Blickwinkel „Fahrer diktiert Klima-/Lüftungs
   const C2 = new RegExp(app.match(/^const CLIMATE2_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['klima macht nur warme luft', 'aus der lüftung kommt gestank', 'lüftung riecht muffig', 'heizung lässt sich nicht abschalten', 'heizung bläst nur heiß', 'heizung geht nicht mehr aus', 'klima lässt sich nicht einstellen', 'klimabedienteil ausgefallen', 'bedienteil der klima ausgefallen', 'temperaturregler kaputt', 'umluft klappe klemmt', 'lüftungsklappe klappert', 'klima kompressor macht geräusche', 'klimakompressor quietscht', 'vents smell', 'the ac panel is dead', 'a/c compressor noisy', 'heater stuck on hot', 'кондиціонер дме теплим', 'кондиционер дует теплым']) ok(C2.test(recurFix(x)), 'Klima: ' + x);
   for (const x of ['klima repariert macht wieder kalte luft', 'heizung lässt sich nicht abschalten, behoben', 'lüftung riecht neu', 'display kaputt', 'navi display dunkel', 'klappe vom staufach klemmt', 'ladeklappe klemmt', 'heckklappe klemmt', 'kompressor macht geräusche', 'luftkompressor laut', 'temperatur im kühlkoffer lässt sich nicht einstellen', 'temperatur lässt sich nicht einstellen', 'кондиціонер дме теплим, полагодили']) ok(!C2.test(recurFix(x)), 'kein Klima-Zusatz: ' + x);
-  ok(app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx);"), 'Listener (nach noFixed)');
+  ok(app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx) && !CLIMATE4_HINT.test(dfx);"), 'Listener (nach noFixed)');
 });
 
 await test('Backlog 1256 (Sonde, Blickwinkel „Fahrer diktiert Tür-/Schloss-Problem ohne Satzzeichen“): Tür geht nicht mehr richtig zu, Hecktür-Hebel abgebrochen, „tür klemt“, Tür springt während der Fahrt auf, hängt durch, Scharnier ausgeschlagen, Drehstangenverschluss klemmt → Tür; Schlüssel steckt im Türschloss fest, Zentralverriegelung schließt von allein, Lkw lässt sich nicht aufschließen, komme nicht ins Fahrerhaus → Schloss; „back door lock broken“ keine Verletzung; Türgriff bleibt ohne Hinweis (Backlog 323)', async () => {
@@ -37388,7 +37388,7 @@ await test('Backlog 1257 (Sonde, Blickwinkel „Fahrer diktiert Spiegel-/Scheibe
   for (const x of ['düsen spritzen nicht', 'adblue düse verstopft', 'wischwasser nachgefüllt', 'wischerblätter gewechselt', 'wischer bleibt in der mitte stehen, repariert', 'waschpumpe defekt, getauscht', 'wipers replaced', 'scheibe sauber gemacht', 'spiegel von innen gesehen alles ok', 'fahrzeug bleibt stehen']) ok(!V2.test(recurFix(x)), 'kein Sicht-Zusatz: ' + x);
   for (const x of ['spiegel zittert', 'spiegel vibriert stark', 'mirror shaking at speed', 'зеркало трясется']) ok(!VIB.test(x), 'keine Vibration: ' + x);
   for (const x of ['lkw vibriert stark', 'lenkrad zittert', 'truck shaking at speed']) ok(VIB.test(x), 'Vibration bleibt: ' + x);
-  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test(dfx) && !MIRROR2_HINT.test(dfx) && !MIRROR3_HINT.test(dfx);") && app.includes("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !VISIB3_HINT.test(dsh) && !HEAT_HINT.test(dsh);"), 'Listener (nach noFixed)');
+  ok(app.includes("$('#mirror').hidden = !MIRROR_HINT.test(dfx) && !MIRROR2_HINT.test(dfx) && !MIRROR3_HINT.test(dfx);") && app.includes("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !VISIB3_HINT.test(dsh) && !HEAT_HINT.test(dsh) && !VISIB4_HINT.test(dsh);"), 'Listener (nach noFixed)');
 });
 
 await test('Backlog 1254 (Reserve Start-Modul nach 1253: 53,11 % > 53 %): gleichlautende Ausschlüsse der Hinweismuster stehen in den erzeugten Modulen nur einmal (`const __RX`), lbRx setzt sie per ${__RX[k]} ein; jeder Ausdruck bleibt Zeichen für Zeichen gleich; Start-Modul ≤ 47 % von app.js', async () => {
@@ -37485,7 +37485,7 @@ await test('Backlog 1294 (Sonde, Blickwinkel „Fahrer diktiert Fenster/Spiegel/
   for (const x of ['дворники поменял', 'дворники не остановились', 'дворники остановились, отремонтировали', 'зеркало не запотевает']) ok(!V3.test(x), 'kein Sicht-Zusatz: ' + x);
   for (const x of ['окно в приложении не открывается', 'окно в офисе не открывается', 'на складе окно не открывается', 'склад не открывается', 'склопідіймач не працює, полагодили']) ok(!W3.test(x), 'kein Fenster-Zusatz: ' + x);
   for (const x of ['камень в лобовое прилетел, стекло заменили', 'уровень масла в норме']) ok(!glass(x), 'kein Glas-Hinweis: ' + x);
-  ok(app.includes("&& !MIRROR3_HINT.test(dfx);") && app.includes("&& !VISIB3_HINT.test(dsh) && !HEAT_HINT.test(dsh);") && app.includes("&& !WINDOW3_HINT.test(dfx);"), 'Listener Spiegel/Sicht/Fenster');
+  ok(app.includes("&& !MIRROR3_HINT.test(dfx);") && app.includes("&& !VISIB3_HINT.test(dsh) && !HEAT_HINT.test(dsh) && !VISIB4_HINT.test(dsh);") && app.includes("&& !WINDOW3_HINT.test(dfx);"), 'Listener Spiegel/Sicht/Fenster');
   const { STRINGS } = await import('../public/i18n.js');
   const H = [['help_mirror_s', mirror, { de: ['зеркало разбилось', 'зеркало отломилось'], uk: ['дзеркало розбилося', 'дзеркало відламалося'], en: ['зеркало погнулось', 'дзеркало розбилося'] }],
     ['help_visib_s', visib, { de: ['дворники остановились', 'не брызгает вода на стекло'], uk: ['двірники зупинилися', 'не бризкає на скло', 'дзеркало запотіває'], en: ['нет воды в омывателе', 'зеркало запотевает'] }],
@@ -37502,7 +37502,7 @@ await test('Backlog 1296/1303 (Reserve Start-Modul nach 1295: 45,84 % > 45,8 %; 
   ok(d.code.includes('${__T[10]}fixed${__T[11]}заменил))') && d.code.includes('${__T[10]}eingestellt${__T[12]}полагод))'), 'Bausteine 10–12 eingesetzt: ' + d.code);
   eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (zweistelliger Index)');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteinliste hat 67 Einträge (Backlog 1351: Index 63–66; Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18; Backlog 1307: Index 19–24; Backlog 1311: Index 25–30; Backlog 1316: Index 31–35; Backlog 1318: Index 36–38; Backlog 1320: Index 39–41; Backlog 1324: Index 42; Backlog 1326: Index 43/44; Backlog 1328: Index 45/46; Backlog 1330: Index 47–49)'); eq(T[23], '|fixed|repaired|replaced|', 'Baustein 23 (Backlog 1307)'); eq(T[24], '(?![a-z])|(?<![a-z])', 'Baustein 24 (Backlog 1307)'); ok([19, 20, 21].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4) && [22, 23, 24].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 12), 'Bausteine 19–24 werden genutzt'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
+  eq(T.length, 154, 'Bausteinliste hat 67 Einträge (Backlog 1351: Index 63–66; Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18; Backlog 1307: Index 19–24; Backlog 1311: Index 25–30; Backlog 1316: Index 31–35; Backlog 1318: Index 36–38; Backlog 1320: Index 39–41; Backlog 1324: Index 42; Backlog 1326: Index 43/44; Backlog 1328: Index 45/46; Backlog 1330: Index 47–49)'); eq(T[23], '|fixed|repaired|replaced|', 'Baustein 23 (Backlog 1307)'); eq(T[24], '(?![a-z])|(?<![a-z])', 'Baustein 24 (Backlog 1307)'); ok([19, 20, 21].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4) && [22, 23, 24].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 12), 'Bausteine 19–24 werden genutzt'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
   ok((main.match(/\$\{__T\[1[0-2]\]\}/g) || []).length > 60, 'zweistellige Bausteine werden genutzt');
   for (const tk of T.slice(10)) ok(Buffer.byteLength(tk) > Buffer.byteLength('${__T[10]}'), 'Baustein länger als Platzhalter: ' + tk);
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
@@ -37630,7 +37630,7 @@ await test('Backlog 1350 (Reserve Start-Modul nach 1349: 45,584 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–66 (Backlog 1351: Index 63–66)');
+  eq(T.length, 154, 'Bausteine 0–66 (Backlog 1351: Index 63–66)');
   for (const [k, n] of [[59, 3], [60, 3], [61, 30], [62, 3]]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= n && main.split(T[k]).length === 2, 'Baustein ' + k + ' ' + n + '× genutzt');
   ok(T[59].startsWith('(?:fahrt|fahren|') && T[59].endsWith('|grundlos)'), 'Baustein 59'); ok(T[60].startsWith('(?:auto|pkw|lkw|') && T[60].endsWith('|taxi|suv)'), 'Baustein 60');
   eq(T[61], '(?![а-яіїєґ])', 'Baustein 61'); ok(T[62].startsWith(String.raw`(?:\d+\.?|erste[nm]?|`) && T[62].endsWith('zw(?:ö|oe)lfte[nm]?)'), 'Baustein 62');
@@ -37755,7 +37755,7 @@ await test('Backlog 1360 (Reserve Start-Modul nach 1355/1362: 45,58 % bei Grenze
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–79');
+  eq(T.length, 154, 'Bausteine 0–79');
   for (let k = 70; k < 80; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[70].startsWith('(?:злама') && T[72] === String.raw`(?:дзеркал\S*|зеркал\S*)` && T[74].startsWith('|lbw|') && T[75].startsWith('|ersatzrad|') && T[77].startsWith('(?:indicator|'), 'Bausteine 70/72/74/75/77');
   const B = await import('../scripts/build-app.mjs');
@@ -37837,7 +37837,7 @@ await test('Backlog 1363 (Reserve Start-Modul nach 1367: 45,63 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–85');
+  eq(T.length, 154, 'Bausteine 0–85');
   for (let k = 80; k <= 85; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[80].startsWith('|неисправ') && T[81].includes('tank(?:deckel|') && T[82].startsWith('(?:олив|масл|') && T[83].startsWith('(?:редуктор') && T[84].startsWith('(?:двигун') && T[85].includes('bußgeld'), 'Bausteine 80–85 wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -37851,7 +37851,7 @@ await test('Backlog 1368 (Reserve Start-Modul nach 1369: 45,603 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–89');
+  eq(T.length, 154, 'Bausteine 0–89');
   for (let k = 86; k <= 89; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[86].startsWith('(?:въехал|') && T[87].startsWith('(?:горить|горит|') && T[88].startsWith('(?:в|у)\\s+(?:причеп') && T[89].startsWith('(?:вантажівк|машин|'), 'Bausteine 86–89 wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -37882,11 +37882,58 @@ await test('Backlog 1381 (Sonde, Blickwinkel „Fahrer meldet Assistenzsystem/Ka
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1383 (Sonde, Blickwinkel „Fahrer meldet Heizung/Klima/Standheizung auf Englisch“, Backlog 195): „the a/c only blows hot air“, „AC isn’t cold anymore“, „aircon needs regassing“, „night heater smokes“, „diesel smell from the night heater“, „webasto display shows F01“, „temperature control knob broken“, „can’t adjust the temperature“, „air recirculation button not working“, „water from the AC drips on my feet“ → Klima-Schritte; „windscreen won’t demist“, „can’t clear the windscreen“, „heater blows only on the feet“, „no warm air from the vents“ → Sicht-Schritte statt Glasschaden; „water dripping from the dashboard“ → Wasser im Fahrerhaus; nach Reparatur, Kühlaggregat, Sitzheizung nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const lc = (x) => recurFix(x).toLowerCase();
+  const C = ['CLIMATE_HINT', 'CLIMATE2_HINT', 'CLIMATE3_HINT', 'CLIMATE4_HINT'].map(rx), c4 = (x) => C[3].test(lc(x)), clim = (x) => C.some((r) => r.test(lc(x)));
+  const V = ['VISIB_HINT', 'VISIB2_HINT', 'VISIB3_HINT', 'HEAT_HINT', 'VISIB4_HINT'].map(rx), v4 = (x) => V[4].test(lc(x)), vis = (x) => V.some((r) => r.test(lc(x)));
+  const L2 = rx('CABLEAK2_HINT');
+  ok(app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx) && !CLIMATE4_HINT.test(dfx);"), 'Meldeformular prüft das Klima-Muster');
+  ok(app.includes("&& !HEAT_HINT.test(dsh) && !VISIB4_HINT.test(dsh);"), 'Meldeformular prüft das Sicht-Muster');
+  ok(app.includes("$('#cableak').hidden = !CABLEAK_HINT.test(noCabHyd(dfx)) && !CABLEAK2_HINT.test(dfx);"), 'Meldeformular prüft Wasser am Armaturenbrett');
+  for (const x of ['the a/c only blows hot air', "the AC isn't cold anymore", 'aircon needs regassing', 'AC needs a regas', 'the air con light is flashing', 'the night heater smokes', 'diesel smell from the night heater', 'smell of diesel from the parking heater', 'the night heater keeps failing to start', 'webasto display shows F01', 'temperature control knob broken', "can't adjust the temperature", 'temperature dial doesn’t do anything', 'air recirculation button not working', 'the AC compressor makes noise', 'the water from the AC drips on my feet', 'Dieselgeruch von der Standheizung', 'Temperatur lässt sich nicht einstellen']) ok(c4(x), 'Klima-Hinweis: ' + x);
+  for (const x of ['night heater was repaired yesterday', 'the AC is fine now', 'AC needed a regas, fixed now', 'the reefer unit is not cooling', 'I turned on the heater', 'seat heater not working', 'the fan is making a loud noise', 'reefer display shows F01', 'can’t adjust the mirror']) ok(!c4(x), 'kein Klima-Hinweis (neues Muster): ' + x);
+  for (const x of ['the reefer unit is not cooling', 'I turned on the heater', 'seat heater not working']) ok(!clim(x), 'kein Klima-Hinweis: ' + x);
+  for (const x of ["windscreen won't demist", "windscreen won't clear", "can't clear the windscreen, heater not working", 'heater blows only on the feet', 'no hot air coming out', 'no warm air from the vents', 'heater takes ages to warm up', 'Windschutzscheibe wird nicht frei, Heizung geht nicht', 'лобове скло не відтає']) ok(v4(x), 'Sicht-Hinweis: ' + x);
+  for (const x of ['windscreen cleared up after a minute, fixed', 'the window is clear', 'no hot water in the kitchen', 'I cleared the windscreen', 'windscreen washer not working']) ok(!v4(x), 'kein Sicht-Hinweis (neues Muster): ' + x);
+  ok(vis('heater fan not working') && vis('windscreen keeps fogging up'), 'bisherige Sicht-Hinweise bleiben');
+  const ws = new Function(app.slice(app.indexOf('const WSOBJ_SPANS'), app.indexOf('\n', app.indexOf('const noDemist')) + 1) + '; return [noWsObj, noDemist];')(), g1 = rx('GLASS_HINT'), g2 = rx('GLASS2_HINT');
+  const glass = (x) => g1.test(ws[0](ws[1](x))) || g2.test(x);
+  for (const x of ["windscreen won't demist", "windscreen won't clear", "can't clear the windscreen, heater not working", 'Frontscheibe taut nicht ab', 'Windschutzscheibe wird nicht frei, Heizung geht nicht', 'лобове скло не відтає']) ok(!glass(x), 'kein Glasschaden: ' + x);
+  for (const x of ["windscreen cracked and won't demist", 'crack in the windscreen', 'Steinschlag in der Frontscheibe', 'stone chip in the windscreen']) ok(glass(x), 'Glasschaden bleibt: ' + x);
+  for (const x of ['water dripping from the dashboard', 'water leaking under the dash on the passenger side', 'Wasser tropft aus dem Armaturenbrett', 'Wasser tropft unter dem Armaturenbrett']) ok(L2.test(lc(x)), 'Wasser im Fahrerhaus: ' + x);
+  for (const x of ['water dripping from the dashboard, fixed', 'coolant leaking under the truck', 'oil leaking under the engine']) ok(!L2.test(lc(x)), 'kein Wasser-im-Fahrerhaus-Hinweis (neues Muster): ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const ex of ['the a/c only blows hot air', 'diesel smell from the night heater', 'can’t adjust the temperature']) { ok(STRINGS[l].help_climate_s.includes(ex), 'Hilfe Klima ' + l + ': ' + ex); ok(c4(ex), 'Hilfe-Beispiel: ' + ex); }
+    for (const ex of ['windscreen won’t demist', 'heater blows only on the feet']) { ok(STRINGS[l].help_visib_s.includes(ex), 'Hilfe Sicht ' + l + ': ' + ex); ok(v4(ex), 'Hilfe-Beispiel: ' + ex); }
+  }
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
+await test('Backlog 1382 (Reserve Start-Modul nach 1383: 45,66 % bei Grenze 45,60 %): Bausteine __T[134]–__T[153] per Häufigkeitsanalyse (zwei Runden) je ≥ 2× genutzt (→ 45,56 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
+  eq(T.length, 154, 'Bausteine 0–153');
+  for (let k = 134; k <= 153; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
+  ok(T[134].startsWith('(?:a\\/?c|aircon|') && T[144].startsWith('(?:dent\\S*|') && T[149].startsWith('(?:тормоз'), 'Bausteine wie analysiert');
+  const B = await import('../scripts/build-app.mjs');
+  for (let k = 134; k <= 153; k++) {
+    const code = "x\nconst A = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))a" + T[k] + "b`, 'i', 1);\nconst B2 = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))z`, 'i', 1);\n";
+    const d = B.dedupeLooks(code); ok(d.code.includes('${__T[' + k + ']}'), 'Baustein ' + k + ' eingesetzt'); eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (' + k + ')');
+  }
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1379 (Reserve Start-Modul nach 1381: 45,625 % bei Grenze 45,60 %): Bausteine __T[124]–__T[133] per Häufigkeitsanalyse je ≥ 2× genutzt (→ 45,57 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–133');
+  eq(T.length, 154, 'Bausteine 0–133');
   for (let k = 124; k <= 133; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[124].startsWith('|aufbau)dach|') && T[127].startsWith('(?:abs|ebs|') && T[131].startsWith('|причіп|') && T[133].startsWith('|(?:adblue|'), 'Bausteine wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -37903,7 +37950,7 @@ await test('Backlog 1380 (Sonde, Blickwinkel „Fahrer meldet Scheibe/Fenster/Sp
   const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
   const g2r = rx('GLASS2_HINT'), g2 = (x) => g2r.test(recurFix(x).toLowerCase());
-  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk))) && !GLASS2_HINT.test(dsk);") && app.includes('GLASS2_HINT.test(noSticker(desc))') && app.includes("GLASS2_HINT.test(i.note || '')"), 'Formular, Vorgang und Abfahrtskontrolle prüfen das neue Muster');
+  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(noDemist(dsk)))) && !GLASS2_HINT.test(dsk);") && app.includes('GLASS2_HINT.test(noSticker(desc))') && app.includes("GLASS2_HINT.test(i.note || '')"), 'Formular, Vorgang und Abfahrtskontrolle prüfen das neue Muster');
   for (const x of ['chip on the glass', 'the screen got a chip from a stone', 'small crack in the front glass', 'passenger window shattered', 'side window smashed', 'rear window of the cab cracked', 'the glass is scratched', 'rubber seal on the window loose', 'windscreen seal coming off']) ok(g2(x), 'Glasschaden: ' + x);
   for (const x of ['mirror glass cracked', 'headlight glass cracked', 'phone screen cracked', 'the display has a crack', 'chip in the screen of the tablet', 'window not cracked', 'window is not smashed', 'side window cracked, replaced yesterday', "window won't go up", 'window broken', 'my glasses are scratched', 'crack in the dashboard', 'seal on the door is loose', 'window seal fine']) ok(!g2(x), 'kein Glasschaden (neues Muster): ' + x);
   const { STRINGS } = await import('../public/i18n.js');
@@ -37929,7 +37976,7 @@ await test('Backlog 1376 (Reserve Start-Modul nach 1378: 45,64 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–123');
+  eq(T.length, 154, 'Bausteine 0–123');
   for (let k = 114; k <= 123; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[114].startsWith('(?:(?:fuel|diesel|tank|') && T[117].startsWith('(?:blink(?:er)?|lenkstock|') && T[119].startsWith('(?:anh(?:ä|ae)nger|') && T[123].startsWith('(?:emissions?|'), 'Bausteine wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -37994,7 +38041,7 @@ await test('Backlog 1374 (Reserve Start-Modul nach 1375: 45,68 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–113');
+  eq(T.length, 154, 'Bausteine 0–113');
   for (let k = 99; k <= 113; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[99].startsWith('(?:angefahren|') && T[100].startsWith('(?:conspicuity') && T[108].startsWith('(?:car|van|') && T[109].startsWith('(?:причіп|напівпричіп|') && T[112].startsWith('(?:dash|dashboard|'), 'Bausteine wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -38032,7 +38079,7 @@ await test('Backlog 1372 (Reserve Start-Modul nach 1373: 45,63 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–98');
+  eq(T.length, 154, 'Bausteine 0–98');
   for (let k = 94; k <= 98; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[94].startsWith("(?:(?:don['’]?t|") && T[95].startsWith('(?:груз|') && T[96].startsWith('(?:важ') && T[97].startsWith('(?:abgebrochen|') && T[98].startsWith('(?:not\\s+working|'), 'Bausteine 94–98 wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -38047,7 +38094,7 @@ await test('Backlog 1370 (Reserve Start-Modul nach 1371: 45,59 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–93');
+  eq(T.length, 154, 'Bausteine 0–93');
   for (let k = 90; k <= 93; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[90].startsWith('(?:світловідбивн|') && T[91].startsWith('(?:руль|руля|') && T[92].startsWith('(?:датчик') && T[93].startsWith('(?:ad[\\s-]?blue|'), 'Bausteine 90–93 wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -38115,7 +38162,7 @@ await test('Backlog 1355 (Reserve Start-Modul nach 1359: 45,59 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–69');
+  eq(T.length, 154, 'Bausteine 0–69');
   for (const k of [67, 68, 69]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[67].startsWith('(?:(?:eisenbahn|bahn|') && T[67].endsWith('|torbogen)(?:n|en|s)'), 'Baustein 67'); ok(T[68].startsWith('(?:загуби') && T[68].endsWith('|немає|нема|'), 'Baustein 68');
   ok(T[69].startsWith('(?:(?:trailer|load(?:ing)?|') && T[69].endsWith('|trailer\\s+(?:walls?|sides?|body))(?![a-z])'), 'Baustein 69');
@@ -38131,7 +38178,7 @@ await test('Backlog 1351 (Reserve Start-Modul nach 1354: 45,595 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–69 (Backlog 1355: Index 67–69)');
+  eq(T.length, 154, 'Bausteine 0–69 (Backlog 1355: Index 67–69)');
   for (const k of [63, 64, 65, 66]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[63].startsWith(String.raw`(?:heizung\S*|heiz|`) && T[63].endsWith(String.raw`|liftachse\S*)`), 'Baustein 63'); ok(T[64].startsWith('(?:(?:(?:протипідкатн|') && T[64].includes('ограждени'), 'Baustein 64');
   ok(T[65].startsWith('(?:kontur(?:markierung|') && T[65].endsWith('|markierungstafel(?:n)?)'), 'Baustein 65'); ok(T[66].startsWith('(?:(?!(?:not|') && T[66].endsWith('|does\\s+nothing)(?![a-z])|'), 'Baustein 66');
@@ -38291,7 +38338,7 @@ await test('Backlog 1339 (Reserve Start-Modul nach 1338: 45,591 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–66 (Backlog 1347: Index 55–58; Backlog 1350: Index 59–62; Backlog 1351: Index 63–66)');
+  eq(T.length, 154, 'Bausteine 0–66 (Backlog 1347: Index 55–58; Backlog 1350: Index 59–62; Backlog 1351: Index 63–66)');
   ok(T[51].startsWith(String.raw`(?:ручк\S*|кнопк\S*|`) && T[51].endsWith(String.raw`блокуванн\S*\s+диф\S*`), 'Baustein 51');
   ok(T[52].includes('siebdruck)boden|ladefl(?:ä|ae)che|'), 'Baustein 52'); ok(T[53].includes('losgegangen|'), 'Baustein 53'); ok(T[54].includes('|touchiert|gerammt|'), 'Baustein 54');
   for (const [k, n] of [[51, 2], [52, 3], [53, 2], [54, 3]]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= n, 'Baustein ' + k + ' wird ' + n + '× genutzt');
@@ -38393,7 +38440,7 @@ await test('Backlog 1333 (Reserve Start-Modul nach 1332: 45,61 % > 45,60 %): Bau
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–66 (Backlog 1339/1347/1350/1351)'); ok(T[50].startsWith('(?:schranke|poller|') && T[50].endsWith('blumenk(?:ü|ue)bel)(?:n|en|e|s|es|er)'), 'Baustein 50');
+  eq(T.length, 154, 'Bausteine 0–66 (Backlog 1339/1347/1350/1351)'); ok(T[50].startsWith('(?:schranke|poller|') && T[50].endsWith('blumenk(?:ü|ue)bel)(?:n|en|e|s|es|er)'), 'Baustein 50');
   ok((main.match(/\$\{__T\[50\]\}/g) || []).length >= 3, 'Baustein 50 wird genutzt');
   ok(!main.includes('wartenh(?:ä|ae)uschen|wareh(?:ä|ae)uschen|blumenk') || main.split('wartenh(?:ä|ae)uschen|wareh(?:ä|ae)uschen|blumenk').length === 2, 'Liste nur noch in der Bausteinliste');
   const B = await import('../scripts/build-app.mjs');
@@ -38420,7 +38467,7 @@ await test('Backlog 1330 (Reserve Start-Modul nach 1329: 45,631 %): Bausteine __
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–66 (Backlog 1333/1339/1347/1350/1351)');
+  eq(T.length, 154, 'Bausteine 0–66 (Backlog 1333/1339/1347/1350/1351)');
   ok(T[47].startsWith('(?<!(?:handy|telefon|smartphone') && T[47].endsWith(String.raw`зеркало)\s+)`), 'Baustein 47'); ok(T[48].startsWith('(?:niemand|keiner|keine|kein|nicht') && T[48].endsWith(String.raw`|без)\s+(?:\S+\s+){0,2})`), 'Baustein 48'); eq(T[49], '(?:открыл|відкрил|відчинил|распахнул|розчинил|розчахнул)', 'Baustein 49');
   ok((main.match(/\$\{__T\[47\]\}/g) || []).length >= 3 && (main.match(/\$\{__T\[48\]\}/g) || []).length >= 3 && (main.match(/\$\{__T\[49\]\}/g) || []).length >= 4, 'Bausteine 47–49 werden genutzt');
   const B = await import('../scripts/build-app.mjs');
@@ -38536,7 +38583,7 @@ await test('Backlog 1320 (Reserve Start-Modul nach 1319: 45,654 % > 45,65 %): Fo
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const B = await import('../scripts/build-app.mjs');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 134, 'Bausteine 0–66 (Backlog 1351: Index 63–66; Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1324: Index 42, Backlog 1326: Index 43/44, Backlog 1328: Index 45/46, Backlog 1330: Index 47–49)');
+  eq(T.length, 154, 'Bausteine 0–66 (Backlog 1351: Index 63–66; Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1324: Index 42, Backlog 1326: Index 43/44, Backlog 1328: Index 45/46, Backlog 1330: Index 47–49)');
   eq(T[39], '|(?<![a-z])(?:', 'Baustein 39'); ok(T[40].startsWith('(?:колес|') && T[40].endsWith('|балон)'), 'Baustein 40'); eq(T[41], '(?![a-z])(?![^.;!?]*(?:fixed|repaired|replaced', 'Baustein 41');
   for (const [k, n] of [[39, 50], [40, 4], [41, 5]]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= n, 'Baustein ' + k + ' wird ≥ ' + n + '× genutzt');
   const code = "x\nconst A = lbRx(String.raw`a|(?<![a-z])(?:b|c)(?![a-z])(?![^.;!?]*(?:fixed|repaired|replaced|ok))(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\nconst B2 = lbRx(String.raw`c(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\n";
@@ -38801,7 +38848,7 @@ await test('Backlog 1302 (Sonde, Blickwinkel „Fahrer diktiert Heizung/Klima au
   for (const x of ['кондей дует нормально', 'заслонка печки переключается', 'кондей не дует, заменили компрессор', 'кондиционер не холодит, заправили', 'автономка не запускается, починили', 'заслонка печки сломана, отремонтировали']) ok(!cli(x), 'keine Klima-Schritte: ' + x);
   for (const x of ['печка гудит', 'пічка гуде', 'вентилятор пічки гуде', 'печка свистит']) ok(N.test(x), 'Geräusch: ' + x);
   for (const x of ['печка не гудит', 'печка гудит поменяли моторчик', 'печка свистит помінял вентилятор']) ok(!N.test(x), 'kein Geräusch: ' + x);
-  ok(app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx);"), 'Listener Klima unverändert');
+  ok(app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx) && !CLIMATE4_HINT.test(dfx);"), 'Listener Klima unverändert');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['в кабине холодно', 'печка дует только в ноги', 'im Fahrerhaus ist es kalt']], ['uk', ['в кабіні холодно', 'пічка гріє тільки на ноги']], ['en', ['в кабине холодно']]]) for (const ex of exs) { ok(STRINGS[l].help_visib_s.includes(ex), 'Hilfe Sicht ' + l + ': ' + ex); ok(vis(ex.toLowerCase()), 'Hilfe-Beispiel löst aus: ' + ex); }
   for (const [l, exs] of [['de', ['кондей не дует', 'заслонка печки не переключается']], ['uk', ['кондей не дує', 'заслонка пічки не перемикається']], ['en', ['кондей не дует']]]) for (const ex of exs) { ok(STRINGS[l].help_climate_s.includes(ex), 'Hilfe Klima ' + l + ': ' + ex); ok(cli(ex), 'Hilfe-Beispiel löst aus: ' + ex); }
@@ -39079,7 +39126,7 @@ await test('Backlog 1276 (Sonde, Blickwinkel „Fahrer diktiert Heizung/Standhei
   for (const x of ['heizung macht nur kalte luft wurde repariert', 'sitzheizung bleibt kalt', 'heizung an batterie schwach', 'kühlbox bleibt kalt', 'motor wird nicht warm', 'blower weak but fixed now', 'scheibe taut nicht ab heizung getauscht']) ok(!H.test(x), 'kein Heizungs-Zusatz: ' + x);
   for (const x of ['standheizung geht nach paar minuten wieder aus', 'webasto schaltet sich nach 5 min ab', 'standheizung geht immer wieder aus', 'parking heater keeps shutting off', 'night heater kept cutting out', 'автономка вимикається через хвилину', 'автономка тухнет']) ok(C3.test(x), 'Standheizung schaltet ab: ' + x);
   for (const x of ['standheizung geht an', 'standheizung geht wieder aus wurde repariert', 'parking heater keeps the cab warm', 'автономка працює']) ok(!C3.test(x), 'kein Standheizungs-Zusatz: ' + x);
-  ok(app.includes("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !VISIB3_HINT.test(dsh) && !HEAT_HINT.test(dsh);") && app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx);"), 'Listener Sicht (nach noSeatHeat) und Klima (nach noFixed)');
+  ok(app.includes("$('#visib').hidden = !VISIB_HINT.test(dsh) && !VISIB2_HINT.test(dsh) && !VISIB3_HINT.test(dsh) && !HEAT_HINT.test(dsh) && !VISIB4_HINT.test(dsh);") && app.includes("$('#climate').hidden = !CLIMATE_HINT.test(dfx) && !CLIMATE2_HINT.test(dfx) && !CLIMATE3_HINT.test(dfx) && !CLIMATE4_HINT.test(dfx);"), 'Listener Sicht (nach noSeatHeat) und Klima (nach noFixed)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['Heizung macht nur kalte Luft', 'in der Kabine wird es nicht warm', 'Gebläse geht gar nicht']], ['uk', ['вентилятор пічки не крутиться', 'пічка дме холодним']], ['en', ['heater only blows cold', 'blower is weak', 'cab isn’t warming up']]]) for (const ex of exs) { ok(STRINGS[l].help_visib_s.includes(ex), 'Hilfe Sicht ' + l + ': ' + ex); ok(H.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
   for (const [l, ex] of [['de', 'Standheizung geht nach ein paar Minuten wieder aus'], ['uk', 'автономка вимикається через хвилину'], ['en', 'parking heater keeps shutting off']]) { ok(STRINGS[l].help_climate_s.includes(ex), 'Hilfe Klima ' + l + ': ' + ex); ok(C3.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }

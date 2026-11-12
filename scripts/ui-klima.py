@@ -2,6 +2,8 @@
 # fünf Schritte (Leitung vor der Ruhezeit, kein Motor im Stand/keine Gasgeräte, nicht öffnen, Anzeige/Foto, Auswahl Fahrbereitschaft);
 # „Standheizung läuft“ zeigt keinen Hinweis; zusammen mit „Unfall“ ist der Unfall-Hinweis offen und der Klima-Hinweis eingeklappt; Hilfe enthält den Abschnitt. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Backlog 1302: Diktat RU/UK („кондей не дует“, „заслонка пічки не перемикається“ → Klima; „в кабіні холодно“, „im fahrerhaus ist es kalt“ → Sicht/Heizung).
+# Backlog 1383: Englisch „the a/c only blows hot air“, „diesel smell from the night heater“ → Klima; „windscreen won't demist“ → Sicht ohne Glasschaden;
+# „water dripping from the dashboard“ → Wasser im Fahrerhaus.
 # Braucht den Dev-Server (scripts/dev-server.mjs).
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -50,6 +52,10 @@ with sync_playwright() as p:
         q.fill('#d',KALT[lang]); q.wait_for_timeout(100)
         check(vis('#visib') and not vis('#climate'),f'{lang}/{w}: Diktat „{KALT[lang]}“ → Sicht-/Heizungshinweis (Backlog 1302)')
         if SHOTS: q.locator('#visib').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/kalt-{lang}-{w}.png')
+        for en in ['the a/c only blows hot air','diesel smell from the night heater',"can't adjust the temperature"]: q.fill('#d',en); q.wait_for_timeout(100); check(vis('#climate'),f'{lang}/{w}: „{en}“ → Klima-Hinweis (Backlog 1383)')
+        q.fill('#d',"windscreen won't demist"); q.wait_for_timeout(100); check(vis('#visib') and not vis('#glass'),f'{lang}/{w}: „windscreen won\'t demist“ → Sicht, kein Glasschaden (Backlog 1383)')
+        if SHOTS: q.locator('#visib').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/demist-{lang}-{w}.png')
+        q.fill('#d','water dripping from the dashboard'); q.wait_for_timeout(100); check(vis('#cableak'),f'{lang}/{w}: „water dripping from the dashboard“ → Wasser im Fahrerhaus (Backlog 1383)')
         q.fill('#d',TXT[lang]); q.wait_for_timeout(100)
         tx=q.inner_text('#climate')
         check(tx.count('\n')>=5,f'{lang}/{w}: Titel und 5 Schritte')
