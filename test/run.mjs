@@ -38024,6 +38024,25 @@ await test('Backlog 1392 (Reserve Start-Modul nach 1394: 45,614 % > 45,60 %): Ba
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1405 (Kurzsonde Reparaturvermerke, Backlog 195): Zustandsvermerke „sorted now“, „got it sorted“, „all good now“, „fine/ok now“, „now it’s fine“, „back to normal“, „passt wieder“, „alles wieder gut“, „вже все добре“, „уже нормально“ blenden Geräte-/Ausstattungshinweise über noFixed aus; „not sorted“, „need to get it sorted out“, „needs to be sorted“, „not ok now“, „is it ok now to drive?“, „passt wieder nicht“, „вже не добре“ und Wiederkehr („broken again although it was sorted“) weiter mit Hinweis', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
+  const a = app.indexOf('const FIX_WORD'), b = app.indexOf("}).join('');", a) + 12;
+  const recurFix = new Function(app.slice(a, b) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", c) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const t = (x) => noFixed(recurFix(x));
+  const M = g('MIRROR_HINT');
+  const pos = ['the mirror is broken', 'the mirror is broken, it is not sorted yet', 'the mirror is broken, not sorted', 'the mirror is broken and needs to be sorted', 'the mirror is broken, need to get it sorted out', 'the mirror is broken, not ok now', 'the mirror is broken, is it ok now to drive?', 'the mirror is broken, ok now to drive?', 'the mirror is broken again although it was sorted last week', "the mirror was sorted but it's broken again", 'the truck drives fine now but the mirror is broken', 'Spiegel kaputt, passt wieder nicht', 'дзеркало розбите, вже не добре', 'дзеркало розбите'];
+  const neg = ['the mirror was broken, sorted now', 'the mirror was broken, all good now', 'mirror was cracked but mechanic sorted it', 'the mirror was broken, sorted it myself', 'the mirror was broken, got it sorted', 'the mirror was broken, ok now', 'the mirror was broken, now it’s fine', 'the mirror was broken, back to normal', 'Spiegel kaputt, alles wieder gut', 'Spiegel kaputt, passt wieder', 'дзеркало розбите, вже все добре', 'зеркало разбито, уже нормально'];
+  for (const x of pos) ok(M.test(t(x)), 'Spiegel-Hinweis bleibt: ' + x);
+  for (const x of neg) ok(!M.test(t(x)), 'Reparaturvermerk, kein Hinweis: ' + x);
+  ok(t('the light is out, nothing is fine') === 'the light is out, nothing is fine' && t('the light is out, not back to normal') === 'the light is out, not back to normal', 'Verneinung ist kein Vermerk');
+  ok(/\bsorted\)/.test(app.slice(a, app.indexOf('\n', a))), 'FIX_WORD kennt „sorted“ (Verneinung/Plan/Wiederkehr neutralisiert)');
+  ok(!/erledigt/.test(app.slice(c, app.indexOf('\n', c))), '„erledigt“ bewusst kein Vermerk („Spiegel kaputt, Tour erledigt“)');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
 await test('Backlog 1403 (Kurzsonde, Blickwinkel „Fahrer meldet Fahrerhaus kippen/Diesel versulzt/Tank leer auf Englisch“, Backlog 195): „the cab is stuck halfway“, „I can’t tilt the cab“, „Fahrerhaus hängt halb oben fest“ → Kippen; „fuel turned to jelly“ → versulzt; „the tank is empty“ → Kraftstoff ausgegangen; Kabinentür, Wassertank, Reparaturvermerk ohne', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
