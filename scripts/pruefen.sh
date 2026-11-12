@@ -233,6 +233,7 @@ UI-Fahrersitz/Gurt auf Englisch: belt wont retract, seat bouncing, seat cover ri
 UI-Schlafkabine/Liege und Fahrerhaus-Ausstattung auf Englisch: bunk wont fold up, bunk strap, cab fridge, privacy curtain, overhead locker, cupboard door; curtains wont close bleibt Plane (Backlog 1397)|ui-liege-englisch.py|/tmp/cfp-liege-englisch.log
 UI-Auspuff auf Englisch: exhaust stack is bent, tailpipe is hanging down, exhaust is loose; Reparaturvermerk und Motorbremse ohne Auspuff (Backlog 1399)|ui-auspuff-englisch.py|/tmp/cfp-auspuff-englisch.log
 UI-Plane/Aufbau auf Englisch: curtainside is torn, sliding roof is jammed, dropside wont close, back doors hanging off; Verneinung und Reparaturvermerk ohne Plane (Backlog 1400)|ui-plane-englisch.py|/tmp/cfp-plane-englisch.log
+UI-Kennzeichen auf Englisch: trailer plate is missing, front plate is hanging off, number plate bracket is broken; Reparaturvermerk und Kennzeichenleuchte ohne Kennzeichen-Hinweis (Backlog 1402)|ui-kennzeichen-englisch.py|/tmp/cfp-kennzeichen-englisch.log
 UI-Fehlbetankung: Warnzeile bei „Weiß nicht“/„fahrbereit“, neue Schreibweisen, Hinweis für die Leitung im Vorgang, DE/UK/EN 390/820/1366|ui-fehlbetankung-sperre.py|/tmp/cfp-fehlbetankung-sperre.log
 UI-Unfallflucht: eigene Schritte statt Unfall-Hinweis, Hinweis Anzeige/Gegner unbekannt im Vorgang, DE/UK/EN 390/820/1366|ui-unfallflucht.py|/tmp/cfp-unfallflucht.log
 UI-Vandalismus: eigene Schritte, nicht doppelt zu Diebstahl, Hinweis Anzeige im Vorgang, DE/UK/EN 390/820/1366|ui-vandalismus.py|/tmp/cfp-vandalismus.log

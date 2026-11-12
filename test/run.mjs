@@ -27304,7 +27304,7 @@ await test('Backlog 685–687 (Blickwinkel „Kennzeichen verloren, gestohlen od
   for (const x of ['Kennzeichen abgefallen', 'Rear number plate fell off', 'Номерний знак відпав у дорозі']) ok(L.test(x) && !L.test(x.replace(W, ' ')), 'Kennzeichen allein zählt nicht zusätzlich als loses Teil: ' + x);
   ok(L.test('Kennzeichen abgefallen, Stoßstange hängt herunter'.replace(W, ' ')), 'anderes loses Teil bleibt erkannt');
   ok(app.includes("if (!$('#numplate').hidden) dl = dl.replace(NUMPLATE_WORDS, ' '); if (!$('#step').hidden) dl = dl.replace(STEP_WORDS, ' '); $('#loose').hidden = !LOOSE_HINT.test(dl);"), 'Lose-Teile-Hinweis ohne Kennzeichenwörter');
-  ok(app.includes("$('#numplate').hidden = !NUMPLATE_HINT.test(dsk);") && app.indexOf("$('#numplate').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#numplate').hidden = !NUMPLATE_HINT.test(noSticker(dfx));") && app.indexOf("$('#numplate').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'lost', 'numplate', 'sticker', 'fuelcard'"), 'Reihenfolge nach Schlüssel/Papiere');
   ok(app.includes("'cargo', 'numplate', "), 'Hilfe-Abschnitt für meldende Rollen');
   ok(app.includes("const numplateHint = NUMPLATE_HINT.test(noSticker(desc));") && app.includes('data-claimnumplate'), 'Hinweis an die Leitung im Vorgang');
@@ -38024,6 +38024,18 @@ await test('Backlog 1392 (Reserve Start-Modul nach 1394: 45,614 % > 45,60 %): Ba
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1402 (Kurzsonde, Blickwinkel „Fahrer meldet Kennzeichen auf Englisch“, Backlog 195): „someone stole the front plate“, „the reg plate is dirty and unreadable“, „plate on the trailer is hanging off“, „the number plate bracket is broken“, „the trailer plate is missing“ → Kennzeichen-Hinweis; Reparaturvermerk, Kennzeichenleuchte, Teller ohne', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const N = new RegExp(app.match(/^const NUMPLATE_HINT = \/(.+)\/i;/m)[1], 'i');
+  for (const x of ['someone stole the front plate', 'the reg plate is dirty and unreadable', 'plate on the trailer is hanging off', 'the number plate bracket is broken', 'the trailer plate is missing', 'the front plate is hanging off', 'rear plate is missing', 'the rear number plate fell off', 'lost the number plate']) ok(N.test(x), 'Kennzeichen: ' + x);
+  for (const x of ['the number plate is fine', 'the number plate light is broken', 'back plate light is out', 'the plate on the trailer is not damaged', 'I broke a plate in the cab', 'the plate was missing, replaced now']) ok(!N.test(x), 'kein Kennzeichen: ' + x);
+  ok(app.includes("$('#numplate').hidden = !NUMPLATE_HINT.test(noSticker(dfx));"), 'Meldeformular: Reparaturvermerk („…, fixed now“) über noFixed ohne Kennzeichen-Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of ['trailer plate is missing', 'front plate is hanging off', 'number plate bracket is broken']) { ok(STRINGS[l].help_numplate_s.includes(x), 'Hilfe Kennzeichen ' + l + ': ' + x); ok(N.test(x), 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-kennzeichen-englisch.py'), 'UI-Prüfung in pruefen.sh');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
 await test('Backlog 1401 (Reserve Start-Modul nach 1400: 45,598 % ≈ 45,60 %): Bausteine __T[224]–__T[233] per Häufigkeitsanalyse (→ 45,57 %); je ≥ 2× genutzt; Rückverwandlung gleich', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
