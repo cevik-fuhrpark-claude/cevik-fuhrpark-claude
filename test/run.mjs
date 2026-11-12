@@ -40506,6 +40506,36 @@ await test('Backlog 1121: „Neu laden“ in den Standzeilen hat eine Tippfläch
   for (const id of ids) { ok(sel.includes('#' + id), 'CSS 24 px fehlt für #' + id); ok(coarse.includes('#' + id), 'CSS 44 px (Touch) fehlt für #' + id); }
 });
 
+await test('Backlog 1418 (Blickwinkel „Inhaber verlängert die Flottenversicherung – Versicherer verlangt den Schadenverlauf nach Schadenjahr“): Versicherungsfälle – Zeitraum und Jahressummen wahlweise nach Schadentag (Schadenzeitpunkt am Vorgang, sonst Anlage des Vorgangs, gezählt), Standard bleibt Meldedatum; Oberfläche, Texte DE/UK/EN, Protokoll', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const ins = db.prepare(`INSERT INTO insurance_claims(id,environment,case_id,vehicle_id,insurer,reported_on,status,evidence,created_by,created_at,updated_at,deductible_net) VALUES (?,'test',?,?,'Vers',?,'reguliert','Schreiben',?,?,?,?)`);
+  const a = await newCase({ description: 'Unfall Silvester' }, U.fleet); const b = await newCase({ description: 'Unfall Sommer' }, U.fleet); const c = await newCase({ description: 'Unfall ohne Zeitpunkt' }, U.fleet);
+  // a: Schaden 28.12.2025 (Abend, Berliner Zeit), gemeldet 05.01.2026; b: Schaden und Meldung 2026; c: ohne Schadenzeitpunkt, Vorgang angelegt 30.11.2025
+  db.prepare('UPDATE cases SET occurred_at=? WHERE id=?').run('2025-12-28T22:30:00.000Z', a);
+  db.prepare('UPDATE cases SET occurred_at=? WHERE id=?').run('2026-06-10', b);
+  db.prepare('UPDATE cases SET occurred_at=NULL, created_at=? WHERE id=?').run('2025-11-30T09:00:00.000Z', c);
+  ins.run('l-a', a, V1, '2026-01-05', U.fleet.id, now, now, 500); ins.run('l-b', b, V1, '2026-06-12', U.fleet.id, now, now, 300); ins.run('l-c', c, V1, '2026-01-20', U.fleet.id, now, now, 200);
+  const get = async (q) => { const r = await U.fleet.get('/api/claims?filter=alle' + q); eq(r.status, 200, JSON.stringify(r.data)); return r.data; };
+  let d = await get(''); eq(d.basis, 'meldung', 'Standard'); eq(d.sums.by_year.map((y) => `${y.year}:${y.n}`).join(), '2026:3', 'nach Meldejahr alles 2026');
+  d = await get('&basis=quatsch'); eq(d.basis, 'meldung', 'unbekannte Basis → Meldedatum');
+  d = await get('&basis=schaden'); eq(d.basis, 'schaden');
+  eq(d.sums.by_year.map((y) => `${y.year}:${y.n}`).join(), '2026:1,2025:2', 'nach Schadenjahr (Berliner Tag 28.12., Fallback Anlage)');
+  const y25 = d.sums.by_year.find((y) => y.year === '2025'); eq(y25.deductible_net, 700); eq(y25.loss_day_fallback, 1, 'ein Fall ohne Schadenzeitpunkt'); eq(d.sums.total.loss_day_fallback, 1);
+  eq(d.claims.find((x) => x.id === 'l-a').loss_day, '2025-12-28'); eq(d.claims.find((x) => x.id === 'l-c').loss_day, '2025-11-30');
+  // Zeitraum nach Schadentag: 2025 → a und c (beide 2026 gemeldet); nach Meldedatum wäre 2025 leer
+  d = await get('&basis=schaden&from=2025-01-01&to=2025-12-31'); eq(d.claims.map((x) => x.id).sort().join(), 'l-a,l-c'); eq(d.counts.alle, 2);
+  eq((await get('&from=2025-01-01&to=2025-12-31')).claims.length, 0, 'Meldedatum unverändert');
+  eq((await get('')).sums.total.loss_day_fallback, 0, 'nach Meldedatum kein Fallback-Zähler');
+  const csv = await U.fleet.get('/api/claims?format=csv&filter=alle&basis=schaden&from=2025-01-01&to=2025-12-31'); eq(csv.status, 200);
+  const txt = typeof csv.data === 'string' ? csv.data : new TextDecoder().decode(csv.data); eq(txt.trim().split('\r\n').length, 3, 'CSV mit Schadentag-Zeitraum');
+  const au = db.prepare(`SELECT detail FROM audit_log WHERE action='claim.export' ORDER BY rowid DESC LIMIT 1`).get(); ok(au && /"basis":"schaden"/.test(au.detail), 'Protokoll nennt die Basis');
+  eq((await U.ws.get('/api/claims?filter=alle&basis=schaden')).status, 403, 'Werkstatt weiterhin ohne Zugriff');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['claim_basis', 'claim_basis_meldung', 'claim_basis_schaden', 'claim_from_loss', 'claim_to_loss', 'claim_period_loss', 'claim_sums_loss', 'claim_loss_fallback']) ok(STRINGS[l][k], `${l}.${k}`); ok(STRINGS[l].claim_loss_fallback.includes('{n}'), `${l} {n}`); }
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("$('#clbasis').onchange =") && app.includes("S.clBasis === 'schaden' ? '&basis=schaden'") && app.includes('id="cllossfb"'), 'Oberfläche');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

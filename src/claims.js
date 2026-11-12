@@ -258,10 +258,16 @@ export async function claimOverview(env, user, envName, query = {}) {
   // nur eigene Seite – die Suche findet auch den Versicherer des Unfallgegners); wirken vor den Zählern wie der Standort
   const day = (x) => { if (x === undefined || x === null || x === '') return null; const v = String(x).slice(0, 12); if (!isCalendarDate(v)) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.'); return v; };
   const from = day(query.from); const to = day(query.to);
+  // Backlog 1418 (Blickwinkel „Inhaber verlängert die Flottenversicherung – Versicherer verlangt den Schadenverlauf nach Schadenjahr“):
+  // Zeitraum und Jahressummen wahlweise nach dem Schadentag (Schadenzeitpunkt am Vorgang; fehlt er: Anlage des Vorgangs, gezählt als
+  // `loss_day_fallback`) statt nach dem Meldedatum an den Versicherer – ein Schaden vom 28.12. mit Meldung am 05.01. gehört ins alte Schadenjahr.
+  const basis = query.basis === 'schaden' ? 'schaden' : 'meldung';
+  for (const r of rows) { r.loss_day = occurrenceDay({ occurred_at: r.case_occurred_at, created_at: r.case_created_at }); r.loss_day_fallback = !r.case_occurred_at; }
+  const bday = (r) => (basis === 'schaden' ? r.loss_day || r.reported_on : r.reported_on);
   if (from && to && from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.');
   const insurerOptions = [...new Set(rows.filter((r) => !sel.site || sel.match(r.vehicle_site)).map((r) => r.insurer).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
   const insurer = query.insurer ? str(query.insurer, { max: 120, field: 'Versicherer' }) : null;
-  let list = rows.filter((r) => (!sel.site || sel.match(r.vehicle_site)) && (!from || r.reported_on >= from) && (!to || r.reported_on <= to) && (!insurer || r.insurer === insurer)).map((r) => {
+  let list = rows.filter((r) => (!sel.site || sel.match(r.vehicle_site)) && (!from || bday(r) >= from) && (!to || bday(r) <= to) && (!insurer || r.insurer === insurer)).map((r) => {
     // gleiche Regel wie die Vorgangsbewertung: Fremdleistung „ersetzt eigene Arbeit/Teile“ → nur Fremdleistung; ohne Stundensatz oder mit unbewerteten/geschätzten Positionen: keine Summe
     // mit Stundensatz-Verlauf je Arbeitsdatum der damals gültige Satz (Backlog 412); ohne Verlauf wie bisher rund(Stunden × Satz)
     const vw = periods.length ? valueWork(rate, periods, JSON.parse(r.wj || '[]')) : null;
@@ -308,13 +314,13 @@ export async function claimOverview(env, user, envName, query = {}) {
   // Summen je Meldejahr und gesamt (Backlog 275): nur Werte, die eingetragen bzw. belegt sind; Fälle ruhender Fahrzeuge außerhalb (wie die Erstattungssumme);
   // Kosten mit unbewerteten/geschätzten Positionen zählen nicht in die Summe, sondern als „unvollständig“
   // *_n = Anzahl Fälle mit eingetragenem Wert (0 → Anzeige „–“ statt 0 €)
-  const acc = () => ({ n: 0, deductible_net: 0, deductible_n: 0, appraisal_net: 0, appraisal_n: 0, reimbursed_net: 0, reimbursed_n: 0, case_cost_net: 0, cost_n: 0, cost_incomplete: 0, cost_missing: 0 });
+  const acc = () => ({ n: 0, loss_day_fallback: 0, deductible_net: 0, deductible_n: 0, appraisal_net: 0, appraisal_n: 0, reimbursed_net: 0, reimbursed_n: 0, case_cost_net: 0, cost_n: 0, cost_incomplete: 0, cost_missing: 0 });
   const years = new Map(); const total = acc();
   for (const c of list) {
     if (c.eval_excluded) continue;
-    const y = String(c.reported_on || '').slice(0, 4); if (!years.has(y)) years.set(y, acc());
+    const y = String(bday(c) || '').slice(0, 4); if (!years.has(y)) years.set(y, acc());
     for (const a of [years.get(y), total]) {
-      a.n++;
+      a.n++; if (basis === 'schaden' && c.loss_day_fallback) a.loss_day_fallback++;
       if (c.deductible_net !== null && c.deductible_net !== undefined) { a.deductible_net = r2(a.deductible_net + c.deductible_net); a.deductible_n++; }
       if (c.appraisal_net !== null && c.appraisal_net !== undefined) { a.appraisal_net = r2(a.appraisal_net + c.appraisal_net); a.appraisal_n++; }
       if (c.reimbursed_net !== null && c.reimbursed_net !== undefined) { a.reimbursed_net = r2(a.reimbursed_net + c.reimbursed_net); a.reimbursed_n++; }
@@ -322,7 +328,7 @@ export async function claimOverview(env, user, envName, query = {}) {
     }
   }
   const sums = { total, by_year: [...years.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([year, v]) => ({ year, ...v })) };
-  return { today, filter, q: q || null, from, to, insurer, insurer_options: insurerOptions, site: sel.site, site_options: sel.options, followup_days: followupDays, counts, claims: list, sums, reimbursed_sum_net: sum(reimb), reimbursed_sum_excluded_net: sum(reimbX) };
+  return { today, filter, basis, q: q || null, from, to, insurer, insurer_options: insurerOptions, site: sel.site, site_options: sel.options, followup_days: followupDays, counts, claims: list, sums, reimbursed_sum_net: sum(reimb), reimbursed_sum_excluded_net: sum(reimbX) };
 }
 
 // thirdParty (Backlog 277): Export für Dritte (z. B. Versicherer) ohne Freitexte „Nachweis“/„Bemerkung“ (dort stehen u. a. Namen von Unfallgegnern)
