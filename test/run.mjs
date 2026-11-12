@@ -38024,6 +38024,27 @@ await test('Backlog 1392 (Reserve Start-Modul nach 1394: 45,614 % > 45,60 %): Ba
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1407 (Blickwinkel „Fahrer schreibt die Meldung auf Türkisch“, Backlog 195): „fren tutmuyor“, „lastik patladı/patladi“, „direksiyon kilitlendi“, „duman çıkıyor“, „yağ kaçırıyor“, „kaza yaptım“, „yaralandım“ → Bremse/Reifenpanne/Lenkung/Brand/Leck/Unfall/Verletzung; Reparaturvermerk, „sorun yok“, „değil“, Auspuffrauch, Bremslicht, Steinschlag, deutsche/englische Texte ohne', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = ['const TR_OK', 'const TR_KINDS', 'const trFold', 'function trKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const TR_KINDS' ? "['injury'" : h, i)) + 1); }).join('');
+  const trKinds = new Function(src + 'return trKinds;')();
+  const is = (x, k) => { const r = [...trKinds(x)].sort().join(','); eq(r, k, x); };
+  for (const [x, k] of [['frenler tutmuyor', 'brake'], ['FREN TUTMUYOR', 'brake'], ['frenim boşa gidiyor', 'brake'], ['fren havası düşük uyarısı', 'brake'], ['hava basıncı düşük', 'brake'],
+    ['Kabinden duman çıkıyor', 'fire'], ['Motor yangın', 'fire'], ['yanık kokusu var', 'fire'], ['araç alev aldı', 'fire'],
+    ['Lastik patladı', 'flat'], ['LASTİK PATLADI', 'flat'], ['lastik patladi', 'flat'], ['lastiğim patladı otoyolda', 'flat'], ['sağ arka lastik indi', 'flat'], ['dorse lastiği patlak', 'flat'], ['lastik patladı, değiştirildi', 'flat'],
+    ['direksiyon kilitlendi', 'steer'], ['direksiyon çok ağır', 'steer'], ['direksiyonda boşluk var', 'steer'], ['araç sağa çekiyor', 'steer'],
+    ['motor yağ kaçırıyor', 'leak'], ['mazot akıyor', 'leak'], ['yağ sızdırıyor şanzımandan', 'leak'], ['kaza yaptım', 'acc'], ['kaza yaptım, yaralandım', 'acc'], ['yaralandım', 'injury'],
+    ['fren tutmuyor ve direksiyon ağır', 'brake,steer']]) is(x, k);
+  for (const x of ['egzozdan siyah duman çıkıyor', 'fren tamir edildi', 'lastik değiştirildi, sorun yok', 'lastik patladı ama değiştirildi', 'frende sorun yok', 'fren sorunu yok', 'lastik patlak değil', 'fren lambası çalışmıyor', 'ön camıma taş çarptı', 'yangın söndürücü eksik', 'ayna kırıldı',
+    'Bremse defekt', 'Reifen geplatzt', 'brakes not working', 'flat tyre', 'oil leak', 'гальма не працюють', 'Fahrer Kaza', 'carpet in the cab is dirty', 'Fire extinguisher missing']) is(x, '');
+  ok(app.includes("for (const k of trKinds(dv)) $('#' + k).hidden = false; $('#noise').hidden = !NOISE_HINT.test(dv)"), 'Meldeformular: türkische Hinweise vor dem Geräusch-Hinweis (der sonst zusätzlich erschiene)');
+  ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of ['fren tutmuyor', 'lastik patladı', 'direksiyon kilitlendi', 'duman çıkıyor', 'yağ kaçırıyor']) { ok(STRINGS[l].help_report_s.includes(x), 'Hilfe Melden ' + l + ': ' + x); ok(trKinds(x).size === 1, 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-tuerkisch.py'), 'UI-Prüfung in pruefen.sh');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
 await test('Backlog 1406 (Kurzsonde Reparaturvermerke „festgezogen/tightened“, Backlog 195): „Spiegel war locker, festgezogen/wieder festgeschraubt/wieder angeschraubt“, „I tightened it up“, „tightened it“, „put/screwed it back on“, „підтягнули“, „подтянули“ blenden den Spiegel-Hinweis über noFixed aus; „muss festgezogen werden“, „nicht festgezogen“, „needs (to be) tightened“, „nobody tightened it“, „nobody put it back on“, „loose again although tightened“, „треба підтягнути“ weiter mit Hinweis', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
