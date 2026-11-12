@@ -21353,7 +21353,7 @@ await test('Backlog 299 (Blickwinkel „Motorwarnleuchte rot während der Fahrt�
     ok(L.warnlight_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="warnlight" class="panel" hidden role="status">`), 'Panel #warnlight');
-  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx) && !WARNLIGHT2_HINT.test(dfx);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx) && !WARNLIGHT2_HINT.test(dfx) && !WARNLIGHT3_HINT.test(dfx);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'warnlight', 'nostart'), 'Hilfe-Abschnitt warnlight nach nostart');
 });
 
@@ -21429,7 +21429,7 @@ await test('Backlog 303 (Blickwinkel „Kühlaggregat des Kühlaufliegers fällt
     ok(L.reefer_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="reefer" class="panel" hidden role="status">`), 'Panel #reefer');
-  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test(dck) && !REEFER2_HINT.test(dck) && !REEFER3_HINT.test(dck);"), 'Hinweis abhängig von der Beschreibung');
+  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test(dck) && !REEFER2_HINT.test(dck) && !REEFER3_HINT.test(dck) && !REEFER4_HINT.test(dck);"), 'Hinweis abhängig von der Beschreibung');
   ok(helpAfter(app, 'reefer', 'fire'), 'Hilfe-Abschnitt reefer nach fire');
 });
 
@@ -21579,7 +21579,7 @@ await test('Backlog 310 (Blickwinkel „Beleuchtung am Lkw/Auflieger ausgefallen
     ok(L.lights_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="lights" class="panel" hidden role="status">`), 'Panel #lights');
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck); $('#door')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck) && !LIGHTS5_HINT.test(dck); $('#door')"), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung');
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.indexOf('acc') < order.indexOf('lights') && order.indexOf('mirror') < order.indexOf('lights') && order.indexOf('lights') < order.indexOf('glass'), 'Gruppierung: Unfall/Spiegel vor Licht vor Glas');
   ok(helpAfter(app, 'lights', 'coupling'), 'Hilfe-Abschnitt lights nach coupling');
@@ -21715,7 +21715,7 @@ await test('Backlog 316 (Blickwinkel „Lenkung schwergängig, hat Spiel oder Lk
     ok(L.steer_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="steer" class="panel" hidden role="status">`), 'Panel #steer');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv) && !STEER3_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv) && !STEER3_HINT.test(dv) && !STEER4_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('steer') && order.indexOf('acc') < order.indexOf('steer') && order.indexOf('flat') < order.indexOf('steer') && order.indexOf('brake') < order.indexOf('steer') && order.indexOf('steer') < order.indexOf('warnlight') && order.indexOf('steer') < order.indexOf('adas'), 'Gruppierung: Unfall/Reifen/Bremse vor Lenkung vor Warnleuchte/Assistent');
   ok(helpAfter(app, 'steer', 'adas'), 'Hilfe-Abschnitt steer nach adas');
@@ -27577,7 +27577,7 @@ await test('Backlog 784 (Sonde Reparaturvermerk Lenkung/Plane): Lenkungs- und Pl
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
   const cabkit = new RegExp(g('CABKIT_HINT').source, 'gi'); ok(app.includes("const CABKIT_SPANS = new RegExp(CABKIT_HINT.source, 'gi');"), 'noCabkit wie im Test');
   const noCabkit = (x) => String(x || '').replace(cabkit, ' ');
-  ok(app.includes("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv) && !STEER3_HINT.test(dv);") && app.includes("$('#tarp').hidden = !TARP_HINT.test(dck) && !TARP2_HINT.test(dck);"), 'Hinweise prüfen dv bzw. dck');
+  ok(app.includes("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv) && !STEER3_HINT.test(dv) && !STEER4_HINT.test(dv);") && app.includes("$('#tarp').hidden = !TARP_HINT.test(dck) && !TARP2_HINT.test(dck);"), 'Hinweise prüfen dv bzw. dck');
   const T = {
     STEER_HINT: [(x) => recurFix(x), ['Lenkung geht schwer', 'Lenkung hat Spiel', 'Кермо туго повертається', 'Руль тянет влево', 'steering heavy', 'Lenkung hat Spiel, muss repariert werden', 'кермо трясеться, після ремонту знову, хоча замінили'],
       ['Lenkung geht schwer, repariert', 'Lenkung hat Spiel, Spurstange getauscht', 'steering heavy, fixed', 'Кермо туго повертається, відремонтували', 'Руль тянет влево, отремонтировали']],
@@ -27628,7 +27628,7 @@ await test('Backlog 781 (Sonde Beleuchtung UK/RU „зламалась/злам�
   const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
   const t = (x) => noFixed(recurFix(x));
   const run = (T) => { for (const [n, [pos, neg]] of Object.entries(T)) { const r = g(n); for (const x of pos) ok(r.test(t(x)), n + ': ' + x); for (const x of neg) ok(!r.test(t(x)), n + ' nicht: ' + x); } };
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck);"), 'Licht-Hinweis weiter ohne noFixed (eigener Reparaturvermerk-Ausschluss)');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck) && !LIGHTS5_HINT.test(dck);"), 'Licht-Hinweis weiter ohne noFixed (eigener Reparaturvermerk-Ausschluss)');
   const r = g('LIGHTS_HINT');
   for (const x of ['фара зламалась', 'ліхтар зламався', 'стоп-сигнал зламався', 'поворотник зламався', 'фара сломалась', 'фара не світить', 'Scheinwerfer kaputt', 'headlight broken', 'фара знову не світить, хоча замінили']) ok(r.test(recurFix(x)), 'LIGHTS_HINT: ' + x);
   for (const x of ['фара зламалась, замінили', 'фара розбита, замінили', 'фара не світить, замінили', 'не світить фара, замінили лампочку', 'фара сломалась, заменили', 'Scheinwerfer kaputt, getauscht']) ok(!r.test(recurFix(x)), 'LIGHTS_HINT nicht: ' + x);
@@ -28490,7 +28490,7 @@ await test('Backlog 707–709 (Blickwinkel „Feststellbremse hält nicht – Lk
     ok(S.help_parkbrake_t && S.help_parkbrake_s.includes(S.parkbrake_hint_steps) && S.help_parkbrake_s.includes(S.nav_new), 'Hilfe nennt Schritte und „' + S.nav_new + '“ ' + l);
   }
   ok(app.includes('<div id="parkbrake" class="panel" hidden role="status">'), 'Panel #parkbrake');
-  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)) && !AIRLINE_HINT.test(dv) && !BRAKE2_HINT.test(noParkbrake(dv)) && !BRAKE3_HINT.test(dv) && !BRAKE4_HINT.test(noParkbrake(dv)); $('#parkbrake').hidden = !PARKBRAKE_HINT.test(dv);") && app.indexOf("$('#parkbrake').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#brake').hidden = !BRAKE_HINT.test(noParkbrake(dv)) && !AIRLINE_HINT.test(dv) && !BRAKE2_HINT.test(noParkbrake(dv)) && !BRAKE3_HINT.test(dv) && !BRAKE4_HINT.test(noParkbrake(dv)); $('#parkbrake').hidden = !PARKBRAKE_HINT.test(dv) && !PARKBRAKE2_HINT.test(dv);") && app.indexOf("$('#parkbrake').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'brake', 'parkbrake', 'pedal', 'steer'"), 'Reihenfolge nach Bremse (seit Backlog 729 Gaspedal dazwischen)');
   ok(helpAfter(app, 'parkbrake', 'brake'), 'Hilfe-Abschnitt für meldende Rollen nach Bremse');
 });
@@ -37503,7 +37503,7 @@ await test('Backlog 1296/1303 (Reserve Start-Modul nach 1295: 45,84 % > 45,8 %; 
   ok(d.code.includes('${__T[10]}fixed${__T[11]}заменил))') && d.code.includes('${__T[10]}eingestellt${__T[12]}полагод))'), 'Bausteine 10–12 eingesetzt: ' + d.code);
   eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (zweistelliger Index)');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteinliste hat 67 Einträge (Backlog 1351: Index 63–66; Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18; Backlog 1307: Index 19–24; Backlog 1311: Index 25–30; Backlog 1316: Index 31–35; Backlog 1318: Index 36–38; Backlog 1320: Index 39–41; Backlog 1324: Index 42; Backlog 1326: Index 43/44; Backlog 1328: Index 45/46; Backlog 1330: Index 47–49)'); eq(T[23], '|fixed|repaired|replaced|', 'Baustein 23 (Backlog 1307)'); eq(T[24], '(?![a-z])|(?<![a-z])', 'Baustein 24 (Backlog 1307)'); ok([19, 20, 21].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4) && [22, 23, 24].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 12), 'Bausteine 19–24 werden genutzt'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
+  eq(T.length, 204, 'Bausteinliste hat 67 Einträge (Backlog 1351: Index 63–66; Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18; Backlog 1307: Index 19–24; Backlog 1311: Index 25–30; Backlog 1316: Index 31–35; Backlog 1318: Index 36–38; Backlog 1320: Index 39–41; Backlog 1324: Index 42; Backlog 1326: Index 43/44; Backlog 1328: Index 45/46; Backlog 1330: Index 47–49)'); eq(T[23], '|fixed|repaired|replaced|', 'Baustein 23 (Backlog 1307)'); eq(T[24], '(?![a-z])|(?<![a-z])', 'Baustein 24 (Backlog 1307)'); ok([19, 20, 21].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4) && [22, 23, 24].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 12), 'Bausteine 19–24 werden genutzt'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
   ok((main.match(/\$\{__T\[1[0-2]\]\}/g) || []).length > 60, 'zweistellige Bausteine werden genutzt');
   for (const tk of T.slice(10)) ok(Buffer.byteLength(tk) > Buffer.byteLength('${__T[10]}'), 'Baustein länger als Platzhalter: ' + tk);
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
@@ -37631,7 +37631,7 @@ await test('Backlog 1350 (Reserve Start-Modul nach 1349: 45,584 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–66 (Backlog 1351: Index 63–66)');
+  eq(T.length, 204, 'Bausteine 0–66 (Backlog 1351: Index 63–66)');
   for (const [k, n] of [[59, 3], [60, 3], [61, 30], [62, 3]]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= n && main.split(T[k]).length === 2, 'Baustein ' + k + ' ' + n + '× genutzt');
   ok(T[59].startsWith('(?:fahrt|fahren|') && T[59].endsWith('|grundlos)'), 'Baustein 59'); ok(T[60].startsWith('(?:auto|pkw|lkw|') && T[60].endsWith('|taxi|suv)'), 'Baustein 60');
   eq(T[61], '(?![а-яіїєґ])', 'Baustein 61'); ok(T[62].startsWith(String.raw`(?:\d+\.?|erste[nm]?|`) && T[62].endsWith('zw(?:ö|oe)lfte[nm]?)'), 'Baustein 62');
@@ -37756,7 +37756,7 @@ await test('Backlog 1360 (Reserve Start-Modul nach 1355/1362: 45,58 % bei Grenze
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–79');
+  eq(T.length, 204, 'Bausteine 0–79');
   for (let k = 70; k < 80; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[70].startsWith('(?:злама') && T[72] === String.raw`(?:дзеркал\S*|зеркал\S*)` && T[74].startsWith('|lbw|') && T[75].startsWith('|ersatzrad|') && T[77].startsWith('(?:indicator|'), 'Bausteine 70/72/74/75/77');
   const B = await import('../scripts/build-app.mjs');
@@ -37838,7 +37838,7 @@ await test('Backlog 1363 (Reserve Start-Modul nach 1367: 45,63 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–85');
+  eq(T.length, 204, 'Bausteine 0–85');
   for (let k = 80; k <= 85; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[80].startsWith('|неисправ') && T[81].includes('tank(?:deckel|') && T[82].startsWith('(?:олив|масл|') && T[83].startsWith('(?:редуктор') && T[84].startsWith('(?:двигун') && T[85].includes('bußgeld'), 'Bausteine 80–85 wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -37852,7 +37852,7 @@ await test('Backlog 1368 (Reserve Start-Modul nach 1369: 45,603 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–89');
+  eq(T.length, 204, 'Bausteine 0–89');
   for (let k = 86; k <= 89; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[86].startsWith('(?:въехал|') && T[87].startsWith('(?:горить|горит|') && T[88].startsWith('(?:в|у)\\s+(?:причеп') && T[89].startsWith('(?:вантажівк|машин|'), 'Bausteine 86–89 wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -37899,6 +37899,43 @@ await test('Backlog 1389 (Sonde, Blickwinkel „Fahrer meldet Panne/Liegenbleibe
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_breakdown_s.includes('the truck died on me') && bd.test('the truck died on me'), 'Hilfe Panne ' + l);
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
+await test('Backlog 1391 (Sonde, Blickwinkel „Fahrer meldet Lkw weggerollt/Feststellbremse/Servolenkung auf Englisch“, Backlog 195): „the truck rolled back into a wall“, „rolled forward and hit the gate“, „rolled down the hill on its own“, „moves even with the handbrake on“, „forgot the handbrake … rolled“ → Feststellbremse (+ Anprall/Unfall); „lost power steering“, „play in the steering“ → Lenkung statt Motor; „fridge lost power“ → Kühlaggregat, „trailer lights lost power“ → Licht statt Motor; „parking brake light stays on“ → Warnleuchte statt Beleuchtung', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2].includes('i') ? m[2] : m[2] + 'i'); };
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x.toLowerCase())); };
+  const pb = any(['PARKBRAKE_HINT', 'PARKBRAKE2_HINT']), acc = any(['ACC_HINT', 'ACC2_HINT', 'ACC3_HINT', 'ACC4_HINT', 'ACC5_HINT']), fix = any(['FIXOBJ_HINT', 'FIXOBJ2_HINT']);
+  const st = any(['STEER_HINT', 'STEER2_HINT', 'STEER3_HINT', 'STEER4_HINT']), eng = any(['ENGINE_HINT', 'ENGINE2_HINT', 'ENGINE3_HINT', 'ENGINE4_HINT', 'ENGINE5_HINT']);
+  const ref = any(['REEFER_HINT', 'REEFER2_HINT', 'REEFER3_HINT', 'REEFER4_HINT']), li = any(['LIGHTS_HINT', 'LIGHTS2_HINT', 'LIGHTS3_HINT', 'LIGHTS4_HINT', 'LIGHTS5_HINT']), wl = any(['WARNLIGHT_HINT', 'WARNLIGHT2_HINT', 'WARNLIGHT3_HINT']);
+  for (const x of ['the truck rolled back into a wall', 'the truck rolled forward and hit the gate', 'the lorry rolled down the hill on its own', 'the truck moves even with the handbrake on', 'I forgot the handbrake and the truck rolled into a car', 'the truck is rolling on its own', 'it moved by itself after I got out', 'truck rolled away while I was unloading']) ok(pb(x), 'Feststellbremse: ' + x);
+  for (const x of ['the trailer was rolled back to the dock by the shunter', 'the truck rolled back at the traffic lights', 'I rolled the window down', 'the truck rolled over', 'the truck rolled back into a wall, handbrake repaired']) ok(!pb(x), 'keine Feststellbremse: ' + x);
+  ok(fix('the truck rolled back into a wall') && fix('the trailer rolled into the loading bay door'), 'weggerollt gegen Wand/Tor → Anprall');
+  for (const x of ['truck rolled into a car', 'I forgot the handbrake and the truck rolled into a car', 'rolled back at the traffic lights and touched the car behind']) ok(acc(x), 'Unfall: ' + x);
+  for (const x of ['lost power steering', 'no power steering', 'lost the power steering', 'there is play in the steering', 'power steering cut out']) { ok(st(x), 'Lenkung: ' + x); ok(!eng(x), 'kein Motor: ' + x); }
+  for (const x of ['the fridge lost power while driving', 'fridge lost power', 'the reefer has no power', 'no power to the fridge unit']) { ok(ref(x), 'Kühlaggregat: ' + x); ok(!eng(x), 'kein Motor: ' + x); }
+  for (const x of ['lost power on the trailer lights', 'trailer lights lost power', 'the trailer lights have no power']) { ok(li(x), 'Licht: ' + x); ok(!eng(x), 'kein Motor: ' + x); }
+  for (const x of ['lost all power on the motorway', 'the truck lost power uphill', 'stopped at the lights and had no power', 'at the traffic lights I lost power', 'truck has no power']) ok(eng(x), 'Motor bleibt: ' + x);
+  ok(!li('stopped at the traffic lights and had no power'), 'Ampel ist kein Licht-Mangel');
+  for (const x of ['parking brake light stays on', 'handbrake light flashing', 'the park brake light came on while driving']) { ok(wl(x), 'Warnleuchte: ' + x); ok(!li(x), 'keine Beleuchtung: ' + x); }
+  ok(li('brake lights stay on'), 'Bremslicht bleibt an bleibt Beleuchtung');
+  ok(app.includes("$('#parkbrake').hidden = !PARKBRAKE_HINT.test(dv) && !PARKBRAKE2_HINT.test(dv)") && app.includes('|| ACC5_HINT.test(daccx)') && app.includes('&& !STEER4_HINT.test(dv)') && app.includes('&& !REEFER4_HINT.test(dck)') && app.includes('&& !LIGHTS5_HINT.test(dck)') && app.includes('&& !WARNLIGHT3_HINT.test(dfx)'), 'Meldeformular prüft die neuen Muster');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].help_parkbrake_s.includes('the truck rolled back into a wall') && STRINGS[l].help_parkbrake_s.includes('the truck moves even with the handbrake on'), 'Hilfe Feststellbremse ' + l); ok(STRINGS[l].help_steer_s.includes('lost power steering'), 'Hilfe Lenkung ' + l); }
+});
+await test('Backlog 1390 (Reserve Start-Modul nach 1391: 45,69 % > 45,60 %): Bausteine __T[174]–__T[203] in drei Runden per Häufigkeitsanalyse (→ 45,58 %); je ≥ 2× genutzt; Rückverwandlung gleich', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
+  eq(T.length, 204, 'Bausteine 0–203');
+  for (let k = 174; k <= 203; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
+  ok(T[174].startsWith('(?:fridge|reefer|') && T[175] === String.raw`(?:by\s+itself|on\s+its\s+own)`, 'Bausteine wie analysiert');
+  const B = await import('../scripts/build-app.mjs');
+  for (let k = 174; k <= 203; k++) {
+    const code = "x\nconst A = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))a" + T[k] + "b`, 'i', 1);\nconst B2 = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))z`, 'i', 1);\n";
+    const d = B.dedupeLooks(code); ok(d.code.includes('${__T[' + k + ']}'), 'Baustein ' + k + ' eingesetzt'); eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (' + k + ')');
+  }
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
 
 await test('Backlog 1387 (Sonde, Blickwinkel „Fahrer meldet Kraftstoff/Tank auf Englisch“, Backlog 195): Dieseldiebstahl („someone stole diesel from the tank overnight“, „somebody nicked the diesel“, „tank was drained overnight“, „someone stole the battery“) → Diebstahl; „I filled the AdBlue tank with diesel“ → Falsch getankt; „diesel smell from the engine“, „strong diesel smell“, „fuel return pipe split“, „fuel hose cracked“ → Leck; „fuel level sensor faulty“, „Tankgeber defekt“ → Anzeige statt Fahrwerk; „diesel tank strap is broken“, „Tankband gerissen“ → loses Teil; „contaminated fuel“, „verunreinigter Diesel“ → Wasser/Kraftstoff; Fehlalarm „I accidentally put AdBlue …“ zeigte Unfall-Schritte', async () => {
   const { readFileSync } = await import('node:fs');
@@ -37936,7 +37973,7 @@ await test('Backlog 1386 (Reserve Start-Modul nach 1387: 45,62 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–173');
+  eq(T.length, 204, 'Bausteine 0–173');
   for (let k = 164; k <= 173; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[164] === String.raw`(?:кабін\S*|кабин\S*)` && T[165].startsWith('|ausgefallen|'), 'Bausteine wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -37978,7 +38015,7 @@ await test('Backlog 1384 (Reserve Start-Modul nach 1385: 45,61 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–163');
+  eq(T.length, 204, 'Bausteine 0–163');
   for (let k = 154; k <= 163; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[154].startsWith("(?:can['’]?t|cannot|") && T[156].startsWith('(?:besch(?:ä|ae|a)digt|'), 'Bausteine wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -38025,7 +38062,7 @@ await test('Backlog 1382 (Reserve Start-Modul nach 1383: 45,66 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–153');
+  eq(T.length, 204, 'Bausteine 0–153');
   for (let k = 134; k <= 153; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[134].startsWith('(?:a\\/?c|aircon|') && T[144].startsWith('(?:dent\\S*|') && T[149].startsWith('(?:тормоз'), 'Bausteine wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -38040,7 +38077,7 @@ await test('Backlog 1379 (Reserve Start-Modul nach 1381: 45,625 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–133');
+  eq(T.length, 204, 'Bausteine 0–133');
   for (let k = 124; k <= 133; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[124].startsWith('|aufbau)dach|') && T[127].startsWith('(?:abs|ebs|') && T[131].startsWith('|причіп|') && T[133].startsWith('|(?:adblue|'), 'Bausteine wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -38083,7 +38120,7 @@ await test('Backlog 1376 (Reserve Start-Modul nach 1378: 45,64 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–123');
+  eq(T.length, 204, 'Bausteine 0–123');
   for (let k = 114; k <= 123; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[114].startsWith('(?:(?:fuel|diesel|tank|') && T[117].startsWith('(?:blink(?:er)?|lenkstock|') && T[119].startsWith('(?:anh(?:ä|ae)nger|') && T[123].startsWith('(?:emissions?|'), 'Bausteine wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -38148,7 +38185,7 @@ await test('Backlog 1374 (Reserve Start-Modul nach 1375: 45,68 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–113');
+  eq(T.length, 204, 'Bausteine 0–113');
   for (let k = 99; k <= 113; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[99].startsWith('(?:angefahren|') && T[100].startsWith('(?:conspicuity') && T[108].startsWith('(?:car|van|') && T[109].startsWith('(?:причіп|напівпричіп|') && T[112].startsWith('(?:dash|dashboard|'), 'Bausteine wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -38186,7 +38223,7 @@ await test('Backlog 1372 (Reserve Start-Modul nach 1373: 45,63 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–98');
+  eq(T.length, 204, 'Bausteine 0–98');
   for (let k = 94; k <= 98; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[94].startsWith("(?:(?:don['’]?t|") && T[95].startsWith('(?:груз|') && T[96].startsWith('(?:важ') && T[97].startsWith('(?:abgebrochen|') && T[98].startsWith('(?:not\\s+working|'), 'Bausteine 94–98 wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -38201,7 +38238,7 @@ await test('Backlog 1370 (Reserve Start-Modul nach 1371: 45,59 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–93');
+  eq(T.length, 204, 'Bausteine 0–93');
   for (let k = 90; k <= 93; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[90].startsWith('(?:світловідбивн|') && T[91].startsWith('(?:руль|руля|') && T[92].startsWith('(?:датчик') && T[93].startsWith('(?:ad[\\s-]?blue|'), 'Bausteine 90–93 wie analysiert');
   const B = await import('../scripts/build-app.mjs');
@@ -38269,7 +38306,7 @@ await test('Backlog 1355 (Reserve Start-Modul nach 1359: 45,59 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–69');
+  eq(T.length, 204, 'Bausteine 0–69');
   for (const k of [67, 68, 69]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[67].startsWith('(?:(?:eisenbahn|bahn|') && T[67].endsWith('|torbogen)(?:n|en|s)'), 'Baustein 67'); ok(T[68].startsWith('(?:загуби') && T[68].endsWith('|немає|нема|'), 'Baustein 68');
   ok(T[69].startsWith('(?:(?:trailer|load(?:ing)?|') && T[69].endsWith('|trailer\\s+(?:walls?|sides?|body))(?![a-z])'), 'Baustein 69');
@@ -38285,7 +38322,7 @@ await test('Backlog 1351 (Reserve Start-Modul nach 1354: 45,595 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–69 (Backlog 1355: Index 67–69)');
+  eq(T.length, 204, 'Bausteine 0–69 (Backlog 1355: Index 67–69)');
   for (const k of [63, 64, 65, 66]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[63].startsWith(String.raw`(?:heizung\S*|heiz|`) && T[63].endsWith(String.raw`|liftachse\S*)`), 'Baustein 63'); ok(T[64].startsWith('(?:(?:(?:протипідкатн|') && T[64].includes('ограждени'), 'Baustein 64');
   ok(T[65].startsWith('(?:kontur(?:markierung|') && T[65].endsWith('|markierungstafel(?:n)?)'), 'Baustein 65'); ok(T[66].startsWith('(?:(?!(?:not|') && T[66].endsWith('|does\\s+nothing)(?![a-z])|'), 'Baustein 66');
@@ -38445,7 +38482,7 @@ await test('Backlog 1339 (Reserve Start-Modul nach 1338: 45,591 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–66 (Backlog 1347: Index 55–58; Backlog 1350: Index 59–62; Backlog 1351: Index 63–66)');
+  eq(T.length, 204, 'Bausteine 0–66 (Backlog 1347: Index 55–58; Backlog 1350: Index 59–62; Backlog 1351: Index 63–66)');
   ok(T[51].startsWith(String.raw`(?:ручк\S*|кнопк\S*|`) && T[51].endsWith(String.raw`блокуванн\S*\s+диф\S*`), 'Baustein 51');
   ok(T[52].includes('siebdruck)boden|ladefl(?:ä|ae)che|'), 'Baustein 52'); ok(T[53].includes('losgegangen|'), 'Baustein 53'); ok(T[54].includes('|touchiert|gerammt|'), 'Baustein 54');
   for (const [k, n] of [[51, 2], [52, 3], [53, 2], [54, 3]]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= n, 'Baustein ' + k + ' wird ' + n + '× genutzt');
@@ -38547,7 +38584,7 @@ await test('Backlog 1333 (Reserve Start-Modul nach 1332: 45,61 % > 45,60 %): Bau
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–66 (Backlog 1339/1347/1350/1351)'); ok(T[50].startsWith('(?:schranke|poller|') && T[50].endsWith('blumenk(?:ü|ue)bel)(?:n|en|e|s|es|er)'), 'Baustein 50');
+  eq(T.length, 204, 'Bausteine 0–66 (Backlog 1339/1347/1350/1351)'); ok(T[50].startsWith('(?:schranke|poller|') && T[50].endsWith('blumenk(?:ü|ue)bel)(?:n|en|e|s|es|er)'), 'Baustein 50');
   ok((main.match(/\$\{__T\[50\]\}/g) || []).length >= 3, 'Baustein 50 wird genutzt');
   ok(!main.includes('wartenh(?:ä|ae)uschen|wareh(?:ä|ae)uschen|blumenk') || main.split('wartenh(?:ä|ae)uschen|wareh(?:ä|ae)uschen|blumenk').length === 2, 'Liste nur noch in der Bausteinliste');
   const B = await import('../scripts/build-app.mjs');
@@ -38574,7 +38611,7 @@ await test('Backlog 1330 (Reserve Start-Modul nach 1329: 45,631 %): Bausteine __
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–66 (Backlog 1333/1339/1347/1350/1351)');
+  eq(T.length, 204, 'Bausteine 0–66 (Backlog 1333/1339/1347/1350/1351)');
   ok(T[47].startsWith('(?<!(?:handy|telefon|smartphone') && T[47].endsWith(String.raw`зеркало)\s+)`), 'Baustein 47'); ok(T[48].startsWith('(?:niemand|keiner|keine|kein|nicht') && T[48].endsWith(String.raw`|без)\s+(?:\S+\s+){0,2})`), 'Baustein 48'); eq(T[49], '(?:открыл|відкрил|відчинил|распахнул|розчинил|розчахнул)', 'Baustein 49');
   ok((main.match(/\$\{__T\[47\]\}/g) || []).length >= 3 && (main.match(/\$\{__T\[48\]\}/g) || []).length >= 3 && (main.match(/\$\{__T\[49\]\}/g) || []).length >= 4, 'Bausteine 47–49 werden genutzt');
   const B = await import('../scripts/build-app.mjs');
@@ -38681,7 +38718,7 @@ await test('Backlog 1321 (Sonde, Blickwinkel „Blinker/Warnblinker per Diktat R
   for (const x of ['сигнал поворота не работает', 'сигнал повороту не працює', 'не моргает поворотник справа', 'поворот не показывает', 'поворот не показує', 'левый поворот на прицепе не работает', 'поворотники мигают сами', 'повторитель поворота разбит', 'повторитель поворота не горит', 'повторювач повороту розбитий', 'боковой поворотник отвалился', 'бічний поворотник відпав', 'реле поворотов щелкает быстро', 'реле поворотів клацає швидко', 'лампочка поворотника сгорела', 'поворотник моргає дуже часто', 'ліва мигалка не працює']) ok(rx('LIGHTS4_HINT').test(x), 'Blinker erkannt: ' + x);
   for (const x of ['включил аварийку стою на обочине', 'аварийка включена жду эвакуатор', 'увімкнув аварійку чекаю', 'поворотник починили работает', 'сигнал поворота заменили теперь работает', 'поворотник поменяли', 'на повороте занесло прицеп', 'после поворота не работает навигатор', 'до поворота не доехал сломался', 'поворот руля не работает', 'поворот налево не работает', 'бічний поворотник відпав, полагодили']) ok(!hit(x), 'kein Licht-Hinweis: ' + x);
   for (const x of ['поворотник не разбит всё нормально', 'на повороте не горит фонарь на улице']) ok(!rx('LIGHTS4_HINT').test(x), 'neue Blinker-Alternative greift nicht: ' + x);
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck);"), 'Listener Licht');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck) && !LIGHTS5_HINT.test(dck);"), 'Listener Licht');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['левый поворот на прицепе не работает', 'повторитель поворота разбит']], ['uk', ['сигнал повороту не працює', 'бічний поворотник відпав']], ['en', ['сигнал поворота не работает', 'повторитель поворота разбит']]]) for (const ex of exs) { ok(STRINGS[l].help_lights_s.includes(ex), 'Hilfe Licht ' + l + ': ' + ex); ok(hit(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
@@ -38690,7 +38727,7 @@ await test('Backlog 1320 (Reserve Start-Modul nach 1319: 45,654 % > 45,65 %): Fo
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const B = await import('../scripts/build-app.mjs');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 174, 'Bausteine 0–66 (Backlog 1351: Index 63–66; Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1324: Index 42, Backlog 1326: Index 43/44, Backlog 1328: Index 45/46, Backlog 1330: Index 47–49)');
+  eq(T.length, 204, 'Bausteine 0–66 (Backlog 1351: Index 63–66; Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1324: Index 42, Backlog 1326: Index 43/44, Backlog 1328: Index 45/46, Backlog 1330: Index 47–49)');
   eq(T[39], '|(?<![a-z])(?:', 'Baustein 39'); ok(T[40].startsWith('(?:колес|') && T[40].endsWith('|балон)'), 'Baustein 40'); eq(T[41], '(?![a-z])(?![^.;!?]*(?:fixed|repaired|replaced', 'Baustein 41');
   for (const [k, n] of [[39, 50], [40, 4], [41, 5]]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= n, 'Baustein ' + k + ' wird ≥ ' + n + '× genutzt');
   const code = "x\nconst A = lbRx(String.raw`a|(?<![a-z])(?:b|c)(?![a-z])(?![^.;!?]*(?:fixed|repaired|replaced|ok))(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\nconst B2 = lbRx(String.raw`c(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\n";
@@ -38733,7 +38770,7 @@ await test('Backlog 1317 (Sonde, Blickwinkel „Warnlampe/Display auf Englisch�
   for (const x of ['regen light flashing, fixed', 'it is raining regen light', 'Regen auf der Plane']) ok(!pf(x), 'kein Partikelfilter: ' + x);
   for (const x of ['cluster is dead', 'instrument cluster is dead', 'cluster went blank', 'display screen frozen']) ok(dash(x), 'Kombiinstrument/Display: ' + x);
   for (const x of ['sat nav screen frozen', 'phone screen frozen', 'rear light cluster broken', 'tail light cluster is dead']) ok(!dash(x), 'kein Kombiinstrument: ' + x);
-  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx) && !WARNLIGHT2_HINT.test(dfx);") && app.includes("$('#pfilter').hidden = !PFILTER_HINT.test(dfx);") && app.includes("$('#dash').hidden = !DASH_HINT.test(dfx);"), 'Listener unverändert');
+  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx) && !WARNLIGHT2_HINT.test(dfx) && !WARNLIGHT3_HINT.test(dfx);") && app.includes("$('#pfilter').hidden = !PFILTER_HINT.test(dfx);") && app.includes("$('#dash').hidden = !DASH_HINT.test(dfx);"), 'Listener unverändert');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, k, ex, f] of [['de', 'help_warnlight_s', 'fault code showing', warn], ['de', 'help_warnlight_s', 'warning buzzer keeps beeping', warn], ['uk', 'help_warnlight_s', 'dash lit up like a christmas tree', warn], ['en', 'help_warnlight_s', 'display says workshop visit', warn], ['de', 'help_pfilter_s', 'regen light flashing', pf], ['uk', 'help_pfilter_s', 'regen light flashing', pf], ['en', 'help_pfilter_s', 'regen light flashing', pf], ['de', 'help_dash_s', 'cluster is dead', dash], ['uk', 'help_dash_s', 'cluster is dead', dash], ['en', 'help_dash_s', 'cluster is dead', dash]]) { ok(STRINGS[l][k].includes(ex), 'Hilfe-Beispiel ' + l + '/' + k + ': ' + ex); ok(f(recurFix(ex)), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
@@ -38970,7 +39007,7 @@ await test('Backlog 1299 (Sonde, Blickwinkel „Fahrer diktiert Warnleuchten umg
     ok(warn(x), 'Warnleuchte: ' + x);
   for (const x of ['масленка не горит', 'не горит масленка', 'чек больше не горит', 'маслянка не горить', 'масленка погасла', 'чек погас после замены датчика', 'чек горит на панели, отремонтировали', 'горит аккумулятор', 'аккумулятор горит дым из под кабины', 'температура на улице минус десять', 'чек с заправки потерял', 'нужно поменять масло масленку купить', 'ошибка в накладной'])
     ok(!warn(x), 'keine Warnleuchte: ' + x);
-  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx) && !WARNLIGHT2_HINT.test(dfx);"), 'Listener unverändert');
+  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx) && !WARNLIGHT2_HINT.test(dfx) && !WARNLIGHT3_HINT.test(dfx);"), 'Listener unverändert');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['загорелась масленка', 'чек горит на панели', 'загорілась температура', 'ошибка на приборке']], ['uk', ['загорілась маслянка', 'чек горить', 'загорелась температура', 'горит аккумулятор на панели']], ['en', ['загорелась масленка', 'чек енжин горить', 'горит температура красным']]])
     for (const ex of exs) { ok(STRINGS[l].help_warnlight_s.includes(ex), 'Hilfe ' + l + ': ' + ex); ok(warn(ex), 'Hilfe-Beispiel löst aus: ' + ex); }
@@ -39018,7 +39055,7 @@ await test('Backlog 1295 (Sonde, Blickwinkel „Fahrer diktiert Bremse/Druckluft
   for (const x of ['тормоза не пропали', 'тормоза в норме', 'гальма в нормі', 'тормоза ремонтировали все нормально', 'не горит ABS', 'тормоза пропали, отремонтировали', 'отказали тормоза, заменили колодки', 'нет проблем с тормозами', 'давление воздуха в норме', 'колесо не клинит', 'тормоза не стучат']) ok(!B4.test(x), 'kein Brems-Zusatz: ' + x);
   for (const x of ['машина катится на ручнике', 'вантажівка котиться на ручнику', 'прицеп ползет на ручнике']) { ok(PB.test(x), 'Feststellbremse: ' + x); ok(!brake(x), 'nicht zusätzlich allgemeine Bremse: ' + x); }
   for (const x of ['машина не катится на ручнике', 'машина катится на ручнике, отремонтировали', 'фура едет на ручнике']) ok(!PB.test(x), 'keine Feststellbremse: ' + x);
-  ok(app.includes("&& !BRAKE4_HINT.test(noParkbrake(dv)); $('#parkbrake').hidden = !PARKBRAKE_HINT.test(dv);"), 'Listener Bremse/Feststellbremse unverändert');
+  ok(app.includes("&& !BRAKE4_HINT.test(noParkbrake(dv)); $('#parkbrake').hidden = !PARKBRAKE_HINT.test(dv) && !PARKBRAKE2_HINT.test(dv);"), 'Listener Bremse/Feststellbremse unverändert');
   const { STRINGS } = await import('../public/i18n.js');
   const H = [['help_brake_s', brake, { de: ['тормоза пропали', 'тормоз прикипел', 'воздух не накачивается'], uk: ['відмовили гальма', 'гальмо закисло', 'повітря не накачується', 'горить ABS'], en: ['отказали тормоза', 'колодки до металла', 'пищит давление воздуха'] }],
     ['help_parkbrake_s', (x) => PB.test(x), { de: ['машина катится на ручнике'], uk: ['машина котиться на ручнику'], en: ['машина катится на ручнике'] }]];
@@ -39045,7 +39082,7 @@ await test('Backlog 1291 (Sonde, Blickwinkel „Fahrer diktiert Licht/Beleuchtun
   const L4 = rx('LIGHTS4_HINT'), L1 = rx('LIGHTS_HINT'), L2 = rx('LIGHTS2_HINT'), L3 = rx('LIGHTS3_HINT');
   for (const x of ['перегорела лампочка', 'перегоріла лампочка', 'перегорела лампа ближнего света', 'фонарь треснул', 'фара треснула', 'фара тріснула', 'задній ліхтар тріснув', 'фара запітніла', 'вода в фаре', 'вода у фарі', 'конденсат внутри фары', 'фара плохо светит', 'ближний очень слабо светит', 'свет тусклый', 'світло тьмяне', 'левый поворотник часто моргает', 'поворотник швидко блимає', 'не працює поворот', 'не работает правый поворот', 'не работает поворот на прицепе', 'номер не подсвечивается', 'номерний знак не підсвічується', 'не горят противотуманки', 'не горить протитуманка', 'горит лампа неисправности освещения', 'помилка зовнішнього світла']) ok(L4.test(x), 'Licht: ' + x);
   for (const x of ['фара не треснула', 'фара треснула, заменили', 'лампочка перегорела, отремонтировали', 'не работает поворот на развязке', 'поворот налево не работает', 'не працює поворот праворуч', 'фарш', 'вода в баке', 'свет в порядке', 'перегорел предохранитель', 'свет тусклый больше не', 'номер не тот']) ok(!L4.test(x), 'kein Licht-Zusatz: ' + x);
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck);"), 'Listener Licht');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck) && !LIGHTS5_HINT.test(dck);"), 'Listener Licht');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['фара треснула', 'вода у фарі', 'поворотник часто моргает']], ['uk', ['перегоріла лампочка', 'фара тріснула', 'світло тьмяне', 'не працює поворот']], ['en', ['перегорела лампочка', 'номер не подсвечивается']]]) for (const ex of exs) { ok(STRINGS[l].help_lights_s.includes(ex), 'Hilfe Licht ' + l + ': ' + ex); ok(L1.test(ex) || L2.test(ex) || L3.test(ex) || L4.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
@@ -39057,7 +39094,7 @@ await test('Backlog 1290 (Sonde, Blickwinkel „Fahrer diktiert Lenkung auf Russ
   const S3 = rx('STEER3_HINT'), S1 = rx('STEER_HINT'), S2 = rx('STEER2_HINT');
   for (const x of ['руль не возвращается', 'руль сам не возвращается', 'кермо не вирівнюється', 'машина гуляет по дороге', 'машина гуляє по дорозі', 'фура виляет из стороны в сторону', 'руль гудит при повороте', 'кермо гуде при повороті', 'руль стучит', 'стук в рулевой', 'стукіт у кермі', 'наконечник рулевой тяги стучит', 'шарнир рулевой люфтит', 'лампа рулевого управления горит', 'помилка гідропідсилювача', 'Lenkrad geht nicht von selbst zurück', 'Lenkung brummt beim Einschlagen', 'Lenkung klopft', 'Lenkgetriebe knackt']) ok(S3.test(x), 'Lenkung: ' + x);
   for (const x of ['руль не стучит', 'кермо не гуде', 'радио стучит в кабине', 'двигатель гудит', 'тяга не погнута', 'машина не гуляет', 'стук в рулевой заменили наконечник', 'руль в порядке', 'Lenkung klopft nicht mehr', 'Lenkung brummt nicht']) ok(!S3.test(x), 'kein Lenkungs-Zusatz: ' + x);
-  ok(app.includes("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv) && !STEER3_HINT.test(dv);"), 'Listener Lenkung');
+  ok(app.includes("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv) && !STEER3_HINT.test(dv) && !STEER4_HINT.test(dv);"), 'Listener Lenkung');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['Lenkung brummt beim Einschlagen']], ['uk', ['кермо гуде при повороті', 'машина гуляє по дорозі', 'стукіт у кермі', 'кермо не повертається']], ['en', ['steering wheel does not return']]]) for (const ex of exs) { ok(STRINGS[l].help_steer_s.includes(ex), 'Hilfe Lenkung ' + l + ': ' + ex); ok(S1.test(ex) || S2.test(ex) || S3.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
@@ -39263,7 +39300,7 @@ await test('Backlog 1274 (Sonde, Blickwinkel „Fahrer diktiert Unfall-/Rangiers
   for (const x of ['beim zurücksetzen ins tor gerutscht', 'ans tor gefahren', 'здаючи назад вдарився в стовп', 'сдавал назад и ударился в столб']) ok(FX.test(x), 'fremde Sache: ' + x);
   ok(!FX.test('ins büro gefahren') && !FX.test('ударился головой'), 'keine fremde Sache: Büro, Kopf');
   ok(CU.test('heck vom auflieger an der rampe eingedrückt'), 'Schaden beim Kunden: Rampe eingedrückt');
-  ok(app.includes("const hitrun = !wild && (HITRUN_HINT.test(dv) || HITRUN2_HINT.test(dv) || HITRUN3_HINT.test(dv) || HITRUN4_HINT.test(dv));") && app.includes("const accReal = ACC_HINT.test(daccx) || ACC2_HINT.test(daccx) || ACC3_HINT.test(daccx) || ACC4_HINT.test(daccx);") && app.includes("(HITRUN_HINT.test(desc || '') || HITRUN2_HINT.test(desc || '') || HITRUN3_HINT.test(desc || '') || HITRUN4_HINT.test(desc || ''))"), 'Listener und Vorgangshinweis');
+  ok(app.includes("const hitrun = !wild && (HITRUN_HINT.test(dv) || HITRUN2_HINT.test(dv) || HITRUN3_HINT.test(dv) || HITRUN4_HINT.test(dv));") && app.includes("const accReal = ACC_HINT.test(daccx) || ACC2_HINT.test(daccx) || ACC3_HINT.test(daccx) || ACC4_HINT.test(daccx) || ACC5_HINT.test(daccx);") && app.includes("(HITRUN_HINT.test(desc || '') || HITRUN2_HINT.test(desc || '') || HITRUN3_HINT.test(desc || '') || HITRUN4_HINT.test(desc || ''))"), 'Listener und Vorgangshinweis');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['pkw hat mich beim spurwechsel gestreift', 'ein pkw hat mir die tür abgefahren', 'beim einparken anderen lkw angefahren']], ['uk', ['мене підрізали і зачепили бампер']], ['en', ['a car hit my trailer while turning', 'someone rear ended me at the lights', 'i scraped a car while parking']]]) for (const ex of exs) { ok(STRINGS[l].help_accident_s.includes(ex), 'Hilfe-Beispiel ' + l + ': ' + ex); ok(A1.test(ex) || A2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
@@ -39289,7 +39326,7 @@ await test('Backlog 1272 (Sonde, Blickwinkel „Fahrer diktiert Warnleuchte/Disp
   for (const x of ['tür kaputt ausrufezeichen', 'reifen platt ausrufezeichen bitte schnell', 'spiegel ab exclamation mark help']) ok(/!/.test(recurFix(x)), 'diktiertes Satzzeichen bleibt: ' + x);
   for (const x of ['gelbe lampe im display an', 'rotes symbol im cockpit leuchtet', 'im display rote lampe an', 'orange warnung im kombiinstrument', 'display zeigt werkstatt aufsuchen', 'meldung werkstatt aufsuchen', 'werkstatt aufsuchen steht im display', 'abgas lampe leuchtet', 'abgaswarnleuchte an', 'ausrufezeichen leuchtet', 'gelbes dreieck im display', 'schraubenschlüssel symbol an', 'schraubenschlüssel leuchtet', 'amber warning on display', 'exclamation mark on the dash', 'wrench light is on', 'знак оклику горить', 'горить жовтий трикутник', 'горит восклицательный знак', 'гайковий ключ горить']) ok(W2.test(x), 'Warnleuchte: ' + x);
   for (const x of ['rote lampe am auflieger kaputt', 'gelbe lampe hinten links kaputt', 'rote leuchte am anhänger geht nicht', 'warndreieck fehlt', 'gelbes dreieck vergessen', 'ich muss eine werkstatt aufsuchen', 'schraubenschlüssel fehlt im werkzeug', 'red light at the traffic light', 'gelbe lampe im display repariert', 'ключ загубив']) ok(!W2.test(x), 'kein Warnleuchten-Zusatz: ' + x);
-  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx) && !WARNLIGHT2_HINT.test(dfx);"), 'Listener');
+  ok(app.includes("$('#warnlight').hidden = !WARNLIGHT_HINT.test(dfx) && !WARNLIGHT2_HINT.test(dfx) && !WARNLIGHT3_HINT.test(dfx);"), 'Listener');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['gelbe lampe im display an', 'display zeigt werkstatt aufsuchen', 'ausrufezeichen leuchtet']], ['uk', ['знак оклику горить', 'горить жовтий трикутник']], ['en', ['amber warning on display', 'exclamation mark on the dash', 'wrench light is on']]]) for (const ex of exs) { ok(STRINGS[l].help_warnlight_s.includes(ex), 'Hilfe-Beispiel ' + l + ': ' + ex); ok(W2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
@@ -39323,7 +39360,7 @@ await test('Backlog 1270 (Sonde, Blickwinkel „Fahrer diktiert Anhänger-Elektr
   for (const x of ['abs anhänger leuchte repariert', 'abs kabel getauscht geht wieder', 'lkw zieht nach rechts', 'anhänger angekuppelt', 'trailer pulls fine', 'trailer pulls to the left fixed']) ok(!B3.test(x), 'kein Brems-Zusatz: ' + x);
   for (const x of ['abs leuchte vom anhänger brennt', 'lampe am auflieger brennt', 'leuchte vom anhänger brennt nicht']) ok(!FIRE.test(noLampBurn(x)), 'kein Brand: ' + x);
   for (const x of ['anhänger brennt', 'ladung vom anhänger brennt', 'kabel am auflieger brennt']) ok(FIRE.test(noLampBurn(x)), 'Brand bleibt: ' + x);
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck);"), 'Listener Licht');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck) && !LIGHTS5_HINT.test(dck);"), 'Listener Licht');
   ok(app.includes("&& !BRAKE2_HINT.test(noParkbrake(dv)) && !BRAKE3_HINT.test(dv) && !BRAKE4_HINT.test(noParkbrake(dv));"), 'Listener Bremse');
   ok(app.includes("$('#fire').hidden = !FIRE_HINT.test(noLampBurn(dv));"), 'Listener Brand');
   const { STRINGS } = await import('../public/i18n.js');
@@ -39383,7 +39420,7 @@ await test('Backlog 1264 (Sonde, Blickwinkel „Fahrer diktiert Kühlaggregat-St
   const C2 = new RegExp(app.match(/^const COUPLING2_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['aggregat geht immer aus', 'aggregat kühlt nicht runter', 'kühlaggregat schaltet sich ständig ab', 'aggregat vereist', 'aggregat taut nicht ab', 'aggregat läuft nur auf netz nicht auf diesel', 'aggregat springt nicht an auf diesel', 'display vom aggregat aus', 'stromkabel für aggregat kaputt', 'laderaum wird nicht kalt', 'koffer wird nicht mehr kühl', 'temperatur schwankt im laderaum']) ok(R2.test(recurFix(x)), 'Kühlgerät: ' + x);
   for (const x of ['hydraulikaggregat von der ladebordwand geht immer aus', 'stromaggregat geht immer aus', 'ladebordwand aggregat geht immer aus', 'aggregat kühlt wieder alles ok', 'kühlaggregat repariert läuft wieder auf diesel', 'klimaaggregat kühlt nicht', 'laderaum ist sauber', 'display vom tacho dunkel', 'kabel für die ladebordwand kaputt']) ok(!R2.test(recurFix(x)), 'kein Kühlgerät-Zusatz: ' + x);
-  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test(dck) && !REEFER2_HINT.test(dck) && !REEFER3_HINT.test(dck);"), 'Listener');
+  ok(app.includes("$('#reefer').hidden = !REEFER_HINT.test(dck) && !REEFER2_HINT.test(dck) && !REEFER3_HINT.test(dck) && !REEFER4_HINT.test(dck);"), 'Listener');
   ok(!C2.test(recurFix('temperatur im auflieger zu hoch')) && C2.test(recurFix('auflieger zu hoch zum ankuppeln')), 'Sattelkupplung: „im auflieger zu hoch“ nicht, „auflieger zu hoch“ weiter');
   ok(/aggregat geht immer aus/.test(readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'Hilfe-Beispiel');
 });
@@ -39461,7 +39498,7 @@ await test('Backlog 1253 (Sonde, Blickwinkel „Fahrer diktiert Lenkungsproblem 
   const S2 = new RegExp(app.match(/^const STEER2_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['zieht stark nach links beim fahren', 'lenkrad steht schräg', 'lenkrad nicht gerade', 'servolenkungsöl verliert', 'servoöl läuft aus', 'lenkgetriebe undicht', 'servoöl leer', 'servopumpe heult', 'servopumpe macht geräusche', 'es knackt beim lenken', 'beim einschlagen knarzt es', 'lenkung klappert', 'lenkung ruckelt', 'lenkung geht nicht zurück', 'lenkrad geht nicht zurück in die mitte', 'lenkung ist tot geht nicht mehr', 'achsschenkel ausgeschlagen', 'achsschenkelbolzen spiel', 'spur stimmt nicht', 'spur ist verstellt', 'achsvermessung nötig', 'reifen fahren innen ab wegen spur', 'nachlaufachse lenkt nicht', 'lenkachse lenkt nicht mit', 'lenkachse warnung', 'lenkungswarnung im display', 'gelbe lenkungsleuchte an', 'lenkradsymbol leuchtet rot', 'fährt schräg', 'lkw fährt schief', 'muss ständig gegenlenken', 'muss dauernd nachlenken', 'lenkung reagiert spät', 'lenkung ist weg', 'steering wheel not straight', 'truck pulls left', 'power steering fluid leaking', 'power steering pump whining', 'steering wheel wont return', 'clunk when turning the wheel', 'steering warning light on', 'alignment is off', 'have to keep correcting the steering', 'тече гідропідсилювач', 'насос гідропідсилювача гуде', 'стукає при повороті керма', 'помилка рульового управління', 'течет гидроусилитель', 'стучит при повороте руля', 'ошибка рулевого управления']) ok(S2.test(recurFix(x)), 'Lenkung: ' + x);
   for (const x of ['seitenwind zieht nach rechts', 'der wind zieht stark nach links', 'lenkung repariert zieht nicht mehr nach links', 'lenkrad ist nicht gerade sauber', 'servoöl nachgefüllt alles ok', 'servopumpe getauscht heult nicht mehr', 'spur eingestellt', 'spur wechseln', 'fahrspur gesperrt', 'achsvermessung gemacht', 'pulled left into the yard', 'i was pulling left into the lane', 'truck pulls to the right, fixed', 'wheel alignment fine', 'es läuft alles schief heute', 'die tour läuft schief', 'lenkachse ok', 'ich musste stark bremsen und gegenlenken wegen reh', 'beim lenken alles normal', 'power steering fluid topped up', 'keep correcting the invoice', 'кермо відремонтували', 'помилка в накладній', 'стук в двері', 'lenkrad steht gerade']) ok(!S2.test(recurFix(x)), 'kein Lenkungs-Zusatz: ' + x);
-  ok(app.includes("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv) && !STEER3_HINT.test(dv);"), 'Listener');
+  ok(app.includes("$('#steer').hidden = !STEER_HINT.test(dv) && !STEER2_HINT.test(dv) && !STEER3_HINT.test(dv) && !STEER4_HINT.test(dv);"), 'Listener');
 });
 
 await test('Backlog 1252 (Sonde, Blickwinkel „Fahrer diktiert Bremsproblem ohne Satzzeichen“): „Bremsscheibe glüht“, „Bremsbelege sind unten“, Belagverschleißanzeige, „ruckelt/flattert beim Bremsen“, „zischt an der Bremse“, „dauert ewig bis Druck da ist“, „ABS-Leuchte an“, „trailer brake not releasing“, „причіп не розгальмовується“ → Brems-Schritte; Reparatur, Feststellbremse, Reifenluft, ABS-Lampe „geht nach dem Start aus“ nicht', async () => {
@@ -39504,7 +39541,7 @@ await test('Backlog 1249 (Sonde, Blickwinkel „Fahrer diktiert Lichtausfall ohn
   const L2 = new RegExp(app.match(/^const LIGHTS2_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['am anhaenger geht garnix mit licht', 'Licht geht gar nicht', 'licht am auflieger geht ueberhaupt nicht', 'Glühbirne kaputt', 'Birnen kaputt am Rücklicht']) ok(L2.test(recurFix(x)), 'Licht: ' + x);
   for (const x of ['Lichtmaschine geht gar nicht', 'Warnlicht geht gar nicht aus', 'Birne gewechselt', 'Licht geht gar nicht, repariert', 'Licht geht']) ok(!L2.test(recurFix(x)), 'kein Licht-Zusatz: ' + x);
-  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck);"), 'Listener prüft nach noCabkit (Innenbeleuchtung bleibt bei Fahrerhaus-Ausstattung)');
+  ok(app.includes("$('#lights').hidden = !LIGHTS_HINT.test(dck) && !LIGHTS2_HINT.test(dck) && !LIGHTS3_HINT.test(dck) && !LIGHTS4_HINT.test(dck) && !LIGHTS5_HINT.test(dck);"), 'Listener prüft nach noCabkit (Innenbeleuchtung bleibt bei Fahrerhaus-Ausstattung)');
 });
 
 await test('Backlog 1248 (Sonde, Blickwinkel „Fahrer diktiert Reifenschaden ohne Satzzeichen“): Reifen/Flanke aufgescheuert, „Laufläche löst sich“ (Tippfehler), EN „tread separating/coming off“ → Reifen-Schritte; „Reifen Seitenwand beschädigt“ zeigt keinen Aufbau-/Boden-Hinweis mehr, „Seitenwand vom Auflieger beschädigt“ schon; Reparatur, „Knie/Plane aufgescheuert“ nicht', async () => {
