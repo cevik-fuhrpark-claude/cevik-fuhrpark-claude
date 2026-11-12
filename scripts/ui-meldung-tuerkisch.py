@@ -1,13 +1,13 @@
 # [CLAUDE] UI-Test (12.11.2026, Backlog 1407, Blickwinkel „Fahrer schreibt die Meldung auf Türkisch“):
 # Meldeformular zeigt bei „frenler tutmuyor“, „lastik patladı“, „direksiyon kilitlendi“, „kabinden duman çıkıyor“, „motor yağ kaçırıyor“, „kaza yaptım“
-# die Hinweise Bremse/Reifenpanne/Lenkung/Brand/Leck/Unfall (Backlog 1409: auch Motor startet nicht/Spiegel/Licht/Tür); „lastik değiştirildi, sorun yok“, „egzozdan duman çıkıyor“ ohne. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
+# die Hinweise Bremse/Reifenpanne/Lenkung/Brand/Leck/Unfall (Backlog 1409: auch Motor startet nicht/Spiegel/Licht/Tür; Backlog 1410: Scheibe/Batterie/Fahrtenschreiber/Kupplung/Tank leer/Motor/Reifen); „lastik değiştirildi, sorun yok“, „egzozdan duman çıkıyor“ ohne. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-CASES=[('frenler tutmuyor','#brake','#noise'),('lastik patladı','#flat',None),('direksiyon kilitlendi','#steer',None),('kabinden duman çıkıyor','#fire',None),('motor yağ kaçırıyor','#leak',None),('kaza yaptım','#acc',None),('motor çalışmıyor','#nostart',None),('ayna kırıldı','#mirror',None),('far yanmıyor','#lights',None),('kapı kapanmıyor','#door',None)]
-NO=['lastik değiştirildi, sorun yok','egzozdan duman çıkıyor','fren tamir edildi','klima çalışmıyor']
+CASES=[('frenler tutmuyor','#brake','#noise'),('lastik patladı','#flat',None),('direksiyon kilitlendi','#steer',None),('kabinden duman çıkıyor','#fire',None),('motor yağ kaçırıyor','#leak',None),('kaza yaptım','#acc',None),('motor çalışmıyor','#nostart',None),('ayna kırıldı','#mirror',None),('far yanmıyor','#lights',None),('kapı kapanmıyor','#door',None),('ön cam çatladı','#glass',None),('akü bitti','#batt',None),('takograf çalışmıyor','#tacho',None),('dorse bağlanmıyor','#coupling',None),('mazot bitti','#dryfuel',None),('motor hararet yaptı','#engine',None),('lastik havası düşük','#tyre',None)]
+NO=['lastik değiştirildi, sorun yok','egzozdan duman çıkıyor','fren tamir edildi','klima çalışmıyor','adblue bitti','akü yeni değiştirildi']
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
