@@ -21739,7 +21739,7 @@ await test('Backlog 317 (Blickwinkel „Motor im Notlauf, verliert Leistung oder
     ok(L.engine_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="engine" class="panel" hidden role="status">`), 'Panel #engine');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv)) && !ENGINE5_HINT.test(noAux(dv));"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('engine') && order.indexOf('fire') < order.indexOf('engine') && order.indexOf('steer') < order.indexOf('engine') && order.indexOf('warnlight') < order.indexOf('engine') && order.indexOf('engine') < order.indexOf('adas') && order.indexOf('engine') < order.indexOf('nostart'), 'Gruppierung: Brand/Lenkung/Warnleuchte vor Motor vor Assistent/Startproblem');
   ok(helpAfter(app, 'engine', 'steer'), 'Hilfe-Abschnitt engine nach steer');
@@ -32319,7 +32319,7 @@ await test('Backlog 919 (Motor/Batterie/Tank des Kühlaggregats ist nicht der Lk
   const m = app.match(/^const AUX_UNIT = \/(.+)\/gi;/m); ok(m, 'AUX_UNIT fehlt');
   const aux = new RegExp(m[1], 'gi'); const noAux = (x) => String(x || '').replace(aux, (y) => y.replace(/(?:dieselmotor|motor|diesel|batter(?:ies|ie|y)|akku|tank|kraftstoff)/gi, '◇'));
   ok(app.includes(".replace(AUX_UNIT, (m) => m.replace(/(?:dieselmotor|motor|diesel|batter(?:ies|ie|y)|akku|tank|kraftstoff)/gi, '◇'));"), 'noAux wie im Test'); // Backlog 1325: auch engl. „battery“ (Ladebordwand)
-  for (const x of ["$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));", "$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx)) && !NOSTART2_HINT.test(noAux(dfx));", "$('#dryfuel').hidden = !DRYFUEL_HINT.test(noAux(dv));", "$('#batt').hidden = !BATT_HINT.test(noAux(dfx));"]) ok(app.includes(x), 'im Formular: ' + x);
+  for (const x of ["$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv)) && !ENGINE5_HINT.test(noAux(dv));", "$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx)) && !NOSTART2_HINT.test(noAux(dfx));", "$('#dryfuel').hidden = !DRYFUEL_HINT.test(noAux(dv));", "$('#batt').hidden = !BATT_HINT.test(noAux(dfx));"]) ok(app.includes(x), 'im Formular: ' + x);
   const lkw = ['ENGINE_HINT', 'NOSTART_HINT', 'DRYFUEL_HINT', 'BATT_HINT'].map(g), rf = g('REEFER_HINT');
   for (const x of ['Kühlaggregat Motor geht aus', 'Kühlaggregat Batterie leer', 'Aggregat hat keinen Diesel mehr', 'Aggregattank leer', 'Tank vom Kühlaggregat leer', 'Batterie vom Kühlaggregat leer', 'Standheizung Batterie leer']) ok(!lkw.some((r) => r.test(noAux(x))), 'kein Lkw-Hinweis: ' + x);
   for (const x of ['Kühlaggregat Batterie leer', 'Aggregat hat keinen Diesel mehr', 'Aggregattank leer', 'Tank vom Kühlaggregat leer', 'Kühlaggregat Motor geht aus']) ok(rf.test(x), 'Kühlgerät-Hinweis erwartet: ' + x);
@@ -37502,7 +37502,7 @@ await test('Backlog 1296/1303 (Reserve Start-Modul nach 1295: 45,84 % > 45,8 %; 
   ok(d.code.includes('${__T[10]}fixed${__T[11]}заменил))') && d.code.includes('${__T[10]}eingestellt${__T[12]}полагод))'), 'Bausteine 10–12 eingesetzt: ' + d.code);
   eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (zweistelliger Index)');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 80, 'Bausteinliste hat 67 Einträge (Backlog 1351: Index 63–66; Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18; Backlog 1307: Index 19–24; Backlog 1311: Index 25–30; Backlog 1316: Index 31–35; Backlog 1318: Index 36–38; Backlog 1320: Index 39–41; Backlog 1324: Index 42; Backlog 1326: Index 43/44; Backlog 1328: Index 45/46; Backlog 1330: Index 47–49)'); eq(T[23], '|fixed|repaired|replaced|', 'Baustein 23 (Backlog 1307)'); eq(T[24], '(?![a-z])|(?<![a-z])', 'Baustein 24 (Backlog 1307)'); ok([19, 20, 21].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4) && [22, 23, 24].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 12), 'Bausteine 19–24 werden genutzt'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
+  eq(T.length, 86, 'Bausteinliste hat 67 Einträge (Backlog 1351: Index 63–66; Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1301: Index 13 = „nicht\\s+(?:mehr\\s+)?“; Backlog 1303: Index 14/15; Backlog 1305: Index 16–18; Backlog 1307: Index 19–24; Backlog 1311: Index 25–30; Backlog 1316: Index 31–35; Backlog 1318: Index 36–38; Backlog 1320: Index 39–41; Backlog 1324: Index 42; Backlog 1326: Index 43/44; Backlog 1328: Index 45/46; Backlog 1330: Index 47–49)'); eq(T[23], '|fixed|repaired|replaced|', 'Baustein 23 (Backlog 1307)'); eq(T[24], '(?![a-z])|(?<![a-z])', 'Baustein 24 (Backlog 1307)'); ok([19, 20, 21].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 4) && [22, 23, 24].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 12), 'Bausteine 19–24 werden genutzt'); eq(T[16], '(?:auflieger|anh(?:ä|ae)nger|', 'Baustein 16 (Backlog 1305)'); eq(T[17], String.raw`|сломал\S*|сломан\S*|`, 'Baustein 17'); eq(T[18], String.raw`(?:won['’]?t|will\s+not|doesn['’]?t|`, 'Baustein 18'); ok([16, 17, 18].every((k) => (main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 10), 'Bausteine 16–18 werden genutzt'); eq(T[14], '(?:фургон|будк|прицеп|полуприцеп|причеп|напівпричеп|кузов|', 'Baustein 14 (Backlog 1303)'); eq(T[15], String.raw`|не\s+працю\S*|не\s+работа\S*|`, 'Baustein 15 (Backlog 1303)'); ok((main.match(/\$\{__T\[14\]\}/g) || []).length >= 8 && (main.match(/\$\{__T\[15\]\}/g) || []).length >= 12, 'Bausteine 14/15 werden genutzt'); eq(T[13], String.raw`nicht\s+(?:mehr\s+)?`, 'Baustein 13'); ok((main.match(/\$\{__T\[13\]\}/g) || []).length > 40, 'Baustein 13 wird genutzt');
   ok((main.match(/\$\{__T\[1[0-2]\]\}/g) || []).length > 60, 'zweistellige Bausteine werden genutzt');
   for (const tk of T.slice(10)) ok(Buffer.byteLength(tk) > Buffer.byteLength('${__T[10]}'), 'Baustein länger als Platzhalter: ' + tk);
   const pct = Buffer.byteLength(main) / Buffer.byteLength(rd('app.js')) * 100;
@@ -37630,7 +37630,7 @@ await test('Backlog 1350 (Reserve Start-Modul nach 1349: 45,584 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 80, 'Bausteine 0–66 (Backlog 1351: Index 63–66)');
+  eq(T.length, 86, 'Bausteine 0–66 (Backlog 1351: Index 63–66)');
   for (const [k, n] of [[59, 3], [60, 3], [61, 30], [62, 3]]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= n && main.split(T[k]).length === 2, 'Baustein ' + k + ' ' + n + '× genutzt');
   ok(T[59].startsWith('(?:fahrt|fahren|') && T[59].endsWith('|grundlos)'), 'Baustein 59'); ok(T[60].startsWith('(?:auto|pkw|lkw|') && T[60].endsWith('|taxi|suv)'), 'Baustein 60');
   eq(T[61], '(?![а-яіїєґ])', 'Baustein 61'); ok(T[62].startsWith(String.raw`(?:\d+\.?|erste[nm]?|`) && T[62].endsWith('zw(?:ö|oe)lfte[nm]?)'), 'Baustein 62');
@@ -37755,7 +37755,7 @@ await test('Backlog 1360 (Reserve Start-Modul nach 1355/1362: 45,58 % bei Grenze
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 80, 'Bausteine 0–79');
+  eq(T.length, 86, 'Bausteine 0–79');
   for (let k = 70; k < 80; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[70].startsWith('(?:злама') && T[72] === String.raw`(?:дзеркал\S*|зеркал\S*)` && T[74].startsWith('|lbw|') && T[75].startsWith('|ersatzrad|') && T[77].startsWith('(?:indicator|'), 'Bausteine 70/72/74/75/77');
   const B = await import('../scripts/build-app.mjs');
@@ -37788,6 +37788,45 @@ await test('Backlog 1364 (Sonde, Blickwinkel „Fahrer diktiert Auspuff/Abgas/DP
     ok(/SCR/.test(STRINGS[l].help_engine_s), 'Hilfe Motor ' + l);
   }
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
+await test('Backlog 1367 (Sonde, Blickwinkel „Fahrer diktiert Kraftstoffanlage/Einspritzung auf Russisch/Ukrainisch“, Backlog 195): „форсунка льет“, „стучит форсунка“, „топливный фильтр забит“, „фильтр грубой очистки забит“, „тнвд не качает“, „ручная подкачка не работает“, „завоздушилась топливная система“, „низкое давление топлива“, „втрачає потужність“, „Einspritzdüse defekt“, „Luft im Kraftstoffsystem“, „low fuel pressure“ → Motor; „водоотделитель полный“, „сепаратор забит водой“, „вода в сепараторі“ → Wasser im Kraftstoff; verneint, Scheibenwaschdüse, Heizung, Ölabscheider, nach Reparatur nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(recurFix(x).toLowerCase())); };
+  const eng5 = any(['ENGINE5_HINT']), water = any(['WATERFUEL_HINT', 'WATERFUEL2_HINT']), water2 = any(['WATERFUEL2_HINT']);
+  ok(app.includes('&& !ENGINE5_HINT.test(noAux(dv));'), 'Formular prüft ENGINE5_HINT'); ok(app.includes('!WATERFUEL_HINT.test(dv) && !WATERFUEL2_HINT.test(dv);'), 'Formular prüft WATERFUEL2_HINT');
+  for (const x of ['форсунка льёт', 'форсунка не работает', 'форсунки забиты', 'ошибка форсунки', 'пробило форсунку', 'стучит форсунка', 'форсунка підтікає', 'помилка форсунки', 'топливный фильтр забит', 'забился топливный фильтр', 'фильтр грубой очистки забит', 'паливний фільтр забитий', 'забився паливний фільтр', 'ТНВД сломался', 'тнвд не качает', 'топливный насос не работает', 'подкачивающий насос не качает', 'ручная подкачка не работает', 'паливний насос не качає', 'підкачувальний насос не працює', 'воздух в топливной системе', 'завоздушилась топливная система', 'повітря в паливній системі', 'низкое давление топлива', 'ошибка давления топлива', 'давление в рампе низкое', 'низький тиск палива', 'помилка тиску палива', 'теряет мощность', 'втрачає потужність', 'Einspritzdüse defekt', 'Dieselpumpe kaputt', 'Luft im Kraftstoffsystem', 'Injektor undicht', 'injector leaking', 'fuel pump failed', 'air in the fuel system', 'low fuel pressure']) ok(eng5(x), 'Motor (Kraftstoffanlage): ' + x);
+  for (const x of ['форсунки омивача забиті', 'форсунка не сломана', 'тнвд не сломан', 'топливный фильтр не забит', 'паливний фільтр не забитий', 'топливный фильтр поменяли', 'форсунки заменили, всё работает', 'давление топлива в норме', 'не теряет мощность', 'мощность кондиционера упала', 'печка теряет мощность', 'нет воздуха в топливной системе', 'Einspritzdüse nicht defekt', 'washer pump failed', 'Einspritzdüse defekt, wurde getauscht']) ok(!eng5(x), 'kein Kraftstoffanlage-Hinweis: ' + x);
+  const eng = any(['ENGINE_HINT', 'ENGINE2_HINT', 'ENGINE3_HINT', 'ENGINE4_HINT', 'ENGINE5_HINT']); for (const x of ['топливный фильтр не забит', 'паливний фільтр не забитий']) ok(!eng(x), 'kein Motor-Hinweis (behoben in ENGINE_HINT): ' + x);
+  for (const x of ['водоотделитель полный', 'сепаратор полный воды', 'в сепараторе вода', 'сепаратор забит водой', 'вода в сепараторі', 'водовідокремлювач повний', 'сепаратор забитий водою']) ok(water2(x), 'Wasser im Kraftstoff: ' + x);
+  for (const x of ['сепаратор масла полный', 'воду из сепаратора слил', 'водоотделитель не полный', 'нет воды в сепараторе']) ok(!water2(x), 'kein Wasserabscheider-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const ex of ['повітря в паливній системі', 'втрачає потужність']) { ok(STRINGS[l].help_engine_s.includes(ex), 'Hilfe Motor ' + l + ': ' + ex); ok(eng5(ex), 'Hilfe-Beispiel: ' + ex); }
+    for (const ex of ['водоотделитель полный', 'водовідокремлювач повний']) { ok(STRINGS[l].help_waterfuel_s.includes(ex), 'Hilfe Wasser im Kraftstoff ' + l + ': ' + ex); ok(water(ex), 'Hilfe-Beispiel: ' + ex); }
+  }
+  for (const ex of ['форсунка льет', 'топливный фильтр забит', 'тнвд не качает', 'завоздушилась топливная система', 'низький тиск палива']) { ok(STRINGS.de.help_engine_s.includes(ex), 'Hilfe Motor de: ' + ex); ok(eng5(ex), 'Hilfe-Beispiel: ' + ex); }
+  for (const ex of ['форсунка підтікає', 'паливний фільтр забитий', 'паливний насос не качає']) { ok(STRINGS.uk.help_engine_s.includes(ex), 'Hilfe Motor uk: ' + ex); ok(eng5(ex), 'Hilfe-Beispiel: ' + ex); }
+  for (const ex of ['injector leaking', 'air in the fuel system', 'low fuel pressure']) { ok(STRINGS.en.help_engine_s.includes(ex), 'Hilfe Motor en: ' + ex); ok(eng5(ex), 'Hilfe-Beispiel: ' + ex); }
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
+await test('Backlog 1363 (Reserve Start-Modul nach 1367: 45,63 % bei Grenze 45,60 %): Bausteine __T[80]–__T[85] per Häufigkeitsanalyse (RU/UK-Warnleuchten-/Fehlerwörter, DE-Tankdeckel, RU/UK-Betriebsstoffe, RU/UK-Achse/Getriebe, RU/UK-Motor-Anfang, DE-Kontrolle/Bußgeld) je ≥ 2× genutzt (→ 45,57 %); Rückverwandlung gleich; Start-Modul ≤ 45,60 %', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
+  eq(T.length, 86, 'Bausteine 0–85');
+  for (let k = 80; k <= 85; k++) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' ≥ 2× genutzt, nirgends mehr ausgeschrieben');
+  ok(T[80].startsWith('|неисправ') && T[81].includes('tank(?:deckel|') && T[82].startsWith('(?:олив|масл|') && T[83].startsWith('(?:редуктор') && T[84].startsWith('(?:двигун') && T[85].includes('bußgeld'), 'Bausteine 80–85 wie analysiert');
+  const B = await import('../scripts/build-app.mjs');
+  for (let k = 80; k <= 85; k++) {
+    const code = "x\nconst A = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))a" + T[k] + "b`, 'i', 1);\nconst B2 = lbRx(String.raw`(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))z`, 'i', 1);\n";
+    const d = B.dedupeLooks(code); ok(d.code.includes('${__T[' + k + ']}'), 'Baustein ' + k + ' eingesetzt'); eq(B.expandRx(d.def + d.code).slice(1), code, 'Rückverwandlung gleich (' + k + ')');
+  }
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
 await test('Backlog 1366 (Sonde, Blickwinkel „Fahrer diktiert Fahrersitz/Gurt auf Russisch/Ukrainisch“, Backlog 195): „замок ремня безопасности сломан“, „пряжка ремня сломана“, „замок ременя безпеки зламаний“, „ремень не блокируется при торможении“, „ремінь безпеки не блокується“, „сиденье болтается“, „сиденье падает вниз“ → Sitz/Gurt; „ремень безопасности не порван“, Türschloss, Spanngurt, „на сиденье падает вода“, nach Reparatur nicht; Hilfe DE/UK/EN', async () => {
@@ -37825,7 +37864,7 @@ await test('Backlog 1355 (Reserve Start-Modul nach 1359: 45,59 % bei Grenze 45,6
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 80, 'Bausteine 0–69');
+  eq(T.length, 86, 'Bausteine 0–69');
   for (const k of [67, 68, 69]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[67].startsWith('(?:(?:eisenbahn|bahn|') && T[67].endsWith('|torbogen)(?:n|en|s)'), 'Baustein 67'); ok(T[68].startsWith('(?:загуби') && T[68].endsWith('|немає|нема|'), 'Baustein 68');
   ok(T[69].startsWith('(?:(?:trailer|load(?:ing)?|') && T[69].endsWith('|trailer\\s+(?:walls?|sides?|body))(?![a-z])'), 'Baustein 69');
@@ -37841,7 +37880,7 @@ await test('Backlog 1351 (Reserve Start-Modul nach 1354: 45,595 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 80, 'Bausteine 0–69 (Backlog 1355: Index 67–69)');
+  eq(T.length, 86, 'Bausteine 0–69 (Backlog 1355: Index 67–69)');
   for (const k of [63, 64, 65, 66]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= 2 && main.split(T[k]).length === 2, 'Baustein ' + k + ' 2× genutzt, nirgends mehr ausgeschrieben');
   ok(T[63].startsWith(String.raw`(?:heizung\S*|heiz|`) && T[63].endsWith(String.raw`|liftachse\S*)`), 'Baustein 63'); ok(T[64].startsWith('(?:(?:(?:протипідкатн|') && T[64].includes('ограждени'), 'Baustein 64');
   ok(T[65].startsWith('(?:kontur(?:markierung|') && T[65].endsWith('|markierungstafel(?:n)?)'), 'Baustein 65'); ok(T[66].startsWith('(?:(?!(?:not|') && T[66].endsWith('|does\\s+nothing)(?![a-z])|'), 'Baustein 66');
@@ -38001,7 +38040,7 @@ await test('Backlog 1339 (Reserve Start-Modul nach 1338: 45,591 % bei Grenze 45,
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 80, 'Bausteine 0–66 (Backlog 1347: Index 55–58; Backlog 1350: Index 59–62; Backlog 1351: Index 63–66)');
+  eq(T.length, 86, 'Bausteine 0–66 (Backlog 1347: Index 55–58; Backlog 1350: Index 59–62; Backlog 1351: Index 63–66)');
   ok(T[51].startsWith(String.raw`(?:ручк\S*|кнопк\S*|`) && T[51].endsWith(String.raw`блокуванн\S*\s+диф\S*`), 'Baustein 51');
   ok(T[52].includes('siebdruck)boden|ladefl(?:ä|ae)che|'), 'Baustein 52'); ok(T[53].includes('losgegangen|'), 'Baustein 53'); ok(T[54].includes('|touchiert|gerammt|'), 'Baustein 54');
   for (const [k, n] of [[51, 2], [52, 3], [53, 2], [54, 3]]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= n, 'Baustein ' + k + ' wird ' + n + '× genutzt');
@@ -38103,7 +38142,7 @@ await test('Backlog 1333 (Reserve Start-Modul nach 1332: 45,61 % > 45,60 %): Bau
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 80, 'Bausteine 0–66 (Backlog 1339/1347/1350/1351)'); ok(T[50].startsWith('(?:schranke|poller|') && T[50].endsWith('blumenk(?:ü|ue)bel)(?:n|en|e|s|es|er)'), 'Baustein 50');
+  eq(T.length, 86, 'Bausteine 0–66 (Backlog 1339/1347/1350/1351)'); ok(T[50].startsWith('(?:schranke|poller|') && T[50].endsWith('blumenk(?:ü|ue)bel)(?:n|en|e|s|es|er)'), 'Baustein 50');
   ok((main.match(/\$\{__T\[50\]\}/g) || []).length >= 3, 'Baustein 50 wird genutzt');
   ok(!main.includes('wartenh(?:ä|ae)uschen|wareh(?:ä|ae)uschen|blumenk') || main.split('wartenh(?:ä|ae)uschen|wareh(?:ä|ae)uschen|blumenk').length === 2, 'Liste nur noch in der Bausteinliste');
   const B = await import('../scripts/build-app.mjs');
@@ -38130,7 +38169,7 @@ await test('Backlog 1330 (Reserve Start-Modul nach 1329: 45,631 %): Bausteine __
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 80, 'Bausteine 0–66 (Backlog 1333/1339/1347/1350/1351)');
+  eq(T.length, 86, 'Bausteine 0–66 (Backlog 1333/1339/1347/1350/1351)');
   ok(T[47].startsWith('(?<!(?:handy|telefon|smartphone') && T[47].endsWith(String.raw`зеркало)\s+)`), 'Baustein 47'); ok(T[48].startsWith('(?:niemand|keiner|keine|kein|nicht') && T[48].endsWith(String.raw`|без)\s+(?:\S+\s+){0,2})`), 'Baustein 48'); eq(T[49], '(?:открыл|відкрил|відчинил|распахнул|розчинил|розчахнул)', 'Baustein 49');
   ok((main.match(/\$\{__T\[47\]\}/g) || []).length >= 3 && (main.match(/\$\{__T\[48\]\}/g) || []).length >= 3 && (main.match(/\$\{__T\[49\]\}/g) || []).length >= 4, 'Bausteine 47–49 werden genutzt');
   const B = await import('../scripts/build-app.mjs');
@@ -38246,7 +38285,7 @@ await test('Backlog 1320 (Reserve Start-Modul nach 1319: 45,654 % > 45,65 %): Fo
   const fs = await import('node:fs'); const rd = (f) => fs.readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
   const B = await import('../scripts/build-app.mjs');
   const main = rd('app-main.js'); const T = new Function((main.match(/^const __T = \[.*\];$/m) || [''])[0] + '; return __T;')();
-  eq(T.length, 80, 'Bausteine 0–66 (Backlog 1351: Index 63–66; Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1324: Index 42, Backlog 1326: Index 43/44, Backlog 1328: Index 45/46, Backlog 1330: Index 47–49)');
+  eq(T.length, 86, 'Bausteine 0–66 (Backlog 1351: Index 63–66; Backlog 1350: Index 59–62; Backlog 1347: Index 55–58; Backlog 1339: Index 51–54; Backlog 1333: Index 50; Backlog 1324: Index 42, Backlog 1326: Index 43/44, Backlog 1328: Index 45/46, Backlog 1330: Index 47–49)');
   eq(T[39], '|(?<![a-z])(?:', 'Baustein 39'); ok(T[40].startsWith('(?:колес|') && T[40].endsWith('|балон)'), 'Baustein 40'); eq(T[41], '(?![a-z])(?![^.;!?]*(?:fixed|repaired|replaced', 'Baustein 41');
   for (const [k, n] of [[39, 50], [40, 4], [41, 5]]) ok((main.match(new RegExp('\\$\\{__T\\[' + k + '\\]\\}', 'g')) || []).length >= n, 'Baustein ' + k + ' wird ≥ ' + n + '× genutzt');
   const code = "x\nconst A = lbRx(String.raw`a|(?<![a-z])(?:b|c)(?![a-z])(?![^.;!?]*(?:fixed|repaired|replaced|ok))(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\nconst B2 = lbRx(String.raw`c(?![^.;!?]*(?:foo|bar|gleiche|ausschlussgruppe|in|beiden|aufrufen|lang|genug))`, 'i', 1);\n";
@@ -38682,7 +38721,7 @@ await test('Backlog 1285 (Sonde, Blickwinkel „Fahrer diktiert Motor springt ni
   for (const x of ['глохне на холостих', 'глохнет на холостом ходу', 'машина дергается при разгоне', 'вантажівка смикається', 'тягач дергается', 'фура дергается на газу', 'пропала тяга', 'пропала потужність', 'тяга пропала', 'заводится и сразу глохнет', 'заводиться і одразу глохне', 'завелся и заглох', 'завівся і заглух', 'обороты скачут', 'оберти плавають', 'обороты прыгают', 'hat keine leistung mehr', 'truck jerks when accelerating', 'rpm jumping up and down']) ok(E4.test(x), 'Motor: ' + x);
   for (const x of ['не глохнет на холостых', 'пропала тяга после ремонта устранили', 'коробка дергается при переключении', 'тягач дергается при торможении', 'машина не дергается', 'обороты не скачут', 'batterie hat keine leistung mehr', 'akku vom handy hat keine leistung mehr', 'truck jerks when braking', 'rpm jumping fixed']) ok(!E4.test(x), 'kein Motor-Zusatz: ' + x);
   ok(app.includes("$('#nostart').hidden = !NOSTART_HINT.test(noAux(dfx)) && !NOSTART2_HINT.test(noAux(dfx));"), 'Listener Start (nach noFixed)');
-  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));"), 'Listener Motor');
+  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv)) && !ENGINE5_HINT.test(noAux(dv));"), 'Listener Motor');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['Anlasser klackt nur']], ['uk', ['клацає стартер']]]) for (const ex of exs) { ok(STRINGS[l].help_nostart_s.includes(ex), 'Hilfe Start ' + l + ': ' + ex); ok(N2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
   for (const [l, exs] of [['de', ['Lkw hat keine Leistung mehr']], ['uk', ['оберти скачуть', 'глохне на холостих', 'пропала потужність']], ['en', ['rpm jumping up and down', 'truck jerks when accelerating']]]) for (const ex of exs) { ok(STRINGS[l].help_engine_s.includes(ex), 'Hilfe Motor ' + l + ': ' + ex); ok(E4.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
@@ -38775,7 +38814,7 @@ await test('Backlog 1278 (Sonde, Blickwinkel „Fahrer diktiert Überhitzung/Kü
   for (const x of ['öltemperatur 105 grad', 'außentemperatur 35 grad', 'temperatur im kühlauflieger steigt bergauf', 'kühlaggregat temperatur nadel geht hoch', 'reefer temp rising on hills', 'die temperatur steigt', 'kein dampf unter der kabine', 'dampfstrahler unter der kabine benutzt', 'temperaturnadel geht hoch wurde repariert', 'fan in the cab running constantly', 'the heater is running hot', 'truck running fine', 'пар з-під кабіни відремонтували', 'чайник закипел']) ok(!E3.test(x), 'kein Überhitzungs-Zusatz: ' + x);
   for (const x of ['lüfter springt nicht an', 'gebläse springt nicht an', 'kühlerlüfter springt nicht an', 'lüfter lässt sich nicht starten']) ok(!NS.test(x), 'kein Startproblem: ' + x);
   for (const x of ['motor springt nicht an', 'lkw springt nicht an', 'lkw lässt sich nicht starten']) ok(NS.test(x), 'Startproblem weiter: ' + x);
-  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));"), 'Listener Motor');
+  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv)) && !ENGINE5_HINT.test(noAux(dv));"), 'Listener Motor');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['Temperaturnadel geht ganz hoch', 'Dampf unter dem Fahrerhaus', 'Kühlerlüfter springt nicht an']], ['uk', ['пар з-під кабіни', 'двигун закипів']], ['en', ['truck is running hot', 'temp keeps rising on hills', 'steam from under the cab']]]) for (const ex of exs) { ok(STRINGS[l].help_engine_s.includes(ex), 'Hilfe Motor ' + l + ': ' + ex); ok(E3.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
@@ -39050,7 +39089,7 @@ await test('Backlog 1250 (Sonde, Blickwinkel „Fahrer diktiert Motor-/Getriebep
   for (const x of ['motor säuft ab repariert', 'motor dreht nicht hoch, behoben', 'fahre nur noch 30 wegen stau', 'fahre nur noch schritttempo wegen glatteis', 'reifen platt fahre nur noch 20', 'motor wird nicht heiß', 'motor dreht hoch', 'fährt nur noch heute', 'lkw wird nur noch 30 tage gefahren', 'engine running fine', 'drehzahlmesser defekt']) ok(!E.test(recurFix(x)), 'kein Motor-Zusatz: ' + x);
   for (const x of ['getriebe hängt im neutral', 'getriebe bleibt im leerlauf', 'getriebe geht auf N', 'schaltet nicht hoch', 'schaltet nicht mehr', 'schaltet nur bis zum 6 gang', 'bleibt im 3. Gang', 'bleibt im dritten gang hängen', 'kommt nicht über den 4 gang', 'getriebe spinnt', 'kriechgang geht nicht', 'lkw bewegt sich nicht obwohl gang drin', 'motor läuft aber lkw fährt nicht', 'schaltet ruckartig', 'truck stuck in neutral', 'stuck in 3rd gear', 'no reverse gear', 'коробка застрягла на нейтралі']) ok(G.test(recurFix(x)), 'Getriebe: ' + x);
   for (const x of ['licht schaltet nicht', 'lüfter schaltet nicht hoch', 'blinker schaltet nicht ab', 'klima schaltet nicht', 'ampel schaltet nicht', 'getriebe schaltet wieder normal', 'schaltet nicht hoch, getriebe gewechselt', 'gearbox stuck in neutral fixed', 'no reverse parking here', 'bleibt im hof', 'im 3 gang angefahren']) ok(!G.test(recurFix(x)), 'kein Getriebe-Zusatz: ' + x);
-  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv));") && app.includes("$('#gear').hidden = !GEAR_HINT.test(dfx) && !GEAR2_HINT.test(dfx) && !GEAR3_HINT.test(dfx);"), 'Listener');
+  ok(app.includes("$('#engine').hidden = !ENGINE_HINT.test(noAux(dv)) && !ENGINE2_HINT.test(noAux(dv)) && !ENGINE3_HINT.test(noAux(dv)) && !ENGINE4_HINT.test(noAux(dv)) && !ENGINE5_HINT.test(noAux(dv));") && app.includes("$('#gear').hidden = !GEAR_HINT.test(dfx) && !GEAR2_HINT.test(dfx) && !GEAR3_HINT.test(dfx);"), 'Listener');
 });
 
 await test('Backlog 1249 (Sonde, Blickwinkel „Fahrer diktiert Lichtausfall ohne Satzzeichen“): „am anhaenger geht garnix mit licht“, „Licht geht gar nicht“, „Glühbirne kaputt“ → Licht-Schritte; Lichtmaschine, Warnlicht, „Birne gewechselt“, Innenbeleuchtung im Fahrerhaus nicht', async () => {
@@ -39165,7 +39204,7 @@ await test('Backlog 1238/1239 (Sonde aus 1237, Blickwinkel „Fahrer meldet ausg
       ok(app.includes(`<div id="${id}" class="panel" hidden role="status">`), 'Panel #' + id);
     }
   }
-  ok(app.includes("$('#airbag').hidden = !AIRBAG_HINT.test(dv); $('#waterfuel').hidden = !WATERFUEL_HINT.test(dv);") && app.indexOf("$('#airbag').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
+  ok(app.includes("$('#airbag').hidden = !AIRBAG_HINT.test(dv); $('#waterfuel').hidden = !WATERFUEL_HINT.test(dv) && !WATERFUEL2_HINT.test(dv);") && app.indexOf("$('#airbag').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(app.includes("'injury', 'airbag', 'loose'") && app.includes("'gelfuel', 'waterfuel', 'elec'"), 'Reihenfolge: Airbag nach Verletzung, Wasser im Diesel nach geliertem Diesel');
   ok(helpAfter(app, 'airbag', 'injury') && helpAfter(app, 'waterfuel', 'gelfuel'), 'Hilfe-Abschnitte für meldende Rollen');
 });
