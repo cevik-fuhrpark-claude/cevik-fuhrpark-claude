@@ -19255,7 +19255,7 @@ await test('Backlog 214/215 (Teilagent „Fahrzeug gestohlen / Einbruch“): Mel
   }
   ok(app.includes(`<div id="theft" class="panel" hidden role="status">`), 'Panel #theft');
   ok(app.includes("'tachofault', 'theft', 'glass', "), 'Hilfe-Abschnitt theft');
-  ok(app.indexOf("const theft = THEFT_HINT.test(dv); $('#theft').hidden = !theft;") > 0 && app.indexOf("$('#theft').hidden = !theft;") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft (Backlog 659: Ergebnis in `theft` für den Vandalismus-Hinweis)');
+  ok(app.indexOf("const theft = THEFT_HINT.test(dv) || THEFT2_HINT.test(dv); $('#theft').hidden = !theft;") > 0 && app.indexOf("$('#theft').hidden = !theft;") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft (Backlog 659: Ergebnis in `theft` für den Vandalismus-Hinweis)');
 });
 
 await test('Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“): Meldeformular zeigt bei Glasschaden Hinweise (Fotos mit Größenvergleich, Sichtfeld, Weiterfahrt klären, früh melden; DE/UK/EN), Hilfe-Abschnitt, Hinweis im Versicherungsabschnitt nur ohne Versicherungsfall; Bremsscheibe/Scheibenwischer/Spiegel lösen nichts aus', async () => {
@@ -19475,7 +19475,7 @@ await test('Backlog 221 (Teilagent „Kraftstoffdiebstahl am Rastplatz“): Vers
   ok(/^const THEFT_HINT = \//m.test(app), 'THEFT_HINT auf Modulebene (eine Erkennung für Meldeformular und Versicherungsfall)');
   eq((app.match(/const THEFT_HINT = /g) || []).length, 1, 'nur eine Definition');
   ok(app.includes("claimSection(d.claim, d.insurance_contracts, d.files || [], c.description, c, "), 'Beschreibung wird übergeben');
-  ok(app.includes("const theftNoRef = THEFT_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('id="cptheft"'), 'Hinweis nur ohne Aktenzeichen');
+  ok(app.includes("const theftNoRef = (THEFT_HINT.test(desc || '') || THEFT2_HINT.test(desc || '')) && !(cl && cl.police_ref);") && app.includes('id="cptheft"'), 'Hinweis nur ohne Aktenzeichen');
   const m = app.match(/const THEFT_HINT = \/(.+)\/i;/); const re = new RegExp(m[1], 'i');
   ok(re.test('Diesel am Rastplatz abgezapft') && re.test('Tankdeckel aufgebrochen') && !re.test('Leistungseinbruch am Berg'), 'Erkennung');
   const { STRINGS } = await import('../public/i18n.js');
@@ -27086,7 +27086,7 @@ await test('Backlog 659–661 (Blickwinkel „Vandalismus über Nacht – Reifen
     ok(S.cp_vandal_hint.includes(S.cp_title), 'Versicherungs-Hinweis nennt den Anzeige-Abschnitt ' + l);
   }
   ok(app.includes('<div id="vandal" class="panel" hidden role="status">'), 'Panel #vandal');
-  ok(app.includes("const theft = THEFT_HINT.test(dv); $('#theft').hidden = !theft; $('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv) || TYRE3_HINT.test(dv);"), 'nicht zusätzlich zu Diebstahl/Unfallflucht');
+  ok(app.includes("const theft = THEFT_HINT.test(dv) || THEFT2_HINT.test(dv); $('#theft').hidden = !theft; $('#vandal').hidden = theft || hitrun || !(VANDAL_HINT.test(dv) || VANDAL2_HINT.test(dv)) || TYRE3_HINT.test(dv);"), 'nicht zusätzlich zu Diebstahl/Unfallflucht');
   ok(app.indexOf("$('#vandal').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun', 'vandal',/.test(app), 'Reihenfolge direkt nach Unfallflucht');
   ok(app.includes("const vandalNoRef = !theftNoRef && !hitrunNoRef && VANDAL_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimvandal'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt');
@@ -37327,7 +37327,7 @@ await test('Backlog 1241 (Sonde Einbruch, Blickwinkel „Fahrerhaus aufgebrochen
   for (const x of ['Seitenscheibe eingeschlagen', 'Spiegel eingeschlagen Glas fehlt', 'Lenkung schlägt ein', 'Steinschlag Frontscheibe', 'Tür klemmt', 'side window smashed', 'Scheibe eingeschlagen, Splitter weggefegt']) ok(!T(x), 'kein Diebstahl-Hinweis: ' + x);
   for (const x of ['jemand hat die Scheibe eingeschlagen', 'Unbekannte haben den Lack zerkratzt', 'Täter haben die Tür eingetreten', 'someone smashed the window', 'somebody keyed the door']) ok(V(x), 'Vandalismus-Hinweis: ' + x);
   for (const x of ['Seitenscheibe eingeschlagen', 'Lenkung schlägt ein', 'jemand hat angerufen', 'someone called dispatch']) ok(!V(x), 'kein Vandalismus-Hinweis: ' + x);
-  ok(app.includes("const theft = THEFT_HINT.test(dv);") && app.includes("$('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv) || TYRE3_HINT.test(dv);"), 'Diebstahl hat Vorrang vor Vandalismus');
+  ok(app.includes("const theft = THEFT_HINT.test(dv) || THEFT2_HINT.test(dv);") && app.includes("$('#vandal').hidden = theft || hitrun || !(VANDAL_HINT.test(dv) || VANDAL2_HINT.test(dv)) || TYRE3_HINT.test(dv);"), 'Diebstahl hat Vorrang vor Vandalismus');
 });
 
 await test('Backlog 1240 (Sonde, Blickwinkel „Fahrzeug überladen/Achslast überschritten“): Meldeformular zeigt eigene Schritte (nicht losfahren, Leitung klärt Teilentladung/Umladen; nur nach Absprache umverteilen; Wiegeschein fotografieren, Gewicht laut Beleg notieren; „Weiß nicht“); DE/EN/UK/RU; Verneinungen, Überladebrücke, Kupplung und Umladen nicht; Hilfe DE/UK/EN ohne Grenze/Frist', async () => {
@@ -37861,6 +37861,26 @@ await test('Backlog 1368 (Reserve Start-Modul nach 1369: 45,603 % bei Grenze 45,
   }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
+await test('Backlog 1377 (Sonde, Blickwinkel „Fahrer meldet Diebstahl/Einbruch/Vandalismus/Unwetter auf Englisch“, Backlog 195): „someone drilled the fuel tank“, „thieves cut the curtain and took boxes“, „padlock cut off the rear doors“, „rear door lock forced“, DE „Tank angebohrt“, „Vorhängeschloss aufgeschnitten“ → Diebstahl/Einbruch (auch Versicherungshinweis im Vorgang); „stones thrown at the truck“, „Steine auf den Lkw geworfen“ → Vandalismus; „door lock broken“, „stones thrown up by the truck in front“, „we cut the curtain to unload“, nach Reparatur nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const t2 = rx('THEFT2_HINT'), v2 = rx('VANDAL2_HINT'), theft = (x) => t2.test(recurFix(x).toLowerCase()), vand = (x) => v2.test(recurFix(x).toLowerCase());
+  ok(app.includes('const theft = THEFT_HINT.test(dv) || THEFT2_HINT.test(dv);') && app.includes('!(VANDAL_HINT.test(dv) || VANDAL2_HINT.test(dv))') && app.includes("(THEFT_HINT.test(desc || '') || THEFT2_HINT.test(desc || ''))"), 'Formular und Vorgang prüfen die neuen Muster');
+  for (const x of ['someone drilled the fuel tank', 'drilled a hole in the diesel tank', 'fuel tank was drilled', 'thieves cut the curtain and took boxes', 'burglars broke the side window', 'padlock cut off the rear doors', 'rear door lock forced', 'the seal on the doors was cut', 'rear doors were forced open', 'Tank angebohrt', 'Loch in den Tank gebohrt', 'Vorhängeschloss an der Hecktür aufgeschnitten', 'Schloss abgeflext']) ok(theft(x), 'Diebstahl/Einbruch: ' + x);
+  for (const x of ['door lock broken', 'the lock on the rear doors is stiff', 'padlock missing', 'thieves were seen in the car park but nothing happened', 'we cut the curtain to unload', 'lock cut off, already replaced', 'tank cap stuck']) ok(!theft(x), 'kein Diebstahl-Hinweis (neues Muster): ' + x);
+  for (const x of ['stones thrown at the truck', 'rocks were thrown at the cab', 'kids threw stones', 'Steine auf den Lkw geworfen', 'mit Steinen beworfen']) ok(vand(x), 'Vandalismus: ' + x);
+  for (const x of ['stones thrown up by the truck in front', 'a stone was thrown up and chipped the windscreen', 'Stein vom Vordermann hochgeschleudert']) ok(!vand(x), 'kein Vandalismus-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const ex of ['someone drilled the fuel tank', 'padlock cut off the rear doors', 'thieves cut the curtain', 'Tank angebohrt']) { ok(STRINGS[l].help_theft_s.includes(ex), 'Hilfe Diebstahl ' + l + ': ' + ex); ok(theft(ex), 'Hilfe-Beispiel: ' + ex); }
+    for (const ex of ['stones thrown at the truck', 'Steine auf den Lkw geworfen']) { ok(STRINGS[l].help_vandal_s.includes(ex), 'Hilfe Vandalismus ' + l + ': ' + ex); ok(vand(ex), 'Hilfe-Beispiel: ' + ex); }
+  }
+  ok(STRINGS.de.help_theft_s.includes('Vorhängeschloss aufgeschnitten') && theft('Vorhängeschloss aufgeschnitten'), 'Hilfe-Beispiel DE Schloss');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1375 (Sonde, Blickwinkel „Fahrer meldet Ladung/Ladungssicherung auf Englisch“, Backlog 195): „the load is not secured“, „load fell off the trailer“, „lost a pallet on the road“, „rear doors are pushed out by the load“, DE „Ladung ist vom Auflieger gefallen“, „Hecktüren werden von der Ladung rausgedrückt“ → Ladung (nicht Trittstufe); „strap ratchet seized“, „need more straps“, „load bar won’t lock“, „decking beam stuck“, „brauche mehr Spanngurte“, „Sperrbalken rastet nicht ein“ → Sicherungsmittel; „load is too heavy“, „Ladung zu schwer“ → Überladung; „police stopped me for load securing“, „Bußgeld wegen ungesicherter Ladung“ → Kontrolle; verneint/nach Umladen/Neusichern nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -38993,7 +39013,7 @@ await test('Backlog 1275 (Sonde, Blickwinkel „Fahrer diktiert Bordstein-/Felge
   const T3 = rx('TYRE3_HINT');
   for (const x of ['beim abbiegen bordstein mitgenommen felge zerkratzt', 'beim rechtsabbiegen auf den bordstein gekommen', 'reifen am bordstein aufgeschlitzt', 'bordstein gestreift', 'kantstein touchiert reifen vorne rechts', 'über den bordstein drübergefahren', 'clipped the curb rim damaged', 'hit the kerb tyre bulge', 'kerb damage on the steer tyre', 'бордюр зачепив диск', 'зачепив бордюр колесом', 'наехал на бордюр']) ok(T3.test(x), 'Reifen/Bordstein: ' + x);
   for (const x of ['bordstein ist hoch an der rampe', 'reifen bordstein repariert', 'bordstein gestreift reifen getauscht', 'parked next to the curb', 'бордюр високий']) ok(!T3.test(x), 'kein Bordstein-Zusatz: ' + x);
-  ok(app.includes("|| TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv)) || TYRE5_HINT.test(noAux(dv))) || bodyWall(dv);") && app.includes("$('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv) || TYRE3_HINT.test(dv);"), 'Listener Reifen und Vandalismus');
+  ok(app.includes("|| TYRE2_HINT.test(noAux(dv)) || TYRE3_HINT.test(dv) || TYRE4_HINT.test(noAux(dv)) || TYRE5_HINT.test(noAux(dv))) || bodyWall(dv);") && app.includes("$('#vandal').hidden = theft || hitrun || !(VANDAL_HINT.test(dv) || VANDAL2_HINT.test(dv)) || TYRE3_HINT.test(dv);"), 'Listener Reifen und Vandalismus');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['beim abbiegen bordstein mitgenommen felge zerkratzt', 'auf den bordstein gekommen']], ['uk', ['бордюр зачепив диск']], ['en', ['clipped the curb rim damaged', 'hit the kerb']]]) for (const ex of exs) { ok(STRINGS[l].help_tyre_s.includes(ex), 'Hilfe-Beispiel ' + l + ': ' + ex); ok(T3.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });
@@ -39328,7 +39348,7 @@ await test('Backlog 1243 (Sonde, Blickwinkel „Alarmanlage geht ständig los“
     ok(S.help_alarm_t && S.help_alarm_s.includes(S.alarm_hint_steps) && S.help_alarm_s.includes(S.nav_new), 'Hilfe ' + l);
   }
   ok(app.includes('<div id="alarm" class="panel" hidden role="status">'), 'Panel #alarm');
-  ok(app.includes("$('#vandal').hidden = theft || hitrun || !VANDAL_HINT.test(dv) || TYRE3_HINT.test(dv); $('#alarm').hidden = theft || !ALARM_HINT.test(dv);") && app.indexOf("$('#alarm').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener, Diebstahl hat Vorrang');
+  ok(app.includes("$('#vandal').hidden = theft || hitrun || !(VANDAL_HINT.test(dv) || VANDAL2_HINT.test(dv)) || TYRE3_HINT.test(dv); $('#alarm').hidden = theft || !ALARM_HINT.test(dv);") && app.indexOf("$('#alarm').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener, Diebstahl hat Vorrang');
   ok(app.includes("'tow', 'reefer', 'alarm', 'fuel'"), 'Reihenfolge: nach Kühlaggregat');
   ok(helpAfter(app, 'alarm', 'cablock'), 'Hilfe-Abschnitt nach Zentralverriegelung für meldende Rollen');
 });
