@@ -37936,6 +37936,25 @@ await test('Backlog 1390 (Reserve Start-Modul nach 1391: 45,69 % > 45,60 %): Bau
   }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
+await test('Backlog 1400 (Sonde, Blickwinkel „Fahrer meldet Plane/Curtainsider/Aufbau auf Englisch“, Backlog 195): „curtainside is torn“, „side curtain came off the rail“, „curtain roller is stuck“, „sliding roof is jammed“, „water coming through the trailer roof“, „customs seal cable is broken“ → Plane; „dropside won\'t close“, „a post on the trailer is bent“, „side panel of the box is cracked“, „roof of the box has a hole“ → Ladeboden/Aufbau; „back doors hanging off“ → Tür; „load locks are missing“ → Ladungssicherungsmittel; Verneinung/Reparaturvermerk ohne Plane, Zollseil nicht Elektrik', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2].includes('i') ? m[2] : m[2] + 'i'); };
+  const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(x)); };
+  const tarp = any(['TARP_HINT', 'TARP2_HINT']), floor = any(['FLOOR_HINT', 'FLOOR2_HINT']), door = any(['DOOR_HINT', 'DOOR2_HINT', 'DOOR3_HINT', 'DOOR4_HINT', 'DOOR5_HINT', 'DOOR6_HINT', 'DOOR7_HINT']), elec = any(['ELEC_HINT', 'ELEC2_HINT', 'ELEC3_HINT']), lash = any(['LASHGEAR_HINT', 'LASHGEAR2_HINT', 'LASHGEAR3_HINT']);
+  for (const x of ['curtainside is torn', 'the curtain side is ripped', 'the side curtain came off the rail', 'curtain roller is stuck', 'sliding roof is jammed', 'water coming through the trailer roof', 'the customs seal cable is broken', 'the curtain is ripped', 'the TIR cord is broken']) ok(tarp(x), 'Plane: ' + x);
+  for (const x of ['the curtain is not ripped', "the curtain isn't torn", 'the curtain was ripped, fixed now', 'curtainside was torn, repaired', 'the curtains in the cab are torn', 'the door is stuck']) ok(!tarp(x), 'keine Plane: ' + x);
+  for (const x of ["dropside won't close", 'a post on the trailer is bent', 'the side panel of the box is cracked', 'the roof of the box has a hole', 'the tailboard is bent', 'the wall of the trailer is dented']) ok(floor(x), 'Ladeboden/Aufbau: ' + x);
+  for (const x of ['the dropside is not bent', 'the side panel of the box was cracked, repaired', 'the roof of the cab has a hole', 'the post office is closed']) ok(!floor(x), 'kein Ladeboden/Aufbau: ' + x);
+  for (const x of ['one of the back doors is hanging off', 'the rear door is hanging', 'barn doors hang down']) ok(door(x), 'Tür: ' + x);
+  ok(!door('the rear door was hanging, fixed now') && !door('the curtain is hanging out'), 'Tür: Reparaturvermerk/Plane ohne Tür');
+  ok(!elec('the customs seal cable is broken') && elec('the wire is broken'), 'Zollseil nicht Elektrik, Kabel weiter');
+  ok(lash('the load locks are missing') && lash('load lock is broken') && lash('the load bar is broken'), 'Sperrbalken (load lock) als Ladungssicherungsmittel');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of ['curtainside is torn', 'sliding roof is jammed', 'water coming through the trailer roof']) { ok(STRINGS[l].help_tarp_s.includes(x), 'Hilfe Plane ' + l + ': ' + x); ok(tarp(x), 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-plane-englisch.py'), 'UI-Prüfung in pruefen.sh');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
 await test('Backlog 1399 (Kurzsonde, Blickwinkel „Fahrer meldet Auspuff auf Englisch“, Backlog 195): „the exhaust stack is bent“, „the tailpipe is hanging down“, „the exhaust is loose“ → Auspuff; nicht Reparaturvermerk, Verneinung, Motorbremse, Ladebordwand', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
