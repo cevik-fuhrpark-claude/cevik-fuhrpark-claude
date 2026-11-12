@@ -37936,6 +37936,18 @@ await test('Backlog 1390 (Reserve Start-Modul nach 1391: 45,69 % > 45,60 %): Bau
   }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
+await test('Backlog 1399 (Kurzsonde, Blickwinkel „Fahrer meldet Auspuff auf Englisch“, Backlog 195): „the exhaust stack is bent“, „the tailpipe is hanging down“, „the exhaust is loose“ → Auspuff; nicht Reparaturvermerk, Verneinung, Motorbremse, Ladebordwand', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2].includes('i') ? m[2] : m[2] + 'i'); };
+  const E = ['EXHAUST_HINT', 'EXHAUST2_HINT'].map(rx), ex = (x) => E.some((r) => r.test(x));
+  for (const x of ['the exhaust stack is bent', 'the tailpipe is hanging down', 'the exhaust is loose', 'the exhaust pipe is loose', 'tail pipe is hanging off', 'exhaust stack fell off', 'tailpipe is broken', 'the tailpipe is dragging on the ground', 'the exhaust stack is hanging']) ok(ex(x), 'Auspuff: ' + x);
+  for (const x of ['the exhaust was loose, fixed now', 'the exhaust is not loose', 'exhaust brake is loose', 'the tail lift is hanging down', 'the tail lift pipe is broken', 'tailpipe was bent but repaired', 'the exhaust is loose, replaced the clamp']) ok(!ex(x), 'kein Auspuff: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of ['exhaust is loose', 'tailpipe is hanging down', 'exhaust stack is bent']) { ok(STRINGS[l].help_exhaust_s.includes(x), 'Hilfe Auspuff ' + l + ': ' + x); ok(ex(x), 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-auspuff-englisch.py'), 'UI-Prüfung in pruefen.sh');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
 await test('Backlog 1397 (Sonde, Blickwinkel „Fahrer meldet Schlafkabine/Liege (bunk) und Fahrerhaus-Ausstattung auf Englisch“, Backlog 195): „the bunk won\'t fold up“, „bunk strap is broken“, „bed in the cab is broken“, „upper bunk fell down“, „cab fridge isn\'t cooling“, „microwave is broken“, „radio has no sound“, „overhead locker won\'t stay shut“, „blackout blinds won\'t come down“, „privacy curtain is torn“ → Ausstattung; nicht Curtainsider, Kühlaufbau, „blind spot camera“, „trailer bed“, Reparaturvermerk; Schrank-Tür nicht Tür, Liegen-Heizung nicht Sicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
