@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (22.10.2026, eigene Verbesserung): Inhaber → Mehr → „Einrichtungsstand“ – Liste der Punkte mit Status, offene mit
 # Hinweis, Antippen öffnet die passende Seite; Fuhrparkleitung sieht den Menüpunkt nicht. DE/UK/EN, 390/820/1366 px, ohne Querscrollen/
-# Skriptfehler; Reaktionsfristen im Betrieb (Backlog 1416). Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
+# Skriptfehler; Reaktionsfristen im Betrieb (Backlog 1416); Werkstätten ohne Konto im Betrieb mit Namen (Backlog 1417). Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -35,6 +35,9 @@ with sync_playwright() as p:
         if SHOTS: q.screenshot(path=f'{SHOTS}/einrichtung_{lang}_{w}.png',full_page=True)
         # Backlog 1416: Reaktionsfristen im Betrieb – offen mit Zähler, Antippen springt zum ersten Betriebs-Feld
         check(q.evaluate("()=>{const e=document.querySelector('[data-rd=sla]'); return !!e && e.textContent.includes('0 / 4') && !!e.querySelector('.small:not(.muted)')}"),f'{lang} {w}px: Reaktionsfristen offen mit Zähler 0 / 4')
+        # Backlog 1417: Werkstätten mit eigenem Konto im Betrieb – Hinweis mit Zähler und Werkstattnamen in der App-Sprache
+        wsr=q.evaluate("()=>{const e=document.querySelector('[data-rd=workshop_accounts]'); return e ? e.textContent : ''}")
+        check('0 / 2' in wsr and ('München' in wsr or 'Munich' in wsr or 'Мюнхен' in wsr or 'MUENCHEN' not in wsr) and 'MUENCHEN' not in wsr,f'{lang} {w}px: Werkstätten ohne Konto mit Namen ({wsr[:80]!r})')
         if w==390:
           q.click('[data-rd=sla]'); q.wait_for_selector('#sf',timeout=15000); q.wait_for_timeout(500)
           check(q.evaluate("()=>document.activeElement && document.activeElement.name==='sla_production_triage_niedrig_min'"),f'{lang} {w}px: Antippen springt zum Feld Betrieb')

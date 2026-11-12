@@ -21054,7 +21054,7 @@ await test('Backlog 282 (Blickwinkel „Inhaber fällt aus“): Einrichtungsstan
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['rd_owner_backup_t', 'rd_owner_backup_todo']) ok(STRINGS[l][k], `${l}.${k}`);
   const fs = await import('node:fs'); const b = fs.readFileSync(new URL('../docs/BETRIEB.md', import.meta.url), 'utf8');
   ok(b.includes('## Inhaber ausgesperrt (Notfall') && b.includes('totp_secret=NULL') && !/SELECT\s+(password_hash|totp_secret)/i.test(b), 'Notfallweg ohne Lesen von Geheimnissen');
-  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("'backup', 'owner_backup', 'prod_accounts'"), 'Reihenfolge');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes("'backup', 'owner_backup', 'workshop_accounts', 'prod_accounts'"), 'Reihenfolge');
 });
 
 await test('Backlog 283 (Blickwinkel „Sonntag 03:00“): nach dem Senden einer kritischen bzw. „nicht fahrbereit“-Meldung zeigt die App auch mit Netz den Anruf-Hinweis mit „Panne & Notfall“/112 und „Meldung öffnen“; Texte DE/UK/EN', async () => {
@@ -38210,6 +38210,30 @@ await test('Backlog 1416 (Blickwinkel „Inhaber prüft vor der Produktivschaltu
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].rd_sla_t.toLowerCase().includes(STRINGS[l].act_receive.toLowerCase()) && STRINGS[l].rd_sla_t.toLowerCase().includes(STRINGS[l].act_acknowledge.toLowerCase()), `${l}: gleiche Begriffe wie die Einstellungen`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("'license_interval', 'sla', 'cost_limit'") && app.includes(`sla: '[name="sla_production_triage_niedrig_min"]'`) && app.includes("if (x.key === 'sla') return `${t('rd_sla_set')}: ${x.n || 0} / ${x.of || 4}`;"), 'Oberfläche: Reihenfolge, Sprungziel, Zähler');
+});
+await test('Backlog 1417 (Blickwinkel „Inhaber prüft vor der Produktivschaltung den Einrichtungsstand“): Punkt „Werkstätten mit eigenem Konto im Betrieb“ – nur Konten im Betrieb mit gesetztem Passwort zählen; ohne offene Vorgänge Hinweis, mit offenen Vorgängen offen; EXTERN zählt nicht; Texte DE/UK/EN', async () => {
+  const { e, U } = await freshWorld();
+  const it = async () => (await U.own.get('/api/admin/readiness')).data.items.find((x) => x.key === 'workshop_accounts');
+  let x = await it(); eq(x.state, 'info', 'nur Testkonten, keine Vorgänge im Betrieb → Hinweis'); eq(x.n, 0); eq(x.of, 2, 'Dortmund + München, ohne EXTERN'); eq(x.link, '#/users');
+  eq(x.missing.map((w) => w.code).sort().join(','), 'DORTMUND,MUENCHEN'); ok(x.missing.every((w) => w.open === 0));
+  const inv = async (b) => { const r = await U.own.post('/api/users', b); eq(r.status, 201, JSON.stringify(r.data)); return r.data; };
+  const wsDo = await inv({ username: 'p.werkstatt', display_name: 'WS DO Betrieb', role: 'workshop', environment: 'production', workshop_site: 'DORTMUND' });
+  x = await it(); eq(x.n, 0, 'Einladung ohne Passwort zählt nicht');
+  const c = new Client(worker, e, 'p.werkstatt'); eq((await c.post('/api/invite/accept', { token: wsDo.invite_token, password: 'Sicheres-Passwort-2026' })).status, 200);
+  x = await it(); eq(x.n, 1); eq(x.state, 'info'); eq(x.missing.map((w) => w.code).join(','), 'MUENCHEN');
+  const drv = await inv({ username: 'p.fahrer', display_name: 'Fahrer Betrieb', role: 'driver', environment: 'production' });
+  const d = new Client(worker, e, 'p.fahrer'); eq((await d.post('/api/invite/accept', { token: drv.invite_token, password: 'Sicheres-Passwort-2026' })).status, 200);
+  const m = await d.post('/api/cases', { vehicle_id: 'VIN:WMA15SZZ2HM722774', description: 'Rückleuchte defekt', priority: 'niedrig', driveability: 'fahrbereit', workshop_site: 'MUENCHEN', request_key: rk() });
+  eq(m.status, 201, JSON.stringify(m.data));
+  x = await it(); eq(x.state, 'open', 'Vorgang im Betrieb für Werkstatt ohne Konto'); eq(x.missing[0].code, 'MUENCHEN'); eq(x.missing[0].open, 1);
+  const r = await U.own.get('/api/admin/readiness'); ok(r.data.open >= 1);
+  e.DB.db.prepare("UPDATE workshops SET active=0 WHERE code='MUENCHEN'").run();
+  x = await it(); eq(x.state, 'ok', 'geschlossene Werkstatt zählt nicht'); eq(x.of, 1);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['rd_workshop_accounts_t', 'rd_workshop_accounts_todo', 'rd_ws_with_account', 'rd_ws_no_account', 'rd_ws_open_cases']) ok(STRINGS[l][k], `${l}.${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].rd_workshop_accounts_todo.includes(STRINGS[l].role_workshop) && STRINGS[l].rd_workshop_accounts_todo.includes(STRINGS[l].users), `${l}: gleiche Begriffe wie Benutzerverwaltung`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("'owner_backup', 'workshop_accounts', 'prod_accounts'") && app.includes("if (x.key === 'workshop_accounts') return"), 'Oberfläche: Reihenfolge, Detailzeile');
 });
 await test('Backlog 1413 (Reserve Start-Modul nach 1412: 45,593 % ≈ 45,60 %, Backlog 1395): Bausteine __T[264]–__T[273] per Häufigkeitsanalyse (→ 45,571 %); je ≥ 2× genutzt; Rückverwandlung gleich', async () => {
   const { readFileSync } = await import('node:fs');

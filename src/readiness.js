@@ -25,7 +25,12 @@ export async function readiness(env, user) {
       (SELECT json_group_object(role, n) FROM (SELECT role, COUNT(*) AS n FROM users WHERE active=1 AND environment='production' AND password_hash IS NOT NULL GROUP BY role)) AS prod_roles,
       (SELECT COUNT(*) FROM users u WHERE u.active=1 AND u.password_hash IS NULL AND EXISTS (SELECT 1 FROM invites i WHERE i.user_id=u.id AND i.used_at IS NULL AND i.expires_at > ?2 AND (i.created_by IS NULL OR EXISTS (SELECT 1 FROM users c WHERE c.id=i.created_by AND c.active=1)))) AS open_invites,
       (SELECT COUNT(*) FROM users WHERE active=1 AND environment='test') AS test_accounts,
-      (SELECT COUNT(*) FROM vehicles WHERE active=1 AND eval_excluded=0) AS vehicles`).bind(user.id, now).first();
+      (SELECT COUNT(*) FROM vehicles WHERE active=1 AND eval_excluded=0) AS vehicles,
+      (SELECT json_group_array(json_object('code', w.code,
+          'acc', EXISTS (SELECT 1 FROM users u WHERE u.active=1 AND u.environment='production' AND u.role='workshop' AND u.password_hash IS NOT NULL AND u.workshop_site=w.code),
+          'open', (SELECT COUNT(*) FROM cases c WHERE c.environment='production' AND c.status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle')
+            AND (c.workshop_site=w.code OR (c.workshop_site IS NULL AND c.suggested_workshop_site=w.code)))))
+        FROM workshops w WHERE w.active=1 AND w.code<>'EXTERN') AS ws`).bind(user.id, now).first();
   const parse = (x, d) => { try { return x ? JSON.parse(x) : d; } catch { return d; } };
   const set = (v) => v !== null && v !== undefined && String(v).trim() !== '';
   const no2fa = parse(r.no2fa, []);
@@ -37,6 +42,11 @@ export async function readiness(env, user) {
   // Fuhrparkagent nie „Meldung nicht angenommen/übernommen“ für niedrig/mittel (kritisch meldet er sofort, src/agent.js) – Fristen gibt die App
   // nicht vor, deshalb nur „offen“ mit der Zahl der gesetzten Felder (4 = niedrig/mittel × Annahme/Übernahme).
   const slaSet = parse(r.sla_set, []).length;
+  // Backlog 1417 (Blickwinkel „Inhaber prüft vor der Produktivschaltung den Einrichtungsstand“): eigene Werkstatt ohne angemeldetes Konto im
+  // Betrieb bekommt keine Aufträge/Pushs (der Agent meldet es erst je Vorgang, NO_WORKSHOP_RECIPIENT). „offen“ nur, wenn dort Vorgänge im Betrieb
+  // offen sind; sonst Hinweis – ob jede Werkstatt genutzt wird, entscheidet der Inhaber. „EXTERN“ führt die Leitung ohne Konto (Backlog 386).
+  const wsRows = parse(r.ws, []);
+  const wsMissing = wsRows.filter((w) => !w.acc).map((w) => ({ code: w.code, open: w.open || 0 }));
   const backupDays = r.backup_at ? Math.floor((nowMs - Date.parse(r.backup_at)) / 86400000) : null;
   // Einstellungs-Links mit Abschnitt (`?s=`): die App springt zum Feld statt an den Anfang der langen Seite (23.10.2026, Inhaber am Handy)
   const items = [
@@ -50,6 +60,7 @@ export async function readiness(env, user) {
     { key: 'hourly_rate', state: set(r.rate) ? 'ok' : 'open', link: '#/settings?s=hourly_rate' },
     { key: 'license_interval', state: set(r.lic_months) ? 'ok' : 'open', link: '#/settings?s=license_interval' },
     { key: 'sla', state: slaSet === 4 ? 'ok' : 'open', n: slaSet, of: 4, link: '#/settings?s=sla' },
+    { key: 'workshop_accounts', state: !wsMissing.length ? 'ok' : wsMissing.some((w) => w.open) ? 'open' : 'info', n: wsRows.length - wsMissing.length, of: wsRows.length, missing: wsMissing, link: '#/users' },
     { key: 'cost_limit', state: set(r.cost_limit) && Number(r.cost_limit) > 0 ? 'ok' : 'info', link: '#/settings?s=cost_limit' },
     { key: 'backup', state: backupDays !== null && backupDays <= 31 ? 'ok' : 'open', last: r.backup_at || null, days: backupDays, link: '#/settings?s=backup' },
     // Backlog 282 (Teilagent „Inhaber fällt aus“): nur ein aktives Inhaber-Konto → Einstellungen, Sicherung, Datenauskunft und

@@ -1562,7 +1562,7 @@ async function viewQuality(pre) {
   const dc = $('#dqcsv'); if (dc) dc.onclick = () => download(new Blob([dataQualityCsv(items, t, fmtD, mk, { km: (n) => fmtKm(n), src: (v) => odoSrc(v), pos: (p) => posL(p), mm: (n) => fmtMm(n), ax: (v) => t('axle_' + v) })], { type: 'text/csv;charset=utf-8' }), `fuhrpark-datenqualitaet_${r.environment}_${bDate()}.csv`);
 }
 
-const RD_ORDER = ['agent', 'vehicles', 'emergency', 'two_factor', 'own_push', 'idle_workshop', 'test_readonly', 'hourly_rate', 'license_interval', 'sla', 'cost_limit', 'backup', 'owner_backup', 'prod_accounts', 'integration'];
+const RD_ORDER = ['agent', 'vehicles', 'emergency', 'two_factor', 'own_push', 'idle_workshop', 'test_readonly', 'hourly_rate', 'license_interval', 'sla', 'cost_limit', 'backup', 'owner_backup', 'workshop_accounts', 'prod_accounts', 'integration'];
 async function viewReadiness() {
   if (!S.me || S.me.role !== 'owner') { location.hash = '#/'; return; }
   const r = await api('GET', '/api/admin/readiness');
@@ -1575,6 +1575,8 @@ async function viewReadiness() {
     if (x.key === 'vehicles' || x.key === 'emergency' || x.key === 'own_push' || x.key === 'owner_backup') return `${t('rd_count')}: ${x.n || 0}`;
     if (x.key === 'idle_workshop' && x.value) return `${x.value} min`;
     if (x.key === 'sla') return `${t('rd_sla_set')}: ${x.n || 0} / ${x.of || 4}`;
+
+    if (x.key === 'workshop_accounts') return [`${t('rd_ws_with_account')}: ${x.n || 0} / ${x.of || 0}`, ...(x.missing || []).map((w) => `${wsName(w.code)}: ${t('rd_ws_no_account')}${w.open ? ` (${t('rd_ws_open_cases')}: ${w.open})` : ''}`)].join(' · ');
     if (x.key === 'prod_accounts') return [...['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'].filter((k) => x.roles && x.roles[k]).map((k) => `${t('role_' + k)}: ${x.roles[k]}`), `${t('rd_open_invites')}: ${x.open_invites || 0}`, `${t('rd_test_accounts')}: ${x.test_accounts || 0}`].join(' · ');
     return '';
   };
