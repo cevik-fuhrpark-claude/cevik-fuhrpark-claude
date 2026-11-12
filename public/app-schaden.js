@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, FUEL_HINT, GLASS_HINT, HITRUN2_HINT, HITRUN3_HINT, HITRUN_HINT, MARTEN_HINT, NUMPLATE_HINT, ROOFICE_HINT, STORM_HINT, STOW_HINT, THEFT_HINT, TOW_HINT, VANDAL_HINT, WILD_HINT, bDate, claimChip, decIn, esc, eur, fileUrl, fmtD, mayReport, noSticker, noTicket, noTr, noWsObj, plate, recurFix, t, tn } from './app-main.js';
+import { BERLIN_FMT, BRIDGE_HINT, CARGO_HINT, FUEL_HINT, GLASS_HINT, HITRUN2_HINT, HITRUN3_HINT, HITRUN4_HINT, HITRUN_HINT, MARTEN_HINT, NUMPLATE_HINT, ROOFICE_HINT, STORM_HINT, STOW_HINT, THEFT_HINT, TOW_HINT, VANDAL_HINT, WILD_HINT, bDate, claimChip, decIn, esc, eur, fileUrl, fmtD, mayReport, noSticker, noTicket, noTr, noWsObj, plate, recurFix, t, tn } from './app-main.js';
 
 const CLAIM_ST = ['gemeldet', 'in_pruefung', 'reguliert', 'abgelehnt', 'zurueckgezogen'];
 
@@ -60,7 +60,7 @@ async function claimSection(cl, contracts, files = [], desc = '', c = null, coup
 
   const theftNoRef = THEFT_HINT.test(desc || '') && !(cl && cl.police_ref);
 
-  const hitrunNoRef = !theftNoRef && (HITRUN_HINT.test(desc || '') || HITRUN2_HINT.test(desc || '') || HITRUN3_HINT.test(desc || '')) && !(cl && cl.police_ref);
+  const hitrunNoRef = !theftNoRef && (HITRUN_HINT.test(desc || '') || HITRUN2_HINT.test(desc || '') || HITRUN3_HINT.test(desc || '') || HITRUN4_HINT.test(desc || '')) && !(cl && cl.police_ref);
 
   const vandalNoRef = !theftNoRef && !hitrunNoRef && VANDAL_HINT.test(desc || '') && !(cl && cl.police_ref);
 
