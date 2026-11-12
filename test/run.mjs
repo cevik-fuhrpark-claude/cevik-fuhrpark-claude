@@ -21819,7 +21819,7 @@ await test('Backlog 321 (Blickwinkel „Sicherheitsgurt oder Fahrersitz defekt�
     ok(L.seat_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="seat" class="panel" hidden role="status">`), 'Panel #seat');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh) && !SEAT2_HINT.test(dsh) && !SEAT3_HINT.test(dsh);") /* Backlog 1132, 1164 */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh) && !SEAT2_HINT.test(dsh) && !SEAT3_HINT.test(dsh) && !SEAT4_HINT.test(dsh);") /* Backlog 1132, 1164 */; ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('seat') && order.indexOf('acc') < order.indexOf('seat') && order.indexOf('steer') < order.indexOf('seat') && order.indexOf('adas') < order.indexOf('seat') && order.indexOf('seat') < order.indexOf('mirror') && order.indexOf('seat') < order.indexOf('door'), 'Gruppierung: Unfall/Lenkung/Assistent vor Gurt/Sitz vor Spiegel/Tür');
   ok(helpAfter(app, 'seat', 'gear'), 'Hilfe-Abschnitt seat nach gear');
@@ -36300,7 +36300,7 @@ await test('Backlog 1132 (Sonde Federung/Sitz): Luftfederung des Fahrer-/Beifahr
   ok(!I.test('Luftfederung hinten links verliert Luft') && !I.test('Fahrersitz verstellt'), 'keine Sitzfederung');
   ok(app.includes('const SEATSUSP_HINT = new RegExp(SEATSUSP_SPANS.source, \'i\');'), 'Prüfmuster ohne g (kein lastIndex)');
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
-  ok(hl.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv)) && !SUSP2_HINT.test(noSeatSusp(dv)) && !SUSP3_HINT.test(noSeatSusp(dv));") && hl.includes("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh) && !SEAT2_HINT.test(dsh) && !SEAT3_HINT.test(dsh);") /* Backlog 1164 */, 'Meldeformular');
+  ok(hl.includes("$('#susp').hidden = !SUSP_HINT.test(noSeatSusp(dv)) && !SUSP2_HINT.test(noSeatSusp(dv)) && !SUSP3_HINT.test(noSeatSusp(dv));") && hl.includes("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh) && !SEAT2_HINT.test(dsh) && !SEAT3_HINT.test(dsh) && !SEAT4_HINT.test(dsh);") /* Backlog 1164 */, 'Meldeformular');
 });
 await test('Backlog 1133 (Sonde Glas-Hinweis, Folge aus 760): „Seiten-/Heckscheibe (von innen) beschlagen“ zeigt nur Sicht/Lüftung, keine Glasschaden-Schritte – mit Riss/kaputt im selben Satz weiterhin Glas', async () => {
   const { readFileSync } = await import('node:fs');
@@ -37936,6 +37936,19 @@ await test('Backlog 1390 (Reserve Start-Modul nach 1391: 45,69 % > 45,60 %): Bau
   }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
+await test('Backlog 1396 (Sonde, Blickwinkel „Fahrer meldet Fahrersitz/Gurt auf Englisch“, Backlog 195): „belt won\'t retract“, „seat belt warning keeps beeping“, „my seat is bouncing a lot“, „seat drops to the bottom“, „seat leaks air“, „seat rocks back and forth“, „back of the seat collapsed“, „seat cover is ripped“, „hole in the seat“, „seat lever snapped“, „armrest is broken“ → Sitz/Gurt; nicht „fan belt“, „my belt is too tight“, Reparaturvermerk', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2].includes('i') ? m[2] : m[2] + 'i'); };
+  const S4 = rx('SEAT4_HINT');
+  for (const x of ["belt won't retract", 'seat belt warning keeps beeping', 'my seat is bouncing a lot', 'I was bouncing in my seat', 'the seat drops to the bottom', 'the seat leaks air', 'driver seat rocks back and forth', 'the back of the seat collapsed', 'the seat cover is ripped', "there's a hole in the seat", 'seat lever snapped', 'the armrest is broken', 'the seat compressor runs all the time']) ok(S4.test(x), 'Sitz/Gurt: ' + x);
+  for (const x of ["the fan belt won't stop squealing", 'my belt is too tight', 'seat belt fixed, no longer stuck', 'the seat cover was ripped, replaced', 'the car seat in the cab is fine']) ok(!S4.test(x), 'kein Sitz/Gurt: ' + x);
+  ok(app.includes("!SEAT3_HINT.test(dsh) && !SEAT4_HINT.test(dsh);"), 'Sitz-Panel nutzt SEAT4_HINT');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_seat_s.includes('belt won’t retract') && STRINGS[l].help_seat_s.includes('seat cover is ripped'), 'Hilfe Sitz/Gurt ' + l);
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1394 (Sonde, Blickwinkel „Fahrer meldet Luftfederung/Fahrwerk auf Englisch“, Backlog 195): „lorry is leaning to the left“, „trailer is down on the suspension“, „sitting on the bump stops“, „air bags are flat“, „air bag on the rear axle is leaking“, „air leaking from the suspension“, „can\'t raise the chassis“, „the trailer won\'t come down“, „the back end is sagging“, „tag axle stays up“, „ECAS fault“, „stabiliser link is broken“, „truck is very bouncy“ → Federung; nicht „leaning against the wall“, Fahrer-Airbag, „rear door is sagging“, „won\'t go down the ramp“, Reparaturvermerk', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -38323,7 +38336,7 @@ await test('Backlog 1366 (Sonde, Blickwinkel „Fahrer diktiert Fahrersitz/Gurt 
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
   const any = (ns) => { const R = ns.map(rx); return (x) => R.some((r) => r.test(recurFix(x).toLowerCase())); };
   const seat = any(['SEAT_HINT', 'SEAT2_HINT', 'SEAT3_HINT']);
-  ok(app.includes("&& !SEAT3_HINT.test(dsh);"), 'Formular prüft SEAT3_HINT');
+  ok(app.includes("&& !SEAT3_HINT.test(dsh) && !SEAT4_HINT.test(dsh);"), 'Formular prüft SEAT3_HINT');
   for (const x of ['замок ремня безопасности сломан', 'пряжка ремня сломана', 'замок ременя безпеки зламаний', 'застёжка ремня не защёлкивается', 'ремень не блокируется при торможении', 'ремінь безпеки не блокується', 'сиденье болтается', 'сиденье падает вниз', 'сидіння бовтається', 'крісло водія падає вниз', 'ремень безопасности порван']) ok(seat(x), 'Sitz/Gurt: ' + x);
   for (const x of ['ремень безопасности не порван', 'ремінь безпеки не порваний', 'замок ремня безопасности не сломан', 'замок пассажирской двери сломан', 'стяжной ремень не блокируется', 'пряжка ремня на грузе сломана', 'на сиденье падает вода с крыши', 'сиденье болталось, уже отремонтировали', 'сиденье не болтается', 'ремень безопасности работает']) ok(!seat(x), 'kein Sitz-/Gurt-Hinweis: ' + x);
   const { STRINGS } = await import('../public/i18n.js');
@@ -39387,7 +39400,7 @@ await test('Backlog 1271 (Sonde, Blickwinkel „Fahrer diktiert Fahrersitz-/Gurt
   for (const x of ['sitz geht nicht hoch wurde repariert', 'sitz defekt wurde repariert']) ok(!S1.test(x), 'Sitz-Muster: Reparaturvermerk zählt nicht: ' + x);
   ok(S1.test('sitz defekt') && S1.test('fahrersitz wackelt'), 'Sitz-Muster weiter: Sitz defekt, wackelt');
   ok(!B2.test('fahrersitz wackelt beim bremsen') && !B2.test('spiegel wackelt beim bremsen') && B2.test('lkw wackelt beim bremsen'), 'Bremse: wackelnder Sitz/Spiegel beim Bremsen nicht, Lkw schon');
-  ok(app.includes("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh) && !SEAT2_HINT.test(dsh) && !SEAT3_HINT.test(dsh);"), 'Listener');
+  ok(app.includes("$('#seat').hidden = !SEAT_HINT.test(dsh) && !SEATSUSP_HINT.test(dsh) && !SEAT2_HINT.test(dsh) && !SEAT3_HINT.test(dsh) && !SEAT4_HINT.test(dsh);"), 'Listener');
   const { STRINGS } = await import('../public/i18n.js');
   for (const [l, exs] of [['de', ['sitz geht nicht mehr hoch', 'rückenlehne klappt nach hinten', 'kopfstütze abgebrochen', 'gurt zieht nicht mehr ein']], ['uk', ['сидіння сповзає назад', 'спинка не фіксується', 'ремінь безпеки не змотується']], ['en', ['seat keeps going down', 'backrest falls back', 'seat belt doesn’t pull out']]]) for (const ex of exs) { ok(STRINGS[l].help_seat_s.includes(ex), 'Hilfe-Beispiel ' + l + ': ' + ex); ok(S2.test(ex), 'Hilfe-Beispiel löst Hinweis aus: ' + ex); }
 });

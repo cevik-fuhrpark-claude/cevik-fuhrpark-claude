@@ -229,6 +229,7 @@ UI-Kraftstoff/Tank auf Englisch: Dieseldiebstahl, AdBlue-Tank mit Diesel, Diesel
 UI-Weggerollt/Feststellbremse/Servolenkung auf Englisch: weggerollt gegen Wand, Handbremse hält nicht, lost power steering, fridge lost power, trailer lights lost power, Feststellbrems-Warnleuchte (Backlog 1391)|ui-feststellbremse-englisch.py|/tmp/cfp-feststellbremse-englisch.log
 UI-Reifen/Rad umgangssprachlich auf Englisch: got a flat, blew a tyre, inner tyre on the twin, bulge on the sidewall, tyres are knackered (Backlog 1393)|ui-reifen-englisch.py|/tmp/cfp-reifen-englisch.log
 UI-Luftfederung/Fahrwerk auf Englisch: down on the suspension, air bags are flat, leaning, ECAS fault, back end sagging (Backlog 1394)|ui-federung-englisch.py|/tmp/cfp-federung-englisch.log
+UI-Fahrersitz/Gurt auf Englisch: belt wont retract, seat bouncing, seat cover ripped, belt warning beeping, armrest broken (Backlog 1396)|ui-sitz-englisch.py|/tmp/cfp-sitz-englisch.log
 UI-Fehlbetankung: Warnzeile bei „Weiß nicht“/„fahrbereit“, neue Schreibweisen, Hinweis für die Leitung im Vorgang, DE/UK/EN 390/820/1366|ui-fehlbetankung-sperre.py|/tmp/cfp-fehlbetankung-sperre.log
 UI-Unfallflucht: eigene Schritte statt Unfall-Hinweis, Hinweis Anzeige/Gegner unbekannt im Vorgang, DE/UK/EN 390/820/1366|ui-unfallflucht.py|/tmp/cfp-unfallflucht.log
 UI-Vandalismus: eigene Schritte, nicht doppelt zu Diebstahl, Hinweis Anzeige im Vorgang, DE/UK/EN 390/820/1366|ui-vandalismus.py|/tmp/cfp-vandalismus.log
