@@ -225,6 +225,7 @@ UI-Glasschaden-Hinweis im Meldeformular, Vorgang und Hilfe|ui-glasschaden.py|/tm
 UI-Wildunfall-Hinweis im Meldeformular, Vorgang und Hilfe|ui-wildunfall.py|/tmp/cfp-wildunfall.log
 UI-Schlüssel/Fahrzeugschein-verloren-Hinweis im Meldeformular und Hilfe|ui-schluessel-verloren.py|/tmp/cfp-schluessel-verloren.log
 UI-Fehlbetankungs-Hinweis im Meldeformular und Hilfe|ui-falsch-getankt.py|/tmp/cfp-falsch-getankt.log
+UI-Kraftstoff/Tank auf Englisch: Dieseldiebstahl, AdBlue-Tank mit Diesel, Dieselgeruch, Tankgeber, Tankband, verunreinigter Kraftstoff, kein Unfall bei „accidentally“ (Backlog 1387)|ui-kraftstoff-englisch.py|/tmp/cfp-kraftstoff-englisch.log
 UI-Fehlbetankung: Warnzeile bei „Weiß nicht“/„fahrbereit“, neue Schreibweisen, Hinweis für die Leitung im Vorgang, DE/UK/EN 390/820/1366|ui-fehlbetankung-sperre.py|/tmp/cfp-fehlbetankung-sperre.log
 UI-Unfallflucht: eigene Schritte statt Unfall-Hinweis, Hinweis Anzeige/Gegner unbekannt im Vorgang, DE/UK/EN 390/820/1366|ui-unfallflucht.py|/tmp/cfp-unfallflucht.log
 UI-Vandalismus: eigene Schritte, nicht doppelt zu Diebstahl, Hinweis Anzeige im Vorgang, DE/UK/EN 390/820/1366|ui-vandalismus.py|/tmp/cfp-vandalismus.log
