@@ -38024,6 +38024,22 @@ await test('Backlog 1392 (Reserve Start-Modul nach 1394: 45,614 % > 45,60 %): Ba
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1406 (Kurzsonde Reparaturvermerke „festgezogen/tightened“, Backlog 195): „Spiegel war locker, festgezogen/wieder festgeschraubt/wieder angeschraubt“, „I tightened it up“, „tightened it“, „put/screwed it back on“, „підтягнули“, „подтянули“ blenden den Spiegel-Hinweis über noFixed aus; „muss festgezogen werden“, „nicht festgezogen“, „needs (to be) tightened“, „nobody tightened it“, „nobody put it back on“, „loose again although tightened“, „треба підтягнути“ weiter mit Hinweis', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const M = new RegExp(app.match(/^const MIRROR_HINT = \/(.+)\/i;(?: \/\/.*)?$/m)[1], 'i');
+  const a = app.indexOf('const FIX_WORD'), b = app.indexOf("}).join('');", a) + 12;
+  const recurFix = new Function(app.slice(a, b) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", c) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const t = (x) => noFixed(recurFix(x));
+  const pos = ['Spiegel war locker', 'Spiegel war locker, muss festgezogen werden', 'Spiegel war locker, nicht festgezogen', 'the mirror is loose, needs tightening', 'the mirror is loose, needs to be tightened', 'the mirror is loose, nobody tightened it', 'the mirror came off, nobody put it back on', 'the mirror is loose again although tightened last week', 'дзеркало розбите, треба підтягнути'];
+  const neg = ['Spiegel war locker, wieder festgeschraubt', 'Spiegel war locker, festgezogen', 'Spiegel war locker, wieder angeschraubt', 'Spiegel war locker, nachgezogen', 'the mirror was loose, tightened it', 'the mirror was loose, I tightened it up', 'the mirror was loose, mechanic tightened it', 'the mirror came off, put it back on', 'the mirror was loose, screwed it back on', 'зеркало болталось, подтянули'];
+  for (const x of pos) ok(M.test(t(x)), 'Spiegel-Hinweis bleibt: ' + x);
+  for (const x of neg) ok(!M.test(t(x)), 'Reparaturvermerk, kein Hinweis: ' + x);
+  ok(t('the seat belt tightened and will not release') === 'the seat belt tightened and will not release', '„seat belt tightened and will not release“ ist kein Vermerk');
+  const fw = app.slice(a, app.indexOf('\n', a)); ok(fw.includes('|festgezogen|') && fw.includes('|tightened)') && fw.includes('|почини|підтягн|подтян)'), 'FIX_WORD kennt festgezogen/tightened/підтягн');
+});
 await test('Backlog 1405 (Kurzsonde Reparaturvermerke, Backlog 195): Zustandsvermerke „sorted now“, „got it sorted“, „all good now“, „fine/ok now“, „now it’s fine“, „back to normal“, „passt wieder“, „alles wieder gut“, „вже все добре“, „уже нормально“ blenden Geräte-/Ausstattungshinweise über noFixed aus; „not sorted“, „need to get it sorted out“, „needs to be sorted“, „not ok now“, „is it ok now to drive?“, „passt wieder nicht“, „вже не добре“ und Wiederkehr („broken again although it was sorted“) weiter mit Hinweis', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -38039,7 +38055,7 @@ await test('Backlog 1405 (Kurzsonde Reparaturvermerke, Backlog 195): Zustandsver
   for (const x of pos) ok(M.test(t(x)), 'Spiegel-Hinweis bleibt: ' + x);
   for (const x of neg) ok(!M.test(t(x)), 'Reparaturvermerk, kein Hinweis: ' + x);
   ok(t('the light is out, nothing is fine') === 'the light is out, nothing is fine' && t('the light is out, not back to normal') === 'the light is out, not back to normal', 'Verneinung ist kein Vermerk');
-  ok(/\bsorted\)/.test(app.slice(a, app.indexOf('\n', a))), 'FIX_WORD kennt „sorted“ (Verneinung/Plan/Wiederkehr neutralisiert)');
+  ok(/\|sorted[|)]/.test(app.slice(a, app.indexOf('\n', a))), 'FIX_WORD kennt „sorted“ (Verneinung/Plan/Wiederkehr neutralisiert)');
   ok(!/erledigt/.test(app.slice(c, app.indexOf('\n', c))), '„erledigt“ bewusst kein Vermerk („Spiegel kaputt, Tour erledigt“)');
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
