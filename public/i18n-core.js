@@ -1094,6 +1094,7 @@ export const PLURALS = { de: {}, uk: {}, en: {} };
 // [CLAUDE] 18.10.2026: Kennzahlen – interne Aufträge, Prüfmängel ohne Auftrag erledigt
 // [CLAUDE] Hilfe „Einstellungen“ (nur Inhaber, 19.10.2026) – beschreibt nur vorhandene Felder der Seite Mehr → Einstellungen
 // [CLAUDE] 20.10.2026: Fehlersuche Reifen/Lager/Fahrerakte/Einstellungen
+// Backlog 1416: Reaktionsfristen im Betrieb im Einrichtungsstand
 // [CLAUDE] 403 mit Grund (reason) in der Oberflächensprache, Status als Bezeichnung statt Code (21.10.2026)
 // [CLAUDE] 22.10.2026: Rollen-/Konsistenz-/Tastaturprüfung
 

@@ -19,6 +19,7 @@ export async function readiness(env, user) {
       (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS rate,
       (SELECT value FROM settings WHERE key='license_check_months') AS lic_months,
       (SELECT value FROM settings WHERE key='repair_cost_limit_net') AS cost_limit,
+      (SELECT json_group_array(key) FROM settings WHERE key IN ('sla_production_triage_niedrig_min','sla_production_triage_mittel_min','sla_production_ack_niedrig_min','sla_production_ack_mittel_min') AND trim(COALESCE(value,''))<>'') AS sla_set,
       (SELECT MAX(created_at) FROM audit_log WHERE action='backup.export') AS backup_at,
       (SELECT json_object('started_at', started_at, 'finished_at', finished_at, 'error', error IS NOT NULL) FROM agent_runs WHERE environment='production' ORDER BY started_at DESC LIMIT 1) AS agent,
       (SELECT json_group_object(role, n) FROM (SELECT role, COUNT(*) AS n FROM users WHERE active=1 AND environment='production' AND password_hash IS NOT NULL GROUP BY role)) AS prod_roles,
@@ -32,6 +33,10 @@ export async function readiness(env, user) {
   const nowMs = Date.parse(now);
   const agentOk = !!agent && !agent.error && (agent.finished_at ? nowMs - Date.parse(agent.finished_at) <= 75 * 60000 : nowMs - Date.parse(agent.started_at) <= 10 * 60000);
   const roles = parse(r.prod_roles, {});
+  // Backlog 1416 (Blickwinkel „Inhaber prüft vor der Produktivschaltung den Einrichtungsstand“): ohne Reaktionsfristen im Betrieb meldet der
+  // Fuhrparkagent nie „Meldung nicht angenommen/übernommen“ für niedrig/mittel (kritisch meldet er sofort, src/agent.js) – Fristen gibt die App
+  // nicht vor, deshalb nur „offen“ mit der Zahl der gesetzten Felder (4 = niedrig/mittel × Annahme/Übernahme).
+  const slaSet = parse(r.sla_set, []).length;
   const backupDays = r.backup_at ? Math.floor((nowMs - Date.parse(r.backup_at)) / 86400000) : null;
   // Einstellungs-Links mit Abschnitt (`?s=`): die App springt zum Feld statt an den Anfang der langen Seite (23.10.2026, Inhaber am Handy)
   const items = [
@@ -44,6 +49,7 @@ export async function readiness(env, user) {
     { key: 'test_readonly', state: r.test_ro === '1' ? 'ok' : 'open', link: '#/settings?s=test_readonly' },
     { key: 'hourly_rate', state: set(r.rate) ? 'ok' : 'open', link: '#/settings?s=hourly_rate' },
     { key: 'license_interval', state: set(r.lic_months) ? 'ok' : 'open', link: '#/settings?s=license_interval' },
+    { key: 'sla', state: slaSet === 4 ? 'ok' : 'open', n: slaSet, of: 4, link: '#/settings?s=sla' },
     { key: 'cost_limit', state: set(r.cost_limit) && Number(r.cost_limit) > 0 ? 'ok' : 'info', link: '#/settings?s=cost_limit' },
     { key: 'backup', state: backupDays !== null && backupDays <= 31 ? 'ok' : 'open', last: r.backup_at || null, days: backupDays, link: '#/settings?s=backup' },
     // Backlog 282 (Teilagent „Inhaber fällt aus“): nur ein aktives Inhaber-Konto → Einstellungen, Sicherung, Datenauskunft und

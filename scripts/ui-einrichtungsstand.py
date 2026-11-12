@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (22.10.2026, eigene Verbesserung): Inhaber → Mehr → „Einrichtungsstand“ – Liste der Punkte mit Status, offene mit
 # Hinweis, Antippen öffnet die passende Seite; Fuhrparkleitung sieht den Menüpunkt nicht. DE/UK/EN, 390/820/1366 px, ohne Querscrollen/
-# Skriptfehler. Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
+# Skriptfehler; Reaktionsfristen im Betrieb (Backlog 1416). Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -33,6 +33,12 @@ with sync_playwright() as p:
         check(q.evaluate("()=>!!document.querySelector('[data-rd=emergency] .small:not(.muted)')"),f'{lang} {w}px: offener Punkt mit Hinweis')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: kein Querscrollen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/einrichtung_{lang}_{w}.png',full_page=True)
+        # Backlog 1416: Reaktionsfristen im Betrieb – offen mit Zähler, Antippen springt zum ersten Betriebs-Feld
+        check(q.evaluate("()=>{const e=document.querySelector('[data-rd=sla]'); return !!e && e.textContent.includes('0 / 4') && !!e.querySelector('.small:not(.muted)')}"),f'{lang} {w}px: Reaktionsfristen offen mit Zähler 0 / 4')
+        if w==390:
+          q.click('[data-rd=sla]'); q.wait_for_selector('#sf',timeout=15000); q.wait_for_timeout(500)
+          check(q.evaluate("()=>document.activeElement && document.activeElement.name==='sla_production_triage_niedrig_min'"),f'{lang} {w}px: Antippen springt zum Feld Betrieb')
+          q.go_back(); q.wait_for_selector('[data-rd=emergency]',timeout=15000)
         q.click('[data-rd=emergency]'); q.wait_for_timeout(800)
         check(q.evaluate('()=>location.hash')=='#/emergency/edit',f'{lang} {w}px: Antippen öffnet Rufnummern')
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs}')

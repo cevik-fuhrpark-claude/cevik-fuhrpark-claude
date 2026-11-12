@@ -38191,6 +38191,26 @@ await test('Backlog 1415 (Reserve Start-Modul nach 1414: 45,592 % ≈ 45,60 %, B
   }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
+
+await test('Backlog 1416 (Blickwinkel „Inhaber prüft vor der Produktivschaltung den Einrichtungsstand“): Punkt „Reaktionsfristen im Betrieb“ offen, bis alle 4 Felder (niedrig/mittel × Eingang/Übernahme, Betrieb) gesetzt sind; Testumgebung zählt nicht; Link springt zum Feld; nichts vorgegeben; Texte DE/UK/EN', async () => {
+  const { e, U } = await freshWorld();
+  const it = async () => (await U.own.get('/api/admin/readiness')).data.items.find((x) => x.key === 'sla');
+  let x = await it(); eq(x.state, 'open'); eq(x.n, 0); eq(x.of, 4); eq(x.link, '#/settings?s=sla');
+  eq(e.DB.db.prepare("SELECT COUNT(*) AS n FROM settings WHERE key LIKE 'sla_%'").get().n, 0, 'keine Frist vorgegeben');
+  eq((await U.own.put('/api/settings', { sla_test_triage_niedrig_min: 60, sla_test_triage_mittel_min: 30, sla_test_ack_niedrig_min: 60, sla_test_ack_mittel_min: 30 })).status, 200);
+  x = await it(); eq(x.n, 0, 'Testfristen zählen nicht'); eq(x.state, 'open');
+  eq((await U.own.put('/api/settings', { sla_production_triage_niedrig_min: 240, sla_production_triage_mittel_min: 60, sla_production_ack_niedrig_min: 480 })).status, 200);
+  x = await it(); eq(x.n, 3); eq(x.state, 'open', 'teilweise = offen');
+  eq((await U.own.put('/api/settings', { sla_production_ack_mittel_min: 120 })).status, 200);
+  x = await it(); eq(x.n, 4); eq(x.state, 'ok');
+  eq((await U.own.put('/api/settings', { sla_production_ack_mittel_min: '' })).status, 200);
+  x = await it(); eq(x.n, 3, 'geleert zählt nicht'); eq(x.state, 'open');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['rd_sla_t', 'rd_sla_todo', 'rd_sla_set']) ok(STRINGS[l][k], `${l}.${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].rd_sla_t.toLowerCase().includes(STRINGS[l].act_receive.toLowerCase()) && STRINGS[l].rd_sla_t.toLowerCase().includes(STRINGS[l].act_acknowledge.toLowerCase()), `${l}: gleiche Begriffe wie die Einstellungen`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("'license_interval', 'sla', 'cost_limit'") && app.includes(`sla: '[name="sla_production_triage_niedrig_min"]'`) && app.includes("if (x.key === 'sla') return `${t('rd_sla_set')}: ${x.n || 0} / ${x.of || 4}`;"), 'Oberfläche: Reihenfolge, Sprungziel, Zähler');
+});
 await test('Backlog 1413 (Reserve Start-Modul nach 1412: 45,593 % ≈ 45,60 %, Backlog 1395): Bausteine __T[264]–__T[273] per Häufigkeitsanalyse (→ 45,571 %); je ≥ 2× genutzt; Rückverwandlung gleich', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');

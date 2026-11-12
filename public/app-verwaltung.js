@@ -1562,7 +1562,7 @@ async function viewQuality(pre) {
   const dc = $('#dqcsv'); if (dc) dc.onclick = () => download(new Blob([dataQualityCsv(items, t, fmtD, mk, { km: (n) => fmtKm(n), src: (v) => odoSrc(v), pos: (p) => posL(p), mm: (n) => fmtMm(n), ax: (v) => t('axle_' + v) })], { type: 'text/csv;charset=utf-8' }), `fuhrpark-datenqualitaet_${r.environment}_${bDate()}.csv`);
 }
 
-const RD_ORDER = ['agent', 'vehicles', 'emergency', 'two_factor', 'own_push', 'idle_workshop', 'test_readonly', 'hourly_rate', 'license_interval', 'cost_limit', 'backup', 'owner_backup', 'prod_accounts', 'integration'];
+const RD_ORDER = ['agent', 'vehicles', 'emergency', 'two_factor', 'own_push', 'idle_workshop', 'test_readonly', 'hourly_rate', 'license_interval', 'sla', 'cost_limit', 'backup', 'owner_backup', 'prod_accounts', 'integration'];
 async function viewReadiness() {
   if (!S.me || S.me.role !== 'owner') { location.hash = '#/'; return; }
   const r = await api('GET', '/api/admin/readiness');
@@ -1574,6 +1574,7 @@ async function viewReadiness() {
     if (x.key === 'backup' && x.last) return `${t('rd_last_backup')}: ${fmtD(x.last)}`;
     if (x.key === 'vehicles' || x.key === 'emergency' || x.key === 'own_push' || x.key === 'owner_backup') return `${t('rd_count')}: ${x.n || 0}`;
     if (x.key === 'idle_workshop' && x.value) return `${x.value} min`;
+    if (x.key === 'sla') return `${t('rd_sla_set')}: ${x.n || 0} / ${x.of || 4}`;
     if (x.key === 'prod_accounts') return [...['owner', 'fleet', 'workshop', 'dispatch', 'driver', 'viewer'].filter((k) => x.roles && x.roles[k]).map((k) => `${t('role_' + k)}: ${x.roles[k]}`), `${t('rd_open_invites')}: ${x.open_invites || 0}`, `${t('rd_test_accounts')}: ${x.test_accounts || 0}`].join(' · ');
     return '';
   };
@@ -1862,7 +1863,7 @@ async function viewSettings(sec) {
     $('#sinv').innerHTML = `<section class="panel warn" role="alert"><p style="margin-top:0"><b>${esc(t('settings_stored_invalid'))}</b></p><ul class="small">${items.join('')}</ul></section>`;
   }
 
-  const SEC = { idle_workshop: '#idle_logout_workshop_min', test_readonly: '#tmr', hourly_rate: '#workshop_hourly_rate_net', license_interval: '#license_check_months', cost_limit: '#repair_cost_limit_net', backup: '#bkp', import: '#csv' };
+  const SEC = { idle_workshop: '#idle_logout_workshop_min', test_readonly: '#tmr', hourly_rate: '#workshop_hourly_rate_net', license_interval: '#license_check_months', cost_limit: '#repair_cost_limit_net', backup: '#bkp', import: '#csv', sla: '[name="sla_production_triage_niedrig_min"]' };
   const secEl = sec && SEC[sec] ? $(SEC[sec]) : null;
   if (secEl) { secEl.scrollIntoView({ block: 'center' }); try { secEl.focus({ preventScroll: true }); } catch {} }
   if ($('#hrkeep')) {
