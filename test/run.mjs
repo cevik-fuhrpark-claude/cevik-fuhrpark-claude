@@ -37883,6 +37883,23 @@ await test('Backlog 1381 (Sonde, Blickwinkel „Fahrer meldet Assistenzsystem/Ka
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1389 (Sonde, Blickwinkel „Fahrer meldet Panne/Liegenbleiben auf Englisch“, Backlog 195): „the truck died on me“, „truck just stopped and won’t move“, „truck needs towing“ → Panne-Schritte; „lost all power on the A1“, „truck stalled at the traffic lights“ → Motor-Schritte; nicht „it died … needs a new battery“, „the truck has never stalled“, Abschleppen zum Werkstatttermin, „towed it back, fixed“', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2].includes('i') ? m[2] : m[2] + 'i'); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const lc = (x) => recurFix(x).toLowerCase();
+  const bd = rx('BREAKDOWN_HINT'), E = ['ENGINE_HINT', 'ENGINE2_HINT', 'ENGINE3_HINT', 'ENGINE4_HINT', 'ENGINE5_HINT'].map(rx), eng = (x) => E.some((r) => r.test(lc(x)));
+  ok(app.includes("$('#breakdown').hidden = !BREAKDOWN_HINT.test(dfx);"), 'Meldeformular prüft das Panne-Muster');
+  for (const x of ['the truck died on me', "truck just stopped and won't move", 'truck needs towing', 'the lorry has died on the A2', 'truck broke down on the motorway']) ok(bd.test(lc(x)), 'Panne: ' + x);
+  for (const x of ['it died at the depot after the shift, needs a new battery', 'truck needs towing to the workshop next week for service', 'the mechanic towed it back, fixed', 'no breakdown, just a question']) ok(!bd.test(lc(x)), 'keine Panne: ' + x);
+  for (const x of ['lost all power on the A1', 'truck stalled at the traffic lights', 'the truck keeps stalling', 'engine keeps stalling']) ok(eng(x), 'Motor: ' + x);
+  for (const x of ['the truck has never stalled', 'no stalling since the repair, fixed']) ok(!E[3].test(lc(x)), 'kein Motor (neues Muster): ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_breakdown_s.includes('the truck died on me') && bd.test('the truck died on me'), 'Hilfe Panne ' + l);
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1387 (Sonde, Blickwinkel „Fahrer meldet Kraftstoff/Tank auf Englisch“, Backlog 195): Dieseldiebstahl („someone stole diesel from the tank overnight“, „somebody nicked the diesel“, „tank was drained overnight“, „someone stole the battery“) → Diebstahl; „I filled the AdBlue tank with diesel“ → Falsch getankt; „diesel smell from the engine“, „strong diesel smell“, „fuel return pipe split“, „fuel hose cracked“ → Leck; „fuel level sensor faulty“, „Tankgeber defekt“ → Anzeige statt Fahrwerk; „diesel tank strap is broken“, „Tankband gerissen“ → loses Teil; „contaminated fuel“, „verunreinigter Diesel“ → Wasser/Kraftstoff; Fehlalarm „I accidentally put AdBlue …“ zeigte Unfall-Schritte', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
