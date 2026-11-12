@@ -19275,7 +19275,7 @@ await test('Backlog 291 (Blickwinkel „Steinschlag in der Windschutzscheibe“)
   }
   ok(app.includes(`<div id="glass" class="panel" hidden role="status">`), 'Panel #glass');
   const lp = app.indexOf("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk)))") /* Backlog 1130 */; ok(lp > 0 && lp < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
-  ok(app.includes("const glassNoClaim = !cl && GLASS_HINT.test(noTicket(noWsObj(noSticker(desc))));") && app.includes('data-claimglass'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
+  ok(app.includes("const glassNoClaim = !cl && (GLASS_HINT.test(noTicket(noWsObj(noSticker(desc)))) || GLASS2_HINT.test(noSticker(desc)));") && app.includes('data-claimglass'), 'Versicherungs-Hinweis nur ohne Versicherungsfall');
   ok(app.includes("'theft', 'glass', "), 'Hilfe-Abschnitt glass für meldende Rollen');
 });
 
@@ -19304,7 +19304,7 @@ await test('Backlog 292: Abfahrtskontrolle zeigt bei einem Mangel mit Glasschade
   eq((app.match(/<div id="glass" class="panel"/g) || []).length, 1, 'Panel einmal definiert (glassPanel)');
   const dep = app.slice(app.indexOf('async function viewDepartureCheck('), app.indexOf('function kmInputOk('));
   ok(dep.includes('${checklistHtml(true)}${tachoPanel()}${glassPanel(true)}'), 'Panel unter der Prüfliste, Variante Kontrolle'); // checklistHtml(true): Backlog 824
-  ok(dep.includes("$('#glass').hidden = !ms.some((i) => GLASS_HINT.test(i.note || ''));"), 'nur Mängel mit passender Beschreibung');
+  ok(dep.includes("$('#glass').hidden = !ms.some((i) => GLASS_HINT.test(i.note || '') || GLASS2_HINT.test(i.note || ''));"), 'nur Mängel mit passender Beschreibung');
   const nw = app.slice(app.indexOf('async function viewNew('), app.indexOf('async function viewNew(') + 6000);
   ok(nw.includes('${glassPanel()}'), 'Meldeformular nutzt dasselbe Panel (Grundvariante)');
   ok(app.includes("if (check) st[2] = t('glass_hint_step_check');"), 'Kontrolle ersetzt nur Schritt 3');
@@ -36259,8 +36259,8 @@ await test('Backlog 1130 (Blickwinkel „Fahrer findet einen Strafzettel am Lkw 
   const GL = new RegExp(app.match(/^const GLASS_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['Strafzettel an der Windschutzscheibe', 'Knöllchen hinter der Frontscheibe', 'parking ticket on the windscreen', 'штраф за паркування на лобовому склі']) { ok(GL.test(x), 'vorher Glas-Schritte: ' + x); ok(!GL.test(noTicket(x)), 'jetzt keine Glas-Schritte: ' + x); }
   for (const x of ['Strafzettel an der Windschutzscheibe, außerdem Steinschlag', 'Windschutzscheibe gerissen, Strafzettel dran', 'parking ticket under the wiper, windscreen cracked', 'Windschutzscheibe gerissen']) ok(GL.test(noTicket(x)), 'Glasschaden bleibt: ' + x);
-  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk)));"), 'Glas-Prüfung ohne Strafzettel-Ort');
-  ok(app.includes('const glassNoClaim = !cl && GLASS_HINT.test(noTicket(noWsObj(noSticker(desc))));'), 'Versicherungsabschnitt: Strafzettel an der Scheibe ist kein Glasschaden');
+  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk))) && !GLASS2_HINT.test(dsk);"), 'Glas-Prüfung ohne Strafzettel-Ort');
+  ok(app.includes('const glassNoClaim = !cl && (GLASS_HINT.test(noTicket(noWsObj(noSticker(desc)))) || GLASS2_HINT.test(noSticker(desc)));'), 'Versicherungsabschnitt: Strafzettel an der Scheibe ist kein Glasschaden');
   ok(app.includes("$('#ticket').hidden = !$('#roadchk').hidden || !TICKET_HINT.test(dv);") && app.indexOf("$('#roadchk').hidden = ") < app.indexOf("$('#ticket').hidden = "), 'neben Einwand bei Kontrolle nur deren Schritte');
   ok(app.includes('<div id="ticket" class="panel" hidden role="status">'), 'Panel #ticket');
   ok(app.includes("'fuelcard', 'toll', 'ticket', 'tacho']"), 'Reihenfolge nach Maut');
@@ -36284,7 +36284,7 @@ await test('Backlog 1131 (Sonde Glas-Hinweis): Gegenstände an/vor der Windschut
   const GL = new RegExp(app.match(/^const GLASS_HINT = \/(.+)\/i;$/m)[1], 'i');
   for (const x of ['Navi-Halterung an der Windschutzscheibe fällt ab', 'Handyhalter an der Frontscheibe hält nicht', 'Saugnapf der Dashcam an der Windschutzscheibe lose', 'Sonnenblende vor der Windschutzscheibe abgebrochen', 'Vignette an der Windschutzscheibe fehlt', 'Gardine vor der Frontscheibe gerissen', 'phone holder on the windscreen fell off', 'sun visor in front of the windshield broken', 'тримач телефону на лобовому склі відпав']) { ok(GL.test(x), 'vorher Glas-Schritte: ' + x); ok(!GL.test(noWsObj(x)), 'jetzt keine: ' + x); }
   for (const x of ['Navi-Halterung an der Windschutzscheibe, Scheibe hat einen Riss', 'Halterung an der Windschutzscheibe abgerissen, Windschutzscheibe gesprungen', 'sat nav mount on the windscreen loose, windscreen cracked', 'Windschutzscheibe gerissen', 'Steinschlag in der Frontscheibe', 'тріщина на лобовому склі']) ok(GL.test(noWsObj(x)), 'Glasschaden bleibt: ' + x);
-  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk)));") && app.includes('const glassNoClaim = !cl && GLASS_HINT.test(noTicket(noWsObj(noSticker(desc))));'), 'Meldeformular und Versicherungsabschnitt');
+  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk))) && !GLASS2_HINT.test(dsk);") && app.includes('const glassNoClaim = !cl && (GLASS_HINT.test(noTicket(noWsObj(noSticker(desc)))) || GLASS2_HINT.test(noSticker(desc)));'), 'Meldeformular und Versicherungsabschnitt');
 });
 await test('Backlog 1132 (Sonde Federung/Sitz): Luftfederung des Fahrer-/Beifahrersitzes zeigt die Sitz-Schritte statt der Federungs-Schritte (DE/UK/EN); Fahrzeugfederung daneben bleibt erkannt', async () => {
   const { readFileSync } = await import('node:fs');
@@ -37861,6 +37861,20 @@ await test('Backlog 1368 (Reserve Start-Modul nach 1369: 45,603 % bei Grenze 45,
   }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
+await test('Backlog 1380 (Sonde, Blickwinkel „Fahrer meldet Scheibe/Fenster/Spiegel auf Englisch“, Backlog 195): „chip on the glass“, „the screen got a chip from a stone“, „passenger window shattered“, „rear window of the cab cracked“, „the glass is scratched“, „rubber seal on the window loose“ → Glasschaden (Formular, Abfahrtskontrolle, Versicherungshinweis im Vorgang); Spiegel/Scheinwerfer/Handy/Display/Brille, verneint, nach Reparatur, Fensterheber nicht; Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const g2r = rx('GLASS2_HINT'), g2 = (x) => g2r.test(recurFix(x).toLowerCase());
+  ok(app.includes("$('#glass').hidden = !GLASS_HINT.test(noTicket(noWsObj(dsk))) && !GLASS2_HINT.test(dsk);") && app.includes('GLASS2_HINT.test(noSticker(desc))') && app.includes("GLASS2_HINT.test(i.note || '')"), 'Formular, Vorgang und Abfahrtskontrolle prüfen das neue Muster');
+  for (const x of ['chip on the glass', 'the screen got a chip from a stone', 'small crack in the front glass', 'passenger window shattered', 'side window smashed', 'rear window of the cab cracked', 'the glass is scratched', 'rubber seal on the window loose', 'windscreen seal coming off']) ok(g2(x), 'Glasschaden: ' + x);
+  for (const x of ['mirror glass cracked', 'headlight glass cracked', 'phone screen cracked', 'the display has a crack', 'chip in the screen of the tablet', 'window not cracked', 'window is not smashed', 'side window cracked, replaced yesterday', "window won't go up", 'window broken', 'my glasses are scratched', 'crack in the dashboard', 'seal on the door is loose', 'window seal fine']) ok(!g2(x), 'kein Glasschaden (neues Muster): ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const ex of ['chip on the glass', 'passenger window shattered', 'rear window of the cab cracked']) { ok(STRINGS[l].help_glass_s.includes(ex), 'Hilfe Glasschaden ' + l + ': ' + ex); ok(g2(ex), 'Hilfe-Beispiel: ' + ex); }
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+
 await test('Backlog 1378 (Sonde, Blickwinkel „Fahrer meldet Fahrtenschreiber/Fahrerkarte auf Englisch“, Backlog 195): ohne „tacho/driver card“ – „card won’t come out“, „unit won’t eject my card“, „card error“, „digi card damaged“, „my card expired“, „left my card at home“, „need a new paper roll“, „printout is blank“, „printer doesn’t print“, „calibration overdue“, „driving without card“, „says insert card“, „can’t do manual entries“, „wrong country entered“, „speed signal error“, „can’t change to rest mode“, DE „Fahrt ohne Karte“, „Ausdruck ist leer“ → Fahrtenschreiber; Tank-/Bank-/Schlüssel-/Tor-/Bürokarte, „not damaged“, „calibration not due“, nach Reparatur/neuer Rolle nicht; Hilfe DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
