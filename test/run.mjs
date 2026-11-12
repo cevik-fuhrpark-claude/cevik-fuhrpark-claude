@@ -21941,7 +21941,7 @@ await test('Backlog 327 (Blickwinkel „Diesel versulzt oder AdBlue eingefroren�
     ok(L.gelfuel_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="gelfuel" class="panel" hidden role="status">`), 'Panel #gelfuel');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#gelfuel').hidden = !GELFUEL_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#gelfuel').hidden = !GELFUEL_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('gelfuel') && order.indexOf('warnlight') < order.indexOf('gelfuel') && order.indexOf('gelfuel') < order.indexOf('engine') && order.indexOf('gelfuel') < order.indexOf('fuel') && order.indexOf('gelfuel') < order.indexOf('nostart'), 'Gruppierung: Warnleuchte vor Diesel/AdBlue vor Motor/Falschtanken/springt nicht an');
   ok(helpAfter(app, 'gelfuel', 'cabtilt'), 'Hilfe-Abschnitt gelfuel nach cabtilt');
@@ -38024,6 +38024,23 @@ await test('Backlog 1392 (Reserve Start-Modul nach 1394: 45,614 % > 45,60 %): Ba
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 
+await test('Backlog 1403 (Kurzsonde, Blickwinkel „Fahrer meldet Fahrerhaus kippen/Diesel versulzt/Tank leer auf Englisch“, Backlog 195): „the cab is stuck halfway“, „I can’t tilt the cab“, „Fahrerhaus hängt halb oben fest“ → Kippen; „fuel turned to jelly“ → versulzt; „the tank is empty“ → Kraftstoff ausgegangen; Kabinentür, Wassertank, Reparaturvermerk ohne', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;', 'm'))[1], 'i');
+  const C = rx('CABTILT_HINT'), G = rx('GELFUEL_HINT'), D = rx('DRYFUEL_HINT');
+  for (const x of ['the cab is stuck half way up', 'the cab is stuck halfway', 'cab stuck in the tilted position', "I can't tip the cab", 'I can’t tilt the cab', 'cannot tip my cabin', 'unable to lower the cab', "the cab won't tip", 'das Fahrerhaus hängt halb oben fest', 'Fahrerhaus bleibt auf halber Höhe stehen', 'ich kann das Fahrerhaus nicht kippen', 'kann die Kabine nicht mehr absenken']) ok(C.test(x), 'Kippen: ' + x);
+  for (const x of ["I can't lock the cab door", "can't tilt the cab window", 'Kabinentür kann ich nicht verriegeln', 'ich kann nicht kippen', 'die Plane hängt auf halber Höhe', 'Ladung hängt auf halber Höhe', 'the tipper won\'t tip']) ok(!C.test(x), 'kein Kippen: ' + x);
+  ok(G.test('the fuel has turned to jelly') && G.test('diesel turned to gel'), 'versulzt: jelly/gel');
+  for (const x of ['the tank is empty, truck stopped', 'the tank is empty and the truck stopped', 'tank was completely empty', 'fuel tank is empty']) ok(D.test(x), 'Kraftstoff ausgegangen: ' + x);
+  for (const x of ['the water tank is empty', 'the adblue tank is empty', 'the washer tank is empty', 'air tank is empty', 'the tank is not empty', 'reefer tank is empty']) ok(!D.test(x), 'kein Kraftstoff ausgegangen: ' + x);
+  ok(app.includes("$('#gelfuel').hidden = !GELFUEL_HINT.test(dfx);"), 'Diesel versulzt: Reparaturvermerk („…, behoben“, „fixed now“) über noFixed ohne Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of ['the cab is stuck halfway', 'I can’t tilt the cab']) { ok(STRINGS[l].help_cabtilt_s.includes(x), 'Hilfe Fahrerhaus kippen ' + l + ': ' + x); ok(C.test(x), 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
+  ok(STRINGS.de.help_cabtilt_s.includes('Fahrerhaus hängt halb oben fest') && C.test('Fahrerhaus hängt halb oben fest'), 'Hilfe DE: deutsches Beispiel');
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-fahrerhaus-kippen-englisch.py'), 'UI-Prüfung in pruefen.sh');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
 await test('Backlog 1402 (Kurzsonde, Blickwinkel „Fahrer meldet Kennzeichen auf Englisch“, Backlog 195): „someone stole the front plate“, „the reg plate is dirty and unreadable“, „plate on the trailer is hanging off“, „the number plate bracket is broken“, „the trailer plate is missing“ → Kennzeichen-Hinweis; Reparaturvermerk, Kennzeichenleuchte, Teller ohne', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
