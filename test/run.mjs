@@ -37936,6 +37936,22 @@ await test('Backlog 1390 (Reserve Start-Modul nach 1391: 45,69 % > 45,60 %): Bau
   }
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
+await test('Backlog 1393 (Sonde, Blickwinkel „Fahrer meldet Reifen/Rad umgangssprachlich auf Englisch“, Backlog 195): „got a flat“, „blew a tyre on the motorway“, „inner tyre on the twin is flat“ → Reifenpanne; „bulge on the sidewall“, „both rear tyres are knackered“ (→ „is broken“) → Reifen; nicht „I got a flat white“, „we have a flat floor“, „the road was flat“', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); return new RegExp(m[1], m[2].includes('i') ? m[2] : m[2] + 'i'); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const lc = (x) => recurFix(x).toLowerCase();
+  const F = ['FLAT_HINT', 'FLAT2_HINT', 'FLAT3_HINT'].map(rx), flat = (x) => F.some((r) => r.test(lc(x)));
+  const T = ['TYRE_HINT', 'TYRE2_HINT', 'TYRE3_HINT', 'TYRE4_HINT', 'TYRE5_HINT'].map(rx), tyre = (x) => T.some((r) => r.test(lc(x)));
+  for (const x of ['got a flat', "I've got a flat on the trailer", 'blew a tyre on the motorway', 'inner tyre on the twin is flat', 'tyre blew out', 'slow puncture on the front left']) ok(flat(x), 'Reifenpanne: ' + x);
+  for (const x of ['I got a flat white', 'we have a flat floor', 'the road was flat', 'got a flat battery']) ok(!flat(x), 'keine Reifenpanne: ' + x);
+  for (const x of ['bulge on the sidewall', 'both rear tyres are knackered', 'tyres are knackered', 'the tyre is broken', 'tyre is bald']) ok(tyre(x), 'Reifen: ' + x);
+  for (const x of ['cut on the side of the cab', 'the clutch is knackered', 'bulge on the sidewall, tyre replaced']) ok(!tyre(x), 'kein Reifen: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_flat_s.includes('got a flat') && STRINGS[l].help_flat_s.includes('blew a tyre'), 'Hilfe Reifenpanne ' + l);
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
 
 await test('Backlog 1387 (Sonde, Blickwinkel „Fahrer meldet Kraftstoff/Tank auf Englisch“, Backlog 195): Dieseldiebstahl („someone stole diesel from the tank overnight“, „somebody nicked the diesel“, „tank was drained overnight“, „someone stole the battery“) → Diebstahl; „I filled the AdBlue tank with diesel“ → Falsch getankt; „diesel smell from the engine“, „strong diesel smell“, „fuel return pipe split“, „fuel hose cracked“ → Leck; „fuel level sensor faulty“, „Tankgeber defekt“ → Anzeige statt Fahrwerk; „diesel tank strap is broken“, „Tankband gerissen“ → loses Teil; „contaminated fuel“, „verunreinigter Diesel“ → Wasser/Kraftstoff; Fehlalarm „I accidentally put AdBlue …“ zeigte Unfall-Schritte', async () => {
   const { readFileSync } = await import('node:fs');
