@@ -374,6 +374,7 @@ UI-Teile bis zum nächsten Werktag (Freitag → Montag), Zähler Rückkehrtermin
 UI-Rückkehrtermin verpasst bei Fahrt bis zur Teilelieferung (Backlog 1429): Disposition, Werkstatt-Startseite, Werkstattplan, DE/UK/EN 390/820/1366|ui-rueckkehr-verpasst.py|/tmp/cfp-rueckkehr-verpasst.log
 UI-Werkstatttermin verpasst beim Fahrer (Backlog 1430): Mein Fahrzeug „Termin verstrichen“, DE/UK/EN 390/820/1366|ui-ws-termin-verpasst-fahrer.py|/tmp/cfp-ws-termin-verpasst-fahrer.log
 UI-Werkstatttermin verpasst in der Disposition (Backlog 1431): Terminplan „Termin verstrichen“ zuerst mit Hinweis, DE/UK/EN 390/820/1366|ui-ws-termin-verpasst-dispo.py|/tmp/cfp-ws-termin-verpasst-dispo.log
+UI-Vorgang mit verstrichenem Termin (Backlog 1432): Markierung „Termin verstrichen“ und Hinweis je Rolle (Inhaber/Disposition), DE/UK/EN 390/820/1366|ui-vorgang-termin-verpasst.py|/tmp/cfp-vorgang-termin-verpasst.log
 UI-Liefertermin geändert bei Fahrt bis zur Teilelieferung (Backlog 1038): Formularhinweis, Disposition erhält Hinweis, DE/UK/EN 390/820/1366|ui-liefertermin-teilefahrt.py|/tmp/cfp-liefertermin-teilefahrt.log
 UI-Lieferschein beim Fortsetzen (Backlog 1032–1034): Hinweis Fahrt bis zur Lieferung endet, Lieferschein verknüpfen, Arbeitsstand entfernen, Verlauf, DE/UK/EN 390/820/1366|ui-lieferschein-fortsetzen.py|/tmp/cfp-lieferschein-fortsetzen.log
 UI-Lieferschein in der Wartezeile (Backlog 1040): Liefertermin mit Höchstdatum, Wartezeile nennt den Lieferschein als Link, DE/UK/EN 390/820/1366|ui-lieferschein-wartezeile.py|/tmp/cfp-lieferschein-wartezeile.log

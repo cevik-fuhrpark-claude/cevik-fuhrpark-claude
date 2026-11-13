@@ -40819,6 +40819,29 @@ await test('Backlog 1431 (Blickwinkel „Disposition plant einen Lkw ein, dessen
   ok(PLURALS.uk.dispo_ws_missed_n.few && PLURALS.uk.dispo_ws_missed_n.many, 'uk Formen');
 });
 
+await test('Backlog 1432 (Blickwinkel „Werkstatt öffnet den Auftrag, dessen Termin gestern verstrichen ist“): Vorgangsansicht markiert den verstrichenen Termin eines nicht begonnenen Auftrags bzw. den verpassten Rückkehrtermin (fährt bis zur Teilelieferung); Hinweis je Rolle; Texte DE/UK/EN', async () => {
+  const { e, U, cmd, newCase, toRepair } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(1) }, 'freigegeben')).status, 200);
+  db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(-1), id);
+  // Vorgang liefert alles, was die Ansicht braucht (Status, Termin, Fahrt bis zur Teilelieferung)
+  let r = await U.fleet.get('/api/cases/' + id); eq(r.status, 200); eq(r.data.case.status, 'werkstatt_freigegeben'); eq(r.data.case.planned_date, day(-1));
+  const id2 = await toRepair(); db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(-1), id2);
+  eq((await cmd(U.ws, id2, 'wait_parts', { parts_expected_date: day(3) }, 'bestellt')).status, 200);
+  eq((await cmd(U.fleet, id2, 'set_parts_drive', { on: '1' })).status, 200);
+  r = await U.fleet.get('/api/cases/' + id2); eq(r.data.case.status, 'wartet_teile'); ok(r.data.case.parts_drive_at, 'Fahrt bis zur Teilelieferung'); eq(r.data.case.planned_date, day(-1));
+  ok(r.data.allowed_actions.includes('set_planned_date'), 'Leitung kann den Rückkehrtermin verschieben');
+  // Oberfläche: gleiche Regel wie Werkstattplan „Termin überschritten“ (nicht begonnen bzw. 🚚 ohne Sperre), Hinweis je Rolle
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const planMissed = (c) => !!c.planned_date && c.planned_date < bDate() && (c.status === 'werkstatt_freigegeben' || pdrOn(c));"), 'Regel');
+  ok(app.includes("fmtD(c.planned_date) : ''}${planMissedInfo(c, A)}"), 'in der Vorgangsansicht hinter dem Termin');
+  ok(app.includes('data-planmissed') && app.includes('data-planmissedhint') && app.includes("(A || []).includes('set_planned_date')") && app.includes("S.me.role === 'driver' ? (pdrOn(c) ? 'drv_ws_ret_missed_txt' : 'drv_ws_missed_txt')"), 'Hinweis je Rolle');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['cpm_set', 'cpm_ret_set', 'cpm_other', 'cpm_ret_other', 'drv_ws_missed', 'drv_ws_missed_txt', 'drv_ws_ret_missed_txt']) ok(STRINGS[l][k] && (k === 'drv_ws_missed' || STRINGS[l][k].includes('{d}')), `${l} ${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cpm_set.includes(STRINGS[l].act_set_planned_date) && STRINGS[l].cpm_ret_set.includes(STRINGS[l].act_set_planned_date), `${l}: Knopfname im Hinweis`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
