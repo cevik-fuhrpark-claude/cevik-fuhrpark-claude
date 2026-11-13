@@ -40842,6 +40842,18 @@ await test('Backlog 1432 (Blickwinkel „Werkstatt öffnet den Auftrag, dessen T
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cpm_set.includes(STRINGS[l].act_set_planned_date) && STRINGS[l].cpm_ret_set.includes(STRINGS[l].act_set_planned_date), `${l}: Knopfname im Hinweis`);
 });
 
+await test('Backlog 1433 (Folge aus 1432): Vorgangsliste markiert den verstrichenen Termin bzw. Rückkehrtermin je Zeile („⚠ Termin verstrichen“, gleiche Regel); Liste liefert Status, Termin und Fahrt bis zur Teilelieferung', async () => {
+  const { e, U, cmd, newCase } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(1) }, 'freigegeben')).status, 200);
+  db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(-1), id);
+  for (const u of [U.fleet, U.ws]) { const r = await u.get('/api/cases'); eq(r.status, 200); const row = (r.data.cases || r.data.items || r.data).find((c) => c.id === id); ok(row, 'Zeile'); eq(row.status, 'werkstatt_freigegeben'); eq(row.planned_date, day(-1)); ok('parts_drive_at' in row, 'parts_drive_at in der Liste'); }
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const cl = app.slice(app.indexOf('function caseList('), app.indexOf('function caseList(') + 6000);
+  ok(cl.includes("${planMissed(c) ? ` <span class=\"chip kritisch\" data-planmissedl style=\"white-space:nowrap\">⚠ ${esc(t('drv_ws_missed'))}</span>`"), 'Marke in der Listenzeile, ohne Umbruch im Wort');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

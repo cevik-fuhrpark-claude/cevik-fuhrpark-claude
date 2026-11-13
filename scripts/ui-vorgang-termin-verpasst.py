@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test (13.11.2026, Backlog 1432, Blickwinkel „Werkstatt öffnet den Auftrag, dessen Termin gestern verstrichen ist“):
-# Vorgangsansicht markiert den verstrichenen Termin (rot) mit Hinweis je Rolle: Inhaber (darf verschieben) bzw. Disposition. DE/UK/EN 390/820/1366 px.
+# Vorgangsansicht markiert den verstrichenen Termin (rot) mit Hinweis je Rolle: Inhaber (darf verschieben) bzw. Disposition; Vorgangsliste mit Marke (Backlog 1433). DE/UK/EN 390/820/1366 px.
 import os, datetime
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -57,6 +57,13 @@ with sync_playwright() as p:
             key='cpm_set' if who=='own' else 'cpm_other'
             check(T[key].split('{d}')[1][:30] in hint and any(x in hint for x in dates),f'{lang}/{w}/{who}: Hinweis {key} mit Datum')
             if who=='own': check(T['act_set_planned_date'] in hint and q.locator('button[data-a="set_planned_date"], button[data-action="set_planned_date"]').count()+q.get_by_role('button',name=T['act_set_planned_date']).count()>=1,f'{lang}/{w}: Knopf „{T["act_set_planned_date"]}“ vorhanden')
+            if who=='own':
+                q.goto(B+'/#/cases'); q.wait_for_selector(f'a[href="#/cases/{cid}"] [data-planmissedl]',timeout=20000)
+                lm=q.locator(f'a[href="#/cases/{cid}"] [data-planmissedl]')
+                check(T['drv_ws_missed'] in lm.inner_text() and 'kritisch' in lm.get_attribute('class'),f'{lang}/{w}: Vorgangsliste mit Marke (Backlog 1433)')
+                check(lm.evaluate('e => e.getClientRects().length') == 1,f'{lang}/{w}: Marke einzeilig')
+                if SHOTS: lm.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/vorgangsliste-verpasst-{lang}-{w}.png')
+                q.goto(B+f'/#/cases/{cid}'); q.wait_for_selector('[data-planmissed]',timeout=20000)
             if SHOTS: q.locator('[data-planmissed]').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/vorgang-verpasst-{who}-{lang}-{w}.png')
             check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}/{who}: ohne Querscrollen')
             check(not errs,f'{lang}/{w}/{who}: keine Skriptfehler {errs[:2]}')
