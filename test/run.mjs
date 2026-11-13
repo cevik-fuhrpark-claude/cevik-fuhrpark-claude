@@ -40791,6 +40791,34 @@ await test('Backlog 1430 (Blickwinkel „Fahrer hat den Werkstatttermin verpasst
   for (const l of ['de', 'uk', 'en']) for (const k of ['drv_ws_missed', 'drv_ws_missed_txt', 'drv_ws_ret_missed_txt']) { ok(STRINGS[l][k], `${l} ${k}`); if (k !== 'drv_ws_missed') ok(STRINGS[l][k].includes('{d}'), `${l} ${k} Platzhalter`); }
 });
 
+await test('Backlog 1431 (Blickwinkel „Disposition plant einen Lkw ein, dessen Werkstatttermin gestern verstrichen ist“): Terminplan der Dispo-Tafel nennt verstrichene Termine nicht begonnener Aufträge zuerst (rot, mit Datum und Hinweis); begonnene bzw. bis zur Teilelieferung fahrende (eigener Abschnitt) nicht; Texte DE/UK/EN', async () => {
+  const { e, U, cmd, newCase, toRepair } = await freshWorld(); const db = e.DB.db;
+  const disp = await (async () => { const x = await U.own.post('/api/users', { username: 'w.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test' }); const c = new Client(worker, e, 'w.dispo'); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); c.id = x.data.id; return c; })();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(1) }, 'freigegeben')).status, 200);
+  db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(-1), id);
+  const miss = async () => (await disp.get('/api/workshop/plan?days=7')).data.overdue.filter((i) => i.type === 'case' && i.status === 'werkstatt_freigegeben' && i.planned_date);
+  let m = await miss(); eq(m.length, 1, 'Disposition erhält den verstrichenen Termin'); eq(m[0].id, id); eq(m[0].planned_date, day(-1)); ok(m[0].plate && m[0].priority, 'Kennzeichen/Priorität für die Zeile');
+  // begonnen → nicht mehr verpasst (in Arbeit)
+  const id2 = await toRepair(); db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(-1), id2);
+  m = await miss(); ok(!m.some((i) => i.id === id2), 'in Reparatur nicht');
+  // fährt bis zur Teilelieferung: eigener Abschnitt (Backlog 1429), hier nicht
+  eq((await cmd(U.ws, id2, 'wait_parts', { parts_expected_date: day(3) }, 'bestellt')).status, 200);
+  eq((await cmd(U.fleet, id2, 'set_parts_drive', { on: '1' })).status, 200);
+  const p = (await disp.get('/api/workshop/plan?days=7')).data; ok(p.overdue.some((i) => i.id === id2) && !(await miss()).some((i) => i.id === id2), 'Rückkehrtermin nicht doppelt');
+  // neuer Termin → weg
+  db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(2), id);
+  eq((await miss()).length, 0, 'neuer Termin');
+  // Oberfläche
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(r.overdue || []).filter((i) => i.type === 'case' && i.status === 'werkstatt_freigegeben' && i.planned_date)") && app.includes('data-dwsmissed') && app.includes("tn('dispo_ws_missed_n', miss.length)"), 'Dispo-Terminplan');
+  ok(app.includes("if (!r || (!r.days.length && !miss.length)) return '';"), 'auch ohne kommende Termine');
+  const { PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(PLURALS[l].dispo_ws_missed_n && PLURALS[l].dispo_ws_missed_n.one.includes('{n}') && PLURALS[l].dispo_ws_missed_n.other.includes('{n}'), `${l} Text`);
+  ok(PLURALS.uk.dispo_ws_missed_n.few && PLURALS.uk.dispo_ws_missed_n.many, 'uk Formen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

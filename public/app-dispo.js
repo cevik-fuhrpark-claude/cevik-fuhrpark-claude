@@ -207,9 +207,13 @@ function dispoSub(i) {
 
 async function dispoPlanned(vsite = '') {
   const r = await api('GET', '/api/workshop/plan?days=7' + (vsite ? '&vsite=' + encodeURIComponent(vsite) : '')).catch(() => null);
-  if (!r || !r.days.length) return '';
-  const rows = r.days.flatMap((d) => d.items.map((i) => `<a class="row ${i.type === 'case' ? 'p-' + esc(i.priority) : ''}" href="${i.type === 'case' ? '#/cases/' + esc(i.id) : '#/vehicles/' + encodeURIComponent(i.vehicle_id)}">${plate(i.plate, { locked: !!i.safety_lock })}<span class="title" style="white-space:normal">${i.type === 'case' ? woTag(i) + esc(t('planned_ws_short')) + ' · ' + esc(t('st_' + i.status)) : esc(t('planned_inspection')) + ': ' + esc(mk(i.kind))}</span><span class="chip${d.date === r.today ? ' ok' : ''}" style="white-space:nowrap">${d.date === r.today ? esc(t('today')) : esc(fmtDue(d.date))}${d.date !== r.today && d.date === nextWorkdayAfter(r.today) ? ` <b data-pnwd style="white-space:normal">· ${esc(t('next_workday'))}</b>` : ''}</span>${dispoSub(i)}</a>`));
-  return `<h2>${esc(t('dispo_planned'))}</h2><p class="small muted">${esc(t('dispo_planned_hint'))}</p><div class="list">${rows.join('')}</div><p><a href="${hj('#/plan')}">${esc(t('wplan'))}</a></p>`;
+
+
+  const miss = r ? (r.overdue || []).filter((i) => i.type === 'case' && i.status === 'werkstatt_freigegeben' && i.planned_date).sort((a, b) => a.planned_date.localeCompare(b.planned_date)) : [];
+  if (!r || (!r.days.length && !miss.length)) return '';
+  const missRows = miss.map((i) => `<a class="row p-${esc(i.priority)}" data-dwsmissed href="#/cases/${esc(i.id)}">${plate(i.plate, { locked: !!i.safety_lock })}<span class="title" style="white-space:normal">${woTag(i)}${esc(t('planned_ws_short'))} · ${esc(t('st_' + i.status))}</span><span class="chip kritisch" style="white-space:nowrap">⚠ ${esc(t('drv_ws_missed'))} ${esc(fmtD(i.planned_date))}</span>${dispoSub(i)}</a>`);
+  const rows = missRows.concat(r.days.flatMap((d) => d.items.map((i) => `<a class="row ${i.type === 'case' ? 'p-' + esc(i.priority) : ''}" href="${i.type === 'case' ? '#/cases/' + esc(i.id) : '#/vehicles/' + encodeURIComponent(i.vehicle_id)}">${plate(i.plate, { locked: !!i.safety_lock })}<span class="title" style="white-space:normal">${i.type === 'case' ? woTag(i) + esc(t('planned_ws_short')) + ' · ' + esc(t('st_' + i.status)) : esc(t('planned_inspection')) + ': ' + esc(mk(i.kind))}</span><span class="chip${d.date === r.today ? ' ok' : ''}" style="white-space:nowrap">${d.date === r.today ? esc(t('today')) : esc(fmtDue(d.date))}${d.date !== r.today && d.date === nextWorkdayAfter(r.today) ? ` <b data-pnwd style="white-space:normal">· ${esc(t('next_workday'))}</b>` : ''}</span>${dispoSub(i)}</a>`)));
+  return `<h2>${esc(t('dispo_planned'))}</h2><p class="small muted">${esc(t('dispo_planned_hint'))}</p>${miss.length ? `<p data-dwsmissedhint><b>⚠ ${esc(tn('dispo_ws_missed_n', miss.length))}</b></p>` : ''}<div class="list">${rows.join('')}</div><p><a href="${hj('#/plan')}">${esc(t('wplan'))}</a></p>`;
 }
 
 export { dispoHome };
