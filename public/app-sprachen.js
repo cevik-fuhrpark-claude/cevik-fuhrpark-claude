@@ -253,6 +253,48 @@ const csFold = (s) => String(s || '').toLowerCase().replace(/[áäčďéěíĺľ
 function csKinds(v) { const k = new Set(); for (const p of csFold(v).split(/[.,;!?\n]+/)) if (!CS_OK.test(p)) for (const [n, rx, ex] of CS_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
 
 
-async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v)]); }
+
+
+const BG_OK = /\bremontiran|\bopraven|\bsmen|\bzamen|\braboti\s+(?:otnovo|pak|normalno)|\b(?:otnovo|pak|veche)\s+raboti\b|\bvsichko\s+e\s+(?:nared|ok|v\s+red)|\b(?:nyama|bez)\s+problem/;
+const BG_KINDS = [['brake', /\bspirach\S*\s+(?:\S+\s+){0,2}(?:ne\s+(?:rabot|deystv|darzh|spir|hvasht)|slab|otkaz)|\bne\s+spira\b|\b(?:spada|pada|namalya)\S*\s+(?:\S+\s+)?nalyagan|\b(?:izpuska|puska|byaga)\s+(?:\S+\s+)?vazduh/, /rachn|parking|stop|svetl|asistent|\bsam[ao]?\b|bez\s+prichina|gum|vazglavnits/],
+  ['fire', /\bpozhar|\b(?:gori|goryat|zapali\s+se|plamna)\b|\bdim\S*\s+(?:\S+\s+)?(?:ot|izpod|izliza|vliza)\b|\b(?:izliza|vliza|ima|vali)\s+(?:\S+\s+)?dim\b|\bmirishe\s+(?:\S+\s+)?(?:na\s+)?(?:izgor|parlen)/, /auspuh|izpuskatel|vyhlop|wydech|egzoz|esapament|kipufog|vyfuk|pozharogasit|pozharsk|krushk|lamp|\bfar|gabarit|svetl|protivotuman|ne\s+gor/],
+  ['flat', /\bspukah\b|\bspukan\S*\s+gum|\bgum\S*\s+(?:\S+\s+)?(?:se\s+)?(?:spuka|izbuhna|pukna|eksplodira|prazn)|\b(?:spuka|izbuhna|pukna)\S*\s+(?:mi\s+)?(?:\S+\s+)?gum/, /vazglavnits|chistachk/],
+  ['steer', /\bvolan\S*\s+(?:\S+\s+)?(?:blokir|zaklyuch|zaseda|zasyada|tezhak|tezhko|ne\s+se\s+varti|ima\s+lyuft)|\b(?:tegli|darpa)\s+(?:\S+\s+)?(?:nadyasno|nalyavo|vdyasno|vlyavo)/],
+  ['leak', /\b(?:maslo\S*|nafta\S*|gorivo\S*|antifriz\S*|ohladitel\S*|technost\S*|adblue|dizel\S*|hidravlik\S*)\s+(?:\S+\s+)?(?:teche|kape|izticha|tekat|kapyat)|\b(?:teche|kape|izticha|tekat|kapyat|izteche)\S*\s+(?:\S+\s+)?(?:maslo|nafta|gorivo|antifriz|ohladitel|technost|adblue|dizel|hidravlik)/, /\bne\s+(?:tech|tek|kap|izticha)/],
+  ['acc', /\bkatastrof|\bblasna|\bpatnotransportno|\bptp\b|\bsblasa|\budari\S*\s+(?:me|ni|kamiona|remarketo)\b/, /kamache|kamak/],
+  ['injury', /\branen\S*|\bpostradah|\blineyk|\bbolnits|\barza\s+pomosht/],
+  ['parkbrake', /\b(?:rachn|parking)\S*\s+spirach\S*\s+(?:\S+\s+)?(?:ne\s+(?:darzh|rabot|se\s+osvobozhd|puska)|zaseda|blokir)|\b(?:tragna|potegli|izbyaga)\S*\s+(?:\S+\s+)?sam\b/],
+  ['nostart', /\bne\s+(?:pali|zapalva|zapali|startira)\b|\bstarter\S*\s+(?:\S+\s+)?ne\s+(?:raboti|varti)/, /agregat|hladil|klimat|parno|pechk|webasto|vebasto|lamp|krushk|svetl|\bfar/],
+  ['mirror', /\bogledal\S*\s+(?:\S+\s+)?(?:schupen|schupi|otchupen|otchupi|padna|visi|ne\s+raboti|pukn)|\b(?:schupen|schupi|otchupen|otchupi)\S*\s+(?:\S+\s+)?ogledal/],
+  ['lights', /\b(?:far|farove|farat|farovete|svetlin\S*|stopove\S*|migach\S*|krushk\S*|gabarit\S*)\s+(?:\S+\s+)?(?:ne\s+(?:svet|rabot|gori)|izgor|schupen|pukn)|\b(?:izgoryal|schupen|puknat)\S*\s+(?:\S+\s+)?(?:krushk|far|stop|migach)/, /kontroln|lampichk|tablo|displey/],
+  ['warnlight', /\b(?:lampichk|kontroln\S*\s+lamp|indikator)\S*\s+(?:\S+\s+){0,3}(?:sveti|svetna|miga|svetyat)|\b(?:sveti|svetna|svetnaha|miga)\s+(?:mi\s+)?(?:\S+\s+)?(?:lampichk|kontroln|indikator)/, /gum|\bshin/],
+  ['glass', /\b(?:predno\S*\s+)?staklo\S*\s+(?:\S+\s+)?(?:pukn|schup|spukan|povred|naprasn)|\b(?:pukn|schup|spukan|povred)\S*\s+(?:\S+\s+)?(?:predno\S*\s+)?staklo/, /ogledal|kamache|kamak|\bfar|zapotya/],
+  ['window', /\bprozor\S*\s+(?:\S+\s+)?(?:ne\s+(?:se\s+)?(?:vdiga|svalya|spuska|otvarya|zatvarya|raboti)|zaseda|zasedna|blokir)/, /chistachk/],
+  ['batt', /\b(?:akumulator|akum|bateri)\S*\s+(?:\S+\s+)?(?:padnal|padna|iztoshten|prazen|ne\s+(?:zarezhda|se\s+zarezhda|darzhi))|\b(?:padnal|iztoshten|prazen)\S*\s+(?:\S+\s+)?(?:akumulator|akum|bateri)/, /lampichk|kontroln/],
+  ['tacho', /\btahograf\S*\s+(?:\S+\s+)?(?:ne\s+(?:chete|raboti|priema|vadi)|greshk|povreda|blokir)|\bkart\S*\s+(?:na\s+vodacha\s+)?(?:\S+\s+)?(?:zasedna|zaseda|ne\s+(?:izliza|se\s+chete)|izgubena|otkradnata|povredena|schupena)|\b(?:zagubih|izgubih)\s+(?:si\s+)?(?:\S+\s+)?kart/, /gorivo|benzinost|platezh|bankov|tank/],
+  ['coupling', /\b(?:remarke|poluremarke)\S*\s+(?:\S+\s+)?(?:ne\s+se\s+(?:zakacha|zakachva|otkacha|svarzva)|se\s+otkachi|otkachi|razkachi)|\bsedlo\S*\s+(?:\S+\s+)?(?:ne\s+(?:zaklyuchva|zatvarya|raboti)|povred|blokir|zaseda)/],
+  ['dryfuel', /\bsvarsh\S*\s+(?:mi\s+)?(?:\S+\s+)?(?:gorivo|nafta|dizel)|\b(?:gorivo|nafta|dizel)\S*\s+(?:\S+\s+)?svarsh|\bnyamam\s+(?:veche\s+)?(?:gorivo|nafta|dizel)/, /agregat|hladil|adblue/],
+  ['engine', /\b(?:dvigatel|motor)\S*\s+(?:\S+\s+)?(?:pregryava|pregrya|nyama\s+moshtnost|gubi\s+moshtnost|gasne|zagasva|zagasna|troi|ne\s+darpa)|\bavariy\S*\s+rezhim|\b(?:nyama|gubi)\s+(?:\S+\s+)?moshtnost/, /agregat|spirach|lager/],
+  ['tyre', /\bgum\S*\s+(?:\S+\s+)?(?:povred|sryaz|naryaz|iznos|izhabena|gubi\s+vazduh|izpuska|ima\s+malko|myahur|tsepnat)/, /spuka|spukan|izbuhn|pukna|prazn|chistachk/],
+  ['reefer', /\b(?:agregat|hladiln\S*\s+agregat|hladiln\S*\s+ustroystvo)\S*\s+(?:\S+\s+)?(?:ne\s+(?:ohlazhda|raboti|varvi|pali)\b|alarma|greshka|avariya)|\balarm\S*\s+(?:na\s+)?(?:hladil|agregat)/],
+  ['susp', /\b(?:vazdushn\S*\s+)?(?:vazglavnits|mehov)\S*\s+(?:\S+\s+)?(?:se\s+)?(?:spuka|pukna|puska|izpuska|povred|skasa)|\b(?:remarke|poluremarke|kamion|vlekach|kabina)\S*\s+(?:\S+\s+)?(?:se\s+)?(?:naklanya|nakloni|klyumna)|\bokachvane\S*\s+(?:\S+\s+)?(?:ne\s+raboti|greshk|povred)/],
+  ['gear', /\bne\s+(?:vliza|vlizat|se\s+vklyuchva)\s+(?:\S+\s+)?skorost|\bskorost\S*\s+(?:\S+\s+)?(?:ne\s+(?:vliza|vlizat|se\s+vklyuchva)|izbiva|izkachat)|\bskorostn\S*\s+kutiya\S*\s+(?:\S+\s+)?(?:greshk|avariya|ne\s+raboti|blokir|zaseda)|\bsaedinitel\S*\s+(?:\S+\s+)?(?:buksuva|prihlazva|ne\s+raboti|izgorya)/],
+  ['climate', /\b(?:klimati\S*|klima|parno\S*|pechk\S*|otoplen\S*|webasto|vebasto)\s+(?:\S+\s+)?(?:ne\s+(?:raboti|topli|gree|ohlazhda|duha|pali)\b|greshk|avariya)/, /sedalk|podgryav/],
+  ['tarp', /\bbrezent\S*\s+(?:\S+\s+)?(?:skasan|skasa|razkasan|dupk|povred|sryazan)|\bdupk\S*\s+(?:\S+\s+)?(?:v\s+|na\s+)?brezent|\b(?:pokrivalo|shtora|shtori)\S*\s+(?:\S+\s+)?(?:skasan|skasa|razkasan|sryazan)/],
+  ['exhaust', /\bauspuh\S*\s+(?:\S+\s+)?(?:padna|padnal|visi|otpadna|dupk|pukna|puknat|schupen)/],
+  ['visib', /\bchistachk\S*\s+(?:\S+\s+)?(?:ne\s+(?:rabot|chist)|schupen|schupi|otchupi|padna)|\bstaklo\S*\s+(?:\S+\s+)?(?:se\s+)?(?:zapotyava|zamaglya|zapoti)/, /sedalk|podgryav/],
+  ['seat', /\b(?:predpazen\S*\s+)?kolan\S*\s+(?:\S+\s+)?(?:ne\s+(?:zakopchava|se\s+zakopchava|darzhi|raboti|izliza)|skasan|zaseda|zasedna)|\bsedalk\S*\s+(?:\S+\s+)?(?:schupen|schupi|ne\s+(?:raboti|se\s+regulira)|klati)/, /podgryav|otoplen/],
+  ['wheel', /\b(?:bolt|gayk|shpilk)\S*\s+(?:\S+\s+){0,3}(?:razhlab|razvi|lipsv|padna|otpadna)|\bdzhant\S*\s+(?:\S+\s+)?(?:pukn|izkrivi|schup)|\b(?:glavin|lager|kolel)\S*\s+(?:\S+\s+)?(?:pregrya|goresht|byuchi|tropa|klati)/, /spirach/],
+  ['stuck', /\b(?:zasednah|zasedna|zatanah|zatana)\S*\s+(?:\S+\s+){0,3}(?:kal\S*|sn[ye]g\S*|pyasa\S*)/],
+  ['lost', /\b(?:zagubih|izgubih)\s+(?:si\s+)?(?:\S+\s+)?(?:klyuch|talon)|\bklyuch\S*\s+(?:\S+\s+)?(?:izguben|zaguben|lipsv)|\bne\s+moga\s+da\s+namerya\s+(?:\S+\s+)?klyuch/],
+  ['numplate', /\b(?:registratsion\S*\s+(?:nomer|tabel)\S*|nomer\S*\s+tabel\S*|tabel\S*\s+s\s+nomer\S*|nomerat|nomera)\s+(?:\S+\s+)?(?:padna|padnal|izgub|lipsva|otkradn|schupen|ne\s+se\s+chete)/, /osvetl|svetl|krushk/],
+  ['adas', /\b(?:asistent|radar|senzor|datchik|kamera|tempomat)\S*\s+(?:\S+\s+){0,3}(?:ne\s+raboti|greshk|izklyuchi|otkaz)|\bspira\s+(?:\S+\s+)?(?:sam\b|bez\s+prichina)/],
+  ['door', /\bvrat\S*\s+(?:\S+\s+)?(?:ne\s+se\s+(?:zatvarya|otvarya|zaklyuchva)|zaseda|zasedna|blokir)|\b(?:(?:padasht|podemn|hidravlich)\S*\s+)?bord\S*\s+(?:\S+\s+)?(?:ne\s+(?:raboti|se\s+vdiga|se\s+spuska)|greshk|avariya)/, /prozor/]];
+const BG_TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sht', ъ: 'a', ь: 'y', ю: 'yu', я: 'ya', ѝ: 'i' };
+const bgFold = (s) => String(s || '').toLowerCase().replace(/[а-яѝ]/g, (c) => BG_TR[c] || c);
+function bgKinds(v) { const k = new Set(); for (const p of bgFold(v).split(/[.,;!?\n]+/)) if (!BG_OK.test(p)) for (const [n, rx, ex] of BG_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
+
+
+async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v)]); }
 
 export { foreignKinds };
