@@ -26557,7 +26557,7 @@ await test('Backlog 616 (Blickwinkel „Jahreskosten für den Steuerberater“):
   odo(1, 200000, '2025-12-30T10:00:00Z'); odo(2, 210000, '2026-03-31T10:00:00Z');
   const rows = async (q) => { const r = await U.fleet.get('/api/reports/costs?from=2026-01&to=2026-09&format=csv' + q); eq(r.status, 200); return new TextDecoder().decode(r.data).replace(/^﻿/, '').trim().split('\r\n').map((l) => l.split(';')); };
   const c = await rows('&part=vehicles'); const h = c[0];
-  eq(h.length, 23, 'Spalten (seit Backlog 1049 + Standortwechsel)'); ok(h[0] === 'Kennzeichen' && h.at(-2) === 'Außer Betrieb seit' && h.at(-1) === 'Standortwechsel ab Zeitraumbeginn' && h.includes('km-Zeitraum unvollständig'), h.join('|'));
+  eq(h.length, 27, 'Spalten (seit Backlog 1419 + Neue Vorgänge/Erstzulassung/km-Stand)'); ok(h[0] === 'Kennzeichen' && h[21] === 'Außer Betrieb seit' && h[22] === 'Standortwechsel ab Zeitraumbeginn' && h.at(-1) === 'km-Stand vom' && h.includes('km-Zeitraum unvollständig'), h.join('|'));
   const col = (r, n) => r[h.indexOf(n)];
   const v = c.find((r) => r[1] === V1); ok(v, 'Zeile V1');
   eq(col(v, 'Stunden'), '3,5'); eq(col(v, 'Arbeitszeit netto'), '350'); eq(col(v, 'Summe belegt netto'), '350'); eq(col(v, 'Gefahrene km'), '10000');
@@ -35048,12 +35048,41 @@ await test('Backlog 1049 (Blickwinkel „Lkw wechselt dauerhaft den Standort“)
   eq(v.site, 'SACHSEN', 'Kosten beim heutigen Standort');
   const csv = await U.fleet.req('GET', `/api/reports/costs?${q}&format=csv&part=vehicles`); eq(csv.status, 200);
   const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data).replace(/^﻿/, '').trim().split('\r\n');
-  ok(lines[0].endsWith(';Standortwechsel ab Zeitraumbeginn'), lines[0]);
-  const row = lines.find((l) => l.startsWith('SZ-YC 5513;')); ok(row && row.endsWith(`${today}: Dortmund → Bayern | ${today}: Bayern → Sachsen`), row);
-  ok(lines.filter((l) => l.startsWith('Summe')).every((l) => l.endsWith(';')), 'Summenzeilen ohne Vermerk');
+  const hd = lines[0].split(';'); const sc = hd.indexOf('Standortwechsel ab Zeitraumbeginn'); ok(sc === 22, lines[0]); // Backlog 1419: weitere Spalten dahinter
+  const row = lines.find((l) => l.startsWith('SZ-YC 5513;')); ok(row && row.split(';')[sc] === `${today}: Dortmund → Bayern | ${today}: Bayern → Sachsen`, row);
+  ok(lines.filter((l) => l.startsWith('Summe')).every((l) => l.split(';')[sc] === ''), 'Summenzeilen ohne Vermerk');
   const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-csitechip') && app.includes("t('cost_site_moved_hint').replace('{list}'"), 'App: Chip und Hinweis');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].cost_site_moved && STRINGS[l].cost_site_moved_hint.includes('{list}'), l);
+});
+
+await test('Backlog 1419 (Blickwinkel „Inhaber plant die Ersatzbeschaffung“): Kostenbericht nennt je Fahrzeug Erstzulassung, letzte km-Ablesung (auch nach dem Zeitraum) und neue Vorgänge im Zeitraum; CSV je Fahrzeug mit vier Spalten am Ende, Summenzeilen leer; fehlende Angaben bleiben leer; App DE/UK/EN', async () => {
+  const { e, U, newCase, V1 } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const id = await newCase({ description: 'Kostenposten Ersatzbeschaffung' }); await newCase({ description: 'Zweiter Vorgang Spiegel' });
+  const uid = db.prepare("SELECT id FROM users WHERE role='owner'").get().id;
+  db.prepare(`INSERT INTO parts (id, case_id, user_id, name, quantity, unit, unit_price_net, valuation, created_at) VALUES ('p-1419', ?, ?, 'Spiegel', 1, 'Stk', 100, 'actual', ?)`).run(id, uid, now);
+  const { berlinDate } = await import('../src/util.js'); const m = berlinDate().slice(0, 7); const q = `from=${m}&to=${m}`;
+  // ohne Erstzulassung und ohne Ablesung: null, nie geschätzt
+  db.prepare('UPDATE vehicles SET first_registration=NULL WHERE id=?').run(V1); db.prepare('DELETE FROM odometer_readings WHERE vehicle_id=?').run(V1);
+  let r = await U.fleet.get(`/api/reports/costs?${q}`); eq(r.status, 200); let v = r.data.vehicles.find((x) => x.vehicle_id === V1);
+  eq(v.first_registration, null); eq(v.last_km, null); eq(v.last_km_at, null); eq(v.cases_opened, 2, 'zwei neue Vorgänge im Zeitraum');
+  db.prepare('UPDATE vehicles SET first_registration=? WHERE id=?').run('2019-03', V1);
+  const odo = (i, km, at) => db.prepare('INSERT INTO odometer_readings(id,vehicle_id,km,measured_at,source,recorded_by,created_at) VALUES (?,?,?,?,?,?,?)').run('b1419-' + i, V1, km, at, 'manuell', null, at);
+  odo(1, 500000, '2024-01-10T10:00:00.000Z'); odo(2, 612345, '2025-06-01T08:00:00.000Z');
+  r = await U.fleet.get(`/api/reports/costs?${q}`); v = r.data.vehicles.find((x) => x.vehicle_id === V1);
+  eq(v.first_registration, '2019-03'); eq(v.last_km, 612345, 'jüngste Ablesung'); eq(v.last_km_at, '2025-06-01T08:00:00.000Z');
+  // Vorjahres-Zeitraum: letzte Ablesung überhaupt (nach dem Zeitraum) bleibt sichtbar, Vorgänge 0
+  r = await U.fleet.get('/api/reports/costs?from=2024-01&to=2024-02'); v = r.data.vehicles.find((x) => x.vehicle_id === V1);
+  ok(v && v.last_km === 612345 && v.cases_opened === 0, JSON.stringify(v));
+  const csv = await U.fleet.req('GET', `/api/reports/costs?${q}&format=csv&part=vehicles`); eq(csv.status, 200);
+  const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data).replace(/^\ufeff/, '').trim().split('\r\n');
+  ok(lines[0].endsWith(';Neue Vorgänge;Erstzulassung;Letzter km-Stand;km-Stand vom'), lines[0]);
+  const row = lines.find((l) => l.split(';')[1] === V1); ok(row && row.endsWith(';2;03.2019;612345;01.06.2025'), row);
+  ok(lines.filter((l) => l.startsWith('Summe')).every((l) => l.endsWith(';;;;')), 'Summenzeilen ohne Stammdaten');
+  eq((await U.driver.get(`/api/reports/costs?${q}`)).status, 403, 'Fahrer');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-cstamm') && app.includes("t('crv_cases').replace('{n}'") && app.includes("esc(t('crv_hint'))"), 'App: Zeile und Hinweis');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].crv_cases.includes('{n}') && STRINGS[l].crv_hint && STRINGS[l].first_reg && STRINGS[l].vm_last, l);
 });
 
 await test('Backlog 1059 (Blickwinkel „Leitung Bayern zieht vor der HU-Woche die Nachweisliste des eigenen Standorts“): Durchgeführte Prüfungen mit Standortfilter (App, CSV mit Standort im Dateinamen, Protokoll, Integrations-API), Filter vor der 5000er-Grenze; App übergibt die Standort-Auswahl der Seite (DE/UK/EN)', async () => {

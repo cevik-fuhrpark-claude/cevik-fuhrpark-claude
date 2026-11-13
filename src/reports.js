@@ -213,6 +213,17 @@ export async function costReport(env, user, envName, query = {}) {
       const l = byV.get(a.target) || []; l.push({ at: a.created_at, from: x.from ?? null, to: x.to ?? null }); byV.set(a.target, l);
     }
     for (const v of vehicles) { const l = byV.get(v.vehicle_id); if (l) v.site_changes = l.slice(-5); }
+    // Backlog 1419 (Blickwinkel „Inhaber plant die Ersatzbeschaffung – welcher Lkw kostet zu viel?“): je Fahrzeug Erstzulassung (Stamm) und
+    // letzte km-Ablesung überhaupt (Stand + Tag, auch nach dem Zeitraum) neben den Kosten, dazu neue Vorgänge im Zeitraum. Reine Anzeige:
+    // nichts geschätzt, kein Fahrzeugalter berechnet, fehlende Angaben bleiben null. Eine Abfrage (Index idx_odometer_vehicle_time).
+    const st = (await env.DB.prepare(`SELECT v.id, v.first_registration AS fr, (SELECT json_object('km', o.km, 'at', o.measured_at) FROM odometer_readings o WHERE o.vehicle_id=v.id ORDER BY o.measured_at DESC, o.rowid DESC LIMIT 1) AS lk
+      FROM vehicles v WHERE v.id IN (SELECT value FROM json_each(?1))`).bind(JSON.stringify(vehicles.map((v) => v.vehicle_id))).all()).results;
+    const stBy = new Map(st.map((x) => [x.id, x])); const casesBy = new Map();
+    for (const r of out) casesBy.set(r.vehicle_id, (casesBy.get(r.vehicle_id) || 0) + r.cases_opened);
+    for (const v of vehicles) {
+      const x = stBy.get(v.vehicle_id) || {}; let lk = null; try { lk = x.lk ? JSON.parse(x.lk) : null; } catch { lk = null; }
+      v.first_registration = x.fr || null; v.last_km = lk ? lk.km : null; v.last_km_at = lk ? lk.at : null; v.cases_opened = casesBy.get(v.vehicle_id) || 0;
+    }
   }
   // Vertragsraten (Leasing/Miete/…) getrennt von der Instandhaltung – nur Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten; nicht über die Integrations-API)
   const contract_costs = user && ['owner', 'fleet'].includes(user.role) ? await contractCosts(env, from, to, vehicleFilter, plates, label) : undefined;
@@ -378,7 +389,9 @@ export function costVehiclesCsv(rep, inactiveSince = new Map()) {
   const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const cell = csvCell;
   const head = ['Kennzeichen', 'FIN-Schlüssel', 'Standort', 'Von (Monat)', 'Bis (Monat)', 'Stunden', 'Arbeitszeit netto', 'Teile netto', 'Teile geschätzt netto', 'Fremdleistung netto', 'Fremdleistung geschätzt netto',
-    'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet', 'Gefahrene km', 'km-Ablesung von', 'km-Ablesung bis', 'Kosten je km netto (belegt)', 'km-Zeitraum unvollständig', 'Fahrzeugstatus', 'Außer Betrieb seit', 'Standortwechsel ab Zeitraumbeginn'];
+    'Summe belegt netto', 'Summe geschätzt netto', 'Unbewertete Positionen', 'Vollständig bewertet', 'Gefahrene km', 'km-Ablesung von', 'km-Ablesung bis', 'Kosten je km netto (belegt)', 'km-Zeitraum unvollständig', 'Fahrzeugstatus', 'Außer Betrieb seit', 'Standortwechsel ab Zeitraumbeginn',
+    // Backlog 1419 (Ersatzbeschaffung): neue Spalten am Ende – Stammdaten/letzte Ablesung, keine Bewertung; Summenzeilen leer
+    'Neue Vorgänge', 'Erstzulassung', 'Letzter km-Stand', 'km-Stand vom'];
   const agg = new Map(); const blank = () => ({ hours: 0, work: 0, workV: false, workU: false, pa: 0, paV: false, paU: false, pe: 0, ea: 0, eaV: false, eaU: false, ee: 0, actual: 0, est: 0, valued: 0, unvalued: 0, active: true });
   for (const r of rep.rows) {
     const a = agg.get(r.vehicle_id) || blank();
@@ -395,7 +408,8 @@ export function costVehiclesCsv(rep, inactiveSince = new Map()) {
     a.valued === 0 && a.unvalued > 0 ? '' : num(r2(a.actual)), num(r2(a.est)), a.unvalued, a.unvalued === 0 && !(a.est > 0) ? 'ja' : 'nein',
     v ? num(v.km) : '', v && v.km !== null && v.km_from_at ? berlinDate(v.km_from_at) : '', v && v.km !== null && v.km_to_at ? berlinDate(v.km_to_at) : '', v ? num(v.cost_per_km) : '', v && v.km_partial ? 'ja' : '', v ? (a.active ? 'aktiv' : 'außer Betrieb') : '', v && inactiveSince.get(v.vehicle_id) ? berlinDate(inactiveSince.get(v.vehicle_id)) : '',
     // Backlog 1049: Standortwechsel ab Zeitraumbeginn („TT.MM.JJJJ: A → B“ wie alle CSV-Kalendertage); Kosten stehen beim heutigen Standort
-    v && (v.site_changes || []).length ? cell(v.site_changes.map((x) => `${berlinDate(x.at).split('-').reverse().join('.')}: ${x.from || '–'} → ${x.to || '–'}`).join(' | ')) : ''];
+    v && (v.site_changes || []).length ? cell(v.site_changes.map((x) => `${berlinDate(x.at).split('-').reverse().join('.')}: ${x.from || '–'} → ${x.to || '–'}`).join(' | ')) : '',
+    v ? (v.cases_opened ?? '') : '', v && v.first_registration ? cell(v.first_registration.split('-').reverse().join('.')) : '', v && v.last_km !== null && v.last_km !== undefined ? v.last_km : '', v && v.last_km_at ? berlinDate(v.last_km_at).split('-').reverse().join('.') : ''];
   for (const v of rep.vehicles) {
     const a = agg.get(v.vehicle_id) || blank(); if (!agg.has(v.vehicle_id) && inactiveSince.has(v.vehicle_id)) a.active = false;
     lines.push(row(cell(v.plate), cell(v.vehicle_id), cell(v.site), a, v).join(';'));
