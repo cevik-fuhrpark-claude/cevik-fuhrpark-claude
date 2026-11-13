@@ -1,5 +1,6 @@
 # [CLAUDE] UI-Test (13.11.2026, Backlog 1434, Blickwinkel „Prüftermin war gestern – Durchführung nicht eingetragen“):
-# verstrichener Prüf-/Wartungstermin ohne Auftrag: Marke in Prüftermin-Übersicht und Fahrzeugakte (mit Hinweis), Gruppe in „Heute zu tun“. DE/UK/EN 390/820/1366 px.
+# verstrichener Prüf-/Wartungstermin ohne Auftrag: Marke in Prüftermin-Übersicht und Fahrzeugakte (mit Hinweis), Gruppe in „Heute zu tun“;
+# Backlog 1435: nicht fälliger Feuerlöscher mit verstrichenem Termin im Werkstattplan (eigener Abschnitt). DE/UK/EN 390/820/1366 px.
 import os, datetime
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -30,6 +31,8 @@ with sync_playwright() as p:
         r=api('POST',f'/api/vehicles/{vid}/maintenance',{'kind':'UVV','last_done_date':iso(-380),'interval_months':12,'evidence':'Prüfbuch UVV (Test)'})
         check(r['s']==201,f'{lang}/{w}: UVV angelegt'); rid=r['d']['id']
         check(api('POST',f'/api/maintenance/{rid}/plan',{'planned_date':iso(-1)})['s']==200,f'{lang}/{w}: Termin gestern')
+        r2=api('POST',f'/api/vehicles/{vid}/maintenance',{'kind':'Feuerlöscher','last_done_date':iso(-30),'interval_months':24,'evidence':'Prüfplakette (Test)'})
+        check(r2['s']==201 and api('POST',f'/api/maintenance/{r2["d"]["id"]}/plan',{'planned_date':iso(-2)})['s']==200,f'{lang}/{w}: Feuerlöscher (nicht fällig), Termin vorgestern')
         ctx=br.new_context(viewport={'width':w,'height':h}); errs=[]
         q=ctx.new_page(); q.on('pageerror',lambda e: errs.append(str(e))); q.goto(B)
         q.evaluate(JS,['POST','/api/login',{'username':me_un,'password':PW}]); q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
@@ -54,8 +57,16 @@ with sync_playwright() as p:
         det=q.locator('details',has=sm).first
         check(pl in det.inner_text(),f'{lang}/{w}: „Heute zu tun“ nennt {pl}')
         if SHOTS: sm.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/pruef-termin-heute-{lang}-{w}.png')
+        # Werkstattplan (Backlog 1435)
+        q.goto(B+'/#/plan'); q.wait_for_selector(f'a[data-mmiss]:has-text("{pl}")',timeout=20000)
+        mr=q.locator(f'a[data-mmiss]:has-text("{pl}")').first
+        check(T['mplan_past'] in mr.inner_text() and q.locator('#wp-mmiss').inner_text().startswith(T['todo_mplan_passed']),f'{lang}/{w}: Werkstattplan-Abschnitt mit Marke')
+        check('?done=' in (mr.get_attribute('href') or ''),f'{lang}/{w}: Zeile führt zum Formular „Erledigt“')
+        if SHOTS: q.locator('#wp-mmiss').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/pruef-termin-plan-{lang}-{w}.png')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang}/{w}: Plan ohne Querscrollen')
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:2]}')
         ctx.close()
+        check(api('POST',f'/api/maintenance/{r2["d"]["id"]}/complete',{'done_date':iso(-2),'evidence':'Prüfplakette (Test 2)'})['s']==200,f'{lang}/{w}: Feuerlöscher erfasst')
         # Durchführung erfasst → Termin weg
         check(api('POST',f'/api/maintenance/{rid}/complete',{'done_date':iso(-1),'evidence':'Prüfbuch UVV (Test 2)'})['s']==200,f'{lang}/{w}: Durchführung erfasst')
         a.goto(B+f'/#/vehicles/{vid}'); a.reload(); a.wait_for_selector('h1',timeout=20000); a.wait_for_timeout(800)

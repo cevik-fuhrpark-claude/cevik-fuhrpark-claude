@@ -1107,6 +1107,14 @@ export async function workshopPlan(env, user, envName, query = {}) {
       ...(r.kind === 'Rückruf' && !r.last_done_date ? { recall_ref: r.evidence } : {}), ...(prevOpen(r) ? { prev_cycle_open: r.prev_cycle_open } : {}) }))
     .sort((a, b) => (b.status === 'ueberfaellig') - (a.status === 'ueberfaellig') || String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')) || String(a.plate).localeCompare(String(b.plate)));
   for (const i of maintenance_due) { i.other_dates = others(i, null); i.coupled = coupled(i.vehicle_id); i.coupled_dates = cDates(i, null); }
+  // Backlog 1435 (Blickwinkel „Werkstatt hatte gestern eine UVV geplant – Durchführung nicht eingetragen“): geplanter Prüf-/Wartungstermin
+  // vorbei, ohne offenen Auftrag, Frist noch nicht im Fenster – fiel aus dem Plan (Tage nur ab heute, „Fällig – ohne Termin“ nur fällige).
+  // Erfassen der Durchführung leert den Termin, ein vergangener Termin heißt also „nicht eingetragen“. Fällige stehen schon oben (`past_planned_date`).
+  const mdIds = new Set(maintenance_due.map((i) => i.id));
+  const maintenance_missed = ov.rows.filter((r) => r.planned_date && r.planned_date < today && !r.open_order && !mdIds.has(r.id) && !(r.kind === 'Rückruf' && r.last_done_date))
+    .map((r) => ({ type: 'maintenance_missed', id: r.id, vehicle_id: r.vehicle_id, plate: r.plate, vehicle_site: r.site, vehicle_kind: r.vehicle_kind, kind: r.kind, title: r.title || null,
+      next_due_date: r.next_due_date || null, planned_date: r.planned_date, ...(r.virtual ? { virtual: true } : {}) }))
+    .sort((a, b) => a.planned_date.localeCompare(b.planned_date) || String(a.plate).localeCompare(String(b.plate)));
   // Backlog 416: laufende Wartungs-/Full-Service-Verträge je Fahrzeug (nur Inhaber/Leitung – Verträge sind Geschäftsdaten), damit der Auftrag
   // nicht ungeprüft an die eigene Werkstatt geht; eine Abfrage nur, wenn Fälliges ohne Termin angezeigt wird
   if (maintenance_due.length && user && ['owner', 'fleet'].includes(user.role)) {
@@ -1119,8 +1127,8 @@ export async function workshopPlan(env, user, envName, query = {}) {
   // woher ein Fahrzeug kommt)
   const vLab = (x) => (x && String(x).trim() ? vSel.label.get(siteKey(x)) || String(x).trim() : 'ohne');
   for (const [, items] of byDay) for (const i of items) i.vehicle_site_label = vLab(i.vehicle_site);
-  for (const i of [...overdue, ...inWork, ...unplanned, ...maintenance_due]) i.vehicle_site_label = vLab(i.vehicle_site);
-  return { today, from: today, to, site, vehicle_site: vSel.site, vehicle_sites: vSel.options, case_load, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, in_work: inWork, unplanned, maintenance_due, warn_km: ov.warn_km };
+  for (const i of [...overdue, ...inWork, ...unplanned, ...maintenance_due, ...maintenance_missed]) i.vehicle_site_label = vLab(i.vehicle_site);
+  return { today, from: today, to, site, vehicle_site: vSel.site, vehicle_sites: vSel.options, case_load, days: [...byDay.keys()].sort().map((d) => ({ date: d, items: byDay.get(d) })), overdue, in_work: inWork, unplanned, maintenance_due, maintenance_missed, warn_km: ov.warn_km };
 }
 
 // Kalenderdatei des Werkstattplans: nur Vorgangsnummer, Kennzeichen, Status/Prüfart – keine Beschreibung, keine Namen

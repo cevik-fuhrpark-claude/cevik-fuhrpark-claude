@@ -19975,8 +19975,8 @@ await test('Backlog 235 (Blickwinkel „UVV aller Fahrzeuge an einem Tag“): Sa
 await test('Backlog 236 (Werkstatt arbeitet den Sammeltermin ab): Werkstattplan verlinkt geplante/fällige Prüftermine direkt auf „Durchführung erfassen“ (nur Inhaber/Leitung/Werkstatt, nicht HU/SP ohne Eintrag), nach dem Speichern zurück in den Plan', async () => {
   const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("[/^#\\/vehicles\\/(VIN:[A-Z0-9]+\\?done=[\\w-]+)$/, (x) => viewVehicle(x.split('?done=')[0], null, 'done:' + x.split('?done=')[1])]"), 'Route ?done=');
-  const plan = app.slice(app.indexOf('async function viewPlan('), app.indexOf('async function viewPlan(') + 14000);
-  ok(plan.includes("const canDone = isMgr() || S.me.role === 'workshop';") && plan.includes("/^[\\w-]+$/.test(i.id) ? '?done='") && (plan.match(/href="\$\{doneHref\(i\)\}" data-fromplan/g) || []).length === 2, 'Plan-Zeilen (Termin und fällig) verlinken das Formular');
+  const plan = app.slice(app.indexOf('async function viewPlan('), app.indexOf('async function viewPlan(') + 16000);
+  ok(plan.includes("const canDone = isMgr() || S.me.role === 'workshop';") && plan.includes("/^[\\w-]+$/.test(i.id) ? '?done='") && (plan.match(/href="\$\{doneHref\(i\)\}" data-fromplan/g) || []).length === 3, 'Plan-Zeilen (Termin, fällig und verstrichen – Backlog 1435) verlinken das Formular');
   ok(plan.includes("$$('a[data-fromplan]').forEach((a) => (a.onclick = () => { S.fromPlan = location.hash || '#/plan'; }));"), 'Herkunft gemerkt');
   const vv = app.slice(app.indexOf('async function viewVehicle('), app.indexOf('\nasync function ', app.indexOf('async function viewVehicle(') + 10));
   ok(vv.includes("if (sec && sec.startsWith('done:'))") && vv.includes('const doneNext = () =>') && (vv.match(/doneToast\(await api\('POST', .{0,80}, b(, \{ timeoutMs: SEND_TIMEOUT_MS \})?\)\); (\/\*[^*]*\*\/ )?doneNext\(\);/g) || []).length === 1 && vv.includes('doneToast(r); doneNext();') /* HU/SP-Formular (Backlog 620): erst nach SP/Prüfbericht */, 'Formular geöffnet, Rückkehr nach dem Speichern');
@@ -40876,6 +40876,31 @@ await test('Backlog 1434 (Blickwinkel „Prüftermin war gestern – Durchführu
   ok(app.includes('data-mplanpast') && app.includes('white-space:nowrap" data-mplanpast'), 'Marke ohne Umbruch im Wort');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const k of ['mplan_past', 'mplan_past_hint', 'todo_mplan_passed']) ok(STRINGS[l][k], `${l} ${k}`); ok(STRINGS[l].mplan_past_hint.includes(STRINGS[l].done), `${l}: Knopfname „${STRINGS[l].done}“ im Hinweis`); }
+});
+
+await test('Backlog 1435 (Blickwinkel „Werkstatt hatte gestern eine UVV geplant – Durchführung nicht eingetragen“): Werkstattplan führt verstrichene Prüf-/Wartungstermine ohne Auftrag und ohne Fälligkeit unter `maintenance_missed`; fällige bleiben in „Fällig – ohne Termin“, Auftrag bzw. Durchführung nehmen sie heraus', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: day(-30), interval_months: 12, evidence: 'Prüfbuch UVV (Test)' }); eq(r.status, 201);
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(1) })).status, 200);
+  const plan = async (u = U.ws) => (await u.get('/api/workshop/plan')).data;
+  let p = await plan(); eq((p.maintenance_missed || []).length, 0, 'kommender Termin: nicht verstrichen');
+  db.prepare('UPDATE maintenance_rules SET planned_date=? WHERE id=?').run(day(-1), r.data.id);
+  for (const u of [U.ws, U.fleet]) {
+    p = await plan(u); const m = p.maintenance_missed.find((i) => i.id === r.data.id);
+    ok(m, 'verstrichener Termin im Plan'); eq(m.planned_date, day(-1)); eq(m.kind, 'UVV'); ok(m.plate && m.next_due_date, 'Kennzeichen/Frist');
+    ok(!p.maintenance_due.some((i) => i.id === r.data.id), 'nicht fällig: nicht unter „Fällig – ohne Termin“');
+    ok(!JSON.stringify(p.maintenance_missed).includes('Prüfbuch'), 'kein Nachweistext');
+  }
+  // fällig → steht oben mit `past_planned_date`, nicht doppelt
+  db.prepare('UPDATE maintenance_rules SET next_due_date=? WHERE id=?').run(day(3), r.data.id);
+  p = await plan(); ok(p.maintenance_due.some((i) => i.id === r.data.id && i.past_planned_date === day(-1)) && !p.maintenance_missed.some((i) => i.id === r.data.id), 'fällig: nur in „Fällig – ohne Termin“');
+  db.prepare('UPDATE maintenance_rules SET next_due_date=? WHERE id=?').run(day(330), r.data.id);
+  // Durchführung erfasst → Termin geleert, nicht mehr im Plan
+  eq((await U.ws.post(`/api/maintenance/${r.data.id}/complete`, { done_date: day(-1), evidence: 'Prüfbuch UVV (Test 2)' })).status, 200);
+  p = await plan(); ok(!p.maintenance_missed.some((i) => i.id === r.data.id), 'nach dem Erfassen weg');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('const mm = r.maintenance_missed || [];') && app.includes('data-mmiss') && app.includes("⚠ ${esc(t('mplan_past'))} ${fmtD(i.planned_date)}"), 'Abschnitt im Werkstattplan');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

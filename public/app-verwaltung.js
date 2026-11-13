@@ -1417,6 +1417,9 @@ async function viewPlan(sec) {
   const drowC = (i) => (canWs(i) ? `<div class="planitem">${row(i)}${wsForm(i)}</div>` : row(i));
   if (r.overdue.length) html += `<h2>${esc(t('wplan_overdue'))} <span class="chip kritisch">${r.overdue.length}</span></h2><div class="list">${r.overdue.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip kritisch">${fmtD(i.planned_date)} · `))).join('')}</div>`;
 
+  const mm = r.maintenance_missed || [];
+  if (mm.length) html += `<h2 id="wp-mmiss">${esc(t('todo_mplan_passed'))} <span class="chip mittel">${mm.length}</span></h2><p class="small muted noprint">${esc(t('mplan_past_hint'))}</p><div class="list">${mm.map((i) => `<a class="row p-mittel" href="${doneHref(i)}" data-fromplan data-mmiss>${plate(i.plate)}<span class="title">${esc(mkR(i))}${i.next_due_date ? ' · ' + esc(t('next_due')) + ' ' + fmtD(i.next_due_date) : ''}</span><span class="chip mittel" style="white-space:nowrap">⚠ ${esc(t('mplan_past'))} ${fmtD(i.planned_date)}</span>${subs(vsTag(i))}</a>`).join('')}</div>`;
+
   const iw = r.in_work || [];
   if (iw.length) html += `<h2 id="wp-inwork">${esc(t('wplan_inwork'))} <span class="chip">${iw.length}</span></h2><p class="small muted noprint">${esc(t('wplan_inwork_hint'))}</p><div class="list">${iw.map((i) => prow(i, row(i).replace('<span class="chip">', `<span class="chip">${fmtD(i.planned_date)} · `))).join('')}</div>`;
   html += r.days.length ? r.days.map((d) => `<h2>${esc(wd(d.date))}${d.date === r.today ? ` <span class="chip ok">${esc(t('today'))}</span>` : ''}${holName(d.date) ? ` <span class="chip mittel" data-hol title="${esc(t('plan_holiday_hint'))}">${esc(holName(d.date))}</span>` : ''}</h2><div class="list">${d.items.map(drowC).join('')}</div>`).join('') : `<div class="panel">${esc(t('wplan_empty'))}</div>`;
