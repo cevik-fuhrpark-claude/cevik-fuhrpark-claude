@@ -73,6 +73,7 @@ UI-Einrichtungsstand (Inhaber)|ui-einrichtungsstand.py|/tmp/cfp-einrichtungsstan
 UI-Versicherungsfälle nach Schadenjahr|ui-schadenjahr.py|/tmp/cfp-schadenjahr.log
 UI-Kosten je Fahrzeug: Erstzulassung/km-Stand (Ersatzbeschaffung)|ui-kosten-ersatzbeschaffung.py|/tmp/cfp-kosten-ersatzbeschaffung.log
 UI-Kennzahlen: Werkstätten im Vergleich|ui-kpi-werkstaetten.py|/tmp/cfp-kpi-werkstaetten.log
+UI-Werkstattplan: Termin vor dem Teile-Liefertermin (Hinweis bei Eingabe)|ui-plan-liefertermin.py|/tmp/cfp-plan-liefertermin.log
 UI-Tippflächen Links in Tabellen, Hilfe Einrichtungsstand/Standort|ui-tippflaechen-links.py|/tmp/cfp-tippflaechen-links.log
 UI-Screenreader-Ansagen (Suche, Filter, Akte, Fokus Datumsfeld)|ui-screenreader-ansagen.py|/tmp/cfp-screenreader.log
 UI-Druck UK/EN (Spaltenbreiten, Werkstatt EXTERN übersetzt)|ui-druck-ukrainisch.py|/tmp/cfp-druck-uk.log

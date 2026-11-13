@@ -40658,6 +40658,26 @@ await test('Backlog 1418 (Blickwinkel „Inhaber verlängert die Flottenversiche
   ok(app.includes("$('#clbasis').onchange =") && app.includes("S.clBasis === 'schaden' ? '&basis=schaden'") && app.includes('id="cllossfb"'), 'Oberfläche');
 });
 
+await test('Backlog 1425 (Blickwinkel „Werkstatt plant die Woche nach Teile-Lieferterminen“): Werkstatttermin vor dem Teile-Liefertermin – Hinweis schon bei der Eingabe (Vorgang, Werkstattplan, Liefertermin ändern), Chip in der Vorgangsansicht, im Plan nur für kommende Termine; Texte DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/function etaPlanWatch\(el, f\) \{ if \(!el \|\| el\.dataset\.etaW\) return;/.test(app), 'Hilfsfunktion');
+  ok(app.includes("etaPlanWatch($('#af input[name=planned_date]'), planEtaMsg(c)); etaPlanWatch($('#af input[name=parts_expected_date]'), etaPlanMsg(c));"), 'Vorgangsformulare');
+  ok(app.includes("for (const i of all) etaPlanWatch($('#pd-' + CSS.escape(i.id)), planEtaMsg(i));"), 'Werkstattplan');
+  ok(app.includes("i.planned_date >= r.today && i.planned_date < i.parts_expected_date && `<span class=\"chip mittel\" data-planeta>"), 'Plan-Chip nur für kommende Termine');
+  ok(app.includes("c.planned_date >= bDate() && c.planned_date < c.parts_expected_date ? ` <span class=\"chip mittel\" data-planeta>"), 'Chip in der Vorgangsansicht');
+  // Logik der Hinweise (aus dem Quelltext nachgebaut)
+  const msg = (src) => new Function('t', 'fmtD', 'bDate', 'return ' + src)((k) => k + ' {d}', (d) => d, () => '2026-11-13');
+  const pe = msg(app.match(/const planEtaMsg = (\(c\) => \(v\) => [^\n]*);\n/)[1].replace(/;$/, ''));
+  const ep = msg(app.match(/const etaPlanMsg = (\(c\) => \(v\) => [^\n]*);\n/)[1].replace(/;$/, ''));
+  const c = { status: 'wartet_teile', parts_expected_date: '2026-11-18', planned_date: '2026-11-16' };
+  ok(pe(c)('2026-11-17').includes('plan_eta_later 2026-11-18'), 'Termin vor Liefertermin'); eq(pe(c)('2026-11-18'), '', 'am Liefertag kein Hinweis'); eq(pe(c)(''), '', 'leer');
+  eq(pe({ ...c, status: 'in_reparatur' })('2026-11-14'), '', 'nur wartet auf Teile');
+  ok(ep(c)('2026-11-17').includes('eta_after_plan 2026-11-16'), 'Liefertermin nach Termin'); eq(ep(c)('2026-11-16'), '', 'gleicher Tag');
+  eq(ep({ ...c, planned_date: '2026-11-10' })('2026-11-20'), '', 'vergangener Termin: kein Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['plan_eta_later', 'eta_after_plan', 'plan_before_parts']) ok(STRINGS[l][k] && (k === 'plan_before_parts' || STRINGS[l][k].includes('{d}')), `${l} ${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
