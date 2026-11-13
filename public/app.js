@@ -5158,6 +5158,9 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     for (const k of ['hours', 'quantity', 'unit_price_net', 'amount_net']) if (k in p) p[k] = String(p[k]).trim();
     if (p.stock_item_id) { delete p.name; delete p.part_number; delete p.supplier; if (!fd.get('unit_price_net')) delete p.unit_price_net; } else delete p.stock_item_id;
     // Arbeitsdatum vor dem laufenden Monat: Buchung ändert einen vergangenen Monat im Kostenbericht (Backlog 189, Jahresabschluss)
+    // Backlog 1441 (Folge aus 1440): geänderter Werkstatttermin vor heute gilt sofort als verstrichen (Werkstatt, Disposition, Leitung sehen „Termin
+    // verstrichen“) – nur nach Rückfrage speichern (Jahr vertippt, Nachtrag); ein unveränderter alter Termin fragt nicht
+    if (['set_planned_date', 'acknowledge', 'approve_repair'].includes(action) && p.planned_date && p.planned_date < bDate() && p.planned_date !== c.planned_date && !confirm(t('plan_past_confirm').replace('{d}', () => fmtD(p.planned_date)))) return;
     if (action === 'record_work' && p.work_date && p.work_date < bDate().slice(0, 7) + '-01' && !confirm(t('work_past_month_confirm').replace('{m}', fmtMonth(p.work_date.slice(0, 7))))) return;
     if (qrel) {
       // Backlog 629: erst „Zur Abschlusskontrolle“ (Abholvermerk, Winterreifen-Bestätigung), dann „Technisch freigeben“ mit der neuen Version;

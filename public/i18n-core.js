@@ -1361,6 +1361,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1434: Prüf-/Wartungstermin verstrichen, Durchführung nicht erfasst
 // Backlog 1436: Dispo-Tafel – verstrichener Prüf-/Wartungstermin, Durchführung nicht eingetragen
 // Backlog 1440: Termin in der Vergangenheit (Hinweis am Feld, Meldung nach dem Speichern)
+// Backlog 1441: Rückfrage Werkstatttermin in der Vergangenheit (Vorgang)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

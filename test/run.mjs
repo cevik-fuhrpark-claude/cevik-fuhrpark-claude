@@ -41028,6 +41028,14 @@ await test('Backlog 1440 (Blickwinkel „Werkstatt trägt nachträglich einen Te
   ok(readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('`in_past: true`'), 'API.md');
 });
 
+await test('Backlog 1441 (Folge aus 1440): Werkstatttermin am Vorgang vor heute – Rückfrage vor dem Speichern (nur bei geändertem Datum; Termin setzen, Übernahme, Freigabe), Server speichert weiter (Nachtrag), Texte DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (['set_planned_date', 'acknowledge', 'approve_repair'].includes(action) && p.planned_date && p.planned_date < bDate() && p.planned_date !== c.planned_date && !confirm(t('plan_past_confirm').replace('{d}', () => fmtD(p.planned_date)))) return;"), 'Rückfrage im Aktionsformular');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { const x = STRINGS[l].plan_past_confirm; ok(x && x.includes('{d}') && x.includes(STRINGS[l].drv_ws_missed), `${l}: nennt „${STRINGS[l].drv_ws_missed}“`); }
+  // Server: Termin vor heute bleibt möglich (Nachtrag) – siehe Test „Werkstatttermin … day(-1) → 200“; die Rückfrage stellt nur die App
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
