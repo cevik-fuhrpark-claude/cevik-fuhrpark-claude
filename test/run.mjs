@@ -41197,6 +41197,22 @@ await test('Backlog 1448 (Blickwinkel „Disposition plant einen Lkw ein, dessen
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].plan_note_lbl, l);
 });
+await test('Backlog 1449 (Blickwinkel „Werkstatt sieht fällige Prüfungen auf der Startseite und weiß nicht, ob schon ein Termin steht“): Werkstatt-Startseite „Prüfungen fällig“ nennt je Zeile den geplanten Termin ab heute (heute/morgen) samt Hinweis zum Termin; verstrichener Termin bleibt beim roten Chip; Werkstatt erhält planned_note', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i = app.indexOf('function workshopBoard('); ok(i >= 0, 'workshopBoard'); const wb = app.slice(i, app.indexOf('\n}', i));
+  ok(wb.includes("${r.planned_date && r.planned_date >= today ? `<span class=\"sub wrap\" data-wsmplan>📅 ${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}${mPlanNote(r.planned_note)}</span>` : ''}"), 'Zeile mit Termin und Hinweis');
+  ok(wb.indexOf('data-wsmplan') > wb.indexOf("const soon = ov.rows.filter") && wb.indexOf('data-wsmplan') < wb.indexOf('id="wsmmiss"'), 'nur in „Prüfungen fällig“');
+  ok(/const mPlanNote = \(n\) => \(n \? ` <span class="small" data-mplannote>📝 \$\{esc\(clipTxt\(n, 120\)\)\}<\/span>` : ''\);/.test(app), 'Hinweis gekürzt und maskiert');
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', next_due_date: day(5), evidence: 'Prüfbuch UVV (Test 1449)' }); eq(r.status, 201, JSON.stringify(r.data));
+  eq((await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(2), planned_note: '9 Uhr TÜV Halle 3' })).status, 200);
+  const row = (await U.ws.get('/api/maintenance')).data.rows.find((y) => y.id === r.data.id);
+  ok(row && row.days <= 14 && row.planned_date === day(2) && row.planned_note === '9 Uhr TÜV Halle 3', JSON.stringify(row));
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].planned && STRINGS[l].today && STRINGS[l].tomorrow, l);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
