@@ -932,6 +932,9 @@ export async function myVehicles(env, user, envName) {
         // Backlog 465: wo das Fahrzeug laut Vorgang steht bzw. wer es abgeschleppt hat (wie Disposition; nur Angaben aus dem Vorgang, mit Stand)
         vehicle_location: c.vehicle_location || null, tow_service: c.tow_service || null, towed_on: c.tow_service ? c.towed_on || null : null, vehicle_location_at: c.vehicle_location || c.tow_service ? c.vehicle_location_at || null : null,
         planned_date: WS.includes(c.status) && c.planned_date >= today ? c.planned_date : null,
+        // Backlog 1446 (Blickwinkel „Springer kommt über den QR-Aufkleber – Uhrzeit/Abgabeort des Werkstatttermins fehlten in der Abfahrtskontrolle“):
+        // Hinweis zum Werkstatttermin je Vorgang (nur zusammen mit dem angezeigten Termin ab heute; vorher nur gesammelt auf „Mein Fahrzeug“)
+        ...(WS.includes(c.status) && c.planned_date >= today && c.planned_note ? { planned_note: c.planned_note } : {}),
         // Backlog 472 (Blickwinkel „Überführungsfahrt zur Werkstatt“): beauftragte Werkstatt (nur nach Auftrag – der Vorschlag der Meldung kann
         // noch geändert werden) und Fahrbereitschaft laut Meldung, wenn eingeschränkt/nicht fahrbereit (der überführende Fahrer sah beides nirgends)
         workshop_site: c.status !== 'gemeldet' && c.workshop_site ? c.workshop_site : null,

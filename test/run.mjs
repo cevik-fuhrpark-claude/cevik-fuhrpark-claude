@@ -18990,7 +18990,7 @@ await test('Backlog 202 (Straßenkontrolle): „Mein Fahrzeug“ zeigt HU/SP und
   // Oberfläche
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('obN || v.coupled?.locked || v.coupled?.open_cases_total ? \'\' : `<span class="chip ok">'), 'grün nur ohne Anhänger-Sperre/-Meldungen');
-  ok(app.includes('${knownDefects(v.known_defects)}${relItems(v.open_items_after_release)}${drvCoupled(v.coupled)}</section>'), 'Anhänger-Block (Backlog 464: Restarbeiten nach Freigabe davor)');
+  ok(app.includes('${knownDefects(v.known_defects, v.planned_workshop_date)}${relItems(v.open_items_after_release)}${drvCoupled(v.coupled)}</section>'), 'Anhänger-Block (Backlog 464: Restarbeiten nach Freigabe davor)');
   ok(app.includes("(v.inspections_unclear || []).map((k) => `<dt>${esc(dk(k))}</dt><dd><span class=\"chip mittel\" data-unclear>${esc(t('ms_ungeklaert'))}"), 'ungeklärt angezeigt (seit Backlog 380 ausgeschrieben)');
   ok(app.includes('known.find((x) => x.id === id) || coupledKnown(known, id)'), 'Abfahrtskontrolle: Anhänger-Mängel');
 });
@@ -41125,6 +41125,27 @@ await test('Backlog 1445 (Blickwinkel „Fahrer bringt den Lkw selbst zur Prüfs
   ok(app.includes('const drvPlanNote = (r) =>') && app.includes('data-drvplannote'), 'Hilfsfunktion');
   const { STRINGS } = await import('../public/i18n.js');
   ok(STRINGS.de.mplan_note_hint.includes('Fahrer') && STRINGS.uk.mplan_note_hint.includes('водієві') && STRINGS.en.mplan_note_hint.includes('driver'), 'Hinweistext nennt den Fahrer');
+});
+
+await test('Backlog 1446 (Blickwinkel „Springer kommt über den QR-Aufkleber – Uhrzeit/Abgabeort des Werkstatttermins fehlten in der Abfahrtskontrolle“): known_defects nennen planned_note je Vorgang (nur mit Termin ab heute); Anzeige in der Liste bekannter Mängel, auf „Mein Fahrzeug“ für den gesammelt gezeigten Tag nicht doppelt', async () => {
+  const { U, cmd, newCase, V1 } = await freshWorld();
+  const id = await newCase({ description: 'Bremsscheibe hinten links riefig' });
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Bremsen prüfen')).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200);
+  const NOTE = 'Abgabe 6:30 Uhr, Schlüssel in den Briefkasten';
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: bDayOff(2), planned_note: NOTE })).status, 200);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, end_previous: false })).status, 201);
+  const kd = async () => ((await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1).known_defects || []).find((k) => k.case_no && k.description.includes('Bremsscheibe'));
+  let k = await kd(); ok(k && k.planned_date === bDayOff(2) && k.planned_note === NOTE, JSON.stringify(k));
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: bDayOff(2), planned_note: '' })).status, 200);
+  k = await kd(); ok(k && !('planned_note' in k), 'ohne Hinweis kein Feld ' + JSON.stringify(k));
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i = app.indexOf('function knownDefects('); const src = app.slice(i, app.indexOf('\n}', i)) + '\n}\n';
+  const kdf = new Function('esc', 't', 'fmtD', 'checkLabel', 'ltxt', 'langAttr', 'rdyOf', 'rdyTxt', 'wsName', src + 'return knownDefects;')((x) => String(x), (x) => x, (d) => d, (x) => x, (x) => x, () => '', () => false, () => '', (x) => x);
+  const row = { id: null, priority: 'mittel', status: 'werkstatt_freigegeben', description: 'Bremse', created_at: '2026-11-13', planned_date: '2026-11-16', planned_note: NOTE };
+  ok(kdf([row]).includes('data-kdplannote') && kdf([row]).includes(NOTE), 'Abfahrtskontrolle/Meldeformular zeigen den Hinweis');
+  ok(!kdf([row], '2026-11-16').includes(NOTE) && kdf([row], '2026-11-20').includes(NOTE), 'Mein Fahrzeug: gesammelt gezeigter Tag nicht doppelt');
+  ok(app.includes('${knownDefects(v.known_defects, v.planned_workshop_date)}'), 'Startseite übergibt den Tag');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
