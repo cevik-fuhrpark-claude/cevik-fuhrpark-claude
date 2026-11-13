@@ -40933,6 +40933,23 @@ await test('Backlog 1436 (Blickwinkel „Disposition plant einen Lkw ein, dessen
   ok(PLURALS.uk.dispo_mplan_missed_n.few && PLURALS.uk.dispo_mplan_missed_n.many, 'uk Formen');
 });
 
+await test('Backlog 1437 (Blickwinkel „Werkstatt kommt morgens rein – die UVV von gestern ist noch nicht eingetragen“): Werkstatt-Startseite nennt verstrichene Prüf-/Wartungstermine ohne Durchführung (auch mit Frist weit voraus) mit Sprung ins Formular „Erledigt“; fällige ≤ 14 Tage tragen die Marke', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Feuerlöscher', last_done_date: day(-30), interval_months: 24, evidence: 'Prüfplakette (Test)' }); eq(r.status, 201);
+  eq((await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(-1) })).status, 200, 'Werkstatt plant (auch rückwirkend)');
+  const row = (await U.ws.get('/api/maintenance')).data.rows.find((x) => x.id === r.data.id);
+  ok(row, 'Werkstatt sieht die Regel'); eq(row.planned_date, day(-1)); eq(row.open_order, null, 'kein Auftrag'); ok(row.days > 14, 'Frist weit voraus (nicht unter „fällig ≤ 14 Tage“)'); ok(row.plate && row.vehicle_id, 'Kennzeichen/Fahrzeug');
+  eq((await U.ws.post(`/api/maintenance/${r.data.id}/complete`, { done_date: day(-1), evidence: 'Prüfplakette (Test 2)' })).status, 200, 'Werkstatt erfasst');
+  eq((await U.ws.get('/api/maintenance')).data.rows.find((x) => x.id === r.data.id).planned_date, null, 'erfasst → nicht mehr verstrichen');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const wb = app.slice(app.indexOf('async function workshopBoard('), app.indexOf('async function workshopBoard(') + 16000);
+  ok(wb.includes("const mm = ov.rows.filter((r) => mPlanPast(r.planned_date, r.open_order) && !soon.includes(r) && !(r.kind === 'Rückruf' && r.last_done_date))"), 'Regel wie Übersicht/Akte, nicht doppelt zu „fällig“');
+  ok(wb.includes("const mDoneHref = (r) => '#/vehicles/' + encodeURIComponent(r.vehicle_id) + (r.id && /^[\\w-]+$/.test(r.id) ? '?done=' + encodeURIComponent(r.id) : '');") && wb.includes('data-wsmmiss href="${mDoneHref(r)}"'), 'Sprung ins Formular „Erledigt“');
+  ok(wb.includes("${mPlanPast(r.planned_date, r.open_order) ? mPlanPastChip() : ''}${r.km_unclear"), 'Marke an fälligen Zeilen');
+  ok(wb.includes("⚠ ${esc(t('mplan_past'))} ${esc(fmtD(r.planned_date))}") && wb.includes("t('todo_mplan_passed')") && wb.includes("t('mplan_past_hint')"), 'Überschrift, Hinweis, Datum (vorhandene Texte DE/UK/EN)');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
