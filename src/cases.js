@@ -1603,7 +1603,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'set_planned_date': {
-      // Werkstatttermin setzen/verschieben/entfernen (leer); ohne Statuswechsel und ohne Push
+      // Werkstatttermin setzen/verschieben/entfernen (leer); ohne Statuswechsel; Push nur bei nahem Termin (Backlog 460/1447, unten)
       const d = p.planned_date ? planDate(p.planned_date) : null;
       // Hinweis zum Termin (Migration 0093, Blickwinkel „Lkw einen halben Tag zur Achsvermessung bei einer Fremdfirma“): z. B. „nur vormittags,
       // Abholung 13 Uhr, Fa. …“ – nicht mitgeschickt = bleibt (Termin im Plan verschieben), leer = entfernen, ohne Termin immer leer
@@ -1619,7 +1619,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Backlog 460: Termin geändert, der heute bis in 7 Tagen lag oder jetzt dort liegt → Hinweis an Disposition und die andere Seite
       // (vorher ohne Push: die Disposition plante den Lkw am alten Tag ein bzw. nicht ein). Weiter weg: nur Verlauf/Plan.
       { const near = (x) => !!x && x >= berlinDate() && x <= addDaysIso(berlinDate(), 7);
-        if (d !== (c.planned_date || null) && (near(d) || near(c.planned_date))) notifyKind = 'plan_changed'; }
+        if (d !== (c.planned_date || null) && (near(d) || near(c.planned_date))) notifyKind = 'plan_changed';
+        // Backlog 1447: nur der Hinweis (z. B. Abgabe 6:30 statt 9 Uhr) eines nahen Termins geändert → gleicher Hinweis an dieselben Empfänger
+        else if (d && d === (c.planned_date || null) && newNote !== oldNote && near(d)) notifyKind = 'plan_changed'; }
       break;
     }
     case 'set_followup': {

@@ -24633,18 +24633,18 @@ await test('Backlog 460 (Blickwinkel „Werkstatt verschiebt den Termin kurzfris
   let d = await pc(D); eq(d.length, 1, 'Disposition informiert');
   ok(d[0].title === 'Термін у майстерні змінено' && d[0].body.includes(dmy(day(1))) && !d[0].urgent, 'Titel UK, neuer Termin, nicht dringend: ' + JSON.stringify(d[0]));
   eq((await pc(U.fleet)).length, 1, 'Leitung informiert (Werkstatt hat geändert)'); eq((await pc(U.ws)).length, 0, 'Werkstatt nicht (selbst geändert)');
-  // nur Hinweis zum Termin geändert → kein Hinweis
+  // nur Hinweis zum Termin geändert (naher Termin) → seit Backlog 1447 Hinweis mit festem Zusatz, nie der Hinweistext
   eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(1), planned_note: 'erst ab 10 Uhr' })).status, 200);
-  eq((await pc(D)).length, 1, 'Hinweistext allein: kein neuer Hinweis');
+  d = await pc(D); eq(d.length, 2, 'Hinweistext allein (Termin nah): Hinweis (Backlog 1447)'); ok(d[0].body.includes('Примітку до терміну змінено') && !d[0].body.includes('10 Uhr'), d[0].body);
   // aus dem Zeitraum heraus (1 → 20): informiert; weit weg → weit weg (20 → 25): nicht
-  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(20) })).status, 200); eq((await pc(D)).length, 2, 'aus 7 Tagen verschoben');
-  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(25) })).status, 200); eq((await pc(D)).length, 2, 'beide Termine weit weg: kein Hinweis');
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(20) })).status, 200); eq((await pc(D)).length, 3, 'aus 7 Tagen verschoben');
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(25) })).status, 200); eq((await pc(D)).length, 3, 'beide Termine weit weg: kein Hinweis');
   // Leitung legt in den Zeitraum: Disposition + Werkstatt, nicht die Leitung
   eq((await cmd(U.fleet, id, 'set_planned_date', { planned_date: day(7) })).status, 200);
-  eq((await pc(D)).length, 3, 'Tag 7 noch im Zeitraum'); eq((await pc(U.ws)).length, 1, 'Werkstatt informiert (Leitung hat geändert)'); eq((await pc(U.fleet)).length, 2, 'Leitung: zwei Änderungen der Werkstatt, nicht die eigene');
+  eq((await pc(D)).length, 4, 'Tag 7 noch im Zeitraum'); eq((await pc(U.ws)).length, 1, 'Werkstatt informiert (Leitung hat geändert)'); eq((await pc(U.fleet)).length, 3, 'Leitung: drei Änderungen der Werkstatt (Backlog 1447: auch der Hinweis), nicht die eigene');
   // Termin entfernt: Hinweis ohne Datum
   eq((await cmd(U.fleet, id, 'set_planned_date', { planned_date: '' })).status, 200);
-  d = await pc(D); eq(d.length, 4, 'Termin entfernt'); ok(!/\d{2}\.\d{2}\.\d{4}/.test(d[0].body), 'ohne Datum: ' + d[0].body);
+  d = await pc(D); eq(d.length, 5, 'Termin entfernt'); ok(!/\d{2}\.\d{2}\.\d{4}/.test(d[0].body), 'ohne Datum: ' + d[0].body);
   // Text je Sprache umgeschrieben; Push-Einstellungen
   const { localizedBody, localizedTitle } = await import('../src/notify.js');
   const ws1 = (await pc(U.ws)).find((n) => n.body.includes(dmy(day(7))));
@@ -41146,6 +41146,29 @@ await test('Backlog 1446 (Blickwinkel „Springer kommt über den QR-Aufkleber �
   ok(kdf([row]).includes('data-kdplannote') && kdf([row]).includes(NOTE), 'Abfahrtskontrolle/Meldeformular zeigen den Hinweis');
   ok(!kdf([row], '2026-11-16').includes(NOTE) && kdf([row], '2026-11-20').includes(NOTE), 'Mein Fahrzeug: gesammelt gezeigter Tag nicht doppelt');
   ok(app.includes('${knownDefects(v.known_defects, v.planned_workshop_date)}'), 'Startseite übergibt den Tag');
+});
+
+await test('Backlog 1447 (Blickwinkel „Werkstatt ändert nur die Uhrzeit im Hinweis – Termin bleibt, der Fahrer kommt zur alten Uhrzeit“): nur geänderter Hinweis eines nahen Werkstatttermins → „Werkstatttermin geändert“ mit festem Zusatz „Hinweis zum Termin geändert“ (ohne Hinweistext, DE/UK/EN, Sprachwechsel); ferner Termin bzw. unveränderter Hinweis ohne Push', async () => {
+  const { U, cmd, newCase, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, end_previous: false })).status, 201);
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(2) }, 'Termin')).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200);
+  const pc = async (c) => (await c.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'plan_changed' && n.case_id === id);
+  const n0 = (await pc(U.driver)).length;
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(2), planned_note: 'Abgabe 9 Uhr' })).status, 200);
+  let d = await pc(U.driver); eq(d.length, n0 + 1, 'Fahrer informiert'); ok(d[0].body.includes('Hinweis zum Termin geändert') && !d[0].body.includes('9 Uhr'), d[0].body);
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(2), planned_note: 'Abgabe 6:30 Uhr' })).status, 200); eq((await pc(U.driver)).length, n0 + 2, 'erneute Änderung');
+  eq((await pc(U.fleet)).length >= 2, true, 'Leitung informiert');
+  const { localizedBody } = await import('../src/notify.js');
+  ok(localizedBody(d[0], 'en').includes('Note on the date changed') && localizedBody(d[0], 'uk').includes('Примітку до терміну змінено') && localizedBody(d[0], 'en').includes(new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC' }).format(new Date(day(2) + 'T12:00:00Z'))), 'Sprachwechsel: ' + localizedBody(d[0], 'en'));
+  // ferner Termin: nur Hinweis geändert → kein Push
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(20) })).status, 200); const n1 = (await pc(U.driver)).length;
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(20), planned_note: 'Halle 4' })).status, 200); eq((await pc(U.driver)).length, n1, 'ferner Termin: kein Hinweis');
+  // Datum + Hinweis zugleich (nah): ein Hinweis mit Datum und Zusatz
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(3), planned_note: 'Halle 5' })).status, 200);
+  d = await pc(U.driver); eq(d.length, n1 + 1); ok(d[0].body.includes(day(3).split('-').reverse().join('.')) && d[0].body.includes('Hinweis zum Termin geändert'), d[0].body);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
