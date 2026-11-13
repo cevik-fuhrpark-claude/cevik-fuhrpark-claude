@@ -38160,7 +38160,7 @@ await test('Backlog 1407 (Blickwinkel „Fahrer schreibt die Meldung auf Türkis
     ['fren tutmuyor ve direksiyon ağır', 'brake,steer']]) is(x, k);
   for (const x of ['egzozdan siyah duman çıkıyor', 'fren tamir edildi', 'lastik değiştirildi, sorun yok', 'lastik patladı ama değiştirildi', 'frende sorun yok', 'fren sorunu yok', 'lastik patlak değil', 'ön camıma taş çarptı', 'yangın söndürücü eksik',
     'Bremse defekt', 'Reifen geplatzt', 'brakes not working', 'flat tyre', 'oil leak', 'гальма не працюють', 'Fahrer Kaza', 'carpet in the cab is dirty', 'Fire extinguisher missing']) is(x, '');
-  ok(app.includes("for (const k of trKinds(dv)) $('#' + k).hidden = false; $('#noise').hidden = !NOISE_HINT.test(dv)"), 'Meldeformular: türkische Hinweise vor dem Geräusch-Hinweis (der sonst zusätzlich erschiene)');
+  ok(app.includes("for (const k of trKinds(dv)) $('#' + k).hidden = false; for (const k of plKinds(dv)) $('#' + k).hidden = false; $('#noise').hidden = !NOISE_HINT.test(dv)"), 'Meldeformular: türkische (und seit 1453 polnische) Hinweise vor dem Geräusch-Hinweis (der sonst zusätzlich erschiene)');
   ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const x of ['fren tutmuyor', 'lastik patladı', 'direksiyon kilitlendi', 'duman çıkıyor', 'yağ kaçırıyor']) { ok(STRINGS[l].help_report_s.includes(x), 'Hilfe Melden ' + l + ': ' + x); ok(trKinds(x).size === 1, 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
@@ -41246,6 +41246,34 @@ await test('Backlog 1451 (Blickwinkel „Werkstatt hat die UVV auf heute vorgezo
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ws_mplan_today && STRINGS[l].ws_mplan_today_hint && STRINGS[l].ws_mplan_today_hint.includes(STRINGS[l].done), l);
   const { HELP } = await import('../public/i18n.js').then((m) => ({ HELP: m.STRINGS }));
   for (const l of ['de', 'uk', 'en']) ok(String(HELP[l].help_ws_s).includes(HELP[l].ws_mplan_today) && String(HELP[l].help_ws_s).includes(HELP[l].inspections_due + ' (≤ 14'), 'Hilfe Werkstatt ' + l);
+});
+await test('Backlog 1453 (Blickwinkel „Fahrer schreibt die Meldung auf Polnisch“, Backlog 195, Folge aus 896/1407): „hamulce nie działają“, „złapałem gumę“, „kierownica zablokowana“, „dym z kabiny“, „cieknie olej“, „miałem wypadek“, „silnik nie odpala“ u. a. → dieselben Hinweise wie türkische Stichwörter, auch ohne ą/ł/ó; Reparaturvermerk, „dym z wydechu“ (auch im Brand-Muster), Steinschlag, Gaśnica, Pogotowie techniczne, Sitzheizung, deutsche/englische/türkische Texte ohne', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = ['const PL_OK', 'const PL_KINDS', 'const plFold', 'function plKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const PL_KINDS' ? "['door'" : h, i)) + 1); }).join('');
+  const plKinds = new Function(src + 'return plKinds;')();
+  const is = (x, k) => eq([...plKinds(x)].sort().join(','), k, x);
+  for (const [x, k] of [['hamulce nie działają', 'brake'], ['HAMULCE NIE DZIAŁAJĄ', 'brake'], ['hamulce nie dzialaja', 'brake'], ['słabo hamuje', 'brake'], ['spada ciśnienie powietrza', 'brake'], ['hamulec ręczny nie trzyma', 'parkbrake'], ['ciężarówka się stoczyła', 'parkbrake'],
+    ['dym z kabiny', 'fire'], ['czuć spaleniznę', 'fire'], ['kabina się pali', 'fire'], ['złapałem gumę', 'flat'], ['zlapalem gume', 'flat'], ['pękła opona', 'flat'], ['opona pękła na autostradzie', 'flat'],
+    ['kierownica zablokowana', 'steer'], ['auto ściąga w prawo', 'steer'], ['cieknie olej', 'leak'], ['wyciek paliwa', 'leak'], ['miałem wypadek', 'acc'], ['miałem stłuczkę, jestem ranny', 'acc'], ['jestem ranny', 'injury'],
+    ['silnik nie odpala', 'nostart'], ['urwane lusterko', 'mirror'], ['lampy tylne nie świecą', 'lights'], ['światło stopu nie działa', 'lights'], ['świeci się kontrolka silnika', 'warnlight'], ['pali się kontrolka', 'warnlight'],
+    ['pęknięta przednia szyba', 'glass'], ['kamień uderzył w szybę, szyba pękła', 'glass'], ['szyba nie otwiera się', 'window'], ['akumulator padł', 'batt'], ['karta kierowcy nie czyta', 'tacho'], ['siodło nie zamyka', 'coupling'],
+    ['skończyło się paliwo', 'dryfuel'], ['silnik się przegrzewa', 'engine'], ['opona przecięta', 'tyre'], ['agregat nie chłodzi', 'reefer'], ['miech pękł', 'susp'], ['sprzęgło się ślizga', 'gear'], ['klima nie działa', 'climate'],
+    ['plandeka rozdarta', 'tarp'], ['tłumik urwany', 'exhaust'], ['wycieraczki nie działają', 'visib'], ['fotel złamany', 'seat'], ['śruby koła poluzowane', 'wheel'], ['zakopałem się w błocie', 'stuck'], ['zgubiłem kluczyki', 'lost'],
+    ['tablica rejestracyjna odpadła', 'numplate'], ['asystent pasa ruchu nie działa', 'adas'], ['sam hamuje bez powodu', 'adas'], ['drzwi nie zamykają się', 'door'], ['winda nie działa', 'door'],
+    ['hamulce nie działają i kierownica zablokowana', 'brake,steer']]) is(x, k);
+  for (const x of ['hamulce naprawione', 'opona wymieniona, wszystko ok', 'opona pękła ale już wymieniona', 'dym z wydechu', 'czarny dym z wydechu', 'kamień uderzył w szybę', 'brak gaśnicy', 'poduszka powietrzna',
+    'ogrzewanie fotela nie działa', 'dzwoni pogotowie techniczne', 'utknąłem w korku', 'agregat: brak paliwa', 'kamień w oponie', 'nie wiem',
+    'Bremse defekt', 'Reifen geplatzt', 'brakes not working', 'flat tyre', 'oil leak', 'гальма не працюють', 'fren tutmuyor', 'lastik patladı']) is(x, '');
+  ok(app.includes("for (const k of trKinds(dv)) $('#' + k).hidden = false; for (const k of plKinds(dv)) $('#' + k).hidden = false; $('#noise').hidden = !NOISE_HINT.test(dv)"), 'Meldeformular: polnische Hinweise vor dem Geräusch-Hinweis');
+  ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  for (const id of [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1])) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  const fl = app.split('\n').find((l) => l.startsWith('const FIRE_HINT')); const FIRE = new Function('return ' + fl.slice(fl.indexOf('=') + 1).replace(/;\s*(\/\/.*)?$/, ''))();
+  ok(!FIRE.test('dym z wydechu') && !FIRE.test('dym iz vyhlopa') && FIRE.test('dym z kabiny') && FIRE.test('dym iz kabiny'), 'Brand-Muster: transliteriertes „dym z/iz“ nur nicht beim Auspuff');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of ['hamulce nie działają', 'złapałem gumę', 'kierownica zablokowana', 'dym z kabiny', 'cieknie olej', 'agregat nie chłodzi', 'zgubiłem kluczyki']) { ok(STRINGS[l].help_report_s.includes(x), 'Hilfe Melden ' + l + ': ' + x); ok(plKinds(x).size === 1, 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-polnisch.py'), 'UI-Prüfung in pruefen.sh');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
