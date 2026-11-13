@@ -41171,6 +41171,32 @@ await test('Backlog 1447 (Blickwinkel „Werkstatt ändert nur die Uhrzeit im Hi
   d = await pc(U.driver); eq(d.length, n1 + 1); ok(d[0].body.includes(day(3).split('-').reverse().join('.')) && d[0].body.includes('Hinweis zum Termin geändert'), d[0].body);
 });
 
+await test('Backlog 1448 (Blickwinkel „Disposition plant einen Lkw ein, dessen Prüftermin mit Hinweis heute/morgen liegt“): „Prüfung/Wartung fällig bis …“ der Dispo-Startseite nennt den Hinweis zum geplanten Prüftermin (Uhrzeit/Ort) – auch bei Termin nach dem Fristende, nie bei verstrichenem Termin; Disposition erhält planned_note aus der Prüfterminliste', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = (name) => { const i = app.indexOf('function ' + name + '('); ok(i >= 0, name); return app.slice(i, app.indexOf('\n}', i)) + '\n}\n'; };
+  const T = { dispo_ds_plan: 'Prüftermin {d}', dispo_ds_late: 'Prüftermin {d} liegt nach dem Fristende', dispo_ds_noplan: 'kein Prüftermin geplant', mo_open: 'Werkstattauftrag', plan_note_lbl: 'Hinweis zum Termin' };
+  const today = '2026-11-06'; const tm = '2026-11-07';
+  const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const plan = new Function('esc', 't', 'fmtD', 'todayMark', 'langAttr', 'clipTxt', fn('dueSoonPlan') + 'return dueSoonPlan;')(esc, (k) => T[k], (d) => d, (d) => (d === today ? ' (heute)' : d === tm ? ' (morgen)' : ''), () => '', (x, n) => String(x).slice(0, n));
+  const a = plan({ planned_date: tm, planned_note: '7:00 Uhr <Prüfstelle Nord>' }, '2026-11-09', today);
+  ok(a.includes('data-dplan') && a.includes('data-dplannote') && a.includes('📝 Hinweis zum Termin: 7:00 Uhr &lt;Prüfstelle Nord>') && a.indexOf('data-dplan>') < a.indexOf('data-dplannote'), a);
+  const b = plan({ planned_date: '2026-11-12', planned_note: 'Halle 2' }, '2026-11-09', today); ok(b.includes('data-dplate') && b.includes('data-dplannote') && b.includes('Halle 2'), 'auch nach dem Fristende: ' + b);
+  ok(!plan({ planned_date: '2026-11-02', planned_note: 'alt' }, '2026-11-09', today).includes('alt'), 'verstrichener Termin: kein Hinweis');
+  ok(!plan({ planned_date: tm }, '2026-11-09', today).includes('data-dplannote'), 'ohne Hinweis nichts');
+  ok(fn('dueSoonPlan').includes('clipTxt(r.planned_note, 120)') && fn('dueSoonPlan').includes('langAttr(r.planned_note)'), 'gekürzt, Sprache markiert');
+  // Server: Disposition sieht den Hinweis in der Prüfterminliste (Quelle der Startseite)
+  const { e, U, V1 } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'w.dispo1448', display_name: 'Dispo', role: 'dispatch', environment: 'test' }); eq(x.status, 201, JSON.stringify(x.data));
+  const disp = new Client(worker, e, 'w.dispo1448'); eq((await disp.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' })).status, 200);
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', next_due_date: day(1), evidence: 'Prüfbuch UVV (Test 1448)' }); eq(r.status, 201, JSON.stringify(r.data));
+  eq((await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(1), planned_note: '6:30 Uhr, Prüfdienst Halle 1' })).status, 200);
+  const dl = await disp.get('/api/maintenance'); eq(dl.status, 200, JSON.stringify(dl.data));
+  const row = dl.data.rows.find((y) => y.id === r.data.id); ok(row && row.planned_date === day(1) && row.planned_note === '6:30 Uhr, Prüfdienst Halle 1', JSON.stringify(row));
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].plan_note_lbl, l);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

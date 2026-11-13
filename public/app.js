@@ -2018,10 +2018,13 @@ function dispoDueSoon(dvs, inSite, mrows = null) {
 }
 // Backlog 1076: Planungsstand einer Frist für die Disposition – Termin (mit „heute“/„morgen“), Termin nach dem Fristende (rot),
 // offener Werkstattauftrag ohne Prüftermin oder „kein Termin geplant“; ein verstrichener Termin zählt nicht als geplant
+// Backlog 1448 (Blickwinkel „Disposition plant einen Lkw ein, dessen Prüftermin mit Hinweis heute/morgen liegt“): Hinweis zum Prüftermin
+// (Uhrzeit/Ort der Prüfstelle, Backlog 1442) direkt am geplanten Termin – vorher nur auf der Dispo-Tafel bzw. in der Fahrzeugakte
 function dueSoonPlan(r, due, today) {
   const pd = r.planned_date && r.planned_date >= today ? r.planned_date : null;
-  if (pd && pd > due) return `<b style="color:var(--stop)" data-dplate>⚠ ${esc(t('dispo_ds_late').replace('{d}', fmtD(pd)))}</b>`;
-  if (pd) return `<span data-dplan>📅 ${esc(t('dispo_ds_plan').replace('{d}', fmtD(pd)))}${todayMark(pd)}</span>`;
+  const pn = pd && r.planned_note ? `<br><span class="small" data-dplannote${langAttr(r.planned_note)}>📝 ${esc(t('plan_note_lbl'))}: ${esc(clipTxt(r.planned_note, 120))}</span>` : '';
+  if (pd && pd > due) return `<b style="color:var(--stop)" data-dplate>⚠ ${esc(t('dispo_ds_late').replace('{d}', fmtD(pd)))}</b>${pn}`;
+  if (pd) return `<span data-dplan>📅 ${esc(t('dispo_ds_plan').replace('{d}', fmtD(pd)))}${todayMark(pd)}</span>${pn}`;
   if (r.open_order) return `<span data-dplanord>🔧 ${esc(t('mo_open'))} ${esc(r.open_order.case_no)}</span>`;
   return `<b data-dnoplan>${esc(t('dispo_ds_noplan'))}</b>`;
 }
