@@ -367,8 +367,45 @@ const LV_KINDS = [['brake', /\bbremz\S*\s+(?:\S+\s+)?(?:nedarboj|nestrada|nebrem
   ['door', /\bdurv\S*\s+(?:\S+\s+)?(?:neaizver|neatver|neaizsledz|neatsledz|iestreg|iestredz)|\b(?:hidraulisk\S*\s+)?(?:bort|lift|pacelaj|rampa)\S*\s+(?:\S+\s+)?(?:nedarboj|nestrada|necel|nenolaiz|kluda|bojat)/, /\blog/]];
 const lvFold = (s) => String(s || '').toLowerCase().replace(/[āčēģīķļņšūž]/g, (c) => 'acegiklnsuz'['āčēģīķļņšūž'.indexOf(c)]);
 function lvKinds(v) { const k = new Set(); for (const p of lvFold(v).split(/[.,;!?\n]+/)) if (!LV_OK.test(p)) for (const [n, rx, ex] of LV_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
+const SQ_OK = /\bu\s+(?:riparua|rregullua|nderrua)n?\b|\b(?:riparuar|rregulluar|nderruar)\b|\bpunon\s+(?:perseri|prape|normal)|\bne\s+rregull\b|\bpa\s+problem/;
+const SQ_KINDS = [['brake', /\bfren\S*\s+(?:\S+\s+)?(?:nuk\s+(?:punon|punojne|mbajne|mban|kapin|kap)|jane\s+te\s+dobet|te\s+dobet|dobet)|\bnuk\s+frenon\b|\b(?:ra|bie|humbet|ulet)\s+(?:\S+\s+)?presion\S*\s+(?:i\s+)?(?:te\s+)?ajri|\bpresion\S*\s+(?:i\s+)?ajri\S*\s+(?:\S+\s+)?(?:ra|bie|ulet)\b|\b(?:humb|humbet|fryn|nxjerr)\s+aj[eë]r\b/, /dore|drit|llamb|asistent|vete|arsye|gom|jastek|balon/],
+  ['fire', /\bzjarr\b|\bmori\s+zjarr|\b(?:digjet|po\s+digjet|u\s+dogj)\s+(?:\S+\s+)?(?:kabin|motor|rrot|gom|kabllo|rimorkio)|\b(?:kabin\S*|motor\S*|rrot\S*|gom\S*|kabllo\S*|rimorkio\S*)\s+(?:\S+\s+)?(?:po\s+)?digjet\b|\btym\b|\btymi\b|\btymos|\bere\s+(?:\S+\s+)?djegi/, /marmit|shkarkim|zjarrfik|fikes|llamb|drit|fener|friksion|wydech|vyhlop|auspuh|egzoz|esapament|kipufog|vyfuk|izputej|ismetim|duslintuv/],
+  ['flat', /\bgom\S*\s+(?:\S+\s+)?(?:u\s+)?(?:shpua|shpuar|plasi|plasur|shfry|shfryre|shfrye|shfryra)\b|\b(?:shpova|shpuam|plasi|u\s+shpua|u\s+shfry)\s+(?:\S+\s+)?gom/, /jastek|balon|tend|fshir/],
+  ['steer', /\btimon\S*\s+(?:\S+\s+)?(?:u\s+)?(?:bllokua|bllokuar|eshte\s+bllokuar|rende|nuk\s+(?:kthehet|punon|rrotullohet)|lekundet|ka\s+loje)|\b(?:terheq|teheq|shkon)\s+(?:\S+\s+)?(?:ne\s+te\s+|nga\s+e\s+)?(?:djathte|majte|djathtas|majtas)\b/],
+  ['leak', /\b(?:rrjedh|pikon|pikojne|derdhet|humb|humbet)\s+(?:\S+\s+)?(?:vaj|naft|karburant|antifriz|ftohes|leng|adblue)|\b(?:vaj|naft|karburant|antifriz|leng\S*\s+ftohes|adblue)\S*\s+(?:\S+\s+)?(?:rrjedh|pikon|derdhet)\b/],
+  ['acc', /\baksident|\bperplas|\bu\s+godit|\bgodita\s+(?:\S+\s+)?(?:makin|kamion|mur|shtyll|automjet|vetur)|\bgoditem\b|\bme\s+goditi\s+(?:nje\s+)?(?:makin|kamion|vetur)/, /gur|zhavor|emergjenc|trekendesh|drit|llamb/],
+  ['injury', /\b(?:jam|eshte|u)\s+(?:i\s+|e\s+)?plagos|\bte\s+plagosur|\bambulanc|\bndihm\S*\s+e\s+shpejte|\bspital/],
+  ['parkbrake', /\bfren\S*\s+(?:e\s+)?dores\s+(?:\S+\s+)?(?:nuk\s+(?:mban|punon|leshon|lirohet)|u\s+bllokua|bllokuar)|\b(?:u\s+rrokullis|leviz\S*|iku|shkoi)\s+(?:\S+\s+)?vete\b/],
+  ['nostart', /\b(?:motor\S*\s+)?nuk\s+(?:ndizet|niset|startohet)\b|\bstarter\S*\s+(?:\S+\s+)?nuk\s+(?:punon|rrotullohet)/, /drit|llamb|fener|ngroh|kondicion|klim|frigo|agregat|webasto|kalorifer|sinjal/],
+  ['mirror', /\bpasqyr\S*\s+(?:\S+\s+)?(?:u\s+)?(?:thye|theu|thyer|ra|u\s+keput|keput|varet|nuk\s+punon|plasi)|\b(?:theva|thyem|u\s+thye)\s+(?:\S+\s+)?pasqyr/],
+  ['lights', /\b(?:drit|fener|fanar|llamb|sinjalizues|pulsues|freca)\S*\s+(?:\S+\s+){0,2}(?:nuk\s+(?:ndiz|punon|punojne|ndriço|ndrico)|u\s+dogj|eshte\s+djegur|jane\s+djegur|u\s+thye|thyer)|\bu\s+dogj\s+(?:\S+\s+)?(?:llamb|drit|fener)/, /panel|ekran|kontroll|motorit/],
+  ['warnlight', /\b(?:u\s+ndez|ndizet|pulson|eshte\s+ndezur|ndezur)\s+(?:\S+\s+){0,2}(?:llamb|drit\S*\s+e\s+kuqe|drit\S*\s+e\s+verdhe|sinjal\S*\s+(?:ne|i)\s+panel)|\bllamb\S*\s+(?:\S+\s+){0,2}(?:u\s+ndez|ndizet|pulson|eshte\s+ndezur)/, /\bnuk\b|dogj|djegur/],
+  ['glass', /\bxham\S*\s+(?:\S+\s+){0,2}(?:u\s+ca|care|u\s+thye|thyer|plasi|plasarit|u\s+plas)|\b(?:plasaritj|carj)\S*\s+(?:\S+\s+)?(?:ne\s+)?xham/, /pasqyr|gur|zhavor|dere|dritar|avull|mjegull/],
+  ['window', /\b(?:dritar\S*|xham\S*\s+(?:i|e)\s+der\S*)\s+(?:\S+\s+)?nuk\s+(?:ulet|ngrihet|hapet|mbyllet|punon)|\bngrites\S*\s+(?:\S+\s+)?(?:i\s+xhamit\s+)?nuk\s+punon/, /fshir/],
+  ['batt', /\b(?:bateri|akumulator)\S*\s+(?:\S+\s+)?(?:u\s+shkarkua|shkarkuar|bosh|ra\b|ka\s+rene|e\s+dobet|nuk\s+mban)|\bu\s+shkarkua\s+(?:\S+\s+)?(?:bateri|akumulator)/, /llamb|telefon|celular/],
+  ['tacho', /\b(?:tahograf|takograf|tachograf)\S*\s+(?:\S+\s+)?(?:nuk\s+(?:punon|lexon|pranon)|gabim|ka\s+defekt|prishur|u\s+prish)|\bkart\S*\s+(?:e\s+)?(?:shoferit\s+|drejtuesit\s+)?(?:\S+\s+)?(?:mbeti\s+brenda|u\s+bllokua|bllokuar|nuk\s+(?:lexohet|del|punon))|\bhumba\s+(?:\S+\s+)?kart|\bkart\S*\s+(?:e\s+)?(?:shoferit|drejtuesit)\s+(?:\S+\s+)?(?:humbi|u\s+humb|u\s+vodh)/, /karburant|naft|bank|kredit|pages/],
+  ['coupling', /\b(?:rimorkio|gjysmerimorkio|gjysme\s+rimorkio)\S*\s+(?:\S+\s+)?(?:u\s+shkeput|u\s+zgjidh|nuk\s+(?:lidhet|bashkohet|shkeputet))|\b(?:shal\S*|rrot\S*\s+e\s+peste)\s+(?:\S+\s+)?(?:nuk\s+(?:mbyllet|punon|kyçet|kycet)|u\s+bllokua|bllokuar)/],
+  ['dryfuel', /\b(?:mbaroi|mbaron|na\s+mbaroi|me\s+mbaroi)\s+(?:\S+\s+)?(?:nafta|karburant)|\bnuk\s+(?:ka|kemi|kam)\s+(?:me\s+)?(?:naft|karburant)|\bmbeta\s+pa\s+(?:naft|karburant)/, /agregat|frigo|adblue|kart/],
+  ['engine', /\bmotor\S*\s+(?:\S+\s+)?(?:nxehet|u\s+nxeh|u\s+mbinxeh|mbinxehet|nuk\s+terheq|humb\S*\s+fuqi|pa\s+fuqi|fiket|u\s+fik|dridhet)|\bregjim\S*\s+(?:i\s+)?(?:emergjenc|urgjenc)|\bnuk\s+ka\s+fuqi\b/, /agregat|frigo|fren|kushinet/],
+  ['tyre', /\bgom\S*\s+(?:\S+\s+)?(?:e\s+)?(?:demtuar|u\s+demtua|prere|u\s+pre|konsumuar|ka\s+flluske|flluske|humb\S*\s+aj[eë]r|ka\s+pak\s+aj[eë]r|pa\s+aj[eë]r)/, /shpua|plas|shfry|fshir|tend/],
+  ['reefer', /\b(?:frigorifer|frigo|agregat|ftohes\S*\s+(?:i\s+)?rimorkio)\S*\s+(?:\S+\s+)?(?:nuk\s+(?:ftoh|ngrin|punon)|jep\s+alarm|alarm|gabim|ka\s+defekt|u\s+fik)/, /kabin/],
+  ['susp', /\b(?:jastek\S*|balon\S*)\s+(?:\S+\s+)?(?:(?:i\s+|e\s+)?ajrit\s+)?(?:plasi|u\s+shpua|shpuar|humb|leshon|u\s+ul)|\bpezullim\S*\s+(?:\S+\s+)?(?:nuk\s+punon|ka\s+defekt|u\s+prish)|\b(?:rimorkio|gjysmerimorkio|kamion)\S*\s+(?:\S+\s+)?(?:eshte\s+)?(?:anuar|u\s+anua|anohet|shtrembe)/, /sigurim|timon/],
+  ['gear', /\bnuk\s+(?:hyn|futet|fus)\s+(?:\S+\s+)?marsh|\bmarsh\S*\s+(?:\S+\s+)?nuk\s+(?:hyn|futet)|\bkuti\S*\s+(?:e\s+)?(?:shpejtesi|marsh)\S*\s+(?:\S+\s+)?(?:gabim|ka\s+defekt|nuk\s+punon|u\s+prish|bllokuar)|\bfriksion\S*\s+(?:\S+\s+)?(?:rreshqet|nuk\s+punon|u\s+dogj|djegur)/],
+  ['climate', /\b(?:kondicioner|klim|ngrohj|kalorifer|webasto)\S*\s+(?:\S+\s+)?(?:nuk\s+(?:punon|ngroh|ftoh|ndizet)|ka\s+defekt|u\s+prish)/, /ndenjes|sedilj|pasqyr/],
+  ['tarp', /\b(?:tend|mushama|telon)\S*\s+(?:\S+\s+)?(?:u\s+gris|grisur|u\s+shqye|shqyer|vrim|u\s+ça|u\s+ca|e\s+cjerre)|\bvrim\S*\s+(?:\S+\s+)?(?:ne\s+)?(?:tend|mushama|telon)/],
+  ['exhaust', /\b(?:marmit|tub\S*\s+(?:i\s+)?shkarkim)\S*\s+(?:\S+\s+)?(?:ra|u\s+keput|keputur|varet|u\s+shpua|vrim|u\s+ça|u\s+ca)/],
+  ['visib', /\bfshires\S*\s+(?:\S+\s+)?(?:nuk\s+(?:punon|punojne|fshijne|fshin)|u\s+thye|thyer|ka\s+defekt)|\bxham\S*\s+(?:\S+\s+)?(?:avullo|mjegullo|zbardhet)/],
+  ['seat', /\brrip\S*\s+(?:i\s+)?sigurim\S*\s+(?:\S+\s+)?(?:nuk\s+(?:mbyllet|mban|punon|del)|u\s+keput|bllokuar)|\b(?:ndenjes|sedilj)\S*\s+(?:\S+\s+)?(?:u\s+prish|prishur|u\s+thye|thyer|nuk\s+(?:rregullohet|punon)|leviz|lekundet)/, /ngroh/],
+  ['wheel', /\b(?:bulon|dado)\S*\s+(?:\S+\s+){0,3}(?:te\s+)?(?:liruar|u\s+liruan|u\s+lirua|mungojne|ra\b|rane)|\bdisk\S*\s+(?:\S+\s+)?(?:i\s+)?(?:rrotes\s+)?(?:u\s+ca|care|plasi|u\s+shtremberua|shtremberuar)|\b(?:moz|kushinet|rrota)\S*\s+(?:\S+\s+)?(?:nxehet|e\s+nxehte|u\s+nxeh|zhurm|troket|lekundet)/, /fren/],
+  ['stuck', /\b(?:ngela|ngeci|ngecem|mbeta|mbeti|u\s+ngul|u\s+fut)\s+(?:\S+\s+){0,2}(?:balt|bore|rere|lloç|lloc|kenet)/],
+  ['lost', /\bhumba\s+(?:\S+\s+)?(?:celes|lej\S*\s+e\s+qarkullimit|librez)|\bceles\S*\s+(?:\S+\s+)?(?:humben|humbi|u\s+humben)|\bnuk\s+(?:i\s+)?gjej\s+(?:\S+\s+)?celes/],
+  ['numplate', /\btarg\S*\s+(?:\S+\s+)?(?:ra\b|u\s+keput|humbi|u\s+humb|u\s+vodh|nuk\s+lexohet|u\s+thye)/, /drit|llamb|ndriçim|ndricim|telefon/],
+  ['adas', /\b(?:asistent|radar|sensor|kamer|tempomat|kontroll\S*\s+i\s+shpejtesise)\S*\s+(?:\S+\s+){0,3}(?:nuk\s+punon|gabim|ka\s+defekt|u\s+fik|u\s+çaktivizua|u\s+caktivizua)|\bfrenon\s+(?:\S+\s+)?(?:vete|pa\s+arsye)/],
+  ['door', /\b(?:der\S*|dyer\S*)\s+(?:\S+\s+)?nuk\s+(?:mbyllet|hapet|mbyllen|hapen|kycet|kyçet|kycen|kyçen)|\b(?:bord\S*|ashensor\S*|platform\S*)\s+(?:\S+\s+)?(?:hidraulik\S*\s+)?(?:nuk\s+(?:punon|ngrihet|ulet)|gabim|ka\s+defekt|u\s+prish)/, /dritar|xham/]];
+const sqFold = (s) => String(s || '').toLowerCase().replace(/[ëç]/g, (c) => (c === 'ë' ? 'e' : 'c'));
+function sqKinds(v) { const k = new Set(); for (const p of sqFold(v).split(/[.,;!?\n]+/)) if (!SQ_OK.test(p)) for (const [n, rx, ex] of SQ_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
 
 
-async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v)]); }
+async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v)]); }
 
 export { foreignKinds };
