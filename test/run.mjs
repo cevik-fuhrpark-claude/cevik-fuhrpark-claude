@@ -38160,7 +38160,7 @@ await test('Backlog 1407 (Blickwinkel „Fahrer schreibt die Meldung auf Türkis
     ['fren tutmuyor ve direksiyon ağır', 'brake,steer']]) is(x, k);
   for (const x of ['egzozdan siyah duman çıkıyor', 'fren tamir edildi', 'lastik değiştirildi, sorun yok', 'lastik patladı ama değiştirildi', 'frende sorun yok', 'fren sorunu yok', 'lastik patlak değil', 'ön camıma taş çarptı', 'yangın söndürücü eksik',
     'Bremse defekt', 'Reifen geplatzt', 'brakes not working', 'flat tyre', 'oil leak', 'гальма не працюють', 'Fahrer Kaza', 'carpet in the cab is dirty', 'Fire extinguisher missing']) is(x, '');
-  ok(app.includes("for (const k of fkSet) $('#' + k).hidden = false; $('#noise').hidden = !NOISE_HINT.test(dv)") && app.includes('async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v)]); }'), 'Meldeformular: türkische (und seit 1453 polnische) Hinweise vor dem Geräusch-Hinweis (der sonst zusätzlich erschiene)');
+  ok(app.includes("for (const k of fkSet) $('#' + k).hidden = false; $('#noise').hidden = !NOISE_HINT.test(dv)") && app.includes('async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v)]); }'), 'Meldeformular: türkische (und seit 1453 polnische) Hinweise vor dem Geräusch-Hinweis (der sonst zusätzlich erschiene)');
   ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const x of ['fren tutmuyor', 'lastik patladı', 'direksiyon kilitlendi', 'duman çıkıyor', 'yağ kaçırıyor']) { ok(STRINGS[l].help_report_s.includes(x), 'Hilfe Melden ' + l + ': ' + x); ok(trKinds(x).size === 1, 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
@@ -41265,7 +41265,7 @@ await test('Backlog 1453 (Blickwinkel „Fahrer schreibt die Meldung auf Polnisc
   for (const x of ['hamulce naprawione', 'opona wymieniona, wszystko ok', 'opona pękła ale już wymieniona', 'dym z wydechu', 'czarny dym z wydechu', 'kamień uderzył w szybę', 'brak gaśnicy', 'poduszka powietrzna',
     'ogrzewanie fotela nie działa', 'dzwoni pogotowie techniczne', 'utknąłem w korku', 'agregat: brak paliwa', 'kamień w oponie', 'nie wiem',
     'Bremse defekt', 'Reifen geplatzt', 'brakes not working', 'flat tyre', 'oil leak', 'гальма не працюють', 'fren tutmuyor', 'lastik patladı']) is(x, '');
-  ok(app.includes("for (const k of fkSet) $('#' + k).hidden = false; $('#noise').hidden = !NOISE_HINT.test(dv)") && app.includes('async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v)]); }'), 'Meldeformular: polnische Hinweise vor dem Geräusch-Hinweis');
+  ok(app.includes("for (const k of fkSet) $('#' + k).hidden = false; $('#noise').hidden = !NOISE_HINT.test(dv)") && app.includes('async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v)]); }'), 'Meldeformular: polnische Hinweise vor dem Geräusch-Hinweis');
   ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   for (const id of [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1])) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
   const fl = app.split('\n').find((l) => l.startsWith('const FIRE_HINT')); const FIRE = new Function('return ' + fl.slice(fl.indexOf('=') + 1).replace(/;\s*(\/\/.*)?$/, ''))();
@@ -41305,6 +41305,33 @@ await test('Backlog 1454 (Blickwinkel „Fahrer schreibt die Meldung auf Rumäni
   ok(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/app-sprachen.js'"), 'Offline-Hülle (SHELL)');
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-rumaenisch.py'), 'UI-Prüfung in pruefen.sh');
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 % nach der Auslagerung)');
+});
+await test('Backlog 1455 (Blickwinkel „Fahrer schreibt die Meldung auf Serbisch/Kroatisch/Bosnisch“, Backlog 195, Folge aus 1453/1454): „kočnice ne rade“, „pukla guma“, „volan blokiran“, „izlazi dim iz kabine“, „curi ulje“, „imao sam udes“, „motor ne pali“ u. a. → dieselben Hinweise, auch ohne č/ć/đ/š/ž; Reparaturvermerk, „dim iz auspuha“, Steinschlag, Feuerlöscher, Sitzheizung, andere Sprachen ohne; Tabelle nur im Modul app-sprachen.js', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = ['const HR_OK', 'const HR_KINDS', 'const hrFold', 'function hrKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const HR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
+  const hrKinds = new Function(src + 'return hrKinds;')();
+  const is = (x, k) => eq([...hrKinds(x)].sort().join(','), k, x);
+  for (const [x, k] of [['kočnice ne rade','brake'],['KOCNICE NE RADE','brake'],['slabo koči','brake'],['pada pritisak zraka','brake'],['ručna kočnica ne drži','parkbrake'],['kamion se otkotrljao','parkbrake'],
+['izlazi dim iz kabine','fire'],['miriše na izgoreno','fire'],['gori kabina','fire'],['pukla guma','flat'],['pukla mi je guma na autoputu','flat'],['guma probušena','flat'],
+['volan blokiran','steer'],['vuče u desno','steer'],['curi ulje','leak'],['gorivo curi','leak'],['imao sam udes','acc'],['imao sam sudar, povrijeđen sam','acc'],['povrijeđen sam','injury'],
+['motor ne pali','nostart'],['retrovizor slomljen','mirror'],['svjetla ne rade','lights'],['pregorjela sijalica','lights'],['upalila se lampica motora','warnlight'],['lampica svijetli','warnlight'],
+['vjetrobransko staklo puklo','glass'],['prozor se ne spušta','window'],['akumulator prazan','batt'],['tahograf ne čita karticu','tacho'],['prikolica se ne kači','coupling'],
+['nestalo goriva','dryfuel'],['motor se pregrijava','engine'],['guma oštećena','tyre'],['agregat ne hladi','reefer'],['jastuk pukao','susp'],['brzina ne ulazi','gear'],['kvačilo proklizava','gear'],
+['klima ne radi','climate'],['cerada pocijepana','tarp'],['auspuh otpao','exhaust'],['brisači ne rade','visib'],['pojas ne kopča','seat'],['matice točka olabavljene','wheel'],
+['zaglavio sam se u blatu','stuck'],['izgubio sam ključeve','lost'],['registarska tablica otpala','numplate'],['asistent za traku ne radi','adas'],['koči sam od sebe','adas'],['vrata se ne zatvaraju','door'],['lift ne radi','door'],
+['kočnice ne rade i volan blokiran','brake,steer']]) is(x, k);
+  for (const x of ['kočnice popravljene', 'guma zamijenjena, sve ok', 'dim iz auspuha', 'crni dim iz auspuha', 'kamen udario u staklo', 'nema aparata za gašenje', 'grijanje sjedišta ne radi', 'zvao sam pomoć na cesti', 'ne znam', 'motor radi normalno',
+    'Bremse defekt', 'Reifen geplatzt', 'brakes not working', 'flat tyre', 'гальма не працюють', 'fren tutmuyor', 'hamulce nie działają', 'frânele nu funcționează']) is(x, '');
+  ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  for (const id of [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1])) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  ok(app.includes('async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v)]); }'), 'in foreignKinds aufgenommen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of ['kočnice ne rade', 'pukla guma', 'volan blokiran', 'izlazi dim iz kabine', 'curi ulje', 'motor ne pali', 'retrovizor slomljen', 'akumulator prazan', 'tahograf ne čita karticu', 'agregat ne hladi', 'brzina ne ulazi', 'izgubio sam ključeve']) { ok(STRINGS[l].help_report_s.includes(x), 'Hilfe Melden ' + l + ': ' + x); ok(hrKinds(x).size === 1, 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  ok(!main.includes('const HR_KINDS') && lang.includes('const HR_KINDS'), 'Tabelle nur in app-sprachen.js');
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-bks.py'), 'UI-Prüfung in pruefen.sh');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
