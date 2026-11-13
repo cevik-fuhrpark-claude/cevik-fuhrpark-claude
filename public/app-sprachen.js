@@ -213,6 +213,46 @@ const huFold = (s) => String(s || '').toLowerCase().replace(/[áéíóöőúüű
 function huKinds(v) { const k = new Set(); for (const p of huFold(v).split(/[.,;!?\n]+/)) if (!HU_OK.test(p)) for (const [n, rx, ex] of HU_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
 
 
-async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v)]); }
+
+const CS_OK = /\bopraven|\bvymenen|\bvymenil|\bfunguje\s+(?:uz|zase|opet|znova|znovu)\b|\b(?:uz|zase|opet|znova|znovu)\s+funguje\b|\b(?:je|vse|vsetko|vsechno)\s+(?:v\s+poradku|v\s+poriadku|ok)\b|\bbez\s+problem/;
+const CS_KINDS = [['brake', /\bbrzd\S*\s+(?:\S+\s+)?(?:nefunguj|nebrzd|nedrz|slab|selhal|zlyhal|povolil)|\bnebrzd|\bslabo\s+brzd|\b(?:pada|klesa|unika)\s+(?:\S+\s+)?tlak|\bunika\s+vzduch/, /rucn|parkovac|svetl|stop|asistent|\bsam[ao]?\b|bez\s+d[uo]vodu|pneu|gum|\bmech|vankus|\bvak/],
+  ['fire', /\bpozar|\b(?:hori|horet|vzplanul\S*)\b|\b(?:kour|dym)\S*\s+(?:\S+\s+)?(?:z|zpod|spod|ide|jde|vychadz\S*|vychaz\S*|stoupa)\b|\b(?:jde|ide|vychazi|vychadza|stoupa|vali)\s+(?:\S+\s+)?(?:kour|dym)|\b(?:smrdi|pachne|citim|cit)\S*\s+(?:\S+\s+)?(?:spalen|horen)/, /vyfuk|wydech|vyhlop|auspuh|egzoz|esapament|kipufog|hasic|hasiac|zarovk|ziarovk|kontrolk/],
+  ['flat', /\b(?:pichl|pichol)\S*|\b(?:pneu\S*|gum[ay]\b)\s+(?:\S+\s+)?(?:prask|pichl|pichnut|prazdn|splask|vybuchl|roztrh)|\b(?:prask|vybuchl|roztrh|splasl)\S*\s+(?:\S+\s+){0,2}(?:pneu|gum)|\bmam[e]?\s+defekt|\bdefekt\s+(?:na\s+)?(?:pneu|kole)/, /\bmech|\bvak|placht|sterac|stierac/],
+  ['steer', /\bvolant\S*\s+(?:\S+\s+)?(?:zablokov|zasek|tezk|tazk|ma\s+vul|nejde|nefunguj)|\b(?:tahne|taha)\s+(?:\S+\s+)?(?:doprava|doleva|vpravo|vlevo|vlavo)/],
+  ['leak', /\b(?:olej|naft|palivo|paliva|chladic|chladiac|kapalin|kvapalin|nemrz|adblue|diesel)\S*\s+(?:\S+\s+)?(?:tece|tecie|kape|kvapka|unika|vytek|vytiek)|\b(?:tece|tecie|kape|kvapka|unika|vytek|vytiek)\S*\s+(?:\S+\s+)?(?:olej|naft|palivo|chladic|chladiac|kapalin|kvapalin|nemrz|adblue)/],
+  ['acc', /\bnehod|\bhavar|\bsrazk|\bzrazk|\bnaboural|\bnabural|\bnarazil|\bodrel|\bvrazil/, /rezim|kamen|kamienk|kaminek/],
+  ['injury', /\bzran(?:en|il|ila|ili)\S*|\bzachrank|\bsanitk|\bnemocnic/],
+  ['parkbrake', /\b(?:rucni|rucna|parkovaci|parkovacia)\s+brzd\S*\s+(?:\S+\s+)?(?:nedrz|nefunguj|neuvoln|zasekl|nejde)|\b(?:rozjel|rozbehol|pohol|odjel)\S*\s+(?:sa\s+|se\s+)?sam/],
+  ['nostart', /\bnenastartuj|\bnestartuj|\b(?:nejde|neda\s+sa)\s+(?:\S+\s+)?nastartovat|\bstarter\S*\s+(?:\S+\s+)?nefunguj/, /agregat|chlad|klim|topen|kurenie|webasto/],
+  ['mirror', /\b(?:zrcatk|zrcadl|zrkadl|zrkadielk)\S*\s+(?:\S+\s+)?(?:ulomen|ulomil|rozbit|utrzen|odtrhn|odtrhol|prask|visi|nejde|nefunguj)|\b(?:ulomen|ulomil|rozbit|utrzen|odtrh)\S*\s+(?:\S+\s+)?(?:zrcatk|zrcadl|zrkadl)/],
+  ['lights', /\b(?:svetl|svetlomet|reflektor|blinkr|smerovk|zarovk|ziarovk)\S*\s+(?:\S+\s+)?(?:nesviti|nesvieti|nefunguj|praskl|spalen|vypalen|rozbit)|\bnesvit\S*\s+(?:\S+\s+)?(?:svetl|blinkr|zarovk|reflektor)|\bnesviet\S*\s+(?:\S+\s+)?(?:svetl|smerovk|ziarovk)|\b(?:praskl|spalen|vypalen)\S*\s+(?:\S+\s+)?(?:zarovk|ziarovk)/, /kontrolk|palubn|displej/],
+  ['warnlight', /\bkontrolk\S*\s+(?:\S+\s+)?(?:sviti|svieti|blika|rozsvit|rozsviet)|\b(?:sviti|svieti|blika|rozsvitil\S*|rozsvietil\S*)\s+(?:se\s+|sa\s+|mi\s+)?(?:\S+\s+)?kontrolk/],
+  ['glass', /\b(?:(?:celni|celne|predni|predne)\s+)?sklo\S*\s+(?:\S+\s+)?(?:praskl|puklo|rozbit|poskoz|poskoden)|\b(?:praskl|puklo|rozbit|poskoz)\S*\s+(?:\S+\s+)?(?:(?:celni|celne)\s+)?sklo/, /zrcatk|zrcadl|zrkadl|kamen|kamienk|kaminek/],
+  ['window', /\bokn\S*\s+(?:\S+\s+)?(?:nejde|nefunguj|zasekl)/, /sterac|stierac/],
+  ['batt', /\b(?:bateri|akumulator|autobateri|aku)\S*\s+(?:\S+\s+)?(?:vybit|slab|nedobij|nenabij)|\bvybit\S*\s+(?:\S+\s+)?(?:bateri|akumulator|aku)/, /kontrolk/],
+  ['tacho', /\btachograf\S*\s+(?:\S+\s+)?(?:nefunguj|necte|necita|chyb|porucha|poruch)|\bkart[auy]\s+(?:ridice\s+|vodica\s+)?(?:\S+\s+)?(?:nejde\s+(?:precist|vytahnout|vybrat)|necte|necita|zasekl|ztracen|straten|ukraden|poskoz)|\b(?:ztratil|stratil)\s+(?:jsem\s+|som\s+)?(?:\S+\s+)?kart/, /tank|cerpac|palivov|platebn|platobn/],
+  ['coupling', /\b(?:naves|prives)\S*\s+(?:\S+\s+)?(?:nejde\s+(?:zapojit|pripojit|zapriahnut|odpojit)|se\s+odpojil|sa\s+odpojil|odpojil|uvolnil)|\btocnic\S*\s+(?:\S+\s+)?(?:nezavir|nezatvar|nezamyk|nejde|porucha|poskoz|zasekl)/],
+  ['dryfuel', /\b(?:dosl[ao]|minul[ao]?)\s+(?:(?:sa|se|mi)\s+)?(?:\S+\s+)?(?:naft|palivo|diesel)|\bnemam\s+(?:uz\s+)?(?:naft|palivo)|\b(?:naft|palivo)\S*\s+(?:\S+\s+)?(?:doslo|dosla|minul)/, /agregat|chlad|adblue/],
+  ['engine', /\bmotor\S*\s+(?:\S+\s+)?(?:se\s+|sa\s+)?(?:prehriv|prehriev|nema\s+vykon|ztraci|straca|zhasin|chcip|cuka|vypina)|\b(?:nouzov|nudzov|havarijn)\S*\s+rezim|\b(?:nema|ztraci|straca)\s+(?:\S+\s+)?vykon/, /agregat|brzd|lozisk/],
+  ['tyre', /\b(?:pneu\S*|gum[ay]\b)\s+(?:\S+\s+)?(?:poskoz|poskoden|proriznut|prerezan|narezan|sjet|ojet|zodrat|opotreb|boul|bublin|ztraci\s+vzduch|straca\s+vzduch|ma\s+malo|uchodi|unika)/, /praskl|pichl|pichnut|vybuchl|splask|prazdn|defekt|sterac|stierac/],
+  ['reefer', /\b(?:agregat|chladic\S*\s+(?:agregat|jednotk)|chladiac\S*\s+(?:agregat|jednotk))\S*\s+(?:\S+\s+)?(?:nechladi|nefunguj|alarm|chyb|porucha|vypadl|nejede|nejde)/],
+  ['susp', /\b(?:mech|mechy|vzduchov\S*\s+(?:mech|vak)|vak)\S*\s+(?:\S+\s+)?(?:praskl|roztrh|unika|uchodi|pusti|poskoz|poskoden)|\b(?:odpruzen|perovan)\S*\s+(?:\S+\s+)?(?:nefunguj|porucha|poskoz)|\b(?:naves|prives|kamion|tahac)\S*\s+(?:\S+\s+)?(?:se\s+|sa\s+)?(?:naklan|nakloni|naklonen|sedi\s+nizko)/],
+  ['gear', /\b(?:nejde|neda\s+sa)\s+(?:\S+\s+)?zaradit|\b(?:rychlost|kvalt)\S*\s+(?:\S+\s+)?(?:nejde|nezaradi)|\bprevodovk\S*\s+(?:\S+\s+)?(?:chyb|porucha|nefunguj|zasekl|drhne)|\bspojk\S*\s+(?:\S+\s+)?(?:prokluz|preklz|nefunguj|spalen|nejde)/],
+  ['climate', /\b(?:klima\S*|topen\S*|kurenie|webasto|nezavisl\S*\s+topen\S*)\s+(?:\S+\s+)?(?:nefunguj|netopi|nekuri|nechladi|nejde|porucha)/, /sedad|sedac|vyhriv|vyhrev/],
+  ['tarp', /\bplacht\S*\s+(?:\S+\s+)?(?:roztrh|roztrz|potrh|potrz|dira|diera|poskoz|poskoden|natrzen)|\b(?:dira|diera)\s+v\s+placht/],
+  ['exhaust', /\bvyfuk\S*\s+(?:\S+\s+)?(?:upadl|odpadl|odpadol|visi|dira|diera|hlucn|praskl|prasknut|ulomen)/],
+  ['visib', /\b(?:sterac|stierac)\S*\s+(?:\S+\s+)?(?:nefunguj|nestir|nestier|ulomen|zlomen|nejde)|\bsklo\s+(?:se\s+|sa\s+)?(?:mlzi|zamlzuj|hmli|zahmlieva|zarosi)/],
+  ['seat', /\b(?:bezpecnostn\S*\s+)?pas\s+(?:\S+\s+)?(?:nejde|nedrzi|nefunguj|roztrh|zasekl)|\b(?:sedadl|sedack)\S*\s+(?:\S+\s+)?(?:zlomen|rozbit|nefunguj|nejde\s+nastavit|vikla|kyva)/, /vyhriv|vyhrev|kuren|topen/],
+  ['wheel', /\b(?:srouby|sroub|skrutk|matic)\S*\s+(?:\S+\s+){0,2}(?:povolen|uvolnen|volne|chybi|chyba|upadl)|\b(?:rafek|rafk|disk)\S*\s+(?:\S+\s+)?(?:praskl|ohnut|zlomen)|\b(?:naboj|lozisk|kolo|koleso)\S*\s+(?:\S+\s+)?(?:hork|horuc|prehriv|prehriev|huci|klepe|vikla)/, /brzd/],
+  ['stuck', /\b(?:zapadl|zapadol|uvizl|uviazol|zahrabal)\S*\s+(?:\S+\s+){0,3}(?:blat|snih|sneh|pisk|piesk)/],
+  ['lost', /\b(?:ztratil|stratil)\S*\s+(?:jsem\s+|som\s+)?(?:\S+\s+)?(?:klic|kluc|technick|osvedc)|\b(?:klic|kluc)\S*\s+(?:\S+\s+)?(?:ztracen|straten|nemuzu|nemozem)|\bnemuzu\s+najit\s+(?:\S+\s+)?klic|\bnemozem\s+najst\s+(?:\S+\s+)?kluc/],
+  ['numplate', /\b(?:spz|ecv|registracn\S*\s+znack\S*|poznavac\S*\s+znack\S*|evidencn\S*\s+cisl\S*)\s+(?:\S+\s+)?(?:upadl|odpadl|odpadol|ztracen|straten|ukraden|necitel|zlomen|chybi|chyba)/, /osvetlen|svetl|zarovk|ziarovk/],
+  ['adas', /\b(?:asistent|radar|senzor|snimac|kamera|tempomat)\S*\s+(?:\S+\s+){0,3}(?:nefunguj|chyb|porucha|vypnul|nejde)|\bbrzdi\s+(?:\S+\s+)?(?:sam|bez\s+(?:duvodu|dovodu))/],
+  ['door', /\bdver\S*\s+(?:\S+\s+)?(?:nejd|nezavir|nezatvar|nezamyk|neotevir|neotvar|zasekl)|\b(?:hydraulick\S*\s+)?(?:celo|plosin|rampa)\S*\s+(?:\S+\s+)?(?:nefunguj|nejde|nejede|porucha|chyb)/, /okn/]];
+const csFold = (s) => String(s || '').toLowerCase().replace(/[áäčďéěíĺľňóôŕřšťúůýž]/g, (c) => 'aacdeeillnoorrstuuyz'['áäčďéěíĺľňóôŕřšťúůýž'.indexOf(c)]);
+function csKinds(v) { const k = new Set(); for (const p of csFold(v).split(/[.,;!?\n]+/)) if (!CS_OK.test(p)) for (const [n, rx, ex] of CS_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
+
+
+async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v)]); }
 
 export { foreignKinds };

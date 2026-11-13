@@ -41352,12 +41352,39 @@ await test('Backlog 1456 (Blickwinkel „Fahrer schreibt die Meldung auf Ungaris
  'Bremse defekt','Reifen geplatzt','defektes Licht','brakes not working','flat tyre','гальма не працюють','fren tutmuyor','hamulce nie działają','frânele nu funcționează','kočnice ne rade','motor ne pali','Motor springt nicht an','Klima defekt'].concat(['Aggregat zeigt Alarm', 'thermo king alarm', 'Index defekt'])) is(x, '');
   ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   for (const id of [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1])) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
-  ok(app.includes('async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v)]); }'), 'in foreignKinds aufgenommen');
+  ok(app.includes('async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v)'), 'in foreignKinds aufgenommen');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const x of ['nem fog a fék', 'defektet kaptam', 'beragadt a kormány', 'füst jön a kabinból', 'folyik az olaj', 'nem indul a motor', 'a tükör letört', 'az akku lemerült', 'a tachográf nem olvassa a kártyát', 'a hűtő nem hűt', 'nem megy be a sebesség', 'elvesztettem a kulcsot']) { ok(STRINGS[l].help_report_s.includes(x), 'Hilfe Melden ' + l + ': ' + x); ok(huKinds(x).size === 1, 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
   ok(!main.includes('const HU_KINDS') && lang.includes('const HU_KINDS'), 'Tabelle nur in app-sprachen.js');
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-ungarisch.py'), 'UI-Prüfung in pruefen.sh');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
+});
+await test('Backlog 1457 (Blickwinkel „Fahrer schreibt die Meldung auf Tschechisch/Slowakisch“, Backlog 195, Folge aus 1453–1456): „brzdy nefungují“, „píchl jsem“, „volant je zablokovaný“, „z kabiny jde kouř“, „teče olej“, „měl jsem nehodu“, „motor nestartuje“ u. a. (auch slowakisch) → dieselben Hinweise, auch ohne Häkchen/Striche; Reparaturvermerk, Auspuffrauch (auch polnisch „dym z wydechu“), Steinschlag, Feuerlöscher, Sitzheizung, Tankkarte, deutsches „defekt“/„Aggregat“/„Tempomat“ und andere Sprachen ohne; Tabelle nur im Modul app-sprachen.js', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = ['const CS_OK', 'const CS_KINDS', 'const csFold', 'function csKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const CS_KINDS' ? "['door'" : h, i)) + 1); }).join('');
+  const csKinds = new Function(src + 'return csKinds;')();
+  const is = (x, k) => eq([...csKinds(x)].sort().join(','), k, x);
+  for (const [x, k] of [['brzdy nefungují','brake'],['BRZDY NEFUNGUJI','brake'],['nebrzdí to','brake'],['padá tlak vzduchu','brake'],['brzdy nefungujú','brake'],['ruční brzda nedrží','parkbrake'],['ručná brzda nedrží','parkbrake'],['kamion se rozjel sám','parkbrake'],
+['z kabiny jde kouř','fire'],['ide dym z kabíny','fire'],['kabina hoří','fire'],['smrdí to spáleninou','fire'],['píchl jsem','flat'],['praskla pneumatika','flat'],['mám defekt','flat'],['pneumatika praskla','flat'],
+['volant je zablokovaný','steer'],['tahá doprava','steer'],['teče olej','leak'],['olej kape','leak'],['tečie nafta','leak'],['měl jsem nehodu','acc'],['mal som nehodu','acc'],['naboural jsem','acc'],['měl jsem nehodu, jsem zraněný','acc'],['jsem zraněný','injury'],['volal jsem záchranku','injury'],
+['motor nestartuje','nostart'],['nenaštartuje','nostart'],['nejde nastartovat','nostart'],['zrcátko ulomené','mirror'],['spätné zrkadlo rozbité','mirror'],['světla nesvítí','lights'],['svetlá nesvietia','lights'],['prasklá žárovka','lights'],['svítí kontrolka motoru','warnlight'],['rozsvietila sa kontrolka','warnlight'],
+['čelní sklo prasklé','glass'],['prasklo čelné sklo','glass'],['okno nejde stáhnout','window'],['baterie vybitá','batt'],['batéria je vybitá','batt'],['tachograf nečte kartu','tacho'],['tachograf nečíta kartu','tacho'],['ztratil jsem kartu řidiče','tacho'],['návěs nejde zapojit','coupling'],['točnice nezavírá','coupling'],
+['došla nafta','dryfuel'],['minula sa nafta','dryfuel'],['motor se přehřívá','engine'],['motor sa prehrieva','engine'],['nemá výkon','engine'],['pneumatika poškozená','tyre'],['pneumatika ztrácí vzduch','tyre'],['agregát nechladí','reefer'],['měch praskl','susp'],['nejde zařadit rychlost','gear'],['spojka prokluzuje','gear'],['spojka prekĺzava','gear'],
+['klimatizace nefunguje','climate'],['topení netopí','climate'],['kúrenie nekúri','climate'],['plachta roztržená','tarp'],['výfuk upadl','exhaust'],['stěrače nefungují','visib'],['stierače nefungujú','visib'],['pás nejde zapnout','seat'],['šrouby kola povolené','wheel'],['skrutky kolesa uvoľnené','wheel'],
+['zapadl jsem v blátě','stuck'],['zapadol som v snehu','stuck'],['ztratil jsem klíče','lost'],['stratil som kľúče','lost'],['SPZ upadla','numplate'],['asistent jízdy v pruhu nefunguje','adas'],['brzdí sám od sebe','adas'],['dveře nejdou zavřít','door'],['dvere nejdú zatvoriť','door'],['hydraulické čelo nefunguje','door'],
+['havarijní režim','engine'],['nouzový režim','engine'],['brzdy nefungují a volant je zablokovaný','brake,steer']]) is(x, k);
+  for (const x of ['brzdy opraveny','pneumatika vyměněna, je v pořádku','kouř z výfuku','černý kouř z výfuku','kamínek praskl čelní sklo','nemám hasicí přístroj','vyhřívání sedadla nefunguje','tanková karta nefunguje','nevím','motor funguje normálně','už funguje',
+ 'Bremse defekt','Reifen geplatzt','defektes Licht','Aggregat zeigt Alarm','Tempomat defekt','brakes not working','flat tyre','гальма не працюють','fren tutmuyor','frânele nu funcționează','kočnice ne rade','nem fog a fék','Motor springt nicht an','Klima defekt'].concat(['dym z wydechu', 'czarny dym z wydechu', 'dym iz vyhlopa'])) is(x, '');
+  ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  for (const id of [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1])) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  ok(app.includes('async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v)]); }'), 'in foreignKinds aufgenommen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of ['brzdy nefungují', 'píchl jsem', 'volant je zablokovaný', 'z kabiny jde kouř', 'teče olej', 'motor nestartuje', 'zrcátko ulomené', 'baterie vybitá', 'tachograf nečte kartu', 'agregát nechladí', 'nejde zařadit rychlost', 'ztratil jsem klíče', 'brzdy nefungujú', 'mal som nehodu']) { ok(STRINGS[l].help_report_s.includes(x), 'Hilfe Melden ' + l + ': ' + x); ok(csKinds(x).size === 1, 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  ok(!main.includes('const CS_KINDS') && lang.includes('const CS_KINDS'), 'Tabelle nur in app-sprachen.js');
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-tschechisch.py'), 'UI-Prüfung in pruefen.sh');
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
