@@ -4197,6 +4197,9 @@ async function viewNew(preId) {
 function myPlanned(v) {
   let h = '';
   if (v.planned_workshop_date) h += `<dt>${esc(t('planned_ws_short'))}</dt><dd><b>${fmtD(v.planned_workshop_date)}</b>${todayMark(v.planned_workshop_date)} ${(v.planned_workshop_sites || []).length ? ` · <span data-plannedws>${v.planned_workshop_sites.map((w) => esc(wsName(w))).join(', ')}</span>` : ''} <span class="small muted">${esc(t('my_ws_hint'))}</span>${v.planned_workshop_note ? `<br><span data-plannote>${esc(t('plan_note_lbl'))}: ${esc(v.planned_workshop_note)}</span>` : ''}</dd>`;
+  // Backlog 1430: verpasster Werkstatt- bzw. Rückkehrtermin (vorher nur Termine ab heute – der Fahrer sah nicht, dass der Termin verstrichen ist)
+  const mw = v.missed_workshop;
+  if (mw && mw.date) h += `<dt>${esc(t('planned_ws_short'))}</dt><dd data-wsmissed><span class="chip kritisch">⚠ ${esc(t('drv_ws_missed'))}</span> ${esc(t(mw.return ? 'drv_ws_ret_missed_txt' : 'drv_ws_missed_txt').replace('{d}', fmtD(mw.date)))}</dd>`;
   const pi = v.planned_inspection;
   if (pi && ![...(v.next_inspections || []), ...(v.km_due || [])].some((r) => r.kind === pi.kind && r.planned_date)) h += `<dt>${esc(mk(pi.kind))}</dt><dd>${esc(t('planned'))} ${fmtD(pi.planned_date)}${todayMark(pi.planned_date)}</dd>`;
   return h;

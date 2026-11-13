@@ -916,6 +916,12 @@ export async function myVehicles(env, user, envName) {
   const minDate = (arr) => arr.filter((d) => d && d >= today).sort()[0] || null;
   const WS = ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'];
   const PRIO_RANK = { kritisch: 0, mittel: 1, niedrig: 2 };
+  const missedWs = (vid) => {
+    const m = mine.results.filter((c) => c.vehicle_id === vid && c.planned_date && c.planned_date < today
+      && (c.status === 'werkstatt_freigegeben' || (c.status === 'wartet_teile' && c.parts_drive_at && !c.safety_lock)))
+      .sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0];
+    return m ? { date: m.planned_date, return: m.status === 'wartet_teile' } : null;
+  };
   // offene Vorgänge (bekannte Mängel) und Prüftermine je Fahrzeug – für eigene und den gekoppelten Anhänger/die Zugmaschine (Backlog 202)
   const defects = (vid) => mine.results.filter((c) => c.vehicle_id === vid).sort((a, b) => (b.safety_lock ? 1 : 0) - (a.safety_lock ? 1 : 0) || (PRIO_RANK[a.priority] ?? 3) - (PRIO_RANK[b.priority] ?? 3) || String(b.created_at).localeCompare(String(a.created_at))).map((c) => ({ id: c.mine ? c.id : null, case_no: c.case_no, status: c.status, priority: c.priority,
         description: c.description, created_at: c.created_at, check_item: c.check_item, safety_lock: !!c.safety_lock, mine: !!c.mine,
@@ -964,6 +970,10 @@ export async function myVehicles(env, user, envName) {
       planned_workshop_sites: (() => { const d = minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)); return d ? [...new Set(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status) && c.planned_date === d && c.workshop_site).map((c) => c.workshop_site))] : []; })(),
       planned_workshop_note: (() => { const d = minDate(mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status)).map((c) => c.planned_date)); return d ? mine.results.filter((c) => c.vehicle_id === v.id && WS.includes(c.status) && c.planned_date === d && c.planned_note).map((c) => c.planned_note).join(' · ') || null : null; })(),
       planned_inspection: plannedInsp(v.id),
+      // Backlog 1430 (Blickwinkel „Fahrer hat den Werkstatttermin verpasst – ‚Mein Fahrzeug‘ zeigte nur Termine ab heute“): frühester
+      // verstrichener Termin eines noch nicht begonnenen Auftrags bzw. verpasster Rückkehrtermin eines Lkw, der bis zur Teilelieferung fährt
+      // (gleiche Regel wie Werkstattplan „Termin überschritten“); nur Datum und Art, kein neuer Termin wird angenommen
+      missed_workshop: missedWs(v.id),
       last_km: (({ vehicle_id, km, measured_at }) => (vehicle_id ? { vehicle_id, km, measured_at } : null))(kmMap.get(v.id) || {}),
       km_due: rules.results.filter((r) => r.vehicle_id === v.id && !['HU', 'SP'].includes(r.kind)).map((r) => ({ r, k: kmDue(r, kmMap.get(v.id), warnKm) }))
         .filter((x) => x.k && ['ueberfaellig', 'faellig'].includes(x.k.km_status)).sort((a, b) => a.k.km_remaining - b.k.km_remaining).slice(0, 4)

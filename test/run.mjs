@@ -40753,6 +40753,44 @@ await test('Backlog 1429 (Blickwinkel „Rückkehrtermin verpasst: Lkw fährt bi
     ok(/Rückkehrtermin … überschritten|Return date … passed|Термін повернення … минув/.test(STRINGS[l].help_dispo_s), `${l} Hilfe`); }
 });
 
+await test('Backlog 1430 (Blickwinkel „Fahrer hat den Werkstatttermin verpasst – ‚Mein Fahrzeug‘ zeigte nur Termine ab heute“): verstrichener Termin eines nicht begonnenen Auftrags bzw. verpasster Rückkehrtermin (fährt bis zur Teilelieferung) als Hinweis beim Fahrer; begonnene Reparatur, Sperre und kommende Termine nicht; Texte DE/UK/EN', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, end_previous: false })).status, 201);
+  const mv = async () => (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1);
+  eq((await mv()).missed_workshop, null, 'ohne Auftrag nichts');
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(2) }, 'freigegeben')).status, 200);
+  let v = await mv(); eq(v.missed_workshop, null, 'kommender Termin: kein Hinweis'); eq(v.planned_workshop_date, day(2));
+  db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(-2), id);
+  v = await mv(); eq(JSON.stringify(v.missed_workshop), JSON.stringify({ date: day(-2), return: false }), 'verstrichener Termin, Reparatur nicht begonnen'); eq(v.planned_workshop_date, null, 'kein kommender Termin');
+  // zweiter Auftrag mit früher verstrichenem Termin → frühester
+  const id2 = await newCase({ description: 'Spiegel lose' });
+  eq((await cmd(U.fleet, id2, 'approve_repair', { workshop_site: 'DORTMUND' }, 'freigegeben')).status, 200);
+  db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(-5), id2);
+  eq((await mv()).missed_workshop.date, day(-5), 'frühester verstrichener Termin');
+  db.prepare('UPDATE cases SET planned_date=NULL WHERE id=?').run(id2);
+  // begonnen → kein Hinweis (Fahrzeug ist gekommen)
+  eq((await cmd(U.ws, id, 'start_repair')).status, 200);
+  eq((await mv()).missed_workshop, null, 'in Reparatur: kein Hinweis');
+  // wartet auf Teile ohne Vermerk: kein Hinweis; fährt bis zur Teilelieferung: verpasster Rückkehrtermin
+  eq((await cmd(U.ws, id, 'wait_parts', { parts_expected_date: day(3) }, 'bestellt')).status, 200);
+  db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(-1), id);
+  eq((await mv()).missed_workshop, null, 'wartet auf Teile, steht in der Werkstatt');
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '1' })).status, 200);
+  eq(JSON.stringify((await mv()).missed_workshop), JSON.stringify({ date: day(-1), return: true }), 'Rückkehrtermin verpasst');
+  db.prepare('UPDATE cases SET safety_lock=1 WHERE id=?').run(id);
+  eq((await mv()).missed_workshop, null, 'Sperre: fährt nicht');
+  db.prepare('UPDATE cases SET safety_lock=0, planned_date=? WHERE id=?').run(day(1), id);
+  eq((await mv()).missed_workshop, null, 'neuer Rückkehrtermin');
+  ok(!JSON.stringify((await U.driver.get('/api/me/vehicles')).data).includes(day(-5)), 'kein alter Termin mehr');
+  // Oberfläche
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<dd data-wsmissed>') && app.includes("t(mw.return ? 'drv_ws_ret_missed_txt' : 'drv_ws_missed_txt').replace('{d}', fmtD(mw.date))"), 'Mein Fahrzeug');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['drv_ws_missed', 'drv_ws_missed_txt', 'drv_ws_ret_missed_txt']) { ok(STRINGS[l][k], `${l} ${k}`); if (k !== 'drv_ws_missed') ok(STRINGS[l][k].includes('{d}'), `${l} ${k} Platzhalter`); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
