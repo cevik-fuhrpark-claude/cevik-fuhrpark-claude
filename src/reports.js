@@ -1012,7 +1012,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
   const sf = site ? ' AND c.workshop_site=?' : '';
   const canPlan = ['owner', 'fleet', 'workshop'].includes(user.role);
   const [cs, mt, vs, mo] = await Promise.all([
-    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, v.eval_excluded, c.status, c.priority, c.safety_lock, c.reported_driveability, c.tow_service, c.workshop_site, c.vehicle_location, c.vehicle_location_at, c.handover_keys, c.handover_papers, c.planned_date, c.planned_note, c.parts_expected_date, c.ready_expected_on, c.workshop_ack_at, c.version, substr(c.description,1,300) AS description, c.maintenance_rule_id, c.tire_order
+    env.DB.prepare(`SELECT c.id, c.case_no, c.vehicle_id, v.plate, v.site AS vehicle_site, v.eval_excluded, c.status, c.priority, c.safety_lock, c.reported_driveability, c.tow_service, c.workshop_site, c.vehicle_location, c.vehicle_location_at, c.handover_keys, c.handover_papers, c.planned_date, c.planned_note, c.parts_expected_date, c.ready_expected_on, c.workshop_ack_at, c.version, substr(c.description,1,300) AS description, c.maintenance_rule_id, c.tire_order, c.parts_drive_at
       FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status IN (${PLAN_STATUSES.map(() => '?').join(',')})${sf}
       ORDER BY c.planned_date, ${PLAN_DAY_ORDER}`).bind(envName, ...PLAN_STATUSES, ...(site ? [site] : [])).all(),
     // ruhende Fahrzeuge mit eingetragenem Termin erscheinen gekennzeichnet (wie ihre Aufträge) – vorher war ihr Prüftermin unsichtbar (23.10.2026)
@@ -1045,11 +1045,12 @@ export async function workshopPlan(env, user, envName, query = {}) {
       AND json_extract(payload,'$.from') IS NOT NULL AND json_extract(payload,'$.to') IS NOT NULL AND json_extract(payload,'$.from') <> json_extract(payload,'$.to') GROUP BY case_id`).bind(JSON.stringify(withDate)).all()).results.map((x) => [x.case_id, x.n]) : []);
   for (const c of cs.results) {
     // can_plan: Termin direkt aus dem Plan setzbar – gleiche Regel wie Vorgangsbefehl set_planned_date (nach Übernahme)
-    const item = { type: 'case', ...c, eval_excluded: !!c.eval_excluded, coupled: coupled(c.vehicle_id), safety_lock: !!c.safety_lock, can_plan: canPlan && (c.status !== 'werkstatt_freigegeben' || !!c.workshop_ack_at), ...(moves.get(c.id) ? { reschedules: moves.get(c.id) } : {}) };
+    const item = { type: 'case', ...c, eval_excluded: !!c.eval_excluded, coupled: coupled(c.vehicle_id), safety_lock: !!c.safety_lock, can_plan: canPlan && (c.status !== 'werkstatt_freigegeben' || !!c.workshop_ack_at), parts_drive: c.status === 'wartet_teile' && !!c.parts_drive_at && !c.safety_lock, ...(moves.get(c.id) ? { reschedules: moves.get(c.id) } : {}) };
     if (!c.planned_date) unplanned.push(item);
     // begonnener Auftrag (in Reparatur/wartet auf Teile) mit vergangenem Termin: Fahrzeug ist gekommen – nicht „Termin überschritten“,
     // sondern eigene Gruppe „in Arbeit“ (Backlog 253, 25.10.2026: Lkw stand wochenlang rot, obwohl er pünktlich kam und auf Teile wartet)
-    else if (c.planned_date < today) (['in_reparatur', 'wartet_teile'].includes(c.status) ? inWork : overdue).push(item);
+    // Backlog 1429: fährt bis zur Teilelieferung – das Fahrzeug ist nicht gekommen, also überschritten (nicht „in Arbeit“)
+    else if (c.planned_date < today) (['in_reparatur', 'wartet_teile'].includes(c.status) && !item.parts_drive ? inWork : overdue).push(item);
     else if (c.planned_date <= to) put(c.planned_date, item);
   }
   // Werkstattauftrag aus diesem Prüftermin am selben Tag: nur der Auftrag erscheint (sonst doppelt); an anderem Tag Hinweis auf den Auftrag

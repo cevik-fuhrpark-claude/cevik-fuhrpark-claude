@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { S, WST_ST, api, bDate, clipTxt, dispoDayBefore, esc, fmtD, fmtDT, fmtDue, fmtKm, hj, hoMissing, isMgr, mk, mkR, nDays, nextWorkdayAfter, partsWaitDays, plate, plateCmp, posL, rdyOf, recentRepeat, t, tn, wsName } from './app-main.js';
+import { S, WST_ST, api, bDate, clipTxt, dispoDayBefore, esc, fmtD, fmtDT, fmtDue, fmtKm, hj, hoMissing, isMgr, mk, mkR, nDays, nextWorkdayAfter, partsWaitDays, pdrOn, plate, plateCmp, posL, rdyOf, recentRepeat, t, tn, wsName } from './app-main.js';
 
 
 
@@ -47,6 +47,8 @@ async function fleetTodo() {
     ['todo_cost_approval', cs.filter((c) => c.cost_over_limit_at).sort(asc((c) => c.cost_over_limit_at)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''} · ${fmtD(c.cost_over_limit_at)}`, 'mittel'],
     ['todo_qc', cs.filter((c) => c.status === 'abschlusskontrolle').sort(asc((c) => c.status_since || c.updated_at)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate}`, 'mittel'],
     ['todo_plan_passed', cs.filter((c) => c.status === 'werkstatt_freigegeben' && c.planned_date && c.planned_date < today).sort(asc((c) => c.planned_date)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${fmtD(c.planned_date)}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''}`, 'mittel'],
+
+    ['todo_pdr_missed', cs.filter((c) => pdrOn(c) && c.planned_date && c.planned_date < today).sort(asc((c) => c.planned_date)), (c) => `#/cases/${c.id}`, (c) => `🚚 ${c.case_no} · ${c.plate} · ${fmtD(c.planned_date)}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''}`, 'mittel'],
     ['todo_parts_passed', cs.filter((c) => c.status === 'wartet_teile' && c.parts_expected_date && c.parts_expected_date < today).sort(asc((c) => c.parts_expected_date)), (c) => `#/cases/${c.id}`, (c) => `${c.case_no} · ${c.plate} · ${t('parts_eta')} ${fmtD(c.parts_expected_date)}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''}`, 'mittel'],
     ['todo_parts', cs.filter((c) => c.status === 'wartet_teile' && !(c.parts_expected_date && c.parts_expected_date < today)).sort(asc((c) => c.status_since || c.updated_at)), (c) => `#/cases/${c.id}`, (c) => { const d = partsWaitDays(c); return `${c.case_no} · ${c.plate}${c.parts_expected_date ? ' · ' + t('parts_eta') + ' ' + fmtD(c.parts_expected_date) : ' · ' + t('parts_eta_none')}${d ? ' · ' + t('parts_wait_days').replace('{d}', nDays(d)) : ''}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''}`; }, ''],
 

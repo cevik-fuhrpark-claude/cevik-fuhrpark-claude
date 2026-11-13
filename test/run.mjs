@@ -40681,7 +40681,7 @@ await test('Backlog 1425 (Blickwinkel „Werkstatt plant die Woche nach Teile-Li
 
 await test('Backlog 1427 (Blickwinkel „Disposition sieht am Montag, welche Lkw diese Woche wegen Teilelieferung zurückkommen“): Abschnitt „Fährt bis zur Teilelieferung“ zeigt den Rückkehrtermin der Werkstatt bzw. „noch nicht vereinbart“, sortiert nach Rückkehr, Zähler „Rückkehr diese Woche“; Texte DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("const pdRet = (c) => (c.planned_date && c.planned_date >= today0 ? c.planned_date : c.parts_expected_date || null);"), 'Rückkehr = kommender Termin, sonst Liefertermin');
+  ok(app.includes("const pdRet = (c) => (c.planned_date || c.parts_expected_date || null);"), 'Rückkehr = Termin (seit Backlog 1429 auch verpasster), sonst Liefertermin');
   ok(app.includes("String(pdRet(a) || '9').localeCompare(String(pdRet(b) || '9'))"), 'Sortierung nach Rückkehr');
   ok(app.includes("const wkEnd = dispoWeekEnd(today0); const pdWeek = pdL.filter((c) => pdRet(c) && pdRet(c) <= wkEnd).length;"), 'Zähler bis Sonntag');
   ok(/data-dpdrplan>🔧 \$\{esc\(t\('dispo_pdrive_back'\)/.test(app) && app.includes('<span data-dpdrnoplan>'), 'Zeile mit Termin bzw. ohne');
@@ -40691,7 +40691,7 @@ await test('Backlog 1427 (Blickwinkel „Disposition sieht am Montag, welche Lkw
   eq(wkE('2026-12-28'), '2027-01-03', 'Jahreswechsel'); eq(wkE('2027-02-24'), '2027-02-28', 'Februar'); eq(wkE('2026-03-26'), '2026-03-29', 'Zeitumstellung');
   const ret = new Function('today0', 'return ' + app.match(/const pdRet = (\(c\) => [^\n]*);\n/)[1].replace(/;$/, ''))('2026-11-16');
   eq(ret({ planned_date: '2026-11-18', parts_expected_date: '2026-11-17' }), '2026-11-18', 'Termin hat Vorrang');
-  eq(ret({ planned_date: '2026-11-10', parts_expected_date: '2026-11-17' }), '2026-11-17', 'vergangener Termin zählt nicht');
+  eq(ret({ planned_date: '2026-11-10', parts_expected_date: '2026-11-17' }), '2026-11-10', 'verpasster Termin zuerst (Backlog 1429)');
   eq(ret({ planned_date: null, parts_expected_date: null }), null, 'ohne Angaben ungeklärt');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const k of ['dispo_pdrive_back', 'dispo_pdrive_noplan', 'dispo_pdrive_week', 'dispo_pdrive_week_t']) ok(STRINGS[l][k], `${l} ${k}`); ok(STRINGS[l].dispo_pdrive_back.includes('{d}') && STRINGS[l].dispo_pdrive_week.includes('{n}'), `${l} Platzhalter`); }
@@ -40704,7 +40704,7 @@ await test('Backlog 1428 (Blickwinkel „Werkstatt sieht am Freitag, welche Teil
   ok(app.includes("const nwd = nextWorkdayAfter(today);\n  const partsDue = open.filter((c) => c.status === 'wartet_teile' && c.parts_expected_date && c.parts_expected_date <= nwd)"), 'bis zum nächsten Werktag');
   ok(!app.includes("c.parts_expected_date <= bDate(1)).sort"), 'nicht mehr „bis morgen“');
   ok(app.includes("k === 'ws_parts_due' && nwd !== bDate(1) ? t('ws_parts_due_wd').replace('{d}', () => fmtDue(nwd)) : t(k)"), 'Überschrift mit Tag nur, wenn nicht morgen');
-  ok(app.includes('data-wspdrnoplan') && app.includes("pdrOn(c) && !(c.planned_date && c.planned_date >= today)"), 'Zähler ohne kommenden Rückkehrtermin');
+  ok(app.includes('data-wspdrnoplan') && app.includes("l.some((c) => pdrOn(c) && !c.planned_date)"), 'Zähler ohne Rückkehrtermin (verpasste seit Backlog 1429 eigener Abschnitt)');
   // Kalenderlogik aus dem Quelltext (bundesweite Feiertage)
   const { federalHoliday } = await import('../public/holidays.js');
   const nwdF = new Function('federalHoliday', 'return ' + app.match(/function nextWorkdayAfter\(iso\) \{\n[\s\S]*?\n\}\n/)[0])(federalHoliday);
@@ -40714,6 +40714,43 @@ await test('Backlog 1428 (Blickwinkel „Werkstatt sieht am Freitag, welche Teil
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].ws_parts_due_wd && STRINGS[l].ws_parts_due_wd.includes('{d}'), `${l} ws_parts_due_wd`); ok(STRINGS[l].ws_pdr_noplan && STRINGS[l].ws_pdr_noplan.includes('{n}'), `${l} ws_pdr_noplan`); }
   const help = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
   for (const x of ['reicht dieser Abschnitt bis zum nächsten Werktag und nennt ihn', 'reaches to the next working day and names it', 'охоплює наступний робочий день і називає його']) ok(help.includes(x), 'Hilfe ' + x);
+});
+
+await test('Backlog 1429 (Blickwinkel „Rückkehrtermin verpasst: Lkw fährt bis zur Teilelieferung und kam am vereinbarten Tag nicht in die Werkstatt“): Werkstattplan führt ihn unter „Termin überschritten“ (nicht „in Arbeit“), Werkstatt-Startseite und „Heute zu tun“ eigener Abschnitt, Dispo-Tafel nennt den verpassten Termin statt „nicht vereinbart“; Texte DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'wait_parts', { parts_expected_date: day(3) }, 'Luftfederbalg bestellt')).status, 200);
+  db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(-1), id);
+  const plan = async () => (await U.fleet.get('/api/workshop/plan?days=14')).data;
+  let p = await plan();
+  ok(p.in_work.some((i) => i.id === id) && !p.overdue.some((i) => i.id === id), 'ohne Vermerk: in Arbeit (Backlog 253)');
+  eq(p.in_work.find((i) => i.id === id).parts_drive, false, 'Kennzeichen aus');
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '1' })).status, 200);
+  p = await plan();
+  ok(p.overdue.some((i) => i.id === id) && !p.in_work.some((i) => i.id === id), 'fährt bis zur Teilelieferung, Termin vorbei → überschritten');
+  eq(p.overdue.find((i) => i.id === id).parts_drive, true, 'Kennzeichen an');
+  // kommender Termin: im Tag, mit Kennzeichen
+  db.prepare('UPDATE cases SET planned_date=? WHERE id=?').run(day(2), id);
+  p = await plan(); const it = p.days.flatMap((d) => d.items).find((i) => i.id === id); ok(it && it.parts_drive === true, 'kommender Rückkehrtermin im Plan');
+  // gesperrt → kein „fährt“
+  db.prepare('UPDATE cases SET planned_date=?, safety_lock=1 WHERE id=?').run(day(-1), id);
+  p = await plan(); ok(p.in_work.some((i) => i.id === id && i.parts_drive === false), 'Sperre: zählt nicht als fahrend');
+  // Werkstatt sieht denselben Plan
+  db.prepare('UPDATE cases SET safety_lock=0 WHERE id=?').run(id);
+  ok((await U.ws.get('/api/workshop/plan?days=14')).data.overdue.some((i) => i.id === id && i.parts_drive), 'Werkstatt');
+  // Oberfläche
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const pdrMiss = open.filter((c) => pdrOn(c) && c.planned_date && c.planned_date < today)") && app.includes("lanes.unshift(['ws_pdr_missed', pdrMiss])") && app.includes('id="wspdrmiss"'), 'Werkstatt-Startseite');
+  ok(app.includes("['todo_pdr_missed', cs.filter((c) => pdrOn(c) && c.planned_date && c.planned_date < today)"), 'Heute zu tun');
+  ok(app.includes('<b data-dpdrmissed>⚠ ${esc(t(\'dispo_pdrive_missed\')'), 'Dispo-Tafel');
+  ok(app.includes('data-wppdr') && app.includes("t(i.planned_date < r.today ? 'wplan_pdr' : 'pdr_short')"), 'Werkstattplan-Zeile');
+  const rep = readFileSync(new URL('../src/reports.js', import.meta.url), 'utf8');
+  ok(rep.includes("['in_reparatur', 'wartet_teile'].includes(c.status) && !item.parts_drive ? inWork : overdue"), 'Plan-Zuordnung');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['ws_pdr_missed', 'ws_pdr_missed_hint', 'dispo_pdrive_missed', 'todo_pdr_missed', 'wplan_pdr']) ok(STRINGS[l][k], `${l} ${k}`);
+    ok(STRINGS[l].dispo_pdrive_missed.includes('{d}'), `${l} Platzhalter`); ok(STRINGS[l].ws_pdr_missed_hint.includes(STRINGS[l].act_resume_repair), `${l} Knopfname`);
+    ok(/Rückkehrtermin … überschritten|Return date … passed|Термін повернення … минув/.test(STRINGS[l].help_dispo_s), `${l} Hilfe`); }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

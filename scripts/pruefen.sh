@@ -371,6 +371,7 @@ UI-Fährt bis zur Teilelieferung (Backlog 880): Leitung setzt/entfernt den Verme
 UI-Fährt bis zur Teilelieferung, Liefertermin überschritten/heute (Backlog 1035): Disposition sieht Kennzeichnung, Warnhinweis und Zähler, DE/UK/EN 390/820/1366|ui-teilefahrt-ueberfaellig.py|/tmp/cfp-teilefahrt-ueberfaellig.log
 UI-Fährt bis zur Teilelieferung, Rückkehrtermin/„noch nicht vereinbart“/Rückkehr diese Woche (Backlog 1427): Disposition, DE/UK/EN 390/820/1366|ui-teilefahrt-rueckkehr.py|/tmp/cfp-teilefahrt-rueckkehr.log
 UI-Teile bis zum nächsten Werktag (Freitag → Montag), Zähler Rückkehrtermin offen (Backlog 1428): Werkstatt, DE/UK/EN 390/820/1366|ui-teile-werktag.py|/tmp/cfp-teile-werktag.log
+UI-Rückkehrtermin verpasst bei Fahrt bis zur Teilelieferung (Backlog 1429): Disposition, Werkstatt-Startseite, Werkstattplan, DE/UK/EN 390/820/1366|ui-rueckkehr-verpasst.py|/tmp/cfp-rueckkehr-verpasst.log
 UI-Liefertermin geändert bei Fahrt bis zur Teilelieferung (Backlog 1038): Formularhinweis, Disposition erhält Hinweis, DE/UK/EN 390/820/1366|ui-liefertermin-teilefahrt.py|/tmp/cfp-liefertermin-teilefahrt.log
 UI-Lieferschein beim Fortsetzen (Backlog 1032–1034): Hinweis Fahrt bis zur Lieferung endet, Lieferschein verknüpfen, Arbeitsstand entfernen, Verlauf, DE/UK/EN 390/820/1366|ui-lieferschein-fortsetzen.py|/tmp/cfp-lieferschein-fortsetzen.log
 UI-Lieferschein in der Wartezeile (Backlog 1040): Liefertermin mit Höchstdatum, Wartezeile nennt den Lieferschein als Link, DE/UK/EN 390/820/1366|ui-lieferschein-wartezeile.py|/tmp/cfp-lieferschein-wartezeile.log
