@@ -1205,8 +1205,11 @@ export async function planMaintenanceBatch(env, user, body) {
   if (!raw || !raw.length || raw.length > PLAN_BATCH_MAX || raw.some((x) => typeof x !== 'string' || !x || x.length > 80)) throw bad('validation', 'Bitte 1 bis 200 Prüftermine auswählen.');
   const ids = [...new Set(raw)];
   const replace = flag(body.replace);
+  // Backlog 1443 (Folge aus 1442, Blickwinkel „UVV aller Lkw an einem Tag beim Prüfdienst – Uhrzeit/Ort gilt für alle“): optionaler gemeinsamer
+  // Hinweis zum Termin; ohne Hinweis wird ein alter Hinweis wie bisher entfernt (gehörte zum alten Termin), gleicher Termin bleibt unverändert
+  const note = str(body.planned_note, { max: 200, field: 'Hinweis zum Termin' });
   const today = berlinDate();
-  const rows = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, m.planned_date, m.next_due_date, v.active, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
+  const rows = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, m.planned_date, m.planned_note, m.next_due_date, v.active, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
     WHERE m.id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(ids.filter((x) => !x.startsWith('husp:')))).all()).results || [];
   const byId = new Map(rows.map((r) => [r.id, r]));
   const skipped = []; const planned = []; let unchanged = 0;
@@ -1217,20 +1220,20 @@ export async function planMaintenanceBatch(env, user, body) {
     const base = { id, vehicle_id: r.vehicle_id, plate: r.plate, kind: r.kind };
     if (!r.active) { skipped.push({ ...base, code: 'inactive' }); continue; }
     if (ONE_TIME_KINDS.includes(r.kind) && r.last_done_date) { skipped.push({ ...base, code: 'already_done' }); continue; }
-    if (r.planned_date === d) { unchanged++; continue; }
-    if (r.planned_date && r.planned_date >= today && !replace) { skipped.push({ ...base, code: 'planned_other', planned_date: r.planned_date }); continue; }
+    if (r.planned_date === d && (!note || note === r.planned_note)) { unchanged++; continue; }
+    if (r.planned_date && r.planned_date !== d && r.planned_date >= today && !replace) { skipped.push({ ...base, code: 'planned_other', planned_date: r.planned_date }); continue; }
     planned.push({ ...base, previous: r.planned_date || null, ...(r.next_due_date && d > r.next_due_date ? { after_due: r.next_due_date } : {}) });
   }
   if (planned.length) {
     const now = nowIso();
     await env.DB.batch([
-      env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, planned_note=NULL, updated_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(d, now, JSON.stringify(planned.map((p) => p.id))),
+      env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, planned_note=?, updated_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(d, note, now, JSON.stringify(planned.map((p) => p.id))),
       // Protokoll je Eintrag wie `planMaintenance` (Ziel = Fahrzeug), zusätzlich `batch` und ein ersetzter Termin
       env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) SELECT json_extract(j.value,'$[0]'), ?, 'maintenance.plan', json_extract(j.value,'$[1]'), json_extract(j.value,'$[2]'), ? FROM json_each(?) j`)
-        .bind(user.id, now, JSON.stringify(planned.map((p) => [uuid(), p.vehicle_id, JSON.stringify({ kind: p.kind, planned_date: d, batch: true, ...(p.previous ? { replaced: p.previous } : {}) })]))),
+        .bind(user.id, now, JSON.stringify(planned.map((p) => [uuid(), p.vehicle_id, JSON.stringify({ kind: p.kind, planned_date: d, batch: true, ...(p.previous ? { replaced: p.previous } : {}), ...(note ? { note_to: note } : {}) })]))),
     ]);
   }
-  return { ok: true, planned_date: d, ...(d < today ? { in_past: true } : {}), planned: planned.map(({ previous, ...p }) => (previous ? { ...p, replaced: previous } : p)), unchanged, skipped };
+  return { ok: true, planned_date: d, ...(note ? { planned_note: note } : {}), ...(d < today ? { in_past: true } : {}), planned: planned.map(({ previous, ...p }) => (previous ? { ...p, replaced: previous } : p)), unchanged, skipped };
 }
 
 // Sammelanlage (Backlog 405, Blickwinkel „Wintercheck vor der Saison für alle Lkw“): denselben Prüftermin (Art, Nachweis/Bezeichnung, optional

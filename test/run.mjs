@@ -41071,6 +41071,24 @@ await test('Backlog 1442 (Blickwinkel „Prüfstelle vereinbart den Termin telef
   ok(readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1442'), 'API.md');
 });
 
+await test('Backlog 1443 (Folge aus 1442, Blickwinkel „UVV aller Lkw an einem Tag beim Prüfdienst – Uhrzeit/Ort gilt für alle“): Sammeltermin mit gemeinsamem Hinweis zum Termin; gleicher Termin nur mit neuem Hinweis wird aktualisiert (auch ohne „ersetzen“), ohne Hinweis entfällt ein alter; Protokoll und Formular', async () => {
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const mk = async (kind) => { const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind, last_done_date: day(-30), interval_months: 12, evidence: `Prüfbuch ${kind} (Test 1443)` }); eq(r.status, 201); return r.data.id; };
+  const a = await mk('UVV'); const b = await mk('Feuerlöscher');
+  const rows = async () => new Map((await U.fleet.get('/api/maintenance')).data.rows.filter((y) => y.id === a || y.id === b).map((y) => [y.id, y]));
+  let x = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: day(5), ids: [a, b], planned_note: ' Prüfdienst ab 7 Uhr ' }); eq(x.status, 200, JSON.stringify(x.data)); eq(x.data.planned.length, 2); eq(x.data.planned_note, 'Prüfdienst ab 7 Uhr');
+  let m = await rows(); eq(m.get(a).planned_note, 'Prüfdienst ab 7 Uhr'); eq(m.get(b).planned_note, 'Prüfdienst ab 7 Uhr');
+  x = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: day(5), ids: [a, b] }); eq(x.data.unchanged, 2, 'gleicher Termin ohne Hinweis → unverändert, Hinweis bleibt'); eq((await rows()).get(a).planned_note, 'Prüfdienst ab 7 Uhr');
+  x = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: day(5), ids: [a], planned_note: 'Prüfdienst ab 8 Uhr' }); eq(x.data.planned.length, 1, 'nur Hinweis neu → ohne „ersetzen“ übernommen ' + JSON.stringify(x.data)); eq((await rows()).get(a).planned_note, 'Prüfdienst ab 8 Uhr');
+  x = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: day(6), ids: [a, b] }); eq(x.data.skipped.length, 2, 'anderer künftiger Termin ohne „ersetzen“ weiter übersprungen');
+  x = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: day(6), ids: [a, b], replace: true }); eq(x.data.planned.length, 2); m = await rows(); eq(m.get(a).planned_note, undefined, 'neuer Termin ohne Hinweis → alter entfällt'); eq(m.get(b).planned_note, undefined);
+  eq((await U.fleet.post('/api/maintenance/plan-batch', { planned_date: day(7), ids: [a], replace: true, planned_note: 'x'.repeat(201) })).status, 400, 'zu lang');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("${esc(t('mb_replace'))}</label></div>${mPlanNoteField('')}") && app.includes('replace: mbf.replace.checked, planned_note: mbf.planned_note.value }'), 'Formular Sammeltermin');
+  ok(readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1443'), 'API.md');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
