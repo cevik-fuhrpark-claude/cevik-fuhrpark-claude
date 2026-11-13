@@ -555,9 +555,9 @@ export function costItemsCsv(rep, wsNames = null) {
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
-// Kennzahlen als CSV (Excel DE): part=vehicles (je Fahrzeug, alle – die App zeigt nur die ersten 20) oder part=priority (je Dringlichkeit).
+// Kennzahlen als CSV (Excel DE): part=vehicles (je Fahrzeug, alle – die App zeigt nur die ersten 20), part=priority (je Dringlichkeit) oder part=workshops (je Werkstatt, Backlog 1422).
 // Nur Anzahlen und Dauern in Stunden, keine Personen; leere Zelle = kein Wert (nicht 0).
-export function kpiReportCsv(rep, part = 'vehicles') {
+export function kpiReportCsv(rep, part = 'vehicles', wsNames = null) {
   const num = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));
   const cell = csvCell; // gemeinsame Regel: Formelschutz, Anführungszeichen auch bei CR
   const lines = [];
@@ -567,6 +567,13 @@ export function kpiReportCsv(rep, part = 'vehicles') {
       'Werkstatt-Übernahme Anzahl', 'Werkstatt-Übernahme Median h', 'Werkstatt-Übernahme P90 h', 'Meldung bis Freigabe Anzahl', 'Meldung bis Freigabe Median h', 'Meldung bis Freigabe P90 h', 'Wartezeit Teile h', 'davon Dubletten', 'davon interne Aufträge', 'davon ohne Reparatur beendet'].join(';'));
     const PL = { niedrig: 'Niedrig', mittel: 'Mittel', kritisch: 'Kritisch', alle: 'Alle' }; // Bezeichnung statt Code (wie die übrigen CSVs)
     for (const p of rep.by_priority) lines.push([PL[p.priority] || p.priority, p.created, p.released, p.rejected, p.open, ...st(p.triage), ...st(p.workshop_ack), ...st(p.created_to_release), num(p.parts_wait_h), p.duplicates || 0, p.internal || 0, p.withdrawn || 0].join(';'));
+  } else if (part === 'workshops') {
+    // Backlog 1422 (Folge aus 1421): Werkstätten im Vergleich – je Werkstatt laut aktueller Zuordnung; Vorgänge ohne Werkstatt als eigene Zeile nur mit Anzahl
+    const st = (x) => [x.n, num(x.median_h), num(x.p90_h)];
+    lines.push(['Werkstatt', 'Werkstattname', 'Meldungen', 'Freigegeben', 'Abgelehnt', 'Offen', 'Werkstatt-Übernahme Anzahl', 'Werkstatt-Übernahme Median h', 'Werkstatt-Übernahme P90 h',
+      'Meldung bis Freigabe Anzahl', 'Meldung bis Freigabe Median h', 'Meldung bis Freigabe P90 h', 'Wartezeit Teile h', 'Rückgaben zur Nacharbeit', 'Vorgänge mit Nacharbeit', 'davon interne Aufträge'].join(';'));
+    for (const w of rep.by_workshop || []) lines.push([cell(w.site), cell((wsNames && wsNames.get(w.site)) || ''), w.created, w.released, w.rejected, w.open, ...st(w.workshop_ack), ...st(w.created_to_release), num(w.parts_wait_h), w.rework_returns, w.cases_with_rework, w.internal || 0].join(';'));
+    if (rep.by_workshop_unassigned) lines.push(['ohne Werkstatt', '', rep.by_workshop_unassigned, ...Array(13).fill('')].join(';'));
   } else {
     lines.push(['Kennzeichen', 'FIN-Schlüssel', 'Art', 'Standort', 'Vorgänge', 'Freigegeben', 'Werkstattzeit h', 'Wartezeit Teile h', 'Sperrzeit h', 'davon Dubletten', 'Ausfallzeit h', 'Verfügbarkeit %', 'Ausfall h (Verfügbarkeit)'].join(';'));
     for (const v of rep.vehicles) lines.push([cell(v.plate), cell(v.vehicle_id), v.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', cell(v.site), v.cases, v.released, num(v.workshop_h), num(v.parts_wait_h), num(v.locked_h), v.duplicates || 0, num(v.downtime_h), num(v.availability_pct), num(v.availability_downtime_h)].join(';'));

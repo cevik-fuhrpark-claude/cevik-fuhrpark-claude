@@ -30,7 +30,7 @@ with sync_playwright() as p:
     check(ok==3,f'3 Aufträge an zwei Werkstätten freigegeben ({ok})')
     for lang in ['de','uk','en']:
         for w,h in [(390,844),(820,1180),(1366,900)]:
-            c=br.new_context(viewport={'width':w,'height':h},locale={'de':'de-DE','uk':'uk-UA','en':'en-GB'}[lang]); q=c.new_page(); q.goto(B)
+            c=br.new_context(accept_downloads=True,viewport={'width':w,'height':h},locale={'de':'de-DE','uk':'uk-UA','en':'en-GB'}[lang]); q=c.new_page(); q.goto(B)
             errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
             q.evaluate(JS,['POST','/api/login',{'username':user,'password':PW}])
             q.evaluate(JS,['PATCH','/api/me',{'language':lang}])
@@ -41,6 +41,9 @@ with sync_playwright() as p:
             check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: kein waagerechtes Scrollen')
             if SHOTS: q.locator('#kpiws').scroll_into_view_if_needed(); q.locator('#kpiws').screenshot(path=f"{SHOTS}/kpi_werkstaetten_{lang}_{w}.png")
             if lang=='de' and w==1366:
+                with q.expect_download() as dl: q.click('#kcsvw')
+                d=dl.value; txt=open(d.path(),encoding='utf-8-sig').read()
+                check('werkstaetten' in d.suggested_filename and txt.startswith('Werkstatt;Werkstattname;') and 'DORTMUND;Werkstatt Dortmund;' in txt,f'CSV je Werkstatt ({d.suggested_filename})')
                 q.select_option('#kf2 select[name=site]','MUENCHEN'); q.click('#kf2 button:not([type])'); q.wait_for_timeout(800)
                 check(q.locator('#kpiws').count()==0,'mit Werkstattfilter kein Vergleich')
             check(not errs,f'{lang} {w}px: keine Skriptfehler {errs[:1]}')

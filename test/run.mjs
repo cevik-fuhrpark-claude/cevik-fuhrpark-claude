@@ -35109,6 +35109,28 @@ await test('Backlog 1421 (Blickwinkel „Inhaber vergleicht zwei Werkstätten“
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].kpi_ws && STRINGS[l].kpi_ws_rework && STRINGS[l].kpi_ws_rework_n.includes('{n}') && STRINGS[l].kpi_ws_rework_n.includes('{c}') && STRINGS[l].kpi_ws_unassigned.includes('{n}') && STRINGS[l].kpi_ws_rule, l);
 });
 
+await test('Backlog 1422 (Folge aus 1421): Kennzahlen-CSV je Werkstatt (Werkstattname, Zeiten, Nacharbeit; Zeile „ohne Werkstatt“ nur mit Anzahl), Export protokolliert, Fahrer 403; Knopf in der App, Texte DE/UK/EN', async () => {
+  const { e, U, cmd, newCase, toRepair } = await freshWorld(); const db = e.DB.db;
+  const a = await toRepair({ description: 'Bremse quietscht' });
+  const b = await newCase({ description: 'Spiegel lose' }); eq((await cmd(U.fleet, b, 'approve_repair', { workshop_site: 'MUENCHEN' }, 'München')).status, 200);
+  await newCase({ description: 'Noch offen' });
+  db.prepare(`INSERT INTO case_events(id,case_id,environment,actor_id,actor_role,action,from_status,to_status,note,created_at) VALUES ('rw1422',?,'test',?,'fleet','return_for_rework','abschlusskontrolle','in_reparatur','nachstellen',?)`).run(a, U.fleet.id, new Date().toISOString());
+  const { berlinDate } = await import('../src/util.js'); const m = berlinDate().slice(0, 7); const q = `from=${m}&to=${m}`;
+  const r = await U.fleet.req('GET', `/api/reports/kpi?${q}&format=csv&part=workshops`); eq(r.status, 200);
+  ok(String(r.headers.get('content-disposition')).includes('werkstaetten'), 'Dateiname');
+  const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data).replace(/^\ufeff/, '').trim().split('\r\n');
+  const hd = lines[0].split(';'); eq(hd.length, 16, lines[0]); ok(hd[0] === 'Werkstatt' && hd[1] === 'Werkstattname' && hd[13] === 'Rückgaben zur Nacharbeit', lines[0]);
+  const dor = lines.find((l) => l.startsWith('DORTMUND;')).split(';'); eq(dor[1], 'Werkstatt Dortmund'); eq(dor[2], '1'); eq(dor[13], '1', 'eine Rückgabe'); eq(dor[14], '1');
+  ok(lines.some((l) => l.startsWith('MUENCHEN;Werkstatt München;1;')), 'München');
+  const un = lines.find((l) => l.startsWith('ohne Werkstatt;')); ok(un && un.split(';').length === 16 && un.split(';')[2] === '1' && un.split(';').slice(3).every((x) => x === ''), String(un));
+  ok(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='reports.kpi.export' AND detail LIKE '%workshops%'`).get().n === 1, 'Export protokolliert');
+  eq((await U.fleet.req('GET', `/api/reports/kpi?${q}&format=csv&part=quatsch`)).status, 200, 'unbekannter Teil → je Fahrzeug');
+  eq((await U.driver.req('GET', `/api/reports/kpi?${q}&format=csv&part=workshops`)).status, 403, 'Fahrer');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="kcsvw"') && app.includes("['#kcsvw', 'workshops', 'werkstaetten']"), 'App: Knopf');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].kpi_csv_ws, l);
+});
+
 await test('Backlog 1420 (Folge aus 1419, Ersatzbeschaffung): Kostenbericht je Fahrzeug sortierbar nach Kosten, Kosten je km, Erstzulassung (älteste zuerst) und km-Stand – fehlende Angaben am Ende; Texte DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('id="crsort"') && app.includes("$('#crsort').onchange") && app.includes("['cost', 'perkm', 'fr', 'km'].includes(S.costSort)"), 'App: Auswahl und Handler');

@@ -533,9 +533,10 @@ async function handleApi(request, env, ctx, url) {
   if (path === '/api/reports/kpi' && m === 'GET') {
     const rep = await reports.kpiReport(env, user, envName, Object.fromEntries(url.searchParams));
     if (url.searchParams.get('format') === 'csv') {
-      const part = url.searchParams.get('part') === 'priority' ? 'priority' : 'vehicles';
+      const part = ['priority', 'workshops'].includes(url.searchParams.get('part')) ? url.searchParams.get('part') : 'vehicles';
+      const wsNames = part === 'workshops' ? new Map((await env.DB.prepare('SELECT code, name FROM workshops').all()).results.map((w) => [w.code, w.name])) : null;
       await auth.audit(env, user.id, 'reports.kpi.export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site, vehicle_site: rep.vehicle_site, part });
-      return new Response(reports.kpiReportCsv(rep, part), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kennzahlen-${part === 'priority' ? 'dringlichkeit' : 'fahrzeuge'}_${envName}_${rep.from}_${rep.to}.csv"` } });
+      return new Response(reports.kpiReportCsv(rep, part, wsNames), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kennzahlen-${part === 'priority' ? 'dringlichkeit' : part === 'workshops' ? 'werkstaetten' : 'fahrzeuge'}_${envName}_${rep.from}_${rep.to}.csv"` } });
     }
     return json(rep);
   }
