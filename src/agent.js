@@ -500,6 +500,24 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       }
     }
 
+    // Backlog 1438 (Blickwinkel „Fuhrparkagent: Prüftermin war gestern – Management-Panel weiß nichts davon“): verstrichener geplanter
+    // Prüf-/Wartungstermin ohne eingetragene Durchführung und ohne offenen Werkstattauftrag zur Regel – wie `maintenance_missed` im Werkstattplan
+    // (Backlog 1435): nur wenn die Frist noch keinen Befund „bald fällig/überfällig“ trägt (dort rät der Befund bereits „einplanen“). Keine Frist,
+    // kein Push (Hinweis wie INSPECTION_RESULT_MISSING); das Erfassen der Durchführung leert den Termin → Befund erledigt sich im nächsten Lauf.
+    {
+      const dueRules = new Set(findings.filter((f) => f.code === 'MAINTENANCE_DUE' || f.code === 'MAINTENANCE_OVERDUE').map((f) => String(f.subject).split('|')[0]));
+      const huspDue = new Set(findings.filter((f) => (f.code === 'MAINTENANCE_DUE' || f.code === 'MAINTENANCE_OVERDUE') && /\|(HU|SP)$/.test(String(f.subject))).map((f) => f.subject));
+      const missed = rules.filter((r) => r.planned_date && r.planned_date < today && !(r.kind === 'Rückruf' && r.last_done_date)
+        && ((r.kind === 'HU' || r.kind === 'SP') ? !huspDue.has(`${r.vehicle_id}|${r.kind}`) : !dueRules.has(r.id)));
+      if (missed.length) {
+        const open = new Set((await env.DB.prepare(`SELECT DISTINCT maintenance_rule_id AS rid FROM cases WHERE environment=? AND maintenance_rule_id IS NOT NULL
+          AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(environment).all()).results.map((x) => x.rid));
+        for (const r of missed) if (!open.has(r.id)) add({ code: 'MAINTENANCE_PLAN_MISSED', subject: `${r.id}|termin`, vehicle_id: r.vehicle_id, severity: 'hinweis', owner_role: 'fleet',
+          ...fm('MAINTENANCE_PLAN_MISSED', { plate: r.plate, kind: r.kind, title: r.title || null, planned: r.planned_date.split('-').reverse().join('.') }),
+          next_action: 'Prüfung durchgeführt → in der Fahrzeugakte „Erledigt“ mit Nachweis eintragen; sonst neuen Werkstatttermin planen.' });
+      }
+    }
+
     // Fahrzeugdokumente mit Gültig-bis-Datum (z. B. Versicherung, Leasing) – nur wenn das Datum beim Hochladen angegeben wurde
     const DOC_LABEL = { zulassung: 'Zulassung', pruefbericht: 'Prüfbericht', rechnung: 'Rechnung', versicherung: 'Versicherung', leasing: 'Leasing/Miete', rueckruf: 'Rückrufschreiben', foto: 'Foto', sonstiges: 'Dokument' };
     for (const d of await documentFindings(env, environment)) {

@@ -25889,7 +25889,7 @@ await test('Backlog 578: „Art – Titel“ auch in Agentenbefunden (MAINT_*), 
   eq(renderFindingMessage('MAINT_DATE_DUE', { plate: 'A-1', kind: 'Sonstiges', title: 'Kühlaggregat', due: '2026-11-05', days: 8 }, 'de'), 'A-1: Sonstiges – Kühlaggregat fällig am 2026-11-05 (in 8 Tagen).');
   eq(renderFindingMessage('MAINT_DATE_DUE', { plate: 'A-1', kind: 'UVV', title: null, due: '2026-11-05', days: 8 }, 'de'), 'A-1: UVV fällig am 2026-11-05 (in 8 Tagen).');
   for (const l of ['uk', 'en']) ok(renderFindingMessage('MAINT_DATE_OVERDUE', { plate: 'A-1', kind: 'Sonstiges', title: 'Kühlaggregat', due: '2026-10-01', days: 3 }, l).includes(' – Kühlaggregat'), l);
-  const agent = (await import('node:fs')).readFileSync(new URL('../src/agent.js', import.meta.url), 'utf8'); eq((agent.match(/kind: r\.kind, title: r\.title \|\| null,/g) || []).length, 5, 'alle fünf MAINT-Befunde');
+  const agent = (await import('node:fs')).readFileSync(new URL('../src/agent.js', import.meta.url), 'utf8'); eq((agent.match(/kind: r\.kind, title: r\.title \|\| null,/g) || []).length, 6, 'alle fünf MAINT-Befunde + MAINTENANCE_PLAN_MISSED (Backlog 1438)');
   const { maintenanceIcs } = await import('../src/maintenance.js');
   const ics = maintenanceIcs({ rows: [{ id: 'r1', vehicle_id: 'V9', kind: 'Sonstiges', title: 'Kühlaggregat', next_due_date: '2026-12-31', plate: 'T-X 1', date_status: 'ok', evidence: 'x' }, { id: 'r2', vehicle_id: 'V9', kind: 'UVV', next_due_date: '2026-12-30', plate: 'T-X 1', date_status: 'ok', evidence: 'y' }] }, undefined, 'de');
   ok(ics.includes('SUMMARY:Sonstiges – Kühlaggregat fällig – T-X 1') && ics.includes('SUMMARY:UVV fällig – T-X 1'), ics.split('\n').filter((l) => l.startsWith('SUMMARY')).join(' | '));
@@ -40948,6 +40948,47 @@ await test('Backlog 1437 (Blickwinkel „Werkstatt kommt morgens rein – die UV
   ok(wb.includes("const mDoneHref = (r) => '#/vehicles/' + encodeURIComponent(r.vehicle_id) + (r.id && /^[\\w-]+$/.test(r.id) ? '?done=' + encodeURIComponent(r.id) : '');") && wb.includes('data-wsmmiss href="${mDoneHref(r)}"'), 'Sprung ins Formular „Erledigt“');
   ok(wb.includes("${mPlanPast(r.planned_date, r.open_order) ? mPlanPastChip() : ''}${r.km_unclear"), 'Marke an fälligen Zeilen');
   ok(wb.includes("⚠ ${esc(t('mplan_past'))} ${esc(fmtD(r.planned_date))}") && wb.includes("t('todo_mplan_passed')") && wb.includes("t('mplan_past_hint')"), 'Überschrift, Hinweis, Datum (vorhandene Texte DE/UK/EN)');
+});
+
+await test('Backlog 1438 (Blickwinkel „Fuhrparkagent: Prüftermin war gestern – Management-Panel weiß nichts davon“): Agent meldet verstrichenen Prüf-/Wartungstermin ohne Durchführung und ohne offenen Auftrag als Hinweis `MAINTENANCE_PLAN_MISSED`; nicht bei fälliger Frist, erledigt sich mit Durchführung bzw. Auftrag', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: day(-30), interval_months: 12, evidence: 'Prüfbuch UVV (Test)' }); eq(r.status, 201);
+  const f = () => db.prepare(`SELECT * FROM agent_findings WHERE finding_code='MAINTENANCE_PLAN_MISSED' AND subject_key=? AND environment='test'`).get(`${r.data.id}|termin`);
+  const run = async () => eq((await U.fleet.post('/api/agent/run', {})).status, 200);
+  // kommender Termin → kein Befund
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(1) })).status, 200);
+  await run(); ok(!f(), 'kommender Termin: kein Befund');
+  // gestern verstrichen → Hinweis (ohne Entscheidung, Leitung), Datum und Prüfart im Text, kein Nachweistext
+  db.prepare('UPDATE maintenance_rules SET planned_date=? WHERE id=?').run(day(-1), r.data.id);
+  await run(); let x = f();
+  ok(x && x.status === 'offen', 'Befund offen'); eq(x.severity, 'hinweis'); eq(x.owner_role, 'fleet'); eq(x.requires_decision, 0); eq(x.vehicle_id, V1);
+  ok(x.message.includes('UVV') && x.message.includes(day(-1).split('-').reverse().join('.')) && x.message.includes('Durchführung nicht eingetragen'), x.message);
+  ok(!x.message.includes('Prüfbuch') && /Erledigt/.test(x.next_action), 'kein Nachweistext, Sprung „Erledigt“');
+  const { renderFindingMessage } = await import('../public/finding-messages.js'); const { findingLabel } = await import('../public/finding-labels.js');
+  const ma = JSON.parse(x.message_args); eq(ma.k, 'MAINTENANCE_PLAN_MISSED'); eq(renderFindingMessage(ma.k, ma.a, 'de'), x.message);
+  for (const l of ['uk', 'en']) { const m = renderFindingMessage(ma.k, ma.a, l, { dates: true }); ok(m && !/[{}]/.test(m) && m !== x.message && m.includes('UVV'), l + ': ' + m); }
+  for (const l of ['de', 'uk', 'en']) ok(findingLabel('MAINTENANCE_PLAN_MISSED', l) !== 'MAINTENANCE_PLAN_MISSED', 'Bezeichnung ' + l);
+  // Management-Panel liefert ihn
+  ok((await U.fleet.get('/api/master')).data.findings.some((y) => y.finding_code === 'MAINTENANCE_PLAN_MISSED' && y.vehicle_id === V1), 'Master-Panel');
+  // erneuter Lauf: keine Dublette
+  await run(); eq(db.prepare(`SELECT COUNT(*) n FROM agent_findings WHERE finding_code='MAINTENANCE_PLAN_MISSED' AND vehicle_id=?`).get(V1).n, 1, 'keine Dublette');
+  // Frist fällig → „bald fällig“ übernimmt (rät „einplanen“), kein zweiter Befund
+  db.prepare('UPDATE maintenance_rules SET next_due_date=? WHERE id=?').run(day(3), r.data.id);
+  await run(); eq(f().status, 'erledigt', 'fällig: nur MAINTENANCE_DUE');
+  ok(db.prepare(`SELECT 1 FROM agent_findings WHERE finding_code='MAINTENANCE_DUE' AND subject_key=? AND status='offen'`).get(r.data.id), 'MAINTENANCE_DUE offen');
+  db.prepare('UPDATE maintenance_rules SET next_due_date=? WHERE id=?').run(day(330), r.data.id);
+  await run(); eq(f().status, 'offen', 'wieder offen');
+  // Durchführung erfasst → Termin geleert → erledigt
+  eq((await U.ws.post(`/api/maintenance/${r.data.id}/complete`, { done_date: day(-1), evidence: 'Prüfbuch UVV (Test 2)' })).status, 200);
+  await run(); eq(f().status, 'erledigt', 'Durchführung erfasst');
+  // offener Werkstattauftrag zur Regel → kein Befund (Auftrag hat eigenen Termin)
+  db.prepare('UPDATE maintenance_rules SET planned_date=? WHERE id=?').run(day(-2), r.data.id);
+  await run(); eq(f().status, 'offen', 'erneut verstrichen');
+  const o = await U.fleet.post(`/api/maintenance/${r.data.id}/order`, { workshop_site: 'DORTMUND', note: 'UVV', request_key: rk() }); eq(o.status, 201, JSON.stringify(o.data));
+  await run(); eq(f().status, 'erledigt', 'offener Auftrag');
+  // Doku
+  const fs = await import('node:fs'); ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('`MAINTENANCE_PLAN_MISSED`'), 'API.md');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
