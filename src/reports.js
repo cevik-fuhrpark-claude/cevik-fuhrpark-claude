@@ -1016,7 +1016,7 @@ export async function workshopPlan(env, user, envName, query = {}) {
       FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.environment=? AND c.status IN (${PLAN_STATUSES.map(() => '?').join(',')})${sf}
       ORDER BY c.planned_date, ${PLAN_DAY_ORDER}`).bind(envName, ...PLAN_STATUSES, ...(site ? [site] : [])).all(),
     // ruhende Fahrzeuge mit eingetragenem Termin erscheinen gekennzeichnet (wie ihre Aufträge) – vorher war ihr Prüftermin unsichtbar (23.10.2026)
-    env.DB.prepare(`SELECT m.id, m.vehicle_id, v.plate, v.site AS vehicle_site, v.kind AS vehicle_kind, v.eval_excluded, m.kind, m.planned_date, m.next_due_date FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
+    env.DB.prepare(`SELECT m.id, m.vehicle_id, v.plate, v.site AS vehicle_site, v.kind AS vehicle_kind, v.eval_excluded, m.kind, m.planned_date, m.planned_note, m.next_due_date FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
       WHERE v.active=1 AND m.planned_date IS NOT NULL AND m.planned_date >= ? AND m.planned_date <= ? ORDER BY m.planned_date, v.plate`).bind(today, to).all(),
     env.DB.prepare(`SELECT id, plate, kind, trailer_plate, site, eval_excluded FROM vehicles WHERE active=1`).all(),
     // offene Aufträge aus Prüfterminen ALLER Werkstätten (ohne Standortfilter): ein Termin, dessen Auftrag bei einer anderen Werkstatt liegt,
@@ -1144,7 +1144,7 @@ export function workshopPlanIcs(plan, envName, lang = 'de') {
     ev.push(i.type === 'case'
       ? { uid: `plan-case-${i.id}`, date: d.date, summary: I.tx('plan_case', { no: i.case_no, plate: i.plate }) + (envName === 'test' ? ` (${I.tx('test_tag')})` : ''),
         description: I.tx('plan_status', { status: I.status(i.status) }) + (i.status === 'wartet_teile' && i.parts_expected_date ? ' · ' + I.tx('plan_parts_eta', { d: I.d(i.parts_expected_date) }) : '') + (i.ready_expected_on ? ' · ' + I.tx('plan_ready_on', { d: I.d(i.ready_expected_on) }) : '') + (i.tire_order === 'winter' ? ' · ' + I.label('wo_tag') : '') + (i.safety_lock ? ' · ' + I.label('locked') : '') + cpl(i) + (i.planned_note ? ' · ' + I.tx('plan_note', { n: i.planned_note }) : '') }
-      : { uid: `${maintIcsUid(i)}-plan`, date: d.date, summary: I.tx('plan_maint', { kind: I.kind(i.kind), plate: i.plate }), description: [i.next_due_date ? I.tx('plan_due_by', { d: I.d(i.next_due_date) }) : '', cpl(i).slice(3)].filter(Boolean).join(' · ') });
+      : { uid: `${maintIcsUid(i)}-plan`, date: d.date, summary: I.tx('plan_maint', { kind: I.kind(i.kind), plate: i.plate }), description: [i.next_due_date ? I.tx('plan_due_by', { d: I.d(i.next_due_date) }) : '', cpl(i).slice(3), i.planned_note ? I.tx('plan_note', { n: i.planned_note }) : ''].filter(Boolean).join(' · ') }); // Backlog 1442: Hinweis zum Prüftermin
   }
   // Testumgebung auch im Kalendernamen (wie Bußgelder/Wiedervorlagen; Backlog 1027 – vorher nur an den Aufträgen, nicht an Prüfterminen)
   return icsCalendar(`${I.tx('cal_plan')}${plan.site ? ' ' + plan.site : ''}${plan.vehicle_site ? ' – ' + I.tx('plan_vsite', { site: plan.vehicle_site === 'ohne' ? I.tx('no_site') : plan.vehicle_site }) : ''}${envName === 'test' ? ` (${I.tx('test_env')})` : ''}`, ev);

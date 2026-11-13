@@ -3104,6 +3104,10 @@ Object.assign(FIELD_NAMES.en, { 'Hinweis zum Termin': 'Note on the date' });
 Object.assign(STRINGS.de, { plan_note_lbl: 'Hinweis zum Termin', plan_note_hint: 'optional, z. B. „nur vormittags“, „Abholung 13 Uhr“, „Achsvermessung bei Fa. …“ – erscheint im Werkstattplan und bei der Disposition', ev_plan_note: 'Hinweis zum Termin' });
 Object.assign(STRINGS.uk, { plan_note_lbl: 'Примітка до терміну', plan_note_hint: 'необов’язково, напр. «лише до обіду», «забрати о 13:00», «розвал-сходження у фірми …» – видно в плані майстерні та диспетчерам', ev_plan_note: 'Примітка до терміну' });
 Object.assign(STRINGS.en, { plan_note_lbl: 'Note on the date', plan_note_hint: 'optional, e.g. “mornings only”, “pick-up 1 pm”, “wheel alignment at company …” – shown in the workshop plan and to dispatch', ev_plan_note: 'Note on the date' });
+// Backlog 1442: Hinweis zum geplanten Prüf-/Wartungstermin (Uhrzeit, Prüfstelle, Absprachen)
+Object.assign(STRINGS.de, { mplan_note_hint: 'optional, z. B. „7:00 Uhr“, „Prüfstelle …“, „Schlüssel beim Pförtner“ – erscheint in Fahrzeugakte, Prüfterminen, Werkstattplan und bei der Disposition' });
+Object.assign(STRINGS.uk, { mplan_note_hint: 'необов’язково, напр. «7:00», «пункт техогляду …», «ключ у вахтера» – видно в картці ТЗ, техоглядах, плані майстерні та диспетчерам' });
+Object.assign(STRINGS.en, { mplan_note_hint: 'optional, e.g. “7:00 am”, “test centre …”, “key at the gate” – shown in the vehicle file, inspections, workshop plan and to dispatch' });
 Object.assign(STRINGS.de, { case_search_mgr: 'Suchen: Kennzeichen, Nummer, Text, Rechnungs-/Teilenr. oder Lieferant', case_search_ws: 'Suchen: Kennzeichen, Nummer, Text oder Teilenummer' });
 Object.assign(STRINGS.uk, { case_search_mgr: 'Пошук: номер авто, номер заявки, текст, номер рахунку/запчастини або постачальник', case_search_ws: 'Пошук: номер авто, номер заявки, текст або номер запчастини' });
 Object.assign(STRINGS.en, { case_search_mgr: 'Search: plate, number, text, invoice/part no. or supplier', case_search_ws: 'Search: plate, number, text or part number' });

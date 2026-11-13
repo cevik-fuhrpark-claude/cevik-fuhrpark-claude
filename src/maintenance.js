@@ -296,7 +296,7 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
   const siteOptions = sel.options; const siteSel = sel.site; const sKey = sel.site !== null;
   const vehicles = sKey ? allVehicles.filter((v) => sel.match(v.site)) : allVehicles;
   const vIds = new Set(vehicles.map((v) => v.id));
-  const rules = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.interval_months, m.interval_km, m.last_done_km, m.due_km, m.last_done_date, m.next_due_date, m.planned_date, m.evidence, m.updated_at, m.km_basis_at, m.title
+  const rules = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.interval_months, m.interval_km, m.last_done_km, m.due_km, m.last_done_date, m.next_due_date, m.planned_date, m.planned_note, m.evidence, m.updated_at, m.km_basis_at, m.title
     FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE v.active=1 AND v.eval_excluded=0`).all()).results.filter((r) => vIds.has(r.vehicle_id));
   const vmap = new Map(vehicles.map((v) => [v.id, v]));
   // HU/SP zentral nach StVZO Anlage VIII (inspection_rules.js)
@@ -321,7 +321,7 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
     if (hs) {
       const due = hs.due || null;
       return { id: r.id, vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site || null, vehicle_kind: v.kind || null, kind: r.kind, last_done_date: hs.last_done || r.last_done_date,
-        next_due_date: due, due_month: due ? `${due.slice(5, 7)}/${due.slice(0, 4)}` : null, due_basis: hs.due_basis, prognosis: hs.prognosis || null, planned_date: hs.planned_date,
+        next_due_date: due, due_month: due ? `${due.slice(5, 7)}/${due.slice(0, 4)}` : null, due_basis: hs.due_basis, prognosis: hs.prognosis || null, planned_date: hs.planned_date, ...(hs.planned_date && r.planned_note ? { planned_note: r.planned_note } : {}), // Backlog 1442
         interval_months: r.kind === 'HU' ? hs.interval_months : null, days: due ? daysUntil(due, today) : null, status: HUSP_MAP[hs.status] || 'ungeklaert', husp_status: hs.status, notes: hs.notes, note_codes: hs.note_codes, prev_cycle_open: hs.prev_cycle_open || null,
         // Datumsstufe getrennt: „Frist ungeklärt“ (z. B. SP-Vorzyklus ohne Beleg) mit bekanntem Termin bleibt einzuplanen (18.10.2026: fehlte im Werkstattplan bis zur Überfälligkeit)
         date_status: !due ? 'ohne_termin' : daysUntil(due, today) < 0 ? 'ueberfaellig' : daysUntil(due, today) <= warnDays ? 'faellig' : 'ok',
@@ -335,7 +335,7 @@ export async function maintenanceOverview(env, user, envName = null, opts = {}) 
     // Gesamtstatus: das Strengere aus Datum und Kilometern; date_status bleibt getrennt sichtbar (km „ungeklärt“ überdeckt sonst „bald fällig“ nach Datum)
     const status = kmd && kmd.km_status !== 'ohne_km' && RANK[kmd.km_status] > RANK[dateStatus] ? kmd.km_status : dateStatus;
     return { id: r.id, vehicle_id: r.vehicle_id, plate: v.plate || null, site: v.site || null, vehicle_kind: v.kind || null, kind: r.kind, last_done_date: r.last_done_date,
-      next_due_date: r.next_due_date, planned_date: r.planned_date || null, interval_months: r.interval_months, days, status, date_status: dateStatus, evidence: r.evidence, updated_at: r.updated_at,
+      next_due_date: r.next_due_date, planned_date: r.planned_date || null, ...(r.planned_date && r.planned_note ? { planned_note: r.planned_note } : {}), interval_months: r.interval_months, days, status, date_status: dateStatus, evidence: r.evidence, updated_at: r.updated_at,
       interval_km: r.interval_km, last_done_km: r.last_done_km, due_km: r.due_km ?? null, title: r.title || null, ...(kmd || { next_due_km: null, km_remaining: null, km_status: null }) };
   }).sort((a, b) => (RANK[b.status] >= 3 ? RANK[b.status] : 0) - (RANK[a.status] >= 3 ? RANK[a.status] : 0) || (a.next_due_date === null) - (b.next_due_date === null) || String(a.next_due_date).localeCompare(String(b.next_due_date)) || String(a.plate).localeCompare(String(b.plate)));
   const has = new Set([...rules.filter((r) => r.next_due_date || r.kind === 'HU' || r.kind === 'SP'), ...virt].map((r) => `${r.vehicle_id}|${r.kind}`));
@@ -697,14 +697,14 @@ export async function importMaintenanceCsv(env, user, text, { dryRun = false } =
         }
         impLog.set(stmts.length, { vehicle_id: p.vehicle_id, detail: { plate: p.plate, kind: p.kind, changed: ch } });
       }
-      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, interval_km=?, last_done_km=?, due_km=?, evidence=?, updated_at=?, km_basis_at=CASE WHEN ? THEN ? ELSE km_basis_at END, due_source=?, planned_date=CASE WHEN ? THEN NULL ELSE planned_date END WHERE id=?
+      stmts.push(env.DB.prepare(`UPDATE maintenance_rules SET next_due_date=?, last_done_date=?, interval_months=CASE WHEN ? THEN NULL ELSE COALESCE(?, interval_months) END, interval_km=?, last_done_km=?, due_km=?, evidence=?, updated_at=?, km_basis_at=CASE WHEN ? THEN ? ELSE km_basis_at END, due_source=?, planned_date=CASE WHEN ? THEN NULL ELSE planned_date END, planned_note=CASE WHEN ? THEN NULL ELSE planned_note END WHERE id=?
         AND next_due_date IS ? AND last_done_date IS ? AND last_done_km IS ? AND due_km IS ? AND interval_km IS ?`)
         // km-Grundlage nur neu, wenn sich km-Werte ändern (nur „Nächster Termin“ geändert: ein Tachotausch blieb sonst unerkannt, 17.10.2026)
         .bind(next, last || cur.last_done_date, p.husp ? 1 : 0, p.interval, km.interval, km.last, km.due, keepDoc && cur.evidence && cur.evidence !== p.evidence ? cutText(`${cur.evidence}; ${p.evidence}`, 500) : p.evidence, now,
           (km.interval ?? null) !== (cur.interval_km ?? null) || (km.last ?? null) !== (cur.last_done_km ?? null) || (km.due ?? null) !== (cur.due_km ?? null) ? 1 : 0,
           kmBasisForDone(parseKmDrop((byId.get(p.vehicle_id) || {}).km_drop), p.last, cur.km_basis_at, now), (p.next && p.dueSource === 'nachweis') || keepDoc ? 'nachweis' : (p.husp || (!p.next && next !== cur.next_due_date) ? 'berechnet' : cur.due_source || null),
           // neue Durchführung erledigt den geplanten Werkstatttermin (wie „erledigt“ in der Akte; 18.10.2026 stand er weiter im Werkstattplan)
-          p.last && (!cur.last_done_date || p.last > cur.last_done_date) ? 1 : 0, cur.id,
+          p.last && (!cur.last_done_date || p.last > cur.last_done_date) ? 1 : 0, p.last && (!cur.last_done_date || p.last > cur.last_done_date) ? 1 : 0, cur.id, // Backlog 1442: Hinweis zum Termin mit
           cur.next_due_date ?? null, cur.last_done_date ?? null, cur.last_done_km ?? null, cur.due_km ?? null, cur.interval_km ?? null));
       // Protokoll alt → neu direkt hinter der Änderung, nur wenn sie gegriffen hat (changes() der vorigen Anweisung) – im selben Stapel (22.10.2026)
       { const lg = impLog.get(stmts.length - 1); stmts.push(env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) SELECT ?1, ?2, 'maintenance.import_update', ?3, ?4, ?5 WHERE changes() > 0`)

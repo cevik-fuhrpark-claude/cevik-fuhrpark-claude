@@ -255,6 +255,8 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     : [];
   const sets = new Map((await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('maintenance_warn_days','tacho_warn_days','contract_warn_days','maintenance_warn_km')`).all()).results.map((r) => [r.key, r.value]));
   const husp = tl ? null : huSpFor((await loadHuSpInputs(env, [vehicleId])).get(vehicleId), berlinDate(), maintenanceWarnDays(sets.get('maintenance_warn_days')));
+  // Backlog 1442: Hinweis zum geplanten HU/SP-Termin (Migration 0104) für die HU/SP-Karte – aus den ohnehin geladenen Einträgen, keine Abfrage mehr
+  if (husp) { const pn = maintenance.filter((m) => (m.kind === 'HU' || m.kind === 'SP') && m.planned_date && m.planned_note); if (pn.length) husp.planned_notes = Object.fromEntries(pn.map((m) => [m.kind, m.planned_note])); }
   const failedInspection = failedInspectionOf(v, maintenanceHistory, allCases, addMonths(berlinDate(), -12));
   // Pflichtprüfung in der App erfasst (≤ 180 Tage, neueste ihrer Art) ohne Prüfergebnis – gleiche Regel wie Datenqualität `inspection_no_result`, ohne Zusatzabfrage
   const sinceNr = berlinDate(new Date(Date.now() - 180 * 86400000).toISOString()); // Berliner Tag wie noResultSql (Datenqualität/„Heute zu tun“, 20.10.2026)
@@ -1086,7 +1088,7 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
 // Geplanter Werkstatttermin für eine Prüfung (ersetzt keine Durchführung, verschiebt keine Frist)
 export async function planMaintenance(env, user, ruleId, body) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
-  const r = await env.DB.prepare('SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, m.next_due_date, m.planned_date, v.active FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?').bind(ruleId).first();
+  const r = await env.DB.prepare('SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, m.next_due_date, m.planned_date, m.planned_note, v.active FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?').bind(ruleId).first();
   if (!r) throw notFound();
   // Backlog 818 (Blickwinkel „Zwei Leitungen bearbeiten gleichzeitig“ – Prüftermin): optional `expected_planned_date` = gelesener Termin
   // (leer = keiner). Weicht der gespeicherte ab, 409 statt die Absprache der anderen Person still zu überschreiben; steht schon der gewünschte
@@ -1105,16 +1107,27 @@ export async function planMaintenance(env, user, ruleId, body) {
   // vertippt“): ein Termin vor heute gilt sofort als verstrichen (Werkstattplan, Dispo-Tafel, Agent `MAINTENANCE_PLAN_MISSED`, CSV). Gespeichert wird
   // weiter (Nachtrag einer Absprache bleibt möglich), die Antwort meldet es aber additiv mit `in_past: true` – die App warnt dann.
   if (d && d < berlinDate()) afterDue.in_past = true;
+  // Backlog 1442 (Blickwinkel „Prüfstelle vereinbart den Termin telefonisch – Uhrzeit, Ort und Absprachen gehen verloren“, Migration 0104):
+  // optionaler Hinweis zum Termin wie bei Vorgängen (Migration 0093) – nicht mitgeschickt = bleibt, leer = entfernen, ohne Termin immer leer
+  const hasNote = body && Object.prototype.hasOwnProperty.call(body, 'planned_note');
+  const oldNote = r.planned_note || null;
+  const pn = hasNote ? str(body.planned_note, { max: 200, field: 'Hinweis zum Termin' }) : oldNote;
+  if (pn && !d && hasNote) throw bad('validation', 'Hinweis zum Termin nur zusammen mit einem Termin angeben.');
+  const note = d ? pn : null;
+  const same = (r.planned_date ?? null) === d && note === oldNote;
+  const noteOut = note ? { planned_note: note } : {};
   if (hasExp) {
     const stale = () => conflict('version_conflict', 'Der Termin wurde zwischenzeitlich geändert. Bitte prüfen.', { current_planned_date: r.planned_date ?? null });
-    if ((r.planned_date ?? null) === d) return { ok: true, planned_date: d, unchanged: true, ...afterDue };
-    if ((r.planned_date ?? null) !== exp) throw stale();
-    const u = await env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=? AND planned_date IS ?').bind(d, nowIso(), ruleId, exp).run();
+    if (same) return { ok: true, planned_date: d, ...noteOut, unchanged: true, ...afterDue };
+    if ((r.planned_date ?? null) !== exp && (r.planned_date ?? null) !== d) throw stale();
+    const u = await env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, planned_note=?, updated_at=? WHERE id=? AND planned_date IS ?').bind(d, note, nowIso(), ruleId, r.planned_date ?? null).run();
     if (!(u.meta && u.meta.changes)) throw stale();
-  } else await env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=?').bind(d, nowIso(), ruleId).run();
-  await audit(env, user.id, 'maintenance.plan', r.vehicle_id, { kind: r.kind, planned_date: d });
+  } else {
+    await env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, planned_note=?, updated_at=? WHERE id=?').bind(d, note, nowIso(), ruleId).run();
+  }
+  await audit(env, user.id, 'maintenance.plan', r.vehicle_id, { kind: r.kind, planned_date: d, ...(note !== oldNote ? { note_from: oldNote, note_to: note } : {}) });
   // Backlog 607: Termin nach Fristende wird gespeichert (die Werkstatt hat ggf. nichts früher frei), aber gemeldet – nichts wird verschoben
-  return { ok: true, planned_date: d, ...afterDue };
+  return { ok: true, planned_date: d, ...noteOut, ...afterDue };
 }
 
 // Sammeltermin (Backlog 235, Blickwinkel „Fuhrparkleitung plant die UVV aller Fahrzeuge an einem Tag“): denselben Termin für mehrere
@@ -1180,7 +1193,7 @@ export async function endMaintenanceRule(env, user, ruleId, body) {
     await audit(env, user.id, 'maintenance.rule_delete', r.vehicle_id, { kind: r.kind, rule_id: ruleId, title: r.title || null, evidence: r.evidence, reason });
     return { ok: true, deleted: true };
   }
-  await env.DB.prepare('UPDATE maintenance_rules SET next_due_date=NULL, interval_months=NULL, interval_km=NULL, due_km=NULL, planned_date=NULL, due_source=NULL, updated_at=? WHERE id=?').bind(nowIso(), ruleId).run();
+  await env.DB.prepare('UPDATE maintenance_rules SET next_due_date=NULL, interval_months=NULL, interval_km=NULL, due_km=NULL, planned_date=NULL, planned_note=NULL, due_source=NULL, updated_at=? WHERE id=?').bind(nowIso(), ruleId).run();
   await audit(env, user.id, 'maintenance.rule_end', r.vehicle_id, { kind: r.kind, rule_id: ruleId, title: r.title || null, next_due_date: r.next_due_date, interval_months: r.interval_months, interval_km: r.interval_km, reason });
   return { ok: true, deleted: false };
 }
@@ -1211,7 +1224,7 @@ export async function planMaintenanceBatch(env, user, body) {
   if (planned.length) {
     const now = nowIso();
     await env.DB.batch([
-      env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(d, now, JSON.stringify(planned.map((p) => p.id))),
+      env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, planned_note=NULL, updated_at=? WHERE id IN (SELECT value FROM json_each(?))').bind(d, now, JSON.stringify(planned.map((p) => p.id))),
       // Protokoll je Eintrag wie `planMaintenance` (Ziel = Fahrzeug), zusätzlich `batch` und ein ersetzter Termin
       env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) SELECT json_extract(j.value,'$[0]'), ?, 'maintenance.plan', json_extract(j.value,'$[1]'), json_extract(j.value,'$[2]'), ? FROM json_each(?) j`)
         .bind(user.id, now, JSON.stringify(planned.map((p) => [uuid(), p.vehicle_id, JSON.stringify({ kind: p.kind, planned_date: d, batch: true, ...(p.previous ? { replaced: p.previous } : {}) })]))),
@@ -1463,7 +1476,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   const basisAt = kmBasisForDone(drop, date, r.km_basis_at, nowIso());
   const stmts = [
     ...(result ? guard('SELECT CASE WHEN COUNT(*)=0 THEN 1 ELSE 0 END FROM maintenance_events WHERE rule_id=? AND done_date=? AND result IS NOT NULL AND result<>?', ruleId, date, result) : []),
-    env.DB.prepare(`UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, due_km=?, next_due_date=?, evidence=?, updated_at=?, km_basis_at=?, due_source=?, planned_date=NULL
+    env.DB.prepare(`UPDATE maintenance_rules SET last_done_date=?, last_done_km=?, due_km=?, next_due_date=?, evidence=?, updated_at=?, km_basis_at=?, due_source=?, planned_date=NULL, planned_note=NULL
       WHERE id=? AND ${oneTime ? 'last_done_date IS NULL' : '(last_done_date IS NULL OR last_done_date <= ?)'}`)
       // ohne Beleg berechnet (19.10.2026: Herkunft „Nachweis“ der alten Plakette blieb – Import des eigenen Exports mit neuerer Prüfung griff dann nicht)
       .bind(date, km, docKm, next, oneTime ? `${r.evidence} · Durchführung: ${evidence}` : evidence, nowIso(), basisAt, docNext ? 'nachweis' : (husp || next ? 'berechnet' : null), ruleId, ...(oneTime ? [] : [date])),

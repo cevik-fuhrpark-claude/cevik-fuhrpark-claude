@@ -29193,7 +29193,7 @@ await test('Backlog 805f (Blickwinkel „Funkloch“): Werkstattplan (Termin set
   ok(app.includes("const cidFor = (key) =>"), 'Helfer');
   ok(app.includes("command_id: cidFor(JSON.stringify([i.id, i.version, 'set_planned_date', pn, f.value]))") && app.includes("payload: { planned_date: f.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; toast(x && x.duplicate ? t('saved_before') : '✓');"), 'Termin setzen');
   ok(app.includes("command_id: cidFor(JSON.stringify([i.id, i.version, 'reassign_workshop', note, sel.value]))") && app.includes("if (x && x.duplicate) { toast(t('saved_before')); viewPlan(); return; }"), 'Werkstatt wechseln');
-  ok(app.includes("hsUrl(fm.dataset.hsplan, 'plan'), { planned_date: fm.planned_date.value || null, expected_planned_date: fm.planned_date.defaultValue || null }, { timeoutMs: SEND_TIMEOUT_MS });") /* seit Backlog 818 mit gelesenem Termin */, 'Prüftermin planen');
+  ok(app.includes("hsUrl(fm.dataset.hsplan, 'plan'), { planned_date: fm.planned_date.value || null, expected_planned_date: fm.planned_date.defaultValue || null, ...(fm.planned_note ? { planned_note: fm.planned_date.value ? fm.planned_note.value : '' } : {}) }, { timeoutMs: SEND_TIMEOUT_MS });") /* seit Backlog 818 mit gelesenem Termin, seit 1442 mit Hinweis */, 'Prüftermin planen');
   ok(app.includes("request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805f */"), 'Wartungsauftrag');
   ok(app.includes("note: $('#oifn').value.trim() || undefined }, { timeoutMs: SEND_TIMEOUT_MS });"), 'Restarbeit');
   ok(app.includes("command_id: uid(), expected_version: cur.case.version, note, payload: rel }, { timeoutMs: SEND_TIMEOUT_MS });"), 'Technisch freigeben');
@@ -41034,6 +41034,41 @@ await test('Backlog 1441 (Folge aus 1440): Werkstatttermin am Vorgang vor heute 
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { const x = STRINGS[l].plan_past_confirm; ok(x && x.includes('{d}') && x.includes(STRINGS[l].drv_ws_missed), `${l}: nennt „${STRINGS[l].drv_ws_missed}“`); }
   // Server: Termin vor heute bleibt möglich (Nachtrag) – siehe Test „Werkstatttermin … day(-1) → 200“; die Rückfrage stellt nur die App
+});
+
+await test('Backlog 1442 (Blickwinkel „Prüfstelle vereinbart den Termin telefonisch – Uhrzeit, Ort und Absprachen gehen verloren“): Hinweis zum geplanten Prüf-/Wartungstermin (Migration 0104) – speichern, ändern, behalten, entfernen; sichtbar in Akte, Prüfterminen, Werkstattplan/Kalender; Sammeltermin und Durchführung entfernen ihn; Texte DE/UK/EN', async () => {
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: day(-30), interval_months: 12, evidence: 'Prüfbuch UVV (Test 1442)' }); eq(r.status, 201);
+  const id = r.data.id; const row = async () => (await U.fleet.get('/api/maintenance')).data.rows.find((y) => y.id === id);
+  let x = await U.ws.post(`/api/maintenance/${id}/plan`, { planned_date: day(3), planned_note: '  7:00 Uhr, Prüfstelle Nord  ' }); eq(x.status, 200, JSON.stringify(x.data)); eq(x.data.planned_note, '7:00 Uhr, Prüfstelle Nord', 'getrimmt zurück');
+  eq((await row()).planned_note, '7:00 Uhr, Prüfstelle Nord', 'Prüfterminübersicht');
+  eq((await U.fleet.get(`/api/vehicles/${V1}`)).data.maintenance.find((m) => m.id === id).planned_note, '7:00 Uhr, Prüfstelle Nord', 'Fahrzeugakte');
+  const plan = (await U.fleet.get('/api/workshop/plan?days=14')).data; const it = plan.days.flatMap((d) => d.items).find((i) => i.type === 'maintenance' && i.id === id);
+  ok(it && it.planned_note === '7:00 Uhr, Prüfstelle Nord', 'Werkstattplan ' + JSON.stringify(it));
+  const ics = (await U.fleet.get('/api/workshop/plan?days=14&format=ics')).data; const icsT = typeof ics === 'string' ? ics : new TextDecoder().decode(ics);
+  ok(icsT.replace(/\r\n[ \t]/g, '').includes('Prüfstelle Nord'), 'Kalender nennt den Hinweis');
+  x = await U.ws.post(`/api/maintenance/${id}/plan`, { planned_date: day(3), planned_note: '7:00 Uhr, Prüfstelle Nord', expected_planned_date: day(3) }); eq(x.data.unchanged, true, 'gleich → unverändert');
+  x = await U.ws.post(`/api/maintenance/${id}/plan`, { planned_date: day(3), planned_note: '8:30 Uhr', expected_planned_date: day(3) }); eq(x.status, 200); eq(x.data.unchanged, undefined, 'nur Hinweis geändert → gespeichert'); eq((await row()).planned_note, '8:30 Uhr');
+  x = await U.ws.post(`/api/maintenance/${id}/plan`, { planned_date: day(4) }); eq(x.status, 200); eq((await row()).planned_note, '8:30 Uhr', 'nicht mitgeschickt → bleibt');
+  eq((await U.ws.post(`/api/maintenance/${id}/plan`, { planned_date: null, planned_note: 'x' })).status, 400, 'Hinweis ohne Termin');
+  eq((await U.ws.post(`/api/maintenance/${id}/plan`, { planned_date: day(4), planned_note: 'x'.repeat(201) })).status, 400, 'zu lang');
+  x = await U.ws.post(`/api/maintenance/${id}/plan`, { planned_date: null, planned_note: '' }); eq(x.status, 200); const rw = await row(); eq(rw.planned_date, null); eq(rw.planned_note, undefined, 'mit Termin entfernt');
+  eq((await U.ws.post(`/api/maintenance/${id}/plan`, { planned_date: day(5), planned_note: 'Halle 2' })).status, 200);
+  x = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: day(6), ids: [id], replace: true }); eq(x.status, 200, JSON.stringify(x.data)); eq((await row()).planned_note, undefined, 'Sammeltermin entfernt alten Hinweis');
+  eq((await U.ws.post(`/api/maintenance/${id}/plan`, { planned_date: day(6), planned_note: 'Halle 3' })).status, 200);
+  x = await U.ws.post(`/api/maintenance/${id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Prüfbuch UVV (Test 1442b)' }); eq(x.status, 200, JSON.stringify(x.data));
+  eq((await U.fleet.get(`/api/vehicles/${V1}`)).data.maintenance.find((m) => m.id === id).planned_note, null, 'Durchführung entfernt den Hinweis');
+  // HU (Eintrag wird beim Planen ggf. erst angelegt): Hinweis an der HU/SP-Karte
+  x = await U.own.post(`/api/vehicles/${V1}/husp/HU/plan`, { planned_date: day(7), planned_note: 'TÜV-Station Süd, 9 Uhr' }); eq(x.status, 200, JSON.stringify(x.data));
+  eq(((await U.own.get(`/api/vehicles/${V1}`)).data.hu_sp.planned_notes || {}).HU, 'TÜV-Station Süd, 9 Uhr', 'HU/SP-Karte');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("...(fm.planned_note ? { planned_note: fm.planned_date.value ? fm.planned_note.value : '' } : {})"), 'Formular schickt den Hinweis (ohne Termin leer)');
+  ok(app.includes('${mPlanNoteField(m.planned_date && m.planned_note)}') && app.includes('${mPlanNoteField(x.planned_date && h.planned_notes && h.planned_notes[k])}'), 'Feld in Wartungszeile und HU/SP-Karte');
+  ok(app.includes('${mPlanNote(r.planned_note)}') && app.includes('${mPlanNote(m.planned_note)}') && app.includes("  if (i.planned_note) parts.push(`<b data-plannote>"), 'Anzeige Prüftermine, Akte, Disposition');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].mplan_note_hint && STRINGS[l].plan_note_lbl, `${l}.mplan_note_hint`);
+  ok(readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1442'), 'API.md');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

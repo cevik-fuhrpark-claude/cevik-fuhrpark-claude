@@ -198,7 +198,7 @@ function dispoSub(i) {
 
   if (i.type === 'case' && i.safety_lock) parts.push(`<b data-dplock>${esc(t('locked'))}</b>`);
   if (i.type === 'case' && i.status === 'werkstatt_freigegeben' && (i.tow_service || i.reported_driveability === 'nicht_fahrbereit')) parts.push(`<b data-dpdrv>${esc(t(i.tow_service ? 'vl_towed_chip' : 'cl_not_drivable'))}</b>`);
-  if (i.type === 'case' && i.planned_note) parts.push(`<b data-plannote>📝 ${esc(clipTxt(i.planned_note, 120))}</b>`);
+  if (i.planned_note) parts.push(`<b data-plannote>📝 ${esc(clipTxt(i.planned_note, 120))}</b>`);
   if (planVehTag(i)) parts.push(planVehTag(i));
   if (i.other_dates && i.other_dates.length) parts.push(`<b>${esc(t('plan_other_dates'))}: ${i.other_dates.map(fmtD).join(', ')}</b>`);
 

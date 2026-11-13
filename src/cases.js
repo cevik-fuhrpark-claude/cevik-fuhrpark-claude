@@ -1615,7 +1615,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       set.planned_date = d; set.planned_note = newNote; payload = { from: c.planned_date || null, to: d, ...(newNote !== oldNote ? { note_from: oldNote, note_to: newNote } : {}) };
       // Auftrag aus Prüftermin verschoben: der vom Auftrag übernommene Prüftermin (gleicher Tag) zieht mit – sonst stand das Fahrzeug im Plan an
       // zwei Tagen (23.10.2026). Nur im Betrieb: Prüftermine gelten für beide Umgebungen, ein Testauftrag ändert keine Betriebsplanung.
-      if (d && c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=? AND planned_date=?').bind(d, now, c.maintenance_rule_id, c.planned_date));
+      if (d && c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, planned_note=NULL, updated_at=? WHERE id=? AND planned_date=?').bind(d, now, c.maintenance_rule_id, c.planned_date));
       // Backlog 460: Termin geändert, der heute bis in 7 Tagen lag oder jetzt dort liegt → Hinweis an Disposition und die andere Seite
       // (vorher ohne Push: die Disposition plante den Lkw am alten Tag ein bzw. nicht ein). Weiter weg: nur Verlauf/Plan.
       { const near = (x) => !!x && x >= berlinDate() && x <= addDaysIso(berlinDate(), 7);
@@ -1819,7 +1819,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (hoBefore) { set.handover_keys = null; set.handover_papers = null; }
       // Backlog 263 (Teilagent „Werkstatt fällt eine Woche aus“): vom Auftrag übernommener Prüftermin (gleicher Tag) entfällt mit – sonst stand
       // das Fahrzeug im Werkstattplan weiter am alten Tag der bisherigen Werkstatt (wie set_planned_date, nur im Betrieb)
-      if (c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=NULL, updated_at=? WHERE id=? AND planned_date=?').bind(now, c.maintenance_rule_id, c.planned_date));
+      if (c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=NULL, planned_note=NULL, updated_at=? WHERE id=? AND planned_date=?').bind(now, c.maintenance_rule_id, c.planned_date));
       // Wechsel an eine Werkstatt ohne aktives Konto: Hinweis in der Antwort wie bei der Freigabe (vorher still bis zum nächsten Agentenlauf)
       noWorkshopUser = !(await env.DB.prepare(`SELECT 1 AS x FROM users WHERE environment=? AND role='workshop' AND active=1 AND password_hash IS NOT NULL AND workshop_site=? LIMIT 1`).bind(envName, site).first()); externalWs = site === 'EXTERN';
       // prev_ack_at: Übernahme der bisherigen Werkstatt (zählt in deren Auslastung weiter, Backlog 90)
@@ -1903,7 +1903,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Terminänderung bei Übernahme im Verlauf festhalten (20.10.2026; vorher nur bei „Termin setzen/verschieben“)
       if (p.planned_date) { set.planned_date = planDate(p.planned_date); if (set.planned_date !== (c.planned_date || null)) payload = { planned_from: c.planned_date || null, planned_to: set.planned_date }; }
       // Backlog 263: Termin bei Übernahme verschoben → übernommener Prüftermin (gleicher Tag) zieht mit (wie set_planned_date, nur im Betrieb)
-      if (set.planned_date && c.planned_date && set.planned_date !== c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, updated_at=? WHERE id=? AND planned_date=?').bind(set.planned_date, now, c.maintenance_rule_id, c.planned_date));
+      if (set.planned_date && c.planned_date && set.planned_date !== c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, planned_note=NULL, updated_at=? WHERE id=? AND planned_date=?').bind(set.planned_date, now, c.maintenance_rule_id, c.planned_date));
       notifyKind = 'acknowledged';
       break;
     case 'start_repair':
