@@ -173,6 +173,46 @@ const hrFold = (s) => String(s || '').toLowerCase().replace(/[čćđšž]/g, (c)
 function hrKinds(v) { const k = new Set(); for (const p of hrFold(v).split(/[.,;!?\n]+/)) if (!HR_OK.test(p)) for (const [n, rx, ex] of HR_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
 
 
-async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v)]); }
+
+const HU_OK = /\b(?:meg|ki)?javit(?:va|ottak|ottam|otta|ottuk)\b|\bki\s*cserel(?:tek|tuk|tem|ve|te)\b|\bcserel(?:ve|tek|tuk)\b|\bujra\s+(?:mukodik|jo)\b|\bmar\s+(?:jo|mukodik|rendben)\b|\bminden\s+rendben|\bnincs\s+(?:semmi\s+)?(?:gond|baj|problema)|\bmegoldva/;
+const HU_KINDS = [['brake', /\bfek(?:ek|et|nek|rendszer\S*|betet\S*|tarcs\S*)?\s+(?:\S+\s+)?(?:nem\s+(?:mukodik|mukodnek|fog|fognak)|gyenge|gyengen|elromlott|rossz|tonkrement)|\b(?:nem|gyengen|rosszul)\s+fekez|\bnem\s+fog(?:nak)?\s+(?:a\s+)?fek|\b(?:esik|csokken|elmegy|szokik)\s+(?:a\s+)?(?:\S+\s+)?(?:levego|legnyomas|nyomas)/, /kezifek|rogzitofek|feklamp|magatol|ok\s+nelkul|gumi|abroncs|legrugo|harang/],
+  ['fire', /\btuz\s+(?:van|utott\s+ki)|\btuzet\b|\btuzben\b|\bkigyullad|\beg\s+a\s+(?:kabin|motor|kamion|potkocsi|rakomany)\b|\bfust\S*\s+(?:\S+\s+)?(?:jon|szall|gomolyog)|\bfustol|\beget\S*\s+szag|\bszag\S*\s+(?:\S+\s+)?eget/, /kipufog|porolto|tuzolto|lampa|izzo|visszajelz|hibalamp/],
+  ['flat', /\bdefekt(?:et|em|unk)\b|\bdefekt\s+(?:van|lett|kaptam)\b|\b(?:gumi|abroncs)\S*\s+(?:\S+\s+)?(?:kidurrant|kilyukadt|lyukas|durrant|szetrobbant|felrobbant|lapos|leeresztett|leengedett)|\b(?:kidurrant|kilyukadt|szetrobbant|felrobbant|lapos|leeresztett)\s+(?:\S+\s+){0,2}(?:gumi|abroncs)/, /harang|legrugo/],
+  ['steer', /\bkormany\S*\s+(?:\S+\s+)?(?:beragadt|blokkol|zarol|nehez|nem\s+(?:fordul|mukodik)|kotyog|holtjatek)|\b(?:beragadt|blokkolt|nehez)\s+(?:a\s+)?kormany|\bhuz\s+(?:\S+\s+)?(?:jobbra|balra)/],
+  ['leak', /\b(?:olaj|uzemanyag|gazolaj|dizel|diesel|hutoviz|hutofolyadek|folyadek|fagyallo|adblue)\S*\s+(?:\S+\s+)?(?:folyik|csopog|szivarog|ereszt)|\b(?:folyik|csopog|szivarog|ereszt)\s+(?:az?\s+)?(?:\S+\s+)?(?:olaj|uzemanyag|gazolaj|dizel|hutoviz|folyadek|fagyallo|adblue)/],
+  ['acc', /\bbaleset|\butkoz|\bosszeutkoz|\bnekimen|\bnekem\s+jott|\bbelem\s+jott|\bkoccan|\bmeghuztam\b|\bsurolt/, /\bko\b|kavics/],
+  ['injury', /\bmegserultem\b|\bmegsebesul|\bmento(?:t|k|hoz)?\b|\bkorhaz|\bverzik|\bvereztem|\beltort\s+a\s+(?:lab|kez|kar|bord)/],
+  ['parkbrake', /\b(?:kezifek|rogzitofek)\S*\s+(?:\S+\s+)?(?:nem\s+(?:fog|tart|mukodik|old|enged)|elromlott|beragadt)|\belgurult/],
+  ['nostart', /\b(?:motor|kamion|auto|vontato)\S*\s+(?:\S+\s+)?nem\s+(?:indul|akar\s+(?:be)?indulni)|\bnem\s+(?:akar\s+)?(?:be)?indul(?:ni)?\b|\bonindito\S*\s+(?:\S+\s+)?(?:nem\s+mukodik|rossz|elromlott)/, /huto|agregat|aggregat|klima|futes|webasto|lift|hatfal/],
+  ['mirror', /\b(?:tukor|tukr|visszapillanto)\S*\s+(?:\S+\s+)?(?:letort|eltort|kitort|betort|torott|log|leszakadt|nem\s+(?:allithato|mukodik))|\b(?:letort|eltort|kitort|leszakadt)\s+(?:a\s+)?(?:\S+\s+)?(?:tukor|visszapillanto)/],
+  ['lights', /\b(?:lampa|lampak|fenyszoro|vilagitas|izzo|index|helyzetjelzo|feklampa|tolatolampa|reflektor)\S*\s+(?:\S+\s+)?(?:nem\s+(?:vilagit|eg|egnek|mukodik|mukodnek)|kieg|torott|eltort|kitort)|\bkieg\S*\s+(?:az?\s+)?(?:\S+\s+)?(?:izzo|lampa)/, /visszajelz|kontroll|muszerfal|hibalamp/],
+  ['warnlight', /\b(?:visszajelz|hibalamp|motorhibalamp|figyelmeztet)\S*\s+(?:\S+\s+)?(?:vilagit|eg|kigyulladt|felgyulladt|villog)\b|\b(?:kigyulladt|felgyulladt|vilagit|villog)\s+(?:az?\s+|egy\s+)?(?:\S+\s+)?(?:visszajelz|hibalamp)|\b(?:motor|olaj|akkumulator|abs|ebs)\s*(?:hiba)?\s*lamp\S*\s+(?:\S+\s+)?(?:vilagit|eg|villog)\b|\b(?:vilagit|eg|villog)\s+(?:a\s+)?(?:motor|olaj|akkumulator|abs|ebs)\s*(?:hiba)?\s*lamp/],
+  ['glass', /\b(?:szelvedo|uveg)\S*\s+(?:\S+\s+)?(?:megreped|reped|betort|kitort|eltort|torott|csillag)|\b(?:megreped|reped|betort|kitort|eltort|torott)\S*\s+(?:az?\s+)?(?:\S+\s+)?(?:szelvedo|uveg)/, /tukor|tukr|visszapillanto/],
+  ['window', /\b(?:ablak(?:ot|om)?|ablakemelo\S*)\s+(?:\S+\s+)?(?:nem\s+(?:megy|mukodik|nyilik|zarodik)|beragadt)/],
+  ['batt', /\b(?:akkumulator|akku)\S*\s+(?:\S+\s+)?(?:lemerult|le\s+van\s+merulve|gyenge|nem\s+tolt)|\blemerult\s+(?:az?\s+)?akku/, /lamp|visszajelz/],
+  ['tacho', /\b(?:tachograf|menetiro)\S*\s+(?:\S+\s+)?(?:nem\s+(?:mukodik|olvas)|hiba|hibas|elromlott)|\b(?:sofor)?kartya\S*\s+(?:\S+\s+)?(?:nem\s+(?:olvas|mukodik|jon\s+ki)|beragadt|elveszett|ellopt|serult|torott)|\belvesztettem\s+(?:a\s+)?(?:sofor)?kartya/, /tank|\bkut|uzemanyag/],
+  ['coupling', /\b(?:potkocsi|felpotkocsi)\S*\s+(?:\S+\s+)?(?:nem\s+(?:kapcsol|csatlakozik|akaszthato)|lekapcsolod|levalt|leszakadt)|\bnyereg\S*\s+(?:\S+\s+)?(?:nem\s+(?:zar|nyit|kapcsol)|elromlott|hibas|beragadt)/],
+  ['dryfuel', /\b(?:kifogyott|elfogyott|nincs\s+(?:tobb|mar))\s+(?:az?\s+)?(?:\S+\s+)?(?:uzemanyag|gazolaj|dizel|diesel)|\b(?:uzemanyag|gazolaj|dizel)\S*\s+(?:\S+\s+)?(?:kifogyott|elfogyott)/, /huto|agregat|aggregat|adblue/],
+  ['engine', /\bmotor\S*\s+(?:\S+\s+)?(?:tulmeleg|forr|nincs\s+ereje|lefullad|leall|rangat|kihagy)|\btulmeleged|\bveszuzem|\bnincs\s+ereje|\bteljesitmeny\S*\s+(?:\S+\s+)?(?:esik|veszt|csokken)/, /huto(?:agregat|aggregat|gep)|\bfek|kerek|csapagy/],
+  ['tyre', /\b(?:gumi|abroncs)\S*\s+(?:\S+\s+)?(?:serult|vagott|elvagott|kopott|lekopott|bubor|pup|ereszt|levegot\s+veszit|szakadt|repedt)|\bgumi\S*\s+(?:\S+\s+)?(?:keves|alacsony)\s+(?:a\s+)?(?:levego|nyomas)/, /kidurr|kilyukad|szetrobban|lapos|defekt|harang|legrugo/],
+  ['reefer', /\b(?:huto|hutoaggregat|hutoagregat|hutogep|hutoegyseg)\S*\s+(?:\S+\s+)?(?:nem\s+(?:hut|mukodik|indul)|riaszt|alarm|hiba|leallt|elromlott)/, /hutoviz|hutofolyadek/],
+  ['susp', /\b(?:legrugo|gumiharang|rugo)\S*\s+(?:\S+\s+)?(?:kidurrant|szakadt|elszakadt|eltort|ereszt|leereszt|lyukas)|\bfelfugg\S*\s+(?:\S+\s+)?(?:nem\s+mukodik|hibas|elromlott)|\b(?:potkocsi|kamion|vontato|felpotkocsi)\S*\s+(?:\S+\s+)?(?:ferde|megdolt|leult|lesullyedt|oldalra\s+dol)/],
+  ['gear', /\b(?:sebessegvalto|valto|fokozat|sebesseg)\S*\s+(?:\S+\s+)?(?:nem\s+(?:megy\s+be|kapcsol|mukodik)|hiba|hibas|elromlott|beragadt)|\bnem\s+megy\s+be\s+(?:a\s+)?(?:\S+\s+)?(?:fokozat|sebesseg)|\bkupp?lung\S*\s+(?:\S+\s+)?(?:csuszik|nem\s+mukodik|elromlott|leegett|kiegett)/],
+  ['climate', /\b(?:klima|legkondi|futes|allofutes|webasto|kalorifer)\S*\s+(?:\S+\s+)?(?:nem\s+(?:mukodik|hut|fut|megy)|elromlott|hibas)/, /ules/],
+  ['tarp', /\bponyv\S*\s+(?:\S+\s+)?(?:szakadt|elszakadt|kiszakadt|lyukas|rongyos)/],
+  ['exhaust', /\bkipufog\S*\s+(?:\S+\s+)?(?:leesett|log|lyukas|eltort|letort|zajos|hangos|szakadt|leszakadt)/],
+  ['visib', /\b(?:ablaktorlo|torlo|ablakmoso)\S*\s+(?:\S+\s+)?(?:nem\s+(?:mukodik|mukodnek|torol|torolnek|megy)|eltort|letort|elromlott)|\b(?:be)?parasod/],
+  ['seat', /\b(?:biztonsagi\s+)?ov(?:et|em|ek)?\s+(?:\S+\s+)?(?:nem\s+(?:kapcsol|csatol|tart|mukodik)|szakadt|elszakadt|beragadt)|\bules\S*\s+(?:\S+\s+)?(?:eltort|torott|nem\s+(?:allithato|mukodik)|elromlott|lotyog|kotyog)/, /fut/],
+  ['wheel', /\b(?:kerekcsavar|kerekanya|csavar|anyacsavar)\S*\s+(?:\S+\s+)?(?:laza|meglazult|kilazult|hianyzik|leesett)|\b(?:meglazult|kilazult)\s+(?:a\s+|egy\s+)?(?:kerekcsavar|kerekanya|anyacsavar)|\bfelni\S*\s+(?:\S+\s+)?(?:repedt|megreped|gorbe|elgorbult|eltort)|\b(?:kerekagy|kerek|csapagy)\S*\s+(?:\S+\s+)?(?:forro|tulmeleg|zug|kotyog|lotyog|nagyon\s+meleg)/],
+  ['stuck', /\b(?:elakad|beragad|megreked|besuppad)\S*\s+(?:\S+\s+){0,2}(?:sar|ho\b|hoban|homok|latyak)|\b(?:sarban|hoban|homokban)\s+(?:\S+\s+)?(?:elakad|ragad|reked)/],
+  ['lost', /\belvesztettem\s+(?:az?\s+)?(?:\S+\s+)?(?:kulcs|forgalmi)|\b(?:kulcs|forgalmi)\S*\s+(?:\S+\s+)?(?:elveszett|eltunt|nincs\s+meg)|\bnem\s+talalom\s+(?:az?\s+)?(?:\S+\s+)?(?:kulcs|forgalmi)/],
+  ['numplate', /\brendszam\S*\s+(?:\S+\s+)?(?:leesett|elveszett|ellopt|olvashatatlan|eltort|torott|letort|hianyzik)/, /vilagit|lampa|izzo/],
+  ['adas', /\b(?:savtarto|asszisztens|radar|szenzor|erzekelo|kamera|tavolsagtarto)\S*\s+(?:\S+\s+){0,2}(?:nem\s+mukodik|hiba|hibas|kikapcsolt|kiesett)|\b(?:magatol|ok\s+nelkul|indokolatlanul)\s+(?:\S+\s+)?fekez/],
+  ['door', /\bajto\S*\s+(?:\S+\s+)?(?:nem\s+(?:zarodik|zar|nyilik|nyithato|csukodik)|beragadt)|\b(?:emelohatfal|hatfal|lift|rampa)\S*\s+(?:\S+\s+)?(?:nem\s+(?:mukodik|emel|megy)|elromlott|hibas)/, /ablak/]];
+const huFold = (s) => String(s || '').toLowerCase().replace(/[áéíóöőúüűõûô]/g, (c) => 'aeiooouuuouo'['áéíóöőúüűõûô'.indexOf(c)]);
+function huKinds(v) { const k = new Set(); for (const p of huFold(v).split(/[.,;!?\n]+/)) if (!HU_OK.test(p)) for (const [n, rx, ex] of HU_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
+
+
+async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v)]); }
 
 export { foreignKinds };
