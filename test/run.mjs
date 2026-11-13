@@ -35633,7 +35633,7 @@ await test('Backlog 1079 (Folge aus 1076): Abfahrtskontrolle nennt Prüffristen 
   const fn = (name) => { const i = app.indexOf('function ' + name + '('); ok(i >= 0, name); return app.slice(i, app.indexOf('\n}', i)) + '\n}\n'; };
   const today = '2026-11-06'; const tm = '2026-11-07';
   const T = { hu_long: 'HU lang', sp_long: 'SP lang', drv_overdue: 'abgelaufen', c_due_on: 'fällig {d}', planned: 'Geplant', trailer: 'Anhänger', truck: 'Lkw', dc_insp_t: 'Prüfung heute oder morgen', dc_insp_over: 'Prüffrist überschritten', dc_insp_over_hint: 'klären' };
-  const box = new Function('esc', 't', 'fmtD', 'todayMark', 'mk', 'bDate', fn('dcInspItems') + fn('dcInspBox') + 'return dcInspBox;')((x) => String(x), (k) => T[k] || k, (d) => d, (d) => (d === today ? ' (heute)' : d === tm ? ' (morgen)' : ''), (k) => k, (n) => (n ? tm : today));
+  const box = new Function('esc', 't', 'fmtD', 'todayMark', 'mk', 'bDate', 'const drvPlanNote = (r) => (r && r.planned_date && r.planned_note ? " 📝" + r.planned_note : "");' + fn('dcInspItems') + fn('dcInspBox') + 'return dcInspBox;')((x) => String(x), (k) => T[k] || k, (d) => d, (d) => (d === today ? ' (heute)' : d === tm ? ' (morgen)' : ''), (k) => k, (n) => (n ? tm : today));
   eq(box({ next_inspections: [{ kind: 'UVV', next_due_date: '2026-12-01', planned_date: '2026-11-20' }], coupled: null }), '', 'nichts Dringendes: kein Kasten');
   const a = box({ next_inspections: [{ kind: 'HU', next_due_date: '2026-11-30', planned_date: tm }], coupled: { kind: 'anhaenger', plate: 'AH-1', next_inspections: [{ kind: 'SP', next_due_date: today }] } });
   ok(a.includes('data-dcinsp') && a.includes('Prüfung heute oder morgen') && a.includes('<b>HU lang</b>: Geplant 2026-11-07 (morgen)') && a.includes('Anhänger AH-1 – <b>SP lang</b>: fällig 2026-11-06 (heute)') && !a.includes('panel warn'), a);
@@ -41099,6 +41099,32 @@ await test('Backlog 1444 (Folge aus 1442, Blickwinkel „Leitung hat die Prüfte
   eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(4), planned_note: 'Prüfstelle Ost, 7 Uhr' })).status, 200);
   c = await cal(); ok(c.includes('Hinweis zum Termin: Prüfstelle Ost\\, 7 Uhr'), 'DE-Kalender nennt den Hinweis (Komma maskiert)');
   for (const [l, w] of [['uk', 'Примітка до терміну'], ['en', 'Note on the date']]) { await U.fleet.patch('/api/me', { language: l }); ok((await cal()).includes(`${w}: Prüfstelle Ost`), `${l}-Kalender`); }
+});
+
+await test('Backlog 1445 (Blickwinkel „Fahrer bringt den Lkw selbst zur Prüfstelle – Uhrzeit/Ort standen nur in Akte, Werkstattplan und Dispo“): /api/me/vehicles nennt den Hinweis zum geplanten Prüf-/Wartungstermin (nur Termine ab heute) in next_inspections und planned_inspection; Anzeige auf „Mein Fahrzeug“ und in der Abfahrtskontrolle; Hinweistext DE/UK/EN nennt den Fahrer', async () => {
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const mine = async () => (await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === V1);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, evidence: 'Dienstplan (Test 1445)' })).status, 201);
+  ok(await mine(), 'Fahrer ist V1 zugeordnet');
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: day(-300), interval_months: 12, evidence: 'Prüfbuch UVV (Test 1445)' }); eq(r.status, 201);
+  eq((await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(3), planned_note: '7:00 Uhr, Prüfstelle Nord' })).status, 200);
+  let mv = await mine(); let u = (mv.next_inspections || []).find((x) => x.kind === 'UVV');
+  ok(u && u.planned_date === day(3) && u.planned_note === '7:00 Uhr, Prüfstelle Nord', 'next_inspections ' + JSON.stringify(mv.next_inspections));
+  ok(mv.planned_inspection && mv.planned_inspection.kind === 'UVV' && mv.planned_inspection.planned_note === '7:00 Uhr, Prüfstelle Nord', 'planned_inspection ' + JSON.stringify(mv.planned_inspection));
+  // HU ohne belegte Frist: nur als geplanter Termin (planned_inspection) mit Hinweis
+  eq((await U.own.post(`/api/vehicles/${V1}/husp/HU/plan`, { planned_date: day(1), planned_note: 'TÜV-Station Süd, 9 Uhr' })).status, 200);
+  mv = await mine(); ok(mv.planned_inspection && mv.planned_inspection.kind === 'HU' && mv.planned_inspection.planned_note === 'TÜV-Station Süd, 9 Uhr', 'HU ' + JSON.stringify(mv.planned_inspection));
+  // ohne Hinweis kein Feld; vergangener Termin ohne Hinweis
+  eq((await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(3), planned_note: '' })).status, 200);
+  mv = await mine(); u = mv.next_inspections.find((x) => x.kind === 'UVV'); ok(u && !('planned_note' in u), 'Hinweis entfernt ' + JSON.stringify(u));
+  eq((await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(-2), planned_note: 'gestern Halle 2' })).status, 200);
+  mv = await mine(); ok(!JSON.stringify(mv).includes('gestern Halle 2'), 'Hinweis zu vergangenem Termin nicht beim Fahrer');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok((app.match(/drvPlanNote\((r|pi)\)/g) || []).length >= 5, 'Anzeige km-Wartung, Prüftermine, geplanter Prüftermin, Abfahrtskontrolle');
+  ok(app.includes('const drvPlanNote = (r) =>') && app.includes('data-drvplannote'), 'Hilfsfunktion');
+  const { STRINGS } = await import('../public/i18n.js');
+  ok(STRINGS.de.mplan_note_hint.includes('Fahrer') && STRINGS.uk.mplan_note_hint.includes('водієві') && STRINGS.en.mplan_note_hint.includes('driver'), 'Hinweistext nennt den Fahrer');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

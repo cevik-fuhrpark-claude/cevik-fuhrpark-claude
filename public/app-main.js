@@ -1807,7 +1807,7 @@ async function viewHome() {
       ${drvNotes(v.notes)}
       ${v.eval_excluded ? `<p class="small" role="note" data-drvresting><b>⚠ ${esc(t('drv_resting'))}</b></p>` : ''}
       ${v.winter ? `<p class="small" role="note" data-drvwinter><b>❄ ${esc(t('drv_winter').replace('{p}', v.winter.noncompliant.map(posL).join(', ')))}</b></p>` : ''}
-      <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}${v.valid_from ? `<dt>${esc(t('drv_assigned_since'))}</dt><dd data-assignedsince>${fmtD(v.valid_from)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${myPlanned(v)}${drvInspRows(v)}${(v.km_due || []).map((r) => `<dt>${esc(mk(r.kind))}</dt><dd>${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining < 0 ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ` <span class="small">(${esc(t('km_left'))} ${fmtKm(r.km_remaining)})</span>`}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}</span>` : ''}</dd>`).join('')}</dl>${knownDefects(v.known_defects)}${relItems(v.open_items_after_release)}${drvCoupled(v.coupled)}</section>`; }).join('')}`;
+      <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}${v.valid_from ? `<dt>${esc(t('drv_assigned_since'))}</dt><dd data-assignedsince>${fmtD(v.valid_from)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${myPlanned(v)}${drvInspRows(v)}${(v.km_due || []).map((r) => `<dt>${esc(mk(r.kind))}</dt><dd>${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining < 0 ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ` <span class="small">(${esc(t('km_left'))} ${fmtKm(r.km_remaining)})</span>`}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}</span>${drvPlanNote(r)}` : ''}</dd>`).join('')}</dl>${knownDefects(v.known_defects)}${relItems(v.open_items_after_release)}${drvCoupled(v.coupled)}</section>`; }).join('')}`;
 
     else if (mv && !mvOffline) html += `<div class="panel" role="note" data-novehicle>${esc(t('drv_no_vehicle'))}</div>`;
 
@@ -3769,6 +3769,8 @@ async function viewNew(preId) {
 }
 
 
+const drvPlanNote = (r) => (r && r.planned_date && r.planned_note ? `<br><span class="small" data-drvplannote${langAttr(r.planned_note)}>📝 ${esc(t('plan_note_lbl'))}: ${esc(r.planned_note)}</span>` : '');
+
 
 function myPlanned(v) {
   let h = '';
@@ -3777,7 +3779,7 @@ function myPlanned(v) {
   const mw = v.missed_workshop;
   if (mw && mw.date) h += `<dt>${esc(t('planned_ws_short'))}</dt><dd data-wsmissed><span class="chip kritisch">⚠ ${esc(t('drv_ws_missed'))}</span> ${esc(t(mw.return ? 'drv_ws_ret_missed_txt' : 'drv_ws_missed_txt').replace('{d}', fmtD(mw.date)))}</dd>`;
   const pi = v.planned_inspection;
-  if (pi && ![...(v.next_inspections || []), ...(v.km_due || [])].some((r) => r.kind === pi.kind && r.planned_date)) h += `<dt>${esc(mk(pi.kind))}</dt><dd>${esc(t('planned'))} ${fmtD(pi.planned_date)}${todayMark(pi.planned_date)}</dd>`;
+  if (pi && ![...(v.next_inspections || []), ...(v.km_due || [])].some((r) => r.kind === pi.kind && r.planned_date)) h += `<dt>${esc(mk(pi.kind))}</dt><dd>${esc(t('planned'))} ${fmtD(pi.planned_date)}${todayMark(pi.planned_date)}${drvPlanNote(pi)}</dd>`;
   return h;
 }
 
@@ -3806,7 +3808,7 @@ function myVehCached() { try { const c = JSON.parse(localStorage.getItem(`cfp_my
 function drvInspRows(v) {
 
   const dk = (k) => (k === 'HU' ? t('hu_long') : k === 'SP' ? t('sp_long') : mk(k));
-  return (v.next_inspections || []).map((r) => `<dt>${esc(dk(r.kind))}</dt><dd>${fmtD(r.next_due_date)}${r.next_due_date < bDate() ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ''}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}</span>` : ''}</dd>`).join('')
+  return (v.next_inspections || []).map((r) => `<dt>${esc(dk(r.kind))}</dt><dd>${fmtD(r.next_due_date)}${r.next_due_date < bDate() ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ''}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}</span>${drvPlanNote(r)}` : ''}</dd>`).join('')
     + (v.inspections_unclear || []).map((k) => `<dt>${esc(dk(k))}</dt><dd><span class="chip mittel" data-unclear>${esc(t('ms_ungeklaert'))}</span> <span class="small muted" data-unclearwho>${esc(t('drv_unclear_fleet'))}</span></dd>`).join('');
 }
 
@@ -5028,11 +5030,11 @@ function dcInspItems(v, who = '') {
     const parts = [];
     if (r.next_due_date && r.next_due_date < today) parts.push(`${fmtD(r.next_due_date)} <span class="chip kritisch">${esc(t('drv_overdue'))}</span>`);
     else if (r.next_due_date && r.next_due_date <= tm) parts.push(`${esc(t('c_due_on').replace('{d}', fmtD(r.next_due_date)))}${todayMark(r.next_due_date)}`);
-    if (r.planned_date && r.planned_date >= today && r.planned_date <= tm) parts.push(`${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}`);
+    if (r.planned_date && r.planned_date >= today && r.planned_date <= tm) parts.push(`${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}${drvPlanNote(r)}`);
     if (parts.length) out.push({ crit: !!(r.next_due_date && r.next_due_date < today), html: `<li>${who}<b>${esc(dk(r.kind))}</b>: ${parts.join(' · ')}</li>` });
   }
   const pi = v.planned_inspection;
-  if (pi && pi.planned_date >= today && pi.planned_date <= tm && !(v.next_inspections || []).some((r) => r.kind === pi.kind && r.planned_date)) out.push({ crit: false, html: `<li>${who}<b>${esc(dk(pi.kind))}</b>: ${esc(t('planned'))} ${fmtD(pi.planned_date)}${todayMark(pi.planned_date)}</li>` });
+  if (pi && pi.planned_date >= today && pi.planned_date <= tm && !(v.next_inspections || []).some((r) => r.kind === pi.kind && r.planned_date)) out.push({ crit: false, html: `<li>${who}<b>${esc(dk(pi.kind))}</b>: ${esc(t('planned'))} ${fmtD(pi.planned_date)}${todayMark(pi.planned_date)}${drvPlanNote(pi)}</li>` });
   return out;
 }
 function dcInspBox(kv) {

@@ -866,7 +866,7 @@ export async function myVehicles(env, user, envName) {
     env.DB.prepare(`SELECT id, case_no, vehicle_id, status, priority, substr(description,1,300) AS description, created_at, check_item, safety_lock, planned_date, planned_note, parts_expected_date, ready_expected_on, vehicle_location, tow_service, towed_on, vehicle_location_at, workshop_site, reported_driveability, parts_drive_at, reporter_id=? AS mine
       FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
       AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at DESC LIMIT 200`).bind(user.id, envName, ids).all(),
-    env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, planned_date, due_km, interval_km, last_done_km, last_done_date, km_basis_at, updated_at FROM maintenance_rules WHERE vehicle_id IN (SELECT value FROM json_each(?))
+    env.DB.prepare(`SELECT vehicle_id, kind, next_due_date, planned_date, planned_note, due_km, interval_km, last_done_km, last_done_date, km_basis_at, updated_at FROM maintenance_rules WHERE vehicle_id IN (SELECT value FROM json_each(?))
       AND (next_due_date IS NOT NULL OR planned_date IS NOT NULL OR (kind NOT IN ('HU','SP') AND (due_km IS NOT NULL OR (interval_km > 0 AND last_done_km IS NOT NULL)))) ORDER BY next_due_date IS NULL, next_due_date`).bind(ids).all(),
     // letzter km-Rücksprung (Tachotausch) je Fahrzeug – gleiche Regel wie Übersicht/Fahrzeugliste (kmDue → „ungeklärt“, nie ein Rest aus gemischten Zählern)
     env.DB.prepare(`SELECT o.vehicle_id, o.km, o.measured_at, ${KM_DROP_SQL('o.vehicle_id')} AS km_drop FROM odometer_readings o WHERE o.vehicle_id IN (SELECT value FROM json_each(?1))
@@ -955,9 +955,12 @@ export async function myVehicles(env, user, envName) {
       unclearBy.get(vid).push('Tachograph');
     }
   }
-  const nextInsp = (vid) => [...rules.results.filter((r) => r.vehicle_id === vid && r.next_due_date && !['HU', 'SP'].includes(r.kind) && !(r.kind === 'Rückruf' && r.last_done_date)), ...(virtBy.get(vid) || [])].sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)).slice(0, 4).map(({ kind, next_due_date, planned_date }) => ({ kind, next_due_date, planned_date: planned_date >= today ? planned_date : null }));
+  // Backlog 1445 (Blickwinkel „Fahrer bringt den Lkw selbst zur Prüfstelle – Uhrzeit/Ort standen nur in Akte, Werkstattplan und Dispo“):
+  // Hinweis zum geplanten Prüf-/Wartungstermin (Migration 0104) nur zu einem Termin ab heute, wie der Hinweis zum Werkstatttermin (Backlog 438)
+  const pnOf = (vid, kind, pd) => { if (!pd || pd < today) return {}; const r = rules.results.find((x) => x.vehicle_id === vid && x.kind === kind && x.planned_date === pd && x.planned_note); return r ? { planned_note: r.planned_note } : {}; };
+  const nextInsp = (vid) => [...rules.results.filter((r) => r.vehicle_id === vid && r.next_due_date && !['HU', 'SP'].includes(r.kind) && !(r.kind === 'Rückruf' && r.last_done_date)), ...(virtBy.get(vid) || [])].sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)).slice(0, 4).map(({ vehicle_id, kind, next_due_date, planned_date }) => ({ kind, next_due_date, planned_date: planned_date >= today ? planned_date : null, ...pnOf(vehicle_id, kind, planned_date) }));
   // nächster Prüftermin ab heute (eigenes bzw. gekoppeltes Fahrzeug, Backlog 1079)
-  const plannedInsp = (vid) => { const r = rules.results.filter((x) => x.vehicle_id === vid && x.planned_date >= today).sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0]; return r ? { kind: r.kind, planned_date: r.planned_date } : null; };
+  const plannedInsp = (vid) => { const r = rules.results.filter((x) => x.vehicle_id === vid && x.planned_date >= today).sort((a, b) => a.planned_date.localeCompare(b.planned_date))[0]; return r ? { kind: r.kind, planned_date: r.planned_date, ...pnOf(vid, r.kind, r.planned_date) } : null; };
   return {
     vehicles: vs.map((v) => ({
       // Backlog 403: ruhend → Hinweis an den Fahrer
@@ -979,7 +982,7 @@ export async function myVehicles(env, user, envName) {
       last_km: (({ vehicle_id, km, measured_at }) => (vehicle_id ? { vehicle_id, km, measured_at } : null))(kmMap.get(v.id) || {}),
       km_due: rules.results.filter((r) => r.vehicle_id === v.id && !['HU', 'SP'].includes(r.kind)).map((r) => ({ r, k: kmDue(r, kmMap.get(v.id), warnKm) }))
         .filter((x) => x.k && ['ueberfaellig', 'faellig'].includes(x.k.km_status)).sort((a, b) => a.k.km_remaining - b.k.km_remaining).slice(0, 4)
-        .map(({ r, k }) => ({ kind: r.kind, next_due_km: k.next_due_km, km_remaining: k.km_remaining, status: k.km_status, planned_date: r.planned_date >= today ? r.planned_date : null })),
+        .map(({ r, k }) => ({ kind: r.kind, next_due_km: k.next_due_km, km_remaining: k.km_remaining, status: k.km_status, planned_date: r.planned_date >= today ? r.planned_date : null, ...pnOf(v.id, r.kind, r.planned_date) })),
       // eigene Hinweise und die des fest gekoppelten Anhängers bzw. der Zugmaschine (mit Kennzeichen); „gültig bis“ mitgeben – die App blendet
       // abgelaufene auch im Offline-Stand aus (vorher fehlte das Feld, Gespann-Hinweise wurden gelesen, aber nie gezeigt – 17.10.2026)
       // eigene Hinweise vor denen des gekoppelten Fahrzeugs, ohne Kappung (je Fahrzeug höchstens 20 aktive; vorher verdrängten 8 neuere Anhänger-Hinweise
