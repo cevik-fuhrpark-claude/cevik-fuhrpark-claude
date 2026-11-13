@@ -40854,6 +40854,30 @@ await test('Backlog 1433 (Folge aus 1432): Vorgangsliste markiert den verstriche
   ok(cl.includes("${planMissed(c) ? ` <span class=\"chip kritisch\" data-planmissedl style=\"white-space:nowrap\">⚠ ${esc(t('drv_ws_missed'))}</span>`"), 'Marke in der Listenzeile, ohne Umbruch im Wort');
 });
 
+await test('Backlog 1434 (Blickwinkel „Prüftermin war gestern – Durchführung nicht eingetragen“): verstrichener Prüf-/Wartungstermin ohne offenen Auftrag markiert (Übersicht, Akte, HU/SP, „Heute zu tun“); Erfassen der Durchführung leert den Termin; Texte DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: day(-300), interval_months: 12, evidence: 'Prüfbuch UVV (Test)' }); eq(r.status, 201);
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(2) })).status, 200);
+  const row = async () => (await U.fleet.get('/api/maintenance')).data.rows.find((x) => x.id === r.data.id);
+  let x = await row(); eq(x.planned_date, day(2)); eq(x.open_order, null, 'kein Auftrag');
+  // Termin vorbei (Tag verstreicht): Übersicht liefert den Termin weiter (ohne Auftrag), die Oberfläche markiert ihn
+  db.prepare('UPDATE maintenance_rules SET planned_date=? WHERE id=?').run(day(-1), r.data.id);
+  x = await row(); eq(x.planned_date, day(-1), 'vergangener Termin bleibt sichtbar'); eq(x.open_order, null);
+  // Erfassen der Durchführung leert den Termin – ein vergangener Termin bedeutet daher „nicht eingetragen“
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/complete`, { done_date: day(-2), evidence: 'Prüfbuch UVV (Test 2)' })).status, 200);
+  x = await row(); eq(x.planned_date, null, 'Durchführung erfasst → Termin geleert');
+  // Oberfläche
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('const mPlanPast = (pd, order) => !!pd && pd < bDate() && !order;'), 'Regel: vergangen und ohne offenen Auftrag');
+  ok(app.includes("fmtD(r.planned_date)}${mPlanPast(r.planned_date, r.open_order) ? mPlanPastChip() : ''}"), 'Prüftermin-Übersicht');
+  ok(app.includes('mPlanPast(m.planned_date, mOrders.get(m.id))') && app.includes('mPlanPast(x.planned_date, orders && rid && orders.get(rid))'), 'Fahrzeugakte: Wartung und HU/SP');
+  ok(app.includes("['todo_mplan_passed', ov ? ov.rows.filter((r) => mPlanPast(r.planned_date, r.open_order))"), 'Heute zu tun');
+  ok(app.includes('data-mplanpast') && app.includes('white-space:nowrap" data-mplanpast'), 'Marke ohne Umbruch im Wort');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['mplan_past', 'mplan_past_hint', 'todo_mplan_passed']) ok(STRINGS[l][k], `${l} ${k}`); ok(STRINGS[l].mplan_past_hint.includes(STRINGS[l].done), `${l}: Knopfname „${STRINGS[l].done}“ im Hinweis`); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

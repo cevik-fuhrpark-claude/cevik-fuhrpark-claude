@@ -1357,6 +1357,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1421: Werkstätten im Vergleich (Kennzahlen)
 // Backlog 1429 (Blickwinkel „Rückkehrtermin verpasst: Lkw fährt bis zur Teilelieferung und kam am vereinbarten Tag nicht in die Werkstatt“)
 // Backlog 1432: verstrichener Termin in der Vorgangsansicht (Werkstatt/Leitung mit „Termin setzen/verschieben“ bzw. übrige Rollen)
+// Backlog 1434: Prüf-/Wartungstermin verstrichen, Durchführung nicht erfasst
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { S, WST_ST, api, bDate, clipTxt, dispoDayBefore, esc, fmtD, fmtDT, fmtDue, fmtKm, hj, hoMissing, isMgr, mk, mkR, nDays, nextWorkdayAfter, partsWaitDays, pdrOn, plate, plateCmp, posL, rdyOf, recentRepeat, t, tn, wsName } from './app-main.js';
+import { S, WST_ST, api, bDate, clipTxt, dispoDayBefore, esc, fmtD, fmtDT, fmtDue, fmtKm, hj, hoMissing, isMgr, mPlanPast, mk, mkR, nDays, nextWorkdayAfter, partsWaitDays, pdrOn, plate, plateCmp, posL, rdyOf, recentRepeat, t, tn, wsName } from './app-main.js';
 
 
 
@@ -64,6 +64,8 @@ async function fleetTodo() {
 
     ['todo_report_missing', ov && ov.report_missing ? ov.report_missing : [], (x) => `#/vehicles/${encodeURIComponent(x.vehicle_id)}`, (x) => `${x.plate} · ${mk(x.kind)} ${fmtD(x.done_date)}`, ''],
     ['todo_maint_unrecorded', ov ? ov.rows.filter((r) => r.unrecorded_order) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${mk(r.kind)} · ${r.unrecorded_order.case_no} ${t('released_short')} ${fmtD(r.unrecorded_order.closed_at)}`, 'mittel'],
+
+    ['todo_mplan_passed', ov ? ov.rows.filter((r) => mPlanPast(r.planned_date, r.open_order)).sort(asc((r) => r.planned_date)) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${mkR(r)} · ${t('planned_appt')} ${fmtD(r.planned_date)}`, 'mittel'],
     ['todo_inspections', ov ? ov.rows.filter((r) => r.status === 'ueberfaellig' || (r.next_due_date && r.next_due_date <= in7 && r.date_status !== 'erledigt')) : [], (r) => `#/vehicles/${encodeURIComponent(r.vehicle_id)}`, (r) => `${r.plate} · ${mkR(r)} · ${r.km_status === 'ueberfaellig' ? `${t('due_at_km')} ${fmtKm(r.next_due_km)} (${t('km_over')} ${fmtKm(-r.km_remaining)})` : r.next_due_date ? fmtD(r.next_due_date) : (r.next_due_km ? fmtKm(r.next_due_km) : '')} · ${r.planned_date && r.planned_date >= today ? t('planned') + ' ' + fmtD(r.planned_date) : t('no_planned_date')}`, 'mittel'],
     ['todo_tacho', tc ? [...tc.drivers.map((x) => ({ ...x, label: x.display_name, href: '#/drivers/' + x.id })), ...tc.vehicles.map((x) => ({ ...x, label: x.plate, href: '#/vehicles/' + encodeURIComponent(x.id) }))].filter((x) => x.status === 'ueberfaellig' || x.status === 'bald')
 
