@@ -40946,7 +40946,7 @@ await test('Backlog 1437 (Blickwinkel „Werkstatt kommt morgens rein – die UV
   const wb = app.slice(app.indexOf('async function workshopBoard('), app.indexOf('async function workshopBoard(') + 16000);
   ok(wb.includes("const mm = ov.rows.filter((r) => mPlanPast(r.planned_date, r.open_order) && !soon.includes(r) && !(r.kind === 'Rückruf' && r.last_done_date))"), 'Regel wie Übersicht/Akte, nicht doppelt zu „fällig“');
   ok(wb.includes("const mDoneHref = (r) => '#/vehicles/' + encodeURIComponent(r.vehicle_id) + (r.id && /^[\\w-]+$/.test(r.id) ? '?done=' + encodeURIComponent(r.id) : '');") && wb.includes('data-wsmmiss href="${mDoneHref(r)}"'), 'Sprung ins Formular „Erledigt“');
-  ok(wb.includes("${mPlanPast(r.planned_date, r.open_order) ? mPlanPastChip() : ''}${r.km_unclear"), 'Marke an fälligen Zeilen');
+  ok(wb.includes("${mPlanPast(r.planned_date, r.open_order) ? mPlanPastChip() : ''}${r.planned_date && r.planned_date >= today ? "), 'Marke an fälligen Zeilen');
   ok(wb.includes("⚠ ${esc(t('mplan_past'))} ${esc(fmtD(r.planned_date))}") && wb.includes("t('todo_mplan_passed')") && wb.includes("t('mplan_past_hint')"), 'Überschrift, Hinweis, Datum (vorhandene Texte DE/UK/EN)');
 });
 
@@ -41212,6 +41212,22 @@ await test('Backlog 1449 (Blickwinkel „Werkstatt sieht fällige Prüfungen auf
   ok(row && row.days <= 14 && row.planned_date === day(2) && row.planned_note === '9 Uhr TÜV Halle 3', JSON.stringify(row));
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].planned && STRINGS[l].today && STRINGS[l].tomorrow, l);
+});
+await test('Backlog 1450 (Blickwinkel „Leitung schickt die Prüftermin-Liste an den Prüfdienst – Uhrzeit/Ort der vereinbarten Termine fehlen“): Prüftermin-CSV nennt den Hinweis zum geplanten Termin im „Hinweis zur Frist“; Spalten unverändert; ohne Termin kein Hinweis', async () => {
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: day(-30), interval_months: 12, evidence: 'Prüfbuch UVV (Test 1450)' }); eq(r.status, 201);
+  const csv = async () => new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/maintenance?format=csv')).data).split(/\r?\n/);
+  const row = (L) => L.find((l) => l.includes('Test 1450'));
+  eq((await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(3), planned_note: '7:00 Uhr; Prüfstelle "Nord"' })).status, 200);
+  let L = await csv(); ok(L[0].endsWith(';Titel;Hinweis zur Frist;km-Stand vom'), 'Kopf unverändert');
+  const n = L[0].split(';').length;
+  const x = row(L); ok(x.includes(`"Hinweis zum Termin ${day(3).split('-').reverse().join('.')}: 7:00 Uhr; Prüfstelle ""Nord"""`), x);
+  ok(x.includes(';' + day(3).split('-').reverse().join('.') + ';;'), 'Termin-Spalte unverändert: ' + x);
+  let q = false, cnt = 1; for (const ch of x) { if (ch === '"') q = !q; else if (ch === ';' && !q) cnt++; } eq(cnt, n, 'Spaltenzahl trotz „;“ im Hinweis');
+  eq((await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: null, planned_note: '' })).status, 200);
+  L = await csv(); ok(!row(L).includes('Hinweis zum Termin'), 'ohne Termin kein Hinweis');
+  ok((await import('node:fs')).readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1450'), 'API.md');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
