@@ -374,6 +374,7 @@ UI-Teile bis zum nächsten Werktag (Freitag → Montag), Zähler Rückkehrtermin
 UI-Rückkehrtermin verpasst bei Fahrt bis zur Teilelieferung (Backlog 1429): Disposition, Werkstatt-Startseite, Werkstattplan, DE/UK/EN 390/820/1366|ui-rueckkehr-verpasst.py|/tmp/cfp-rueckkehr-verpasst.log
 UI-Werkstatttermin verpasst beim Fahrer (Backlog 1430): Mein Fahrzeug „Termin verstrichen“, DE/UK/EN 390/820/1366|ui-ws-termin-verpasst-fahrer.py|/tmp/cfp-ws-termin-verpasst-fahrer.log
 UI-Werkstatttermin verpasst in der Disposition (Backlog 1431): Terminplan „Termin verstrichen“ zuerst mit Hinweis, DE/UK/EN 390/820/1366|ui-ws-termin-verpasst-dispo.py|/tmp/cfp-ws-termin-verpasst-dispo.log
+UI-Prüftermin verstrichen in der Disposition (Backlog 1436): Terminplan „Termin verstrichen“ mit Hinweis, DE/UK/EN 390/820/1366|ui-pruef-termin-dispo.py|/tmp/cfp-pruef-termin-dispo.log
 UI-Vorgang mit verstrichenem Termin (Backlog 1432/1433): Markierung „Termin verstrichen“ in Vorgang und Liste, Hinweis je Rolle (Inhaber/Disposition), DE/UK/EN 390/820/1366|ui-vorgang-termin-verpasst.py|/tmp/cfp-vorgang-termin-verpasst.log
 UI-Prüftermin verstrichen (Backlog 1434/1435): Marke „Termin verstrichen“ in Prüftermin-Übersicht und Fahrzeugakte, Gruppe in „Heute zu tun“, Abschnitt im Werkstattplan, DE/UK/EN 390/820/1366|ui-pruef-termin-verstrichen.py|/tmp/cfp-pruef-termin-verstrichen.log
 UI-Liefertermin geändert bei Fahrt bis zur Teilelieferung (Backlog 1038): Formularhinweis, Disposition erhält Hinweis, DE/UK/EN 390/820/1366|ui-liefertermin-teilefahrt.py|/tmp/cfp-liefertermin-teilefahrt.log

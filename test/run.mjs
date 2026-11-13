@@ -40813,7 +40813,7 @@ await test('Backlog 1431 (Blickwinkel „Disposition plant einen Lkw ein, dessen
   // Oberfläche
   const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("(r.overdue || []).filter((i) => i.type === 'case' && i.status === 'werkstatt_freigegeben' && i.planned_date)") && app.includes('data-dwsmissed') && app.includes("tn('dispo_ws_missed_n', miss.length)"), 'Dispo-Terminplan');
-  ok(app.includes("if (!r || (!r.days.length && !miss.length)) return '';"), 'auch ohne kommende Termine');
+  ok(app.includes("if (!r || (!r.days.length && !miss.length && !mmiss.length)) return '';"), 'auch ohne kommende Termine'); // Backlog 1436: + verstrichene Prüftermine
   const { PLURALS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(PLURALS[l].dispo_ws_missed_n && PLURALS[l].dispo_ws_missed_n.one.includes('{n}') && PLURALS[l].dispo_ws_missed_n.other.includes('{n}'), `${l} Text`);
   ok(PLURALS.uk.dispo_ws_missed_n.few && PLURALS.uk.dispo_ws_missed_n.many, 'uk Formen');
@@ -40901,6 +40901,36 @@ await test('Backlog 1435 (Blickwinkel „Werkstatt hatte gestern eine UVV geplan
   p = await plan(); ok(!p.maintenance_missed.some((i) => i.id === r.data.id), 'nach dem Erfassen weg');
   const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('const mm = r.maintenance_missed || [];') && app.includes('data-mmiss') && app.includes("⚠ ${esc(t('mplan_past'))} ${fmtD(i.planned_date)}"), 'Abschnitt im Werkstattplan');
+});
+
+await test('Backlog 1436 (Blickwinkel „Disposition plant einen Lkw ein, dessen UVV-/Prüftermin gestern verstrichen ist“): Dispo erhält verstrichene Prüf-/Wartungstermine (ohne Nachweistext), die Tafel nennt sie mit Datum und Hinweis; Texte DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const disp = await (async () => { const x = await U.own.post('/api/users', { username: 'w.dispo2', display_name: 'Dispo', role: 'dispatch', environment: 'test' }); const c = new Client(worker, e, 'w.dispo2'); await c.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); return c; })();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: day(-30), interval_months: 12, evidence: 'Prüfbuch UVV (Test)' }); eq(r.status, 201);
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(1) })).status, 200);
+  const plan = async () => { const x = await disp.get('/api/workshop/plan?days=7'); eq(x.status, 200); return x.data; };
+  const missed = (p) => [...(p.maintenance_missed || []).map((i) => [i.id, i.planned_date]), ...(p.maintenance_due || []).filter((i) => i.past_planned_date).map((i) => [i.id, i.past_planned_date])];
+  let p = await plan(); eq(missed(p).length, 0, 'kommender Termin: nicht verstrichen'); ok(p.days.some((d) => d.items.some((i) => i.id === r.data.id)), 'kommender Termin im Terminplan');
+  db.prepare('UPDATE maintenance_rules SET planned_date=? WHERE id=?').run(day(-1), r.data.id);
+  p = await plan(); eq(JSON.stringify(missed(p)), JSON.stringify([[r.data.id, day(-1)]]), 'Disposition erhält den verstrichenen Termin');
+  ok(!JSON.stringify(p.maintenance_missed).includes('Prüfbuch'), 'kein Nachweistext für die Disposition');
+  ok(!p.days.some((d) => d.items.some((i) => i.id === r.data.id)), 'nicht mehr unter den kommenden Tagen');
+  // fällig: über `past_planned_date`
+  db.prepare('UPDATE maintenance_rules SET next_due_date=? WHERE id=?').run(day(3), r.data.id);
+  p = await plan(); eq(JSON.stringify(missed(p)), JSON.stringify([[r.data.id, day(-1)]]), 'fällig: einmal, mit verstrichenem Termin');
+  // neuer Termin → weg
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(2) })).status, 200);
+  p = await plan(); eq(missed(p).length, 0, 'neuer Termin');
+  // Oberfläche
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const dp = app.slice(app.indexOf('async function dispoPlanned('), app.indexOf('async function dispoPlanned(') + 5000);
+  ok(dp.includes("(r.maintenance_missed || []).map((i) => ({ ...i, pd: i.planned_date }))") && dp.includes("(r.maintenance_due || []).filter((i) => i.past_planned_date)"), 'beide Quellen');
+  ok(dp.includes("if (!r || (!r.days.length && !miss.length && !mmiss.length)) return '';"), 'auch ohne kommende Termine');
+  ok(dp.includes('data-dmplanmissed href="#/vehicles/') && dp.includes("⚠ ${esc(t('mplan_past'))} ${esc(fmtD(i.pd))}") && dp.includes("tn('dispo_mplan_missed_n', mmiss.length)") && dp.includes('missRows.concat(mmissRows, r.days'), 'Zeilen und Hinweis vor den kommenden Tagen');
+  const { PLURALS, STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(PLURALS[l].dispo_mplan_missed_n && PLURALS[l].dispo_mplan_missed_n.one.includes('{n}') && PLURALS[l].dispo_mplan_missed_n.other.includes('{n}'), `${l} Text`); ok(STRINGS[l].dispo_mplan_missed_n.includes('{n}'), `${l} Grundtext`); }
+  ok(PLURALS.uk.dispo_mplan_missed_n.few && PLURALS.uk.dispo_mplan_missed_n.many, 'uk Formen');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
