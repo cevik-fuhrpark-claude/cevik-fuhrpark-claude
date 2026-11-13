@@ -1,4 +1,4 @@
-# [CLAUDE] UI-Test Backlog 1421 (Blickwinkel „Inhaber vergleicht zwei Werkstätten“): Kennzahlen zeigen ohne Werkstattfilter den Abschnitt
+# [CLAUDE] UI-Test Backlog 1421/1423 (Blickwinkel „Inhaber vergleicht zwei Werkstätten“): Kennzahlen zeigen ohne Werkstattfilter den Abschnitt
 # „Werkstätten im Vergleich“ (eine Zeile je Werkstatt), mit Werkstattfilter nicht; DE/UK/EN, 390/820/1366 px, kein waagerechtes Scrollen, keine Skriptfehler.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
@@ -28,6 +28,13 @@ with sync_playwright() as p:
         x=api('POST',f'/api/cases/{cid}/commands',{'action':'approve_repair','command_id':str(uuid.uuid4()),'expected_version':ver,'payload':{'workshop_site':ws},'note':'freigegeben'})
         ok+= x['s']==200
     check(ok==3,f'3 Aufträge an zwei Werkstätten freigegeben ({ok})')
+    # Backlog 1423: erster Dortmunder Auftrag freigegeben mit Prüfpunkt, gleicher Prüfpunkt am selben Fahrzeug erneut aus einer Kontrolle gemeldet
+    cs=[x for x in api('GET','/api/cases?f=all')['d']['cases'] if 'Werkstattvergleich Bremse 0' in (x.get('description') or '')]
+    if cs:
+        api('POST',f"/__dev/case-item?case={cs[0]['id']}&item=bremse&released=1")
+        r=api('POST','/api/cases',{'vehicle_id':cs[0]['vehicle_id'],'description':'Bremse erneut','priority':'mittel','driveability':'fahrbereit','request_key':'wv-again'})
+        if r['s'] in (200,201): api('POST',f"/__dev/case-item?case={r['d']['id']}&item=bremse")
+    check(bool(cs),'Auftrag für Wiederkehr gefunden')
     for lang in ['de','uk','en']:
         for w,h in [(390,844),(820,1180),(1366,900)]:
             c=br.new_context(accept_downloads=True,viewport={'width':w,'height':h},locale={'de':'de-DE','uk':'uk-UA','en':'en-GB'}[lang]); q=c.new_page(); q.goto(B)
@@ -38,12 +45,15 @@ with sync_playwright() as p:
             check(HEAD[lang] in q.inner_text('#kpiws h3'),f'{lang} {w}px: Überschrift')
             rows=q.locator('#kpiws tr[data-kws]').count()
             check(rows>=2,f'{lang} {w}px: je Werkstatt eine Zeile ({rows})')
+            ag=q.locator('#kpiws tr[data-kws=DORTMUND] [data-kwsag]')
+            check(ag.count()==1 and '1' in ag.inner_text(),f'{lang} {w}px: Prüfpunkt erneut binnen 90 Tagen ({ag.inner_text() if ag.count() else "-"})')
+            check(q.locator('#kpiws tr[data-kws=DORTMUND] [data-kwsagl] a').count()==2,f'{lang} {w}px: Links Auftrag → erneute Meldung')
             check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {w}px: kein waagerechtes Scrollen')
             if SHOTS: q.locator('#kpiws').scroll_into_view_if_needed(); q.locator('#kpiws').screenshot(path=f"{SHOTS}/kpi_werkstaetten_{lang}_{w}.png")
             if lang=='de' and w==1366:
                 with q.expect_download() as dl: q.click('#kcsvw')
                 d=dl.value; txt=open(d.path(),encoding='utf-8-sig').read()
-                check('werkstaetten' in d.suggested_filename and txt.startswith('Werkstatt;Werkstattname;') and 'DORTMUND;Werkstatt Dortmund;' in txt,f'CSV je Werkstatt ({d.suggested_filename})')
+                check('werkstaetten' in d.suggested_filename and txt.startswith('Werkstatt;Werkstattname;') and 'DORTMUND;Werkstatt Dortmund;' in txt and 'Prüfpunkt erneut binnen 90 Tagen' in txt.splitlines()[0],f'CSV je Werkstatt ({d.suggested_filename})')
                 q.select_option('#kf2 select[name=site]','MUENCHEN'); q.click('#kf2 button:not([type])'); q.wait_for_timeout(800)
                 check(q.locator('#kpiws').count()==0,'mit Werkstattfilter kein Vergleich')
             check(not errs,f'{lang} {w}px: keine Skriptfehler {errs[:1]}')

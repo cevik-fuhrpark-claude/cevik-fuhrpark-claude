@@ -83,6 +83,15 @@ http.createServer(async (req, res) => {
     if (pdays) env.DB.db.prepare(`UPDATE cases SET parts_expected_date = date(parts_expected_date, '-${pdays} days') WHERE id=? AND parts_expected_date IS NOT NULL`).run(id);
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ cases: Number(a), events: Number(b) })); return;
   }
+  // Nur lokal: Vorgang als freigegeben mit Prüfpunkt bzw. als neue Kontroll-Meldung zu einem Prüfpunkt markieren (Backlog 1423, scripts/ui-kpi-werkstaetten.py –
+  // der volle Ablauf Kontrolle → Reparatur → Abschlusskontrolle wäre im UI-Test zu lang)
+  if (url.pathname === '/__dev/case-item' && req.method === 'POST') {
+    const id = String(url.searchParams.get('case') || ''); const item = String(url.searchParams.get('item') || '').slice(0, 40);
+    const n = url.searchParams.get('released') === '1'
+      ? env.DB.db.prepare(`UPDATE cases SET status='fahrzeug_freigegeben', closed_at=?, check_item=? WHERE id=?`).run(new Date().toISOString(), item, id).changes
+      : env.DB.db.prepare(`UPDATE cases SET origin='kontrolle', check_item=? WHERE id=?`).run(item, id).changes;
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ changed: Number(n) })); return;
+  }
   // Nur lokal: Begründungen der km-Stände eines Fahrzeugs leeren – erzeugt „Rücksprung ohne Begründung“ wie aus Alt-Import (scripts/ui-km-begruendung.py)
   if (url.pathname === '/__dev/odo-clear-note' && req.method === 'POST') {
     const n = env.DB.db.prepare('UPDATE odometer_readings SET note=NULL WHERE vehicle_id=?').run(String(url.searchParams.get('vehicle') || '')).changes;

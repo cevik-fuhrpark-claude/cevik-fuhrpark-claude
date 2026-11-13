@@ -35119,16 +35119,55 @@ await test('Backlog 1422 (Folge aus 1421): Kennzahlen-CSV je Werkstatt (Werkstat
   const r = await U.fleet.req('GET', `/api/reports/kpi?${q}&format=csv&part=workshops`); eq(r.status, 200);
   ok(String(r.headers.get('content-disposition')).includes('werkstaetten'), 'Dateiname');
   const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(r.data).replace(/^\ufeff/, '').trim().split('\r\n');
-  const hd = lines[0].split(';'); eq(hd.length, 16, lines[0]); ok(hd[0] === 'Werkstatt' && hd[1] === 'Werkstattname' && hd[13] === 'Rückgaben zur Nacharbeit', lines[0]);
+  const hd = lines[0].split(';'); eq(hd.length, 19, lines[0]); ok(hd[0] === 'Werkstatt' && hd[1] === 'Werkstattname' && hd[13] === 'Rückgaben zur Nacharbeit', lines[0]);
   const dor = lines.find((l) => l.startsWith('DORTMUND;')).split(';'); eq(dor[1], 'Werkstatt Dortmund'); eq(dor[2], '1'); eq(dor[13], '1', 'eine Rückgabe'); eq(dor[14], '1');
   ok(lines.some((l) => l.startsWith('MUENCHEN;Werkstatt München;1;')), 'München');
-  const un = lines.find((l) => l.startsWith('ohne Werkstatt;')); ok(un && un.split(';').length === 16 && un.split(';')[2] === '1' && un.split(';').slice(3).every((x) => x === ''), String(un));
+  const un = lines.find((l) => l.startsWith('ohne Werkstatt;')); ok(un && un.split(';').length === 19 && un.split(';')[2] === '1' && un.split(';').slice(3).every((x) => x === ''), String(un));
   ok(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='reports.kpi.export' AND detail LIKE '%workshops%'`).get().n === 1, 'Export protokolliert');
   eq((await U.fleet.req('GET', `/api/reports/kpi?${q}&format=csv&part=quatsch`)).status, 200, 'unbekannter Teil → je Fahrzeug');
   eq((await U.driver.req('GET', `/api/reports/kpi?${q}&format=csv&part=workshops`)).status, 403, 'Fahrer');
   const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('id="kcsvw"') && app.includes("['#kcsvw', 'workshops', 'werkstaetten']"), 'App: Knopf');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].kpi_csv_ws, l);
+});
+
+await test('Backlog 1423/1424 (Folge aus 1421, Blickwinkel „gleicher Mangel kehrt nach der Freigabe zurück“): je Werkstatt freigegebene Aufträge mit Prüfpunkt und davon binnen 90 Tagen erneut gemeldet (mit Link zur erneuten Meldung) (nicht abgelehnt, keine Dublette, anderes Fahrzeug/anderer Prüfpunkt/nach 90 Tagen zählt nicht), „Beobachtung läuft“; CSV-Spalten; App/Texte DE/UK/EN', async () => {
+  const { e, U, cmd, newCase, toRepair } = await freshWorld(); const db = e.DB.db;
+  const a = await toRepair({ description: 'Bremse vorne' }); const b = await toRepair({ description: 'Licht hinten' }); const c2 = await toRepair({ description: 'Reifen' });
+  const m1 = await newCase({ description: 'München' }); eq((await cmd(U.fleet, m1, 'approve_repair', { workshop_site: 'MUENCHEN' }, 'München')).status, 200);
+  const day = 86400000; const iso = (ms) => new Date(ms).toISOString(); const now = Date.now();
+  const rel = db.prepare(`UPDATE cases SET status='fahrzeug_freigegeben', closed_at=?, check_item=? WHERE id=?`);
+  rel.run(iso(now - 3 * day), 'bremse', a); // kommt wieder
+  rel.run(iso(now - 2 * day), 'licht', b); // kommt nicht wieder (Beobachtung läuft)
+  rel.run(iso(now - 1 * day), 'reifen', c2); // nur abgelehnt/Dublette wieder → zählt nicht
+  const veh = (id) => db.prepare('SELECT vehicle_id FROM cases WHERE id=?').get(id).vehicle_id;
+  const again = async (id, item, extra = '') => { const n = await newCase({ description: 'erneut ' + item }); db.prepare(`UPDATE cases SET origin='kontrolle', check_item=?, vehicle_id=?${extra} WHERE id=?`).run(item, veh(id), n); return n; };
+  await again(a, 'bremse');
+  await again(c2, 'reifen', ", status='abgelehnt'");
+  const dupe = await again(c2, 'reifen'); db.prepare('UPDATE cases SET duplicate_of=? WHERE id=?').run(c2, dupe);
+  await again(b, 'bremse'); // anderer Prüfpunkt am Fahrzeug von b
+  const { berlinDate } = await import('../src/util.js'); const m = berlinDate().slice(0, 7); const q = `from=${m}&to=${m}`;
+  const r = await U.fleet.get(`/api/reports/kpi?${q}`); eq(r.status, 200, JSON.stringify(r.data));
+  const dor = r.data.by_workshop.find((x) => x.site === 'DORTMUND'); const muc = r.data.by_workshop.find((x) => x.site === 'MUENCHEN');
+  eq(dor.released_check_items, 3, JSON.stringify(dor)); eq(dor.again_90d, 1, 'nur Bremse kam wieder'); eq(dor.again_window_open, 2, 'Licht und Reifen: Beobachtung läuft');
+  eq(muc.released_check_items, 0); eq(muc.again_90d, 0); eq(muc.again_window_open, 0);
+  ok(r.data.definitions.by_workshop.includes('again_90d') && r.data.definitions.by_workshop.includes('90 Tagen'), 'Definition');
+  // Backlog 1424: Link je Auftrag zur ersten erneuten Meldung
+  eq(dor.again_cases.length, 1, JSON.stringify(dor.again_cases)); const ac = dor.again_cases[0];
+  eq(ac.id, a); eq(ac.check_item, 'bremse'); ok(ac.case_no && ac.again_case_no && ac.again_id && ac.again_id !== a && ac.plate, JSON.stringify(ac));
+  eq(db.prepare('SELECT check_item FROM cases WHERE id=?').get(ac.again_id).check_item, 'bremse'); eq(muc.again_cases.length, 0);
+  // Freigabe länger als 90 Tage vor der erneuten Meldung → zählt nicht; Beobachtung abgeschlossen
+  db.prepare(`UPDATE cases SET closed_at=? WHERE id=?`).run(iso(now - 120 * day), a);
+  const r2 = await U.fleet.get(`/api/reports/kpi?${q}`); const d2 = r2.data.by_workshop.find((x) => x.site === 'DORTMUND');
+  eq(d2.again_90d, 0, 'nach 90 Tagen nicht mehr'); eq(d2.again_cases.length, 0, 'keine Links'); eq(d2.again_window_open, 2, 'alte Freigabe: Beobachtung beendet');
+  const csv = await U.fleet.req('GET', `/api/reports/kpi?${q}&format=csv&part=workshops`); eq(csv.status, 200);
+  const lines = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data).replace(/^\ufeff/, '').trim().split('\r\n');
+  const hd = lines[0].split(';'); eq(hd[16], 'Freigegeben mit Prüfpunkt'); eq(hd[17], 'Prüfpunkt erneut binnen 90 Tagen'); eq(hd[18], 'Beobachtung läuft (unter 90 Tage)');
+  const dl = lines.find((l) => l.startsWith('DORTMUND;')).split(';'); eq(dl.slice(16).join(), '3,0,2', lines.join('|'));
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-kwsag') && app.includes("t('kpi_ws_again')") && app.includes("t('kpi_ws_again_open')") && app.includes('data-kwsagl') && app.includes('x.again_90d > x.again_cases.length'), 'App (Backlog 1424: Links)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].kpi_ws_again.includes('{n}') && STRINGS[l].kpi_ws_again.includes('{m}') && STRINGS[l].kpi_ws_again_open.includes('{n}') && STRINGS[l].kpi_ws_rule.includes('90'), l);
 });
 
 await test('Backlog 1420 (Folge aus 1419, Ersatzbeschaffung): Kostenbericht je Fahrzeug sortierbar nach Kosten, Kosten je km, Erstzulassung (älteste zuerst) und km-Stand – fehlende Angaben am Ende; Texte DE/UK/EN', async () => {
