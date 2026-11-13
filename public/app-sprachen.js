@@ -330,8 +330,45 @@ const LT_KINDS = [['brake', /\bstabd\S*\s+(?:\S+\s+)?(?:neveik|nestabd|silpn|nel
   ['door', /\bdur(?:ys|is|u|yse)\b\s+(?:\S+\s+)?(?:neuzsidar|neatsidar|neuzsirakin|neatsirakin|uzstrig|nesidaro)|\b(?:hidraulin\S*\s+)?(?:bort|keltuv|liftas|rampa)\S*\s+(?:\S+\s+)?(?:neveik|nekyla|nenusileid|gedim|sugedo|klaid)/, /lang/]];
 const ltFold = (s) => String(s || '').toLowerCase().replace(/[ąčęėįšųūž]/g, (c) => 'aceeisuuz'['ąčęėįšųūž'.indexOf(c)]);
 function ltKinds(v) { const k = new Set(); for (const p of ltFold(v).split(/[.,;!?\n]+/)) if (!LT_OK.test(p)) for (const [n, rx, ex] of LT_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
+const LV_OK = /\bsalabo|\bnomain|\bsaremont|\b(?:jau|atkal)\s+(?:darbojas|strada)\b|\b(?:darbojas|strada)\s+(?:atkal|normali)\b|\bviss\s+(?:kartiba|labi)|\bbez\s+problem/;
+const LV_KINDS = [['brake', /\bbremz\S*\s+(?:\S+\s+)?(?:nedarboj|nestrada|nebremz|vajas|neietur|atteic|pazud)|\bnebremz|\bvaj\S*\s+bremz|\b(?:krit|samazinas|pazud)\S*\s+(?:\S+\s+)?(?:gaisa\s+)?spiedien|\bspiedien\S*\s+(?:\S+\s+)?(?:krit|samazin)|\b(?:pus|laiz)\s+gaisu\b/, /rokas|stavbremz|luktur|gaism|asistent|\bpat[si]\b|\bpasa\b|iemesl|riep|spilven|avarijas/],
+  ['fire', /\bugunsgrek|\baizdeg\S*\s+(?:\S+\s+)?(?:kabin|dzinej|motor|riten|riep|vad|piekab)|\b(?:kabin\S*|dzinej\S*|motor\S*|riten\S*|riep\S*|piekab\S*|vadi)\s+(?:\S+\s+)?deg\b|\bdeg\s+(?:kabine|dzinejs|motors|ritenis|riepa|piekabe|vadi)\b|\b(?:dumi|dumu|kup|kupej\S*)\b|\bdeguma|\bsvilum/, /izputej|slapetaj|wydech|vyhlop|auspuh|egzoz|esapament|kipufog|vyfuk|ismetim|duslintuv|ugunsdzes|lamp|kontrol|luktur|gaism/],
+  ['flat', /\bpardur\S*|\b(?:parsprag\S*|plisa|plisusi|sprag\S*|nolaid\S*|nolaist\S*|tuks\S*)\s+(?:\S+\s+)?riep|\briep\S*\s+(?:\S+\s+)?(?:parsprag|plisa|plisusi|nolaid|nolaist|tuks|pardurt|sprag)/, /spilven|tent|slotin/],
+  ['steer', /\bstur(?:e|i|es|ei)\b\s+(?:\S+\s+)?(?:iestreg|iestredz|bloket|nobloket|gruti|nedarboj|nestrada|negriez|klib)|\b(?:velk|rauj)\s+(?:\S+\s+)?(?:pa\s+)?(?:labi|kreisi)\b/],
+  ['leak', /\b(?:ella|ellu|ellas|dizel|degviel|antifriz|dzesesanas\s+skidr|skidr|adblue)\S*\s+(?:\S+\s+)?(?:tek|pil|sucas|izteceja|noplud)\S*|\b(?:tek|pil|sucas|izteceja|noplud)\S*\s+(?:\S+\s+)?(?:ella|ellu|dizel|degviel|antifriz|dzesesanas|skidr|adblue)/],
+  ['acc', /\bavarij|\bsadursm|\bietriec|\bsadur(?:os|as)\b|\batsit(?:os|as)\b|\baizker|\bnoskrap|\bsasit(?:u|a)\s+(?:\S+\s+)?(?:masin|auto|kravas)/, /rezim|akmen|skemb|gaism|signal|zime|trijstur|bremz/],
+  ['injury', /\bievainot|\bsavainoj|\batr(?:a|o|ajai)\s+palidzib|\bslimnic/],
+  ['parkbrake', /\b(?:rokas\s+bremz|stavbremz)\S*\s+(?:\S+\s+)?(?:neturas|neietur|nedarboj|nestrada|neatlaiz|iestreg)|\b(?:aizripoja|noripoja|sakustejas|aizbrauca)\s+(?:\S+\s+)?(?:pati|pats|pasa)\b/],
+  ['nostart', /\bneiedarboj|\bnevar\s+(?:\S+\s+)?iedarbin|\bstarter\S*\s+(?:\S+\s+)?(?:nedarboj|nestrada|negriez)/, /agregat|saldet|refrizerator|kondicion|apkur|sild|webasto|autonom/],
+  ['mirror', /\bspogul\S*\s+(?:\S+\s+)?(?:noluz|saplis|nolauz|noraut|karaj|nedarboj|sasist|ieplis)|\b(?:noluz|saplis|nolauzt|noraut|sasist)\S*\s+(?:\S+\s+)?spogul/],
+  ['lights', /\b(?:luktur|gaism|spuldz|virzienraditaj|pagrieziena\s+raditaj|migluktur)\S*\s+(?:\S+\s+)?(?:nespid|nedeg|nedarboj|nestrada|izdeg|saplis|sasist)|\b(?:nespid|nedeg)\S*\s+(?:\S+\s+)?(?:luktur|gaism|spuldz)|\bizdeg\S*\s+(?:\S+\s+)?(?:spuldz|luktur)/, /kontrol|panel|ekran|displej/],
+  ['warnlight', /\b(?:kontrol\S*\s+)?lamp(?:ina|inas|a)\b\s+(?:\S+\s+)?(?:deg\b|mirgo|iedeg)|\b(?:deg|mirgo|iedeg\S*)\s+(?:\S+\s+){0,2}(?:kontrol\S*|lampin\S*|lampa)\b|\bkontrol(?:lamp|spuldz)\S*\s+(?:\S+\s+)?(?:deg\b|mirgo|iedeg)/],
+  ['glass', /\b(?:vejstikl|stikl)\S*\s+(?:\S+\s+)?(?:ieplis|saplis|plaisa|sasist|ieplais)|\b(?:ieplis|saplis|plaisa|sasist)\S*\s+(?:\S+\s+)?(?:vejstikl|stikl)/, /spogul|akmen|skemb/],
+  ['window', /\blog(?:s|a|i|u)\b\s+(?:\S+\s+)?(?:nenolaiz|necel|nedarboj|nestrada|iestreg|iestredz|neatver|neaizver)/, /slotin|tiritaj/],
+  ['batt', /\b(?:akumulator|baterij)\S*\s+(?:\S+\s+)?(?:izlad|tuks|vajs|vaj\b|neuzlad|nosed|miris)|\b(?:izlad|nosed)\S*\s+(?:\S+\s+)?(?:akumulator|baterij)/, /kontrol|lamp/],
+  ['tacho', /\btahograf\S*\s+(?:\S+\s+)?(?:nedarboj|nestrada|nenolasa|nelasa|kluda|kludu|bojat|nepienem)|\bkart(?:e|i|es)\b\s+(?:\S+\s+)?(?:iestreg|iestredz|nenolasa|nelasa|pazaudet|nozagt|bojat)|\b(?:pazaudeju|pazaudeta|nozaga|nozagta)\s+(?:\S+\s+)?(?:vaditaj\S*\s+)?kart|\bnevaru\s+(?:iznemt|izvilkt)\s+(?:\S+\s+)?kart|\bvaditaj\S*\s+kart\S*\s+(?:\S+\s+)?(?:nedarboj|nestrada|bojat)/, /degviel|maksajum|bankas|kredit/],
+  ['coupling', /\b(?:piekab|puspiekab)\S*\s+(?:\S+\s+)?(?:atkabin|neatkabin|nesakabin|nepiekabin|nekabin)|\b(?:sakab|seglu\s+sakab|seglierice)\S*\s+(?:\S+\s+)?(?:nenosledz|nenosleg|nedarboj|nestrada|iestreg|nesledz|bojat)/],
+  ['dryfuel', /\b(?:beidzas|beidzies|beigusies|pietruka|izbeidzas)\s+(?:\S+\s+)?(?:degviel|dizel)|\bnav\s+(?:vairs\s+)?(?:degviel|dizel)|\b(?:degviel|dizel)\S*\s+(?:\S+\s+)?(?:beidzas|beidzies|beigusies|pietruka)/, /agregat|saldet|adblue|kart/],
+  ['engine', /\b(?:dzinej|motor)\S*\s+(?:\S+\s+)?(?:parkarst|sakarst|nevelk|noslap|slap|raust|zaude\s+jaud)|\bavarijas\s+rezim|\b(?:nav|zaude|truks)\S*\s+(?:\S+\s+)?jaud/, /agregat|bremz|gultn/],
+  ['tyre', /\briep\S*\s+(?:\S+\s+)?(?:bojat|iegriez|nodil|nolietot|pump|burbul|zaude\s+gais|laiz\s+gais|maz\s+gais)/, /parsprag|plis|sprag|nolaid|nolaist|tuks|pardur|slotin|tent/],
+  ['reefer', /\b(?:saldetaj|refrizerator|agregat|dzesesanas\s+(?:agregat|iekart))\S*\s+(?:\S+\s+)?(?:nedzese|nesalde|nedarboj|nestrada|trauksm|kluda|kludu|bojat|izsledz)/, /kabin|ledusskap/],
+  ['susp', /\b(?:gaisa\s+)?spilven\S*\s+(?:\S+\s+)?(?:plis|parplis|sprag|parsprag|laiz|bojat|nolaid)|\bpiekar\S*\s+(?:\S+\s+)?(?:nedarboj|bojat|nestrada)|\b(?:piekab|puspiekab|vilcej)\S*\s+(?:\S+\s+)?(?:saskieb|nolie|sveras|zemu)/, /drosib|stur/],
+  ['gear', /\bneiesledz\S*\s+(?:\S+\s+)?(?:parnes|atrum)|\bnevar\s+ieslegt\s+(?:\S+\s+)?(?:parnes|atrum)|\b(?:atrumkarb|parnesumkarb)\S*\s+(?:\S+\s+)?(?:kluda|kludu|nedarboj|nestrada|iestreg|bojat)|\bsajug\S*\s+(?:\S+\s+)?(?:slid|nedarboj|nestrada|izdeg|sadeg)/],
+  ['climate', /\b(?:kondicionier|klimat|apkur|sildit|webasto|autonom\S*\s+apkur)\S*\s+(?:\S+\s+)?(?:nedarboj|nestrada|nesilda|nedzese|neiesledz|bojat)/, /sedekl|spogul/],
+  ['tarp', /\btent\S*\s+(?:\S+\s+)?(?:saples|saplis|plis|caurum|pardurt|bojat)|\bcaurum\S*\s+(?:\S+\s+)?tent/],
+  ['exhaust', /\b(?:izputej|troksna\s+slapetaj|slapetaj)\S*\s+(?:\S+\s+)?(?:nokrit|karaj|caur|skal|ieplis|noluz|atdal)/],
+  ['visib', /\b(?:slotin|tiritaj|stiklu\s+tiritaj)\S*\s+(?:\S+\s+)?(?:nedarboj|nestrada|netira|noluz|bojat)|\b(?:stikl|vejstikl|logs)\S*\s+(?:\S+\s+)?(?:aizsvist|svist|aizsvid|rasoj)/],
+  ['seat', /\b(?:drosibas\s+)?jost\S*\s+(?:\S+\s+)?(?:neaizsprad|nedarboj|iestreg|saplis|neietur|neturas)|\bsedekl\S*\s+(?:\S+\s+)?(?:saluz|noluz|nedarboj|nestrada|neregul|logas|kustas)/, /sild/],
+  ['wheel', /\b(?:skruv|uzgriezn)\S*\s+(?:\S+\s+){0,2}(?:valig|atskruv|truks|nokrit|izkrit)|\b(?:disk|ritendisk)\S*\s+(?:\S+\s+)?(?:ieplis|plaisa|saliekt|saluz)|\b(?:rumb|gultn|ritenis)\S*\s+(?:\S+\s+)?(?:karst|sakarst|parkarst|duc|klab|klib)/, /bremz/],
+  ['stuck', /\b(?:iestreg|iestredz|iespru|iegrim)\S*\s+(?:\S+\s+){0,3}(?:dubl|snieg|smilt|purv)/],
+  ['lost', /\b(?:pazaudeju|pazaudet\S*|pazuda)\s+(?:\S+\s+)?(?:atsleg|tehnisk|registracijas\s+apliecib|apliecib)|\batsleg\S*\s+(?:\S+\s+)?(?:pazaudet|pazud|nevaru\s+atrast)|\bnevaru\s+atrast\s+(?:\S+\s+)?atsleg/],
+  ['numplate', /\b(?:numurzim|valsts\s+numur|numur)\S*\s+(?:\S+\s+)?(?:nokrit|pazaudet|nozagt|noluz|nav\s+salasam|nesalasam|pazud)/, /apgaism|gaism|spuldz|telefon/],
+  ['adas', /\b(?:asistent|radar|sensor|kamer|kruiza\s+kontrol|tempomat)\S*\s+(?:\S+\s+){0,3}(?:nedarboj|nestrada|kluda|kludu|izsledz|bojat)|\bbremze\s+(?:\S+\s+)?(?:pats|pati|bez\s+iemesl)/],
+  ['door', /\bdurv\S*\s+(?:\S+\s+)?(?:neaizver|neatver|neaizsledz|neatsledz|iestreg|iestredz)|\b(?:hidraulisk\S*\s+)?(?:bort|lift|pacelaj|rampa)\S*\s+(?:\S+\s+)?(?:nedarboj|nestrada|necel|nenolaiz|kluda|bojat)/, /\blog/]];
+const lvFold = (s) => String(s || '').toLowerCase().replace(/[āčēģīķļņšūž]/g, (c) => 'acegiklnsuz'['āčēģīķļņšūž'.indexOf(c)]);
+function lvKinds(v) { const k = new Set(); for (const p of lvFold(v).split(/[.,;!?\n]+/)) if (!LV_OK.test(p)) for (const [n, rx, ex] of LV_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
 
 
-async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v)]); }
+async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v)]); }
 
 export { foreignKinds };
