@@ -35167,7 +35167,7 @@ await test('Backlog 1423/1424 (Folge aus 1421, Blickwinkel „gleicher Mangel ke
   const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes('data-kwsag') && app.includes("t('kpi_ws_again')") && app.includes("t('kpi_ws_again_open')") && app.includes('data-kwsagl') && app.includes('x.again_90d > x.again_cases.length'), 'App (Backlog 1424: Links)');
   const { STRINGS } = await import('../public/i18n.js');
-  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].kpi_ws_again.includes('{n}') && STRINGS[l].kpi_ws_again.includes('{m}') && STRINGS[l].kpi_ws_again_open.includes('{n}') && STRINGS[l].kpi_ws_rule.includes('90'), l);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].kpi_ws_again.includes('{n}') && STRINGS[l].kpi_ws_again.includes('{m}') && STRINGS[l].kpi_ws_again_open.includes('{n}') && STRINGS[l].kpi_ws_rule.includes('90') && STRINGS[l].help_kpi_s.includes('90'), l);
 });
 
 await test('Backlog 1420 (Folge aus 1419, Ersatzbeschaffung): Kostenbericht je Fahrzeug sortierbar nach Kosten, Kosten je km, Erstzulassung (älteste zuerst) und km-Stand – fehlende Angaben am Ende; Texte DE/UK/EN', async () => {
