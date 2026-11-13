@@ -896,7 +896,7 @@ export function maintenanceIcs(ov, stamp = new Date().toISOString(), lang = 'de'
   // geplante Werkstatttermine (ab heute) als eigene Termine ohne Erinnerung – nur gespeicherte Plan-Daten, nichts berechnet
   const today = ov.today || berlinDate();
   for (const r of ov.rows) if (r.planned_date && r.planned_date >= today) events.push({ uid: `${uidOf(r)}-plan`, date: r.planned_date, summary: I.tx('maint_plan', { kind: I.kind(r.kind), plate: r.plate || r.vehicle_id }),
-    description: I.tx('maint_plan_desc') + (r.next_due_date ? ' · ' + I.tx('maint_plan_due', { d: I.d(r.next_due_date) }) : '') });
+    description: I.tx('maint_plan_desc') + (r.next_due_date ? ' · ' + I.tx('maint_plan_due', { d: I.d(r.next_due_date) }) : '') + (r.planned_note ? ' · ' + I.tx('plan_note', { n: r.planned_note }) : '') }); // Backlog 1444: Hinweis zum Termin
   // gewählter Standort im Kalendernamen (wie Verträge/Werkstattplan) – sonst zwei gleichnamige Kalender beim Import (20.10.2026)
   return icsCalendar(`${I.tx('cal_maint')}${ov.site ? ' – ' + (ov.site === 'ohne' ? I.tx('no_site') : ov.site) : ''}${maintIcsSel(I, ov.export)}`, events, stamp);
 }

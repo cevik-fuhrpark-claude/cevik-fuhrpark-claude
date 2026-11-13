@@ -41089,6 +41089,18 @@ await test('Backlog 1443 (Folge aus 1442, Blickwinkel „UVV aller Lkw an einem 
   ok(readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1443'), 'API.md');
 });
 
+await test('Backlog 1444 (Folge aus 1442, Blickwinkel „Leitung hat die Prüftermine als Kalender im Handy – die Uhrzeit der Prüfstelle fehlt dort“): Prüftermin-Kalender (ICS) nennt den Hinweis zum geplanten Termin in der Beschreibung (DE/UK/EN), ohne Hinweis unverändert', async () => {
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: day(-30), interval_months: 12, evidence: 'Prüfbuch UVV (Test 1444)' }); eq(r.status, 201);
+  const cal = async () => { const x = (await U.fleet.get('/api/maintenance?format=ics')).data; return (typeof x === 'string' ? x : new TextDecoder().decode(x)).replace(/\r\n[ \t]/g, ''); };
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(4) })).status, 200);
+  let c = await cal(); ok(c.includes(`-plan`) && !c.includes('Hinweis zum Termin'), 'ohne Hinweis kein Zusatz');
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(4), planned_note: 'Prüfstelle Ost, 7 Uhr' })).status, 200);
+  c = await cal(); ok(c.includes('Hinweis zum Termin: Prüfstelle Ost\\, 7 Uhr'), 'DE-Kalender nennt den Hinweis (Komma maskiert)');
+  for (const [l, w] of [['uk', 'Примітка до терміну'], ['en', 'Note on the date']]) { await U.fleet.patch('/api/me', { language: l }); ok((await cal()).includes(`${w}: Prüfstelle Ost`), `${l}-Kalender`); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
