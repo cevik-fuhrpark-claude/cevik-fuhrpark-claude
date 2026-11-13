@@ -38160,7 +38160,7 @@ await test('Backlog 1407 (Blickwinkel „Fahrer schreibt die Meldung auf Türkis
     ['fren tutmuyor ve direksiyon ağır', 'brake,steer']]) is(x, k);
   for (const x of ['egzozdan siyah duman çıkıyor', 'fren tamir edildi', 'lastik değiştirildi, sorun yok', 'lastik patladı ama değiştirildi', 'frende sorun yok', 'fren sorunu yok', 'lastik patlak değil', 'ön camıma taş çarptı', 'yangın söndürücü eksik',
     'Bremse defekt', 'Reifen geplatzt', 'brakes not working', 'flat tyre', 'oil leak', 'гальма не працюють', 'Fahrer Kaza', 'carpet in the cab is dirty', 'Fire extinguisher missing']) is(x, '');
-  ok(app.includes("for (const k of trKinds(dv)) $('#' + k).hidden = false; for (const k of plKinds(dv)) $('#' + k).hidden = false; $('#noise').hidden = !NOISE_HINT.test(dv)"), 'Meldeformular: türkische (und seit 1453 polnische) Hinweise vor dem Geräusch-Hinweis (der sonst zusätzlich erschiene)');
+  ok(app.includes("for (const k of fkSet) $('#' + k).hidden = false; $('#noise').hidden = !NOISE_HINT.test(dv)") && app.includes('async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v)]); }'), 'Meldeformular: türkische (und seit 1453 polnische) Hinweise vor dem Geräusch-Hinweis (der sonst zusätzlich erschiene)');
   ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const x of ['fren tutmuyor', 'lastik patladı', 'direksiyon kilitlendi', 'duman çıkıyor', 'yağ kaçırıyor']) { ok(STRINGS[l].help_report_s.includes(x), 'Hilfe Melden ' + l + ': ' + x); ok(trKinds(x).size === 1, 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
@@ -41265,7 +41265,7 @@ await test('Backlog 1453 (Blickwinkel „Fahrer schreibt die Meldung auf Polnisc
   for (const x of ['hamulce naprawione', 'opona wymieniona, wszystko ok', 'opona pękła ale już wymieniona', 'dym z wydechu', 'czarny dym z wydechu', 'kamień uderzył w szybę', 'brak gaśnicy', 'poduszka powietrzna',
     'ogrzewanie fotela nie działa', 'dzwoni pogotowie techniczne', 'utknąłem w korku', 'agregat: brak paliwa', 'kamień w oponie', 'nie wiem',
     'Bremse defekt', 'Reifen geplatzt', 'brakes not working', 'flat tyre', 'oil leak', 'гальма не працюють', 'fren tutmuyor', 'lastik patladı']) is(x, '');
-  ok(app.includes("for (const k of trKinds(dv)) $('#' + k).hidden = false; for (const k of plKinds(dv)) $('#' + k).hidden = false; $('#noise').hidden = !NOISE_HINT.test(dv)"), 'Meldeformular: polnische Hinweise vor dem Geräusch-Hinweis');
+  ok(app.includes("for (const k of fkSet) $('#' + k).hidden = false; $('#noise').hidden = !NOISE_HINT.test(dv)") && app.includes('async function foreignKinds(v) { return new Set([...trKinds(v), ...plKinds(v), ...roKinds(v)]); }'), 'Meldeformular: polnische Hinweise vor dem Geräusch-Hinweis');
   ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   for (const id of [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1])) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
   const fl = app.split('\n').find((l) => l.startsWith('const FIRE_HINT')); const FIRE = new Function('return ' + fl.slice(fl.indexOf('=') + 1).replace(/;\s*(\/\/.*)?$/, ''))();
@@ -41274,6 +41274,37 @@ await test('Backlog 1453 (Blickwinkel „Fahrer schreibt die Meldung auf Polnisc
   for (const l of ['de', 'uk', 'en']) for (const x of ['hamulce nie działają', 'złapałem gumę', 'kierownica zablokowana', 'dym z kabiny', 'cieknie olej', 'agregat nie chłodzi', 'zgubiłem kluczyki']) { ok(STRINGS[l].help_report_s.includes(x), 'Hilfe Melden ' + l + ': ' + x); ok(plKinds(x).size === 1, 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-polnisch.py'), 'UI-Prüfung in pruefen.sh');
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.6, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,60 %)');
+});
+await test('Backlog 1454 (Blickwinkel „Fahrer schreibt die Meldung auf Rumänisch“, Backlog 195, Folge aus 1407/1453): „frânele nu funcționează“, „am făcut pană“, „volanul e blocat“, „iese fum din cabină“, „curge ulei“, „am avut un accident“, „motorul nu pornește“ u. a. → dieselben Hinweise wie polnische Stichwörter, auch ohne ă/î/ș/ț; Reparaturvermerk, „fum din eșapament“, Steinschlag, Stingător, Sitzheizung ohne; Stichwort-Tabellen TR/PL/RO im still nachgeladenen Modul app-sprachen.js (Reserve Start-Modul)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = ['const RO_OK', 'const RO_KINDS', 'const roFold', 'function roKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const RO_KINDS' ? "['door'" : h, i)) + 1); }).join('');
+  const roKinds = new Function(src + 'return roKinds;')();
+  const is = (x, k) => eq([...roKinds(x)].sort().join(','), k, x);
+  for (const [x, k] of [['frânele nu funcționează','brake'],['FRANELE NU MERG','brake'],['nu mai frânează','brake'],['pierde aer, scade presiunea','brake'],['frâna de mână nu ține','parkbrake'],['camionul a plecat singur la vale','parkbrake'],
+['iese fum din cabină','fire'],['miroase a ars','fire'],['cabina a luat foc','fire'],['am făcut pană','flat'],['a explodat anvelopa','flat'],['cauciucul e dezumflat','flat'],
+['volanul e blocat','steer'],['trage în dreapta','steer'],['curge ulei','leak'],['picură motorină','leak'],['am avut un accident','acc'],['am avut o tamponare, sunt rănit','acc'],['sunt rănit','injury'],
+['motorul nu pornește','nostart'],['oglinda e ruptă','mirror'],['farul nu funcționează','lights'],['s-a ars becul de la stop','lights'],['s-a aprins martorul de motor','warnlight'],
+['parbrizul e crăpat','glass'],['geamul nu se deschide','window'],['bateria e descărcată','batt'],['tahograful nu citește cardul','tacho'],['semiremorca nu se cuplează','coupling'],
+['am rămas fără motorină','dryfuel'],['motorul se supraîncălzește','engine'],['anvelopa e tăiată','tyre'],['agregatul nu răcește','reefer'],['perna de aer e spartă','susp'],['viteza nu intră','gear'],['ambreiajul patinează','gear'],
+['clima nu funcționează','climate'],['prelata e ruptă','tarp'],['țeava de eșapament e ruptă','exhaust'],['ștergătoarele nu funcționează','visib'],['centura nu se închide','seat'],['prezoanele sunt slăbite','wheel'],
+['m-am împotmolit în noroi','stuck'],['am pierdut cheile','lost'],['numărul de înmatriculare a căzut','numplate'],['asistentul de bandă nu funcționează','adas'],['frânează singur','adas'],['ușa nu se închide','door'],['liftul nu funcționează','door'],
+['frânele nu funcționează și volanul e blocat','brake,steer']]) is(x, k);
+  for (const x of ['frânele reparate', 'anvelopa înlocuită, totul ok', 'fum din eșapament', 'fum negru din eșapament', 'o piatră a lovit parbrizul', 'lipsește stingătorul', 'încălzirea scaunului nu funcționează', 'am sunat la asistența rutieră', 'nu știu',
+    'Bremse defekt', 'Reifen geplatzt', 'brakes not working', 'flat tyre', 'гальма не працюють', 'fren tutmuyor', 'hamulce nie działają']) is(x, '');
+  is('perna de aer pierde aer', 'susp');
+  ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  for (const id of [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1])) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of ['frânele nu funcționează', 'am făcut pană', 'volanul e blocat', 'iese fum din cabină', 'curge ulei', 'motorul nu pornește', 'oglinda e ruptă', 'parbrizul e crăpat', 'bateria e descărcată', 'tahograful nu citește cardul', 'agregatul nu răcește', 'ambreiajul patinează', 'am pierdut cheile']) { ok(STRINGS[l].help_report_s.includes(x), 'Hilfe Melden ' + l + ': ' + x); ok(roKinds(x).size === 1, 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
+  // Modul-Aufteilung: Tabellen nur in app-sprachen.js, im Start-Modul nur der stille Platzhalter; Offline-Hülle enthält das Modul
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  for (const n of ['const TR_KINDS', 'const PL_KINDS', 'const RO_KINDS', 'function trKinds', 'function plKinds', 'function roKinds']) { ok(!main.includes(n), 'nicht im Start-Modul: ' + n); ok(lang.includes(n), 'in app-sprachen.js: ' + n); }
+  ok(main.includes("async function foreignKinds(...a) { return (await lazyModule('sprachen', 1)).foreignKinds(...a); }"), 'stiller Platzhalter (kein „Lädt…“ über dem Formular)');
+  ok(lang.includes('export { foreignKinds };'), 'Export');
+  ok(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8').includes("'/app-sprachen.js'"), 'Offline-Hülle (SHELL)');
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-rumaenisch.py'), 'UI-Prüfung in pruefen.sh');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 % nach der Auslagerung)');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
