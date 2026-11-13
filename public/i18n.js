@@ -4118,3 +4118,7 @@ Object.assign(STRINGS.en, { plan_past_maint: 'Date {d} is in the past – the ap
 Object.assign(STRINGS.de, { plan_past_confirm: 'Der Termin {d} liegt in der Vergangenheit und gilt sofort als verstrichen (Werkstatt, Disposition und Leitung sehen „Termin verstrichen“). Trotzdem speichern?' });
 Object.assign(STRINGS.uk, { plan_past_confirm: 'Дата {d} у минулому й одразу вважається пропущеною (майстерня, диспетчерська та керівництво бачать «Термін минув»). Усе одно зберегти?' });
 Object.assign(STRINGS.en, { plan_past_confirm: 'The date {d} is in the past and counts as missed straight away (workshop, dispatch and management will see “Date passed”). Save anyway?' });
+// Backlog 1451: Werkstatt-Startseite – heute geplante Prüfungen mit späterer Frist
+Object.assign(STRINGS.de, { ws_mplan_today: 'Heute geplante Prüfungen (Frist später)', ws_mplan_today_hint: 'Termin vorgezogen – nach der Prüfung „Erledigt“ mit Nachweis eintragen.' });
+Object.assign(STRINGS.uk, { ws_mplan_today: 'Перевірки, заплановані на сьогодні (строк пізніше)', ws_mplan_today_hint: 'Термін перенесено на раніше – після перевірки внесіть «Виконано» з підтвердженням.' });
+Object.assign(STRINGS.en, { ws_mplan_today: 'Inspections planned for today (due later)', ws_mplan_today_hint: 'Brought forward – after the inspection record “Done” with proof.' });

@@ -41229,6 +41229,22 @@ await test('Backlog 1450 (Blickwinkel „Leitung schickt die Prüftermin-Liste a
   L = await csv(); ok(!row(L).includes('Hinweis zum Termin'), 'ohne Termin kein Hinweis');
   ok((await import('node:fs')).readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1450'), 'API.md');
 });
+await test('Backlog 1451 (Blickwinkel „Werkstatt hat die UVV auf heute vorgezogen, Frist erst in zwei Monaten – die Startseite zeigt den Termin nicht“): Werkstatt-Startseite nennt heute geplante Prüfungen außerhalb von „Prüfungen fällig“ mit Hinweis zum Termin und Sprung ins Formular „Erledigt“; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i = app.indexOf('function workshopBoard('); ok(i >= 0, 'workshopBoard'); const wb = app.slice(i, app.indexOf('\n}', i));
+  ok(wb.includes("const mt = ov.rows.filter((r) => r.planned_date === today && !soon.includes(r) && !r.open_order && !(r.kind === 'Rückruf' && r.last_done_date))"), 'Auswahl: heute geplant, nicht schon unter „fällig“, ohne Auftrag');
+  ok(wb.includes('data-wsmtoday href="${mDoneHref(r)}"') && wb.includes('${mPlanNote(r.planned_note)}</span></a>`).join') && wb.indexOf('const mDoneHref') < wb.indexOf('const mt ='), 'Sprung „Erledigt“, Hinweis zum Termin');
+  ok(wb.indexOf('id="wsmtoday"') > wb.indexOf('const soon =') && wb.indexOf('id="wsmtoday"') < wb.indexOf('id="wsmmiss"'), 'Reihenfolge');
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', next_due_date: day(60), evidence: 'Prüfbuch UVV (Test 1451)' }); eq(r.status, 201, JSON.stringify(r.data));
+  eq((await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(0), planned_note: '10 Uhr Halle 2' })).status, 200);
+  const row = (await U.ws.get('/api/maintenance')).data.rows.find((y) => y.id === r.data.id);
+  ok(row && row.days > 14 && row.planned_date === BERLIN_TODAY && row.planned_note === '10 Uhr Halle 2' && !row.open_order, JSON.stringify(row));
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ws_mplan_today && STRINGS[l].ws_mplan_today_hint && STRINGS[l].ws_mplan_today_hint.includes(STRINGS[l].done), l);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

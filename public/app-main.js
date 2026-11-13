@@ -1732,6 +1732,10 @@ async function workshopBoard() {
 
 
     const mDoneHref = (r) => '#/vehicles/' + encodeURIComponent(r.vehicle_id) + (r.id && /^[\w-]+$/.test(r.id) ? '?done=' + encodeURIComponent(r.id) : '');
+
+
+    const mt = ov.rows.filter((r) => r.planned_date === today && !soon.includes(r) && !r.open_order && !(r.kind === 'Rückruf' && r.last_done_date)).sort((a, b) => plateCmp(a.plate, b.plate));
+    if (mt.length) html += `<h2 id="wsmtoday">${esc(t('ws_mplan_today'))} <span class="chip">${mt.length}</span></h2><p class="small muted">${esc(t('ws_mplan_today_hint'))}</p><div class="list">${mt.map((r) => `<a class="row p-niedrig" data-wsmtoday href="${mDoneHref(r)}">${plate(r.plate)}<span class="title">${esc(mkR(r))}${r.next_due_date ? ' · ' + fmtD(r.next_due_date) : ''}</span><span class="sub wrap">📅 ${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}${mPlanNote(r.planned_note)}</span></a>`).join('')}</div>`;
     const mm = ov.rows.filter((r) => mPlanPast(r.planned_date, r.open_order) && !soon.includes(r) && !(r.kind === 'Rückruf' && r.last_done_date)).sort((a, b) => a.planned_date.localeCompare(b.planned_date) || plateCmp(a.plate, b.plate));
     if (mm.length) html += `<h2 id="wsmmiss">${esc(t('todo_mplan_passed'))} <span class="chip mittel">${mm.length}</span></h2><p class="small muted">${esc(t('mplan_past_hint'))}</p><div class="list">${mm.map((r) => `<a class="row p-mittel" data-wsmmiss href="${mDoneHref(r)}">${plate(r.plate)}<span class="title">${esc(mkR(r))}</span><span class="chip kritisch" style="white-space:nowrap">⚠ ${esc(t('mplan_past'))} ${esc(fmtD(r.planned_date))}</span></a>`).join('')}</div>`;
 
