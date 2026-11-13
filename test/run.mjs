@@ -25397,7 +25397,7 @@ await test('Backlog 524–526 (Blickwinkel „Teile für drei wartende Aufträge
   const r = await U.ws.get('/api/cases?status=wartet_teile&ws=DORTMUND&limit=500'); eq(r.status, 200); ok(r.data.cases.some((c) => c.id === id), '524: Abfrage der Oberfläche liefert den Auftrag');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("`/api/cases?status=wartet_teile&ws=${encodeURIComponent(site)}&limit=500`") && app.includes("nDays(d)))}` : ''}${partsEta(c)}</div>"), '524');
-  ok(app.includes("c.parts_expected_date <= bDate(1)).sort((a, b) => a.parts_expected_date.localeCompare(b.parts_expected_date) || dayOrder(a, b))"), '525');
+  ok(app.includes("c.parts_expected_date <= nwd).sort((a, b) => a.parts_expected_date.localeCompare(b.parts_expected_date) || dayOrder(a, b))"), '525 (seit Backlog 1428 bis zum nächsten Werktag)');
 });
 
 await test('Backlog 527–531 (Blickwinkel „Quartalsende: offene Versicherungsfälle“): Filter „Nachfassen fällig“ und „reguliert ohne Erstattung“ mit Zählern, offene älteste zuerst, CSV mit Standort/Nachfassen, Ausdruck nennt die Suche, Reiter „zurückgezogen“', async () => {
@@ -40697,6 +40697,23 @@ await test('Backlog 1427 (Blickwinkel „Disposition sieht am Montag, welche Lkw
   for (const l of ['de', 'uk', 'en']) { for (const k of ['dispo_pdrive_back', 'dispo_pdrive_noplan', 'dispo_pdrive_week', 'dispo_pdrive_week_t']) ok(STRINGS[l][k], `${l} ${k}`); ok(STRINGS[l].dispo_pdrive_back.includes('{d}') && STRINGS[l].dispo_pdrive_week.includes('{n}'), `${l} Platzhalter`); }
   const help = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
   for (const x of ['Rückkehr diese Woche: N', 'Returning this week: N', 'Повернення цього тижня: N']) ok(help.includes(x), 'Hilfe ' + x);
+});
+
+await test('Backlog 1428 (Blickwinkel „Werkstatt sieht am Freitag, welche Teile nächste Woche kommen und welche Lkw dafür zurück müssen“): Abschnitt „Teile … erwartet“ der Werkstatt-Startseite reicht bis zum nächsten Werktag (Fr → Mo, vor Feiertagen weiter), Überschrift nennt den Tag; Zähler „Rückkehrtermin noch nicht vereinbart“ für Fahrzeuge, die bis zur Lieferung fahren; Texte/Hilfe DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const nwd = nextWorkdayAfter(today);\n  const partsDue = open.filter((c) => c.status === 'wartet_teile' && c.parts_expected_date && c.parts_expected_date <= nwd)"), 'bis zum nächsten Werktag');
+  ok(!app.includes("c.parts_expected_date <= bDate(1)).sort"), 'nicht mehr „bis morgen“');
+  ok(app.includes("k === 'ws_parts_due' && nwd !== bDate(1) ? t('ws_parts_due_wd').replace('{d}', () => fmtDue(nwd)) : t(k)"), 'Überschrift mit Tag nur, wenn nicht morgen');
+  ok(app.includes('data-wspdrnoplan') && app.includes("pdrOn(c) && !(c.planned_date && c.planned_date >= today)"), 'Zähler ohne kommenden Rückkehrtermin');
+  // Kalenderlogik aus dem Quelltext (bundesweite Feiertage)
+  const { federalHoliday } = await import('../public/holidays.js');
+  const nwdF = new Function('federalHoliday', 'return ' + app.match(/function nextWorkdayAfter\(iso\) \{\n[\s\S]*?\n\}\n/)[0])(federalHoliday);
+  eq(nwdF('2026-11-13'), '2026-11-16', 'Freitag → Montag'); eq(nwdF('2026-11-16'), '2026-11-17', 'Montag → Dienstag'); eq(nwdF('2026-11-14'), '2026-11-16', 'Samstag → Montag');
+  eq(nwdF('2026-12-24'), '2026-12-28', 'Weihnachten'); eq(nwdF('2026-12-31'), '2027-01-04', 'Neujahr + Wochenende'); eq(nwdF('2027-03-25'), '2027-03-30', 'Ostern');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].ws_parts_due_wd && STRINGS[l].ws_parts_due_wd.includes('{d}'), `${l} ws_parts_due_wd`); ok(STRINGS[l].ws_pdr_noplan && STRINGS[l].ws_pdr_noplan.includes('{n}'), `${l} ws_pdr_noplan`); }
+  const help = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const x of ['reicht dieser Abschnitt bis zum nächsten Werktag und nennt ihn', 'reaches to the next working day and names it', 'охоплює наступний робочий день і називає його']) ok(help.includes(x), 'Hilfe ' + x);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

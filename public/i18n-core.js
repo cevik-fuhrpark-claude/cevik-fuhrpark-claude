@@ -58,6 +58,7 @@ export { CHECK_LABELS } from './check-labels.js';
 // [CLAUDE] Panne & Notfall (Rufnummern für unterwegs; fest nur Notruf 112)
 // [CLAUDE] Backlog 431: Bundesland für landesweite Feiertage (Erreichbarkeit einer Rufnummer)
 // [CLAUDE] Hilfe: Kennzahlen Instandhaltung lesen (Inhaber/Fuhrparkleitung)
+ // Backlog 1428
 // Backlog 1425: Werkstatttermin und Teile-Liefertermin passen nicht zusammen (nur Hinweis bei der Eingabe)
 // Backlog 1042 (Blickwinkel „Inhaber prüft am Monatsende offene Kostenfreigaben“): feste Sortierung nach Wartezeit, Link aus dem Bericht
 // Backlog 618: HU/SP mit erheblichen/gefährlichen Mängeln ohne spätere bestandene Prüfung (Fahrzeugliste, Gespann)
