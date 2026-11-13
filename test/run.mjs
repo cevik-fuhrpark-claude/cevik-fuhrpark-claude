@@ -41244,6 +41244,8 @@ await test('Backlog 1451 (Blickwinkel „Werkstatt hat die UVV auf heute vorgezo
   ok(row && row.days > 14 && row.planned_date === BERLIN_TODAY && row.planned_note === '10 Uhr Halle 2' && !row.open_order, JSON.stringify(row));
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ws_mplan_today && STRINGS[l].ws_mplan_today_hint && STRINGS[l].ws_mplan_today_hint.includes(STRINGS[l].done), l);
+  const { HELP } = await import('../public/i18n.js').then((m) => ({ HELP: m.STRINGS }));
+  for (const l of ['de', 'uk', 'en']) ok(String(HELP[l].help_ws_s).includes(HELP[l].ws_mplan_today) && String(HELP[l].help_ws_s).includes(HELP[l].inspections_due + ' (≤ 14'), 'Hilfe Werkstatt ' + l);
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
