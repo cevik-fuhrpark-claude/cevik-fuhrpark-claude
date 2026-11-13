@@ -1101,6 +1101,10 @@ export async function planMaintenance(env, user, ruleId, body) {
   if (d && !r.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
   if (d && ONE_TIME_KINDS.includes(r.kind) && r.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
   const afterDue = d && r.next_due_date && d > r.next_due_date ? { after_due: r.next_due_date } : {};
+  // Backlog 1440 (Blickwinkel „Werkstatt trägt nachträglich einen Termin in der Vergangenheit ein – gemeint war die Durchführung oder das Jahr ist
+  // vertippt“): ein Termin vor heute gilt sofort als verstrichen (Werkstattplan, Dispo-Tafel, Agent `MAINTENANCE_PLAN_MISSED`, CSV). Gespeichert wird
+  // weiter (Nachtrag einer Absprache bleibt möglich), die Antwort meldet es aber additiv mit `in_past: true` – die App warnt dann.
+  if (d && d < berlinDate()) afterDue.in_past = true;
   if (hasExp) {
     const stale = () => conflict('version_conflict', 'Der Termin wurde zwischenzeitlich geändert. Bitte prüfen.', { current_planned_date: r.planned_date ?? null });
     if ((r.planned_date ?? null) === d) return { ok: true, planned_date: d, unchanged: true, ...afterDue };
@@ -1213,7 +1217,7 @@ export async function planMaintenanceBatch(env, user, body) {
         .bind(user.id, now, JSON.stringify(planned.map((p) => [uuid(), p.vehicle_id, JSON.stringify({ kind: p.kind, planned_date: d, batch: true, ...(p.previous ? { replaced: p.previous } : {}) })]))),
     ]);
   }
-  return { ok: true, planned_date: d, planned: planned.map(({ previous, ...p }) => (previous ? { ...p, replaced: previous } : p)), unchanged, skipped };
+  return { ok: true, planned_date: d, ...(d < today ? { in_past: true } : {}), planned: planned.map(({ previous, ...p }) => (previous ? { ...p, replaced: previous } : p)), unchanged, skipped };
 }
 
 // Sammelanlage (Backlog 405, Blickwinkel „Wintercheck vor der Saison für alle Lkw“): denselben Prüftermin (Art, Nachweis/Bezeichnung, optional

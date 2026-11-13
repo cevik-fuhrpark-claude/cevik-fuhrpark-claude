@@ -41007,6 +41007,27 @@ await test('Backlog 1439 (Blickwinkel „Leitung exportiert die Prüftermine fü
   L = await csv(); ok(!row(L).includes('verstrichen'), 'offener Auftrag: kein Zusatz');
 });
 
+await test('Backlog 1440 (Blickwinkel „Werkstatt trägt nachträglich einen Termin in der Vergangenheit ein – gemeint war die Durchführung oder das Jahr ist vertippt“): Prüftermin vor heute wird gespeichert, aber mit `in_past` gemeldet (auch Sammeltermin); App warnt am Feld und nach dem Speichern (DE/UK/EN)', async () => {
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: day(-30), interval_months: 12, evidence: 'Prüfbuch UVV (Test 1440)' }); eq(r.status, 201);
+  let x = await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(1) }); eq(x.status, 200); eq(x.data.in_past, undefined, 'morgen: kein Zusatz');
+  x = await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: BERLIN_TODAY }); eq(x.data.in_past, undefined, 'heute: kein Zusatz');
+  x = await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(-1) }); eq(x.status, 200, 'gespeichert (Nachtrag bleibt möglich)'); eq(x.data.in_past, true, 'gestern → in_past');
+  eq((await U.ws.get('/api/maintenance')).data.rows.find((y) => y.id === r.data.id).planned_date, day(-1), 'Termin steht');
+  x = await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(-1), expected_planned_date: day(-1) }); eq(x.data.unchanged, true); eq(x.data.in_past, true, 'auch unverändert gemeldet');
+  x = await U.ws.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: null }); eq(x.status, 200); eq(x.data.in_past, undefined, 'Entfernen ohne Zusatz');
+  x = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: day(-2), ids: [r.data.id] }); eq(x.status, 200, JSON.stringify(x.data)); eq(x.data.in_past, true, 'Sammeltermin');
+  x = await U.fleet.post('/api/maintenance/plan-batch', { planned_date: day(2), ids: [r.data.id], replace: true }); eq(x.data.in_past, undefined, 'Sammeltermin künftig');
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const x = !!v && v < bDate() && v !== el.defaultValue;"), 'Hinweis nur bei geändertem Datum vor heute');
+  ok(app.includes("pastWatch($$('#af input[name=planned_date]'), 'plan_past_case');") && app.includes("pastWatch($$('form[data-hsplan] input[name=planned_date]'), 'plan_past_maint');"), 'Werkstatttermin am Vorgang und Prüftermin in der Akte');
+  ok(app.includes("if (r && r.in_past) toast(t('plan_past_saved')"), 'Meldung nach dem Speichern');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['plan_past_maint', 'plan_past_case', 'plan_past_saved']) ok(STRINGS[l][k] && STRINGS[l][k].includes('{d}'), `${l}.${k}`);
+  ok(readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('`in_past: true`'), 'API.md');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
