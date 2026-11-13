@@ -40991,6 +40991,22 @@ await test('Backlog 1438 (Blickwinkel „Fuhrparkagent: Prüftermin war gestern 
   const fs = await import('node:fs'); ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('`MAINTENANCE_PLAN_MISSED`'), 'API.md');
 });
 
+await test('Backlog 1439 (Blickwinkel „Leitung exportiert die Prüftermine für die Monatsbesprechung – der UVV-Termin von gestern steht als normaler Termin in der Liste“): CSV nennt verstrichenen Werkstatttermin ohne Auftrag im „Hinweis zur Frist“; Spalten unverändert, kommender Termin bzw. offener Auftrag ohne Zusatz', async () => {
+  const { U, V1, e } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const r = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', last_done_date: day(-30), interval_months: 12, evidence: 'Prüfbuch UVV (Test 1439)' }); eq(r.status, 201);
+  const csv = async () => new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get('/api/maintenance?format=csv')).data).split(/\r?\n/);
+  const row = (L) => L.find((l) => l.includes('Test 1439'));
+  const NOTE = `Werkstatttermin ${day(-1).split('-').reverse().join('.')} verstrichen – Durchführung nicht eingetragen.`;
+  eq((await U.fleet.post(`/api/maintenance/${r.data.id}/plan`, { planned_date: day(1) })).status, 200);
+  let L = await csv(); ok(L[0].endsWith(';Titel;Hinweis zur Frist;km-Stand vom'), 'Kopf unverändert'); ok(!row(L).includes('verstrichen'), 'kommender Termin ohne Zusatz');
+  const n = L[0].split(';').length;
+  db.prepare('UPDATE maintenance_rules SET planned_date=? WHERE id=?').run(day(-1), r.data.id);
+  L = await csv(); const c = row(L).split(';'); eq(c.length, n, 'Spaltenzahl'); eq(c.at(-2), NOTE, 'Hinweis zur Frist'); eq(c[L[0].split(';').indexOf('Geplanter Werkstatttermin')], day(-1).split('-').reverse().join('.'), 'Termin bleibt in seiner Spalte');
+  const o = await U.fleet.post(`/api/maintenance/${r.data.id}/order`, { workshop_site: 'DORTMUND', note: 'UVV', request_key: rk() }); eq(o.status, 201, JSON.stringify(o.data));
+  L = await csv(); ok(!row(L).includes('verstrichen'), 'offener Auftrag: kein Zusatz');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
