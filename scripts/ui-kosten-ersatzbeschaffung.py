@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (Backlog 1419, Blickwinkel „Inhaber plant die Ersatzbeschaffung – welcher Lkw kostet zu viel?“):
 # Mehr → Kosten je Fahrzeug: aufgeklappte Fahrzeugzeile nennt Erstzulassung, letzten km-Stand (mit Tag) und neue Vorgänge im Zeitraum;
-# Fahrzeug ohne Angaben zeigt „–“. Hinweis im Regeltext. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
+# Fahrzeug ohne Angaben zeigt „–“; Sortierung nach Erstzulassung/km-Stand (Backlog 1420). Hinweis im Regeltext. DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler.
 # Frischer Dev-Server nötig (CFP_SHOTS=<Ordner> speichert Screenshots).
 import os, datetime
 from playwright.sync_api import sync_playwright
@@ -49,6 +49,13 @@ with sync_playwright() as p:
         box=rows.nth(0).locator('[data-cstamm]').bounding_box()
         check(box and box['x']+box['width']<=w+1,f'{lang} {w}px: Zeile im Bild')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: ohne Querscrollen')
+        # Backlog 1420: Sortierung – EB-UI 2 hat mehr Kosten-Gleichstand? beide 0 € → nach Erstzulassung/km-Stand steht EB-UI 1 vorn, fehlende Angaben am Ende
+        for k in ['fr','km']:
+            q.select_option('#crsort',k); q.wait_for_function(f'()=>document.querySelector("#crsort") && document.querySelector("#crsort").value=={k!r} && document.querySelectorAll("details.row").length==2',timeout=15000)
+            first=q.locator('details.row').nth(0).locator('summary').inner_text()
+            check('EB-UI 1' in first,f'{lang} {w}px: Sortierung {k} – EB-UI 1 zuerst')
+        q.select_option('#crsort','cost'); q.wait_for_function('()=>document.querySelector("#crsort").value=="cost"',timeout=15000)
+        rows=q.locator('details.row'); rows.nth(0).locator('summary').click()
         if SHOTS: rows.nth(0).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/ersatzbeschaffung_{lang}_{w}.png',full_page=True)
         check(not errs,f'{lang} {w}px: keine Skriptfehler {errs[:2]}')
         ctx.close()

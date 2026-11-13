@@ -422,8 +422,13 @@ async function viewCosts() {
     if (!onPage('#/costs')) return;   render(`<h1>${esc(t('costs_report'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const byV = new Map();
   for (const r of rep.rows) { const v = byV.get(r.vehicle_id) || { plate: r.plate, site: r.site, inactive: r.vehicle_active === false, actual: 0, valued: 0, estimate: 0, unvalued: 0, hours: 0, months: [] }; v.actual += r.actual_net; v.valued += r.valued_items || 0; v.estimate += r.estimate_net; v.unvalued += r.unvalued_items; v.hours += r.hours; v.months.push(r); byV.set(r.vehicle_id, v); }
-  const vs = [...byV.entries()].sort((a, b) => b[1].actual - a[1].actual);
   const kmBy = new Map((rep.vehicles || []).map((v) => [v.vehicle_id, v]));
+
+
+  const cSort = ['cost', 'perkm', 'fr', 'km'].includes(S.costSort) ? S.costSort : 'cost';
+  const cKey = (id) => { const k = kmBy.get(id) || {}; return cSort === 'perkm' ? k.cost_per_km : cSort === 'fr' ? k.first_registration : cSort === 'km' ? k.last_km : null; };
+  const vs = [...byV.entries()].sort((a, b) => { if (cSort !== 'cost') { const x = cKey(a[0]); const y = cKey(b[0]); const nx = x === null || x === undefined; const ny = y === null || y === undefined;
+    if (nx !== ny) return nx ? 1 : -1; if (!nx && x !== y) return cSort === 'fr' ? (x < y ? -1 : 1) : y - x; } return b[1].actual - a[1].actual; });
 
   const cy = bYm().slice(0, 4);
   const costQuick = [['prevm', bYm(1), bYm(1)], ['year', `${cy}-01`, bYm()], ['prev', `${Number(cy) - 1}-01`, `${Number(cy) - 1}-12`], ['12m', bYm(11), bYm()]];
@@ -441,6 +446,7 @@ async function viewCosts() {
 
   html += `<details class="panel" id="costsup"><summary style="cursor:pointer"><b>${esc(t('csu_title'))}</b></summary><p class="small muted" style="margin-top:8px">${esc(t('csu_rule'))}</p><div id="costsupbody"><p class="muted">${esc(t('loading'))}</p></div>
     <div class="actions noprint"><button type="button" class="btn secondary small" id="csvsup">${esc(t('export_csv'))}</button></div></details>`;
+  if (vs.length > 1) html += `<select id="crsort" class="noprint" aria-label="${esc(t('sort_by'))}" style="max-width:420px;margin-bottom:12px">${['cost', 'perkm', 'fr', 'km'].map((k) => `<option value="${k}"${cSort === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('crs_' + k))}</option>`).join('')}</select>`;
   html += `<div class="list print-summary">${vs.map(([id, v]) => `<details class="row" style="display:block"><summary style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;cursor:pointer">${plate(v.plate || id)}${v.inactive ? `<span class="chip" data-cinact>${esc(t('inactive_vehicles'))}</span>` : ''}<span class="title">${eurIst({ actual_net: Math.round(v.actual * 100) / 100, valued_items: v.valued, unvalued_items: v.unvalued })}</span>${v.estimate ? `<span class="chip">${esc(t('estimate'))}: ${eur(Math.round(v.estimate * 100) / 100)}</span>` : ''}${v.unvalued ? `<span class="chip kritisch">${v.unvalued} ${esc(t('unvalued_short'))}</span>` : ''}${(kmBy.get(id) || {}).site_changes ? `<span class="chip mittel" data-csitechip>${esc(t('cost_site_moved'))}</span>` : ''}${(() => { const k = kmBy.get(id); return k && k.km ? `<span class="chip">${fmtKm(k.km)} · ${k.cost_per_km !== null ? fmtNum(k.cost_per_km, { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + (S.lang === 'uk' ? ' €/км' : ' €/km') : '–'}${k.complete ? '' : ' (' + esc(t('incomplete')) + ')'}</span>${k.km_partial ? ` <span class="chip mittel" data-ckmpartial title="${esc(t('ckm_partial_hint'))}">${esc(t('ckm_partial').replace('{a}', fmtD(k.km_from_at)).replace('{b}', fmtD(k.km_to_at)))}</span>` : ''}` : k && k.km_status === 'decrease' ? `<span class="chip" data-ckm="decrease">${esc(t('vm_decrease'))}</span>` : ''; })()}</summary>
     <dl class="kv" style="margin-top:8px">${v.months.map((m) => `<dt>${esc(fmtMonth(m.month))}</dt><dd>${eurIst(m)}${m.estimate_net ? ' · ' + esc(t('estimate')) + ' ' + eur(m.estimate_net) : ''}${m.unvalued_items ? ' · ' + m.unvalued_items + ' ' + esc(t('unvalued_short')) : ''}${m.late_items ? ` · <span class="chip mittel" data-clate title="${esc(t('late_items_hint'))}">${esc(tn('late_items_n', m.late_items))}</span>` : ''} · ${esc(fmtNum(m.hours))} ${esc(t('h_short'))}${m.km !== null && m.km !== undefined ? ' · ' + fmtKm(m.km) : ''}</dd>`).join('')}</dl>${(() => { const k = kmBy.get(id); return k && k.km !== null && k.km_from_at ? `<p class="small muted" data-ckm="span">${esc(t('ckm_span').replace('{a}', fmtD(k.km_from_at)).replace('{b}', fmtD(k.km_to_at)))}${k.km_basis === 'first_in_period' ? ' · ' + esc(t('ckm_first')) : ''}</p>` : ''; })()}
 ${(() => { const sc = (kmBy.get(id) || {}).site_changes;
@@ -461,6 +467,7 @@ ${(() => { const k = kmBy.get(id);
   const cr = $('#cr');
   $('#costprt').onclick = () => window.print();
   cr.onsubmit = (e) => { e.preventDefault(); S.costFrom = cr.from.value; S.costTo = cr.to.value; S.costSite = cr.site ? cr.site.value : ''; viewCosts(); };
+  if ($('#crsort')) $('#crsort').onchange = (e) => { S.costSort = e.target.value; viewCosts(); };
   $$('[data-crq]').forEach((bt) => { bt.onclick = () => { const q = costQuick.find((x) => x[0] === bt.dataset.crq); S.costFrom = q[1]; S.costTo = q[2]; viewCosts(); }; });
 
   $('#csv').onclick = async () => { try { const blob = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}&format=csv`); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `fuhrpark-kosten_${envFn()}_${rep.from || from}_${rep.to || to}${rep.site ? '_' + fnPart(rep.site) : ''}_${standTag()}.csv`; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } catch (err) { toast(err.message, true); } };

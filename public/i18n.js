@@ -4058,3 +4058,7 @@ Object.assign(STRINGS.en, { claim_basis: 'Period and year by', claim_basis_meldu
 Object.assign(STRINGS.de, { crv_cases: 'Neue Vorgänge im Zeitraum: {n}', crv_hint: 'Erstzulassung laut Fahrzeugakte, km-Stand laut letzter Ablesung (auch nach dem Zeitraum) – zur Einordnung, z. B. bei der Ersatzbeschaffung; nichts davon wird geschätzt.' });
 Object.assign(STRINGS.uk, { crv_cases: 'Нові справи за період: {n}', crv_hint: 'Перша реєстрація за карткою транспортного засобу, пробіг за останнім показником (також після періоду) – для орієнтації, напр. при заміні транспорту; нічого не оцінюється приблизно.' });
 Object.assign(STRINGS.en, { crv_cases: 'New cases in period: {n}', crv_hint: 'First registration from the vehicle file, odometer from the latest reading (also after the period) – for context, e.g. when planning a replacement; nothing is estimated.' });
+// Backlog 1420: Sortierung im Kostenbericht je Fahrzeug
+Object.assign(STRINGS.de, { crs_cost: 'Kosten (höchste zuerst)', crs_perkm: 'Kosten je km (höchste zuerst)', crs_fr: 'Erstzulassung (älteste zuerst)', crs_km: 'km-Stand (höchster zuerst)' });
+Object.assign(STRINGS.uk, { crs_cost: 'Витрати (найбільші спочатку)', crs_perkm: 'Витрати на км (найбільші спочатку)', crs_fr: 'Перша реєстрація (найстаріші спочатку)', crs_km: 'Пробіг (найбільший спочатку)' });
+Object.assign(STRINGS.en, { crs_cost: 'Costs (highest first)', crs_perkm: 'Cost per km (highest first)', crs_fr: 'First registration (oldest first)', crs_km: 'Odometer (highest first)' });

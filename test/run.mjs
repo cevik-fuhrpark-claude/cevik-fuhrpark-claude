@@ -35085,6 +35085,14 @@ await test('Backlog 1419 (Blickwinkel „Inhaber plant die Ersatzbeschaffung“)
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].crv_cases.includes('{n}') && STRINGS[l].crv_hint && STRINGS[l].first_reg && STRINGS[l].vm_last, l);
 });
 
+await test('Backlog 1420 (Folge aus 1419, Ersatzbeschaffung): Kostenbericht je Fahrzeug sortierbar nach Kosten, Kosten je km, Erstzulassung (älteste zuerst) und km-Stand – fehlende Angaben am Ende; Texte DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="crsort"') && app.includes("$('#crsort').onchange") && app.includes("['cost', 'perkm', 'fr', 'km'].includes(S.costSort)"), 'App: Auswahl und Handler');
+  ok(/if \(nx !== ny\) return nx \? 1 : -1;/.test(app), 'fehlende Werte ans Ende');
+  const verw = readFileSync(new URL('../public/app-verwaltung.js', import.meta.url), 'utf8'); ok(verw.includes('id="crsort"'), 'im erzeugten Modul');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) for (const k of ['cost', 'perkm', 'fr', 'km']) ok(STRINGS[l]['crs_' + k], `${l} crs_${k}`);
+});
+
 await test('Backlog 1059 (Blickwinkel „Leitung Bayern zieht vor der HU-Woche die Nachweisliste des eigenen Standorts“): Durchgeführte Prüfungen mit Standortfilter (App, CSV mit Standort im Dateinamen, Protokoll, Integrations-API), Filter vor der 5000er-Grenze; App übergibt die Standort-Auswahl der Seite (DE/UK/EN)', async () => {
   const { e, U } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
   const csv = 'Kennzeichen / LKW;Standort;Status;Hersteller;Baujahr;FIN;Anhänger Kennzeichen\nSZ-YC 5513;Dortmund;in Betrieb;MAN;2016;WMA15SZZ2HM722774;\nSZ-KC 5515; bayern ;in Betrieb;DAIMLER;2015;WDB9630051L917317;';
