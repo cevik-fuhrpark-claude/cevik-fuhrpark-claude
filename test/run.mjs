@@ -40679,6 +40679,26 @@ await test('Backlog 1425 (Blickwinkel „Werkstatt plant die Woche nach Teile-Li
   for (const l of ['de', 'uk', 'en']) for (const k of ['plan_eta_later', 'eta_after_plan', 'plan_before_parts']) ok(STRINGS[l][k] && (k === 'plan_before_parts' || STRINGS[l][k].includes('{d}')), `${l} ${k}`);
 });
 
+await test('Backlog 1427 (Blickwinkel „Disposition sieht am Montag, welche Lkw diese Woche wegen Teilelieferung zurückkommen“): Abschnitt „Fährt bis zur Teilelieferung“ zeigt den Rückkehrtermin der Werkstatt bzw. „noch nicht vereinbart“, sortiert nach Rückkehr, Zähler „Rückkehr diese Woche“; Texte DE/UK/EN', async () => {
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const pdRet = (c) => (c.planned_date && c.planned_date >= today0 ? c.planned_date : c.parts_expected_date || null);"), 'Rückkehr = kommender Termin, sonst Liefertermin');
+  ok(app.includes("String(pdRet(a) || '9').localeCompare(String(pdRet(b) || '9'))"), 'Sortierung nach Rückkehr');
+  ok(app.includes("const wkEnd = dispoWeekEnd(today0); const pdWeek = pdL.filter((c) => pdRet(c) && pdRet(c) <= wkEnd).length;"), 'Zähler bis Sonntag');
+  ok(/data-dpdrplan>🔧 \$\{esc\(t\('dispo_pdrive_back'\)/.test(app) && app.includes('<span data-dpdrnoplan>'), 'Zeile mit Termin bzw. ohne');
+  // Kalenderlogik aus dem Quelltext
+  const wkE = new Function('return ' + app.match(/function dispoWeekEnd\(d\) \{[^\n]*\}\n/)[0])();
+  eq(wkE('2026-11-16'), '2026-11-22', 'Montag → Sonntag'); eq(wkE('2026-11-13'), '2026-11-15', 'Freitag'); eq(wkE('2026-11-15'), '2026-11-15', 'Sonntag = heute');
+  eq(wkE('2026-12-28'), '2027-01-03', 'Jahreswechsel'); eq(wkE('2027-02-24'), '2027-02-28', 'Februar'); eq(wkE('2026-03-26'), '2026-03-29', 'Zeitumstellung');
+  const ret = new Function('today0', 'return ' + app.match(/const pdRet = (\(c\) => [^\n]*);\n/)[1].replace(/;$/, ''))('2026-11-16');
+  eq(ret({ planned_date: '2026-11-18', parts_expected_date: '2026-11-17' }), '2026-11-18', 'Termin hat Vorrang');
+  eq(ret({ planned_date: '2026-11-10', parts_expected_date: '2026-11-17' }), '2026-11-17', 'vergangener Termin zählt nicht');
+  eq(ret({ planned_date: null, parts_expected_date: null }), null, 'ohne Angaben ungeklärt');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['dispo_pdrive_back', 'dispo_pdrive_noplan', 'dispo_pdrive_week', 'dispo_pdrive_week_t']) ok(STRINGS[l][k], `${l} ${k}`); ok(STRINGS[l].dispo_pdrive_back.includes('{d}') && STRINGS[l].dispo_pdrive_week.includes('{n}'), `${l} Platzhalter`); }
+  const help = readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const x of ['Rückkehr diese Woche: N', 'Returning this week: N', 'Повернення цього тижня: N']) ok(help.includes(x), 'Hilfe ' + x);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

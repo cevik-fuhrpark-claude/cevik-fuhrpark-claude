@@ -1872,6 +1872,7 @@ function nextWorkdayAfter(iso) {
 
 
 
+
 function dispoDayBefore(d) { const [y, m, dd] = String(d).split('-').map(Number); const x = new Date(Date.UTC(y, m - 1, dd - 1)); return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; }
 
 
