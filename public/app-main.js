@@ -4495,6 +4495,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
 
   offDayWatch($$('#af input[name=ready_expected_on], #af input[name=parts_expected_date]'), 'date_offday_hint');
   etaPlanWatch($('#af input[name=planned_date]'), planEtaMsg(c)); etaPlanWatch($('#af input[name=parts_expected_date]'), etaPlanMsg(c));
+  etaPlanWatch($('#af input[name=ready_expected_on]'), planEtaMsg(c));
   if (action === 'record_work') { workDayWatch(c); hoursWatch(); }
   if (action === 'add_part') partQtyWatch();
   $('#af').onsubmit = (e) => {

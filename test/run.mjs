@@ -40663,6 +40663,7 @@ await test('Backlog 1425 (Blickwinkel „Werkstatt plant die Woche nach Teile-Li
   ok(/function etaPlanWatch\(el, f\) \{ if \(!el \|\| el\.dataset\.etaW\) return;/.test(app), 'Hilfsfunktion');
   ok(app.includes("etaPlanWatch($('#af input[name=planned_date]'), planEtaMsg(c)); etaPlanWatch($('#af input[name=parts_expected_date]'), etaPlanMsg(c));"), 'Vorgangsformulare');
   ok(app.includes("for (const i of all) etaPlanWatch($('#pd-' + CSS.escape(i.id)), planEtaMsg(i));"), 'Werkstattplan');
+  ok(app.includes("etaPlanWatch($('#af input[name=ready_expected_on]'), planEtaMsg(c));"), 'Backlog 1426: voraussichtlich fertig');
   ok(app.includes("i.planned_date >= r.today && i.planned_date < i.parts_expected_date && `<span class=\"chip mittel\" data-planeta>"), 'Plan-Chip nur für kommende Termine');
   ok(app.includes("c.planned_date >= bDate() && c.planned_date < c.parts_expected_date ? ` <span class=\"chip mittel\" data-planeta>"), 'Chip in der Vorgangsansicht');
   // Logik der Hinweise (aus dem Quelltext nachgebaut)

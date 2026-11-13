@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (13.11.2026, Backlog 1425, Blickwinkel „Werkstatt plant die Woche nach Teile-Lieferterminen“): Werkstatttermin vor
 # dem Teile-Liefertermin – Hinweis schon bei der Eingabe (Werkstattplan, Vorgang „Termin setzen“, „Liefertermin ändern“) und Chip in der
-# Vorgangsansicht. DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig (sh scripts/restart-dev.sh).
+# Vorgangsansicht; Backlog 1426: „voraussichtlich fertig“ vor dem Liefertermin. DE/UK/EN, 390/820/1366 px, ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig (sh scripts/restart-dev.sh).
 # Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid, datetime
 from playwright.sync_api import sync_playwright
@@ -59,6 +59,12 @@ with sync_playwright() as p:
         if SHOTS: eh.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/vorgang-liefertermin-{lang}-{wd}.png')
         q.fill('#af input[name="parts_expected_date"]',iso(1)); check(not eh.is_visible(),f'{lang} {wd}px: Liefertermin am Termin – kein Hinweis')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {wd}px: Vorgang ohne Querscrollen')
+        # Backlog 1426: „voraussichtlich fertig“ vor dem Liefertermin → Hinweis
+        q.goto(B+'/#/cases/'+B2); q.reload(); q.wait_for_selector('button[data-act="set_ready_date"]',timeout=20000)
+        q.locator('button[data-act="set_ready_date"]').first.click(); q.wait_for_selector('#af input[name="ready_expected_on"]',timeout=10000)
+        q.fill('#af input[name="ready_expected_on"]',iso(3)); rh=q.locator('#af p[data-etaplan]')
+        check(rh.is_visible() and LATER[lang] in rh.inner_text(),f'{lang} {wd}px: voraussichtlich fertig – Hinweis')
+        q.fill('#af input[name="ready_expected_on"]',iso(7)); check(not rh.is_visible(),f'{lang} {wd}px: fertig nach Liefertermin – kein Hinweis')
         check(not errs,f'{lang} {wd}px: keine Skriptfehler {errs[:2]}')
         ctx.close()
     br.close()

@@ -5086,6 +5086,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   // Backlog 890 (Blickwinkel „Werkstatt-Betriebsruhe zwischen den Jahren“): Fertig-/Teile-Liefertermin am Wochenende/Feiertag – nur Hinweis
   offDayWatch($$('#af input[name=ready_expected_on], #af input[name=parts_expected_date]'), 'date_offday_hint');
   etaPlanWatch($('#af input[name=planned_date]'), planEtaMsg(c)); etaPlanWatch($('#af input[name=parts_expected_date]'), etaPlanMsg(c)); // Backlog 1425
+  etaPlanWatch($('#af input[name=ready_expected_on]'), planEtaMsg(c)); // Backlog 1426: „voraussichtlich fertig“ vor dem Teile-Liefertermin
   if (action === 'record_work') { workDayWatch(c); hoursWatch(); }
   if (action === 'add_part') partQtyWatch();
   $('#af').onsubmit = (e) => {
