@@ -168,6 +168,15 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 /* Kennzahlen: Zustand der Flotte als ein Balken statt Kartenraster */
 .fleetbar { display: flex; height: 18px; border-radius: 4px; overflow: hidden; background: var(--rule); margin: 8px 0 6px; }
 .fleetbar span { display: block; height: 100%; }
+/* [CLAUDE] Backlog 1490 (Blickwinkel „Fuhrparkleitung mit Rot-Grün-Sehschwäche“): Bei Deuteranopie sind Gesperrt (rot) und In Werkstatt
+   (braun) kaum unterscheidbar (ΔE 3,8), dunkel Werkstatt/Meldung offen (ΔE 15) – und Schwarz-Weiß-Druck macht alle vier zu Grautönen.
+   Deshalb nicht nur Farbe (WCAG 1.4.1): Gesperrt schräg schraffiert, Werkstatt gepunktet, Balken und Legende gleich; Segmente durch eine
+   2-px-Fuge in Flächenfarbe getrennt (Grenzen sonst bei ähnlichen Farben unsichtbar). */
+.fleetbar, .legend { --fb-ink: rgba(255, 255, 255, 0.65); }
+@media (prefers-color-scheme: dark) { .fleetbar, .legend { --fb-ink: rgba(0, 0, 0, 0.55); } } /* helle Farben im Dunkelmodus: dunkles Muster */
+.fleetbar span + span { border-left: 2px solid var(--surface); }
+.fb-gesperrt { background-image: repeating-linear-gradient(135deg, var(--fb-ink) 0 2px, transparent 2px 6px); }
+.fb-werkstatt { background-image: radial-gradient(var(--fb-ink) 1.2px, transparent 1.6px); background-size: 5px 5px; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.9rem; }
 .legend a { color: inherit; display: inline-flex; align-items: center; gap: 0.3em; min-height: 24px; }
 /* Backlog 1104 (Blickwinkel „Disposition am Tablet im Querformat bei der Frühschicht“): Links neben Text mit 44 px Tippfläche
@@ -179,7 +188,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
    Mindest-Tippfläche 24 px (WCAG 2.5.8; ui-tippflaechen-links war seit Backlog 1112 rot); am Touchgerät 44 px wie .tap */
 :is(#homeasof, #casesasof, #vehasof, #planasof, #stockasof, #maintasof, #finesasof, #contractsasof, #claimsasof, #driversasof, #tachoasof, #tiresasof) a { display: inline-flex; align-items: center; min-height: 24px; }
 @media (pointer: coarse) { :is(#homeasof, #casesasof, #vehasof, #planasof, #stockasof, #maintasof, #finesasof, #contractsasof, #claimsasof, #driversasof, #tachoasof, #tiresasof) a { min-height: 44px; } }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+.legend i { display: inline-block; width: 14px; height: 14px; border-radius: 2px; margin-right: 6px; vertical-align: -2px; flex: none; } /* Backlog 1490: 14 px, damit das Muster erkennbar ist */
 .stats { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 8px 0 16px; }
 .stats div { font-family: var(--din); }
 .stats b { font-size: 1.8rem; display: block; line-height: 1.1; }

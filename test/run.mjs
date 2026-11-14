@@ -41991,6 +41991,37 @@ await test('Backlog 1489 (Nebenbefund aus 1488, Backlog 195): „из выхло
   for (const x of ['дым из кабины', 'из кабины идет дым', 'глушитель в порядке, из кабины дым', 'выхлоп нормальный дым из кабины', 'из под капота дым', 'кабина в дыму', 'вся кабина в дыму']) ok(FIRE.test(x), 'Brand fehlt: ' + x);
   ok(app.includes('пожежі|пожара|диму|дыма|дыму)(?![а-яіїєґё])'), '„без дыму/не было дыму“ wie „без дыма“ verneint');
 });
+await test('Backlog 1490 (Blickwinkel „Fuhrparkleitung mit Rot-Grün-Sehschwäche“, Backlog 195): Flottenbalken der Startseite unterscheidet Gesperrt/In Werkstatt nicht nur über Farbe – Muster in Balken und Legende, Fuge zwischen Segmenten, leere Segmente entfallen, Zahlen im aria-label; jedes Farbpaar, das bei Deuteranopie/Protanopie/Tritanopie (hell und dunkel) ähnlich aussieht, ist durch ein Muster getrennt', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8'), app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  const pat = new Set([...css.matchAll(/^\.fb-([a-z_]+) \{ background-image: (repeating-linear-gradient|radial-gradient)\((135deg, )?var\(--fb-ink\)/gm)].map((m) => m[1]));
+  ok(pat.has('gesperrt') && pat.has('werkstatt'), 'Muster für Gesperrt und Werkstatt: ' + [...pat]);
+  ok(css.includes('.fleetbar span + span { border-left: 2px solid var(--surface); }'), 'Fuge zwischen Segmenten');
+  ok(/@media \(prefers-color-scheme: dark\) \{ \.fleetbar, \.legend \{ --fb-ink: rgba\(0, 0, 0/.test(css), 'dunkles Muster im Dunkelmodus');
+  ok(/\.legend i \{[^}]*width: 14px; height: 14px;/.test(css), 'Legendenfeld groß genug für das Muster');
+  for (const src of [app, main]) {
+    ok(src.includes("seg.filter(([, n]) => n > 0).map(([k, n, c]) => `<span class=\"fb-${k}\""), 'Balken: Klasse je Zustand, leere Segmente entfallen');
+    ok(src.includes('<i class="fb-${k}" style="background-color:${c}"></i>'), 'Legende: gleiches Muster wie der Balken (background-color, sonst überschreibt background das Muster)');
+    ok(src.includes("aria-label=\"${esc(t('fleet_state') + ': ' + seg.map(([k, n]) => `${t('av_' + k)} ${n}`).join(', '))}\""), 'Bildschirmleser hört die Zahlen');
+  }
+  // Farbpaare unter simulierter Farbsehschwäche (Machado 2009, Schwere 1,0) im Lab-Abstand: unter 20 → mindestens eines der beiden mit Muster
+  const segs = app.match(/const seg = \[(\['gesperrt'.*?)\];/)[1]; const keys = [...segs.matchAll(/\['([a-z_]+)', v\.[a-z_]+, 'var\(--([a-z]+)\)'\]/g)].map((m) => [m[1], m[2]]);
+  eq(keys.length, 4, 'vier Segmente');
+  const vars = (block) => Object.fromEntries([...block.matchAll(/--([a-z]+): (#[0-9a-f]{6})/g)].map((m) => [m[1], m[2]]));
+  const light = vars(css.slice(0, css.indexOf('@media (prefers-color-scheme: dark)'))), dark = { ...light, ...vars(css.slice(css.indexOf('@media (prefers-color-scheme: dark)')).split('}')[0]) };
+  const M = { deut: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.01182, 0.04294, 0.968881]], prot: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]], trit: [[1.255528, -0.076749, -0.178779], [-0.078411, 0.930809, 0.147602], [0.004733, 0.691367, 0.3039]] };
+  const lin = (h) => [1, 3, 5].map((i) => { const c = parseInt(h.slice(i, i + 2), 16) / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+  const lab = ([r, g, b]) => { const f = (x) => (x > 0.008856 ? Math.cbrt(x) : 7.787 * x + 16 / 116); const X = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047), Y = f(0.2126 * r + 0.7152 * g + 0.0722 * b), Z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883); return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)]; };
+  const sim = (h, k) => { const l = lin(h); return k === 'none' ? l : M[k].map((row) => Math.min(1, Math.max(0, row[0] * l[0] + row[1] * l[1] + row[2] * l[2]))); };
+  let close = 0;
+  for (const [mode, pal] of [['hell', light], ['dunkel', dark]]) for (const k of ['none', 'deut', 'prot', 'trit']) for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
+    const a = lab(sim(pal[keys[i][1]], k)), b = lab(sim(pal[keys[j][1]], k)); const d = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    if (d < 20) { close++; ok(pat.has(keys[i][0]) || pat.has(keys[j][0]), `${mode} ${k}: ${keys[i][0]}/${keys[j][0]} ΔE ${d.toFixed(1)} ohne Muster`); }
+  }
+  ok(close >= 3, 'Gegenprobe: ähnliche Paare gefunden (Gesperrt/Werkstatt bei Deuteranopie) – ' + close);
+  ok(readFileSync(new URL('../scripts/ui-flotte-farbsehschwaeche.py', import.meta.url), 'utf8').includes('Backlog 1490'), 'UI-Prüfung');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

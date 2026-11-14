@@ -1829,10 +1829,11 @@ async function viewHome() {
     if (S.me.role === 'dispatch' && S.me.home_site) { const hs0 = !S.dispoAll ? S.me.home_site : ''; html += `<p class="small muted noprint" id="dsitebar">${esc(t('kpi_vsite'))}: <b>${esc(hs0 ? (hs0 === 'ohne' ? t('cs_nosite') : hs0) : t('filter_all'))}</b> · <a href="#/" class="tap" id="dsitetoggle">${esc(hs0 ? t('dispo_all_sites') : t('dispo_my_site'))}</a></p>`; }
     if (d.vehicles) {
       const v = d.vehicles; const tot = Math.max(v.total, 1);
+
       const seg = [['gesperrt', v.gesperrt, 'var(--stop)'], ['werkstatt', v.werkstatt, 'var(--mid)'], ['meldung_offen', v.meldung_offen, 'var(--signal)'], ['einsatzbereit_lt_system', v.einsatzbereit, 'var(--go)']];
       html += `<section class="panel"><h2 style="margin-top:0">${esc(t('vehicles'))}: ${v.total}</h2>
-        <div class="fleetbar" role="img" aria-label="${esc(t('fleet_state'))}">${seg.map(([, n, c]) => `<span style="width:${(n / tot) * 100}%;background:${c}"></span>`).join('')}</div>
-        <div class="legend">${seg.map(([k, n, c]) => `<a href="${hj(FB_HREF[k])}" data-fbk="${k}"><i style="background:${c}"></i>${esc(t('av_' + k))}: <b>${n}</b></a>`).join('')}${v.ruhend ? `<a class="muted" id="fbdormant" href="${hj('#/vehicles?f=dormant')}">${esc(t('eval_excluded'))}: <b>${v.ruhend}</b></a>` : ''}</div></section>`;
+        <div class="fleetbar" role="img" aria-label="${esc(t('fleet_state') + ': ' + seg.map(([k, n]) => `${t('av_' + k)} ${n}`).join(', '))}">${seg.filter(([, n]) => n > 0).map(([k, n, c]) => `<span class="fb-${k}" style="width:${(n / tot) * 100}%;background-color:${c}"></span>`).join('')}</div>
+        <div class="legend">${seg.map(([k, n, c]) => `<a href="${hj(FB_HREF[k])}" data-fbk="${k}"><i class="fb-${k}" style="background-color:${c}"></i>${esc(t('av_' + k))}: <b>${n}</b></a>`).join('')}${v.ruhend ? `<a class="muted" id="fbdormant" href="${hj('#/vehicles?f=dormant')}">${esc(t('eval_excluded'))}: <b>${v.ruhend}</b></a>` : ''}</div></section>`;
     }
 
     html += `<div class="stats"><a class="statlink" id="stopen" href="${hj('#/cases?f=open')}"><b>${d.open_cases}${d.open_cases_truncated ? '+' : ''}</b>${esc(t('open'))}</a><a class="statlink" id="stcrit" href="${hj('#/cases?f=critical')}"><b style="color:var(--stop)">${d.critical}</b>${esc(t('prio_kritisch'))}</a><a class="statlink" id="stlock" href="${hj('#/cases?f=locked')}"><b>${d.locked}</b>${esc(t('locked_cases'))}</a>
