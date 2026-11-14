@@ -41649,6 +41649,21 @@ await test('Backlog 1468 (Blickwinkel „Fahrer meldet im Telegrammstil mit Abk�
   for (const [n, x] of [['GLASS', 'Ca. 3 Std. Standzeit'], ['ACC', 'Termin evtl. Mo.'], ['LIGHTS', 'Lkw steht in der Str. vor der Halle']]) ok(!any(n, recurFix(x)), 'fälschlich ' + n + ': ' + x + ' → ' + recurFix(x));
   ok(/^const DICT_ABBR = \[/m.test(app) && app.includes("let t = String(s || '');\n  for (const [r, v] of DICT_ABBR) t = t.replace(r, v);"), 'dictFix schreibt Abkürzungen vor allem anderen aus');
 });
+await test('Backlog 1469 (Fund aus 1468, Backlog 195): Hinweismuster reichen nicht mehr über einen abgeschlossenen Gut-Satz – „Reifen neu. Bremslicht defekt.“ nur Licht, „Bremse ok. Licht defekt.“ keine Bremse, „Getriebe ok. Hupe geht nicht.“ kein Getriebe, „Tür ok. Kaffeemaschine kaputt.“ keine Tür; Telegrammstil „Reifen hi li. Luft raus.“ und Sätze ohne Gut-Meldung bleiben wie bisher; Lücke „⁞“ ×16 aus dictFix nach dem Gut-Satz, Muster unverändert', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); ok(m, n); return new RegExp(m[1], m[2]); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const H = (n, x) => g(n).test(recurFix(x));
+  const dictFix = new Function(app.slice(app.indexOf('const DICT_PAIRS'), app.indexOf('const recurFix')) + '; return dictFix;')();
+  for (const [n, x] of [['FLAT_HINT', 'Reifen neu. Bremslicht defekt.'], ['FLAT_HINT', 'Reifen gewechselt. Spiegel kaputt.'], ['BRAKE_HINT', 'Bremse ok. Licht defekt.'], ['BRAKE_HINT', 'Bremse i.O. Licht defekt.'], ['GEAR_HINT', 'Getriebe ok. Hupe geht nicht.'], ['DOOR_HINT', 'Tür ok. Kaffeemaschine kaputt.'], ['MIRROR_HINT', 'Spiegel ok. Kaffeemaschine kaputt.'], ['SUSP_HINT', 'Federung ok. Radio geht nicht.'], ['STEER_HINT', 'Lenkung ok. Kaffeemaschine kaputt.']]) {
+    ok(g(n).test(x.toLowerCase()), 'ohne Lücke wäre es ein Treffer (Sonde): ' + n + ' ' + x); ok(!H(n, x), 'fälschlich ' + n + ': ' + x);
+  }
+  for (const [n, x] of [['FLAT_HINT', 'Reifen hi li. Luft raus.'], ['FLAT_HINT', 'Plane ok. Reifen platt.'], ['BRAKE_HINT', 'Licht ok! Bremse quietscht.'], ['DOOR_HINT', 'Spiegel neu. Tür klemmt.'], ['LIGHTS_HINT', 'Reifen neu. Bremslicht defekt.'], ['MIRROR_HINT', 'Tür ok. Spiegel abgebrochen.'], ['ACC_HINT', 'Fahrer ok. Unfall mit Pkw.'], ['FLAT_HINT', 'Reifen platt. Bremse ok.']]) ok(H(n, x), n + ': ' + x);
+  eq((dictFix('Reifen neu. Bremslicht defekt.').match(/⁞/g) || []).length, 16, 'Lücke nach Gut-Satz');
+  for (const x of ['Reifen hi li. Luft raus.', 'Bremslicht defekt. Reifen neu.', 'Reifen neu', 'Reifen neuer Satz. Licht', 'Bremse okay', 'Bremse in Ordnung']) ok(!dictFix(x).includes('⁞'), 'keine Lücke: ' + x);
+  for (const x of ['Bremse i.O. Licht defekt.', 'Licht ok! Bremse quietscht.', 'Spiegel neu; Tür klemmt', 'brakes fixed. light broken']) ok(dictFix(x).includes('⁞'), 'Lücke: ' + x);
+  ok(/^const OK_GAP = Array\(16\)/m.test(app) && app.includes("return t.replace(OK_END, '$& ' + OK_GAP);"), 'dictFix setzt die Lücke zuletzt');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

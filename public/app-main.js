@@ -2884,13 +2884,20 @@ const dictSign = (w) => (/^(?:komma|comma)$/i.test(w) ? ',' : /^doppel/i.test(w)
 
 const abbrEnd = (w) => (m, ...a) => w + (/^\s*[A-ZÄÖÜ0-9]/.test(a[a.length - 1].slice(a[a.length - 2] + m.length)) ? '. ' : ' ');
 const DICT_ABBR = [[lbRx(String.raw`${__T[3]}bremsl\.`, 'gi'), 'bremslicht '], [lbRx(String.raw`${__T[3]}r(?:ü|ue)ckl\.`, 'gi'), 'rücklicht '], [lbRx(String.raw`${__T[3]}scheinw\.`, 'gi'), 'scheinwerfer '], [lbRx(String.raw`${__T[3]}blinkl?\.`, 'gi'), 'blinker '], [lbRx(String.raw`${__T[3]}beleucht?\.`, 'gi'), 'beleuchtung '], [lbRx(String.raw`${__T[3]}k(?:ü|ue)hlw\.`, 'gi'), 'kühlwasser '], [lbRx(String.raw`${__T[3]}(?:ö|oe)lverl\.`, 'gi'), 'ölverlust '], [lbRx(String.raw`${__T[3]}getr\.`, 'gi'), 'getriebe '], [lbRx(String.raw`${__T[3]}luftfed\.`, 'gi'), 'luftfederung '], [lbRx(String.raw`${__T[3]}(sattel)?kuppl?g?\.`, 'gi'), '$1kupplung '], [lbRx(String.raw`${__T[3]}batt\.`, 'gi'), 'batterie '], [lbRx(String.raw`${__T[3]}anh\.`, 'gi'), 'anhänger '], [lbRx(String.raw`${__T[3]}sto(?:ß|ss)st\.`, 'gi'), 'stoßstange '], [lbRx(String.raw`${__T[3]}unf\.`, 'gi'), 'unfall '], [lbRx(String.raw`${__T[3]}warnl\.`, 'gi'), 'warnleuchte '], [lbRx(String.raw`${__T[3]}warn\.`, 'gi'), 'warnung '], [lbRx(String.raw`${__T[3]}(motor)?kontrolll\.`, 'gi'), '$1kontrollleuchte '], [lbRx(String.raw`${__T[3]}mkl${__T[0]}`, 'gi'), 'motorkontrollleuchte'], [lbRx(String.raw`${__T[3]}(beifahrer|fahrer|heck|seiten|schiebe)t\.`, 'gi'), '$1tür '], [lbRx(String.raw`${__T[3]}fahrtenschr\.`, 'gi'), 'fahrtenschreiber '], [lbRx(String.raw`${__T[3]}(front|heck|seiten)sch\.`, 'gi'), '$1scheibe '], [lbRx(String.raw`${__T[3]}scheibenw\.`, 'gi'), 'scheibenwischer '], [lbRx(String.raw`${__T[3]}m\.(?=\s*(?:pkw|lkw|transporter|bus|auto|fahrzeug|tor|poller|wand|baum|pfosten|laterne|zaun|rampe|bordstein|leitplanke|schild|ampel|radfahrer|fahrrad|gegenverkehr))`, 'gi'), 'mit '], [lbRx(String.raw`${__T[3]}n\.(?=\s*(?:li|re|links|rechts)${__T[0]})`, 'gi'), 'nach '], [lbRx(String.raw`${__T[3]}(?:o\.|ohne)\s*f(?:kt|unkt)\.?${__T[0]}`, 'gi'), abbrEnd('ohne funktion')], [/(^|[.;!?\n]\s*)[Dd]ef\.(?=\s)/gm, '$1defekt '], [lbRx(String.raw`${__T[3]}(?<!(?:low|of|the|no|out|add|added|more|some|need|needs|needed|refill|refilled|top|topped|fill|filled|up|with|my|a)\s+)[Dd]ef\.`, 'g'), abbrEnd('defekt')], [lbRx(String.raw`${__T[3]}abgebr\.`, 'gi'), abbrEnd('abgebrochen')], [lbRx(String.raw`${__T[3]}eingeriss\.`, 'gi'), abbrEnd('eingerissen')], [lbRx(String.raw`${__T[3]}besch(?:ä|ae)d\.`, 'gi'), abbrEnd('beschädigt')], [lbRx(String.raw`${__T[3]}(li|re|vo|hi|vorn|hint)\.(?=\s+[a-zäöüß])`, 'g'), '$1 '], [lbRx(String.raw`${__T[3]}(ca|evtl|ggf|bzw|bzgl|inkl|wg|z\.\s?b|u\.\s?a)\.`, 'gi'), '$1 ']];
+
+
+
+
+
+const OK_END = /(?:^|[^a-zäöüß])(?:ok|okay|i\.?\s?o|in\s+ordnung|alles\s+gut|neu|gewechselt|getauscht|ersetzt|repariert|erneuert|sauber|funktioniert|fine|good|fixed|replaced)\s*[.;!]+(?=\s)/gi;
+const OK_GAP = Array(16).fill('⁞').join(' ');
 const dictFix = (s) => {
   let t = String(s || '');
   for (const [r, v] of DICT_ABBR) t = t.replace(r, v);
   t = t.replace(DICT_SIGN, (m, a, w, b) => (a || b ? m : ' ' + dictSign(w) + ' '));
   for (const [r, v] of DICT_TYPO) t = t.replace(r, (w) => (w[0] !== w[0].toLowerCase() ? v[0].toUpperCase() + v.slice(1) : v));
   for (let i = 0; i < 2; i++) t = t.replace(DICT_JOIN, (m, a, w) => a + w.replace(/\s+/g, ''));
-  return t;
+  return t.replace(OK_END, '$& ' + OK_GAP);
 };
 const recurFix = (s) => noFunc(noPlace(clauseCut(dictFix(s).replace(/ё/g, 'е').replace(/Ё/g, 'Е').replace(FIX_SYN, (w) => (/^(?:и|почин)/i.test(w) ? 'отремонтировали' : 'відремонтували')))).replace(STOP_WORK, 'not working')).replace(PRED_FIRST, (m, v, subj) => m + ' ⁘' + subj + ' ' + v).replace(V2_INV, (m, adv, v, subj) => m + ' ⁘' + subj + ' ' + v).replace(NO_MORE, '◦ ⁂ behoben').replace(NO_MORE_X, '◦ ⁂ behoben').split(/([.;!?\n]+)/).map((part) => {
   const all = RECUR_MARK.test(part);
