@@ -7,14 +7,14 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-CASES=[('kočnice ne rade','brake'),('kocnice ne rade','brake'),('pada pritisak zraka','brake'),('ručna kočnica ne drži','parkbrake'),('izlazi dim iz kabine','fire'),('pukla guma','flat'),('guma probušena','flat'),
+CASES=[('kočnice ne rade','brake'),('kočnice ne funkcioniraju','brake'),('tahograf ne funkcionira','tacho'),('kocnice ne rade','brake'),('pada pritisak zraka','brake'),('ručna kočnica ne drži','parkbrake'),('izlazi dim iz kabine','fire'),('pukla guma','flat'),('guma probušena','flat'),
  ('volan blokiran','steer'),('curi ulje','leak'),('imao sam udes','acc'),('povrijeđen sam','injury'),('motor ne pali','nostart'),('retrovizor slomljen','mirror'),('svjetla ne rade','lights'),
  ('upalila se lampica motora','warnlight'),('vjetrobransko staklo puklo','glass'),('prozor se ne spušta','window'),('akumulator prazan','batt'),('tahograf ne čita karticu','tacho'),('prikolica se ne kači','coupling'),
  ('nestalo goriva','dryfuel'),('motor se pregrijava','engine'),('guma oštećena','tyre'),('agregat ne hladi','reefer'),('jastuk pukao','susp'),('brzina ne ulazi','gear'),('klima ne radi','climate'),
  ('cerada pocijepana','tarp'),('auspuh otpao','exhaust'),('brisači ne rade','visib'),('pojas ne kopča','seat'),('matice točka olabavljene','wheel'),('zaglavio sam se u blatu','stuck'),('izgubio sam ključeve','lost'),
  ('registarska tablica otpala','numplate'),('asistent za traku ne radi','adas'),('vrata se ne zatvaraju','door'),('lift ne radi','door'),
  ('frânele nu funcționează','brake'),('hamulce nie działają','brake')]
-NO=['kočnice popravljene','guma zamijenjena, sve ok','dim iz auspuha','kamen udario u staklo','nema aparata za gašenje','grijanje sjedišta ne radi','zvao sam pomoć na cesti','ne znam']
+NO=['kočnice popravljene','sve funkcionira','guma zamijenjena, sve ok','dim iz auspuha','kamen udario u staklo','nema aparata za gašenje','grijanje sjedišta ne radi','zvao sam pomoć na cesti','ne znam']
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)

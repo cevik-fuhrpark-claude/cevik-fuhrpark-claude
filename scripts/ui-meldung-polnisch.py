@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-CASES=[('hamulce nie działają','brake'),('hamulce nie dzialaja','brake'),('spada ciśnienie powietrza','brake'),('hamulec ręczny nie trzyma','parkbrake'),('dym z kabiny','fire'),('złapałem gumę','flat'),('pękła opona','flat'),
+CASES=[('hamulce nie działają','brake'),('hamulce nie funkcjonują','brake'),('hamulce nie dzialaja','brake'),('spada ciśnienie powietrza','brake'),('hamulec ręczny nie trzyma','parkbrake'),('dym z kabiny','fire'),('złapałem gumę','flat'),('pękła opona','flat'),
  ('kierownica zablokowana','steer'),('cieknie olej','leak'),('miałem wypadek','acc'),('jestem ranny','injury'),('silnik nie odpala','nostart'),('lusterko urwane','mirror'),('lampy tylne nie świecą','lights'),
  ('świeci się kontrolka silnika','warnlight'),('szyba pękła','glass'),('szyba nie otwiera się','window'),('akumulator padł','batt'),('tachograf nie działa','tacho'),('naczepa nie chce się zapiąć','coupling'),
  ('skończyło się paliwo','dryfuel'),('silnik się przegrzewa','engine'),('opona przecięta','tyre'),('agregat nie chłodzi','reefer'),('miech pękł','susp'),('bieg nie wchodzi','gear'),('klima nie działa','climate'),

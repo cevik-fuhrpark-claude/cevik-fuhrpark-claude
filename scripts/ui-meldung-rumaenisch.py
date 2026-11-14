@@ -7,14 +7,14 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-CASES=[('frânele nu funcționează','brake'),('franele nu functioneaza','brake'),('pierde aer, scade presiunea','brake'),('frâna de mână nu ține','parkbrake'),('iese fum din cabină','fire'),('am făcut pană','flat'),('a explodat anvelopa','flat'),
+CASES=[('frânele nu funcționează','brake'),('tahograful nu merge','tacho'),('frâna de mână nu merge','parkbrake'),('franele nu functioneaza','brake'),('pierde aer, scade presiunea','brake'),('frâna de mână nu ține','parkbrake'),('iese fum din cabină','fire'),('am făcut pană','flat'),('a explodat anvelopa','flat'),
  ('volanul e blocat','steer'),('curge ulei','leak'),('am avut un accident','acc'),('sunt rănit','injury'),('motorul nu pornește','nostart'),('oglinda e ruptă','mirror'),('farul nu funcționează','lights'),
  ('s-a aprins martorul de motor','warnlight'),('parbrizul e crăpat','glass'),('geamul nu se deschide','window'),('bateria e descărcată','batt'),('tahograful nu citește cardul','tacho'),('semiremorca nu se cuplează','coupling'),
  ('am rămas fără motorină','dryfuel'),('motorul se supraîncălzește','engine'),('anvelopa e tăiată','tyre'),('agregatul nu răcește','reefer'),('perna de aer e spartă','susp'),('viteza nu intră','gear'),('clima nu funcționează','climate'),
  ('prelata e ruptă','tarp'),('țeava de eșapament e ruptă','exhaust'),('ștergătoarele nu funcționează','visib'),('centura nu se închide','seat'),('prezoanele sunt slăbite','wheel'),('m-am împotmolit în noroi','stuck'),('am pierdut cheile','lost'),
  ('numărul de înmatriculare a căzut','numplate'),('asistentul de bandă nu funcționează','adas'),('ușa nu se închide','door'),('liftul nu funcționează','door'),
  ('hamulce nie działają','brake'),('fren tutmuyor','brake')]
-NO=['frânele reparate','anvelopa înlocuită, totul ok','fum din eșapament','o piatră a lovit parbrizul','lipsește stingătorul','încălzirea scaunului nu funcționează','am sunat la asistența rutieră','nu știu']
+NO=['frânele reparate','totul merge bine','anvelopa înlocuită, totul ok','fum din eșapament','o piatră a lovit parbrizul','lipsește stingătorul','încălzirea scaunului nu funcționează','am sunat la asistența rutieră','nu știu']
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
