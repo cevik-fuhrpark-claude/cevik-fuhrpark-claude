@@ -42061,6 +42061,20 @@ await test('Backlog 1492 (Blickwinkel „Leitung druckt am A4-Drucker mit große
   ok(ui.includes('Backlog 1492') && ui.includes('Page.setFontSizes') && ui.includes('Gegenprobe'), 'UI-Prüfung mit echter Browser-Grundschrift und Gegenprobe');
 });
 
+await test('Backlog 1493 (Blickwinkel „Inhaberin mit Leseschwäche nutzt eine Lese-Erweiterung mit größeren Zeichenabständen“, Backlog 195, WCAG 1.4.12): Umgebungswahl der Kopfzeile schrumpft nicht (Text nie abgeschnitten), App-Name füllt den Rest, Kopfzeile bricht nur im Notfall um statt Glocke/Suche hinauszuschieben', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const i = css.indexOf('.topbar { flex-wrap: wrap; justify-content: flex-end; }');
+  ok(i > 0, 'Kopfzeile darf umbrechen, zweite Zeile rechtsbündig');
+  const rule = css.slice(i, css.indexOf('\n', i));
+  ok(rule.includes('.topbar .spacer { display: none; }') && rule.includes('.topbar .brand { flex: 1 1 0; min-width: 3.4em; }') && rule.includes('.topbar select { flex: 0 0 auto; }'), 'App-Name Basis 0 mit Mindestbreite für „CEVIK“, Auswahl ohne Schrumpfen, Abstandhalter entfällt');
+  // die neuen Regeln stehen nach den älteren Kopfzeilen-Regeln (sonst gewinnt flex: 0 1 auto / min-width: 0)
+  ok(i > css.indexOf('.topbar select { width: auto; min-width: 6.5rem; flex: 0 1 auto; }') && i > css.indexOf('.topbar .brand { white-space: nowrap; min-width: 0; overflow: hidden; }'), 'Reihenfolge: neue Regeln überschreiben die alten');
+  ok(/@media \(max-width: 360px\), \(max-width: 22\.5em\) \{ \.topbar \{ column-gap: 8px; \} \}/.test(css), 'schmale Handys: engerer Abstand (in px und em)');
+  const ui = readFileSync(new URL('../scripts/ui-kopfzeile-zeichenabstand.py', import.meta.url), 'utf8');
+  ok(ui.includes('Backlog 1493') && ui.includes('letter-spacing: 0.12em') && ui.includes('Gegenprobe'), 'UI-Prüfung mit WCAG-Textabständen und Gegenprobe');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
