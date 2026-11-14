@@ -41686,6 +41686,17 @@ await test('Backlog 1471 (Folge aus 1470, Backlog 195): „Sitz/Fahrersitz/Lufts
   for (const x of ['Luftfederung hat keinen Luftverlust', 'Sitz hat keinen Luftverlust']) ok(!susp(x) && !seat(x) && !brake(x), 'verneint ohne Hinweis: ' + x);
   for (const x of ['Bremse hat Luftverlust', 'Fahrersitz zu tief, Kompressor hat Luftverlust', 'Sitz ok, Bremse hat Luftverlust', 'Luftfederung ok, Bremse hat Luftverlust', 'Luftbalg neu und Kompressor hat Luftverlust']) ok(brake(x), 'Bremse fehlt: ' + x);
 });
+await test('Backlog 1472 (Sonde-Rest aus 1471, Backlog 195): „Luftsitz zischt“, „Fahrersitz verliert Druck“, „Luftsitz ist undicht“, „Fahrersitz bläst Luft ab“, „сиденье травит воздух“, „пневмосидіння шипить“, „driver seat losing pressure“ zeigen den Sitz-Hinweis, nicht die Bremse; „zischt nicht mehr“/„wurde getauscht“ ohne Hinweis; Bremse/Schlauch/Reifen unverändert', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); ok(m, n); return new RegExp(m[1], m[2]); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const any = (ns) => { const R = ns.map(g); return (x) => R.some((r) => r.test(recurFix(x))); };
+  const brake = any(['BRAKE_HINT', 'BRAKE2_HINT', 'BRAKE3_HINT', 'BRAKE4_HINT', 'AIRLINE_HINT']), seat = any(['SEAT_HINT', 'SEAT2_HINT', 'SEAT3_HINT', 'SEAT4_HINT']), tyre = any(['TYRE_HINT', 'TYRE2_HINT']);
+  for (const x of ['Luftsitz zischt', 'Fahrerluftsitz zischt', 'Luftsitz pfeift', 'Fahrersitz verliert Druck', 'Luftsitz verliert Druck', 'Luftsitz ist undicht', 'Sitz undicht', 'Fahrersitz bläst Luft ab', 'Luftsitz lässt Luft ab', 'Luftsitz geht nicht mehr hoch', 'сидіння шипить', 'пневмосидіння шипить', 'крісло водія травить повітря', 'сиденье травит воздух', 'пневмосидіння травить повітря', 'seat is leaking', 'driver seat losing pressure']) { ok(seat(x), 'Sitz fehlt: ' + x); ok(!brake(x), 'fälschlich Bremse: ' + x); }
+  for (const x of ['Luftsitz zischt nicht mehr', 'Luftsitz undicht, wurde getauscht', 'сидіння більше не шипить', 'seat leaking, fixed', 'seat leaking water from roof', 'Sitz nass, Dach undicht', 'Sitzheizung undicht']) ok(!seat(x), 'fälschlich Sitz: ' + x);
+  for (const x of ['гальма травлять повітря', 'шланг травить повітря', 'сидіння ок, гальма шипить повітрям', 'Sitz ok. Bremse verliert Druck', 'Fahrersitz zu tief, Bremse verliert Druck', 'brake losing pressure']) { ok(brake(x), 'Bremse fehlt: ' + x); ok(!seat(x), 'fälschlich Sitz: ' + x); }
+  ok(tyre('шина травить повітря') && !seat('шина травить повітря'), 'Reifen: шина травить повітря');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (14.11.2026, Backlog 1470, Sonde-Rest aus 1469): Luftverlust als Hauptwort („Reifen hat Luftverlust“, „Luftverlust Reifen hinten links“,
 # „Reifen undicht“, „tyre losing pressure“) zeigt genau den Reifen-Hinweis, nicht die Bremse; Bremse/Druckluft mit Luftverlust bleibt Bremse; Verneinung ohne Hinweis.
-# Backlog 1471: „Sitz/Luftfederung hat Luftverlust“ → nur Sitz bzw. Federung. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
+# Backlog 1471: „Sitz/Luftfederung hat Luftverlust“ → nur Sitz bzw. Federung. Backlog 1472: „Luftsitz zischt/undicht“, „сидіння травить повітря“, „seat losing pressure“ → nur Sitz. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -9,8 +9,9 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
 CASES=[("Reifen hat Luftverlust","tyre"),("Motor läuft. Reifen hat Luftverlust.","tyre"),("Reifen hinten links hat Druckverlust","tyre"),("Luftverlust Reifen hinten links","tyre"),
  ("schleichender Luftverlust am Vorderreifen","tyre"),("Reifenluftverlust","tyre"),("Reifen ist undicht","tyre"),("Reifen hält die Luft nicht","tyre"),("tyre losing pressure","tyre"),("slow leak in the tyre","tyre"),
  ("Reifen ok, Bremse hat Luftverlust","brake"),("Bremse am Rad hat Luftverlust","brake"),("Luftverlust im Druckluftsystem","brake"),
- ("Sitz hat Luftverlust","seat"),("Fahrersitz hat Luftverlust","seat"),("Luftfederung hat Luftverlust","susp"),("Luftbalg hat Luftverlust","susp")]
-NO=["Reifen hat keinen Luftverlust","Kein Luftverlust am Reifen","Reifen ist nicht undicht","tyre not losing pressure","Reifen hat Luftverlust, wurde geflickt","Luftfederung hat keinen Luftverlust"]
+ ("Sitz hat Luftverlust","seat"),("Fahrersitz hat Luftverlust","seat"),("Luftfederung hat Luftverlust","susp"),("Luftbalg hat Luftverlust","susp"),
+ ("Luftsitz zischt","seat"),("Fahrersitz verliert Druck","seat"),("Luftsitz ist undicht","seat"),("Fahrersitz bläst Luft ab","seat"),("сиденье травит воздух","seat"),("пневмосидіння шипить","seat"),("driver seat losing pressure","seat")]
+NO=["Reifen hat keinen Luftverlust","Kein Luftverlust am Reifen","Reifen ist nicht undicht","tyre not losing pressure","Reifen hat Luftverlust, wurde geflickt","Luftfederung hat keinen Luftverlust","Luftsitz zischt nicht mehr","Luftsitz undicht, wurde getauscht","сидіння більше не шипить"]
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
