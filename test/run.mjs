@@ -41983,6 +41983,14 @@ await test('Backlog 1488 (Blickwinkel „Fahrer schreibt die Meldung auf Belarus
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-belarussisch.py'), 'UI-Prüfung in pruefen.sh');
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
 });
+await test('Backlog 1489 (Nebenbefund aus 1488, Backlog 195): „из выхлопа черный дым“, „з вихлопу чорний дим“, „из глушителя синий дым“, „из выхлопа валит дым“ zeigen nur den Motor-Hinweis, keinen Brand (ein Farb-/Verbwort zwischen Auspuff und Rauch); „дым из кабины“, „выхлоп нормальный дым из кабины“ bleiben Brand; „кабина в дыму“ Brand, „без дыму/не было дыму“ ohne', async () => {
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); ok(m, n); return new RegExp(m[1], m[2]); };
+  const FIRE = g('FIRE_HINT'), ENG = ['ENGINE_HINT', 'ENGINE2_HINT', 'ENGINE3_HINT', 'ENGINE4_HINT', 'ENGINE5_HINT'].map(g);
+  for (const x of ['из выхлопа черный дым', 'з вихлопу чорний дим', 'из глушителя синий дым', 'из выхлопа валит дым', 'из выхлопа густой дым', 'з глушника сизий дим']) { ok(!FIRE.test(x), 'fälschlich Brand: ' + x); ok(ENG.some((r) => r.test(x)), 'Motor fehlt: ' + x); }
+  for (const x of ['дым из кабины', 'из кабины идет дым', 'глушитель в порядке, из кабины дым', 'выхлоп нормальный дым из кабины', 'из под капота дым', 'кабина в дыму', 'вся кабина в дыму']) ok(FIRE.test(x), 'Brand fehlt: ' + x);
+  ok(app.includes('пожежі|пожара|диму|дыма|дыму)(?![а-яіїєґё])'), '„без дыму/не было дыму“ wie „без дыма“ verneint');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
