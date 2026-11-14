@@ -41596,6 +41596,14 @@ await test('Backlog 1465 (Blickwinkel „Fahrer schreibt Serbisch/Mazedonisch in
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-serbisch-kyrillisch.py'), 'UI-Prüfung in pruefen.sh');
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
 });
+await test('Backlog 1466 (Folge aus 1465): lateinisch „povredena guma“/„guma povrijeđena“/„kabinata e povredena“ (bei Sachen = beschädigt) zeigen über HR_KINDS keinen Verletzungs-Hinweis mehr; „povrijeđen sam“, „vozač povrijeđen“, „kabina povređena, vozač povređen“, „ozlijeđen“, Rettungsdienst weiter Verletzung; Unfall verdrängt Verletzung', async () => {
+  const { readFileSync } = await import('node:fs');
+  const lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { hrKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { hrKinds, foreignKinds };')();
+  for (const [x, k] of [['povredena guma', ''], ['guma povrijeđena', ''], ['kabinata e povredena', ''], ['prikolica povređena', ''], ['povrijeđen sam', 'injury'], ['vozač povrijeđen', 'injury'], ['kabina povređena, vozač povređen', 'injury'], ['ozlijeđen', 'injury'], ['zovite hitnu pomoć, kamion', 'injury'], ['imao sam sudar, povrijeđen sam', 'acc'], ['vozač povrijeđen kod kamiona', 'injury']]) {
+    eq([...hrKinds(x)].sort().join(','), k, 'HR: ' + x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); }
+  ok(readFileSync(new URL('../scripts/ui-meldung-serbisch-kyrillisch.py', import.meta.url), 'utf8').includes('"povredena guma"'), 'UI-Prüfung enthält „povredena guma“');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

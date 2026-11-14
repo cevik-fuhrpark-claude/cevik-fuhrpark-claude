@@ -3552,7 +3552,7 @@ const HR_KINDS = [['brake', /\bkocnic\S*\s+(?:\S+\s+)?(?:ne\s+(?:rade|radi|koce|
   ['steer', /\bvolan\S*\s+(?:\S+\s+)?(?:blokiran|zakljucan|tezak|tesko|ima\s+(?:zazor|luft)|ne\s+(?:okrece|radi))|\bvuce\s+(?:\S+\s+)?(?:desno|lijevo|levo)/],
   ['leak', /\b(?:ulj|goriv|naft|dizel|tecnost|tekucin|antifriz|adblue)\S*\s+(?:\S+\s+)?(?:curi|kapa|cure|ide\s+van)|\b(?:curi|kapa|gubi)\s+(?:\S+\s+)?(?:ulj|goriv|naft|dizel|tecnost|tekucin|antifriz|adblue)/],
   ['acc', /\b(?:imao|imala|imali)\s+(?:sam\s+|smo\s+)?(?:\S+\s+)?(?:nesrec|sudar|udes)|\bnesreca|\bsudar|\budes\b|\b(?:udario|udarila|lupio|ogrebao|okrznuo|zakacio)\b|\budario\s+me/, /kamen/],
-  ['injury', /\b(?:povrijed|povred|ozlijed|ozled)\S*|\bhitn\S*\s+pomoc|\bambulant/],
+  ['injury', /\b(?:povrijed|povred|ozlijed|ozled)\S*|\bhitn\S*\s+pomoc|\bambulant/, /^(?!.*\b(?:vozac\S*|suvozac\S*|covjek|covek|osoba|pjesak|pesak|biciklist\S*|kolega|sam|smo|ja|jas|sum)\b)(?!.*\b(?:hitn|ambulant))(?=.*\b(?:povrijed|povred)).*\b(?:gum|kabin|prikolic|stakl|felg|branik|vrat|karoserij|cerad|retrovizor|ogledal|far|blatobran|kamion|tegljac|auto|sleper|ceradu)/], // Backlog 1466: „povredena guma“ (bulgarisch/mazedonisch lateinisch = beschädigt) ohne Person keine Verletzung
   ['parkbrake', /\brucn\S*\s+(?:kocnic\S*\s+)?(?:\S+\s+)?(?:ne\s+(?:drzi|radi|otpusta)|pokvaren|zaglavil)|\b(?:kamion|auto|prikolica|tegljac|sleper)\S*\s+(?:se\s+)?(?:otkotrlja|sam\s+krenu)/],
   ['nostart', /\b(?:motor|kamion|auto|tegljac)\S*\s+(?:\S+\s+)?(?:ne\s+(?:pali|upaljuje|vata)|nece\s+(?:da\s+)?(?:upali|pali))|\banlaser\S*\s+(?:\S+\s+)?ne\s+radi/],
   ['mirror', /\b(?:retrovizor|ogledal|retrovizer)\S*\s+(?:\S+\s+)?(?:slomljen|otpa|puk|razbijen|visi|ne\s+(?:radi|podesava))/],
