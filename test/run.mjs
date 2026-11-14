@@ -41766,6 +41766,21 @@ await test('Backlog 1478 (Blickwinkel „nachgestellte Verneinung“): „Reifen
   ok(/NOT_BAD/.test(app.slice(app.indexOf('const recurFix'), app.indexOf('const recurFix') + 1500)), 'recurFix wendet NOT_BAD an');
   ok(/ui-meldung-verneinung\.py/.test(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8')), 'UI-Prüfung steht in pruefen.sh');
 });
+await test('Backlog 1479 (Blickwinkel „Verneinung mit weder … noch“): „Reifen weder platt noch beschädigt“, „Kupplung weder rutscht noch klemmt“, „Scheibe hat weder Riss noch Steinschlag“, „tires neither flat nor damaged“, „шини ні спущені ні пошкоджені“ lösen keinen Hinweis aus; „…, aber Bremse quietscht“, „Reifen platt, weder Pannendienst noch Werkstatt erreichbar“ und „weder Licht noch Blinker gehen“ (keine Schadenswörter) bleiben unberührt', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); ok(m, n); return new RegExp(m[1], m[2]); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", app.indexOf('const noFixed')) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const H = { flat: ['FLAT_HINT', 'FLAT2_HINT', 'FLAT3_HINT'], tyre: ['TYRE_HINT', 'TYRE2_HINT', 'TYRE3_HINT', 'TYRE4_HINT', 'TYRE5_HINT'], brake: ['BRAKE_HINT', 'BRAKE2_HINT', 'BRAKE3_HINT', 'BRAKE4_HINT'], mirror: ['MIRROR_HINT', 'MIRROR2_HINT', 'MIRROR3_HINT'], gear: ['GEAR_HINT', 'GEAR2_HINT', 'GEAR3_HINT'], tarp: ['TARP_HINT', 'TARP2_HINT'], glass2: ['GLASS2_HINT'] };
+  const R = Object.fromEntries(Object.entries(H).map(([k, v]) => [k, v.map(g)]));
+  const hit = (x) => { const t = noFixed(recurFix(x)); return Object.keys(R).filter((k) => R[k].some((r) => r.test(t))); };
+  for (const x of ['Reifen weder platt noch beschädigt', 'Reifen weder platt noch beschaedigt', 'Kupplung weder rutscht noch klemmt', 'Reifenprofil weder abgefahren noch eingerissen', 'Scheibe hat weder Riss noch Steinschlag', 'Plane weder gerissen noch ein Loch', 'tires neither flat nor damaged', 'mirror neither cracked nor broken', 'glass has neither cracks nor chips', 'шини ні спущені ні пошкоджені', 'дзеркало ні тріснуте ні розбите', 'шины ни спущены ни повреждены']) ok(hit(x).length === 0, 'weder/noch, ohne Hinweis: ' + x + ' ' + hit(x));
+  for (const [x, k] of [['Reifen weder platt noch beschädigt, aber Bremse quietscht', 'brake'], ['Reifen platt, weder Pannendienst noch Werkstatt erreichbar', 'flat'], ['Plane weder gerissen noch Loch, aber Spiegel kaputt', 'mirror'], ['Reifen platt', 'flat'], ['tyre flat', 'flat'], ['шина спущена', 'flat']]) ok(hit(x).includes(k), 'Hinweis bleibt: ' + x + ' → ' + hit(x));
+  ok(/weder Licht noch Blinker/.test(recurFix('weder Licht noch Blinker gehen')), 'weder/noch ohne Schadenswörter bleibt stehen');
+  ok(/NEITHER_BAD/.test(app.slice(app.indexOf('const recurFix'), app.indexOf('const recurFix') + 1500)), 'recurFix wendet NEITHER_BAD an');
+  ok(/ui-meldung-weder-noch\.py/.test(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8')), 'UI-Prüfung steht in pruefen.sh');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
