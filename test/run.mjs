@@ -41697,6 +41697,17 @@ await test('Backlog 1472 (Sonde-Rest aus 1471, Backlog 195): „Luftsitz zischt�
   for (const x of ['гальма травлять повітря', 'шланг травить повітря', 'сидіння ок, гальма шипить повітрям', 'Sitz ok. Bremse verliert Druck', 'Fahrersitz zu tief, Bremse verliert Druck', 'brake losing pressure']) { ok(brake(x), 'Bremse fehlt: ' + x); ok(!seat(x), 'fälschlich Sitz: ' + x); }
   ok(tyre('шина травить повітря') && !seat('шина травить повітря'), 'Reifen: шина травить повітря');
 });
+await test('Backlog 1473 (Backlog 195, Sonde „Fahrer meldet Alltagsmängel“): „Keile fehlen“/„Keile sind weg“ zeigen den Bordausrüstungs-Hinweis (nicht „Holzkeile“, „Keilriemen“), „stinkt nach Diesel“, „Diesel riecht im Fahrerhaus“, „Kabine stinkt nach Diesel“ den Undicht-Hinweis (nicht „Diesel riecht nicht mehr“)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); ok(m, n); return new RegExp(m[1], m[2]); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const any = (ns) => { const R = ns.map(g); return (x) => R.some((r) => r.test(recurFix(x))); };
+  const kit = any(['SAFETYKIT_HINT']), leak = any(['LEAK_HINT', 'LEAK2_HINT', 'LEAK3_HINT']);
+  for (const x of ['Keile fehlen', 'Keile sind weg', 'Unterlegkeile fehlen', 'Radkeil fehlt', 'wheel chocks missing']) ok(kit(x), 'Bordausrüstung fehlt: ' + x);
+  for (const x of ['Holzkeile fehlen', 'Keilriemen fehlt', 'Keilriemen quietscht']) ok(!kit(x), 'fälschlich Bordausrüstung: ' + x);
+  for (const x of ['es stinkt nach Diesel in der Kabine', 'Diesel riecht im Fahrerhaus', 'Kabine stinkt nach Diesel', 'Diesel stinkt', 'riecht nach Diesel', 'Dieselgeruch im Fahrerhaus']) ok(leak(x), 'Undicht fehlt: ' + x);
+  ok(!leak('Diesel riecht nicht mehr'), 'fälschlich undicht: Diesel riecht nicht mehr');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
