@@ -1,12 +1,12 @@
 # [CLAUDE] UI-Test (14.11.2026, Backlog 1473, Backlog 195): „Keile fehlen“ zeigt genau den Bordausrüstungs-Hinweis, „stinkt nach Diesel“/„Diesel riecht im Fahrerhaus“
-# genau den Undicht-Hinweis; Backlog 1474: „no fire extinguisher“ → Bordausrüstung („no fire“ ohne Hinweis); Holzkeile/Keilriemen/„riecht nicht mehr“ ohne Hinweis. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
+# genau den Undicht-Hinweis; Backlog 1474: „no fire extinguisher“ → Bordausrüstung („no fire“ ohne Hinweis); Holzkeile/Keilriemen/„riecht nicht mehr“ ohne Hinweis; Backlog 1475: „Feuerlöscher fehlte, wurde ersetzt“ ohne Hinweis. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-CASES=[("Keile fehlen","safetykit"),("Keile sind weg","safetykit"),("es stinkt nach Diesel in der Kabine","leak"),("Diesel riecht im Fahrerhaus","leak"),("Kabine stinkt nach Diesel","leak"),("no fire extinguisher","safetykit"),("there is no fire extinguisher in the cab","safetykit")]
-NO=["Holzkeile fehlen","Diesel riecht nicht mehr","no fire, no smoke"]
+CASES=[("Keile fehlen","safetykit"),("Feuerlöscher wurde ersetzt, aber Warndreieck fehlt","safetykit"),("Keile sind weg","safetykit"),("es stinkt nach Diesel in der Kabine","leak"),("Diesel riecht im Fahrerhaus","leak"),("Kabine stinkt nach Diesel","leak"),("no fire extinguisher","safetykit"),("there is no fire extinguisher in the cab","safetykit")]
+NO=["Holzkeile fehlen","Diesel riecht nicht mehr","no fire, no smoke","Feuerlöscher fehlte, wurde ersetzt","Keile fehlen, ersetzt","fire extinguisher missing, replaced"]
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)

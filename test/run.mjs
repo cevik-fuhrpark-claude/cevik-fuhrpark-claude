@@ -21965,7 +21965,7 @@ await test('Backlog 328 (Blickwinkel „Warndreieck, Verbandkasten, Feuerlösche
     ok(L.safetykit_hint_title, 'Titel ' + l);
   }
   ok(app.includes(`<div id="safetykit" class="panel" hidden role="status">`), 'Panel #safetykit');
-  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#safetykit').hidden = !SAFETYKIT_HINT.test(dv);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
+  { const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || ''; const i = hl.indexOf("$('#safetykit').hidden = !SAFETYKIT_HINT.test(dfx);"); ok(i > 0 && i < hl.indexOf('groupHints(hintOpen); };'), 'Hinweis abhängig von der Beschreibung, vor der Gruppierung'); }
   const order = app.match(/^const HINT_ORDER = \[([^\]]+)\];/m)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
   ok(order.includes('safetykit') && order.indexOf('fire') < order.indexOf('safetykit') && order.indexOf('warnlight') < order.indexOf('safetykit') && order.indexOf('stuck') < order.indexOf('safetykit') && order.indexOf('safetykit') < order.indexOf('roadchk') && order.indexOf('safetykit') < order.indexOf('theft'), 'Gruppierung: Brand/Warnleuchte/Festgefahren vor Ausrüstung vor Kontrolle/Diebstahl');
   ok(helpAfter(app, 'safetykit', 'gelfuel'), 'Hilfe-Abschnitt safetykit nach gelfuel');
@@ -41716,6 +41716,18 @@ await test('Backlog 1474 (Fund aus 1473): „no fire extinguisher“ zeigt den B
   for (const x of ['no fire extinguisher', 'there is no fire extinguisher in the cab', 'No fire extinguisher on board']) ok(kit.test(recurFix(x)), 'Bordausrüstung fehlt: ' + x);
   for (const x of ['no fire', 'no fire, no smoke', 'no smoke, no fire']) { ok(!fire.test(recurFix(x)) && !kit.test(recurFix(x)), 'Entwarnung: ' + x); ok(/\bok\b/.test(recurFix(x)), 'Entwarnung nicht erkannt: ' + x); }
   ok(fire.test(recurFix('fire in the engine')), 'Brand fehlt');
+});
+await test('Backlog 1475 (Rest aus 1473): Bordausrüstung mit Reparaturvermerk – „Feuerlöscher fehlte, wurde ersetzt“, „Feuerlöscher abgelaufen, wurde getauscht“, „Keile fehlen, ersetzt“, „fire extinguisher missing, replaced“, „вогнегасник прострочений, замінили“ zeigen keinen Bordausrüstungs-Hinweis mehr (noFixed wie bei anderen Hinweisen); ohne Vermerk, mit „aber … fehlt“ und „benutzt“ bleibt er', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); ok(m, n); return new RegExp(m[1], m[2]); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", app.indexOf('const noFixed')) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const kit = g('SAFETYKIT_HINT'), on = (x) => kit.test(noFixed(recurFix(x)));
+  const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
+  ok(hl.includes("$('#safetykit').hidden = !SAFETYKIT_HINT.test(dfx);"), 'Bordausrüstung prüft die Beschreibung ohne Reparaturvermerk (dfx)');
+  for (const x of ['Feuerlöscher fehlte, wurde ersetzt', 'Feuerlöscher abgelaufen, wurde getauscht', 'Keile fehlen, ersetzt', 'fire extinguisher missing, replaced', 'first aid kit expired, replaced it', 'вогнегасник прострочений, замінили']) ok(!on(x), 'erledigt, ohne Hinweis: ' + x);
+  for (const x of ['Feuerlöscher fehlt', 'Keile fehlen', 'Feuerlöscher benutzt. Bitte neuen besorgen', 'Feuerlöscher wurde ersetzt, aber Warndreieck fehlt', 'Feuerlöscher fehlt, wurde ersetzt aber Verbandkasten fehlt', 'Feuerlöscher repariert, fehlt aber immer noch', 'no fire extinguisher', 'Warndreieck fehlt, habe ein neues gekauft']) ok(on(x), 'Hinweis bleibt: ' + x);
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
