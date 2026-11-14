@@ -38149,7 +38149,7 @@ await test('Backlog 1392 (Reserve Start-Modul nach 1394: 45,614 % > 45,60 %): Ba
 await test('Backlog 1407 (Blickwinkel „Fahrer schreibt die Meldung auf Türkisch“, Backlog 195): „fren tutmuyor“, „lastik patladı/patladi“, „direksiyon kilitlendi“, „duman çıkıyor“, „yağ kaçırıyor“, „kaza yaptım“, „yaralandım“ → Bremse/Reifenpanne/Lenkung/Brand/Leck/Unfall/Verletzung; Reparaturvermerk, „sorun yok“, „değil“, Auspuffrauch, Bremslicht, Steinschlag, deutsche/englische Texte ohne', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const src = ['const TR_OK', 'const TR_KINDS', 'const trFold', 'function trKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const TR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
+  const src = ['const TR_OK', 'const TR_KINDS', 'const TR_NEG', 'const trFold', 'function trKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const TR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
   const trKinds = new Function(src + 'return trKinds;')();
   const is = (x, k) => { const r = [...trKinds(x)].sort().join(','); eq(r, k, x); };
   for (const [x, k] of [['frenler tutmuyor', 'brake'], ['fren lambası çalışmıyor', 'lights'], ['FREN TUTMUYOR', 'brake'], ['frenim boşa gidiyor', 'brake'], ['fren havası düşük uyarısı', 'brake'], ['hava basıncı düşük', 'brake'],
@@ -38234,7 +38234,7 @@ await test('Backlog 1402 (Kurzsonde, Blickwinkel „Fahrer meldet Kennzeichen au
 await test('Backlog 1410 (Folge aus 1409, Meldung auf Türkisch): „ön cam çatladı“ → Scheibe; „cam açılmıyor“ → Fenster; „akü bitti“ → Batterie; „takograf çalışmıyor“, „şoför kartı okunmuyor“ → Fahrtenschreiber; „dorse bağlanmıyor“, „semer kilitlenmiyor“ → Kupplung; „mazot bitti“ → Tank leer; „motor hararet yaptı“, „araç çekmiyor“ → Motor; „lastik kesik/havası düşük“ → Reifen; Spiegelglas, AdBlue, Reparaturvermerk ohne', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const src = ['const TR_OK', 'const TR_KINDS', 'const trFold', 'function trKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const TR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
+  const src = ['const TR_OK', 'const TR_KINDS', 'const TR_NEG', 'const trFold', 'function trKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const TR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
   const trKinds = new Function(src + 'return trKinds;')();
   const is = (x, k) => eq([...trKinds(x)].sort().join(','), k, x);
   for (const [x, k] of [['ön cam çatladı', 'glass'], ['taş çarptı, ön cam çatladı', 'glass'], ['camda çatlak var', 'glass'], ['on cam kirildi', 'glass'], ['ayna camı kırıldı', 'mirror'], ['kapı camı açılmıyor', 'window'], ['cam inmiyor', 'window'],
@@ -38266,7 +38266,7 @@ await test('Backlog 1411 (Reserve Start-Modul nach 1410: 45,5997 % ≈ 45,60 %, 
 await test('Backlog 1414 (Folge aus 1412, Meldung auf Türkisch): „silecek çalışmıyor“, „cam buğulanıyor“ → Sicht; „emniyet kemeri takılmıyor“, „koltuk kırıldı“ → Gurt/Sitz; „bijon gevşedi“, „jant çatladı“, „teker sallanıyor“ → Rad; „çamura saplandı“ → festgefahren; „anahtar kayboldu“ → verloren; „plaka düştü“ → Kennzeichen; „şerit takip asistanı arıza“, „kendi kendine fren yapıyor“ → Assistenz (nicht Bremse); Sitzheizung, Kennzeichenlicht, Fahrerkarte, Reparaturvermerk ohne', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const src = ['const TR_OK', 'const TR_KINDS', 'const trFold', 'function trKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const TR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
+  const src = ['const TR_OK', 'const TR_KINDS', 'const TR_NEG', 'const trFold', 'function trKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const TR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
   ok(src.includes("['adas'") && src.includes("['visib'"), 'neue Bereiche stehen vor dem abschließenden Tür-Eintrag');
   const trKinds = new Function(src + 'return trKinds;')();
   const is = (x, k) => eq([...trKinds(x)].sort().join(','), k, x);
@@ -38284,7 +38284,7 @@ await test('Backlog 1414 (Folge aus 1412, Meldung auf Türkisch): „silecek ça
 await test('Backlog 1412 (Folge aus 1410, Meldung auf Türkisch): „frigo çalışmıyor“, „thermo king alarm“, „frigo yakıtı bitti“ → Kühlgerät; „lift kalkmıyor“ → Tür/Ladebordwand; „körük patladı“ → Luftfederung; „vites geçmiyor“ → Getriebe; „klima/kalorifer çalışmıyor“ → Klima/Heizung; „branda yırtıldı“ → Plane; „egzoz patladı“ → Auspuff; Sitzheizung, Kühlwasser, Auspuffrauch, Forklift, Reparaturvermerk ohne', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const src = ['const TR_OK', 'const TR_KINDS', 'const trFold', 'function trKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const TR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
+  const src = ['const TR_OK', 'const TR_KINDS', 'const TR_NEG', 'const trFold', 'function trKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const TR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
   ok(src.includes("['exhaust'") && src.includes("['reefer'"), 'neue Bereiche stehen vor dem abschließenden Tür-Eintrag (ältere Tests schneiden bei „[\'door\'“ ab)');
   const trKinds = new Function(src + 'return trKinds;')();
   const is = (x, k) => eq([...trKinds(x)].sort().join(','), k, x);
@@ -38374,7 +38374,7 @@ await test('Backlog 1413 (Reserve Start-Modul nach 1412: 45,593 % ≈ 45,60 %, B
 await test('Backlog 1409 (Folge aus 1407, Meldung auf Türkisch): „motor çalışmıyor“, „marş basmıyor“ → springt nicht an; „ayna kırıldı“ → Spiegel; „far/stop lambası yanmıyor“, „ampul patladı“ → Licht; „arıza lambası yandı“ → Warnleuchte; „kapı kapanmıyor“ → Tür; Klima/Radio, Reparaturvermerk ohne', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const src = ['const TR_OK', 'const TR_KINDS', 'const trFold', 'function trKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const TR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
+  const src = ['const TR_OK', 'const TR_KINDS', 'const TR_NEG', 'const trFold', 'function trKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const TR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
   const trKinds = new Function(src + 'return trKinds;')();
   const is = (x, k) => eq([...trKinds(x)].sort().join(','), k, x);
   for (const [x, k] of [['motor çalışmıyor', 'nostart'], ['araç çalışmıyor sabah', 'nostart'], ['marş basmıyor', 'nostart'], ['ayna kırıldı', 'mirror'], ['sağ aynam düştü', 'mirror'], ['aynası ayarlanmıyor', 'mirror'],
@@ -41250,7 +41250,7 @@ await test('Backlog 1451 (Blickwinkel „Werkstatt hat die UVV auf heute vorgezo
 await test('Backlog 1453 (Blickwinkel „Fahrer schreibt die Meldung auf Polnisch“, Backlog 195, Folge aus 896/1407): „hamulce nie działają“, „złapałem gumę“, „kierownica zablokowana“, „dym z kabiny“, „cieknie olej“, „miałem wypadek“, „silnik nie odpala“ u. a. → dieselben Hinweise wie türkische Stichwörter, auch ohne ą/ł/ó; Reparaturvermerk, „dym z wydechu“ (auch im Brand-Muster), Steinschlag, Gaśnica, Pogotowie techniczne, Sitzheizung, deutsche/englische/türkische Texte ohne', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const src = ['const PL_OK', 'const PL_KINDS', 'const plFold', 'function plKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const PL_KINDS' ? "['door'" : h, i)) + 1); }).join('');
+  const src = ['const PL_OK', 'const PL_KINDS', 'const PL_NEG', 'const plFold', 'function plKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const PL_KINDS' ? "['door'" : h, i)) + 1); }).join('');
   const plKinds = new Function(src + 'return plKinds;')();
   const is = (x, k) => eq([...plKinds(x)].sort().join(','), k, x);
   for (const [x, k] of [['hamulce nie działają', 'brake'], ['HAMULCE NIE DZIAŁAJĄ', 'brake'], ['hamulce nie dzialaja', 'brake'], ['słabo hamuje', 'brake'], ['spada ciśnienie powietrza', 'brake'], ['hamulec ręczny nie trzyma', 'parkbrake'], ['ciężarówka się stoczyła', 'parkbrake'],
@@ -41278,7 +41278,7 @@ await test('Backlog 1453 (Blickwinkel „Fahrer schreibt die Meldung auf Polnisc
 await test('Backlog 1454 (Blickwinkel „Fahrer schreibt die Meldung auf Rumänisch“, Backlog 195, Folge aus 1407/1453): „frânele nu funcționează“, „am făcut pană“, „volanul e blocat“, „iese fum din cabină“, „curge ulei“, „am avut un accident“, „motorul nu pornește“ u. a. → dieselben Hinweise wie polnische Stichwörter, auch ohne ă/î/ș/ț; Reparaturvermerk, „fum din eșapament“, Steinschlag, Stingător, Sitzheizung ohne; Stichwort-Tabellen TR/PL/RO im still nachgeladenen Modul app-sprachen.js (Reserve Start-Modul)', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const src = ['const RO_OK', 'const RO_KINDS', 'const roFold', 'function roKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const RO_KINDS' ? "['door'" : h, i)) + 1); }).join('');
+  const src = ['const RO_OK', 'const RO_KINDS', 'const RO_NEG', 'const roFold', 'function roKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const RO_KINDS' ? "['door'" : h, i)) + 1); }).join('');
   const roKinds = new Function(src + 'return roKinds;')();
   const is = (x, k) => eq([...roKinds(x)].sort().join(','), k, x);
   for (const [x, k] of [['frânele nu funcționează','brake'],['FRANELE NU MERG','brake'],['nu mai frânează','brake'],['pierde aer, scade presiunea','brake'],['frâna de mână nu ține','parkbrake'],['camionul a plecat singur la vale','parkbrake'],
@@ -41309,7 +41309,7 @@ await test('Backlog 1454 (Blickwinkel „Fahrer schreibt die Meldung auf Rumäni
 await test('Backlog 1455 (Blickwinkel „Fahrer schreibt die Meldung auf Serbisch/Kroatisch/Bosnisch“, Backlog 195, Folge aus 1453/1454): „kočnice ne rade“, „pukla guma“, „volan blokiran“, „izlazi dim iz kabine“, „curi ulje“, „imao sam udes“, „motor ne pali“ u. a. → dieselben Hinweise, auch ohne č/ć/đ/š/ž; Reparaturvermerk, „dim iz auspuha“, Steinschlag, Feuerlöscher, Sitzheizung, andere Sprachen ohne; Tabelle nur im Modul app-sprachen.js', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const src = ['const HR_OK', 'const HR_KINDS', 'const hrFold', 'function hrKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const HR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
+  const src = ['const HR_OK', 'const HR_KINDS', 'const HR_NEG', 'const hrFold', 'function hrKinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const HR_KINDS' ? "['door'" : h, i)) + 1); }).join('');
   const hrKinds = new Function(src + 'return hrKinds;')();
   const is = (x, k) => eq([...hrKinds(x)].sort().join(','), k, x);
   for (const [x, k] of [['kočnice ne rade','brake'],['KOCNICE NE RADE','brake'],['slabo koči','brake'],['pada pritisak zraka','brake'],['ručna kočnica ne drži','parkbrake'],['kamion se otkotrljao','parkbrake'],
@@ -41808,6 +41808,20 @@ await test('Backlog 1481 (Blickwinkel „Mangel mit ohne/kein + Bauteil“): „
   for (const x of ['no mirror damage', 'Spiegel ohne Riss', 'keinen Spiegel einstellen können', 'ohne Bremsdruck-Verlust', 'no lights on the dashboard', 'kein Diesel ausgelaufen', 'kein Öl ausgetreten', 'no fuel leak']) ok(hit(x).length === 0, 'ohne Hinweis: ' + x + ' ' + hit(x));
   ok(/ohneFix/.test(app.slice(app.indexOf('const recurFix'), app.indexOf('const recurFix') + 1500)), 'recurFix wendet ohneFix an');
   ok(/ui-meldung-ohne-bauteil\.py/.test(fs.readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8')), 'UI-Prüfung steht in pruefen.sh');
+});
+await test('Backlog 1482 (Blickwinkel „Verneinung in TR/PL/RO/HR-Meldungen“): „lastik patlamadı“, „ayna kırılmadı“, „opona nie przebita“, „lusterko nie zbite“, „anvelopa nu a explodat“, „guma nije probušena“, „ogledalo nije razbijeno“, „ulje ne curi“ ohne Hinweis; „opona przebita“, „bez lusterka“, „fara oglinda“, „nema ogledala“ mit Hinweis; „hamulce nie działają“, „kocnice ne rade“, „fren tutmuyor“ (Verneinung = Mangel) bleiben', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const mk = (U, l) => { const src = ['const ' + U + '_OK', 'const ' + U + '_KINDS', 'const ' + U + '_NEG', 'const ' + l + 'Fold', 'function ' + l + 'Kinds'].map((h) => { const i = app.indexOf('\n' + h) + 1; ok(i > 0, h); return app.slice(i, app.indexOf('\n', app.indexOf(h === 'const ' + U + '_KINDS' ? "['door'" : h, i)) + 1); }).join(''); return new Function(src + 'return ' + l + 'Kinds;')(); };
+  const K = { tr: mk('TR', 'tr'), pl: mk('PL', 'pl'), ro: mk('RO', 'ro'), hr: mk('HR', 'hr') };
+  const is = (l, x, k) => eq([...K[l](x)].sort().join(','), k, l + ': ' + x);
+  for (const [l, x] of [['tr', 'lastik patlamadı'], ['tr', 'ayna kırılmadı'], ['tr', 'yağ akmıyor'], ['pl', 'opona nie przebita'], ['pl', 'opona nie jest przebita'], ['pl', 'lusterko nie zbite'], ['pl', 'olej nie cieknie'], ['ro', 'anvelopa nu a explodat'], ['ro', 'oglinda nu e spartă'], ['hr', 'guma nije probušena'], ['hr', 'ogledalo nije razbijeno'], ['hr', 'ulje ne curi']]) is(l, x, '');
+  for (const [l, x, k] of [['pl', 'opona przebita', 'flat'], ['pl', 'bez lusterka', 'mirror'], ['pl', 'brak lusterka', 'mirror'], ['ro', 'fara oglinda', 'mirror'], ['ro', 'oglinda lipseste', 'mirror'], ['hr', 'nema ogledala', 'mirror'], ['hr', 'bez retrovizora', 'mirror'], ['tr', 'lastik patladı', 'flat'], ['ro', 'anvelopa a explodat', 'flat'], ['hr', 'guma probušena', 'flat'], ['hr', 'ulje curi', 'leak'], ['pl', 'hamulce nie działają', 'brake'], ['hr', 'kocnice ne rade', 'brake'], ['tr', 'fren tutmuyor', 'brake']]) ok(K[l](x).has(k), l + ': ' + x + ' → ' + k + ' (' + [...K[l](x)] + ')');
+  ok(K.tr('lastik patlamadı ama fren tutmuyor').has('brake') && !K.tr('lastik patlamadı ama fren tutmuyor').has('flat'), 'TR: Rest der Meldung wirkt weiter');
+  ok(K.pl('opona nie przebita, hamulce nie działają').has('brake') && !K.pl('opona nie przebita, hamulce nie działają').has('flat'), 'PL: Rest der Meldung wirkt weiter');
+  const lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  for (const n of ['TR_NEG', 'PL_NEG', 'RO_NEG', 'HR_NEG']) { ok(lang.includes(n), 'in app-sprachen.js: ' + n); ok(!main.includes(n), 'nicht im Start-Modul: ' + n); }
+  ok(/ui-meldung-fremdsprache-verneinung\.py/.test(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8')), 'UI-Prüfung steht in pruefen.sh');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
