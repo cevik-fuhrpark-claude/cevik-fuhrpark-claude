@@ -41555,7 +41555,7 @@ await test('Backlog 1464 (Blickwinkel „Fahrer schreibt Ukrainisch in lateinisc
   const ids = [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1]);
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
   eq(new Set(ids).size, 34, 'Hinweisarten');
-  ok(app.includes('...rlKinds(v), ...ulKinds(v)]);'), 'in foreignKinds aufgenommen');
+  ok(app.includes('...rlKinds(v), ...ulKinds(v)'), 'in foreignKinds aufgenommen');
   { const FIRE = new RegExp(app.match(/^const FIRE_HINT = \/(.+)\/i;/m)[1], 'i'); ok(!FIRE.test('chornyi dym z hlushnyka') && !FIRE.test('dym z vykhlopnoi truby') && FIRE.test('dym z kabiny') && !FIRE.test('dym iz glushitelya'), 'Hauptmuster Brand: Rauch aus dem Schalldämpfer („hlushnyk“) ohne Hinweis'); }
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const x of ["halma ne pratsyuyut","probyv koleso","kermo zaklynylo","dym z kabiny","teche olyva","potrapyv v avariiu","dvyhun ne zavodytsia","dzerkalo rozbyte","akumuliator siv","takhohraf ne chytaie kartku","refryzherator ne morozyt","peredacha ne vmykaietsia","zahubyv kliuchi"]) { ok(STRINGS[l].help_report_s.includes(x), 'Hilfe Melden ' + l + ': ' + x); ok(ulKinds(x).size === 1, 'Hilfe-Beispiel löst Hinweis aus: ' + x); }
@@ -41565,6 +41565,35 @@ await test('Backlog 1464 (Blickwinkel „Fahrer schreibt Ukrainisch in lateinisc
   { const body = lang.replace(/^import .*$/m, '').replace(/^export .*$/m, ''); const fk = new Function(body + 'return foreignKinds;')();
     for (const [x, k] of [['dym z vykhlopnoi truby', ''], ['chornyi dym z hlushnyka', ''], ['avariika', ''], ['avariinyi znak zahubyv', ''], ['avariinyi rezhym', 'engine'], ['juhtus avarii', 'acc'], ['dym z kabiny', 'fire'], ['halma ne pratsyuyut', 'brake'], ['avariia, vodii poranenyi', 'acc']]) eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); }
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-ukrainisch-latein.py'), 'UI-Prüfung in pruefen.sh');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
+});
+await test('Backlog 1465 (Blickwinkel „Fahrer schreibt Serbisch/Mazedonisch in kyrillischer Schrift“, Backlog 195, Folge aus 1453–1464): „кочнице не раде“, „пукла гума“, „дим из кабине“, „мотор неће да упали“ (serbisch über HR_KINDS) sowie „сопирачките не работат“, „гумата пукна“, „моторот не пали“, „имав сообраќајна несреќа“ (mazedonisch, MK_KINDS, auch lateinisch) → dieselben Hinweise; Reparaturvermerk, Auspuffrauch, Steinschlag, Feuerlöscher („гашење пожара“, „противпожарен“ – auch im Hauptmuster Brand), Sitzheizung, Tankkarte ohne; russische/ukrainische/bulgarische Sätze unverändert; Tabelle nur im Modul app-sprachen.js', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const body = lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '');
+  const { srKinds, foreignKinds: fk } = new Function(body + 'return { srKinds, foreignKinds };')();
+  const is = (x, k) => eq([...srKinds(x)].sort().join(','), k, x);
+  const CASES = [['кочнице не раде', 'brake'], ['КОЧНИЦЕ НЕ РАДЕ', 'brake'], ['сопирачките не работат', 'brake'], ['kocnicite ne rabotat', 'brake'], ['ручна кочница не држи', 'parkbrake'], ['шлепер се откотрљао', 'parkbrake'], ['рачната сопирачка не држи', 'parkbrake'], ['дим из кабине', 'fire'], ['кабина гори', 'fire'], ['пожар у кабини', 'fire'], ['чад од кабината', 'fire'],
+    ['пукла гума', 'flat'], ['гумата пукна', 'flat'], ['волан блокиран', 'steer'], ['воланот е заглавен', 'steer'], ['цури уље', 'leak'], ['тече масло', 'leak'], ['имао сам саобраћајну несрећу', 'acc'], ['имав сообраќајна несреќа', 'acc'], ['возачот е повреден', 'injury'], ['возач је повређен', 'injury'], ['звати хитну помоћ', 'injury'], ['имао сам несрећу, возач повређен', 'acc'],
+    ['мотор неће да упали', 'nostart'], ['моторот не пали', 'nostart'], ['акумулатор празан', 'batt'], ['акумулаторот е празен', 'batt'], ['изгубио сам кључеве', 'lost'], ['ги изгубив клучевите', 'lost'], ['огледало разбијено', 'mirror'], ['огледалото е скршено', 'mirror'],
+    ['лампица гори', 'warnlight'], ['гори лампица за мотор', 'warnlight'], ['свети лампичка', 'warnlight'], ['тахограф не чита картицу', 'tacho'], ['тахографот не ја чита картичката', 'tacho'], ['хладњак не хлади', 'reefer'], ['ладилникот не лади', 'reefer'], ['мењач не убацује', 'gear'], ['менувачот не влегува', 'gear'], ['сопирачките не работат. гумата пукна', 'brake,flat']];
+  for (const [x, k] of CASES) { is(x, k); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); }
+  const NO = ['кочнице поправљене', 'сопирачките се поправени', 'дим из ауспуха', 'чад од ауспухот', 'камен ударио у стакло', 'камен удри во стаклото', 'нема апарата за гашење пожара', 'нема противпожарен апарат', 'грејање седишта не ради', 'греењето на седиштето не работи', 'картица за гориво не ради', 'картичката за гориво не работи', 'све је у реду', 'сè е во ред', 'мотор ради нормално', 'моторот пак работи'];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  for (const x of ['гумата е повредена', 'кабината е повредена', 'гума повређена']) is(x, ''); // „повредена“ bei Sachen = beschädigt, keine Verletzung
+  for (const x of ['тормоза не работают', 'дым из кабины', 'двигун не заводиться', 'мотор не заводится', 'спирачките не работят', 'горит кабина']) is(x, '');
+  for (const [x, k] of [['спирачките не работят', 'brake'], ['гумата се спука', 'flat'], ['kocnice ne rade', 'brake'], ['pukla guma', 'flat'], ['dim iz auspuha', ''], ['gori lampica motora', 'warnlight']]) eq([...await fk(x)].sort().join(','), k, 'andere Sprachen: ' + x);
+  { const FIRE = new RegExp(app.match(/^const FIRE_HINT = \/(.+)\/i;/m)[1], 'i'); ok(!FIRE.test('нема апарата за гашење пожара') && !FIRE.test('нема противпожарен апарат') && FIRE.test('пожар у кабини') && FIRE.test('пожар в кабине'), 'Hauptmuster Brand: Feuerlöscher („гашење пожара“, „противпожарен“) ohne Hinweis'); }
+  const src = app.slice(app.indexOf('\nconst SR_TR'), app.indexOf('\nfunction srKinds'));
+  ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  for (const id of [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1])) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  ok(app.includes('...ulKinds(v), ...srKinds(v)]);'), 'in foreignKinds aufgenommen');
+  ok(!main.includes('const MK_KINDS') && lang.includes('const MK_KINDS'), 'Tabelle nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['кочнице не раде', 'пукла гума', 'дим из кабине', 'мотор неће да упали', 'сопирачките не работат', 'гумата пукна', 'моторот не пали', 'имав сообраќајна несреќа', 'ладилникот не лади']) ok(STRINGS[l].help_report_s.includes(x) && srKinds(x).size === 1, 'Hilfe Melden ' + l + ': ' + x);
+    for (const x of ['све је у реду', 'сè е во ред', 'дим из ауспуха', 'апарат за гашење пожара']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-serbisch-kyrillisch.py'), 'UI-Prüfung in pruefen.sh');
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
