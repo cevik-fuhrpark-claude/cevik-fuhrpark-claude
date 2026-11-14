@@ -25777,7 +25777,7 @@ await test('Backlog 572: kurze Tab-Beschriftung der Abfahrtskontrolle (DE „Kon
   eq(STRINGS.de.nav_check_tab, 'Kontrolle'); eq(STRINGS.en.nav_check_tab, 'Check'); eq(STRINGS.uk.nav_check_tab, 'Перевірка');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].nav_check !== STRINGS[l].nav_check_tab && STRINGS[l].nav_check.length > STRINGS[l].nav_check_tab.length, 'Vollname ' + l);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("tabs.push(['#/check', 'truck', t('nav_check_tab'), 'check', t('nav_check')]);") && app.includes('${full && full !== label ? ` aria-label="${esc(full)}"` : \'\'}'), 'aria-label');
+  ok(app.includes("tabs.push(['#/check', 'truck', t('nav_check_tab'), 'check', t('nav_check')]);") && app.includes('${full && full !== label ? ` aria-label="${esc(tabName(label, full))}"` : \'\'}'), 'aria-label (seit Backlog 1495 mit vorangestellter sichtbarer Beschriftung)');
 });
 
 await test('Backlog 574 (Blickwinkel „Ladebordwand/Ladekran prüfen“): eigene Prüfarten Ladebordwand und Ladekran – beide am selben Lkw (vorher nur ein „Hydraulik/Aufbau“), je Art höchstens einer, Intervall nur laut Eingabe, Import-Aliase, Texte DE/UK/EN inkl. Kalender', async () => {
@@ -42099,6 +42099,28 @@ await test('Backlog 1494 (Blickwinkel „Disposition bedient PC/Tablet nur per T
   ok(focusHidden(700, 760, 68, 619) === true, 'ganz unter der Tabbar → nachrücken');
   const ui = readFileSync(new URL('../scripts/ui-fokus-verdeckt.py', import.meta.url), 'utf8');
   ok(ui.includes('Backlog 1494') && ui.includes('Shift+Tab') && ui.includes('Gegenprobe') && readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-fokus-verdeckt.py'), 'UI-Prüfung mit Gegenprobe, in pruefen.sh');
+});
+
+await test('Backlog 1495 (Blickwinkel „Disposition steuert die App per Sprachsteuerung (Sprachzugriff/Voice Control)“, Backlog 195, WCAG 2.5.3): zugänglicher Name beginnt mit der sichtbaren Beschriftung – Fahrer-Reiter „Kontrolle“/„Check“ und Sprachknopf des Werkstatt-Panels', async () => {
+  const { readFileSync } = await import('node:fs');
+  const rd = (f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const app = rd('app.js'); const main = rd('app-main.js'); const { STRINGS } = await import('../public/i18n.js');
+  const src = app.match(/const tabName = \(label, full\) => [^\n]*/)[0];
+  const tabName = new Function(src + '; return tabName;')();
+  const norm = (x) => String(x).replace(/[\u00ad\u200b]/g, '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  for (const lang of ['de', 'uk', 'en']) {
+    const label = STRINGS[lang].nav_check_tab, full = STRINGS[lang].nav_check, name = tabName(label, full);
+    ok((norm(name) + ' ').startsWith(norm(label) + ' '), `${lang}: Name „${name}“ beginnt mit sichtbarem „${label}“`);
+    ok(name.includes(full), `${lang}: voller Name „${full}“ bleibt für den Bildschirmleser erhalten`);
+  }
+  ok(tabName('Kontrolle', 'Abfahrtskontrolle') === 'Kontrolle (Abfahrtskontrolle)' && tabName('Check', 'Pre-trip check') === 'Check (Pre-trip check)', 'DE/EN: sichtbare Beschriftung vorangestellt');
+  ok(tabName('Перевірка', 'Перевірка перед виїздом') === 'Перевірка перед виїздом', 'UK: beginnt bereits gleich → unverändert');
+  ok(app.includes('aria-label="${esc(tabName(label, full))}"') && main.includes('tabName(label, full)'), 'Reiterleiste nutzt tabName (auch im Start-Modul)');
+  const ws = rd('werkstatt/app.js'), wsh = rd('werkstatt/index.html');
+  ok(ws.includes('$("#langBtn").setAttribute("aria-label", l.short + " – " + t("lang") + ": " + l.name);') && wsh.includes('id="langBtn" aria-label="DE – Sprache">DE</button>'), 'Werkstatt-Panel: Sprachknopf „🌐 DE“ heißt „DE – Sprache: Deutsch“');
+  ok(!/aria-label="Sprache">/.test(wsh), 'kein Name ohne sichtbares Kürzel mehr');
+  const ui = readFileSync(new URL('../scripts/ui-name-sichtbar.py', import.meta.url), 'utf8');
+  ok(ui.includes('Backlog 1495') && ui.includes('Gegenprobe') && ui.includes('getFullAXTree') && readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-name-sichtbar.py'), 'UI-Prüfung (Barrierefreiheitsbaum, DE/UK/EN, Werkstatt-Panel) mit Gegenprobe, in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

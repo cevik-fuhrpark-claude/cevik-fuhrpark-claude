@@ -563,7 +563,7 @@ function statisch(){
   $("#sDemo").innerHTML = t("demo") + " " + esc(t("demoKeep"));
   $("#wlan").textContent = online ? t("wlanOff") : t("wlanOn");
   $("#theme").textContent = document.documentElement.dataset.theme === "light" ? t("dark") : t("light");
-  const l = LANGS.find(x => x.code === lang); $("#langBtn").textContent = "🌐 " + l.short; $("#langBtn").setAttribute("aria-label", t("lang") + ": " + l.name);
+  const l = LANGS.find(x => x.code === lang); $("#langBtn").textContent = "🌐 " + l.short; $("#langBtn").setAttribute("aria-label", l.short + " – " + t("lang") + ": " + l.name); /* Backlog 1495 (WCAG 2.5.3): sichtbares Kürzel zuerst – Sprachsteuerung „Tippe auf DE“ */
   if (user) $("#urole").textContent = t("role:" + user.rolle);
   showIdle(); renderNet();
 }

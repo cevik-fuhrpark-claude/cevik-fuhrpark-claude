@@ -406,6 +406,9 @@ const ICON = {
 // ohne Strich um („Managemen|t“, „Abfahrtskont|rolle“, „Повідоми|ти“); U+00AD trennt nur, wenn es nötig ist
 const TAB_SHY = { Abfahrtskontrolle: 'Abfahrts\u00ADkontrolle', Kontrolle: 'Kon\u00ADtrolle', Management: 'Manage\u00ADment', 'Übersicht': 'Über\u00ADsicht', 'Vorgänge': 'Vor\u00ADgänge', Fahrzeuge: 'Fahr\u00ADzeuge',
   Overview: 'Over\u00ADview', Vehicles: 'Vehi\u00ADcles', 'Повідомити': 'Пові\u00ADдомити', 'Транспорт': 'Тран\u00ADспорт', 'Керівництво': 'Керів\u00ADництво', 'Перевірка': 'Пере\u00ADвірка', 'виїздом': 'ви\u00ADїздом', 'Заявки': 'Заяв\u00ADки' };
+// Backlog 1495 (Blickwinkel „Disposition steuert per Sprachsteuerung“, WCAG 2.5.3): der zugängliche Name beginnt mit der sichtbaren
+// Beschriftung – sonst findet „Tippe auf Kontrolle“ den Reiter „Abfahrtskontrolle“ nicht (EN „Check“ ↔ „Pre-trip check“); UK beginnt bereits gleich
+const tabName = (label, full) => (String(full).toLocaleLowerCase().startsWith(String(label).toLocaleLowerCase() + ' ') ? full : `${label} (${full})`);
 const tabShy = (label) => String(label).split(' ').map((w) => TAB_SHY[w] || w).join(' ');
 function frame(content, active) {
   const env = S.me ? (S.viewEnv && S.me.role === 'owner' ? S.viewEnv : S.me.environment) : null;
@@ -427,7 +430,7 @@ function frame(content, active) {
   </header>
   ${env === 'test' ? `<div class="testband">${esc(t('env_test'))}</div>` : ''}
   ${clockText() ? `<div class="clockband" role="status">${esc(clockText())}</div>` : ''}
-  <nav class="tabbar" aria-label="${esc(t('navigation'))}">${tabs.map(([href, icon, label, key, full]) => `<a href="${href}"${full && full !== label ? ` aria-label="${esc(full)}"` : ''} class="${key === active ? 'active' : ''}${key === 'new' ? ' report' : ''}"${key === active ? ' aria-current="page"' : ''}>${key === 'new' ? `<span class="dot">${ICON[icon]}</span>` : ICON[icon]}<span>${esc(tabShy(label))}</span></a>`).join('')}</nav>
+  <nav class="tabbar" aria-label="${esc(t('navigation'))}">${tabs.map(([href, icon, label, key, full]) => `<a href="${href}"${full && full !== label ? ` aria-label="${esc(tabName(label, full))}"` : ''} class="${key === active ? 'active' : ''}${key === 'new' ? ' report' : ''}"${key === active ? ' aria-current="page"' : ''}>${key === 'new' ? `<span class="dot">${ICON[icon]}</span>` : ICON[icon]}<span>${esc(tabShy(label))}</span></a>`).join('')}</nav>
   <main id="main" tabindex="-1">${content}</main>`;
 }
 
