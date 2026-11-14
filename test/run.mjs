@@ -41708,6 +41708,15 @@ await test('Backlog 1473 (Backlog 195, Sonde „Fahrer meldet Alltagsmängel“)
   for (const x of ['es stinkt nach Diesel in der Kabine', 'Diesel riecht im Fahrerhaus', 'Kabine stinkt nach Diesel', 'Diesel stinkt', 'riecht nach Diesel', 'Dieselgeruch im Fahrerhaus']) ok(leak(x), 'Undicht fehlt: ' + x);
   ok(!leak('Diesel riecht nicht mehr'), 'fälschlich undicht: Diesel riecht nicht mehr');
 });
+await test('Backlog 1474 (Fund aus 1473): „no fire extinguisher“ zeigt den Bordausrüstungs-Hinweis – die Entwarnung „no fire“ (kein Brand) verschluckte das Wort „fire“ vor „extinguisher/blanket/alarm/detector“; „no fire“, „no smoke“ bleiben Entwarnung, „fire in the engine“ bleibt Brand', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); ok(m, n); return new RegExp(m[1], m[2]); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const kit = g('SAFETYKIT_HINT'), fire = g('FIRE_HINT');
+  for (const x of ['no fire extinguisher', 'there is no fire extinguisher in the cab', 'No fire extinguisher on board']) ok(kit.test(recurFix(x)), 'Bordausrüstung fehlt: ' + x);
+  for (const x of ['no fire', 'no fire, no smoke', 'no smoke, no fire']) { ok(!fire.test(recurFix(x)) && !kit.test(recurFix(x)), 'Entwarnung: ' + x); ok(/\bok\b/.test(recurFix(x)), 'Entwarnung nicht erkannt: ' + x); }
+  ok(fire.test(recurFix('fire in the engine')), 'Brand fehlt');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
