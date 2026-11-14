@@ -433,9 +433,25 @@ export function standTag(iso = new Date().toISOString()) {
   return d ? `stand-${d.slice(6, 10)}-${d.slice(3, 5)}-${d.slice(0, 2)}-${d.slice(11, 13)}${d.slice(14, 16)}` : 'stand';
 }
 export const COST_ITEMS_MAX = 20000;
-export async function costItems(env, user, envName, query = {}, { all = false } = {}) {
+// Backlog 1486 (Blickwinkel „Leitung prüft montags die Kosten der Vorwoche je Fahrzeug“): Kalenderwoche Mo–So (Berlin) zu einem beliebigen Tag;
+// ohne Angabe die Vorwoche. Tage als JJJJ-MM-TT, Jahr 2000–2100.
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+export function weekRange(q = {}) {
+  const raw = q.week_of ? String(q.week_of).slice(0, 10) : null;
+  let d;
+  if (raw) {
+    d = DAY.test(raw) ? new Date(raw + 'T00:00:00Z') : null;
+    if (!d || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== raw || raw < '2000-01-03' || raw > '2100-12-26') throw bad('validation', 'Woche im Format JJJJ-MM-TT (ein Tag der Woche) angeben.');
+  } else d = new Date(Date.parse(berlinDate() + 'T00:00:00Z') - 7 * 86400000);
+  const mon = new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 86400000);
+  const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const fromDay = day(mon.getTime()); const toDay = day(mon.getTime() + 6 * 86400000);
+  return { week: isoWeek(fromDay), from_day: fromDay, to_day: toDay, prev_week_of: day(mon.getTime() - 7 * 86400000), next_week_of: day(mon.getTime() + 7 * 86400000) };
+}
+export async function costItems(env, user, envName, query = {}, { all = false, days = null } = {}) {
   if (user && !READ_ROLES.includes(user.role)) throw forbidden();
-  const { from, to } = monthRange(query);
+  // days: { from_day, to_day } – Positionen nur dieser Tage, Arbeitszeit je Vorgang und Tag (statt je Monat)
+  const { from, to } = days ? { from: days.from_day.slice(0, 7), to: days.to_day.slice(0, 7) } : monthRange(query);
   // Fahrzeugfilter wie im Kostenbericht (24.10.2026, Blickwinkel Buchhaltung: vorher still ignoriert → Positionen aller Fahrzeuge)
   const vehicleFilter = query.vehicle_id ? String(query.vehicle_id).slice(0, 40) : null;
   // Bemerkung zur Fremdleistung nur für Inhaber/Leitung (Vorgang zeigt Fremdleistungen nur ihnen; Lesezugriff sieht Lieferant/Beleg/Betrag)
@@ -458,43 +474,69 @@ export async function costItems(env, user, envName, query = {}, { all = false } 
   const sel = siteSelection(allV.filter((v) => !v.eval_excluded), query.site);
   const keep = (vid) => { const v = vmap.get(vid); return !!v && !v.eval_excluded && (!vehicleFilter || vid === vehicleFilter) && (!query.site || sel.match(v.site)); };
   const inRange = (m) => m >= from && m <= to;
+  const inDays = (day) => !days || (day >= days.from_day && day <= days.to_day);
   const dayOf = (d) => (d.length === 10 ? d : berlinDate(d));
   const items = [];
-  const base = (x, day) => { const v = vmap.get(x.vehicle_id); return { date: day, month: day.slice(0, 7), case_no: x.case_no, plate: v.plate, vehicle_id: x.vehicle_id, site: v.site ? (sel.label.get(siteKey(v.site)) || v.site) : null, vehicle_active: v.active !== 0 }; };
+  const base = (x, day) => { const v = vmap.get(x.vehicle_id); return { date: day, month: day.slice(0, 7), case_id: x.case_id, case_no: x.case_no, plate: v.plate, vehicle_id: x.vehicle_id, site: v.site ? (sel.label.get(siteKey(v.site)) || v.site) : null, vehicle_active: v.active !== 0 }; };
   // Arbeitszeit: je Vorgang und Monat eine Position, Betrag fortlaufend gerundet (Monate eines Vorgangs ergeben den Betrag der Akte)
   const wm = new Map();
   // nach Monatsende gebuchte Arbeitszeit als eigene Position je Buchungstag (Backlog 189: vorher 2 h aus Dezember + im Februar nachgebuchte 3 h
   // als eine Zeile „Erfasst am <Februar>“ – die Dezember-Buchung war nicht mehr zu erkennen); fortlaufende Rundung je Vorgang bleibt
   // mit Stundensatz-Verlauf je Satz-Abschnitt p eine eigene Position (Einzelpreis = damals gültiger Satz)
   for (const w of work) { const day = dayOf(w.d); const m = day.slice(0, 7); const rd = w.rec ? berlinDate(w.rec) : ''; const late = !!rd && rd.slice(0, 7) > m; const p = pIdx(day);
-    const k = `${w.case_id}|${m}|${late ? rd : ''}|${p}`; const x = wm.get(k) || { ...w, m, p, sub: late ? rd : '', late, last: day, h: 0, rec: null }; x.h += w.hours; if (day > x.last) x.last = day; if (w.rec && (!x.rec || w.rec > x.rec)) x.rec = w.rec; wm.set(k, x); }
+    const dk = days ? day : ''; const k = `${w.case_id}|${m}|${dk}|${late ? rd : ''}|${p}`; const x = wm.get(k) || { ...w, m, dk, p, sub: late ? rd : '', late, last: day, h: 0, rec: null }; x.h += w.hours; if (day > x.last) x.last = day; if (w.rec && (!x.rec || w.rec > x.rec)) x.rec = w.rec; wm.set(k, x); }
   const cum = new Map();
-  for (const x of [...wm.values()].sort((a, b) => (a.case_id !== b.case_id ? (a.case_id < b.case_id ? -1 : 1) : a.p !== b.p ? a.p - b.p : a.m !== b.m ? (a.m < b.m ? -1 : 1) : a.sub < b.sub ? -1 : a.sub > b.sub ? 1 : 0))) {
+  for (const x of [...wm.values()].sort((a, b) => (a.case_id !== b.case_id ? (a.case_id < b.case_id ? -1 : 1) : a.p !== b.p ? a.p - b.p : a.m !== b.m ? (a.m < b.m ? -1 : 1) : a.dk !== b.dk ? (a.dk < b.dk ? -1 : 1) : a.sub < b.sub ? -1 : a.sub > b.sub ? 1 : 0))) {
     const ck = `${x.case_id}|${x.p}`; const xr = rateAt(x.p);
     const before = cum.get(ck) || 0; const after = before + x.h; cum.set(ck, after);
-    if (!inRange(x.m) || !keep(x.vehicle_id) || !(x.h > 0)) continue;
+    if (!inRange(x.m) || !inDays(x.last) || !keep(x.vehicle_id) || !(x.h > 0)) continue;
     // recorded_at: Erfassungszeitpunkt (Arbeitszeit: jüngste Buchung der Position) – nachgereichte Belege erkennbar (23.10.2026)
     items.push({ ...base(x, x.last), recorded_at: x.rec || null, ...(x.late ? { late: true } : {}), type: 'arbeitszeit', description: null, supplier: null, document: null, quantity: r2(x.h), unit: 'h', unit_price_net: xr,
       amount_net: xr === null ? null : r2(r2(after * xr) - r2(before * xr)), valuation: xr === null ? 'unvalued' : 'actual', counted: !covered.has(x.case_id) });
   }
   for (const p of parts) {
-    const day = dayOf(p.d); if (!inRange(day.slice(0, 7)) || !keep(p.vehicle_id)) continue;
+    const day = dayOf(p.d); if (!inRange(day.slice(0, 7)) || !inDays(day) || !keep(p.vehicle_id)) continue;
     const unv = p.unit_price_net === null || p.valuation === 'unvalued';
     items.push({ ...base(p, day), recorded_at: p.d, type: 'teil', description: [p.name, p.part_number].filter(Boolean).join(' · '), supplier: p.supplier || null, document: p.document_ref || null, quantity: p.quantity, unit: p.unit,
       unit_price_net: unv ? null : p.unit_price_net, amount_net: unv ? null : r2(p.quantity * p.unit_price_net), valuation: unv ? 'unvalued' : p.valuation, counted: !covered.has(p.case_id) });
   }
   for (const e of ext) {
-    const day = dayOf(e.d); if (!inRange(day.slice(0, 7)) || !keep(e.vehicle_id)) continue;
+    const day = dayOf(e.d); if (!inRange(day.slice(0, 7)) || !inDays(day) || !keep(e.vehicle_id)) continue;
     const unv = e.amount_net === null || e.valuation === 'unvalued';
     // Bemerkung (Leistung laut Rechnung) und „Beleg-Datei in der App“ für den Abgleich mit den Eingangsrechnungen (24.10.2026);
     // seit Backlog 247 mit Dateiname, damit Buchhaltung/Lesezugriff die Rechnung in der Dateiliste des Vorgangs findet
     const note = seesNote && e.note ? String(e.note).replace(/\s+/g, ' ').trim() : '';
     items.push({ ...base(e, day), recorded_at: e.d, type: 'fremdleistung', description: [e.covers_work_and_parts ? 'ersetzt eigene Arbeit/Teile' : '', note].filter(Boolean).join(' · ') || null, supplier: e.supplier, document: e.invoice_no || null, quantity: null, unit: null,
-      unit_price_net: null, amount_net: unv ? null : r2(e.amount_net), valuation: unv ? 'unvalued' : e.valuation, counted: true, has_file: !!e.file_id, file_name: e.file_id ? (e.file_name || null) : null });
+      unit_price_net: null, amount_net: unv ? null : r2(e.amount_net), valuation: unv ? 'unvalued' : e.valuation, counted: true, replaces_own: !!e.covers_work_and_parts, has_file: !!e.file_id, file_name: e.file_id ? (e.file_name || null) : null });
   }
   items.sort((a, b) => a.date.localeCompare(b.date) || String(a.plate).localeCompare(String(b.plate)) || String(a.case_no).localeCompare(String(b.case_no)) || a.type.localeCompare(b.type));
   const truncated = !all && items.length > COST_ITEMS_MAX;
   return { from, to, site: sel.site, vehicle_id: vehicleFilter, items: truncated ? items.slice(0, COST_ITEMS_MAX) : items, truncated };
+}
+
+// Backlog 1486: Kosten einer Kalenderwoche je Fahrzeug (Montagsdurchsicht der Leitung) – dieselben Einzelpositionen wie die CSV,
+// Arbeitszeit je Vorgang und Tag. Summen wie im Kostenbericht: Ist nur belegte, gezählte Positionen; fehlender Preis = unbewertet (nie 0 €).
+export async function costWeek(env, user, envName, query = {}) {
+  const wk = weekRange(query);
+  const rep = await costItems(env, user, envName, query, { all: true, days: wk });
+  const by = new Map();
+  for (const i of rep.items) {
+    const v = by.get(i.vehicle_id) || { vehicle_id: i.vehicle_id, plate: i.plate, site: i.site, vehicle_active: i.vehicle_active, actual: 0, valued: 0, estimate: 0, unvalued: 0, not_counted: 0, hours: 0, cases: new Set(), items: [] };
+    if (i.type === 'arbeitszeit') v.hours += i.quantity;
+    if (!i.counted) v.not_counted++;
+    else if (i.valuation === 'unvalued' || i.amount_net === null) v.unvalued++;
+    else if (i.valuation === 'estimate') v.estimate += i.amount_net;
+    else { v.actual += i.amount_net; v.valued++; }
+    v.cases.add(i.case_no); v.items.push(i); by.set(i.vehicle_id, v);
+  }
+  const vehicles = [...by.values()].map((v) => ({ vehicle_id: v.vehicle_id, plate: v.plate, site: v.site, vehicle_active: v.vehicle_active, actual_net: r2(v.actual), valued_items: v.valued, estimate_net: r2(v.estimate),
+    unvalued_items: v.unvalued, not_counted_items: v.not_counted, hours: r2(v.hours), cases: v.cases.size, items: v.items }))
+    .sort((a, b) => b.actual_net - a.actual_net || b.unvalued_items - a.unvalued_items || String(a.plate).localeCompare(String(b.plate), 'de'));
+  const sum = (f) => r2(vehicles.reduce((a, v) => a + v[f], 0));
+  const today = berlinDate();
+  return { ...wk, next_week_of: wk.next_week_of > today ? null : wk.next_week_of, running: wk.to_day >= today, site: rep.site, vehicles,
+    totals: { vehicles: vehicles.length, actual_net: sum('actual_net'), valued_items: vehicles.reduce((a, v) => a + v.valued_items, 0), estimate_net: sum('estimate_net'), unvalued_items: vehicles.reduce((a, v) => a + v.unvalued_items, 0), hours: sum('hours'), items: rep.items.length },
+    generated_at: new Date().toISOString() };
 }
 
 // Backlog 904 (Blickwinkel „Inhaber bereitet das Jahresgespräch mit der Fremdwerkstatt/dem Teilelieferanten vor“):

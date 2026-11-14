@@ -86,6 +86,8 @@ const VALIDATION_TEXTS = {
 // [CLAUDE] Backlog 83: restliche feste Eingabefehler (v. a. Inhaber/Fuhrparkleitung: Verträge, Bußgelder, Importe, Versicherung, Fahrer).
 // CSV-Spaltennamen bleiben deutsch (so heißen sie in der Datei). Rein technische Integrationsfehler bleiben unübersetzt.
 const V_MORE = [
+  // Backlog 1486: Kosten einer Kalenderwoche
+  ['Woche im Format JJJJ-MM-TT (ein Tag der Woche) angeben.', 'Вкажіть тиждень у форматі РРРР-ММ-ДД (будь-який день тижня).', 'Give the week as YYYY-MM-DD (any day of the week).'],
   // Backlog 1022: Zwei-Faktor-Anmeldung auf neues Handy übertragen
   ['Bitte zuerst „Auf neues Handy übertragen“ beginnen.', 'Спершу розпочніть «Перенести на новий телефон».', 'Please start “Move to a new phone” first.'],
   ['Code falsch oder abgelaufen. Bitte den aktuellen Code aus der App auf dem neuen Handy eingeben (Uhrzeit des Handys prüfen).', 'Код неправильний або застарів. Введіть поточний код із застосунку на новому телефоні (перевірте час на телефоні).', 'Code wrong or expired. Please enter the current code from the app on the new phone (check the phone’s clock).'],
@@ -900,6 +902,7 @@ const AUDIT_ACTIONS = {
   'reports.costs.export': ['Kostenbericht exportiert', 'Звіт про витрати експортовано', 'Cost report exported'],
   'reports.costs.items_export': ['Kosten-Einzelpositionen exportiert', 'Окремі позиції витрат експортовано', 'Cost line items exported'],
   'reports.costs.suppliers_export': ['Kosten je Firma exportiert', 'Витрати за фірмами експортовано', 'Costs per company exported'],
+  'reports.costs.week_export': ['Kosten einer Woche exportiert', 'Витрати за тиждень експортовано', 'Costs of one week exported'],
   'reports.drivers.export': ['Fahrerliste exportiert', 'Список водіїв експортовано', 'Driver list exported'],
   'reports.fines.export': ['Bußgelder exportiert', 'Штрафи експортовано', 'Fines exported'],
   'reports.kpi.export': ['Kennzahlen exportiert', 'Показники експортовано', 'KPIs exported'],
@@ -918,6 +921,8 @@ export function auditActionLabel(lang, code) {
 // übersetzt werden nur Ja/Nein, Umgebung (test/production) und Rolle; {from,to} wird „alt → neu“, Listen mit Komma.
 // Unbekannte Schlüssel erscheinen roh (künftige Details, Einstellungsschlüssel). CSV und Suche nutzen weiter den Rohtext.
 const AUDIT_DETAIL_KEYS = {
+  // Backlog 1486: Export „Kosten einer Woche“ (week, from_day, to_day, items)
+  items: ['Positionen', 'Позиції', 'Items'], week: ['Kalenderwoche', 'Календарний тиждень', 'Calendar week'], from_day: ['von (Tag)', 'з (день)', 'from (day)'], to_day: ['bis (Tag)', 'по (день)', 'to (day)'],
   hours_days: ['Erreichbar an Wochentagen', 'Дні доступності', 'Reachable on weekdays'], hours_from: ['Erreichbar von', 'Доступний з', 'Reachable from'], hours_to: ['Erreichbar bis', 'Доступний до', 'Reachable until'], hours_no_holidays: ['Nicht an Feiertagen', 'Не у святкові дні', 'Not on public holidays'], hours_more: ['Weitere Zeitspannen', 'Додаткові проміжки', 'Further time spans'], hours_holiday_state: ['Feiertage des Bundeslands', 'Свята федеральної землі', 'Public holidays of the state'],
   recreated: ['durch erneutes Anlegen', 'через повторне створення', 'by creating again'],
   plate_old: ['bisheriges Kennzeichen', 'попередній номерний знак', 'previous plate'], manufacturer: ['Hersteller', 'Виробник', 'Manufacturer'], model: ['Modell', 'Модель', 'Model'],
@@ -1364,6 +1369,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1440: Termin in der Vergangenheit (Hinweis am Feld, Meldung nach dem Speichern)
 // Backlog 1441: Rückfrage Werkstatttermin in der Vergangenheit (Vorgang)
 // Backlog 1451: Werkstatt-Startseite – heute geplante Prüfungen mit späterer Frist
+// Backlog 1486 (Blickwinkel „Leitung prüft montags die Kosten der Vorwoche je Fahrzeug“): Kosten einer Kalenderwoche je Fahrzeug
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

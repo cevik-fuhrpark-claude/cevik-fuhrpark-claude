@@ -488,6 +488,14 @@ async function handleApi(request, env, ctx, url) {
     await auth.audit(env, user.id, 'reports.costs.suppliers_export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site, ...(rep.vehicle_id ? { vehicle_id: rep.vehicle_id } : {}), suppliers: rep.suppliers.length });
     return new Response(reports.costSuppliersCsv(rep, await workshopNameMap(env)), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kosten-je-firma_${envName}_${rep.from}_${rep.to}_${reports.standTag()}.csv"` } });
   }
+  // Backlog 1486: Kosten einer Kalenderwoche je Fahrzeug – JSON für die Ansicht, CSV (Einzelpositionen der Woche) mit format=csv
+  if (path === '/api/reports/costs' && m === 'GET' && url.searchParams.get('part') === 'week') {
+    const rep = await reports.costWeek(env, user, envName, Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('format') !== 'csv') return json(rep);
+    await auth.audit(env, user.id, 'reports.costs.week_export', null, { week: rep.week, from_day: rep.from_day, to_day: rep.to_day, environment: envName, site: rep.site, items: rep.totals.items });
+    const items = rep.vehicles.flatMap((v) => v.items).sort((a, b) => a.date.localeCompare(b.date) || String(a.plate).localeCompare(String(b.plate)) || String(a.case_no).localeCompare(String(b.case_no)) || a.type.localeCompare(b.type));
+    return new Response(reports.costItemsCsv({ items, truncated: false }, await workshopNameMap(env)), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-kosten-woche_${envName}_${rep.from_day}_${rep.to_day}_${reports.standTag()}.csv"` } });
+  }
   if (path === '/api/reports/costs' && m === 'GET' && url.searchParams.get('part') === 'items') {
     const rep = await reports.costItems(env, user, envName, Object.fromEntries(url.searchParams));
     await auth.audit(env, user.id, 'reports.costs.items_export', null, { from: rep.from, to: rep.to, environment: envName, site: rep.site, ...(rep.vehicle_id ? { vehicle_id: rep.vehicle_id } : {}), items: rep.items.length, ...(rep.truncated ? { truncated: true } : {}) });

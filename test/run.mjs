@@ -4089,7 +4089,7 @@ await test('Nur unbewertete Positionen: „Belegt“ zeigt „–“ statt 0 €
     eq((await users.fleet.get(`/api/vehicles/${VID}`)).data.costs.valued_items, 0, 'Fahrzeugakte');
     const app = await (await import('node:fs/promises')).readFile(new URL('../public/app.js', import.meta.url), 'utf8');
     ok(/const eurIst = \(o\) => \(o && o\.valued_items === 0 && o\.unvalued_items > 0 \? '–' : eur\(o\.actual_net\)\)/.test(app), 'Oberfläche: „–“-Regel');
-    eq((app.match(/eurIst\(/g) || []).length, 7, 'Vorgang, Fahrzeugakte, Summe, Standort, Fahrzeug, Monat, Firma (Backlog 904)');
+    eq((app.match(/eurIst\(/g) || []).length, 9, 'Vorgang, Fahrzeugakte, Summe, Standort, Fahrzeug, Monat, Firma (Backlog 904), Woche gesamt/je Fahrzeug (Backlog 1486)');
     const i18n = await (await import('node:fs/promises')).readFile(new URL('../public/i18n.js', import.meta.url), 'utf8');
     for (const w of ['steht bei „Belegt“ „–“ statt 0 €', 'стоїть «–» замість 0 €', '“Documented” shows “–” instead of €0']) ok(i18n.includes(w), 'Hilfe: ' + w);
   } finally {
@@ -7079,7 +7079,7 @@ const csvExportUrls = () => {
   return {
     'fuhrpark-fahrzeuge': '/api/vehicles?format=csv', 'fuhrpark-vertraege': '/api/contracts?format=csv', 'fuhrpark-prueftermine': '/api/maintenance?format=csv',
     'fuhrpark-durchgefuehrte-pruefungen': `/api/maintenance/history?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`, 'fuhrpark-reifen': '/api/tires/fleet?format=csv',
-    'fuhrpark-protokoll': `/api/admin/audit?format=csv&from=${BERLIN_TODAY}&to=${BERLIN_TODAY}`, 'fuhrpark-kosten': `/api/reports/costs?format=csv&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kostenpositionen': `/api/reports/costs?part=items&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kosten-je-firma': `/api/reports/costs?part=suppliers&format=csv&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kosten-je-fahrzeug': `/api/reports/costs?format=csv&part=vehicles&from=${y}-01&to=${COST_TO}`,
+    'fuhrpark-protokoll': `/api/admin/audit?format=csv&from=${BERLIN_TODAY}&to=${BERLIN_TODAY}`, 'fuhrpark-kosten': `/api/reports/costs?format=csv&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kostenpositionen': `/api/reports/costs?part=items&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kosten-je-firma': `/api/reports/costs?part=suppliers&format=csv&from=${y}-01&to=${COST_TO}`, 'fuhrpark-kosten-woche': `/api/reports/costs?part=week&format=csv&week_of=${BERLIN_TODAY}`, 'fuhrpark-kosten-je-fahrzeug': `/api/reports/costs?format=csv&part=vehicles&from=${y}-01&to=${COST_TO}`,
     'werkstatt-auslastung': '/api/reports/workshop-load?weeks=4&format=csv', 'fuhrpark-kennzahlen': `/api/reports/kpi?format=csv&from=${y}-01&to=${COST_TO}`,
     'fuhrpark-kennzahlen-prio': `/api/reports/kpi?format=csv&part=priority&from=${y}-01&to=${COST_TO}`,
     'fuhrpark-bestellvorschlag': '/api/stock?reorder=1&format=csv', 'fuhrpark-lager': '/api/stock?format=csv', 'fuhrpark-lagerjournal': `/api/stock/journal?format=csv&from=${y}-01-01&to=${BERLIN_TODAY}`,
@@ -41860,6 +41860,80 @@ await test('Backlog 1485 (Blickwinkel „Standardverben für ‚funktioniert nic
   for (const [l, x] of [['hr', 'sve funkcionira'], ['hr', 'kočnice opet funkcioniraju'], ['pl', 'hamulce funkcjonują normalnie'], ['ro', 'totul merge bine'], ['ro', 'frânele merg bine'], ['cs', 'brzdy jdou dobře'], ['sq', 'frenat funksionojnë mirë']]) eq(has(l, x), '', l + ': ' + x);
   const lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
   for (const n of ['HR_FUNK', 'PL_FUNK', 'RO_MERGE', 'SQ_FUNK']) { ok(lang.includes(n), 'in app-sprachen.js: ' + n); ok(!main.includes(n), 'nicht im Start-Modul: ' + n); ok(!/\(\?<[!=]/.test(app.match(new RegExp('^const ' + n + ' = .*$', 'm'))[0]), 'kein Lookbehind: ' + n); }
+});
+await test('Backlog 1486 (Blickwinkel „Leitung prüft montags die Kosten der Vorwoche je Fahrzeug“): Kosten einer Kalenderwoche (Mo–So) je Fahrzeug – ohne Angabe Vorwoche, Arbeitszeit am Arbeitstag, Ist/Schätzung/unbewertet/nicht gezählt getrennt, laufende Woche markiert, Jahreswechsel KW 53, CSV, Rechte, Texte DE/UK/EN', async () => {
+  const { weekRange, costWeek } = await import('../src/reports.js');
+  eq(JSON.stringify(weekRange({ week_of: '2026-11-14' })), JSON.stringify({ week: '2026-W46', from_day: '2026-11-09', to_day: '2026-11-15', prev_week_of: '2026-11-02', next_week_of: '2026-11-16' }), 'Samstag → Mo–So');
+  eq(weekRange({ week_of: '2026-11-09' }).from_day, '2026-11-09', 'Montag bleibt Montag');
+  eq(weekRange({ week_of: '2026-11-15' }).to_day, '2026-11-15', 'Sonntag ist der letzte Tag der Woche');
+  const ny = weekRange({ week_of: '2027-01-01' }); eq(`${ny.week} ${ny.from_day} ${ny.to_day}`, '2026-W53 2026-12-28 2027-01-03', 'Jahreswechsel: KW 53/2026');
+  eq(weekRange({ week_of: '2028-01-01' }).week, '2027-W52', 'ISO-Jahr');
+  for (const x of ['2026-02-30', 'abc', '2026-1-5', '1999-12-31', '2101-01-01']) { let e = null; try { weekRange({ week_of: x }); } catch (er) { e = er; } ok(e && e.status === 400, 'ungültig: ' + x); }
+  const D = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const def = weekRange({}); ok(def.from_day <= D(-7) && def.to_day >= D(-7) && def.to_day < BERLIN_TODAY, 'ohne Angabe: Vorwoche ' + JSON.stringify(def));
+  eq((await owner.post('/api/vehicles', { plate: 'FK-T 1486', vin: 'WDB96340314860001', site: 'Dortmund' })).status, 201);
+  const V = 'VIN:WDB96340314860001';
+  const mk = async (text) => (await users.fleet.post('/api/cases', { vehicle_id: V, description: text, priority: 'mittel', driveability: 'fahrbereit', request_key: rk() })).data.id;
+  const cmdOn = (cid) => async (u, action, payload = {}, note = null) => { const c = (await u.get(`/api/cases/${cid}`)).data.case; return u.post(`/api/cases/${cid}/commands`, { action, command_id: rk(), expected_version: c.version, note, payload }); };
+  const c1 = await mk('Spiegel abgefahren (Test 1486)'); let cmd = cmdOn(c1);
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Test 1486')).status, 200);
+  eq((await cmd(users.ws, 'acknowledge')).status, 200); eq((await cmd(users.ws, 'start_repair')).status, 200);
+  eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Glas Groß', amount_net: 500, invoice_no: 'RE-1486' })).status, 200);
+  eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Glas Groß', amount_net: 200, valuation: 'estimate' })).status, 200);
+  eq((await cmd(users.ws, 'add_part', { name: 'Spiegelglas', quantity: 2, unit_price_net: 80, supplier: 'Teile Nord' })).status, 200);
+  eq((await cmd(users.ws, 'add_part', { name: 'Clip ohne Preis', quantity: 4 })).status, 200);
+  eq((await cmd(users.ws, 'record_work', { hours: 1, description: 'Spiegel montiert', work_date: BERLIN_TODAY })).status, 200);
+  eq((await cmd(users.ws, 'record_work', { hours: 2, description: 'Halter gerichtet', work_date: D(-7) })).status, 200);
+  eq((await cmd(users.ws, 'record_work', { hours: 0.5, description: 'Halter nachgezogen', work_date: D(-7) })).status, 200);
+  const c2 = await mk('Ölwechsel (Test 1486)'); cmd = cmdOn(c2);
+  eq((await cmd(users.fleet, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Test 1486')).status, 200);
+  eq((await cmd(users.ws, 'acknowledge')).status, 200); eq((await cmd(users.ws, 'start_repair')).status, 200);
+  eq((await cmd(users.ws, 'add_part', { name: 'Ölfilter', quantity: 1, unit_price_net: 10 })).status, 200);
+  eq((await cmd(users.fleet, 'add_external_cost', { supplier: 'Komplett GmbH', amount_net: 300, covers_work_and_parts: true, invoice_no: 'KG-1486' })).status, 200);
+  const vq = `&vehicle_id=${encodeURIComponent(V)}`;
+  // Vorwoche (ohne Angabe): nur die Arbeitszeit vom Tag vor 7 Tagen – beide Buchungen eines Tages in einer Position
+  let r = await users.fleet.get(`/api/reports/costs?part=week${vq}`); eq(r.status, 200);
+  eq(`${r.data.from_day}|${r.data.running}|${r.data.next_week_of}`, `${def.from_day}|false|${def.next_week_of}`, 'Vorwoche, nicht laufend, Woche danach wählbar');
+  eq(r.data.vehicles.length, 1); let v = r.data.vehicles[0];
+  eq(JSON.stringify(v.items.map((i) => [i.type, i.date, i.quantity, i.case_id])), JSON.stringify([['arbeitszeit', D(-7), 2.5, c1]]), 'Arbeitszeit am Arbeitstag, je Vorgang und Tag');
+  eq(`${v.hours}|${v.cases}|${r.data.totals.hours}|${r.data.totals.items}`, '2.5|1|2.5|1');
+  // laufende Woche
+  r = await users.fleet.get(`/api/reports/costs?part=week&week_of=${BERLIN_TODAY}${vq}`); eq(r.status, 200);
+  eq(`${r.data.running}|${r.data.next_week_of}|${r.data.prev_week_of}`, `true|null|${weekRange({ week_of: D(-7) }).from_day}`, 'laufende Woche ohne „Woche danach“');
+  v = r.data.vehicles[0]; const it = v.items;
+  eq(it.filter((i) => i.type === 'arbeitszeit').map((i) => i.quantity).join(), '1', 'nur die Arbeitszeit dieser Woche');
+  ok(it.every((i) => i.date >= r.data.from_day && i.date <= r.data.to_day), 'alle Positionen in der Woche');
+  const ext = it.filter((i) => i.type === 'fremdleistung');
+  eq(JSON.stringify(ext.map((i) => [i.amount_net, i.valuation, i.replaces_own]).sort((x, y) => x[0] - y[0])), JSON.stringify([[200, 'estimate', false], [300, 'actual', true], [500, 'actual', false]]), 'Fremdleistungen');
+  ok(ext.some((i) => i.amount_net === 300 && i.replaces_own) && ext.some((i) => i.amount_net === 500 && !i.replaces_own), 'ersetzt eigene Arbeit/Teile gekennzeichnet');
+  const exp = Math.round(it.filter((i) => i.counted && i.valuation === 'actual' && i.amount_net !== null).reduce((a, i) => a + i.amount_net, 0) * 100) / 100;
+  ok(exp >= 960, 'Ist mindestens 500 + 160 + 300');
+  eq(v.actual_net, exp, 'Ist = gezählte, belegte Positionen'); eq(v.estimate_net, 200, 'Schätzung getrennt');
+  eq(v.unvalued_items, it.filter((i) => i.counted && (i.valuation === 'unvalued' || i.amount_net === null)).length, 'unbewertet'); ok(v.unvalued_items >= 1, 'Teil ohne Preis unbewertet, nicht 0 €');
+  eq(v.not_counted_items, 1, 'Ölfilter durch Fremdleistung ersetzt'); eq(v.cases, 2);
+  eq(JSON.stringify(r.data.totals), JSON.stringify({ vehicles: 1, actual_net: v.actual_net, valued_items: v.valued_items, estimate_net: 200, unvalued_items: v.unvalued_items, hours: 1, items: it.length }), 'Summen');
+  // gleiche Zahlen wie die Monats-Einzelpositionen (Woche liegt im Monat oder überschneidet ihn)
+  const fenv = (await users.fleet.get('/api/me')).data.user.environment;
+  const w2 = await costWeek(env, { id: 'x', role: 'fleet' }, fenv, { week_of: BERLIN_TODAY, vehicle_id: V }); eq(w2.vehicles[0].actual_net, v.actual_net, 'direkt = API');
+  // Standortfilter
+  eq((await users.fleet.get(`/api/reports/costs?part=week&week_of=${BERLIN_TODAY}&site=Hamburg-gibt-es-nicht${vq}`)).data.vehicles.length, 0, 'anderer Standort: leer');
+  // CSV
+  const c = await users.fleet.get(`/api/reports/costs?part=week&week_of=${BERLIN_TODAY}${vq}&format=csv`);
+  eq(c.status, 200); ok(new RegExp(`filename="fuhrpark-kosten-woche_[a-z]+_${r.data.from_day}_${r.data.to_day}_stand-`).test(c.headers.get('content-disposition') || ''), 'Dateiname mit Montag und Sonntag');
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(c.data);
+  ok(text.startsWith('﻿Datum;Monat;Vorgang;Kennzeichen;'), 'Kopfzeile wie Einzelpositionen'); eq(text.trim().split('\r\n').length, it.length + 1, 'eine Zeile je Position');
+  // Rechte, ungültige Woche
+  for (const u of ['driver', 'ws']) eq((await users[u].get(`/api/reports/costs?part=week`)).status, 403, u);
+  eq((await users.fleet.get('/api/reports/costs?part=week&week_of=2026-13-01')).status, 400, 'ungültige Woche');
+  // Oberfläche, Texte, Hilfe
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const m of ['id="costweek"', '/api/reports/costs?part=week', '&format=csv`), `fuhrpark-kosten-woche_', 'data-cwnav=', 'data-cwrun', 'data-cwempty', 'S.costWeekOpen = cwk.open']) ok(app.includes(m), m);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const kk of ['cw_title', 'cw_rule', 'cw_week', 'cw_kw', 'cw_prev', 'cw_next', 'cw_last', 'cw_running', 'cw_empty', 'cw_t_arbeitszeit', 'cw_t_teil', 'cw_t_fremdleistung', 'cw_replaces', 'cw_notcounted']) ok(STRINGS[l][kk], `${l}.${kk}`);
+    ok(STRINGS[l].help_costs_s.includes(STRINGS[l].cw_title), `${l}: Hilfe`);
+  }
+  ok((await import('node:fs')).readFileSync(new URL('../scripts/ui-kosten-woche.py', import.meta.url), 'utf8').includes('Backlog 1486'), 'UI-Prüfung');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
