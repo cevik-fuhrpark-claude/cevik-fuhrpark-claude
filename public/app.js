@@ -329,6 +329,8 @@ const isCalDay = (y, m, d) => { const x = new Date(Date.UTC(y, m - 1, d)); retur
 const impMore = (total, shown) => (total > shown ? `<p class="small" role="note" data-impmore>${esc(t('imp_first_n').replace('{n}', fmtNum(shown)).replace('{m}', fmtNum(total)))}</p>` : '');
 // Durchführung älter als die gespeicherte letzte: nur im Verlauf gespeichert, Fälligkeit unverändert – ausdrücklich sagen (17.10.2026)
 const doneToast = (r) => toast(r && r.older_than_last ? '✓ ' + t('mt_older_saved').replace('{d}', fmtD(r.last_done_date)) : '✓');
+// Backlog 1491 (Blickwinkel „Person mit Bewegungsempfindlichkeit, System auf ‚Bewegung reduzieren‘“, WCAG 2.3.3): weiches Scrollen nur ohne diese Einstellung
+const scrollBeh = () => { try { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'; } catch { return 'auto'; } };
 // Ansage nur für Screenreader (dauerhafte Live-Region wie bei toast, ohne sichtbaren Hinweis) – z. B. Trefferzahl nach einer Suche (22.10.2026)
 function announce(msg) {
   let live = document.getElementById('live');
@@ -5771,7 +5773,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   // Backlog 1084 (Blickwinkel „Unfallschaden: Gutachter muss vor der Reparatur besichtigen“): auch im Formular „Reparatur freigeben“ der Leitung
   const apwF = ['start_repair', 'record_work', 'add_part', 'add_external_cost', 'approve_repair'].includes(action) && c.appraisal_wait_on ? `<p class="panel warn small" data-apwform>🔍 <b>${esc(t('apw_title'))} ${fmtD(c.appraisal_wait_on)}</b> – ${esc(t(action === 'approve_repair' ? 'apw_appr_mgr' : 'apw_hint_ws'))}</p>` : '';
   box.innerHTML = `<form class="panel" id="af"><h3>${esc(t('act_' + action))}</h3>${apwF}${bkFor}${f.join('')}<div class="actions"><button class="btn">${esc(t('save'))}</button><button type="button" class="btn secondary" id="ac">${esc(t('cancel'))}</button></div></form>`;
-  if (!restore) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!restore) { box.style.scrollMarginTop = '80px'; box.scrollIntoView({ behavior: scrollBeh(), block: 'start' }); } // Kopfleiste verdeckt sonst den Formularanfang
   // Tastatur/Screenreader: Fokus ins Formular, „Abbrechen“ gibt ihn an den auslösenden Knopf zurück (21.10.2026: blieb auf dem Knopf bzw. fiel auf body)
   if (!restore) { const h3 = box.querySelector('#af h3'); if (h3) { h3.tabIndex = -1; h3.focus({ preventScroll: true }); } } // Überschrift statt Feld: keine Bildschirmtastatur am Tablet
   $('#ac').onclick = () => { box.innerHTML = ''; S.openAct = null; actDraft(c.id).clear(); const ab = document.querySelector(`button[data-act="${action}"]`); if (ab) ab.focus(); };
@@ -6828,12 +6830,12 @@ async function viewVehicle(id, focusEv = null, sec = null) {
   if (S.vLost && S.vLost.id === id) { const L = S.vLost; S.vLost = null; const fm = $('#' + L.form); if (fm) conflictKeep(fm, L, 'vlost-' + L.form); }
   const evf = $('#evf'); if (evf) evf.onsubmit = async (e) => { e.preventDefault(); try { await saveVehicleForm(evf, true); toast('✓'); viewVehicle(id); } catch (err) { if (err.code === 'version_conflict') { S.vLost = { id, form: 'evf', ...conflictMine(evf) }; viewVehicle(id); return; } toast(err.message, true); } };
   // Sprung von der Startseite „Prüfergebnis fehlt“ bzw. Knopf in der Akte: Prüfhistorie und Formular „Ergebnis nachtragen“ der Durchführung öffnen
-  const openResAdd = (evId, smooth) => { const rf = document.querySelector(`[data-resadd="${CSS.escape(evId)}"]`); const mh = $('#mhist'); if (rf && mh) { mh.open = true; const dt = rf.closest('details'); dt.open = true; dt.style.scrollMarginTop = '90px'; dt.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' }); const sel = rf.querySelector('select'); if (sel) sel.focus({ preventScroll: true }); } };
+  const openResAdd = (evId, smooth) => { const rf = document.querySelector(`[data-resadd="${CSS.escape(evId)}"]`); const mh = $('#mhist'); if (rf && mh) { mh.open = true; const dt = rf.closest('details'); dt.open = true; dt.style.scrollMarginTop = '90px'; dt.scrollIntoView({ block: 'start', behavior: smooth ? scrollBeh() : 'auto' }); const sel = rf.querySelector('select'); if (sel) sel.focus({ preventScroll: true }); } };
   if (focusEv) openResAdd(focusEv, false);
   $$('[data-rmgo]').forEach((b) => (b.onclick = () => openResAdd(b.dataset.rmgo, true)));
   // Backlog 883: Formular „Dokument hinzufügen“ öffnen, Art „Prüfbericht“ und Bemerkung „<Art> <JJJJ-MM-TT>“ vorbelegt (wie beim Erledigen)
   $$('[data-nrgo]').forEach((b) => (b.onclick = () => { const dd = $('#docadd-d'); const f = $('#docf'); if (!dd || !f) return; dd.open = true; f.kind.value = 'pruefbericht'; if (!f.note.value.trim()) f.note.value = b.dataset.nrgo; dd.scrollIntoView({ block: 'start' }); f.file.focus({ preventScroll: true }); }));
-  const vfiGo = $('#vfi-go'); if (vfiGo) vfiGo.onclick = () => { const mh = $('#mhist'); if (mh) { mh.open = true; mh.style.scrollMarginTop = '90px'; mh.scrollIntoView({ behavior: 'smooth', block: 'start' }); } };
+  const vfiGo = $('#vfi-go'); if (vfiGo) vfiGo.onclick = () => { const mh = $('#mhist'); if (mh) { mh.open = true; mh.style.scrollMarginTop = '90px'; mh.scrollIntoView({ behavior: scrollBeh(), block: 'start' }); } };
   // Rückkehr direkt aus dem roten Hinweisfeld (Backlog 205; Knöpfe sonst nur in „Stammdaten bearbeiten“) – löst denselben Knopf aus
   $$('[data-goto]').forEach((b) => (b.onclick = () => { const x = $('#' + b.dataset.goto); if (x) x.click(); }));
   // Grund beim Wiederaufnehmen/Reaktivieren optional (steht dann in der Zeitleiste), Abbrechen bricht ab

@@ -42022,6 +42022,31 @@ await test('Backlog 1490 (Blickwinkel „Fuhrparkleitung mit Rot-Grün-Sehschwä
   ok(close >= 3, 'Gegenprobe: ähnliche Paare gefunden (Gesperrt/Werkstatt bei Deuteranopie) – ' + close);
   ok(readFileSync(new URL('../scripts/ui-flotte-farbsehschwaeche.py', import.meta.url), 'utf8').includes('Backlog 1490'), 'UI-Prüfung');
 });
+await test('Backlog 1491 (Blickwinkel „Person mit Bewegungsempfindlichkeit, System auf ‚Bewegung reduzieren‘“, Backlog 195, WCAG 2.3.3): kein weiches Scrollen und keine Animation, wenn das System Bewegung reduzieren verlangt – Scrollen nur über scrollBeh(), Animationen/Übergänge nur unter prefers-reduced-motion: no-preference; Aktionsformular nicht unter der Kopfleiste', async () => {
+  const { readFileSync } = await import('node:fs');
+  const rd = (f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const app = rd('app.js');
+  // Quelle und alle ausgelieferten Skripte: „smooth“ nur in der Hilfsfunktion selbst
+  for (const f of ['app.js', 'app-main.js', 'app-fahrzeug.js', 'app-verwaltung.js', 'app-lager.js', 'app-suche.js', 'werkstatt/app.js', 'boot.js']) {
+    const src = rd(f); const hits = [...src.matchAll(/'smooth'|"smooth"|`smooth`/g)].length;
+    ok(hits === (/const scrollBeh = /.test(src) ? 1 : 0), `${f}: „smooth“ nur in scrollBeh (${hits}×)`);
+    ok(!/scroll-behavior\s*:\s*smooth/.test(src), `${f}: kein scroll-behavior: smooth`);
+  }
+  ok(/const scrollBeh = \(\) => \{ try \{ return window\.matchMedia && window\.matchMedia\('\(prefers-reduced-motion: reduce\)'\)\.matches \? 'auto' : 'smooth'; \} catch \{ return 'auto'; \} \};/.test(app), 'scrollBeh fragt prefers-reduced-motion ab, Rückfall ohne matchMedia: auto');
+  ok((app.match(/behavior: scrollBeh\(\)/g) || []).length === 2 && app.includes("behavior: smooth ? scrollBeh() : 'auto'"), 'drei weiche Sprünge (Aktionsformular, Akte-Prüfverlauf, Restarbeit) über scrollBeh');
+  ok(app.includes("box.style.scrollMarginTop = '80px'; box.scrollIntoView({ behavior: scrollBeh(), block: 'start' });"), 'Aktionsformular beginnt unterhalb der Kopfleiste');
+  ok(/scrollBeh/.test(rd('app-main.js')) && /import \{[^}]*\bscrollBeh\b/.test(rd('app-fahrzeug.js')), 'Fahrzeugakte-Modul importiert scrollBeh');
+  // CSS: jede Animation/jeder Übergang steht in einer Zeile mit prefers-reduced-motion: no-preference (Keyframes selbst bewegen nichts)
+  const wsHtml = rd('werkstatt/index.html');
+  for (const [f, src] of [['styles.css', rd('styles.css')], ['werkstatt/index.html', wsHtml], ['index.html', rd('index.html')]]) {
+    for (const line of src.split('\n')) {
+      if (!/(^|[;{\s])(animation|transition)(-[a-z-]+)?\s*:/.test(line)) continue;
+      ok(/prefers-reduced-motion:\s*no-preference/.test(line), `${f}: Animation nur ohne „Bewegung reduzieren“: ${line.trim().slice(0, 90)}`);
+    }
+  }
+  ok(readFileSync(new URL('../scripts/ui-bewegung-reduzieren.py', import.meta.url), 'utf8').includes('Backlog 1491'), 'UI-Prüfung');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

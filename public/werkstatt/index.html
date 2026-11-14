@@ -95,7 +95,8 @@ main{padding-block:32px 64px;display:flex;flex-direction:column;gap:36px}
 .tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
 @media (max-width:900px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:560px){.tiles{grid-template-columns:minmax(0,1fr)}.tile.wide{grid-column:auto}}
-.tile{all:unset;box-sizing:border-box;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:12px;min-width:0;transition:border-color .15s,transform .15s,box-shadow .15s}
+.tile{all:unset;box-sizing:border-box;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:12px;min-width:0}
+@media (prefers-reduced-motion:no-preference){.tile{transition:border-color .15s,transform .15s,box-shadow .15s}} /* [CLAUDE] Backlog 1491: kein Anheben/Schweben bei „Bewegung reduzieren“ */
 .tile.wide{grid-column:span 2}
 .tile.full{grid-column:1/-1}
 .tile.full .pv{flex-direction:row;flex-wrap:wrap;align-items:center;gap:12px 32px}
