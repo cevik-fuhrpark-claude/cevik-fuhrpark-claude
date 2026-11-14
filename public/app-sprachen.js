@@ -489,7 +489,8 @@ const RL_KINDS = [['brake', /\btormoz\S*\s+(?:\S+\s+)?(?:ne\s+(?:rabota|derzh|to
   ['door', /\bdver\S*\s+(?:\S+\s+)?(?:ne\s+(?:zakryva|otkryva|zapira|otpira)|zaklin|zaelo)|\b(?:gidrobort|bort|lift|podyemnik|podemnik)\S*\s+(?:\S+\s+)?(?:ne\s+(?:rabota|podnima|opuska)|oshibk|slomal)/, /okn|stekl/]];
 const rlFold = (s) => String(s || '').toLowerCase().replace(/['ʼ’`]/g, '').replace(/[ß-ɏ]/g, 'q');
 const RL_NEG = /\b(?:ne|net)\s+(?:(?:bylo|byl|byla|byli)\s+)?(?:probit|probito|probita|lopnul|vzorval|spustil|spusch|spushch|sdul|razbit|razbil|slomal|slomano|otorval|otorvan|tresn|techet|kapaet|podteka)\S*/g;
-function rlKinds(v) { const k = new Set(); for (const p of rlFold(v).replace(RL_NEG, ' ').split(/[.,;!?\n]+/)) if (!RL_OK.test(p)) for (const [n, rx, ex] of RL_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
+const RL_FILL = /\bu\s+(?:menya|menia|nas|nego|nee|neyo)\b/g;
+function rlKinds(v) { const k = new Set(); for (const p of rlFold(v).replace(RL_FILL, ' ').replace(RL_NEG, ' ').split(/[.,;!?\n]+/)) if (!RL_OK.test(p)) for (const [n, rx, ex] of RL_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
 
 const UL_OK = /\b(?:vidremont|polahodil|zaminil|vipravil|vipravlen)\S*|\b(?:znovu|znov|vzhe)\s+pratsiu|\bpratsiu\S*\s+(?:znovu|normalno)\b|\bvse\s+(?:v\s+)?(?:poriadku|normalno|dobre|harazd)\b|\bbez\s+problem/;
 const UL_KINDS = [['brake', /\bhalm\S*\s+(?:\S+\s+)?(?:ne\s+(?:pratsiu|trima|halmu|spratsiov)|slabk|vidmov)|\bne\s+halmu|\b(?:padaie|padae|vpav|vpalo|znizh)\S*\s+(?:\S+\s+)?tisk|\btisk\S*\s+(?:\S+\s+)?(?:pada|vpav|znizh)|\b(?:travit|spuskaie|spuskae)\s+(?:\S+\s+)?povitr/, /ruchn|stoian|lihtar|lamp|stop|as+istent|\bsam\b|bez\s+prichin|shin|koles|hum[aiu]|podush|balon/],
@@ -528,7 +529,8 @@ const UL_KINDS = [['brake', /\bhalm\S*\s+(?:\S+\s+)?(?:ne\s+(?:pratsiu|trima|hal
   ['door', /\bdver\S*\s+(?:\S+\s+)?(?:ne\s+(?:zakriva|vidkriva|zamika|vidmika)|zaklin|zai+lo)|\b(?:hidrobort|bort|lift|pidiomnik)\S*\s+(?:\S+\s+)?(?:ne\s+(?:pratsiu|pidnima|pidiima|opuska)|pomilk|zlamal)/, /vikn|skl/]];
 const ulFold = (s) => String(s || '').toLowerCase().replace(/['ʼ’`]/g, '').replace(/kh/g, 'h').replace(/c(?!h)/g, 'ts').replace(/[yj]/g, 'i').replace(/g/g, 'h').replace(/w/g, 'v').replace(/[ß-ɏ]/g, 'q');
 const UL_NEG = /\bne\s+(?:(?:bulo|buv|bula|buli)\s+)?(?:probit|lopnul|lusnul|vibuhl|spustil|zdul|rozbit|zlaman|vidirv|trisn|teche|kapaie|kapae|pidtik)\S*/g;
-function ulKinds(v) { const k = new Set(); for (const p of ulFold(v).replace(UL_NEG, ' ').split(/[.,;!?\n]+/)) if (!UL_OK.test(p)) for (const [n, rx, ex] of UL_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
+const UL_FILL = /\bu\s+(?:mene|nas|noho|nei|neyi)\b/g;
+function ulKinds(v) { const k = new Set(); for (const p of ulFold(v).replace(UL_FILL, ' ').replace(UL_NEG, ' ').split(/[.,;!?\n]+/)) if (!UL_OK.test(p)) for (const [n, rx, ex] of UL_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
 
 
 
@@ -605,7 +607,8 @@ const SL_KINDS = [['brake', /\bzavor\S*\s+(?:\S+\s+)?(?:ne\s+(?:delaj|dela|prime
   ['adas', /\b(?:asistent|radar|senzor|kamer)\S*\s+(?:\S+\s+){0,2}(?:ne\s+dela|napaka|okvar|izklopil)|\bzavira\s+(?:sam\s+od\s+sebe|brez\s+razloga)/],
   ['door', /\bvrata\s+(?:\S+\s+)?(?:se\s+)?ne\s+(?:zaprejo|odprejo|zaklenejo|zapirajo|odpirajo)|\b(?:dvizn\S*\s+(?:ploscad|vrata)|lift|rampa)\S*\s+(?:\S+\s+)?(?:ne\s+(?:dela|delajo|dviga|spusca)|pokvarjen|okvar)/]];
 const SL_NEG = /\b(?:ni|niso|ne)\s+(?:(?:bil[aoi]?|bile)\s+)?(?:pocil|pocen|predrt|eksplodiral|prazn|zlomljen|odpadl|razbit|pusca|puscal|tece|kaplja)\S*/g;
-function slKinds(v) { const k = new Set(); for (const p of hrFold(v).replace(SL_NEG, ' ').split(/[.,;!?\n]+/)) if (!SL_OK.test(p)) for (const [n, rx, ex] of SL_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
+const SL_DELUJ = /\b(?:deluj|funkcionir)\S*/g;
+function slKinds(v) { const k = new Set(); for (const p of hrFold(v).replace(SL_DELUJ, 'dela').replace(SL_NEG, ' ').split(/[.,;!?\n]+/)) if (!SL_OK.test(p)) for (const [n, rx, ex] of SL_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
 
 
 

@@ -1,19 +1,19 @@
 # [CLAUDE] UI-Test (14.11.2026, Backlog 1467, Blickwinkel „Fahrer schreibt die Meldung auf Slowenisch“):
 # Meldeformular zeigt bei slowenischen Stichwörtern (auch ohne č/š/ž) dieselben Hinweise wie bei den anderen Sprachen (Backlog 1453–1466) – Tabelle aus dem
 # still nachgeladenen Modul app-sprachen.js – und keine weiteren (genau der erwartete Hinweis sichtbar); Reparaturvermerk, Auspuffrauch, Steinschlag, Feuerlöscher,
-# Sitzheizung, Tankkarte, Verbandskasten, „vse je v redu“ ohne Hinweis; „guma je poškodovana“ nur Reifen. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
+# Sitzheizung, Tankkarte, Verbandskasten, „vse je v redu“ ohne Hinweis; Backlog 1484: „ne deluje/delujejo/funkcionira“ wie „ne dela“; „guma je poškodovana“ nur Reifen. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-CASES=[("zavore ne delajo","brake"),("ZAVORE NE DELAJO","brake"),("zavora slabo zavira","brake"),("rocna zavora ne drzi","parkbrake"),("ročna zavora ne drži","parkbrake"),("tovornjak se je sam odkotalil","parkbrake"),
+CASES=[("zavore ne delajo","brake"),("zavore ne delujejo","brake"),("luči ne delujejo","lights"),("tahograf ne deluje","tacho"),("klima ne funkcionira","climate"),("ZAVORE NE DELAJO","brake"),("zavora slabo zavira","brake"),("rocna zavora ne drzi","parkbrake"),("ročna zavora ne drži","parkbrake"),("tovornjak se je sam odkotalil","parkbrake"),
  ("iz kabine se kadi","fire"),("dim iz motorja","fire"),("kabina gori","fire"),("počila mi je guma","flat"),("pnevmatika predrta","flat"),("volan je blokiran","steer"),("vleče v desno","steer"),("pušča olje","leak"),("olje kaplja pod motorjem","leak"),
  ("imel sem prometno nesrečo","acc"),("trčil sem v drug tovornjak","acc"),("voznik je ranjen","injury"),("pokličite rešilca","injury"),("motor ne vžge","nostart"),("tovornjak noče vžgati","nostart"),("akumulator je prazen","batt"),("izgubil sem ključe","lost"),
  ("ogledalo je razbito","mirror"),("luči ne delajo","lights"),("sveti lučka za motor","warnlight"),("gori lučka","warnlight"),("vetrobransko steklo je počilo","glass"),("okno se ne spušča","window"),("tahograf ne bere kartice","tacho"),("priklopnik se ne zapne","coupling"),
  ("zmanjkalo mi je goriva","dryfuel"),("motor se pregreva","engine"),("guma izgublja zrak","tyre"),("guma je poškodovana","tyre"),("hladilni agregat ne hladi","reefer"),("zračna blazina pušča","susp"),("prestava ne gre noter","gear"),("ogrevanje ne dela","climate"),
  ("cerada je strgana","tarp"),("izpuh je odpadel","exhaust"),("brisalci ne delajo","visib"),("pas se ne zapne","seat"),("vijaki kolesa so razrahljani","wheel"),("obtičal sem v blatu","stuck"),("registrska tablica je odpadla","numplate"),("kamera ne dela","adas"),("vrata se ne zaprejo","door")]
-NO=["zavore popravljene","guma zamenjana","dim iz izpuha","kamen je zadel steklo","ni gasilnega aparata","gretje sedeža ne dela","kartica za gorivo ne dela","vse je v redu","motor dela normalno","manjka torbica za prvo pomoč","kabina je poškodovana","ogledalo spet dela"]
+NO=["zavore popravljene","zavore spet delujejo","guma zamenjana","dim iz izpuha","kamen je zadel steklo","ni gasilnega aparata","gretje sedeža ne dela","kartica za gorivo ne dela","vse je v redu","motor dela normalno","manjka torbica za prvo pomoč","kabina je poškodovana","ogledalo spet dela"]
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
