@@ -615,7 +615,51 @@ const SL_DELUJ = /\b(?:deluj|funkcionir)\S*/g;
 function slKinds(v) { const k = new Set(); for (const p of hrFold(v).replace(SL_DELUJ, 'dela').replace(SL_NEG, ' ').split(/[.,;!?\n]+/)) if (!SL_OK.test(p)) for (const [n, rx, ex] of SL_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
 
 
+const BE_MAP = { а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', ё: 'io', ж: 'zh', з: 'z', і: 'i', и: 'i', ї: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ў: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ы: 'y', ь: '', ъ: '', э: 'e', ю: 'iu', я: 'ia', є: 'ie' };
+const beLat = (s) => String(s || '').toLowerCase().replace(/['ʼ’`]/g, '').replace(/[а-яёіїєґў]/g, (c) => BE_MAP[c] ?? c);
+const BE_OK = /\b(?:adramantav|pamianial|zamianil|vypravil|pachynil|paladzil)\S*|\b(?:znou|zrazu)\s+pratsu|\bpratsu\S*\s+(?:znou|narmalna)\b|\busio\s+(?:u\s+)?(?:paradku|dobra|narmalna)\b|\bbiaz\s+prablem/;
+const BE_KINDS = [['brake', /\b(?:tarmaz|tormaz)\S*\s+(?:\S+\s+)?(?:ne\s+(?:pratsu|tryma|tarmoz|spratsav)|slab|admovil)|\bne\s+tarmoz|\b(?:padae|upau|upal|znizhaetstsa)\s+(?:\S+\s+)?tsisk|\btsisk\S*\s+(?:\S+\s+)?(?:padae|upau|znizh)|\b(?:tratsits|spuskae|travits)\s+(?:\S+\s+)?pavetr/, /ruchn|stoiank|stop|liampach|lamp|likhtar|shyn|padushk|asistent|\bsam\b/],
+  ['fire', /\bpazhar|\b(?:haryts|haryt|zahare(?:lasia|usia|lisia|losia)|uzharel)\b|\bdym\S*\s+(?:\S+\s+)?(?:z|sa|z-pad|ad)\b|\bdymits|\bpakhne\s+(?:\S+\s+)?(?:harel|palen)/, /hlushyts|vykhlap|liampach|lamp|chek|indykatar|kantrolk|far[ay]?\b|stop|habarit|pavarotn|pamylk/],
+  ['flat', /\b(?:lopnul|prabit|spustsil|spushchan|razarval|vybukhl)\S*\s+(?:\S+\s+)?(?:shyn|kol[aoy]\b)|\b(?:shyn|kol[aoy]\b)\S*\s+(?:\S+\s+)?(?:lopnul|prabit|spustsil|spushchan|razarval|spuskae)/, /zapasn/],
+  ['steer', /\brul\S*\s+(?:\S+\s+)?(?:tsiazhk|zaklinil|ne\s+krutsi|liuft|biaets)|\btsiahne\s+(?:\S+\s+)?(?:u\s*)?(?:prava|leva|bok)\b/],
+  ['leak', /\b(?:tsiache|kapae|patsiok|tsiakuts|ubiahae)\S*\s+(?:\S+\s+)?(?:masl|paliv|saliark|dyzel|antyfryz|tasol|adblue|vadkas)|\b(?:masl|paliv|saliark|dyzel|antyfryz|tasol|adblue)\S*\s+(?:\S+\s+)?(?:tsiache|kapae|patsiok|tsiakuts)/],
+  ['acc', /\bavary(?:ia|i|iu)\b|\bdtz\b|\b(?:urezau|urezalas|zbiu|zbila|zachapiu|zachapila|sutyknu|uviezau|uvehau)\S*/, /kamen|kamian/],
+  ['injury', /\bparanen\S*|\b(?:kirouts|vadzits|pasazhyr|peshakhod|chalavek)\S*\s+(?:\S+\s+)?(?:paranen|pakalechan|traumav)|\bkhutk\S*\s+dapamoh|\btraum/, /\b(?:mashyn|hruzavik|tsiahach|prychep|kabin)\S*\s+(?:\S+\s+)?pashkodzh/],
+  ['parkbrake', /\bruchn\S*\s+(?:(?:tarmaz|tormaz)\S*\s+)?(?:\S+\s+)?(?:ne\s+(?:tryma|pratsu|adpuska)|zlaman|zaklinil)|\b(?:sam\s+)?pakatsi(?:usia|lasia|lisia)\b/],
+  ['nostart', /\b(?:rukhavik|mator|hruzavik|tsiahach|mashyn)\S*\s+(?:\S+\s+)?ne\s+(?:zavodz|zapuska|zavia)|\bstartar\S*\s+(?:\S+\s+)?ne\s+(?:krutsi|pratsu)/],
+  ['mirror', /\bliusterk\S*\s+(?:\S+\s+)?(?:razbit|zlaman|adarval|adlamal|tresn|vysits|ne\s+rehuliu)|\b(?:razbil|zlamal|adarval)\S*\s+(?:\S+\s+)?liusterk/],
+  ['lights', /\b(?:far[ay]?|faru|stop\S*|pavarotnik\S*|habarit\S*|asviatlenn\S*)\s+(?:\S+\s+)?(?:ne\s+(?:pratsu|haryts|haratsts|svets)|perahare|razbit)|\bne\s+(?:haryts|haratsts|pratsu\S*)\s+(?:\S+\s+)?(?:far|stop|pavarotnik|habarit)|\bperahare\S*\s+(?:\S+\s+)?(?:liampach|lamp)/],
+  ['warnlight', /\b(?:haryts|zahare\S*|mihae|svetsits|zapalil\S*)\s+(?:\S+\s+)?(?:liampach|lamp|chek|indykatar|kantrolk|pamylk)|\b(?:liampach|lamp|chek|indykatar|kantrolk)\S*\s+(?:\S+\s+)?(?:haryts|zahare|mihae|svetsits)/, /\bfar|stop|pavarotn|habarit|perahare/],
+  ['glass', /\b(?:labav\S*|shkl\S*)\s+(?:\S+\s+)?(?:tresn|razbit|patreskal)|\btreshchyn\S*\s+(?:\S+\s+)?(?:na\s+)?(?:labav|shkl)|\b(?:kamen|kamian)\S*\s+(?:\S+\s+)?(?:trapiu|patrapiu|uletseu|vyletseu|udaryu)\S*\s+(?:\S+\s+)?(?:u\s+)?(?:labav|shkl)/, /liusterk/],
+  ['window', /\b(?:akno|shkl\S*)\s+(?:\S+\s+)?ne\s+(?:apuska|padnima|adchynia|zachynia)/],
+  ['batt', /\bakumuliatar\S*\s+(?:\S+\s+)?(?:seu\b|razradzh|pusty|ne\s+(?:zariadzh|tryma))|\bseu\s+akumuliatar/],
+  ['tacho', /\btakhohraf\S*\s+(?:\S+\s+)?(?:ne\s+(?:chyta|pratsu|bacha)|pamylk|zlaman)|\bkart\S*\s+(?:kirouts\S*\s+)?(?:\S+\s+)?(?:ne\s+(?:chyta|pratsu|vykhodz)|zlaman|z(?:a)?hublen|skradzen|pashkodzhan)|\bz(?:a)?hubi\S*\s+(?:\S+\s+)?kart/, /paliv|paliu|zapraun|azs/],
+  ['coupling', /\b(?:prychep|paupryche|naupryche)\S*\s+(?:\S+\s+)?(?:ne\s+(?:schapl|zachapl|adchapl)|adchapiu|adarvau)|\bsiadl\S*\s+(?:\S+\s+)?(?:ne\s+(?:zachynia|zakryva|adkryva)|zlaman)/],
+  ['dryfuel', /\b(?:skonchyl|zakonchyl)\S*\s+(?:\S+\s+)?(?:paliv|saliark|dyzel)|\b(?:paliv|saliark|dyzel)\S*\s+(?:\S+\s+)?(?:skonchyl|zakonchyl)|\bniama\s+(?:bolsh\s+)?(?:paliv|saliark)/, /aharehat|khaladz|refryzh/],
+  ['engine', /\b(?:rukhavik|mator)\S*\s+(?:\S+\s+)?(?:perahra|hlokhne|zahlokh|ne\s+tsiahne|tsiahne\s+drenna|traschae)|\bavaryin\S*\s+rezhym|\b(?:hlushyts|vykhlap)\S*\s+(?:\S+\s+)?dymits|\bdym\S*\s+(?:\S+\s+)?(?:z|sa)\s+(?:\S+\s+)?(?:hlushyts|vykhlap)/],
+  ['tyre', /\bshyn\S*\s+(?:\S+\s+)?(?:pashkodzhan|parezan|zatsert|hryzh|tratsits\s+pavetr|spuskae\s+pavetr)/, /lopnul|prabit/],
+  ['reefer', /\b(?:khaladziln|refryzh|aharehat|termo\s*kin|carrier)\S*\s+(?:\S+\s+)?(?:ne\s+(?:khalodz|pratsu|zavodz)|pamylk|alarm|spynius|zahlokh)/],
+  ['susp', /\b(?:padushk|pneumapadushk|pnevmapadushk|pneumaresor)\S*\s+(?:\S+\s+)?(?:spuska|lopnul|tratsits|prapuska|travits)|\bpadviesk\S*\s+(?:\S+\s+)?(?:ne\s+pratsu|zlaman)/, /siadz|krasl/],
+  ['gear', /\bperadach\S*\s+(?:\S+\s+)?ne\s+(?:ukliuch|uklia|ida|uvakho)|\bkarobk\S*\s+(?:\S+\s+)?(?:pamylk|zlaman|ne\s+pratsu|ne\s+pierakliuch)|\bschaplenn\S*\s+(?:\S+\s+)?(?:buksu|ne\s+pratsu|zharel|zhareu|zhare)/],
+  ['climate', /\b(?:atsiaplenn|kandytsyian|kandytsian|klimat|pechk|webasto|vebasta)\S*\s+(?:\S+\s+)?(?:ne\s+(?:pratsu|hree|khalodz|duie)|zlaman)/, /siadz/],
+  ['tarp', /\btent\S*\s+(?:\S+\s+)?(?:parvan|razarvan|dzirk|dziurk)/],
+  ['exhaust', /\b(?:hlushyts|vykhlap)\S*\s+(?:\S+\s+)?(?:advaliu|advalil|adarvau|adarval|prahar|dzirk|tresn|vysits)/],
+  ['visib', /\bdvornik\S*\s+(?:\S+\s+)?(?:ne\s+(?:pratsu|chysts)|zlaman)|\bshkl\S*\s+(?:\S+\s+)?pacie/],
+  ['seat', /\bremen\S*\s+biaspek\S*\s+(?:\S+\s+)?(?:ne\s+(?:zashpil|zashchalk|ustsiah|tryma)|parvan|zaklinil)|\bsiadzenn\S*\s+(?:\S+\s+)?(?:zlaman|khistaetstsa|ne\s+(?:rehuliu|pratsu))/, /atsiaplen|padahre/],
+  ['wheel', /\bhaik\S*\s+(?:\S+\s+)?(?:kol\S*\s+)?(?:aslab|adkruts|niama|razkruts)|\bdysk\S*\s+(?:kola\s+)?(?:\S+\s+)?(?:tresn|zhnut|pahnut)|\b(?:stupits|padshypnik)\S*\s+(?:\S+\s+)?(?:hreetstsa|hrukhae|hudz)/],
+  ['stuck', /\b(?:zakhrasn|zastrah|zaseu|zasela|zakapau)\S*\s+(?:\S+\s+)?u\s+(?:hraz|snez|pias|kanav)/],
+  ['lost', /\bz(?:a)?hubi\S*\s+(?:\S+\s+)?(?:kliuch|tekhpasp|dakument)|\bkliuch\S*\s+(?:\S+\s+)?(?:z(?:a)?hubil|ne\s+mahu\s+znaits)|\bne\s+mahu\s+znaits\s+(?:\S+\s+)?kliuch/],
+  ['numplate', /\bnumar(?:n\S*\s+znak\S*)?\s+(?:\S+\s+)?(?:advaliu|advalil|z(?:a)?hubil|skradzen|ukradli|ne\s+chytaetstsa|zlaman)/, /liampach|lamp|telef/],
+  ['adas', /\b(?:kamer|radar|datchyk|sensar|asistent)\S*\s+(?:\S+\s+){0,2}(?:ne\s+pratsu|pamylk|adkliuchy)|\btarmozits\s+sam/],
+  ['cabkit', /\bpadahre\S*\s+(?:\S+\s+)?siadzenn\S*\s+(?:\S+\s+)?(?:ne\s+pratsu|zlaman)/],
+  ['fuelcard', /\b(?:paliun|zapraun)\S*\s+kart\S*\s+(?:\S+\s+)?(?:ne\s+(?:pratsu|pryma|chyta)|zablakav|z(?:a)?hublen)|\bz(?:a)?hubi\S*\s+(?:\S+\s+)?(?:paliun|zapraun)\S*\s+kart/],
+  ['door', /\bdzver\S*\s+(?:\S+\s+)?(?:ne\s+(?:zachynia|adchynia|zakryva|adkryva|zamyka)|zaklinil)|\b(?:hidrabort|padiomnik)\S*\s+(?:\S+\s+)?(?:ne\s+(?:pratsu|padnima|apuska)|zlaman)/]];
 
-async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
+const BE_NEG = /\bne\s+(?:(?:byl[aoi]?|byu)\s+)?(?:prabit|lopnul|razbit|zlaman|tsiache|kapae|spushchan|tresn)\S*/g;
+function beKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n]+/)) { if (!/[а-яёіўы]/i.test(raw) || /[ищъїєґ]/i.test(raw)) continue; const p = beLat(raw).replace(/\bu\s+miane\b/g, ' ').replace(BE_NEG, ' '); if (!BE_OK.test(p)) for (const [n, rx, ex] of BE_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };

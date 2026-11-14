@@ -41949,6 +41949,40 @@ await test('Backlog 1487 (Blickwinkel „Werkstatt-Tablet mit sehr großer Schri
   ok(!/matchMedia\('\(max-width: (260|300|360|420|480)px\)'\)/.test(app), 'keine px-Abfrage dieser Stufen im Skript (sonst uneinheitlich)');
   ok((await import('node:fs')).readFileSync(new URL('../scripts/ui-werkstatt-grosse-schrift.py', import.meta.url), 'utf8').includes('Backlog 1487'), 'UI-Prüfung');
 });
+await test('Backlog 1488 (Blickwinkel „Fahrer schreibt die Meldung auf Belarussisch“, Backlog 195, Folge aus 1453–1467): „тармазы не працуюць“, „лопнула шына“, „рухавік не заводзіцца“, „кабіна гарыць“, „цячэ масла“, „трапіў у аварыю“, „гарыць лямпачка рухавіка“ u. a. → dieselben Hinweise (BE_KINDS über beLat); Reparaturvermerk, Verneinung, „усё ў парадку“, Feuerlöscher ohne; „дым з глушыцеля“ Motor statt Brand, „счапленне буксуе“ Getriebe statt festgefahren; russische/ukrainische Sätze (и/щ/ъ/ї/є) unberührt; Tabelle nur im Modul app-sprachen.js', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { beKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { beKinds, foreignKinds };')();
+  const CASES = [['тармазы не працуюць', 'brake'], ['ТОРМАЗЫ НЕ ПРАЦУЮЦЬ', 'brake'], ['тармазы слаба трымаюць', 'brake'], ['падае ціск паветра', 'brake'], ['ручны тормаз не трымае', 'parkbrake'], ['лопнула шына', 'flat'], ['прабіта кола', 'flat'], ['спусціла кола', 'flat'],
+    ['рухавік не заводзіцца', 'nostart'], ['матор не заводзіцца', 'nostart'], ['рухавік перагразаецца', 'engine'], ['кабіна гарыць', 'fire'], ['цячэ масла', 'leak'], ['цячэ паліва', 'leak'], ['трапіў у аварыю', 'acc'], ['у мяне ДТЗ', 'acc'], ['урэзаўся ў слуп', 'acc'], ['кіроўца паранены', 'injury'], ['трапіў у аварыю, кіроўца паранены', 'acc'],
+    ['гарыць лямпачка рухавіка', 'warnlight'], ['загарэлася лямпачка', 'warnlight'], ['загарэўся чэк', 'warnlight'], ['лабавое шкло трэснула', 'glass'], ['камень трапіў у лабавое шкло', 'glass'], ['люстэрка разбітае', 'mirror'], ['фары не працуюць', 'lights'], ['не гарыць стоп', 'lights'], ['акумулятар сеў', 'batt'],
+    ['тахограф не чытае картку', 'tacho'], ['згубіў картку кіроўцы', 'tacho'], ['паліўная картка не працуе', 'fuelcard'], ['згубіў ключы', 'lost'], ['прычэп не счапляецца', 'coupling'], ['скончылася паліва', 'dryfuel'], ['халадзільнік не халодзіць', 'reefer'], ['рэфрыжэратар не працуе', 'reefer'], ['пнеўмападушка спускае', 'susp'],
+    ['перадача не ўключаецца', 'gear'], ['ацяпленне не працуе', 'climate'], ['кандыцыянер не працуе', 'climate'], ['падагрэў сядзення не працуе', 'cabkit'], ['тэнт парваны', 'tarp'], ['глушыцель адваліўся', 'exhaust'], ['дворнікі не працуюць', 'visib'], ['рэмень бяспекі не зашпільваецца', 'seat'], ['гайкі кола аслабелі', 'wheel'],
+    ['захраснуў у гразі', 'stuck'], ['нумарны знак адваліўся', 'numplate'], ['камера не працуе', 'adas'], ['дзверы не зачыняюцца', 'door'], ['гідраборт не працуе', 'door'], ['акно не апускаецца', 'window'], ['руль цяжка круціцца', 'steer'], ['цягне ўправа', 'steer'], ['тармазы не працуюць. лопнула шына', 'brake,flat']];
+  for (const [x, k] of CASES) { eq([...beKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); }
+  const NO = ['усё ў парадку', 'усё добра, праблем няма', 'тармазы адрамантавалі', 'шыну замянілі', 'зноў працуе', 'тармазы працуюць нармальна', 'няма вогнетушыцеля', 'кабіна пашкоджана', 'грузавік пашкоджаны', 'кола не прабітае', 'люстэрка не разбітае', 'масла не цячэ'];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  // russische/ukrainische Sätze: beKinds bleibt leer (eigene Muster), auch wenn Wörter ähnlich sind
+  for (const x of ['ручник заклинило, замінили трос', 'Дымится проводка', 'чек двигателя мигает', 'шарнир рулевой люфтит', 'Загубив ключі від вантажівки', 'тормоза не работают', 'гальма не працюють', 'кабина горит']) eq([...beKinds(x)].join(','), '', 'nicht belarussisch: ' + x);
+  // Hauptmuster: belarussische Schreibung von Auspuff/Kupplung in den Ausnahmen (wie russisch „глушитель/выхлоп/сцепление“)
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); ok(m, n); return new RegExp(m[1], m[2]); };
+  const FIRE = g('FIRE_HINT'), STUCK = g('STUCK_HINT'), ENG = ['ENGINE_HINT', 'ENGINE2_HINT', 'ENGINE3_HINT', 'ENGINE4_HINT', 'ENGINE5_HINT'].map(g);
+  for (const x of ['дым з глушыцеля', 'дым з выхлапу', 'выхлап дыміць']) { ok(!FIRE.test(x), 'fälschlich Brand: ' + x); eq([...await fk(x)].join(','), 'engine', 'Motor (BE_KINDS): ' + x); }
+  for (const x of ['дым из глушителя', 'дым из выхлопа']) { ok(!FIRE.test(x), 'russisch weiter ohne Brand: ' + x); ok(ENG.some((r) => r.test(x)), 'russisch Motor: ' + x); }
+  ok(FIRE.test('дым из кабины') && FIRE.test('дым з кабіны'), 'Rauch aus der Kabine bleibt Brand');
+  ok(!STUCK.test('счапленне буксуе') && !STUCK.test('сцепление буксует') && STUCK.test('машина буксует в грязи'), 'Kupplung rutscht ≠ festgefahren');
+  const src = app.slice(app.indexOf('\nconst BE_MAP'), app.indexOf('\nfunction beKinds'));
+  ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  for (const id of [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1])) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  ok(app.includes('...slKinds(v), ...beKinds(v)'), 'in foreignKinds aufgenommen');
+  ok(!main.includes('const BE_KINDS') && lang.includes('const BE_KINDS'), 'Tabelle nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['тармазы не працуюць', 'лопнула шына', 'рухавік не заводзіцца', 'кабіна гарыць', 'цячэ масла', 'трапіў у аварыю', 'гарыць лямпачка рухавіка', 'халадзільнік не халодзіць']) ok(STRINGS[l].help_report_s.includes(x) && beKinds(x).size === 1, 'Hilfe Melden ' + l + ': ' + x);
+    for (const x of ['усё ў парадку', 'зноў працуе']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-belarussisch.py'), 'UI-Prüfung in pruefen.sh');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
