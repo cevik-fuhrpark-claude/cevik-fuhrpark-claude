@@ -41742,6 +41742,16 @@ await test('Backlog 1476 (Rest aus 1473): „Warnleuchte fehlt/weg/nicht mehr da
   for (const x of ['Warnleuchte leuchtet, Warndreieck fehlt', 'Motorkontrollleuchte an, Warnleuchte fehlt']) { const r = show(x); ok(r.wl && r.kit, 'beide: ' + x); }
   { const r = show('keine Warnleuchte an'); ok(!r.wl && !r.kit, 'Entwarnung „keine Warnleuchte an“'); }
 });
+await test('Backlog 1477 (Folge aus 1476): verneinte Bordausrüstung – „Warndreieck fehlt nicht“, „Feuerlöscher ist nicht leer“, „Verbandkasten nicht abgelaufen“, „Warnweste ist nicht weg“, „Keile fehlen nicht“, „fire extinguisher not expired“, „аптечка не прострочена“ zeigen keinen Bordausrüstungs-Hinweis mehr; „Warnweste ist nicht da“, „… fehlt nicht, aber Warnweste fehlt“ bleiben mit Hinweis', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); ok(m, n); return new RegExp(m[1], m[2]); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", app.indexOf('const noFixed')) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const kit = g('SAFETYKIT_HINT'), on = (x) => kit.test(noFixed(recurFix(x)));
+  for (const x of ['Warndreieck fehlt nicht', 'Warnleuchte fehlt nicht', 'Feuerlöscher ist nicht leer', 'Verbandkasten nicht abgelaufen', 'Feuerlöscher nicht abgelaufen, alles da', 'Warnweste ist nicht weg', 'Keile fehlen nicht', 'Feuerlöscher geprüft, nicht abgelaufen', 'Warndreieck fehlt nicht mehr', 'fire extinguisher not expired', 'first aid kit is not missing', 'аптечка не прострочена']) ok(!on(x), 'verneint, ohne Hinweis: ' + x);
+  for (const x of ['Warndreieck fehlt', 'Warnweste nicht mehr da', 'Warnweste ist nicht da', 'Feuerlöscher ist leer', 'Feuerlöscher Prüfdatum abgelaufen', 'Warndreieck fehlt nicht, aber Warnweste fehlt', 'Warnleuchte fehlt', 'Keile fehlen', 'first aid kit is expired', 'аптечка прострочена']) ok(on(x), 'Hinweis bleibt: ' + x);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
