@@ -2822,6 +2822,11 @@ const NO_MORE_X = lbRx(String.raw`${__T[3]}(?:lenkung\s+zieh${__T[212]}?nicht\s+
 
 
 
+const NOT_BAD = lbRx(String.raw`${__T[3]}(?:(?:ist|sind|war|waren|wirkt|wirken|scheint|scheinen)\s+)?(?:(?:noch|auch|jedenfalls|eigentlich|zum\s+gl(?:ü|ue)ck|gar)\s+)?nicht\s+(?:kaputt|defekt|besch(?:ä|ae|a)digt|leer|platt|gerissen|eingerissen|gesprungen|gebrochen|undicht|locker|lose|verbogen|angeknackst|abgefahren)(?:\s+(?:gegangen|worden|gewesen))?${__T[0]}|${__T[3]}zieh(?:t|en)\s+nicht\s+(?:schief|einseitig|zur\s+seite|nach\s+(?:links|rechts))${__T[0]}|${__T[3]}verlier(?:t|en)\s+(?:(?:auch|zum\s+gl(?:ü|ue)ck)\s+)?(?:kein|keine|keinen)\s+(?:(?:ö|oe|o)l|luft|wasser|diesel|k(?:ü|ue|u)hlwasser|k(?:ü|ue|u)hlmittel|adblue)${__T[0]}|${__T[3]}(?:ha(?:t|ben)|zeig(?:t|en))\s+(?:(?:auch|zum\s+gl(?:ü|ue)ck)\s+)?(?:kein|keine|keinen)\s+(?:(?:sichtbaren?|erkennbaren?)\s+)?(?:spiel|riss|risse|schaden|sch(?:ä|ae|a)den|delle|dellen|leck|lecks)${__T[0]}|${__T[3]}(?:kein|keine|keinen)\s+(?:(?:ö|oe|o)l|luft|wasser|k(?:ü|ue|u)hlwasser|diesel)verlust${__T[0]}${__T[39]}(?:is|are|was|were)\s+not|isn['’]t|aren['’]t|wasn['’]t|weren['’]t|not)\s+(?:cracked|broken|flat|dead|damaged|leaking|loose|bent|empty|torn|ripped)${__T[24]}no\s+(?:(?:oil|air|fuel|diesel|water|coolant)\s+)?(?:leaks?|loss)(?![a-z])|${__T[4]}не\s+(?:розбит\S*|пошкоджен\S*|спущен\S*|розряджен\S*|тріснут\S*|зламан\S*|тече|протікає|порван\S*|розірван\S*|разбит\S*|поврежден\S*|разряжен\S*|треснут\S*|сломан\S*|течет|протекает)`, 'gi');
+
+
+
+
 
 
 const CLAUSE_FIXW = lbRx(String.raw`${__T[3]}${__T[276]}(?:aus)?gewechselt|instand\s*gesetzt${__T[23]}changed)${__T[0]}|${__T[4]}${__T[232]}поміня|поменя|полагод|почини)[а-яіїєґ']*`, 'gi');
@@ -2899,7 +2904,7 @@ const dictFix = (s) => {
   for (let i = 0; i < 2; i++) t = t.replace(DICT_JOIN, (m, a, w) => a + w.replace(/\s+/g, ''));
   return t.replace(OK_END, '$& ' + OK_GAP);
 };
-const recurFix = (s) => noFunc(noPlace(clauseCut(dictFix(s).replace(/ё/g, 'е').replace(/Ё/g, 'Е').replace(FIX_SYN, (w) => (/^(?:и|почин)/i.test(w) ? 'отремонтировали' : 'відремонтували')))).replace(STOP_WORK, 'not working')).replace(PRED_FIRST, (m, v, subj) => m + ' ⁘' + subj + ' ' + v).replace(V2_INV, (m, adv, v, subj) => m + ' ⁘' + subj + ' ' + v).replace(NO_MORE, '◦ ⁂ behoben').replace(NO_MORE_X, '◦ ⁂ behoben').split(/([.;!?\n]+)/).map((part) => {
+const recurFix = (s) => noFunc(noPlace(clauseCut(dictFix(s).replace(/ё/g, 'е').replace(/Ё/g, 'Е').replace(FIX_SYN, (w) => (/^(?:и|почин)/i.test(w) ? 'отремонтировали' : 'відремонтували')))).replace(STOP_WORK, 'not working')).replace(PRED_FIRST, (m, v, subj) => m + ' ⁘' + subj + ' ' + v).replace(V2_INV, (m, adv, v, subj) => m + ' ⁘' + subj + ' ' + v).replace(NO_MORE, '◦ ⁂ behoben').replace(NO_MORE_X, '◦ ⁂ behoben').replace(NOT_BAD, ' ◦ ').split(/([.;!?\n]+)/).map((part) => {
   const all = RECUR_MARK.test(part);
   return (all || RECUR_AGAIN.test(part) ? part + recurTail(part) : part).replace(FIX_WORD, (w, off) => (all || FIX_NEG.test(part.slice(0, off)) || FIX_PLAN.test(part.slice(0, off)) || FIX_PLAN_AFTER.test(part.slice(off + w.length)) || /(?:ти|ть|тися|ться)$/i.test(w) ? (/^\S*wieder/i.test(w) || /^(?:schon|immer)\s/i.test(w) ? '' : '◦') : w));
 }).join('');
