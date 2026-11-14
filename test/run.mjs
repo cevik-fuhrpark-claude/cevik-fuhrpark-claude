@@ -41588,7 +41588,7 @@ await test('Backlog 1465 (Blickwinkel „Fahrer schreibt Serbisch/Mazedonisch in
   const src = app.slice(app.indexOf('\nconst SR_TR'), app.indexOf('\nfunction srKinds'));
   ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   for (const id of [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1])) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
-  ok(app.includes('...ulKinds(v), ...srKinds(v)]);'), 'in foreignKinds aufgenommen');
+  ok(app.includes('...ulKinds(v), ...srKinds(v)'), 'in foreignKinds aufgenommen');
   ok(!main.includes('const MK_KINDS') && lang.includes('const MK_KINDS'), 'Tabelle nur in app-sprachen.js');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['кочнице не раде', 'пукла гума', 'дим из кабине', 'мотор неће да упали', 'сопирачките не работат', 'гумата пукна', 'моторот не пали', 'имав сообраќајна несреќа', 'ладилникот не лади']) ok(STRINGS[l].help_report_s.includes(x) && srKinds(x).size === 1, 'Hilfe Melden ' + l + ': ' + x);
@@ -41603,6 +41603,33 @@ await test('Backlog 1466 (Folge aus 1465): lateinisch „povredena guma“/„gu
   for (const [x, k] of [['povredena guma', ''], ['guma povrijeđena', ''], ['kabinata e povredena', ''], ['prikolica povređena', ''], ['povrijeđen sam', 'injury'], ['vozač povrijeđen', 'injury'], ['kabina povređena, vozač povređen', 'injury'], ['ozlijeđen', 'injury'], ['zovite hitnu pomoć, kamion', 'injury'], ['imao sam sudar, povrijeđen sam', 'acc'], ['vozač povrijeđen kod kamiona', 'injury']]) {
     eq([...hrKinds(x)].sort().join(','), k, 'HR: ' + x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); }
   ok(readFileSync(new URL('../scripts/ui-meldung-serbisch-kyrillisch.py', import.meta.url), 'utf8').includes('"povredena guma"'), 'UI-Prüfung enthält „povredena guma“');
+});
+await test('Backlog 1467 (Blickwinkel „Fahrer schreibt die Meldung auf Slowenisch“, Backlog 195, Folge aus 1453–1466): „zavore ne delajo“, „počila mi je guma“, „motor ne vžge“, „iz kabine se kadi“, „pušča olje“, „imel sem prometno nesrečo“, „sveti lučka“ (auch ohne č/š/ž) → dieselben Hinweise (SL_KINDS); Reparaturvermerk, Auspuffrauch, Steinschlag, Feuerlöscher, Sitzheizung, Tankkarte, Verbandskasten („prva pomoč“) ohne; „poškodovana“ bei Sachen keine Verletzung; „gori lučka“ über alle Tabellen kein Brand; russisch „zagorelsya chek“ bleibt Warnleuchte; Tabelle nur im Modul app-sprachen.js', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { slKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { slKinds, foreignKinds };')();
+  const CASES = [['zavore ne delajo', 'brake'], ['ZAVORE NE DELAJO', 'brake'], ['zavora slabo zavira', 'brake'], ['pada tlak zraka v zavorah', 'brake'], ['ročna zavora ne drži', 'parkbrake'], ['rocna zavora ne drzi', 'parkbrake'], ['tovornjak se je sam odkotalil', 'parkbrake'],
+    ['iz kabine se kadi', 'fire'], ['dim iz motorja', 'fire'], ['kabina gori', 'fire'], ['zagorelo je v kabini', 'fire'], ['smrdi po zažganem', 'fire'], ['počila mi je guma', 'flat'], ['pocila mi je guma', 'flat'], ['pnevmatika predrta', 'flat'], ['volan je blokiran', 'steer'], ['vleče v desno', 'steer'],
+    ['pušča olje', 'leak'], ['olje kaplja pod motorjem', 'leak'], ['imel sem prometno nesrečo', 'acc'], ['trčil sem v drug tovornjak', 'acc'], ['oplazil sem steber', 'acc'], ['voznik je ranjen', 'injury'], ['pokličite rešilca', 'injury'], ['poškodoval sem se', 'injury'], ['imel sem nesrečo, voznik ranjen', 'acc'],
+    ['motor ne vžge', 'nostart'], ['tovornjak noče vžgati', 'nostart'], ['akumulator je prazen', 'batt'], ['izgubil sem ključe', 'lost'], ['ogledalo je razbito', 'mirror'], ['luči ne delajo', 'lights'], ['pregorela žarnica', 'lights'], ['sveti lučka za motor', 'warnlight'], ['prižgala se je lučka', 'warnlight'], ['gori lučka', 'warnlight'],
+    ['vetrobransko steklo je počilo', 'glass'], ['okno se ne spušča', 'window'], ['tahograf ne bere kartice', 'tacho'], ['izgubil sem kartico voznika', 'tacho'], ['priklopnik se ne zapne', 'coupling'], ['zmanjkalo mi je goriva', 'dryfuel'], ['motor se pregreva', 'engine'], ['guma izgublja zrak', 'tyre'], ['guma je poškodovana', 'tyre'],
+    ['hladilni agregat ne hladi', 'reefer'], ['zračna blazina pušča', 'susp'], ['prestava ne gre noter', 'gear'], ['sklopka drsi', 'gear'], ['ogrevanje ne dela', 'climate'], ['cerada je strgana', 'tarp'], ['izpuh je odpadel', 'exhaust'], ['brisalci ne delajo', 'visib'], ['pas se ne zapne', 'seat'],
+    ['vijaki kolesa so razrahljani', 'wheel'], ['obtičal sem v blatu', 'stuck'], ['registrska tablica je odpadla', 'numplate'], ['kamera ne dela', 'adas'], ['vrata se ne zaprejo', 'door'], ['dvižna ploščad ne dela', 'door'], ['zavore ne delajo. počila je guma', 'brake,flat']];
+  for (const [x, k] of CASES) { eq([...slKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); }
+  const NO = ['zavore popravljene', 'guma zamenjana', 'dim iz izpuha', 'kamen je zadel steklo', 'ni gasilnega aparata', 'gretje sedeža ne dela', 'kartica za gorivo ne dela', 'vse je v redu', 'motor dela normalno', 'manjka torbica za prvo pomoč', 'kabina je poškodovana', 'tovornjak se je poškodoval', 'ogledalo spet dela'];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  for (const [x, k] of [['zagorelsya chek', 'warnlight'], ['kocnice ne rade', 'brake'], ['gori lampica motora', 'warnlight'], ['izlazi dim iz kabine', 'fire'], ['агрегат не хлади', 'reefer'], ['горит кабина', '']]) eq([...await fk(x)].sort().join(','), k, 'andere Sprachen: ' + x);
+  const src = app.slice(app.indexOf('\nconst SL_OK'), app.indexOf('\nfunction slKinds'));
+  ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  for (const id of [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1])) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  ok(app.includes('...srKinds(v), ...slKinds(v)'), 'in foreignKinds aufgenommen');
+  ok(!main.includes('const SL_KINDS') && lang.includes('const SL_KINDS'), 'Tabelle nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['zavore ne delajo', 'počila mi je guma', 'motor ne vžge', 'iz kabine se kadi', 'pušča olje', 'imel sem prometno nesrečo', 'sveti lučka za motor', 'hladilni agregat ne hladi', 'guma je poškodovana']) ok(STRINGS[l].help_report_s.includes(x) && slKinds(x).size === 1, 'Hilfe Melden ' + l + ': ' + x);
+    for (const x of ['vse je v redu', 'dim iz izpuha']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-slowenisch.py'), 'UI-Prüfung in pruefen.sh');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

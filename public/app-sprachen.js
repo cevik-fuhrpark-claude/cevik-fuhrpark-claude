@@ -136,7 +136,7 @@ function roKinds(v) { const k = new Set(); for (const p of roFold(v).split(/[.,;
 
 const HR_OK = /poprav|zamijenj|zamenj|promijenj|promenj|opet\s+radi|ponovo\s+radi|nema\s+problem|sve\s+(?:ok|u\s+redu)/;
 const HR_KINDS = [['brake', /\bkocnic\S*\s+(?:\S+\s+)?(?:ne\s+(?:rade|radi|koce|drze|drzi)|slab|otkazal|popustil)|\b(?:slabo|ne)\s+koci|\b(?:pada|gubi|nestaje)\s+(?:\S+\s+)?(?:pritisak|zrak|vazduh)/, /rucn|parkirn|svjetl|svetl|stop|asistent|sam\s+od\s+sebe|bez\s+razloga|gum|jastuk|mijeh|\bmeh/],
-  ['fire', /\bpozar|\b(?:gori|zapalio\s+se|zapalila\s+se|zapalilo\s+se)\b|\bizlazi\s+dim|\bdim\S*\s+(?:\S+\s+)?(?:iz|ispod|izlazi|kulja)|\b(?:mirise|smrdi|miris|smrad)\S*\s+(?:\S+\s+)?(?:na\s+)?(?:izgoren|paljevin|spaljen|zagoren)/, /auspuh|izduv|aparat|gasenj|lampic|sijalic|pregorj/],
+  ['fire', /\bpozar|\b(?:gori|zapalio\s+se|zapalila\s+se|zapalilo\s+se)\b|\bizlazi\s+dim|\bdim\S*\s+(?:\S+\s+)?(?:iz|ispod|izlazi|kulja)|\b(?:mirise|smrdi|miris|smrad)\S*\s+(?:\S+\s+)?(?:na\s+)?(?:izgoren|paljevin|spaljen|zagoren)/, /auspuh|izduv|izpuh|aparat|gasenj|lampic|sijalic|pregorj|luck/],
   ['flat', /\b(?:gum\S*|pneumati\S*)\s+(?:\S+\s+)?(?:pukl|puknut|probusen|eksplod|prazn|ispust)|\b(?:pukl|eksplodiral)\S*\s+(?:\S+\s+){0,2}gum/],
   ['steer', /\bvolan\S*\s+(?:\S+\s+)?(?:blokiran|zakljucan|tezak|tesko|ima\s+(?:zazor|luft)|ne\s+(?:okrece|radi))|\bvuce\s+(?:\S+\s+)?(?:desno|lijevo|levo)/],
   ['leak', /\b(?:ulj|goriv|naft|dizel|tecnost|tekucin|antifriz|adblue)\S*\s+(?:\S+\s+)?(?:curi|kapa|cure|ide\s+van)|\b(?:curi|kapa|gubi)\s+(?:\S+\s+)?(?:ulj|goriv|naft|dizel|tecnost|tekucin|antifriz|adblue)/],
@@ -257,7 +257,7 @@ function csKinds(v) { const k = new Set(); for (const p of csFold(v).split(/[.,;
 
 const BG_OK = /\bremontiran|\bopraven|\bsmen|\bzamen|\braboti\s+(?:otnovo|pak|normalno)|\b(?:otnovo|pak|veche)\s+raboti\b|\bvsichko\s+e\s+(?:nared|ok|v\s+red)|\b(?:nyama|bez)\s+problem/;
 const BG_KINDS = [['brake', /\bspirach\S*\s+(?:\S+\s+){0,2}(?:ne\s+(?:rabot|deystv|darzh|spir|hvasht)|slab|otkaz)|\bne\s+spira\b|\b(?:spada|pada|namalya)\S*\s+(?:\S+\s+)?nalyagan|\b(?:izpuska|puska|byaga)\s+(?:\S+\s+)?vazduh/, /rachn|parking|stop|svetl|asistent|\bsam[ao]?\b|bez\s+prichina|gum|vazglavnits/],
-  ['fire', /\bpozhar|\b(?:gori|goryat|zapali\s+se|plamna)\b|\bdim\S*\s+(?:\S+\s+)?(?:ot|izpod|izliza|vliza)\b|\b(?:izliza|vliza|ima|vali)\s+(?:\S+\s+)?dim\b|\bmirishe\s+(?:\S+\s+)?(?:na\s+)?(?:izgor|parlen)/, /auspuh|izpuskatel|vyhlop|wydech|egzoz|esapament|kipufog|vyfuk|pozharogasit|pozharsk|gashe|krushk|lamp|\bfar|gabarit|svetl|protivotuman|ne\s+gor/],
+  ['fire', /\bpozhar|\b(?:gori|goryat|zapali\s+se|plamna)\b|\bdim\S*\s+(?:\S+\s+)?(?:ot|izpod|izliza|vliza)\b|\b(?:izliza|vliza|ima|vali)\s+(?:\S+\s+)?dim\b|\bmirishe\s+(?:\S+\s+)?(?:na\s+)?(?:izgor|parlen)/, /auspuh|izpuskatel|vyhlop|wydech|egzoz|esapament|kipufog|vyfuk|pozharogasit|pozharsk|gashe|krushk|lamp|luqk|luck|\bfar|gabarit|svetl|protivotuman|ne\s+gor/],
   ['flat', /\bspukah\b|\bspukan\S*\s+gum|\bgum\S*\s+(?:\S+\s+)?(?:se\s+)?(?:spuka|izbuhna|pukna|eksplodira|prazn)|\b(?:spuka|izbuhna|pukna)\S*\s+(?:mi\s+)?(?:\S+\s+)?gum/, /vazglavnits|chistachk/],
   ['steer', /\bvolan\S*\s+(?:\S+\s+)?(?:blokir|zaklyuch|zaseda|zasyada|tezhak|tezhko|ne\s+se\s+varti|ima\s+lyuft)|\b(?:tegli|darpa)\s+(?:\S+\s+)?(?:nadyasno|nalyavo|vdyasno|vlyavo)/],
   ['leak', /\b(?:maslo\S*|nafta\S*|gorivo\S*|antifriz\S*|ohladitel\S*|technost\S*|adblue|dizel\S*|hidravlik\S*)\s+(?:\S+\s+)?(?:teche|kape|izticha|tekat|kapyat)|\b(?:teche|kape|izticha|tekat|kapyat|izteche)\S*\s+(?:\S+\s+)?(?:maslo|nafta|gorivo|antifriz|ohladitel|technost|adblue|dizel|hidravlik)/, /\bne\s+(?:tech|tek|kap|izticha)/],
@@ -557,6 +557,46 @@ function srKinds(v) { const k = new Set(); for (const raw of String(v || '').toL
 
 
 
-async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
+
+const SL_OK = /popravlj|zamenjan|zamenjal|spet\s+dela|zopet\s+dela|ponovno\s+dela|dela\s+normalno|ni\s+(?:vec\s+)?problem|vse\s+(?:je\s+)?(?:ok|v\s+redu)/;
+const SL_KINDS = [['brake', /\bzavor\S*\s+(?:\S+\s+)?(?:ne\s+(?:delaj|dela|prime|zavira)|slab|odpoved|popusca)|\b(?:slabo|ne)\s+zavira|\b(?:pada|izgublja|zmanjkuje)\s+(?:\S+\s+)?(?:tlak|zrak)\b/, /rocn|parkirn|luc|stop|asistent|sam\s+od\s+sebe|brez\s+razloga|gum|pnevmatik|blazin|\bmeh\b/],
+  ['fire', /\bpozar|\b(?:gori|zagorel[aoi]?|vzgal[aoi]?\s+se|se\s+je\s+vzgal[aoi]?)\b|\bkadi\s+(?:\S+\s+)?iz\b|\biz\s+(?:\S+\s+)?se\s+kadi|\bdim\S*\s+(?:\S+\s+)?(?:iz|izpod|se\s+vali|uhaja)\b|\b(?:smrdi|vonj\S*|disi)\s+(?:\S+\s+)?(?:po\s+)?(?:zazgan|zgoren|smojen)/, /izpuh|auspuh|gasiln|aparat|luck|lampic|sijalic|kontrolk|zarnic|pregorel/],
+  ['flat', /\b(?:gum\S*|pnevmatik\S*)\s+(?:\S+\s+){0,2}(?:pocil|pocen|predrt|eksplodiral|prazn|spusc)|\bpocil\S*\s+(?:\S+\s+){0,2}(?:gum|pnevmatik)/],
+  ['steer', /\bvolan\S*\s+(?:\S+\s+)?(?:je\s+)?(?:blokiran|zaklenjen|tezak|tezko|trd\b|ima\s+zracnost|ne\s+(?:obraca|dela))|\bvlece\s+(?:\S+\s+)?(?:v\s+)?(?:desno|levo)/],
+  ['leak', /\b(?:olj|goriv|naft|dizl|dizel|tekocin|antifriz|adblue)\S*\s+(?:\S+\s+)?(?:tece|kaplja|pusca|curlja|uhaja)|\b(?:tece|kaplja|pusca|curlja|izgublja)\s+(?:\S+\s+)?(?:olj|goriv|naft|dizl|dizel|tekocin|antifriz|adblue)/],
+  ['acc', /\bnesrec|\btrcenj|\b(?:trcil|trcila|zadel|zadela|oplazil|oplazila|opraskal|opraskala|zaletel|zaletela|naletel)\b/, /kamen|kamenc/],
+  ['injury', /\branjen\S*|\b(?:sem\s+se|se\s+je)\s+(?:\S+\s+)?poskodoval|\bposkodoval\S*\s+sem\s+se\b|\b(?:voznik|sovoznik|kolega|pesec|kolesar|clovek|oseba)\S*\s+(?:\S+\s+)?(?:je\s+)?(?:poskodovan|ranjen)|\b(?:resilc|resevalc)|\bnujn\S*\s+(?:medicinsk\S*\s+)?pomoc/, /\b(?:tovornjak|kamion|vlacilec|priklopnik|vozilo|kabin)\S*\s+se\s+je\s+(?:\S+\s+)?poskodoval/],
+  ['parkbrake', /\brocn\S*\s+(?:zavor\S*\s+)?(?:\S+\s+)?(?:ne\s+(?:drzi|dela|popusti)|pokvarjen|zataknjen)|\b(?:tovornjak|kamion|vlacilec|priklopnik|vozilo)\S*\s+(?:se\s+)?(?:je\s+)?(?:sam\s+)?(?:odkotalil|zapeljal\s+sam|premaknil\s+sam|sam\s+premaknil|sam\s+zapeljal)/],
+  ['nostart', /\b(?:motor|tovornjak|kamion|vlacilec)\S*\s+(?:\S+\s+)?(?:ne\s+(?:vzge|zazene|zaganja)|noce\s+(?:vzgati|zagnati|vzgat))|\bzaganjac\S*\s+(?:\S+\s+)?ne\s+dela/],
+  ['mirror', /\bogledal\S*\s+(?:\S+\s+)?(?:je\s+)?(?:zlomljen|odpadl|pocil|pocen|razbit|visi|ne\s+(?:dela|nastavlja))/],
+  ['lights', /\b(?:luc|luci|zaromet\S*|smernik\S*|zavorn\S*\s+luc\S*|zarnic\S*)\s+(?:\S+\s+)?(?:ne\s+(?:dela|delajo|sveti|svetijo|gori|gorijo)|pregorel\S*|razbit\S*)|\bpregorel\S*\s+(?:\S+\s+)?(?:zarnic|luc)/, /lucka|kontroln/],
+  ['warnlight', /\b(?:lucka|kontroln\S*\s+luck)\S*\s+(?:\S+\s+)?(?:sveti|gori|utripa|se\s+je\s+prizgal|se\s+prizge)|\bprizgal\S*\s+(?:se\s+)?(?:je\s+)?(?:\S+\s+)?lucka|\b(?:gori|sveti|utripa)\s+(?:\S+\s+)?lucka/],
+  ['glass', /\b(?:vetrobran\S*|steklo|stekla|sipa)\s+(?:\S+\s+)?(?:je\s+)?(?:pocil|pocen|razpokan|razbit)|\b(?:pocil|razpokal|razbil)\S*\s+(?:\S+\s+)?(?:se\s+)?(?:je\s+)?(?:vetrobran|steklo|sipa)/, /ogledal|kamen/],
+  ['window', /\b(?:okno|steklo)\S*\s+(?:\S+\s+)?(?:se\s+)?ne\s+(?:spusca|dviga|odpira|zapira)/],
+  ['batt', /\bakumulator\S*\s+(?:\S+\s+)?(?:je\s+)?(?:prazen|prazn|izpraznjen|sibk|crknjen|ne\s+polni|ne\s+drzi)/],
+  ['tacho', /\btahograf\S*\s+(?:\S+\s+)?(?:ne\s+(?:dela|bere|prebere)|napaka|okvar)|\bkartic\S*\s+(?:voznika\s+)?(?:\S+\s+)?(?:ne\s+(?:bere|dela|gre\s+ven)|izgubljen|ukraden|poskodovan|zataknjen)|\bizgubil\S*\s+(?:sem\s+)?kartic/, /goriv|tank|bencin|nafto/],
+  ['coupling', /\b(?:priklopnik|polpriklopnik|prikolic)\S*\s+(?:\S+\s+)?(?:se\s+)?(?:ne\s+(?:zapne|pripne|odpne|spoji)|odpel|odklopil)|\bsedl\S*\s+(?:\S+\s+)?(?:se\s+)?(?:ne\s+(?:zapre|zaklene|odpre)|pokvarjen|okvar)/],
+  ['dryfuel', /\b(?:zmanjkalo|ostal\S*\s+sem\s+brez|nimam\s+vec)\s+(?:\S+\s+)?(?:je\s+)?(?:goriva|nafte|dizla|dizel)\b/, /agregat|hladil/],
+  ['engine', /\bmotor\S*\s+(?:\S+\s+)?(?:se\s+)?(?:pregreva|kuha|nima\s+moci|izgublja\s+moc|ugasa|ugasnil|je\s+ugasnil|cuka|trza)|\bzasilni\s+(?:nacin|rezim)|\bizgublja\s+moc/],
+  ['tyre', /\b(?:gum|pnevmatik)\S*\s+(?:\S+\s+)?(?:je\s+)?(?:poskodovan|prerezan|obrabljen|ima\s+(?:mehur|balon)|izgublja\s+zrak|pusca\s+zrak|premalo\s+zraka)/, /pocil|pocen|predrt/],
+  ['reefer', /\b(?:hladiln\S*\s+agregat|agregat|frigo|thermo\s*king|carrier)\S*\s+(?:\S+\s+)?(?:ne\s+(?:hladi|dela|vzge)|alarm|napaka|okvar|se\s+je\s+ustavil|ugasnil)/],
+  ['susp', /\b(?:blazin|zracn\S*\s+blazin)\S*\s+(?:\S+\s+)?(?:je\s+)?(?:pocil|pusca|poskodovan)|\bmeh\b\s+(?:\S+\s+)?(?:je\s+)?(?:pocil|pusca)|\bvzmetenj\S*\s+(?:\S+\s+)?(?:ne\s+dela|okvar|pokvarjen)|\b(?:priklopnik|tovornjak|vlacilec)\s+(?:je\s+)?(?:\S+\s+)?(?:nagnjen|povesen|se\s+je\s+spustil)/],
+  ['gear', /\bprestav\S*\s+(?:\S+\s+)?(?:ne\s+(?:gre|grejo|prime))|\bmenjalnik\S*\s+(?:\S+\s+)?(?:napaka|okvar|ne\s+(?:dela|prestavlja))|\bsklopk\S*\s+(?:\S+\s+)?(?:drsi|ne\s+dela|zgorel)/],
+  ['climate', /\b(?:klima|ogrevanj|gretj|webasto|grelec)\S*\s+(?:\S+\s+)?(?:ne\s+(?:dela|greje|hladi)|okvar|pokvarjen)/, /sedez/],
+  ['tarp', /\bcerad\S*\s+(?:\S+\s+)?(?:je\s+)?(?:strgan|raztrgan|luknj|pocen)/],
+  ['exhaust', /\bizpuh\S*\s+(?:\S+\s+)?(?:je\s+)?(?:odpadel|pocil|pocen|luknj|ropota|visi)/],
+  ['visib', /\bbrisal\S*\s+(?:\S+\s+)?(?:ne\s+(?:delaj|dela|brise)|zlomljen|pokvarjen)|\bsteklo\s+se\s+(?:ros|zarosi)/],
+  ['seat', /\b(?:varnostn\S*\s+)?pas\b\s+(?:\S+\s+)?(?:se\s+)?(?:ne\s+(?:zapne|vraca|drzi)|strgan|pokvarjen|zataknjen)|\bsedez\S*\s+(?:\S+\s+)?(?:je\s+)?(?:zlomljen|pokvarjen|se\s+maje|ne\s+(?:dela|nastavlja))/, /gretj|ogrevanj/],
+  ['wheel', /\b(?:vijak|vijaki|matic)\S*\s+(?:\S+\s+)?(?:kolesa\s+)?(?:so\s+|je\s+)?(?:razrahljan|zrahljan|odvit|manjka)|\bplatisc\S*\s+(?:\S+\s+)?(?:je\s+)?(?:pocen|pocil|zvit|ukrivljen)|\b(?:kolo|lezaj|pesto)\S*\s+(?:\S+\s+)?(?:se\s+)?(?:maje|greje|vroc|ropota)/],
+  ['stuck', /\bobtical\S*\s+(?:sem\s+)?(?:\S+\s+)?v\s+(?:blat|snegu|pesk)|\bzaril\S*\s+(?:se\s+)?(?:\S+\s+)?v\s+(?:blat|sneg|pesek)/],
+  ['lost', /\bizgubil\S*\s+(?:sem\s+)?(?:\S+\s+)?(?:kljuc|prometn\S*\s+dovoljenj)|\b(?:kljuc|prometn\S*\s+dovoljenj)\S*\s+(?:\S+\s+)?(?:izgubljen|ne\s+najdem)|\bne\s+najdem\s+(?:\S+\s+)?kljuc/],
+  ['numplate', /\b(?:registrsk\S*\s+)?tablic\S*\s+(?:\S+\s+)?(?:je\s+)?(?:odpadl|izgubljen|ukraden|necitljiv|pocen|zlomljen)/, /luc|zarnic/],
+  ['adas', /\b(?:asistent|radar|senzor|kamer)\S*\s+(?:\S+\s+){0,2}(?:ne\s+dela|napaka|okvar|izklopil)|\bzavira\s+(?:sam\s+od\s+sebe|brez\s+razloga)/],
+  ['door', /\bvrata\s+(?:\S+\s+)?(?:se\s+)?ne\s+(?:zaprejo|odprejo|zaklenejo|zapirajo|odpirajo)|\b(?:dvizn\S*\s+(?:ploscad|vrata)|lift|rampa)\S*\s+(?:\S+\s+)?(?:ne\s+(?:dela|delajo|dviga|spusca)|pokvarjen|okvar)/]];
+function slKinds(v) { const k = new Set(); for (const p of hrFold(v).split(/[.,;!?\n]+/)) if (!SL_OK.test(p)) for (const [n, rx, ex] of SL_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };
