@@ -25733,8 +25733,8 @@ await test('Backlog 567 (Blickwinkel „große Systemschrift / Browser-Zoom 200 
   ok(css.includes('font-size: min(0.75rem, 18px, max(15px, 4.2vw)); min-height: 60px;') && css.includes('-webkit-line-clamp: 3; -webkit-box-orient: vertical;'), 'Tabbar');
   ok(css.includes('#app h1, #app h2 { overflow-wrap: break-word; hyphens: auto;'), 'Titel');
   ok(css.includes('#app input[type=file] { max-width: 100%; }'), 'Dateiauswahl');
-  ok(css.includes('@media (max-width: 260px) { .row { grid-template-columns: minmax(0, 1fr); }'), 'Zeilen einspaltig bei Zoom 200 %');
-  ok(/@media \(max-height: 420px\) \{ \.topbar \{ position: static; \} \}/.test(css) && css.indexOf('@media (max-height: 420px)') > css.indexOf('.topbar { position: sticky'), 'Kopfzeile');
+  ok(css.includes('@media (max-width: 260px), (max-width: 16.25em) { .row { grid-template-columns: minmax(0, 1fr); }'), 'Zeilen einspaltig bei Zoom 200 % (seit Backlog 1487 auch in em)');
+  ok(/@media \(max-height: 420px\), \(max-height: 26\.25em\) \{ \.topbar \{ position: static; \} \}/.test(css) && css.indexOf('@media (max-height: 420px)') > css.indexOf('.topbar { position: sticky'), 'Kopfzeile');
   const html = (await import('node:fs')).readFileSync(new URL('../public/index.html', import.meta.url), 'utf8'); ok(!/user-scalable\s*=\s*no|maximum-scale\s*=\s*1(?![.\d])/.test(html), 'Zoom nicht gesperrt');
 });
 
@@ -28775,14 +28775,14 @@ await test('Backlog 790 (Blickwinkel „Fahrer hält das Handy quer im Fahrerhau
 await test('Backlog 791 (Blickwinkel „Fahrer mit Bildschirmtastatur im Querformat“): bei ≤ 300 px Höhe ist die Tabbar ausgeblendet, solange in ein Textfeld getippt wird (Ankreuzfelder/Dateiauswahl lösen das nicht aus), Hinweise rücken nach unten; „Neue Hinweise“ klebt ohne mitlaufende Kopfzeile oben; UI-Prüfung `ui-tastatur-querformat.py` steht in `pruefen.sh`', async () => {
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
-  const i = css.indexOf('@media (max-height: 300px) {'); ok(i > 0, 'Regel für niedrige Höhe vorhanden');
+  const i = css.indexOf('@media (max-height: 300px), (max-height: 18.75em) {'); ok(i > 0, 'Regel für niedrige Höhe vorhanden');
   const block = css.slice(i, css.indexOf('\n}', i));
   const sel = block.match(/body:has\((:is\([^{]*\)):focus\) \.tabbar \{ display: none; \}/); ok(sel, 'Tabbar beim Tippen ausgeblendet');
   for (const ty of ['checkbox', 'radio', 'file', 'submit', 'button']) ok(sel[1].includes(`[type=${ty}]`), `Feldtyp ${ty} blendet die Tabbar nicht aus`);
   ok(sel[1].includes('textarea'), 'Beschreibungsfeld zählt');
   ok(/\.toast \{ bottom: calc\(8px/.test(block) && block.includes('scroll-padding-bottom: 8px'), 'Hinweise und Scroll-Abstand ohne Tabbar');
-  ok(/@media \(max-height: 420px\) \{ #nnew \{ top: env\(safe-area-inset-top\); \} \}/.test(css), '„Neue Hinweise“ ohne Lücke unter fehlender Kopfzeile');
-  ok(css.indexOf('@media (max-height: 420px) { .topbar { position: static; } }') > 0, 'Kopfzeile scrollt unter 420 px weiter mit (567)');
+  ok(/@media \(max-height: 420px\), \(max-height: 26\.25em\) \{ #nnew \{ top: env\(safe-area-inset-top\); \} \}/.test(css), '„Neue Hinweise“ ohne Lücke unter fehlender Kopfzeile');
+  ok(css.indexOf('@media (max-height: 420px), (max-height: 26.25em) { .topbar { position: static; } }') > 0, 'Kopfzeile scrollt unter 420 px weiter mit (567)');
   const pr = readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8'); ok(pr.includes('|ui-tastatur-querformat.py|'), 'UI-Prüfung eingetragen');
 });
 
@@ -41934,6 +41934,20 @@ await test('Backlog 1486 (Blickwinkel „Leitung prüft montags die Kosten der V
     ok(STRINGS[l].help_costs_s.includes(STRINGS[l].cw_title), `${l}: Hilfe`);
   }
   ok((await import('node:fs')).readFileSync(new URL('../scripts/ui-kosten-woche.py', import.meta.url), 'utf8').includes('Backlog 1486'), 'UI-Prüfung');
+});
+await test('Backlog 1487 (Blickwinkel „Werkstatt-Tablet mit sehr großer Schrift (Bedienungshilfen 150–200 %)“): schmale Breiten-/Höhenstufen zusätzlich in em (Browser-Grundschrift) – bei 16 px gleich, bei großer Systemschrift Handy-Layout auf dem Tablet; Knöpfe mit Umbruchverbot brechen dort an Leerzeichen um', async () => {
+  const css = (await import('node:fs')).readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const qs = [...css.matchAll(/@media \(max-(width|height): (\d+)px\)(, \(max-\1: ([\d.]+)em\))?/g)];
+  ok(qs.length >= 9, 'Stufen gefunden: ' + qs.length);
+  for (const m of qs) {
+    const px = Number(m[2]);
+    if (px > 480) { ok(!m[3], `Layout-Stufe ${m[1]} ${px}px bleibt nur in px`); continue; }
+    ok(m[3], `max-${m[1]}: ${px}px auch in em`); eq(Number(m[4]) * 16, px, `${px}px = ${m[4]}em bei 16 px`);
+  }
+  ok(/@media \(max-width: 420px\), \(max-width: 26\.25em\) \{ \.btn\[style\*="white-space:nowrap"\] \{ white-space: normal !important; overflow-wrap: normal; max-width: 100%;/.test(css), 'Knöpfe: Umbruch an Leerzeichen, nie mitten im Wort');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!/matchMedia\('\(max-width: (260|300|360|420|480)px\)'\)/.test(app), 'keine px-Abfrage dieser Stufen im Skript (sonst uneinheitlich)');
+  ok((await import('node:fs')).readFileSync(new URL('../scripts/ui-werkstatt-grosse-schrift.py', import.meta.url), 'utf8').includes('Backlog 1487'), 'UI-Prüfung');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

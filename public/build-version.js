@@ -1,2 +1,2 @@
 // [CLAUDE] automatisch erzeugt (npm run build) – nicht von Hand ändern
-export const BUILD_VERSION = '97edf4fcb736';
+export const BUILD_VERSION = '3eb906fa5efc';
