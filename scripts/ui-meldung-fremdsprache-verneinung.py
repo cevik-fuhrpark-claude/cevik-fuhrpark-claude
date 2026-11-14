@@ -1,12 +1,12 @@
 # [CLAUDE] UI-Test (14.11.2026, Backlog 1482, Backlog 195, Blickwinkel „Verneinung in TR/PL/RO/HR-Meldungen“): „lastik patlamadı“, „opona nie przebita“, „anvelopa nu a explodat“,
-# „guma nije probušena“, „ogledalo nije razbijeno“ ohne Hinweis; „opona przebita“, „bez lusterka“, „fara oglinda“, „nema ogledala“, „lastik patlamadı ama fren tutmuyor“ mit Hinweis.
+# „guma nije probušena“, „ogledalo nije razbijeno“ ohne Hinweis (seit Backlog 1483 auch HU/CS/SQ/ET/RL/SL: „a gumi nem durrant ki“, „guma ni počila“ …); „opona przebita“, „bez lusterka“, „fara oglinda“, „nema ogledala“, „lastik patlamadı ama fren tutmuyor“ mit Hinweis.
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-CASES=[("opona przebita","flat"),("bez lusterka","mirror"),("fara oglinda","mirror"),("nema ogledala","mirror"),("lastik patlamadı ama fren tutmuyor","brake"),("opona nie przebita, hamulce nie działają","brake"),("guma probušena","flat")]
-NO=["lastik patlamadı","ayna kırılmadı","opona nie przebita","lusterko nie zbite","olej nie cieknie","anvelopa nu a explodat","guma nije probušena","ogledalo nije razbijeno","ulje ne curi"]
+CASES=[("opona przebita","flat"),("bez lusterka","mirror"),("fara oglinda","mirror"),("nema ogledala","mirror"),("lastik patlamadı ama fren tutmuyor","brake"),("opona nie przebita, hamulce nie działają","brake"),("guma probušena","flat"),("pneumatika prasklá","flat"),("okno se ne spušča","window")]
+NO=["lastik patlamadı","ayna kırılmadı","opona nie przebita","lusterko nie zbite","olej nie cieknie","anvelopa nu a explodat","guma nije probušena","ogledalo nije razbijeno","ulje ne curi","a gumi nem durrant ki","pneumatika není prasklá","goma nuk u shpua","rehv ei lõhkenud","koleso ne probito","guma ni počila"]
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
