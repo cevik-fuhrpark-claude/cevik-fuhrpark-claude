@@ -41729,6 +41729,19 @@ await test('Backlog 1475 (Rest aus 1473): Bordausrüstung mit Reparaturvermerk �
   for (const x of ['Feuerlöscher fehlte, wurde ersetzt', 'Feuerlöscher abgelaufen, wurde getauscht', 'Keile fehlen, ersetzt', 'fire extinguisher missing, replaced', 'first aid kit expired, replaced it', 'вогнегасник прострочений, замінили']) ok(!on(x), 'erledigt, ohne Hinweis: ' + x);
   for (const x of ['Feuerlöscher fehlt', 'Keile fehlen', 'Feuerlöscher benutzt. Bitte neuen besorgen', 'Feuerlöscher wurde ersetzt, aber Warndreieck fehlt', 'Feuerlöscher fehlt, wurde ersetzt aber Verbandkasten fehlt', 'Feuerlöscher repariert, fehlt aber immer noch', 'no fire extinguisher', 'Warndreieck fehlt, habe ein neues gekauft']) ok(on(x), 'Hinweis bleibt: ' + x);
 });
+await test('Backlog 1476 (Rest aus 1473): „Warnleuchte fehlt/weg/nicht mehr da“, „Warnlampe fehlt“, „Warn-Leuchte fehlt“, „keine Warnleuchte an Bord/im Fahrzeug“ zeigen nur den Bordausrüstungs-Hinweis (Warnleuchte als Ausrüstung), nicht mehr zusätzlich „Kontrollleuchte“; „Warnleuchte leuchtet/an/blinkt“ bleibt Kontrollleuchte, „keine Warnleuchte an“ bleibt Entwarnung', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); ok(m, n); return new RegExp(m[1], m[2]); };
+  const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
+  const c = app.indexOf('const FIXED_NOTE'), d = app.indexOf("}).join('');", app.indexOf('const noFixed')) + 12;
+  const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
+  const kit = g('SAFETYKIT_HINT'), wl = [g('WARNLIGHT_HINT'), g('WARNLIGHT2_HINT'), g('WARNLIGHT3_HINT')];
+  const show = (x) => { const dv = recurFix(x), dfx = noFixed(dv); return { kit: kit.test(dfx), wl: wl.some((r) => r.test(dfx)) }; };
+  for (const x of ['Warnleuchte fehlt', 'Warnleuchte ist nicht mehr da', 'Warnleuchte weg', 'die gelbe Warnleuchte fehlt im Fahrzeug', 'Warnlampe fehlt', 'Warn-Leuchte fehlt', 'keine Warnleuchte an Bord', 'keine Warnleuchte im Fahrzeug', 'Warnleuchte fehlt, Warndreieck auch']) { const r = show(x); ok(r.kit && !r.wl, 'nur Bordausrüstung: ' + x + ' ' + JSON.stringify(r)); }
+  for (const x of ['Warnleuchte leuchtet', 'Warnleuchte an', 'Warnleuchte ist an', 'gelbe Warnleuchte blinkt', 'Warnlampe leuchtet seit heute', 'Warnleuchte im Display leuchtet rot']) { const r = show(x); ok(r.wl && !r.kit, 'nur Kontrollleuchte: ' + x + ' ' + JSON.stringify(r)); }
+  for (const x of ['Warnleuchte leuchtet, Warndreieck fehlt', 'Motorkontrollleuchte an, Warnleuchte fehlt']) { const r = show(x); ok(r.wl && r.kit, 'beide: ' + x); }
+  { const r = show('keine Warnleuchte an'); ok(!r.wl && !r.kit, 'Entwarnung „keine Warnleuchte an“'); }
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
