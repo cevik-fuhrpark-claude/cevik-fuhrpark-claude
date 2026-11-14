@@ -28765,7 +28765,7 @@ await test('Backlog 790 (Blickwinkel „Fahrer hält das Handy quer im Fahrerhau
   const block = css.slice(i, css.indexOf('\n}', i));
   ok(/\.tabbar a \{ flex-direction: row;[^}]*min-height: 44px;/.test(block), 'Tabs nebeneinander, mind. 44 px');
   ok(/\.tabbar a\.report span\.dot \{[^}]*margin-top: 0;/.test(block), 'Melden-Punkt ragt nicht über die Leiste');
-  ok(/body \{ padding-bottom: calc\(max\(64px/.test(block) && block.includes('scroll-padding-bottom: 64px'), 'Abstand unter dem Inhalt passend zur kompakten Leiste');
+  ok(/body \{ padding-bottom: calc\(max\(64px/.test(block) && block.includes('scroll-padding-bottom: calc(var(--tabbar-h, 56px) + 8px)') /* Backlog 1494: tatsächliche Tabbar-Höhe, Rückfall 56 + 8 px */, 'Abstand unter dem Inhalt passend zur kompakten Leiste');
   // Die hohe Tabbar (Hochformat) bleibt die Grundregel
   ok(/\.tabbar a \{ display: flex; flex-direction: column;[^}]*min-height: 60px;/.test(css), 'Hochformat unverändert');
   ok(css.indexOf('@media (min-width: 900px) {') > 0 && !block.includes('220px'), 'Seitenleiste ab 900 px unberührt');
@@ -42073,6 +42073,32 @@ await test('Backlog 1493 (Blickwinkel „Inhaberin mit Leseschwäche nutzt eine 
   ok(/@media \(max-width: 360px\), \(max-width: 22\.5em\) \{ \.topbar \{ column-gap: 8px; \} \}/.test(css), 'schmale Handys: engerer Abstand (in px und em)');
   const ui = readFileSync(new URL('../scripts/ui-kopfzeile-zeichenabstand.py', import.meta.url), 'utf8');
   ok(ui.includes('Backlog 1493') && ui.includes('letter-spacing: 0.12em') && ui.includes('Gegenprobe'), 'UI-Prüfung mit WCAG-Textabständen und Gegenprobe');
+});
+
+await test('Backlog 1494 (Blickwinkel „Disposition bedient PC/Tablet nur per Tastatur, mit großer Schrift bzw. Lese-Erweiterung“, Backlog 195, WCAG 2.4.11/2.4.12): Freiraum für Fokus-/Sprungziele aus der tatsächlichen Höhe von Kopfzeile und unterer Tabbar; per Tab erreichte Felder rücken unter der Tabbar hervor, Antippen bleibt unberührt', async () => {
+  const { readFileSync } = await import('node:fs');
+  const rd = (f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const app = rd('app.js'); const css = rd('styles.css'); const main = rd('app-main.js');
+  ok(css.includes('html { scroll-padding-top: calc(var(--topbar-h, 3.5rem) + 8px); scroll-padding-bottom: calc(var(--tabbar-h, 102px) + 8px); }'), 'scroll-padding aus --topbar-h/--tabbar-h, Rückfall ohne Skript ≈ bisherige 4rem/110 px');
+  ok(css.includes('html { scroll-padding-bottom: calc(var(--tabbar-h, 56px) + 8px); }') && !/scroll-padding-top:\s*4rem/.test(css) && !/scroll-padding-bottom:\s*(110|64)px/.test(css), 'Querformat ebenfalls über --tabbar-h, keine festen Altwerte mehr');
+  ok(/function barGaps\(\) \{/.test(main) && /function barGapsWatch\(\) \{/.test(main) && /function focusHidden\(/.test(main), 'barGaps/focusHidden im Start-Modul');
+  ok(/innerHTML = S\.me \? frame\(html, active\)[^\n]*\n[^\n]*\n  barGapsWatch\(\);/.test(app), 'jeder Seitenaufbau misst Kopfzeile/Tabbar neu (ResizeObserver auf die neuen Elemente)');
+  ok(/if \(p === 'sticky' \|\| p === 'fixed'\) top = /.test(app), 'mitscrollende Kopfzeile (niedrige Fenster) → --topbar-h 0');
+  ok(/r\.width >= window\.innerWidth \* 0\.6 && r\.bottom >= window\.innerHeight - 2\) bot = r\.height/.test(app), 'Seitenleiste am PC zählt nicht als untere Tabbar');
+  ok(/typeof ResizeObserver !== 'function'\) return;/.test(app), 'ältere Browser ohne ResizeObserver: kein Fehler');
+  // Fokus-Nachrücken nur nach Tab, nie nach Antippen (Bildschirmtastatur)
+  ok(app.includes("document.addEventListener('keydown', (e) => { if (e.key === 'Tab') kbNav = true; }, true);") && app.includes("document.addEventListener('pointerdown', () => { kbNav = false; }, true);"), 'Tastatur-Navigation wird erkannt, Antippen setzt zurück');
+  ok(/if \(!kbNav \|\| !el \|\| !el\.closest \|\| el\.closest\('\.topbar, \.tabbar, \.skip'\)\) return;/.test(app) && app.includes("el.scrollIntoView({ block: 'nearest', behavior: 'auto' })"), 'Nachrücken nur nach Tab, ohne Kopfzeile/Tabbar/Sprunglink, ohne weiches Scrollen');
+  const src = app.match(/function focusHidden\(top, bottom, gapTop, gapBottom\) \{[\s\S]*?\n\}/)[0];
+  const focusHidden = new Function(src + '; return focusHidden;')();
+  ok(focusHidden(100, 150, 68, 763) === false, 'ganz frei → nichts tun');
+  ok(focusHidden(64, 112, 68, 763) === true, 'oberer Rand unter der Kopfzeile (4 px) → nachrücken');
+  ok(focusHidden(554, 664, 68, 619) === true, 'Kommentarfeld zu 40 % unter der Tabbar → nachrücken');
+  ok(focusHidden(100, 900, 68, 619) === false, 'höher als der freie Raum, Anfang sichtbar → bleibt');
+  ok(focusHidden(20, 900, 68, 619) === true, 'höher als der freie Raum, Anfang verdeckt → nachrücken');
+  ok(focusHidden(700, 760, 68, 619) === true, 'ganz unter der Tabbar → nachrücken');
+  const ui = readFileSync(new URL('../scripts/ui-fokus-verdeckt.py', import.meta.url), 'utf8');
+  ok(ui.includes('Backlog 1494') && ui.includes('Shift+Tab') && ui.includes('Gegenprobe') && readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-fokus-verdeckt.py'), 'UI-Prüfung mit Gegenprobe, in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

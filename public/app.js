@@ -441,6 +441,7 @@ function render(html, active, { defer = false } = {}) {
   if (document.documentElement.lang !== S.lang) document.documentElement.lang = S.lang;
   document.getElementById('app').innerHTML = S.me ? frame(html, active) : `<main>${html}</main>`;
   const sk = $('.skip'); if (sk) sk.onclick = (e) => { e.preventDefault(); $('#main').focus(); };
+  barGapsWatch();
   const es = $('#envsel');
   if (es) es.onchange = () => { S.viewEnv = es.value; try { localStorage.setItem('cfp_env', es.value); } catch {} S.unread = 0; refreshUnread();
     // Detailseiten gehören zu einer Umgebung (Vorgang, Kontrolle, Bußgeld, Fahrerakte) – nach dem Umschalten auf die passende Liste statt „nicht gefunden“ (23.10.2026)
@@ -636,6 +637,43 @@ document.addEventListener('keydown', (e) => {
   if (e.target.closest('#af')) { const c = document.getElementById('ac'); if (c) { e.preventDefault(); c.click(); } return; }
   const fm = e.target.closest('form[data-mdone]');
   if (fm) { e.preventDefault(); fm.hidden = true; const b = document.querySelector(`button[data-done="${CSS.escape(fm.dataset.mdone)}"]`); if (b) { b.setAttribute('aria-expanded', 'false'); b.focus(); } }
+});
+// Backlog 1494 (Blickwinkel „Disposition bedient PC/Tablet nur per Tastatur, mit großer Schrift bzw. Lese-Erweiterung“, WCAG 2.4.11/2.4.12):
+// Freiraum für Fokus- und Sprungziele aus der tatsächlichen Höhe der festen Kopfzeile und der unteren Tabbar (CSS-Variablen für scroll-padding).
+// Vorher feste 4rem/110 px: bei normaler Schrift ist die Kopfzeile 68 px hoch (Shift+Tab ließ den oberen Rand samt Fokusring darunter),
+// mit Lese-Erweiterung 104 px (8 px verdeckt); am PC ist die Tabbar eine Seitenleiste und braucht unten keinen Abstand.
+function barGaps() {
+  const tb = document.querySelector('.topbar'); const bb = document.querySelector('.tabbar'); let top = 0; let bot = 0;
+  if (tb) { const p = getComputedStyle(tb).position; if (p === 'sticky' || p === 'fixed') top = tb.getBoundingClientRect().height; }
+  if (bb) { const r = bb.getBoundingClientRect(); if (r.height && r.width >= window.innerWidth * 0.6 && r.bottom >= window.innerHeight - 2) bot = r.height; }
+  const de = document.documentElement; de.style.setProperty('--topbar-h', Math.ceil(top) + 'px'); de.style.setProperty('--tabbar-h', Math.ceil(bot) + 'px');
+}
+let barRO = null;
+function barGapsWatch() {
+  try { barGaps(); } catch { return; }
+  if (typeof ResizeObserver !== 'function') return; // ältere Browser: Werte vom letzten Seitenaufbau
+  if (barRO) barRO.disconnect(); else barRO = new ResizeObserver(() => { try { barGaps(); } catch { /* ohne Kopfzeile */ } });
+  for (const el of document.querySelectorAll('.topbar, .tabbar')) barRO.observe(el);
+}
+window.addEventListener('resize', () => { try { barGaps(); } catch { /* ohne Kopfzeile */ } });
+// Textfelder: Chrome scrollt beim Fokus nur die Schreibmarke in Sicht (ohne scroll-padding) – ein per Tab erreichtes Feld lag dann zum Teil
+// unter der Tabbar (Kommentarfeld am Vorgang, 320 px, 40 % verdeckt). Nur nach Tastatur-Navigation nachrücken, nie beim Antippen (Bildschirmtastatur).
+function focusHidden(top, bottom, gapTop, gapBottom) {
+  if (top >= gapTop && bottom <= gapBottom) return false; // ganz frei
+  if (bottom - top > gapBottom - gapTop) return !(top >= gapTop && top < gapBottom); // höher als der freie Raum: Anfang sichtbar genügt
+  return true;
+}
+let kbNav = false;
+document.addEventListener('keydown', (e) => { if (e.key === 'Tab') kbNav = true; }, true);
+document.addEventListener('pointerdown', () => { kbNav = false; }, true);
+document.addEventListener('focusin', (e) => {
+  const el = e.target; if (!kbNav || !el || !el.closest || el.closest('.topbar, .tabbar, .skip')) return;
+  requestAnimationFrame(() => {
+    if (document.activeElement !== el) return;
+    const r = el.getBoundingClientRect(); const cs = getComputedStyle(document.documentElement);
+    const gt = parseFloat(cs.getPropertyValue('--topbar-h')) || 0; const gb = window.innerHeight - (parseFloat(cs.getPropertyValue('--tabbar-h')) || 0);
+    if (r.height && focusHidden(r.top, r.bottom, gt, gb)) el.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+  });
 });
 // Backlog 1002 (Blickwinkel „Fuhrparkleitung am PC, Telefon am Ohr – Kennzeichen schnell nachschlagen“): Taste „/“ öffnet von jeder Seite
 // die globale Suche (bzw. setzt den Cursor ins Suchfeld der Suche/Hilfe) – nicht in Eingabefeldern, nicht mit Strg/Alt/Cmd, nicht für Fahrer

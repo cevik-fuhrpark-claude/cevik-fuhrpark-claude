@@ -231,6 +231,7 @@ haben einen Rückfall und sind je mit einem UI-Skript abgesichert, das einen äl
   (Hinweise im Meldeformular eher öfter). In `public/app.js` bleiben die Literale unverändert (Backlog 794, `ui-ohne-lookbehind.py`).
 - `createImageBitmap` (iOS < 15): Fotos werden über `<img>` dekodiert und trotzdem auf 1600 px verkleinert (Backlog 795, `ui-foto-ohne-imagebitmap.py`).
 - `AbortSignal.timeout` (Chrome < 103, iOS < 16): Zeitlimit des Foto-Uploads über `AbortController` + `setTimeout` (`timeoutSignal`) – ohne Rückfall hing „Lade Foto 1/1“ im Funkloch ohne Ende (Backlog 797, `ui-foto-zeitlimit-ohne-abortsignal.py`).
+- `ResizeObserver` (Chrome < 64, iOS < 13.4 – unterhalb der Untergrenze, trotzdem abgefangen): Abstände für Fokus-/Sprungziele (`--topbar-h`/`--tabbar-h`, Backlog 1494) werden dann nur bei jedem Seitenaufbau und bei Größenänderung des Fensters gemessen; ohne Skript gelten die CSS-Rückfallwerte ≈ 4rem/110 px (`ui-fokus-verdeckt.py`).
 Neue JS/CSS-Funktionen deshalb vor dem Einsatz auf Unterstützung prüfen und ggf. mit Rückfall bauen.
 Rechenlast am langsamen Handy (Backlog 1102, 06.11.2026, `ui-lange-beschreibung.py`): Das Meldeformular prüft rund 100 Hinweismuster. Gemessen in Chrome mit
 CPU-Drosselung 4× (≈ älteres Handy): erste Taste vorher 300–460 ms, jetzt ≈ 3 ms (Muster im Leerlauf vorgewärmt, `requestIdleCallback`, Rückfall `setTimeout`);

@@ -37,7 +37,7 @@
 * { box-sizing: border-box; }
 /* Grundschrift aus den Browser-Einstellungen (100 % statt fest 16 px, 21.10.2026); feste Kopfzeile beim Springen freihalten (scroll-padding) */
 html, body { margin: 0; background: var(--paper); color: var(--ink); font: 100%/1.5 var(--body); -webkit-text-size-adjust: 100%; }
-html { scroll-padding-top: 4rem; scroll-padding-bottom: 110px; } /* unten: Tabbar */
+html { scroll-padding-top: calc(var(--topbar-h, 3.5rem) + 8px); scroll-padding-bottom: calc(var(--tabbar-h, 102px) + 8px); } /* Backlog 1494: tatsächliche Höhe von Kopfzeile/Tabbar (barGaps in app.js), ohne Skript wie bisher ≈ 4rem/110 px */
 /* Platz unter dem Inhalt ≥ Höhe der Tabbar (zweizeilige Beschriftung, große Schrift; vorher 76 px – letzte Karte lag unter der Tabbar) */
 body { min-height: 100vh; padding-bottom: calc(max(110px, 3.375rem + 50px) + env(safe-area-inset-bottom)); } /* Backlog 567: wächst mit der Schrift (Tabbar bis 3 Zeilen à 18 px ≈ 126 px) */
 a { color: inherit; }
@@ -412,7 +412,7 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 /* Backlog 790 (Blickwinkel „Fahrer hält das Handy quer im Fahrerhaus“): im Querformat am Handy belegte die Tabbar 65 px von ≈ 300 px sichtbarer Höhe
    (mit Adressleiste über 20 %). Hier Symbol neben der Beschriftung, Melden-Punkt ohne Überstand: ≈ 46 px; Hochformat, Tablet und PC unverändert */
 @media (orientation: landscape) and (max-height: 500px) and (max-width: 899px) {
-  html { scroll-padding-bottom: 64px; }
+  html { scroll-padding-bottom: calc(var(--tabbar-h, 56px) + 8px); }
   body { padding-bottom: calc(max(64px, 2.5rem + 24px) + env(safe-area-inset-bottom)); }
   .tabbar a { flex-direction: row; gap: 6px; min-height: 44px; padding: 3px 4px; }
   .tabbar a > span:last-child { text-align: start; -webkit-line-clamp: 2; }

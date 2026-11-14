@@ -469,6 +469,7 @@ function render(html, active, { defer = false } = {}) {
   if (document.documentElement.lang !== S.lang) document.documentElement.lang = S.lang;
   document.getElementById('app').innerHTML = S.me ? frame(html, active) : `<main>${html}</main>`;
   const sk = $('.skip'); if (sk) sk.onclick = (e) => { e.preventDefault(); $('#main').focus(); };
+  barGapsWatch();
   const es = $('#envsel');
   if (es) es.onchange = () => { S.viewEnv = es.value; try { localStorage.setItem('cfp_env', es.value); } catch {} S.unread = 0; refreshUnread();
 
@@ -664,6 +665,43 @@ document.addEventListener('keydown', (e) => {
   if (e.target.closest('#af')) { const c = document.getElementById('ac'); if (c) { e.preventDefault(); c.click(); } return; }
   const fm = e.target.closest('form[data-mdone]');
   if (fm) { e.preventDefault(); fm.hidden = true; const b = document.querySelector(`button[data-done="${CSS.escape(fm.dataset.mdone)}"]`); if (b) { b.setAttribute('aria-expanded', 'false'); b.focus(); } }
+});
+
+
+
+
+function barGaps() {
+  const tb = document.querySelector('.topbar'); const bb = document.querySelector('.tabbar'); let top = 0; let bot = 0;
+  if (tb) { const p = getComputedStyle(tb).position; if (p === 'sticky' || p === 'fixed') top = tb.getBoundingClientRect().height; }
+  if (bb) { const r = bb.getBoundingClientRect(); if (r.height && r.width >= window.innerWidth * 0.6 && r.bottom >= window.innerHeight - 2) bot = r.height; }
+  const de = document.documentElement; de.style.setProperty('--topbar-h', Math.ceil(top) + 'px'); de.style.setProperty('--tabbar-h', Math.ceil(bot) + 'px');
+}
+let barRO = null;
+function barGapsWatch() {
+  try { barGaps(); } catch { return; }
+  if (typeof ResizeObserver !== 'function') return;
+  if (barRO) barRO.disconnect(); else barRO = new ResizeObserver(() => { try { barGaps(); } catch {   } });
+  for (const el of document.querySelectorAll('.topbar, .tabbar')) barRO.observe(el);
+}
+window.addEventListener('resize', () => { try { barGaps(); } catch {   } });
+
+
+function focusHidden(top, bottom, gapTop, gapBottom) {
+  if (top >= gapTop && bottom <= gapBottom) return false;
+  if (bottom - top > gapBottom - gapTop) return !(top >= gapTop && top < gapBottom);
+  return true;
+}
+let kbNav = false;
+document.addEventListener('keydown', (e) => { if (e.key === 'Tab') kbNav = true; }, true);
+document.addEventListener('pointerdown', () => { kbNav = false; }, true);
+document.addEventListener('focusin', (e) => {
+  const el = e.target; if (!kbNav || !el || !el.closest || el.closest('.topbar, .tabbar, .skip')) return;
+  requestAnimationFrame(() => {
+    if (document.activeElement !== el) return;
+    const r = el.getBoundingClientRect(); const cs = getComputedStyle(document.documentElement);
+    const gt = parseFloat(cs.getPropertyValue('--topbar-h')) || 0; const gb = window.innerHeight - (parseFloat(cs.getPropertyValue('--tabbar-h')) || 0);
+    if (r.height && focusHidden(r.top, r.bottom, gt, gb)) el.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+  });
 });
 
 
