@@ -426,6 +426,9 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 @media (max-height: 420px), (max-height: 26.25em) { #nnew { top: env(safe-area-inset-top); } }
 /* Backlog 567: min(280px, 100%) – bei Browser-Zoom 200 % (≈ 180 CSS-px Breite) schob die 280-px-Spalte das Meldeformular seitlich aus dem Bild */
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 12px; } .grid2 > .panel { margin: 0; }
+/* Backlog 1492: im Druck Spaltenbreite in em – bei großer Grundschrift standen HU/SP der Fahrzeugakte nebeneinander und zerbrachen
+   Beschriftungen („Hauptuntersuchung“, „Nachweis / Quelle“, UK „Підтвердження“); jetzt untereinander, bei normaler Schrift weiter nebeneinander */
+@media print { .grid2 { grid-template-columns: repeat(auto-fit, minmax(min(18em, 100%), 1fr)); } }
 /* [CLAUDE] QR-Code für Einladungslinks: feste Schwarz/Weiß-Darstellung, gut scanbar */
 .qr svg { width: min(240px, 70vw); height: auto; display: block; border-radius: 4px; }
 @media print { .qr svg { width: 50mm; } }
@@ -448,6 +451,10 @@ table.paper th, table.paper td { border: 1px solid var(--rule); padding: 6px; ve
 table.paper td.box { text-align: center; font-size: 1.2rem; width: 3.2em; }
 table.paper td:last-child { min-width: 30%; }
 @media print { table.paper th, table.paper td { border-color: #555; padding: 4px; } }
+/* Backlog 1492 (Blickwinkel „Leitung druckt am A4-Drucker mit großer Systemschrift“): Bei Browser-Grundschrift 28–32 px ragte der Papiervordruck
+   rechts über das A4-Blatt (Spalte „Mangel beschreiben“ abgeschnitten, Feld „Kilometerstand“ breiter als seine 220-px-Spalte). Im Druck Kopffelder
+   in em, Tabelle höchstens 13 pt (Ankreuzfelder relativ dazu) – bei normaler Schrift unverändert */
+@media print { .paper-head { grid-template-columns: repeat(auto-fit, minmax(min(14em, 100%), 1fr)); } table.paper { font-size: min(1em, 13pt); } table.paper td.box { font-size: 1.2em; width: 2.6em; } }
 .known { margin-top: 8px; } .known summary { font-weight: 600; cursor: pointer; } .known ul { margin: 6px 0 0 18px; padding: 0; } .known li { margin: 4px 0; }
 
 /* Werkstattplan: Termin direkt setzen */

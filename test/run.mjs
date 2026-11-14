@@ -42047,6 +42047,20 @@ await test('Backlog 1491 (Blickwinkel „Person mit Bewegungsempfindlichkeit, Sy
   ok(readFileSync(new URL('../scripts/ui-bewegung-reduzieren.py', import.meta.url), 'utf8').includes('Backlog 1491'), 'UI-Prüfung');
 });
 
+await test('Backlog 1492 (Blickwinkel „Leitung druckt am A4-Drucker mit großer Systemschrift“, Backlog 195): Druckregeln in em statt px – Papiervordruck der Abfahrtskontrolle (Kopffelder, Tabelle höchstens 13 pt) und zweispaltige Raster (HU/SP der Fahrzeugakte) passen bei Grundschrift 24–32 px auf A4', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const printRules = css.split('\n').filter((l) => /@media print/.test(l));
+  ok(printRules.some((l) => /\.paper-head \{ grid-template-columns: repeat\(auto-fit, minmax\(min\(14em, 100%\), 1fr\)\); \}/.test(l) && /table\.paper \{ font-size: min\(1em, 13pt\); \}/.test(l) && /table\.paper td\.box \{ font-size: 1\.2em;/.test(l)), 'Druck: Vordruck-Kopffelder in em, Tabelle ≤ 13 pt, Ankreuzfelder relativ (em statt rem)');
+  ok(printRules.some((l) => /\.grid2 \{ grid-template-columns: repeat\(auto-fit, minmax\(min\(18em, 100%\), 1fr\)\); \}/.test(l)), 'Druck: .grid2 mit Spaltenbreite in em (HU/SP bei großer Schrift untereinander)');
+  // die px-Regeln am Bildschirm bleiben (normale Schrift unverändert)
+  ok(css.includes('.paper-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));') && css.includes('.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));'), 'Bildschirmregeln unverändert');
+  // Druckregeln mit festen px-Spaltenbreiten (minmax(NNNpx …)) brechen bei großer Schrift – nur in em/mm
+  for (const l of printRules) ok(!/minmax\(\s*(min\()?\d{3,}px/.test(l), `Druckregel ohne feste px-Spaltenbreite: ${l.trim().slice(0, 90)}`);
+  const ui = readFileSync(new URL('../scripts/ui-druck-grosse-schrift.py', import.meta.url), 'utf8');
+  ok(ui.includes('Backlog 1492') && ui.includes('Page.setFontSizes') && ui.includes('Gegenprobe'), 'UI-Prüfung mit echter Browser-Grundschrift und Gegenprobe');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
