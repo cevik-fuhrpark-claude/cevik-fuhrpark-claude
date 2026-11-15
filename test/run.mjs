@@ -42316,6 +42316,14 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
     const e = await owner.get(u + '?from=1999-12&to=2000-06'); eq(e.status, 400); eq(e.data.field_key, 'from', u + ': Von vor 2000');
     eq((await owner.get(u + '?from=2026-01&to=2026-03')).status, 200, u + ': gültiger Zeitraum');
   }
+  // Stufe 13: persönliche Ruhezeit für Push (src/worker.js) – Feld „von“/„bis“ im Formular #qf
+  const qz0 = JSON.stringify((await users.fleet.get('/api/me/notify-prefs')).data.quiet);
+  const qz1 = await users.fleet.put('/api/me/notify-prefs', { quiet: { from: '22:00', to: '22:00' } }); eq(qz1.status, 400); eq(qz1.data.field_key, 'to', 'Ruhezeit: Beginn = Ende');
+  const qz2 = await users.fleet.put('/api/me/notify-prefs', { quiet: { from: '25:00', to: '06:00' } }); eq(qz2.status, 400); eq(qz2.data.field_key, 'from', 'Ruhezeit: Beginn ungültig');
+  const qz3 = await users.fleet.put('/api/me/notify-prefs', { quiet: { from: '22:00' } }); eq(qz3.status, 400); eq(qz3.data.field_key, 'to', 'Ruhezeit: Ende fehlt');
+  eq(JSON.stringify((await users.fleet.get('/api/me/notify-prefs')).data.quiet), qz0, 'Ruhezeit nach Ablehnung unverändert');
+  { const s0 = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+    ok(s0.includes('<input id="qfrom" name="from" type="time"') && s0.includes('<input id="qto" name="to" type="time"'), 'Ruhezeit-Formular: Feldnamen from/to'); }
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

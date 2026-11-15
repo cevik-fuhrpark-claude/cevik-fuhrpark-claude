@@ -9255,8 +9255,8 @@ async function loadNotifyPrefs(np) {
     $('#npl').innerHTML = pr.kinds.map((k) => `<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" data-pk="${esc(k)}"${pr.muted.includes(k) ? '' : ' checked'}> ${esc(t('pk_' + k))}</label>`).join('') + (pr.kinds.length ? '' : `<p class="small muted" id="npnone">${esc(t('push_kinds_none'))}</p>`)
       + `<h3 style="margin-top:14px">${esc(t('quiet_title'))}</h3><p class="small muted">${esc(t('quiet_hint'))}</p>
       <p id="qst"><b>${esc(q ? t('quiet_on').replace('{f}', q.from).replace('{t}', q.to) : t('quiet_none'))}</b></p>
-      <form id="qf" class="grid2"><div><label for="qfrom">${esc(t('quiet_from'))}</label><input id="qfrom" type="time" step="60" required value="${esc(q ? q.from : '')}"></div>
-      <div><label for="qto">${esc(t('quiet_to'))}</label><input id="qto" type="time" step="60" required value="${esc(q ? q.to : '')}"></div>${tzNote() ? `<div style="grid-column:1/-1">${tzNote()}</div>` : ''}
+      <form id="qf" class="grid2"><div><label for="qfrom">${esc(t('quiet_from'))}</label><input id="qfrom" name="from" type="time" step="60" required value="${esc(q ? q.from : '')}"></div>
+      <div><label for="qto">${esc(t('quiet_to'))}</label><input id="qto" name="to" type="time" step="60" required value="${esc(q ? q.to : '')}"></div>${tzNote() ? `<div style="grid-column:1/-1">${tzNote()}</div>` : ''}
       <div class="actions" style="grid-column:1/-1"><button class="btn secondary">${esc(t('quiet_save'))}</button>${q ? `<button type="button" class="btn secondary" id="qoff">${esc(t('quiet_off'))}</button>` : ''}</div></form>`;
     const qsave = async (quiet) => {
       try { await api('PUT', '/api/me/notify-prefs', { quiet }); toast('✓'); await viewInbox(); const d = $('#np'); if (d) d.open = true; } catch (err) { toast(err.message, true); }

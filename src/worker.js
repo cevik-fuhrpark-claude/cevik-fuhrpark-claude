@@ -220,8 +220,10 @@ async function handleApi(request, env, ctx, url) {
     if ('quiet' in b) {
       if (b.quiet === null || (b.quiet && !b.quiet.from && !b.quiet.to)) { qf = null; qt = null; } else {
         const q = b.quiet || {};
-        if (!QUIET_TIME.test(String(q.from || '')) || !QUIET_TIME.test(String(q.to || ''))) throw bad('validation', 'Ruhezeit: Uhrzeit im Format HH:MM angeben (von und bis).');
-        if (q.from === q.to) throw bad('validation', 'Ruhezeit: Beginn und Ende dürfen nicht gleich sein.');
+        // Backlog 1501 Stufe 13: field_key nennt das beanstandete Feld (from/to wie name= im Formular „Ruhezeit“)
+        const okF = QUIET_TIME.test(String(q.from || '')); const okT = QUIET_TIME.test(String(q.to || ''));
+        if (!okF || !okT) throw bad('validation', 'Ruhezeit: Uhrzeit im Format HH:MM angeben (von und bis).', { field_key: okF ? 'to' : 'from' });
+        if (q.from === q.to) throw bad('validation', 'Ruhezeit: Beginn und Ende dürfen nicht gleich sein.', { field_key: 'to' });
         qf = q.from; qt = q.to;
       }
     }
