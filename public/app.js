@@ -406,6 +406,13 @@ function markServerField(form, since) {
   if (!el || !el.tagName || el.disabled || el.type === 'hidden' || el.offsetParent === null) return;
   markInvalid(el, fe.msg); try { el.focus(); } catch {}
 }
+// Backlog 1501 Stufe 9: Auswertungen per GET (Zeitraum, Suchtext) zeichnen die Seite nach dem Laden neu – die abgelehnten Eingaben
+// wieder ins Feld setzen (nur bei Prüffehler mit Feldnamen) und das vom Server genannte Feld markieren; sonst bleibt es beim Toast
+function markGetField(form, since, kept) {
+  const fe = S.fieldErr; if (!fe || fe.at < since || !form || !form.elements) return;
+  if (kept) for (const [k, v] of Object.entries(kept)) { const el = form.elements.namedItem(k); if (el && el.tagName && v) el.value = v; }
+  markServerField(form, since);
+}
 // Backlog 1499 (WCAG 3.3.1): Auswahlliste ohne Haken → Hinweis unter der Liste (aria-invalid/-describedby an der Gruppe), Fokus aufs erste Kästchen
 function markPick(boxes, msg) {
   const b = boxes.find((x) => x.offsetParent !== null) || boxes[0]; if (!b) return;
@@ -8041,7 +8048,7 @@ async function viewPartsUsage() {
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
   const q = ss('cfp_pu_q'); const from = ss('cfp_pu_from'); const to = ss('cfp_pu_to'); const today = bDate();
   const qs = `q=${encodeURIComponent(q)}${from ? '&from=' + encodeURIComponent(from) : ''}${to ? '&to=' + encodeURIComponent(to) : ''}`;
-  let rep = null;
+  let rep = null; const t0 = Date.now();
   if (q.trim().length >= 3) { try { rep = await api('GET', '/api/parts/usage?' + qs); } catch (err) { toast(err.message, true); rep = null; } }
   // Backlog 442: betroffene Fahrzeuge (in Betrieb) in einem Schritt als offenen Rückruf erfassen – über den vorhandenen Rückruf-Import
   // (Vorschau, dann Übernehmen; gleiche Referenz am Fahrzeug nie doppelt; Frist nur laut Schreiben). Nur Inhaber/Fuhrparkleitung.
@@ -8063,8 +8070,8 @@ async function viewPartsUsage() {
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('ptu_title'))}</h1>
     <p class="small muted">${esc(t(S.me.role === 'workshop' ? 'ptu_hint_ws' : 'ptu_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(t('ptu_q'))}: ${esc(q)}${from || to ? ` · ${esc(from ? fmtD(from) : '…')} – ${esc(to ? fmtD(to) : '…')}` : ''}${S.me.role === 'workshop' ? ' · ' + esc(wsName(S.me.workshop_site)) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
-    <form id="puf" class="panel noprint"><label for="puq">${esc(t('ptu_q'))}</label><input id="puq" value="${esc(q)}" minlength="3" maxlength="80" required autocomplete="off" placeholder="${esc(t('ptu_q_ph'))}">
-      <div class="grid2"><div><label for="pufrom">${esc(t('ptu_from'))}</label><input type="date" id="pufrom" value="${esc(from)}" max="${esc(today)}"></div><div><label for="puto">${esc(t('to'))}</label><input type="date" id="puto" value="${esc(to)}" max="${esc(today)}"></div></div>
+    <form id="puf" class="panel noprint"><label for="puq">${esc(t('ptu_q'))}</label><input id="puq" name="q" value="${esc(q)}" minlength="3" maxlength="80" required autocomplete="off" placeholder="${esc(t('ptu_q_ph'))}">
+      <div class="grid2"><div><label for="pufrom">${esc(t('ptu_from'))}</label><input type="date" id="pufrom" name="from" value="${esc(from)}" max="${esc(today)}"></div><div><label for="puto">${esc(t('to'))}</label><input type="date" id="puto" name="to" value="${esc(to)}" max="${esc(today)}"></div></div>
       <div class="actions"><button class="btn">${esc(t('show'))}</button><button type="button" class="btn secondary" id="pucsv"${rep && rep.items.length ? '' : ' disabled'}>${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="puprt"${rep && rep.items.length ? '' : ' disabled'}>${esc(t('print'))}</button></div></form>
     ${rep && rep.truncated ? `<p class="panel warn">${esc(t('ptu_truncated').replaceAll('{n}', rep.max))}</p>` : ''}
     ${rep && rep.items.length ? `<p id="pusum"><b>${esc(t('ptu_sum').replace('{n}', rep.items.length).replace('{v}', rep.vehicles.length))}</b></p><p class="small muted">${esc(t('ptu_removed_hint'))}</p>
@@ -8073,6 +8080,7 @@ async function viewPartsUsage() {
       </tbody></table></div>${rcPanel()}` : rep ? `<p class="muted" id="punone">${esc(t('ptu_none'))}</p>` : ''}${stockPanel()}`, 'more');
   $('#puf').onsubmit = (e) => { e.preventDefault(); ss('cfp_pu_q', $('#puq').value.trim()); ss('cfp_pu_from', $('#pufrom').value); ss('cfp_pu_to', $('#puto').value); viewPartsUsage(); };
   $('#puprt').onclick = () => window.print();
+  markGetField($('#puf'), t0); // Backlog 1501 Stufe 9
   if ($('#purcf')) {
     const q2 = (x) => `"${String(x).replace(/"/g, '""')}"`;
     // CSV wie „Rückrufe importieren“: FIN (sonst Kennzeichen), Referenz, Frist (nur wenn eingetragen), Bemerkung
@@ -8492,7 +8500,8 @@ async function viewDriverRecords() {
   const drs = vsDef('drvSite') || '';
   const qs = () => { const f = ss('cfp_dr_from'); const to = ss('cfp_dr_to'); return [f && 'from=' + encodeURIComponent(f), to && 'to=' + encodeURIComponent(to), drs && 'site=' + encodeURIComponent(drs)].filter(Boolean).join('&'); };
   let r;
-  try { r = await api('GET', '/api/drivers/records' + (qs() ? '?' + qs() : '')); } catch (err) { ss('cfp_dr_from', ''); ss('cfp_dr_to', ''); toast(err.message, true); r = await api('GET', '/api/drivers/records' + (drs ? '?site=' + encodeURIComponent(drs) : '')); }
+  const t0 = Date.now(); let kept = null;
+  try { r = await api('GET', '/api/drivers/records' + (qs() ? '?' + qs() : '')); } catch (err) { kept = { from: ss('cfp_dr_from'), to: ss('cfp_dr_to') }; ss('cfp_dr_from', ''); ss('cfp_dr_to', ''); toast(err.message, true); r = await api('GET', '/api/drivers/records' + (drs ? '?site=' + encodeURIComponent(drs) : '')); }
   const today = bDate();
   const ST = { aktuell: 'ok', abgelaufen: 'kritisch', abgeloest: '', storniert: '' };
   const who = (x) => `<a href="#/drivers/${esc(x.driver_id)}">${esc(x.display_name)}</a>${x.personnel_no ? `<div class="small muted">${noTr(x.personnel_no)}</div>` : ''}${x.active ? '' : `<div><span class="chip">${esc(t('th_inactive'))}</span></div>`}`;
@@ -8510,12 +8519,13 @@ async function viewDriverRecords() {
     <p class="small muted">${esc(t('dr_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(fmtD(r.from))} – ${esc(fmtD(r.to))}${r.site ? ' · ' + esc(t('site')) + ': ' + esc(r.site === 'ohne' ? t('cs_nosite') : r.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('drsite', '', r.site_options, r.site, t('site'), t('filter_all'))}</div></div>` : ''}${r.no_site_hidden ? `<p class="small muted noprint" data-drnositehidden>${esc(tn('drv_nosite_hidden', r.no_site_hidden))}</p>` : ''}
-    <form id="drf" class="panel noprint"><div class="grid2"><div><label for="drfrom">${esc(t('from'))}</label><input type="date" id="drfrom" value="${esc(r.from)}" max="${esc(today)}"></div><div><label for="drto">${esc(t('to'))}</label><input type="date" id="drto" value="${esc(r.to)}" max="${esc(today)}"></div></div>
+    <form id="drf" class="panel noprint"><div class="grid2"><div><label for="drfrom">${esc(t('from'))}</label><input type="date" id="drfrom" name="from" value="${esc(r.from)}" max="${esc(today)}"></div><div><label for="drto">${esc(t('to'))}</label><input type="date" id="drto" name="to" value="${esc(r.to)}" max="${esc(today)}"></div></div>
       <div class="actions"><button class="btn">${esc(t('show'))}</button><button type="button" class="btn secondary" id="drcsvd">${esc(t('dr_csv_docs'))}</button><button type="button" class="btn secondary" id="drcsvc">${esc(t('dr_csv_checks'))}</button><button type="button" class="btn secondary" id="drprt">${esc(t('print'))}</button></div></form>
     ${r.truncated ? `<p class="panel warn" id="drtrunc">${esc(t('dr_truncated').replaceAll('{n}', r.max))}</p>` : ''}
     <h2>${esc(t('dr_docs'))} <span class="small muted">${r.documents.length}</span></h2>${docs}
     <h2>${esc(t('dr_checks'))} <span class="small muted">${r.checks.length}</span></h2>${checks}`, 'more');
   $('#drf').onsubmit = (e) => { e.preventDefault(); ss('cfp_dr_from', $('#drfrom').value); ss('cfp_dr_to', $('#drto').value); viewDriverRecords(); };
+  markGetField($('#drf'), t0, kept); // Backlog 1501 Stufe 9
   const drse = $('#drsite'); if (drse) drse.onchange = () => { S.drvSite = drse.value; viewDriverRecords(); };
   $('#drprt').onclick = () => window.print();
   const csv = (part, name) => async () => { try { download(await api('GET', `/api/drivers/records?from=${encodeURIComponent(r.from)}&to=${encodeURIComponent(r.to)}${r.site ? '&site=' + encodeURIComponent(r.site) : ''}&format=csv&part=${part}`), `fuhrpark-fahrer-${name}_${envFn()}_${r.from}_${r.to}${r.site ? '_' + fnPart(r.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
@@ -9043,8 +9053,8 @@ async function viewTachoHistory() {
   // Backlog 1060: Standort wie auf „Auslesungen“ (gemeinsame Auswahl `tachoSite`) – Liste, Summen, Ausdruck und CSV
   const ths = vsDef('tachoSite') || '';
   const qs = () => { const f = ss('cfp_th_from'); const to = ss('cfp_th_to'); return [f && 'from=' + encodeURIComponent(f), to && 'to=' + encodeURIComponent(to), ths && 'site=' + encodeURIComponent(ths)].filter(Boolean).join('&'); };
-  let h;
-  try { h = await api('GET', '/api/tacho/history' + (qs() ? '?' + qs() : '')); } catch (err) { ss('cfp_th_from', ''); ss('cfp_th_to', ''); toast(err.message, true); h = await api('GET', '/api/tacho/history' + (ths ? '?site=' + encodeURIComponent(ths) : '')); }
+  let h; const t0 = Date.now(); let kept = null;
+  try { h = await api('GET', '/api/tacho/history' + (qs() ? '?' + qs() : '')); } catch (err) { kept = { from: ss('cfp_th_from'), to: ss('cfp_th_to') }; ss('cfp_th_from', ''); ss('cfp_th_to', ''); toast(err.message, true); h = await api('GET', '/api/tacho/history' + (ths ? '?site=' + encodeURIComponent(ths) : '')); }
   const today = bDate();
   const gapTxt = (g) => `${esc(t('th_overdue').replace('{d}', fmtD(g.overdue_from)))} – ${g.open ? `<b>${esc(t('th_open'))}</b>` : g.cut ? esc(t('th_cut')) : esc(t('th_until').replace('{d}', fmtD(g.until)))} · ${esc(nDays(g.days))}`;
   const table = (list, kind) => list.length ? `<div class="scroll"><table class="stack printsm" data-th="${kind}"><thead><tr><th>${esc(kind === 'drivers' ? t('role_driver') : t('vehicle'))}</th><th>${esc(t('th_downloads'))}</th><th>${esc(t('th_gaps'))}</th></tr></thead><tbody>${list.map((x) => `<tr>
@@ -9057,12 +9067,13 @@ async function viewTachoHistory() {
     <p class="small muted">${esc(t('th_hint'))}</p><p class="small muted">${esc(t('tacho_rule'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(fmtD(h.from))} – ${esc(fmtD(h.to))}${h.site ? ' · ' + esc(t('site')) + ': ' + esc(h.site === 'ohne' ? t('cs_nosite') : h.site) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
     ${(h.site_options || []).length > 1 || h.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('thsite', '', h.site_options, h.site, t('site'), t('filter_all'))}</div></div>` : ''}${h.no_site_hidden ? `<p class="small muted noprint" data-thnositehidden>${esc(tn('drv_nosite_hidden', h.no_site_hidden))}</p>` : ''}
-    <form id="thf" class="panel noprint"><div class="grid2"><div><label for="thfrom">${esc(t('from'))}</label><input type="date" id="thfrom" value="${esc(h.from)}" max="${esc(today)}"></div><div><label for="thto">${esc(t('to'))}</label><input type="date" id="thto" value="${esc(h.to)}" max="${esc(today)}"></div></div>
+    <form id="thf" class="panel noprint"><div class="grid2"><div><label for="thfrom">${esc(t('from'))}</label><input type="date" id="thfrom" name="from" value="${esc(h.from)}" max="${esc(today)}"></div><div><label for="thto">${esc(t('to'))}</label><input type="date" id="thto" name="to" value="${esc(h.to)}" max="${esc(today)}"></div></div>
       <div class="actions"><button class="btn">${esc(t('show'))}</button><button type="button" class="btn secondary" id="thcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="thprt">${esc(t('print'))}</button></div></form>
     ${h.truncated ? `<p class="panel warn" id="thtrunc">${esc(t('th_truncated').replaceAll('{n}', h.max))}</p>` : ''}
     <h2>${esc(t('tacho_cards'))} <span class="small muted">${sum('drivers')}</span></h2>${table(h.drivers, 'drivers')}
     <h2>${esc(t('tacho_vus'))} <span class="small muted">${sum('vehicles')}</span></h2>${table(h.vehicles, 'vehicles')}`, 'more');
   $('#thf').onsubmit = (e) => { e.preventDefault(); ss('cfp_th_from', $('#thfrom').value); ss('cfp_th_to', $('#thto').value); viewTachoHistory(); };
+  markGetField($('#thf'), t0, kept); // Backlog 1501 Stufe 9: abgelehnter Zeitraum bleibt im Feld, Liste zeigt den Standardzeitraum
   const thse = $('#thsite'); if (thse) thse.onchange = () => { S.tachoSite = thse.value; viewTachoHistory(); };
   $('#thprt').onclick = () => window.print();
   $('#thcsv').onclick = async () => { try { download(await api('GET', `/api/tacho/history?from=${encodeURIComponent(h.from)}&to=${encodeURIComponent(h.to)}${h.site ? '&site=' + encodeURIComponent(h.site) : ''}&format=csv`), `fuhrpark-auslesungen-verlauf_${h.from}_${h.to}${h.site ? '_' + fnPart(h.site) : ''}.csv`); } catch (err) { toast(err.message, true); } };
@@ -9524,8 +9535,8 @@ async function viewMaint(fq) {
   if (S.mbRes) html += `<div id="mbres" class="noprint" role="status">${S.mbRes}</div>`;
   // Durchgeführte Prüfungen (Wartungshistorie der Flotte) – Inhaber, Fuhrparkleitung, Lesezugriff
   if (['owner', 'fleet', 'viewer'].includes(S.me.role)) html += `<details class="panel noprint" id="mhist"><summary>${esc(t('mh_title'))}</summary><p class="small muted">${esc(t('mh_hint'))}</p>
-    <form id="mhf" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end"><div><label>${esc(t('from'))}</label><input type="date" name="from" value="${esc(ov.today.slice(0, 4))}-01-01" required></div><div><label>${esc(t('to'))}</label><input type="date" name="to" value="${esc(ov.today)}" required></div>
-    <div><label>${esc(t('kind'))}</label><select name="kind"><option value="">${esc(t('filter_all'))}</option>${(S.meta.maintenance_kinds || []).map((k) => `<option value="${esc(k)}">${esc(mk(k))}</option>`).join('')}</select></div>
+    <form id="mhf" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end"><div><label for="mhfrom">${esc(t('from'))}</label><input type="date" id="mhfrom" name="from" value="${esc(ov.today.slice(0, 4))}-01-01" required></div><div><label for="mhto">${esc(t('to'))}</label><input type="date" id="mhto" name="to" value="${esc(ov.today)}" required></div>
+    <div><label for="mhkind">${esc(t('kind'))}</label><select id="mhkind" name="kind"><option value="">${esc(t('filter_all'))}</option>${(S.meta.maintenance_kinds || []).map((k) => `<option value="${esc(k)}">${esc(mk(k))}</option>`).join('')}</select></div>
     <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn secondary" id="mhcsv">${esc(t('export_csv'))}</button></div></form><div id="mhres"></div></details>`;
   if (isMgr()) html += `<section class="panel noprint"><h2 style="margin-top:0">${esc(t('import_maint'))}</h2><p class="small muted">${esc(t('import_maint_hint'))}</p><input type="file" id="mimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_maint'))}"><div id="mimpr"></div></section>
     <section class="panel noprint"><h2 style="margin-top:0">${esc(t('import_recalls'))}</h2><p class="small muted">${esc(t('import_recalls_hint'))}</p><input type="file" id="rimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('import_recalls'))}"><div id="rimpr"></div></section>`;

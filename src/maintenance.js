@@ -936,8 +936,9 @@ export async function maintenanceHistory(env, user, query = {}, envName = 'produ
   const today = berlinDate();
   // ohne „Von“: Jahresbeginn des „Bis“-Jahres (21.10.2026: „bis 2025-06-30“ allein → 400 „Von liegt nach bis“)
   const to = query.to || today; const from = query.from || (isCalendarDate(to) ? `${to.slice(0, 4)}-01-01` : `${today.slice(0, 4)}-01-01`);
-  for (const d of [from, to]) if (!isCalendarDate(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
-  if (from > to) throw bad('validation', '„Von“ liegt nach „bis“.');
+  // Backlog 1501 Stufe 9: Feld nennen (`field_key`), Nachweisliste markiert „Von“/„Bis“
+  for (const [k, d] of [['from', from], ['to', to]]) if (!isCalendarDate(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.', { field_key: k });
+  if (from > to) throw bad('validation', '„Von“ liegt nach „bis“.', { field_key: 'to' });
   // Prüfart ohne Groß-/Kleinschreibung (z. B. „hu“ → „HU“, 22.10.2026: lieferte still 0 Ereignisse); unbekannte Art unverändert
   const kindRaw = query.kind ? String(query.kind).slice(0, 40) : null;
   const kind = kindRaw ? MAINT_KINDS.find((k) => k.toLowerCase() === kindRaw.toLowerCase()) || kindRaw : null;

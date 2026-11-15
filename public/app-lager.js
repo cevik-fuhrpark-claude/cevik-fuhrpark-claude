@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, isStockHash, lostDup, lostMark, ltxt, markInvalid, nDays, noneP, nowMs, onPage, parseQty, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, isStockHash, lostDup, lostMark, ltxt, markGetField, markInvalid, nDays, noneP, nowMs, onPage, parseQty, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
 
 
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
@@ -623,7 +623,7 @@ async function viewPartsUsage() {
   const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k) || ''; sessionStorage.setItem(k, v); } catch { return ''; } return ''; };
   const q = ss('cfp_pu_q'); const from = ss('cfp_pu_from'); const to = ss('cfp_pu_to'); const today = bDate();
   const qs = `q=${encodeURIComponent(q)}${from ? '&from=' + encodeURIComponent(from) : ''}${to ? '&to=' + encodeURIComponent(to) : ''}`;
-  let rep = null;
+  let rep = null; const t0 = Date.now();
   if (q.trim().length >= 3) { try { rep = await api('GET', '/api/parts/usage?' + qs); } catch (err) { toast(err.message, true); rep = null; } }
 
 
@@ -645,8 +645,8 @@ async function viewPartsUsage() {
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('ptu_title'))}</h1>
     <p class="small muted">${esc(t(S.me.role === 'workshop' ? 'ptu_hint_ws' : 'ptu_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(t('ptu_q'))}: ${esc(q)}${from || to ? ` · ${esc(from ? fmtD(from) : '…')} – ${esc(to ? fmtD(to) : '…')}` : ''}${S.me.role === 'workshop' ? ' · ' + esc(wsName(S.me.workshop_site)) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
-    <form id="puf" class="panel noprint"><label for="puq">${esc(t('ptu_q'))}</label><input id="puq" value="${esc(q)}" minlength="3" maxlength="80" required autocomplete="off" placeholder="${esc(t('ptu_q_ph'))}">
-      <div class="grid2"><div><label for="pufrom">${esc(t('ptu_from'))}</label><input type="date" id="pufrom" value="${esc(from)}" max="${esc(today)}"></div><div><label for="puto">${esc(t('to'))}</label><input type="date" id="puto" value="${esc(to)}" max="${esc(today)}"></div></div>
+    <form id="puf" class="panel noprint"><label for="puq">${esc(t('ptu_q'))}</label><input id="puq" name="q" value="${esc(q)}" minlength="3" maxlength="80" required autocomplete="off" placeholder="${esc(t('ptu_q_ph'))}">
+      <div class="grid2"><div><label for="pufrom">${esc(t('ptu_from'))}</label><input type="date" id="pufrom" name="from" value="${esc(from)}" max="${esc(today)}"></div><div><label for="puto">${esc(t('to'))}</label><input type="date" id="puto" name="to" value="${esc(to)}" max="${esc(today)}"></div></div>
       <div class="actions"><button class="btn">${esc(t('show'))}</button><button type="button" class="btn secondary" id="pucsv"${rep && rep.items.length ? '' : ' disabled'}>${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="puprt"${rep && rep.items.length ? '' : ' disabled'}>${esc(t('print'))}</button></div></form>
     ${rep && rep.truncated ? `<p class="panel warn">${esc(t('ptu_truncated').replaceAll('{n}', rep.max))}</p>` : ''}
     ${rep && rep.items.length ? `<p id="pusum"><b>${esc(t('ptu_sum').replace('{n}', rep.items.length).replace('{v}', rep.vehicles.length))}</b></p><p class="small muted">${esc(t('ptu_removed_hint'))}</p>
@@ -655,6 +655,7 @@ async function viewPartsUsage() {
       </tbody></table></div>${rcPanel()}` : rep ? `<p class="muted" id="punone">${esc(t('ptu_none'))}</p>` : ''}${stockPanel()}`, 'more');
   $('#puf').onsubmit = (e) => { e.preventDefault(); ss('cfp_pu_q', $('#puq').value.trim()); ss('cfp_pu_from', $('#pufrom').value); ss('cfp_pu_to', $('#puto').value); viewPartsUsage(); };
   $('#puprt').onclick = () => window.print();
+  markGetField($('#puf'), t0);
   if ($('#purcf')) {
     const q2 = (x) => `"${String(x).replace(/"/g, '""')}"`;
 

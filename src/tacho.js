@@ -172,11 +172,12 @@ export function tachoCsv(ov, cell) {
 // Zeitraum für Prüfungsnachweise: ohne „Bis“ heute, ohne „Von“ 12 Monate bis einschließlich „Bis“ (z. B. 25.10.2025–24.10.2026)
 export function periodOf(query = {}, today = berlinDate()) {
   const to = query.to ? String(query.to).slice(0, 10) : today;
-  if (!ISO.test(to)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
+  // Backlog 1501 Stufe 9: Feld nennen (`field_key` from/to) – Auslesungen-Verlauf und Nachweise der Fahrer markieren es
+  if (!ISO.test(to)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.', { field_key: 'to' });
   let from = query.from ? String(query.from).slice(0, 10) : null;
   if (!from) { const prev = `${Number(to.slice(0, 4)) - 1}${to.slice(4)}`; from = addDays(ISO.test(prev) ? prev : `${Number(to.slice(0, 4)) - 1}-02-28`, 1); }
-  if (!ISO.test(from)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
-  if (from > to) throw bad('validation', '„Von“ liegt nach „bis“.');
+  if (!ISO.test(from)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.', { field_key: 'from' });
+  if (from > to) throw bad('validation', '„Von“ liegt nach „bis“.', { field_key: 'to' });
   return { from, to };
 }
 export const TACHO_HISTORY_MAX = 5000;

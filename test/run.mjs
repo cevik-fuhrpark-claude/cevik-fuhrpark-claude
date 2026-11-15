@@ -42274,10 +42274,20 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   const n2 = await owner.post(`/api/vehicles/${vlk.id}/notes`, { text: 'Feld 1501', valid_until: '2020-01-01' }); eq(n2.status, 400); eq(n2.data.field_key, 'valid_until', 'Fahrzeughinweis: gültig bis');
   const { keepRateStatement } = await import('../src/rates.js');
   let rk; try { await keepRateStatement({}, {}, { hourly_rate_keep_until: '31.12.' }, []); } catch (e) { rk = e.extra && e.extra.field_key; } eq(rk, 'hourly_rate_keep_until', 'Stundensatz gilt bis');
+  // Stufe 9: Auswertungen per GET (Teile-Verwendung, Nachweisliste Prüfungen, Auslesungen-Verlauf, Nachweise der Fahrer)
+  const pu1 = await owner.get('/api/parts/usage?q=ab'); eq(pu1.status, 400); eq(pu1.data.field_key, 'q', 'Teile-Verwendung: Suchtext zu kurz');
+  const pu2 = await owner.get('/api/parts/usage?q=Filter&from=2026-02-30'); eq(pu2.data.field_key, 'from', 'Teile-Verwendung: Von ungültig');
+  const pu3 = await owner.get('/api/parts/usage?q=Filter&to=2026-13-01'); eq(pu3.data.field_key, 'to', 'Teile-Verwendung: Bis ungültig');
+  const pu4 = await owner.get('/api/parts/usage?q=Filter&from=2026-05-01&to=2026-04-01'); eq(pu4.data.field_key, 'to', 'Teile-Verwendung: Von nach Bis');
+  const mh1 = await owner.get('/api/maintenance/history?from=2026-02-30&to=2026-03-01'); eq(mh1.status, 400); eq(mh1.data.field_key, 'from', 'Nachweisliste: Von ungültig');
+  const mh2 = await owner.get('/api/maintenance/history?from=2026-05-01&to=2026-04-01'); eq(mh2.data.field_key, 'to', 'Nachweisliste: Von nach Bis');
+  const th1 = await users.fleet.get('/api/tacho/history?from=2026-05-01&to=2026-04-01'); eq(th1.status, 400); eq(th1.data.field_key, 'to', 'Auslesungen-Verlauf: Von nach Bis');
+  const th2 = await users.fleet.get('/api/tacho/history?from=2026-02-30&to=2026-04-01'); eq(th2.data.field_key, 'from', 'Auslesungen-Verlauf: Von ungültig');
+  const dr1 = await users.fleet.get('/api/drivers/records?to=gestern'); eq(dr1.status, 400); eq(dr1.data.field_key, 'to', 'Nachweise der Fahrer: Bis ungültig');
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims', 'fines', 'stock', 'tires', 'tacho', 'vehicles', 'cases', 'vnotes', 'rates']) {
+  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims', 'fines', 'stock', 'tires', 'tacho', 'vehicles', 'cases', 'vnotes', 'rates', 'partsusage', 'maintenance']) {
     const s = readFileSync(new URL(`../src/${m}.js`, import.meta.url), 'utf8');
     const keys = new Set([...s.matchAll(/\{ key: '(\w+)', (?!group)|field_key: '(\w+)'|withKey\('(\w+)'|\{ key: '(\w+)' \}/g)].map((x) => x[1] || x[2] || x[3] || x[4])); // nur Prüf-Optionen (nicht request_key, nicht CHECKLIST)
     ok(keys.size > 0, m + ': keine Feldnamen');
@@ -42304,6 +42314,18 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   eq(sels[0], '[data-fkey="supplier"]', 'Selektor ohne Sonderzeichen'); eq(calls.length, 2, 'data-fkey-Feld markiert'); ok(fk2.f && !fk1.f, 'erstes sichtbares Feld');
   S.fieldErr = { key: 'x', msg: 'x', at: 300 }; fn({ isConnected: true, elements: { namedItem: () => null }, querySelectorAll: () => [fk1] }, 200); eq(calls.length, 2, 'nur unsichtbares data-fkey-Feld → nur Toast');
   const hid = { ...el, offsetParent: null }; S.fieldErr = { key: 'display_name', msg: 'x', at: 300 }; fn({ isConnected: true, elements: { namedItem: () => hid } }, 200); eq(calls.length, 2, 'verstecktes Feld → nur Toast');
+  // Stufe 9: markGetField setzt abgelehnte Eingaben nur bei Prüffehler mit Feldnamen zurück und markiert dann das Feld
+  const g = src.indexOf('function markGetField(form, since, kept) {'); const gj = src.indexOf('\n}\n', g); ok(g > 0, 'markGetField vorhanden');
+  const marks = []; const S2 = {};
+  const mg = new Function('S', 'markServerField', src.slice(g, gj + 2) + '; return markGetField;')(S2, (f, t) => marks.push(t));
+  const fromEl = { tagName: 'INPUT', value: '2026-01-01' }; const gform = { elements: { namedItem: (k) => (k === 'from' ? fromEl : null) } };
+  S2.fieldErr = null; mg(gform, 200, { from: '2026-05-01' }); eq(fromEl.value, '2026-01-01', 'ohne Feld-Fehler: Standardwert bleibt'); eq(marks.length, 0, 'ohne Feld-Fehler nichts markiert');
+  S2.fieldErr = { key: 'from', msg: 'x', at: 100 }; mg(gform, 200, { from: '2026-05-01' }); eq(marks.length, 0, 'älterer Fehler ignoriert');
+  S2.fieldErr = { key: 'from', msg: 'x', at: 300 }; mg(gform, 200, { from: '2026-05-01', to: '' }); eq(fromEl.value, '2026-05-01', 'abgelehnte Eingabe wieder im Feld'); eq(JSON.stringify(marks), '[200]', 'markServerField aufgerufen');
+  for (const [v, f] of [['viewPartsUsage', '#puf'], ['viewTachoHistory', '#thf'], ['viewDriverRecords', '#drf']]) {
+    const a = src.indexOf(`async function ${v}(`); const b = src.indexOf('\nasync function ', a + 10); ok(a > 0 && src.slice(a, b).includes(`markGetField($('${f}'), t0`), `${v} markiert Feld nach dem Neuzeichnen`);
+  }
+  ok(/<label for="mhfrom">[^\n]*id="mhfrom" name="from"[^\n]*<label for="mhto">[^\n]*id="mhto" name="to"/.test(src) && src.includes('<label for="mhkind">'), 'Nachweisliste: Beschriftungen den Feldern zugeordnet');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

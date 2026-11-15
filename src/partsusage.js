@@ -16,11 +16,13 @@ export const pnKey = (s) => String(s || '').toLocaleUpperCase('de').replace(/[\s
 export async function partsUsage(env, user, envName, query = {}) {
   const ws = user.role === 'workshop';
   if (!(user.role === 'owner' || user.role === 'fleet' || (ws && user.workshop_site))) throw forbidden();
-  const q = String(str(query.q, { max: 80, field: 'Suche' }) || '').trim().replace(/\s+/g, ' ');
-  if (q.length < 3) throw bad('validation', 'Bitte mindestens 3 Zeichen der Teilenummer oder Bezeichnung angeben.');
+  // Backlog 1501 Stufe 9: Prüffehler nennen das Feld (`field_key` q/from/to) – die Oberfläche markiert es nach dem Neuzeichnen
+  const q = String(str(query.q, { key: 'q', max: 80, field: 'Suche' }) || '').trim().replace(/\s+/g, ' ');
+  if (q.length < 3) throw bad('validation', 'Bitte mindestens 3 Zeichen der Teilenummer oder Bezeichnung angeben.', { field_key: 'q' });
   const from = query.from ? String(query.from) : ''; const to = query.to ? String(query.to) : '';
-  if ((from && !isCalendarDate(from)) || (to && !isCalendarDate(to))) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.');
-  if (from && to && from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.');
+  if (from && !isCalendarDate(from)) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.', { field_key: 'from' });
+  if (to && !isCalendarDate(to)) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.', { field_key: 'to' });
+  if (from && to && from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.', { field_key: 'to' });
   const key = pnKey(q);
   // Bezeichnung/Lieferant/Beleg: instr statt LIKE (D1: Muster > 50 Byte), Schreibweisen-Varianten für Umlaute/Kyrillisch (lower() nur A–Z)
   const vs = caseVariants(q);
