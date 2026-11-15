@@ -1128,10 +1128,10 @@ export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body
   if (open && body.request_key && open.request_key === String(body.request_key) && open.reporter_id === user.id) return { id: open.id, case_no: open.case_no, duplicate: true };
   if (rule.kind === 'Rückruf' && rule.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
   if (open) throw conflict('order_exists', `Für diese Prüfung gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
-  const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
+  const site = str(body.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
   if (!rule.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
   const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität');
-  const note = str(body.note, { max: 1000, field: 'Bemerkung' });
+  const note = str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' });
   // Rückruf: Referenz laut Schreiben in den Auftrag, damit die Werkstatt die richtige Aktion durchführt
   const description = rule.kind === 'Rückruf' ? `Herstellerrückruf durchführen (Referenz: ${String(rule.evidence || '')})${note ? ' – ' + note : ''}` : `Prüfung/Wartung ${rule.kind} durchführen${note ? ' – ' + note : ''}`;
   const requestKey = str(body.request_key, { max: 64, field: 'request_key' }) || uuid();
@@ -1163,11 +1163,11 @@ export async function orderFromInspectionDefect(env, ctx, user, envName, eventId
   const open = ev.open_case ? JSON.parse(ev.open_case) : null;
   if (open && body.request_key && open.request_key === String(body.request_key) && open.reporter_id === user.id) return { id: open.id, case_no: open.case_no, duplicate: true };
   if (open) throw conflict('order_exists', `Für diese Prüfung gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
-  const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
+  const site = str(body.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
   if (!ev.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
   const priority = oneOf(body.priority || (ev.result === 'erhebliche_maengel' ? 'mittel' : 'kritisch'), PRIORITIES, 'Priorität');
   const driveability = oneOf(body.driveability || (ev.result === 'verkehrsunsicher' ? 'nicht_fahrbereit' : 'unbekannt'), DRIVEABILITY, 'Fahrbereitschaft');
-  const note = str(body.note, { max: 1000, field: 'Bemerkung' });
+  const note = str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' });
   const date = ev.done_date.split('-').reverse().join('.');
   const description = `Mängel aus ${ev.kind} vom ${date} beseitigen (Ergebnis: ${DEFECT_RES[ev.result]}; Nachweis: ${ev.evidence})${note ? ' – ' + note : ''}`;
   const requestKey = str(body.request_key, { max: 64, field: 'request_key' }) || uuid();
@@ -1199,10 +1199,10 @@ export async function orderWinterTires(env, ctx, user, envName, vehicleId, body 
   const ev = (await env.DB.prepare('SELECT position, event_type, winter_mark FROM tire_events WHERE environment=? AND vehicle_id=? ORDER BY created_at DESC').bind(envName, vehicleId).all()).results;
   const w = winterStatus(v.kind, winterMarks(ev));
   if (w.status === 'erfuellt') throw conflict('winter_ok', 'Winterreifen laut Erfassung bereits erfüllt – kein Auftrag nötig.');
-  const site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
+  const site = str(body.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
   if (!v.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
   const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität');
-  const note = str(body.note, { max: 1000, field: 'Bemerkung' });
+  const note = str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' });
   // Termin vor dem Anlegen prüfen (sonst bliebe bei ungültigem Termin eine nicht freigegebene Meldung zurück)
   const planned = body.planned_date ? planDate(body.planned_date) : null;
   if (planned && planned < berlinDate()) throw bad('validation', 'Werkstatttermin darf nicht in der Vergangenheit liegen.');
@@ -1264,12 +1264,12 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   if (!bodies.length) return [];
   const specs = [];
   for (const body of bodies) {
-    const vehicleId = str(body.vehicle_id, { required: true, max: 40, field: 'Fahrzeug' });
-    const description = str(body.description, { required: true, max: 4000, field: 'Fehlerbeschreibung' });
+    const vehicleId = str(body.vehicle_id, { key: 'vehicle_id', required: true, max: 40, field: 'Fahrzeug' });
+    const description = str(body.description, { key: 'description', required: true, max: 4000, field: 'Fehlerbeschreibung' });
     if (description.length < 5) throw bad('validation', 'Fehlerbeschreibung ist zu kurz.');
     const reportedPriority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Dringlichkeit');
     const driveability = oneOf(body.driveability || 'unbekannt', DRIVEABILITY, 'Fahrbereitschaft');
-    const suggested = body.workshop_site ? str(body.workshop_site, { max: 20, field: 'Werkstatt' }) : null;
+    const suggested = body.workshop_site ? str(body.workshop_site, { key: 'workshop_site', max: 20, field: 'Werkstatt' }) : null;
     const requestKey = str(body.request_key, { required: true, max: 64, field: 'request_key' });
     const location = str(body.location_note, { max: 300, field: 'Ort' });
     const origin = body.origin && ['meldung', 'kontrolle'].includes(body.origin) ? body.origin : 'meldung';
@@ -1462,7 +1462,7 @@ export async function openItemToCase(env, ctx, user, envName, caseId, oid, body)
   }
   const priority = oneOf(body.priority, PRIORITIES, 'Dringlichkeit');
   const driveability = oneOf(body.driveability || (oi.safety_relevant ? 'nicht_fahrbereit' : 'unbekannt'), DRIVEABILITY, 'Fahrbereitschaft');
-  const note = str(body.note, { max: 1000, field: 'Bemerkung' });
+  const note = str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' });
   const now = nowIso();
   const description = cutText(`[Restarbeit aus ${c.case_no}] ${oi.description}${note ? ' – ' + note : ''}`, 4000);
   const internal = {
@@ -1499,7 +1499,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const action = str(body.action, { required: true, max: 40, field: 'Aktion' });
   const commandId = str(body.command_id, { required: true, max: 64, field: 'command_id' });
   const expectedVersion = num(body.expected_version, { min: 1, field: 'Version' });
-  let note = str(body.note, { max: 4000, field: 'Bemerkung' });
+  let note = str(body.note, { key: 'note', max: 4000, field: 'Bemerkung' });
   const p = body.payload || {};
 
   const { c, access } = await loadCase(env, user, envName, caseId);
@@ -1532,7 +1532,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   // Backlog 1033: Lieferschein (Foto/PDF) zu „Teillieferung eingegangen“ bzw. „Reparatur fortsetzen“ – optional eine Datei dieses Vorgangs derselben Umgebung
   const deliveryFile = async () => {
     if (p.file_id === undefined || p.file_id === null || p.file_id === '') return null;
-    const f = await env.DB.prepare('SELECT id, filename FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(p.file_id, { max: 40, field: 'Datei' }), c.id, envName).first();
+    const f = await env.DB.prepare('SELECT id, filename FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(p.file_id, { key: 'file_id', max: 40, field: 'Datei' }), c.id, envName).first();
     if (!f) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
     return f;
   };
@@ -1585,7 +1585,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'approve_repair': {
-      const site = str(p.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
+      const site = str(p.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
       const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
       if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
       requireNote('Bitte Reparaturumfang/Freigabevermerk angeben.');
@@ -1608,7 +1608,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Hinweis zum Termin (Migration 0093, Blickwinkel „Lkw einen halben Tag zur Achsvermessung bei einer Fremdfirma“): z. B. „nur vormittags,
       // Abholung 13 Uhr, Fa. …“ – nicht mitgeschickt = bleibt (Termin im Plan verschieben), leer = entfernen, ohne Termin immer leer
       const oldNote = c.planned_note || null;
-      const pn = p.planned_note === undefined ? oldNote : str(p.planned_note, { max: 200, field: 'Hinweis zum Termin' });
+      const pn = p.planned_note === undefined ? oldNote : str(p.planned_note, { key: 'planned_note', max: 200, field: 'Hinweis zum Termin' });
       if (pn && !d && p.planned_note !== undefined) throw bad('validation', 'Hinweis zum Termin nur zusammen mit einem Termin angeben.');
       const newNote = d ? pn : null;
       if (d === (c.planned_date || null) && newNote === oldNote) throw bad('validation', 'Termin ist unverändert.');
@@ -1638,8 +1638,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     case 'set_vehicle_location': {
       // Wo steht das Fahrzeug jetzt, wer hat es abgeschleppt (Migration 0079)? Nur Angaben laut Meldung/Beleg; alles leer = entfernen.
       // Ohne Statuswechsel und ohne Push (wie Werkstatttermin); der Verlauf zeigt alt → neu.
-      const loc = str(p.vehicle_location, { max: 300, field: 'Standort des Fahrzeugs' });
-      const svc = str(p.tow_service, { max: 120, field: 'Abschleppdienst' });
+      const loc = str(p.vehicle_location, { key: 'vehicle_location', max: 300, field: 'Standort des Fahrzeugs' });
+      const svc = str(p.tow_service, { key: 'tow_service', max: 120, field: 'Abschleppdienst' });
       const on = pastDay(p.towed_on, 'Abgeschleppt am');
       if (on && !svc) throw bad('validation', 'Abschleppdatum nur zusammen mit dem Abschleppdienst angeben.');
       if (on && on < oneYearBack(berlinDate())) throw bad('validation', 'Abgeschleppt am: liegt mehr als ein Jahr zurück.');
@@ -1715,7 +1715,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Meldung am falschen Fahrzeug (Backlog 254, 25.10.2026, Teilagent „Meldung am falschen Fahrzeug“): Leitung hängt eine noch nicht
       // freigegebene Meldung mit Begründung an das richtige Fahrzeug um – vorher nur Ablehnen + neu melden (Melder, Fotos, Sperre gingen verloren;
       // der wirklich defekte Lkw blieb bis dahin ungesperrt). Nur ohne Folge-/Dublettenbezug und ohne Versicherungsfall (wandern sonst nicht mit).
-      const vid = str(p.vehicle_id, { required: true, max: 80, field: 'Fahrzeug' });
+      const vid = str(p.vehicle_id, { key: 'vehicle_id', required: true, max: 80, field: 'Fahrzeug' });
       requireNote('Bitte Grund für die Korrektur angeben (z. B. Kennzeichen verwechselt).');
       if (vid === c.vehicle_id) throw bad('validation', 'Fahrzeug ist unverändert.');
       // Backlog 255 (25.10.2026): Mangel aus einer Abfahrtskontrolle → die ganze Kontrolle hängt um (Kontrolle, alle daraus angelegten
@@ -1806,7 +1806,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'reassign_workshop': {
-      const site = str(p.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
+      const site = str(p.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
       const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
       if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
       requireNote('Bitte Grund für den Werkstattwechsel angeben.');
@@ -1956,9 +1956,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'record_work': {
-      const hours = hoursNum(p.hours, { min: 0.05, max: 24, field: 'Stunden', decimalPoint: pointDec(user), decimalComma: commaDec(user) });
-      const desc = str(p.description, { required: true, max: 2000, field: 'Tätigkeit' });
-      const date = str(p.work_date, { max: 10 }) || berlinDate();
+      const hours = hoursNum(p.hours, { key: 'hours', min: 0.05, max: 24, field: 'Stunden', decimalPoint: pointDec(user), decimalComma: commaDec(user) });
+      const desc = str(p.description, { key: 'description', required: true, max: 2000, field: 'Tätigkeit' });
+      const date = str(p.work_date, { key: 'work_date', max: 10 }) || berlinDate();
       if (!isCalendarDate(date)) throw bad('validation', 'Datum ungültig.');
       // Tippfehler im Jahr (2062/1926) fielen sonst aus dem Monats-Kostenbericht: nicht in der Zukunft, höchstens 1 Jahr vor der Meldung
       const earliest = addMonths(berlinDate(c.created_at), -12);
@@ -1982,18 +1982,18 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Backlog 983: freies Teil ohne Einheitenfeld übernimmt die Einheit aus der Menge („5 l“, „vier Liter“ → l; „2 Stück“ → Stk) – nur bekannte Einheiten, keine Umrechnung
       const freeUnit = (typeof p.unit === 'string' && p.unit.trim()) || qtyUnitOf(p.quantity) || 'Stk';
       const qUnit = p.stock_item_id && typeof p.quantity === 'string' && /[^\d\s.,'’-]/.test(p.quantity) ? ((await env.DB.prepare('SELECT unit FROM stock_items WHERE id=? AND environment=?').bind(String(p.stock_item_id).slice(0, 40), envName).first()) || {}).unit : freeUnit;
-      const qty = Math.round(qtyNum(p.quantity ?? 1, qUnit, { min: 0.001, max: 100000, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }) * 1000) / 1000; // 3 Nachkommastellen wie das Lager
+      const qty = Math.round(qtyNum(p.quantity ?? 1, qUnit, { key: 'quantity', min: 0.001, max: 100000, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }) * 1000) / 1000; // 3 Nachkommastellen wie das Lager
       const pid = uuid();
       let stockItem = null;
       // Preis aus dem Lager: hinterlegter Artikelpreis gilt für Teil und Lagerbuchung; nur ohne Artikelpreis der eingegebene – für beide
       // (18.10.2026: Eingabe landete nur im Teil, Journal blieb „unbewertet“ bzw. beim Artikelpreis; Regel wie die Entnahme im Lager)
-      const inPrice = num(p.unit_price_net === '' ? null : p.unit_price_net, { min: 0, max: 1000000, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+      const inPrice = num(p.unit_price_net === '' ? null : p.unit_price_net, { key: 'unit_price_net', min: 0, max: 1000000, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
       if (p.stock_item_id) {
-        const w = await prepareCaseWithdrawal(env, user, envName, c, str(p.stock_item_id, { max: 40 }), qty, pid, inPrice, now);
+        const w = await prepareCaseWithdrawal(env, user, envName, c, str(p.stock_item_id, { key: 'stock_item_id', max: 40 }), qty, pid, inPrice, now);
         stockItem = w.item;
         extra.push(w.stmt, ...w.guard); stockGuardItem = { id: w.item.id, qty, unit: w.item.unit };
       }
-      const name = stockItem ? stockItem.name : str(p.name, { required: true, max: 200, field: 'Teil' });
+      const name = stockItem ? stockItem.name : str(p.name, { key: 'name', required: true, max: 200, field: 'Teil' });
       const price = stockItem && stockItem.unit_price_net !== null && stockItem.unit_price_net !== undefined ? stockItem.unit_price_net : inPrice;
       // Lagerartikel mit hinterlegtem Preis: Wert steht fest (Lagerjournal bucht ihn als tatsächlich) – nie „Schätzung“
       // (22.10.2026: Teil zählte als Schätzung, die Entnahme im Lagerjournal als tatsächlicher Wert)
@@ -2003,23 +2003,23 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Foto/PDF zum Teil (Backlog 426: Typenschild/Teilenummer fotografiert): optional eine Datei dieses Vorgangs derselben Umgebung
       let ptFile = null;
       if (p.file_id !== undefined && p.file_id !== null && p.file_id !== '') {
-        ptFile = await env.DB.prepare('SELECT id, filename FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(p.file_id, { max: 40, field: 'Datei' }), c.id, envName).first();
+        ptFile = await env.DB.prepare('SELECT id, filename FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(p.file_id, { key: 'file_id', max: 40, field: 'Datei' }), c.id, envName).first();
         if (!ptFile) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
       }
       extra.push(env.DB.prepare(`INSERT INTO parts(id,case_id,user_id,name,part_number,quantity,unit,unit_price_net,valuation,supplier,document_ref,stock_item_id,created_at,warranty_until,file_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(pid, c.id, user.id, name, stockItem ? stockItem.part_number : str(p.part_number, { max: 80 }), qty,
-        stockItem ? stockItem.unit : str(freeUnit, { max: 20 }), price, valuation, stockItem ? `Lager ${stockItem.site}` : str(p.supplier, { max: 120 }),
-        str(p.document_ref, { max: 200 }), stockItem ? stockItem.id : null, now, warranty, ptFile ? ptFile.id : null));
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(pid, c.id, user.id, name, stockItem ? stockItem.part_number : str(p.part_number, { key: 'part_number', max: 80 }), qty,
+        stockItem ? stockItem.unit : str(freeUnit, { max: 20 }), price, valuation, stockItem ? `Lager ${stockItem.site}` : str(p.supplier, { key: 'supplier', max: 120 }),
+        str(p.document_ref, { key: 'document_ref', max: 200 }), stockItem ? stockItem.id : null, now, warranty, ptFile ? ptFile.id : null));
       payload = { part_id: pid, name, quantity: qty, unit_price_net: price, valuation, stock_item_id: stockItem ? stockItem.id : null, ...(warranty ? { warranty_until: warranty } : {}), ...(ptFile ? { file_id: ptFile.id, file_name: ptFile.filename } : {}) };
       break;
     }
     case 'add_open_item': {
-      const desc = str(p.description, { required: true, max: 2000, field: 'Restarbeit' });
+      const desc = str(p.description, { key: 'description', required: true, max: 2000, field: 'Restarbeit' });
       const oid = uuid();
       // Foto/PDF zum Befund (Backlog 261): optional eine Datei dieses Vorgangs derselben Umgebung
       let oiFile = null;
       if (p.file_id !== undefined && p.file_id !== null && p.file_id !== '') {
-        oiFile = await env.DB.prepare('SELECT id FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(p.file_id, { max: 40, field: 'Datei' }), c.id, envName).first();
+        oiFile = await env.DB.prepare('SELECT id FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(p.file_id, { key: 'file_id', max: 40, field: 'Datei' }), c.id, envName).first();
         if (!oiFile) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
       }
       extra.push(env.DB.prepare(`INSERT INTO open_items(id,case_id,description,safety_relevant,status,created_by,created_at,file_id) VALUES (?,?,?,?,'offen',?,?,?)`)
@@ -2067,15 +2067,15 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     }
     case 'add_external_cost': {
-      const supplier = str(p.supplier, { required: true, max: 120, field: 'Lieferant' });
-      const amount = num(p.amount_net, { min: 0, max: 10000000, field: 'Betrag', nullable: true, net: true, cents: true, decimalPoint: pointDec(user), decimalComma: commaDec(user) });
+      const supplier = str(p.supplier, { key: 'supplier', required: true, max: 120, field: 'Lieferant' });
+      const amount = num(p.amount_net, { key: 'amount_net', min: 0, max: 10000000, field: 'Betrag', nullable: true, net: true, cents: true, decimalPoint: pointDec(user), decimalComma: commaDec(user) });
       const valuation = amount === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const eid = uuid();
       const warranty = warrantyDate(p.warranty_until);
       // Doppelte Rechnung (Backlog 233): gleiche Rechnungsnummer schon als Fremdleistung gebucht (dieser oder ein anderer Vorgang derselben
       // Umgebung) → Hinweis mit Fundstellen, Buchung nur nach ausdrücklicher Bestätigung (Sammelrechnung für mehrere Fahrzeuge ist zulässig).
       // Fremdleistungen buchen nur Inhaber/Fuhrparkleitung (sehen alle Vorgänge und Kosten).
-      const invNo0 = str(p.invoice_no, { max: 60 });
+      const invNo0 = str(p.invoice_no, { key: 'invoice_no', max: 60 });
       const dupConfirmed = flag(p.confirm_duplicate_invoice, 'Bestätigung');
       if (invNo0 && !dupConfirmed) {
         // Backlog 626 (Blickwinkel „Panne in Frankreich“): Schreibweise egal – „FA-2026/118“, „FA 2026 118“, „N° FA.2026.118“ gelten als dieselbe
@@ -2094,11 +2094,11 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Beleg (Backlog 224): optional eine Datei dieses Vorgangs derselben Umgebung (Kostenvoranschlag/Rechnung als PDF oder Foto)
       let ecFile = null;
       if (p.file_id !== undefined && p.file_id !== null && p.file_id !== '') {
-        ecFile = await env.DB.prepare('SELECT id, filename FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(p.file_id, { max: 40, field: 'Datei' }), c.id, envName).first();
+        ecFile = await env.DB.prepare('SELECT id, filename FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(p.file_id, { key: 'file_id', max: 40, field: 'Datei' }), c.id, envName).first();
         if (!ecFile) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
       }
       extra.push(env.DB.prepare(`INSERT INTO external_costs(id,case_id,user_id,supplier,invoice_no,amount_net,valuation,covers_work_and_parts,note,created_at,warranty_until,file_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(eid, c.id, user.id, supplier, str(p.invoice_no, { max: 60 }), amount, valuation, flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile') ? 1 : 0, note, now, warranty, ecFile ? ecFile.id : null));
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(eid, c.id, user.id, supplier, str(p.invoice_no, { key: 'invoice_no', max: 60 }), amount, valuation, flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile') ? 1 : 0, note, now, warranty, ecFile ? ecFile.id : null));
       const covers = flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile');
       // Backlog 887 (Folge aus 886, Blickwinkel „Fremdwerkstatt-Rechnung mit unpassendem km-Stand“): optional km-Stand laut Rechnung (mit Datum
       // laut Rechnung, ohne = heute). Gleiche Regel wie „Kilometerstand erfassen“/Kontrolle: nicht kleiner als der Stand davor, nicht größer als
@@ -2130,7 +2130,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
         }
       }
       // Verlauf nennt Schalter und Rechnungsnummer: nachvollziehbar, ab wann eigene Stunden/Teile nicht mehr zählen (23.10.2026)
-      const invNo = str(p.invoice_no, { max: 60 });
+      const invNo = str(p.invoice_no, { key: 'invoice_no', max: 60 });
       payload = { external_cost_id: eid, supplier, amount_net: amount, valuation, ...(warranty ? { warranty_until: warranty } : {}), ...(covers ? { covers_work_and_parts: true } : {}), ...(invNo ? { invoice_no: invNo } : {}), ...(invNo && dupConfirmed ? { duplicate_invoice_confirmed: true } : {}), ...(ecFile ? { file_id: ecFile.id, file_name: ecFile.filename } : {}),
         ...(extOdo !== null ? { odometer_km: extOdo, ...(extOn ? { odometer_on: extOn } : {}), ...(extKmRej ? { km_rejected: extKmRej.next_km !== undefined ? { km: extOdo, next_km: extKmRej.next_km } : { km: extOdo, previous_km: extKmRej.previous_km } } : {}), ...(extKmTestOnly ? { km_test_only: true } : {}) } : {}) };
       break;
@@ -2164,7 +2164,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
         payload = { winter_status: w.status, ...(!['erfuellt', 'nicht_pflichtig'].includes(w.status) ? { winter_open_confirmed: true, noncompliant: w.noncompliant, missing: w.missing } : {}) };
       }
       // Abholvermerk (Backlog 425): Werkstatt weiß, wo Schlüssel/Fahrzeugschein und Fahrzeug zur Abholung liegen – optional, ≤ 300
-      { const pn = str(p.pickup_note, { max: 300, field: 'Abholung' }); if (pn) { set.pickup_note = pn; payload = { ...(payload || {}), pickup_note: true }; } }
+      { const pn = str(p.pickup_note, { key: 'pickup_note', max: 300, field: 'Abholung' }); if (pn) { set.pickup_note = pn; payload = { ...(payload || {}), pickup_note: true }; } }
       toStatus = 'abschlusskontrolle';
       notifyKind = 'quality_check';
       break;
@@ -2190,7 +2190,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Abholvermerk (Backlog 425, Blickwinkel „Fahrer findet den Schlüssel nach der Werkstatt nicht“): optional, übernimmt bzw. berichtigt
       // den Eintrag der Werkstatt; auf Wunsch zusätzlich als „Hinweis zum Fahrzeug“ für die zugeordneten Fahrer (die den Vorgang nicht sehen).
       // Nicht in den Push-Text (Sperrbildschirm: Ablageort des Schlüssels).
-      const pickup = str(p.pickup_note, { max: 300, field: 'Abholung' });
+      const pickup = str(p.pickup_note, { key: 'pickup_note', max: 300, field: 'Abholung' });
       if (pickup) set.pickup_note = pickup;
       const pickupForDriver = flag(p.pickup_for_driver, 'Für Fahrer sichtbar');
       let pickupUntil = null;
@@ -2381,14 +2381,14 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
   let c = null;
   let vehicleId;
   if (kind === 'nach_reparatur') {
-    const caseId = str(body.case_id, { required: true, max: 40, field: 'Vorgang' });
+    const caseId = str(body.case_id, { key: 'case_id', required: true, max: 40, field: 'Vorgang' });
     const loaded = await loadCase(env, user, envName, caseId);
     c = loaded.c;
     if (!allowedActions(user, c, loaded.access).includes('inspection')) throw forbidden('Kontrolle nach Reparatur ist nur im Status „in Reparatur“ durch die zuständige Werkstatt möglich.', { denied: 'inspection_not_allowed', status: c.status });
     vehicleId = c.vehicle_id;
   } else {
     if (!['driver', 'fleet', 'owner', 'workshop'].includes(user.role)) throw forbidden();
-    vehicleId = str(body.vehicle_id, { required: true, max: 40, field: 'Fahrzeug' });
+    vehicleId = str(body.vehicle_id, { key: 'vehicle_id', required: true, max: 40, field: 'Fahrzeug' });
     const v = await env.DB.prepare('SELECT id, active FROM vehicles WHERE id=?').bind(vehicleId).first();
     // inzwischen außer Betrieb genommen (Offline-Kontrolle): eigene Meldung wie bei Schadensmeldungen (19.10.2026)
     if (!v || !v.active) throw bad('validation', v ? 'Fahrzeug ist außer Betrieb.' : 'Fahrzeug unbekannt.');
@@ -2432,7 +2432,7 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
   }
   const vOf = (d) => d.vehicle_id || vehicleId;
   // Vermerk vor dem Anlegen der Folgeaufträge prüfen (17.10.2026: zu langer Vermerk → 400 erst nach dem Anlegen; gesperrter Folgeauftrag ohne Kontrolle)
-  const inspNote = str(body.note, { max: 2000, field: 'Bemerkung' });
+  const inspNote = str(body.note, { key: 'note', max: 2000, field: 'Bemerkung' });
   const now = nowIso();
   // Offline gespeicherte Abfahrtskontrolle (17.10.2026): Postausgang sendet den Zeitpunkt der Durchführung mit (`performed_at`).
   // Übernommen, wenn plausibel: nicht in der Zukunft (Uhr des Geräts vorgehend → jetzt), höchstens 7 Tage alt (älter → 400,

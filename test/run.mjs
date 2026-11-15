@@ -42255,15 +42255,17 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   const m1 = await owner.post(`/api/vehicles/${vlk.id}/maintenance`, { kind: 'Ölwechsel', last_done_date: '2026-01-10', last_done_km: 50000, due_km: 40000, evidence: 'Feld 1501' });
   eq(m1.status, 400); eq(m1.data.field_key, 'due_km', 'Prüftermin: fällig bei km vor letzter Prüfung');
   const m2 = await owner.post(`/api/vehicles/${vlk.id}/maintenance`, { kind: 'UVV', last_done_date: '2026-01-10', interval_months: 'zwölf', evidence: 'Feld 1501' }); eq(m2.data.field_key, 'interval_months', 'Prüftermin: Intervall');
+  // Stufe 6: Vorgänge (Meldung und Befehle)
+  const k1 = await users.driver.post('/api/cases', { vehicle_id: V1, description: '', request_key: 'k1501-' + Date.now() }); eq(k1.status, 400); eq(k1.data.field_key, 'description', 'Meldung: Beschreibung fehlt');
   const { withKey } = await import('../src/util.js');
   eq(fk(() => withKey('x_on', () => { throw new HttpError(400, 'validation', 'Datum ungültig'); })), 'x_on', 'withKey ergänzt field_key');
   eq(fk(() => withKey('x_on', () => str('', { key: 'inner', required: true }))), 'inner', 'withKey überschreibt keinen vorhandenen field_key');
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims', 'fines', 'stock', 'tires', 'tacho', 'vehicles']) {
+  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims', 'fines', 'stock', 'tires', 'tacho', 'vehicles', 'cases']) {
     const s = readFileSync(new URL(`../src/${m}.js`, import.meta.url), 'utf8');
-    const keys = new Set([...s.matchAll(/key: '(\w+)'|field_key: '(\w+)'|withKey\('(\w+)'/g)].map((x) => x[1] || x[2] || x[3]));
+    const keys = new Set([...s.matchAll(/\{ key: '(\w+)', (?!group)|field_key: '(\w+)'|withKey\('(\w+)'/g)].map((x) => x[1] || x[2] || x[3])); // nur Prüf-Optionen (nicht request_key, nicht CHECKLIST)
     ok(keys.size > 0, m + ': keine Feldnamen');
     for (const k of keys) ok(src.includes(`name="${k}"`) || ['password', 'employee_number'].includes(k), `${m}: Feld „${k}“ fehlt in der Oberfläche`);
   }
