@@ -294,6 +294,8 @@ async function api(method, path, body, extra = {}) {
     // Lagerbestand: verfügbare Menge auch in UK/EN nennen (Server liefert sie als Zahl, 19.10.2026)
     if (code === 'insufficient_stock' && tr && data && typeof data.available === 'number') tr = t('err_insufficient_stock_q').replace('{q}', fmtNum(data.available)).replace('{u}', unitL(data.unit)) + (data.no_stock_hint ? ' ' + t('stock_no_stock_hint') : '');
     const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; e.data = data instanceof Blob ? null : data;
+    // Backlog 1501: Server-Prüffehler mit Feldname → Formular-Sperre (submit) markiert danach das Feld (markInvalid), Toast bleibt
+    if (code === 'validation' && data && typeof data.field_key === 'string') S.fieldErr = { key: data.field_key, msg: e.message, at: Date.now() };
     // inzwischen andere Person angemeldet (anderer Tab): Stand neu laden – Eingaben/Postausgang bleiben auf dem Gerät erhalten
     if (code === 'user_mismatch' || code === 'env_mismatch') setTimeout(() => location.reload(), 2500);
     throw e;
@@ -392,6 +394,15 @@ function markInvalid(el, msg, after = el) {
   el.setAttribute('aria-invalid', 'true'); el.setAttribute('aria-describedby', keep ? id + ' ' + keep : id);
   const clear = () => { el.removeAttribute('aria-invalid'); if (keep) el.setAttribute('aria-describedby', keep); else el.removeAttribute('aria-describedby'); p.remove(); el.removeEventListener('input', clear); el.removeEventListener('change', clear); };
   el.addEventListener('input', clear); el.addEventListener('change', clear);
+}
+// Backlog 1501 (WCAG 3.3.1): Server meldet Prüffehler mit `field_key` (z. B. „Name ist zu lang“) – nach dem Absenden das gleichnamige Feld des
+// Formulars markieren und fokussieren (nur sichtbare, bedienbare Felder; Formular inzwischen ersetzt/verlassen → nur der Toast wie bisher)
+function markServerField(form, since) {
+  const fe = S.fieldErr; if (!fe || fe.at < since) return; S.fieldErr = null;
+  if (!form || !form.isConnected || !form.elements) return;
+  let el = form.elements.namedItem(fe.key); if (el && !el.tagName && el.length) el = el[0];
+  if (!el || !el.tagName || el.disabled || el.type === 'hidden' || el.offsetParent === null) return;
+  markInvalid(el, fe.msg); try { el.focus(); } catch {}
 }
 // Backlog 1499 (WCAG 3.3.1): Auswahlliste ohne Haken → Hinweis unter der Liste (aria-invalid/-describedby an der Gruppe), Fokus aufs erste Kästchen
 function markPick(boxes, msg) {
@@ -728,8 +739,9 @@ document.addEventListener('submit', (e) => {
   e.preventDefault(); e.stopImmediatePropagation();
   if (form.cfpBusy) return;
   form.cfpBusy = true; form.setAttribute('aria-busy', 'true');
+  const t0 = Date.now();
   let p; try { p = h.call(form, e); } catch (err) { p = Promise.reject(err); }
-  Promise.resolve(p).catch((err) => { if (!onUnhandledApiError(err)) throw err; }).finally(() => { form.cfpBusy = false; form.removeAttribute('aria-busy'); });
+  Promise.resolve(p).catch((err) => { if (!onUnhandledApiError(err)) throw err; }).finally(() => { form.cfpBusy = false; form.removeAttribute('aria-busy'); markServerField(form, t0); });
 }, true);
 // Zahlen einfügen (Backlog 897): Werte aus Rechnung/PDF, Nachricht oder der App-Anzeige kommen mit Einheit und geschützten
 // Leerzeichen („1.234,56 €“, „EUR 99,90“, „123.456 km“, UK-Anzeige „123 456 км“ mit U+00A0) – das Muster der km-Felder wies sie

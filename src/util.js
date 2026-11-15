@@ -19,6 +19,17 @@ export class HttpError extends Error {
 }
 
 export const bad = (code, message, extra) => new HttpError(400, code, message, extra);
+// Backlog 1501 (WCAG 3.3.1): Prüffunktionen mit Option `key` (Feldname der Anfrage, z. B. 'display_name') melden das Feld maschinenlesbar
+// als `field_key` – die Oberfläche markiert damit das Formularfeld statt nur einen Toast zu zeigen. Antwort nur additiv.
+function keyed(fn, at) {
+  return (...a) => {
+    try { return fn(...a); } catch (e) {
+      const k = a[at] && a[at].key;
+      if (k && e instanceof HttpError && e.code === 'validation' && !(e.extra && e.extra.field_key)) e.extra = { ...(e.extra || {}), field_key: String(k) };
+      throw e;
+    }
+  };
+}
 // extra.denied: maschinenlesbarer Grund (App übersetzt danach statt nur „Keine Berechtigung“) – 21.10.2026
 export const forbidden = (message = 'Keine Berechtigung für diese Aktion.', extra) => new HttpError(403, 'forbidden', message, extra);
 export const notFound = (message = 'Nicht gefunden.') => new HttpError(404, 'not_found', message);
@@ -183,7 +194,8 @@ export const cleanText = (s) => String(s).normalize('NFC').replace(TEXT_CTRL, ''
 // Text auf n UTF-16-Einheiten kürzen, ohne ein Emoji zu zerteilen (halbes Surrogatpaar → „�“ in Anzeige/CSV)
 export const cutText = (s, n) => { const x = String(s ?? ''); if (x.length <= n) return x; const r = x.slice(0, n); return /[\uD800-\uDBFF]$/.test(r) ? r.slice(0, -1) : r; };
 
-export function str(v, { max = 2000, required = false, field = 'Feld' } = {}) {
+export const str = keyed(strBase, 1);
+function strBase(v, { max = 2000, required = false, field = 'Feld' } = {}) {
   if (v === undefined || v === null) {
     if (required) throw bad('validation', `${field} ist erforderlich.`);
     return null;
@@ -232,7 +244,8 @@ export const DUE_FAR_MSG = 'Fälligkeit liegt mehr als 20 Jahre in der Zukunft �
 // beginnen oft mit der Bezeichnung („km-Stand: 123.456“, „Kilometerstand 123456“, „Tacho 123.456“, „Пробіг: 123 456“, „Odometer 123,456“ bleibt
 // mehrdeutig) – Bezeichnung vorne entfernen; nur km-Felder (nicht Gewicht/Intervall).
 export const KM_LABEL = /^(km[-\s]?stand|kilometerstand|kilometer|tachostand|tacho|km|км|пробіг|пробег|odometer(?:\s+reading)?|mileage)\s*[:.=]?\s*(?=\d)/i;
-export function kmNum(v, { min = 0, max = 5000000, field = 'Kilometerstand' } = {}) {
+export const kmNum = keyed(kmNumBase, 1);
+function kmNumBase(v, { min = 0, max = 5000000, field = 'Kilometerstand' } = {}) {
   // Backlog 985: ausgeschriebene Einheit aus Diktat („123.456 Kilometer“, „123 456 кілометрів“) über KM_UNIT_RX (public/hours.js)
   if (typeof v === 'string') {
     // Backlog 1003: Meilen bzw. Betriebsstunden (Mietauflieger, Kühlaggregat) mit eigener Meldung – nie umgerechnet
@@ -251,7 +264,8 @@ export function kmNum(v, { min = 0, max = 5000000, field = 'Kilometerstand' } = 
 // „1,30“/„1.30“ bleibt eine Dezimalzahl (1,3 Std.) – die Oberfläche zeigt dazu „= 1 Std. 18 Min.“.
 // Backlog 982: Muster und Zahlwörter („zweieinhalb Stunden“, „half an hour“, „півтори години“) gemeinsam mit der Oberfläche in public/hours.js.
 const HUNIT_RX = new RegExp(`(\\d)\\s*${H_UNIT}\\.?$`, 'i');
-export function hoursNum(v, opts = {}) {
+export const hoursNum = keyed(hoursNumBase, 1);
+function hoursNumBase(v, opts = {}) {
   const field = opts.field || 'Stunden';
   if (typeof v === 'string') {
     const t = v.trim().replace(/[\s\u00a0]+/g, ' ');
@@ -272,7 +286,8 @@ export function qtyUnitOf(v) {
   let m; if (/^[x×]\s*\d/i.test(t)) return 'Stk';
   return (m = t.match(/^(.*?\d)\s*([A-Za-zÄÖÜäöüßА-Яа-яІіЇїЄєҐґ×]{1,12})\.?$/)) ? unitCanon(m[2]) : null;
 }
-export function qtyNum(v, unit, opts = {}) {
+export const qtyNum = keyed(qtyNumBase, 2);
+function qtyNumBase(v, unit, opts = {}) {
   const field = opts.field || 'Menge';
   if (typeof v === 'string') {
     const t = v.trim();
@@ -296,7 +311,8 @@ export function qtyNum(v, unit, opts = {}) {
   return num(v, { ...opts, field });
 }
 export const RATE_PERIOD_DE = { year: 'Jahresbetrag', half: 'Halbjahresbetrag', quarter: 'Quartalsbetrag' };
-export function num(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, money = false, net = false, unit = null, monthly = false, decimalComma = false, decimalPoint = false } = {}) {
+export const num = keyed(numBase, 1);
+function numBase(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable = false, grouped = false, cents = false, money = false, net = false, unit = null, monthly = false, decimalComma = false, decimalPoint = false } = {}) {
   if ((v === null || v === undefined || v === '') && nullable) return null;
   let n;
   if (typeof v === 'number') n = v;

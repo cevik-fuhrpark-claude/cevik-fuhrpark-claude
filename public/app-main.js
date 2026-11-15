@@ -326,6 +326,8 @@ async function api(method, path, body, extra = {}) {
     if (code === 'insufficient_stock' && tr && data && typeof data.available === 'number') tr = t('err_insufficient_stock_q').replace('{q}', fmtNum(data.available)).replace('{u}', unitL(data.unit)) + (data.no_stock_hint ? ' ' + t('stock_no_stock_hint') : '');
     const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; e.data = data instanceof Blob ? null : data;
 
+    if (code === 'validation' && data && typeof data.field_key === 'string') S.fieldErr = { key: data.field_key, msg: e.message, at: Date.now() };
+
     if (code === 'user_mismatch' || code === 'env_mismatch') setTimeout(() => location.reload(), 2500);
     throw e;
   }
@@ -420,6 +422,15 @@ function markInvalid(el, msg, after = el) {
   el.setAttribute('aria-invalid', 'true'); el.setAttribute('aria-describedby', keep ? id + ' ' + keep : id);
   const clear = () => { el.removeAttribute('aria-invalid'); if (keep) el.setAttribute('aria-describedby', keep); else el.removeAttribute('aria-describedby'); p.remove(); el.removeEventListener('input', clear); el.removeEventListener('change', clear); };
   el.addEventListener('input', clear); el.addEventListener('change', clear);
+}
+
+
+function markServerField(form, since) {
+  const fe = S.fieldErr; if (!fe || fe.at < since) return; S.fieldErr = null;
+  if (!form || !form.isConnected || !form.elements) return;
+  let el = form.elements.namedItem(fe.key); if (el && !el.tagName && el.length) el = el[0];
+  if (!el || !el.tagName || el.disabled || el.type === 'hidden' || el.offsetParent === null) return;
+  markInvalid(el, fe.msg); try { el.focus(); } catch {}
 }
 
 
@@ -749,8 +760,9 @@ document.addEventListener('submit', (e) => {
   e.preventDefault(); e.stopImmediatePropagation();
   if (form.cfpBusy) return;
   form.cfpBusy = true; form.setAttribute('aria-busy', 'true');
+  const t0 = Date.now();
   let p; try { p = h.call(form, e); } catch (err) { p = Promise.reject(err); }
-  Promise.resolve(p).catch((err) => { if (!onUnhandledApiError(err)) throw err; }).finally(() => { form.cfpBusy = false; form.removeAttribute('aria-busy'); });
+  Promise.resolve(p).catch((err) => { if (!onUnhandledApiError(err)) throw err; }).finally(() => { form.cfpBusy = false; form.removeAttribute('aria-busy'); markServerField(form, t0); });
 }, true);
 
 

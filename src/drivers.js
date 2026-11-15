@@ -152,10 +152,10 @@ export async function driverDetail(env, user, envName, id) {
 
 export async function createDriver(env, user, envName, body) {
   if (!isMgr(user)) throw forbidden();
-  const name = str(body.display_name, { required: true, max: 120, field: 'Name' });
+  const name = str(body.display_name, { key: 'display_name', required: true, max: 120, field: 'Name' });
   const userId = await validLinkedUser(env, envName, body.user_id);
   const id = uuid(); const now = nowIso();
-  const pno = str(body.personnel_no, { max: 40, field: 'Personalnummer' });
+  const pno = str(body.personnel_no, { key: 'personnel_no', max: 40, field: 'Personalnummer' });
   // Backlog 805e (Funkloch): erneutes Senden mit demselben request_key → vorhandene Akte (gleiche Namen sind erlaubt, sonst zweite Akte)
   const rkey = requestKey(body.request_key);
   const byKey = async () => {
@@ -186,7 +186,7 @@ export async function createDriver(env, user, envName, body) {
   try {
     r = await env.DB.prepare(`INSERT INTO drivers(id,environment,display_name,personnel_no,site,user_id,active,note,created_by,created_at,updated_at,request_key) SELECT ?1,?2,?3,?4,?5,?6,1,?7,?8,?9,?10,?11
       WHERE ?4 IS NULL OR NOT EXISTS (SELECT 1 FROM drivers x WHERE x.environment=?2 AND x.active=1 AND lower(trim(x.personnel_no))=lower(?4))`)
-      .bind(id, envName, name, pno, str(body.site, { max: 60, field: 'Standort' }), userId, str(body.note, { max: 1000, field: 'Bemerkung' }), user.id, now, now, rkey).run();
+      .bind(id, envName, name, pno, str(body.site, { key: 'site', max: 60, field: 'Standort' }), userId, str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' }), user.id, now, now, rkey).run();
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) { const d = await byKey(); if (d) return d; throw await linkedConflict(env, userId); } // paralleles Doppelsenden
     throw e;
@@ -221,14 +221,14 @@ export async function updateDriver(env, user, envName, id, body) {
   if (!isMgr(user)) throw forbidden();
   const d = await loadDriver(env, user, envName, id);
   // Formular aus älterer Ansicht: nur auf dem gelesenen Stand speichern (17.10.2026: machte eine zwischenzeitliche Deaktivierung still rückgängig)
-  const expected = body.expected_updated_at !== undefined && body.expected_updated_at !== null && body.expected_updated_at !== '' ? str(body.expected_updated_at, { max: 40, field: 'Stand' }) : null;
+  const expected = body.expected_updated_at !== undefined && body.expected_updated_at !== null && body.expected_updated_at !== '' ? str(body.expected_updated_at, { key: 'expected_updated_at', max: 40, field: 'Stand' }) : null;
   const f = {
-    display_name: body.display_name !== undefined ? str(body.display_name, { required: true, max: 120, field: 'Name' }) : d.display_name,
-    personnel_no: body.personnel_no !== undefined ? str(body.personnel_no, { max: 40, field: 'Personalnummer' }) : d.personnel_no,
-    site: body.site !== undefined ? str(body.site, { max: 60, field: 'Standort' }) : d.site,
+    display_name: body.display_name !== undefined ? str(body.display_name, { key: 'display_name', required: true, max: 120, field: 'Name' }) : d.display_name,
+    personnel_no: body.personnel_no !== undefined ? str(body.personnel_no, { key: 'personnel_no', max: 40, field: 'Personalnummer' }) : d.personnel_no,
+    site: body.site !== undefined ? str(body.site, { key: 'site', max: 60, field: 'Standort' }) : d.site,
     user_id: body.user_id !== undefined ? await validLinkedUser(env, envName, body.user_id) : d.user_id,
     active: body.active === undefined ? d.active : (flag(body.active, 'Aktiv', !!d.active) ? 1 : 0),
-    note: body.note !== undefined ? str(body.note, { max: 1000, field: 'Bemerkung' }) : d.note,
+    note: body.note !== undefined ? str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' }) : d.note,
   };
   // Backlog 805j (Funkloch): Wiederholung nach verlorener Antwort – alle gesendeten Felder schon so gespeichert → „War bereits gespeichert“ statt Konflikt
   if (expected && expected !== d.updated_at) {
@@ -301,7 +301,7 @@ export async function addDriverDocument(env, user, envName, id, body) {
   if (!isMgr(user)) throw forbidden();
   await loadDriver(env, user, envName, id);
   const kind = oneOf(body.kind, DOC_KINDS, 'Art');
-  const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
+  const evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis' });
   const issued = date(body.issued_on, 'Ausgestellt am', { notFuture: true });
   const valid = date(body.valid_until, 'Gültig bis');
   if (issued && valid && valid < issued) throw bad('validation', 'Gültig bis liegt vor dem Ausstellungsdatum.');
@@ -327,7 +327,7 @@ export async function addDriverDocument(env, user, envName, id, body) {
       OR ((x.valid_until IS NULL OR ?8 IS NULL) AND ?7 IS NOT NULL AND COALESCE(x.issued_on, ${berlinDaySql('x.created_at')}) > ?7)))`;
   stmts.push(env.DB.prepare(`INSERT INTO driver_documents(id,driver_id,kind,title,number,license_classes,issued_on,valid_until,evidence,superseded,created_by,created_at,request_key)
       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,${single ? `CASE WHEN ${newerExists} THEN 1 ELSE 0 END` : '0'},?10,?11,?12)`)
-    .bind(docId, id, kind, (str(body.title, { max: 120, field: 'Bezeichnung' }) || null)?.normalize('NFC') ?? null, str(body.number, { max: 40, field: 'Nummer' }), kind === 'fuehrerschein' ? str(body.license_classes, { max: 60, field: 'Klassen' }) : null, issued, valid, evidence, user.id, now, rkey));
+    .bind(docId, id, kind, (str(body.title, { key: 'title', max: 120, field: 'Bezeichnung' }) || null)?.normalize('NFC') ?? null, str(body.number, { key: 'number', max: 40, field: 'Nummer' }), kind === 'fuehrerschein' ? str(body.license_classes, { key: 'license_classes', max: 60, field: 'Klassen' }) : null, issued, valid, evidence, user.id, now, rkey));
   if (single) stmts.push(env.DB.prepare(`UPDATE driver_documents SET superseded=1 WHERE driver_id=?1 AND kind=?2 AND superseded=0 AND id<>?3
       AND (SELECT superseded FROM driver_documents WHERE id=?3)=0`).bind(id, kind, docId));
   try { await env.DB.batch(stmts); } catch (e) { if (rkey && /UNIQUE/i.test(String(e && e.message))) { const d = await byKey(); if (d) return d; } throw e; } // paralleles Doppelsenden
@@ -346,11 +346,11 @@ export async function addTrainingBatch(env, user, envName, body) {
   if (!Array.isArray(body.driver_ids) || !body.driver_ids.length) throw bad('validation', 'Bitte mindestens einen Fahrer auswählen.');
   const ids = [...new Set(body.driver_ids.map((x) => str(x, { max: 40, field: 'Fahrer' })).filter(Boolean))];
   if (ids.length > BATCH_DOCS_MAX) throw bad('validation', 'Höchstens 200 Fahrer je Erfassung.');
-  const title = str(body.title, { required: true, max: 120, field: 'Bezeichnung' }).normalize('NFC');
+  const title = str(body.title, { key: 'title', required: true, max: 120, field: 'Bezeichnung' }).normalize('NFC');
   const issued = date(body.issued_on, 'Ausgestellt am', { required: true, notFuture: true });
   const valid = date(body.valid_until, 'Gültig bis');
   if (valid && valid < issued) throw bad('validation', 'Gültig bis liegt vor dem Ausstellungsdatum.');
-  const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
+  const evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis' });
   const found = (await env.DB.prepare(`SELECT d.id, d.display_name, d.active FROM json_each(?1) j JOIN drivers d ON d.id=j.value AND d.environment=?2`).bind(JSON.stringify(ids), envName).all()).results;
   const byId = new Map(found.map((d) => [d.id, d]));
   const missing = ids.filter((x) => !byId.has(x)); const inactive = found.filter((d) => !d.active);
@@ -383,7 +383,7 @@ export async function addLicenseCheckBatch(env, user, envName, body) {
   if (ids.length > BATCH_DOCS_MAX) throw bad('validation', 'Höchstens 200 Fahrer je Erfassung.');
   const on = date(body.checked_on, 'Kontrolldatum', { required: true, notFuture: true });
   if (body.result !== undefined && body.result !== 'in_ordnung') throw bad('validation', 'Sammelerfassung nur für „in Ordnung“ – Mängel bitte einzeln in der Fahrerakte erfassen.');
-  const note = str(body.note, { max: 500, field: 'Bemerkung' }) || null;
+  const note = str(body.note, { key: 'note', max: 500, field: 'Bemerkung' }) || null;
   const found = (await env.DB.prepare(`SELECT d.id, d.display_name, d.active FROM json_each(?1) j JOIN drivers d ON d.id=j.value AND d.environment=?2`).bind(JSON.stringify(ids), envName).all()).results;
   const byId = new Map(found.map((d) => [d.id, d]));
   if (ids.some((x) => !byId.has(x))) throw notFound('Fahrer nicht gefunden.');
@@ -410,7 +410,7 @@ export async function addLicenseCheckBatch(env, user, envName, body) {
 export async function cancelDriverDocument(env, user, envName, id, docId, body = {}) {
   if (!isMgr(user)) throw forbidden();
   await loadDriver(env, user, envName, id);
-  const reason = str(body.reason, { required: true, max: 300, field: 'Begründung' });
+  const reason = str(body.reason, { key: 'reason', required: true, max: 300, field: 'Begründung' });
   if (reason.length < 3) throw bad('validation', 'Begründung ist zu kurz.');
   const d = await env.DB.prepare('SELECT id, kind, valid_until, superseded, cancelled_at FROM driver_documents WHERE id=? AND driver_id=?').bind(str(docId, { max: 40 }), id).first();
   if (!d) throw notFound('Nachweis nicht gefunden.');
@@ -443,7 +443,7 @@ export async function cancelDriverDocument(env, user, envName, id, docId, body =
 export async function cancelLicenseCheck(env, user, envName, id, checkId, body = {}) {
   if (!isMgr(user)) throw forbidden();
   await loadDriver(env, user, envName, id);
-  const reason = str(body.reason, { required: true, max: 300, field: 'Begründung' });
+  const reason = str(body.reason, { key: 'reason', required: true, max: 300, field: 'Begründung' });
   if (reason.length < 3) throw bad('validation', 'Begründung ist zu kurz.');
   const c = await env.DB.prepare('SELECT id, checked_on, result, cancelled_at FROM driver_license_checks WHERE id=? AND driver_id=?').bind(str(checkId, { max: 40 }), id).first();
   if (!c) throw notFound('Kontrolle nicht gefunden.');
@@ -459,7 +459,7 @@ export async function addLicenseCheck(env, user, envName, id, body) {
   await loadDriver(env, user, envName, id);
   const on = date(body.checked_on, 'Kontrolldatum', { required: true, notFuture: true });
   const result = oneOf(body.result, CHECK_RESULTS, 'Ergebnis');
-  const note = str(body.note, { max: 500, field: 'Bemerkung' });
+  const note = str(body.note, { key: 'note', max: 500, field: 'Bemerkung' });
   if (result !== 'in_ordnung' && !note) throw bad('validation', 'Bei Mängeln oder nicht vorgelegtem Führerschein bitte Vermerk angeben.');
   const cid = uuid();
   // gleiche Kontrolle (Tag, Ergebnis, Vermerk) nur einmal – Doppelklick/parallel ergab zwei Zeilen (17.10.2026); verglichen wird nur mit der

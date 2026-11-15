@@ -19,9 +19,9 @@ const sortContacts = (a, b) => KIND_ORDER(a.kind) - KIND_ORDER(b.kind) || a.labe
 // Rufnummer: Ziffern mit üblichen Trennzeichen, optional führendes +; 3–20 Ziffern. Gespeichert wie eingegeben (Leerzeichen zusammengefasst).
 export function normPhone(v) {
   // Backlog 992: aus Signatur/Website/Visitenkarte eingefügt („Tel.: …“, „tel:+49…“, Gedankenstrich) – erst bereinigen, dann 30 Zeichen
-  const s = str(phoneIn(str(v, { required: true, max: 80, field: 'Telefonnummer' })), { required: true, max: 30, field: 'Telefonnummer' });
+  const s = str(phoneIn(str(v, { key: 'phone', required: true, max: 80, field: 'Telefonnummer' })), { key: 'phone', required: true, max: 30, field: 'Telefonnummer' });
   const digits = s.replace(/\D/g, '').length;
-  if (!/^\+?[0-9(][0-9 ()/.-]*[0-9]$/.test(s) || digits < 3 || digits > 20) throw bad('validation', 'Telefonnummer: nur Ziffern, Leerzeichen, + ( ) / - (3 bis 20 Ziffern).');
+  if (!/^\+?[0-9(][0-9 ()/.-]*[0-9]$/.test(s) || digits < 3 || digits > 20) throw bad('validation', 'Telefonnummer: nur Ziffern, Leerzeichen, + ( ) / - (3 bis 20 Ziffern).', { field_key: 'phone' });
   return s;
 }
 
@@ -159,30 +159,30 @@ async function readBody(env, body, existing = {}) {
   const pick = (k) => (body[k] !== undefined ? body[k] : existing[k]);
   const kind = pick('kind');
   if (!EMERGENCY_KINDS.includes(kind)) throw bad('validation', 'Art der Rufnummer: ungültiger Wert.');
-  const label = str(pick('label'), { required: true, max: 60, field: 'Bezeichnung' });
-  if (label.length < 2) throw bad('validation', 'Bezeichnung ist zu kurz.');
+  const label = str(pick('label'), { key: 'label', required: true, max: 60, field: 'Bezeichnung' });
+  if (label.length < 2) throw bad('validation', 'Bezeichnung ist zu kurz.', { field_key: 'label' });
   const phone = normPhone(pick('phone'));
-  const note = str(pick('note'), { max: 200, field: 'Hinweis' });
+  const note = str(pick('note'), { key: 'note', max: 200, field: 'Hinweis' });
   const hours = readHours(body, existing);
   // Geltung: scope all | site | vehicle (Standard: bisherige Geltung, sonst alle)
   const scope = body.scope !== undefined ? body.scope : existing.vehicle_id ? 'vehicle' : existing.site ? 'site' : 'all';
   let site = null; let vehicleId = null;
   if (scope === 'site') {
-    const raw = str(body.site !== undefined ? body.site : existing.site, { max: 60, field: 'Standort' });
-    if (!raw) throw bad('validation', 'Standort angeben.');
+    const raw = str(body.site !== undefined ? body.site : existing.site, { key: 'site', max: 60, field: 'Standort' });
+    if (!raw) throw bad('validation', 'Standort angeben.', { field_key: 'site' });
     // Standort unverändert (z. B. nur Nummer korrigiert): ohne Stammprüfung behalten – sonst ließ sich eine Nummer nicht mehr korrigieren,
     // sobald kein Fahrzeug mehr an diesem Standort steht (18.10.2026)
     if (existing.site && siteKey(raw) === siteKey(existing.site)) return { kind, label, phone, note, site: existing.site, vehicle_id: null, ...hours };
     const labels = siteLabels((await env.DB.prepare('SELECT site FROM vehicles').all()).results);
-    if (siteKey(raw) === 'ohne' || !labels.has(siteKey(raw))) throw bad('validation', 'Standort ist im Fahrzeugstamm nicht vorhanden.');
+    if (siteKey(raw) === 'ohne' || !labels.has(siteKey(raw))) throw bad('validation', 'Standort ist im Fahrzeugstamm nicht vorhanden.', { field_key: 'site' });
     site = labels.get(siteKey(raw));
   } else if (scope === 'vehicle') {
-    const vid = str(body.vehicle_id !== undefined ? body.vehicle_id : existing.vehicle_id, { max: 40, field: 'Fahrzeug' });
-    if (!vid) throw bad('validation', 'Fahrzeug angeben.');
+    const vid = str(body.vehicle_id !== undefined ? body.vehicle_id : existing.vehicle_id, { key: 'vehicle_id', max: 40, field: 'Fahrzeug' });
+    if (!vid) throw bad('validation', 'Fahrzeug angeben.', { field_key: 'vehicle_id' });
     const veh = await env.DB.prepare('SELECT id, active FROM vehicles WHERE id=?').bind(vid).first();
     if (!veh) throw notFound('Fahrzeug nicht gefunden.');
     // neue/umgehängte fahrzeugbezogene Nummer nur an Fahrzeugen in Betrieb (wie Fahrerzuordnung/Termin); bestehende bleibt korrigierbar (23.10.2026)
-    if (!veh.active && vid !== existing.vehicle_id) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
+    if (!veh.active && vid !== existing.vehicle_id) throw bad('validation', 'Fahrzeug ist außer Betrieb.', { field_key: 'vehicle_id' });
     vehicleId = vid;
   } else if (scope !== 'all') throw bad('validation', 'Geltung: ungültiger Wert.');
   return { kind, label, phone, note, site, vehicle_id: vehicleId, ...hours };

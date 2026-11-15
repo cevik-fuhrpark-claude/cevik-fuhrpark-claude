@@ -106,11 +106,11 @@ async function ipKey(request) {
 }
 
 export async function login(env, request, body, ctx = null) {
-  const username = str(body.username, { required: true, max: 64, field: 'Benutzername' }).toLowerCase();
+  const username = str(body.username, { key: 'username', required: true, max: 64, field: 'Benutzername' }).toLowerCase();
   // Passwort ungekürzt prüfen (18.10.2026): Einladung/Passwortwechsel speichern es samt Leerzeichen am Rand – str() kürzte nur hier,
   // ein Passwort mit Leerzeichen am Ende sperrte das Konto aus
   const password = typeof body.password === 'string' && body.password.length > 0 && body.password.length <= 200 ? body.password
-    : str(body.password, { required: true, max: 200, field: 'Passwort' });
+    : str(body.password, { key: 'password', required: true, max: 200, field: 'Passwort' });
   const ik = await ipKey(request);
   const win = Math.floor(Date.now() / 1000 / IP_FAIL_LIMIT.windowSec) * IP_FAIL_LIMIT.windowSec;
   // Versuch VOR der (langen) Passwortprüfung reservieren – je Netzadresse und je Konto (18.10.2026): vorher wurden Sperre und
@@ -576,12 +576,12 @@ export async function createUser(env, actor, body) {
   } else if (actor.role !== 'owner') {
     throw forbidden();
   }
-  const username = str(body.username, { required: true, max: 64, field: 'Benutzername' }).toLowerCase();
+  const username = str(body.username, { key: 'username', required: true, max: 64, field: 'Benutzername' }).toLowerCase();
   if (!/^[a-z0-9._-]{3,64}$/.test(username)) throw bad('validation', 'Benutzername: 3–64 Zeichen, nur a–z, 0–9, Punkt, Bindestrich, Unterstrich.');
-  const display = str(body.display_name, { required: true, max: 120, field: 'Name' });
+  const display = str(body.display_name, { key: 'display_name', required: true, max: 120, field: 'Name' });
   let site = null;
   if (role === 'workshop') {
-    site = str(body.workshop_site, { required: true, max: 20, field: 'Werkstatt' });
+    site = str(body.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
     const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
     if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
   }
@@ -593,7 +593,7 @@ export async function createUser(env, actor, body) {
   const now = nowIso();
   // gleichzeitiges Anlegen desselben Namens: 409 statt 500 (UNIQUE) – 17.10.2026
   const ins = await env.DB.prepare(`INSERT INTO users(id,username,display_name,role,environment,workshop_site,employee_number,active,created_by,created_at,updated_at,language)
-    VALUES (?,?,?,?,?,?,?,1,?,?,?,?) ON CONFLICT(username) DO NOTHING`).bind(id, username, display, role, environment, site, str(body.employee_number, { max: 30, field: 'Personalnummer' }), actor.id, now, now, language || 'de').run();
+    VALUES (?,?,?,?,?,?,?,1,?,?,?,?) ON CONFLICT(username) DO NOTHING`).bind(id, username, display, role, environment, site, str(body.employee_number, { key: 'employee_number', max: 30, field: 'Personalnummer' }), actor.id, now, now, language || 'de').run();
   if (!ins.meta || !ins.meta.changes) throw new HttpError(409, 'username_taken', 'Benutzername ist bereits vergeben.');
   const token = await createInvite(env, id, actor.id);
   await audit(env, actor.id, 'user.create', id, { role, environment, username, ...(language ? { language } : {}) });
@@ -615,8 +615,8 @@ export async function updateUser(env, actor, userId, body) {
   const role = body.role ? oneOf(body.role, ROLES, 'Rolle') : target.role;
   const environment = body.environment ? oneOf(body.environment, ENVS, 'Umgebung') : target.environment;
   const active = activeIn === undefined ? target.active : (activeIn ? 1 : 0);
-  const display = body.display_name !== undefined && body.display_name !== null && body.display_name !== '' ? str(body.display_name, { required: true, max: 120, field: 'Name' }) : target.display_name; // nur Leerzeichen/[] → 400 statt NOT-NULL-Fehler
-  const site = role === 'workshop' ? (body.workshop_site !== undefined && body.workshop_site !== null ? str(body.workshop_site, { max: 20, field: 'Werkstatt' }) : target.workshop_site) : null;
+  const display = body.display_name !== undefined && body.display_name !== null && body.display_name !== '' ? str(body.display_name, { key: 'display_name', required: true, max: 120, field: 'Name' }) : target.display_name; // nur Leerzeichen/[] → 400 statt NOT-NULL-Fehler
+  const site = role === 'workshop' ? (body.workshop_site !== undefined && body.workshop_site !== null ? str(body.workshop_site, { key: 'workshop_site', max: 20, field: 'Werkstatt' }) : target.workshop_site) : null;
   if (role === 'workshop' && !site) throw bad('validation', 'Werkstatt ist für Rolle Werkstatt erforderlich.');
   // neue/geänderte Werkstatt wie beim Anlegen prüfen (vorher beliebiger Code gespeichert → Werkstattkonto sah keine Aufträge)
   if (role === 'workshop' && (site !== target.workshop_site || target.role !== 'workshop')
@@ -808,14 +808,14 @@ export async function setupFirstOwner(env, body) {
   if (!env.SETUP_CODE || !timingSafeEqual(String(body.setup_code || '').trim(), env.SETUP_CODE)) {
     throw new HttpError(401, 'invalid_setup_code', 'Einrichtungscode falsch.');
   }
-  const username = str(body.username, { required: true, max: 64, field: 'Benutzername' }).toLowerCase();
+  const username = str(body.username, { key: 'username', required: true, max: 64, field: 'Benutzername' }).toLowerCase();
   if (!/^[a-z0-9._-]{3,64}$/.test(username)) throw bad('validation', 'Ungültiger Benutzername.');
   const id = uuid();
   const now = nowIso();
   // nur wenn weiterhin kein Benutzer existiert (17.10.2026: zwei gleichzeitige Einrichtungen ergaben zwei Inhaberkonten)
   const ins = await env.DB.prepare(`INSERT INTO users(id,username,display_name,role,environment,active,created_at,updated_at) SELECT ?,?,?,?,?,1,?,?
     WHERE NOT EXISTS (SELECT 1 FROM users) ON CONFLICT(username) DO NOTHING`)
-    .bind(id, username, str(body.display_name, { required: true, max: 120, field: 'Name' }), 'owner', 'production', now, now).run();
+    .bind(id, username, str(body.display_name, { key: 'display_name', required: true, max: 120, field: 'Name' }), 'owner', 'production', now, now).run();
   if (!ins.meta || !ins.meta.changes) throw new HttpError(410, 'setup_done', 'Einrichtung bereits abgeschlossen.');
   const token = await createInvite(env, id, null);
   await audit(env, null, 'setup.owner', id, { username });

@@ -8582,7 +8582,7 @@ await test('Oberfläche: Formulare und Aktionsknöpfe werden nicht doppelt ausge
   const code = app.slice(app.indexOf("document.addEventListener('submit', (e) => {"), app.indexOf('}, true);', app.indexOf("document.addEventListener('submit', (e) => {")) + 9);
   let listener, capture; const doc = { addEventListener: (type, fn, cap) => { eq(type, 'submit'); listener = fn; capture = cap; } };
   const errs = []; const apiErr = (e) => { if (e && e.status) { errs.push(e.message); return true; } return false; };
-  new Function('document', 'onUnhandledApiError', code)(doc, apiErr);
+  new Function('document', 'onUnhandledApiError', 'markServerField', code)(doc, apiErr, () => {}); // Backlog 1501: Feldmarkierung nach dem Absenden
   eq(capture, true, 'Einfangphase');
   const attrs = {}; let calls = 0, resolve, reject;
   const form = { setAttribute: (k, v) => (attrs[k] = v), removeAttribute: (k) => delete attrs[k],
@@ -42200,6 +42200,53 @@ await test('Backlog 1500 (WCAG 3.3.1/1.3.1): markInvalid erhält vorhandenes ari
   for (const k of ['ptErr(r.e), true); markInvalid(el, ptErr(r.e))', "toast(m, true); markInvalid(el, m); return; }", "toast(pdErr(r.e), true); markInvalid(el, pdErr(r.e))", "toast(t('pv_many'), true); markInvalid(el, t('pv_many'))", "toast(t('pv_none'), true); markInvalid(el, t('pv_none'))"])
     ok(src.includes(k), 'Einfüge-Fehler am Feld: ' + k);
   ok(!/toast\((ptErr|pdErr)\([^)]*\), true\); return;/.test(src), 'kein Einfüge-Fehler nur im Toast');
+});
+
+await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – Oberfläche markiert das gleichnamige Formularfeld', async () => {
+  const { str, num, kmNum, hoursNum, qtyNum, HttpError } = await import('../src/util.js');
+  const fk = (f) => { try { f(); } catch (e) { ok(e instanceof HttpError && e.code === 'validation', 'Prüffehler'); return e.extra && e.extra.field_key; } return 'kein Fehler'; };
+  eq(fk(() => str('x'.repeat(5), { key: 'display_name', max: 3, field: 'Name' })), 'display_name', 'str: zu lang');
+  eq(fk(() => str('', { key: 'label', required: true })), 'label', 'str: Pflicht');
+  eq(fk(() => num('abc', { key: 'amount_eur' })), 'amount_eur', 'num');
+  eq(fk(() => kmNum('12 mi', { key: 'km' })), 'km', 'kmNum');
+  eq(fk(() => hoursNum('1:75', { key: 'hours' })), 'hours', 'hoursNum');
+  eq(fk(() => qtyNum('5 l', 'Stk', { key: 'qty' })), 'qty', 'qtyNum (Einheit)');
+  eq(fk(() => str('x'.repeat(5), { max: 3 })), undefined, 'ohne key: Antwort unverändert');
+  eq(str(' a ', { key: 'x' }), 'a', 'gültige Werte unverändert');
+  // API: Fahrerakte, Notfall-Rufnummer, Benutzer
+  const r1 = await users.fleet.post('/api/drivers', { display_name: 'N'.repeat(121) });
+  eq(r1.status, 400); eq(r1.data.field_key, 'display_name', 'Fahrerakte: Name');
+  const r2 = await users.fleet.post('/api/drivers', { display_name: 'Feld 1501', personnel_no: 'P'.repeat(41) });
+  eq(r2.data.field_key, 'personnel_no', 'Fahrerakte: Personalnummer');
+  const r3 = await owner.post('/api/emergency/contacts', { kind: 'dispo', label: 'D', phone: '0123 456' });
+  eq(r3.status, 400); eq(r3.data.field_key, 'label', 'Notfall: Bezeichnung zu kurz');
+  const r4 = await owner.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo 1501', phone: 'abc' });
+  eq(r4.data.field_key, 'phone', 'Notfall: Rufnummer');
+  const r5 = await owner.post('/api/users', { username: 'feld.1501', display_name: 'N'.repeat(121), role: 'driver', environment: 'test' });
+  eq(r5.status, 400); eq(r5.data.field_key, 'display_name', 'Benutzer: Name');
+  // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const m of ['drivers', 'auth', 'emergency']) {
+    const s = readFileSync(new URL(`../src/${m}.js`, import.meta.url), 'utf8');
+    const keys = new Set([...s.matchAll(/key: '(\w+)'|field_key: '(\w+)'/g)].map((x) => x[1] || x[2]));
+    ok(keys.size > 0, m + ': keine Feldnamen');
+    for (const k of keys) ok(src.includes(`name="${k}"`) || ['password', 'employee_number'].includes(k), `${m}: Feld „${k}“ fehlt in der Oberfläche`);
+  }
+  // Oberfläche: api() merkt den Feldnamen, die Formular-Sperre markiert nach dem Absenden (nur sichtbare Felder desselben Formulars)
+  ok(/code === 'validation' && data && typeof data\.field_key === 'string'\) S\.fieldErr = \{ key: data\.field_key, msg: e\.message, at: Date\.now\(\) \}/.test(src), 'api() merkt field_key');
+  ok(/\.finally\(\(\) => \{ form\.cfpBusy = false; form\.removeAttribute\('aria-busy'\); markServerField\(form, t0\); \}\)/.test(src), 'Formular-Sperre ruft markServerField');
+  const i = src.indexOf('function markServerField(form, since) {'); const j = src.indexOf('\n}\n', i); ok(i > 0, 'markServerField vorhanden');
+  const S = {}; const calls = [];
+  const fn = new Function('S', 'markInvalid', src.slice(i, j + 2) + '; return markServerField;')(S, (el, m) => calls.push([el.name, m]));
+  const el = { tagName: 'INPUT', name: 'display_name', type: 'text', offsetParent: {}, focus() { this.f = true; } };
+  const form = { isConnected: true, elements: { namedItem: (k) => (k === 'display_name' ? el : null) } };
+  S.fieldErr = { key: 'display_name', msg: 'Name ist zu lang', at: 100 }; fn(form, 200); eq(calls.length, 0, 'älterer Fehler wird nicht übernommen');
+  S.fieldErr = { key: 'display_name', msg: 'Name ist zu lang', at: 300 }; fn(form, 200);
+  eq(JSON.stringify(calls), '[["display_name","Name ist zu lang"]]', 'Feld markiert'); ok(el.f, 'Fokus'); ok(S.fieldErr === null, 'verbraucht');
+  S.fieldErr = { key: 'display_name', msg: 'x', at: 300 }; fn({ ...form, isConnected: false }, 200); eq(calls.length, 1, 'Formular ersetzt → nur Toast');
+  S.fieldErr = { key: 'note', msg: 'x', at: 300 }; fn(form, 200); eq(calls.length, 1, 'Feld nicht im Formular → nur Toast');
+  const hid = { ...el, offsetParent: null }; S.fieldErr = { key: 'display_name', msg: 'x', at: 300 }; fn({ isConnected: true, elements: { namedItem: () => hid } }, 200); eq(calls.length, 1, 'verstecktes Feld → nur Toast');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
