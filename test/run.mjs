@@ -42224,12 +42224,27 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   eq(r4.data.field_key, 'phone', 'Notfall: Rufnummer');
   const r5 = await owner.post('/api/users', { username: 'feld.1501', display_name: 'N'.repeat(121), role: 'driver', environment: 'test' });
   eq(r5.status, 400); eq(r5.data.field_key, 'display_name', 'Benutzer: Name');
+  // Stufe 2: Fahrzeugverträge (auch Datums-/Zahlfelder über withKey und Prüfungen zwischen Feldern)
+  const vl = await owner.get('/api/vehicles'); const vid = (vl.data.vehicles || vl.data)[0].id;
+  const c1 = await owner.post(`/api/vehicles/${vid}/contracts`, { kind: 'leasing', partner: 'Feld 1501', evidence: 'Test', start_date: '2026-05-01', end_date: '2026-01-01' });
+  eq(c1.status, 400); eq(c1.data.field_key, 'end_date', 'Vertrag: Ende vor Beginn');
+  const c2 = await owner.post(`/api/vehicles/${vid}/contracts`, { kind: 'leasing', partner: 'Feld 1501', evidence: 'Test', start_date: '2026-13-45' });
+  eq(c2.data.field_key, 'start_date', 'Vertrag: ungültiges Datum');
+  const c3 = await owner.post(`/api/vehicles/${vid}/contracts`, { kind: 'leasing', partner: 'Feld 1501', evidence: 'Test', monthly_rate_net: 'viel' });
+  eq(c3.data.field_key, 'monthly_rate_net', 'Vertrag: Monatsrate');
+  const c4 = await owner.post(`/api/vehicles/${vid}/contracts`, { kind: 'leasing', partner: 'Feld 1501', evidence: 'Test', km_allowance: '100000' });
+  eq(c4.data.field_key, 'start_km', 'Vertrag: Kontingent ohne km bei Übernahme');
+  const c5 = await owner.post(`/api/vehicles/${vid}/contracts`, { kind: 'leasing', evidence: 'Test' });
+  eq(c5.data.field_key, 'partner', 'Vertrag: Partner fehlt');
+  const { withKey } = await import('../src/util.js');
+  eq(fk(() => withKey('x_on', () => { throw new HttpError(400, 'validation', 'Datum ungültig'); })), 'x_on', 'withKey ergänzt field_key');
+  eq(fk(() => withKey('x_on', () => str('', { key: 'inner', required: true }))), 'inner', 'withKey überschreibt keinen vorhandenen field_key');
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const m of ['drivers', 'auth', 'emergency']) {
+  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims']) {
     const s = readFileSync(new URL(`../src/${m}.js`, import.meta.url), 'utf8');
-    const keys = new Set([...s.matchAll(/key: '(\w+)'|field_key: '(\w+)'/g)].map((x) => x[1] || x[2]));
+    const keys = new Set([...s.matchAll(/key: '(\w+)'|field_key: '(\w+)'|withKey\('(\w+)'/g)].map((x) => x[1] || x[2] || x[3]));
     ok(keys.size > 0, m + ': keine Feldnamen');
     for (const k of keys) ok(src.includes(`name="${k}"`) || ['password', 'employee_number'].includes(k), `${m}: Feld „${k}“ fehlt in der Oberfläche`);
   }

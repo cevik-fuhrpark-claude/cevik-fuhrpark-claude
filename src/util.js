@@ -21,6 +21,12 @@ export class HttpError extends Error {
 export const bad = (code, message, extra) => new HttpError(400, code, message, extra);
 // Backlog 1501 (WCAG 3.3.1): Prüffunktionen mit Option `key` (Feldname der Anfrage, z. B. 'display_name') melden das Feld maschinenlesbar
 // als `field_key` – die Oberfläche markiert damit das Formularfeld statt nur einen Toast zu zeigen. Antwort nur additiv.
+export function withKey(key, fn) {
+  try { return fn(); } catch (e) {
+    if (e instanceof HttpError && e.code === 'validation' && !(e.extra && e.extra.field_key)) e.extra = { ...(e.extra || {}), field_key: String(key) };
+    throw e;
+  }
+}
 function keyed(fn, at) {
   return (...a) => {
     try { return fn(...a); } catch (e) {

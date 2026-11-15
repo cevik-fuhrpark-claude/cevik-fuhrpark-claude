@@ -4,7 +4,7 @@
 // Sichtbar und änderbar nur für Inhaber/Fuhrparkleitung (Raten sind Geschäftsdaten). Gemeinsame Stammdaten wie Fahrzeuge.
 import { icsLang } from '../public/ics-texts.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, importDay, normPlate, normalizeVin, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso, maxFutureDate, berlinDaySql } from './util.js';
+import { withKey, nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, addMonths, berlinDate, parseCsv, icsCalendar, isCalendarDate, importDay, normPlate, normalizeVin, pickVehicleByPlate, commaDec, pointDec, berlinDayStartIso, maxFutureDate, berlinDaySql } from './util.js';
 import { audit } from './auth.js';
 import { ratePeriod } from '../public/hours.js';
 import { latestKmByVehicle, kmDigitsPrev, csvCell, csvText, KM_DROP_SQL, parseKmDrop, PLATE_FORMER_SKIP, plateFormerOther, formerPlatesAll } from './maintenance.js';
@@ -111,20 +111,20 @@ function readBody(body, existing = {}, user = null) {
   const fresh = (k, fn) => { const x = pick(k); return x == null || x === existing[k] ? x : fn(x); };
   const f = {
     kind: oneOf(pick('kind'), CONTRACT_KINDS, 'Vertragsart'),
-    partner: str(fresh('partner', (x) => String(x).replace(/\s+/g, ' ')), { required: true, max: 120, field: 'Vertragspartner' }), // Backlog 996: Leerraum vereinheitlicht
-    contract_no: str(fresh('contract_no', contractNoIn), { max: 60, field: 'Vertragsnummer' }), // Backlog 996: „Vertragsnr.:“ usw. entfernt
-    start_date: date(pick('start_date'), 'Vertragsbeginn'),
-    end_date: date(pick('end_date'), 'Vertragsende'),
-    notice_months: intOrNull(pick('notice_months'), 'Kündigungsfrist (Monate)', 60),
-    km_allowance: intOrNull(kmAllowanceIn(pick('km_allowance')), 'km-Kontingent', 5000000),
-    start_km: intOrNull(pick('start_km'), 'km bei Übernahme', 9999999),
-    monthly_rate_net: num(pick('monthly_rate_net'), { min: 0, max: 1000000, field: 'Monatsrate', nullable: true, net: true, cents: true, monthly: true, ...(user ? { decimalComma: commaDec(user), decimalPoint: pointDec(user) } : {}) }),
-    evidence: str(pick('evidence'), { required: true, max: 300, field: 'Nachweis' }),
-    note: str(pick('note'), { max: 1000, field: 'Bemerkung' }),
+    partner: str(fresh('partner', (x) => String(x).replace(/\s+/g, ' ')), { key: 'partner', required: true, max: 120, field: 'Vertragspartner' }), // Backlog 996: Leerraum vereinheitlicht
+    contract_no: str(fresh('contract_no', contractNoIn), { key: 'contract_no', max: 60, field: 'Vertragsnummer' }), // Backlog 996: „Vertragsnr.:“ usw. entfernt
+    start_date: withKey('start_date', () => date(pick('start_date'), 'Vertragsbeginn')),
+    end_date: withKey('end_date', () => date(pick('end_date'), 'Vertragsende')),
+    notice_months: withKey('notice_months', () => intOrNull(pick('notice_months'), 'Kündigungsfrist (Monate)', 60)),
+    km_allowance: withKey('km_allowance', () => intOrNull(kmAllowanceIn(pick('km_allowance')), 'km-Kontingent', 5000000)),
+    start_km: withKey('start_km', () => intOrNull(pick('start_km'), 'km bei Übernahme', 9999999)),
+    monthly_rate_net: num(pick('monthly_rate_net'), { key: 'monthly_rate_net', min: 0, max: 1000000, field: 'Monatsrate', nullable: true, net: true, cents: true, monthly: true, ...(user ? { decimalComma: commaDec(user), decimalPoint: pointDec(user) } : {}) }),
+    evidence: str(pick('evidence'), { key: 'evidence', required: true, max: 300, field: 'Nachweis' }),
+    note: str(pick('note'), { key: 'note', max: 1000, field: 'Bemerkung' }),
   };
-  if (f.start_date && f.end_date && f.end_date <= f.start_date) throw bad('validation', 'Vertragsende muss nach dem Vertragsbeginn liegen.');
-  if (f.notice_months && !f.end_date) throw bad('validation', 'Kündigungsfrist nur zusammen mit einem Vertragsende (laut Vertrag).');
-  if (f.km_allowance && f.start_km === null) throw bad('validation', 'Für ein km-Kontingent bitte den km-Stand bei Übernahme laut Übergabeprotokoll angeben.');
+  if (f.start_date && f.end_date && f.end_date <= f.start_date) throw bad('validation', 'Vertragsende muss nach dem Vertragsbeginn liegen.', { field_key: 'end_date' });
+  if (f.notice_months && !f.end_date) throw bad('validation', 'Kündigungsfrist nur zusammen mit einem Vertragsende (laut Vertrag).', { field_key: 'end_date' });
+  if (f.km_allowance && f.start_km === null) throw bad('validation', 'Für ein km-Kontingent bitte den km-Stand bei Übernahme laut Übergabeprotokoll angeben.', { field_key: 'start_km' });
   return f;
 }
 
@@ -134,7 +134,7 @@ async function checkFile(env, vehicleId, envName, raw) {
   const fid = str(raw, { max: 40, field: 'Vertragsdokument' });
   if (!fid) return null;
   const f = await env.DB.prepare('SELECT id FROM files WHERE id=? AND vehicle_id=? AND case_id IS NULL AND environment=?').bind(fid, vehicleId, envName || '').first();
-  if (!f) throw bad('validation', 'Vertragsdokument: bitte ein Dokument aus der Dokumentablage dieses Fahrzeugs wählen.');
+  if (!f) throw bad('validation', 'Vertragsdokument: bitte ein Dokument aus der Dokumentablage dieses Fahrzeugs wählen.', { field_key: 'file_id' });
   return f.id;
 }
 
@@ -274,7 +274,7 @@ export async function endContract(env, user, id, body) {
   if (!isMgr(user)) throw forbidden();
   const c = await loadContract(env, id);
   const on = date(body.ended_on, 'Beendet am', { notFuture: true }) || berlinDate();
-  const note = str(body.end_note, { required: true, max: 300, field: 'Grund' });
+  const note = str(body.end_note, { key: 'end_note', required: true, max: 300, field: 'Grund' });
   // Backlog 805g (Funkloch): Wiederholung nach verlorener Antwort – genau so beendet → Erfolg; sonst wie bisher „bereits beendet“
   if (c.ended_on && c.ended_on === on && (c.end_note || null) === note) return { id, ended_on: on, duplicate: true };
   if (c.ended_on) throw bad('contract_ended', 'Vertrag ist bereits beendet.');
@@ -299,7 +299,7 @@ export async function contractBatch(env, user, body) {
   if (ids.some((x) => !/^[\w-]{1,64}$/.test(x))) throw bad('validation', 'Auswahl ungültig – bitte neu laden.');
   const today = berlinDate();
   let on = null; let note = null; let endDate = null;
-  if (mode === 'end') { on = date(body.ended_on, 'Beendet am', { notFuture: true }) || today; note = str(body.end_note, { required: true, max: 300, field: 'Grund' }); }
+  if (mode === 'end') { on = date(body.ended_on, 'Beendet am', { notFuture: true }) || today; note = str(body.end_note, { key: 'end_note', required: true, max: 300, field: 'Grund' }); }
   else { endDate = date(body.end_date, 'Vertragsende'); if (!endDate) throw bad('validation', 'Vertragsende angeben.'); }
   const replace = flagLike(body.replace);
   const rows = (await env.DB.prepare(`SELECT c.id, c.kind, c.partner, c.contract_no, c.start_date, c.end_date, c.ended_on, c.updated_at, v.plate FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id

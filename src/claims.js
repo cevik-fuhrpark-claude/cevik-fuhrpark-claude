@@ -2,7 +2,7 @@
 // Alle Angaben laut Schadenmeldung bzw. Schreiben/Abrechnung des Versicherers (Pflicht-Nachweis) – die App berechnet nichts außer
 // der Dauer seit Meldung und dem Saldo „Kosten des Vorgangs − Erstattung“ (nur wenn beide belegt sind).
 import { findingText as fm } from '../public/finding-messages.js';
-import { occurredCsv, nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate, rateOf, roundCents, commaDec, pointDec, normPlate, ratePeriods, valueWork } from './util.js';
+import { withKey, occurredCsv, nowIso, laterIso, conflict, uuid, bad, forbidden, notFound, str, num, oneOf, berlinDate, isCalendarDate, rateOf, roundCents, commaDec, pointDec, normPlate, ratePeriods, valueWork } from './util.js';
 import { audit } from './auth.js';
 import { csvCell, csvText } from './maintenance.js';
 import { siteSelection } from './reports.js';
@@ -42,38 +42,38 @@ function readBody(body, existing = {}, user = null) {
   const pick = (k) => (body[k] !== undefined ? body[k] : existing[k]);
   const fresh = (k) => { const x = pick(k); return x == null || x === existing[k] ? x : claimNoIn(x); }; // Backlog 998
   const f = {
-    insurer: str(pick('insurer'), { max: 120, field: 'Versicherer' }),
-    contract_id: str(pick('contract_id'), { max: 40, field: 'Versicherungsvertrag' }),
-    claim_no: str(fresh('claim_no'), { max: 60, field: 'Schadennummer' }),
-    reported_on: day(pick('reported_on'), 'Gemeldet am', true),
+    insurer: str(pick('insurer'), { key: 'insurer', max: 120, field: 'Versicherer' }),
+    contract_id: str(pick('contract_id'), { key: 'contract_id', max: 40, field: 'Versicherungsvertrag' }),
+    claim_no: str(fresh('claim_no'), { key: 'claim_no', max: 60, field: 'Schadennummer' }),
+    reported_on: withKey('reported_on', () => day(pick('reported_on'), 'Gemeldet am', true)),
     // leerer/fehlender Status behält den gespeicherten (18.10.2026: setzte einen regulierten Fall still auf „gemeldet“ zurück)
     status: oneOf(body.status !== undefined && body.status !== null && body.status !== '' ? body.status : (existing.status || 'gemeldet'), CLAIM_STATUS, 'Status'),
-    deductible_net: num(pick('deductible_net'), { min: 0, max: 1000000, field: 'Selbstbeteiligung', nullable: true, net: true, cents: true, decimalComma: dc, decimalPoint: dp }),
-    reimbursed_net: num(pick('reimbursed_net'), { min: 0, max: 10000000, field: 'Erstattung', nullable: true, net: true, cents: true, decimalComma: dc, decimalPoint: dp }),
-    reimbursed_on: day(pick('reimbursed_on'), 'Erstattet am'),
-    evidence: str(pick('evidence'), { required: true, max: 300, field: 'Nachweis' }),
-    note: str(pick('note'), { max: 1000, field: 'Bemerkung' }),
+    deductible_net: num(pick('deductible_net'), { key: 'deductible_net', min: 0, max: 1000000, field: 'Selbstbeteiligung', nullable: true, net: true, cents: true, decimalComma: dc, decimalPoint: dp }),
+    reimbursed_net: num(pick('reimbursed_net'), { key: 'reimbursed_net', min: 0, max: 10000000, field: 'Erstattung', nullable: true, net: true, cents: true, decimalComma: dc, decimalPoint: dp }),
+    reimbursed_on: withKey('reimbursed_on', () => day(pick('reimbursed_on'), 'Erstattet am')),
+    evidence: str(pick('evidence'), { key: 'evidence', required: true, max: 300, field: 'Nachweis' }),
+    note: str(pick('note'), { key: 'note', max: 1000, field: 'Bemerkung' }),
     // Gutachter (Teilagent „Versicherungsschaden mit Gutachter“, 23.10.2026): alles optional, nur laut Schreiben/Termin des Gutachters bzw. Versicherers
-    appraiser: str(pick('appraiser'), { max: 120, field: 'Gutachter' }),
-    appraisal_on: day(pick('appraisal_on'), 'Besichtigung am', false, true),
-    appraisal_received_on: day(pick('appraisal_received_on'), 'Gutachten eingegangen am'),
-    appraisal_net: num(pick('appraisal_net'), { min: 0, max: 10000000, field: 'Schadenhöhe laut Gutachten', nullable: true, net: true, cents: true, decimalComma: dc, decimalPoint: dp }),
+    appraiser: str(pick('appraiser'), { key: 'appraiser', max: 120, field: 'Gutachter' }),
+    appraisal_on: withKey('appraisal_on', () => day(pick('appraisal_on'), 'Besichtigung am', false, true)),
+    appraisal_received_on: withKey('appraisal_received_on', () => day(pick('appraisal_received_on'), 'Gutachten eingegangen am')),
+    appraisal_net: num(pick('appraisal_net'), { key: 'appraisal_net', min: 0, max: 10000000, field: 'Schadenhöhe laut Gutachten', nullable: true, net: true, cents: true, decimalComma: dc, decimalPoint: dp }),
     // Unfallgegner (Teilagent „Unfall mit fremdem Fahrzeug“, 24.10.2026): alles optional und nur laut Unfallbericht/Schreiben.
     // Kein Namens-/Adressfeld (Datenschutz-Frage offen) – wer Namen braucht, trägt sie wie bisher unter „Bemerkung“ ein.
-    opponent_plate: plateText(str(pick('opponent_plate'), { max: 20, field: 'Kennzeichen Unfallgegner' })),
-    opponent_insurer: str(pick('opponent_insurer'), { max: 120, field: 'Versicherer Unfallgegner' }),
-    opponent_claim_no: str(fresh('opponent_claim_no'), { max: 60, field: 'Schadennummer Unfallgegner' }),
+    opponent_plate: plateText(str(pick('opponent_plate'), { key: 'opponent_plate', max: 20, field: 'Kennzeichen Unfallgegner' })),
+    opponent_insurer: str(pick('opponent_insurer'), { key: 'opponent_insurer', max: 120, field: 'Versicherer Unfallgegner' }),
+    opponent_claim_no: str(fresh('opponent_claim_no'), { key: 'opponent_claim_no', max: 60, field: 'Schadennummer Unfallgegner' }),
     // Polizeiliche Anzeige (Teilagent „Kraftstoffdiebstahl am Rastplatz“, 24.10.2026): optional, nur laut Anzeigebestätigung bzw. Angabe des Fahrers
-    police_station: str(pick('police_station'), { max: 120, field: 'Polizeidienststelle' }),
-    police_ref: str(pick('police_ref'), { max: 60, field: 'Polizeiliches Aktenzeichen' }),
-    police_reported_on: day(pick('police_reported_on'), 'Anzeige erstattet am'),
+    police_station: str(pick('police_station'), { key: 'police_station', max: 120, field: 'Polizeidienststelle' }),
+    police_ref: str(pick('police_ref'), { key: 'police_ref', max: 60, field: 'Polizeiliches Aktenzeichen' }),
+    police_reported_on: withKey('police_reported_on', () => day(pick('police_reported_on'), 'Anzeige erstattet am')),
   };
-  if (f.police_ref && !f.police_station) throw bad('validation', 'Polizeiliches Aktenzeichen nur zusammen mit der Dienststelle angeben.');
-  if (f.opponent_claim_no && !f.opponent_insurer) throw bad('validation', 'Schadennummer Unfallgegner nur zusammen mit dem Versicherer der Gegenseite angeben.');
-  if (f.appraisal_net !== null && !f.appraisal_received_on) throw bad('validation', 'Schadenhöhe laut Gutachten nur mit dem Eingangsdatum des Gutachtens angeben.');
-  if (f.appraisal_on && f.appraisal_received_on && f.appraisal_received_on < f.appraisal_on) throw bad('validation', 'Gutachten eingegangen am liegt vor der Besichtigung.');
-  if ((f.reimbursed_net === null) !== (f.reimbursed_on === null)) throw bad('validation', 'Erstattung: Betrag und Datum nur zusammen laut Abrechnung des Versicherers angeben.');
-  if (f.reimbursed_on && f.reimbursed_on < f.reported_on) throw bad('validation', 'Erstattet am liegt vor dem Meldedatum.');
+  if (f.police_ref && !f.police_station) throw bad('validation', 'Polizeiliches Aktenzeichen nur zusammen mit der Dienststelle angeben.', { field_key: 'police_station' });
+  if (f.opponent_claim_no && !f.opponent_insurer) throw bad('validation', 'Schadennummer Unfallgegner nur zusammen mit dem Versicherer der Gegenseite angeben.', { field_key: 'opponent_insurer' });
+  if (f.appraisal_net !== null && !f.appraisal_received_on) throw bad('validation', 'Schadenhöhe laut Gutachten nur mit dem Eingangsdatum des Gutachtens angeben.', { field_key: 'appraisal_received_on' });
+  if (f.appraisal_on && f.appraisal_received_on && f.appraisal_received_on < f.appraisal_on) throw bad('validation', 'Gutachten eingegangen am liegt vor der Besichtigung.', { field_key: 'appraisal_received_on' });
+  if ((f.reimbursed_net === null) !== (f.reimbursed_on === null)) throw bad('validation', 'Erstattung: Betrag und Datum nur zusammen laut Abrechnung des Versicherers angeben.', { field_key: f.reimbursed_on === null ? 'reimbursed_on' : 'reimbursed_net' });
+  if (f.reimbursed_on && f.reimbursed_on < f.reported_on) throw bad('validation', 'Erstattet am liegt vor dem Meldedatum.', { field_key: 'reimbursed_on' });
   if (f.reimbursed_net !== null && ['abgelehnt', 'zurueckgezogen'].includes(f.status)) throw bad('validation', 'Bei „abgelehnt“/„zurückgezogen“ keine Erstattung eintragen.');
   return f;
 }
@@ -97,7 +97,7 @@ export async function saveClaim(env, user, envName, caseId, body) {
   let warning = null;
   if (f.contract_id) {
     const k = await env.DB.prepare(`SELECT id, partner, start_date, end_date, ended_on FROM vehicle_contracts WHERE id=? AND vehicle_id=? AND kind='versicherung'`).bind(f.contract_id, c.vehicle_id).first();
-    if (!k) throw bad('validation', 'Versicherungsvertrag: bitte einen Versicherungsvertrag dieses Fahrzeugs wählen.');
+    if (!k) throw bad('validation', 'Versicherungsvertrag: bitte einen Versicherungsvertrag dieses Fahrzeugs wählen.', { field_key: 'contract_id' });
     // Backlog 621 (Blickwinkel „Versichererwechsel zum 01.01.“): Vertrag galt am Schadentag (Schadenzeitpunkt, sonst Meldetag) nicht – nur Warnung,
     // nicht blockierend (Laufzeit im System kann unvollständig sein); vorher wurde der Fall still dem falschen Versicherer zugeordnet
     const day = occurrenceDay(c);
@@ -106,14 +106,14 @@ export async function saveClaim(env, user, envName, caseId, body) {
     // Vertrag gewechselt, Versicherer unverändert mitgesendet (Formular füllt ihn vor) → Partner des neuen Vertrags (17.10.2026)
     if (!f.insurer || (ex && ex.contract_id !== f.contract_id && f.insurer === ex.insurer)) f.insurer = k.partner;
   }
-  if (!f.insurer) throw bad('validation', 'Versicherer angeben (oder Versicherungsvertrag wählen).');
+  if (!f.insurer) throw bad('validation', 'Versicherer angeben (oder Versicherungsvertrag wählen).', { field_key: 'insurer' });
   // Schreiben/Abrechnung als Datei desselben Vorgangs verknüpfen (Feld weglassen = unverändert, leer/null = Verknüpfung aufheben)
   if (body.file_id === undefined) f.file_id = ex ? ex.file_id : null;
   else if (body.file_id === null || body.file_id === '') f.file_id = null;
   // unverändert mitgesendet: auch gültig, wenn die Datei an einer Dublette hängt (Fall wurde umgehängt, 18.10.2026)
   else if (ex && ex.file_id && body.file_id === ex.file_id) f.file_id = ex.file_id;
   else {
-    const file = await env.DB.prepare('SELECT id FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(body.file_id, { max: 40, field: 'Datei' }), c.id, envName).first();
+    const file = await env.DB.prepare('SELECT id FROM files WHERE id=? AND case_id=? AND environment=?').bind(str(body.file_id, { key: 'file_id', max: 40, field: 'Datei' }), c.id, envName).first();
     if (!file) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
     f.file_id = file.id;
   }
