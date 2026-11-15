@@ -18707,7 +18707,7 @@ await test('Geschlossene Werkstatt in Namen und Filtern (Backlog 192): /api/meta
   ok(app.includes("const wsName = (code) => wsLabel(wsAll().find((w) => w.code === code)) || code || '–';"), 'Namen aus allen Werkstätten');
   ok(app.includes("(w && w.active === false ? ` (${t('ws_closed')})` : '')"), 'Kennzeichnung „geschlossen“');
   ok(app.includes('<select id="psite"><option value="">${esc(t(\'all\'))}</option>${wsAll().map((w) =>'), 'Werkstattplan-Filter mit allen');
-  ok(app.includes('<select name="workshop_site">${S.meta.workshops.map((w) =>'), 'Konto anlegen weiter nur aktive');
+  ok(app.includes('<select id="nuws" name="workshop_site">${S.meta.workshops.map((w) =>'), 'Konto anlegen weiter nur aktive');
 });
 
 await test('Frostmorgen/Urlaubsvertretung (Backlog 193): gesperrter Vorgang mit Dringlichkeit „niedrig“ steht in Vorgangsliste und Management vorn; Deaktivieren einer Leitung entwertet ihre offenen Einladungen (Hinweis, Einrichtungsstand, nach Reaktivierung weiter ungültig)', async () => {
@@ -42417,6 +42417,31 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
     eq((await users.fleet.put(P16, { ...b16, opponent_plate: '***' })).data.field_key, 'opponent_plate', 'Versicherungsfall: Kennzeichen Unfallgegner');
     eq((await users.fleet.put(P16, { ...b16, status: 'abgelehnt', reimbursed_net: '100', reimbursed_on: bDayOff(-1) })).data.field_key, 'reimbursed_net', 'Versicherungsfall: Erstattung bei Ablehnung');
   }
+  // Stufe 17: Lager (Wareneingang je Position mit field_line, Liefertermin, Umlagerung, Stichtag) und Benutzer (Benutzername, Werkstatt)
+  { const mk = async (name) => { const r = await users.ws.post('/api/stock', { name, unit_price_net: '1,00' }); ok(r.status === 201, JSON.stringify(r.data)); return r.data.id; };
+    const a = await mk('Feld 1517 A'); const b = await mk('Feld 1517 B');
+    const R = (lines) => users.ws.post('/api/stock/receipt', { site: 'DORTMUND', lines });
+    const e1 = await R([{ item_id: a, qty: '1' }, { item_id: b, qty: '0' }]); eq(e1.status, 400); eq(e1.data.field_key, 'qty', 'Wareneingang: Menge 0'); eq(e1.data.field_line, 1, 'Wareneingang: zweite Position');
+    const e2 = await R([{ item_id: a, qty: '2 l' }]); eq(e2.data.field_key, 'qty', 'Wareneingang: fremde Einheit'); eq(e2.data.field_line, 0, 'Wareneingang: erste Position');
+    const e3 = await R([{ item_id: a, qty: '1' }, { item_id: b, qty: '1', unit_price_net: 'teuer' }]); eq(e3.data.field_key, 'unit_price_net', 'Wareneingang: Preis'); eq(e3.data.field_line, 1);
+    const e4 = await R([{ item_id: a, qty: '1' }, { item_id: b, qty: '1' }, { item_id: a, qty: '1' }]); eq(e4.data.field_key, 'item_id', 'Wareneingang: Artikel doppelt'); eq(e4.data.field_line, 2, 'Wareneingang: die Wiederholung');
+    const e5 = await R([{ item_id: a, qty: '1' }, { item_id: 'gibtsnicht', qty: '1' }]); eq(e5.data.field_key, 'item_id', 'Wareneingang: fremder Artikel'); eq(e5.data.field_line, 1);
+    ok(/^Position 2: /.test(e5.data.message), 'Meldungstext unverändert');
+    eq((await users.ws.get(`/api/stock/${a}`)).data.item.on_hand, 0, 'nichts gebucht');
+    const o1 = await users.ws.put(`/api/stock/${a}/order`, { qty: 2, eta: '2020-01-01' }); eq(o1.status, 400); eq(o1.data.field_key, 'eta', 'Bestellvermerk: Liefertermin vor Bestelldatum');
+    const t1 = await users.ws.post(`/api/stock/${a}/transfer`, { to_site: 'DORTMUND', qty: 1 }); eq(t1.status, 400); eq(t1.data.field_key, 'to_site', 'Umlagerung: eigenes Lager');
+    const t2 = await users.ws.post(`/api/stock/${a}/transfer`, { to_site: 'NIRGENDWO', qty: 1 }); eq(t2.data.field_key, 'to_site', 'Umlagerung: unbekannte Werkstatt');
+    const a1 = await users.ws.get('/api/stock/asof?date=2099-01-01'); eq(a1.status, 400); eq(a1.data.field_key, 'date', 'Stichtag in der Zukunft');
+    const a2 = await users.ws.get('/api/stock/asof?date=31.12.2025'); eq(a2.data.field_key, 'date', 'Stichtag ungültig');
+    const u1 = await owner.post('/api/users', { username: 'a b', display_name: 'Feld 1517', role: 'driver', environment: 'test' }); eq(u1.status, 400); eq(u1.data.field_key, 'username', 'Benutzer: Benutzername');
+    const u2 = await owner.post('/api/users', { username: 'feld.1517', display_name: 'Feld 1517', role: 'workshop', environment: 'test', workshop_site: 'NIRGENDWO' }); eq(u2.data.field_key, 'workshop_site', 'Benutzer: unbekannte Werkstatt');
+    const s17 = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+    ok(s17.includes('<select id="rci${n}" class="rci" data-fkey="item_id">') && s17.includes('class="rcq" data-fkey="qty"') && s17.includes('class="rcp" data-fkey="unit_price_net"'), 'Wareneingang: Positionsfelder tragen data-fkey');
+    ok(s17.includes("rows.forEach((r, i) => { for (const x of [$('select', r), $('.stockq', r), $('.rcq', r), $('.rcp', r)]) if (x) x.dataset.fline = String(i);"), 'Wareneingang: Positionsnummer = Reihenfolge der gesendeten Zeilen');
+    ok(s17.includes('<input type="date" id="sadate" name="date"') && s17.includes("if (kept) markGetField($('#saf'), t0, kept);"), 'Stichtag: Feld markiert');
+    ok(s17.includes('<label for="nuuser">') && s17.includes('<label for="nuws">') && s17.includes('<label for="rs">'), 'Benutzerformular: Beschriftungen zugeordnet');
+    ok(s17.includes('...(Number.isInteger(data.field_line) && data.field_line >= 0 ? { line: data.field_line } : {})'), 'api() merkt field_line');
+  }
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -42427,7 +42452,7 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
     for (const k of keys) ok(src.includes(`name="${k}"`) || src.includes(`data-fkey="${k}"`) || src.includes(`f('${k}', `) || ['password', 'employee_number'].includes(k), `${m}: Feld „${k}“ fehlt in der Oberfläche`);
   }
   // Oberfläche: api() merkt den Feldnamen, die Formular-Sperre markiert nach dem Absenden (nur sichtbare Felder desselben Formulars)
-  ok(/code === 'validation' && data && typeof data\.field_key === 'string'\) S\.fieldErr = \{ key: data\.field_key, msg: e\.message, at: Date\.now\(\) \}/.test(src), 'api() merkt field_key');
+  ok(/code === 'validation' && data && typeof data\.field_key === 'string'\) S\.fieldErr = \{ key: data\.field_key, msg: e\.message, at: Date\.now\(\),/.test(src), 'api() merkt field_key');
   ok(/el\.removeAttribute\('aria-busy'\); if \(el\.form\) markServerField\(el\.form, t0\); \}\)/.test(src), 'Klick-Sperre (onclick in Formular) ruft markServerField');
   ok(/\.finally\(\(\) => \{ form\.cfpBusy = false; form\.removeAttribute\('aria-busy'\); markServerField\(form, t0\); \}\)/.test(src), 'Formular-Sperre ruft markServerField');
   const i = src.indexOf('function markServerField(form, since) {'); const j = src.indexOf('\n}\n', i); ok(i > 0, 'markServerField vorhanden');
@@ -42447,6 +42472,10 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   eq(sels[0], '[data-fkey="supplier"]', 'Selektor ohne Sonderzeichen'); eq(calls.length, 2, 'data-fkey-Feld markiert'); ok(fk2.f && !fk1.f, 'erstes sichtbares Feld');
   S.fieldErr = { key: 'x', msg: 'x', at: 300 }; fn({ isConnected: true, elements: { namedItem: () => null }, querySelectorAll: () => [fk1] }, 200); eq(calls.length, 2, 'nur unsichtbares data-fkey-Feld → nur Toast');
   const hid = { ...el, offsetParent: null }; S.fieldErr = { key: 'display_name', msg: 'x', at: 300 }; fn({ isConnected: true, elements: { namedItem: () => hid } }, 200); eq(calls.length, 2, 'verstecktes Feld → nur Toast');
+  // Stufe 17: Positionsfehler (line) – nur das Feld dieser Position, nie das gleichnamige Feld einer anderen Zeile
+  { const l0 = { tagName: 'INPUT', name: '', offsetParent: {}, focus() { this.f = true; } }; const qs = []; const lform = { isConnected: true, elements: { namedItem: () => l0 }, querySelectorAll: (q) => { qs.push(q); return q.includes('[data-fline="1"]') ? [l0] : []; } };
+    S.fieldErr = { key: 'qty', msg: 'Position 2: Menge', at: 300, line: 1 }; fn(lform, 200); eq(qs[0], '[data-fkey="qty"][data-fline="1"]', 'Selektor mit Position'); eq(calls.length, 3, 'Positionsfeld markiert'); ok(l0.f, 'Fokus auf Position');
+    l0.f = false; S.fieldErr = { key: 'qty', msg: 'x', at: 300, line: 4 }; fn(lform, 200); eq(calls.length, 3, 'Position nicht im Formular → nur Toast (kein Rückfall auf name=)'); ok(!l0.f, 'kein Fokus'); }
   // Stufe 9: markGetField setzt abgelehnte Eingaben nur bei Prüffehler mit Feldnamen zurück und markiert dann das Feld
   const g = src.indexOf('function markGetField(form, since, kept) {'); const gj = src.indexOf('\n}\n', g); ok(g > 0, 'markGetField vorhanden');
   const marks = []; const S2 = {};

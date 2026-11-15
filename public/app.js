@@ -295,7 +295,7 @@ async function api(method, path, body, extra = {}) {
     if (code === 'insufficient_stock' && tr && data && typeof data.available === 'number') tr = t('err_insufficient_stock_q').replace('{q}', fmtNum(data.available)).replace('{u}', unitL(data.unit)) + (data.no_stock_hint ? ' ' + t('stock_no_stock_hint') : '');
     const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; e.data = data instanceof Blob ? null : data;
     // Backlog 1501: Server-Prüffehler mit Feldname → Formular-Sperre (submit) markiert danach das Feld (markInvalid), Toast bleibt
-    if (code === 'validation' && data && typeof data.field_key === 'string') S.fieldErr = { key: data.field_key, msg: e.message, at: Date.now() };
+    if (code === 'validation' && data && typeof data.field_key === 'string') S.fieldErr = { key: data.field_key, msg: e.message, at: Date.now(), ...(Number.isInteger(data.field_line) && data.field_line >= 0 ? { line: data.field_line } : {}) };
     // inzwischen andere Person angemeldet (anderer Tab): Stand neu laden – Eingaben/Postausgang bleiben auf dem Gerät erhalten
     if (code === 'user_mismatch' || code === 'env_mismatch') setTimeout(() => location.reload(), 2500);
     throw e;
@@ -400,6 +400,8 @@ function markInvalid(el, msg, after = el) {
 function markServerField(form, since) {
   const fe = S.fieldErr; if (!fe || fe.at < since) return; S.fieldErr = null;
   if (!form || !form.isConnected || !form.elements) return;
+  // Backlog 1501 Stufe 17: Positionsfehler (`line`, z. B. Wareneingang) – nur das Feld dieser Position (data-fline), sonst nur der Toast
+  if (fe.line !== undefined) { const ln = form.querySelectorAll ? [...form.querySelectorAll(`[data-fkey="${String(fe.key).replace(/[^\w-]/g, '')}"][data-fline="${Number(fe.line)}"]`)].find((x) => !x.disabled && x.offsetParent !== null) : null; if (ln) { markInvalid(ln, fe.msg); try { ln.focus(); } catch {} } return; }
   let el = form.elements.namedItem(fe.key); if (el && !el.tagName && el.length) el = el[0];
   // Backlog 1501 Stufe 8: Eingaben ohne name= (eigene Sammlung beim Absenden) tragen data-fkey="<Feldname der Anfrage>" – erstes sichtbares
   if ((!el || !el.tagName) && form.querySelectorAll) el = [...form.querySelectorAll(`[data-fkey="${String(fe.key).replace(/[^\w-]/g, '')}"]`)].find((x) => !x.disabled && x.offsetParent !== null) || null;
@@ -7855,8 +7857,8 @@ async function viewStockAsOf() {
   const date = ss('cfp_sa_date') || `${Number(today.slice(0, 4)) - 1}-12-31`;
   const site = sites.some((w) => w.code === ss('cfp_sa_site')) ? ss('cfp_sa_site') : '';
   const qs = `date=${encodeURIComponent(date)}${site ? '&site=' + encodeURIComponent(site) : ''}`;
-  let rep;
-  try { rep = await api('GET', '/api/stock/asof?' + qs); } catch (err) { ss('cfp_sa_date', ''); toast(err.message, true); rep = null; }
+  let rep; const t0 = Date.now(); let kept = null;
+  try { rep = await api('GET', '/api/stock/asof?' + qs); } catch (err) { ss('cfp_sa_date', ''); toast(err.message, true); rep = null; kept = { date }; } // Backlog 1501 Stufe 17: abgelehnter Stichtag bleibt im Feld (markiert)
   const n = (x) => (x === null || x === undefined ? '' : fmtNum(x));
   const val = (x) => (x === null ? `<span class="muted">${esc(t('unvalued_short'))}</span>` : eur(x));
   const sm = (k) => `${rep.summary[k].unvalued === rep.summary.count ? '–' : eur(rep.summary[k].value_net)}${rep.summary[k].unvalued ? ` <span class="small muted">(${rep.summary[k].unvalued} ${esc(t('unvalued_short'))})</span>` : ''}`;
@@ -7864,7 +7866,7 @@ async function viewStockAsOf() {
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('asof_title'))}</h1>
     <p class="small muted">${esc(t('asof_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(t('asof_date'))} ${esc(fmtD(date))}${site ? ' · ' + esc(wsName(site)) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
-    <form id="saf" class="panel noprint"><label for="sadate">${esc(t('asof_date'))}</label><input type="date" id="sadate" value="${esc(date)}" max="${esc(today)}" required>
+    <form id="saf" class="panel noprint"><label for="sadate">${esc(t('asof_date'))}</label><input type="date" id="sadate" name="date" value="${esc(kept ? `${Number(today.slice(0, 4)) - 1}-12-31` : date)}" max="${esc(today)}" required>
       ${sites.length > 1 ? `<label for="sasite">${esc(t('workshop'))}</label><select id="sasite"><option value="">${esc(t('all'))}</option>${sites.map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
       <div class="actions"><button class="btn">${esc(t('show'))}</button><button type="button" class="btn secondary" id="sacsv"${rep && rep.items.length ? '' : ' disabled'}>${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="saprt">${esc(t('print'))}</button></div></form>
     ${rep && rep.items.length ? `<ul class="small" id="sasum"><li>${esc(tn('asof_count', rep.summary.count).replace('{d}', fmtD(rep.date)))}</li><li>${esc(t('asof_val_purchase'))}: ${sm('purchase')}</li><li>${esc(t('asof_val_today'))}: ${sm('today')}</li></ul>
@@ -7873,6 +7875,7 @@ async function viewStockAsOf() {
       <div class="scroll"><table class="stack printsm" id="satab"><thead><tr><th>${esc(t('workshop'))}</th><th>${esc(t('part_name'))}</th><th>${esc(t('asof_qty'))}</th><th>${esc(t('asof_last_purchase'))}</th><th>${esc(t('asof_val_purchase'))}</th><th>${esc(t('inv_item_price'))}</th><th>${esc(t('asof_val_today'))}</th></tr></thead><tbody>
       ${rep.items.map((i) => `<tr><td>${esc(wsName(i.site))}</td><td><a href="#/stock/${esc(i.id)}">${esc(i.name)}</a>${i.part_number || i.location ? `<div class="small muted">${[i.part_number, i.location].filter(Boolean).map(esc).join(' · ')}</div>` : ''}${i.active ? '' : ` <span class="chip">${esc(t('asof_inactive'))}</span>`}</td><td><b>${n(i.qty)}</b> ${esc(unitL(i.unit))}</td><td>${val(i.last_purchase_price)}</td><td>${i.value_purchase_net === null ? '–' : eur(i.value_purchase_net)}</td><td>${val(i.price_today)}</td><td>${i.value_today_net === null ? '–' : eur(i.value_today_net)}</td></tr>`).join('')}
       </tbody></table></div>` : rep ? `<p class="muted">${esc(t('asof_none'))}</p>` : ''}`, 'more');
+  if (kept) markGetField($('#saf'), t0, kept);
   $('#saf').onsubmit = (e) => { e.preventDefault(); ss('cfp_sa_date', $('#sadate').value); if ($('#sasite')) ss('cfp_sa_site', $('#sasite').value); viewStockAsOf(); };
   $('#saprt').onclick = () => window.print();
   $('#sacsv').onclick = async () => { try { download(await api('GET', '/api/stock/asof?format=csv&' + qs), `fuhrpark-lagerbestand-stichtag_${envFn()}_${date}${site ? '_' + site : ''}.csv`); } catch (err) { toast(err.message, true); } };
@@ -8025,9 +8028,9 @@ async function viewStockReceipt() {
   const addLine = () => {
     if ($$('#rclines .rcl').length >= 50) { toast(t('rcpt_max'), true); return; }
     n += 1; const d = document.createElement('div'); d.className = 'rcl'; d.style.cssText = 'border-top:1px solid var(--rule);padding-top:8px;margin-top:8px';
-    d.innerHTML = `<label for="rci${n}">${esc(t('part_name'))}</label>${stockQHtml('rcq' + n + 's')}<select id="rci${n}" class="rci">${opts()}</select>
+    d.innerHTML = `<label for="rci${n}">${esc(t('part_name'))}</label>${stockQHtml('rcq' + n + 's')}<select id="rci${n}" class="rci" data-fkey="item_id">${opts()}</select>
       <button type="button" class="linkbtn small rcnew" data-rcnew aria-expanded="false">+ ${esc(t('rcn_open'))}</button><div class="rcnf" data-rcnf hidden></div><p class="small" data-rcnok role="status" aria-live="polite" hidden></p>
-      <div class="grid2"><div><label for="rcq${n}">${esc(t('qty'))}</label><input id="rcq${n}" class="rcq" inputmode="decimal"></div><div><label for="rcp${n}">${esc(t('price_net'))}</label><input id="rcp${n}" class="rcp" inputmode="decimal"></div></div>
+      <div class="grid2"><div><label for="rcq${n}">${esc(t('qty'))}</label><input id="rcq${n}" class="rcq" data-fkey="qty" inputmode="decimal"></div><div><label for="rcp${n}">${esc(t('price_net'))}</label><input id="rcp${n}" class="rcp" data-fkey="unit_price_net" inputmode="decimal"></div></div>
       <div class="small rclast" data-rclast style="margin:4px 0 8px"></div>
       <button type="button" class="btn secondary rcdel">${esc(t('rcpt_remove'))}</button>`;
     $('#rclines').append(d);
@@ -8072,6 +8075,9 @@ async function viewStockReceipt() {
     }
     const ids = rows.map((r) => $('select', r).value);
     if (new Set(ids).size !== ids.length) { toast(t('rcpt_twice'), true); const dup = rows.find((r, i) => ids.indexOf(ids[i]) !== i); if (dup) { markInvalid($('select', dup), t('rcpt_twice')); $('select', dup).focus(); } return; }
+    // Backlog 1501 Stufe 17: Positionsnummer der Anfrage an die Felder (leere Zeilen werden nicht gesendet) – Server-Prüffehler mit `field_line` markieren genau diese Position
+    $$('#rclines [data-fline]').forEach((x) => x.removeAttribute('data-fline'));
+    rows.forEach((r, i) => { for (const x of [$('select', r), $('.stockq', r), $('.rcq', r), $('.rcp', r)]) if (x) x.dataset.fline = String(i); const q = $('.stockq', r); if (q) q.setAttribute('data-fkey', 'item_id'); });
     const body = { site: site(), supplier: $('#rcsup').value.trim() || null, document_ref: $('#rcdoc').value.trim() || null, note: $('#rcnote').value.trim() || null, request_key: key,
       lines: rows.map((r) => ({ item_id: $('select', r).value, qty: $('.rcq', r).value.trim(), unit_price_net: $('.rcp', r).value.trim() || null })) };
     try {
@@ -10656,11 +10662,11 @@ async function viewUsers() {
   if (!onPage('#/users')) return; // Backlog 1235
   render(`<h1>${esc(t('users'))}</h1>${helpLink('access')}${no2fa.length ? `<div class="panel warn small" role="note">${esc(tn('tf_admin_hint', no2fa.length))} <a class="noprint tap" href="#/help?s=login2fa">${esc(t('help_login2fa_t'))} ›</a></div>` : ''}${noPush.length ? `<div class="panel warn small" role="note" id="nopush">${esc(tn('push_admin_hint', noPush.length))} <a class="noprint tap" href="#/help?s=push">${esc(t('help_push_t'))} ›</a></div>` : ''}${unused.length ? `<div class="panel warn small" role="note" id="unusedhint">${esc(tn('unused_admin_hint', unused.length).replace('{d}', nDays(ud)))}${ufi !== 'unused' ? `<div class="actions"><button type="button" class="btn secondary" id="ushowunused">${esc(t('unused_show'))}</button></div>` : ''}</div>` : ''}<div id="inv"></div>
     <details class="panel"><summary>${esc(t('new_user'))}</summary><form id="nf">
-      <label>${esc(t('display_name'))}</label><input name="display_name" required><label>${esc(t('username'))}</label><input name="username" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="m.mustermann">
-      <label>${esc(t('role'))}</label><select name="role" id="rs">${roles.map((r) => `<option value="${r}">${esc(t('role_' + r))}</option>`).join('')}</select>
-      <div id="wsrow" hidden><label>${esc(t('workshop'))}</label><select name="workshop_site">${S.meta.workshops.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select></div>
+      <label for="nuname">${esc(t('display_name'))}</label><input id="nuname" name="display_name" required><label for="nuuser">${esc(t('username'))}</label><input id="nuuser" name="username" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="m.mustermann">
+      <label for="rs">${esc(t('role'))}</label><select name="role" id="rs">${roles.map((r) => `<option value="${r}">${esc(t('role_' + r))}</option>`).join('')}</select>
+      <div id="wsrow" hidden><label for="nuws">${esc(t('workshop'))}</label><select id="nuws" name="workshop_site">${S.meta.workshops.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select></div>
       <label for="nulang">${esc(t('user_language'))}<span class="hint">${esc(t('user_language_hint'))}</span></label><select id="nulang" name="language"><option value="">${esc(t('user_language_device'))}</option><option value="de" lang="de">Deutsch</option><option value="uk" lang="uk">Українська</option><option value="en" lang="en">English</option></select>
-      ${S.me.role === 'owner' ? `<label>${esc(t('environment'))}</label><select name="environment"><option value="test">${esc(t('env_testname'))}</option><option value="production">${esc(t('env_prod'))}</option></select>` : ''}
+      ${S.me.role === 'owner' ? `<label for="nuenv">${esc(t('environment'))}</label><select id="nuenv" name="environment"><option value="test">${esc(t('env_testname'))}</option><option value="production">${esc(t('env_prod'))}</option></select>` : ''}
       <div class="actions"><button class="btn">${esc(t('new_user'))}</button></div></form></details>
     <div class="actions" style="flex-wrap:wrap"><select id="usort" aria-label="${esc(t('sort_by'))}" style="flex:1 1 100%;max-width:420px">${USER_SORTS.map((k) => `<option value="${k}"${uso === k ? ' selected' : ''}>${esc(t('sort_by'))}: ${esc(t('usort_' + k))}</option>`).join('')}</select><select id="ufilt" aria-label="${esc(t('ufilter'))}" style="flex:1 1 100%;max-width:420px"><optgroup label="${esc(t('status'))}">${USER_FILTERS.filter((k) => !k.startsWith('r_') && (k !== 'unused' || ud)).map((k) => `<option value="${k}"${ufi === k ? ' selected' : ''}>${esc(t('ufilter'))}: ${esc(ufLabel(k))}</option>`).join('')}</optgroup><optgroup label="${esc(t('role'))}">${USER_FILTERS.filter((k) => k.startsWith('r_') && (S.me.role === 'owner' || roles.includes(k.slice(2)) || all.some((u) => u.role === k.slice(2)))).map((k) => `<option value="${k}"${ufi === k ? ' selected' : ''}>${esc(t('ufilter'))}: ${esc(ufLabel(k))}</option>`).join('')}</optgroup></select><button type="button" class="btn secondary" id="ucsv" title="${esc(t('uc_hint'))}">${esc(t('uc_btn'))}</button><button type="button" class="btn secondary" id="uprt" title="${esc(t('uc_hint'))}">${esc(t('print'))}</button></div>
     ${ufi !== 'all' ? `<p class="small muted noprint" id="ufcount">${esc(t('ufilter_shown').replace('{n}', us.length).replace('{m}', all.length))}</p>` : ''}

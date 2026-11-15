@@ -371,8 +371,8 @@ async function viewStockAsOf() {
   const date = ss('cfp_sa_date') || `${Number(today.slice(0, 4)) - 1}-12-31`;
   const site = sites.some((w) => w.code === ss('cfp_sa_site')) ? ss('cfp_sa_site') : '';
   const qs = `date=${encodeURIComponent(date)}${site ? '&site=' + encodeURIComponent(site) : ''}`;
-  let rep;
-  try { rep = await api('GET', '/api/stock/asof?' + qs); } catch (err) { ss('cfp_sa_date', ''); toast(err.message, true); rep = null; }
+  let rep; const t0 = Date.now(); let kept = null;
+  try { rep = await api('GET', '/api/stock/asof?' + qs); } catch (err) { ss('cfp_sa_date', ''); toast(err.message, true); rep = null; kept = { date }; }
   const n = (x) => (x === null || x === undefined ? '' : fmtNum(x));
   const val = (x) => (x === null ? `<span class="muted">${esc(t('unvalued_short'))}</span>` : eur(x));
   const sm = (k) => `${rep.summary[k].unvalued === rep.summary.count ? '–' : eur(rep.summary[k].value_net)}${rep.summary[k].unvalued ? ` <span class="small muted">(${rep.summary[k].unvalued} ${esc(t('unvalued_short'))})</span>` : ''}`;
@@ -380,7 +380,7 @@ async function viewStockAsOf() {
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('asof_title'))}</h1>
     <p class="small muted">${esc(t('asof_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(t('asof_date'))} ${esc(fmtD(date))}${site ? ' · ' + esc(wsName(site)) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
-    <form id="saf" class="panel noprint"><label for="sadate">${esc(t('asof_date'))}</label><input type="date" id="sadate" value="${esc(date)}" max="${esc(today)}" required>
+    <form id="saf" class="panel noprint"><label for="sadate">${esc(t('asof_date'))}</label><input type="date" id="sadate" name="date" value="${esc(kept ? `${Number(today.slice(0, 4)) - 1}-12-31` : date)}" max="${esc(today)}" required>
       ${sites.length > 1 ? `<label for="sasite">${esc(t('workshop'))}</label><select id="sasite"><option value="">${esc(t('all'))}</option>${sites.map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
       <div class="actions"><button class="btn">${esc(t('show'))}</button><button type="button" class="btn secondary" id="sacsv"${rep && rep.items.length ? '' : ' disabled'}>${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="saprt">${esc(t('print'))}</button></div></form>
     ${rep && rep.items.length ? `<ul class="small" id="sasum"><li>${esc(tn('asof_count', rep.summary.count).replace('{d}', fmtD(rep.date)))}</li><li>${esc(t('asof_val_purchase'))}: ${sm('purchase')}</li><li>${esc(t('asof_val_today'))}: ${sm('today')}</li></ul>
@@ -389,6 +389,7 @@ async function viewStockAsOf() {
       <div class="scroll"><table class="stack printsm" id="satab"><thead><tr><th>${esc(t('workshop'))}</th><th>${esc(t('part_name'))}</th><th>${esc(t('asof_qty'))}</th><th>${esc(t('asof_last_purchase'))}</th><th>${esc(t('asof_val_purchase'))}</th><th>${esc(t('inv_item_price'))}</th><th>${esc(t('asof_val_today'))}</th></tr></thead><tbody>
       ${rep.items.map((i) => `<tr><td>${esc(wsName(i.site))}</td><td><a href="#/stock/${esc(i.id)}">${esc(i.name)}</a>${i.part_number || i.location ? `<div class="small muted">${[i.part_number, i.location].filter(Boolean).map(esc).join(' · ')}</div>` : ''}${i.active ? '' : ` <span class="chip">${esc(t('asof_inactive'))}</span>`}</td><td><b>${n(i.qty)}</b> ${esc(unitL(i.unit))}</td><td>${val(i.last_purchase_price)}</td><td>${i.value_purchase_net === null ? '–' : eur(i.value_purchase_net)}</td><td>${val(i.price_today)}</td><td>${i.value_today_net === null ? '–' : eur(i.value_today_net)}</td></tr>`).join('')}
       </tbody></table></div>` : rep ? `<p class="muted">${esc(t('asof_none'))}</p>` : ''}`, 'more');
+  if (kept) markGetField($('#saf'), t0, kept);
   $('#saf').onsubmit = (e) => { e.preventDefault(); ss('cfp_sa_date', $('#sadate').value); if ($('#sasite')) ss('cfp_sa_site', $('#sasite').value); viewStockAsOf(); };
   $('#saprt').onclick = () => window.print();
   $('#sacsv').onclick = async () => { try { download(await api('GET', '/api/stock/asof?format=csv&' + qs), `fuhrpark-lagerbestand-stichtag_${envFn()}_${date}${site ? '_' + site : ''}.csv`); } catch (err) { toast(err.message, true); } };
@@ -539,9 +540,9 @@ async function viewStockReceipt() {
   const addLine = () => {
     if ($$('#rclines .rcl').length >= 50) { toast(t('rcpt_max'), true); return; }
     n += 1; const d = document.createElement('div'); d.className = 'rcl'; d.style.cssText = 'border-top:1px solid var(--rule);padding-top:8px;margin-top:8px';
-    d.innerHTML = `<label for="rci${n}">${esc(t('part_name'))}</label>${stockQHtml('rcq' + n + 's')}<select id="rci${n}" class="rci">${opts()}</select>
+    d.innerHTML = `<label for="rci${n}">${esc(t('part_name'))}</label>${stockQHtml('rcq' + n + 's')}<select id="rci${n}" class="rci" data-fkey="item_id">${opts()}</select>
       <button type="button" class="linkbtn small rcnew" data-rcnew aria-expanded="false">+ ${esc(t('rcn_open'))}</button><div class="rcnf" data-rcnf hidden></div><p class="small" data-rcnok role="status" aria-live="polite" hidden></p>
-      <div class="grid2"><div><label for="rcq${n}">${esc(t('qty'))}</label><input id="rcq${n}" class="rcq" inputmode="decimal"></div><div><label for="rcp${n}">${esc(t('price_net'))}</label><input id="rcp${n}" class="rcp" inputmode="decimal"></div></div>
+      <div class="grid2"><div><label for="rcq${n}">${esc(t('qty'))}</label><input id="rcq${n}" class="rcq" data-fkey="qty" inputmode="decimal"></div><div><label for="rcp${n}">${esc(t('price_net'))}</label><input id="rcp${n}" class="rcp" data-fkey="unit_price_net" inputmode="decimal"></div></div>
       <div class="small rclast" data-rclast style="margin:4px 0 8px"></div>
       <button type="button" class="btn secondary rcdel">${esc(t('rcpt_remove'))}</button>`;
     $('#rclines').append(d);
@@ -586,6 +587,9 @@ async function viewStockReceipt() {
     }
     const ids = rows.map((r) => $('select', r).value);
     if (new Set(ids).size !== ids.length) { toast(t('rcpt_twice'), true); const dup = rows.find((r, i) => ids.indexOf(ids[i]) !== i); if (dup) { markInvalid($('select', dup), t('rcpt_twice')); $('select', dup).focus(); } return; }
+
+    $$('#rclines [data-fline]').forEach((x) => x.removeAttribute('data-fline'));
+    rows.forEach((r, i) => { for (const x of [$('select', r), $('.stockq', r), $('.rcq', r), $('.rcp', r)]) if (x) x.dataset.fline = String(i); const q = $('.stockq', r); if (q) q.setAttribute('data-fkey', 'item_id'); });
     const body = { site: site(), supplier: $('#rcsup').value.trim() || null, document_ref: $('#rcdoc').value.trim() || null, note: $('#rcnote').value.trim() || null, request_key: key,
       lines: rows.map((r) => ({ item_id: $('select', r).value, qty: $('.rcq', r).value.trim(), unit_price_net: $('.rcp', r).value.trim() || null })) };
     try {

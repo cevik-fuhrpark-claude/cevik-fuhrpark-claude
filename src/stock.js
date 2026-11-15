@@ -116,17 +116,20 @@ export async function receipt(env, user, envName, body) {
   }
   const supplier = str(body.supplier, { key: 'supplier', max: 120, field: 'Lieferant' }); const docRef = str(body.document_ref, { key: 'document_ref', max: 200, field: 'Beleg' }); const note = str(body.note, { key: 'note', max: 500, field: 'Bemerkung' });
   const ids = lines.map((l) => String((l && l.item_id) || '').slice(0, 64));
-  if (ids.some((x) => !x)) throw bad('validation', 'Jede Position braucht einen Artikel.');
-  if (new Set(ids).size !== ids.length) throw bad('validation', 'Ein Artikel steht mehrfach im Wareneingang – Mengen bitte zusammenfassen.');
+  // Backlog 1501 Stufe 17: Positionsfehler nennen Feld und Position (`field_line`, 0-basiert = Reihenfolge in `lines`) – die Oberfläche
+  // markiert das Feld genau dieser Position (Antwort nur additiv; Meldungstext unverändert)
+  const atLine = (idx, fn) => { try { return fn(); } catch (e) { if (e instanceof HttpError && e.code === 'validation' && e.extra && e.extra.field_key && e.extra.field_line === undefined) e.extra = { ...e.extra, field_line: idx }; throw e; } };
+  if (ids.some((x) => !x)) throw bad('validation', 'Jede Position braucht einen Artikel.', { field_key: 'item_id', field_line: ids.findIndex((x) => !x) });
+  if (new Set(ids).size !== ids.length) throw bad('validation', 'Ein Artikel steht mehrfach im Wareneingang – Mengen bitte zusammenfassen.', { field_key: 'item_id', field_line: ids.findIndex((x, i) => ids.indexOf(x) !== i) });
   const items = new Map((await env.DB.prepare(`SELECT * FROM stock_items WHERE environment=? AND site=? AND id IN (SELECT value FROM json_each(?))`).bind(envName, site, JSON.stringify(ids)).all()).results.map((i) => [i.id, i]));
   const now = nowIso(); const stmts = []; const out = []; const out_rest = new Map();
   lines.forEach((l, idx) => {
     const it = items.get(ids[idx]);
-    if (!it) throw bad('validation', `Position ${idx + 1}: ${NOT_IN_SITE}`);
-    if (!it.active) throw bad('validation', `Position ${idx + 1}: Artikel ist deaktiviert.`);
-    const qty = r3(qtyNum(l.qty, it.unit, { min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
-    if (!(qty > 0)) throw bad('validation', `Position ${idx + 1}: Menge muss größer 0 sein.`);
-    const price = num(l.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+    if (!it) throw bad('validation', `Position ${idx + 1}: ${NOT_IN_SITE}`, { field_key: 'item_id', field_line: idx });
+    if (!it.active) throw bad('validation', `Position ${idx + 1}: Artikel ist deaktiviert.`, { field_key: 'item_id', field_line: idx });
+    const qty = r3(atLine(idx, () => qtyNum(l.qty, it.unit, { key: 'qty', min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) })));
+    if (!(qty > 0)) throw bad('validation', `Position ${idx + 1}: Menge muss größer 0 sein.`, { field_key: 'qty', field_line: idx });
+    const price = atLine(idx, () => num(l.unit_price_net, { key: 'unit_price_net', min: 0, max: 1e7, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
     stmts.push(env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
       VALUES (?,?,?,'zugang',?,NULL,?,?,?,?,?,?,?)`).bind(uuid(), envName, it.id, qty, price, supplier, docRef, note, user.id, now, rk ? `${rk}-${idx + 1}` : null));
     if (price !== null) {
@@ -338,12 +341,12 @@ export async function setOrder(env, user, envName, id, body, expected = null) {
   const on = body.ordered_on ? String(body.ordered_on) : today;
   if (!isCalendarDate(on) || on > today) throw bad('validation', 'Bestelldatum: gültiges Datum, nicht in der Zukunft.');
   const eta = body.eta ? String(body.eta) : null;
-  if (eta && (!isCalendarDate(eta) || eta < on)) throw bad('validation', 'Liefertermin: gültiges Datum, nicht vor dem Bestelldatum.');
+  if (eta && (!isCalendarDate(eta) || eta < on)) throw bad('validation', 'Liefertermin: gültiges Datum, nicht vor dem Bestelldatum.', { field_key: 'eta' });
   // Jahres-Tippfehler (1926/2062): Bestellung höchstens 5 Jahre zurück, Liefertermin höchstens 2 Jahre nach der Bestellung – sonst blieb
   // „Bestellung überfällig“ jahrzehntelang aus und der Vermerk unterdrückte „unter Mindestbestand“ (19.10.2026)
   const shiftY = (d, y) => String(Number(d.slice(0, 4)) + y).padStart(4, '0') + d.slice(4);
   if (on < shiftY(today, -5)) throw bad('validation', 'Bestelldatum liegt mehr als 5 Jahre zurück – bitte prüfen.');
-  if (eta && eta > shiftY(on, 2)) throw bad('validation', 'Liefertermin liegt mehr als 2 Jahre nach dem Bestelldatum – bitte prüfen.');
+  if (eta && eta > shiftY(on, 2)) throw bad('validation', 'Liefertermin liegt mehr als 2 Jahre nach dem Bestelldatum – bitte prüfen.', { field_key: 'eta' });
   const r = await env.DB.prepare('UPDATE stock_items SET ordered_qty=?, ordered_on=?, ordered_eta=?, ordered_note=?, ordered_by=?, updated_at=? WHERE id=? AND ordered_on IS NULL AND active=1')
     .bind(qty, on, eta, str(body.note, { key: 'note', max: 200, field: 'Bemerkung' }), user.id, nowIso(), id).run();
   if (!(r.meta && r.meta.changes)) throw conflict('stock_order_exists', 'Für diesen Artikel ist bereits eine Bestellung vermerkt. Bitte neu laden.');
@@ -357,8 +360,8 @@ export async function setOrder(env, user, envName, id, body, expected = null) {
 export async function transfer(env, user, envName, id, body, retried = false) {
   const it = await loadItem(env, user, envName, id);
   const toSite = str(body.to_site, { key: 'to_site', required: true, max: 20, field: 'Ziellager' });
-  if (toSite === it.site) throw bad('validation', 'Ziellager ist das eigene Lager.');
-  if (!(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(toSite).first())) throw bad('validation', 'Unbekannte Werkstatt.');
+  if (toSite === it.site) throw bad('validation', 'Ziellager ist das eigene Lager.', { field_key: 'to_site' });
+  if (!(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(toSite).first())) throw bad('validation', 'Unbekannte Werkstatt.', { field_key: 'to_site' });
   const qty = r3(qtyNum(body.qty, it.unit, { key: 'qty', min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
   if (qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.', { field_key: 'qty' });
   const rkey = requestKey(body);
@@ -604,8 +607,8 @@ export async function stockAsOf(env, user, envName, query = {}) {
   const site = siteScope(user, query.site ? String(query.site).slice(0, 20) : null);
   const today = berlinDate();
   const date = query.date ? String(query.date) : `${Number(today.slice(0, 4)) - 1}-12-31`;
-  if (!isCalendarDate(date)) throw bad('validation', 'Stichtag: Datum im Format JJJJ-MM-TT angeben.');
-  if (date > today) throw bad('validation', 'Stichtag liegt in der Zukunft.');
+  if (!isCalendarDate(date)) throw bad('validation', 'Stichtag: Datum im Format JJJJ-MM-TT angeben.', { field_key: 'date' });
+  if (date > today) throw bad('validation', 'Stichtag liegt in der Zukunft.', { field_key: 'date' });
   const end = berlinDayStartIso(new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10));
   const rows = (await env.DB.prepare(`SELECT i.id, i.site, i.part_number, i.name, i.unit, i.location, i.active, i.unit_price_net AS price_today,
       (SELECT SUM(m.qty) FROM stock_movements m WHERE m.item_id=i.id AND m.created_at < ?) AS qty,

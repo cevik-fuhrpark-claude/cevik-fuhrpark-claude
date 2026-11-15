@@ -577,13 +577,13 @@ export async function createUser(env, actor, body) {
     throw forbidden();
   }
   const username = str(body.username, { key: 'username', required: true, max: 64, field: 'Benutzername' }).toLowerCase();
-  if (!/^[a-z0-9._-]{3,64}$/.test(username)) throw bad('validation', 'Benutzername: 3–64 Zeichen, nur a–z, 0–9, Punkt, Bindestrich, Unterstrich.');
+  if (!/^[a-z0-9._-]{3,64}$/.test(username)) throw bad('validation', 'Benutzername: 3–64 Zeichen, nur a–z, 0–9, Punkt, Bindestrich, Unterstrich.', { field_key: 'username' });
   const display = str(body.display_name, { key: 'display_name', required: true, max: 120, field: 'Name' });
   let site = null;
   if (role === 'workshop') {
     site = str(body.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
     const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
-    if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
+    if (!ws) throw bad('validation', 'Unbekannte Werkstatt.', { field_key: 'workshop_site' });
   }
   // Backlog 381: Sprache der Person optional beim Anlegen (Einladungsseite und App starten darin; leer = Standard Deutsch bzw. Handysprache)
   const language = body.language === undefined || body.language === null || body.language === '' ? null : oneOf(body.language, ['de', 'uk', 'en'], 'Sprache', { key: 'language' });
@@ -617,10 +617,10 @@ export async function updateUser(env, actor, userId, body) {
   const active = activeIn === undefined ? target.active : (activeIn ? 1 : 0);
   const display = body.display_name !== undefined && body.display_name !== null && body.display_name !== '' ? str(body.display_name, { key: 'display_name', required: true, max: 120, field: 'Name' }) : target.display_name; // nur Leerzeichen/[] → 400 statt NOT-NULL-Fehler
   const site = role === 'workshop' ? (body.workshop_site !== undefined && body.workshop_site !== null ? str(body.workshop_site, { key: 'workshop_site', max: 20, field: 'Werkstatt' }) : target.workshop_site) : null;
-  if (role === 'workshop' && !site) throw bad('validation', 'Werkstatt ist für Rolle Werkstatt erforderlich.');
+  if (role === 'workshop' && !site) throw bad('validation', 'Werkstatt ist für Rolle Werkstatt erforderlich.', { field_key: 'workshop_site' });
   // neue/geänderte Werkstatt wie beim Anlegen prüfen (vorher beliebiger Code gespeichert → Werkstattkonto sah keine Aufträge)
   if (role === 'workshop' && (site !== target.workshop_site || target.role !== 'workshop')
-    && !(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first())) throw bad('validation', 'Unbekannte Werkstatt.');
+    && !(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first())) throw bad('validation', 'Unbekannte Werkstatt.', { field_key: 'workshop_site' });
   // nichts geändert (z. B. leerer Aufruf an ein deaktiviertes Konto): kein Protokoll, keine erneute Entwertung von Sitzungen/Einladungen (19.10.2026)
   if (role === target.role && environment === target.environment && !!active === !!target.active && display === target.display_name && (site || null) === (target.workshop_site || null)) return { ok: true, changed: [], sessions_ended: false };
   // Backlog 812: „Benutzer bearbeiten“ sendet alle Felder absolut – ohne Prüfung machte das Speichern eine zwischenzeitliche Änderung einer

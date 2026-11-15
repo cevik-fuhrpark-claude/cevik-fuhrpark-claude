@@ -326,7 +326,7 @@ async function api(method, path, body, extra = {}) {
     if (code === 'insufficient_stock' && tr && data && typeof data.available === 'number') tr = t('err_insufficient_stock_q').replace('{q}', fmtNum(data.available)).replace('{u}', unitL(data.unit)) + (data.no_stock_hint ? ' ' + t('stock_no_stock_hint') : '');
     const e = new Error(tr || (data && data.message) || `${t('error')} ${res.status}`); e.code = code; e.status = res.status; e.data = data instanceof Blob ? null : data;
 
-    if (code === 'validation' && data && typeof data.field_key === 'string') S.fieldErr = { key: data.field_key, msg: e.message, at: Date.now() };
+    if (code === 'validation' && data && typeof data.field_key === 'string') S.fieldErr = { key: data.field_key, msg: e.message, at: Date.now(), ...(Number.isInteger(data.field_line) && data.field_line >= 0 ? { line: data.field_line } : {}) };
 
     if (code === 'user_mismatch' || code === 'env_mismatch') setTimeout(() => location.reload(), 2500);
     throw e;
@@ -428,6 +428,8 @@ function markInvalid(el, msg, after = el) {
 function markServerField(form, since) {
   const fe = S.fieldErr; if (!fe || fe.at < since) return; S.fieldErr = null;
   if (!form || !form.isConnected || !form.elements) return;
+
+  if (fe.line !== undefined) { const ln = form.querySelectorAll ? [...form.querySelectorAll(`[data-fkey="${String(fe.key).replace(/[^\w-]/g, '')}"][data-fline="${Number(fe.line)}"]`)].find((x) => !x.disabled && x.offsetParent !== null) : null; if (ln) { markInvalid(ln, fe.msg); try { ln.focus(); } catch {} } return; }
   let el = form.elements.namedItem(fe.key); if (el && !el.tagName && el.length) el = el[0];
 
   if ((!el || !el.tagName) && form.querySelectorAll) el = [...form.querySelectorAll(`[data-fkey="${String(fe.key).replace(/[^\w-]/g, '')}"]`)].find((x) => !x.disabled && x.offsetParent !== null) || null;
