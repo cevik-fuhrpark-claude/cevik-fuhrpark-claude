@@ -543,10 +543,10 @@ function vehicleRow(user, body) {
   if (!plateOk(plate)) throw bad('validation', 'Kennzeichen enthält unzulässige Zeichen (nur lateinische Buchstaben, Ziffern, Leerzeichen und Bindestrich).');
   if (body.trailer_plate && typeof body.trailer_plate === 'string' && body.trailer_plate.trim() && !plateOk(body.trailer_plate.trim().toUpperCase())) throw bad('validation', 'Anhänger-Kennzeichen enthält unzulässige Zeichen (nur lateinische Buchstaben, Ziffern, Leerzeichen und Bindestrich).');
   return {
-    id: `VIN:${vin}`, vin, plate, site: str(body.site, { max: 60, field: 'Standort' }), manufacturer: str(body.manufacturer, { max: 60, field: 'Hersteller' }), model: str(body.model, { max: 60, field: 'Modell' }),
+    id: `VIN:${vin}`, vin, plate, site: str(body.site, { key: 'site', max: 60, field: 'Standort' }), manufacturer: str(body.manufacturer, { max: 60, field: 'Hersteller' }), model: str(body.model, { max: 60, field: 'Modell' }),
     build_year: body.build_year ? Math.round(num(body.build_year, { min: 1950, max: 2100, field: 'Baujahr' })) : null,
     trailer_plate: str(body.trailer_plate, { max: 20, field: 'Anhänger-Kennzeichen' })?.toUpperCase() ?? null, trailer_vin: (() => { // geprüft wie die FIN (17.10.2026: Objekt wurde „OBJECTOBJECT“, beliebige Länge gespeichert)
-      const t = str(body.trailer_vin, { max: 30, field: 'Anhänger-FIN' }); if (!t) return null;
+      const t = str(body.trailer_vin, { key: 'trailer_vin', max: 30, field: 'Anhänger-FIN' }); if (!t) return null;
       const n = normalizeVin(t); if (!isValidVin(n)) throw bad('validation', 'Anhänger-FIN muss 17 Zeichen haben (ohne I, O, Q).'); return n; })(),
     master_status: str(body.master_status, { max: 40, field: 'Stammstatus' }), source: str(body.source, { max: 200, field: 'Quelle' }) || `manuell durch ${user.username}`,
     kind: normalizeVehicleKind(body.kind),
@@ -705,7 +705,7 @@ export async function setVehicleEvaluation(env, user, envName, vehicleId, body) 
   const v = await env.DB.prepare('SELECT id, plate, eval_excluded FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const excluded = flag(body.excluded, 'Ausgenommen');
-  const reason = str(body.reason, { required: excluded, max: 300, field: 'Grund' });
+  const reason = str(body.reason, { key: 'reason', required: excluded, max: 300, field: 'Grund' });
   // schon im gewünschten Zustand (Doppelklick, zweite Leitung mit veralteter Akte): nichts überschreiben, kein zweiter Protokolleintrag (Backlog 204)
   const already = () => conflict(excluded ? 'already_excluded' : 'already_included', excluded ? 'Fahrzeug ist bereits ruhend (aus Auswertungen ausgenommen).' : 'Fahrzeug ist bereits in den Auswertungen.');
   if (Number(v.eval_excluded || 0) === (excluded ? 1 : 0)) throw already();
@@ -720,7 +720,7 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   const v = await env.DB.prepare('SELECT id, plate, active, kind FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const active = flag(body.active, 'Aktiv');
-  const reason = str(body.reason, { required: !active, max: 300, field: 'Grund' });
+  const reason = str(body.reason, { key: 'reason', required: !active, max: 300, field: 'Grund' });
   if (!active) {
     const open = await env.DB.prepare(`SELECT COUNT(*) AS n FROM cases WHERE vehicle_id=? AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')`).bind(vehicleId).first();
     if (open.n) throw conflict('open_cases', `Fahrzeug hat noch offene Vorgänge (${open.n}, alle Umgebungen) – zuerst abschließen.`);
@@ -783,7 +783,7 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
 export async function assignDriver(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
   // rec_active: Fahrerakte des Kontos (0 = ausgeschieden → Warnhinweis, Backlog 250; Sperre erst nach Antwort auf „Ausgeschiedene Fahrer“)
-  const driver = await env.DB.prepare(`SELECT id, display_name, (SELECT d.active FROM drivers d WHERE d.user_id=users.id) AS rec_active FROM users WHERE id=? AND role='driver' AND environment=? AND active=1`).bind(str(body.user_id, { required: true, max: 40, field: 'Fahrer' }), envName).first();
+  const driver = await env.DB.prepare(`SELECT id, display_name, (SELECT d.active FROM drivers d WHERE d.user_id=users.id) AS rec_active FROM users WHERE id=? AND role='driver' AND environment=? AND active=1`).bind(str(body.user_id, { key: 'user_id', required: true, max: 40, field: 'Fahrer' }), envName).first();
   if (!driver) throw bad('validation', 'Fahrer nicht gefunden (gleiche Umgebung erforderlich).');
   const v = await env.DB.prepare('SELECT id, active FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
@@ -808,7 +808,7 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   stmts.push(env.DB.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at,environment) SELECT ?1,?2,?3,?4,NULL,?5,?6,?7,?8
     WHERE NOT EXISTS (SELECT 1 FROM driver_vehicles WHERE user_id=?2 AND vehicle_id=?3 AND (valid_to IS NULL OR valid_to > ?4))
       AND EXISTS (SELECT 1 FROM vehicles WHERE id=?3 AND active=1)`)
-    .bind(id, driver.id, vehicleId, now, str(body.evidence, { max: 300, field: 'Nachweis' }) || 'Zuordnung durch Fuhrparkleitung', user.id, now, envName),
+    .bind(id, driver.id, vehicleId, now, str(body.evidence, { key: 'evidence', max: 300, field: 'Nachweis' }) || 'Zuordnung durch Fuhrparkleitung', user.id, now, envName),
     env.DB.prepare('INSERT INTO cmd_guard(ok) SELECT changes()'), env.DB.prepare('DELETE FROM cmd_guard'));
   try { await env.DB.batch(stmts); } catch (e) {
     if (String(e && e.message).includes('CHECK')) {
@@ -1023,7 +1023,7 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const kind = oneOf(body.kind, MAINT_KINDS, 'Art');
-  const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
+  const evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis/Quelle' });
   const title = ruleTitle(kind, body.title);
   // Backlog 804 (Funkloch): erneutes Senden mit demselben request_key → vorhandener Prüftermin (Rückruf/Sonstiges wurden sonst doppelt angelegt)
   const rkey = requestKey(body.request_key);
@@ -1036,21 +1036,21 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   };
   { const d = await byKey(); if (d) return d; }
   // ganze Zahlen (19.10.2026: „1,5“ Monate wurde still zu 2 – Frist verschoben; der Import weist das schon ab)
-  const months = body.interval_months ? num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate', unit: 'months' }) : null;
-  const km = body.interval_km ? num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', unit: 'km', grouped: true }) : null;
+  const months = body.interval_months ? num(body.interval_months, { key: 'interval_months', min: 1, max: 120, field: 'Intervall Monate', unit: 'months' }) : null;
+  const km = body.interval_km ? num(body.interval_km, { key: 'interval_km', min: 100, max: 1000000, field: 'Intervall km', unit: 'km', grouped: true }) : null;
   if ((months !== null && !Number.isInteger(months)) || (km !== null && !Number.isInteger(km))) throw bad('validation', 'Intervall als ganze Zahl angeben.');
-  const lastDate = str(body.last_done_date, { max: 10, field: 'Letzte Prüfung' });
-  const lastKm = body.last_done_km != null && String(body.last_done_km).trim() !== '' ? kmNum(body.last_done_km, { field: 'km' }) : null;
+  const lastDate = str(body.last_done_date, { key: 'last_done_date', max: 10, field: 'Letzte Prüfung' });
+  const lastKm = body.last_done_km != null && String(body.last_done_km).trim() !== '' ? kmNum(body.last_done_km, { key: 'last_done_km', field: 'km' }) : null;
   const husp = kind === 'HU' || kind === 'SP';
   if (ONE_TIME_KINDS.includes(kind) && (months || km)) throw bad('validation', 'Rückruf ist eine einmalige Aktion – kein Intervall angeben.');
   // bereits durchgeführter Rückruf: keine Frist (sonst überfällig/fällig, aber weder erledigbar noch planbar – Dauerbefund; 20.10.2026)
   if (ONE_TIME_KINDS.includes(kind) && body.last_done_date && String(body.last_done_date).trim() && ((body.next_due_date && String(body.next_due_date).trim()) || (body.due_km && String(body.due_km).trim()))) throw bad('validation', 'Rückruf ist bereits durchgeführt – keine Frist angeben.');
   // Belegte km-Fälligkeit (Serviceanzeige/Wartungsheft); HU/SP richten sich nur nach der Zeit
-  let dueKm = body.due_km ? kmNum(body.due_km, { min: 1, field: 'km' }) : null;
+  let dueKm = body.due_km ? kmNum(body.due_km, { key: 'due_km', min: 1, field: 'km' }) : null;
   if (husp && (dueKm !== null || km !== null)) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.');
-  if (dueKm !== null && lastKm !== null && dueKm <= lastKm) throw bad('validation', 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.');
+  if (dueKm !== null && lastKm !== null && dueKm <= lastKm) throw bad('validation', 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.', { field_key: 'due_km' });
   if (dueKm !== null && km && lastKm !== null && dueKm === lastKm + km) dueKm = null; // ergibt sich ohnehin aus Intervall
-  let nextDue = str(body.next_due_date, { max: 10, field: 'Nächster Termin' });
+  let nextDue = str(body.next_due_date, { key: 'next_due_date', max: 10, field: 'Nächster Termin' });
   const dueSource = nextDue ? 'nachweis' : 'berechnet';
   // HU/SP: kein pauschales Intervall – Fälligkeit zentral nach StVZO Anlage VIII (inspection_rules.js) oder laut Nachweis
   // erst prüfen, dann rechnen (ungültiges Datum wie „0000-00-00“ ließ addMonths mit „Invalid time value“ abbrechen – Fuzz 15.10.2026)
@@ -1103,7 +1103,7 @@ export async function planMaintenance(env, user, ruleId, body) {
   const exp = hasExp && body.expected_planned_date ? str(body.expected_planned_date, { max: 10, field: 'expected_planned_date' }) : null;
   if (exp && !isCalendarDate(exp)) throw bad('validation', 'expected_planned_date im Format JJJJ-MM-TT.');
   // gleiche Prüfung wie Werkstatttermine: echtes Kalenderdatum, nicht mehr als 1 Jahr zurück / 2 Jahre voraus
-  const d = body.planned_date ? planDate(str(body.planned_date, { max: 10, field: 'Termin' })) : null;
+  const d = body.planned_date ? planDate(str(body.planned_date, { key: 'planned_date', max: 10, field: 'Termin' })) : null;
   // Termin setzen nur für aktive Fahrzeuge und nicht für erledigte Rückrufe (wie „Werkstattauftrag erstellen“; 18.10.2026 – Termin stand
   // sonst im Plan/Kalender); Termin entfernen bleibt immer möglich
   if (d && !r.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
@@ -1117,7 +1117,7 @@ export async function planMaintenance(env, user, ruleId, body) {
   // optionaler Hinweis zum Termin wie bei Vorgängen (Migration 0093) – nicht mitgeschickt = bleibt, leer = entfernen, ohne Termin immer leer
   const hasNote = body && Object.prototype.hasOwnProperty.call(body, 'planned_note');
   const oldNote = r.planned_note || null;
-  const pn = hasNote ? str(body.planned_note, { max: 200, field: 'Hinweis zum Termin' }) : oldNote;
+  const pn = hasNote ? str(body.planned_note, { key: 'planned_note', max: 200, field: 'Hinweis zum Termin' }) : oldNote;
   if (pn && !d && hasNote) throw bad('validation', 'Hinweis zum Termin nur zusammen mit einem Termin angeben.');
   const note = d ? pn : null;
   const same = (r.planned_date ?? null) === d && note === oldNote;
@@ -1161,10 +1161,10 @@ export async function editMaintenanceRule(env, user, ruleId, body) {
   const r = await ruleForEdit(env, user, ruleId);
   const ch = {};
   if ('title' in body) ch.title = ruleTitle(r.kind, body.title);
-  if ('evidence' in body) ch.evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
+  if ('evidence' in body) ch.evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis/Quelle' });
   if ('interval_months' in body) {
     if (ONE_TIME_KINDS.includes(r.kind) && body.interval_months) throw bad('validation', 'Rückruf ist eine einmalige Aktion – kein Intervall angeben.');
-    const mo = body.interval_months === null || String(body.interval_months).trim() === '' ? null : num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate', unit: 'months' });
+    const mo = body.interval_months === null || String(body.interval_months).trim() === '' ? null : num(body.interval_months, { key: 'interval_months', min: 1, max: 120, field: 'Intervall Monate', unit: 'months' });
     if (mo !== null && !Number.isInteger(mo)) throw bad('validation', 'Intervall als ganze Zahl angeben.');
     ch.interval_months = mo;
     // berechnete Fälligkeit neu (Nachweis-Fälligkeit bleibt); ohne Intervall bleibt die bisherige Fälligkeit stehen
@@ -1192,7 +1192,7 @@ export async function editMaintenanceRule(env, user, ruleId, body) {
 }
 export async function endMaintenanceRule(env, user, ruleId, body) {
   const r = await ruleForEdit(env, user, ruleId);
-  const reason = str(body.reason, { required: true, max: 300, field: 'Begründung' });
+  const reason = str(body.reason, { key: 'reason', required: true, max: 300, field: 'Begründung' });
   if (r.n_open) throw conflict('open_order', 'Zu diesem Prüftermin ist noch ein Werkstattauftrag offen – erst abschließen oder ablehnen.');
   if (!r.n_events && !r.n_cases) {
     await env.DB.prepare('DELETE FROM maintenance_rules WHERE id=? AND NOT EXISTS (SELECT 1 FROM maintenance_events WHERE rule_id=?) AND NOT EXISTS (SELECT 1 FROM cases WHERE maintenance_rule_id=?)').bind(ruleId, ruleId, ruleId).run();
@@ -1206,14 +1206,14 @@ export async function endMaintenanceRule(env, user, ruleId, body) {
 
 export async function planMaintenanceBatch(env, user, body) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
-  const d = planDate(str(body.planned_date, { required: true, max: 10, field: 'Termin' }));
+  const d = planDate(str(body.planned_date, { key: 'planned_date', required: true, max: 10, field: 'Termin' }));
   const raw = Array.isArray(body.ids) ? body.ids : null;
   if (!raw || !raw.length || raw.length > PLAN_BATCH_MAX || raw.some((x) => typeof x !== 'string' || !x || x.length > 80)) throw bad('validation', 'Bitte 1 bis 200 Prüftermine auswählen.');
   const ids = [...new Set(raw)];
   const replace = flag(body.replace);
   // Backlog 1443 (Folge aus 1442, Blickwinkel „UVV aller Lkw an einem Tag beim Prüfdienst – Uhrzeit/Ort gilt für alle“): optionaler gemeinsamer
   // Hinweis zum Termin; ohne Hinweis wird ein alter Hinweis wie bisher entfernt (gehörte zum alten Termin), gleicher Termin bleibt unverändert
-  const note = str(body.planned_note, { max: 200, field: 'Hinweis zum Termin' });
+  const note = str(body.planned_note, { key: 'planned_note', max: 200, field: 'Hinweis zum Termin' });
   const today = berlinDate();
   const rows = (await env.DB.prepare(`SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, m.planned_date, m.planned_note, m.next_due_date, v.active, v.plate FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id
     WHERE m.id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(ids.filter((x) => !x.startsWith('husp:')))).all()).results || [];
@@ -1260,12 +1260,12 @@ export async function addMaintenanceRuleBatch(env, user, body) {
   if (!isManager(user)) throw forbidden();
   const kind = oneOf(body.kind, MAINT_KINDS, 'Art');
   if (kind === 'HU' || kind === 'SP' || ONE_TIME_KINDS.includes(kind)) throw bad('validation', 'HU/SP und Rückrufe bitte je Fahrzeug bzw. über „Rückrufe importieren“ anlegen.');
-  const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis/Quelle' });
+  const evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis/Quelle' });
   const title = ruleTitle(kind, body.title);
-  const months = body.interval_months ? num(body.interval_months, { min: 1, max: 120, field: 'Intervall Monate', unit: 'months' }) : null;
-  const km = body.interval_km ? num(body.interval_km, { min: 100, max: 1000000, field: 'Intervall km', unit: 'km', grouped: true }) : null;
+  const months = body.interval_months ? num(body.interval_months, { key: 'interval_months', min: 1, max: 120, field: 'Intervall Monate', unit: 'months' }) : null;
+  const km = body.interval_km ? num(body.interval_km, { key: 'interval_km', min: 100, max: 1000000, field: 'Intervall km', unit: 'km', grouped: true }) : null;
   if ((months !== null && !Number.isInteger(months)) || (km !== null && !Number.isInteger(km))) throw bad('validation', 'Intervall als ganze Zahl angeben.');
-  const nextDue = str(body.next_due_date, { max: 10, field: 'Nächster Termin' });
+  const nextDue = str(body.next_due_date, { key: 'next_due_date', max: 10, field: 'Nächster Termin' });
   if (nextDue && !isCalendarDate(nextDue)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   if (nextDue && nextDue > maxFutureDate()) throw bad('validation', DUE_FAR_MSG);
   const raw = Array.isArray(body.vehicle_ids) ? body.vehicle_ids : null;
@@ -1349,11 +1349,11 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
   const v = await env.DB.prepare('SELECT id, plate, kind, zgm_class, zgm_kg, first_registration FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
-  const source = str(body.spec_source, { required: true, max: 200, field: 'Nachweis (z. B. Fahrzeugschein)' });
+  const source = str(body.spec_source, { key: 'spec_source', required: true, max: 200, field: 'Nachweis (z. B. Fahrzeugschein)' });
   // Backlog 1014: „18.000 kg“/„F.2: 18000“ wie im Fahrzeugschein annehmen (`unit: 'kg'`), Tonnen mit eigener Meldung – nie umgerechnet
   const field = 'zulässige Gesamtmasse (kg)';
   if (typeof body.zgm_kg === 'string' && massTonnes(body.zgm_kg)) throw bad('validation', `${field}: „${body.zgm_kg.replace(/\s+/g, ' ').trim().slice(0, 40)}“ ist in Tonnen angegeben – bitte die Masse in kg laut Fahrzeugschein (F.2) eingeben (die App rechnet nicht um).`);
-  const kg = body.zgm_kg === undefined || body.zgm_kg === null || body.zgm_kg === '' ? null : Math.round(num(body.zgm_kg, { min: 500, max: 60000, field, grouped: true, unit: 'kg' }));
+  const kg = body.zgm_kg === undefined || body.zgm_kg === null || body.zgm_kg === '' ? null : Math.round(num(body.zgm_kg, { key: 'zgm_kg', min: 500, max: 60000, field, grouped: true, unit: 'kg' }));
   const allowed = v.kind === 'anhaenger' ? ZGM_CLASSES_TRAILER : ZGM_CLASSES_LKW;
   let cls = body.zgm_class ? oneOf(body.zgm_class, allowed, 'Gewichtsklasse') : null;
   if (kg !== null) {
@@ -1361,7 +1361,7 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
     if (cls && cls !== fromKg) throw bad('validation', 'Gewichtsklasse passt nicht zur angegebenen Gesamtmasse.');
     cls = fromKg;
   }
-  const ez = body.first_registration ? str(body.first_registration, { max: 10, field: 'Erstzulassung' }) : null;
+  const ez = body.first_registration ? str(body.first_registration, { key: 'first_registration', max: 10, field: 'Erstzulassung' }) : null;
   if (ez && (!isCalendarDate(ez) || ez > berlinDate())) throw bad('validation', 'Erstzulassung im Format JJJJ-MM-TT, nicht in der Zukunft.');
   // Untergrenze wie Baujahr (23.10.2026: 1900-01-01 wurde angenommen und trieb die SP-Prognose)
   if (ez && ez < '1950-01-01') throw bad('validation', 'Erstzulassung vor 1950 ist nicht plausibel.');
@@ -1409,7 +1409,7 @@ export async function addMaintenanceResult(env, user, eventId, body, { ctx = nul
   const e = await env.DB.prepare('SELECT id, rule_id, vehicle_id, kind, done_date, result FROM maintenance_events WHERE id=?').bind(eventId).first();
   if (!e) throw notFound('Durchführung nicht gefunden.');
   const result = oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis');
-  const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis (z. B. Prüfbericht-Nr.)' });
+  const evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis (z. B. Prüfbericht-Nr.)' });
   if (e.result) throw conflict('result_exists', 'Für diese Durchführung ist bereits ein Prüfergebnis eingetragen – es wird nicht überschrieben.');
   const upd = await env.DB.prepare('UPDATE maintenance_events SET result=? WHERE id=? AND result IS NULL').bind(result, e.id).run();
   if (!upd.meta || !upd.meta.changes) throw conflict('result_exists', 'Für diese Durchführung ist bereits ein Prüfergebnis eingetragen – es wird nicht überschrieben.');
@@ -1423,7 +1423,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
   const r = await env.DB.prepare('SELECT * FROM maintenance_rules WHERE id=?').bind(ruleId).first();
   if (!r) throw notFound();
-  const date = str(body.done_date, { required: true, max: 10, field: 'Datum' });
+  const date = str(body.done_date, { key: 'done_date', required: true, max: 10, field: 'Datum' });
   if (!isCalendarDate(date)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   if (date > berlinDate()) throw bad('validation', 'Durchführungsdatum liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
   // Backlog 619 (Blickwinkel „HU-Prüfer auf dem Hof“): Untergrenze wie Erstzulassung/Baujahr – 05.01.1900 (Tippfehler) landete im Verlauf und in der Nachweisliste
@@ -1433,8 +1433,8 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
     // Erstzulassung ggf. nur JJJJ-MM: Vergleich nach Monat (eine HU/SP vor der Zulassung gibt es nicht)
     if (fr && date.slice(0, 7) < String(fr).slice(0, 7)) throw bad('validation', 'Durchführungsdatum liegt vor der Erstzulassung des Fahrzeugs.');
   }
-  const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
-  const km = body.done_km != null && String(body.done_km).trim() !== '' ? kmNum(body.done_km, { field: 'km' }) : null;
+  const evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis' });
+  const km = body.done_km != null && String(body.done_km).trim() !== '' ? kmNum(body.done_km, { key: 'done_km', field: 'km' }) : null;
   if (r.interval_km && km === null && r.kind !== 'HU' && r.kind !== 'SP') throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.');
   // Plausibilität wie „Kilometerstand erfassen“: nicht kleiner als der zuletzt davor erfasste km-Stand (Tippfehler würde km-Fälligkeiten
   // und €/km verfälschen). Tachotausch: zuerst den km-Stand des neuen Zählers mit Begründung in der Fahrzeugakte erfassen.
@@ -1453,7 +1453,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   if (km !== null && r.last_done_km !== null && r.last_done_km !== undefined && km < r.last_done_km && (!r.last_done_date || date >= r.last_done_date) && !kmCounterDropAfter(r, drop))
     throw bad('validation', 'Kilometerstand bei Durchführung ist kleiner als der km-Stand der letzten Durchführung. Bitte prüfen; bei Tachotausch zuerst den neuen km-Stand mit Begründung in der Fahrzeugakte erfassen.');
   const husp = r.kind === 'HU' || r.kind === 'SP';
-  const docNext = str(body.next_due_date, { max: 10, field: 'Nächster Termin' });
+  const docNext = str(body.next_due_date, { key: 'next_due_date', max: 10, field: 'Nächster Termin' });
   // wie beim Anlegen: nur echtes Kalenderdatum (sonst „31.12.2027“ gespeichert → Tage NaN, Status „in Ordnung“, nie überfällig; 17.10.2026)
   if (docNext && !isCalendarDate(docNext)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
   if (docNext && docNext > maxFutureDate()) throw bad('validation', DUE_FAR_MSG);
@@ -1463,9 +1463,9 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   if (oneTime && r.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
   if (oneTime && (docNext || (body.next_due_km && String(body.next_due_km).trim()))) throw bad('validation', 'Rückruf ist eine einmalige Aktion – keine Folgefrist angeben.');
   // neue km-Fälligkeit laut Beleg (z. B. Serviceanzeige nach dem Ölwechsel); ohne Angabe gilt „km + Intervall km“
-  let docKm = body.next_due_km ? kmNum(body.next_due_km, { min: 1, field: 'km' }) : null;
+  let docKm = body.next_due_km ? kmNum(body.next_due_km, { key: 'next_due_km', min: 1, field: 'km' }) : null;
   if (husp && docKm !== null) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.');
-  if (docKm !== null && km !== null && docKm <= km) throw bad('validation', 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.');
+  if (docKm !== null && km !== null && docKm <= km) throw bad('validation', 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.', { field_key: 'next_due_km' });
   if (docKm !== null && km !== null && r.interval_km && docKm === km + r.interval_km) docKm = null;
   const next = docNext || (!husp && r.interval_months ? addMonths(date, r.interval_months) : null);
   // Backlog 576: Termin ohne Intervall (z. B. Verbandkasten mit Ablaufdatum) fiel nach „erledigt“ ohne neues Datum still aus Erinnerung/Kalender
@@ -1547,7 +1547,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
 // „Rücksprung ohne Begründung“ ließ sich vorher nicht auflösen (22.10.2026). Inhaber/Leitung, protokolliert.
 export async function addOdometerNote(env, user, readingId, body) {
   if (!isManager(user)) throw forbidden();
-  const note = str(body.note, { max: 300, field: 'Begründung', required: true });
+  const note = str(body.note, { key: 'note', max: 300, field: 'Begründung', required: true });
   const o = await env.DB.prepare('SELECT id, vehicle_id, km, measured_at, note FROM odometer_readings WHERE id=?').bind(readingId).first();
   if (!o) throw notFound('km-Stand nicht gefunden.');
   if (o.note && String(o.note).trim() === note) return { ok: true, duplicate: true }; // Backlog 805g: Wiederholung derselben Begründung
@@ -1560,19 +1560,19 @@ export async function addOdometerNote(env, user, readingId, body) {
 
 export async function addOdometer(env, user, vehicleId, body) {
   if (!['owner', 'fleet', 'workshop', 'driver', 'dispatch'].includes(user.role)) throw forbidden();
-  const km = kmNum(body.km);
+  const km = kmNum(body.km, { key: 'km' });
   // Ablesedatum optional (nachträgliche Erfassung), nie in der Zukunft; ohne Datum = jetzt
   const now = nowIso();
   let measuredAt = now;
   const mOn = typeof body.measured_on === 'string' ? body.measured_on.trim() : body.measured_on; // Leerzeichen wie bei den anderen Datumsfeldern
   if (mOn) {
     const d = String(mOn);
-    if (!isCalendarDate(d) || d < '2000-01-01') throw bad('validation', 'Ablesedatum ungültig (JJJJ-MM-TT).');
+    if (!isCalendarDate(d) || d < '2000-01-01') throw bad('validation', 'Ablesedatum ungültig (JJJJ-MM-TT).', { field_key: 'measured_on' });
     const today = berlinDate();
-    if (d > today) throw bad('validation', 'Ablesedatum darf nicht in der Zukunft liegen.');
+    if (d > today) throw bad('validation', 'Ablesedatum darf nicht in der Zukunft liegen.', { field_key: 'measured_on' });
     if (d < today) measuredAt = `${d}T12:00:00.000Z`;
   }
-  const note = str(body.note, { max: 300, field: 'Bemerkung' });
+  const note = str(body.note, { key: 'note', max: 300, field: 'Bemerkung' });
   const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
   // Plausibilität gegen die zeitlich benachbarten Werte: davor nicht größer, danach nicht kleiner – sonst nur mit Begründung
