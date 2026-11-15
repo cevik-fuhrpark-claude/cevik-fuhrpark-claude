@@ -1,7 +1,7 @@
 // [CLAUDE] Schadens- und Werkstattvorgänge: Statusmaschine als Befehle (keine freien Status-Updates)
 import { claimForCase, day as pastDay } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
-import { nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, hoursNum, qtyNum, qtyUnitOf, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork, otherEnvNotFound } from './util.js';
+import { withKey, nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, hoursNum, qtyNum, qtyUnitOf, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork, otherEnvNotFound } from './util.js';
 import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile, fineVehiclesSql, gespannVehiclesSql } from './fines.js';
@@ -734,7 +734,9 @@ export async function costLimit(env) {
 }
 const COST_ACTIONS = ['record_work', 'add_part', 'add_external_cost'];
 // „Gewährleistung bis“ (optional, nur laut Rechnung/Lieferant): Kalenderdatum, höchstens 10 Jahre voraus – keine Vorgabe der App
-export function warrantyDate(v) {
+// Backlog 1501 Stufe 14: Prüffehler nennen das Feld `warranty_until` (field_key)
+export function warrantyDate(v) { return withKey('warranty_until', () => warrantyDateRaw(v)); }
+function warrantyDateRaw(v) {
   if (v === undefined || v === null || v === '') return null;
   const d = String(v);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !isCalendarDate(d)) throw bad('validation', 'Gewährleistung bis: bitte gültiges Datum (JJJJ-MM-TT) angeben.');
@@ -924,7 +926,9 @@ export async function vehicleCosts(env, envName, vehicleId) {
 const round2 = roundCents; // kaufmännisch, gegen Gleitkommafehler abgesichert (18.10.2026)
 
 // Werkstatttermin: JJJJ-MM-TT, gültiges Datum, nicht mehr als 1 Jahr in der Vergangenheit/2 Jahre in der Zukunft
-export function planDate(v) {
+// Backlog 1501 Stufe 14: Prüffehler nennen das Feld `planned_date` (field_key)
+export function planDate(v) { return withKey('planned_date', () => planDateRaw(v)); }
+function planDateRaw(v) {
   const d = String(v);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Termin im Format JJJJ-MM-TT.');
   const today = berlinDate();
@@ -949,7 +953,9 @@ export function oneYearAhead(day) {
 // Schadenzeitpunkt laut Meldung (Backlog 285, Migration 0084): leer → null; „JJJJ-MM-TT“ = Tag ohne Uhrzeit (Berliner Kalender);
 // „JJJJ-MM-TTTHH:MM“ = deutsche Uhrzeit (wie die Tatzeit bei Bußgeldern) bzw. ISO mit Zeitzone → UTC-ISO. Nicht nach `latest`
 // (Meldezeit; 10 Min. Toleranz für Geräteuhren), höchstens ein Jahr zurück. Nie geschätzt oder aus der Meldezeit abgeleitet.
-export function occurredAt(v, latest = nowIso()) {
+// Backlog 1501 Stufe 14: Prüffehler nennen das Feld `occurred_at` (field_key)
+export function occurredAt(v, latest = nowIso()) { return withKey('occurred_at', () => occurredAtRaw(v, latest)); }
+function occurredAtRaw(v, latest = nowIso()) {
   const s = str(v, { max: 40, field: 'Schadenzeitpunkt' });
   if (!s) return null;
   const lim = berlinDate(latest);
@@ -1008,7 +1014,9 @@ export function reporterAssignment(c, rows) {
 }
 
 // Wiedervorlage: Kalenderdatum ab heute (Berlin), höchstens 1 Jahr voraus
-export function followupDate(v) {
+// Backlog 1501 Stufe 14: Prüffehler nennen das Feld `followup_on` (field_key)
+export function followupDate(v) { return withKey('followup_on', () => followupDateRaw(v)); }
+function followupDateRaw(v) {
   const d = String(v);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Wiedervorlage im Format JJJJ-MM-TT.');
   const today = berlinDate();
@@ -1018,7 +1026,9 @@ export function followupDate(v) {
 }
 
 // Liefertermin Teile: gültiges Datum, nicht in der Vergangenheit (Berliner Kalender), höchstens 1 Jahr voraus
-export function partsDate(v) {
+// Backlog 1501 Stufe 14: Prüffehler nennen das Feld `parts_expected_date` (field_key)
+export function partsDate(v) { return withKey('parts_expected_date', () => partsDateRaw(v)); }
+function partsDateRaw(v) {
   const d = String(v);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Liefertermin im Format JJJJ-MM-TT.');
   const today = berlinDate();
@@ -1028,7 +1038,9 @@ export function partsDate(v) {
 }
 
 // Backlog 871: voraussichtlich fertig – gültiges Datum, nicht in der Vergangenheit (Berliner Kalender), höchstens 1 Jahr voraus
-export function readyDate(v) {
+// Backlog 1501 Stufe 14: Prüffehler nennen das Feld `ready_expected_on` (field_key)
+export function readyDate(v) { return withKey('ready_expected_on', () => readyDateRaw(v)); }
+function readyDateRaw(v) {
   const d = String(v);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Fertigstellung im Format JJJJ-MM-TT.');
   const today = berlinDate();
@@ -1558,8 +1570,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       notifyKind = 'received';
       break;
     case 'change_priority': {
-      const np = oneOf(p.priority, PRIORITIES, 'Priorität');
-      if (np === c.priority) throw bad('validation', 'Priorität ist unverändert.');
+      const np = oneOf(p.priority, PRIORITIES, 'Priorität', { key: 'priority' });
+      if (np === c.priority) throw bad('validation', 'Priorität ist unverändert.', { field_key: 'priority' });
       requireNote('Bitte Begründung für die Prioritätsänderung angeben.');
       set.priority = np; set.priority_reviewed = 1;
       if (!c.fleet_received_at) { set.fleet_received_at = now; set.fleet_received_by = user.id; }
@@ -1590,7 +1602,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
       requireNote('Bitte Reparaturumfang/Freigabevermerk angeben.');
       set.workshop_site = site; set.approval_scope = note; set.priority_reviewed = 1;
-      if (p.priority) { const np = oneOf(p.priority, PRIORITIES, 'Priorität'); if (np !== c.priority) { set.priority = np; payload.priority_from = c.priority; payload.priority_to = np; } }
+      if (p.priority) { const np = oneOf(p.priority, PRIORITIES, 'Priorität', { key: 'priority' }); if (np !== c.priority) { set.priority = np; payload.priority_from = c.priority; payload.priority_to = np; } }
       if (!c.fleet_received_at) { set.fleet_received_at = now; set.fleet_received_by = user.id; }
       if (p.planned_date) { set.planned_date = planDate(p.planned_date); if (set.planned_date !== (c.planned_date || null)) { payload.planned_from = c.planned_date || null; payload.planned_to = set.planned_date; } }
       toStatus = 'werkstatt_freigegeben';
@@ -1609,9 +1621,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Abholung 13 Uhr, Fa. …“ – nicht mitgeschickt = bleibt (Termin im Plan verschieben), leer = entfernen, ohne Termin immer leer
       const oldNote = c.planned_note || null;
       const pn = p.planned_note === undefined ? oldNote : str(p.planned_note, { key: 'planned_note', max: 200, field: 'Hinweis zum Termin' });
-      if (pn && !d && p.planned_note !== undefined) throw bad('validation', 'Hinweis zum Termin nur zusammen mit einem Termin angeben.');
+      if (pn && !d && p.planned_note !== undefined) throw bad('validation', 'Hinweis zum Termin nur zusammen mit einem Termin angeben.', { field_key: 'planned_date' });
       const newNote = d ? pn : null;
-      if (d === (c.planned_date || null) && newNote === oldNote) throw bad('validation', 'Termin ist unverändert.');
+      if (d === (c.planned_date || null) && newNote === oldNote) throw bad('validation', 'Termin ist unverändert.', { field_key: 'planned_date' });
       set.planned_date = d; set.planned_note = newNote; payload = { from: c.planned_date || null, to: d, ...(newNote !== oldNote ? { note_from: oldNote, note_to: newNote } : {}) };
       // Auftrag aus Prüftermin verschoben: der vom Auftrag übernommene Prüftermin (gleicher Tag) zieht mit – sonst stand das Fahrzeug im Plan an
       // zwei Tagen (23.10.2026). Nur im Betrieb: Prüftermine gelten für beide Umgebungen, ein Testauftrag ändert keine Betriebsplanung.
@@ -1630,8 +1642,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const d = !p.followup_on ? null : String(p.followup_on) === (c.followup_on || '') ? c.followup_on : followupDate(p.followup_on);
       // Ohne mitgeschickten Vermerk bleibt der bisherige (Datum verschieben löschte ihn still – 19.10.2026)
       const fnote = d ? (body.note === undefined ? (c.followup_note || null) : (note || null)) : null;
-      if (d === (c.followup_on || null) && fnote === (c.followup_note || null)) throw bad('validation', 'Wiedervorlage ist unverändert.');
-      if (fnote && fnote.length > 300) throw bad('validation', 'Vermerk der Wiedervorlage ist zu lang (max. 300 Zeichen).'); // vorher still gekürzt
+      if (d === (c.followup_on || null) && fnote === (c.followup_note || null)) throw bad('validation', 'Wiedervorlage ist unverändert.', { field_key: 'followup_on' });
+      if (fnote && fnote.length > 300) throw bad('validation', 'Vermerk der Wiedervorlage ist zu lang (max. 300 Zeichen).', { field_key: 'note' }); // vorher still gekürzt
       set.followup_on = d; set.followup_note = fnote || null; payload = { from: c.followup_on || null, to: d };
       break;
     }
@@ -1640,12 +1652,12 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Ohne Statuswechsel und ohne Push (wie Werkstatttermin); der Verlauf zeigt alt → neu.
       const loc = str(p.vehicle_location, { key: 'vehicle_location', max: 300, field: 'Standort des Fahrzeugs' });
       const svc = str(p.tow_service, { key: 'tow_service', max: 120, field: 'Abschleppdienst' });
-      const on = pastDay(p.towed_on, 'Abgeschleppt am');
-      if (on && !svc) throw bad('validation', 'Abschleppdatum nur zusammen mit dem Abschleppdienst angeben.');
-      if (on && on < oneYearBack(berlinDate())) throw bad('validation', 'Abgeschleppt am: liegt mehr als ein Jahr zurück.');
+      const on = withKey('towed_on', () => pastDay(p.towed_on, 'Abgeschleppt am'));
+      if (on && !svc) throw bad('validation', 'Abschleppdatum nur zusammen mit dem Abschleppdienst angeben.', { field_key: 'tow_service' });
+      if (on && on < oneYearBack(berlinDate())) throw bad('validation', 'Abgeschleppt am: liegt mehr als ein Jahr zurück.', { field_key: 'towed_on' });
       const from = { location: c.vehicle_location || null, service: c.tow_service || null, on: c.towed_on || null };
       const to = { location: loc, service: svc, on };
-      if (from.location === to.location && from.service === to.service && from.on === to.on) throw bad('validation', 'Standort ist unverändert.');
+      if (from.location === to.location && from.service === to.service && from.on === to.on) throw bad('validation', 'Standort ist unverändert.', { field_key: 'vehicle_location' });
       // Zeitpunkt der Angabe (Migration 0094): „Stand …“ in Vorgang, Akte, Werkstattplan und Disposition; alles leer = entfernt
       set.vehicle_location = loc; set.tow_service = svc; set.towed_on = on; set.vehicle_location_at = loc || svc || on ? now : null;
       payload = { from: from.location || from.service || from.on ? from : null, to: loc || svc || on ? to : null };
@@ -1656,8 +1668,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Werkstatttermin ist der Beginn, nicht das Ende. Leer = entfernen; ohne Statuswechsel und ohne Push. Fahrer und Disposition sehen das Datum.
       const raw = p.ready_expected_on === undefined || p.ready_expected_on === null ? '' : String(p.ready_expected_on).trim();
       const d = raw ? readyDate(raw) : null;
-      if (d && c.status === 'werkstatt_freigegeben' && c.planned_date && d < c.planned_date) throw bad('validation', 'Voraussichtliche Fertigstellung liegt vor dem Werkstatttermin.');
-      if (d === (c.ready_expected_on || null)) throw bad('validation', 'Voraussichtliche Fertigstellung ist unverändert.');
+      if (d && c.status === 'werkstatt_freigegeben' && c.planned_date && d < c.planned_date) throw bad('validation', 'Voraussichtliche Fertigstellung liegt vor dem Werkstatttermin.', { field_key: 'ready_expected_on' });
+      if (d === (c.ready_expected_on || null)) throw bad('validation', 'Voraussichtliche Fertigstellung ist unverändert.', { field_key: 'ready_expected_on' });
       set.ready_expected_on = d; payload = { from: c.ready_expected_on || null, to: d };
       if (d) notifyKind = 'ready_changed'; // Backlog 873: neues/geändertes Datum melden (Entfernen still – nichts Neues zu planen)
       break;
@@ -1667,8 +1679,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Übergabe – was erledigt ist, was fehlt, Zustand des Fahrzeugs. Text = Bemerkung (steht so im Verlauf); leer = entfernen (z. B. weitergearbeitet).
       // Ohne Statuswechsel und ohne Push; Zeitpunkt und Person werden mitgeführt (Tafel: „Stand … · Name“).
       const ws0 = note || null;
-      if (ws0 && ws0.length > 500) throw bad('validation', 'Arbeitsstand ist zu lang (max. 500 Zeichen).');
-      if (ws0 === (c.work_state_note || null)) throw bad('validation', 'Arbeitsstand ist unverändert.');
+      if (ws0 && ws0.length > 500) throw bad('validation', 'Arbeitsstand ist zu lang (max. 500 Zeichen).', { field_key: 'note' });
+      if (ws0 === (c.work_state_note || null)) throw bad('validation', 'Arbeitsstand ist unverändert.', { field_key: 'note' });
       set.work_state_note = ws0; set.work_state_at = ws0 ? now : null; set.work_state_by = ws0 ? user.id : null;
       payload = ws0 ? (c.work_state_note ? { changed: true } : {}) : { cleared: true };
       break;
@@ -1695,8 +1707,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const val = (v, field) => (v === undefined || v === null || v === '' ? null : oneOf(v, HANDOVER_VALUES, field));
       const to = { keys: val(p.keys, 'Fahrzeugschlüssel'), papers: val(p.papers, 'Fahrzeugschein') };
       const from = { keys: c.handover_keys || null, papers: c.handover_papers || null };
-      if (from.keys === to.keys && from.papers === to.papers) throw bad('validation', 'Angaben zu Schlüssel/Fahrzeugschein sind unverändert.');
-      if (note && note.length > 300) throw bad('validation', 'Vermerk ist zu lang (max. 300 Zeichen).');
+      if (from.keys === to.keys && from.papers === to.papers) throw bad('validation', 'Angaben zu Schlüssel/Fahrzeugschein sind unverändert.', { field_key: 'keys' });
+      if (note && note.length > 300) throw bad('validation', 'Vermerk ist zu lang (max. 300 Zeichen).', { field_key: 'note' });
       set.handover_keys = to.keys; set.handover_papers = to.papers;
       payload = { from: from.keys || from.papers ? from : null, to: to.keys || to.papers ? to : null };
       const newlyMissing = ['keys', 'papers'].filter((k) => to[k] === 'fehlt' && from[k] !== 'fehlt');
@@ -1707,7 +1719,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Schadenzeitpunkt laut Meldung/Rückfrage (Backlog 285): Tag oder Tag + deutsche Uhrzeit, nicht nach der Meldung; leer = entfernen.
       // Ohne Statuswechsel und ohne Push; der Verlauf zeigt alt → neu.
       const at = occurredAt(p.occurred_at, c.created_at);
-      if (at === (c.occurred_at || null)) throw bad('validation', 'Schadenzeitpunkt ist unverändert.');
+      if (at === (c.occurred_at || null)) throw bad('validation', 'Schadenzeitpunkt ist unverändert.', { field_key: 'occurred_at' });
       set.occurred_at = at; payload = { from: c.occurred_at || null, to: at };
       break;
     }
@@ -1810,7 +1822,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
       if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
       requireNote('Bitte Grund für den Werkstattwechsel angeben.');
-      if (site === c.workshop_site) throw bad('validation', 'Werkstatt ist unverändert.');
+      if (site === c.workshop_site) throw bad('validation', 'Werkstatt ist unverändert.', { field_key: 'workshop_site' });
       // Termin gehörte zur bisherigen Werkstatt – die neue legt ihren eigenen bei der Übernahme fest (bleibt im Verlauf)
       set.workshop_site = site; set.workshop_ack_at = null; set.workshop_ack_by = null; set.planned_date = null; set.planned_note = null;
       if (c.ready_expected_on) set.ready_expected_on = null; // Backlog 871: Angabe der bisherigen Werkstatt gilt nicht mehr
@@ -1926,7 +1938,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     case 'set_parts_eta': {
       // Liefertermin setzen/verschieben/entfernen (leer); ohne Statuswechsel; Push nur, wenn das Fahrzeug bis zur Teilelieferung fährt (Backlog 1038)
       const eta = p.parts_expected_date ? partsDate(p.parts_expected_date) : null;
-      if (eta === (c.parts_expected_date || null)) throw bad('validation', 'Liefertermin ist unverändert.');
+      if (eta === (c.parts_expected_date || null)) throw bad('validation', 'Liefertermin ist unverändert.', { field_key: 'parts_expected_date' });
       set.parts_expected_date = eta; payload = { from: c.parts_expected_date || null, to: eta };
       if (c.parts_drive_at && !c.safety_lock) notifyKind = 'parts_eta_changed'; // Backlog 1038: Lkw fährt bis zur Teilelieferung – Disposition plant danach
       break;
@@ -1959,10 +1971,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const hours = hoursNum(p.hours, { key: 'hours', min: 0.05, max: 24, field: 'Stunden', decimalPoint: pointDec(user), decimalComma: commaDec(user) });
       const desc = str(p.description, { key: 'description', required: true, max: 2000, field: 'Tätigkeit' });
       const date = str(p.work_date, { key: 'work_date', max: 10 }) || berlinDate();
-      if (!isCalendarDate(date)) throw bad('validation', 'Datum ungültig.');
+      if (!isCalendarDate(date)) throw bad('validation', 'Datum ungültig.', { field_key: 'work_date' });
       // Tippfehler im Jahr (2062/1926) fielen sonst aus dem Monats-Kostenbericht: nicht in der Zukunft, höchstens 1 Jahr vor der Meldung
       const earliest = addMonths(berlinDate(c.created_at), -12);
-      if (date > berlinDate() || date < earliest) throw bad('validation', `Arbeitsdatum: nicht in der Zukunft und nicht vor dem ${earliest.split('-').reverse().join('.')}.`);
+      if (date > berlinDate() || date < earliest) throw bad('validation', `Arbeitsdatum: nicht in der Zukunft und nicht vor dem ${earliest.split('-').reverse().join('.')}.`, { field_key: 'work_date' });
       // höchstens 24 Stunden je Benutzerkonto und Arbeitstag über alle Vorgänge (vorher 3 × 24 h am selben Tag möglich, 17.10.2026) – Vorprüfung
       // für die verständliche Meldung, Prüfung im Stapel gegen gleichzeitige Buchungen
       const { h: dayH, lim: dayLim } = await workHoursOn(env, user.id, date);
@@ -2109,8 +2121,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (extOdo !== null) {
         let at = now;
         if (extOn) {
-          if (!isCalendarDate(extOn) || extOn < '2000-01-01') throw bad('validation', 'Datum laut Rechnung ungültig (JJJJ-MM-TT).');
-          if (extOn > berlinDate()) throw bad('validation', 'Datum laut Rechnung darf nicht in der Zukunft liegen.');
+          if (!isCalendarDate(extOn) || extOn < '2000-01-01') throw bad('validation', 'Datum laut Rechnung ungültig (JJJJ-MM-TT).', { field_key: 'odometer_on' });
+          if (extOn > berlinDate()) throw bad('validation', 'Datum laut Rechnung darf nicht in der Zukunft liegen.', { field_key: 'odometer_on' });
           if (extOn < berlinDate()) at = `${extOn}T12:00:00.000Z`;
         }
         const [prev, next] = await Promise.all([
@@ -2195,12 +2207,12 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const pickupForDriver = flag(p.pickup_for_driver, 'Für Fahrer sichtbar');
       let pickupUntil = null;
       if (pickupForDriver) {
-        if (!(pickup || c.pickup_note)) throw bad('validation', 'Abholung: bitte zuerst eintragen, wo Schlüssel/Fahrzeugschein liegen.');
+        if (!(pickup || c.pickup_note)) throw bad('validation', 'Abholung: bitte zuerst eintragen, wo Schlüssel/Fahrzeugschein liegen.', { field_key: 'pickup_note' });
         if (p.pickup_valid_until !== undefined && p.pickup_valid_until !== null && p.pickup_valid_until !== '') {
           pickupUntil = String(p.pickup_valid_until);
-          if (!isCalendarDate(pickupUntil)) throw bad('validation', '„Gültig bis“ ist kein gültiges Datum (JJJJ-MM-TT).');
-          if (pickupUntil < berlinDate()) throw bad('validation', '„Gültig bis“ darf nicht in der Vergangenheit liegen.');
-          if (pickupUntil > oneYearAhead(berlinDate())) throw bad('validation', 'Abholung: „Gültig bis“ liegt mehr als ein Jahr in der Zukunft.');
+          if (!isCalendarDate(pickupUntil)) throw bad('validation', '„Gültig bis“ ist kein gültiges Datum (JJJJ-MM-TT).', { field_key: 'pickup_valid_until' });
+          if (pickupUntil < berlinDate()) throw bad('validation', '„Gültig bis“ darf nicht in der Vergangenheit liegen.', { field_key: 'pickup_valid_until' });
+          if (pickupUntil > oneYearAhead(berlinDate())) throw bad('validation', 'Abholung: „Gültig bis“ liegt mehr als ein Jahr in der Zukunft.', { field_key: 'pickup_valid_until' });
         }
         const nn = await env.DB.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(source_case_id IS NOT NULL AND source_case_id<>?), 0) AS repl FROM vehicle_notes WHERE vehicle_id=? AND environment=? AND ${noteActiveSql()}`).bind(c.id, c.vehicle_id, envName, berlinDate()).first();
         // ersetzte Abholhinweise (Backlog 879, unten im selben Stapel archiviert) zählen nicht mit

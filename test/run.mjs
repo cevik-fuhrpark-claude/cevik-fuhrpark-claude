@@ -42347,6 +42347,31 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   eq(JSON.stringify((await users.fleet.get('/api/me/notify-prefs')).data.quiet), qz0, 'Ruhezeit nach Ablehnung unverändert');
   { const s0 = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
     ok(s0.includes('<input id="qfrom" name="from" type="time"') && s0.includes('<input id="qto" name="to" type="time"'), 'Ruhezeit-Formular: Feldnamen from/to'); }
+  // Stufe 14: Datums- und Querprüfungen der Vorgangsbefehle (Formular #af; Schadenzeitpunkt über data-fkey am Datumsfeld)
+  { const { planDate, followupDate, partsDate, readyDate, warrantyDate, occurredAt } = await import('../src/cases.js');
+    eq(fk(() => planDate('2026-02-30')), 'planned_date', 'Werkstatttermin ungültig'); eq(fk(() => followupDate('3000-01-01')), 'followup_on', 'Wiedervorlage zu weit');
+    eq(fk(() => partsDate('2026-13-01')), 'parts_expected_date', 'Liefertermin ungültig'); eq(fk(() => readyDate('kein Datum')), 'ready_expected_on', 'Fertigstellung ungültig');
+    eq(fk(() => warrantyDate('2026-02-30')), 'warranty_until', 'Gewährleistung ungültig'); eq(fk(() => occurredAt('2099-01-01')), 'occurred_at', 'Schadenzeitpunkt in der Zukunft');
+    eq(planDate(bDayOff(3)), bDayOff(3), 'gültiger Termin unverändert');
+    eq((await owner.post('/api/vehicles', { plate: 'AB-F 1514', vin: 'WDB96340310815014', site: 'Dortmund' })).status, 201);
+    const kc = await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310815014', description: 'Spiegel links abgebrochen (Stufe 14)', priority: 'mittel', driveability: 'fahrbereit', request_key: crypto.randomUUID() });
+    ok(kc.status < 300, JSON.stringify(kc.data)); const kid = kc.data.id || kc.data.case.id;
+    const kcmd = async (action, payload, note = null) => { const c = (await users.fleet.get(`/api/cases/${kid}`)).data.case; return users.fleet.post(`/api/cases/${kid}/commands`, { action, command_id: crypto.randomUUID(), expected_version: c.version, note, payload }); };
+    const fq = async (action, payload, key, label, note) => { const r = await kcmd(action, payload, note); eq(r.status, 400, label + ' ' + JSON.stringify(r.data)); eq(r.data.field_key, key, label); };
+    await fq('set_followup', { followup_on: '2026-02-30' }, 'followup_on', 'Wiedervorlage ungültig');
+    await fq('set_followup', { followup_on: null }, 'followup_on', 'Wiedervorlage unverändert');
+    await fq('set_vehicle_location', { towed_on: bDayOff(0) }, 'tow_service', 'Abschleppdatum ohne Dienst');
+    await fq('set_vehicle_location', { tow_service: 'Abschlepp 1514', towed_on: bDayOff(2) }, 'towed_on', 'Abschleppdatum in der Zukunft');
+    await fq('set_vehicle_location', { tow_service: 'Abschlepp 1514', towed_on: bDayOff(-400) }, 'towed_on', 'Abschleppdatum über ein Jahr zurück');
+    await fq('set_vehicle_location', {}, 'vehicle_location', 'Standort unverändert');
+    await fq('set_occurred_at', { occurred_at: '2099-01-01' }, 'occurred_at', 'Schadenzeitpunkt in der Zukunft (Befehl)');
+    await fq('set_occurred_at', { occurred_at: null }, 'occurred_at', 'Schadenzeitpunkt unverändert');
+    await fq('change_priority', { priority: 'mittel' }, 'priority', 'Priorität unverändert');
+    await fq('change_priority', { priority: 'egal' }, 'priority', 'Priorität ungültig');
+    const nk = await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310815014', description: 'Tür klemmt (Stufe 14)', priority: 'niedrig', driveability: 'fahrbereit', occurred_at: bDayOff(-400), request_key: crypto.randomUUID() });
+    eq(nk.status, 400, 'Meldung: Schadenzeitpunkt zu alt'); eq(nk.data.field_key, 'occurred_at', 'Meldung: Schadenzeitpunkt');
+    const s14 = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(s14.includes('<input type="date" id="occd" data-fkey="occurred_at"'), 'Datumsfeld Schadenzeitpunkt trägt data-fkey');
+  }
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
