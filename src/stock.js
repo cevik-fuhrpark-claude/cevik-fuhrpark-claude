@@ -544,9 +544,10 @@ export async function journal(env, user, envName, query = {}) {
   const today = berlinDate();
   const from = query.from ? String(query.from) : today.slice(0, 8) + '01';
   const to = query.to ? String(query.to) : today;
-  if (!isCalendarDate(from) || !isCalendarDate(to)) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.');
-  if (from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.');
-  if ((Date.parse(to) - Date.parse(from)) / 86400000 > 366) throw bad('validation', 'Zeitraum höchstens ein Jahr.');
+  // Backlog 1501 Stufe 9: Feld nennen (`field_key` from/to) – das Lagerjournal markiert es nach dem Neuzeichnen
+  for (const [k, d] of [['from', from], ['to', to]]) if (!isCalendarDate(d)) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.', { field_key: k });
+  if (from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.', { field_key: 'to' });
+  if ((Date.parse(to) - Date.parse(from)) / 86400000 > 366) throw bad('validation', 'Zeitraum höchstens ein Jahr.', { field_key: 'from' });
   const type = query.type ? oneOf(String(query.type), ['zugang', 'entnahme', 'korrektur', 'umlagerung', 'inventur'], 'Buchungsart') : null;
   // optional: nur ein Artikel (Verweis aus der Artikelakte); gleiche Sichtprüfung wie die Artikelakte (Umgebung, Werkstatt nur eigenes Lager)
   const item = query.item ? await loadItem(env, user, envName, String(query.item).slice(0, 64)) : null;

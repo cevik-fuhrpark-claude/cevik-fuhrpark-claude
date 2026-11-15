@@ -1,5 +1,5 @@
 # [CLAUDE] UI-Test Backlog 1501 Stufe 9 (WCAG 3.3.1): Auswertungen per GET – „Von“ nach „Bis“ markiert das Feld „Bis“ (aria-invalid,
-# Hinweis am Feld, Fokus), die abgelehnte Eingabe bleibt im Feld stehen: Auslesungen-Verlauf, Nachweise der Fahrer, Teile-Verwendung,
+# Hinweis am Feld, Fokus), die abgelehnte Eingabe bleibt im Feld stehen: Auslesungen-Verlauf, Nachweise der Fahrer, Teile-Verwendung, Lagerjournal,
 # Nachweisliste „Durchgeführte Prüfungen“ (Beschriftungen zugeordnet). DE bei 390/820/1366 px, UK/EN bei 390 px.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). CFP_SHOTS=<ordner> speichert Bildschirmfotos.
 import os
@@ -28,7 +28,8 @@ with sync_playwright() as p:
         q.evaluate(JS, ['PATCH', '/api/me', {'language': lang}])
         for name, hsh, form, fr, to, pre in [('Auslesungen-Verlauf', '#/tacho/history', '#thf', '#thfrom', '#thto', None),
                                               ('Nachweise der Fahrer', '#/drivers/records', '#drf', '#drfrom', '#drto', None),
-                                              ('Teile-Verwendung', '#/stock/usage', '#puf', '#pufrom', '#puto', '#puq')]:
+                                              ('Teile-Verwendung', '#/stock/usage', '#puf', '#pufrom', '#puto', '#puq'),
+                                              ('Lagerjournal', '#/stock/journal', '#jf', '#jfrom', '#jto', None)]:
             q.goto(B + '/' + hsh); q.wait_for_selector(form)
             if pre: q.fill(pre, 'Filter')
             q.fill(fr, '2026-05-01'); q.fill(to, '2026-04-01')

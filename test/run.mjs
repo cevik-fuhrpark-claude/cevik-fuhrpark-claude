@@ -42283,6 +42283,9 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   const mh2 = await owner.get('/api/maintenance/history?from=2026-05-01&to=2026-04-01'); eq(mh2.data.field_key, 'to', 'Nachweisliste: Von nach Bis');
   const th1 = await users.fleet.get('/api/tacho/history?from=2026-05-01&to=2026-04-01'); eq(th1.status, 400); eq(th1.data.field_key, 'to', 'Auslesungen-Verlauf: Von nach Bis');
   const th2 = await users.fleet.get('/api/tacho/history?from=2026-02-30&to=2026-04-01'); eq(th2.data.field_key, 'from', 'Auslesungen-Verlauf: Von ungültig');
+  const sj1 = await users.fleet.get('/api/stock/journal?from=2026-05-01&to=2026-04-01'); eq(sj1.status, 400); eq(sj1.data.field_key, 'to', 'Lagerjournal: Von nach Bis');
+  const sj2 = await users.fleet.get('/api/stock/journal?from=2024-01-01&to=2026-04-01'); eq(sj2.data.field_key, 'from', 'Lagerjournal: mehr als ein Jahr');
+  const au1 = await owner.get('/api/admin/audit?format=csv&from=2026-05-01&to=2026-04-01'); eq(au1.status, 400); eq(au1.data.field_key, 'to', 'Protokoll-CSV: Von nach Bis');
   const dr1 = await users.fleet.get('/api/drivers/records?to=gestern'); eq(dr1.status, 400); eq(dr1.data.field_key, 'to', 'Nachweise der Fahrer: Bis ungültig');
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
@@ -42322,7 +42325,7 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   S2.fieldErr = null; mg(gform, 200, { from: '2026-05-01' }); eq(fromEl.value, '2026-01-01', 'ohne Feld-Fehler: Standardwert bleibt'); eq(marks.length, 0, 'ohne Feld-Fehler nichts markiert');
   S2.fieldErr = { key: 'from', msg: 'x', at: 100 }; mg(gform, 200, { from: '2026-05-01' }); eq(marks.length, 0, 'älterer Fehler ignoriert');
   S2.fieldErr = { key: 'from', msg: 'x', at: 300 }; mg(gform, 200, { from: '2026-05-01', to: '' }); eq(fromEl.value, '2026-05-01', 'abgelehnte Eingabe wieder im Feld'); eq(JSON.stringify(marks), '[200]', 'markServerField aufgerufen');
-  for (const [v, f] of [['viewPartsUsage', '#puf'], ['viewTachoHistory', '#thf'], ['viewDriverRecords', '#drf']]) {
+  for (const [v, f] of [['viewPartsUsage', '#puf'], ['viewTachoHistory', '#thf'], ['viewDriverRecords', '#drf'], ['viewStockJournal', '#jf']]) {
     const a = src.indexOf(`async function ${v}(`); const b = src.indexOf('\nasync function ', a + 10); ok(a > 0 && src.slice(a, b).includes(`markGetField($('${f}'), t0`), `${v} markiert Feld nach dem Neuzeichnen`);
   }
   ok(/<label for="mhfrom">[^\n]*id="mhfrom" name="from"[^\n]*<label for="mhto">[^\n]*id="mhto" name="to"/.test(src) && src.includes('<label for="mhkind">'), 'Nachweisliste: Beschriftungen den Feldern zugeordnet');

@@ -403,8 +403,8 @@ async function viewStockJournal() {
   const site = sites.some((w) => w.code === ss('cfp_sj_site')) ? ss('cfp_sj_site') : ''; const type = ss('cfp_sj_type');
   const itemId = ss('cfp_sj_item');
   const qs = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${site ? '&site=' + encodeURIComponent(site) : ''}${type ? '&type=' + encodeURIComponent(type) : ''}${itemId ? '&item=' + encodeURIComponent(itemId) : ''}`;
-  let rep;
-  try { rep = await api('GET', '/api/stock/journal?' + qs); } catch (err) { ss('cfp_sj_from', ''); ss('cfp_sj_to', ''); ss('cfp_sj_item', ''); toast(err.message, true); rep = null; }
+  let rep; const t0 = Date.now(); let kept = null;
+  try { rep = await api('GET', '/api/stock/journal?' + qs); } catch (err) { kept = { from, to }; ss('cfp_sj_from', ''); ss('cfp_sj_to', ''); ss('cfp_sj_item', ''); toast(err.message, true); rep = null; }
   const n = (x) => (x === null || x === undefined ? '' : fmtNum(x));
   const TYPES = ['zugang', 'entnahme', 'korrektur', 'umlagerung'];
   const inv = type === 'inventur' && rep && rep.summary.inventur; const is = inv ? rep.summary.inventur : null;
@@ -413,7 +413,7 @@ async function viewStockJournal() {
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t(inv ? 'inventory_diffs' : 'stock_journal'))}</h1>
     <p class="small muted">${esc(t(inv ? 'inv_hint' : 'journal_hint'))}</p>
     <p class="print-only small">${printStamp()} · ${esc(fmtD(from))} – ${esc(fmtD(to))}${site ? ' · ' + esc(wsName(site)) : ''}${rep && rep.item ? ' · ' + esc(rep.item.name) : ''} · CEVIK ${esc(t('app'))} [CLAUDE]</p>
-    <form id="jf" class="panel noprint"><div class="grid2"><div><label for="jfrom">${esc(t('from'))}</label><input type="date" id="jfrom" value="${esc(from)}" max="${esc(today)}"></div><div><label for="jto">${esc(t('to'))}</label><input type="date" id="jto" value="${esc(to)}" max="${esc(today)}"></div></div>
+    <form id="jf" class="panel noprint"><div class="grid2"><div><label for="jfrom">${esc(t('from'))}</label><input type="date" id="jfrom" name="from" value="${esc(from)}" max="${esc(today)}"></div><div><label for="jto">${esc(t('to'))}</label><input type="date" id="jto" name="to" value="${esc(to)}" max="${esc(today)}"></div></div>
       ${sites.length > 1 ? `<label for="jsite">${esc(t('workshop'))}</label><select id="jsite"><option value="">${esc(t('all'))}</option>${sites.map((w) => `<option value="${esc(w.code)}"${w.code === site ? ' selected' : ''}>${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
       <label for="jtype">${esc(t('kind'))}</label><select id="jtype"><option value="">${esc(t('all'))}</option>${[...TYPES, 'inventur'].map((k) => `<option value="${k}"${k === type ? ' selected' : ''}>${esc(t('mv_' + k))}</option>`).join('')}</select>
       ${rep && rep.item ? `<p id="jitem" style="margin-top:12px"><span class="chip">${esc(t('part_name'))}: ${esc(rep.item.name)}${rep.item.part_number ? ' · ' + esc(rep.item.part_number) : ''}</span> <button type="button" class="btn secondary" id="jitemclr">${esc(t('journal_item_all'))}</button></p>` : ''}
@@ -425,6 +425,7 @@ async function viewStockJournal() {
       ${rep.movements.map((m) => `<tr><td class="small">${fmtDT(m.created_at)}</td><td>${esc(wsName(m.site))}</td><td><a href="#/stock/${esc(m.item_id)}">${esc(m.name)}</a>${m.part_number ? `<div class="small muted pn">${esc(m.part_number)}</div>` : ''}</td><td>${m.transfer_id ? `${esc(t('mv_umlagerung'))} ${m.qty < 0 ? '→' : '←'} ${esc(wsName(m.transfer_site))}` : esc(t('mv_' + m.type))}</td><td><b>${m.qty > 0 ? '+' : ''}${n(m.qty)}</b> ${esc(unitL(m.unit))}</td><td>${m.unit_price_net === null ? `<span class="muted">${esc(t('unvalued_short'))}</span>` : eur3(m.unit_price_net)}</td><td>${m.value_net === null ? '–' : eur(m.value_net)}</td><td>${m.case_no ? `<a href="#/cases/${esc(m.case_id)}" translate="no">${esc(m.case_no)}</a>${m.plate ? ' · ' + esc(m.plate) : ''}` : '–'}</td><td class="small">${[m.supplier, m.document_ref && !(m.note || '').startsWith(m.document_ref) ? stNote(m.document_ref) : null, stNote(m.note)].filter(Boolean).map(esc).join(' · ') || '–'}</td></tr>`).join('')}
       </tbody></table></div>` : rep ? `<p class="muted">${esc(t('journal_none'))}</p>` : ''}`, 'more');
   $('#jf').onsubmit = (e) => { e.preventDefault(); ss('cfp_sj_from', $('#jfrom').value); ss('cfp_sj_to', $('#jto').value); if ($('#jsite')) ss('cfp_sj_site', $('#jsite').value); ss('cfp_sj_type', $('#jtype').value); viewStockJournal(); };
+  markGetField($('#jf'), t0, kept);
   $('#jprt').onclick = () => window.print();
   if ($('#jitemclr')) $('#jitemclr').onclick = () => { ss('cfp_sj_item', ''); viewStockJournal(); };
   $('#jcsv').onclick = async () => { try { downloadChecked(await api('GET', '/api/stock/journal?format=csv&' + qs), `fuhrpark-${inv ? 'inventurdifferenzen' : 'lagerjournal'}_${envFn()}_${from}_${to}${site ? '_' + site : ''}${rep && rep.item && rep.item.part_number ? '_' + rep.item.part_number.replace(/[^\w-]/g, '') : ''}.csv`); } catch (err) { toast(err.message, true); } };

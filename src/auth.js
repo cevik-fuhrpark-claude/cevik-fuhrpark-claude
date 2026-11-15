@@ -964,8 +964,8 @@ export async function auditCsv(env, user, query, csvCell) {
   if (user.role !== 'owner') throw new HttpError(403, 'forbidden', 'Nur der Inhaber sieht das Protokoll.');
   const today = berlinDate();
   const from = query.from || today.slice(0, 8) + '01'; const to = query.to || today;
-  if (!isCalendarDate(from) || !isCalendarDate(to)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
-  if (from > to) throw bad('validation', '„Von“ liegt nach „bis“.');
+  for (const [k, d] of [['from', from], ['to', to]]) if (!isCalendarDate(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.', { field_key: k }); // Backlog 1501 Stufe 9
+  if (from > to) throw bad('validation', '„Von“ liegt nach „bis“.', { field_key: 'to' });
   const next = new Date(Date.parse(to + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
   if ((Date.parse(next) - Date.parse(from)) / 86400000 > 366) throw bad('validation', 'Höchstens ein Jahr je Export.');
   const lo = berlinDayStartIso(from); const hi = berlinDayStartIso(next);
