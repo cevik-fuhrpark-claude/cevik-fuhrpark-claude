@@ -807,6 +807,57 @@ function faKinds(v) { const k = new Set(); for (const raw of String(v || '').spl
 
 
 
-async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+const UZ_TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'j', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'x', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ь: '', э: 'e', ю: 'yu', я: 'ya', ў: 'o', қ: 'q', ғ: 'g', ҳ: 'h' };
+const uzFold = (s) => String(s || '').toLowerCase().replace(/[а-яёўқғҳ]/g, (c) => UZ_TR[c] ?? c).replace(/([og])[ʻʼ‘’'`´]/g, '$1');
+const UZ_D = 'ishlama\\S*|buzil\\S*|buzuq\\S*|nosoz\\S*';
+const UZ_SIN = 'sin(?:di|dir\\S*|gan|ib|iq)\\b\\S*';
+const uzRx = (n, d, extra) => new RegExp(`\\b(?:${n})\\S*\\s+(?:\\S+\\s+){0,2}?(?:${d.split('@').join(UZ_D)})${extra ? '|' + extra : ''}`);
+const UZ_OK = /\b(?:tuzat|tuzal|almashtir|yangila|sozla|remont\s+qil)\S*|\bsoz\b(?!\s+emas)|\b(?:yana|endi|qayta)\s+(?:\S+\s+)?(?:ishlay|yonyapti|yuryapti|ot\s+ol)\S*|\bhammasi\s+(?:\S+\s+)?(?:joyida|yaxshi|normal|soz|ok)\b|\bmuammo\S*\s+yoq\b|\bmuammosiz\b/;
+const UZ_NEG = /\b(?:teshil|yoril|portla|sin|buzil|kuy|oq|uzil|yirtil|qiz|toqnash|uril|ur|yarala|tuga|osil|darz|egil|bot|ogirla|yoqol|yoqot|tiqil|tomchila)(?:ib\s+)?m[ae](?:gan|di|ydi|yapti|yabdi|yotgan|sa|y)\S*|\b\S+\s+emas\b|\bhech\s+(?:qanday\s+|narsa\s+)?\S+|\b(?:avariya|muammo|xato|tutun|shikast)siz\b/g;
+const UZ_FIRE_N = 'kabina|motor|dvigatel|gildirak|shina|balon|ballon|mashina|yuk|pritsep|prisep|tirkama|simlar|provod';
+const UZ_KINDS = [['brake', uzRx('tormoz|tormaz', '@|ushlama\\S*|tutma\\S*|yoq\\b|kuchsiz\\S*|zaif\\S*|ketib\\s+qol\\S*', '\\bhavo\\s+(?:\\S+\\s+)?(?:bosim\\S*\\s+)?(?:tush(?:yapti|ib|di)|ketyapti|chiqyapti)'), /\bqol\s+tormoz|ruchnik|stoyanka|asistent|datchik|ozi\s+(?:\S+\s+)?tormoz|chiro|lampochka|indikator/],
+  ['parkbrake', /\b(?:qol\s+tormoz\S*|ruchnik\S*)\s+(?:\S+\s+){0,2}?(?:ishlama|ushlama|tutma|buzil|buzuq)\S*|\bozi\s+(?:\S+\s+)?(?:yurib|dumalab|siljib)\s+ket\S*/],
+  ['flat', uzRx('shina|balon|ballon|gildirak|koles|pokrishka', 'teshil\\S*|yoril\\S*|portla\\S*|dami\\s+chiq\\S*|havosi\\s+(?:chiq|ket|tush)\\S*|pachaq\\S*|prokol\\S*', '\\b(?:teshil|portla|yoril)\\S*\\s+(?:\\S+\\s+)?(?:shina|balon|ballon|gildirak)|\\bprokol\\s+bol\\S*'), /podushka|yostig|yostiq|tent/],
+  ['tyre', uzRx('shina|balon|ballon|pokrishka|protektor', 'yeyil\\S*|kesil\\S*|shish\\S*|grija\\S*|gryja\\S*|tekis\\s+bol\\S*|siliq\\S*|darz\\S*'), /teshil|portla|yoril|dami\s+chiq|havosi/],
+  ['steer', uzRx('rul', '@|qattiq\\S*|ogir\\S*|aylanma\\S*|tiqil\\S*|qimirla\\S*|bush\\S*', '\\b(?:ongga|onga|chapga)\\s+(?:\\S+\\s+)?tort(?:yapti|ib|adi|ayapti|moqda)\\S*'), /podushka|xavfsizlik/],
+  ['leak', uzRx('moy|maslo|solyarka|salyarka|dizel|yoqilgi|antifriz|tosol|sovutish\\s+suyuq|adblue|gidravlik', 'oq(?:yapti|ayapti|moqda|ib|di|yabdi)\\b|tomchila\\S*|tom(?:yapti|ib)\\b|siz(?:ib|yapti|moqda)\\b|ketyapti|ketib\\s+qolyapti', '\\b(?:oqyapti|oqib\\s+yotibdi)\\s+(?:\\S+\\s+)?(?:moy|solyarka|antifriz|dizel)'), /tugadi|tugab|qolmadi|chiroq|chirog|lampochka/],
+  ['fire', uzRx(UZ_FIRE_N, 'yon(?:yapti|ayapti|ib\\s+ket\\S*|ib\\s+qol\\S*|moqda|di)\\b|olov\\S*', '\\byongin\\S*|\\b(?:tutun|dud)\\S*\\s+(?:\\S+\\s+)?(?:chiq|ket)\\S*|\\bolov\\s+(?:\\S+\\s+)?(?:chiq|ol)\\S*|\\bot\\s+ket(?:di|ib)\\b'), /glushitel|glushak|vyxlop|vixlop|truba|ochirgich|ognetush|chiro|lampochka|indikator|check|chek|panel|sigaret|chiqma/],
+  ['acc', /\bavariya(?:ga|da|ni|si)?\s+(?:\S+\s+)?(?:uchradi|uchradim|uchradik|boldi|bolib|qildim|chiqdi)\b|\btoqnash\S*|\buril(?:di|dim|dik|ib)\b|\burib\s+(?:oldi|oldim|yubordim|ketdim|ketdi)\b|\btegib\s+ket(?:dim|di)\b/, /\btosh\b|shagal|qum\s+/],
+  ['injury', /\byaralan(?:di|dim|gan|ib)\b|\bjarohat\S*|\btez\s+yordam\S*|\bkasalxona\S*|\bshifoxona\S*|\b(?:qol|oyog|bosh|bel|barmog)im\S*\s+(?:\S+\s+)?(?:kesib|kesil|sindi|sinib|lat\s+yedi|shikast)\S*/],
+  ['nostart', /\bot\s+olma\S*|\bzavod\s+(?:bolma|olma)\S*|\bzavodga\s+tushma\S*|\bstarter\S*\s+(?:\S+\s+)?(?:ishlama|aylanma|buzil)\S*|\b(?:motor|dvigatel|mashina)\s+(?:umuman\s+)?(?:ishlama|yurma)\S*/, /agregat|xolodil|refrijerator|konditsioner|pechka|webasto|vebasto/],
+  ['engine', uzRx('motor|dvigatel', 'qiz(?:ib|di|iyapti|yapti|moqda)\\b\\S*|isib\\s+ket\\S*|ochib\\s+qol\\S*|ochyapti|tortma\\S*|kuchsiz\\S*|kuchi\\s+yoq|taqilla\\S*|shovqin\\S*|gʻalati|galati', '\\b(?:kuch|moshchnost\\S*)\\s+yoq\\b|\\btortmayapti\\b|\\b(?:glushitel|glushak|vyxlop|vixlop|truba)\\S*\\s+(?:\\S+\\s+){0,2}?(?:(?:qora|oq|kok)\\s+)?(?:tutun|dud)|\\b(?:qora|kok)\\s+tutun\\s+(?:\\S+\\s+)?chiq\\S*|\\bavariya\\s+rejim\\S*|\\btemperatura\\S*\\s+(?:\\S+\\s+)?(?:kotaril|baland|oshib|oshdi)\\S*'), /agregat|xolodil|refrijerator|chiro|lampochka/],
+  ['mirror', uzRx('kozgu|zerkal', UZ_SIN + '|buzil\\S*|uzil\\S*|osil\\S*|tushib\\s+ket\\S*|qopor\\S*', '\\b(?:sindi|sindirdim|sindirib\\s+\\S+)\\s+(?:\\S+\\s+)?(?:kozgu|zerkal)'), /isit|podogrev/],
+  ['lights', uzRx('chiroq|chirog|fara|farlar|fonar|stop\\s+chiroq|povorot|gabarit|lampochka|lampa|avariyka', 'yonma\\S*|ishlama\\S*|kuy(?:di|ib|gan)\\S*|' + UZ_SIN + '|ochib\\s+qol\\S*', '\\b(?:kuydi|kuyib\\s+qoldi)\\s+(?:\\S+\\s+)?(?:lampochka|lampa|chiroq)'), /panel|ekran|displey|xato|oshibk|check|chek|motor\s+chiro|indikator/],
+  ['warnlight', /\b(?:panel|ekran|displey|pribor)\S*\s+(?:\S+\s+){0,3}?(?:yon(?:yapti|ib|di|moqda)\b|chiq(?:di|yapti)\b|xato|oshibk)\S*|\b(?:check|chek|indikator|lampochka)\S*\s+(?:\S+\s+)?(?:yon(?:yapti|ib|di|moqda)|miltilla\S*|chiqdi|chiqyapti)\b|\b(?:xato|xatolik|oshibka)\S*\s+(?:\S+\s+)?(?:chiq|yon|kor|ber)\S*|\b(?:motor|dvigatel|moy|abs|ebs|adblue|akkumulyator|tormoz|qizil|sariq)\s+chiro(?:q|g)\S*\s+(?:\S+\s+)?yon(?:yapti|ib|di|moqda)\b/],
+  ['glass', uzRx('lobovoy|oldingi\\s+oyna|old\\s+oyna|oyna|steklo|shisha', 'yoril\\S*|darz\\S*|' + UZ_SIN + '|treshchin\\S*|chatna\\S*|teshil\\S*', '\\btosh\\s+(?:\\S+\\s+){0,2}?(?:urildi|tegdi|tushdi|keldi)'), /kozgu|zerkal/],
+  ['window', /\boyna\S*\s+(?:\S+\s+)?(?:tushma|kotarilma|ochilma|yopilma)\S*|\bsteklopod\S*\s+(?:\S+\s+)?(?:ishlama|buzil)\S*/],
+  ['batt', uzRx('akkumulyator|akkumlyator|akkum|akum|batareya|akb', '@|otir\\S*|tugadi|tugab\\S*|zaryad\\S*\\s+(?:olma|ushlama|tutma)\\S*|boshab\\S*'), /chiro|lampochka|indikator/],
+  ['tacho', /\b(?:taxograf|tahograf|tachograf)\S*\s+(?:\S+\s+){0,2}?(?:ishlama|buzil|buzuq|oqima|xato|kartani\s+(?:oqima|olma))\S*|\b(?:karta|kartochka)\S*\s+(?:\S+\s+){0,2}?(?:oqima|tiqilib|qolib\s+ket|chiqma|yoqol|yoqot|ogirla)\S*|\b(?:haydovchi|voditel)\S*\s+karta\S*\s+(?:\S+\s+)?(?:ishlama|buzil|yoqol|yoqot)\S*/, /yoqilgi|zapravka|toplivn|bank|plastik|benzin|dizel|solyarka|bonus/],
+  ['fuelcard', /\b(?:yoqilgi|toplivn|zapravka|dizel|solyarka|benzin)\S*\s+karta\S*\s+(?:\S+\s+){0,2}?(?:ishlama|blok|otma|yoqol|yoqot|qabul\s+qilma|ogirla)\S*/],
+  ['lost', uzRx('kalit|klyuch|texpasport|tex\\s+pasport|hujjat|dokument', 'yoqol\\S*|yoqot\\S*|topolma\\S*|topilma\\S*|ogirla\\S*', '\\b(?:yoqotdim|yoqotib\\s+qoydim)\\s+(?:\\S+\\s+)?(?:kalit|klyuch|hujjat|texpasport)'), /karta/],
+  ['coupling', /\b(?:pritsep|prisep|polupritsep|tirkama)\S*\s+(?:\S+\s+){0,2}?(?:ulanma|ilinma|uzil|ajral|chiqib\s+ket)\S*|\b(?:sedelka|egar)\S*\s+(?:\S+\s+){0,2}?(?:ishlama|buzil|yopilma|ilinma|qulflanma)\S*/],
+  ['dryfuel', /\b(?:solyarka|salyarka|yoqilgi|dizel|benzin|toplivo)\S*\s+(?:\S+\s+)?(?:tugadi|tugab|qolmadi|yoq\b)\S*|\bbak\S*\s+(?:\S+\s+)?(?:bosh|quruq)\b/, /agregat|xolodil|adblue|karta/],
+  ['reefer', uzRx('xolodilnik|xolodil|refrijerator|refrejerator|agregat|sovutgich', '@|sovutma\\S*|ochib\\s+qol\\S*|xato\\S*|alarm\\S*|yoqilma\\S*'), /kabina|konditsioner/],
+  ['susp', uzRx('podushka|havo\\s+yostig|yostiq|pnevmo|ressor|amortizator|ammortizator', 'yoril\\S*|teshil\\S*|portla\\S*|' + UZ_SIN + '|@|havo\\s+chiqar\\S*|tushib\\s+qol\\S*', '\\b(?:pritsep|prisep|tirkama|mashina)\\S*\\s+(?:\\S+\\s+)?(?:bir\\s+tomonga\\s+)?(?:qiyshay|egilib\\s+qol|ogib\\s+qol)\\S*'), /xavfsizlik|\brul\b/],
+  ['gear', uzRx('peredacha|skorost|korobka|kpp|uzatma', 'tushma\\S*|qoshilma\\S*|ulanma\\S*|@|xato\\S*|kirma\\S*', '\\b(?:sseplenie|stseplenie|sepleniye|seplenie|mufta)\\S*\\s+(?:\\S+\\s+){0,2}?(?:ishlama|buzil|kuy|toyib|sirgan|sirpan)\\S*')],
+  ['climate', uzRx('konditsioner|kondisioner|kondey|pechka|isitgich|webasto|vebasto|avtonomka|ventilyator', '@|isitma\\S*|sovutma\\S*|puflama\\S*|yoqilma\\S*'), /orindiq|sidenye|kozgu|zerkal|xolodil|agregat|refrijerator/],
+  ['cabkit', /\b(?:orindiq|sidenye|kozgu|zerkal)\S*\s+(?:isitgich|isitish|podogrev)\S*\s+(?:\S+\s+)?(?:ishlama|buzil|isitma)\S*|\bpodogrev\S*\s+(?:\S+\s+)?(?:ishlama|buzil)\S*/],
+  ['tarp', uzRx('tent', 'yirtil\\S*|yirtiq\\S*|teshil\\S*|teshik\\S*|uzil\\S*', '\\b(?:teshik|yirtiq)\\S*\\s+(?:\\S+\\s+)?tent')],
+  ['exhaust', uzRx('glushitel|glushak|vyxlop|vixlop|vyhlop', 'tushib\\S*|osil\\S*|teshil\\S*|yoril\\S*|uzil\\S*|' + UZ_SIN + '|shovqin\\S*|@')],
+  ['visib', uzRx('dvornik|tozalagich|shchetka|omyvatel|omivatel|stekloomivatel|bryzgovik', '@|tozalama\\S*|' + UZ_SIN + '|uzil\\S*|suv\\s+(?:sepma|berma|chiqma)\\S*', '\\boyna\\S*\\s+(?:\\S+\\s+)?terla\\S*')],
+  ['seat', /\b(?:kamar|remen)\S*\s+(?:\S+\s+){0,2}?(?:taqilma|qadalma|ishlama|buzil|tiqil|yirtil)\S*|\b(?:orindiq|sidenye|kreslo)\S*\s+(?:\S+\s+){0,2}?(?:sin(?:di|gan|ib)|ishlama|buzil|qimirla|tushib\s+ket)\S*/, /isit|podogrev/],
+  ['wheel', /\b(?:gayka|bolt)\S*\s+(?:\S+\s+){0,2}?(?:boshab|bosha|yoq\b|tushib|chiqib|yechil)\S*|\bdisk\S*\s+(?:\S+\s+)?(?:yoril|darz|egil|sin(?:di|gan|ib))\S*|\b(?:podshipnik|stupitsa|stupisa|gupchak)\S*\s+(?:\S+\s+){0,2}?(?:qiz|ishlama|buzil|shovqin|gudilla|ovoz)\S*|\b(?:kardan|reduktor)\S*\s+(?:\S+\s+){0,2}?(?:ishlama|buzil|shovqin|taqilla)\S*/, /tormoz/],
+  ['stuck', /\b(?:loy|botqoq|qor|qum)\S*\s+(?:\S+\s+){0,2}?(?:botib\s+qol|tiqilib\s+qol|qolib\s+ket|botdi|botdim)\S*|\bbotib\s+qol\S*/],
+  ['numplate', uzRx('nomer|davlat\\s+raqam|raqam', 'tushib\\S*|yoqol\\S*|ogirla\\S*|uzil\\S*|' + UZ_SIN + '|korinma\\S*|oqilma\\S*'), /chiro|lampochka|telefon|\btel\b|karta|podsvet/],
+  ['adas', uzRx('datchik|sensor|radar|kamera|asistent|kruiz|tempomat', '@|xato\\S*|ochib\\s+qol\\S*', '\\bozi\\s+(?:\\S+\\s+)?tormoz\\s+(?:ber|bos)\\S*')],
+  ['door', uzRx('eshik|dver|gidrobort|zamok|markaziy\\s+qulf', 'yopilma\\S*|ochilma\\S*|qulflanma\\S*|tiqil\\S*|@|ochilib\\s+ket\\S*|kotarilma\\S*|tushma\\S*'), /oyna/]];
+function uzKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n]+/)) { if (!/[a-zа-яёўқғҳ]/i.test(raw)) continue; const p = uzFold(raw).replace(UZ_NEG, ' '); if (!UZ_OK.test(p)) for (const [n, rx, ex] of UZ_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };
