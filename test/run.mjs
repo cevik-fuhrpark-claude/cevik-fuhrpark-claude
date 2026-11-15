@@ -42218,6 +42218,21 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   eq(r1.status, 400); eq(r1.data.field_key, 'display_name', 'Fahrerakte: Name');
   const r2 = await users.fleet.post('/api/drivers', { display_name: 'Feld 1501', personnel_no: 'P'.repeat(41) });
   eq(r2.data.field_key, 'personnel_no', 'Fahrerakte: Personalnummer');
+  // Stufe 12: Datumsfelder und Querprüfungen der Fahrerakte (Nachweis, Führerscheinkontrolle, Sammelerfassung)
+  { const dv = await users.fleet.post('/api/drivers', { display_name: 'Datum 1501' }); ok(dv.status < 300, 'Fahrer angelegt'); const did = dv.data.id || (dv.data.driver && dv.data.driver.id);
+    const D = (b) => users.fleet.post(`/api/drivers/${did}/documents`, { kind: 'fahrerkarte', evidence: 'Kopie Akte', ...b });
+    eq((await D({ issued_on: '2026-02-30', valid_until: '2030-01-01' })).data.field_key, 'issued_on', 'Nachweis: Ausgestellt ungültig');
+    eq((await D({ issued_on: '2099-01-01', valid_until: '2100-01-01' })).data.field_key, 'issued_on', 'Nachweis: Ausgestellt in der Zukunft');
+    eq((await D({ issued_on: '2025-01-01', valid_until: '3000-01-01' })).data.field_key, 'valid_until', 'Nachweis: Gültig bis außerhalb');
+    eq((await D({ issued_on: '2025-01-01', valid_until: '2024-01-01' })).data.field_key, 'valid_until', 'Nachweis: Gültig bis vor Ausstellung');
+    eq((await D({ issued_on: '2025-01-01' })).data.field_key, 'valid_until', 'Nachweis: Gültig bis fehlt (Fahrerkarte)');
+    const L = (b) => users.fleet.post(`/api/drivers/${did}/license-checks`, { checked_on: '2026-01-05', result: 'in_ordnung', ...b });
+    eq((await L({ checked_on: '05.01.2026' })).data.field_key, 'checked_on', 'Kontrolle: Datum ungültig');
+    eq((await L({ result: 'maengel' })).data.field_key, 'note', 'Kontrolle: Vermerk fehlt bei Mängeln');
+    const LB = await users.fleet.post('/api/drivers/license-checks', { driver_ids: [did], result: 'in_ordnung', checked_on: '2099-01-01' }); eq(LB.data.field_key, 'checked_on', 'Sammel-Kontrolle: Datum in der Zukunft');
+    const DB = await users.fleet.post('/api/drivers/trainings', { driver_ids: [did], title: 'Unterweisung', evidence: 'Liste', issued_on: '2026-01-05', valid_until: '2025-01-01' });
+    eq(DB.status, 400); eq(DB.data.field_key, 'valid_until', 'Sammel-Unterweisung: Gültig bis vor Ausstellung');
+  }
   const r3 = await owner.post('/api/emergency/contacts', { kind: 'dispo', label: 'D', phone: '0123 456' });
   eq(r3.status, 400); eq(r3.data.field_key, 'label', 'Notfall: Bezeichnung zu kurz');
   const r4 = await owner.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo 1501', phone: 'abc' });
@@ -42360,6 +42375,8 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
       for (const id of ids) ok(w.includes(`<label for="${id}">`) && w.includes(`id="${id}" name="${id.slice(2) === 'from' ? 'from' : 'to'}"`), `${v}: Beschriftung ${id} zugeordnet`);
     }
   }
+  // Stufe 12: Fahrerakte – Nachweis- und Kontrollformular mit zugeordneten Beschriftungen (Feldnamen = field_key)
+  for (const [id, n] of [['ddkind', 'kind'], ['ddissued', 'issued_on'], ['ddvalid', 'valid_until'], ['ddev', 'evidence'], ['lcon', 'checked_on'], ['lcres', 'result'], ['lcnote', 'note']]) ok(src.includes(`<label for="${id}">`) && src.includes(`id="${id}" name="${n}"`), `Fahrerakte: Beschriftung ${id} zugeordnet`);
   ok(/<label for="mhfrom">[^\n]*id="mhfrom" name="from"[^\n]*<label for="mhto">[^\n]*id="mhto" name="to"/.test(src) && src.includes('<label for="mhkind">'), 'Nachweisliste: Beschriftungen den Feldern zugeordnet');
 });
 

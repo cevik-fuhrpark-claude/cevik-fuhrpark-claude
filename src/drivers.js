@@ -2,7 +2,7 @@
 // Grundsätze: Fristen nur aus Dokumenten (nichts berechnet/erfunden). Personenbezogene Daten: Inhaber und Fuhrparkleitung sehen alles,
 // ein Fahrer nur seine eigene Akte (über verknüpftes Konto), alle anderen Rollen nichts. Jede Änderung im Audit-Log.
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, requestKey, str, oneOf, flag, berlinDate, berlinDaySql, isCalendarDate, cutText } from './util.js';
+import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, requestKey, withKey, str, oneOf, flag, berlinDate, berlinDaySql, isCalendarDate, cutText } from './util.js';
 import { audit } from './auth.js';
 import { tachoStatus, warnDaysOf, TACHO_RULE, pnoKey, normName, periodOf } from './tacho.js';
 import { SETTING_DEFAULTS } from './settings.js';
@@ -14,7 +14,9 @@ export const CHECK_RESULTS = ['in_ordnung', 'maengel', 'nicht_vorgelegt'];
 export const CHECK_RESULT_DE = { in_ordnung: 'in Ordnung', maengel: 'Mängel', nicht_vorgelegt: 'nicht vorgelegt' };
 const isMgr = (u) => u.role === 'owner' || u.role === 'fleet';
 const ISO = { test: isCalendarDate }; // echtes Kalenderdatum JJJJ-MM-TT
-const date = (v, field, { required = false, notFuture = false } = {}) => {
+// Backlog 1501 Stufe 12: Feldname der Anfrage (`issued_on`, `valid_until`, `checked_on`) als field_key – die App markiert das Datumsfeld
+const date = (v, field, opts = {}) => (opts.key ? withKey(opts.key, () => dateRaw(v, field, opts)) : dateRaw(v, field, opts));
+const dateRaw = (v, field, { required = false, notFuture = false } = {}) => {
   const d = str(v, { max: 10, required, field });
   if (!d) return null;
   if (!ISO.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z'))) throw bad('validation', `${field}: Datum im Format JJJJ-MM-TT.`);
@@ -302,10 +304,10 @@ export async function addDriverDocument(env, user, envName, id, body) {
   await loadDriver(env, user, envName, id);
   const kind = oneOf(body.kind, DOC_KINDS, 'Art', { key: 'kind' });
   const evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis' });
-  const issued = date(body.issued_on, 'Ausgestellt am', { notFuture: true });
-  const valid = date(body.valid_until, 'Gültig bis');
-  if (issued && valid && valid < issued) throw bad('validation', 'Gültig bis liegt vor dem Ausstellungsdatum.');
-  if (['fahrerkarte', 'code95'].includes(kind) && !valid) throw bad('validation', 'Gültig bis laut Dokument angeben.');
+  const issued = date(body.issued_on, 'Ausgestellt am', { notFuture: true, key: 'issued_on' });
+  const valid = date(body.valid_until, 'Gültig bis', { key: 'valid_until' });
+  if (issued && valid && valid < issued) throw bad('validation', 'Gültig bis liegt vor dem Ausstellungsdatum.', { field_key: 'valid_until' });
+  if (['fahrerkarte', 'code95'].includes(kind) && !valid) throw bad('validation', 'Gültig bis laut Dokument angeben.', { field_key: 'valid_until' });
   // Backlog 804 (Funkloch): erneutes Senden mit demselben request_key → vorhandener Nachweis (sonst zweiter Eintrag in der Akte)
   const rkey = requestKey(body.request_key);
   const byKey = async () => {
@@ -347,9 +349,9 @@ export async function addTrainingBatch(env, user, envName, body) {
   const ids = [...new Set(body.driver_ids.map((x) => str(x, { max: 40, field: 'Fahrer' })).filter(Boolean))];
   if (ids.length > BATCH_DOCS_MAX) throw bad('validation', 'Höchstens 200 Fahrer je Erfassung.');
   const title = str(body.title, { key: 'title', required: true, max: 120, field: 'Bezeichnung' }).normalize('NFC');
-  const issued = date(body.issued_on, 'Ausgestellt am', { required: true, notFuture: true });
-  const valid = date(body.valid_until, 'Gültig bis');
-  if (valid && valid < issued) throw bad('validation', 'Gültig bis liegt vor dem Ausstellungsdatum.');
+  const issued = date(body.issued_on, 'Ausgestellt am', { required: true, notFuture: true, key: 'issued_on' });
+  const valid = date(body.valid_until, 'Gültig bis', { key: 'valid_until' });
+  if (valid && valid < issued) throw bad('validation', 'Gültig bis liegt vor dem Ausstellungsdatum.', { field_key: 'valid_until' });
   const evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis' });
   const found = (await env.DB.prepare(`SELECT d.id, d.display_name, d.active FROM json_each(?1) j JOIN drivers d ON d.id=j.value AND d.environment=?2`).bind(JSON.stringify(ids), envName).all()).results;
   const byId = new Map(found.map((d) => [d.id, d]));
@@ -381,7 +383,7 @@ export async function addLicenseCheckBatch(env, user, envName, body) {
   if (!Array.isArray(body.driver_ids) || !body.driver_ids.length) throw bad('validation', 'Bitte mindestens einen Fahrer auswählen.');
   const ids = [...new Set(body.driver_ids.map((x) => str(x, { max: 40, field: 'Fahrer' })).filter(Boolean))];
   if (ids.length > BATCH_DOCS_MAX) throw bad('validation', 'Höchstens 200 Fahrer je Erfassung.');
-  const on = date(body.checked_on, 'Kontrolldatum', { required: true, notFuture: true });
+  const on = date(body.checked_on, 'Kontrolldatum', { required: true, notFuture: true, key: 'checked_on' });
   if (body.result !== undefined && body.result !== 'in_ordnung') throw bad('validation', 'Sammelerfassung nur für „in Ordnung“ – Mängel bitte einzeln in der Fahrerakte erfassen.');
   const note = str(body.note, { key: 'note', max: 500, field: 'Bemerkung' }) || null;
   const found = (await env.DB.prepare(`SELECT d.id, d.display_name, d.active FROM json_each(?1) j JOIN drivers d ON d.id=j.value AND d.environment=?2`).bind(JSON.stringify(ids), envName).all()).results;
@@ -457,10 +459,10 @@ export async function cancelLicenseCheck(env, user, envName, id, checkId, body =
 export async function addLicenseCheck(env, user, envName, id, body) {
   if (!isMgr(user)) throw forbidden();
   await loadDriver(env, user, envName, id);
-  const on = date(body.checked_on, 'Kontrolldatum', { required: true, notFuture: true });
+  const on = date(body.checked_on, 'Kontrolldatum', { required: true, notFuture: true, key: 'checked_on' });
   const result = oneOf(body.result, CHECK_RESULTS, 'Ergebnis', { key: 'result' });
   const note = str(body.note, { key: 'note', max: 500, field: 'Bemerkung' });
-  if (result !== 'in_ordnung' && !note) throw bad('validation', 'Bei Mängeln oder nicht vorgelegtem Führerschein bitte Vermerk angeben.');
+  if (result !== 'in_ordnung' && !note) throw bad('validation', 'Bei Mängeln oder nicht vorgelegtem Führerschein bitte Vermerk angeben.', { field_key: 'note' });
   const cid = uuid();
   // gleiche Kontrolle (Tag, Ergebnis, Vermerk) nur einmal – Doppelklick/parallel ergab zwei Zeilen (17.10.2026); verglichen wird nur mit der
   // neuesten Kontrolle desselben Tages (20.10.2026: „in Ordnung“ nach „nicht vorgelegt“ am selben Tag wurde als Dublette abgewiesen)
