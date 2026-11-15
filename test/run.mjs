@@ -42139,6 +42139,17 @@ await test('Backlog 1496 (Blickwinkel „Disposition mit Screenreader springt ü
   ok(ui.includes('Backlog 1496') && ui.includes('Gegenprobe') && ui.includes('getFullAXTree') && ui.includes('übersprungen') && readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-ueberschriften.py'), 'UI-Prüfung (Barrierefreiheitsbaum, DE/UK/EN, Anmeldung, Werkstatt-Panel) mit Gegenprobe, in pruefen.sh');
 });
 
+await test('Backlog 1498 (WCAG 1.4.13, Tastatur): eingeblendete Meldung (Toast) lässt sich per Escape schließen, vor allen anderen Escape-Aktionen', async () => {
+  const { readFileSync } = await import('node:fs');
+  const rd = (f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  for (const f of ['app.js', 'app-main.js']) {
+    const src = rd(f); const i = src.indexOf("if (e.key !== 'Escape' || e.defaultPrevented"); const j = src.indexOf("querySelectorAll('body > .toast')", i); const k = src.indexOf("e.target.closest('#af')", i);
+    ok(i > 0 && j > i && k > j && j - i < 400, `${f}: Escape-Behandlung schließt zuerst Toasts`);
+    ok(/ts\.length\) \{ e\.preventDefault\(\); ts\.forEach\(\(x\) => x\.remove\(\)\); return; \}/.test(src), `${f}: Toast entfernt, Escape verbraucht (kein zusätzliches Schließen eines Formulars)`);
+  }
+  ok(rd('app.js').includes("el.addEventListener('click', () => el.remove());"), 'Antippen schließt weiterhin');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -637,6 +637,8 @@ window.addEventListener('hashchange', route);
 // Tastatur: Escape schließt ein aufgeklapptes Aktionsformular am Vorgang bzw. „Erledigt“ in der Fahrzeugakte, Fokus zurück auf den Auslöser (22.10.2026)
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || e.defaultPrevented || !e.target || !e.target.closest) return;
+  // Backlog 1498 (WCAG 1.4.13): eingeblendete Meldung (Toast) zuerst per Escape schließen – bisher nur per Antippen/Maus, Tastatur-Nutzer mussten warten
+  const ts = document.querySelectorAll('body > .toast'); if (ts.length) { e.preventDefault(); ts.forEach((x) => x.remove()); return; }
   if (e.target.closest('#af')) { const c = document.getElementById('ac'); if (c) { e.preventDefault(); c.click(); } return; }
   const fm = e.target.closest('form[data-mdone]');
   if (fm) { e.preventDefault(); fm.hidden = true; const b = document.querySelector(`button[data-done="${CSS.escape(fm.dataset.mdone)}"]`); if (b) { b.setAttribute('aria-expanded', 'false'); b.focus(); } }
