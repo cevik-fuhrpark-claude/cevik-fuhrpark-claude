@@ -17,7 +17,7 @@ export const claimNoIn = (x) => { if (x === undefined || x === null) return x; c
 const CLAIM_KEY_MIN = 5;
 
 // Backlog 393: Gegner-Kennzeichen ohne einen einzigen Buchstaben/Ziffer („???“, „-“) abweisen – Format sonst frei (ausländische Kennzeichen)
-const plateText = (v) => { if (v && !/[\p{L}\p{N}]/u.test(v)) throw bad('validation', 'Kennzeichen Unfallgegner: bitte Buchstaben/Ziffern laut Unfallbericht angeben oder leer lassen.'); return v; };
+const plateText = (v) => { if (v && !/[\p{L}\p{N}]/u.test(v)) throw bad('validation', 'Kennzeichen Unfallgegner: bitte Buchstaben/Ziffern laut Unfallbericht angeben oder leer lassen.', { field_key: 'opponent_plate' }); return v; };
 export const CLAIM_STATUS = ['gemeldet', 'in_pruefung', 'reguliert', 'abgelehnt', 'zurueckgezogen'];
 export const OPEN_STATUS = ['gemeldet', 'in_pruefung'];
 const STATUS_DE = { gemeldet: 'gemeldet', in_pruefung: 'in Prüfung', reguliert: 'reguliert', abgelehnt: 'abgelehnt', zurueckgezogen: 'zurückgezogen' };
@@ -74,7 +74,7 @@ function readBody(body, existing = {}, user = null) {
   if (f.appraisal_on && f.appraisal_received_on && f.appraisal_received_on < f.appraisal_on) throw bad('validation', 'Gutachten eingegangen am liegt vor der Besichtigung.', { field_key: 'appraisal_received_on' });
   if ((f.reimbursed_net === null) !== (f.reimbursed_on === null)) throw bad('validation', 'Erstattung: Betrag und Datum nur zusammen laut Abrechnung des Versicherers angeben.', { field_key: f.reimbursed_on === null ? 'reimbursed_on' : 'reimbursed_net' });
   if (f.reimbursed_on && f.reimbursed_on < f.reported_on) throw bad('validation', 'Erstattet am liegt vor dem Meldedatum.', { field_key: 'reimbursed_on' });
-  if (f.reimbursed_net !== null && ['abgelehnt', 'zurueckgezogen'].includes(f.status)) throw bad('validation', 'Bei „abgelehnt“/„zurückgezogen“ keine Erstattung eintragen.');
+  if (f.reimbursed_net !== null && ['abgelehnt', 'zurueckgezogen'].includes(f.status)) throw bad('validation', 'Bei „abgelehnt“/„zurückgezogen“ keine Erstattung eintragen.', { field_key: 'reimbursed_net' });
   return f;
 }
 

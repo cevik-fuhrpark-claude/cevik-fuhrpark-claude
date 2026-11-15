@@ -42406,6 +42406,17 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
     const s15 = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
     ok(s15.includes('<label for="vf_${name}">${esc(label)}</label><input id="vf_${name}" name="${name}"') && s15.includes('<label for="vf_kind">'), 'Fahrzeugformular: Beschriftungen zugeordnet');
   }
+  // Stufe 16: Erreichbarkeit der Notfall-Rufnummer (von/bis), Versicherungsfall (Kennzeichen Unfallgegner, Erstattung bei Ablehnung)
+  { const E = (b) => owner.post('/api/emergency/contacts', { kind: 'dispo', label: 'Dispo 1516', phone: '0231 1516', hours_days: '12345', ...b });
+    eq((await E({ hours_from: '06:00' })).data.field_key, 'hours_to', 'Erreichbarkeit: bis fehlt');
+    eq((await E({ hours_to: '18:00' })).data.field_key, 'hours_from', 'Erreichbarkeit: von fehlt');
+    eq((await E({ hours_from: '25:00', hours_to: '06:00' })).data.field_key, 'hours_from', 'Erreichbarkeit: von ungültig');
+    eq((await E({ hours_from: '06:00', hours_to: '6 Uhr' })).data.field_key, 'hours_to', 'Erreichbarkeit: bis ungültig');
+    const kc = await users.fleet.post('/api/cases', { vehicle_id: 'VIN:WDB96340310815014', description: 'Anstoß beim Rangieren (Stufe 16)', priority: 'mittel', driveability: 'fahrbereit', request_key: crypto.randomUUID() });
+    const P16 = `/api/cases/${kc.data.id || kc.data.case.id}/claim`; const b16 = { insurer: 'Eigene Vers AG', reported_on: bDayOff(-2), evidence: 'Unfallbericht 1516', expected_updated_at: null };
+    eq((await users.fleet.put(P16, { ...b16, opponent_plate: '***' })).data.field_key, 'opponent_plate', 'Versicherungsfall: Kennzeichen Unfallgegner');
+    eq((await users.fleet.put(P16, { ...b16, status: 'abgelehnt', reimbursed_net: '100', reimbursed_on: bDayOff(-1) })).data.field_key, 'reimbursed_net', 'Versicherungsfall: Erstattung bei Ablehnung');
+  }
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');

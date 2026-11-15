@@ -132,7 +132,7 @@ function readHours(body, ex) {
   }
   const days = normDays(rawDays);
   if (!days) throw bad('validation', 'Erreichbarkeit: Wochentage ungültig.');
-  if (!!from !== !!to || (from && (!isHm(from) || !isHm(to)))) throw bad('validation', 'Erreichbarkeit: Uhrzeit „von“ und „bis“ beide angeben (HH:MM) oder beide leer lassen.');
+  if (!!from !== !!to || (from && (!isHm(from) || !isHm(to)))) throw bad('validation', 'Erreichbarkeit: Uhrzeit „von“ und „bis“ beide angeben (HH:MM) oder beide leer lassen.', { field_key: !from || !isHm(from) ? 'hours_from' : 'hours_to' }); // Backlog 1501
   return { hours_days: days, hours_from: from, hours_to: to, hours_no_holidays: noHol ? 1 : null, hours_more: more, hours_holiday_state: st };
 }
 
