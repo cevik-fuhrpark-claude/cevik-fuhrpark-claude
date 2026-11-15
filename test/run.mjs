@@ -42150,6 +42150,24 @@ await test('Backlog 1498 (WCAG 1.4.13, Tastatur): eingeblendete Meldung (Toast) 
   ok(rd('app.js').includes("el.addEventListener('click', () => el.remove());"), 'Antippen schließt weiterhin');
 });
 
+await test('Backlog 1499 (WCAG 3.3.1): Prüffehler in Formularen hängen am Feld bzw. an der Auswahlliste (aria-invalid, aria-describedby, Fokus), nicht nur im Toast', async () => {
+  const { readFileSync } = await import('node:fs');
+  const rd = (f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const src = rd('app.js');
+  ok(/function markPick\(boxes, msg\) \{[\s\S]{0,500}markInvalid\(g, msg\); b\.focus\(\);/.test(src), 'markPick markiert die Gruppe und setzt den Fokus');
+  // Schlüssel, deren Prüfung früher nur einen Toast zeigte – jetzt immer zusammen mit markInvalid/markPick
+  for (const k of ['km_invalid', 'mb_pick', 'dtb_none', 'wob_pick', 'err_from_after_to', 'rcpt_need_line', 'rcpt_twice']) {
+    const lines = src.split('\n').filter((l) => l.includes(`toast(t('${k}'), true)`));
+    ok(lines.length > 0, `${k}: Prüfung vorhanden`);
+    for (const l of lines) ok(/markInvalid\(|markPick\(/.test(l), `${k}: Hinweis am Feld fehlt – ${l.trim().slice(0, 120)}`);
+  }
+  // Wächter: neue „toast(t('…'), true); return;“-Prüfungen in Absende-Handlern ohne Feldbezug
+  const bare = src.split('\n').filter((l) => /onsubmit|if \(!(ids|sel|rows)\.length\)/.test(l) && /toast\(t\('[a-z_]+'\), true\); return; \}/.test(l) && !/markInvalid\(|markPick\(/.test(l));
+  eq(bare.length, 0, 'Prüfungen nur mit Toast: ' + bare.map((l) => l.trim().slice(0, 90)).join(' | '));
+  const { readdirSync } = await import('node:fs');
+  eq(readdirSync(new URL('../public/', import.meta.url)).filter((f) => /^app-[a-z]+\.js$/.test(f) && rd(f).includes('function markPick(boxes, msg)')).length, 1, 'genau ein App-Modul enthält markPick');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

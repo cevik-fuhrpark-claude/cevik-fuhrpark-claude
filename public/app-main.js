@@ -419,6 +419,7 @@ function markInvalid(el, msg, after = el) {
 }
 
 
+
 const ICON = {
   home: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>',
   cases: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>',
@@ -5049,7 +5050,7 @@ async function viewDepartureCheck(preId) {
     const sb = $('#sb');
     const who = outboxWho();
 
-    if ($('#km').value.trim() && !kmInputOk($('#km').value)) { $('#km').focus(); toast(t('km_invalid'), true); return; }
+    if ($('#km').value.trim() && !kmInputOk($('#km').value)) { markInvalid($('#km'), t('km_invalid')); $('#km').focus(); toast(t('km_invalid'), true); return; }
     const body = { kind: 'abfahrt', vehicle_id: $('#v').value, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null, checklist_version: S.meta.checklist_version || undefined };
     const files = photoUsable($('#ph'));
     const hasDefect = body.items.some((i) => i.result === 'mangel');

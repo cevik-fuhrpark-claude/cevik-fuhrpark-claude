@@ -578,13 +578,13 @@ async function viewStockReceipt() {
     e.preventDefault();
     for (const r of $$('#rclines .rcl')) if (r._scan && r._scan()) return;
     const rows = $$('#rclines .rcl').filter((r) => $('select', r).value || $('.rcq', r).value.trim());
-    if (!rows.length) { toast(t('rcpt_need_line'), true); return; }
+    if (!rows.length) { toast(t('rcpt_need_line'), true); const r0 = $('#rclines .rcl select'); if (r0) { markInvalid(r0, t('rcpt_need_line')); r0.focus(); } return; }
     for (const r of rows) {
       if (!$('select', r).value) { toast(t('rcpt_need_item'), true); markInvalid($('select', r), t('rcpt_need_item')); $('select', r).focus(); return; }
       if (!$('.rcq', r).value.trim()) { toast(t('rcpt_need_qty'), true); markInvalid($('.rcq', r), t('rcpt_need_qty')); $('.rcq', r).focus(); return; }
     }
     const ids = rows.map((r) => $('select', r).value);
-    if (new Set(ids).size !== ids.length) { toast(t('rcpt_twice'), true); return; }
+    if (new Set(ids).size !== ids.length) { toast(t('rcpt_twice'), true); const dup = rows.find((r, i) => ids.indexOf(ids[i]) !== i); if (dup) { markInvalid($('select', dup), t('rcpt_twice')); $('select', dup).focus(); } return; }
     const body = { site: site(), supplier: $('#rcsup').value.trim() || null, document_ref: $('#rcdoc').value.trim() || null, note: $('#rcnote').value.trim() || null, request_key: key,
       lines: rows.map((r) => ({ item_id: $('select', r).value, qty: $('.rcq', r).value.trim(), unit_price_net: $('.rcp', r).value.trim() || null })) };
     try {

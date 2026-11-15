@@ -389,6 +389,14 @@ function markInvalid(el, msg, after = el) {
   const clear = () => { el.removeAttribute('aria-invalid'); el.removeAttribute('aria-describedby'); p.remove(); el.removeEventListener('input', clear); el.removeEventListener('change', clear); };
   el.addEventListener('input', clear); el.addEventListener('change', clear);
 }
+// Backlog 1499 (WCAG 3.3.1): Auswahlliste ohne Haken → Hinweis unter der Liste (aria-invalid/-describedby an der Gruppe), Fokus aufs erste Kästchen
+function markPick(boxes, msg) {
+  const b = boxes.find((x) => x.offsetParent !== null) || boxes[0]; if (!b) return;
+  const g = (b.closest('label') || b).parentElement; if (!g) return;
+  if (!g.id) g.id = 'pick_' + String(b.name || 'feld').replace(/[^\w-]/g, '_');
+  if (!g.getAttribute('role')) g.setAttribute('role', 'group');
+  markInvalid(g, msg); b.focus();
+}
 
 // ---------- Rahmen ----------
 const ICON = {
@@ -6278,7 +6286,7 @@ async function viewDepartureCheck(preId) {
     const sb = $('#sb'); // festhalten – Seitenwechsel während des Hochladens (siehe Meldung)
     const who = outboxWho();
     // km-Stand wie der Server prüfen (0–5.000.000, ganze Zahl, Tausenderpunkt erlaubt) – sonst scheiterte die Kontrolle offline dauerhaft im Postausgang (20.10.2026)
-    if ($('#km').value.trim() && !kmInputOk($('#km').value)) { $('#km').focus(); toast(t('km_invalid'), true); return; }
+    if ($('#km').value.trim() && !kmInputOk($('#km').value)) { markInvalid($('#km'), t('km_invalid')); $('#km').focus(); toast(t('km_invalid'), true); return; }
     const body = { kind: 'abfahrt', vehicle_id: $('#v').value, request_key: key, items: collectChecklist(form), odometer_km: $('#km').value || null, checklist_version: S.meta.checklist_version || undefined }; // Fassung der Prüfliste (Postausgang über einen App-Wechsel)
     const files = photoUsable($('#ph')); // Backlog 1129: ohne Videos/Tonaufnahmen
     const hasDefect = body.items.some((i) => i.result === 'mangel');
@@ -7144,7 +7152,7 @@ function ctBatch(list) {
   fm.onsubmit = async (e) => {
     e.preventDefault();
     const ids = boxes().filter((x) => x.checked).map((x) => x.value);
-    if (!ids.length) { toast(t('mb_pick'), true); return; }
+    if (!ids.length) { toast(t('mb_pick'), true); markPick(boxes(), t('mb_pick')); return; }
     const m = fm.mode.value;
     if (m === 'end' && !confirm(t('ctb_confirm_end').replace('{n}', ids.length))) return;
     try {
@@ -7966,13 +7974,13 @@ async function viewStockReceipt() {
     e.preventDefault();
     for (const r of $$('#rclines .rcl')) if (r._scan && r._scan()) return; // Backlog 1234: gescannter Code in Menge/Preis → nicht buchen
     const rows = $$('#rclines .rcl').filter((r) => $('select', r).value || $('.rcq', r).value.trim());
-    if (!rows.length) { toast(t('rcpt_need_line'), true); return; }
+    if (!rows.length) { toast(t('rcpt_need_line'), true); const r0 = $('#rclines .rcl select'); if (r0) { markInvalid(r0, t('rcpt_need_line')); r0.focus(); } return; }
     for (const r of rows) {
       if (!$('select', r).value) { toast(t('rcpt_need_item'), true); markInvalid($('select', r), t('rcpt_need_item')); $('select', r).focus(); return; }
       if (!$('.rcq', r).value.trim()) { toast(t('rcpt_need_qty'), true); markInvalid($('.rcq', r), t('rcpt_need_qty')); $('.rcq', r).focus(); return; }
     }
     const ids = rows.map((r) => $('select', r).value);
-    if (new Set(ids).size !== ids.length) { toast(t('rcpt_twice'), true); return; }
+    if (new Set(ids).size !== ids.length) { toast(t('rcpt_twice'), true); const dup = rows.find((r, i) => ids.indexOf(ids[i]) !== i); if (dup) { markInvalid($('select', dup), t('rcpt_twice')); $('select', dup).focus(); } return; }
     const body = { site: site(), supplier: $('#rcsup').value.trim() || null, document_ref: $('#rcdoc').value.trim() || null, note: $('#rcnote').value.trim() || null, request_key: key,
       lines: rows.map((r) => ({ item_id: $('select', r).value, qty: $('.rcq', r).value.trim(), unit_price_net: $('.rcp', r).value.trim() || null })) };
     try {
@@ -8518,7 +8526,7 @@ function wireDtb() {
   fm.onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(fm); const ids = fd.getAll('driver_ids');
-    if (!ids.length) { toast(t('dtb_none'), true); return; }
+    if (!ids.length) { toast(t('dtb_none'), true); markPick(boxes(), t('dtb_none')); return; }
     const b = { driver_ids: ids, title: fd.get('title'), issued_on: fd.get('issued_on'), evidence: fd.get('evidence') }; if (fd.get('valid_until')) b.valid_until = fd.get('valid_until');
     try {
       const r = await api('POST', '/api/drivers/trainings', b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h: gleicher Eintrag je Fahrer nur einmal */
@@ -8551,7 +8559,7 @@ function wireDlb() {
   fm.onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(fm); const ids = fd.getAll('driver_ids');
-    if (!ids.length) { toast(t('dtb_none'), true); return; }
+    if (!ids.length) { toast(t('dtb_none'), true); markPick(boxes(), t('dtb_none')); return; }
     const b = { driver_ids: ids, checked_on: fd.get('checked_on'), result: 'in_ordnung' }; if (fd.get('note')) b.note = fd.get('note');
     try {
       const r = await api('POST', '/api/drivers/license-checks', b, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h */
@@ -9527,7 +9535,7 @@ async function viewMaint(fq) {
     mbf.onsubmit = async (e) => {
       e.preventDefault();
       const ids = boxes().filter((x) => x.checked).map((x) => x.value);
-      if (!ids.length) { toast(t('mb_pick'), true); return; }
+      if (!ids.length) { toast(t('mb_pick'), true); markPick(boxes(), t('mb_pick')); return; }
       try {
         const r = await api('POST', '/api/maintenance/plan-batch', { planned_date: mbf.planned_date.value, ids, replace: mbf.replace.checked, planned_note: mbf.planned_note.value }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805h */
         const skip = (r.skipped || []).map((x) => `<li>${x.plate ? esc(x.plate) + ' · ' : ''}${x.kind ? esc(mk(x.kind)) + ': ' : ''}${esc(t('mb_sk_' + x.code).replace('{d}', fmtD(x.planned_date)))}</li>`).join('');
@@ -9703,7 +9711,7 @@ async function viewAudit(more, uArg, vArg) {
   const avx = $('#auvx'); if (avx) avx.onclick = () => { S.auditVeh = null; S.auditVehName = null; viewAudit(); };
   const af = $('#auf');
   af.onsubmit = async (e) => { e.preventDefault(); S.auditFrom = af.from.value; S.auditTo = af.to.value;
-    if (af.from.value > af.to.value) { toast(t('err_from_after_to'), true); return; }
+    if (af.from.value > af.to.value) { toast(t('err_from_after_to'), true); markInvalid(af.to, t('err_from_after_to')); af.from.addEventListener('change', () => af.to.dispatchEvent(new Event('change')), { once: true }); af.to.focus(); return; }
     try { const blob = await api('GET', `/api/admin/audit?format=csv&from=${encodeURIComponent(af.from.value)}&to=${encodeURIComponent(af.to.value)}${f ? '&action=' + encodeURIComponent(f) : ''}${aq.length >= 2 ? '&q=' + encodeURIComponent(aq) : ''}${pu ? '&user=' + encodeURIComponent(pu) : ''}${pv ? '&vehicle=' + encodeURIComponent(pv) : ''}`); download(blob, `fuhrpark-protokoll_${af.from.value}_${af.to.value}${pu && S.auditUserName ? '_' + fnPart(S.auditUserName) : ''}${pv && S.auditVehName ? '_' + fnPart(S.auditVehName) : ''}.csv`); if (blob.cfpTruncated) toast(t('audit_csv_truncated').replace('{n}', blob.cfpTruncated), true); } catch (err) { toast(err.message, true); } };
 }
 
@@ -10269,7 +10277,7 @@ function wireWoBatch() {
   fm.onsubmit = async (e) => {
     e.preventDefault();
     const sel = boxes().filter((x) => x.checked);
-    if (!sel.length) { toast(t('wob_pick'), true); return; }
+    if (!sel.length) { toast(t('wob_pick'), true); markPick(boxes(), t('wob_pick')); return; }
     if (!fm.workshop_site.value) { toast(t('wob_ws'), true); markInvalid(fm.workshop_site, t('wob_ws')); fm.workshop_site.focus(); return; }
     const body = { workshop_site: fm.workshop_site.value, priority: fm.priority.value, ...(fm.planned_date.value ? { planned_date: fm.planned_date.value } : {}), ...(fm.note.value.trim() ? { note: fm.note.value.trim() } : {}) };
     // Schlüssel je Inhalt (wie „Reifen erfassen“): gleiche Eingaben erneut → dieselben Aufträge; geänderte Eingaben → neue Kennung

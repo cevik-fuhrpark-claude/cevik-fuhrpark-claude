@@ -17,6 +17,14 @@ function dueWeekendWatch() { for (const el of $$('input[name=response_due]')) { 
 
 const impMore = (total, shown) => (total > shown ? `<p class="small" role="note" data-impmore>${esc(t('imp_first_n').replace('{n}', fmtNum(shown)).replace('{m}', fmtNum(total)))}</p>` : '');
 
+function markPick(boxes, msg) {
+  const b = boxes.find((x) => x.offsetParent !== null) || boxes[0]; if (!b) return;
+  const g = (b.closest('label') || b).parentElement; if (!g) return;
+  if (!g.id) g.id = 'pick_' + String(b.name || 'feld').replace(/[^\w-]/g, '_');
+  if (!g.getAttribute('role')) g.setAttribute('role', 'group');
+  markInvalid(g, msg); b.focus();
+}
+
 
 
 function dexTrunc(x) { const tr = x && x.meta && Array.isArray(x.meta.truncated) ? x.meta.truncated : []; if (tr.length) toast(t('dex_truncated').replace('{t}', tr.join(', ')), true); }
@@ -155,7 +163,7 @@ function ctBatch(list) {
   fm.onsubmit = async (e) => {
     e.preventDefault();
     const ids = boxes().filter((x) => x.checked).map((x) => x.value);
-    if (!ids.length) { toast(t('mb_pick'), true); return; }
+    if (!ids.length) { toast(t('mb_pick'), true); markPick(boxes(), t('mb_pick')); return; }
     const m = fm.mode.value;
     if (m === 'end' && !confirm(t('ctb_confirm_end').replace('{n}', ids.length))) return;
     try {
@@ -569,7 +577,7 @@ function wireDtb() {
   fm.onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(fm); const ids = fd.getAll('driver_ids');
-    if (!ids.length) { toast(t('dtb_none'), true); return; }
+    if (!ids.length) { toast(t('dtb_none'), true); markPick(boxes(), t('dtb_none')); return; }
     const b = { driver_ids: ids, title: fd.get('title'), issued_on: fd.get('issued_on'), evidence: fd.get('evidence') }; if (fd.get('valid_until')) b.valid_until = fd.get('valid_until');
     try {
       const r = await api('POST', '/api/drivers/trainings', b, { timeoutMs: SEND_TIMEOUT_MS });
@@ -602,7 +610,7 @@ function wireDlb() {
   fm.onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(fm); const ids = fd.getAll('driver_ids');
-    if (!ids.length) { toast(t('dtb_none'), true); return; }
+    if (!ids.length) { toast(t('dtb_none'), true); markPick(boxes(), t('dtb_none')); return; }
     const b = { driver_ids: ids, checked_on: fd.get('checked_on'), result: 'in_ordnung' }; if (fd.get('note')) b.note = fd.get('note');
     try {
       const r = await api('POST', '/api/drivers/license-checks', b, { timeoutMs: SEND_TIMEOUT_MS });
@@ -1146,7 +1154,7 @@ async function viewMaint(fq) {
     mbf.onsubmit = async (e) => {
       e.preventDefault();
       const ids = boxes().filter((x) => x.checked).map((x) => x.value);
-      if (!ids.length) { toast(t('mb_pick'), true); return; }
+      if (!ids.length) { toast(t('mb_pick'), true); markPick(boxes(), t('mb_pick')); return; }
       try {
         const r = await api('POST', '/api/maintenance/plan-batch', { planned_date: mbf.planned_date.value, ids, replace: mbf.replace.checked, planned_note: mbf.planned_note.value }, { timeoutMs: SEND_TIMEOUT_MS });
         const skip = (r.skipped || []).map((x) => `<li>${x.plate ? esc(x.plate) + ' · ' : ''}${x.kind ? esc(mk(x.kind)) + ': ' : ''}${esc(t('mb_sk_' + x.code).replace('{d}', fmtD(x.planned_date)))}</li>`).join('');
@@ -1316,7 +1324,7 @@ async function viewAudit(more, uArg, vArg) {
   const avx = $('#auvx'); if (avx) avx.onclick = () => { S.auditVeh = null; S.auditVehName = null; viewAudit(); };
   const af = $('#auf');
   af.onsubmit = async (e) => { e.preventDefault(); S.auditFrom = af.from.value; S.auditTo = af.to.value;
-    if (af.from.value > af.to.value) { toast(t('err_from_after_to'), true); return; }
+    if (af.from.value > af.to.value) { toast(t('err_from_after_to'), true); markInvalid(af.to, t('err_from_after_to')); af.from.addEventListener('change', () => af.to.dispatchEvent(new Event('change')), { once: true }); af.to.focus(); return; }
     try { const blob = await api('GET', `/api/admin/audit?format=csv&from=${encodeURIComponent(af.from.value)}&to=${encodeURIComponent(af.to.value)}${f ? '&action=' + encodeURIComponent(f) : ''}${aq.length >= 2 ? '&q=' + encodeURIComponent(aq) : ''}${pu ? '&user=' + encodeURIComponent(pu) : ''}${pv ? '&vehicle=' + encodeURIComponent(pv) : ''}`); download(blob, `fuhrpark-protokoll_${af.from.value}_${af.to.value}${pu && S.auditUserName ? '_' + fnPart(S.auditUserName) : ''}${pv && S.auditVehName ? '_' + fnPart(S.auditVehName) : ''}.csv`); if (blob.cfpTruncated) toast(t('audit_csv_truncated').replace('{n}', blob.cfpTruncated), true); } catch (err) { toast(err.message, true); } };
 }
 
@@ -1709,7 +1717,7 @@ function wireWoBatch() {
   fm.onsubmit = async (e) => {
     e.preventDefault();
     const sel = boxes().filter((x) => x.checked);
-    if (!sel.length) { toast(t('wob_pick'), true); return; }
+    if (!sel.length) { toast(t('wob_pick'), true); markPick(boxes(), t('wob_pick')); return; }
     if (!fm.workshop_site.value) { toast(t('wob_ws'), true); markInvalid(fm.workshop_site, t('wob_ws')); fm.workshop_site.focus(); return; }
     const body = { workshop_site: fm.workshop_site.value, priority: fm.priority.value, ...(fm.planned_date.value ? { planned_date: fm.planned_date.value } : {}), ...(fm.note.value.trim() ? { note: fm.note.value.trim() } : {}) };
 
