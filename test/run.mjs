@@ -42236,13 +42236,19 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   eq(c4.data.field_key, 'start_km', 'Vertrag: Kontingent ohne km bei Übernahme');
   const c5 = await owner.post(`/api/vehicles/${vid}/contracts`, { kind: 'leasing', evidence: 'Test' });
   eq(c5.data.field_key, 'partner', 'Vertrag: Partner fehlt');
+  // Stufe 3: Bußgelder
+  const fb = { kind: 'bussgeldbescheid', authority: 'Bußgeldstelle 1501', reference: 'AZ-1501', offense_type: 'parken', offense_at: new Date().toISOString(), plate_in_letter: 'SZ YC 1501' };
+  const f1 = await owner.post('/api/fines', { ...fb, response_due: '2026-02-30' }); eq(f1.status, 400); eq(f1.data.field_key, 'response_due', 'Bußgeld: Frist');
+  const f2 = await owner.post('/api/fines', { ...fb, amount_eur: 'viel' }); eq(f2.data.field_key, 'amount_eur', 'Bußgeld: Betrag');
+  const f3 = await owner.post('/api/fines', { ...fb, offense_at: 'gestern' }); eq(f3.data.field_key, 'offense_at', 'Bußgeld: Tatzeit');
+  const f4 = await owner.post('/api/fines', { ...fb, authority: '' }); eq(f4.data.field_key, 'authority', 'Bußgeld: Behörde');
   const { withKey } = await import('../src/util.js');
   eq(fk(() => withKey('x_on', () => { throw new HttpError(400, 'validation', 'Datum ungültig'); })), 'x_on', 'withKey ergänzt field_key');
   eq(fk(() => withKey('x_on', () => str('', { key: 'inner', required: true }))), 'inner', 'withKey überschreibt keinen vorhandenen field_key');
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims']) {
+  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims', 'fines']) {
     const s = readFileSync(new URL(`../src/${m}.js`, import.meta.url), 'utf8');
     const keys = new Set([...s.matchAll(/key: '(\w+)'|field_key: '(\w+)'|withKey\('(\w+)'/g)].map((x) => x[1] || x[2] || x[3]));
     ok(keys.size > 0, m + ': keine Feldnamen');

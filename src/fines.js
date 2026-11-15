@@ -2,7 +2,7 @@
 import { icsLang } from '../public/ics-texts.js';
 import { federalHoliday } from '../public/holidays.js';
 import { findingText as fm } from '../public/finding-messages.js';
-import { otherEnvNotFound, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, plateHits, plateNoCountry, normPlate, PLATE_KEY_SQL, quoteCell, pointDec } from './util.js';
+import { withKey, otherEnvNotFound, nowIso, uuid, bad, forbidden, notFound, conflict, str, num, oneOf, sha256Hex, berlinDate, berlinDateTime, berlinLocalToIso, isCalendarDate, pickVehicleByPlate, plateHits, plateNoCountry, normPlate, PLATE_KEY_SQL, quoteCell, pointDec } from './util.js';
 import { notifyUsers, nt } from './notify.js';
 import { siteSelection } from './reports.js';
 
@@ -284,17 +284,17 @@ export async function createFine(env, user, envName, body) {
   if (!isMgr(user)) throw forbidden();
   const kind = oneOf(body.kind, FINE_KINDS, 'Art');
   const offense = oneOf(body.offense_type, OFFENSES, 'Verstoß');
-  const offenseAt = parseOffenseAt(body.offense_at);
-  const plate = str(body.plate_in_letter, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
-  const due = str(body.response_due, { max: 10, field: 'Antwortfrist' });
-  if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
-  if (due && due < '2000-01-01') throw bad('validation', 'Frist vor 2000 – bitte Jahr prüfen.');
-  if (due && due > maxDueDay()) throw bad('validation', 'Frist: Datum außerhalb des zulässigen Bereichs.'); // Jahres-Tippfehler 2062: nie fällig (18.10.2026), Grenze wie Fahrerakte
+  const offenseAt = withKey('offense_at', () => parseOffenseAt(body.offense_at));
+  const plate = str(body.plate_in_letter, { key: 'plate_in_letter', required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
+  const due = str(body.response_due, { key: 'response_due', max: 10, field: 'Antwortfrist' });
+  if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.', { field_key: 'response_due' });
+  if (due && due < '2000-01-01') throw bad('validation', 'Frist vor 2000 – bitte Jahr prüfen.', { field_key: 'response_due' });
+  if (due && due > maxDueDay()) throw bad('validation', 'Frist: Datum außerhalb des zulässigen Bereichs.', { field_key: 'response_due' }); // Jahres-Tippfehler 2062: nie fällig (18.10.2026), Grenze wie Fahrerakte
   // Frist vor der Tat: Tippfehler im Jahr – Agent meldete sofort „überfällig“ (18.10.2026)
-  if (due && due < berlinDate(offenseAt)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.');
+  if (due && due < berlinDate(offenseAt)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.', { field_key: 'response_due' });
   // alle Eingaben vor dem Hochzählen der Bußgeldnummer prüfen (18.10.2026: jeder Tippfehler verbrauchte eine Nummer)
-  const location = str(body.location, { max: 200, field: 'Ort' }); const amount = num(body.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true, cents: true, decimalPoint: pointDec(user) }); const fnote = str(body.note, { max: 2000, field: 'Bemerkung' });
-  const ban = parseBan(body.driving_ban_months);
+  const location = str(body.location, { key: 'location', max: 200, field: 'Ort' }); const amount = num(body.amount_eur, { key: 'amount_eur', min: 0, max: 1e6, field: 'Betrag', nullable: true, cents: true, decimalPoint: pointDec(user) }); const fnote = str(body.note, { key: 'note', max: 2000, field: 'Bemerkung' });
+  const ban = withKey('driving_ban_months', () => parseBan(body.driving_ban_months));
   // bei gleichem Kennzeichen zählt das aktive bewertete vor dem ruhenden vor dem außer Betrieb genommenen, sonst mehrdeutig = keine Zuordnung
   // (Fahrerermittlung über ein falsches Fahrzeug wäre schlimmer als eine manuelle Klärung). Außer Betrieb genommene zählen mit: das Schreiben
   // kommt oft Wochen nach der Tat, wenn das Fahrzeug schon verkauft ist (vorher kein Fahrzeug, kein Fahrer – 17.10.2026)
@@ -302,8 +302,8 @@ export async function createFine(env, user, envName, body) {
   // kein Fahrzeug trägt das Kennzeichen (mehr): zur Tatzeit eindeutig früheres Kennzeichen eines Fahrzeugs (Backlog 257b) → dieses Fahrzeug
   const former = !pick.vehicle && !pick.ambiguous ? await formerPlateVehicle(env, plate, offenseAt) : null;
   const veh = pick.vehicle || (former ? { id: former.vehicle_id } : null);
-  const reference = fineRef(body.reference);
-  const authority = fineAuthority(body.authority);
+  const reference = withKey('reference', () => fineRef(body.reference));
+  const authority = withKey('authority', () => fineAuthority(body.authority));
   // Idempotenzschlüssel je Formular: Doppelklick/Netzwiederholung ergibt denselben Vorgang statt eines zweiten (18.10.2026) –
   // wichtig bei Schreiben ohne Aktenzeichen, die keine Dublettenprüfung haben. Geprüft vor allem anderen (auch vor der Aktenzeichen-Dublette
   // und vor dem Hochzählen der Nummer), damit die Wiederholung einer erfolgreichen Anlage nicht als „Aktenzeichen bereits erfasst“ scheitert.
@@ -368,7 +368,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
   const f = await loadFine(env, user, envName, id);
   const action = str(body.action, { required: true, max: 30, field: 'Aktion' });
   const p = body.payload || {};
-  const note = str(body.note, { max: 2000, field: 'Bemerkung' });
+  const note = str(body.note, { key: 'note', max: 2000, field: 'Bemerkung' });
   const now = nowIso();
   const set = {};
   let payload = {}; let plateAmbiguous = false; let plateCountry = false;
@@ -406,8 +406,8 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
     switch (action) {
       case 'confirm_driver': {
         const basis = oneOf(p.basis, BASES, 'Grundlage');
-        const evidence = str(p.evidence, { required: true, max: 500, field: 'Nachweis' });
-        const did = str(p.driver_id, { max: 64, field: 'Fahrer' }); // Liste/Objekt → 400 statt 500 (17.10.2026)
+        const evidence = str(p.evidence, { key: 'evidence', required: true, max: 500, field: 'Nachweis' });
+        const did = str(p.driver_id, { key: 'driver_id', max: 64, field: 'Fahrer' }); // Liste/Objekt → 400 statt 500 (17.10.2026)
         if (did) {
           // ausgeschiedener (deaktivierter) Fahrer nur, wenn er zur Tatzeit zugeordnet war – genau so wird er als Kandidat angeboten (17.10.2026: Angebot ließ sich nicht bestätigen)
           // Rolle inzwischen gewechselt: wer zur Tatzeit zugeordnet war, bleibt bestätigbar (18.10.2026: Kandidat angeboten, Bestätigen → 400)
@@ -419,7 +419,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
           if (!d && !(await driverCandidates(env, envName, f)).some((c) => c.user_id === did)) throw bad('validation', 'Fahrer nicht gefunden.');
           set.driver_id = did; set.driver_name_note = null;
         } else {
-          set.driver_name_note = str(p.driver_name_note, { required: true, max: 120, field: 'Fahrer' });
+          set.driver_name_note = str(p.driver_name_note, { key: 'driver_name_note', required: true, max: 120, field: 'Fahrer' });
           set.driver_id = null;
         }
         set.driver_basis = basis; set.driver_evidence = evidence; set.driver_confirmed_by = user.id; set.driver_confirmed_at = now; set.status = 'fahrer_ermittelt';
@@ -455,17 +455,17 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         break;
       }
       case 'update':
-        if (p.amount_eur !== undefined) set.amount_eur = num(p.amount_eur, { min: 0, max: 1e6, field: 'Betrag', nullable: true, cents: true, decimalPoint: pointDec(user) });
+        if (p.amount_eur !== undefined) set.amount_eur = num(p.amount_eur, { key: 'amount_eur', min: 0, max: 1e6, field: 'Betrag', nullable: true, cents: true, decimalPoint: pointDec(user) });
         if (p.response_due !== undefined) {
-          const due = str(p.response_due, { max: 10 });
-          if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.');
-          if (due && due < '2000-01-01') throw bad('validation', 'Frist vor 2000 – bitte Jahr prüfen.');
-          if (due && due > maxDueDay()) throw bad('validation', 'Frist: Datum außerhalb des zulässigen Bereichs.'); // Jahres-Tippfehler 2062: nie fällig (18.10.2026), Grenze wie Fahrerakte
+          const due = str(p.response_due, { key: 'response_due', max: 10 });
+          if (due && !isCalendarDate(due)) throw bad('validation', 'Frist im Format JJJJ-MM-TT.', { field_key: 'response_due' });
+          if (due && due < '2000-01-01') throw bad('validation', 'Frist vor 2000 – bitte Jahr prüfen.', { field_key: 'response_due' });
+          if (due && due > maxDueDay()) throw bad('validation', 'Frist: Datum außerhalb des zulässigen Bereichs.', { field_key: 'response_due' }); // Jahres-Tippfehler 2062: nie fällig (18.10.2026), Grenze wie Fahrerakte
           set.response_due = due;
         }
         // Tatzeit korrigierbar – nur vor der Fahrerermittlung (die Kandidaten hängen an ihr), wie das Kennzeichen (23.10.2026)
         if (p.offense_at !== undefined) {
-          const oa = parseOffenseAt(p.offense_at);
+          const oa = withKey('offense_at', () => parseOffenseAt(p.offense_at));
           if (oa !== f.offense_at) {
             if (f.driver_confirmed_at) throw conflict('driver_confirmed', 'Fahrer bereits ermittelt – Tatzeit nur vor der Fahrerermittlung änderbar.');
             set.offense_at = oa;
@@ -473,12 +473,12 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         }
         {
           const due = set.response_due !== undefined ? set.response_due : f.response_due; const oa = set.offense_at || f.offense_at;
-          if (('response_due' in set || 'offense_at' in set) && due && due < berlinDate(oa)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.');
+          if (('response_due' in set || 'offense_at' in set) && due && due < berlinDate(oa)) throw bad('validation', 'Frist liegt vor der Tatzeit – bitte Jahr prüfen.', { field_key: 'response_due' });
         }
-        if (p.reference !== undefined) set.reference = fineRef(p.reference);
-        if (p.driving_ban_months !== undefined) set.driving_ban_months = parseBan(p.driving_ban_months); // Backlog 364
+        if (p.reference !== undefined) set.reference = withKey('reference', () => fineRef(p.reference));
+        if (p.driving_ban_months !== undefined) set.driving_ban_months = withKey('driving_ban_months', () => parseBan(p.driving_ban_months)); // Backlog 364
         // Behörde korrigierbar (19.10.2026, Backlog 91) – Pflichtfeld wie beim Anlegen
-        if (p.authority !== undefined) set.authority = fineAuthority(p.authority);
+        if (p.authority !== undefined) set.authority = withKey('authority', () => fineAuthority(p.authority));
         {
           // gleiche Dublettenregel wie beim Anlegen (Umgebung + Behörde + Aktenzeichen) – vorher über „Ändern“ umgehbar; auch bei geänderter Behörde
           const ref = set.reference !== undefined ? set.reference : f.reference; const auth = set.authority !== undefined ? set.authority : f.authority;
@@ -488,7 +488,7 @@ export async function fineCommand(env, ctx, user, envName, id, body) {
         // Kennzeichen laut Schreiben korrigierbar (Tippfehler/mehrdeutig blieb sonst dauerhaft ohne Fahrzeug, Kandidaten und Standort) –
         // nur vor der Fahrerermittlung: eine bestätigte Ermittlung bezog sich auf das bisherige Fahrzeug (19.10.2026, Backlog 91)
         if (p.plate_in_letter !== undefined) {
-          const np = str(p.plate_in_letter, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
+          const np = str(p.plate_in_letter, { key: 'plate_in_letter', required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
           // auch bei gleichem Kennzeichen, solange kein Fahrzeug zugeordnet ist (Fahrzeugstamm inzwischen eindeutig, 21.10.2026)
           if (np !== f.plate_in_letter || !f.vehicle_id) {
             if (f.driver_confirmed_at) throw conflict('driver_confirmed', 'Fahrer bereits ermittelt – Kennzeichen nur vor der Fahrerermittlung änderbar.');
