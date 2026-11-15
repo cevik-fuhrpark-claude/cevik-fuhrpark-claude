@@ -94,18 +94,18 @@ export async function listDownloads(env, user, envName, q = {}) {
 export async function addDownload(env, user, envName, body) {
   if (!isMgr(user)) throw forbidden();
   const kind = oneOf(body.kind, TACHO_KINDS, 'Art');
-  const on = str(body.downloaded_on, { required: true, max: 10, field: 'Auslesedatum' });
-  if (!ISO.test(on) || Number.isNaN(Date.parse(on + 'T00:00:00Z'))) throw bad('validation', 'Auslesedatum im Format JJJJ-MM-TT.');
-  if (on > berlinDate()) throw bad('validation', 'Auslesedatum darf nicht in der Zukunft liegen.');
-  const evidence = str(body.evidence, { required: true, max: 300, field: 'Nachweis' });
-  const note = str(body.note, { max: 500, field: 'Bemerkung' });
+  const on = str(body.downloaded_on, { key: 'downloaded_on', required: true, max: 10, field: 'Auslesedatum' });
+  if (!ISO.test(on) || Number.isNaN(Date.parse(on + 'T00:00:00Z'))) throw bad('validation', 'Auslesedatum im Format JJJJ-MM-TT.', { field_key: 'downloaded_on' });
+  if (on > berlinDate()) throw bad('validation', 'Auslesedatum darf nicht in der Zukunft liegen.', { field_key: 'downloaded_on' });
+  const evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis' });
+  const note = str(body.note, { key: 'note', max: 500, field: 'Bemerkung' });
   let driverId = null; let vehicleId = null; let label;
   if (kind === 'fahrerkarte') {
-    const d = await env.DB.prepare('SELECT id, display_name FROM drivers WHERE id=? AND environment=?').bind(str(body.driver_id, { required: true, max: 40, field: 'Fahrer' }), envName).first();
+    const d = await env.DB.prepare('SELECT id, display_name FROM drivers WHERE id=? AND environment=?').bind(str(body.driver_id, { key: 'driver_id', required: true, max: 40, field: 'Fahrer' }), envName).first();
     if (!d) throw notFound('Fahrer nicht gefunden.');
     driverId = d.id; label = d.display_name;
   } else {
-    const v = await env.DB.prepare(`SELECT id, plate, kind FROM vehicles WHERE id=?`).bind(str(body.vehicle_id, { required: true, max: 60, field: 'Fahrzeug' })).first();
+    const v = await env.DB.prepare(`SELECT id, plate, kind FROM vehicles WHERE id=?`).bind(str(body.vehicle_id, { key: 'vehicle_id', required: true, max: 60, field: 'Fahrzeug' })).first();
     if (!v) throw notFound('Fahrzeug nicht gefunden.');
     if (v.kind === 'anhaenger') throw bad('validation', 'Anhänger haben keinen Fahrtenschreiber.');
     vehicleId = v.id; label = v.plate;
@@ -123,7 +123,7 @@ export async function addDownload(env, user, envName, body) {
 // Atomar nur einmal; danach kann der richtige Tag neu erfasst werden (18.10.2026).
 export async function cancelDownload(env, user, envName, id, body = {}) {
   if (!isMgr(user)) throw forbidden();
-  const reason = str(body.reason, { required: true, max: 300, field: 'Begründung' });
+  const reason = str(body.reason, { key: 'reason', required: true, max: 300, field: 'Begründung' });
   if (reason.length < 3) throw bad('validation', 'Begründung ist zu kurz.');
   const t = await env.DB.prepare('SELECT id, kind, driver_id, vehicle_id, downloaded_on, cancelled_at FROM tacho_downloads WHERE id=? AND environment=?').bind(str(id, { max: 40 }), envName).first();
   if (!t) throw notFound('Auslesung nicht gefunden.');

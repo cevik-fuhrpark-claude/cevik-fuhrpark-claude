@@ -207,18 +207,18 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const allowed = positionsForKind(v.kind);
   const wrong = positions.filter((p) => !allowed.includes(p));
   if (wrong.length) throw bad('validation', v.kind === 'anhaenger' ? 'Position passt nicht zum Anhänger (nur AH-Achsen oder Reserve).' : 'Position passt nicht zum Lkw (Anhängerachsen AH beim Anhänger erfassen).');
-  const tread0 = num(body.tread_mm, { min: 0, max: 30, field: 'Profiltiefe', unit: 'mm', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+  const tread0 = num(body.tread_mm, { key: 'tread_mm', min: 0, max: 30, field: 'Profiltiefe', unit: 'mm', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
   // auf 3 Nachkommastellen wie die Anzeige – sonst „1,6 mm liegt unter dem Minimum von 1,6 mm“ bei 1,5996 (18.10.2026)
   const tread = tread0 === null ? null : Math.round(tread0 * 1000) / 1000;
-  const pressure = num(body.pressure_bar, { min: 0, max: 15, field: 'Luftdruck', unit: 'bar', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
-  if (type === 'messung' && tread === null && pressure === null) throw bad('validation', 'Messung braucht Profiltiefe oder Luftdruck.');
-  const size = str(body.size, { max: 40, field: 'Reifengröße' });
-  if (type === 'wechsel' && !size) throw bad('validation', 'Beim Reifenwechsel ist die Reifengröße Pflicht.');
-  if (size && !/\d/.test(size)) throw bad('validation', 'Reifengröße unplausibel (z. B. 315/80 R22.5).');
-  const dot = str(body.dot, { max: 20, field: 'DOT' });
-  if (dot && !dotDate(dot)) throw bad('validation', 'DOT: letzte 4 Ziffern = Woche und Jahr (z. B. 2324).');
-  if (dot && dotDate(dot) > berlinDate()) throw bad('validation', 'DOT: Herstellwoche liegt in der Zukunft.');
-  const caseId = body.case_id ? str(body.case_id, { max: 40, field: 'Vorgang' }) : null;
+  const pressure = num(body.pressure_bar, { key: 'pressure_bar', min: 0, max: 15, field: 'Luftdruck', unit: 'bar', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+  if (type === 'messung' && tread === null && pressure === null) throw bad('validation', 'Messung braucht Profiltiefe oder Luftdruck.', { field_key: 'tread_mm' });
+  const size = str(body.size, { key: 'size', max: 40, field: 'Reifengröße' });
+  if (type === 'wechsel' && !size) throw bad('validation', 'Beim Reifenwechsel ist die Reifengröße Pflicht.', { field_key: 'size' });
+  if (size && !/\d/.test(size)) throw bad('validation', 'Reifengröße unplausibel (z. B. 315/80 R22.5).', { field_key: 'size' });
+  const dot = str(body.dot, { key: 'dot', max: 20, field: 'DOT' });
+  if (dot && !dotDate(dot)) throw bad('validation', 'DOT: letzte 4 Ziffern = Woche und Jahr (z. B. 2324).', { field_key: 'dot' });
+  if (dot && dotDate(dot) > berlinDate()) throw bad('validation', 'DOT: Herstellwoche liegt in der Zukunft.', { field_key: 'dot' });
+  const caseId = body.case_id ? str(body.case_id, { key: 'case_id', max: 40, field: 'Vorgang' }) : null;
   if (caseId) {
     const c = await env.DB.prepare('SELECT id FROM cases WHERE id=? AND environment=? AND vehicle_id=?').bind(caseId, envName, vehicleId).first();
     if (!c) throw bad('validation', 'Vorgang passt nicht zu diesem Fahrzeug.');
@@ -226,7 +226,7 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const winter = body.winter_mark === undefined || body.winter_mark === null || body.winter_mark === '' ? null : oneOf(body.winter_mark, WINTER_MARKS, 'Winterkennzeichnung');
   const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : kmNum(body.odometer_km);
   const now = nowIso();
-  const brand = str(body.brand, { max: 60, field: 'Marke' }); const note = str(body.note, { max: 1000, field: 'Bemerkung' });
+  const brand = str(body.brand, { key: 'brand', max: 60, field: 'Marke' }); const note = str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' });
   // Wiederholung mit gleichem request_key (Netzabbruch, erneutes Absenden): keine doppelten Ereignisse, Antwort duplicate (19.10.2026, Migration 0064)
   const rk = str(body.request_key, { max: 80, field: 'request_key' }) || null;
   const known = async () => (rk ? (await env.DB.prepare('SELECT id, position, tread_mm, odometer_km FROM tire_events WHERE vehicle_id=? AND request_key=? AND recorded_by=? AND environment=? ORDER BY created_at, rowid').bind(vehicleId, rk, user.id, envName).all()).results : []);
@@ -308,8 +308,8 @@ function warnOf(tread, positions) {
 export async function setTireSpec(env, user, vehicleId, body) {
   if (!canWrite(user)) throw forbidden();
   const axle = oneOf(body.axle, AXLES, 'Achse');
-  const size = str(body.size, { required: true, max: 40, field: 'Reifengröße' });
-  if (!/\d/.test(size)) throw bad('validation', 'Reifengröße unplausibel (z. B. 315/80 R22.5).'); // wie der Import (20.10.2026)
+  const size = str(body.size, { key: 'size', required: true, max: 40, field: 'Reifengröße' });
+  if (!/\d/.test(size)) throw bad('validation', 'Reifengröße unplausibel (z. B. 315/80 R22.5).', { field_key: 'size' }); // wie der Import (20.10.2026)
   const verified = flag(body.verified, 'Geprüft') ? 1 : 0;
   // unbekanntes Fahrzeug → 404 (vorher Fremdschlüssel-Fehler = „Interner Fehler“, Fuzz 15.10.2026)
   const veh = await env.DB.prepare('SELECT kind FROM vehicles WHERE id=?').bind(vehicleId).first();

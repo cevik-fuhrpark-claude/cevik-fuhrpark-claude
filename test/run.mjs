@@ -42242,13 +42242,20 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   const f2 = await owner.post('/api/fines', { ...fb, amount_eur: 'viel' }); eq(f2.data.field_key, 'amount_eur', 'Bußgeld: Betrag');
   const f3 = await owner.post('/api/fines', { ...fb, offense_at: 'gestern' }); eq(f3.data.field_key, 'offense_at', 'Bußgeld: Tatzeit');
   const f4 = await owner.post('/api/fines', { ...fb, authority: '' }); eq(f4.data.field_key, 'authority', 'Bußgeld: Behörde');
+  // Stufe 4: Lager, Reifen, Auslesungen
+  const s1 = await users.ws.post('/api/stock', { name: 'Feld 1501', unit_price_net: 'teuer' }); eq(s1.status, 400); eq(s1.data.field_key, 'unit_price_net', 'Lager: Preis');
+  const s2 = await users.ws.post('/api/stock', { name: 'Feld 1501', initial_qty: '5 l' }); eq(s2.data.field_key, 'initial_qty', 'Lager: Anfangsbestand mit fremder Einheit');
+  const vlk = (await owner.get('/api/vehicles')).data.vehicles.find((v) => v.kind === 'lkw');
+  const t1 = await owner.post(`/api/vehicles/${vlk.id}/tires/events`, { position: 'VA-L', event_type: 'messung' }); eq(t1.status, 400); eq(t1.data.field_key, 'tread_mm', 'Reifen: Messung ohne Werte');
+  const t2 = await owner.post(`/api/vehicles/${vlk.id}/tires/events`, { position: 'VA-L', event_type: 'messung', tread_mm: 8, dot: '9999' }); eq(t2.data.field_key, 'dot', 'Reifen: DOT');
+  const d1 = await users.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: vlk.id, downloaded_on: '2099-01-01', evidence: 'x' }); eq(d1.status, 400); eq(d1.data.field_key, 'downloaded_on', 'Auslesung: Datum in der Zukunft');
   const { withKey } = await import('../src/util.js');
   eq(fk(() => withKey('x_on', () => { throw new HttpError(400, 'validation', 'Datum ungültig'); })), 'x_on', 'withKey ergänzt field_key');
   eq(fk(() => withKey('x_on', () => str('', { key: 'inner', required: true }))), 'inner', 'withKey überschreibt keinen vorhandenen field_key');
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims', 'fines']) {
+  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims', 'fines', 'stock', 'tires', 'tacho']) {
     const s = readFileSync(new URL(`../src/${m}.js`, import.meta.url), 'utf8');
     const keys = new Set([...s.matchAll(/key: '(\w+)'|field_key: '(\w+)'|withKey\('(\w+)'/g)].map((x) => x[1] || x[2] || x[3]));
     ok(keys.size > 0, m + ': keine Feldnamen');

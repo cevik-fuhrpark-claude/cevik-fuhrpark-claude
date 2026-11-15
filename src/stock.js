@@ -114,7 +114,7 @@ export async function receipt(env, user, envName, body) {
     const dup = (await env.DB.prepare('SELECT COUNT(*) AS n FROM stock_movements WHERE request_key=? OR (request_key > ? AND request_key < ?)').bind(rk, rk + '-', rk + '.').first()).n;
     if (dup) return { ok: true, duplicate: true, lines: lines.length };
   }
-  const supplier = str(body.supplier, { max: 120, field: 'Lieferant' }); const docRef = str(body.document_ref, { max: 200, field: 'Beleg' }); const note = str(body.note, { max: 500, field: 'Bemerkung' });
+  const supplier = str(body.supplier, { key: 'supplier', max: 120, field: 'Lieferant' }); const docRef = str(body.document_ref, { key: 'document_ref', max: 200, field: 'Beleg' }); const note = str(body.note, { key: 'note', max: 500, field: 'Bemerkung' });
   const ids = lines.map((l) => String((l && l.item_id) || '').slice(0, 64));
   if (ids.some((x) => !x)) throw bad('validation', 'Jede Position braucht einen Artikel.');
   if (new Set(ids).size !== ids.length) throw bad('validation', 'Ein Artikel steht mehrfach im Wareneingang – Mengen bitte zusammenfassen.');
@@ -203,19 +203,19 @@ export async function createItem(env, user, envName, body) {
   // Anfangsbestand VOR dem Anlegen prüfen (17.10.2026): vorher war der Artikel bei ungültigem Anfangsbestand („1.000“, -5) trotz 400
   // schon angelegt – erneutes Senden ergab „existiert bereits“
   // Backlog 1015: Anfangs-/Mindestbestand mit Einheit („5 Stück“, „20 l“) wie Buchung und Lagerimport (`qtyNum`, Einheit laut Formular); fremde Einheit mit eigenem Grund
-  const unitIn0 = stdUnit(str(body.unit, { max: 20, field: 'Einheit' })) || 'Stk';
-  const initial = qtyNum(body.initial_qty, unitIn0, { min: 0, max: 1e6, field: 'Anfangsbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+  const unitIn0 = stdUnit(str(body.unit, { key: 'unit', max: 20, field: 'Einheit' })) || 'Stk';
+  const initial = qtyNum(body.initial_qty, unitIn0, { key: 'initial_qty', min: 0, max: 1e6, field: 'Anfangsbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
   // 0,0004 rundet beim Buchen auf 0 → Buchung abgelehnt, Artikel aber schon angelegt (17.10.2026) – vorher prüfen
-  if (initial && r3(initial) <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
-  await assertNoTwin(env, envName, site, str(body.name, { required: true, max: 200, field: 'Bezeichnung' }), str(body.part_number, { max: 80, field: 'Teilenummer' }));
+  if (initial && r3(initial) <= 0) throw bad('validation', 'Menge muss größer 0 sein.', { field_key: 'qty' });
+  await assertNoTwin(env, envName, site, str(body.name, { key: 'name', required: true, max: 200, field: 'Bezeichnung' }), str(body.part_number, { key: 'part_number', max: 80, field: 'Teilenummer' }));
   const id = uuid();
   const now = nowIso();
   try {
     await env.DB.prepare(`INSERT INTO stock_items(id,environment,site,part_number,name,unit,min_qty,location,unit_price_net,created_by,created_at,updated_at,item_key)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, str(body.part_number, { max: 80, field: 'Teilenummer' }), str(body.name, { required: true, max: 200, field: 'Bezeichnung' }),
-      stdUnit(str(body.unit, { max: 20, field: 'Einheit' })), r3n(qtyNum(body.min_qty, unitIn0, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) })), str(body.location, { max: 80, field: 'Ort' }),
-      num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }), user.id, now, now,
-      itemKey(str(body.name, { required: true, max: 200, field: 'Bezeichnung' }), str(body.part_number, { max: 80, field: 'Teilenummer' }))).run();
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, envName, site, str(body.part_number, { key: 'part_number', max: 80, field: 'Teilenummer' }), str(body.name, { key: 'name', required: true, max: 200, field: 'Bezeichnung' }),
+      stdUnit(str(body.unit, { key: 'unit', max: 20, field: 'Einheit' })), r3n(qtyNum(body.min_qty, unitIn0, { key: 'min_qty', min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) })), str(body.location, { key: 'location', max: 80, field: 'Ort' }),
+      num(body.unit_price_net, { key: 'unit_price_net', min: 0, max: 1e7, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }), user.id, now, now,
+      itemKey(str(body.name, { key: 'name', required: true, max: 200, field: 'Bezeichnung' }), str(body.part_number, { key: 'part_number', max: 80, field: 'Teilenummer' }))).run();
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) throw conflict('duplicate_item', 'Artikel existiert in diesem Lager bereits.');
     throw e;
@@ -230,11 +230,11 @@ export async function updateItem(env, user, envName, id, body) {
   const expected = body.expected_updated_at !== undefined && body.expected_updated_at !== null && body.expected_updated_at !== '' ? str(body.expected_updated_at, { max: 40, field: 'Stand' }) : null;
   if (expected && expected !== it.updated_at) throw conflict('version_conflict', 'Artikel wurde zwischenzeitlich geändert. Bitte neu laden.');
   const fields = {
-    name: body.name !== undefined ? str(body.name, { required: true, max: 200, field: 'Bezeichnung' }) : it.name,
-    part_number: body.part_number !== undefined ? str(body.part_number, { max: 80, field: 'Teilenummer' }) : it.part_number,
-    min_qty: body.min_qty !== undefined ? r3n(qtyNum(body.min_qty, it.unit, { min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) })) : it.min_qty,
-    location: body.location !== undefined ? str(body.location, { max: 80, field: 'Ort' }) : it.location,
-    unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }) : it.unit_price_net,
+    name: body.name !== undefined ? str(body.name, { key: 'name', required: true, max: 200, field: 'Bezeichnung' }) : it.name,
+    part_number: body.part_number !== undefined ? str(body.part_number, { key: 'part_number', max: 80, field: 'Teilenummer' }) : it.part_number,
+    min_qty: body.min_qty !== undefined ? r3n(qtyNum(body.min_qty, it.unit, { key: 'min_qty', min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) })) : it.min_qty,
+    location: body.location !== undefined ? str(body.location, { key: 'location', max: 80, field: 'Ort' }) : it.location,
+    unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { key: 'unit_price_net', min: 0, max: 1e7, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }) : it.unit_price_net,
     active: body.active === undefined ? it.active : (flag(body.active, 'Aktiv', !!it.active) ? 1 : 0),
   };
   // Nur tatsächliche Änderungen speichern und protokollieren (Stammdaten-Pflege in der Artikelakte, 15.10.2026)
@@ -274,7 +274,7 @@ export async function addMovement(env, user, envName, id, body) {
   // er zählte sonst im Stichtagsbestand weiter, ließ sich aber weder zählen noch korrigieren
   const type = oneOf(body.type, ['zugang', 'entnahme', 'korrektur'], 'Buchungsart');
   // Mengen auf 3 Nachkommastellen wie Anzeige/Umlagerung/Inventur (0,9996 ergab sonst Anzeige 1 und später unbemerkt negativen Bestand)
-  let qty = r3(qtyNum(body.qty, it.unit, { min: -1e6, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
+  let qty = r3(qtyNum(body.qty, it.unit, { key: 'qty', min: -1e6, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
   const rkey = requestKey(body);
   const dup = rkey ? await env.DB.prepare('SELECT item_id, transfer_id, type, qty FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
   // Wiederholung nur, wenn derselbe Schlüssel an diesem Artikel als Buchung (keine Umlagerung) benutzt wurde – sonst 409 (18.10.2026: meldete still „duplicate“);
@@ -284,18 +284,18 @@ export async function addMovement(env, user, envName, id, body) {
   // erst nach der Wiederholungsprüfung (23.10.2026: Ausbuchen/Zugang mit verlorener Antwort, Artikel inzwischen deaktiviert → 400 statt „duplicate“)
   if (!it.active && type !== 'korrektur') throw bad('validation', 'Artikel ist deaktiviert.');
   if (!it.active) { const oh = await onHand(env, id); if (oh === 0 || Math.abs(oh + qty) > 1e-9) throw bad('validation', 'Bei deaktivierten Artikeln ist nur das Ausbuchen des Restbestands auf 0 möglich.'); }
-  if (type !== 'korrektur' && qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
-  if (type === 'korrektur' && qty === 0) throw bad('validation', 'Korrektur ungleich 0 angeben.');
-  if (type === 'korrektur' && !str(body.note, { max: 500, field: 'Bemerkung' })) throw bad('validation', 'Korrektur braucht einen Grund.');
+  if (type !== 'korrektur' && qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.', { field_key: 'qty' });
+  if (type === 'korrektur' && qty === 0) throw bad('validation', 'Korrektur ungleich 0 angeben.', { field_key: 'qty' });
+  if (type === 'korrektur' && !str(body.note, { key: 'note', max: 500, field: 'Bemerkung' })) throw bad('validation', 'Korrektur braucht einen Grund.', { field_key: 'note' });
   if (type === 'entnahme') qty = -qty;
   if (qty < 0 && (await onHand(env, id)) + qty < 0) { const av = await onHand(env, id); throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
-  const entered = num(body.unit_price_net, { min: 0, max: 1e7, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
+  const entered = num(body.unit_price_net, { key: 'unit_price_net', min: 0, max: 1e7, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
   // Entnahme und Korrektur: Wert = hinterlegter Artikelpreis (wie Entnahme aus dem Vorgang und Umlagerung); nur ohne Artikelpreis der eingegebene
   // (23.10.2026: Korrekturen – Rückgabe, Retoure, Mengenfehler – standen „unbewertet“ im Journal, Summe passte nicht zum Lagerwert)
   const price = type !== 'zugang' && it.unit_price_net !== null ? it.unit_price_net : entered;
   const stmts = [env.DB.prepare(`INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,request_key)
-    VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?,?)`).bind(uuid(), envName, id, type, qty, price, str(body.supplier, { max: 120, field: 'Lieferant' }), str(body.document_ref, { max: 200, field: 'Beleg' }),
-    str(body.note, { max: 500, field: 'Bemerkung' }), user.id, nowIso(), rkey)];
+    VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?,?)`).bind(uuid(), envName, id, type, qty, price, str(body.supplier, { key: 'supplier', max: 120, field: 'Lieferant' }), str(body.document_ref, { key: 'document_ref', max: 200, field: 'Beleg' }),
+    str(body.note, { key: 'note', max: 500, field: 'Bemerkung' }), user.id, nowIso(), rkey)];
   if (type === 'zugang' && price !== null) stmts.push(env.DB.prepare('UPDATE stock_items SET unit_price_net=?, updated_at=? WHERE id=?').bind(price, nowIso(), id));
   // Artikelpreis durch Zugang geändert: alter Preis ins Protokoll (22.10.2026: vorher still ersetzt) – im selben Stapel wie die Buchung
   if (type === 'zugang' && price !== null && Number(price) !== Number(it.unit_price_net ?? NaN)) stmts.push(env.DB.prepare(`INSERT INTO audit_log(id,actor_id,action,target,detail,created_at) VALUES (?,?,?,?,?,?)`)
@@ -332,8 +332,8 @@ export async function setOrder(env, user, envName, id, body, expected = null) {
     return { ok: true };
   }
   if (!it.active) throw bad('validation', 'Artikel ist deaktiviert.');
-  const qty = r3(qtyNum(body.qty, it.unit, { min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
-  if (qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
+  const qty = r3(qtyNum(body.qty, it.unit, { key: 'qty', min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
+  if (qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.', { field_key: 'qty' });
   const today = berlinDate();
   const on = body.ordered_on ? String(body.ordered_on) : today;
   if (!isCalendarDate(on) || on > today) throw bad('validation', 'Bestelldatum: gültiges Datum, nicht in der Zukunft.');
@@ -345,7 +345,7 @@ export async function setOrder(env, user, envName, id, body, expected = null) {
   if (on < shiftY(today, -5)) throw bad('validation', 'Bestelldatum liegt mehr als 5 Jahre zurück – bitte prüfen.');
   if (eta && eta > shiftY(on, 2)) throw bad('validation', 'Liefertermin liegt mehr als 2 Jahre nach dem Bestelldatum – bitte prüfen.');
   const r = await env.DB.prepare('UPDATE stock_items SET ordered_qty=?, ordered_on=?, ordered_eta=?, ordered_note=?, ordered_by=?, updated_at=? WHERE id=? AND ordered_on IS NULL AND active=1')
-    .bind(qty, on, eta, str(body.note, { max: 200, field: 'Bemerkung' }), user.id, nowIso(), id).run();
+    .bind(qty, on, eta, str(body.note, { key: 'note', max: 200, field: 'Bemerkung' }), user.id, nowIso(), id).run();
   if (!(r.meta && r.meta.changes)) throw conflict('stock_order_exists', 'Für diesen Artikel ist bereits eine Bestellung vermerkt. Bitte neu laden.');
   await audit(env, user.id, 'stock.order_mark', null, { item: id, qty, eta });
   return { ok: true };
@@ -356,11 +356,11 @@ export async function setOrder(env, user, envName, id, body, expected = null) {
 // (Bezeichnung/Teilenummer/Einheit/Preis übernommen, ohne Mindestbestand/Lagerort). Wert neutral: Preis des Quellartikels.
 export async function transfer(env, user, envName, id, body, retried = false) {
   const it = await loadItem(env, user, envName, id);
-  const toSite = str(body.to_site, { required: true, max: 20, field: 'Ziellager' });
+  const toSite = str(body.to_site, { key: 'to_site', required: true, max: 20, field: 'Ziellager' });
   if (toSite === it.site) throw bad('validation', 'Ziellager ist das eigene Lager.');
   if (!(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(toSite).first())) throw bad('validation', 'Unbekannte Werkstatt.');
-  const qty = r3(qtyNum(body.qty, it.unit, { min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
-  if (qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.');
+  const qty = r3(qtyNum(body.qty, it.unit, { key: 'qty', min: 0, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
+  if (qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.', { field_key: 'qty' });
   const rkey = requestKey(body);
   const prevT = rkey ? await env.DB.prepare('SELECT transfer_id, item_id FROM stock_movements WHERE request_key=?').bind(rkey).first() : null;
   // Schlüssel einer Umlagerung eines anderen Artikels ist keine Wiederholung (18.10.2026: Umlagerung B wurde still als „duplicate“ von A beantwortet, nichts gebucht)
@@ -369,7 +369,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
   if (!it.active) throw bad('validation', 'Artikel ist deaktiviert.'); // nach der Wiederholungsprüfung (23.10.2026)
   const avail = await onHand(env, id);
   if (avail < qty) { const av = avail; throw bad('insufficient_stock', `Bestand reicht nicht (verfügbar: ${deQty(av)} ${it.unit}).`, { available: av, unit: it.unit }); }
-  const note = str(body.note, { max: 300, field: 'Bemerkung' });
+  const note = str(body.note, { key: 'note', max: 300, field: 'Bemerkung' });
   // Ziel-Artikel wie assertNoTwin ohne Groß-/Kleinschreibung und Leerzeichen (20.10.2026: „bremsbelag“ im Ziellager wurde nicht gefunden,
   // Umlagerung legte einen zweiten Artikel an); danach eindeutige Teilenummer (ebenfalls ohne Groß-/Kleinschreibung)
   const cands = (await env.DB.prepare('SELECT * FROM stock_items WHERE environment=? AND site=?').bind(envName, toSite).all()).results;
@@ -451,7 +451,7 @@ export async function inventory(env, user, envName, body, { dryRun = false } = {
   // leere Liste erlaubt: die App sendet nur gezählte Zeilen (Vorschau „0 gezählt“; Buchen unten „nichts eingetragen“)
   if (body.counts.length > 2000) throw bad('validation', 'Maximal 2000 Artikel je Inventur.');
   const items = new Map((await listStock(env, user, envName, { site })).map((i) => [i.id, i]));
-  const note = str(body.note, { max: 300, field: 'Bemerkung' });
+  const note = str(body.note, { key: 'note', max: 300, field: 'Bemerkung' });
   const date = berlinDate();
   const diffs = [];
   const seen = new Set();
