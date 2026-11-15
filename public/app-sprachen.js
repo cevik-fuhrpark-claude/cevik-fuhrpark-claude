@@ -858,6 +858,56 @@ function uzKinds(v) { const k = new Set(); for (const raw of String(v || '').spl
 
 
 
-async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+const azFold = (s) => String(s || '').toLowerCase().replace(/\u0307/g, '').replace(/[əä]/g, 'e').replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ş|sh/g, 's').replace(/ç|ch/g, 'c').replace(/ğ|gh/g, 'g').replace(/[ʻʼ‘’'`´-]/g, ' ');
+const AZ_D = 'isleme\\S*|islemir\\S*|xarab\\S*|nasaz\\S*|siradan\\s+cix\\S*';
+const AZ_SIN = 'sin(?:di|ib|iq|dir|mis)\\b\\S*|qiril(?:di|ib|mis)\\S*';
+const azRx = (n, d, extra) => new RegExp(`\\b(?:${n})\\S*\\s+(?:\\S+\\s+){0,2}?(?:${d.split('@').join(AZ_D)})${extra ? '|' + extra : ''}`);
+const AZ_OK = /\b(?:duzeldil|duzeldi|temir\s+(?:olundu|edildi|olunub|edilib|etdiler|etdim)|deyisdiril|deyisdirdi|deyisdik|yenilendi)\S*|\b(?:yene|artiq|tezeden)\s+(?:\S+\s+)?(?:isleyir|yanir|gedir|ise\s+dusur)\b|\bher\s+sey\s+(?:\S+\s+)?(?:qaydasindadir|qaydasinda|yaxsidir|normaldir|ok)\b|\bproblem\S*\s+yoxdur\b|\bnasazliq\s+yoxdur\b/;
+const AZ_NEG = /\b\S+\s+deyil\S*|\bhec\s+(?:bir\s+|ne\s+)?\S+|\b(?:qeza|problem|xeta|tustu|zede|nasazliq)s[iu]z\b/g;
+const AZ_FIRE_N = 'kabin|muherrik|motor|teker|masin|yuk|qosqu|pritsep|naqil|provod|tent';
+const AZ_KINDS = [['brake', azRx('eylec|tormoz', '@|tutmur\\S*|saxlamir\\S*|yoxdur|zeif\\S*|getdi\\b|getmir\\S*', '\\bhava\\s+(?:tezyiq\\S*\\s+)?(?:dusur|dusdu|gedir|cixir|tutmur)\\b'), /\bel\s+eylec|rucnik|datcik|ozu\s+(?:\S+\s+)?eylec|lampa|indikator|isiq/],
+  ['parkbrake', /\b(?:el\s+eylec\S*|rucnik\S*)\s+(?:\S+\s+){0,2}?(?:isleme|islemir|tutmur|saxlamir|xarab)\S*|\b(?:oz\s+ozune|ozbasina)\s+(?:\S+\s+)?(?:getdi|diyirlendi|surusdu|yurudu)\b/],
+  ['flat', azRx('teker|sin(?:ler|i|in|lerin)?(?![a-z])|balon|kolyos|pokriska', 'partla(?:di|yib|yibdi|mis)\\b|desil\\S*|havasi\\s+(?:cix|get|dus)\\S*|yatib\\b|yatdi\\b|prokol\\S*', '\\bprokol\\s+(?:oldu|olub)\\b|\\b(?:partladi|desildi)\\s+(?:\\S+\\s+)?(?:teker|sin\\b)'), /podus|yastiq|tent/],
+  ['tyre', azRx('teker|sin(?:ler|i|in|lerin)?(?![a-z])|protektor|pokriska', 'yeyil\\S*|kesil\\S*|sisib\\S*|qabar\\S*|hamarla\\S*|cat(?:la\\S*|\\s+var)'), /partla|desil|havasi|prokol/],
+  ['steer', azRx('sukan|rul', '@|agir\\S*|berk\\S*|firlanmir\\S*|oynayir\\S*|ilis\\S*', '\\b(?:saga|sola)\\s+(?:\\S+\\s+)?cek(?:ir|ib|di)\\b'), /tehlukesizlik|podus/],
+  ['leak', azRx('yag|maslo|solyarka|dizel|yanacaq|antifriz|tosol|soyuducu\\s+maye|adblue|hidravlik|gidravlik', 'ax(?:ir|di|ib|idir)\\b|siz(?:ir|di|ib)\\b|damcila\\S*|damir\\b|tokul(?:ur|ub|du)\\b|gedir\\b', '\\bax(?:ir|ib)\\s+(?:\\S+\\s+)?(?:yag|solyarka|antifriz|dizel)'), /qurtar|bitdi|qalmadi|lampa|isiq|indikator|kart/],
+  ['fire', azRx(AZ_FIRE_N, 'yan(?:ir|di|ib\\s+(?:gedir|getdi))\\b|alis(?:di|ib|ir)\\b|od\\s+tut\\S*', '\\byangin\\S*|\\btustu\\S*\\s+(?:\\S+\\s+)?(?:cix|gel)\\S*|\\bod\\s+(?:tutdu|tutub|aldi)\\b|\\balov\\S*'), /egzoz|qlusitel|glusitel|vixlop|vyxlop|truba|sondurucu|ognetus|lampa|isiq|indikator|check|cek|panel|siqaret/],
+  ['acc', /\bqeza(?:ya|da|ni|si)?\s+(?:\S+\s+)?(?:dusdum|dusduk|dusdu|oldu|oldum|etdim|etdi|elemisem|eledim)\b|\btoqqus\S*|\bvurdum\b|\bvurdu\b|\bvurub\s+(?:qacdi|getdi)\b|\bdeydim\b|\bcirpil(?:di|dim)\b/, /\bdas\b|cinqil|rejim|\bhava\s+vur/],
+  ['injury', /\byaralan(?:di|dim|ib|mis)\b|\bzede\s+(?:aldi|aldim|alib)\b|\btecili\s+yardim\S*|\bxestexana\S*|\b(?:el|ayag|bas|bel|barmag)im\S*\s+(?:\S+\s+)?(?:kesildi|kesdim|sindi|zedelendi|ezildi)\b/],
+  ['nostart', /\bise\s+dusmur\S*|\bise\s+salmaq\s+olmur\b|\bstart\s+(?:vermir|almir|olmur)\b|\bstarter\S*\s+(?:\S+\s+)?(?:isleme|islemir|firlanmir|xarab)\S*|\b(?:muherrik|motor|masin)\s+(?:umumiyyetle\s+)?(?:islemir|islemeyir|islemedi|getmir)\b/, /aqreqat|xolodil|refrijerator|kondisioner|kondisoner|pec\b|webasto|vebasto|soyuducu/],
+  ['engine', azRx('muherrik|motor', 'qiz(?:ib|di|ir|masi)\\b\\S*|dartmir\\S*|gucu\\s+(?:yoxdur|azdir)|zeif\\S*|taqqilda\\S*|ses\\s+(?:salir|verir)\\S*|qeribe\\s+ses\\S*', '\\b(?:guc|mosnost\\S*)\\s+yoxdur\\b|\\bdartmir\\b|\\b(?:egzoz|qlusitel|glusitel|vixlop|vyxlop|truba)\\S*\\s+(?:\\S+\\s+){0,2}?(?:(?:qara|ag|goy)\\s+)?tustu|\\b(?:qara|goy)\\s+tustu\\s+(?:\\S+\\s+)?cix\\S*|\\bqeza\\s+rejim\\S*|\\btemperatur\\S*\\s+(?:\\S+\\s+)?(?:qalx|yuksel|artir|artdi)\\S*'), /aqreqat|xolodil|refrijerator|lampa|isiq|indikator/],
+  ['mirror', azRx('guzgu|zerkal', AZ_SIN + '|xarab\\S*|qop(?:du|ub)\\S*|sallan\\S*|dus(?:du|ub)\\b', '\\b(?:sindi|sindirdim)\\s+(?:\\S+\\s+)?(?:guzgu|zerkal)'), /qizdir|isidic|podogrev|podoqrev/],
+  ['lights', azRx('isiq|isig|fara|faralar|fonar|stop\\s+isig|povorot|qabarit|gabarit|lampoc|lampa\\b', 'yanmir\\S*|yanmayir\\S*|@|' + AZ_SIN + '|sonub\\b|sondu\\b', '\\b(?:lampoc\\S*|lampa)\\s+(?:\\S+\\s+)?yan(?:ib|ib\\s+gedib)\\b'), /panel|ekran|displey|xeta|sehv|check|cek|muherrik\s+lampa|motor\s+lampa|indikator/],
+  ['warnlight', /\b(?:panel|ekran|displey|pribor)\S*\s+(?:\S+\s+){0,3}?(?:yan(?:ir|di|ib)\b|cix(?:di|ir)\b|xeta|sehv|osibk)\S*|\b(?:check|cek|indikator|lampa)\S*\s+(?:\S+\s+)?(?:yan(?:ir|di)|yanib\s+sonur|yanib\s+qalib|cixdi|cixir)\b|\b(?:xeta|sehv|osibka)\S*\s+(?:\S+\s+)?(?:cix|ver|gos|yan)\S*|\b(?:muherrik|motor|yag|abs|ebs|adblue|akkumulyator|eylec|qirmizi|sari)\s+lampa\S*\s+(?:\S+\s+)?yan(?:ir|di|ib)\b/],
+  ['glass', azRx('lobovoy|on\\s+suse|suse|steklo', 'catla\\S*|cat\\s+var|cat\\s+dus\\S*|' + AZ_SIN + '|tresin\\S*|desil\\S*', '\\bdas\\s+(?:\\S+\\s+){0,2}?(?:deydi|dusdu|gelib\\s+deydi|vurdu)'), /guzgu|zerkal|silen|dvornik|pencere\s+\S+\s+(?:dusmur|qalxmir)/],
+  ['window', /\b(?:pencere|suse)\S*\s+(?:\S+\s+)?(?:dusmur|qalxmir|acilmir|baglanmir)\S*|\bsteklopod\S*\s+(?:\S+\s+)?(?:isleme|islemir|xarab)\S*/],
+  ['batt', azRx('akkumulyator|akkumlyator|akkum|akum|batareya|akb', '@|otur(?:ub|du)\\S*|bosal\\S*|doldurmur\\S*|sarj\\s+(?:almir|saxlamir)\\S*|zeif\\S*|bitib\\b'), /lampa|isiq|indikator/],
+  ['tacho', /\b(?:taxoqraf|taxograf|tachograf|taxoqrav)\S*\s+(?:\S+\s+){0,2}?(?:isleme|islemir|xarab|oxumur|xeta|karti\s+(?:oxumur|qebul\s+etmir))\S*|\b(?:kart|kartoc)\S*\s+(?:\S+\s+){0,2}?(?:oxunmur|oxumur|ilisib|qalib|cixmir|itdi|itib|itirdim|ogurlan)\S*|\b(?:surucu|voditel)\S*\s+kart\S*\s+(?:\S+\s+)?(?:isleme|islemir|xarab|itdi|itirdim)\S*/, /yanacaq|zapravka|toplivn|bank|plastik|benzin|dizel|solyarka|bonus/],
+  ['fuelcard', /\b(?:yanacaq|toplivn|zapravka|dizel|solyarka|benzin)\S*\s+kart\S*\s+(?:\S+\s+){0,2}?(?:isleme|islemir|blok|kecmir|itdi|itib|itirdim|qebul\s+olunmur|ogurlan)\S*/],
+  ['lost', azRx('acar|klyuc|texpasport|tex\\s+pasport|sened|dokument', 'itdi\\b|itib\\b|itirdim\\S*|tapa\\s+bilmir\\S*|tapilmir\\S*|ogurlan\\S*', '\\bitirdim\\s+(?:\\S+\\s+)?(?:acar|klyuc|sened|texpasport)'), /kart/],
+  ['coupling', /\b(?:qosqu|yarimqosqu|pritsep|pricep|polupritsep)\S*\s+(?:\S+\s+){0,2}?(?:qosulmur|ilismir|ayrildi|ayrilib|qopdu|qopub|acildi)\S*|\b(?:sedelka|yeher)\S*\s+(?:\S+\s+){0,2}?(?:isleme|islemir|xarab|baglanmir|kilidlenmir|tutmur)\S*/],
+  ['dryfuel', /\b(?:solyarka|yanacaq|dizel|benzin|toplivo)\S*\s+(?:\S+\s+)?(?:qurtardi|qurtarib|bitdi|bitib|qalmadi|yoxdur)\b|\bbak\S*\s+(?:\S+\s+)?bos(?:dur|du|alib)?\b/, /aqreqat|xolodil|adblue|kart/],
+  ['reefer', azRx('xolodilnik|xolodil|refrijerator|refrejerator|aqreqat|soyuducu(?!\\s+maye)', '@|soyutmur\\S*|soyutmayir\\S*|qizir\\b|xeta\\S*|alarm\\S*|yanmir\\S*'), /kabin|kondisioner|kondisoner/],
+  ['susp', azRx('podus|pnevmoyastiq|hava\\s+yastig|yastiq|ressor|amortizator|amortizator\S*', 'partla\\S*|desil\\S*|' + AZ_SIN + '|@|hava\\s+burax\\S*|yatib\\b|dusub\\b', '\\b(?:qosqu|pritsep|yarimqosqu|masin)\\S*\\s+(?:\\S+\\s+)?(?:bir\\s+terefe\\s+)?(?:eyil|eyri\\s+dur|yatib)\\S*'), /tehlukesizlik|\brul\b|sukan/],
+  ['gear', azRx('suret|peredac|skorost|karobka|korobka|kpp|oturme\\s+qutu|oturucu', 'girmir\\S*|qosulmur\\S*|@|xeta\\S*|dusmur\\S*', '\\b(?:debriyaj|scepleniye|sceplenie|sepleniye|seplenie|mufta)\\S*\\s+(?:\\S+\\s+){0,2}?(?:isleme|islemir|xarab|yanib|surusur|tutmur)\\S*'), /isiq|lampa/],
+  ['climate', azRx('kondisioner|kondisoner|kondey|pec|qizdirici|webasto|vebasto|avtonomka|ventilyator', '@|qizdirmir\\S*|soyutmur\\S*|ufurmur\\S*|yanmir\\S*'), /oturacaq|kreslo|guzgu|zerkal|xolodil|aqreqat|refrijerator/],
+  ['cabkit', /\b(?:oturacaq|kreslo|guzgu|zerkal)\S*\s+(?:qizdiric|isidic|podogrev|podoqrev)\S*\s+(?:\S+\s+)?(?:isleme|islemir|xarab|qizdirmir)\S*|\b(?:podogrev|podoqrev)\S*\s+(?:\S+\s+)?(?:isleme|islemir|xarab)\S*/],
+  ['tarp', azRx('tent', 'ciril\\S*|ciriq\\S*|desil\\S*|desik\\S*|qop(?:du|ub)\\S*', '\\b(?:desik|ciriq)\\S*\\s+(?:\\S+\\s+)?tent')],
+  ['exhaust', azRx('egzoz|qlusitel|glusitel|vixlop|vyxlop', 'dus(?:du|ub)\\S*|sallan\\S*|desil\\S*|catla\\S*|qop(?:du|ub)\\S*|' + AZ_SIN + '|ses\\s+(?:salir|verir)\\S*|@'), /tustu/],
+  ['visib', azRx('dvornik|silen|suse\\s+silen|yuyucu|scotka|omivatel|omyvatel', '@|silmir\\S*|' + AZ_SIN + '|qop(?:du|ub)\\S*|su\\s+(?:vurmur|vermir|cixmir)\\S*', '\\b(?:suse|pencere)\\S*\\s+(?:\\S+\\s+)?terle(?:yir|yib|di)\\b')],
+  ['seat', /\b(?:kemer|remen)\S*\s+(?:\S+\s+){0,2}?(?:baglanmir|taxilmir|isleme|islemir|xarab|ilis|ciril)\S*|\b(?:oturacaq|kreslo|sidenye)\S*\s+(?:\S+\s+){0,2}?(?:sin(?:di|ib)|isleme|islemir|xarab|terpenir|oynayir|dus(?:du|ub))\S*/, /qizdir|isidic|podogrev|podoqrev/],
+  ['wheel', /\b(?:qayka|bolt)\S*\s+(?:\S+\s+){0,2}?(?:bosal|yoxdur|dus(?:du|ub)|cixib|acilib)\S*|\bdisk\S*\s+(?:\S+\s+)?(?:catla|eyil|sin(?:di|ib))\S*|\b(?:podsipnik|stupitsa|stupica|gupcek)\S*\s+(?:\S+\s+){0,2}?(?:qiz|isleme|islemir|xarab|ugulda|ses)\S*|\b(?:kardan|reduktor)\S*\s+(?:\S+\s+){0,2}?(?:isleme|islemir|xarab|ses|taqqilda)\S*/, /eylec|tormoz/],
+  ['stuck', /\b(?:palciq|batdaq|qar|qum)\S*\s+(?:\S+\s+){0,2}?(?:batib\s+qal|ilisib\s+qal|batdi|batdim|batmisam)\S*|\bbatib\s+qal(?:di|dim|mis|misam)\b/],
+  ['numplate', azRx('nomre|dovlet\\s+nisan', 'dus(?:du|ub)\\S*|itdi\\b|itib\\b|ogurlan\\S*|qop(?:du|ub)\\S*|' + AZ_SIN + '|gorunmur\\S*|oxunmur\\S*'), /isiq|lampa|telefon|\btel\b|kart|podsvet/],
+  ['adas', azRx('datcik|sensor|radar|kamera|assistent|asistent|kruiz|tempomat', '@|xeta\\S*|sonub\\b|sondu\\b', '\\bozu\\s+(?:\\S+\\s+)?eylec\\s+(?:edir|basir|verir|etdi|basdi)\\b')],
+  ['door', azRx('qapi|dver|hidrobort|gidrobort|qifil|zamok|merkezi\\s+kilid', 'baglanmir\\S*|acilmir\\S*|kilidlenmir\\S*|ilis\\S*|@|acilib\\s+get\\S*|qalxmir\\S*|dusmur\\S*'), /pencere|suse/]];
+function azKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n]+/)) { if (!/[a-zəıöüşçğ]/i.test(raw)) continue; const p = azFold(raw).replace(AZ_NEG, ' '); if (!AZ_OK.test(p)) for (const [n, rx, ex] of AZ_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };
