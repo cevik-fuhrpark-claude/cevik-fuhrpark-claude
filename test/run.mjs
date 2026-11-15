@@ -42080,7 +42080,7 @@ await test('Backlog 1505 (Blickwinkel „Werkstatt meldet am Freitagabend drei L
   const li = (await U.fleet.get('/api/cases?status=abschlusskontrolle')).data; const row = (li.cases || li.items || li).find((c) => c.id === id); ok(row && row.status_since === '2026-11-13T16:40:00.000Z', 'Liste liefert status_since: ' + (row && row.status_since));
   for (const l of ['de', 'uk', 'en']) { const m = renderFindingMessage('QC_PENDING', { label: 'DO-AB 1' }, l); ok(m.startsWith('DO-AB 1') && !m.includes('{') && !m.includes('()'), 'ohne Zeitangabe: ' + m); }
 });
-await test('Backlog 1506 (Blickwinkel „Fahrer schreibt die Meldung auf Usbekisch“, Backlog 195): „tormoz ishlamayapti“, „shina teshildi“, „motor o‘t olmayapti“, „kabina yonyapti“, „moy oqyapti“, „avariyaga uchradim“ u. a. – lateinisch (mit/ohne Apostroph-Varianten) und kyrillisch („тормоз ишламаяпти“, „ғилдирак тешилди“) → dieselben Hinweise (UZ_KINDS über uzFold); Reparaturvermerk, verneintes Verb („teshilmagan“, „oqmayapti“, „avariya bo‘lmadi“), „… emas“, „hammasi joyida“, Stau ohne; Auspuffrauch Motor statt Brand; keine andere Test-Zeichenkette (RU/UK/TR/…) trifft die usbekische Tabelle; Tabelle nur im Modul app-sprachen.js', async () => {
+await test('Backlog 1506 (Blickwinkel „Fahrer schreibt die Meldung auf Usbekisch“, Backlog 195): „tormoz ishlamayapti“, „shina teshildi“, „motor o‘t olmayapti“, „kabina yonyapti“, „moy oqyapti“, „avariyaga uchradim“ u. a. – lateinisch (mit/ohne Apostroph-Varianten) und kyrillisch („тормоз ишламаяпти“, „ғилдирак тешилди“) → dieselben Hinweise (UZ_KINDS über uzFold); Reparaturvermerk, verneintes Verb („teshilmagan“, „oqmayapti“, „avariya bo‘lmadi“), „… emas“, „hammasi joyida“, Stau ohne; Auspuffrauch Motor statt Brand; keine andere Test-Zeichenkette (RU/UK/TR/KY/…) erhält durch die usbekische Tabelle einen zusätzlichen Hinweis; Tabelle nur im Modul app-sprachen.js', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
@@ -42096,7 +42096,10 @@ await test('Backlog 1506 (Blickwinkel „Fahrer schreibt die Meldung auf Usbekis
   // Gegenprobe: keine Zeichenkette der übrigen Tests (andere Sprachen, Russisch/Ukrainisch kyrillisch und lateinisch, Türkisch …) trifft die usbekische Tabelle
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1506"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
-  const hit = [...strs].filter((x) => uzKinds(x).size); eq(hit.slice(0, 5).join(' | '), '', 'andere Sprachen ohne usbekischen Treffer');
+  // seit Backlog 1509: kirgisische Sätze teilen usbekische Wörter („шина тешилди“, „шина шишип кетти“) – erlaubt, solange die übrigen Tabellen denselben Hinweis zeigen
+  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace('...faKinds(v), ...uzKinds(v), ', '...faKinds(v), ') + 'return foreignKinds;')();
+  const hit = []; for (const x of strs) { const a = uzKinds(x); if (!a.size) continue; const o = await others(x); if (o.has('acc')) a.delete('injury'); if ([...a].some((k) => !o.has(k))) hit.push(x); }
+  eq(hit.slice(0, 5).join(' | '), '', 'andere Sprachen ohne zusätzlichen Hinweis aus der usbekischen Tabelle');
   const src = app.slice(app.indexOf('\nconst UZ_TR'), app.indexOf('\nfunction uzKinds'));
   ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   const ids = [...src.matchAll(/\['([a-z]+)', (?:uzRx|\/)/g)].map((m) => m[1]);
@@ -42155,7 +42158,7 @@ await test('Backlog 1508 (Blickwinkel „Fahrer schreibt die Meldung auf Kasachi
   // einen Hinweis, den die übrigen Tabellen nicht ohnehin zeigen
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1508"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
-  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace('...azKinds(v), ...kzKinds(v)]', '...azKinds(v)]') + 'return foreignKinds;')();
+  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace('...azKinds(v), ...kzKinds(v), ', '...azKinds(v), ') + 'return foreignKinds;')();
   const extra = []; for (const x of strs) { const a = kzKinds(x); if (!a.size) continue; const o = await others(x); if (o.has('acc')) a.delete('injury'); if ([...a].some((k) => !o.has(k))) extra.push(x); }
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne zusätzlichen Hinweis aus der kasachischen Tabelle');
   const src = app.slice(app.indexOf('\nconst KZ_D'), app.indexOf('\nfunction kzKinds'));
@@ -42164,13 +42167,44 @@ await test('Backlog 1508 (Blickwinkel „Fahrer schreibt die Meldung auf Kasachi
   const ids = [...src.matchAll(/\['([a-z]+)', (?:kzRx|\/)/g)].map((m) => m[1]);
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
   eq(new Set(ids).size, 36, '36 Hinweisarten');
-  ok(app.includes('...azKinds(v), ...kzKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(app.includes('...azKinds(v), ...kzKinds(v), '), 'in foreignKinds aufgenommen');
   ok(!main.includes('const KZ_KINDS') && lang.includes('const KZ_KINDS'), 'Tabelle nur in app-sprachen.js');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['тежегіш істемейді', 'дөңгелек жарылды', 'қозғалтқыш от алмайды', 'кабина жанып жатыр', 'май ағып жатыр', 'апатқа түстім', 'қозғалтқыш шамы жанып тұр', 'тоңазытқыш суытпайды', 'тормоз работать етпейді']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
     for (const x of ['тежегіш жөнделді', 'дөңгелек ауыстырылды', 'қайтадан істеп тұр', 'бәрі дұрыс']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x);
     ok(STRINGS[l].help_report_s.includes('глушительден қара түтін шығып жатыр') && [...await fk('глушительден қара түтін шығып жатыр')].join() === 'engine', 'Hilfe Auspuffrauch = Motor: ' + l); }
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-kasachisch.py'), 'UI-Prüfung in pruefen.sh');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
+});
+await test('Backlog 1509 (Blickwinkel „Fahrer schreibt die Meldung auf Kirgisisch“, Backlog 195): „тормоз иштебей жатат“, „дөңгөлөк жарылды“, „мотор от албай жатат“, „кабина күйүп жатат“, „май агып жатат“, „авария болду“ u. a. – auch lateinisch („tormoz ishtebey jatat“) und Mischform „работать этпейт“ → dieselben Hinweise (KY_KINDS über kzFold); Reparaturvermerk, verneintes Verb („акпайт“, „жарылбады“), „…ган жок“ (auch kasachisch „…ған жок“), „эч …“, „…сыз“, „фара күйүп турат“, Stau ohne; Kontrollleuchte „күйүп турат“ kein Brand; Auspuffrauch Motor statt Brand; keine andere Test-Zeichenkette erhält durch die kirgisische Tabelle einen zusätzlichen Hinweis; Tabelle nur im Modul app-sprachen.js', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { kyKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { kyKinds, foreignKinds };')();
+  const CASES = [["тормоз иштебей жатат", "brake"], ["тормоз иштебейт", "brake"], ["тормоз кармабай жатат", "brake"], ["тормоз работать этпейт", "brake"], ["tormoz ishtebey jatat", "brake"], ["аба басымы түшүп жатат", "brake"], ["кол тормоз кармабай жатат", "parkbrake"], ["машина өзүнөн өзү жылып кетти", "parkbrake"], ["дөңгөлөк жарылды", "flat"], ["шина тешилди", "flat"], ["дөңгөлөктүн абасы чыгып кетти", "flat"], ["алдыңкы сол дөңгөлөк тешилип калды", "flat"], ["dongolok jaryldy", "flat"], ["шина жешилип калды", "tyre"], ["шина шишип кетти", "tyre"], ["руль оор", "steer"], ["руль бурулбай жатат", "steer"], ["машина оңго тартып жатат", "steer"], ["унаа солго тартат", "steer"], ["май агып жатат", "leak"], ["мотордон май агат", "leak"], ["антифриз тамчылап жатат", "leak"], ["солярка агып жатат", "leak"], ["кабина күйүп жатат", "fire"], ["кабинадан түтүн чыгып жатат", "fire"], ["өрт чыкты", "fire"], ["авария болду", "acc"], ["кырсыкка кабылдым", "acc"], ["машинаны кагып алдым", "acc"], ["урунуп алдым", "acc"], ["жаракат алдым", "injury"], ["тез жардам чакыргыла", "injury"], ["мотор от албай жатат", "nostart"], ["машина оталбай жатат", "nostart"], ["стартер иштебейт", "nostart"], ["мотор кызып кетти", "engine"], ["кыймылдаткыч тартпай жатат", "engine"], ["мотордон башка добуш чыгып жатат", "engine"], ["глушителден кара түтүн чыгып жатат", "engine"], ["авариялык режимге түштү", "engine"], ["күзгү сынды", "mirror"], ["оң жактагы күзгү жулунуп кетти", "mirror"], ["фара күйбөй жатат", "lights"], ["стоп чырак күйбөйт", "lights"], ["оң фара сынып калды", "lights"], ["лампочка күйүп кетти", "lights"], ["мотор чырагы күйүп турат", "warnlight"], ["abs чырагы күйдү", "warnlight"], ["панелде ката чыкты", "warnlight"], ["алдыңкы айнек жарылды", "glass"], ["айнекке таш тийди", "glass"], ["айнек сынды", "glass"], ["терезе түшпөй жатат", "window"], ["терезе көтөрүлбөй жатат", "window"], ["аккумулятор отуруп калды", "batt"], ["аккумулятордо заряд жок", "batt"], ["тахограф картаны окубай жатат", "tacho"], ["айдоочунун картасы жоголду", "tacho"], ["күйүүчү май картасы иштебейт", "fuelcard"], ["ачкычты жоготуп алдым", "lost"], ["ачкыч жоголду", "lost"], ["прицеп илинбей жатат", "coupling"], ["солярка бүттү", "dryfuel"], ["муздаткыч муздатпай жатат", "reefer"], ["агрегат иштебейт", "reefer"], ["подушка жарылды", "susp"], ["передача кирбей жатат", "gear"], ["сцепление тайгаланып жатат", "gear"], ["кондиционер иштебейт", "climate"], ["печка жылытпай жатат", "climate"], ["отургучтун жылыткычы иштебейт", "cabkit"], ["тент айрылып кетти", "tarp"], ["глушитель түшүп калды", "exhaust"], ["дворник иштебейт", "visib"], ["коопсуздук куру тагылбай жатат", "seat"], ["гайка бошоп кетти", "wheel"], ["баткакка батып калдым", "stuck"], ["номер түшүп калды", "numplate"], ["камера иштебейт", "adas"], ["эшик жабылбай жатат", "door"], ["эшик ачылбай жатат", "door"], ["токто, дөңгөлөк жарылды жана руль оор", "flat,steer"], ["тормоз иштебейт. мотор кызып кетти", "brake,engine"]];
+  for (const [x, k] of CASES) { eq([...kyKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); }
+  const NO = ["тормоз оңдолду", "дөңгөлөк алмаштырылды", "кайра иштеп жатат", "баары жакшы", "көйгөй жок", "май акпайт", "айнек сынган жок", "дөңгөлөк жарылбады", "авариясыз жеттим", "тыгында турам", "жүктү тапшырдым", "эртең саат сегизде жетем", "май куйдум", "эч көйгөй жок", "дөңгөлөктөргө аба толтурдум", "фара күйүп турат", "мотор иштеп жатат", "дөңгөлөк жакшы", "кабинада тамеки түтүнү", "мотор чырагы өчтү", "фара сынган эмес", "әйнек сынған жок"];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  // Gegenprobe: keine Zeichenkette der übrigen Tests (Kasachisch, Russisch/Ukrainisch kyrillisch, Usbekisch, Türkisch …) bekommt durch die kirgisische Tabelle
+  // einen Hinweis, den die übrigen Tabellen nicht ohnehin zeigen
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1509"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...kyKinds(v)]', ']') + 'return foreignKinds;')();
+  const extra = []; for (const x of strs) { const a = kyKinds(x); if (!a.size) continue; const o = await others(x); if (o.has('acc')) a.delete('injury'); if ([...a].some((k) => !o.has(k))) extra.push(x); }
+  eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne zusätzlichen Hinweis aus der kirgisischen Tabelle');
+  const src = app.slice(app.indexOf('\nconst KY_D'), app.indexOf('\nfunction kyKinds'));
+  ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  ok(!/[а-яёңөү]/i.test(src), 'keine kyrillischen Zeichen in den lateinischen Mustern');
+  const ids = [...src.matchAll(/\['([a-z]+)', (?:kyRx|\/)/g)].map((m) => m[1]);
+  for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  eq(new Set(ids).size, 36, '36 Hinweisarten');
+  ok(app.includes('...kzKinds(v), ...kyKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(!main.includes('const KY_KINDS') && lang.includes('const KY_KINDS'), 'Tabelle nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['тормоз иштебей жатат', 'дөңгөлөк жарылды', 'мотор от албай жатат', 'кабина күйүп жатат', 'май агып жатат', 'авария болду', 'мотор чырагы күйүп турат', 'муздаткыч муздатпай жатат', 'тормоз работать этпейт']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
+    for (const x of ['тормоз оңдолду', 'дөңгөлөк алмаштырылды', 'кайра иштеп жатат', 'баары жакшы']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x);
+    ok(STRINGS[l].help_report_s.includes('глушителден кара түтүн чыгып жатат') && [...await fk('глушителден кара түтүн чыгып жатат')].join() === 'engine', 'Hilfe Auspuffrauch = Motor: ' + l); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-kirgisisch.py'), 'UI-Prüfung in pruefen.sh');
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
 });
 await test('Backlog 1489 (Nebenbefund aus 1488, Backlog 195): „из выхлопа черный дым“, „з вихлопу чорний дим“, „из глушителя синий дым“, „из выхлопа валит дым“ zeigen nur den Motor-Hinweis, keinen Brand (ein Farb-/Verbwort zwischen Auspuff und Rauch); „дым из кабины“, „выхлоп нормальный дым из кабины“ bleiben Brand; „кабина в дыму“ Brand, „без дыму/не было дыму“ ohne', async () => {

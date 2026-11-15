@@ -917,7 +917,7 @@ const KZ_D = 'istemey\\S*|isten\\s+shyq\\S*|buzyl\\S*|buzyq\\S*|rabotat\\s+etpey
 const KZ_SIN = 'syn(?:dy|yp|gan|yq)\\b\\S*';
 const kzRx = (n, d, extra) => new RegExp(`\\b(?:${n})\\S*\\s+(?:\\S+\\s+){0,2}?(?:${d.split('@').join(KZ_D)})${extra ? '|' + extra : ''}`);
 const KZ_OK = /\b(?:jondel|jondep|jondedi|auystyryl|auystyrdy)\S*|\b(?:qaytadan|qayta|qazir|endi)\s+(?:\S+\s+)?(?:istep\s+tur|isteydi|janyp\s+tur|jurip\s+tur|otalady|ot\s+alady)\b|\bbari\s+(?:\S+\s+)?(?:durys|jaqsy|qalypty|normal|ok)\b|\b(?:problema|masele|aqau)\S*\s+joq\b/;
-const KZ_NEG = /\b\S+\s+emes\b|\besh\s+(?:qanday\s+|bir\s+|narse\s+)?\S+|\b\S+(?:gan|gen|qan|ken)\s+joq\b|\b(?:apat|avariya|problema|masele|aqau|tutin|jaraqat)s[yi]z\b/g;
+const KZ_NEG = /\b\S+\s+emes\b|\besh\s+(?:qanday\s+|bir\s+|narse\s+)?\S+|\b\S+(?:gan|gen|qan|ken)\s+jo[qk]\b|\b(?:apat|avariya|problema|masele|aqau|tutin|jaraqat)s[yi]z\b/g;
 const KZ_FIRE_N = 'kabina|qozgaltqysh|motor|dongelek|dongalaq|shina|kolik|mashina|juk|tirkeme|pritsep|sym|provod|tent';
 const KZ_KINDS = [['brake', kzRx('tejegish|tormoz|tormaz', '@|ustamay\\S*|joq\\b|alsyz\\S*|ketip\\s+qal\\S*', '\\baua\\s+(?:\\S+\\s+)?(?:qysym\\S*\\s+)?(?:tusip|tusti|ketip)\\b'), /\bqol\s+tejeg|ruchnik|ozi\s+(?:\S+\s+)?tejey|datchik|sham|lampoch|indikator/],
   ['parkbrake', /\b(?:qol\s+tejegish|ruchnik)\S*\s+(?:\S+\s+){0,2}?(?:istemey|ustamay|buzyl)\S*|\b(?:ozdiginen|oz\s+ozinen)\s+(?:\S+\s+)?(?:jurip\s+ketti|domalap\s+ketti|jyljyp\s+ketti)\b/],
@@ -959,6 +959,55 @@ function kzKinds(v) { const k = new Set(); for (const raw of String(v || '').spl
 
 
 
-async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v), ...kzKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+const KY_D = 'ishtebe\\S*|ishten\\s+chyk\\S*|buzul\\S*|buzuk\\S*|rabotat\\s+etpe\\S*';
+const KY_SIN = 'syn(?:dy|yp|gan|yk)\\b\\S*';
+const kyRx = (n, d, extra) => new RegExp(`\\b(?:${n})\\S*\\s+(?:\\S+\\s+){0,2}?(?:${d.split('@').join(KY_D)})${extra ? '|' + extra : ''}`);
+const KY_OK = /\b(?:ondol|ondoldu|ondop\s+(?:berdi|koydu)|almashtyr)\S*|\b(?:kayra|kayradan|azyr|emi)\s+(?:\S+\s+)?(?:ishtep\s+(?:tur\S*|jatat)|ishteyt|kuyup\s+tur\S*|jurup\s+jatat|ot\s+alat)\b|\bbaary\s+(?:\S+\s+)?(?:jakshy|tuura|normal|ok)\b|\b(?:problema|koygoy|kemchilik)\S*\s+jok\b/;
+const KY_NEG = /\b\S+\s+emes\b|\bech\s+(?:kanday\s+|bir\s+|nerse\s+)?\S+|\b\S+[gkq][aeo]n\s+jo[kq]\b|\b(?:avariya|problema|koygoy|kemchilik|tutun|jarakat|kyrsyk)s[yiu]z\b/g;
+const KY_FIRE_N = 'kabina|kyymyldatkych|motor|dongolok|shina|mashina|unaa|juk|pritsep|pricep|zym|provod|tent';
+const KY_KINDS = [['brake', kyRx('tormoz|tormuz', '@|karmabay\\S*|jok\\b|alsyz\\S*|ketip\\s+kal\\S*', '\\baba\\s+(?:\\S+\\s+)?(?:basym\\S*\\s+)?(?:tushup|tushtu|ketip)\\b'), /\bkol\s+tormoz|ruchnik|ozu\s+(?:\S+\s+)?tormoz|datchik|chyra[kg]|lampoch|indikator/],
+  ['parkbrake', /\b(?:kol\s+tormoz|ruchnik)\S*\s+(?:\S+\s+){0,2}?(?:ishtebe|karmabay|buzul)\S*|\b(?:ozunon\s+ozu|ozu\s+ozunon)\s+(?:\S+\s+)?(?:jylyp|jyljyp|jurup|tomolop)\s+ketti\b/],
+  ['flat', kyRx('dongolok|shina|balon|ballon|koles|pokryshk', 'jaryl(?:dy|yp|gan)\\b|teshil(?:di|ip|gen)\\b|abasy\\s+(?:chyk|chyg|ket|tush)\\S*|prokol\\S*', '\\bprokol\\s+(?:boldu|bolup)\\S*|\\b(?:jaryldy|teshildi)\\s+(?:\\S+\\s+)?(?:dongolok|shina|balon)'), /podushka|jazdyk|tent/],
+  ['tyre', kyRx('dongolok|shina|protektor|pokryshk|rezina', 'jeshil\\S*|kesil\\S*|shish(?:ip|ti|ken)\\S*|jaraka\\S*|tegiz\\s+bol\\S*'), /jaryl|teshil|abasy|prokol/],
+  ['steer', kyRx('rul|rol(?!ik)', '@|oor\\b|oorlap\\S*|katuu\\S*|burulbay\\S*|kyst\\S*|solkul\\S*', '\\b(?:ongo|solgo)\\s+(?:\\S+\\s+)?tart(?:at|yp|ty)\\S*'), /podushka|koopsuzduk/],
+  ['leak', kyRx('may|maslo|solyarka|dizel|antifriz|tosol|adblue|gidravlik', 'ag(?:yp|at|ypty)\\S*|akty\\b|tamchyla\\S*|tamyp\\b|syzyp\\b|ketip\\s+jatat', '\\bagyp\\s+(?:jatat|turat)\\s+(?:\\S+\\s+)?(?:may|solyarka|antifriz|dizel)'), /buttu|tugon|kalbady|chyra[kg]|lampoch|indikator|karta/],
+  ['fire', kyRx(KY_FIRE_N, 'kuyup\\s+(?:jatat|ketti|tur)\\S*|kuydu\\b|ort\\s+(?:chyk|chyg|ald)\\S*|tutun\\S*\\s+(?:\\S+\\s+)?(?:chyg|chyk|burk)\\S*', '\\bort\\s+(?:chyk|chyg|ket|ald)\\S*|\\bortton\\S*|\\btutun\\S*\\s+(?:\\S+\\s+)?(?:chyg|chyk|burk)\\S*'), /glushitel|vyhlop|chygaruuchu|ochurguch|ognetush|chyra[kg]|lampoch|indikator|check|chek|panel|sigaret|kubaty|jarygy/],
+  ['acc', /\bavari(?:ya|ia)\S*\s+(?:\S+\s+)?(?:boldu|kyldym|kyldyk|jasadym|tushtum|kabyld\S*)\b|\bkyrsyk\S*\s+(?:\S+\s+)?(?:boldu|kabyld\S*|tushtum)\b|\bkagyp\s+(?:aldym|aldy|kettim|ketti)\b|\burunup\s+(?:aldym|aldy|kettim|ketti)\b|\bsuzup\s+(?:aldym|aldy)\b/, /\btash\b|rejim/],
+  ['injury', /\bjarakat\s+(?:aldym|aldy|alyp)\b|\bjaradar\s+bol\S*|\btez\s+jardam\S*|\boorukana\S*|\b(?:kolum|butum|bashym|belim|manjam)\S*\s+(?:\S+\s+)?(?:kesildi|kesip\s+aldym|syndy|kysylyp\s+kaldy)\b/],
+  ['nostart', /\bot\s+albay\S*|\botalbay\S*|\bstarter\S*\s+(?:\S+\s+)?(?:ishtebe|aylanbay|buzul)\S*|\b(?:kyymyldatkych|motor|mashina|unaa)\s+(?:takyr\s+)?(?:otpoy|jurbo)\S*/, /agregat|muzdat|holodil|refrijerator|konditsioner|pech|webasto|vebasto|jylytkych/],
+  ['engine', kyRx('kyymyldatkych|motor|dvigatel', 'kyz(?:yp|dy|ayt)\\b\\S*|tartpay\\S*|kubaty\\s+(?:jok|az)|alsyz\\S*|tykylda\\S*|bashka\\s+(?:dobush|un)\\S*|dobush\\s+(?:chyg|ber)\\S*|shyldyra\\S*', '\\b(?:glushitel|vyhlop|chygaruuchu\\s+tutuk)\\S*\\s+(?:\\S+\\s+){0,2}?(?:(?:kara|ak|kok)\\s+)?tutun|\\b(?:kara|kok)\\s+tutun\\s+(?:\\S+\\s+)?chyg\\S*|\\bavari(?:ya|ia)l\\S*\\s+rejim\\S*|\\btemperatura\\S*\\s+(?:\\S+\\s+)?(?:kotorul|jogorula)\\S*'), /agregat|muzdat|holodil|refrijerator|chyra[kg]|lampoch|indikator/],
+  ['mirror', kyRx('kuzgu|zerkal', KY_SIN + '|uzul\\S*|julun\\S*|tushup\\s+(?:kal|ket)\\S*|salaktap\\S*|@', '\\b(?:syndyrdym|syndyryp\\s+aldym)\\s+(?:\\S+\\s+)?(?:kuzgu|zerkal)'), /jylyt|podogrev/],
+  ['lights', kyRx('fara|faralar|chyra[kg]|stop\\s+chyra[kg]|gabarit|povorot|burulush\\s+chyra[kg]|lampoch|lampa', 'kuyboy\\S*|janbay\\S*|@|' + KY_SIN + '|kuyup\\s+(?:ket|kal)\\S*', '\\b(?:lampoch\\S*|lampa)\\s+(?:\\S+\\s+)?kuyup\\s+(?:ketti|kaldy)'), /panel|ekran|displey|kata|oshibk|check|chek|kyymyldatkych\s+chyra|motor\s+chyra|abs\s+chyra|indikator/],
+  ['warnlight', /\b(?:panel|ekran|displey|pribor)\S*\s+(?:\S+\s+){0,3}?(?:kuyup|kuydu|chykty|chygyp|kata|oshibk)\S*|\b(?:check|chek|indikator|chyra[kg]|lampoch)\S*\s+(?:\S+\s+)?(?:kuyup\s+(?:tur\S*|jatat)|kuydu|jymyld\S*|chykty)(?!\S)|\b(?:kata|oshibka)\S*\s+(?:\S+\s+)?(?:chyk|chyg|ber|korsot)\S*/],
+  ['glass', kyRx('aynek|lobovoy|steklo', 'jaryl\\S*|jaraka\\S*|chiyil\\S*|' + KY_SIN + '|treshin\\S*|teshil\\S*', '\\btash\\s+(?:\\S+\\s+){0,2}?(?:tiydi|tiyip|urdu|uchup\\s+keldi)'), /kuzgu|zerkal|dvornik|tazala|tushpoy|kotorulbo/],
+  ['window', /\b(?:tereze|aynek)\S*\s+(?:\S+\s+)?(?:tushpoy|kotorulbo|achylbay|jabylbay)\S*|\bsteklopod\S*\s+(?:\S+\s+)?(?:ishtebe|buzul)\S*/],
+  ['batt', kyRx('akkumulyator|akkumlyator|akkum|akum|batareya|akb', '@|oturup\\S*|olturup\\S*|zaryad\\S*\\s+(?:jok|karmabay|albay)\\S*|butup\\s+kal\\S*|alsyz\\S*'), /chyra[kg]|lampoch|indikator/],
+  ['tacho', /\b(?:tahograf|tachograf)\S*\s+(?:\S+\s+){0,2}?(?:ishtebe|buzul|okubay|kata|kartany\s+(?:okubay|kabyl\s+albay))\S*|\bkarta\S*\s+(?:\S+\s+){0,2}?(?:okulbay|okubay|kyst|chykpay|jogol|uurdal)\S*|\b(?:aydoochu|voditel)\S*\s+karta\S*\s+(?:\S+\s+)?(?:ishtebe|buzul|jogol)\S*/, /kuyuuchu|zapravk|toplivn|bank|benzin|dizel|solyark|bonus/],
+  ['fuelcard', /\b(?:kuyuuchu\s+may|toplivn|zapravk|dizel|solyark|benzin)\S*\s+karta\S*\s+(?:\S+\s+){0,2}?(?:ishtebe|blok|otpoy|jogol|uurdal|kabyl\S*\s+alynbay)\S*/],
+  ['lost', kyRx('achkych|klyuch|tehpasport|teh\\s+pasport|dokument', 'jogol(?:du|up|gon)\\b|jogot(?:tum|up|tu)\\S*|tabylbay\\S*|taba\\s+albay\\S*|uurdal\\S*', '\\bjogotup\\s+(?:aldym|koydum)\\s+(?:\\S+\\s+)?(?:achkych|klyuch|dokument|tehpasport)'), /karta/],
+  ['coupling', /\b(?:pritsep|pricep|polupritsep)\S*\s+(?:\S+\s+){0,2}?(?:ilinbe|ulanbay|ajyrap|ajyrady|julun|chechilip)\S*|\b(?:sedelka|sedel)\S*\s+(?:\S+\s+){0,2}?(?:ishtebe|buzul|jabylbay|kulpulanbay|karmabay)\S*/],
+  ['dryfuel', /\b(?:solyarka|kuyuuchu\s+may|dizel|benzin|toplivo)\S*\s+(?:\S+\s+)?(?:buttu|butup\s+kaldy|tugondu|tugonup\s+kaldy|kalbady)\b|\bbak\S*\s+(?:\S+\s+)?bosh\b/, /agregat|muzdat|holodil|adblue|karta/],
+  ['reefer', kyRx('holodilnik|holodil|refrijerator|refrejerator|agregat|muzdatkych', '@|muzdatpay\\S*|suutpay\\S*|kyzyp\\s+(?:ket|tur)\\S*|kata\\S*|alarm\\S*|kosulbay\\S*'), /kabina|konditsioner/],
+  ['susp', kyRx('podushka|pnevmo|ressor|amortizator|aba\\s+jazdyk', 'jaryl\\S*|teshil\\S*|' + KY_SIN + '|@|aba\\s+chygar\\S*|tushup\\s+kal\\S*', '\\b(?:pritsep|mashina|unaa)\\S*\\s+(?:\\S+\\s+)?(?:bir\\s+jakka\\s+)?kyyshay\\S*'), /koopsuzduk|\brul\b/],
+  ['gear', kyRx('berilish|peredacha|skorost|korobka|kpp', 'kirbey\\S*|kosulbay\\S*|@|kata\\S*|tushpoy\\S*', '\\b(?:stseplenie|sceplenie|seplenie)\\S*\\s+(?:\\S+\\s+){0,2}?(?:ishtebe|buzul|tayyp|tayga\\S*|kuygon|kuyup\\s+ket|karmabay)\\S*'), /chyra[kg]|lampa/],
+  ['climate', kyRx('konditsioner|kondisioner|kondey|pech|jylytkych|webasto|vebasto|avtonomka|ventilyator', '@|jylytpay\\S*|suutpay\\S*|muzdatpay\\S*|kosulbay\\S*'), /oturguch|kreslo|kuzgu|zerkal|holodil|agregat|refrijerator|muzdatkych/],
+  ['cabkit', /\b(?:oturguch|kreslo|kuzgu|zerkal)\S*\s+(?:jylytkych|podogrev)\S*\s+(?:\S+\s+)?(?:ishtebe|buzul|jylytpay)\S*|\bpodogrev\S*\s+(?:\S+\s+)?(?:ishtebe|buzul)\S*/],
+  ['tarp', kyRx('tent', 'tytyl\\S*|ayryl\\S*|jyrtyl\\S*|teshil\\S*|teshik\\S*|julun\\S*', '\\b(?:teshik|jyrtyk)\\S*\\s+(?:\\S+\\s+)?tent')],
+  ['exhaust', kyRx('glushitel|vyhlop|chygaruuchu\\s+tutuk', 'tushup\\S*|salaktap\\S*|teshil\\S*|jaryl\\S*|uzul\\S*|' + KY_SIN + '|dobush\\S*|@'), /tutun/],
+  ['visib', kyRx('dvornik|tazalagych|shyotk|shotk|shchetk|omyvatel|omivatel', '@|tazalabay\\S*|' + KY_SIN + '|uzul\\S*|suu\\s+(?:chachpay|berbey|chykpay)\\S*', '\\b(?:aynek|tereze)\\S*\\s+(?:\\S+\\s+)?terle\\S*')],
+  ['seat', /\b(?:koopsuzduk\s+kur|remen)\S*\s+(?:\S+\s+){0,2}?(?:tagylbay|bekibey|ishtebe|buzul|kyst|ayryl)\S*|\b(?:oturguch|kreslo|sidenye)\S*\s+(?:\S+\s+){0,2}?(?:syn(?:dy|yp)|ishtebe|buzul|kyymyld|solkul|boshop)\S*/, /jylyt|podogrev/],
+  ['wheel', /\b(?:gayka|bolt)\S*\s+(?:\S+\s+){0,2}?(?:boshop|boshodu|jok|tushup|chygyp)\S*|\bdisk\S*\s+(?:\S+\s+)?(?:jaryl|kyyshay|syn(?:dy|yp))\S*|\b(?:podshipnik|stupitsa|stupica)\S*\s+(?:\S+\s+){0,2}?(?:kyz|ishtebe|buzul|shyldyra|dobush|tykylda)\S*|\b(?:kardan|reduktor)\S*\s+(?:\S+\s+){0,2}?(?:ishtebe|buzul|dobush|tykylda)\S*/, /tormoz/],
+  ['stuck', /\b(?:batkak|kar|kum|ylay)\S*\s+(?:\S+\s+){0,2}?(?:batyp\s+kal|tygylyp\s+kal|batyp\s+tur)\S*|\bbatyp\s+kal(?:dy|dym|dyk)\b/],
+  ['numplate', kyRx('nomer|mamlekettik\\s+nomer', 'tushup\\S*|jogol(?:du|up)\\b|uurdal\\S*|julun\\S*|' + KY_SIN + '|korunbo\\S*|okulbay\\S*'), /chyra[kg]|lampa|telefon|\btel\b|karta|podsvet/],
+  ['adas', kyRx('datchik|sensor|radar|kamera|asistent|assistent|kruiz|tempomat', '@|kata\\S*|ochup\\s+kal\\S*', '\\bozu\\s+(?:\\S+\\s+)?tormoz\\s+(?:basat|berat|basty)\\S*')],
+  ['door', kyRx('eshik|dver|gidrobort|kulpu|zamok|borborduk\\s+kulpu', 'jabylbay\\S*|achylbay\\S*|kulpulanbay\\S*|kyst\\S*|@|achylyp\\s+ket\\S*|kotorulbo\\S*|tushpoy\\S*'), /tereze|aynek/]];
+function kyKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n]+/)) { if (!/[a-zа-яёңөү]/i.test(raw)) continue; const p = kzFold(raw).replace(KY_NEG, ' '); if (!KY_OK.test(p)) for (const [n, rx, ex] of KY_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v), ...kzKinds(v), ...kyKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };
