@@ -5,7 +5,8 @@
 # (nach Ebene 2 folgt höchstens 3, nicht 4), keine leere Überschrift. Inhaber, Fahrer, Werkstatt; DE/UK/EN; 390/1366 px; auf Vorgängen werden
 # alle Aktionsformulare geöffnet; Meldeformular mit Hinweisen; Werkstatt-Panel (Anmeldung + jeder Reiter).
 # Gegenprobe: eine eingeschobene <h4> direkt nach der <h1> und eine leere <h2> werden gefunden. Braucht den Dev-Server (scripts/dev-server.mjs).
-# Screenshots: CFP_SHOTS=<Ordner>; Sprachen: CFP_LANGS=de,uk,en.
+# Screenshots: CFP_SHOTS=<Ordner>; Sprachen: CFP_LANGS=de,uk,en; Rollen eingrenzen: CFP_ROLES=fleet,dispatch (Backlog 1497).
+# Backlog 1497 (15.11.2026): zusätzlich Fuhrparkleitung, Disposition, Lesezugriff sowie Mehrfach-Formulare, Zeitleiste, Fahrer-/Bußgeld-/Artikelakte.
 import os, uuid, re
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -58,7 +59,7 @@ with sync_playwright() as p:
     check(api('POST','/api/vehicles/import',csv,'text/csv')['s']==200,'Fahrzeug importiert')
     me=api('GET','/api/me')['d']; envn=(me.get('user') or me).get('environment') or 'production'
     users={'owner':owner}
-    for role in ['driver','workshop']:
+    for role in ['driver','workshop','fleet','dispatch','viewer']:
         un=f'us.{role}{sfx}'; r=api('POST','/api/users',{'username':un,'display_name':f'US {role}','role':role,'workshop_site':'DORTMUND','environment':envn,'language':'de'})
         if r['s'] in (200,201) and r['d'] and r['d'].get('invite_token'):
             c2=br.new_context(); q2=c2.new_page(); q2.goto(B); q2.evaluate(JS,['POST','/api/invite/accept',{'token':r['d']['invite_token'],'password':PW},None]); c2.close()
@@ -81,12 +82,33 @@ with sync_playwright() as p:
         cx,pg=login(users['driver'])
         d=pg.evaluate(JS,['POST','/api/cases',{'vehicle_id':'VIN:'+vin,'description':'Rücklicht links defekt (Test Überschriften)','priority':'niedrig','driveability':'fahrbereit','request_key':'usd-'+sfx},None])
         check(d['s']==201,'Fahrer meldet Fall 2'); dcid=d['d']['id'] if d['s']==201 else cid; cx.close()
+    # Akten mit Testdaten (Backlog 1497): Fahrerakte, Bußgeld, Lagerartikel, Fahrzeug-Zeitleiste
+    vref='VIN:'+vin; extra={}
+    dr=api('POST','/api/drivers',{'display_name':'US Fahrer '+sfx,'personnel_no':'US-'+sfx})
+    if dr['s'] in (200,201) and dr['d']: extra['driver']='#/drivers/'+str(dr['d'].get('id'))
+    fn=api('POST','/api/fines',{'kind':'anhoerung','authority':'Test Bußgeldstelle','reference':'US-AZ-'+sfx,'offense_type':'geschwindigkeit','offense_at':'2026-09-01T08:00:00Z','location':'Test','plate_in_letter':'US-ZM '+sfx,'amount_eur':70,'response_due':'2026-12-01'})
+    if fn['s'] in (200,201) and fn['d']: extra['fine']='#/fines/'+str(fn['d'].get('id'))
+    if 'workshop' in users:
+        cx,pg=login(users['workshop'])
+        st=pg.evaluate(JS,['POST','/api/stock',{'name':'Test Bremsbelag '+sfx,'part_number':'US-'+sfx,'initial_qty':3,'min_qty':1},None]); cx.close()
+        if st['s'] in (200,201) and st['d']: extra['stock']='#/stock/'+str(st['d'].get('id') or (st['d'].get('item') or {}).get('id'))
+    for k in ('driver','fine','stock'): check(k in extra,f'Testdaten {k} angelegt')
     ROUTES={'owner':['#/','#/cases','#/new','#/vehicles','#/more','#/maintenance','#/master','#/plan','#/stock','#/users','#/help','#/check','#/emergency',
                      '#/cases/'+cid,'#/cases/'+dcid,'#/vehicles/VIN:'+vin,'#/fines','#/drivers','#/tires','#/tacho','#/quality','#/audit','#/guide','#/guide?l=uk','#/guide?l=en','#/search','#/settings','#/kpi',
                      '#/claims','#/contracts','#/costs','#/defects','#/drivers/records','#/emergency/edit','#/inbox','#/readiness','#/stock/asof','#/stock/count',
                      '#/stock/journal','#/stock/receipt','#/stock/reorder','#/stock/usage','#/tacho/history','#/telematics','#/usage','#/vehicles/qr','#/wsload'],
-            'driver':['#/','#/new','#/check','#/help','#/emergency','#/cases/'+dcid],
-            'workshop':['#/','#/cases','#/stock','#/cases/'+cid,'#/plan']}
+            'driver':['#/','#/new','#/check','#/check/paper','#/help','#/emergency','#/cases/'+dcid,'#/inbox','#/more','#/fines','#/drivers','#/v/'+vref,'#/check/'+vref],
+            'workshop':['#/','#/cases','#/stock','#/cases/'+cid,'#/plan','#/inbox','#/vehicles','#/more','#/maintenance','#/tires','#/stock/reorder','#/stock/count','#/stock/receipt','#/wsload','#/help','#/inspect/'+cid],
+            'fleet':['#/','#/cases','#/cases?f=stale','#/new','#/new/multi','#/vehicles','#/master','#/more','#/maintenance','#/maintenance/multi','#/plan','#/inbox','#/search','#/kpi','#/defects','#/costs',
+                     '#/fines','#/drivers','#/drivers/records','#/tacho','#/tacho/history','#/quality','#/telematics','#/contracts','#/claims','#/wsload','#/users','#/help','#/emergency','#/emergency/edit',
+                     '#/cases/'+cid,'#/inspect/'+cid,'#/vehicles/'+vref,'#/vehicles/'+vref+'/timeline','#/vehicles/'+vref+'/timeline?f=case','#/vehicles/qr','#/vehicles/qr/'+vref],
+            'dispatch':['#/','#/search','#/inbox','#/plan','#/cases','#/vehicles','#/more','#/maintenance','#/help','#/guide','#/emergency','#/emergency/edit','#/cases/'+cid,'#/vehicles/'+vref],
+            'viewer':['#/','#/search','#/inbox','#/plan','#/cases','#/vehicles','#/more','#/maintenance','#/tires','#/kpi','#/costs','#/fines','#/wsload','#/help','#/cases/'+cid,'#/vehicles/'+vref,'#/vehicles/'+vref+'/timeline?f=fine']}
+    ROUTES['owner']+=['#/maintenance/multi','#/new/multi','#/vehicles/'+vref+'/timeline']+[v for v in extra.values()]
+    ROUTES['fleet']+=[v for v in extra.values()]
+    if 'stock' in extra: ROUTES['workshop'].append(extra['stock'])
+    ONLY=[r for r in os.environ.get('CFP_ROLES','').split(',') if r]
+    if ONLY: ROUTES={k:v for k,v in ROUTES.items() if k in ONLY}
     seen={}
     LANGS=os.environ.get('CFP_LANGS','de,uk,en').split(',')
     # Gegenprobe: übersprungene Ebene und leere Überschrift werden gefunden
