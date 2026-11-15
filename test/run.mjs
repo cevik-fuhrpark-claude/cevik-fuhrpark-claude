@@ -42074,6 +42074,10 @@ await test('Backlog 1505 (Blickwinkel „Werkstatt meldet am Freitagabend drei L
   // Kommentar am Montag verschiebt die Angabe nicht
   eq((await cmd(U.fleet, id, 'comment', {}, 'Kontrolle heute Nachmittag')).status, 200);
   f = await qc(); ok(f.message.includes('(seit 13.11.2026 17:40)'), 'nach Kommentar: ' + f.message);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(c) => `${c.case_no} · ${c.plate}${c.workshop_site ? ' · ' + wsName(c.workshop_site) : ''}${c.status_since ? ' · ' + fmtDT(c.status_since) : ''}`, 'mittel'],"), '„Heute zu tun“ – Kontrolle: Werkstatt + seit wann');
+  ok((await import('node:fs')).readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-heute-kontrolle-seit.py'), 'UI-Prüfung in pruefen.sh');
+  const li = (await U.fleet.get('/api/cases?status=abschlusskontrolle')).data; const row = (li.cases || li.items || li).find((c) => c.id === id); ok(row && row.status_since === '2026-11-13T16:40:00.000Z', 'Liste liefert status_since: ' + (row && row.status_since));
   for (const l of ['de', 'uk', 'en']) { const m = renderFindingMessage('QC_PENDING', { label: 'DO-AB 1' }, l); ok(m.startsWith('DO-AB 1') && !m.includes('{') && !m.includes('()'), 'ohne Zeitangabe: ' + m); }
 });
 await test('Backlog 1489 (Nebenbefund aus 1488, Backlog 195): „из выхлопа черный дым“, „з вихлопу чорний дим“, „из глушителя синий дым“, „из выхлопа валит дым“ zeigen nur den Motor-Hinweis, keinen Brand (ein Farb-/Verbwort zwischen Auspuff und Rauch); „дым из кабины“, „выхлоп нормальный дым из кабины“ bleiben Brand; „кабина в дыму“ Brand, „без дыму/не было дыму“ ohne', async () => {
