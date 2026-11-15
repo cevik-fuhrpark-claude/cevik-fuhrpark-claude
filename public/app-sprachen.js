@@ -705,6 +705,58 @@ function geKinds(v) { const k = new Set(); for (const raw of String(v || '').spl
 
 
 
-async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
+
+const AR_MAP = { ا: 'a', أ: 'a', إ: 'a', آ: 'a', ٱ: 'a', ء: '', ب: 'b', ت: 't', ث: 'th', ج: 'j', ح: '7', خ: 'kh', د: 'd', ذ: 'dh', ر: 'r', ز: 'z', س: 's', ش: 'sh', ص: 's', ض: 'd', ط: 't', ظ: 'dh', ع: '3', غ: 'gh', ف: 'f', ق: 'q', ك: 'k', ل: 'l', م: 'm', ن: 'n', ه: 'h', ة: 'h', و: 'w', ي: 'y', ى: 'a', ؤ: 'w', ئ: 'y', پ: 'p', چ: 'ch', ژ: 'zh', ک: 'k', گ: 'g', ی: 'y' };
+const arLat = (s) => String(s || '').replace(/[ً-ٰٟـ]/g, '').replace(/[ء-ی]/g, (c) => AR_MAP[c] ?? c).toLowerCase();
+const AR_P = '\\b[wfb]?(?:a?ll?)?';
+const AR_NOT = (v) => `(?:la|ma|msh|mw|lm)\\s+(?:\\S+\\s+)?(?:b?[ynt])?(?:${v})`;
+const AR_D = `(?:${AR_NOT('3ml|shtghl|shghal|shtghal')}|khrb|m3tl|t?3tl|3atl|d3yf)`;
+
+const arRx = (n, d, extra) => new RegExp(`${AR_P}(?:${n})\\S*\\s+(?:\\S+\\s+){0,2}(?:${d.split('D').join(AR_D)})|\\bt?3tl\\S*\\s+(?:fy\\s+)?${AR_P}(?:${n})${extra ? '|' + extra : ''}`);
+const AR_ENG = 'm7rk|mwtwr|matwr', AR_EXH = 'shkman|ashkman|3adm|akzwz|ekzwz|aksdwz', AR_LOSE = 'da3|day3|dy3t|fqdt|mfqwd|ra7t|ansrq|msrwq|srqw';
+const AR_OK = /\b(?:tm|ttm|qd)\s+(?:al)?(?:asla7|tsly7|tghyyr|astbdal|tbdyl)|\b(?:sl7|asl7|ghyrna|ghyrw|ghyrt|bdlna|bdlw|bdlt)\S*|\brj3\S*\s+(?:\S+\s+)?b?[yt](?:shtghl|3ml)|\bkl\s+(?:\S+\s+)?(?:tmam|mmtaz|mnyh|tyb|zyn)|\b(?:ma|mafy|mafyh|la|lys)\s+(?:fy\s+|ywjd\s+|twjd\s+|fyh\s+|hnak\s+)?(?:ay\s+)?(?:mshkl|mshakl|a3tal)|\b(?:b?[yt]3ml|b?[yt]shtghl|shghal\S*)\s+(?:\S+\s+)?(?:bshkl\s+)?(?:tby3y|mnyh|tmam|mzbwt|mlyh)/;
+const AR_KINDS = [['brake', arRx('framl|fram|bryk|mkab7|mkb7', 'D|' + AR_NOT('msk'), '\\bdght\\s+[wfb]?(?:a?ll?)?hwa\\S*\\s+(?:\\S+\\s+)?(?:b?[yt]nzl|[yt]nkhfd|nazl|d3yf)'), /(?:framl|fram|bryk)\S*\s+[wfb]?(?:a?ll?)?(?:yd|wqwf)\b|hand\s*bryk/],
+  ['parkbrake', arRx('(?:framl|fram|bryk)\\S*\\s+[wfb]?(?:a?ll?)?(?:yd|wqwf)\\b|hand\\s*bryk', 'D|' + AR_NOT('msk'))],
+  ['flat', arRx('atar|dwlab|dwalyb|kawtsh|kwtsh|tayr|3jl', 'anfjr|fq3|m?bnshr|mthqwb|nazl|fady|nfs', `\\b(?:anfjr|fq3|bnshr|ankhzq)\\S*\\s+(?:\\S+\\s+)?${AR_P}(?:atar|dwlab|kawtsh|kwtsh|tayr|3jl)|\\bm?bnshr`)],
+  ['tyre', arRx('atar|dwlab|dwalyb|kawtsh|kwtsh|tayr', 'mshqwq|anshq|mntfkh|mmsw7|mqtw3', `\\bshq\\S*\\s+(?:fy\\s+)?${AR_P}(?:atar|dwlab|kawtsh|tayr)`)],
+  ['steer', arRx('mqwd|drksywn|dryksywn|styrng|twjyh', 'D|thqyl|qasy|l3b|[yt]s7b|[yt]shd', '\\b(?:b?[yt]s7b|b?[yt]shd)\\s+(?:\\S+\\s+)?\\S*(?:ymyn|ysar|shmal)')],
+  ['leak', arRx('zyt|dyzl|mazwt|swlar|adblw|antyfryz|sayl', 'b?[yt]srb|tsryb|b?[yt]nqt|b?[yt]khr|nazl', `\\b(?:tsryb|tnqyt|nazl|b?[yt]nqt|b?[yt]khr|b?[yt]srb)\\s+(?:\\S+\\s+){0,2}${AR_P}(?:zyt|dyzl|mazwt|swlar|adblw|antyfryz)`)],
+  ['fire', /\b[wfb]?(?:a?ll?)?(?:7ryq|nar\b|dkhan|dkhnh)|\b(?:b?[yt]|a)?7trq|\basht3l|\b(?:b?t)?wl3/, new RegExp(`\\btfay|${AR_P}(?:${AR_EXH})|\\b(?:b?t)?wl3\\S*\\s+(?:\\S+\\s+)?${AR_P}(?:lmb|dw\\b|ashar|3lam)|${AR_P}(?:lmb|dw\\b)\\S*\\s+(?:\\S+\\s+){0,2}(?:b?t)?wl3`)],
+  ['acc', /\b[wfb]?(?:a?ll?)?(?:7adth|7adt\b)|\bt?sadm|\bastdm|\b(?:sdmt|sdmny|sdmna|sdmw|khbtt|khbtny|khbtna|khbtw|khbth|d3st)/],
+  ['injury', /\b(?:msab|asab[ht]|anjr7|mjrw7|jr7|nzyf|[yt]nzf)/],
+  ['nostart', arRx(AR_ENG, AR_NOT('dwr|ql3|shtghl|shghl|3ml|shghal|shtghal') + '|(?:tfa|ytfy|btfy|bytfy|wqf)\\b', `\\b(?:la|ma|msh|mw)\\s+(?:\\S+\\s+)?b?[yt](?:dwr|ql3)\\b|\\b(?:tfa|ytfy|btfy|bytfy)\\s+(?:\\S+\\s+)?${AR_P}(?:${AR_ENG})`)],
+  ['engine', arRx(AR_ENG + '|tyrbw|trbw', 'skhn|skhwn|d3yf|d3f|swt|tqtq|khrb|m3tl|3atl|[yt]rjf|byrjf|rjf|sfyr|bysfr', `\\b(?:skhwnh|artfa3)\\s+(?:\\S+\\s+)?${AR_P}7rar|\\b7rar\\S*\\s+${AR_P}(?:${AR_ENG})\\S*\\s+(?:\\S+\\s+)?(?:3aly|mrtf3|[yt]rtf3|btrtf3|tl3t)|${AR_P}(?:${AR_EXH})\\S*\\s+(?:\\S+\\s+){0,2}${AR_P}(?:dkhan|dkhnh)|${AR_P}(?:dkhan|dkhnh)\\S*\\s+(?:\\S+\\s+){0,3}${AR_P}(?:${AR_EXH})|\\b(?:ma|mafy|la)\\s+(?:fy\\s+|ywjd\\s+)?(?:qwh|3zm)\\b|\\b(?:fqdan|d3f|nqs)\\s+(?:fy\\s+)?${AR_P}(?:qwh|3zm)`)],
+  ['mirror', arRx('mrah|mrayh|mray|mrayat|mrayt', 'mksw?r|anksr|[yt]nksr|ksrt|trt|wq3t|sqtt|mkhlw3', `\\b(?:anksr|ksrt?)\\S*\\s+(?:\\S+\\s+)?${AR_P}(?:mrah|mrayh|mray)`)],
+  ['lights', arRx('dw\\b|dwa\\b|adwa\\b|lmbh|lmbat|lmb\\b|adah|fanws|anwar|nwr\\b|stwb|ghmaz|flashr|kshaf', 'D|m7rwq|7rqt|an7rqt|tafy|mtfy|' + AR_NOT('dwy|dy'))],
+  ['warnlight', new RegExp(`\\b(?:lmb|dw\\b|ashar|3lam|ayqwn)\\S*\\s+(?:\\S+\\s+)?${AR_P}(?:${AR_ENG}|t7dhyr|tnbyh|khta|zyt|abs|adblw)|\\b(?:rsal|khta)\\S*\\s+(?:\\S+\\s+)?(?:3l[ae]|fy|b)\\s+${AR_P}?(?:shash|tablw|3dad)|\\b(?:ash3l|wl3|dwt|tl3t)\\S*\\s+(?:\\S+\\s+)?${AR_P}(?:lmb|dw\\b|ashar|3lam)`)],
+  ['glass', arRx('zjaj|qzaz|blwr|shbak|nafdh|brbryz', 'mksw?r|anksr|[yt]nksr|msh3wr|sh3r|mshqwq|shq|mtshq|7jr', `\\b(?:sh3r|shq)\\S*\\s+(?:fy\\s+)?${AR_P}(?:zjaj|qzaz|blwr)|\\b7jr\\S*\\s+(?:\\S+\\s+){0,2}${AR_P}(?:zjaj|qzaz|blwr)`)],
+  ['window', arRx('shbak|shbabyk|nafdh|nwafdh', 'D|' + AR_NOT('skr|nzl|tl3|ghlq|ft7|sakr'))],
+  ['batt', arRx('btaryh|btaryat|btary\\b|bataryh', 'fady|khls|myt|nazl|d3yf|fslt|nam|D', `\\b(?:fdyt|khlst|nzlt|matt)\\s+(?:\\S+\\s+)?${AR_P}btary`)],
+  ['tacho', arRx(`takwghraf|takhwghraf|takwgraf|takhwgraf|takw\\b|(?:krt|btaq)\\S*\\s+${AR_P}(?:sayq|shwfyr)`, `D|${AR_LOSE}|anksr|mksw?r|${AR_NOT('qr|qra')}`, `\\b(?:dy3t|fqdt|da3t)\\s+(?:\\S+\\s+)?${AR_P}(?:krt|btaq)\\S*\\s+${AR_P}(?:sayq|shwfyr)`)],
+  ['fuelcard', arRx(`(?:krt|btaq)\\S*\\s+${AR_P}(?:wqwd|mazwt|bnzyn|dyzl|swlar|kazy|t3by)`, `D|${AR_LOSE}|anksr|mksw?r|mrfwd|mqfl|mblwk|${AR_NOT('qr|mr')}`, `\\b(?:dy3t|fqdt)\\s+(?:\\S+\\s+)?${AR_P}(?:krt|btaq)\\S*\\s+${AR_P}(?:wqwd|mazwt|bnzyn|dyzl|kazy|t3by)`)],
+  ['lost', arRx('mfta7|mfaty7|awraq|astmar', AR_LOSE, `\\b(?:dy3t|fqdt|da3t?)\\S*\\s+(?:\\S+\\s+)?${AR_P}(?:mfta7|mfaty7|awraq|astmar)`)],
+  ['coupling', arRx('tryl|mqtwr|s7n\\b|kyng|sdl', AR_NOT('shbk|qfl|msk|rkb') + '|anfsl|anfk|fltt'), /\b[wfb]?(?:a?ll?)?(?:framl|fram\b|bryk)/],
+  ['dryfuel', new RegExp(`${AR_P}(?:mazwt|dyzl|swlar|bnzyn|wqwd)\\S*\\s+(?:\\S+\\s+)?(?:khls|nfd|ntfd)|\\b(?:khls|khlst|nfd|nfdt)\\S*\\s+(?:\\S+\\s+)?${AR_P}(?:mazwt|dyzl|swlar|bnzyn|wqwd)|${AR_P}(?:khzan|tnk)\\S*\\s+(?:\\S+\\s+)?fady`)],
+  ['reefer', arRx(`brad|thlaj|fryzr|thrmw|trmw|kwlr|(?:makyn|mkyn|wh?d)\\S*\\s+${AR_P}tbryd`, 'D|tafy|' + AR_NOT('brd'))],
+  ['susp', arRx('msa3d|balwn|mkhd|nwabd|yay|t3lyq|sspns|amrtyz', 'anfjr|mnfjr|mthqwb|fady|nazl|mksw?r|anksr|[yt]srb|tsryb|[yt]nqt|D', `${AR_P}(?:sha7n|syar|tryl|kmywn)\\S*\\s+(?:\\S+\\s+)?(?:nazl|mayl|natsh)`), new RegExp(`msa3d\\S*\\s+${AR_P}(?:7ar|sayq|frml|tw?qf)`)],
+  ['gear', arRx('jyr|qyr|gyr|ftys|kltsh|klatsh|dbryaj|dbryag|grbks|jyrbks|3lbh\\s+[wfb]?(?:a?ll?)?sr3|naql\\s+[wfb]?(?:a?ll?)?7rk', AR_NOT('3shq|dkhl|ghyr|tghyr') + '|3alq|tqtq|m7rwq|D|b?[yt]z7lq|b?[yt]flt', '\\b(?:ma|la|msh)\\s+(?:\\S+\\s+)?b?[yt]3shq\\b')],
+  ['climate', arRx('mkyf|tkyyf|tkyf|kwndshn|kndyshn|tdfy|shwfaj|swba|dfay|hytr|wybstw|wbstw', 'D|' + AR_NOT('brd|dfy|skhn')), new RegExp(`(?:tdfy|tskhyn)\\S*\\s+${AR_P}(?:krsy|mq3d)`)],
+  ['cabkit', arRx(`(?:tdfy|tskhyn)\\S*\\s+${AR_P}(?:krsy|mq3d)`, 'D')],
+  ['tarp', arRx('shadr|trbal|brnd|star[ah]', 'mshqwq|anshq|shq|mqtw3|anqt3|mmzq|tmzq|mkhzwq|ankhzq|mfkwk|tar|trt', `\\b(?:shq|khzq)\\S*\\s+(?:fy\\s+)?${AR_P}(?:shadr|trbal)`)],
+  ['exhaust', arRx(AR_EXH, 'waq3|wq3|sqt|mksw?r|anksr|mthqwb|mkhzwq|swt|byzmr|mfkwk|anfk|m3lq|mt3lq|dayl|D'), /dkhan|dkhnh/],
+  ['visib', arRx('ms7[ah]|ms7at|msa7|mas7|wybr|wyprz', 'D|mqtw3|anqt3|mksw?r|anksr|' + AR_NOT('ms7|t7rk'))],
+  ['seat', arRx('krsy|kursy|mq3d|7zam', 'D|mksw?r|anksr|mqtw3|anqt3|3alq|3lq|' + AR_NOT('qfl|t7rk|rj3|tl3|shbk|nzl')), new RegExp(`(?:tdfy|tskhyn)\\S*\\s+${AR_P}(?:krsy|mq3d)`)],
+  ['wheel', arRx('swamyl|smwl|smamyl|brghy|braghy|rwlman|bylya|bly\\b|jnt|jnwt', 'mrkhy|mfkwk|rakhy|rkhw|anfk|wq3|sqt|naqs|mksw?r|anksr|tar|ra7|swt|bytq|tqtq|D', `${AR_P}(?:dwlab|3jl|atar|kawtsh)\\S*\\s+(?:\\S+\\s+){0,2}(?:b?[yt]tl3|ankhl3|tar\\b|b?[yt]rqs)`)],
+  ['stuck', new RegExp(`\\b(?:t?ghrz|ghtst)|\\b(?:3lq|t3lq)\\S*\\s+(?:\\S+\\s+){0,2}(?:fy\\s+)?${AR_P}(?:w7l|tyn|thlj|rml|khndq|tr3h)`)],
+  ['numplate', arRx(`nmr[ht]?\\b|nmrat|lw7[ht]?\\s+${AR_P}arqam|lw7[ht]?\\b`, `wq3|sqt|trt|${AR_LOSE}|mksw?r|anksr|${AR_NOT('nqr|qr')}|msh\\s+mqrw|mmsw7`), /lmb|dw\b|nwr\b|tlfwn|tlyfwn|qyad/],
+  ['adas', arRx(`kamyr|kmyr|radar|rdar|7sas|7ssas|snsr|sensr|msa3d\\S*\\s+${AR_P}(?:7ar|frml|tw?qf|sayq)`, 'D|khta|tafy|' + AR_NOT('shwf'), '\\bb?[yt]frml\\S*\\s+(?:\\S+\\s+)?(?:l7al|w7d|mn\\s+7al)')],
+  ['door', arRx('bab\\b|babh|abwab|qfl|kalwn|skr[ht]|bwab[ht]|raf3[ht]?|hydrw?lyk', AR_NOT('skr|ft7|nft7|ghlq|nghlq|qfl|nqfl|tl3|nzl') + '|mksw?r|anksr|3alq|3lq|D')]];
+
+const AR_NEG = /\b(?:la|ma|msh|mw|mafy|mafyh|lys|lm|bdwn|blash|ghyr)\s+(?:fy\s+|ywjd\s+|twjd\s+|fyh\s+|hnak\s+|3m\s+|sar\s+|7sl\s+|kan\s+)?[wfb]?(?:a?ll?)?(?:b?[yt]srb|tsryb|srb|b?[yt]nqt|tnqyt|b?[yt]khr|anfjr|[yt]nfjr|mnfjr|m?bnshr|mthqwb|anksr|[yt]nksr|mksw?r|msh3wr|7ryq|nar\b|dkhan|dkhnh|[yta]7trq|7adth|7adt\b|tsadm|asab|msab|anjr7|mjrw7|da3|day3|mshqwq|mqtw3)\S*/g;
+function arKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n،؛؟]+/)) { if (!/[ء-ي]/.test(raw)) continue; const p = arLat(raw).replace(AR_NEG, ' '); if (!AR_OK.test(p)) for (const [n, rx, ex] of AR_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };
