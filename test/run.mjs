@@ -42058,6 +42058,24 @@ await test('Backlog 1504 (Blickwinkel „Fahrer schreibt die Meldung auf Persisc
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-persisch.py'), 'UI-Prüfung in pruefen.sh');
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
 });
+await test('Backlog 1505 (Blickwinkel „Werkstatt meldet am Freitagabend drei Lkw fertig, Leitung kontrolliert am Montag“, Backlog 195): Befund QC_PENDING nennt, seit wann die Reparatur zur Kontrolle gemeldet ist (Eintritt in „abschlusskontrolle“, nicht Kommentarzeit); ältere gespeicherte Befunde ohne Zeitangabe bleiben lesbar', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Bremsleitung erneuert' })).status, 200);
+  const keys = (await U.ws.get('/api/meta')).data.checklist.map((i) => i.key);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items: keys.map((k) => ({ key: k, result: 'ok' })) })).status, 201);
+  { const r = await cmd(U.ws, id, 'request_quality_check', {}, 'erledigt'); eq(r.status, 200, JSON.stringify(r.data)); }
+  db.prepare(`UPDATE case_events SET created_at='2026-11-13T16:40:00.000Z' WHERE case_id=? AND to_status='abschlusskontrolle'`).run(id);
+  const qc = async () => { eq((await U.fleet.post('/api/agent/run', {})).status, 200); return db.prepare(`SELECT * FROM agent_findings WHERE environment='test' AND finding_code='QC_PENDING' AND case_id=? AND status='offen'`).get(id); };
+  let f = await qc(); ok(f, 'Befund vorhanden'); ok(f.message.includes('(seit 13.11.2026 17:40)'), f.message);
+  const { findingMessage, renderFindingMessage } = await import('../public/finding-messages.js');
+  ok(findingMessage(f.message_args, '', 'en').includes('(since 13/11/2026 17:40)'), findingMessage(f.message_args, '', 'en'));
+  ok(findingMessage(f.message_args, '', 'uk').includes('(з 13.11.2026 17:40)'), findingMessage(f.message_args, '', 'uk'));
+  // Kommentar am Montag verschiebt die Angabe nicht
+  eq((await cmd(U.fleet, id, 'comment', {}, 'Kontrolle heute Nachmittag')).status, 200);
+  f = await qc(); ok(f.message.includes('(seit 13.11.2026 17:40)'), 'nach Kommentar: ' + f.message);
+  for (const l of ['de', 'uk', 'en']) { const m = renderFindingMessage('QC_PENDING', { label: 'DO-AB 1' }, l); ok(m.startsWith('DO-AB 1') && !m.includes('{') && !m.includes('()'), 'ohne Zeitangabe: ' + m); }
+});
 await test('Backlog 1489 (Nebenbefund aus 1488, Backlog 195): „из выхлопа черный дым“, „з вихлопу чорний дим“, „из глушителя синий дым“, „из выхлопа валит дым“ zeigen nur den Motor-Hinweis, keinen Brand (ein Farb-/Verbwort zwischen Auspuff und Rauch); „дым из кабины“, „выхлоп нормальный дым из кабины“ bleiben Brand; „кабина в дыму“ Brand, „без дыму/не было дыму“ ohne', async () => {
   const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/([a-z]*);(?: \\/\\/.*)?$', 'm')); ok(m, n); return new RegExp(m[1], m[2]); };

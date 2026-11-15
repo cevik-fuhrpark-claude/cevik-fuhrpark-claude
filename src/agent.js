@@ -342,7 +342,7 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
       }
       if (c.status === 'abschlusskontrolle') {
         add({ code: 'QC_PENDING', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'handeln', owner_role: 'fleet', requires_decision: 1,
-          ...fm('QC_PENDING', { label }),
+          ...fm('QC_PENDING', { label, at: berlinDateTime(c.status_since) }), // Backlog 1505: seit wann – Freitagabend gemeldet, Montag kontrolliert
           next_action: 'Kontrolle durchführen: freigeben oder Nacharbeit anfordern.' });
       }
       // alle Werkstattzustände – bei „wartet auf Teile“ erledigte sich der Befund sonst und wurde nach „fortgesetzt“ erneut übergeben (17.10.2026)
