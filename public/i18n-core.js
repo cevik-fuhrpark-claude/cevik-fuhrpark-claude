@@ -1370,6 +1370,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1441: Rückfrage Werkstatttermin in der Vergangenheit (Vorgang)
 // Backlog 1451: Werkstatt-Startseite – heute geplante Prüfungen mit späterer Frist
 // Backlog 1486 (Blickwinkel „Leitung prüft montags die Kosten der Vorwoche je Fahrzeug“): Kosten einer Kalenderwoche je Fahrzeug
+// Backlog 1510 (Blickwinkel „Fahrer ruft an – Disposition erfasst die Meldung stellvertretend“): Namensvermerk der meldenden Person
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

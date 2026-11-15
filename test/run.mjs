@@ -31225,7 +31225,7 @@ await test('Backlog 874 (Folge aus 871): Vorgangs-CSV mit Spalte „Voraussichtl
   for (const [role, u] of [['fleet', U.fleet], ['viewer', U.viewer], ['workshop', U.ws]]) {
     const r = await u.get('/api/cases?format=csv&status='); eq(r.status, 200);
     const txt = new TextDecoder().decode(r.data); const T = csvTable(txt);
-    eq(T.head.at(-1), 'Voraussichtlich fertig', role + ': letzte Spalte');
+    eq(T.head.at(-2), 'Voraussichtlich fertig', role + ': vorletzte Spalte (danach Backlog 1510 „Angabe von“)');
     ok(T.rows.length && parseCsv(txt).slice(1).every((x) => x.length === T.head.length), role + ': gleiche Spaltenzahl je Zeile');
     const v = (id) => (T.rows.find((x) => x.Vorgang === no(id)) || {})['Voraussichtlich fertig'];
     eq(v(a), dot(day(2)), role + ': in Reparatur');
@@ -31235,7 +31235,7 @@ await test('Backlog 874 (Folge aus 871): Vorgangs-CSV mit Spalte „Voraussichtl
   }
   // Leitung: Spalte steht hinter den Versicherungs-/Abschleppspalten (Anhängen ändert keine bestehende Position)
   const H = csvTable(new TextDecoder().decode((await U.fleet.get('/api/cases?format=csv&status=')).data)).head;
-  ok(H.indexOf('Abgeschleppt am') === H.length - 2 && H.indexOf('Kostenfreigabe ausstehend') > 0, 'Reihenfolge');
+  ok(H.indexOf('Abgeschleppt am') === H.length - 3 && H.indexOf('Kostenfreigabe ausstehend') > 0, 'Reihenfolge');
   eq((await U.driver.get('/api/cases?format=csv')).status, 403, 'Fahrer weiterhin ohne CSV');
 });
 
@@ -42709,6 +42709,39 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   // Stufe 12: Fahrerakte – Nachweis- und Kontrollformular mit zugeordneten Beschriftungen (Feldnamen = field_key)
   for (const [id, n] of [['ddkind', 'kind'], ['ddissued', 'issued_on'], ['ddvalid', 'valid_until'], ['ddev', 'evidence'], ['lcon', 'checked_on'], ['lcres', 'result'], ['lcnote', 'note']]) ok(src.includes(`<label for="${id}">`) && src.includes(`id="${id}" name="${n}"`), `Fahrerakte: Beschriftung ${id} zugeordnet`);
   ok(/<label for="mhfrom">[^\n]*id="mhfrom" name="from"[^\n]*<label for="mhto">[^\n]*id="mhto" name="to"/.test(src) && src.includes('<label for="mhkind">'), 'Nachweisliste: Beschriftungen den Feldern zugeordnet');
+});
+
+await test('Backlog 1510 (Blickwinkel „Fahrer ruft an – Disposition erfasst die Meldung stellvertretend“): Namensvermerk „Gemeldet von“ im Meldeformular (nicht für Fahrer), im Vorgang „Angabe von“ und in der CSV; Lesezugriff ohne, Fahrer-Vermerk verworfen, zu lang → Feld markiert', async () => {
+  const { e, U, newCase } = await freshWorld();
+  const id = await newCase({ reporter_name_note: '  Fahrer B., telefonisch ' }, U.fleet);
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.case.reporter_name_note, 'Fahrer B., telefonisch', 'Leitung sieht Vermerk (getrimmt)');
+  eq((await U.ws.get(`/api/cases/${id}`)).data.case.reporter_name_note, 'Fahrer B., telefonisch', 'Werkstatt sieht Vermerk');
+  ok(!('reporter_name_note' in (await U.viewer.get(`/api/cases/${id}`)).data.case), 'Lesezugriff ohne Vermerk');
+  const wid = await newCase({ reporter_name_note: 'Kollege Werkstatt' }, U.ws);
+  eq(e.DB.db.prepare('SELECT reporter_name_note FROM cases WHERE id=?').get(wid).reporter_name_note, 'Kollege Werkstatt', 'Werkstatt darf stellvertretend melden');
+  const did = await newCase({ reporter_name_note: 'Jemand anderes' }, U.driver);
+  eq(e.DB.db.prepare('SELECT reporter_name_note FROM cases WHERE id=?').get(did).reporter_name_note, null, 'Fahrer: Vermerk verworfen');
+  const bad = await U.fleet.post('/api/cases', { vehicle_id: 'VIN:WMA15SZZ2HM722774', description: 'Rückleuchte defekt', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk(), reporter_name_note: 'x'.repeat(121) });
+  eq(bad.status, 400); eq(bad.data.field_key, 'reporter_name_note', 'zu lang → Feld markiert');
+  const no = e.DB.db.prepare('SELECT case_no FROM cases WHERE id=?').get(id).case_no;
+  for (const [role, u, want] of [['fleet', U.fleet, 'Fahrer B., telefonisch'], ['viewer', U.viewer, '']]) {
+    const txt = new TextDecoder().decode((await u.get('/api/cases?format=csv&status=')).data); const T = csvTable(txt);
+    eq(T.head.at(-1), 'Angabe von (Vermerk)', role + ': letzte Spalte');
+    ok(parseCsv(txt).slice(1).every((x) => x.length === T.head.length), role + ': gleiche Spaltenzahl');
+    eq((T.rows.find((x) => x.Vorgang === no) || {})['Angabe von (Vermerk)'], want, role + ': Wert');
+  }
+  const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const nv0 = app.indexOf('async function viewNew(preId)'); const nv = app.slice(nv0, app.indexOf('\nasync function ', nv0 + 10));
+  ok(/S\.me\.role !== 'driver' \? `<label for="rnn">/.test(nv) && nv.includes('<input id="rnn" data-fkey="reporter_name_note" maxlength="120"'), 'Feld im Meldeformular, nicht für Fahrer, Feldmarkierung');
+  ok(nv.includes("reporter_name_note: $('#rnn').value.trim()"), 'wird gesendet');
+  ok(app.includes("<dd data-rnn>${esc(c.reporter_name_note)}</dd>"), 'Anzeige im Vorgang');
+  const multi = app.slice(app.indexOf('async function viewNewMulti('), app.indexOf('async function viewNew(preId)'));
+  ok(!multi.includes('id="rnn"'), 'Sammelmeldung unverändert');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].rnn_label && STRINGS[l].rnn_hint && STRINGS[l].rnn_shown, l + ': Texte');
+    ok(STRINGS[l].help_report_s.includes(STRINGS[l].rnn_label) && STRINGS[l].help_report_s.includes(STRINGS[l].rnn_shown), l + ': Hilfe „Melden“ nennt Feld und Anzeige');
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

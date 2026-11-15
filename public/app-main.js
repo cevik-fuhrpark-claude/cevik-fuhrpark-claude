@@ -3847,6 +3847,7 @@ async function viewNew(preId) {
     <label id="lbl_drv">${esc(t('driveable'))}</label><div class="choices" role="radiogroup" aria-labelledby="lbl_drv">${['fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit', 'unbekannt'].map((p) => `<label class="choice${p === 'nicht_fahrbereit' ? ' c-kritisch' : ''}"><input type="radio" name="drv" value="${p}"${p === 'unbekannt' ? ' checked' : ''}><b>${esc(t('drv_' + p))}</b></label>`).join('')}</div>
     <label for="w">${esc(t('workshop'))}</label><select id="w"><option value="">–</option>${ws.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>
     <label for="l">${esc(t('location'))}</label><input id="l" maxlength="300">
+    ${S.me.role !== 'driver' ? `<label for="rnn">${esc(t('rnn_label'))}<span class="hint">${esc(t('rnn_hint'))}</span></label><input id="rnn" data-fkey="reporter_name_note" maxlength="120" autocomplete="off">`   : ''}
     ${occurredFields(null)}
     <label for="ph">${esc(t('photos_now'))}<span class="hint">${esc(t('photos_now_hint'))}</span></label><input type="file" id="ph" accept="image/jpeg,image/png,image/webp" multiple>
     <div id="phlater_w" hidden><label class="check" style="margin-top:6px"><input type="checkbox" id="phlater"> ${esc(t('photos_later_opt'))}</label><p class="small muted" style="margin:2px 0 0">${esc(t('photos_later_hint'))}</p></div>
@@ -3943,7 +3944,7 @@ async function viewNew(preId) {
 
     const hold = !!(photoFiles.length && $('#phlater') && $('#phlater').checked);
     const body = { vehicle_id: veh.value, description: $('#d').value, priority: $('input[name=prio]:checked').value,
-      driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key, ...(occ ? { occurred_at: occ } : {}), ...(hold ? { photos_later: photoFiles.length } : {}) };
+      driveability: $('input[name=drv]:checked').value, workshop_site: $('#w').value || null, location_note: $('#l').value || null, request_key: key, ...(occ ? { occurred_at: occ } : {}), ...(hold ? { photos_later: photoFiles.length } : {}), ...($('#rnn') && $('#rnn').value.trim() ? { reporter_name_note: $('#rnn').value.trim() } : {}) };
     try {
       const r = await api('POST', '/api/cases', body, { timeoutMs: SEND_TIMEOUT_MS });
       draft.clear();
@@ -4106,7 +4107,7 @@ async function viewCase(id, pre = null) {
     <dl class="kv">
       <dt>${esc(t('urgency'))}</dt><dd><span class="chip ${esc(c.priority)}">${esc(t('prio_' + c.priority))}</span>${prioLine}</dd>
       <dt>${esc(t('driveable'))}</dt><dd>${c.origin === 'kontrolle' && c.reported_driveability === 'unbekannt' ? `<span data-drvcheck>${esc(t('drv_not_asked_check'))}${S.me.role === 'driver' && OPEN_CASE_ST.includes(c.status) ? ' – ' + esc(t('check_defect_clarify')) : ''}</span>` : esc(t('drv_' + c.reported_driveability))}</dd>
-      ${d.reporter_name || d.reporter_name_hidden ? `<dt>${esc(t('reported_by'))}</dt><dd>${esc(pnm(d.reporter_name, d.reporter_name_hidden))} · ${fmtDT(c.created_at)}</dd>` : `<dt>${esc(t('date'))}</dt><dd>${fmtDT(c.created_at)}</dd>`}${repAssign(d.reporter_assignment, c.vehicle_id)}
+      ${d.reporter_name || d.reporter_name_hidden ? `<dt>${esc(t('reported_by'))}</dt><dd>${esc(pnm(d.reporter_name, d.reporter_name_hidden))} · ${fmtDT(c.created_at)}</dd>` : `<dt>${esc(t('date'))}</dt><dd>${fmtDT(c.created_at)}</dd>`}${c.reporter_name_note ? `<dt>${esc(t('rnn_shown'))}</dt><dd data-rnn>${esc(c.reporter_name_note)}</dd>` : ''}${repAssign(d.reporter_assignment, c.vehicle_id)}
       ${srcInsp(d.source_inspection)}
       ${c.occurred_at ? `<dt>${esc(t('occurred'))}</dt><dd data-occurred>${fmtOccurred(c.occurred_at)}${occLate(c)}</dd>${occDrivers(d.occurred_drivers)}` : ''}
       <dt>${esc(t('received'))}</dt><dd>${c.fleet_received_at ? fmtDT(c.fleet_received_at) : esc(t('not_yet'))}${c.fleet_received_at && d.received_by ? ` · ${esc(d.received_by.name)}${d.received_by.current ? '' : ` <span class="chip mittel" data-recvgone>${esc(t('recv_gone'))}</span>`}` : ''}</dd>
