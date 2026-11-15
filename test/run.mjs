@@ -42372,6 +42372,40 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
     eq(nk.status, 400, 'Meldung: Schadenzeitpunkt zu alt'); eq(nk.data.field_key, 'occurred_at', 'Meldung: Schadenzeitpunkt');
     const s14 = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(s14.includes('<input type="date" id="occd" data-fkey="occurred_at"'), 'Datumsfeld Schadenzeitpunkt trägt data-fkey');
   }
+  // Stufe 15: Fahrzeugstamm, Fahrzeugdaten (Gesamtmasse/Erstzulassung), Prüftermine anlegen/erledigen (src/vehicles.js)
+  { const V = (b) => owner.post('/api/vehicles', { vin: 'WDB96340310815215', plate: 'AB-F 1515', ...b });
+    eq((await V({ vin: 'KURZ' })).data.field_key, 'vin', 'Stamm: FIN');
+    eq((await V({ plate: 'АВ-С 1' })).data.field_key, 'plate', 'Stamm: Kennzeichen kyrillisch');
+    eq((await V({ trailer_plate: '***' })).data.field_key, 'trailer_plate', 'Stamm: Anhänger-Kennzeichen');
+    eq((await V({ trailer_vin: 'ABC' })).data.field_key, 'trailer_vin', 'Stamm: Anhänger-FIN');
+    eq((await V({ kind: 'Boot' })).data.field_key, 'kind', 'Stamm: Fahrzeugart');
+    eq((await V({ build_year: '1800' })).data.field_key, 'build_year', 'Stamm: Baujahr');
+    eq((await V({ manufacturer: 'M'.repeat(61) })).data.field_key, 'manufacturer', 'Stamm: Hersteller');
+    eq((await V({})).status, 201, 'gültiger Stammsatz');
+    const vid15 = 'VIN:WDB96340310815215';
+    const SP = (b) => owner.post(`/api/vehicles/${vid15}/spec`, { spec_source: 'Fahrzeugschein 1515', ...b });
+    eq((await SP({ zgm_kg: '18 t' })).data.field_key, 'zgm_kg', 'Fahrzeugdaten: Tonnen');
+    eq((await SP({ zgm_kg: '18000', zgm_class: '3_5_7_5' })).data.field_key, 'zgm_class', 'Fahrzeugdaten: Klasse passt nicht');
+    eq((await SP({ first_registration: '2099-01-01' })).data.field_key, 'first_registration', 'Fahrzeugdaten: Erstzulassung in der Zukunft');
+    eq((await SP({ first_registration: '1900-01-01' })).data.field_key, 'first_registration', 'Fahrzeugdaten: Erstzulassung vor 1950');
+    const M = (b) => owner.post(`/api/vehicles/${vid15}/maintenance`, { kind: 'UVV', evidence: 'Feld 1515', ...b });
+    eq((await M({ interval_months: '1,5' })).data.field_key, 'interval_months', 'Prüftermin: Intervall keine ganze Zahl');
+    eq((await M({ last_done_date: '2026-02-30' })).data.field_key, 'last_done_date', 'Prüftermin: letzte Prüfung ungültig');
+    eq((await M({ next_due_date: '2026-13-01' })).data.field_key, 'next_due_date', 'Prüftermin: nächster Termin ungültig');
+    eq((await M({ last_done_date: '2026-05-01', next_due_date: '2026-04-01' })).data.field_key, 'next_due_date', 'Prüftermin: nächster vor letzter');
+    eq((await M({ last_done_date: '2099-01-01' })).data.field_key, 'last_done_date', 'Prüftermin: letzte in der Zukunft');
+    eq((await M({ kind: 'HU', due_km: '50000' })).data.field_key, 'due_km', 'Prüftermin: HU mit km');
+    eq((await M({ kind: 'Sonstiges', title: 'T'.repeat(81) })).data.field_key, 'title', 'Prüftermin: Titel zu lang');
+    eq((await M({ title: 'Titel' })).data.field_key, 'title', 'Prüftermin: Titel nur bei Sonstiges');
+    const mr = await M({ interval_months: 12, last_done_date: '2026-01-10' }); ok(mr.status < 300, JSON.stringify(mr.data)); const mid = mr.data.id || mr.data.rule.id;
+    const C = (b) => owner.post(`/api/maintenance/${mid}/complete`, { evidence: 'Feld 1515', ...b });
+    eq((await C({ done_date: '2026-02-30' })).data.field_key, 'done_date', 'Erledigt: Datum ungültig');
+    eq((await C({ done_date: '2099-01-01' })).data.field_key, 'done_date', 'Erledigt: Datum in der Zukunft');
+    eq((await C({ done_date: '1900-01-01' })).data.field_key, 'done_date', 'Erledigt: vor 1950');
+    eq((await C({ done_date: '2026-02-10', next_due_date: '2026-01-01' })).data.field_key, 'next_due_date', 'Erledigt: nächster Termin vor Durchführung');
+    const s15 = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+    ok(s15.includes('<label for="vf_${name}">${esc(label)}</label><input id="vf_${name}" name="${name}"') && s15.includes('<label for="vf_kind">'), 'Fahrzeugformular: Beschriftungen zugeordnet');
+  }
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -42379,7 +42413,7 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
     const s = readFileSync(new URL(`../src/${m}.js`, import.meta.url), 'utf8');
     const keys = new Set([...s.matchAll(/\{ key: '(\w+)', (?!group)|field_key: '(\w+)'|withKey\('(\w+)'|\{ key: '(\w+)' \}/g)].map((x) => x[1] || x[2] || x[3] || x[4])); // nur Prüf-Optionen (nicht request_key, nicht CHECKLIST)
     ok(keys.size > 0, m + ': keine Feldnamen');
-    for (const k of keys) ok(src.includes(`name="${k}"`) || src.includes(`data-fkey="${k}"`) || ['password', 'employee_number'].includes(k), `${m}: Feld „${k}“ fehlt in der Oberfläche`);
+    for (const k of keys) ok(src.includes(`name="${k}"`) || src.includes(`data-fkey="${k}"`) || src.includes(`f('${k}', `) || ['password', 'employee_number'].includes(k), `${m}: Feld „${k}“ fehlt in der Oberfläche`);
   }
   // Oberfläche: api() merkt den Feldnamen, die Formular-Sperre markiert nach dem Absenden (nur sichtbare Felder desselben Formulars)
   ok(/code === 'validation' && data && typeof data\.field_key === 'string'\) S\.fieldErr = \{ key: data\.field_key, msg: e\.message, at: Date\.now\(\) \}/.test(src), 'api() merkt field_key');

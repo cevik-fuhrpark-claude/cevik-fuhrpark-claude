@@ -1,7 +1,7 @@
 // [CLAUDE] Fahrzeugakten, Fahrerzuordnung, Wartung/Prüftermine, Kilometerstände
 import { tachoStatus, warnDaysOf, TACHO_RULE } from './tacho.js';
 import { caseDescText } from '../public/check-labels.js';
-import { nowIso, uuid, bad, forbidden, notFound, conflict, requestKey, str, num, oneOf, flag, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, samePlate, intParam, kmNum, maxFutureDate, DUE_FAR_MSG, plateCmp, cutText } from './util.js';
+import { withKey, nowIso, uuid, bad, forbidden, notFound, conflict, requestKey, str, num, oneOf, flag, normalizeVin, isValidVin, addMonths, berlinDate, berlinDayStartIso, parseCsv, isCalendarDate, normPlate, samePlate, intParam, kmNum, maxFutureDate, DUE_FAR_MSG, plateCmp, cutText } from './util.js';
 import { audit, auditStmt } from './auth.js';
 import { syncHuSpDues, huSpFor, loadHuSpInputs, ZGM_CLASSES_LKW, ZGM_CLASSES_TRAILER, zgmClassFromKg } from './inspection_rules.js';
 import { vehicleCosts, sniffType, VEHICLE_DOC_READ, planDate, WARR_VEH_MAX, caseAccess } from './cases.js';
@@ -535,21 +535,21 @@ export function vehiclesCsv(list, csvCell) {
 // Prüft und normalisiert einen Stammdatensatz (gemeinsam für Einzelpflege und Import)
 function vehicleRow(user, body) {
   const vin = normalizeVin(body.vin);
-  if (!isValidVin(vin)) throw bad('validation', 'FIN muss 17 Zeichen haben (ohne I, O, Q).');
-  const plate = str(body.plate, { required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
+  if (!isValidVin(vin)) throw bad('validation', 'FIN muss 17 Zeichen haben (ohne I, O, Q).', { field_key: 'vin' });
+  const plate = str(body.plate, { key: 'plate', required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
   // nur lateinische Buchstaben (kyrillisches „С“/„А“ von ukrainischer Tastatur sieht gleich aus, Kopplung und Dublettenprüfung griffen still nicht, 18.10.2026)
   // mindestens ein Buchstabe/eine Ziffer, kein Tabulator (20.10.2026: „-“ wurde angelegt, alle solchen galten als gleiches Kennzeichen)
   const plateOk = (x) => /^[A-Z0-9ÄÖÜ \-.\/_\u00a0\u202f\u2010\u2011\u2013\u2014]+$/.test(x) && /[A-Z0-9ÄÖÜ]/.test(x);
-  if (!plateOk(plate)) throw bad('validation', 'Kennzeichen enthält unzulässige Zeichen (nur lateinische Buchstaben, Ziffern, Leerzeichen und Bindestrich).');
-  if (body.trailer_plate && typeof body.trailer_plate === 'string' && body.trailer_plate.trim() && !plateOk(body.trailer_plate.trim().toUpperCase())) throw bad('validation', 'Anhänger-Kennzeichen enthält unzulässige Zeichen (nur lateinische Buchstaben, Ziffern, Leerzeichen und Bindestrich).');
+  if (!plateOk(plate)) throw bad('validation', 'Kennzeichen enthält unzulässige Zeichen (nur lateinische Buchstaben, Ziffern, Leerzeichen und Bindestrich).', { field_key: 'plate' });
+  if (body.trailer_plate && typeof body.trailer_plate === 'string' && body.trailer_plate.trim() && !plateOk(body.trailer_plate.trim().toUpperCase())) throw bad('validation', 'Anhänger-Kennzeichen enthält unzulässige Zeichen (nur lateinische Buchstaben, Ziffern, Leerzeichen und Bindestrich).', { field_key: 'trailer_plate' });
   return {
-    id: `VIN:${vin}`, vin, plate, site: str(body.site, { key: 'site', max: 60, field: 'Standort' }), manufacturer: str(body.manufacturer, { max: 60, field: 'Hersteller' }), model: str(body.model, { max: 60, field: 'Modell' }),
-    build_year: body.build_year ? Math.round(num(body.build_year, { min: 1950, max: 2100, field: 'Baujahr' })) : null,
-    trailer_plate: str(body.trailer_plate, { max: 20, field: 'Anhänger-Kennzeichen' })?.toUpperCase() ?? null, trailer_vin: (() => { // geprüft wie die FIN (17.10.2026: Objekt wurde „OBJECTOBJECT“, beliebige Länge gespeichert)
+    id: `VIN:${vin}`, vin, plate, site: str(body.site, { key: 'site', max: 60, field: 'Standort' }), manufacturer: str(body.manufacturer, { key: 'manufacturer', max: 60, field: 'Hersteller' }), model: str(body.model, { key: 'model', max: 60, field: 'Modell' }),
+    build_year: body.build_year ? Math.round(num(body.build_year, { key: 'build_year', min: 1950, max: 2100, field: 'Baujahr' })) : null,
+    trailer_plate: str(body.trailer_plate, { key: 'trailer_plate', max: 20, field: 'Anhänger-Kennzeichen' })?.toUpperCase() ?? null, trailer_vin: (() => { // geprüft wie die FIN (17.10.2026: Objekt wurde „OBJECTOBJECT“, beliebige Länge gespeichert)
       const t = str(body.trailer_vin, { key: 'trailer_vin', max: 30, field: 'Anhänger-FIN' }); if (!t) return null;
-      const n = normalizeVin(t); if (!isValidVin(n)) throw bad('validation', 'Anhänger-FIN muss 17 Zeichen haben (ohne I, O, Q).'); return n; })(),
-    master_status: str(body.master_status, { max: 40, field: 'Stammstatus' }), source: str(body.source, { max: 200, field: 'Quelle' }) || `manuell durch ${user.username}`,
-    kind: normalizeVehicleKind(body.kind),
+      const n = normalizeVin(t); if (!isValidVin(n)) throw bad('validation', 'Anhänger-FIN muss 17 Zeichen haben (ohne I, O, Q).', { field_key: 'trailer_vin' }); return n; })(),
+    master_status: str(body.master_status, { key: 'master_status', max: 40, field: 'Stammstatus' }), source: str(body.source, { key: 'source', max: 200, field: 'Quelle' }) || `manuell durch ${user.username}`,
+    kind: withKey('kind', () => normalizeVehicleKind(body.kind)),
   };
 }
 
@@ -1038,34 +1038,34 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
   // ganze Zahlen (19.10.2026: „1,5“ Monate wurde still zu 2 – Frist verschoben; der Import weist das schon ab)
   const months = body.interval_months ? num(body.interval_months, { key: 'interval_months', min: 1, max: 120, field: 'Intervall Monate', unit: 'months' }) : null;
   const km = body.interval_km ? num(body.interval_km, { key: 'interval_km', min: 100, max: 1000000, field: 'Intervall km', unit: 'km', grouped: true }) : null;
-  if ((months !== null && !Number.isInteger(months)) || (km !== null && !Number.isInteger(km))) throw bad('validation', 'Intervall als ganze Zahl angeben.');
+  if ((months !== null && !Number.isInteger(months)) || (km !== null && !Number.isInteger(km))) throw bad('validation', 'Intervall als ganze Zahl angeben.', { field_key: months !== null && !Number.isInteger(months) ? 'interval_months' : 'interval_km' });
   const lastDate = str(body.last_done_date, { key: 'last_done_date', max: 10, field: 'Letzte Prüfung' });
   const lastKm = body.last_done_km != null && String(body.last_done_km).trim() !== '' ? kmNum(body.last_done_km, { key: 'last_done_km', field: 'km' }) : null;
   const husp = kind === 'HU' || kind === 'SP';
-  if (ONE_TIME_KINDS.includes(kind) && (months || km)) throw bad('validation', 'Rückruf ist eine einmalige Aktion – kein Intervall angeben.');
+  if (ONE_TIME_KINDS.includes(kind) && (months || km)) throw bad('validation', 'Rückruf ist eine einmalige Aktion – kein Intervall angeben.', { field_key: 'interval_months' });
   // bereits durchgeführter Rückruf: keine Frist (sonst überfällig/fällig, aber weder erledigbar noch planbar – Dauerbefund; 20.10.2026)
-  if (ONE_TIME_KINDS.includes(kind) && body.last_done_date && String(body.last_done_date).trim() && ((body.next_due_date && String(body.next_due_date).trim()) || (body.due_km && String(body.due_km).trim()))) throw bad('validation', 'Rückruf ist bereits durchgeführt – keine Frist angeben.');
+  if (ONE_TIME_KINDS.includes(kind) && body.last_done_date && String(body.last_done_date).trim() && ((body.next_due_date && String(body.next_due_date).trim()) || (body.due_km && String(body.due_km).trim()))) throw bad('validation', 'Rückruf ist bereits durchgeführt – keine Frist angeben.', { field_key: 'next_due_date' });
   // Belegte km-Fälligkeit (Serviceanzeige/Wartungsheft); HU/SP richten sich nur nach der Zeit
   let dueKm = body.due_km ? kmNum(body.due_km, { key: 'due_km', min: 1, field: 'km' }) : null;
-  if (husp && (dueKm !== null || km !== null)) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.');
+  if (husp && (dueKm !== null || km !== null)) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.', { field_key: dueKm !== null ? 'due_km' : 'interval_km' });
   if (dueKm !== null && lastKm !== null && dueKm <= lastKm) throw bad('validation', 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.', { field_key: 'due_km' });
   if (dueKm !== null && km && lastKm !== null && dueKm === lastKm + km) dueKm = null; // ergibt sich ohnehin aus Intervall
   let nextDue = str(body.next_due_date, { key: 'next_due_date', max: 10, field: 'Nächster Termin' });
   const dueSource = nextDue ? 'nachweis' : 'berechnet';
   // HU/SP: kein pauschales Intervall – Fälligkeit zentral nach StVZO Anlage VIII (inspection_rules.js) oder laut Nachweis
   // erst prüfen, dann rechnen (ungültiges Datum wie „0000-00-00“ ließ addMonths mit „Invalid time value“ abbrechen – Fuzz 15.10.2026)
-  for (const d of [lastDate, nextDue]) if (d && !isCalendarDate(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
-  if (nextDue && nextDue > maxFutureDate()) throw bad('validation', DUE_FAR_MSG); // 2062 statt 2026 → Frist „in Ordnung“ für Jahrzehnte
+  for (const [d, k] of [[lastDate, 'last_done_date'], [nextDue, 'next_due_date']]) if (d && !isCalendarDate(d)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.', { field_key: k });
+  if (nextDue && nextDue > maxFutureDate()) throw bad('validation', DUE_FAR_MSG, { field_key: 'next_due_date' }); // 2062 statt 2026 → Frist „in Ordnung“ für Jahrzehnte
   if (!nextDue && lastDate && months && !husp) nextDue = addMonths(lastDate, months);
   // wie beim Import (17.10.2026): nächster Termin nicht vor der letzten Durchführung
-  if (nextDue && lastDate && nextDue < lastDate) throw bad('validation', 'Nächster Termin liegt vor der letzten Durchführung.');
-  if (lastDate && lastDate > berlinDate()) throw bad('validation', 'Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
+  if (nextDue && lastDate && nextDue < lastDate) throw bad('validation', 'Nächster Termin liegt vor der letzten Durchführung.', { field_key: 'next_due_date' });
+  if (lastDate && lastDate > berlinDate()) throw bad('validation', 'Letzte Durchführung liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.', { field_key: 'last_done_date' });
   // Backlog 1089 (Blickwinkel „Neufahrzeug kommt in den Bestand“): Plausibilität wie „erledigt“ (Backlog 619) – eine vertippte letzte HU
   // vor der Erstzulassung legte sofort eine Durchführung an und machte den nagelneuen Lkw „bald fällig“/„überfällig“
-  if (lastDate && lastDate < '1950-01-01') throw bad('validation', 'Durchführungsdatum vor 1950 ist nicht plausibel.');
+  if (lastDate && lastDate < '1950-01-01') throw bad('validation', 'Durchführungsdatum vor 1950 ist nicht plausibel.', { field_key: 'last_done_date' });
   if (husp && lastDate) {
     const fr = (await env.DB.prepare('SELECT first_registration FROM vehicles WHERE id=?').bind(vehicleId).first() || {}).first_registration;
-    if (fr && lastDate.slice(0, 7) < String(fr).slice(0, 7)) throw bad('validation', 'Durchführungsdatum liegt vor der Erstzulassung des Fahrzeugs.');
+    if (fr && lastDate.slice(0, 7) < String(fr).slice(0, 7)) throw bad('validation', 'Durchführungsdatum liegt vor der Erstzulassung des Fahrzeugs.', { field_key: 'last_done_date' });
   }
   const id = uuid();
   const now = nowIso();
@@ -1118,7 +1118,7 @@ export async function planMaintenance(env, user, ruleId, body) {
   const hasNote = body && Object.prototype.hasOwnProperty.call(body, 'planned_note');
   const oldNote = r.planned_note || null;
   const pn = hasNote ? str(body.planned_note, { key: 'planned_note', max: 200, field: 'Hinweis zum Termin' }) : oldNote;
-  if (pn && !d && hasNote) throw bad('validation', 'Hinweis zum Termin nur zusammen mit einem Termin angeben.');
+  if (pn && !d && hasNote) throw bad('validation', 'Hinweis zum Termin nur zusammen mit einem Termin angeben.', { field_key: 'planned_date' });
   const note = d ? pn : null;
   const same = (r.planned_date ?? null) === d && note === oldNote;
   const noteOut = note ? { planned_note: note } : {};
@@ -1163,9 +1163,9 @@ export async function editMaintenanceRule(env, user, ruleId, body) {
   if ('title' in body) ch.title = ruleTitle(r.kind, body.title);
   if ('evidence' in body) ch.evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis/Quelle' });
   if ('interval_months' in body) {
-    if (ONE_TIME_KINDS.includes(r.kind) && body.interval_months) throw bad('validation', 'Rückruf ist eine einmalige Aktion – kein Intervall angeben.');
+    if (ONE_TIME_KINDS.includes(r.kind) && body.interval_months) throw bad('validation', 'Rückruf ist eine einmalige Aktion – kein Intervall angeben.', { field_key: 'interval_months' });
     const mo = body.interval_months === null || String(body.interval_months).trim() === '' ? null : num(body.interval_months, { key: 'interval_months', min: 1, max: 120, field: 'Intervall Monate', unit: 'months' });
-    if (mo !== null && !Number.isInteger(mo)) throw bad('validation', 'Intervall als ganze Zahl angeben.');
+    if (mo !== null && !Number.isInteger(mo)) throw bad('validation', 'Intervall als ganze Zahl angeben.', { field_key: 'interval_months' });
     ch.interval_months = mo;
     // berechnete Fälligkeit neu (Nachweis-Fälligkeit bleibt); ohne Intervall bleibt die bisherige Fälligkeit stehen
     if (r.due_source !== 'nachweis' && r.last_done_date && mo) ch.next_due_date = addMonths(r.last_done_date, mo);
@@ -1252,8 +1252,8 @@ export async function planMaintenanceBatch(env, user, body) {
 export const CREATE_BATCH_MAX = 200;
 // Titel je Prüftermin (Backlog 577): nur bei „Sonstiges“ (mehrere Termine je Fahrzeug), höchstens 80 Zeichen; leer = ohne Titel
 export function ruleTitle(kind, raw) {
-  const t = str(raw, { max: 80, field: 'Titel' });
-  if (t && kind !== 'Sonstiges') throw bad('validation', 'Ein Titel ist nur bei der Prüfart „Sonstiges“ vorgesehen.');
+  const t = str(raw, { key: 'title', max: 80, field: 'Titel' });
+  if (t && kind !== 'Sonstiges') throw bad('validation', 'Ein Titel ist nur bei der Prüfart „Sonstiges“ vorgesehen.', { field_key: 'title' });
   return t || null;
 }
 export async function addMaintenanceRuleBatch(env, user, body) {
@@ -1264,10 +1264,10 @@ export async function addMaintenanceRuleBatch(env, user, body) {
   const title = ruleTitle(kind, body.title);
   const months = body.interval_months ? num(body.interval_months, { key: 'interval_months', min: 1, max: 120, field: 'Intervall Monate', unit: 'months' }) : null;
   const km = body.interval_km ? num(body.interval_km, { key: 'interval_km', min: 100, max: 1000000, field: 'Intervall km', unit: 'km', grouped: true }) : null;
-  if ((months !== null && !Number.isInteger(months)) || (km !== null && !Number.isInteger(km))) throw bad('validation', 'Intervall als ganze Zahl angeben.');
+  if ((months !== null && !Number.isInteger(months)) || (km !== null && !Number.isInteger(km))) throw bad('validation', 'Intervall als ganze Zahl angeben.', { field_key: months !== null && !Number.isInteger(months) ? 'interval_months' : 'interval_km' });
   const nextDue = str(body.next_due_date, { key: 'next_due_date', max: 10, field: 'Nächster Termin' });
-  if (nextDue && !isCalendarDate(nextDue)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
-  if (nextDue && nextDue > maxFutureDate()) throw bad('validation', DUE_FAR_MSG);
+  if (nextDue && !isCalendarDate(nextDue)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.', { field_key: 'next_due_date' });
+  if (nextDue && nextDue > maxFutureDate()) throw bad('validation', DUE_FAR_MSG, { field_key: 'next_due_date' });
   const raw = Array.isArray(body.vehicle_ids) ? body.vehicle_ids : null;
   if (!raw || !raw.length || raw.length > CREATE_BATCH_MAX || raw.some((x) => typeof x !== 'string' || !x || x.length > 40)) throw bad('validation', 'Bitte 1 bis 200 Fahrzeuge auswählen.');
   const ids = [...new Set(raw)];
@@ -1352,24 +1352,24 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   const source = str(body.spec_source, { key: 'spec_source', required: true, max: 200, field: 'Nachweis (z. B. Fahrzeugschein)' });
   // Backlog 1014: „18.000 kg“/„F.2: 18000“ wie im Fahrzeugschein annehmen (`unit: 'kg'`), Tonnen mit eigener Meldung – nie umgerechnet
   const field = 'zulässige Gesamtmasse (kg)';
-  if (typeof body.zgm_kg === 'string' && massTonnes(body.zgm_kg)) throw bad('validation', `${field}: „${body.zgm_kg.replace(/\s+/g, ' ').trim().slice(0, 40)}“ ist in Tonnen angegeben – bitte die Masse in kg laut Fahrzeugschein (F.2) eingeben (die App rechnet nicht um).`);
+  if (typeof body.zgm_kg === 'string' && massTonnes(body.zgm_kg)) throw bad('validation', `${field}: „${body.zgm_kg.replace(/\s+/g, ' ').trim().slice(0, 40)}“ ist in Tonnen angegeben – bitte die Masse in kg laut Fahrzeugschein (F.2) eingeben (die App rechnet nicht um).`, { field_key: 'zgm_kg' });
   const kg = body.zgm_kg === undefined || body.zgm_kg === null || body.zgm_kg === '' ? null : Math.round(num(body.zgm_kg, { key: 'zgm_kg', min: 500, max: 60000, field, grouped: true, unit: 'kg' }));
   const allowed = v.kind === 'anhaenger' ? ZGM_CLASSES_TRAILER : ZGM_CLASSES_LKW;
   let cls = body.zgm_class ? oneOf(body.zgm_class, allowed, 'Gewichtsklasse', { key: 'zgm_class' }) : null;
   if (kg !== null) {
     const fromKg = zgmClassFromKg(v.kind, kg);
-    if (cls && cls !== fromKg) throw bad('validation', 'Gewichtsklasse passt nicht zur angegebenen Gesamtmasse.');
+    if (cls && cls !== fromKg) throw bad('validation', 'Gewichtsklasse passt nicht zur angegebenen Gesamtmasse.', { field_key: 'zgm_class' });
     cls = fromKg;
   }
   const ez = body.first_registration ? str(body.first_registration, { key: 'first_registration', max: 10, field: 'Erstzulassung' }) : null;
-  if (ez && (!isCalendarDate(ez) || ez > berlinDate())) throw bad('validation', 'Erstzulassung im Format JJJJ-MM-TT, nicht in der Zukunft.');
+  if (ez && (!isCalendarDate(ez) || ez > berlinDate())) throw bad('validation', 'Erstzulassung im Format JJJJ-MM-TT, nicht in der Zukunft.', { field_key: 'first_registration' });
   // Untergrenze wie Baujahr (23.10.2026: 1900-01-01 wurde angenommen und trieb die SP-Prognose)
-  if (ez && ez < '1950-01-01') throw bad('validation', 'Erstzulassung vor 1950 ist nicht plausibel.');
+  if (ez && ez < '1950-01-01') throw bad('validation', 'Erstzulassung vor 1950 ist nicht plausibel.', { field_key: 'first_registration' });
   // Backlog 1090 (Gegenrichtung zu Backlog 619/1089): neue/geänderte Erstzulassung nach einer schon erfassten HU/SP – typisch Feld I
   // („Datum dieser Zulassung“) statt Feld B; die fällige SP wurde sonst still zu „erste SP künftig“ (Übersicht, Agent, Lückenliste)
   if (ez && ez !== v.first_registration) {
     const first = (await env.DB.prepare(`SELECT MIN(done_date) AS d FROM maintenance_events WHERE vehicle_id=? AND kind IN ('HU','SP')`).bind(vehicleId).first() || {}).d;
-    if (first && String(first).slice(0, 7) < ez.slice(0, 7)) throw bad('validation', 'Erstzulassung liegt nach einer bereits erfassten HU/SP – bitte Feld B (Erstzulassung) der Zulassungsbescheinigung prüfen.');
+    if (first && String(first).slice(0, 7) < ez.slice(0, 7)) throw bad('validation', 'Erstzulassung liegt nach einer bereits erfassten HU/SP – bitte Feld B (Erstzulassung) der Zulassungsbescheinigung prüfen.', { field_key: 'first_registration' });
   }
   // gelesener Stand (Formular sendet `expected_updated_at`): zwischenzeitliche Änderung → 409 statt still überschreiben (21.10.2026, Backlog 105)
   const expected = body.expected_updated_at ? str(body.expected_updated_at, { max: 40, field: 'Stand' }) : null;
@@ -1424,47 +1424,47 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   const r = await env.DB.prepare('SELECT * FROM maintenance_rules WHERE id=?').bind(ruleId).first();
   if (!r) throw notFound();
   const date = str(body.done_date, { key: 'done_date', required: true, max: 10, field: 'Datum' });
-  if (!isCalendarDate(date)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
-  if (date > berlinDate()) throw bad('validation', 'Durchführungsdatum liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.');
+  if (!isCalendarDate(date)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.', { field_key: 'done_date' });
+  if (date > berlinDate()) throw bad('validation', 'Durchführungsdatum liegt in der Zukunft – geplante Termine über „Werkstatttermin planen“ eintragen.', { field_key: 'done_date' });
   // Backlog 619 (Blickwinkel „HU-Prüfer auf dem Hof“): Untergrenze wie Erstzulassung/Baujahr – 05.01.1900 (Tippfehler) landete im Verlauf und in der Nachweisliste
-  if (date < '1950-01-01') throw bad('validation', 'Durchführungsdatum vor 1950 ist nicht plausibel.');
+  if (date < '1950-01-01') throw bad('validation', 'Durchführungsdatum vor 1950 ist nicht plausibel.', { field_key: 'done_date' });
   if (r.kind === 'HU' || r.kind === 'SP') {
     const fr = (await env.DB.prepare('SELECT first_registration FROM vehicles WHERE id=?').bind(r.vehicle_id).first() || {}).first_registration;
     // Erstzulassung ggf. nur JJJJ-MM: Vergleich nach Monat (eine HU/SP vor der Zulassung gibt es nicht)
-    if (fr && date.slice(0, 7) < String(fr).slice(0, 7)) throw bad('validation', 'Durchführungsdatum liegt vor der Erstzulassung des Fahrzeugs.');
+    if (fr && date.slice(0, 7) < String(fr).slice(0, 7)) throw bad('validation', 'Durchführungsdatum liegt vor der Erstzulassung des Fahrzeugs.', { field_key: 'done_date' });
   }
   const evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis' });
   const km = body.done_km != null && String(body.done_km).trim() !== '' ? kmNum(body.done_km, { key: 'done_km', field: 'km' }) : null;
-  if (r.interval_km && km === null && r.kind !== 'HU' && r.kind !== 'SP') throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.');
+  if (r.interval_km && km === null && r.kind !== 'HU' && r.kind !== 'SP') throw bad('validation', 'Kilometerstand bei Durchführung angeben – diese Prüfung hat ein Kilometer-Intervall.', { field_key: 'done_km' });
   // Plausibilität wie „Kilometerstand erfassen“: nicht kleiner als der zuletzt davor erfasste km-Stand (Tippfehler würde km-Fälligkeiten
   // und €/km verfälschen). Tachotausch: zuerst den km-Stand des neuen Zählers mit Begründung in der Fahrzeugakte erfassen.
   const drop = parseKmDrop((await env.DB.prepare(`SELECT ${KM_DROP_SQL('?')} AS d`).bind(r.vehicle_id).first() || {}).d);
   if (km !== null) {
     const at = date >= berlinDate() ? nowIso() : `${date}T12:00:00.000Z`;
     const prev = await env.DB.prepare('SELECT km FROM odometer_readings WHERE vehicle_id=? AND measured_at <= ? ORDER BY measured_at DESC, rowid DESC LIMIT 1').bind(r.vehicle_id, at).first();
-    if (prev && km < prev.km) throw bad('validation', 'Kilometerstand bei Durchführung ist kleiner als ein zuvor erfasster km-Stand. Bitte prüfen; bei Tachotausch zuerst den neuen km-Stand mit Begründung in der Fahrzeugakte erfassen.');
+    if (prev && km < prev.km) throw bad('validation', 'Kilometerstand bei Durchführung ist kleiner als ein zuvor erfasster km-Stand. Bitte prüfen; bei Tachotausch zuerst den neuen km-Stand mit Begründung in der Fahrzeugakte erfassen.', { field_key: 'done_km' });
     // auch nicht größer als ein später erfasster, unbegründeter Stand (nachgetragene Prüfung mit Tippfehler machte sonst die spätere
     // Ablesung zum Rücksprung und verfälschte Fahrleistung/km-Fälligkeiten – wie „Kilometerstand erfassen“, 17.10.2026)
     const nextR = await env.DB.prepare('SELECT km, note FROM odometer_readings WHERE vehicle_id=? AND measured_at > ? ORDER BY measured_at ASC, rowid ASC LIMIT 1').bind(r.vehicle_id, at).first();
-    if (nextR && km > nextR.km && !(nextR.note && String(nextR.note).trim())) throw bad('validation', 'Kilometerstand bei Durchführung ist größer als ein später erfasster km-Stand. Bitte prüfen.');
+    if (nextR && km > nextR.km && !(nextR.note && String(nextR.note).trim())) throw bad('validation', 'Kilometerstand bei Durchführung ist größer als ein später erfasster km-Stand. Bitte prüfen.', { field_key: 'done_km' });
   }
   // nicht kleiner als der km-Stand der letzten Durchführung dieser Regel (ohne Ablesungen am Fahrzeug griff die Prüfung oben nicht: Tippfehler
   // 30 000 statt 330 000 → km-Fälligkeit viel zu früh, 19.10.2026); nach einem km-Rücksprung (Tachotausch) gilt der alte Stand nicht
   if (km !== null && r.last_done_km !== null && r.last_done_km !== undefined && km < r.last_done_km && (!r.last_done_date || date >= r.last_done_date) && !kmCounterDropAfter(r, drop))
-    throw bad('validation', 'Kilometerstand bei Durchführung ist kleiner als der km-Stand der letzten Durchführung. Bitte prüfen; bei Tachotausch zuerst den neuen km-Stand mit Begründung in der Fahrzeugakte erfassen.');
+    throw bad('validation', 'Kilometerstand bei Durchführung ist kleiner als der km-Stand der letzten Durchführung. Bitte prüfen; bei Tachotausch zuerst den neuen km-Stand mit Begründung in der Fahrzeugakte erfassen.', { field_key: 'done_km' });
   const husp = r.kind === 'HU' || r.kind === 'SP';
   const docNext = str(body.next_due_date, { key: 'next_due_date', max: 10, field: 'Nächster Termin' });
   // wie beim Anlegen: nur echtes Kalenderdatum (sonst „31.12.2027“ gespeichert → Tage NaN, Status „in Ordnung“, nie überfällig; 17.10.2026)
-  if (docNext && !isCalendarDate(docNext)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.');
-  if (docNext && docNext > maxFutureDate()) throw bad('validation', DUE_FAR_MSG);
-  if (docNext && docNext < date) throw bad('validation', 'Nächster Termin liegt vor der letzten Durchführung.');
+  if (docNext && !isCalendarDate(docNext)) throw bad('validation', 'Datum im Format JJJJ-MM-TT.', { field_key: 'next_due_date' });
+  if (docNext && docNext > maxFutureDate()) throw bad('validation', DUE_FAR_MSG, { field_key: 'next_due_date' });
+  if (docNext && docNext < date) throw bad('validation', 'Nächster Termin liegt vor der letzten Durchführung.', { field_key: 'next_due_date' });
   // einmalige Aktion (Rückruf): nur einmal durchführbar, keine Folgefrist (sonst stünde sie nie auf „erledigt“)
   const oneTime = ONE_TIME_KINDS.includes(r.kind);
   if (oneTime && r.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
-  if (oneTime && (docNext || (body.next_due_km && String(body.next_due_km).trim()))) throw bad('validation', 'Rückruf ist eine einmalige Aktion – keine Folgefrist angeben.');
+  if (oneTime && (docNext || (body.next_due_km && String(body.next_due_km).trim()))) throw bad('validation', 'Rückruf ist eine einmalige Aktion – keine Folgefrist angeben.', { field_key: 'next_due_date' });
   // neue km-Fälligkeit laut Beleg (z. B. Serviceanzeige nach dem Ölwechsel); ohne Angabe gilt „km + Intervall km“
   let docKm = body.next_due_km ? kmNum(body.next_due_km, { key: 'next_due_km', min: 1, field: 'km' }) : null;
-  if (husp && docKm !== null) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.');
+  if (husp && docKm !== null) throw bad('validation', 'HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.', { field_key: 'next_due_km' });
   if (docKm !== null && km !== null && docKm <= km) throw bad('validation', 'Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.', { field_key: 'next_due_km' });
   if (docKm !== null && km !== null && r.interval_km && docKm === km + r.interval_km) docKm = null;
   const next = docNext || (!husp && r.interval_months ? addMonths(date, r.interval_months) : null);
