@@ -660,6 +660,51 @@ function beKinds(v) { const k = new Set(); for (const raw of String(v || '').spl
 
 
 
-async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
+const GE_MAP = { ა: 'a', ბ: 'b', გ: 'g', დ: 'd', ე: 'e', ვ: 'v', ზ: 'z', თ: 't', ი: 'i', კ: 'k', ლ: 'l', მ: 'm', ნ: 'n', ო: 'o', პ: 'p', ჟ: 'zh', რ: 'r', ს: 's', ტ: 't', უ: 'u', ფ: 'p', ქ: 'k', ღ: 'gh', ყ: 'q', შ: 'sh', ჩ: 'ch', ც: 'ts', ძ: 'dz', წ: 'ts', ჭ: 'ch', ხ: 'kh', ჯ: 'j', ჰ: 'h' };
+const geLat = (s) => String(s || '').toLowerCase().replace(/[ა-ჰ]/g, (c) => GE_MAP[c] ?? c);
+const GE_OK = /\b(?:shevaket|sheaket|gavaket|gaaket|gamovtsval|shevtsval|shetsval|gamotsval|gamostsor)\S*|\bisev\s+(?:\S+\s+)?mushaob|\bqvelaper\S*\s+(?:\S+\s+)?(?:rigz|kargad|norm)|\bproblem\S*\s+ar\s+(?:aris|maqv|gvaqv)|\bnormalur/;
+const GE_KINDS = [['brake', /\b(?:mukhruch|tormoz)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:mushaob|ichers|achers|chers)|sust)|\btsnev\S*\s+(?:\S+\s+)?(?:etsem|vardeb|daets)|\bhaer\S*\s+(?:\S+\s+)?(?:ar\s+ivseb|ar\s+igheb)/, /\bkhelis\s+(?:mukhruch|tormoz)/],
+  ['parkbrake', /\bkhelis\s+(?:mukhruch|tormoz)\S*\s+(?:\S+\s+)?(?:ar|ver|gapuch|gaiched)/],
+  ['flat', /\b(?:saburav|borbal|shin)\S*\s+(?:\S+\s+)?(?:gaskd|daeshv|chajd|gaikhvrit|gaichr)|\b(?:gaskd|gaikhvrit)\S*\s+(?:\S+\s+)?(?:saburav|borbal)|\bsaburav\S*\s+(?:\S+\s+)?haer\S*\s+gadis/],
+  ['tyre', /\bsaburav\S*\s+(?:\S+\s+)?(?:gatsvet|bzar|gaibzar|daziand|gaberil)/],
+  ['steer', /\bsache\S*\s+(?:\S+\s+)?(?:mdzim|gaiched|ar\s+trial|ver\s+vatrial|luft|kankal)|\b(?:marjvniv|martskhniv)\s+(?:\S+\s+)?(?:miakv|itsev|mikh)/],
+  ['leak', /\b(?:zet|satsvav|dizel|antifriz|tosol|adblu|siti)\S*\s+(?:\S+\s+)?(?:zhonav|gamodis|ighvr|gaedin|chamodis)|\bgazhonv|\bzhonav\S*\s+(?:\S+\s+)?(?:zet|satsvav|dizel|antifriz)/],
+  ['fire', /\bitsvis\b|\btsetskhl(?!makr)|\bkhandzar(?!satsin)|\bkvaml/, /\b(?:maquch|gamonabolkv|glushitel|vikhlop)/],
+  ['acc', /\bavari(?!ul)|\b(?:davejakh|shemejakh|daejakh|shevejakh|gadabrund|gadavbrund)|\bsagzao\s+(?:\S+\s+)?shemtkhvev/],
+  ['injury', /\b(?:dashav|davshav|travm)/],
+  ['nostart', /\b(?:dzrav|motor|mankan)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:irtveb|ikokeb)|chakr)|\bver\s+(?:davkok|vkok|gavkok)/],
+  ['engine', /\b(?:gadakhurd|khurdeb)|\bdzrav\S*\s+(?:\S+\s+)?(?:simdzlavr|aklebs|khmaur|kakun|kankal)|\b(?:maquch|gamonabolkv)\S*\s+(?:\S+\s+)?kvaml|\bkvaml\S*\s+(?:\S+\s+)?(?:maquch|gamonabolkv)|\bturbin\S*\s+(?:\S+\s+)?(?:gapuch|stvens|khmaur)/],
+  ['mirror', /\bsark\S*\s+(?:\S+\s+)?(?:gatqd|motqd|gaibzar|chamovard|daziand)|\b(?:gatqd|motqd)\S*\s+(?:\S+\s+)?sark/],
+  ['lights', /\b(?:pari|parebi|par[ie]b\S*|natur|shuk|stop|gabarit|povorot)\S*\s+(?:\S+\s+)?(?:ar\s+(?:anateb|mushaob|ints)|daitsv)|\bmokhvevis\s+(?:\S+\s+)?(?:ar\s+mushaob|daitsv)/],
+  ['warnlight', /\bainto\b|\bantia\b|\b(?:shetsdom|oshibk)\S*\s+(?:\S+\s+)?(?:tser|amoagd|gamoakv|ants)/],
+  ['glass', /\bmin\S*\s+(?:\S+\s+)?(?:gaibzar|gatqd|bzar|chamtvr)|\bkv\S*\s+(?:\S+\s+)?mokhvd\S*\s+(?:\S+\s+)?(?:sakare|min)|\bpanjar\S*\s+(?:\S+\s+)?(?:gatqd|gaibzar|chamtvr)/],
+  ['window', /\bpanjar\S*\s+(?:\S+\s+)?(?:ar|ver)\s+(?:itsev|eshveb|ikhureb|igheb|daveshv|avts)/],
+  ['batt', /\b(?:akumulator|akum|batare)\S*\s+(?:\S+\s+)?(?:dajd|datsl|chajd|ar\s+(?:mushaob|tenis))|\b(?:dajd|datsl)\S*\s+(?:\S+\s+)?(?:akumulator|akum|batare)/],
+  ['tacho', /\btakhograp\S*\s+(?:\S+\s+)?(?:ar|ver|gapuch|shetsdom)|\bmdzghol\S*\s+barat\S*\s+(?:\S+\s+)?(?:davkarg|dakarg|damekarg|gapuch|gatqd|ar\s+(?:ikitkh|mushaob))/],
+  ['fuelcard', /\b(?:satsvavis|benzinis|dizelis)\s+barat\S*\s+(?:\S+\s+)?(?:ar|ver|daiblok|gapuch|davkarg)/],
+  ['lost', /\b(?:gasagheb|tekpasport|dokument)\S*\s+(?:\S+\s+)?(?:davkarg|damekarg|dakarg|ver\s+vipov)|\b(?:davkarg|damekarg)\S*\s+(?:\S+\s+)?(?:gasagheb|tekpasport|dokument)/],
+  ['coupling', /\b(?:misabmel|pritsep|polupritsep|sedl|treiler)\S*\s+(?:\S+\s+)?(?:ar|ver)\s+(?:ebmeb|vabam|davabi|ikhsneb|iketeb)/],
+  ['dryfuel', /\b(?:satsvav|dizel|soliar|benzin)\S*\s+(?:\S+\s+)?(?:gamitavd|gatavd|damimtavr|damtavr|gamomel)|\bavz\S*\s+(?:\S+\s+)?tsariel/],
+  ['reefer', /\b(?:matsivar|repi|refi|refrijerator|kholodilnik|agregat|termoking)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:atsieb|mushaob|chairtv)|gapuch|shetsdom)/],
+  ['susp', /\b(?:pnevmo|padushk|resor|amortizator)\S*\s+(?:\S+\s+)?(?:gaskd|gatqd|ushvebs|chajd|daeshv|ar\s+mushaob|zhonav|gapuch)/],
+  ['gear', /\b(?:sichkar|peredach|korobk|gadatsemat)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:ertveb|chairtv|vrtav|gadadis)|gapuch|khmaur|kakun)|\b(?:stseplen|klach|gadabmulob)\S*\s+(?:\S+\s+)?(?:buksa|ar\s+mushaob|gapuch)/],
+  ['climate', /\b(?:gatbob|konditsioner|pechi|pechka|avtonomk|vebasto|webasto|klimat)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:mushaob|atbob|atsieb|chairtv|irtveb)|gapuch)/, /\bsavardzl\S*\s+gatbob/],
+  ['cabkit', /\bsavardzl\S*\s+gatbob\S*\s+(?:\S+\s+)?(?:ar|ver|gapuch)/],
+  ['tarp', /\b(?:tent|brezent|pard)\S*\s+(?:\S+\s+)?(?:gaikh|dakhe|gaichr|daziand|chamovard)/],
+  ['exhaust', /\bmaquch\S*\s+(?:\S+\s+)?(?:chamovard|gaikhvrit|gapuch|khmaur|daziand|motqd|gatqd)/],
+  ['visib', /\b(?:satsmend|dvornik)\S*\s+(?:\S+\s+)?(?:ar|ver|gapuch|gatqd)/],
+  ['seat', /\bghved\S*\s+(?:\S+\s+)?(?:ar|ver|gapuch|gatqd|gaikh)|\bsavardzel\S*\s+(?:\S+\s+)?(?:gatqd|gapuch|ar\s+(?:mushaob|ireguleb))/],
+  ['wheel', /\b(?:chanchik|kanch|gaik)\S*\s+(?:\S+\s+)?(?:moeshv|moshv|chamovard|aklia|gatqd)/],
+  ['stuck', /\b(?:talakh|tovl|qinul|kvish)\S*\s+(?:\S+\s+)?(?:chavrch|chavepal|chaejd|chavjd)|\b(?:mankan|borbl|borbal)\S*\s+(?:\S+\s+)?buksa/, /\bsatsob/],
+  ['numplate', /\b(?:nomer|sanomr)\S*\s+(?:\S+\s+)?(?:chamovard|dakarg|davkarg|motqd|gatqd|moipar)/],
+  ['adas', /\b(?:kamer|radar|asistent|sensor|datchik)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:mushaob|achveneb)|gapuch)/],
+  ['door', /\b(?:kari|karebi|kars|saket|gidrobort|hidrobort)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:iketeb|igheb|vkhsni|vagheb|mushaob|eshveb)|gapuch)/]];
+
+const GE_NEG = /\b(?:ar|ver)\s+(?:aris\s+)?(?:itsv|zhonav|gamod|ighvr|gaskd|daeshv|gaikhvrit|gakhvret|gatqd|gaibzar|daziand|dashav|davejakh|chamovard)\S*/g;
+function geKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n]+/)) { if (!/[ა-ჰᲐ-Ჰ]/.test(raw)) continue; const p = geLat(raw).replace(GE_NEG, ' '); if (!GE_OK.test(p)) for (const [n, rx, ex] of GE_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };
