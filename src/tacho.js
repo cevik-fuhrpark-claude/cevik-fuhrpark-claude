@@ -93,7 +93,7 @@ export async function listDownloads(env, user, envName, q = {}) {
 
 export async function addDownload(env, user, envName, body) {
   if (!isMgr(user)) throw forbidden();
-  const kind = oneOf(body.kind, TACHO_KINDS, 'Art');
+  const kind = oneOf(body.kind, TACHO_KINDS, 'Art', { key: 'kind' });
   const on = str(body.downloaded_on, { key: 'downloaded_on', required: true, max: 10, field: 'Auslesedatum' });
   if (!ISO.test(on) || Number.isNaN(Date.parse(on + 'T00:00:00Z'))) throw bad('validation', 'Auslesedatum im Format JJJJ-MM-TT.', { field_key: 'downloaded_on' });
   if (on > berlinDate()) throw bad('validation', 'Auslesedatum darf nicht in der Zukunft liegen.', { field_key: 'downloaded_on' });

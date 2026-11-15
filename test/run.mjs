@@ -42257,7 +42257,16 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   const m2 = await owner.post(`/api/vehicles/${vlk.id}/maintenance`, { kind: 'UVV', last_done_date: '2026-01-10', interval_months: 'zwölf', evidence: 'Feld 1501' }); eq(m2.data.field_key, 'interval_months', 'Prüftermin: Intervall');
   // Stufe 6: Vorgänge (Meldung und Befehle)
   const k1 = await users.driver.post('/api/cases', { vehicle_id: V1, description: '', request_key: 'k1501-' + Date.now() }); eq(k1.status, 400); eq(k1.data.field_key, 'description', 'Meldung: Beschreibung fehlt');
-  const { withKey } = await import('../src/util.js');
+  const { withKey, oneOf, flag } = await import('../src/util.js');
+  // Stufe 7: Auswahl-/Ja-Nein-Felder (oneOf/flag mit { key }) und Knöpfe in Formularen, die per onclick senden
+  eq(fk(() => oneOf('x', ['a', 'b'], 'Art', { key: 'kind' })), 'kind', 'oneOf mit key');
+  eq(fk(() => oneOf('x', ['a', 'b'], 'Art')), undefined, 'oneOf ohne key unverändert');
+  eq(oneOf('a', ['a', 'b'], 'Art', { key: 'kind' }), 'a', 'oneOf gültig');
+  eq(fk(() => flag('vielleicht', 'Aktiv', false, { key: 'active' })), 'active', 'flag mit key'); eq(flag(undefined, 'Aktiv', true, { key: 'active' }), true, 'flag Vorgabe');
+  const g1 = await owner.post('/api/fines', { ...fb, offense_type: 'raten' }); eq(g1.status, 400); eq(g1.data.field_key, 'offense_type', 'Bußgeld: Verstoß');
+  const g2 = await owner.post(`/api/vehicles/${vlk.id}/tires/events`, { position: 'XX', event_type: 'messung', tread_mm: 8 }); eq(g2.status, 400); eq(g2.data.field_key, 'position', 'Reifen: Position');
+  const g3 = await owner.post('/api/users', { username: 'feld.1501b', display_name: 'Feld', role: 'chef', environment: 'test' }); eq(g3.status, 400); eq(g3.data.field_key, 'role', 'Benutzer: Rolle');
+  const g4 = await users.fleet.post('/api/tacho/downloads', { kind: 'unbekannt', vehicle_id: vlk.id, downloaded_on: '2026-01-01', evidence: 'x' }); eq(g4.status, 400); eq(g4.data.field_key, 'kind', 'Auslesung: Art');
   eq(fk(() => withKey('x_on', () => { throw new HttpError(400, 'validation', 'Datum ungültig'); })), 'x_on', 'withKey ergänzt field_key');
   eq(fk(() => withKey('x_on', () => str('', { key: 'inner', required: true }))), 'inner', 'withKey überschreibt keinen vorhandenen field_key');
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
@@ -42265,12 +42274,13 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims', 'fines', 'stock', 'tires', 'tacho', 'vehicles', 'cases']) {
     const s = readFileSync(new URL(`../src/${m}.js`, import.meta.url), 'utf8');
-    const keys = new Set([...s.matchAll(/\{ key: '(\w+)', (?!group)|field_key: '(\w+)'|withKey\('(\w+)'/g)].map((x) => x[1] || x[2] || x[3])); // nur Prüf-Optionen (nicht request_key, nicht CHECKLIST)
+    const keys = new Set([...s.matchAll(/\{ key: '(\w+)', (?!group)|field_key: '(\w+)'|withKey\('(\w+)'|\{ key: '(\w+)' \}/g)].map((x) => x[1] || x[2] || x[3] || x[4])); // nur Prüf-Optionen (nicht request_key, nicht CHECKLIST)
     ok(keys.size > 0, m + ': keine Feldnamen');
     for (const k of keys) ok(src.includes(`name="${k}"`) || ['password', 'employee_number'].includes(k), `${m}: Feld „${k}“ fehlt in der Oberfläche`);
   }
   // Oberfläche: api() merkt den Feldnamen, die Formular-Sperre markiert nach dem Absenden (nur sichtbare Felder desselben Formulars)
   ok(/code === 'validation' && data && typeof data\.field_key === 'string'\) S\.fieldErr = \{ key: data\.field_key, msg: e\.message, at: Date\.now\(\) \}/.test(src), 'api() merkt field_key');
+  ok(/el\.removeAttribute\('aria-busy'\); if \(el\.form\) markServerField\(el\.form, t0\); \}\)/.test(src), 'Klick-Sperre (onclick in Formular) ruft markServerField');
   ok(/\.finally\(\(\) => \{ form\.cfpBusy = false; form\.removeAttribute\('aria-busy'\); markServerField\(form, t0\); \}\)/.test(src), 'Formular-Sperre ruft markServerField');
   const i = src.indexOf('function markServerField(form, since) {'); const j = src.indexOf('\n}\n', i); ok(i > 0, 'markServerField vorhanden');
   const S = {}; const calls = [];

@@ -300,7 +300,7 @@ async function cardDownloadHint(env, driverId) {
 export async function addDriverDocument(env, user, envName, id, body) {
   if (!isMgr(user)) throw forbidden();
   await loadDriver(env, user, envName, id);
-  const kind = oneOf(body.kind, DOC_KINDS, 'Art');
+  const kind = oneOf(body.kind, DOC_KINDS, 'Art', { key: 'kind' });
   const evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis' });
   const issued = date(body.issued_on, 'Ausgestellt am', { notFuture: true });
   const valid = date(body.valid_until, 'Gültig bis');
@@ -458,7 +458,7 @@ export async function addLicenseCheck(env, user, envName, id, body) {
   if (!isMgr(user)) throw forbidden();
   await loadDriver(env, user, envName, id);
   const on = date(body.checked_on, 'Kontrolldatum', { required: true, notFuture: true });
-  const result = oneOf(body.result, CHECK_RESULTS, 'Ergebnis');
+  const result = oneOf(body.result, CHECK_RESULTS, 'Ergebnis', { key: 'result' });
   const note = str(body.note, { key: 'note', max: 500, field: 'Bemerkung' });
   if (result !== 'in_ordnung' && !note) throw bad('validation', 'Bei Mängeln oder nicht vorgelegtem Führerschein bitte Vermerk angeben.');
   const cid = uuid();

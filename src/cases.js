@@ -1130,7 +1130,7 @@ export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body
   if (open) throw conflict('order_exists', `Für diese Prüfung gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
   const site = str(body.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
   if (!rule.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
-  const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität');
+  const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität', { key: 'priority' });
   const note = str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' });
   // Rückruf: Referenz laut Schreiben in den Auftrag, damit die Werkstatt die richtige Aktion durchführt
   const description = rule.kind === 'Rückruf' ? `Herstellerrückruf durchführen (Referenz: ${String(rule.evidence || '')})${note ? ' – ' + note : ''}` : `Prüfung/Wartung ${rule.kind} durchführen${note ? ' – ' + note : ''}`;
@@ -1201,7 +1201,7 @@ export async function orderWinterTires(env, ctx, user, envName, vehicleId, body 
   if (w.status === 'erfuellt') throw conflict('winter_ok', 'Winterreifen laut Erfassung bereits erfüllt – kein Auftrag nötig.');
   const site = str(body.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
   if (!v.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
-  const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität');
+  const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität', { key: 'priority' });
   const note = str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' });
   // Termin vor dem Anlegen prüfen (sonst bliebe bei ungültigem Termin eine nicht freigegebene Meldung zurück)
   const planned = body.planned_date ? planDate(body.planned_date) : null;
@@ -1267,8 +1267,8 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
     const vehicleId = str(body.vehicle_id, { key: 'vehicle_id', required: true, max: 40, field: 'Fahrzeug' });
     const description = str(body.description, { key: 'description', required: true, max: 4000, field: 'Fehlerbeschreibung' });
     if (description.length < 5) throw bad('validation', 'Fehlerbeschreibung ist zu kurz.');
-    const reportedPriority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Dringlichkeit');
-    const driveability = oneOf(body.driveability || 'unbekannt', DRIVEABILITY, 'Fahrbereitschaft');
+    const reportedPriority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Dringlichkeit', { key: 'priority' });
+    const driveability = oneOf(body.driveability || 'unbekannt', DRIVEABILITY, 'Fahrbereitschaft', { key: 'driveability' });
     const suggested = body.workshop_site ? str(body.workshop_site, { key: 'workshop_site', max: 20, field: 'Werkstatt' }) : null;
     const requestKey = str(body.request_key, { required: true, max: 64, field: 'request_key' });
     const location = str(body.location_note, { max: 300, field: 'Ort' });

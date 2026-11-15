@@ -189,7 +189,7 @@ export async function tireOverview(env, user, envName, vehicleId) {
 }
 
 export async function addTireEvent(env, user, envName, vehicleId, body) {
-  const type = oneOf(body.event_type, TIRE_EVENTS, 'Art');
+  const type = oneOf(body.event_type, TIRE_EVENTS, 'Art', { key: 'event_type' });
   if (!(type === 'messung' || type === 'sichtpruefung' ? canMeasure(user) : canWrite(user))) throw forbidden();
   if (user.role === 'driver') {
     const a = await env.DB.prepare('SELECT 1 FROM driver_vehicles WHERE user_id=? AND vehicle_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(user.id, vehicleId, nowIso()).first();
@@ -198,7 +198,7 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const v = await env.DB.prepare('SELECT id, kind, active FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   if (!v.active) throw bad('validation', 'Fahrzeug ist außer Betrieb.'); // wie Kontrolle/Meldung (17.10.2026)
-  const position = oneOf(body.position, POSITIONS, 'Position');
+  const position = oneOf(body.position, POSITIONS, 'Position', { key: 'position' });
   // Sammel-Erfassung (z. B. Umrüstung auf Winterreifen): gleiche Angaben für weitere Positionen, atomar in einem Batch
   // `positions` als Text o. Ä. wurde still ignoriert (18.10.2026: nur die erste Position erfasst) – nur Liste oder nichts
   if (body.positions != null && !Array.isArray(body.positions)) throw bad('tire_positions_list', 'Weitere Positionen bitte als Liste angeben.');
@@ -223,7 +223,7 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
     const c = await env.DB.prepare('SELECT id FROM cases WHERE id=? AND environment=? AND vehicle_id=?').bind(caseId, envName, vehicleId).first();
     if (!c) throw bad('validation', 'Vorgang passt nicht zu diesem Fahrzeug.');
   }
-  const winter = body.winter_mark === undefined || body.winter_mark === null || body.winter_mark === '' ? null : oneOf(body.winter_mark, WINTER_MARKS, 'Winterkennzeichnung');
+  const winter = body.winter_mark === undefined || body.winter_mark === null || body.winter_mark === '' ? null : oneOf(body.winter_mark, WINTER_MARKS, 'Winterkennzeichnung', { key: 'winter_mark' });
   const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : kmNum(body.odometer_km);
   const now = nowIso();
   const brand = str(body.brand, { key: 'brand', max: 60, field: 'Marke' }); const note = str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' });

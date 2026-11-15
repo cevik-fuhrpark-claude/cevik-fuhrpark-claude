@@ -219,17 +219,20 @@ function strBase(v, { max = 2000, required = false, field = 'Feld' } = {}) {
 
 // Ja/Nein-Felder: nur true/false (bzw. 1/0, "true"/"false"); Text wie "false"/"nein" galt vorher als „ja“ (17.10.2026:
 // Fahrer still reaktiviert, interner Hinweis für Fahrer sichtbar, Restarbeit sicherheitsrelevant). Fehlt der Wert → def.
-export function flag(v, field, def = false) {
+function flagBase(v, field, def = false) {
   if (v === undefined || v === null) return def;
   if (v === true || v === 1 || v === '1' || v === 'true') return true;
   if (v === false || v === 0 || v === '0' || v === 'false' || v === '') return false;
   throw bad('validation', `${field}: ungültiger Wert.`);
 }
 
-export function oneOf(v, allowed, field) {
+function oneOfBase(v, allowed, field) {
   if (!allowed.includes(v)) throw bad('validation', `${field}: ungültiger Wert.`);
   return v;
 }
+// Backlog 1501 Stufe 7: Auswahl- und Ja/Nein-Felder nehmen optional als 4. Argument `{ key: '<Feldname>' }` → `field_key` (wie `str`/`num`)
+export const flag = keyed(flagBase, 3);
+export const oneOf = keyed(oneOfBase, 3);
 
 // Zahlen aus Formularen: Dezimalkomma; deutsches Format mit Tausenderpunkt und Komma („1.234,50“) wird verstanden.
 // Bei ganzzahligen Feldern (grouped: km, km-Kontingent) gilt „120.000“ als 120000. Sonst ist „2.000“ ohne Komma mehrdeutig (2 oder 2000?) und wird abgewiesen, statt still als 2 gespeichert zu werden.

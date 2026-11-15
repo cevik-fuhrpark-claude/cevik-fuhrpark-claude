@@ -47,7 +47,7 @@ function readBody(body, existing = {}, user = null) {
     claim_no: str(fresh('claim_no'), { key: 'claim_no', max: 60, field: 'Schadennummer' }),
     reported_on: withKey('reported_on', () => day(pick('reported_on'), 'Gemeldet am', true)),
     // leerer/fehlender Status behält den gespeicherten (18.10.2026: setzte einen regulierten Fall still auf „gemeldet“ zurück)
-    status: oneOf(body.status !== undefined && body.status !== null && body.status !== '' ? body.status : (existing.status || 'gemeldet'), CLAIM_STATUS, 'Status'),
+    status: oneOf(body.status !== undefined && body.status !== null && body.status !== '' ? body.status : (existing.status || 'gemeldet'), CLAIM_STATUS, 'Status', { key: 'status' }),
     deductible_net: num(pick('deductible_net'), { key: 'deductible_net', min: 0, max: 1000000, field: 'Selbstbeteiligung', nullable: true, net: true, cents: true, decimalComma: dc, decimalPoint: dp }),
     reimbursed_net: num(pick('reimbursed_net'), { key: 'reimbursed_net', min: 0, max: 10000000, field: 'Erstattung', nullable: true, net: true, cents: true, decimalComma: dc, decimalPoint: dp }),
     reimbursed_on: withKey('reimbursed_on', () => day(pick('reimbursed_on'), 'Erstattet am')),

@@ -1355,7 +1355,7 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   if (typeof body.zgm_kg === 'string' && massTonnes(body.zgm_kg)) throw bad('validation', `${field}: „${body.zgm_kg.replace(/\s+/g, ' ').trim().slice(0, 40)}“ ist in Tonnen angegeben – bitte die Masse in kg laut Fahrzeugschein (F.2) eingeben (die App rechnet nicht um).`);
   const kg = body.zgm_kg === undefined || body.zgm_kg === null || body.zgm_kg === '' ? null : Math.round(num(body.zgm_kg, { key: 'zgm_kg', min: 500, max: 60000, field, grouped: true, unit: 'kg' }));
   const allowed = v.kind === 'anhaenger' ? ZGM_CLASSES_TRAILER : ZGM_CLASSES_LKW;
-  let cls = body.zgm_class ? oneOf(body.zgm_class, allowed, 'Gewichtsklasse') : null;
+  let cls = body.zgm_class ? oneOf(body.zgm_class, allowed, 'Gewichtsklasse', { key: 'zgm_class' }) : null;
   if (kg !== null) {
     const fromKg = zgmClassFromKg(v.kind, kg);
     if (cls && cls !== fromKg) throw bad('validation', 'Gewichtsklasse passt nicht zur angegebenen Gesamtmasse.');
@@ -1408,7 +1408,7 @@ export async function addMaintenanceResult(env, user, eventId, body, { ctx = nul
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
   const e = await env.DB.prepare('SELECT id, rule_id, vehicle_id, kind, done_date, result FROM maintenance_events WHERE id=?').bind(eventId).first();
   if (!e) throw notFound('Durchführung nicht gefunden.');
-  const result = oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis');
+  const result = oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis', { key: 'result' });
   const evidence = str(body.evidence, { key: 'evidence', required: true, max: 300, field: 'Nachweis (z. B. Prüfbericht-Nr.)' });
   if (e.result) throw conflict('result_exists', 'Für diese Durchführung ist bereits ein Prüfergebnis eingetragen – es wird nicht überschrieben.');
   const upd = await env.DB.prepare('UPDATE maintenance_events SET result=? WHERE id=? AND result IS NULL').bind(result, e.id).run();
@@ -1473,7 +1473,7 @@ export async function completeMaintenance(env, user, ruleId, body, { ctx = null,
   // Backlog 636 (Blickwinkel „Wartung nach km“): km-Fälligkeit laut Nachweis ohne km-Intervall (z. B. Serviceanzeige) fiel nach „erledigt“ ohne neue
   // Fälligkeit still weg (Regel „ohne Termin“) – wie 576 beim Datum: nächste km-Fälligkeit oder nächsten Termin laut Nachweis verlangen
   if (!husp && !oneTime && !next && !r.next_due_date && !r.interval_km && r.due_km !== null && r.due_km !== undefined && docKm === null) throw bad('validation', 'Dieser Prüftermin hat kein km-Intervall – bitte die nächste km-Fälligkeit oder den nächsten Termin laut Nachweis angeben, sonst entfällt die Erinnerung.');
-  const result = body.result ? oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis') : null;
+  const result = body.result ? oneOf(body.result, INSPECTION_RESULTS, 'Prüfergebnis', { key: 'result' }) : null;
   // Atomar (17.10.2026):
   // - Regel (letzte Durchführung, Fälligkeit) nur ändern, wenn diese Durchführung nicht älter ist als die gespeicherte – ein nachgetragener
   //   alter Bericht (oder die langsamere von zwei gleichzeitigen Erfassungen) verschob sonst die Fälligkeit zurück. Die Durchführung selbst

@@ -272,7 +272,7 @@ export async function addMovement(env, user, envName, id, body) {
   // deaktivierte Artikel: keine Buchungen (Bestand wäre unsichtbar, wie Umlagerung/Entnahme im Vorgang – 17.10.2026)
   // Ausnahme (23.10.2026, Teilagent „Inventur zum Jahreswechsel“): Restbestand eines deaktivierten Artikels per Korrektur genau auf 0 ausbuchen –
   // er zählte sonst im Stichtagsbestand weiter, ließ sich aber weder zählen noch korrigieren
-  const type = oneOf(body.type, ['zugang', 'entnahme', 'korrektur'], 'Buchungsart');
+  const type = oneOf(body.type, ['zugang', 'entnahme', 'korrektur'], 'Buchungsart', { key: 'type' });
   // Mengen auf 3 Nachkommastellen wie Anzeige/Umlagerung/Inventur (0,9996 ergab sonst Anzeige 1 und später unbemerkt negativen Bestand)
   let qty = r3(qtyNum(body.qty, it.unit, { key: 'qty', min: -1e6, max: 1e6, field: 'Menge', decimalComma: commaDec(user), decimalPoint: pointDec(user) }));
   const rkey = requestKey(body);

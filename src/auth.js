@@ -568,8 +568,8 @@ export async function revokeOtherSessions(env, user) {
 const FLEET_MAY_CREATE = ['driver', 'workshop', 'viewer'];
 
 export async function createUser(env, actor, body) {
-  const role = oneOf(body.role, ROLES, 'Rolle');
-  let environment = oneOf(body.environment || actor.environment, ENVS, 'Umgebung');
+  const role = oneOf(body.role, ROLES, 'Rolle', { key: 'role' });
+  let environment = oneOf(body.environment || actor.environment, ENVS, 'Umgebung', { key: 'environment' });
   if (actor.role === 'fleet') {
     if (!FLEET_MAY_CREATE.includes(role)) throw forbidden('Fuhrparkleitung darf nur Fahrer, Werkstatt und Leser anlegen.');
     environment = actor.environment;
@@ -586,7 +586,7 @@ export async function createUser(env, actor, body) {
     if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
   }
   // Backlog 381: Sprache der Person optional beim Anlegen (Einladungsseite und App starten darin; leer = Standard Deutsch bzw. Handysprache)
-  const language = body.language === undefined || body.language === null || body.language === '' ? null : oneOf(body.language, ['de', 'uk', 'en'], 'Sprache');
+  const language = body.language === undefined || body.language === null || body.language === '' ? null : oneOf(body.language, ['de', 'uk', 'en'], 'Sprache', { key: 'language' });
   const exists = await env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first();
   if (exists) throw new HttpError(409, 'username_taken', 'Benutzername ist bereits vergeben.');
   const id = uuid();
@@ -612,8 +612,8 @@ export async function updateUser(env, actor, userId, body) {
   if (target.id === actor.id && (activeIn === false || (body.role && body.role !== actor.role))) {
     throw bad('validation', 'Eigene Rolle/Aktivierung kann nicht selbst geändert werden.');
   }
-  const role = body.role ? oneOf(body.role, ROLES, 'Rolle') : target.role;
-  const environment = body.environment ? oneOf(body.environment, ENVS, 'Umgebung') : target.environment;
+  const role = body.role ? oneOf(body.role, ROLES, 'Rolle', { key: 'role' }) : target.role;
+  const environment = body.environment ? oneOf(body.environment, ENVS, 'Umgebung', { key: 'environment' }) : target.environment;
   const active = activeIn === undefined ? target.active : (activeIn ? 1 : 0);
   const display = body.display_name !== undefined && body.display_name !== null && body.display_name !== '' ? str(body.display_name, { key: 'display_name', required: true, max: 120, field: 'Name' }) : target.display_name; // nur Leerzeichen/[] → 400 statt NOT-NULL-Fehler
   const site = role === 'workshop' ? (body.workshop_site !== undefined && body.workshop_site !== null ? str(body.workshop_site, { key: 'workshop_site', max: 20, field: 'Werkstatt' }) : target.workshop_site) : null;

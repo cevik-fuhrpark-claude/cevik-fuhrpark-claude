@@ -969,10 +969,11 @@ document.addEventListener('click', (e) => {
   if (typeof h !== 'function' || h.cfpGuard) return;
   const g = function (ev) {
     if (el.cfpBusy) { ev.preventDefault(); return false; }
-    const r = h.call(this, ev);
+    const t0 = Date.now(); const r = h.call(this, ev);
     if (r && typeof r.then === 'function') {
       el.cfpBusy = true; el.setAttribute('aria-busy', 'true');
-      Promise.resolve(r).catch((err) => { if (!onUnhandledApiError(err)) throw err; }).finally(() => { el.cfpBusy = false; el.removeAttribute('aria-busy'); });
+      // Backlog 1501 Stufe 7: Knopf (type=button) in einem Formular, der per onclick sendet → Server-Prüffehler ebenfalls am Feld markieren
+      Promise.resolve(r).catch((err) => { if (!onUnhandledApiError(err)) throw err; }).finally(() => { el.cfpBusy = false; el.removeAttribute('aria-busy'); if (el.form) markServerField(el.form, t0); });
     }
     return r;
   };

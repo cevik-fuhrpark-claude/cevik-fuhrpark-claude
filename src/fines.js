@@ -282,8 +282,8 @@ function parseBan(v) {
 
 export async function createFine(env, user, envName, body) {
   if (!isMgr(user)) throw forbidden();
-  const kind = oneOf(body.kind, FINE_KINDS, 'Art');
-  const offense = oneOf(body.offense_type, OFFENSES, 'Verstoß');
+  const kind = oneOf(body.kind, FINE_KINDS, 'Art', { key: 'kind' });
+  const offense = oneOf(body.offense_type, OFFENSES, 'Verstoß', { key: 'offense_type' });
   const offenseAt = withKey('offense_at', () => parseOffenseAt(body.offense_at));
   const plate = str(body.plate_in_letter, { key: 'plate_in_letter', required: true, max: 20, field: 'Kennzeichen' }).toUpperCase();
   const due = str(body.response_due, { key: 'response_due', max: 10, field: 'Antwortfrist' });
