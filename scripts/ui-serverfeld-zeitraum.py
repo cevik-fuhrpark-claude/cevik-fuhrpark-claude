@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test Backlog 1501 Stufe 9 (WCAG 3.3.1): Auswertungen per GET – „Von“ nach „Bis“ markiert das Feld „Bis“ (aria-invalid,
 # Hinweis am Feld, Fokus), die abgelehnte Eingabe bleibt im Feld stehen: Auslesungen-Verlauf, Nachweise der Fahrer, Teile-Verwendung, Lagerjournal,
-# Nachweisliste „Durchgeführte Prüfungen“ (Beschriftungen zugeordnet), Versicherungsfälle (Stufe 10). DE bei 390/820/1366 px, UK/EN bei 390 px.
+# Nachweisliste „Durchgeführte Prüfungen“ (Beschriftungen zugeordnet), Versicherungsfälle (Stufe 10), Kosten/Kennzahlen (Stufe 11). DE bei 390/820/1366 px, UK/EN bei 390 px.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). CFP_SHOTS=<ordner> speichert Bildschirmfotos.
 import os
 from playwright.sync_api import sync_playwright
@@ -66,6 +66,28 @@ with sync_playwright() as p:
         check(len(reqs) == n0, f'Versicherungsfälle: keine weiteren Anfragen nach der Markierung ({len(reqs) - n0})')
         check(q.eval_on_selector('#clto', 'e => e.getAttribute("aria-invalid")') == 'true', 'Versicherungsfälle: Markierung bleibt bestehen')
         if SHOTS: q.screenshot(path=f'{SHOTS}/serverfeld-zeitraum-claims-{lang}-{w}.png')
+        # Stufe 11: Kosten je Fahrzeug / Kennzahlen (Monatsfelder) – „Bis“ vor „Von“ → nur „Bis“ verworfen und markiert; „Von“ in der Zukunft
+        # (Bis danach Standard) → beide zurück, keine Endlosschleife; Beschriftungen zugeordnet
+        for name, hsh, form, fr, to in [('Kosten', '#/costs', '#cr', '#crfrom', '#crto'), ('Kennzahlen', '#/kpi', '#kf2', '#kpfrom', '#kpto')]:
+            q.goto(B + '/' + hsh); q.wait_for_selector(form)
+            check(q.evaluate(f"() => ['{fr[1:]}', '{to[1:]}'].every((id) => document.getElementById(id).labels.length === 1)"), f'{name}: Beschriftungen zugeordnet')
+            q.fill(fr, '2026-05'); q.fill(to, '2026-04')
+            q.click(form + ' button:not([type=button])')
+            q.wait_for_selector(to + '[aria-invalid=true]', timeout=8000)
+            st = q.evaluate(STATE, to)
+            check(st['val'] == '2026-04' and q.input_value(fr) == '2026-05', f'{name}: Von bleibt, abgelehntes Bis steht im Feld ({st["val"]})')
+            check(bool(st['txt']) and (MSG[lang] is None or MSG[lang] in st['txt']), f'{name}: Hinweis am Feld „Bis“: {st["txt"]}')
+            check(st['focus'], f'{name}: Fokus im Feld „Bis“')
+            if SHOTS: q.screenshot(path=f'{SHOTS}/serverfeld-zeitraum-{hsh.strip("#/")}-{lang}-{w}.png')
+            q.fill(to, '2026-06')
+            check(q.eval_on_selector(to, 'e => !e.hasAttribute("aria-invalid")'), f'{name}: Eingabe hebt die Markierung auf')
+            rq = []; hk = lambda r: rq.append(r.url) if '/api/reports/' in r.url else None; q.on('request', hk)
+            q.fill(fr, '2099-01'); q.fill(to, '2026-04'); q.click(form + ' button:not([type=button])')
+            q.wait_for_timeout(1500); q.wait_for_selector(form)
+            n0 = len(rq); q.wait_for_timeout(1000)
+            check(len(rq) == n0 and 3 <= len(rq) <= 4, f'{name}: Von in der Zukunft → beide zurück, ohne Endlosschleife ({len(rq)} Anfragen)')
+            check(q.input_value(fr) == '2099-01' and q.eval_on_selector(to, 'e => e.getAttribute("aria-invalid")') == 'true', f'{name}: abgelehntes Von bleibt sichtbar, Bis markiert')
+            q.remove_listener('request', hk)
         check(not errs, 'keine Skriptfehler: ' + ' | '.join(errs))
         c.close()
     br.close()

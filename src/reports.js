@@ -36,12 +36,15 @@ function monthRange(q) {
   const to = q.to || now;
   // ohne „Von“: 12 Monate vor „Bis“, frühestens 2000-01 (18.10.2026: „Bis 2000-06“ allein → 400)
   const from = q.from || (MONTH.test(to) ? [`${Number(to.slice(0, 4)) - 1}-${to.slice(5, 7)}`, '2000-01'].sort()[1] : to);
-  if (!MONTH.test(from) || !MONTH.test(to)) throw bad('validation', 'Zeitraum im Format JJJJ-MM angeben.');
-  // Jahr begrenzen (9999-12 ergab beim Monatsende „10000-01-01“ → 500 im Kennzahlenbericht, 17.10.2026)
-  if (from < '2000-01' || to > '2100-12') throw bad('validation', 'Zeitraum im Format JJJJ-MM angeben.');
-  if (from > to) throw bad('validation', '„Von“ liegt nach „Bis“.');
+  // Backlog 1501 Stufe 11: field_key nennt das beanstandete Feld (Kosten je Fahrzeug, Kennzahlen Instandhaltung)
+  for (const [k, v] of [['from', from], ['to', to]]) {
+    if (!MONTH.test(v)) throw bad('validation', 'Zeitraum im Format JJJJ-MM angeben.', { field_key: k });
+    // Jahr begrenzen (9999-12 ergab beim Monatsende „10000-01-01“ → 500 im Kennzahlenbericht, 17.10.2026)
+    if (v < '2000-01' || v > '2100-12') throw bad('validation', 'Zeitraum im Format JJJJ-MM angeben.', { field_key: k });
+  }
+  if (from > to) throw bad('validation', '„Von“ liegt nach „Bis“.', { field_key: 'to' });
   const months = (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 + Number(to.slice(5, 7)) - Number(from.slice(5, 7)) + 1;
-  if (months > 36) throw bad('validation', 'Maximal 36 Monate je Abfrage.');
+  if (months > 36) throw bad('validation', 'Maximal 36 Monate je Abfrage.', { field_key: 'from' });
   return { from, to };
 }
 

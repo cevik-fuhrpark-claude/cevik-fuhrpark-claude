@@ -17,6 +17,16 @@ function dueWeekendWatch() { for (const el of $$('input[name=response_due]')) { 
 
 const impMore = (total, shown) => (total > shown ? `<p class="small" role="note" data-impmore>${esc(t('imp_first_n').replace('{n}', fmtNum(shown)).replace('{m}', fmtNum(total)))}</p>` : '');
 
+
+
+
+function periodReset(from, to, since) {
+  const fe = S.fieldErr && S.fieldErr.at >= since ? S.fieldErr.key : null;
+  if (fe === 'from' && from) return [null, to];
+  if (fe === 'to' && to) return [from, null];
+  return [null, null];
+}
+
 function markPick(boxes, msg) {
   const b = boxes.find((x) => x.offsetParent !== null) || boxes[0]; if (!b) return;
   const g = (b.closest('label') || b).parentElement; if (!g) return;
@@ -434,9 +444,11 @@ async function viewCosts() {
   const to = S.costTo || bYm(); const from = S.costFrom || bYm(11); const site = vsDef('costSite') || '';
   const siteQ = site ? `&site=${encodeURIComponent(site)}` : '';
   let rep;
+  const t0 = Date.now();
   try { rep = await api('GET', `/api/reports/costs?from=${from}&to=${to}${siteQ}`); } catch (err) {
 
-    if (S.costFrom || S.costTo) { S.costFrom = null; S.costTo = null; toast(err.message, true); return viewCosts(); }
+
+    if (S.costFrom || S.costTo) { const kept = { from: S.costFrom, to: S.costTo }; [S.costFrom, S.costTo] = periodReset(S.costFrom, S.costTo, t0); toast(err.message, true); await viewCosts(); markGetField($('#cr'), t0, kept); return; }
     if (err.status === 403 || err.status === 404) throw err;
     if (!onPage('#/costs')) return;   render(`<h1>${esc(t('costs_report'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const byV = new Map();
@@ -453,7 +465,7 @@ async function viewCosts() {
   const costQuick = [['prevm', bYm(1), bYm(1)], ['year', `${cy}-01`, bYm()], ['prev', `${Number(cy) - 1}-01`, `${Number(cy) - 1}-12`], ['12m', bYm(11), bYm()]];
 
   let html = `<h1>${esc(t('costs_report'))}</h1>${printHead([`${t('period')}: ${fmtMonth(from)} – ${fmtMonth(to)}`, site ? `${t('site')}: ${site === 'ohne' ? t('cs_nosite') : site}` : ''])}${helpLink('costs')}<form id="cr" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
-    <div><label>${esc(t('from'))}</label><input type="month" name="from" value="${esc(from)}" required></div><div><label>${esc(t('to'))}</label><input type="month" name="to" value="${esc(to)}" required></div>
+    <div><label for="crfrom">${esc(t('from'))}</label><input type="month" id="crfrom" name="from" value="${esc(from)}" required></div><div><label for="crto">${esc(t('to'))}</label><input type="month" id="crto" name="to" value="${esc(to)}" required></div>
     ${(rep.site_options || []).length > 1 || site ? `<div>${siteSelect('crsite', 'site', rep.site_options, site)}</div>` : ''}
     <div class="noprint" id="crq" style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap">${costQuick.map(([k, f, tt]) => `<button type="button" class="btn ${f === from && tt === to ? '' : 'secondary '}small" data-crq="${k}" aria-pressed="${f === from && tt === to}" style="white-space:nowrap">${esc(t('crq_' + k).replace('{y}', f.slice(0, 4)).replace('{m}', fmtMonth(f)))}</button>`).join('')}</div>
     <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn" id="csv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="csvi" title="${esc(t('cost_items_csv_hint'))}">${esc(t('cost_items_csv'))}</button><button type="button" class="btn secondary" id="csvv" title="${esc(t('cost_vehicles_csv_hint'))}">${esc(t('cost_vehicles_csv'))}</button><button type="button" class="btn secondary" id="costprt">${esc(t('print'))}</button></div></form>
@@ -1237,11 +1249,12 @@ const FINE_FILES_MAX = 20;
 async function viewKpi() {
   const to = S.kpiTo || bYm(); const from = S.kpiFrom || bYm(2);
   let r;
-  try { r = await api('GET', `/api/reports/kpi?from=${from}&to=${to}${S.kpiSite ? '&site=' + encodeURIComponent(S.kpiSite) : ''}${vsDef('kpiVsite') ? '&vsite=' + encodeURIComponent(vsDef('kpiVsite')) : ''}`); } catch (err) { if (err.status === 403 || err.status === 404) throw err; if (S.kpiFrom || S.kpiTo) { S.kpiFrom = null; S.kpiTo = null; toast(err.message, true); return viewKpi(); } render(`<h1>${esc(t('kpi'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
+  const t0 = Date.now();
+  try { r = await api('GET', `/api/reports/kpi?from=${from}&to=${to}${S.kpiSite ? '&site=' + encodeURIComponent(S.kpiSite) : ''}${vsDef('kpiVsite') ? '&vsite=' + encodeURIComponent(vsDef('kpiVsite')) : ''}`); } catch (err) { if (err.status === 403 || err.status === 404) throw err; if (S.kpiFrom || S.kpiTo) { const kept = { from: S.kpiFrom, to: S.kpiTo }; [S.kpiFrom, S.kpiTo] = periodReset(S.kpiFrom, S.kpiTo, t0); toast(err.message, true); await viewKpi(); markGetField($('#kf2'), t0, kept); return;   } render(`<h1>${esc(t('kpi'))}</h1><div class="panel alert">${esc(err.message)}</div>`, 'more'); return; }
   const st = (x) => (x.n ? `${dur(x.median_h)} <span class="small muted">(P90 ${dur(x.p90_h)}, n=${x.n})</span>` : '–');
   let html = `<h1>${esc(t('kpi'))}</h1>${printHead([`${t('period')}: ${fmtMonth(from)} – ${fmtMonth(to)}`, r.site ? `${t('workshop')}: ${r.site === 'ohne' ? t('kpi_no_site') : wsName(r.site)}` : '', r.vehicle_site ? `${t('kpi_vsite')}: ${r.vehicle_site === 'ohne' ? t('cs_nosite') : r.vehicle_site}` : ''])}${helpLink('kpi')}<form id="kf2" class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
-    <div><label>${esc(t('from'))}</label><input type="month" name="from" value="${esc(from)}" required></div><div><label>${esc(t('to'))}</label><input type="month" name="to" value="${esc(to)}" required></div>
-    ${r.sites.length > 1 || r.site ? `<div><label>${esc(t('workshop'))}</label><select name="site"><option value="">${esc(t('filter_all'))}</option>${[...new Set([...r.sites, ...(r.site ? [r.site] : [])])].map((x) => `<option value="${esc(x)}"${x === r.site ? ' selected' : ''}>${esc(x === 'ohne' ? t('kpi_no_site') : wsName(x))}</option>`).join('')}</select></div>` : ''}
+    <div><label for="kpfrom">${esc(t('from'))}</label><input type="month" id="kpfrom" name="from" value="${esc(from)}" required></div><div><label for="kpto">${esc(t('to'))}</label><input type="month" id="kpto" name="to" value="${esc(to)}" required></div>
+    ${r.sites.length > 1 || r.site ? `<div><label for="kpsite">${esc(t('workshop'))}</label><select id="kpsite" name="site"><option value="">${esc(t('filter_all'))}</option>${[...new Set([...r.sites, ...(r.site ? [r.site] : [])])].map((x) => `<option value="${esc(x)}"${x === r.site ? ' selected' : ''}>${esc(x === 'ohne' ? t('kpi_no_site') : wsName(x))}</option>`).join('')}</select></div>` : ''}
     ${(r.vehicle_sites || []).length > 1 || r.vehicle_site ? `<div>${siteSelect('kvsite', 'vsite', r.vehicle_sites, r.vehicle_site, t('kpi_vsite'), t('filter_all'))}</div>` : ''}
     <div class="actions" style="margin:0"><button class="btn secondary">${esc(t('show'))}</button><button type="button" class="btn secondary" id="kpiprt">${esc(t('print'))}</button></div></form>${r.generated_at ? `<p class="small muted">${esc(t('kpi_status_basis').replace('{at}', fmtDT(r.generated_at)))}</p>` : ''}${r.site ? `<p class="small muted">${esc(t('kpi_site_hint'))}</p>` : ''}${r.vehicle_site ? `<p class="small muted">${esc(t('kpi_vsite_hint'))}</p>` : ''}${r.by_priority.length ? `<div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="kcsvv">${esc(t('kpi_csv_veh'))}</button><button type="button" class="btn secondary" id="kcsvp">${esc(t('kpi_csv_prio'))}</button></div>` : ''}`;
   html += r.by_priority.length ? r.by_priority.map((p) => `<section class="panel ${p.priority === 'kritisch' ? 'alert' : ''}"><h3>${esc(p.priority === 'alle' ? t('filter_all') : t('prio_' + p.priority))}</h3><dl class="kv">

@@ -42292,10 +42292,19 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   const cl2 = await owner.get('/api/claims?filter=alle&from=2026-02-30'); eq(cl2.data.field_key, 'from', 'Versicherungsfälle: Von ungültig');
   const cl3 = await owner.get('/api/claims?filter=alle&basis=schaden&to=2026-13-01'); eq(cl3.data.field_key, 'to', 'Versicherungsfälle: Bis ungültig (Schadentag)');
   const cl4 = await owner.get('/api/claims?filter=alle&insurer=' + 'x'.repeat(121)); eq(cl4.status, 400); eq(cl4.data.field_key, 'insurer', 'Versicherungsfälle: Versicherer zu lang');
+  // Stufe 11: Monatszeitraum Kosten je Fahrzeug / Kennzahlen Instandhaltung
+  for (const u of ['/api/reports/costs', '/api/reports/kpi']) {
+    const a = await owner.get(u + '?from=2026-05&to=2026-04'); eq(a.status, 400); eq(a.data.field_key, 'to', u + ': Von nach Bis');
+    const b = await owner.get(u + '?from=2026-13&to=2026-12'); eq(b.status, 400); eq(b.data.field_key, 'from', u + ': Von ungültig');
+    const c = await owner.get(u + '?from=2026-01&to=2101-01'); eq(c.status, 400); eq(c.data.field_key, 'to', u + ': Bis außerhalb des Bereichs');
+    const d = await owner.get(u + '?from=2022-01&to=2026-01'); eq(d.status, 400); eq(d.data.field_key, 'from', u + ': mehr als 36 Monate');
+    const e = await owner.get(u + '?from=1999-12&to=2000-06'); eq(e.status, 400); eq(e.data.field_key, 'from', u + ': Von vor 2000');
+    eq((await owner.get(u + '?from=2026-01&to=2026-03')).status, 200, u + ': gültiger Zeitraum');
+  }
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims', 'fines', 'stock', 'tires', 'tacho', 'vehicles', 'cases', 'vnotes', 'rates', 'partsusage', 'maintenance']) {
+  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims', 'fines', 'stock', 'tires', 'tacho', 'vehicles', 'cases', 'vnotes', 'rates', 'partsusage', 'maintenance', 'reports']) {
     const s = readFileSync(new URL(`../src/${m}.js`, import.meta.url), 'utf8');
     const keys = new Set([...s.matchAll(/\{ key: '(\w+)', (?!group)|field_key: '(\w+)'|withKey\('(\w+)'|\{ key: '(\w+)' \}/g)].map((x) => x[1] || x[2] || x[3] || x[4])); // nur Prüf-Optionen (nicht request_key, nicht CHECKLIST)
     ok(keys.size > 0, m + ': keine Feldnamen');
@@ -42337,6 +42346,19 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
     ok(v.includes('markGetField(box && { isConnected: box.isConnected, elements: { namedItem: (k) => box.querySelector(`input[name="${k}"]`) } }, t0, kept)') && v.includes('id="clfrom" name="from"') && v.includes('id="clto" name="to"'), 'Versicherungsfälle: Zeitraum mit Feldnamen, Feld markiert');
     ok(!v.includes('<form class="actions noprint"') && v.includes('setTimeout(ok, 0)'), 'Versicherungsfälle: Filterleiste ohne <form> (Wiederherstellung löst sonst „change“ → Schleife), Markierung nach der Wiederherstellung');
     ok(v.includes("if (fe === 'from') S.clFrom = null; else if (fe === 'to') S.clTo = null; else if (fe === 'insurer') S.clIns = null;"), 'Versicherungsfälle: nur der beanstandete Filter wird zurückgesetzt');
+  }
+  // Stufe 11: Kosten/Kennzahlen – nur das beanstandete Feld zurück (bereits Standard → beide, keine Endlosschleife), Feld markiert, Beschriftungen zugeordnet
+  { const a = src.indexOf('function periodReset(from, to, since) {'); const b = src.indexOf('\n}\n', a); ok(a > 0, 'periodReset vorhanden');
+    const S3 = {}; const pr = new Function('S', src.slice(a, b + 2) + '; return periodReset;')(S3);
+    S3.fieldErr = { key: 'to', at: 300 }; eq(JSON.stringify(pr('2026-05', '2026-04', 200)), '["2026-05",null]', 'nur Bis zurück');
+    S3.fieldErr = { key: 'from', at: 300 }; eq(JSON.stringify(pr('2022-01', '2026-01', 200)), '[null,"2026-01"]', 'nur Von zurück');
+    S3.fieldErr = { key: 'to', at: 300 }; eq(JSON.stringify(pr('2030-01', null, 200)), '[null,null]', 'Bis war schon Standard → beide zurück');
+    S3.fieldErr = { key: 'to', at: 100 }; eq(JSON.stringify(pr('2026-05', '2026-04', 200)), '[null,null]', 'älterer Fehler → beide zurück');
+    for (const [v, f, st, ids] of [['viewCosts', '#cr', 'cost', ['crfrom', 'crto']], ['viewKpi', '#kf2', 'kpi', ['kpfrom', 'kpto']]]) {
+      const x = src.indexOf(`async function ${v}(`); const y = src.indexOf('\nasync function ', x + 10); const w = src.slice(x, y);
+      ok(w.includes(`[S.${st}From, S.${st}To] = periodReset(S.${st}From, S.${st}To, t0)`) && w.includes(`markGetField($('${f}'), t0, kept)`), `${v}: nur beanstandetes Feld zurück, Feld markiert`);
+      for (const id of ids) ok(w.includes(`<label for="${id}">`) && w.includes(`id="${id}" name="${id.slice(2) === 'from' ? 'from' : 'to'}"`), `${v}: Beschriftung ${id} zugeordnet`);
+    }
   }
   ok(/<label for="mhfrom">[^\n]*id="mhfrom" name="from"[^\n]*<label for="mhto">[^\n]*id="mhto" name="to"/.test(src) && src.includes('<label for="mhkind">'), 'Nachweisliste: Beschriftungen den Feldern zugeordnet');
 });
