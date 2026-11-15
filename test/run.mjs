@@ -33301,7 +33301,7 @@ await test('Backlog 978 (Blickwinkel „Leitung überträgt die Tatzeit aus dem 
   eq(pz('2026-11-03T23:30:00Z', bl), '2026-11-04 00:30'); eq(pz('2026-07-01T12:00:00.000Z', bl), '2026-07-01 14:00'); eq(pz('am 2026-11-04T13:32:00+01:00', bl), 'am 2026-11-04 13:32'); eq(pz('04.11.2026 14:32', bl), '04.11.2026 14:32');
   // Handler: Uhrzeit-, Datum- und Datum+Uhrzeit-Felder; Tatzeit nur mit Tag UND Uhrzeit; Schadenzeitpunkt füllt das Uhrzeitfeld mit
   ok(app.includes("['date', 'time', 'datetime-local'].includes(el.type)"), 'Handler für alle drei Feldarten');
-  ok(app.includes("toast(tr.e === 'none' ? t('pdt_notime') : ptErr(tr.e), true); return;") && app.includes("t('pdt_nodate')"), 'Tatzeit ohne Uhrzeit/Datum → Meldung, nichts eingetragen');
+  ok(app.includes("const m = tr.e === 'none' ? t('pdt_notime') : ptErr(tr.e); toast(m, true); markInvalid(el, m); return;") && app.includes("t('pdt_nodate')"), 'Tatzeit ohne Uhrzeit/Datum → Meldung, nichts eingetragen');
   ok(app.includes("el.closest('[data-occ]').querySelector('input[type=time]')"), 'Schadenzeitpunkt: Uhrzeit mit übernommen');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['pt_none', 'pt_many', 'pt_invalid', 'pdt_notime', 'pdt_nodate']) ok(STRINGS[l][k] && STRINGS[l][k].length > 20, `${l}.${k}`);
@@ -33366,7 +33366,7 @@ await test('Backlog 980 (Blickwinkel „Leitung überträgt die FIN aus Zulassun
   eq(vinOf('WDB963').c, 'WDB963', 'Teilstück wird übernommen (Zähler zeigt 6 von 17)'); eq(vinOf(''), null);
   eq(vinOf('FIN: WDB963403IL123456').v, 'WDB963403IL123456', 'I bleibt I (Hinweis statt Ersetzen)');
   eq(vinKey('FIN: wdb9634031l123456'), V);
-  ok(app.includes("if (r.e === 'many') { toast(t('pv_many'), true); return; }") && app.includes("el.name !== 'vin'"), 'Handler nur für das FIN-Feld, mehrere → Meldung');
+  ok(app.includes("if (r.e === 'many') { toast(t('pv_many'), true); markInvalid(el, t('pv_many')); return; }") && app.includes("el.name !== 'vin'"), 'Handler nur für das FIN-Feld, mehrere → Meldung');
   ok(app.includes('id="vinchk" role="status" aria-live="polite" hidden') && app.includes("/[IOQ]/.test(c) ? t('vin_ioq')"), 'Zähler/Hinweis I/O/Q im Formular');
   ok(app.includes('if (!vAll.length) { const fv = vinOf(q); if (fv && fv.v) vAll = vHit(norm(fv.v)); }'), 'Suche: eingefügte „FIN: …“');
   const { STRINGS } = await import('../public/i18n.js');
@@ -42166,6 +42166,40 @@ await test('Backlog 1499 (WCAG 3.3.1): Prüffehler in Formularen hängen am Feld
   eq(bare.length, 0, 'Prüfungen nur mit Toast: ' + bare.map((l) => l.trim().slice(0, 90)).join(' | '));
   const { readdirSync } = await import('node:fs');
   eq(readdirSync(new URL('../public/', import.meta.url)).filter((f) => /^app-[a-z]+\.js$/.test(f) && rd(f).includes('function markPick(boxes, msg)')).length, 1, 'genau ein App-Modul enthält markPick');
+});
+
+await test('Backlog 1500 (WCAG 3.3.1/1.3.1): markInvalid erhält vorhandenes aria-describedby, Felder ohne Namen teilen sich keinen Hinweis; Einfüge-Fehler (Datum/Uhrzeit/FIN) am Feld', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i = src.indexOf('function markInvalid(el, msg, after = el) {'); const j = src.indexOf('\n}\n', i);
+  ok(i > 0 && j > i, 'markInvalid gefunden');
+  // kleine DOM-Nachbildung: Elemente mit Attributen, Ereignissen und einem Dokument-Verzeichnis der ids
+  const byId = new Map(); let n = 0;
+  const mk = (attrs = {}) => { const a = { ...attrs }; const ls = {}; const e = {
+    get id() { return a.id || ''; }, set id(v) { a.id = v; byId.set(v, e); },
+    getAttribute: (k) => (k in a ? a[k] : null), setAttribute: (k, v) => { a[k] = String(v); if (k === 'id') byId.set(v, e); }, removeAttribute: (k) => { delete a[k]; },
+    addEventListener: (k, f) => { (ls[k] ||= []).push(f); }, removeEventListener: (k, f) => { ls[k] = (ls[k] || []).filter((x) => x !== f); },
+    fire: (k) => [...(ls[k] || [])].forEach((f) => f()), insertAdjacentElement: (_, p) => { byId.set(p.id, p); p.remove = () => byId.delete(p.id); }, attrs: a }; if (a.id) byId.set(a.id, e); return e; };
+  const document = { getElementById: (x) => byId.get(x) || null, createElement: () => { const p = { id: '', className: '', textContent: '' }; return p; } };
+  const uid = () => 'u-' + (++n) + '-abcdef';
+  const markInvalid = new Function('document', 'uid', src.slice(i, j + 2) + '; return markInvalid;')(document, uid);
+  const vin = mk({ name: 'vin', 'aria-describedby': 'vinhint' });
+  markInvalid(vin, 'Keine FIN gefunden');
+  eq(vin.attrs['aria-describedby'], 'err_vin vinhint', 'Fehler zuerst, FIN-Hinweis bleibt');
+  eq(vin.attrs['aria-invalid'], 'true', 'aria-invalid gesetzt');
+  markInvalid(vin, 'Mehrere FIN');
+  eq(vin.attrs['aria-describedby'], 'err_vin vinhint', 'zweiter Fehler: keine doppelte Kennung');
+  eq(document.getElementById('err_vin').textContent, 'Mehrere FIN', 'Hinweistext aktualisiert');
+  vin.fire('input');
+  eq(vin.attrs['aria-describedby'], 'vinhint', 'nach Eingabe: ursprüngliche Beschreibung wiederhergestellt');
+  ok(!('aria-invalid' in vin.attrs) && !document.getElementById('err_vin'), 'Markierung und Hinweis entfernt');
+  const a1 = mk(), a2 = mk(); markInvalid(a1, 'A'); markInvalid(a2, 'B');
+  ok(a1.id && a2.id && a1.id !== a2.id, 'Felder ohne id/Name erhalten eigene Kennungen');
+  ok(document.getElementById('err_' + a1.id).textContent === 'A' && document.getElementById('err_' + a2.id).textContent === 'B', 'je Feld eigener Hinweis');
+  const plain = mk({ id: 'km' }); markInvalid(plain, 'x'); plain.fire('change'); ok(!('aria-describedby' in plain.attrs), 'ohne vorherige Beschreibung: Attribut entfernt');
+  for (const k of ['ptErr(r.e), true); markInvalid(el, ptErr(r.e))', "toast(m, true); markInvalid(el, m); return; }", "toast(pdErr(r.e), true); markInvalid(el, pdErr(r.e))", "toast(t('pv_many'), true); markInvalid(el, t('pv_many'))", "toast(t('pv_none'), true); markInvalid(el, t('pv_none'))"])
+    ok(src.includes(k), 'Einfüge-Fehler am Feld: ' + k);
+  ok(!/toast\((ptErr|pdErr)\([^)]*\), true\); return;/.test(src), 'kein Einfüge-Fehler nur im Toast');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

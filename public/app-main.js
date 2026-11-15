@@ -409,12 +409,16 @@ const searchKey = (x) => String(x || '').normalize('NFC').toLowerCase().replace(
 
 function markInvalid(el, msg, after = el) {
   if (!el) return;
+
+  if (!el.id && !el.getAttribute('aria-labelledby') && !el.getAttribute('name')) el.id = 'fx' + uid().replace(/[^\w]/g, '').slice(0, 10);
   const id = 'err_' + String(el.id || el.getAttribute('aria-labelledby') || el.getAttribute('name') || 'feld').replace(/[^\w-]/g, '_');
   let p = document.getElementById(id);
   if (!p) { p = document.createElement('p'); p.id = id; p.className = 'small fielderr'; after.insertAdjacentElement('afterend', p); }
   p.textContent = msg;
-  el.setAttribute('aria-invalid', 'true'); el.setAttribute('aria-describedby', id);
-  const clear = () => { el.removeAttribute('aria-invalid'); el.removeAttribute('aria-describedby'); p.remove(); el.removeEventListener('input', clear); el.removeEventListener('change', clear); };
+
+  const keep = String(el.getAttribute('aria-describedby') || '').split(/\s+/).filter((x) => x && x !== id).join(' ');
+  el.setAttribute('aria-invalid', 'true'); el.setAttribute('aria-describedby', keep ? id + ' ' + keep : id);
+  const clear = () => { el.removeAttribute('aria-invalid'); if (keep) el.setAttribute('aria-describedby', keep); else el.removeAttribute('aria-describedby'); p.remove(); el.removeEventListener('input', clear); el.removeEventListener('change', clear); };
   el.addEventListener('input', clear); el.addEventListener('change', clear);
 }
 
@@ -886,7 +890,7 @@ document.addEventListener('paste', (e) => {
   const raw = pasteZoned(raw0, berlinLocalDT);
   if (el.type === 'time') {
     const r = pasteTime(raw); if (!r) return;
-    e.preventDefault(); if (!r.t) { toast(ptErr(r.e), true); return; }
+    e.preventDefault(); if (!r.t) { toast(ptErr(r.e), true); markInvalid(el, ptErr(r.e)); return; }
     pasteSet(el, r.t); if (!el.checkValidity()) el.reportValidity(); return;
   }
   const r = pasteDate(raw, Number(bDate().slice(0, 4)));
@@ -895,11 +899,11 @@ document.addEventListener('paste', (e) => {
   if (el.type === 'datetime-local') {
 
     const tr = pasteTime(raw.replace(/(^|[^\d])\d{4}-\d{2}-\d{2}(?=t|\s|$)/gi, '$1 ').replace(/(^|[^\d])\d{1,2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{2,4}(?!\d)/g, '$1 ')) || { e: 'none' };
-    if (!r.d) { toast(r.e === 'none' && tr.t ? t('pdt_nodate') : pdErr(r.e), true); return; }
-    if (!tr.t) { toast(tr.e === 'none' ? t('pdt_notime') : ptErr(tr.e), true); return; }
+    if (!r.d) { const m = r.e === 'none' && tr.t ? t('pdt_nodate') : pdErr(r.e); toast(m, true); markInvalid(el, m); return; }
+    if (!tr.t) { const m = tr.e === 'none' ? t('pdt_notime') : ptErr(tr.e); toast(m, true); markInvalid(el, m); return; }
     pasteSet(el, `${r.d}T${tr.t}`); if (!el.checkValidity()) el.reportValidity(); return;
   }
-  if (!r.d) { toast(pdErr(r.e), true); return; }
+  if (!r.d) { toast(pdErr(r.e), true); markInvalid(el, pdErr(r.e)); return; }
   pasteSet(el, r.d);
 
   const tf = el.closest('[data-occ]') && el.closest('[data-occ]').querySelector('input[type=time]');
@@ -934,8 +938,8 @@ document.addEventListener('paste', (e) => {
   const raw = e.clipboardData ? e.clipboardData.getData('text') : ''; const r = vinOf(raw); if (!r) return;
   if (r.v && r.v === String(raw).trim()) return;
   e.preventDefault();
-  if (r.e === 'many') { toast(t('pv_many'), true); return; }
-  if (r.e === 'none') { if (!r.c || r.c.length > 25) { toast(t('pv_none'), true); return; } pasteSet(el, r.c); vinCheck(el); return; }
+  if (r.e === 'many') { toast(t('pv_many'), true); markInvalid(el, t('pv_many')); return; }
+  if (r.e === 'none') { if (!r.c || r.c.length > 25) { toast(t('pv_none'), true); markInvalid(el, t('pv_none')); return; } pasteSet(el, r.c); vinCheck(el); return; }
   pasteSet(el, r.v); vinCheck(el);
 });
 document.addEventListener('input', (e) => { const el = e.target; if (el && el.tagName === 'INPUT' && el.name === 'vin' && el.type !== 'hidden') vinCheck(el); });

@@ -4,6 +4,7 @@
 #     das Fahrzeug mit dieser FIN an.
 #  2. Rechnungszeile mit zwei FIN → Meldung in der App-Sprache, Feld unverändert; Teilstück → Zähler „N von 17“; I/O → Hinweis.
 #  3. Globale Suche findet das Fahrzeug über eingefügtes „FIN: …“.
+#  4. Backlog 1500: Fehler beim Einfügen zusätzlich am Feld (aria-invalid, Hinweis unter dem Feld), gültiges Einfügen hebt auf.
 # Braucht den Dev-Server. Screenshots: CFP_SHOTS=<Ordner>.
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -44,8 +45,12 @@ with sync_playwright() as p:
         q.evaluate("() => document.querySelectorAll('.toast').forEach((x) => x.remove())")
         r=q.evaluate(PASTE,[sel,f'Zugmaschine WDB9634031L{sfx[:4]}99\nAnhänger WDB9634031L{sfx[:4]}98']); q.wait_for_timeout(150); tt=q.evaluate(TOAST)
         check(r['prevented'] and r['value']=='WDB963' and m_many.lower() in tt.lower(),f'{lang}: zwei FIN → Feld unverändert, Meldung „{tt[:70]}“')
+        # Backlog 1500: Fehler zusätzlich am Feld (aria-invalid, Hinweis darunter), vorhandene Beschreibung bleibt; gültiges Einfügen hebt auf
+        fe=q.evaluate("(s) => { const e = document.querySelector(s); const ids = (e.getAttribute('aria-describedby') || '').split(' '); const p = document.getElementById(ids[0]); return { inv: e.getAttribute('aria-invalid'), ids, hint: p ? p.textContent : '' }; }",sel)
+        check(fe['inv']=='true' and fe['ids'][0].startswith('err_') and fe['hint']==tt,f'{lang}: Meldung auch am Feld {fe}')
         r=q.evaluate(PASTE,[sel,'FIN: WDB963403IL123456']); q.wait_for_timeout(100); c=q.evaluate(CHK)
         check(r['value']=='WDB963403IL123456' and m_ioq in c,f'{lang}: I bleibt I, Hinweis „{c[:60]}“')
+        check(q.evaluate("(s) => !document.querySelector(s).hasAttribute('aria-invalid') && !document.querySelector('#nvf .fielderr')",sel),f'{lang}: gültiges Einfügen hebt die Feldmarkierung auf')
         r=q.evaluate(PASTE,[sel,txt]); q.wait_for_timeout(100); c=q.evaluate(CHK)
         check(r['prevented'] and r['value']==vin and c=='',f'{lang} {w}px: „{txt[:40]}…“ → {r["value"]}')
         if SHOTS:
