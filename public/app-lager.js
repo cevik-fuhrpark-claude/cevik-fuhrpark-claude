@@ -444,7 +444,7 @@ async function viewStockReceipt() {
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="print-only small">${printStamp()} · CEVIK ${esc(t('app'))} [CLAUDE]</p><p class="small muted">${esc(t('rcpt_hint'))}</p>
     <form id="rcf" class="panel" novalidate>${sites.length > 1 ? `<label for="rcsite">${esc(t('workshop'))}</label><select id="rcsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
       <label for="rcsup">${esc(t('supplier'))}</label><input id="rcsup" maxlength="120" list="rcsupl" autocomplete="off"><datalist id="rcsupl"></datalist><label for="rcdoc">${esc(t('doc_ref'))}</label><input id="rcdoc" maxlength="200"><label for="rcnote">${esc(t('note'))}</label><input id="rcnote" maxlength="500">
-      <h3 style="margin-top:16px">${esc(t('rcpt_lines'))}</h3><div id="rclines"></div>
+      <h2 class="h3" style="margin-top:16px">${esc(t('rcpt_lines'))}</h2><div id="rclines"></div>
       <div class="actions"><button type="button" class="btn secondary" id="rcadd">${esc(t('rcpt_add'))}</button></div>
       <p class="small" id="rcsum" role="status" aria-live="polite"></p>
       <div class="actions"><button class="btn" id="rcbook">${esc(t('rcpt_book'))}</button></div></form><div id="rcres"></div>`, 'more');

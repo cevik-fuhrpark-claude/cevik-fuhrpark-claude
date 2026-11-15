@@ -832,12 +832,12 @@ async function viewDriverGuide(l) {
   const sec = (k, i) => {
     const parts = gt('g_' + k).split('|');
     const body = parts.length > 1 ? `<ol>${parts.map((x) => `<li>${guideFill(g, x)}</li>`).join('')}</ol>` : `<p>${guideFill(g, parts[0])}</p>`;
-    return `<section class="guide-sec${k === 'crit' ? ' alert' : ''}"><h2>${i + 1}. ${esc(gt('g_' + k + '_t'))}</h2>${body}${k === 'crit' ? `<div class="paper-head">${field('g_phone_dispo')}${field('g_phone_fleet')}</div>` : ''}</section>`;
+    return `<section class="guide-sec${k === 'crit' ? ' alert' : ''}"><h3>${i + 1}. ${esc(gt('g_' + k + '_t'))}</h3>${body}${k === 'crit' ? `<div class="paper-head">${field('g_phone_dispo')}${field('g_phone_fleet')}</div>` : ''}</section>`;
   };
   render(`<div class="noprint">${isMgr() ? `<p><a class="backlink" href="#/more">‹ ${esc(t('back'))}</a></p>` : ''}<h1 data-title="${esc(t('guide'))} – ${esc({ de: 'Deutsch', uk: 'Українська', en: 'English' }[g] || g)}">${esc(t('guide'))}</h1><p class="small muted">${esc(t('guide_hint'))}</p>
     <p class="small" id="glabel">${esc(t('guide_lang'))}</p><div class="actions" role="group" aria-labelledby="glabel" style="flex-wrap:wrap">${[['de', 'Deutsch', '#/guide?l=de'], ['uk', 'Українська', '#/guide?l=uk'], ['en', 'English', '#/guide?l=en']].map(([k, n, href]) => `<a class="btn ${k === g ? '' : 'secondary'}" href="${href}" lang="${k}"${k === g ? ' aria-current="true"' : ''}>${n}</a>`).join('')}</div>
     <div class="actions"><button type="button" class="btn" id="gprt">${esc(t('print'))}</button></div></div>
-    <article class="guide" lang="${g}"><h1>${esc(gt('g_title'))}</h1>
+    <article class="guide" lang="${g}" aria-labelledby="gtitle"><h2 class="g-title" id="gtitle">${esc(gt('g_title'))}</h2>
     <div class="guide-top"><div class="qr">${(() => { try { return qrSvg(addr, { label: gt('g_addr') }); } catch { return ''; } })()}</div><div><p class="small"><b>${esc(gt('g_addr'))}</b></p><p class="guide-addr">${esc(addr)}</p></div></div>
     ${GUIDE_SECTIONS.map(sec).join('')}
     <p class="small muted">${esc(gt('g_printed'))}: ${esc(new Intl.DateTimeFormat(locOf(g), dateOpts('UTC')).format(new Date(bDate() + 'T12:00:00Z')))} · CEVIK ${esc(gt("app"))} [CLAUDE]</p></article>`, 'more');

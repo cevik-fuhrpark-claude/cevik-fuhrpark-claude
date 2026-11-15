@@ -7830,7 +7830,7 @@ async function viewStockReceipt() {
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="print-only small">${printStamp()} · CEVIK ${esc(t('app'))} [CLAUDE]</p><p class="small muted">${esc(t('rcpt_hint'))}</p>
     <form id="rcf" class="panel" novalidate>${sites.length > 1 ? `<label for="rcsite">${esc(t('workshop'))}</label><select id="rcsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
       <label for="rcsup">${esc(t('supplier'))}</label><input id="rcsup" maxlength="120" list="rcsupl" autocomplete="off"><datalist id="rcsupl"></datalist><label for="rcdoc">${esc(t('doc_ref'))}</label><input id="rcdoc" maxlength="200"><label for="rcnote">${esc(t('note'))}</label><input id="rcnote" maxlength="500">
-      <h3 style="margin-top:16px">${esc(t('rcpt_lines'))}</h3><div id="rclines"></div>
+      <h2 class="h3" style="margin-top:16px">${esc(t('rcpt_lines'))}</h2><div id="rclines"></div>
       <div class="actions"><button type="button" class="btn secondary" id="rcadd">${esc(t('rcpt_add'))}</button></div>
       <p class="small" id="rcsum" role="status" aria-live="polite"></p>
       <div class="actions"><button class="btn" id="rcbook">${esc(t('rcpt_book'))}</button></div></form><div id="rcres"></div>`, 'more');
@@ -8993,12 +8993,12 @@ async function viewDriverGuide(l) {
   const sec = (k, i) => {
     const parts = gt('g_' + k).split('|');
     const body = parts.length > 1 ? `<ol>${parts.map((x) => `<li>${guideFill(g, x)}</li>`).join('')}</ol>` : `<p>${guideFill(g, parts[0])}</p>`;
-    return `<section class="guide-sec${k === 'crit' ? ' alert' : ''}"><h2>${i + 1}. ${esc(gt('g_' + k + '_t'))}</h2>${body}${k === 'crit' ? `<div class="paper-head">${field('g_phone_dispo')}${field('g_phone_fleet')}</div>` : ''}</section>`;
+    return `<section class="guide-sec${k === 'crit' ? ' alert' : ''}"><h3>${i + 1}. ${esc(gt('g_' + k + '_t'))}</h3>${body}${k === 'crit' ? `<div class="paper-head">${field('g_phone_dispo')}${field('g_phone_fleet')}</div>` : ''}</section>`;
   };
   render(`<div class="noprint">${isMgr() ? `<p><a class="backlink" href="#/more">‹ ${esc(t('back'))}</a></p>` : ''}<h1 data-title="${esc(t('guide'))} – ${esc({ de: 'Deutsch', uk: 'Українська', en: 'English' }[g] || g)}">${esc(t('guide'))}</h1><p class="small muted">${esc(t('guide_hint'))}</p>
     <p class="small" id="glabel">${esc(t('guide_lang'))}</p><div class="actions" role="group" aria-labelledby="glabel" style="flex-wrap:wrap">${[['de', 'Deutsch', '#/guide?l=de'], ['uk', 'Українська', '#/guide?l=uk'], ['en', 'English', '#/guide?l=en']].map(([k, n, href]) => `<a class="btn ${k === g ? '' : 'secondary'}" href="${href}" lang="${k}"${k === g ? ' aria-current="true"' : ''}>${n}</a>`).join('')}</div>
     <div class="actions"><button type="button" class="btn" id="gprt">${esc(t('print'))}</button></div></div>
-    <article class="guide" lang="${g}"><h1>${esc(gt('g_title'))}</h1>
+    <article class="guide" lang="${g}" aria-labelledby="gtitle"><h2 class="g-title" id="gtitle">${esc(gt('g_title'))}</h2>
     <div class="guide-top"><div class="qr">${(() => { try { return qrSvg(addr, { label: gt('g_addr') }); } catch { return ''; } })()}</div><div><p class="small"><b>${esc(gt('g_addr'))}</b></p><p class="guide-addr">${esc(addr)}</p></div></div>
     ${GUIDE_SECTIONS.map(sec).join('')}
     <p class="small muted">${esc(gt('g_printed'))}: ${esc(new Intl.DateTimeFormat(locOf(g), dateOpts('UTC')).format(new Date(bDate() + 'T12:00:00Z')))} · CEVIK ${esc(gt("app"))} [CLAUDE]</p></article>`, 'more');
@@ -9210,10 +9210,10 @@ async function loadNotifyPrefs(np) {
 async function pushPanel(el) {
   const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const ios = /iPhone|iPad/.test(navigator.userAgent) && !window.navigator.standalone;
-  if (!supported) { el.innerHTML = `<h3>${esc(t('push_title'))}</h3><p class="muted">${esc(ios ? t('push_ios') : t('push_unsupported'))}</p>`; return; }
+  if (!supported) { el.innerHTML = `<h2 class="h3">${esc(t('push_title'))}</h2><p class="muted">${esc(ios ? t('push_ios') : t('push_unsupported'))}</p>`; return; }
   const reg = await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.getSubscription();
-  el.innerHTML = `<h3>${esc(t('push_title'))}</h3><p>${sub ? `<span class="chip ok">${esc(t('push_on'))}</span>` : `<span class="chip">${esc(t('push_off'))}</span>`}${Notification.permission === 'denied' ? ` <span class="chip kritisch">${esc(t('push_denied'))}</span>` : ''}</p>
+  el.innerHTML = `<h2 class="h3">${esc(t('push_title'))}</h2><p>${sub ? `<span class="chip ok">${esc(t('push_on'))}</span>` : `<span class="chip">${esc(t('push_off'))}</span>`}${Notification.permission === 'denied' ? ` <span class="chip kritisch">${esc(t('push_denied'))}</span>` : ''}</p>
     <div class="actions">${sub ? `<button class="btn secondary" id="pt">${esc(t('push_test'))}</button>` : `<button class="btn" id="pe">${esc(t('push_enable'))}</button>`}</div>`;
   const pe = $('#pe', el);
   if (pe) pe.onclick = async () => {

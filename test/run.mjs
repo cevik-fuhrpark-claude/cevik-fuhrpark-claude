@@ -42123,6 +42123,22 @@ await test('Backlog 1495 (Blickwinkel „Disposition steuert die App per Sprachs
   ok(ui.includes('Backlog 1495') && ui.includes('Gegenprobe') && ui.includes('getFullAXTree') && readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-name-sichtbar.py'), 'UI-Prüfung (Barrierefreiheitsbaum, DE/UK/EN, Werkstatt-Panel) mit Gegenprobe, in pruefen.sh');
 });
 
+await test('Backlog 1496 (Blickwinkel „Disposition mit Screenreader springt über Überschriften“, Backlog 195, WCAG 1.3.1/2.4.6/2.4.10): Kurzanleitung, Push-Feld und Wareneingang ohne zweite Ebene 1 bzw. übersprungene Ebene, Aussehen unverändert', async () => {
+  const { readFileSync } = await import('node:fs');
+  const rd = (f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8');
+  const app = rd('app.js'); const css = rd('styles.css');
+  const guide = app.slice(app.indexOf('async function viewDriverGuide('), app.indexOf('// ---------- Auslese-Fristen Fahrerkarte'));
+  ok(guide.length > 500 && (guide.match(/<h1[ >]/g) || []).length === 1, 'Kurzanleitung: nur die Seitenüberschrift ist Ebene 1');
+  ok(guide.includes('<article class="guide" lang="${g}" aria-labelledby="gtitle"><h2 class="g-title" id="gtitle">') && guide.includes("<h3>${i + 1}. ${esc(gt('g_' + k + '_t'))}</h3>") && !/<h2>\$\{i \+ 1\}/.test(guide), 'Aushang: Titel Ebene 2, Abschnitte Ebene 3');
+  ok(/\.guide \.g-title \{ font-size: 1\.6rem; margin-top: 0; \}/.test(css) && /\.guide \.g-title \{ font-size: 17pt; margin-bottom: 2\.5mm; \}/.test(css) && /\.guide h3 \{ font-size: 11\.5pt;/.test(css) && !/\.guide h1 \{/.test(css), 'Aushang sieht am Bildschirm und im Druck aus wie bisher (Größen von h1/h2 übernommen)');
+  ok(!app.includes("<h3>${esc(t('push_title'))}</h3>") && (app.match(/<h2 class="h3">\$\{esc\(t\('push_title'\)\)\}<\/h2>/g) || []).length === 2, 'Push-Feld (Hinweise, Fahrer-Startseite): Ebene 2 statt 3 direkt unter der Seitenüberschrift');
+  ok(app.includes(`<h2 class="h3" style="margin-top:16px">\${esc(t('rcpt_lines'))}</h2>`), 'Wareneingang: „Positionen“ Ebene 2');
+  ok(/h2\.h3 \{ font-size: 1\.05rem; margin-top: 0; \}/.test(css), 'h2.h3 sieht aus wie h3');
+  for (const f of ['app-main.js', 'app-konto.js', 'app-lager.js', 'app-verwaltung.js']) ok(!/<h3>\$\{esc\(t\('push_title'\)\)\}<\/h3>|<article class="guide" lang="\$\{g\}"><h1>/.test(rd(f)), `${f}: erzeugtes Modul aktuell`);
+  const ui = readFileSync(new URL('../scripts/ui-ueberschriften.py', import.meta.url), 'utf8');
+  ok(ui.includes('Backlog 1496') && ui.includes('Gegenprobe') && ui.includes('getFullAXTree') && ui.includes('übersprungen') && readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-ueberschriften.py'), 'UI-Prüfung (Barrierefreiheitsbaum, DE/UK/EN, Anmeldung, Werkstatt-Panel) mit Gegenprobe, in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

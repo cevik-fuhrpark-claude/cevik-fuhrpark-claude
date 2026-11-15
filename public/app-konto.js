@@ -89,10 +89,10 @@ async function loadNotifyPrefs(np) {
 async function pushPanel(el) {
   const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const ios = /iPhone|iPad/.test(navigator.userAgent) && !window.navigator.standalone;
-  if (!supported) { el.innerHTML = `<h3>${esc(t('push_title'))}</h3><p class="muted">${esc(ios ? t('push_ios') : t('push_unsupported'))}</p>`; return; }
+  if (!supported) { el.innerHTML = `<h2 class="h3">${esc(t('push_title'))}</h2><p class="muted">${esc(ios ? t('push_ios') : t('push_unsupported'))}</p>`; return; }
   const reg = await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.getSubscription();
-  el.innerHTML = `<h3>${esc(t('push_title'))}</h3><p>${sub ? `<span class="chip ok">${esc(t('push_on'))}</span>` : `<span class="chip">${esc(t('push_off'))}</span>`}${Notification.permission === 'denied' ? ` <span class="chip kritisch">${esc(t('push_denied'))}</span>` : ''}</p>
+  el.innerHTML = `<h2 class="h3">${esc(t('push_title'))}</h2><p>${sub ? `<span class="chip ok">${esc(t('push_on'))}</span>` : `<span class="chip">${esc(t('push_off'))}</span>`}${Notification.permission === 'denied' ? ` <span class="chip kritisch">${esc(t('push_denied'))}</span>` : ''}</p>
     <div class="actions">${sub ? `<button class="btn secondary" id="pt">${esc(t('push_test'))}</button>` : `<button class="btn" id="pe">${esc(t('push_enable'))}</button>`}</div>`;
   const pe = $('#pe', el);
   if (pe) pe.onclick = async () => {
