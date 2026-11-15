@@ -42269,14 +42269,19 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   const g4 = await users.fleet.post('/api/tacho/downloads', { kind: 'unbekannt', vehicle_id: vlk.id, downloaded_on: '2026-01-01', evidence: 'x' }); eq(g4.status, 400); eq(g4.data.field_key, 'kind', 'Auslesung: Art');
   eq(fk(() => withKey('x_on', () => { throw new HttpError(400, 'validation', 'Datum ungültig'); })), 'x_on', 'withKey ergänzt field_key');
   eq(fk(() => withKey('x_on', () => str('', { key: 'inner', required: true }))), 'inner', 'withKey überschreibt keinen vorhandenen field_key');
+  // Stufe 8: Fahrzeughinweise, Stundensatz-Verlauf; Eingaben ohne name= über data-fkey (Wareneingang, Stundensatz „gilt bis“)
+  const n1 = await owner.post(`/api/vehicles/${vlk.id}/notes`, { text: 'ab' }); eq(n1.status, 400); eq(n1.data.field_key, 'text', 'Fahrzeughinweis: zu kurz');
+  const n2 = await owner.post(`/api/vehicles/${vlk.id}/notes`, { text: 'Feld 1501', valid_until: '2020-01-01' }); eq(n2.status, 400); eq(n2.data.field_key, 'valid_until', 'Fahrzeughinweis: gültig bis');
+  const { keepRateStatement } = await import('../src/rates.js');
+  let rk; try { await keepRateStatement({}, {}, { hourly_rate_keep_until: '31.12.' }, []); } catch (e) { rk = e.extra && e.extra.field_key; } eq(rk, 'hourly_rate_keep_until', 'Stundensatz gilt bis');
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims', 'fines', 'stock', 'tires', 'tacho', 'vehicles', 'cases']) {
+  for (const m of ['drivers', 'auth', 'emergency', 'contracts', 'claims', 'fines', 'stock', 'tires', 'tacho', 'vehicles', 'cases', 'vnotes', 'rates']) {
     const s = readFileSync(new URL(`../src/${m}.js`, import.meta.url), 'utf8');
     const keys = new Set([...s.matchAll(/\{ key: '(\w+)', (?!group)|field_key: '(\w+)'|withKey\('(\w+)'|\{ key: '(\w+)' \}/g)].map((x) => x[1] || x[2] || x[3] || x[4])); // nur Prüf-Optionen (nicht request_key, nicht CHECKLIST)
     ok(keys.size > 0, m + ': keine Feldnamen');
-    for (const k of keys) ok(src.includes(`name="${k}"`) || ['password', 'employee_number'].includes(k), `${m}: Feld „${k}“ fehlt in der Oberfläche`);
+    for (const k of keys) ok(src.includes(`name="${k}"`) || src.includes(`data-fkey="${k}"`) || ['password', 'employee_number'].includes(k), `${m}: Feld „${k}“ fehlt in der Oberfläche`);
   }
   // Oberfläche: api() merkt den Feldnamen, die Formular-Sperre markiert nach dem Absenden (nur sichtbare Felder desselben Formulars)
   ok(/code === 'validation' && data && typeof data\.field_key === 'string'\) S\.fieldErr = \{ key: data\.field_key, msg: e\.message, at: Date\.now\(\) \}/.test(src), 'api() merkt field_key');
@@ -42292,7 +42297,13 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   eq(JSON.stringify(calls), '[["display_name","Name ist zu lang"]]', 'Feld markiert'); ok(el.f, 'Fokus'); ok(S.fieldErr === null, 'verbraucht');
   S.fieldErr = { key: 'display_name', msg: 'x', at: 300 }; fn({ ...form, isConnected: false }, 200); eq(calls.length, 1, 'Formular ersetzt → nur Toast');
   S.fieldErr = { key: 'note', msg: 'x', at: 300 }; fn(form, 200); eq(calls.length, 1, 'Feld nicht im Formular → nur Toast');
-  const hid = { ...el, offsetParent: null }; S.fieldErr = { key: 'display_name', msg: 'x', at: 300 }; fn({ isConnected: true, elements: { namedItem: () => hid } }, 200); eq(calls.length, 1, 'verstecktes Feld → nur Toast');
+  // Stufe 8: Rückfall auf data-fkey (erstes sichtbares, nicht gesperrtes Feld), wenn kein Formularelement so heißt
+  const fk1 = { tagName: 'INPUT', name: '', type: 'text', offsetParent: null, focus() {} }; const fk2 = { tagName: 'INPUT', name: '', type: 'text', offsetParent: {}, focus() { this.f = true; } };
+  const sels = []; const fform = { isConnected: true, elements: { namedItem: () => null }, querySelectorAll: (q) => { sels.push(q); return [fk1, fk2]; } };
+  S.fieldErr = { key: 'supplier"]', msg: 'Lieferant zu lang', at: 300 }; fn(fform, 200);
+  eq(sels[0], '[data-fkey="supplier"]', 'Selektor ohne Sonderzeichen'); eq(calls.length, 2, 'data-fkey-Feld markiert'); ok(fk2.f && !fk1.f, 'erstes sichtbares Feld');
+  S.fieldErr = { key: 'x', msg: 'x', at: 300 }; fn({ isConnected: true, elements: { namedItem: () => null }, querySelectorAll: () => [fk1] }, 200); eq(calls.length, 2, 'nur unsichtbares data-fkey-Feld → nur Toast');
+  const hid = { ...el, offsetParent: null }; S.fieldErr = { key: 'display_name', msg: 'x', at: 300 }; fn({ isConnected: true, elements: { namedItem: () => hid } }, 200); eq(calls.length, 2, 'verstecktes Feld → nur Toast');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

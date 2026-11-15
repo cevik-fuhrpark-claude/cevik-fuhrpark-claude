@@ -15,7 +15,7 @@ export async function keepRateStatement(env, user, body, pairs) {
   const raw = body ? body.hourly_rate_keep_until : undefined;
   if (raw === undefined || raw === null || raw === '' || raw === false) return null;
   const until = String(raw).trim().slice(0, 12);
-  if (!isCalendarDate(until)) throw bad('validation', 'Bisheriger Stundensatz gilt bis: Datum im Format JJJJ-MM-TT angeben.');
+  if (!isCalendarDate(until)) throw bad('validation', 'Bisheriger Stundensatz gilt bis: Datum im Format JJJJ-MM-TT angeben.', { field_key: 'hourly_rate_keep_until' });
   const pair = pairs.find(([k]) => k === 'workshop_hourly_rate_net');
   if (!pair) throw bad('validation', 'Bisherigen Stundensatz nur zusammen mit einem neuen Stundensatz behalten.');
   const cur = await env.DB.prepare(`SELECT (SELECT value FROM settings WHERE key='workshop_hourly_rate_net') AS rate,
@@ -24,9 +24,9 @@ export async function keepRateStatement(env, user, body, pairs) {
   if (old === null) throw bad('validation', 'Es ist noch kein gültiger Stundensatz gespeichert, der behalten werden kann.');
   const next = rateOf(pair[1]);
   if (next !== null && next === old) throw bad('validation', 'Der Stundensatz ist unverändert – der bisherige Satz muss nicht behalten werden.');
-  if (until < '2000-01-01') throw bad('validation', 'Bisheriger Stundensatz gilt bis: Datum liegt zu weit zurück.');
+  if (until < '2000-01-01') throw bad('validation', 'Bisheriger Stundensatz gilt bis: Datum liegt zu weit zurück.', { field_key: 'hourly_rate_keep_until' });
   // höchstens bis Ende des nächsten Kalenderjahres (Vorab-Eintrag „ab 01.01.“ im Dezember; kein Datum Jahre im Voraus)
-  if (until > `${Number(berlinDate().slice(0, 4)) + 1}-12-31`) throw bad('validation', 'Bisheriger Stundensatz gilt bis: höchstens bis Ende des nächsten Jahres.');
+  if (until > `${Number(berlinDate().slice(0, 4)) + 1}-12-31`) throw bad('validation', 'Bisheriger Stundensatz gilt bis: höchstens bis Ende des nächsten Jahres.', { field_key: 'hourly_rate_keep_until' });
   if (cur.last_until && until <= cur.last_until) throw conflict('rate_period_order', 'Der bisherige Stundensatz muss nach dem letzten Satzwechsel enden.', { last_until: cur.last_until });
   // Stand-Prüfung im Stapel: nur wenn der gespeicherte Satz noch derselbe ist und kein späterer Wechsel dazukam (gleichzeitiges Speichern)
   return {

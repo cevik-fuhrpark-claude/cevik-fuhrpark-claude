@@ -443,7 +443,7 @@ async function viewStockReceipt() {
   let key = uid().replace(/[^\w-]/g, '');
   render(`<p class="noprint"><a class="backlink" href="#/stock">‹ ${esc(t('back'))}</a></p><h1>${esc(t('rcpt_title'))}</h1><p class="print-only small">${printStamp()} · CEVIK ${esc(t('app'))} [CLAUDE]</p><p class="small muted">${esc(t('rcpt_hint'))}</p>
     <form id="rcf" class="panel" novalidate>${sites.length > 1 ? `<label for="rcsite">${esc(t('workshop'))}</label><select id="rcsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
-      <label for="rcsup">${esc(t('supplier'))}</label><input id="rcsup" maxlength="120" list="rcsupl" autocomplete="off"><datalist id="rcsupl"></datalist><label for="rcdoc">${esc(t('doc_ref'))}</label><input id="rcdoc" maxlength="200"><label for="rcnote">${esc(t('note'))}</label><input id="rcnote" maxlength="500">
+      <label for="rcsup">${esc(t('supplier'))}</label><input id="rcsup" data-fkey="supplier" maxlength="120" list="rcsupl" autocomplete="off"><datalist id="rcsupl"></datalist><label for="rcdoc">${esc(t('doc_ref'))}</label><input id="rcdoc" data-fkey="document_ref" maxlength="200"><label for="rcnote">${esc(t('note'))}</label><input id="rcnote" data-fkey="note" maxlength="500">
       <h2 class="h3" style="margin-top:16px">${esc(t('rcpt_lines'))}</h2><div id="rclines"></div>
       <div class="actions"><button type="button" class="btn secondary" id="rcadd">${esc(t('rcpt_add'))}</button></div>
       <p class="small" id="rcsum" role="status" aria-live="polite"></p>
@@ -501,9 +501,9 @@ async function viewStockReceipt() {
     const q = $('.stockq', d).value.trim(); const asPn = /\d/.test(q) && !/\p{L}{4,}/u.test(q);
     const id = 'rcn' + Math.random().toString(36).slice(2, 8);
     f.innerHTML = `<div class="panel" style="margin:4px 0 8px"><p class="small muted">${esc(t('rcn_hint').replace('{ws}', wsName(site())))}</p>
-      <label for="${id}n">${esc(t('part_name'))} *</label><input id="${id}n" data-rcnname maxlength="200" autocomplete="off" value="${asPn ? '' : esc(q)}">
-      <label for="${id}p">${esc(t('part_number'))}</label><input id="${id}p" data-rcnpn maxlength="80" autocomplete="off" value="${asPn ? esc(q) : ''}"><div class="small" data-rcndup role="status" aria-live="polite" hidden></div>
-      <div class="grid2"><div><label for="${id}u">${esc(t('unit'))}</label><input id="${id}u" data-rcnunit maxlength="20" value="${esc(unitL('Stk'))}"></div><div><label for="${id}l">${esc(t('storage'))}</label><input id="${id}l" data-rcnloc maxlength="80"></div></div>
+      <label for="${id}n">${esc(t('part_name'))} *</label><input id="${id}n" data-rcnname data-fkey="name" maxlength="200" autocomplete="off" value="${asPn ? '' : esc(q)}">
+      <label for="${id}p">${esc(t('part_number'))}</label><input id="${id}p" data-rcnpn data-fkey="part_number" maxlength="80" autocomplete="off" value="${asPn ? esc(q) : ''}"><div class="small" data-rcndup role="status" aria-live="polite" hidden></div>
+      <div class="grid2"><div><label for="${id}u">${esc(t('unit'))}</label><input id="${id}u" data-rcnunit data-fkey="unit" maxlength="20" value="${esc(unitL('Stk'))}"></div><div><label for="${id}l">${esc(t('storage'))}</label><input id="${id}l" data-rcnloc data-fkey="location" maxlength="80"></div></div>
       <div class="actions"><button type="button" class="btn" data-rcnsave>${esc(t('rcn_save'))}</button><button type="button" class="btn secondary" data-rcncancel>${esc(t('cancel'))}</button></div></div>`;
     f.hidden = false; btn.setAttribute('aria-expanded', 'true');
     const nm = $('[data-rcnname]', f); const pn = $('[data-rcnpn]', f); const dup = $('[data-rcndup]', f);

@@ -1,5 +1,6 @@
 # [CLAUDE] UI-Test Backlog 1501 (WCAG 3.3.1): Server-Prüffehler mit field_key markieren das Formularfeld (aria-invalid, Hinweis am Feld,
-# Fokus) statt nur einen Toast zu zeigen – Notfall-Rufnummer (Bezeichnung zu kurz) und Fahrerakte (Name zu lang), DE/UK/EN bei 390/820/1366 px.
+# Fokus) statt nur einen Toast zu zeigen – Notfall-Rufnummer (Bezeichnung zu kurz) und Fahrerakte (Name zu lang), DE/UK/EN bei 390/820/1366 px;
+# Stufe 8: Fahrzeughinweis „gültig bis“, Wareneingang (Lieferant, neuer Artikel – Felder ohne name= über data-fkey).
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). CFP_SHOTS=<ordner> speichert Bildschirmfotos.
 import os
 from playwright.sync_api import sync_playwright
@@ -60,8 +61,39 @@ with sync_playwright() as p:
                 q.wait_for_selector('#nf [name=response_due][aria-invalid=true]', timeout=8000)
                 check(q.evaluate("() => document.activeElement && document.activeElement.name") == 'response_due', 'Bußgeld: Fokus im Feld „Antwortfrist“')
                 if SHOTS: q.screenshot(path=f'{SHOTS}/serverfeld-bussgeld-{lang}-{w}.png')
+                # Stufe 8: Fahrzeughinweis „gültig bis“ in der Vergangenheit (nur am Server geprüft)
+                q.goto(B + '/#/vehicles/' + vid); q.wait_for_selector('#vnf', state='attached')
+                q.evaluate("() => { document.querySelector('#vnf').closest('details').open = true; }")
+                q.fill('#vnf [name=text]', 'Hinweis Feld 1501'); q.fill('#vnf [name=valid_until]', '2020-01-01')
+                q.click('#vnf button:not([type=button])')
+                q.wait_for_selector('#vnf [name=valid_until][aria-invalid=true]', timeout=8000)
+                check(q.evaluate("() => document.activeElement && document.activeElement.name") == 'valid_until', 'Fahrzeughinweis: Fokus im Feld „Gültig bis“')
+                if SHOTS: q.screenshot(path=f'{SHOTS}/serverfeld-hinweis-{lang}-{w}.png')
             check(not errs, 'keine Skriptfehler: ' + ' | '.join(errs))
             c.close()
+    # Stufe 8: Wareneingang – Eingaben ohne name= (data-fkey): Lieferant beim Buchen, Bezeichnung beim „neu anlegen“
+    env = api('GET', '/api/me')['d']['active_environment']
+    u = api('POST', '/api/users', {'username': 'sf.werkstatt', 'display_name': 'SF Werkstatt', 'role': 'workshop', 'environment': env, 'workshop_site': 'DORTMUND'})
+    c = br.new_context(viewport={'width': 390, 'height': 844}); q = c.new_page(); q.goto(B); errs = []; q.on('pageerror', lambda e: errs.append(str(e)))
+    q.evaluate(JS, ['POST', '/api/invite/accept', {'token': u['d']['invite_token'], 'password': PW}])
+    q.evaluate(JS, ['POST', '/api/login', {'username': 'sf.werkstatt', 'password': PW}])
+    item = q.evaluate(JS, ['POST', '/api/stock', {'site': 'DORTMUND', 'name': 'Ölfilter 1501', 'part_number': 'W1501'}])['d']['id']
+    q.goto(B + '/#/stock/receipt'); q.wait_for_selector('#rcf', timeout=15000)
+    q.select_option('#rclines .rcl:nth-child(1) select', item); q.fill('#rclines .rcl:nth-child(1) .rcq', '2')
+    q.evaluate("() => { document.querySelector('#rcsup').value = 'S'.repeat(121); }")
+    q.click('#rcf button:not([type=button])')
+    q.wait_for_selector('#rcsup[aria-invalid=true]', timeout=8000)
+    check(q.evaluate("() => document.activeElement && document.activeElement.id") == 'rcsup', 'Wareneingang: Fokus im Feld „Lieferant“ (data-fkey)')
+    if SHOTS: q.screenshot(path=f'{SHOTS}/serverfeld-wareneingang-de-390.png')
+    q.fill('#rcsup', 'Teile Süd')
+    q.click('#rclines .rcl:nth-child(1) [data-rcnew]')
+    q.evaluate("() => { document.querySelector('[data-rcnname]').value = 'N'.repeat(201); }")
+    q.click('[data-rcnsave]')
+    q.wait_for_selector('[data-rcnname][aria-invalid=true]', timeout=8000)
+    check(q.evaluate("() => document.activeElement && document.activeElement.hasAttribute('data-rcnname')"), 'Neuer Artikel: Fokus im Feld „Bezeichnung“ (data-fkey)')
+    if SHOTS: q.screenshot(path=f'{SHOTS}/serverfeld-neuer-artikel-de-390.png')
+    check(not errs, 'keine Skriptfehler (Wareneingang): ' + ' | '.join(errs))
+    c.close()
     br.close()
 print('FEHLER: ' + ' | '.join(fails) if fails else 'Alles grün')
 raise SystemExit(1 if fails else 0)

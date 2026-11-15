@@ -33,16 +33,16 @@ export async function listNotes(env, user, envName, vehicleId, query = {}) {
 export async function addNote(env, user, envName, vehicleId, body) {
   if (!WRITE.includes(user.role)) throw forbidden();
   await vehicleOk(env, vehicleId);
-  const text = str(body.text, { required: true, max: 500, field: 'Hinweis' });
-  if (text.length < 3) throw bad('validation', 'Hinweis ist zu kurz.');
+  const text = str(body.text, { key: 'text', required: true, max: 500, field: 'Hinweis' });
+  if (text.length < 3) throw bad('validation', 'Hinweis ist zu kurz.', { field_key: 'text' });
   const today = berlinDate();
   let validUntil = null;
   if (body.valid_until !== undefined && body.valid_until !== null && body.valid_until !== '') {
     validUntil = String(body.valid_until);
-    if (!isCalendarDate(validUntil)) throw bad('validation', '„Gültig bis“ ist kein gültiges Datum (JJJJ-MM-TT).');
-    if (validUntil < today) throw bad('validation', '„Gültig bis“ darf nicht in der Vergangenheit liegen.');
+    if (!isCalendarDate(validUntil)) throw bad('validation', '„Gültig bis“ ist kein gültiges Datum (JJJJ-MM-TT).', { field_key: 'valid_until' });
+    if (validUntil < today) throw bad('validation', '„Gültig bis“ darf nicht in der Vergangenheit liegen.', { field_key: 'valid_until' });
     // Jahres-Tippfehler (2062): Hinweis sonst praktisch dauerhaft (18.10.2026) – höchstens 20 Jahre wie die Fahrerakte
-    if (validUntil > String(Number(today.slice(0, 4)) + 20) + today.slice(4)) throw bad('validation', '„Gültig bis“ liegt mehr als 20 Jahre in der Zukunft – bitte Jahr prüfen.');
+    if (validUntil > String(Number(today.slice(0, 4)) + 20) + today.slice(4)) throw bad('validation', '„Gültig bis“ liegt mehr als 20 Jahre in der Zukunft – bitte Jahr prüfen.', { field_key: 'valid_until' });
   }
   // Backlog 804 (Funkloch): optionaler request_key je Formular – erneutes Senden nach verlorener Antwort liefert den vorhandenen Hinweis
   const rk = body.request_key;

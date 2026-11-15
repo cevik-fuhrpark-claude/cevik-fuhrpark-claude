@@ -429,6 +429,8 @@ function markServerField(form, since) {
   const fe = S.fieldErr; if (!fe || fe.at < since) return; S.fieldErr = null;
   if (!form || !form.isConnected || !form.elements) return;
   let el = form.elements.namedItem(fe.key); if (el && !el.tagName && el.length) el = el[0];
+
+  if ((!el || !el.tagName) && form.querySelectorAll) el = [...form.querySelectorAll(`[data-fkey="${String(fe.key).replace(/[^\w-]/g, '')}"]`)].find((x) => !x.disabled && x.offsetParent !== null) || null;
   if (!el || !el.tagName || el.disabled || el.type === 'hidden' || el.offsetParent === null) return;
   markInvalid(el, fe.msg); try { el.focus(); } catch {}
 }
