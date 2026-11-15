@@ -757,6 +757,56 @@ function arKinds(v) { const k = new Set(); for (const raw of String(v || '').spl
 
 
 
-async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
+
+const faLat = (s) => arLat(String(s || '').replace(/‌/g, '')).replace(/\b(n?my)\s+(?=\S)/g, '$1');
+const FA_D = 'kar\\s+nmy\\S*|3ml\\s+nmy\\S*|khrab\\S*|d3yf\\S*|az\\s+kar\\s+aft\\S*|(?:mshkl|ayrad|3yb)\\S*\\s+(?:\\S+\\s+)?(?:dar|pyda)\\S*';
+const FA_LOSE = 'gm\\s+(?:sh|kr)\\S*|gm\\b|dzdyd\\S*';
+
+const faRx = (n, d, extra) => new RegExp(`\\b(?:${n})\\S*\\s+(?:\\S+\\s+){0,3}(?:${d.split('D').join(FA_D)})${extra ? '|' + extra : ''}`);
+const FA_OK = /\b(?:t3myr|t3wyd|3wd|drst|pnchrgyry)\s*(?:shd|krd|kr)\S*|\bdwbarh\s+(?:\S+\s+)?(?:kar|rwshn)\s+my\S*|\bhmh\s*(?:chyz|chy)\S*\s+(?:\S+\s+)?(?:khwb|drst|mrtb|ok|salm|rdyf|tmyz)|\bmshkly\s+(?:\S+\s+)?n(?:yst|dar)\S*|\bsalm\s+(?:ast|h?st)\b|\bdrst\s+kar\s+my\S*|\bkar\s+my(?:knd|knh)\s+(?:\S+\s+)?(?:khwb|ady|drst)/;
+const FA_NEG = /\b(?:hych|bdwn)\s+\S+|\b(?:pnchr|shksth|shkst|trk|nsht|nshty|chkh|dwd|atsh|tsadf|tsadfy|parh|swrakh|khrab|mshkl|mshkly|ayrad|ayrady|3yb|gm|khaly|aftadh|aftad|lq|shl|jda)\S*\s+(?:(?:hm|ham|ra|ast)\s+)?n(?:yst|bwd|dar|dasht|shd|krd|kd|grft|myad|mychk|my)\S*/g;
+const FA_ENG = 'mwtwr|mashyn|kamywn|tryly|mwtr|kshnd';
+const FA_WARN = '(?:chk|mwtwr|hshdar|khta|abs|ebs|adblw|rwghn|dma|batry|srwys|zrd|qrmz)';
+const FA_KINDS = [['brake', faRx('trmz|bryk|lnt', 'D|nmy?gyr\\S*|bryd\\S*|sft\\S*|sda\\S*\\s+(?:\\S+\\s+)?(?:my|dar)\\S*|dagh\\S*|tmwm\\S*|tmam\\s+sh\\S*', '\\bfshar\\s+(?:\\S+\\s+)?bad\\S*\\s+(?:\\S+\\s+)?(?:km|payyn|myaft|aft|nmyr)\\S*'), /trmz\s*(?:dsty|khwab|parkyng)|hnd\s*bryk|(?:chragh|lamp)\s+(?:trmz|bryk)|khwdkar/],
+  ['parkbrake', faRx('trmz\\s*(?:dsty|khwab|parkyng)|hnd\\s*bryk', 'D|nmy?gyr\\S*|bryd\\S*|gyr\\s+krd\\S*|(?:baz|azad)\\s+nmy\\S*|nmykhwab\\S*')],
+  ['flat', faRx('lastyk|tayr|chrkh', 'pnchr\\S*|trkyd\\S*|bad\\s+(?:\\S+\\s+)?(?:ndar|khaly|rft|km)\\S*|bad\\S*\\s+khaly\\S*|khwabyd\\S*', '\\bpnchr\\S*(?=\\s|$)|\\btrkyd\\S*\\s+(?:\\S+\\s+)?(?:lastyk|tayr)')],
+  ['tyre', faRx('lastyk|tayr', 'trk(?!yd)\\S*|parh\\S*|bad\\s+krdh\\b|sayydh|saydh|saf\\s+sh\\S*|brydgy\\S*|ajr\\S*')],
+  ['steer', faRx('frman', 'D|sngyn\\S*|sft\\S*|lq\\b|lq\\s+sh\\S*|l3q|myksh\\S*|kj\\b|kj\\s+sh\\S*|bazy\\s+dar\\S*|mylrz\\S*|lrz\\S*', '\\b(?:mashyn|kamywn|tryly|mwtr)\\S*\\s+(?:\\S+\\s+)?(?:bh\\s+)?(?:smt\\s+)?(?:rast|chp)\\s+myksh\\S*')],
+  ['leak', faRx('rwghn|tyl|gazw|dyzl|swkht|ab\\s+radyatwr|ddykh|adblw', 'nsht\\s+(?:my|dar|krd)\\S*|nshty\\s+dar\\S*|mychk\\S*|chkh\\s+(?:my|dar|krd)\\S*|myryz\\S*|(?:ryzsh|ryzy)\\s+dar\\S*', '\\bnshty?\\s+(?:\\S+\\s+)?(?:rwghn|tyl|gazw|dyzl|swkht|ab|ddykh|adblw)\\S*(?=\\s|$)(?!\\s+(?:\\S+\\s+)?n)|\\b(?:rwghn|tyl|gazw\\S*?)\\s*ryzy\\S*(?=\\s|$)(?!\\s+(?:\\S+\\s+)?n)')],
+  ['fire', /\batsh\s*(?:grft|gyrft|grfth|zd)\S*|\batshswz\S*|\b(?:kabyn|mwtwr|mashyn|kamywn|tryly|mwtr|bar|lastyk)\S*\s+(?:\S+\s+)?(?:myswz\S*|atsh\b)|\bdwd\s+(?:\S+\s+){0,2}(?:myad|myayd|blnd|byrwn|zd|grft)\S*/, /agzwz/],
+  ['acc', /\btsadf\S*(?=\s|$)(?!\s+n)|\btsadm|\baksydnt|\btkr\s+(?:kd|krd|khwrd)\S*|\b(?:zdm|zdym|zd|khwrdm|khwrdym|malydm)\s+bh\s+|\bbh\s+(?:\S+\s+){0,2}(?:zdm|zdym|khwrdm|khwrdym|malydm)\b|\b(?:bhm|bh\s+mn|bh\s+ma)\s+(?:\S+\s+)?zd/],
+  ['injury', /\b(?:zkhmy|msdwm|mjrw7)|\basyb\s+dyd(?:m|ym)\b|\b(?:dstm|paym|srm)\s+(?:\S+\s+)?(?:bryd|zkhm)/],
+  ['nostart', faRx('mwtwr|mwtr', 'kar\\s+nmy\\S*|(?:rwshn|ash?tart|chalan)\\s+(?:\\S+\\s+)?nmy\\S*|khamwsh\\s+(?:shd|my)\\S*', `\\b(?:${FA_ENG})\\S*\\s+(?:\\S+\\s+){0,3}(?:(?:rwshn|chalan)\\s+nmy\\S*|khamwsh\\s+(?:shd|my)\\S*)|\\b(?:rwshn|ash?tart|chalan)\\s+(?:\\S+\\s+)?nmy(?:shh|shwd|shd|zn|khwr|gyr)\\S*`), /\b(?:chragh|lamp|nwr\b|flashr|rahnma|bkhary|kwlr|hytr|wbstw|ykhchal|sf7h|nmayshgr|dwrbyn)/],
+  ['engine', faRx('mwtwr|twrbw', 'dagh\\S*|jwsh\\s+awrd\\S*|sda\\S*\\s+(?:\\S+\\s+)?(?:my|dar)\\S*|(?:qdrt|kshsh)\\s+ndar\\S*|d3yf\\S*|khrab\\S*|mylrz\\S*|lrzsh\\S*|dwd\\s+my(?:knd|knh|kn)\\b|tq\\s*tq\\S*|ryp\\s+my\\S*', '\\bampr\\S*\\s+(?:\\S+\\s+)?(?:ab\\s+)?bala|\\bjwsh\\s+awrd\\S*|\\bagzwz\\S*\\s+(?:\\S+\\s+){0,2}dwd|\\bdwd\\s+(?:\\S+\\s+){0,2}(?:az\\s+)?agzwz|\\b(?:qdrt|kshsh)\\s+ndar\\S*'), new RegExp(`\\b(?:chragh|lamp)\\S*\\s+(?:\\S+\\s+)?${FA_WARN}`)],
+  ['mirror', faRx('aynh|ayynh', 'shkst\\S*|trk(?!yd)\\S*|aftad\\S*|kndh\\s+sh\\S*|kj\\s+sh\\S*|lq\\b|lq\\s+sh\\S*|shl\\s+sh\\S*|D')],
+  ['lights', faRx('chragh|lamp|nwr\\b|flashr|rahnma|nwrafkn', 'D|swkht\\S*|khamwsh\\b(?!\\s+nmy)|rwshn\\s+nmy\\S*|kar\\s+nmy\\S*'), new RegExp(`\\b(?:chragh|lamp)\\S*\\s+(?:\\S+\\s+)?(?:chk|mwtwr|hshdar|khta|abs|ebs|adblw|rwghn|dma|batry|srwys)|\\b(?:chragh|lamp)\\S*\\s+(?:\\S+\\s+)?(?:zrd|qrmz)\\S*\\s+(?:\\S+\\s+)?rwshn\\s+sh`)],
+  ['warnlight', new RegExp(`\\b(?:chragh|lamp)\\S*\\s+(?:\\S+\\s+)?${FA_WARN}\\S*\\s+(?:\\S+\\s+)?(?:rwshn\\s+(?:sh|mand|mwnd|my|ast|h?st)|khamwsh\\s+nmy|chshmk)|\\b(?:khta|arwr|hshdar|pyghm)\\S*\\s+(?:\\S+\\s+){0,2}(?:rwy|dr|bh)\\s+(?:sf7h|nmayshgr|dashbwrd|kylwmtr|mnytwr)`)],
+  ['glass', faRx('shysh', 'shkst\\S*|trk(?!yd)\\S*|sng\\s+khwrd\\S*|khrd\\s+sh\\S*', '\\bsng\\s+(?:\\S+\\s+)?(?:khwrd|zd|prt)\\S*\\s+(?:\\S+\\s+)?(?:bh\\s+)?shysh'), /balabr|bala\s+br|shwr/],
+  ['window', faRx('shysh|pnjrh|balabr', '(?:bala|payyn|baz|bsth)\\s+nmy\\S*|gyr\\s+krd\\S*|kar\\s+nmy\\S*|khrab\\S*'), /shwr|brfpak|abpash/],
+  ['batt', faRx('batry|btry|akw\\b|aky\\b', 'khaly\\S*|tmwm\\S*|tmam\\s+krd\\S*|khwabyd\\S*|khwab\\b|d3yf\\S*|sh?arzh?\\s+nmy\\S*|sharj\\s+nmy\\S*|ab\\s+krd\\S*|bad\\s+krd\\S*|D')],
+  ['tacho', faRx('ta(?:kh|k|ch)w?gra?f|kart\\s+(?:rannd|shwfr|hwshmnd)', `D|${FA_LOSE}|shkst\\S*|nmykhw\\S*|khwndh\\s+nmy\\S*|qbwl\\s+nmy\\S*|khta\\S*`, '\\bgm\\s+kr\\S*\\s+(?:\\S+\\s+)?kart\\s+(?:rannd|hwshmnd)')],
+  ['fuelcard', faRx('kart\\s+(?:swkht|bnzyn|gazw|tank)', `D|${FA_LOSE}|msdwd\\S*|bl[ao]?k\\S*|qbwl\\s+nmy\\S*|rd\\s+my\\S*`)],
+  ['lost', faRx('klyd|swyych|swych|mdark|kart\\s+(?:mashyn|khwdrw)|sanad|snd\\b', `${FA_LOSE}|nyst\\b|pyda\\s+nmy\\S*`, '\\bgm\\s+kr\\S*\\s+(?:\\S+\\s+)?(?:klyd|swyych|mdark)')],
+  ['coupling', faRx('tryly|trylr|chrkh\\s+pnjm|kfy\\b|kwplyng|shylng\\s+bad|shylngha', 'jda\\s+sh\\S*|(?:qfl|bsth|wsl)\\s+nmy\\S*|lq\\b|lq\\s+sh\\S*|dr\\s+rft\\S*'), /trmz/],
+  ['dryfuel', /\b(?:swkht|gazw|bnzyn|dyzl|bak|tyl)\S*\s+(?:\S+\s+)?(?:tmam|tmwm|khlas|khaly)\S*(?=\s|$)(?!\s+(?:\S+\s+)?n)|\b(?:tmam|tmwm)\s+(?:krdm|krdym|shd)\s+(?:\S+\s+)?(?:swkht|gazw|bnzyn|dyzl)/, /kart|lastyk|batry/],
+  ['reefer', faRx('ykhchal|srdkn|srdkhanh|ywnyt\\s+srd|trmwkyng|trmw\\s*kyng', 'D|(?:srd|khnk)\\s+nmy\\S*|khamwsh\\s+(?:sh|my)\\S*|grm\\s+sh\\S*', '\\bdma\\S*\\s+(?:\\S+\\s+)?ykhchal\\S*\\s+(?:\\S+\\s+)?bala')],
+  ['susp', faRx('fnr|kmk\\s*fnr|balshtk|bad\\s*bnd|kysh\\s+bad|amrtysr', 'shkst\\S*|parh\\S*|trkyd\\S*|nsht\\S*|khwabyd\\S*|khaly\\b|bad\\s+(?:ndar|nmy)\\S*|swrakh\\S*|D', '\\b(?:kamywn|tryly|mashyn|kabyn|mwtr)\\S*\\s+(?:\\S+\\s+){0,2}(?:kj|yk\\s+(?:trf|smt)\\S*)\\s+(?:sh|ast|h?st|nshst|aftad)\\S*'), /sndly/],
+  ['gear', faRx('gyrbks|gyrbaks|dndh|klach|klaj|klch|dyfrnsyl', 'D|ja\\s+nmy\\S*|dr\\s+my\\S*|gyr\\s+(?:my|krd)\\S*|sft\\S*|mylghz\\S*|sda\\S*\\s+(?:\\S+\\s+)?(?:my|dar)\\S*|bwy\\s+swkht\\S*|tq\\s*tq\\S*')],
+  ['climate', faRx('bkhary|kwlr|hytr|wbstw|wbastw|dmndh|thwyh|klyma', 'D|(?:srd|grm|khnk|rwshn)\\s+nmy\\S*|bad\\s+(?:\\S+\\s+)?nmy\\S*|khamwsh\\s+my\\S*|gaz\\s+ndar\\S*'), /sndly/],
+  ['cabkit', faRx('grmkn\\S*\\s+sndly|sndly\\s+grmkn', 'D|grm\\s+nmy\\S*')],
+  ['tarp', faRx('chadr|brznt', 'parh\\S*|pary\\S*|swrakh\\S*|jr\\s+khwrd\\S*|kndh\\s+sh\\S*|ptr\\S*|bsth\\s+nmy\\S*|shl\\s+sh\\S*|D')],
+  ['exhaust', faRx('agzwz|ekzwz', 'aftad\\S*|shkst\\S*|swrakh\\S*|sda\\S*\\s+(?:\\S+\\s+)?(?:my|dar)\\S*|lq\\b|lq\\s+sh\\S*|kndh\\s+sh\\S*|awyzan\\S*|D'), /dwd/],
+  ['visib', faRx('brfpak|brf\\s+pak|tyghh?\\s+brf|abpash|ab\\s+pash|shyshhshwr|shyshh\\s+shwr', 'D|(?:pak|tmyz)\\s+nmy\\S*|parh\\S*|kndh\\s+sh\\S*|ab\\s+nmy\\S*|nmyzn\\S*|tkan\\s+nmy\\S*')],
+  ['seat', faRx('sndly|kmrbnd|kmr\\s+bnd|syt\\b', 'D|shkst\\S*|parh\\S*|gyr\\s+krd\\S*|(?:qfl|bsth|baz|jlw|3qb|payyn|bala)\\s+nmy\\S*|lq\\b|lq\\s+sh\\S*|shl\\s+sh\\S*|bad\\s+ndar\\S*|khwabyd\\S*'), /grmkn/],
+  ['wheel', faRx('mhrh|bwlt|pych\\s+chrkh|rwlmn|blbryng|bwlbryng|kardan|kardn|ryng|twpy', 'shl\\S*|lq\\b|lq\\s+sh\\S*|aftad\\S*|kndh\\s+sh\\S*|nyst\\b|sda\\S*\\s+(?:\\S+\\s+)?(?:my|dar)\\S*|dagh\\S*|gm\\s+sh\\S*|shkst\\S*|D', '\\bchrkh\\S*\\s+(?:\\S+\\s+){0,2}(?:shl|lq|dagh|sda\\s+my|mylrz|dr\\s+myr|aftad|kndh\\s+sh|qfl\\s+krd)\\S*'), /pnjm|pnchr/],
+  ['stuck', /\b(?:tw|twy|dr)\s+(?:gl|brf|shn|chalh|jwb|lajn)\s+(?:\S+\s+)?(?:gyr\s+krd|gyr\s+aftad|frw\s*rft|mand|mwnd)\S*|\b(?:gl|shn|chalh|lajn)\s+(?:\S+\s+)?(?:gyr\s+krd|frw\s*rft)\S*|\bgyr\s+krd\S*\s+(?:tw|twy|dr)\s+(?:gl|brf|shn|chalh|jwb|lajn)\b/],
+  ['numplate', faRx('plak', 'aftad\\S*|gm\\s+sh\\S*|gm\\b|shkst\\S*|kndh\\s+sh\\S*|khwana?\\s+nyst|khwndh\\s+nmy\\S*|nyst\\b|dzdyd\\S*|kj\\s+sh\\S*|D'), /chragh|lamp|nwr\b/],
+  ['adas', faRx('dwrbyn|snswr|radar|rdar|dsthyar|lyn\\s*asyst', 'D|khta\\S*|khamwsh\\s+sh\\S*|tar\\b|tar\\s+sh\\S*|nmyby?n\\S*|(?:nshan|tswyr)\\s+nmy\\S*|syah\\s+sh\\S*')],
+  ['door', new RegExp(`\\bdrb\\S*\\s+(?:\\S+\\s+){0,2}(?:${FA_D}|(?:baz|bsth|qfl)\\s+nmy\\S*|gyr\\s+krd\\S*|shkst\\S*|kndh\\s+sh\\S*|lq\\b)|\\bdr\\s+(?:(?:kabyn|ranndh|3qb|bar|kmprsy|ykhchal|knar)\\S*\\s+)?(?:baz|bsth|qfl)\\s+nmy\\S*|\\bqfl\\S*\\s+(?:\\S+\\s+){0,2}(?:${FA_D}|(?:baz|bsth)\\s+nmy\\S*|shkst\\S*|kndh\\s+sh\\S*|gyr\\s+krd\\S*)`), /chrkh\s+pnjm|kmrbnd|klyd|sndly/]];
+function faKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n،؛؟]+/)) { if (!/[ء-ۿ]/.test(raw)) continue; const p = faLat(raw).replace(FA_NEG, ' '); if (!FA_OK.test(p)) for (const [n, rx, ex] of FA_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };
