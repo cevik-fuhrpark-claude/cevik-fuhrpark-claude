@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test Backlog 1501 Stufe 9 (WCAG 3.3.1): Auswertungen per GET – „Von“ nach „Bis“ markiert das Feld „Bis“ (aria-invalid,
 # Hinweis am Feld, Fokus), die abgelehnte Eingabe bleibt im Feld stehen: Auslesungen-Verlauf, Nachweise der Fahrer, Teile-Verwendung, Lagerjournal,
-# Nachweisliste „Durchgeführte Prüfungen“ (Beschriftungen zugeordnet). DE bei 390/820/1366 px, UK/EN bei 390 px.
+# Nachweisliste „Durchgeführte Prüfungen“ (Beschriftungen zugeordnet), Versicherungsfälle (Stufe 10). DE bei 390/820/1366 px, UK/EN bei 390 px.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). CFP_SHOTS=<ordner> speichert Bildschirmfotos.
 import os
 from playwright.sync_api import sync_playwright
@@ -51,6 +51,21 @@ with sync_playwright() as p:
         q.wait_for_selector('#mhto[aria-invalid=true]', timeout=8000)
         check(q.evaluate(STATE, '#mhto')['focus'], 'Nachweisliste: Fokus im Feld „Bis“')
         if SHOTS: q.screenshot(path=f'{SHOTS}/serverfeld-zeitraum-nachweisliste-{lang}-{w}.png')
+        # Stufe 10: Versicherungsfälle – Zeitraum wirkt per onchange, Filterleiste ohne <form>; „Bis“ vor „Von“ → nur „Bis“ verworfen
+        reqs = []; q.on('request', lambda r: reqs.append(r.url) if '/api/claims' in r.url else None)
+        q.goto(B + '/#/claims'); q.wait_for_selector('#clfrom')
+        q.fill('#clfrom', '2026-05-01'); q.wait_for_timeout(700); q.wait_for_selector('#clfrom')
+        check(q.input_value('#clfrom') == '2026-05-01', 'Versicherungsfälle: Von gesetzt')
+        q.fill('#clto', '2026-04-01')
+        q.wait_for_selector('#clto[aria-invalid=true]', timeout=8000)
+        st = q.evaluate(STATE, '#clto')
+        check(st['val'] == '2026-04-01' and q.input_value('#clfrom') == '2026-05-01', f'Versicherungsfälle: Von bleibt gesetzt, abgelehntes Bis steht im Feld ({st["val"]})')
+        check(bool(st['txt']) and (MSG[lang] is None or MSG[lang] in st['txt']), f'Versicherungsfälle: Hinweis am Feld „Bis“: {st["txt"]}')
+        check(st['focus'], 'Versicherungsfälle: Fokus im Feld „Bis“')
+        n0 = len(reqs); q.wait_for_timeout(1500)
+        check(len(reqs) == n0, f'Versicherungsfälle: keine weiteren Anfragen nach der Markierung ({len(reqs) - n0})')
+        check(q.eval_on_selector('#clto', 'e => e.getAttribute("aria-invalid")') == 'true', 'Versicherungsfälle: Markierung bleibt bestehen')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/serverfeld-zeitraum-claims-{lang}-{w}.png')
         check(not errs, 'keine Skriptfehler: ' + ' | '.join(errs))
         c.close()
     br.close()

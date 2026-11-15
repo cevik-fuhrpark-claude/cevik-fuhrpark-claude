@@ -256,17 +256,18 @@ export async function claimOverview(env, user, envName, query = {}) {
   const sel = siteSelection(rows.map((r) => ({ site: r.vehicle_site })), query.site);
   // Backlog 274 (Teilagent „Versicherer verlangt eine Schadenaufstellung“): Zeitraum nach Meldedatum (von/bis) und Versicherer (genau,
   // nur eigene Seite – die Suche findet auch den Versicherer des Unfallgegners); wirken vor den Zählern wie der Standort
-  const day = (x) => { if (x === undefined || x === null || x === '') return null; const v = String(x).slice(0, 12); if (!isCalendarDate(v)) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.'); return v; };
-  const from = day(query.from); const to = day(query.to);
+  // Backlog 1501 Stufe 10: field_key → die Oberfläche markiert das Datumsfeld (WCAG 3.3.1)
+  const day = (x, key) => { if (x === undefined || x === null || x === '') return null; const v = String(x).slice(0, 12); if (!isCalendarDate(v)) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.', { field_key: key }); return v; };
+  const from = day(query.from, 'from'); const to = day(query.to, 'to');
   // Backlog 1418 (Blickwinkel „Inhaber verlängert die Flottenversicherung – Versicherer verlangt den Schadenverlauf nach Schadenjahr“):
   // Zeitraum und Jahressummen wahlweise nach dem Schadentag (Schadenzeitpunkt am Vorgang; fehlt er: Anlage des Vorgangs, gezählt als
   // `loss_day_fallback`) statt nach dem Meldedatum an den Versicherer – ein Schaden vom 28.12. mit Meldung am 05.01. gehört ins alte Schadenjahr.
   const basis = query.basis === 'schaden' ? 'schaden' : 'meldung';
   for (const r of rows) { r.loss_day = occurrenceDay({ occurred_at: r.case_occurred_at, created_at: r.case_created_at }); r.loss_day_fallback = !r.case_occurred_at; }
   const bday = (r) => (basis === 'schaden' ? r.loss_day || r.reported_on : r.reported_on);
-  if (from && to && from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.');
+  if (from && to && from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.', { field_key: 'to' });
   const insurerOptions = [...new Set(rows.filter((r) => !sel.site || sel.match(r.vehicle_site)).map((r) => r.insurer).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
-  const insurer = query.insurer ? str(query.insurer, { max: 120, field: 'Versicherer' }) : null;
+  const insurer = query.insurer ? str(query.insurer, { max: 120, field: 'Versicherer', key: 'insurer' }) : null;
   let list = rows.filter((r) => (!sel.site || sel.match(r.vehicle_site)) && (!from || bday(r) >= from) && (!to || bday(r) <= to) && (!insurer || r.insurer === insurer)).map((r) => {
     // gleiche Regel wie die Vorgangsbewertung: Fremdleistung „ersetzt eigene Arbeit/Teile“ → nur Fremdleistung; ohne Stundensatz oder mit unbewerteten/geschätzten Positionen: keine Summe
     // mit Stundensatz-Verlauf je Arbeitsdatum der damals gültige Satz (Backlog 412); ohne Verlauf wie bisher rund(Stunden × Satz)

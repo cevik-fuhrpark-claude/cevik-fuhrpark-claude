@@ -42287,6 +42287,11 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   const sj2 = await users.fleet.get('/api/stock/journal?from=2024-01-01&to=2026-04-01'); eq(sj2.data.field_key, 'from', 'Lagerjournal: mehr als ein Jahr');
   const au1 = await owner.get('/api/admin/audit?format=csv&from=2026-05-01&to=2026-04-01'); eq(au1.status, 400); eq(au1.data.field_key, 'to', 'Protokoll-CSV: Von nach Bis');
   const dr1 = await users.fleet.get('/api/drivers/records?to=gestern'); eq(dr1.status, 400); eq(dr1.data.field_key, 'to', 'Nachweise der Fahrer: Bis ungültig');
+  // Stufe 10: Versicherungsfälle (Zeitraum per onchange, Filterleiste ohne <form>)
+  const cl1 = await owner.get('/api/claims?filter=alle&from=2026-05-01&to=2026-04-01'); eq(cl1.status, 400); eq(cl1.data.field_key, 'to', 'Versicherungsfälle: Von nach Bis');
+  const cl2 = await owner.get('/api/claims?filter=alle&from=2026-02-30'); eq(cl2.data.field_key, 'from', 'Versicherungsfälle: Von ungültig');
+  const cl3 = await owner.get('/api/claims?filter=alle&basis=schaden&to=2026-13-01'); eq(cl3.data.field_key, 'to', 'Versicherungsfälle: Bis ungültig (Schadentag)');
+  const cl4 = await owner.get('/api/claims?filter=alle&insurer=' + 'x'.repeat(121)); eq(cl4.status, 400); eq(cl4.data.field_key, 'insurer', 'Versicherungsfälle: Versicherer zu lang');
   // Wächter: jeder field_key der umgestellten Module ist ein Feldname im Formular der Oberfläche
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -42327,6 +42332,11 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
   S2.fieldErr = { key: 'from', msg: 'x', at: 300 }; mg(gform, 200, { from: '2026-05-01', to: '' }); eq(fromEl.value, '2026-05-01', 'abgelehnte Eingabe wieder im Feld'); eq(JSON.stringify(marks), '[200]', 'markServerField aufgerufen');
   for (const [v, f] of [['viewPartsUsage', '#puf'], ['viewTachoHistory', '#thf'], ['viewDriverRecords', '#drf'], ['viewStockJournal', '#jf']]) {
     const a = src.indexOf(`async function ${v}(`); const b = src.indexOf('\nasync function ', a + 10); ok(a > 0 && src.slice(a, b).includes(`markGetField($('${f}'), t0`), `${v} markiert Feld nach dem Neuzeichnen`);
+  }
+  { const a = src.indexOf('async function viewClaims('); const b = src.indexOf('\nasync function ', a + 10); const v = src.slice(a, b);
+    ok(v.includes('markGetField(box && { isConnected: box.isConnected, elements: { namedItem: (k) => box.querySelector(`input[name="${k}"]`) } }, t0, kept)') && v.includes('id="clfrom" name="from"') && v.includes('id="clto" name="to"'), 'Versicherungsfälle: Zeitraum mit Feldnamen, Feld markiert');
+    ok(!v.includes('<form class="actions noprint"') && v.includes('setTimeout(ok, 0)'), 'Versicherungsfälle: Filterleiste ohne <form> (Wiederherstellung löst sonst „change“ → Schleife), Markierung nach der Wiederherstellung');
+    ok(v.includes("if (fe === 'from') S.clFrom = null; else if (fe === 'to') S.clTo = null; else if (fe === 'insurer') S.clIns = null;"), 'Versicherungsfälle: nur der beanstandete Filter wird zurückgesetzt');
   }
   ok(/<label for="mhfrom">[^\n]*id="mhfrom" name="from"[^\n]*<label for="mhto">[^\n]*id="mhto" name="to"/.test(src) && src.includes('<label for="mhkind">'), 'Nachweisliste: Beschriftungen den Feldern zugeordnet');
 });

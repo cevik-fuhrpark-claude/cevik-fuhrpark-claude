@@ -96,9 +96,20 @@ async function viewClaims() {
 
   const bq = S.clBasis === 'schaden' ? '&basis=schaden' : '';
   const qq = qq0 + pq + bq;
-  let r;
+  let r; const t0 = Date.now();
 
-  try { r = await api('GET', `/api/claims?filter=${f}${csq}${qq}`); } catch (err) { if (!pq) throw err; S.clFrom = S.clTo = S.clIns = null; toast(err.message, true); return viewClaims(); }
+
+
+  try { r = await api('GET', `/api/claims?filter=${f}${csq}${qq}`); } catch (err) {
+    if (!pq) throw err;
+    const fe = S.fieldErr && S.fieldErr.at >= t0 ? S.fieldErr.key : null; const kept = { from: S.clFrom, to: S.clTo };
+    if (fe === 'from') S.clFrom = null; else if (fe === 'to') S.clTo = null; else if (fe === 'insurer') S.clIns = null; else S.clFrom = S.clTo = S.clIns = null;
+    toast(err.message, true); await viewClaims();
+
+
+    if (fe === 'from' || fe === 'to') { await new Promise((ok) => setTimeout(ok, 0)); const box = $('#clper'); markGetField(box && { isConnected: box.isConnected, elements: { namedItem: (k) => box.querySelector(`input[name="${k}"]`) } }, t0, kept); } else if (S.fieldErr && S.fieldErr.at >= t0) S.fieldErr = null;
+    return;
+  }
 
   const tabs = ['offen', ...(r.followup_days || f === 'nachfassen' ? ['nachfassen'] : []), 'gutachten', 'alle', 'reguliert', ...(r.counts.ohne_erstattung || f === 'ohne_erstattung' ? ['ohne_erstattung'] : []), 'abgelehnt', 'zurueckgezogen'];
   const fName = (x) => (x === 'offen' ? t('claim_f_open') : x === 'gutachten' ? t('ca_pending') : x === 'alle' ? t('filter_all') : x === 'nachfassen' ? t('todo_claims') : x === 'ohne_erstattung' ? t('claim_f_noreimb') : t('cls_' + x));
@@ -107,7 +118,7 @@ async function viewClaims() {
   let html = `<h1>${esc(t('claims'))}</h1><p class="small muted noprint" id="claimsasof" style="margin:-6px 0 8px">${esc(t('home_asof').replace('{t}', fmtHM(new Date(nowMs()).toISOString())))} · <a href="#/claims" id="clreload" title="${esc(t('claims_asof_hint'))}">${esc(t('update_now'))}</a></p>${printHead([`${t('print_filter')}: ${fLabel}`, r.site ? `${t('kpi_vsite')}: ${r.site === 'ohne' ? t('cs_nosite') : r.site}` : '', r.from || r.to ? `${t(lossB ? 'claim_period_loss' : 'claim_period')}: ${r.from ? fmtD(r.from) : '…'} – ${r.to ? fmtD(r.to) : '…'}` : '', r.insurer ? `${t('claim_insurer')}: ${r.insurer}` : '', q ? t('claim_print_search').replace('{q}', q) : '', t('print_count').replace('{n}', r.claims.length)])}${helpLink('claims')}<p class="small muted">${esc(t('claims_hint'))}</p>
     <div class="actions noprint" style="flex-wrap:wrap">${tabs.map((x) => `<button type="button" class="btn ${f === x ? '' : 'secondary'}" data-clf="${x}">${esc(fName(x))} (${r.counts[x] || 0})</button>`).join('')}</div>
     ${(r.site_options || []).length > 1 || r.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('clsite', '', r.site_options, r.site, t('kpi_vsite'), t('filter_all'))}</div></div>` : ''}
-    <div class="actions noprint" style="margin-top:0;align-items:end;flex-wrap:wrap" id="clper"><div><label for="clbasis">${esc(t('claim_basis'))}</label><select id="clbasis">${['meldung', 'schaden'].map((x) => `<option value="${x}"${(lossB ? 'schaden' : 'meldung') === x ? ' selected' : ''}>${esc(t('claim_basis_' + x))}</option>`).join('')}</select></div><div><label for="clfrom">${esc(t(lossB ? 'claim_from_loss' : 'claim_from'))}</label><input type="date" id="clfrom" value="${esc(r.from || '')}"></div><div><label for="clto">${esc(t(lossB ? 'claim_to_loss' : 'claim_to'))}</label><input type="date" id="clto" value="${esc(r.to || '')}"></div>${(r.insurer_options || []).length > 1 || r.insurer ? `<div><label for="clins">${esc(t('claim_insurer'))}</label><select id="clins"><option value="">${esc(t('filter_all'))}</option>${[...new Set([...(r.insurer_options || []), ...(r.insurer ? [r.insurer] : [])])].map((x) => `<option value="${esc(x)}"${x === r.insurer ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div>` : ''}</div>
+    <div class="actions noprint" style="margin-top:0;align-items:end;flex-wrap:wrap" id="clper"><div><label for="clbasis">${esc(t('claim_basis'))}</label><select id="clbasis">${['meldung', 'schaden'].map((x) => `<option value="${x}"${(lossB ? 'schaden' : 'meldung') === x ? ' selected' : ''}>${esc(t('claim_basis_' + x))}</option>`).join('')}</select></div><div><label for="clfrom">${esc(t(lossB ? 'claim_from_loss' : 'claim_from'))}</label><input type="date" id="clfrom" name="from" value="${esc(r.from || '')}"></div><div><label for="clto">${esc(t(lossB ? 'claim_to_loss' : 'claim_to'))}</label><input type="date" id="clto" name="to" value="${esc(r.to || '')}"></div>${(r.insurer_options || []).length > 1 || r.insurer ? `<div><label for="clins">${esc(t('claim_insurer'))}</label><select id="clins"><option value="">${esc(t('filter_all'))}</option>${[...new Set([...(r.insurer_options || []), ...(r.insurer ? [r.insurer] : [])])].map((x) => `<option value="${esc(x)}"${x === r.insurer ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div>` : ''}</div>
     <input id="clq" class="noprint" type="search" maxlength="60" value="${esc(q)}" placeholder="${esc(t('claim_search'))}" aria-label="${esc(t('claim_search'))}" autocomplete="off" style="margin-bottom:12px">
     ${q ? `<p class="small muted" id="clqinfo">${esc(t('claim_search_info').replace('{q}', q).replace('{n}', r.claims.length))}</p>` : ''}
     ${r.reimbursed_sum_net !== null || r.reimbursed_sum_excluded_net != null ? `<section class="panel"><dl class="kv">${r.reimbursed_sum_net !== null ? `<dt>${esc(t('claim_sum'))}</dt><dd><b>${eur(r.reimbursed_sum_net)}</b></dd>` : ''}${r.reimbursed_sum_excluded_net != null ? `<dt>${esc(t('claim_sum_excluded'))}</dt><dd>${eur(r.reimbursed_sum_excluded_net)}<div class="small muted">${esc(t('claim_sum_excluded_hint'))}</div></dd>` : ''}</dl></section>` : ''}
