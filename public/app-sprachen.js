@@ -1117,6 +1117,53 @@ function tkKinds(v) { const k = new Set(); for (const raw of String(v || '').spl
 
 
 
-async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v), ...kzKinds(v), ...kyKinds(v), ...tjKinds(v), ...tkKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+
+
+const HY_MAP = { ա: 'a', բ: 'b', գ: 'g', դ: 'd', ե: 'e', զ: 'z', է: 'e', ը: 'y', թ: 't', ժ: 'zh', ի: 'i', լ: 'l', խ: 'kh', ծ: 'ts', կ: 'k', հ: 'h', ձ: 'dz', ղ: 'gh', ճ: 'ch', մ: 'm', յ: 'y', ն: 'n', շ: 'sh', ո: 'o', չ: 'ch', պ: 'p', ջ: 'j', ռ: 'r', ս: 's', վ: 'v', տ: 't', ր: 'r', ց: 'ts', ւ: 'v', փ: 'p', ք: 'k', և: 'ev', օ: 'o', ֆ: 'f' };
+const hyLat = (s) => String(s || '').toLowerCase().replace(/[՛՜՞]/g, '').replace(/ու/g, 'u').replace(/և/g, 'ev').replace(/[ա-ֆ]/g, (c) => HY_MAP[c] ?? c);
+const HY_OK = /\b(?:veranorog|norogets|norogel\s+en|sarkets|sarkel\s+en|pokhets|pokhel\s+en|pokhvel)\S*|\bnorits\s+(?:\S+\s+)?ashkhat|\bamen\s+inch\s+(?:\S+\s+)?(?:kargin|normal|lav)|\bkhndir\s+chk|\bnormal\s+(?:\S+\s+)?ashkhat/;
+const HY_KINDS = [['brake', /\b(?:argelak|tormuz|tormoz)\S*\s+(?:\S+\s+)?(?:ch[ei]n?\s+(?:ashkhat|brn)|tuyl)|\bodi\s+chnshum\S*\s+(?:\S+\s+)?(?:ynk|ijn)/, /\b(?:dzerki\s+(?:argelak|tormuz|tormoz)|dzernargelak|ruchnik)/],
+  ['parkbrake', /\b(?:dzerki\s+(?:argelak|tormuz|tormoz)|dzernargelak|ruchnik)\S*\s+(?:\S+\s+)?(?:ch[ei]n?\s+(?:brn|ashkhat|pah)|pchats|tuyl)/],
+  ['flat', /\b(?:anvadogh|aniv|shin|kolyos)\S*\s+(?:\S+\s+)?(?:payt|tsakv|ijel|nstel|od\s+e\s+togh)|\bpaytets\S*\s+(?:\S+\s+)?(?:anvadogh|aniv)/, /\b(?:ptutak|gayk)/],
+  ['tyre', /\b(?:anvadogh|shin)\S*\s+(?:\S+\s+)?(?:mash|chakv|chakel)/],
+  ['steer', /\bghek\S*\s+(?:\S+\s+)?(?:tsanr|khagh|lyuft|chi\s+ptt)|\b(?:aj|dzakh)\s+(?:\S+\s+)?(?:kash|tan)um/],
+  ['leak', /\b(?:yugh|varelik|dizel|solyar|antifriz|tosol|adblu|jur)\S*\s+(?:\S+\s+)?(?:hos|katum|kat\S*\s+e|artahos)|\bartahos/],
+  ['fire', /\bvarvum\s+e\b|\bayrv|\bkrak(?!mar)|\bhrdeh|\btsukh|\bpozhar/, /\b(?:khlatsutsich|glushitel|vikhlop|chek|lamp|indikator|luys|far)/],
+  ['acc', /\bvtar(?!ayin)|\bavaria(?:\s|$)|\bavariayi\s+entark|\bbakhv|\bkhpets|\bkhpel\s+em/],
+  ['injury', /\b(?:viravor|travm|vnasvatsk)/],
+  ['nostart', /\b(?:sharzhich|motor|mekena)\S*\s+(?:\S+\s+)?chi\s+(?:mian|varv)|\b(?:sharzhich|motor)\S*\s+(?:\S+\s+)?(?:anjat|hangav)/],
+  ['engine', /\b(?:gertakats|takanum|erum\b)|\b(?:sharzhich|motor)\S*\s+(?:\S+\s+)?(?:aghmk|takum|uzh\s+chuni|dzayn)|\b(?:khlatsutsich|glushitel|vikhlop)\S*\s+(?:\S+\s+)?tsukh|\btsukh\S*\s+(?:\S+\s+)?(?:khlatsutsich|glushitel|vikhlop)|\bturbin\S*\s+(?:\S+\s+)?(?:pchats|svvum|dzayn)/],
+  ['mirror', /\b(?:hayel|zerkal)\S*\s+(?:\S+\s+)?(?:kotr|jard|ynk|chakv)/],
+  ['lights', /\b(?:luys|far|lamp|gabarit|stop|povorot|shrjadardz)\S*\s+(?:\S+\s+)?(?:ch[ei]n?\s+(?:varv|ashkhat)|ayrvel)/, /\bvtarayin/],
+  ['warnlight', /\b(?:chek|indikator|lampochk|lamp)\S*\s+(?:\S+\s+)?varv(?:ets|el|um)|\bskhal\S*\s+(?:\S+\s+)?(?:grum|tsuyts|varv)/, /\bch[ei]n?\s+varv/],
+  ['glass', /\b(?:dimapak|apak|lobov)\S*\s+(?:\S+\s+)?(?:chak|kotr|jard)|\bkar\s+(?:\S+\s+)?(?:dipav|kpav)\S*\s+(?:\S+\s+)?(?:dimapak|apak)/],
+  ['window', /\b(?:patuhan|apak)\S*\s+(?:\S+\s+)?chi\s+(?:ijn|bardzr|batsv|pakv)/],
+  ['batt', /\b(?:akumulyator|akkumulyator|akum|martkots)\S*\s+(?:\S+\s+)?(?:nst|litskatap|chi\s+ashkhat|merel)/],
+  ['tacho', /\btakhograf\S*\s+(?:\S+\s+)?(?:chi|skhal|pchats)|\bvarordi\s+kart\S*\s+(?:\S+\s+)?(?:kortsr|korav|korel|chi\s+kard|kotrv)/],
+  ['fuelcard', /\b(?:vareliki|benzini|dizeli)\s+kart\S*\s+(?:\S+\s+)?(?:chi|blok|kortsr)/],
+  ['lost', /\b(?:banali|klyuch|pastatght|tekhpasport|tekhandznagir|dokument)\S*\s+(?:\S+\s+)?(?:kortsr|korav|korel|chem\s+gtnum)|\bkortsr\S*\s+(?:\S+\s+)?(?:banali|pastatght|tekhpasport|dokument)/],
+  ['coupling', /\b(?:ktsord(?!ich)|kisakts|pritsep|polupritsep|sedl|treyler)\S*\s+(?:\S+\s+)?chi\s+(?:mian|kts|amr|bats)/],
+  ['dryfuel', /\b(?:varelik|dizel|solyar|benzin)\S*\s+(?:\S+\s+)?(?:verjats|prts)|\bbak\S*\s+(?:\S+\s+)?datark/],
+  ['reefer', /\b(?:sarnaran|ref|refrizherator|khaladilnik|kholodilnik|agregat|termoking)\S*\s+(?:\S+\s+)?(?:chi\s+(?:saretsn|sarets|ashkhat|mian)|pchats|skhal)/],
+  ['susp', /\b(?:pnevmo|bardz(?!r)|podushk|resor|amortizator)\S*\s+(?:\S+\s+)?(?:payt|kotr|hos|od\s+e\s+togh|chi\s+ashkhat|pchats)/],
+  ['gear', /\b(?:pokhantsum|peredach|karobk|skorost)\S*\s+(?:\S+\s+)?(?:ch[ei]n?\s+(?:mtn|mian)|pchats|dzayn)|\b(?:ktsordich|stseplen)\S*\s+(?:\S+\s+)?(?:buks|sahum|chi\s+ashkhat|pchats)/],
+  ['climate', /\b(?:jeruts|konditsioner|pechk|avtonomk|vebasto|webasto|klimat)\S*\s+(?:\S+\s+)?(?:chi\s+(?:ashkhat|mian|tak|sarets|varv)|pchats)/, /\bnstateghi\s+(?:takats|jeruts)/],
+  ['cabkit', /\bnstateghi\s+(?:takats|jeruts)\S*\s+(?:\S+\s+)?(?:chi|pchats)/],
+  ['tarp', /\b(?:tent|brezent)\S*\s+(?:\S+\s+)?(?:patrv|ktrv|pchats|ynk)/],
+  ['exhaust', /\b(?:khlatsutsich|glushitel|vikhlop)\S*\s+(?:\S+\s+)?(?:ynkav|ynkel|kotr|tsakv|dzayn|pchats)/],
+  ['visib', /\b(?:makrich|apakemakrich|dvornik)\S*\s+(?:\S+\s+)?(?:ch[ei]n?\s+ashkhat|pchats|kotr)/],
+  ['seat', /\b(?:amragot|remen)\S*\s+(?:\S+\s+)?(?:chi|kotr|pchats)|\b(?:nstategh(?!i\s+(?:takats|jeruts))|kreslo)\S*\s+(?:\S+\s+)?(?:kotr|pchats|chi\s+(?:kargav|ashkhat))/],
+  ['wheel', /\b(?:ptutak|gayk)\S*\s+(?:\S+\s+)?(?:tulats|ynk|kotr|chka)/],
+  ['stuck', /\b(?:tsekh|dzyun|dzyan|avaz)\S*\s+(?:\S+\s+)?(?:khrv|mnats)|\bkhrv(?:ets|el)|\b(?:mekena|aniv)\S*\s+(?:\S+\s+)?buks/, /\b(?:khtsanum|probk)/],
+  ['numplate', /\b(?:hamaranish|nomer)\S*\s+(?:\S+\s+)?(?:ynk|kortsr|korav|kotr|chi\s+erevum)/],
+  ['adas', /\b(?:tesakhtsik|kamer|radar|sensor|datchik|asistent)\S*\s+(?:\S+\s+)?(?:chi\s+ashkhat|pchats|skhal)/],
+  ['door', /\b(?:dur(?:y|n|ry)?|drner\S*|(?:gidro|hidro)bort\S*)\s+(?:\S+\s+)?(?:chi\s+(?:pakv|batsv|ashkhat|bardzr|ijn)|chen\s+(?:pakv|batsv)|pchats)/]];
+
+const HY_NEG = /\bch(?:i|en|em|enk|es)\s+(?:hos|kat|kotr|payt|tsakv|chakv|bakhv|vnasv|ayrv|ijel|ynk|jard|viravor)\S*|\b(?:kotrv|payt|tsakv|chakv|vnasv|jard)\S*\s+che\b|\bchkotrv\S*/g;
+function hyKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n։՝]+/)) { if (!/[ա-ֆԱ-Ֆ]/.test(raw)) continue; const p = hyLat(raw).replace(HY_NEG, ' '); if (!HY_OK.test(p)) for (const [n, rx, ex] of HY_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
+async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v), ...kzKinds(v), ...kyKinds(v), ...tjKinds(v), ...tkKinds(v), ...hyKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };

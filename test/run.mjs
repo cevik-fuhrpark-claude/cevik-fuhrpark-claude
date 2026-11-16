@@ -42733,7 +42733,7 @@ await test('Backlog 1512 (Blickwinkel „Fahrer schreibt die Meldung auf Turkmen
   const ids = [...src.matchAll(/\['([a-z]+)', (?:tkRx|\/|new RegExp)/g)].map((m) => m[1]);
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
   eq(new Set(ids).size, 36, '36 Hinweisarten');
-  ok(app.includes('...tjKinds(v), ...tkKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(app.includes('...tjKinds(v), ...tkKinds(v)'), 'in foreignKinds aufgenommen');
   ok(!main.includes('const TK_KINDS') && lang.includes('const TK_KINDS'), 'Tabelle nur in app-sprachen.js');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['tormoz işlemeýär', 'teker ýaryldy', 'maşyn ot almaýar', 'kabina ýanýar', 'ýag akýar', 'awariýa boldum', 'motor çyrasy ýandy', 'holodilnik sowatmaýar', 'тормоз ишлемейәр']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
@@ -43556,6 +43556,39 @@ await test('Backlog 1532 (Blickwinkel „Leitung legt einen neuen Fahrer an und 
   }
 });
 
+await test('Backlog 1533 (Blickwinkel „Fahrer schreibt die Meldung auf Armenisch“, Backlog 195, Folge aus 1502/1507): „Արգելակները չեն աշխատում“, „Անիվը պայթեց“, „Շարժիչը չի միանում“, „Կաբինան վառվում է“, „Յուղը հոսում է“, „Վթարի ենթարկվեցի“, „Չեկը վառվեց“ u. a. (auch Großbuchstaben und russische Lehnwörter wie „Տորմուզ“, „Ռուչնիկ“, „Ռեֆ“) → dieselben Hinweise (HY_KINDS über hyLat); Reparaturvermerk, Verneinung („չի հոսում“, „կոտրված չէ“, „չեմ բախվել“), „ամեն ինչ կարգին է“, Feuerlöscher, Stau, Warnblinker ohne; „Մեքենան չի վառվում“ springt nicht an statt Brand, Auspuffrauch Motor; Tabelle nur im Modul app-sprachen.js', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { hyKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { hyKinds, foreignKinds };')();
+  const CASES = [["Արգելակները չեն աշխատում", "brake"], ["ԱՐԳԵԼԱԿՆԵՐԸ ՉԵՆ ԱՇԽԱՏՈՒՄ", "brake"], ["Արգելակը թույլ է բռնում", "brake"], ["Տորմուզը չի աշխատում", "brake"], ["Օդի ճնշումը ընկնում է", "brake"], ["Ձեռքի արգելակը չի բռնում", "parkbrake"], ["Ռուչնիկը չի աշխատում", "parkbrake"], ["Անիվը պայթեց", "flat"], ["Անվադողը ծակվել է", "flat"], ["Անիվը իջել է", "flat"], ["Պայթեց անվադողը", "flat"], ["Անվադողը մաշված է", "tyre"], ["Շարժիչը չի միանում", "nostart"], ["Մեքենան չի վառվում", "nostart"], ["Մոտորը անջատվեց", "nostart"], ["Շարժիչը տաքանում է", "engine"], ["Շարժիչը գերտաքացել է", "engine"], ["Շարժիչը աղմկում է", "engine"], ["Խլացուցիչից սև ծուխ է գալիս", "engine"], ["Կաբինան վառվում է", "fire"], ["Կաբինայից ծուխ է գալիս", "fire"], ["Կրակ է բռնկվել", "fire"], ["Յուղը հոսում է", "leak"], ["Դիզելը կաթում է", "leak"], ["Անտիֆրիզի արտահոսք կա", "leak"], ["Վթարի ենթարկվեցի", "acc"], ["Բախվեցի սյանը", "acc"], ["Ավարիա եղավ", "acc"], ["Վարորդը վիրավորվել է", "injury"], ["Վթարի ենթարկվեցի, վարորդը վիրավորվել է", "acc"], ["Չեկը վառվեց", "warnlight"], ["Շարժիչի լամպը վառվեց", "warnlight"], ["Վահանակին սխալ է գրում", "warnlight"], ["Դիմապակին ճաքեց", "glass"], ["Քար դիպավ դիմապակուն", "glass"], ["Հայելին կոտրվեց", "mirror"], ["Լույսերը չեն վառվում", "lights"], ["Լամպը այրվել է", "lights"], ["Ֆարը չի աշխատում", "lights"], ["Ակումուլյատորը նստել է", "batt"], ["Տախոգրաֆը չի կարդում քարտը", "tacho"], ["Վարորդի քարտը կորցրել եմ", "tacho"], ["Վառելիքի քարտը չի աշխատում", "fuelcard"], ["Բանալին կորցրել եմ", "lost"], ["Փաստաթղթերը կորել են", "lost"], ["Կցորդը չի միանում", "coupling"], ["Կիսակցորդը չի ամրանում", "coupling"], ["Վառելիքը վերջացավ", "dryfuel"], ["Բաքը դատարկ է", "dryfuel"], ["Սառնարանը չի սառեցնում", "reefer"], ["Ռեֆը չի աշխատում", "reefer"], ["Պնևմոբարձը օդ է թողնում", "susp"], ["Ռեսորը կոտրվել է", "susp"], ["Փոխանցումը չի մտնում", "gear"], ["Կցորդիչը բուքսավորում է", "gear"], ["Կարոբկան փչացել է", "gear"], ["Ջեռուցումը չի աշխատում", "climate"], ["Կոնդիցիոները չի միանում", "climate"], ["Ավտոնոմկան չի վառվում", "climate"], ["Նստատեղի տաքացումը չի աշխատում", "cabkit"], ["Տենտը պատռվեց", "tarp"], ["Խլացուցիչը ընկավ", "exhaust"], ["Մաքրիչները չեն աշխատում", "visib"], ["Ամրագոտին չի կապվում", "seat"], ["Նստատեղը կոտրվեց", "seat"], ["Անիվի պտուտակները թուլացել են", "wheel"], ["Ցեխի մեջ խրվեցի", "stuck"], ["Մեքենան բուքսավորում է", "stuck"], ["Համարանիշը ընկավ", "numplate"], ["Տեսախցիկը չի աշխատում", "adas"], ["Դուռը չի փակվում", "door"], ["Գիդրոբորտը չի աշխատում", "door"], ["Պատուհանը չի իջնում", "window"], ["Ղեկը ծանր է պտտվում", "steer"], ["Աջ է քաշում", "steer"], ["Դռները չեն փակվում", "door"], ["Սեդլոն չի բացվում", "coupling"], ["Մոտորը թակում է", "engine"], ["Ձախ է տանում", "steer"], ["Մեքենան չի միանում", "nostart"]];
+  for (const [x, k] of CASES) { eq([...hyKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); }
+  const NO = ["Ամեն ինչ կարգին է", "Արգելակները վերանորոգեցին", "Անիվը փոխեցինք", "Նորից աշխատում է", "Արգելակները նորմալ աշխատում են", "Կրակմարիչը չկա", "Կաբինան վնասված է", "Անիվը չի պայթել", "Հայելին կոտրված չէ", "Յուղը չի հոսում", "Խնդիր չկա", "Խցանման մեջ մնացի", "Վթարային լույսերը միացրի", "Չեմ բախվել", "Լույսերը միացրի", "Արգելակը սարքեցին", "Ապակին կոտրված չէ", "Ծխում եմ", "Շարժիչը աշխատում է"];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  ok(hyKinds('Արգելակները չեն աշխատում։ Յուղը հոսում է').size === 2 && hyKinds('Արգելակնե՞րը չեն աշխատում').has('brake'), 'armenischer Punkt „։“ trennt Sätze, Fragezeichen im Wort stört nicht');
+  // Gegenprobe: Zeichenketten der übrigen Tests (andere Schriften) bekommen aus der armenischen Tabelle keinen Hinweis
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1533"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const extra = []; for (const x of strs) if (hyKinds(x).size) extra.push(x);
+  eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der armenischen Tabelle');
+  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...hyKinds(v)', '') + 'return foreignKinds;')();
+  for (const [x] of CASES) eq([...await others(x)].join(','), '', 'übrige Tabellen reagieren nicht auf Armenisch: ' + x);
+  const src = app.slice(app.indexOf('\nconst HY_MAP'), app.indexOf('\nfunction hyKinds'));
+  ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  const ids = [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1]);
+  for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  eq(new Set(ids).size, 36, '36 Hinweisarten');
+  eq(new Set(CASES.map((c) => c[1])).size, 36, 'jede Hinweisart mit mindestens einem Beispiel');
+  ok(app.includes('...tkKinds(v), ...hyKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(!main.includes('const HY_KINDS') && lang.includes('const HY_KINDS'), 'Tabelle nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['Արգելակները չեն աշխատում', 'Անիվը պայթեց', 'Շարժիչը չի միանում', 'Կաբինան վառվում է', 'Յուղը հոսում է', 'Վթարի ենթարկվեցի', 'Չեկը վառվեց', 'Սառնարանը չի սառեցնում']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
+    for (const x of ['վերանորոգեցին', 'փոխեցինք', 'նորից աշխատում է', 'ամեն ինչ կարգին է']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x);
+    ok(STRINGS[l].help_report_s.includes('Խլացուցիչից սև ծուխ է գալիս') && [...await fk('Խլացուցիչից սև ծուխ է գալիս')].join() === 'engine', 'Hilfe Auspuffrauch = Motor: ' + l);
+    ok(STRINGS[l].help_report_s.includes('Մեքենան չի վառվում') && [...await fk('Մեքենան չի վառվում')].join() === 'nostart', 'Hilfe „springt nicht an“: ' + l); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-armenisch.py'), 'UI-Prüfung in pruefen.sh');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
