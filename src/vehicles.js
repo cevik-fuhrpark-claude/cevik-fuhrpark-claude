@@ -1237,21 +1237,29 @@ export async function planMaintenance(env, user, ruleId, body) {
 // bzw. schon verstrichen ist und die keinen Termin ab heute haben. Nur Hinweis zum gemeinsamen Werkstattbesuch – nichts wird geplant oder verschoben.
 // HU/SP nach der zentralen Regel (`huSpFor`, ungeklärt/nicht SP-pflichtig ohne Hinweis), übrige nach gespeicherter Fälligkeit; reine km-Fälligkeiten,
 // beendete Einträge und erledigte Rückrufe zählen nicht. Höchstens 6, früheste Frist zuerst.
-async function alsoDueAt(env, r, d) {
+export async function alsoDueAt(env, r, d) {
   const today = berlinDate();
-  const self = await env.DB.prepare('SELECT id, plate, kind, trailer_plate, active, COALESCE(eval_excluded,0) AS eval_excluded FROM vehicles WHERE id=?').bind(r.vehicle_id).first();
+  // Backlog 1519: Fahrzeug, Gespann-Kandidaten und Vorwarnzeit in einer Abfrage (Abfragebudget „Auftrag aus Prüftermin“)
+  const vrows = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate, active, COALESCE(eval_excluded,0) AS eval_excluded,
+      (SELECT value FROM settings WHERE key='maintenance_warn_days') AS _wd FROM vehicles WHERE id=?1 OR (active=1 AND id<>?1 AND kind IN ('lkw','anhaenger'))
+      ORDER BY COALESCE(eval_excluded,0), created_at`).bind(r.vehicle_id).all()).results;
+  const self = vrows.find((x) => x.id === r.vehicle_id);
   if (!self || !self.active || self.eval_excluded) return [];
-  const pool = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate, COALESCE(eval_excluded,0) AS eval_excluded FROM vehicles WHERE active=1 AND id<>? AND kind IN ('lkw','anhaenger') ORDER BY COALESCE(eval_excluded,0), created_at`).bind(self.id).all()).results;
+  const pool = vrows.filter((x) => x.id !== self.id);
   const cand = self.kind === 'anhaenger'
     ? pool.filter((x) => x.kind === 'lkw' && x.trailer_plate && normPlate(x.trailer_plate) === normPlate(self.plate))
     : self.trailer_plate ? pool.filter((x) => x.kind === 'anhaenger' && normPlate(x.plate) === normPlate(self.trailer_plate)) : [];
   const partner = cand.find((x) => !x.eval_excluded) || null; // ruhende Doppel nie (aus allen Bewertungen ausgenommen)
   const vids = [self.id, ...(partner ? [partner.id] : [])];
   const plateOf = new Map([[self.id, self.plate], ...(partner ? [[partner.id, partner.plate]] : [])]);
-  const wd = maintenanceWarnDays((await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first() || {}).value);
+  const wd = maintenanceWarnDays(self._wd);
   const limit = new Date(Date.parse(d + 'T12:00:00Z') + wd * 86400000).toISOString().slice(0, 10);
-  const rules = (await env.DB.prepare(`SELECT id, vehicle_id, kind, next_due_date, planned_date, last_done_date FROM maintenance_rules
-    WHERE vehicle_id IN (SELECT value FROM json_each(?)) AND kind NOT IN ('HU','SP') AND next_due_date IS NOT NULL AND id<>?`).bind(JSON.stringify(vids), r.id).all()).results;
+  // eigener Eintrag (`r.id`) mitgelesen: liefert seine Art, wenn der Aufrufer sie nicht kennt (Werkstatttermin eines Auftrags aus Prüftermin)
+  const rrows = (await env.DB.prepare(`SELECT id, vehicle_id, kind, next_due_date, planned_date, last_done_date FROM maintenance_rules
+    WHERE (vehicle_id IN (SELECT value FROM json_each(?1)) AND kind NOT IN ('HU','SP') AND next_due_date IS NOT NULL) OR id=?2`).bind(JSON.stringify(vids), r.id || '').all()).results;
+  const own = rrows.find((m) => m.id === r.id);
+  const ownKind = r.kind || (own ? own.kind : '');
+  const rules = rrows.filter((m) => m.id !== r.id && !['HU', 'SP'].includes(m.kind) && m.next_due_date);
   const out = [];
   for (const m of rules) {
     if (ONE_TIME_KINDS.includes(m.kind) && m.last_done_date) continue;
@@ -1265,7 +1273,7 @@ async function alsoDueAt(env, r, d) {
     for (const kind of ['HU', 'SP']) {
       const y = kind === 'HU' ? h.hu : h.sp;
       if (!y || !y.due || ['ungeklaert', 'nicht_sp_pflichtig'].includes(y.status)) continue;
-      if (vid === r.vehicle_id && kind === r.kind) continue;
+      if (vid === r.vehicle_id && kind === ownKind) continue;
       if (y.planned_date && y.planned_date >= today) continue;
       if (y.due <= limit) out.push({ vehicle_id: vid, kind, due: y.due });
     }

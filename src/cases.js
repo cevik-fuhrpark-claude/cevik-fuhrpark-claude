@@ -1153,7 +1153,8 @@ export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body
   const planned = rule.planned_date && rule.planned_date >= berlinDate() ? rule.planned_date : null;
   const r = await runCommand(env, ctx, user, envName, created.id, { action: 'approve_repair', command_id: ('mo-' + requestKey).slice(0, 64), expected_version: 1,
     note: `Auftrag aus Prüftermin ${rule.kind}${note ? ': ' + note : ''}`, payload: { workshop_site: site, ...(planned ? { planned_date: planned } : {}) } });
-  return { id: created.id, case_no: created.case_no, status: r.status, planned_date: planned };
+  // Backlog 1519: übernommener Termin → weitere bis dahin fällige Prüfungen ohne Termin (ohne den eigenen Prüftermin) als Hinweis durchreichen
+  return { id: created.id, case_no: created.case_no, status: r.status, planned_date: planned, ...(r.also_due ? { also_due: r.also_due } : {}) };
 }
 
 
@@ -2318,7 +2319,16 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const cost_limit_cleared = COST_ACTIONS.includes(action) && updated.cost_over_limit_at ? (await revalidateCostMarks(env, user.id, [c.id])).length > 0 : false;
   // Kostengrenze überschritten bzw. Markierung aufgehoben → Version um 1 erhöht; Antwort nennt diese (18.10.2026: sonst 409 beim nächsten Befehl)
   const version = cost_limit_exceeded || cost_limit_cleared ? newVersion + 1 : newVersion;
-  return { ok: true, version, status: toStatus, ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}), ...(noWorkshopUser && !externalWs ? { no_workshop_user: true } : {}), ...(noWorkshopUser && externalWs ? { external_workshop: true } : {}), ...(noRecipients ? { no_recipients: true } : {}),
+  // Backlog 1519 (Folge aus 1518, Blickwinkel „Leitung/Werkstatt legt den Werkstatttermin eines Schadens fest – UVV, Tacho-Prüfung oder SP des
+  // Fahrzeugs bzw. des fest gekoppelten Anhängers sind bis dahin ebenfalls fällig und haben keinen Termin“): gleicher Hinweis wie beim Prüftermin
+  // (`alsoDueAt`), nur wenn der Termin neu gesetzt/verschoben wurde und ab heute liegt; der eigene Prüftermin eines Auftrags aus Prüftermin zählt
+  // nicht. Nur Hinweis – nichts wird geplant oder verschoben. Dynamischer Import: vehicles.js importiert cases.js (Zyklus).
+  let also_due = [];
+  if (['set_planned_date', 'acknowledge', 'approve_repair'].includes(action) && set.planned_date && set.planned_date !== (c.planned_date || null) && set.planned_date >= berlinDate() && c.vehicle_id) {
+    const { alsoDueAt } = await import('./vehicles.js'); // Art des eigenen Prüftermins liest alsoDueAt selbst mit
+    also_due = await alsoDueAt(env, { id: c.maintenance_rule_id || '', vehicle_id: c.vehicle_id }, set.planned_date);
+  }
+  return { ok: true, version, status: toStatus, ...(also_due.length ? { also_due } : {}), ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}), ...(noWorkshopUser && !externalWs ? { no_workshop_user: true } : {}), ...(noWorkshopUser && externalWs ? { external_workshop: true } : {}), ...(noRecipients ? { no_recipients: true } : {}),
     // Backlog 887: km laut Rechnung nicht übernommen (Rücksprung/später kleinerer Stand) bzw. nur Testumgebung – Antwort wie bei der Kontrolle
     ...(action === 'add_external_cost' && payload && payload.km_rejected ? { km_rejected: payload.km_rejected } : {}), ...(action === 'add_external_cost' && payload && payload.km_test_only ? { km_test_only: true } : {}) };
 }

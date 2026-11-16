@@ -6045,7 +6045,7 @@ await test('Werkstattauftrag aus Prüftermin: Leitung legt an und gibt frei, gep
   eq(d.case.origin, 'wartung'); eq(d.case.workshop_site, 'DORTMUND'); eq(d.case.planned_date, day(3));
   { const ce = d.events.find((e) => e.action === 'create'); const pl = typeof ce.payload === 'string' ? JSON.parse(ce.payload) : ce.payload;
     eq(pl.origin, 'wartung', 'Anlage-Ereignis nennt Herkunft Wartung (Verknüpfung im selben Batch)'); }
-  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').every((w) => w.n <= 29), 'Auftrag aus Prüftermin ≤ 29 Abfragen'); // +2 (18.10.2026): Fahrzeug noch in Betrieb im Anlage-Stapel; +2: „höchstens ein offener Auftrag“ im Anlage-Stapel (17.10.2026)
+  ok(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').every((w) => w.n <= 33), 'Auftrag aus Prüftermin ≤ 33 Abfragen ' + JSON.stringify(QSTAT.perRequest.filter((w) => w.path === '/api/maintenance/:id/order').map((w) => w.n))); // +4 (16.11.2026, Backlog 1519): übernommener Termin → Hinweis „bis dahin ebenfalls fällig“ (alsoDueAt, nur mit Termin) // +2 (18.10.2026): Fahrzeug noch in Betrieb im Anlage-Stapel; +2: „höchstens ein offener Auftrag“ im Anlage-Stapel (17.10.2026)
   { // Anfragedaten können Herkunft/Verknüpfung nicht setzen
     const fake = await users.fleet.post('/api/cases', { vehicle_id: rule.data.vehicle_id || V1, description: 'Test Herkunft fremd gesetzt', origin: 'wartung', maintenance_rule_id: rule.data.id, request_key: rk() });
     eq(fake.status, 201); const fc = (await users.fleet.get(`/api/cases/${fake.data.id}`)).data;
@@ -15450,7 +15450,7 @@ await test('Fehlersuche 20.10. (18): Vertrag nach bestätigtem Tachotausch „un
   ok(cand, 'Kandidat aus Kontrolle'); eq(cand.via_plate, 'FX-ZM 1'); ok(/Zugmaschine FX-ZM 1$/.test(cand.evidence), cand.evidence);
   // 4. App: Befehlskennung je Inhalt, Bußgeld-Hinweis in der Suche, Übersetzung des Nachweises; Doku-Pfad
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(/S\.pendCmd && S\.pendCmd\.key === key && Date\.now\(\) - S\.pendCmd\.at < 10 \* 60000 \? S\.pendCmd\.id : uid\(\)/.test(app) && app.includes('command_id: commandId, expected_version: c.version') && app.includes('S.pendCmd = null; if (r && r.no_workshop_user)'), 'Befehlswiederholung mit gleicher Kennung');
+  ok(/S\.pendCmd && S\.pendCmd\.key === key && Date\.now\(\) - S\.pendCmd\.at < 10 \* 60000 \? S\.pendCmd\.id : uid\(\)/.test(app) && app.includes('command_id: commandId, expected_version: c.version') && app.includes("S.pendCmd = null; /* Backlog 1519: weitere bis zum Werkstatttermin fällige Prüfungen ohne Termin – nur Hinweis */ const ad = r && !r.duplicate ? alsoDueTxt(r) : ''; if (r && r.no_workshop_user)"), 'Befehlswiederholung mit gleicher Kennung');
   ok(/fineTrunc = !!fr\.truncated/.test(app) && app.includes('id="gftrunc"'), 'Suche: Hinweis auf die 500 jüngsten Schreiben');
   ok(app.includes("Uhr( – nach der Tatzeit)?(?: – Zugmaschine (.+))?$/") , 'Nachweis-Übersetzung mit Zugmaschine');
   const api = fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8'); ok(!api.includes('/api/fines/:id/command`'), 'Doku: /commands');
@@ -18350,7 +18350,7 @@ await test('Anhänger abgestellt / Urlaubsrückkehr / neuer Standort (Teilagente
   const { STRINGS, translateValidation } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) for (const k of ['nf_more', 'trailer_deact_warn', 'dq_trailer_inactive']) ok(STRINGS[l][k] && !/\((n|s|і)\)/.test(STRINGS[l][k]), `${l}.${k}`);
   ok(/^List out of date/.test(translateValidation('en', 'Liste veraltet – bitte neu laden.')), 'V_MORE');
-  ok(app.includes("if (r && r.no_workshop_user) toast(t('no_ws_user_warn'), true);") && ['de', 'uk', 'en'].every((l) => STRINGS[l].no_ws_user_warn), 'Hinweis Werkstatt ohne Konto');
+  ok(app.includes("if (r && r.no_workshop_user) toast(t('no_ws_user_warn') + ad, true);") && ['de', 'uk', 'en'].every((l) => STRINGS[l].no_ws_user_warn), 'Hinweis Werkstatt ohne Konto');
 });
 
 await test('Versichererwechsel / Lager-Rückgabe / Fahrer auf Ukrainisch (Teilagenten 23.10.): Vertragsimport mit „Versicherungsbeginn/-ende“, unbekannte Datumsspalte abgewiesen, Folgepolice mit laufender Nummer übersprungen statt „vorhanden“; Lager-Wiederholung nach Deaktivieren, Korrektur zum Artikelpreis; Fehlermeldung bleibt nicht auf der nächsten Seite, Vordruck-Spalten ohne Umbruch', async () => {
@@ -22878,7 +22878,7 @@ await test('Backlog 386–389 (Blickwinkel „Lkw drei Wochen in der Herstellerw
   const fs = await import('node:fs'); const fm = fs.readFileSync(new URL('../public/finding-messages.js', import.meta.url), 'utf8');
   for (const k of ['CASE_STALE_FOLLOWUP', 'WORKSHOP_ACK_PENDING_EXTERN']) eq((fm.match(new RegExp(`\\b${k}:`, 'g')) || []).length, 3, `${k} in DE/UK/EN`);
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('data-extnote') && app.includes("t('ext_amount_hint')") && app.includes("r.external_workshop) toast(t('ext_ws_hint'))") && /i\.vehicle_location && `<span data-vloc>/.test(app), 'Oberfläche');
+  ok(app.includes('data-extnote') && app.includes("t('ext_amount_hint')") && app.includes("r.external_workshop) toast(t('ext_ws_hint') + ad, !!ad)") && /i\.vehicle_location && `<span data-vloc>/.test(app), 'Oberfläche');
 });
 await test('Backlog 390–394 (Blickwinkel „Unfall in Polen mit Fremdbeteiligung“): Unfall-Hinweis erkennt Zusammenstoß/зіткнення/європротокол/collision (nicht „наїхав на цвях“), Gegner-Kennzeichen ohne „D“-Band, Suche ohne Akzente und mit Länderkennung, Kennzeichen ohne Buchstaben/Ziffern abgewiesen, Unfallbericht im Hinweis und in der Belegbezeichnung', async () => {
   const { U } = await freshWorld();
@@ -29191,7 +29191,7 @@ await test('Backlog 805f (Blickwinkel „Funkloch“): Werkstattplan (Termin set
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("const cidFor = (key) =>"), 'Helfer');
-  ok(app.includes("command_id: cidFor(JSON.stringify([i.id, i.version, 'set_planned_date', pn, f.value]))") && app.includes("payload: { planned_date: f.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; toast(x && x.duplicate ? t('saved_before') : '✓');"), 'Termin setzen');
+  ok(app.includes("command_id: cidFor(JSON.stringify([i.id, i.version, 'set_planned_date', pn, f.value]))") && app.includes("payload: { planned_date: f.value } }, { timeoutMs: SEND_TIMEOUT_MS }); S.pendCid = null; const ad = x && !x.duplicate ? alsoDueTxt(x) : ''; /* Backlog 1519 */ toast(x && x.duplicate ? t('saved_before') : ad ? '✓ ·' + ad : '✓', !!ad);"), 'Termin setzen');
   ok(app.includes("command_id: cidFor(JSON.stringify([i.id, i.version, 'reassign_workshop', note, sel.value]))") && app.includes("if (x && x.duplicate) { toast(t('saved_before')); viewPlan(); return; }"), 'Werkstatt wechseln');
   ok(app.includes("hsUrl(fm.dataset.hsplan, 'plan'), { planned_date: fm.planned_date.value || null, expected_planned_date: fm.planned_date.defaultValue || null, ...(fm.planned_note ? { planned_note: fm.planned_date.value ? fm.planned_note.value : '' } : {}) }, { timeoutMs: SEND_TIMEOUT_MS });") /* seit Backlog 818 mit gelesenem Termin, seit 1442 mit Hinweis */, 'Prüftermin planen');
   ok(app.includes("request_key: fm.dataset.key || (fm.dataset.key = uid()) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805f */"), 'Wartungsauftrag');
@@ -43019,6 +43019,42 @@ await test('Backlog 1518 (Backlog 195, Blickwinkel „Leitung legt den Werkstatt
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].plan_also_due.includes('{list}') && STRINGS[l].plan_also_saved, `${l}.plan_also_due`);
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_dates_s.split('|').some((p) => /1518|Werkstattbesuch|візит|workshop visit/.test(p)), `${l}: Hilfe`);
   ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1518'), 'API.md');
+});
+
+await test('Backlog 1519 (Folge aus 1518, Blickwinkel „Leitung/Werkstatt legt den Werkstatttermin eines Schadens fest – weitere Prüfungen des Fahrzeugs sind bis dahin ebenfalls fällig und haben keinen Termin“): Vorgangsbefehle set_planned_date/acknowledge/approve_repair und Auftrag aus Prüftermin liefern `also_due` (ohne eigenen Prüftermin, nur bei neuem/verschobenem Termin ab heute) – nur Hinweis; Oberfläche DE/UK/EN', async () => {
+  const { U, cmd, newCase, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const rule = async (kind, due) => { const x = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind, next_due_date: due, evidence: 'Test 1519' }); eq(x.status, 201, JSON.stringify(x.data)); return x.data.id; };
+  const uvv = await rule('UVV', day(20));
+  await rule('Bremsen', day(90)); // nach Termin + Vorwarnzeit → nie
+  const tacho = await rule('Tachograph', day(15));
+  eq((await U.fleet.post(`/api/maintenance/${tacho}/plan`, { planned_date: day(12) })).status, 200); // hat schon einen Termin → nie
+  const mine = (r) => JSON.stringify((r.data.also_due || []).filter((y) => ['UVV', 'Bremsen', 'Tachograph'].includes(y.kind)));
+  const id = await newCase({ description: 'Spiegel rechts abgebrochen' });
+  let r = await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(10) }, 'Spiegel tauschen'); eq(r.status, 200, JSON.stringify(r.data));
+  eq(mine(r), JSON.stringify([{ kind: 'UVV', due: day(20) }]), 'Freigabe mit Termin');
+  ok((r.data.also_due || []).every((y) => !y.plate), 'eigenes Fahrzeug ohne Kennzeichen');
+  r = await cmd(U.ws, id, 'acknowledge'); eq(r.status, 200); eq(r.data.also_due, undefined, 'Übernahme ohne Termin');
+  r = await cmd(U.ws, id, 'set_planned_date', { planned_date: day(10), planned_note: 'Abgabe 7 Uhr' }); eq(r.status, 200); eq(r.data.also_due, undefined, 'nur Hinweis geändert, Termin gleich');
+  r = await cmd(U.ws, id, 'set_planned_date', { planned_date: day(11) }); eq(r.status, 200); eq(mine(r), JSON.stringify([{ kind: 'UVV', due: day(20) }]), 'Termin verschoben');
+  r = await cmd(U.ws, id, 'set_planned_date', { planned_date: day(-1) }); eq(r.status, 200); eq(r.data.also_due, undefined, 'Termin vor heute');
+  r = await cmd(U.ws, id, 'set_planned_date', { planned_date: null }); eq(r.status, 200); eq(r.data.also_due, undefined, 'Termin entfernt');
+  eq((await U.fleet.get('/api/maintenance')).data.rows.filter((x) => x.vehicle_id === V1 && x.planned_date && ['UVV', 'Bremsen'].includes(x.kind)).length, 0, 'nichts zusätzlich geplant');
+  // Auftrag aus dem UVV-Prüftermin mit Termin: die UVV selbst zählt nicht; der Tacho-Termin liegt vor der Frist → keiner
+  eq((await U.fleet.post(`/api/maintenance/${uvv}/plan`, { planned_date: day(5) })).status, 200);
+  r = await U.fleet.post(`/api/maintenance/${uvv}/order`, { workshop_site: 'DORTMUND' }); eq(r.status, 201, JSON.stringify(r.data));
+  eq(r.data.planned_date, day(5)); eq(mine(r), '[]', 'eigener Prüftermin zählt nicht');
+  // Tacho-Termin entfernt → der Auftrag aus der UVV nennt nach dem Verschieben die Tacho-Prüfung
+  eq((await U.fleet.post(`/api/maintenance/${tacho}/plan`, { planned_date: null })).status, 200);
+  await cmd(U.ws, r.data.id, 'acknowledge');
+  const y = await cmd(U.ws, r.data.id, 'set_planned_date', { planned_date: day(6) }); eq(y.status, 200, JSON.stringify(y.data));
+  eq(mine(y), JSON.stringify([{ kind: 'Tachograph', due: day(15) }]), 'Auftrag aus Prüftermin verschoben');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('const alsoDueTxt = (r) =>') && app.includes("const ad = r && !r.duplicate ? alsoDueTxt(r) : '';") && app.includes("else if (ad) toast('✓ ·' + ad, true);"), 'Vorgangsformular zeigt den Hinweis');
+  ok(app.includes("const ad = x && !x.duplicate ? alsoDueTxt(x) : '';") && (app.match(/case_no \+ alsoDueTxt\((r|x)\)/g) || []).length === 2, 'Werkstattplan und Auftrag aus Prüftermin');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_dates_s.split('|').some((p) => /Vorgangs|звернення|of a case/.test(p) && /Werkstattbesuch|візиту|workshop visit/.test(p)), `${l}: Hilfe`);
+  ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1519'), 'API.md');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
