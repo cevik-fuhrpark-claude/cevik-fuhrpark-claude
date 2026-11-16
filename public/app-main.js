@@ -5246,6 +5246,9 @@ const mayReport = () => !!(S.me && S.me.role !== 'viewer');
 
 const FB_HREF = { gesperrt: '#/vehicles?f=gesperrt', werkstatt: '#/vehicles?f=werkstatt', meldung_offen: '#/vehicles?f=meldung_offen', einsatzbereit_lt_system: '#/vehicles?f=einsatzbereit_lt_system' };
 
+
+
+
 async function viewVehicles(...a) { return (await lazyModule('fahrzeug')).viewVehicles(...a); }
 
 const coupledLockedText = (c) => `${t(c.kind === 'anhaenger' ? 'trailer' : 'truck')} ${c.plate}: ${t('locked')} – ${t('do_not_drive')}`;

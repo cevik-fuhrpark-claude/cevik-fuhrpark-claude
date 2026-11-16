@@ -33,6 +33,10 @@ async function platesInsert(env, list, actorId, source) {
     WHERE EXISTS (SELECT 1 FROM vehicles v WHERE v.id = json_extract(value,'$.id'))`).bind(nowIso(), actorId || null, source, JSON.stringify(list)).run();
 }
 
+// Backlog 1513: Ausstattung aus Prüfarten (Reihenfolge fest; Kühlgerät/ATP/Temperaturschreiber = Kühlung)
+export const EQUIP_OF_KIND = { Ladebordwand: 'taillift', Ladekran: 'crane', 'Kühlgerät': 'reefer', 'ATP-Bescheinigung': 'reefer', Temperaturschreiber: 'reefer' };
+export const EQUIP_KEYS = ['taillift', 'crane', 'reefer'];
+export const equipmentOf = (csv) => { const s = new Set(String(csv || '').split(',').map((k) => EQUIP_OF_KIND[k]).filter(Boolean)); return EQUIP_KEYS.filter((k) => s.has(k)); };
 export async function listVehicles(env, user, envName, query = {}) {
   const active = query.inactive === '1' && isManager(user) ? 0 : 1;
   const today = berlinDate(); // geplante Termine: nur heute oder später (überschrittene zeigt der Werkstattplan)
@@ -65,6 +69,12 @@ export async function listVehicles(env, user, envName, query = {}) {
       (SELECT COUNT(*) FROM vehicle_notes n WHERE n.vehicle_id=v.id AND n.environment=? AND n.archived_at IS NULL AND (n.valid_until IS NULL OR n.valid_until >= ?)) AS notes_active,
       -- offene Herstellerrückrufe (noch nicht durchgeführt; gleiche Regel wie Vorgangs-Kurzinfo „Zum Fahrzeug“), Frist nur laut Schreiben
       (SELECT COUNT(*) FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.kind='Rückruf' AND m.last_done_date IS NULL) AS open_recalls,
+      -- Backlog 1513 (Blickwinkel „Disposition braucht kurzfristig einen freien Lkw mit Ladebordwand bzw. einen Kühlauflieger“): Ausstattung nur aus
+      -- hinterlegten Prüfterminen ableiten (keine eigene Angabe, nichts geschätzt); ein beendeter Eintrag (Durchführungen, aber weder Fälligkeit,
+      -- Intervall noch Termin – „Kran abgebaut“, Backlog 579) zählt nicht mehr
+      (SELECT group_concat(DISTINCT m.kind) FROM maintenance_rules m WHERE m.vehicle_id=v.id AND m.kind IN ('Ladebordwand','Ladekran','Kühlgerät','ATP-Bescheinigung','Temperaturschreiber')
+        AND (m.next_due_date IS NOT NULL OR m.interval_months IS NOT NULL OR m.interval_km IS NOT NULL OR m.due_km IS NOT NULL OR m.planned_date IS NOT NULL
+          OR NOT EXISTS (SELECT 1 FROM maintenance_events e WHERE e.vehicle_id=v.id AND e.rule_id=m.id))) AS eqk,
       -- offene Befunde des Fuhrparkagenten (Umgebung der Person) über idx_findings_vehicle; nur Inhaber/Fuhrparkleitung bekommen die Zahlen
       (SELECT COUNT(*) || '|' || COALESCE(SUM(f.severity='kritisch'), 0) FROM agent_findings f WHERE f.vehicle_id=v.id AND f.environment=? AND f.status='offen') AS af,
       -- frühere Kennzeichen (Backlog 256): Suche nach dem alten Kennzeichen findet das Fahrzeug
@@ -74,6 +84,7 @@ export async function listVehicles(env, user, envName, query = {}) {
   for (const v of rows) { { const nd = v.next_due ? String(v.next_due) : null; const i = nd ? nd.indexOf('|') : -1; v.next_due = nd ? (i < 0 ? nd : nd.slice(0, i)) : null; v.next_due_kind = nd && i >= 0 ? nd.slice(i + 1) : null; }
     const [at, result, by] = v.last_check ? v.last_check.split('|') : [null, null, null]; v.last_check_at = at; v.last_check_result = result; v._lcBy = by || null; delete v.last_check;
     v.former_plates = v.fp ? [...new Set(String(v.fp).split('|').filter((x) => x && x !== v.plate))] : []; delete v.fp;
+    v.equipment = equipmentOf(v.eqk); delete v.eqk;
     // nächster geplanter Prüftermin ab heute + Prüfart(en) an diesem Tag
     const [pd, pk] = v.planned_inspection ? v.planned_inspection.split('|') : [null, null]; v.planned_inspection_date = pd; v.planned_inspection_kind = pk || null; delete v.planned_inspection;
     // km-Fälligkeit: Rest-km nur mit erfasstem km-Stand (keine Schätzung)
@@ -132,7 +143,8 @@ export async function listVehicles(env, user, envName, query = {}) {
     v.coupled = p ? { id: p.id, plate: p.plate, kind: p.kind, availability: p.availability, eval_excluded: p.eval_excluded ? 1 : 0, next_due: p.next_due || null, next_due_kind: p.next_due ? p.next_due_kind || null : null,
       km_remaining: p.km_remaining ?? null, failed_inspection: p.failed_inspection || null, reinspection_open: p.reinspection_open || null,
       // Backlog 1078 (Blickwinkel „Disposition bucht einen Lkw ein, der morgen zur HU muss“): nächster Prüf-/Werkstatttermin des gekoppelten Fahrzeugs (ab heute)
-      planned_inspection_date: p.planned_inspection_date || null, planned_inspection_kind: p.planned_inspection_date ? p.planned_inspection_kind || null : null, planned_workshop_date: p.planned_workshop_date || null } : null;
+      planned_inspection_date: p.planned_inspection_date || null, planned_inspection_kind: p.planned_inspection_date ? p.planned_inspection_kind || null : null, planned_workshop_date: p.planned_workshop_date || null,
+      equipment: p.equipment || [] } : null; // Backlog 1513: Ausstattung des gekoppelten Fahrzeugs (z. B. Kühlauflieger am Lkw)
   }
   for (const v of list) { if (user.role !== 'driver') delete v._lcBy; }
   if (user.role === 'driver') {

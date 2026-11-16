@@ -8743,7 +8743,7 @@ await test('Fahrzeugliste: Suche findet Hersteller/Modell, Liste zeigt beides; P
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
-  ok(app.includes("(v.manufacturer || '') + ' ' + (v.model || '') + ' ' + (v.former_plates || []).join(' ')).toLowerCase())}\"") , 'Suchtext enthält Hersteller und Modell');
+  ok(app.includes("(v.manufacturer || '') + ' ' + (v.model || '') + ' ' + (v.former_plates || []).join(' ') + ' ' + vEquip(v).map((k) => t('eq_' + k)).join(' ')).toLowerCase())}\"") , 'Suchtext enthält Hersteller und Modell (seit Backlog 1513 auch Ausstattung)');
   ok(app.includes("esc([v.manufacturer, v.model, v.build_year].filter(Boolean).join(' '))"), 'Liste zeigt Hersteller, Modell, Baujahr');
   eq((i18n.match(/veh_search_ph: '/g) || []).length, 3, 'Platzhalter DE/UK/EN');
   ok(app.includes("t('veh_search_ph')"), 'Platzhalter genutzt');
@@ -25222,7 +25222,7 @@ await test('Backlog 489–494 (Blickwinkel „Kennzeichen in verschiedenen Schre
   ok(!(await U.viewer.get('/api/vehicles')).data.vehicles.some((v) => v.id === VQ), 'nicht in der Liste');
   eq((await U.viewer.get('/api/vehicles/' + VQ)).status, 200, 'Lesezugriff: Akte'); eq((await U.driver.get('/api/vehicles/' + VQ)).status, 403, 'Fahrer nicht');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("(v.model || '') + ' ' + (v.former_plates || []).join(' ')).toLowerCase())"), '489: Fahrzeugliste mit früheren Kennzeichen');
+  ok(app.includes("(v.model || '') + ' ' + (v.former_plates || []).join(' ') + ' '"), '489: Fahrzeugliste mit früheren Kennzeichen');
   ok(app.includes("const q = $('#afq') ? searchKey((S.afQ || '').trim()) : '';") && app.includes('afText.set(r, searchKey(r.textContent))'), '490: Befundsuche normalisiert');
   ok(app.includes("if (/^#\\/(new|check|v)\\/VIN:[A-Z0-9]+$/.test(h0) || (fromPush && AFTER_LOGIN_RX.test(h0))) { try { sessionStorage.setItem('cfp_after_login', h0); } catch {} } location.hash = '#/login';"), '492: Scan-Ziel bei Sitzungsablauf (seit 1017 auch eben getippte Benachrichtigung, sonst keine Vorgänge)');
   const i0 = app.indexOf('async function viewScan('); const vsrc = app.slice(i0, app.indexOf('\n}\n', i0));
@@ -42804,6 +42804,54 @@ await test('Backlog 1510 (Blickwinkel „Fahrer ruft an – Disposition erfasst 
   for (const l of ['de', 'uk', 'en']) {
     ok(STRINGS[l].rnn_label && STRINGS[l].rnn_hint && STRINGS[l].rnn_shown, l + ': Texte');
     ok(STRINGS[l].help_report_s.includes(STRINGS[l].rnn_label) && STRINGS[l].help_report_s.includes(STRINGS[l].rnn_shown), l + ': Hilfe „Melden“ nennt Feld und Anzeige');
+  }
+});
+
+await test('Backlog 1513 (Blickwinkel „Disposition braucht kurzfristig einen freien Lkw mit Ladebordwand bzw. einen Kühlauflieger“): Fahrzeugliste nennt die Ausstattung laut hinterlegten Prüfterminen (Ladebordwand, Ladekran, Kühlgerät/ATP/Temperaturschreiber = Kühlung), beim Lkw auch die des gekoppelten Anhängers; beendeter Prüftermin zählt nicht; Fahrer ohne Angabe; Auswahl „Ausstattung“ mit Anzahl, Chip mit Herkunft, Suche, Druckkopf, Hinweis und Hilfe (DE/UK/EN)', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const eqA = (x, y, msg) => eq(JSON.stringify(x), JSON.stringify(y), msg);
+  const db = e.DB.db;
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WDB96340310151301', plate: 'TT-KA 1513', kind: 'anhaenger', site: 'Dortmund' })).status, 201, 'Kühlauflieger');
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WDB96340310151302', plate: 'TT-KL 1513', trailer_plate: 'TT-KA 1513', site: 'Dortmund' })).status, 201, 'Zugmaschine');
+  const TR = 'VIN:WDB96340310151301'; const TK = 'VIN:WDB96340310151302'; const V2 = 'VIN:WDB9630051L917317';
+  const add = async (vid, b) => { const r = await U.fleet.post(`/api/vehicles/${encodeURIComponent(vid)}/maintenance`, b); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  await add(V1, { kind: 'Ladebordwand', last_done_date: '2026-03-10', interval_months: 12, evidence: 'Prüfbuch LBW' });
+  await add(TR, { kind: 'ATP-Bescheinigung', next_due_date: '2028-04-30', evidence: 'ATP-Bescheinigung' });
+  await add(TR, { kind: 'Temperaturschreiber', next_due_date: '2027-04-30', evidence: 'Prüfbericht' });
+  const kr = await add(V2, { kind: 'Ladekran', last_done_date: '2026-02-10', interval_months: 12, evidence: 'Kranprüfbuch' });
+  const list = async (c = U.fleet) => new Map((await c.get('/api/vehicles')).data.vehicles.map((v) => [v.id, v]));
+  let m = await list();
+  eqA(m.get(V1).equipment, ['taillift'], 'Ladebordwand'); eqA(m.get(TR).equipment, ['reefer'], 'ATP + Temperaturschreiber = einmal Kühlung');
+  eqA(m.get(TK).equipment, [], 'Zugmaschine selbst ohne'); eqA(m.get(TK).coupled.equipment, ['reefer'], 'Gespann: Kühlung des Anhängers');
+  eqA(m.get(TR).coupled.equipment, [], 'Anhänger-Zeile: Zugmaschine ohne'); eqA(m.get(V2).equipment, ['crane'], 'Ladekran');
+  // beenden (Kran abgebaut) – mit Durchführung bleibt der Eintrag, zählt aber nicht mehr als Ausstattung
+  const hasEv = db.prepare('SELECT COUNT(*) AS n FROM maintenance_events WHERE rule_id=?').get(kr).n;
+  if (!hasEv) eq((await U.fleet.post(`/api/maintenance/${kr}/complete`, { done_date: '2026-10-01', done_km: 400000, evidence: 'Kranprüfung' })).status, 200, 'Durchführung');
+  const en = await U.fleet.post(`/api/maintenance/${kr}/end`, { reason: 'Ladekran abgebaut' }); eq(en.status, 200, JSON.stringify(en.data)); eq(en.data.deleted, false);
+  m = await list(); eqA(m.get(V2).equipment, [], 'beendeter Prüftermin zählt nicht');
+  // Eintrag ohne Durchführung und ohne Fälligkeit (frisch angelegt) zählt weiterhin
+  const { equipmentOf } = await import('../src/vehicles.js');
+  eqA(equipmentOf('Kühlgerät,Ladebordwand,ATP-Bescheinigung,Ladekran'), ['taillift', 'crane', 'reefer'], 'feste Reihenfolge, ohne Doppel'); eqA(equipmentOf(null), []); eqA(equipmentOf('HU,Rückruf'), []);
+  // Fahrer: keine Ausstattungsangabe (Liste wie bisher)
+  for (const v of (await U.driver.get('/api/vehicles')).data.vehicles) { ok(!('equipment' in v), 'Fahrer ohne equipment'); ok(!v.coupled || !('equipment' in v.coupled), 'Fahrer: Gespann ohne equipment'); }
+  // Oberfläche
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const line = (k) => app.slice(app.indexOf(k), app.indexOf('\n', app.indexOf(k)));
+  const ln2 = (k) => { const a = app.indexOf(k); const b = app.indexOf('\n', app.indexOf('\n', a) + 1); return app.slice(a, b); };
+  const { vEquip, eqChips } = new Function('t', 'esc', [line('const EQUIP_KEYS = '), line('const vEquip = (v) =>'), ln2('const eqChips = (v) =>')].join('\n') + '; return { vEquip, eqChips };')((k) => ({ eq_reefer: 'Kühlung', eq_taillift: 'Ladebordwand', trailer: 'Anhänger', truck: 'Zugfahrzeug' })[k] || k, (x) => String(x));
+  eqA(vEquip({ equipment: ['taillift'], coupled: { kind: 'anhaenger', equipment: ['reefer'] } }), ['taillift', 'reefer'], 'Gespann vereinigt');
+  eqA(vEquip({ equipment: undefined, coupled: null }), [], 'ohne Angaben (Fahrer/ältere Antwort)');
+  const ch = eqChips({ equipment: ['taillift'], coupled: { kind: 'anhaenger', equipment: ['reefer'] } });
+  ok(ch.includes('data-eq="taillift">Ladebordwand<') && ch.includes('data-eqc>Kühlung (Anhänger)<'), 'Chip nennt Herkunft: ' + ch);
+  ok(app.includes('<select id="veq"') && app.includes("S.vehEq = veq.value; viewVehicles();"), 'Auswahl „Ausstattung“ (kein <form>, lädt sofort)');
+  ok(app.includes("const base = preEq.filter((v) => !eqSel || vEquip(v).includes(eqSel));"), 'Auswahl wirkt vor den Verfügbarkeits-Knöpfen');
+  ok(app.includes("eqSel ? `${t('eq_label')} ${t('eq_' + eqSel)}` : ''"), 'Druckkopf nennt die Ausstattung');
+  ok(app.includes('data-eqhint') && app.includes("vEquip(v).map((k) => t('eq_' + k)).join(' ')).toLowerCase()"), 'Hinweis und Suche („kühlung“ findet das Gespann)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['eq_label', 'eq_taillift', 'eq_crane', 'eq_reefer']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].eq_hint && STRINGS[l].eq_hint.length > 80, `${l}.eq_hint`);
+    ok(STRINGS[l].help_dispo_s.split('|').some((p) => p.includes(STRINGS[l].eq_label)), `${l}: Hilfe Disposition erklärt „${STRINGS[l].eq_label}“`);
   }
 });
 
